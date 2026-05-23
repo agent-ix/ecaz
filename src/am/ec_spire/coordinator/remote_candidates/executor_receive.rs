@@ -196,8 +196,8 @@ fn remote_search_receive_attempt_next_blocker(error: &str) -> String {
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn remote_search_libpq_identity_cache_contract_probe_counts(
-    index_relation: pg_sys::Relation,
+pub(crate) fn remote_search_libpq_identity_cache_contract_probe_counts(
+    index: SpireLiveIndexRelation,
     requested_epoch: u64,
     query: Vec<f32>,
     selected_pids: Vec<u64>,
@@ -205,21 +205,18 @@ pub(crate) unsafe fn remote_search_libpq_identity_cache_contract_probe_counts(
     consistency_mode: &str,
 ) -> (u64, u64, u64, u64, String) {
     let result = (|| -> Result<(u64, u64, u64, u64, String), String> {
-        // SAFETY: test/pg_test callers pass an open SPIRE index relation; rd_id
-        // is read only to validate remote endpoint identity.
-        let index_relid = unsafe { (*index_relation).rd_id };
-        // SAFETY: arguments are forwarded unchanged to the dispatch-plan wrapper,
-        // which validates the requested epoch and remote execution plan.
-        let dispatch_rows = unsafe {
-            remote_search_libpq_dispatch_plan_rows(
-                index_relation,
-                requested_epoch,
-                query,
-                selected_pids,
-                top_k,
-                consistency_mode,
-            )
-        };
+        let index_relid = remote_candidate_index_oid(
+            index,
+            "ec_spire libpq identity cache contract probe",
+        );
+        let dispatch_rows = remote_search_libpq_dispatch_plan_rows(
+            index,
+            requested_epoch,
+            query,
+            selected_pids,
+            top_k,
+            consistency_mode,
+        );
         let row = dispatch_rows
             .iter()
             .find(|row| row.dispatch_action == SPIRE_REMOTE_DISPATCH_PIPELINE_ACTION)
@@ -294,8 +291,10 @@ pub(crate) unsafe fn remote_search_libpq_identity_cache_contract_probe_counts(
         )?;
 
         let mut served_epoch_row = row.clone();
-        served_epoch_row.requested_epoch =
-            served_epoch_row.requested_epoch.checked_add(1).ok_or_else(|| {
+        served_epoch_row.requested_epoch = served_epoch_row
+            .requested_epoch
+            .checked_add(1)
+            .ok_or_else(|| {
                 "ec_spire remote search libpq identity cache contract probe served epoch overflow"
                     .to_owned()
             })?;
@@ -308,11 +307,12 @@ pub(crate) unsafe fn remote_search_libpq_identity_cache_contract_probe_counts(
         )?;
 
         let mut identity_row = row.clone();
-        identity_row.remote_index_identity = if identity_row.remote_index_identity.as_slice() == &[0xff] {
-            vec![0x00]
-        } else {
-            vec![0xff]
-        };
+        identity_row.remote_index_identity =
+            if identity_row.remote_index_identity.as_slice() == &[0xff] {
+                vec![0x00]
+            } else {
+                vec![0xff]
+            };
         let mismatch_status = match validate_remote_search_libpq_endpoint_identity_for_dispatch(
             &mut client,
             index_relid,
@@ -410,8 +410,8 @@ pub(crate) fn remote_search_libpq_executor_budget_contract_probe_counts(
     )
 }
 
-pub(crate) unsafe fn remote_search_libpq_executor_receive_attempt_rows(
-    index_relation: pg_sys::Relation,
+pub(crate) fn remote_search_libpq_executor_receive_attempt_rows(
+    index: SpireLiveIndexRelation,
     requested_epoch: u64,
     query: Vec<f32>,
     selected_pids: Vec<u64>,
@@ -420,21 +420,16 @@ pub(crate) unsafe fn remote_search_libpq_executor_receive_attempt_rows(
 ) -> Vec<SpireRemoteSearchLibpqReceiveAttemptRow> {
     let result = (|| -> Result<Vec<SpireRemoteSearchLibpqReceiveAttemptRow>, String> {
         let requested_consistency_mode = parse_remote_search_consistency_mode(consistency_mode)?;
-        // SAFETY: callers pass an open SPIRE index relation; rd_id is read only
-        // to validate remote endpoint identity for dispatched requests.
-        let index_relid = unsafe { (*index_relation).rd_id };
-        // SAFETY: arguments are forwarded unchanged to the dispatch-plan wrapper,
-        // which validates the requested epoch and remote execution plan.
-        let dispatch_rows = unsafe {
-            remote_search_libpq_dispatch_plan_rows(
-                index_relation,
-                requested_epoch,
-                query.clone(),
-                selected_pids,
-                top_k,
-                consistency_mode,
-            )
-        };
+        let index_relid =
+            remote_candidate_index_oid(index, "ec_spire libpq executor receive attempts");
+        let dispatch_rows = remote_search_libpq_dispatch_plan_rows(
+            index,
+            requested_epoch,
+            query.clone(),
+            selected_pids,
+            top_k,
+            consistency_mode,
+        );
         let mut executor_state = SpireRemoteSearchLibpqExecutorState::default();
         let mut rows = Vec::with_capacity(dispatch_rows.len());
         for row in &dispatch_rows {
@@ -453,8 +448,7 @@ pub(crate) unsafe fn remote_search_libpq_executor_receive_attempt_rows(
                         selected_pids: row.selected_pids.clone(),
                         pid_count: row.pid_count,
                         candidate_count: u64::try_from(candidates.len()).map_err(|_| {
-                            "ec_spire remote receive attempt candidate count exceeds u64"
-                                .to_owned()
+                            "ec_spire remote receive attempt candidate count exceeds u64".to_owned()
                         })?,
                         status: SPIRE_REMOTE_STATUS_READY.to_owned(),
                         next_blocker: SPIRE_REMOTE_NONE.to_owned(),
@@ -466,11 +460,7 @@ pub(crate) unsafe fn remote_search_libpq_executor_receive_attempt_rows(
                 Err(error) => {
                     let degraded =
                         requested_consistency_mode == meta::SpireConsistencyMode::Degraded;
-                    let failure_action = if degraded {
-                        "skip_node"
-                    } else {
-                        "fail_closed"
-                    };
+                    let failure_action = if degraded { "skip_node" } else { "fail_closed" };
                     let recommendation = if degraded {
                         format!(
                             "skip node_id {} in degraded mode before merge: {error}",
@@ -645,7 +635,7 @@ fn remote_search_libpq_executor_candidates_from_dispatch_rows_with_state(
 }
 
 fn remote_search_libpq_executor_candidate_rows_with_state(
-    index_relation: pg_sys::Relation,
+    index: SpireLiveIndexRelation,
     requested_epoch: u64,
     query: Vec<f32>,
     selected_pids: Vec<u64>,
@@ -653,22 +643,16 @@ fn remote_search_libpq_executor_candidate_rows_with_state(
     consistency_mode: &str,
     executor_state: &mut SpireRemoteSearchLibpqExecutorState,
 ) -> Result<Vec<SpireRemoteSearchCandidateRow>, String> {
-    // SAFETY: arguments are forwarded unchanged to the dispatch-plan wrapper,
-    // which validates epoch, fanout, readiness, and remote request state.
-    let dispatch_rows = unsafe {
-        remote_search_libpq_dispatch_plan_rows(
-            index_relation,
-            requested_epoch,
-            query.clone(),
-            selected_pids,
-            top_k,
-            consistency_mode,
-        )
-    };
+    let dispatch_rows = remote_search_libpq_dispatch_plan_rows(
+        index,
+        requested_epoch,
+        query.clone(),
+        selected_pids,
+        top_k,
+        consistency_mode,
+    );
     remote_search_libpq_executor_candidates_from_dispatch_rows_with_state(
-        // SAFETY: index_relation is the open SPIRE index relation whose relid
-        // is compared against remote endpoint identity metadata.
-        unsafe { (*index_relation).rd_id },
+        remote_candidate_index_oid(index, "ec_spire libpq executor candidates"),
         &dispatch_rows,
         &query,
         top_k,
@@ -677,8 +661,8 @@ fn remote_search_libpq_executor_candidate_rows_with_state(
     )
 }
 
-pub(crate) unsafe fn remote_search_libpq_executor_candidate_rows(
-    index_relation: pg_sys::Relation,
+pub(crate) fn remote_search_libpq_executor_candidate_rows(
+    index: SpireLiveIndexRelation,
     requested_epoch: u64,
     query: Vec<f32>,
     selected_pids: Vec<u64>,
@@ -688,7 +672,7 @@ pub(crate) unsafe fn remote_search_libpq_executor_candidate_rows(
     let result = (|| -> Result<Vec<SpireRemoteSearchCandidateRow>, String> {
         let mut executor_state = SpireRemoteSearchLibpqExecutorState::default();
         remote_search_libpq_executor_candidate_rows_with_state(
-            index_relation,
+            index,
             requested_epoch,
             query,
             selected_pids,
@@ -750,7 +734,7 @@ fn remote_search_libpq_executor_heap_candidates_from_dispatch_rows_with_state(
 }
 
 fn remote_search_libpq_executor_heap_candidate_rows_with_state(
-    index_relation: pg_sys::Relation,
+    index: SpireLiveIndexRelation,
     requested_epoch: u64,
     query: Vec<f32>,
     selected_pids: Vec<u64>,
@@ -758,22 +742,16 @@ fn remote_search_libpq_executor_heap_candidate_rows_with_state(
     consistency_mode: &str,
     executor_state: &mut SpireRemoteSearchLibpqExecutorState,
 ) -> Result<Vec<SpireRemoteSearchLocalHeapCandidateRow>, String> {
-    // SAFETY: arguments are forwarded unchanged to the dispatch-plan wrapper,
-    // which validates epoch, fanout, readiness, and remote request state.
-    let dispatch_rows = unsafe {
-        remote_search_libpq_dispatch_plan_rows(
-            index_relation,
-            requested_epoch,
-            query.clone(),
-            selected_pids,
-            top_k,
-            consistency_mode,
-        )
-    };
+    let dispatch_rows = remote_search_libpq_dispatch_plan_rows(
+        index,
+        requested_epoch,
+        query.clone(),
+        selected_pids,
+        top_k,
+        consistency_mode,
+    );
     remote_search_libpq_executor_heap_candidates_from_dispatch_rows_with_state(
-        // SAFETY: index_relation is the open SPIRE index relation whose relid
-        // is compared against remote endpoint identity metadata.
-        unsafe { (*index_relation).rd_id },
+        remote_candidate_index_oid(index, "ec_spire libpq heap candidates"),
         &dispatch_rows,
         &query,
         top_k,
@@ -782,8 +760,8 @@ fn remote_search_libpq_executor_heap_candidate_rows_with_state(
     )
 }
 
-pub(crate) unsafe fn remote_search_libpq_executor_heap_candidate_rows(
-    index_relation: pg_sys::Relation,
+pub(crate) fn remote_search_libpq_executor_heap_candidate_rows(
+    index: SpireLiveIndexRelation,
     requested_epoch: u64,
     query: Vec<f32>,
     selected_pids: Vec<u64>,
@@ -793,7 +771,7 @@ pub(crate) unsafe fn remote_search_libpq_executor_heap_candidate_rows(
     let result = (|| -> Result<Vec<SpireRemoteSearchLocalHeapCandidateRow>, String> {
         let mut executor_state = SpireRemoteSearchLibpqExecutorState::default();
         remote_search_libpq_executor_heap_candidate_rows_with_state(
-            index_relation,
+            index,
             requested_epoch,
             query,
             selected_pids,
@@ -805,8 +783,8 @@ pub(crate) unsafe fn remote_search_libpq_executor_heap_candidate_rows(
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
-pub(crate) unsafe fn remote_search_libpq_identity_cache_summary_row(
-    index_relation: pg_sys::Relation,
+pub(crate) fn remote_search_libpq_identity_cache_summary_row(
+    index: SpireLiveIndexRelation,
     requested_epoch: u64,
     query: Vec<f32>,
     selected_pids: Vec<u64>,
@@ -814,21 +792,16 @@ pub(crate) unsafe fn remote_search_libpq_identity_cache_summary_row(
     consistency_mode: &str,
 ) -> SpireRemoteSearchLibpqIdentityCacheSummaryRow {
     let result = (|| -> Result<SpireRemoteSearchLibpqIdentityCacheSummaryRow, String> {
-        // SAFETY: callers pass an open SPIRE index relation; rd_id is read only
-        // to validate remote endpoint identity for dispatched requests.
-        let index_relid = unsafe { (*index_relation).rd_id };
-        // SAFETY: arguments are forwarded unchanged to the dispatch-plan wrapper,
-        // which validates the requested epoch and remote execution plan.
-        let dispatch_rows = unsafe {
-            remote_search_libpq_dispatch_plan_rows(
-                index_relation,
-                requested_epoch,
-                query.clone(),
-                selected_pids,
-                top_k,
-                consistency_mode,
-            )
-        };
+        let index_relid =
+            remote_candidate_index_oid(index, "ec_spire libpq identity cache summary");
+        let dispatch_rows = remote_search_libpq_dispatch_plan_rows(
+            index,
+            requested_epoch,
+            query.clone(),
+            selected_pids,
+            top_k,
+            consistency_mode,
+        );
         let dispatch_count = u64::try_from(dispatch_rows.len()).map_err(|_| {
             "ec_spire remote search libpq identity cache dispatch count exceeds u64".to_owned()
         })?;
@@ -872,8 +845,9 @@ pub(crate) unsafe fn remote_search_libpq_identity_cache_summary_row(
                         SPIRE_REMOTE_STATUS_READY,
                     )
                 }
-                Err(error) if remote_search_receive_attempt_failure_status(&error)
-                    == SPIRE_REMOTE_STATUS_ENDPOINT_IDENTITY_MISMATCH =>
+                Err(error)
+                    if remote_search_receive_attempt_failure_status(&error)
+                        == SPIRE_REMOTE_STATUS_ENDPOINT_IDENTITY_MISMATCH =>
                 {
                     (0_u64, 0_u64, SPIRE_REMOTE_STATUS_ENDPOINT_IDENTITY_MISMATCH)
                 }
@@ -898,26 +872,22 @@ pub(crate) unsafe fn remote_search_libpq_identity_cache_summary_row(
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
-pub(crate) unsafe fn remote_search_receive_plan_rows(
-    index_relation: pg_sys::Relation,
+pub(crate) fn remote_search_receive_plan_rows(
+    index: SpireLiveIndexRelation,
     requested_epoch: u64,
     query: Vec<f32>,
     selected_pids: Vec<u64>,
     top_k: usize,
     consistency_mode: &str,
 ) -> Vec<SpireRemoteSearchReceivePlanRow> {
-    // SAFETY: arguments are forwarded unchanged to the libpq request-plan
-    // wrapper, which validates remote execution and request shape.
-    let rows = unsafe {
-        remote_search_libpq_request_plan_rows(
-            index_relation,
-            requested_epoch,
-            query,
-            selected_pids,
-            top_k,
-            consistency_mode,
-        )
-    };
+    let rows = remote_search_libpq_request_plan_rows(
+        index,
+        requested_epoch,
+        query,
+        selected_pids,
+        top_k,
+        consistency_mode,
+    );
     remote_search_receive_plan_rows_from_requests(&rows)
 }
 
@@ -939,8 +909,8 @@ fn remote_search_receive_plan_rows_from_requests(
         .collect()
 }
 
-pub(crate) unsafe fn remote_search_merge_input_summary_row(
-    index_relation: pg_sys::Relation,
+pub(crate) fn remote_search_merge_input_summary_row(
+    index: SpireLiveIndexRelation,
     requested_epoch: u64,
     query: Vec<f32>,
     selected_pids: Vec<u64>,
@@ -948,18 +918,14 @@ pub(crate) unsafe fn remote_search_merge_input_summary_row(
     consistency_mode: &str,
 ) -> SpireRemoteSearchMergeInputSummaryRow {
     let result = (|| -> Result<SpireRemoteSearchMergeInputSummaryRow, String> {
-        // SAFETY: arguments are forwarded unchanged to the execution-summary
-        // wrapper, which validates query, epoch, and remote execution plan rows.
-        let execution_summary = unsafe {
-            remote_search_execution_summary_row(
-                index_relation,
-                requested_epoch,
-                query,
-                selected_pids,
-                top_k,
-                consistency_mode,
-            )
-        };
+        let execution_summary = remote_search_execution_summary_row(
+            index,
+            requested_epoch,
+            query,
+            selected_pids,
+            top_k,
+            consistency_mode,
+        );
         Ok(remote_search_merge_input_summary_from_execution(
             &execution_summary,
         ))

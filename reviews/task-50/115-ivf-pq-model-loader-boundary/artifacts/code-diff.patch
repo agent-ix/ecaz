@@ -1,0 +1,56 @@
+commit 9cffbea32d5964fb2ea058bb8c8f338f0a9100e4
+Author:     Agent IX <agent@agent-ix.dev>
+AuthorDate: Wed May 20 17:27:31 2026 -0700
+Commit:     Agent IX <agent@agent-ix.dev>
+CommitDate: Wed May 20 17:27:31 2026 -0700
+
+    Reduce IVF PQ model loader unsafe callers
+---
+ src/am/ec_ivf/insert.rs    | 4 +---
+ src/am/ec_ivf/quantizer.rs | 2 +-
+ src/am/ec_ivf/scan.rs      | 4 +---
+ 3 files changed, 3 insertions(+), 7 deletions(-)
+
+diff --git a/src/am/ec_ivf/insert.rs b/src/am/ec_ivf/insert.rs
+index 55242966..28a19a9a 100644
+--- a/src/am/ec_ivf/insert.rs
++++ b/src/am/ec_ivf/insert.rs
+@@ -100,9 +100,7 @@ unsafe fn reencode_tuple_for_storage(
+     if metadata.storage_format != options::StorageFormat::PqFastScan {
+         return Ok(tuple);
+     }
+-    // SAFETY: caller passes the live IVF index relation and metadata read from
+-    // it; the model chain is validated by the loader.
+-    let model = unsafe { quantizer::load_pq_fastscan_model(index_relation, metadata) }?;
++    let model = quantizer::load_pq_fastscan_model(index_relation, metadata)?;
+     let ivf_quantizer = quantizer::IvfQuantizer::resolve_with_pq_group_size(
+         metadata.storage_format,
+         usize::from(metadata.dimensions),
+diff --git a/src/am/ec_ivf/quantizer.rs b/src/am/ec_ivf/quantizer.rs
+index 249177f3..4069a6ab 100644
+--- a/src/am/ec_ivf/quantizer.rs
++++ b/src/am/ec_ivf/quantizer.rs
+@@ -388,7 +388,7 @@ pub(super) fn resolve_pq_fastscan_group_size(
+     Ok(group_size)
+ }
+
+-pub(super) unsafe fn load_pq_fastscan_model(
++pub(super) fn load_pq_fastscan_model(
+     index_relation: pgrx::pg_sys::Relation,
+     metadata: &page::MetadataPage,
+ ) -> Result<IvfPqFastScanModel, String> {
+diff --git a/src/am/ec_ivf/scan.rs b/src/am/ec_ivf/scan.rs
+index ac275441..2d1481a7 100644
+--- a/src/am/ec_ivf/scan.rs
++++ b/src/am/ec_ivf/scan.rs
+@@ -729,9 +729,7 @@ fn pq_fastscan_model_for_scan<'a>(
+     metadata: &super::page::MetadataPage,
+ ) -> Result<&'a IvfPqFastScanModel, String> {
+     if opaque.pq_fastscan_model.is_null() {
+-        // SAFETY: `index_relation` and metadata describe the live IVF index;
+-        // the quantizer loader validates the on-disk PQ model.
+-        let model = unsafe { quantizer::load_pq_fastscan_model(index_relation, metadata) }?;
++        let model = quantizer::load_pq_fastscan_model(index_relation, metadata)?;
+         opaque.pq_fastscan_model = Box::into_raw(Box::new(model));
+     }
+     Ok(

@@ -1,0 +1,94 @@
+diff --git a/src/am/ec_spire/dml_frontdoor/mod.rs b/src/am/ec_spire/dml_frontdoor/mod.rs
+index 1c2af9c9..dc441ec3 100644
+--- a/src/am/ec_spire/dml_frontdoor/mod.rs
++++ b/src/am/ec_spire/dml_frontdoor/mod.rs
+@@ -7,7 +7,7 @@
+ //! fail closed before any hook can fall through to the coordinator heap path.
+ #![allow(dead_code)]
+ 
+-use pgrx::{pg_guard, pg_sys, FromDatum, PgList, Spi};
++use pgrx::{pg_guard, pg_sys, PgList, Spi};
+ 
+ use std::collections::HashMap;
+ use std::ffi::CStr;
+@@ -1009,18 +1009,12 @@ fn dml_frontdoor_param_datum_to_bigint(
+     datum: pg_sys::Datum,
+     typoid: pg_sys::Oid,
+ ) -> Result<i64, String> {
+-    // SAFETY: typoid selects the matching by-value integer Datum accessor.
+-    unsafe {
+-        match typoid {
+-            pg_sys::INT2OID => Ok(i64::from(pg_sys::DatumGetInt16(datum))),
+-            pg_sys::INT4OID => Ok(i64::from(pg_sys::DatumGetInt32(datum))),
+-            pg_sys::INT8OID => Ok(pg_sys::DatumGetInt64(datum)),
+-            other => Err(format!(
+-                "ec_spire DML frontdoor PK parameter ${param_id} has unsupported type OID {}",
+-                other.to_u32()
+-            )),
+-        }
+-    }
++    dml_frontdoor_integer_datum_value(datum, typoid).ok_or_else(|| {
++        format!(
++            "ec_spire DML frontdoor PK parameter ${param_id} has unsupported type OID {}",
++            typoid.to_u32()
++        )
++    })
+ }
+ 
+ fn dml_frontdoor_custom_scan_mode_from_decision(
+@@ -2387,17 +2381,11 @@ fn dml_frontdoor_single_coerced_arg_value(
+ }
+ 
+ fn dml_frontdoor_single_list_expr_arg(args: *mut pg_sys::List) -> Option<*mut pg_sys::Expr> {
+-    // SAFETY: args may be null; one-element List shape and elements are checked
+-    // before reading the PG18 ListCell pointer value.
+-    unsafe {
+-        let args = args.as_ref()?;
+-        if args.type_ != pg_sys::NodeTag::T_List || args.length != 1 || args.elements.is_null() {
+-            return None;
+-        }
+-        // PG18 exposes List cells through `elements`; this remains the stable
+-        // single-argument check for implicit-cast FuncExpr wrappers.
+-        Some((*args.elements).ptr_value.cast::<pg_sys::Expr>())
++    let args_ref = dml_frontdoor_pg_ref(args)?;
++    if args_ref.type_ != pg_sys::NodeTag::T_List || args_ref.length != 1 {
++        return None;
+     }
++    dml_frontdoor_pg_list::<pg_sys::Expr>(args).get_ptr(0)
+ }
+ 
+ fn dml_frontdoor_coercible_integer_value(
+@@ -2442,20 +2430,20 @@ fn dml_frontdoor_other_predicate_value() -> SpireDmlFrontdoorPredicateValue {
+ }
+ 
+ fn dml_frontdoor_const_bigint_value(const_expr: &pg_sys::Const) -> Option<i64> {
+-    // SAFETY: callers pass Const nodes whose consttype is one of int2/int4/int8;
+-    // FromDatum copies the by-value integer Datum into Rust.
++    if const_expr.constisnull {
++        return None;
++    }
++    dml_frontdoor_integer_datum_value(const_expr.constvalue, const_expr.consttype)
++}
++
++fn dml_frontdoor_integer_datum_value(datum: pg_sys::Datum, typoid: pg_sys::Oid) -> Option<i64> {
++    // SAFETY: typoid selects the matching by-value integer Datum accessor.
+     unsafe {
+-        if const_expr.constisnull {
+-            return None;
+-        }
+-        if const_expr.consttype == pg_sys::INT8OID {
+-            i64::from_datum(const_expr.constvalue, false)
+-        } else if const_expr.consttype == pg_sys::INT4OID {
+-            i32::from_datum(const_expr.constvalue, false).map(i64::from)
+-        } else if const_expr.consttype == pg_sys::INT2OID {
+-            i16::from_datum(const_expr.constvalue, false).map(i64::from)
+-        } else {
+-            None
++        match typoid {
++            pg_sys::INT2OID => Some(i64::from(pg_sys::DatumGetInt16(datum))),
++            pg_sys::INT4OID => Some(i64::from(pg_sys::DatumGetInt32(datum))),
++            pg_sys::INT8OID => Some(pg_sys::DatumGetInt64(datum)),
++            _ => None,
+         }
+     }
+ }

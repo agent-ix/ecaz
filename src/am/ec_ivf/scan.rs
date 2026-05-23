@@ -2,11 +2,13 @@ use std::cmp::Ordering;
 use hashbrown::hash_map::Entry;
 use hashbrown::HashMap;
 use std::collections::{BinaryHeap, HashSet};
-use std::ptr;
+use std::ptr::{self, NonNull};
 
 use pgrx::{pg_sys, FromDatum, IntoDatum, PgBox};
 
-use crate::am::common::{callback::pg_am_callback, explain::IvfExplainCounters};
+use crate::am::common::{
+    callback::pg_am_callback, explain::IvfExplainCounters, heap_slot::HeapSlotReader,
+};
 use crate::am::ec_hnsw::source;
 use crate::am::stats::{self, TqStatsCounters};
 #[cfg(feature = "pg18")]
@@ -153,7 +155,7 @@ impl ResolvedIvfScanSnapshot {
 // Field order is intentional: Rust drops struct fields in declaration order, so
 // the tuple slot is dropped before snapshot and relation guards.
 struct IvfHeapRerankState {
-    slot: TupleTableSlotGuard,
+    slot: TupleTableSlotGuard<'static>,
     snapshot: ResolvedIvfScanSnapshot,
     heap_relation: ResolvedIvfScanHeapRelation,
     source_attnum: i16,
@@ -370,7 +372,9 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_amrescan(
         }
 
         let metadata = super::page::read_metadata_page((*scan).indexRelation);
-        let index_options = super::options::relation_options((*scan).indexRelation);
+        let index_relation_handle = NonNull::new((*scan).indexRelation)
+            .unwrap_or_else(|| pgrx::error!("ec_ivf scan needs a valid index relation"));
+        let index_options = super::options::relation_options(index_relation_handle);
         metadata
             .storage_format
             .validate_v1_supported()
@@ -1266,40 +1270,36 @@ unsafe fn rerank_probe_candidates_heap_f32(
     }
     let source_attnum = i32::from(state.source_attnum);
 
-    // SAFETY: heap relation is live and candidates contain heap TIDs to
-    // prefetch before heap row fetches.
-    unsafe { prefetch_heap_rerank_blocks(heap_relation, candidates) };
+    // SAFETY: heap rerank state owns the heap relation/snapshot/slot for this
+    // scan callback and keeps them live while candidates are reranked and while
+    // heap blocks are prefetched.
+    let mut heap_reader = unsafe {
+        let heap_reader = HeapSlotReader::from_raw(heap_relation, snapshot, slot, "ec_ivf")
+            .unwrap_or_else(|error| pgrx::error!("{error}"));
+        prefetch_heap_rerank_blocks(heap_relation, candidates);
+        heap_reader
+    };
 
     let rerank_rows = {
         let query_values = opaque.query_values();
         let mut rerank_rows = 0usize;
         for candidate in candidates {
-            // SAFETY: heap relation, snapshot, and slot come from live rerank
-            // state; candidate heap TID came from IVF posting data.
-            unsafe {
-                source::fetch_heap_row_version(
-                    heap_relation,
-                    candidate.heap_tid,
-                    snapshot,
-                    slot,
-                    "ec_ivf heap_f32 rerank source vector",
-                )
-            };
-            // SAFETY: `slot` contains the fetched heap row version and
-            // `source_attnum` was resolved from the indexed ecvector column.
-            unsafe {
-                source::with_indexed_ecvector_from_slot(
-                    slot,
-                    source_attnum,
-                    "ec_ivf heap_f32 rerank source vector",
-                    |source_vector| {
-                        candidate.score = source::negative_inner_product_index_internal(
-                            query_values,
-                            source_vector.as_slice(),
-                        );
-                    },
-                )
-            };
+            source::fetch_heap_row_version_with_reader(
+                &mut heap_reader,
+                candidate.heap_tid,
+                "ec_ivf heap_f32 rerank source vector",
+            );
+            source::with_indexed_ecvector_from_slot_reader(
+                &mut heap_reader,
+                source_attnum,
+                "ec_ivf heap_f32 rerank source vector",
+                |source_vector| {
+                    candidate.score = source::negative_inner_product_index_internal(
+                        query_values,
+                        source_vector.as_slice(),
+                    );
+                },
+            );
             rerank_rows += 1;
         }
         rerank_rows
@@ -1766,15 +1766,15 @@ fn debug_scan_first_orderby_score(scan: pg_sys::IndexScanDesc) -> Option<f32> {
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-struct DebugHeapBackedScan {
-    scan: IndexScanGuard,
+struct DebugHeapBackedScan<'heap, 'index, 'snap> {
+    scan: IndexScanGuard<'heap, 'index, 'snap>,
     _snapshot: ActiveSnapshotGuard,
     _heap_relation: HeapRelationGuard,
     _index_relation: IndexRelationGuard,
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-fn debug_begin_heap_backed_scan(index_oid: pg_sys::Oid) -> DebugHeapBackedScan {
+fn debug_begin_heap_backed_scan(index_oid: pg_sys::Oid) -> DebugHeapBackedScan<'static, 'static, 'static> {
     let index_relation =
         IndexRelationGuard::access_share(index_oid, "ec_ivf debug begin heap backed scan");
     let index_relation_ptr = index_relation.as_ptr();
@@ -1787,10 +1787,20 @@ fn debug_begin_heap_backed_scan(index_oid: pg_sys::Oid) -> DebugHeapBackedScan {
         .unwrap_or_else(|| pgrx::error!("ec_ivf debug scan could not open heap relation"));
     let snapshot = ActiveSnapshotGuard::latest_after_command_counter()
         .unwrap_or_else(|| pgrx::error!("ec_ivf debug scan could not acquire a latest snapshot"));
-    let scan = IndexScanGuard::begin(&heap_relation, &index_relation, &snapshot, 0, 1)
-        .unwrap_or_else(|| {
-            pgrx::error!("ec_ivf debug scan failed to begin heap-backed index scan")
-        });
+    // SAFETY: this debug state owns the heap relation, index relation, and
+    // snapshot guards; field order drops the scan before those dependencies.
+    let scan = unsafe {
+        IndexScanGuard::begin_from_raw(
+            heap_relation.as_ptr(),
+            index_relation.as_ptr(),
+            snapshot.as_ptr(),
+            0,
+            1,
+        )
+    }
+    .unwrap_or_else(|| {
+        pgrx::error!("ec_ivf debug scan failed to begin heap-backed index scan")
+    });
 
     DebugHeapBackedScan {
         scan,
@@ -1801,7 +1811,7 @@ fn debug_begin_heap_backed_scan(index_oid: pg_sys::Oid) -> DebugHeapBackedScan {
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-fn debug_end_heap_backed_scan(state: DebugHeapBackedScan) {
+fn debug_end_heap_backed_scan(state: DebugHeapBackedScan<'_, '_, '_>) {
     drop(state);
 }
 

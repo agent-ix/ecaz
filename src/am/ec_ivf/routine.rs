@@ -1,12 +1,10 @@
-use pgrx::{pg_guard, pg_sys, AllocatedByRust, PgBox};
+use pgrx::{pg_guard, pg_sys};
 
 use super::{build, cost, insert, options, scan, vacuum};
+use crate::am::common::routine::{alloc_index_am_routine, IndexAmRoutineBox};
 
-fn build_ec_ivf_routine() -> PgBox<pg_sys::IndexAmRoutine, AllocatedByRust> {
-    // SAFETY: `IndexAmRoutine` is a PostgreSQL Node type and must be allocated
-    // with the corresponding node tag.
-    let mut amroutine =
-        unsafe { PgBox::<pg_sys::IndexAmRoutine>::alloc_node(pg_sys::NodeTag::T_IndexAmRoutine) };
+fn build_ec_ivf_routine() -> IndexAmRoutineBox {
+    let mut amroutine = alloc_index_am_routine();
 
     amroutine.amstrategies = 1;
     amroutine.amsupport = 1;

@@ -31,14 +31,16 @@ pub(crate) enum GraphStorageDescriptor {
 }
 
 impl GraphStorageDescriptor {
-    pub(crate) unsafe fn from_index_relation(
+    pub(crate) fn from_index_relation(
         index_relation: pg_sys::Relation,
         metadata: &page::MetadataPage,
     ) -> Result<Self, String> {
         let descriptor = Self::from_metadata(metadata)?;
-        // SAFETY: `index_relation` is the live index relation whose reloptions
-        // are being compared against its already-read metadata page.
-        let expected = unsafe { options::relation_options(index_relation) }.storage_format;
+        let expected = options::relation_options(
+            std::ptr::NonNull::new(index_relation)
+                .expect("ec_hnsw graph index relation should be non-null"),
+        )
+        .storage_format;
         if descriptor.matches_storage_format(expected) {
             return Ok(descriptor);
         }
@@ -335,18 +337,14 @@ impl<'a> GraphTupleRef<'a> {
     }
 }
 
-pub(crate) unsafe fn load_graph_element(
+pub(crate) fn load_graph_element(
     index_relation: pg_sys::Relation,
     element_tid: page::ItemPointer,
     code_len: usize,
 ) -> GraphElement {
-    // SAFETY: `index_relation` is live and `element_tid` names an element tuple
-    // whose bytes are decoded inside the page-tuple callback.
-    let element = unsafe {
-        read_page_tuple(index_relation, element_tid, "element", |tuple_bytes| {
-            page::TqElementTuple::decode(tuple_bytes, code_len)
-        })
-    }
+    let element = read_page_tuple(index_relation, element_tid, "element", |tuple_bytes| {
+        page::TqElementTuple::decode(tuple_bytes, code_len)
+    })
     .unwrap_or_else(|e| pgrx::error!("ec_hnsw failed to decode graph element tuple: {e}"));
     GraphElement {
         tid: element_tid,
@@ -359,31 +357,22 @@ pub(crate) unsafe fn load_graph_element(
     }
 }
 
-pub(crate) unsafe fn load_exact_graph_element(
+pub(crate) fn load_exact_graph_element(
     index_relation: pg_sys::Relation,
     element_tid: page::ItemPointer,
     storage: GraphStorageDescriptor,
 ) -> GraphElement {
     match storage {
-        // SAFETY: TurboQuant exact storage keeps the full scalar payload in the
-        // graph element tuple identified by `element_tid`.
-        GraphStorageDescriptor::TurboQuant { code_len } => unsafe {
+        GraphStorageDescriptor::TurboQuant { code_len } => {
             load_graph_element(index_relation, element_tid, code_len)
-        },
+        }
         GraphStorageDescriptor::TurboQuantHotCold(layout) => {
-            // SAFETY: `element_tid` names a hot graph tuple in the live index
-            // relation; only the hot tuple fields are used after decoding.
-            let hot = unsafe {
+            let hot =
                 read_page_tuple(index_relation, element_tid, "turbo hot", |tuple_bytes| {
                     page::TqTurboHotTuple::decode(tuple_bytes, layout.binary_word_count)
                 })
-            }
-            .unwrap_or_else(|e| pgrx::error!("ec_hnsw failed to decode turbo hot tuple: {e}"));
-            // SAFETY: `hot.reranktid` was decoded from the live hot tuple and
-            // points at the cold rerank payload for this graph element.
-            let rerank = unsafe {
-                load_rerank_payload(index_relation, hot.reranktid, layout.rerank_code_len)
-            };
+                .unwrap_or_else(|e| pgrx::error!("ec_hnsw failed to decode turbo hot tuple: {e}"));
+            let rerank = load_rerank_payload(index_relation, hot.reranktid, layout.rerank_code_len);
             GraphElement {
                 tid: element_tid,
                 level: hot.level,
@@ -395,13 +384,8 @@ pub(crate) unsafe fn load_exact_graph_element(
             }
         }
         GraphStorageDescriptor::PqFastScan(layout) => {
-            // SAFETY: `element_tid` names a grouped hot tuple in the live index
-            // relation for the supplied PqFastScan layout.
-            let hot = unsafe { load_grouped_graph_element(index_relation, element_tid, layout) };
-            // SAFETY: `hot.reranktid` was decoded from that grouped hot tuple
-            // and points at the cold rerank payload.
-            let rerank =
-                unsafe { load_grouped_rerank_payload(index_relation, hot.reranktid, layout) };
+            let hot = load_grouped_graph_element(index_relation, element_tid, layout);
+            let rerank = load_grouped_rerank_payload(index_relation, hot.reranktid, layout);
             GraphElement {
                 tid: hot.tid,
                 level: hot.level,
@@ -416,22 +400,14 @@ pub(crate) unsafe fn load_exact_graph_element(
 }
 
 #[cfg_attr(not(any(test, feature = "pg_test")), allow(dead_code))]
-pub(crate) unsafe fn load_grouped_graph_element(
+pub(crate) fn load_grouped_graph_element(
     index_relation: pg_sys::Relation,
     element_tid: page::ItemPointer,
     layout: PqFastScanLayout,
 ) -> GroupedGraphElement {
-    // SAFETY: `index_relation` is live and `element_tid` names a grouped hot
-    // tuple whose bytes are decoded inside the page-tuple callback.
-    let element = unsafe {
-        read_page_tuple(index_relation, element_tid, "grouped hot", |tuple_bytes| {
-            page::TqGroupedHotTuple::decode(
-                tuple_bytes,
-                layout.binary_word_count,
-                layout.search_code_len,
-            )
-        })
-    }
+    let element = read_page_tuple(index_relation, element_tid, "grouped hot", |tuple_bytes| {
+        page::TqGroupedHotTuple::decode(tuple_bytes, layout.binary_word_count, layout.search_code_len)
+    })
     .unwrap_or_else(|e| pgrx::error!("ec_hnsw failed to decode grouped graph tuple: {e}"));
     GroupedGraphElement {
         tid: element_tid,
@@ -445,7 +421,7 @@ pub(crate) unsafe fn load_grouped_graph_element(
     }
 }
 
-pub(crate) unsafe fn with_graph_element_tuple<R, F>(
+pub(crate) fn with_graph_element_tuple<R, F>(
     index_relation: pg_sys::Relation,
     element_tid: page::ItemPointer,
     code_len: usize,
@@ -454,17 +430,13 @@ pub(crate) unsafe fn with_graph_element_tuple<R, F>(
 where
     F: FnOnce(page::TqElementTupleRef<'_>) -> R,
 {
-    // SAFETY: `index_relation` is live and `element_tid` names a scalar graph
-    // tuple; the decoded tuple ref is consumed before the page buffer unlocks.
-    unsafe {
-        read_page_tuple(index_relation, element_tid, "element", |tuple_bytes| {
-            Ok(f(page::TqElementTupleRef::decode(tuple_bytes, code_len)?))
-        })
-    }
+    read_page_tuple(index_relation, element_tid, "element", |tuple_bytes| {
+        Ok(f(page::TqElementTupleRef::decode(tuple_bytes, code_len)?))
+    })
     .unwrap_or_else(|e| pgrx::error!("ec_hnsw failed to decode graph element tuple: {e}"))
 }
 
-pub(crate) unsafe fn with_turbo_hot_graph_tuple<R, F>(
+pub(crate) fn with_turbo_hot_graph_tuple<R, F>(
     index_relation: pg_sys::Relation,
     element_tid: page::ItemPointer,
     layout: TurboQuantHotColdLayout,
@@ -473,21 +445,17 @@ pub(crate) unsafe fn with_turbo_hot_graph_tuple<R, F>(
 where
     F: FnOnce(page::TqTurboHotTupleRef<'_>) -> R,
 {
-    // SAFETY: `index_relation` is live and `element_tid` names a TurboQuant hot
-    // tuple; the decoded tuple ref is consumed before the page buffer unlocks.
-    unsafe {
-        read_page_tuple(index_relation, element_tid, "turbo hot", |tuple_bytes| {
-            Ok(f(page::TqTurboHotTupleRef::decode(
-                tuple_bytes,
-                layout.binary_word_count,
-            )?))
-        })
-    }
+    read_page_tuple(index_relation, element_tid, "turbo hot", |tuple_bytes| {
+        Ok(f(page::TqTurboHotTupleRef::decode(
+            tuple_bytes,
+            layout.binary_word_count,
+        )?))
+    })
     .unwrap_or_else(|e| pgrx::error!("ec_hnsw failed to decode turbo hot tuple: {e}"))
 }
 
 #[cfg_attr(not(any(test, feature = "pg_test")), allow(dead_code))]
-pub(crate) unsafe fn with_grouped_graph_tuple<R, F>(
+pub(crate) fn with_grouped_graph_tuple<R, F>(
     index_relation: pg_sys::Relation,
     element_tid: page::ItemPointer,
     layout: PqFastScanLayout,
@@ -496,22 +464,18 @@ pub(crate) unsafe fn with_grouped_graph_tuple<R, F>(
 where
     F: FnOnce(page::TqGroupedHotTupleRef<'_>) -> R,
 {
-    // SAFETY: `index_relation` is live and `element_tid` names a grouped hot
-    // tuple; the decoded tuple ref is consumed before the page buffer unlocks.
-    unsafe {
-        read_page_tuple(index_relation, element_tid, "grouped hot", |tuple_bytes| {
-            Ok(f(page::TqGroupedHotTupleRef::decode(
-                tuple_bytes,
-                layout.binary_word_count,
-                layout.search_code_len,
-            )?))
-        })
-    }
+    read_page_tuple(index_relation, element_tid, "grouped hot", |tuple_bytes| {
+        Ok(f(page::TqGroupedHotTupleRef::decode(
+            tuple_bytes,
+            layout.binary_word_count,
+            layout.search_code_len,
+        )?))
+    })
     .unwrap_or_else(|e| pgrx::error!("ec_hnsw failed to decode grouped graph tuple: {e}"))
 }
 
 #[cfg_attr(not(any(test, feature = "pg_test")), allow(dead_code))]
-pub(crate) unsafe fn with_graph_storage_tuple<R, F>(
+pub(crate) fn with_graph_storage_tuple<R, F>(
     index_relation: pg_sys::Relation,
     element_tid: page::ItemPointer,
     storage: GraphStorageDescriptor,
@@ -521,32 +485,26 @@ where
     F: FnOnce(GraphTupleRef<'_>) -> R,
 {
     match storage {
-        // SAFETY: storage descriptor selects the tuple format used for
-        // `element_tid` in this live index relation.
-        GraphStorageDescriptor::TurboQuant { code_len } => unsafe {
+        GraphStorageDescriptor::TurboQuant { code_len } => {
             with_graph_element_tuple(index_relation, element_tid, code_len, |tuple| {
                 f(GraphTupleRef::Scalar(tuple))
             })
-        },
-        // SAFETY: storage descriptor selects the tuple format used for
-        // `element_tid` in this live index relation.
-        GraphStorageDescriptor::TurboQuantHotCold(layout) => unsafe {
+        }
+        GraphStorageDescriptor::TurboQuantHotCold(layout) => {
             with_turbo_hot_graph_tuple(index_relation, element_tid, layout, |tuple| {
                 f(GraphTupleRef::TurboHot(tuple))
             })
-        },
-        // SAFETY: storage descriptor selects the tuple format used for
-        // `element_tid` in this live index relation.
-        GraphStorageDescriptor::PqFastScan(layout) => unsafe {
+        }
+        GraphStorageDescriptor::PqFastScan(layout) => {
             with_grouped_graph_tuple(index_relation, element_tid, layout, |tuple| {
                 f(GraphTupleRef::GroupedHot(tuple))
             })
-        },
+        }
     }
 }
 
 #[cfg(feature = "pg18")]
-pub(crate) unsafe fn with_graph_storage_tuple_from_buffer<R, F>(
+pub(crate) fn with_graph_storage_tuple_from_buffer<R, F>(
     buffer: &PinnedBufferLockGuard<'_>,
     element_tid: page::ItemPointer,
     storage: GraphStorageDescriptor,
@@ -556,28 +514,22 @@ where
     F: FnOnce(GraphTupleRef<'_>) -> R,
 {
     match storage {
-        // SAFETY: `buffer` is pinned/share-locked by the caller for
-        // `element_tid`'s block, and the tuple ref is consumed in the callback.
-        GraphStorageDescriptor::TurboQuant { code_len } => unsafe {
+        GraphStorageDescriptor::TurboQuant { code_len } => {
             read_page_tuple_from_buffer(buffer, element_tid, "element", |tuple_bytes| {
                 Ok(f(GraphTupleRef::Scalar(page::TqElementTupleRef::decode(
                     tuple_bytes,
                     code_len,
                 )?)))
             })
-        },
-        // SAFETY: `buffer` is pinned/share-locked by the caller for
-        // `element_tid`'s block, and the tuple ref is consumed in the callback.
-        GraphStorageDescriptor::TurboQuantHotCold(layout) => unsafe {
+        }
+        GraphStorageDescriptor::TurboQuantHotCold(layout) => {
             read_page_tuple_from_buffer(buffer, element_tid, "turbo hot", |tuple_bytes| {
                 Ok(f(GraphTupleRef::TurboHot(
                     page::TqTurboHotTupleRef::decode(tuple_bytes, layout.binary_word_count)?,
                 )))
             })
-        },
-        // SAFETY: `buffer` is pinned/share-locked by the caller for
-        // `element_tid`'s block, and the tuple ref is consumed in the callback.
-        GraphStorageDescriptor::PqFastScan(layout) => unsafe {
+        }
+        GraphStorageDescriptor::PqFastScan(layout) => {
             read_page_tuple_from_buffer(buffer, element_tid, "grouped hot", |tuple_bytes| {
                 Ok(f(GraphTupleRef::GroupedHot(
                     page::TqGroupedHotTupleRef::decode(
@@ -587,47 +539,20 @@ where
                     )?,
                 )))
             })
-        },
+        }
     }
     .unwrap_or_else(|e| pgrx::error!("ec_hnsw failed to decode graph element tuple: {e}"))
 }
 
 #[cfg_attr(not(any(test, feature = "pg_test")), allow(dead_code))]
-pub(crate) unsafe fn with_grouped_rerank_tuple<R, F>(
-    index_relation: pg_sys::Relation,
-    rerank_tid: page::ItemPointer,
-    layout: PqFastScanLayout,
-    f: F,
-) -> R
-where
-    F: FnOnce(page::TqRerankTupleRef<'_>) -> R,
-{
-    // SAFETY: `index_relation` is live and `rerank_tid` names a rerank payload
-    // tuple; the decoded tuple ref is consumed before the page buffer unlocks.
-    unsafe {
-        read_page_tuple(index_relation, rerank_tid, "rerank", |tuple_bytes| {
-            Ok(f(page::TqRerankTupleRef::decode(
-                tuple_bytes,
-                layout.rerank_code_len,
-            )?))
-        })
-    }
-    .unwrap_or_else(|e| pgrx::error!("ec_hnsw failed to decode grouped rerank tuple: {e}"))
-}
-
-#[cfg_attr(not(any(test, feature = "pg_test")), allow(dead_code))]
-pub(crate) unsafe fn load_rerank_payload(
+pub(crate) fn load_rerank_payload(
     index_relation: pg_sys::Relation,
     rerank_tid: page::ItemPointer,
     rerank_code_len: usize,
 ) -> GroupedRerankPayload {
-    // SAFETY: `index_relation` is live and `rerank_tid` names a rerank payload
-    // tuple whose bytes are decoded inside the page-tuple callback.
-    let rerank = unsafe {
-        read_page_tuple(index_relation, rerank_tid, "rerank", |tuple_bytes| {
-            page::TqRerankTuple::decode(tuple_bytes, rerank_code_len)
-        })
-    }
+    let rerank = read_page_tuple(index_relation, rerank_tid, "rerank", |tuple_bytes| {
+        page::TqRerankTuple::decode(tuple_bytes, rerank_code_len)
+    })
     .unwrap_or_else(|e| pgrx::error!("ec_hnsw failed to decode rerank tuple: {e}"));
     GroupedRerankPayload {
         tid: rerank_tid,
@@ -637,18 +562,16 @@ pub(crate) unsafe fn load_rerank_payload(
 }
 
 #[cfg_attr(not(any(test, feature = "pg_test")), allow(dead_code))]
-pub(crate) unsafe fn load_grouped_rerank_payload(
+pub(crate) fn load_grouped_rerank_payload(
     index_relation: pg_sys::Relation,
     rerank_tid: page::ItemPointer,
     layout: PqFastScanLayout,
 ) -> GroupedRerankPayload {
-    // SAFETY: `rerank_tid` came from a grouped hot tuple for this layout and
-    // names the cold rerank payload in the live index relation.
-    unsafe { load_rerank_payload(index_relation, rerank_tid, layout.rerank_code_len) }
+    load_rerank_payload(index_relation, rerank_tid, layout.rerank_code_len)
 }
 
 #[cfg_attr(not(any(test, feature = "pg_test")), allow(dead_code))]
-pub(crate) unsafe fn with_grouped_codebook_tuple<R, F>(
+pub(crate) fn with_grouped_codebook_tuple<R, F>(
     index_relation: pg_sys::Relation,
     codebook_tid: page::ItemPointer,
     centroid_count: usize,
@@ -657,26 +580,17 @@ pub(crate) unsafe fn with_grouped_codebook_tuple<R, F>(
 where
     F: FnOnce(page::TqGroupedCodebookTupleRef<'_>) -> R,
 {
-    // SAFETY: `index_relation` is live and `codebook_tid` names a persisted
-    // grouped codebook tuple consumed inside the page-tuple callback.
-    unsafe {
-        read_page_tuple(
-            index_relation,
-            codebook_tid,
-            "grouped codebook",
-            |tuple_bytes| {
-                Ok(f(page::TqGroupedCodebookTupleRef::decode(
-                    tuple_bytes,
-                    centroid_count,
-                )?))
-            },
-        )
-    }
+    read_page_tuple(index_relation, codebook_tid, "grouped codebook", |tuple_bytes| {
+        Ok(f(page::TqGroupedCodebookTupleRef::decode(
+            tuple_bytes,
+            centroid_count,
+        )?))
+    })
     .unwrap_or_else(|e| pgrx::error!("ec_hnsw failed to decode grouped codebook tuple: {e}"))
 }
 
 #[cfg_attr(not(any(test, feature = "pg_test")), allow(dead_code))]
-pub(crate) unsafe fn load_grouped_codebook_model(
+pub(crate) fn load_grouped_codebook_model(
     index_relation: pg_sys::Relation,
     metadata: &page::MetadataPage,
 ) -> GroupedCodebookModel {
@@ -701,18 +615,14 @@ pub(crate) unsafe fn load_grouped_codebook_model(
                 group_count
             );
         }
-        // SAFETY: `next_tid` is a non-INVALID link from metadata or the
-        // previous decoded tuple, and the live index relation remains valid
-        // for the synchronous tuple callback.
-        let codebook = unsafe {
+        let codebook =
             with_grouped_codebook_tuple(index_relation, next_tid, centroid_count, |tuple| {
                 page::TqGroupedCodebookTuple {
                     group_index: tuple.group_index,
                     nexttid: tuple.nexttid,
                     centroids: tuple.collect_centroids(),
                 }
-            })
-        };
+            });
         if usize::from(codebook.group_index) != expected_group_index {
             pgrx::error!(
                 "ec_hnsw grouped codebook order mismatch: got group {}, expected {}",
@@ -764,7 +674,7 @@ pub(crate) fn derive_grouped_search_code_from_source(
     ))
 }
 
-pub(crate) unsafe fn load_graph_neighbors(
+pub(crate) fn load_graph_neighbors(
     index_relation: pg_sys::Relation,
     neighbor_tid: page::ItemPointer,
 ) -> GraphNeighbors {
@@ -776,16 +686,12 @@ pub(crate) unsafe fn load_graph_neighbors(
         };
     }
 
-    // SAFETY: `neighbor_tid` is non-INVALID and names a neighbor tuple in the
-    // live index relation; `read_page_tuple` holds the page lock while decoding.
-    let neighbor = unsafe {
-        read_page_tuple(
-            index_relation,
-            neighbor_tid,
-            "neighbor",
-            page::TqNeighborTuple::decode,
-        )
-    }
+    let neighbor = read_page_tuple(
+        index_relation,
+        neighbor_tid,
+        "neighbor",
+        page::TqNeighborTuple::decode,
+    )
     .unwrap_or_else(|e| pgrx::error!("ec_hnsw failed to decode graph neighbor tuple: {e}"));
     let count = neighbor.count as usize;
     if count > neighbor.tids.len() {
@@ -802,102 +708,25 @@ pub(crate) unsafe fn load_graph_neighbors(
     }
 }
 
-pub(crate) unsafe fn load_graph_adjacency(
-    index_relation: pg_sys::Relation,
-    element_tid: page::ItemPointer,
-    code_len: usize,
-) -> (GraphElement, GraphNeighbors) {
-    // SAFETY: `element_tid` is a graph element TID supplied by graph metadata
-    // or traversal, and `index_relation` remains live for the tuple load.
-    let element = unsafe { load_graph_element(index_relation, element_tid, code_len) };
-    // SAFETY: The element decoder produced `neighbortid`; the neighbor loader
-    // validates INVALID and tuple shape before exposing the TID list.
-    let neighbors = unsafe { load_graph_neighbors(index_relation, element.neighbortid) };
-    (element, neighbors)
-}
-
-pub(crate) unsafe fn load_exact_graph_adjacency(
+pub(crate) fn load_exact_graph_adjacency(
     index_relation: pg_sys::Relation,
     element_tid: page::ItemPointer,
     storage: GraphStorageDescriptor,
 ) -> (GraphElement, GraphNeighbors) {
-    // SAFETY: `element_tid` is a graph element TID supplied by graph metadata
-    // or traversal, and `storage` matches the exact element tuple payload.
-    let element = unsafe { load_exact_graph_element(index_relation, element_tid, storage) };
-    // SAFETY: The decoded element owns the neighbor-list TID; the neighbor
-    // loader handles INVALID and validates the tuple payload before use.
-    let neighbors = unsafe { load_graph_neighbors(index_relation, element.neighbortid) };
+    let element = load_exact_graph_element(index_relation, element_tid, storage);
+    let neighbors = load_graph_neighbors(index_relation, element.neighbortid);
     (element, neighbors)
 }
 
 #[cfg_attr(not(any(test, feature = "pg_test")), allow(dead_code))]
-pub(crate) unsafe fn load_grouped_graph_adjacency(
+pub(crate) fn load_grouped_graph_adjacency(
     index_relation: pg_sys::Relation,
     element_tid: page::ItemPointer,
     layout: PqFastScanLayout,
 ) -> (GroupedGraphElement, GraphNeighbors) {
-    // SAFETY: `element_tid` is a graph element TID supplied by graph metadata
-    // or traversal, and `layout` is the grouped element payload layout.
-    let element = unsafe { load_grouped_graph_element(index_relation, element_tid, layout) };
-    // SAFETY: The grouped element decoder produced `neighbortid`; neighbor
-    // loading performs INVALID and tuple-shape validation before returning.
-    let neighbors = unsafe { load_graph_neighbors(index_relation, element.neighbortid) };
+    let element = load_grouped_graph_element(index_relation, element_tid, layout);
+    let neighbors = load_graph_neighbors(index_relation, element.neighbortid);
     (element, neighbors)
-}
-
-pub(crate) unsafe fn load_layer0_neighbor_tids(
-    index_relation: pg_sys::Relation,
-    element_tid: page::ItemPointer,
-    code_len: usize,
-    m: usize,
-) -> Vec<page::ItemPointer> {
-    // SAFETY: `element_tid` identifies a layer-0 graph node in the live index;
-    // adjacency loading validates the element and neighbor tuple payloads.
-    let (element, neighbors) =
-        unsafe { load_graph_adjacency(index_relation, element_tid, code_len) };
-    valid_neighbor_tids_for_layer(&neighbors.tids, element.level, m, 0)
-}
-
-pub(crate) unsafe fn load_neighbor_tids_for_layer(
-    index_relation: pg_sys::Relation,
-    element_tid: page::ItemPointer,
-    code_len: usize,
-    m: usize,
-    layer: u8,
-) -> Vec<page::ItemPointer> {
-    // SAFETY: `element_tid` identifies a graph node in the live index;
-    // adjacency loading validates element and neighbor tuple payloads.
-    let (element, neighbors) =
-        unsafe { load_graph_adjacency(index_relation, element_tid, code_len) };
-    valid_neighbor_tids_for_layer(&neighbors.tids, element.level, m, layer)
-}
-
-pub(crate) unsafe fn load_layer0_successor_candidates<KeepFn, ScoreFn>(
-    index_relation: pg_sys::Relation,
-    source_tid: page::ItemPointer,
-    code_len: usize,
-    m: usize,
-    mut keep_neighbor_tid: KeepFn,
-    mut score_candidate: ScoreFn,
-) -> Vec<search::BeamCandidate<page::ItemPointer>>
-where
-    KeepFn: FnMut(page::ItemPointer) -> bool,
-    ScoreFn: FnMut(&GraphElement) -> Option<f32>,
-{
-    // SAFETY: `source_tid` is a graph node reached by search traversal, layer
-    // zero is always present, and the keep/score callbacks are live for this
-    // synchronous successor expansion.
-    unsafe {
-        load_successor_candidates_for_layer(
-            index_relation,
-            source_tid,
-            code_len,
-            m,
-            0,
-            &mut keep_neighbor_tid,
-            &mut score_candidate,
-        )
-    }
 }
 
 pub(crate) unsafe fn load_layer0_successor_candidates_with_storage<KeepFn, ScoreFn>(
@@ -927,38 +756,6 @@ where
     }
 }
 
-pub(crate) unsafe fn greedy_descend_from_entry<ScoreFn>(
-    index_relation: pg_sys::Relation,
-    code_len: usize,
-    m: usize,
-    entry_candidate: search::BeamCandidate<page::ItemPointer>,
-    mut score_candidate: ScoreFn,
-) -> search::BeamCandidate<page::ItemPointer>
-where
-    ScoreFn: FnMut(&GraphElement) -> Option<f32>,
-{
-    // SAFETY: `entry_candidate.node` is the current graph entry point for the
-    // live index relation; the element load validates its tuple payload.
-    let entry_element =
-        unsafe { load_graph_element(index_relation, entry_candidate.node, code_len) };
-    greedy_descend_with_successors(entry_candidate, entry_element.level, |source_tid, layer| {
-        // SAFETY: Greedy descent invokes this callback synchronously for graph
-        // nodes it just selected; `score_candidate` remains borrowed for the
-        // duration of the successor expansion.
-        unsafe {
-            load_successor_candidates_for_layer(
-                index_relation,
-                source_tid,
-                code_len,
-                m,
-                layer,
-                |_| true,
-                &mut score_candidate,
-            )
-        }
-    })
-}
-
 pub(crate) unsafe fn greedy_descend_from_entry_with_storage<ScoreFn>(
     index_relation: pg_sys::Relation,
     storage: GraphStorageDescriptor,
@@ -969,10 +766,7 @@ pub(crate) unsafe fn greedy_descend_from_entry_with_storage<ScoreFn>(
 where
     ScoreFn: FnMut(&GraphElement) -> Option<f32>,
 {
-    // SAFETY: `entry_candidate.node` is the current graph entry point for the
-    // live index relation, and `storage` matches exact element tuple payloads.
-    let entry_element =
-        unsafe { load_exact_graph_element(index_relation, entry_candidate.node, storage) };
+    let entry_element = load_exact_graph_element(index_relation, entry_candidate.node, storage);
     let mut keep_all = |_| true;
     greedy_descend_with_successors(entry_candidate, entry_element.level, |source_tid, layer| {
         // SAFETY: Greedy descent invokes this callback synchronously for graph
@@ -986,67 +780,6 @@ where
                 m,
                 layer,
                 &mut keep_all,
-                &mut score_candidate,
-            )
-        }
-    })
-}
-
-pub(crate) unsafe fn run_layer0_beam_search<SeedIter, KeepFn, ScoreFn>(
-    index_relation: pg_sys::Relation,
-    code_len: usize,
-    m: usize,
-    ef_search: usize,
-    seeds: SeedIter,
-    mut keep_neighbor_tid: KeepFn,
-    mut score_candidate: ScoreFn,
-) -> search::BeamTrace<page::ItemPointer>
-where
-    SeedIter: IntoIterator<Item = search::BeamCandidate<page::ItemPointer>>,
-    KeepFn: FnMut(page::ItemPointer) -> bool,
-    ScoreFn: FnMut(&GraphElement) -> Option<f32>,
-{
-    run_layer0_beam_search_with_successors(ef_search, seeds, |source_tid| {
-        // SAFETY: Beam search calls the successor closure synchronously for
-        // seeded or discovered graph nodes; the keep/score callbacks remain
-        // live for this layer-0 expansion.
-        unsafe {
-            load_layer0_successor_candidates(
-                index_relation,
-                source_tid,
-                code_len,
-                m,
-                &mut keep_neighbor_tid,
-                &mut score_candidate,
-            )
-        }
-    })
-}
-
-pub(crate) unsafe fn search_layer0_result_candidates<SeedIter, KeepFn, ScoreFn>(
-    index_relation: pg_sys::Relation,
-    code_len: usize,
-    m: usize,
-    ef_search: usize,
-    seeds: SeedIter,
-    mut keep_neighbor_tid: KeepFn,
-    mut score_candidate: ScoreFn,
-) -> Vec<search::BeamCandidate<page::ItemPointer>>
-where
-    SeedIter: IntoIterator<Item = search::BeamCandidate<page::ItemPointer>>,
-    KeepFn: FnMut(page::ItemPointer) -> bool,
-    ScoreFn: FnMut(&GraphElement) -> Option<f32>,
-{
-    search_layer0_result_candidates_with_successors(ef_search, seeds, |source_tid| {
-        // SAFETY: Result collection expands only graph nodes provided by the
-        // beam-search frontier, and the borrowed callbacks outlive this call.
-        unsafe {
-            load_layer0_successor_candidates(
-                index_relation,
-                source_tid,
-                code_len,
-                m,
-                &mut keep_neighbor_tid,
                 &mut score_candidate,
             )
         }
@@ -1076,38 +809,6 @@ where
                 source_tid,
                 storage,
                 m,
-                &mut keep_neighbor_tid,
-                &mut score_candidate,
-            )
-        }
-    })
-}
-
-pub(crate) unsafe fn search_layer_result_candidates<SeedIter, KeepFn, ScoreFn>(
-    index_relation: pg_sys::Relation,
-    code_len: usize,
-    m: usize,
-    layer: u8,
-    ef_search: usize,
-    seeds: SeedIter,
-    mut keep_neighbor_tid: KeepFn,
-    mut score_candidate: ScoreFn,
-) -> Vec<search::BeamCandidate<page::ItemPointer>>
-where
-    SeedIter: IntoIterator<Item = search::BeamCandidate<page::ItemPointer>>,
-    KeepFn: FnMut(page::ItemPointer) -> bool,
-    ScoreFn: FnMut(&GraphElement) -> Option<f32>,
-{
-    search_layer0_result_candidates_with_successors(ef_search, seeds, |source_tid| {
-        // SAFETY: Layer search expands graph nodes from the current frontier;
-        // the layer bounds are enforced while filtering neighbor slots.
-        unsafe {
-            load_successor_candidates_for_layer(
-                index_relation,
-                source_tid,
-                code_len,
-                m,
-                layer,
                 &mut keep_neighbor_tid,
                 &mut score_candidate,
             )
@@ -1148,83 +849,10 @@ where
     })
 }
 
-pub(crate) unsafe fn search_upper_layer_seed_candidates<ScoreFn>(
-    index_relation: pg_sys::Relation,
-    code_len: usize,
-    m: usize,
-    entry_candidate: search::BeamCandidate<page::ItemPointer>,
-    entry_level: u8,
-    ef_search: usize,
-    mut score_candidate: ScoreFn,
-) -> Vec<search::BeamCandidate<page::ItemPointer>>
-where
-    ScoreFn: FnMut(&GraphElement) -> Option<f32>,
-{
-    if entry_level == 0 {
-        return vec![entry_candidate];
-    }
-
-    let mut seeds = vec![entry_candidate];
-    for layer in (1..=entry_level).rev() {
-        // SAFETY: `seeds` contain the entry candidate or candidates produced
-        // by prior upper-layer traversal, and `layer` is within entry level.
-        seeds = unsafe {
-            search_layer_result_candidates(
-                index_relation,
-                code_len,
-                m,
-                layer,
-                ef_search,
-                seeds,
-                |_| true,
-                |neighbor| score_candidate(neighbor),
-            )
-        };
-        if seeds.is_empty() {
-            break;
-        }
-    }
-
-    seeds
-}
-
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Layer0VisibleSeedExpansion {
     pub expanded_source_tids: Vec<page::ItemPointer>,
     pub discovered_candidates: Vec<search::BeamCandidate<page::ItemPointer>>,
-}
-
-pub(crate) unsafe fn load_layer0_refill_successors<KeepFn, ScoreFn>(
-    index_relation: pg_sys::Relation,
-    code_len: usize,
-    m: usize,
-    source_tid: page::ItemPointer,
-    max_successor_candidates: usize,
-    mut keep_neighbor_tid: KeepFn,
-    mut score_candidate: ScoreFn,
-) -> Vec<search::BeamCandidate<page::ItemPointer>>
-where
-    KeepFn: FnMut(page::ItemPointer) -> bool,
-    ScoreFn: FnMut(&GraphElement) -> Option<f32>,
-{
-    if source_tid == page::ItemPointer::INVALID || max_successor_candidates == 0 {
-        return Vec::new();
-    }
-
-    refill_successors_with_successors(source_tid, max_successor_candidates, |source_tid| {
-        // SAFETY: Refill expands the validated source or its discovered graph
-        // successors synchronously while the keep/score callbacks are live.
-        unsafe {
-            load_layer0_successor_candidates(
-                index_relation,
-                source_tid,
-                code_len,
-                m,
-                &mut keep_neighbor_tid,
-                &mut score_candidate,
-            )
-        }
-    })
 }
 
 pub(crate) unsafe fn load_layer0_refill_successors_with_storage<KeepFn, ScoreFn>(
@@ -1252,36 +880,6 @@ where
                 index_relation,
                 source_tid,
                 storage,
-                m,
-                &mut keep_neighbor_tid,
-                &mut score_candidate,
-            )
-        }
-    })
-}
-
-pub(crate) unsafe fn expand_layer0_visible_seeds<SeedIter, KeepFn, ScoreFn>(
-    index_relation: pg_sys::Relation,
-    code_len: usize,
-    m: usize,
-    max_successor_candidates: usize,
-    seeds: SeedIter,
-    mut keep_neighbor_tid: KeepFn,
-    mut score_candidate: ScoreFn,
-) -> Layer0VisibleSeedExpansion
-where
-    SeedIter: IntoIterator<Item = search::BeamCandidate<page::ItemPointer>>,
-    KeepFn: FnMut(page::ItemPointer) -> bool,
-    ScoreFn: FnMut(&GraphElement) -> Option<f32>,
-{
-    expand_visible_seeds_with_successors(max_successor_candidates, seeds, |source_tid| {
-        // SAFETY: Visible-seed expansion invokes this closure synchronously
-        // for seed or discovered graph nodes while callbacks remain live.
-        unsafe {
-            load_layer0_successor_candidates(
-                index_relation,
-                source_tid,
-                code_len,
                 m,
                 &mut keep_neighbor_tid,
                 &mut score_candidate,
@@ -1605,57 +1203,6 @@ where
     search.run(|candidate| successors(candidate.node))
 }
 
-unsafe fn load_successor_candidates_for_layer<KeepFn, ScoreFn>(
-    index_relation: pg_sys::Relation,
-    source_tid: page::ItemPointer,
-    code_len: usize,
-    m: usize,
-    layer: u8,
-    mut keep_neighbor_tid: KeepFn,
-    mut score_candidate: ScoreFn,
-) -> Vec<search::BeamCandidate<page::ItemPointer>>
-where
-    KeepFn: FnMut(page::ItemPointer) -> bool,
-    ScoreFn: FnMut(&GraphElement) -> Option<f32>,
-{
-    // SAFETY: `source_tid` is provided by graph traversal, and adjacency
-    // loading validates both the element tuple and its neighbor-list tuple.
-    let (element, neighbors) =
-        unsafe { load_graph_adjacency(index_relation, source_tid, code_len) };
-    let mut candidates = Vec::with_capacity(layer_neighbor_slot_capacity(
-        neighbors.tids.len(),
-        element.level,
-        m,
-        layer,
-    ));
-
-    for_each_valid_neighbor_tid_for_layer(
-        &neighbors.tids,
-        element.level,
-        m,
-        layer,
-        |neighbor_tid| {
-            if keep_neighbor_tid(neighbor_tid) {
-                // SAFETY: `neighbor_tid` was taken from a validated neighbor
-                // tuple slot for this layer and is loaded synchronously.
-                let neighbor =
-                    unsafe { load_graph_element(index_relation, neighbor_tid, code_len) };
-                if !neighbor.deleted && !neighbor.heaptids.is_empty() {
-                    if let Some(score) = score_candidate(&neighbor) {
-                        candidates.push(search::BeamCandidate::with_source(
-                            neighbor.tid,
-                            score,
-                            source_tid,
-                        ));
-                    }
-                }
-            }
-        },
-    );
-
-    candidates
-}
-
 unsafe fn load_successor_candidates_for_layer_with_storage<KeepFn, ScoreFn>(
     index_relation: pg_sys::Relation,
     source_tid: page::ItemPointer,
@@ -1669,10 +1216,7 @@ where
     KeepFn: FnMut(page::ItemPointer) -> bool,
     ScoreFn: FnMut(&GraphElement) -> Option<f32>,
 {
-    // SAFETY: `source_tid` is provided by graph traversal, and exact adjacency
-    // loading validates the element payload and neighbor-list tuple.
-    let (element, neighbors) =
-        unsafe { load_exact_graph_adjacency(index_relation, source_tid, storage) };
+    let (element, neighbors) = load_exact_graph_adjacency(index_relation, source_tid, storage);
     let valid_neighbor_tids =
         valid_neighbor_tids_for_layer(&neighbors.tids, element.level, m, layer);
     let mut candidates = Vec::with_capacity(valid_neighbor_tids.len());
@@ -1682,9 +1226,7 @@ where
             continue;
         }
 
-        // SAFETY: `neighbor_tid` comes from a validated layer-specific neighbor
-        // slot, and `storage` matches the exact graph element payload.
-        let neighbor = unsafe { load_exact_graph_element(index_relation, neighbor_tid, storage) };
+        let neighbor = load_exact_graph_element(index_relation, neighbor_tid, storage);
         let Some(score) = score_candidate(&neighbor) else {
             continue;
         };
@@ -1720,7 +1262,7 @@ where
         .collect()
 }
 
-unsafe fn read_page_tuple<T, DecodeFn>(
+fn read_page_tuple<T, DecodeFn>(
     index_relation: pg_sys::Relation,
     tuple_tid: page::ItemPointer,
     tuple_kind: &str,
@@ -1729,9 +1271,9 @@ unsafe fn read_page_tuple<T, DecodeFn>(
 where
     DecodeFn: FnOnce(&[u8]) -> Result<T, String>,
 {
-    // SAFETY: `index_relation` is live for the duration of the read, the block
-    // number comes from an index tuple TID, and the guard pins and share-locks
-    // the page before any tuple bytes are inspected.
+    // SAFETY: callers supply a live index relation; the block number comes
+    // from an index tuple TID, and the guard pins and share-locks the page
+    // before any tuple bytes are inspected.
     let buffer = unsafe {
         LockedBufferGuard::read_main(
             index_relation,
@@ -1757,13 +1299,11 @@ where
         );
     }
 
-    // SAFETY: The page pointer and size come from the locked buffer, and the
-    // offset was checked against the page line-pointer count above.
-    unsafe { with_page_tuple_bytes(page_ptr, page_size, tuple_tid, tuple_kind, decode) }
+    with_page_tuple_bytes(page_ptr, page_size, tuple_tid, tuple_kind, decode)
 }
 
 #[cfg(feature = "pg18")]
-unsafe fn read_page_tuple_from_buffer<T, DecodeFn>(
+fn read_page_tuple_from_buffer<T, DecodeFn>(
     buffer: &PinnedBufferLockGuard<'_>,
     tuple_tid: page::ItemPointer,
     tuple_kind: &str,
@@ -1783,12 +1323,10 @@ where
         );
     }
 
-    // SAFETY: The page pointer and size come from the caller-provided pinned
-    // buffer lock, and the offset was checked against the line-pointer count.
-    unsafe { with_page_tuple_bytes(page_ptr, page_size, tuple_tid, tuple_kind, decode) }
+    with_page_tuple_bytes(page_ptr, page_size, tuple_tid, tuple_kind, decode)
 }
 
-unsafe fn with_page_tuple_bytes<T, DecodeFn>(
+fn with_page_tuple_bytes<T, DecodeFn>(
     page_ptr: *mut u8,
     page_size: usize,
     tuple_tid: page::ItemPointer,
@@ -1798,8 +1336,8 @@ unsafe fn with_page_tuple_bytes<T, DecodeFn>(
 where
     DecodeFn: FnOnce(&[u8]) -> Result<T, String>,
 {
-    // SAFETY: Callers validated `offset_number` against the page's line-pointer
-    // count before requesting the item id for this tuple.
+    // SAFETY: callers validated `offset_number` against the page's
+    // line-pointer count before requesting the item id for this tuple.
     let item_id = unsafe { &*super::shared::page_item_id(page_ptr, tuple_tid.offset_number) };
     if item_id.lp_flags() == 0 {
         pgrx::error!("ec_hnsw graph read found unused {tuple_kind} tuple slot");

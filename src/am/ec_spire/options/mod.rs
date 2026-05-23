@@ -4,6 +4,8 @@ use std::ptr;
 
 use pgrx::{pg_sys, GucContext, GucFlags, GucRegistry, GucSetting, PostgresGucEnum};
 
+use crate::am::common::callback::pg_am_callback;
+
 use super::quantizer::SpireAssignmentPayloadFormat;
 use super::{
     EC_SPIRE_DEFAULT_BOUNDARY_REPLICA_COUNT, EC_SPIRE_DEFAULT_LOCAL_STORE_COUNT,
@@ -630,29 +632,27 @@ pub(super) fn plan_local_store_tablespaces_with_resolver(
         .collect()
 }
 
-pub(super) unsafe fn resolve_local_store_tablespace_plan(
+pub(super) fn resolve_local_store_tablespace_plan(
     index_relation: pg_sys::Relation,
     options: &EcSpireOptions,
 ) -> Result<Vec<SpireLocalStoreTablespacePlanEntry>, String> {
     if index_relation.is_null() {
         return Err("ec_spire local store tablespace plan needs a valid index relation".to_owned());
     }
-    // SAFETY: index_relation is checked non-null above and remains live while
-    // reading its relcache tablespace.
-    let index_tablespace_oid = unsafe { (*(*index_relation).rd_rel).reltablespace }.into();
+    let index_relation = std::ptr::NonNull::new(index_relation).ok_or_else(|| {
+        "ec_spire local store tablespace plan needs a valid index relation".to_owned()
+    })?;
+    let index_tablespace_oid =
+        crate::storage::relation::relation_tablespace_handle(index_relation).into();
     plan_local_store_tablespaces_with_resolver(
         options.local_store_count,
         index_tablespace_oid,
         options.local_store_tablespaces.as_deref(),
-        |name| {
-            // SAFETY: resolve_tablespace_name only passes a NUL-free CString
-            // pointer to PostgreSQL for the duration of the lookup call.
-            unsafe { resolve_tablespace_name(name) }
-        },
+        resolve_tablespace_name,
     )
 }
 
-unsafe fn resolve_tablespace_name(name: &str) -> Result<u32, String> {
+fn resolve_tablespace_name(name: &str) -> Result<u32, String> {
     let c_name = CString::new(name)
         .map_err(|_| "ec_spire local_store_tablespaces cannot contain NUL bytes".to_owned())?;
     // SAFETY: c_name is a NUL-terminated CString that lives for the lookup call.
@@ -1374,22 +1374,20 @@ pub(super) unsafe extern "C-unwind" fn ec_spire_amoptions(
     // SAFETY: PostgreSQL invokes amoptions with a reloptions Datum and validate
     // flag; the guarded closure registers the local reloptions layout and
     // returns the bytea allocated by PostgreSQL's reloptions builder.
-    unsafe {
-        pgrx::pgrx_extern_c_guard(|| {
-            let mut relopts = pg_sys::local_relopts::default();
+    pg_am_callback!({
+        let mut relopts = pg_sys::local_relopts::default();
 
-            pg_sys::init_local_reloptions(&mut relopts, size_of::<EcSpireReloptions>());
-            pg_sys::add_local_int_reloption(
-                &mut relopts,
-                c"nlists".as_ptr(),
-                c"Number of single-level SPIRE-IVF leaf PIDs; 0 chooses an automatic value."
-                    .as_ptr(),
-                EC_SPIRE_DEFAULT_NLISTS,
-                EC_SPIRE_MIN_NLISTS,
-                EC_SPIRE_MAX_NLISTS,
-                offset_of!(EcSpireReloptions, nlists) as i32,
-            );
-            pg_sys::add_local_int_reloption(
+        pg_sys::init_local_reloptions(&mut relopts, size_of::<EcSpireReloptions>());
+        pg_sys::add_local_int_reloption(
+            &mut relopts,
+            c"nlists".as_ptr(),
+            c"Number of single-level SPIRE-IVF leaf PIDs; 0 chooses an automatic value.".as_ptr(),
+            EC_SPIRE_DEFAULT_NLISTS,
+            EC_SPIRE_MIN_NLISTS,
+            EC_SPIRE_MAX_NLISTS,
+            offset_of!(EcSpireReloptions, nlists) as i32,
+        );
+        pg_sys::add_local_int_reloption(
                 &mut relopts,
                 c"recursive_fanout".as_ptr(),
                 c"Opt-in recursive SPIRE routing fanout; 0 keeps single-level build behavior, values must be at least 2."
@@ -1399,7 +1397,7 @@ pub(super) unsafe extern "C-unwind" fn ec_spire_amoptions(
                 EC_SPIRE_MAX_RECURSIVE_FANOUT,
                 offset_of!(EcSpireReloptions, recursive_fanout) as i32,
             );
-            pg_sys::add_local_int_reloption(
+        pg_sys::add_local_int_reloption(
                 &mut relopts,
                 c"local_store_count".as_ptr(),
                 c"Number of local SPIRE partition-store relations to plan for; 1 keeps embedded single-store behavior."
@@ -1409,7 +1407,7 @@ pub(super) unsafe extern "C-unwind" fn ec_spire_amoptions(
                 EC_SPIRE_MAX_LOCAL_STORE_COUNT,
                 offset_of!(EcSpireReloptions, local_store_count) as i32,
             );
-            pg_sys::add_local_int_reloption(
+        pg_sys::add_local_int_reloption(
                 &mut relopts,
                 c"boundary_replica_count".as_ptr(),
                 c"Maximum secondary SPIRE leaf assignments per vector; 0 keeps primary-only assignment."
@@ -1419,17 +1417,17 @@ pub(super) unsafe extern "C-unwind" fn ec_spire_amoptions(
                 EC_SPIRE_MAX_BOUNDARY_REPLICA_COUNT,
                 offset_of!(EcSpireReloptions, boundary_replica_count) as i32,
             );
-            pg_sys::add_local_int_reloption(
-                &mut relopts,
-                c"nprobe".as_ptr(),
-                c"Number of SPIRE leaf PIDs to probe during scan; 0 chooses an automatic value."
-                    .as_ptr(),
-                EC_SPIRE_DEFAULT_NPROBE,
-                EC_SPIRE_MIN_NPROBE,
-                EC_SPIRE_MAX_NPROBE,
-                offset_of!(EcSpireReloptions, nprobe) as i32,
-            );
-            pg_sys::add_local_int_reloption(
+        pg_sys::add_local_int_reloption(
+            &mut relopts,
+            c"nprobe".as_ptr(),
+            c"Number of SPIRE leaf PIDs to probe during scan; 0 chooses an automatic value."
+                .as_ptr(),
+            EC_SPIRE_DEFAULT_NPROBE,
+            EC_SPIRE_MIN_NPROBE,
+            EC_SPIRE_MAX_NPROBE,
+            offset_of!(EcSpireReloptions, nprobe) as i32,
+        );
+        pg_sys::add_local_int_reloption(
                 &mut relopts,
                 c"rerank_width".as_ptr(),
                 c"Number of quantized candidates to exact-rerank; 0 reranks the full candidate frontier."
@@ -1439,7 +1437,7 @@ pub(super) unsafe extern "C-unwind" fn ec_spire_amoptions(
                 EC_SPIRE_MAX_RERANK_WIDTH,
                 offset_of!(EcSpireReloptions, rerank_width) as i32,
             );
-            pg_sys::add_local_int_reloption(
+        pg_sys::add_local_int_reloption(
                 &mut relopts,
                 c"max_candidate_rows".as_ptr(),
                 c"Hard cap on quantized candidate rows retained before exact rerank; 0 uses the automatic ceiling."
@@ -1449,83 +1447,82 @@ pub(super) unsafe extern "C-unwind" fn ec_spire_amoptions(
                 EC_SPIRE_MAX_MAX_CANDIDATE_ROWS,
                 offset_of!(EcSpireReloptions, max_candidate_rows) as i32,
             );
-            pg_sys::add_local_int_reloption(
-                &mut relopts,
-                c"training_sample_rows".as_ptr(),
-                c"Maximum rows sampled for SPIRE centroid training; 0 chooses an automatic value."
-                    .as_ptr(),
-                EC_SPIRE_DEFAULT_TRAINING_SAMPLE_ROWS,
-                EC_SPIRE_MIN_TRAINING_SAMPLE_ROWS,
-                EC_SPIRE_MAX_TRAINING_SAMPLE_ROWS,
-                offset_of!(EcSpireReloptions, training_sample_rows) as i32,
-            );
-            pg_sys::add_local_int_reloption(
-                &mut relopts,
-                c"seed".as_ptr(),
-                c"Deterministic seed for SPIRE centroid training and quantizer defaults.".as_ptr(),
-                EC_SPIRE_DEFAULT_SEED,
-                EC_SPIRE_MIN_SEED,
-                EC_SPIRE_MAX_SEED,
-                offset_of!(EcSpireReloptions, seed) as i32,
-            );
-            pg_sys::add_local_int_reloption(
-                &mut relopts,
-                c"pq_group_size".as_ptr(),
-                c"Grouped-PQ subvector size for storage_format = 'pq_fastscan'; 0 chooses the default."
-                    .as_ptr(),
-                EC_SPIRE_DEFAULT_PQ_GROUP_SIZE,
-                EC_SPIRE_MIN_PQ_GROUP_SIZE,
-                EC_SPIRE_MAX_PQ_GROUP_SIZE,
-                offset_of!(EcSpireReloptions, pq_group_size) as i32,
-            );
-            pg_sys::add_local_int_reloption(
-                &mut relopts,
-                c"top_graph_enabled".as_ptr(),
-                c"Enable SPIRE top-graph build/scan plumbing; 0 keeps flat recursive routing."
-                    .as_ptr(),
-                EC_SPIRE_DEFAULT_TOP_GRAPH_ENABLED,
-                EC_SPIRE_MIN_TOP_GRAPH_ENABLED,
-                EC_SPIRE_MAX_TOP_GRAPH_ENABLED,
-                offset_of!(EcSpireReloptions, top_graph_enabled) as i32,
-            );
-            pg_sys::add_local_int_reloption(
-                &mut relopts,
-                c"top_graph_degree".as_ptr(),
-                c"Maximum Vamana out-degree for the SPIRE top graph.".as_ptr(),
-                EC_SPIRE_DEFAULT_TOP_GRAPH_DEGREE,
-                EC_SPIRE_MIN_TOP_GRAPH_DEGREE,
-                EC_SPIRE_MAX_TOP_GRAPH_DEGREE,
-                offset_of!(EcSpireReloptions, top_graph_degree) as i32,
-            );
-            pg_sys::add_local_int_reloption(
-                &mut relopts,
-                c"top_graph_build_list_size".as_ptr(),
-                c"Vamana build search-list size for the SPIRE top graph.".as_ptr(),
-                EC_SPIRE_DEFAULT_TOP_GRAPH_BUILD_LIST_SIZE,
-                EC_SPIRE_MIN_TOP_GRAPH_BUILD_LIST_SIZE,
-                EC_SPIRE_MAX_TOP_GRAPH_BUILD_LIST_SIZE,
-                offset_of!(EcSpireReloptions, top_graph_build_list_size) as i32,
-            );
-            pg_sys::add_local_real_reloption(
-                &mut relopts,
-                c"top_graph_alpha".as_ptr(),
-                c"Vamana alpha-pruning slack for the SPIRE top graph.".as_ptr(),
-                EC_SPIRE_DEFAULT_TOP_GRAPH_ALPHA as f64,
-                EC_SPIRE_MIN_TOP_GRAPH_ALPHA as f64,
-                EC_SPIRE_MAX_TOP_GRAPH_ALPHA as f64,
-                offset_of!(EcSpireReloptions, top_graph_alpha) as i32,
-            );
-            pg_sys::add_local_int_reloption(
-                &mut relopts,
-                c"top_graph_search_list_size".as_ptr(),
-                c"Vamana scan search-list size for the SPIRE top graph; 0 derives from nprobe."
-                    .as_ptr(),
-                EC_SPIRE_DEFAULT_TOP_GRAPH_SEARCH_LIST_SIZE,
-                EC_SPIRE_MIN_TOP_GRAPH_SEARCH_LIST_SIZE,
-                EC_SPIRE_MAX_TOP_GRAPH_SEARCH_LIST_SIZE,
-                offset_of!(EcSpireReloptions, top_graph_search_list_size) as i32,
-            );
-            pg_sys::add_local_string_reloption(
+        pg_sys::add_local_int_reloption(
+            &mut relopts,
+            c"training_sample_rows".as_ptr(),
+            c"Maximum rows sampled for SPIRE centroid training; 0 chooses an automatic value."
+                .as_ptr(),
+            EC_SPIRE_DEFAULT_TRAINING_SAMPLE_ROWS,
+            EC_SPIRE_MIN_TRAINING_SAMPLE_ROWS,
+            EC_SPIRE_MAX_TRAINING_SAMPLE_ROWS,
+            offset_of!(EcSpireReloptions, training_sample_rows) as i32,
+        );
+        pg_sys::add_local_int_reloption(
+            &mut relopts,
+            c"seed".as_ptr(),
+            c"Deterministic seed for SPIRE centroid training and quantizer defaults.".as_ptr(),
+            EC_SPIRE_DEFAULT_SEED,
+            EC_SPIRE_MIN_SEED,
+            EC_SPIRE_MAX_SEED,
+            offset_of!(EcSpireReloptions, seed) as i32,
+        );
+        pg_sys::add_local_int_reloption(
+            &mut relopts,
+            c"pq_group_size".as_ptr(),
+            c"Grouped-PQ subvector size for storage_format = 'pq_fastscan'; 0 chooses the default."
+                .as_ptr(),
+            EC_SPIRE_DEFAULT_PQ_GROUP_SIZE,
+            EC_SPIRE_MIN_PQ_GROUP_SIZE,
+            EC_SPIRE_MAX_PQ_GROUP_SIZE,
+            offset_of!(EcSpireReloptions, pq_group_size) as i32,
+        );
+        pg_sys::add_local_int_reloption(
+            &mut relopts,
+            c"top_graph_enabled".as_ptr(),
+            c"Enable SPIRE top-graph build/scan plumbing; 0 keeps flat recursive routing.".as_ptr(),
+            EC_SPIRE_DEFAULT_TOP_GRAPH_ENABLED,
+            EC_SPIRE_MIN_TOP_GRAPH_ENABLED,
+            EC_SPIRE_MAX_TOP_GRAPH_ENABLED,
+            offset_of!(EcSpireReloptions, top_graph_enabled) as i32,
+        );
+        pg_sys::add_local_int_reloption(
+            &mut relopts,
+            c"top_graph_degree".as_ptr(),
+            c"Maximum Vamana out-degree for the SPIRE top graph.".as_ptr(),
+            EC_SPIRE_DEFAULT_TOP_GRAPH_DEGREE,
+            EC_SPIRE_MIN_TOP_GRAPH_DEGREE,
+            EC_SPIRE_MAX_TOP_GRAPH_DEGREE,
+            offset_of!(EcSpireReloptions, top_graph_degree) as i32,
+        );
+        pg_sys::add_local_int_reloption(
+            &mut relopts,
+            c"top_graph_build_list_size".as_ptr(),
+            c"Vamana build search-list size for the SPIRE top graph.".as_ptr(),
+            EC_SPIRE_DEFAULT_TOP_GRAPH_BUILD_LIST_SIZE,
+            EC_SPIRE_MIN_TOP_GRAPH_BUILD_LIST_SIZE,
+            EC_SPIRE_MAX_TOP_GRAPH_BUILD_LIST_SIZE,
+            offset_of!(EcSpireReloptions, top_graph_build_list_size) as i32,
+        );
+        pg_sys::add_local_real_reloption(
+            &mut relopts,
+            c"top_graph_alpha".as_ptr(),
+            c"Vamana alpha-pruning slack for the SPIRE top graph.".as_ptr(),
+            EC_SPIRE_DEFAULT_TOP_GRAPH_ALPHA as f64,
+            EC_SPIRE_MIN_TOP_GRAPH_ALPHA as f64,
+            EC_SPIRE_MAX_TOP_GRAPH_ALPHA as f64,
+            offset_of!(EcSpireReloptions, top_graph_alpha) as i32,
+        );
+        pg_sys::add_local_int_reloption(
+            &mut relopts,
+            c"top_graph_search_list_size".as_ptr(),
+            c"Vamana scan search-list size for the SPIRE top graph; 0 derives from nprobe."
+                .as_ptr(),
+            EC_SPIRE_DEFAULT_TOP_GRAPH_SEARCH_LIST_SIZE,
+            EC_SPIRE_MIN_TOP_GRAPH_SEARCH_LIST_SIZE,
+            EC_SPIRE_MAX_TOP_GRAPH_SEARCH_LIST_SIZE,
+            offset_of!(EcSpireReloptions, top_graph_search_list_size) as i32,
+        );
+        pg_sys::add_local_string_reloption(
                 &mut relopts,
                 c"nprobe_per_level".as_ptr(),
                 c"Comma-separated recursive SPIRE nprobe values for levels above 1, ordered from level 2 upward; omitted levels use the conservative policy."
@@ -1535,7 +1532,7 @@ pub(super) unsafe extern "C-unwind" fn ec_spire_amoptions(
                 None,
                 offset_of!(EcSpireReloptions, nprobe_per_level_offset) as i32,
             );
-            pg_sys::add_local_string_reloption(
+        pg_sys::add_local_string_reloption(
                 &mut relopts,
                 c"storage_format".as_ptr(),
                 c"SPIRE assignment payload quantizer profile: 'turboquant', 'pq_fastscan', 'rabitq', or 'auto'."
@@ -1545,7 +1542,7 @@ pub(super) unsafe extern "C-unwind" fn ec_spire_amoptions(
                 None,
                 offset_of!(EcSpireReloptions, storage_format_offset) as i32,
             );
-            pg_sys::add_local_string_reloption(
+        pg_sys::add_local_string_reloption(
                 &mut relopts,
                 c"quantizer".as_ptr(),
                 c"Alias for storage_format: SPIRE assignment payload quantizer profile 'turboquant', 'pq_fastscan', 'rabitq', or 'auto'."
@@ -1555,7 +1552,7 @@ pub(super) unsafe extern "C-unwind" fn ec_spire_amoptions(
                 None,
                 offset_of!(EcSpireReloptions, quantizer_offset) as i32,
             );
-            pg_sys::add_local_string_reloption(
+        pg_sys::add_local_string_reloption(
                 &mut relopts,
                 c"source_identity".as_ptr(),
                 c"Stable SPIRE vector identity provider: 'include' reads one INCLUDE column as a UUID or exact-16-byte bytea source identity."
@@ -1565,7 +1562,7 @@ pub(super) unsafe extern "C-unwind" fn ec_spire_amoptions(
                 None,
                 offset_of!(EcSpireReloptions, source_identity_offset) as i32,
             );
-            pg_sys::add_local_string_reloption(
+        pg_sys::add_local_string_reloption(
                 &mut relopts,
                 c"local_store_tablespaces".as_ptr(),
                 c"Comma-separated tablespace names for local SPIRE stores; repeated names are allowed for same-device baselines."
@@ -1575,156 +1572,127 @@ pub(super) unsafe extern "C-unwind" fn ec_spire_amoptions(
                 None,
                 offset_of!(EcSpireReloptions, local_store_tablespaces_offset) as i32,
             );
-            pg_sys::build_local_reloptions(&mut relopts, reloptions, validate) as *mut pg_sys::bytea
-        })
-    }
+        pg_sys::build_local_reloptions(&mut relopts, reloptions, validate) as *mut pg_sys::bytea
+    })
 }
 
-unsafe fn read_string_reloption(
-    rd_options: *mut pg_sys::varlena,
-    offset: i32,
-    name: &str,
-) -> Option<String> {
-    if offset == 0 {
-        return None;
-    }
-
-    // SAFETY: rd_options points to EcSpireReloptions storage and offset is a
-    // nonzero reloption string offset supplied by PostgreSQL's reloptions parser.
-    let value_ptr = unsafe {
-        rd_options
-            .cast::<u8>()
-            .add(offset as usize)
-            .cast::<std::ffi::c_char>()
-    };
-    // SAFETY: value_ptr points at PostgreSQL's NUL-terminated reloption string
-    // storage for this rd_options allocation.
-    let value = unsafe { std::ffi::CStr::from_ptr(value_ptr) }
-        .to_str()
-        .unwrap_or_else(|e| pgrx::error!("invalid ec_spire {name} reloption: {e}"));
-    if value.is_empty() {
-        pgrx::error!("invalid ec_spire {name} reloption: value must not be empty");
-    }
-    Some(value.to_owned())
+struct EcSpireReloptionsView {
+    rd_options: crate::am::common::reloptions::ReloptionsBlob,
 }
 
-pub(super) unsafe fn relation_options(index_relation: pg_sys::Relation) -> EcSpireOptions {
-    // SAFETY: index_relation is live for the relcache callback and rd_options is
-    // read from its relation descriptor.
-    let rd_options = unsafe { (*index_relation).rd_options };
-    if rd_options.is_null() {
-        return EcSpireOptions::DEFAULT;
+impl EcSpireReloptionsView {
+    fn reloptions(&self) -> &EcSpireReloptions {
+        crate::storage::relation::relation_options_layout_ref(self.rd_options.handle())
     }
 
-    // SAFETY: ec_spire_amoptions registers rd_options with the
-    // EcSpireReloptions layout for this index AM.
-    let reloptions = unsafe { &*rd_options.cast::<EcSpireReloptions>() };
-    validate_recursive_fanout_value(reloptions.recursive_fanout)
-        .unwrap_or_else(|e| pgrx::error!("{e}"));
-    validate_local_store_count_value(reloptions.local_store_count)
-        .unwrap_or_else(|e| pgrx::error!("{e}"));
-    validate_boundary_replica_count_value(reloptions.boundary_replica_count)
-        .unwrap_or_else(|e| pgrx::error!("{e}"));
-    validate_max_candidate_rows_value(reloptions.max_candidate_rows)
-        .unwrap_or_else(|e| pgrx::error!("{e}"));
-    validate_top_graph_enabled_value(reloptions.top_graph_enabled)
-        .unwrap_or_else(|e| pgrx::error!("{e}"));
-    validate_top_graph_degree_value(reloptions.top_graph_degree)
-        .unwrap_or_else(|e| pgrx::error!("{e}"));
-    validate_top_graph_build_list_size_value(reloptions.top_graph_build_list_size)
-        .unwrap_or_else(|e| pgrx::error!("{e}"));
-    validate_top_graph_alpha_value(reloptions.top_graph_alpha as f32)
-        .unwrap_or_else(|e| pgrx::error!("{e}"));
-    validate_top_graph_search_list_size_value(reloptions.top_graph_search_list_size)
-        .unwrap_or_else(|e| pgrx::error!("{e}"));
-    // SAFETY: rd_options and offset come from the live EcSpireReloptions struct;
-    // read_string_reloption handles offset 0 and validates string contents.
-    let storage_format_reloption = unsafe {
-        read_string_reloption(
-            rd_options,
-            reloptions.storage_format_offset,
-            "storage_format",
-        )
-    };
-    // SAFETY: rd_options and offset come from the live EcSpireReloptions struct;
-    // read_string_reloption handles offset 0 and validates string contents.
-    let quantizer_reloption =
-        unsafe { read_string_reloption(rd_options, reloptions.quantizer_offset, "quantizer") };
-    if let (Some(storage_format), Some(quantizer)) =
-        (&storage_format_reloption, &quantizer_reloption)
-    {
-        if storage_format != quantizer {
-            pgrx::error!(
-                "ec_spire storage_format and quantizer reloptions conflict: storage_format = '{}', quantizer = '{}'",
-                storage_format,
-                quantizer
-            );
+    fn read_string_reloption(&self, offset: i32, name: &str) -> Option<String> {
+        self.rd_options
+            .read_string_reloption(offset, "ec_spire", name)
+    }
+
+    fn validate(&self) {
+        let reloptions = self.reloptions();
+        validate_recursive_fanout_value(reloptions.recursive_fanout)
+            .unwrap_or_else(|e| pgrx::error!("{e}"));
+        validate_local_store_count_value(reloptions.local_store_count)
+            .unwrap_or_else(|e| pgrx::error!("{e}"));
+        validate_boundary_replica_count_value(reloptions.boundary_replica_count)
+            .unwrap_or_else(|e| pgrx::error!("{e}"));
+        validate_max_candidate_rows_value(reloptions.max_candidate_rows)
+            .unwrap_or_else(|e| pgrx::error!("{e}"));
+        validate_top_graph_enabled_value(reloptions.top_graph_enabled)
+            .unwrap_or_else(|e| pgrx::error!("{e}"));
+        validate_top_graph_degree_value(reloptions.top_graph_degree)
+            .unwrap_or_else(|e| pgrx::error!("{e}"));
+        validate_top_graph_build_list_size_value(reloptions.top_graph_build_list_size)
+            .unwrap_or_else(|e| pgrx::error!("{e}"));
+        validate_top_graph_alpha_value(reloptions.top_graph_alpha as f32)
+            .unwrap_or_else(|e| pgrx::error!("{e}"));
+        validate_top_graph_search_list_size_value(reloptions.top_graph_search_list_size)
+            .unwrap_or_else(|e| pgrx::error!("{e}"));
+    }
+
+    fn to_options(&self) -> EcSpireOptions {
+        self.validate();
+        let reloptions = self.reloptions();
+        let storage_format_reloption =
+            self.read_string_reloption(reloptions.storage_format_offset, "storage_format");
+        let quantizer_reloption =
+            self.read_string_reloption(reloptions.quantizer_offset, "quantizer");
+        if let (Some(storage_format), Some(quantizer)) =
+            (&storage_format_reloption, &quantizer_reloption)
+        {
+            if storage_format != quantizer {
+                pgrx::error!(
+                    "ec_spire storage_format and quantizer reloptions conflict: storage_format = '{}', quantizer = '{}'",
+                    storage_format,
+                    quantizer
+                );
+            }
+        }
+        let storage_format = storage_format_reloption
+            .or(quantizer_reloption)
+            .map(|value| {
+                SpireStorageFormat::parse_reloption(&value).unwrap_or_else(|e| pgrx::error!("{e}"))
+            })
+            .unwrap_or(SpireStorageFormat::Auto);
+        let source_identity = self
+            .read_string_reloption(reloptions.source_identity_offset, "source_identity")
+            .map(|value| {
+                SpireSourceIdentityProvider::parse_reloption(&value)
+                    .unwrap_or_else(|e| pgrx::error!("{e}"))
+            })
+            .unwrap_or(SpireSourceIdentityProvider::None);
+        let local_store_tablespaces = self
+            .read_string_reloption(
+                reloptions.local_store_tablespaces_offset,
+                "local_store_tablespaces",
+            )
+            .map(|value| {
+                normalize_local_store_tablespaces_reloption(&value, reloptions.local_store_count)
+                    .unwrap_or_else(|e| pgrx::error!("{e}"))
+            });
+        let nprobe_per_level = self
+            .read_string_reloption(reloptions.nprobe_per_level_offset, "nprobe_per_level")
+            .map(|value| {
+                parse_nprobe_per_level_reloption(&value).unwrap_or_else(|e| pgrx::error!("{e}"))
+            });
+
+        EcSpireOptions {
+            nlists: reloptions.nlists,
+            recursive_fanout: reloptions.recursive_fanout,
+            local_store_count: reloptions.local_store_count,
+            boundary_replica_count: reloptions.boundary_replica_count,
+            nprobe: reloptions.nprobe,
+            rerank_width: reloptions.rerank_width,
+            max_candidate_rows: reloptions.max_candidate_rows,
+            training_sample_rows: reloptions.training_sample_rows,
+            seed: reloptions.seed,
+            pq_group_size: reloptions.pq_group_size,
+            top_graph_enabled: reloptions.top_graph_enabled,
+            top_graph_degree: reloptions.top_graph_degree,
+            top_graph_build_list_size: reloptions.top_graph_build_list_size,
+            top_graph_alpha: reloptions.top_graph_alpha as f32,
+            top_graph_search_list_size: reloptions.top_graph_search_list_size,
+            nprobe_per_level,
+            storage_format,
+            source_identity,
+            local_store_tablespaces,
         }
     }
-    let storage_format = storage_format_reloption
-        .or(quantizer_reloption)
-        .map(|value| {
-            SpireStorageFormat::parse_reloption(&value).unwrap_or_else(|e| pgrx::error!("{e}"))
-        })
-        .unwrap_or(SpireStorageFormat::Auto);
-    // SAFETY: rd_options and offset come from the live EcSpireReloptions struct;
-    // read_string_reloption handles offset 0 and validates string contents.
-    let source_identity = unsafe {
-        read_string_reloption(
-            rd_options,
-            reloptions.source_identity_offset,
-            "source_identity",
-        )
-    }
-    .map(|value| {
-        SpireSourceIdentityProvider::parse_reloption(&value).unwrap_or_else(|e| pgrx::error!("{e}"))
-    })
-    .unwrap_or(SpireSourceIdentityProvider::None);
-    // SAFETY: rd_options and offset come from the live EcSpireReloptions struct;
-    // read_string_reloption handles offset 0 and validates string contents.
-    let local_store_tablespaces = unsafe {
-        read_string_reloption(
-            rd_options,
-            reloptions.local_store_tablespaces_offset,
-            "local_store_tablespaces",
-        )
-    }
-    .map(|value| {
-        normalize_local_store_tablespaces_reloption(&value, reloptions.local_store_count)
-            .unwrap_or_else(|e| pgrx::error!("{e}"))
-    });
-    // SAFETY: rd_options and offset come from the live EcSpireReloptions struct;
-    // read_string_reloption handles offset 0 and validates string contents.
-    let nprobe_per_level = unsafe {
-        read_string_reloption(
-            rd_options,
-            reloptions.nprobe_per_level_offset,
-            "nprobe_per_level",
-        )
-    }
-    .map(|value| parse_nprobe_per_level_reloption(&value).unwrap_or_else(|e| pgrx::error!("{e}")));
+}
 
-    EcSpireOptions {
-        nlists: reloptions.nlists,
-        recursive_fanout: reloptions.recursive_fanout,
-        local_store_count: reloptions.local_store_count,
-        boundary_replica_count: reloptions.boundary_replica_count,
-        nprobe: reloptions.nprobe,
-        rerank_width: reloptions.rerank_width,
-        max_candidate_rows: reloptions.max_candidate_rows,
-        training_sample_rows: reloptions.training_sample_rows,
-        seed: reloptions.seed,
-        pq_group_size: reloptions.pq_group_size,
-        top_graph_enabled: reloptions.top_graph_enabled,
-        top_graph_degree: reloptions.top_graph_degree,
-        top_graph_build_list_size: reloptions.top_graph_build_list_size,
-        top_graph_alpha: reloptions.top_graph_alpha as f32,
-        top_graph_search_list_size: reloptions.top_graph_search_list_size,
-        nprobe_per_level,
-        storage_format,
-        source_identity,
-        local_store_tablespaces,
+pub(super) fn relation_options(index_relation: pg_sys::Relation) -> EcSpireOptions {
+    let index_relation = std::ptr::NonNull::new(index_relation)
+        .unwrap_or_else(|| pgrx::error!("ec_spire relation options need a valid index relation"));
+    let rd_options = crate::storage::relation::relation_options_handle(index_relation);
+    let Some(rd_options) = std::ptr::NonNull::new(rd_options) else {
+        return EcSpireOptions::DEFAULT;
+    };
+    EcSpireReloptionsView {
+        rd_options: crate::am::common::reloptions::ReloptionsBlob::new(rd_options),
     }
+    .to_options()
 }
 
 include!("tests.rs");

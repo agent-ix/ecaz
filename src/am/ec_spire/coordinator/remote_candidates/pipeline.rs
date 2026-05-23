@@ -8,29 +8,25 @@ struct SpireCoordinatorPipeline {
 }
 
 impl SpireCoordinatorPipeline {
-    unsafe fn execute_once(
-        index_relation: pg_sys::Relation,
+    fn execute_once(
+        index: SpireLiveIndexRelation,
         requested_epoch: u64,
         query: Vec<f32>,
         selected_pids: Vec<u64>,
         top_k: usize,
         consistency_mode: &str,
     ) -> Result<Self, String> {
-        let top_k_for_empty_plan = u64::try_from(top_k)
-            .map_err(|_| "ec_spire coordinator pipeline top_k exceeds u64")?;
+        let top_k_for_empty_plan =
+            u64::try_from(top_k).map_err(|_| "ec_spire coordinator pipeline top_k exceeds u64")?;
         let query_for_summary_fallback = query.clone();
-        // SAFETY: forwards the live index relation and checked request fields
-        // into the readiness planner that owns relation page/catalog reads.
-        let readiness_rows = unsafe {
-            remote_search_request_readiness_rows(
-                index_relation,
-                requested_epoch,
-                query.clone(),
-                selected_pids,
-                top_k,
-                consistency_mode,
-            )
-        };
+        let readiness_rows = remote_search_request_readiness_rows(
+            index,
+            requested_epoch,
+            query.clone(),
+            selected_pids,
+            top_k,
+            consistency_mode,
+        );
         let execution_rows = readiness_rows
             .into_iter()
             .map(remote_search_execution_plan_row_from_readiness)
@@ -43,14 +39,11 @@ impl SpireCoordinatorPipeline {
             consistency_mode,
         )?;
         let request_rows = remote_search_libpq_request_plan_rows_from_execution(&execution_rows);
-        // SAFETY: rd_id is stable while the relation is open for this pipeline
-        // read and is only used as the local index OID for connection planning.
-        let index_oid = unsafe { (*index_relation).rd_id };
-        let connection_rows = remote_search_libpq_connection_plan_rows_from_requests(
-            index_oid,
-            &request_rows,
-        )?;
-        let dispatch_rows = remote_search_libpq_dispatch_plan_rows_from_connections(&connection_rows);
+        let index_oid = remote_candidate_index_oid(index, "ec_spire coordinator pipeline");
+        let connection_rows =
+            remote_search_libpq_connection_plan_rows_from_requests(index_oid, &request_rows)?;
+        let dispatch_rows =
+            remote_search_libpq_dispatch_plan_rows_from_connections(&connection_rows);
         let dispatch_summary = remote_search_libpq_dispatch_summary_from_plan_rows(
             requested_epoch,
             &dispatch_rows,
@@ -80,26 +73,22 @@ impl SpireCoordinatorPipeline {
     }
 }
 
-pub(crate) unsafe fn remote_search_coordinator_gate_summary_row(
-    index_relation: pg_sys::Relation,
+pub(crate) fn remote_search_coordinator_gate_summary_row(
+    index: SpireLiveIndexRelation,
     requested_epoch: u64,
     query: Vec<f32>,
     selected_pids: Vec<u64>,
     top_k: usize,
     consistency_mode: &str,
 ) -> SpireRemoteSearchCoordinatorGateSummaryRow {
-    // SAFETY: executes the coordinator pipeline with the live index relation
-    // supplied by the SQL diagnostic caller and checked request fields.
-    let pipeline = unsafe {
-        SpireCoordinatorPipeline::execute_once(
-            index_relation,
-            requested_epoch,
-            query,
-            selected_pids,
-            top_k,
-            consistency_mode,
-        )
-    }
+    let pipeline = SpireCoordinatorPipeline::execute_once(
+        index,
+        requested_epoch,
+        query,
+        selected_pids,
+        top_k,
+        consistency_mode,
+    )
     .unwrap_or_else(|e| pgrx::error!("{e}"));
     let execution_summary = &pipeline.execution_summary;
     let dispatch_summary = &pipeline.dispatch_summary;
@@ -159,7 +148,11 @@ pub(crate) unsafe fn remote_search_coordinator_gate_summary_row(
                 SPIRE_REMOTE_NONE,
             )
         } else {
-            (SPIRE_REMOTE_NONE, finalization_summary.status, SPIRE_REMOTE_NONE)
+            (
+                SPIRE_REMOTE_NONE,
+                finalization_summary.status,
+                SPIRE_REMOTE_NONE,
+            )
         };
 
     SpireRemoteSearchCoordinatorGateSummaryRow {
@@ -185,43 +178,34 @@ pub(crate) unsafe fn remote_search_coordinator_gate_summary_row(
     }
 }
 
-pub(crate) unsafe fn remote_search_heap_resolution_summary_row(
-    index_relation: pg_sys::Relation,
+pub(crate) fn remote_search_heap_resolution_summary_row(
+    index: SpireLiveIndexRelation,
     requested_epoch: u64,
     query: Vec<f32>,
     selected_pids: Vec<u64>,
     top_k: usize,
     consistency_mode: &str,
 ) -> SpireRemoteSearchHeapResolutionSummaryRow {
-    // SAFETY: forwards the live index relation and request fields into the
-    // coordinator gate summary before deriving heap-resolution status.
-    let gate = unsafe {
-        remote_search_coordinator_gate_summary_row(
-            index_relation,
-            requested_epoch,
-            query.clone(),
-            selected_pids.clone(),
-            top_k,
-            consistency_mode,
-        )
-    };
+    let gate = remote_search_coordinator_gate_summary_row(
+        index,
+        requested_epoch,
+        query.clone(),
+        selected_pids.clone(),
+        top_k,
+        consistency_mode,
+    );
 
     let decoded_local_locator_count = if gate.remote_plan_count == 0
         && gate.status != SPIRE_REMOTE_STATUS_EMPTY_TOP_K
     {
-        // SAFETY: forwards the live index relation and cloned request fields to
-        // the local heap-resolution planner only when the gate selected a local
-        // heap-only path.
-        let rows = unsafe {
-            remote_search_local_heap_resolution_plan_rows(
-                index_relation,
-                requested_epoch,
-                query,
-                selected_pids,
-                top_k,
-                consistency_mode,
-            )
-        };
+        let rows = remote_search_local_heap_resolution_plan_rows(
+            index,
+            requested_epoch,
+            query,
+            selected_pids,
+            top_k,
+            consistency_mode,
+        );
         u64::try_from(rows.len())
             .unwrap_or_else(|_| pgrx::error!("ec_spire local heap resolution row count overflow"))
     } else {
@@ -232,7 +216,8 @@ pub(crate) unsafe fn remote_search_heap_resolution_summary_row(
         SPIRE_REMOTE_NONE
     } else if gate.status == SPIRE_REMOTE_STATUS_EMPTY_TOP_K {
         SPIRE_REMOTE_STATUS_EMPTY_TOP_K
-    } else if gate.remote_plan_count == 0 && remote_search_status_allows_local_heap_rows(gate.status)
+    } else if gate.remote_plan_count == 0
+        && remote_search_status_allows_local_heap_rows(gate.status)
     {
         SPIRE_REMOTE_STATUS_READY
     } else {

@@ -4,7 +4,12 @@
 //! carry page images/deltas rather than an extension-owned record body, so the
 //! versioned byte contract lives in the page payloads themselves.
 
+use std::marker::PhantomData;
+
 use pgrx::pg_sys;
+
+use crate::storage::buffer_guard::LockedBufferGuard;
+use crate::storage::page::ItemPointer;
 
 /// Current format tag for future extension-owned ECAZ WAL payloads.
 pub const ECAZ_CUSTOM_WAL_RECORD_FORMAT_VERSION: u8 = 1;
@@ -40,6 +45,12 @@ pub struct GenericXLogTxn {
     finished: bool,
 }
 
+pub(crate) struct RegisteredBufferPage<'txn, 'buffer> {
+    page: pg_sys::Page,
+    buffer: &'buffer LockedBufferGuard,
+    _txn: PhantomData<&'txn mut GenericXLogTxn>,
+}
+
 impl GenericXLogTxn {
     /// Start a new GenericXLog transaction for the given relation.
     ///
@@ -57,30 +68,118 @@ impl GenericXLogTxn {
         }
     }
 
-    /// Register a buffer for modification and return the writable page pointer.
-    ///
-    /// # Safety
-    ///
-    /// `buffer` must be a valid buffer belonging to the relation used to start
-    /// this transaction. `flags` must follow PostgreSQL's GenericXLog contract.
-    pub unsafe fn register_buffer(&mut self, buffer: pg_sys::Buffer, flags: i32) -> pg_sys::Page {
+    /// Register a locked buffer as a full-page image and return the writable page.
+    pub fn register_locked_buffer_full_image(
+        &mut self,
+        buffer: &LockedBufferGuard,
+    ) -> pg_sys::Page {
+        self.register_locked_buffer_full_image_raw(buffer)
+    }
+
+    pub(crate) fn register_locked_buffer_full_image_page<'txn, 'buffer>(
+        &'txn mut self,
+        buffer: &'buffer LockedBufferGuard,
+    ) -> RegisteredBufferPage<'txn, 'buffer> {
+        let page = self.register_locked_buffer_full_image_raw(buffer);
+        RegisteredBufferPage {
+            page,
+            buffer,
+            _txn: PhantomData,
+        }
+    }
+
+    fn register_locked_buffer_full_image_raw(
+        &mut self,
+        buffer: &LockedBufferGuard,
+    ) -> pg_sys::Page {
         assert!(
             !self.finished,
             "cannot register buffer after GenericXLogFinish"
         );
-        // SAFETY: The caller guarantees `buffer` and `flags` are valid.
-        unsafe { pg_sys::GenericXLogRegisterBuffer(self.state, buffer, flags) }
+        // SAFETY: `LockedBufferGuard` owns a valid locked buffer. ECAZ's current
+        // GenericXLog usage registers full-page images only.
+        let page = unsafe {
+            pg_sys::GenericXLogRegisterBuffer(
+                self.state,
+                buffer.buffer(),
+                pg_sys::GENERIC_XLOG_FULL_IMAGE as i32,
+            )
+        };
+        assert!(!page.is_null(), "GenericXLogRegisterBuffer returned null");
+        page
     }
 
     /// Finish the GenericXLog transaction and return the written WAL pointer.
     ///
-    /// # Safety
-    ///
-    /// All registered pages must already contain their final intended contents.
-    pub unsafe fn finish(mut self) -> pg_sys::XLogRecPtr {
+    /// `GenericXLogTxn` owns the PostgreSQL WAL state and prevents double
+    /// finish through `self` ownership. Callers are still responsible for
+    /// writing final page contents before calling this method.
+    pub fn finish(mut self) -> pg_sys::XLogRecPtr {
         self.finished = true;
         // SAFETY: `self.state` came from `GenericXLogStart` and has not yet been finished/aborted.
         unsafe { pg_sys::GenericXLogFinish(self.state) }
+    }
+}
+
+impl RegisteredBufferPage<'_, '_> {
+    pub(crate) fn visit_tuple_bytes_mut<R, F>(
+        &mut self,
+        tid: ItemPointer,
+        tuple_kind: &str,
+        visit: F,
+    ) -> Result<R, String>
+    where
+        F: FnOnce(&mut [u8]) -> Result<R, String>,
+    {
+        let page_size = self.buffer.page_size();
+
+        // SAFETY: this page was returned by GenericXLogRegisterBuffer for the
+        // locked buffer borrowed by this token. The TID offset, line pointer,
+        // tuple bounds, and tuple pointer are checked before exposing mutable
+        // bytes for the duration of the visitor only.
+        unsafe {
+            let max_offset = pg_sys::PageGetMaxOffsetNumber(self.page);
+            if tid.offset_number == pg_sys::InvalidOffsetNumber || tid.offset_number > max_offset {
+                return Err(format!(
+                    "{tuple_kind} tuple ({},{}) has invalid offset {} (max {})",
+                    tid.block_number, tid.offset_number, tid.offset_number, max_offset
+                ));
+            }
+
+            let item_id = pg_sys::PageGetItemId(self.page, tid.offset_number);
+            if item_id.is_null() {
+                return Err(format!(
+                    "{tuple_kind} tuple ({},{}) returned a null item id",
+                    tid.block_number, tid.offset_number
+                ));
+            }
+            let item_id_ref = &*item_id;
+            if item_id_ref.lp_flags() == 0 {
+                return Err(format!(
+                    "{tuple_kind} tuple ({},{}) points at an unused slot",
+                    tid.block_number, tid.offset_number
+                ));
+            }
+
+            let tuple_offset = item_id_ref.lp_off() as usize;
+            let tuple_len = item_id_ref.lp_len() as usize;
+            if tuple_offset + tuple_len > page_size {
+                return Err(format!(
+                    "{tuple_kind} tuple ({},{}) has invalid bounds",
+                    tid.block_number, tid.offset_number
+                ));
+            }
+
+            let tuple_ptr = pg_sys::PageGetItem(self.page, item_id).cast::<u8>();
+            if tuple_ptr.is_null() {
+                return Err(format!(
+                    "{tuple_kind} tuple ({},{}) returned a null tuple pointer",
+                    tid.block_number, tid.offset_number
+                ));
+            }
+            let tuple = std::slice::from_raw_parts_mut(tuple_ptr, tuple_len);
+            visit(tuple)
+        }
     }
 }
 

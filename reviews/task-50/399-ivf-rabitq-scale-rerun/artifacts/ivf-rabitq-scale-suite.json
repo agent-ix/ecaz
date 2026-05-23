@@ -1,0 +1,45 @@
+{
+  "name": "task50-ivf-rabitq-scale-rerun",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-50/399-ivf-rabitq-scale-rerun/artifacts/suite",
+  "defaults": {
+    "bits": 4,
+    "seed": 42,
+    "pg": 18,
+    "force_index": true
+  },
+  "steps": [
+    { "kind": "recall",  "name": "ivf-rabitq-25k-recall-k10",
+      "tags": ["ivf","rabitq","recall","ec_real_25k"],
+      "profile": "ec_ivf",  "prefix": "ec_real_25k_ivfrabitq",
+      "k": 10, "sweep": [8,16,24,32,48,64],
+      "log_output": "reviews/task-50/399-ivf-rabitq-scale-rerun/artifacts/ivf-rabitq-25k-recall-k10.log" },
+    { "kind": "latency", "name": "ivf-rabitq-25k-latency-k10-c1",
+      "tags": ["ivf","rabitq","latency","ec_real_25k"],
+      "profile": "ec_ivf",  "prefix": "ec_real_25k_ivfrabitq",
+      "k": 10, "sweep": [8,16,24,32,48,64], "concurrency": 1,
+      "log_output": "reviews/task-50/399-ivf-rabitq-scale-rerun/artifacts/ivf-rabitq-25k-latency-k10-c1.log" },
+
+    { "kind": "recall",  "name": "ivf-rabitq-50k-recall-k10",
+      "tags": ["ivf","rabitq","recall","ec_real_50k"],
+      "profile": "ec_ivf",  "prefix": "ec_real_50k_ivfrabitq",
+      "k": 10, "sweep": [8,16,24,32,48,64],
+      "log_output": "reviews/task-50/399-ivf-rabitq-scale-rerun/artifacts/ivf-rabitq-50k-recall-k10.log" },
+    { "kind": "latency", "name": "ivf-rabitq-50k-latency-k10-c1",
+      "tags": ["ivf","rabitq","latency","ec_real_50k"],
+      "profile": "ec_ivf",  "prefix": "ec_real_50k_ivfrabitq",
+      "k": 10, "sweep": [8,16,24,32,48,64], "concurrency": 1,
+      "log_output": "reviews/task-50/399-ivf-rabitq-scale-rerun/artifacts/ivf-rabitq-50k-latency-k10-c1.log" },
+
+    { "kind": "recall",  "name": "ivf-rabitq-100k-recall-k10",
+      "tags": ["ivf","rabitq","recall","ec_real_100k"],
+      "profile": "ec_ivf",  "prefix": "ec_real_100k_ivfrabitq",
+      "k": 10, "sweep": [8,16,24,32,48,64],
+      "log_output": "reviews/task-50/399-ivf-rabitq-scale-rerun/artifacts/ivf-rabitq-100k-recall-k10.log" },
+    { "kind": "latency", "name": "ivf-rabitq-100k-latency-k10-c1",
+      "tags": ["ivf","rabitq","latency","ec_real_100k"],
+      "profile": "ec_ivf",  "prefix": "ec_real_100k_ivfrabitq",
+      "k": 10, "sweep": [8,16,24,32,48,64], "concurrency": 1,
+      "log_output": "reviews/task-50/399-ivf-rabitq-scale-rerun/artifacts/ivf-rabitq-100k-latency-k10-c1.log" }
+  ]
+}

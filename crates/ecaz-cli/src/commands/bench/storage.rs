@@ -54,10 +54,7 @@ pub async fn run(conn: &ConnectionOptions, args: StorageArgs) -> Result<()> {
         .await
         .wrap_err("disabling index scans for row count")?;
         let r = tx
-            .query_one(
-                &format!("SELECT count(*) FROM {corpus_table}"),
-                &[],
-            )
+            .query_one(&format!("SELECT count(*) FROM {corpus_table}"), &[])
             .await
             .wrap_err_with(|| format!("counting rows in {corpus_table:?}"))?
             .get::<_, i64>(0);

@@ -17,13 +17,13 @@
 //! stays clear on V0 builds. The V0 rerank source is the heap
 //! `ecvector` row (ADR-044 default).
 
-use std::ffi::{c_void, CStr};
-use std::ptr;
+use std::ffi::c_void;
+use std::ptr::{self, NonNull};
 use std::time::{Duration, Instant};
 
-use pgrx::{itemptr::item_pointer_get_both, pg_sys, PgBox, PgTupleDesc};
+use pgrx::{pg_sys, PgBox};
 
-use crate::am::common::{detoast::DetoastedVarlena, training};
+use crate::am::common::{callback::pg_am_callback, detoast::DetoastedVarlena, training};
 use crate::quant::prod::ProdQuantizer;
 use crate::storage::buffer_guard::LockedBufferGuard;
 use crate::storage::page::{DataPageChain, ItemPointer, METADATA_BLOCK_NUMBER};
@@ -102,9 +102,7 @@ struct BuildPassTimingSummary {
 
 impl BuildState {
     unsafe fn new(index_relation: pg_sys::Relation) -> Self {
-        // SAFETY: The index relation is live while ambuild reads its reloptions
-        // for this build state.
-        let options = unsafe { options::relation_options(index_relation) };
+        let options = options::relation_options(index_relation);
         Self {
             options,
             page_size: pg_sys::BLCKSZ as usize,
@@ -161,79 +159,71 @@ pub(super) unsafe extern "C-unwind" fn ec_diskann_ambuild(
     index_relation: pg_sys::Relation,
     index_info: *mut pg_sys::IndexInfo,
 ) -> *mut pg_sys::IndexBuildResult {
-    // SAFETY: PostgreSQL invokes ambuild with callback-duration relation and
-    // IndexInfo pointers; all raw pointer work is contained inside the guard.
-    unsafe {
-        pgrx::pgrx_extern_c_guard(|| {
-            let mut state = BuildState::new(index_relation);
-            let index_name = relation_name(index_relation);
-            validate_single_ecvector_attribute(heap_relation, index_info);
+    pg_am_callback!({
+        let mut state = BuildState::new(index_relation);
+        let index_name = relation_name(index_relation);
+        validate_single_ecvector_attribute(heap_relation, index_info);
 
-            initialize_metadata_page(index_relation, empty_metadata(&state));
+        initialize_metadata_page(index_relation, empty_metadata(&state));
 
-            let total_started = Instant::now();
-            let heap_scan_started = Instant::now();
-            let heap_tuples = pg_sys::table_index_build_scan(
-                heap_relation,
-                index_relation,
-                index_info,
-                false,
-                false,
-                Some(ec_diskann_build_callback),
-                (&mut state as *mut BuildState).cast(),
-                ptr::null_mut(),
+        let total_started = Instant::now();
+        let heap_scan_started = Instant::now();
+        let heap_tuples = pg_sys::table_index_build_scan(
+            heap_relation,
+            index_relation,
+            index_info,
+            false,
+            false,
+            Some(ec_diskann_build_callback),
+            (&mut state as *mut BuildState).cast(),
+            ptr::null_mut(),
+        );
+        let heap_scan_elapsed = heap_scan_started.elapsed();
+
+        let index_tuples = if state.heap_tuples.is_empty() {
+            log_ambuild_empty_timing(
+                &index_name,
+                heap_tuples,
+                state.scanned_tuples,
+                heap_scan_elapsed,
+                total_started.elapsed(),
             );
-            let heap_scan_elapsed = heap_scan_started.elapsed();
+            0.0
+        } else {
+            let flush_timing = flush_build_state(index_relation, &state)
+                .unwrap_or_else(|e| pgrx::error!("ec_diskann ambuild failed: {e}"));
+            log_ambuild_timing(
+                &index_name,
+                heap_tuples,
+                state.scanned_tuples,
+                state.heap_tuples.len(),
+                heap_scan_elapsed,
+                &flush_timing,
+                total_started.elapsed(),
+            );
+            state.heap_tuples.len() as f64
+        };
 
-            let index_tuples = if state.heap_tuples.is_empty() {
-                log_ambuild_empty_timing(
-                    &index_name,
-                    heap_tuples,
-                    state.scanned_tuples,
-                    heap_scan_elapsed,
-                    total_started.elapsed(),
-                );
-                0.0
-            } else {
-                let flush_timing = flush_build_state(index_relation, &state)
-                    .unwrap_or_else(|e| pgrx::error!("ec_diskann ambuild failed: {e}"));
-                log_ambuild_timing(
-                    &index_name,
-                    heap_tuples,
-                    state.scanned_tuples,
-                    state.heap_tuples.len(),
-                    heap_scan_elapsed,
-                    &flush_timing,
-                    total_started.elapsed(),
-                );
-                state.heap_tuples.len() as f64
-            };
+        if heap_tuples != state.scanned_tuples as f64 {
+            pgrx::error!(
+                "ec_diskann ambuild scanned {heap_tuples} heap tuples but observed {}",
+                state.scanned_tuples
+            );
+        }
 
-            if heap_tuples != state.scanned_tuples as f64 {
-                pgrx::error!(
-                    "ec_diskann ambuild scanned {heap_tuples} heap tuples but observed {}",
-                    state.scanned_tuples
-                );
-            }
-
-            crate::fault::maybe_fail_palloc("ec_diskann ambuild result");
-            let mut result = PgBox::<pg_sys::IndexBuildResult>::alloc0();
-            result.heap_tuples = heap_tuples;
-            result.index_tuples = index_tuples;
-            result.into_pg()
-        })
-    }
+        crate::fault::maybe_fail_palloc("ec_diskann ambuild result");
+        let mut result = PgBox::<pg_sys::IndexBuildResult>::alloc0();
+        result.heap_tuples = heap_tuples;
+        result.index_tuples = index_tuples;
+        result.into_pg()
+    })
 }
 
 pub(super) unsafe extern "C-unwind" fn ec_diskann_ambuildempty(index_relation: pg_sys::Relation) {
-    // SAFETY: PostgreSQL invokes ambuildempty with a live index relation; the
-    // metadata initialization stays inside the guard.
-    unsafe {
-        pgrx::pgrx_extern_c_guard(|| {
-            let state = BuildState::new(index_relation);
-            initialize_metadata_page(index_relation, empty_metadata(&state));
-        })
-    }
+    pg_am_callback!({
+        let state = BuildState::new(index_relation);
+        initialize_metadata_page(index_relation, empty_metadata(&state));
+    })
 }
 
 unsafe extern "C-unwind" fn ec_diskann_build_callback(
@@ -244,26 +234,22 @@ unsafe extern "C-unwind" fn ec_diskann_build_callback(
     _tuple_is_alive: bool,
     state: *mut c_void,
 ) {
-    // SAFETY: PostgreSQL invokes the build callback with callback-duration
-    // Datum/null arrays, heap TID, and opaque state pointer from ambuild.
-    unsafe {
-        pgrx::pgrx_extern_c_guard(|| {
-            let state = &mut *state.cast::<BuildState>();
-            if values.is_null() || isnull.is_null() {
-                pgrx::error!("ec_diskann ambuild received null tuple value arrays");
-            }
-            if *isnull {
-                pgrx::error!("ec_diskann does not support NULL indexed values");
-            }
-            let datum = *values;
-            if datum.is_null() {
-                pgrx::error!("ec_diskann ambuild received a null indexed datum");
-            }
-            let source_vector = ecvector_datum_to_vec(datum);
-            let heap_tid = decode_heap_tid(tid);
-            state.push(heap_tid, source_vector);
-        })
-    }
+    pg_am_callback!({
+        let state = &mut *state.cast::<BuildState>();
+        if values.is_null() || isnull.is_null() {
+            pgrx::error!("ec_diskann ambuild received null tuple value arrays");
+        }
+        if *isnull {
+            pgrx::error!("ec_diskann does not support NULL indexed values");
+        }
+        let datum = *values;
+        if datum.is_null() {
+            pgrx::error!("ec_diskann ambuild received a null indexed datum");
+        }
+        let source_vector = ecvector_datum_to_vec(datum);
+        let heap_tid = decode_heap_tid(tid);
+        state.push(heap_tid, source_vector);
+    })
 }
 
 fn empty_metadata(state: &BuildState) -> VamanaMetadataPage {
@@ -447,15 +433,10 @@ fn elapsed_ms(duration: Duration) -> u128 {
     duration.as_millis()
 }
 
-unsafe fn relation_name(relation: pg_sys::Relation) -> String {
-    // SAFETY: The relation is live and PostgreSQL keeps `rd_rel` valid for the
-    // opened relation lifetime.
-    let rd_rel = unsafe { (*relation).rd_rel.as_ref() }
-        .expect("opened relation should expose pg_class metadata");
-    // SAFETY: `relname.data` is PostgreSQL's fixed NUL-terminated name buffer.
-    unsafe { CStr::from_ptr(rd_rel.relname.data.as_ptr()) }
-        .to_string_lossy()
-        .into_owned()
+fn relation_name(relation: pg_sys::Relation) -> String {
+    let relation = NonNull::new(relation)
+        .unwrap_or_else(|| pgrx::error!("ec_diskann build needs a valid relation"));
+    crate::storage::relation::relation_name_handle(relation)
 }
 
 fn log_ambuild_empty_timing(
@@ -648,9 +629,7 @@ unsafe fn source_inner_product_avx2_fma(left: &[f32], right: &[f32]) -> f32 {
     let mut ip = lanes.iter().sum::<f32>();
 
     while i < len {
-        // SAFETY: The tail loop maintains `i < len`, and `len` is the minimum
-        // of the two slice lengths, so both unchecked reads are in bounds.
-        ip += unsafe { *left.get_unchecked(i) * *right.get_unchecked(i) };
+        ip += left[i] * right[i];
         i += 1;
     }
 
@@ -715,9 +694,7 @@ unsafe fn source_inner_product_neon(left: &[f32], right: &[f32]) -> f32 {
     let mut ip = lanes.iter().sum::<f32>();
 
     while i < len {
-        // SAFETY: The tail loop maintains `i < len`, and `len` is the minimum
-        // of the two slice lengths, so both unchecked reads are in bounds.
-        ip += unsafe { *left.get_unchecked(i) * *right.get_unchecked(i) };
+        ip += left[i] * right[i];
         i += 1;
     }
 
@@ -725,11 +702,11 @@ unsafe fn source_inner_product_neon(left: &[f32], right: &[f32]) -> f32 {
 }
 
 unsafe fn initialize_metadata_page(index_relation: pg_sys::Relation, metadata: VamanaMetadataPage) {
-    // SAFETY: The index relation is live while initializing its main fork and
-    // PostgreSQL returns the current block count for that fork.
-    let existing_blocks = unsafe {
-        pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
-    };
+    let index_relation_handle = NonNull::new(index_relation).unwrap_or_else(|| {
+        pgrx::error!("ec_diskann metadata initialization needs a valid index relation")
+    });
+    let existing_blocks =
+        crate::storage::relation::main_fork_block_count_handle(index_relation_handle);
     let target_block = if existing_blocks == 0 {
         P_NEW
     } else {
@@ -772,25 +749,18 @@ fn write_metadata_to_buffer(
     let page_size = buffer.page_size();
     // SAFETY: The WAL transaction is scoped to this live index relation.
     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
-    // SAFETY: The metadata buffer is locked exclusively by the caller and is
-    // registered for a full image rewrite.
-    let page_ptr =
-        unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
+    let page_ptr = wal_txn.register_locked_buffer_full_image(&buffer);
     let metadata_bytes = metadata.encode();
     let special_size = (metadata_bytes.len() + 7) & !7;
     // SAFETY: `page_ptr` is the WAL-registered metadata page and `page_size`
-    // comes from the locked buffer guard.
-    unsafe { pg_sys::PageInit(page_ptr, page_size, special_size) };
-    // SAFETY: The page was initialized with a special area large enough for the
-    // encoded metadata bytes.
-    let dst = unsafe { pg_sys::PageGetSpecialPointer(page_ptr) }.cast::<u8>();
-    // SAFETY: Source and destination are non-overlapping and the destination
-    // special area was sized by PageInit above.
+    // comes from the locked buffer guard. The special area is sized from the
+    // encoded metadata before copying from owned Rust memory.
     unsafe {
+        pg_sys::PageInit(page_ptr, page_size, special_size);
+        let dst = pg_sys::PageGetSpecialPointer(page_ptr).cast::<u8>();
         ptr::copy_nonoverlapping(metadata_bytes.as_ptr(), dst, metadata_bytes.len());
     }
-    // SAFETY: All metadata page writes were made through the registered page.
-    unsafe { wal_txn.finish() };
+    wal_txn.finish();
 }
 
 pub(super) unsafe fn write_data_pages(index_relation: pg_sys::Relation, chain: &DataPageChain) {
@@ -809,37 +779,31 @@ pub(super) unsafe fn write_data_pages(index_relation: pg_sys::Relation, chain: &
         let page_size = buffer.page_size();
         // SAFETY: The WAL transaction is scoped to this live index relation.
         let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
-        // SAFETY: The newly allocated data buffer is locked exclusively and is
-        // registered for a full image write.
-        let page_ptr = unsafe {
-            wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32)
-        };
+        let page_ptr = wal_txn.register_locked_buffer_full_image(&buffer);
         // SAFETY: `page_ptr` is the WAL-registered data page and `page_size`
-        // comes from the locked buffer guard.
-        unsafe { pg_sys::PageInit(page_ptr, page_size, 0) };
+        // comes from the locked buffer guard. Each staged tuple byte slice is
+        // immutable and PageAddItemExtended copies it into the initialized page.
+        unsafe {
+            pg_sys::PageInit(page_ptr, page_size, 0);
 
-        for tuple in staged_page.tuples() {
-            // SAFETY: `tuple` bytes are immutable staged page bytes and
-            // PageAddItemExtended copies them into the initialized page.
-            let offset = unsafe {
-                pg_sys::PageAddItemExtended(
+            for tuple in staged_page.tuples() {
+                let offset = pg_sys::PageAddItemExtended(
                     page_ptr,
                     tuple.as_ptr().cast_mut().cast(),
                     tuple.len(),
                     pg_sys::InvalidOffsetNumber,
                     0,
-                )
-            };
-            if offset == pg_sys::InvalidOffsetNumber {
-                pgrx::error!(
-                    "ec_diskann failed to write tuple to block {}",
-                    staged_page.block_number()
                 );
+                if offset == pg_sys::InvalidOffsetNumber {
+                    pgrx::error!(
+                        "ec_diskann failed to write tuple to block {}",
+                        staged_page.block_number()
+                    );
+                }
             }
         }
 
-        // SAFETY: All data page writes were made through the registered page.
-        unsafe { wal_txn.finish() };
+        wal_txn.finish();
     }
 }
 
@@ -847,13 +811,9 @@ pub(super) unsafe fn decode_heap_tid(tid: pg_sys::ItemPointer) -> ItemPointer {
     if tid.is_null() {
         pgrx::error!("ec_diskann ambuild received a null heap tid");
     }
-    // SAFETY: Null was checked above and PostgreSQL supplied this heap TID for
-    // the ambuild callback currently decoding it.
-    let (block_number, offset_number) = item_pointer_get_both(unsafe { *tid });
-    ItemPointer {
-        block_number,
-        offset_number,
-    }
+    crate::am::common::pg_ptr::item_pointer(
+        std::ptr::NonNull::new(tid).expect("ec_diskann heap tid should be non-null"),
+    )
 }
 
 unsafe fn validate_single_ecvector_attribute(
@@ -863,9 +823,9 @@ unsafe fn validate_single_ecvector_attribute(
     if index_info.is_null() {
         pgrx::error!("ec_diskann ambuild received a null IndexInfo");
     }
-    // SAFETY: Null was checked above and PostgreSQL owns IndexInfo for the
-    // duration of the ambuild callback.
-    let info = unsafe { &*index_info };
+    let info = crate::am::common::pg_ptr::index_info(
+        std::ptr::NonNull::new(index_info).expect("ec_diskann IndexInfo should be non-null"),
+    );
     if info.ii_NumIndexAttrs != 1 || info.ii_NumIndexKeyAttrs != 1 {
         pgrx::error!("ec_diskann currently supports single-column indexes only");
     }
@@ -880,28 +840,17 @@ unsafe fn validate_single_ecvector_attribute(
         pgrx::error!("ec_diskann ambuild requires a base heap column index key");
     }
 
-    // SAFETY: The heap relation is live for ambuild and `from_pg_copy` copies
-    // tuple descriptor metadata before inspection.
-    let tuple_desc = unsafe { PgTupleDesc::from_pg_copy((*heap_relation).rd_att) };
+    let heap_relation = NonNull::new(heap_relation)
+        .unwrap_or_else(|| pgrx::error!("ec_diskann ambuild needs a valid heap relation"));
+    let tuple_desc = crate::storage::relation::relation_tuple_desc_copy_handle(heap_relation);
     let att = tuple_desc
         .get(attnum as usize - 1)
         .expect("indexed attribute should exist");
     if att.attisdropped {
         pgrx::error!("ec_diskann indexed column references a dropped column");
     }
-    // SAFETY: `att.atttypid` comes from copied tuple descriptor metadata.
-    let base_type_oid = unsafe { pg_sys::getBaseType(att.atttypid) };
-    // SAFETY: `base_type_oid` is the normalized type OID returned by PostgreSQL.
-    let formatted = unsafe { pg_sys::format_type_be(base_type_oid) };
-    if formatted.is_null() {
-        pgrx::error!("ec_diskann indexed column has no resolvable type name");
-    }
-    // SAFETY: `format_type_be` returned a non-null NUL-terminated C string.
-    let name = unsafe { CStr::from_ptr(formatted) }
-        .to_string_lossy()
-        .into_owned();
-    // SAFETY: The formatted type name was palloc'd by PostgreSQL.
-    unsafe { pg_sys::pfree(formatted.cast()) };
+    let name = crate::storage::type_info::formatted_base_type_name(att.atttypid)
+        .unwrap_or_else(|| pgrx::error!("ec_diskann indexed column has no resolvable type name"));
     let type_name = name.rsplit('.').next().unwrap_or(&name).trim_matches('"');
     if type_name != "ecvector" {
         pgrx::error!("ec_diskann indexed column must be ecvector, got {type_name}");

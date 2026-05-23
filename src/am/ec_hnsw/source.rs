@@ -1,11 +1,8 @@
-use std::{
-    ffi::{c_int, CStr},
-    marker::PhantomData,
-};
+use std::{ffi::c_int, marker::PhantomData};
 
-use pgrx::{itemptr::item_pointer_set_all, pg_sys, PgTupleDesc};
+use pgrx::pg_sys;
 
-use crate::am::common::detoast::DetoastedVarlena;
+use crate::am::common::{detoast::DetoastedVarlena, heap_slot};
 
 use super::page;
 
@@ -260,7 +257,7 @@ unsafe fn inner_product_neon(left: &[f32], right: &[f32]) -> f32 {
     sum
 }
 
-pub(crate) unsafe fn resolve_source_attnum(
+pub(crate) fn resolve_source_attnum(
     heap_relation: pg_sys::Relation,
     source_column: &str,
     source_label: &str,
@@ -280,32 +277,25 @@ pub(crate) unsafe fn resolve_source_attnum(
     attnum
 }
 
-pub(crate) unsafe fn resolve_source_attribute(
+pub(crate) fn resolve_source_attribute(
     heap_relation: pg_sys::Relation,
     source_column: &str,
     source_label: &str,
     type_policy: SourceTypePolicy,
 ) -> SourceAttribute {
-    // SAFETY: The caller supplies a live heap relation and column label; this
-    // helper validates the resolved attnum before it is reused below.
-    let source_attnum =
-        unsafe { resolve_source_attnum(heap_relation, source_column, source_label) };
-    // SAFETY: `source_attnum` was resolved from this heap relation and type
-    // policy validation happens inside the delegated helper.
-    unsafe {
-        resolve_source_attribute_by_attnum(heap_relation, source_attnum, source_label, type_policy)
-    }
+    let source_attnum = resolve_source_attnum(heap_relation, source_column, source_label);
+    resolve_source_attribute_by_attnum(heap_relation, source_attnum, source_label, type_policy)
 }
 
-pub(crate) unsafe fn resolve_source_attribute_by_attnum(
+pub(crate) fn resolve_source_attribute_by_attnum(
     heap_relation: pg_sys::Relation,
     source_attnum: i32,
     source_label: &str,
     type_policy: SourceTypePolicy,
 ) -> SourceAttribute {
-    // SAFETY: The heap relation is live for the caller's PostgreSQL callback;
-    // `from_pg_copy` copies the tuple descriptor metadata before inspection.
-    let tuple_desc = unsafe { PgTupleDesc::from_pg_copy((*heap_relation).rd_att) };
+    let heap_relation = std::ptr::NonNull::new(heap_relation)
+        .unwrap_or_else(|| pgrx::error!("ec_hnsw source resolution needs a valid heap relation"));
+    let tuple_desc = crate::storage::relation::relation_tuple_desc_copy_handle(heap_relation);
     let att = tuple_desc
         .get(source_attnum as usize - 1)
         .expect("resolved source attribute should exist");
@@ -314,7 +304,7 @@ pub(crate) unsafe fn resolve_source_attribute_by_attnum(
     }
 
     // SAFETY: `att.atttypid` comes from the copied tuple descriptor metadata.
-    let kind = unsafe { resolve_source_datum_kind(att.atttypid) }.unwrap_or_default();
+    let kind = resolve_source_datum_kind(att.atttypid).unwrap_or_default();
     let valid = match type_policy {
         SourceTypePolicy::BuildSource => {
             matches!(kind, SourceDatumKind::RealArray | SourceDatumKind::Ecvector)
@@ -342,16 +332,16 @@ pub(crate) unsafe fn resolve_source_attribute_by_attnum(
     }
 }
 
-pub(crate) unsafe fn resolve_single_base_heap_index_attnum(
+pub(crate) fn resolve_single_base_heap_index_attnum(
     index_info: *mut pg_sys::IndexInfo,
     label: &str,
 ) -> i32 {
     if index_info.is_null() {
         pgrx::error!("ec_hnsw {label} received a null IndexInfo");
     }
-    // SAFETY: Null was checked above and PostgreSQL owns `IndexInfo` for the
-    // duration of the calling AM callback.
-    let index_info = unsafe { &*index_info };
+    let index_info = crate::am::common::pg_ptr::index_info(
+        std::ptr::NonNull::new(index_info).expect("ec_hnsw IndexInfo should be non-null"),
+    );
     if index_info.ii_NumIndexKeyAttrs != 1 {
         pgrx::error!("ec_hnsw {label} currently supports single-key indexes only");
     }
@@ -369,16 +359,16 @@ pub(crate) unsafe fn resolve_single_base_heap_index_attnum(
     attnum
 }
 
-pub(crate) unsafe fn resolve_indexed_ecvector_attribute_from_index_info(
+pub(crate) fn resolve_indexed_ecvector_attribute_from_index_info(
     heap_relation: pg_sys::Relation,
     index_info: *mut pg_sys::IndexInfo,
     label: &str,
 ) -> SourceAttribute {
     // SAFETY: The heap relation is live and `index_info` is callback-duration
     // metadata owned by PostgreSQL.
-    let indexed = unsafe {
+    let indexed = 
         resolve_indexed_vector_attribute_from_index_info(heap_relation, index_info, label)
-    };
+    ;
     if indexed.kind != IndexedVectorKind::Ecvector {
         pgrx::error!("ec_hnsw {label} must be ecvector");
     }
@@ -388,37 +378,34 @@ pub(crate) unsafe fn resolve_indexed_ecvector_attribute_from_index_info(
     }
 }
 
-pub(crate) unsafe fn resolve_indexed_ecvector_attribute(
+pub(crate) fn resolve_indexed_ecvector_attribute(
     heap_relation: pg_sys::Relation,
     index_relation: pg_sys::Relation,
     label: &str,
 ) -> SourceAttribute {
-    // SAFETY: The index relation is live; BuildIndexInfo returns palloc'd
-    // metadata for this relation.
-    let index_info = unsafe { pg_sys::BuildIndexInfo(index_relation) };
-    if index_info.is_null() {
-        pgrx::error!("ec_hnsw {label} could not build index metadata");
-    }
+    let index_info = super::index_info::IndexInfoGuard::build(index_relation, label);
     // SAFETY: `index_info` was checked non-null and belongs to this index.
-    let attribute = unsafe {
-        resolve_indexed_ecvector_attribute_from_index_info(heap_relation, index_info, label)
-    };
-    // SAFETY: `index_info` was allocated by PostgreSQL BuildIndexInfo above.
-    unsafe { pg_sys::pfree(index_info.cast()) };
+    let attribute = 
+        resolve_indexed_ecvector_attribute_from_index_info(
+            heap_relation,
+            index_info.as_ptr(),
+            label,
+        )
+    ;
     attribute
 }
 
-pub(crate) unsafe fn resolve_indexed_vector_attribute_from_index_info(
+pub(crate) fn resolve_indexed_vector_attribute_from_index_info(
     heap_relation: pg_sys::Relation,
     index_info: *mut pg_sys::IndexInfo,
     label: &str,
 ) -> IndexedVectorAttribute {
     // SAFETY: `index_info` is callback-duration PostgreSQL metadata and the
     // helper validates single-key base-column shape.
-    let indexed_attnum = unsafe { resolve_single_base_heap_index_attnum(index_info, label) };
-    // SAFETY: The heap relation is live; `from_pg_copy` copies tuple descriptor
-    // metadata before the indexed attribute is inspected.
-    let tuple_desc = unsafe { PgTupleDesc::from_pg_copy((*heap_relation).rd_att) };
+    let indexed_attnum = resolve_single_base_heap_index_attnum(index_info, label);
+    let heap_relation = std::ptr::NonNull::new(heap_relation)
+        .unwrap_or_else(|| pgrx::error!("ec_hnsw source resolution needs a valid heap relation"));
+    let tuple_desc = crate::storage::relation::relation_tuple_desc_copy_handle(heap_relation);
     let att = tuple_desc
         .get(indexed_attnum as usize - 1)
         .expect("resolved indexed attribute should exist");
@@ -427,7 +414,7 @@ pub(crate) unsafe fn resolve_indexed_vector_attribute_from_index_info(
     }
 
     // SAFETY: `att.atttypid` comes from the copied tuple descriptor metadata.
-    let kind = unsafe { resolve_indexed_vector_kind(att.atttypid) }
+    let kind = resolve_indexed_vector_kind(att.atttypid)
         .unwrap_or_else(|| pgrx::error!("ec_hnsw {label} must be ecvector or tqvector"));
     IndexedVectorAttribute {
         attnum: indexed_attnum,
@@ -435,28 +422,21 @@ pub(crate) unsafe fn resolve_indexed_vector_attribute_from_index_info(
     }
 }
 
-pub(crate) unsafe fn resolve_indexed_vector_attribute(
+pub(crate) fn resolve_indexed_vector_attribute(
     heap_relation: pg_sys::Relation,
     index_relation: pg_sys::Relation,
     label: &str,
 ) -> IndexedVectorAttribute {
-    // SAFETY: The index relation is live; BuildIndexInfo returns palloc'd
-    // metadata for this relation.
-    let index_info = unsafe { pg_sys::BuildIndexInfo(index_relation) };
-    if index_info.is_null() {
-        pgrx::error!("ec_hnsw {label} could not build index metadata");
-    }
+    let index_info = super::index_info::IndexInfoGuard::build(index_relation, label);
     // SAFETY: `index_info` was checked non-null and belongs to this index.
-    let attribute = unsafe {
-        resolve_indexed_vector_attribute_from_index_info(heap_relation, index_info, label)
-    };
-    // SAFETY: `index_info` was allocated by PostgreSQL BuildIndexInfo above.
-    unsafe { pg_sys::pfree(index_info.cast()) };
+    let attribute = 
+        resolve_indexed_vector_attribute_from_index_info(heap_relation, index_info.as_ptr(), label)
+    ;
     attribute
 }
 
-unsafe fn resolve_indexed_vector_kind(type_oid: pg_sys::Oid) -> Option<IndexedVectorKind> {
-    let name = formatted_base_type_name(type_oid)?;
+fn resolve_indexed_vector_kind(type_oid: pg_sys::Oid) -> Option<IndexedVectorKind> {
+    let name = crate::storage::type_info::formatted_base_type_name(type_oid)?;
     let type_name = name.rsplit('.').next().unwrap_or(&name).trim_matches('"');
     match type_name {
         "ecvector" => Some(IndexedVectorKind::Ecvector),
@@ -465,12 +445,12 @@ unsafe fn resolve_indexed_vector_kind(type_oid: pg_sys::Oid) -> Option<IndexedVe
     }
 }
 
-unsafe fn resolve_source_datum_kind(type_oid: pg_sys::Oid) -> Option<SourceDatumKind> {
+fn resolve_source_datum_kind(type_oid: pg_sys::Oid) -> Option<SourceDatumKind> {
     match type_oid {
         pg_sys::FLOAT4ARRAYOID => Some(SourceDatumKind::RealArray),
         pg_sys::BYTEAOID => Some(SourceDatumKind::Bytea),
         _ => {
-            let name = formatted_base_type_name(type_oid)?;
+            let name = crate::storage::type_info::formatted_base_type_name(type_oid)?;
             let type_name = name.rsplit('.').next().unwrap_or(&name).trim_matches('"');
             if type_name == "ecvector" {
                 Some(SourceDatumKind::Ecvector)
@@ -481,38 +461,14 @@ unsafe fn resolve_source_datum_kind(type_oid: pg_sys::Oid) -> Option<SourceDatum
     }
 }
 
-fn formatted_base_type_name(type_oid: pg_sys::Oid) -> Option<String> {
-    // SAFETY: PostgreSQL accepts any type OID here, `format_type_be` returns a
-    // palloc'd NUL-terminated string for known type OIDs, and that allocation
-    // is released before the copied Rust string is returned.
-    unsafe {
-        let base_type_oid = pg_sys::getBaseType(type_oid);
-        let formatted = pg_sys::format_type_be(base_type_oid);
-        if formatted.is_null() {
-            return None;
-        }
-        let name = CStr::from_ptr(formatted).to_string_lossy().into_owned();
-        pg_sys::pfree(formatted.cast());
-        Some(name)
-    }
-}
-
-pub(crate) unsafe fn fetch_heap_row_version(
-    heap_relation: pg_sys::Relation,
+pub(crate) fn fetch_heap_row_version_with_reader(
+    reader: &mut heap_slot::HeapSlotReader<'_>,
     heap_tid: page::ItemPointer,
-    snapshot: pg_sys::Snapshot,
-    slot: *mut pg_sys::TupleTableSlot,
     label: &str,
 ) {
-    let mut tid = pg_sys::ItemPointerData::default();
-    item_pointer_set_all(&mut tid, heap_tid.block_number, heap_tid.offset_number);
-    // SAFETY: `slot` is caller-owned and valid for reuse within the current
-    // scan/build/vacuum callback.
-    unsafe { pg_sys::ExecClearTuple(slot) };
-    // SAFETY: The heap relation, snapshot, and slot are caller-owned for this
-    // callback; `tid` is a stack ItemPointer initialized from the index tuple.
-    let fetched =
-        unsafe { pg_sys::table_tuple_fetch_row_version(heap_relation, &mut tid, snapshot, slot) };
+    let fetched = reader
+        .fetch_row_version(heap_tid)
+        .unwrap_or_else(|error| pgrx::error!("{error}"));
     if !fetched {
         pgrx::error!(
             "ec_hnsw {label} could not fetch heap tuple at ({},{})",
@@ -522,24 +478,14 @@ pub(crate) unsafe fn fetch_heap_row_version(
     }
 }
 
-pub(crate) unsafe fn required_slot_datum(
-    slot: *mut pg_sys::TupleTableSlot,
+pub(crate) fn required_slot_datum_with_reader(
+    reader: &mut heap_slot::HeapSlotReader<'_>,
     attnum: i32,
     label: &str,
 ) -> pg_sys::Datum {
-    // SAFETY: `slot` is caller-owned and valid, and `attnum` was resolved from
-    // the tuple descriptor before this helper was called. Materialization and
-    // value/null-array reads all use the same descriptor-backed attribute.
-    let attr_index = usize::try_from(attnum - 1).expect("attribute number should be positive");
-    unsafe {
-        if (*slot).tts_nvalid < attnum as i16 {
-            pg_sys::slot_getsomeattrs_int(slot, attnum);
-        }
-        if *(*slot).tts_isnull.add(attr_index) {
-            pgrx::error!("ec_hnsw does not support NULL {label}");
-        }
-        *(*slot).tts_values.add(attr_index)
-    }
+    reader
+        .required_datum(attnum, label)
+        .unwrap_or_else(|error| pgrx::error!("{error}"))
 }
 
 struct DetoastedFloat4Datum {
@@ -587,17 +533,17 @@ impl<'datum> FlatFloat4ArrayRef<'datum> {
         let detoasted = unsafe { DetoastedFloat4Datum::from_datum(datum, label) };
         let array_ptr = detoasted.as_array_ptr();
 
-        // SAFETY: `array_ptr` points at the detoasted ArrayType backing storage.
-        let ndim = match usize::try_from(unsafe { (*array_ptr).ndim }) {
+        // SAFETY: `array_ptr` points at the detoasted ArrayType backing storage,
+        // held alive by `detoasted` for the duration of this borrow.
+        let array_header = unsafe { &*array_ptr };
+        let ndim = match usize::try_from(array_header.ndim) {
             Ok(value) => value,
             Err(_) => pgrx::error!("ec_hnsw {label} must be a one-dimensional real[]"),
         };
         if ndim != 1 {
             pgrx::error!("ec_hnsw {label} must be a one-dimensional real[]");
         }
-        // SAFETY: `array_ptr` is the detoasted ArrayType and `elemtype` is part
-        // of the fixed array header.
-        if unsafe { (*array_ptr).elemtype } != pg_sys::FLOAT4OID {
+        if array_header.elemtype != pg_sys::FLOAT4OID {
             pgrx::error!("ec_hnsw {label} must be a real[]");
         }
         // SAFETY: `array_ptr` is a valid detoasted ArrayType.
@@ -726,35 +672,27 @@ pub(crate) unsafe fn with_flat_float4_source_from_datum<R>(
     f(source)
 }
 
-pub(crate) unsafe fn with_source_from_heap_row<R>(
-    heap_relation: pg_sys::Relation,
+pub(crate) fn with_source_from_heap_row_reader<R>(
+    reader: &mut heap_slot::HeapSlotReader<'_>,
     heap_tid: page::ItemPointer,
-    snapshot: pg_sys::Snapshot,
-    slot: *mut pg_sys::TupleTableSlot,
     source_attribute: SourceAttribute,
     label: &str,
     f: impl for<'datum> FnOnce(FlatFloat4SourceRef<'datum>) -> R,
 ) -> R {
-    // SAFETY: The heap relation/snapshot/slot are caller-owned for this
-    // callback and `heap_tid` came from the index tuple being examined.
-    unsafe { fetch_heap_row_version(heap_relation, heap_tid, snapshot, slot, label) };
-    // SAFETY: The slot now holds the requested row version and the source
-    // attnum was resolved from heap metadata.
-    let source_datum = unsafe { required_slot_datum(slot, source_attribute.attnum, label) };
+    fetch_heap_row_version_with_reader(reader, heap_tid, label);
+    let source_datum = required_slot_datum_with_reader(reader, source_attribute.attnum, label);
     // SAFETY: The source kind was resolved from heap metadata and the closure
     // keeps the datum-backed source view scoped to this call.
     unsafe { with_flat_float4_source_from_datum(source_datum, source_attribute.kind, label, f) }
 }
 
-pub(crate) unsafe fn with_indexed_ecvector_from_slot<R>(
-    slot: *mut pg_sys::TupleTableSlot,
+pub(crate) fn with_indexed_ecvector_from_slot_reader<R>(
+    reader: &mut heap_slot::HeapSlotReader<'_>,
     attnum: i32,
     label: &str,
     f: impl for<'datum> FnOnce(FlatFloat4VarlenaRef<'datum>) -> R,
 ) -> R {
-    // SAFETY: The slot contains a row with the indexed ecvector attribute and
-    // `attnum` was resolved from index/heap metadata.
-    let source_datum = unsafe { required_slot_datum(slot, attnum, label) };
+    let source_datum = required_slot_datum_with_reader(reader, attnum, label);
     // SAFETY: The indexed attribute is required to be ecvector, which is stored
     // as a byte-backed varlena float payload.
     let source = unsafe { FlatFloat4VarlenaRef::from_datum(source_datum, label) };

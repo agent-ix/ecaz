@@ -1,0 +1,135 @@
+Script started on 2026-05-21 21:01:57-07:00 [<not executed on terminal>]
+- `crates/ecaz-lints/fixtures/panic_across_ffi/src/lib.rs`.
+- `vendor/hnsw_rs/**`: classify as vendored. Either exclude formally, patch
+  through a vendored-fork policy, or replace usage with wrapped APIs.
+
+Expected disposition: test unsafe is not ignored; it is either deleted through
+safe test helpers or recorded as test-only irreducible.
+
+## Execution Order
+
+This is intentionally more than nine slices. The work should run as a sequence
+of contract programs and fanout tranches.
+
+### Wave 0: Ledger And Baseline
+
+1. Land the unsafe ledger tooling and generated initial ledger.
+2. Mark every current unsafe as one of the programs P1-P13.
+3. Add residual registry skeleton.
+4. Add a "no new unledgered unsafe" check.
+
+### Wave 1: Foundation Contracts
+
+5. Callback entry contract rollout.
+6. PostgreSQL handle view constructors.
+7. Buffer/page/WAL closure APIs.
+8. Page tuple view APIs.
+9. Heap slot/source scorer seed.
+10. Datum/vector wrapper seed.
+11. Reloption/C-string guard seed.
+12. Read-stream guard seed.
+13. DSM atomic field seed.
+14. Scan opaque owner seed.
+
+### Wave 2: SPIRE And IVF/RaBitQ Production Fanout
+
+15. SPIRE page/store tuple views.
+16. SPIRE active epoch/read relation handle views.
+17. SPIRE production read heap-source/scorer rollout.
+18. SPIRE custom scan planner/node/list views.
+19. SPIRE DML frontdoor expression walkers.
+20. SPIRE remote-candidate coordinator views.
+21. IVF page tuple and posting views to zero reducible page unsafe.
+22. IVF scan/build/insert/vacuum heap-source and vector datum rollout.
+23. IVF/RaBitQ quant payload wrappers.
+24. IVF options/reloptions cleanup.
+
+### Wave 3: HNSW And DiskANN Fanout
+
+25. HNSW scan opaque/state owner rollout.
+26. HNSW scan and scan-debug handle/page/scorer rollout.
+27. HNSW graph/shared page tuple rollout.
+28. HNSW insert/vacuum page/WAL rollout.
+29. HNSW build/build_parallel DSM atomic rollout.
+30. DiskANN routine callback/scan owner rollout.
+31. DiskANN insert/routine page tuple and WAL rollout.
+32. DiskANN ambuild/vector datum rollout.
+33. DiskANN options/reloptions cleanup.
+
+### Wave 4: Shared, Root, Quant, Tests, Hardening
+
+34. Storage guard residual minimization.
+35. AM common parallel/stream/explain/cost residual minimization.
+36. Root exports and `src/am/mod.rs` safe facade cleanup.
+37. SIMD lane newtypes and quant fanout.
+38. Test support symbol/timeout helper.
+39. Remote-search test helper rollout.
+40. HNSW/IVF/SPIRE/DiskANN test unsafe cleanup.
+41. Hardening/careful cleanup or explicit proof-harness residual registry.
+42. Crate fixture disposition.
+43. Vendor disposition decision.
+
+### Wave 5: Residual Burnoff
+
+44. Re-run full ledger and generate zero-reducible report.
+45. For every remaining unsafe, require residual registry row:
+    - owning module;
+    - exact invariant;
+    - why safe Rust cannot express it;
+    - proof/validation;
+    - whether future Rust/pgrx/PostgreSQL APIs could remove it.
+46. Final pass over files with 1-5 blocks; delete small stragglers.
+47. Final pass over tests/debug/hardening.
+48. Closeout only when every unsafe row is either removed or registered as
+    irreducible.
+
+## File Coverage Rule
+
+Every file in `artifacts/src-unsafe-block-count-working-tree.log` is covered by
+one or more programs above. The file is not allowed to disappear from tracking
+until its ledger rows are removed or residual-registered.
+
+Primary file groups:
+
+- HNSW: all `src/am/ec_hnsw/*.rs` files in the count artifact.
+- SPIRE: all `src/am/ec_spire/**` files in the count artifact.
+- IVF: all `src/am/ec_ivf/*.rs` files in the count artifact.
+- DiskANN: all `src/am/ec_diskann/*.rs` files in the count artifact.
+- Shared AM/storage/quant/root: all counted files under `src/am/common/`,
+  `src/storage/`, `src/quant/`, `src/lib.rs`, `src/am/mod.rs`,
+  `src/pg18_pgstat_shim.rs`, `src/standalone_pg_backend_stubs.rs`.
+- Tests: all counted files under `src/tests/**`.
+- Non-`src`: all counted files in `repo-unsafe-block-count-working-tree.log`
+  receive an explicit owned/hardening/crate/vendor disposition.
+
+## Packet Acceptance Rules
+
+Each implementation packet must include:
+
+- before/after direct unsafe counts for every touched file;
+- ledger diff for every touched unsafe ID;
+- the contract program and wave/tranche number it advances;
+- explanation of any unsafe moved into a helper and proof that call-site unsafe
+  was deleted at scale;
+- focused compile/lint validation appropriate to the touched modules;
+- focused runtime tests only when callback ordering, tuple visibility, scan
+  ordering, WAL mutation, or vector decoding could drift.
+
+Full benchmark matrices are not part of this plan unless a packet changes
+candidate ordering, scoring math, payload bytes, WAL order, or allocation shape
+on a hot path. When that happens, use the narrowest `ecaz bench suite` evidence
+needed for that behavioral risk.
+
+## Closeout Gate
+
+Task 50 closes only when:
+
+- no unledgered direct unsafe exists under the chosen scope;
+- every original unsafe ledger row is removed or residual-registered;
+- every helper introduced by this task has call-site deletion evidence;
+- every residual unsafe has a named owner and invariant;
+- the final packet reports counts for `src/`, hardening/crates, tests, and
+  vendor disposition separately.
+
+
+Script done on 2026-05-21 21:01:57-07:00 [COMMAND_EXIT_CODE="0"]

@@ -99,7 +99,9 @@ mod tests {
     fn forced_backend_accepts_auto_empty_and_absent() {
         with_simd_env(None, || assert_eq!(forced_backend_from_env(), None));
         with_simd_env(Some(""), || assert_eq!(forced_backend_from_env(), None));
-        with_simd_env(Some(" auto "), || assert_eq!(forced_backend_from_env(), None));
+        with_simd_env(Some(" auto "), || {
+            assert_eq!(forced_backend_from_env(), None)
+        });
     }
 
     #[test]

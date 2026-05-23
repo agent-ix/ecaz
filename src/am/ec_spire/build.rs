@@ -1,9 +1,9 @@
 use std::collections::{HashMap, HashSet};
-use std::ffi::{c_void, CStr};
+use std::ffi::c_void;
 use std::mem::size_of;
 use std::ptr;
 
-use pgrx::{itemptr::item_pointer_get_both, pg_sys, PgBox, PgTupleDesc};
+use pgrx::{pg_sys, PgBox};
 
 use super::assign::{
     build_boundary_leaf_assignment_placements_with_identity, build_primary_leaf_assignments,
@@ -25,7 +25,9 @@ use super::storage::{
 };
 use super::{options, page};
 use super::{quantizer, quantizer::SpireAssignmentPayloadFormat};
-use crate::am::common::{detoast::DetoastedVarlena, training as common_training};
+use crate::am::common::{
+    callback::pg_am_callback, detoast::DetoastedVarlena, training as common_training,
+};
 use crate::quant::prod::ProdQuantizer;
 use crate::storage::page::ItemPointer;
 

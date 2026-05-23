@@ -156,8 +156,9 @@ mod scaffold {
 
         #[test]
         fn miri_assignment_payload_scannability_reports_status_per_variant() {
-            let (scannable, status, _rec) =
-                assignment_payload_scannability(quantizer::SpireAssignmentPayloadFormat::TurboQuant);
+            let (scannable, status, _rec) = assignment_payload_scannability(
+                quantizer::SpireAssignmentPayloadFormat::TurboQuant,
+            );
             assert!(scannable);
             assert_eq!(status, "supported");
 
@@ -166,8 +167,9 @@ mod scaffold {
             assert!(scannable);
             assert_eq!(status, "supported");
 
-            let (scannable, status, rec) =
-                assignment_payload_scannability(quantizer::SpireAssignmentPayloadFormat::PqFastScan);
+            let (scannable, status, rec) = assignment_payload_scannability(
+                quantizer::SpireAssignmentPayloadFormat::PqFastScan,
+            );
             assert!(!scannable);
             assert_eq!(status, "deferred_model_metadata");
             assert!(rec.contains("grouped-PQ"));
@@ -176,11 +178,25 @@ mod scaffold {
         #[test]
         fn miri_boundary_replica_identity_scope_distinguishes_global_local_invalid() {
             assert_eq!(
-                boundary_replica_identity_scope(&[storage::SPIRE_GLOBAL_VEC_ID_DISCRIMINATOR, 9, 9]),
+                boundary_replica_identity_scope(&[
+                    storage::SPIRE_GLOBAL_VEC_ID_DISCRIMINATOR,
+                    9,
+                    9
+                ]),
                 "global",
             );
             assert_eq!(
-                boundary_replica_identity_scope(&[storage::SPIRE_LOCAL_VEC_ID_DISCRIMINATOR, 1, 0, 0, 0, 0, 0, 0, 0]),
+                boundary_replica_identity_scope(&[
+                    storage::SPIRE_LOCAL_VEC_ID_DISCRIMINATOR,
+                    1,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0
+                ]),
                 "node_local",
             );
             assert_eq!(boundary_replica_identity_scope(&[0xff, 1, 2]), "invalid");
@@ -252,24 +268,63 @@ mod scaffold {
 
         #[test]
         fn miri_meta_name_helpers_cover_every_enum_variant() {
-            assert_eq!(consistency_mode_name(meta::SpireConsistencyMode::Strict), "strict");
-            assert_eq!(consistency_mode_name(meta::SpireConsistencyMode::Degraded), "degraded");
+            assert_eq!(
+                consistency_mode_name(meta::SpireConsistencyMode::Strict),
+                "strict"
+            );
+            assert_eq!(
+                consistency_mode_name(meta::SpireConsistencyMode::Degraded),
+                "degraded"
+            );
 
-            assert_eq!(epoch_state_name(meta::SpireEpochState::Building), "building");
-            assert_eq!(epoch_state_name(meta::SpireEpochState::Published), "published");
+            assert_eq!(
+                epoch_state_name(meta::SpireEpochState::Building),
+                "building"
+            );
+            assert_eq!(
+                epoch_state_name(meta::SpireEpochState::Published),
+                "published"
+            );
             assert_eq!(epoch_state_name(meta::SpireEpochState::Retired), "retired");
             assert_eq!(epoch_state_name(meta::SpireEpochState::Failed), "failed");
 
-            assert_eq!(placement_state_name(meta::SpirePlacementState::Available), "available");
-            assert_eq!(placement_state_name(meta::SpirePlacementState::Stale), "stale");
-            assert_eq!(placement_state_name(meta::SpirePlacementState::Unavailable), "unavailable");
-            assert_eq!(placement_state_name(meta::SpirePlacementState::Skipped), "skipped");
+            assert_eq!(
+                placement_state_name(meta::SpirePlacementState::Available),
+                "available"
+            );
+            assert_eq!(
+                placement_state_name(meta::SpirePlacementState::Stale),
+                "stale"
+            );
+            assert_eq!(
+                placement_state_name(meta::SpirePlacementState::Unavailable),
+                "unavailable"
+            );
+            assert_eq!(
+                placement_state_name(meta::SpirePlacementState::Skipped),
+                "skipped"
+            );
 
-            assert_eq!(partition_object_kind_name(storage::SpirePartitionObjectKind::Root), "root");
-            assert_eq!(partition_object_kind_name(storage::SpirePartitionObjectKind::Internal), "internal");
-            assert_eq!(partition_object_kind_name(storage::SpirePartitionObjectKind::Leaf), "leaf");
-            assert_eq!(partition_object_kind_name(storage::SpirePartitionObjectKind::Delta), "delta");
-            assert_eq!(partition_object_kind_name(storage::SpirePartitionObjectKind::TopGraph), "top_graph");
+            assert_eq!(
+                partition_object_kind_name(storage::SpirePartitionObjectKind::Root),
+                "root"
+            );
+            assert_eq!(
+                partition_object_kind_name(storage::SpirePartitionObjectKind::Internal),
+                "internal"
+            );
+            assert_eq!(
+                partition_object_kind_name(storage::SpirePartitionObjectKind::Leaf),
+                "leaf"
+            );
+            assert_eq!(
+                partition_object_kind_name(storage::SpirePartitionObjectKind::Delta),
+                "delta"
+            );
+            assert_eq!(
+                partition_object_kind_name(storage::SpirePartitionObjectKind::TopGraph),
+                "top_graph"
+            );
         }
 
         fn empty_diagnostics() -> SpireActiveSnapshotDiagnostics {
@@ -447,8 +502,7 @@ mod scaffold {
             assert_eq!(action, "split_candidate");
 
             // Below merge: merge_recommended.
-            let (split_rec, merge_rec, action, _reason) =
-                leaf_maintenance_labels(10, split, merge);
+            let (split_rec, merge_rec, action, _reason) = leaf_maintenance_labels(10, split, merge);
             assert!(!split_rec);
             assert!(merge_rec);
             assert_eq!(action, "merge_candidate");

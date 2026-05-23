@@ -73,10 +73,7 @@ mod scaffold {
                 tid(5, 2),
             ];
             sort_and_dedup_item_pointers(&mut tids);
-            assert_eq!(
-                tids,
-                vec![tid(5, 1), tid(5, 2), tid(10, 1), tid(10, 3)],
-            );
+            assert_eq!(tids, vec![tid(5, 1), tid(5, 2), tid(10, 1), tid(10, 3)],);
         }
 
         #[test]
@@ -169,11 +166,12 @@ mod scaffold {
             let (mut chain, gr, bw, sc) = build_chain_with_nodes(&nodes, &[]);
             let phantom = tid(999, 1);
             let tuple = VamanaNodeTuple::placeholder(gr, 0, 0);
-            let err =
-                write_chain_node(&mut chain, gr, bw, sc, phantom, &tuple).expect_err(
-                    "writing to a phantom block must surface an error",
-                );
-            assert!(err.contains("could not find page"), "unexpected error: {err}");
+            let err = write_chain_node(&mut chain, gr, bw, sc, phantom, &tuple)
+                .expect_err("writing to a phantom block must surface an error");
+            assert!(
+                err.contains("could not find page"),
+                "unexpected error: {err}"
+            );
         }
 
         // ---------------- collect_tuple_rewrites tests --------------
@@ -218,7 +216,10 @@ mod scaffold {
             assert!(two_pages.pages().len() > one_page.pages().len());
             let err = collect_tuple_rewrites(&one_page, &two_pages)
                 .expect_err("page-count mismatch must be rejected");
-            assert!(err.contains("page-count mismatch"), "unexpected error: {err}");
+            assert!(
+                err.contains("page-count mismatch"),
+                "unexpected error: {err}"
+            );
         }
 
         #[test]

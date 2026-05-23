@@ -1,0 +1,2 @@
+python3 scripts/unsafe_ledger.py check --ledger reviews/task-50/037-read-stream-prefetch-helper/artifacts/unsafe-ledger-after.jsonl src
+ledger covers 2406 current unsafe rows

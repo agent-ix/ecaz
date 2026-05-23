@@ -1,0 +1,2 @@
+python3 scripts/unsafe_ledger.py check --ledger reviews/task-50/039-ivf-read-stream-visitor/artifacts/unsafe-ledger-after.jsonl src
+ledger covers 2381 current unsafe rows

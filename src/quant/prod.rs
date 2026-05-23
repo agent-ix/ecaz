@@ -269,11 +269,7 @@ impl ProdQuantizer {
             return None;
         }
         let (mse_packed, qjl_packed) = self.split_code_bytes(code_bytes);
-        // SAFETY: runtime feature detection above proves AVX2/FMA, and
-        // `qjl_enabled` ensures this test path supplies QJL payload bytes.
-        Some(unsafe {
-            self.score_ip_from_split_parts_avx2(prepared, gamma, mse_packed, qjl_packed)
-        })
+        self.score_ip_from_split_parts_avx2_checked(prepared, gamma, mse_packed, qjl_packed)
     }
 
     #[cfg(all(any(test, feature = "bench"), target_arch = "aarch64"))]
@@ -289,11 +285,7 @@ impl ProdQuantizer {
             return None;
         }
         let (mse_packed, qjl_packed) = self.split_code_bytes(code_bytes);
-        // SAFETY: runtime feature detection above proves NEON, and
-        // `qjl_enabled` ensures this test path supplies QJL payload bytes.
-        Some(unsafe {
-            self.score_ip_from_split_parts_neon(prepared, gamma, mse_packed, qjl_packed)
-        })
+        self.score_ip_from_split_parts_neon_checked(prepared, gamma, mse_packed, qjl_packed)
     }
 
     pub fn prepare_ip_query_int8_approx_no_qjl_4bit(
@@ -517,17 +509,17 @@ impl ProdQuantizer {
 
         match backend() {
             #[cfg(target_arch = "x86_64")]
-            // SAFETY: `backend()` only selects `Avx2Fma` when AVX2/FMA are
-            // available, and this branch is only reached when QJL is active.
-            SimdBackend::Avx2Fma => unsafe {
-                self.score_ip_from_split_parts_avx2(prepared, gamma, mse_packed, qjl_packed)
-            },
+            SimdBackend::Avx2Fma => self
+                .score_ip_from_split_parts_avx2_checked(prepared, gamma, mse_packed, qjl_packed)
+                .unwrap_or_else(|| {
+                    self.score_ip_from_split_parts_scalar(prepared, gamma, mse_packed, qjl_packed)
+                }),
             #[cfg(target_arch = "aarch64")]
-            // SAFETY: `backend()` only selects `Neon` when NEON is available,
-            // and this branch is only reached when QJL is active.
-            SimdBackend::Neon => unsafe {
-                self.score_ip_from_split_parts_neon(prepared, gamma, mse_packed, qjl_packed)
-            },
+            SimdBackend::Neon => self
+                .score_ip_from_split_parts_neon_checked(prepared, gamma, mse_packed, qjl_packed)
+                .unwrap_or_else(|| {
+                    self.score_ip_from_split_parts_scalar(prepared, gamma, mse_packed, qjl_packed)
+                }),
             SimdBackend::Scalar => {
                 self.score_ip_from_split_parts_scalar(prepared, gamma, mse_packed, qjl_packed)
             }
@@ -764,9 +756,7 @@ impl ProdQuantizer {
         }
         let (mse_a, _) = self.split_code_bytes(code_a);
         let (mse_b, _) = self.split_code_bytes(code_b);
-        // SAFETY: runtime feature detection proves AVX2/FMA and the guard above
-        // restricts this fast path to 3-bit MSE codes.
-        Some(unsafe { self.score_ip_mse_codes_avx2(mse_a, mse_b) })
+        self.score_ip_mse_codes_avx2_checked(mse_a, mse_b)
     }
 
     #[cfg(all(any(test, feature = "bench"), target_arch = "aarch64"))]
@@ -778,9 +768,7 @@ impl ProdQuantizer {
         }
         let (mse_a, _) = self.split_code_bytes(code_a);
         let (mse_b, _) = self.split_code_bytes(code_b);
-        // SAFETY: runtime feature detection proves NEON and the guard above
-        // restricts this fast path to 3-bit MSE codes.
-        Some(unsafe { self.score_ip_mse_codes_neon(mse_a, mse_b) })
+        self.score_ip_mse_codes_neon_checked(mse_a, mse_b)
     }
 
     fn score_ip_mse_codes(&self, mse_a: &[u8], mse_b: &[u8]) -> f32 {
@@ -790,13 +778,13 @@ impl ProdQuantizer {
         if mse_bits(self.original_dim, self.bits) == 3 {
             match backend() {
                 #[cfg(target_arch = "x86_64")]
-                // SAFETY: `backend()` only selects `Avx2Fma` when AVX2/FMA are
-                // available, and the enclosing branch restricts codes to 3 bits.
-                SimdBackend::Avx2Fma => unsafe { self.score_ip_mse_codes_avx2(mse_a, mse_b) },
+                SimdBackend::Avx2Fma => self
+                    .score_ip_mse_codes_avx2_checked(mse_a, mse_b)
+                    .unwrap_or_else(|| self.score_ip_mse_codes_scalar(mse_a, mse_b)),
                 #[cfg(target_arch = "aarch64")]
-                // SAFETY: `backend()` only selects `Neon` when NEON is available,
-                // and the enclosing branch restricts codes to 3 bits.
-                SimdBackend::Neon => unsafe { self.score_ip_mse_codes_neon(mse_a, mse_b) },
+                SimdBackend::Neon => self
+                    .score_ip_mse_codes_neon_checked(mse_a, mse_b)
+                    .unwrap_or_else(|| self.score_ip_mse_codes_scalar(mse_a, mse_b)),
                 SimdBackend::Scalar => self.score_ip_mse_codes_scalar(mse_a, mse_b),
             }
         } else {
@@ -827,6 +815,19 @@ impl ProdQuantizer {
             dim_index += 1;
         }
         mse_sum
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    fn score_ip_mse_codes_avx2_checked(&self, mse_a: &[u8], mse_b: &[u8]) -> Option<f32> {
+        if !std::arch::is_x86_feature_detected!("avx2")
+            || !std::arch::is_x86_feature_detected!("fma")
+            || mse_bits(self.original_dim, self.bits) != 3
+        {
+            return None;
+        }
+        // SAFETY: runtime feature detection proves AVX2/FMA.
+        // SAFETY: the guard above restricts this fast path to 3-bit MSE codes.
+        Some(unsafe { self.score_ip_mse_codes_avx2(mse_a, mse_b) })
     }
 
     #[cfg(target_arch = "x86_64")]
@@ -1018,6 +1019,27 @@ impl ProdQuantizer {
     }
 
     #[cfg(target_arch = "x86_64")]
+    fn score_ip_from_split_parts_avx2_checked(
+        &self,
+        prepared: &PreparedQuery,
+        gamma: f32,
+        mse_packed: &[u8],
+        qjl_packed: &[u8],
+    ) -> Option<f32> {
+        if !std::arch::is_x86_feature_detected!("avx2")
+            || !std::arch::is_x86_feature_detected!("fma")
+            || !qjl_enabled(self.original_dim, self.bits)
+        {
+            return None;
+        }
+        // SAFETY: runtime feature detection proves AVX2/FMA.
+        // SAFETY: `qjl_enabled` ensures callers supply QJL payload bytes for this scoring path.
+        Some(unsafe {
+            self.score_ip_from_split_parts_avx2(prepared, gamma, mse_packed, qjl_packed)
+        })
+    }
+
+    #[cfg(target_arch = "x86_64")]
     #[target_feature(enable = "avx2,fma")]
     unsafe fn score_ip_from_split_parts_avx2(
         &self,
@@ -1196,6 +1218,26 @@ impl ProdQuantizer {
     }
 
     #[cfg(target_arch = "aarch64")]
+    fn score_ip_from_split_parts_neon_checked(
+        &self,
+        prepared: &PreparedQuery,
+        gamma: f32,
+        mse_packed: &[u8],
+        qjl_packed: &[u8],
+    ) -> Option<f32> {
+        if !std::arch::is_aarch64_feature_detected!("neon")
+            || !qjl_enabled(self.original_dim, self.bits)
+        {
+            return None;
+        }
+        // SAFETY: runtime feature detection proves NEON.
+        // SAFETY: `qjl_enabled` ensures callers supply QJL payload bytes for this scoring path.
+        Some(unsafe {
+            self.score_ip_from_split_parts_neon(prepared, gamma, mse_packed, qjl_packed)
+        })
+    }
+
+    #[cfg(target_arch = "aarch64")]
     #[target_feature(enable = "neon")]
     unsafe fn score_ip_from_split_parts_neon(
         &self,
@@ -1321,6 +1363,18 @@ impl ProdQuantizer {
         }
 
         mse_sum + gamma * prepared.qjl_scale * qjl_sum
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    fn score_ip_mse_codes_neon_checked(&self, mse_a: &[u8], mse_b: &[u8]) -> Option<f32> {
+        if !std::arch::is_aarch64_feature_detected!("neon")
+            || mse_bits(self.original_dim, self.bits) != 3
+        {
+            return None;
+        }
+        // SAFETY: runtime feature detection proves NEON.
+        // SAFETY: the guard above restricts this fast path to 3-bit MSE codes.
+        Some(unsafe { self.score_ip_mse_codes_neon(mse_a, mse_b) })
     }
 
     #[cfg(target_arch = "aarch64")]

@@ -1,12 +1,13 @@
 use std::mem::size_of;
+use std::ptr::NonNull;
 
 use pgrx::pg_sys;
 
 use super::{options, page};
 use crate::am::common::callback::{am_callback, pg_am_callback};
 use crate::am::common::cost::{
-    current_planner_cost_constants, strategy_translation_snapshot, PlannerCostConstants,
-    PlannerCostEstimate, PlannerTreeHeightInput, StrategyTranslationSnapshot,
+    current_planner_cost_constants, relation_main_fork_block_count, strategy_translation_snapshot,
+    PlannerCostConstants, PlannerCostEstimate, PlannerTreeHeightInput, StrategyTranslationSnapshot,
 };
 use crate::storage::relation_guard::IndexRelationGuard;
 
@@ -176,15 +177,14 @@ pub(crate) unsafe extern "C-unwind" fn ec_ivf_amtranslatecmptype(
 pub(crate) unsafe fn index_cost_snapshot(index_relation: pg_sys::Relation) -> IndexCostSnapshot {
     // SAFETY: `index_relation` is a live PostgreSQL index relation supplied by
     // a SQL diagnostic wrapper.
-    let metadata = unsafe { page::read_metadata_page(index_relation) };
-    // SAFETY: `index_relation` is live for the duration of the snapshot read.
-    let block_count = unsafe {
-        pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
-    };
+    let metadata = page::read_metadata_page(index_relation);
+    let block_count = relation_main_fork_block_count(index_relation);
     let index_pages = f64::from(block_count);
-    // SAFETY: PostgreSQL relation metadata is valid for an opened index relation.
-    let reltuples = unsafe { (*(*index_relation).rd_rel).reltuples } as f64;
-    // SAFETY: Reads PostgreSQL planner cost GUCs through backend-local state.
+    let index_relation_handle = NonNull::new(index_relation)
+        .unwrap_or_else(|| pgrx::error!("ec_ivf cost snapshot received null index relation"));
+    let reltuples = crate::storage::relation::relation_reltuples_handle(index_relation_handle);
+    // SAFETY: diagnostic snapshot reads planner cost globals in the current
+    // backend to report the same constants the planner would use.
     let constants = unsafe { current_planner_cost_constants() };
     let nprobe = options::resolve_scan_nprobe(metadata.nlists, metadata.nprobe);
     let tree_height = resolved_ivf_tree_height_input();
@@ -231,15 +231,14 @@ pub(crate) unsafe fn index_cost_snapshot(index_relation: pg_sys::Relation) -> In
 unsafe fn compute_amcostestimate(index_relation: pg_sys::Relation) -> PlannerCostEstimate {
     // SAFETY: `index_relation` is a live relation pointer owned by the planner
     // callback guard for the duration of this computation.
-    let metadata = unsafe { page::read_metadata_page(index_relation) };
-    // SAFETY: `index_relation` is live while the planner callback computes cost.
-    let block_count = unsafe {
-        pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
-    };
+    let metadata = page::read_metadata_page(index_relation);
+    let block_count = relation_main_fork_block_count(index_relation);
     let index_pages = f64::from(block_count);
-    // SAFETY: PostgreSQL relation metadata is valid for an opened index relation.
-    let reltuples = unsafe { (*(*index_relation).rd_rel).reltuples } as f64;
-    // SAFETY: Reads PostgreSQL planner cost GUCs through backend-local state.
+    let index_relation_handle = NonNull::new(index_relation)
+        .unwrap_or_else(|| pgrx::error!("ec_ivf cost estimate received null index relation"));
+    let reltuples = crate::storage::relation::relation_reltuples_handle(index_relation_handle);
+    // SAFETY: AM cost estimation runs inside PostgreSQL planner callback
+    // context where backend-local planner cost globals are valid to read.
     let constants = unsafe { current_planner_cost_constants() };
 
     estimate_ivf_cost(&metadata, index_pages, reltuples, constants)

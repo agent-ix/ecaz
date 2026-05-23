@@ -1,5 +1,5 @@
 use std::mem::{offset_of, size_of};
-use std::ptr;
+use std::ptr::{self, NonNull};
 
 use pgrx::{pg_sys, GucContext, GucFlags, GucRegistry, GucSetting};
 
@@ -397,56 +397,51 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_amoptions(
     })
 }
 
-unsafe fn read_string_reloption(
-    rd_options: *mut pg_sys::varlena,
-    offset: i32,
-    name: &str,
-) -> Option<String> {
-    if offset == 0 {
-        return None;
-    }
-
-    // SAFETY: `rd_options` points at PostgreSQL's relation options allocation
-    // and `offset` is an option offset produced by the reloptions parser.
-    let value_ptr = unsafe {
-        rd_options
-            .cast::<u8>()
-            .add(offset as usize)
-            .cast::<std::ffi::c_char>()
-    };
-    // SAFETY: string reloptions are stored as NUL-terminated C strings at the
-    // parsed offset inside `rd_options`.
-    let value = unsafe { std::ffi::CStr::from_ptr(value_ptr) }
-        .to_str()
-        .unwrap_or_else(|e| pgrx::error!("invalid ec_ivf {name} reloption: {e}"));
-    if value.is_empty() {
-        pgrx::error!("invalid ec_ivf {name} reloption: value must not be empty");
-    }
-    Some(value.to_owned())
+struct EcIvfReloptionsView {
+    rd_options: crate::am::common::reloptions::ReloptionsBlob,
 }
 
-pub(super) unsafe fn relation_options(index_relation: pg_sys::Relation) -> EcIvfOptions {
-    // SAFETY: callers pass a live PostgreSQL relation; reading `rd_options` does
-    // not take ownership and PostgreSQL keeps the relcache entry valid here.
-    let rd_options = unsafe { (*index_relation).rd_options };
-    if rd_options.is_null() {
-        return EcIvfOptions::DEFAULT;
+impl EcIvfReloptionsView {
+    fn from_relation(index_relation: NonNull<pg_sys::RelationData>) -> Option<Self> {
+        let rd_options = crate::storage::relation::relation_options_handle(index_relation);
+        let rd_options = NonNull::new(rd_options)?;
+        Some(Self {
+            rd_options: crate::am::common::reloptions::ReloptionsBlob::new(rd_options),
+        })
     }
 
-    // SAFETY: `rd_options` was allocated using the `EcIvfReloptions` layout
-    // registered by `ec_ivf_amoptions`.
-    let reloptions = unsafe { &*rd_options.cast::<EcIvfReloptions>() };
-    // SAFETY: `storage_format_offset` comes from the parsed reloptions struct.
-    let storage_format_reloption = unsafe {
-        read_string_reloption(
-            rd_options,
-            reloptions.storage_format_offset,
-            "storage_format",
+    fn reloptions(&self) -> &EcIvfReloptions {
+        crate::storage::relation::relation_options_layout_ref(self.rd_options.handle())
+    }
+
+    fn read_string_reloption(&self, offset: i32, name: &str) -> Option<String> {
+        self.rd_options
+            .read_string_reloption(offset, "ec_ivf", name)
+    }
+
+    fn to_options(&self) -> EcIvfOptions {
+        let reloptions = self.reloptions();
+        let storage_format_reloption =
+            self.read_string_reloption(reloptions.storage_format_offset, "storage_format");
+        let quantizer_reloption =
+            self.read_string_reloption(reloptions.quantizer_offset, "quantizer");
+        let rerank_reloption = self.read_string_reloption(reloptions.rerank_offset, "rerank");
+
+        build_options_from_reloptions(
+            reloptions,
+            storage_format_reloption,
+            quantizer_reloption,
+            rerank_reloption,
         )
-    };
-    // SAFETY: `quantizer_offset` comes from the parsed reloptions struct.
-    let quantizer_reloption =
-        unsafe { read_string_reloption(rd_options, reloptions.quantizer_offset, "quantizer") };
+    }
+}
+
+fn build_options_from_reloptions(
+    reloptions: &EcIvfReloptions,
+    storage_format_reloption: Option<String>,
+    quantizer_reloption: Option<String>,
+    rerank_reloption: Option<String>,
+) -> EcIvfOptions {
     if let (Some(storage_format), Some(quantizer)) =
         (&storage_format_reloption, &quantizer_reloption)
     {
@@ -462,10 +457,7 @@ pub(super) unsafe fn relation_options(index_relation: pg_sys::Relation) -> EcIvf
         .or(quantizer_reloption)
         .map(|value| StorageFormat::parse_reloption(&value).unwrap_or_else(|e| pgrx::error!("{e}")))
         .unwrap_or(StorageFormat::Auto);
-    // SAFETY: `rerank_offset` comes from the parsed reloptions struct.
-    let rerank = match unsafe {
-        read_string_reloption(rd_options, reloptions.rerank_offset, "rerank")
-    } {
+    let rerank = match rerank_reloption {
         Some(value) => RerankMode::parse_reloption(&value).unwrap_or_else(|e| pgrx::error!("{e}")),
         None => RerankMode::Auto,
     };
@@ -482,4 +474,11 @@ pub(super) unsafe fn relation_options(index_relation: pg_sys::Relation) -> EcIvf
         storage_format,
         rerank,
     }
+}
+
+pub(super) fn relation_options(index_relation: NonNull<pg_sys::RelationData>) -> EcIvfOptions {
+    let Some(reloptions) = EcIvfReloptionsView::from_relation(index_relation) else {
+        return EcIvfOptions::DEFAULT;
+    };
+    reloptions.to_options()
 }

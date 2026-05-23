@@ -1,11 +1,14 @@
-use std::ffi::{c_void, CStr};
+use std::ffi::c_void;
 use std::ptr;
+use std::ptr::NonNull;
 
-use pgrx::{itemptr::item_pointer_get_both, pg_sys, PgBox, PgTupleDesc};
+use pgrx::{pg_sys, PgBox, PgTupleDesc};
 
 use super::quantizer::{self, IvfPqFastScanModel, IvfQuantizer};
 use super::{options, page, training, P_NEW};
-use crate::am::common::{detoast::DetoastedVarlena, training as common_training};
+use crate::am::common::{
+    callback::pg_am_callback, detoast::DetoastedVarlena, training as common_training,
+};
 use crate::quant::prod::ProdQuantizer;
 use crate::storage::{
     buffer_guard::LockedBufferGuard,
@@ -125,53 +128,72 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_ambuild(
     index_relation: pg_sys::Relation,
     index_info: *mut pg_sys::IndexInfo,
 ) -> *mut pg_sys::IndexBuildResult {
-    // SAFETY: PostgreSQL invokes this AM build callback with live heap/index
-    // relations and IndexInfo for the duration of the guarded call.
+    pg_am_callback!({
+        // SAFETY: PostgreSQL invokes ambuild with a live IVF index relation.
+        let index_relation_handle = NonNull::new(index_relation)
+            .unwrap_or_else(|| pgrx::error!("ec_ivf ambuild received null index relation"));
+        let options = options::relation_options(index_relation_handle);
+        options
+            .storage_format
+            .validate_v1_supported()
+            .unwrap_or_else(|e| pgrx::error!("{e}"));
+        options
+            .rerank
+            .validate_v1_supported()
+            .unwrap_or_else(|e| pgrx::error!("{e}"));
+        page::initialize_metadata_page(index_relation, page::MetadataPage::empty(options));
+
+        let indexed_vector_kind = resolve_indexed_vector_kind(heap_relation, index_info, "ambuild");
+        let mut state = BuildState::new(options, indexed_vector_kind);
+        let heap_tuples =
+            table_index_build_scan(heap_relation, index_relation, index_info, &mut state);
+        let index_tuples = if state.scanned_tuples == 0 {
+            0.0
+        } else {
+            let model = state
+                .train_model()
+                .unwrap_or_else(|e| pgrx::error!("ec_ivf centroid training failed: {e}"));
+            let plan = state
+                .stage_build_plan(&model)
+                .unwrap_or_else(|e| pgrx::error!("ec_ivf populated index staging failed: {e}"));
+            flush_build_plan(index_relation, &plan);
+            plan.posting_count() as f64
+        };
+
+        crate::fault::maybe_fail_palloc("ec_ivf ambuild result");
+        let mut result = PgBox::<pg_sys::IndexBuildResult>::alloc0();
+        result.heap_tuples = heap_tuples;
+        result.index_tuples = index_tuples;
+        result.into_pg()
+    })
+}
+
+fn build_state_mut<'a>(state: *mut c_void, context: &str) -> &'a mut BuildState {
+    // SAFETY: `table_index_build_scan` invokes the callback with the
+    // BuildState pointer supplied by `table_index_build_scan` below.
+    unsafe { state.cast::<BuildState>().as_mut() }
+        .unwrap_or_else(|| pgrx::error!("ec_ivf {context} received null build state"))
+}
+
+fn table_index_build_scan(
+    heap_relation: pg_sys::Relation,
+    index_relation: pg_sys::Relation,
+    index_info: *mut pg_sys::IndexInfo,
+    state: &mut BuildState,
+) -> f64 {
+    // SAFETY: PostgreSQL invokes ambuild with live heap/index relations and
+    // IndexInfo; the stack BuildState outlives the synchronous build scan.
     unsafe {
-        pgrx::pgrx_extern_c_guard(|| {
-            let options = options::relation_options(index_relation);
-            options
-                .storage_format
-                .validate_v1_supported()
-                .unwrap_or_else(|e| pgrx::error!("{e}"));
-            options
-                .rerank
-                .validate_v1_supported()
-                .unwrap_or_else(|e| pgrx::error!("{e}"));
-            page::initialize_metadata_page(index_relation, page::MetadataPage::empty(options));
-
-            let indexed_vector_kind =
-                resolve_indexed_vector_kind(heap_relation, index_info, "ambuild");
-            let mut state = BuildState::new(options, indexed_vector_kind);
-            let heap_tuples = pg_sys::table_index_build_scan(
-                heap_relation,
-                index_relation,
-                index_info,
-                false,
-                false,
-                Some(ec_ivf_build_callback),
-                (&mut state as *mut BuildState).cast(),
-                ptr::null_mut(),
-            );
-            let index_tuples = if state.scanned_tuples == 0 {
-                0.0
-            } else {
-                let model = state
-                    .train_model()
-                    .unwrap_or_else(|e| pgrx::error!("ec_ivf centroid training failed: {e}"));
-                let plan = state
-                    .stage_build_plan(&model)
-                    .unwrap_or_else(|e| pgrx::error!("ec_ivf populated index staging failed: {e}"));
-                flush_build_plan(index_relation, &plan);
-                plan.posting_count() as f64
-            };
-
-            crate::fault::maybe_fail_palloc("ec_ivf ambuild result");
-            let mut result = PgBox::<pg_sys::IndexBuildResult>::alloc0();
-            result.heap_tuples = heap_tuples;
-            result.index_tuples = index_tuples;
-            result.into_pg()
-        })
+        pg_sys::table_index_build_scan(
+            heap_relation,
+            index_relation,
+            index_info,
+            false,
+            false,
+            Some(ec_ivf_build_callback),
+            (state as *mut BuildState).cast(),
+            ptr::null_mut(),
+        )
     }
 }
 
@@ -544,26 +566,32 @@ pub(super) unsafe fn flush_build_plan(index_relation: pg_sys::Relation, plan: &I
     debug_assert!(plan.data_page_count() > 0);
     debug_assert_eq!(plan.total_live_tuples(), plan.posting_count() as u64);
 
-    // SAFETY: caller passes the live index relation and a staged plan whose
-    // data pages were built for that relation.
     unsafe { write_data_pages(index_relation, &plan.data_pages) };
     // SAFETY: same live relation; metadata belongs to the staged plan just
     // flushed to disk.
-    unsafe { page::initialize_metadata_page(index_relation, plan.metadata) };
+    page::initialize_metadata_page(index_relation, plan.metadata);
 }
 
 unsafe fn write_data_pages(index_relation: pg_sys::Relation, data_pages: &DataPageChain) {
     for staged_page in data_pages.pages() {
-        // SAFETY: caller passes the live index relation; P_NEW requests a new
-        // main-fork block that is returned locked and zeroed.
-        let buffer = unsafe {
-            LockedBufferGuard::read_main_locked(
-                index_relation,
-                P_NEW,
-                pg_sys::ReadBufferMode::RBM_ZERO_AND_LOCK,
-            )
-        };
-        let buffer = buffer.unwrap_or_else(|| {
+        unsafe { write_data_page(index_relation, staged_page) };
+    }
+}
+
+unsafe fn write_data_page(
+    index_relation: pg_sys::Relation,
+    staged_page: &crate::storage::page::DataPage,
+) {
+    // SAFETY: caller passes the live index relation; P_NEW returns a new locked
+    // zeroed main-fork block, then the generic WAL image owns all page mutation
+    // until `finish`.
+    unsafe {
+        let buffer = LockedBufferGuard::read_main_locked(
+            index_relation,
+            P_NEW,
+            pg_sys::ReadBufferMode::RBM_ZERO_AND_LOCK,
+        )
+        .unwrap_or_else(|| {
             pgrx::error!(
                 "ec_ivf failed to allocate data buffer for block {}",
                 staged_page.block_number()
@@ -571,29 +599,18 @@ unsafe fn write_data_pages(index_relation: pg_sys::Relation, data_pages: &DataPa
         });
 
         let page_size = buffer.page_size();
-        // SAFETY: starts a generic WAL transaction for this live relation.
-        let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
-        // SAFETY: the locked buffer remains pinned/locked through `buffer`;
-        // generic WAL returns a page pointer valid until transaction finish.
-        let page_ptr = unsafe {
-            wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32)
-        };
-        // SAFETY: page_ptr comes from the registered zeroed buffer and
-        // page_size matches that buffer.
-        unsafe { pg_sys::PageInit(page_ptr, page_size, 0) };
+        let mut wal_txn = wal::GenericXLogTxn::start(index_relation);
+        let page_ptr = wal_txn.register_locked_buffer_full_image(&buffer);
+        pg_sys::PageInit(page_ptr, page_size, 0);
 
         for tuple in staged_page.tuples() {
-            // SAFETY: page_ptr is initialized and writable within the active
-            // WAL transaction; tuple bytes remain alive for the call.
-            let offset = unsafe {
-                pg_sys::PageAddItemExtended(
-                    page_ptr,
-                    tuple.as_ptr().cast_mut().cast(),
-                    tuple.len(),
-                    pg_sys::InvalidOffsetNumber,
-                    0,
-                )
-            };
+            let offset = pg_sys::PageAddItemExtended(
+                page_ptr,
+                tuple.as_ptr().cast_mut().cast(),
+                tuple.len(),
+                pg_sys::InvalidOffsetNumber,
+                0,
+            );
             if offset == pg_sys::InvalidOffsetNumber {
                 pgrx::error!(
                     "ec_ivf failed to write tuple to block {}",
@@ -602,9 +619,7 @@ unsafe fn write_data_pages(index_relation: pg_sys::Relation, data_pages: &DataPa
             }
         }
 
-        // SAFETY: commits the generic WAL transaction started above after all
-        // staged tuples have been copied into the registered page.
-        unsafe { wal_txn.finish() };
+        wal_txn.finish();
     }
 }
 
@@ -612,7 +627,7 @@ fn list_id_u32(list_id: usize) -> Result<u32, String> {
     u32::try_from(list_id).map_err(|_| format!("ec_ivf list id {list_id} exceeds u32"))
 }
 
-pub(super) unsafe fn build_index_tuple(
+pub(super) fn build_index_tuple(
     values: *mut pg_sys::Datum,
     isnull: *mut bool,
     heap_tid: ItemPointer,
@@ -624,22 +639,12 @@ pub(super) unsafe fn build_index_tuple(
     if values.is_null() || isnull.is_null() {
         pgrx::error!("ec_ivf {context} received null tuple value arrays");
     }
-    // SAFETY: null was checked above and PostgreSQL provides at least the
-    // first null flag for this single-column AM callback.
-    if unsafe { *isnull } {
-        pgrx::error!("ec_ivf does not support NULL indexed values");
-    }
-
-    // SAFETY: null was checked above and PostgreSQL provides at least the
-    // first datum for this single-column AM callback.
-    let datum = unsafe { *values };
+    let datum = build_index_tuple_datum(values, isnull, context);
     if datum.is_null() {
         pgrx::error!("ec_ivf {context} received a null indexed datum");
     }
 
-    // SAFETY: datum is non-null and points to the indexed vector varlena value
-    // for this callback.
-    let bytes = unsafe { detoasted_varlena_bytes(datum, "indexed vector column") };
+    let bytes = detoasted_varlena_bytes(datum, "indexed vector column");
     match indexed_vector_kind {
         IndexedVectorKind::Ecvector => {
             build_ecvector_tuple(heap_tid, &bytes, storage_format, quant_bits, context)
@@ -647,6 +652,25 @@ pub(super) unsafe fn build_index_tuple(
         IndexedVectorKind::Tqvector => {
             build_tqvector_tuple(heap_tid, &bytes, storage_format, quant_bits, context)
         }
+    }
+}
+
+fn build_index_tuple_datum(
+    values: *mut pg_sys::Datum,
+    isnull: *mut bool,
+    context: &str,
+) -> pg_sys::Datum {
+    // SAFETY: null was checked by caller and PostgreSQL provides at least the
+    // first null flag and datum for this single-column AM callback.
+    unsafe {
+        if *isnull {
+            pgrx::error!("ec_ivf does not support NULL indexed values");
+        }
+        let datum = *values;
+        if datum.is_null() {
+            pgrx::error!("ec_ivf {context} received a null indexed datum");
+        }
+        datum
     }
 }
 
@@ -698,7 +722,7 @@ fn build_tqvector_tuple(
     heap_tid: ItemPointer,
     bytes: &[u8],
     storage_format: options::StorageFormat,
-    quant_bits: u8,
+    _quant_bits: u8,
     context: &str,
 ) -> BuildTuple {
     let (dimensions, bits, seed, gamma, code) = crate::unpack(bytes)
@@ -729,7 +753,7 @@ fn build_tqvector_tuple(
     }
 }
 
-unsafe fn detoasted_varlena_bytes(datum: pg_sys::Datum, label: &str) -> Vec<u8> {
+fn detoasted_varlena_bytes(datum: pg_sys::Datum, label: &str) -> Vec<u8> {
     // SAFETY: caller passes a non-null varlena datum; DetoastedVarlena owns
     // any detoasted copy for the duration of conversion.
     unsafe { DetoastedVarlena::packed_from_datum(datum) }
@@ -737,30 +761,21 @@ unsafe fn detoasted_varlena_bytes(datum: pg_sys::Datum, label: &str) -> Vec<u8> 
         .to_vec()
 }
 
-pub(super) unsafe fn decode_heap_tid(tid: pg_sys::ItemPointer, context: &str) -> ItemPointer {
+pub(super) fn decode_heap_tid(tid: pg_sys::ItemPointer, context: &str) -> ItemPointer {
     if tid.is_null() {
         pgrx::error!("ec_ivf {context} received a null heap tid");
     }
-    // SAFETY: null was checked above; PostgreSQL's ItemPointerData is copied
-    // out before returning the storage-local representation.
-    let (block_number, offset_number) = item_pointer_get_both(unsafe { *tid });
-    ItemPointer {
-        block_number,
-        offset_number,
-    }
+    crate::am::common::pg_ptr::item_pointer(
+        std::ptr::NonNull::new(tid).expect("ec_ivf heap tid should be non-null"),
+    )
 }
 
-pub(super) unsafe fn resolve_indexed_vector_kind(
+pub(super) fn resolve_indexed_vector_kind(
     heap_relation: pg_sys::Relation,
     index_info: *mut pg_sys::IndexInfo,
     context: &str,
 ) -> IndexedVectorKind {
-    if index_info.is_null() {
-        pgrx::error!("ec_ivf {context} received a null IndexInfo");
-    }
-    // SAFETY: null was checked above and PostgreSQL owns IndexInfo for the AM
-    // callback duration.
-    let index_info = unsafe { &*index_info };
+    let index_info = index_info_ref(index_info, context);
     if index_info.ii_NumIndexAttrs != 1 || index_info.ii_NumIndexKeyAttrs != 1 {
         pgrx::error!("ec_ivf currently supports single-column indexes only");
     }
@@ -776,39 +791,40 @@ pub(super) unsafe fn resolve_indexed_vector_kind(
         pgrx::error!("ec_ivf requires a base heap column index key");
     }
 
-    // SAFETY: heap_relation is live for the AM callback; `from_pg_copy`
-    // copies the tuple descriptor pointer contents for safe attribute access.
-    let tuple_desc = unsafe { PgTupleDesc::from_pg_copy((*heap_relation).rd_att) };
+    let tuple_desc = unsafe { heap_relation_tuple_desc(heap_relation, context) };
     let att = tuple_desc
         .get(attnum as usize - 1)
         .expect("resolved indexed attribute should exist");
     if att.attisdropped {
         pgrx::error!("ec_ivf indexed column references a dropped column");
     }
-    // SAFETY: attribute type OID comes from the copied tuple descriptor.
-    unsafe { resolve_indexed_vector_kind_from_type(att.atttypid) }
+    resolve_indexed_vector_kind_from_type(att.atttypid)
         .unwrap_or_else(|| pgrx::error!("ec_ivf indexed column must be ecvector or tqvector"))
 }
 
-unsafe fn resolve_indexed_vector_kind_from_type(
-    type_oid: pg_sys::Oid,
-) -> Option<IndexedVectorKind> {
-    // SAFETY: PostgreSQL accepts a type OID and returns its base type OID.
-    let base_type_oid = unsafe { pg_sys::getBaseType(type_oid) };
-    // SAFETY: PostgreSQL returns a palloc-backed C string or null for the type
-    // name; null is handled below and non-null is freed before returning.
-    let formatted = unsafe { pg_sys::format_type_be(base_type_oid) };
-    if formatted.is_null() {
-        return None;
+fn index_info_ref<'a>(index_info: *mut pg_sys::IndexInfo, context: &str) -> &'a pg_sys::IndexInfo {
+    let Some(index_info) = std::ptr::NonNull::new(index_info) else {
+        pgrx::error!("ec_ivf {context} received a null IndexInfo");
+    };
+    crate::am::common::pg_ptr::index_info(index_info)
+}
+
+unsafe fn heap_relation_tuple_desc(
+    heap_relation: pg_sys::Relation,
+    context: &str,
+) -> PgTupleDesc<'static> {
+    // SAFETY: heap_relation is live for the AM callback; `from_pg_copy`
+    // copies the tuple descriptor pointer contents for safe attribute access.
+    unsafe {
+        let Some(heap_relation) = heap_relation.as_ref() else {
+            pgrx::error!("ec_ivf {context} received a null heap relation");
+        };
+        PgTupleDesc::from_pg_copy(heap_relation.rd_att)
     }
-    // SAFETY: formatted is non-null and points to a NUL-terminated string
-    // allocated by PostgreSQL.
-    let name = unsafe { CStr::from_ptr(formatted) }
-        .to_string_lossy()
-        .into_owned();
-    // SAFETY: formatted was allocated by PostgreSQL for this backend and has
-    // been copied into an owned Rust string above.
-    unsafe { pg_sys::pfree(formatted.cast()) };
+}
+
+fn resolve_indexed_vector_kind_from_type(type_oid: pg_sys::Oid) -> Option<IndexedVectorKind> {
+    let name = crate::storage::type_info::formatted_base_type_name(type_oid)?;
     let type_name = name.rsplit('.').next().unwrap_or(&name).trim_matches('"');
     match type_name {
         "ecvector" => Some(IndexedVectorKind::Ecvector),
@@ -818,23 +834,22 @@ unsafe fn resolve_indexed_vector_kind_from_type(
 }
 
 pub(super) unsafe extern "C-unwind" fn ec_ivf_ambuildempty(index_relation: pg_sys::Relation) {
-    // SAFETY: PostgreSQL invokes this AM callback with a live index relation
-    // that should be initialized as an empty index.
-    unsafe {
-        pgrx::pgrx_extern_c_guard(|| {
-            let options = options::relation_options(index_relation);
-            options
-                .storage_format
-                .validate_v1_supported()
-                .unwrap_or_else(|e| pgrx::error!("{e}"));
-            options
-                .rerank
-                .validate_v1_supported()
-                .unwrap_or_else(|e| pgrx::error!("{e}"));
-            let metadata = page::MetadataPage::empty(options);
-            page::initialize_metadata_page(index_relation, metadata);
-        })
-    }
+    pg_am_callback!({
+        // SAFETY: PostgreSQL invokes ambuildempty with a live IVF index relation.
+        let index_relation_handle = NonNull::new(index_relation)
+            .unwrap_or_else(|| pgrx::error!("ec_ivf ambuildempty received null index relation"));
+        let options = options::relation_options(index_relation_handle);
+        options
+            .storage_format
+            .validate_v1_supported()
+            .unwrap_or_else(|e| pgrx::error!("{e}"));
+        options
+            .rerank
+            .validate_v1_supported()
+            .unwrap_or_else(|e| pgrx::error!("{e}"));
+        let metadata = page::MetadataPage::empty(options);
+        page::initialize_metadata_page(index_relation, metadata);
+    })
 }
 
 #[cfg(test)]

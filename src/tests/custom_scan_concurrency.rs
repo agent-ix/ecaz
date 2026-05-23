@@ -65,13 +65,9 @@
         .expect("coordinator idle-timeout leaf pid query should succeed")
         .expect("coordinator idle-timeout leaf pids should exist");
 
-        // SAFETY: This pg_test fixture owns the Postgres objects and test-only debug state for this boundary, and keeps the relevant relation, slot, or guard alive for the call.
-
-        unsafe {
-            for pid in &coord_leaf_pids {
+        for pid in &coord_leaf_pids {
                 am::debug_spire_rewrite_placement_node(index_oid, *pid as u64, 2);
             }
-        }
         let register_result = Spi::get_one::<bool>(&format!(
             "SELECT ec_spire_register_remote_node_descriptor(\
                      '{}'::oid, 2, 108, 'spire/remote/customscan/idle_timeout', \
@@ -241,13 +237,9 @@
         .expect("coordinator remote-restart leaf pid query should succeed")
         .expect("coordinator remote-restart leaf pids should exist");
 
-        // SAFETY: This pg_test fixture owns the Postgres objects and test-only debug state for this boundary, and keeps the relevant relation, slot, or guard alive for the call.
-
-        unsafe {
-            for pid in &coord_leaf_pids {
+        for pid in &coord_leaf_pids {
                 am::debug_spire_rewrite_placement_node(index_oid, *pid as u64, 2);
             }
-        }
         let register_result = Spi::get_one::<bool>(&format!(
             "SELECT ec_spire_register_remote_node_descriptor(\
                      '{}'::oid, 2, 109, 'spire/remote/customscan/remote_restart', \
@@ -470,13 +462,9 @@
         .expect("coordinator-drop leaf pid query should succeed")
         .expect("coordinator-drop leaf pids should exist");
 
-        // SAFETY: This pg_test fixture owns the Postgres objects and test-only debug state for this boundary, and keeps the relevant relation, slot, or guard alive for the call.
-
-        unsafe {
-            for pid in &coord_leaf_pids {
+        for pid in &coord_leaf_pids {
                 am::debug_spire_rewrite_placement_node(index_oid, *pid as u64, 2);
             }
-        }
         let register_result = Spi::get_one::<bool>(&format!(
             "SELECT ec_spire_register_remote_node_descriptor(\
                      '{}'::oid, 2, 111, 'spire/remote/customscan/coord_drop', \

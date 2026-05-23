@@ -26,7 +26,7 @@
 
         let index_oid = index_oid("ec_spire_epoch_cleanup_run_idx");
         // SAFETY: This pg_test fixture owns the Postgres objects and test-only debug state for this boundary, and keeps the relevant relation, slot, or guard alive for the call.
-        let aged = unsafe { am::debug_spire_age_retired_epoch_manifests(index_oid, 1) };
+        let aged = am::debug_spire_age_retired_epoch_manifests(index_oid, 1);
         assert!(aged >= 3);
 
         let pre_tuple_count = Spi::get_one::<i64>(
@@ -224,7 +224,7 @@
 
         let index_oid = index_oid("ec_spire_epoch_snapshot_sql_idx");
         // SAFETY: This pg_test fixture owns the Postgres objects and test-only debug state for this boundary, and keeps the relevant relation, slot, or guard alive for the call.
-        let stats = unsafe { am::debug_spire_vacuum_remove_heap_tids(index_oid, &[]) };
+        let stats = am::debug_spire_vacuum_remove_heap_tids(index_oid, &[]);
         assert_eq!(stats.tuples_removed, 0.0);
         assert_eq!(stats.num_index_tuples, 3.0);
 
@@ -940,13 +940,13 @@
         let index_oid = index_oid("ec_spire_vacuum_delta_idx");
         let deleted_tid = heap_tid_for_row("ec_spire_vacuum_delta", 2);
         // SAFETY: This pg_test fixture owns the Postgres objects and test-only debug state for this boundary, and keeps the relevant relation, slot, or guard alive for the call.
-        let stats = unsafe { am::debug_spire_vacuum_remove_heap_tids(index_oid, &[deleted_tid]) };
+        let stats = am::debug_spire_vacuum_remove_heap_tids(index_oid, &[deleted_tid]);
 
         assert_eq!(stats.tuples_removed, 1.0);
         assert_eq!(stats.num_index_tuples, 1.0);
         let (active_epoch, next_pid, next_local_vec_seq) =
             // SAFETY: This pg_test fixture owns the Postgres objects and test-only debug state for this boundary, and keeps the relevant relation, slot, or guard alive for the call.
-            unsafe { am::debug_spire_root_control(index_oid) };
+            am::debug_spire_root_control(index_oid);
         assert_eq!(active_epoch, 3);
         assert_eq!(next_pid, 5);
         assert_eq!(next_local_vec_seq, 3);
@@ -996,13 +996,13 @@
 
         let index_oid = index_oid("ec_spire_vacuum_no_delta_idx");
         // SAFETY: This pg_test fixture owns the Postgres objects and test-only debug state for this boundary, and keeps the relevant relation, slot, or guard alive for the call.
-        let stats = unsafe { am::debug_spire_vacuum_remove_heap_tids(index_oid, &[]) };
+        let stats = am::debug_spire_vacuum_remove_heap_tids(index_oid, &[]);
 
         assert_eq!(stats.tuples_removed, 0.0);
         assert_eq!(stats.num_index_tuples, 2.0);
         let (active_epoch, next_pid, next_local_vec_seq) =
             // SAFETY: This pg_test fixture owns the Postgres objects and test-only debug state for this boundary, and keeps the relevant relation, slot, or guard alive for the call.
-            unsafe { am::debug_spire_root_control(index_oid) };
+            am::debug_spire_root_control(index_oid);
         assert_eq!(active_epoch, 1);
         assert_eq!(next_pid, 4);
         assert_eq!(next_local_vec_seq, 3);
@@ -1055,13 +1055,13 @@
 
         // SAFETY: This pg_test fixture owns the Postgres objects and test-only debug state for this boundary, and keeps the relevant relation, slot, or guard alive for the call.
 
-        let stats = unsafe { am::debug_spire_vacuum_remove_heap_tids(index_oid, &[]) };
+        let stats = am::debug_spire_vacuum_remove_heap_tids(index_oid, &[]);
 
         assert_eq!(stats.tuples_removed, 0.0);
         assert_eq!(stats.num_index_tuples, 3.0);
         let (active_epoch, next_pid, next_local_vec_seq) =
             // SAFETY: This pg_test fixture owns the Postgres objects and test-only debug state for this boundary, and keeps the relevant relation, slot, or guard alive for the call.
-            unsafe { am::debug_spire_root_control(index_oid) };
+            am::debug_spire_root_control(index_oid);
         assert_eq!(active_epoch, 3);
         assert_eq!(next_pid, 5);
         assert_eq!(next_local_vec_seq, 4);
@@ -1115,13 +1115,13 @@
         let index_oid = index_oid("ec_spire_vacuum_mixed_delta_idx");
         let deleted_tid = heap_tid_for_row("ec_spire_vacuum_mixed_delta", 1);
         // SAFETY: This pg_test fixture owns the Postgres objects and test-only debug state for this boundary, and keeps the relevant relation, slot, or guard alive for the call.
-        let stats = unsafe { am::debug_spire_vacuum_remove_heap_tids(index_oid, &[deleted_tid]) };
+        let stats = am::debug_spire_vacuum_remove_heap_tids(index_oid, &[deleted_tid]);
 
         assert_eq!(stats.tuples_removed, 1.0);
         assert_eq!(stats.num_index_tuples, 2.0);
         let (active_epoch, next_pid, next_local_vec_seq) =
             // SAFETY: This pg_test fixture owns the Postgres objects and test-only debug state for this boundary, and keeps the relevant relation, slot, or guard alive for the call.
-            unsafe { am::debug_spire_root_control(index_oid) };
+            am::debug_spire_root_control(index_oid);
         assert_eq!(active_epoch, 4);
         assert_eq!(next_pid, 5);
         assert_eq!(next_local_vec_seq, 4);
@@ -1194,7 +1194,7 @@
         let index_oid = index_oid(INDEX_NAME);
         let (active_epoch, next_pid, next_local_vec_seq) =
             // SAFETY: This pg_test fixture owns the Postgres objects and test-only debug state for this boundary, and keeps the relevant relation, slot, or guard alive for the call.
-            unsafe { am::debug_spire_root_control(index_oid) };
+            am::debug_spire_root_control(index_oid);
         assert_eq!(heap_count, 2);
         assert_eq!(active_epoch, 3);
         assert_eq!(next_pid, 4);
@@ -1468,7 +1468,7 @@
         let index_oid = index_oid(INDEX_NAME);
         let (active_epoch, next_pid, next_local_vec_seq) =
             // SAFETY: This pg_test fixture owns the Postgres objects and test-only debug state for this boundary, and keeps the relevant relation, slot, or guard alive for the call.
-            unsafe { am::debug_spire_root_control(index_oid) };
+            am::debug_spire_root_control(index_oid);
         assert_eq!(heap_count, 3);
         assert_eq!(active_epoch, 4);
         assert_eq!(next_pid, 5);

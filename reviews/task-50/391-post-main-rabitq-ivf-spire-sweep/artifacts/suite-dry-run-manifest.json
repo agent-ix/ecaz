@@ -1,0 +1,189 @@
+{
+  "suite": "task50-post-main-rabitq-ivf-spire-local",
+  "schema_version": 1,
+  "config": "reviews/task-50/391-post-main-rabitq-ivf-spire-sweep/artifacts/rabitq-ivf-spire-local-suite.json",
+  "config_sha256": "d6636965582aedcb4f4b6b2cdc126f06d9964a68b46c850ee16d392a052a04eb",
+  "dry_run": true,
+  "generated_at_unix_ms": 1779421973380,
+  "connection": {
+    "database": "tqvector_bench",
+    "host": "localhost",
+    "port": 28818,
+    "user": null,
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "ivf-rabitq-10k-recall-k10",
+      "kind": "recall",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--host",
+        "localhost",
+        "--port",
+        "28818",
+        "bench",
+        "recall",
+        "--prefix",
+        "ec_real_10k_ivfrabitq",
+        "--profile",
+        "ec_ivf",
+        "--k",
+        "10",
+        "--sweep",
+        "8,16",
+        "--queries-limit",
+        "50",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--log-output",
+        "reviews/task-50/391-post-main-rabitq-ivf-spire-sweep/artifacts/ivf-rabitq-10k-recall-k10.log"
+      ],
+      "selected": true,
+      "tags": [
+        "ivf",
+        "rabitq",
+        "recall"
+      ],
+      "expected_artifacts": [
+        "reviews/task-50/391-post-main-rabitq-ivf-spire-sweep/artifacts/ivf-rabitq-10k-recall-k10.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "ivf-rabitq-10k-latency-k10-c1",
+      "kind": "latency",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--host",
+        "localhost",
+        "--port",
+        "28818",
+        "bench",
+        "latency",
+        "--prefix",
+        "ec_real_10k_ivfrabitq",
+        "--profile",
+        "ec_ivf",
+        "--k",
+        "10",
+        "--concurrency",
+        "1",
+        "--iterations",
+        "50",
+        "--sweep",
+        "8,16",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--memory-sample-interval-ms",
+        "25",
+        "--log-output",
+        "reviews/task-50/391-post-main-rabitq-ivf-spire-sweep/artifacts/ivf-rabitq-10k-latency-k10-c1.log"
+      ],
+      "selected": true,
+      "tags": [
+        "ivf",
+        "rabitq",
+        "latency"
+      ],
+      "expected_artifacts": [
+        "reviews/task-50/391-post-main-rabitq-ivf-spire-sweep/artifacts/ivf-rabitq-10k-latency-k10-c1.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "spire-rabitq-10k-recall-k10",
+      "kind": "recall",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--host",
+        "localhost",
+        "--port",
+        "28818",
+        "bench",
+        "recall",
+        "--prefix",
+        "ec_real_10k_spirerabitq",
+        "--profile",
+        "ec_spire",
+        "--k",
+        "10",
+        "--sweep",
+        "8,16",
+        "--queries-limit",
+        "50",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--log-output",
+        "reviews/task-50/391-post-main-rabitq-ivf-spire-sweep/artifacts/spire-rabitq-10k-recall-k10.log"
+      ],
+      "selected": true,
+      "tags": [
+        "spire",
+        "rabitq",
+        "recall"
+      ],
+      "expected_artifacts": [
+        "reviews/task-50/391-post-main-rabitq-ivf-spire-sweep/artifacts/spire-rabitq-10k-recall-k10.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "spire-rabitq-10k-latency-k10-c1",
+      "kind": "latency",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--host",
+        "localhost",
+        "--port",
+        "28818",
+        "bench",
+        "latency",
+        "--prefix",
+        "ec_real_10k_spirerabitq",
+        "--profile",
+        "ec_spire",
+        "--k",
+        "10",
+        "--concurrency",
+        "1",
+        "--iterations",
+        "50",
+        "--sweep",
+        "8,16",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--memory-sample-interval-ms",
+        "25",
+        "--log-output",
+        "reviews/task-50/391-post-main-rabitq-ivf-spire-sweep/artifacts/spire-rabitq-10k-latency-k10-c1.log"
+      ],
+      "selected": true,
+      "tags": [
+        "spire",
+        "rabitq",
+        "latency"
+      ],
+      "expected_artifacts": [
+        "reviews/task-50/391-post-main-rabitq-ivf-spire-sweep/artifacts/spire-rabitq-10k-latency-k10-c1.log"
+      ],
+      "status": "dry-run"
+    }
+  ]
+}

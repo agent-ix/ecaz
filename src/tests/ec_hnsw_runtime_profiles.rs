@@ -1,12 +1,3 @@
-    macro_rules! hnsw_runtime_debug {
-        ($call:expr) => {{
-            // SAFETY: These pg_test fixtures create the referenced HNSW index
-            // before invoking test-only runtime/profile debug helpers for that
-            // index and query vector.
-            unsafe { $call }
-        }};
-    }
-
     #[pg_extern]
     fn ec_hnsw_debug_pack_f32_bytea(values: Vec<f32>) -> Vec<u8> {
         let mut bytes = Vec::with_capacity(values.len() * std::mem::size_of::<f32>());
@@ -421,7 +412,7 @@
     }
 
     fn observed_heap_tids_for_query(index_oid: pg_sys::Oid, query: Vec<f32>) -> Vec<(u32, u16)> {
-        hnsw_runtime_debug!(am::debug_gettuple_scan_heap_tids_with_scores(index_oid, query))
+        am::debug_gettuple_scan_heap_tids_with_scores(index_oid, query)
             .into_iter()
             .map(|(heap_tid, _score)| heap_tid)
             .collect()
@@ -498,13 +489,14 @@
         let _scope_guard = scope
             .map(|value| ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_EXACT_TRAVERSAL_SCOPE", value));
         let index_oid = create_pq_fastscan_runtime_fixture(table_name, index_name);
-        let observed = hnsw_runtime_debug!(am::debug_gettuple_scan_heap_tids_with_score_comparisons(
-                index_oid,
-                pq_fastscan_runtime_query(),
-            ));
-        let emitted_scores = hnsw_runtime_debug!(am::debug_gettuple_scan_heap_tids_with_scores(index_oid, pq_fastscan_runtime_query()))
-        .into_iter()
-        .collect::<HashMap<_, _>>();
+        let observed = am::debug_gettuple_scan_heap_tids_with_score_comparisons(
+            index_oid,
+            pq_fastscan_runtime_query(),
+        );
+        let emitted_scores =
+            am::debug_gettuple_scan_heap_tids_with_scores(index_oid, pq_fastscan_runtime_query())
+                .into_iter()
+                .collect::<HashMap<_, _>>();
         (observed, emitted_scores)
     }
 
@@ -525,13 +517,14 @@
         } else {
             create_pq_fastscan_runtime_fixture(table_name, index_name)
         };
-        let observed = hnsw_runtime_debug!(am::debug_gettuple_scan_heap_tids_with_score_comparisons(
-                index_oid,
-                pq_fastscan_runtime_query(),
-            ));
-        let emitted_scores = hnsw_runtime_debug!(am::debug_gettuple_scan_heap_tids_with_scores(index_oid, pq_fastscan_runtime_query()))
-        .into_iter()
-        .collect::<HashMap<_, _>>();
+        let observed = am::debug_gettuple_scan_heap_tids_with_score_comparisons(
+            index_oid,
+            pq_fastscan_runtime_query(),
+        );
+        let emitted_scores =
+            am::debug_gettuple_scan_heap_tids_with_scores(index_oid, pq_fastscan_runtime_query())
+                .into_iter()
+                .collect::<HashMap<_, _>>();
         (observed, emitted_scores)
     }
 
@@ -786,9 +779,9 @@
         );
 
         let (_block_count, _m, _ef_construction, mut metadata) =
-            hnsw_runtime_debug!(am::debug_index_metadata(index_oid));
+            am::debug_index_metadata(index_oid);
         metadata.payload_flags &= !am::page::PAYLOAD_FLAG_BINARY_SIDECAR;
-        hnsw_runtime_debug!(am::debug_update_index_metadata(index_oid, metadata));
+        am::debug_update_index_metadata(index_oid, metadata);
 
         assert_eq!(
             fetch_pq_fastscan_index_runtime_text(index_oid, "pq_fastscan_traversal_score_mode")
@@ -975,9 +968,9 @@
         );
 
         let query = pq_fastscan_runtime_query();
-        let observed = hnsw_runtime_debug!(am::debug_gettuple_scan_heap_tids_with_score_comparisons(index_oid, query.clone()));
+        let observed = am::debug_gettuple_scan_heap_tids_with_score_comparisons(index_oid, query.clone());
         let emitted_scores =
-            hnsw_runtime_debug!(am::debug_gettuple_scan_heap_tids_with_scores(index_oid, query.clone()))
+            am::debug_gettuple_scan_heap_tids_with_scores(index_oid, query.clone())
                 .into_iter()
                 .collect::<HashMap<_, _>>();
         let exact_scores = (1..=16)
@@ -1084,10 +1077,10 @@
             Some("default_heap_f32_with_build_source_column"),
             "the default source-backed fixture should report that heap_f32 came from build_source_column",
         );
-        let default_observed = hnsw_runtime_debug!(am::debug_gettuple_scan_heap_tids_with_score_comparisons(
-                default_index_oid,
-                pq_fastscan_runtime_query(),
-            ));
+        let default_observed = am::debug_gettuple_scan_heap_tids_with_score_comparisons(
+            default_index_oid,
+            pq_fastscan_runtime_query(),
+        );
 
         let _rerank_guard = ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_RERANK_MODE", "heap_f32");
         let explicit_index_oid = create_pq_fastscan_runtime_fixture(
@@ -1109,10 +1102,10 @@
             Some("env_override"),
             "the explicit heap override fixture should report that heap_f32 came from the env override",
         );
-        let explicit_heap_observed = hnsw_runtime_debug!(am::debug_gettuple_scan_heap_tids_with_score_comparisons(
-                explicit_index_oid,
-                pq_fastscan_runtime_query(),
-            ));
+        let explicit_heap_observed = am::debug_gettuple_scan_heap_tids_with_score_comparisons(
+            explicit_index_oid,
+            pq_fastscan_runtime_query(),
+        );
 
         let default_scores = default_observed
             .into_iter()
@@ -1252,13 +1245,14 @@
         let index_name = "ec_hnsw_pq_fastscan_runtime_persisted_heap_rerank_bytea_idx";
         let index_oid =
             create_pq_fastscan_runtime_fixture_with_persisted_source_raw(table_name, index_name);
-        let observed = hnsw_runtime_debug!(am::debug_gettuple_scan_heap_tids_with_score_comparisons(
-                index_oid,
-                pq_fastscan_runtime_query(),
-            ));
-        let emitted_scores = hnsw_runtime_debug!(am::debug_gettuple_scan_heap_tids_with_scores(index_oid, pq_fastscan_runtime_query()))
-        .into_iter()
-        .collect::<HashMap<_, _>>();
+        let observed = am::debug_gettuple_scan_heap_tids_with_score_comparisons(
+            index_oid,
+            pq_fastscan_runtime_query(),
+        );
+        let emitted_scores =
+            am::debug_gettuple_scan_heap_tids_with_scores(index_oid, pq_fastscan_runtime_query())
+                .into_iter()
+                .collect::<HashMap<_, _>>();
         let query = pq_fastscan_runtime_query();
         let exact_scores = (1..=16)
             .map(|id| {
@@ -1360,7 +1354,7 @@
             grouped_traversal_budgeted_expansions,
             grouped_traversal_budgeted_candidates,
             grouped_traversal_budgeted_exact_candidates,
-        ) = hnsw_runtime_debug!(am::debug_profile_ordered_scan(index_oid, pq_fastscan_runtime_query()));
+        ) = am::debug_profile_ordered_scan(index_oid, pq_fastscan_runtime_query());
 
         assert!(
             grouped_traversal_approx_score_calls > 0
@@ -1444,7 +1438,7 @@
             grouped_traversal_budgeted_expansions,
             grouped_traversal_budgeted_candidates,
             grouped_traversal_budgeted_exact_candidates,
-        ) = hnsw_runtime_debug!(am::debug_profile_ordered_scan(index_oid, pq_fastscan_binary_runtime_query()));
+        ) = am::debug_profile_ordered_scan(index_oid, pq_fastscan_binary_runtime_query());
 
         assert!(
             result_count > 0,
@@ -1488,7 +1482,7 @@
             grouped_rerank_heap_fetch_elapsed_us,
             grouped_rerank_heap_decode_elapsed_us,
             grouped_rerank_heap_dot_elapsed_us,
-        ) = hnsw_runtime_debug!(am::debug_grouped_rerank_profile(index_oid, pq_fastscan_runtime_query(), 10));
+        ) = am::debug_grouped_rerank_profile(index_oid, pq_fastscan_runtime_query(), 10);
 
         assert!(
             result_count > 0,
@@ -1536,7 +1530,7 @@
             grouped_rerank_heap_fetch_elapsed_us,
             grouped_rerank_heap_decode_elapsed_us,
             grouped_rerank_heap_dot_elapsed_us,
-        ) = hnsw_runtime_debug!(am::debug_grouped_rerank_profile(index_oid, pq_fastscan_runtime_query(), 10));
+        ) = am::debug_grouped_rerank_profile(index_oid, pq_fastscan_runtime_query(), 10);
 
         assert!(
             result_count > 0,
@@ -1584,7 +1578,7 @@
             grouped_rerank_heap_fetch_elapsed_us,
             grouped_rerank_heap_decode_elapsed_us,
             grouped_rerank_heap_dot_elapsed_us,
-        ) = hnsw_runtime_debug!(am::debug_grouped_rerank_profile(index_oid, pq_fastscan_binary_runtime_query(), 10));
+        ) = am::debug_grouped_rerank_profile(index_oid, pq_fastscan_binary_runtime_query(), 10);
 
         assert!(
             result_count > 0,
@@ -1631,7 +1625,7 @@
             grouped_rerank_heap_fetch_elapsed_us,
             grouped_rerank_heap_decode_elapsed_us,
             grouped_rerank_heap_dot_elapsed_us,
-        ) = hnsw_runtime_debug!(am::debug_grouped_rerank_profile(index_oid, pq_fastscan_binary_runtime_query(), 10));
+        ) = am::debug_grouped_rerank_profile(index_oid, pq_fastscan_binary_runtime_query(), 10);
 
         assert!(
             result_count > 0,
@@ -1679,7 +1673,7 @@
             grouped_rerank_heap_fetch_elapsed_us,
             grouped_rerank_heap_decode_elapsed_us,
             grouped_rerank_heap_dot_elapsed_us,
-        ) = hnsw_runtime_debug!(am::debug_grouped_rerank_profile(index_oid, pq_fastscan_binary_runtime_query(), 10));
+        ) = am::debug_grouped_rerank_profile(index_oid, pq_fastscan_binary_runtime_query(), 10);
 
         assert!(
             result_count > 0,
@@ -1725,7 +1719,7 @@
             grouped_rerank_heap_fetch_elapsed_us,
             grouped_rerank_heap_decode_elapsed_us,
             grouped_rerank_heap_dot_elapsed_us,
-        ) = hnsw_runtime_debug!(am::debug_grouped_rerank_profile(index_oid, pq_fastscan_binary_runtime_query(), 10));
+        ) = am::debug_grouped_rerank_profile(index_oid, pq_fastscan_binary_runtime_query(), 10);
 
         assert!(
             result_count > 0,
@@ -1759,16 +1753,17 @@
         let index_oid = create_turboquant_binary_runtime_fixture_with_persisted_source_raw(
             table_name, index_name,
         );
-        let observed = hnsw_runtime_debug!(am::debug_gettuple_scan_heap_tids_with_score_comparisons(
+        let observed = am::debug_gettuple_scan_heap_tids_with_score_comparisons(
+            index_oid,
+            pq_fastscan_binary_runtime_query(),
+        );
+        let emitted_scores =
+            am::debug_gettuple_scan_heap_tids_with_scores(
                 index_oid,
                 pq_fastscan_binary_runtime_query(),
-            ));
-        let emitted_scores = hnsw_runtime_debug!(am::debug_gettuple_scan_heap_tids_with_scores(
-                index_oid,
-                pq_fastscan_binary_runtime_query(),
-            ))
-        .into_iter()
-        .collect::<HashMap<_, _>>();
+            )
+            .into_iter()
+            .collect::<HashMap<_, _>>();
         let query = pq_fastscan_binary_runtime_query();
         let rerank_scores = (1..=16)
             .map(|id| {
@@ -1893,7 +1888,7 @@
 
         assert!(reloptions_for_index().contains(&"rerank_source_column=source_raw".to_string()));
         assert_matches_expected(
-            hnsw_runtime_debug!(am::debug_gettuple_scan_heap_tids_with_score_comparisons(index_oid, query.clone())),
+            am::debug_gettuple_scan_heap_tids_with_score_comparisons(index_oid, query.clone()),
             &rerank_scores,
             &build_source_scores,
             "persisted TurboQuant rerank_source_column",
@@ -1908,7 +1903,7 @@
             "RESET should remove rerank_source_column from reloptions",
         );
         assert_matches_expected(
-            hnsw_runtime_debug!(am::debug_gettuple_scan_heap_tids_with_score_comparisons(index_oid, query.clone())),
+            am::debug_gettuple_scan_heap_tids_with_score_comparisons(index_oid, query.clone()),
             &build_source_scores,
             &rerank_scores,
             "reset TurboQuant rerank_source_column",
@@ -1920,7 +1915,7 @@
         .expect("ALTER INDEX SET should restore the persisted rerank source reloption");
         assert!(reloptions_for_index().contains(&"rerank_source_column=source_raw".to_string()));
         assert_matches_expected(
-            hnsw_runtime_debug!(am::debug_gettuple_scan_heap_tids_with_score_comparisons(index_oid, query)),
+            am::debug_gettuple_scan_heap_tids_with_score_comparisons(index_oid, query),
             &rerank_scores,
             &build_source_scores,
             "restored TurboQuant rerank_source_column",
@@ -2319,7 +2314,7 @@
             "ec_hnsw_turboquant_invalid_exact_score_mode_idx",
         );
 
-        let _ = hnsw_runtime_debug!(am::debug_profile_ordered_scan(index_oid, pq_fastscan_binary_runtime_query()));
+        let _ = am::debug_profile_ordered_scan(index_oid, pq_fastscan_binary_runtime_query());
     }
 
     #[pg_test]
@@ -2386,7 +2381,7 @@
             grouped_traversal_budgeted_expansions,
             grouped_traversal_budgeted_candidates,
             grouped_traversal_budgeted_exact_candidates,
-        ) = hnsw_runtime_debug!(am::debug_profile_ordered_scan(index_oid, pq_fastscan_runtime_query()));
+        ) = am::debug_profile_ordered_scan(index_oid, pq_fastscan_runtime_query());
 
         assert!(
             grouped_traversal_approx_score_calls > 0

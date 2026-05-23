@@ -1,0 +1,43 @@
+Script started on 2026-05-20 07:45:12-07:00 [<not executed on terminal>]
+ 158 src/am/ec_hnsw/scan.rs
+ 139 src/am/ec_hnsw/build_parallel.rs
+ 135 src/am/ec_hnsw/scan_debug.rs
+ 100 src/am/ec_spire/dml_frontdoor/mod.rs
+  93 src/am/ec_hnsw/insert.rs
+  90 src/am/ec_ivf/page.rs
+  69 src/am/ec_ivf/scan.rs
+  68 src/am/ec_hnsw/vacuum.rs
+  64 src/am/ec_diskann/routine.rs
+  58 src/am/ec_spire/page.rs
+  56 src/am/ec_hnsw/graph.rs
+  52 src/am/ec_hnsw/source.rs
+  52 src/am/ec_spire/storage/relation_store.rs
+  50 src/am/ec_diskann/insert.rs
+  50 src/am/ec_hnsw/shared.rs
+  48 src/am/ec_spire/coordinator/hierarchy_snapshots.rs
+  43 src/quant/hadamard.rs
+  42 src/am/ec_diskann/ambuild.rs
+  42 src/am/ec_spire/coordinator/snapshots.rs
+  42 src/lib.rs
+  40 src/tests/mod.rs
+  38 src/am/common/parallel.rs
+  38 src/am/ec_spire/coordinator/debug.rs
+  37 src/am/ec_spire/custom_scan/planner.rs
+  35 src/am/ec_spire/scan/relation.rs
+  33 src/am/ec_hnsw/build.rs
+  31 src/am/ec_spire/vacuum/mod.rs
+  24 src/am/ec_diskann/scan_state.rs
+  24 src/am/ec_spire/coordinator/remote_candidates/scan_output.rs
+  23 src/am/ec_ivf/build.rs
+  23 src/am/ec_ivf/vacuum.rs
+  23 src/am/ec_spire/custom_scan/plan_private.rs
+  20 src/am/ec_ivf/insert.rs
+  20 src/am/ec_spire/coordinator/maintenance.rs
+  20 src/am/ec_spire/custom_scan/dml.rs
+  20 src/am/ec_spire/insert.rs
+  20 src/storage/buffer_guard.rs
+  19 src/am/ec_spire/build/drafts.rs
+  19 src/am/ec_spire/custom_scan/cost_helpers.rs
+  18 src/am/ec_spire/cost/mod.rs
+
+Script done on 2026-05-20 07:45:12-07:00 [COMMAND_EXIT_CODE="0"]

@@ -1,0 +1,86 @@
+Script started on 2026-05-21 19:27:24-07:00 [<not executed on terminal>]
+diff --git a/src/am/ec_spire/coordinator/hierarchy_snapshots.rs b/src/am/ec_spire/coordinator/hierarchy_snapshots.rs
+index 1f8b74891..8c912afef 100644
+--- a/src/am/ec_spire/coordinator/hierarchy_snapshots.rs
++++ b/src/am/ec_spire/coordinator/hierarchy_snapshots.rs
+@@ -189,30 +189,28 @@ fn remote_search_heap_candidate_rows_from_compact_candidates(
+     .ok_or_else(|| "ec_spire remote heap resolution could not open heap relation".to_owned())?;
+     let snapshot = crate::storage::snapshot_guard::active_snapshot()
+         .ok_or_else(|| "ec_spire remote heap resolution requires an active snapshot".to_owned())?;
+-    // SAFETY: heap_relation and index_relation are both open for this lookup;
+-    // the helper resolves the indexed vector attribute for heap fetches.
+-    let indexed_attribute = unsafe {
+-        crate::am::ec_hnsw::source::resolve_indexed_vector_attribute(
+-            heap_relation.as_ptr(),
+-            index.relation,
+-            "ec_spire remote heap resolution indexed column",
+-        )
+-    };
+     let slot =
+         crate::storage::slot_guard::TupleTableSlotGuard::single_for_heap_guard(&heap_relation)
+             .ok_or_else(|| {
+                 "ec_spire remote heap resolution failed to allocate a heap tuple slot".to_owned()
+             })?;
+-    // SAFETY: the heap relation guard, active snapshot, and tuple slot stay
+-    // live through the local-heap resolution pass below.
+-    let mut heap_reader = unsafe {
+-        crate::am::common::heap_slot::HeapSlotReader::from_raw(
++    // SAFETY: heap_relation and index relation are both open for this lookup.
++    // The resolved indexed vector attribute, heap relation guard, active
++    // snapshot, and tuple slot stay live through the local-heap resolution pass.
++    let (indexed_attribute, mut heap_reader) = unsafe {
++        let indexed_attribute = crate::am::ec_hnsw::source::resolve_indexed_vector_attribute(
++            heap_relation.as_ptr(),
++            index.relation,
++            "ec_spire remote heap resolution indexed column",
++        );
++        let heap_reader = crate::am::common::heap_slot::HeapSlotReader::from_raw(
+             heap_relation.as_ptr(),
+             snapshot,
+             slot.as_ptr(),
+             "ec_spire",
+-        )
+-    }?;
++        )?;
++        (indexed_attribute, heap_reader)
++    };
+ 
+     let result = (|| -> Result<Vec<SpireRemoteSearchLocalHeapCandidateRow>, String> {
+         let mut rows = Vec::with_capacity(candidates.len());
+@@ -297,15 +295,15 @@ fn load_relation_epoch_manifests_for_coordinator_fanout(
+         return Err("ec_spire cannot load manifests for empty active epoch".to_owned());
+     }
+     // SAFETY: root_control was read from this live relation and names manifest
+-    // tuple IDs in the same SPIRE index relation.
+-    let epoch_bytes =
+-        unsafe { page::read_object_tuple(index_relation, root_control.epoch_manifest_tid) }?;
+-    // SAFETY: same live relation and root/control manifest locator scope.
+-    let object_bytes =
+-        unsafe { page::read_object_tuple(index_relation, root_control.object_manifest_tid) }?;
+-    // SAFETY: same live relation and root/control manifest locator scope.
+-    let placement_bytes =
+-        unsafe { page::read_object_tuple(index_relation, root_control.placement_directory_tid) }?;
++    // tuple IDs in the same SPIRE index relation; each page helper returns owned
++    // bytes before the decoded manifests are validated below.
++    let (epoch_bytes, object_bytes, placement_bytes) = unsafe {
++        (
++            page::read_object_tuple(index_relation, root_control.epoch_manifest_tid)?,
++            page::read_object_tuple(index_relation, root_control.object_manifest_tid)?,
++            page::read_object_tuple(index_relation, root_control.placement_directory_tid)?,
++        )
++    };
+     let epoch_manifest = meta::SpireEpochManifest::decode(&epoch_bytes)?;
+     let object_manifest = meta::SpireObjectManifest::decode(&object_bytes)?;
+     let placement_directory = meta::SpirePlacementDirectory::decode(&placement_bytes)?;
+@@ -804,7 +802,8 @@ fn remote_search_local_heap_candidate_summary_from_gate(
+     let (decoded_local_locator_count, returned_candidate_count) = if gate.remote_plan_count == 0
+         && remote_search_status_allows_local_heap_rows(gate.status)
+     {
+-        let scan_query = scan::SpireScanQuery::new(query.clone()).unwrap_or_else(|e| pgrx::error!("{e}"));
++        let scan_query =
++            scan::SpireScanQuery::new(query.clone()).unwrap_or_else(|e| pgrx::error!("{e}"));
+         let candidates = remote_search_coordinator_local_candidates_result(
+             index,
+             requested_epoch,
+
+Script done on 2026-05-21 19:27:24-07:00 [COMMAND_EXIT_CODE="0"]

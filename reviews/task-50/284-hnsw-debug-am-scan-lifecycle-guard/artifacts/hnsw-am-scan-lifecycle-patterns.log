@@ -1,0 +1,16 @@
+Script started on 2026-05-21 11:14:11-07:00 [<not executed on terminal>]
+615:unsafe fn debug_scan_has_opaque(scan: pg_sys::IndexScanDesc) -> bool {
+622:unsafe fn debug_scan_opaque_is_null(scan: pg_sys::IndexScanDesc) -> bool {
+696:struct DebugAmScan {
+702:impl DebugAmScan {
+713:        unsafe { debug_scan_has_opaque(self.scan) }
+719:        unsafe { debug_scan_opaque_is_null(self.scan) }
+735:impl Drop for DebugAmScan {
+779:pub(crate) fn debug_begin_end_scan(index_oid: pg_sys::Oid) -> (bool, bool) {
+780:    let index_relation = IndexRelationGuard::access_share(index_oid, "debug_begin_end_scan");
+781:    let mut scan = DebugAmScan::begin(index_relation.as_ptr(), 0, 1);
+791:pub(crate) fn debug_end_scan_twice(index_oid: pg_sys::Oid) -> (bool, bool, bool) {
+792:    let index_relation = IndexRelationGuard::access_share(index_oid, "debug_end_scan_twice");
+793:    let mut scan = DebugAmScan::begin(index_relation.as_ptr(), 0, 1);
+
+Script done on 2026-05-21 11:14:11-07:00 [COMMAND_EXIT_CODE="0"]

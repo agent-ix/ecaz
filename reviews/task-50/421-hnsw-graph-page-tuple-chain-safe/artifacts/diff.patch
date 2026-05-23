@@ -1,0 +1,299 @@
+diff --git a/src/am/ec_hnsw/graph.rs b/src/am/ec_hnsw/graph.rs
+index 2f0f038ce..01ceaf5d0 100644
+--- a/src/am/ec_hnsw/graph.rs
++++ b/src/am/ec_hnsw/graph.rs
+@@ -342,13 +342,9 @@ pub(crate) unsafe fn load_graph_element(
+     element_tid: page::ItemPointer,
+     code_len: usize,
+ ) -> GraphElement {
+-    // SAFETY: `index_relation` is live and `element_tid` names an element tuple
+-    // whose bytes are decoded inside the page-tuple callback.
+-    let element = unsafe {
+-        read_page_tuple(index_relation, element_tid, "element", |tuple_bytes| {
+-            page::TqElementTuple::decode(tuple_bytes, code_len)
+-        })
+-    }
++    let element = read_page_tuple(index_relation, element_tid, "element", |tuple_bytes| {
++        page::TqElementTuple::decode(tuple_bytes, code_len)
++    })
+     .unwrap_or_else(|e| pgrx::error!("ec_hnsw failed to decode graph element tuple: {e}"));
+     GraphElement {
+         tid: element_tid,
+@@ -373,14 +369,11 @@ pub(crate) unsafe fn load_exact_graph_element(
+             load_graph_element(index_relation, element_tid, code_len)
+         },
+         GraphStorageDescriptor::TurboQuantHotCold(layout) => {
+-            // SAFETY: `element_tid` names a hot graph tuple in the live index
+-            // relation; only the hot tuple fields are used after decoding.
+-            let hot = unsafe {
++            let hot =
+                 read_page_tuple(index_relation, element_tid, "turbo hot", |tuple_bytes| {
+                     page::TqTurboHotTuple::decode(tuple_bytes, layout.binary_word_count)
+                 })
+-            }
+-            .unwrap_or_else(|e| pgrx::error!("ec_hnsw failed to decode turbo hot tuple: {e}"));
++                .unwrap_or_else(|e| pgrx::error!("ec_hnsw failed to decode turbo hot tuple: {e}"));
+             // SAFETY: `hot.reranktid` was decoded from the live hot tuple and
+             // points at the cold rerank payload for this graph element.
+             let rerank = unsafe {
+@@ -423,17 +416,9 @@ pub(crate) unsafe fn load_grouped_graph_element(
+     element_tid: page::ItemPointer,
+     layout: PqFastScanLayout,
+ ) -> GroupedGraphElement {
+-    // SAFETY: `index_relation` is live and `element_tid` names a grouped hot
+-    // tuple whose bytes are decoded inside the page-tuple callback.
+-    let element = unsafe {
+-        read_page_tuple(index_relation, element_tid, "grouped hot", |tuple_bytes| {
+-            page::TqGroupedHotTuple::decode(
+-                tuple_bytes,
+-                layout.binary_word_count,
+-                layout.search_code_len,
+-            )
+-        })
+-    }
++    let element = read_page_tuple(index_relation, element_tid, "grouped hot", |tuple_bytes| {
++        page::TqGroupedHotTuple::decode(tuple_bytes, layout.binary_word_count, layout.search_code_len)
++    })
+     .unwrap_or_else(|e| pgrx::error!("ec_hnsw failed to decode grouped graph tuple: {e}"));
+     GroupedGraphElement {
+         tid: element_tid,
+@@ -456,13 +441,9 @@ pub(crate) unsafe fn with_graph_element_tuple<R, F>(
+ where
+     F: FnOnce(page::TqElementTupleRef<'_>) -> R,
+ {
+-    // SAFETY: `index_relation` is live and `element_tid` names a scalar graph
+-    // tuple; the decoded tuple ref is consumed before the page buffer unlocks.
+-    unsafe {
+-        read_page_tuple(index_relation, element_tid, "element", |tuple_bytes| {
+-            Ok(f(page::TqElementTupleRef::decode(tuple_bytes, code_len)?))
+-        })
+-    }
++    read_page_tuple(index_relation, element_tid, "element", |tuple_bytes| {
++        Ok(f(page::TqElementTupleRef::decode(tuple_bytes, code_len)?))
++    })
+     .unwrap_or_else(|e| pgrx::error!("ec_hnsw failed to decode graph element tuple: {e}"))
+ }
+ 
+@@ -475,16 +456,12 @@ pub(crate) unsafe fn with_turbo_hot_graph_tuple<R, F>(
+ where
+     F: FnOnce(page::TqTurboHotTupleRef<'_>) -> R,
+ {
+-    // SAFETY: `index_relation` is live and `element_tid` names a TurboQuant hot
+-    // tuple; the decoded tuple ref is consumed before the page buffer unlocks.
+-    unsafe {
+-        read_page_tuple(index_relation, element_tid, "turbo hot", |tuple_bytes| {
+-            Ok(f(page::TqTurboHotTupleRef::decode(
+-                tuple_bytes,
+-                layout.binary_word_count,
+-            )?))
+-        })
+-    }
++    read_page_tuple(index_relation, element_tid, "turbo hot", |tuple_bytes| {
++        Ok(f(page::TqTurboHotTupleRef::decode(
++            tuple_bytes,
++            layout.binary_word_count,
++        )?))
++    })
+     .unwrap_or_else(|e| pgrx::error!("ec_hnsw failed to decode turbo hot tuple: {e}"))
+ }
+ 
+@@ -498,17 +475,13 @@ pub(crate) unsafe fn with_grouped_graph_tuple<R, F>(
+ where
+     F: FnOnce(page::TqGroupedHotTupleRef<'_>) -> R,
+ {
+-    // SAFETY: `index_relation` is live and `element_tid` names a grouped hot
+-    // tuple; the decoded tuple ref is consumed before the page buffer unlocks.
+-    unsafe {
+-        read_page_tuple(index_relation, element_tid, "grouped hot", |tuple_bytes| {
+-            Ok(f(page::TqGroupedHotTupleRef::decode(
+-                tuple_bytes,
+-                layout.binary_word_count,
+-                layout.search_code_len,
+-            )?))
+-        })
+-    }
++    read_page_tuple(index_relation, element_tid, "grouped hot", |tuple_bytes| {
++        Ok(f(page::TqGroupedHotTupleRef::decode(
++            tuple_bytes,
++            layout.binary_word_count,
++            layout.search_code_len,
++        )?))
++    })
+     .unwrap_or_else(|e| pgrx::error!("ec_hnsw failed to decode grouped graph tuple: {e}"))
+ }
+ 
+@@ -558,28 +531,22 @@ where
+     F: FnOnce(GraphTupleRef<'_>) -> R,
+ {
+     match storage {
+-        // SAFETY: `buffer` is pinned/share-locked by the caller for
+-        // `element_tid`'s block, and the tuple ref is consumed in the callback.
+-        GraphStorageDescriptor::TurboQuant { code_len } => unsafe {
++        GraphStorageDescriptor::TurboQuant { code_len } => {
+             read_page_tuple_from_buffer(buffer, element_tid, "element", |tuple_bytes| {
+                 Ok(f(GraphTupleRef::Scalar(page::TqElementTupleRef::decode(
+                     tuple_bytes,
+                     code_len,
+                 )?)))
+             })
+-        },
+-        // SAFETY: `buffer` is pinned/share-locked by the caller for
+-        // `element_tid`'s block, and the tuple ref is consumed in the callback.
+-        GraphStorageDescriptor::TurboQuantHotCold(layout) => unsafe {
++        }
++        GraphStorageDescriptor::TurboQuantHotCold(layout) => {
+             read_page_tuple_from_buffer(buffer, element_tid, "turbo hot", |tuple_bytes| {
+                 Ok(f(GraphTupleRef::TurboHot(
+                     page::TqTurboHotTupleRef::decode(tuple_bytes, layout.binary_word_count)?,
+                 )))
+             })
+-        },
+-        // SAFETY: `buffer` is pinned/share-locked by the caller for
+-        // `element_tid`'s block, and the tuple ref is consumed in the callback.
+-        GraphStorageDescriptor::PqFastScan(layout) => unsafe {
++        }
++        GraphStorageDescriptor::PqFastScan(layout) => {
+             read_page_tuple_from_buffer(buffer, element_tid, "grouped hot", |tuple_bytes| {
+                 Ok(f(GraphTupleRef::GroupedHot(
+                     page::TqGroupedHotTupleRef::decode(
+@@ -589,7 +556,7 @@ where
+                     )?,
+                 )))
+             })
+-        },
++        }
+     }
+     .unwrap_or_else(|e| pgrx::error!("ec_hnsw failed to decode graph element tuple: {e}"))
+ }
+@@ -600,13 +567,9 @@ pub(crate) unsafe fn load_rerank_payload(
+     rerank_tid: page::ItemPointer,
+     rerank_code_len: usize,
+ ) -> GroupedRerankPayload {
+-    // SAFETY: `index_relation` is live and `rerank_tid` names a rerank payload
+-    // tuple whose bytes are decoded inside the page-tuple callback.
+-    let rerank = unsafe {
+-        read_page_tuple(index_relation, rerank_tid, "rerank", |tuple_bytes| {
+-            page::TqRerankTuple::decode(tuple_bytes, rerank_code_len)
+-        })
+-    }
++    let rerank = read_page_tuple(index_relation, rerank_tid, "rerank", |tuple_bytes| {
++        page::TqRerankTuple::decode(tuple_bytes, rerank_code_len)
++    })
+     .unwrap_or_else(|e| pgrx::error!("ec_hnsw failed to decode rerank tuple: {e}"));
+     GroupedRerankPayload {
+         tid: rerank_tid,
+@@ -636,21 +599,12 @@ pub(crate) unsafe fn with_grouped_codebook_tuple<R, F>(
+ where
+     F: FnOnce(page::TqGroupedCodebookTupleRef<'_>) -> R,
+ {
+-    // SAFETY: `index_relation` is live and `codebook_tid` names a persisted
+-    // grouped codebook tuple consumed inside the page-tuple callback.
+-    unsafe {
+-        read_page_tuple(
+-            index_relation,
+-            codebook_tid,
+-            "grouped codebook",
+-            |tuple_bytes| {
+-                Ok(f(page::TqGroupedCodebookTupleRef::decode(
+-                    tuple_bytes,
+-                    centroid_count,
+-                )?))
+-            },
+-        )
+-    }
++    read_page_tuple(index_relation, codebook_tid, "grouped codebook", |tuple_bytes| {
++        Ok(f(page::TqGroupedCodebookTupleRef::decode(
++            tuple_bytes,
++            centroid_count,
++        )?))
++    })
+     .unwrap_or_else(|e| pgrx::error!("ec_hnsw failed to decode grouped codebook tuple: {e}"))
+ }
+ 
+@@ -755,16 +709,12 @@ pub(crate) fn load_graph_neighbors(
+         };
+     }
+ 
+-    // SAFETY: `neighbor_tid` is non-INVALID and names a neighbor tuple in the
+-    // live index relation; `read_page_tuple` holds the page lock while decoding.
+-    let neighbor = unsafe {
+-        read_page_tuple(
+-            index_relation,
+-            neighbor_tid,
+-            "neighbor",
+-            page::TqNeighborTuple::decode,
+-        )
+-    }
++    let neighbor = read_page_tuple(
++        index_relation,
++        neighbor_tid,
++        "neighbor",
++        page::TqNeighborTuple::decode,
++    )
+     .unwrap_or_else(|e| pgrx::error!("ec_hnsw failed to decode graph neighbor tuple: {e}"));
+     let count = neighbor.count as usize;
+     if count > neighbor.tids.len() {
+@@ -1351,7 +1301,7 @@ where
+         .collect()
+ }
+ 
+-unsafe fn read_page_tuple<T, DecodeFn>(
++fn read_page_tuple<T, DecodeFn>(
+     index_relation: pg_sys::Relation,
+     tuple_tid: page::ItemPointer,
+     tuple_kind: &str,
+@@ -1360,9 +1310,9 @@ unsafe fn read_page_tuple<T, DecodeFn>(
+ where
+     DecodeFn: FnOnce(&[u8]) -> Result<T, String>,
+ {
+-    // SAFETY: `index_relation` is live for the duration of the read, the block
+-    // number comes from an index tuple TID, and the guard pins and share-locks
+-    // the page before any tuple bytes are inspected.
++    // SAFETY: callers supply a live index relation; the block number comes
++    // from an index tuple TID, and the guard pins and share-locks the page
++    // before any tuple bytes are inspected.
+     let buffer = unsafe {
+         LockedBufferGuard::read_main(
+             index_relation,
+@@ -1388,13 +1338,11 @@ where
+         );
+     }
+ 
+-    // SAFETY: The page pointer and size come from the locked buffer, and the
+-    // offset was checked against the page line-pointer count above.
+-    unsafe { with_page_tuple_bytes(page_ptr, page_size, tuple_tid, tuple_kind, decode) }
++    with_page_tuple_bytes(page_ptr, page_size, tuple_tid, tuple_kind, decode)
+ }
+ 
+ #[cfg(feature = "pg18")]
+-unsafe fn read_page_tuple_from_buffer<T, DecodeFn>(
++fn read_page_tuple_from_buffer<T, DecodeFn>(
+     buffer: &PinnedBufferLockGuard<'_>,
+     tuple_tid: page::ItemPointer,
+     tuple_kind: &str,
+@@ -1414,12 +1362,10 @@ where
+         );
+     }
+ 
+-    // SAFETY: The page pointer and size come from the caller-provided pinned
+-    // buffer lock, and the offset was checked against the line-pointer count.
+-    unsafe { with_page_tuple_bytes(page_ptr, page_size, tuple_tid, tuple_kind, decode) }
++    with_page_tuple_bytes(page_ptr, page_size, tuple_tid, tuple_kind, decode)
+ }
+ 
+-unsafe fn with_page_tuple_bytes<T, DecodeFn>(
++fn with_page_tuple_bytes<T, DecodeFn>(
+     page_ptr: *mut u8,
+     page_size: usize,
+     tuple_tid: page::ItemPointer,
+@@ -1429,8 +1375,8 @@ unsafe fn with_page_tuple_bytes<T, DecodeFn>(
+ where
+     DecodeFn: FnOnce(&[u8]) -> Result<T, String>,
+ {
+-    // SAFETY: Callers validated `offset_number` against the page's line-pointer
+-    // count before requesting the item id for this tuple.
++    // SAFETY: callers validated `offset_number` against the page's
++    // line-pointer count before requesting the item id for this tuple.
+     let item_id = unsafe { &*super::shared::page_item_id(page_ptr, tuple_tid.offset_number) };
+     if item_id.lp_flags() == 0 {
+         pgrx::error!("ec_hnsw graph read found unused {tuple_kind} tuple slot");

@@ -1,12 +1,8 @@
-pub(crate) unsafe fn index_insert_debt_snapshot(
-    index_relation: pg_sys::Relation,
+pub(crate) fn index_insert_debt_snapshot(
+    index: SpireLiveIndexRelation,
 ) -> SpireIndexInsertDebtSnapshot {
-    // SAFETY: reads root/control state through the live SPIRE index relation
-    // supplied by the SQL diagnostic wrapper.
-    let root_control = unsafe { page::read_root_control_page(index_relation) };
-    // SAFETY: forwards the same live index relation into the leaf snapshot
-    // wrapper used to summarize insert debt.
-    let leaf_rows = unsafe { index_leaf_snapshot(index_relation) };
+    let root_control = index.root_control();
+    let leaf_rows = index_leaf_snapshot(index);
     let active_leaf_count = u64::try_from(leaf_rows.len())
         .unwrap_or_else(|_| pgrx::error!("ec_spire leaf row count exceeds u64"));
     let leaf_count_with_deltas = leaf_rows
@@ -174,17 +170,16 @@ fn remote_search_exact_heap_score(query: &[f32], source_vector: &[f32]) -> Resul
     Ok(-inner_product)
 }
 
-unsafe fn remote_search_heap_candidate_rows_from_compact_candidates(
-    index_relation: pg_sys::Relation,
+fn remote_search_heap_candidate_rows_from_compact_candidates(
+    index: SpireLiveIndexRelation,
     requested_epoch: u64,
     query: &scan::SpireScanQuery,
     candidates: Vec<SpireRemoteSearchCandidateRow>,
     heap_lookup_owner: &'static str,
     context: &str,
 ) -> Result<Vec<SpireRemoteSearchLocalHeapCandidateRow>, String> {
-    // SAFETY: index_relation is live for the heap-resolution request; rd_id is
-    // copied only to resolve the owning heap relation OID.
-    let heap_oid = unsafe { pg_sys::IndexGetRelation((*index_relation).rd_id, false) };
+    let heap_oid =
+        crate::storage::relation::index_heap_relation_oid_from_index_oid(index.relid().into());
     if heap_oid == pg_sys::InvalidOid {
         return Err("ec_spire remote heap resolution could not resolve heap relation".to_owned());
     }
@@ -192,43 +187,42 @@ unsafe fn remote_search_heap_candidate_rows_from_compact_candidates(
         heap_oid,
     )
     .ok_or_else(|| "ec_spire remote heap resolution could not open heap relation".to_owned())?;
-    // SAFETY: reads the backend-local active snapshot pointer and rejects null
-    // before using it for heap row visibility checks.
-    let snapshot = unsafe { pg_sys::GetActiveSnapshot() };
-    if snapshot.is_null() {
-        return Err("ec_spire remote heap resolution requires an active snapshot".to_owned());
-    }
-    // SAFETY: heap_relation and index_relation are both open for this lookup;
-    // the helper resolves the indexed vector attribute for heap fetches.
-    let indexed_attribute = unsafe {
-        crate::am::ec_hnsw::source::resolve_indexed_vector_attribute(
-            heap_relation.as_ptr(),
-            index_relation,
-            "ec_spire remote heap resolution indexed column",
-        )
-    };
+    let snapshot = crate::storage::snapshot_guard::active_snapshot()
+        .ok_or_else(|| "ec_spire remote heap resolution requires an active snapshot".to_owned())?;
     let slot =
-        crate::storage::slot_guard::TupleTableSlotGuard::single_for_heap(heap_relation.as_ptr())
+        crate::storage::slot_guard::TupleTableSlotGuard::single_for_heap_guard(&heap_relation)
             .ok_or_else(|| {
                 "ec_spire remote heap resolution failed to allocate a heap tuple slot".to_owned()
             })?;
+    // SAFETY: heap_relation and index relation are both open for this lookup.
+    // The returned tuple is valid because the indexed vector attribute is copied
+    // by value, and the heap relation guard, active snapshot, and tuple slot stay
+    // live through the local-heap resolution pass.
+    let (indexed_attribute, mut heap_reader) = unsafe {
+        let indexed_attribute = crate::am::ec_hnsw::source::resolve_indexed_vector_attribute(
+            heap_relation.as_ptr(),
+            index.relation,
+            "ec_spire remote heap resolution indexed column",
+        );
+        let heap_reader = crate::am::common::heap_slot::HeapSlotReader::from_raw(
+            heap_relation.as_ptr(),
+            snapshot,
+            slot.as_ptr(),
+            "ec_spire",
+        )?;
+        (indexed_attribute, heap_reader)
+    };
 
     let result = (|| -> Result<Vec<SpireRemoteSearchLocalHeapCandidateRow>, String> {
         let mut rows = Vec::with_capacity(candidates.len());
         for candidate in candidates {
             let heap_tid = decode_remote_search_local_heap_locator(&candidate, context)?;
-            // SAFETY: heap_relation, snapshot, slot, and indexed_attribute were
-            // validated above; heap_tid was decoded from the local row locator.
-            let source_vector = unsafe {
-                scan::load_indexed_source_vector_from_heap_row(
-                    heap_relation.as_ptr(),
-                    snapshot,
-                    slot.as_ptr(),
-                    indexed_attribute,
-                    heap_tid,
-                    "ec_spire remote heap resolution source vector",
-                )
-            }?;
+            let source_vector = scan::load_indexed_source_vector_from_heap_row(
+                &mut heap_reader,
+                indexed_attribute,
+                heap_tid,
+                "ec_spire remote heap resolution source vector",
+            )?;
             let (score, status) = match source_vector {
                 Some(source_vector) => (
                     remote_search_exact_heap_score(query.values(), &source_vector)?,
@@ -287,8 +281,8 @@ fn coordinator_metadata_read_placement(
     placement
 }
 
-unsafe fn load_relation_epoch_manifests_for_coordinator_fanout(
-    index_relation: pg_sys::Relation,
+fn load_relation_epoch_manifests_for_coordinator_fanout(
+    index: SpireLiveIndexRelation,
     root_control: meta::SpireRootControlState,
 ) -> Result<
     (
@@ -301,18 +295,9 @@ unsafe fn load_relation_epoch_manifests_for_coordinator_fanout(
     if root_control.active_epoch == 0 {
         return Err("ec_spire cannot load manifests for empty active epoch".to_owned());
     }
-    // SAFETY: root_control came from this live index relation and contains the
-    // tuple ID of the active epoch manifest.
-    let epoch_bytes =
-        unsafe { page::read_object_tuple(index_relation, root_control.epoch_manifest_tid)? };
-    // SAFETY: root_control came from this live index relation and contains the
-    // tuple ID of the active object manifest.
-    let object_bytes =
-        unsafe { page::read_object_tuple(index_relation, root_control.object_manifest_tid)? };
-    // SAFETY: root_control came from this live index relation and contains the
-    // tuple ID of the active placement directory.
-    let placement_bytes =
-        unsafe { page::read_object_tuple(index_relation, root_control.placement_directory_tid)? };
+    let epoch_bytes = index.object_tuple(root_control.epoch_manifest_tid)?;
+    let object_bytes = index.object_tuple(root_control.object_manifest_tid)?;
+    let placement_bytes = index.object_tuple(root_control.placement_directory_tid)?;
     let epoch_manifest = meta::SpireEpochManifest::decode(&epoch_bytes)?;
     let object_manifest = meta::SpireObjectManifest::decode(&object_bytes)?;
     let placement_directory = meta::SpirePlacementDirectory::decode(&placement_bytes)?;
@@ -330,31 +315,27 @@ unsafe fn load_relation_epoch_manifests_for_coordinator_fanout(
     Ok((epoch_manifest, object_manifest, placement_directory))
 }
 
-pub(crate) unsafe fn remote_search_candidates(
-    index_relation: pg_sys::Relation,
+pub(crate) fn remote_search_candidates(
+    index: SpireLiveIndexRelation,
     requested_epoch: u64,
     query: Vec<f32>,
     selected_pids: Vec<u64>,
     top_k: usize,
     consistency_mode: &str,
 ) -> Vec<SpireRemoteSearchCandidateRow> {
-    // SAFETY: forwards the live index relation and checked SQL arguments into
-    // the fallible remote-candidate implementation.
-    let result = unsafe {
-        remote_search_candidates_result(
-            index_relation,
-            requested_epoch,
-            query,
-            selected_pids,
-            top_k,
-            consistency_mode,
-        )
-    };
+    let result = remote_search_candidates_result(
+        index,
+        requested_epoch,
+        query,
+        selected_pids,
+        top_k,
+        consistency_mode,
+    );
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
-unsafe fn remote_search_candidates_result(
-    index_relation: pg_sys::Relation,
+fn remote_search_candidates_result(
+    index: SpireLiveIndexRelation,
     requested_epoch: u64,
     query: Vec<f32>,
     selected_pids: Vec<u64>,
@@ -371,9 +352,6 @@ unsafe fn remote_search_candidates_result(
 
     let requested_consistency_mode = parse_remote_search_consistency_mode(consistency_mode)?;
     let query = scan::SpireScanQuery::new(query)?;
-    // SAFETY: PostgreSQL calls this coordinator helper with a live SPIRE index
-    // relation for the duration of the candidate request.
-    let index = unsafe { SpireLiveIndexRelation::new(index_relation) };
     let root_control = index.root_control();
     if root_control.active_epoch != requested_epoch {
         return Err(format!(
@@ -427,31 +405,27 @@ unsafe fn remote_search_candidates_result(
         .collect())
 }
 
-pub(crate) unsafe fn remote_search_coordinator_local_candidates(
-    index_relation: pg_sys::Relation,
+pub(crate) fn remote_search_coordinator_local_candidates(
+    index: SpireLiveIndexRelation,
     requested_epoch: u64,
     query: Vec<f32>,
     selected_pids: Vec<u64>,
     top_k: usize,
     consistency_mode: &str,
 ) -> Vec<SpireRemoteSearchCandidateRow> {
-    // SAFETY: forwards the live index relation and checked SQL arguments into
-    // the fallible coordinator-local candidate implementation.
-    let result = unsafe {
-        remote_search_coordinator_local_candidates_result(
-            index_relation,
-            requested_epoch,
-            query,
-            selected_pids,
-            top_k,
-            consistency_mode,
-        )
-    };
+    let result = remote_search_coordinator_local_candidates_result(
+        index,
+        requested_epoch,
+        query,
+        selected_pids,
+        top_k,
+        consistency_mode,
+    );
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
-unsafe fn remote_search_coordinator_local_candidates_result(
-    index_relation: pg_sys::Relation,
+fn remote_search_coordinator_local_candidates_result(
+    index: SpireLiveIndexRelation,
     requested_epoch: u64,
     query: Vec<f32>,
     selected_pids: Vec<u64>,
@@ -469,9 +443,6 @@ unsafe fn remote_search_coordinator_local_candidates_result(
 
     let requested_consistency_mode = parse_remote_search_consistency_mode(consistency_mode)?;
     let query = scan::SpireScanQuery::new(query)?;
-    // SAFETY: PostgreSQL calls this coordinator helper with a live SPIRE index
-    // relation for the duration of the local-candidate request.
-    let index = unsafe { SpireLiveIndexRelation::new(index_relation) };
     let root_control = index.root_control();
     if root_control.active_epoch != requested_epoch {
         return Err(format!(
@@ -544,8 +515,8 @@ unsafe fn remote_search_coordinator_local_candidates_result(
     Ok(merged.candidates)
 }
 
-unsafe fn remote_search_coordinator_local_candidates_for_result_summary(
-    index_relation: pg_sys::Relation,
+fn remote_search_coordinator_local_candidates_for_result_summary(
+    index: SpireLiveIndexRelation,
     requested_epoch: u64,
     query: Vec<f32>,
     selected_pids: Vec<u64>,
@@ -563,9 +534,6 @@ unsafe fn remote_search_coordinator_local_candidates_for_result_summary(
 
     let requested_consistency_mode = parse_remote_search_consistency_mode(consistency_mode)?;
     let query = scan::SpireScanQuery::new(query)?;
-    // SAFETY: PostgreSQL calls this coordinator helper with a live SPIRE index
-    // relation for the duration of the local-result summary request.
-    let index = unsafe { SpireLiveIndexRelation::new(index_relation) };
     let root_control = index.root_control();
     if root_control.active_epoch != requested_epoch {
         return Err(format!(
@@ -668,31 +636,27 @@ unsafe fn remote_search_coordinator_local_candidates_for_result_summary(
     Ok(merged.candidates)
 }
 
-pub(crate) unsafe fn remote_search_coordinator_local_summary(
-    index_relation: pg_sys::Relation,
+pub(crate) fn remote_search_coordinator_local_summary(
+    index: SpireLiveIndexRelation,
     requested_epoch: u64,
     query: Vec<f32>,
     selected_pids: Vec<u64>,
     top_k: usize,
     consistency_mode: &str,
 ) -> SpireRemoteSearchCoordinatorLocalSummaryRow {
-    // SAFETY: forwards the live index relation and checked SQL arguments into
-    // the fallible coordinator-local summary implementation.
-    let result = unsafe {
-        remote_search_coordinator_local_summary_result(
-            index_relation,
-            requested_epoch,
-            query,
-            selected_pids,
-            top_k,
-            consistency_mode,
-        )
-    };
+    let result = remote_search_coordinator_local_summary_result(
+        index,
+        requested_epoch,
+        query,
+        selected_pids,
+        top_k,
+        consistency_mode,
+    );
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
-pub(crate) unsafe fn remote_search_local_heap_resolution_plan_rows(
-    index_relation: pg_sys::Relation,
+pub(crate) fn remote_search_local_heap_resolution_plan_rows(
+    index: SpireLiveIndexRelation,
     requested_epoch: u64,
     query: Vec<f32>,
     selected_pids: Vec<u64>,
@@ -700,18 +664,14 @@ pub(crate) unsafe fn remote_search_local_heap_resolution_plan_rows(
     consistency_mode: &str,
 ) -> Vec<SpireRemoteSearchLocalHeapResolutionPlanRow> {
     let result = (|| -> Result<Vec<SpireRemoteSearchLocalHeapResolutionPlanRow>, String> {
-        // SAFETY: forwards the live index relation and checked request fields to
-        // local candidate collection before decoding heap locators.
-        let candidates = unsafe {
-            remote_search_coordinator_local_candidates_result(
-                index_relation,
-                requested_epoch,
-                query,
-                selected_pids,
-                top_k,
-                consistency_mode,
-            )?
-        };
+        let candidates = remote_search_coordinator_local_candidates_result(
+            index,
+            requested_epoch,
+            query,
+            selected_pids,
+            top_k,
+            consistency_mode,
+        )?;
         candidates
             .into_iter()
             .map(|candidate| {
@@ -737,8 +697,8 @@ pub(crate) unsafe fn remote_search_local_heap_resolution_plan_rows(
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
-pub(crate) unsafe fn remote_search_local_heap_candidate_rows(
-    index_relation: pg_sys::Relation,
+pub(crate) fn remote_search_local_heap_candidate_rows(
+    index: SpireLiveIndexRelation,
     requested_epoch: u64,
     query: Vec<f32>,
     selected_pids: Vec<u64>,
@@ -747,36 +707,28 @@ pub(crate) unsafe fn remote_search_local_heap_candidate_rows(
 ) -> Vec<SpireRemoteSearchLocalHeapCandidateRow> {
     let result = (|| -> Result<Vec<SpireRemoteSearchLocalHeapCandidateRow>, String> {
         let scan_query = scan::SpireScanQuery::new(query.clone())?;
-        // SAFETY: forwards the live index relation and checked request fields to
-        // coordinator-local candidate collection before heap resolution.
-        let candidates = unsafe {
-            remote_search_coordinator_local_candidates_result(
-                index_relation,
-                requested_epoch,
-                query,
-                selected_pids,
-                top_k,
-                consistency_mode,
-            )?
-        };
-        // SAFETY: candidates were produced from the same live index relation and
-        // requested epoch; heap lookup decodes their local row locators.
-        unsafe {
-            remote_search_heap_candidate_rows_from_compact_candidates(
-                index_relation,
-                requested_epoch,
-                &scan_query,
-                candidates,
-                SPIRE_REMOTE_LOCAL_HEAP_RESOLUTION,
-                "local heap candidate rows",
-            )
-        }
+        let candidates = remote_search_coordinator_local_candidates_result(
+            index,
+            requested_epoch,
+            query,
+            selected_pids,
+            top_k,
+            consistency_mode,
+        )?;
+        remote_search_heap_candidate_rows_from_compact_candidates(
+            index,
+            requested_epoch,
+            &scan_query,
+            candidates,
+            SPIRE_REMOTE_LOCAL_HEAP_RESOLUTION,
+            "local heap candidate rows",
+        )
     })();
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
-unsafe fn remote_search_local_heap_candidate_rows_for_result_summary(
-    index_relation: pg_sys::Relation,
+fn remote_search_local_heap_candidate_rows_for_result_summary(
+    index: SpireLiveIndexRelation,
     requested_epoch: u64,
     query: Vec<f32>,
     selected_pids: Vec<u64>,
@@ -785,71 +737,55 @@ unsafe fn remote_search_local_heap_candidate_rows_for_result_summary(
 ) -> Vec<SpireRemoteSearchLocalHeapCandidateRow> {
     let result = (|| -> Result<Vec<SpireRemoteSearchLocalHeapCandidateRow>, String> {
         let scan_query = scan::SpireScanQuery::new(query.clone())?;
-        // SAFETY: forwards the live index relation and checked request fields to
-        // the result-summary candidate path before heap resolution.
-        let candidates = unsafe {
-            remote_search_coordinator_local_candidates_for_result_summary(
-                index_relation,
-                requested_epoch,
-                query,
-                selected_pids,
-                top_k,
-                consistency_mode,
-            )?
-        };
-        // SAFETY: candidates were produced from the same live index relation and
-        // requested epoch; heap lookup decodes their local row locators.
-        unsafe {
-            remote_search_heap_candidate_rows_from_compact_candidates(
-                index_relation,
-                requested_epoch,
-                &scan_query,
-                candidates,
-                SPIRE_REMOTE_LOCAL_HEAP_RESOLUTION,
-                "coordinator result summary local heap candidates",
-            )
-        }
+        let candidates = remote_search_coordinator_local_candidates_for_result_summary(
+            index,
+            requested_epoch,
+            query,
+            selected_pids,
+            top_k,
+            consistency_mode,
+        )?;
+        remote_search_heap_candidate_rows_from_compact_candidates(
+            index,
+            requested_epoch,
+            &scan_query,
+            candidates,
+            SPIRE_REMOTE_LOCAL_HEAP_RESOLUTION,
+            "coordinator result summary local heap candidates",
+        )
     })();
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
-pub(crate) unsafe fn remote_search_local_heap_candidate_summary_row(
-    index_relation: pg_sys::Relation,
+pub(crate) fn remote_search_local_heap_candidate_summary_row(
+    index: SpireLiveIndexRelation,
     requested_epoch: u64,
     query: Vec<f32>,
     selected_pids: Vec<u64>,
     top_k: usize,
     consistency_mode: &str,
 ) -> SpireRemoteSearchLocalHeapCandidateSummaryRow {
-    // SAFETY: forwards the live index relation and checked request fields to the
-    // coordinator gate summary used to decide whether heap rows are readable.
-    let gate = unsafe {
-        remote_search_coordinator_gate_summary_row(
-            index_relation,
-            requested_epoch,
-            query.clone(),
-            selected_pids.clone(),
-            top_k,
-            consistency_mode,
-        )
-    };
-    // SAFETY: gate was derived from the same live index relation and request;
-    // the summary helper only reads heap candidates when the gate allows it.
-    unsafe {
-        remote_search_local_heap_candidate_summary_from_gate(
-            index_relation,
-            &gate,
-            requested_epoch,
-            query,
-            selected_pids,
-            top_k,
-            consistency_mode,
-        )
-    }
+    let gate = remote_search_coordinator_gate_summary_row(
+        index,
+        requested_epoch,
+        query.clone(),
+        selected_pids.clone(),
+        top_k,
+        consistency_mode,
+    );
+    remote_search_local_heap_candidate_summary_from_gate(
+        index,
+        &gate,
+        requested_epoch,
+        query,
+        selected_pids,
+        top_k,
+        consistency_mode,
+    )
 }
 
-unsafe fn remote_search_local_heap_candidate_summary_from_gate(
-    index_relation: pg_sys::Relation,
+fn remote_search_local_heap_candidate_summary_from_gate(
+    index: SpireLiveIndexRelation,
     gate: &SpireRemoteSearchCoordinatorGateSummaryRow,
     requested_epoch: u64,
     query: Vec<f32>,
@@ -860,18 +796,26 @@ unsafe fn remote_search_local_heap_candidate_summary_from_gate(
     let (decoded_local_locator_count, returned_candidate_count) = if gate.remote_plan_count == 0
         && remote_search_status_allows_local_heap_rows(gate.status)
     {
-        // SAFETY: gate permits local heap row reads for the same live index
-        // relation and request fields passed to the summary helper.
-        let rows = unsafe {
-            remote_search_local_heap_candidate_rows(
-                index_relation,
-                requested_epoch,
-                query,
-                selected_pids,
-                top_k,
-                consistency_mode,
-            )
-        };
+        let scan_query =
+            scan::SpireScanQuery::new(query.clone()).unwrap_or_else(|e| pgrx::error!("{e}"));
+        let candidates = remote_search_coordinator_local_candidates_result(
+            index,
+            requested_epoch,
+            query,
+            selected_pids,
+            top_k,
+            consistency_mode,
+        )
+        .unwrap_or_else(|e| pgrx::error!("{e}"));
+        let rows = remote_search_heap_candidate_rows_from_compact_candidates(
+            index,
+            requested_epoch,
+            &scan_query,
+            candidates,
+            SPIRE_REMOTE_LOCAL_HEAP_RESOLUTION,
+            "local heap candidate summary",
+        )
+        .unwrap_or_else(|e| pgrx::error!("{e}"));
         let decoded = u64::try_from(rows.len())
             .unwrap_or_else(|_| pgrx::error!("ec_spire local heap candidate count overflow"));
         let returned = u64::try_from(
@@ -1005,57 +949,45 @@ fn merge_remote_search_heap_candidates_for_result(
         .map(|result| result.candidates)
 }
 
-pub(crate) unsafe fn remote_search_coordinator_result_summary_row(
-    index_relation: pg_sys::Relation,
+pub(crate) fn remote_search_coordinator_result_summary_row(
+    index: SpireLiveIndexRelation,
     requested_epoch: u64,
     query: Vec<f32>,
     selected_pids: Vec<u64>,
     top_k: usize,
     consistency_mode: &str,
 ) -> SpireRemoteSearchCoordinatorResultSummaryRow {
-    // SAFETY: forwards the live index relation and checked request fields to the
-    // coordinator gate summary before selecting heap-resolution paths.
-    let gate = unsafe {
-        remote_search_coordinator_gate_summary_row(
-            index_relation,
-            requested_epoch,
-            query.clone(),
-            selected_pids.clone(),
-            top_k,
-            consistency_mode,
-        )
-    };
+    let gate = remote_search_coordinator_gate_summary_row(
+        index,
+        requested_epoch,
+        query.clone(),
+        selected_pids.clone(),
+        top_k,
+        consistency_mode,
+    );
     let mut heap_candidates = Vec::new();
     if gate.local_plan_count > 0
         && (remote_search_status_allows_local_heap_rows(gate.status)
             || gate.status == SPIRE_REMOTE_EXECUTOR_REQUIRED)
     {
-        // SAFETY: gate permits local heap resolution for the same live index
-        // relation and request fields used by the result summary.
-        heap_candidates.extend(unsafe {
-            remote_search_local_heap_candidate_rows_for_result_summary(
-                index_relation,
-                requested_epoch,
-                query.clone(),
-                selected_pids.clone(),
-                top_k,
-                consistency_mode,
-            )
-        });
+        heap_candidates.extend(remote_search_local_heap_candidate_rows_for_result_summary(
+            index,
+            requested_epoch,
+            query.clone(),
+            selected_pids.clone(),
+            top_k,
+            consistency_mode,
+        ));
     }
     if gate.remote_plan_count > 0 && gate.status == SPIRE_REMOTE_EXECUTOR_REQUIRED {
-        // SAFETY: gate requires remote executor heap rows for the same live
-        // index relation and request fields used by the result summary.
-        heap_candidates.extend(unsafe {
-            remote_search_libpq_executor_heap_candidate_rows(
-                index_relation,
-                requested_epoch,
-                query,
-                selected_pids,
-                top_k,
-                consistency_mode,
-            )
-        });
+        heap_candidates.extend(remote_search_libpq_executor_heap_candidate_rows(
+            index,
+            requested_epoch,
+            query,
+            selected_pids,
+            top_k,
+            consistency_mode,
+        ));
     }
     let heap_candidates = merge_remote_search_heap_candidates_for_result(heap_candidates, top_k)
         .unwrap_or_else(|e| pgrx::error!("{e}"));
@@ -1130,8 +1062,8 @@ pub(crate) unsafe fn remote_search_coordinator_result_summary_row(
     }
 }
 
-unsafe fn remote_search_coordinator_local_summary_result(
-    index_relation: pg_sys::Relation,
+fn remote_search_coordinator_local_summary_result(
+    index: SpireLiveIndexRelation,
     requested_epoch: u64,
     query: Vec<f32>,
     selected_pids: Vec<u64>,
@@ -1146,9 +1078,6 @@ unsafe fn remote_search_coordinator_local_summary_result(
 
     let requested_consistency_mode = parse_remote_search_consistency_mode(consistency_mode)?;
     let query = scan::SpireScanQuery::new(query)?;
-    // SAFETY: PostgreSQL calls this coordinator helper with a live SPIRE index
-    // relation for the duration of the local summary request.
-    let index = unsafe { SpireLiveIndexRelation::new(index_relation) };
     let root_control = index.root_control();
     if root_control.active_epoch != requested_epoch {
         return Err(format!(
@@ -1265,13 +1194,10 @@ unsafe fn remote_search_coordinator_local_summary_result(
     })
 }
 
-pub(crate) unsafe fn index_top_graph_snapshot(
-    index_relation: pg_sys::Relation,
+pub(crate) fn index_top_graph_snapshot(
+    index: SpireLiveIndexRelation,
 ) -> SpireIndexTopGraphSnapshot {
     let result = (|| -> Result<SpireIndexTopGraphSnapshot, String> {
-        // SAFETY: PostgreSQL calls this diagnostic wrapper with a live SPIRE
-        // index relation for the duration of the call.
-        let index = unsafe { SpireLiveIndexRelation::new(index_relation) };
         let relation_options = index.relation_options();
         let top_graph_plan = relation_options.top_graph_plan()?;
         let root_control = index.root_control();
@@ -1355,10 +1281,8 @@ pub(crate) unsafe fn index_top_graph_snapshot(
         let top_graph_count = u64::try_from(top_graphs.len())
             .map_err(|_| "ec_spire top graph snapshot count exceeds u64".to_owned())?;
         let (placement, top_graph) = &top_graphs[0];
-        // SAFETY: placement belongs to the active top-graph snapshot and the
-        // object store was opened for the same relation and placement set.
         let object_tuple_count =
-            u64::try_from(unsafe { object_store.active_object_tuple_locators(placement)? }.len())
+            u64::try_from(object_store.active_object_tuple_locators(placement)?.len())
                 .map_err(|_| "ec_spire top graph object tuple count exceeds u64".to_owned())?;
         let object_meta_tuple_count = u64::from(object_tuple_count > 0);
         let object_segment_count = object_tuple_count.saturating_sub(object_meta_tuple_count);
@@ -1444,13 +1368,10 @@ pub(crate) unsafe fn index_top_graph_snapshot(
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
-pub(crate) unsafe fn index_hierarchy_snapshot(
-    index_relation: pg_sys::Relation,
+pub(crate) fn index_hierarchy_snapshot(
+    index: SpireLiveIndexRelation,
 ) -> SpireIndexHierarchySnapshot {
     let result = (|| -> Result<SpireIndexHierarchySnapshot, String> {
-        // SAFETY: PostgreSQL calls this diagnostic wrapper with a live SPIRE
-        // index relation for the duration of the call.
-        let index = unsafe { SpireLiveIndexRelation::new(index_relation) };
         let root_control = index.root_control();
         let Some(anchor) = index.coordinator_fanout_anchor(root_control)? else {
             let (status, recommendation) = hierarchy_snapshot_status(0, 0, 0, true, false);
@@ -1606,13 +1527,10 @@ pub(crate) unsafe fn index_hierarchy_snapshot(
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
-pub(crate) unsafe fn index_object_snapshot(
-    index_relation: pg_sys::Relation,
+pub(crate) fn index_object_snapshot(
+    index: SpireLiveIndexRelation,
 ) -> Vec<SpireIndexObjectSnapshotRow> {
     let result = (|| -> Result<Vec<SpireIndexObjectSnapshotRow>, String> {
-        // SAFETY: PostgreSQL calls this diagnostic wrapper with a live SPIRE
-        // index relation for the duration of the call.
-        let index = unsafe { SpireLiveIndexRelation::new(index_relation) };
         let root_control = index.root_control();
         let Some(anchor) = index.active_epoch_anchor(root_control)? else {
             return Ok(Vec::new());
@@ -1666,13 +1584,10 @@ pub(crate) unsafe fn index_object_snapshot(
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
-pub(crate) unsafe fn index_delta_snapshot(
-    index_relation: pg_sys::Relation,
+pub(crate) fn index_delta_snapshot(
+    index: SpireLiveIndexRelation,
 ) -> Vec<SpireIndexDeltaSnapshotRow> {
     let result = (|| -> Result<Vec<SpireIndexDeltaSnapshotRow>, String> {
-        // SAFETY: PostgreSQL calls this diagnostic wrapper with a live SPIRE
-        // index relation for the duration of the call.
-        let index = unsafe { SpireLiveIndexRelation::new(index_relation) };
         let Some(anchor) = index.active_epoch_anchor(index.root_control())? else {
             return Ok(Vec::new());
         };
@@ -1734,15 +1649,12 @@ pub(crate) unsafe fn index_delta_snapshot(
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
-pub(crate) unsafe fn index_scan_placement_snapshot(
-    index_relation: pg_sys::Relation,
+pub(crate) fn index_scan_placement_snapshot(
+    index: SpireLiveIndexRelation,
     query_values: Vec<f32>,
 ) -> Vec<SpireIndexScanPlacementSnapshotRow> {
     let result = (|| -> Result<Vec<SpireIndexScanPlacementSnapshotRow>, String> {
         let query = scan::SpireScanQuery::new(query_values)?;
-        // SAFETY: PostgreSQL calls this diagnostic wrapper with a live SPIRE
-        // index relation for the duration of the call.
-        let index = unsafe { SpireLiveIndexRelation::new(index_relation) };
         let Some(anchor) = index.active_epoch_anchor(index.root_control())? else {
             return Ok(Vec::new());
         };
@@ -1812,29 +1724,24 @@ pub(crate) unsafe fn index_scan_placement_snapshot(
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
-pub(crate) unsafe fn index_selected_pid_placement_snapshot(
-    index_relation: pg_sys::Relation,
+pub(crate) fn index_selected_pid_placement_snapshot(
+    index: SpireLiveIndexRelation,
     selected_pids: Vec<u64>,
 ) -> Vec<SpireIndexSelectedPidPlacementSnapshotRow> {
     let result = (|| -> Result<Vec<SpireIndexSelectedPidPlacementSnapshotRow>, String> {
-        // SAFETY: reads root/control state through the live index relation for
-        // selected-PID placement diagnostics.
-        let root_control = unsafe { page::read_root_control_page(index_relation) };
-        if root_control.active_epoch == 0 {
+        let root_control = index.root_control();
+        let Some(anchor) = index.coordinator_fanout_anchor(root_control)? else {
             return Ok(Vec::new());
-        }
-
-        let (_epoch_manifest, object_manifest, placement_directory) =
-            load_relation_epoch_manifests_for_coordinator_fanout(index_relation, root_control)?;
+        };
         let mut rows = Vec::with_capacity(selected_pids.len());
         for (selection_index, pid) in selected_pids.into_iter().enumerate() {
             if pid == 0 {
                 return Err("ec_spire selected PID placement snapshot received PID 0".to_owned());
             }
-            let manifest_entry = object_manifest.get(pid).ok_or_else(|| {
+            let manifest_entry = anchor.object_manifest.get(pid).ok_or_else(|| {
                 format!("ec_spire selected PID placement snapshot missing object for pid {pid}")
             })?;
-            let placement = placement_directory.get(pid).ok_or_else(|| {
+            let placement = anchor.placement_directory.get(pid).ok_or_else(|| {
                 format!("ec_spire selected PID placement snapshot missing placement for pid {pid}")
             })?;
             if placement.object_version != manifest_entry.object_version {
@@ -1863,42 +1770,26 @@ pub(crate) unsafe fn index_selected_pid_placement_snapshot(
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
-pub(crate) unsafe fn index_scan_routing_snapshot(
-    index_relation: pg_sys::Relation,
+pub(crate) fn index_scan_routing_snapshot(
+    index: SpireLiveIndexRelation,
     query_values: Vec<f32>,
 ) -> Vec<SpireIndexScanRoutingSnapshotRow> {
     let result = (|| -> Result<Vec<SpireIndexScanRoutingSnapshotRow>, String> {
         let query = scan::SpireScanQuery::new(query_values)?;
-        // SAFETY: reads root/control state through the live index relation for
-        // scan-routing diagnostics.
-        let root_control = unsafe { page::read_root_control_page(index_relation) };
-        if root_control.active_epoch == 0 {
+        let root_control = index.root_control();
+        let Some(anchor) = index.active_epoch_anchor(root_control)? else {
             return Ok(Vec::new());
-        }
-
-        // SAFETY: root_control came from the same live index relation and names
-        // the active manifests used by scan-routing diagnostics.
-        let (epoch_manifest, object_manifest, placement_directory) =
-            unsafe { scan::load_relation_epoch_manifests(index_relation, root_control)? };
-        let snapshot = meta::SpirePublishedEpochSnapshot::new(
-            &epoch_manifest,
-            &object_manifest,
-            &placement_directory,
-        )?;
-        // SAFETY: opens relation-backed object stores for placements in the
-        // active scan-routing snapshot while holding AccessShareLock.
-        let object_store = unsafe {
-            storage::SpireRelationObjectStoreSet::for_index_relation_and_placements(
-                index_relation,
-                &placement_directory,
-                pg_sys::AccessShareLock as pg_sys::LOCKMODE,
-            )?
         };
+        let snapshot = anchor.snapshot()?;
+        let object_store = index.object_store_set(
+            &anchor.placement_directory,
+            pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+        )?;
         let diagnostics = scan::collect_scan_routing_diagnostics(
             &snapshot,
             &object_store,
             &query,
-            options::relation_options(index_relation),
+            index.relation_options(),
         )?;
         let scan_plan = diagnostics.scan_plan;
         let rows = diagnostics
@@ -1906,7 +1797,7 @@ pub(crate) unsafe fn index_scan_routing_snapshot(
             .into_iter()
             .map(|level| {
                 Ok(SpireIndexScanRoutingSnapshotRow {
-                    active_epoch: epoch_manifest.epoch,
+                    active_epoch: anchor.epoch_manifest.epoch,
                     effective_nprobe: level.effective_nprobe,
                     effective_nprobe_source: if level.effective_nprobe_source == "configured" {
                         scan_plan.nprobe_source
@@ -1966,66 +1857,38 @@ pub(crate) unsafe fn index_scan_routing_snapshot(
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
-pub(crate) unsafe fn index_root_routing_snapshot(
-    index_relation: pg_sys::Relation,
+pub(crate) fn index_root_routing_snapshot(
+    index: SpireLiveIndexRelation,
 ) -> Vec<SpireIndexRootRoutingSnapshotRow> {
     let result = (|| -> Result<Vec<SpireIndexRootRoutingSnapshotRow>, String> {
-        // SAFETY: reads root/control state through the live index relation for
-        // root-routing diagnostics.
-        let root_control = unsafe { page::read_root_control_page(index_relation) };
-        if root_control.active_epoch == 0 {
+        let root_control = index.root_control();
+        let Some(anchor) = index.active_epoch_anchor(root_control)? else {
             return Ok(Vec::new());
-        }
-
-        // SAFETY: root_control came from the same live index relation and names
-        // the active manifests used by root-routing diagnostics.
-        let (epoch_manifest, object_manifest, placement_directory) =
-            unsafe { scan::load_relation_epoch_manifests(index_relation, root_control)? };
-        let snapshot = meta::SpireValidatedEpochSnapshot::new(
-            &epoch_manifest,
-            &object_manifest,
-            &placement_directory,
-        )?;
-        // SAFETY: opens the SPIRE relation object store for the live index
-        // relation before reading local root-routing objects.
-        let object_store =
-            unsafe { storage::SpireRelationObjectStore::for_index_relation(index_relation)? };
+        };
+        let snapshot = anchor.validated_snapshot()?;
+        let object_store = index.object_store()?;
         collect_root_routing_snapshot_rows(&snapshot, &object_store)
     })();
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
-pub(crate) unsafe fn index_routing_centroid_snapshot(
-    index_relation: pg_sys::Relation,
+pub(crate) fn index_routing_centroid_snapshot(
+    index: SpireLiveIndexRelation,
 ) -> Vec<SpireIndexRoutingCentroidSnapshotRow> {
     let result = (|| -> Result<Vec<SpireIndexRoutingCentroidSnapshotRow>, String> {
-        // SAFETY: reads root/control state through the live index relation for
-        // routing-centroid diagnostics.
-        let root_control = unsafe { page::read_root_control_page(index_relation) };
-        if root_control.active_epoch == 0 {
+        let root_control = index.root_control();
+        let Some(anchor) = index.active_epoch_anchor(root_control)? else {
             return Ok(Vec::new());
-        }
-
-        // SAFETY: root_control came from the same live index relation and names
-        // the active manifests used by routing-centroid diagnostics.
-        let (epoch_manifest, object_manifest, placement_directory) =
-            unsafe { scan::load_relation_epoch_manifests(index_relation, root_control)? };
-        let snapshot = meta::SpireValidatedEpochSnapshot::new(
-            &epoch_manifest,
-            &object_manifest,
-            &placement_directory,
-        )?;
-        // SAFETY: opens the SPIRE relation object store for the live index
-        // relation before reading local routing centroids.
-        let object_store =
-            unsafe { storage::SpireRelationObjectStore::for_index_relation(index_relation)? };
+        };
+        let snapshot = anchor.validated_snapshot()?;
+        let object_store = index.object_store()?;
         collect_routing_centroid_snapshot_rows(&snapshot, &object_store)
     })();
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
-pub(crate) unsafe fn classify_centroid(
-    index_relation: pg_sys::Relation,
+pub(crate) fn classify_centroid(
+    index: SpireLiveIndexRelation,
     embedding: &[f32],
 ) -> Result<(u32, u64, u64), String> {
     if embedding.is_empty() {
@@ -2035,45 +1898,14 @@ pub(crate) unsafe fn classify_centroid(
         return Err("ec_spire_classify_centroid embedding components must be finite".to_owned());
     }
 
-    // SAFETY: reads root/control state through the live index relation for
-    // centroid classification against the active routing epoch.
-    let root_control = unsafe { page::read_root_control_page(index_relation) };
-    if root_control.active_epoch == 0 {
+    let root_control = index.root_control();
+    let Some(anchor) = index.active_epoch_anchor(root_control)? else {
         return Err(
             "ec_spire_classify_centroid requires an active ec_spire routing epoch".to_owned(),
         );
-    }
-
-    // SAFETY: root_control came from this live index relation and contains the
-    // tuple ID of the active epoch manifest.
-    let epoch_bytes =
-        unsafe { page::read_object_tuple(index_relation, root_control.epoch_manifest_tid)? };
-    // SAFETY: root_control came from this live index relation and contains the
-    // tuple ID of the active object manifest.
-    let object_bytes =
-        unsafe { page::read_object_tuple(index_relation, root_control.object_manifest_tid)? };
-    // SAFETY: root_control came from this live index relation and contains the
-    // tuple ID of the active placement directory.
-    let placement_bytes =
-        unsafe { page::read_object_tuple(index_relation, root_control.placement_directory_tid)? };
-    let epoch_manifest = meta::SpireEpochManifest::decode(&epoch_bytes)?;
-    let object_manifest = meta::SpireObjectManifest::decode(&object_bytes)?;
-    let placement_directory = meta::SpirePlacementDirectory::decode(&placement_bytes)?;
-    if epoch_manifest.epoch != root_control.active_epoch {
-        return Err(format!(
-            "ec_spire root/control active epoch {} does not match epoch manifest {}",
-            root_control.active_epoch, epoch_manifest.epoch
-        ));
-    }
-    let snapshot = meta::SpireValidatedEpochSnapshot::new(
-        &epoch_manifest,
-        &object_manifest,
-        &placement_directory,
-    )?;
-    // SAFETY: opens the SPIRE relation object store for the live index relation
-    // before reading local root routing objects.
-    let object_store =
-        unsafe { storage::SpireRelationObjectStore::for_index_relation(index_relation)? };
+    };
+    let snapshot = anchor.validated_snapshot()?;
+    let object_store = index.object_store()?;
     let mut root = None;
     for manifest_entry in &snapshot.object_manifest().entries {
         let lookup = snapshot.require_lookup(manifest_entry.pid, "classify centroid root load")?;

@@ -1,0 +1,105 @@
+Script started on 2026-05-21 19:20:31-07:00 [<not executed on terminal>]
+diff --git a/src/am/ec_spire/storage/relation_plan.rs b/src/am/ec_spire/storage/relation_plan.rs
+index fd8ef2b34..17fd1fd0c 100644
+--- a/src/am/ec_spire/storage/relation_plan.rs
++++ b/src/am/ec_spire/storage/relation_plan.rs
+@@ -146,27 +146,27 @@ fn spire_aux_store_reloptions() -> Result<pg_sys::Datum, String> {
+     let option = std::ffi::CString::new("autovacuum_enabled=false")
+         .map_err(|_| "ec_spire auxiliary store reloption contains NUL".to_owned())?;
+     // SAFETY: option is a NUL-terminated CString that remains live while
+-    // PostgreSQL copies it into a text Datum.
+-    let text = unsafe { pg_sys::cstring_to_text(option.as_ptr()) };
+-    if text.is_null() {
+-        return Err("ec_spire failed to allocate auxiliary store reloption text".to_owned());
+-    }
++    // PostgreSQL copies it into a text Datum. The non-null text varlena is then
++    // wrapped as one TEXT datum, copied into a PostgreSQL array value, and the
++    // resulting non-null array varlena is returned as a Datum.
++    unsafe {
++        let text = pg_sys::cstring_to_text(option.as_ptr());
++        if text.is_null() {
++            return Err("ec_spire failed to allocate auxiliary store reloption text".to_owned());
++        }
+ 
+-    // SAFETY: text is a non-null PostgreSQL varlena allocated above and is safe
+-    // to wrap as a Datum for construct_array_builtin.
+-    let mut elems = [unsafe { pg_sys::PointerGetDatum(text.cast()) }];
+-    // SAFETY: elems points to one TEXT datum and construct_array_builtin copies
+-    // it into a PostgreSQL array value for TEXTOID.
+-    let array = unsafe {
+-        pg_sys::construct_array_builtin(elems.as_mut_ptr(), elems.len() as i32, pg_sys::TEXTOID)
+-    };
+-    if array.is_null() {
+-        return Err("ec_spire failed to allocate auxiliary store reloptions array".to_owned());
+-    }
++        let mut elems = [pg_sys::PointerGetDatum(text.cast())];
++        let array = pg_sys::construct_array_builtin(
++            elems.as_mut_ptr(),
++            elems.len() as i32,
++            pg_sys::TEXTOID,
++        );
++        if array.is_null() {
++            return Err("ec_spire failed to allocate auxiliary store reloptions array".to_owned());
++        }
+ 
+-    // SAFETY: array is non-null PostgreSQL varlena storage allocated by
+-    // construct_array_builtin and can be returned as a Datum.
+-    Ok(unsafe { pg_sys::PointerGetDatum(array.cast()) })
++        Ok(pg_sys::PointerGetDatum(array.cast()))
++    }
+ }
+ 
+ #[cfg(any(feature = "pg17", feature = "pg18", feature = "pg_test"))]
+@@ -228,9 +228,10 @@ pub(super) fn create_local_store_relations_for_build(
+ 
+         // SAFETY: relname, tuple_desc, reloptions, namespace/owner/persistence,
+         // and tablespace values are prepared above and remain valid for the
+-        // heap_create_with_catalog call.
++        // heap_create_with_catalog call. tuple_desc was allocated by
++        // CreateTupleDescCopy and is released immediately after the catalog call.
+         let store_relid = unsafe {
+-            pg_sys::heap_create_with_catalog(
++            let store_relid = pg_sys::heap_create_with_catalog(
+                 relname.as_ptr(),
+                 namespace_oid,
+                 pg_sys::Oid::from(entry.tablespace_oid),
+@@ -252,11 +253,10 @@ pub(super) fn create_local_store_relations_for_build(
+                 true,
+                 pg_sys::InvalidOid,
+                 std::ptr::null_mut(),
+-            )
++            );
++            pg_sys::FreeTupleDesc(tuple_desc);
++            store_relid
+         };
+-        // SAFETY: tuple_desc was allocated by CreateTupleDescCopy above and is
+-        // no longer needed after heap_create_with_catalog returns.
+-        unsafe { pg_sys::FreeTupleDesc(tuple_desc) };
+         if store_relid == pg_sys::InvalidOid {
+             return Err(format!(
+                 "ec_spire failed to create local_store_id {} relation '{}'",
+@@ -275,17 +275,17 @@ pub(super) fn create_local_store_relations_for_build(
+             objectSubId: 0,
+         };
+         // SAFETY: store_object and index_object are valid relation ObjectAddress
+-        // values for objects created/read in this transaction.
++        // values for objects created/read in this transaction. The catalog write
++        // must become visible before the created auxiliary store is opened and
++        // initialized below.
+         unsafe {
+             pg_sys::recordDependencyOn(
+                 &store_object,
+                 &index_object,
+                 pg_sys::DependencyType::DEPENDENCY_INTERNAL,
+-            )
++            );
++            pg_sys::CommandCounterIncrement();
+         };
+-        // SAFETY: dependency/catalog writes above must become visible before the
+-        // created auxiliary store is opened and initialized below.
+-        unsafe { pg_sys::CommandCounterIncrement() };
+ 
+         let Some(store_relation) = crate::storage::relation_guard::RelationGuard::try_open(
+             store_relid,
+
+Script done on 2026-05-21 19:20:31-07:00 [COMMAND_EXIT_CODE="0"]

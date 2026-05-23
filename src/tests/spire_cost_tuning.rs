@@ -183,7 +183,7 @@
         // SAFETY: the test created this index and selected_pid from the
         // index-local leaf snapshot immediately before rewriting the debug
         // placement metadata.
-        unsafe { am::debug_spire_rewrite_placement_node(index_oid, selected_pid as u64, 2) };
+        am::debug_spire_rewrite_placement_node(index_oid, selected_pid as u64, 2);
 
         Spi::run("SET enable_seqscan = off").expect("disable seqscan should succeed");
         Spi::run("SET enable_indexscan = off").expect("disable indexscan should succeed");

@@ -3,7 +3,6 @@
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap, HashSet},
     mem::size_of,
-    ptr,
 };
 
 use pgrx::pg_sys;

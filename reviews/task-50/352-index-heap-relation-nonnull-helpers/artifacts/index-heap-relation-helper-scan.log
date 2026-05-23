@@ -1,0 +1,30 @@
+Script started on 2026-05-21 17:09:27-07:00 [<not executed on terminal>]
+src/am/ec_diskann/routine.rs
+1123:    let heap_oid = crate::storage::relation::index_heap_relation_oid_handle(index_relation);
+
+src/am/ec_diskann/scan_state.rs
+288:        let heap_oid = crate::storage::relation::index_heap_relation_oid_handle(index_relation);
+
+src/am/ec_spire/scan/relation.rs
+112:        let heap_oid = crate::storage::relation::index_heap_relation_oid_handle(index_relation);
+
+src/storage/relation.rs
+8:pub(crate) type RelationHandle = NonNull<pg_sys::RelationData>;
+27:    relation_oid_handle(relation)
+30:pub(crate) fn relation_oid_handle(relation: RelationHandle) -> pg_sys::Oid {
+132:    index_heap_relation_oid_handle(index_relation)
+135:pub(crate) fn index_heap_relation_oid_handle(index_relation: RelationHandle) -> pg_sys::Oid {
+136:    index_heap_relation_oid_from_index_oid(relation_oid_handle(index_relation))
+
+src/am/ec_hnsw/scan.rs
+1391:    let heap_oid = crate::storage::relation::index_heap_relation_oid_handle(index_relation_handle);
+1768:    let heap_oid = crate::storage::relation::index_heap_relation_oid_handle(index_relation_handle);
+
+src/am/ec_hnsw/build.rs
+321:            crate::storage::relation::index_heap_relation_oid_handle(index_relation_handle);
+525:    let heap_oid = crate::storage::relation::index_heap_relation_oid_handle(index_relation_handle);
+
+src/storage/relation_guard.rs
+61:        crate::storage::relation::index_heap_relation_oid_handle(relation)
+
+Script done on 2026-05-21 17:09:27-07:00 [COMMAND_EXIT_CODE="0"]

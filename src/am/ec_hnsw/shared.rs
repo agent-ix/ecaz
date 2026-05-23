@@ -1,10 +1,9 @@
-use std::ptr;
+use std::ptr::{self, NonNull};
 
-use pgrx::{itemptr::item_pointer_get_both, pg_sys, PgBox};
+use pgrx::pg_sys;
 
-#[cfg(feature = "pg18")]
-use super::stream;
 use super::{graph, options, page, EC_HNSW_PLANNER_SCAN_ENABLED, P_NEW};
+use crate::am::common::vacuum::{alloc_index_bulk_delete_result, set_index_bulk_delete_summary};
 use crate::storage::buffer_guard::LockedBufferGuard;
 #[cfg(any(test, feature = "pg_test"))]
 use crate::storage::relation_guard::IndexRelationGuard;
@@ -57,11 +56,9 @@ unsafe fn write_metadata_bytes(page: pg_sys::Page, metadata_bytes: &[u8]) {
 }
 
 fn hnsw_main_block_count(index_relation: pg_sys::Relation) -> pg_sys::BlockNumber {
-    // SAFETY: Callers hold a live index relation while copying its current
-    // main-fork block count.
-    unsafe {
-        pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
-    }
+    let index_relation = NonNull::new(index_relation)
+        .unwrap_or_else(|| pgrx::error!("ec_hnsw block count received null index relation"));
+    crate::storage::relation::main_fork_block_count_handle(index_relation)
 }
 
 fn read_main_buffer(
@@ -129,48 +126,39 @@ fn rewrite_metadata_buffer(
     // large enough for the encoded metadata before the bytes are copied.
     unsafe {
         let mut wal_txn = wal::GenericXLogTxn::start(index_relation);
-        let page = wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32);
+        let page = wal_txn.register_locked_buffer_full_image(&buffer);
         pg_sys::PageInit(page, page_size, special_size);
         write_metadata_bytes(page, &metadata_bytes);
         wal_txn.finish();
     }
 }
 
-pub(super) unsafe fn ec_hnsw_noop_vacuum_stats(
+pub(super) fn ec_hnsw_noop_vacuum_stats(
     index_relation: pg_sys::Relation,
     stats: *mut pg_sys::IndexBulkDeleteResult,
 ) -> *mut pg_sys::IndexBulkDeleteResult {
     let stats = if stats.is_null() {
-        // SAFETY: PostgreSQL memory-context allocation creates a zeroed stats
-        // struct owned by the current vacuum callback.
-        unsafe { PgBox::<pg_sys::IndexBulkDeleteResult>::alloc0().into_pg() }
+        alloc_index_bulk_delete_result().into()
     } else {
         stats
     };
 
-    // SAFETY: `stats` is either PostgreSQL-supplied or allocated above, and the
-    // index relation is live while page/live-tuple stats are computed.
-    unsafe {
-        (*stats).num_pages = pg_sys::RelationGetNumberOfBlocksInFork(
-            index_relation,
-            pg_sys::ForkNumber::MAIN_FORKNUM,
-        );
-        (*stats).estimated_count = false;
-        (*stats).num_index_tuples = count_element_tuples(index_relation) as f64;
-    }
+    let stats_handle =
+        NonNull::new(stats).unwrap_or_else(|| pgrx::error!("ec_hnsw vacuum stats is null"));
+    let index_relation_handle = NonNull::new(index_relation)
+        .unwrap_or_else(|| pgrx::error!("ec_hnsw vacuum stats need a valid index relation"));
+    let block_count = crate::storage::relation::main_fork_block_count_handle(index_relation_handle);
+    let live_tuples = u64::try_from(count_element_tuples(index_relation))
+        .unwrap_or_else(|_| pgrx::error!("ec_hnsw vacuum live tuple count exceeds u64"));
+    set_index_bulk_delete_summary(stats_handle, block_count, live_tuples);
 
     stats
 }
 
-pub(super) unsafe fn count_element_tuples(index_relation: pg_sys::Relation) -> usize {
-    // SAFETY: The index relation is live and the metadata page is read under a
-    // shared buffer lock.
-    let metadata = unsafe { read_metadata_page(index_relation) };
-    // SAFETY: Metadata was decoded from this index and describes its graph
-    // storage layout.
-    let storage =
-        unsafe { graph::GraphStorageDescriptor::from_index_relation(index_relation, &metadata) }
-            .unwrap_or_else(|e| pgrx::error!("{e}"));
+pub(super) fn count_element_tuples(index_relation: pg_sys::Relation) -> usize {
+    let metadata = read_metadata_page(index_relation);
+    let storage = graph::GraphStorageDescriptor::from_index_relation(index_relation, &metadata)
+        .unwrap_or_else(|e| pgrx::error!("{e}"));
     let block_count = hnsw_main_block_count(index_relation);
     if block_count <= page::FIRST_DATA_BLOCK_NUMBER {
         return 0;
@@ -179,56 +167,19 @@ pub(super) unsafe fn count_element_tuples(index_relation: pg_sys::Relation) -> u
 
     #[cfg(feature = "pg18")]
     {
-        let mut linear_state = stream::LinearPrefetchState::new(
+        crate::am::stream::visit_relation_linear_read_stream(
+            index_relation,
             page::FIRST_DATA_BLOCK_NUMBER,
             block_count
                 .saturating_sub(1)
                 .max(page::FIRST_DATA_BLOCK_NUMBER),
-        );
-        // SAFETY: The index relation and callback state live until
-        // `read_stream_end`; the stream callback yields main-fork block numbers.
-        let stream = unsafe {
-            pg_sys::read_stream_begin_relation(
-                pg_sys::READ_STREAM_SEQUENTIAL as i32,
-                ptr::null_mut(),
-                index_relation,
-                pg_sys::ForkNumber::MAIN_FORKNUM,
-                Some(stream::linear_prefetch_cb),
-                (&mut linear_state as *mut stream::LinearPrefetchState).cast(),
-                std::mem::size_of::<pg_sys::BlockNumber>(),
-            )
-        };
-        // SAFETY: `stream` was just opened and can be reset before consumption.
-        unsafe { pg_sys::read_stream_reset(stream) };
-        loop {
-            let mut per_buffer_data = ptr::null_mut();
-            // SAFETY: `stream` remains valid until `read_stream_end` below.
-            let buffer = unsafe { pg_sys::read_stream_next_buffer(stream, &mut per_buffer_data) };
-            if buffer == pg_sys::InvalidBuffer as pg_sys::Buffer {
-                break;
-            }
-            let block_number = if per_buffer_data.is_null() {
-                page::FIRST_DATA_BLOCK_NUMBER
-            } else {
-                // SAFETY: The stream callback stores a BlockNumber-sized payload
-                // when per-buffer data is non-null.
-                unsafe { *per_buffer_data.cast::<pg_sys::BlockNumber>() }
-            };
-            // SAFETY: `read_stream_next_buffer` returns a pinned buffer that is
-            // locked here for shared tuple inspection.
-            let buffer =
-                unsafe { LockedBufferGuard::lock_pinned(buffer, pg_sys::BUFFER_LOCK_SHARE as i32) }
-                    .unwrap_or_else(|| {
-                        pgrx::error!(
-                            "ec_hnsw failed to open data buffer while counting live tuples"
-                        )
-                    });
-            // SAFETY: The buffer guard owns a shared lock and `storage` matches
-            // the decoded index metadata.
-            count += unsafe { count_live_elements_on_buffer(storage, &buffer, block_number) };
-        }
-        // SAFETY: Ends the read stream opened above after all buffers are consumed.
-        unsafe { pg_sys::read_stream_end(stream) };
+            "ec_hnsw live tuple count",
+            |buffer, block_number| {
+                count += count_live_elements_on_buffer(storage, buffer, block_number);
+                Ok(())
+            },
+        )
+        .unwrap_or_else(|error| pgrx::error!("{error}"));
     }
 
     #[cfg(not(feature = "pg18"))]
@@ -250,7 +201,7 @@ pub(super) unsafe fn count_element_tuples(index_relation: pg_sys::Relation) -> u
     count
 }
 
-unsafe fn count_live_elements_on_buffer(
+fn count_live_elements_on_buffer(
     storage: graph::GraphStorageDescriptor,
     buffer: &LockedBufferGuard,
     block_number: u32,
@@ -261,16 +212,13 @@ unsafe fn count_live_elements_on_buffer(
     let mut count = 0_usize;
 
     for offset in 1..=line_pointer_count {
-        // SAFETY: The buffer is shared-locked by the caller; offsets are bounded
-        // by this page's line pointer count before tuple bytes are visited.
-        unsafe {
-            with_page_line_tuple_bytes(
-                page_ptr,
-                page_size,
-                block_number,
-                offset,
-                "counting vacuum tuples",
-                |tuple_bytes| match storage {
+        with_page_line_tuple_bytes(
+            page_ptr,
+            page_size,
+            block_number,
+            offset,
+            "counting vacuum tuples",
+            |tuple_bytes| match storage {
                     graph::GraphStorageDescriptor::TurboQuant { code_len } => {
                         if tuple_bytes.first().copied() == Some(page::TQ_ELEMENT_TAG) {
                             let element = page::TqElementTuple::decode(tuple_bytes, code_len)
@@ -317,16 +265,15 @@ unsafe fn count_live_elements_on_buffer(
                             }
                         }
                     }
-                },
-            )
-            .unwrap_or_else(|e| pgrx::error!("{e}"))
-        };
+            },
+        )
+        .unwrap_or_else(|e| pgrx::error!("{e}"));
     }
 
     count
 }
 
-pub(super) unsafe fn highest_level_live_entry_candidate(
+pub(super) fn highest_level_live_entry_candidate(
     index_relation: pg_sys::Relation,
     storage: graph::GraphStorageDescriptor,
 ) -> Option<LiveEntryCandidate> {
@@ -351,16 +298,13 @@ pub(super) unsafe fn highest_level_live_entry_candidate(
                 block_number,
                 offset_number: offset,
             };
-            // SAFETY: The buffer is shared-locked and the offset is bounded by
-            // this page's line pointer count before tuple bytes are decoded.
-            let candidate = unsafe {
-                with_page_line_tuple_bytes(
-                    page_ptr,
-                    page_size,
-                    block_number,
-                    offset,
-                    "selecting a live entry candidate",
-                    |tuple_bytes| match storage {
+            let candidate = with_page_line_tuple_bytes(
+                page_ptr,
+                page_size,
+                block_number,
+                offset,
+                "selecting a live entry candidate",
+                |tuple_bytes| match storage {
                         graph::GraphStorageDescriptor::TurboQuant { code_len } => {
                             if tuple_bytes.first().copied() != Some(page::TQ_ELEMENT_TAG) {
                                 None
@@ -423,9 +367,8 @@ pub(super) unsafe fn highest_level_live_entry_candidate(
                                 )
                             }
                         }
-                    },
-                )
-            }
+                },
+            )
             .unwrap_or_else(|e| pgrx::error!("{e}"))
             .flatten();
             if let Some(candidate) = candidate {
@@ -479,7 +422,7 @@ pub(super) fn page_line_pointer_count(page_ptr: *mut u8) -> u16 {
         / size_of::<pg_sys::ItemIdData>()) as u16
 }
 
-pub(super) unsafe fn with_page_line_tuple_bytes<R, F>(
+pub(super) fn with_page_line_tuple_bytes<R, F>(
     page_ptr: *mut u8,
     page_size: usize,
     block_number: pg_sys::BlockNumber,
@@ -511,7 +454,7 @@ where
     Ok(Some(visit(tuple_bytes)))
 }
 
-pub(super) unsafe fn with_writable_page_tuple_bytes<R, F>(
+pub(super) fn with_writable_page_tuple_bytes<R, F>(
     page_ptr: *mut u8,
     page_size: usize,
     tuple_tid: page::ItemPointer,
@@ -552,13 +495,9 @@ pub(super) unsafe fn decode_heap_tid(tid: pg_sys::ItemPointer) -> page::ItemPoin
     if tid.is_null() {
         pgrx::error!("ec_hnsw ambuild received a null heap tid");
     }
-    // SAFETY: Null was checked above and PostgreSQL supplied this heap TID for
-    // the AM callback currently decoding it.
-    let (block_number, offset_number) = item_pointer_get_both(unsafe { *tid });
-    page::ItemPointer {
-        block_number,
-        offset_number,
-    }
+    crate::am::common::pg_ptr::item_pointer(
+        std::ptr::NonNull::new(tid).expect("ec_hnsw heap tid should be non-null"),
+    )
 }
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -569,14 +508,13 @@ pub(crate) struct DebugIndexDataPage {
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_index_pages(
+pub(crate) fn debug_index_pages(
     index_oid: pg_sys::Oid,
 ) -> (u32, page::MetadataPage, Vec<DebugIndexDataPage>) {
     let index_relation = IndexRelationGuard::access_share(index_oid, "debug_index_pages");
     let block_count = hnsw_main_block_count(index_relation.as_ptr());
 
-    // SAFETY: The index relation guard keeps the metadata page readable.
-    let metadata = unsafe { read_metadata_page(index_relation.as_ptr()) };
+    let metadata = read_metadata_page(index_relation.as_ptr());
     let mut data_pages = Vec::new();
     for block_number in page::FIRST_DATA_BLOCK_NUMBER..block_count {
         // SAFETY: `block_number` is within the current main-fork block range and
@@ -587,7 +525,7 @@ pub(crate) unsafe fn debug_index_pages(
     (block_count, metadata, data_pages)
 }
 
-pub(crate) unsafe fn read_metadata_page(index_relation: pg_sys::Relation) -> page::MetadataPage {
+pub(crate) fn read_metadata_page(index_relation: pg_sys::Relation) -> page::MetadataPage {
     let buffer = read_main_buffer(
         index_relation,
         page::METADATA_BLOCK_NUMBER,
@@ -597,8 +535,8 @@ pub(crate) unsafe fn read_metadata_page(index_relation: pg_sys::Relation) -> pag
     );
     let raw_page = buffer.page().cast::<u8>();
     let page_size = buffer.page_size();
-    // SAFETY: The buffer guard pins the metadata page for the duration of this
-    // borrow and `page_size` bounds the slice.
+    // SAFETY: The buffer guard pins the metadata page and bounds `page_size`
+    // for the page memory; the slice does not outlive the guard.
     let page_bytes = unsafe { std::slice::from_raw_parts(raw_page, page_size) };
     let metadata =
         page::MetadataPage::decode_page(page_bytes).expect("metadata page should decode");
@@ -701,17 +639,14 @@ pub(crate) struct PlannerIntegrationSnapshot {
     pub next_pg18_blocker: &'static str,
 }
 
-pub(crate) unsafe fn index_admin_snapshot(index_relation: pg_sys::Relation) -> IndexAdminSnapshot {
-    // SAFETY: The index relation is live while its reloptions are decoded for
-    // admin diagnostics.
-    let relation_options = unsafe { options::relation_options(index_relation) };
+pub(crate) fn index_admin_snapshot(index_relation: pg_sys::Relation) -> IndexAdminSnapshot {
+    let relation_options = options::relation_options(
+        std::ptr::NonNull::new(index_relation)
+            .expect("ec_hnsw admin index relation should be non-null"),
+    );
     let tuning = options::resolve_scan_tuning(&relation_options);
-    // SAFETY: The index relation is live and metadata is read under a shared
-    // buffer lock.
-    let metadata = unsafe { read_metadata_page(index_relation) };
-    // SAFETY: The index relation is live while shared page traversal counts
-    // live HNSW element tuples.
-    let total_live_nodes = unsafe { count_element_tuples(index_relation) };
+    let metadata = read_metadata_page(index_relation);
+    let total_live_nodes = count_element_tuples(index_relation);
     let inserted_since_rebuild =
         usize::try_from(metadata.inserted_since_rebuild).unwrap_or_else(|_| {
             pgrx::error!(
@@ -742,12 +677,10 @@ fn insert_drift_fraction(total_live_nodes: usize, inserted_since_rebuild: usize)
     inserted_since_rebuild as f64 / total_live_nodes as f64
 }
 
-pub(crate) unsafe fn index_explain_snapshot(
+pub(crate) fn index_explain_snapshot(
     index_relation: pg_sys::Relation,
 ) -> IndexExplainSnapshot {
-    // SAFETY: The index relation is live for the duration of this diagnostic
-    // snapshot and admin snapshot reads only relation metadata.
-    let admin = unsafe { index_admin_snapshot(index_relation) };
+    let admin = index_admin_snapshot(index_relation);
     let translation = super::cost::strategy_translation_snapshot();
     let explain = super::explain::explain_option_snapshot();
     IndexExplainSnapshot {
@@ -767,22 +700,21 @@ pub(crate) unsafe fn index_explain_snapshot(
     }
 }
 
-pub(crate) unsafe fn index_cost_snapshot(index_relation: pg_sys::Relation) -> IndexCostSnapshot {
-    // SAFETY: The index relation is live while its reloptions are decoded for
-    // cost diagnostics.
-    let relation_options = unsafe { options::relation_options(index_relation) };
+pub(crate) fn index_cost_snapshot(index_relation: pg_sys::Relation) -> IndexCostSnapshot {
+    let relation_options = options::relation_options(
+        std::ptr::NonNull::new(index_relation)
+            .expect("ec_hnsw cost index relation should be non-null"),
+    );
     let tuning = options::resolve_scan_tuning(&relation_options);
-    // SAFETY: The index relation is live and metadata is read under a shared
-    // buffer lock.
-    let metadata = unsafe { read_metadata_page(index_relation) };
+    let metadata = read_metadata_page(index_relation);
     let block_count = hnsw_main_block_count(index_relation);
     let index_pages = f64::from(block_count);
-    // SAFETY: `index_relation` is a live Relation and `rd_rel` points at
-    // PostgreSQL's relation catalog tuple for the relation lifetime.
-    let reltuples = unsafe { (*(*index_relation).rd_rel).reltuples } as f64;
+    let index_relation = NonNull::new(index_relation)
+        .unwrap_or_else(|| pgrx::error!("ec_hnsw cost snapshot received null index relation"));
+    let reltuples = crate::storage::relation::relation_reltuples_handle(index_relation);
     let tree_height = super::cost::resolved_tree_height_input(metadata.max_level);
-    // SAFETY: Planner cost constants are read from PostgreSQL GUC state for this
-    // backend without retaining raw pointers.
+    // SAFETY: diagnostic snapshot reads planner cost globals in the current
+    // backend to report the same constants the planner would use.
     let constants = unsafe { super::cost::current_planner_cost_constants() };
     // Block 0 is always the metadata page; an empty index has block_count == 1.
     // FR-020's "Empty index (0 data pages)" gate must trip on
@@ -863,16 +795,12 @@ pub(crate) fn read_stream_snapshot() -> ReadStreamSnapshot {
     }
 }
 
-pub(crate) unsafe fn planner_integration_snapshot(
+pub(crate) fn planner_integration_snapshot(
     index_relation: pg_sys::Relation,
 ) -> PlannerIntegrationSnapshot {
-    // SAFETY: The index relation is live for the duration of this diagnostic
-    // snapshot and admin snapshot reads only relation metadata.
-    let admin = unsafe { index_admin_snapshot(index_relation) };
-    // SAFETY: Delegates to snapshot helpers using the same live index relation.
-    let explain = unsafe { index_explain_snapshot(index_relation) };
-    // SAFETY: Delegates to snapshot helpers using the same live index relation.
-    let cost = unsafe { index_cost_snapshot(index_relation) };
+    let admin = index_admin_snapshot(index_relation);
+    let explain = index_explain_snapshot(index_relation);
+    let cost = index_cost_snapshot(index_relation);
     let diagnostics = pg18_diagnostics_snapshot();
     let stream = read_stream_snapshot();
 
@@ -930,9 +858,7 @@ fn planner_tuning_snapshot(index_relation: pg_sys::Relation) -> DebugPlannerTuni
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_planner_tuning_snapshot(
-    index_oid: pg_sys::Oid,
-) -> DebugPlannerTuningSnapshot {
+pub(crate) fn debug_planner_tuning_snapshot(index_oid: pg_sys::Oid) -> DebugPlannerTuningSnapshot {
     let index_relation =
         IndexRelationGuard::access_share(index_oid, "debug_planner_tuning_snapshot");
     planner_tuning_snapshot(index_relation.as_ptr())
@@ -986,25 +912,20 @@ unsafe fn read_data_page(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_index_metadata(
-    index_oid: pg_sys::Oid,
-) -> (u32, i32, i32, page::MetadataPage) {
+pub(crate) fn debug_index_metadata(index_oid: pg_sys::Oid) -> (u32, i32, i32, page::MetadataPage) {
     let index_relation = IndexRelationGuard::access_share(index_oid, "debug_index_metadata");
-    // SAFETY: The index relation guard keeps the relation open while reloptions
-    // are decoded.
-    let options = unsafe { super::options::relation_options(index_relation.as_ptr()) };
+    let options = super::options::relation_options(
+        std::ptr::NonNull::new(index_relation.as_ptr())
+            .expect("ec_hnsw debug index relation should be non-null"),
+    );
     let block_count = hnsw_main_block_count(index_relation.as_ptr());
-    // SAFETY: The index relation guard keeps the metadata page readable.
-    let metadata = unsafe { read_metadata_page(index_relation.as_ptr()) };
+    let metadata = read_metadata_page(index_relation.as_ptr());
 
     (block_count, options.m, options.ef_construction, metadata)
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_update_index_metadata(
-    index_oid: pg_sys::Oid,
-    metadata: page::MetadataPage,
-) {
+pub(crate) fn debug_update_index_metadata(index_oid: pg_sys::Oid, metadata: page::MetadataPage) {
     let index_relation = IndexRelationGuard::access_share(index_oid, "debug_update_index_metadata");
     // SAFETY: The index relation guard keeps the relation open while the
     // metadata page is rewritten under exclusive lock.
@@ -1012,9 +933,41 @@ pub(crate) unsafe fn debug_update_index_metadata(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_vacuum_stats(index_oid: pg_sys::Oid) -> pg_sys::IndexBulkDeleteResult {
+pub(crate) struct DebugHnswVacuumStats {
+    pub(crate) estimated_count: bool,
+    pub(crate) num_index_tuples: f64,
+    pub(crate) tuples_removed: f64,
+    pub(crate) num_pages: pg_sys::BlockNumber,
+    pub(crate) pages_newly_deleted: pg_sys::BlockNumber,
+    pub(crate) pages_deleted: pg_sys::BlockNumber,
+    pub(crate) pages_free: pg_sys::BlockNumber,
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+fn debug_hnsw_vacuum_stats_row(stats: *mut pg_sys::IndexBulkDeleteResult) -> DebugHnswVacuumStats {
+    if stats.is_null() {
+        pgrx::error!("ec_hnsw debug vacuum stats returned NULL");
+    }
+    let stats = crate::am::common::vacuum::copy_index_bulk_delete_result(
+        std::ptr::NonNull::new(stats).expect("ec_hnsw debug vacuum stats should be non-null"),
+    );
+    DebugHnswVacuumStats {
+        estimated_count: stats.estimated_count,
+        num_index_tuples: stats.num_index_tuples,
+        tuples_removed: stats.tuples_removed,
+        num_pages: stats.num_pages,
+        pages_newly_deleted: stats.pages_newly_deleted,
+        pages_deleted: stats.pages_deleted,
+        pages_free: stats.pages_free,
+    }
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) fn debug_vacuum_stats(index_oid: pg_sys::Oid) -> DebugHnswVacuumStats {
     let index_relation = IndexRelationGuard::access_share(index_oid, "debug_vacuum_stats");
-    let mut info = PgBox::<pg_sys::IndexVacuumInfo>::alloc0();
+    // SAFETY: The debug helper immediately initializes the required vacuum
+    // fields before passing the struct to AM vacuum callbacks.
+    let mut info = crate::am::common::vacuum::alloc_index_vacuum_info();
     info.index = index_relation.as_ptr();
     let info_ptr = (&mut *info) as *mut pg_sys::IndexVacuumInfo;
 
@@ -1025,9 +978,5 @@ pub(crate) unsafe fn debug_vacuum_stats(index_oid: pg_sys::Oid) -> pg_sys::Index
     };
     // SAFETY: The same vacuum info and stats pointer are valid for cleanup.
     let stats = unsafe { super::vacuum::ec_hnsw_amvacuumcleanup(info_ptr, stats) };
-    // SAFETY: The AM returned a valid stats pointer; copy it before guards leave
-    // scope.
-    let result = unsafe { *stats };
-
-    result
+    debug_hnsw_vacuum_stats_row(stats)
 }

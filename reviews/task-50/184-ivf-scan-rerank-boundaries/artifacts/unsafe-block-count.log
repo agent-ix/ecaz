@@ -1,0 +1,30 @@
+Script started on 2026-05-21 00:20:41-07:00 [<not executed on terminal>]
+121:    unsafe { std::slice::from_raw_parts(ptr, len) }
+130:        Some(unsafe { &*ptr })
+141:        Some(unsafe { &mut *ptr })
+151:        drop(unsafe { Box::from_raw(ptr) });
+161:    unsafe { scan.as_ref() }.unwrap_or_else(|| pgrx::error!("{context} received null scan"))
+169:    unsafe { index_state.as_ref() }
+175:    unsafe {
+186:    unsafe { pg_sys::GetActiveSnapshot() }
+193:    let scan_ref = unsafe { ivf_scan_desc_ref(scan, context) };
+201:    unsafe { ivf_scan_opaque_option(scan, context) }
+659:    let ptr = unsafe {
+680:        unsafe { pg_sys::pfree((*ptr).cast()) };
+864:    let (heap_relation, snapshot, source_attribute) = unsafe {
+1225:    let mut heap_reader = unsafe {
+1278:    let heap_oid = unsafe { ivf_index_heap_oid(scan_ref.indexRelation, "ec_ivf heap_f32 rerank") };
+1499:    unsafe { ec_ivf_ambeginscan(index_relation, nkeys, norderbys) }
+1512:    unsafe { ec_ivf_amrescan(scan, keys, nkeys, orderbys, norderbys) };
+1521:    unsafe { ec_ivf_amgettuple(scan, direction) }
+1528:    unsafe { ec_ivf_amendscan(scan) };
+1535:    unsafe { pg_sys::IndexScanEnd(scan) };
+1548:    unsafe { pg_sys::index_rescan(scan, keys, nkeys, orderbys, norderbys) };
+1557:    unsafe { pg_sys::index_getnext_tid(scan, direction) }
+1591:    unsafe { ivf_index_heap_oid(index_relation, "ec_ivf debug scan") }
+1618:    unsafe {
+1631:    unsafe {
+1656:    let heap_oid = unsafe { debug_index_heap_oid(index_relation_ptr) };
+1667:    let scan = unsafe {
+
+Script done on 2026-05-21 00:20:41-07:00 [COMMAND_EXIT_CODE="0"]

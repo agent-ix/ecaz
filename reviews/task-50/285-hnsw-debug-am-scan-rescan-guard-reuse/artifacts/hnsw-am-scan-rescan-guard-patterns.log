@@ -1,0 +1,20 @@
+Script started on 2026-05-21 11:18:00-07:00 [<not executed on terminal>]
+682:struct DebugAmScan {
+688:impl DebugAmScan {
+739:impl Drop for DebugAmScan {
+785:    let mut scan = DebugAmScan::begin(index_relation.as_ptr(), 0, 1);
+797:    let mut scan = DebugAmScan::begin(index_relation.as_ptr(), 0, 1);
+810:pub(crate) fn debug_rescan_query_dimensions(
+815:        IndexRelationGuard::access_share(index_oid, "debug_rescan_query_dimensions");
+816:    let scan = DebugAmScan::begin(index_relation.as_ptr(), 0, 1);
+844:pub(crate) fn debug_rescan_overwrites_query_dimensions(
+850:        IndexRelationGuard::access_share(index_oid, "debug_rescan_overwrites_query_dimensions");
+851:    let scan = DebugAmScan::begin(index_relation.as_ptr(), 0, 1);
+923:pub(crate) fn debug_rescan_with_unused_key_buffer(
+928:        IndexRelationGuard::access_share(index_oid, "debug_rescan_with_unused_key_buffer");
+929:    let scan = DebugAmScan::begin(index_relation.as_ptr(), 0, 1);
+1014:pub(crate) fn debug_gettuple_after_rescan_result(index_oid: pg_sys::Oid, query: Vec<f32>) -> bool {
+1016:        IndexRelationGuard::access_share(index_oid, "debug_gettuple_after_rescan_result");
+1017:    let scan = DebugAmScan::begin(index_relation.as_ptr(), 0, 1);
+
+Script done on 2026-05-21 11:18:00-07:00 [COMMAND_EXIT_CODE="0"]

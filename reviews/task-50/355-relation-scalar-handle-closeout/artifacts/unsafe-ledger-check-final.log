@@ -1,0 +1,5 @@
+Script started on 2026-05-21 17:29:38-07:00 [<not executed on terminal>]
+python3 scripts/unsafe_ledger.py check --ledger reviews/task-50/355-relation-scalar-handle-closeout/artifacts/unsafe-ledger-after.jsonl src
+ledger covers 1246 current unsafe rows
+
+Script done on 2026-05-21 17:29:39-07:00 [COMMAND_EXIT_CODE="0"]

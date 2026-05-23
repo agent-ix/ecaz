@@ -1,5 +1,5 @@
-pub(crate) unsafe fn remote_search_production_consistency_policy_summary_row(
-    index_relation: pg_sys::Relation,
+pub(crate) fn remote_search_production_consistency_policy_summary_row(
+    index: SpireLiveIndexRelation,
     requested_epoch: u64,
     consistency_mode_source: &'static str,
     consistency_mode: &str,
@@ -13,44 +13,34 @@ pub(crate) unsafe fn remote_search_production_consistency_policy_summary_row(
         }
         let requested_consistency_mode = parse_remote_search_consistency_mode(consistency_mode)?;
         let requested_consistency_mode = consistency_mode_name(requested_consistency_mode);
-        // SAFETY: index_relation is the live PostgreSQL index relation supplied
-        // by the SQL diagnostic caller for the duration of this summary read.
-        let root_control = unsafe { page::read_root_control_page(index_relation) };
-        let (epoch_manifest, _, _) = {
-            // SAFETY: root_control was read from the same relation immediately
-            // above, so manifest locators are interpreted against their owning
-            // index relation.
-            unsafe { load_relation_epoch_manifests_for_coordinator_fanout(index_relation, root_control) }?
-        };
+        let root_control = index.root_control();
+        let (epoch_manifest, _, _) =
+            load_relation_epoch_manifests_for_coordinator_fanout(index, root_control)?;
         let active_consistency_mode = consistency_mode_name(epoch_manifest.consistency_mode);
 
-        let (
-            status,
-            failure_category,
-            failure_action,
-            recommendation,
-        ) = if root_control.active_epoch != requested_epoch {
-            (
-                SPIRE_REMOTE_PRODUCTION_REQUESTED_EPOCH_MISMATCH,
-                SPIRE_REMOTE_PRODUCTION_REQUESTED_EPOCH_MISMATCH,
-                "fail_closed",
-                "request the active epoch before planning production remote fanout",
-            )
-        } else if active_consistency_mode != requested_consistency_mode {
-            (
+        let (status, failure_category, failure_action, recommendation) =
+            if root_control.active_epoch != requested_epoch {
+                (
+                    SPIRE_REMOTE_PRODUCTION_REQUESTED_EPOCH_MISMATCH,
+                    SPIRE_REMOTE_PRODUCTION_REQUESTED_EPOCH_MISMATCH,
+                    "fail_closed",
+                    "request the active epoch before planning production remote fanout",
+                )
+            } else if active_consistency_mode != requested_consistency_mode {
+                (
                 SPIRE_REMOTE_STATUS_CONSISTENCY_MODE_MISMATCH,
                 SPIRE_REMOTE_STATUS_CONSISTENCY_MODE_MISMATCH,
                 "fail_closed",
                 "publish a degraded-capable epoch or run the query with the active epoch policy",
             )
-        } else {
-            (
-                SPIRE_REMOTE_STATUS_READY,
-                SPIRE_REMOTE_NONE,
-                SPIRE_REMOTE_NONE,
-                "consistency policy is ready for production dispatch planning",
-            )
-        };
+            } else {
+                (
+                    SPIRE_REMOTE_STATUS_READY,
+                    SPIRE_REMOTE_NONE,
+                    SPIRE_REMOTE_NONE,
+                    "consistency policy is ready for production dispatch planning",
+                )
+            };
 
         Ok(SpireRemoteProductionConsistencyPolicySummaryRow {
             requested_epoch,
@@ -72,21 +62,17 @@ pub(crate) unsafe fn remote_search_production_consistency_policy_summary_row(
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
-pub(crate) unsafe fn remote_search_production_session_consistency_policy_summary_row(
-    index_relation: pg_sys::Relation,
+pub(crate) fn remote_search_production_session_consistency_policy_summary_row(
+    index: SpireLiveIndexRelation,
     requested_epoch: u64,
 ) -> SpireRemoteProductionConsistencyPolicySummaryRow {
     let consistency_mode = options::current_session_remote_search_consistency_mode_name();
-    // SAFETY: forwards the live index relation from the diagnostic caller and a
-    // backend-local session consistency-mode name into the checked summary path.
-    unsafe {
-        remote_search_production_consistency_policy_summary_row(
-            index_relation,
-            requested_epoch,
-            "ec_spire.remote_search_consistency_mode",
-            consistency_mode,
-        )
-    }
+    remote_search_production_consistency_policy_summary_row(
+        index,
+        requested_epoch,
+        "ec_spire.remote_search_consistency_mode",
+        consistency_mode,
+    )
 }
 
 pub(crate) fn remote_search_production_fault_matrix_rows(

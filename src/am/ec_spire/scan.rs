@@ -30,7 +30,7 @@ use crate::am::common::{callback::pg_am_callback, detoast::DetoastedVarlena};
 use crate::am::ec_hnsw::source;
 use crate::quant::prod::ProdQuantizer;
 use crate::storage::page::ItemPointer;
-use pgrx::{pg_sys, FromDatum, IntoDatum, PgBox, PgMemoryContexts};
+use pgrx::{pg_sys, FromDatum, PgBox, PgMemoryContexts};
 
 include!("scan/types.rs");
 include!("scan/snapshot.rs");

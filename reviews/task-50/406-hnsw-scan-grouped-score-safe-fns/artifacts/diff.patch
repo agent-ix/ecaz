@@ -1,0 +1,223 @@
+diff --git a/src/am/ec_hnsw/scan.rs b/src/am/ec_hnsw/scan.rs
+index e79f838b0..1688db68c 100644
+--- a/src/am/ec_hnsw/scan.rs
++++ b/src/am/ec_hnsw/scan.rs
+@@ -2661,7 +2661,7 @@ fn score_grouped_rerank_payload_result(
+     -quantizer.score_ip_from_parts(prepared_query, payload.rerank_gamma, &payload.rerank_code)
+ }
+ 
+-unsafe fn score_grouped_heap_source_from_scan_state(
++fn score_grouped_heap_source_from_scan_state(
+     opaque: &mut TqScanOpaque,
+     heap_tid: page::ItemPointer,
+ ) -> f32 {
+@@ -2739,20 +2739,15 @@ unsafe fn score_grouped_heap_source_from_scan_state(
+     score
+ }
+ 
+-unsafe fn score_grouped_candidate_heap_rerank(
+-    opaque: *mut TqScanOpaque,
++fn score_grouped_candidate_heap_rerank(
++    opaque: &mut TqScanOpaque,
+     element: &CachedGraphElement,
+ ) -> Option<f32> {
+-    // SAFETY: callers pass the current scan opaque pointer; it remains live
+-    // while scoring heap rerank candidates.
+-    let opaque = scan_opaque_mut(opaque);
+     #[cfg(any(test, feature = "pg_test"))]
+     let started = Instant::now();
+     let mut best_score: Option<f32> = None;
+     for heap_tid in element.heaptids.as_slice().iter().copied() {
+-        // SAFETY: `opaque` holds the grouped heap rerank state used to fetch
+-        // and score each candidate heap TID.
+-        let score = unsafe { score_grouped_heap_source_from_scan_state(opaque, heap_tid) };
++        let score = score_grouped_heap_source_from_scan_state(opaque, heap_tid);
+         best_score = Some(match best_score {
+             Some(current) => current.min(score),
+             None => score,
+@@ -2769,16 +2764,13 @@ unsafe fn score_grouped_candidate_heap_rerank(
+     best_score
+ }
+ 
+-unsafe fn exact_score_grouped_candidate_context(
++fn exact_score_grouped_candidate_context(
+     index_relation: pg_sys::Relation,
+-    opaque: *mut TqScanOpaque,
++    opaque: &mut TqScanOpaque,
+     grouped: GroupedScoreContext<'_>,
+ ) -> f32 {
+-    // SAFETY: callers pass the current scan opaque pointer; it remains live
+-    // while exact grouped scoring checks and updates score cache.
+-    let opaque_ref = scan_opaque_mut(opaque);
+-    if let Some(score) = cached_scan_element_score(opaque_ref, grouped.element_tid) {
+-        record_score_cache_hit(opaque_ref);
++    if let Some(score) = cached_scan_element_score(opaque, grouped.element_tid) {
++        record_score_cache_hit(opaque);
+         return score;
+     }
+ 
+@@ -2791,7 +2783,7 @@ unsafe fn exact_score_grouped_candidate_context(
+     // SAFETY: `payload` was loaded and shape-checked for this grouped element.
+     unsafe {
+         score_and_cache_scan_element(
+-            opaque_ref,
++            opaque,
+             grouped.element_tid,
+             payload.rerank_gamma,
+             &payload.rerank_code,
+@@ -2799,23 +2791,20 @@ unsafe fn exact_score_grouped_candidate_context(
+     }
+ }
+ 
+-unsafe fn score_grouped_candidate_context_exact(
++fn score_grouped_candidate_context_exact(
+     index_relation: pg_sys::Relation,
+-    opaque: *mut TqScanOpaque,
++    opaque: &mut TqScanOpaque,
+     grouped: GroupedScoreContext<'_>,
+ ) -> f32 {
+     #[cfg(any(test, feature = "pg_test"))]
+     let started = Instant::now();
+-    // SAFETY: delegates to the exact grouped scorer with the same live scan
+-    // relation, opaque pointer, and grouped context.
+-    let score = unsafe { exact_score_grouped_candidate_context(index_relation, opaque, grouped) };
++    let score = exact_score_grouped_candidate_context(index_relation, opaque, grouped);
+     #[cfg(any(test, feature = "pg_test"))]
+     let elapsed_us =
+         u64::try_from(started.elapsed().as_micros()).expect("timing should fit in u64");
+     #[cfg(not(any(test, feature = "pg_test")))]
+     let elapsed_us = 0;
+-    // SAFETY: `opaque` is the same live scan opaque pointer used for scoring.
+-    record_grouped_traversal_exact_score_elapsed(scan_opaque_mut(opaque), elapsed_us);
++    record_grouped_traversal_exact_score_elapsed(opaque, elapsed_us);
+     score
+ }
+ 
+@@ -2830,13 +2819,7 @@ fn score_grouped_search_code_result(
+     -prepared_query.score(search_code)
+ }
+ 
+-unsafe fn score_grouped_search_code_from_scan_state(
+-    opaque: *mut TqScanOpaque,
+-    search_code: &[u8],
+-) -> f32 {
+-    // SAFETY: callers pass the current scan opaque pointer; it remains live
+-    // while approximate grouped scoring reads prepared query state.
+-    let opaque = scan_opaque_ref(opaque);
++fn score_grouped_search_code_from_scan_state(opaque: &TqScanOpaque, search_code: &[u8]) -> f32 {
+     let prepared_query = grouped_scan_query(opaque).unwrap_or_else(|| {
+         pgrx::error!("ec_hnsw PqFastScan scan is missing PqFastScan query state")
+     });
+@@ -2851,8 +2834,7 @@ unsafe fn grouped_candidate_rerank_comparison_score(
+     // SAFETY: callers pass the current scan opaque pointer; it remains live
+     // while choosing heap, TurboQuant, or grouped rerank scoring.
+     if grouped_heap_rerank_enabled(scan_opaque_ref(opaque)) {
+-        // SAFETY: the same live scan opaque owns the grouped heap rerank state.
+-        return unsafe { score_grouped_candidate_heap_rerank(opaque, element) };
++        return score_grouped_candidate_heap_rerank(scan_opaque_mut(opaque), element);
+     }
+ 
+     // SAFETY: `opaque` is the live scan opaque pointer used for this candidate.
+@@ -2887,9 +2869,7 @@ unsafe fn grouped_candidate_rerank_comparison_score(
+     let grouped = grouped_score_context_from_scan_state(scan_graph_storage, element)?;
+     #[cfg(any(test, feature = "pg_test"))]
+     let started = Instant::now();
+-    // SAFETY: grouped context was derived from this cached element and is
+-    // scored against the same live scan relation and opaque state.
+-    let score = unsafe { exact_score_grouped_candidate_context(index_relation, opaque, grouped) };
++    let score = exact_score_grouped_candidate_context(index_relation, scan_opaque_mut(opaque), grouped);
+     #[cfg(any(test, feature = "pg_test"))]
+     let elapsed_us =
+         u64::try_from(started.elapsed().as_micros()).expect("timing should fit in u64");
+@@ -2940,9 +2920,7 @@ unsafe fn score_grouped_candidate_context_approx(
+     });
+     #[cfg(any(test, feature = "pg_test"))]
+     let started = Instant::now();
+-    // SAFETY: `opaque` holds the prepared grouped query used to score this
+-    // metadata-aligned search-code slice.
+-    let score = unsafe { score_grouped_search_code_from_scan_state(opaque, search_code) };
++    let score = score_grouped_search_code_from_scan_state(scan_opaque_ref(opaque), search_code);
+     #[cfg(any(test, feature = "pg_test"))]
+     let elapsed_us =
+         u64::try_from(started.elapsed().as_micros()).expect("timing should fit in u64");
+@@ -2953,8 +2931,8 @@ unsafe fn score_grouped_candidate_context_approx(
+     score
+ }
+ 
+-unsafe fn score_grouped_candidate_context_binary(
+-    opaque: *mut TqScanOpaque,
++fn score_grouped_candidate_context_binary(
++    opaque: &TqScanOpaque,
+     grouped: GroupedScoreContext<'_>,
+ ) -> f32 {
+     assert_eq!(
+@@ -2962,9 +2940,6 @@ unsafe fn score_grouped_candidate_context_binary(
+         grouped.call.shape.binary_word_count,
+         "grouped binary traversal scoring requires metadata-aligned binary sidecars",
+     );
+-    // SAFETY: callers pass the current scan opaque pointer; it remains live
+-    // while binary grouped scoring reads prepared query state.
+-    let opaque = scan_opaque_ref(opaque);
+     let binary_query = binary_sign_query(opaque).unwrap_or_else(|| {
+         pgrx::error!("ec_hnsw PqFastScan binary traversal scoring requires a prepared binary query")
+     });
+@@ -3004,10 +2979,8 @@ unsafe fn score_budgeted_grouped_traversal_candidates(
+         .unwrap_or_else(|| {
+             panic!("budgeted grouped exact traversal requires metadata-aligned grouped payloads")
+         });
+-        // SAFETY: each grouped context was derived from a cached graph element
+-        // for this scan and is scored against the live index relation.
+         final_scores[exact_idx] =
+-            unsafe { score_grouped_candidate_context_exact(index_relation, opaque, grouped) };
++            score_grouped_candidate_context_exact(index_relation, scan_opaque_mut(opaque), grouped);
+     }
+ 
+     candidates
+@@ -3028,17 +3001,20 @@ unsafe fn score_grouped_candidate_context(
+     // SAFETY: callers pass the current scan opaque pointer; it remains live
+     // while dispatching grouped traversal scoring.
+     let opaque_ref = scan_opaque_ref(opaque);
+-    if grouped_exact_traversal_full_candidate_scoring_for_layer(opaque_ref, traversal_layer) {
+-        // SAFETY: exact grouped scoring uses the same live scan relation,
+-        // opaque pointer, and grouped context.
+-        return unsafe { score_grouped_candidate_context_exact(index_relation, opaque, grouped) };
++    let exact_layer =
++        grouped_exact_traversal_full_candidate_scoring_for_layer(opaque_ref, traversal_layer);
++    let binary_score = grouped_binary_traversal_score_enabled(opaque_ref);
++    if exact_layer {
++        return score_grouped_candidate_context_exact(
++            index_relation,
++            scan_opaque_mut(opaque),
++            grouped,
++        );
+     }
+ 
+     let _ = index_relation;
+-    if grouped_binary_traversal_score_enabled(opaque_ref) {
+-        // SAFETY: binary grouped scoring reads prepared state from this live
+-        // scan opaque pointer.
+-        return unsafe { score_grouped_candidate_context_binary(opaque, grouped) };
++    if binary_score {
++        return score_grouped_candidate_context_binary(opaque_ref, grouped);
+     }
+ 
+     // SAFETY: approximate grouped scoring reads prepared state from this live
+@@ -4647,11 +4623,13 @@ unsafe fn refine_grouped_frontier_head_exact(
+                         loaded_state,
+                     )
+                 },
+-                // SAFETY: grouped context came from the same loaded candidate
+-                // and exact scoring uses this scan's live query state.
+-                CandidateScoreDispatch::Grouped(grouped) => unsafe {
+-                    score_grouped_candidate_context_exact(index_relation, opaque_ptr, grouped)
+-                },
++                CandidateScoreDispatch::Grouped(grouped) => {
++                    score_grouped_candidate_context_exact(
++                        index_relation,
++                        scan_opaque_mut(opaque_ptr),
++                        grouped,
++                    )
++                }
+             };
+         let updated = search::BeamCandidate {
+             score: exact_score,

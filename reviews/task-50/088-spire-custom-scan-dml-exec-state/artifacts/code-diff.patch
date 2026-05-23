@@ -1,0 +1,457 @@
+Script started on 2026-05-20 14:02:06-07:00 [<not executed on terminal>]
+diff --git a/src/am/ec_spire/custom_scan/dml.rs b/src/am/ec_spire/custom_scan/dml.rs
+index d5b291dc..e5cbb646 100644
+--- a/src/am/ec_spire/custom_scan/dml.rs
++++ b/src/am/ec_spire/custom_scan/dml.rs
+@@ -121,6 +121,16 @@ fn custom_scan_dml_primitive_invocation(
+     )
+ }
+ 
++fn custom_scan_exec_state_mut<'a>(
++    state: *mut SpireCustomScanExecState,
++    context: &str,
++) -> &'a mut SpireCustomScanExecState {
++    // SAFETY: executor callbacks pass the provider-owned CustomScan exec state
++    // for the duration of the current callback.
++    unsafe { state.as_mut() }
++        .unwrap_or_else(|| pgrx::error!("EcSpireDistributedScan {context} state is NULL"))
++}
++
+ unsafe fn custom_scan_top_k_from_plan(custom_scan: *mut pg_sys::CustomScan) -> usize {
+     // SAFETY: executor passes the CustomScan node produced by this provider;
+     // plan_private offset 2 stores the encoded LIMIT value.
+@@ -445,150 +455,136 @@ unsafe fn custom_scan_bigint_datum_value(datum: pg_sys::Datum, typoid: pg_sys::O
+ }
+ 
+ unsafe fn custom_scan_execute_dml_delete(state: *mut SpireCustomScanExecState) -> u64 {
+-    // SAFETY: executor passes the live custom scan state; this function only
+-    // reads owned DML invocation fields before executing SPI.
+-    unsafe {
+-        let state_ref = &mut *state;
+-        let invocation =
+-            custom_scan_dml_primitive_invocation(state_ref).unwrap_or_else(|e| pgrx::error!("{e}"));
+-        if invocation.mode != super::SpireDmlFrontdoorCustomScanMode::CoordinatorDeleteTuplePayload
+-        {
+-            pgrx::error!("EcSpireDistributedScan DML DELETE got non-delete primitive mode");
+-        }
+-        let deleted_count = Spi::connect(|client| {
+-            client
+-                .select(
+-                    "SELECT remote_deleted_count \
+-                       FROM ec_spire_prepare_coordinator_delete_tuple_payload(\
+-                            $1::oid, $2::text, $3::bytea)",
+-                    None,
+-                    &[
+-                        invocation.index_oid.into(),
+-                        invocation.pk_column.as_str().into(),
+-                        invocation.pk_value.to_vec().into(),
+-                    ],
+-                )
+-                .map_err(|e| format!("EcSpireDistributedScan DML DELETE primitive failed: {e}"))?
+-                .map(|row| {
+-                    row["remote_deleted_count"]
+-                        .value::<i64>()
+-                        .map_err(|e| {
+-                            format!(
+-                                "EcSpireDistributedScan DML DELETE deleted_count decode failed: {e}"
+-                            )
+-                        })?
+-                        .ok_or_else(|| {
+-                            "EcSpireDistributedScan DML DELETE deleted_count is null".to_owned()
+-                        })
+-                })
+-                .next()
+-                .transpose()
+-                .map(|value| {
+-                    value.ok_or_else(|| {
+-                        "EcSpireDistributedScan DML DELETE primitive returned no rows".to_owned()
+-                    })
+-                })?
+-        })
+-        .unwrap_or_else(|e| pgrx::error!("{e}"));
+-        u64::try_from(deleted_count).unwrap_or_else(|_| {
+-            pgrx::error!("EcSpireDistributedScan DML DELETE returned a negative deleted_count")
+-        })
++    let state_ref = custom_scan_exec_state_mut(state, "DML DELETE");
++    let invocation =
++        custom_scan_dml_primitive_invocation(state_ref).unwrap_or_else(|e| pgrx::error!("{e}"));
++    if invocation.mode != super::SpireDmlFrontdoorCustomScanMode::CoordinatorDeleteTuplePayload {
++        pgrx::error!("EcSpireDistributedScan DML DELETE got non-delete primitive mode");
+     }
++    let deleted_count = Spi::connect(|client| {
++        client
++            .select(
++                "SELECT remote_deleted_count \
++                   FROM ec_spire_prepare_coordinator_delete_tuple_payload(\
++                        $1::oid, $2::text, $3::bytea)",
++                None,
++                &[
++                    invocation.index_oid.into(),
++                    invocation.pk_column.as_str().into(),
++                    invocation.pk_value.to_vec().into(),
++                ],
++            )
++            .map_err(|e| format!("EcSpireDistributedScan DML DELETE primitive failed: {e}"))?
++            .map(|row| {
++                row["remote_deleted_count"]
++                    .value::<i64>()
++                    .map_err(|e| {
++                        format!(
++                            "EcSpireDistributedScan DML DELETE deleted_count decode failed: {e}"
++                        )
++                    })?
++                    .ok_or_else(|| {
++                        "EcSpireDistributedScan DML DELETE deleted_count is null".to_owned()
++                    })
++            })
++            .next()
++            .transpose()
++            .map(|value| {
++                value.ok_or_else(|| {
++                    "EcSpireDistributedScan DML DELETE primitive returned no rows".to_owned()
++                })
++            })?
++    })
++    .unwrap_or_else(|e| pgrx::error!("{e}"));
++    u64::try_from(deleted_count).unwrap_or_else(|_| {
++        pgrx::error!("EcSpireDistributedScan DML DELETE returned a negative deleted_count")
++    })
+ }
+ 
+ unsafe fn custom_scan_execute_dml_update(
+     state: *mut SpireCustomScanExecState,
+     scan_state: *mut pg_sys::ScanState,
+ ) -> u64 {
+-    // SAFETY: executor passes live custom/scan state pointers; UPDATE payload
+-    // expressions are evaluated against the matching scan state's ExprContext.
+-    unsafe {
+-        let state_ref = &mut *state;
+-        let invocation =
+-            custom_scan_dml_primitive_invocation(state_ref).unwrap_or_else(|e| pgrx::error!("{e}"));
+-        if invocation.mode != super::SpireDmlFrontdoorCustomScanMode::CoordinatorUpdateTuplePayload
+-        {
+-            pgrx::error!("EcSpireDistributedScan DML UPDATE got non-update primitive mode");
+-        }
+-        if state_ref.dml_update_value_exprs.len() != invocation.updated_columns.len() {
+-            pgrx::error!(
+-                "EcSpireDistributedScan DML UPDATE value expression count does not match updated columns"
+-            );
+-        }
+-        let row_payload_json = custom_scan_dml_update_row_payload_json(
+-            scan_state.cast::<pg_sys::CustomScanState>(),
+-            &invocation.updated_columns,
+-            &state_ref.dml_update_value_exprs,
++    let state_ref = custom_scan_exec_state_mut(state, "DML UPDATE");
++    let invocation =
++        custom_scan_dml_primitive_invocation(state_ref).unwrap_or_else(|e| pgrx::error!("{e}"));
++    if invocation.mode != super::SpireDmlFrontdoorCustomScanMode::CoordinatorUpdateTuplePayload {
++        pgrx::error!("EcSpireDistributedScan DML UPDATE got non-update primitive mode");
++    }
++    if state_ref.dml_update_value_exprs.len() != invocation.updated_columns.len() {
++        pgrx::error!(
++            "EcSpireDistributedScan DML UPDATE value expression count does not match updated columns"
+         );
+-        let updated_column_refs = invocation
+-            .updated_columns
+-            .iter()
+-            .map(String::as_str)
+-            .collect::<Vec<_>>();
+-        let updated_count = Spi::connect(|client| {
+-            client
+-                .select(
+-                    "SELECT remote_updated_count \
+-                       FROM ec_spire_forward_coordinator_update_tuple_payload(\
+-                            $1::oid, $2::text, $3::bytea, $4::jsonb, $5::text[])",
+-                    None,
+-                    &[
+-                        invocation.index_oid.into(),
+-                        invocation.pk_column.as_str().into(),
+-                        invocation.pk_value.to_vec().into(),
+-                        row_payload_json.as_str().into(),
+-                        updated_column_refs.as_slice().into(),
+-                    ],
+-                )
+-                .map_err(|e| format!("EcSpireDistributedScan DML UPDATE primitive failed: {e}"))?
+-                .map(|row| {
+-                    row["remote_updated_count"]
+-                        .value::<i64>()
+-                        .map_err(|e| {
+-                            format!(
+-                                "EcSpireDistributedScan DML UPDATE updated_count decode failed: {e}"
+-                            )
+-                        })?
+-                        .ok_or_else(|| {
+-                            "EcSpireDistributedScan DML UPDATE updated_count is null".to_owned()
+-                        })
+-                })
+-                .next()
+-                .transpose()
+-                .map(|value| {
+-                    value.ok_or_else(|| {
+-                        "EcSpireDistributedScan DML UPDATE primitive returned no rows".to_owned()
+-                    })
+-                })?
+-        })
+-        .unwrap_or_else(|e| pgrx::error!("{e}"));
+-        u64::try_from(updated_count).unwrap_or_else(|_| {
+-            pgrx::error!("EcSpireDistributedScan DML UPDATE returned a negative updated_count")
+-        })
+     }
++    let row_payload_json = custom_scan_dml_update_row_payload_json(
++        scan_state.cast::<pg_sys::CustomScanState>(),
++        &invocation.updated_columns,
++        &state_ref.dml_update_value_exprs,
++    );
++    let updated_column_refs = invocation
++        .updated_columns
++        .iter()
++        .map(String::as_str)
++        .collect::<Vec<_>>();
++    let updated_count = Spi::connect(|client| {
++        client
++            .select(
++                "SELECT remote_updated_count \
++                   FROM ec_spire_forward_coordinator_update_tuple_payload(\
++                        $1::oid, $2::text, $3::bytea, $4::jsonb, $5::text[])",
++                None,
++                &[
++                    invocation.index_oid.into(),
++                    invocation.pk_column.as_str().into(),
++                    invocation.pk_value.to_vec().into(),
++                    row_payload_json.as_str().into(),
++                    updated_column_refs.as_slice().into(),
++                ],
++            )
++            .map_err(|e| format!("EcSpireDistributedScan DML UPDATE primitive failed: {e}"))?
++            .map(|row| {
++                row["remote_updated_count"]
++                    .value::<i64>()
++                    .map_err(|e| {
++                        format!(
++                            "EcSpireDistributedScan DML UPDATE updated_count decode failed: {e}"
++                        )
++                    })?
++                    .ok_or_else(|| {
++                        "EcSpireDistributedScan DML UPDATE updated_count is null".to_owned()
++                    })
++            })
++            .next()
++            .transpose()
++            .map(|value| {
++                value.ok_or_else(|| {
++                    "EcSpireDistributedScan DML UPDATE primitive returned no rows".to_owned()
++                })
++            })?
++    })
++    .unwrap_or_else(|e| pgrx::error!("{e}"));
++    u64::try_from(updated_count).unwrap_or_else(|_| {
++        pgrx::error!("EcSpireDistributedScan DML UPDATE returned a negative updated_count")
++    })
+ }
+ 
+-unsafe fn custom_scan_dml_update_row_payload_json(
++fn custom_scan_dml_update_row_payload_json(
+     node: *mut pg_sys::CustomScanState,
+     updated_columns: &[String],
+     value_exprs: &[*mut pg_sys::Expr],
+ ) -> String {
+-    // SAFETY: node is the live CustomScanState and value_exprs are provider-owned
+-    // UPDATE expressions matched one-for-one with updated_columns.
+-    unsafe {
+-        if updated_columns.len() != value_exprs.len() {
+-            pgrx::error!("EcSpireDistributedScan DML UPDATE payload column/value width mismatch");
+-        }
+-        let mut payload = serde_json::Map::with_capacity(updated_columns.len());
+-        for (column, expr) in updated_columns.iter().zip(value_exprs.iter().copied()) {
+-            let value = custom_scan_dml_update_expr_json_value(node, expr);
+-            payload.insert(column.clone(), value);
+-        }
+-        serde_json::Value::Object(payload).to_string()
++    if updated_columns.len() != value_exprs.len() {
++        pgrx::error!("EcSpireDistributedScan DML UPDATE payload column/value width mismatch");
+     }
++    let mut payload = serde_json::Map::with_capacity(updated_columns.len());
++    for (column, expr) in updated_columns.iter().zip(value_exprs.iter().copied()) {
++        let value = custom_scan_dml_update_expr_json_value(node, expr);
++        payload.insert(column.clone(), value);
++    }
++    serde_json::Value::Object(payload).to_string()
+ }
+ 
+-unsafe fn custom_scan_dml_update_expr_json_value(
++fn custom_scan_dml_update_expr_json_value(
+     node: *mut pg_sys::CustomScanState,
+     expr: *mut pg_sys::Expr,
+ ) -> serde_json::Value {
+@@ -666,72 +662,63 @@ unsafe fn custom_scan_dml_update_datum_json_value(
+ }
+ 
+ unsafe fn custom_scan_ensure_dml_pk_select_payload(state: *mut SpireCustomScanExecState) {
+-    // SAFETY: executor passes the live custom scan state; this function owns the
+-    // transition from unloaded to loaded DML PK SELECT tuple payload.
+-    unsafe {
+-        let state_ref = &mut *state;
+-        if state_ref.dml_payload_loaded {
+-            return;
+-        }
+-        let invocation =
+-            custom_scan_dml_primitive_invocation(state_ref).unwrap_or_else(|e| pgrx::error!("{e}"));
+-        if invocation.mode
+-            != super::SpireDmlFrontdoorCustomScanMode::CoordinatorPkSelectTuplePayload
+-        {
+-            pgrx::error!("EcSpireDistributedScan DML PK SELECT got non-select primitive mode");
+-        }
+-        let requested_columns = custom_scan_dml_pk_select_requested_columns(
+-            &invocation,
+-            &state_ref.tuple_payload_columns,
+-        );
+-        let requested_column_refs = requested_columns
+-            .iter()
+-            .map(String::as_str)
+-            .collect::<Vec<_>>();
+-        let tuple_payload_json = Spi::connect(|client| {
+-            client
+-                .select(
+-                    "SELECT selected_count, tuple_payload_json \
+-                       FROM ec_spire_forward_coordinator_select_tuple_payload(\
+-                            $1::oid, $2::text, $3::bytea, $4::text[])",
+-                    None,
+-                    &[
+-                        invocation.index_oid.into(),
+-                        invocation.pk_column.as_str().into(),
+-                        invocation.pk_value.to_vec().into(),
+-                        requested_column_refs.as_slice().into(),
+-                    ],
+-                )
+-                .map_err(|e| format!("EcSpireDistributedScan DML PK SELECT primitive failed: {e}"))?
+-                .map(|row| {
+-                    let selected_count = row["selected_count"]
+-                        .value::<i64>()
+-                        .map_err(|e| {
+-                            format!(
+-                                "EcSpireDistributedScan DML PK SELECT selected_count decode failed: {e}"
+-                            )
+-                        })?
+-                        .ok_or_else(|| {
+-                            "EcSpireDistributedScan DML PK SELECT selected_count is null"
+-                                .to_owned()
+-                        })?;
+-                    let payload = row["tuple_payload_json"].value::<String>().map_err(|e| {
+-                        format!("EcSpireDistributedScan DML PK SELECT payload decode failed: {e}")
++    let state_ref = custom_scan_exec_state_mut(state, "DML PK SELECT");
++    if state_ref.dml_payload_loaded {
++        return;
++    }
++    let invocation =
++        custom_scan_dml_primitive_invocation(state_ref).unwrap_or_else(|e| pgrx::error!("{e}"));
++    if invocation.mode != super::SpireDmlFrontdoorCustomScanMode::CoordinatorPkSelectTuplePayload {
++        pgrx::error!("EcSpireDistributedScan DML PK SELECT got non-select primitive mode");
++    }
++    let requested_columns =
++        custom_scan_dml_pk_select_requested_columns(&invocation, &state_ref.tuple_payload_columns);
++    let requested_column_refs = requested_columns
++        .iter()
++        .map(String::as_str)
++        .collect::<Vec<_>>();
++    let tuple_payload_json = Spi::connect(|client| {
++        client
++            .select(
++                "SELECT selected_count, tuple_payload_json \
++                   FROM ec_spire_forward_coordinator_select_tuple_payload(\
++                        $1::oid, $2::text, $3::bytea, $4::text[])",
++                None,
++                &[
++                    invocation.index_oid.into(),
++                    invocation.pk_column.as_str().into(),
++                    invocation.pk_value.to_vec().into(),
++                    requested_column_refs.as_slice().into(),
++                ],
++            )
++            .map_err(|e| format!("EcSpireDistributedScan DML PK SELECT primitive failed: {e}"))?
++            .map(|row| {
++                let selected_count = row["selected_count"]
++                    .value::<i64>()
++                    .map_err(|e| {
++                        format!(
++                            "EcSpireDistributedScan DML PK SELECT selected_count decode failed: {e}"
++                        )
++                    })?
++                    .ok_or_else(|| {
++                        "EcSpireDistributedScan DML PK SELECT selected_count is null".to_owned()
+                     })?;
+-                    Ok::<Option<String>, String>((selected_count == 1).then_some(payload).flatten())
++                let payload = row["tuple_payload_json"].value::<String>().map_err(|e| {
++                    format!("EcSpireDistributedScan DML PK SELECT payload decode failed: {e}")
++                })?;
++                Ok::<Option<String>, String>((selected_count == 1).then_some(payload).flatten())
++            })
++            .next()
++            .transpose()
++            .map(|value| {
++                value.ok_or_else(|| {
++                    "EcSpireDistributedScan DML PK SELECT primitive returned no rows".to_owned()
+                 })
+-                .next()
+-                .transpose()
+-                .map(|value| {
+-                    value.ok_or_else(|| {
+-                        "EcSpireDistributedScan DML PK SELECT primitive returned no rows".to_owned()
+-                    })
+-                })?
+-        })
+-        .unwrap_or_else(|e| pgrx::error!("{e}"));
+-        state_ref.dml_tuple_payload_json = tuple_payload_json;
+-        state_ref.dml_payload_loaded = true;
+-    }
++            })?
++    })
++    .unwrap_or_else(|e| pgrx::error!("{e}"));
++    state_ref.dml_tuple_payload_json = tuple_payload_json;
++    state_ref.dml_payload_loaded = true;
+ }
+ 
+ fn custom_scan_dml_pk_select_requested_columns(
+@@ -750,22 +737,14 @@ fn custom_scan_dml_pk_select_requested_columns(
+ }
+ 
+ unsafe fn custom_scan_ensure_outputs(state: *mut SpireCustomScanExecState) {
+-    // SAFETY: the CustomScan executor passes the live `SpireCustomScanExecState`.
+-    let loaded_outputs = unsafe { (*state).loaded_outputs };
+-    if loaded_outputs {
++    let state_ref = custom_scan_exec_state_mut(state, "output loading");
++    if state_ref.loaded_outputs {
+         return;
+     }
+-    // SAFETY: the executor state remains live for this call; clone owned
+-    // fields before building the remote stream so no borrowed Rust state is
+-    // held across possible PostgreSQL error paths.
+-    let (index_oid, query, top_k, tuple_payload_columns) = unsafe {
+-        (
+-            (*state).index_oid,
+-            (*state).query.clone(),
+-            (*state).top_k,
+-            (*state).tuple_payload_columns.clone(),
+-        )
+-    };
++    let index_oid = state_ref.index_oid;
++    let query = state_ref.query.clone();
++    let top_k = state_ref.top_k;
++    let tuple_payload_columns = state_ref.tuple_payload_columns.clone();
+     let index_relation = crate::storage::relation_guard::IndexRelationGuard::access_share(
+         index_oid,
+         "EcSpireDistributedScan production executor",
+@@ -784,10 +763,6 @@ unsafe fn custom_scan_ensure_outputs(state: *mut SpireCustomScanExecState) {
+             stream.summary.recommendation
+         );
+     }
+-    // SAFETY: `state` is the live executor state and this function owns the
+-    // transition from unloaded to loaded outputs.
+-    unsafe {
+-        (*state).outputs = stream.outputs;
+-        (*state).loaded_outputs = true;
+-    }
++    state_ref.outputs = stream.outputs;
++    state_ref.loaded_outputs = true;
+ }
+
+Script done on 2026-05-20 14:02:06-07:00 [COMMAND_EXIT_CODE="0"]
