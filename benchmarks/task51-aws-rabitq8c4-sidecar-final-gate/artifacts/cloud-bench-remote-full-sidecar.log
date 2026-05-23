@@ -1,0 +1,8 @@
+
+   0: [91mssm command 897e691d-cd68-4837-bcf1-b0d9cea44ccd on i-0b3375453f169ab75 ended in Failed (rc=-1): [0m
+
+Location:
+   [35mcrates/ecaz-cloud/src/ssm.rs[0m:[35m111[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.
