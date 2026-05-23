@@ -60,55 +60,66 @@ deserves its own file" covers it.
 
 Bench suite ran via `ecaz bench suite run --config
 reviews/task-52/007-closeout/artifacts/suite.json` on PG18, M5 Pro
-laptop. Same prefix (`ec_real_10k_hnsw`), same ef sweep
-(`[40, 80, 120, 200, 400]`), same `m: [8, 16]`,
-`ef_construction=128` as the baseline.
+laptop. **Full 8-step suite matching the post-Task-50 baseline
+shape** (load + recall + latency + storage at both 10k and 100k,
+same `m`, `ef_construction=128`, ef sweep `[40, 80, 120, 200, 400]`).
 
-**Headline result: recall identical to 4 decimal places; latency
-drift within stddev / ≤5% on every bucket.**
+The closeout's first attempt ran only 3 of 8 steps (10k only); the
+reviewer (`reviews/task-52/007-closeout/feedback/2026-05-23-01-reviewer.md`)
+correctly rejected that as insufficient evidence per the
+"same prefixes and sweep" language in the task spec §Performance
+Gate. This re-run satisfies the full baseline shape.
 
-| ef | Baseline recall@10 | Task 52 recall@10 | Δ |
-| --- | ---: | ---: | ---: |
-| 40  | 0.9040 | 0.9040 | 0.0000 |
-| 80  | 0.9530 | 0.9530 | 0.0000 |
-| 120 | 0.9605 | 0.9605 | 0.0000 |
-| 200 | 0.9775 | 0.9775 | 0.0000 |
-| 400 | 0.9950 | 0.9950 | 0.0000 |
+**Headline results:**
 
-| ef | Baseline p50 | Task 52 p50 | Baseline p95 | Task 52 p95 |
-| --- | ---: | ---: | ---: | ---: |
-| 40  | 0.57 ms | 0.57 ms | 0.74 ms | 0.75 ms |
-| 80  | 0.89 ms | 0.91 ms | 1.15 ms | 1.21 ms |
-| 120 | 0.82 ms | 0.81 ms | 1.08 ms | 1.12 ms |
-| 200 | 1.05 ms | 1.07 ms | 1.36 ms | 1.37 ms |
-| 400 | 1.69 ms | 1.73 ms | 2.02 ms | 2.05 ms |
+| Surface | Baseline | Task 52 | Disposition |
+| --- | --- | --- | --- |
+| **10k recall@10** (all ef) | identical | identical | exact-equal to 4 decimals |
+| **100k recall@10** (all ef) | 0.7426 / 0.8506 / 0.8973 / 0.9414 / 0.9676 | 0.7434 / 0.8503 / 0.8973 / 0.9419 / 0.9678 | within ci95 (~±0.008) |
+| **10k storage per row** | 19359.3 B | 19361.0 B | FSM/VM noise (<2 B) |
+| **100k storage per row** | 18117.1 B | 18117.4 B | FSM/VM noise (<1 B) |
+| **10k index sizes** | m=8: 11.8 MiB; m=16: 13.0 MiB | identical | bit-for-bit |
+| **100k index size** (m=16) | 130.2 MiB / 1365.4 B/row | identical | bit-for-bit |
+| **10k latency p50** (worst delta) | ef=400: 1.69 ms | 1.73 ms | +2.4% (≤ stddev 0.21 ms) |
+| **10k latency p95** (worst delta) | ef=80: 1.15 ms | 1.21 ms | +5.2% (≤ stddev 0.17 ms) |
+| **100k latency p50** (worst delta) | ef=400: 4.92 ms | 4.66 ms | **-5.3% (faster)** |
+| **100k latency p95** (worst delta) | ef=400: 6.38 ms | 6.12 ms | **-4.1% (faster)** |
 
-Recall-exact-equal demonstrates that the wrapper migrations on the
-parallel-build worker tail (slice 005's `view.record_workers_done`)
-and on the leader scope (slice 006's `ParallelContextRef`-routed
-lifecycle, estimator, and queue setup) preserve the index's neighbor
-topology bit-for-bit. Latency mixed-sign drift (+2-5% at some
-buckets, -1% at others) is run-to-run noise on this host.
+All latency drift is mixed-sign across ef buckets, within stddev on
+both corpus sizes. At higher ef on 100k, Task 52 is slightly faster
+than baseline (within noise but consistent — possibly cache
+friendliness from the simplified `record_workers_done` tail).
+
+**No regression on either corpus size**:
+- Recall is exact-equal on 10k and inside ci95 on 100k.
+- Storage is bit-for-bit identical on both index sizes; total-per-row
+  drift is FSM/VM noise.
+- Latency drift is mixed-sign ≤5.3% on every p50/p95/p99 bucket.
+
+Recall-exact-equal on 10k + within-ci95 on 100k demonstrates that
+the wrapper migrations (slice 005's `view.record_workers_done` and
+slice 006's `ParallelContextRef`-routed lifecycle / estimator / queue
+setup) preserve the index neighbor topology under the parallel
+build worker scheduling. The wrapper-side blocks (+12 in
+`parallel_build_view.rs`, +19 in `parallel_context.rs`) carry no
+runtime cost — they're inline-able single-line FFI forwarders.
 
 Bench evidence:
 - `artifacts/suite-manifest.json` — `ecaz bench suite` audit trail.
 - `artifacts/results.jsonl` — structured per-step results.
-- `artifacts/corpus-load-ec_real_10k-hnsw.log` — load step output
-  (exercises the migrated build path).
-- `artifacts/recall-ec_real_10k-hnsw.log` — recall@10 vs ef sweep.
-- `artifacts/latency-ec_real_10k-hnsw.log` — latency p50/p95/p99
-  vs ef sweep.
+- `artifacts/corpus-load-ec_real_10k-hnsw.log` + `corpus-load-ec_real_100k-hnsw.log`
+  — load steps that exercise the migrated build path.
+- `artifacts/recall-ec_real_10k-hnsw.log` + `recall-ec_real_100k-hnsw.log`
+  — recall@10 vs ef sweep.
+- `artifacts/latency-ec_real_10k-hnsw.log` + `latency-ec_real_100k-hnsw.log`
+  — latency p50/p95/p99 vs ef sweep.
+- `artifacts/storage-ec_real_10k-hnsw.log` + `storage-ec_real_100k-hnsw.log`
+  — storage per-row + per-index breakdown.
 - `artifacts/before-after-summary.md` — full numeric comparison
   with tolerance assessment.
 
-Acceptance: same regression tolerance as Task 50 (functional +
-forward-baseline). The +12 wrapper-side blocks in
-`parallel_build_view.rs` and +19 in `parallel_context.rs` carry no
-runtime cost — they are inline-able single-line FFI forwarders.
-
-100k corpus skipped to keep wall time bounded; a build-path semantics
-regression would surface as recall@k mismatch, and recall matched
-exactly on 10k. Available to extend if the reviewer requests it.
+Acceptance disposition: same regression tolerance as Task 50
+(functional + forward-baseline). All numbers in tolerance.
 
 ### §Exit Criterion #4 — Closing summary
 
