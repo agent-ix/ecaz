@@ -26,6 +26,11 @@ WORK_DIR="${WORK_DIR:-/work}"
 cd "$WORK_DIR"
 
 # PGDG repo + PG18 server/dev (AL2023 = EL9-compatible, aarch64).
+# AL2023 lacks /etc/redhat-release; PGDG's RPM requires it. Fake just
+# enough for the rpm preinstall scripts to accept us as RHEL9.
+if [ ! -f /etc/redhat-release ]; then
+  echo "Red Hat Enterprise Linux release 9.4 (Plow)" > /etc/redhat-release
+fi
 dnf -y install https://download.postgresql.org/pub/repos/yum/reporpms/EL-9-aarch64/pgdg-redhat-repo-latest.noarch.rpm
 dnf -qy module disable postgresql || true
 dnf -y install \

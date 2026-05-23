@@ -10,7 +10,11 @@ BUCKET="${ECAZ_SPIRE_AWS_BUCKET:?bucket must be set by SSM document}"
 ECAZ_KEY="${ECAZ_SPIRE_AWS_TARBALL_KEY:-ecaz-latest.tar.gz}"
 
 # AL2023 ships PG15 by default; PG18 lives in the PGDG yum repo for EL9.
-dnf -y install https://download.postgresql.org/pub/repos/yum/reporpms/EL-9-x86_64/pgdg-redhat-repo-latest.noarch.rpm
+# AL2023 lacks /etc/redhat-release; fake it so the PGDG rpm preinstall accepts.
+if [ ! -f /etc/redhat-release ]; then
+  echo "Red Hat Enterprise Linux release 9.4 (Plow)" > /etc/redhat-release
+fi
+dnf -y install https://download.postgresql.org/pub/repos/yum/reporpms/EL-9-aarch64/pgdg-redhat-repo-latest.noarch.rpm
 dnf -qy module disable postgresql || true
 dnf -y install postgresql${PG_VERSION}-server postgresql${PG_VERSION}-contrib jq awscli
 
