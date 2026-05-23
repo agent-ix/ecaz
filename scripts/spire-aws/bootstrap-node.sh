@@ -48,12 +48,24 @@ fi
 # Phase 13a.1.b GUCs. shared_preload_libraries='ecaz' is appended AFTER
 # the cargo pgrx install step below; PG must not start with it set until
 # ecaz.so exists.
+# F20: scale shared_buffers to instance RAM. 32 GB hardcoded value
+# was sized for the spec r8g.4xlarge (128 GB); fails on smaller nodes
+# (r8g.xlarge=32 GB, r8g.large=16 GB) which can't map that much
+# anonymous shared memory.
+#
+# Rule of thumb: shared_buffers = 25% of total RAM, capped at 8 GB
+# (returns diminishing perf above that for our workload).
+TOTAL_MEM_KB=$(awk '/MemTotal/ {print $2}' /proc/meminfo)
+SHARED_MB=$(( TOTAL_MEM_KB / 1024 / 4 ))
+if [ "$SHARED_MB" -gt 8192 ]; then SHARED_MB=8192; fi
+if [ "$SHARED_MB" -lt 256 ]; then SHARED_MB=256; fi
+
 cat > "${PGDATA}/postgresql.auto.conf" <<EOF
 listen_addresses = '*'
 port = 5432
-shared_buffers = 32GB
+shared_buffers = ${SHARED_MB}MB
 work_mem = 64MB
-maintenance_work_mem = 2GB
+maintenance_work_mem = 512MB
 max_prepared_transactions = 64
 ssl = on
 EOF
