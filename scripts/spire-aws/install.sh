@@ -28,6 +28,24 @@ ECAZ_REF="${ECAZ_GIT_REF:?ECAZ_GIT_REF must be set (export from Makefile)}"
 ALL_IDS=("$COORD_ID")
 while IFS= read -r id; do ALL_IDS+=("$id"); done <<< "$REMOTE_IDS"
 
+# Wait for the SSM agent on every node to register with the SSM service
+# (post-provision, the EC2 instance is up before its SSM agent has called
+# home; send-command on such an instance fails with InvalidInstanceId).
+echo "waiting for SSM agents to register on $(echo "${ALL_IDS[@]}" | wc -w) instances..."
+EXPECTED_COUNT=$(echo "${ALL_IDS[@]}" | wc -w)
+INSTANCE_LIST=$(echo "${ALL_IDS[@]}" | tr ' ' ',')
+for _ in $(seq 1 60); do
+  COUNT=$(aws ssm describe-instance-information --region "$REGION" \
+    --query "length(InstanceInformationList[?contains(\`${INSTANCE_LIST}\`,InstanceId) && PingStatus=='Online'])" \
+    --output text 2>/dev/null || echo 0)
+  if [ "$COUNT" = "$EXPECTED_COUNT" ]; then
+    echo "all SSM agents online ($COUNT/$EXPECTED_COUNT)"
+    break
+  fi
+  echo "  $COUNT/$EXPECTED_COUNT online; sleeping 10s..."
+  sleep 10
+done
+
 aws s3 cp \
   "$REPO_ROOT/scripts/spire-aws/bootstrap-node.sh" \
   "s3://${BUCKET}/bootstrap-node.sh" \
