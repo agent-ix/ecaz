@@ -20,12 +20,22 @@ rustflags = [
 [target.'cfg(target_os="macos")']
 # target-cpu=native: Apple Silicon ISA features (i8mm, dotprod, fp16,
 # bf16) on M-series; native x86_64 features on Intel Macs.
-# link-args: pgrx extension dylibs reference PostgreSQL backend symbols
-# that resolve only when Postgres loads the extension.
+# link-args:
+# - `-undefined dynamic_lookup`: pgrx extension dylibs reference PostgreSQL
+#   backend symbols that resolve only when Postgres loads the extension.
+# - `-no_fixup_chains`: macOS 12+ defaults to chained fixups, which eagerly
+#   bind flat-namespace `static mut` symbols at dyld load time. The CLI
+#   binary statically links `ecaz` (a pgrx extension crate) and therefore
+#   transitively references PG-backend globals like `BufferBlocks`. The CLI
+#   never calls into those paths, but eager binding fails before main.
+#   Disabling fixup chains restores classic lazy binding so unresolved
+#   symbols only fail if actually invoked. Harmless for the extension dylib
+#   (PG resolves symbols via dlopen, not dyld auto-bind).
 rustflags = [
     "-C", "target-cpu=native",
     "-C", "link-arg=-undefined",
     "-C", "link-arg=dynamic_lookup",
+    "-C", "link-arg=-Wl,-no_fixup_chains",
 ]
 
 [alias]
