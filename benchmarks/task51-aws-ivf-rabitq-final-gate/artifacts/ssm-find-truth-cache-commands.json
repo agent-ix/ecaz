@@ -1,0 +1,7 @@
+{
+  "commands": [
+    "set -x",
+    "find /var/lib/pgsql/build/ecaz -path '*truth*' -type f -maxdepth 7 | sort | head -80",
+    "find /var/lib/pgsql/build/ecaz/benchmarks -type f \\( -name '*q500*' -o -name '*truth*' \\) | sort | head -120"
+  ]
+}

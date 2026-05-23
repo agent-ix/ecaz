@@ -1,0 +1,1307 @@
+Script started on 2026-05-23 06:12:41-07:00 [<not executed on terminal>]
+down: profile=10k-medium data volume vol-00da8cf3d75fc8f3d has snapshot snap-0e0632400184fadd4 (started 2026-05-23T13:12:27.583000+00:00); proceeding.
+
+Warning: Deprecated flag: -state
+
+Use the "path" attribute within the "local" backend to specify a file for state storage
+random_id.bucket: Refreshing state... [id=8ymf7Q]
+data.aws_iam_policy_document.ec2_assume: Reading...
+data.aws_ami.al2023_arm64: Reading...
+aws_vpc.this: Refreshing state... [id=vpc-0144450f76f9f5e66]
+aws_ebs_volume.db: Refreshing state... [id=vol-00da8cf3d75fc8f3d]
+aws_s3_bucket.this: Refreshing state... [id=ecaz-cloud-10k-medium-f3299fed]
+data.aws_iam_policy_document.ec2_assume: Read complete after 0s [id=2851119427]
+aws_iam_role.instance: Refreshing state... [id=ecaz-cloud-10k-medium-instance]
+data.aws_ami.al2023_arm64: Read complete after 1s [id=ami-0493fed4130eafff5]
+aws_s3_bucket_public_access_block.this: Refreshing state... [id=ecaz-cloud-10k-medium-f3299fed]
+data.aws_iam_policy_document.bucket_rw: Reading...
+aws_s3_bucket_lifecycle_configuration.this: Refreshing state... [id=ecaz-cloud-10k-medium-f3299fed]
+data.aws_iam_policy_document.bucket_rw: Read complete after 0s [id=3603298397]
+aws_internet_gateway.this: Refreshing state... [id=igw-07ca58a7c867d3170]
+aws_security_group.loader: Refreshing state... [id=sg-02c9cd014733e0812]
+aws_security_group.endpoints: Refreshing state... [id=sg-00280dbc0d45c5162]
+aws_subnet.private: Refreshing state... [id=subnet-072044b17658c69c6]
+aws_security_group.eice[0]: Refreshing state... [id=sg-020ac851ec668d884]
+aws_iam_role_policy.bucket_rw: Refreshing state... [id=ecaz-cloud-10k-medium-instance:ecaz-cloud-10k-medium-bucket-rw]
+aws_iam_role_policy_attachment.ssm: Refreshing state... [id=ecaz-cloud-10k-medium-instance-20260523081417994600000002]
+aws_iam_instance_profile.instance: Refreshing state... [id=ecaz-cloud-10k-medium-instance]
+aws_route_table.private: Refreshing state... [id=rtb-0bc6d9989b3717ee7]
+aws_vpc_endpoint.s3: Refreshing state... [id=vpce-02e579ee1c840e6ef]
+aws_route_table_association.private: Refreshing state... [id=rtbassoc-092409a849d43844d]
+aws_vpc_endpoint.interface["ec2messages"]: Refreshing state... [id=vpce-0e2ca63ffc8c888fa]
+aws_vpc_endpoint.interface["ssmmessages"]: Refreshing state... [id=vpce-056905b3ce246d585]
+aws_vpc_endpoint.interface["ssm"]: Refreshing state... [id=vpce-0342c4d849461ae2c]
+aws_security_group.db: Refreshing state... [id=sg-0fcd4604ce82f48dc]
+aws_ec2_instance_connect_endpoint.this[0]: Refreshing state... [id=eice-0583473f8e6e47d65]
+aws_instance.loader: Refreshing state... [id=i-0a0adad0c16cc7795]
+aws_instance.db: Refreshing state... [id=i-09a3d149ad259b2d3]
+aws_volume_attachment.db_data: Refreshing state... [id=vai-1116615371]
+
+Terraform used the selected providers to generate the following execution plan. Resource actions are indicated with the following symbols:
+  - destroy
+
+Terraform will perform the following actions:
+
+  # aws_ebs_volume.db will be destroyed
+  - resource "aws_ebs_volume" "db" {
+      - arn                  = "arn:aws:ec2:us-west-2:932658697181:volume/vol-00da8cf3d75fc8f3d" -> null
+      - availability_zone    = "us-west-2a" -> null
+      - create_time          = "2026-05-23T08:14:16Z" -> null
+      - encrypted            = true -> null
+      - final_snapshot       = false -> null
+      - id                   = "vol-00da8cf3d75fc8f3d" -> null
+      - iops                 = 3000 -> null
+      - kms_key_id           = "arn:aws:kms:us-west-2:932658697181:key/2da7b41b-819f-41f5-bbc7-8f3f01089bb0" -> null
+      - multi_attach_enabled = false -> null
+      - size                 = 100 -> null
+      - snapshot_id          = "snap-091251b06d2da2df4" -> null
+      - tags                 = {
+          - "Name"         = "ecaz-cloud-10k-medium-db-data"
+          - "ecaz:harness" = "cloud"
+          - "ecaz:profile" = "10k-medium"
+        } -> null
+      - tags_all             = {
+          - "Name"         = "ecaz-cloud-10k-medium-db-data"
+          - "ecaz:harness" = "cloud"
+          - "ecaz:profile" = "10k-medium"
+        } -> null
+      - throughput           = 125 -> null
+      - type                 = "gp3" -> null
+        # (1 unchanged attribute hidden)
+    }
+
+  # aws_ec2_instance_connect_endpoint.this[0] will be destroyed
+  - resource "aws_ec2_instance_connect_endpoint" "this" {
+      - arn                   = "arn:aws:ec2:us-west-2:932658697181:instance-connect-endpoint/eice-0583473f8e6e47d65" -> null
+      - availability_zone     = "us-west-2a" -> null
+      - dns_name              = "eice-0583473f8e6e47d65.8a862d75.ec2-instance-connect-endpoint.us-west-2.amazonaws.com" -> null
+      - fips_dns_name         = "eice-0583473f8e6e47d65.8a862d75.fips.ec2-instance-connect-endpoint.us-west-2.amazonaws.com" -> null
+      - id                    = "eice-0583473f8e6e47d65" -> null
+      - network_interface_ids = [
+          - "eni-010e7ac54bd822d56",
+        ] -> null
+      - owner_id              = "932658697181" -> null
+      - preserve_client_ip    = false -> null
+      - security_group_ids    = [
+          - "sg-020ac851ec668d884",
+        ] -> null
+      - subnet_id             = "subnet-072044b17658c69c6" -> null
+      - tags                  = {
+          - "ecaz:harness" = "cloud"
+          - "ecaz:profile" = "10k-medium"
+        } -> null
+      - tags_all              = {
+          - "ecaz:harness" = "cloud"
+          - "ecaz:profile" = "10k-medium"
+        } -> null
+      - vpc_id                = "vpc-0144450f76f9f5e66" -> null
+    }
+
+  # aws_iam_instance_profile.instance will be destroyed
+  - resource "aws_iam_instance_profile" "instance" {
+      - arn         = "arn:aws:iam::932658697181:instance-profile/ecaz-cloud-10k-medium-instance" -> null
+      - create_date = "2026-05-23T08:14:17Z" -> null
+      - id          = "ecaz-cloud-10k-medium-instance" -> null
+      - name        = "ecaz-cloud-10k-medium-instance" -> null
+      - path        = "/" -> null
+      - role        = "ecaz-cloud-10k-medium-instance" -> null
+      - tags        = {} -> null
+      - tags_all    = {} -> null
+      - unique_id   = "AIPA5SJWKKPO6TYH3JUJ7" -> null
+        # (1 unchanged attribute hidden)
+    }
+
+  # aws_iam_role.instance will be destroyed
+  - resource "aws_iam_role" "instance" {
+      - arn                   = "arn:aws:iam::932658697181:role/ecaz-cloud-10k-medium-instance" -> null
+      - assume_role_policy    = jsonencode(
+            {
+              - Statement = [
+                  - {
+                      - Action    = "sts:AssumeRole"
+                      - Effect    = "Allow"
+                      - Principal = {
+                          - Service = "ec2.amazonaws.com"
+                        }
+                    },
+                ]
+              - Version   = "2012-10-17"
+            }
+        ) -> null
+      - create_date           = "2026-05-23T08:14:16Z" -> null
+      - force_detach_policies = false -> null
+      - id                    = "ecaz-cloud-10k-medium-instance" -> null
+      - managed_policy_arns   = [
+          - "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore",
+        ] -> null
+      - max_session_duration  = 3600 -> null
+      - name                  = "ecaz-cloud-10k-medium-instance" -> null
+      - path                  = "/" -> null
+      - tags                  = {
+          - "ecaz:harness" = "cloud"
+          - "ecaz:profile" = "10k-medium"
+        } -> null
+      - tags_all              = {
+          - "ecaz:harness" = "cloud"
+          - "ecaz:profile" = "10k-medium"
+        } -> null
+      - unique_id             = "AROA5SJWKKPO2BPLXVPEI" -> null
+        # (3 unchanged attributes hidden)
+
+      - inline_policy {
+          - name   = "ecaz-cloud-10k-medium-bucket-rw" -> null
+          - policy = jsonencode(
+                {
+                  - Statement = [
+                      - {
+                          - Action   = "s3:ListBucket"
+                          - Effect   = "Allow"
+                          - Resource = "arn:aws:s3:::ecaz-cloud-10k-medium-f3299fed"
+                        },
+                      - {
+                          - Action   = [
+                              - "s3:PutObject",
+                              - "s3:GetObject",
+                              - "s3:DeleteObject",
+                            ]
+                          - Effect   = "Allow"
+                          - Resource = "arn:aws:s3:::ecaz-cloud-10k-medium-f3299fed/*"
+                        },
+                    ]
+                  - Version   = "2012-10-17"
+                }
+            ) -> null
+        }
+    }
+
+  # aws_iam_role_policy.bucket_rw will be destroyed
+  - resource "aws_iam_role_policy" "bucket_rw" {
+      - id          = "ecaz-cloud-10k-medium-instance:ecaz-cloud-10k-medium-bucket-rw" -> null
+      - name        = "ecaz-cloud-10k-medium-bucket-rw" -> null
+      - policy      = jsonencode(
+            {
+              - Statement = [
+                  - {
+                      - Action   = "s3:ListBucket"
+                      - Effect   = "Allow"
+                      - Resource = "arn:aws:s3:::ecaz-cloud-10k-medium-f3299fed"
+                    },
+                  - {
+                      - Action   = [
+                          - "s3:PutObject",
+                          - "s3:GetObject",
+                          - "s3:DeleteObject",
+                        ]
+                      - Effect   = "Allow"
+                      - Resource = "arn:aws:s3:::ecaz-cloud-10k-medium-f3299fed/*"
+                    },
+                ]
+              - Version   = "2012-10-17"
+            }
+        ) -> null
+      - role        = "ecaz-cloud-10k-medium-instance" -> null
+        # (1 unchanged attribute hidden)
+    }
+
+  # aws_iam_role_policy_attachment.ssm will be destroyed
+  - resource "aws_iam_role_policy_attachment" "ssm" {
+      - id         = "ecaz-cloud-10k-medium-instance-20260523081417994600000002" -> null
+      - policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore" -> null
+      - role       = "ecaz-cloud-10k-medium-instance" -> null
+    }
+
+  # aws_instance.db will be destroyed
+  - resource "aws_instance" "db" {
+      - ami                                  = "ami-0493fed4130eafff5" -> null
+      - arn                                  = "arn:aws:ec2:us-west-2:932658697181:instance/i-09a3d149ad259b2d3" -> null
+      - associate_public_ip_address          = true -> null
+      - availability_zone                    = "us-west-2a" -> null
+      - cpu_core_count                       = 8 -> null
+      - cpu_threads_per_core                 = 1 -> null
+      - disable_api_stop                     = false -> null
+      - disable_api_termination              = false -> null
+      - ebs_optimized                        = false -> null
+      - get_password_data                    = false -> null
+      - hibernation                          = false -> null
+      - iam_instance_profile                 = "ecaz-cloud-10k-medium-instance" -> null
+      - id                                   = "i-09a3d149ad259b2d3" -> null
+      - instance_initiated_shutdown_behavior = "stop" -> null
+      - instance_state                       = "running" -> null
+      - instance_type                        = "m8g.2xlarge" -> null
+      - ipv6_address_count                   = 0 -> null
+      - ipv6_addresses                       = [] -> null
+      - monitoring                           = false -> null
+      - placement_partition_number           = 0 -> null
+      - primary_network_interface_id         = "eni-0a28c418b2e4b6a49" -> null
+      - private_dns                          = "ip-10-42-1-22.us-west-2.compute.internal" -> null
+      - private_ip                           = "10.42.1.22" -> null
+      - public_dns                           = "ec2-34-221-27-102.us-west-2.compute.amazonaws.com" -> null
+      - public_ip                            = "34.221.27.102" -> null
+      - secondary_private_ips                = [] -> null
+      - security_groups                      = [] -> null
+      - source_dest_check                    = true -> null
+      - subnet_id                            = "subnet-072044b17658c69c6" -> null
+      - tags                                 = {
+          - "Name"         = "ecaz-cloud-10k-medium-db"
+          - "ecaz:harness" = "cloud"
+          - "ecaz:profile" = "10k-medium"
+        } -> null
+      - tags_all                             = {
+          - "Name"         = "ecaz-cloud-10k-medium-db"
+          - "ecaz:harness" = "cloud"
+          - "ecaz:profile" = "10k-medium"
+        } -> null
+      - tenancy                              = "default" -> null
+      - user_data                            = "9fc8f20741e824b22cc1ffdf9cd43981a61e1612" -> null
+      - user_data_replace_on_change          = false -> null
+      - vpc_security_group_ids               = [
+          - "sg-0fcd4604ce82f48dc",
+        ] -> null
+        # (7 unchanged attributes hidden)
+
+      - capacity_reservation_specification {
+          - capacity_reservation_preference = "open" -> null
+        }
+
+      - cpu_options {
+          - core_count       = 8 -> null
+          - threads_per_core = 1 -> null
+            # (1 unchanged attribute hidden)
+        }
+
+      - ebs_block_device {
+          - delete_on_termination = false -> null
+          - device_name           = "/dev/sdf" -> null
+          - encrypted             = true -> null
+          - iops                  = 3000 -> null
+          - kms_key_id            = "arn:aws:kms:us-west-2:932658697181:key/2da7b41b-819f-41f5-bbc7-8f3f01089bb0" -> null
+          - snapshot_id           = "snap-091251b06d2da2df4" -> null
+          - tags                  = {
+              - "Name"         = "ecaz-cloud-10k-medium-db-data"
+              - "ecaz:harness" = "cloud"
+              - "ecaz:profile" = "10k-medium"
+            } -> null
+          - tags_all              = {
+              - "Name"         = "ecaz-cloud-10k-medium-db-data"
+              - "ecaz:harness" = "cloud"
+              - "ecaz:profile" = "10k-medium"
+            } -> null
+          - throughput            = 125 -> null
+          - volume_id             = "vol-00da8cf3d75fc8f3d" -> null
+          - volume_size           = 100 -> null
+          - volume_type           = "gp3" -> null
+        }
+
+      - enclave_options {
+          - enabled = false -> null
+        }
+
+      - maintenance_options {
+          - auto_recovery = "default" -> null
+        }
+
+      - metadata_options {
+          - http_endpoint               = "enabled" -> null
+          - http_protocol_ipv6          = "disabled" -> null
+          - http_put_response_hop_limit = 2 -> null
+          - http_tokens                 = "required" -> null
+          - instance_metadata_tags      = "disabled" -> null
+        }
+
+      - private_dns_name_options {
+          - enable_resource_name_dns_a_record    = false -> null
+          - enable_resource_name_dns_aaaa_record = false -> null
+          - hostname_type                        = "ip-name" -> null
+        }
+
+      - root_block_device {
+          - delete_on_termination = true -> null
+          - device_name           = "/dev/xvda" -> null
+          - encrypted             = true -> null
+          - iops                  = 3000 -> null
+          - kms_key_id            = "arn:aws:kms:us-west-2:932658697181:key/2da7b41b-819f-41f5-bbc7-8f3f01089bb0" -> null
+          - tags                  = {} -> null
+          - tags_all              = {} -> null
+          - throughput            = 125 -> null
+          - volume_id             = "vol-0c1ea3daa168d4f96" -> null
+          - volume_size           = 20 -> null
+          - volume_type           = "gp3" -> null
+        }
+    }
+
+  # aws_instance.loader will be destroyed
+  - resource "aws_instance" "loader" {
+      - ami                                  = "ami-0493fed4130eafff5" -> null
+      - arn                                  = "arn:aws:ec2:us-west-2:932658697181:instance/i-0a0adad0c16cc7795" -> null
+      - associate_public_ip_address          = true -> null
+      - availability_zone                    = "us-west-2a" -> null
+      - cpu_core_count                       = 1 -> null
+      - cpu_threads_per_core                 = 1 -> null
+      - disable_api_stop                     = false -> null
+      - disable_api_termination              = false -> null
+      - ebs_optimized                        = false -> null
+      - get_password_data                    = false -> null
+      - hibernation                          = false -> null
+      - iam_instance_profile                 = "ecaz-cloud-10k-medium-instance" -> null
+      - id                                   = "i-0a0adad0c16cc7795" -> null
+      - instance_initiated_shutdown_behavior = "stop" -> null
+      - instance_state                       = "running" -> null
+      - instance_type                        = "c8g.medium" -> null
+      - ipv6_address_count                   = 0 -> null
+      - ipv6_addresses                       = [] -> null
+      - monitoring                           = false -> null
+      - placement_partition_number           = 0 -> null
+      - primary_network_interface_id         = "eni-0dac8d37a52e12a65" -> null
+      - private_dns                          = "ip-10-42-1-115.us-west-2.compute.internal" -> null
+      - private_ip                           = "10.42.1.115" -> null
+      - public_dns                           = "ec2-44-247-53-246.us-west-2.compute.amazonaws.com" -> null
+      - public_ip                            = "44.247.53.246" -> null
+      - secondary_private_ips                = [] -> null
+      - security_groups                      = [] -> null
+      - source_dest_check                    = true -> null
+      - subnet_id                            = "subnet-072044b17658c69c6" -> null
+      - tags                                 = {
+          - "Name"         = "ecaz-cloud-10k-medium-loader"
+          - "ecaz:harness" = "cloud"
+          - "ecaz:profile" = "10k-medium"
+        } -> null
+      - tags_all                             = {
+          - "Name"         = "ecaz-cloud-10k-medium-loader"
+          - "ecaz:harness" = "cloud"
+          - "ecaz:profile" = "10k-medium"
+        } -> null
+      - tenancy                              = "default" -> null
+      - user_data                            = "693289728638f8576107975a3112957ccd379dee" -> null
+      - user_data_replace_on_change          = false -> null
+      - vpc_security_group_ids               = [
+          - "sg-02c9cd014733e0812",
+        ] -> null
+        # (7 unchanged attributes hidden)
+
+      - capacity_reservation_specification {
+          - capacity_reservation_preference = "open" -> null
+        }
+
+      - cpu_options {
+          - core_count       = 1 -> null
+          - threads_per_core = 1 -> null
+            # (1 unchanged attribute hidden)
+        }
+
+      - enclave_options {
+          - enabled = false -> null
+        }
+
+      - maintenance_options {
+          - auto_recovery = "default" -> null
+        }
+
+      - metadata_options {
+          - http_endpoint               = "enabled" -> null
+          - http_protocol_ipv6          = "disabled" -> null
+          - http_put_response_hop_limit = 2 -> null
+          - http_tokens                 = "required" -> null
+          - instance_metadata_tags      = "disabled" -> null
+        }
+
+      - private_dns_name_options {
+          - enable_resource_name_dns_a_record    = false -> null
+          - enable_resource_name_dns_aaaa_record = false -> null
+          - hostname_type                        = "ip-name" -> null
+        }
+
+      - root_block_device {
+          - delete_on_termination = true -> null
+          - device_name           = "/dev/xvda" -> null
+          - encrypted             = true -> null
+          - iops                  = 3000 -> null
+          - kms_key_id            = "arn:aws:kms:us-west-2:932658697181:key/2da7b41b-819f-41f5-bbc7-8f3f01089bb0" -> null
+          - tags                  = {} -> null
+          - tags_all              = {} -> null
+          - throughput            = 125 -> null
+          - volume_id             = "vol-0d970ad421bb52281" -> null
+          - volume_size           = 100 -> null
+          - volume_type           = "gp3" -> null
+        }
+    }
+
+  # aws_internet_gateway.this will be destroyed
+  - resource "aws_internet_gateway" "this" {
+      - arn      = "arn:aws:ec2:us-west-2:932658697181:internet-gateway/igw-07ca58a7c867d3170" -> null
+      - id       = "igw-07ca58a7c867d3170" -> null
+      - owner_id = "932658697181" -> null
+      - tags     = {
+          - "Name"         = "ecaz-cloud-10k-medium"
+          - "ecaz:harness" = "cloud"
+          - "ecaz:profile" = "10k-medium"
+        } -> null
+      - tags_all = {
+          - "Name"         = "ecaz-cloud-10k-medium"
+          - "ecaz:harness" = "cloud"
+          - "ecaz:profile" = "10k-medium"
+        } -> null
+      - vpc_id   = "vpc-0144450f76f9f5e66" -> null
+    }
+
+  # aws_route_table.private will be destroyed
+  - resource "aws_route_table" "private" {
+      - arn              = "arn:aws:ec2:us-west-2:932658697181:route-table/rtb-0bc6d9989b3717ee7" -> null
+      - id               = "rtb-0bc6d9989b3717ee7" -> null
+      - owner_id         = "932658697181" -> null
+      - propagating_vgws = [] -> null
+      - route            = [
+          - {
+              - cidr_block                 = "0.0.0.0/0"
+              - gateway_id                 = "igw-07ca58a7c867d3170"
+                # (11 unchanged attributes hidden)
+            },
+        ] -> null
+      - tags             = {
+          - "Name"         = "ecaz-cloud-10k-medium-private"
+          - "ecaz:harness" = "cloud"
+          - "ecaz:profile" = "10k-medium"
+        } -> null
+      - tags_all         = {
+          - "Name"         = "ecaz-cloud-10k-medium-private"
+          - "ecaz:harness" = "cloud"
+          - "ecaz:profile" = "10k-medium"
+        } -> null
+      - vpc_id           = "vpc-0144450f76f9f5e66" -> null
+    }
+
+  # aws_route_table_association.private will be destroyed
+  - resource "aws_route_table_association" "private" {
+      - id             = "rtbassoc-092409a849d43844d" -> null
+      - route_table_id = "rtb-0bc6d9989b3717ee7" -> null
+      - subnet_id      = "subnet-072044b17658c69c6" -> null
+        # (1 unchanged attribute hidden)
+    }
+
+  # aws_s3_bucket.this will be destroyed
+  - resource "aws_s3_bucket" "this" {
+      - arn                         = "arn:aws:s3:::ecaz-cloud-10k-medium-f3299fed" -> null
+      - bucket                      = "ecaz-cloud-10k-medium-f3299fed" -> null
+      - bucket_domain_name          = "ecaz-cloud-10k-medium-f3299fed.s3.amazonaws.com" -> null
+      - bucket_regional_domain_name = "ecaz-cloud-10k-medium-f3299fed.s3.us-west-2.amazonaws.com" -> null
+      - force_destroy               = false -> null
+      - hosted_zone_id              = "Z3BJ6K6RIION7M" -> null
+      - id                          = "ecaz-cloud-10k-medium-f3299fed" -> null
+      - object_lock_enabled         = false -> null
+      - region                      = "us-west-2" -> null
+      - request_payer               = "BucketOwner" -> null
+      - tags                        = {
+          - "ecaz:harness" = "cloud"
+          - "ecaz:profile" = "10k-medium"
+        } -> null
+      - tags_all                    = {
+          - "ecaz:harness" = "cloud"
+          - "ecaz:profile" = "10k-medium"
+        } -> null
+        # (3 unchanged attributes hidden)
+
+      - grant {
+          - id          = "aa61570614a0334dbb4de3b36666be959cf269342f6a80a0d738c91083fd7476" -> null
+          - permissions = [
+              - "FULL_CONTROL",
+            ] -> null
+          - type        = "CanonicalUser" -> null
+            # (1 unchanged attribute hidden)
+        }
+
+      - lifecycle_rule {
+          - abort_incomplete_multipart_upload_days = 0 -> null
+          - enabled                                = true -> null
+          - id                                     = "expire-raw-parquet" -> null
+          - prefix                                 = "parquet/" -> null
+          - tags                                   = {} -> null
+
+          - expiration {
+              - days                         = 30 -> null
+              - expired_object_delete_marker = false -> null
+                # (1 unchanged attribute hidden)
+            }
+        }
+
+      - server_side_encryption_configuration {
+          - rule {
+              - bucket_key_enabled = false -> null
+
+              - apply_server_side_encryption_by_default {
+                  - sse_algorithm     = "AES256" -> null
+                    # (1 unchanged attribute hidden)
+                }
+            }
+        }
+
+      - versioning {
+          - enabled    = false -> null
+          - mfa_delete = false -> null
+        }
+    }
+
+  # aws_s3_bucket_lifecycle_configuration.this will be destroyed
+  - resource "aws_s3_bucket_lifecycle_configuration" "this" {
+      - bucket                                 = "ecaz-cloud-10k-medium-f3299fed" -> null
+      - id                                     = "ecaz-cloud-10k-medium-f3299fed" -> null
+      - transition_default_minimum_object_size = "all_storage_classes_128K" -> null
+        # (1 unchanged attribute hidden)
+
+      - rule {
+          - id     = "expire-raw-parquet" -> null
+          - status = "Enabled" -> null
+            # (1 unchanged attribute hidden)
+
+          - expiration {
+              - days                         = 30 -> null
+              - expired_object_delete_marker = false -> null
+            }
+
+          - filter {
+              - prefix = "parquet/" -> null
+            }
+        }
+    }
+
+  # aws_s3_bucket_public_access_block.this will be destroyed
+  - resource "aws_s3_bucket_public_access_block" "this" {
+      - block_public_acls       = true -> null
+      - block_public_policy     = true -> null
+      - bucket                  = "ecaz-cloud-10k-medium-f3299fed" -> null
+      - id                      = "ecaz-cloud-10k-medium-f3299fed" -> null
+      - ignore_public_acls      = true -> null
+      - restrict_public_buckets = true -> null
+    }
+
+  # aws_security_group.db will be destroyed
+  - resource "aws_security_group" "db" {
+      - arn                    = "arn:aws:ec2:us-west-2:932658697181:security-group/sg-0fcd4604ce82f48dc" -> null
+      - description            = "ecaz DB host: Postgres in-VPC only, egress open" -> null
+      - egress                 = [
+          - {
+              - cidr_blocks      = [
+                  - "0.0.0.0/0",
+                ]
+              - from_port        = 0
+              - ipv6_cidr_blocks = []
+              - prefix_list_ids  = []
+              - protocol         = "-1"
+              - security_groups  = []
+              - self             = false
+              - to_port          = 0
+                # (1 unchanged attribute hidden)
+            },
+        ] -> null
+      - id                     = "sg-0fcd4604ce82f48dc" -> null
+      - ingress                = [
+          - {
+              - cidr_blocks      = [
+                  - "10.42.0.0/16",
+                ]
+              - description      = "Postgres from inside the VPC"
+              - from_port        = 5432
+              - ipv6_cidr_blocks = []
+              - prefix_list_ids  = []
+              - protocol         = "tcp"
+              - security_groups  = []
+              - self             = false
+              - to_port          = 5432
+            },
+          - {
+              - cidr_blocks      = []
+              - description      = "SSH from EC2 Instance Connect Endpoint"
+              - from_port        = 22
+              - ipv6_cidr_blocks = []
+              - prefix_list_ids  = []
+              - protocol         = "tcp"
+              - security_groups  = [
+                  - "sg-020ac851ec668d884",
+                ]
+              - self             = false
+              - to_port          = 22
+            },
+        ] -> null
+      - name                   = "ecaz-cloud-10k-medium-db" -> null
+      - owner_id               = "932658697181" -> null
+      - revoke_rules_on_delete = false -> null
+      - tags                   = {
+          - "ecaz:harness" = "cloud"
+          - "ecaz:profile" = "10k-medium"
+        } -> null
+      - tags_all               = {
+          - "ecaz:harness" = "cloud"
+          - "ecaz:profile" = "10k-medium"
+        } -> null
+      - vpc_id                 = "vpc-0144450f76f9f5e66" -> null
+        # (1 unchanged attribute hidden)
+    }
+
+  # aws_security_group.eice[0] will be destroyed
+  - resource "aws_security_group" "eice" {
+      - arn                    = "arn:aws:ec2:us-west-2:932658697181:security-group/sg-020ac851ec668d884" -> null
+      - description            = "ecaz EC2 Instance Connect Endpoint egress to instances" -> null
+      - egress                 = [
+          - {
+              - cidr_blocks      = [
+                  - "10.42.0.0/16",
+                ]
+              - description      = "SSH egress to VPC instances"
+              - from_port        = 22
+              - ipv6_cidr_blocks = []
+              - prefix_list_ids  = []
+              - protocol         = "tcp"
+              - security_groups  = []
+              - self             = false
+              - to_port          = 22
+            },
+        ] -> null
+      - id                     = "sg-020ac851ec668d884" -> null
+      - ingress                = [] -> null
+      - name                   = "ecaz-cloud-10k-medium-eice" -> null
+      - owner_id               = "932658697181" -> null
+      - revoke_rules_on_delete = false -> null
+      - tags                   = {
+          - "ecaz:harness" = "cloud"
+          - "ecaz:profile" = "10k-medium"
+        } -> null
+      - tags_all               = {
+          - "ecaz:harness" = "cloud"
+          - "ecaz:profile" = "10k-medium"
+        } -> null
+      - vpc_id                 = "vpc-0144450f76f9f5e66" -> null
+        # (1 unchanged attribute hidden)
+    }
+
+  # aws_security_group.endpoints will be destroyed
+  - resource "aws_security_group" "endpoints" {
+      - arn                    = "arn:aws:ec2:us-west-2:932658697181:security-group/sg-00280dbc0d45c5162" -> null
+      - description            = "Managed by Terraform" -> null
+      - egress                 = [
+          - {
+              - cidr_blocks      = [
+                  - "0.0.0.0/0",
+                ]
+              - from_port        = 0
+              - ipv6_cidr_blocks = []
+              - prefix_list_ids  = []
+              - protocol         = "-1"
+              - security_groups  = []
+              - self             = false
+              - to_port          = 0
+                # (1 unchanged attribute hidden)
+            },
+        ] -> null
+      - id                     = "sg-00280dbc0d45c5162" -> null
+      - ingress                = [
+          - {
+              - cidr_blocks      = [
+                  - "10.42.0.0/16",
+                ]
+              - from_port        = 443
+              - ipv6_cidr_blocks = []
+              - prefix_list_ids  = []
+              - protocol         = "tcp"
+              - security_groups  = []
+              - self             = false
+              - to_port          = 443
+                # (1 unchanged attribute hidden)
+            },
+        ] -> null
+      - name                   = "ecaz-cloud-10k-medium-endpoints" -> null
+      - owner_id               = "932658697181" -> null
+      - revoke_rules_on_delete = false -> null
+      - tags                   = {
+          - "ecaz:harness" = "cloud"
+          - "ecaz:profile" = "10k-medium"
+        } -> null
+      - tags_all               = {
+          - "ecaz:harness" = "cloud"
+          - "ecaz:profile" = "10k-medium"
+        } -> null
+      - vpc_id                 = "vpc-0144450f76f9f5e66" -> null
+        # (1 unchanged attribute hidden)
+    }
+
+  # aws_security_group.loader will be destroyed
+  - resource "aws_security_group" "loader" {
+      - arn                    = "arn:aws:ec2:us-west-2:932658697181:security-group/sg-02c9cd014733e0812" -> null
+      - description            = "ecaz loader host: egress only" -> null
+      - egress                 = [
+          - {
+              - cidr_blocks      = [
+                  - "0.0.0.0/0",
+                ]
+              - from_port        = 0
+              - ipv6_cidr_blocks = []
+              - prefix_list_ids  = []
+              - protocol         = "-1"
+              - security_groups  = []
+              - self             = false
+              - to_port          = 0
+                # (1 unchanged attribute hidden)
+            },
+        ] -> null
+      - id                     = "sg-02c9cd014733e0812" -> null
+      - ingress                = [] -> null
+      - name                   = "ecaz-cloud-10k-medium-loader" -> null
+      - owner_id               = "932658697181" -> null
+      - revoke_rules_on_delete = false -> null
+      - tags                   = {
+          - "ecaz:harness" = "cloud"
+          - "ecaz:profile" = "10k-medium"
+        } -> null
+      - tags_all               = {
+          - "ecaz:harness" = "cloud"
+          - "ecaz:profile" = "10k-medium"
+        } -> null
+      - vpc_id                 = "vpc-0144450f76f9f5e66" -> null
+        # (1 unchanged attribute hidden)
+    }
+
+  # aws_subnet.private will be destroyed
+  - resource "aws_subnet" "private" {
+      - arn                                            = "arn:aws:ec2:us-west-2:932658697181:subnet/subnet-072044b17658c69c6" -> null
+      - assign_ipv6_address_on_creation                = false -> null
+      - availability_zone                              = "us-west-2a" -> null
+      - availability_zone_id                           = "usw2-az2" -> null
+      - cidr_block                                     = "10.42.1.0/24" -> null
+      - enable_dns64                                   = false -> null
+      - enable_lni_at_device_index                     = 0 -> null
+      - enable_resource_name_dns_a_record_on_launch    = false -> null
+      - enable_resource_name_dns_aaaa_record_on_launch = false -> null
+      - id                                             = "subnet-072044b17658c69c6" -> null
+      - ipv6_native                                    = false -> null
+      - map_customer_owned_ip_on_launch                = false -> null
+      - map_public_ip_on_launch                        = false -> null
+      - owner_id                                       = "932658697181" -> null
+      - private_dns_hostname_type_on_launch            = "ip-name" -> null
+      - tags                                           = {
+          - "Name"         = "ecaz-cloud-10k-medium-private"
+          - "ecaz:harness" = "cloud"
+          - "ecaz:profile" = "10k-medium"
+        } -> null
+      - tags_all                                       = {
+          - "Name"         = "ecaz-cloud-10k-medium-private"
+          - "ecaz:harness" = "cloud"
+          - "ecaz:profile" = "10k-medium"
+        } -> null
+      - vpc_id                                         = "vpc-0144450f76f9f5e66" -> null
+        # (4 unchanged attributes hidden)
+    }
+
+  # aws_volume_attachment.db_data will be destroyed
+  - resource "aws_volume_attachment" "db_data" {
+      - device_name = "/dev/sdf" -> null
+      - id          = "vai-1116615371" -> null
+      - instance_id = "i-09a3d149ad259b2d3" -> null
+      - volume_id   = "vol-00da8cf3d75fc8f3d" -> null
+    }
+
+  # aws_vpc.this will be destroyed
+  - resource "aws_vpc" "this" {
+      - arn                                  = "arn:aws:ec2:us-west-2:932658697181:vpc/vpc-0144450f76f9f5e66" -> null
+      - assign_generated_ipv6_cidr_block     = false -> null
+      - cidr_block                           = "10.42.0.0/16" -> null
+      - default_network_acl_id               = "acl-0742245b280982500" -> null
+      - default_route_table_id               = "rtb-086a174945e8051d1" -> null
+      - default_security_group_id            = "sg-0b78aef3940ab7cd2" -> null
+      - dhcp_options_id                      = "dopt-06bdd876a1435e446" -> null
+      - enable_dns_hostnames                 = true -> null
+      - enable_dns_support                   = true -> null
+      - enable_network_address_usage_metrics = false -> null
+      - id                                   = "vpc-0144450f76f9f5e66" -> null
+      - instance_tenancy                     = "default" -> null
+      - ipv6_netmask_length                  = 0 -> null
+      - main_route_table_id                  = "rtb-086a174945e8051d1" -> null
+      - owner_id                             = "932658697181" -> null
+      - tags                                 = {
+          - "Name"         = "ecaz-cloud-10k-medium"
+          - "ecaz:harness" = "cloud"
+          - "ecaz:profile" = "10k-medium"
+        } -> null
+      - tags_all                             = {
+          - "Name"         = "ecaz-cloud-10k-medium"
+          - "ecaz:harness" = "cloud"
+          - "ecaz:profile" = "10k-medium"
+        } -> null
+        # (4 unchanged attributes hidden)
+    }
+
+  # aws_vpc_endpoint.interface["ec2messages"] will be destroyed
+  - resource "aws_vpc_endpoint" "interface" {
+      - arn                        = "arn:aws:ec2:us-west-2:932658697181:vpc-endpoint/vpce-0e2ca63ffc8c888fa" -> null
+      - cidr_blocks                = [] -> null
+      - dns_entry                  = [
+          - {
+              - dns_name       = "vpce-0e2ca63ffc8c888fa-zjhac2j7.ec2messages.us-west-2.vpce.amazonaws.com"
+              - hosted_zone_id = "Z1YSA3EXCYUU9Z"
+            },
+          - {
+              - dns_name       = "vpce-0e2ca63ffc8c888fa-zjhac2j7-us-west-2a.ec2messages.us-west-2.vpce.amazonaws.com"
+              - hosted_zone_id = "Z1YSA3EXCYUU9Z"
+            },
+          - {
+              - dns_name       = "ec2messages.us-west-2.amazonaws.com"
+              - hosted_zone_id = "Z02509473I7QIMME1MD0J"
+            },
+        ] -> null
+      - id                         = "vpce-0e2ca63ffc8c888fa" -> null
+      - ip_address_type            = "ipv4" -> null
+      - network_interface_ids      = [
+          - "eni-0394f56071ba615a9",
+        ] -> null
+      - owner_id                   = "932658697181" -> null
+      - policy                     = jsonencode(
+            {
+              - Statement = [
+                  - {
+                      - Action    = "*"
+                      - Effect    = "Allow"
+                      - Principal = "*"
+                      - Resource  = "*"
+                    },
+                ]
+            }
+        ) -> null
+      - private_dns_enabled        = true -> null
+      - requester_managed          = false -> null
+      - route_table_ids            = [] -> null
+      - security_group_ids         = [
+          - "sg-00280dbc0d45c5162",
+        ] -> null
+      - service_name               = "com.amazonaws.us-west-2.ec2messages" -> null
+      - service_region             = "us-west-2" -> null
+      - state                      = "available" -> null
+      - subnet_ids                 = [
+          - "subnet-072044b17658c69c6",
+        ] -> null
+      - tags                       = {
+          - "ecaz:harness" = "cloud"
+          - "ecaz:profile" = "10k-medium"
+        } -> null
+      - tags_all                   = {
+          - "ecaz:harness" = "cloud"
+          - "ecaz:profile" = "10k-medium"
+        } -> null
+      - vpc_endpoint_type          = "Interface" -> null
+      - vpc_id                     = "vpc-0144450f76f9f5e66" -> null
+        # (2 unchanged attributes hidden)
+
+      - dns_options {
+          - dns_record_ip_type                             = "ipv4" -> null
+          - private_dns_only_for_inbound_resolver_endpoint = false -> null
+        }
+
+      - subnet_configuration {
+          - ipv4      = "10.42.1.148" -> null
+          - subnet_id = "subnet-072044b17658c69c6" -> null
+            # (1 unchanged attribute hidden)
+        }
+    }
+
+  # aws_vpc_endpoint.interface["ssm"] will be destroyed
+  - resource "aws_vpc_endpoint" "interface" {
+      - arn                        = "arn:aws:ec2:us-west-2:932658697181:vpc-endpoint/vpce-0342c4d849461ae2c" -> null
+      - cidr_blocks                = [] -> null
+      - dns_entry                  = [
+          - {
+              - dns_name       = "vpce-0342c4d849461ae2c-de4iybyf.ssm.us-west-2.vpce.amazonaws.com"
+              - hosted_zone_id = "Z1YSA3EXCYUU9Z"
+            },
+          - {
+              - dns_name       = "vpce-0342c4d849461ae2c-de4iybyf-us-west-2a.ssm.us-west-2.vpce.amazonaws.com"
+              - hosted_zone_id = "Z1YSA3EXCYUU9Z"
+            },
+          - {
+              - dns_name       = "ssm.us-west-2.amazonaws.com"
+              - hosted_zone_id = "Z05870573QPTU34ZIN2C7"
+            },
+          - {
+              - dns_name       = "ssm.us-west-2.api.aws"
+              - hosted_zone_id = "Z08875412W4MW3AJQ0R52"
+            },
+        ] -> null
+      - id                         = "vpce-0342c4d849461ae2c" -> null
+      - ip_address_type            = "ipv4" -> null
+      - network_interface_ids      = [
+          - "eni-0f534e1da3224c447",
+        ] -> null
+      - owner_id                   = "932658697181" -> null
+      - policy                     = jsonencode(
+            {
+              - Statement = [
+                  - {
+                      - Action    = "*"
+                      - Effect    = "Allow"
+                      - Principal = "*"
+                      - Resource  = "*"
+                    },
+                ]
+            }
+        ) -> null
+      - private_dns_enabled        = true -> null
+      - requester_managed          = false -> null
+      - route_table_ids            = [] -> null
+      - security_group_ids         = [
+          - "sg-00280dbc0d45c5162",
+        ] -> null
+      - service_name               = "com.amazonaws.us-west-2.ssm" -> null
+      - service_region             = "us-west-2" -> null
+      - state                      = "available" -> null
+      - subnet_ids                 = [
+          - "subnet-072044b17658c69c6",
+        ] -> null
+      - tags                       = {
+          - "ecaz:harness" = "cloud"
+          - "ecaz:profile" = "10k-medium"
+        } -> null
+      - tags_all                   = {
+          - "ecaz:harness" = "cloud"
+          - "ecaz:profile" = "10k-medium"
+        } -> null
+      - vpc_endpoint_type          = "Interface" -> null
+      - vpc_id                     = "vpc-0144450f76f9f5e66" -> null
+        # (2 unchanged attributes hidden)
+
+      - dns_options {
+          - dns_record_ip_type                             = "ipv4" -> null
+          - private_dns_only_for_inbound_resolver_endpoint = false -> null
+        }
+
+      - subnet_configuration {
+          - ipv4      = "10.42.1.16" -> null
+          - subnet_id = "subnet-072044b17658c69c6" -> null
+            # (1 unchanged attribute hidden)
+        }
+    }
+
+  # aws_vpc_endpoint.interface["ssmmessages"] will be destroyed
+  - resource "aws_vpc_endpoint" "interface" {
+      - arn                        = "arn:aws:ec2:us-west-2:932658697181:vpc-endpoint/vpce-056905b3ce246d585" -> null
+      - cidr_blocks                = [] -> null
+      - dns_entry                  = [
+          - {
+              - dns_name       = "vpce-056905b3ce246d585-8bx3bd1u.ssmmessages.us-west-2.vpce.amazonaws.com"
+              - hosted_zone_id = "Z1YSA3EXCYUU9Z"
+            },
+          - {
+              - dns_name       = "vpce-056905b3ce246d585-8bx3bd1u-us-west-2a.ssmmessages.us-west-2.vpce.amazonaws.com"
+              - hosted_zone_id = "Z1YSA3EXCYUU9Z"
+            },
+          - {
+              - dns_name       = "ssmmessages.us-west-2.amazonaws.com"
+              - hosted_zone_id = "Z07978363D0G4M7YUBMUF"
+            },
+          - {
+              - dns_name       = "ssmmessages.us-west-2.api.aws"
+              - hosted_zone_id = "Z0796781E4LAN6YGOKP8"
+            },
+        ] -> null
+      - id                         = "vpce-056905b3ce246d585" -> null
+      - ip_address_type            = "ipv4" -> null
+      - network_interface_ids      = [
+          - "eni-05ecf65b4447a1e00",
+        ] -> null
+      - owner_id                   = "932658697181" -> null
+      - policy                     = jsonencode(
+            {
+              - Statement = [
+                  - {
+                      - Action    = "*"
+                      - Effect    = "Allow"
+                      - Principal = "*"
+                      - Resource  = "*"
+                    },
+                ]
+            }
+        ) -> null
+      - private_dns_enabled        = true -> null
+      - requester_managed          = false -> null
+      - route_table_ids            = [] -> null
+      - security_group_ids         = [
+          - "sg-00280dbc0d45c5162",
+        ] -> null
+      - service_name               = "com.amazonaws.us-west-2.ssmmessages" -> null
+      - service_region             = "us-west-2" -> null
+      - state                      = "available" -> null
+      - subnet_ids                 = [
+          - "subnet-072044b17658c69c6",
+        ] -> null
+      - tags                       = {
+          - "ecaz:harness" = "cloud"
+          - "ecaz:profile" = "10k-medium"
+        } -> null
+      - tags_all                   = {
+          - "ecaz:harness" = "cloud"
+          - "ecaz:profile" = "10k-medium"
+        } -> null
+      - vpc_endpoint_type          = "Interface" -> null
+      - vpc_id                     = "vpc-0144450f76f9f5e66" -> null
+        # (2 unchanged attributes hidden)
+
+      - dns_options {
+          - dns_record_ip_type                             = "ipv4" -> null
+          - private_dns_only_for_inbound_resolver_endpoint = false -> null
+        }
+
+      - subnet_configuration {
+          - ipv4      = "10.42.1.187" -> null
+          - subnet_id = "subnet-072044b17658c69c6" -> null
+            # (1 unchanged attribute hidden)
+        }
+    }
+
+  # aws_vpc_endpoint.s3 will be destroyed
+  - resource "aws_vpc_endpoint" "s3" {
+      - arn                        = "arn:aws:ec2:us-west-2:932658697181:vpc-endpoint/vpce-02e579ee1c840e6ef" -> null
+      - cidr_blocks                = [
+          - "3.5.76.0/22",
+          - "16.12.96.0/20",
+          - "16.12.112.0/21",
+          - "3.5.80.0/21",
+          - "16.15.32.0/20",
+          - "18.34.48.0/20",
+          - "18.34.244.0/22",
+          - "16.12.88.0/21",
+          - "52.92.128.0/17",
+          - "52.218.128.0/17",
+        ] -> null
+      - dns_entry                  = [] -> null
+      - id                         = "vpce-02e579ee1c840e6ef" -> null
+      - ip_address_type            = "ipv4" -> null
+      - network_interface_ids      = [] -> null
+      - owner_id                   = "932658697181" -> null
+      - policy                     = jsonencode(
+            {
+              - Statement = [
+                  - {
+                      - Action    = "*"
+                      - Effect    = "Allow"
+                      - Principal = "*"
+                      - Resource  = "*"
+                    },
+                ]
+              - Version   = "2008-10-17"
+            }
+        ) -> null
+      - prefix_list_id             = "pl-68a54001" -> null
+      - private_dns_enabled        = false -> null
+      - requester_managed          = false -> null
+      - route_table_ids            = [
+          - "rtb-0bc6d9989b3717ee7",
+        ] -> null
+      - security_group_ids         = [] -> null
+      - service_name               = "com.amazonaws.us-west-2.s3" -> null
+      - service_region             = "us-west-2" -> null
+      - state                      = "available" -> null
+      - subnet_ids                 = [] -> null
+      - tags                       = {
+          - "ecaz:harness" = "cloud"
+          - "ecaz:profile" = "10k-medium"
+        } -> null
+      - tags_all                   = {
+          - "ecaz:harness" = "cloud"
+          - "ecaz:profile" = "10k-medium"
+        } -> null
+      - vpc_endpoint_type          = "Gateway" -> null
+      - vpc_id                     = "vpc-0144450f76f9f5e66" -> null
+        # (2 unchanged attributes hidden)
+
+      - dns_options {
+          - dns_record_ip_type                             = "service-defined" -> null
+          - private_dns_only_for_inbound_resolver_endpoint = false -> null
+        }
+    }
+
+  # random_id.bucket will be destroyed
+  - resource "random_id" "bucket" {
+      - b64_std     = "8ymf7Q==" -> null
+      - b64_url     = "8ymf7Q" -> null
+      - byte_length = 4 -> null
+      - dec         = "4079591405" -> null
+      - hex         = "f3299fed" -> null
+      - id          = "8ymf7Q" -> null
+    }
+
+Plan: 0 to add, 0 to change, 26 to destroy.
+
+Changes to Outputs:
+  - db_instance_id     = "i-09a3d149ad259b2d3" -> null
+  - db_private_ip      = "10.42.1.22" -> null
+  - db_volume_id       = "vol-00da8cf3d75fc8f3d" -> null
+  - loader_instance_id = "i-0a0adad0c16cc7795" -> null
+  - profile            = "10k-medium" -> null
+  - region             = "us-west-2" -> null
+  - s3_bucket          = "ecaz-cloud-10k-medium-f3299fed" -> null
+  - subnet_id          = "subnet-072044b17658c69c6" -> null
+  - vpc_id             = "vpc-0144450f76f9f5e66" -> null
+aws_route_table_association.private: Destroying... [id=rtbassoc-092409a849d43844d]
+aws_s3_bucket_public_access_block.this: Destroying... [id=ecaz-cloud-10k-medium-f3299fed]
+aws_iam_role_policy_attachment.ssm: Destroying... [id=ecaz-cloud-10k-medium-instance-20260523081417994600000002]
+aws_ec2_instance_connect_endpoint.this[0]: Destroying... [id=eice-0583473f8e6e47d65]
+aws_volume_attachment.db_data: Destroying... [id=vai-1116615371]
+aws_iam_role_policy.bucket_rw: Destroying... [id=ecaz-cloud-10k-medium-instance:ecaz-cloud-10k-medium-bucket-rw]
+aws_vpc_endpoint.interface["ssmmessages"]: Destroying... [id=vpce-056905b3ce246d585]
+aws_s3_bucket_lifecycle_configuration.this: Destroying... [id=ecaz-cloud-10k-medium-f3299fed]
+aws_vpc_endpoint.interface["ssm"]: Destroying... [id=vpce-0342c4d849461ae2c]
+aws_instance.loader: Destroying... [id=i-0a0adad0c16cc7795]
+aws_route_table_association.private: Destruction complete after 0s
+aws_iam_role_policy.bucket_rw: Destruction complete after 0s
+aws_vpc_endpoint.interface["ec2messages"]: Destroying... [id=vpce-0e2ca63ffc8c888fa]
+aws_vpc_endpoint.s3: Destroying... [id=vpce-02e579ee1c840e6ef]
+aws_iam_role_policy_attachment.ssm: Destruction complete after 0s
+aws_s3_bucket_public_access_block.this: Destruction complete after 0s
+aws_s3_bucket_lifecycle_configuration.this: Destruction complete after 0s
+aws_vpc_endpoint.s3: Destruction complete after 4s
+aws_route_table.private: Destroying... [id=rtb-0bc6d9989b3717ee7]
+aws_route_table.private: Destruction complete after 1s
+aws_internet_gateway.this: Destroying... [id=igw-07ca58a7c867d3170]
+aws_volume_attachment.db_data: Still destroying... [id=vai-1116615371, 00m09s elapsed]
+aws_ec2_instance_connect_endpoint.this[0]: Still destroying... [id=eice-0583473f8e6e47d65, 00m09s elapsed]
+aws_vpc_endpoint.interface["ssm"]: Still destroying... [id=vpce-0342c4d849461ae2c, 00m09s elapsed]
+aws_vpc_endpoint.interface["ssmmessages"]: Still destroying... [id=vpce-056905b3ce246d585, 00m09s elapsed]
+aws_instance.loader: Still destroying... [id=i-0a0adad0c16cc7795, 00m09s elapsed]
+aws_vpc_endpoint.interface["ec2messages"]: Still destroying... [id=vpce-0e2ca63ffc8c888fa, 00m09s elapsed]
+aws_volume_attachment.db_data: Destruction complete after 9s
+aws_ebs_volume.db: Destroying... [id=vol-00da8cf3d75fc8f3d]
+aws_instance.db: Destroying... [id=i-09a3d149ad259b2d3]
+aws_ec2_instance_connect_endpoint.this[0]: Destruction complete after 12s
+aws_internet_gateway.this: Still destroying... [id=igw-07ca58a7c867d3170, 00m10s elapsed]
+aws_instance.loader: Still destroying... [id=i-0a0adad0c16cc7795, 00m19s elapsed]
+aws_vpc_endpoint.interface["ssm"]: Still destroying... [id=vpce-0342c4d849461ae2c, 00m19s elapsed]
+aws_vpc_endpoint.interface["ssmmessages"]: Still destroying... [id=vpce-056905b3ce246d585, 00m19s elapsed]
+aws_vpc_endpoint.interface["ec2messages"]: Still destroying... [id=vpce-0e2ca63ffc8c888fa, 00m19s elapsed]
+aws_ebs_volume.db: Still destroying... [id=vol-00da8cf3d75fc8f3d, 00m10s elapsed]
+aws_instance.db: Still destroying... [id=i-09a3d149ad259b2d3, 00m10s elapsed]
+aws_internet_gateway.this: Still destroying... [id=igw-07ca58a7c867d3170, 00m20s elapsed]
+aws_vpc_endpoint.interface["ssmmessages"]: Still destroying... [id=vpce-056905b3ce246d585, 00m29s elapsed]
+aws_instance.loader: Still destroying... [id=i-0a0adad0c16cc7795, 00m29s elapsed]
+aws_vpc_endpoint.interface["ssm"]: Still destroying... [id=vpce-0342c4d849461ae2c, 00m29s elapsed]
+aws_vpc_endpoint.interface["ec2messages"]: Still destroying... [id=vpce-0e2ca63ffc8c888fa, 00m29s elapsed]
+aws_ebs_volume.db: Still destroying... [id=vol-00da8cf3d75fc8f3d, 00m20s elapsed]
+aws_instance.db: Still destroying... [id=i-09a3d149ad259b2d3, 00m20s elapsed]
+aws_internet_gateway.this: Destruction complete after 27s
+aws_vpc_endpoint.interface["ssm"]: Still destroying... [id=vpce-0342c4d849461ae2c, 00m37s elapsed]
+aws_instance.loader: Still destroying... [id=i-0a0adad0c16cc7795, 00m37s elapsed]
+aws_vpc_endpoint.interface["ssmmessages"]: Still destroying... [id=vpce-056905b3ce246d585, 00m37s elapsed]
+aws_vpc_endpoint.interface["ec2messages"]: Still destroying... [id=vpce-0e2ca63ffc8c888fa, 00m38s elapsed]
+aws_instance.loader: Destruction complete after 38s
+aws_security_group.loader: Destroying... [id=sg-02c9cd014733e0812]
+aws_ebs_volume.db: Still destroying... [id=vol-00da8cf3d75fc8f3d, 00m29s elapsed]
+aws_instance.db: Still destroying... [id=i-09a3d149ad259b2d3, 00m29s elapsed]
+aws_instance.db: Destruction complete after 29s
+aws_iam_instance_profile.instance: Destroying... [id=ecaz-cloud-10k-medium-instance]
+aws_security_group.db: Destroying... [id=sg-0fcd4604ce82f48dc]
+aws_s3_bucket.this: Destroying... [id=ecaz-cloud-10k-medium-f3299fed]
+aws_security_group.loader: Destruction complete after 1s
+aws_iam_instance_profile.instance: Destruction complete after 1s
+aws_iam_role.instance: Destroying... [id=ecaz-cloud-10k-medium-instance]
+aws_security_group.db: Destruction complete after 1s
+aws_security_group.eice[0]: Destroying... [id=sg-020ac851ec668d884]
+aws_iam_role.instance: Destruction complete after 0s
+aws_security_group.eice[0]: Destruction complete after 0s
+aws_vpc_endpoint.interface["ssmmessages"]: Still destroying... [id=vpce-056905b3ce246d585, 00m47s elapsed]
+aws_vpc_endpoint.interface["ssm"]: Still destroying... [id=vpce-0342c4d849461ae2c, 00m47s elapsed]
+aws_vpc_endpoint.interface["ec2messages"]: Still destroying... [id=vpce-0e2ca63ffc8c888fa, 00m48s elapsed]
+aws_ebs_volume.db: Still destroying... [id=vol-00da8cf3d75fc8f3d, 00m39s elapsed]
+aws_vpc_endpoint.interface["ssm"]: Still destroying... [id=vpce-0342c4d849461ae2c, 00m57s elapsed]
+aws_vpc_endpoint.interface["ssmmessages"]: Still destroying... [id=vpce-056905b3ce246d585, 00m57s elapsed]
+aws_vpc_endpoint.interface["ec2messages"]: Still destroying... [id=vpce-0e2ca63ffc8c888fa, 00m58s elapsed]
+aws_ebs_volume.db: Still destroying... [id=vol-00da8cf3d75fc8f3d, 00m49s elapsed]
+aws_vpc_endpoint.interface["ssm"]: Still destroying... [id=vpce-0342c4d849461ae2c, 01m06s elapsed]
+aws_vpc_endpoint.interface["ssmmessages"]: Still destroying... [id=vpce-056905b3ce246d585, 01m06s elapsed]
+aws_vpc_endpoint.interface["ec2messages"]: Still destroying... [id=vpce-0e2ca63ffc8c888fa, 01m07s elapsed]
+aws_ebs_volume.db: Still destroying... [id=vol-00da8cf3d75fc8f3d, 00m58s elapsed]
+aws_vpc_endpoint.interface["ssmmessages"]: Still destroying... [id=vpce-056905b3ce246d585, 01m16s elapsed]
+aws_vpc_endpoint.interface["ssm"]: Still destroying... [id=vpce-0342c4d849461ae2c, 01m16s elapsed]
+aws_vpc_endpoint.interface["ec2messages"]: Still destroying... [id=vpce-0e2ca63ffc8c888fa, 01m17s elapsed]
+aws_ebs_volume.db: Still destroying... [id=vol-00da8cf3d75fc8f3d, 01m08s elapsed]
+aws_vpc_endpoint.interface["ssmmessages"]: Still destroying... [id=vpce-056905b3ce246d585, 01m26s elapsed]
+aws_vpc_endpoint.interface["ssm"]: Still destroying... [id=vpce-0342c4d849461ae2c, 01m26s elapsed]
+aws_vpc_endpoint.interface["ec2messages"]: Still destroying... [id=vpce-0e2ca63ffc8c888fa, 01m27s elapsed]
+aws_ebs_volume.db: Still destroying... [id=vol-00da8cf3d75fc8f3d, 01m18s elapsed]
+aws_vpc_endpoint.interface["ssm"]: Still destroying... [id=vpce-0342c4d849461ae2c, 01m35s elapsed]
+aws_vpc_endpoint.interface["ssmmessages"]: Still destroying... [id=vpce-056905b3ce246d585, 01m35s elapsed]
+aws_vpc_endpoint.interface["ec2messages"]: Still destroying... [id=vpce-0e2ca63ffc8c888fa, 01m35s elapsed]
+aws_ebs_volume.db: Still destroying... [id=vol-00da8cf3d75fc8f3d, 01m27s elapsed]
+aws_vpc_endpoint.interface["ec2messages"]: Destruction complete after 1m36s
+aws_vpc_endpoint.interface["ssm"]: Still destroying... [id=vpce-0342c4d849461ae2c, 01m45s elapsed]
+aws_vpc_endpoint.interface["ssmmessages"]: Still destroying... [id=vpce-056905b3ce246d585, 01m45s elapsed]
+aws_ebs_volume.db: Still destroying... [id=vol-00da8cf3d75fc8f3d, 01m37s elapsed]
+aws_vpc_endpoint.interface["ssm"]: Still destroying... [id=vpce-0342c4d849461ae2c, 01m55s elapsed]
+aws_vpc_endpoint.interface["ssmmessages"]: Still destroying... [id=vpce-056905b3ce246d585, 01m55s elapsed]
+aws_ebs_volume.db: Still destroying... [id=vol-00da8cf3d75fc8f3d, 01m47s elapsed]
+aws_vpc_endpoint.interface["ssmmessages"]: Still destroying... [id=vpce-056905b3ce246d585, 02m04s elapsed]
+aws_vpc_endpoint.interface["ssm"]: Still destroying... [id=vpce-0342c4d849461ae2c, 02m04s elapsed]
+aws_ebs_volume.db: Still destroying... [id=vol-00da8cf3d75fc8f3d, 01m55s elapsed]
+aws_vpc_endpoint.interface["ssm"]: Destruction complete after 2m5s
+aws_vpc_endpoint.interface["ssmmessages"]: Destruction complete after 2m5s
+aws_subnet.private: Destroying... [id=subnet-072044b17658c69c6]
+aws_security_group.endpoints: Destroying... [id=sg-00280dbc0d45c5162]
+aws_security_group.endpoints: Destruction complete after 1s
+aws_subnet.private: Destruction complete after 1s
+aws_vpc.this: Destroying... [id=vpc-0144450f76f9f5e66]
+aws_vpc.this: Destruction complete after 0s
+aws_ebs_volume.db: Still destroying... [id=vol-00da8cf3d75fc8f3d, 02m05s elapsed]
+aws_ebs_volume.db: Still destroying... [id=vol-00da8cf3d75fc8f3d, 02m15s elapsed]
+aws_ebs_volume.db: Still destroying... [id=vol-00da8cf3d75fc8f3d, 02m24s elapsed]
+aws_ebs_volume.db: Still destroying... [id=vol-00da8cf3d75fc8f3d, 02m34s elapsed]
+aws_ebs_volume.db: Still destroying... [id=vol-00da8cf3d75fc8f3d, 02m44s elapsed]
+aws_ebs_volume.db: Still destroying... [id=vol-00da8cf3d75fc8f3d, 02m53s elapsed]
+aws_ebs_volume.db: Still destroying... [id=vol-00da8cf3d75fc8f3d, 03m03s elapsed]
+aws_ebs_volume.db: Still destroying... [id=vol-00da8cf3d75fc8f3d, 03m13s elapsed]
+aws_ebs_volume.db: Still destroying... [id=vol-00da8cf3d75fc8f3d, 03m22s elapsed]
+aws_ebs_volume.db: Still destroying... [id=vol-00da8cf3d75fc8f3d, 03m32s elapsed]
+aws_ebs_volume.db: Still destroying... [id=vol-00da8cf3d75fc8f3d, 03m42s elapsed]
+aws_ebs_volume.db: Still destroying... [id=vol-00da8cf3d75fc8f3d, 03m50s elapsed]
+aws_ebs_volume.db: Still destroying... [id=vol-00da8cf3d75fc8f3d, 04m00s elapsed]
+aws_ebs_volume.db: Still destroying... [id=vol-00da8cf3d75fc8f3d, 04m10s elapsed]
+aws_ebs_volume.db: Still destroying... [id=vol-00da8cf3d75fc8f3d, 04m19s elapsed]
+aws_ebs_volume.db: Still destroying... [id=vol-00da8cf3d75fc8f3d, 04m29s elapsed]
+aws_ebs_volume.db: Still destroying... [id=vol-00da8cf3d75fc8f3d, 04m39s elapsed]
+aws_ebs_volume.db: Still destroying... [id=vol-00da8cf3d75fc8f3d, 04m48s elapsed]
+aws_ebs_volume.db: Still destroying... [id=vol-00da8cf3d75fc8f3d, 04m58s elapsed]
+aws_ebs_volume.db: Still destroying... [id=vol-00da8cf3d75fc8f3d, 05m08s elapsed]
+aws_ebs_volume.db: Still destroying... [id=vol-00da8cf3d75fc8f3d, 05m17s elapsed]
+aws_ebs_volume.db: Still destroying... [id=vol-00da8cf3d75fc8f3d, 05m27s elapsed]
+aws_ebs_volume.db: Still destroying... [id=vol-00da8cf3d75fc8f3d, 05m37s elapsed]
+aws_ebs_volume.db: Still destroying... [id=vol-00da8cf3d75fc8f3d, 05m45s elapsed]
+aws_ebs_volume.db: Still destroying... [id=vol-00da8cf3d75fc8f3d, 05m55s elapsed]
+aws_ebs_volume.db: Still destroying... [id=vol-00da8cf3d75fc8f3d, 06m05s elapsed]
+aws_ebs_volume.db: Still destroying... [id=vol-00da8cf3d75fc8f3d, 06m14s elapsed]
+aws_ebs_volume.db: Still destroying... [id=vol-00da8cf3d75fc8f3d, 06m24s elapsed]
+aws_ebs_volume.db: Still destroying... [id=vol-00da8cf3d75fc8f3d, 06m34s elapsed]
+aws_ebs_volume.db: Still destroying... [id=vol-00da8cf3d75fc8f3d, 06m43s elapsed]
+aws_ebs_volume.db: Still destroying... [id=vol-00da8cf3d75fc8f3d, 06m53s elapsed]
+aws_ebs_volume.db: Still destroying... [id=vol-00da8cf3d75fc8f3d, 07m03s elapsed]
+aws_ebs_volume.db: Still destroying... [id=vol-00da8cf3d75fc8f3d, 07m12s elapsed]
+aws_ebs_volume.db: Still destroying... [id=vol-00da8cf3d75fc8f3d, 07m22s elapsed]
+aws_ebs_volume.db: Still destroying... [id=vol-00da8cf3d75fc8f3d, 07m32s elapsed]
+aws_ebs_volume.db: Still destroying... [id=vol-00da8cf3d75fc8f3d, 07m40s elapsed]
+aws_ebs_volume.db: Still destroying... [id=vol-00da8cf3d75fc8f3d, 07m50s elapsed]
+aws_ebs_volume.db: Still destroying... [id=vol-00da8cf3d75fc8f3d, 08m00s elapsed]
+aws_ebs_volume.db: Still destroying... [id=vol-00da8cf3d75fc8f3d, 08m09s elapsed]
+aws_ebs_volume.db: Still destroying... [id=vol-00da8cf3d75fc8f3d, 08m19s elapsed]
+aws_ebs_volume.db: Still destroying... [id=vol-00da8cf3d75fc8f3d, 08m29s elapsed]
+aws_ebs_volume.db: Still destroying... [id=vol-00da8cf3d75fc8f3d, 08m38s elapsed]
+aws_ebs_volume.db: Still destroying... [id=vol-00da8cf3d75fc8f3d, 08m48s elapsed]
+aws_ebs_volume.db: Still destroying... [id=vol-00da8cf3d75fc8f3d, 08m58s elapsed]
+aws_ebs_volume.db: Still destroying... [id=vol-00da8cf3d75fc8f3d, 09m07s elapsed]
+aws_ebs_volume.db: Still destroying... [id=vol-00da8cf3d75fc8f3d, 09m17s elapsed]
+aws_ebs_volume.db: Still destroying... [id=vol-00da8cf3d75fc8f3d, 09m27s elapsed]
+aws_ebs_volume.db: Still destroying... [id=vol-00da8cf3d75fc8f3d, 09m35s elapsed]
+
+Error: deleting S3 Bucket (ecaz-cloud-10k-medium-f3299fed): operation error S3: DeleteBucket, https response error StatusCode: 409, RequestID: K84XGCH90264SN36, HostID: HodUINqLllvvKxTy3YZqv8h4qVnm9o6RQREM4n+s5M1xNDOD0QD60Udyvq1xlBqS4Jj/B5sMTIg=, api error BucketNotEmpty: The bucket you tried to delete is not empty
+
+
+Error: waiting for EBS Volume (vol-00da8cf3d75fc8f3d) delete: timeout while waiting for resource to be gone (last state: 'deleting', timeout: 10m0s)
+
+
+   0: [91mterraform ["destroy", "-auto-approve", "-input=false", "-no-color", "-state=/home/peter/.local/share/ecaz/cloud/10k-medium/terraform.tfstate", "-var-file=/home/peter/dev/ecaz/infra/cloud/terraform/profiles/10k-medium.tfvars"] failed: exit status: 1[0m
+
+Location:
+   [35mcrates/ecaz-cloud/src/terraform.rs[0m:[35m133[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.
+
+Script done on 2026-05-23 06:22:37-07:00 [COMMAND_EXIT_CODE="1"]

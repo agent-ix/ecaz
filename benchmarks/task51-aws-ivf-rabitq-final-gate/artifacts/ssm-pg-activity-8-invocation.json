@@ -1,0 +1,25 @@
+Script started on 2026-05-23 01:54:35-07:00 [<not executed on terminal>]
+{
+    "CommandId": "0555bef0-36ad-43b8-86a0-65494c6e48c9",
+    "InstanceId": "i-09a3d149ad259b2d3",
+    "Comment": "",
+    "DocumentName": "AWS-RunShellScript",
+    "DocumentVersion": "$DEFAULT",
+    "PluginName": "aws:runShellScript",
+    "ResponseCode": 0,
+    "ExecutionStartDateTime": "2026-05-23T08:54:29.494Z",
+    "ExecutionElapsedTime": "PT0.097S",
+    "ExecutionEndDateTime": "2026-05-23T08:54:29.494Z",
+    "Status": "Success",
+    "StatusDetails": "Success",
+    "StandardOutputContent": "  pid  | state  | wait_event_type |  wait_event  |       age       |                                                                                             query                                                                                             \n-------+--------+-----------------+--------------+-----------------+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------\n 51756 | active | IO              | DataFileRead | 00:21:17.441693 | SELECT id, source FROM real_1m_ivf_rabitq1_rerank_corpus ORDER BY id\n 52640 | active |                 |              | 00:00:00        | SELECT pid, state, wait_event_type, wait_event, now() - query_start AS age, left(query, 240) AS query FROM pg_stat_activity WHERE datname = 'tqvector_bench' ORDER BY query_start NULLS LAST;\n(2 rows)\n\n",
+    "StandardOutputUrl": "",
+    "StandardErrorContent": "++ sudo -u postgres psql -d tqvector_bench -P pager=off -c 'SELECT pid, state, wait_event_type, wait_event, now() - query_start AS age, left(query, 240) AS query FROM pg_stat_activity WHERE datname = '\\''tqvector_bench'\\'' ORDER BY query_start NULLS LAST;'\n",
+    "StandardErrorUrl": "",
+    "CloudWatchOutputConfig": {
+        "CloudWatchLogGroupName": "",
+        "CloudWatchOutputEnabled": false
+    }
+}
+
+Script done on 2026-05-23 01:54:36-07:00 [COMMAND_EXIT_CODE="0"]
