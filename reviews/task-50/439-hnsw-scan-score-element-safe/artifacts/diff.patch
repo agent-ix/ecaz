@@ -1,0 +1,29 @@
+commit 39c0ec77790fb2be549641c56e3a5a4115d31ba3
+Author: Codex <codex@openai.com>
+Date:   Fri May 22 17:12:57 2026 -0700
+
+    Task 50/439: HNSW scan.rs live_loaded_state + score_scan_element_result safe-fn lifts
+    
+    Two more leaf scan-side lifts:
+    
+      - live_loaded_state_from_exact_payload (body composed of safe ops
+        after slice 410's score_and_cache_scan_element lift)
+      - score_scan_element_result (body composed of cached-quantizer +
+        scan-box-ref calls, no internal unsafe blocks)
+    
+    Three caller-side unsafe wraps stripped (score_and_cache_scan_element
+    internal, build_cached_graph_element dispatcher arm,
+    miri_score_scan_element_result_via_raw_opaque_ptr_updates_stats_delta
+    test). The raw-ptr deref inside the test caller stays as a tight
+    inline unsafe over the &mut *opaque_ptr, not the call itself.
+    
+    Per-file delta:
+    
+      scan.rs   82 -> 80  (-2)
+    
+    Cumulative HNSW rotation delta: -200 (549 -> 349, -36.4%).
+    
+    Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
+
+ src/am/ec_hnsw/scan.rs | 31 ++++++++++++-------------------
+ 1 file changed, 12 insertions(+), 19 deletions(-)
