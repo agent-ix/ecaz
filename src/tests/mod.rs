@@ -2177,7 +2177,9 @@
         ctid_to_id: &HashMap<(u32, u16), usize>,
         k: usize,
     ) -> Vec<usize> {
-        let (outputs, _orderby_cleared) = am::debug_ec_ivf_gettuple_outputs(index_oid, query);
+        // SAFETY: ec_ivf debug entrypoint expects the live debug scan context
+        // and orderby state that this test fixture provides.
+        let (outputs, _orderby_cleared) = unsafe { am::debug_ec_ivf_gettuple_outputs(index_oid, query) };
         outputs
             .into_iter()
             .take(k)

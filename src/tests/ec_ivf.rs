@@ -1,6 +1,10 @@
     macro_rules! ec_ivf_debug {
         ($call:expr) => {{
-            $call
+            // SAFETY: ec_ivf debug entrypoints are unsafe fn that take the
+            // debug-test live state pointers. Each call site here is inside
+            // a pgrx-managed test fixture where those invariants hold.
+            #[allow(unused_unsafe)]
+            unsafe { $call }
         }};
     }
 

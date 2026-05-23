@@ -1766,15 +1766,15 @@ fn debug_scan_first_orderby_score(scan: pg_sys::IndexScanDesc) -> Option<f32> {
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-struct DebugHeapBackedScan {
-    scan: IndexScanGuard,
+struct DebugHeapBackedScan<'heap, 'index, 'snap> {
+    scan: IndexScanGuard<'heap, 'index, 'snap>,
     _snapshot: ActiveSnapshotGuard,
     _heap_relation: HeapRelationGuard,
     _index_relation: IndexRelationGuard,
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-fn debug_begin_heap_backed_scan(index_oid: pg_sys::Oid) -> DebugHeapBackedScan {
+fn debug_begin_heap_backed_scan(index_oid: pg_sys::Oid) -> DebugHeapBackedScan<'static, 'static, 'static> {
     let index_relation =
         IndexRelationGuard::access_share(index_oid, "ec_ivf debug begin heap backed scan");
     let index_relation_ptr = index_relation.as_ptr();
@@ -1787,10 +1787,20 @@ fn debug_begin_heap_backed_scan(index_oid: pg_sys::Oid) -> DebugHeapBackedScan {
         .unwrap_or_else(|| pgrx::error!("ec_ivf debug scan could not open heap relation"));
     let snapshot = ActiveSnapshotGuard::latest_after_command_counter()
         .unwrap_or_else(|| pgrx::error!("ec_ivf debug scan could not acquire a latest snapshot"));
-    let scan = IndexScanGuard::begin(&heap_relation, &index_relation, &snapshot, 0, 1)
-        .unwrap_or_else(|| {
-            pgrx::error!("ec_ivf debug scan failed to begin heap-backed index scan")
-        });
+    // SAFETY: this debug state owns the heap relation, index relation, and
+    // snapshot guards; field order drops the scan before those dependencies.
+    let scan = unsafe {
+        IndexScanGuard::begin_from_raw(
+            heap_relation.as_ptr(),
+            index_relation.as_ptr(),
+            snapshot.as_ptr(),
+            0,
+            1,
+        )
+    }
+    .unwrap_or_else(|| {
+        pgrx::error!("ec_ivf debug scan failed to begin heap-backed index scan")
+    });
 
     DebugHeapBackedScan {
         scan,
@@ -1801,7 +1811,7 @@ fn debug_begin_heap_backed_scan(index_oid: pg_sys::Oid) -> DebugHeapBackedScan {
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-fn debug_end_heap_backed_scan(state: DebugHeapBackedScan) {
+fn debug_end_heap_backed_scan(state: DebugHeapBackedScan<'_, '_, '_>) {
     drop(state);
 }
 
