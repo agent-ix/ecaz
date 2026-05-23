@@ -16,68 +16,77 @@ clean. This packet is the **first real AWS spend** — driving
 `make -C infra/spire-aws pass-correctness` against freshly provisioned
 infrastructure in `us-west-2`, on **AWS Graviton 4** (`r8g`) hardware.
 
-Before the AWS run could start, four latent gaps in the AWS lane had to
+Before the AWS run could start, three latent gaps in the AWS lane had to
 be fixed (none of these existed in packet 957's scope — they were
 discovered while assembling this packet):
 
 - **F3** — `infra/spire-aws/terraform.tfvars` did not exist (only
   `.example`); five required vars had no defaults.
-- **F4** — `scripts/spire-aws/bootstrap-node.sh` ran `dnf install
-  postgresql18-server` against AL2023's default repos, which do not
-  ship PG18. PGDG yum repo was never added.
+- **F4 (rev2)** — `scripts/spire-aws/bootstrap-node.sh` was a stub.
+  Initially patched to add PGDG repo, but final implementation
+  mirrors the proven `infra/cloud/terraform/cloud-init/db.sh.tftpl`
+  approach instead: install AL2023 native `postgresql18-server`
+  packages (PG18 18.3 ships in AL2023 base repos for aarch64 — verified
+  via `dnf info postgresql18-server`), install Rust + cargo-pgrx, clone
+  ecaz, run `cargo pgrx install --sudo --release` on each node from
+  the requested git ref. ~10 min per-node build, parallelizable across
+  the 4-node topology.
 - **F5** — `pass-correctness` chained `provision → install-extension`
-  with no step to stage the ecaz extension tarball into the artifact
-  bucket between them. The bucket only exists post-provision; the
-  tarball had to exist pre-install. Operator-manual `aws s3 cp` step
-  was implied by the runbook but absent from the Makefile chain.
-- **F6** — No build path produced an AL2023-compatible extension
-  tarball. The local pgrx build in packet 957 produces an Ubuntu 24
-  / x86_64 glibc binary; EC2 nodes here are **AL2023 / aarch64
-  (Graviton 4 / Neoverse V2)**. ABI-incompatible.
+  with no actual extension binary path. Original plan added a
+  package/upload-tarball stage; pivoted to the per-node build pattern
+  above (eliminates Docker, qemu, cross-arch packaging, S3 tarball
+  staging) once the cloud-init prior art was discovered. Final chain:
+  `provision → install-extension (clones + builds on each node)
+  → register-remotes → ...`.
+
+(F6 from the early draft of this request — "no AL2023-compatible
+build" — is rendered moot by the per-node-native-build model.)
 
 ## Scope
 
 Plumbing fixes (committed before AWS spend):
 
 1. `infra/spire-aws/terraform.tfvars` populated for `us-west-2` / AZ
-   `us-west-2a` / arm64 AL2023 AMI / Graviton 4 instance types
-   (`r8g.4xlarge` coord + 3 × `r8g.2xlarge` remotes) / cost-tag owner
-   `kreneskyp` and `auto_stop_at` deadline. `terraform.tfvars` added
-   to `.gitignore` (file content is local-only; the AMI ID + region are
-   recorded in this request).
-2. `scripts/spire-aws/bootstrap-node.sh` installs the PGDG yum repo
-   for EL-9-aarch64 and disables the AL2023 built-in postgresql module
-   before `dnf install postgresql18-server`.
-3. `scripts/spire-aws/build-tarball.sh` (new) builds the ecaz
-   extension inside an `amazonlinux:2023` aarch64 container, tuned for
-   Neoverse V2 (`RUSTFLAGS=-C target-cpu=neoverse-v2`,
-   `CFLAGS/CXXFLAGS=-mcpu=neoverse-v2`). Output:
-   `target/ecaz-spire-aws-<short-sha>.tar.gz` plus
-   `target/ecaz-spire-aws-latest.tar.gz` symlink-style copy.
-4. `infra/spire-aws/Makefile` gains two targets: `package` (Docker
-   `--platform linux/arm64` runs the build script) and
-   `upload-tarball` (stages the artifact into `s3://<bucket>/<key>`
-   from the live `aws-topology.json`). Both inserted into
-   `pass-correctness` and `pass-representative` chains.
+   `us-west-2a` / arm64 AL2023 AMI (`ami-04e0d7d889f694536`) / Graviton 4
+   instance types (`r8g.4xlarge` coord + 3 × `r8g.2xlarge` remotes) /
+   cost-tag owner `kreneskyp` and `auto_stop_at` deadline.
+   `terraform.tfvars` added to `.gitignore`.
+2. `scripts/spire-aws/bootstrap-node.sh` rewritten to mirror
+   `infra/cloud/terraform/cloud-init/db.sh.tftpl`: install AL2023
+   native `postgresql18-server / contrib / server-devel`, then build +
+   install ecaz on the node via `cargo pgrx install --sudo --release
+   --pg-config /usr/bin/pg_config` from the operator-supplied
+   `ECAZ_GIT_REF`.
+3. `scripts/spire-aws/install.sh` passes `ECAZ_GIT_URL` and
+   `ECAZ_GIT_REF` env vars through SSM `send-command` to each node;
+   `--timeout-seconds 1800` + `aws ssm wait command-executed
+   --cli-read-timeout 2000` to cover the ~10 min per-node build.
+4. `infra/spire-aws/Makefile` exports `ECAZ_GIT_REF = $(git rev-parse
+   HEAD)` and `ECAZ_GIT_URL = https://github.com/agent-ix/ecaz.git`
+   by default so a `make pass-correctness` from the working tree
+   builds the working-tree SHA on every node. No `package` or
+   `upload-tarball` targets; chain restored to
+   `provision → install-extension → register-remotes → ...`.
 
 AWS run:
 
 5. `make -C infra/spire-aws ARTIFACT_DIR=$(pwd)/reviews/task-30/958-spire-aws-pass-correctness/artifacts pass-correctness`
-   — drives the full chain: `package → provision → upload-tarball →
-   install-extension → register-remotes → load-correctness →
-   smoke-correctness → bench-correctness → fault-degraded →
-   fault-strict → teardown`.
+   — drives the chain: `provision → install-extension →
+   register-remotes → load-correctness → smoke-correctness →
+   bench-correctness → fault-degraded → fault-strict → teardown`.
 6. Suite: `scripts/spire-aws/suite-correctness.json` — 10k synthetic
    corpus (`ec_spire_aws_synth_10k`), recall k=10 across 8/16/32
    probes, latency c=1 × 200 iterations.
 
-## Local Verification Inputs
+## Build Locality
 
-Build host: x86_64 laptop, Docker + qemu user-mode (binfmt registered
-via `tonistiigi/binfmt --install arm64`). qemu emulation produces
-correct aarch64 binaries because codegen flags are explicit
-(`target-cpu=neoverse-v2`) — see follow-up packet for the CI matrix
-that replaces qemu with GHA's native `ubuntu-24.04-arm` runner.
+Each EC2 node performs its own `cargo pgrx install --release` from the
+pinned git SHA. No laptop-side Docker / qemu / tarball. Pattern reuses
+the proven Phase 13 Graviton 4 cloud-init (see
+`benchmarks/cloud-10k-graviton-preopt-baselines/manifest.md`).
+A follow-up packet may add a GHA `package` job on
+`ubuntu-24.04-arm` (native arm64 runner) to produce a shippable tarball
+artifact for users who don't want to wait for an on-node build.
 
 ## Deliverables
 
