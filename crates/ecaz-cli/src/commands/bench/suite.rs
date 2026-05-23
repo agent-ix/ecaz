@@ -198,6 +198,7 @@ enum SuiteStep {
     Latency(LatencyStep),
     Storage(StorageStep),
     Explain(ExplainStep),
+    SidecarRerank(SidecarRerankStep),
     ComparePgvector(ComparePgvectorStep),
     CompareVectorscale(CompareVectorscaleStep),
     Raw(RawStep),
@@ -380,6 +381,35 @@ struct ExplainStep {
     port: Option<u16>,
     sql_file: PathBuf,
     log_output: PathBuf,
+}
+
+#[derive(Debug, Deserialize)]
+struct SidecarRerankStep {
+    name: String,
+    #[serde(default)]
+    tags: Vec<String>,
+    prefix: String,
+    #[serde(default)]
+    profile: Option<String>,
+    #[serde(default)]
+    k: Option<usize>,
+    #[serde(default)]
+    candidate_k: Option<usize>,
+    sweep: Vec<i32>,
+    #[serde(default)]
+    queries_limit: Option<usize>,
+    #[serde(default)]
+    bits: Option<i32>,
+    #[serde(default)]
+    seed: Option<i64>,
+    #[serde(default)]
+    variants: Vec<String>,
+    #[serde(default)]
+    force_index: Option<bool>,
+    #[serde(default)]
+    allow_unsafe_index_shape: bool,
+    #[serde(default)]
+    log_output: Option<PathBuf>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1034,7 +1064,7 @@ fn parse_result_rows(
     raw: &str,
 ) -> Vec<ResultRow> {
     match step.kind.as_str() {
-        "recall" | "latency" => parse_table_rows(raw)
+        "recall" | "latency" | "sidecar-rerank" => parse_table_rows(raw)
             .into_iter()
             .map(|values| ResultRow {
                 suite: manifest.suite.clone(),
@@ -1463,6 +1493,7 @@ impl SuiteStep {
             SuiteStep::Latency(step) => &step.name,
             SuiteStep::Storage(step) => &step.name,
             SuiteStep::Explain(step) => &step.name,
+            SuiteStep::SidecarRerank(step) => &step.name,
             SuiteStep::ComparePgvector(step) => &step.name,
             SuiteStep::CompareVectorscale(step) => &step.name,
             SuiteStep::Raw(step) => &step.name,
@@ -1479,6 +1510,7 @@ impl SuiteStep {
             SuiteStep::Latency(_) => "latency",
             SuiteStep::Storage(_) => "storage",
             SuiteStep::Explain(_) => "explain",
+            SuiteStep::SidecarRerank(_) => "sidecar-rerank",
             SuiteStep::ComparePgvector(_) => "compare-pgvector",
             SuiteStep::CompareVectorscale(_) => "compare-vectorscale",
             SuiteStep::Raw(_) => "raw",
@@ -1495,6 +1527,7 @@ impl SuiteStep {
             SuiteStep::Latency(step) => &step.tags,
             SuiteStep::Storage(step) => &step.tags,
             SuiteStep::Explain(step) => &step.tags,
+            SuiteStep::SidecarRerank(step) => &step.tags,
             SuiteStep::ComparePgvector(step) => &step.tags,
             SuiteStep::CompareVectorscale(step) => &step.tags,
             SuiteStep::Raw(step) => &step.tags,
@@ -1603,6 +1636,25 @@ impl SuiteStep {
             SuiteStep::Explain(step) => {
                 validate_profile_name("explain profile", step.profile.as_deref())
             }
+            SuiteStep::SidecarRerank(step) => {
+                validate_profile_name("sidecar-rerank profile", step.profile.as_deref())?;
+                if step.sweep.is_empty() {
+                    bail!(
+                        "sidecar-rerank step {:?} must include at least one sweep value",
+                        step.name
+                    )
+                }
+                if step.k == Some(0) {
+                    bail!("sidecar-rerank step {:?} must set k >= 1", step.name)
+                }
+                if step.candidate_k == Some(0) {
+                    bail!(
+                        "sidecar-rerank step {:?} must set candidate_k >= 1",
+                        step.name
+                    )
+                }
+                Ok(())
+            }
             SuiteStep::ComparePgvector(step) => {
                 validate_profile_name("compare-pgvector profile", step.profile.as_deref())?;
                 if step.sweep.is_empty() && step.ecaz_sweep.is_none() {
@@ -1640,6 +1692,7 @@ impl SuiteStep {
             SuiteStep::Latency(step) => Ok(expand_latency(step, defaults)),
             SuiteStep::Storage(step) => Ok(expand_storage(step)),
             SuiteStep::Explain(step) => Ok(expand_explain(step, defaults, conn)),
+            SuiteStep::SidecarRerank(step) => Ok(expand_sidecar_rerank(step, defaults)),
             SuiteStep::ComparePgvector(step) => Ok(expand_compare_pgvector(step, defaults)),
             SuiteStep::CompareVectorscale(step) => Ok(expand_compare_vectorscale(step, defaults)),
             SuiteStep::Raw(step) => Ok(step.args.clone()),
@@ -1675,6 +1728,7 @@ impl SuiteStep {
             SuiteStep::Latency(step) => step.log_output.iter().cloned().collect(),
             SuiteStep::Storage(step) => step.log_file.iter().cloned().collect(),
             SuiteStep::Explain(step) => vec![step.sql_file.clone(), step.log_output.clone()],
+            SuiteStep::SidecarRerank(step) => step.log_output.iter().cloned().collect(),
             SuiteStep::ComparePgvector(step) => step.log_file.iter().cloned().collect(),
             SuiteStep::CompareVectorscale(step) => step.log_file.iter().cloned().collect(),
             SuiteStep::Raw(step) => step.expected_artifacts.clone(),
@@ -2015,6 +2069,39 @@ fn expand_explain(
     args.push("--raw".into());
     push_arg_path(&mut args, "--file", &step.sql_file);
     push_arg_path(&mut args, "--log-output", &step.log_output);
+    args
+}
+
+fn expand_sidecar_rerank(step: &SidecarRerankStep, defaults: &SuiteDefaults) -> Vec<String> {
+    let mut args = vec!["bench".into(), "sidecar-rerank".into()];
+    push_arg(&mut args, "--prefix", &step.prefix);
+    push_arg(
+        &mut args,
+        "--profile",
+        &profile(defaults, step.profile.as_deref()),
+    );
+    push_arg(&mut args, "--k", &step.k.unwrap_or(10).to_string());
+    push_arg(
+        &mut args,
+        "--candidate-k",
+        &step.candidate_k.unwrap_or(50).to_string(),
+    );
+    push_arg(&mut args, "--sweep", &join_i32(&step.sweep));
+    if let Some(limit) = step.queries_limit.or(defaults.queries_limit) {
+        push_arg(&mut args, "--queries-limit", &limit.to_string());
+    }
+    push_arg(&mut args, "--bits", &bits(defaults, step.bits).to_string());
+    push_arg(&mut args, "--seed", &seed(defaults, step.seed).to_string());
+    for variant in &step.variants {
+        push_arg(&mut args, "--variant", variant);
+    }
+    if step.force_index.or(defaults.force_index).unwrap_or(false) {
+        args.push("--force-index".into());
+    }
+    if step.allow_unsafe_index_shape {
+        args.push("--allow-unsafe-index-shape".into());
+    }
+    push_opt_path(&mut args, "--log-output", step.log_output.as_deref());
     args
 }
 
@@ -2601,6 +2688,43 @@ mod tests {
     }
 
     #[test]
+    fn expands_sidecar_rerank_with_variants() {
+        let defaults = SuiteDefaults {
+            profile: Some("ec_ivf".into()),
+            queries_limit: Some(200),
+            force_index: Some(true),
+            ..SuiteDefaults::default()
+        };
+        let step = SidecarRerankStep {
+            name: "sidecar".into(),
+            tags: vec!["sidecar".into()],
+            prefix: "surface".into(),
+            profile: None,
+            k: Some(10),
+            candidate_k: Some(50),
+            sweep: vec![64, 128],
+            queries_limit: None,
+            bits: None,
+            seed: None,
+            variants: vec!["f32".into(), "f16".into(), "rabitq8".into()],
+            force_index: None,
+            allow_unsafe_index_shape: false,
+            log_output: Some("sidecar.log".into()),
+        };
+        let args = expand_sidecar_rerank(&step, &defaults);
+        assert!(args.windows(2).any(|w| w == ["--profile", "ec_ivf"]));
+        assert!(args.windows(2).any(|w| w == ["--candidate-k", "50"]));
+        assert!(args.windows(2).any(|w| w == ["--sweep", "64,128"]));
+        assert!(args.windows(2).any(|w| w == ["--variant", "f32"]));
+        assert!(args.windows(2).any(|w| w == ["--variant", "f16"]));
+        assert!(args.windows(2).any(|w| w == ["--variant", "rabitq8"]));
+        assert!(args.contains(&"--force-index".into()));
+        assert!(args
+            .windows(2)
+            .any(|w| w == ["--log-output", "sidecar.log"]));
+    }
+
+    #[test]
     fn expands_chunked_load_without_corpus_query_paths() {
         let defaults = SuiteDefaults {
             profile: Some("ec_ivf".into()),
@@ -2629,9 +2753,7 @@ mod tests {
         };
         let args = expand_load(&step, &defaults);
         assert!(args.contains(&"--chunked".into()));
-        assert!(args
-            .windows(2)
-            .any(|w| w == ["--storage-format", "rabitq"]));
+        assert!(args.windows(2).any(|w| w == ["--storage-format", "rabitq"]));
         assert!(args
             .windows(2)
             .any(|w| w == ["--manifest-file", "stage/anchor_manifest.json"]));

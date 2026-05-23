@@ -16,6 +16,7 @@ mod graph;
 pub mod latency;
 mod overhead;
 pub mod recall;
+mod sidecar_rerank;
 mod spire_pipeline;
 mod storage;
 mod suite;
@@ -26,6 +27,7 @@ pub use graph::GraphArgs;
 pub use latency::LatencyArgs;
 pub use overhead::OverheadArgs;
 pub use recall::RecallArgs;
+pub use sidecar_rerank::SidecarRerankArgs;
 #[allow(unused_imports)]
 pub use spire_pipeline::{SpirePipelineArgs, SpireRemoteTupleTransportMode};
 pub use storage::StorageArgs;
@@ -133,6 +135,8 @@ pub enum BenchCommand {
     DiskannBuildProbe(BuildProbeArgs),
     /// Latency overhead breakdown: encode vs internal scan vs residual client/protocol.
     Overhead(OverheadArgs),
+    /// IVF/RaBitQ sidecar upper-bound rerank measurement.
+    SidecarRerank(SidecarRerankArgs),
     /// SPIRE routing, local pipeline, and optional remote fanout counters.
     SpirePipeline(SpirePipelineArgs),
     /// Expand a configured benchmark suite into packet-style ecaz commands.
@@ -149,6 +153,7 @@ impl BenchCommand {
             BenchCommand::DiskannGraph(a) => graph::run(conn, a).await,
             BenchCommand::DiskannBuildProbe(a) => build_probe::run(conn, a).await,
             BenchCommand::Overhead(a) => overhead::run(conn, a).await,
+            BenchCommand::SidecarRerank(a) => sidecar_rerank::run(conn, a).await,
             BenchCommand::SpirePipeline(a) => spire_pipeline::run(conn, a).await,
             BenchCommand::Suite(a) => suite::run(conn, a).await,
         }

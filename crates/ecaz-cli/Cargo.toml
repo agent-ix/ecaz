@@ -17,6 +17,7 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros", "fs", "io-util
 tokio-postgres = "0.7"
 bytes = "1"
 futures = "0.3"
+half = "2"
 indicatif = "0.17"
 comfy-table = "7"
 ndarray = { version = "0.16", features = ["rayon"] }
