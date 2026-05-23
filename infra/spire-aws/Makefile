@@ -29,7 +29,7 @@ export SPIRE_AWS_DIR REPO_ROOT ARTIFACT_DIR TOPOLOGY
         bench-correctness bench-representative bench-stress \
         fault-degraded fault-strict fault-2pc fault-missing-guc fault-schema-drift fault-auth \
         single-node-smoke snapshot teardown clean \
-        pass-correctness pass-representative pass-smoke \
+        pass-correctness pass-correctness-bench pass-representative pass-smoke \
         all-correctness all-representative
 
 # Git ref that each EC2 node clones + cargo-pgrx-installs at bootstrap.
@@ -190,6 +190,12 @@ clean:
 	cd $(SPIRE_AWS_DIR) && rm -rf .terraform terraform.tfstate*
 
 pass-correctness: purge-stuck-secrets provision install-extension load-correctness register-remotes smoke-correctness bench-correctness fault-degraded fault-strict snapshot teardown
+
+# Variant without the fault matrix — useful while F29 (IAM node-role
+# can't ec2:StopInstances) and F34 (fault.sh hardcoded representative
+# prefix) are not yet resolved. Produces the same bench evidence as
+# pass-correctness, just skips the fault drills.
+pass-correctness-bench: purge-stuck-secrets provision install-extension load-correctness register-remotes smoke-correctness bench-correctness snapshot teardown
 
 # Minimal AWS smoke that bypasses the laptop->VPC connectivity gap in
 # the multi-cluster register/load/smoke/bench/fault scripts. Drives a
