@@ -493,9 +493,12 @@ as expected for IVF — the per-list scoring work dominates and the
 list count grows with sqrt(corpus). The round's wins hold cleanly
 across the 20× corpus span.
 
-At nprobe=128 we reach **vchord's recall ceiling exactly** (0.9991
-vs vchord 0.9995 at 1m) in 7.5 ms at 50k — a sane upper bound for
-production high-recall traffic.
+(Stale claim removed: an earlier draft cited "0.9991 / 7.5 ms at
+50k" from the bits=1 byte-LUT *width=200* sweep — that's not the
+round's final default. The final width=50 50k operating point is
+`nprobe=128 = 6.67 ms @ recall 0.9963`, with width=200 still
+available as an override for users who need the absolute recall
+ceiling at slight latency cost.)
 
 Remaining residual is the rerank-pipeline cost (heap fetch + toast
 detoast on the `real[]` source column). Non-architectural avenues:

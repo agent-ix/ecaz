@@ -65,14 +65,19 @@ dispatch logic — do **not** require rebuilding indexes. After
 - `storage_format` reloption changes (`turboquant` ↔ `rabitq` ↔ `pq_fastscan`)
 - `quant_bits` reloption changes (1 ↔ 2 ↔ 4 ↔ 8)
 - `pq_group_size` reloption changes
+- `nlists` reloption changes — list count determines centroid training,
+  directory/list layout, and per-tuple assignment at build time. A new
+  `nlists` value produces an entirely different IVF geometry on disk.
+- `seed` or `training_sample_rows` changes that affect centroid sampling
 - `MetadataPage` format version bump that affects per-tuple encoding
 - `rerank` mode changes that require per-code aux state (none today)
 
 **Don't rebuild on:**
 
 - NEON / SVE2 / AVX2 kernel changes
-- `rerank_width` default changes (it's a scan-time knob)
-- `nprobe` / `nlists` reloption changes (these only affect search)
+- `rerank_width` default changes (scan-time knob)
+- `nprobe` reloption / GUC changes (scan-time knob — chooses how many
+  of the existing built lists to probe, doesn't change list contents)
 - Pre-prune wiring, dedup data structures, scan dispatch fixes
 
 When in doubt: run the scan against the existing index. If it
