@@ -1,12 +1,5 @@
-Script started on 2026-05-23 01:27:22-07:00 [<not executed on terminal>]
-   Compiling tracing-attributes v0.1.31
-   Compiling tokio-macros v2.7.0
-    Checking tokio v1.51.0
-    Checking tracing v0.1.44
-    Checking tracing-error v0.2.1
-    Checking color-spantrace v0.3.0
-    Checking color-eyre v0.6.5
+Script started on 2026-05-23 06:17:26-07:00 [<not executed on terminal>]
     Checking ecaz-cloud v0.1.0 (/home/peter/dev/ecaz/crates/ecaz-cloud)
-    Finished `dev` profile [unoptimized + debuginfo] target(s) in 2.77s
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.47s
 
-Script done on 2026-05-23 01:27:24-07:00 [COMMAND_EXIT_CODE="0"]
+Script done on 2026-05-23 06:17:27-07:00 [COMMAND_EXIT_CODE="0"]

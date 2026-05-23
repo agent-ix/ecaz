@@ -7,10 +7,11 @@ Please review the Task 51 cloud install fix:
 
 ## Scope
 
-The AWS final-gate bring-up exposed that `ecaz cloud install` still used the old PGDG-style paths:
+The AWS final-gate bring-up exposed that `ecaz cloud install` still used the old PGDG-style paths and omitted the privilege handoff required for extension file install:
 
 - `/usr/pgsql-18/bin/pg_config`
 - `postgresql-18`
+- `cargo pgrx install` without `--sudo`
 
 The AL2023 cloud-init path in this repo installs PostgreSQL 18 packages using the AL2023 layout instead:
 
@@ -23,7 +24,7 @@ This packet updates the install command to match cloud-init. It does not change 
 
 ```text
 cargo check -p ecaz-cloud
-Finished `dev` profile [unoptimized + debuginfo] target(s) in 2.77s
+Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.47s
 ```
 
 ## Caveat

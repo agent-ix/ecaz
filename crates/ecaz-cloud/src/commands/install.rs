@@ -71,7 +71,7 @@ sudo -u postgres bash -lc '
   git fetch --all --tags
   git checkout {r}
   git pull --ff-only origin {r} 2>/dev/null || true
-  cargo pgrx install --release --pg-config /usr/bin/pg_config
+  cargo pgrx install --sudo --release --pg-config /usr/bin/pg_config
 '
 sudo systemctl restart postgresql
 sudo -u postgres psql -c 'DROP EXTENSION IF EXISTS ecaz;'
