@@ -63,17 +63,19 @@ impl<'a> EcHnswParallelBuildSharedView<'a> {
         }
     }
 
-    /// Borrow the header read-only.
-    pub(super) fn header(&self) -> &'a EcHnswParallelBuildSharedHeader {
-        // SAFETY: see `from_raw`'s contract — the header is initialized
-        // and outlives `'a`.
-        unsafe { self.header.as_ref() }
-    }
-
-    /// Mirror of the underlying [`EcHnswParallelBuildSharedHeader::validate`]
-    /// for callers that hold only the view.
+    /// Validate the magic + version header bytes; pgrx-errors on
+    /// mismatch.
+    ///
+    /// This is an *operation*: it reads two `Copy` fields and either
+    /// returns or aborts. No reference to the underlying header is
+    /// handed back to the caller (per reviewer direction on slice 002
+    /// — anti-pattern B avoidance, memory rule
+    /// `feedback_anti_pattern_b_unbounded_lifetime`).
     pub(super) fn validate(&self) {
-        self.header().validate();
+        // SAFETY: see `from_raw`'s contract — the header bytes are
+        // initialized and outlive `'a`. The borrow created here is
+        // confined to this method body and never escapes.
+        unsafe { (*self.header.as_ptr()).validate() }
     }
 
     /// Initialize the embedded SpinLock and ConditionVariable.
