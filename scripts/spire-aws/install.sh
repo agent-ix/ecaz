@@ -69,8 +69,23 @@ CMD_ID=$(aws ssm send-command \
 echo "ssm command id: $CMD_ID" | tee "$ARTIFACT_DIR/install.log"
 
 for id in "${ALL_IDS[@]}"; do
-  aws ssm wait command-executed --region "$REGION" --command-id "$CMD_ID" --instance-id "$id" --cli-read-timeout 2000 --cli-connect-timeout 60
+  # F27: `aws ssm wait command-executed` defaults to ~200s total
+  # (40 attempts × 5s) before timing out. Cargo build takes 10-15 min
+  # on these instances, so the waiter fails before the work finishes.
+  # Manual poll loop with no fixed cap (capped only by SSM's own
+  # --timeout-seconds 1800 on send-command).
+  while :; do
+    STATUS=$(aws ssm get-command-invocation --region "$REGION" \
+      --command-id "$CMD_ID" --instance-id "$id" \
+      --query Status --output text 2>/dev/null || echo Pending)
+    case "$STATUS" in
+      Pending|InProgress|Delayed) sleep 30 ;;
+      *) break ;;
+    esac
+  done
   aws ssm get-command-invocation \
     --region "$REGION" --command-id "$CMD_ID" --instance-id "$id" \
     > "$ARTIFACT_DIR/install-${id}.log"
+  # Fail loudly if a node didn't reach Success — make chain stops.
+  test "$STATUS" = "Success" || { echo "install on $id failed: $STATUS"; exit 1; }
 done
