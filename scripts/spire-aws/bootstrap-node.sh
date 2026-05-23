@@ -58,6 +58,20 @@ max_prepared_transactions = 64
 ssl = on
 EOF
 
+# ssl=on requires server.crt + server.key in $PGDATA. Generate a
+# self-signed cert valid for 1 day (enough for a packet run) so PG can
+# start. Production deployments should replace with a real cert; this is
+# a smoke-test setup.
+sudo -u postgres bash -c "
+  cd \"${PGDATA}\"
+  if [ ! -s server.crt ]; then
+    openssl req -new -x509 -days 1 -nodes -text \
+      -out server.crt -keyout server.key \
+      -subj '/CN=ecaz-spire-aws-smoke'
+    chmod 600 server.key server.crt
+  fi
+"
+
 cat > "${PGDATA}/pg_hba.conf" <<EOF
 local all all                     trust
 host  all all 127.0.0.1/32        trust
