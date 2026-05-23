@@ -1111,17 +1111,13 @@ unsafe fn plan_repair_replacement(
         layer: request.layer,
     };
     if replacements.len() < free_slots {
-        // SAFETY: Linear top-up scans the same index/storage descriptor and
-        // appends only local candidate TIDs to `replacements`.
-        unsafe {
-            top_up_repair_replacements_from_linear_scan(
-                index,
-                metric,
-                &linear_planner,
-                &mut replacements,
-                free_slots,
-            )
-        };
+        top_up_repair_replacements_from_linear_scan(
+            index,
+            metric,
+            &linear_planner,
+            &mut replacements,
+            free_slots,
+        );
     }
     if replacements.is_empty() {
         return None;
@@ -1297,7 +1293,7 @@ fn dedup_beam_candidates_by_tid(candidates: &mut Vec<search::BeamCandidate<page:
     candidates.retain(|candidate| seen.insert(candidate.node));
 }
 
-unsafe fn top_up_repair_replacements_from_linear_scan(
+fn top_up_repair_replacements_from_linear_scan(
     index: VacuumIndexRelation,
     metric: &mut VacuumSearchMetric,
     planner: &LinearRepairPlanner<'_>,
