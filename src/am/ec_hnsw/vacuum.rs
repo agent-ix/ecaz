@@ -289,7 +289,7 @@ impl VacuumSearchMetric {
         }
     }
 
-    unsafe fn score_graph_element(
+    fn score_graph_element(
         &mut self,
         metadata: &page::MetadataPage,
         source_element: &graph::GraphElement,
@@ -1148,17 +1148,13 @@ unsafe fn search_repair_candidates_for_layer(
 ) -> Vec<page::ItemPointer> {
     let mut seeds = Vec::new();
 
-    // SAFETY: The planner metadata/storage/source were produced from this
-    // vacuum repair pass and metric owns any source-scoring heap state.
-    if let Some(entry_candidate) = unsafe {
-        load_vacuum_entry_candidate(
-            index,
-            planner.metadata,
-            planner.storage,
-            metric,
-            planner.source,
-        )
-    } {
+    if let Some(entry_candidate) = load_vacuum_entry_candidate(
+        index,
+        planner.metadata,
+        planner.storage,
+        metric,
+        planner.source,
+    ) {
         if planner.layer == 0 {
             // SAFETY: The entry candidate came from metadata and greedy descent
             // reads graph elements through the same storage descriptor.
@@ -1201,14 +1197,10 @@ unsafe fn search_repair_candidates_for_layer(
     }
 
     seeds.extend(planner.existing_layer.iter().filter_map(|tid| {
-        // SAFETY: Existing-layer TIDs came from the source neighbor slice and
-        // are loaded through the same graph storage descriptor.
-        unsafe {
-            let element = graph::load_exact_graph_element(index.as_ptr(), *tid, planner.storage);
-            metric
-                .score_graph_element(planner.metadata, planner.source, &element)
-                .map(|score| search::BeamCandidate::new(*tid, score))
-        }
+        let element = graph::load_exact_graph_element(index.as_ptr(), *tid, planner.storage);
+        metric
+            .score_graph_element(planner.metadata, planner.source, &element)
+            .map(|score| search::BeamCandidate::new(*tid, score))
     }));
     dedup_beam_candidates_by_tid(&mut seeds);
     if seeds.is_empty() {
@@ -1265,7 +1257,7 @@ unsafe fn search_repair_candidates_for_layer(
         .collect::<Vec<_>>()
 }
 
-unsafe fn load_vacuum_entry_candidate(
+fn load_vacuum_entry_candidate(
     index: VacuumIndexRelation,
     metadata: &page::MetadataPage,
     storage: graph::GraphStorageDescriptor,
@@ -1276,13 +1268,8 @@ unsafe fn load_vacuum_entry_candidate(
         return None;
     }
 
-    // SAFETY: Metadata names a non-invalid entry point, storage matches this
-    // vacuum repair snapshot, and metric owns any source-scoring heap state.
-    let (entry, entry_score) = unsafe {
-        let entry = graph::load_exact_graph_element(index.as_ptr(), metadata.entry_point, storage);
-        let entry_score = metric.score_graph_element(metadata, source_element, &entry)?;
-        (entry, entry_score)
-    };
+    let entry = graph::load_exact_graph_element(index.as_ptr(), metadata.entry_point, storage);
+    let entry_score = metric.score_graph_element(metadata, source_element, &entry)?;
     Some(search::BeamCandidate::new(entry.tid, entry_score))
 }
 
@@ -1490,9 +1477,7 @@ fn collect_linear_repair_candidates_on_page(
 
         // SAFETY: Candidate and source graph elements were loaded from the same
         // storage descriptor and metric owns any source-scoring heap state.
-        if let Some(score) =
-            unsafe { metric.score_graph_element(planner.metadata, planner.source, &candidate) }
-        {
+        if let Some(score) = metric.score_graph_element(planner.metadata, planner.source, &candidate) {
             scored.push((tid, score));
         }
     }

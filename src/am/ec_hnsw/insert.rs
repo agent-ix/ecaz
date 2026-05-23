@@ -972,10 +972,8 @@ unsafe fn discover_insert_forward_neighbor_slots(
 ) -> (Vec<page::ItemPointer>, Vec<LayerForwardSelection>) {
     let mut slots = empty_insert_neighbor_slots(insert_level, m);
     let mut selections = Vec::new();
-    // SAFETY: The metadata snapshot and storage descriptor identify the current
-    // entry point, and metric owns any source-scoring heap state.
     let Some(entry_candidate) =
-        (unsafe { load_insert_entry_candidate(index_relation, metadata, storage, tuple, metric) })
+        load_insert_entry_candidate(index_relation, metadata, storage, tuple, metric)
     else {
         return (slots, selections);
     };
@@ -1027,7 +1025,7 @@ unsafe fn discover_insert_forward_neighbor_slots(
     (slots, selections)
 }
 
-unsafe fn load_insert_entry_candidate(
+fn load_insert_entry_candidate(
     index_relation: pg_sys::Relation,
     metadata: &page::MetadataPage,
     storage: graph::GraphStorageDescriptor,
