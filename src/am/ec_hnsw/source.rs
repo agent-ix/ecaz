@@ -506,7 +506,7 @@ pub(crate) unsafe fn with_flat_float4_source_from_datum<R>(
     datum: pg_sys::Datum,
     kind: SourceDatumKind,
     label: &str,
-    f: impl for<'datum> FnOnce(FlatFloat4Source<'datum>) -> R,
+    f: impl FnOnce(FlatFloat4Source) -> R,
 ) -> R {
     let flat_kind = flat_float4_kind(kind, label);
     // SAFETY: `flat_kind` is derived from `kind`, which the caller has
@@ -522,7 +522,7 @@ pub(crate) fn with_source_from_heap_row_reader<R>(
     heap_tid: page::ItemPointer,
     source_attribute: SourceAttribute,
     label: &str,
-    f: impl for<'datum> FnOnce(FlatFloat4Source<'datum>) -> R,
+    f: impl FnOnce(FlatFloat4Source) -> R,
 ) -> R {
     fetch_heap_row_version_with_reader(reader, heap_tid, label);
     let source_datum = required_slot_datum_with_reader(reader, source_attribute.attnum, label);
@@ -535,7 +535,7 @@ pub(crate) fn with_indexed_ecvector_from_slot_reader<R>(
     reader: &mut heap_slot::HeapSlotReader<'_>,
     attnum: i32,
     label: &str,
-    f: impl for<'datum> FnOnce(FlatFloat4Source<'datum>) -> R,
+    f: impl FnOnce(FlatFloat4Source) -> R,
 ) -> R {
     let source_datum = required_slot_datum_with_reader(reader, attnum, label);
     // SAFETY: The indexed attribute is required to be ecvector, which is stored

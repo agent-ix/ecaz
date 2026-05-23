@@ -11,7 +11,7 @@
 //! varlena owned by the surrounding PG arena scope); the read methods on the
 //! resulting wrapper are safe and encapsulate the underlying PG primitive.
 
-use std::{ffi::c_int, marker::PhantomData};
+use std::ffi::c_int;
 
 use pgrx::pg_sys;
 
@@ -38,14 +38,13 @@ pub(crate) enum FlatFloat4Kind {
 /// varlenas behind a single safe `as_slice()` accessor. The wrapper owns the
 /// detoasted backing storage and ties its slice lifetime to `'a` so the
 /// borrowed view cannot escape the surrounding PG-arena scope.
-pub(crate) struct FlatFloat4Source<'a> {
+pub(crate) struct FlatFloat4Source {
     _detoasted: DetoastedVarlena,
     data_ptr: *const f32,
     len: usize,
-    _marker: PhantomData<&'a [f32]>,
 }
 
-impl<'a> FlatFloat4Source<'a> {
+impl FlatFloat4Source {
     /// Construct a typed flat-float4 view over `datum`.
     ///
     /// Returns `None` if `datum` is SQL NULL. Otherwise dispatches on `kind`
@@ -87,7 +86,6 @@ impl<'a> FlatFloat4Source<'a> {
             _detoasted: detoasted,
             data_ptr,
             len,
-            _marker: PhantomData,
         })
     }
 
@@ -190,8 +188,8 @@ impl<'a> FlatFloat4Source<'a> {
 /// TODO(slice-003): wire to the actual `EcVector` / `EcVectorView` types once
 /// they exist. For now `view()` returns the underlying flat float4 slice via
 /// [`EcVectorView`].
-pub(crate) struct EcVectorDatum<'a> {
-    source: FlatFloat4Source<'a>,
+pub(crate) struct EcVectorDatum {
+    source: FlatFloat4Source,
 }
 
 /// Safe borrowed view returned by [`EcVectorDatum::view`].
@@ -214,7 +212,7 @@ impl<'a> EcVectorView<'a> {
     }
 }
 
-impl<'a> EcVectorDatum<'a> {
+impl EcVectorDatum {
     /// Construct a typed ecvector view over `datum`.
     ///
     /// Returns `None` if `datum` is SQL NULL.
