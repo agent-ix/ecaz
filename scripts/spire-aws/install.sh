@@ -22,7 +22,8 @@ REGION=$(jq -r '.region' "$TOPOLOGY")
 BUCKET=$(jq -r '.artifact_bucket' "$TOPOLOGY")
 COORD_ID=$(jq -r '.coordinator.instance_id' "$TOPOLOGY")
 REMOTE_IDS=$(jq -r '.remotes[].instance_id' "$TOPOLOGY")
-TARBALL_KEY="${ECAZ_SPIRE_AWS_TARBALL_KEY:-ecaz-latest.tar.gz}"
+ECAZ_URL="${ECAZ_GIT_URL:-https://github.com/agent-ix/ecaz.git}"
+ECAZ_REF="${ECAZ_GIT_REF:?ECAZ_GIT_REF must be set (export from Makefile)}"
 
 ALL_IDS=("$COORD_ID")
 while IFS= read -r id; do ALL_IDS+=("$id"); done <<< "$REMOTE_IDS"
@@ -33,20 +34,24 @@ aws s3 cp \
   --region "$REGION" \
   > "$ARTIFACT_DIR/bootstrap-upload.log"
 
+# Each node downloads bootstrap-node.sh from S3 and runs it. The script
+# clones ecaz, builds the extension via cargo-pgrx, and CREATEs it. The
+# build is ~10 min per node on r8g hardware; SSM wait timeout is 30 min.
 CMD_ID=$(aws ssm send-command \
   --region "$REGION" \
   --document-name "AWS-RunShellScript" \
   --instance-ids "${ALL_IDS[@]}" \
-  --parameters "commands=[\"sudo aws s3 cp s3://${BUCKET}/bootstrap-node.sh /tmp/bootstrap-node.sh\",\"sudo ECAZ_SPIRE_AWS_BUCKET=${BUCKET} ECAZ_SPIRE_AWS_TARBALL_KEY=${TARBALL_KEY} bash /tmp/bootstrap-node.sh\"]" \
+  --timeout-seconds 1800 \
+  --parameters "commands=[\"sudo aws s3 cp s3://${BUCKET}/bootstrap-node.sh /tmp/bootstrap-node.sh\",\"sudo ECAZ_SPIRE_AWS_BUCKET=${BUCKET} ECAZ_GIT_URL=${ECAZ_URL} ECAZ_GIT_REF=${ECAZ_REF} bash /tmp/bootstrap-node.sh\"]" \
   --output-s3-bucket-name "$BUCKET" \
   --output-s3-key-prefix "spire-aws/install" \
-  --comment "ecaz Phase 13b.5 install" \
+  --comment "ecaz Phase 13b.5 install (git ref ${ECAZ_REF})" \
   --query "Command.CommandId" --output text)
 
 echo "ssm command id: $CMD_ID" | tee "$ARTIFACT_DIR/install.log"
 
 for id in "${ALL_IDS[@]}"; do
-  aws ssm wait command-executed --region "$REGION" --command-id "$CMD_ID" --instance-id "$id"
+  aws ssm wait command-executed --region "$REGION" --command-id "$CMD_ID" --instance-id "$id" --cli-read-timeout 2000 --cli-connect-timeout 60
   aws ssm get-command-invocation \
     --region "$REGION" --command-id "$CMD_ID" --instance-id "$id" \
     > "$ARTIFACT_DIR/install-${id}.log"
