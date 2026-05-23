@@ -120,3 +120,16 @@ sleep 3
 
 sudo -u postgres psql -c 'CREATE EXTENSION IF NOT EXISTS ecaz;'
 sudo -u postgres psql -c "SELECT extname, extversion FROM pg_extension WHERE extname = 'ecaz';"
+
+# Create the ecaz_coord role expected by scripts/spire-aws/*.sh. Superuser
+# because the SPIRE coordinator routines require server-level privileges
+# (register remotes, manage secrets bindings, etc.). Idempotent.
+sudo -u postgres psql <<'PSQL'
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'ecaz_coord') THEN
+    CREATE ROLE ecaz_coord WITH LOGIN SUPERUSER;
+  END IF;
+END
+$$;
+PSQL

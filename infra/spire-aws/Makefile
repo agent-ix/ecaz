@@ -28,8 +28,9 @@ export SPIRE_AWS_DIR REPO_ROOT ARTIFACT_DIR TOPOLOGY
         smoke smoke-correctness smoke-representative smoke-stress \
         bench-correctness bench-representative bench-stress \
         fault-degraded fault-strict fault-2pc fault-missing-guc fault-schema-drift fault-auth \
-        snapshot teardown clean \
-        pass-correctness pass-representative all-correctness all-representative
+        single-node-smoke snapshot teardown clean \
+        pass-correctness pass-representative pass-smoke \
+        all-correctness all-representative
 
 # Git ref that each EC2 node clones + cargo-pgrx-installs at bootstrap.
 # Defaults to the local branch HEAD so a fresh `make pass-correctness` from
@@ -113,6 +114,18 @@ fault-schema-drift:
 fault-auth:
 	cd $(REPO_ROOT) && $(SCRIPTS)/fault.sh auth-failure $(TOPOLOGY) $(ARTIFACT_DIR)
 
+single-node-smoke:
+	cd $(REPO_ROOT) && $(SCRIPTS)/single-node-smoke.sh $(TOPOLOGY) $(ARTIFACT_DIR)
+
+# Cleanup any Secrets Manager secrets stuck in the deletion recovery
+# window from a prior aborted run. Idempotent: succeeds even if no
+# secrets are present. Runs as a prerequisite of `provision`.
+purge-stuck-secrets:
+	@REGION=$$(jq -r '.region // "us-west-2"' $(SPIRE_AWS_DIR)/terraform.tfvars 2>/dev/null || echo us-west-2); \
+	  for n in ecaz-spire-aws-remote-1 ecaz-spire-aws-remote-2 ecaz-spire-aws-remote-3; do \
+	    aws secretsmanager delete-secret --region $$REGION --secret-id "$$n" --force-delete-without-recovery >/dev/null 2>&1 || true; \
+	  done
+
 snapshot:
 	@test -f $(TOPOLOGY) || { echo "ERROR: $(TOPOLOGY) does not exist. Run 'make provision' first." >&2; exit 1; }
 	@REGION=$$(jq -r '.region' $(TOPOLOGY)); \
@@ -139,6 +152,13 @@ clean:
 	cd $(SPIRE_AWS_DIR) && rm -rf .terraform terraform.tfstate*
 
 pass-correctness: provision install-extension register-remotes load-correctness smoke-correctness bench-correctness fault-degraded fault-strict snapshot teardown
+
+# Minimal AWS smoke that bypasses the laptop->VPC connectivity gap in
+# the multi-cluster register/load/smoke/bench/fault scripts. Drives a
+# single-node ec_ivf + RaBitQ bench on the coordinator via SSM
+# send-command, snapshots the coordinator volume, then teardown. Useful
+# for proving the AWS plumbing + extension install on Graviton 4.
+pass-smoke: purge-stuck-secrets provision install-extension single-node-smoke snapshot teardown
 
 all-correctness: pass-correctness
 
