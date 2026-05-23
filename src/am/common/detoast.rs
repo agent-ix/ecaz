@@ -53,6 +53,31 @@ impl DetoastedVarlena {
     pub(crate) fn to_vec(&self) -> Vec<u8> {
         self.as_bytes().to_vec()
     }
+
+    /// Reinterpret the detoasted payload as a `&[T]` slice.
+    ///
+    /// Returns `None` if the byte length is not a multiple of
+    /// `size_of::<T>()` or if the underlying buffer is not aligned for `T`.
+    /// `T` must be `Copy` (and therefore safely transmuted from a packed
+    /// byte payload); callers retain responsibility for asserting that the
+    /// varlena bytes were produced by serializing `T` values.
+    pub(crate) fn as_typed_slice<T: Copy>(&self) -> Option<&[T]> {
+        let bytes = self.as_bytes();
+        if std::mem::size_of::<T>() == 0 {
+            return None;
+        }
+        if bytes.len() % std::mem::size_of::<T>() != 0 {
+            return None;
+        }
+        // SAFETY: `align_to` is used only to validate exact `T` alignment;
+        // any non-empty prefix/suffix is rejected so the body covers all
+        // bytes.
+        let (prefix, body, suffix) = unsafe { bytes.align_to::<T>() };
+        if !prefix.is_empty() || !suffix.is_empty() {
+            return None;
+        }
+        Some(body)
+    }
 }
 
 impl Drop for DetoastedVarlena {
