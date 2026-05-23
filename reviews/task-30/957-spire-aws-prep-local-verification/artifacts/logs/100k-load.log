@@ -1,0 +1,22 @@
+[loader] inspecting /home/peter/pg18-spire/corpora/spire100k_corpus.tsv
+[loader] inspecting /home/peter/pg18-spire/corpora/spire100k_queries.tsv
+[loader] corpus: 100000 rows, sha256=4c4a2e8f30a747f71c8425003c2e20906c4e5e35ca0673dccfbfc496743b4aed  queries: 100 rows, sha256=2ab86f0719975a85febdda88795d013a20da8131cdd304b1121cc012b361a31b
+[loader] no sibling manifest at /home/peter/pg18-spire/corpora/spire100k_manifest.json; continuing without verification
+[loader] copied corpus table spire100k_corpus in 51.07s
+[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...
+[loader] encoded corpus table spire100k_corpus in 16.10s
+[loader] copied queries table spire100k_queries in 106.31ms
+[loader] building spire100k_rabitq_idx using ec_spire (reloptions=[nlists=128, local_store_count=4, local_store_tablespaces=spire_ts1,spire_ts2,spire_ts3,spire_ts4, storage_format=rabitq]) ...
+[loader] built spire100k_rabitq_idx in 74.37s
+┌─────────┬────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ field   ┆ value                                                                                                                                          │
+╞═════════╪════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════╡
+│ profile ┆ ec_spire                                                                                                                                       │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ spire100k_corpus (100000 rows)                                                                                                                 │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ spire100k_queries (100 rows)                                                                                                                   │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ spire100k_rabitq_idx [nlists=128, local_store_count=4, local_store_tablespaces=spire_ts1,spire_ts2,spire_ts3,spire_ts4, storage_format=rabitq] │
+└─────────┴────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+[loader] completed prefix spire100k in 150.71s

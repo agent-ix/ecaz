@@ -1,0 +1,93 @@
+=== 100k pg_basebackup snapshot ===
+2026-05-23T05:23:40Z
+waiting for checkpoint
+     65/2776985 kB (0%), 0/5 tablespaces
+  19571/2776985 kB (0%), 0/5 tablespaces
+  19571/2776985 kB (0%), 1/5 tablespaces
+  43310/2776985 kB (1%), 1/5 tablespaces
+  43310/2776985 kB (1%), 2/5 tablespaces
+  61521/2776985 kB (2%), 2/5 tablespaces
+  61521/2776985 kB (2%), 3/5 tablespaces
+  81596/2776985 kB (2%), 3/5 tablespaces
+  81596/2776985 kB (2%), 4/5 tablespaces
+ 121067/2776985 kB (4%), 4/5 tablespaces
+ 159787/2776985 kB (5%), 4/5 tablespaces
+ 198827/2776985 kB (7%), 4/5 tablespaces
+ 237931/2776985 kB (8%), 4/5 tablespaces
+ 270515/2776985 kB (9%), 4/5 tablespaces
+ 309363/2776985 kB (11%), 4/5 tablespaces
+ 348339/2776985 kB (12%), 4/5 tablespaces
+ 387379/2776985 kB (13%), 4/5 tablespaces
+ 426611/2776985 kB (15%), 4/5 tablespaces
+ 465203/2776985 kB (16%), 4/5 tablespaces
+ 504179/2776985 kB (18%), 4/5 tablespaces
+ 542899/2776985 kB (19%), 4/5 tablespaces
+ 581683/2776985 kB (20%), 4/5 tablespaces
+ 620659/2776985 kB (22%), 4/5 tablespaces
+ 659571/2776985 kB (23%), 4/5 tablespaces
+ 698803/2776985 kB (25%), 4/5 tablespaces
+ 737459/2776985 kB (26%), 4/5 tablespaces
+ 776691/2776985 kB (27%), 4/5 tablespaces
+ 815731/2776985 kB (29%), 4/5 tablespaces
+ 855155/2776985 kB (30%), 4/5 tablespaces
+ 893811/2776985 kB (32%), 4/5 tablespaces
+ 932915/2776985 kB (33%), 4/5 tablespaces
+ 971379/2776985 kB (34%), 4/5 tablespaces
+1010611/2776985 kB (36%), 4/5 tablespaces
+1049779/2776985 kB (37%), 4/5 tablespaces
+1094280/2776985 kB (39%), 4/5 tablespaces
+1133384/2776985 kB (40%), 4/5 tablespaces
+1172808/2776985 kB (42%), 4/5 tablespaces
+1211336/2776985 kB (43%), 4/5 tablespaces
+1250248/2776985 kB (45%), 4/5 tablespaces
+1289032/2776985 kB (46%), 4/5 tablespaces
+1328200/2776985 kB (47%), 4/5 tablespaces
+1366984/2776985 kB (49%), 4/5 tablespaces
+1406216/2776985 kB (50%), 4/5 tablespaces
+1445320/2776985 kB (52%), 4/5 tablespaces
+1484744/2776985 kB (53%), 4/5 tablespaces
+1523912/2776985 kB (54%), 4/5 tablespaces
+1563016/2776985 kB (56%), 4/5 tablespaces
+1601928/2776985 kB (57%), 4/5 tablespaces
+1638950/2776985 kB (59%), 4/5 tablespaces
+1676773/2776985 kB (60%), 4/5 tablespaces
+1716524/2776985 kB (61%), 4/5 tablespaces
+1755564/2776985 kB (63%), 4/5 tablespaces
+1794668/2776985 kB (64%), 4/5 tablespaces
+1833068/2776985 kB (66%), 4/5 tablespaces
+1872236/2776985 kB (67%), 4/5 tablespaces
+1911532/2776985 kB (68%), 4/5 tablespaces
+1950700/2776985 kB (70%), 4/5 tablespaces
+1989804/2776985 kB (71%), 4/5 tablespaces
+2029228/2776985 kB (73%), 4/5 tablespaces
+2068268/2776985 kB (74%), 4/5 tablespaces
+2107372/2776985 kB (75%), 4/5 tablespaces
+2146092/2776985 kB (77%), 4/5 tablespaces
+2185132/2776985 kB (78%), 4/5 tablespaces
+2221356/2776985 kB (79%), 4/5 tablespaces
+2260396/2776985 kB (81%), 4/5 tablespaces
+2299564/2776985 kB (82%), 4/5 tablespaces
+2338732/2776985 kB (84%), 4/5 tablespaces
+2377644/2776985 kB (85%), 4/5 tablespaces
+2409708/2776985 kB (86%), 4/5 tablespaces
+2448364/2776985 kB (88%), 4/5 tablespaces
+2487148/2776985 kB (89%), 4/5 tablespaces
+2526060/2776985 kB (90%), 4/5 tablespaces
+2565484/2776985 kB (92%), 4/5 tablespaces
+2604652/2776985 kB (93%), 4/5 tablespaces
+2643756/2776985 kB (95%), 4/5 tablespaces
+2682860/2776985 kB (96%), 4/5 tablespaces
+2721836/2776985 kB (98%), 4/5 tablespaces
+2766095/2776985 kB (99%), 4/5 tablespaces
+2776999/2776999 kB (100%), 4/5 tablespaces
+2776999/2776999 kB (100%), 5/5 tablespaces
+--- sha256 ---
+a8e640b2169e1afc8b452e364e6992390276e9c3ab8bb0bcc1a22ff02e0b346a  299261.tar.gz
+5c48edc6136b7a3e6e9bca28b613cc9a0b860fd2993479fa61369f3f5355eb7c  299262.tar.gz
+c2424a9b422b9d25a51b41207d71cc833097ee1f77c0ef9d0453bb76694c1277  299263.tar.gz
+d6cb366e1b7541dce13eeb019df9a1aa7099ba070325adc5bb90d4dba4b77b3d  299264.tar.gz
+84eef1e9fec21ca7265081713cfc60c3f36ea0ed254a97e133aa802a952c956f  base.tar.gz
+736cae9ec696deff82e9d58ace2bffec12b4706178509620bae3a4d1bfe83676  pg_wal.tar.gz
+416c4251dc143721d160a89c4fef24fd0c52ed0cc6808e8b36ba3979fea34b1b  backup_manifest
+--- size ---
+1.9G	/home/peter/pg18-spire/snapshots/100k

@@ -1,0 +1,39 @@
+=== 50k pg_basebackup snapshot ===
+2026-05-23T05:01:04Z
+waiting for checkpoint
+     76/1058479 kB (0%), 0/1 tablespace
+  37742/1058479 kB (3%), 0/1 tablespace
+  76078/1058479 kB (7%), 0/1 tablespace
+ 114030/1058479 kB (10%), 0/1 tablespace
+ 151982/1058479 kB (14%), 0/1 tablespace
+ 191404/1058479 kB (18%), 0/1 tablespace
+ 229292/1058479 kB (21%), 0/1 tablespace
+ 266988/1058479 kB (25%), 0/1 tablespace
+ 305004/1058479 kB (28%), 0/1 tablespace
+ 343276/1058479 kB (32%), 0/1 tablespace
+ 381548/1058479 kB (36%), 0/1 tablespace
+ 418860/1058479 kB (39%), 0/1 tablespace
+ 456364/1058479 kB (43%), 0/1 tablespace
+ 494252/1058479 kB (46%), 0/1 tablespace
+ 532268/1058479 kB (50%), 0/1 tablespace
+ 569324/1058479 kB (53%), 0/1 tablespace
+ 606700/1058479 kB (57%), 0/1 tablespace
+ 645164/1058479 kB (60%), 0/1 tablespace
+ 683692/1058479 kB (64%), 0/1 tablespace
+ 722220/1058479 kB (68%), 0/1 tablespace
+ 760172/1058479 kB (71%), 0/1 tablespace
+ 797868/1058479 kB (75%), 0/1 tablespace
+ 835628/1058479 kB (78%), 0/1 tablespace
+ 873964/1058479 kB (82%), 0/1 tablespace
+ 912492/1058479 kB (86%), 0/1 tablespace
+ 950764/1058479 kB (89%), 0/1 tablespace
+ 987802/1058479 kB (93%), 0/1 tablespace
+1022554/1058479 kB (96%), 0/1 tablespace
+1058490/1058490 kB (100%), 0/1 tablespace
+1058490/1058490 kB (100%), 1/1 tablespace
+--- sha256 ---
+86ceb9dfc1b646471de26c21c64a07985a16a9008755d56303bfc4175810a4c3  base.tar.gz
+57cedcb50ee24e25279ac0a3ac8db9600695ad0d2a14e7281a00a23bf1d7ff47  pg_wal.tar.gz
+4a53d63932d489c4231001c3a117ae793ff17962e7ac3654f8aa6a2832ad8a3f  backup_manifest
+--- size ---
+692M	/home/peter/pg18-spire/snapshots/50k

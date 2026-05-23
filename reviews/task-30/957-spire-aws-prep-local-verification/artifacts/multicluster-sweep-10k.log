@@ -1,0 +1,223 @@
+=== 2026-05-23T04:47:47Z START smoke-pg18 ===
+[spire-multicluster] repo=/home/peter/dev/ecaz
+[spire-multicluster] pgbin=/home/peter/.pgrx/18.3/pgrx-install/bin
+[spire-multicluster] artifact_dir=/home/peter/dev/ecaz/reviews/task-30/957-spire-aws-prep-local-verification/artifacts/multicluster-smoke-pg18-10k
+run_dir=/home/peter/dev/ecaz/target/spire-multicluster-pg18-20260523T044747Z
+remote_port=39218
+coord_port=39219
+ERROR:  ec_spire remote search executor remote_index_identity does not match endpoint profile_fingerprint for node_id 2
+
+   0: [91mrunning SPIRE PG18 multicluster smoke fixture[0m
+   1: [91mCommand { std: cd "/home/peter/dev/ecaz" && "bash" "/home/peter/dev/ecaz/scripts/run_spire_multicluster_pg18_smoke.sh" "--pgbin" "/home/peter/.pgrx/18.3/pgrx-install/bin" "--artifact-dir" "/home/peter/dev/ecaz/reviews/task-30/957-spire-aws-prep-local-verification/artifacts/multicluster-smoke-pg18-10k" "--skip-install", kill_on_drop: false } failed with status exit status: 1[0m
+
+Location:
+   [35mcrates/ecaz-cli/src/commands/dev/support.rs[0m:[35m180[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.
+=== 2026-05-23T04:47:52Z FAIL  smoke-pg18 (exit 1) ===
+=== 2026-05-23T04:47:52Z START customscan-read-pg18 ===
+[spire-multicluster] repo=/home/peter/dev/ecaz
+[spire-multicluster] pgbin=/home/peter/.pgrx/18.3/pgrx-install/bin
+[spire-multicluster] artifact_dir=/home/peter/dev/ecaz/reviews/task-30/957-spire-aws-prep-local-verification/artifacts/multicluster-customscan-read-pg18-10k
+run_dir=/home/peter/dev/ecaz/target/spire-cscan-read-pg18-20260523T044752Z
+remote_port=39228
+coord_port=39229
+NOTICE:  ec_spire_register_remote_node_descriptor remote node_id 2 reports max_prepared_transactions = 0; coordinator-routed SPIRE writes require max_prepared_transactions > 0 and enough free prepared transaction slots
+remote_epoch=1
+coord_epoch=1
+remote_pids=2,3
+coord_pids=2,3
+remote_identity_hex=802cec00b7d39f22
+plan=Limit
+  ->  Custom Scan (EcSpireDistributedScan) on ec_spire_customscan_coord_sql
+        node: EcSpireDistributedScan
+        remote_fanout: 1
+        tuple_transport_status: ready
+        nprobe: 2
+        rerank_width: 0
+read_row=10|remote alpha|{red,blue}|domain alpha|(7,left)
+payload_probe=ready,2,{"id": 10, "title": "remote alpha"}
+typed_payload_probe=ready,pg_binary_attr_v1,t,t
+profile_summary=ready|remote_ready|1|1|1|1|1|1|1
+SPIRE multicluster CustomScan read passed
+=== 2026-05-23T04:47:56Z PASS  customscan-read-pg18 ===
+=== 2026-05-23T04:47:56Z START insert-read-after-customscan-pg18 ===
+[spire-multicluster] repo=/home/peter/dev/ecaz
+[spire-multicluster] pgbin=/home/peter/.pgrx/18.3/pgrx-install/bin
+[spire-multicluster] insert_mode=helper
+[spire-multicluster] artifact_dir=/home/peter/dev/ecaz/reviews/task-30/957-spire-aws-prep-local-verification/artifacts/multicluster-insert-read-after-customscan-pg18-10k
+run_dir=/home/peter/dev/ecaz/target/spire-insert-read-after-cscan-pg18-20260523T044756Z
+remote_port=39238
+coord_port=39239
+insert_mode=helper
+remote_epoch=1
+coord_epoch=2
+remote_pids=2,3
+coord_pids=2,3
+remote_identity_hex=893fc100bd151fc4
+remote_epoch_after_insert=2
+remote_identity_hex_after_insert=e0a89776c86a579b
+descriptor_row=93,2,2,e0a89776c86a579b
+insert_result=2,remote_insert_prepared_pending_local_commit,await_local_commit,true,true
+coordinator_row_count=not_applicable
+remote_row=303,remote inserted via coordinator
+placement_row=2,3,2
+plan=Limit
+  ->  Custom Scan (EcSpireDistributedScan) on ec_spire_insert_read_coord_sql
+        node: EcSpireDistributedScan
+        remote_fanout: 1
+        tuple_transport_status: ready
+        nprobe: 2
+        rerank_width: 0
+read_row=303,remote inserted via coordinator
+SPIRE multicluster coordinator insert read-after-CustomScan passed
+=== 2026-05-23T04:48:00Z PASS  insert-read-after-customscan-pg18 ===
+=== 2026-05-23T04:48:00Z START transport-overlap-pg18 ===
+[spire-multicluster] repo=/home/peter/dev/ecaz
+[spire-multicluster] pgbin=/home/peter/.pgrx/18.3/pgrx-install/bin
+[spire-multicluster] artifact_dir=/home/peter/dev/ecaz/reviews/task-30/957-spire-aws-prep-local-verification/artifacts/multicluster-transport-overlap-pg18-10k
+run_dir=/home/peter/dev/ecaz/target/spire-multicluster-transport-overlap-pg18-20260523T044800Z
+remote_fast_port=39218
+remote_slow_port=39220
+coord_port=39219
+transport_overlap_row=2,ready,none,0,304,304,3
+transport_overlap_row=3,ready,none,0,3,3,3
+slow_status=ready
+slow_failure_category=none
+slow_completed_after_ms=304
+slow_elapsed_ms=304
+fast_status=ready
+fast_failure_category=none
+fast_completed_after_ms=3
+fast_elapsed_ms=3
+fast_completed_before_slow=true
+SPIRE multicluster PG18 transport overlap passed
+=== 2026-05-23T04:48:07Z PASS  transport-overlap-pg18 ===
+=== 2026-05-23T04:48:07Z START fault-pg18 ===
+error: the following required arguments were not provided:
+  --case <CASE>
+
+Usage: ecaz dev spire-multicluster fault-pg18 --case <CASE> --pg <PG> --skip-install --artifact-dir <ARTIFACT_DIR>
+
+For more information, try '--help'.
+=== 2026-05-23T04:48:07Z FAIL  fault-pg18 (exit 2) ===
+=== 2026-05-23T04:48:07Z START lifecycle-pg18 ===
+error: the following required arguments were not provided:
+  --case <CASE>
+
+Usage: ecaz dev spire-multicluster lifecycle-pg18 --case <CASE> --pg <PG> --skip-install --artifact-dir <ARTIFACT_DIR>
+
+For more information, try '--help'.
+=== 2026-05-23T04:48:07Z FAIL  lifecycle-pg18 (exit 2) ===
+=== 2026-05-23T04:48:07Z SWEEP DONE ===
+=== 2026-05-23T04:53:20Z RETRY START smoke-pg18 ===
+[spire-multicluster] repo=/home/peter/dev/ecaz
+[spire-multicluster] pgbin=/home/peter/.pgrx/18.3/pgrx-install/bin
+[spire-multicluster] artifact_dir=/home/peter/dev/ecaz/reviews/task-30/957-spire-aws-prep-local-verification/artifacts/multicluster-smoke-pg18-10k
+run_dir=/home/peter/dev/ecaz/target/spire-multicluster-pg18-20260523T045320Z
+remote_port=39218
+coord_port=39219
+connection_status=libpq_connection_opened,secret_provider
+candidate_count=1
+heap_summary=remote_heap_candidates,ready,1
+heap_row=2,origin_node_row_locator,true
+coordinator_result=remote_heap_candidates,ready,remote_ready,1
+manifest_executor=libpq_connection_opened,ready,ready
+remote_manifest_applied=1,1
+remote_manifest_entries=1,1
+SPIRE multicluster PG18 smoke passed
+=== 2026-05-23T04:53:24Z RETRY PASS smoke-pg18 ===
+=== 2026-05-23T04:53:24Z RETRY START fault-pg18 ===
+[spire-multicluster] repo=/home/peter/dev/ecaz
+[spire-multicluster] pgbin=/home/peter/.pgrx/18.3/pgrx-install/bin
+[spire-multicluster] fault_case=local_cancel
+[spire-multicluster] artifact_dir=/home/peter/dev/ecaz/reviews/task-30/957-spire-aws-prep-local-verification/artifacts/multicluster-fault-pg18-10k
+run_dir=/home/peter/dev/ecaz/target/spire-stage-e-transport-fault-pg18-20260523T045324Z
+fault_case=local_cancel
+remote_ready_port=39324
+coord_port=39325
+matrix_row=local_cancel,local_query_cancelled,cancel_query,remote_executor_cancelled,cancel_query,remote_executor_cancelled,cancelled_dispatch_count=fanout; retained_candidate_batch_count=0
+injection=local_cancel_after_ms=25 all_remote_sql=pg_sleep(0.30)
+query_command=tests.ec_spire_test_production_transport_probe_case_summary(..., 'strict')
+expected_status=remote_executor_cancelled
+expected_transport_failed_dispatch_count=0
+expected_degraded_skipped_dispatch_count=0
+expected_cancelled_dispatch_count=2
+expected_first_transport_failure_category=none
+expected_first_cancellation_category=local_query_cancelled
+expected_first_degraded_skip_category=none
+expected_next_executor_step=remote_executor_cancellation
+observed_transport_rows=2,remote_transport_failed,local_query_cancelled,0
+3,remote_transport_failed,local_query_cancelled,0
+observed_summary=spire_remote_fanout_executor_v1,2,0,0,0,0,2,local_query_cancelled,0,none,remote_executor_cancellation,remote_executor_cancelled
+matrix_row=local_cancel,local_query_cancelled,cancel_query,remote_executor_cancelled,cancel_query,remote_executor_cancelled,cancelled_dispatch_count=fanout; retained_candidate_batch_count=0
+injection=local_cancel_after_ms=25 all_remote_sql=pg_sleep(0.30)
+query_command=tests.ec_spire_test_production_transport_probe_case_summary(..., 'degraded')
+expected_status=remote_executor_cancelled
+expected_transport_failed_dispatch_count=0
+expected_degraded_skipped_dispatch_count=0
+expected_cancelled_dispatch_count=2
+expected_first_transport_failure_category=none
+expected_first_cancellation_category=local_query_cancelled
+expected_first_degraded_skip_category=none
+expected_next_executor_step=remote_executor_cancellation
+observed_transport_rows=2,remote_transport_failed,local_query_cancelled,0
+3,remote_transport_failed,local_query_cancelled,0
+observed_summary=spire_remote_fanout_executor_v1,2,0,0,0,0,2,local_query_cancelled,0,none,remote_executor_cancellation,remote_executor_cancelled
+strict_log=/home/peter/dev/ecaz/reviews/task-30/957-spire-aws-prep-local-verification/artifacts/multicluster-fault-pg18-10k/stage_e_fault_local_cancel_strict.log
+degraded_log=/home/peter/dev/ecaz/reviews/task-30/957-spire-aws-prep-local-verification/artifacts/multicluster-fault-pg18-10k/stage_e_fault_local_cancel_degraded.log
+stage_e_fault_local_cancel_passed=true
+SPIRE Stage E local_cancel PG18 fixture passed
+=== 2026-05-23T04:53:28Z RETRY PASS fault-pg18 ===
+=== 2026-05-23T04:53:28Z RETRY START lifecycle-pg18 ===
+[spire-multicluster] repo=/home/peter/dev/ecaz
+[spire-multicluster] pgbin=/home/peter/.pgrx/18.3/pgrx-install/bin
+[spire-multicluster] lifecycle_case=drop_remote_index_before_fanout
+[spire-multicluster] artifact_dir=/home/peter/dev/ecaz/reviews/task-30/957-spire-aws-prep-local-verification/artifacts/multicluster-lifecycle-pg18-10k
+run_dir=/home/peter/dev/ecaz/target/spire-stage-e-lifecycle-pg18-20260523T045328Z
+lifecycle_case=drop_remote_index_before_fanout
+remote_ready_port=39326
+coord_port=39327
+NOTICE:  index "ec_spire_stage_e_lifecycle_dropped_idx" does not exist, skipping
+lifecycle_row=drop_remote_index_before_fanout,DROP INDEX,before_fanout_planning,fail_closed,remote_candidate_receive_failed,skip_node,degraded_skipped,remote_index_unavailable,compact_candidate_receive
+injection=DROP INDEX ec_spire_stage_e_lifecycle_dropped_idx before fanout
+dropped_index_to_regclass_is_null=t
+dropped_remote_identity_before_drop=89432700bd1802ed
+remote_reindexed_identity=
+coord_ready_identity=89432700bd1802ed
+coord_ready_epoch=1
+coord_ready_pids=2,3
+query_command=tests.ec_spire_test_production_candidate_receive_summary(..., 'strict')
+expected_status=remote_candidate_receive_failed
+expected_candidate_receive_failed_dispatch_count=1
+expected_degraded_skipped_dispatch_count=0
+expected_first_candidate_receive_failure_category=remote_index_unavailable
+expected_first_degraded_skip_category=none
+expected_next_executor_step=compact_candidate_receive
+observed_candidate_receive_rows=2,remote_candidate_receive_failed,remote_index_unavailable,0
+3,ready,none,1
+observed_summary=spire_remote_fanout_executor_v1,2,2,1,1,remote_index_unavailable,1,0,none,compact_candidate_receive,remote_candidate_receive_failed
+lifecycle_row=drop_remote_index_before_fanout,DROP INDEX,before_fanout_planning,fail_closed,remote_candidate_receive_failed,skip_node,degraded_skipped,remote_index_unavailable,compact_candidate_receive
+injection=DROP INDEX ec_spire_stage_e_lifecycle_dropped_idx before fanout
+dropped_index_to_regclass_is_null=t
+dropped_remote_identity_before_drop=89432700bd1802ed
+remote_reindexed_identity=
+coord_ready_identity=89432700bd1802ed
+coord_ready_epoch=1
+coord_ready_pids=2,3
+query_command=tests.ec_spire_test_production_candidate_receive_summary(..., 'degraded')
+expected_status=degraded_ready
+expected_candidate_receive_failed_dispatch_count=0
+expected_degraded_skipped_dispatch_count=1
+expected_first_candidate_receive_failure_category=none
+expected_first_degraded_skip_category=remote_index_unavailable
+expected_next_executor_step=remote_heap_resolution
+observed_candidate_receive_rows=2,remote_candidate_receive_failed,remote_index_unavailable,0
+3,ready,none,1
+observed_summary=spire_remote_fanout_executor_v1,2,1,1,0,none,1,1,remote_index_unavailable,remote_heap_resolution,degraded_ready
+strict_log=/home/peter/dev/ecaz/reviews/task-30/957-spire-aws-prep-local-verification/artifacts/multicluster-lifecycle-pg18-10k/stage_e_lifecycle_drop_remote_index_before_fanout_strict.log
+degraded_log=/home/peter/dev/ecaz/reviews/task-30/957-spire-aws-prep-local-verification/artifacts/multicluster-lifecycle-pg18-10k/stage_e_lifecycle_drop_remote_index_before_fanout_degraded.log
+stage_e_lifecycle_drop_remote_index_before_fanout_passed=true
+SPIRE Stage E lifecycle drop_remote_index_before_fanout PG18 fixture passed
+=== 2026-05-23T04:53:32Z RETRY PASS lifecycle-pg18 ===

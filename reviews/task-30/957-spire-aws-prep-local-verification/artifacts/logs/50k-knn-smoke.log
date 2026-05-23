@@ -1,0 +1,28 @@
+=== 50k kNN smoke (raw query source) ===
+--- top-5 nearest to query 0 via ec_spire index ---
+                                     QUERY PLAN                                      
+-------------------------------------------------------------------------------------
+ Limit
+   ->  Sort
+         Sort Key: ((s.embedding <#> encode_to_ecvector(q.source, 4, '42'::bigint)))
+         ->  Nested Loop
+               ->  Seq Scan on spire50k_queries q
+                     Filter: (id = 0)
+               ->  Seq Scan on spire50k_corpus s
+(7 rows)
+
+  id   
+-------
+ 46153
+ 22968
+  2962
+ 38695
+ 38001
+(5 rows)
+
+--- index/table sizes ---
+ index_size | table_size 
+------------+------------
+ 41 MB      | 6680 kB
+(1 row)
+

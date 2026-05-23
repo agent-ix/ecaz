@@ -1,0 +1,22 @@
+[loader] inspecting /home/peter/pg18-spire/corpora/spire50k_corpus.tsv
+[loader] inspecting /home/peter/pg18-spire/corpora/spire50k_queries.tsv
+[loader] corpus: 50000 rows, sha256=fe06385e5da8fa555fc65d41c1d763bd266f961996c1bb80e4ec17ae9cb031f5  queries: 100 rows, sha256=2ab86f0719975a85febdda88795d013a20da8131cdd304b1121cc012b361a31b
+[loader] no sibling manifest at /home/peter/pg18-spire/corpora/spire50k_manifest.json; continuing without verification
+[loader] copied corpus table spire50k_corpus in 25.40s
+[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...
+[loader] encoded corpus table spire50k_corpus in 8.26s
+[loader] copied queries table spire50k_queries in 74.01ms
+[loader] building spire50k_rabitq_idx using ec_spire (reloptions=[nlists=128, storage_format=rabitq]) ...
+[loader] built spire50k_rabitq_idx in 40.09s
+┌─────────┬─────────────────────────────────────────────────────────┐
+│ field   ┆ value                                                   │
+╞═════════╪═════════════════════════════════════════════════════════╡
+│ profile ┆ ec_spire                                                │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ spire50k_corpus (50000 rows)                            │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ spire50k_queries (100 rows)                             │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ spire50k_rabitq_idx [nlists=128, storage_format=rabitq] │
+└─────────┴─────────────────────────────────────────────────────────┘
+[loader] completed prefix spire50k in 78.32s

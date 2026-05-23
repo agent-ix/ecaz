@@ -1,0 +1,35 @@
+=== 100k multi-disk file placement ===
+--- tablespace ts1 contents ---
+/home/peter/pg18-spire/tablespaces/ts1/PG_18_202506291/16384/899646
+/home/peter/pg18-spire/tablespaces/ts1/PG_18_202506291/16384/899646_fsm
+ts1 total bytes: 20037632
+--- tablespace ts2 contents ---
+/home/peter/pg18-spire/tablespaces/ts2/PG_18_202506291/16384/899649_fsm
+/home/peter/pg18-spire/tablespaces/ts2/PG_18_202506291/16384/899649
+ts2 total bytes: 24305664
+--- tablespace ts3 contents ---
+/home/peter/pg18-spire/tablespaces/ts3/PG_18_202506291/16384/899652_fsm
+/home/peter/pg18-spire/tablespaces/ts3/PG_18_202506291/16384/899652
+ts3 total bytes: 18644992
+--- tablespace ts4 contents ---
+/home/peter/pg18-spire/tablespaces/ts4/PG_18_202506291/16384/899655
+/home/peter/pg18-spire/tablespaces/ts4/PG_18_202506291/16384/899655_fsm
+ts4 total bytes: 20553728
+
+=== 100k index/table sizes ===
+ index_size | table_size 
+------------+------------
+ 32 kB      | 13 MB
+(1 row)
+
+
+=== 100k kNN smoke ===
+  id   
+-------
+ 46153
+ 79286
+ 64711
+ 71065
+ 22968
+(5 rows)
+
