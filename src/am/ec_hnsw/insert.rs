@@ -230,7 +230,7 @@ impl InsertHeapSourceScorer {
         representative
     }
 
-    unsafe fn score_element_against_query(
+    fn score_element_against_query(
         &mut self,
         query_source: &[f32],
         element: &graph::GraphElement,
@@ -247,7 +247,7 @@ impl InsertHeapSourceScorer {
         ))
     }
 
-    unsafe fn score_existing_backlink_candidate(
+    fn score_existing_backlink_candidate(
         &mut self,
         target_element: &graph::GraphElement,
         candidate_element: &graph::GraphElement,
@@ -292,7 +292,7 @@ impl InsertHeapSourceScorer {
 }
 
 impl InsertSearchMetric {
-    unsafe fn score_new_tuple_against_element(
+    fn score_new_tuple_against_element(
         &mut self,
         metadata: &page::MetadataPage,
         tuple: &build::BuildTuple,
@@ -300,20 +300,16 @@ impl InsertSearchMetric {
     ) -> Option<f32> {
         match self {
             Self::Code => score_insert_graph_element(metadata, &tuple.code, element),
-            // SAFETY: Source-scored inserts require the tuple source vector;
-            // the scorer loads comparable source representatives.
-            Self::Source(scorer) => unsafe {
-                scorer.score_element_against_query(
-                    tuple.source_vector.as_deref().unwrap_or_else(|| {
-                        pgrx::error!("ec_hnsw live insert source scoring requires source data")
-                    }),
-                    element,
-                )
-            },
+            Self::Source(scorer) => scorer.score_element_against_query(
+                tuple.source_vector.as_deref().unwrap_or_else(|| {
+                    pgrx::error!("ec_hnsw live insert source scoring requires source data")
+                }),
+                element,
+            ),
         }
     }
 
-    unsafe fn score_existing_backlink_candidate(
+    fn score_existing_backlink_candidate(
         &mut self,
         metadata: &page::MetadataPage,
         target_element: &graph::GraphElement,
@@ -323,15 +319,13 @@ impl InsertSearchMetric {
             Self::Code => {
                 score_backlink_candidate(metadata, &target_element.code, &candidate_element.code)
             }
-            // SAFETY: Source backlink scoring loads source representatives for
-            // graph elements already read from the index.
-            Self::Source(scorer) => unsafe {
+            Self::Source(scorer) => {
                 scorer.score_existing_backlink_candidate(target_element, candidate_element)
-            },
+            }
         }
     }
 
-    unsafe fn score_new_backlink_candidate(
+    fn score_new_backlink_candidate(
         &mut self,
         metadata: &page::MetadataPage,
         target_element: &graph::GraphElement,
@@ -1049,9 +1043,7 @@ unsafe fn load_insert_entry_candidate(
     }
 
     let entry = graph::load_exact_graph_element(index_relation, metadata.entry_point, storage);
-    // SAFETY: `entry` was loaded from the graph and metric owns any required
-    // source-scoring state.
-    let entry_score = unsafe { metric.score_new_tuple_against_element(metadata, tuple, &entry) }?;
+    let entry_score = metric.score_new_tuple_against_element(metadata, tuple, &entry)?;
     Some(search::BeamCandidate::new(entry.tid, entry_score))
 }
 
@@ -1194,25 +1186,20 @@ unsafe fn plan_backlink_mutations(
         .iter()
         .copied()
         .filter_map(|selection| {
-            // SAFETY: Each selection names a graph element discovered from the
-            // same index/storage descriptor; its neighbor tuple is part of that
-            // element payload.
-            unsafe {
-                let element = graph::load_exact_graph_element(
-                    index_relation,
-                    selection.element_tid,
-                    planner.storage,
-                );
-                let neighbors = graph::load_graph_neighbors(index_relation, element.neighbortid);
-                plan_backlink_mutation(
-                    index_relation,
-                    planner,
-                    metric,
-                    &element,
-                    &neighbors,
-                    selection.layer,
-                )
-            }
+            let element = graph::load_exact_graph_element(
+                index_relation,
+                selection.element_tid,
+                planner.storage,
+            );
+            let neighbors = graph::load_graph_neighbors(index_relation, element.neighbortid);
+            plan_backlink_mutation(
+                index_relation,
+                planner,
+                metric,
+                &element,
+                &neighbors,
+                selection.layer,
+            )
         })
         .filter(|mutation| mutation.neighbor_tid != page::ItemPointer::INVALID)
         .collect::<Vec<_>>();
@@ -1374,7 +1361,7 @@ unsafe fn add_backlinks_on_page(
     retries
 }
 
-unsafe fn plan_backlink_mutation(
+fn plan_backlink_mutation(
     index_relation: pg_sys::Relation,
     planner: &BacklinkPlanner<'_>,
     metric: &mut InsertSearchMetric,
@@ -1398,11 +1385,8 @@ unsafe fn plan_backlink_mutation(
         });
     }
 
-    // SAFETY: A full layer slice needs rescoring existing graph elements using
-    // the planner's storage descriptor and insert metric.
-    let replacement_slice = unsafe {
-        select_backlink_rewrite_slice(index_relation, planner, metric, target_element, layer_slice)
-    };
+    let replacement_slice =
+        select_backlink_rewrite_slice(index_relation, planner, metric, target_element, layer_slice);
     replacement_slice
         .contains(&planner.new_element_tid)
         .then_some(BacklinkMutation {
@@ -1416,7 +1400,7 @@ unsafe fn plan_backlink_mutation(
         })
 }
 
-unsafe fn select_backlink_rewrite_slice(
+fn select_backlink_rewrite_slice(
     index_relation: pg_sys::Relation,
     planner: &BacklinkPlanner<'_>,
     metric: &mut InsertSearchMetric,
@@ -1425,11 +1409,11 @@ unsafe fn select_backlink_rewrite_slice(
 ) -> Vec<page::ItemPointer> {
     let new_candidate = ScoredBacklinkNode {
         node: planner.new_element_tid,
-        // SAFETY: The new tuple and target element belong to this insert, and
-        // metric owns any source-scoring heap state.
-        score: unsafe {
-            metric.score_new_backlink_candidate(planner.metadata, target_element, planner.new_tuple)
-        },
+        score: metric.score_new_backlink_candidate(
+            planner.metadata,
+            target_element,
+            planner.new_tuple,
+        ),
         is_new: true,
     };
     let candidates = existing_slice
@@ -1437,19 +1421,15 @@ unsafe fn select_backlink_rewrite_slice(
         .copied()
         .filter(|tid| *tid != page::ItemPointer::INVALID)
         .map(|tid| {
-            // SAFETY: Existing backlink candidates are TIDs from the neighbor
-            // slice and are loaded through the same graph storage descriptor.
-            unsafe {
-                let element = graph::load_exact_graph_element(index_relation, tid, planner.storage);
-                ScoredBacklinkNode {
-                    node: tid,
-                    score: metric.score_existing_backlink_candidate(
-                        planner.metadata,
-                        target_element,
-                        &element,
-                    ),
-                    is_new: false,
-                }
+            let element = graph::load_exact_graph_element(index_relation, tid, planner.storage);
+            ScoredBacklinkNode {
+                node: tid,
+                score: metric.score_existing_backlink_candidate(
+                    planner.metadata,
+                    target_element,
+                    &element,
+                ),
+                is_new: false,
             }
         })
         .chain(std::iter::once(new_candidate))
