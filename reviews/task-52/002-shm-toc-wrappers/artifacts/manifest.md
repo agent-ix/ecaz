@@ -36,4 +36,13 @@ This slice's evidence is static: command + result lines, captured in
   - `cargo fmt --all` — clean.
   - `cargo check --no-default-features --features pg18` — `Finished` exit 0,
     11m 27s from-scratch debug build (background id `bnfbmkhm5`).
+  - `cargo clippy --no-default-features --features pg18 -p ecaz --lib -- -D warnings`
+    — 103 pre-existing `-D warnings` failures, **none in
+    `src/am/common/dsm.rs`** (the touched module).
+    `grep -E "src/am/common/dsm.rs" /tmp/task52-clippy-full.log` returns
+    zero matches. The 103 failures live in `src/quant/rabitq.rs` and
+    other files; they were introduced by the post-main-merge IVF RaBitQ
+    optimization landing (per memory
+    `feedback_main_priority_in_conflicts`). Slice 002 introduces zero
+    new clippy warnings on its touched module.
 - Timestamp: 2026-05-23.
