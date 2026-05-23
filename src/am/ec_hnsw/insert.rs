@@ -483,20 +483,16 @@ impl InsertFormatAdapter {
         new_element_tid: page::ItemPointer,
         m: u16,
     ) {
-        // SAFETY: `new_element_tid` is the element appended by this insert, and
-        // selections were discovered using the same storage descriptor.
-        unsafe {
-            add_backlinks_to_forward_neighbors(
-                index_relation,
-                metadata,
-                self.graph_storage(),
-                tuple,
-                metric,
-                selections,
-                new_element_tid,
-                m,
-            )
-        }
+        add_backlinks_to_forward_neighbors(
+            index_relation,
+            metadata,
+            self.graph_storage(),
+            tuple,
+            metric,
+            selections,
+            new_element_tid,
+            m,
+        )
     }
 }
 
@@ -1132,7 +1128,7 @@ fn write_layer_forward_candidates(
     }
 }
 
-unsafe fn add_backlinks_to_forward_neighbors(
+fn add_backlinks_to_forward_neighbors(
     index_relation: pg_sys::Relation,
     metadata: &page::MetadataPage,
     storage: graph::GraphStorageDescriptor,
@@ -1161,22 +1157,16 @@ unsafe fn add_backlinks_to_forward_neighbors(
             break;
         }
 
-        // SAFETY: Pending selections came from forward-neighbor discovery for
-        // this insert and the planner carries the matching metadata/storage.
-        let mutations =
-            unsafe { plan_backlink_mutations(index_relation, &planner, metric, &pending) };
+        let mutations = plan_backlink_mutations(index_relation, &planner, metric, &pending);
         if mutations.is_empty() {
             break;
         }
 
-        // SAFETY: Planned mutations group neighbor TIDs by index page and only
-        // target graph tuples loaded through the planner storage descriptor.
-        pending =
-            unsafe { apply_backlink_mutations(index_relation, &mutations, new_element_tid, m) };
+        pending = apply_backlink_mutations(index_relation, &mutations, new_element_tid, m);
     }
 }
 
-unsafe fn plan_backlink_mutations(
+fn plan_backlink_mutations(
     index_relation: pg_sys::Relation,
     planner: &BacklinkPlanner<'_>,
     metric: &mut InsertSearchMetric,
@@ -1214,7 +1204,7 @@ unsafe fn plan_backlink_mutations(
     mutations
 }
 
-unsafe fn apply_backlink_mutations(
+fn apply_backlink_mutations(
     index_relation: pg_sys::Relation,
     mutations: &[BacklinkMutation],
     new_element_tid: page::ItemPointer,
@@ -1229,13 +1219,12 @@ unsafe fn apply_backlink_mutations(
             end += 1;
         }
 
-        retries.extend({
-            // SAFETY: This run slice contains only mutations for one neighbor
-            // block, so `add_backlinks_on_page` can lock and rewrite that page.
-            unsafe {
-                add_backlinks_on_page(index_relation, &mutations[start..end], new_element_tid, m)
-            }
-        });
+        retries.extend(add_backlinks_on_page(
+            index_relation,
+            &mutations[start..end],
+            new_element_tid,
+            m,
+        ));
         start = end;
     }
 
@@ -1243,7 +1232,7 @@ unsafe fn apply_backlink_mutations(
     retries
 }
 
-unsafe fn add_backlinks_on_page(
+fn add_backlinks_on_page(
     index_relation: pg_sys::Relation,
     mutations: &[BacklinkMutation],
     new_element_tid: page::ItemPointer,
