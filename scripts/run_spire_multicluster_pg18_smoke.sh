@@ -131,9 +131,9 @@ fi
 export EC_SPIRE_REMOTE_CONNINFO_SPIRE_REMOTE_MULTICLUSTER="host=$SOCKET_DIR port=$REMOTE_PORT dbname=postgres user=postgres"
 
 "$PG_CTL" -w -D "$REMOTE_DATA" -l "$LOG_DIR/remote-postgres.log" \
-  -o "-p $REMOTE_PORT -k $SOCKET_DIR -c listen_addresses=''" start >/dev/null
+  -o "-p $REMOTE_PORT -k $SOCKET_DIR -c listen_addresses='' -c max_prepared_transactions=10" start >/dev/null
 "$PG_CTL" -w -D "$COORD_DATA" -l "$LOG_DIR/coord-postgres.log" \
-  -o "-p $COORD_PORT -k $SOCKET_DIR -c listen_addresses=''" start >/dev/null
+  -o "-p $COORD_PORT -k $SOCKET_DIR -c listen_addresses='' -c max_prepared_transactions=10" start >/dev/null
 
 remote_psql=("$PSQL" -v ON_ERROR_STOP=1 -h "$SOCKET_DIR" -p "$REMOTE_PORT" -U postgres -d postgres)
 coord_psql=("$PSQL" -v ON_ERROR_STOP=1 -h "$SOCKET_DIR" -p "$COORD_PORT" -U postgres -d postgres)
@@ -149,7 +149,7 @@ INSERT INTO ec_spire_multicluster_remote_sql (id, embedding) VALUES
     (2, encode_to_ecvector(ARRAY[0.0, 1.0], 4, 42));
 CREATE INDEX ec_spire_multicluster_remote_idx
     ON ec_spire_multicluster_remote_sql USING ec_spire
-    (embedding ecvector_spire_ip_ops) WITH (nlists = 1);
+    (embedding ecvector_spire_ip_ops) WITH (nlists = 1, storage_format = 'rabitq');
 SQL
 
 "${coord_psql[@]}" <<'SQL' >/dev/null
@@ -160,13 +160,14 @@ INSERT INTO ec_spire_multicluster_coord_sql (id, embedding) VALUES
     (2, encode_to_ecvector(ARRAY[0.0, 1.0], 4, 42));
 CREATE INDEX ec_spire_multicluster_coord_idx
     ON ec_spire_multicluster_coord_sql USING ec_spire
-    (embedding ecvector_spire_ip_ops) WITH (nlists = 1);
+    (embedding ecvector_spire_ip_ops) WITH (nlists = 1, storage_format = 'rabitq');
 SQL
 
 remote_epoch="$("${remote_psql[@]}" -At -c "SELECT active_epoch FROM ec_spire_index_hierarchy_snapshot('ec_spire_multicluster_remote_idx'::regclass)")"
 coord_epoch="$("${coord_psql[@]}" -At -c "SELECT active_epoch FROM ec_spire_index_hierarchy_snapshot('ec_spire_multicluster_coord_idx'::regclass)")"
 remote_pid="$("${remote_psql[@]}" -At -c "SELECT min(leaf_pid) FROM ec_spire_index_leaf_snapshot('ec_spire_multicluster_remote_idx'::regclass)")"
 coord_pid="$("${coord_psql[@]}" -At -c "SELECT min(leaf_pid) FROM ec_spire_index_leaf_snapshot('ec_spire_multicluster_coord_idx'::regclass)")"
+remote_identity_hex="$("${remote_psql[@]}" -At -c "SELECT profile_fingerprint FROM ec_spire_remote_search_endpoint_identity('ec_spire_multicluster_remote_idx'::regclass::oid)")"
 extversion="$("${coord_psql[@]}" -At -c "SELECT extversion FROM pg_extension WHERE extname = 'ecaz'")"
 
 if [[ "$remote_epoch" != "$coord_epoch" ]]; then
@@ -178,7 +179,8 @@ if [[ "$remote_pid" != "$coord_pid" ]]; then
   exit 4
 fi
 
-"${coord_psql[@]}" -v coord_epoch="$coord_epoch" -v coord_pid="$coord_pid" -v extversion="$extversion" <<'SQL' >/dev/null
+"${coord_psql[@]}" -v coord_epoch="$coord_epoch" -v coord_pid="$coord_pid" -v extversion="$extversion" \
+  -v remote_identity_hex="$remote_identity_hex" <<'SQL' >/dev/null
 SELECT tests.ec_spire_test_rewrite_placement_node(
     'ec_spire_multicluster_coord_idx'::regclass::oid,
     :coord_pid::bigint,
@@ -189,7 +191,7 @@ SELECT ec_spire_register_remote_node_descriptor(
     2,
     1,
     'spire/remote/multicluster',
-    decode('01', 'hex'),
+    decode(:'remote_identity_hex', 'hex'),
     'ec_spire_multicluster_remote_idx',
     'active',
     :coord_epoch::bigint,

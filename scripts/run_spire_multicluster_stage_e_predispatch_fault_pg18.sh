@@ -148,9 +148,9 @@ fi
 "$PG_CTL" initdb -D "$COORD_DATA" -o "-A trust -U postgres" >/dev/null
 
 "$PG_CTL" -w -D "$REMOTE_READY_DATA" -l "$LOG_DIR/remote-ready-postgres.log" \
-  -o "-p $REMOTE_READY_PORT -k $SOCKET_DIR -c listen_addresses=''" start >/dev/null
+  -o "-p $REMOTE_READY_PORT -k $SOCKET_DIR -c listen_addresses='' -c max_prepared_transactions=10" start >/dev/null
 "$PG_CTL" -w -D "$COORD_DATA" -l "$LOG_DIR/coord-postgres.log" \
-  -o "-p $COORD_PORT -k $SOCKET_DIR -c listen_addresses=''" start >/dev/null
+  -o "-p $COORD_PORT -k $SOCKET_DIR -c listen_addresses='' -c max_prepared_transactions=10" start >/dev/null
 
 remote_ready_psql=("$PSQL" -v ON_ERROR_STOP=1 -h "$SOCKET_DIR" -p "$REMOTE_READY_PORT" -U postgres -d postgres)
 coord_psql=("$PSQL" -v ON_ERROR_STOP=1 -h "$SOCKET_DIR" -p "$COORD_PORT" -U postgres -d postgres)
@@ -168,7 +168,7 @@ INSERT INTO ec_spire_stage_e_ready_remote_sql (id, embedding) VALUES
     (4, encode_to_ecvector(ARRAY[0.0, -1.0], 4, 42));
 CREATE INDEX ec_spire_stage_e_ready_remote_idx
     ON ec_spire_stage_e_ready_remote_sql USING ec_spire
-    (embedding ecvector_spire_ip_ops) WITH (nlists = 2);
+    (embedding ecvector_spire_ip_ops) WITH (nlists = 2, storage_format = 'rabitq');
 SQL
 
 ready_identity_hex="$("${remote_ready_psql[@]}" -At -c "SELECT profile_fingerprint FROM ec_spire_remote_search_endpoint_identity('ec_spire_stage_e_ready_remote_idx'::regclass)")"
@@ -190,7 +190,7 @@ INSERT INTO :table_name (id, embedding) VALUES
     (4, encode_to_ecvector(ARRAY[0.0, -1.0], 4, 42));
 CREATE INDEX :index_name
     ON :table_name USING ec_spire
-    (embedding ecvector_spire_ip_ops) WITH (nlists = 2, nprobe = 2);
+    (embedding ecvector_spire_ip_ops) WITH (nlists = 2, nprobe = 2, storage_format = 'rabitq');
 SQL
 
   local coord_epoch
