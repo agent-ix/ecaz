@@ -3529,11 +3529,9 @@ unsafe fn produce_next_scan_heap_tid(
         ScanExecutionPhase::GraphTraversal => unsafe {
             produce_next_graph_traversal_heap_tid(scan_output, index_relation, opaque)
         },
-        // SAFETY: linear fallback uses the same live scan descriptor/relation
-        // after graph traversal has moved the opaque into fallback phase.
-        ScanExecutionPhase::LinearFallback => unsafe {
+        ScanExecutionPhase::LinearFallback => {
             produce_next_linear_fallback_heap_tid(scan_output, index_relation, opaque, code_len)
-        },
+        }
         ScanExecutionPhase::Exhausted => false,
     }
 }
@@ -4732,7 +4730,7 @@ unsafe fn produce_next_graph_traversal_heap_tid(
     emitted
 }
 
-unsafe fn produce_next_linear_fallback_heap_tid(
+fn produce_next_linear_fallback_heap_tid(
     scan_output: &mut IndexScanOutput<'_>,
     index_relation: pg_sys::Relation,
     opaque: &mut TqScanOpaque,
@@ -4751,11 +4749,7 @@ unsafe fn produce_next_linear_fallback_heap_tid(
         return true;
     }
 
-    let Some(selected) =
-        // SAFETY: linear fallback selection scans the live index relation using
-        // the fallback cursor state held by this scan opaque.
-        (unsafe { select_next_linear_scan_result(index_relation, opaque, code_len) })
-    else {
+    let Some(selected) = select_next_linear_scan_result(index_relation, opaque, code_len) else {
         return false;
     };
 
@@ -4773,7 +4767,7 @@ unsafe fn produce_next_linear_fallback_heap_tid(
     emitted
 }
 
-unsafe fn select_next_linear_scan_result(
+fn select_next_linear_scan_result(
     index_relation: pg_sys::Relation,
     opaque: &mut TqScanOpaque,
     code_len: usize,
@@ -4800,11 +4794,8 @@ unsafe fn select_next_linear_scan_result(
             "ec_hnsw linear scan",
             |buffer, block_number| {
                 let block_number = block_number.unwrap_or(opaque.next_block_number);
-                // SAFETY: the buffer is share-locked for `block_number` and belongs
-                // to this scan's live relation.
-                let selected = unsafe {
-                    select_linear_scan_result_from_buffer(opaque, code_len, buffer, block_number)
-                };
+                let selected =
+                    select_linear_scan_result_from_buffer(opaque, code_len, buffer, block_number);
                 if selected.is_some() {
                     selected_result = selected;
                     return Ok(super::stream::ScanOwnedReadStreamControl::Stop);
@@ -4836,11 +4827,8 @@ unsafe fn select_next_linear_scan_result(
                 )
             }
             .unwrap_or_else(|| pgrx::error!("ec_hnsw failed to open linear scan buffer"));
-            // SAFETY: the buffer is share-locked for `block_number` and belongs
-            // to this scan's live relation.
-            let selected = unsafe {
-                select_linear_scan_result_from_buffer(opaque, code_len, buffer, block_number)
-            };
+            let selected =
+                select_linear_scan_result_from_buffer(opaque, code_len, buffer, block_number);
             if selected.is_some() {
                 return selected;
             }
@@ -4851,7 +4839,7 @@ unsafe fn select_next_linear_scan_result(
     None
 }
 
-unsafe fn select_linear_scan_result_from_buffer(
+fn select_linear_scan_result_from_buffer(
     opaque: &mut TqScanOpaque,
     code_len: usize,
     buffer: LockedBufferGuard,
