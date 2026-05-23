@@ -94,6 +94,27 @@ re-export graph, and macOS-26 chained fixups bind those eagerly.
 That fix lands as its own commit (separately reviewable) and is the
 gating change that lets `ecaz bench suite` run on the local M5 at all.
 
+## Parallel-reviewer concur (already landed)
+
+Two reviewer feedback files landed concurrently at the benchmark
+packet during this session:
+
+- `benchmarks/task-50-m5-hnsw-baseline/feedback/2026-05-23-01-reviewer.md`
+  (commit `5a35f644c`) — planning-stage review of the packet
+  scaffold; confirmed scope-lock honored, suite shape correct,
+  `--bits 4` HNSW default a no-op (not a bug), and recommended
+  the "functional + forward-baseline" gate interpretation rather
+  than strict A/B (since the WSL2 baseline is on a different host).
+- `benchmarks/task-50-m5-hnsw-baseline/feedback/2026-05-23-02-reviewer.md`
+  (commit `1ffb2e32f`) — post-run review: 8/8 steps succeeded,
+  recall monotonic in ef_search, p99/p50 ratio under 1.65× at all
+  sweep points, storage per row stable. **Approve. §Exit Criterion
+  3 met. Task 50 HNSW rotation closes.**
+
+This request.md is the matching coder-side packet for the bench run
+that those feedbacks reviewed. The bench evidence + my dyld unblock
++ the reviewer concur together close the gate.
+
 ## Artifacts cited
 
 All under `benchmarks/task-50-m5-hnsw-baseline/artifacts/`:
