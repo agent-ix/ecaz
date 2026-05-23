@@ -288,6 +288,8 @@ struct RecallStep {
     #[serde(default)]
     adaptive_nprobe_score_gap_micros: Option<i32>,
     #[serde(default)]
+    adaptive_nprobe_score_margin_ratio_bps: Option<i32>,
+    #[serde(default)]
     ivf_scratch_soa_batch_decode: Option<bool>,
     #[serde(default)]
     queries_limit: Option<usize>,
@@ -339,6 +341,8 @@ struct LatencyStep {
     adaptive_nprobe: Option<bool>,
     #[serde(default)]
     adaptive_nprobe_score_gap_micros: Option<i32>,
+    #[serde(default)]
+    adaptive_nprobe_score_margin_ratio_bps: Option<i32>,
     #[serde(default)]
     ivf_scratch_soa_batch_decode: Option<bool>,
     #[serde(default)]
@@ -1966,6 +1970,13 @@ fn expand_recall(step: &RecallStep, defaults: &SuiteDefaults) -> Vec<String> {
             &score_gap_micros.to_string(),
         );
     }
+    if let Some(score_margin_ratio_bps) = step.adaptive_nprobe_score_margin_ratio_bps {
+        push_arg(
+            &mut args,
+            "--adaptive-nprobe-score-margin-ratio-bps",
+            &score_margin_ratio_bps.to_string(),
+        );
+    }
     if step.ivf_scratch_soa_batch_decode.unwrap_or(false) {
         args.push("--ivf-scratch-soa-batch-decode".into());
     }
@@ -2043,6 +2054,13 @@ fn expand_latency(step: &LatencyStep, defaults: &SuiteDefaults) -> Vec<String> {
             &mut args,
             "--adaptive-nprobe-score-gap-micros",
             &score_gap_micros.to_string(),
+        );
+    }
+    if let Some(score_margin_ratio_bps) = step.adaptive_nprobe_score_margin_ratio_bps {
+        push_arg(
+            &mut args,
+            "--adaptive-nprobe-score-margin-ratio-bps",
+            &score_margin_ratio_bps.to_string(),
         );
     }
     if step.ivf_scratch_soa_batch_decode.unwrap_or(false) {
@@ -2665,6 +2683,7 @@ mod tests {
             rerank_width: Some(500),
             adaptive_nprobe: Some(true),
             adaptive_nprobe_score_gap_micros: Some(1000),
+            adaptive_nprobe_score_margin_ratio_bps: Some(2500),
             ivf_scratch_soa_batch_decode: Some(true),
             queries_limit: None,
             profile: None,
@@ -2685,6 +2704,9 @@ mod tests {
         assert!(args
             .windows(2)
             .any(|w| w == ["--adaptive-nprobe-score-gap-micros", "1000"]));
+        assert!(args
+            .windows(2)
+            .any(|w| w == ["--adaptive-nprobe-score-margin-ratio-bps", "2500"]));
         assert!(args.contains(&"--ivf-scratch-soa-batch-decode".into()));
         assert!(args
             .windows(2)
@@ -2872,6 +2894,7 @@ mod tests {
             rerank_width: None,
             adaptive_nprobe: None,
             adaptive_nprobe_score_gap_micros: None,
+            adaptive_nprobe_score_margin_ratio_bps: None,
             ivf_scratch_soa_batch_decode: None,
             queries_limit: None,
             profile: None,

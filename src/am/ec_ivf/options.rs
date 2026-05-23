@@ -6,10 +6,12 @@ use pgrx::{pg_sys, GucContext, GucFlags, GucRegistry, GucSetting};
 use crate::am::common::callback::pg_am_callback;
 
 use super::{
-    EC_IVF_DEFAULT_ADAPTIVE_NPROBE_SCORE_GAP_MICROS, EC_IVF_DEFAULT_NLISTS, EC_IVF_DEFAULT_NPROBE,
-    EC_IVF_DEFAULT_POSTING_SLACK_PERCENT, EC_IVF_DEFAULT_PQ_GROUP_SIZE, EC_IVF_DEFAULT_QUANT_BITS,
-    EC_IVF_DEFAULT_RERANK_WIDTH, EC_IVF_DEFAULT_SEED, EC_IVF_DEFAULT_TRAINING_SAMPLE_ROWS,
-    EC_IVF_MAX_ADAPTIVE_NPROBE_SCORE_GAP_MICROS, EC_IVF_MAX_NLISTS, EC_IVF_MAX_NPROBE,
+    EC_IVF_DEFAULT_ADAPTIVE_NPROBE_SCORE_GAP_MICROS,
+    EC_IVF_DEFAULT_ADAPTIVE_NPROBE_SCORE_MARGIN_RATIO_BPS, EC_IVF_DEFAULT_NLISTS,
+    EC_IVF_DEFAULT_NPROBE, EC_IVF_DEFAULT_POSTING_SLACK_PERCENT, EC_IVF_DEFAULT_PQ_GROUP_SIZE,
+    EC_IVF_DEFAULT_QUANT_BITS, EC_IVF_DEFAULT_RERANK_WIDTH, EC_IVF_DEFAULT_SEED,
+    EC_IVF_DEFAULT_TRAINING_SAMPLE_ROWS, EC_IVF_MAX_ADAPTIVE_NPROBE_SCORE_GAP_MICROS,
+    EC_IVF_MAX_ADAPTIVE_NPROBE_SCORE_MARGIN_RATIO_BPS, EC_IVF_MAX_NLISTS, EC_IVF_MAX_NPROBE,
     EC_IVF_MAX_POSTING_SLACK_PERCENT, EC_IVF_MAX_PQ_GROUP_SIZE, EC_IVF_MAX_QUANT_BITS,
     EC_IVF_MAX_RERANK_WIDTH, EC_IVF_MAX_SEED, EC_IVF_MAX_TRAINING_SAMPLE_ROWS, EC_IVF_MIN_NLISTS,
     EC_IVF_MIN_NPROBE, EC_IVF_MIN_POSTING_SLACK_PERCENT, EC_IVF_MIN_PQ_GROUP_SIZE,
@@ -26,6 +28,8 @@ static EC_IVF_RERANK_WIDTH_GUC: GucSetting<i32> =
 static EC_IVF_ADAPTIVE_NPROBE_GUC: GucSetting<bool> = GucSetting::<bool>::new(false);
 static EC_IVF_ADAPTIVE_NPROBE_SCORE_GAP_MICROS_GUC: GucSetting<i32> =
     GucSetting::<i32>::new(EC_IVF_DEFAULT_ADAPTIVE_NPROBE_SCORE_GAP_MICROS);
+static EC_IVF_ADAPTIVE_NPROBE_SCORE_MARGIN_RATIO_BPS_GUC: GucSetting<i32> =
+    GucSetting::<i32>::new(EC_IVF_DEFAULT_ADAPTIVE_NPROBE_SCORE_MARGIN_RATIO_BPS);
 static EC_IVF_SCRATCH_SOA_BATCH_DECODE_GUC: GucSetting<bool> = GucSetting::<bool>::new(false);
 
 #[repr(C)]
@@ -240,6 +244,16 @@ pub(super) fn register_gucs() {
         GucContext::Userset,
         GucFlags::default(),
     );
+    GucRegistry::define_int_guc(
+        c"ec_ivf.adaptive_nprobe_score_margin_ratio_bps",
+        c"Score margin-ratio threshold for ec_ivf adaptive nprobe.",
+        c"Basis-point ratio of the boundary score gap to the top-to-boundary score margin. Values greater than zero switch adaptive nprobe to the ratio signal.",
+        &EC_IVF_ADAPTIVE_NPROBE_SCORE_MARGIN_RATIO_BPS_GUC,
+        0,
+        EC_IVF_MAX_ADAPTIVE_NPROBE_SCORE_MARGIN_RATIO_BPS,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
     GucRegistry::define_bool_guc(
         c"ec_ivf.scratch_soa_batch_decode",
         c"Enable experimental ec_ivf posting scratch SoA batch decode.",
@@ -271,6 +285,14 @@ pub(super) fn current_session_adaptive_nprobe_score_gap_micros() -> i32 {
         EC_IVF_DEFAULT_ADAPTIVE_NPROBE_SCORE_GAP_MICROS
     } else {
         EC_IVF_ADAPTIVE_NPROBE_SCORE_GAP_MICROS_GUC.get()
+    }
+}
+
+pub(super) fn current_session_adaptive_nprobe_score_margin_ratio_bps() -> i32 {
+    if cfg!(test) {
+        EC_IVF_DEFAULT_ADAPTIVE_NPROBE_SCORE_MARGIN_RATIO_BPS
+    } else {
+        EC_IVF_ADAPTIVE_NPROBE_SCORE_MARGIN_RATIO_BPS_GUC.get()
     }
 }
 

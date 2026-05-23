@@ -45,18 +45,23 @@ pub(crate) fn sweep_value_label(profile: &IndexProfile, value: i32) -> String {
 }
 
 const EC_MAX_ADAPTIVE_NPROBE_SCORE_GAP_MICROS: i32 = 1_000_000;
+const EC_MAX_ADAPTIVE_NPROBE_SCORE_MARGIN_RATIO_BPS: i32 = 1_000_000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct AdaptiveNprobeBenchOptions {
     pub(crate) enabled: bool,
     pub(crate) score_gap_micros: Option<i32>,
+    pub(crate) score_margin_ratio_bps: Option<i32>,
 }
 
 pub(crate) fn validate_adaptive_nprobe_options(
     profile: &IndexProfile,
     options: AdaptiveNprobeBenchOptions,
 ) -> Result<()> {
-    if !options.enabled && options.score_gap_micros.is_none() {
+    if !options.enabled
+        && options.score_gap_micros.is_none()
+        && options.score_margin_ratio_bps.is_none()
+    {
         return Ok(());
     }
     if adaptive_nprobe_gucs(profile).is_none() {
@@ -69,11 +74,29 @@ pub(crate) fn validate_adaptive_nprobe_options(
             "--adaptive-nprobe-score-gap-micros requires --adaptive-nprobe"
         ));
     }
+    if options.score_margin_ratio_bps.is_some() && !options.enabled {
+        return Err(eyre!(
+            "--adaptive-nprobe-score-margin-ratio-bps requires --adaptive-nprobe"
+        ));
+    }
+    if options.score_margin_ratio_bps.is_some() && adaptive_nprobe_ratio_guc(profile).is_none() {
+        return Err(eyre!(
+            "--adaptive-nprobe-score-margin-ratio-bps is only supported with --profile ec_ivf"
+        ));
+    }
     if let Some(value) = options.score_gap_micros {
         if !(0..=EC_MAX_ADAPTIVE_NPROBE_SCORE_GAP_MICROS).contains(&value) {
             return Err(eyre!(
                 "--adaptive-nprobe-score-gap-micros must be between 0 and {}",
                 EC_MAX_ADAPTIVE_NPROBE_SCORE_GAP_MICROS
+            ));
+        }
+    }
+    if let Some(value) = options.score_margin_ratio_bps {
+        if !(0..=EC_MAX_ADAPTIVE_NPROBE_SCORE_MARGIN_RATIO_BPS).contains(&value) {
+            return Err(eyre!(
+                "--adaptive-nprobe-score-margin-ratio-bps must be between 0 and {}",
+                EC_MAX_ADAPTIVE_NPROBE_SCORE_MARGIN_RATIO_BPS
             ));
         }
     }
@@ -101,6 +124,17 @@ pub(crate) async fn apply_adaptive_nprobe_options(
             .await
             .wrap_err_with(|| format!("SET {score_gap_guc} = {score_gap_micros}"))?;
     }
+    if let Some(score_margin_ratio_bps) = options.score_margin_ratio_bps {
+        let ratio_guc = adaptive_nprobe_ratio_guc(profile).ok_or_else(|| {
+            eyre!(
+                "--adaptive-nprobe-score-margin-ratio-bps is only supported with --profile ec_ivf"
+            )
+        })?;
+        client
+            .batch_execute(&format!("SET {ratio_guc} = {score_margin_ratio_bps}"))
+            .await
+            .wrap_err_with(|| format!("SET {ratio_guc} = {score_margin_ratio_bps}"))?;
+    }
     Ok(())
 }
 
@@ -111,11 +145,14 @@ pub(crate) fn append_adaptive_nprobe_label(
     if !options.enabled {
         return message;
     }
-    match options.score_gap_micros {
-        Some(score_gap_micros) => {
+    match (options.score_gap_micros, options.score_margin_ratio_bps) {
+        (_, Some(score_margin_ratio_bps)) => {
+            format!("{message} adaptive_nprobe=on margin_ratio_bps={score_margin_ratio_bps}")
+        }
+        (Some(score_gap_micros), None) => {
             format!("{message} adaptive_nprobe=on gap_micros={score_gap_micros}")
         }
-        None => format!("{message} adaptive_nprobe=on"),
+        (None, None) => format!("{message} adaptive_nprobe=on"),
     }
 }
 
@@ -129,6 +166,13 @@ pub(crate) fn validate_ivf_scratch_soa_batch_decode(
         ));
     }
     Ok(())
+}
+
+fn adaptive_nprobe_ratio_guc(profile: &IndexProfile) -> Option<&'static str> {
+    match profile.name {
+        "ec_ivf" => Some("ec_ivf.adaptive_nprobe_score_margin_ratio_bps"),
+        _ => None,
+    }
 }
 
 pub(crate) async fn apply_ivf_scratch_soa_batch_decode(
@@ -147,10 +191,7 @@ pub(crate) async fn apply_ivf_scratch_soa_batch_decode(
     Ok(())
 }
 
-pub(crate) fn append_ivf_scratch_soa_batch_decode_label(
-    message: String,
-    enabled: bool,
-) -> String {
+pub(crate) fn append_ivf_scratch_soa_batch_decode_label(message: String, enabled: bool) -> String {
     if enabled {
         format!("{message} scratch_soa=on")
     } else {
@@ -247,6 +288,7 @@ mod tests {
             AdaptiveNprobeBenchOptions {
                 enabled: true,
                 score_gap_micros: Some(0),
+                score_margin_ratio_bps: None,
             },
         )
         .is_ok());
@@ -255,6 +297,7 @@ mod tests {
             AdaptiveNprobeBenchOptions {
                 enabled: true,
                 score_gap_micros: Some(0),
+                score_margin_ratio_bps: None,
             },
         )
         .is_ok());
@@ -263,6 +306,7 @@ mod tests {
             AdaptiveNprobeBenchOptions {
                 enabled: true,
                 score_gap_micros: None,
+                score_margin_ratio_bps: None,
             },
         )
         .unwrap_err()
@@ -277,10 +321,35 @@ mod tests {
             AdaptiveNprobeBenchOptions {
                 enabled: false,
                 score_gap_micros: Some(0),
+                score_margin_ratio_bps: None,
             },
         )
         .unwrap_err()
         .to_string()
         .contains("requires --adaptive-nprobe"));
+    }
+
+    #[test]
+    fn adaptive_nprobe_ratio_signal_is_ivf_only() {
+        assert!(validate_adaptive_nprobe_options(
+            &EC_IVF,
+            AdaptiveNprobeBenchOptions {
+                enabled: true,
+                score_gap_micros: None,
+                score_margin_ratio_bps: Some(2500),
+            },
+        )
+        .is_ok());
+        assert!(validate_adaptive_nprobe_options(
+            &EC_SPIRE,
+            AdaptiveNprobeBenchOptions {
+                enabled: true,
+                score_gap_micros: None,
+                score_margin_ratio_bps: Some(2500),
+            },
+        )
+        .unwrap_err()
+        .to_string()
+        .contains("--profile ec_ivf"));
     }
 }

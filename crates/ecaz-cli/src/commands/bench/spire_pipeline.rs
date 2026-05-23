@@ -157,6 +157,7 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
     let adaptive_nprobe_options = super::AdaptiveNprobeBenchOptions {
         enabled: args.adaptive_nprobe,
         score_gap_micros: args.adaptive_nprobe_score_gap_micros,
+        score_margin_ratio_bps: None,
     };
     let cost_tuning_options = SpireCostTuningOptions {
         routing_dimension_scale: args.cost_routing_dimension_scale,
@@ -1900,6 +1901,7 @@ mod tests {
             adaptive_nprobe_options: super::super::AdaptiveNprobeBenchOptions {
                 enabled: false,
                 score_gap_micros: None,
+                score_margin_ratio_bps: None,
             },
             cost_snapshot_enabled: true,
             cost_tuning: &BTreeMap::new(),

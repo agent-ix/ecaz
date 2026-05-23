@@ -61,6 +61,9 @@ pub struct RecallArgs {
     /// IVF/SPIRE: score-gap threshold for adaptive nprobe decisions.
     #[arg(long)]
     pub adaptive_nprobe_score_gap_micros: Option<i32>,
+    /// IVF-only: score margin-ratio threshold, in basis points, for adaptive nprobe decisions.
+    #[arg(long)]
+    pub adaptive_nprobe_score_margin_ratio_bps: Option<i32>,
     /// IVF-only: enable experimental posting scratch SoA batch decode.
     #[arg(long)]
     pub ivf_scratch_soa_batch_decode: bool,
@@ -137,6 +140,7 @@ pub async fn run(conn: &ConnectionOptions, args: RecallArgs) -> Result<()> {
     let adaptive_nprobe_options = super::AdaptiveNprobeBenchOptions {
         enabled: args.adaptive_nprobe,
         score_gap_micros: args.adaptive_nprobe_score_gap_micros,
+        score_margin_ratio_bps: args.adaptive_nprobe_score_margin_ratio_bps,
     };
     super::validate_adaptive_nprobe_options(profile, adaptive_nprobe_options)?;
     super::validate_ivf_scratch_soa_batch_decode(profile, args.ivf_scratch_soa_batch_decode)?;
@@ -217,6 +221,7 @@ pub async fn run(conn: &ConnectionOptions, args: RecallArgs) -> Result<()> {
         "recall_p10",
         "recall_p50",
         "recall_p90",
+        "recall_worst",
         "ndcg@k",
         "mean q-time",
     ]);
@@ -315,6 +320,7 @@ pub async fn run(conn: &ConnectionOptions, args: RecallArgs) -> Result<()> {
             Cell::new(format!("{:.4}", recall.p10)),
             Cell::new(format!("{:.4}", recall.p50)),
             Cell::new(format!("{:.4}", recall.p90)),
+            Cell::new(format!("{:.4}", recall.worst)),
             Cell::new(format!("{:.4}", ndcg)),
             Cell::new(format!("{:.2} ms", mean_ms)),
         ]);
@@ -804,6 +810,7 @@ pub struct RecallSummary {
     pub p10: f64,
     pub p50: f64,
     pub p90: f64,
+    pub worst: f64,
     pub queries: usize,
     pub hits: usize,
     pub trials: usize,
@@ -822,6 +829,7 @@ pub fn recall_summary_at_k(truth: &[Vec<i64>], pred: &[Vec<i64>], k: usize) -> R
             p10: 0.0,
             p50: 0.0,
             p90: 0.0,
+            worst: 0.0,
             queries: truth.len(),
             hits: 0,
             trials: 0,
@@ -851,6 +859,11 @@ pub fn recall_summary_at_k(truth: &[Vec<i64>], pred: &[Vec<i64>], k: usize) -> R
         p10: percentile(&per_query, 0.10),
         p50: percentile(&per_query, 0.50),
         p90: percentile(&per_query, 0.90),
+        worst: per_query
+            .iter()
+            .copied()
+            .min_by(|left, right| left.total_cmp(right))
+            .unwrap_or(0.0),
         queries: truth.len(),
         hits,
         trials,
@@ -1172,6 +1185,7 @@ mod tests {
         assert!((summary.p10 - 0.1).abs() < 1e-9, "{summary:?}");
         assert!((summary.p50 - 0.5).abs() < 1e-9, "{summary:?}");
         assert!((summary.p90 - 0.9).abs() < 1e-9, "{summary:?}");
+        assert!((summary.worst - 0.0).abs() < 1e-9, "{summary:?}");
     }
 
     #[test]
@@ -1184,6 +1198,7 @@ mod tests {
         assert_eq!(summary.trials, 4);
         assert!((summary.recall - 0.5).abs() < 1e-9);
         assert!((summary.p50 - 0.5).abs() < 1e-9, "{summary:?}");
+        assert!((summary.worst - 0.0).abs() < 1e-9, "{summary:?}");
     }
 
     // --- ndcg_at_k ---

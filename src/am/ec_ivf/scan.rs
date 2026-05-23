@@ -513,6 +513,7 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_amrescan(
                 requested_nprobe,
                 super::options::current_session_adaptive_nprobe(),
                 super::options::current_session_adaptive_nprobe_score_gap_micros(),
+                super::options::current_session_adaptive_nprobe_score_margin_ratio_bps(),
             );
             opaque.scan_nprobe = u32::try_from(selected_lists.len()).unwrap_or(u32::MAX);
             opaque
@@ -1094,7 +1095,7 @@ fn probe_list_heap_cmp(left: &EcIvfCentroidScore, right: &EcIvfCentroidScore) ->
 }
 
 fn select_probe_lists(scores: &[EcIvfCentroidScore], nprobe: u32) -> Vec<u32> {
-    select_probe_lists_with_adaptive(scores, nprobe, false, 0)
+    select_probe_lists_with_adaptive(scores, nprobe, false, 0, 0)
 }
 
 fn select_probe_lists_with_adaptive(
@@ -1102,6 +1103,7 @@ fn select_probe_lists_with_adaptive(
     nprobe: u32,
     adaptive_nprobe: bool,
     adaptive_score_gap_micros: i32,
+    adaptive_score_margin_ratio_bps: i32,
 ) -> Vec<u32> {
     let limit = nprobe as usize;
     if limit == 0 || scores.is_empty() {
@@ -1110,8 +1112,13 @@ fn select_probe_lists_with_adaptive(
     if limit >= scores.len() {
         let mut ranked = scores.to_vec();
         ranked.sort_by(probe_list_cmp);
-        let effective_nprobe =
-            choose_adaptive_nprobe(nprobe, &ranked, adaptive_nprobe, adaptive_score_gap_micros);
+        let effective_nprobe = choose_adaptive_nprobe(
+            nprobe,
+            &ranked,
+            adaptive_nprobe,
+            adaptive_score_gap_micros,
+            adaptive_score_margin_ratio_bps,
+        );
         return ranked
             .into_iter()
             .take(effective_nprobe as usize)
@@ -1139,8 +1146,13 @@ fn select_probe_lists_with_adaptive(
         .map(|entry| entry.centroid)
         .collect::<Vec<_>>();
     ranked.sort_by(probe_list_cmp);
-    let effective_nprobe =
-        choose_adaptive_nprobe(nprobe, &ranked, adaptive_nprobe, adaptive_score_gap_micros);
+    let effective_nprobe = choose_adaptive_nprobe(
+        nprobe,
+        &ranked,
+        adaptive_nprobe,
+        adaptive_score_gap_micros,
+        adaptive_score_margin_ratio_bps,
+    );
     ranked
         .into_iter()
         .take(effective_nprobe as usize)
@@ -1153,6 +1165,7 @@ fn choose_adaptive_nprobe(
     ranked_scores: &[EcIvfCentroidScore],
     adaptive_nprobe: bool,
     adaptive_score_gap_micros: i32,
+    adaptive_score_margin_ratio_bps: i32,
 ) -> u32 {
     if !adaptive_nprobe || requested_nprobe <= 1 {
         return requested_nprobe;
@@ -1166,6 +1179,24 @@ fn choose_adaptive_nprobe(
 
     let boundary = ranked_scores[adaptive_index - 1].score;
     let next = ranked_scores[adaptive_index].score;
+    if adaptive_score_margin_ratio_bps > 0 {
+        let top = ranked_scores[0].score;
+        let raw_gap = (boundary - next).max(0.0);
+        let top_to_boundary = (top - boundary).abs();
+        let ratio_bps = if raw_gap > 0.0 && top_to_boundary > f32::EPSILON {
+            ((raw_gap / top_to_boundary) * 10_000.0).round() as i32
+        } else if raw_gap > 0.0 {
+            i32::MAX
+        } else {
+            0
+        };
+        return if ratio_bps >= adaptive_score_margin_ratio_bps {
+            adaptive_nprobe
+        } else {
+            requested_nprobe
+        };
+    }
+
     let raw_gap_micros = (boundary - next) * 1_000_000.0;
     let gap_micros = if raw_gap_micros.is_finite() && raw_gap_micros > 0.0 {
         raw_gap_micros.round() as i32
@@ -2377,6 +2408,7 @@ pub(crate) unsafe fn debug_ec_ivf_directory_entry(
 #[cfg(test)]
 mod tests {
     use super::super::options::{EcIvfOptions, RerankMode, StorageFormat as IvfStorageFormat};
+    use super::super::page::{IvfPostingTuple, IvfPostingTupleRef};
     use super::{
         build_probe_block_sequence, candidate_heap_blocks, candidate_heap_tid_cmp,
         choose_adaptive_nprobe, consume_live_tid_budget, inner_product, inner_product_scalar,
@@ -2384,7 +2416,6 @@ mod tests {
         CandidateTopK, EcIvfCentroidScore, EcIvfScoredCandidate, IvfPostingScratchSoa,
         ProbeBlockRange,
     };
-    use super::super::page::{IvfPostingTuple, IvfPostingTupleRef};
     use crate::storage::page::ItemPointer;
 
     #[test]
@@ -2459,7 +2490,10 @@ mod tests {
         let tuple = IvfPostingTuple {
             list_id: 7,
             deleted: false,
-            heaptids: vec![candidate(11, 1, 0.0).heap_tid, candidate(12, 3, 0.0).heap_tid],
+            heaptids: vec![
+                candidate(11, 1, 0.0).heap_tid,
+                candidate(12, 3, 0.0).heap_tid,
+            ],
             gamma: 1.25,
             rerank_tid: ItemPointer::INVALID,
             payload: vec![4, 5, 6],
@@ -2649,6 +2683,7 @@ mod tests {
             8,
             true,
             100_000,
+            0,
         );
 
         assert_eq!(selected, vec![1, 2, 3, 4]);
@@ -2668,6 +2703,7 @@ mod tests {
             6,
             true,
             100_000,
+            0,
         );
 
         assert_eq!(selected, vec![1, 2, 3, 4, 5, 6]);
@@ -2682,7 +2718,29 @@ mod tests {
             centroid(4, 9.10),
         ];
 
-        assert_eq!(choose_adaptive_nprobe(4, &ranked, false, 0), 4);
+        assert_eq!(choose_adaptive_nprobe(4, &ranked, false, 0, 0), 4);
+    }
+
+    #[test]
+    fn adaptive_nprobe_can_use_boundary_score_margin_ratio() {
+        let selected = select_probe_lists_with_adaptive(
+            &[
+                centroid(1, 10.00),
+                centroid(2, 9.90),
+                centroid(3, 9.80),
+                centroid(4, 9.70),
+                centroid(5, 9.10),
+                centroid(6, 9.00),
+                centroid(7, 8.90),
+                centroid(8, 8.80),
+            ],
+            8,
+            true,
+            0,
+            10_000,
+        );
+
+        assert_eq!(selected, vec![1, 2, 3, 4]);
     }
 
     #[test]

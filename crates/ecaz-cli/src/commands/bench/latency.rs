@@ -64,6 +64,9 @@ pub struct LatencyArgs {
     /// IVF/SPIRE: score-gap threshold for adaptive nprobe decisions.
     #[arg(long)]
     pub adaptive_nprobe_score_gap_micros: Option<i32>,
+    /// IVF-only: score margin-ratio threshold, in basis points, for adaptive nprobe decisions.
+    #[arg(long)]
+    pub adaptive_nprobe_score_margin_ratio_bps: Option<i32>,
     /// IVF-only: enable experimental posting scratch SoA batch decode.
     #[arg(long)]
     pub ivf_scratch_soa_batch_decode: bool,
@@ -126,6 +129,7 @@ pub async fn run(conn: &ConnectionOptions, args: LatencyArgs) -> Result<()> {
     let adaptive_nprobe_options = super::AdaptiveNprobeBenchOptions {
         enabled: args.adaptive_nprobe,
         score_gap_micros: args.adaptive_nprobe_score_gap_micros,
+        score_margin_ratio_bps: args.adaptive_nprobe_score_margin_ratio_bps,
     };
     super::validate_adaptive_nprobe_options(profile, adaptive_nprobe_options)?;
     super::validate_ivf_scratch_soa_batch_decode(profile, args.ivf_scratch_soa_batch_decode)?;
@@ -270,8 +274,7 @@ async fn run_sweep_point(
         _ => sweep_label,
     };
     let msg = super::append_adaptive_nprobe_label(msg, adaptive_nprobe_options);
-    let msg =
-        super::append_ivf_scratch_soa_batch_decode_label(msg, ivf_scratch_soa_batch_decode);
+    let msg = super::append_ivf_scratch_soa_batch_decode_label(msg, ivf_scratch_soa_batch_decode);
     bar.set_message(msg);
     bar.enable_steady_tick(Duration::from_millis(250));
     let bar = Arc::new(bar);
