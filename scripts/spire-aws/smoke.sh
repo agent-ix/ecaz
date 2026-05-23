@@ -22,7 +22,7 @@ ecaz dev sql \
 
 ecaz dev sql \
   --host "$COORD_HOST" --user ecaz_coord --database postgres \
-  --sql "SELECT * FROM ec_spire_remote_search_production_read_profile(format('%s_idx', '${PREFIX}')::regclass, (SELECT embedding FROM ${PREFIX}_queries WHERE vec_id = 0)::real[], 10)" \
+  --sql "SELECT * FROM ec_spire_remote_search_production_read_profile(format('%s_idx', '${PREFIX}')::regclass, (SELECT source FROM ${PREFIX}_queries WHERE id = 0), 10)" \
   --log-output "$ARTIFACT_DIR/production-read-profile-smoke.log"
 
 ecaz bench spire-pipeline \
