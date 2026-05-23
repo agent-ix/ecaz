@@ -1,5 +1,6 @@
 pub(crate) mod callback;
 pub(crate) mod cost;
+pub(crate) mod datum;
 pub(crate) mod detoast;
 pub(crate) mod dsm;
 pub(crate) mod explain;
