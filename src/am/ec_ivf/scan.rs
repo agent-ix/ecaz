@@ -13,7 +13,9 @@ use crate::am::stats::{self, TqStatsCounters};
 #[cfg(feature = "pg18")]
 use crate::storage::buffer_guard::PinnedBufferGuard;
 use crate::storage::{
-    page::ItemPointer, relation_guard::HeapRelationGuard, slot_guard::TupleTableSlotGuard,
+    page::{ItemPointer, HEAPTID_INLINE_CAPACITY},
+    relation_guard::HeapRelationGuard,
+    slot_guard::TupleTableSlotGuard,
     snapshot_guard::RegisteredSnapshotGuard,
 };
 #[cfg(any(test, feature = "pg_test"))]
@@ -43,6 +45,7 @@ struct EcIvfScanOpaque {
     posting_candidates: *mut EcIvfScoredCandidate,
     posting_candidate_count: u32,
     next_candidate_index: u32,
+    posting_scratch_soa: *mut IvfPostingScratchSoa,
     heap_rerank_state: *mut IvfHeapRerankState,
     explain_counters: IvfExplainCounters,
     stats_delta: TqStatsCounters,
@@ -292,6 +295,85 @@ struct ProbeListHeapEntry {
     centroid: EcIvfCentroidScore,
 }
 
+const IVF_POSTING_SCRATCH_SOA_BATCH_POSTINGS: usize = 256;
+const IVF_POSTING_SCRATCH_SOA_BATCH_HEAPTIDS: usize =
+    IVF_POSTING_SCRATCH_SOA_BATCH_POSTINGS * HEAPTID_INLINE_CAPACITY;
+
+#[derive(Debug)]
+struct IvfPostingScratchSoa {
+    payload_len: usize,
+    gammas: Vec<f32>,
+    heap_tid_offsets: Vec<usize>,
+    heap_tid_counts: Vec<usize>,
+    heap_tids: Vec<ItemPointer>,
+    payloads: Vec<u8>,
+}
+
+impl IvfPostingScratchSoa {
+    fn new(payload_len: usize) -> Self {
+        Self {
+            payload_len,
+            gammas: Vec::with_capacity(IVF_POSTING_SCRATCH_SOA_BATCH_POSTINGS),
+            heap_tid_offsets: Vec::with_capacity(IVF_POSTING_SCRATCH_SOA_BATCH_POSTINGS),
+            heap_tid_counts: Vec::with_capacity(IVF_POSTING_SCRATCH_SOA_BATCH_POSTINGS),
+            heap_tids: Vec::with_capacity(IVF_POSTING_SCRATCH_SOA_BATCH_HEAPTIDS),
+            payloads: Vec::with_capacity(payload_len * IVF_POSTING_SCRATCH_SOA_BATCH_POSTINGS),
+        }
+    }
+
+    fn clear_for_payload_len(&mut self, payload_len: usize) {
+        if self.payload_len != payload_len {
+            *self = Self::new(payload_len);
+            return;
+        }
+        self.clear();
+    }
+
+    fn clear(&mut self) {
+        self.gammas.clear();
+        self.heap_tid_offsets.clear();
+        self.heap_tid_counts.clear();
+        self.heap_tids.clear();
+        self.payloads.clear();
+    }
+
+    fn is_empty(&self) -> bool {
+        self.gammas.is_empty()
+    }
+
+    fn can_accept(&self, heap_tid_count: usize) -> bool {
+        self.gammas.len() < IVF_POSTING_SCRATCH_SOA_BATCH_POSTINGS
+            && self.heap_tids.len().saturating_add(heap_tid_count)
+                <= IVF_POSTING_SCRATCH_SOA_BATCH_HEAPTIDS
+    }
+
+    fn push(&mut self, posting: super::page::IvfPostingTupleRef<'_>) {
+        debug_assert_eq!(posting.payload.len(), self.payload_len);
+        let offset = self.heap_tids.len();
+        self.gammas.push(posting.gamma);
+        self.heap_tid_offsets.push(offset);
+        self.heap_tid_counts.push(posting.heaptid_count());
+        self.heap_tids.extend(posting.heaptids());
+        self.payloads.extend_from_slice(posting.payload);
+    }
+
+    fn len(&self) -> usize {
+        self.gammas.len()
+    }
+
+    fn payload(&self, index: usize) -> &[u8] {
+        let start = index * self.payload_len;
+        let end = start + self.payload_len;
+        &self.payloads[start..end]
+    }
+
+    fn heap_tids(&self, index: usize) -> &[ItemPointer] {
+        let start = self.heap_tid_offsets[index];
+        let end = start + self.heap_tid_counts[index];
+        &self.heap_tids[start..end]
+    }
+}
+
 impl PartialEq for ProbeListHeapEntry {
     fn eq(&self, other: &Self) -> bool {
         probe_list_heap_cmp(&self.centroid, &other.centroid) == Ordering::Equal
@@ -508,6 +590,7 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_amendscan(scan: pg_sys::IndexScanD
             free_scan_query_prep(opaque);
             free_pq_fastscan_model(opaque);
             free_candidate_dedup(opaque);
+            free_posting_scratch_soa(opaque);
             pg_sys::pfree(opaque_ptr);
             (*scan).opaque = ptr::null_mut();
         }
@@ -785,6 +868,30 @@ fn free_candidate_dedup(opaque: &mut EcIvfScanOpaque) {
         // scan opaque and has not been freed while the pointer is non-null.
         drop(unsafe { Box::from_raw(opaque.candidate_dedup) });
         opaque.candidate_dedup = ptr::null_mut();
+    }
+}
+
+fn posting_scratch_soa(
+    opaque: &mut EcIvfScanOpaque,
+    payload_len: usize,
+) -> *mut IvfPostingScratchSoa {
+    if opaque.posting_scratch_soa.is_null() {
+        opaque.posting_scratch_soa =
+            Box::into_raw(Box::new(IvfPostingScratchSoa::new(payload_len)));
+        return opaque.posting_scratch_soa;
+    }
+
+    // SAFETY: `posting_scratch_soa` is scan-opaque owned and allocated by this helper.
+    unsafe { &mut *opaque.posting_scratch_soa }.clear_for_payload_len(payload_len);
+    opaque.posting_scratch_soa
+}
+
+fn free_posting_scratch_soa(opaque: &mut EcIvfScanOpaque) {
+    if !opaque.posting_scratch_soa.is_null() {
+        // SAFETY: `posting_scratch_soa` was created with `Box::into_raw` by
+        // this scan opaque and has not been freed while the pointer is non-null.
+        drop(unsafe { Box::from_raw(opaque.posting_scratch_soa) });
+        opaque.posting_scratch_soa = ptr::null_mut();
     }
 }
 
@@ -1114,74 +1221,103 @@ unsafe fn materialize_probe_candidates(
         .explain_counters
         .record_posting_pages_read(posting_pages);
     record_posting_pages_read(opaque, posting_pages);
-    // SAFETY: `probe_plan.block_sequence` contains posting blocks from
-    // validated IVF directory metadata, and the visitor only borrows tuple refs
-    // for the duration of each callback.
-    unsafe {
-        super::page::visit_ivf_posting_refs_for_block_sequence(
-            index_relation,
-            &probe_plan.block_sequence,
-            payload_len,
-            |_, posting| {
-                if !probe_plan.contains_list(posting.list_id) || posting.deleted {
-                    return Ok(());
-                }
-                opaque.explain_counters.record_posting_visited();
-                let heap_tid_count = posting.heaptid_count();
-                if !consume_live_tid_budget(
-                    &mut remaining_live_tids_by_list,
-                    posting.list_id,
-                    heap_tid_count,
-                )? {
-                    return Ok(());
-                }
-                let min_ip_to_keep = running_top
-                    .as_ref()
-                    .and_then(CandidateTopK::worst_score_if_full)
-                    .map(|worst_score| -worst_score);
-                let Some(ip) = quantizer.score_ip_from_parts_with_min_bound(
-                    prepared_query,
-                    posting.gamma,
-                    posting.payload,
-                    min_ip_to_keep,
-                )?
-                else {
-                    opaque.explain_counters.record_posting_pruned_by_bound();
-                    return Ok(());
-                };
-                let score = -ip;
-                opaque.explain_counters.record_posting_scored();
-                opaque
-                    .explain_counters
-                    .record_heap_tids_scored(heap_tid_count);
-                record_distance_calcs(opaque, 1);
-                for heap_tid in posting.heaptids() {
-                    opaque.explain_counters.record_candidate_scored();
-                    let candidate = EcIvfScoredCandidate { heap_tid, score };
-                    // SAFETY: `best_by_heap_tid` points to the scan-owned
-                    // dedup map returned by `candidate_dedup_map` above.
-                    let best_by_heap_tid = &mut *best_by_heap_tid;
-                    match best_by_heap_tid.entry(heap_tid) {
-                        Entry::Occupied(mut entry) => {
-                            opaque.explain_counters.record_filtered_duplicate();
-                            let existing = entry.get_mut();
-                            if candidate_cmp(&candidate, existing) == Ordering::Less {
-                                *existing = candidate;
-                            }
-                        }
-                        Entry::Vacant(entry) => {
-                            entry.insert(candidate);
-                            opaque.explain_counters.record_candidate_inserted();
-                            if let Some(top_k) = running_top.as_mut() {
-                                top_k.push(candidate);
-                            }
-                        }
+    if use_scratch_soa_batch_decode(metadata) {
+        let scratch = posting_scratch_soa(opaque, payload_len);
+        // SAFETY: `probe_plan.block_sequence` contains posting blocks from
+        // validated IVF directory metadata, and the visitor only borrows tuple refs
+        // for the duration of each callback.
+        unsafe {
+            super::page::visit_ivf_posting_refs_for_block_sequence(
+                index_relation,
+                &probe_plan.block_sequence,
+                payload_len,
+                |_, posting| {
+                    if !probe_plan.contains_list(posting.list_id) || posting.deleted {
+                        return Ok(());
                     }
-                }
-                Ok(())
-            },
-        )?
-    };
+                    opaque.explain_counters.record_posting_visited();
+                    let heap_tid_count = posting.heaptid_count();
+                    if !consume_live_tid_budget(
+                        &mut remaining_live_tids_by_list,
+                        posting.list_id,
+                        heap_tid_count,
+                    )? {
+                        return Ok(());
+                    }
+                    let scratch_ref = &mut *scratch;
+                    if !scratch_ref.can_accept(heap_tid_count) {
+                        process_scratch_soa_postings(
+                            scratch_ref,
+                            quantizer,
+                            prepared_query,
+                            opaque,
+                            best_by_heap_tid,
+                            &mut running_top,
+                        )?;
+                    }
+                    scratch_ref.push(posting);
+                    Ok(())
+                },
+            )?;
+            process_scratch_soa_postings(
+                &mut *scratch,
+                quantizer,
+                prepared_query,
+                opaque,
+                best_by_heap_tid,
+                &mut running_top,
+            )?;
+        }
+    } else {
+        // SAFETY: `probe_plan.block_sequence` contains posting blocks from
+        // validated IVF directory metadata, and the visitor only borrows tuple refs
+        // for the duration of each callback.
+        unsafe {
+            super::page::visit_ivf_posting_refs_for_block_sequence(
+                index_relation,
+                &probe_plan.block_sequence,
+                payload_len,
+                |_, posting| {
+                    if !probe_plan.contains_list(posting.list_id) || posting.deleted {
+                        return Ok(());
+                    }
+                    opaque.explain_counters.record_posting_visited();
+                    let heap_tid_count = posting.heaptid_count();
+                    if !consume_live_tid_budget(
+                        &mut remaining_live_tids_by_list,
+                        posting.list_id,
+                        heap_tid_count,
+                    )? {
+                        return Ok(());
+                    }
+                    let min_ip_to_keep = running_top
+                        .as_ref()
+                        .and_then(CandidateTopK::worst_score_if_full)
+                        .map(|worst_score| -worst_score);
+                    let Some(ip) = quantizer.score_ip_from_parts_with_min_bound(
+                        prepared_query,
+                        posting.gamma,
+                        posting.payload,
+                        min_ip_to_keep,
+                    )?
+                    else {
+                        opaque.explain_counters.record_posting_pruned_by_bound();
+                        return Ok(());
+                    };
+                    let score = -ip;
+                    record_scored_posting_candidates(
+                        opaque,
+                        best_by_heap_tid,
+                        &mut running_top,
+                        posting.heaptids(),
+                        heap_tid_count,
+                        score,
+                    );
+                    Ok(())
+                },
+            )?
+        };
+    }
 
     // SAFETY: `best_by_heap_tid` points to the scan-owned dedup map populated
     // during the posting visitor above.
@@ -1208,6 +1344,92 @@ unsafe fn materialize_probe_candidates(
             .record_exact_rerank_elapsed_us(elapsed_us_u32(rerank_started.elapsed()));
     }
     Ok(candidates)
+}
+
+fn use_scratch_soa_batch_decode(metadata: &super::page::MetadataPage) -> bool {
+    super::options::current_session_scratch_soa_batch_decode()
+        && metadata.storage_format == StorageFormat::RaBitQ
+        && metadata.quant_bits == 1
+}
+
+fn process_scratch_soa_postings(
+    scratch: &mut IvfPostingScratchSoa,
+    quantizer: IvfQuantizer,
+    prepared_query: &IvfPreparedQuery,
+    opaque: &mut EcIvfScanOpaque,
+    best_by_heap_tid: *mut HashMap<ItemPointer, EcIvfScoredCandidate>,
+    running_top: &mut Option<CandidateTopK>,
+) -> Result<(), String> {
+    if scratch.is_empty() {
+        return Ok(());
+    }
+
+    for index in 0..scratch.len() {
+        let min_ip_to_keep = running_top
+            .as_ref()
+            .and_then(CandidateTopK::worst_score_if_full)
+            .map(|worst_score| -worst_score);
+        let Some(ip) = quantizer.score_ip_from_parts_with_min_bound(
+            prepared_query,
+            scratch.gammas[index],
+            scratch.payload(index),
+            min_ip_to_keep,
+        )?
+        else {
+            opaque.explain_counters.record_posting_pruned_by_bound();
+            continue;
+        };
+        record_scored_posting_candidates(
+            opaque,
+            best_by_heap_tid,
+            running_top,
+            scratch.heap_tids(index).iter().copied(),
+            scratch.heap_tid_counts[index],
+            -ip,
+        );
+    }
+    scratch.clear();
+    Ok(())
+}
+
+fn record_scored_posting_candidates<I>(
+    opaque: &mut EcIvfScanOpaque,
+    best_by_heap_tid: *mut HashMap<ItemPointer, EcIvfScoredCandidate>,
+    running_top: &mut Option<CandidateTopK>,
+    heap_tids: I,
+    heap_tid_count: usize,
+    score: f32,
+) where
+    I: IntoIterator<Item = ItemPointer>,
+{
+    opaque.explain_counters.record_posting_scored();
+    opaque
+        .explain_counters
+        .record_heap_tids_scored(heap_tid_count);
+    record_distance_calcs(opaque, 1);
+    for heap_tid in heap_tids {
+        opaque.explain_counters.record_candidate_scored();
+        let candidate = EcIvfScoredCandidate { heap_tid, score };
+        // SAFETY: `best_by_heap_tid` points to the scan-owned dedup map
+        // returned by `candidate_dedup_map` above.
+        let best_by_heap_tid = unsafe { &mut *best_by_heap_tid };
+        match best_by_heap_tid.entry(heap_tid) {
+            Entry::Occupied(mut entry) => {
+                opaque.explain_counters.record_filtered_duplicate();
+                let existing = entry.get_mut();
+                if candidate_cmp(&candidate, existing) == Ordering::Less {
+                    *existing = candidate;
+                }
+            }
+            Entry::Vacant(entry) => {
+                entry.insert(candidate);
+                opaque.explain_counters.record_candidate_inserted();
+                if let Some(top_k) = running_top.as_mut() {
+                    top_k.push(candidate);
+                }
+            }
+        }
+    }
 }
 
 fn pre_rerank_candidate_limit(index_options: &super::options::EcIvfOptions) -> Option<usize> {
@@ -2159,8 +2381,10 @@ mod tests {
         build_probe_block_sequence, candidate_heap_blocks, candidate_heap_tid_cmp,
         choose_adaptive_nprobe, consume_live_tid_budget, inner_product, inner_product_scalar,
         pre_rerank_candidate_limit, select_probe_lists, select_probe_lists_with_adaptive,
-        CandidateTopK, EcIvfCentroidScore, EcIvfScoredCandidate, ProbeBlockRange,
+        CandidateTopK, EcIvfCentroidScore, EcIvfScoredCandidate, IvfPostingScratchSoa,
+        ProbeBlockRange,
     };
+    use super::super::page::{IvfPostingTuple, IvfPostingTupleRef};
     use crate::storage::page::ItemPointer;
 
     #[test]
@@ -2224,6 +2448,58 @@ mod tests {
             storage_format: IvfStorageFormat::RaBitQ,
             rerank,
         }
+    }
+
+    fn posting_ref_from_bytes(bytes: &[u8], payload_len: usize) -> IvfPostingTupleRef<'_> {
+        IvfPostingTupleRef::decode(bytes, payload_len).unwrap()
+    }
+
+    #[test]
+    fn posting_scratch_soa_batches_fields_without_losing_order() {
+        let tuple = IvfPostingTuple {
+            list_id: 7,
+            deleted: false,
+            heaptids: vec![candidate(11, 1, 0.0).heap_tid, candidate(12, 3, 0.0).heap_tid],
+            gamma: 1.25,
+            rerank_tid: ItemPointer::INVALID,
+            payload: vec![4, 5, 6],
+        };
+        let encoded = tuple.encode().unwrap();
+        let posting = posting_ref_from_bytes(&encoded, tuple.payload.len());
+        let mut scratch = IvfPostingScratchSoa::new(tuple.payload.len());
+
+        scratch.push(posting);
+
+        assert_eq!(scratch.len(), 1);
+        assert_eq!(scratch.gammas, vec![1.25]);
+        assert_eq!(scratch.payload(0), [4, 5, 6]);
+        assert_eq!(scratch.heap_tids(0), tuple.heaptids.as_slice());
+    }
+
+    #[test]
+    fn posting_scratch_soa_reuses_capacity_when_payload_len_matches() {
+        let mut scratch = IvfPostingScratchSoa::new(3);
+        let payload_capacity = scratch.payloads.capacity();
+        let heap_tid_capacity = scratch.heap_tids.capacity();
+        scratch.payloads.extend_from_slice(&[1, 2, 3]);
+        scratch.heap_tids.push(candidate(1, 1, 0.0).heap_tid);
+
+        scratch.clear_for_payload_len(3);
+
+        assert!(scratch.is_empty());
+        assert_eq!(scratch.payloads.capacity(), payload_capacity);
+        assert_eq!(scratch.heap_tids.capacity(), heap_tid_capacity);
+    }
+
+    #[test]
+    fn posting_scratch_soa_rebuilds_capacity_when_payload_len_changes() {
+        let mut scratch = IvfPostingScratchSoa::new(3);
+        scratch.payloads.reserve(100);
+
+        scratch.clear_for_payload_len(9);
+
+        assert_eq!(scratch.payload_len, 9);
+        assert!(scratch.payloads.capacity() >= 9 * super::IVF_POSTING_SCRATCH_SOA_BATCH_POSTINGS);
     }
 
     #[test]

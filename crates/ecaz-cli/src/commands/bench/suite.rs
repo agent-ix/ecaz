@@ -288,6 +288,8 @@ struct RecallStep {
     #[serde(default)]
     adaptive_nprobe_score_gap_micros: Option<i32>,
     #[serde(default)]
+    ivf_scratch_soa_batch_decode: Option<bool>,
+    #[serde(default)]
     queries_limit: Option<usize>,
     #[serde(default)]
     profile: Option<String>,
@@ -337,6 +339,8 @@ struct LatencyStep {
     adaptive_nprobe: Option<bool>,
     #[serde(default)]
     adaptive_nprobe_score_gap_micros: Option<i32>,
+    #[serde(default)]
+    ivf_scratch_soa_batch_decode: Option<bool>,
     #[serde(default)]
     profile: Option<String>,
     #[serde(default)]
@@ -1958,6 +1962,9 @@ fn expand_recall(step: &RecallStep, defaults: &SuiteDefaults) -> Vec<String> {
             &score_gap_micros.to_string(),
         );
     }
+    if step.ivf_scratch_soa_batch_decode.unwrap_or(false) {
+        args.push("--ivf-scratch-soa-batch-decode".into());
+    }
     if let Some(limit) = step.queries_limit.or(defaults.queries_limit) {
         push_arg(&mut args, "--queries-limit", &limit.to_string());
     }
@@ -2033,6 +2040,9 @@ fn expand_latency(step: &LatencyStep, defaults: &SuiteDefaults) -> Vec<String> {
             "--adaptive-nprobe-score-gap-micros",
             &score_gap_micros.to_string(),
         );
+    }
+    if step.ivf_scratch_soa_batch_decode.unwrap_or(false) {
+        args.push("--ivf-scratch-soa-batch-decode".into());
     }
     push_arg(&mut args, "--bits", &bits(defaults, step.bits).to_string());
     push_arg(&mut args, "--seed", &seed(defaults, step.seed).to_string());
@@ -2645,6 +2655,7 @@ mod tests {
             rerank_width: Some(500),
             adaptive_nprobe: Some(true),
             adaptive_nprobe_score_gap_micros: Some(1000),
+            ivf_scratch_soa_batch_decode: Some(true),
             queries_limit: None,
             profile: None,
             bits: None,
@@ -2664,6 +2675,7 @@ mod tests {
         assert!(args
             .windows(2)
             .any(|w| w == ["--adaptive-nprobe-score-gap-micros", "1000"]));
+        assert!(args.contains(&"--ivf-scratch-soa-batch-decode".into()));
         assert!(args
             .windows(2)
             .any(|w| w == ["--predictions-output", "predictions.json"]));
@@ -2844,6 +2856,7 @@ mod tests {
             rerank_width: None,
             adaptive_nprobe: None,
             adaptive_nprobe_score_gap_micros: None,
+            ivf_scratch_soa_batch_decode: None,
             queries_limit: None,
             profile: None,
             bits: None,

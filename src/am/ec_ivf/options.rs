@@ -26,6 +26,7 @@ static EC_IVF_RERANK_WIDTH_GUC: GucSetting<i32> =
 static EC_IVF_ADAPTIVE_NPROBE_GUC: GucSetting<bool> = GucSetting::<bool>::new(false);
 static EC_IVF_ADAPTIVE_NPROBE_SCORE_GAP_MICROS_GUC: GucSetting<i32> =
     GucSetting::<i32>::new(EC_IVF_DEFAULT_ADAPTIVE_NPROBE_SCORE_GAP_MICROS);
+static EC_IVF_SCRATCH_SOA_BATCH_DECODE_GUC: GucSetting<bool> = GucSetting::<bool>::new(false);
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
@@ -239,6 +240,14 @@ pub(super) fn register_gucs() {
         GucContext::Userset,
         GucFlags::default(),
     );
+    GucRegistry::define_bool_guc(
+        c"ec_ivf.scratch_soa_batch_decode",
+        c"Enable experimental ec_ivf posting scratch SoA batch decode.",
+        c"Task 51 diagnostic mode; batches decoded posting tuple fields into scan-local structure-of-arrays buffers before scoring. Disabled by default.",
+        &EC_IVF_SCRATCH_SOA_BATCH_DECODE_GUC,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
 }
 
 pub(super) fn current_session_nprobe() -> i32 {
@@ -262,6 +271,14 @@ pub(super) fn current_session_adaptive_nprobe_score_gap_micros() -> i32 {
         EC_IVF_DEFAULT_ADAPTIVE_NPROBE_SCORE_GAP_MICROS
     } else {
         EC_IVF_ADAPTIVE_NPROBE_SCORE_GAP_MICROS_GUC.get()
+    }
+}
+
+pub(super) fn current_session_scratch_soa_batch_decode() -> bool {
+    if cfg!(test) {
+        false
+    } else {
+        EC_IVF_SCRATCH_SOA_BATCH_DECODE_GUC.get()
     }
 }
 

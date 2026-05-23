@@ -119,6 +119,45 @@ pub(crate) fn append_adaptive_nprobe_label(
     }
 }
 
+pub(crate) fn validate_ivf_scratch_soa_batch_decode(
+    profile: &IndexProfile,
+    enabled: bool,
+) -> Result<()> {
+    if enabled && profile.name != "ec_ivf" {
+        return Err(eyre!(
+            "--ivf-scratch-soa-batch-decode is only supported with --profile ec_ivf"
+        ));
+    }
+    Ok(())
+}
+
+pub(crate) async fn apply_ivf_scratch_soa_batch_decode(
+    client: &Client,
+    profile: &IndexProfile,
+    enabled: bool,
+) -> Result<()> {
+    if !enabled {
+        return Ok(());
+    }
+    validate_ivf_scratch_soa_batch_decode(profile, enabled)?;
+    client
+        .batch_execute("SET ec_ivf.scratch_soa_batch_decode = on")
+        .await
+        .wrap_err("SET ec_ivf.scratch_soa_batch_decode = on")?;
+    Ok(())
+}
+
+pub(crate) fn append_ivf_scratch_soa_batch_decode_label(
+    message: String,
+    enabled: bool,
+) -> String {
+    if enabled {
+        format!("{message} scratch_soa=on")
+    } else {
+        message
+    }
+}
+
 fn adaptive_nprobe_gucs(profile: &IndexProfile) -> Option<(&'static str, &'static str)> {
     match profile.name {
         "ec_ivf" => Some((

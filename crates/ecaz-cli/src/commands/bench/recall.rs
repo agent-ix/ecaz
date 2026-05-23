@@ -61,6 +61,9 @@ pub struct RecallArgs {
     /// IVF/SPIRE: score-gap threshold for adaptive nprobe decisions.
     #[arg(long)]
     pub adaptive_nprobe_score_gap_micros: Option<i32>,
+    /// IVF-only: enable experimental posting scratch SoA batch decode.
+    #[arg(long)]
+    pub ivf_scratch_soa_batch_decode: bool,
     /// Cap the query set (default: all rows in `<prefix>_queries`).
     #[arg(long)]
     pub queries_limit: Option<usize>,
@@ -136,6 +139,7 @@ pub async fn run(conn: &ConnectionOptions, args: RecallArgs) -> Result<()> {
         score_gap_micros: args.adaptive_nprobe_score_gap_micros,
     };
     super::validate_adaptive_nprobe_options(profile, adaptive_nprobe_options)?;
+    super::validate_ivf_scratch_soa_batch_decode(profile, args.ivf_scratch_soa_batch_decode)?;
 
     let corpus_table = format!("{}_corpus", args.prefix);
     let queries_table = format!("{}_queries", args.prefix);
@@ -235,6 +239,12 @@ pub async fn run(conn: &ConnectionOptions, args: RecallArgs) -> Result<()> {
             }
         }
         super::apply_adaptive_nprobe_options(&client, profile, adaptive_nprobe_options).await?;
+        super::apply_ivf_scratch_soa_batch_decode(
+            &client,
+            profile,
+            args.ivf_scratch_soa_batch_decode,
+        )
+        .await?;
         client
             .batch_execute(&format!("SET {guc} = {value}"))
             .await
@@ -255,9 +265,10 @@ pub async fn run(conn: &ConnectionOptions, args: RecallArgs) -> Result<()> {
             None => super::sweep_value_label(profile, *value),
             _ => super::sweep_value_label(profile, *value),
         };
-        bar.set_message(super::append_adaptive_nprobe_label(
+        let msg = super::append_adaptive_nprobe_label(msg, adaptive_nprobe_options);
+        bar.set_message(super::append_ivf_scratch_soa_batch_decode_label(
             msg,
-            adaptive_nprobe_options,
+            args.ivf_scratch_soa_batch_decode,
         ));
         bar.enable_steady_tick(Duration::from_millis(250));
 

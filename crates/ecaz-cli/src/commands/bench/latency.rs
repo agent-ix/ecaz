@@ -64,6 +64,9 @@ pub struct LatencyArgs {
     /// IVF/SPIRE: score-gap threshold for adaptive nprobe decisions.
     #[arg(long)]
     pub adaptive_nprobe_score_gap_micros: Option<i32>,
+    /// IVF-only: enable experimental posting scratch SoA batch decode.
+    #[arg(long)]
+    pub ivf_scratch_soa_batch_decode: bool,
     /// Quantization bits used when encoding query vectors (must match loader).
     #[arg(long, default_value_t = 4)]
     pub bits: i32,
@@ -125,6 +128,7 @@ pub async fn run(conn: &ConnectionOptions, args: LatencyArgs) -> Result<()> {
         score_gap_micros: args.adaptive_nprobe_score_gap_micros,
     };
     super::validate_adaptive_nprobe_options(profile, adaptive_nprobe_options)?;
+    super::validate_ivf_scratch_soa_batch_decode(profile, args.ivf_scratch_soa_batch_decode)?;
 
     let corpus_table = format!("{}_corpus", args.prefix);
     let queries_table = format!("{}_queries", args.prefix);
@@ -188,6 +192,7 @@ pub async fn run(conn: &ConnectionOptions, args: LatencyArgs) -> Result<()> {
             args.force_index,
             args.rerank_width,
             adaptive_nprobe_options,
+            args.ivf_scratch_soa_batch_decode,
             args.bits,
             args.seed,
             args.k,
@@ -247,6 +252,7 @@ async fn run_sweep_point(
     force_index: bool,
     rerank_width: Option<i32>,
     adaptive_nprobe_options: super::AdaptiveNprobeBenchOptions,
+    ivf_scratch_soa_batch_decode: bool,
     bits: i32,
     seed: i64,
     k: usize,
@@ -264,6 +270,8 @@ async fn run_sweep_point(
         _ => sweep_label,
     };
     let msg = super::append_adaptive_nprobe_label(msg, adaptive_nprobe_options);
+    let msg =
+        super::append_ivf_scratch_soa_batch_decode_label(msg, ivf_scratch_soa_batch_decode);
     bar.set_message(msg);
     bar.enable_steady_tick(Duration::from_millis(250));
     let bar = Arc::new(bar);
@@ -293,6 +301,7 @@ async fn run_sweep_point(
                 rerank_width,
                 rerank_width_guc,
                 adaptive_nprobe_options,
+                ivf_scratch_soa_batch_decode,
                 bits,
                 seed,
                 k,
@@ -333,6 +342,7 @@ async fn worker(
     rerank_width: Option<i32>,
     rerank_width_guc: Option<String>,
     adaptive_nprobe_options: super::AdaptiveNprobeBenchOptions,
+    ivf_scratch_soa_batch_decode: bool,
     bits: i32,
     seed: i64,
     k: usize,
@@ -354,6 +364,8 @@ async fn worker(
         }
     }
     super::apply_adaptive_nprobe_options(&client, profile, adaptive_nprobe_options).await?;
+    super::apply_ivf_scratch_soa_batch_decode(&client, profile, ivf_scratch_soa_batch_decode)
+        .await?;
     if force_index {
         client.batch_execute("SET enable_seqscan = off").await?;
     }
