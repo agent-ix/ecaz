@@ -1,0 +1,1400 @@
+make: Entering directory '/home/peter/dev/ecaz/infra/spire-aws'
+cd /home/peter/dev/ecaz/infra/spire-aws && terraform destroy -auto-approve
+[0m[1mrandom_password.remote[0]: Refreshing state... [id=none][0m
+[0m[1mrandom_password.remote[1]: Refreshing state... [id=none][0m
+[0m[1maws_secretsmanager_secret.remote[0]: Refreshing state... [id=arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-spire-aws-remote-1-wyDVQU][0m
+[0m[1maws_secretsmanager_secret.remote[1]: Refreshing state... [id=arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-spire-aws-remote-2-EEfClW][0m
+[0m[1maws_iam_role.node: Refreshing state... [id=ecaz-spire-aws-node][0m
+[0m[1maws_vpc.spire_aws: Refreshing state... [id=vpc-0a2f98585cd2fa2c7][0m
+[0m[1maws_s3_bucket.artifacts: Refreshing state... [id=ecaz-spire-aws-20260523165108075000000003][0m
+[0m[1maws_s3_bucket_versioning.artifacts: Refreshing state... [id=ecaz-spire-aws-20260523165108075000000003][0m
+[0m[1maws_s3_bucket_server_side_encryption_configuration.artifacts: Refreshing state... [id=ecaz-spire-aws-20260523165108075000000003][0m
+[0m[1maws_iam_role_policy_attachment.node_ssm: Refreshing state... [id=ecaz-spire-aws-node-20260523165109148600000004][0m
+[0m[1maws_iam_role_policy.node_artifacts_secrets: Refreshing state... [id=ecaz-spire-aws-node:ecaz-spire-aws-node-artifacts-secrets][0m
+[0m[1maws_iam_instance_profile.node: Refreshing state... [id=ecaz-spire-aws-node][0m
+[0m[1maws_route_table.spire_aws_data: Refreshing state... [id=rtb-0a3addb3203f0c592][0m
+[0m[1maws_subnet.spire_aws_data: Refreshing state... [id=subnet-0bbc149851847e770][0m
+[0m[1maws_security_group.coordinator: Refreshing state... [id=sg-0851880f0e0ed3ee3][0m
+[0m[1maws_security_group.remote: Refreshing state... [id=sg-05c788e04a143750a][0m
+[0m[1maws_security_group.endpoint: Refreshing state... [id=sg-0f94c9c4a957583c0][0m
+[0m[1maws_vpc_endpoint.s3: Refreshing state... [id=vpce-029fdbe5f03826deb][0m
+[0m[1maws_security_group_rule.coord_to_remote_pg: Refreshing state... [id=sgrule-2435537201][0m
+[0m[1maws_route_table_association.spire_aws_data: Refreshing state... [id=rtbassoc-062357cd9bd324b9f][0m
+[0m[1maws_vpc_endpoint.ssmmessages: Refreshing state... [id=vpce-04ba377dddf0e72fb][0m
+[0m[1maws_vpc_endpoint.ssm: Refreshing state... [id=vpce-0d835e1ca05f54891][0m
+[0m[1maws_vpc_endpoint.secretsmanager: Refreshing state... [id=vpce-0b4ab6354d7d5122c][0m
+[0m[1maws_vpc_endpoint.ec2messages: Refreshing state... [id=vpce-0115d745d6b007a4e][0m
+[0m[1maws_instance.remote[0]: Refreshing state... [id=i-038a69ed982910349][0m
+[0m[1maws_instance.remote[1]: Refreshing state... [id=i-04cb4ccb7328736ef][0m
+[0m[1maws_instance.coordinator: Refreshing state... [id=i-068f303289c8e500d][0m
+[0m[1maws_secretsmanager_secret_version.remote[0]: Refreshing state... [id=arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-spire-aws-remote-1-wyDVQU|terraform-2026052316513476710000000e][0m
+[0m[1maws_secretsmanager_secret_version.remote[1]: Refreshing state... [id=arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-spire-aws-remote-2-EEfClW|terraform-2026052316513476730000000f][0m
+
+Terraform used the selected providers to generate the following execution
+plan. Resource actions are indicated with the following symbols:
+  [31m-[0m destroy[0m
+
+Terraform will perform the following actions:
+
+[1m  # aws_iam_instance_profile.node[0m will be [1m[31mdestroyed[0m
+[0m  [31m-[0m[0m resource "aws_iam_instance_profile" "node" {
+      [31m-[0m[0m arn         = "arn:aws:iam::932658697181:instance-profile/ecaz-spire-aws-node" [90m-> null[0m[0m
+      [31m-[0m[0m create_date = "2026-05-23T16:51:09Z" [90m-> null[0m[0m
+      [31m-[0m[0m id          = "ecaz-spire-aws-node" [90m-> null[0m[0m
+      [31m-[0m[0m name        = "ecaz-spire-aws-node" [90m-> null[0m[0m
+      [31m-[0m[0m path        = "/" [90m-> null[0m[0m
+      [31m-[0m[0m role        = "ecaz-spire-aws-node" [90m-> null[0m[0m
+      [31m-[0m[0m tags        = {} [90m-> null[0m[0m
+      [31m-[0m[0m tags_all    = {
+          [31m-[0m[0m "AutoStop" = "2026-05-24T00:00:00Z"
+          [31m-[0m[0m "Owner"    = "kreneskyp"
+          [31m-[0m[0m "Phase"    = "13-spire-aws-verification"
+          [31m-[0m[0m "Project"  = "ecaz"
+        } [90m-> null[0m[0m
+      [31m-[0m[0m unique_id   = "AIPA5SJWKKPOUNO6KCQEQ" [90m-> null[0m[0m
+        [90m# (1 unchanged attribute hidden)[0m[0m
+    }
+
+[1m  # aws_iam_role.node[0m will be [1m[31mdestroyed[0m
+[0m  [31m-[0m[0m resource "aws_iam_role" "node" {
+      [31m-[0m[0m arn                   = "arn:aws:iam::932658697181:role/ecaz-spire-aws-node" [90m-> null[0m[0m
+      [31m-[0m[0m assume_role_policy    = jsonencode(
+            {
+              [31m-[0m[0m Statement = [
+                  [31m-[0m[0m {
+                      [31m-[0m[0m Action    = "sts:AssumeRole"
+                      [31m-[0m[0m Effect    = "Allow"
+                      [31m-[0m[0m Principal = {
+                          [31m-[0m[0m Service = "ec2.amazonaws.com"
+                        }
+                    },
+                ]
+              [31m-[0m[0m Version   = "2012-10-17"
+            }
+        ) [90m-> null[0m[0m
+      [31m-[0m[0m create_date           = "2026-05-23T16:51:08Z" [90m-> null[0m[0m
+      [31m-[0m[0m force_detach_policies = false [90m-> null[0m[0m
+      [31m-[0m[0m id                    = "ecaz-spire-aws-node" [90m-> null[0m[0m
+      [31m-[0m[0m managed_policy_arns   = [
+          [31m-[0m[0m "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore",
+        ] [90m-> null[0m[0m
+      [31m-[0m[0m max_session_duration  = 3600 [90m-> null[0m[0m
+      [31m-[0m[0m name                  = "ecaz-spire-aws-node" [90m-> null[0m[0m
+      [31m-[0m[0m path                  = "/" [90m-> null[0m[0m
+      [31m-[0m[0m tags                  = {} [90m-> null[0m[0m
+      [31m-[0m[0m tags_all              = {
+          [31m-[0m[0m "AutoStop" = "2026-05-24T00:00:00Z"
+          [31m-[0m[0m "Owner"    = "kreneskyp"
+          [31m-[0m[0m "Phase"    = "13-spire-aws-verification"
+          [31m-[0m[0m "Project"  = "ecaz"
+        } [90m-> null[0m[0m
+      [31m-[0m[0m unique_id             = "AROA5SJWKKPOQANQ4BWBS" [90m-> null[0m[0m
+        [90m# (3 unchanged attributes hidden)[0m[0m
+
+      [31m-[0m[0m inline_policy {
+          [31m-[0m[0m name   = "ecaz-spire-aws-node-artifacts-secrets" [90m-> null[0m[0m
+          [31m-[0m[0m policy = jsonencode(
+                {
+                  [31m-[0m[0m Statement = [
+                      [31m-[0m[0m {
+                          [31m-[0m[0m Action   = [
+                              [31m-[0m[0m "s3:GetObject",
+                              [31m-[0m[0m "s3:PutObject",
+                              [31m-[0m[0m "s3:ListBucket",
+                            ]
+                          [31m-[0m[0m Effect   = "Allow"
+                          [31m-[0m[0m Resource = [
+                              [31m-[0m[0m "arn:aws:s3:::ecaz-spire-aws-20260523165108075000000003",
+                              [31m-[0m[0m "arn:aws:s3:::ecaz-spire-aws-20260523165108075000000003/*",
+                            ]
+                        },
+                      [31m-[0m[0m {
+                          [31m-[0m[0m Action   = [
+                              [31m-[0m[0m "secretsmanager:GetSecretValue",
+                              [31m-[0m[0m "secretsmanager:DescribeSecret",
+                            ]
+                          [31m-[0m[0m Effect   = "Allow"
+                          [31m-[0m[0m Resource = [
+                              [31m-[0m[0m "arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-spire-aws-remote-1-wyDVQU",
+                              [31m-[0m[0m "arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-spire-aws-remote-2-EEfClW",
+                            ]
+                        },
+                    ]
+                  [31m-[0m[0m Version   = "2012-10-17"
+                }
+            ) [90m-> null[0m[0m
+        }
+    }
+
+[1m  # aws_iam_role_policy.node_artifacts_secrets[0m will be [1m[31mdestroyed[0m
+[0m  [31m-[0m[0m resource "aws_iam_role_policy" "node_artifacts_secrets" {
+      [31m-[0m[0m id          = "ecaz-spire-aws-node:ecaz-spire-aws-node-artifacts-secrets" [90m-> null[0m[0m
+      [31m-[0m[0m name        = "ecaz-spire-aws-node-artifacts-secrets" [90m-> null[0m[0m
+      [31m-[0m[0m policy      = jsonencode(
+            {
+              [31m-[0m[0m Statement = [
+                  [31m-[0m[0m {
+                      [31m-[0m[0m Action   = [
+                          [31m-[0m[0m "s3:GetObject",
+                          [31m-[0m[0m "s3:PutObject",
+                          [31m-[0m[0m "s3:ListBucket",
+                        ]
+                      [31m-[0m[0m Effect   = "Allow"
+                      [31m-[0m[0m Resource = [
+                          [31m-[0m[0m "arn:aws:s3:::ecaz-spire-aws-20260523165108075000000003",
+                          [31m-[0m[0m "arn:aws:s3:::ecaz-spire-aws-20260523165108075000000003/*",
+                        ]
+                    },
+                  [31m-[0m[0m {
+                      [31m-[0m[0m Action   = [
+                          [31m-[0m[0m "secretsmanager:GetSecretValue",
+                          [31m-[0m[0m "secretsmanager:DescribeSecret",
+                        ]
+                      [31m-[0m[0m Effect   = "Allow"
+                      [31m-[0m[0m Resource = [
+                          [31m-[0m[0m "arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-spire-aws-remote-1-wyDVQU",
+                          [31m-[0m[0m "arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-spire-aws-remote-2-EEfClW",
+                        ]
+                    },
+                ]
+              [31m-[0m[0m Version   = "2012-10-17"
+            }
+        ) [90m-> null[0m[0m
+      [31m-[0m[0m role        = "ecaz-spire-aws-node" [90m-> null[0m[0m
+        [90m# (1 unchanged attribute hidden)[0m[0m
+    }
+
+[1m  # aws_iam_role_policy_attachment.node_ssm[0m will be [1m[31mdestroyed[0m
+[0m  [31m-[0m[0m resource "aws_iam_role_policy_attachment" "node_ssm" {
+      [31m-[0m[0m id         = "ecaz-spire-aws-node-20260523165109148600000004" [90m-> null[0m[0m
+      [31m-[0m[0m policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore" [90m-> null[0m[0m
+      [31m-[0m[0m role       = "ecaz-spire-aws-node" [90m-> null[0m[0m
+    }
+
+[1m  # aws_instance.coordinator[0m will be [1m[31mdestroyed[0m
+[0m  [31m-[0m[0m resource "aws_instance" "coordinator" {
+      [31m-[0m[0m ami                                  = "ami-04e0d7d889f694536" [90m-> null[0m[0m
+      [31m-[0m[0m arn                                  = "arn:aws:ec2:us-west-2:932658697181:instance/i-068f303289c8e500d" [90m-> null[0m[0m
+      [31m-[0m[0m associate_public_ip_address          = false [90m-> null[0m[0m
+      [31m-[0m[0m availability_zone                    = "us-west-2a" [90m-> null[0m[0m
+      [31m-[0m[0m cpu_core_count                       = 4 [90m-> null[0m[0m
+      [31m-[0m[0m cpu_threads_per_core                 = 1 [90m-> null[0m[0m
+      [31m-[0m[0m disable_api_stop                     = false [90m-> null[0m[0m
+      [31m-[0m[0m disable_api_termination              = false [90m-> null[0m[0m
+      [31m-[0m[0m ebs_optimized                        = false [90m-> null[0m[0m
+      [31m-[0m[0m get_password_data                    = false [90m-> null[0m[0m
+      [31m-[0m[0m hibernation                          = false [90m-> null[0m[0m
+      [31m-[0m[0m iam_instance_profile                 = "ecaz-spire-aws-node" [90m-> null[0m[0m
+      [31m-[0m[0m id                                   = "i-068f303289c8e500d" [90m-> null[0m[0m
+      [31m-[0m[0m instance_initiated_shutdown_behavior = "stop" [90m-> null[0m[0m
+      [31m-[0m[0m instance_state                       = "stopped" [90m-> null[0m[0m
+      [31m-[0m[0m instance_type                        = "r8g.xlarge" [90m-> null[0m[0m
+      [31m-[0m[0m ipv6_address_count                   = 0 [90m-> null[0m[0m
+      [31m-[0m[0m ipv6_addresses                       = [] [90m-> null[0m[0m
+      [31m-[0m[0m monitoring                           = false [90m-> null[0m[0m
+      [31m-[0m[0m placement_partition_number           = 0 [90m-> null[0m[0m
+      [31m-[0m[0m primary_network_interface_id         = "eni-021e5c98c5a441530" [90m-> null[0m[0m
+      [31m-[0m[0m private_dns                          = "ip-10-42-1-196.us-west-2.compute.internal" [90m-> null[0m[0m
+      [31m-[0m[0m private_ip                           = "10.42.1.196" [90m-> null[0m[0m
+      [31m-[0m[0m secondary_private_ips                = [] [90m-> null[0m[0m
+      [31m-[0m[0m security_groups                      = [] [90m-> null[0m[0m
+      [31m-[0m[0m source_dest_check                    = true [90m-> null[0m[0m
+      [31m-[0m[0m subnet_id                            = "subnet-0bbc149851847e770" [90m-> null[0m[0m
+      [31m-[0m[0m tags                                 = {
+          [31m-[0m[0m "Name" = "ecaz-spire-aws-coord"
+          [31m-[0m[0m "Role" = "coordinator"
+        } [90m-> null[0m[0m
+      [31m-[0m[0m tags_all                             = {
+          [31m-[0m[0m "AutoStop" = "2026-05-24T00:00:00Z"
+          [31m-[0m[0m "Name"     = "ecaz-spire-aws-coord"
+          [31m-[0m[0m "Owner"    = "kreneskyp"
+          [31m-[0m[0m "Phase"    = "13-spire-aws-verification"
+          [31m-[0m[0m "Project"  = "ecaz"
+          [31m-[0m[0m "Role"     = "coordinator"
+        } [90m-> null[0m[0m
+      [31m-[0m[0m tenancy                              = "default" [90m-> null[0m[0m
+      [31m-[0m[0m user_data_replace_on_change          = false [90m-> null[0m[0m
+      [31m-[0m[0m vpc_security_group_ids               = [
+          [31m-[0m[0m "sg-0851880f0e0ed3ee3",
+        ] [90m-> null[0m[0m
+        [90m# (9 unchanged attributes hidden)[0m[0m
+
+      [31m-[0m[0m capacity_reservation_specification {
+          [31m-[0m[0m capacity_reservation_preference = "open" [90m-> null[0m[0m
+        }
+
+      [31m-[0m[0m cpu_options {
+          [31m-[0m[0m core_count       = 4 [90m-> null[0m[0m
+          [31m-[0m[0m threads_per_core = 1 [90m-> null[0m[0m
+            [90m# (1 unchanged attribute hidden)[0m[0m
+        }
+
+      [31m-[0m[0m enclave_options {
+          [31m-[0m[0m enabled = false [90m-> null[0m[0m
+        }
+
+      [31m-[0m[0m maintenance_options {
+          [31m-[0m[0m auto_recovery = "default" [90m-> null[0m[0m
+        }
+
+      [31m-[0m[0m metadata_options {
+          [31m-[0m[0m http_endpoint               = "enabled" [90m-> null[0m[0m
+          [31m-[0m[0m http_protocol_ipv6          = "disabled" [90m-> null[0m[0m
+          [31m-[0m[0m http_put_response_hop_limit = 2 [90m-> null[0m[0m
+          [31m-[0m[0m http_tokens                 = "required" [90m-> null[0m[0m
+          [31m-[0m[0m instance_metadata_tags      = "disabled" [90m-> null[0m[0m
+        }
+
+      [31m-[0m[0m private_dns_name_options {
+          [31m-[0m[0m enable_resource_name_dns_a_record    = false [90m-> null[0m[0m
+          [31m-[0m[0m enable_resource_name_dns_aaaa_record = false [90m-> null[0m[0m
+          [31m-[0m[0m hostname_type                        = "ip-name" [90m-> null[0m[0m
+        }
+
+      [31m-[0m[0m root_block_device {
+          [31m-[0m[0m delete_on_termination = true [90m-> null[0m[0m
+          [31m-[0m[0m device_name           = "/dev/xvda" [90m-> null[0m[0m
+          [31m-[0m[0m encrypted             = true [90m-> null[0m[0m
+          [31m-[0m[0m iops                  = 3000 [90m-> null[0m[0m
+          [31m-[0m[0m kms_key_id            = "arn:aws:kms:us-west-2:932658697181:key/2da7b41b-819f-41f5-bbc7-8f3f01089bb0" [90m-> null[0m[0m
+          [31m-[0m[0m tags                  = {} [90m-> null[0m[0m
+          [31m-[0m[0m tags_all              = {
+              [31m-[0m[0m "AutoStop" = "2026-05-24T00:00:00Z"
+              [31m-[0m[0m "Owner"    = "kreneskyp"
+              [31m-[0m[0m "Phase"    = "13-spire-aws-verification"
+              [31m-[0m[0m "Project"  = "ecaz"
+            } [90m-> null[0m[0m
+          [31m-[0m[0m throughput            = 125 [90m-> null[0m[0m
+          [31m-[0m[0m volume_id             = "vol-058b6b1b23f7939fd" [90m-> null[0m[0m
+          [31m-[0m[0m volume_size           = 200 [90m-> null[0m[0m
+          [31m-[0m[0m volume_type           = "gp3" [90m-> null[0m[0m
+        }
+    }
+
+[1m  # aws_instance.remote[0][0m will be [1m[31mdestroyed[0m
+[0m  [31m-[0m[0m resource "aws_instance" "remote" {
+      [31m-[0m[0m ami                                  = "ami-04e0d7d889f694536" [90m-> null[0m[0m
+      [31m-[0m[0m arn                                  = "arn:aws:ec2:us-west-2:932658697181:instance/i-038a69ed982910349" [90m-> null[0m[0m
+      [31m-[0m[0m associate_public_ip_address          = false [90m-> null[0m[0m
+      [31m-[0m[0m availability_zone                    = "us-west-2a" [90m-> null[0m[0m
+      [31m-[0m[0m cpu_core_count                       = 4 [90m-> null[0m[0m
+      [31m-[0m[0m cpu_threads_per_core                 = 1 [90m-> null[0m[0m
+      [31m-[0m[0m disable_api_stop                     = false [90m-> null[0m[0m
+      [31m-[0m[0m disable_api_termination              = false [90m-> null[0m[0m
+      [31m-[0m[0m ebs_optimized                        = false [90m-> null[0m[0m
+      [31m-[0m[0m get_password_data                    = false [90m-> null[0m[0m
+      [31m-[0m[0m hibernation                          = false [90m-> null[0m[0m
+      [31m-[0m[0m iam_instance_profile                 = "ecaz-spire-aws-node" [90m-> null[0m[0m
+      [31m-[0m[0m id                                   = "i-038a69ed982910349" [90m-> null[0m[0m
+      [31m-[0m[0m instance_initiated_shutdown_behavior = "stop" [90m-> null[0m[0m
+      [31m-[0m[0m instance_state                       = "stopped" [90m-> null[0m[0m
+      [31m-[0m[0m instance_type                        = "r8g.xlarge" [90m-> null[0m[0m
+      [31m-[0m[0m ipv6_address_count                   = 0 [90m-> null[0m[0m
+      [31m-[0m[0m ipv6_addresses                       = [] [90m-> null[0m[0m
+      [31m-[0m[0m monitoring                           = false [90m-> null[0m[0m
+      [31m-[0m[0m placement_partition_number           = 0 [90m-> null[0m[0m
+      [31m-[0m[0m primary_network_interface_id         = "eni-0c9648df4b4edfaf6" [90m-> null[0m[0m
+      [31m-[0m[0m private_dns                          = "ip-10-42-1-56.us-west-2.compute.internal" [90m-> null[0m[0m
+      [31m-[0m[0m private_ip                           = "10.42.1.56" [90m-> null[0m[0m
+      [31m-[0m[0m secondary_private_ips                = [] [90m-> null[0m[0m
+      [31m-[0m[0m security_groups                      = [] [90m-> null[0m[0m
+      [31m-[0m[0m source_dest_check                    = true [90m-> null[0m[0m
+      [31m-[0m[0m subnet_id                            = "subnet-0bbc149851847e770" [90m-> null[0m[0m
+      [31m-[0m[0m tags                                 = {
+          [31m-[0m[0m "Name" = "ecaz-spire-aws-remote-1"
+          [31m-[0m[0m "Role" = "remote"
+        } [90m-> null[0m[0m
+      [31m-[0m[0m tags_all                             = {
+          [31m-[0m[0m "AutoStop" = "2026-05-24T00:00:00Z"
+          [31m-[0m[0m "Name"     = "ecaz-spire-aws-remote-1"
+          [31m-[0m[0m "Owner"    = "kreneskyp"
+          [31m-[0m[0m "Phase"    = "13-spire-aws-verification"
+          [31m-[0m[0m "Project"  = "ecaz"
+          [31m-[0m[0m "Role"     = "remote"
+        } [90m-> null[0m[0m
+      [31m-[0m[0m tenancy                              = "default" [90m-> null[0m[0m
+      [31m-[0m[0m user_data_replace_on_change          = false [90m-> null[0m[0m
+      [31m-[0m[0m vpc_security_group_ids               = [
+          [31m-[0m[0m "sg-05c788e04a143750a",
+        ] [90m-> null[0m[0m
+        [90m# (9 unchanged attributes hidden)[0m[0m
+
+      [31m-[0m[0m capacity_reservation_specification {
+          [31m-[0m[0m capacity_reservation_preference = "open" [90m-> null[0m[0m
+        }
+
+      [31m-[0m[0m cpu_options {
+          [31m-[0m[0m core_count       = 4 [90m-> null[0m[0m
+          [31m-[0m[0m threads_per_core = 1 [90m-> null[0m[0m
+            [90m# (1 unchanged attribute hidden)[0m[0m
+        }
+
+      [31m-[0m[0m enclave_options {
+          [31m-[0m[0m enabled = false [90m-> null[0m[0m
+        }
+
+      [31m-[0m[0m maintenance_options {
+          [31m-[0m[0m auto_recovery = "default" [90m-> null[0m[0m
+        }
+
+      [31m-[0m[0m metadata_options {
+          [31m-[0m[0m http_endpoint               = "enabled" [90m-> null[0m[0m
+          [31m-[0m[0m http_protocol_ipv6          = "disabled" [90m-> null[0m[0m
+          [31m-[0m[0m http_put_response_hop_limit = 2 [90m-> null[0m[0m
+          [31m-[0m[0m http_tokens                 = "required" [90m-> null[0m[0m
+          [31m-[0m[0m instance_metadata_tags      = "disabled" [90m-> null[0m[0m
+        }
+
+      [31m-[0m[0m private_dns_name_options {
+          [31m-[0m[0m enable_resource_name_dns_a_record    = false [90m-> null[0m[0m
+          [31m-[0m[0m enable_resource_name_dns_aaaa_record = false [90m-> null[0m[0m
+          [31m-[0m[0m hostname_type                        = "ip-name" [90m-> null[0m[0m
+        }
+
+      [31m-[0m[0m root_block_device {
+          [31m-[0m[0m delete_on_termination = true [90m-> null[0m[0m
+          [31m-[0m[0m device_name           = "/dev/xvda" [90m-> null[0m[0m
+          [31m-[0m[0m encrypted             = true [90m-> null[0m[0m
+          [31m-[0m[0m iops                  = 3000 [90m-> null[0m[0m
+          [31m-[0m[0m kms_key_id            = "arn:aws:kms:us-west-2:932658697181:key/2da7b41b-819f-41f5-bbc7-8f3f01089bb0" [90m-> null[0m[0m
+          [31m-[0m[0m tags                  = {} [90m-> null[0m[0m
+          [31m-[0m[0m tags_all              = {
+              [31m-[0m[0m "AutoStop" = "2026-05-24T00:00:00Z"
+              [31m-[0m[0m "Owner"    = "kreneskyp"
+              [31m-[0m[0m "Phase"    = "13-spire-aws-verification"
+              [31m-[0m[0m "Project"  = "ecaz"
+            } [90m-> null[0m[0m
+          [31m-[0m[0m throughput            = 125 [90m-> null[0m[0m
+          [31m-[0m[0m volume_id             = "vol-0fbbda986598eeba4" [90m-> null[0m[0m
+          [31m-[0m[0m volume_size           = 100 [90m-> null[0m[0m
+          [31m-[0m[0m volume_type           = "gp3" [90m-> null[0m[0m
+        }
+    }
+
+[1m  # aws_instance.remote[1][0m will be [1m[31mdestroyed[0m
+[0m  [31m-[0m[0m resource "aws_instance" "remote" {
+      [31m-[0m[0m ami                                  = "ami-04e0d7d889f694536" [90m-> null[0m[0m
+      [31m-[0m[0m arn                                  = "arn:aws:ec2:us-west-2:932658697181:instance/i-04cb4ccb7328736ef" [90m-> null[0m[0m
+      [31m-[0m[0m associate_public_ip_address          = false [90m-> null[0m[0m
+      [31m-[0m[0m availability_zone                    = "us-west-2a" [90m-> null[0m[0m
+      [31m-[0m[0m cpu_core_count                       = 4 [90m-> null[0m[0m
+      [31m-[0m[0m cpu_threads_per_core                 = 1 [90m-> null[0m[0m
+      [31m-[0m[0m disable_api_stop                     = false [90m-> null[0m[0m
+      [31m-[0m[0m disable_api_termination              = false [90m-> null[0m[0m
+      [31m-[0m[0m ebs_optimized                        = false [90m-> null[0m[0m
+      [31m-[0m[0m get_password_data                    = false [90m-> null[0m[0m
+      [31m-[0m[0m hibernation                          = false [90m-> null[0m[0m
+      [31m-[0m[0m iam_instance_profile                 = "ecaz-spire-aws-node" [90m-> null[0m[0m
+      [31m-[0m[0m id                                   = "i-04cb4ccb7328736ef" [90m-> null[0m[0m
+      [31m-[0m[0m instance_initiated_shutdown_behavior = "stop" [90m-> null[0m[0m
+      [31m-[0m[0m instance_state                       = "stopped" [90m-> null[0m[0m
+      [31m-[0m[0m instance_type                        = "r8g.xlarge" [90m-> null[0m[0m
+      [31m-[0m[0m ipv6_address_count                   = 0 [90m-> null[0m[0m
+      [31m-[0m[0m ipv6_addresses                       = [] [90m-> null[0m[0m
+      [31m-[0m[0m monitoring                           = false [90m-> null[0m[0m
+      [31m-[0m[0m placement_partition_number           = 0 [90m-> null[0m[0m
+      [31m-[0m[0m primary_network_interface_id         = "eni-0c00461541548b3cc" [90m-> null[0m[0m
+      [31m-[0m[0m private_dns                          = "ip-10-42-1-110.us-west-2.compute.internal" [90m-> null[0m[0m
+      [31m-[0m[0m private_ip                           = "10.42.1.110" [90m-> null[0m[0m
+      [31m-[0m[0m secondary_private_ips                = [] [90m-> null[0m[0m
+      [31m-[0m[0m security_groups                      = [] [90m-> null[0m[0m
+      [31m-[0m[0m source_dest_check                    = true [90m-> null[0m[0m
+      [31m-[0m[0m subnet_id                            = "subnet-0bbc149851847e770" [90m-> null[0m[0m
+      [31m-[0m[0m tags                                 = {
+          [31m-[0m[0m "Name" = "ecaz-spire-aws-remote-2"
+          [31m-[0m[0m "Role" = "remote"
+        } [90m-> null[0m[0m
+      [31m-[0m[0m tags_all                             = {
+          [31m-[0m[0m "AutoStop" = "2026-05-24T00:00:00Z"
+          [31m-[0m[0m "Name"     = "ecaz-spire-aws-remote-2"
+          [31m-[0m[0m "Owner"    = "kreneskyp"
+          [31m-[0m[0m "Phase"    = "13-spire-aws-verification"
+          [31m-[0m[0m "Project"  = "ecaz"
+          [31m-[0m[0m "Role"     = "remote"
+        } [90m-> null[0m[0m
+      [31m-[0m[0m tenancy                              = "default" [90m-> null[0m[0m
+      [31m-[0m[0m user_data_replace_on_change          = false [90m-> null[0m[0m
+      [31m-[0m[0m vpc_security_group_ids               = [
+          [31m-[0m[0m "sg-05c788e04a143750a",
+        ] [90m-> null[0m[0m
+        [90m# (9 unchanged attributes hidden)[0m[0m
+
+      [31m-[0m[0m capacity_reservation_specification {
+          [31m-[0m[0m capacity_reservation_preference = "open" [90m-> null[0m[0m
+        }
+
+      [31m-[0m[0m cpu_options {
+          [31m-[0m[0m core_count       = 4 [90m-> null[0m[0m
+          [31m-[0m[0m threads_per_core = 1 [90m-> null[0m[0m
+            [90m# (1 unchanged attribute hidden)[0m[0m
+        }
+
+      [31m-[0m[0m enclave_options {
+          [31m-[0m[0m enabled = false [90m-> null[0m[0m
+        }
+
+      [31m-[0m[0m maintenance_options {
+          [31m-[0m[0m auto_recovery = "default" [90m-> null[0m[0m
+        }
+
+      [31m-[0m[0m metadata_options {
+          [31m-[0m[0m http_endpoint               = "enabled" [90m-> null[0m[0m
+          [31m-[0m[0m http_protocol_ipv6          = "disabled" [90m-> null[0m[0m
+          [31m-[0m[0m http_put_response_hop_limit = 2 [90m-> null[0m[0m
+          [31m-[0m[0m http_tokens                 = "required" [90m-> null[0m[0m
+          [31m-[0m[0m instance_metadata_tags      = "disabled" [90m-> null[0m[0m
+        }
+
+      [31m-[0m[0m private_dns_name_options {
+          [31m-[0m[0m enable_resource_name_dns_a_record    = false [90m-> null[0m[0m
+          [31m-[0m[0m enable_resource_name_dns_aaaa_record = false [90m-> null[0m[0m
+          [31m-[0m[0m hostname_type                        = "ip-name" [90m-> null[0m[0m
+        }
+
+      [31m-[0m[0m root_block_device {
+          [31m-[0m[0m delete_on_termination = true [90m-> null[0m[0m
+          [31m-[0m[0m device_name           = "/dev/xvda" [90m-> null[0m[0m
+          [31m-[0m[0m encrypted             = true [90m-> null[0m[0m
+          [31m-[0m[0m iops                  = 3000 [90m-> null[0m[0m
+          [31m-[0m[0m kms_key_id            = "arn:aws:kms:us-west-2:932658697181:key/2da7b41b-819f-41f5-bbc7-8f3f01089bb0" [90m-> null[0m[0m
+          [31m-[0m[0m tags                  = {} [90m-> null[0m[0m
+          [31m-[0m[0m tags_all              = {
+              [31m-[0m[0m "AutoStop" = "2026-05-24T00:00:00Z"
+              [31m-[0m[0m "Owner"    = "kreneskyp"
+              [31m-[0m[0m "Phase"    = "13-spire-aws-verification"
+              [31m-[0m[0m "Project"  = "ecaz"
+            } [90m-> null[0m[0m
+          [31m-[0m[0m throughput            = 125 [90m-> null[0m[0m
+          [31m-[0m[0m volume_id             = "vol-083bcce80cb2d25fe" [90m-> null[0m[0m
+          [31m-[0m[0m volume_size           = 100 [90m-> null[0m[0m
+          [31m-[0m[0m volume_type           = "gp3" [90m-> null[0m[0m
+        }
+    }
+
+[1m  # aws_route_table.spire_aws_data[0m will be [1m[31mdestroyed[0m
+[0m  [31m-[0m[0m resource "aws_route_table" "spire_aws_data" {
+      [31m-[0m[0m arn              = "arn:aws:ec2:us-west-2:932658697181:route-table/rtb-0a3addb3203f0c592" [90m-> null[0m[0m
+      [31m-[0m[0m id               = "rtb-0a3addb3203f0c592" [90m-> null[0m[0m
+      [31m-[0m[0m owner_id         = "932658697181" [90m-> null[0m[0m
+      [31m-[0m[0m propagating_vgws = [] [90m-> null[0m[0m
+      [31m-[0m[0m route            = [] [90m-> null[0m[0m
+      [31m-[0m[0m tags             = {
+          [31m-[0m[0m "Name" = "ecaz-spire-aws-data"
+        } [90m-> null[0m[0m
+      [31m-[0m[0m tags_all         = {
+          [31m-[0m[0m "AutoStop" = "2026-05-24T00:00:00Z"
+          [31m-[0m[0m "Name"     = "ecaz-spire-aws-data"
+          [31m-[0m[0m "Owner"    = "kreneskyp"
+          [31m-[0m[0m "Phase"    = "13-spire-aws-verification"
+          [31m-[0m[0m "Project"  = "ecaz"
+        } [90m-> null[0m[0m
+      [31m-[0m[0m vpc_id           = "vpc-0a2f98585cd2fa2c7" [90m-> null[0m[0m
+    }
+
+[1m  # aws_route_table_association.spire_aws_data[0m will be [1m[31mdestroyed[0m
+[0m  [31m-[0m[0m resource "aws_route_table_association" "spire_aws_data" {
+      [31m-[0m[0m id             = "rtbassoc-062357cd9bd324b9f" [90m-> null[0m[0m
+      [31m-[0m[0m route_table_id = "rtb-0a3addb3203f0c592" [90m-> null[0m[0m
+      [31m-[0m[0m subnet_id      = "subnet-0bbc149851847e770" [90m-> null[0m[0m
+        [90m# (1 unchanged attribute hidden)[0m[0m
+    }
+
+[1m  # aws_s3_bucket.artifacts[0m will be [1m[31mdestroyed[0m
+[0m  [31m-[0m[0m resource "aws_s3_bucket" "artifacts" {
+      [31m-[0m[0m arn                         = "arn:aws:s3:::ecaz-spire-aws-20260523165108075000000003" [90m-> null[0m[0m
+      [31m-[0m[0m bucket                      = "ecaz-spire-aws-20260523165108075000000003" [90m-> null[0m[0m
+      [31m-[0m[0m bucket_domain_name          = "ecaz-spire-aws-20260523165108075000000003.s3.amazonaws.com" [90m-> null[0m[0m
+      [31m-[0m[0m bucket_prefix               = "ecaz-spire-aws-" [90m-> null[0m[0m
+      [31m-[0m[0m bucket_regional_domain_name = "ecaz-spire-aws-20260523165108075000000003.s3.us-west-2.amazonaws.com" [90m-> null[0m[0m
+      [31m-[0m[0m force_destroy               = false [90m-> null[0m[0m
+      [31m-[0m[0m hosted_zone_id              = "Z3BJ6K6RIION7M" [90m-> null[0m[0m
+      [31m-[0m[0m id                          = "ecaz-spire-aws-20260523165108075000000003" [90m-> null[0m[0m
+      [31m-[0m[0m object_lock_enabled         = false [90m-> null[0m[0m
+      [31m-[0m[0m region                      = "us-west-2" [90m-> null[0m[0m
+      [31m-[0m[0m request_payer               = "BucketOwner" [90m-> null[0m[0m
+      [31m-[0m[0m tags                        = {} [90m-> null[0m[0m
+      [31m-[0m[0m tags_all                    = {
+          [31m-[0m[0m "AutoStop" = "2026-05-24T00:00:00Z"
+          [31m-[0m[0m "Owner"    = "kreneskyp"
+          [31m-[0m[0m "Phase"    = "13-spire-aws-verification"
+          [31m-[0m[0m "Project"  = "ecaz"
+        } [90m-> null[0m[0m
+        [90m# (2 unchanged attributes hidden)[0m[0m
+
+      [31m-[0m[0m grant {
+          [31m-[0m[0m id          = "aa61570614a0334dbb4de3b36666be959cf269342f6a80a0d738c91083fd7476" [90m-> null[0m[0m
+          [31m-[0m[0m permissions = [
+              [31m-[0m[0m "FULL_CONTROL",
+            ] [90m-> null[0m[0m
+          [31m-[0m[0m type        = "CanonicalUser" [90m-> null[0m[0m
+            [90m# (1 unchanged attribute hidden)[0m[0m
+        }
+
+      [31m-[0m[0m server_side_encryption_configuration {
+          [31m-[0m[0m rule {
+              [31m-[0m[0m bucket_key_enabled = false [90m-> null[0m[0m
+
+              [31m-[0m[0m apply_server_side_encryption_by_default {
+                  [31m-[0m[0m sse_algorithm     = "AES256" [90m-> null[0m[0m
+                    [90m# (1 unchanged attribute hidden)[0m[0m
+                }
+            }
+        }
+
+      [31m-[0m[0m versioning {
+          [31m-[0m[0m enabled    = true [90m-> null[0m[0m
+          [31m-[0m[0m mfa_delete = false [90m-> null[0m[0m
+        }
+    }
+
+[1m  # aws_s3_bucket_server_side_encryption_configuration.artifacts[0m will be [1m[31mdestroyed[0m
+[0m  [31m-[0m[0m resource "aws_s3_bucket_server_side_encryption_configuration" "artifacts" {
+      [31m-[0m[0m bucket                = "ecaz-spire-aws-20260523165108075000000003" [90m-> null[0m[0m
+      [31m-[0m[0m id                    = "ecaz-spire-aws-20260523165108075000000003" [90m-> null[0m[0m
+        [90m# (1 unchanged attribute hidden)[0m[0m
+
+      [31m-[0m[0m rule {
+          [31m-[0m[0m bucket_key_enabled = false [90m-> null[0m[0m
+
+          [31m-[0m[0m apply_server_side_encryption_by_default {
+              [31m-[0m[0m sse_algorithm     = "AES256" [90m-> null[0m[0m
+                [90m# (1 unchanged attribute hidden)[0m[0m
+            }
+        }
+    }
+
+[1m  # aws_s3_bucket_versioning.artifacts[0m will be [1m[31mdestroyed[0m
+[0m  [31m-[0m[0m resource "aws_s3_bucket_versioning" "artifacts" {
+      [31m-[0m[0m bucket                = "ecaz-spire-aws-20260523165108075000000003" [90m-> null[0m[0m
+      [31m-[0m[0m id                    = "ecaz-spire-aws-20260523165108075000000003" [90m-> null[0m[0m
+        [90m# (1 unchanged attribute hidden)[0m[0m
+
+      [31m-[0m[0m versioning_configuration {
+          [31m-[0m[0m status     = "Enabled" [90m-> null[0m[0m
+            [90m# (1 unchanged attribute hidden)[0m[0m
+        }
+    }
+
+[1m  # aws_secretsmanager_secret.remote[0][0m will be [1m[31mdestroyed[0m
+[0m  [31m-[0m[0m resource "aws_secretsmanager_secret" "remote" {
+      [31m-[0m[0m arn                            = "arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-spire-aws-remote-1-wyDVQU" [90m-> null[0m[0m
+      [31m-[0m[0m force_overwrite_replica_secret = false [90m-> null[0m[0m
+      [31m-[0m[0m id                             = "arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-spire-aws-remote-1-wyDVQU" [90m-> null[0m[0m
+      [31m-[0m[0m name                           = "ecaz-spire-aws-remote-1" [90m-> null[0m[0m
+      [31m-[0m[0m recovery_window_in_days        = 30 [90m-> null[0m[0m
+      [31m-[0m[0m tags                           = {} [90m-> null[0m[0m
+      [31m-[0m[0m tags_all                       = {
+          [31m-[0m[0m "AutoStop" = "2026-05-24T00:00:00Z"
+          [31m-[0m[0m "Owner"    = "kreneskyp"
+          [31m-[0m[0m "Phase"    = "13-spire-aws-verification"
+          [31m-[0m[0m "Project"  = "ecaz"
+        } [90m-> null[0m[0m
+        [90m# (4 unchanged attributes hidden)[0m[0m
+    }
+
+[1m  # aws_secretsmanager_secret.remote[1][0m will be [1m[31mdestroyed[0m
+[0m  [31m-[0m[0m resource "aws_secretsmanager_secret" "remote" {
+      [31m-[0m[0m arn                            = "arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-spire-aws-remote-2-EEfClW" [90m-> null[0m[0m
+      [31m-[0m[0m force_overwrite_replica_secret = false [90m-> null[0m[0m
+      [31m-[0m[0m id                             = "arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-spire-aws-remote-2-EEfClW" [90m-> null[0m[0m
+      [31m-[0m[0m name                           = "ecaz-spire-aws-remote-2" [90m-> null[0m[0m
+      [31m-[0m[0m recovery_window_in_days        = 30 [90m-> null[0m[0m
+      [31m-[0m[0m tags                           = {} [90m-> null[0m[0m
+      [31m-[0m[0m tags_all                       = {
+          [31m-[0m[0m "AutoStop" = "2026-05-24T00:00:00Z"
+          [31m-[0m[0m "Owner"    = "kreneskyp"
+          [31m-[0m[0m "Phase"    = "13-spire-aws-verification"
+          [31m-[0m[0m "Project"  = "ecaz"
+        } [90m-> null[0m[0m
+        [90m# (4 unchanged attributes hidden)[0m[0m
+    }
+
+[1m  # aws_secretsmanager_secret_version.remote[0][0m will be [1m[31mdestroyed[0m
+[0m  [31m-[0m[0m resource "aws_secretsmanager_secret_version" "remote" {
+      [31m-[0m[0m arn            = "arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-spire-aws-remote-1-wyDVQU" [90m-> null[0m[0m
+      [31m-[0m[0m id             = "arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-spire-aws-remote-1-wyDVQU|terraform-2026052316513476710000000e" [90m-> null[0m[0m
+      [31m-[0m[0m secret_id      = "arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-spire-aws-remote-1-wyDVQU" [90m-> null[0m[0m
+      [31m-[0m[0m secret_string  = (sensitive value) [90m-> null[0m[0m
+      [31m-[0m[0m version_id     = "terraform-2026052316513476710000000e" [90m-> null[0m[0m
+      [31m-[0m[0m version_stages = [
+          [31m-[0m[0m "AWSCURRENT",
+        ] [90m-> null[0m[0m
+        [90m# (1 unchanged attribute hidden)[0m[0m
+    }
+
+[1m  # aws_secretsmanager_secret_version.remote[1][0m will be [1m[31mdestroyed[0m
+[0m  [31m-[0m[0m resource "aws_secretsmanager_secret_version" "remote" {
+      [31m-[0m[0m arn            = "arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-spire-aws-remote-2-EEfClW" [90m-> null[0m[0m
+      [31m-[0m[0m id             = "arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-spire-aws-remote-2-EEfClW|terraform-2026052316513476730000000f" [90m-> null[0m[0m
+      [31m-[0m[0m secret_id      = "arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-spire-aws-remote-2-EEfClW" [90m-> null[0m[0m
+      [31m-[0m[0m secret_string  = (sensitive value) [90m-> null[0m[0m
+      [31m-[0m[0m version_id     = "terraform-2026052316513476730000000f" [90m-> null[0m[0m
+      [31m-[0m[0m version_stages = [
+          [31m-[0m[0m "AWSCURRENT",
+        ] [90m-> null[0m[0m
+        [90m# (1 unchanged attribute hidden)[0m[0m
+    }
+
+[1m  # aws_security_group.coordinator[0m will be [1m[31mdestroyed[0m
+[0m  [31m-[0m[0m resource "aws_security_group" "coordinator" {
+      [31m-[0m[0m arn                    = "arn:aws:ec2:us-west-2:932658697181:security-group/sg-0851880f0e0ed3ee3" [90m-> null[0m[0m
+      [31m-[0m[0m description            = "SPIRE coordinator: no public ingress; egress to remote SG on 5432." [90m-> null[0m[0m
+      [31m-[0m[0m egress                 = [
+          [31m-[0m[0m {
+              [31m-[0m[0m cidr_blocks      = [
+                  [31m-[0m[0m "0.0.0.0/0",
+                ]
+              [31m-[0m[0m from_port        = 0
+              [31m-[0m[0m ipv6_cidr_blocks = []
+              [31m-[0m[0m prefix_list_ids  = []
+              [31m-[0m[0m protocol         = "-1"
+              [31m-[0m[0m security_groups  = []
+              [31m-[0m[0m self             = false
+              [31m-[0m[0m to_port          = 0
+                [90m# (1 unchanged attribute hidden)[0m[0m
+            },
+        ] [90m-> null[0m[0m
+      [31m-[0m[0m id                     = "sg-0851880f0e0ed3ee3" [90m-> null[0m[0m
+      [31m-[0m[0m ingress                = [] [90m-> null[0m[0m
+      [31m-[0m[0m name                   = "ecaz-spire-aws-coord" [90m-> null[0m[0m
+      [31m-[0m[0m owner_id               = "932658697181" [90m-> null[0m[0m
+      [31m-[0m[0m revoke_rules_on_delete = false [90m-> null[0m[0m
+      [31m-[0m[0m tags                   = {
+          [31m-[0m[0m "Name" = "ecaz-spire-aws-coord"
+        } [90m-> null[0m[0m
+      [31m-[0m[0m tags_all               = {
+          [31m-[0m[0m "AutoStop" = "2026-05-24T00:00:00Z"
+          [31m-[0m[0m "Name"     = "ecaz-spire-aws-coord"
+          [31m-[0m[0m "Owner"    = "kreneskyp"
+          [31m-[0m[0m "Phase"    = "13-spire-aws-verification"
+          [31m-[0m[0m "Project"  = "ecaz"
+        } [90m-> null[0m[0m
+      [31m-[0m[0m vpc_id                 = "vpc-0a2f98585cd2fa2c7" [90m-> null[0m[0m
+        [90m# (1 unchanged attribute hidden)[0m[0m
+    }
+
+[1m  # aws_security_group.endpoint[0m will be [1m[31mdestroyed[0m
+[0m  [31m-[0m[0m resource "aws_security_group" "endpoint" {
+      [31m-[0m[0m arn                    = "arn:aws:ec2:us-west-2:932658697181:security-group/sg-0f94c9c4a957583c0" [90m-> null[0m[0m
+      [31m-[0m[0m description            = "Allow data-plane SGs to reach interface VPC endpoints." [90m-> null[0m[0m
+      [31m-[0m[0m egress                 = [
+          [31m-[0m[0m {
+              [31m-[0m[0m cidr_blocks      = [
+                  [31m-[0m[0m "0.0.0.0/0",
+                ]
+              [31m-[0m[0m from_port        = 0
+              [31m-[0m[0m ipv6_cidr_blocks = []
+              [31m-[0m[0m prefix_list_ids  = []
+              [31m-[0m[0m protocol         = "-1"
+              [31m-[0m[0m security_groups  = []
+              [31m-[0m[0m self             = false
+              [31m-[0m[0m to_port          = 0
+                [90m# (1 unchanged attribute hidden)[0m[0m
+            },
+        ] [90m-> null[0m[0m
+      [31m-[0m[0m id                     = "sg-0f94c9c4a957583c0" [90m-> null[0m[0m
+      [31m-[0m[0m ingress                = [
+          [31m-[0m[0m {
+              [31m-[0m[0m cidr_blocks      = [
+                  [31m-[0m[0m "10.42.1.0/24",
+                ]
+              [31m-[0m[0m description      = "HTTPS from the data plane."
+              [31m-[0m[0m from_port        = 443
+              [31m-[0m[0m ipv6_cidr_blocks = []
+              [31m-[0m[0m prefix_list_ids  = []
+              [31m-[0m[0m protocol         = "tcp"
+              [31m-[0m[0m security_groups  = []
+              [31m-[0m[0m self             = false
+              [31m-[0m[0m to_port          = 443
+            },
+        ] [90m-> null[0m[0m
+      [31m-[0m[0m name                   = "ecaz-spire-aws-endpoint" [90m-> null[0m[0m
+      [31m-[0m[0m owner_id               = "932658697181" [90m-> null[0m[0m
+      [31m-[0m[0m revoke_rules_on_delete = false [90m-> null[0m[0m
+      [31m-[0m[0m tags                   = {} [90m-> null[0m[0m
+      [31m-[0m[0m tags_all               = {
+          [31m-[0m[0m "AutoStop" = "2026-05-24T00:00:00Z"
+          [31m-[0m[0m "Owner"    = "kreneskyp"
+          [31m-[0m[0m "Phase"    = "13-spire-aws-verification"
+          [31m-[0m[0m "Project"  = "ecaz"
+        } [90m-> null[0m[0m
+      [31m-[0m[0m vpc_id                 = "vpc-0a2f98585cd2fa2c7" [90m-> null[0m[0m
+        [90m# (1 unchanged attribute hidden)[0m[0m
+    }
+
+[1m  # aws_security_group.remote[0m will be [1m[31mdestroyed[0m
+[0m  [31m-[0m[0m resource "aws_security_group" "remote" {
+      [31m-[0m[0m arn                    = "arn:aws:ec2:us-west-2:932658697181:security-group/sg-05c788e04a143750a" [90m-> null[0m[0m
+      [31m-[0m[0m description            = "SPIRE remote: ingress only from the coordinator SG on 5432." [90m-> null[0m[0m
+      [31m-[0m[0m egress                 = [
+          [31m-[0m[0m {
+              [31m-[0m[0m cidr_blocks      = [
+                  [31m-[0m[0m "0.0.0.0/0",
+                ]
+              [31m-[0m[0m from_port        = 0
+              [31m-[0m[0m ipv6_cidr_blocks = []
+              [31m-[0m[0m prefix_list_ids  = []
+              [31m-[0m[0m protocol         = "-1"
+              [31m-[0m[0m security_groups  = []
+              [31m-[0m[0m self             = false
+              [31m-[0m[0m to_port          = 0
+                [90m# (1 unchanged attribute hidden)[0m[0m
+            },
+        ] [90m-> null[0m[0m
+      [31m-[0m[0m id                     = "sg-05c788e04a143750a" [90m-> null[0m[0m
+      [31m-[0m[0m ingress                = [
+          [31m-[0m[0m {
+              [31m-[0m[0m cidr_blocks      = []
+              [31m-[0m[0m description      = "PG from coordinator to remote."
+              [31m-[0m[0m from_port        = 5432
+              [31m-[0m[0m ipv6_cidr_blocks = []
+              [31m-[0m[0m prefix_list_ids  = []
+              [31m-[0m[0m protocol         = "tcp"
+              [31m-[0m[0m security_groups  = [
+                  [31m-[0m[0m "sg-0851880f0e0ed3ee3",
+                ]
+              [31m-[0m[0m self             = false
+              [31m-[0m[0m to_port          = 5432
+            },
+        ] [90m-> null[0m[0m
+      [31m-[0m[0m name                   = "ecaz-spire-aws-remote" [90m-> null[0m[0m
+      [31m-[0m[0m owner_id               = "932658697181" [90m-> null[0m[0m
+      [31m-[0m[0m revoke_rules_on_delete = false [90m-> null[0m[0m
+      [31m-[0m[0m tags                   = {
+          [31m-[0m[0m "Name" = "ecaz-spire-aws-remote"
+        } [90m-> null[0m[0m
+      [31m-[0m[0m tags_all               = {
+          [31m-[0m[0m "AutoStop" = "2026-05-24T00:00:00Z"
+          [31m-[0m[0m "Name"     = "ecaz-spire-aws-remote"
+          [31m-[0m[0m "Owner"    = "kreneskyp"
+          [31m-[0m[0m "Phase"    = "13-spire-aws-verification"
+          [31m-[0m[0m "Project"  = "ecaz"
+        } [90m-> null[0m[0m
+      [31m-[0m[0m vpc_id                 = "vpc-0a2f98585cd2fa2c7" [90m-> null[0m[0m
+        [90m# (1 unchanged attribute hidden)[0m[0m
+    }
+
+[1m  # aws_security_group_rule.coord_to_remote_pg[0m will be [1m[31mdestroyed[0m
+[0m  [31m-[0m[0m resource "aws_security_group_rule" "coord_to_remote_pg" {
+      [31m-[0m[0m description              = "PG from coordinator to remote." [90m-> null[0m[0m
+      [31m-[0m[0m from_port                = 5432 [90m-> null[0m[0m
+      [31m-[0m[0m id                       = "sgrule-2435537201" [90m-> null[0m[0m
+      [31m-[0m[0m protocol                 = "tcp" [90m-> null[0m[0m
+      [31m-[0m[0m security_group_id        = "sg-05c788e04a143750a" [90m-> null[0m[0m
+      [31m-[0m[0m security_group_rule_id   = "sgr-0aaa034dc4b89f062" [90m-> null[0m[0m
+      [31m-[0m[0m self                     = false [90m-> null[0m[0m
+      [31m-[0m[0m source_security_group_id = "sg-0851880f0e0ed3ee3" [90m-> null[0m[0m
+      [31m-[0m[0m to_port                  = 5432 [90m-> null[0m[0m
+      [31m-[0m[0m type                     = "ingress" [90m-> null[0m[0m
+    }
+
+[1m  # aws_subnet.spire_aws_data[0m will be [1m[31mdestroyed[0m
+[0m  [31m-[0m[0m resource "aws_subnet" "spire_aws_data" {
+      [31m-[0m[0m arn                                            = "arn:aws:ec2:us-west-2:932658697181:subnet/subnet-0bbc149851847e770" [90m-> null[0m[0m
+      [31m-[0m[0m assign_ipv6_address_on_creation                = false [90m-> null[0m[0m
+      [31m-[0m[0m availability_zone                              = "us-west-2a" [90m-> null[0m[0m
+      [31m-[0m[0m availability_zone_id                           = "usw2-az2" [90m-> null[0m[0m
+      [31m-[0m[0m cidr_block                                     = "10.42.1.0/24" [90m-> null[0m[0m
+      [31m-[0m[0m enable_dns64                                   = false [90m-> null[0m[0m
+      [31m-[0m[0m enable_lni_at_device_index                     = 0 [90m-> null[0m[0m
+      [31m-[0m[0m enable_resource_name_dns_a_record_on_launch    = false [90m-> null[0m[0m
+      [31m-[0m[0m enable_resource_name_dns_aaaa_record_on_launch = false [90m-> null[0m[0m
+      [31m-[0m[0m id                                             = "subnet-0bbc149851847e770" [90m-> null[0m[0m
+      [31m-[0m[0m ipv6_native                                    = false [90m-> null[0m[0m
+      [31m-[0m[0m map_customer_owned_ip_on_launch                = false [90m-> null[0m[0m
+      [31m-[0m[0m map_public_ip_on_launch                        = false [90m-> null[0m[0m
+      [31m-[0m[0m owner_id                                       = "932658697181" [90m-> null[0m[0m
+      [31m-[0m[0m private_dns_hostname_type_on_launch            = "ip-name" [90m-> null[0m[0m
+      [31m-[0m[0m tags                                           = {
+          [31m-[0m[0m "Name" = "ecaz-spire-aws-data"
+        } [90m-> null[0m[0m
+      [31m-[0m[0m tags_all                                       = {
+          [31m-[0m[0m "AutoStop" = "2026-05-24T00:00:00Z"
+          [31m-[0m[0m "Name"     = "ecaz-spire-aws-data"
+          [31m-[0m[0m "Owner"    = "kreneskyp"
+          [31m-[0m[0m "Phase"    = "13-spire-aws-verification"
+          [31m-[0m[0m "Project"  = "ecaz"
+        } [90m-> null[0m[0m
+      [31m-[0m[0m vpc_id                                         = "vpc-0a2f98585cd2fa2c7" [90m-> null[0m[0m
+        [90m# (4 unchanged attributes hidden)[0m[0m
+    }
+
+[1m  # aws_vpc.spire_aws[0m will be [1m[31mdestroyed[0m
+[0m  [31m-[0m[0m resource "aws_vpc" "spire_aws" {
+      [31m-[0m[0m arn                                  = "arn:aws:ec2:us-west-2:932658697181:vpc/vpc-0a2f98585cd2fa2c7" [90m-> null[0m[0m
+      [31m-[0m[0m assign_generated_ipv6_cidr_block     = false [90m-> null[0m[0m
+      [31m-[0m[0m cidr_block                           = "10.42.0.0/16" [90m-> null[0m[0m
+      [31m-[0m[0m default_network_acl_id               = "acl-0ff2b161838cc584c" [90m-> null[0m[0m
+      [31m-[0m[0m default_route_table_id               = "rtb-075f23057add24d5a" [90m-> null[0m[0m
+      [31m-[0m[0m default_security_group_id            = "sg-0ec381d7f68077435" [90m-> null[0m[0m
+      [31m-[0m[0m dhcp_options_id                      = "dopt-06bdd876a1435e446" [90m-> null[0m[0m
+      [31m-[0m[0m enable_dns_hostnames                 = true [90m-> null[0m[0m
+      [31m-[0m[0m enable_dns_support                   = true [90m-> null[0m[0m
+      [31m-[0m[0m enable_network_address_usage_metrics = false [90m-> null[0m[0m
+      [31m-[0m[0m id                                   = "vpc-0a2f98585cd2fa2c7" [90m-> null[0m[0m
+      [31m-[0m[0m instance_tenancy                     = "default" [90m-> null[0m[0m
+      [31m-[0m[0m ipv6_netmask_length                  = 0 [90m-> null[0m[0m
+      [31m-[0m[0m main_route_table_id                  = "rtb-075f23057add24d5a" [90m-> null[0m[0m
+      [31m-[0m[0m owner_id                             = "932658697181" [90m-> null[0m[0m
+      [31m-[0m[0m tags                                 = {
+          [31m-[0m[0m "Name" = "ecaz-spire-aws"
+        } [90m-> null[0m[0m
+      [31m-[0m[0m tags_all                             = {
+          [31m-[0m[0m "AutoStop" = "2026-05-24T00:00:00Z"
+          [31m-[0m[0m "Name"     = "ecaz-spire-aws"
+          [31m-[0m[0m "Owner"    = "kreneskyp"
+          [31m-[0m[0m "Phase"    = "13-spire-aws-verification"
+          [31m-[0m[0m "Project"  = "ecaz"
+        } [90m-> null[0m[0m
+        [90m# (4 unchanged attributes hidden)[0m[0m
+    }
+
+[1m  # aws_vpc_endpoint.ec2messages[0m will be [1m[31mdestroyed[0m
+[0m  [31m-[0m[0m resource "aws_vpc_endpoint" "ec2messages" {
+      [31m-[0m[0m arn                        = "arn:aws:ec2:us-west-2:932658697181:vpc-endpoint/vpce-0115d745d6b007a4e" [90m-> null[0m[0m
+      [31m-[0m[0m cidr_blocks                = [] [90m-> null[0m[0m
+      [31m-[0m[0m dns_entry                  = [
+          [31m-[0m[0m {
+              [31m-[0m[0m dns_name       = "vpce-0115d745d6b007a4e-a3w273rk.ec2messages.us-west-2.vpce.amazonaws.com"
+              [31m-[0m[0m hosted_zone_id = "Z1YSA3EXCYUU9Z"
+            },
+          [31m-[0m[0m {
+              [31m-[0m[0m dns_name       = "vpce-0115d745d6b007a4e-a3w273rk-us-west-2a.ec2messages.us-west-2.vpce.amazonaws.com"
+              [31m-[0m[0m hosted_zone_id = "Z1YSA3EXCYUU9Z"
+            },
+          [31m-[0m[0m {
+              [31m-[0m[0m dns_name       = "ec2messages.us-west-2.amazonaws.com"
+              [31m-[0m[0m hosted_zone_id = "Z04293071QF5YZFFZK6NI"
+            },
+        ] [90m-> null[0m[0m
+      [31m-[0m[0m id                         = "vpce-0115d745d6b007a4e" [90m-> null[0m[0m
+      [31m-[0m[0m ip_address_type            = "ipv4" [90m-> null[0m[0m
+      [31m-[0m[0m network_interface_ids      = [
+          [31m-[0m[0m "eni-05dac1d1dfdcb9a43",
+        ] [90m-> null[0m[0m
+      [31m-[0m[0m owner_id                   = "932658697181" [90m-> null[0m[0m
+      [31m-[0m[0m policy                     = jsonencode(
+            {
+              [31m-[0m[0m Statement = [
+                  [31m-[0m[0m {
+                      [31m-[0m[0m Action    = "*"
+                      [31m-[0m[0m Effect    = "Allow"
+                      [31m-[0m[0m Principal = "*"
+                      [31m-[0m[0m Resource  = "*"
+                    },
+                ]
+            }
+        ) [90m-> null[0m[0m
+      [31m-[0m[0m private_dns_enabled        = true [90m-> null[0m[0m
+      [31m-[0m[0m requester_managed          = false [90m-> null[0m[0m
+      [31m-[0m[0m route_table_ids            = [] [90m-> null[0m[0m
+      [31m-[0m[0m security_group_ids         = [
+          [31m-[0m[0m "sg-0f94c9c4a957583c0",
+        ] [90m-> null[0m[0m
+      [31m-[0m[0m service_name               = "com.amazonaws.us-west-2.ec2messages" [90m-> null[0m[0m
+      [31m-[0m[0m service_region             = "us-west-2" [90m-> null[0m[0m
+      [31m-[0m[0m state                      = "available" [90m-> null[0m[0m
+      [31m-[0m[0m subnet_ids                 = [
+          [31m-[0m[0m "subnet-0bbc149851847e770",
+        ] [90m-> null[0m[0m
+      [31m-[0m[0m tags                       = {} [90m-> null[0m[0m
+      [31m-[0m[0m tags_all                   = {
+          [31m-[0m[0m "AutoStop" = "2026-05-24T00:00:00Z"
+          [31m-[0m[0m "Owner"    = "kreneskyp"
+          [31m-[0m[0m "Phase"    = "13-spire-aws-verification"
+          [31m-[0m[0m "Project"  = "ecaz"
+        } [90m-> null[0m[0m
+      [31m-[0m[0m vpc_endpoint_type          = "Interface" [90m-> null[0m[0m
+      [31m-[0m[0m vpc_id                     = "vpc-0a2f98585cd2fa2c7" [90m-> null[0m[0m
+        [90m# (2 unchanged attributes hidden)[0m[0m
+
+      [31m-[0m[0m dns_options {
+          [31m-[0m[0m dns_record_ip_type                             = "ipv4" [90m-> null[0m[0m
+          [31m-[0m[0m private_dns_only_for_inbound_resolver_endpoint = false [90m-> null[0m[0m
+        }
+
+      [31m-[0m[0m subnet_configuration {
+          [31m-[0m[0m ipv4      = "10.42.1.126" [90m-> null[0m[0m
+          [31m-[0m[0m subnet_id = "subnet-0bbc149851847e770" [90m-> null[0m[0m
+            [90m# (1 unchanged attribute hidden)[0m[0m
+        }
+    }
+
+[1m  # aws_vpc_endpoint.s3[0m will be [1m[31mdestroyed[0m
+[0m  [31m-[0m[0m resource "aws_vpc_endpoint" "s3" {
+      [31m-[0m[0m arn                        = "arn:aws:ec2:us-west-2:932658697181:vpc-endpoint/vpce-029fdbe5f03826deb" [90m-> null[0m[0m
+      [31m-[0m[0m cidr_blocks                = [
+          [31m-[0m[0m "3.5.76.0/22",
+          [31m-[0m[0m "16.12.96.0/20",
+          [31m-[0m[0m "16.12.112.0/21",
+          [31m-[0m[0m "3.5.80.0/21",
+          [31m-[0m[0m "16.15.32.0/20",
+          [31m-[0m[0m "18.34.48.0/20",
+          [31m-[0m[0m "18.34.244.0/22",
+          [31m-[0m[0m "16.12.88.0/21",
+          [31m-[0m[0m "52.92.128.0/17",
+          [31m-[0m[0m "52.218.128.0/17",
+        ] [90m-> null[0m[0m
+      [31m-[0m[0m dns_entry                  = [] [90m-> null[0m[0m
+      [31m-[0m[0m id                         = "vpce-029fdbe5f03826deb" [90m-> null[0m[0m
+      [31m-[0m[0m ip_address_type            = "ipv4" [90m-> null[0m[0m
+      [31m-[0m[0m network_interface_ids      = [] [90m-> null[0m[0m
+      [31m-[0m[0m owner_id                   = "932658697181" [90m-> null[0m[0m
+      [31m-[0m[0m policy                     = jsonencode(
+            {
+              [31m-[0m[0m Statement = [
+                  [31m-[0m[0m {
+                      [31m-[0m[0m Action    = "*"
+                      [31m-[0m[0m Effect    = "Allow"
+                      [31m-[0m[0m Principal = "*"
+                      [31m-[0m[0m Resource  = "*"
+                    },
+                ]
+              [31m-[0m[0m Version   = "2008-10-17"
+            }
+        ) [90m-> null[0m[0m
+      [31m-[0m[0m prefix_list_id             = "pl-68a54001" [90m-> null[0m[0m
+      [31m-[0m[0m private_dns_enabled        = false [90m-> null[0m[0m
+      [31m-[0m[0m requester_managed          = false [90m-> null[0m[0m
+      [31m-[0m[0m route_table_ids            = [
+          [31m-[0m[0m "rtb-0a3addb3203f0c592",
+        ] [90m-> null[0m[0m
+      [31m-[0m[0m security_group_ids         = [] [90m-> null[0m[0m
+      [31m-[0m[0m service_name               = "com.amazonaws.us-west-2.s3" [90m-> null[0m[0m
+      [31m-[0m[0m service_region             = "us-west-2" [90m-> null[0m[0m
+      [31m-[0m[0m state                      = "available" [90m-> null[0m[0m
+      [31m-[0m[0m subnet_ids                 = [] [90m-> null[0m[0m
+      [31m-[0m[0m tags                       = {} [90m-> null[0m[0m
+      [31m-[0m[0m tags_all                   = {
+          [31m-[0m[0m "AutoStop" = "2026-05-24T00:00:00Z"
+          [31m-[0m[0m "Owner"    = "kreneskyp"
+          [31m-[0m[0m "Phase"    = "13-spire-aws-verification"
+          [31m-[0m[0m "Project"  = "ecaz"
+        } [90m-> null[0m[0m
+      [31m-[0m[0m vpc_endpoint_type          = "Gateway" [90m-> null[0m[0m
+      [31m-[0m[0m vpc_id                     = "vpc-0a2f98585cd2fa2c7" [90m-> null[0m[0m
+        [90m# (2 unchanged attributes hidden)[0m[0m
+
+      [31m-[0m[0m dns_options {
+          [31m-[0m[0m dns_record_ip_type                             = "service-defined" [90m-> null[0m[0m
+          [31m-[0m[0m private_dns_only_for_inbound_resolver_endpoint = false [90m-> null[0m[0m
+        }
+    }
+
+[1m  # aws_vpc_endpoint.secretsmanager[0m will be [1m[31mdestroyed[0m
+[0m  [31m-[0m[0m resource "aws_vpc_endpoint" "secretsmanager" {
+      [31m-[0m[0m arn                        = "arn:aws:ec2:us-west-2:932658697181:vpc-endpoint/vpce-0b4ab6354d7d5122c" [90m-> null[0m[0m
+      [31m-[0m[0m cidr_blocks                = [] [90m-> null[0m[0m
+      [31m-[0m[0m dns_entry                  = [
+          [31m-[0m[0m {
+              [31m-[0m[0m dns_name       = "vpce-0b4ab6354d7d5122c-ttnmkbxj.secretsmanager.us-west-2.vpce.amazonaws.com"
+              [31m-[0m[0m hosted_zone_id = "Z1YSA3EXCYUU9Z"
+            },
+          [31m-[0m[0m {
+              [31m-[0m[0m dns_name       = "vpce-0b4ab6354d7d5122c-ttnmkbxj-us-west-2a.secretsmanager.us-west-2.vpce.amazonaws.com"
+              [31m-[0m[0m hosted_zone_id = "Z1YSA3EXCYUU9Z"
+            },
+          [31m-[0m[0m {
+              [31m-[0m[0m dns_name       = "secretsmanager.us-west-2.amazonaws.com"
+              [31m-[0m[0m hosted_zone_id = "Z06300243EJOUS53C5KF3"
+            },
+        ] [90m-> null[0m[0m
+      [31m-[0m[0m id                         = "vpce-0b4ab6354d7d5122c" [90m-> null[0m[0m
+      [31m-[0m[0m ip_address_type            = "ipv4" [90m-> null[0m[0m
+      [31m-[0m[0m network_interface_ids      = [
+          [31m-[0m[0m "eni-038b3db94de06cc27",
+        ] [90m-> null[0m[0m
+      [31m-[0m[0m owner_id                   = "932658697181" [90m-> null[0m[0m
+      [31m-[0m[0m policy                     = jsonencode(
+            {
+              [31m-[0m[0m Statement = [
+                  [31m-[0m[0m {
+                      [31m-[0m[0m Action    = "*"
+                      [31m-[0m[0m Effect    = "Allow"
+                      [31m-[0m[0m Principal = "*"
+                      [31m-[0m[0m Resource  = "*"
+                    },
+                ]
+            }
+        ) [90m-> null[0m[0m
+      [31m-[0m[0m private_dns_enabled        = true [90m-> null[0m[0m
+      [31m-[0m[0m requester_managed          = false [90m-> null[0m[0m
+      [31m-[0m[0m route_table_ids            = [] [90m-> null[0m[0m
+      [31m-[0m[0m security_group_ids         = [
+          [31m-[0m[0m "sg-0f94c9c4a957583c0",
+        ] [90m-> null[0m[0m
+      [31m-[0m[0m service_name               = "com.amazonaws.us-west-2.secretsmanager" [90m-> null[0m[0m
+      [31m-[0m[0m service_region             = "us-west-2" [90m-> null[0m[0m
+      [31m-[0m[0m state                      = "available" [90m-> null[0m[0m
+      [31m-[0m[0m subnet_ids                 = [
+          [31m-[0m[0m "subnet-0bbc149851847e770",
+        ] [90m-> null[0m[0m
+      [31m-[0m[0m tags                       = {} [90m-> null[0m[0m
+      [31m-[0m[0m tags_all                   = {
+          [31m-[0m[0m "AutoStop" = "2026-05-24T00:00:00Z"
+          [31m-[0m[0m "Owner"    = "kreneskyp"
+          [31m-[0m[0m "Phase"    = "13-spire-aws-verification"
+          [31m-[0m[0m "Project"  = "ecaz"
+        } [90m-> null[0m[0m
+      [31m-[0m[0m vpc_endpoint_type          = "Interface" [90m-> null[0m[0m
+      [31m-[0m[0m vpc_id                     = "vpc-0a2f98585cd2fa2c7" [90m-> null[0m[0m
+        [90m# (2 unchanged attributes hidden)[0m[0m
+
+      [31m-[0m[0m dns_options {
+          [31m-[0m[0m dns_record_ip_type                             = "ipv4" [90m-> null[0m[0m
+          [31m-[0m[0m private_dns_only_for_inbound_resolver_endpoint = false [90m-> null[0m[0m
+        }
+
+      [31m-[0m[0m subnet_configuration {
+          [31m-[0m[0m ipv4      = "10.42.1.152" [90m-> null[0m[0m
+          [31m-[0m[0m subnet_id = "subnet-0bbc149851847e770" [90m-> null[0m[0m
+            [90m# (1 unchanged attribute hidden)[0m[0m
+        }
+    }
+
+[1m  # aws_vpc_endpoint.ssm[0m will be [1m[31mdestroyed[0m
+[0m  [31m-[0m[0m resource "aws_vpc_endpoint" "ssm" {
+      [31m-[0m[0m arn                        = "arn:aws:ec2:us-west-2:932658697181:vpc-endpoint/vpce-0d835e1ca05f54891" [90m-> null[0m[0m
+      [31m-[0m[0m cidr_blocks                = [] [90m-> null[0m[0m
+      [31m-[0m[0m dns_entry                  = [
+          [31m-[0m[0m {
+              [31m-[0m[0m dns_name       = "vpce-0d835e1ca05f54891-qhsoway5.ssm.us-west-2.vpce.amazonaws.com"
+              [31m-[0m[0m hosted_zone_id = "Z1YSA3EXCYUU9Z"
+            },
+          [31m-[0m[0m {
+              [31m-[0m[0m dns_name       = "vpce-0d835e1ca05f54891-qhsoway5-us-west-2a.ssm.us-west-2.vpce.amazonaws.com"
+              [31m-[0m[0m hosted_zone_id = "Z1YSA3EXCYUU9Z"
+            },
+          [31m-[0m[0m {
+              [31m-[0m[0m dns_name       = "ssm.us-west-2.amazonaws.com"
+              [31m-[0m[0m hosted_zone_id = "Z04276832BSORK2BKHZUI"
+            },
+          [31m-[0m[0m {
+              [31m-[0m[0m dns_name       = "ssm.us-west-2.api.aws"
+              [31m-[0m[0m hosted_zone_id = "Z0758465J7LGCC01E4ET"
+            },
+        ] [90m-> null[0m[0m
+      [31m-[0m[0m id                         = "vpce-0d835e1ca05f54891" [90m-> null[0m[0m
+      [31m-[0m[0m ip_address_type            = "ipv4" [90m-> null[0m[0m
+      [31m-[0m[0m network_interface_ids      = [
+          [31m-[0m[0m "eni-0c40d6d72b0ac8ee8",
+        ] [90m-> null[0m[0m
+      [31m-[0m[0m owner_id                   = "932658697181" [90m-> null[0m[0m
+      [31m-[0m[0m policy                     = jsonencode(
+            {
+              [31m-[0m[0m Statement = [
+                  [31m-[0m[0m {
+                      [31m-[0m[0m Action    = "*"
+                      [31m-[0m[0m Effect    = "Allow"
+                      [31m-[0m[0m Principal = "*"
+                      [31m-[0m[0m Resource  = "*"
+                    },
+                ]
+            }
+        ) [90m-> null[0m[0m
+      [31m-[0m[0m private_dns_enabled        = true [90m-> null[0m[0m
+      [31m-[0m[0m requester_managed          = false [90m-> null[0m[0m
+      [31m-[0m[0m route_table_ids            = [] [90m-> null[0m[0m
+      [31m-[0m[0m security_group_ids         = [
+          [31m-[0m[0m "sg-0f94c9c4a957583c0",
+        ] [90m-> null[0m[0m
+      [31m-[0m[0m service_name               = "com.amazonaws.us-west-2.ssm" [90m-> null[0m[0m
+      [31m-[0m[0m service_region             = "us-west-2" [90m-> null[0m[0m
+      [31m-[0m[0m state                      = "available" [90m-> null[0m[0m
+      [31m-[0m[0m subnet_ids                 = [
+          [31m-[0m[0m "subnet-0bbc149851847e770",
+        ] [90m-> null[0m[0m
+      [31m-[0m[0m tags                       = {} [90m-> null[0m[0m
+      [31m-[0m[0m tags_all                   = {
+          [31m-[0m[0m "AutoStop" = "2026-05-24T00:00:00Z"
+          [31m-[0m[0m "Owner"    = "kreneskyp"
+          [31m-[0m[0m "Phase"    = "13-spire-aws-verification"
+          [31m-[0m[0m "Project"  = "ecaz"
+        } [90m-> null[0m[0m
+      [31m-[0m[0m vpc_endpoint_type          = "Interface" [90m-> null[0m[0m
+      [31m-[0m[0m vpc_id                     = "vpc-0a2f98585cd2fa2c7" [90m-> null[0m[0m
+        [90m# (2 unchanged attributes hidden)[0m[0m
+
+      [31m-[0m[0m dns_options {
+          [31m-[0m[0m dns_record_ip_type                             = "ipv4" [90m-> null[0m[0m
+          [31m-[0m[0m private_dns_only_for_inbound_resolver_endpoint = false [90m-> null[0m[0m
+        }
+
+      [31m-[0m[0m subnet_configuration {
+          [31m-[0m[0m ipv4      = "10.42.1.108" [90m-> null[0m[0m
+          [31m-[0m[0m subnet_id = "subnet-0bbc149851847e770" [90m-> null[0m[0m
+            [90m# (1 unchanged attribute hidden)[0m[0m
+        }
+    }
+
+[1m  # aws_vpc_endpoint.ssmmessages[0m will be [1m[31mdestroyed[0m
+[0m  [31m-[0m[0m resource "aws_vpc_endpoint" "ssmmessages" {
+      [31m-[0m[0m arn                        = "arn:aws:ec2:us-west-2:932658697181:vpc-endpoint/vpce-04ba377dddf0e72fb" [90m-> null[0m[0m
+      [31m-[0m[0m cidr_blocks                = [] [90m-> null[0m[0m
+      [31m-[0m[0m dns_entry                  = [
+          [31m-[0m[0m {
+              [31m-[0m[0m dns_name       = "vpce-04ba377dddf0e72fb-wdypydcg.ssmmessages.us-west-2.vpce.amazonaws.com"
+              [31m-[0m[0m hosted_zone_id = "Z1YSA3EXCYUU9Z"
+            },
+          [31m-[0m[0m {
+              [31m-[0m[0m dns_name       = "vpce-04ba377dddf0e72fb-wdypydcg-us-west-2a.ssmmessages.us-west-2.vpce.amazonaws.com"
+              [31m-[0m[0m hosted_zone_id = "Z1YSA3EXCYUU9Z"
+            },
+          [31m-[0m[0m {
+              [31m-[0m[0m dns_name       = "ssmmessages.us-west-2.amazonaws.com"
+              [31m-[0m[0m hosted_zone_id = "Z0779008WY1YKHNKKQAJ"
+            },
+          [31m-[0m[0m {
+              [31m-[0m[0m dns_name       = "ssmmessages.us-west-2.api.aws"
+              [31m-[0m[0m hosted_zone_id = "Z06286353V1YY0DK13WJN"
+            },
+        ] [90m-> null[0m[0m
+      [31m-[0m[0m id                         = "vpce-04ba377dddf0e72fb" [90m-> null[0m[0m
+      [31m-[0m[0m ip_address_type            = "ipv4" [90m-> null[0m[0m
+      [31m-[0m[0m network_interface_ids      = [
+          [31m-[0m[0m "eni-0210a06be4c32af61",
+        ] [90m-> null[0m[0m
+      [31m-[0m[0m owner_id                   = "932658697181" [90m-> null[0m[0m
+      [31m-[0m[0m policy                     = jsonencode(
+            {
+              [31m-[0m[0m Statement = [
+                  [31m-[0m[0m {
+                      [31m-[0m[0m Action    = "*"
+                      [31m-[0m[0m Effect    = "Allow"
+                      [31m-[0m[0m Principal = "*"
+                      [31m-[0m[0m Resource  = "*"
+                    },
+                ]
+            }
+        ) [90m-> null[0m[0m
+      [31m-[0m[0m private_dns_enabled        = true [90m-> null[0m[0m
+      [31m-[0m[0m requester_managed          = false [90m-> null[0m[0m
+      [31m-[0m[0m route_table_ids            = [] [90m-> null[0m[0m
+      [31m-[0m[0m security_group_ids         = [
+          [31m-[0m[0m "sg-0f94c9c4a957583c0",
+        ] [90m-> null[0m[0m
+      [31m-[0m[0m service_name               = "com.amazonaws.us-west-2.ssmmessages" [90m-> null[0m[0m
+      [31m-[0m[0m service_region             = "us-west-2" [90m-> null[0m[0m
+      [31m-[0m[0m state                      = "available" [90m-> null[0m[0m
+      [31m-[0m[0m subnet_ids                 = [
+          [31m-[0m[0m "subnet-0bbc149851847e770",
+        ] [90m-> null[0m[0m
+      [31m-[0m[0m tags                       = {} [90m-> null[0m[0m
+      [31m-[0m[0m tags_all                   = {
+          [31m-[0m[0m "AutoStop" = "2026-05-24T00:00:00Z"
+          [31m-[0m[0m "Owner"    = "kreneskyp"
+          [31m-[0m[0m "Phase"    = "13-spire-aws-verification"
+          [31m-[0m[0m "Project"  = "ecaz"
+        } [90m-> null[0m[0m
+      [31m-[0m[0m vpc_endpoint_type          = "Interface" [90m-> null[0m[0m
+      [31m-[0m[0m vpc_id                     = "vpc-0a2f98585cd2fa2c7" [90m-> null[0m[0m
+        [90m# (2 unchanged attributes hidden)[0m[0m
+
+      [31m-[0m[0m dns_options {
+          [31m-[0m[0m dns_record_ip_type                             = "ipv4" [90m-> null[0m[0m
+          [31m-[0m[0m private_dns_only_for_inbound_resolver_endpoint = false [90m-> null[0m[0m
+        }
+
+      [31m-[0m[0m subnet_configuration {
+          [31m-[0m[0m ipv4      = "10.42.1.213" [90m-> null[0m[0m
+          [31m-[0m[0m subnet_id = "subnet-0bbc149851847e770" [90m-> null[0m[0m
+            [90m# (1 unchanged attribute hidden)[0m[0m
+        }
+    }
+
+[1m  # random_password.remote[0][0m will be [1m[31mdestroyed[0m
+[0m  [31m-[0m[0m resource "random_password" "remote" {
+      [31m-[0m[0m bcrypt_hash = (sensitive value) [90m-> null[0m[0m
+      [31m-[0m[0m id          = "none" [90m-> null[0m[0m
+      [31m-[0m[0m length      = 32 [90m-> null[0m[0m
+      [31m-[0m[0m lower       = true [90m-> null[0m[0m
+      [31m-[0m[0m min_lower   = 0 [90m-> null[0m[0m
+      [31m-[0m[0m min_numeric = 0 [90m-> null[0m[0m
+      [31m-[0m[0m min_special = 0 [90m-> null[0m[0m
+      [31m-[0m[0m min_upper   = 0 [90m-> null[0m[0m
+      [31m-[0m[0m number      = true [90m-> null[0m[0m
+      [31m-[0m[0m numeric     = true [90m-> null[0m[0m
+      [31m-[0m[0m result      = (sensitive value) [90m-> null[0m[0m
+      [31m-[0m[0m special     = false [90m-> null[0m[0m
+      [31m-[0m[0m upper       = true [90m-> null[0m[0m
+    }
+
+[1m  # random_password.remote[1][0m will be [1m[31mdestroyed[0m
+[0m  [31m-[0m[0m resource "random_password" "remote" {
+      [31m-[0m[0m bcrypt_hash = (sensitive value) [90m-> null[0m[0m
+      [31m-[0m[0m id          = "none" [90m-> null[0m[0m
+      [31m-[0m[0m length      = 32 [90m-> null[0m[0m
+      [31m-[0m[0m lower       = true [90m-> null[0m[0m
+      [31m-[0m[0m min_lower   = 0 [90m-> null[0m[0m
+      [31m-[0m[0m min_numeric = 0 [90m-> null[0m[0m
+      [31m-[0m[0m min_special = 0 [90m-> null[0m[0m
+      [31m-[0m[0m min_upper   = 0 [90m-> null[0m[0m
+      [31m-[0m[0m number      = true [90m-> null[0m[0m
+      [31m-[0m[0m numeric     = true [90m-> null[0m[0m
+      [31m-[0m[0m result      = (sensitive value) [90m-> null[0m[0m
+      [31m-[0m[0m special     = false [90m-> null[0m[0m
+      [31m-[0m[0m upper       = true [90m-> null[0m[0m
+    }
+
+[1mPlan:[0m 0 to add, 0 to change, 29 to destroy.
+[0m
+Changes to Outputs:
+  [31m-[0m[0m artifact_bucket         = "ecaz-spire-aws-20260523165108075000000003" [90m-> null[0m[0m
+  [31m-[0m[0m availability_zone       = "us-west-2a" [90m-> null[0m[0m
+  [31m-[0m[0m coordinator_instance_id = "i-068f303289c8e500d" [90m-> null[0m[0m
+  [31m-[0m[0m coordinator_private_ip  = "10.42.1.196" [90m-> null[0m[0m
+  [31m-[0m[0m coordinator_sg_id       = "sg-0851880f0e0ed3ee3" [90m-> null[0m[0m
+  [31m-[0m[0m region                  = "us-west-2" [90m-> null[0m[0m
+  [31m-[0m[0m remote_instance_ids     = [
+      [31m-[0m[0m "i-038a69ed982910349",
+      [31m-[0m[0m "i-04cb4ccb7328736ef",
+    ] [90m-> null[0m[0m
+  [31m-[0m[0m remote_private_ips      = [
+      [31m-[0m[0m "10.42.1.56",
+      [31m-[0m[0m "10.42.1.110",
+    ] [90m-> null[0m[0m
+  [31m-[0m[0m remote_secret_arns      = [
+      [31m-[0m[0m "arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-spire-aws-remote-1-wyDVQU",
+      [31m-[0m[0m "arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-spire-aws-remote-2-EEfClW",
+    ] [90m-> null[0m[0m
+  [31m-[0m[0m remote_sg_id            = "sg-05c788e04a143750a" [90m-> null[0m[0m
+  [31m-[0m[0m subnet_id               = "subnet-0bbc149851847e770" [90m-> null[0m[0m
+  [31m-[0m[0m topology                = {
+      [31m-[0m[0m artifact_bucket   = "ecaz-spire-aws-20260523165108075000000003"
+      [31m-[0m[0m availability_zone = "us-west-2a"
+      [31m-[0m[0m coordinator       = {
+          [31m-[0m[0m instance_id = "i-068f303289c8e500d"
+          [31m-[0m[0m private_ip  = "10.42.1.196"
+        }
+      [31m-[0m[0m region            = "us-west-2"
+      [31m-[0m[0m remotes           = [
+          [31m-[0m[0m {
+              [31m-[0m[0m instance_id = "i-038a69ed982910349"
+              [31m-[0m[0m node_id     = 2
+              [31m-[0m[0m private_ip  = "10.42.1.56"
+              [31m-[0m[0m secret_arn  = "arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-spire-aws-remote-1-wyDVQU"
+              [31m-[0m[0m secret_name = "ecaz-spire-aws-remote-1"
+            },
+          [31m-[0m[0m {
+              [31m-[0m[0m instance_id = "i-04cb4ccb7328736ef"
+              [31m-[0m[0m node_id     = 3
+              [31m-[0m[0m private_ip  = "10.42.1.110"
+              [31m-[0m[0m secret_arn  = "arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-spire-aws-remote-2-EEfClW"
+              [31m-[0m[0m secret_name = "ecaz-spire-aws-remote-2"
+            },
+        ]
+    } [90m-> null[0m[0m
+  [31m-[0m[0m vpc_id                  = "vpc-0a2f98585cd2fa2c7" [90m-> null[0m[0m
+[0m[1maws_route_table_association.spire_aws_data: Destroying... [id=rtbassoc-062357cd9bd324b9f][0m[0m
+[0m[1maws_iam_role_policy.node_artifacts_secrets: Destroying... [id=ecaz-spire-aws-node:ecaz-spire-aws-node-artifacts-secrets][0m[0m
+[0m[1maws_secretsmanager_secret_version.remote[0]: Destroying... [id=arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-spire-aws-remote-1-wyDVQU|terraform-2026052316513476710000000e][0m[0m
+[0m[1maws_s3_bucket_server_side_encryption_configuration.artifacts: Destroying... [id=ecaz-spire-aws-20260523165108075000000003][0m[0m
+[0m[1maws_security_group_rule.coord_to_remote_pg: Destroying... [id=sgrule-2435537201][0m[0m
+[0m[1maws_vpc_endpoint.ec2messages: Destroying... [id=vpce-0115d745d6b007a4e][0m[0m
+[0m[1maws_vpc_endpoint.ssm: Destroying... [id=vpce-0d835e1ca05f54891][0m[0m
+[0m[1maws_vpc_endpoint.ssmmessages: Destroying... [id=vpce-04ba377dddf0e72fb][0m[0m
+[0m[1maws_vpc_endpoint.s3: Destroying... [id=vpce-029fdbe5f03826deb][0m[0m
+[0m[1maws_instance.coordinator: Destroying... [id=i-068f303289c8e500d][0m[0m
+[0m[1maws_secretsmanager_secret_version.remote[0]: Destruction complete after 1s[0m
+[0m[1maws_iam_role_policy_attachment.node_ssm: Destroying... [id=ecaz-spire-aws-node-20260523165109148600000004][0m[0m
+[0m[1maws_route_table_association.spire_aws_data: Destruction complete after 1s[0m
+[0m[1maws_iam_role_policy.node_artifacts_secrets: Destruction complete after 1s[0m
+[0m[1maws_s3_bucket_versioning.artifacts: Destroying... [id=ecaz-spire-aws-20260523165108075000000003][0m[0m
+[0m[1maws_vpc_endpoint.secretsmanager: Destroying... [id=vpce-0b4ab6354d7d5122c][0m[0m
+[0m[1maws_s3_bucket_server_side_encryption_configuration.artifacts: Destruction complete after 1s[0m
+[0m[1maws_secretsmanager_secret_version.remote[1]: Destroying... [id=arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-spire-aws-remote-2-EEfClW|terraform-2026052316513476730000000f][0m[0m
+[0m[1maws_security_group_rule.coord_to_remote_pg: Destruction complete after 1s[0m
+[0m[1maws_secretsmanager_secret_version.remote[1]: Destruction complete after 0s[0m
+[0m[1maws_iam_role_policy_attachment.node_ssm: Destruction complete after 0s[0m
+[0m[1mrandom_password.remote[0]: Destroying... [id=none][0m[0m
+[0m[1mrandom_password.remote[0]: Destruction complete after 0s[0m
+[0m[1mrandom_password.remote[1]: Destroying... [id=none][0m[0m
+[0m[1mrandom_password.remote[1]: Destruction complete after 0s[0m
+[0m[1maws_secretsmanager_secret.remote[1]: Destroying... [id=arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-spire-aws-remote-2-EEfClW][0m[0m
+[0m[1maws_instance.remote[1]: Destroying... [id=i-04cb4ccb7328736ef][0m[0m
+[0m[1maws_instance.remote[0]: Destroying... [id=i-038a69ed982910349][0m[0m
+[0m[1maws_secretsmanager_secret.remote[1]: Destruction complete after 0s[0m
+[0m[1maws_secretsmanager_secret.remote[0]: Destroying... [id=arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-spire-aws-remote-1-wyDVQU][0m[0m
+[0m[1maws_s3_bucket_versioning.artifacts: Destruction complete after 0s[0m
+[0m[1maws_s3_bucket.artifacts: Destroying... [id=ecaz-spire-aws-20260523165108075000000003][0m[0m
+[0m[1maws_secretsmanager_secret.remote[0]: Destruction complete after 0s[0m
+[0m[1maws_vpc_endpoint.s3: Destruction complete after 6s[0m
+[0m[1maws_route_table.spire_aws_data: Destroying... [id=rtb-0a3addb3203f0c592][0m[0m
+[0m[1maws_route_table.spire_aws_data: Destruction complete after 0s[0m
+[0m[1maws_vpc_endpoint.ssm: Still destroying... [id=vpce-0d835e1ca05f54891, 10s elapsed][0m[0m
+[0m[1maws_vpc_endpoint.ssmmessages: Still destroying... [id=vpce-04ba377dddf0e72fb, 10s elapsed][0m[0m
+[0m[1maws_vpc_endpoint.ec2messages: Still destroying... [id=vpce-0115d745d6b007a4e, 10s elapsed][0m[0m
+[0m[1maws_instance.coordinator: Still destroying... [id=i-068f303289c8e500d, 10s elapsed][0m[0m
+[0m[1maws_vpc_endpoint.secretsmanager: Still destroying... [id=vpce-0b4ab6354d7d5122c, 10s elapsed][0m[0m
+[0m[1maws_instance.remote[0]: Still destroying... [id=i-038a69ed982910349, 10s elapsed][0m[0m
+[0m[1maws_instance.remote[1]: Still destroying... [id=i-04cb4ccb7328736ef, 10s elapsed][0m[0m
+[0m[1maws_instance.coordinator: Destruction complete after 11s[0m
+[0m[1maws_security_group.coordinator: Destroying... [id=sg-0851880f0e0ed3ee3][0m[0m
+[0m[1maws_instance.remote[1]: Destruction complete after 11s[0m
+[0m[1maws_instance.remote[0]: Destruction complete after 11s[0m
+[0m[1maws_iam_instance_profile.node: Destroying... [id=ecaz-spire-aws-node][0m[0m
+[0m[1maws_security_group.remote: Destroying... [id=sg-05c788e04a143750a][0m[0m
+[0m[1maws_iam_instance_profile.node: Destruction complete after 0s[0m
+[0m[1maws_security_group.coordinator: Destruction complete after 1s[0m
+[0m[1maws_iam_role.node: Destroying... [id=ecaz-spire-aws-node][0m[0m
+[0m[1maws_security_group.remote: Destruction complete after 0s[0m
+[0m[1maws_iam_role.node: Destruction complete after 1s[0m
+[0m[1maws_vpc_endpoint.ssm: Still destroying... [id=vpce-0d835e1ca05f54891, 20s elapsed][0m[0m
+[0m[1maws_vpc_endpoint.ssmmessages: Still destroying... [id=vpce-04ba377dddf0e72fb, 20s elapsed][0m[0m
+[0m[1maws_vpc_endpoint.ec2messages: Still destroying... [id=vpce-0115d745d6b007a4e, 20s elapsed][0m[0m
+[0m[1maws_vpc_endpoint.secretsmanager: Still destroying... [id=vpce-0b4ab6354d7d5122c, 20s elapsed][0m[0m
+[0m[1maws_vpc_endpoint.ssm: Still destroying... [id=vpce-0d835e1ca05f54891, 30s elapsed][0m[0m
+[0m[1maws_vpc_endpoint.ec2messages: Still destroying... [id=vpce-0115d745d6b007a4e, 30s elapsed][0m[0m
+[0m[1maws_vpc_endpoint.ssmmessages: Still destroying... [id=vpce-04ba377dddf0e72fb, 30s elapsed][0m[0m
+[0m[1maws_vpc_endpoint.secretsmanager: Still destroying... [id=vpce-0b4ab6354d7d5122c, 30s elapsed][0m[0m
+[0m[1maws_vpc_endpoint.ec2messages: Still destroying... [id=vpce-0115d745d6b007a4e, 40s elapsed][0m[0m
+[0m[1maws_vpc_endpoint.ssm: Still destroying... [id=vpce-0d835e1ca05f54891, 40s elapsed][0m[0m
+[0m[1maws_vpc_endpoint.ssmmessages: Still destroying... [id=vpce-04ba377dddf0e72fb, 40s elapsed][0m[0m
+[0m[1maws_vpc_endpoint.secretsmanager: Still destroying... [id=vpce-0b4ab6354d7d5122c, 40s elapsed][0m[0m
+[0m[1maws_vpc_endpoint.ssmmessages: Still destroying... [id=vpce-04ba377dddf0e72fb, 50s elapsed][0m[0m
+[0m[1maws_vpc_endpoint.ssm: Still destroying... [id=vpce-0d835e1ca05f54891, 50s elapsed][0m[0m
+[0m[1maws_vpc_endpoint.ec2messages: Still destroying... [id=vpce-0115d745d6b007a4e, 50s elapsed][0m[0m
+[0m[1maws_vpc_endpoint.secretsmanager: Still destroying... [id=vpce-0b4ab6354d7d5122c, 50s elapsed][0m[0m
+[0m[1maws_vpc_endpoint.ssmmessages: Still destroying... [id=vpce-04ba377dddf0e72fb, 1m0s elapsed][0m[0m
+[0m[1maws_vpc_endpoint.ssm: Still destroying... [id=vpce-0d835e1ca05f54891, 1m0s elapsed][0m[0m
+[0m[1maws_vpc_endpoint.ec2messages: Still destroying... [id=vpce-0115d745d6b007a4e, 1m0s elapsed][0m[0m
+[0m[1maws_vpc_endpoint.secretsmanager: Still destroying... [id=vpce-0b4ab6354d7d5122c, 1m0s elapsed][0m[0m
+[0m[1maws_vpc_endpoint.ssm: Still destroying... [id=vpce-0d835e1ca05f54891, 1m10s elapsed][0m[0m
+[0m[1maws_vpc_endpoint.ec2messages: Still destroying... [id=vpce-0115d745d6b007a4e, 1m10s elapsed][0m[0m
+[0m[1maws_vpc_endpoint.ssmmessages: Still destroying... [id=vpce-04ba377dddf0e72fb, 1m10s elapsed][0m[0m
+[0m[1maws_vpc_endpoint.secretsmanager: Still destroying... [id=vpce-0b4ab6354d7d5122c, 1m10s elapsed][0m[0m
+[0m[1maws_vpc_endpoint.ssmmessages: Still destroying... [id=vpce-04ba377dddf0e72fb, 1m20s elapsed][0m[0m
+[0m[1maws_vpc_endpoint.ssm: Still destroying... [id=vpce-0d835e1ca05f54891, 1m20s elapsed][0m[0m
+[0m[1maws_vpc_endpoint.ec2messages: Still destroying... [id=vpce-0115d745d6b007a4e, 1m20s elapsed][0m[0m
+[0m[1maws_vpc_endpoint.secretsmanager: Still destroying... [id=vpce-0b4ab6354d7d5122c, 1m20s elapsed][0m[0m
+[0m[1maws_vpc_endpoint.ec2messages: Still destroying... [id=vpce-0115d745d6b007a4e, 1m30s elapsed][0m[0m
+[0m[1maws_vpc_endpoint.ssmmessages: Still destroying... [id=vpce-04ba377dddf0e72fb, 1m30s elapsed][0m[0m
+[0m[1maws_vpc_endpoint.ssm: Still destroying... [id=vpce-0d835e1ca05f54891, 1m30s elapsed][0m[0m
+[0m[1maws_vpc_endpoint.secretsmanager: Still destroying... [id=vpce-0b4ab6354d7d5122c, 1m30s elapsed][0m[0m
+[0m[1maws_vpc_endpoint.ssmmessages: Still destroying... [id=vpce-04ba377dddf0e72fb, 1m40s elapsed][0m[0m
+[0m[1maws_vpc_endpoint.ssm: Still destroying... [id=vpce-0d835e1ca05f54891, 1m40s elapsed][0m[0m
+[0m[1maws_vpc_endpoint.ec2messages: Still destroying... [id=vpce-0115d745d6b007a4e, 1m40s elapsed][0m[0m
+[0m[1maws_vpc_endpoint.secretsmanager: Still destroying... [id=vpce-0b4ab6354d7d5122c, 1m40s elapsed][0m[0m
+[0m[1maws_vpc_endpoint.ssm: Destruction complete after 1m41s[0m
+[0m[1maws_vpc_endpoint.ssmmessages: Destruction complete after 1m42s[0m
+[0m[1maws_vpc_endpoint.ec2messages: Destruction complete after 1m42s[0m
+[0m[1maws_vpc_endpoint.secretsmanager: Still destroying... [id=vpce-0b4ab6354d7d5122c, 1m50s elapsed][0m[0m
+[0m[1maws_vpc_endpoint.secretsmanager: Still destroying... [id=vpce-0b4ab6354d7d5122c, 2m0s elapsed][0m[0m
+[0m[1maws_vpc_endpoint.secretsmanager: Still destroying... [id=vpce-0b4ab6354d7d5122c, 2m10s elapsed][0m[0m
+[0m[1maws_vpc_endpoint.secretsmanager: Still destroying... [id=vpce-0b4ab6354d7d5122c, 2m20s elapsed][0m[0m
+[0m[1maws_vpc_endpoint.secretsmanager: Still destroying... [id=vpce-0b4ab6354d7d5122c, 2m30s elapsed][0m[0m
+[0m[1maws_vpc_endpoint.secretsmanager: Still destroying... [id=vpce-0b4ab6354d7d5122c, 2m40s elapsed][0m[0m
+[0m[1maws_vpc_endpoint.secretsmanager: Destruction complete after 2m49s[0m
+[0m[1maws_subnet.spire_aws_data: Destroying... [id=subnet-0bbc149851847e770][0m[0m
+[0m[1maws_security_group.endpoint: Destroying... [id=sg-0f94c9c4a957583c0][0m[0m
+[0m[1maws_subnet.spire_aws_data: Destruction complete after 0s[0m
+[0m[1maws_security_group.endpoint: Destruction complete after 0s[0m
+[0m[1maws_vpc.spire_aws: Destroying... [id=vpc-0a2f98585cd2fa2c7][0m[0m
+[0m[1maws_vpc.spire_aws: Destruction complete after 1s[0m
+[31m╷[0m[0m
+[31m│[0m [0m[1m[31mError: [0m[0m[1mdeleting S3 Bucket (ecaz-spire-aws-20260523165108075000000003): operation error S3: DeleteBucket, https response error StatusCode: 409, RequestID: 0VDP964JF665F2M0, HostID: 5zWCOjbq3sNQeuQgnptdVUc06XcdxypLEH+q1sz5+XEbFvDCmTZ4FNc+qblA2Rb/cObzGCCkk+KoBXr7j8W2Ag==, api error BucketNotEmpty: The bucket you tried to delete is not empty. You must delete all versions in the bucket.[0m
+[31m│[0m [0m
+[31m│[0m [0m[0m
+[31m╵[0m[0m
+make: *** [Makefile:149: teardown] Error 1
+make: Leaving directory '/home/peter/dev/ecaz/infra/spire-aws'

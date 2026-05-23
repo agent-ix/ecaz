@@ -110,6 +110,30 @@ artifact for users who don't want to wait for an on-node build.
 - `artifacts/post-teardown-instance-check.log` — `aws ec2
   describe-instances` confirming zero ecaz/spire instances remain.
 
+## Mid-Run Pivot — pass-smoke (single-node) Replaces pass-correctness (Multi-Cluster)
+
+The first two `make pass-correctness` attempts surfaced findings F7–F10
+in the manifest (vCPU quota, Secrets Manager recovery, missing
+`ecaz_coord` role, laptop→VPC connectivity gap). F10 in particular
+showed that the `scripts/spire-aws/{register,load,smoke,bench,fault}.sh`
+multi-cluster scripts can't run from the operator's laptop today
+without `session-manager-plugin` (sudo install required) and a tunnel
+helper.
+
+Pragmatic pivot: this packet ships a **single-node smoke**
+(`make pass-smoke`) that exercises the AWS plumbing + native Graviton 4
+ecaz build + a baseline ec_ivf bench, all driven via `aws ssm
+send-command` from the laptop. Multi-cluster registration is left
+intact in the chain but deferred to a follow-up packet that:
+
+- Adds session-manager-plugin install instructions or replaces the
+  tunnel approach with SSM-wrapped commands.
+- Ports the multi-cluster setup (register + cross-node SQL) to the
+  `ecaz cloud` CLI subsystem (already present on `origin/main`) so it's
+  durably reusable, not bash glue per packet.
+- Wires multi-disk (`local_store_tablespaces` reloption — proven in
+  packet 957) into the AWS load step via per-tablespace EBS volumes.
+
 ## Out of Scope
 
 - `pass-representative` (1M `qdrant-dbpedia`, dim 1536). F2

@@ -1,0 +1,50 @@
+Timing is on.
+=== scale=1m corpus=real_1m_ivf_rabitq1_rerank_corpus idx=real_1m_ivf_rabitq1_rerank_rabitq_idx ===
+ corpus_total | index_size 
+--------------+------------
+ 16 GB        | 298 MB
+(1 row)
+
+Time: 1.241 ms
+ n_rows 
+--------
+ 990000
+(1 row)
+
+Time: 17.238 ms
+psql:/tmp/bench-1m.sql:53: NOTICE:  BENCH-RESULT scale=1m corpus=real_1m_ivf_rabitq1_rerank_corpus idx=real_1m_ivf_rabitq1_rerank_rabitq_idx queries=100 mean_ms=5804.789 total_ms=580478.9
+psql:/tmp/bench-1m.sql:53: NOTICE:  BENCH-LATENCY-PCTL scale=1m p50=2478.801 p95=2523.103 p99=5865.116 min=2426.154 max=334820.702
+DO
+Time: 581264.864 ms (09:41.265)
+--- planner sanity (EXPLAIN ANALYZE one query) ---
+                                                                                                                  QUERY PLAN                                                                                                                   
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Limit  (cost=28425.61..28426.79 rows=10 width=12) (actual time=3243.294..3244.015 rows=10.00 loops=1)
+   Buffers: shared hit=6919318 read=1017452
+   InitPlan 1
+     ->  Subquery Scan on probe  (cost=0.42..0.49 rows=1 width=32) (actual time=0.018..0.019 rows=1.00 loops=1)
+           Buffers: shared hit=2 read=2
+           ->  Limit  (cost=0.42..0.48 rows=1 width=40) (actual time=0.018..0.018 rows=1.00 loops=1)
+                 Buffers: shared hit=2 read=2
+                 ->  Index Scan using real_1m_ivf_rabitq1_rerank_corpus_pkey on real_1m_ivf_rabitq1_rerank_corpus real_1m_ivf_rabitq1_rerank_corpus_1  (cost=0.42..53113.43 rows=990000 width=40) (actual time=0.017..0.018 rows=1.00 loops=1)
+                       Index Searches: 1
+                       Buffers: shared hit=2 read=2
+   ->  Gather Merge  (cost=28425.12..145548.51 rows=990000 width=12) (actual time=3243.293..3244.011 rows=10.00 loops=1)
+         Workers Planned: 3
+         Workers Launched: 3
+         Buffers: shared hit=6919318 read=1017452
+         ->  Sort  (cost=27425.08..28223.47 rows=319355 width=12) (actual time=3236.305..3236.306 rows=8.25 loops=4)
+               Sort Key: ((real_1m_ivf_rabitq1_rerank_corpus.embedding <#> (InitPlan 1).col1))
+               Sort Method: top-N heapsort  Memory: 25kB
+               Buffers: shared hit=6919316 read=1017450
+               Worker 0:  Sort Method: top-N heapsort  Memory: 25kB
+               Worker 1:  Sort Method: top-N heapsort  Memory: 25kB
+               Worker 2:  Sort Method: top-N heapsort  Memory: 25kB
+               ->  Parallel Seq Scan on real_1m_ivf_rabitq1_rerank_corpus  (cost=0.00..20523.94 rows=319355 width=12) (actual time=3.039..3207.924 rows=247500.00 loops=4)
+                     Buffers: shared hit=6919204 read=1017448
+ Planning Time: 0.071 ms
+ Execution Time: 3244.036 ms
+(25 rows)
+
+Time: 3244.356 ms (00:03.244)
+

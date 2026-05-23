@@ -1,0 +1,5 @@
+waiting for SSM agents to register on 3 instances...
+all SSM agents online (3/3)
+ssm command id: 39683429-f37f-4a69-b6b3-3760ab17ba57
+
+aws: [ERROR]: Waiter CommandExecuted failed: Waiter encountered a terminal failure state: For expression "Status" we matched expected path: "Failed"

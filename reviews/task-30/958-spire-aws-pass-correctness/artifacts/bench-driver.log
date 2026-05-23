@@ -1,0 +1,103 @@
+=== bench scale=10k corpus=real_10k_ivf_rabitq1_corpus idx=real_10k_ivf_rabitq1_idx ===
+ssm cmd: d3c571ea-5187-4c88-b297-c4b362b7b10c
+10k final status: Success
+--- 10k stdout tail ---
+ Limit  (cost=679.11..679.13 rows=10 width=12) (actual time=87.953..87.958 rows=10.00 loops=1)
+   Buffers: shared hit=60188
+   InitPlan 1
+     ->  Subquery Scan on probe  (cost=244.00..244.01 rows=1 width=18) (actual time=1.637..1.639 rows=1.00 loops=1)
+           Buffers: shared hit=94
+           ->  Limit  (cost=244.00..244.00 rows=1 width=26) (actual time=1.637..1.638 rows=1.00 loops=1)
+                 Buffers: shared hit=94
+                 ->  Sort  (cost=244.00..269.00 rows=10000 width=26) (actual time=1.636..1.637 rows=1.00 loops=1)
+                       Sort Key: real_10k_ivf_rabitq1_corpus_1.id
+                       Sort Method: top-N heapsort  Memory: 25kB
+                       Buffers: shared hit=94
+                       ->  Seq Scan on real_10k_ivf_rabitq1_corpus real_10k_ivf_rabitq1_corpus_1  (cost=0.00..194.00 rows=10000 width=26) (actual time=0.001..0.748 rows=10000.00 loops=1)
+                             Buffers: shared hit=94
+   ->  Sort  (cost=435.10..460.10 rows=10000 width=12) (actual time=87.952..87.953 rows=10.00 loops=1)
+         Sort Key: ((real_10k_ivf_rabitq1_corpus.embedding <#> (InitPlan 1).col1))
+         Sort Method: top-N heapsort  Memory: 25kB
+         Buffers: shared hit=60188
+         ->  Seq Scan on real_10k_ivf_rabitq1_corpus  (cost=0.00..219.00 rows=10000 width=12) (actual time=1.671..86.896 rows=10000.00 loops=1)
+               Buffers: shared hit=60188
+ Planning Time: 0.056 ms
+ Execution Time: 87.973 ms
+(21 rows)
+
+Time: 89.287 ms
+
+--- 10k stderr tail ---
+
+
+=== bench scale=100k corpus=real_100k_ivf_rabitq1_rerank_corpus idx=real_100k_ivf_rabitq1_rerank_rabitq_idx ===
+ssm cmd: 1e6e92ce-7b4a-4bf2-b52a-a3b6abda620b
+100k final status: Success
+--- 100k stdout tail ---
+   InitPlan 1
+     ->  Subquery Scan on probe  (cost=0.42..0.53 rows=1 width=32) (actual time=0.018..0.019 rows=1.00 loops=1)
+           Buffers: shared hit=2 read=2
+           ->  Limit  (cost=0.42..0.52 rows=1 width=40) (actual time=0.017..0.018 rows=1.00 loops=1)
+                 Buffers: shared hit=2 read=2
+                 ->  Index Scan using real_100k_ivf_rabitq1_rerank_corpus_pkey on real_100k_ivf_rabitq1_rerank_corpus real_100k_ivf_rabitq1_rerank_corpus_1  (cost=0.42..10384.42 rows=100000 width=40) (actual time=0.017..0.018 rows=1.00 loops=1)
+                       Index Searches: 1
+                       Buffers: shared hit=2 read=2
+   ->  Gather Merge  (cost=4676.47..16073.64 rows=100001 width=12) (actual time=686.773..686.952 rows=10.00 loops=1)
+         Workers Planned: 1
+         Workers Launched: 1
+         Buffers: shared hit=698978 read=102774
+         ->  Sort  (cost=3676.46..3823.52 rows=58824 width=12) (actual time=647.964..647.966 rows=8.00 loops=2)
+               Sort Key: ((real_100k_ivf_rabitq1_rerank_corpus.embedding <#> (InitPlan 1).col1))
+               Sort Method: top-N heapsort  Memory: 25kB
+               Buffers: shared hit=698976 read=102772
+               Worker 0:  Sort Method: top-N heapsort  Memory: 25kB
+               ->  Parallel Seq Scan on real_100k_ivf_rabitq1_rerank_corpus  (cost=0.00..2405.30 rows=58824 width=12) (actual time=0.588..642.216 rows=50000.00 loops=2)
+                     Buffers: shared hit=698940 read=102770
+ Planning Time: 0.071 ms
+ Execution Time: 686.973 ms
+(23 rows)
+
+Time: 687.267 ms
+
+--- 100k stderr tail ---
+
+
+=== bench scale=1m corpus=real_1m_ivf_rabitq1_rerank_corpus idx=real_1m_ivf_rabitq1_rerank_rabitq_idx ===
+ssm cmd: c04ea6aa-8e50-46f8-a28a-6316aea12504
+1m final status: Success
+--- 1m stdout tail ---
+           Buffers: shared hit=2 read=2
+           ->  Limit  (cost=0.42..0.48 rows=1 width=40) (actual time=0.018..0.018 rows=1.00 loops=1)
+                 Buffers: shared hit=2 read=2
+                 ->  Index Scan using real_1m_ivf_rabitq1_rerank_corpus_pkey on real_1m_ivf_rabitq1_rerank_corpus real_1m_ivf_rabitq1_rerank_corpus_1  (cost=0.42..53113.43 rows=990000 width=40) (actual time=0.017..0.018 rows=1.00 loops=1)
+                       Index Searches: 1
+                       Buffers: shared hit=2 read=2
+   ->  Gather Merge  (cost=28425.12..145548.51 rows=990000 width=12) (actual time=3243.293..3244.011 rows=10.00 loops=1)
+         Workers Planned: 3
+         Workers Launched: 3
+         Buffers: shared hit=6919318 read=1017452
+         ->  Sort  (cost=27425.08..28223.47 rows=319355 width=12) (actual time=3236.305..3236.306 rows=8.25 loops=4)
+               Sort Key: ((real_1m_ivf_rabitq1_rerank_corpus.embedding <#> (InitPlan 1).col1))
+               Sort Method: top-N heapsort  Memory: 25kB
+               Buffers: shared hit=6919316 read=1017450
+               Worker 0:  Sort Method: top-N heapsort  Memory: 25kB
+               Worker 1:  Sort Method: top-N heapsort  Memory: 25kB
+               Worker 2:  Sort Method: top-N heapsort  Memory: 25kB
+               ->  Parallel Seq Scan on real_1m_ivf_rabitq1_rerank_corpus  (cost=0.00..20523.94 rows=319355 width=12) (actual time=3.039..3207.924 rows=247500.00 loops=4)
+                     Buffers: shared hit=6919204 read=1017448
+ Planning Time: 0.071 ms
+ Execution Time: 3244.036 ms
+(25 rows)
+
+Time: 3244.356 ms (00:03.244)
+
+--- 1m stderr tail ---
+
+
+DONE: /home/peter/dev/ecaz/reviews/task-30/958-spire-aws-pass-correctness/artifacts/bench-on-live-db
+/home/peter/dev/ecaz/reviews/task-30/958-spire-aws-pass-correctness/artifacts/bench-on-live-db/100k-latency.log:psql:/tmp/bench-100k.sql:53: NOTICE:  BENCH-RESULT scale=100k corpus=real_100k_ivf_rabitq1_rerank_corpus idx=real_100k_ivf_rabitq1_rerank_rabitq_idx queries=100 mean_ms=1250.976 total_ms=125097.6
+/home/peter/dev/ecaz/reviews/task-30/958-spire-aws-pass-correctness/artifacts/bench-on-live-db/100k-latency.log:psql:/tmp/bench-100k.sql:53: NOTICE:  BENCH-LATENCY-PCTL scale=100k p50=500.054 p95=512.034 p99=1272.687 min=480.107 max=75550.693
+/home/peter/dev/ecaz/reviews/task-30/958-spire-aws-pass-correctness/artifacts/bench-on-live-db/10k-latency.log:psql:/tmp/bench-10k.sql:53: NOTICE:  BENCH-RESULT scale=10k corpus=real_10k_ivf_rabitq1_corpus idx=real_10k_ivf_rabitq1_idx queries=100 mean_ms=382.284 total_ms=38228.4
+/home/peter/dev/ecaz/reviews/task-30/958-spire-aws-pass-correctness/artifacts/bench-on-live-db/10k-latency.log:psql:/tmp/bench-10k.sql:53: NOTICE:  BENCH-LATENCY-PCTL scale=10k p50=64.943 p95=65.530 p99=383.277 min=63.734 max=31799.592
+/home/peter/dev/ecaz/reviews/task-30/958-spire-aws-pass-correctness/artifacts/bench-on-live-db/1m-latency.log:psql:/tmp/bench-1m.sql:53: NOTICE:  BENCH-RESULT scale=1m corpus=real_1m_ivf_rabitq1_rerank_corpus idx=real_1m_ivf_rabitq1_rerank_rabitq_idx queries=100 mean_ms=5804.789 total_ms=580478.9
+/home/peter/dev/ecaz/reviews/task-30/958-spire-aws-pass-correctness/artifacts/bench-on-live-db/1m-latency.log:psql:/tmp/bench-1m.sql:53: NOTICE:  BENCH-LATENCY-PCTL scale=1m p50=2478.801 p95=2523.103 p99=5865.116 min=2426.154 max=334820.702

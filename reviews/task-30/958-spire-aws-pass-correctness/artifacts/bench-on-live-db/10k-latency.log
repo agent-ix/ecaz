@@ -1,0 +1,46 @@
+Timing is on.
+=== scale=10k corpus=real_10k_ivf_rabitq1_corpus idx=real_10k_ivf_rabitq1_idx ===
+ corpus_total | index_size 
+--------------+------------
+ 163 MB       | 4144 kB
+(1 row)
+
+Time: 0.999 ms
+ n_rows 
+--------
+  10000
+(1 row)
+
+Time: 0.682 ms
+psql:/tmp/bench-10k.sql:53: NOTICE:  BENCH-RESULT scale=10k corpus=real_10k_ivf_rabitq1_corpus idx=real_10k_ivf_rabitq1_idx queries=100 mean_ms=382.284 total_ms=38228.4
+psql:/tmp/bench-10k.sql:53: NOTICE:  BENCH-LATENCY-PCTL scale=10k p50=64.943 p95=65.530 p99=383.277 min=63.734 max=31799.592
+DO
+Time: 38343.336 ms (00:38.343)
+--- planner sanity (EXPLAIN ANALYZE one query) ---
+                                                                                        QUERY PLAN                                                                                         
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Limit  (cost=679.11..679.13 rows=10 width=12) (actual time=87.953..87.958 rows=10.00 loops=1)
+   Buffers: shared hit=60188
+   InitPlan 1
+     ->  Subquery Scan on probe  (cost=244.00..244.01 rows=1 width=18) (actual time=1.637..1.639 rows=1.00 loops=1)
+           Buffers: shared hit=94
+           ->  Limit  (cost=244.00..244.00 rows=1 width=26) (actual time=1.637..1.638 rows=1.00 loops=1)
+                 Buffers: shared hit=94
+                 ->  Sort  (cost=244.00..269.00 rows=10000 width=26) (actual time=1.636..1.637 rows=1.00 loops=1)
+                       Sort Key: real_10k_ivf_rabitq1_corpus_1.id
+                       Sort Method: top-N heapsort  Memory: 25kB
+                       Buffers: shared hit=94
+                       ->  Seq Scan on real_10k_ivf_rabitq1_corpus real_10k_ivf_rabitq1_corpus_1  (cost=0.00..194.00 rows=10000 width=26) (actual time=0.001..0.748 rows=10000.00 loops=1)
+                             Buffers: shared hit=94
+   ->  Sort  (cost=435.10..460.10 rows=10000 width=12) (actual time=87.952..87.953 rows=10.00 loops=1)
+         Sort Key: ((real_10k_ivf_rabitq1_corpus.embedding <#> (InitPlan 1).col1))
+         Sort Method: top-N heapsort  Memory: 25kB
+         Buffers: shared hit=60188
+         ->  Seq Scan on real_10k_ivf_rabitq1_corpus  (cost=0.00..219.00 rows=10000 width=12) (actual time=1.671..86.896 rows=10000.00 loops=1)
+               Buffers: shared hit=60188
+ Planning Time: 0.056 ms
+ Execution Time: 87.973 ms
+(21 rows)
+
+Time: 89.287 ms
+

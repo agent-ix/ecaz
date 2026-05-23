@@ -1,0 +1,6 @@
+make: Entering directory '/home/peter/dev/ecaz/infra/spire-aws'
+Snapshotting EBS root volumes for coord+remotes in us-west-2...
+i-068f303289c8e500d vol-058b6b1b23f7939fd snap-0629f7f6387698e88
+i-038a69ed982910349 vol-0fbbda986598eeba4 snap-08e8600e1234bf509
+i-04cb4ccb7328736ef vol-083bcce80cb2d25fe snap-078f1372782aa91b4
+make: Leaving directory '/home/peter/dev/ecaz/infra/spire-aws'

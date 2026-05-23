@@ -1,0 +1,22 @@
+{
+    "CommandId": "1e6e92ce-7b4a-4bf2-b52a-a3b6abda620b",
+    "InstanceId": "i-04ce81ce1c10db4bc",
+    "Comment": "",
+    "DocumentName": "AWS-RunShellScript",
+    "DocumentVersion": "$DEFAULT",
+    "PluginName": "aws:runShellScript",
+    "ResponseCode": 0,
+    "ExecutionStartDateTime": "2026-05-23T17:38:48.931Z",
+    "ExecutionElapsedTime": "PT2M6.499S",
+    "ExecutionEndDateTime": "2026-05-23T17:40:54.931Z",
+    "Status": "Success",
+    "StatusDetails": "Success",
+    "StandardOutputContent": "Timing is on.\n=== scale=100k corpus=real_100k_ivf_rabitq1_rerank_corpus idx=real_100k_ivf_rabitq1_rerank_rabitq_idx ===\n corpus_total | index_size \n--------------+------------\n 1630 MB      | 33 MB\n(1 row)\n\nTime: 1.034 ms\n n_rows \n--------\n 100000\n(1 row)\n\nTime: 4.360 ms\npsql:/tmp/bench-100k.sql:53: NOTICE:  BENCH-RESULT scale=100k corpus=real_100k_ivf_rabitq1_rerank_corpus idx=real_100k_ivf_rabitq1_rerank_rabitq_idx queries=100 mean_ms=1250.976 total_ms=125097.6\npsql:/tmp/bench-100k.sql:53: NOTICE:  BENCH-LATENCY-PCTL scale=100k p50=500.054 p95=512.034 p99=1272.687 min=480.107 max=75550.693\nDO\nTime: 125678.827 ms (02:05.679)\n--- planner sanity (EXPLAIN ANALYZE one query) ---\n                                                                                                                     QUERY PLAN                                                                                                                      \n-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------\n Limit  (cost=4677.00..4678.14 rows=10 width=12) (actual time=686.774..686.955 rows=10.00 loops=1)\n   Buffers: shared hit=698978 read=102774\n   InitPlan 1\n     ->  Subquery Scan on probe  (cost=0.42..0.53 rows=1 width=32) (actual time=0.018..0.019 rows=1.00 loops=1)\n           Buffers: shared hit=2 read=2\n           ->  Limit  (cost=0.42..0.52 rows=1 width=40) (actual time=0.017..0.018 rows=1.00 loops=1)\n                 Buffers: shared hit=2 read=2\n                 ->  Index Scan using real_100k_ivf_rabitq1_rerank_corpus_pkey on real_100k_ivf_rabitq1_rerank_corpus real_100k_ivf_rabitq1_rerank_corpus_1  (cost=0.42..10384.42 rows=100000 width=40) (actual time=0.017..0.018 rows=1.00 loops=1)\n                       Index Searches: 1\n                       Buffers: shared hit=2 read=2\n   ->  Gather Merge  (cost=4676.47..16073.64 rows=100001 width=12) (actual time=686.773..686.952 rows=10.00 loops=1)\n         Workers Planned: 1\n         Workers Launched: 1\n         Buffers: shared hit=698978 read=102774\n         ->  Sort  (cost=3676.46..3823.52 rows=58824 width=12) (actual time=647.964..647.966 rows=8.00 loops=2)\n               Sort Key: ((real_100k_ivf_rabitq1_rerank_corpus.embedding <#> (InitPlan 1).col1))\n               Sort Method: top-N heapsort  Memory: 25kB\n               Buffers: shared hit=698976 read=102772\n               Worker 0:  Sort Method: top-N heapsort  Memory: 25kB\n               ->  Parallel Seq Scan on real_100k_ivf_rabitq1_rerank_corpus  (cost=0.00..2405.30 rows=58824 width=12) (actual time=0.588..642.216 rows=50000.00 loops=2)\n                     Buffers: shared hit=698940 read=102770\n Planning Time: 0.071 ms\n Execution Time: 686.973 ms\n(23 rows)\n\nTime: 687.267 ms\n",
+    "StandardOutputUrl": "",
+    "StandardErrorContent": "",
+    "StandardErrorUrl": "",
+    "CloudWatchOutputConfig": {
+        "CloudWatchLogGroupName": "",
+        "CloudWatchOutputEnabled": false
+    }
+}
