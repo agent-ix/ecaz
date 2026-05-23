@@ -828,9 +828,7 @@ unsafe fn repair_graph_connections_with_storage(
             &repair_requests,
         )
     };
-    // SAFETY: Repair plans target neighbor tuples from this index and are
-    // applied under page-exclusive locks.
-    unsafe { apply_repair_plans(index, metadata.m, &deleted_tids, &repair_plans) };
+    apply_repair_plans(index, metadata.m, &deleted_tids, &repair_plans);
 }
 
 fn collect_repair_requests(
@@ -1525,7 +1523,7 @@ fn load_grouped_rerank_payload_for_linear_repair_candidate(
     })
 }
 
-unsafe fn apply_repair_plans(
+fn apply_repair_plans(
     index: VacuumIndexRelation,
     m: u16,
     deleted_tids: &HashSet<page::ItemPointer>,
@@ -1543,16 +1541,12 @@ unsafe fn apply_repair_plans(
             end += 1;
         }
 
-        // SAFETY: This slice contains only repair plans for one neighbor block,
-        // which will be locked exclusively before rewrite.
-        unsafe {
-            apply_repair_plans_on_page(index, block_number, m, deleted_tids, &plans[start..end])
-        };
+        apply_repair_plans_on_page(index, block_number, m, deleted_tids, &plans[start..end]);
         start = end;
     }
 }
 
-unsafe fn apply_repair_plans_on_page(
+fn apply_repair_plans_on_page(
     index: VacuumIndexRelation,
     block_number: u32,
     m: u16,
@@ -1577,8 +1571,6 @@ unsafe fn apply_repair_plans_on_page(
             end += 1;
         }
 
-        // SAFETY: `neighbor_tid` points at a tuple on the registered page and
-        // the closure preserves the encoded tuple length.
         let tuple_changed =
             shared::with_writable_page_tuple_bytes(
                 page_ptr,
