@@ -1,0 +1,57 @@
+Pre-Task-53 unsafe-block density snapshot
+==========================================
+
+Head SHA: 5c0e9e2bd (origin/main; Task 52 not yet merged in)
+Branch:   task-53
+Date:     2026-05-23
+
+source.rs unsafe block census (29 total)
+----------------------------------------
+Command: grep -nE "unsafe\s*\{" src/am/ec_hnsw/source.rs
+
+  84:    unsafe { inner_product_avx2_fma(left, right) };       <- SIMD intrinsic
+  93:    unsafe { inner_product_neon(left, right) };           <- SIMD intrinsic
+ 115:    unsafe { inner_product_avx2_fma(left, right) }        <- SIMD intrinsic
+ 125:    unsafe { inner_product_neon(left, right) }            <- SIMD intrinsic
+ 157:    unsafe { ... _mm256_loadu_ps ... } (8-way unroll)     <- SIMD intrinsic
+ 178:    unsafe { ... _mm256_loadu_ps ... } (single)           <- SIMD intrinsic
+ 195:    unsafe { _mm256_storeu_ps(...) }                      <- SIMD intrinsic
+ 215:    unsafe { ... vld1q_f32 ... } (8-way unroll, NEON)     <- SIMD intrinsic
+ 237:    unsafe { ... vld1q_f32 ... } (single, NEON)           <- SIMD intrinsic
+ 252:    unsafe { vst1q_f32(...) }                             <- SIMD intrinsic
+
+  -- SIMD subtotal: 10 blocks. Out of scope per §Non-Goals --
+
+ 269:    unsafe { pg_sys::get_attnum((*heap_relation).rd_id, source_column.as_ptr()) }
+ 499:    let varlena = unsafe { DetoastedVarlena::plain_from_datum(datum) }
+ 529:    let detoasted = unsafe { DetoastedFloat4Datum::from_datum(datum, label) };
+ 534:    let array_header = unsafe { &*array_ptr };
+ 546:    if unsafe { pg_sys::array_contains_nulls(array_ptr) } {
+ 551:    let dims_ptr = unsafe { flat_array_dims_ptr(array_ptr) };
+ 553:    let len = usize::try_from(unsafe { pg_sys::ArrayGetNItems((*array_ptr).ndim, dims_ptr) })
+ 557:    let data_ptr = unsafe { ... flat_array_data_offset ... };
+ 578:    unsafe { std::slice::from_raw_parts(self.data_ptr, self.len) }
+ 597:    let detoasted = unsafe { DetoastedFloat4Datum::from_datum(datum, label) };
+ 605:    let (prefix, body, suffix) = unsafe { bytes.align_to::<f32>() };
+ 623:    unsafe { std::slice::from_raw_parts(self.data_ptr, self.len) }
+ 638:    unsafe { FlatFloat4ArrayRef::from_datum(datum, label) }
+ 643:    unsafe { FlatFloat4VarlenaRef::from_datum(datum, label) }
+ 667:    let source = unsafe { FlatFloat4SourceRef::from_datum(datum, kind, label) };
+ 682:    unsafe { with_flat_float4_source_from_datum(...) }
+ 694:    let source = unsafe { FlatFloat4VarlenaRef::from_datum(source_datum, label) };
+ 727:    unsafe { ... flat_array_data_offset / from_raw_parts ... }
+ 744:    let dataoffset = unsafe { (*array_ptr).dataoffset };
+
+  -- Datum-handling subtotal: 19 blocks. In scope for Task 53. --
+
+src/ total: 960
+
+Subsystem context
+-----------------
+HNSW total (pre-Task-53): 327 (= Task 50's close number)
+Target this task: source.rs 29 -> <= 14 (per task spec §Migration Targets)
+
+Note: this branch is open off origin/main `5c0e9e2bd`. Task 52
+(task-52 branch, HEAD 9878aa158) is not yet merged in. Task 53's
+wrappers go to src/am/common/datum.rs (new module), separate from
+Task 52's src/am/common/dsm.rs and src/am/common/parallel_context.rs.
