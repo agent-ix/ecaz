@@ -1,0 +1,12 @@
+[spire-multicluster] repo=/home/peter/dev/ecaz
+[spire-multicluster] pgbin=/home/peter/.pgrx/18.3/pgrx-install/bin
+[spire-multicluster] artifact_dir=reviews/task-30/957-spire-aws-prep-local-verification/artifacts/multicluster-smoke-10k
+
+   0: [91mrunning SPIRE PG18 multicluster smoke fixture[0m
+   1: [91mCommand { std: cd "/home/peter/dev/ecaz" && "bash" "/home/peter/dev/ecaz/scripts/run_spire_multicluster_pg18_smoke.sh" "--pgbin" "/home/peter/.pgrx/18.3/pgrx-install/bin" "--artifact-dir" "reviews/task-30/957-spire-aws-prep-local-verification/artifacts/multicluster-smoke-10k" "--coord-port" "29000" "--remote-port" "29001" "--skip-install", kill_on_drop: false } failed with status exit status: 3[0m
+
+Location:
+   [35mcrates/ecaz-cli/src/commands/dev/support.rs[0m:[35m180[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.

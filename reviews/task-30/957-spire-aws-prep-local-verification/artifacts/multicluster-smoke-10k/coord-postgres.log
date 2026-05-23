@@ -1,0 +1,17 @@
+2026-05-22 20:15:39.441 PDT [4179847] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0, 64-bit
+2026-05-22 20:15:39.443 PDT [4179847] LOG:  listening on Unix socket "/home/peter/dev/ecaz/target/s-3122851201/.s.PGSQL.29000"
+2026-05-22 20:15:39.449 PDT [4179853] LOG:  database system was shut down at 2026-05-22 20:15:39 PDT
+2026-05-22 20:15:39.453 PDT [4179847] LOG:  database system is ready to accept connections
+2026-05-22 20:15:39.951 PDT [4179896] ERROR:  schema "tests" does not exist at character 8
+2026-05-22 20:15:39.951 PDT [4179896] STATEMENT:  SELECT tests.ec_spire_test_rewrite_placement_node(
+	    'ec_spire_multicluster_coord_idx'::regclass::oid,
+	    2::bigint,
+	    2
+	);
+2026-05-22 20:15:39.953 PDT [4179847] LOG:  received fast shutdown request
+2026-05-22 20:15:39.955 PDT [4179847] LOG:  aborting any active transactions
+2026-05-22 20:15:39.955 PDT [4179847] LOG:  background worker "logical replication launcher" (PID 4179856) exited with exit code 1
+2026-05-22 20:15:39.955 PDT [4179851] LOG:  shutting down
+2026-05-22 20:15:39.957 PDT [4179851] LOG:  checkpoint starting: shutdown immediate
+2026-05-22 20:15:40.030 PDT [4179851] LOG:  checkpoint complete: wrote 226 buffers (1.4%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.007 s, sync=0.061 s, total=0.076 s; sync files=126, longest=0.007 s, average=0.001 s; distance=1518 kB, estimate=1518 kB; lsn=0/18DC790, redo lsn=0/18DC790
+2026-05-22 20:15:40.052 PDT [4179847] LOG:  database system is shut down

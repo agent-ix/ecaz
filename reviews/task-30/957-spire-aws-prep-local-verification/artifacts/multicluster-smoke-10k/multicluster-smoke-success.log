@@ -1,0 +1,6 @@
+run_dir=/home/peter/dev/ecaz/target/spire-multicluster-pg18-20260523T031536Z
+remote_port=29001
+coord_port=29000
+ERROR:  schema "tests" does not exist
+LINE 1: SELECT tests.ec_spire_test_rewrite_placement_node(
+               ^

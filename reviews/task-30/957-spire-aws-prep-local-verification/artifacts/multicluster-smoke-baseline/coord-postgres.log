@@ -1,0 +1,13 @@
+2026-05-22 20:22:29.471 PDT [4188202] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0, 64-bit
+2026-05-22 20:22:29.473 PDT [4188202] LOG:  listening on Unix socket "/home/peter/dev/ecaz/target/s-2966703018/.s.PGSQL.29000"
+2026-05-22 20:22:29.479 PDT [4188208] LOG:  database system was shut down at 2026-05-22 20:22:28 PDT
+2026-05-22 20:22:29.484 PDT [4188202] LOG:  database system is ready to accept connections
+2026-05-22 20:22:30.284 PDT [4188253] ERROR:  ec_spire remote search executor endpoint_status requires_rabitq_storage_format is not ready
+2026-05-22 20:22:30.284 PDT [4188253] STATEMENT:  SELECT count(*) FROM ec_spire_remote_search_libpq_executor_candidates('ec_spire_multicluster_coord_idx'::regclass, 1::bigint, ARRAY[1.0, 0.0]::real[], ARRAY[2::bigint], 1, 'strict')
+2026-05-22 20:22:30.286 PDT [4188202] LOG:  received fast shutdown request
+2026-05-22 20:22:30.288 PDT [4188202] LOG:  aborting any active transactions
+2026-05-22 20:22:30.289 PDT [4188202] LOG:  background worker "logical replication launcher" (PID 4188211) exited with exit code 1
+2026-05-22 20:22:30.289 PDT [4188206] LOG:  shutting down
+2026-05-22 20:22:30.290 PDT [4188206] LOG:  checkpoint starting: shutdown immediate
+2026-05-22 20:22:30.331 PDT [4188206] LOG:  checkpoint complete: wrote 297 buffers (1.8%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.007 s, sync=0.031 s, total=0.043 s; sync files=130, longest=0.004 s, average=0.001 s; distance=2343 kB, estimate=2343 kB; lsn=0/19AADE0, redo lsn=0/19AADE0
+2026-05-22 20:22:30.339 PDT [4188202] LOG:  database system is shut down

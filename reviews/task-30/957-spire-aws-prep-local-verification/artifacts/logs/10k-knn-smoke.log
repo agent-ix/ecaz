@@ -1,0 +1,50 @@
+=== 10k SPIRE+RaBitQ kNN smoke (clean) ===
+2026-05-22T20:14:51-07:00
+--- forced ec_spire index scan ---
+SET
+SET
+SET
+  id  |     dist     
+------+--------------
+ 2962 |  -0.09589344
+ 3966 | -0.090834744
+ 4582 |  -0.09002689
+ 4175 |  -0.08727486
+ 7471 |  -0.08513729
+ 4178 |  -0.08120488
+  526 |  -0.08104187
+ 4360 | -0.080536224
+ 1002 |   -0.0797461
+ 5902 |  -0.07791461
+(10 rows)
+
+                                                                              QUERY PLAN                                                                               
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Limit  (cost=608.38..608.41 rows=10 width=12) (actual time=964.970..964.974 rows=10.00 loops=1)
+   Buffers: shared hit=50169
+   ->  Sort  (cost=608.38..633.38 rows=10000 width=12) (actual time=964.969..964.972 rows=10.00 loops=1)
+         Sort Key: ((sc.embedding <#> spire10k_queries.source))
+         Sort Method: top-N heapsort  Memory: 25kB
+         Buffers: shared hit=50169
+         ->  Nested Loop  (cost=0.14..392.29 rows=10000 width=12) (actual time=0.186..962.032 rows=10000.00 loops=1)
+               Buffers: shared hit=50169
+               ->  Limit  (cost=0.14..0.28 rows=1 width=26) (actual time=0.032..0.034 rows=1.00 loops=1)
+                     Buffers: shared hit=2
+                     ->  Index Scan using spire10k_queries_pkey on spire10k_queries  (cost=0.14..13.64 rows=100 width=26) (actual time=0.032..0.033 rows=1.00 loops=1)
+                           Index Searches: 1
+                           Buffers: shared hit=2
+               ->  Seq Scan on spire10k_corpus sc  (cost=0.00..267.00 rows=10000 width=26) (actual time=0.044..0.940 rows=10000.00 loops=1)
+                     Disabled: true
+                     Buffers: shared hit=167
+ Planning:
+   Buffers: shared hit=197
+ Planning Time: 1.422 ms
+ Execution Time: 965.010 ms
+(20 rows)
+
+--- sizes ---
+ table_size | index_size 
+------------+------------
+ 169 MB     | 9104 kB
+(1 row)
+

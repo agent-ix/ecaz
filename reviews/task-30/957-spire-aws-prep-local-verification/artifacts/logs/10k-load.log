@@ -1,0 +1,22 @@
+[loader] inspecting /home/peter/pg18-spire/corpora/spire10k_corpus.tsv
+[loader] inspecting /home/peter/pg18-spire/corpora/spire10k_queries.tsv
+[loader] corpus: 10000 rows, sha256=ccd9a13cdf99eded145fe92ba65d135a57495b55513444caf35c54d5bdcc6f2f  queries: 100 rows, sha256=2ab86f0719975a85febdda88795d013a20da8131cdd304b1121cc012b361a31b
+[loader] no sibling manifest at /home/peter/pg18-spire/corpora/spire10k_manifest.json; continuing without verification
+[loader] copied corpus table spire10k_corpus in 5.36s
+[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...
+[loader] encoded corpus table spire10k_corpus in 1.71s
+[loader] copied queries table spire10k_queries in 71.19ms
+[loader] building spire10k_idx using ec_spire (reloptions=[<none>]) ...
+[loader] built spire10k_idx in 14.79s
+┌─────────┬──────────────────────────────┐
+│ field   ┆ value                        │
+╞═════════╪══════════════════════════════╡
+│ profile ┆ ec_spire                     │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ spire10k_corpus (10000 rows) │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ spire10k_queries (100 rows)  │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ spire10k_idx [<default>]     │
+└─────────┴──────────────────────────────┘
+[loader] completed prefix spire10k in 22.86s
