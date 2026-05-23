@@ -150,10 +150,10 @@ async fn remote_suite_script(
     let remote_config = relative_to_repo(repo_root, config)?;
     let remote_artifacts = relative_to_repo(repo_root, artifacts_dir)?;
     let upload = if skip_upload {
-        String::new()
+        ":".to_string()
     } else {
         format!(
-            "aws s3 sync {} {} --region {} --only-show-errors",
+            "aws s3 sync {} {} --region {} --only-show-errors || true",
             shell_escape(&remote_artifacts),
             shell_escape(s3_dest),
             shell_escape(region)
@@ -174,12 +174,12 @@ async fn remote_suite_script(
 set -euxo pipefail
 cd {root}
 mkdir -p "$(dirname {config_path})" {artifacts}
+trap 'status=$?; set +e; {upload}; exit $status' EXIT
 cat > {config_path} <<'ECAZ_SUITE_CONFIG'
 {config_text}
 ECAZ_SUITE_CONFIG
 chown -R postgres:postgres "$(dirname {config_path})" {artifacts}
 sudo -u postgres bash -lc {run_cmd}
-{upload}
 "#,
         root = shell_escape(remote_root),
         config_path = shell_escape(&remote_config),
