@@ -1,0 +1,76 @@
+{
+  "name": "task51-aws-ivf-rabitq-final-gate",
+  "schema_version": 1,
+  "artifact_dir": "benchmarks/task51-aws-ivf-rabitq-final-gate/artifacts",
+  "defaults": {
+    "pg": 18,
+    "socket_dir": "/var/run/postgresql",
+    "profile": "ec_ivf",
+    "bits": 4,
+    "seed": 42,
+    "queries_limit": 500,
+    "iterations": 200,
+    "force_index": true
+  },
+  "steps": [
+    {
+      "kind": "recall",
+      "name": "recall-1m-rabitq1-rerank-q500",
+      "tags": ["aws", "recall", "ec_real_990k", "ivf", "rabitq", "q500"],
+      "prefix": "real_1m_ivf_rabitq1_rerank",
+      "profile": "ec_ivf",
+      "bits": 4,
+      "k": 10,
+      "sweep": [64, 128, 256],
+      "rerank_width": 50,
+      "force_index": true,
+      "truth_cache_file": "benchmarks/task51-aws-ivf-rabitq-final-gate/artifacts/truth-aws-real-1m-q500-k10.json",
+      "log_output": "benchmarks/task51-aws-ivf-rabitq-final-gate/artifacts/recall-1m-rabitq1-rerank-q500.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-1m-rabitq1-rerank",
+      "tags": ["aws", "latency", "ec_real_990k", "ivf", "rabitq"],
+      "prefix": "real_1m_ivf_rabitq1_rerank",
+      "profile": "ec_ivf",
+      "bits": 4,
+      "sweep": [64, 128, 256],
+      "rerank_width": 50,
+      "force_index": true,
+      "iterations": 200,
+      "concurrency": 1,
+      "log_output": "benchmarks/task51-aws-ivf-rabitq-final-gate/artifacts/latency-1m-rabitq1-rerank.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-1m-rabitq1-rerank",
+      "tags": ["aws", "storage", "ec_real_990k", "ivf", "rabitq"],
+      "prefix": "real_1m_ivf_rabitq1_rerank",
+      "log_file": "benchmarks/task51-aws-ivf-rabitq-final-gate/artifacts/storage-1m-rabitq1-rerank.log"
+    },
+    {
+      "kind": "explain",
+      "name": "explain-1m-rabitq1-rerank-p128",
+      "tags": ["aws", "explain", "ec_real_990k", "ivf", "rabitq", "nprobe128"],
+      "prefix": "real_1m_ivf_rabitq1_rerank",
+      "profile": "ec_ivf",
+      "index_name": "real_1m_ivf_rabitq1_rerank_rabitq_idx",
+      "nprobe": 128,
+      "rerank_width": 50,
+      "sql_file": "benchmarks/task51-aws-ivf-rabitq-final-gate/artifacts/explain-1m-rabitq1-rerank-p128.sql",
+      "log_output": "benchmarks/task51-aws-ivf-rabitq-final-gate/artifacts/explain-1m-rabitq1-rerank-p128.log"
+    },
+    {
+      "kind": "explain",
+      "name": "explain-1m-rabitq1-rerank-p256",
+      "tags": ["aws", "explain", "ec_real_990k", "ivf", "rabitq", "nprobe256"],
+      "prefix": "real_1m_ivf_rabitq1_rerank",
+      "profile": "ec_ivf",
+      "index_name": "real_1m_ivf_rabitq1_rerank_rabitq_idx",
+      "nprobe": 256,
+      "rerank_width": 50,
+      "sql_file": "benchmarks/task51-aws-ivf-rabitq-final-gate/artifacts/explain-1m-rabitq1-rerank-p256.sql",
+      "log_output": "benchmarks/task51-aws-ivf-rabitq-final-gate/artifacts/explain-1m-rabitq1-rerank-p256.log"
+    }
+  ]
+}
