@@ -2389,15 +2389,18 @@ pub(super) fn write_data_pages(handle: RelationHandle, data_pages: &page::DataPa
         });
 
         let mut wal_txn = wal::WalTxnScope::start_handle(handle);
-        let mut page = wal_txn.register_page(&buffer);
-        page.init(0);
-
-        for tuple in staged_page.tuples() {
-            page.add_item(tuple).unwrap_or_else(|err| {
-                pgrx::error!("ec_hnsw failed to write tuple to block {}", err.block_number)
-            });
+        {
+            let mut page = wal_txn.register_page(&buffer);
+            page.init(0);
+            for tuple in staged_page.tuples() {
+                page.add_item(tuple).unwrap_or_else(|err| {
+                    pgrx::error!(
+                        "ec_hnsw failed to write tuple to block {}",
+                        err.block_number
+                    )
+                });
+            }
         }
-        drop(page);
 
         wal_txn.finish();
     }

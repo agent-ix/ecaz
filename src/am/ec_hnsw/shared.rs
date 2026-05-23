@@ -105,8 +105,18 @@ pub(super) unsafe fn with_locked_metadata_page<T>(
     index_relation: pg_sys::Relation,
     f: impl FnOnce(&mut page::MetadataPage) -> T,
 ) -> T {
-    let buffer = LockedBufferGuard::read_main(
-        index_relation,
+    let handle = NonNull::new(index_relation).unwrap_or_else(|| {
+        pgrx::error!("ec_hnsw with_locked_metadata_page received a null index relation")
+    });
+    with_locked_metadata_page_handle(handle, f)
+}
+
+pub(super) fn with_locked_metadata_page_handle<T>(
+    handle: crate::storage::relation::RelationHandle,
+    f: impl FnOnce(&mut page::MetadataPage) -> T,
+) -> T {
+    let buffer = LockedBufferGuard::read_main_handle(
+        handle,
         page::METADATA_BLOCK_NUMBER,
         pg_sys::ReadBufferMode::RBM_NORMAL,
         pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
@@ -121,7 +131,7 @@ pub(super) unsafe fn with_locked_metadata_page<T>(
         page::MetadataPage::decode_page(page_bytes).expect("metadata page should decode");
     let result = f(&mut metadata);
 
-    rewrite_metadata_buffer(index_relation, &buffer, page_size, metadata);
+    rewrite_metadata_buffer(handle.as_ptr(), &buffer, page_size, metadata);
     result
 }
 

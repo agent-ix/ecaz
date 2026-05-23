@@ -32,20 +32,19 @@ impl PinnedBufferGuard {
         block_number: pg_sys::BlockNumber,
         mode: pg_sys::ReadBufferMode::Type,
     ) -> Option<Self> {
-        // SAFETY: caller supplies a live PostgreSQL relation and block number.
-        // The returned buffer pin is owned by this guard.
-        let buffer = unsafe {
-            pg_sys::ReadBufferExtended(
+        // SAFETY: caller supplies a live PostgreSQL relation and block number;
+        // `ReadBufferExtended` pins valid buffers and `from_pinned` validates
+        // before constructing the owning guard.
+        unsafe {
+            let buffer = pg_sys::ReadBufferExtended(
                 relation,
                 pg_sys::ForkNumber::MAIN_FORKNUM,
                 block_number,
                 mode,
                 ptr::null_mut(),
-            )
-        };
-        // SAFETY: `buffer` is the direct result from `ReadBufferExtended`,
-        // which pins valid buffers for the caller.
-        unsafe { Self::from_pinned(buffer) }
+            );
+            Self::from_pinned(buffer)
+        }
     }
 
     pub(crate) unsafe fn from_pinned(buffer: pg_sys::Buffer) -> Option<Self> {
@@ -134,25 +133,21 @@ impl LockedBufferGuard {
         mode: pg_sys::ReadBufferMode::Type,
         lockmode: i32,
     ) -> Option<Self> {
-        // SAFETY: caller supplies a live PostgreSQL relation and block number.
-        // The returned buffer pin is owned by this guard.
-        let buffer = unsafe {
-            pg_sys::ReadBufferExtended(
-                relation,
-                pg_sys::ForkNumber::MAIN_FORKNUM,
-                block_number,
-                mode,
-                ptr::null_mut(),
-            )
-        };
-        // SAFETY: `buffer` is the result from `ReadBufferExtended`.
-        if !unsafe { pg_sys::BufferIsValid(buffer) } {
+        // SAFETY: caller supplies a live PostgreSQL relation and block number;
+        // `ReadBufferExtended` pins valid buffers, `BufferIsValid` filters
+        // invalid handles, and the matched `LockBuffer` pairs with this
+        // guard's `UnlockReleaseBuffer` in Drop.
+        let buffer = pg_sys::ReadBufferExtended(
+            relation,
+            pg_sys::ForkNumber::MAIN_FORKNUM,
+            block_number,
+            mode,
+            ptr::null_mut(),
+        );
+        if !pg_sys::BufferIsValid(buffer) {
             return None;
         }
-
-        // SAFETY: `buffer` is valid and pinned; this guard owns the matching
-        // `UnlockReleaseBuffer`.
-        unsafe { pg_sys::LockBuffer(buffer, lockmode) };
+        pg_sys::LockBuffer(buffer, lockmode);
         Some(Self { buffer })
     }
 
@@ -162,18 +157,16 @@ impl LockedBufferGuard {
         mode: pg_sys::ReadBufferMode::Type,
     ) -> Option<Self> {
         // SAFETY: caller supplies a live PostgreSQL relation and a read mode
-        // that returns the buffer already locked, such as `RBM_ZERO_AND_LOCK`.
-        let buffer = unsafe {
-            pg_sys::ReadBufferExtended(
-                relation,
-                pg_sys::ForkNumber::MAIN_FORKNUM,
-                block_number,
-                mode,
-                ptr::null_mut(),
-            )
-        };
-        // SAFETY: `buffer` is the result from `ReadBufferExtended`.
-        if !unsafe { pg_sys::BufferIsValid(buffer) } {
+        // that returns the buffer already locked, such as `RBM_ZERO_AND_LOCK`;
+        // `BufferIsValid` filters invalid handles.
+        let buffer = pg_sys::ReadBufferExtended(
+            relation,
+            pg_sys::ForkNumber::MAIN_FORKNUM,
+            block_number,
+            mode,
+            ptr::null_mut(),
+        );
+        if !pg_sys::BufferIsValid(buffer) {
             return None;
         }
         Some(Self { buffer })
@@ -212,14 +205,12 @@ impl LockedBufferGuard {
 
     pub(crate) unsafe fn lock_pinned(buffer: pg_sys::Buffer, lockmode: i32) -> Option<Self> {
         // SAFETY: `buffer` is supplied by a PostgreSQL API that pins buffers
-        // for the caller, such as `read_stream_next_buffer`.
-        if !unsafe { pg_sys::BufferIsValid(buffer) } {
+        // for the caller (e.g. `read_stream_next_buffer`); `BufferIsValid`
+        // filters invalid handles before the matched `LockBuffer`/Drop pair.
+        if !pg_sys::BufferIsValid(buffer) {
             return None;
         }
-
-        // SAFETY: `buffer` is valid and pinned; this guard owns the matching
-        // `UnlockReleaseBuffer`.
-        unsafe { pg_sys::LockBuffer(buffer, lockmode) };
+        pg_sys::LockBuffer(buffer, lockmode);
         Some(Self { buffer })
     }
 
