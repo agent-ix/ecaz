@@ -14,6 +14,19 @@
 - AWS: not used
 - vchord / pgvectorscale: not used
 
+## Measurement Scope
+
+This packet is a free-I/O upper-bound measurement. The CLI builds each
+sidecar representation in process memory before timed reranking, so
+`sidecar_p50` measures local scoring over resident source bytes. It does not
+measure product sidecar storage latency, random id lookup, TID-sorted sidecar
+fetch, prefetch behavior, or an in-index read path. A real-I/O sidecar
+microbenchmark is still owed before Exp 7 can support a product decision.
+
+`candidate_sql_p50` is the current `rerank=off` IVF approximate query returning
+the top 50 candidate ids to the client. It is not a full posting-frontier
+materialization.
+
 ## Commands
 
 Validation:
@@ -87,4 +100,5 @@ rabitq8 sidecar estimate: 73.81 MiB
 - The measured local candidate SQL time is the existing rerank-off IVF approximate scan. It still dominates p50, especially at high nprobe.
 - f32 and f16 preserve the same recall because both rerank the same 50-candidate approximate frontier closely enough at this fixture. The f16 scalar path is slower on this local x86/WSL2 host; that is not Graviton NEON evidence.
 - `rabitq8` is much smaller and slightly faster in local rerank CPU, but loses recall at this candidate width on this fixture.
+- `recall_p10 = 0.9000` at nprobe=32 for all variants is a candidate-frontier floor: the approximate `LIMIT 50` candidate set is missing true neighbors for the hardest queries before exact sidecar scoring runs.
 - Query count is 200 as a local cost waiver. AWS promotion must raise q-count per Task 51 rules.

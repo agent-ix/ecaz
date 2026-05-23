@@ -13,6 +13,19 @@
 - AWS: not used
 - vchord / pgvectorscale: not used
 
+## Scope Clarification From Reviewer Feedback
+
+This packet measures a free-I/O upper bound. `ecaz bench sidecar-rerank` loads
+the sidecar representation into the CLI process before timed reranking, so the
+reported `sidecar_p50` is resident scoring time, not product sidecar storage
+latency. The benchmark does not model random sidecar table lookup,
+TID-sorted sidecar fetch, prefetch behavior, or an in-index read path. A
+real-I/O sidecar microbenchmark remains open before Exp 7 can support a product
+decision.
+
+The `candidate_sql_p50` values are IVF `rerank=off` top-50 candidate-id
+queries returned to the client, not full posting-frontier materialization.
+
 ## Validation Artifacts
 
 - `cargo-check-ecaz-cli.log`
