@@ -103,6 +103,14 @@ flowchart TD
     Leaf --> Delta
 ```
 
+## Schema
+
+```json
+{
+  "TODO": "describe the schema shape here"
+}
+```
+
 ## Acceptance Criteria
 
 ### FR-051-AC-1

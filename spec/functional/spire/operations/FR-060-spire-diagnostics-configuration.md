@@ -95,6 +95,10 @@ lifecycle fixtures.
 Measurement and readiness claims SHALL cite packet-local artifacts and one of
 the evidence labels defined by the SPIRE readiness docs.
 
+## Endpoint
+
+> TODO: document the endpoint as a `| Method | Path | Auth | Description |` table.
+
 ## Acceptance Criteria
 
 ### FR-060-AC-1

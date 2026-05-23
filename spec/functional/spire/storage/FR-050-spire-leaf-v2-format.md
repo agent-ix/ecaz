@@ -121,6 +121,14 @@ flags are reserved for delta objects.
 5. Segment tuple heap TIDs and gammas SHALL be valid and finite.
 6. Assignment payload format SHALL be one of the defined tags.
 
+## Schema
+
+```json
+{
+  "TODO": "describe the schema shape here"
+}
+```
+
 ## Acceptance Criteria
 
 ### FR-050-AC-1

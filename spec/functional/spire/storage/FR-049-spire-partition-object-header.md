@@ -59,6 +59,14 @@ Header size SHALL be exactly 54 bytes.
    against their own format-specific invariants before returning structured
    objects.
 
+## Schema
+
+```json
+{
+  "TODO": "describe the schema shape here"
+}
+```
+
 ## Acceptance Criteria
 
 ### FR-049-AC-1

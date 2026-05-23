@@ -141,6 +141,10 @@ erDiagram
     SPIRE_INDEX ||--o{ PLACEMENT_DIRECTORY : routes_writes
 ```
 
+## Bounded Context
+
+> TODO: describe the bounded context for this domain — the scope, the ubiquitous language, and the dominant interactions inside the boundary.
+
 ## Acceptance Criteria
 
 ### FR-048-AC-1
