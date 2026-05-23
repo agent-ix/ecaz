@@ -49,8 +49,9 @@ impl PinnedBufferGuard {
 
     pub(crate) unsafe fn from_pinned(buffer: pg_sys::Buffer) -> Option<Self> {
         // SAFETY: `buffer` is supplied by a PostgreSQL API that pins buffers
-        // for the caller, such as `read_stream_next_buffer`.
-        if !unsafe { pg_sys::BufferIsValid(buffer) } {
+        // for the caller, such as `read_stream_next_buffer`; `BufferIsValid`
+        // filters invalid handles inside this unsafe fn.
+        if !pg_sys::BufferIsValid(buffer) {
             return None;
         }
         Some(Self { buffer })
