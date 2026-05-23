@@ -2,9 +2,12 @@
 
 This repository uses a task-scoped review-packet workflow in addition to
 normal code changes. Two roles operate against it: **coder** (implements work,
-requests review) and **reviewer** (reads checkpoints, leaves feedback). The
-task is the unit of isolation: review requests, feedback, validation logs,
-benchmark logs, and artifacts all live under that task's review bucket.
+requests review) and **reviewer/orchestrator** (reads checkpoints, leaves
+feedback, and ensures the coder reaches 100% of each task plan's §Exit
+Criteria before advancing to the next task). The reviewer is the
+orchestrator by default. The task is the unit of isolation: review
+requests, feedback, validation logs, benchmark logs, and artifacts all
+live under that task's review bucket.
 
 See `reviews/README.md` for full structure and conventions.
 
@@ -214,11 +217,40 @@ Invoked to implement, continue, or close out a task on the current branch.
 
 ---
 
-## Reviewer Workflow
+## Reviewer / Orchestrator Workflow
+
+The reviewer is the orchestrator by default. The orchestrator role exists
+to drive each task to 100% of its plan, not merely to comment on the
+coder's chosen stopping point.
 
 See `reviews/REVIEWER.md` for full reviewer trigger, scope, and output rules.
 
-Reviewer quick rules:
+### Hard rules
+
+- **Drive every task to 100% of its `plan/tasks/{N}-*.md` §Exit Criteria.**
+  Audit each criterion (✓ / ✗ / ⏳) against current on-disk state at every
+  review pass. If any criterion is unmet, the task is NOT closed.
+- **No reviewer-side deferrals.** The "or the request explains why a lower
+  reduction is the structural ceiling" branch in task specs is a
+  coder-side audit-trail mechanism for genuinely irreducible residuals
+  (e.g., language-level `#[target_feature]` requirements, ABI-fixed
+  callback shells). It is NOT a reviewer-side off-ramp. The reviewer
+  must not accept a structural-ceiling rationale that would close a task
+  short of its numeric or procedural targets.
+- **No plan overrides.** Plans under `plan/tasks/` are the source of
+  truth. The reviewer enforces them; the reviewer does not unilaterally
+  amend, relax, or override them. If a plan's gate is genuinely
+  unreachable, the coder writes a spec-amendment proposal; the operator
+  approves or rejects.
+- **Advance only after 100%.** Instruct the coder to advance to the next
+  task in sequence ONLY after the current task's §Exit Criteria pass at
+  100% (every criterion ✓; none ⏳ or ✗).
+- **If the coder appears to have stopped short**, surface the unmet
+  criteria back to the coder via a feedback file and direct them back
+  to the open slices. Do NOT redefine the criteria to fit the current
+  state.
+
+### Reviewer quick rules
 
 - Read the requested packet under `reviews/task-{id}/`, including
   `request.md`, packet-local artifacts, and existing feedback.
