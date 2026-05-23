@@ -1,0 +1,25 @@
+[loader] inspecting fixtures/m5_diskann_real10k/m5_diskann_real10k_corpus.tsv
+[loader] inspecting fixtures/m5_diskann_real10k/m5_diskann_real10k_queries.tsv
+[loader] corpus: 10000 rows, sha256=ed6012f8b12281edd80f72dfe1146a9cd09cb3192a5a0012aebb1c398290926f  queries: 200 rows, sha256=77d406729dabfe907824d74df69f64b5706a76579ec1deaf54e5619091c9f7ac
+[loader] no sibling manifest at fixtures/m5_diskann_real10k/m5_diskann_real10k_manifest.json; continuing without verification
+[loader] copied corpus table ec_real_10k_hnsw_corpus in 2.00s
+[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...
+[loader] encoded corpus table ec_real_10k_hnsw_corpus in 747.89ms
+[loader] copied queries table ec_real_10k_hnsw_queries in 37.23ms
+[loader] building ec_real_10k_hnsw_m8_idx using ec_hnsw (reloptions=[m=8, ef_construction=128, build_source_column=source]) ...
+[loader] built ec_real_10k_hnsw_m8_idx in 1.45s
+[loader] building ec_real_10k_hnsw_m16_idx using ec_hnsw (reloptions=[m=16, ef_construction=128, build_source_column=source]) ...
+[loader] built ec_real_10k_hnsw_m16_idx in 1.79s
+┌─────────┬──────────────────────────────────────────────────────────────────────────────────┐
+│ field   ┆ value                                                                            │
+╞═════════╪══════════════════════════════════════════════════════════════════════════════════╡
+│ profile ┆ ec_hnsw                                                                          │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ ec_real_10k_hnsw_corpus (10000 rows)                                             │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ ec_real_10k_hnsw_queries (200 rows)                                              │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ ec_real_10k_hnsw_m8_idx [m=8, ef_construction=128, build_source_column=source]   │
+│         ┆ ec_real_10k_hnsw_m16_idx [m=16, ef_construction=128, build_source_column=source] │
+└─────────┴──────────────────────────────────────────────────────────────────────────────────┘
+[loader] completed prefix ec_real_10k_hnsw in 6.64s
