@@ -24,7 +24,7 @@ SPIRE distributed vector reads SHALL use `EcSpireDistributedScan`, a PostgreSQL
 CustomScan node, to route selected PIDs to local and remote stores, merge
 candidate streams, and return virtual tuple payloads directly to the executor.
 
-## Planner And Execution Flow
+## Workflow
 
 ```mermaid
 sequenceDiagram

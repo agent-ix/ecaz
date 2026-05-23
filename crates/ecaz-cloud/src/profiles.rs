@@ -11,6 +11,13 @@ use serde::Serialize;
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 pub enum Profile {
     P10k,
+    /// `10k-medium` = bigger 10k bench host (m8g.xlarge / 4 vCPU /
+    /// 16 GB). Recommended default for bench cycles per
+    /// `infra/cloud/terraform/profiles/10k-medium.tfvars`: the
+    /// `[profile.bench]` build (lto=fat, codegen-units=1, debug=true)
+    /// needs > 8 GB to compile without OOM, and the extra cores keep
+    /// the SSM agent responsive during criterion + perf-stat runs.
+    P10kMedium,
     Dev,
     P1m,
     P10m,
@@ -26,6 +33,7 @@ impl Profile {
     pub fn parse(s: &str) -> Option<Profile> {
         match s {
             "10k" => Some(Profile::P10k),
+            "10k-medium" => Some(Profile::P10kMedium),
             "dev" => Some(Profile::Dev),
             "1m" => Some(Profile::P1m),
             "10m" => Some(Profile::P10m),
@@ -38,6 +46,7 @@ impl Profile {
     pub fn name(self) -> &'static str {
         match self {
             Profile::P10k => "10k",
+            Profile::P10kMedium => "10k-medium",
             Profile::Dev => "dev",
             Profile::P1m => "1m",
             Profile::P10m => "10m",
@@ -49,6 +58,7 @@ impl Profile {
     pub fn db_instance_type(self) -> &'static str {
         match self {
             Profile::P10k | Profile::Dev => "m7g.large",
+            Profile::P10kMedium => "m8g.xlarge",
             Profile::P1m => "m7g.xlarge",
             Profile::P10m => "m7g.4xlarge",
             Profile::P100m => "r7g.4xlarge",
@@ -59,6 +69,7 @@ impl Profile {
     pub fn loader_instance_type(self) -> &'static str {
         match self {
             Profile::P10k | Profile::Dev => "c7g.large",
+            Profile::P10kMedium => "c8g.medium",
             Profile::P1m | Profile::P10m => "c7g.2xlarge",
             Profile::P100m | Profile::P1b => "c7g.4xlarge",
         }
@@ -67,7 +78,7 @@ impl Profile {
     pub fn ebs_gb(self) -> u64 {
         match self {
             Profile::P10k => 20,
-            Profile::Dev => 50,
+            Profile::P10kMedium | Profile::Dev => 50,
             Profile::P1m => 100,
             Profile::P10m => 500,
             Profile::P100m => 2048,
@@ -80,6 +91,7 @@ impl Profile {
         // Rough Graviton on-demand list price, us-east-1.
         let db = match self {
             Profile::P10k | Profile::Dev => 0.0816, // m7g.large
+            Profile::P10kMedium => 0.1632,          // m8g.xlarge ≈ m7g.xlarge list
             Profile::P1m => 0.1632,                 // m7g.xlarge
             Profile::P10m => 0.6528,                // m7g.4xlarge
             Profile::P100m => 0.8568,               // r7g.4xlarge
@@ -87,6 +99,7 @@ impl Profile {
         };
         let loader = match self {
             Profile::P10k | Profile::Dev => 0.0725, // c7g.large
+            Profile::P10kMedium => 0.0181,          // c8g.medium
             Profile::P1m | Profile::P10m => 0.29,   // c7g.2xlarge
             Profile::P100m | Profile::P1b => 0.58,  // c7g.4xlarge
         };
@@ -118,7 +131,7 @@ impl std::fmt::Display for UnknownProfile {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "unknown profile {:?}; expected one of 10k/dev/1m/10m/100m",
+            "unknown profile {:?}; expected one of 10k/10k-medium/dev/1m/10m/100m/1b",
             self.0
         )
     }

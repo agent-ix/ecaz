@@ -113,7 +113,8 @@ const _: () = {
 };
 
 const _: () = {
-    assert!(EC_IVF_INDEX_FORMAT_VERSION == 1);
+    // v2 added quant_bits at byte 34 (was reserved); v1 indexes decode as bits=4.
+    assert!(EC_IVF_INDEX_FORMAT_VERSION == 2);
     assert!(EC_IVF_METADATA_MAGIC == 0x5649_4345);
     assert!(EC_IVF_METADATA_BYTES == 80);
     assert!(EC_IVF_METADATA_MAGIC_OFFSET == 0);

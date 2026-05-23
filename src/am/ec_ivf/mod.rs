@@ -18,7 +18,17 @@ pub(super) const EC_IVF_MAX_NLISTS: i32 = 1_000_000;
 pub(super) const EC_IVF_DEFAULT_NPROBE: i32 = 0;
 pub(super) const EC_IVF_MIN_NPROBE: i32 = 0;
 pub(super) const EC_IVF_MAX_NPROBE: i32 = 1_000_000;
-pub(super) const EC_IVF_DEFAULT_RERANK_WIDTH: i32 = 0;
+// 0 historically meant "rerank every candidate" which at high nprobe
+// can run heap fetches for tens of thousands of candidates per query
+// (~80 ms on 50k @ nprobe=64). A small width is enough: at bits=1 +
+// rerank=heap_f32 we measured recall@10 plateau by width=50 on real
+// DBpedia (0.986 vs 0.988 at width=200) — wider just spends more on
+// f32 heap reranks that don't move recall.
+//
+// 50 covers query K up to ~10 with comfortable margin; queries with
+// LIMIT > 10 should bump via WITH (rerank_width = ...) at CREATE
+// INDEX or SET ec_ivf.rerank_width = N per session.
+pub(super) const EC_IVF_DEFAULT_RERANK_WIDTH: i32 = 50;
 pub(super) const EC_IVF_MIN_RERANK_WIDTH: i32 = 0;
 pub(super) const EC_IVF_MAX_RERANK_WIDTH: i32 = 10_000_000;
 pub(super) const EC_IVF_DEFAULT_TRAINING_SAMPLE_ROWS: i32 = 0;
@@ -32,6 +42,17 @@ pub(super) const EC_IVF_MIN_PQ_GROUP_SIZE: i32 = 0;
 pub(super) const EC_IVF_MAX_PQ_GROUP_SIZE: i32 = 32;
 pub(super) const EC_IVF_DEFAULT_POSTING_SLACK_PERCENT: i32 = 0;
 pub(super) const EC_IVF_MIN_POSTING_SLACK_PERCENT: i32 = 0;
+
+/// Per-dimension code width for `storage_format = 'rabitq'`. The
+/// RaBitQ quantizer supports bits ∈ {1, 2, 4, 8}; 1-bit is the
+/// fastest scoring kernel + smallest code (~4× less storage and ~4×
+/// kernel throughput vs 4-bit) at the cost of recall (must be paired
+/// with `rerank = 'heap_f32'` for high-recall queries). 4 is the
+/// classical paper default and what existing indexes used before this
+/// reloption landed.
+pub(super) const EC_IVF_DEFAULT_QUANT_BITS: i32 = 4;
+pub(super) const EC_IVF_MIN_QUANT_BITS: i32 = 1;
+pub(super) const EC_IVF_MAX_QUANT_BITS: i32 = 8;
 pub(super) const EC_IVF_MAX_POSTING_SLACK_PERCENT: i32 = 1000;
 pub(super) const P_NEW: pgrx::pg_sys::BlockNumber = u32::MAX;
 

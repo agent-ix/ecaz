@@ -45,6 +45,7 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_aminsert(
             heap_tid,
             indexed_vector_kind,
             metadata.storage_format,
+            metadata.quant_bits,
             "aminsert",
         );
 
@@ -101,11 +102,14 @@ unsafe fn reencode_tuple_for_storage(
     if metadata.storage_format != options::StorageFormat::PqFastScan {
         return Ok(tuple);
     }
-    let model = quantizer::load_pq_fastscan_model(index_relation, metadata)?;
-    let ivf_quantizer = quantizer::IvfQuantizer::resolve_with_pq_group_size(
+    // SAFETY: caller passes the live IVF index relation and metadata read from
+    // it; the model chain is validated by the loader.
+    let model = unsafe { quantizer::load_pq_fastscan_model(index_relation, metadata) }?;
+    let ivf_quantizer = quantizer::IvfQuantizer::resolve_with_pq_group_size_and_bits(
         metadata.storage_format,
         usize::from(metadata.dimensions),
         metadata_pq_group_size(metadata),
+        Some(metadata.quant_bits),
     )?;
     let (dimensions, gamma, payload) =
         ivf_quantizer.encode_source_with_pq_model(&tuple.source_vector, &model)?;
@@ -172,10 +176,11 @@ unsafe fn ensure_heap_tid_absent(
         return Err("ec_ivf metadata has live dimensions but no directory head".to_owned());
     }
 
-    let payload_len = super::quantizer::IvfQuantizer::resolve_with_pq_group_size(
+    let payload_len = super::quantizer::IvfQuantizer::resolve_with_pq_group_size_and_bits(
         metadata.storage_format,
         metadata.dimensions as usize,
         metadata_pq_group_size(metadata),
+        Some(metadata.quant_bits),
     )?
     .payload_len();
     let mut next_tid = metadata.directory_head;
@@ -236,6 +241,7 @@ fn options_from_metadata(metadata: &page::MetadataPage) -> Result<options::EcIvf
         seed: i32::try_from(metadata.seed).map_err(|_| "metadata seed exceeds i32".to_owned())?,
         pq_group_size: i32::from(metadata.pq_group_size),
         posting_slack_percent: 0,
+        quant_bits: i32::from(metadata.quant_bits),
         storage_format: metadata.storage_format,
         rerank: metadata.rerank,
     })
@@ -272,10 +278,11 @@ fn validate_insert_tuple(
             metadata.dimensions
         ));
     }
-    let expected_payload_len = super::quantizer::IvfQuantizer::resolve_with_pq_group_size(
+    let expected_payload_len = super::quantizer::IvfQuantizer::resolve_with_pq_group_size_and_bits(
         metadata.storage_format,
         usize::from(metadata.dimensions),
         metadata_pq_group_size(metadata),
+        Some(metadata.quant_bits),
     )?
     .payload_len();
     if tuple.payload.len() != expected_payload_len {

@@ -53,7 +53,12 @@ pub(super) const METADATA_BLOCK_NUMBER: u32 = 0;
 pub(super) const FIRST_DATA_BLOCK_NUMBER: pg_sys::BlockNumber = 1;
 #[cfg(not(any(feature = "pg17", feature = "pg18")))]
 pub(super) const FIRST_DATA_BLOCK_NUMBER: u32 = 1;
-pub const EC_IVF_INDEX_FORMAT_VERSION: u16 = 1;
+// v1 = original format
+// v2 = stores `quant_bits` (RaBitQ per-dim code width) at byte 34.
+//      Indexes written by v1 read back here as `quant_bits = 0` which
+//      the decoder coerces to the default of 4.
+pub const EC_IVF_INDEX_FORMAT_VERSION: u16 = 2;
+pub(super) const EC_IVF_INDEX_FORMAT_VERSION_MIN: u16 = 1;
 pub(super) const INDEX_FORMAT_VERSION: u16 = EC_IVF_INDEX_FORMAT_VERSION;
 
 pub const EC_IVF_METADATA_MAGIC: u32 = 0x5649_4345; // "ECIV" as little-endian bytes.
@@ -579,6 +584,10 @@ pub struct MetadataPage {
     pub seed: u64,
     pub storage_format: StorageFormat,
     pub rerank: RerankMode,
+    /// RaBitQ per-dim code width. Valid values are {1, 2, 4, 8}. v1
+    /// indexes write 0 here and the decoder coerces to 4 (the legacy
+    /// hardcoded value).
+    pub quant_bits: u8,
     pub centroid_head: ItemPointer,
     pub directory_head: ItemPointer,
     pub total_live_tuples: u64,
@@ -601,6 +610,7 @@ impl MetadataPage {
             seed: u64::try_from(options.seed).expect("validated seed should fit in u64"),
             storage_format: options.storage_format,
             rerank: options.rerank.v1_effective(),
+            quant_bits: options.effective_quant_bits(),
             centroid_head: ItemPointer::INVALID,
             directory_head: ItemPointer::INVALID,
             total_live_tuples: 0,
@@ -623,6 +633,7 @@ impl MetadataPage {
         out[24..32].copy_from_slice(&self.seed.to_le_bytes());
         out[32] = self.storage_format as u8;
         out[33] = self.rerank as u8;
+        out[34] = self.quant_bits;
         write_item_pointer(&mut out[36..42], self.centroid_head);
         write_item_pointer(&mut out[42..48], self.directory_head);
         out[48..56].copy_from_slice(&self.total_live_tuples.to_le_bytes());
@@ -653,7 +664,7 @@ impl MetadataPage {
                 .try_into()
                 .expect("metadata format slice should be 2 bytes"),
         );
-        if format_version != INDEX_FORMAT_VERSION {
+        if !(EC_IVF_INDEX_FORMAT_VERSION_MIN..=INDEX_FORMAT_VERSION).contains(&format_version) {
             return Err(format!(
                 "unsupported ec_ivf metadata format version: {format_version}"
             ));
@@ -692,6 +703,15 @@ impl MetadataPage {
             ),
             storage_format: decode_storage_format(bytes[32])?,
             rerank: decode_rerank(bytes[33])?,
+            // v1 metadata didn't write here, leaving 0 — coerce to the
+            // legacy default of 4 so old indexes keep working.
+            quant_bits: match bytes[34] {
+                0 => 4,
+                b @ (1 | 2 | 4 | 8) => b,
+                other => {
+                    return Err(format!("invalid ec_ivf quant_bits stored in metadata: {other}"))
+                }
+            },
             centroid_head: ItemPointer::decode(&bytes[36..42])?,
             directory_head: ItemPointer::decode(&bytes[42..48])?,
             total_live_tuples: u64::from_le_bytes(
@@ -2509,6 +2529,7 @@ mod tests {
             seed: 7,
             pq_group_size: 0,
             posting_slack_percent: 0,
+            quant_bits: 4,
             storage_format: StorageFormat::RaBitQ,
             rerank: RerankMode::HeapF32,
         });
@@ -2536,6 +2557,7 @@ mod tests {
             seed: 42,
             pq_group_size: 0,
             posting_slack_percent: 0,
+            quant_bits: 4,
             storage_format: StorageFormat::Auto,
             rerank: RerankMode::Auto,
         });
@@ -2887,6 +2909,7 @@ mod tests {
             seed: 1,
             pq_group_size: 0,
             posting_slack_percent: 0,
+            quant_bits: 4,
             storage_format: StorageFormat::Auto,
             rerank: RerankMode::Auto,
         });

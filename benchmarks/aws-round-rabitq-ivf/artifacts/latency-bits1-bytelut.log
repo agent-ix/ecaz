@@ -1,0 +1,10 @@
+HEAD is now at 77dab6e85 RaBitQ bits=1 NEON: replace 8 scalar selects/byte with 8-lane LUT row
+[32m[1m       Running[0m[39m sudo cp /var/lib/pgsql/build/ecaz/target/release/ecaz-pg18/usr/share/pgsql/extension/ecaz.control /usr/share/pgsql/extension/ecaz.control
+[32m[1m       Running[0m[39m sudo cp /var/lib/pgsql/build/ecaz/target/release/ecaz-pg18/usr/lib64/pgsql/ecaz.so /usr/lib64/pgsql/ecaz.so
+[32m[1m       Running[0m[39m sudo cp /var/lib/pgsql/build/ecaz/target/release/ecaz-pg18/usr/share/pgsql/extension/ecaz--0.1.1.sql /usr/share/pgsql/extension/ecaz--0.1.1.sql
+warning: `ecaz-cli` (bin "ecaz") generated 1 warning
+    Finished `release` profile [optimized] target(s) in 6m 30s
+ real_50k_queries_shared             | 64 kB    |            8
+(41 rows)
+
+

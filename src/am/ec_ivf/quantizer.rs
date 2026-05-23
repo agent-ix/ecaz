@@ -42,6 +42,9 @@ pub(super) struct IvfPqFastScanModel {
 pub(super) struct IvfQuantizer {
     profile: IvfQuantizerProfile,
     dimensions: usize,
+    /// Per-dim code width for the RaBitQ branch. Ignored for
+    /// TurboQuant / PqFastScan profiles. Always one of {1, 2, 4, 8}.
+    rabitq_bits: u8,
 }
 
 impl IvfQuantizer {
@@ -49,13 +52,22 @@ impl IvfQuantizer {
         storage_format: StorageFormat,
         dimensions: usize,
     ) -> Result<Self, String> {
-        Self::resolve_with_pq_group_size(storage_format, dimensions, None)
+        Self::resolve_with_pq_group_size_and_bits(storage_format, dimensions, None, None)
     }
 
     pub(super) fn resolve_with_pq_group_size(
         storage_format: StorageFormat,
         dimensions: usize,
         pq_group_size: Option<usize>,
+    ) -> Result<Self, String> {
+        Self::resolve_with_pq_group_size_and_bits(storage_format, dimensions, pq_group_size, None)
+    }
+
+    pub(super) fn resolve_with_pq_group_size_and_bits(
+        storage_format: StorageFormat,
+        dimensions: usize,
+        pq_group_size: Option<usize>,
+        rabitq_bits: Option<u8>,
     ) -> Result<Self, String> {
         storage_format.validate_v1_supported()?;
         let profile = match storage_format {
@@ -70,9 +82,18 @@ impl IvfQuantizer {
             }
             StorageFormat::RaBitQ => IvfQuantizerProfile::RaBitQ,
         };
+        let bits = match rabitq_bits.unwrap_or(crate::DEFAULT_QUANT_BITS) {
+            b @ (1 | 2 | 4 | 8) => b,
+            other => {
+                return Err(format!(
+                    "ec_ivf RaBitQ quant_bits must be one of 1, 2, 4, 8; got {other}"
+                ))
+            }
+        };
         Ok(Self {
             profile,
             dimensions,
+            rabitq_bits: bits,
         })
     }
 
@@ -245,7 +266,7 @@ impl IvfQuantizer {
             }
             (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::RaBitQ(prepared_query)) => {
                 let _ = gamma;
-                Ok(prepared_query.estimate_ip(payload).estimate)
+                Ok(prepared_query.estimate_ip_scalar_only(payload))
             }
             (
                 IvfQuantizerProfile::PqFastScan { group_count, .. },
@@ -306,6 +327,10 @@ impl IvfQuantizer {
                     min_ip_to_keep,
                 ))
             }
+            (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::RaBitQ(prepared), Some(min_ip)) => {
+                let _ = gamma;
+                Ok(prepared.try_estimate_ip_scalar(payload, min_ip))
+            }
             _ => self
                 .score_ip_from_parts(prepared_query, gamma, payload)
                 .map(Some),
@@ -318,20 +343,27 @@ impl IvfQuantizer {
                 crate::code_len(self.dimensions, crate::DEFAULT_QUANT_BITS)
             }
             IvfQuantizerProfile::PqFastScan { group_count, .. } => group_count.div_ceil(2),
-            IvfQuantizerProfile::RaBitQ => code_len_for(self.dimensions, crate::DEFAULT_QUANT_BITS)
-                .expect("default RaBitQ configuration should be valid"),
+            IvfQuantizerProfile::RaBitQ => code_len_for(self.dimensions, self.rabitq_bits)
+                .expect("RaBitQ quant_bits should be validated at resolve time"),
         }
     }
 
+    pub(super) fn rabitq_bits(self) -> u8 {
+        self.rabitq_bits
+    }
+
     pub(super) fn uses_score_bound_pruning(self) -> bool {
-        matches!(self.profile, IvfQuantizerProfile::PqFastScan { .. })
+        matches!(
+            self.profile,
+            IvfQuantizerProfile::PqFastScan { .. } | IvfQuantizerProfile::RaBitQ
+        )
     }
 
     fn rabitq_quantizer(self) -> Result<Arc<RaBitQQuantizer>, String> {
         RaBitQQuantizer::cached_seeded_srht_bits(
             self.dimensions,
             crate::DEFAULT_QUANT_SEED,
-            crate::DEFAULT_QUANT_BITS,
+            self.rabitq_bits,
         )
     }
 

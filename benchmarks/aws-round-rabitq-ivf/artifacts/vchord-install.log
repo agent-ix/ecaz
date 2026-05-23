@@ -1,0 +1,29 @@
+HEAD is now at 31a7accfa Reviewer 2026-05-22-04 fixes: nlists rebuild rule, stale 50k claim, manifest
+=== ensure pgvector ===
+Dependencies resolved.
+Nothing to do.
+Complete!
+/usr/bin/install -c -m 644 src/ivfflat.bc '/usr/lib64/pgsql/bitcode'/vector/src/
+/usr/bin/install -c -m 644 src/ivfinsert.bc '/usr/lib64/pgsql/bitcode'/vector/src/
+/usr/bin/install -c -m 644 src/ivfkmeans.bc '/usr/lib64/pgsql/bitcode'/vector/src/
+/usr/bin/install -c -m 644 src/ivfscan.bc '/usr/lib64/pgsql/bitcode'/vector/src/
+/usr/bin/install -c -m 644 src/ivfutils.bc '/usr/lib64/pgsql/bitcode'/vector/src/
+/usr/bin/install -c -m 644 src/ivfvacuum.bc '/usr/lib64/pgsql/bitcode'/vector/src/
+/usr/bin/install -c -m 644 src/sparsevec.bc '/usr/lib64/pgsql/bitcode'/vector/src/
+/usr/bin/install -c -m 644 src/vector.bc '/usr/lib64/pgsql/bitcode'/vector/src/
+cd '/usr/lib64/pgsql/bitcode' && /usr/bin/llvm-lto -thinlto -thinlto-action=thinlink -o vector.index.bc vector/src/bitutils.bc vector/src/bitvec.bc vector/src/halfutils.bc vector/src/halfvec.bc vector/src/hnsw.bc vector/src/hnswbuild.bc vector/src/hnswinsert.bc vector/src/hnswscan.bc vector/src/hnswutils.bc vector/src/hnswvacuum.bc vector/src/ivfbuild.bc vector/src/ivfflat.bc vector/src/ivfinsert.bc vector/src/ivfkmeans.bc vector/src/ivfscan.bc vector/src/ivfutils.bc vector/src/ivfvacuum.bc vector/src/sparsevec.bc vector/src/vector.bc
+[comparator:pgvector] 00:50:53 installed. Run:  psql -c 'CREATE EXTENSION IF NOT EXISTS vector;'
+=== install vchord ===
+[comparator:vchord] 00:50:53 downloading prebuilt postgresql-18-vchord_1.1.1_aarch64-linux-gnu.zip
+[comparator:vchord] 00:50:54 installing into /usr/lib64/pgsql and /usr/share/pgsql/extension
+[comparator:vchord] 00:50:54 installed vchord 1.1.1 (prebuilt) for pg18-aarch64-linux-gnu
+[comparator:vchord] 00:50:54 ensuring vchord is in shared_preload_libraries
+[comparator:vchord] 00:50:54 adding vchord -> 'ecaz,vchord'
+ALTER SYSTEM
+Job for postgresql.service failed because the control process exited with error code.
+See "systemctl status postgresql.service" and "journalctl -xeu postgresql.service" for details.
+=== restart pg ===
+=== verify extensions available ===
+psql: error: connection to server on socket "/var/run/postgresql/.s.PGSQL.5432" failed: No such file or directory
+	Is the server running locally and accepting connections on that socket?
+

@@ -1,20 +1,21 @@
 use std::cmp::Ordering;
-use std::collections::{hash_map::Entry, BinaryHeap, HashMap, HashSet};
+use hashbrown::hash_map::Entry;
+use hashbrown::HashMap;
+use std::collections::{BinaryHeap, HashSet};
 use std::ptr::{self, NonNull};
 
-#[cfg(any(test, feature = "pg_test"))]
-use pgrx::IntoDatum;
-use pgrx::{pg_sys, FromDatum, PgBox};
+use pgrx::{pg_sys, FromDatum, IntoDatum, PgBox};
 
 use crate::am::common::{
     callback::pg_am_callback, explain::IvfExplainCounters, heap_slot::HeapSlotReader,
-    scan_output::IndexScanOutput,
 };
 use crate::am::ec_hnsw::source;
 use crate::am::stats::{self, TqStatsCounters};
+#[cfg(feature = "pg18")]
+use crate::storage::buffer_guard::PinnedBufferGuard;
 use crate::storage::{
-    page::ItemPointer, relation::index_heap_relation_oid_handle, relation_guard::HeapRelationGuard,
-    slot_guard::TupleTableSlotGuard, snapshot_guard::RegisteredSnapshotGuard,
+    page::ItemPointer, relation_guard::HeapRelationGuard, slot_guard::TupleTableSlotGuard,
+    snapshot_guard::RegisteredSnapshotGuard,
 };
 #[cfg(any(test, feature = "pg_test"))]
 use crate::storage::{
@@ -53,12 +54,9 @@ impl EcIvfScanOpaque {
         if self.query_values.is_null() || self.query_dimensions == 0 {
             pgrx::error!("ec_ivf scan query state is missing");
         }
-        scan_owned_slice(
-            self,
-            self.query_values,
-            self.query_dimensions as usize,
-            "ec_ivf scan query values",
-        )
+        // SAFETY: `store_scan_query` allocates `query_dimensions` contiguous
+        // f32 values and this method rejects null or zero-length state above.
+        unsafe { std::slice::from_raw_parts(self.query_values, self.query_dimensions as usize) }
     }
 
     fn next_posting_candidate(&mut self) -> Option<EcIvfScoredCandidate> {
@@ -68,14 +66,13 @@ impl EcIvfScanOpaque {
             return None;
         }
 
-        let candidate = scan_owned_slice(
-            self,
-            self.posting_candidates,
-            self.posting_candidate_count as usize,
-            "ec_ivf posting candidates",
-        )
-        .get(self.next_candidate_index as usize)
-        .copied()?;
+        // SAFETY: `posting_candidates` points to `posting_candidate_count`
+        // contiguous candidates and the index bound is checked above.
+        let candidate = unsafe {
+            *self
+                .posting_candidates
+                .add(self.next_candidate_index as usize)
+        };
         self.next_candidate_index += 1;
         Some(candidate)
     }
@@ -85,12 +82,9 @@ impl EcIvfScanOpaque {
         if self.query_values.is_null() || self.query_dimensions == 0 {
             return &[];
         }
-        scan_owned_slice(
-            self,
-            self.query_values,
-            self.query_dimensions as usize,
-            "ec_ivf scan query values",
-        )
+        // SAFETY: test-only accessor mirrors `query_values`; non-null storage
+        // contains `query_dimensions` contiguous f32 values.
+        unsafe { std::slice::from_raw_parts(self.query_values, self.query_dimensions as usize) }
     }
 
     #[cfg(any(test, feature = "pg_test"))]
@@ -98,157 +92,12 @@ impl EcIvfScanOpaque {
         if self.selected_lists.is_null() || self.selected_list_count == 0 {
             return &[];
         }
-        scan_owned_slice(
-            self,
-            self.selected_lists,
-            self.selected_list_count as usize,
-            "ec_ivf selected lists",
-        )
-    }
-}
-
-fn scan_owned_slice<'a, T>(
-    _opaque: &'a EcIvfScanOpaque,
-    ptr: *const T,
-    len: usize,
-    context: &str,
-) -> &'a [T] {
-    if ptr.is_null() {
-        pgrx::error!("{context} pointer is null");
-    }
-    // SAFETY: scan-owned arrays are allocated with at least `len` contiguous
-    // elements and retained by `EcIvfScanOpaque` for the returned borrow.
-    unsafe { std::slice::from_raw_parts(ptr, len) }
-}
-
-fn scan_box_ref<'a, T>(ptr: *const T, _context: &str) -> Option<&'a T> {
-    if ptr.is_null() {
-        None
-    } else {
-        // SAFETY: scan-owned raw pointers passed here come from Box raw
-        // storage retained by the scan opaque for the duration of the borrow.
-        Some(unsafe { &*ptr })
-    }
-}
-
-fn scan_box_mut<'a, T>(ptr: *mut T, _context: &str) -> Option<&'a mut T> {
-    if ptr.is_null() {
-        None
-    } else {
-        // SAFETY: scan-owned raw pointers passed here come from Box raw
-        // storage retained by the scan opaque, and callers uphold exclusive
-        // access to the active scan state.
-        Some(unsafe { &mut *ptr })
-    }
-}
-
-fn drop_boxed_scan_ptr<T>(slot: &mut *mut T) {
-    if !(*slot).is_null() {
-        let ptr = *slot;
-        *slot = ptr::null_mut();
-        // SAFETY: scan-owned boxed pointers passed here are produced by
-        // Box::into_raw and this helper clears the slot before dropping.
-        drop(unsafe { Box::from_raw(ptr) });
-    }
-}
-
-#[derive(Clone, Copy)]
-struct IvfScanDescView<'a> {
-    scan: &'a pg_sys::IndexScanDescData,
-}
-
-impl<'a> IvfScanDescView<'a> {
-    fn from_nonnull(scan: NonNull<pg_sys::IndexScanDescData>) -> Self {
-        // SAFETY: AM callbacks and debug helpers pass a PostgreSQL-owned
-        // IndexScanDesc that remains live for the current callback/probe.
-        let scan = unsafe { scan.as_ref() };
-        Self { scan }
-    }
-
-    #[cfg(any(test, feature = "pg_test"))]
-    fn from_ref(scan: &'a pg_sys::IndexScanDescData) -> Self {
-        Self { scan }
-    }
-
-    fn as_ref(self) -> &'a pg_sys::IndexScanDescData {
-        self.scan
-    }
-
-    fn index_relation(self) -> pg_sys::Relation {
-        self.scan.indexRelation
-    }
-
-    fn index_relation_nonnull(self, context: &str) -> NonNull<pg_sys::RelationData> {
-        NonNull::new(self.index_relation())
-            .unwrap_or_else(|| pgrx::error!("{context} received null index relation"))
-    }
-
-    fn heap_relation(self) -> Option<pg_sys::Relation> {
-        (!self.scan.heapRelation.is_null()).then_some(self.scan.heapRelation)
-    }
-
-    fn snapshot(self) -> Option<pg_sys::Snapshot> {
-        (!self.scan.xs_snapshot.is_null()).then_some(self.scan.xs_snapshot)
-    }
-
-    fn heap_oid(self, context: &str) -> pg_sys::Oid {
-        ivf_index_heap_oid(self.index_relation_nonnull(context))
-    }
-
-    fn opaque_option(self, context: &str) -> Option<&'a EcIvfScanOpaque> {
-        scan_box_ref(self.scan.opaque.cast::<EcIvfScanOpaque>(), context)
-    }
-
-    fn opaque_ref(self, context: &str) -> &'a EcIvfScanOpaque {
-        self.opaque_option(context)
-            .unwrap_or_else(|| pgrx::error!("{context} missing IVF scan opaque state"))
-    }
-
-    #[cfg(any(test, feature = "pg_test"))]
-    fn first_orderby_output(self) -> DebugFirstOrderbyOutput {
-        // SAFETY: debug callers pass a live scan descriptor. The null and
-        // value arrays are PostgreSQL-owned single-element ORDER BY outputs
-        // for this IVF scan descriptor and are copied immediately.
+        // SAFETY: `store_selected_lists` allocates `selected_list_count`
+        // contiguous u32 list ids and this accessor rejects null/empty state.
         unsafe {
-            if self.scan.xs_orderbynulls.is_null() {
-                return DebugFirstOrderbyOutput {
-                    is_null: true,
-                    value: None,
-                };
-            }
-            let is_null = *self.scan.xs_orderbynulls;
-            let value = if is_null || self.scan.xs_orderbyvals.is_null() {
-                None
-            } else {
-                f32::from_datum(*self.scan.xs_orderbyvals, false)
-            };
-            DebugFirstOrderbyOutput { is_null, value }
+            std::slice::from_raw_parts(self.selected_lists, self.selected_list_count as usize)
         }
     }
-}
-
-#[cfg(any(test, feature = "pg_test"))]
-struct DebugFirstOrderbyOutput {
-    is_null: bool,
-    value: Option<f32>,
-}
-
-unsafe fn ivf_index_scan_state_ref<'a>(
-    index_state: *mut pg_sys::IndexScanState,
-) -> Option<&'a pg_sys::IndexScanState> {
-    // SAFETY: EXPLAIN passes a PostgreSQL-owned IndexScanState; null is a
-    // valid absence signal for defensive debug/explain paths.
-    unsafe { index_state.as_ref() }
-}
-
-fn ivf_index_heap_oid(index_relation: NonNull<pg_sys::RelationData>) -> pg_sys::Oid {
-    index_heap_relation_oid_handle(index_relation)
-}
-
-fn ivf_active_snapshot() -> pg_sys::Snapshot {
-    // SAFETY: reads PostgreSQL's active snapshot pointer for the current
-    // backend; callers handle a null result.
-    unsafe { pg_sys::GetActiveSnapshot() }
 }
 
 struct ResolvedIvfScanHeapRelation {
@@ -522,13 +371,10 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_amrescan(
             );
         }
 
-        let scan_view = IvfScanDescView::from_nonnull(
-            NonNull::new(scan)
-                .unwrap_or_else(|| pgrx::error!("ec_ivf amrescan received null scan descriptor")),
-        );
-        let metadata = super::page::read_metadata_page(scan_view.index_relation());
-        let index_options =
-            super::options::relation_options(scan_view.index_relation_nonnull("ec_ivf amrescan"));
+        let metadata = super::page::read_metadata_page((*scan).indexRelation);
+        let index_relation_handle = NonNull::new((*scan).indexRelation)
+            .unwrap_or_else(|| pgrx::error!("ec_ivf scan needs a valid index relation"));
+        let index_options = super::options::relation_options(index_relation_handle);
         metadata
             .storage_format
             .validate_v1_supported()
@@ -626,19 +472,18 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_amgettuple(
         }
 
         let opaque = &mut *opaque_ptr;
-        let mut scan_output = IndexScanOutput::from_raw(scan, "ec_ivf amgettuple scan output");
         if opaque.scan_dimensions == 0 {
-            clear_scan_orderby_output(&mut scan_output);
+            clear_scan_orderby_output(scan);
             return false;
         }
         match opaque.next_posting_candidate() {
             Some(candidate) => {
-                set_scan_heap_tid(&mut scan_output, candidate.heap_tid);
-                set_scan_orderby_score(&mut scan_output, candidate.score);
+                set_scan_heap_tid(scan, candidate.heap_tid);
+                set_scan_orderby_score(scan, candidate.score);
                 true
             }
             None => {
-                clear_scan_orderby_output(&mut scan_output);
+                clear_scan_orderby_output(scan);
                 false
             }
         }
@@ -664,20 +509,45 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_amendscan(scan: pg_sys::IndexScanD
     })
 }
 
-fn set_scan_heap_tid(scan_output: &mut IndexScanOutput<'_>, heap_tid: ItemPointer) {
-    scan_output.set_heap_tid(heap_tid);
+fn set_scan_heap_tid(scan: pg_sys::IndexScanDesc, heap_tid: ItemPointer) {
+    // SAFETY: callers pass a live scan descriptor from the AM callback path;
+    // `xs_heaptid` is PostgreSQL-owned output storage for the current tuple.
+    unsafe {
+        pgrx::itemptr::item_pointer_set_all(
+            &mut (*scan).xs_heaptid,
+            heap_tid.block_number,
+            heap_tid.offset_number,
+        );
+    }
 }
 
-fn set_scan_orderby_score(scan_output: &mut IndexScanOutput<'_>, score: f32) {
-    scan_output.set_orderby_score(
-        score,
-        "ec_ivf scan orderby values",
-        "ec_ivf scan orderby nulls",
-    );
+fn set_scan_orderby_score(scan: pg_sys::IndexScanDesc, score: f32) {
+    // SAFETY: callers pass a live scan descriptor. The IVF AM has exactly one
+    // order-by output slot and allocates the value/null arrays before writing.
+    unsafe {
+        if (*scan).xs_orderbyvals.is_null() {
+            crate::fault::maybe_fail_palloc("ec_ivf scan orderby values");
+            (*scan).xs_orderbyvals =
+                pg_sys::palloc0(std::mem::size_of::<pg_sys::Datum>()).cast::<pg_sys::Datum>();
+        }
+        if (*scan).xs_orderbynulls.is_null() {
+            crate::fault::maybe_fail_palloc("ec_ivf scan orderby nulls");
+            (*scan).xs_orderbynulls = pg_sys::palloc0(std::mem::size_of::<bool>()).cast::<bool>();
+        }
+
+        *(*scan).xs_orderbyvals = score.into_datum().expect("score should convert to datum");
+        *(*scan).xs_orderbynulls = false;
+    }
 }
 
-fn clear_scan_orderby_output(scan_output: &mut IndexScanOutput<'_>) {
-    scan_output.clear_orderby_output();
+fn clear_scan_orderby_output(scan: pg_sys::IndexScanDesc) {
+    // SAFETY: callers pass a live scan descriptor; if the nulls array has been
+    // allocated, setting its first slot marks the single ORDER BY result NULL.
+    unsafe {
+        if !(*scan).xs_orderbynulls.is_null() {
+            *(*scan).xs_orderbynulls = true;
+        }
+    }
 }
 
 fn record_distance_calcs(opaque: &mut EcIvfScanOpaque, count: usize) {
@@ -706,18 +576,14 @@ fn palloc_copy_slice<T: Copy>(values: &[T], context: &str) -> *mut T {
     let bytes = std::mem::size_of_val(values);
     crate::fault::maybe_fail_palloc(context);
     // SAFETY: allocates `bytes` in PostgreSQL memory for scan-local slice
-    // storage and copies exactly `values.len()` non-overlapping elements into
-    // it; callers have already rejected empty slices.
-    let ptr = unsafe {
-        let ptr = pg_sys::palloc(bytes).cast::<T>();
-        if !ptr.is_null() {
-            ptr::copy_nonoverlapping(values.as_ptr(), ptr, values.len());
-        }
-        ptr
-    };
+    // storage; callers have already rejected empty slices.
+    let ptr = unsafe { pg_sys::palloc(bytes) }.cast::<T>();
     if ptr.is_null() {
         pgrx::error!("{context}");
     }
+    // SAFETY: `ptr` points to space for exactly `values.len()` elements, and
+    // source/destination do not overlap.
+    unsafe { ptr::copy_nonoverlapping(values.as_ptr(), ptr, values.len()) };
     ptr
 }
 
@@ -747,7 +613,7 @@ fn free_scan_query(opaque: &mut EcIvfScanOpaque) {
     opaque.query_dimensions = 0;
 }
 
-unsafe fn store_scan_prepared_query(
+fn store_scan_prepared_query(
     opaque: &mut EcIvfScanOpaque,
     index_relation: pg_sys::Relation,
     query: &[f32],
@@ -758,10 +624,11 @@ unsafe fn store_scan_prepared_query(
         return;
     }
 
-    let quantizer = IvfQuantizer::resolve_with_pq_group_size(
+    let quantizer = IvfQuantizer::resolve_with_pq_group_size_and_bits(
         metadata.storage_format,
         metadata.dimensions as usize,
         metadata_pq_group_size(metadata),
+        Some(metadata.quant_bits),
     )
     .unwrap_or_else(|e| pgrx::error!("{e}"));
     let prepared = if metadata.storage_format == StorageFormat::PqFastScan {
@@ -779,26 +646,37 @@ unsafe fn store_scan_prepared_query(
 }
 
 fn free_scan_prepared_query(opaque: &mut EcIvfScanOpaque) {
-    drop_boxed_scan_ptr(&mut opaque.prepared_query);
+    if !opaque.prepared_query.is_null() {
+        // SAFETY: `prepared_query` was created with `Box::into_raw` by this
+        // scan opaque and has not been freed while the pointer is non-null.
+        drop(unsafe { Box::from_raw(opaque.prepared_query) });
+        opaque.prepared_query = ptr::null_mut();
+    }
 }
 
-unsafe fn pq_fastscan_model_for_scan<'a>(
+fn pq_fastscan_model_for_scan<'a>(
     opaque: &'a mut EcIvfScanOpaque,
     index_relation: pg_sys::Relation,
     metadata: &super::page::MetadataPage,
 ) -> Result<&'a IvfPqFastScanModel, String> {
     if opaque.pq_fastscan_model.is_null() {
-        let model = quantizer::load_pq_fastscan_model(index_relation, metadata)?;
+        // SAFETY: `index_relation` and metadata describe the live IVF index;
+        // the quantizer loader validates the on-disk PQ model.
+        let model = unsafe { quantizer::load_pq_fastscan_model(index_relation, metadata) }?;
         opaque.pq_fastscan_model = Box::into_raw(Box::new(model));
     }
-    Ok(
-        scan_box_ref(opaque.pq_fastscan_model, "ec_ivf pq_fastscan model")
-            .expect("pq_fastscan model should be initialized"),
-    )
+    // SAFETY: the pointer is initialized above and remains owned by `opaque`
+    // until `free_pq_fastscan_model` clears it.
+    Ok(unsafe { &*opaque.pq_fastscan_model })
 }
 
 fn free_pq_fastscan_model(opaque: &mut EcIvfScanOpaque) {
-    drop_boxed_scan_ptr(&mut opaque.pq_fastscan_model);
+    if !opaque.pq_fastscan_model.is_null() {
+        // SAFETY: `pq_fastscan_model` was created with `Box::into_raw` by this
+        // scan opaque and has not been freed while the pointer is non-null.
+        drop(unsafe { Box::from_raw(opaque.pq_fastscan_model) });
+        opaque.pq_fastscan_model = ptr::null_mut();
+    }
 }
 
 fn store_centroid_scores(opaque: &mut EcIvfScanOpaque, scores: &[EcIvfCentroidScore]) {
@@ -863,7 +741,8 @@ fn free_posting_candidates(opaque: &mut EcIvfScanOpaque) {
 fn free_scan_query_prep(opaque: &mut EcIvfScanOpaque) {
     free_scan_query(opaque);
     free_scan_prepared_query(opaque);
-    free_heap_rerank_state(opaque);
+    // SAFETY: heap rerank state is scan-opaque owned and cleared by helper.
+    unsafe { free_heap_rerank_state(opaque) };
     free_centroid_scores(opaque);
     free_selected_lists(opaque);
     free_posting_candidates(opaque);
@@ -881,8 +760,9 @@ fn candidate_dedup_map(
         return opaque.candidate_dedup;
     }
 
-    let map = scan_box_mut(opaque.candidate_dedup, "ec_ivf candidate dedup map")
-        .expect("candidate dedup map should be initialized");
+    // SAFETY: `candidate_dedup` was created with `Box::into_raw` by this scan
+    // opaque and remains valid while the pointer is non-null.
+    let map = unsafe { &mut *opaque.candidate_dedup };
     map.clear();
     if map.capacity() < capacity {
         map.reserve(capacity - map.capacity());
@@ -891,11 +771,21 @@ fn candidate_dedup_map(
 }
 
 fn free_candidate_dedup(opaque: &mut EcIvfScanOpaque) {
-    drop_boxed_scan_ptr(&mut opaque.candidate_dedup);
+    if !opaque.candidate_dedup.is_null() {
+        // SAFETY: `candidate_dedup` was created with `Box::into_raw` by this
+        // scan opaque and has not been freed while the pointer is non-null.
+        drop(unsafe { Box::from_raw(opaque.candidate_dedup) });
+        opaque.candidate_dedup = ptr::null_mut();
+    }
 }
 
-fn free_heap_rerank_state(opaque: &mut EcIvfScanOpaque) {
-    drop_boxed_scan_ptr(&mut opaque.heap_rerank_state);
+unsafe fn free_heap_rerank_state(opaque: &mut EcIvfScanOpaque) {
+    if !opaque.heap_rerank_state.is_null() {
+        // SAFETY: `heap_rerank_state` was created with `Box::into_raw` by this
+        // scan opaque and has not been freed while the pointer is non-null.
+        drop(unsafe { Box::from_raw(opaque.heap_rerank_state) });
+        opaque.heap_rerank_state = ptr::null_mut();
+    }
 }
 
 unsafe fn configure_heap_rerank_state(
@@ -903,32 +793,30 @@ unsafe fn configure_heap_rerank_state(
     opaque: &mut EcIvfScanOpaque,
     index_options: &super::options::EcIvfOptions,
 ) {
-    free_heap_rerank_state(opaque);
+    // SAFETY: heap rerank state is scan-opaque owned and cleared by helper
+    // before a fresh state is configured.
+    unsafe { free_heap_rerank_state(opaque) };
 
     if index_options.rerank.v1_effective() != super::options::RerankMode::HeapF32 {
         return;
     }
 
-    // SAFETY: the scan descriptor is live for the active callback. The
-    // relation/snapshot resolvers either borrow callback-owned pointers or hold
-    // guards in the returned state, and the attribute resolver validates the
-    // indexed ecvector source attribute for heap_f32 rerank.
-    let (heap_relation, snapshot, source_attribute) = {
-        let scan = IvfScanDescView::from_nonnull(
-            NonNull::new(scan)
-                .unwrap_or_else(|| pgrx::error!("ec_ivf heap_f32 rerank received null scan")),
-        );
-        let heap_relation = resolve_scan_heap_relation(scan);
-        let heap_relation_ptr = heap_relation.as_ptr();
-        let snapshot = resolve_scan_snapshot(scan);
-        let source_attribute = source::resolve_indexed_ecvector_attribute(
-            heap_relation_ptr,
-            scan.index_relation(),
-            "ec_ivf heap_f32 rerank indexed column",
-        );
-        (heap_relation, snapshot, source_attribute)
-    };
+    // SAFETY: `scan` is the live PostgreSQL scan descriptor from the AM
+    // callback path; resolver returns a borrowed or owned heap relation guard.
+    let heap_relation = unsafe { resolve_scan_heap_relation(scan) };
     let heap_relation_ptr = heap_relation.as_ptr();
+    // SAFETY: `scan` is live; resolver returns a borrowed scan snapshot or an
+    // owned registered snapshot guard.
+    let snapshot = unsafe { resolve_scan_snapshot(scan) };
+    // SAFETY: heap and index relations are live; resolver validates the indexed
+    // ecvector source attribute for heap_f32 rerank.
+    let source_attribute = unsafe {
+        source::resolve_indexed_ecvector_attribute(
+            heap_relation_ptr,
+            (*scan).indexRelation,
+            "ec_ivf heap_f32 rerank indexed column",
+        )
+    };
     let slot = TupleTableSlotGuard::single_for_heap(heap_relation_ptr).unwrap_or_else(|| {
         pgrx::error!("ec_ivf heap_f32 rerank failed to allocate a heap tuple slot")
     });
@@ -962,8 +850,11 @@ unsafe fn load_centroid_scores(
     let mut next_tid = metadata.centroid_head;
     let mut scores = Vec::with_capacity(metadata.nlists as usize);
     for expected_list_id in 0..metadata.nlists {
-        let (centroid, following_tid) =
-            super::page::read_ivf_centroid_and_next(index_relation, next_tid, dimensions)?;
+        // SAFETY: `index_relation` is live and `next_tid` follows the centroid
+        // chain from IVF metadata; page helper validates tuple layout.
+        let (centroid, following_tid) = unsafe {
+            super::page::read_ivf_centroid_and_next(index_relation, next_tid, dimensions)?
+        };
         if centroid.list_id != expected_list_id {
             return Err(format!(
                 "ec_ivf centroid order mismatch: got list {}, expected {}",
@@ -980,10 +871,73 @@ unsafe fn load_centroid_scores(
 }
 
 fn inner_product(left: &[f32], right: &[f32]) -> f32 {
+    // Release-mode length check; helper relies on slice lengths matching
+    // to skip per-iteration bounds checks in the SIMD body.
+    assert_eq!(
+        left.len(),
+        right.len(),
+        "ec_ivf centroid inner_product slice length mismatch"
+    );
+    #[cfg(target_arch = "aarch64")]
+    {
+        if std::arch::is_aarch64_feature_detected!("neon") {
+            // SAFETY: NEON feature confirmed at runtime; assert_eq above
+            // guarantees both slices have the same length.
+            return unsafe { inner_product_neon(left, right) };
+        }
+    }
+    inner_product_scalar(left, right)
+}
+
+#[inline]
+fn inner_product_scalar(left: &[f32], right: &[f32]) -> f32 {
     left.iter()
         .zip(right.iter())
         .map(|(left, right)| left * right)
         .sum()
+}
+
+/// f32 inner product with 4 accumulator chains. Used to score IVF
+/// centroids against the query (~`nlists` × `dimensions` ops at the
+/// start of every scan) — formerly a scalar `.sum()` loop, which at
+/// dim=1536 nlists=224 was ~1 ms of per-query fixed cost on Graviton 4.
+#[cfg(target_arch = "aarch64")]
+#[target_feature(enable = "neon")]
+unsafe fn inner_product_neon(left: &[f32], right: &[f32]) -> f32 {
+    use std::arch::aarch64::{vaddq_f32, vdupq_n_f32, vfmaq_f32, vld1q_f32, vst1q_f32};
+    let n = left.len();
+    let mut acc0 = vdupq_n_f32(0.0);
+    let mut acc1 = vdupq_n_f32(0.0);
+    let mut acc2 = vdupq_n_f32(0.0);
+    let mut acc3 = vdupq_n_f32(0.0);
+    let mut i = 0_usize;
+    while i + 16 <= n {
+        // SAFETY: i + 16 <= n and both slices have length n.
+        let va0 = vld1q_f32(left.as_ptr().add(i));
+        let va1 = vld1q_f32(left.as_ptr().add(i + 4));
+        let va2 = vld1q_f32(left.as_ptr().add(i + 8));
+        let va3 = vld1q_f32(left.as_ptr().add(i + 12));
+        let vb0 = vld1q_f32(right.as_ptr().add(i));
+        let vb1 = vld1q_f32(right.as_ptr().add(i + 4));
+        let vb2 = vld1q_f32(right.as_ptr().add(i + 8));
+        let vb3 = vld1q_f32(right.as_ptr().add(i + 12));
+        acc0 = vfmaq_f32(acc0, va0, vb0);
+        acc1 = vfmaq_f32(acc1, va1, vb1);
+        acc2 = vfmaq_f32(acc2, va2, vb2);
+        acc3 = vfmaq_f32(acc3, va3, vb3);
+        i += 16;
+    }
+    let mut lanes = [0.0_f32; 4];
+    vst1q_f32(
+        lanes.as_mut_ptr(),
+        vaddq_f32(vaddq_f32(acc0, acc1), vaddq_f32(acc2, acc3)),
+    );
+    let mut sum = lanes[0] + lanes[1] + lanes[2] + lanes[3];
+    while i < n {
+        sum += left[i] * right[i];
+        i += 1;
+    }
+    sum
 }
 
 fn candidate_cmp(left: &EcIvfScoredCandidate, right: &EcIvfScoredCandidate) -> Ordering {
@@ -1076,19 +1030,24 @@ unsafe fn materialize_probe_candidates(
         return Err("ec_ivf posting-list scan requires a prepared query".to_owned());
     }
 
-    let prepared_query = scan_box_ref(opaque.prepared_query, "ec_ivf prepared scan query")
-        .ok_or_else(|| "ec_ivf posting-list scan requires a prepared query".to_owned())?;
-    let quantizer = IvfQuantizer::resolve_with_pq_group_size(
+    // SAFETY: `prepared_query` is initialized by `store_scan_prepared_query`
+    // for this scan opaque and remains owned for the scan lifetime.
+    let prepared_query = unsafe { &*opaque.prepared_query };
+    let quantizer = IvfQuantizer::resolve_with_pq_group_size_and_bits(
         metadata.storage_format,
         metadata.dimensions as usize,
         metadata_pq_group_size(metadata),
+        Some(metadata.quant_bits),
     )?;
     let payload_len = quantizer.payload_len();
-    let probe_plan = build_selected_probe_plan(index_relation, metadata, selected_lists)?;
+    // SAFETY: `index_relation` and metadata describe the live IVF index; the
+    // selected list ids come from validated centroid scores.
+    let probe_plan =
+        unsafe { build_selected_probe_plan(index_relation, metadata, selected_lists)? };
     let best_by_heap_tid = candidate_dedup_map(opaque, probe_plan.candidate_bound);
     let mut running_top = quantizer
         .uses_score_bound_pruning()
-        .then(|| pre_rerank_candidate_limit(index_options))
+        .then(|| running_top_k_for_pruning(index_options))
         .flatten()
         .map(CandidateTopK::new);
     let mut remaining_live_tids_by_list = probe_plan.remaining_live_tids_by_list.clone();
@@ -1097,76 +1056,85 @@ unsafe fn materialize_probe_candidates(
         .explain_counters
         .record_posting_pages_read(posting_pages);
     record_posting_pages_read(opaque, posting_pages);
-    super::page::visit_ivf_posting_refs_for_block_sequence(
-        index_relation,
-        &probe_plan.block_sequence,
-        payload_len,
-        |_, posting| {
-            if !probe_plan.contains_list(posting.list_id) || posting.deleted {
-                return Ok(());
-            }
-            opaque.explain_counters.record_posting_visited();
-            let heap_tid_count = posting.heaptids().count();
-            if !consume_live_tid_budget(
-                &mut remaining_live_tids_by_list,
-                posting.list_id,
-                heap_tid_count,
-            )? {
-                return Ok(());
-            }
-            let min_ip_to_keep = running_top
-                .as_ref()
-                .and_then(CandidateTopK::worst_score_if_full)
-                .map(|worst_score| -worst_score);
-            let Some(ip) = quantizer.score_ip_from_parts_with_min_bound(
-                prepared_query,
-                posting.gamma,
-                posting.payload,
-                min_ip_to_keep,
-            )?
-            else {
-                opaque.explain_counters.record_posting_pruned_by_bound();
-                return Ok(());
-            };
-            let score = -ip;
-            opaque.explain_counters.record_posting_scored();
-            opaque
-                .explain_counters
-                .record_heap_tids_scored(heap_tid_count);
-            record_distance_calcs(opaque, 1);
-            for heap_tid in posting.heaptids() {
-                opaque.explain_counters.record_candidate_scored();
-                let candidate = EcIvfScoredCandidate { heap_tid, score };
-                let best_by_heap_tid = scan_box_mut(best_by_heap_tid, "ec_ivf candidate dedup map")
-                    .expect("candidate dedup map should be live");
-                match best_by_heap_tid.entry(heap_tid) {
-                    Entry::Occupied(mut entry) => {
-                        opaque.explain_counters.record_filtered_duplicate();
-                        let existing = entry.get_mut();
-                        if candidate_cmp(&candidate, existing) == Ordering::Less {
-                            *existing = candidate;
+    // SAFETY: `probe_plan.block_sequence` contains posting blocks from
+    // validated IVF directory metadata, and the visitor only borrows tuple refs
+    // for the duration of each callback.
+    unsafe {
+        super::page::visit_ivf_posting_refs_for_block_sequence(
+            index_relation,
+            &probe_plan.block_sequence,
+            payload_len,
+            |_, posting| {
+                if !probe_plan.contains_list(posting.list_id) || posting.deleted {
+                    return Ok(());
+                }
+                opaque.explain_counters.record_posting_visited();
+                let heap_tid_count = posting.heaptid_count();
+                if !consume_live_tid_budget(
+                    &mut remaining_live_tids_by_list,
+                    posting.list_id,
+                    heap_tid_count,
+                )? {
+                    return Ok(());
+                }
+                let min_ip_to_keep = running_top
+                    .as_ref()
+                    .and_then(CandidateTopK::worst_score_if_full)
+                    .map(|worst_score| -worst_score);
+                let Some(ip) = quantizer.score_ip_from_parts_with_min_bound(
+                    prepared_query,
+                    posting.gamma,
+                    posting.payload,
+                    min_ip_to_keep,
+                )?
+                else {
+                    opaque.explain_counters.record_posting_pruned_by_bound();
+                    return Ok(());
+                };
+                let score = -ip;
+                opaque.explain_counters.record_posting_scored();
+                opaque
+                    .explain_counters
+                    .record_heap_tids_scored(heap_tid_count);
+                record_distance_calcs(opaque, 1);
+                for heap_tid in posting.heaptids() {
+                    opaque.explain_counters.record_candidate_scored();
+                    let candidate = EcIvfScoredCandidate { heap_tid, score };
+                    // SAFETY: `best_by_heap_tid` points to the scan-owned
+                    // dedup map returned by `candidate_dedup_map` above.
+                    let best_by_heap_tid = &mut *best_by_heap_tid;
+                    match best_by_heap_tid.entry(heap_tid) {
+                        Entry::Occupied(mut entry) => {
+                            opaque.explain_counters.record_filtered_duplicate();
+                            let existing = entry.get_mut();
+                            if candidate_cmp(&candidate, existing) == Ordering::Less {
+                                *existing = candidate;
+                            }
                         }
-                    }
-                    Entry::Vacant(entry) => {
-                        entry.insert(candidate);
-                        opaque.explain_counters.record_candidate_inserted();
-                        if let Some(top_k) = running_top.as_mut() {
-                            top_k.push(candidate);
+                        Entry::Vacant(entry) => {
+                            entry.insert(candidate);
+                            opaque.explain_counters.record_candidate_inserted();
+                            if let Some(top_k) = running_top.as_mut() {
+                                top_k.push(candidate);
+                            }
                         }
                     }
                 }
-            }
-            Ok(())
-        },
-    )?;
+                Ok(())
+            },
+        )?
+    };
 
-    let best_by_heap_tid = scan_box_mut(best_by_heap_tid, "ec_ivf candidate dedup map")
-        .expect("candidate dedup map should be live");
+    // SAFETY: `best_by_heap_tid` points to the scan-owned dedup map populated
+    // during the posting visitor above.
+    let best_by_heap_tid = unsafe { &mut *best_by_heap_tid };
     let mut candidates = collect_ranked_probe_candidates(
         best_by_heap_tid.values().copied(),
         pre_rerank_candidate_limit(index_options),
     );
-    rerank_probe_candidates(scan, index_options, opaque, &mut candidates);
+    // SAFETY: candidates were materialized for this live scan and opaque; the
+    // rerank helper validates whether heap_f32 state is present before use.
+    unsafe { rerank_probe_candidates(scan, index_options, opaque, &mut candidates) };
     Ok(candidates)
 }
 
@@ -1177,6 +1145,28 @@ fn pre_rerank_candidate_limit(index_options: &super::options::EcIvfOptions) -> O
         super::options::RerankMode::HeapF32 if rerank_width > 0 => Some(rerank_width as usize),
         _ => None,
     }
+}
+
+/// K used to seed the `running_top` Cauchy-Schwarz cutoff during the
+/// posting scan. Distinct from `pre_rerank_candidate_limit`, which
+/// drives the *post-scan* rerank set size. The pre-prune cutoff is
+/// recall-safe at any K ≥ the query's downstream LIMIT: candidates
+/// below the K-th best RaBitQ score by definition cannot enter the
+/// final top-K.
+///
+/// Default is 200 so pre-prune fires on no-rerank scans (where
+/// `pre_rerank_candidate_limit` would otherwise be `None` and the
+/// cutoff would never materialize). Covers the common K ≤ 200 case.
+/// Queries with LIMIT > 200 would see truncation — track via a GUC
+/// override if that workload becomes real. When `heap_f32` rerank is
+/// on with an explicit width, we reuse that width so the cutoff
+/// aligns with the rerank set.
+fn running_top_k_for_pruning(index_options: &super::options::EcIvfOptions) -> Option<usize> {
+    if let Some(width) = pre_rerank_candidate_limit(index_options) {
+        return Some(width);
+    }
+    const DEFAULT_PRE_PRUNE_K: usize = 200;
+    Some(DEFAULT_PRE_PRUNE_K)
 }
 
 fn collect_ranked_probe_candidates<I>(
@@ -1221,7 +1211,7 @@ fn consume_live_tid_budget(
     Ok(true)
 }
 
-fn rerank_probe_candidates(
+unsafe fn rerank_probe_candidates(
     _scan: pg_sys::IndexScanDesc,
     index_options: &super::options::EcIvfOptions,
     opaque: &mut EcIvfScanOpaque,
@@ -1234,7 +1224,9 @@ fn rerank_probe_candidates(
                 super::options::resolve_scan_rerank_width(index_options.rerank_width)
                     .effective_rerank_width;
             let rerank_len = resolve_rerank_len(rerank_width, candidates.len());
-            rerank_probe_candidates_heap_f32(opaque, &mut candidates[..rerank_len]);
+            // SAFETY: `rerank_len` is bounded by `candidates.len()`, and the
+            // heap_f32 helper validates scan-local rerank state before fetching.
+            unsafe { rerank_probe_candidates_heap_f32(opaque, &mut candidates[..rerank_len]) };
             candidates[..rerank_len].sort_by(candidate_cmp);
             if rerank_width > 0 {
                 candidates.truncate(rerank_len);
@@ -1255,7 +1247,7 @@ fn resolve_rerank_len(rerank_width: i32, candidate_len: usize) -> usize {
         .min(candidate_len)
 }
 
-fn rerank_probe_candidates_heap_f32(
+unsafe fn rerank_probe_candidates_heap_f32(
     opaque: &mut EcIvfScanOpaque,
     candidates: &mut [EcIvfScoredCandidate],
 ) {
@@ -1263,7 +1255,9 @@ fn rerank_probe_candidates_heap_f32(
         return;
     }
     candidates.sort_by(candidate_heap_tid_cmp);
-    let state = scan_box_ref(opaque.heap_rerank_state, "ec_ivf heap_f32 rerank state")
+    // SAFETY: heap rerank state is created with `Box::into_raw` during scan
+    // configuration and remains owned by `opaque` while the pointer is non-null.
+    let state = unsafe { opaque.heap_rerank_state.as_ref() }
         .filter(|state| state.source_attnum > 0)
         .unwrap_or_else(|| {
             pgrx::error!("ec_ivf heap_f32 rerank is missing heap fetch state");
@@ -1275,6 +1269,7 @@ fn rerank_probe_candidates_heap_f32(
         pgrx::error!("ec_ivf heap_f32 rerank is missing heap fetch state");
     }
     let source_attnum = i32::from(state.source_attnum);
+
     // SAFETY: heap rerank state owns the heap relation/snapshot/slot for this
     // scan callback and keeps them live while candidates are reranked and while
     // heap blocks are prefetched.
@@ -1314,6 +1309,7 @@ fn rerank_probe_candidates_heap_f32(
     }
 }
 
+#[cfg(feature = "pg18")]
 unsafe fn prefetch_heap_rerank_blocks(
     heap_relation: pg_sys::Relation,
     candidates: &[EcIvfScoredCandidate],
@@ -1322,15 +1318,69 @@ unsafe fn prefetch_heap_rerank_blocks(
         .iter()
         .map(|candidate| candidate.heap_tid.block_number)
         .collect::<Vec<_>>();
-    crate::am::stream::prefetch_relation_blocks(heap_relation, block_numbers, "ec_ivf heap rerank");
-}
+    let mut state = crate::am::stream::BlockSequencePrefetchState::new(block_numbers);
+    // SAFETY: `heap_relation` is live, `state` outlives the stream loop, and
+    // per-buffer data stores block-number-sized callback payloads.
+    let stream = unsafe {
+        pg_sys::read_stream_begin_relation(
+            pg_sys::READ_STREAM_DEFAULT as i32,
+            ptr::null_mut(),
+            heap_relation,
+            pg_sys::ForkNumber::MAIN_FORKNUM,
+            Some(crate::am::stream::block_sequence_prefetch_cb),
+            (&mut state as *mut crate::am::stream::BlockSequencePrefetchState).cast(),
+            std::mem::size_of::<pg_sys::BlockNumber>(),
+        )
+    };
 
-fn resolve_scan_heap_relation(scan: IvfScanDescView<'_>) -> ResolvedIvfScanHeapRelation {
-    if let Some(heap_relation) = scan.heap_relation() {
-        return ResolvedIvfScanHeapRelation::borrowed(heap_relation);
+    loop {
+        let mut per_buffer_data = ptr::null_mut();
+        // SAFETY: `stream` was created above and remains open until
+        // `read_stream_end` after exhaustion.
+        let buffer = unsafe { pg_sys::read_stream_next_buffer(stream, &mut per_buffer_data) };
+        if buffer == pg_sys::InvalidBuffer as pg_sys::Buffer {
+            break;
+        }
+        // SAFETY: `read_stream_next_buffer` returns a valid pinned buffer
+        // until the stream is exhausted; the guard owns the release.
+        let _buffer = unsafe { PinnedBufferGuard::from_pinned(buffer) }
+            .unwrap_or_else(|| pgrx::error!("ec_ivf read stream returned an invalid buffer"));
     }
 
-    let heap_oid = scan.heap_oid("ec_ivf heap_f32 rerank");
+    // SAFETY: closes the read stream created above.
+    unsafe { pg_sys::read_stream_end(stream) };
+}
+
+#[cfg(not(feature = "pg18"))]
+unsafe fn prefetch_heap_rerank_blocks(
+    heap_relation: pg_sys::Relation,
+    candidates: &[EcIvfScoredCandidate],
+) {
+    for candidate in candidates {
+        // SAFETY: `heap_relation` is live and candidate heap TIDs provide
+        // main-fork block numbers for best-effort prefetch.
+        unsafe {
+            pg_sys::PrefetchBuffer(
+                heap_relation,
+                pg_sys::ForkNumber::MAIN_FORKNUM,
+                candidate.heap_tid.block_number,
+            )
+        };
+    }
+}
+
+unsafe fn resolve_scan_heap_relation(scan: pg_sys::IndexScanDesc) -> ResolvedIvfScanHeapRelation {
+    // SAFETY: `scan` is a live PostgreSQL scan descriptor; `heapRelation` may
+    // already be supplied by the executor.
+    if !unsafe { (*scan).heapRelation }.is_null() {
+        // SAFETY: same live scan descriptor; returning the borrowed relation
+        // keeps ownership with PostgreSQL.
+        return ResolvedIvfScanHeapRelation::borrowed(unsafe { (*scan).heapRelation });
+    }
+
+    // SAFETY: `scan.indexRelation` is live; PostgreSQL resolves the heap
+    // relation OID for the index relation id.
+    let heap_oid = unsafe { pg_sys::IndexGetRelation((*(*scan).indexRelation).rd_id, false) };
     if heap_oid == pg_sys::InvalidOid {
         pgrx::error!("ec_ivf heap_f32 rerank could not resolve heap relation");
     }
@@ -1339,12 +1389,18 @@ fn resolve_scan_heap_relation(scan: IvfScanDescView<'_>) -> ResolvedIvfScanHeapR
     ResolvedIvfScanHeapRelation::owned(heap_relation)
 }
 
-fn resolve_scan_snapshot(scan: IvfScanDescView<'_>) -> ResolvedIvfScanSnapshot {
-    if let Some(snapshot) = scan.snapshot() {
-        return ResolvedIvfScanSnapshot::borrowed(snapshot);
+unsafe fn resolve_scan_snapshot(scan: pg_sys::IndexScanDesc) -> ResolvedIvfScanSnapshot {
+    // SAFETY: `scan` is a live PostgreSQL scan descriptor; `xs_snapshot` may
+    // already be supplied by the executor.
+    if !unsafe { (*scan).xs_snapshot }.is_null() {
+        // SAFETY: same live scan descriptor; returning the borrowed snapshot
+        // keeps ownership with PostgreSQL.
+        return ResolvedIvfScanSnapshot::borrowed(unsafe { (*scan).xs_snapshot });
     }
 
-    let active_snapshot = ivf_active_snapshot();
+    // SAFETY: reads PostgreSQL's active snapshot pointer for the current
+    // backend; null is handled below.
+    let active_snapshot = unsafe { pg_sys::GetActiveSnapshot() };
     if !active_snapshot.is_null() {
         return ResolvedIvfScanSnapshot::borrowed(active_snapshot);
     }
@@ -1441,7 +1497,9 @@ unsafe fn build_selected_probe_plan(
         return Err("ec_ivf metadata has lists but no directory head".to_owned());
     }
 
-    let directories = load_directory_entries(index_relation, metadata)?;
+    // SAFETY: caller passes the live IVF index relation; metadata was read
+    // from that relation and its directory head is validated above.
+    let directories = unsafe { load_directory_entries(index_relation, metadata)? };
     let mut ordered_selected_lists = Vec::with_capacity(selected_lists.len());
     let mut selected_list_mask = vec![false; metadata.nlists as usize];
     let mut remaining_live_tids_by_list = vec![0_u64; metadata.nlists as usize];
@@ -1491,22 +1549,27 @@ unsafe fn build_selected_probe_plan(
 pub(crate) unsafe fn explain_counters_from_index_scan_state(
     index_state: *mut pg_sys::IndexScanState,
 ) -> IvfExplainCounters {
-    let Some(index_state) = ivf_index_scan_state_ref(index_state) else {
+    if index_state.is_null() {
         return IvfExplainCounters::default();
-    };
-    let scan_desc = index_state.iss_ScanDesc;
+    }
+
+    // SAFETY: caller passes PostgreSQL's live IndexScanState from EXPLAIN;
+    // null scan descriptors are handled below.
+    let scan_desc = unsafe { (*index_state).iss_ScanDesc };
     if scan_desc.is_null() {
         return IvfExplainCounters::default();
     }
 
-    let scan_desc = IvfScanDescView::from_nonnull(
-        NonNull::new(scan_desc)
-            .unwrap_or_else(|| pgrx::error!("ec_ivf EXPLAIN counters received null scan")),
-    );
-    scan_desc
-        .opaque_option("ec_ivf EXPLAIN counters")
-        .map(|opaque| opaque.explain_counters)
-        .unwrap_or_default()
+    // SAFETY: `scan_desc` is live and owned by PostgreSQL; null AM-private
+    // state is handled below.
+    let opaque = unsafe { (*scan_desc).opaque };
+    if opaque.is_null() {
+        return IvfExplainCounters::default();
+    }
+
+    // SAFETY: `opaque` is the IVF scan private state installed by this AM and
+    // lives at least as long as the scan descriptor.
+    unsafe { (*opaque.cast::<EcIvfScanOpaque>()).explain_counters }
 }
 
 unsafe fn load_directory_entries(
@@ -1524,7 +1587,9 @@ unsafe fn load_directory_entries(
     let mut directories = Vec::with_capacity(metadata.nlists as usize);
     for expected_list_id in 0..metadata.nlists {
         let (directory, following_tid) =
-            super::page::read_ivf_list_directory_and_next(index_relation, next_tid)?;
+            // SAFETY: `index_relation` is the live IVF index relation and
+            // `next_tid` follows the metadata directory chain.
+            unsafe { super::page::read_ivf_list_directory_and_next(index_relation, next_tid)? };
         if directory.list_id != expected_list_id {
             return Err(format!(
                 "ec_ivf directory order mismatch: got list {}, expected {}",
@@ -1614,95 +1679,95 @@ fn debug_index_getnext_tid(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-fn debug_scan_desc_ref<'a>(
-    scan: pg_sys::IndexScanDesc,
-    context: &str,
-) -> &'a pg_sys::IndexScanDescData {
-    IvfScanDescView::from_nonnull(
-        NonNull::new(scan).unwrap_or_else(|| pgrx::error!("{context} received null scan")),
-    )
-    .as_ref()
+unsafe fn debug_scan_opaque<'a>(scan: pg_sys::IndexScanDesc) -> &'a EcIvfScanOpaque {
+    // SAFETY: Debug callers inspect the IVF opaque while the scan descriptor is
+    // live and after begin/rescan initialized the opaque pointer.
+    unsafe { &*(*scan).opaque.cast::<EcIvfScanOpaque>() }
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-fn debug_scan_opaque_option<'a>(scan: pg_sys::IndexScanDesc) -> Option<&'a EcIvfScanOpaque> {
-    let scan = IvfScanDescView::from_nonnull(
-        NonNull::new(scan).unwrap_or_else(|| pgrx::error!("ec_ivf debug scan received null scan")),
-    );
-    scan.opaque_option("ec_ivf debug scan opaque")
-}
-
-#[cfg(any(test, feature = "pg_test"))]
-fn debug_scan_opaque<'a>(scan: pg_sys::IndexScanDesc) -> &'a EcIvfScanOpaque {
-    debug_scan_opaque_option(scan)
-        .unwrap_or_else(|| pgrx::error!("ec_ivf debug scan opaque missing IVF state"))
+unsafe fn debug_scan_opaque_option<'a>(scan: pg_sys::IndexScanDesc) -> Option<&'a EcIvfScanOpaque> {
+    // SAFETY: `as_ref` converts a null IVF opaque pointer to None for debug
+    // probes that intentionally inspect optional cache state.
+    unsafe { (*scan).opaque.cast::<EcIvfScanOpaque>().as_ref() }
 }
 
 #[cfg(any(test, feature = "pg_test"))]
 fn debug_prepared_query_lut_len(opaque: &EcIvfScanOpaque) -> usize {
-    scan_box_ref(opaque.prepared_query, "ec_ivf debug prepared query")
-        .map(IvfPreparedQuery::lut_len)
-        .unwrap_or(0)
+    if opaque.prepared_query.is_null() {
+        return 0;
+    }
+    // SAFETY: null was checked above and prepared query storage is scan-owned
+    // for the lifetime of `opaque`.
+    unsafe { (*opaque.prepared_query).lut_len() }
 }
 
 #[cfg(any(test, feature = "pg_test"))]
 fn debug_prepared_query_sq_len(opaque: &EcIvfScanOpaque) -> usize {
-    scan_box_ref(opaque.prepared_query, "ec_ivf debug prepared query")
-        .map(IvfPreparedQuery::sq_len)
-        .unwrap_or(0)
+    if opaque.prepared_query.is_null() {
+        return 0;
+    }
+    // SAFETY: null was checked above and prepared query storage is scan-owned
+    // for the lifetime of `opaque`.
+    unsafe { (*opaque.prepared_query).sq_len() }
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-fn debug_read_metadata_page(index_relation: &IndexRelationGuard) -> super::page::MetadataPage {
-    // SAFETY: the debug helper owns the open index relation guard for this
-    // metadata read.
-    unsafe { super::page::read_metadata_page(index_relation.as_ptr()) }
+fn debug_read_metadata_page(index_relation: pg_sys::Relation) -> super::page::MetadataPage {
+    // SAFETY: Debug callers hold the index relation open for this metadata read.
+    unsafe { super::page::read_metadata_page(index_relation) }
 }
 
 #[cfg(any(test, feature = "pg_test"))]
 fn debug_index_heap_oid(index_relation: pg_sys::Relation) -> pg_sys::Oid {
-    let index_relation = NonNull::new(index_relation)
-        .unwrap_or_else(|| pgrx::error!("ec_ivf debug scan received null index relation"));
-    ivf_index_heap_oid(index_relation)
+    // SAFETY: Debug callers pass a live index relation; PostgreSQL resolves the
+    // heap relation OID from its relation id without taking ownership.
+    unsafe { pg_sys::IndexGetRelation((*index_relation).rd_id, false) }
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-fn debug_scan_heap_tid(scan: pg_sys::IndexScanDesc) -> (u32, u16) {
-    let scan_ref = debug_scan_desc_ref(scan, "ec_ivf debug scan heap tid");
-    pgrx::itemptr::item_pointer_get_both(scan_ref.xs_heaptid)
+unsafe fn debug_scan_heap_tid(scan: pg_sys::IndexScanDesc) -> (u32, u16) {
+    // SAFETY: Debug callers read xs_heaptid immediately after a successful
+    // gettuple call on the same live scan descriptor.
+    pgrx::itemptr::item_pointer_get_both(unsafe { (*scan).xs_heaptid })
 }
 
 #[cfg(any(test, feature = "pg_test"))]
 fn debug_scan_orderbyvals_is_null(scan: pg_sys::IndexScanDesc) -> bool {
-    debug_scan_desc_ref(scan, "ec_ivf debug scan orderby values")
-        .xs_orderbyvals
-        .is_null()
+    // SAFETY: Debug callers pass a live scan descriptor and only read the
+    // nullable order-by values pointer.
+    unsafe { (*scan).xs_orderbyvals.is_null() }
 }
 
 #[cfg(any(test, feature = "pg_test"))]
 fn debug_scan_orderbynulls_is_null(scan: pg_sys::IndexScanDesc) -> bool {
-    debug_scan_desc_ref(scan, "ec_ivf debug scan orderby nulls")
-        .xs_orderbynulls
-        .is_null()
+    // SAFETY: Debug callers pass a live scan descriptor and only read the
+    // nullable order-by nulls pointer.
+    unsafe { (*scan).xs_orderbynulls.is_null() }
 }
 
 #[cfg(any(test, feature = "pg_test"))]
 fn debug_scan_first_orderby_is_null(scan: pg_sys::IndexScanDesc) -> bool {
-    let scan_ref = debug_scan_desc_ref(scan, "ec_ivf debug scan orderby null flag");
-    let scan = IvfScanDescView::from_ref(scan_ref);
-    scan.first_orderby_output().is_null
+    if debug_scan_orderbynulls_is_null(scan) {
+        return true;
+    }
+    // SAFETY: null was checked above before reading the first order-by null flag.
+    unsafe { *(*scan).xs_orderbynulls }
 }
 
 #[cfg(any(test, feature = "pg_test"))]
 fn debug_scan_first_orderby_score(scan: pg_sys::IndexScanDesc) -> Option<f32> {
-    let scan_ref = debug_scan_desc_ref(scan, "ec_ivf debug scan orderby score");
-    let scan = IvfScanDescView::from_ref(scan_ref);
-    scan.first_orderby_output().value
+    if debug_scan_orderbyvals_is_null(scan) || debug_scan_first_orderby_is_null(scan) {
+        return None;
+    }
+    // SAFETY: non-null order-by values were verified above and the AM stores
+    // the score as the first f32 datum.
+    unsafe { f32::from_datum(*(*scan).xs_orderbyvals, false) }
 }
 
 #[cfg(any(test, feature = "pg_test"))]
 struct DebugHeapBackedScan {
-    scan: IndexScanGuard<'static, 'static, 'static>,
+    scan: IndexScanGuard,
     _snapshot: ActiveSnapshotGuard,
     _heap_relation: HeapRelationGuard,
     _index_relation: IndexRelationGuard,
@@ -1722,18 +1787,10 @@ fn debug_begin_heap_backed_scan(index_oid: pg_sys::Oid) -> DebugHeapBackedScan {
         .unwrap_or_else(|| pgrx::error!("ec_ivf debug scan could not open heap relation"));
     let snapshot = ActiveSnapshotGuard::latest_after_command_counter()
         .unwrap_or_else(|| pgrx::error!("ec_ivf debug scan could not acquire a latest snapshot"));
-    // SAFETY: this debug state owns the heap relation, index relation, and
-    // snapshot guards; field order drops the scan before those dependencies.
-    let scan = unsafe {
-        IndexScanGuard::begin_from_raw(
-            heap_relation.as_ptr(),
-            index_relation.as_ptr(),
-            snapshot.as_ptr(),
-            0,
-            1,
-        )
-    }
-    .unwrap_or_else(|| pgrx::error!("ec_ivf debug scan failed to begin heap-backed index scan"));
+    let scan = IndexScanGuard::begin(&heap_relation, &index_relation, &snapshot, 0, 1)
+        .unwrap_or_else(|| {
+            pgrx::error!("ec_ivf debug scan failed to begin heap-backed index scan")
+        });
 
     DebugHeapBackedScan {
         scan,
@@ -1749,7 +1806,7 @@ fn debug_end_heap_backed_scan(state: DebugHeapBackedScan) {
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) fn debug_ec_ivf_gettuple_after_rescan_result(index_oid: pg_sys::Oid) -> bool {
+pub(crate) unsafe fn debug_ec_ivf_gettuple_after_rescan_result(index_oid: pg_sys::Oid) -> bool {
     let state = debug_begin_heap_backed_scan(index_oid);
     let mut orderby = pg_sys::ScanKeyData {
         sk_argument: IntoDatum::into_datum(vec![1.0_f32])
@@ -1784,7 +1841,7 @@ pub(crate) struct EcIvfRescanDebugSnapshot {
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) fn debug_ec_ivf_rescan_query_prep(
+pub(crate) unsafe fn debug_ec_ivf_rescan_query_prep(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
 ) -> EcIvfRescanDebugSnapshot {
@@ -1822,7 +1879,7 @@ pub(crate) fn debug_ec_ivf_rescan_query_prep(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) fn debug_ec_ivf_pq_fastscan_model_cache_reused(index_oid: pg_sys::Oid) -> bool {
+pub(crate) unsafe fn debug_ec_ivf_pq_fastscan_model_cache_reused(index_oid: pg_sys::Oid) -> bool {
     let index_relation = crate::storage::relation_guard::IndexRelationGuard::access_share(
         index_oid,
         "ec_ivf debug pq fastscan cache",
@@ -1858,7 +1915,7 @@ pub(crate) fn debug_ec_ivf_pq_fastscan_model_cache_reused(index_oid: pg_sys::Oid
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) fn debug_ec_ivf_gettuple_outputs(
+pub(crate) unsafe fn debug_ec_ivf_gettuple_outputs(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
 ) -> (Vec<(u32, u16, f32)>, bool) {
@@ -1889,12 +1946,12 @@ pub(crate) fn debug_ec_ivf_gettuple_outputs(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) fn debug_ec_ivf_metadata(index_oid: pg_sys::Oid) -> (u16, u32, u32, u32, u64) {
+pub(crate) unsafe fn debug_ec_ivf_metadata(index_oid: pg_sys::Oid) -> (u16, u32, u32, u32, u64) {
     let index_relation = crate::storage::relation_guard::IndexRelationGuard::access_share(
         index_oid,
         "ec_ivf debug metadata",
     );
-    let metadata = debug_read_metadata_page(&index_relation);
+    let metadata = debug_read_metadata_page(index_relation.as_ptr());
     (
         metadata.format_version,
         metadata.nlists,
@@ -1905,12 +1962,12 @@ pub(crate) fn debug_ec_ivf_metadata(index_oid: pg_sys::Oid) -> (u16, u32, u32, u
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) fn debug_ec_ivf_quantizer_cache_ptr(index_oid: pg_sys::Oid) -> Option<usize> {
+pub(crate) unsafe fn debug_ec_ivf_quantizer_cache_ptr(index_oid: pg_sys::Oid) -> Option<usize> {
     let index_relation = crate::storage::relation_guard::IndexRelationGuard::access_share(
         index_oid,
         "ec_ivf debug quantizer cache",
     );
-    let metadata = debug_read_metadata_page(&index_relation);
+    let metadata = debug_read_metadata_page(index_relation.as_ptr());
     if metadata.dimensions == 0 {
         return None;
     }
@@ -1922,24 +1979,24 @@ pub(crate) fn debug_ec_ivf_quantizer_cache_ptr(index_oid: pg_sys::Oid) -> Option
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) fn debug_ec_ivf_rerank_mode(index_oid: pg_sys::Oid) -> &'static str {
+pub(crate) unsafe fn debug_ec_ivf_rerank_mode(index_oid: pg_sys::Oid) -> &'static str {
     let index_relation = crate::storage::relation_guard::IndexRelationGuard::access_share(
         index_oid,
         "ec_ivf debug rerank mode",
     );
-    let metadata = debug_read_metadata_page(&index_relation);
+    let metadata = debug_read_metadata_page(index_relation.as_ptr());
     metadata.rerank.reloption_name()
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) fn debug_ec_ivf_build_metadata(
+pub(crate) unsafe fn debug_ec_ivf_build_metadata(
     index_oid: pg_sys::Oid,
 ) -> (u16, u32, u16, u64, bool, bool) {
     let index_relation = crate::storage::relation_guard::IndexRelationGuard::access_share(
         index_oid,
         "ec_ivf debug build metadata",
     );
-    let metadata = debug_read_metadata_page(&index_relation);
+    let metadata = debug_read_metadata_page(index_relation.as_ptr());
     (
         metadata.dimensions,
         metadata.nlists,
@@ -1951,13 +2008,15 @@ pub(crate) fn debug_ec_ivf_build_metadata(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) fn debug_ec_ivf_directory_summary(index_oid: pg_sys::Oid) -> (u32, u32, u64, u64, u64) {
+pub(crate) unsafe fn debug_ec_ivf_directory_summary(
+    index_oid: pg_sys::Oid,
+) -> (u32, u32, u64, u64, u64) {
     let index_relation = crate::storage::relation_guard::IndexRelationGuard::access_share(
         index_oid,
         "ec_ivf debug directory summary",
     );
     let index_relation_ptr = index_relation.as_ptr();
-    let metadata = debug_read_metadata_page(&index_relation);
+    let metadata = debug_read_metadata_page(index_relation_ptr);
 
     if metadata.directory_head == crate::storage::page::ItemPointer::INVALID {
         if metadata.total_live_tuples != 0 {
@@ -1972,11 +2031,12 @@ pub(crate) fn debug_ec_ivf_directory_summary(index_oid: pg_sys::Oid) -> (u32, u3
     let mut dead_sum = 0_u64;
     let mut inserted_sum = 0_u64;
     for expected_list_id in 0..metadata.nlists {
-        // SAFETY: the debug helper owns the open index relation while walking
-        // the directory chain.
-        let (directory, following_tid) =
-            unsafe { super::page::read_ivf_list_directory_and_next(index_relation_ptr, next_tid) }
-                .unwrap_or_else(|e| pgrx::error!("{e}"));
+        let (directory, following_tid) = unsafe {
+            // SAFETY: `index_relation_ptr` is live for the loop and `next_tid`
+            // follows the directory chain read from metadata.
+            super::page::read_ivf_list_directory_and_next(index_relation_ptr, next_tid)
+                .unwrap_or_else(|e| pgrx::error!("{e}"))
+        };
         if directory.list_id != expected_list_id {
             pgrx::error!(
                 "ec_ivf directory order mismatch: got list {}, expected {}",
@@ -2003,7 +2063,7 @@ pub(crate) fn debug_ec_ivf_directory_summary(index_oid: pg_sys::Oid) -> (u32, u3
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) fn debug_ec_ivf_directory_entry(
+pub(crate) unsafe fn debug_ec_ivf_directory_entry(
     index_oid: pg_sys::Oid,
     list_id: u32,
 ) -> (u32, u32, u64, u64, u64) {
@@ -2011,9 +2071,9 @@ pub(crate) fn debug_ec_ivf_directory_entry(
         index_oid,
         "ec_ivf debug directory entry",
     );
-    let metadata = debug_read_metadata_page(&index_relation);
-    // SAFETY: the debug helper owns the open index relation while reading the
-    // directory entries.
+    let metadata = debug_read_metadata_page(index_relation.as_ptr());
+    // SAFETY: metadata was read from the same live index relation and
+    // `load_directory_entries` validates the directory chain ordering.
     let directories = unsafe { load_directory_entries(index_relation.as_ptr(), &metadata) }
         .unwrap_or_else(|e| pgrx::error!("{e}"));
     let directory = directories
@@ -2032,10 +2092,37 @@ pub(crate) fn debug_ec_ivf_directory_entry(
 mod tests {
     use super::{
         build_probe_block_sequence, candidate_heap_tid_cmp, consume_live_tid_budget,
-        select_probe_lists, CandidateTopK, EcIvfCentroidScore, EcIvfScoredCandidate,
-        ProbeBlockRange,
+        inner_product, inner_product_scalar, select_probe_lists, CandidateTopK,
+        EcIvfCentroidScore, EcIvfScoredCandidate, ProbeBlockRange,
     };
     use crate::storage::page::ItemPointer;
+
+    #[test]
+    fn inner_product_neon_matches_scalar_at_various_dims() {
+        // Cover the 16-wide loop, 4-wide tail, and the trailing scalar
+        // for the last < 4 lanes. 1536 is the production dim; the
+        // others exercise tail paths.
+        for &dim in &[1_usize, 3, 4, 15, 16, 17, 31, 32, 33, 64, 100, 1536] {
+            let a: Vec<f32> = (0..dim).map(|i| ((i as f32) * 0.013).sin()).collect();
+            let b: Vec<f32> = (0..dim).map(|i| ((i as f32) * 0.017).cos()).collect();
+            let dispatch = inner_product(&a, &b);
+            let scalar = inner_product_scalar(&a, &b);
+            let tol = 1e-4_f32 * scalar.abs().max(1.0);
+            assert!(
+                (dispatch - scalar).abs() <= tol,
+                "dim={dim}: dispatch={dispatch} scalar={scalar} delta={}",
+                (dispatch - scalar).abs()
+            );
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "slice length mismatch")]
+    fn inner_product_panics_on_length_mismatch() {
+        let a = vec![1.0_f32; 4];
+        let b = vec![1.0_f32; 5];
+        inner_product(&a, &b);
+    }
 
     fn candidate(block_number: u32, offset_number: u16, score: f32) -> EcIvfScoredCandidate {
         EcIvfScoredCandidate {

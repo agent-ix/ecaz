@@ -1,0 +1,8 @@
+
+   0: [91mssm command 789675b2-d47d-4f05-91c9-f2c39a65482c on i-05747a9944ca4b450 ended in Failed (rc=127): + sudo -u loader bash -lc ' /   set -eux /   pip install --user --quiet huggingface_hub /   python3 - <<PY / from huggingface_hub import snapshot_download[0m
+
+Location:
+   [35mcrates/ecaz-cloud/src/ssm.rs[0m:[35m111[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.

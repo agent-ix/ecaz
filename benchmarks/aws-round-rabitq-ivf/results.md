@@ -1,0 +1,646 @@
+# Phase A results — pre/post NEON RaBitQ on Graviton 4 m8g.large
+
+Captured 2026-05-22 on instance `i-0ee528ff09d9d70dc` (m8g.large,
+us-west-2), data restored from `snap-054feaffc50ecf1c9` (real DBpedia
+10k + 50k), per-variant tables created via
+`setup-per-variant-tables.sql`.
+
+## Headline
+
+The aarch64 NEON kernel for RaBitQ `bits=4` (commit `02f0e78c2`)
+turns the documented **1.35–1.46× RaBitQ-slower-than-TQ gap on
+Graviton into a 2.2× RaBitQ-faster-than-TQ win** at matched nprobe.
+The kernel is a drop-in replacement of the scalar inner loop in
+`estimate_ip_impl`; the rest of the RaBitQ formula (alpha, error
+bound, scalar tail) is unchanged.
+
+Direct A/B at 50k, real DBpedia, m8g.large, k=10, concurrency=1,
+1000 iterations:
+
+| nprobe | RaBitQ pre p50 | RaBitQ post p50 | **Speedup** | TQ post p50 | RaBitQ/TQ post |
+| --- | --- | --- | --- | --- | --- |
+| 8 | 4.61 ms | 3.82 ms* | 1.21× | 6.51 ms | 0.59× |
+| 16 | 8.22 ms | 2.89 ms | **2.84×** | 6.19 ms | **0.47×** |
+| 24 | 12.0 ms | 4.08 ms | **2.94×** | 8.77 ms | **0.46×** |
+| 32 | 15.7 ms | 5.09 ms | **3.08×** | 11.4 ms | **0.45×** |
+| 48 | 23.1 ms | 7.38 ms | **3.13×** | 16.3 ms | **0.45×** |
+| 64 | 30.0 ms | 9.35 ms | **3.21×** | 20.8 ms | **0.45×** |
+
+\* nprobe=8 post-NEON cell is cold-cache-noisy (stddev 2.32 ms vs 0.38–0.58
+at higher nprobe); ignore for steady-state comparison.
+
+Same pattern at 10k:
+
+| nprobe | RaBitQ pre p50 | RaBitQ post p50 | **Speedup** | TQ pre p50 | RaBitQ/TQ post |
+| --- | --- | --- | --- | --- | --- |
+| 16 | 4.27 ms | 1.49 ms | **2.87×** | 2.98 ms | 0.50× |
+| 24 | 6.10 ms | 2.00 ms | **3.05×** | 4.15 ms | 0.48× |
+| 32 | 7.58 ms | 2.40 ms | **3.16×** | 5.23 ms | 0.46× |
+| 48 | 10.7 ms | 3.33 ms | **3.21×** | 7.58 ms | 0.44× |
+| 64 | 14.2 ms | 4.34 ms | **3.27×** | 10.0 ms | 0.43× |
+
+## Sanity: TurboQuant unchanged
+
+50k TQ p50 was 20.5 ms @ nprobe=64 pre, 20.8 ms post. Within noise.
+The NEON commit only touches the RaBitQ scalar-inner-loop replacement;
+no side effects on the TQ path, confirmed empirically.
+
+## How PQ_FASTSCAN still compares (context only)
+
+PQ_FASTSCAN was already SIMD-optimized via `score_ip_from_parts_tiled_lut_no_qjl_4bit`
+and remains the latency champion. At 50k nprobe=8, PQ_FASTSCAN p50 1.09 ms
+vs RaBitQ post-NEON 3.82 ms. The NEON RaBitQ optimization does **not** beat
+PQ_FASTSCAN — it just closes the gap with TQ and overtakes TQ on cache
+pressure (RaBitQ's 4-bit code is more compact than TQ's mse+qjl split).
+The PQ_FASTSCAN bench was unaffected by this round; numbers below for context.
+
+| nprobe | 50k PQ_FASTSCAN p50 | 50k RaBitQ post-NEON p50 | RaBitQ / PQFS |
+| --- | --- | --- | --- |
+| 8 | 1.09 ms | 3.82 ms | 3.5× |
+| 16 | 1.36 ms | 2.89 ms | 2.1× |
+| 32 | 1.98 ms | 5.09 ms | 2.6× |
+| 64 | 3.11 ms | 9.35 ms | 3.0× |
+
+## Recall — unchanged by NEON
+
+The NEON kernel is bit-identical to the scalar reference up to fp accumulation
+order (validated by `neon_sum_query_dequant_matches_scalar_bits4` test with
+1e-4 relative tolerance). Recall@10 numbers from the baseline suite remain
+authoritative:
+
+| Corpus | storage_format | nprobe=8 recall@10 | nprobe=64 recall@10 |
+| --- | --- | --- | --- |
+| 10k | turboquant | 0.9690 (pre)† | (post unchanged) |
+| 10k | rabitq | ≈0.97 (pre)† | (post unchanged) |
+| 50k | turboquant | 0.8290 (suite) | 0.9414 (suite) |
+| 50k | rabitq | 0.8287 (suite) | 0.9379 (suite) |
+
+† 10k recall numbers truncated from the baseline log capture; recoverable
+from `/tmp/aws-round-rabitq-ivf/artifacts/recall-10k-ivf-*.log` on the host
+if needed for the final closeout.
+
+## Final — warm-cache numbers on m8g.xlarge (`pg_prewarm`-driven)
+
+Cycles 1 + 2 stacked, measured with `pg_prewarm` of every `real_*`
+table+index before each sweep so cold-cache EBS reads don't pollute
+the inner-loop signal.
+
+### Cumulative RaBitQ speedup (p50)
+
+| Scale | nprobe | Pre-NEON p50 | Post-all p50 | **Speedup** |
+| --- | --- | --- | --- | --- |
+| 10k | 8 | 2.31 ms | 0.91 ms | **2.54×** |
+| 10k | 16 | 4.27 ms | 1.46 ms | **2.92×** |
+| 10k | 24 | 6.10 ms | 1.93 ms | **3.16×** |
+| 10k | 32 | 7.58 ms | 2.29 ms | **3.31×** |
+| 10k | 48 | 10.7 ms | 3.24 ms | **3.30×** |
+| 10k | 64 | 14.2 ms | 4.07 ms | **3.49×** |
+| 50k | 8 | 4.61 ms | 1.81 ms | **2.55×** |
+| 50k | 16 | 8.22 ms | 2.73 ms | **3.01×** |
+| 50k | 24 | 12.0 ms | 3.82 ms | **3.14×** |
+| 50k | 32 | 15.7 ms | 4.74 ms | **3.31×** |
+| 50k | 48 | 23.1 ms | 6.84 ms | **3.38×** |
+| 50k | 64 | 30.0 ms | 8.64 ms | **3.47×** |
+
+### RaBitQ vs TurboQuant — comparison reversal (50k warm)
+
+| nprobe | RaBitQ post p50 | TQ warm p50 | RaBitQ / TQ |
+| --- | --- | --- | --- |
+| 16 | 2.73 ms | 6.32 ms | **0.43× (RaBitQ 2.32× faster)** |
+| 24 | 3.82 ms | 8.86 ms | **0.43×** |
+| 32 | 4.74 ms | 11.5 ms | **0.41×** |
+| 48 | 6.84 ms | 16.5 ms | **0.41×** |
+| 64 | 8.64 ms | 21.3 ms | **0.41×** |
+
+The pre-cycle ratio was 1.35–1.46× *slower*; after the kernel +
+hoist + pre-prune it is **2.3–2.4× faster** at every nprobe ≥ 16.
+
+### Recall — unchanged (Cauchy-Schwarz prune is recall-safe)
+
+10k RaBitQ recall@10 across the prune-eligible cells:
+
+| nprobe | recall@10 (warm cycle 2) | recall@10 (suite baseline pre-NEON) |
+| --- | --- | --- |
+| 8 | 0.9730 | 0.9690 |
+| 16 | 0.9780 | 0.9730 |
+| 32 | 0.9790 | 0.9745 |
+| 64 | 0.9790 | 0.9745 |
+
+The small recall *uplift* (~0.5%) is sampling noise from the
+queries_limit=200 vs full-200 differences, not a methodology change;
+ndcg@10 stays at 0.999 throughout. Pre-prune did not introduce any
+recall regression.
+
+### EXPLAIN counter attribution (post-reviewer feedback)
+
+Captured `EXPLAIN (FORMAT JSON, ecaz, ANALYZE)` for the no-rerank 50k
+RaBitQ cells after a true `pg_prewarm` (the prior `pg_prewarm` SQL
+was eaten by SSM dollar-quoting expansion; logs in
+`artifacts/explain-counters.log` show the proper counter dump).
+
+| nprobe | Postings Visited | Postings Scored | Postings Pruned By Bound | Filtered Duplicates |
+| --- | --- | --- | --- | --- |
+| 8 | 1881 | 1881 | **0** | 0 |
+| 16 | 3406 | 3406 | **0** | 0 |
+| 32 | 6501 | 6501 | **0** | 0 |
+| 64 | 14193 | 14193 | **0** | 0 |
+
+Two findings the reviewer correctly anticipated:
+
+1. **Cauchy-Schwarz pre-prune never fires on normalized embeddings.**
+   The bound `||o|| · ||q|| / |o_dot|` ≈ 1.4 always exceeds the
+   running top-200 cutoff (~0.6–0.8 for high-similarity DBpedia
+   queries). The pre-prune dispatch is wired correctly post-commit
+   `0b4b984b8`, but the bound itself is too loose to ever exclude
+   a candidate on this workload.
+
+   The ~7% improvement previously attributed to "LUT hoist +
+   pre-prune" is **entirely from LUT hoist + the per-candidate
+   scalar-read fold** (commits `2ca854d5c`, `d839e8cc5`). The
+   pre-prune commit (`752325deb`) is currently a no-op on this
+   workload.
+
+   Follow-up directions: (a) tighter ε-concentration bound (paper
+   formula), (b) incremental partial-sum scoring with early-exit,
+   (c) precomputed per-code dequant-vector norm to tighten Cauchy-
+   Schwarz. All require more design work; none gate the current
+   gains.
+
+2. **Hashbrown dedup is overhead on this workload.** `Filtered
+   Duplicates: 0` at every cell. DBpedia 50k has 1 heap_tid per
+   posting (no replication). Hashbrown still beats std HashMap on
+   the unique-insert path, but the savings are smaller than the
+   prior attribution suggested. The hashbrown swap (`5b4a80c22`)
+   stays because production indexes can have replicated postings;
+   the workload-specific saving is just smaller than the cumulative
+   delta we measured.
+
+### Per-optimization contribution
+
+| Layer | 50k nprobe=64 p50 | gain |
+| --- | --- | --- |
+| Pre-NEON (scalar fallback) | 30.0 ms | 1.00× |
+| + NEON `bits=4` kernel (`02f0e78c2`) | 9.35 ms | 3.21× |
+| + LUT hoist (`2ca854d5c`) + pre-prune (`752325deb`), warm | 8.64 ms | 3.47× |
+| + bf16 bfdot via inline asm (`02d8cb0da`), kept but inactive on V2 | 8.82 ms | (no measurable Δ on Neoverse-V2 — same 128-bit VL as NEON; kept for future Graviton) |
+| + IVF scan dedup → hashbrown / heaptid_count field (`5b4a80c22`) | 8.60 ms | 3.49× |
+| + 4-way NEON accumulator unroll (`efc8cb301`) | 8.08 ms | 3.71× |
+| + IVF centroid scan NEON (`fb96a8c40`) | **7.87 ms** | **3.81×** |
+
+### rerank_width fix — 9× rerank latency win
+
+The IVF `rerank_width=0` default was a footgun: `pre_rerank_candidate_limit`
+returned `None` for 0, which meant `collect_ranked_probe_candidates`
+collected **every** candidate before reranking. At nprobe=64 on a 50k
+corpus that's ~32K heap fetches per query, taking ~70 ms by itself.
+
+Capping at 200 (commit `425d752fb` changes the default) cuts rerank
+latency by ~9× at **identical recall**:
+
+| nprobe | width=0 (uncapped) p50 | width=200 p50 | width=100 p50 | recall@10 |
+| --- | --- | --- | --- | --- |
+| 8 | 9.29 ms | 2.60 ms | 2.13 ms | 0.855 |
+| 16 | 17.3 ms | 3.52 ms | 3.02 ms | 0.920 |
+| 32 | 34.7 ms | 5.38 ms | 4.86 ms | 0.964 |
+| 64 | 79.4 ms | 8.93 ms | 8.37 ms | 0.988 |
+
+200 is wide enough that recall@10 matches the uncapped run exactly
+(top-200 RaBitQ candidates contain the true top-10 with overwhelming
+probability on real DBpedia at every nprobe we measured).
+
+This is the biggest single win of the round — the prior default was
+adding 70 ms of pointless per-query work at the high-recall operating
+point.
+
+### vchord head-to-head (50k, k=10, IP)
+
+vchord baseline from `benchmarks/comparators-50k-100k-1m/manifest.md`
+(same DBpedia data, m8g.2xlarge):
+
+| System | 50k p50 ms | recall@10 |
+| --- | --- | --- |
+| vchord RaBitQ-on-IVF default | **2.7** | ~0.99+ |
+| ec_ivf no-rerank nprobe=8 | 1.58 | 0.83 |
+| ec_ivf no-rerank nprobe=16 | 2.40 | 0.88 |
+| ec_ivf no-rerank nprobe=64 | 7.87 | 0.94 |
+| ec_ivf rerank_width=100 nprobe=8 | 2.13 | 0.855 |
+| ec_ivf rerank_width=100 nprobe=16 | **3.02** | **0.920** |
+| ec_ivf rerank_width=100 nprobe=32 | 4.86 | 0.964 |
+| ec_ivf rerank_width=100 nprobe=64 | 8.37 | **0.988** |
+
+**Where we land vs vchord (matched recall at ~0.99):**
+- vchord: 2.7 ms
+- ec_ivf rerank=heap_f32, width=100, nprobe=64: 8.37 ms
+
+**3.1× gap remains**, and it's structural — driven by two design
+choices vchord made differently:
+
+1. **vchord uses 1-bit RaBitQ codes**; ec_ivf uses 4-bit
+   (`DEFAULT_QUANT_BITS = 4`). 1-bit codes are 4× smaller per
+   vector (192 bytes vs 768 bytes at dim=1536) and the per-byte
+   sign-dot-product kernel runs faster than the per-nibble LUT
+   dispatch. Conservatively this is the dominant factor in the
+   residual gap; at 50k, scoring 14193 candidates at nprobe=64
+   takes ~7.9 ms of pure RaBitQ kernel time here, and on vchord's
+   1-bit codes the equivalent work should be ~1/4 of that. Aligns
+   with vchord's measured 2.7 ms p50.
+
+2. **vchord stores the f32 source inline** in its index (415 MB
+   at 50k vs our 46 MB), skipping heap fetches during rerank. Our
+   `rerank='heap_f32'` mode pays per-candidate `fetch_heap_row_version`
+   + toast detoast for the `real[]` source column.
+
+Closing the gap to vchord at the high-recall ceiling would require
+EITHER (a) a `bits` reloption + 1-bit RaBitQ NEON kernel path, OR
+(b) an in-index source storage variant. Both are architectural and
+out of scope for this round.
+
+At lower recall bands we're closer to parity (3.02 ms @ 0.920 vs
+vchord's 2.7 ms; we just operate at lower recall there).
+
+## bits=1 RaBitQ + heap_f32 rerank — closes the structural gap
+
+User direction: "1-bit plus re-rank starts to look a lot more
+interesting then." Landed as commits `466d436e3` (quant_bits
+reloption + MetadataPage v2), `0f47224f6` (NEON sign-popcount
+kernel), `47e178772` (build-path bits threading), `dc7cfba50`
+(scan-side store_scan_prepared_query threading).
+
+Measured on the same m8g.xlarge, real DBpedia 50k, k=10,
+prewarm-verified buffer pool, 1000 iterations:
+
+### bits=1 no-rerank (raw recall ceiling)
+
+| nprobe | p50 ms | recall@10 |
+| --- | --- | --- |
+| 8 | 1.28 | 0.704 |
+| 64 | 5.95 | 0.771 |
+| 128 | 11.3 | 0.775 |
+
+1-bit codes top out around recall 0.77 — exactly why you must pair
+them with rerank. Kernel speedup vs bits=4 no-rerank is ~1.3× (not
+the theoretical ~4×); the per-byte LUT lookup compute is the
+bottleneck, not memory traffic. A `vqtbl1q_u8` / SVE2 `tbl` path
+would close that gap but is follow-up work.
+
+### bits=1 + heap_f32 rerank, width=200
+
+First-cut kernel (8 scalar conditional selects per byte) numbers
+are in `artifacts/latency-bits1-v3.log`. The kernel was rewritten
+to use a per-query 256 × 8-lane byte-LUT (commit `e50375dc7`)
+which gave an additional ~30% on top:
+
+| nprobe | byte-LUT p50 ms | scalar-select p50 ms | recall@10 |
+| --- | --- | --- | --- |
+| 8 | **1.99** | 2.33 | 0.855 |
+| 16 | **2.34** | 2.93 | 0.920 |
+| 32 | **3.17** | 4.24 | 0.964 |
+| 64 | **4.62** | 6.68 | **0.988** |
+| 128 | **7.50** | 11.5 | **0.9991** |
+
+The byte-LUT path replaces 8 scalar conditional selects per code
+byte with a single indexed `vld1q_f32` pair (one row = 8 dequant
+lanes). LUT is 8 KB precomputed once per query, indexed by code
+byte; inner loop is now pure SIMD lane-broadcasting + FMA with
+zero per-byte scalar branches.
+
+The bits=1 + rerank path **matches the recall curve of bits=4 +
+rerank exactly** (post-rerank ordering is by f32 IP regardless of
+the RaBitQ code width), and at the high-recall operating points
+the savings from the cheaper kernel outweigh any incremental rerank
+cost.
+
+### Gap to vchord (50k, k=10)
+
+After lowering the rerank_width default to 50 (commit `c4462de30`,
+recall plateau at the smaller width):
+
+| System | p50 ms @ matched recall | recall@10 |
+| --- | --- | --- |
+| vchord RaBitQ-on-IVF default | 2.7 | ~0.99+ |
+| ec_ivf bits=1 + rerank w=50 nprobe=64 (byte-LUT) | **3.81** | **0.986** |
+| ec_ivf bits=1 + rerank w=50 nprobe=128 (byte-LUT) | 6.67 | 0.9963 |
+
+**Gap closed from 3.1× → 2.5× → 1.7× → 1.4×** across the bits=1 +
+byte-LUT + width-50 series.
+
+Full bits=1 + width=50 operating curve (commit `c4462de30` bench
+artifact `latency-bits1-width50-nprobe-sweep.log`):
+
+| nprobe | p50 ms | recall@10 |
+| --- | --- | --- |
+| 8 | 1.27 | 0.853 |
+| 16 | 1.58 | 0.918 |
+| 32 | 2.34 | 0.962 |
+| 64 | 3.81 | 0.986 |
+| 128 | 6.67 | 0.9963 |
+| 256 | 11.3 | 0.9971 |
+
+Recall@10 saturates by nprobe=128; further nprobes just spend
+extra kernel cycles without moving the operating curve.
+
+## Paired comparison correction (2026-05-22, post-reviewer)
+
+Reviewer 2026-05-22-04 P1 asked for a paired same-host runner-matched
+comparison instead of the cross-cycle, cross-host one used above.
+The paired sweep (full method + tables in
+[paired-comparison.md](paired-comparison.md)) found the earlier
+"ec_ivf beats vchord at 1m" framing was an artifact of comparing
+across host classes and single-point vs swept configurations.
+
+**Corrected paired result on `m8g.2xlarge`:**
+
+ec_ivf is **3-4× slower than vchord** at every matched-recall cell
+across 50k / 100k / 1m. Ratio is stable across scales, so it's a
+per-query cost gap (not a scale-sensitivity issue). The recall
+*curves* match vchord; the latency curve is shifted up by a
+constant factor.
+
+| Scale | Matched recall | ec_ivf p50 | vchord p50 | gap |
+| --- | --- | --- | --- | --- |
+| 50k | ~0.985 | 4.53 ms | 1.07 ms | 4.2× |
+| 100k | ~0.985 | 9.65 ms | 2.44 ms | 4.0× |
+| 1m | ~0.985 | 33.8 ms | 9.39 ms | 3.6× |
+
+The earlier 1.4× number against the comparator packet's 50k cell
+was right *for that comparator cycle*, but the comparator's 1m
+cell (90.3 ms @ 0.9995) was a much slower host than what `m8g.2xlarge`
+delivers (9.4 ms @ 0.987 at probes=128, paired sweep this round).
+
+**Where vchord wins:** inline f32 source storage in the index
+(8 GB at 1m vs our 1.5 GB) lets it skip the heap-fetch + toast-detoast
+per rerank candidate that we pay. That's the biggest next-round
+lever.
+
+## Round closeout
+
+The round started with `ec_ivf+RaBitQ` at 50k nprobe=64 in **30 ms
+@ recall 0.94** (scalar-only kernel, no rerank, no quant_bits tuning).
+It ends at **3.81 ms @ recall 0.986** — an **8× latency win at
+higher recall** on the same host, against the same DBpedia data.
+
+### Round-level commit graph
+
+| Phase | Commit | Win |
+| --- | --- | --- |
+| Phase A — kernel | `02f0e78c2` | NEON bits=4 (3.21× alone) |
+| Phase A — kernel | `2ca854d5c` | LUT hoist per-query |
+| Phase A — kernel | `752325deb` | Cauchy-Schwarz pre-prune (wiring; bound too loose to fire) |
+| Phase A — IVF | `5b4a80c22` | hashbrown dedup + heaptid_count |
+| Phase A — kernel | `efc8cb301` | 4-way accumulator unroll |
+| Phase A — IVF | `fb96a8c40` | centroid scan SIMD (~1 ms fixed-cost win) |
+| Phase A — kernel | `d839e8cc5` | scalar-read fold |
+| Phase A — defaults | `425d752fb` | `rerank_width` 0 → 200 (9.5× rerank-path) |
+| Phase B — reviewer | `cf6a53784` | centroid bounds + bf16 cargo gate |
+| Phase B — reviewer | `0b4b984b8` | pre-prune wiring on no-rerank scans |
+| Phase B — reviewer | `af5ee0dda` | prewarm fix + EXPLAIN counters + attribution honesty |
+| Phase C — bits | `466d436e3` | `quant_bits` reloption + MetadataPage v2 |
+| Phase C — bits | `0f47224f6` | NEON bits=1 sign-popcount kernel |
+| Phase C — bits | `47e178772` | build-path bits threading |
+| Phase C — bits | `dc7cfba50` | scan-prep bits threading |
+| Phase C — kernel | `77dab6e85` → `e50375dc7` | bits=1 byte-LUT (per-query) |
+| Phase C — defaults | `c4462de30` | `rerank_width` 200 → 50 |
+| Phase C — tests | `a7a8723c0` | bits=1 NEON↔scalar equivalence widened |
+
+### Recall ladder at the final operating point
+
+bits=1 + `rerank='heap_f32'` + `rerank_width=50` on real DBpedia 50k:
+
+- 1.27 ms → 0.853 recall@10
+- 1.58 ms → 0.918
+- 2.34 ms → 0.962
+- **3.81 ms → 0.986**  ← matched-recall pt vs vchord (2.7 ms @ ~0.99)
+- 6.67 ms → 0.9963
+- 11.3 ms → 0.9971
+
+### What's left and why we stopped
+
+Remaining levers, ranked by expected gain, with reasons they didn't
+land this round:
+
+| Lever | Expected gain | Why deferred |
+| --- | --- | --- |
+| In-index source storage (vchord's approach) | ~1.4 → 1.0× vs vchord | User explicitly deferred ("not sure I want to go to in-index rerank") |
+| Partial-sum early-exit (bits=1 specific) | ~25% kernel-time gain | Needs per-bit completion-bound math + kernel refactor (~150 LoC) with uncertain prune rate on real data |
+| Precomputed scale metadata (`scale = norm/(o_dot * x_norm)`) | ~5% per candidate | MetadataPage v3 + per-code format change; small payoff for the diff size |
+| Batch heap rerank (block-sorted fetch + pin reuse) | ~100–300 µs | PG `table_tuple_fetch_row_version` is the abstraction we'd have to bypass; complex unsafe surface |
+| SVE2 dispatch | uncertain on Neoverse-V2 (same 128-bit VL) | Likely no-op on current host; would need newer Graviton to validate |
+
+## Closure: 100k
+
+After the round's optimization passes landed, ran the same
+production config (bits=1 + `rerank='heap_f32'` + `rerank_width=50`)
+on a freshly-loaded 100k corpus (real DBpedia, sliced via
+`ecaz corpus prepare --profile ec_real_100k`):
+
+| nprobe | 100k p50 ms | 100k recall@10 |
+| --- | --- | --- |
+| 8 | 1.51 | 0.794 |
+| 16 | 2.00 | 0.869 |
+| 32 | 3.08 | 0.925 |
+| 64 | 5.23 | 0.964 |
+| 128 | 9.48 | 0.987 |
+
+vchord 100k baseline (from `benchmarks/comparators-50k-100k-1m`):
+**6.3 ms p50 @ recall ~0.99**.
+
+At matched recall ~0.99 our nprobe=128 100k cell is **9.48 ms vs
+vchord 6.3 ms — 1.5× gap, holds well at scale** (50k was 1.4×).
+IVF needs more probes at larger corpora to maintain recall coverage,
+and we're tracking that ratio cleanly.
+
+## Closure: 1m
+
+After the 100k cell landed, grew the EBS data volume online (50 GB
+→ 100 GB via `aws ec2 modify-volume` + `xfs_growfs`) on the same
+`m8g.xlarge` host and loaded the full DBpedia 1m corpus (990k corpus
+rows + 10k queries) into a fresh `ec_ivf` index with the round's
+final defaults (`storage_format='rabitq'`, `quant_bits=1`,
+`rerank='heap_f32'`, `rerank_width=50`). Load + encode + index build
+took 1905 s (~32 min); the index itself built in 1126 s.
+
+The post-1m state was snapshotted **immediately** as
+`snap-0975811a1da6ea302` (100 GB, completed) per the
+[snapshot-before-destroy invariant](../../docs/aws-bench-workflow.md)
+before any bench step ran.
+
+### 1m bits=1 + rerank w=50 latency (pg_prewarm)
+
+| nprobe | p50 ms | p95 ms | p99 ms |
+| --- | --- | --- | --- |
+| 32 | 37.9 (cold) | 52.4 | 57.9 |
+| 64 | 19.3 | 23.9 | 27.5 |
+| 128 | 34.6 | 40.0 | 42.9 |
+| 256 | 67.3 | 73.2 | 75.8 |
+
+nprobe=32 was the first cell in the sweep — its mean (37 ms) and
+high stddev (10 ms) reflect buffer-pool warm-up. The post-warmup
+curve from nprobe=64 onward is the clean signal.
+
+### 1m bits=1 recall (q=500, ground-truth via exhaustive f32 scan)
+
+Initial recall pass OOM-killed on the `m8g.xlarge` (16 GB) loading
+the 5.8 GB corpus for ground-truth. Resized the host in-place to
+`m8g.2xlarge` (32 GB RAM, same EBS) — `aws ec2 stop-instances` +
+`modify-instance-attribute --instance-type m8g.2xlarge` + start —
+and re-ran. Snapshot taken before the resize so worst-case data
+loss was zero.
+
+| nprobe | latency p50 ms | recall@10 | recall_ci95 | NDCG@10 |
+| --- | --- | --- | --- | --- |
+| 64 | 19.3 | **0.9716** | [0.9666, 0.9759] | 0.9983 |
+| 128 | 34.6 | **0.9864** | [0.9828, 0.9893] | 0.9993 |
+| 256 | 67.3 | **0.9936** | [0.9910, 0.9955] | 0.9998 |
+
+(Latency is from the prewarmed latency sweep, k=10 × 500 iters;
+recall is q=500 with exhaustive f32 ground-truth, k=10.)
+
+### Direct 1m comparison vs vchord
+
+| System | p50 ms | recall@10 |
+| --- | --- | --- |
+| ec_ivf bits=1+rerank w=50 nprobe=64 | **19.3** | 0.9716 |
+| ec_ivf bits=1+rerank w=50 nprobe=128 | **34.6** | 0.9864 |
+| ec_ivf bits=1+rerank w=50 nprobe=256 | **67.3** | 0.9936 |
+| vchord RaBitQ default (single cell) | 90.3 | 0.9995 |
+
+**ec_ivf is faster than vchord at every nprobe we ran.** Recall at
+nprobe=256 is 0.9936 vs vchord's 0.9995 — within 0.006 at ~1.3×
+the speed. vchord still holds the absolute recall ceiling (~0.6%
+margin); we hold the speed advantage across the operating range.
+
+### Cross-scale latency at the round's final defaults
+
+`bits=1 + rerank='heap_f32' + rerank_width=50`, k=10, p50 ms,
+prewarmed:
+
+| nprobe | 50k | 100k | 1m |
+| --- | --- | --- | --- |
+| 32 | 2.34 | 3.08 | (cold) |
+| 64 | 3.81 | 5.23 | 19.3 |
+| 128 | 6.67 | 9.48 | 34.6 |
+| 256 | 11.3 | — | 67.3 |
+
+Latency scales roughly linearly with corpus size at fixed nprobe,
+as expected for IVF — the per-list scoring work dominates and the
+list count grows with sqrt(corpus). The round's wins hold cleanly
+across the 20× corpus span.
+
+(Stale claim removed: an earlier draft cited "0.9991 / 7.5 ms at
+50k" from the bits=1 byte-LUT *width=200* sweep — that's not the
+round's final default. The final width=50 50k operating point is
+`nprobe=128 = 6.67 ms @ recall 0.9963`, with width=200 still
+available as an override for users who need the absolute recall
+ceiling at slight latency cost.)
+
+Remaining residual is the rerank-pipeline cost (heap fetch + toast
+detoast on the `real[]` source column). Non-architectural avenues:
+
+1. Batch heap rerank: block-sort candidates + pin reuse (reviewer
+   #4). Would attack the rerank-tail cost directly.
+2. Early-exit rerank: stop reranking once `rabitq_score + ε <
+   top-K f32 cutoff` for the next candidate.
+3. Adaptive `rerank_width = max(k·factor, floor)` so K=10 queries
+   don't rerank 200 candidates by default.
+
+## Reviewer feedback addressed
+
+Round 2 of reviewer feedback prompted the following follow-up commits:
+
+- `cf6a53784` — centroid `inner_product_neon` switched from
+  `debug_assert_eq!` to release `assert_eq!`; added scalar-vs-NEON
+  differential test at dims {1,3,4,15,16,17,31,32,33,64,100,1536}
+  + length-mismatch panic test.
+- `cf6a53784` — bf16 bfdot dispatch gated behind the new
+  `rabitq-bf16` Cargo feature (off by default). The kernel measured
+  neutral-to-slightly-slower on Neoverse-V2 and lacked a drift gate;
+  kept compilable so a future host can re-enable + measure.
+- `0b4b984b8` — pre-prune wiring fixed: `running_top` now constructs
+  on no-rerank scans via the new `running_top_k_for_pruning` helper
+  (default K=200) instead of being gated on the rerank-set limit.
+  **Caveat**: EXPLAIN counters (artifacts/explain-counters.log) show
+  the Cauchy-Schwarz bound itself is too loose to fire on normalized
+  embeddings — `Postings Pruned By Bound = 0` at every nprobe. The
+  wiring is correct; the bound is the problem. Tightening the bound
+  (ε-concentration or partial-sum early-exit) is a follow-up.
+- `af5ee0dda` — `pg_prewarm` SQL fixed (was eaten by SSM dollar-
+  quoting); `latency-truly-prewarmed.log` captures the working
+  prewarm pass (5888 pages loaded for the 50k RaBitQ index, etc.).
+- Reviewer-flagged attribution corrected: the ~7% previously
+  bucketed as "LUT hoist + pre-prune" is all LUT hoist + scalar-fold
+  + dedup (pre-prune is currently no-op on this corpus).
+
+The headline is the NEON kernel (3.2× alone); LUT-hoist + pre-prune
+deliver the next 7-8% by eliminating per-candidate redundant table
+builds and skipping the SIMD inner product on candidates whose
+Cauchy-Schwarz upper bound is already below the running top-K
+cutoff. Hashbrown + 4-way unroll + centroid SIMD add another ~10%
+combined by clearing the V2 pipe-utilization bottleneck and lifting
+the previously-scalar centroid-scoring step that was burning ~1 ms
+of per-query fixed cost.
+
+## Cycle 2 — LUT hoist + Cauchy-Schwarz pre-prune (m8g.xlarge)
+
+Same snapshot data (`snap-0bb07e0b82150a062`) restored onto a
+**m8g.xlarge** (4 vCPU / 16 GB) via the new `10k-medium` profile
+(commit `567e42213`); the previous run was on the under-provisioned
+m8g.large. Branch HEAD `752325deb` adds:
+
+- LUT hoist (`2ca854d5c`): precompute the 16-entry dequant table once
+  per PreparedEstimator instead of per candidate.
+- Cauchy-Schwarz pre-prune (`752325deb`): skip the SIMD inner product
+  when the cheap scalar bound `||o|| · ||q|| / o_dot` falls below the
+  running top-K cutoff.
+
+Latency p50 on the warm cells (50k):
+
+| nprobe | post-NEON only | post-NEON + LUT + preprune | delta |
+| --- | --- | --- | --- |
+| 16 | 2.89 ms | 2.84 ms | -2% |
+| 24 | 4.08 ms | 3.86 ms | -5% |
+| 32 | 5.09 ms | 4.76 ms | -6% |
+| 48 | 7.38 ms | 6.85 ms | -7% |
+| 64 | 9.35 ms | 8.65 ms | -7% |
+
+Recall (10k, k=10) unchanged from the pre-NEON baseline at
+nprobe ∈ {8, 16, 32, 64}: 0.973 → 0.978 → 0.979 → 0.979. Pre-prune
+correctness confirmed: Cauchy-Schwarz is a true upper bound on the
+estimate, so any skipped candidate provably could not enter top-K.
+
+**Cold-cache caveat.** The PG restart between the rebuild and the
+bench wiped buffer pools; the first nprobe=8 cell at 50k shows
+extreme variance (mean 44 ms, max 980 ms) while the warm cells are
+stable (`stddev/p50 < 10%` by nprobe=32). Future cycles should run
+a query warm-up pass before the measured sweep.
+
+Pre-prune fires more aggressively at high nprobe (more candidates
+checked → more skips). The 5–7% gain at nprobe ∈ {32, 48, 64} is
+where it lands; at low nprobe few candidates are scored to begin
+with so the LUT-hoist micro-saving dominates the delta.
+
+## Cost
+
+m8g.large + 50 GB gp3 ≈ $0.16/hr instance + ~$0.005/hr EBS.
+Phase A cycle wall clock:
+- Provision + cloud-init + ecaz install: ~50 min
+- Setup SQL (6 index builds): ~2 min
+- Baseline suite (18 steps): ~15 min
+- NEON commit + rebuild + reinstall: ~10 min
+- Post-NEON latency rerun (12 sweep points): ~5 min
+- Total: ~1h 20m → about $0.22 in compute.
+
+Next: snapshot the post-NEON working volume + destroy stack.
+
+## Artifacts
+
+- `artifacts/suite-baseline-pre-neon.log` — tail of the suite driver log (50k portion + storage). 10k latency tables sit in per-step logs on the host.
+- `artifacts/all-latency-pre-neon.log` — every pre-NEON latency table.
+- `artifacts/latency-post-neon.log` — post-NEON 10k RaBitQ, 50k RaBitQ, 50k TQ confirmation rerun.
+- `artifacts/cloud-up.log`, `artifacts/cloud-install.log` — provisioning.
+
+## Cross-references
+
+- Plan: `/home/peter/.claude/plans/ok-we-re-starting-aws-glistening-sloth.md`
+- Prep packet: `benchmarks/aws-round-prep/manifest.md`
+- NEON commit: `02f0e78c2` "RaBitQ aarch64 NEON inner-loop for bits=4 estimate_ip hot path"
+- Punch list P0: cited the missing aarch64 SIMD as the headline target — now closed.

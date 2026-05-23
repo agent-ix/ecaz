@@ -1,0 +1,28 @@
+=== prewarm via file ===
+ real_100k_ivf_rabitq1_rerank_corpus       | 13 MB    |         1670
+ real_100k_ivf_rabitq1_rerank_corpus_pkey  | 4408 kB  |          551
+ real_100k_ivf_rabitq1_rerank_queries      | 64 kB    |            8
+ real_100k_ivf_rabitq1_rerank_queries_pkey | 40 kB    |            5
+ real_100k_ivf_rabitq1_rerank_rabitq_idx   | 33 MB    |         4182
+ real_1m_ivf_rabitq1_rerank_corpus         | 129 MB   |        16532
+ real_1m_ivf_rabitq1_rerank_corpus_pkey    | 42 MB    |         5432
+ real_1m_ivf_rabitq1_rerank_queries        | 592 kB   |           74
+ real_1m_ivf_rabitq1_rerank_queries_pkey   | 240 kB   |           30
+ real_1m_ivf_rabitq1_rerank_rabitq_idx     | 298 MB   |        38143
+(51 rows)
+=== 1m bits=1 + rerank w=50 latency ===
+┌────────┬───────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┐
+│ nprobe ┆ count ┆ mean    ┆ stddev  ┆ min     ┆ p50     ┆ p95     ┆ p99     ┆ max     │
+╞════════╪═══════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╡
+│ 32     ┆ 500   ┆ 37.0 ms ┆ 10.1 ms ┆ 11.4 ms ┆ 37.9 ms ┆ 52.4 ms ┆ 57.9 ms ┆ 86.6 ms │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ 64     ┆ 500   ┆ 19.6 ms ┆ 2.24 ms ┆ 15.1 ms ┆ 19.3 ms ┆ 23.9 ms ┆ 27.5 ms ┆ 30.4 ms │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ 128    ┆ 500   ┆ 35.0 ms ┆ 2.76 ms ┆ 28.4 ms ┆ 34.6 ms ┆ 40.0 ms ┆ 42.9 ms ┆ 44.2 ms │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ 256    ┆ 500   ┆ 67.2 ms ┆ 3.60 ms ┆ 57.1 ms ┆ 67.3 ms ┆ 73.2 ms ┆ 75.8 ms ┆ 81.7 ms │
+└────────┴───────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┘
+=== 1m bits=1 + rerank w=50 recall ===
+[recall] fetching queries from real_1m_ivf_rabitq1_rerank_queries ...
+[recall] fetching corpus from real_1m_ivf_rabitq1_rerank_corpus ...
+
