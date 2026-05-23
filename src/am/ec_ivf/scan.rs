@@ -1049,7 +1049,7 @@ unsafe fn materialize_probe_candidates(
     let best_by_heap_tid = candidate_dedup_map(opaque, probe_plan.candidate_bound);
     let mut running_top = quantizer
         .uses_score_bound_pruning()
-        .then(|| running_top_k_for_pruning(index_options))
+        .then(|| pre_rerank_candidate_limit(index_options))
         .flatten()
         .map(CandidateTopK::new);
     let mut remaining_live_tids_by_list = probe_plan.remaining_live_tids_by_list.clone();
@@ -1162,28 +1162,6 @@ fn pre_rerank_candidate_limit(index_options: &super::options::EcIvfOptions) -> O
         super::options::RerankMode::HeapF32 if rerank_width > 0 => Some(rerank_width as usize),
         _ => None,
     }
-}
-
-/// K used to seed the `running_top` Cauchy-Schwarz cutoff during the
-/// posting scan. Distinct from `pre_rerank_candidate_limit`, which
-/// drives the *post-scan* rerank set size. The pre-prune cutoff is
-/// recall-safe at any K ≥ the query's downstream LIMIT: candidates
-/// below the K-th best RaBitQ score by definition cannot enter the
-/// final top-K.
-///
-/// Default is 200 so pre-prune fires on no-rerank scans (where
-/// `pre_rerank_candidate_limit` would otherwise be `None` and the
-/// cutoff would never materialize). Covers the common K ≤ 200 case.
-/// Queries with LIMIT > 200 would see truncation — track via a GUC
-/// override if that workload becomes real. When `heap_f32` rerank is
-/// on with an explicit width, we reuse that width so the cutoff
-/// aligns with the rerank set.
-fn running_top_k_for_pruning(index_options: &super::options::EcIvfOptions) -> Option<usize> {
-    if let Some(width) = pre_rerank_candidate_limit(index_options) {
-        return Some(width);
-    }
-    const DEFAULT_PRE_PRUNE_K: usize = 200;
-    Some(DEFAULT_PRE_PRUNE_K)
 }
 
 fn collect_ranked_probe_candidates<I>(
@@ -2121,10 +2099,12 @@ pub(crate) unsafe fn debug_ec_ivf_directory_entry(
 
 #[cfg(test)]
 mod tests {
+    use super::super::options::{EcIvfOptions, RerankMode, StorageFormat as IvfStorageFormat};
     use super::{
         build_probe_block_sequence, candidate_heap_blocks, candidate_heap_tid_cmp,
-        consume_live_tid_budget, inner_product, inner_product_scalar, select_probe_lists,
-        CandidateTopK, EcIvfCentroidScore, EcIvfScoredCandidate, ProbeBlockRange,
+        consume_live_tid_budget, inner_product, inner_product_scalar, pre_rerank_candidate_limit,
+        select_probe_lists, CandidateTopK, EcIvfCentroidScore, EcIvfScoredCandidate,
+        ProbeBlockRange,
     };
     use crate::storage::page::ItemPointer;
 
@@ -2173,6 +2153,21 @@ mod tests {
         ProbeBlockRange {
             head_block,
             tail_block,
+        }
+    }
+
+    fn options_with_rerank(rerank: RerankMode, rerank_width: i32) -> EcIvfOptions {
+        EcIvfOptions {
+            nlists: 16,
+            nprobe: 4,
+            rerank_width,
+            training_sample_rows: 0,
+            seed: 42,
+            pq_group_size: 0,
+            posting_slack_percent: 0,
+            quant_bits: 1,
+            storage_format: IvfStorageFormat::RaBitQ,
+            rerank,
         }
     }
 
@@ -2254,6 +2249,26 @@ mod tests {
         ];
 
         assert_eq!(candidate_heap_blocks(&candidates), vec![7, 8, 12]);
+    }
+
+    #[test]
+    fn pre_rerank_candidate_limit_requires_heap_f32_positive_width() {
+        assert_eq!(
+            pre_rerank_candidate_limit(&options_with_rerank(RerankMode::HeapF32, 50)),
+            Some(50)
+        );
+        assert_eq!(
+            pre_rerank_candidate_limit(&options_with_rerank(RerankMode::HeapF32, 0)),
+            None
+        );
+        assert_eq!(
+            pre_rerank_candidate_limit(&options_with_rerank(RerankMode::Off, 50)),
+            None
+        );
+        assert_eq!(
+            pre_rerank_candidate_limit(&options_with_rerank(RerankMode::Auto, 50)),
+            None
+        );
     }
 
     #[test]
