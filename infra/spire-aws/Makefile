@@ -61,58 +61,96 @@ install-extension:
 
 install: install-extension
 
+# All of these targets used to run from the laptop against the
+# coordinator's private IP. That doesn't work — no laptop->VPC route.
+# Instead, dispatch each script body on the coordinator via SSM through
+# scripts/spire-aws/_run-on-coord.sh. PG is reachable via localhost on
+# the coord; ecaz CLI lives at /usr/local/bin/ecaz; the repo is cloned
+# to /var/lib/pgsql/build/ecaz.
+
+ECAZ_VPC_WORK_DIR ?= /var/lib/ecaz
+
 register-remotes:
-	cd $(REPO_ROOT) && $(SCRIPTS)/register.sh $(TOPOLOGY) $(ARTIFACT_DIR)
+	$(SCRIPTS)/_run-on-coord.sh register \
+	  "sudo mkdir -p $(ECAZ_VPC_WORK_DIR) && sudo chown postgres:postgres $(ECAZ_VPC_WORK_DIR) && cd /var/lib/pgsql/build/ecaz && sudo -u postgres bash scripts/spire-aws/register.sh /tmp/topology.json /tmp/artifacts/register" \
+	  $(TOPOLOGY) $(ARTIFACT_DIR)
 
 register: register-remotes
 
 load-correctness:
-	cd $(REPO_ROOT) && $(SCRIPTS)/load.sh correctness $(TOPOLOGY) $(ARTIFACT_DIR)
+	$(SCRIPTS)/_run-on-coord.sh load-correctness \
+	  "sudo mkdir -p $(ECAZ_VPC_WORK_DIR) && sudo chown postgres:postgres $(ECAZ_VPC_WORK_DIR) && cd /var/lib/pgsql/build/ecaz && sudo -u postgres bash scripts/spire-aws/load.sh correctness /tmp/topology.json /tmp/artifacts/load" \
+	  $(TOPOLOGY) $(ARTIFACT_DIR)
 
 load-representative:
-	cd $(REPO_ROOT) && $(SCRIPTS)/load.sh representative $(TOPOLOGY) $(ARTIFACT_DIR)
+	$(SCRIPTS)/_run-on-coord.sh load-representative \
+	  "sudo mkdir -p $(ECAZ_VPC_WORK_DIR) && sudo chown postgres:postgres $(ECAZ_VPC_WORK_DIR) && cd /var/lib/pgsql/build/ecaz && sudo -u postgres bash scripts/spire-aws/load.sh representative /tmp/topology.json /tmp/artifacts/load" \
+	  $(TOPOLOGY) $(ARTIFACT_DIR)
 
 load-stress:
-	cd $(REPO_ROOT) && $(SCRIPTS)/load.sh stress $(TOPOLOGY) $(ARTIFACT_DIR)
+	$(SCRIPTS)/_run-on-coord.sh load-stress \
+	  "sudo mkdir -p $(ECAZ_VPC_WORK_DIR) && sudo chown postgres:postgres $(ECAZ_VPC_WORK_DIR) && cd /var/lib/pgsql/build/ecaz && sudo -u postgres bash scripts/spire-aws/load.sh stress /tmp/topology.json /tmp/artifacts/load" \
+	  $(TOPOLOGY) $(ARTIFACT_DIR)
 
-smoke:
-	cd $(REPO_ROOT) && PREFIX=$(PREFIX) $(SCRIPTS)/smoke.sh $(TOPOLOGY) $(ARTIFACT_DIR)
+smoke-correctness:
+	$(SCRIPTS)/_run-on-coord.sh smoke-correctness \
+	  "cd /var/lib/pgsql/build/ecaz && sudo -u postgres PREFIX=ec_spire_aws_synth_10k bash scripts/spire-aws/smoke.sh /tmp/topology.json /tmp/artifacts/smoke" \
+	  $(TOPOLOGY) $(ARTIFACT_DIR)
 
-smoke-correctness: PREFIX = ec_spire_aws_synth_10k
-smoke-correctness: smoke
+smoke-representative:
+	$(SCRIPTS)/_run-on-coord.sh smoke-representative \
+	  "cd /var/lib/pgsql/build/ecaz && sudo -u postgres PREFIX=ec_spire_aws_repr_1m bash scripts/spire-aws/smoke.sh /tmp/topology.json /tmp/artifacts/smoke" \
+	  $(TOPOLOGY) $(ARTIFACT_DIR)
 
-smoke-representative: PREFIX = ec_spire_aws_repr_1m
-smoke-representative: smoke
-
-smoke-stress: PREFIX = ec_spire_aws_synth_10m
-smoke-stress: smoke
+smoke-stress:
+	$(SCRIPTS)/_run-on-coord.sh smoke-stress \
+	  "cd /var/lib/pgsql/build/ecaz && sudo -u postgres PREFIX=ec_spire_aws_synth_10m bash scripts/spire-aws/smoke.sh /tmp/topology.json /tmp/artifacts/smoke" \
+	  $(TOPOLOGY) $(ARTIFACT_DIR)
 
 bench-correctness:
-	cd $(REPO_ROOT) && $(SCRIPTS)/bench.sh correctness $(TOPOLOGY) $(ARTIFACT_DIR)
+	$(SCRIPTS)/_run-on-coord.sh bench-correctness \
+	  "cd /var/lib/pgsql/build/ecaz && sudo -u postgres bash scripts/spire-aws/bench.sh correctness /tmp/topology.json /tmp/artifacts/bench" \
+	  $(TOPOLOGY) $(ARTIFACT_DIR)
 
 bench-representative:
-	cd $(REPO_ROOT) && $(SCRIPTS)/bench.sh representative $(TOPOLOGY) $(ARTIFACT_DIR)
+	$(SCRIPTS)/_run-on-coord.sh bench-representative \
+	  "cd /var/lib/pgsql/build/ecaz && sudo -u postgres bash scripts/spire-aws/bench.sh representative /tmp/topology.json /tmp/artifacts/bench" \
+	  $(TOPOLOGY) $(ARTIFACT_DIR)
 
 bench-stress:
-	cd $(REPO_ROOT) && $(SCRIPTS)/bench.sh stress $(TOPOLOGY) $(ARTIFACT_DIR)
+	$(SCRIPTS)/_run-on-coord.sh bench-stress \
+	  "cd /var/lib/pgsql/build/ecaz && sudo -u postgres bash scripts/spire-aws/bench.sh stress /tmp/topology.json /tmp/artifacts/bench" \
+	  $(TOPOLOGY) $(ARTIFACT_DIR)
 
 fault-degraded:
-	cd $(REPO_ROOT) && $(SCRIPTS)/fault.sh degraded $(TOPOLOGY) $(ARTIFACT_DIR)
+	$(SCRIPTS)/_run-on-coord.sh fault-degraded \
+	  "cd /var/lib/pgsql/build/ecaz && sudo -u postgres bash scripts/spire-aws/fault.sh degraded /tmp/topology.json /tmp/artifacts/fault" \
+	  $(TOPOLOGY) $(ARTIFACT_DIR)
 
 fault-strict:
-	cd $(REPO_ROOT) && $(SCRIPTS)/fault.sh strict $(TOPOLOGY) $(ARTIFACT_DIR)
+	$(SCRIPTS)/_run-on-coord.sh fault-strict \
+	  "cd /var/lib/pgsql/build/ecaz && sudo -u postgres bash scripts/spire-aws/fault.sh strict /tmp/topology.json /tmp/artifacts/fault" \
+	  $(TOPOLOGY) $(ARTIFACT_DIR)
 
 fault-2pc:
-	cd $(REPO_ROOT) && $(SCRIPTS)/fault.sh orphaned-2pc $(TOPOLOGY) $(ARTIFACT_DIR)
+	$(SCRIPTS)/_run-on-coord.sh fault-2pc \
+	  "cd /var/lib/pgsql/build/ecaz && sudo -u postgres bash scripts/spire-aws/fault.sh orphaned-2pc /tmp/topology.json /tmp/artifacts/fault" \
+	  $(TOPOLOGY) $(ARTIFACT_DIR)
 
 fault-missing-guc:
-	cd $(REPO_ROOT) && $(SCRIPTS)/fault.sh missing-guc $(TOPOLOGY) $(ARTIFACT_DIR)
+	$(SCRIPTS)/_run-on-coord.sh fault-missing-guc \
+	  "cd /var/lib/pgsql/build/ecaz && sudo -u postgres bash scripts/spire-aws/fault.sh missing-guc /tmp/topology.json /tmp/artifacts/fault" \
+	  $(TOPOLOGY) $(ARTIFACT_DIR)
 
 fault-schema-drift:
-	cd $(REPO_ROOT) && $(SCRIPTS)/fault.sh schema-drift $(TOPOLOGY) $(ARTIFACT_DIR)
+	$(SCRIPTS)/_run-on-coord.sh fault-schema-drift \
+	  "cd /var/lib/pgsql/build/ecaz && sudo -u postgres bash scripts/spire-aws/fault.sh schema-drift /tmp/topology.json /tmp/artifacts/fault" \
+	  $(TOPOLOGY) $(ARTIFACT_DIR)
 
 fault-auth:
-	cd $(REPO_ROOT) && $(SCRIPTS)/fault.sh auth-failure $(TOPOLOGY) $(ARTIFACT_DIR)
+	$(SCRIPTS)/_run-on-coord.sh fault-auth \
+	  "cd /var/lib/pgsql/build/ecaz && sudo -u postgres bash scripts/spire-aws/fault.sh auth-failure /tmp/topology.json /tmp/artifacts/fault" \
+	  $(TOPOLOGY) $(ARTIFACT_DIR)
 
 single-node-smoke:
 	cd $(REPO_ROOT) && $(SCRIPTS)/single-node-smoke.sh $(TOPOLOGY) $(ARTIFACT_DIR)
@@ -151,7 +189,7 @@ teardown:
 clean:
 	cd $(SPIRE_AWS_DIR) && rm -rf .terraform terraform.tfstate*
 
-pass-correctness: provision install-extension register-remotes load-correctness smoke-correctness bench-correctness fault-degraded fault-strict snapshot teardown
+pass-correctness: provision install-extension load-correctness register-remotes smoke-correctness bench-correctness fault-degraded fault-strict snapshot teardown
 
 # Minimal AWS smoke that bypasses the laptop->VPC connectivity gap in
 # the multi-cluster register/load/smoke/bench/fault scripts. Drives a
@@ -162,6 +200,6 @@ pass-smoke: purge-stuck-secrets provision install-extension single-node-smoke sn
 
 all-correctness: pass-correctness
 
-pass-representative: provision install-extension register-remotes load-representative smoke-representative bench-representative fault-2pc fault-schema-drift snapshot teardown
+pass-representative: provision install-extension load-representative register-remotes smoke-representative bench-representative fault-2pc fault-schema-drift snapshot teardown
 
 all-representative: pass-representative

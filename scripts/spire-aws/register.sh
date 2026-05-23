@@ -13,9 +13,9 @@ ARTIFACT_DIR="${2:?artifact directory required}"
 mkdir -p "$ARTIFACT_DIR"
 
 COORD_HOST=$(jq -r '.coordinator.private_ip' "$TOPOLOGY")
-COORD_INDEX="${COORD_INDEX:-ec_spire_aws_repr_1m_idx}"
-REMOTE_INDEX="${REMOTE_INDEX:-ec_spire_aws_repr_1m_remote_idx}"
-EXTVERSION="${EXTVERSION:-0.1.2}"
+COORD_INDEX="${COORD_INDEX:-ec_spire_aws_synth_10k_idx}"
+REMOTE_INDEX="${REMOTE_INDEX:-ec_spire_aws_synth_10k_remote_idx}"
+EXTVERSION="${EXTVERSION:-0.1.1}"
 
 ecaz dev sql \
   --host "$COORD_HOST" --user ecaz_coord --database postgres \
