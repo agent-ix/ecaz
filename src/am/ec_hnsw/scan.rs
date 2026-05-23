@@ -2477,16 +2477,13 @@ fn cached_graph_element_from_buffer(
     (element, loaded_state)
 }
 
-unsafe fn score_cached_graph_element_from_storage(
+fn score_cached_graph_element_from_storage(
     index_relation: pg_sys::Relation,
-    opaque: *mut TqScanOpaque,
+    opaque: &mut TqScanOpaque,
     element_tid: page::ItemPointer,
 ) -> f32 {
-    // SAFETY: callers pass the current scan opaque pointer; it remains live
-    // while loading and scoring the graph element.
-    let opaque_ref = scan_opaque_mut(opaque);
     let element =
-        graph::load_exact_graph_element(index_relation, element_tid, opaque_ref.scan_graph_storage);
+        graph::load_exact_graph_element(index_relation, element_tid, opaque.scan_graph_storage);
     if element.deleted || element.heaptids.is_empty() {
         pgrx::error!(
             "ec_hnsw cannot exact-score dead or heapless graph element {}:{}",
@@ -2494,7 +2491,7 @@ unsafe fn score_cached_graph_element_from_storage(
             element_tid.offset_number
         );
     }
-    score_and_cache_scan_element(opaque_ref, element_tid, element.gamma, &element.code)
+    score_and_cache_scan_element(opaque, element_tid, element.gamma, &element.code)
 }
 
 fn exact_score_cached_graph_element(
@@ -2526,11 +2523,7 @@ fn exact_score_cached_graph_element(
                 record_score_cache_hit(opaque);
                 score
             } else {
-                // SAFETY: `index_relation`, `opaque`, and `element_tid` are
-                // the same live scan inputs being scored by this helper.
-                unsafe {
-                    score_cached_graph_element_from_storage(index_relation, opaque, element_tid)
-                }
+                score_cached_graph_element_from_storage(index_relation, opaque, element_tid)
             }
         }
     }
