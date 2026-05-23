@@ -23,16 +23,16 @@ ORDER BY node_id;
 EXPLAIN (ANALYZE, BUFFERS, FORMAT TEXT)
 SELECT id
 FROM :corpus_table
-ORDER BY embedding <#> (
-  SELECT embedding FROM :queries_table WHERE id = 0
-)
+ORDER BY embedding <#> encode_to_ecvector(
+  (SELECT source FROM :queries_table WHERE id = 0),
+  4, 42)
 LIMIT 10;
 
 \echo === Handoff summary ===
 SELECT *
 FROM ec_spire_remote_search_production_scan_handoff_summary(
   :'index_name'::regclass,
-  (SELECT embedding FROM :queries_table WHERE id = 0)::real[],
+  (SELECT source FROM :queries_table WHERE id = 0),
   10
 );
 
@@ -40,6 +40,6 @@ FROM ec_spire_remote_search_production_scan_handoff_summary(
 SELECT *
 FROM ec_spire_remote_search_production_read_profile(
   :'index_name'::regclass,
-  (SELECT embedding FROM :queries_table WHERE id = 0)::real[],
+  (SELECT source FROM :queries_table WHERE id = 0),
   10
 );
