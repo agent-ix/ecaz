@@ -29,6 +29,6 @@ ecaz bench spire-pipeline \
   --host "$COORD_HOST" --user ecaz_coord --database postgres \
   --prefix "$PREFIX" \
   --queries-limit 5 --sweep 8,16,32 \
-  --include-remote --consistency-mode epoch \
+  --include-remote --consistency-mode strict \
   --include-cost-snapshot --include-query-metrics \
   --log-output "$ARTIFACT_DIR/bench-spire-pipeline-smoke.log"
