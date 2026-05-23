@@ -1,0 +1,6 @@
+error: unexpected argument '--rows' found
+
+Usage: ecaz corpus generate [OPTIONS] --output <OUTPUT> --n <N>
+
+For more information, try '--help'.
+failed to run commands: exit status 2

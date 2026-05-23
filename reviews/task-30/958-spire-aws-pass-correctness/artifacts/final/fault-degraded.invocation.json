@@ -1,0 +1,22 @@
+{
+    "CommandId": "cd24aa49-4612-4e13-9296-e72ca90fa3f1",
+    "InstanceId": "i-0ac1427961342c802",
+    "Comment": "",
+    "DocumentName": "AWS-RunShellScript",
+    "DocumentVersion": "$DEFAULT",
+    "PluginName": "aws:runShellScript",
+    "ResponseCode": 1,
+    "ExecutionStartDateTime": "2026-05-23T19:51:10.808Z",
+    "ExecutionElapsedTime": "PT0.059S",
+    "ExecutionEndDateTime": "2026-05-23T19:51:10.808Z",
+    "Status": "Failed",
+    "StatusDetails": "Failed",
+    "StandardOutputContent": "",
+    "StandardOutputUrl": "",
+    "StandardErrorContent": "mkdir: cannot create directory ‘/tmp/artifacts/fault’: Permission denied\nfailed to run commands: exit status 1",
+    "StandardErrorUrl": "",
+    "CloudWatchOutputConfig": {
+        "CloudWatchLogGroupName": "",
+        "CloudWatchOutputEnabled": false
+    }
+}

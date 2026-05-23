@@ -1,0 +1,2 @@
+mkdir: cannot create directory ‘/tmp/artifacts/register’: Permission denied
+failed to run commands: exit status 1

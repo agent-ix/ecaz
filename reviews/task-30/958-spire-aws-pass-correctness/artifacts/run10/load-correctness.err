@@ -1,0 +1,14 @@
+[generate] wrote 10000 × dim 1536 rows to /var/lib/ecaz/ec_spire_aws_synth_10k_corpus.tsv (kind=Corpus, seed=42)
+[generate] wrote 100 × dim 1536 rows to /var/lib/ecaz/ec_spire_aws_synth_10k_queries.tsv (kind=Corpus, seed=42)
+[loader] inspecting /var/lib/ecaz/ec_spire_aws_synth_10k_corpus.tsv
+[loader] inspecting /var/lib/ecaz/ec_spire_aws_synth_10k_queries.tsv
+[loader] corpus: 10000 rows, sha256=ccd9a13cdf99eded145fe92ba65d135a57495b55513444caf35c54d5bdcc6f2f  queries: 100 rows, sha256=bb94538673add7f7073f0cd5150f7fd0687749f6de01d7fba964e5a305fc99c4
+[loader] no sibling manifest at /var/lib/ecaz/ec_spire_aws_synth_10k_manifest.json; continuing without verification
+[loader] copied corpus table ec_spire_aws_synth_10k_corpus in 2.48s
+[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...
+[loader] encoded corpus table ec_spire_aws_synth_10k_corpus in 540.21ms
+[loader] copied queries table ec_spire_aws_synth_10k_queries in 36.73ms
+[loader] building ec_spire_aws_synth_10k_idx using ec_spire (reloptions=[<none>]) ...
+[loader] built ec_spire_aws_synth_10k_idx in 9.40s
+[loader] completed prefix ec_spire_aws_synth_10k in 13.26s
+

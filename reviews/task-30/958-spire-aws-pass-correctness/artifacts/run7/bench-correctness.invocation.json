@@ -1,0 +1,22 @@
+{
+    "CommandId": "84e732c4-a475-4025-958b-0c6defb1312e",
+    "InstanceId": "i-0781e46d659614ce6",
+    "Comment": "",
+    "DocumentName": "AWS-RunShellScript",
+    "DocumentVersion": "$DEFAULT",
+    "PluginName": "aws:runShellScript",
+    "ResponseCode": 1,
+    "ExecutionStartDateTime": "2026-05-23T20:14:50.946Z",
+    "ExecutionElapsedTime": "PT0.118S",
+    "ExecutionEndDateTime": "2026-05-23T20:14:50.946Z",
+    "Status": "Failed",
+    "StatusDetails": "Failed",
+    "StandardOutputContent": "[suite:spire-aws-correctness] 13a3a-recall-k10 -> --database postgres --host 10.42.1.32 --user ecaz_coord bench recall --prefix ec_spire_aws_synth_10k --profile ec_spire --k 10 --sweep \"8,16,24,32\" --queries-limit 100 --bits 4 --seed 42\n",
+    "StandardOutputUrl": "",
+    "StandardErrorContent": "[suite:spire-aws-correctness] wrote /tmp/artifacts/bench/suite-manifest-correctness.json\n[suite:spire-aws-correctness] wrote /tmp/artifacts/bench/suite-manifest-correctness.json\n\n   0: \u001b[91mno ec_spire index found for profile \"ec_spire\"; build one first with `ecaz corpus load --profile ec_spire ...` on \"ec_spire_aws_synth_10k_corpus\"\u001b[0m\n\nLocation:\n   \u001b[35mcrates/ecaz-cli/src/commands/bench/recall.rs\u001b[0m:\u001b[35m145\u001b[0m\n\nBacktrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.\nRun with RUST_BACKTRACE=full to include source snippets.\n[suite:spire-aws-correctness] wrote /tmp/artifacts/bench/suite-manifest-correctness.json\n\n   0: \u001b[91msuite step \"13a3a-recall-k10\" failed with exit code 1; rerun with --continue-on-error to keep going\u001b[0m\n\nLocation:\n   \u001b[35mcrates/ecaz-cli/src/commands/bench/suite.rs\u001b[0m:\u001b[35m655\u001b[0m\n\nBacktrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.\nRun with RUST_BACKTRACE=full to include source snippets.\nfailed to run commands: exit status 1",
+    "StandardErrorUrl": "",
+    "CloudWatchOutputConfig": {
+        "CloudWatchLogGroupName": "",
+        "CloudWatchOutputEnabled": false
+    }
+}

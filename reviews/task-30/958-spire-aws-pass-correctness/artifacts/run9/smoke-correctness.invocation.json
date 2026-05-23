@@ -1,0 +1,22 @@
+{
+    "CommandId": "4ea66919-6b67-464b-97ea-12d9d4fd6889",
+    "InstanceId": "i-0d6d7d1d9efa0298b",
+    "Comment": "",
+    "DocumentName": "AWS-RunShellScript",
+    "DocumentVersion": "$DEFAULT",
+    "PluginName": "aws:runShellScript",
+    "ResponseCode": 1,
+    "ExecutionStartDateTime": "2026-05-23T21:07:01.988Z",
+    "ExecutionElapsedTime": "PT0.2S",
+    "ExecutionEndDateTime": "2026-05-23T21:07:01.988Z",
+    "Status": "Failed",
+    "StatusDetails": "Failed",
+    "StandardOutputContent": "=== Registered remote nodes ===\n0\tactive\t101\n=== EXPLAIN ANALYZE: vector ORDER BY LIMIT through CustomScan ===\n",
+    "StandardOutputUrl": "",
+    "StandardErrorContent": "psql:scripts/spire-aws/smoke-customscan-read.sql:29: ERROR:  column \"vec_id\" does not exist\nLINE 2: SELECT vec_id\n               ^\n\n   0: \u001b[91mCommand { std: \"/usr/bin/psql\" \"-h\" \"10.42.1.251\" \"-U\" \"ecaz_coord\" \"-d\" \"postgres\" \"-v\" \"ON_ERROR_STOP=1\" \"-v\" \"prefix=ec_spire_aws_synth_10k\" \"-A\" \"-t\" \"-F\" \"\\t\" \"-f\" \"scripts/spire-aws/smoke-customscan-read.sql\", kill_on_drop: false } failed with status exit status: 3\u001b[0m\n\nLocation:\n   \u001b[35mcrates/ecaz-cli/src/commands/dev/sql.rs\u001b[0m:\u001b[35m193\u001b[0m\n\nBacktrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.\nRun with RUST_BACKTRACE=full to include source snippets.\nfailed to run commands: exit status 1",
+    "StandardErrorUrl": "",
+    "CloudWatchOutputConfig": {
+        "CloudWatchLogGroupName": "",
+        "CloudWatchOutputEnabled": false
+    }
+}

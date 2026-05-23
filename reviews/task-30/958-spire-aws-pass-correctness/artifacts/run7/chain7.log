@@ -1,0 +1,166 @@
+make: Entering directory '/home/peter/dev/ecaz/infra/spire-aws'
+/home/peter/dev/ecaz/scripts/spire-aws/_run-on-coord.sh load-correctness \
+  "sudo mkdir -p /var/lib/ecaz && sudo chown postgres:postgres /var/lib/ecaz && cd /var/lib/pgsql/build/ecaz && sudo -u postgres bash scripts/spire-aws/load.sh correctness /tmp/topology.json /tmp/artifacts/load" \
+  /home/peter/dev/ecaz/reviews/task-30/958-spire-aws-pass-correctness/artifacts/run7/aws-topology.json /home/peter/dev/ecaz/reviews/task-30/958-spire-aws-pass-correctness/artifacts/run7
+[_topology-upload-load-correctness] ssm cmd: 52acb288-7df5-42fc-a05f-59205dfcdbce
+[_topology-upload-load-correctness] final status: Success
+[load-correctness] ssm cmd: 7b2dfc55-15f3-4e59-9275-daf202dd77bc
+[load-correctness] final status: Failed
+[load-correctness] STDOUT tail:
+
+[load-correctness] STDERR tail:
+error: unexpected argument '--rows' found
+
+Usage: ecaz corpus generate [OPTIONS] --output <OUTPUT> --n <N>
+
+For more information, try '--help'.
+failed to run commands: exit status 2
+make: *** [Makefile:81: load-correctness] Error 1
+make: Leaving directory '/home/peter/dev/ecaz/infra/spire-aws'
+[20:14:36] load-correctness rc=2
+make: Entering directory '/home/peter/dev/ecaz/infra/spire-aws'
+/home/peter/dev/ecaz/scripts/spire-aws/_run-on-coord.sh register \
+  "sudo mkdir -p /var/lib/ecaz && sudo chown postgres:postgres /var/lib/ecaz && cd /var/lib/pgsql/build/ecaz && sudo -u postgres bash scripts/spire-aws/register.sh /tmp/topology.json /tmp/artifacts/register" \
+  /home/peter/dev/ecaz/reviews/task-30/958-spire-aws-pass-correctness/artifacts/run7/aws-topology.json /home/peter/dev/ecaz/reviews/task-30/958-spire-aws-pass-correctness/artifacts/run7
+[_topology-upload-register] ssm cmd: 9e53e7c5-aaf3-4ec2-a687-02b9a14c6aaf
+[_topology-upload-register] final status: Success
+[register] ssm cmd: 33a17525-b2eb-400e-8573-115a77d438fb
+[register] final status: Failed
+[register] STDOUT tail:
+ec_spire.cost_local_store_page_fanout_scale	0.05	
+ec_spire.cost_rerank_multiplier	1.35	
+ec_spire.cost_routing_dimension_scale	0.01	
+ec_spire.cost_storage_scoring_multiplier	1	
+ec_spire.max_candidate_rows	-1	
+ec_spire.max_remote_payload_bytes_per_row	1024	
+ec_spire.max_remote_payload_rows_per_batch	64	
+ec_spire.nprobe	-1	
+ec_spire.remote_search_connect_timeout_ms	0	
+ec_spire.remote_search_consistency_mode	strict	
+ec_spire.remote_search_max_concurrent_dispatches	0	
+ec_spire.remote_search_max_concurrent_dispatches_per_node	0	
+ec_spire.remote_search_max_nodes	0	
+ec_spire.remote_search_max_pids	0	
+ec_spire.remote_search_max_pids_per_node	0	
+ec_spire.remote_search_statement_timeout_ms	0	
+ec_spire.remote_tuple_transport	auto	
+ec_spire.rerank_width	-1	
+=== Buffer / work memory (Phase 13a.1.b) ===
+maintenance_work_mem	524288	kB
+shared_buffers	1007744	8kB
+work_mem	65536	kB
+=== ecaz extension version ===
+ecaz	0.1.1
+
+[register] STDERR tail:
+psql:scripts/spire-aws/register-remotes.sql:19: ERROR:  relation "ec_spire_aws_synth_10k_idx" does not exist
+LINE 2:   'ec_spire_aws_synth_10k_idx'::regclass::oid,
+          ^
+
+   0: [91mCommand { std: "/usr/bin/psql" "-h" "10.42.1.32" "-U" "ecaz_coord" "-d" "postgres" "-v" "ON_ERROR_STOP=1" "-v" "coord_index=ec_spire_aws_synth_10k_idx" "-v" "node_id=2" "-v" "descriptor_generation=1" "-v" "conninfo_secret=ecaz-spire-aws-remote-1" "-v" "remote_index=ec_spire_aws_synth_10k_remote_idx" "-v" "state=active" "-v" "served_epoch=1" "-v" "min_retained_epoch=1" "-v" "extversion=0.1.1" "-A" "-t" "-F" "\t" "-f" "scripts/spire-aws/register-remotes.sql", kill_on_drop: false } failed with status exit status: 3[0m
+
+Location:
+   [35mcrates/ecaz-cli/src/commands/dev/sql.rs[0m:[35m193[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.
+failed to run commands: exit status 1
+make: *** [Makefile:74: register-remotes] Error 1
+make: Leaving directory '/home/peter/dev/ecaz/infra/spire-aws'
+[20:14:42] register-remotes rc=2
+make: Entering directory '/home/peter/dev/ecaz/infra/spire-aws'
+/home/peter/dev/ecaz/scripts/spire-aws/_run-on-coord.sh smoke-correctness \
+  "cd /var/lib/pgsql/build/ecaz && sudo -u postgres PREFIX=ec_spire_aws_synth_10k bash scripts/spire-aws/smoke.sh /tmp/topology.json /tmp/artifacts/smoke" \
+  /home/peter/dev/ecaz/reviews/task-30/958-spire-aws-pass-correctness/artifacts/run7/aws-topology.json /home/peter/dev/ecaz/reviews/task-30/958-spire-aws-pass-correctness/artifacts/run7
+[_topology-upload-smoke-correctness] ssm cmd: eecad95f-d2b2-4b58-989d-49eaa386116b
+[_topology-upload-smoke-correctness] final status: Success
+[smoke-correctness] ssm cmd: 4fa2b937-0d21-4e88-8a64-5f03c0259be2
+[smoke-correctness] final status: Failed
+[smoke-correctness] STDOUT tail:
+=== Registered remote nodes ===
+
+[smoke-correctness] STDERR tail:
+psql:scripts/spire-aws/smoke-customscan-read.sql:20: ERROR:  relation "ec_spire_aws_synth_10k_idx" does not exist
+LINE 3:   'ec_spire_aws_synth_10k_idx'::regclass
+          ^
+
+   0: [91mCommand { std: "/usr/bin/psql" "-h" "10.42.1.32" "-U" "ecaz_coord" "-d" "postgres" "-v" "ON_ERROR_STOP=1" "-v" "prefix=ec_spire_aws_synth_10k" "-A" "-t" "-F" "\t" "-f" "scripts/spire-aws/smoke-customscan-read.sql", kill_on_drop: false } failed with status exit status: 3[0m
+
+Location:
+   [35mcrates/ecaz-cli/src/commands/dev/sql.rs[0m:[35m193[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.
+failed to run commands: exit status 1
+make: *** [Makefile:96: smoke-correctness] Error 1
+make: Leaving directory '/home/peter/dev/ecaz/infra/spire-aws'
+[20:14:47] smoke-correctness rc=2
+make: Entering directory '/home/peter/dev/ecaz/infra/spire-aws'
+/home/peter/dev/ecaz/scripts/spire-aws/_run-on-coord.sh bench-correctness \
+  "cd /var/lib/pgsql/build/ecaz && sudo -u postgres bash scripts/spire-aws/bench.sh correctness /tmp/topology.json /tmp/artifacts/bench" \
+  /home/peter/dev/ecaz/reviews/task-30/958-spire-aws-pass-correctness/artifacts/run7/aws-topology.json /home/peter/dev/ecaz/reviews/task-30/958-spire-aws-pass-correctness/artifacts/run7
+[_topology-upload-bench-correctness] ssm cmd: a280757a-2cc6-403d-ba33-84fab0e531e2
+[_topology-upload-bench-correctness] final status: Success
+[bench-correctness] ssm cmd: 84e732c4-a475-4025-958b-0c6defb1312e
+[bench-correctness] final status: Failed
+[bench-correctness] STDOUT tail:
+[suite:spire-aws-correctness] 13a3a-recall-k10 -> --database postgres --host 10.42.1.32 --user ecaz_coord bench recall --prefix ec_spire_aws_synth_10k --profile ec_spire --k 10 --sweep "8,16,24,32" --queries-limit 100 --bits 4 --seed 42
+
+[bench-correctness] STDERR tail:
+[suite:spire-aws-correctness] wrote /tmp/artifacts/bench/suite-manifest-correctness.json
+[suite:spire-aws-correctness] wrote /tmp/artifacts/bench/suite-manifest-correctness.json
+
+   0: [91mno ec_spire index found for profile "ec_spire"; build one first with `ecaz corpus load --profile ec_spire ...` on "ec_spire_aws_synth_10k_corpus"[0m
+
+Location:
+   [35mcrates/ecaz-cli/src/commands/bench/recall.rs[0m:[35m145[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.
+[suite:spire-aws-correctness] wrote /tmp/artifacts/bench/suite-manifest-correctness.json
+
+   0: [91msuite step "13a3a-recall-k10" failed with exit code 1; rerun with --continue-on-error to keep going[0m
+
+Location:
+   [35mcrates/ecaz-cli/src/commands/bench/suite.rs[0m:[35m655[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.
+failed to run commands: exit status 1
+make: *** [Makefile:111: bench-correctness] Error 1
+make: Leaving directory '/home/peter/dev/ecaz/infra/spire-aws'
+[20:14:52] bench-correctness rc=2
+make: Entering directory '/home/peter/dev/ecaz/infra/spire-aws'
+/home/peter/dev/ecaz/scripts/spire-aws/_run-on-coord.sh fault-degraded \
+  "cd /var/lib/pgsql/build/ecaz && sudo -u postgres bash scripts/spire-aws/fault.sh degraded /tmp/topology.json /tmp/artifacts/fault" \
+  /home/peter/dev/ecaz/reviews/task-30/958-spire-aws-pass-correctness/artifacts/run7/aws-topology.json /home/peter/dev/ecaz/reviews/task-30/958-spire-aws-pass-correctness/artifacts/run7
+[_topology-upload-fault-degraded] ssm cmd: fe620f71-d854-4016-bfc9-86e0d6842f7b
+[_topology-upload-fault-degraded] final status: Success
+[fault-degraded] ssm cmd: 1bfdf8fb-25c9-418b-a290-ae1a68add239
+[fault-degraded] final status: Failed
+[fault-degraded] STDOUT tail:
+
+[fault-degraded] STDERR tail:
+
+An error occurred (UnauthorizedOperation) when calling the StopInstances operation: You are not authorized to perform this operation. User: arn:aws:sts::932658697181:assumed-role/ecaz-spire-aws-node/i-0781e46d659614ce6 is not authorized to perform: ec2:StopInstances on resource: arn:aws:ec2:us-west-2:932658697181:instance/i-0c02b193ff1205d50 because no identity-based policy allows the ec2:StopInstances action. Encoded authorization failure message: KpNTNhwQPNNPSQYBEaiZrraoO6XAEbbewBZQ2vs914PVHVKlvUzB06kaJQmjd3y-uPyQYlGdoEmqVytv9C5jC8Bsz58WX6UQzz5vR03Ak4FGyJRrCeAHpkWNTTj2VGNGfopnNh7MQEenRCiQcFGmaqF_qZCkO4nw2Qp8nbqmq3wZ1AARn0fSeG8ARc6FrXC21gKk8O8VwILZNuOsIVuGr7Ga3QqbH3DYN6pHFLZzoeo5cSQ3Y-bXwcy4idtOK5I1pePo8jQXvWxy2MU8NFaucrXR64J42JjNE0eAjlHBKKJ6wI1KjS_wrp6z-HZBOKhjHQDyfltB6CGLmfnITcxVrvluMQSZFtt-DA9g7rzpCz05OZDxe7pEOIIMe-8qcG95SideXs8IRhxS8bpijEI8Z31g7SUmdM5JJT-yNKTNKVm0z1eF_xUBzDwTWSYEg-9doe91KDtKk7aAtFcbAihgdYYu_V8ON-7jbSo4iTca2Ir6F0sOSNSiPv6snV4Sb41_vHVqC6cLGRb3g3MSrmbiJ00FKwixr1Mb6w_zgetMwSS7BucNxDbU5soJDkUyQNBfzEXRDfqgf6RjfWTVCc1zt780VjVuLl48L-99HkyOXlGBjFqVOYLMD5lBoA6OK93tWCWGw_LYG4LICjooIOcDOKzz5TkH7ADSEaYHTSmR7mjzWJuy0x-f8es2YIBM6bf--M28G3js_cmHGUlZlcsNL7mRxrzo_lqF_17BD0RqFI8O7OnP_jzuZSJm11h6Pv5LUVM4jO2-xnyl4KN54dkiEm5XZncxo7kRX9WhUpDqmOl1YA2zKk4LOs4eIVi3-bVE3Z4dWM3bQ5AmOxO25OtZQ6cNnPHBksddVz0D8pZdnLaMAp1iwvfoL5jKoPe1JBAwieu1x_Wvz6719Jc1JzvyGPLeXPaOO-YIeZEOdqC0C2NqKMTSkfIG2EQwNbE47raG2JwgtJI58WsR1oh9q9KG9Ej78-WssR0irJ-4FRy88Xo7uXt8FQXDee6N671BO6dwjt-ziyQTs8AYo6DEpKjwVqomYBP9e66zoGWCMsu_rdBTKnNb28EpyZmTlTrpc7QxAg
+failed to run commands: exit status 254
+make: *** [Makefile:126: fault-degraded] Error 1
+make: Leaving directory '/home/peter/dev/ecaz/infra/spire-aws'
+[20:15:08] fault-degraded rc=2
+make: Entering directory '/home/peter/dev/ecaz/infra/spire-aws'
+/home/peter/dev/ecaz/scripts/spire-aws/_run-on-coord.sh fault-strict \
+  "cd /var/lib/pgsql/build/ecaz && sudo -u postgres bash scripts/spire-aws/fault.sh strict /tmp/topology.json /tmp/artifacts/fault" \
+  /home/peter/dev/ecaz/reviews/task-30/958-spire-aws-pass-correctness/artifacts/run7/aws-topology.json /home/peter/dev/ecaz/reviews/task-30/958-spire-aws-pass-correctness/artifacts/run7
+[_topology-upload-fault-strict] ssm cmd: 10747273-40b8-47c3-a4de-f79b5677785f
+[_topology-upload-fault-strict] final status: Success
+[fault-strict] ssm cmd: 61053339-a1aa-418c-8988-c2d53227767a
+[fault-strict] final status: Failed
+[fault-strict] STDOUT tail:
+
+[fault-strict] STDERR tail:
+
+An error occurred (UnauthorizedOperation) when calling the StopInstances operation: You are not authorized to perform this operation. User: arn:aws:sts::932658697181:assumed-role/ecaz-spire-aws-node/i-0781e46d659614ce6 is not authorized to perform: ec2:StopInstances on resource: arn:aws:ec2:us-west-2:932658697181:instance/i-0c02b193ff1205d50 because no identity-based policy allows the ec2:StopInstances action. Encoded authorization failure message: y5ra-gcEbHK641ctxTD2cZfKS5JkDjGooVRLWwJ8mCZ4AkqIoPLZsmbSntPhqk7GfT0andWeMTcyA7aBdh53jpsdmrvOY44EhvzZtNZTKd6IliAKfiHd2NPjJQUnhHJzvhFRWJ6-EcT0v53gCHOhp5udGhjPq3pmmsdD9XEEcOT0tZe2-Hw78lNMWvnS1hyTrYN58icJCr3Kib1Xrl-RmCXW7s_w_62I9H8KWHnivQIgfjdpEqmf-7V2meiyMbNC3LyyuRR0sGjXrAb9EC-e4aeZk7zMLu6saTDlONUSkc_S1zes2gJ7kJqMWOC96iJqE7tcaUp9AI_mOI2bRah5jZvPP_MXWZectBOklM3oRld_wHiyKtqheQFXLC_43wFTYxEVAUTDjBAQPMgzjsCjItWxM504RCcdN68meXpDLVqvN8EsWVFLIlgqsRirWim0-z3MU1vezJ4UnytUP8giOS_v1Qs7rtaR27eVfEQDXGhsSTYSvcuMjC48_IJgETUMXp-gaKAKJC0uxmtQE5yZIKH49SuPQ2L9aVcjLN288jTHAe-Q8gddbSNH-OCJNLIRFTzg_Uajp488y1f1WNE88z20neh8ygi_04DFoXkCh09SH2A6DVrSN3toeVb1csrXeYzzbXzzGTO9PIsqXypWlQ0-daR1BVYn5HHLYdsR7Y2UJhDc5defo9iDZMLjKGntpFjcBc0IrLr5cWZnUgnZZrveCCdh32I1Robcy8LEJqicALLgDY7re6zJ5JRhyEHrXVfwORKZZogfcLVgM6RgwDDRUJNROJhSUhZsm_XiGXW0s-IIWAET139KMS3AYIkGoIA7JvhK8hyjrMnVozdVwpgW-7iRqRUs6wQLL0E9l06jx04FCIW1yQQkCy5dPjA88_n6TfwYGg-EackS2k-L8hrwscEJn7JFSCURo8LHyU-zW6GtGFjc14sd8N5OeHazDj_Y0g5zkI55E5asN_6yxbj91jPoXJl6nWL38iJQFjA3vtZDvqH1hr4iDCja31JUGj848YlyA2XjwtXLHEflTs4hQLVW4qHNSD8NtMezfNcwlA2jnzOcYIiiT1SZLVoVZg
+failed to run commands: exit status 254
+make: *** [Makefile:131: fault-strict] Error 1
+make: Leaving directory '/home/peter/dev/ecaz/infra/spire-aws'
+[20:15:25] fault-strict rc=2

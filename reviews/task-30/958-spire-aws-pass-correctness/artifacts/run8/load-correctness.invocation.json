@@ -1,0 +1,22 @@
+{
+    "CommandId": "a5bd755d-d051-4f06-ae6e-7e6151116523",
+    "InstanceId": "i-00a602c956296814c",
+    "Comment": "",
+    "DocumentName": "AWS-RunShellScript",
+    "DocumentVersion": "$DEFAULT",
+    "PluginName": "aws:runShellScript",
+    "ResponseCode": 2,
+    "ExecutionStartDateTime": "2026-05-23T20:42:53.625Z",
+    "ExecutionElapsedTime": "PT2.097S",
+    "ExecutionEndDateTime": "2026-05-23T20:42:55.625Z",
+    "Status": "Failed",
+    "StatusDetails": "Failed",
+    "StandardOutputContent": "",
+    "StandardOutputUrl": "",
+    "StandardErrorContent": "[generate] wrote 10000 × dim 1536 rows to /var/lib/ecaz/ec_spire_aws_synth_10k_corpus.tsv (kind=Corpus, seed=42)\n[generate] wrote 100 × dim 1536 rows to /var/lib/ecaz/ec_spire_aws_synth_10k_queries.tsv (kind=Corpus, seed=42)\nerror: unexpected argument '--log-output' found\n\nUsage: ecaz corpus load --prefix <PREFIX> --host <HOST> --user <USER> --database <DATABASE> --corpus-file <CORPUS_FILE> --queries-file <QUERIES_FILE> --profile <PROFILE> --dim <DIM> --bits <BITS> --seed <SEED>\n\nFor more information, try '--help'.\nfailed to run commands: exit status 2",
+    "StandardErrorUrl": "",
+    "CloudWatchOutputConfig": {
+        "CloudWatchLogGroupName": "",
+        "CloudWatchOutputEnabled": false
+    }
+}

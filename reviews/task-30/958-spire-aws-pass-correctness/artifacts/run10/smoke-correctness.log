@@ -1,0 +1,22 @@
+=== Registered remote nodes ===
+0	active	101
+=== EXPLAIN ANALYZE: vector ORDER BY LIMIT through CustomScan ===
+Limit  (cost=23008.10..23008.12 rows=10 width=12) (actual time=145.811..145.813 rows=10.00 loops=1)
+  Buffers: shared hit=70198
+  ->  Sort  (cost=23008.10..23033.10 rows=10000 width=12) (actual time=145.809..145.811 rows=10.00 loops=1)
+        Sort Key: ((ec_spire_aws_synth_10k_corpus.embedding <#> (SubPlan 1)))
+        Sort Method: top-N heapsort  Memory: 25kB
+        Buffers: shared hit=70198
+        ->  Seq Scan on ec_spire_aws_synth_10k_corpus  (cost=0.00..22792.00 rows=10000 width=12) (actual time=1.392..144.692 rows=10000.00 loops=1)
+              Buffers: shared hit=70195
+              SubPlan 1
+                ->  Seq Scan on ec_spire_aws_synth_10k_queries  (cost=0.00..2.25 rows=1 width=32) (actual time=0.001..0.004 rows=1.00 loops=10000)
+                      Filter: (id = 0)
+                      Rows Removed by Filter: 99
+                      Buffers: shared hit=10000
+Planning:
+  Buffers: shared hit=293 read=1
+Planning Time: 1.783 ms
+Execution Time: 145.838 ms
+=== Handoff summary ===
+

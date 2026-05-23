@@ -1,0 +1,4 @@
+=== Registered remote nodes ===
+0	active	101
+=== EXPLAIN ANALYZE: vector ORDER BY LIMIT through CustomScan ===
+

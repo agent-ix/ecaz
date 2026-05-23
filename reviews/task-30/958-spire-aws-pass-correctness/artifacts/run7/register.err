@@ -1,0 +1,12 @@
+psql:scripts/spire-aws/register-remotes.sql:19: ERROR:  relation "ec_spire_aws_synth_10k_idx" does not exist
+LINE 2:   'ec_spire_aws_synth_10k_idx'::regclass::oid,
+          ^
+
+   0: [91mCommand { std: "/usr/bin/psql" "-h" "10.42.1.32" "-U" "ecaz_coord" "-d" "postgres" "-v" "ON_ERROR_STOP=1" "-v" "coord_index=ec_spire_aws_synth_10k_idx" "-v" "node_id=2" "-v" "descriptor_generation=1" "-v" "conninfo_secret=ecaz-spire-aws-remote-1" "-v" "remote_index=ec_spire_aws_synth_10k_remote_idx" "-v" "state=active" "-v" "served_epoch=1" "-v" "min_retained_epoch=1" "-v" "extversion=0.1.1" "-A" "-t" "-F" "\t" "-f" "scripts/spire-aws/register-remotes.sql", kill_on_drop: false } failed with status exit status: 3[0m
+
+Location:
+   [35mcrates/ecaz-cli/src/commands/dev/sql.rs[0m:[35m193[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.
+failed to run commands: exit status 1

@@ -1,0 +1,22 @@
+{
+    "CommandId": "33a17525-b2eb-400e-8573-115a77d438fb",
+    "InstanceId": "i-0781e46d659614ce6",
+    "Comment": "",
+    "DocumentName": "AWS-RunShellScript",
+    "DocumentVersion": "$DEFAULT",
+    "PluginName": "aws:runShellScript",
+    "ResponseCode": 1,
+    "ExecutionStartDateTime": "2026-05-23T20:14:40.361Z",
+    "ExecutionElapsedTime": "PT0.246S",
+    "ExecutionEndDateTime": "2026-05-23T20:14:40.361Z",
+    "Status": "Failed",
+    "StatusDetails": "Failed",
+    "StandardOutputContent": "=== PostgreSQL version ===\n18.3\n=== Prepared-xact capacity (must be >= 64 per Phase 13a.1.b) ===\n64\n=== SPIRE GUCs (consistency / transport / payload caps) ===\nec_spire.adaptive_nprobe\toff\t\nec_spire.adaptive_nprobe_score_gap_micros\t1000\t\nec_spire.cost_index_page_scale\t1\t\nec_spire.cost_leaf_dimension_scale\t0.01\t\nec_spire.cost_local_store_page_fanout_scale\t0.05\t\nec_spire.cost_rerank_multiplier\t1.35\t\nec_spire.cost_routing_dimension_scale\t0.01\t\nec_spire.cost_storage_scoring_multiplier\t1\t\nec_spire.max_candidate_rows\t-1\t\nec_spire.max_remote_payload_bytes_per_row\t1024\t\nec_spire.max_remote_payload_rows_per_batch\t64\t\nec_spire.nprobe\t-1\t\nec_spire.remote_search_connect_timeout_ms\t0\t\nec_spire.remote_search_consistency_mode\tstrict\t\nec_spire.remote_search_max_concurrent_dispatches\t0\t\nec_spire.remote_search_max_concurrent_dispatches_per_node\t0\t\nec_spire.remote_search_max_nodes\t0\t\nec_spire.remote_search_max_pids\t0\t\nec_spire.remote_search_max_pids_per_node\t0\t\nec_spire.remote_search_statement_timeout_ms\t0\t\nec_spire.remote_tuple_transport\tauto\t\nec_spire.rerank_width\t-1\t\n=== Buffer / work memory (Phase 13a.1.b) ===\nmaintenance_work_mem\t524288\tkB\nshared_buffers\t1007744\t8kB\nwork_mem\t65536\tkB\n=== ecaz extension version ===\necaz\t0.1.1\n",
+    "StandardOutputUrl": "",
+    "StandardErrorContent": "psql:scripts/spire-aws/register-remotes.sql:19: ERROR:  relation \"ec_spire_aws_synth_10k_idx\" does not exist\nLINE 2:   'ec_spire_aws_synth_10k_idx'::regclass::oid,\n          ^\n\n   0: \u001b[91mCommand { std: \"/usr/bin/psql\" \"-h\" \"10.42.1.32\" \"-U\" \"ecaz_coord\" \"-d\" \"postgres\" \"-v\" \"ON_ERROR_STOP=1\" \"-v\" \"coord_index=ec_spire_aws_synth_10k_idx\" \"-v\" \"node_id=2\" \"-v\" \"descriptor_generation=1\" \"-v\" \"conninfo_secret=ecaz-spire-aws-remote-1\" \"-v\" \"remote_index=ec_spire_aws_synth_10k_remote_idx\" \"-v\" \"state=active\" \"-v\" \"served_epoch=1\" \"-v\" \"min_retained_epoch=1\" \"-v\" \"extversion=0.1.1\" \"-A\" \"-t\" \"-F\" \"\\t\" \"-f\" \"scripts/spire-aws/register-remotes.sql\", kill_on_drop: false } failed with status exit status: 3\u001b[0m\n\nLocation:\n   \u001b[35mcrates/ecaz-cli/src/commands/dev/sql.rs\u001b[0m:\u001b[35m193\u001b[0m\n\nBacktrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.\nRun with RUST_BACKTRACE=full to include source snippets.\nfailed to run commands: exit status 1",
+    "StandardErrorUrl": "",
+    "CloudWatchOutputConfig": {
+        "CloudWatchLogGroupName": "",
+        "CloudWatchOutputEnabled": false
+    }
+}

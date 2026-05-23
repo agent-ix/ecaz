@@ -1,0 +1,22 @@
+{
+    "CommandId": "72cb7ab2-cec5-4e45-b52d-4fe1746c1296",
+    "InstanceId": "i-0a1659bf346b5ca55",
+    "Comment": "",
+    "DocumentName": "AWS-RunShellScript",
+    "DocumentVersion": "$DEFAULT",
+    "PluginName": "aws:runShellScript",
+    "ResponseCode": 0,
+    "ExecutionStartDateTime": "2026-05-23T21:31:56.214Z",
+    "ExecutionElapsedTime": "PT0.399S",
+    "ExecutionEndDateTime": "2026-05-23T21:31:56.214Z",
+    "Status": "Success",
+    "StatusDetails": "Success",
+    "StandardOutputContent": "=== PostgreSQL version ===\n18.3\n=== Prepared-xact capacity (must be >= 64 per Phase 13a.1.b) ===\n64\n=== SPIRE GUCs (consistency / transport / payload caps) ===\nec_spire.adaptive_nprobe\toff\t\nec_spire.adaptive_nprobe_score_gap_micros\t1000\t\nec_spire.cost_index_page_scale\t1\t\nec_spire.cost_leaf_dimension_scale\t0.01\t\nec_spire.cost_local_store_page_fanout_scale\t0.05\t\nec_spire.cost_rerank_multiplier\t1.35\t\nec_spire.cost_routing_dimension_scale\t0.01\t\nec_spire.cost_storage_scoring_multiplier\t1\t\nec_spire.max_candidate_rows\t-1\t\nec_spire.max_remote_payload_bytes_per_row\t1024\t\nec_spire.max_remote_payload_rows_per_batch\t64\t\nec_spire.nprobe\t-1\t\nec_spire.remote_search_connect_timeout_ms\t0\t\nec_spire.remote_search_consistency_mode\tstrict\t\nec_spire.remote_search_max_concurrent_dispatches\t0\t\nec_spire.remote_search_max_concurrent_dispatches_per_node\t0\t\nec_spire.remote_search_max_nodes\t0\t\nec_spire.remote_search_max_pids\t0\t\nec_spire.remote_search_max_pids_per_node\t0\t\nec_spire.remote_search_statement_timeout_ms\t0\t\nec_spire.remote_tuple_transport\tauto\t\nec_spire.rerank_width\t-1\t\n=== Buffer / work memory (Phase 13a.1.b) ===\nmaintenance_work_mem\t524288\tkB\nshared_buffers\t1007744\t8kB\nwork_mem\t65536\tkB\n=== ecaz extension version ===\necaz\t0.1.1\nt\n1\t0\tlocal\t0\tactive\t101\t101\t0\t0\t0\t1\t0\t1\t1\t0.1.1\tnone\tready\tnone\n",
+    "StandardOutputUrl": "",
+    "StandardErrorContent": "psql:scripts/spire-aws/register-remotes.sql:19: NOTICE:  ec_spire_register_remote_node_descriptor skipped remote insert shape fingerprint for node_id 2: ec_spire remote write shape fingerprint conninfo secret for node_id 2 is not resolved: conninfo_secret_missing; descriptor will fail closed for coordinator-routed writes until refreshed with reachable remote\npsql:scripts/spire-aws/register-remotes.sql:19: NOTICE:  ec_spire_register_remote_node_descriptor skipped remote max_prepared_transactions preflight for node_id 2: conninfo_secret_missing; resolve conninfo_secret_name before enabling coordinator-routed writes\n",
+    "StandardErrorUrl": "",
+    "CloudWatchOutputConfig": {
+        "CloudWatchLogGroupName": "",
+        "CloudWatchOutputEnabled": false
+    }
+}

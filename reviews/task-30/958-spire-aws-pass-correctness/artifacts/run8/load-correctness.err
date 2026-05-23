@@ -1,0 +1,8 @@
+[generate] wrote 10000 × dim 1536 rows to /var/lib/ecaz/ec_spire_aws_synth_10k_corpus.tsv (kind=Corpus, seed=42)
+[generate] wrote 100 × dim 1536 rows to /var/lib/ecaz/ec_spire_aws_synth_10k_queries.tsv (kind=Corpus, seed=42)
+error: unexpected argument '--log-output' found
+
+Usage: ecaz corpus load --prefix <PREFIX> --host <HOST> --user <USER> --database <DATABASE> --corpus-file <CORPUS_FILE> --queries-file <QUERIES_FILE> --profile <PROFILE> --dim <DIM> --bits <BITS> --seed <SEED>
+
+For more information, try '--help'.
+failed to run commands: exit status 2

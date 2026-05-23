@@ -1,0 +1,12 @@
+[suite:spire-aws-correctness] wrote /tmp/artifacts/bench/suite-manifest-correctness.json
+[suite:spire-aws-correctness] wrote /tmp/artifacts/bench/suite-manifest-correctness.json
+[recall] fetching queries from ec_spire_aws_synth_10k_queries ...
+[recall] fetching corpus from ec_spire_aws_synth_10k_corpus ...
+[recall] computing ground truth: 100 queries vs 10000 corpus rows (dim=1536) ...
+[recall] ground truth in 56.09ms
+[suite:spire-aws-correctness] wrote /tmp/artifacts/bench/suite-manifest-correctness.json
+[suite:spire-aws-correctness] wrote /tmp/artifacts/bench/suite-manifest-correctness.json
+[suite:spire-aws-correctness] wrote /tmp/artifacts/bench/suite-manifest-correctness.json
+[suite:spire-aws-correctness] wrote /tmp/artifacts/bench/suite-results-correctness.jsonl
+[suite:spire-aws-correctness] wrote /tmp/artifacts/bench/suite-manifest-correctness.json
+

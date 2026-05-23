@@ -1,0 +1,22 @@
+{
+    "CommandId": "7b2dfc55-15f3-4e59-9275-daf202dd77bc",
+    "InstanceId": "i-0781e46d659614ce6",
+    "Comment": "",
+    "DocumentName": "AWS-RunShellScript",
+    "DocumentVersion": "$DEFAULT",
+    "PluginName": "aws:runShellScript",
+    "ResponseCode": 2,
+    "ExecutionStartDateTime": "2026-05-23T20:14:35.119Z",
+    "ExecutionElapsedTime": "PT0.36S",
+    "ExecutionEndDateTime": "2026-05-23T20:14:35.119Z",
+    "Status": "Failed",
+    "StatusDetails": "Failed",
+    "StandardOutputContent": "",
+    "StandardOutputUrl": "",
+    "StandardErrorContent": "error: unexpected argument '--rows' found\n\nUsage: ecaz corpus generate [OPTIONS] --output <OUTPUT> --n <N>\n\nFor more information, try '--help'.\nfailed to run commands: exit status 2",
+    "StandardErrorUrl": "",
+    "CloudWatchOutputConfig": {
+        "CloudWatchLogGroupName": "",
+        "CloudWatchOutputEnabled": false
+    }
+}

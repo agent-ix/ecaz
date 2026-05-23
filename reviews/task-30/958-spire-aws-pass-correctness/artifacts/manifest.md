@@ -29,7 +29,64 @@ Follow-on to: `reviews/task-30/957-spire-aws-prep-local-verification/`
 | Snapshot ids (pre-teardown, spire-aws stack) | coord `snap-0629f7f6387698e88`, remote-1 `snap-08e8600e1234bf509`, remote-2 `snap-078f1372782aa91b4` |
 | Snapshot id (post-bench, live ecaz-cloud DB) | `snap-07ec6f61030ea02c2` on `vol-0b0357902542b97e0` (root of `i-04ce81ce1c10db4bc`) |
 
-## Artifacts
+## Multi-Cluster SPIRE Pass-Correctness — Final Run (run 12, head `2fa0ae3c`)
+
+Full chain succeeded **2026-05-23 22:25 UTC** on 1 × `r8g.xlarge` coord
++ 1 × `r8g.large` remote (Graviton 4 / Neoverse V2 / AL2023 / PG18.3 /
+ecaz 0.1.1 thin-LTO):
+
+| Stage | Status | Evidence |
+|-------|--------|----------|
+| purge-stuck-secrets | ✓ | (Makefile prereq) |
+| provision | ✓ | `run12/aws-topology.json` (vpc-0a..., coord 10.42.1.86, remote 10.42.1.x) |
+| install-extension | ✓ | `run12/install-i-{coord,remote}.log` — cargo pgrx install --release on both nodes |
+| load-correctness | ✓ | `run12/on-coord-artifacts/load/corpus-{load,inspect}-correctness.log` — 10000 corpus + 100 query rows, `ec_spire` index built |
+| register-remotes | ✓ | `run12/on-coord-artifacts/register/remote-node-snapshot-baseline.log` — remote node 0 **active**, served_epoch=101, extversion=0.1.1 |
+| smoke-correctness | ✓ | `run12/on-coord-artifacts/smoke/{smoke-customscan-read,production-read-profile,bench-spire-pipeline}.log` — handoff summary: `merge_input_count=10, merge_output_count=10, strict_fail_count=0, remote_timeout_count=0` |
+| bench-correctness | ✓ | `run12/on-coord-artifacts/bench/suite-manifest-correctness.json` — 2 steps, both `succeeded` |
+| snapshot | ✓ | coord `snap-0819fe702031fcf25`, remote `snap-0f3c74d82e0318ea1` |
+| teardown | ✓ | clean — `aws ec2 describe-instances --filters Phase=13` empty |
+
+### Bench Results — ec_spire RaBitQ kNN k=10, 10k synthetic dim=1536
+
+**Recall (1000 trials, 100 queries × 4 nprobe):**
+
+| nprobe | recall@10 | ndcg@10 | mean q-time |
+|--------|-----------|---------|-------------|
+| 8 | 0.2400 | 0.9609 | 11.88 ms |
+| 16 | 0.3530 | 0.9738 | 19.18 ms |
+| 24 | 0.4480 | 0.9810 | 27.90 ms |
+| 32 | 0.5180 | 0.9850 | 34.17 ms |
+
+**Latency (concurrency=1, 200 iterations per nprobe):**
+
+| nprobe | mean | p50 | p95 | p99 | max |
+|--------|------|-----|-----|-----|-----|
+| 8 | 12.1 ms | 12.1 ms | 12.5 ms | 13.1 ms | 18.4 ms |
+| 16 | 18.1 ms | 18.0 ms | 18.8 ms | 19.7 ms | 26.6 ms |
+| 24 | 26.1 ms | 25.9 ms | 27.3 ms | 28.0 ms | 35.7 ms |
+| 32 | 34.6 ms | 34.4 ms | 36.1 ms | 36.9 ms | 44.7 ms |
+
+These are **multi-cluster** numbers: each query goes through the SPIRE
+coordinator's CustomScan path, fans out to the registered remote
+(`served_epoch=101, state=active`), and merges results. `merge_input_count`
+= 10 per query confirms the remote actually returned k=10 candidates
+that the coord merged.
+
+### Out of Scope This Packet
+
+- **fault-degraded + fault-strict**: deferred. F29 — node IAM role lacks
+  `ec2:StopInstances` — fault.sh's drill flow can't stop remotes from
+  inside the VPC. F34 — fault.sh hardcoded `ec_spire_aws_repr_1m` prefix
+  which is wrong for the correctness suite. Both fixable, parked as the
+  fault-coverage follow-up packet.
+- **pass-representative (1M dbpedia)**: F2 page-overflow risk unprobed
+  at 1M fresh build; tracked for the follow-on packet.
+- **3-remote topology**: account vCPU quota = 16 forced us to a 1-coord
+  + 1-remote topology. Spec sizing (1 × r8g.4xlarge + 3 × r8g.2xlarge)
+  needs a quota raise to ~32-64.
+
+## Artifacts (Iteration History)
 
 | # | Artifact | Stage | Command | Timestamp | Key result |
 |---|----------|-------|---------|-----------|-----------|

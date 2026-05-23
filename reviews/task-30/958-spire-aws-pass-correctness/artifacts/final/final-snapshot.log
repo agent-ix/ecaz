@@ -1,0 +1,4 @@
+make: Entering directory '/home/peter/dev/ecaz/infra/spire-aws'
+ERROR: /home/peter/dev/ecaz/reviews/task-30/958-spire-aws-pass-correctness/artifacts/final/aws-topology.json does not exist. Run 'make provision' first.
+make: *** [Makefile:168: snapshot] Error 1
+make: Leaving directory '/home/peter/dev/ecaz/infra/spire-aws'

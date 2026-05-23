@@ -1,0 +1,22 @@
+{
+    "CommandId": "cca148ad-3c4c-4f1a-a83b-1c0a90808e73",
+    "InstanceId": "i-0c05a8e7ce5536d0d",
+    "Comment": "",
+    "DocumentName": "AWS-RunShellScript",
+    "DocumentVersion": "$DEFAULT",
+    "PluginName": "aws:runShellScript",
+    "ResponseCode": 0,
+    "ExecutionStartDateTime": "2026-05-23T22:19:23.878Z",
+    "ExecutionElapsedTime": "PT15.379S",
+    "ExecutionEndDateTime": "2026-05-23T22:19:38.878Z",
+    "Status": "Success",
+    "StatusDetails": "Success",
+    "StandardOutputContent": "┌─────────┬────────────────────────────────────────────┐\n│ field   ┆ value                                      │\n╞═════════╪════════════════════════════════════════════╡\n│ profile ┆ ec_spire                                   │\n├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤\n│ corpus  ┆ ec_spire_aws_synth_10k_corpus (10000 rows) │\n├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤\n│ queries ┆ ec_spire_aws_synth_10k_queries (100 rows)  │\n├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤\n│ indexes ┆ ec_spire_aws_synth_10k_idx [<default>]     │\n└─────────┴────────────────────────────────────────────┘\n┌────────────────┬────────────────────────────────────────────┐\n│ field          ┆ value                                      │\n╞════════════════╪════════════════════════════════════════════╡\n│ prefix         ┆ ec_spire_aws_synth_10k                     │\n├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤\n│ corpus         ┆ ec_spire_aws_synth_10k_corpus (10000 rows) │\n├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤\n│ queries        ┆ ec_spire_aws_synth_10k_queries (100 rows)  │\n├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤\n│ embedding type ┆ ecvector                                   │\n├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤\n│ bench profiles ┆ ec_spire                                   │\n└────────────────┴────────────────────────────────────────────┘\n┌────────────────────────────────────┬───────────────┬───────────┬────────────┬───────────┐\n│ index                              ┆ access method ┆ profile   ┆ reloptions ┆ size      │\n╞════════════════════════════════════╪═══════════════╪═══════════╪════════════╪═══════════╡\n│ ec_spire_aws_synth_10k_corpus_pkey ┆ btree         ┆ <unknown> ┆ {}         ┆ 456.0 KiB │\n├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤\n│ ec_spire_aws_synth_10k_idx         ┆ ec_spire      ┆ ec_spire  ┆ {}         ┆ 8.9 MiB   │\n└────────────────────────────────────┴───────────────┴───────────┴────────────┴───────────┘\n",
+    "StandardOutputUrl": "",
+    "StandardErrorContent": "[generate] wrote 10000 × dim 1536 rows to /var/lib/ecaz/ec_spire_aws_synth_10k_corpus.tsv (kind=Corpus, seed=42)\n[generate] wrote 100 × dim 1536 rows to /var/lib/ecaz/ec_spire_aws_synth_10k_queries.tsv (kind=Corpus, seed=42)\n[loader] inspecting /var/lib/ecaz/ec_spire_aws_synth_10k_corpus.tsv\n[loader] inspecting /var/lib/ecaz/ec_spire_aws_synth_10k_queries.tsv\n[loader] corpus: 10000 rows, sha256=ccd9a13cdf99eded145fe92ba65d135a57495b55513444caf35c54d5bdcc6f2f  queries: 100 rows, sha256=bb94538673add7f7073f0cd5150f7fd0687749f6de01d7fba964e5a305fc99c4\n[loader] no sibling manifest at /var/lib/ecaz/ec_spire_aws_synth_10k_manifest.json; continuing without verification\n[loader] copied corpus table ec_spire_aws_synth_10k_corpus in 2.49s\n[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...\n[loader] encoded corpus table ec_spire_aws_synth_10k_corpus in 524.30ms\n[loader] copied queries table ec_spire_aws_synth_10k_queries in 36.02ms\n[loader] building ec_spire_aws_synth_10k_idx using ec_spire (reloptions=[<none>]) ...\n[loader] built ec_spire_aws_synth_10k_idx in 9.39s\n[loader] completed prefix ec_spire_aws_synth_10k in 13.24s\n",
+    "StandardErrorUrl": "",
+    "CloudWatchOutputConfig": {
+        "CloudWatchLogGroupName": "",
+        "CloudWatchOutputEnabled": false
+    }
+}

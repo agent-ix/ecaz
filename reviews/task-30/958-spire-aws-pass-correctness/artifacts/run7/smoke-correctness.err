@@ -1,0 +1,12 @@
+psql:scripts/spire-aws/smoke-customscan-read.sql:20: ERROR:  relation "ec_spire_aws_synth_10k_idx" does not exist
+LINE 3:   'ec_spire_aws_synth_10k_idx'::regclass
+          ^
+
+   0: [91mCommand { std: "/usr/bin/psql" "-h" "10.42.1.32" "-U" "ecaz_coord" "-d" "postgres" "-v" "ON_ERROR_STOP=1" "-v" "prefix=ec_spire_aws_synth_10k" "-A" "-t" "-F" "\t" "-f" "scripts/spire-aws/smoke-customscan-read.sql", kill_on_drop: false } failed with status exit status: 3[0m
+
+Location:
+   [35mcrates/ecaz-cli/src/commands/dev/sql.rs[0m:[35m193[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.
+failed to run commands: exit status 1

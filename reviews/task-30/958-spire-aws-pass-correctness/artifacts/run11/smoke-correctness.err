@@ -1,0 +1,12 @@
+ERROR:  column "embedding" does not exist
+LINE 1: ...dx', 'ec_spire_aws_synth_10k')::regclass, (SELECT embedding ...
+                                                             ^
+
+   0: [91mCommand { std: "/usr/bin/psql" "-h" "10.42.1.186" "-U" "ecaz_coord" "-d" "postgres" "-v" "ON_ERROR_STOP=1" "-A" "-t" "-F" "\t" "-c" "SELECT * FROM ec_spire_remote_search_production_read_profile(format('%s_idx', 'ec_spire_aws_synth_10k')::regclass, (SELECT embedding FROM ec_spire_aws_synth_10k_queries WHERE vec_id = 0)::real[], 10)", kill_on_drop: false } failed with status exit status: 1[0m
+
+Location:
+   [35mcrates/ecaz-cli/src/commands/dev/sql.rs[0m:[35m193[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.
+failed to run commands: exit status 1

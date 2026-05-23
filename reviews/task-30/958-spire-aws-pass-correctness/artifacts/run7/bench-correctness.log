@@ -1,0 +1,2 @@
+[suite:spire-aws-correctness] 13a3a-recall-k10 -> --database postgres --host 10.42.1.32 --user ecaz_coord bench recall --prefix ec_spire_aws_synth_10k --profile ec_spire --k 10 --sweep "8,16,24,32" --queries-limit 100 --bits 4 --seed 42
+

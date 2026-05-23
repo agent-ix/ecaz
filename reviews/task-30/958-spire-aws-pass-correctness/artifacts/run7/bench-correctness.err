@@ -1,0 +1,20 @@
+[suite:spire-aws-correctness] wrote /tmp/artifacts/bench/suite-manifest-correctness.json
+[suite:spire-aws-correctness] wrote /tmp/artifacts/bench/suite-manifest-correctness.json
+
+   0: [91mno ec_spire index found for profile "ec_spire"; build one first with `ecaz corpus load --profile ec_spire ...` on "ec_spire_aws_synth_10k_corpus"[0m
+
+Location:
+   [35mcrates/ecaz-cli/src/commands/bench/recall.rs[0m:[35m145[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.
+[suite:spire-aws-correctness] wrote /tmp/artifacts/bench/suite-manifest-correctness.json
+
+   0: [91msuite step "13a3a-recall-k10" failed with exit code 1; rerun with --continue-on-error to keep going[0m
+
+Location:
+   [35mcrates/ecaz-cli/src/commands/bench/suite.rs[0m:[35m655[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.
+failed to run commands: exit status 1

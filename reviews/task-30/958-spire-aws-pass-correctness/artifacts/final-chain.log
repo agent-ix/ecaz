@@ -1,0 +1,104 @@
+[19:39:33] waiting for bootstrap-continue on both nodes...
+[19:39:35] coord=InProgress remote=InProgress
+[19:40:06] coord=InProgress remote=InProgress
+[19:40:38] coord=InProgress remote=InProgress
+[19:41:10] coord=InProgress remote=InProgress
+[19:41:42] coord=InProgress remote=InProgress
+[19:42:14] coord=InProgress remote=InProgress
+[19:42:46] coord=InProgress remote=InProgress
+[19:43:17] coord=InProgress remote=InProgress
+[19:43:49] coord=InProgress remote=InProgress
+[19:44:21] coord=InProgress remote=InProgress
+[19:44:53] coord=InProgress remote=InProgress
+[19:45:25] coord=InProgress remote=InProgress
+[19:45:57] coord=InProgress remote=InProgress
+[19:46:29] coord=Success remote=InProgress
+[19:47:01] coord=Success remote=InProgress
+[19:47:32] coord=Success remote=InProgress
+[19:48:04] coord=Success remote=InProgress
+[19:48:36] coord=Success remote=InProgress
+[19:49:08] coord=Success remote=InProgress
+[19:49:40] coord=Success remote=InProgress
+[19:50:12] coord=Success remote=InProgress
+[19:50:44] coord=Success remote=Success
+[19:50:44] bootstrap-continue final: coord=Success remote=Success
+[19:50:46] starting load-correctness...
+[_topology-upload-load-correctness] ssm cmd: de33bbbb-447f-4dd6-8d60-4ab82f33cc0c
+[_topology-upload-load-correctness] final status: Success
+[load-correctness] ssm cmd: 3eb01faa-13fd-49d9-ab0f-09fac085fcdb
+[load-correctness] final status: Failed
+[load-correctness] STDOUT tail:
+
+[load-correctness] STDERR tail:
+mkdir: cannot create directory ‘/tmp/artifacts/load’: Permission denied
+failed to run commands: exit status 1
+[19:50:51] load-correctness rc=1
+load FAILED
+[19:50:51] starting register...
+[_topology-upload-register] ssm cmd: b5dc21c8-8f59-4edd-83bc-779b2466b567
+[_topology-upload-register] final status: Success
+[register] ssm cmd: a0802e30-7dce-433f-96c5-ea49dfc3ec3d
+[register] final status: Failed
+[register] STDOUT tail:
+
+[register] STDERR tail:
+mkdir: cannot create directory ‘/tmp/artifacts/register’: Permission denied
+failed to run commands: exit status 1
+[19:50:56] register rc=1
+register FAILED — likely F17
+[19:50:56] starting smoke-correctness...
+[_topology-upload-smoke-correctness] ssm cmd: 98b964d4-a719-4226-8d24-f917499df3a2
+[_topology-upload-smoke-correctness] final status: Success
+[smoke-correctness] ssm cmd: 18bccb79-0e71-4fa8-bfba-cd7346e54e8c
+[smoke-correctness] final status: Failed
+[smoke-correctness] STDOUT tail:
+
+[smoke-correctness] STDERR tail:
+mkdir: cannot create directory ‘/tmp/artifacts/smoke’: Permission denied
+failed to run commands: exit status 1
+[19:51:02] smoke-correctness rc=1
+smoke FAILED
+[19:51:02] starting bench-correctness...
+[_topology-upload-bench-correctness] ssm cmd: 030c0aab-36ba-4ba1-a6bc-cd542e4e8565
+[_topology-upload-bench-correctness] final status: Success
+[bench-correctness] ssm cmd: b3827078-ada6-4b73-9236-c39258b22cf2
+[bench-correctness] final status: Failed
+[bench-correctness] STDOUT tail:
+
+[bench-correctness] STDERR tail:
+mkdir: cannot create directory ‘/tmp/artifacts/bench’: Permission denied
+failed to run commands: exit status 1
+[19:51:07] bench-correctness rc=1
+bench FAILED
+[19:51:07] starting fault-degraded...
+[_topology-upload-fault-degraded] ssm cmd: fc7f7c03-c621-490d-8b88-0b86629c3c77
+[_topology-upload-fault-degraded] final status: Success
+[fault-degraded] ssm cmd: cd24aa49-4612-4e13-9296-e72ca90fa3f1
+[fault-degraded] final status: Failed
+[fault-degraded] STDOUT tail:
+
+[fault-degraded] STDERR tail:
+mkdir: cannot create directory ‘/tmp/artifacts/fault’: Permission denied
+failed to run commands: exit status 1
+[19:51:12] fault-degraded rc=1
+fault-degraded FAILED
+[19:51:12] starting fault-strict...
+[_topology-upload-fault-strict] ssm cmd: 3f7de91c-f31f-4acf-9161-a1f39b073e5e
+[_topology-upload-fault-strict] final status: Success
+[fault-strict] ssm cmd: ac255b3f-06a0-4fc4-9322-a78e3c69efbc
+[fault-strict] final status: Failed
+[fault-strict] STDOUT tail:
+
+[fault-strict] STDERR tail:
+mkdir: cannot create directory ‘/tmp/artifacts/fault’: Permission denied
+failed to run commands: exit status 1
+[19:51:17] fault-strict rc=1
+fault-strict FAILED
+make: Entering directory '/home/peter/dev/ecaz/infra/spire-aws'
+ERROR: /home/peter/dev/ecaz/reviews/task-30/958-spire-aws-pass-correctness/artifacts/final/aws-topology.json does not exist. Run 'make provision' first.
+make: *** [Makefile:168: snapshot] Error 1
+make: Leaving directory '/home/peter/dev/ecaz/infra/spire-aws'
+[31m╵[0m[0m
+make: *** [Makefile:187: teardown] Error 1
+make: Leaving directory '/home/peter/dev/ecaz/infra/spire-aws'
+[19:53:38] CHAIN-COMPLETE

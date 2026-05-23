@@ -1,0 +1,22 @@
+{
+    "CommandId": "222d743a-05c2-46e1-9380-7d4cb4991bb4",
+    "InstanceId": "i-0a1659bf346b5ca55",
+    "Comment": "",
+    "DocumentName": "AWS-RunShellScript",
+    "DocumentVersion": "$DEFAULT",
+    "PluginName": "aws:runShellScript",
+    "ResponseCode": 1,
+    "ExecutionStartDateTime": "2026-05-23T21:32:01.551Z",
+    "ExecutionElapsedTime": "PT0.24S",
+    "ExecutionEndDateTime": "2026-05-23T21:32:01.551Z",
+    "Status": "Failed",
+    "StatusDetails": "Failed",
+    "StandardOutputContent": "=== Registered remote nodes ===\n0\tactive\t101\n=== EXPLAIN ANALYZE: vector ORDER BY LIMIT through CustomScan ===\nLimit  (cost=23008.10..23008.12 rows=10 width=12) (actual time=145.811..145.813 rows=10.00 loops=1)\n  Buffers: shared hit=70198\n  ->  Sort  (cost=23008.10..23033.10 rows=10000 width=12) (actual time=145.809..145.811 rows=10.00 loops=1)\n        Sort Key: ((ec_spire_aws_synth_10k_corpus.embedding <#> (SubPlan 1)))\n        Sort Method: top-N heapsort  Memory: 25kB\n        Buffers: shared hit=70198\n        ->  Seq Scan on ec_spire_aws_synth_10k_corpus  (cost=0.00..22792.00 rows=10000 width=12) (actual time=1.392..144.692 rows=10000.00 loops=1)\n              Buffers: shared hit=70195\n              SubPlan 1\n                ->  Seq Scan on ec_spire_aws_synth_10k_queries  (cost=0.00..2.25 rows=1 width=32) (actual time=0.001..0.004 rows=1.00 loops=10000)\n                      Filter: (id = 0)\n                      Rows Removed by Filter: 99\n                      Buffers: shared hit=10000\nPlanning:\n  Buffers: shared hit=293 read=1\nPlanning Time: 1.783 ms\nExecution Time: 145.838 ms\n=== Handoff summary ===\n",
+    "StandardOutputUrl": "",
+    "StandardErrorContent": "psql:scripts/spire-aws/smoke-customscan-read.sql:37: ERROR:  column \"embedding\" does not exist\nLINE 4:   (SELECT embedding FROM ec_spire_aws_synth_10k_queries WHER...\n                  ^\n\n   0: \u001b[91mCommand { std: \"/usr/bin/psql\" \"-h\" \"10.42.1.6\" \"-U\" \"ecaz_coord\" \"-d\" \"postgres\" \"-v\" \"ON_ERROR_STOP=1\" \"-v\" \"prefix=ec_spire_aws_synth_10k\" \"-A\" \"-t\" \"-F\" \"\\t\" \"-f\" \"scripts/spire-aws/smoke-customscan-read.sql\", kill_on_drop: false } failed with status exit status: 3\u001b[0m\n\nLocation:\n   \u001b[35mcrates/ecaz-cli/src/commands/dev/sql.rs\u001b[0m:\u001b[35m193\u001b[0m\n\nBacktrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.\nRun with RUST_BACKTRACE=full to include source snippets.\nfailed to run commands: exit status 1",
+    "StandardErrorUrl": "",
+    "CloudWatchOutputConfig": {
+        "CloudWatchLogGroupName": "",
+        "CloudWatchOutputEnabled": false
+    }
+}

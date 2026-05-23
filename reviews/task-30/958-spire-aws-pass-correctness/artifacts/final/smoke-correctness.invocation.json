@@ -1,0 +1,22 @@
+{
+    "CommandId": "18bccb79-0e71-4fa8-bfba-cd7346e54e8c",
+    "InstanceId": "i-0ac1427961342c802",
+    "Comment": "",
+    "DocumentName": "AWS-RunShellScript",
+    "DocumentVersion": "$DEFAULT",
+    "PluginName": "aws:runShellScript",
+    "ResponseCode": 1,
+    "ExecutionStartDateTime": "2026-05-23T19:51:00.324Z",
+    "ExecutionElapsedTime": "PT0.093S",
+    "ExecutionEndDateTime": "2026-05-23T19:51:00.324Z",
+    "Status": "Failed",
+    "StatusDetails": "Failed",
+    "StandardOutputContent": "",
+    "StandardOutputUrl": "",
+    "StandardErrorContent": "mkdir: cannot create directory ‘/tmp/artifacts/smoke’: Permission denied\nfailed to run commands: exit status 1",
+    "StandardErrorUrl": "",
+    "CloudWatchOutputConfig": {
+        "CloudWatchLogGroupName": "",
+        "CloudWatchOutputEnabled": false
+    }
+}

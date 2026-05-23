@@ -1,0 +1,22 @@
+{
+    "CommandId": "4fa2b937-0d21-4e88-8a64-5f03c0259be2",
+    "InstanceId": "i-0781e46d659614ce6",
+    "Comment": "",
+    "DocumentName": "AWS-RunShellScript",
+    "DocumentVersion": "$DEFAULT",
+    "PluginName": "aws:runShellScript",
+    "ResponseCode": 1,
+    "ExecutionStartDateTime": "2026-05-23T20:14:45.661Z",
+    "ExecutionElapsedTime": "PT0.101S",
+    "ExecutionEndDateTime": "2026-05-23T20:14:45.661Z",
+    "Status": "Failed",
+    "StatusDetails": "Failed",
+    "StandardOutputContent": "=== Registered remote nodes ===\n",
+    "StandardOutputUrl": "",
+    "StandardErrorContent": "psql:scripts/spire-aws/smoke-customscan-read.sql:20: ERROR:  relation \"ec_spire_aws_synth_10k_idx\" does not exist\nLINE 3:   'ec_spire_aws_synth_10k_idx'::regclass\n          ^\n\n   0: \u001b[91mCommand { std: \"/usr/bin/psql\" \"-h\" \"10.42.1.32\" \"-U\" \"ecaz_coord\" \"-d\" \"postgres\" \"-v\" \"ON_ERROR_STOP=1\" \"-v\" \"prefix=ec_spire_aws_synth_10k\" \"-A\" \"-t\" \"-F\" \"\\t\" \"-f\" \"scripts/spire-aws/smoke-customscan-read.sql\", kill_on_drop: false } failed with status exit status: 3\u001b[0m\n\nLocation:\n   \u001b[35mcrates/ecaz-cli/src/commands/dev/sql.rs\u001b[0m:\u001b[35m193\u001b[0m\n\nBacktrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.\nRun with RUST_BACKTRACE=full to include source snippets.\nfailed to run commands: exit status 1",
+    "StandardErrorUrl": "",
+    "CloudWatchOutputConfig": {
+        "CloudWatchLogGroupName": "",
+        "CloudWatchOutputEnabled": false
+    }
+}

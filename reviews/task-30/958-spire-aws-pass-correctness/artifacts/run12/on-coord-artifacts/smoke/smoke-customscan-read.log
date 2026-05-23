@@ -1,0 +1,74 @@
+=== Registered remote nodes ===
+0	active	101
+=== EXPLAIN ANALYZE: vector ORDER BY LIMIT through CustomScan ===
+Limit  (cost=535.35..535.37 rows=10 width=12) (actual time=155.499..155.502 rows=10.00 loops=1)
+  Buffers: shared hit=50222
+  InitPlan 1
+    ->  Seq Scan on ec_spire_aws_synth_10k_queries  (cost=0.00..2.25 rows=1 width=18) (actual time=0.005..0.009 rows=1.00 loops=1)
+          Filter: (id = 0)
+          Rows Removed by Filter: 99
+          Buffers: shared hit=1
+  ->  Sort  (cost=533.10..558.10 rows=10000 width=12) (actual time=155.498..155.499 rows=10.00 loops=1)
+        Sort Key: ((ec_spire_aws_synth_10k_corpus.embedding <#> encode_to_ecvector((InitPlan 1).col1, 4, '42'::bigint)))
+        Sort Method: top-N heapsort  Memory: 25kB
+        Buffers: shared hit=50222
+        ->  Seq Scan on ec_spire_aws_synth_10k_corpus  (cost=0.00..317.00 rows=10000 width=12) (actual time=0.274..154.274 rows=10000.00 loops=1)
+              Buffers: shared hit=50219
+Planning:
+  Buffers: shared hit=299
+Planning Time: 1.820 ms
+Execution Time: 155.538 ms
+=== Handoff summary ===
+1	ec_spire.remote_search_consistency_mode	strict	10	10	10	0	0	0	0	0	0	none	0	0	0	local_ready	none	ready	none
+=== Production read profile ===
+requested_epoch	1
+consistency_mode_source	ec_spire.remote_search_consistency_mode
+consistency_mode	strict
+effective_nprobe	10
+selected_pid_count	10
+local_pid_count	10
+remote_pid_count	0
+skipped_pid_count	0
+dispatch_count	0
+compact_candidate_count	0
+remote_heap_ready_dispatch_count	0
+remote_heap_failed_dispatch_count	0
+remote_heap_candidate_count	0
+local_heap_candidate_count	10
+returned_candidate_count	10
+result_source	local_heap_candidates
+final_heap_fetch_status	local_ready
+next_blocker	none
+status	ready
+recommendation	none
+planning_elapsed_ms	6
+fingerprint_guard_elapsed_ms	0
+conninfo_secret_lookup_elapsed_ms	0
+connect_elapsed_ms	0
+statement_timeout_setup_elapsed_ms	0
+regclass_probe_elapsed_ms	0
+endpoint_identity_elapsed_ms	0
+candidate_receive_elapsed_ms	0
+heap_receive_elapsed_ms	0
+payload_decode_elapsed_ms	0
+merge_elapsed_ms	0
+total_elapsed_ms	6
+conninfo_secret_lookup_count	0
+socket_open_count	0
+tls_disable_count	0
+tls_require_count	0
+tls_verify_full_count	0
+statement_timeout_setup_count	0
+regclass_probe_count	0
+endpoint_identity_query_count	0
+candidate_receive_query_count	0
+heap_receive_query_count	0
+payload_decode_row_count	0
+payload_decode_bytes	0
+merge_input_count	10
+merge_duplicate_vec_id_count	0
+merge_output_count	10
+strict_fail_count	0
+remote_timeout_count	0
+remote_cancel_count	0
+degraded_skipped_dispatch_count	0

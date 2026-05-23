@@ -1,0 +1,22 @@
+{
+    "CommandId": "6bd58cf3-a1f7-466a-a3c4-b205ca2ca4c9",
+    "InstanceId": "i-0a1659bf346b5ca55",
+    "Comment": "",
+    "DocumentName": "AWS-RunShellScript",
+    "DocumentVersion": "$DEFAULT",
+    "PluginName": "aws:runShellScript",
+    "ResponseCode": 0,
+    "ExecutionStartDateTime": "2026-05-23T21:31:26.164Z",
+    "ExecutionElapsedTime": "PT0.008S",
+    "ExecutionEndDateTime": "2026-05-23T21:31:26.164Z",
+    "Status": "Success",
+    "StatusDetails": "Success",
+    "StandardOutputContent": "",
+    "StandardOutputUrl": "",
+    "StandardErrorContent": "",
+    "StandardErrorUrl": "",
+    "CloudWatchOutputConfig": {
+        "CloudWatchLogGroupName": "",
+        "CloudWatchOutputEnabled": false
+    }
+}

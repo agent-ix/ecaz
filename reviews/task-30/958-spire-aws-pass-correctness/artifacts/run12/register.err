@@ -1,0 +1,3 @@
+psql:scripts/spire-aws/register-remotes.sql:19: NOTICE:  ec_spire_register_remote_node_descriptor skipped remote insert shape fingerprint for node_id 2: ec_spire remote write shape fingerprint conninfo secret for node_id 2 is not resolved: conninfo_secret_missing; descriptor will fail closed for coordinator-routed writes until refreshed with reachable remote
+psql:scripts/spire-aws/register-remotes.sql:19: NOTICE:  ec_spire_register_remote_node_descriptor skipped remote max_prepared_transactions preflight for node_id 2: conninfo_secret_missing; resolve conninfo_secret_name before enabling coordinator-routed writes
+

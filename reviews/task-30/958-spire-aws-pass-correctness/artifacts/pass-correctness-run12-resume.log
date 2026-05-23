@@ -1,0 +1,19 @@
+make: Entering directory '/home/peter/dev/ecaz/infra/spire-aws'
+/home/peter/dev/ecaz/scripts/spire-aws/_run-on-coord.sh smoke-correctness \
+  "cd /var/lib/pgsql/build/ecaz && sudo -u postgres PREFIX=ec_spire_aws_synth_10k bash scripts/spire-aws/smoke.sh /tmp/topology.json /tmp/artifacts/smoke" \
+  /home/peter/dev/ecaz/reviews/task-30/958-spire-aws-pass-correctness/artifacts/run12/aws-topology.json /home/peter/dev/ecaz/reviews/task-30/958-spire-aws-pass-correctness/artifacts/run12
+[_topology-upload-smoke-correctness] ssm cmd: 5c10e326-996d-46a1-80f2-382545ecc2f0
+[_topology-upload-smoke-correctness] final status: Success
+[smoke-correctness] ssm cmd: e0f4f53b-1c8e-459d-9a64-848c3299cd77
+[smoke-correctness] final status: Success
+/home/peter/dev/ecaz/scripts/spire-aws/_run-on-coord.sh bench-correctness \
+  "cd /var/lib/pgsql/build/ecaz && sudo -u postgres bash scripts/spire-aws/bench.sh correctness /tmp/topology.json /tmp/artifacts/bench" \
+  /home/peter/dev/ecaz/reviews/task-30/958-spire-aws-pass-correctness/artifacts/run12/aws-topology.json /home/peter/dev/ecaz/reviews/task-30/958-spire-aws-pass-correctness/artifacts/run12
+[_topology-upload-bench-correctness] ssm cmd: be27c815-a89d-4dae-a7a2-432e6957d14c
+[_topology-upload-bench-correctness] final status: Success
+[bench-correctness] ssm cmd: 24d9d30b-46c6-41dc-9594-2cde16d6e564
+[bench-correctness] final status: Success
+Snapshotting EBS root volumes for coord+remotes in us-west-2...
+i-0c05a8e7ce5536d0d vol-019c651aa51d8b1a3 snap-0819fe702031fcf25
+i-0963137d1326ef546 vol-004cb09a91f41ec6e snap-0f3c74d82e0318ea1
+make: Leaving directory '/home/peter/dev/ecaz/infra/spire-aws'
