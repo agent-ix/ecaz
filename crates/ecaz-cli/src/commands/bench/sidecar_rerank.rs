@@ -13,6 +13,7 @@ use std::time::Instant;
 use clap::{Args, ValueEnum};
 use color_eyre::eyre::{bail, eyre, Context, Result};
 use comfy_table::{presets::UTF8_FULL, Cell, Table};
+use futures::stream::{self, StreamExt, TryStreamExt};
 use half::f16;
 use ndarray::Array2;
 use tokio_postgres::Client;
@@ -79,6 +80,9 @@ pub struct SidecarRerankArgs {
     /// Candidate frontier size to fetch from the rerank=off IVF index.
     #[arg(long, default_value_t = 50)]
     pub candidate_k: usize,
+    /// Concurrent sidecar DB fetch/score tasks per variant/read-mode.
+    #[arg(long, default_value_t = 1)]
+    pub concurrency: usize,
     /// Sweep values for the profile tuning GUC.
     #[arg(long, value_delimiter = ',')]
     pub sweep: Vec<i32>,
@@ -119,6 +123,9 @@ pub async fn run(conn: &ConnectionOptions, args: SidecarRerankArgs) -> Result<()
     }
     if args.candidate_k < args.k {
         bail!("--candidate-k must be >= --k");
+    }
+    if args.concurrency == 0 {
+        bail!("--concurrency must be >= 1");
     }
     let profile = profiles::resolve(&args.profile).ok_or_else(|| {
         eyre!(
@@ -219,6 +226,7 @@ pub async fn run(conn: &ConnectionOptions, args: SidecarRerankArgs) -> Result<()
         "read_mode",
         "queries",
         "candidate_k",
+        "concurrency",
         "recall@k",
         "recall_p10",
         "recall_p50",
@@ -276,6 +284,7 @@ pub async fn run(conn: &ConnectionOptions, args: SidecarRerankArgs) -> Result<()
                             &sidecar_table_name(&args.prefix, sidecar.variant),
                             &candidate_run.ids,
                             &queries,
+                            args.concurrency,
                         )
                         .await?
                     }
@@ -306,6 +315,7 @@ pub async fn run(conn: &ConnectionOptions, args: SidecarRerankArgs) -> Result<()
                     Cell::new(read_mode.label()),
                     Cell::new(recall.queries),
                     Cell::new(args.candidate_k),
+                    Cell::new(args.concurrency),
                     Cell::new(format!("{:.4}", recall.recall)),
                     Cell::new(format!("{:.4}", recall.p10)),
                     Cell::new(format!("{:.4}", recall.p50)),
@@ -684,12 +694,8 @@ async fn rerank_with_sidecar_db(
     table: &str,
     candidates: &[Vec<i64>],
     queries: &Array2<f32>,
+    concurrency: usize,
 ) -> Result<RerankRun> {
-    let mut predictions = Vec::with_capacity(candidates.len());
-    let mut io_elapsed_ns = Vec::with_capacity(candidates.len());
-    let mut score_elapsed_ns = Vec::with_capacity(candidates.len());
-    let mut elapsed_ns = Vec::with_capacity(candidates.len());
-
     let random_stmt = if matches!(read_mode, SidecarReadMode::RandomId) {
         Some(
             client
@@ -715,59 +721,33 @@ async fn rerank_with_sidecar_db(
         None
     };
 
-    for (q, ids) in candidates.iter().enumerate() {
-        let query = queries.row(q).to_vec();
-        let total_started = Instant::now();
-        let io_started = Instant::now();
-        let fetched = match read_mode {
-            SidecarReadMode::Free => unreachable!("free sidecar mode does not use DB fetch"),
-            SidecarReadMode::RandomId => {
-                let stmt = random_stmt.as_ref().expect("random statement prepared");
-                let mut fetched = Vec::with_capacity(ids.len());
-                for id in ids {
-                    let row = client
-                        .query_opt(stmt, &[id])
-                        .await
-                        .wrap_err_with(|| format!("fetching sidecar payload id {id} from {table}"))?
-                        .ok_or_else(|| eyre!("sidecar table {table} missing id {id}"))?;
-                    fetched.push((*id, row.get::<_, Vec<u8>>(0)));
-                }
-                fetched
-            }
-            SidecarReadMode::TidSorted => {
-                let stmt = tid_sorted_stmt
-                    .as_ref()
-                    .expect("tid-sorted statement prepared");
-                client
-                    .query(stmt, &[ids])
-                    .await
-                    .wrap_err_with(|| format!("fetching tid-sorted sidecar payloads from {table}"))?
-                    .into_iter()
-                    .map(|row| (row.get::<_, i64>(0), row.get::<_, Vec<u8>>(1)))
-                    .collect()
-            }
-        };
-        let io_elapsed = io_started.elapsed().as_nanos();
-        if fetched.len() != ids.len() {
-            bail!(
-                "sidecar table {table} returned {} rows for {} candidate ids",
-                fetched.len(),
-                ids.len()
-            );
-        }
+    let results: Vec<_> = stream::iter(candidates.iter().enumerate())
+        .map(|(q, ids)| {
+            let query = queries.row(q).to_vec();
+            rerank_one_sidecar_db_query(
+                client,
+                sidecar,
+                read_mode,
+                table,
+                random_stmt.as_ref(),
+                tid_sorted_stmt.as_ref(),
+                ids,
+                query,
+            )
+        })
+        .buffered(concurrency)
+        .try_collect()
+        .await?;
 
-        let score_started = Instant::now();
-        let mut scored = score_sidecar_payloads(sidecar, &query, &fetched)?;
-        scored.sort_unstable_by(|a, b| {
-            b.1.partial_cmp(&a.1)
-                .unwrap_or(std::cmp::Ordering::Equal)
-                .then(a.0.cmp(&b.0))
-        });
-        let score_elapsed = score_started.elapsed().as_nanos();
-        predictions.push(scored.into_iter().map(|(id, _)| id).collect());
-        io_elapsed_ns.push(io_elapsed);
-        score_elapsed_ns.push(score_elapsed);
-        elapsed_ns.push(total_started.elapsed().as_nanos());
+    let mut predictions = Vec::with_capacity(results.len());
+    let mut io_elapsed_ns = Vec::with_capacity(results.len());
+    let mut score_elapsed_ns = Vec::with_capacity(results.len());
+    let mut elapsed_ns = Vec::with_capacity(results.len());
+    for result in results {
+        predictions.push(result.prediction);
+        io_elapsed_ns.push(result.io_elapsed_ns);
+        score_elapsed_ns.push(result.score_elapsed_ns);
+        elapsed_ns.push(result.elapsed_ns);
     }
 
     Ok(RerankRun {
@@ -775,6 +755,76 @@ async fn rerank_with_sidecar_db(
         io_elapsed_ns,
         score_elapsed_ns,
         elapsed_ns,
+    })
+}
+
+struct RerankQueryResult {
+    prediction: Vec<i64>,
+    io_elapsed_ns: u128,
+    score_elapsed_ns: u128,
+    elapsed_ns: u128,
+}
+
+async fn rerank_one_sidecar_db_query(
+    client: &Client,
+    sidecar: &Sidecar,
+    read_mode: SidecarReadMode,
+    table: &str,
+    random_stmt: Option<&tokio_postgres::Statement>,
+    tid_sorted_stmt: Option<&tokio_postgres::Statement>,
+    ids: &[i64],
+    query: Vec<f32>,
+) -> Result<RerankQueryResult> {
+    let total_started = Instant::now();
+    let io_started = Instant::now();
+    let fetched = match read_mode {
+        SidecarReadMode::Free => unreachable!("free sidecar mode does not use DB fetch"),
+        SidecarReadMode::RandomId => {
+            let stmt = random_stmt.expect("random statement prepared");
+            let mut fetched = Vec::with_capacity(ids.len());
+            for id in ids {
+                let row = client
+                    .query_opt(stmt, &[id])
+                    .await
+                    .wrap_err_with(|| format!("fetching sidecar payload id {id} from {table}"))?
+                    .ok_or_else(|| eyre!("sidecar table {table} missing id {id}"))?;
+                fetched.push((*id, row.get::<_, Vec<u8>>(0)));
+            }
+            fetched
+        }
+        SidecarReadMode::TidSorted => {
+            let stmt = tid_sorted_stmt.expect("tid-sorted statement prepared");
+            client
+                .query(stmt, &[&ids])
+                .await
+                .wrap_err_with(|| format!("fetching tid-sorted sidecar payloads from {table}"))?
+                .into_iter()
+                .map(|row| (row.get::<_, i64>(0), row.get::<_, Vec<u8>>(1)))
+                .collect()
+        }
+    };
+    let io_elapsed_ns = io_started.elapsed().as_nanos();
+    if fetched.len() != ids.len() {
+        bail!(
+            "sidecar table {table} returned {} rows for {} candidate ids",
+            fetched.len(),
+            ids.len()
+        );
+    }
+
+    let score_started = Instant::now();
+    let mut scored = score_sidecar_payloads(sidecar, &query, &fetched)?;
+    scored.sort_unstable_by(|a, b| {
+        b.1.partial_cmp(&a.1)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then(a.0.cmp(&b.0))
+    });
+    let score_elapsed_ns = score_started.elapsed().as_nanos();
+    Ok(RerankQueryResult {
+        prediction: scored.into_iter().map(|(id, _)| id).collect(),
+        io_elapsed_ns,
+        score_elapsed_ns,
+        elapsed_ns: total_started.elapsed().as_nanos(),
     })
 }
 

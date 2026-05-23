@@ -413,6 +413,8 @@ struct SidecarRerankStep {
     k: Option<usize>,
     #[serde(default)]
     candidate_k: Option<usize>,
+    #[serde(default)]
+    concurrency: Option<usize>,
     sweep: Vec<i32>,
     #[serde(default)]
     queries_limit: Option<usize>,
@@ -1681,6 +1683,12 @@ impl SuiteStep {
                         step.name
                     )
                 }
+                if step.concurrency == Some(0) {
+                    bail!(
+                        "sidecar-rerank step {:?} must set concurrency >= 1",
+                        step.name
+                    )
+                }
                 Ok(())
             }
             SuiteStep::ComparePgvector(step) => {
@@ -2154,6 +2162,9 @@ fn expand_sidecar_rerank(step: &SidecarRerankStep, defaults: &SuiteDefaults) -> 
         "--candidate-k",
         &step.candidate_k.unwrap_or(50).to_string(),
     );
+    if let Some(concurrency) = step.concurrency {
+        push_arg(&mut args, "--concurrency", &concurrency.to_string());
+    }
     push_arg(&mut args, "--sweep", &join_i32(&step.sweep));
     if let Some(limit) = step.queries_limit.or(defaults.queries_limit) {
         push_arg(&mut args, "--queries-limit", &limit.to_string());
@@ -2812,6 +2823,7 @@ mod tests {
             profile: None,
             k: Some(10),
             candidate_k: Some(50),
+            concurrency: Some(4),
             sweep: vec![64, 128],
             queries_limit: None,
             bits: None,
@@ -2826,6 +2838,7 @@ mod tests {
         let args = expand_sidecar_rerank(&step, &defaults);
         assert!(args.windows(2).any(|w| w == ["--profile", "ec_ivf"]));
         assert!(args.windows(2).any(|w| w == ["--candidate-k", "50"]));
+        assert!(args.windows(2).any(|w| w == ["--concurrency", "4"]));
         assert!(args.windows(2).any(|w| w == ["--sweep", "64,128"]));
         assert!(args.windows(2).any(|w| w == ["--variant", "f32"]));
         assert!(args.windows(2).any(|w| w == ["--variant", "f16"]));
