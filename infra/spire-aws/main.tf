@@ -33,6 +33,57 @@ resource "aws_route_table_association" "spire_aws_data" {
   route_table_id = aws_route_table.spire_aws_data.id
 }
 
+# F21: nodes need to reach sh.rustup.rs + github.com during
+# bootstrap-node.sh. Original Phase 13a.1 design assumed an
+# air-gapped VPC reachable only via SSM/S3 endpoints, but that
+# blocks rustup install and the ecaz repo clone. Add a NAT gateway
+# in a public subnet for outbound HTTPS only.
+resource "aws_internet_gateway" "spire_aws" {
+  vpc_id = aws_vpc.spire_aws.id
+  tags   = { Name = "ecaz-spire-aws-igw" }
+}
+
+resource "aws_subnet" "spire_aws_public" {
+  vpc_id                  = aws_vpc.spire_aws.id
+  cidr_block              = cidrsubnet(var.vpc_cidr, 8, 2)
+  availability_zone       = var.availability_zone
+  map_public_ip_on_launch = true
+  tags                    = { Name = "ecaz-spire-aws-public" }
+}
+
+resource "aws_route_table" "spire_aws_public" {
+  vpc_id = aws_vpc.spire_aws.id
+  route {
+    cidr_block = "0.0.0.0/0"
+    gateway_id = aws_internet_gateway.spire_aws.id
+  }
+  tags = { Name = "ecaz-spire-aws-public" }
+}
+
+resource "aws_route_table_association" "spire_aws_public" {
+  subnet_id      = aws_subnet.spire_aws_public.id
+  route_table_id = aws_route_table.spire_aws_public.id
+}
+
+resource "aws_eip" "nat" {
+  domain     = "vpc"
+  depends_on = [aws_internet_gateway.spire_aws]
+  tags       = { Name = "ecaz-spire-aws-nat-eip" }
+}
+
+resource "aws_nat_gateway" "spire_aws" {
+  allocation_id = aws_eip.nat.id
+  subnet_id     = aws_subnet.spire_aws_public.id
+  depends_on    = [aws_internet_gateway.spire_aws]
+  tags          = { Name = "ecaz-spire-aws-nat" }
+}
+
+resource "aws_route" "private_default" {
+  route_table_id         = aws_route_table.spire_aws_data.id
+  destination_cidr_block = "0.0.0.0/0"
+  nat_gateway_id         = aws_nat_gateway.spire_aws.id
+}
+
 resource "aws_vpc_endpoint" "s3" {
   vpc_id            = aws_vpc.spire_aws.id
   service_name      = "com.amazonaws.${var.region}.s3"
