@@ -36,8 +36,9 @@ pub(crate) enum FlatFloat4Kind {
 ///
 /// Absorbs both array-typed (`real[]`) and byte-backed (`bytea` / `ecvector`)
 /// varlenas behind a single safe `as_slice()` accessor. The wrapper owns the
-/// detoasted backing storage and ties its slice lifetime to `'a` so the
-/// borrowed view cannot escape the surrounding PG-arena scope.
+/// detoasted backing storage; `as_slice()` returns a `&[f32]` whose lifetime
+/// is tied to `&self` via the embedded `DetoastedVarlena`, so the borrowed
+/// view cannot outlive the wrapper.
 pub(crate) struct FlatFloat4Source {
     _detoasted: DetoastedVarlena,
     data_ptr: *const f32,
@@ -54,9 +55,10 @@ impl FlatFloat4Source {
     ///
     /// # Safety
     /// `datum` must be a live PostgreSQL Datum that was type-checked to match
-    /// `kind` before dispatch, and whose backing varlena outlives `'a`. The
-    /// returned wrapper owns the detoasted copy (when one was produced) and
-    /// releases it via [`DetoastedVarlena`]'s Drop.
+    /// `kind` before dispatch, and whose backing varlena is valid for the
+    /// duration of this call (long enough for `pg_detoast_datum` to produce a
+    /// stable copy). The returned wrapper owns the detoasted copy (when one
+    /// was produced) and releases it via [`DetoastedVarlena`]'s Drop.
     pub(crate) unsafe fn from_datum(
         datum: pg_sys::Datum,
         kind: FlatFloat4Kind,
@@ -220,7 +222,7 @@ impl EcVectorDatum {
     /// # Safety
     /// `datum` must be a live PostgreSQL Datum that was type-checked as
     /// `ecvector` (a byte-backed varlena packed `[f32]`) before dispatch,
-    /// and whose backing varlena outlives `'a`.
+    /// and whose backing varlena is valid for the duration of this call.
     pub(crate) unsafe fn from_datum(datum: pg_sys::Datum, label: &str) -> Option<Self> {
         // SAFETY: caller asserts `datum` is a live ecvector Datum.
         let source =

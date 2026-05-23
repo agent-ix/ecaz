@@ -14,13 +14,17 @@ this task. They will consume the wrappers under Tasks 57 ... and 56
 
 Available for cross-AM consumers:
 
-- `src/am/common/datum.rs::FlatFloat4Source<'a>` — unified flat-float4
+- `src/am/common/datum.rs::FlatFloat4Source` — unified flat-float4
   array/varlena dispatch. Replaces ad-hoc detoast + `ArrayType` header
-  read + `from_raw_parts` data slice patterns.
-- `src/am/common/datum.rs::EcVectorDatum<'a>` / `EcVectorView<'a>` —
-  thin shim over `FlatFloat4Source<Varlena>`. Reviewer call: when a
-  real `EcVector` type lands, wire this through; until then the shim
-  is a stable wrapper boundary.
+  read + `from_raw_parts` data slice patterns. (`'a` parameter dropped
+  in `f86e26d4f` per slice-002 reviewer nit — the borrow lifetime is
+  tied to `&self` via the owned `DetoastedVarlena`.)
+- `src/am/common/datum.rs::EcVectorDatum` / `EcVectorView<'a>` —
+  thin shim over `FlatFloat4Source` in `Varlena` mode. `EcVectorDatum`
+  is lifetimeless (owns its `FlatFloat4Source`); `EcVectorView<'a>`
+  carries the borrow tied to `&self`. Reviewer call: when a real
+  `EcVector` type lands, wire this through; until then the shim is a
+  stable wrapper boundary.
 - `src/am/common/datum.rs::AttnumLookup` — safe `pg_sys::get_attnum`
   wrapper.
 - `src/am/common/detoast.rs::DetoastedVarlena::as_typed_slice<T: Copy>`
