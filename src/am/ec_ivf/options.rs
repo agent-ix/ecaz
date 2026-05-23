@@ -6,14 +6,15 @@ use pgrx::{pg_sys, GucContext, GucFlags, GucRegistry, GucSetting};
 use crate::am::common::callback::pg_am_callback;
 
 use super::{
-    EC_IVF_DEFAULT_NLISTS, EC_IVF_DEFAULT_NPROBE, EC_IVF_DEFAULT_POSTING_SLACK_PERCENT,
-    EC_IVF_DEFAULT_PQ_GROUP_SIZE, EC_IVF_DEFAULT_QUANT_BITS, EC_IVF_DEFAULT_RERANK_WIDTH,
-    EC_IVF_DEFAULT_SEED, EC_IVF_DEFAULT_TRAINING_SAMPLE_ROWS, EC_IVF_MAX_NLISTS,
-    EC_IVF_MAX_NPROBE, EC_IVF_MAX_POSTING_SLACK_PERCENT, EC_IVF_MAX_PQ_GROUP_SIZE,
-    EC_IVF_MAX_QUANT_BITS, EC_IVF_MAX_RERANK_WIDTH, EC_IVF_MAX_SEED,
-    EC_IVF_MAX_TRAINING_SAMPLE_ROWS, EC_IVF_MIN_NLISTS, EC_IVF_MIN_NPROBE,
-    EC_IVF_MIN_POSTING_SLACK_PERCENT, EC_IVF_MIN_PQ_GROUP_SIZE, EC_IVF_MIN_QUANT_BITS,
-    EC_IVF_MIN_RERANK_WIDTH, EC_IVF_MIN_SEED, EC_IVF_MIN_TRAINING_SAMPLE_ROWS,
+    EC_IVF_DEFAULT_ADAPTIVE_NPROBE_SCORE_GAP_MICROS, EC_IVF_DEFAULT_NLISTS, EC_IVF_DEFAULT_NPROBE,
+    EC_IVF_DEFAULT_POSTING_SLACK_PERCENT, EC_IVF_DEFAULT_PQ_GROUP_SIZE, EC_IVF_DEFAULT_QUANT_BITS,
+    EC_IVF_DEFAULT_RERANK_WIDTH, EC_IVF_DEFAULT_SEED, EC_IVF_DEFAULT_TRAINING_SAMPLE_ROWS,
+    EC_IVF_MAX_ADAPTIVE_NPROBE_SCORE_GAP_MICROS, EC_IVF_MAX_NLISTS, EC_IVF_MAX_NPROBE,
+    EC_IVF_MAX_POSTING_SLACK_PERCENT, EC_IVF_MAX_PQ_GROUP_SIZE, EC_IVF_MAX_QUANT_BITS,
+    EC_IVF_MAX_RERANK_WIDTH, EC_IVF_MAX_SEED, EC_IVF_MAX_TRAINING_SAMPLE_ROWS, EC_IVF_MIN_NLISTS,
+    EC_IVF_MIN_NPROBE, EC_IVF_MIN_POSTING_SLACK_PERCENT, EC_IVF_MIN_PQ_GROUP_SIZE,
+    EC_IVF_MIN_QUANT_BITS, EC_IVF_MIN_RERANK_WIDTH, EC_IVF_MIN_SEED,
+    EC_IVF_MIN_TRAINING_SAMPLE_ROWS,
 };
 
 const EC_IVF_SESSION_NPROBE_UNSET: i32 = -1;
@@ -22,6 +23,9 @@ const EC_IVF_SESSION_RERANK_WIDTH_UNSET: i32 = -1;
 static EC_IVF_NPROBE_GUC: GucSetting<i32> = GucSetting::<i32>::new(EC_IVF_SESSION_NPROBE_UNSET);
 static EC_IVF_RERANK_WIDTH_GUC: GucSetting<i32> =
     GucSetting::<i32>::new(EC_IVF_SESSION_RERANK_WIDTH_UNSET);
+static EC_IVF_ADAPTIVE_NPROBE_GUC: GucSetting<bool> = GucSetting::<bool>::new(false);
+static EC_IVF_ADAPTIVE_NPROBE_SCORE_GAP_MICROS_GUC: GucSetting<i32> =
+    GucSetting::<i32>::new(EC_IVF_DEFAULT_ADAPTIVE_NPROBE_SCORE_GAP_MICROS);
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
@@ -217,6 +221,24 @@ pub(super) fn register_gucs() {
         GucContext::Userset,
         GucFlags::default(),
     );
+    GucRegistry::define_bool_guc(
+        c"ec_ivf.adaptive_nprobe",
+        c"Enable deterministic adaptive ec_ivf nprobe reduction.",
+        c"Diagnostic Task 51 mode; when enabled, scans may reduce nprobe by half when the centroid frontier has the configured score gap.",
+        &EC_IVF_ADAPTIVE_NPROBE_GUC,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
+    GucRegistry::define_int_guc(
+        c"ec_ivf.adaptive_nprobe_score_gap_micros",
+        c"Score-gap threshold for ec_ivf adaptive nprobe.",
+        c"Inner-product score gap, multiplied by 1,000,000, required between the retained adaptive frontier and the next centroid before adaptive nprobe reduces probe breadth.",
+        &EC_IVF_ADAPTIVE_NPROBE_SCORE_GAP_MICROS_GUC,
+        0,
+        EC_IVF_MAX_ADAPTIVE_NPROBE_SCORE_GAP_MICROS,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
 }
 
 pub(super) fn current_session_nprobe() -> i32 {
@@ -225,6 +247,22 @@ pub(super) fn current_session_nprobe() -> i32 {
 
 pub(super) fn current_session_rerank_width() -> i32 {
     EC_IVF_RERANK_WIDTH_GUC.get()
+}
+
+pub(super) fn current_session_adaptive_nprobe() -> bool {
+    if cfg!(test) {
+        false
+    } else {
+        EC_IVF_ADAPTIVE_NPROBE_GUC.get()
+    }
+}
+
+pub(super) fn current_session_adaptive_nprobe_score_gap_micros() -> i32 {
+    if cfg!(test) {
+        EC_IVF_DEFAULT_ADAPTIVE_NPROBE_SCORE_GAP_MICROS
+    } else {
+        EC_IVF_ADAPTIVE_NPROBE_SCORE_GAP_MICROS_GUC.get()
+    }
 }
 
 pub(super) fn resolve_scan_nprobe(nlists: u32, relation_nprobe: u32) -> NprobeResolution {

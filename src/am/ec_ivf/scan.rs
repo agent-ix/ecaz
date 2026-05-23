@@ -413,11 +413,12 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_amrescan(
         opaque.stats_delta.record_scan_started();
         opaque.scan_dimensions = metadata.dimensions;
         opaque.scan_nlists = metadata.nlists;
-        opaque.scan_nprobe = if metadata.dimensions == 0 {
+        let requested_nprobe = if metadata.dimensions == 0 {
             0
         } else {
             resolve_effective_nprobe(&metadata)
         };
+        opaque.scan_nprobe = requested_nprobe;
         store_scan_query(opaque, &query);
         store_scan_prepared_query(opaque, (*scan).indexRelation, &query, &metadata);
         configure_heap_rerank_state(scan, opaque, &index_options);
@@ -425,7 +426,13 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_amrescan(
         if metadata.dimensions != 0 {
             let centroid_scores = load_centroid_scores((*scan).indexRelation, &metadata, &query)
                 .unwrap_or_else(|e| pgrx::error!("{e}"));
-            let selected_lists = select_probe_lists(&centroid_scores, opaque.scan_nprobe);
+            let selected_lists = select_probe_lists_with_adaptive(
+                &centroid_scores,
+                requested_nprobe,
+                super::options::current_session_adaptive_nprobe(),
+                super::options::current_session_adaptive_nprobe_score_gap_micros(),
+            );
+            opaque.scan_nprobe = u32::try_from(selected_lists.len()).unwrap_or(u32::MAX);
             opaque
                 .explain_counters
                 .record_centroid_scores(centroid_scores.len());
@@ -980,6 +987,15 @@ fn probe_list_heap_cmp(left: &EcIvfCentroidScore, right: &EcIvfCentroidScore) ->
 }
 
 fn select_probe_lists(scores: &[EcIvfCentroidScore], nprobe: u32) -> Vec<u32> {
+    select_probe_lists_with_adaptive(scores, nprobe, false, 0)
+}
+
+fn select_probe_lists_with_adaptive(
+    scores: &[EcIvfCentroidScore],
+    nprobe: u32,
+    adaptive_nprobe: bool,
+    adaptive_score_gap_micros: i32,
+) -> Vec<u32> {
     let limit = nprobe as usize;
     if limit == 0 || scores.is_empty() {
         return Vec::new();
@@ -987,7 +1003,13 @@ fn select_probe_lists(scores: &[EcIvfCentroidScore], nprobe: u32) -> Vec<u32> {
     if limit >= scores.len() {
         let mut ranked = scores.to_vec();
         ranked.sort_by(probe_list_cmp);
-        return ranked.into_iter().map(|score| score.list_id).collect();
+        let effective_nprobe =
+            choose_adaptive_nprobe(nprobe, &ranked, adaptive_nprobe, adaptive_score_gap_micros);
+        return ranked
+            .into_iter()
+            .take(effective_nprobe as usize)
+            .map(|score| score.list_id)
+            .collect();
     }
 
     let mut retained = BinaryHeap::with_capacity(limit);
@@ -1010,11 +1032,44 @@ fn select_probe_lists(scores: &[EcIvfCentroidScore], nprobe: u32) -> Vec<u32> {
         .map(|entry| entry.centroid)
         .collect::<Vec<_>>();
     ranked.sort_by(probe_list_cmp);
+    let effective_nprobe =
+        choose_adaptive_nprobe(nprobe, &ranked, adaptive_nprobe, adaptive_score_gap_micros);
     ranked
         .into_iter()
-        .take(nprobe as usize)
+        .take(effective_nprobe as usize)
         .map(|score| score.list_id)
         .collect()
+}
+
+fn choose_adaptive_nprobe(
+    requested_nprobe: u32,
+    ranked_scores: &[EcIvfCentroidScore],
+    adaptive_nprobe: bool,
+    adaptive_score_gap_micros: i32,
+) -> u32 {
+    if !adaptive_nprobe || requested_nprobe <= 1 {
+        return requested_nprobe;
+    }
+
+    let adaptive_nprobe = (requested_nprobe / 2).max(1);
+    let adaptive_index = adaptive_nprobe as usize;
+    if ranked_scores.len() <= adaptive_index {
+        return requested_nprobe;
+    }
+
+    let boundary = ranked_scores[adaptive_index - 1].score;
+    let next = ranked_scores[adaptive_index].score;
+    let raw_gap_micros = (boundary - next) * 1_000_000.0;
+    let gap_micros = if raw_gap_micros.is_finite() && raw_gap_micros > 0.0 {
+        raw_gap_micros.round() as i32
+    } else {
+        0
+    };
+    if gap_micros >= adaptive_score_gap_micros {
+        adaptive_nprobe
+    } else {
+        requested_nprobe
+    }
 }
 
 unsafe fn materialize_probe_candidates(
@@ -2102,9 +2157,9 @@ mod tests {
     use super::super::options::{EcIvfOptions, RerankMode, StorageFormat as IvfStorageFormat};
     use super::{
         build_probe_block_sequence, candidate_heap_blocks, candidate_heap_tid_cmp,
-        consume_live_tid_budget, inner_product, inner_product_scalar, pre_rerank_candidate_limit,
-        select_probe_lists, CandidateTopK, EcIvfCentroidScore, EcIvfScoredCandidate,
-        ProbeBlockRange,
+        choose_adaptive_nprobe, consume_live_tid_budget, inner_product, inner_product_scalar,
+        pre_rerank_candidate_limit, select_probe_lists, select_probe_lists_with_adaptive,
+        CandidateTopK, EcIvfCentroidScore, EcIvfScoredCandidate, ProbeBlockRange,
     };
     use crate::storage::page::ItemPointer;
 
@@ -2300,6 +2355,58 @@ mod tests {
         );
 
         assert_eq!(selected, vec![1, 3, 7]);
+    }
+
+    #[test]
+    fn adaptive_nprobe_reduces_when_centroid_boundary_gap_is_large() {
+        let selected = select_probe_lists_with_adaptive(
+            &[
+                centroid(1, 10.00),
+                centroid(2, 9.90),
+                centroid(3, 9.80),
+                centroid(4, 9.70),
+                centroid(5, 9.10),
+                centroid(6, 9.00),
+                centroid(7, 8.90),
+                centroid(8, 8.80),
+            ],
+            8,
+            true,
+            100_000,
+        );
+
+        assert_eq!(selected, vec![1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn adaptive_nprobe_keeps_requested_width_when_gap_is_small() {
+        let selected = select_probe_lists_with_adaptive(
+            &[
+                centroid(1, 10.00),
+                centroid(2, 9.90),
+                centroid(3, 9.80),
+                centroid(4, 9.70),
+                centroid(5, 9.69),
+                centroid(6, 9.00),
+            ],
+            6,
+            true,
+            100_000,
+        );
+
+        assert_eq!(selected, vec![1, 2, 3, 4, 5, 6]);
+    }
+
+    #[test]
+    fn adaptive_nprobe_is_disabled_by_default() {
+        let ranked = [
+            centroid(1, 10.00),
+            centroid(2, 9.90),
+            centroid(3, 9.20),
+            centroid(4, 9.10),
+        ];
+
+        assert_eq!(choose_adaptive_nprobe(4, &ranked, false, 0), 4);
     }
 
     #[test]
