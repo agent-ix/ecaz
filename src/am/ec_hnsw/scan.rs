@@ -1496,7 +1496,7 @@ fn resolve_grouped_rerank_mode_decision(
     }
 }
 
-pub(crate) unsafe fn resolve_pq_fastscan_rerank_mode_decision(
+pub(crate) fn resolve_pq_fastscan_rerank_mode_decision(
     index_relation: pg_sys::Relation,
     graph_storage: graph::GraphStorageDescriptor,
 ) -> PqFastScanRerankModeDecision {
@@ -2590,7 +2590,7 @@ fn grouped_score_rerank_payload<'a>(
 }
 
 #[cfg_attr(not(any(test, feature = "pg_test")), allow(dead_code))]
-unsafe fn load_grouped_score_rerank_payload<'a>(
+fn load_grouped_score_rerank_payload<'a>(
     index_relation: pg_sys::Relation,
     grouped: GroupedScoreContext<'a>,
 ) -> Option<GroupedScoreRerankPayload<'a>> {
@@ -2730,12 +2730,9 @@ fn exact_score_grouped_candidate_context(
         return score;
     }
 
-    // SAFETY: `grouped` was derived from a cached graph element for this scan,
-    // and `index_relation` is the live relation containing its cold payload.
-    let payload = unsafe { load_grouped_score_rerank_payload(index_relation, grouped) }
-        .unwrap_or_else(|| {
-            pgrx::error!("ec_hnsw PqFastScan exact scoring requires metadata-aligned cold payload")
-        });
+    let payload = load_grouped_score_rerank_payload(index_relation, grouped).unwrap_or_else(|| {
+        pgrx::error!("ec_hnsw PqFastScan exact scoring requires metadata-aligned cold payload")
+    });
     score_and_cache_scan_element(opaque, grouped.element_tid, payload.rerank_gamma, &payload.rerank_code)
 }
 
