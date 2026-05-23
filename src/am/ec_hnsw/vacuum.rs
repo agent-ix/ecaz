@@ -349,11 +349,7 @@ impl VacuumFormatAdapter {
         index: VacuumIndexRelation,
         deleted_tids: &[page::ItemPointer],
     ) {
-        // SAFETY: The adapter storage descriptor matches the index metadata
-        // resolved for this vacuum pass.
-        unsafe {
-            finalize_fully_dead_elements_with_storage(index, self.graph_storage(), deleted_tids)
-        }
+        finalize_fully_dead_elements_with_storage(index, self.graph_storage(), deleted_tids)
     }
 }
 
@@ -1808,7 +1804,7 @@ fn apply_page_pass2_updates(
     }
 }
 
-unsafe fn finalize_fully_dead_elements_with_storage(
+fn finalize_fully_dead_elements_with_storage(
     index: VacuumIndexRelation,
     storage: graph::GraphStorageDescriptor,
     tids: &[page::ItemPointer],
@@ -1829,21 +1825,17 @@ unsafe fn finalize_fully_dead_elements_with_storage(
             end += 1;
         }
 
-        // SAFETY: This slice contains only fully-dead element TIDs for one
-        // block, which will be locked exclusively before finalization.
-        unsafe {
-            finalize_fully_dead_elements_on_page_with_storage(
-                index,
-                block_number,
-                storage,
-                &tids[start..end],
-            )
-        };
+        finalize_fully_dead_elements_on_page_with_storage(
+            index,
+            block_number,
+            storage,
+            &tids[start..end],
+        );
         start = end;
     }
 }
 
-unsafe fn finalize_fully_dead_elements_on_page_with_storage(
+fn finalize_fully_dead_elements_on_page_with_storage(
     index: VacuumIndexRelation,
     block_number: u32,
     storage: graph::GraphStorageDescriptor,
@@ -1860,8 +1852,6 @@ unsafe fn finalize_fully_dead_elements_on_page_with_storage(
     let mut updates = Vec::new();
 
     for tid in tids {
-        // SAFETY: `tid` targets this locked page and the helper validates the
-        // line pointer before exposing tuple bytes.
         let update =
             shared::with_page_line_tuple_bytes(
                 page_ptr,
