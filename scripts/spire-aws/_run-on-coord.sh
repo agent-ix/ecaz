@@ -90,11 +90,14 @@ ssm_send_and_wait() {
 # Step 1: ensure /tmp/topology.json exists on coord. Idempotent — we
 # always upload because it's cheap and avoids stale state.
 B64_TOPO=$(base64 -w0 < "$TOPOLOGY")
-UPLOAD_CMD="echo ${B64_TOPO} | base64 -d > /tmp/topology.json && chmod 644 /tmp/topology.json && mkdir -p /tmp/artifacts"
+# F24: /tmp/artifacts must be writable by the postgres user since the
+# script bodies run via `sudo -u postgres`. The first SSM call creates
+# it as root; chmod 1777 (sticky world-writable, like /tmp itself).
+UPLOAD_CMD="echo ${B64_TOPO} | base64 -d > /tmp/topology.json && chmod 644 /tmp/topology.json && mkdir -p /tmp/artifacts && chmod 1777 /tmp/artifacts"
 ssm_send_and_wait "_topology-upload-${LABEL}" "$UPLOAD_CMD"
 
 # Step 2: run the requested command body. Wrap the user's payload in
 # a small prologue that puts ecaz on PATH and exports a default
 # ARTIFACT_DIR for the on-coord script if it needs one.
-WRAPPED_CMD="export PATH=/usr/local/bin:/usr/pgsql-18/bin:/usr/bin:\$PATH; export ARTIFACT_DIR=/tmp/artifacts; mkdir -p /tmp/artifacts; ${CMD_BODY}"
+WRAPPED_CMD="export PATH=/usr/local/bin:/usr/pgsql-18/bin:/usr/bin:\$PATH; export ARTIFACT_DIR=/tmp/artifacts; mkdir -p /tmp/artifacts; chmod 1777 /tmp/artifacts; ${CMD_BODY}"
 ssm_send_and_wait "$LABEL" "$WRAPPED_CMD"
