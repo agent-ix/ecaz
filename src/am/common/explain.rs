@@ -78,7 +78,11 @@ pub(crate) struct IvfExplainCounters {
     pub stats_heap_tids_scored: u32,
     pub stats_candidates_scored: u32,
     pub stats_candidates_inserted: u32,
+    pub stats_candidates_emitted: u32,
     pub stats_rerank_rows: u32,
+    pub stats_heap_blocks_fetched: u32,
+    pub stats_approximate_scan_elapsed_us: u32,
+    pub stats_exact_rerank_elapsed_us: u32,
     pub stats_filtered_duplicates: u32,
 }
 
@@ -256,8 +260,30 @@ impl IvfExplainCounters {
         self.stats_candidates_inserted = self.stats_candidates_inserted.saturating_add(1);
     }
 
+    pub(crate) fn record_candidate_emitted(&mut self) {
+        self.stats_candidates_emitted = self.stats_candidates_emitted.saturating_add(1);
+    }
+
     pub(crate) fn record_rerank_row(&mut self) {
         self.stats_rerank_rows = self.stats_rerank_rows.saturating_add(1);
+    }
+
+    pub(crate) fn record_heap_blocks_fetched(&mut self, count: usize) {
+        self.stats_heap_blocks_fetched = self
+            .stats_heap_blocks_fetched
+            .saturating_add(u32::try_from(count).unwrap_or(u32::MAX));
+    }
+
+    pub(crate) fn record_approximate_scan_elapsed_us(&mut self, elapsed_us: u32) {
+        self.stats_approximate_scan_elapsed_us = self
+            .stats_approximate_scan_elapsed_us
+            .saturating_add(elapsed_us);
+    }
+
+    pub(crate) fn record_exact_rerank_elapsed_us(&mut self, elapsed_us: u32) {
+        self.stats_exact_rerank_elapsed_us = self
+            .stats_exact_rerank_elapsed_us
+            .saturating_add(elapsed_us);
     }
 
     pub(crate) fn record_filtered_duplicate(&mut self) {
@@ -268,7 +294,7 @@ impl IvfExplainCounters {
         *self = Self::default();
     }
 
-    pub(crate) fn explain_properties(self) -> [ExplainProperty; 11] {
+    pub(crate) fn explain_properties(self) -> [ExplainProperty; 15] {
         [
             ExplainProperty {
                 property_name: "Centroid Scores",
@@ -307,8 +333,24 @@ impl IvfExplainCounters {
                 value: ExplainPropertyValue::Integer(self.stats_candidates_inserted),
             },
             ExplainProperty {
+                property_name: "Candidates Emitted",
+                value: ExplainPropertyValue::Integer(self.stats_candidates_emitted),
+            },
+            ExplainProperty {
                 property_name: "Rerank Rows",
                 value: ExplainPropertyValue::Integer(self.stats_rerank_rows),
+            },
+            ExplainProperty {
+                property_name: "Heap Blocks Fetched",
+                value: ExplainPropertyValue::Integer(self.stats_heap_blocks_fetched),
+            },
+            ExplainProperty {
+                property_name: "Approximate Scan Elapsed Us",
+                value: ExplainPropertyValue::Integer(self.stats_approximate_scan_elapsed_us),
+            },
+            ExplainProperty {
+                property_name: "Exact Rerank Elapsed Us",
+                value: ExplainPropertyValue::Integer(self.stats_exact_rerank_elapsed_us),
             },
             ExplainProperty {
                 property_name: "Filtered Duplicates",
@@ -711,7 +753,11 @@ mod tests {
         counters.record_candidate_scored();
         counters.record_candidate_scored();
         counters.record_candidate_inserted();
+        counters.record_candidate_emitted();
         counters.record_rerank_row();
+        counters.record_heap_blocks_fetched(31);
+        counters.record_approximate_scan_elapsed_us(37);
+        counters.record_exact_rerank_elapsed_us(41);
         counters.record_filtered_duplicate();
 
         assert_eq!(
@@ -726,7 +772,11 @@ mod tests {
                 stats_heap_tids_scored: 9,
                 stats_candidates_scored: 2,
                 stats_candidates_inserted: 1,
+                stats_candidates_emitted: 1,
                 stats_rerank_rows: 1,
+                stats_heap_blocks_fetched: 31,
+                stats_approximate_scan_elapsed_us: 37,
+                stats_exact_rerank_elapsed_us: 41,
                 stats_filtered_duplicates: 1,
             }
         );
@@ -744,8 +794,12 @@ mod tests {
             stats_heap_tids_scored: 13,
             stats_candidates_scored: 17,
             stats_candidates_inserted: 19,
-            stats_rerank_rows: 23,
-            stats_filtered_duplicates: 29,
+            stats_candidates_emitted: 23,
+            stats_rerank_rows: 29,
+            stats_heap_blocks_fetched: 31,
+            stats_approximate_scan_elapsed_us: 37,
+            stats_exact_rerank_elapsed_us: 41,
+            stats_filtered_duplicates: 43,
         };
 
         assert_eq!(
@@ -788,12 +842,28 @@ mod tests {
                     value: ExplainPropertyValue::Integer(19),
                 },
                 ExplainProperty {
-                    property_name: "Rerank Rows",
+                    property_name: "Candidates Emitted",
                     value: ExplainPropertyValue::Integer(23),
                 },
                 ExplainProperty {
-                    property_name: "Filtered Duplicates",
+                    property_name: "Rerank Rows",
                     value: ExplainPropertyValue::Integer(29),
+                },
+                ExplainProperty {
+                    property_name: "Heap Blocks Fetched",
+                    value: ExplainPropertyValue::Integer(31),
+                },
+                ExplainProperty {
+                    property_name: "Approximate Scan Elapsed Us",
+                    value: ExplainPropertyValue::Integer(37),
+                },
+                ExplainProperty {
+                    property_name: "Exact Rerank Elapsed Us",
+                    value: ExplainPropertyValue::Integer(41),
+                },
+                ExplainProperty {
+                    property_name: "Filtered Duplicates",
+                    value: ExplainPropertyValue::Integer(43),
                 },
             ]
         );

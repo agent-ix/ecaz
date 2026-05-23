@@ -1,8 +1,9 @@
-use std::cmp::Ordering;
 use hashbrown::hash_map::Entry;
 use hashbrown::HashMap;
+use std::cmp::Ordering;
 use std::collections::{BinaryHeap, HashSet};
 use std::ptr;
+use std::time::{Duration, Instant};
 
 use pgrx::{pg_sys, FromDatum, IntoDatum, PgBox};
 
@@ -476,6 +477,7 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_amgettuple(
             Some(candidate) => {
                 set_scan_heap_tid(scan, candidate.heap_tid);
                 set_scan_orderby_score(scan, candidate.score);
+                opaque.explain_counters.record_candidate_emitted();
                 true
             }
             None => {
@@ -558,6 +560,10 @@ fn record_posting_pages_read(opaque: &mut EcIvfScanOpaque, count: u32) {
         stats::record_linear_page();
         opaque.stats_delta.record_linear_page();
     }
+}
+
+fn elapsed_us_u32(duration: Duration) -> u32 {
+    u32::try_from(duration.as_micros()).unwrap_or(u32::MAX)
 }
 
 fn flush_scan_stats(opaque: &mut EcIvfScanOpaque) {
@@ -1048,6 +1054,7 @@ unsafe fn materialize_probe_candidates(
         .map(CandidateTopK::new);
     let mut remaining_live_tids_by_list = probe_plan.remaining_live_tids_by_list.clone();
     let posting_pages = probe_plan.posting_page_count()?;
+    let approximate_started = Instant::now();
     opaque
         .explain_counters
         .record_posting_pages_read(posting_pages);
@@ -1128,9 +1135,23 @@ unsafe fn materialize_probe_candidates(
         best_by_heap_tid.values().copied(),
         pre_rerank_candidate_limit(index_options),
     );
+    opaque
+        .explain_counters
+        .record_approximate_scan_elapsed_us(elapsed_us_u32(approximate_started.elapsed()));
+    let should_record_exact_rerank = matches!(
+        index_options.rerank.v1_effective(),
+        super::options::RerankMode::HeapF32
+    ) && pre_rerank_candidate_limit(index_options).is_some()
+        && !candidates.is_empty();
     // SAFETY: candidates were materialized for this live scan and opaque; the
     // rerank helper validates whether heap_f32 state is present before use.
+    let rerank_started = should_record_exact_rerank.then(Instant::now);
     unsafe { rerank_probe_candidates(scan, index_options, opaque, &mut candidates) };
+    if let Some(rerank_started) = rerank_started {
+        opaque
+            .explain_counters
+            .record_exact_rerank_elapsed_us(elapsed_us_u32(rerank_started.elapsed()));
+    }
     Ok(candidates)
 }
 
@@ -1265,6 +1286,9 @@ unsafe fn rerank_probe_candidates_heap_f32(
         pgrx::error!("ec_ivf heap_f32 rerank is missing heap fetch state");
     }
     let source_attnum = i32::from(state.source_attnum);
+    opaque
+        .explain_counters
+        .record_heap_blocks_fetched(count_distinct_candidate_blocks(candidates));
 
     // SAFETY: heap relation is live and candidates contain heap TIDs to
     // prefetch before heap row fetches.
@@ -1307,6 +1331,22 @@ unsafe fn rerank_probe_candidates_heap_f32(
     for _ in 0..rerank_rows {
         opaque.explain_counters.record_rerank_row();
     }
+}
+
+fn count_distinct_candidate_blocks(candidates: &[EcIvfScoredCandidate]) -> usize {
+    candidates
+        .iter()
+        .map(|candidate| candidate.heap_tid.block_number)
+        .scan(None, |previous, block| {
+            let is_new = match previous {
+                Some(previous) => *previous != block,
+                None => true,
+            };
+            *previous = Some(block);
+            Some(is_new)
+        })
+        .filter(|is_new| *is_new)
+        .count()
 }
 
 #[cfg(feature = "pg18")]
@@ -2091,9 +2131,9 @@ pub(crate) unsafe fn debug_ec_ivf_directory_entry(
 #[cfg(test)]
 mod tests {
     use super::{
-        build_probe_block_sequence, candidate_heap_tid_cmp, consume_live_tid_budget,
-        inner_product, inner_product_scalar, select_probe_lists, CandidateTopK,
-        EcIvfCentroidScore, EcIvfScoredCandidate, ProbeBlockRange,
+        build_probe_block_sequence, candidate_heap_tid_cmp, consume_live_tid_budget, inner_product,
+        inner_product_scalar, select_probe_lists, CandidateTopK, EcIvfCentroidScore,
+        EcIvfScoredCandidate, ProbeBlockRange,
     };
     use crate::storage::page::ItemPointer;
 
