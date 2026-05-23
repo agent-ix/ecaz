@@ -19,6 +19,7 @@ use std::ptr;
 use pgrx::pg_sys;
 
 use crate::storage::page::ItemPointer;
+use crate::storage::relation::RelationHandle;
 
 pub(crate) struct PinnedBufferGuard {
     buffer: pg_sys::Buffer,
@@ -176,6 +177,37 @@ impl LockedBufferGuard {
             return None;
         }
         Some(Self { buffer })
+    }
+
+    /// Safe variant of [`read_main`](Self::read_main) — callers that already
+    /// hold a validated [`RelationHandle`] pass it through this entry point so
+    /// the buffer guard inherits the handle's "live relation" SAFETY contract
+    /// instead of re-establishing it at every call site.
+    #[allow(dead_code)] // Consumed by HNSW migration in Task 54 packets 003/004.
+    pub(crate) fn read_main_handle(
+        handle: RelationHandle,
+        block_number: pg_sys::BlockNumber,
+        mode: pg_sys::ReadBufferMode::Type,
+        lockmode: i32,
+    ) -> Option<Self> {
+        // SAFETY: `RelationHandle` is a non-null pointer whose construction
+        // contract requires a live opened PostgreSQL relation; that contract
+        // satisfies `ReadBufferExtended` and `LockBuffer`.
+        unsafe { Self::read_main(handle.as_ptr(), block_number, mode, lockmode) }
+    }
+
+    /// Safe variant of [`read_main_locked`](Self::read_main_locked) — see
+    /// [`read_main_handle`](Self::read_main_handle) for the safety contract.
+    #[allow(dead_code)] // Consumed by HNSW migration in Task 54 packets 003/004.
+    pub(crate) fn read_main_locked_handle(
+        handle: RelationHandle,
+        block_number: pg_sys::BlockNumber,
+        mode: pg_sys::ReadBufferMode::Type,
+    ) -> Option<Self> {
+        // SAFETY: `RelationHandle` carries a live relation pointer; the
+        // requested `mode` (e.g. `RBM_ZERO_AND_LOCK`) returns the buffer
+        // already locked, so no follow-up `LockBuffer` is needed.
+        unsafe { Self::read_main_locked(handle.as_ptr(), block_number, mode) }
     }
 
     pub(crate) unsafe fn lock_pinned(buffer: pg_sys::Buffer, lockmode: i32) -> Option<Self> {
