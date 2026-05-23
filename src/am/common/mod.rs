@@ -1,6 +1,7 @@
 pub(crate) mod callback;
 pub(crate) mod cost;
 pub(crate) mod detoast;
+pub(crate) mod dsm;
 pub(crate) mod explain;
 pub(crate) mod heap_slot;
 pub(crate) mod parallel;

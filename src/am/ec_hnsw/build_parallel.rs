@@ -49,29 +49,26 @@ static LAST_PARALLEL_GRAPH_BUILD_WORKERS_LAUNCHED: AtomicI32 = AtomicI32::new(0)
 #[derive(Debug, Copy, Clone)]
 struct PgLockedDsmInsertStateCell(*mut pg_sys::pg_atomic_uint32);
 
+impl PgLockedDsmInsertStateCell {
+    fn as_atomic_ref(&self) -> crate::am::common::dsm::PgAtomicU32Ref<'_> {
+        // SAFETY: The cell wraps a PostgreSQL atomic field inside a live DSM
+        // node; the wrapper only exposes safe acquire/release operations.
+        unsafe { crate::am::common::dsm::PgAtomicU32Ref::from_raw(self.0) }
+    }
+}
+
 impl EcHnswConcurrentDsmInsertStateCell for PgLockedDsmInsertStateCell {
     fn load_acquire(&self) -> u32 {
-        // SAFETY: The cell wraps a PostgreSQL atomic field inside a DSM node;
-        // callers hold the appropriate node lock or are using the atomic
-        // protocol's acquire load.
-        unsafe { pg_sys::pg_atomic_read_u32(self.0) }
+        self.as_atomic_ref().load_acquire()
     }
 
     fn store_release(&self, value: u32) {
-        // SAFETY: The cell points at a PostgreSQL atomic field inside a DSM
-        // node, and the release barrier publishes node insert-state changes.
-        unsafe {
-            pg_sys::pg_atomic_write_membarrier_u32(self.0, value);
-        }
+        self.as_atomic_ref().store_release(value);
     }
 
     fn compare_exchange_acqrel_acquire(&self, current: u32, new: u32) -> bool {
-        let mut expected = current;
-        // The lifted concurrent DSM insert protocol requires real CAS semantics.
-        // PostgreSQL's pg_atomic_compare_exchange_u32 is the production contract.
-        // SAFETY: The cell points at a PostgreSQL atomic insert-state field, and
-        // the compare-exchange uses PostgreSQL's acquire/release primitive.
-        unsafe { pg_sys::pg_atomic_compare_exchange_u32(self.0, &mut expected, new) }
+        self.as_atomic_ref()
+            .compare_exchange_acqrel_acquire(current, new)
     }
 }
 
