@@ -57,13 +57,15 @@ Sidecar real-I/O upper-bound cells, q=200, nprobe=128, candidate_k=50:
 
 Best measured Pareto point in this round: `rabitq8` TID-sorted sidecar
 measurement gives the smallest measured sidecar footprint and lowest sidecar
-p50/p95, but it remains measurement-only. It is not a product storage-format
-decision.
+p50/p95. Its total-bound p50 is `43.499 ms` versus the current-head baseline
+`69.1 ms`, a projected p50 improvement of about 37% at lower measured recall
+(`0.9455` vs `0.9936`). This remains measurement-only. It is not a product
+storage-format decision.
 
 ## Closed Experiments
 
 - Exp 2 geometry: local evidence showed `nlists=128` can win at 50k matched recall, but 100k did not prove a stable 1M promotion. Do not claim it as the final AWS shape from this round.
-- Exp 3 scratch SoA: implemented and measured; local x86 evidence did not meet the promotion gate. Because the NEON-specific question remains a possible future microbench, this round does not use Exp 3 to justify Layout v2.
+- Exp 3 scratch SoA: closed for this round. The local x86 evidence is below gate; the Graviton NEON kernel measurement is the only open question and is captured as follow-up #2. This round does not use Exp 3 to justify Layout v2.
 - Exp 4 heap locality: rejected by counter arithmetic in packet 021; exact rerank is too small a share to meet the 15% gate.
 - Exp 5 adaptive nprobe/rerank width: closed negative in packet 018; no threshold preserved recall while producing the required p50 win.
 - Exp 6 Posting Layout v2: rejected for this round because Exp 3 did not produce the required gate-opening evidence.
@@ -71,6 +73,6 @@ decision.
 
 ## Follow-Ups
 
-1. Product sidecar design task: decide whether `rabitq8` or f16 TID-sorted sidecar should become a product feature, including storage format, build/read path, MVCC/churn behavior, and concurrency-tail handling.
+1. Product sidecar design task: decide whether `rabitq8` or f16 TID-sorted sidecar should become a product feature. The starting target is the measured `rabitq8` TID-sorted point: about 37% projected p50 improvement (`43.499 ms` total-bound p50 vs `69.1 ms` baseline) at `1.43 GiB` sidecar size. The design must explicitly handle the tail risks shown here: random-id tail blowup (`f16` random-id c1 p99 `529.692 ms`) and TID-sorted concurrency tail blowup (`rabitq8` TID-sorted c4 p99 `334.866 ms`). Diagnose the c4 p99 sidecar tail before any product decision: likely candidates are page-cache cliff under concurrent fetch, buffer-manager interaction, or queue stalls. The harness is not a product read path, and the c4 result shows concurrency is not free. Use packets 016, 020, and 022 as the read-mode and assumption baseline.
 2. Optional Graviton scratch SoA microbench: one focused AWS cell only if the team wants a definitive ARM/NEON answer for Exp 3; otherwise leave Layout v2 rejected for this round.
 3. AWS workflow cleanup: add a standard `ecaz cloud` artifact retrieval path for on-host suite runs, so future agents do not use direct SSM/S3 glue.
