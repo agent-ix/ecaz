@@ -1,8 +1,9 @@
-use std::{ffi::c_int, marker::PhantomData};
-
 use pgrx::pg_sys;
 
-use crate::am::common::{detoast::DetoastedVarlena, heap_slot};
+use crate::am::common::{
+    datum::{AttnumLookup, FlatFloat4Kind, FlatFloat4Source},
+    heap_slot,
+};
 
 use super::page;
 
@@ -262,19 +263,12 @@ pub(crate) fn resolve_source_attnum(
     source_column: &str,
     source_label: &str,
 ) -> i32 {
-    let source_column = std::ffi::CString::new(source_column)
-        .unwrap_or_else(|_| pgrx::error!("ec_hnsw {source_label} contains an invalid NUL byte"));
-    // SAFETY: The heap relation is live for the caller's PostgreSQL callback,
-    // and `source_column` is a NUL-terminated CString for `get_attnum`.
-    let attnum = unsafe { pg_sys::get_attnum((*heap_relation).rd_id, source_column.as_ptr()) };
-    let attnum = i32::from(attnum);
-    if attnum <= 0 {
+    let attnum = AttnumLookup::lookup(heap_relation, source_column).unwrap_or_else(|| {
         pgrx::error!(
-            "ec_hnsw {source_label} \"{}\" does not name a user column on the heap relation",
-            source_column.to_string_lossy()
-        );
-    }
-    attnum
+            "ec_hnsw {source_label} \"{source_column}\" does not name a user column on the heap relation"
+        )
+    });
+    i32::from(attnum)
 }
 
 pub(crate) fn resolve_source_attribute(
@@ -366,9 +360,8 @@ pub(crate) fn resolve_indexed_ecvector_attribute_from_index_info(
 ) -> SourceAttribute {
     // SAFETY: The heap relation is live and `index_info` is callback-duration
     // metadata owned by PostgreSQL.
-    let indexed = 
-        resolve_indexed_vector_attribute_from_index_info(heap_relation, index_info, label)
-    ;
+    let indexed =
+        resolve_indexed_vector_attribute_from_index_info(heap_relation, index_info, label);
     if indexed.kind != IndexedVectorKind::Ecvector {
         pgrx::error!("ec_hnsw {label} must be ecvector");
     }
@@ -385,13 +378,11 @@ pub(crate) fn resolve_indexed_ecvector_attribute(
 ) -> SourceAttribute {
     let index_info = super::index_info::IndexInfoGuard::build(index_relation, label);
     // SAFETY: `index_info` was checked non-null and belongs to this index.
-    let attribute = 
-        resolve_indexed_ecvector_attribute_from_index_info(
-            heap_relation,
-            index_info.as_ptr(),
-            label,
-        )
-    ;
+    let attribute = resolve_indexed_ecvector_attribute_from_index_info(
+        heap_relation,
+        index_info.as_ptr(),
+        label,
+    );
     attribute
 }
 
@@ -429,9 +420,8 @@ pub(crate) fn resolve_indexed_vector_attribute(
 ) -> IndexedVectorAttribute {
     let index_info = super::index_info::IndexInfoGuard::build(index_relation, label);
     // SAFETY: `index_info` was checked non-null and belongs to this index.
-    let attribute = 
-        resolve_indexed_vector_attribute_from_index_info(heap_relation, index_info.as_ptr(), label)
-    ;
+    let attribute =
+        resolve_indexed_vector_attribute_from_index_info(heap_relation, index_info.as_ptr(), label);
     attribute
 }
 
@@ -488,187 +478,42 @@ pub(crate) fn required_slot_datum_with_reader(
         .unwrap_or_else(|error| pgrx::error!("{error}"))
 }
 
-struct DetoastedFloat4Datum {
-    varlena: DetoastedVarlena,
-}
-
-impl DetoastedFloat4Datum {
-    unsafe fn from_datum(datum: pg_sys::Datum, label: &str) -> Self {
-        if datum.is_null() {
-            pgrx::error!("ec_hnsw does not support NULL {label}");
-        }
-
-        // SAFETY: The datum is non-null and expected to be a varlena float
-        // payload selected by earlier type validation.
-        let varlena = unsafe { DetoastedVarlena::plain_from_datum(datum) }
-            .unwrap_or_else(|| pgrx::error!("ec_hnsw could not detoast {label}"));
-
-        Self { varlena }
-    }
-
-    fn as_array_ptr(&self) -> *mut pg_sys::ArrayType {
-        self.varlena.as_ptr().cast::<pg_sys::ArrayType>()
-    }
-
-    fn as_bytes(&self) -> &[u8] {
-        self.varlena.as_bytes()
-    }
-}
-
-pub(crate) struct FlatFloat4ArrayRef<'datum> {
-    _detoasted: DetoastedFloat4Datum,
-    data_ptr: *const f32,
-    len: usize,
-    _datum: PhantomData<&'datum [f32]>,
-}
-
-impl<'datum> FlatFloat4ArrayRef<'datum> {
-    unsafe fn from_datum(datum: pg_sys::Datum, label: &str) -> Self {
-        if datum.is_null() {
-            pgrx::error!("ec_hnsw does not support NULL {label}");
-        }
-
-        // SAFETY: The caller has already type-checked this datum as a supported
-        // source value and this helper owns the detoasted backing storage.
-        let detoasted = unsafe { DetoastedFloat4Datum::from_datum(datum, label) };
-        let array_ptr = detoasted.as_array_ptr();
-
-        // SAFETY: `array_ptr` points at the detoasted ArrayType backing storage,
-        // held alive by `detoasted` for the duration of this borrow.
-        let array_header = unsafe { &*array_ptr };
-        let ndim = match usize::try_from(array_header.ndim) {
-            Ok(value) => value,
-            Err(_) => pgrx::error!("ec_hnsw {label} must be a one-dimensional real[]"),
-        };
-        if ndim != 1 {
-            pgrx::error!("ec_hnsw {label} must be a one-dimensional real[]");
-        }
-        if array_header.elemtype != pg_sys::FLOAT4OID {
-            pgrx::error!("ec_hnsw {label} must be a real[]");
-        }
-        // SAFETY: `array_ptr` is a valid detoasted ArrayType.
-        if unsafe { pg_sys::array_contains_nulls(array_ptr) } {
-            pgrx::error!("ec_hnsw {label} arrays must not contain NULL elements");
-        }
-
-        // SAFETY: The array is a detoasted one-dimensional flat ArrayType.
-        let dims_ptr = unsafe { flat_array_dims_ptr(array_ptr) };
-        // SAFETY: `ndim` and `dims_ptr` come from the same ArrayType header.
-        let len = usize::try_from(unsafe { pg_sys::ArrayGetNItems((*array_ptr).ndim, dims_ptr) })
-            .expect("flat float4 array length should fit in usize");
-        // SAFETY: Data offset is computed from the same flat ArrayType header;
-        // alignment is checked before exposing the f32 slice.
-        let data_ptr = unsafe {
-            array_ptr
-                .cast::<u8>()
-                .add(flat_array_data_offset(array_ptr, ndim))
-                .cast::<f32>()
-        };
-        if (data_ptr as usize) % std::mem::align_of::<f32>() != 0 {
-            pgrx::error!("ec_hnsw {label} data pointer is not aligned for float4 access");
-        }
-
-        Self {
-            _detoasted: detoasted,
-            data_ptr,
-            len,
-            _datum: PhantomData,
-        }
-    }
-
-    pub(crate) fn as_slice(&self) -> &[f32] {
-        // SAFETY: `data_ptr` and `len` were validated during construction and
-        // the detoasted backing storage is owned by `self`.
-        unsafe { std::slice::from_raw_parts(self.data_ptr, self.len) }
-    }
-}
-
-pub(crate) struct FlatFloat4VarlenaRef<'datum> {
-    _detoasted: DetoastedFloat4Datum,
-    data_ptr: *const f32,
-    len: usize,
-    _datum: PhantomData<&'datum [f32]>,
-}
-
-impl<'datum> FlatFloat4VarlenaRef<'datum> {
-    unsafe fn from_datum(datum: pg_sys::Datum, label: &str) -> Self {
-        if datum.is_null() {
-            pgrx::error!("ec_hnsw does not support NULL {label}");
-        }
-
-        // SAFETY: The caller has already type-checked this datum as a supported
-        // byte-backed source value and this helper owns the detoasted backing.
-        let detoasted = unsafe { DetoastedFloat4Datum::from_datum(datum, label) };
-        let (data_ptr, len) = {
-            let bytes = detoasted.as_bytes();
-            if bytes.len() % std::mem::size_of::<f32>() != 0 {
-                pgrx::error!("ec_hnsw {label} bytea payload length must be a multiple of 4 bytes");
-            }
-            // SAFETY: `align_to` is used only to validate exact f32 alignment;
-            // any non-empty prefix/suffix is rejected before the body is stored.
-            let (prefix, body, suffix) = unsafe { bytes.align_to::<f32>() };
-            if !prefix.is_empty() || !suffix.is_empty() {
-                pgrx::error!("ec_hnsw {label} bytea payload is not aligned for float4 access");
-            }
-            (body.as_ptr(), body.len())
-        };
-
-        Self {
-            _detoasted: detoasted,
-            data_ptr,
-            len,
-            _datum: PhantomData,
-        }
-    }
-
-    pub(crate) fn as_slice(&self) -> &[f32] {
-        // SAFETY: `data_ptr` and `len` were validated during construction and
-        // the detoasted backing storage is owned by `self`.
-        unsafe { std::slice::from_raw_parts(self.data_ptr, self.len) }
-    }
-}
-
-pub(crate) enum FlatFloat4SourceRef<'datum> {
-    Array(FlatFloat4ArrayRef<'datum>),
-    Varlena(FlatFloat4VarlenaRef<'datum>),
-}
-
-impl<'datum> FlatFloat4SourceRef<'datum> {
-    unsafe fn from_datum(datum: pg_sys::Datum, kind: SourceDatumKind, label: &str) -> Self {
-        match kind {
-            SourceDatumKind::RealArray => {
-                // SAFETY: `kind` records that the datum was type-checked as a
-                // supported real[] source before dispatch.
-                Self::Array(unsafe { FlatFloat4ArrayRef::from_datum(datum, label) })
-            }
-            SourceDatumKind::Bytea | SourceDatumKind::Ecvector => {
-                // SAFETY: `kind` records that the datum was type-checked as a
-                // supported byte-backed source before dispatch.
-                Self::Varlena(unsafe { FlatFloat4VarlenaRef::from_datum(datum, label) })
-            }
-            _ => pgrx::error!("ec_hnsw {label} must be real[], bytea, or ecvector"),
-        }
-    }
-
-    pub(crate) fn as_slice(&self) -> &[f32] {
-        match self {
-            Self::Array(array) => array.as_slice(),
-            Self::Varlena(varlena) => varlena.as_slice(),
+/// Map an HNSW [`SourceDatumKind`] to the common-layer [`FlatFloat4Kind`].
+///
+/// Errors via `pgrx::error!` on `Unknown` since unresolved source datum kinds
+/// indicate a build-time metadata bug, not a recoverable input shape.
+fn flat_float4_kind(kind: SourceDatumKind, label: &str) -> FlatFloat4Kind {
+    match kind {
+        SourceDatumKind::RealArray => FlatFloat4Kind::RealArray,
+        SourceDatumKind::Bytea | SourceDatumKind::Ecvector => FlatFloat4Kind::Varlena,
+        SourceDatumKind::Unknown => {
+            pgrx::error!("ec_hnsw {label} must be real[], bytea, or ecvector")
         }
     }
 }
 
+/// Closure-CPS entry that materialises a [`FlatFloat4Source`] over `datum` and
+/// passes the resulting borrowed view to `f`. The higher-ranked closure keeps
+/// Datum-backed slices local to this call: callers may copy or score from them
+/// but cannot return the borrowed view.
+///
+/// # Safety
+/// `datum` must be a live PostgreSQL Datum whose static type matches `kind`
+/// (resolved upstream via [`resolve_source_attribute`] /
+/// [`resolve_indexed_vector_attribute`]). The backing varlena must outlive the
+/// closure invocation.
 pub(crate) unsafe fn with_flat_float4_source_from_datum<R>(
     datum: pg_sys::Datum,
     kind: SourceDatumKind,
     label: &str,
-    f: impl for<'datum> FnOnce(FlatFloat4SourceRef<'datum>) -> R,
+    f: impl for<'datum> FnOnce(FlatFloat4Source<'datum>) -> R,
 ) -> R {
-    // The higher-ranked closure keeps Datum-backed slices local to this call:
-    // callers may copy or score from them, but cannot return the borrowed view.
-    // SAFETY: `kind` is resolved from PostgreSQL type metadata before this call
-    // and the closure lifetime prevents the borrowed datum view escaping.
-    let source = unsafe { FlatFloat4SourceRef::from_datum(datum, kind, label) };
+    let flat_kind = flat_float4_kind(kind, label);
+    // SAFETY: `flat_kind` is derived from `kind`, which the caller has
+    // type-checked against the live PostgreSQL relation metadata; the closure
+    // lifetime prevents the borrowed datum view from escaping this call.
+    let source = unsafe { FlatFloat4Source::from_datum(datum, flat_kind, label) }
+        .unwrap_or_else(|| pgrx::error!("ec_hnsw does not support NULL {label}"));
     f(source)
 }
 
@@ -677,7 +522,7 @@ pub(crate) fn with_source_from_heap_row_reader<R>(
     heap_tid: page::ItemPointer,
     source_attribute: SourceAttribute,
     label: &str,
-    f: impl for<'datum> FnOnce(FlatFloat4SourceRef<'datum>) -> R,
+    f: impl for<'datum> FnOnce(FlatFloat4Source<'datum>) -> R,
 ) -> R {
     fetch_heap_row_version_with_reader(reader, heap_tid, label);
     let source_datum = required_slot_datum_with_reader(reader, source_attribute.attnum, label);
@@ -690,12 +535,14 @@ pub(crate) fn with_indexed_ecvector_from_slot_reader<R>(
     reader: &mut heap_slot::HeapSlotReader<'_>,
     attnum: i32,
     label: &str,
-    f: impl for<'datum> FnOnce(FlatFloat4VarlenaRef<'datum>) -> R,
+    f: impl for<'datum> FnOnce(FlatFloat4Source<'datum>) -> R,
 ) -> R {
     let source_datum = required_slot_datum_with_reader(reader, attnum, label);
     // SAFETY: The indexed attribute is required to be ecvector, which is stored
-    // as a byte-backed varlena float payload.
-    let source = unsafe { FlatFloat4VarlenaRef::from_datum(source_datum, label) };
+    // as a byte-backed varlena float payload; the closure scopes the borrow.
+    let source =
+        unsafe { FlatFloat4Source::from_datum(source_datum, FlatFloat4Kind::Varlena, label) }
+            .unwrap_or_else(|| pgrx::error!("ec_hnsw does not support NULL {label}"));
     f(source)
 }
 
@@ -723,36 +570,6 @@ pub(crate) fn negative_inner_product_index_internal(query: &[f32], source: &[f32
         );
     }
     -inner_product(query, source)
-}
-
-unsafe fn flat_array_dims_ptr(array_ptr: *const pg_sys::ArrayType) -> *const c_int {
-    // SAFETY: The caller supplies a detoasted flat ArrayType pointer; array dims
-    // immediately follow the fixed ArrayType header in PostgreSQL layout.
-    unsafe {
-        array_ptr
-            .cast::<u8>()
-            .add(std::mem::size_of::<pg_sys::ArrayType>())
-            .cast::<c_int>()
-    }
-}
-
-fn maxaligned_size(len: usize) -> usize {
-    let align =
-        usize::try_from(pg_sys::MAXIMUM_ALIGNOF).expect("MAXIMUM_ALIGNOF should fit in usize");
-    (len + align - 1) & !(align - 1)
-}
-
-unsafe fn flat_array_data_offset(array_ptr: *const pg_sys::ArrayType, ndim: usize) -> usize {
-    // SAFETY: The caller supplies a detoasted ArrayType pointer and `dataoffset`
-    // is a fixed header field.
-    let dataoffset = unsafe { (*array_ptr).dataoffset };
-    if dataoffset != 0 {
-        usize::try_from(dataoffset).expect("flat float4 array dataoffset should fit in usize")
-    } else {
-        maxaligned_size(
-            std::mem::size_of::<pg_sys::ArrayType>() + (2 * ndim * std::mem::size_of::<c_int>()),
-        )
-    }
 }
 
 #[cfg(test)]
