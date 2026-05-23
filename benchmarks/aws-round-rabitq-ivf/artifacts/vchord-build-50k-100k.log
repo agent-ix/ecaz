@@ -1,0 +1,34 @@
+Completed 1.8 KiB/1.8 KiB (25.1 KiB/s) with 1 file(s) remainingdownload: s3://ecaz-cloud-10k-medium-db4b238f/build-vchord-50k-100k.sql to ../../tmp/build-vchord-50k-100k.sql
+psql:/tmp/build-vchord-50k-100k.sql:59: INFO:  clustering: iteration 7
+psql:/tmp/build-vchord-50k-100k.sql:59: INFO:  clustering: iteration 8
+psql:/tmp/build-vchord-50k-100k.sql:59: INFO:  clustering: iteration 9
+psql:/tmp/build-vchord-50k-100k.sql:59: INFO:  clustering: iteration 10
+psql:/tmp/build-vchord-50k-100k.sql:59: INFO:  clustering: finished
+psql:/tmp/build-vchord-50k-100k.sql:59: INFO:  maintain: number_of_formerly_allocated_pages = 6
+psql:/tmp/build-vchord-50k-100k.sql:59: INFO:  maintain: number_of_freshly_allocated_pages = 8
+psql:/tmp/build-vchord-50k-100k.sql:59: INFO:  maintain: number_of_freed_pages = 226
+CREATE INDEX
+Time: 23444.358 ms (00:23.444)
+            relname            | pg_size_pretty 
+-------------------------------+----------------
+ real_100k_vchord_corpus       | 5888 kB
+ real_100k_vchord_corpus_pkey  | 2208 kB
+ real_100k_vchord_idx          | 817 MB
+ real_100k_vchord_queries      | 64 kB
+ real_100k_vchord_queries_pkey | 40 kB
+ real_1m_vchord_corpus         | 57 MB
+ real_1m_vchord_corpus_pkey    | 21 MB
+ real_1m_vchord_idx            | 8007 MB
+ real_1m_vchord_queries        | 592 kB
+ real_1m_vchord_queries_pkey   | 240 kB
+ real_50k_vchord_corpus        | 2944 kB
+ real_50k_vchord_corpus_pkey   | 1112 kB
+ real_50k_vchord_idx           | 411 MB
+ real_50k_vchord_queries       | 64 kB
+ real_50k_vchord_queries_pkey  | 40 kB
+(15 rows)
+
+Time: 1.204 ms
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/nvme1n1    100G   78G   23G  78% /var/lib/pgsql/18
+

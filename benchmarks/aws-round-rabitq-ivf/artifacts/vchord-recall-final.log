@@ -1,0 +1,20 @@
+=== 50k ===
+vchord scale=50k probes=16 recall@10=                                                             ^
+vchord scale=50k probes=32 recall@10=                                                             ^
+vchord scale=50k probes=64 recall@10=                                                             ^
+vchord scale=50k probes=128 recall@10=                                                             ^
+vchord scale=50k probes=256 recall@10=                                                             ^
+=== 100k ===
+vchord scale=100k probes=16 recall@10=                                                             ^
+vchord scale=100k probes=32 recall@10=                                                             ^
+vchord scale=100k probes=64 recall@10=                                                             ^
+vchord scale=100k probes=128 recall@10=                                                             ^
+vchord scale=100k probes=256 recall@10=                                                             ^
+=== 1m ===
+vchord scale=1m probes=16 recall@10=                                                             ^
+vchord scale=1m probes=32 recall@10=                                                             ^
+vchord scale=1m probes=64 recall@10=                                                             ^
+vchord scale=1m probes=128 recall@10=                                                             ^
+vchord scale=1m probes=256 recall@10=                                                             ^
+vchord scale=1m probes=512 recall@10=                                                             ^
+

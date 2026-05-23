@@ -339,6 +339,39 @@ artifact `latency-bits1-width50-nprobe-sweep.log`):
 Recall@10 saturates by nprobe=128; further nprobes just spend
 extra kernel cycles without moving the operating curve.
 
+## Paired comparison correction (2026-05-22, post-reviewer)
+
+Reviewer 2026-05-22-04 P1 asked for a paired same-host runner-matched
+comparison instead of the cross-cycle, cross-host one used above.
+The paired sweep (full method + tables in
+[paired-comparison.md](paired-comparison.md)) found the earlier
+"ec_ivf beats vchord at 1m" framing was an artifact of comparing
+across host classes and single-point vs swept configurations.
+
+**Corrected paired result on `m8g.2xlarge`:**
+
+ec_ivf is **3-4× slower than vchord** at every matched-recall cell
+across 50k / 100k / 1m. Ratio is stable across scales, so it's a
+per-query cost gap (not a scale-sensitivity issue). The recall
+*curves* match vchord; the latency curve is shifted up by a
+constant factor.
+
+| Scale | Matched recall | ec_ivf p50 | vchord p50 | gap |
+| --- | --- | --- | --- | --- |
+| 50k | ~0.985 | 4.53 ms | 1.07 ms | 4.2× |
+| 100k | ~0.985 | 9.65 ms | 2.44 ms | 4.0× |
+| 1m | ~0.985 | 33.8 ms | 9.39 ms | 3.6× |
+
+The earlier 1.4× number against the comparator packet's 50k cell
+was right *for that comparator cycle*, but the comparator's 1m
+cell (90.3 ms @ 0.9995) was a much slower host than what `m8g.2xlarge`
+delivers (9.4 ms @ 0.987 at probes=128, paired sweep this round).
+
+**Where vchord wins:** inline f32 source storage in the index
+(8 GB at 1m vs our 1.5 GB) lets it skip the heap-fetch + toast-detoast
+per rerank candidate that we pay. That's the biggest next-round
+lever.
+
 ## Round closeout
 
 The round started with `ec_ivf+RaBitQ` at 50k nprobe=64 in **30 ms
