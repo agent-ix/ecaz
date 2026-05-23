@@ -2291,7 +2291,7 @@ fn cached_scan_element_score(opaque: &TqScanOpaque, element_tid: page::ItemPoint
         .copied()
 }
 
-unsafe fn live_loaded_state_from_exact_payload(
+fn live_loaded_state_from_exact_payload(
     opaque: &mut TqScanOpaque,
     element_tid: page::ItemPointer,
     binary_query_active: bool,
@@ -2335,9 +2335,7 @@ fn score_and_cache_scan_element(
     record_score_cache_miss(opaque);
     #[cfg(any(test, feature = "pg_test"))]
     let started = Instant::now();
-    // SAFETY: callers provide code bytes loaded from a live graph tuple that
-    // match this scan's prepared query and quantizer state.
-    let score = unsafe { score_scan_element_result(opaque, gamma, code_bytes) };
+    let score = score_scan_element_result(opaque, gamma, code_bytes);
     #[cfg(any(test, feature = "pg_test"))]
     let elapsed_us =
         u64::try_from(started.elapsed().as_micros()).expect("timing should fit in u64");
@@ -2379,16 +2377,12 @@ fn build_cached_graph_element(
     if live_element {
         loaded_state = match (opaque_ref.scan_graph_storage, element.exact_payload()) {
             (graph::GraphStorageDescriptor::TurboQuantHotCold(_), None) => LoadedElementState::None,
-            // SAFETY: `element` is a live graph tuple view for `element_tid`;
-            // the helper copies any payload bytes it needs into scan-owned state.
-            (_, exact_payload) => unsafe {
-                live_loaded_state_from_exact_payload(
-                    opaque_ref,
-                    element_tid,
-                    binary_query_active,
-                    exact_payload,
-                )
-            },
+            (_, exact_payload) => live_loaded_state_from_exact_payload(
+                opaque_ref,
+                element_tid,
+                binary_query_active,
+                exact_payload,
+            ),
         };
     }
 
@@ -4966,7 +4960,7 @@ where
     candidates
 }
 
-unsafe fn score_scan_element_result(
+fn score_scan_element_result(
     opaque: &mut TqScanOpaque,
     gamma: f32,
     code_bytes: &[u8],
@@ -7170,10 +7164,9 @@ mod tests {
         };
         let opaque_ptr = &mut opaque as *mut TqScanOpaque;
 
-        let score =
-            // SAFETY: `opaque_ptr` points to the live test scan opaque with
-            // prepared query and quantizer fields initialized above.
-            unsafe { score_scan_element_result(&mut *opaque_ptr, encoded.gamma, &code_bytes) };
+        // SAFETY: `opaque_ptr` points to the live test scan opaque with
+        // prepared query and quantizer fields initialized above.
+        let score = score_scan_element_result(unsafe { &mut *opaque_ptr }, encoded.gamma, &code_bytes);
 
         assert!(score.is_finite());
         // SAFETY: `opaque_ptr` still points to the live test scan opaque.
