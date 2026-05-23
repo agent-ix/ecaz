@@ -28,7 +28,7 @@ export SPIRE_AWS_DIR REPO_ROOT ARTIFACT_DIR TOPOLOGY
         smoke smoke-correctness smoke-representative smoke-stress \
         bench-correctness bench-representative bench-stress \
         fault-degraded fault-strict fault-2pc fault-missing-guc fault-schema-drift fault-auth \
-        teardown clean \
+        snapshot teardown clean \
         pass-correctness pass-representative all-correctness all-representative
 
 # Git ref that each EC2 node clones + cargo-pgrx-installs at bootstrap.
@@ -113,16 +113,35 @@ fault-schema-drift:
 fault-auth:
 	cd $(REPO_ROOT) && $(SCRIPTS)/fault.sh auth-failure $(TOPOLOGY) $(ARTIFACT_DIR)
 
+snapshot:
+	@test -f $(TOPOLOGY) || { echo "ERROR: $(TOPOLOGY) does not exist. Run 'make provision' first." >&2; exit 1; }
+	@REGION=$$(jq -r '.region' $(TOPOLOGY)); \
+	  COORD_ID=$$(jq -r '.coordinator.instance_id' $(TOPOLOGY)); \
+	  REMOTE_IDS=$$(jq -r '.remotes[].instance_id' $(TOPOLOGY) | tr '\n' ' '); \
+	  HEAD_SHA=$$(cd $(REPO_ROOT) && git rev-parse --short HEAD); \
+	  TS=$$(date -u +%Y%m%dT%H%M%SZ); \
+	  echo "Snapshotting EBS root volumes for coord+remotes in $$REGION..."; \
+	  for INSTANCE_ID in $$COORD_ID $$REMOTE_IDS; do \
+	    VOL=$$(aws ec2 describe-instances --region $$REGION --instance-ids $$INSTANCE_ID \
+	      --query 'Reservations[0].Instances[0].BlockDeviceMappings[?DeviceName==`/dev/xvda` || DeviceName==`/dev/sda1`].Ebs.VolumeId | [0]' --output text); \
+	    test "$$VOL" != "None" -a -n "$$VOL" || { echo "ERROR: no root volume found for $$INSTANCE_ID" >&2; exit 1; }; \
+	    SNAP=$$(aws ec2 create-snapshot --region $$REGION --volume-id $$VOL \
+	      --description "spire-aws pass-correctness $$HEAD_SHA / $$INSTANCE_ID / $$TS" \
+	      --tag-specifications "ResourceType=snapshot,Tags=[{Key=Phase,Value=13-spire-aws-verification},{Key=Owner,Value=kreneskyp},{Key=Packet,Value=task-30/958-spire-aws-pass-correctness},{Key=HeadSha,Value=$$HEAD_SHA},{Key=InstanceId,Value=$$INSTANCE_ID}]" \
+	      --query 'SnapshotId' --output text); \
+	    echo "$$INSTANCE_ID $$VOL $$SNAP" | tee -a $(ARTIFACT_DIR)/snapshots.log; \
+	  done
+
 teardown:
 	cd $(SPIRE_AWS_DIR) && terraform destroy -auto-approve
 
 clean:
 	cd $(SPIRE_AWS_DIR) && rm -rf .terraform terraform.tfstate*
 
-pass-correctness: provision install-extension register-remotes load-correctness smoke-correctness bench-correctness fault-degraded fault-strict teardown
+pass-correctness: provision install-extension register-remotes load-correctness smoke-correctness bench-correctness fault-degraded fault-strict snapshot teardown
 
 all-correctness: pass-correctness
 
-pass-representative: provision install-extension register-remotes load-representative smoke-representative bench-representative fault-2pc fault-schema-drift teardown
+pass-representative: provision install-extension register-remotes load-representative smoke-representative bench-representative fault-2pc fault-schema-drift snapshot teardown
 
 all-representative: pass-representative
