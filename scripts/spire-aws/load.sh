@@ -23,9 +23,9 @@ WORK_DIR="${WORK_DIR:-/var/lib/ecaz}"
 case "$TIER" in
   correctness)
     PREFIX=ec_spire_aws_synth_10k
-    ecaz corpus generate --rows 10000 --dim 1536 \
+    ecaz corpus generate --n 10000 --dim 1536 \
       --output "$WORK_DIR/${PREFIX}_corpus.tsv"
-    ecaz corpus generate --rows 100 --dim 1536 \
+    ecaz corpus generate --n 100 --dim 1536 \
       --output "$WORK_DIR/${PREFIX}_queries.tsv"
     ecaz corpus load \
       --host "$COORD_HOST" --user ecaz_coord --database postgres \
@@ -59,9 +59,9 @@ case "$TIER" in
     ;;
   stress)
     PREFIX=ec_spire_aws_synth_10m
-    ecaz corpus generate --rows 10000000 --dim 1536 \
+    ecaz corpus generate --n 10000000 --dim 1536 \
       --output "$WORK_DIR/${PREFIX}_corpus.tsv"
-    ecaz corpus generate --rows 10000 --dim 1536 \
+    ecaz corpus generate --n 10000 --dim 1536 \
       --output "$WORK_DIR/${PREFIX}_queries.tsv"
     ecaz corpus load \
       --host "$COORD_HOST" --user ecaz_coord --database postgres \
