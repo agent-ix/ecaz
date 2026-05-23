@@ -23,13 +23,16 @@ PREFIX       ?= ec_spire_aws_synth_10k
 
 export SPIRE_AWS_DIR REPO_ROOT ARTIFACT_DIR TOPOLOGY
 
-.PHONY: preflight provision setup install-extension install register-remotes register \
+.PHONY: preflight package upload-tarball provision setup install-extension install register-remotes register \
         load-correctness load-representative load-stress \
         smoke smoke-correctness smoke-representative smoke-stress \
         bench-correctness bench-representative bench-stress \
         fault-degraded fault-strict fault-2pc fault-missing-guc fault-schema-drift fault-auth \
         teardown clean \
         pass-correctness pass-representative all-correctness all-representative
+
+# Tarball produced by `make package` and consumed by `make upload-tarball`.
+TARBALL ?= $(REPO_ROOT)/target/ecaz-spire-aws-latest.tar.gz
 
 preflight:
 	cd $(SPIRE_AWS_DIR) && terraform fmt -check
@@ -39,11 +42,33 @@ preflight:
 	cd $(REPO_ROOT) && if command -v shellcheck >/dev/null 2>&1; then shellcheck scripts/spire-aws/*.sh; else echo "shellcheck not found; skipping shellcheck"; fi
 	cd $(REPO_ROOT) && jq empty scripts/spire-aws/suite-correctness.json scripts/spire-aws/suite-representative.json scripts/spire-aws/suite-stress.json
 
+package:
+	@mkdir -p $(REPO_ROOT)/target
+	docker run --rm \
+	  --platform linux/arm64 \
+	  -v $(REPO_ROOT):/work \
+	  -v ecaz-spire-aws-cargo-arm64:/root/.cargo \
+	  -v ecaz-spire-aws-rustup-arm64:/root/.rustup \
+	  -w /work \
+	  amazonlinux:2023 \
+	  bash /work/scripts/spire-aws/build-tarball.sh
+	@ls -lh $(TARBALL)
+
 provision:
 	@mkdir -p $(ARTIFACT_DIR)
 	cd $(SPIRE_AWS_DIR) && terraform init
 	cd $(SPIRE_AWS_DIR) && terraform apply -auto-approve
 	cd $(SPIRE_AWS_DIR) && terraform output -json topology > $(TOPOLOGY)
+
+upload-tarball:
+	@test -f $(TARBALL) || { echo "ERROR: $(TARBALL) does not exist. Run 'make package' first." >&2; exit 1; }
+	@test -f $(TOPOLOGY) || { echo "ERROR: $(TOPOLOGY) does not exist. Run 'make provision' first." >&2; exit 1; }
+	@BUCKET=$$(jq -r '.artifact_bucket' $(TOPOLOGY)); \
+	  REGION=$$(jq -r '.region' $(TOPOLOGY)); \
+	  KEY=$${ECAZ_SPIRE_AWS_TARBALL_KEY:-ecaz-latest.tar.gz}; \
+	  echo "uploading $(TARBALL) to s3://$$BUCKET/$$KEY in $$REGION"; \
+	  aws s3 cp $(TARBALL) "s3://$$BUCKET/$$KEY" --region "$$REGION" | tee $(ARTIFACT_DIR)/tarball-upload.log; \
+	  sha256sum $(TARBALL) | tee -a $(ARTIFACT_DIR)/tarball-upload.log
 
 setup: provision
 
@@ -111,10 +136,10 @@ teardown:
 clean:
 	cd $(SPIRE_AWS_DIR) && rm -rf .terraform terraform.tfstate*
 
-pass-correctness: provision install-extension register-remotes load-correctness smoke-correctness bench-correctness fault-degraded fault-strict teardown
+pass-correctness: package provision upload-tarball install-extension register-remotes load-correctness smoke-correctness bench-correctness fault-degraded fault-strict teardown
 
 all-correctness: pass-correctness
 
-pass-representative: provision install-extension register-remotes load-representative smoke-representative bench-representative fault-2pc fault-schema-drift teardown
+pass-representative: package provision upload-tarball install-extension register-remotes load-representative smoke-representative bench-representative fault-2pc fault-schema-drift teardown
 
 all-representative: pass-representative
