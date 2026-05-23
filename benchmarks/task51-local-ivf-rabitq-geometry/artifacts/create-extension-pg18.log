@@ -1,0 +1,7 @@
+CREATE EXTENSION
+ extversion 
+------------
+ 0.1.1
+(1 row)
+
+NOTICE:  extension "ecaz" already exists, skipping
