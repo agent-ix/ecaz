@@ -8,8 +8,8 @@
 - execution start: `2026-05-23T18:42:34.415Z`
 - execution elapsed: `PT31M14.927S`
 - execution end: `2026-05-23T19:13:48.415Z`
-- stack after run: paused via `target/release/ecaz cloud pause --profile 10k-medium`
-- final local status: `paused`, `$0.00/hr` running, about `$4.00/mo` retained storage
+- stack after artifact pull: destroyed via `target/release/ecaz cloud down --profile 10k-medium --yes`
+- final local status: `down`, `$0.00/hr` running, retained snapshot `snap-0758119609e81ab7f`
 
 The SSM response body truncated stdout before the full sidecar result table. The
 remote suite wrote the complete artifacts on the DB host under:
@@ -18,9 +18,9 @@ remote suite wrote the complete artifacts on the DB host under:
 /var/lib/pgsql/build/ecaz/benchmarks/task51-aws-ivf-rabitq-current-head-final-gate/artifacts/
 ```
 
-The stack is paused, not destroyed, so the remote `results.jsonl`,
-`results-report.jsonl`, per-step logs, and `suite-manifest.json` can still be
-retrieved without rerunning the suite.
+The complete remote artifacts were later copied into the benchmark packet
+without rerunning the suite. `suite-status-local-after-pull.log` reports
+`completed=6 failed=0 skipped=0 dry_run=0 missing_artifacts=0 stale=0`.
 
 ## Preserved DB Precheck
 
@@ -90,55 +90,28 @@ exact_rerank_elapsed_us: 944
 filtered_duplicates: 0
 ```
 
-## Sidecar Rows Visible Before SSM Truncation
+## Sidecar Rows
 
 The suite config executed the c1 sidecar step for variants `f16` and `rabitq8`
 across read modes `random-id` and `tid-sorted`, and the c4 step for
-`rabitq8`/`tid-sorted`. Stderr confirms that the f16 and rabitq8 sidecar tables
-were populated to 990000 rows and that the c4 step reused the existing rabitq8
-sidecar table.
-
-Only the first sidecar result row was fully visible before SSM stdout
-truncation:
+`rabitq8`/`tid-sorted`.
 
 ```text
-nprobe=128
-variant=f16
-read_mode=random-id
-queries=200
-candidate_k=50
-concurrency=1
-recall@k=0.9815
-recall_p10=0.9000
-recall_p50=1.0000
-recall_p90=1.0000
-ndcg@k=0.9991
-candidate_sql_p50=43.075 ms
-sidecar_io_p50=18.707 ms
-sidecar_score_p50=0.055 ms
-sidecar_p50=18.761 ms
-total_bound_p50=63.026 ms
-candidate_sql_p95=54.552 ms
-sidecar_io_p95=324.014 ms
-sidecar_score_p95=0.057 ms
-sidecar_p95=324.069 ms
-total_bound_p95=376.773 ms
-candidate_sql_p99=65.581 ms
-sidecar_io_p99=529.637 ms
-sidecar_score_p99=0.060 ms
-sidecar_p99=529.692 ms
-total_bound_p99=594.757 ms
-sidecar_bytes_per_vector=3072
-sidecar_size=2.83 GiB
+f16 random-id c1: recall@10=0.9815 sidecar_p50=18.761 ms sidecar_p95=324.069 ms sidecar_p99=529.692 ms total_bound_p50=63.026 ms sidecar_size=2.83 GiB
+f16 tid-sorted c1: recall@10=0.9815 sidecar_p50=0.523 ms sidecar_p95=0.787 ms sidecar_p99=1.920 ms total_bound_p50=43.619 ms sidecar_size=2.83 GiB
+rabitq8 random-id c1: recall@10=0.9455 sidecar_p50=1.918 ms sidecar_p95=4.819 ms sidecar_p99=11.585 ms total_bound_p50=45.166 ms sidecar_size=1.43 GiB
+rabitq8 tid-sorted c1: recall@10=0.9455 sidecar_p50=0.413 ms sidecar_p95=0.437 ms sidecar_p99=0.535 ms total_bound_p50=43.499 ms sidecar_size=1.43 GiB
+rabitq8 tid-sorted c4: recall@10=0.9455 sidecar_p50=1.121 ms sidecar_p95=1.723 ms sidecar_p99=334.866 ms total_bound_p50=41.615 ms sidecar_size=1.43 GiB
 ```
 
-## Retrieval Blocker
+## Retrieval Note
 
-A non-escalated attempt to sync remote artifacts to S3 using SSM failed with:
+The first non-escalated attempt to sync remote artifacts to S3 using SSM failed
+with:
 
 ```text
 Could not connect to the endpoint URL: "https://ssm.us-west-2.amazonaws.com/"
 ```
 
-No escalated approval request was made. The stack was paused to preserve the
-remote artifacts while stopping instance spend.
+The final artifact copy used the existing AWS SSM/S3 route and then tore the
+stack down. No benchmark was rerun for artifact retrieval.

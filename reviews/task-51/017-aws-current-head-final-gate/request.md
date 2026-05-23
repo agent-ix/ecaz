@@ -39,10 +39,11 @@ response_code: 0
 elapsed: PT31M14.927S
 ```
 
-The stack is paused after the run:
+The stack was snapshotted and torn down after artifact retrieval:
 
 ```text
-state: paused
+snapshot: snap-0758119609e81ab7f
+state: down
 cost: ~$0.00/hr running, ~$4.00/mo retained storage
 ```
 
@@ -73,31 +74,24 @@ exact_rerank_elapsed_us=944
 execution_time=84.427 ms
 ```
 
-Sidecar row visible before SSM stdout truncation:
+Sidecar real-I/O, q=200, nprobe=128, candidate_k=50:
 
-| variant | read mode | concurrency | recall@10 | sidecar p50 | sidecar p95 | sidecar size |
-| --- | --- | ---: | ---: | ---: | ---: | ---: |
-| f16 | random-id | 1 | 0.9815 | 18.761 ms | 324.069 ms | 2.83 GiB |
+| variant | read mode | concurrency | recall@10 | sidecar p50 | sidecar p95 | sidecar p99 | total bound p50 | sidecar size |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| f16 | random-id | 1 | 0.9815 | 18.761 ms | 324.069 ms | 529.692 ms | 63.026 ms | 2.83 GiB |
+| f16 | TID-sorted | 1 | 0.9815 | 0.523 ms | 0.787 ms | 1.920 ms | 43.619 ms | 2.83 GiB |
+| rabitq8 | random-id | 1 | 0.9455 | 1.918 ms | 4.819 ms | 11.585 ms | 45.166 ms | 1.43 GiB |
+| rabitq8 | TID-sorted | 1 | 0.9455 | 0.413 ms | 0.437 ms | 0.535 ms | 43.499 ms | 1.43 GiB |
+| rabitq8 | TID-sorted | 4 | 0.9455 | 1.121 ms | 1.723 ms | 334.866 ms | 41.615 ms | 1.43 GiB |
 
-## Sidecar Spectrum Caveat
+## Artifact Status
 
-The checked-in suite executed the intended sidecar spectrum:
+Remote artifacts were copied into the benchmark packet after the run. The suite
+manifest now reports:
 
-- `f16`, random-id, concurrency 1
-- `f16`, TID-sorted, concurrency 1
-- `rabitq8`, random-id, concurrency 1
-- `rabitq8`, TID-sorted, concurrency 1
-- `rabitq8`, TID-sorted, concurrency 4
-
-The SSM response truncated stdout during the sidecar table, so only the first
-row is locally visible right now. The complete remote artifacts were written on
-the DB host under the benchmark packet path, including `results.jsonl`,
-`results-report.jsonl`, `suite-manifest.json`, and the sidecar logs.
-
-A non-escalated SSM artifact sync failed with an SSM endpoint error. I did not
-request escalation because the operator instruction was to avoid approval gates.
-The stack was paused, not destroyed, so those remote artifacts are preserved for
-a later artifact-copy step without rerunning the suite.
+```text
+[suite:task51-aws-ivf-rabitq-current-head-final-gate] completed=6 failed=0 skipped=0 dry_run=0 missing_artifacts=0 stale=0
+```
 
 ## Notes
 

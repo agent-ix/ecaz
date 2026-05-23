@@ -1,6 +1,7 @@
 # Task 51: IVF RaBitQ Second Optimization Round
 
-Status: **proposed** — follow-on to the AWS RaBitQ/IVF Graviton v4 round.
+Status: **closed** — see `reviews/task-51/023-round-closeout/request.md`.
+Follow-on to the AWS RaBitQ/IVF Graviton v4 round.
 This task owns the next latency-reduction cycle after the bits=1 NEON,
 byte-LUT, `quant_bits=1`, and `rerank_width=50` work. The goal is to find
 another material latency reduction without assuming that more index-side
@@ -352,4 +353,3 @@ before the round's final claim packet.
 4. Exp 3 (SoA), Exp 4 (block-sort heap), Exp 6 (Layout v2) get
    prioritized only against what Exp 7 reveals about non-sidecar
    headroom.
-

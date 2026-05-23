@@ -17,7 +17,7 @@
 - suite runner: `ecaz bench suite`
 - suite command id: `70df8076-1c85-4481-b1c9-a3e8bdbd7f88`
 - suite status: `Success`, response code `0`, elapsed `PT31M14.927S`
-- post-run stack state: paused; no instance spend, remote artifacts retained
+- post-run stack state: down; no EC2/EBS volume spend, retained snapshot `snap-0758119609e81ab7f`
 
 ## Local Artifacts
 
@@ -29,18 +29,30 @@
 - `benchmarks/task51-aws-ivf-rabitq-current-head-final-gate/artifacts/suite-dry-run-manifest-current-head.json`
 - `benchmarks/task51-aws-ivf-rabitq-current-head-final-gate/artifacts/ssm-sync-suite-invocation.json`
 - `benchmarks/task51-aws-ivf-rabitq-current-head-final-gate/artifacts/ssm-build-cli-invocation.json`
+- `benchmarks/task51-aws-ivf-rabitq-current-head-final-gate/artifacts/suite-manifest.json`
+- `benchmarks/task51-aws-ivf-rabitq-current-head-final-gate/artifacts/results.jsonl`
+- `benchmarks/task51-aws-ivf-rabitq-current-head-final-gate/artifacts/results-report.jsonl`
+- `benchmarks/task51-aws-ivf-rabitq-current-head-final-gate/artifacts/suite-status.log`
+- `benchmarks/task51-aws-ivf-rabitq-current-head-final-gate/artifacts/suite-report.log`
+- `benchmarks/task51-aws-ivf-rabitq-current-head-final-gate/artifacts/sidecar-1m-rabitq1-k50-q200-c1.log`
+- `benchmarks/task51-aws-ivf-rabitq-current-head-final-gate/artifacts/sidecar-1m-rabitq1-k50-q200-c4-rabitq8-tid-sorted.log`
+- `benchmarks/task51-aws-ivf-rabitq-current-head-final-gate/artifacts/cloud-status-after-down.log`
 
-## Remote Artifacts
+## Artifact Pull / Shutdown
 
-The complete remote artifacts remain on the paused DB host at:
+The complete remote artifacts were copied back into the benchmark packet from:
 
 ```text
 /var/lib/pgsql/build/ecaz/benchmarks/task51-aws-ivf-rabitq-current-head-final-gate/artifacts/
 ```
 
-They include `results.jsonl`, `results-report.jsonl`, `suite-manifest.json`,
-per-step logs, and the complete sidecar rows. A non-escalated SSM artifact-sync
-attempt failed with an endpoint error, and no approval request was made.
+The profile was snapshotted and torn down after artifact retrieval:
+
+```text
+snapshot: snap-0758119609e81ab7f
+state: down
+cost: ~$0.00/hr running, ~$4.00/mo retained storage
+```
 
 ## Key Result Lines
 
@@ -69,8 +81,12 @@ exact_rerank_elapsed_us=944
 execution_time=84.427 ms
 ```
 
-Sidecar row visible before SSM truncation:
+Sidecar real-I/O, q=200, nprobe=128, candidate_k=50:
 
 ```text
-variant=f16 read_mode=random-id concurrency=1 nprobe=128 candidate_k=50 recall@10=0.9815 sidecar_io_p50=18.707 ms sidecar_p50=18.761 ms sidecar_io_p95=324.014 ms sidecar_p95=324.069 ms sidecar_size=2.83 GiB
+f16 random-id c1: recall@10=0.9815 sidecar_p50=18.761 ms sidecar_p95=324.069 ms sidecar_p99=529.692 ms total_bound_p50=63.026 ms sidecar_size=2.83 GiB
+f16 tid-sorted c1: recall@10=0.9815 sidecar_p50=0.523 ms sidecar_p95=0.787 ms sidecar_p99=1.920 ms total_bound_p50=43.619 ms sidecar_size=2.83 GiB
+rabitq8 random-id c1: recall@10=0.9455 sidecar_p50=1.918 ms sidecar_p95=4.819 ms sidecar_p99=11.585 ms total_bound_p50=45.166 ms sidecar_size=1.43 GiB
+rabitq8 tid-sorted c1: recall@10=0.9455 sidecar_p50=0.413 ms sidecar_p95=0.437 ms sidecar_p99=0.535 ms total_bound_p50=43.499 ms sidecar_size=1.43 GiB
+rabitq8 tid-sorted c4: recall@10=0.9455 sidecar_p50=1.121 ms sidecar_p95=1.723 ms sidecar_p99=334.866 ms total_bound_p50=41.615 ms sidecar_size=1.43 GiB
 ```
