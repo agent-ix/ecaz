@@ -2765,19 +2765,16 @@ fn score_grouped_search_code_from_scan_state(opaque: &TqScanOpaque, search_code:
     score_grouped_search_code_result(prepared_query, search_code)
 }
 
-unsafe fn grouped_candidate_rerank_comparison_score(
+fn grouped_candidate_rerank_comparison_score(
     index_relation: pg_sys::Relation,
-    opaque: *mut TqScanOpaque,
+    opaque: &mut TqScanOpaque,
     element: &CachedGraphElement,
 ) -> Option<f32> {
-    // SAFETY: callers pass the current scan opaque pointer; it remains live
-    // while choosing heap, TurboQuant, or grouped rerank scoring.
-    if grouped_heap_rerank_enabled(scan_opaque_ref(opaque)) {
-        return score_grouped_candidate_heap_rerank(scan_opaque_mut(opaque), element);
+    if grouped_heap_rerank_enabled(opaque) {
+        return score_grouped_candidate_heap_rerank(opaque, element);
     }
 
-    // SAFETY: `opaque` is the live scan opaque pointer used for this candidate.
-    let scan_graph_storage = scan_opaque_ref(opaque).scan_graph_storage;
+    let scan_graph_storage = opaque.scan_graph_storage;
     if matches!(
         scan_graph_storage,
         graph::GraphStorageDescriptor::TurboQuant { .. }
@@ -2787,7 +2784,7 @@ unsafe fn grouped_candidate_rerank_comparison_score(
         let started = Instant::now();
         let score = exact_score_cached_graph_element(
             index_relation,
-            scan_opaque_mut(opaque),
+            opaque,
             element.tid,
             LoadedElementState::None,
         );
@@ -2796,22 +2793,20 @@ unsafe fn grouped_candidate_rerank_comparison_score(
             u64::try_from(started.elapsed().as_micros()).expect("timing should fit in u64");
         #[cfg(not(any(test, feature = "pg_test")))]
         let elapsed_us = 0;
-        // SAFETY: `opaque` is the same live scan opaque pointer used for scoring.
-        record_grouped_rerank_quantized_score_elapsed(scan_opaque_mut(opaque), elapsed_us);
+        record_grouped_rerank_quantized_score_elapsed(opaque, elapsed_us);
         return Some(score);
     }
 
     let grouped = grouped_score_context_from_scan_state(scan_graph_storage, element)?;
     #[cfg(any(test, feature = "pg_test"))]
     let started = Instant::now();
-    let score = exact_score_grouped_candidate_context(index_relation, scan_opaque_mut(opaque), grouped);
+    let score = exact_score_grouped_candidate_context(index_relation, opaque, grouped);
     #[cfg(any(test, feature = "pg_test"))]
     let elapsed_us =
         u64::try_from(started.elapsed().as_micros()).expect("timing should fit in u64");
     #[cfg(not(any(test, feature = "pg_test")))]
     let elapsed_us = 0;
-    // SAFETY: `opaque` is the same live scan opaque pointer used for scoring.
-    record_grouped_rerank_quantized_score_elapsed(scan_opaque_mut(opaque), elapsed_us);
+    record_grouped_rerank_quantized_score_elapsed(opaque, elapsed_us);
     Some(score)
 }
 
@@ -3778,15 +3773,8 @@ unsafe fn buffer_grouped_graph_result_candidate(
         return;
     }
 
-    // SAFETY: `element` was loaded for this candidate and the scan opaque owns
-    // any grouped rerank/query state used for comparison scoring.
-    let comparison_score = unsafe {
-        grouped_candidate_rerank_comparison_score(
-            index_relation,
-            opaque as *mut TqScanOpaque,
-            &element,
-        )
-    };
+    let comparison_score =
+        grouped_candidate_rerank_comparison_score(index_relation, opaque, &element);
     let approx_rank_base = opaque.grouped_live_rerank_next_approx_rank;
     let emitted_heap_rows =
         i32::try_from(element.heaptids.as_slice().len()).expect("heap tid count should fit in i32");
@@ -3828,15 +3816,8 @@ unsafe fn materialize_graph_result_candidate(
     // Keep traversal/output ordering on the grouped approximate score for now, but
     // capture the cold rerank score alongside emitted results so the next packets
     // can compare approximate-vs-exact behavior on real scan outputs.
-    // SAFETY: `element` was loaded for this candidate and the scan opaque owns
-    // any grouped rerank/query state used for comparison scoring.
-    let comparison_score = unsafe {
-        grouped_candidate_rerank_comparison_score(
-            index_relation,
-            opaque as *mut TqScanOpaque,
-            &element,
-        )
-    };
+    let comparison_score =
+        grouped_candidate_rerank_comparison_score(index_relation, opaque, &element);
     opaque.explain_counters.record_element_scored();
     mark_emitted_element(opaque, candidate.node);
     // SAFETY: `result_state` is the active result-state pointer passed by the
