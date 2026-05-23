@@ -820,10 +820,8 @@ pub struct PreparedEstimator {
     /// 256-row × 8-lane f32 byte-LUT for the bits=1 NEON kernel.
     /// Each row carries the 8 dequant lanes for a code byte; the
     /// kernel reads `byte_lut[code_byte]` with two `vld1q_f32`s and
-    /// FMAs against query lanes — no per-byte scalar unpack. Only
-    /// populated when `bits_per_dim == 1`; otherwise an 8 KB zero
-    /// array we just don't touch.
-    bits1_byte_lut: Box<[[f32; 8]; 256]>,
+    /// FMAs against query lanes — no per-byte scalar unpack.
+    bits1_byte_lut: Option<Box<[[f32; 8]; 256]>>,
     /// Same `query_rotated` data truncated to bfloat16 (stored as raw
     /// u16 bits — the upper half of the f32). Used by the aarch64 +
     /// `bf16` feature path which executes `bfdot` to FMA 8 bf16 lanes
@@ -853,7 +851,7 @@ impl PreparedEstimator {
             self.dimensions,
             self.bits_per_dim,
             &self.dequant_lut,
-            &self.bits1_byte_lut,
+            self.bits1_byte_lut.as_deref(),
             code,
         )
     }
@@ -871,7 +869,7 @@ impl PreparedEstimator {
             self.dimensions,
             self.bits_per_dim,
             &self.dequant_lut,
-            &self.bits1_byte_lut,
+            self.bits1_byte_lut.as_deref(),
             code,
         )
     }
@@ -941,7 +939,7 @@ impl PreparedEstimator {
             self.dimensions,
             bits,
             &self.dequant_lut,
-            &self.bits1_byte_lut,
+            self.bits1_byte_lut.as_deref(),
             code,
         );
         Some(candidate_norm * sum_q_dequant / (candidate_o_dot * candidate_x_norm))
@@ -990,7 +988,7 @@ pub struct RaBitQScorer {
     dimensions: usize,
     bits_per_dim: u8,
     dequant_lut: [f32; 256],
-    bits1_byte_lut: Box<[[f32; 8]; 256]>,
+    bits1_byte_lut: Option<Box<[[f32; 8]; 256]>>,
     query_bf16: Vec<u16>,
     dequant_lut_bf16: [u16; 256],
 }
@@ -1004,7 +1002,7 @@ impl crate::quant::QueryScorer for RaBitQScorer {
             self.dimensions,
             self.bits_per_dim,
             &self.dequant_lut,
-            &self.bits1_byte_lut,
+            self.bits1_byte_lut.as_deref(),
             code,
         )
     }
@@ -1253,7 +1251,11 @@ fn f32_to_bf16_bits(value: f32) -> u16 {
 fn prepare_bf16_state(query_rotated: &[f32], dequant_lut: &[f32; 256]) -> (Vec<u16>, [u16; 256]) {
     #[cfg(feature = "rabitq-bf16")]
     {
-        let query_bf16: Vec<u16> = query_rotated.iter().copied().map(f32_to_bf16_bits).collect();
+        let query_bf16: Vec<u16> = query_rotated
+            .iter()
+            .copied()
+            .map(f32_to_bf16_bits)
+            .collect();
         let mut lut_bf16 = [0_u16; 256];
         for (i, &v) in dequant_lut.iter().enumerate() {
             lut_bf16[i] = f32_to_bf16_bits(v);
@@ -1267,16 +1269,14 @@ fn prepare_bf16_state(query_rotated: &[f32], dequant_lut: &[f32; 256]) -> (Vec<u
     }
 }
 
-/// Build the bits=1 byte-LUT once per prepared query/scorer. Only
-/// populated when `bits_per_dim == 1` — at other widths the inner
-/// kernel doesn't reach this table so we allocate a zero-filled box
-/// to keep the field shape uniform without paying the 256 × row
-/// initialization cost.
-fn build_bits1_byte_lut_boxed(lut: &[f32; 256], bits_per_dim: u8) -> Box<[[f32; 8]; 256]> {
-    let mut out: Box<[[f32; 8]; 256]> = Box::new([[0.0_f32; 8]; 256]);
+/// Build the bits=1 byte-LUT once per prepared query/scorer. Other
+/// code widths never reach the bits=1 kernel, so they keep this
+/// state absent and avoid the per-query 8 KB allocation/memset.
+fn build_bits1_byte_lut_boxed(lut: &[f32; 256], bits_per_dim: u8) -> Option<Box<[[f32; 8]; 256]>> {
     if bits_per_dim != 1 {
-        return out;
+        return None;
     }
+    let mut out: Box<[[f32; 8]; 256]> = Box::new([[0.0_f32; 8]; 256]);
     let neg = lut[0];
     let pos = lut[1];
     for (b, row) in out.iter_mut().enumerate() {
@@ -1284,7 +1284,7 @@ fn build_bits1_byte_lut_boxed(lut: &[f32; 256], bits_per_dim: u8) -> Box<[[f32; 
             *lane = if ((b >> i) & 1) == 1 { pos } else { neg };
         }
     }
-    out
+    Some(out)
 }
 
 /// Build a 256-entry dequant table indexed by `level`. The first
@@ -1317,17 +1317,7 @@ fn sum_query_dequant(
     lut: &[f32; 256],
     code: &[u8],
 ) -> f32 {
-    let empty: [[f32; 8]; 256] = [[0.0_f32; 8]; 256];
-    sum_query_dequant_with_bf16(
-        query_rotated,
-        None,
-        None,
-        dimensions,
-        bits,
-        lut,
-        &empty,
-        code,
-    )
+    sum_query_dequant_with_bf16(query_rotated, None, None, dimensions, bits, lut, None, code)
 }
 
 /// Variant that also accepts the bf16 mirror state. When the caller
@@ -1343,17 +1333,25 @@ fn sum_query_dequant_with_bf16(
     dimensions: usize,
     bits: usize,
     lut: &[f32; 256],
-    bits1_byte_lut: &[[f32; 8]; 256],
+    bits1_byte_lut: Option<&[[f32; 8]; 256]>,
     code: &[u8],
 ) -> f32 {
-    let _ = (query_bf16, dequant_lut_bf16);
+    let _ = (query_bf16, dequant_lut_bf16, bits1_byte_lut);
     #[cfg(target_arch = "aarch64")]
     {
         if bits == 1 && std::arch::is_aarch64_feature_detected!("neon") {
             // SAFETY: NEON feature confirmed at runtime; impl owns lane safety.
-            return unsafe {
-                sum_query_dequant_neon_bits1(query_rotated, dimensions, bits1_byte_lut, lut, code)
-            };
+            if let Some(bits1_byte_lut) = bits1_byte_lut {
+                return unsafe {
+                    sum_query_dequant_neon_bits1(
+                        query_rotated,
+                        dimensions,
+                        bits1_byte_lut,
+                        lut,
+                        code,
+                    )
+                };
+            }
         }
         if bits == 4 {
             // bf16 bfdot kernel is gated behind the `rabitq-bf16` Cargo
@@ -1501,14 +1499,22 @@ unsafe fn sum_query_dequant_neon_bf16_bits4(
         let b6 = *code.get_unchecked(byte_base + 6) as usize;
         let b7 = *code.get_unchecked(byte_base + 7) as usize;
         let dq: [u16; 16] = [
-            lut_bf16[b0 & 0x0F], lut_bf16[b0 >> 4],
-            lut_bf16[b1 & 0x0F], lut_bf16[b1 >> 4],
-            lut_bf16[b2 & 0x0F], lut_bf16[b2 >> 4],
-            lut_bf16[b3 & 0x0F], lut_bf16[b3 >> 4],
-            lut_bf16[b4 & 0x0F], lut_bf16[b4 >> 4],
-            lut_bf16[b5 & 0x0F], lut_bf16[b5 >> 4],
-            lut_bf16[b6 & 0x0F], lut_bf16[b6 >> 4],
-            lut_bf16[b7 & 0x0F], lut_bf16[b7 >> 4],
+            lut_bf16[b0 & 0x0F],
+            lut_bf16[b0 >> 4],
+            lut_bf16[b1 & 0x0F],
+            lut_bf16[b1 >> 4],
+            lut_bf16[b2 & 0x0F],
+            lut_bf16[b2 >> 4],
+            lut_bf16[b3 & 0x0F],
+            lut_bf16[b3 >> 4],
+            lut_bf16[b4 & 0x0F],
+            lut_bf16[b4 >> 4],
+            lut_bf16[b5 & 0x0F],
+            lut_bf16[b5 >> 4],
+            lut_bf16[b6 & 0x0F],
+            lut_bf16[b6 >> 4],
+            lut_bf16[b7 & 0x0F],
+            lut_bf16[b7 >> 4],
         ];
         let q_lo = vld1q_u16(query_bf16.as_ptr().add(dim_index));
         let q_hi = vld1q_u16(query_bf16.as_ptr().add(dim_index + 8));
@@ -1675,14 +1681,22 @@ unsafe fn sum_query_dequant_neon_bits4(
         // 16 nibbles unpacked in coordinate order (low nibble at 2k,
         // high nibble at 2k+1).
         let dq: [f32; 16] = [
-            lut[b0 & 0x0F], lut[b0 >> 4],
-            lut[b1 & 0x0F], lut[b1 >> 4],
-            lut[b2 & 0x0F], lut[b2 >> 4],
-            lut[b3 & 0x0F], lut[b3 >> 4],
-            lut[b4 & 0x0F], lut[b4 >> 4],
-            lut[b5 & 0x0F], lut[b5 >> 4],
-            lut[b6 & 0x0F], lut[b6 >> 4],
-            lut[b7 & 0x0F], lut[b7 >> 4],
+            lut[b0 & 0x0F],
+            lut[b0 >> 4],
+            lut[b1 & 0x0F],
+            lut[b1 >> 4],
+            lut[b2 & 0x0F],
+            lut[b2 >> 4],
+            lut[b3 & 0x0F],
+            lut[b3 >> 4],
+            lut[b4 & 0x0F],
+            lut[b4 >> 4],
+            lut[b5 & 0x0F],
+            lut[b5 >> 4],
+            lut[b6 & 0x0F],
+            lut[b6 >> 4],
+            lut[b7 & 0x0F],
+            lut[b7 >> 4],
         ];
 
         // SAFETY: dim_index + 16 <= dimensions ⇒ four 4-lane query loads OK.
@@ -1711,10 +1725,14 @@ unsafe fn sum_query_dequant_neon_bits4(
         let b2 = *code.get_unchecked(byte_base + 2) as usize;
         let b3 = *code.get_unchecked(byte_base + 3) as usize;
         let dq = [
-            lut[b0 & 0x0F], lut[b0 >> 4],
-            lut[b1 & 0x0F], lut[b1 >> 4],
-            lut[b2 & 0x0F], lut[b2 >> 4],
-            lut[b3 & 0x0F], lut[b3 >> 4],
+            lut[b0 & 0x0F],
+            lut[b0 >> 4],
+            lut[b1 & 0x0F],
+            lut[b1 >> 4],
+            lut[b2 & 0x0F],
+            lut[b2 >> 4],
+            lut[b3 & 0x0F],
+            lut[b3 >> 4],
         ];
         let q0 = vld1q_f32(query_rotated.as_ptr().add(dim_index));
         let q1 = vld1q_f32(query_rotated.as_ptr().add(dim_index + 4));
@@ -1776,7 +1794,7 @@ fn estimate_ip_impl(
     dimensions: usize,
     bits_per_dim: u8,
     dequant_lut: &[f32; 256],
-    bits1_byte_lut: &[[f32; 8]; 256],
+    bits1_byte_lut: Option<&[[f32; 8]; 256]>,
     code: &[u8],
 ) -> DistanceEstimate {
     debug_assert_eq!(query_rotated.len(), dimensions);
@@ -1858,7 +1876,7 @@ fn estimate_ip_scalar_only_impl(
     dimensions: usize,
     bits_per_dim: u8,
     dequant_lut: &[f32; 256],
-    bits1_byte_lut: &[[f32; 8]; 256],
+    bits1_byte_lut: Option<&[[f32; 8]; 256]>,
     code: &[u8],
 ) -> f32 {
     debug_assert_eq!(query_rotated.len(), dimensions);
@@ -2876,9 +2894,7 @@ mod tests {
     fn neon_sum_query_dequant_matches_scalar_bits1() {
         // Cover the 32-wide loop, 32-wide tail re-entry, and short
         // sub-32 tails. 1536 is the production dim.
-        for &dim in &[
-            8_usize, 16, 24, 31, 32, 33, 48, 63, 64, 95, 96, 128, 1536,
-        ] {
+        for &dim in &[8_usize, 16, 24, 31, 32, 33, 48, 63, 64, 95, 96, 128, 1536] {
             let bits = 1_usize;
             let packed_bytes = (dim * bits).div_ceil(8);
             let mut code = vec![0_u8; packed_bytes + RABITQ_SCALAR_LEN];
@@ -2890,11 +2906,10 @@ mod tests {
                 .map(|i| ((i as f32) - dim as f32 / 2.0) * 0.07)
                 .collect();
             let lut = build_dequant_lut(dim, bits);
-            let byte_lut = build_bits1_byte_lut_boxed(&lut, 1);
+            let byte_lut = build_bits1_byte_lut_boxed(&lut, 1).expect("bits=1 builds byte LUT");
             let scalar = sum_query_dequant_scalar(&query, dim, bits, &lut, &code);
             // SAFETY: aarch64 cfg + valid byte_lut for bits=1.
-            let neon =
-                unsafe { sum_query_dequant_neon_bits1(&query, dim, &byte_lut, &lut, &code) };
+            let neon = unsafe { sum_query_dequant_neon_bits1(&query, dim, &byte_lut, &lut, &code) };
             let tol = 1e-4_f32 * scalar.abs().max(1.0);
             assert!(
                 (scalar - neon).abs() <= tol,
@@ -2908,7 +2923,7 @@ mod tests {
         // The byte LUT must agree with the per-bit scalar decode for
         // every input byte and every bit position.
         let lut = build_dequant_lut(1536, 1);
-        let byte_lut = build_bits1_byte_lut_boxed(&lut, 1);
+        let byte_lut = build_bits1_byte_lut_boxed(&lut, 1).expect("bits=1 builds byte LUT");
         for byte in 0_usize..256 {
             for i in 0_usize..8 {
                 let bit = (byte >> i) & 1;
@@ -2917,13 +2932,17 @@ mod tests {
                 assert_eq!(actual, expected, "byte={byte} i={i}");
             }
         }
-        // bits!=1 returns a zero-filled LUT.
-        let bits4_lut = build_bits1_byte_lut_boxed(&lut, 4);
-        for byte in 0_usize..256 {
-            for i in 0_usize..8 {
-                assert_eq!(bits4_lut[byte][i], 0.0, "bits=4 byte={byte} i={i}");
-            }
-        }
+        assert!(build_bits1_byte_lut_boxed(&lut, 4).is_none());
+    }
+
+    #[test]
+    fn prepared_queries_only_keep_bits1_byte_lut_for_bits1() {
+        let query = vec![0.25_f32; 16];
+        let bits1 = identity_quantizer(16, 1).prepare_estimator(&query);
+        let bits4 = identity_quantizer(16, 4).prepare_estimator(&query);
+
+        assert!(bits1.bits1_byte_lut.is_some());
+        assert!(bits4.bits1_byte_lut.is_none());
     }
 
     #[cfg(target_arch = "aarch64")]
