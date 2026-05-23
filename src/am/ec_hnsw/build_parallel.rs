@@ -17,6 +17,7 @@ use super::concurrent_dsm_state::{
 };
 use super::{build, graph, insert, options, page, search, shared, source};
 use crate::am::common::callback::{pg_am_callback, pg_callback};
+use crate::am::common::dsm::{ShmTocBuilder, ShmTocReader};
 use crate::storage::lock_guard::LwLockGuard;
 use crate::storage::relation_guard::{HeapRelationGuard, IndexRelationGuard};
 use crate::storage::snapshot_guard::RegisteredSnapshotGuard;
@@ -1986,20 +1987,6 @@ fn checked_u16(value: i32, field: &str) -> u16 {
     u16::try_from(value).unwrap_or_else(|_| panic!("parallel build {field} should fit in u16"))
 }
 
-/// Typed TOC lookup. Returns a `*mut T` whose lifetime is bound to the
-/// surrounding DSM segment held alive by the parallel context.
-///
-/// Callers are inside a worker or leader scope where the entry under `key`
-/// was installed by the leader before `LaunchParallelWorkers` returned.
-/// `shm_toc_lookup` is called with `noerror = false`, so PostgreSQL itself
-/// ereports if the key is missing; the returned pointer is non-null on
-/// successful return.
-fn shm_toc_lookup_required<T>(toc: *mut pg_sys::shm_toc, key: u64) -> *mut T {
-    // SAFETY: see function-level contract; the TOC entry exists, PG ereports
-    // if missing, and the DSM segment outlives the returned pointer's use.
-    unsafe { pg_sys::shm_toc_lookup(toc, key, false) }.cast::<T>()
-}
-
 pub(super) fn reset_debug_last_parallel_build_workers_launched() {
     LAST_PARALLEL_BUILD_WORKERS_LAUNCHED.store(0, Ordering::Release);
     LAST_PARALLEL_HEAP_BUILD_WORKERS_LAUNCHED.store(0, Ordering::Release);
@@ -2219,24 +2206,19 @@ impl EcHnswParallelGraphBuildLeader {
             return None;
         }
 
-        // SAFETY: The DSM segment and TOC exist after InitializeParallelDSM;
-        // the allocation size is aligned for the shared header type.
-        let shared = unsafe {
-            pg_sys::shm_toc_allocate(
-                (*pcxt).toc,
-                bufferalign(size_of::<EcHnswParallelBuildSharedHeader>() as pg_sys::Size),
-            )
-            .cast::<EcHnswParallelBuildSharedHeader>()
-        };
-        // SAFETY: The DSM segment and TOC exist, and the graph layout computed
-        // the byte size for the graph image allocation.
-        let graph_base =
-            unsafe { pg_sys::shm_toc_allocate((*pcxt).toc, preassembly.graph_layout.total_bytes) };
+        // SAFETY: After InitializeParallelDSM, `(*pcxt).toc` is the leader's
+        // live TOC; the backing DSM segment outlives this leader scope.
+        let builder = unsafe { ShmTocBuilder::new((*pcxt).toc) };
+        let shared: *mut EcHnswParallelBuildSharedHeader = builder.allocate_typed(bufferalign(
+            size_of::<EcHnswParallelBuildSharedHeader>() as pg_sys::Size,
+        ));
+        let graph_base = builder.allocate_bytes(preassembly.graph_layout.total_bytes);
         // SAFETY: PostgreSQL returns a tranche id for this backend's LWLock
         // tranche registration before lock initialization.
         let tranche_id = unsafe { pg_sys::LWLockNewTrancheId() };
-        // SAFETY: All pointers are DSM allocations from this TOC; the shared
-        // header and graph image are initialized before insertion/worker launch.
+        // SAFETY: `shared` and `graph_base` are DSM allocations from this TOC;
+        // the shared header and graph image are initialized in place before
+        // they are registered with the TOC.
         unsafe {
             pg_sys::LWLockRegisterTranche(
                 tranche_id,
@@ -2253,59 +2235,28 @@ impl EcHnswParallelGraphBuildLeader {
             );
             pg_sys::ConditionVariableInit(&mut (*shared).workersdonecv);
             pg_sys::SpinLockInit(&mut (*shared).mutex);
-            pg_sys::shm_toc_insert(
-                (*pcxt).toc,
-                PARALLEL_KEY_EC_HNSW_BUILD_SHARED,
-                shared.cast(),
-            );
             initialize_concurrent_dsm_graph_image(graph_base, preassembly, |lock| {
                 pg_sys::LWLockInitialize(lock, tranche_id)
             });
-            pg_sys::shm_toc_insert(
-                (*pcxt).toc,
-                PARALLEL_KEY_EC_HNSW_CONCURRENT_DSM_GRAPH,
-                graph_base,
-            );
         }
+        builder.insert(PARALLEL_KEY_EC_HNSW_BUILD_SHARED, shared);
+        builder.insert(PARALLEL_KEY_EC_HNSW_CONCURRENT_DSM_GRAPH, graph_base);
 
-        // SAFETY: The WAL usage array allocation is sized for launched worker
-        // accounting and stored in this ParallelContext's DSM TOC.
-        let walusage = unsafe {
-            pg_sys::shm_toc_allocate(
-                (*pcxt).toc,
-                checked_mul_size(
-                    size_of::<pg_sys::WalUsage>() as pg_sys::Size,
-                    plan.requested_workers as pg_sys::Size,
-                    "parallel graph build WAL usage allocation",
-                ),
-            )
-            .cast::<pg_sys::WalUsage>()
-        };
-        // SAFETY: The buffer usage array allocation is sized for launched
-        // worker accounting and stored in this ParallelContext's DSM TOC.
-        let bufferusage = unsafe {
-            pg_sys::shm_toc_allocate(
-                (*pcxt).toc,
-                checked_mul_size(
-                    size_of::<pg_sys::BufferUsage>() as pg_sys::Size,
-                    plan.requested_workers as pg_sys::Size,
-                    "parallel graph build buffer usage allocation",
-                ),
-            )
-            .cast::<pg_sys::BufferUsage>()
-        };
-        // SAFETY: All TOC entries point at allocations in this DSM; workers are
-        // launched only after shared state, graph image, and accounting arrays
-        // are inserted.
-        unsafe {
-            pg_sys::shm_toc_insert((*pcxt).toc, PARALLEL_KEY_EC_HNSW_WAL_USAGE, walusage.cast());
-            pg_sys::shm_toc_insert(
-                (*pcxt).toc,
-                PARALLEL_KEY_EC_HNSW_BUFFER_USAGE,
-                bufferusage.cast(),
-            );
-            pg_sys::LaunchParallelWorkers(pcxt);
-        }
+        let walusage: *mut pg_sys::WalUsage = builder.allocate_typed(checked_mul_size(
+            size_of::<pg_sys::WalUsage>() as pg_sys::Size,
+            plan.requested_workers as pg_sys::Size,
+            "parallel graph build WAL usage allocation",
+        ));
+        let bufferusage: *mut pg_sys::BufferUsage = builder.allocate_typed(checked_mul_size(
+            size_of::<pg_sys::BufferUsage>() as pg_sys::Size,
+            plan.requested_workers as pg_sys::Size,
+            "parallel graph build buffer usage allocation",
+        ));
+        builder.insert(PARALLEL_KEY_EC_HNSW_WAL_USAGE, walusage);
+        builder.insert(PARALLEL_KEY_EC_HNSW_BUFFER_USAGE, bufferusage);
+        // SAFETY: Shared state, graph image, and accounting arrays are all
+        // installed in the ParallelContext DSM before worker launch.
+        unsafe { pg_sys::LaunchParallelWorkers(pcxt) };
         // SAFETY: `pcxt` remains live after worker launch and records the
         // number of launched workers.
         let workers_launched = unsafe { (*pcxt).nworkers_launched };
@@ -2483,12 +2434,10 @@ impl EcHnswParallelBuildLeader {
             return None;
         }
 
-        // SAFETY: The DSM segment and TOC exist after InitializeParallelDSM;
-        // `shared_bytes` was computed by PostgreSQL's parallel scan sizing.
-        let shared = unsafe {
-            pg_sys::shm_toc_allocate((*pcxt).toc, shared_bytes)
-                .cast::<EcHnswParallelBuildSharedHeader>()
-        };
+        // SAFETY: After InitializeParallelDSM, `(*pcxt).toc` is the leader's
+        // live TOC; the backing DSM segment outlives this leader scope.
+        let builder = unsafe { ShmTocBuilder::new((*pcxt).toc) };
+        let shared: *mut EcHnswParallelBuildSharedHeader = builder.allocate_typed(shared_bytes);
         // SAFETY: The shared header allocation is large enough for the header,
         // relation OIDs come from live relation pointers, and the parallel scan
         // object is initialized before workers can attach.
@@ -2509,62 +2458,35 @@ impl EcHnswParallelBuildLeader {
                 parallel_table_scan_from_shared(shared),
                 snapshot,
             );
-            pg_sys::shm_toc_insert(
-                (*pcxt).toc,
-                PARALLEL_KEY_EC_HNSW_BUILD_SHARED,
-                shared.cast(),
-            );
         }
+        builder.insert(PARALLEL_KEY_EC_HNSW_BUILD_SHARED, shared);
 
-        // SAFETY: Queue chunks were estimated above; each queue allocation is
-        // inserted into this ParallelContext's DSM TOC before worker launch.
+        // SAFETY: Queue chunks were estimated above; each queue's backing
+        // allocation goes through the builder, and `shm_mq_create` +
+        // `shm_mq_set_receiver` are PG FFI calls.
         unsafe {
             for worker_index in 0..plan.requested_workers {
                 let mq = pg_sys::shm_mq_create(
-                    pg_sys::shm_toc_allocate((*pcxt).toc, EC_HNSW_PARALLEL_BUILD_QUEUE_BYTES),
+                    builder.allocate_bytes(EC_HNSW_PARALLEL_BUILD_QUEUE_BYTES),
                     EC_HNSW_PARALLEL_BUILD_QUEUE_BYTES,
                 );
                 pg_sys::shm_mq_set_receiver(mq, pg_sys::MyProc);
-                pg_sys::shm_toc_insert((*pcxt).toc, queue_key(worker_index), mq.cast::<c_void>());
+                builder.insert(queue_key(worker_index), mq);
             }
         }
 
-        // SAFETY: The WAL usage array is sized for requested worker accounting
-        // and belongs to this ParallelContext DSM.
-        let walusage = unsafe {
-            pg_sys::shm_toc_allocate(
-                (*pcxt).toc,
-                checked_mul_size(
-                    size_of::<pg_sys::WalUsage>() as pg_sys::Size,
-                    plan.requested_workers as pg_sys::Size,
-                    "parallel build WAL usage allocation",
-                ),
-            )
-            .cast::<pg_sys::WalUsage>()
-        };
-        // SAFETY: The buffer usage array is sized for requested worker
-        // accounting and belongs to this ParallelContext DSM.
-        let bufferusage = unsafe {
-            pg_sys::shm_toc_allocate(
-                (*pcxt).toc,
-                checked_mul_size(
-                    size_of::<pg_sys::BufferUsage>() as pg_sys::Size,
-                    plan.requested_workers as pg_sys::Size,
-                    "parallel build buffer usage allocation",
-                ),
-            )
-            .cast::<pg_sys::BufferUsage>()
-        };
-        // SAFETY: The accounting arrays are DSM allocations in this TOC and are
-        // inserted before workers are launched.
-        unsafe {
-            pg_sys::shm_toc_insert((*pcxt).toc, PARALLEL_KEY_EC_HNSW_WAL_USAGE, walusage.cast());
-            pg_sys::shm_toc_insert(
-                (*pcxt).toc,
-                PARALLEL_KEY_EC_HNSW_BUFFER_USAGE,
-                bufferusage.cast(),
-            );
-        }
+        let walusage: *mut pg_sys::WalUsage = builder.allocate_typed(checked_mul_size(
+            size_of::<pg_sys::WalUsage>() as pg_sys::Size,
+            plan.requested_workers as pg_sys::Size,
+            "parallel build WAL usage allocation",
+        ));
+        let bufferusage: *mut pg_sys::BufferUsage = builder.allocate_typed(checked_mul_size(
+            size_of::<pg_sys::BufferUsage>() as pg_sys::Size,
+            plan.requested_workers as pg_sys::Size,
+            "parallel build buffer usage allocation",
+        ));
+        builder.insert(PARALLEL_KEY_EC_HNSW_WAL_USAGE, walusage);
+        builder.insert(PARALLEL_KEY_EC_HNSW_BUFFER_USAGE, bufferusage);
 
         // SAFETY: Shared state, worker queues, and accounting arrays have all
         // been initialized in the ParallelContext DSM.
@@ -2741,8 +2663,11 @@ pub unsafe extern "C-unwind" fn ec_hnsw_parallel_graph_build_main(
 }
 
 unsafe fn parallel_build_worker_main(seg: *mut pg_sys::dsm_segment, toc: *mut pg_sys::shm_toc) {
+    // SAFETY: `toc` is the worker's attached TOC handed in by PostgreSQL; the
+    // backing DSM segment outlives this worker frame.
+    let reader = unsafe { ShmTocReader::attach(toc) };
     let shared: *mut EcHnswParallelBuildSharedHeader =
-        shm_toc_lookup_required(toc, PARALLEL_KEY_EC_HNSW_BUILD_SHARED);
+        reader.lookup_required(PARALLEL_KEY_EC_HNSW_BUILD_SHARED);
     // SAFETY: the leader inserted `shared` before launching workers and keeps
     // the DSM segment alive until every worker exits, so the borrow is bounded
     // by this function frame.
@@ -2760,7 +2685,7 @@ unsafe fn parallel_build_worker_main(seg: *mut pg_sys::dsm_segment, toc: *mut pg
         pgrx::error!("ec_hnsw parallel build worker started without a worker number");
     }
 
-    let queue: *mut pg_sys::shm_mq = shm_toc_lookup_required(toc, queue_key(worker_number));
+    let queue: *mut pg_sys::shm_mq = reader.lookup_required(queue_key(worker_number));
     // SAFETY: The queue is this worker's shm_mq; the worker backend is the
     // sender and attaches using the inherited DSM segment.
     unsafe { pg_sys::shm_mq_set_sender(queue, pg_sys::MyProc) };
@@ -2831,9 +2756,8 @@ unsafe fn parallel_build_worker_main(seg: *mut pg_sys::dsm_segment, toc: *mut pg
     }
 
     let bufferusage: *mut pg_sys::BufferUsage =
-        shm_toc_lookup_required(toc, PARALLEL_KEY_EC_HNSW_BUFFER_USAGE);
-    let walusage: *mut pg_sys::WalUsage =
-        shm_toc_lookup_required(toc, PARALLEL_KEY_EC_HNSW_WAL_USAGE);
+        reader.lookup_required(PARALLEL_KEY_EC_HNSW_BUFFER_USAGE);
+    let walusage: *mut pg_sys::WalUsage = reader.lookup_required(PARALLEL_KEY_EC_HNSW_WAL_USAGE);
     // SAFETY: `worker_number` is non-negative and indexes this worker's
     // accounting slot in arrays allocated by the leader.
     unsafe {
@@ -2847,8 +2771,11 @@ unsafe fn parallel_build_worker_main(seg: *mut pg_sys::dsm_segment, toc: *mut pg
 }
 
 unsafe fn parallel_graph_build_worker_main(toc: *mut pg_sys::shm_toc) {
+    // SAFETY: `toc` is the worker's attached TOC handed in by PostgreSQL; the
+    // backing DSM segment outlives this worker frame.
+    let reader = unsafe { ShmTocReader::attach(toc) };
     let shared: *mut EcHnswParallelBuildSharedHeader =
-        shm_toc_lookup_required(toc, PARALLEL_KEY_EC_HNSW_BUILD_SHARED);
+        reader.lookup_required(PARALLEL_KEY_EC_HNSW_BUILD_SHARED);
     // SAFETY: the graph-build leader inserted `shared` before launching
     // workers and keeps the DSM segment alive until every worker exits, so
     // the borrow is bounded by this function frame.
@@ -2866,8 +2793,7 @@ unsafe fn parallel_graph_build_worker_main(toc: *mut pg_sys::shm_toc) {
         pgrx::error!("ec_hnsw parallel graph build worker started without a worker number");
     }
 
-    let graph_base: *mut c_void =
-        shm_toc_lookup_required(toc, PARALLEL_KEY_EC_HNSW_CONCURRENT_DSM_GRAPH);
+    let graph_base: *mut c_void = reader.lookup_required(PARALLEL_KEY_EC_HNSW_CONCURRENT_DSM_GRAPH);
     let attachment = attach_concurrent_dsm_graph_image(graph_base);
     let config = attachment.require_insert_config();
     let mut scratch = EcHnswConcurrentDsmInsertScratch::new(
@@ -2900,9 +2826,8 @@ unsafe fn parallel_graph_build_worker_main(toc: *mut pg_sys::shm_toc) {
     }
 
     let bufferusage: *mut pg_sys::BufferUsage =
-        shm_toc_lookup_required(toc, PARALLEL_KEY_EC_HNSW_BUFFER_USAGE);
-    let walusage: *mut pg_sys::WalUsage =
-        shm_toc_lookup_required(toc, PARALLEL_KEY_EC_HNSW_WAL_USAGE);
+        reader.lookup_required(PARALLEL_KEY_EC_HNSW_BUFFER_USAGE);
+    let walusage: *mut pg_sys::WalUsage = reader.lookup_required(PARALLEL_KEY_EC_HNSW_WAL_USAGE);
     // SAFETY: `worker_number` is non-negative and indexes this worker's
     // accounting slot in arrays allocated by the leader.
     unsafe {
