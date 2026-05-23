@@ -417,6 +417,10 @@ struct SidecarRerankStep {
     #[serde(default)]
     variants: Vec<String>,
     #[serde(default)]
+    read_modes: Vec<String>,
+    #[serde(default)]
+    rebuild_sidecar_table: bool,
+    #[serde(default)]
     force_index: Option<bool>,
     #[serde(default)]
     allow_unsafe_index_shape: bool,
@@ -2133,6 +2137,12 @@ fn expand_sidecar_rerank(step: &SidecarRerankStep, defaults: &SuiteDefaults) -> 
     for variant in &step.variants {
         push_arg(&mut args, "--variant", variant);
     }
+    for read_mode in &step.read_modes {
+        push_arg(&mut args, "--read-mode", read_mode);
+    }
+    if step.rebuild_sidecar_table {
+        args.push("--rebuild-sidecar-table".into());
+    }
     if step.force_index.or(defaults.force_index).unwrap_or(false) {
         args.push("--force-index".into());
     }
@@ -2753,6 +2763,8 @@ mod tests {
             bits: None,
             seed: None,
             variants: vec!["f32".into(), "f16".into(), "rabitq8".into()],
+            read_modes: vec!["free".into(), "random-id".into(), "tid-sorted".into()],
+            rebuild_sidecar_table: true,
             force_index: None,
             allow_unsafe_index_shape: false,
             log_output: Some("sidecar.log".into()),
@@ -2764,6 +2776,10 @@ mod tests {
         assert!(args.windows(2).any(|w| w == ["--variant", "f32"]));
         assert!(args.windows(2).any(|w| w == ["--variant", "f16"]));
         assert!(args.windows(2).any(|w| w == ["--variant", "rabitq8"]));
+        assert!(args.windows(2).any(|w| w == ["--read-mode", "free"]));
+        assert!(args.windows(2).any(|w| w == ["--read-mode", "random-id"]));
+        assert!(args.windows(2).any(|w| w == ["--read-mode", "tid-sorted"]));
+        assert!(args.contains(&"--rebuild-sidecar-table".into()));
         assert!(args.contains(&"--force-index".into()));
         assert!(args
             .windows(2)
