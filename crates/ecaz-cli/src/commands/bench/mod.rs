@@ -44,24 +44,24 @@ pub(crate) fn sweep_value_label(profile: &IndexProfile, value: i32) -> String {
     format!("{}={value}", profile.sweep_axis_label())
 }
 
-const EC_SPIRE_MAX_ADAPTIVE_NPROBE_SCORE_GAP_MICROS: i32 = 1_000_000;
+const EC_MAX_ADAPTIVE_NPROBE_SCORE_GAP_MICROS: i32 = 1_000_000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct SpireAdaptiveNprobeBenchOptions {
+pub(crate) struct AdaptiveNprobeBenchOptions {
     pub(crate) enabled: bool,
     pub(crate) score_gap_micros: Option<i32>,
 }
 
-pub(crate) fn validate_spire_adaptive_nprobe_options(
+pub(crate) fn validate_adaptive_nprobe_options(
     profile: &IndexProfile,
-    options: SpireAdaptiveNprobeBenchOptions,
+    options: AdaptiveNprobeBenchOptions,
 ) -> Result<()> {
     if !options.enabled && options.score_gap_micros.is_none() {
         return Ok(());
     }
-    if profile.name != "ec_spire" {
+    if adaptive_nprobe_gucs(profile).is_none() {
         return Err(eyre!(
-            "--adaptive-nprobe is only supported with --profile ec_spire"
+            "--adaptive-nprobe is only supported with --profile ec_ivf or --profile ec_spire"
         ));
     }
     if options.score_gap_micros.is_some() && !options.enabled {
@@ -70,43 +70,43 @@ pub(crate) fn validate_spire_adaptive_nprobe_options(
         ));
     }
     if let Some(value) = options.score_gap_micros {
-        if !(0..=EC_SPIRE_MAX_ADAPTIVE_NPROBE_SCORE_GAP_MICROS).contains(&value) {
+        if !(0..=EC_MAX_ADAPTIVE_NPROBE_SCORE_GAP_MICROS).contains(&value) {
             return Err(eyre!(
                 "--adaptive-nprobe-score-gap-micros must be between 0 and {}",
-                EC_SPIRE_MAX_ADAPTIVE_NPROBE_SCORE_GAP_MICROS
+                EC_MAX_ADAPTIVE_NPROBE_SCORE_GAP_MICROS
             ));
         }
     }
     Ok(())
 }
 
-pub(crate) async fn apply_spire_adaptive_nprobe_options(
+pub(crate) async fn apply_adaptive_nprobe_options(
     client: &Client,
-    options: SpireAdaptiveNprobeBenchOptions,
+    profile: &IndexProfile,
+    options: AdaptiveNprobeBenchOptions,
 ) -> Result<()> {
     if !options.enabled {
         return Ok(());
     }
+    let (enabled_guc, score_gap_guc) = adaptive_nprobe_gucs(profile).ok_or_else(|| {
+        eyre!("--adaptive-nprobe is only supported with --profile ec_ivf or --profile ec_spire")
+    })?;
     client
-        .batch_execute("SET ec_spire.adaptive_nprobe = on")
+        .batch_execute(&format!("SET {enabled_guc} = on"))
         .await
-        .wrap_err("SET ec_spire.adaptive_nprobe = on")?;
+        .wrap_err_with(|| format!("SET {enabled_guc} = on"))?;
     if let Some(score_gap_micros) = options.score_gap_micros {
         client
-            .batch_execute(&format!(
-                "SET ec_spire.adaptive_nprobe_score_gap_micros = {score_gap_micros}"
-            ))
+            .batch_execute(&format!("SET {score_gap_guc} = {score_gap_micros}"))
             .await
-            .wrap_err_with(|| {
-                format!("SET ec_spire.adaptive_nprobe_score_gap_micros = {score_gap_micros}")
-            })?;
+            .wrap_err_with(|| format!("SET {score_gap_guc} = {score_gap_micros}"))?;
     }
     Ok(())
 }
 
 pub(crate) fn append_adaptive_nprobe_label(
     message: String,
-    options: SpireAdaptiveNprobeBenchOptions,
+    options: AdaptiveNprobeBenchOptions,
 ) -> String {
     if !options.enabled {
         return message;
@@ -116,6 +116,20 @@ pub(crate) fn append_adaptive_nprobe_label(
             format!("{message} adaptive_nprobe=on gap_micros={score_gap_micros}")
         }
         None => format!("{message} adaptive_nprobe=on"),
+    }
+}
+
+fn adaptive_nprobe_gucs(profile: &IndexProfile) -> Option<(&'static str, &'static str)> {
+    match profile.name {
+        "ec_ivf" => Some((
+            "ec_ivf.adaptive_nprobe",
+            "ec_ivf.adaptive_nprobe_score_gap_micros",
+        )),
+        "ec_spire" => Some((
+            "ec_spire.adaptive_nprobe",
+            "ec_spire.adaptive_nprobe_score_gap_micros",
+        )),
+        _ => None,
     }
 }
 
@@ -163,7 +177,7 @@ impl BenchCommand {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::profiles::{EC_DISKANN, EC_HNSW, EC_SPIRE};
+    use crate::profiles::{EC_DISKANN, EC_HNSW, EC_IVF, EC_SPIRE};
 
     #[test]
     fn missing_am_error_points_operator_at_matching_profile_load() {
@@ -188,32 +202,40 @@ mod tests {
     }
 
     #[test]
-    fn adaptive_nprobe_bench_options_are_spire_only() {
-        assert!(validate_spire_adaptive_nprobe_options(
+    fn adaptive_nprobe_bench_options_support_ivf_and_spire() {
+        assert!(validate_adaptive_nprobe_options(
             &EC_SPIRE,
-            SpireAdaptiveNprobeBenchOptions {
+            AdaptiveNprobeBenchOptions {
                 enabled: true,
                 score_gap_micros: Some(0),
             },
         )
         .is_ok());
-        assert!(validate_spire_adaptive_nprobe_options(
+        assert!(validate_adaptive_nprobe_options(
+            &EC_IVF,
+            AdaptiveNprobeBenchOptions {
+                enabled: true,
+                score_gap_micros: Some(0),
+            },
+        )
+        .is_ok());
+        assert!(validate_adaptive_nprobe_options(
             &EC_HNSW,
-            SpireAdaptiveNprobeBenchOptions {
+            AdaptiveNprobeBenchOptions {
                 enabled: true,
                 score_gap_micros: None,
             },
         )
         .unwrap_err()
         .to_string()
-        .contains("--profile ec_spire"));
+        .contains("--profile ec_ivf or --profile ec_spire"));
     }
 
     #[test]
     fn adaptive_nprobe_threshold_requires_enabled_switch() {
-        assert!(validate_spire_adaptive_nprobe_options(
+        assert!(validate_adaptive_nprobe_options(
             &EC_SPIRE,
-            SpireAdaptiveNprobeBenchOptions {
+            AdaptiveNprobeBenchOptions {
                 enabled: false,
                 score_gap_micros: Some(0),
             },

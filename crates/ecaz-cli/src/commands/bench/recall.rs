@@ -55,10 +55,10 @@ pub struct RecallArgs {
     /// Use -1 for the index reloption, 0 for the full probed frontier.
     #[arg(long)]
     pub rerank_width: Option<i32>,
-    /// SPIRE-only: enable deterministic adaptive nprobe during the sweep.
+    /// IVF/SPIRE: enable deterministic adaptive nprobe during the sweep.
     #[arg(long)]
     pub adaptive_nprobe: bool,
-    /// SPIRE-only: score-gap threshold for adaptive nprobe decisions.
+    /// IVF/SPIRE: score-gap threshold for adaptive nprobe decisions.
     #[arg(long)]
     pub adaptive_nprobe_score_gap_micros: Option<i32>,
     /// Cap the query set (default: all rows in `<prefix>_queries`).
@@ -131,11 +131,11 @@ pub async fn run(conn: &ConnectionOptions, args: RecallArgs) -> Result<()> {
         args.sweep.clone()
     };
     validate_rerank_width_arg(profile, args.rerank_width)?;
-    let adaptive_nprobe_options = super::SpireAdaptiveNprobeBenchOptions {
+    let adaptive_nprobe_options = super::AdaptiveNprobeBenchOptions {
         enabled: args.adaptive_nprobe,
         score_gap_micros: args.adaptive_nprobe_score_gap_micros,
     };
-    super::validate_spire_adaptive_nprobe_options(profile, adaptive_nprobe_options)?;
+    super::validate_adaptive_nprobe_options(profile, adaptive_nprobe_options)?;
 
     let corpus_table = format!("{}_corpus", args.prefix);
     let queries_table = format!("{}_queries", args.prefix);
@@ -234,7 +234,7 @@ pub async fn run(conn: &ConnectionOptions, args: RecallArgs) -> Result<()> {
                     .wrap_err_with(|| format!("SET {rerank_width_guc} = {rerank_width}"))?;
             }
         }
-        super::apply_spire_adaptive_nprobe_options(&client, adaptive_nprobe_options).await?;
+        super::apply_adaptive_nprobe_options(&client, profile, adaptive_nprobe_options).await?;
         client
             .batch_execute(&format!("SET {guc} = {value}"))
             .await

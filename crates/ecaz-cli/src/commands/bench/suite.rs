@@ -284,6 +284,10 @@ struct RecallStep {
     #[serde(default)]
     rerank_width: Option<i32>,
     #[serde(default)]
+    adaptive_nprobe: Option<bool>,
+    #[serde(default)]
+    adaptive_nprobe_score_gap_micros: Option<i32>,
+    #[serde(default)]
     queries_limit: Option<usize>,
     #[serde(default)]
     profile: Option<String>,
@@ -329,6 +333,10 @@ struct LatencyStep {
     iterations: Option<usize>,
     #[serde(default)]
     rerank_width: Option<i32>,
+    #[serde(default)]
+    adaptive_nprobe: Option<bool>,
+    #[serde(default)]
+    adaptive_nprobe_score_gap_micros: Option<i32>,
     #[serde(default)]
     profile: Option<String>,
     #[serde(default)]
@@ -1940,6 +1948,16 @@ fn expand_recall(step: &RecallStep, defaults: &SuiteDefaults) -> Vec<String> {
     if let Some(width) = step.rerank_width {
         push_arg(&mut args, "--rerank-width", &width.to_string());
     }
+    if step.adaptive_nprobe.unwrap_or(false) {
+        args.push("--adaptive-nprobe".into());
+    }
+    if let Some(score_gap_micros) = step.adaptive_nprobe_score_gap_micros {
+        push_arg(
+            &mut args,
+            "--adaptive-nprobe-score-gap-micros",
+            &score_gap_micros.to_string(),
+        );
+    }
     if let Some(limit) = step.queries_limit.or(defaults.queries_limit) {
         push_arg(&mut args, "--queries-limit", &limit.to_string());
     }
@@ -2005,6 +2023,16 @@ fn expand_latency(step: &LatencyStep, defaults: &SuiteDefaults) -> Vec<String> {
     push_arg(&mut args, "--sweep", &join_i32(&step.sweep));
     if let Some(width) = step.rerank_width {
         push_arg(&mut args, "--rerank-width", &width.to_string());
+    }
+    if step.adaptive_nprobe.unwrap_or(false) {
+        args.push("--adaptive-nprobe".into());
+    }
+    if let Some(score_gap_micros) = step.adaptive_nprobe_score_gap_micros {
+        push_arg(
+            &mut args,
+            "--adaptive-nprobe-score-gap-micros",
+            &score_gap_micros.to_string(),
+        );
     }
     push_arg(&mut args, "--bits", &bits(defaults, step.bits).to_string());
     push_arg(&mut args, "--seed", &seed(defaults, step.seed).to_string());
@@ -2615,6 +2643,8 @@ mod tests {
             k: 10,
             sweep: vec![48, 96],
             rerank_width: Some(500),
+            adaptive_nprobe: Some(true),
+            adaptive_nprobe_score_gap_micros: Some(1000),
             queries_limit: None,
             profile: None,
             bits: None,
@@ -2630,6 +2660,10 @@ mod tests {
         assert!(args.windows(2).any(|w| w == ["--queries-limit", "100"]));
         assert!(args.contains(&"--force-index".into()));
         assert!(args.windows(2).any(|w| w == ["--sweep", "48,96"]));
+        assert!(args.contains(&"--adaptive-nprobe".into()));
+        assert!(args
+            .windows(2)
+            .any(|w| w == ["--adaptive-nprobe-score-gap-micros", "1000"]));
         assert!(args
             .windows(2)
             .any(|w| w == ["--predictions-output", "predictions.json"]));
@@ -2808,6 +2842,8 @@ mod tests {
             k: 10,
             sweep: vec![48],
             rerank_width: None,
+            adaptive_nprobe: None,
+            adaptive_nprobe_score_gap_micros: None,
             queries_limit: None,
             profile: None,
             bits: None,
