@@ -1,0 +1,75 @@
+HEAD is now at 47e178772 IVF build path: thread quant_bits all the way through (was hardcoded 4)
+[32m[1m       Running[0m[39m sudo cp /var/lib/pgsql/build/ecaz/target/release/ecaz-pg18/usr/share/pgsql/extension/ecaz.control /usr/share/pgsql/extension/ecaz.control
+[32m[1m       Running[0m[39m sudo cp /var/lib/pgsql/build/ecaz/target/release/ecaz-pg18/usr/lib64/pgsql/ecaz.so /usr/lib64/pgsql/ecaz.so
+[32m[1m       Running[0m[39m sudo cp /var/lib/pgsql/build/ecaz/target/release/ecaz-pg18/usr/share/pgsql/extension/ecaz--0.1.1.sql /usr/share/pgsql/extension/ecaz--0.1.1.sql
+warning: `ecaz-cli` (bin "ecaz") generated 1 warning
+    Finished `release` profile [optimized] target(s) in 6m 28s
+Time: 28946.807 ms (00:28.947)
+               relname               |  size   
+-------------------------------------+---------
+ real_10k_ivf_rabitq1_corpus         | 752 kB
+ real_10k_ivf_rabitq1_idx            | 4144 kB
+ real_10k_ivf_rabitq1_queries        | 16 kB
+ real_50k_ivf_rabitq1_corpus         | 3744 kB
+ real_50k_ivf_rabitq1_idx            | 17 MB
+ real_50k_ivf_rabitq1_queries        | 64 kB
+ real_50k_ivf_rabitq1_rerank_corpus  | 4136 kB
+ real_50k_ivf_rabitq1_rerank_idx     | 17 MB
+ real_50k_ivf_rabitq1_rerank_queries | 64 kB
+(9 rows)
+
+Time: 0.902 ms
+ real_50k_queries_shared             | 64 kB    |            8
+(41 rows)
+
+=== 50k bits=1 no-rerank latency ===
+
+   0: [91mdb error[0m
+   1: [91mERROR: RaBitQ code too short: got 204, expected at least 780[0m
+
+Location:
+   [35mcrates/ecaz-cli/src/commands/bench/latency.rs[0m:[35m390[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.
+=== 50k bits=1 no-rerank recall ===
+[recall] fetching queries from real_50k_ivf_rabitq1_queries ...
+[recall] fetching corpus from real_50k_ivf_rabitq1_corpus ...
+[recall] computing ground truth: 1000 queries vs 50000 corpus rows (dim=1536) ...
+[recall] ground truth in 2.51s
+
+   0: [91mexecuting recall KNN query[0m
+   1: [91mdb error[0m
+   2: [91mERROR: RaBitQ code too short: got 204, expected at least 780[0m
+
+Location:
+   [35mcrates/ecaz-cli/src/commands/bench/recall.rs[0m:[35m280[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.
+=== 50k bits=1 + rerank=heap_f32 w=200 latency ===
+
+   0: [91mdb error[0m
+   1: [91mERROR: RaBitQ code too short: got 204, expected at least 780[0m
+
+Location:
+   [35mcrates/ecaz-cli/src/commands/bench/latency.rs[0m:[35m390[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.
+=== 50k bits=1 + rerank=heap_f32 w=200 recall ===
+[recall] fetching queries from real_50k_ivf_rabitq1_rerank_queries ...
+[recall] fetching corpus from real_50k_ivf_rabitq1_rerank_corpus ...
+[recall] computing ground truth: 1000 queries vs 50000 corpus rows (dim=1536) ...
+[recall] ground truth in 2.51s
+
+   0: [91mexecuting recall KNN query[0m
+   1: [91mdb error[0m
+   2: [91mERROR: RaBitQ code too short: got 204, expected at least 780[0m
+
+Location:
+   [35mcrates/ecaz-cli/src/commands/bench/recall.rs[0m:[35m280[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.
+

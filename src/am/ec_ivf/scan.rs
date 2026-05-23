@@ -1,5 +1,7 @@
 use std::cmp::Ordering;
-use std::collections::{hash_map::Entry, BinaryHeap, HashMap, HashSet};
+use hashbrown::hash_map::Entry;
+use hashbrown::HashMap;
+use std::collections::{BinaryHeap, HashSet};
 use std::ptr;
 
 use pgrx::{pg_sys, FromDatum, IntoDatum, PgBox};
@@ -618,10 +620,11 @@ fn store_scan_prepared_query(
         return;
     }
 
-    let quantizer = IvfQuantizer::resolve_with_pq_group_size(
+    let quantizer = IvfQuantizer::resolve_with_pq_group_size_and_bits(
         metadata.storage_format,
         metadata.dimensions as usize,
         metadata_pq_group_size(metadata),
+        Some(metadata.quant_bits),
     )
     .unwrap_or_else(|e| pgrx::error!("{e}"));
     let prepared = if metadata.storage_format == StorageFormat::PqFastScan {
@@ -864,10 +867,73 @@ unsafe fn load_centroid_scores(
 }
 
 fn inner_product(left: &[f32], right: &[f32]) -> f32 {
+    // Release-mode length check; helper relies on slice lengths matching
+    // to skip per-iteration bounds checks in the SIMD body.
+    assert_eq!(
+        left.len(),
+        right.len(),
+        "ec_ivf centroid inner_product slice length mismatch"
+    );
+    #[cfg(target_arch = "aarch64")]
+    {
+        if std::arch::is_aarch64_feature_detected!("neon") {
+            // SAFETY: NEON feature confirmed at runtime; assert_eq above
+            // guarantees both slices have the same length.
+            return unsafe { inner_product_neon(left, right) };
+        }
+    }
+    inner_product_scalar(left, right)
+}
+
+#[inline]
+fn inner_product_scalar(left: &[f32], right: &[f32]) -> f32 {
     left.iter()
         .zip(right.iter())
         .map(|(left, right)| left * right)
         .sum()
+}
+
+/// f32 inner product with 4 accumulator chains. Used to score IVF
+/// centroids against the query (~`nlists` × `dimensions` ops at the
+/// start of every scan) — formerly a scalar `.sum()` loop, which at
+/// dim=1536 nlists=224 was ~1 ms of per-query fixed cost on Graviton 4.
+#[cfg(target_arch = "aarch64")]
+#[target_feature(enable = "neon")]
+unsafe fn inner_product_neon(left: &[f32], right: &[f32]) -> f32 {
+    use std::arch::aarch64::{vaddq_f32, vdupq_n_f32, vfmaq_f32, vld1q_f32, vst1q_f32};
+    let n = left.len();
+    let mut acc0 = vdupq_n_f32(0.0);
+    let mut acc1 = vdupq_n_f32(0.0);
+    let mut acc2 = vdupq_n_f32(0.0);
+    let mut acc3 = vdupq_n_f32(0.0);
+    let mut i = 0_usize;
+    while i + 16 <= n {
+        // SAFETY: i + 16 <= n and both slices have length n.
+        let va0 = vld1q_f32(left.as_ptr().add(i));
+        let va1 = vld1q_f32(left.as_ptr().add(i + 4));
+        let va2 = vld1q_f32(left.as_ptr().add(i + 8));
+        let va3 = vld1q_f32(left.as_ptr().add(i + 12));
+        let vb0 = vld1q_f32(right.as_ptr().add(i));
+        let vb1 = vld1q_f32(right.as_ptr().add(i + 4));
+        let vb2 = vld1q_f32(right.as_ptr().add(i + 8));
+        let vb3 = vld1q_f32(right.as_ptr().add(i + 12));
+        acc0 = vfmaq_f32(acc0, va0, vb0);
+        acc1 = vfmaq_f32(acc1, va1, vb1);
+        acc2 = vfmaq_f32(acc2, va2, vb2);
+        acc3 = vfmaq_f32(acc3, va3, vb3);
+        i += 16;
+    }
+    let mut lanes = [0.0_f32; 4];
+    vst1q_f32(
+        lanes.as_mut_ptr(),
+        vaddq_f32(vaddq_f32(acc0, acc1), vaddq_f32(acc2, acc3)),
+    );
+    let mut sum = lanes[0] + lanes[1] + lanes[2] + lanes[3];
+    while i < n {
+        sum += left[i] * right[i];
+        i += 1;
+    }
+    sum
 }
 
 fn candidate_cmp(left: &EcIvfScoredCandidate, right: &EcIvfScoredCandidate) -> Ordering {
@@ -963,10 +1029,11 @@ unsafe fn materialize_probe_candidates(
     // SAFETY: `prepared_query` is initialized by `store_scan_prepared_query`
     // for this scan opaque and remains owned for the scan lifetime.
     let prepared_query = unsafe { &*opaque.prepared_query };
-    let quantizer = IvfQuantizer::resolve_with_pq_group_size(
+    let quantizer = IvfQuantizer::resolve_with_pq_group_size_and_bits(
         metadata.storage_format,
         metadata.dimensions as usize,
         metadata_pq_group_size(metadata),
+        Some(metadata.quant_bits),
     )?;
     let payload_len = quantizer.payload_len();
     // SAFETY: `index_relation` and metadata describe the live IVF index; the
@@ -976,7 +1043,7 @@ unsafe fn materialize_probe_candidates(
     let best_by_heap_tid = candidate_dedup_map(opaque, probe_plan.candidate_bound);
     let mut running_top = quantizer
         .uses_score_bound_pruning()
-        .then(|| pre_rerank_candidate_limit(index_options))
+        .then(|| running_top_k_for_pruning(index_options))
         .flatten()
         .map(CandidateTopK::new);
     let mut remaining_live_tids_by_list = probe_plan.remaining_live_tids_by_list.clone();
@@ -998,7 +1065,7 @@ unsafe fn materialize_probe_candidates(
                     return Ok(());
                 }
                 opaque.explain_counters.record_posting_visited();
-                let heap_tid_count = posting.heaptids().count();
+                let heap_tid_count = posting.heaptid_count();
                 if !consume_live_tid_budget(
                     &mut remaining_live_tids_by_list,
                     posting.list_id,
@@ -1074,6 +1141,28 @@ fn pre_rerank_candidate_limit(index_options: &super::options::EcIvfOptions) -> O
         super::options::RerankMode::HeapF32 if rerank_width > 0 => Some(rerank_width as usize),
         _ => None,
     }
+}
+
+/// K used to seed the `running_top` Cauchy-Schwarz cutoff during the
+/// posting scan. Distinct from `pre_rerank_candidate_limit`, which
+/// drives the *post-scan* rerank set size. The pre-prune cutoff is
+/// recall-safe at any K ≥ the query's downstream LIMIT: candidates
+/// below the K-th best RaBitQ score by definition cannot enter the
+/// final top-K.
+///
+/// Default is 200 so pre-prune fires on no-rerank scans (where
+/// `pre_rerank_candidate_limit` would otherwise be `None` and the
+/// cutoff would never materialize). Covers the common K ≤ 200 case.
+/// Queries with LIMIT > 200 would see truncation — track via a GUC
+/// override if that workload becomes real. When `heap_f32` rerank is
+/// on with an explicit width, we reuse that width so the cutoff
+/// aligns with the rerank set.
+fn running_top_k_for_pruning(index_options: &super::options::EcIvfOptions) -> Option<usize> {
+    if let Some(width) = pre_rerank_candidate_limit(index_options) {
+        return Some(width);
+    }
+    const DEFAULT_PRE_PRUNE_K: usize = 200;
+    Some(DEFAULT_PRE_PRUNE_K)
 }
 
 fn collect_ranked_probe_candidates<I>(
@@ -2003,10 +2092,37 @@ pub(crate) unsafe fn debug_ec_ivf_directory_entry(
 mod tests {
     use super::{
         build_probe_block_sequence, candidate_heap_tid_cmp, consume_live_tid_budget,
-        select_probe_lists, CandidateTopK, EcIvfCentroidScore, EcIvfScoredCandidate,
-        ProbeBlockRange,
+        inner_product, inner_product_scalar, select_probe_lists, CandidateTopK,
+        EcIvfCentroidScore, EcIvfScoredCandidate, ProbeBlockRange,
     };
     use crate::storage::page::ItemPointer;
+
+    #[test]
+    fn inner_product_neon_matches_scalar_at_various_dims() {
+        // Cover the 16-wide loop, 4-wide tail, and the trailing scalar
+        // for the last < 4 lanes. 1536 is the production dim; the
+        // others exercise tail paths.
+        for &dim in &[1_usize, 3, 4, 15, 16, 17, 31, 32, 33, 64, 100, 1536] {
+            let a: Vec<f32> = (0..dim).map(|i| ((i as f32) * 0.013).sin()).collect();
+            let b: Vec<f32> = (0..dim).map(|i| ((i as f32) * 0.017).cos()).collect();
+            let dispatch = inner_product(&a, &b);
+            let scalar = inner_product_scalar(&a, &b);
+            let tol = 1e-4_f32 * scalar.abs().max(1.0);
+            assert!(
+                (dispatch - scalar).abs() <= tol,
+                "dim={dim}: dispatch={dispatch} scalar={scalar} delta={}",
+                (dispatch - scalar).abs()
+            );
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "slice length mismatch")]
+    fn inner_product_panics_on_length_mismatch() {
+        let a = vec![1.0_f32; 4];
+        let b = vec![1.0_f32; 5];
+        inner_product(&a, &b);
+    }
 
     fn candidate(block_number: u32, offset_number: u16, score: f32) -> EcIvfScoredCandidate {
         EcIvfScoredCandidate {

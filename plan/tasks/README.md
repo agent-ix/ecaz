@@ -88,6 +88,7 @@ These pre-lane task files are retained only for historical context under
 48. `48-build-matrix-and-soak.md` — CI matrix for darwin / linux-gnu / linux-musl × pg17 / pg18, qemu cross-endian decode lane, 24-hour soak harness with leak-slope detection, and PG resource-limit exhaustion sweeps.
 49. `49-hardening-ci-governance.md` — recommended next coder pickup; retargets the four Task 34 synthetic harnesses (Rudra/Flux/Loom/Shuttle) at real ECAZ code, restores `make test` to `cargo test` on CI, documents the local → PR → nightly → weekly promotion ladder, and adds `make hardening-validate` to block future synthetic-only lanes.
 50. `50-unsafe-structural-reduction.md` — post-Task-35 follow-on: reduce the *count* of `unsafe { ... }` blocks (not baseline entries) in the densest residual modules via encapsulation, type-lifted invariants, narrowed blocks, container-owned state, and closure APIs; gated on per-packet bench evidence (HNSW/IVF/DiskANN/SPIRE) showing no regression.
+51. `51-ivf-rabitq-second-optimization-round.md` — follow-on AWS RaBitQ/IVF latency lane: paired same-host comparator baseline, 1M scan counters, `nlists`/nprobe geometry sweeps, local batch-decode scratch-SoA prototype, heap-rerank locality, adaptive nprobe/rerank width, and a gated Posting Layout v2 decision before any invasive on-disk format work.
 
 ## Coordination rules
 

@@ -80,6 +80,57 @@ pub async fn describe_instance_state(region: &str, id: &str) -> Result<String> {
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
 
+/// Look up the most recent `completed`/`pending` EBS snapshot of
+/// `volume_id`. Returns `Ok(Some((snapshot_id, start_time_iso)))`
+/// if found, `Ok(None)` if the volume has no snapshots at all.
+///
+/// Used by `ecaz cloud down` to refuse destruction when the data
+/// volume has no snapshot covering its current state. Per the
+/// snapshot-before-destroy invariant (see
+/// `docs/aws-bench-workflow.md`), losing the volume without a
+/// snapshot loses hours of corpus + index build work.
+pub async fn latest_snapshot_for_volume(
+    region: &str,
+    volume_id: &str,
+) -> Result<Option<(String, String)>> {
+    let output = Command::new("aws")
+        .args([
+            "ec2",
+            "describe-snapshots",
+            "--region",
+            region,
+            "--owner-ids",
+            "self",
+            "--filters",
+            &format!("Name=volume-id,Values={}", volume_id),
+            "Name=status,Values=completed,pending",
+            "--query",
+            "sort_by(Snapshots, &StartTime) | [-1].[SnapshotId, StartTime]",
+            "--output",
+            "text",
+        ])
+        .output()
+        .await
+        .wrap_err("invoke aws ec2 describe-snapshots")?;
+    if !output.status.success() {
+        return Err(eyre!(
+            "describe-snapshots for {volume_id} failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        ));
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let trimmed = stdout.trim();
+    if trimmed.is_empty() || trimmed == "None" {
+        return Ok(None);
+    }
+    let mut parts = trimmed.split_whitespace();
+    let id = parts
+        .next()
+        .ok_or_else(|| eyre!("describe-snapshots returned empty row for {volume_id}"))?;
+    let started = parts.next().unwrap_or("").to_string();
+    Ok(Some((id.to_string(), started)))
+}
+
 pub async fn create_snapshot(region: &str, volume_id: &str, description: &str) -> Result<String> {
     let output = Command::new("aws")
         .args([

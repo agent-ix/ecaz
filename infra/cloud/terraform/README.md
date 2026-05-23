@@ -43,3 +43,13 @@ multiple profiles concurrently.
 - The cloud-init scripts under `cloud-init/` install Postgres 18 and
   build ecaz from `ecaz_git_ref`. They are idempotent on re-run but
   intentionally skip work if state files exist.
+
+## Data preservation — required reading
+
+**Before running `ecaz cloud down` or `terraform destroy`:** see
+[`docs/aws-bench-workflow.md`](../../../docs/aws-bench-workflow.md).
+The bench round workflow refuses destructive ops on data volumes
+without a recent EBS snapshot covering them; the workflow doc
+documents the snapshot inventory and the reuse-before-rebuild
+policy. Bypassing this rule costs hours of corpus + index rebuild
+on the next round.

@@ -1,0 +1,66 @@
+HEAD is now at cf6a53784 Address reviewer P1 safety findings: centroid bounds + bf16 gating
+[32m[1m       Running[0m[39m sudo cp /var/lib/pgsql/build/ecaz/target/release/ecaz-pg18/usr/share/pgsql/extension/ecaz.control /usr/share/pgsql/extension/ecaz.control
+[32m[1m       Running[0m[39m sudo cp /var/lib/pgsql/build/ecaz/target/release/ecaz-pg18/usr/lib64/pgsql/ecaz.so /usr/lib64/pgsql/ecaz.so
+[32m[1m       Running[0m[39m sudo cp /var/lib/pgsql/build/ecaz/target/release/ecaz-pg18/usr/share/pgsql/extension/ecaz--0.1.1.sql /usr/share/pgsql/extension/ecaz--0.1.1.sql
+warning: `ecaz-cli` (bin "ecaz") generated 1 warning
+    Finished `release` profile [optimized] target(s) in 6m 27s
+Completed 276 Bytes/276 Bytes (4.0 KiB/s) with 1 file(s) remainingdownload: s3://ecaz-cloud-10k-medium-db4b238f/prewarm.sql to ../../../../../tmp/prewarm.sql
+=== PREWARM ===
+ real_10k_ivf_rabitq_rerank_corpus   | 752 kB   |           94
+ real_10k_ivf_rabitq_rerank_idx      | 10056 kB |         1257
+ real_10k_ivf_rabitq_rerank_queries  | 16 kB    |            2
+ real_10k_ivf_tq_corpus              | 752 kB   |           94
+ real_10k_ivf_tq_idx                 | 10056 kB |         1257
+ real_10k_ivf_tq_queries             | 16 kB    |            2
+ real_10k_queries_shared             | 16 kB    |            2
+ real_50k_ivf_pqfs_corpus            | 3744 kB  |          468
+ real_50k_ivf_pqfs_idx               | 9448 kB  |         1181
+ real_50k_ivf_pqfs_queries           | 64 kB    |            8
+ real_50k_ivf_rabitq_corpus          | 3744 kB  |          468
+ real_50k_ivf_rabitq_idx             | 46 MB    |         5888
+ real_50k_ivf_rabitq_noreran_corpus  | 3744 kB  |          468
+ real_50k_ivf_rabitq_noreran_idx     | 46 MB    |         5888
+ real_50k_ivf_rabitq_noreran_queries | 64 kB    |            8
+ real_50k_ivf_rabitq_queries         | 64 kB    |            8
+ real_50k_ivf_rabitq_rerank_corpus   | 3744 kB  |          468
+ real_50k_ivf_rabitq_rerank_idx      | 46 MB    |         5888
+ real_50k_ivf_rabitq_rerank_queries  | 64 kB    |            8
+ real_50k_ivf_tq_corpus              | 3744 kB  |          468
+ real_50k_ivf_tq_idx                 | 46 MB    |         5888
+ real_50k_ivf_tq_queries             | 64 kB    |            8
+ real_50k_queries_shared             | 64 kB    |            8
+(32 rows)
+
+=== 50k RaBitQ post-fixes ===
+┌────────┬───────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┐
+│ nprobe ┆ count ┆ mean    ┆ stddev  ┆ min     ┆ p50     ┆ p95     ┆ p99     ┆ max     │
+╞════════╪═══════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╡
+│ 8      ┆ 1000  ┆ 1.56 ms ┆ 0.53 ms ┆ 1.09 ms ┆ 1.54 ms ┆ 1.83 ms ┆ 1.94 ms ┆ 17.5 ms │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ 16     ┆ 1000  ┆ 2.50 ms ┆ 0.21 ms ┆ 1.91 ms ┆ 2.49 ms ┆ 2.84 ms ┆ 3.03 ms ┆ 3.32 ms │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ 24     ┆ 1000  ┆ 3.52 ms ┆ 0.21 ms ┆ 2.65 ms ┆ 3.52 ms ┆ 3.88 ms ┆ 4.02 ms ┆ 4.20 ms │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ 32     ┆ 1000  ┆ 4.43 ms ┆ 0.24 ms ┆ 3.59 ms ┆ 4.44 ms ┆ 4.81 ms ┆ 5.00 ms ┆ 5.37 ms │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ 48     ┆ 1000  ┆ 6.51 ms ┆ 0.28 ms ┆ 5.59 ms ┆ 6.51 ms ┆ 6.98 ms ┆ 7.16 ms ┆ 7.45 ms │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ 64     ┆ 1000  ┆ 8.23 ms ┆ 0.32 ms ┆ 7.25 ms ┆ 8.23 ms ┆ 8.76 ms ┆ 8.99 ms ┆ 10.0 ms │
+└────────┴───────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┘
+=== 10k RaBitQ post-fixes ===
+┌────────┬───────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┐
+│ nprobe ┆ count ┆ mean    ┆ stddev  ┆ min     ┆ p50     ┆ p95     ┆ p99     ┆ max     │
+╞════════╪═══════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╡
+│ 8      ┆ 1000  ┆ 0.80 ms ┆ 0.12 ms ┆ 0.53 ms ┆ 0.80 ms ┆ 1.00 ms ┆ 1.06 ms ┆ 1.91 ms │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ 16     ┆ 1000  ┆ 1.30 ms ┆ 0.15 ms ┆ 0.93 ms ┆ 1.34 ms ┆ 1.49 ms ┆ 1.55 ms ┆ 1.92 ms │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ 24     ┆ 1000  ┆ 1.78 ms ┆ 0.12 ms ┆ 1.32 ms ┆ 1.81 ms ┆ 1.92 ms ┆ 1.96 ms ┆ 2.34 ms │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ 32     ┆ 1000  ┆ 2.13 ms ┆ 0.12 ms ┆ 1.72 ms ┆ 2.15 ms ┆ 2.31 ms ┆ 2.38 ms ┆ 2.97 ms │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ 48     ┆ 1000  ┆ 3.06 ms ┆ 0.13 ms ┆ 2.68 ms ┆ 3.07 ms ┆ 3.27 ms ┆ 3.36 ms ┆ 3.90 ms │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ 64     ┆ 1000  ┆ 3.97 ms ┆ 0.13 ms ┆ 3.65 ms ┆ 3.96 ms ┆ 4.18 ms ┆ 4.28 ms ┆ 4.84 ms │
+└────────┴───────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┘
+

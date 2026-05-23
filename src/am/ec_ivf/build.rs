@@ -112,6 +112,7 @@ unsafe extern "C-unwind" fn ec_ivf_build_callback(
                 heap_tid,
                 state.indexed_vector_kind,
                 state.options.storage_format,
+                state.options.effective_quant_bits(),
                 "ambuild",
             );
             state.push(tuple);
@@ -205,10 +206,11 @@ impl BuildState {
                 tuple.dimensions
             ));
         }
-        let expected_payload_len = IvfQuantizer::resolve_with_pq_group_size(
+        let expected_payload_len = IvfQuantizer::resolve_with_pq_group_size_and_bits(
             self.options.storage_format,
             usize::from(tuple.dimensions),
             self.options.requested_pq_group_size(),
+            Some(self.options.effective_quant_bits()),
         )?
         .payload_len();
         let deferred_pq_encode = self.options.storage_format == options::StorageFormat::PqFastScan
@@ -378,10 +380,11 @@ impl BuildState {
                 let tuple = &self.heap_tuples[*tuple_index];
                 let (gamma, payload) = match &pq_model {
                     Some(pq_model) => {
-                        let quantizer = IvfQuantizer::resolve_with_pq_group_size(
+                        let quantizer = IvfQuantizer::resolve_with_pq_group_size_and_bits(
                             self.options.storage_format,
                             usize::from(tuple.dimensions),
                             self.options.requested_pq_group_size(),
+                            Some(self.options.effective_quant_bits()),
                         )?;
                         let (_, gamma, payload) = quantizer
                             .encode_source_with_pq_model(&tuple.source_vector, pq_model)?;
@@ -615,6 +618,7 @@ pub(super) unsafe fn build_index_tuple(
     heap_tid: ItemPointer,
     indexed_vector_kind: IndexedVectorKind,
     storage_format: options::StorageFormat,
+    quant_bits: u8,
     context: &str,
 ) -> BuildTuple {
     if values.is_null() || isnull.is_null() {
@@ -638,10 +642,10 @@ pub(super) unsafe fn build_index_tuple(
     let bytes = unsafe { detoasted_varlena_bytes(datum, "indexed vector column") };
     match indexed_vector_kind {
         IndexedVectorKind::Ecvector => {
-            build_ecvector_tuple(heap_tid, &bytes, storage_format, context)
+            build_ecvector_tuple(heap_tid, &bytes, storage_format, quant_bits, context)
         }
         IndexedVectorKind::Tqvector => {
-            build_tqvector_tuple(heap_tid, &bytes, storage_format, context)
+            build_tqvector_tuple(heap_tid, &bytes, storage_format, quant_bits, context)
         }
     }
 }
@@ -650,6 +654,7 @@ fn build_ecvector_tuple(
     heap_tid: ItemPointer,
     bytes: &[u8],
     storage_format: options::StorageFormat,
+    quant_bits: u8,
     context: &str,
 ) -> BuildTuple {
     let source_vector = crate::unpack_raw_f32(bytes, "ec_ivf indexed ecvector column")
@@ -669,8 +674,13 @@ fn build_ecvector_tuple(
             source_vector,
         };
     }
-    let quantizer = IvfQuantizer::resolve(storage_format, source_vector.len())
-        .unwrap_or_else(|e| pgrx::error!("{e}"));
+    let quantizer = IvfQuantizer::resolve_with_pq_group_size_and_bits(
+        storage_format,
+        source_vector.len(),
+        None,
+        Some(quant_bits),
+    )
+    .unwrap_or_else(|e| pgrx::error!("{e}"));
     let (dimensions, gamma, payload) = quantizer
         .encode_source(&source_vector)
         .unwrap_or_else(|e| pgrx::error!("ec_ivf {context} found invalid indexed ecvector: {e}"));
@@ -688,6 +698,7 @@ fn build_tqvector_tuple(
     heap_tid: ItemPointer,
     bytes: &[u8],
     storage_format: options::StorageFormat,
+    quant_bits: u8,
     context: &str,
 ) -> BuildTuple {
     let (dimensions, bits, seed, gamma, code) = crate::unpack(bytes)
@@ -839,6 +850,7 @@ mod tests {
             seed: 7,
             pq_group_size: 0,
             posting_slack_percent: 0,
+            quant_bits: 4,
             storage_format: options::StorageFormat::Auto,
             rerank: options::RerankMode::Auto,
         }

@@ -224,6 +224,19 @@ ecaz bench latency --prefix ec_real_10k --profile ec_hnsw --log-file "$PACKET/ar
 See the [Operator CLI README](../crates/ecaz-cli/README.md) for all command
 groups and profile behavior.
 
+### AWS benchmark cycles
+
+For benches that run against AWS (`ecaz cloud up/install/bench/snapshot/down`),
+the [AWS Benchmark Workflow](aws-bench-workflow.md) is **required reading**.
+It encodes the snapshot-before-destroy invariant and the
+reuse-before-rebuild policy. `ecaz cloud down` will refuse to tear down a
+stack whose data volume has no EBS snapshot, to prevent the kind of data
+loss the prior `cloud-scaling-multi-am` cycle hit.
+
+The workflow doc also maintains the **snapshot inventory** — the
+ground-truth list of which snapshots cover which corpora and access
+methods — that future cycles consult before paying to rebuild.
+
 ## Methodology
 
 See [Benchmark Reporting Standard](benchmark-reporting-standard.md),

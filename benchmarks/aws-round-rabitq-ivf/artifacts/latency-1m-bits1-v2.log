@@ -1,0 +1,5 @@
+ERROR:  syntax error at or near "%"
+LINE 1: ...ation_size(oid)) FROM pg_class WHERE relname LIKE %$ ORDER B...
+                                                             ^
+=== prewarm 1m index ===
+
