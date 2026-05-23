@@ -1,0 +1,30 @@
+commit 67055d7d1777d0c8ad049f2f95fb7418c8b625d1
+Author: Codex <codex@openai.com>
+Date:   Fri May 22 17:53:41 2026 -0700
+
+    Task 50/446: HNSW vacuum.rs top_up_repair_replacements_from_linear_scan safe-fn lift
+    
+    Lift top_up_repair_replacements_from_linear_scan from unsafe fn
+    to safe fn. Body composes only safe operations after slices
+    422 (load_exact_graph_element), 424 (with_page_line_tuple_bytes),
+    and 443 (score_graph_element):
+    
+      - VacuumIndexRelation::main_fork_block_count (safe)
+      - VacuumIndexRelation::read_main_locked (safe RAII guard)
+      - collect_linear_repair_candidates_on_page (already safe fn)
+    
+    One caller-side unsafe wrap stripped:
+      - plan_repair_replacement internal call to
+        top_up_repair_replacements_from_linear_scan
+    
+    Per-file delta:
+      vacuum.rs   19 -> 18  (-1)
+    
+    Cumulative HNSW rotation delta: -220 (549 -> 329, **-40.07%**).
+    Crosses the -40% mark, 10 points beyond the -30% Task 50 §Exit
+    Criteria per-module target.
+    
+    Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
+
+ src/am/ec_hnsw/vacuum.rs | 20 ++++++++------------
+ 1 file changed, 8 insertions(+), 12 deletions(-)
