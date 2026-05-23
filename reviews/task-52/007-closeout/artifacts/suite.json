@@ -1,0 +1,44 @@
+{
+  "name": "task-52-closeout",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-52/007-closeout/artifacts",
+  "defaults": {
+    "seed": 42,
+    "pg": 18,
+    "socket_dir": "/Users/peter/.pgrx"
+  },
+  "steps": [
+    {
+      "kind": "load",
+      "name": "load-10k-hnsw",
+      "tags": ["load", "ec_real_10k", "hnsw"],
+      "prefix": "ec_real_10k_hnsw",
+      "profile": "ec_hnsw",
+      "corpus_file": "fixtures/m5_diskann_real10k/m5_diskann_real10k_corpus.tsv",
+      "queries_file": "fixtures/m5_diskann_real10k/m5_diskann_real10k_queries.tsv",
+      "allow_manifest_mismatch": true,
+      "m": [8, 16],
+      "ef_construction": 128,
+      "log_file": "reviews/task-52/007-closeout/artifacts/corpus-load-ec_real_10k-hnsw.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-10k-hnsw",
+      "tags": ["recall", "ec_real_10k", "hnsw"],
+      "prefix": "ec_real_10k_hnsw",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [40, 80, 120, 200, 400],
+      "log_output": "reviews/task-52/007-closeout/artifacts/recall-ec_real_10k-hnsw.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-10k-hnsw",
+      "tags": ["latency", "ec_real_10k", "hnsw"],
+      "prefix": "ec_real_10k_hnsw",
+      "profile": "ec_hnsw",
+      "sweep": [40, 80, 120, 200, 400],
+      "log_output": "reviews/task-52/007-closeout/artifacts/latency-ec_real_10k-hnsw.log"
+    }
+  ]
+}
