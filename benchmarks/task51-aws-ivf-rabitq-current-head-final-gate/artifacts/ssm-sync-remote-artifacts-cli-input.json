@@ -1,0 +1,12 @@
+{
+  "DocumentName": "AWS-RunShellScript",
+  "InstanceIds": [
+    "i-04ce81ce1c10db4bc"
+  ],
+  "Comment": "task51-sync-remote-artifacts",
+  "Parameters": {
+    "commands": [
+      "sudo -u postgres bash -lc 'cd /var/lib/pgsql/build/ecaz && aws s3 sync benchmarks/task51-aws-ivf-rabitq-current-head-final-gate/artifacts s3://ecaz-cloud-10k-medium-a02e4aea/bench-artifacts/task51-aws-ivf-rabitq-current-head-final-gate/20260523T191348Z/ --only-show-errors'"
+    ]
+  }
+}
