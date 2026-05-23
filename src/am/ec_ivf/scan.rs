@@ -1286,13 +1286,14 @@ unsafe fn rerank_probe_candidates_heap_f32(
         pgrx::error!("ec_ivf heap_f32 rerank is missing heap fetch state");
     }
     let source_attnum = i32::from(state.source_attnum);
+    let heap_blocks = candidate_heap_blocks(candidates);
     opaque
         .explain_counters
-        .record_heap_blocks_fetched(count_distinct_candidate_blocks(candidates));
+        .record_heap_blocks_fetched(heap_blocks.len());
 
-    // SAFETY: heap relation is live and candidates contain heap TIDs to
-    // prefetch before heap row fetches.
-    unsafe { prefetch_heap_rerank_blocks(heap_relation, candidates) };
+    // SAFETY: heap relation is live and block numbers come from candidate
+    // heap TIDs in the same scan.
+    unsafe { prefetch_heap_rerank_blocks(heap_relation, &heap_blocks) };
 
     let rerank_rows = {
         let query_values = opaque.query_values();
@@ -1333,7 +1334,7 @@ unsafe fn rerank_probe_candidates_heap_f32(
     }
 }
 
-fn count_distinct_candidate_blocks(candidates: &[EcIvfScoredCandidate]) -> usize {
+fn candidate_heap_blocks(candidates: &[EcIvfScoredCandidate]) -> Vec<u32> {
     candidates
         .iter()
         .map(|candidate| candidate.heap_tid.block_number)
@@ -1343,22 +1344,15 @@ fn count_distinct_candidate_blocks(candidates: &[EcIvfScoredCandidate]) -> usize
                 None => true,
             };
             *previous = Some(block);
-            Some(is_new)
+            Some((block, is_new))
         })
-        .filter(|is_new| *is_new)
-        .count()
+        .filter_map(|(block, is_new)| is_new.then_some(block))
+        .collect()
 }
 
 #[cfg(feature = "pg18")]
-unsafe fn prefetch_heap_rerank_blocks(
-    heap_relation: pg_sys::Relation,
-    candidates: &[EcIvfScoredCandidate],
-) {
-    let block_numbers = candidates
-        .iter()
-        .map(|candidate| candidate.heap_tid.block_number)
-        .collect::<Vec<_>>();
-    let mut state = crate::am::stream::BlockSequencePrefetchState::new(block_numbers);
+unsafe fn prefetch_heap_rerank_blocks(heap_relation: pg_sys::Relation, block_numbers: &[u32]) {
+    let mut state = crate::am::stream::BlockSequencePrefetchState::new(block_numbers.to_vec());
     // SAFETY: `heap_relation` is live, `state` outlives the stream loop, and
     // per-buffer data stores block-number-sized callback payloads.
     let stream = unsafe {
@@ -1392,18 +1386,15 @@ unsafe fn prefetch_heap_rerank_blocks(
 }
 
 #[cfg(not(feature = "pg18"))]
-unsafe fn prefetch_heap_rerank_blocks(
-    heap_relation: pg_sys::Relation,
-    candidates: &[EcIvfScoredCandidate],
-) {
-    for candidate in candidates {
-        // SAFETY: `heap_relation` is live and candidate heap TIDs provide
-        // main-fork block numbers for best-effort prefetch.
+unsafe fn prefetch_heap_rerank_blocks(heap_relation: pg_sys::Relation, block_numbers: &[u32]) {
+    for &block_number in block_numbers {
+        // SAFETY: `heap_relation` is live and block numbers come from
+        // candidate heap TIDs for best-effort main-fork prefetch.
         unsafe {
             pg_sys::PrefetchBuffer(
                 heap_relation,
                 pg_sys::ForkNumber::MAIN_FORKNUM,
-                candidate.heap_tid.block_number,
+                block_number,
             )
         };
     }
@@ -2131,9 +2122,9 @@ pub(crate) unsafe fn debug_ec_ivf_directory_entry(
 #[cfg(test)]
 mod tests {
     use super::{
-        build_probe_block_sequence, candidate_heap_tid_cmp, consume_live_tid_budget, inner_product,
-        inner_product_scalar, select_probe_lists, CandidateTopK, EcIvfCentroidScore,
-        EcIvfScoredCandidate, ProbeBlockRange,
+        build_probe_block_sequence, candidate_heap_blocks, candidate_heap_tid_cmp,
+        consume_live_tid_budget, inner_product, inner_product_scalar, select_probe_lists,
+        CandidateTopK, EcIvfCentroidScore, EcIvfScoredCandidate, ProbeBlockRange,
     };
     use crate::storage::page::ItemPointer;
 
@@ -2250,6 +2241,19 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![(7, 9, 1.0), (7, 9, 9.0), (8, 1, 0.1), (8, 3, 0.5)]
         );
+    }
+
+    #[test]
+    fn candidate_heap_blocks_collapses_adjacent_sorted_blocks() {
+        let candidates = [
+            candidate(7, 1, 0.1),
+            candidate(7, 3, 0.2),
+            candidate(8, 1, 0.3),
+            candidate(8, 4, 0.4),
+            candidate(12, 2, 0.5),
+        ];
+
+        assert_eq!(candidate_heap_blocks(&candidates), vec![7, 8, 12]);
     }
 
     #[test]
