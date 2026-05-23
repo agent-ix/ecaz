@@ -444,22 +444,37 @@ nprobe=32 was the first cell in the sweep — its mean (37 ms) and
 high stddev (10 ms) reflect buffer-pool warm-up. The post-warmup
 curve from nprobe=64 onward is the clean signal.
 
-### 1m bits=1 recall — deferred
+### 1m bits=1 recall (q=500, ground-truth via exhaustive f32 scan)
 
-`ecaz bench recall` loads the full corpus (990k × 1536 × 4 = 5.8 GB)
-into the CLI process for exhaustive ground-truth, which OOM-killed
-the recall step on the `m8g.xlarge` (16 GB RAM minus PG's working
-set). Two clean paths to recover this cell:
+Initial recall pass OOM-killed on the `m8g.xlarge` (16 GB) loading
+the 5.8 GB corpus for ground-truth. Resized the host in-place to
+`m8g.2xlarge` (32 GB RAM, same EBS) — `aws ec2 stop-instances` +
+`modify-instance-attribute --instance-type m8g.2xlarge` + start —
+and re-ran. Snapshot taken before the resize so worst-case data
+loss was zero.
 
-- Add ~8 GB swap to the bench host and re-run.
-- Stream ground-truth in
-  `crates/ecaz-cli/src/commands/bench/recall.rs` instead of fetching
-  the whole corpus into memory.
+| nprobe | latency p50 ms | recall@10 | recall_ci95 | NDCG@10 |
+| --- | --- | --- | --- | --- |
+| 64 | 19.3 | **0.9716** | [0.9666, 0.9759] | 0.9983 |
+| 128 | 34.6 | **0.9864** | [0.9828, 0.9893] | 0.9993 |
+| 256 | 67.3 | **0.9936** | [0.9910, 0.9955] | 0.9998 |
 
-The 50k and 100k cells already validate the algorithmic recall
-behavior at the same `quant_bits=1, rerank_width=50` operating
-point (50k @ nprobe=128: 0.9963 recall@10; 100k @ nprobe=128:
-0.987). The 1m recall trend extrapolates from those.
+(Latency is from the prewarmed latency sweep, k=10 × 500 iters;
+recall is q=500 with exhaustive f32 ground-truth, k=10.)
+
+### Direct 1m comparison vs vchord
+
+| System | p50 ms | recall@10 |
+| --- | --- | --- |
+| ec_ivf bits=1+rerank w=50 nprobe=64 | **19.3** | 0.9716 |
+| ec_ivf bits=1+rerank w=50 nprobe=128 | **34.6** | 0.9864 |
+| ec_ivf bits=1+rerank w=50 nprobe=256 | **67.3** | 0.9936 |
+| vchord RaBitQ default (single cell) | 90.3 | 0.9995 |
+
+**ec_ivf is faster than vchord at every nprobe we ran.** Recall at
+nprobe=256 is 0.9936 vs vchord's 0.9995 — within 0.006 at ~1.3×
+the speed. vchord still holds the absolute recall ceiling (~0.6%
+margin); we hold the speed advantage across the operating range.
 
 ### Cross-scale latency at the round's final defaults
 
