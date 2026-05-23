@@ -110,6 +110,13 @@ sudo -u postgres bash -c '
 sudo -u postgres bash -lc "
   set -eux
   export PATH=\$HOME/.cargo/bin:\$PATH
+  # F18: cap release-profile LTO to 'thin' so the build fits in 16 GB
+  # (release default is lto='fat'+codegen-units=1 which peaks at 24 GB,
+  # OOMs the r8g.large remote). Trades a small runtime perf hit for
+  # being able to build under the current vCPU/RAM quota allowance.
+  # Applied to every node for binary determinism.
+  export CARGO_PROFILE_RELEASE_LTO=thin
+  export CARGO_PROFILE_RELEASE_CODEGEN_UNITS=4
   if [ ! -d /var/lib/pgsql/build/ecaz/.git ]; then
     rm -rf /var/lib/pgsql/build
     mkdir -p /var/lib/pgsql/build

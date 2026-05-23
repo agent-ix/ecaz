@@ -189,7 +189,7 @@ teardown:
 clean:
 	cd $(SPIRE_AWS_DIR) && rm -rf .terraform terraform.tfstate*
 
-pass-correctness: provision install-extension load-correctness register-remotes smoke-correctness bench-correctness fault-degraded fault-strict snapshot teardown
+pass-correctness: purge-stuck-secrets provision install-extension load-correctness register-remotes smoke-correctness bench-correctness fault-degraded fault-strict snapshot teardown
 
 # Minimal AWS smoke that bypasses the laptop->VPC connectivity gap in
 # the multi-cluster register/load/smoke/bench/fault scripts. Drives a
@@ -200,6 +200,6 @@ pass-smoke: purge-stuck-secrets provision install-extension single-node-smoke sn
 
 all-correctness: pass-correctness
 
-pass-representative: provision install-extension load-representative register-remotes smoke-representative bench-representative fault-2pc fault-schema-drift snapshot teardown
+pass-representative: purge-stuck-secrets provision install-extension load-representative register-remotes smoke-representative bench-representative fault-2pc fault-schema-drift snapshot teardown
 
 all-representative: pass-representative
