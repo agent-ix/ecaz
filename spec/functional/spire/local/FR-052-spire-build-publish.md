@@ -28,7 +28,7 @@ write a validated manifest bundle, and publish a coherent active epoch only
 after all required root/control, object, placement, and store metadata is
 durable.
 
-## Build Flow
+## Workflow
 
 ```mermaid
 sequenceDiagram
