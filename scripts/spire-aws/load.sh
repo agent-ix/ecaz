@@ -33,7 +33,7 @@ case "$TIER" in
       --corpus-file "$WORK_DIR/${PREFIX}_corpus.tsv" \
       --queries-file "$WORK_DIR/${PREFIX}_queries.tsv" \
       --profile ec_spire --dim 1536 --bits 4 --seed 42 \
-      --log-output "$ARTIFACT_DIR/corpus-load-${TIER}.log"
+      --log-file "$ARTIFACT_DIR/corpus-load-${TIER}.log"
     ;;
   representative)
     PREFIX=ec_spire_aws_repr_1m
@@ -55,7 +55,7 @@ case "$TIER" in
       --manifest-file "$WORK_DIR/qdrant-dbpedia/prepared/${PREPARED_PREFIX}_manifest.json" \
       --allow-manifest-mismatch \
       --profile ec_spire --dim 1536 --bits 4 --seed 42 \
-      --log-output "$ARTIFACT_DIR/corpus-load-${TIER}.log"
+      --log-file "$ARTIFACT_DIR/corpus-load-${TIER}.log"
     ;;
   stress)
     PREFIX=ec_spire_aws_synth_10m
@@ -69,7 +69,7 @@ case "$TIER" in
       --corpus-file "$WORK_DIR/${PREFIX}_corpus.tsv" \
       --queries-file "$WORK_DIR/${PREFIX}_queries.tsv" \
       --profile ec_spire --dim 1536 --bits 4 --seed 42 --chunked \
-      --log-output "$ARTIFACT_DIR/corpus-load-${TIER}.log"
+      --log-file "$ARTIFACT_DIR/corpus-load-${TIER}.log"
     ;;
   *)
     echo "unknown tier: $TIER" >&2; exit 2 ;;
@@ -78,4 +78,4 @@ esac
 ecaz corpus inspect \
   --host "$COORD_HOST" --user ecaz_coord --database postgres \
   --prefix "$PREFIX" \
-  --log-output "$ARTIFACT_DIR/corpus-inspect-${TIER}.log"
+  --log-file "$ARTIFACT_DIR/corpus-inspect-${TIER}.log"
