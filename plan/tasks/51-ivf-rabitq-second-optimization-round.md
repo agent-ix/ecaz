@@ -260,3 +260,117 @@ Task 51 closes when:
 - Coordinate with benchmark workflow owners before any new AWS snapshot or
   corpus rebuild; snapshot metadata must include `nlists`, `quant_bits`,
   `rerank`, `rerank_width`, and storage format.
+
+---
+
+## Amended Strategy (post-paired-data, 2026-05-22)
+
+The original plan was written *before* the paired same-host comparison
+ran on m8g.2xlarge. That benchmark (committed as
+`benchmarks/aws-round-rabitq-ivf/paired-comparison.md`, head `94c02c682`)
+changes two priors:
+
+1. The gap is **3-4× at every matched-recall band across 50k/100k/1m**,
+   not 1.4×. The ratio is stable across the 20× corpus span, so it is
+   per-query cost, not corpus-size sensitivity.
+2. The recall *curve* matches vchord exactly. The IVF + RaBitQ +
+   `rerank='heap_f32'` design is correct. The latency curve is shifted
+   up by a constant factor — heap fetch + toast detoast on the `real[]`
+   source column accounts for an estimated ~18 ms of the ~24 ms 1m
+   nprobe=128 gap.
+
+### Score of the experiment plan against the new data
+
+| # | Expected gain | Confidence | Closes 4× gap? |
+| --- | --- | --- | --- |
+| 2 | `nlists` / nprobe geometry sweep | 25-35% | med-high | partial — closes ~1.3× |
+| 3 | Scratch SoA batch-decode | 20-30% candidates/sec | medium | partial — closes ~1.3× |
+| 4 | Block-sort heap rerank | 5-10% | med-high | barely — closes ~1.1× |
+| 5 | Adaptive nprobe / rerank_width | tail-latency only | medium | not on p50 |
+| 6 | Posting Layout v2 | 25-35% | low (gated) | partial — closes ~1.3× |
+| 7 | Sidecar measurement (f32, f16, bits=8) | ~3× | high | yes, but adds storage |
+
+Compounded best-case for Exp 2 + 3 + 4 + 6: **~2.0-2.2× on p50**.
+That is half the gap. **Non-architectural work alone cannot match
+vchord** on m8g.2xlarge.
+
+### Cost decomposition (estimated, 1m nprobe=128)
+
+| Component | ec_ivf | vchord |
+| --- | --- | --- |
+| Centroid + RaBitQ scoring | ~10 ms | ~7 ms |
+| Posting iter + dedup | ~5 ms | ~1 ms |
+| Heap fetch (50 candidates) | ~15 ms | 0 (inline) |
+| Toast detoast (`real[]`) | ~3 ms | 0 (inline) |
+| **Total** | **~33 ms** | **~9 ms** |
+
+The ~18 ms of heap+toast is **structurally invisible to Exp 2-6**.
+
+### Pareto reframing — the operating points the data unlocks
+
+| Configuration | 1m p50 @ 0.987 | 1m index size |
+| --- | --- | --- |
+| ec_ivf today (bits=1 + heap_f32 + w=50) | 33.8 ms | 1.5 GB |
+| + Exp 2+3+4+6 (optimistic, no sidecar) | ~16-18 ms | 1.5 GB |
+| + f16 sidecar (~3 GB extra) | ~12-15 ms (est.) | ~4.5 GB |
+| + bits=8 RaBitQ sidecar (~1.5 GB extra) | ~15-18 ms (est.) | ~3 GB |
+| + full f32 inline sidecar | ~9 ms (parity) | ~8 GB |
+| vchord (reference) | 9.4 ms | 8 GB |
+
+The interesting cells are the **middle Pareto points** (f16 sidecar,
+bits=8 sidecar). The choice is not binary — there is a sub-vchord-sized
+sidecar that closes most of the latency gap while keeping the index
+meaningfully smaller than vchord's 8 GB.
+
+### Amended sequencing
+
+The one change to the plan: **promote Experiment 7 (sidecar bounds)
+from "after everything else" to "in parallel with Experiments 2 and 3."**
+Reasoning: Exp 2-6 collectively top out at ~2× on p50, while the
+real gap is ~4×. Without Exp 7's upper-bound measurement, we cannot
+honestly answer "is vchord parity reachable without sidecar storage?"
+until after committing weeks of effort to Exp 2-6 and discovering
+the answer is no.
+
+Exp 7 stays measurement-only — it sets the upper bound so the rest of
+the round can target a known ceiling. It does not commit to a sidecar
+product direction.
+
+Bounds to prove under Exp 7:
+
+1. **Upper bound:** full inline f32 sidecar. Should match or beat
+   vchord 1m at parity (same layout, our kernel work compounds on top).
+2. **Middle bound:** f16 sidecar. Tells us how much of the latency
+   win is bandwidth-bound vs format-bound. f16 IP via NEON `bfdot`
+   is already-tested infrastructure.
+3. **Smallest sidecar:** bits=8 RaBitQ sidecar — reuses the existing
+   RaBitQ encoder, smaller index growth than f16 or f32.
+
+### Methodology gaps from the paired comparator pass that must close
+
+From reviewer 2026-05-22-04, the paired pass had three known gaps
+to address before Task 51 closes:
+
+- q=100 instead of q≥500 (cost reason logged in `paired-comparison.md`)
+- Ad-hoc shell sweepers instead of an `ecaz bench suite` config
+- Missing `suite-manifest.json` / `results.jsonl` aggregation
+- pgvectorscale not yet included in the same-host matrix
+
+These are not blockers for starting Exp 2 / Exp 7, but they must close
+before the round's final claim packet.
+
+### Recommended start order (revised)
+
+1. **Cleanup pass:** add 1m EXPLAIN counters (Task 51 Baseline #4),
+   add pgvectorscale to the paired matrix, write packet `manifest.md`
+   + `suite-manifest.json`, drive the next paired sweep via
+   `ecaz bench suite`.
+2. **In parallel:** Exp 2 (`nlists` sweep) and Exp 7 (sidecar upper
+   bounds).
+3. **After Exp 7 lands:** decide whether the round ships modest Exp 2-6
+   wins + recommends sidecar as a future feature flag, *or* commits to
+   a sized sidecar product decision now.
+4. Exp 3 (SoA), Exp 4 (block-sort heap), Exp 6 (Layout v2) get
+   prioritized only against what Exp 7 reveals about non-sidecar
+   headroom.
+
