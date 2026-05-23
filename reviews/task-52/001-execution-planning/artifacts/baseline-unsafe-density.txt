@@ -1,0 +1,42 @@
+Pre-Task-52 unsafe-block density snapshot
+==========================================
+
+Head SHA: 0d01a77c0
+Branch:   task-52
+Date:     2026-05-23
+Command:  find src -name '*.rs' -print0 | xargs -0 grep -c "unsafe\s*{" | awk -F: '$2 > 0' | sort -t: -k2,2 -rn | head -25
+
+Top 25 files by `unsafe { ... }` block count (`unsafe\s*\{` matches):
+
+src/am/ec_hnsw/build_parallel.rs:112        <-- Task 52 primary target
+src/am/ec_hnsw/scan.rs:74
+src/am/ec_ivf/scan.rs:69
+src/am/common/parallel.rs:34
+src/am/ec_hnsw/source.rs:29
+src/am/ec_spire/dml_frontdoor/mod.rs:28
+src/am/ec_diskann/routine.rs:27
+src/tests/mod.rs:26
+src/am/ec_hnsw/insert.rs:25
+src/quant/hadamard.rs:24
+src/storage/buffer_guard.rs:22
+src/am/ec_hnsw/shared.rs:21
+src/am/ec_diskann/ambuild.rs:19
+src/am/ec_hnsw/vacuum.rs:18
+src/am/ec_hnsw/scan_debug.rs:18
+src/am/ec_hnsw/build.rs:18
+src/am/common/stream.rs:17
+src/am/ec_spire/custom_scan/plan_private.rs:16
+src/am/ec_spire/custom_scan/cost_helpers.rs:16
+src/am/ec_ivf/page.rs:16
+src/am/ec_spire/custom_scan/begin_exec.rs:15
+src/storage/relation.rs:13
+src/am/ec_spire/page.rs:13
+src/am/ec_spire/custom_scan/planner.rs:11
+src/am/ec_spire/coordinator/debug.rs:11
+
+src/am/common/dsm.rs (slice-447 P8 wrapper module):  9 unsafe { ... } blocks
+src/ total unsafe blocks:                          960
+
+Reference command for src/ total:
+  find src -name '*.rs' -print0 | xargs -0 grep -c "unsafe\s*{" | \
+      awk -F: '{s+=$2} END {print s}'

@@ -1,0 +1,114 @@
+build_parallel.rs consumer-site survey
+======================================
+
+Head SHA: 0d01a77c0
+File:     src/am/ec_hnsw/build_parallel.rs (4241 lines, 112 unsafe blocks)
+Command:  grep -nE "EcHnswParallelBuildShared|shm_toc_(allocate|insert|lookup|estimate|attach)|SpinLockAcquire|SpinLockRelease|ConditionVariableSignal|SpinLockInit|ConditionVariableInit" src/am/ec_hnsw/build_parallel.rs
+
+Structs in scope
+----------------
+- line 190:  pub(super) struct EcHnswParallelBuildSharedHeader { ... }
+             ONE shared header — used by BOTH heap-scan phase
+             (`parallel_build_worker_main`) and graph-build phase
+             (`parallel_graph_build_worker_main`).  Task 52 spec named two
+             distinct headers; that is incorrect against current code.
+             Plan absorbs both phases into a single typed view.
+
+Setup-side shm_toc + DSM init (leader)
+--------------------------------------
+- ~lines 2184–2302  heap-scan phase leader setup:
+    shm_toc_estimate (header) + shm_toc_allocate (header)
+    -> ConditionVariableInit(&mut (*shared).workersdonecv)
+    -> SpinLockInit(&mut (*shared).mutex)
+    -> shm_toc_insert (header key)
+    -> shm_toc_allocate (worker queues × N) + shm_toc_insert each
+    -> shm_toc_allocate (buffer_usage, wal_usage) + shm_toc_insert each
+- ~lines 2489–2562  graph-build phase leader setup:
+    shm_toc_allocate (header)
+    -> ConditionVariableInit / SpinLockInit on (*shared)
+    -> shm_toc_insert (header key)
+    -> shm_toc_allocate per worker queue + shm_toc_insert
+    -> buffer_usage + wal_usage allocate/insert
+- line 2594  worker queue lookup via shm_toc_lookup (in leader queue rebind)
+
+Worker-side shm_toc lookup
+--------------------------
+- existing helper `shm_toc_lookup_required<T>` (line 1997) wraps `shm_toc_lookup`
+  with a NonNull check. Reusable as the building block of `ShmTocReader::lookup`.
+- line 2744  parallel_build_worker_main: shm_toc_lookup_required for shared header
+- line 2763  ... for worker's own queue
+- line 2836  ... for buffer_usage
+- line 2838  ... for wal_usage
+- line 2852  parallel_graph_build_worker_main: shared header
+- line 2872  ... PARALLEL_KEY_EC_HNSW_CONCURRENT_DSM_GRAPH (graph DSM base)
+- line 2905  ... buffer_usage
+- line 2907  ... wal_usage
+
+SpinLock + CV compound (worker hot loop)
+----------------------------------------
+- lines 2828–2833  parallel_build_worker_main: compound
+    SpinLockAcquire(&mut (*shared).mutex)
+    (*shared).record_worker_counts(...)
+    SpinLockRelease(...)
+    ConditionVariableSignal(&mut (*shared).workersdonecv)
+- lines 2897–2902  parallel_graph_build_worker_main: same compound
+- lines 2253–2256  leader-side init compound (SpinLockInit + CVInit)
+- lines 2504–2507  graph-leader-side same init compound
+
+Field derefs `(*shared).field`
+------------------------------
+Touched on these lines (sample): 2254, 2255, 2829, 2830, 2831, 2832, 2898–2901,
+plus many `(*shared).{magic,version,...}` reads inside `record_worker_counts`
+call sites and validation. Full count to be enumerated at slice time.
+
+Field derefs `(*pcxt).field`
+----------------------------
+`(*pcxt).toc` and `(*pcxt).estimator` are the main reads — sample lines:
+2225, 2234, 2256, 2274, 2287, 2301, 2302, 2489, 2512, 2524, 2528, 2535, 2548,
+2561, 2562. Wrap candidate: `ParallelContextRef<'a>` exposing `toc()` /
+`estimator()`. Whether this needs to be a packaged wrapper or simply tucked
+inside the call sites of the new typed views is a slice-time judgment.
+
+Wrappers proposed (Task-52 scope)
+---------------------------------
+1. `EcHnswParallelBuildSharedView<'a>`  — single view, both phases.
+   Methods:
+     - safe constructor pair: `unsafe fn from_raw(*mut EcHnswParallelBuildSharedHeader)`
+       (DSM lifetime contract); safe `header()`, `participant_count()`,
+       `requested_workers()`, etc.
+     - `record_workers_done(&self, scanned_delta, encoded_delta) -> ()` —
+       absorbs the entire SpinLockAcquire + mutate + SpinLockRelease + Signal
+       compound into one safe method. Documented as the "worker-done
+       publication" sequence.
+     - `init_synchronization(&mut self)` — safe wrapper for the leader's
+       SpinLockInit + ConditionVariableInit pair (called once per phase).
+   Borrow shape: lives inside the worker frame for the duration of the worker
+   body; constructor is `unsafe` so the DSM-segment liveness contract is
+   stated at one site per worker entry.
+
+2. `ShmTocBuilder<'a>` — leader-side allocate + insert.
+   - `unsafe fn new(toc: *mut shm_toc) -> Self`
+   - safe `allocate<T>(key: u64, count: usize) -> *mut T` (or sized variant
+     for byte-buffered allocations like the queue and graph image)
+   - safe `insert<T>(key: u64, ptr: *mut T)`
+   The DSM segment lifetime is contracted at `new`; subsequent operations
+   are safe because they only forward to PG's bookkeeping for an
+   already-validated toc.
+
+3. `ShmTocReader<'a>` — worker-side attach + lookup.
+   - `unsafe fn attach(toc: *mut shm_toc) -> Self`
+   - safe `lookup<T>(key: u64) -> &'a T`
+   - safe `lookup_mut<T>(key: u64) -> &'a mut T`
+   - safe `lookup_required<T>(key: u64) -> &'a T` (panics-with-PG-error
+     on null — supersedes the local `shm_toc_lookup_required` helper)
+
+Open questions deferred to slice-time
+-------------------------------------
+- Whether the graph-build leader's `EcHnswConcurrentDsmGraphHeader` DSM
+  layout (lines 209–243) needs its own typed view. Task spec §Scope #4
+  mentions `(*shared).field` derefs but the graph-image layout has its own
+  `EcHnswConcurrentDsmGraphParts` accessor pattern already; we will only
+  touch it if `build_parallel.rs` direct deref sites remain after the
+  primary four wrappers consume their compound patterns.
+- Whether `ParallelContextRef<'a>` rises to a named wrapper or stays
+  inline. Decide after slice 005 first migration shows the deref count.
