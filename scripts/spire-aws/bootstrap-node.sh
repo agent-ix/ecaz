@@ -132,12 +132,14 @@ sudo -u postgres bash -lc "
   if [ ! -d /var/lib/pgsql/build/ecaz/.git ]; then
     rm -rf /var/lib/pgsql/build
     mkdir -p /var/lib/pgsql/build
-    git clone ${ECAZ_URL} /var/lib/pgsql/build/ecaz
+    # F23: shallow-clone the default branch then fetch the specific
+    # commit. \`git fetch origin <sha>\` works against GitHub since
+    # uploadpack.allowReachableSHA1InWant is enabled.
+    git clone --filter=blob:none ${ECAZ_URL} /var/lib/pgsql/build/ecaz
   fi
   cd /var/lib/pgsql/build/ecaz
-  git fetch --all --tags
-  git checkout ${ECAZ_REF}
-  git pull --ff-only origin ${ECAZ_REF} 2>/dev/null || true
+  git fetch origin ${ECAZ_REF}
+  git checkout FETCH_HEAD
   cargo pgrx install --sudo --release --pg-config /usr/bin/pg_config
   # ecaz CLI on the node for in-VPC corpus/bench operations.
   cargo build --release -p ecaz-cli
