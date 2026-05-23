@@ -33,6 +33,9 @@ pub enum SidecarVariant {
     F32,
     F16,
     Rabitq8,
+    Rabitq8ls,
+    Rabitq8c3,
+    Rabitq8c4,
 }
 
 impl SidecarVariant {
@@ -41,6 +44,18 @@ impl SidecarVariant {
             Self::F32 => "f32",
             Self::F16 => "f16",
             Self::Rabitq8 => "rabitq8",
+            Self::Rabitq8ls => "rabitq8ls",
+            Self::Rabitq8c3 => "rabitq8c3",
+            Self::Rabitq8c4 => "rabitq8c4",
+        }
+    }
+
+    fn rabitq_clip(self) -> Option<f32> {
+        match self {
+            Self::Rabitq8 | Self::Rabitq8ls => Some(2.0),
+            Self::Rabitq8c3 => Some(3.0),
+            Self::Rabitq8c4 => Some(4.0),
+            Self::F32 | Self::F16 => None,
         }
     }
 }
@@ -593,11 +608,16 @@ fn build_sidecars(
                     storage: SidecarStorage::F16(encoded),
                 });
             }
-            SidecarVariant::Rabitq8 => {
+            SidecarVariant::Rabitq8
+            | SidecarVariant::Rabitq8ls
+            | SidecarVariant::Rabitq8c3
+            | SidecarVariant::Rabitq8c4 => {
                 let prod = ProdQuantizer::cached(corpus.ncols(), 4, seed);
+                let clip = variant.rabitq_clip().expect("RaBitQ variant has a clip");
                 let quantizer = Arc::new(
-                    RaBitQQuantizer::with_srht_bits(corpus.ncols(), prod, 8)
-                        .map_err(|err| eyre!("building bits=8 RaBitQ sidecar: {err}"))?,
+                    RaBitQQuantizer::with_srht_bits_clip(corpus.ncols(), prod, 8, clip).map_err(
+                        |err| eyre!("building bits=8 RaBitQ sidecar with clip {clip}: {err}"),
+                    )?,
                 );
                 let bytes_per_vector = <RaBitQQuantizer as Quantizer>::code_len(quantizer.as_ref());
                 let codes = corpus
@@ -663,7 +683,7 @@ fn rerank_with_sidecar(
                     let pos = *id_to_pos.get(id).ok_or_else(|| {
                         eyre!("candidate id {id} not present in corpus source map")
                     })?;
-                    let score = quantizer.estimate_ip(&prepared, &codes[pos]).estimate;
+                    let score = rabitq_sidecar_score(sidecar.variant, &prepared, &codes[pos]);
                     scored.push((*id, score));
                 }
             }
@@ -850,17 +870,32 @@ fn score_sidecar_payloads(
             for (id, payload) in payloads {
                 if payload.len() != sidecar.bytes_per_vector {
                     bail!(
-                        "rabitq8 sidecar payload for id {id} has {} bytes, expected {}",
+                        "{} sidecar payload for id {id} has {} bytes, expected {}",
+                        sidecar.variant.label(),
                         payload.len(),
                         sidecar.bytes_per_vector
                     );
                 }
-                let score = quantizer.estimate_ip(&prepared, payload).estimate;
+                let score = rabitq_sidecar_score(sidecar.variant, &prepared, payload);
                 scored.push((*id, score));
             }
         }
     }
     Ok(scored)
+}
+
+fn rabitq_sidecar_score(
+    variant: SidecarVariant,
+    prepared: &ecaz::bench_api::PreparedEstimator,
+    code: &[u8],
+) -> f32 {
+    match variant {
+        SidecarVariant::Rabitq8 | SidecarVariant::Rabitq8c3 | SidecarVariant::Rabitq8c4 => {
+            prepared.estimate_ip(code).estimate
+        }
+        SidecarVariant::Rabitq8ls => prepared.estimate_ip_least_squares_scalar_only(code),
+        SidecarVariant::F32 | SidecarVariant::F16 => unreachable!("not a RaBitQ sidecar variant"),
+    }
 }
 
 fn dot_f32(query: &[f32], corpus: &Array2<f32>, pos: usize) -> f32 {

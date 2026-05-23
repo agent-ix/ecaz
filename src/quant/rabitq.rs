@@ -68,19 +68,11 @@ pub const RABITQ_SCALAR_LEN: usize = RABITQ_NORM_LEN + RABITQ_UNIT_DOT_LEN + RAB
 /// scalar tail).
 pub const RABITQ_SUPPORTED_BITS: [u8; 4] = [1, 2, 4, 8];
 
-/// Clip radius used when scalar-quantizing at `bits_per_dim > 1`.
+/// Default clip radius used when scalar-quantizing at `bits_per_dim > 1`.
 /// Rotated unit-vector coordinates have std ≈ `1/√D`; scaling by
 /// `√D` puts them roughly in `N(0, 1)`. Clipping at 2σ covers
 /// ~95% of the mass and keeps quantization levels well-utilized.
-const RABITQ_QUANT_CLIP: f32 = 2.0;
-
-/// Total scalar-quantization range: must equal `2.0 * RABITQ_QUANT_CLIP`.
-/// Inlined as a literal so the `* → +` binop mutation on the prior
-/// `2.0 * c` form (an equivalent mutant when `c == 2.0`) is removed
-/// from `quantize_level`. The `quantize_level` round-trip tests pin
-/// specific outputs, so a drift in `RABITQ_QUANT_CLIP` would fail
-/// them rather than silently re-skewing the bins here.
-const RABITQ_QUANT_RANGE: f32 = 4.0;
+const RABITQ_DEFAULT_QUANT_CLIP: f32 = 2.0;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 struct SeededSrhtCacheKey {
@@ -286,6 +278,7 @@ pub struct RaBitQQuantizer {
     dimensions: usize,
     rotation: Arc<dyn Rotation>,
     bits_per_dim: u8,
+    quant_clip: f32,
 }
 
 impl RaBitQQuantizer {
@@ -322,12 +315,28 @@ impl RaBitQQuantizer {
     /// `bits = 1` the encoding is bit-identical to the paper's
     /// binary RaBitQ; at `bits ≥ 2` each coordinate gets a signed
     /// q-bit scalar-quantized level with clipping at
-    /// ±[`RABITQ_QUANT_CLIP`]·σ (σ = 1/√D on the unit sphere).
+    /// ±2σ by default (σ = 1/√D on the unit sphere).
     pub fn with_bits(rotation: Arc<dyn Rotation>, bits: u8) -> Result<Self, String> {
+        Self::with_bits_clip(rotation, bits, RABITQ_DEFAULT_QUANT_CLIP)
+    }
+
+    /// Like [`Self::with_bits`] but with an explicit scalar-quantization clip
+    /// radius for `bits_per_dim > 1`. This is intended for measurement and
+    /// tuning; the default constructor preserves the existing `2.0σ` profile.
+    pub fn with_bits_clip(
+        rotation: Arc<dyn Rotation>,
+        bits: u8,
+        quant_clip: f32,
+    ) -> Result<Self, String> {
         if !RABITQ_SUPPORTED_BITS.contains(&bits) {
             return Err(format!(
                 "RaBitQ bits_per_dim must be one of {:?}, got {}",
                 RABITQ_SUPPORTED_BITS, bits,
+            ));
+        }
+        if quant_clip <= 0.0 || !quant_clip.is_finite() {
+            return Err(format!(
+                "RaBitQ quant_clip must be positive and finite, got {quant_clip}",
             ));
         }
         let dimensions = rotation.dimensions();
@@ -336,6 +345,7 @@ impl RaBitQQuantizer {
             dimensions,
             rotation,
             bits_per_dim: bits,
+            quant_clip,
         })
     }
 
@@ -354,6 +364,17 @@ impl RaBitQQuantizer {
     ) -> Result<Self, String> {
         let rotation: Arc<dyn Rotation> = Arc::new(SrhtRotation::new(dimensions, prod));
         Self::with_bits(rotation, bits)
+    }
+
+    /// Like [`Self::with_srht_bits`] but with an explicit scalar clip radius.
+    pub fn with_srht_bits_clip(
+        dimensions: usize,
+        prod: Arc<ProdQuantizer>,
+        bits: u8,
+        quant_clip: f32,
+    ) -> Result<Self, String> {
+        let rotation: Arc<dyn Rotation> = Arc::new(SrhtRotation::new(dimensions, prod));
+        Self::with_bits_clip(rotation, bits, quant_clip)
     }
 
     /// Convenience: build a RaBitQ quantizer with a freshly-seeded
@@ -426,7 +447,8 @@ impl crate::quant::Quantizer for RaBitQQuantizer {
         let bits = self.bits_per_dim as usize;
 
         for (i, &o_i) in rotated.iter().enumerate() {
-            let (level_idx, dequant_i) = quantize_level(o_i * inv_norm, bits, sqrt_d);
+            let (level_idx, dequant_i) =
+                quantize_level(o_i * inv_norm, bits, sqrt_d, self.quant_clip);
             write_level(&mut out, i, bits, level_idx);
             inner_o_xdec += o_i * dequant_i;
             x_dec_norm_sq += dequant_i * dequant_i;
@@ -456,7 +478,8 @@ impl crate::quant::Quantizer for RaBitQQuantizer {
     ) -> Box<dyn crate::quant::QueryScorer + Send + Sync + '_> {
         let rotated = self.rotated(query);
         let norm = l2_norm(&rotated);
-        let dequant_lut = build_dequant_lut(self.dimensions, self.bits_per_dim as usize);
+        let dequant_lut =
+            build_dequant_lut(self.dimensions, self.bits_per_dim as usize, self.quant_clip);
         let bits1_byte_lut = build_bits1_byte_lut_boxed(&dequant_lut, self.bits_per_dim);
         let (query_bf16, dequant_lut_bf16) = prepare_bf16_state(&rotated, &dequant_lut);
         Box::new(RaBitQScorer {
@@ -488,7 +511,8 @@ impl RaBitQQuantizer {
     pub fn prepare_estimator(&self, query: &[f32]) -> PreparedEstimator {
         let rotated = self.rotated(query);
         let norm = l2_norm(&rotated);
-        let dequant_lut = build_dequant_lut(self.dimensions, self.bits_per_dim as usize);
+        let dequant_lut =
+            build_dequant_lut(self.dimensions, self.bits_per_dim as usize, self.quant_clip);
         let bits1_byte_lut = build_bits1_byte_lut_boxed(&dequant_lut, self.bits_per_dim);
         let (query_bf16, dequant_lut_bf16) = prepare_bf16_state(&rotated, &dequant_lut);
         PreparedEstimator {
@@ -874,6 +898,27 @@ impl PreparedEstimator {
         )
     }
 
+    /// Least-squares scaled inner-product estimate:
+    /// `||o|| * o_dot * <q, x_dec> / ||x_dec||`.
+    ///
+    /// This is not the paper's unbiased RaBitQ estimator used by the AM scan
+    /// path. It is exposed for measurement harnesses that want to evaluate
+    /// whether the lower-variance least-squares projection ranks a narrow
+    /// rerank candidate frontier better than the unbiased `1 / o_dot` scale.
+    #[inline]
+    pub fn estimate_ip_least_squares_scalar_only(&self, code: &[u8]) -> f32 {
+        estimate_ip_least_squares_scalar_only_impl(
+            &self.query_rotated,
+            Some(&self.query_bf16),
+            Some(&self.dequant_lut_bf16),
+            self.dimensions,
+            self.bits_per_dim,
+            &self.dequant_lut,
+            self.bits1_byte_lut.as_deref(),
+            code,
+        )
+    }
+
     /// Batch IVF-fast estimates for contiguous bits=1 RaBitQ codes.
     ///
     /// This is the production entrypoint for scratch-SoA callers that already
@@ -1203,11 +1248,11 @@ fn l2_norm(rotated: &[f32]) -> f32 {
 ///
 /// At `bits ≥ 2`: multiply by `sqrt_d` to put the coordinate
 /// distribution on `N(0, 1)` (coord std of a unit vector is
-/// `1/√D`), clip to `[-C, +C]` with `C = RABITQ_QUANT_CLIP`, then
+/// `1/√D`), clip to `[-C, +C]` with caller-provided `quant_clip`, then
 /// bin uniformly into `2^bits` cells. The level stored is the
 /// unsigned bin index `0..2^bits - 1`; the dequantized value is
 /// the bin center mapped back to the unit-vector scale.
-fn quantize_level(o_hat_i: f32, bits: usize, sqrt_d: f32) -> (u32, f32) {
+fn quantize_level(o_hat_i: f32, bits: usize, sqrt_d: f32, quant_clip: f32) -> (u32, f32) {
     if bits == 1 {
         if o_hat_i >= 0.0 {
             (1, 1.0)
@@ -1216,12 +1261,13 @@ fn quantize_level(o_hat_i: f32, bits: usize, sqrt_d: f32) -> (u32, f32) {
         }
     } else {
         let levels = 1_u32 << bits;
-        let c = RABITQ_QUANT_CLIP;
+        let c = quant_clip;
+        let range = 2.0 * c;
         let scaled = o_hat_i * sqrt_d;
-        let t = ((scaled + c) / RABITQ_QUANT_RANGE).clamp(0.0, 1.0);
+        let t = ((scaled + c) / range).clamp(0.0, 1.0);
         let level = ((t * levels as f32) as u32).min(levels - 1);
         // Bin center, mapped back to unit-vector scale.
-        let center_scaled = (level as f32 + 0.5) / levels as f32 * RABITQ_QUANT_RANGE - c;
+        let center_scaled = (level as f32 + 0.5) / levels as f32 * range - c;
         let dequant = center_scaled / sqrt_d;
         (level, dequant)
     }
@@ -1229,7 +1275,7 @@ fn quantize_level(o_hat_i: f32, bits: usize, sqrt_d: f32) -> (u32, f32) {
 
 /// Inverse of [`quantize_level`]: given a stored level index and
 /// `bits`, return the dequantized coordinate value.
-fn dequant_level(level: u32, bits: usize, sqrt_d: f32) -> f32 {
+fn dequant_level(level: u32, bits: usize, sqrt_d: f32, quant_clip: f32) -> f32 {
     if bits == 1 {
         if level == 1 {
             1.0
@@ -1238,8 +1284,8 @@ fn dequant_level(level: u32, bits: usize, sqrt_d: f32) -> f32 {
         }
     } else {
         let levels = 1_u32 << bits;
-        let c = RABITQ_QUANT_CLIP;
-        let center_scaled = (level as f32 + 0.5) / levels as f32 * RABITQ_QUANT_RANGE - c;
+        let c = quant_clip;
+        let center_scaled = (level as f32 + 0.5) / levels as f32 * (2.0 * c) - c;
         center_scaled / sqrt_d
     }
 }
@@ -1341,13 +1387,13 @@ fn build_bits1_byte_lut_boxed(lut: &[f32; 256], bits_per_dim: u8) -> Option<Box<
 /// `1 << bits` entries are valid; the rest are zero-filled. The LUT
 /// depends only on `(bits, sqrt_d)`, so it can be computed once per
 /// prepared query and reused across every candidate code.
-fn build_dequant_lut(dimensions: usize, bits: usize) -> [f32; 256] {
+fn build_dequant_lut(dimensions: usize, bits: usize, quant_clip: f32) -> [f32; 256] {
     let mut lut = [0.0_f32; 256];
     let sqrt_d = (dimensions as f32).sqrt();
     let entries = 1_usize << bits;
     let mut level = 0_u32;
     while (level as usize) < entries {
-        lut[level as usize] = dequant_level(level, bits, sqrt_d);
+        lut[level as usize] = dequant_level(level, bits, sqrt_d, quant_clip);
         level += 1;
     }
     lut
@@ -1977,6 +2023,65 @@ fn estimate_ip_scalar_only_impl(
     candidate_norm * sum_q_dequant / (candidate_o_dot * candidate_x_norm)
 }
 
+#[inline]
+fn estimate_ip_least_squares_scalar_only_impl(
+    query_rotated: &[f32],
+    query_bf16: Option<&[u16]>,
+    dequant_lut_bf16: Option<&[u16; 256]>,
+    dimensions: usize,
+    bits_per_dim: u8,
+    dequant_lut: &[f32; 256],
+    bits1_byte_lut: Option<&[[f32; 8]; 256]>,
+    code: &[u8],
+) -> f32 {
+    debug_assert_eq!(query_rotated.len(), dimensions);
+    let bits = bits_per_dim as usize;
+    let packed_bytes = (dimensions * bits).div_ceil(8);
+    assert!(
+        code.len() >= packed_bytes + RABITQ_SCALAR_LEN,
+        "RaBitQ code too short: got {}, expected at least {}",
+        code.len(),
+        packed_bytes + RABITQ_SCALAR_LEN,
+    );
+    let s = packed_bytes;
+    let candidate_norm = f32::from_le_bytes(
+        code[s..s + RABITQ_NORM_LEN]
+            .try_into()
+            .expect("norm slice is always 4 bytes"),
+    );
+    let candidate_o_dot = f32::from_le_bytes(
+        code[s + RABITQ_NORM_LEN..s + RABITQ_NORM_LEN + RABITQ_UNIT_DOT_LEN]
+            .try_into()
+            .expect("o_dot slice is always 4 bytes"),
+    );
+    let candidate_x_norm = f32::from_le_bytes(
+        code[s + RABITQ_NORM_LEN + RABITQ_UNIT_DOT_LEN..s + RABITQ_SCALAR_LEN]
+            .try_into()
+            .expect("x_norm slice is always 4 bytes"),
+    );
+
+    let sum_q_dequant = sum_query_dequant_with_bf16(
+        query_rotated,
+        query_bf16,
+        dequant_lut_bf16,
+        dimensions,
+        bits,
+        dequant_lut,
+        bits1_byte_lut,
+        code,
+    );
+
+    const O_DOT_FLOOR: f32 = 1e-6;
+    if candidate_o_dot.abs() < O_DOT_FLOOR
+        || !candidate_o_dot.is_finite()
+        || candidate_x_norm <= 0.0
+        || !candidate_x_norm.is_finite()
+    {
+        return 0.0;
+    }
+    candidate_norm * candidate_o_dot * sum_q_dequant / candidate_x_norm
+}
+
 fn sign_words_from_byte_slice(bytes: &[u8], dim: usize) -> Vec<u64> {
     let mut words = vec![0_u64; dim.div_ceil(64)];
     for index in 0..dim {
@@ -2195,7 +2300,13 @@ mod tests {
         let sqrt_d = (q.dimensions() as f32).sqrt();
         let mut sum_q_dequant = 0.0_f32;
         for (i, &query_i) in query.iter().enumerate() {
-            sum_q_dequant += query_i * dequant_level(read_level(&code, i, 2), 2, sqrt_d);
+            sum_q_dequant += query_i
+                * dequant_level(
+                    read_level(&code, i, 2),
+                    2,
+                    sqrt_d,
+                    RABITQ_DEFAULT_QUANT_CLIP,
+                );
         }
         let expected_estimate = candidate_norm * sum_q_dequant / (o_dot * x_norm);
         let o_dot_sq = o_dot * o_dot;
@@ -2228,6 +2339,37 @@ mod tests {
             f32::NAN,
         );
         assert!(q.estimate_ip(&prepared, &code).bound.is_infinite());
+    }
+
+    #[test]
+    fn least_squares_estimator_uses_o_dot_as_shrinkage() {
+        let q = identity_quantizer(5, 2);
+        let query = [0.75_f32, -0.25, 1.25, -1.5, 0.5];
+        let candidate = [-0.25_f32, 0.0, 0.25, 0.5, -0.5];
+        let code =
+            <RaBitQQuantizer as crate::quant::Quantizer>::encode_code(&q, &candidate).into_vec();
+        let prepared = q.prepare_estimator(&query);
+        let packed_bytes = q.packed_bytes();
+
+        let candidate_norm = read_tail_f32(&code, packed_bytes, 0);
+        let o_dot = read_tail_f32(&code, packed_bytes, RABITQ_NORM_LEN);
+        let x_norm = read_tail_f32(&code, packed_bytes, RABITQ_NORM_LEN + RABITQ_UNIT_DOT_LEN);
+        let sqrt_d = (q.dimensions() as f32).sqrt();
+        let mut sum_q_dequant = 0.0_f32;
+        for (i, &query_i) in query.iter().enumerate() {
+            sum_q_dequant += query_i
+                * dequant_level(
+                    read_level(&code, i, 2),
+                    2,
+                    sqrt_d,
+                    RABITQ_DEFAULT_QUANT_CLIP,
+                );
+        }
+        let expected = candidate_norm * o_dot * sum_q_dequant / x_norm;
+
+        let estimate = prepared.estimate_ip_least_squares_scalar_only(&code);
+        assert!((estimate - expected).abs() < 1e-6);
+        assert_ne!(estimate, prepared.estimate_ip_scalar_only(&code));
     }
 
     #[test]
@@ -2289,8 +2431,9 @@ mod tests {
         for bits in [2_usize, 4, 8] {
             let levels = 1_u32 << bits;
             for level in [0_u32, 1, levels / 2, levels - 2, levels - 1] {
-                let dequant = dequant_level(level, bits, sqrt_d);
-                let (roundtrip_level, roundtrip_dequant) = quantize_level(dequant, bits, sqrt_d);
+                let dequant = dequant_level(level, bits, sqrt_d, RABITQ_DEFAULT_QUANT_CLIP);
+                let (roundtrip_level, roundtrip_dequant) =
+                    quantize_level(dequant, bits, sqrt_d, RABITQ_DEFAULT_QUANT_CLIP);
                 assert_eq!(roundtrip_level, level, "bits={bits} level={level}");
                 assert!(
                     (roundtrip_dequant - dequant).abs() < 1e-6,
@@ -2299,19 +2442,31 @@ mod tests {
             }
         }
 
-        assert_eq!(quantize_level(0.0, 1, sqrt_d), (1, 1.0));
-        assert_eq!(quantize_level(-0.01, 1, sqrt_d), (0, -1.0));
-        assert_eq!(dequant_level(1, 1, sqrt_d), 1.0);
-        assert_eq!(dequant_level(0, 1, sqrt_d), -1.0);
+        assert_eq!(
+            quantize_level(0.0, 1, sqrt_d, RABITQ_DEFAULT_QUANT_CLIP),
+            (1, 1.0)
+        );
+        assert_eq!(
+            quantize_level(-0.01, 1, sqrt_d, RABITQ_DEFAULT_QUANT_CLIP),
+            (0, -1.0)
+        );
+        assert_eq!(dequant_level(1, 1, sqrt_d, RABITQ_DEFAULT_QUANT_CLIP), 1.0);
+        assert_eq!(dequant_level(0, 1, sqrt_d, RABITQ_DEFAULT_QUANT_CLIP), -1.0);
 
-        assert_eq!(quantize_level(-0.25, 2, sqrt_d).0, 1);
-        assert_eq!(quantize_level(0.25, 2, sqrt_d).0, 3);
+        assert_eq!(
+            quantize_level(-0.25, 2, sqrt_d, RABITQ_DEFAULT_QUANT_CLIP).0,
+            1
+        );
+        assert_eq!(
+            quantize_level(0.25, 2, sqrt_d, RABITQ_DEFAULT_QUANT_CLIP).0,
+            3
+        );
     }
 
     #[test]
     fn qbit_quantize_pins_non_roundtrip_scale_term() {
         let sqrt_d = 4.0_f32;
-        let (level, dequant) = quantize_level(-0.125, 2, sqrt_d);
+        let (level, dequant) = quantize_level(-0.125, 2, sqrt_d, RABITQ_DEFAULT_QUANT_CLIP);
 
         assert_eq!(level, 1);
         assert!((dequant - (-0.5 / sqrt_d)).abs() < 1e-6);
@@ -3014,7 +3169,7 @@ mod tests {
             let query: Vec<f32> = (0..dim)
                 .map(|i| ((i as f32) - dim as f32 / 2.0) * 0.07)
                 .collect();
-            let lut = build_dequant_lut(dim, bits);
+            let lut = build_dequant_lut(dim, bits, RABITQ_DEFAULT_QUANT_CLIP);
             let byte_lut = build_bits1_byte_lut_boxed(&lut, 1).expect("bits=1 builds byte LUT");
             let scalar = sum_query_dequant_scalar(&query, dim, bits, &lut, &code);
             // SAFETY: aarch64 cfg + valid byte_lut for bits=1.
@@ -3031,7 +3186,7 @@ mod tests {
     fn bits1_byte_lut_matches_per_bit_decode() {
         // The byte LUT must agree with the per-bit scalar decode for
         // every input byte and every bit position.
-        let lut = build_dequant_lut(1536, 1);
+        let lut = build_dequant_lut(1536, 1, RABITQ_DEFAULT_QUANT_CLIP);
         let byte_lut = build_bits1_byte_lut_boxed(&lut, 1).expect("bits=1 builds byte LUT");
         for byte in 0_usize..256 {
             for i in 0_usize..8 {
@@ -3074,7 +3229,7 @@ mod tests {
                 .collect();
             let sqrt_d = (dim as f32).sqrt();
 
-            let lut = build_dequant_lut(dim, bits);
+            let lut = build_dequant_lut(dim, bits, RABITQ_DEFAULT_QUANT_CLIP);
             let scalar = sum_query_dequant_scalar(&query, dim, bits, &lut, &code);
             // SAFETY: aarch64 cfg + always-present NEON on the supported
             // bench hosts (Graviton).
