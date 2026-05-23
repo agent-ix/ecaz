@@ -15,6 +15,7 @@ use super::concurrent_dsm_state::{
     EcHnswConcurrentDsmInsertError, EcHnswConcurrentDsmInsertStateCell,
     EC_HNSW_CONCURRENT_DSM_INSERT_STATE_READY, EC_HNSW_CONCURRENT_DSM_INSERT_STATE_UNINSERTED,
 };
+use super::parallel_build_view::EcHnswParallelBuildSharedView;
 use super::{build, graph, insert, options, page, search, shared, source};
 use crate::am::common::callback::{pg_am_callback, pg_callback};
 use crate::am::common::dsm::{ShmTocBuilder, ShmTocReader};
@@ -1974,6 +1975,26 @@ impl EcHnswParallelBuildSharedHeader {
         self.encoded_index_tuples
     }
 
+    pub(super) fn participant_count(&self) -> u16 {
+        self.participant_count
+    }
+
+    pub(super) fn requested_workers(&self) -> u16 {
+        self.requested_workers
+    }
+
+    pub(super) fn is_concurrent(&self) -> bool {
+        self.is_concurrent
+    }
+
+    pub(super) fn heaprelid(&self) -> pg_sys::Oid {
+        self.heaprelid
+    }
+
+    pub(super) fn indexrelid(&self) -> pg_sys::Oid {
+        self.indexrelid
+    }
+
     pub(super) fn validate(&self) {
         if self.magic != EC_HNSW_PARALLEL_BUILD_MAGIC
             || self.version != EC_HNSW_PARALLEL_BUILD_VERSION
@@ -2668,15 +2689,13 @@ unsafe fn parallel_build_worker_main(seg: *mut pg_sys::dsm_segment, toc: *mut pg
     let reader = unsafe { ShmTocReader::attach(toc) };
     let shared: *mut EcHnswParallelBuildSharedHeader =
         reader.lookup_required(PARALLEL_KEY_EC_HNSW_BUILD_SHARED);
+    if shared.is_null() {
+        pgrx::error!("ec_hnsw parallel build shared header is null");
+    }
     // SAFETY: the leader inserted `shared` before launching workers and keeps
-    // the DSM segment alive until every worker exits, so the borrow is bounded
-    // by this function frame.
-    let header: &EcHnswParallelBuildSharedHeader = unsafe {
-        ptr::NonNull::new(shared)
-            .unwrap_or_else(|| pgrx::error!("ec_hnsw parallel build shared header is null"))
-            .as_ref()
-    };
-    header.validate();
+    // the DSM segment alive until every worker exits.
+    let view = unsafe { EcHnswParallelBuildSharedView::from_raw(shared) };
+    view.validate();
 
     // SAFETY: PostgreSQL assigns ParallelWorkerNumber before invoking the
     // parallel worker entrypoint.
@@ -2691,7 +2710,7 @@ unsafe fn parallel_build_worker_main(seg: *mut pg_sys::dsm_segment, toc: *mut pg
     unsafe { pg_sys::shm_mq_set_sender(queue, pg_sys::MyProc) };
     let queue_handle = unsafe { pg_sys::shm_mq_attach(queue, seg, ptr::null_mut()) };
 
-    let is_concurrent = header.is_concurrent;
+    let is_concurrent = view.is_concurrent();
     let (heap_lockmode, index_lockmode) = if is_concurrent {
         (
             pg_sys::ShareUpdateExclusiveLock as pg_sys::LOCKMODE,
@@ -2704,9 +2723,9 @@ unsafe fn parallel_build_worker_main(seg: *mut pg_sys::dsm_segment, toc: *mut pg
         )
     };
 
-    let heap_relation_guard = HeapRelationGuard::try_open(header.heaprelid, heap_lockmode)
+    let heap_relation_guard = HeapRelationGuard::try_open(view.heaprelid(), heap_lockmode)
         .unwrap_or_else(|| pgrx::error!("ec_hnsw parallel build worker could not open heap"));
-    let index_relation_guard = IndexRelationGuard::try_open(header.indexrelid, index_lockmode)
+    let index_relation_guard = IndexRelationGuard::try_open(view.indexrelid(), index_lockmode)
         .unwrap_or_else(|| pgrx::error!("ec_hnsw parallel build worker could not open index"));
     let heap_relation = heap_relation_guard.as_ptr();
     let index_relation = index_relation_guard.as_ptr();
@@ -2746,14 +2765,7 @@ unsafe fn parallel_build_worker_main(seg: *mut pg_sys::dsm_segment, toc: *mut pg
 
     send_done_message(queue_handle);
 
-    // SAFETY: `shared` is the initialized shared header; the spinlock protects
-    // worker aggregate counters and the condition variable wakes the leader.
-    unsafe {
-        pg_sys::SpinLockAcquire(&mut (*shared).mutex);
-        (*shared).record_worker_counts(scanned_tuples, worker_state.encoded_tuples as f64);
-        pg_sys::SpinLockRelease(&mut (*shared).mutex);
-        pg_sys::ConditionVariableSignal(&mut (*shared).workersdonecv);
-    }
+    view.record_workers_done(scanned_tuples, worker_state.encoded_tuples as f64);
 
     let bufferusage: *mut pg_sys::BufferUsage =
         reader.lookup_required(PARALLEL_KEY_EC_HNSW_BUFFER_USAGE);
@@ -2776,15 +2788,13 @@ unsafe fn parallel_graph_build_worker_main(toc: *mut pg_sys::shm_toc) {
     let reader = unsafe { ShmTocReader::attach(toc) };
     let shared: *mut EcHnswParallelBuildSharedHeader =
         reader.lookup_required(PARALLEL_KEY_EC_HNSW_BUILD_SHARED);
+    if shared.is_null() {
+        pgrx::error!("ec_hnsw parallel build shared header is null");
+    }
     // SAFETY: the graph-build leader inserted `shared` before launching
-    // workers and keeps the DSM segment alive until every worker exits, so
-    // the borrow is bounded by this function frame.
-    let header: &EcHnswParallelBuildSharedHeader = unsafe {
-        ptr::NonNull::new(shared)
-            .unwrap_or_else(|| pgrx::error!("ec_hnsw parallel build shared header is null"))
-            .as_ref()
-    };
-    header.validate();
+    // workers and keeps the DSM segment alive until every worker exits.
+    let view = unsafe { EcHnswParallelBuildSharedView::from_raw(shared) };
+    view.validate();
 
     // SAFETY: PostgreSQL assigns ParallelWorkerNumber before invoking the
     // graph-build worker entrypoint.
@@ -2805,25 +2815,17 @@ unsafe fn parallel_graph_build_worker_main(toc: *mut pg_sys::shm_toc) {
     // SAFETY: The worker is running inside PostgreSQL parallel query
     // instrumentation scope.
     unsafe { pg_sys::InstrStartParallelQuery() };
-    let participant_count = header.participant_count;
     let inserted = insert_concurrent_dsm_graph_participant(
         attachment.parts,
         attachment.layout,
         config,
-        participant_count,
+        view.participant_count(),
         checked_u16(worker_number, "graph worker participant index"),
         &mut scratch,
         EcHnswConcurrentDsmLockOps::postgres(),
     );
 
-    // SAFETY: `shared` is the initialized shared header; the spinlock protects
-    // aggregate counters and the condition variable wakes the leader.
-    unsafe {
-        pg_sys::SpinLockAcquire(&mut (*shared).mutex);
-        (*shared).record_worker_counts(0.0, inserted as f64);
-        pg_sys::SpinLockRelease(&mut (*shared).mutex);
-        pg_sys::ConditionVariableSignal(&mut (*shared).workersdonecv);
-    }
+    view.record_workers_done(0.0, inserted as f64);
 
     let bufferusage: *mut pg_sys::BufferUsage =
         reader.lookup_required(PARALLEL_KEY_EC_HNSW_BUFFER_USAGE);

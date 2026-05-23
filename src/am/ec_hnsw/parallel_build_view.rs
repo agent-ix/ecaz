@@ -19,6 +19,8 @@
 
 use std::ptr::NonNull;
 
+use pgrx::pg_sys;
+
 use super::build_parallel::EcHnswParallelBuildSharedHeader;
 use crate::am::common::dsm::{
     condition_variable_init, spinlock_init, ConditionVariableRef, SpinLockGuard,
@@ -61,6 +63,45 @@ impl<'a> EcHnswParallelBuildSharedView<'a> {
             header,
             _marker: std::marker::PhantomData,
         }
+    }
+
+    /// Read the participant count (`Copy` value; no reference escapes).
+    pub(super) fn participant_count(&self) -> u16 {
+        // SAFETY: see `from_raw`. Field read returns a `Copy` value;
+        // no reference escapes the method body.
+        unsafe { (*self.header.as_ptr()).participant_count() }
+    }
+
+    /// Read the `is_concurrent` flag.
+    pub(super) fn is_concurrent(&self) -> bool {
+        // SAFETY: see `from_raw`. Copy value read; no reference escapes.
+        unsafe { (*self.header.as_ptr()).is_concurrent() }
+    }
+
+    /// Read the heap relation Oid.
+    pub(super) fn heaprelid(&self) -> pg_sys::Oid {
+        // SAFETY: see `from_raw`. Copy value read; no reference escapes.
+        unsafe { (*self.header.as_ptr()).heaprelid() }
+    }
+
+    /// Read the index relation Oid.
+    pub(super) fn indexrelid(&self) -> pg_sys::Oid {
+        // SAFETY: see `from_raw`. Copy value read; no reference escapes.
+        unsafe { (*self.header.as_ptr()).indexrelid() }
+    }
+
+    /// Read the final scanned-heap-tuples aggregate (leader-side, after
+    /// workers report).
+    pub(super) fn scanned_heap_tuples(&self) -> f64 {
+        // SAFETY: see `from_raw`. Copy value read; no reference escapes.
+        unsafe { (*self.header.as_ptr()).scanned_heap_tuples() }
+    }
+
+    /// Read the final encoded-index-tuples aggregate (leader-side, after
+    /// workers report).
+    pub(super) fn encoded_index_tuples(&self) -> f64 {
+        // SAFETY: see `from_raw`. Copy value read; no reference escapes.
+        unsafe { (*self.header.as_ptr()).encoded_index_tuples() }
     }
 
     /// Validate the magic + version header bytes; pgrx-errors on
