@@ -197,8 +197,8 @@ pub(super) struct EcHnswParallelBuildSharedHeader {
     indexrelid: pg_sys::Oid,
     is_concurrent: bool,
     reserved0: [u8; 3],
-    workersdonecv: pg_sys::ConditionVariable,
-    mutex: pg_sys::slock_t,
+    pub(super) workersdonecv: pg_sys::ConditionVariable,
+    pub(super) mutex: pg_sys::slock_t,
     nparticipantsdone: i32,
     scanned_heap_tuples: f64,
     encoded_index_tuples: f64,
@@ -1973,7 +1973,7 @@ impl EcHnswParallelBuildSharedHeader {
         self.encoded_index_tuples
     }
 
-    fn validate(&self) {
+    pub(super) fn validate(&self) {
         if self.magic != EC_HNSW_PARALLEL_BUILD_MAGIC
             || self.version != EC_HNSW_PARALLEL_BUILD_VERSION
         {
@@ -2796,10 +2796,8 @@ unsafe fn parallel_build_worker_main(seg: *mut pg_sys::dsm_segment, toc: *mut pg
         encoded_tuples: 0,
     };
 
-    let mut index_info = super::index_info::IndexInfoView::build_borrowed(
-        index_relation,
-        "parallel build worker",
-    );
+    let mut index_info =
+        super::index_info::IndexInfoView::build_borrowed(index_relation, "parallel build worker");
     index_info.as_mut().ii_Concurrent = is_concurrent;
     // SAFETY: `shared` contains the table_parallelscan_initialize state and
     // `heap_relation` is open in this worker.
