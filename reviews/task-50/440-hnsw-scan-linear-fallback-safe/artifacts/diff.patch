@@ -1,0 +1,38 @@
+commit d58a7c7c477cf8d8f123f4709b703a4ee62638a1
+Author: Codex <codex@openai.com>
+Date:   Fri May 22 17:32:02 2026 -0700
+
+    Task 50/440: HNSW scan.rs linear-fallback chain safe-fn lifts
+    
+    Two more leaf scan-side lifts in the linear-fallback path:
+    
+      - select_linear_scan_result_from_buffer (no internal unsafe blocks
+        on pg18 — calls only safe helpers; pg17 branch keeps its
+        LockedBufferGuard::read_main unsafe block as internal)
+      - select_next_linear_scan_result (body composed of safe ops
+        plus the lifted from_buffer; pg17 branch keeps its
+        LockedBufferGuard unsafe block internal)
+      - produce_next_linear_fallback_heap_tid (body composed of safe
+        ops after the chain lifts)
+    
+    Caller-side unsafe wraps stripped:
+      - select_next_linear_scan_result internals (two: pg18 stream and
+        pg17 buffer-loop arms)
+      - produce_next_linear_fallback_heap_tid internal call to
+        select_next_linear_scan_result
+      - produce_next_scan_heap_tid LinearFallback dispatcher arm
+    
+    The GraphTraversal arm in produce_next_scan_heap_tid remains unsafe
+    because ensure_prefetched_output -> prefetch_next ->
+    prefetch_next_graph_result_from_frontier is still an unsafe-fn cascade.
+    
+    Per-file delta:
+    
+      scan.rs   80 -> 76  (-4)
+    
+    Cumulative HNSW rotation delta: -204 (549 -> 345, -37.2%).
+    
+    Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
+
+ src/am/ec_hnsw/scan.rs | 32 ++++++++++----------------------
+ 1 file changed, 10 insertions(+), 22 deletions(-)
