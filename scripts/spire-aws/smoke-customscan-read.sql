@@ -21,10 +21,10 @@ ORDER BY node_id;
 
 \echo === EXPLAIN ANALYZE: vector ORDER BY LIMIT through CustomScan ===
 EXPLAIN (ANALYZE, BUFFERS, FORMAT TEXT)
-SELECT vec_id
+SELECT id
 FROM :corpus_table
 ORDER BY embedding <#> (
-  SELECT embedding FROM :queries_table WHERE vec_id = 0
+  SELECT embedding FROM :queries_table WHERE id = 0
 )
 LIMIT 10;
 
@@ -32,7 +32,7 @@ LIMIT 10;
 SELECT *
 FROM ec_spire_remote_search_production_scan_handoff_summary(
   :'index_name'::regclass,
-  (SELECT embedding FROM :queries_table WHERE vec_id = 0)::real[],
+  (SELECT embedding FROM :queries_table WHERE id = 0)::real[],
   10
 );
 
@@ -40,6 +40,6 @@ FROM ec_spire_remote_search_production_scan_handoff_summary(
 SELECT *
 FROM ec_spire_remote_search_production_read_profile(
   :'index_name'::regclass,
-  (SELECT embedding FROM :queries_table WHERE vec_id = 0)::real[],
+  (SELECT embedding FROM :queries_table WHERE id = 0)::real[],
   10
 );
