@@ -25,7 +25,7 @@ Local `ec_spire` index scans SHALL use an eager bounded scan contract:
 scores and deduplicates candidates, performs heap rerank when configured, and
 prepares a forward-only cursor that `amgettuple` drains.
 
-## Search Flow
+## Workflow
 
 ```mermaid
 sequenceDiagram

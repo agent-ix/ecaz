@@ -38,7 +38,7 @@ front-door statements, `RETURNING`, coordinator row triggers, transition
 tables, cross-shard non-PK reads, DDL propagation, and embedding moves are
 deferred.
 
-## INSERT 2PC Flow
+## Workflow
 
 ```mermaid
 sequenceDiagram

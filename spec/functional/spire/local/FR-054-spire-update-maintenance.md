@@ -21,7 +21,7 @@ relationships:
 cleanup as epoch-safe delta or replacement-object publication, never as
 in-place mutation of objects visible to active queries.
 
-## Maintenance Flow
+## Workflow
 
 ```mermaid
 flowchart TD
