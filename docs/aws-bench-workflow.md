@@ -100,6 +100,7 @@ and on every cycle close-out.
 | `snap-01838d965fa09c433` | 50 GB | 2026-05-22 | post-bits=1 + rerank round state: + ec_ivf bits=1 variants + rerank=heap_f32 variants |
 | `snap-0975811a1da6ea302` | 100 GB | 2026-05-22 | post-1m closure: + real DBpedia 100k + 1m loaded as `real_{100k,1m}_ivf_rabitq1_rerank_corpus` + `..._queries` + `..._rabitq_idx` (quant_bits=1, rerank=heap_f32, rerank_width=50). branch=aws-optimization-ivf-rabitq-spire HEAD=b2073ad82 |
 | `snap-0e9c7743263e61d70` | 100 GB | 2026-05-22 | post-1m recall measurement, same data as snap-0975811a1da6ea302 plus the recall artifacts. Host was m8g.2xlarge by this point (resized from m8g.xlarge to fit 5.8 GB ground-truth corpus in RAM). |
+| `snap-091251b06d2da2df4` | 100 GB | 2026-05-23 | post-vchord paired sweep: prior contents + `real_{50k,100k,1m}_vchord_{corpus,queries,idx}` (vchordrq lists=224/320/1024) + `gt_{50k,100k,1m}` brute-force top-10 GT tables (q=100, numpy exhaustive IP). PG `shared_preload_libraries='ecaz,vchord'`. branch=aws-optimization-ivf-rabitq-spire HEAD=7b3336b3c. Use to restore the full paired-comparator state without rebuilding vchord. |
 
 **When adding rows:** include exact prefixes (`real_50k_ivf_rabitq`,
 not "the 50k tables"), reloptions used (`bits=1`, `rerank=heap_f32`,
