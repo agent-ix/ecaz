@@ -307,6 +307,7 @@ struct IvfPostingScratchSoa {
     heap_tid_counts: Vec<usize>,
     heap_tids: Vec<ItemPointer>,
     payloads: Vec<u8>,
+    scores: Vec<f32>,
 }
 
 impl IvfPostingScratchSoa {
@@ -318,6 +319,7 @@ impl IvfPostingScratchSoa {
             heap_tid_counts: Vec::with_capacity(IVF_POSTING_SCRATCH_SOA_BATCH_POSTINGS),
             heap_tids: Vec::with_capacity(IVF_POSTING_SCRATCH_SOA_BATCH_HEAPTIDS),
             payloads: Vec::with_capacity(payload_len * IVF_POSTING_SCRATCH_SOA_BATCH_POSTINGS),
+            scores: Vec::with_capacity(IVF_POSTING_SCRATCH_SOA_BATCH_POSTINGS),
         }
     }
 
@@ -335,6 +337,7 @@ impl IvfPostingScratchSoa {
         self.heap_tid_counts.clear();
         self.heap_tids.clear();
         self.payloads.clear();
+        self.scores.clear();
     }
 
     fn is_empty(&self) -> bool {
@@ -1392,6 +1395,33 @@ fn process_scratch_soa_postings(
     running_top: &mut Option<CandidateTopK>,
 ) -> Result<(), String> {
     if scratch.is_empty() {
+        return Ok(());
+    }
+
+    if quantizer.score_ip_bits1_batch_from_payloads(
+        prepared_query,
+        &scratch.payloads,
+        scratch.payload_len,
+        &mut scratch.scores,
+    )? {
+        if scratch.scores.len() != scratch.len() {
+            return Err(format!(
+                "ec_ivf scratch SoA batch scorer produced {} scores for {} postings",
+                scratch.scores.len(),
+                scratch.len()
+            ));
+        }
+        for index in 0..scratch.len() {
+            record_scored_posting_candidates(
+                opaque,
+                best_by_heap_tid,
+                running_top,
+                scratch.heap_tids(index).iter().copied(),
+                scratch.heap_tid_counts[index],
+                -scratch.scores[index],
+            );
+        }
+        scratch.clear();
         return Ok(());
     }
 
@@ -2517,10 +2547,12 @@ mod tests {
         let heap_tid_capacity = scratch.heap_tids.capacity();
         scratch.payloads.extend_from_slice(&[1, 2, 3]);
         scratch.heap_tids.push(candidate(1, 1, 0.0).heap_tid);
+        scratch.scores.push(2.5);
 
         scratch.clear_for_payload_len(3);
 
         assert!(scratch.is_empty());
+        assert!(scratch.scores.is_empty());
         assert_eq!(scratch.payloads.capacity(), payload_capacity);
         assert_eq!(scratch.heap_tids.capacity(), heap_tid_capacity);
     }

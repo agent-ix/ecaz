@@ -388,6 +388,8 @@ struct ExplainStep {
     nprobe: i32,
     rerank_width: i32,
     #[serde(default)]
+    ivf_scratch_soa_batch_decode: Option<bool>,
+    #[serde(default)]
     pg: Option<u16>,
     #[serde(default)]
     db: Option<String>,
@@ -1654,7 +1656,13 @@ impl SuiteStep {
                 Ok(())
             }
             SuiteStep::Explain(step) => {
-                validate_profile_name("explain profile", step.profile.as_deref())
+                validate_profile_name("explain profile", step.profile.as_deref())?;
+                let profile = profiles::resolve(step.profile.as_deref().unwrap_or("ec_ivf"))
+                    .unwrap_or(&profiles::EC_IVF);
+                super::validate_ivf_scratch_soa_batch_decode(
+                    profile,
+                    step.ivf_scratch_soa_batch_decode.unwrap_or(false),
+                )
             }
             SuiteStep::SidecarRerank(step) => {
                 validate_profile_name("sidecar-rerank profile", step.profile.as_deref())?;
@@ -2297,6 +2305,24 @@ fn explain_sql(step: &ExplainStep, defaults: &SuiteDefaults) -> String {
     let profile = explain_step_profile(step, defaults);
     let scan_guc = profile.ef_search_guc.unwrap_or("ec_ivf.nprobe");
     let rerank_guc = rerank_width_guc(profile);
+    let use_scratch_soa =
+        profile.name == "ec_ivf" && step.ivf_scratch_soa_batch_decode.unwrap_or(false);
+    let set_scratch_soa_sql = if use_scratch_soa {
+        "SET ec_ivf.scratch_soa_batch_decode = on;\n".to_owned()
+    } else {
+        String::new()
+    };
+    let current_scratch_soa_sql = if use_scratch_soa {
+        "current_setting('ec_ivf.scratch_soa_batch_decode') AS scratch_soa_batch_decode,\n           "
+            .to_owned()
+    } else {
+        String::new()
+    };
+    let reset_scratch_soa_sql = if use_scratch_soa {
+        "RESET ec_ivf.scratch_soa_batch_decode;\n".to_owned()
+    } else {
+        String::new()
+    };
     let set_rerank_sql = rerank_guc
         .map(|guc| {
             format!(
@@ -2332,10 +2358,12 @@ fn explain_sql(step: &ExplainStep, defaults: &SuiteDefaults) -> String {
          \\timing on\n\n\
          SET enable_seqscan = off;\n\
          SET {scan_guc} = {nprobe};\n\
+         {set_scratch_soa_sql}\
          {set_rerank_sql}\n\
          SELECT\n\
            current_setting('server_version') AS server_version,\n\
            current_setting('{scan_guc}') AS sweep_value,\n\
+           {current_scratch_soa_sql}\
            {current_rerank_sql}'{profile_name}' AS profile;\n\n\
          SELECT\n\
            '{index}' AS index_name,\n\
@@ -2355,10 +2383,13 @@ fn explain_sql(step: &ExplainStep, defaults: &SuiteDefaults) -> String {
          LIMIT 10;\n\n\
          RESET enable_seqscan;\n\
          RESET {scan_guc};\n\
+         {reset_scratch_soa_sql}\
          {reset_rerank_sql}",
         nprobe = step.nprobe,
         scan_guc = scan_guc,
+        set_scratch_soa_sql = set_scratch_soa_sql,
         set_rerank_sql = set_rerank_sql,
+        current_scratch_soa_sql = current_scratch_soa_sql,
         current_rerank_sql = current_rerank_sql,
         profile_name = profile.name,
         index = index,
@@ -2366,6 +2397,7 @@ fn explain_sql(step: &ExplainStep, defaults: &SuiteDefaults) -> String {
         cost_tuning_snapshot_sql = cost_tuning_snapshot_sql,
         corpus_table = corpus_table,
         query_table = query_table,
+        reset_scratch_soa_sql = reset_scratch_soa_sql,
         reset_rerank_sql = reset_rerank_sql
     )
 }
@@ -3164,6 +3196,7 @@ mod tests {
             corpus_table: None,
             nprobe: 96,
             rerank_width: 1000,
+            ivf_scratch_soa_batch_decode: None,
             pg: None,
             db: None,
             socket_dir: None,
@@ -3190,6 +3223,7 @@ mod tests {
             corpus_table: None,
             nprobe: 96,
             rerank_width: 1000,
+            ivf_scratch_soa_batch_decode: None,
             pg: None,
             db: None,
             socket_dir: None,
@@ -3207,6 +3241,35 @@ mod tests {
     }
 
     #[test]
+    fn explain_sql_can_enable_ivf_scratch_soa() {
+        let step = ExplainStep {
+            name: "explain".into(),
+            tags: Vec::new(),
+            prefix: "pfx".into(),
+            profile: None,
+            index_name: None,
+            query_table: None,
+            corpus_table: None,
+            nprobe: 96,
+            rerank_width: 1000,
+            ivf_scratch_soa_batch_decode: Some(true),
+            pg: None,
+            db: None,
+            socket_dir: None,
+            port: None,
+            sql_file: "explain.sql".into(),
+            log_output: "explain.log".into(),
+        };
+        let sql = explain_sql(&step, &SuiteDefaults::default());
+
+        assert!(sql.contains("SET ec_ivf.scratch_soa_batch_decode = on;"));
+        assert!(sql.contains(
+            "current_setting('ec_ivf.scratch_soa_batch_decode') AS scratch_soa_batch_decode"
+        ));
+        assert!(sql.contains("RESET ec_ivf.scratch_soa_batch_decode;"));
+    }
+
+    #[test]
     fn explain_sql_uses_spire_profile_gucs_and_cost_snapshot() {
         let step = ExplainStep {
             name: "explain".into(),
@@ -3218,6 +3281,7 @@ mod tests {
             corpus_table: None,
             nprobe: 32,
             rerank_width: 500,
+            ivf_scratch_soa_batch_decode: None,
             pg: None,
             db: None,
             socket_dir: None,
@@ -3250,6 +3314,7 @@ mod tests {
             corpus_table: None,
             nprobe: 200,
             rerank_width: -1,
+            ivf_scratch_soa_batch_decode: None,
             pg: None,
             db: None,
             socket_dir: None,

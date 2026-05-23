@@ -337,6 +337,42 @@ impl IvfQuantizer {
         }
     }
 
+    pub(super) fn score_ip_bits1_batch_from_payloads(
+        self,
+        prepared_query: &IvfPreparedQuery,
+        payloads: &[u8],
+        payload_len: usize,
+        out_scores: &mut Vec<f32>,
+    ) -> Result<bool, String> {
+        match (self.profile, prepared_query) {
+            (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::RaBitQ(prepared_query))
+                if self.rabitq_bits == 1 =>
+            {
+                prepared_query.estimate_ip_bits1_batch(payloads, payload_len, out_scores)?;
+                Ok(true)
+            }
+            (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::RaBitQ(_))
+            | (IvfQuantizerProfile::TurboQuant, IvfPreparedQuery::TurboQuant(_))
+            | (IvfQuantizerProfile::TurboQuant, IvfPreparedQuery::TurboQuantNoQjl4BitLut(_))
+            | (IvfQuantizerProfile::PqFastScan { .. }, IvfPreparedQuery::PqFastScan { .. }) => {
+                Ok(false)
+            }
+            (IvfQuantizerProfile::TurboQuant, IvfPreparedQuery::RaBitQ(_))
+            | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::TurboQuant(_))
+            | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::TurboQuantNoQjl4BitLut(_))
+            | (IvfQuantizerProfile::TurboQuant, IvfPreparedQuery::PqFastScan { .. })
+            | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::PqFastScan { .. })
+            | (IvfQuantizerProfile::PqFastScan { .. }, IvfPreparedQuery::TurboQuant(_))
+            | (
+                IvfQuantizerProfile::PqFastScan { .. },
+                IvfPreparedQuery::TurboQuantNoQjl4BitLut(_),
+            )
+            | (IvfQuantizerProfile::PqFastScan { .. }, IvfPreparedQuery::RaBitQ(_)) => {
+                Err("ec_ivf prepared query does not match quantizer profile".to_owned())
+            }
+        }
+    }
+
     pub(super) fn payload_len(self) -> usize {
         match self.profile {
             IvfQuantizerProfile::TurboQuant => {
@@ -700,6 +736,80 @@ mod tests {
             crate::quant::rabitq::seeded_srht_construction_count_for_test(),
             after_prepare
         );
+    }
+
+    #[test]
+    fn rabitq_bits1_batch_dispatch_matches_scalar_scores() {
+        let dimensions = 40;
+        let query = unit_vector(dimensions);
+        let dispatch = IvfQuantizer::resolve_with_pq_group_size_and_bits(
+            StorageFormat::RaBitQ,
+            dimensions,
+            None,
+            Some(1),
+        )
+        .unwrap();
+        let prepared = dispatch.prepare_ip_query(&query).unwrap();
+        let payloads = (0..4)
+            .flat_map(|row| {
+                let source = (0..dimensions)
+                    .map(|col| (row as f32 - col as f32) * 0.03125)
+                    .collect::<Vec<_>>();
+                let (_, _, payload) = dispatch.encode_source(&source).unwrap();
+                payload
+            })
+            .collect::<Vec<_>>();
+        let mut batch_scores = Vec::new();
+
+        let used_batch = dispatch
+            .score_ip_bits1_batch_from_payloads(
+                &prepared,
+                &payloads,
+                dispatch.payload_len(),
+                &mut batch_scores,
+            )
+            .unwrap();
+
+        assert!(used_batch);
+        assert_eq!(batch_scores.len(), 4);
+        for (index, payload) in payloads.chunks_exact(dispatch.payload_len()).enumerate() {
+            let scalar = dispatch
+                .score_ip_from_parts(&prepared, 0.0, payload)
+                .unwrap();
+            assert!(
+                (batch_scores[index] - scalar).abs() < 1e-6,
+                "index={index} batch={} scalar={scalar}",
+                batch_scores[index]
+            );
+        }
+    }
+
+    #[test]
+    fn non_bits1_batch_dispatch_declines_without_scoring() {
+        let dimensions = 40;
+        let query = unit_vector(dimensions);
+        let dispatch = IvfQuantizer::resolve_with_pq_group_size_and_bits(
+            StorageFormat::RaBitQ,
+            dimensions,
+            None,
+            Some(4),
+        )
+        .unwrap();
+        let prepared = dispatch.prepare_ip_query(&query).unwrap();
+        let (_, _, payload) = dispatch.encode_source(&query).unwrap();
+        let mut batch_scores = vec![1.0];
+
+        let used_batch = dispatch
+            .score_ip_bits1_batch_from_payloads(
+                &prepared,
+                &payload,
+                dispatch.payload_len(),
+                &mut batch_scores,
+            )
+            .unwrap();
+
+        assert!(!used_batch);
+        assert_eq!(batch_scores, vec![1.0]);
     }
 
     #[test]

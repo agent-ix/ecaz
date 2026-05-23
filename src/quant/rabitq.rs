@@ -874,6 +874,56 @@ impl PreparedEstimator {
         )
     }
 
+    /// Batch IVF-fast estimates for contiguous bits=1 RaBitQ codes.
+    ///
+    /// This is the production entrypoint for scratch-SoA callers that already
+    /// hold a dense payload slab. Each code still uses the target-specific
+    /// bits=1 kernel selected by `sum_query_dequant_with_bf16`; the batch API
+    /// removes the per-posting quantizer dispatch and lets callers reuse one
+    /// output buffer across scan chunks.
+    pub fn estimate_ip_bits1_batch(
+        &self,
+        codes: &[u8],
+        code_len: usize,
+        out_scores: &mut Vec<f32>,
+    ) -> Result<(), String> {
+        if self.bits_per_dim != 1 {
+            return Err(format!(
+                "RaBitQ bits=1 batch scorer requires bits=1, got {}",
+                self.bits_per_dim
+            ));
+        }
+        let expected_code_len = code_len_for(self.dimensions, 1)
+            .expect("bits=1 RaBitQ code length should be valid for prepared dimensions");
+        if code_len != expected_code_len {
+            return Err(format!(
+                "RaBitQ bits=1 batch scorer code length mismatch: got {code_len}, expected {expected_code_len}"
+            ));
+        }
+        if code_len == 0 || codes.len() % code_len != 0 {
+            return Err(format!(
+                "RaBitQ bits=1 batch scorer payload slab length {} is not divisible by code length {code_len}",
+                codes.len()
+            ));
+        }
+
+        out_scores.clear();
+        out_scores.reserve(codes.len() / code_len);
+        for code in codes.chunks_exact(code_len) {
+            out_scores.push(estimate_ip_scalar_only_impl(
+                &self.query_rotated,
+                Some(&self.query_bf16),
+                Some(&self.dequant_lut_bf16),
+                self.dimensions,
+                self.bits_per_dim,
+                &self.dequant_lut,
+                self.bits1_byte_lut.as_deref(),
+                code,
+            ));
+        }
+        Ok(())
+    }
+
     /// Cheap pre-prune via Cauchy-Schwarz. Reads only the per-code
     /// scalar metadata (`||o||`, `o_dot`) and skips the full
     /// `dimensions`-wide SIMD inner product when even the most
@@ -2023,6 +2073,65 @@ mod tests {
         assert!((score - expected).abs() < 1e-6);
         assert!(score != 0.0);
         assert!(score != 1.0);
+    }
+
+    #[test]
+    fn bits1_batch_estimator_matches_scalar_order() {
+        let q = identity_quantizer(17, 1);
+        let query: Vec<f32> = (0..17).map(|i| i as f32 * 0.125 - 0.75).collect();
+        let candidates = (0..5)
+            .map(|row| {
+                (0..17)
+                    .map(|col| (row as f32 - col as f32) * 0.0625)
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+        let codes = candidates
+            .iter()
+            .flat_map(|candidate| {
+                <RaBitQQuantizer as crate::quant::Quantizer>::encode_code(&q, candidate).into_vec()
+            })
+            .collect::<Vec<_>>();
+        let prepared = q.prepare_estimator(&query);
+        let code_len = <RaBitQQuantizer as crate::quant::Quantizer>::code_len(&q);
+        let mut batch_scores = vec![123.0];
+
+        prepared
+            .estimate_ip_bits1_batch(&codes, code_len, &mut batch_scores)
+            .unwrap();
+
+        assert_eq!(batch_scores.len(), candidates.len());
+        for (index, candidate) in candidates.iter().enumerate() {
+            let code = <RaBitQQuantizer as crate::quant::Quantizer>::encode_code(&q, candidate);
+            let scalar = prepared.estimate_ip_scalar_only(&code);
+            assert!(
+                (batch_scores[index] - scalar).abs() < 1e-6,
+                "index={index} batch={} scalar={scalar}",
+                batch_scores[index]
+            );
+        }
+    }
+
+    #[test]
+    fn bits1_batch_estimator_rejects_wrong_width_and_stride() {
+        let q = identity_quantizer(17, 2);
+        let query: Vec<f32> = (0..17).map(|i| i as f32 * 0.125 - 0.75).collect();
+        let code = <RaBitQQuantizer as crate::quant::Quantizer>::encode_code(&q, &query);
+        let prepared = q.prepare_estimator(&query);
+        let mut batch_scores = Vec::new();
+
+        let err = prepared
+            .estimate_ip_bits1_batch(&code, code.len(), &mut batch_scores)
+            .unwrap_err();
+        assert!(err.contains("requires bits=1"));
+
+        let q = identity_quantizer(17, 1);
+        let prepared = q.prepare_estimator(&query);
+        let code = <RaBitQQuantizer as crate::quant::Quantizer>::encode_code(&q, &query);
+        let err = prepared
+            .estimate_ip_bits1_batch(&code[..code.len() - 1], code.len(), &mut batch_scores)
+            .unwrap_err();
+        assert!(err.contains("not divisible"));
     }
 
     #[test]
