@@ -13,7 +13,11 @@ use std::time::Instant;
 use clap::{Args, ValueEnum};
 use color_eyre::eyre::{bail, eyre, Context, Result};
 use comfy_table::{presets::UTF8_FULL, Cell, Table};
-use futures::stream::{self, StreamExt, TryStreamExt};
+use bytes::Bytes;
+use futures::{
+    stream::{self, StreamExt, TryStreamExt},
+    SinkExt,
+};
 use half::f16;
 use ndarray::Array2;
 use tokio_postgres::Client;
@@ -548,17 +552,9 @@ async fn ensure_sidecar_tables(
             .batch_execute(&format!("BEGIN; TRUNCATE {table}"))
             .await
             .wrap_err_with(|| format!("starting sidecar table load for {table}"))?;
-        let insert_sql = format!("INSERT INTO {table} (id, payload) VALUES ($1, $2)");
-        let insert = client
-            .prepare(&insert_sql)
-            .await
-            .wrap_err_with(|| format!("preparing sidecar insert for {table}"))?;
-        for (pos, id) in corpus_ids.iter().enumerate() {
-            let payload = sidecar_payload_bytes(sidecar, corpus, pos)?;
-            client
-                .execute(&insert, &[id, &payload])
-                .await
-                .wrap_err_with(|| format!("inserting sidecar row {pos} into {table}"))?;
+        if let Err(err) = copy_sidecar_rows(client, &table, sidecar, corpus_ids, corpus).await {
+            let _ = client.batch_execute("ROLLBACK").await;
+            return Err(err).wrap_err_with(|| format!("copying sidecar rows into {table}"));
         }
         client
             .batch_execute(&format!("COMMIT; ANALYZE {table}"))
@@ -566,6 +562,58 @@ async fn ensure_sidecar_tables(
             .wrap_err_with(|| format!("finishing sidecar table load for {table}"))?;
     }
     Ok(())
+}
+
+async fn copy_sidecar_rows(
+    client: &Client,
+    table: &str,
+    sidecar: &Sidecar,
+    corpus_ids: &[i64],
+    corpus: &Array2<f32>,
+) -> Result<()> {
+    const COPY_CHUNK_TARGET: usize = 8 * 1024 * 1024;
+
+    let sink = client
+        .copy_in::<_, Bytes>(&format!("COPY {table} (id, payload) FROM STDIN BINARY"))
+        .await
+        .wrap_err_with(|| format!("starting binary COPY for {table}"))?;
+    futures::pin_mut!(sink);
+
+    let mut chunk = Vec::with_capacity(COPY_CHUNK_TARGET + sidecar.bytes_per_vector + 32);
+    chunk.extend_from_slice(b"PGCOPY\n\xff\r\n\0");
+    chunk.extend_from_slice(&0_i32.to_be_bytes()); // flags
+    chunk.extend_from_slice(&0_i32.to_be_bytes()); // header extension length
+
+    for (pos, id) in corpus_ids.iter().enumerate() {
+        let payload = sidecar_payload_bytes(sidecar, corpus, pos)?;
+        append_copy_row(&mut chunk, *id, &payload);
+        if chunk.len() >= COPY_CHUNK_TARGET {
+            let full = std::mem::replace(
+                &mut chunk,
+                Vec::with_capacity(COPY_CHUNK_TARGET + sidecar.bytes_per_vector + 32),
+            );
+            sink.send(Bytes::from(full))
+                .await
+                .wrap_err_with(|| format!("sending binary COPY chunk for {table}"))?;
+        }
+    }
+
+    chunk.extend_from_slice(&(-1_i16).to_be_bytes());
+    sink.send(Bytes::from(chunk))
+        .await
+        .wrap_err_with(|| format!("sending final binary COPY chunk for {table}"))?;
+    sink.finish()
+        .await
+        .wrap_err_with(|| format!("finishing binary COPY for {table}"))?;
+    Ok(())
+}
+
+fn append_copy_row(out: &mut Vec<u8>, id: i64, payload: &[u8]) {
+    out.extend_from_slice(&2_i16.to_be_bytes());
+    out.extend_from_slice(&8_i32.to_be_bytes());
+    out.extend_from_slice(&id.to_be_bytes());
+    out.extend_from_slice(&(payload.len() as i32).to_be_bytes());
+    out.extend_from_slice(payload);
 }
 
 fn sidecar_payload_bytes(sidecar: &Sidecar, corpus: &Array2<f32>, pos: usize) -> Result<Vec<u8>> {
