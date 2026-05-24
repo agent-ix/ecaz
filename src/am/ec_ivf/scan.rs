@@ -29,7 +29,7 @@ use crate::storage::{
 use super::options::StorageFormat;
 use super::quantizer::{self, IvfPqFastScanModel, IvfPreparedQuery, IvfQuantizer};
 
-#[derive(Debug, Default)]
+#[derive(Default)]
 struct EcIvfScanOpaque {
     rescan_called: bool,
     query_dimensions: u16,
@@ -37,7 +37,7 @@ struct EcIvfScanOpaque {
     scan_dimensions: u16,
     scan_nlists: u32,
     scan_nprobe: u32,
-    pq_fastscan_model: *mut IvfPqFastScanModel,
+    pq_fastscan_model: Option<Box<IvfPqFastScanModel>>,
     prepared_query: *mut IvfPreparedQuery,
     centroid_scores: *mut EcIvfCentroidScore,
     centroid_score_count: u32,
@@ -48,7 +48,7 @@ struct EcIvfScanOpaque {
     posting_candidate_count: u32,
     next_candidate_index: u32,
     posting_scratch_soa: *mut IvfPostingScratchSoa,
-    heap_rerank_state: *mut IvfHeapRerankState,
+    heap_rerank_state: Option<Box<IvfHeapRerankState>>,
     explain_counters: IvfExplainCounters,
     stats_delta: TqStatsCounters,
 }
@@ -748,13 +748,12 @@ unsafe fn store_scan_prepared_query(
     opaque.prepared_query = Box::into_raw(Box::new(prepared));
 }
 
-/// # Safety
-/// `prepared_query` was created with `Box::into_raw` by this scan opaque
-/// and has not been freed while the pointer is non-null.
-unsafe fn free_scan_prepared_query(opaque: &mut EcIvfScanOpaque) {
-    if !opaque.prepared_query.is_null() {
-        drop(Box::from_raw(opaque.prepared_query));
-        opaque.prepared_query = ptr::null_mut();
+fn free_scan_prepared_query(opaque: &mut EcIvfScanOpaque) {
+    let ptr = std::mem::replace(&mut opaque.prepared_query, ptr::null_mut());
+    if !ptr.is_null() {
+        // SAFETY: non-null `ptr` was created with `Box::into_raw` by
+        // `store_scan_prepared_query` and is owned by this scan opaque.
+        drop(unsafe { Box::from_raw(ptr) });
     }
 }
 
@@ -767,21 +766,18 @@ unsafe fn pq_fastscan_model_for_scan<'a>(
     index_relation: pg_sys::Relation,
     metadata: &super::page::MetadataPage,
 ) -> Result<&'a IvfPqFastScanModel, String> {
-    if opaque.pq_fastscan_model.is_null() {
+    if opaque.pq_fastscan_model.is_none() {
         let model = quantizer::load_pq_fastscan_model(index_relation, metadata)?;
-        opaque.pq_fastscan_model = Box::into_raw(Box::new(model));
+        opaque.pq_fastscan_model = Some(Box::new(model));
     }
-    Ok(&*opaque.pq_fastscan_model)
+    Ok(opaque
+        .pq_fastscan_model
+        .as_deref()
+        .expect("pq_fastscan_model was just populated above"))
 }
 
-/// # Safety
-/// `pq_fastscan_model` was created with `Box::into_raw` by this scan opaque
-/// and has not been freed while the pointer is non-null.
-unsafe fn free_pq_fastscan_model(opaque: &mut EcIvfScanOpaque) {
-    if !opaque.pq_fastscan_model.is_null() {
-        drop(Box::from_raw(opaque.pq_fastscan_model));
-        opaque.pq_fastscan_model = ptr::null_mut();
-    }
+fn free_pq_fastscan_model(opaque: &mut EcIvfScanOpaque) {
+    opaque.pq_fastscan_model = None;
 }
 
 fn store_centroid_scores(opaque: &mut EcIvfScanOpaque, scores: &[EcIvfCentroidScore]) {
@@ -843,11 +839,7 @@ fn free_posting_candidates(opaque: &mut EcIvfScanOpaque) {
     opaque.next_candidate_index = 0;
 }
 
-/// # Safety
-/// All scan-opaque Box pointers cleared here were allocated by their
-/// matching helpers and have not been freed; heap rerank state is owned by
-/// `opaque` for the duration of the scan.
-unsafe fn free_scan_query_prep(opaque: &mut EcIvfScanOpaque) {
+fn free_scan_query_prep(opaque: &mut EcIvfScanOpaque) {
     free_scan_query(opaque);
     free_scan_prepared_query(opaque);
     free_heap_rerank_state(opaque);
@@ -880,13 +872,12 @@ unsafe fn candidate_dedup_map(
     opaque.candidate_dedup
 }
 
-/// # Safety
-/// `candidate_dedup` was created with `Box::into_raw` by this scan opaque
-/// and has not been freed while the pointer is non-null.
-unsafe fn free_candidate_dedup(opaque: &mut EcIvfScanOpaque) {
-    if !opaque.candidate_dedup.is_null() {
-        drop(Box::from_raw(opaque.candidate_dedup));
-        opaque.candidate_dedup = ptr::null_mut();
+fn free_candidate_dedup(opaque: &mut EcIvfScanOpaque) {
+    let ptr = std::mem::replace(&mut opaque.candidate_dedup, ptr::null_mut());
+    if !ptr.is_null() {
+        // SAFETY: non-null `ptr` was created with `Box::into_raw` by
+        // `candidate_dedup_map` and is owned by this scan opaque.
+        drop(unsafe { Box::from_raw(ptr) });
     }
 }
 
@@ -908,24 +899,17 @@ unsafe fn posting_scratch_soa(
     opaque.posting_scratch_soa
 }
 
-/// # Safety
-/// `posting_scratch_soa` was created with `Box::into_raw` by this scan
-/// opaque and has not been freed while the pointer is non-null.
-unsafe fn free_posting_scratch_soa(opaque: &mut EcIvfScanOpaque) {
-    if !opaque.posting_scratch_soa.is_null() {
-        drop(Box::from_raw(opaque.posting_scratch_soa));
-        opaque.posting_scratch_soa = ptr::null_mut();
+fn free_posting_scratch_soa(opaque: &mut EcIvfScanOpaque) {
+    let ptr = std::mem::replace(&mut opaque.posting_scratch_soa, ptr::null_mut());
+    if !ptr.is_null() {
+        // SAFETY: non-null `ptr` was created with `Box::into_raw` by
+        // `posting_scratch_soa` and is owned by this scan opaque.
+        drop(unsafe { Box::from_raw(ptr) });
     }
 }
 
-/// # Safety
-/// `heap_rerank_state` was created with `Box::into_raw` by this scan
-/// opaque and has not been freed while the pointer is non-null.
-unsafe fn free_heap_rerank_state(opaque: &mut EcIvfScanOpaque) {
-    if !opaque.heap_rerank_state.is_null() {
-        drop(Box::from_raw(opaque.heap_rerank_state));
-        opaque.heap_rerank_state = ptr::null_mut();
-    }
+fn free_heap_rerank_state(opaque: &mut EcIvfScanOpaque) {
+    opaque.heap_rerank_state = None;
 }
 
 /// # Safety
@@ -937,9 +921,7 @@ unsafe fn configure_heap_rerank_state(
     opaque: &mut EcIvfScanOpaque,
     index_options: &super::options::EcIvfOptions,
 ) {
-    // SAFETY: heap rerank state is scan-opaque owned and cleared by helper
-    // before a fresh state is configured.
-    unsafe { free_heap_rerank_state(opaque) };
+    free_heap_rerank_state(opaque);
 
     if index_options.rerank.v1_effective() != super::options::RerankMode::HeapF32 {
         return;
@@ -965,7 +947,7 @@ unsafe fn configure_heap_rerank_state(
         pgrx::error!("ec_ivf heap_f32 rerank failed to allocate a heap tuple slot")
     });
 
-    opaque.heap_rerank_state = Box::into_raw(Box::new(IvfHeapRerankState {
+    opaque.heap_rerank_state = Some(Box::new(IvfHeapRerankState {
         slot,
         snapshot,
         heap_relation,
@@ -973,6 +955,7 @@ unsafe fn configure_heap_rerank_state(
             .expect("heap rerank source attnum should fit in i16"),
     }));
 }
+
 
 fn resolve_effective_nprobe(metadata: &super::page::MetadataPage) -> u32 {
     super::options::resolve_scan_nprobe(metadata.nlists, metadata.nprobe).effective_nprobe
@@ -1266,8 +1249,12 @@ unsafe fn materialize_probe_candidates(
     }
 
     // SAFETY: `prepared_query` is initialized by `store_scan_prepared_query`
-    // for this scan opaque and remains owned for the scan lifetime.
+    // for this scan opaque and remains owned for the scan lifetime; the read
+    // does not alias with subsequent mutations of unrelated opaque fields.
     let prepared_query = unsafe { &*opaque.prepared_query };
+    let index_relation_handle = NonNull::new(index_relation).unwrap_or_else(|| {
+        pgrx::error!("ec_ivf materialize_probe_candidates received null index relation")
+    });
     let quantizer = IvfQuantizer::resolve_with_pq_group_size_and_bits(
         metadata.storage_format,
         metadata.dimensions as usize,
@@ -1300,7 +1287,7 @@ unsafe fn materialize_probe_candidates(
         // duration of the call.
         unsafe {
             super::page::visit_ivf_posting_refs_for_block_sequence(
-                index_relation,
+                index_relation_handle,
                 &probe_plan.block_sequence,
                 payload_len,
                 |_, posting| {
@@ -1342,7 +1329,7 @@ unsafe fn materialize_probe_candidates(
         }
     } else {
         super::page::visit_ivf_posting_refs_for_block_sequence(
-            index_relation,
+            index_relation_handle,
             &probe_plan.block_sequence,
             payload_len,
             |_, posting| {
@@ -1627,9 +1614,9 @@ unsafe fn rerank_probe_candidates_heap_f32(
         return;
     }
     candidates.sort_by(candidate_heap_tid_cmp);
-    // SAFETY: heap rerank state is created with `Box::into_raw` during scan
-    // configuration and remains owned by `opaque` while the pointer is non-null.
-    let state = unsafe { opaque.heap_rerank_state.as_ref() }
+    let state = opaque
+        .heap_rerank_state
+        .as_deref()
         .filter(|state| state.source_attnum > 0)
         .unwrap_or_else(|| {
             pgrx::error!("ec_ivf heap_f32 rerank is missing heap fetch state");
@@ -1957,22 +1944,20 @@ pub(crate) unsafe fn explain_counters_from_index_scan_state(
     }
 
     // SAFETY: caller passes PostgreSQL's live IndexScanState from EXPLAIN;
-    // null scan descriptors are handled below.
-    let scan_desc = unsafe { (*index_state).iss_ScanDesc };
-    if scan_desc.is_null() {
-        return IvfExplainCounters::default();
+    // its `iss_ScanDesc` and the AM-installed `opaque` are owned by the
+    // executor for at least as long as this counter read, and null checks
+    // bail out at each link of the chain.
+    unsafe {
+        let scan_desc = (*index_state).iss_ScanDesc;
+        if scan_desc.is_null() {
+            return IvfExplainCounters::default();
+        }
+        let opaque = (*scan_desc).opaque;
+        if opaque.is_null() {
+            return IvfExplainCounters::default();
+        }
+        (*opaque.cast::<EcIvfScanOpaque>()).explain_counters
     }
-
-    // SAFETY: `scan_desc` is live and owned by PostgreSQL; null AM-private
-    // state is handled below.
-    let opaque = unsafe { (*scan_desc).opaque };
-    if opaque.is_null() {
-        return IvfExplainCounters::default();
-    }
-
-    // SAFETY: `opaque` is the IVF scan private state installed by this AM and
-    // lives at least as long as the scan descriptor.
-    unsafe { (*opaque.cast::<EcIvfScanOpaque>()).explain_counters }
 }
 
 /// # Safety
@@ -2342,9 +2327,9 @@ pub(crate) unsafe fn debug_ec_ivf_pq_fastscan_model_cache_reused(index_oid: pg_s
     };
     debug_am_rescan(scan, ptr::null_mut(), 0, &mut first_orderby, 1);
     let first_opaque = debug_scan_opaque_option(scan);
-    let first_ptr = first_opaque.and_then(|opaque| {
-        (!opaque.pq_fastscan_model.is_null()).then_some(opaque.pq_fastscan_model)
-    });
+    let first_ptr = first_opaque
+        .and_then(|opaque| opaque.pq_fastscan_model.as_deref())
+        .map(|model| model as *const IvfPqFastScanModel);
 
     let mut second_orderby = pg_sys::ScanKeyData {
         sk_argument: IntoDatum::into_datum(vec![0.0_f32, 1.0_f32])
@@ -2353,9 +2338,9 @@ pub(crate) unsafe fn debug_ec_ivf_pq_fastscan_model_cache_reused(index_oid: pg_s
     };
     debug_am_rescan(scan, ptr::null_mut(), 0, &mut second_orderby, 1);
     let second_opaque = debug_scan_opaque_option(scan);
-    let second_ptr = second_opaque.and_then(|opaque| {
-        (!opaque.pq_fastscan_model.is_null()).then_some(opaque.pq_fastscan_model)
-    });
+    let second_ptr = second_opaque
+        .and_then(|opaque| opaque.pq_fastscan_model.as_deref())
+        .map(|model| model as *const IvfPqFastScanModel);
 
     debug_am_end_scan(scan);
     debug_index_scan_end(scan);

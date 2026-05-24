@@ -1493,7 +1493,7 @@ where
 
 #[cfg(any(feature = "pg17", feature = "pg18"))]
 pub(super) fn visit_ivf_posting_refs_for_block_sequence<F>(
-    index_relation: pg_sys::Relation,
+    index_relation: RelationHandle,
     block_numbers: &[pg_sys::BlockNumber],
     payload_len: usize,
     mut visitor: F,
@@ -1508,7 +1508,7 @@ where
     #[cfg(feature = "pg18")]
     {
         visit_ivf_posting_ref_block_sequence_with_read_stream(
-            index_relation,
+            index_relation.as_ptr(),
             block_numbers,
             payload_len,
             &mut visitor,
@@ -1519,7 +1519,7 @@ where
     {
         for block_number in block_numbers {
             visit_all_ivf_posting_refs_for_block(
-                index_relation,
+                index_relation.as_ptr(),
                 *block_number,
                 payload_len,
                 &mut visitor,
