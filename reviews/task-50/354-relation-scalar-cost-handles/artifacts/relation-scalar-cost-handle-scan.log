@@ -1,0 +1,25 @@
+Script started on 2026-05-21 17:19:41-07:00 [<not executed on terminal>]
+src/am/ec_spire/cost/mod.rs
+98:    let block_count = crate::storage::relation::main_fork_block_count_handle(index_relation_handle);
+100:    let reltuples = crate::storage::relation::relation_reltuples_handle(index_relation_handle);
+163:    let block_count = crate::storage::relation::main_fork_block_count_handle(index_relation_handle);
+165:    let reltuples = crate::storage::relation::relation_reltuples_handle(index_relation_handle);
+202:    let block_count = crate::storage::relation::main_fork_block_count_handle(index_relation_handle);
+204:    let reltuples = crate::storage::relation::relation_reltuples_handle(index_relation_handle);
+
+src/am/ec_ivf/cost.rs
+185:    let reltuples = crate::storage::relation::relation_reltuples_handle(index_relation_handle);
+239:    let reltuples = crate::storage::relation::relation_reltuples_handle(index_relation_handle);
+
+src/am/ec_hnsw/vacuum.rs
+46:        crate::storage::relation::main_fork_block_count_handle(relation)
+
+src/am/ec_hnsw/shared.rs
+61:    crate::storage::relation::main_fork_block_count_handle(index_relation)
+736:    let reltuples = crate::storage::relation::relation_reltuples_handle(index_relation);
+
+src/am/ec_diskann/insert.rs
+88:        crate::storage::relation::main_fork_block_count_handle(self.handle())
+92:        crate::storage::relation::relation_reltuples_handle(self.handle())
+
+Script done on 2026-05-21 17:19:41-07:00 [COMMAND_EXIT_CODE="0"]

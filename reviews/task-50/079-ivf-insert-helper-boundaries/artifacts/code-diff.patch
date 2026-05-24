@@ -1,0 +1,111 @@
+diff --git a/src/am/ec_ivf/insert.rs b/src/am/ec_ivf/insert.rs
+index 04f2d211..921207e0 100644
+--- a/src/am/ec_ivf/insert.rs
++++ b/src/am/ec_ivf/insert.rs
+@@ -65,7 +65,7 @@ fn validate_metadata_runtime_options(metadata: &page::MetadataPage) -> Result<()
+     metadata.rerank.validate_v1_supported()
+ }
+ 
+-unsafe fn lock_empty_bootstrap_relation(index_relation: pg_sys::Relation) -> RelationLockGuard {
++fn lock_empty_bootstrap_relation(index_relation: pg_sys::Relation) -> RelationLockGuard {
+     // SAFETY: caller passes a live index relation; reading rd_id does not take
+     // ownership of the relation.
+     let relid = unsafe { (*index_relation).rd_id };
+@@ -81,20 +81,15 @@ unsafe fn insert_with_empty_bootstrap_lock(
+     index_relation: pg_sys::Relation,
+     tuple: build::BuildTuple,
+ ) -> Result<(), String> {
+-    // SAFETY: caller passes the live index relation; the guard serializes the
+-    // empty-index bootstrap recheck and build flush.
+-    let guard = unsafe { lock_empty_bootstrap_relation(index_relation) };
++    let guard = lock_empty_bootstrap_relation(index_relation);
+     // SAFETY: same live index relation, reread under the bootstrap lock.
+     let metadata = unsafe { page::read_metadata_page(index_relation) };
+     validate_metadata_runtime_options(&metadata)?;
+     if metadata.dimensions == 0 {
+-        // SAFETY: relation is still locked and metadata confirms the index is
+-        // empty, so the single-tuple bootstrap may initialize storage.
+-        return unsafe { bootstrap_empty_index(index_relation, &metadata, tuple) };
++        return bootstrap_empty_index(index_relation, &metadata, tuple);
+     }
+     drop(guard);
+-    // SAFETY: relation is live and metadata now describes a trained index.
+-    unsafe { insert_into_trained_index(index_relation, &metadata, tuple) }
++    insert_into_trained_index(index_relation, &metadata, tuple)
+ }
+ 
+ unsafe fn reencode_tuple_for_storage(
+@@ -121,7 +116,7 @@ unsafe fn reencode_tuple_for_storage(
+     Ok(tuple)
+ }
+ 
+-unsafe fn insert_into_trained_index(
++fn insert_into_trained_index(
+     index_relation: pg_sys::Relation,
+     metadata: &page::MetadataPage,
+     tuple: build::BuildTuple,
+@@ -130,15 +125,11 @@ unsafe fn insert_into_trained_index(
+     validate_insert_tuple(metadata, &tuple)
+         .map_err(|e| format!("ec_ivf aminsert found invalid tuple: {e}"))?;
+ 
+-    // SAFETY: relation is live and metadata has been validated for a trained
+-    // IVF index with centroid storage.
+-    let model = unsafe { load_centroid_model(index_relation, metadata) }?;
++    let model = load_centroid_model(index_relation, metadata)?;
+     let list_id = training::assign_vector_to_centroid(&tuple.source_vector, &model)
+         .map_err(|e| format!("ec_ivf aminsert centroid assignment failed: {e}"))?;
+     let (directory_tid, directory) =
+-        // SAFETY: relation is live and metadata directory storage belongs to
+-        // the same index.
+-        unsafe { load_directory_entry(index_relation, metadata, list_id) }?;
++        load_directory_entry(index_relation, metadata, list_id)?;
+ 
+     let posting = page::IvfPostingTuple {
+         list_id: u32::try_from(list_id)
+@@ -182,7 +173,7 @@ unsafe fn insert_into_trained_index(
+     Ok(())
+ }
+ 
+-unsafe fn ensure_heap_tid_absent(
++fn ensure_heap_tid_absent(
+     index_relation: pg_sys::Relation,
+     metadata: &page::MetadataPage,
+     heap_tid: ItemPointer,
+@@ -239,7 +230,7 @@ unsafe fn ensure_heap_tid_absent(
+     Ok(())
+ }
+ 
+-unsafe fn bootstrap_empty_index(
++fn bootstrap_empty_index(
+     index_relation: pg_sys::Relation,
+     metadata: &page::MetadataPage,
+     tuple: build::BuildTuple,
+@@ -322,7 +313,7 @@ fn validate_insert_tuple(
+     Ok(())
+ }
+ 
+-unsafe fn load_centroid_model(
++fn load_centroid_model(
+     index_relation: pg_sys::Relation,
+     metadata: &page::MetadataPage,
+ ) -> Result<training::SphericalKMeansModel, String> {
+@@ -358,7 +349,7 @@ unsafe fn load_centroid_model(
+     })
+ }
+ 
+-unsafe fn load_directory_entry(
++fn load_directory_entry(
+     index_relation: pg_sys::Relation,
+     metadata: &page::MetadataPage,
+     list_id: usize,
+@@ -482,9 +473,7 @@ pub(crate) unsafe fn debug_ec_ivf_validate_no_duplicate_heap_tid(
+         block_number,
+         offset_number,
+     };
+-    // SAFETY: metadata was read from the same guarded relation and the helper
+-    // only scans IVF directory/posting storage.
+-    let result = unsafe { ensure_heap_tid_absent(index_relation.as_ptr(), &metadata, heap_tid) };
++    let result = ensure_heap_tid_absent(index_relation.as_ptr(), &metadata, heap_tid);
+     result.unwrap_or_else(|e| pgrx::error!("ec_ivf duplicate heap tid validation failed: {e}"));
+ }
+ 

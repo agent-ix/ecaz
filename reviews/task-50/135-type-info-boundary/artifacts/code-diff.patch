@@ -1,0 +1,193 @@
+commit 68a7d617a4dbbfd38526f74c5ff8d61e3ce1574e
+Author: Agent IX <agent@agent-ix.dev>
+Date:   Wed May 20 18:52:32 2026 -0700
+
+    Centralize PostgreSQL type metadata unsafe
+---
+ src/am/ec_diskann/ambuild.rs    | 17 +++--------------
+ src/am/ec_hnsw/source.rs        | 25 +++----------------------
+ src/am/ec_spire/build.rs        |  2 +-
+ src/am/ec_spire/build/tuples.rs | 19 ++-----------------
+ src/storage/mod.rs              |  1 +
+ src/storage/type_info.rs        | 26 ++++++++++++++++++++++++++
+ 6 files changed, 36 insertions(+), 54 deletions(-)
+
+diff --git a/src/am/ec_diskann/ambuild.rs b/src/am/ec_diskann/ambuild.rs
+index fc5a223e..77337e4e 100644
+--- a/src/am/ec_diskann/ambuild.rs
++++ b/src/am/ec_diskann/ambuild.rs
+@@ -17,7 +17,7 @@
+ //! stays clear on V0 builds. The V0 rerank source is the heap
+ //! `ecvector` row (ADR-044 default).
+
+-use std::ffi::{c_void, CStr};
++use std::ffi::c_void;
+ use std::ptr;
+ use std::time::{Duration, Instant};
+
+@@ -867,19 +867,8 @@ unsafe fn validate_single_ecvector_attribute(
+     if att.attisdropped {
+         pgrx::error!("ec_diskann indexed column references a dropped column");
+     }
+-    // SAFETY: `att.atttypid` comes from copied tuple descriptor metadata.
+-    let base_type_oid = unsafe { pg_sys::getBaseType(att.atttypid) };
+-    // SAFETY: `base_type_oid` is the normalized type OID returned by PostgreSQL.
+-    let formatted = unsafe { pg_sys::format_type_be(base_type_oid) };
+-    if formatted.is_null() {
+-        pgrx::error!("ec_diskann indexed column has no resolvable type name");
+-    }
+-    // SAFETY: `format_type_be` returned a non-null NUL-terminated C string.
+-    let name = unsafe { CStr::from_ptr(formatted) }
+-        .to_string_lossy()
+-        .into_owned();
+-    // SAFETY: The formatted type name was palloc'd by PostgreSQL.
+-    unsafe { pg_sys::pfree(formatted.cast()) };
++    let name = crate::storage::type_info::formatted_base_type_name(att.atttypid)
++        .unwrap_or_else(|| pgrx::error!("ec_diskann indexed column has no resolvable type name"));
+     let type_name = name.rsplit('.').next().unwrap_or(&name).trim_matches('"');
+     if type_name != "ecvector" {
+         pgrx::error!("ec_diskann indexed column must be ecvector, got {type_name}");
+diff --git a/src/am/ec_hnsw/source.rs b/src/am/ec_hnsw/source.rs
+index 6f6eeb11..1eddf2b7 100644
+--- a/src/am/ec_hnsw/source.rs
++++ b/src/am/ec_hnsw/source.rs
+@@ -1,7 +1,4 @@
+-use std::{
+-    ffi::{c_int, CStr},
+-    marker::PhantomData,
+-};
++use std::{ffi::c_int, marker::PhantomData};
+
+ use pgrx::pg_sys;
+
+@@ -452,7 +449,7 @@ pub(crate) unsafe fn resolve_indexed_vector_attribute(
+ }
+
+ unsafe fn resolve_indexed_vector_kind(type_oid: pg_sys::Oid) -> Option<IndexedVectorKind> {
+-    let name = formatted_base_type_name(type_oid)?;
++    let name = crate::storage::type_info::formatted_base_type_name(type_oid)?;
+     let type_name = name.rsplit('.').next().unwrap_or(&name).trim_matches('"');
+     match type_name {
+         "ecvector" => Some(IndexedVectorKind::Ecvector),
+@@ -466,7 +463,7 @@ unsafe fn resolve_source_datum_kind(type_oid: pg_sys::Oid) -> Option<SourceDatum
+         pg_sys::FLOAT4ARRAYOID => Some(SourceDatumKind::RealArray),
+         pg_sys::BYTEAOID => Some(SourceDatumKind::Bytea),
+         _ => {
+-            let name = formatted_base_type_name(type_oid)?;
++            let name = crate::storage::type_info::formatted_base_type_name(type_oid)?;
+             let type_name = name.rsplit('.').next().unwrap_or(&name).trim_matches('"');
+             if type_name == "ecvector" {
+                 Some(SourceDatumKind::Ecvector)
+@@ -477,22 +474,6 @@ unsafe fn resolve_source_datum_kind(type_oid: pg_sys::Oid) -> Option<SourceDatum
+     }
+ }
+
+-fn formatted_base_type_name(type_oid: pg_sys::Oid) -> Option<String> {
+-    // SAFETY: PostgreSQL accepts any type OID here, `format_type_be` returns a
+-    // palloc'd NUL-terminated string for known type OIDs, and that allocation
+-    // is released before the copied Rust string is returned.
+-    unsafe {
+-        let base_type_oid = pg_sys::getBaseType(type_oid);
+-        let formatted = pg_sys::format_type_be(base_type_oid);
+-        if formatted.is_null() {
+-            return None;
+-        }
+-        let name = CStr::from_ptr(formatted).to_string_lossy().into_owned();
+-        pg_sys::pfree(formatted.cast());
+-        Some(name)
+-    }
+-}
+-
+ pub(crate) fn fetch_heap_row_version_with_reader(
+     reader: &mut heap_slot::HeapSlotReader<'_>,
+     heap_tid: page::ItemPointer,
+diff --git a/src/am/ec_spire/build.rs b/src/am/ec_spire/build.rs
+index 959ecfc1..d092b01e 100644
+--- a/src/am/ec_spire/build.rs
++++ b/src/am/ec_spire/build.rs
+@@ -1,5 +1,5 @@
+ use std::collections::{HashMap, HashSet};
+-use std::ffi::{c_void, CStr};
++use std::ffi::c_void;
+ use std::mem::size_of;
+ use std::ptr;
+
+diff --git a/src/am/ec_spire/build/tuples.rs b/src/am/ec_spire/build/tuples.rs
+index 00089335..0adc9b37 100644
+--- a/src/am/ec_spire/build/tuples.rs
++++ b/src/am/ec_spire/build/tuples.rs
+@@ -159,21 +159,7 @@ pub(super) fn resolve_indexed_tuple_layout(
+ }
+
+ fn resolve_indexed_vector_kind_from_type(type_oid: pg_sys::Oid) -> Option<SpireIndexedVectorKind> {
+-    // SAFETY: type_oid comes from PostgreSQL tuple descriptor metadata.
+-    let base_type_oid = unsafe { pg_sys::getBaseType(type_oid) };
+-    // SAFETY: base_type_oid is the PostgreSQL base type OID returned above.
+-    let formatted = unsafe { pg_sys::format_type_be(base_type_oid) };
+-    if formatted.is_null() {
+-        return None;
+-    }
+-    // SAFETY: format_type_be returns a non-null NUL-terminated string on
+-    // success; it remains valid until pfree below.
+-    let name = unsafe { CStr::from_ptr(formatted) }
+-        .to_string_lossy()
+-        .into_owned();
+-    // SAFETY: formatted was allocated by PostgreSQL format_type_be and is no
+-    // longer needed after copying into name.
+-    unsafe { pg_sys::pfree(formatted.cast()) };
++    let name = crate::storage::type_info::formatted_base_type_name(type_oid)?;
+     let type_name = name.rsplit('.').next().unwrap_or(&name).trim_matches('"');
+     match type_name {
+         "ecvector" => Some(SpireIndexedVectorKind::Ecvector),
+@@ -185,8 +171,7 @@ fn resolve_indexed_vector_kind_from_type(type_oid: pg_sys::Oid) -> Option<SpireI
+ fn resolve_source_identity_datum_kind(
+     type_oid: pg_sys::Oid,
+ ) -> Option<SpireSourceIdentityDatumKind> {
+-    // SAFETY: type_oid comes from PostgreSQL tuple descriptor metadata.
+-    match unsafe { pg_sys::getBaseType(type_oid) } {
++    match crate::storage::type_info::base_type_oid(type_oid) {
+         pg_sys::UUIDOID => Some(SpireSourceIdentityDatumKind::Uuid),
+         pg_sys::BYTEAOID => Some(SpireSourceIdentityDatumKind::Bytea16),
+         _ => None,
+diff --git a/src/storage/mod.rs b/src/storage/mod.rs
+index 2a8ec264..f4439fbb 100644
+--- a/src/storage/mod.rs
++++ b/src/storage/mod.rs
+@@ -14,4 +14,5 @@ pub(crate) mod slot_guard;
+ pub(crate) mod snapshot_guard;
+ pub(crate) mod spi_guard;
+ pub(crate) mod time;
++pub(crate) mod type_info;
+ pub mod wal;
+diff --git a/src/storage/type_info.rs b/src/storage/type_info.rs
+new file mode 100644
+index 00000000..a56df850
+--- /dev/null
++++ b/src/storage/type_info.rs
+@@ -0,0 +1,26 @@
++//! PostgreSQL type metadata helpers.
++
++use std::ffi::CStr;
++
++use pgrx::pg_sys;
++
++pub(crate) fn base_type_oid(type_oid: pg_sys::Oid) -> pg_sys::Oid {
++    // SAFETY: PostgreSQL accepts any type OID and returns either the base type
++    // OID or the original OID by value.
++    unsafe { pg_sys::getBaseType(type_oid) }
++}
++
++pub(crate) fn formatted_base_type_name(type_oid: pg_sys::Oid) -> Option<String> {
++    let base_type_oid = base_type_oid(type_oid);
++    // SAFETY: PostgreSQL returns a palloc'd NUL-terminated string for known
++    // type OIDs. The string is copied into Rust-owned memory before pfree.
++    unsafe {
++        let formatted = pg_sys::format_type_be(base_type_oid);
++        if formatted.is_null() {
++            return None;
++        }
++        let name = CStr::from_ptr(formatted).to_string_lossy().into_owned();
++        pg_sys::pfree(formatted.cast());
++        Some(name)
++    }
++}

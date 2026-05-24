@@ -1,0 +1,44 @@
+python3 scripts/unsafe_ledger.py check --ledger reviews/task-50/031-unsafe-ledger-seed/artifacts/unsafe-ledger.jsonl src
+unledgered unsafe rows: 1615
+  unsafe-005a56d133e8e38f src/storage/relation.rs:112:5
+  unsafe-0081bd2ef7b4958d src/tests/remote_search/libpq_executor.rs:860:9
+  unsafe-00a1bfb61eef9e30 src/am/ec_hnsw/mod.rs:71:5
+  unsafe-00a9922d3fbc995b src/am/ec_hnsw/vacuum.rs:1565:16
+  unsafe-00c7226b1adddfb3 src/am/ec_spire/build/drafts.rs:469:8
+  unsafe-011b646f5c656f27 src/am/ec_hnsw/build_parallel.rs:2200:12
+  unsafe-015ae58e4a20e650 src/am/ec_spire/storage/relation_plan.rs:227:27
+  unsafe-016ddf5f47397de1 src/am/ec_hnsw/build_parallel.rs:2774:46
+  unsafe-01bd9632f80d962b src/am/ec_ivf/page.rs:2431:5
+  unsafe-01e4648fdbf9c6d8 src/tests/remote_search/production_summary.rs:704:9
+  unsafe-0240a502106256b5 src/am/ec_hnsw/build_parallel.rs:2649:17
+  unsafe-024c91225071a6dc src/am/ec_ivf/insert.rs:70:17
+  unsafe-029704bcd302a40b src/am/ec_hnsw/shared.rs:739:21
+  unsafe-02e0ac518f907b9e src/am/ec_spire/scan/relation.rs:323:17
+  unsafe-031a2b1b3a1aa395 src/am/ec_hnsw/vacuum.rs:594:5
+  unsafe-03663f1ab2ef6495 src/am/ec_hnsw/build_parallel.rs:4124:9
+  unsafe-03763ba624eaf376 src/am/ec_hnsw/vacuum.rs:33:9
+  unsafe-03adc89a2fa76890 src/am/ec_hnsw/source.rs:565:12
+  unsafe-03b082fbe340770a src/tests/remote_search/contracts_libpq.rs:42:9
+  unsafe-03e6179650f65e70 src/am/ec_hnsw/insert.rs:1330:29
+stale open ledger rows: 2444
+  unsafe-000d9673392d8517 src/am/ec_ivf/scan.rs:848
+  unsafe-00219e065df43871 src/quant/hadamard.rs:714
+  unsafe-0026cedbc16f9936 src/tests/diagnostics.rs:318
+  unsafe-002a7bafafa76c91 src/am/ec_ivf/page.rs:2799
+  unsafe-006a81c7b56616e2 src/am/ec_spire/page.rs:533
+  unsafe-0078093f2bbb8471 src/tests/remote_search/contracts.rs:1223
+  unsafe-007941fbef680705 src/am/ec_hnsw/scan.rs:3210
+  unsafe-00816ab5a691ff41 src/am/ec_spire/custom_scan/cost_helpers.rs:16
+  unsafe-00876017543a4e66 src/am/ec_spire/dml_frontdoor/mod.rs:2212
+  unsafe-0090bc41f4ccca73 src/am/ec_spire/storage/relation_plan.rs:300
+  unsafe-0094d20f8bdc31a9 src/am/ec_spire/page.rs:559
+  unsafe-00b3b601f0536e5f src/am/ec_spire/build/tuples.rs:185
+  unsafe-00c6f5796eb692f8 src/am/ec_spire/coordinator/hierarchy_snapshots.rs:865
+  unsafe-00cdd281e6cd317e src/am/ec_spire/insert.rs:296
+  unsafe-00e56ee471ed178f src/am/ec_hnsw/insert.rs:247
+  unsafe-00e84c8656cd8395 src/am/ec_hnsw/build_parallel.rs:2658
+  unsafe-01362dd787021c8f src/am/ec_hnsw/insert.rs:709
+  unsafe-01458e5fd013e2e1 src/am/ec_hnsw/scan.rs:4202
+  unsafe-0149da6efd6b034f src/am/ec_spire/coordinator/debug.rs:163
+  unsafe-016b61808bc0655d src/am/ec_ivf/scan.rs:1547
+make: *** [Makefile:115: unsafe-ledger-check] Error 1

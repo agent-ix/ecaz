@@ -1,4 +1,5 @@
 use pgrx::pg_sys;
+use std::ptr::NonNull;
 
 use super::{options, page, quantizer::IvfQuantizer};
 use crate::storage::page::ItemPointer;
@@ -82,13 +83,12 @@ struct DirectoryDriftSummary {
 pub(crate) unsafe fn index_drift_snapshot(index_relation: pg_sys::Relation) -> IndexDriftSnapshot {
     // SAFETY: `index_relation` is a live IVF index relation supplied by a SQL
     // diagnostic wrapper; page readers validate the metadata/directory layout.
-    let metadata = unsafe { page::read_metadata_page(index_relation) };
-    let directory = unsafe { directory_drift_summary(index_relation, &metadata) };
-    // SAFETY: PostgreSQL owns the relation; querying the main fork block count
-    // is valid for the opened index relation.
-    let block_count = unsafe {
-        pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
-    };
+    let metadata = page::read_metadata_page(index_relation);
+    let directory = directory_drift_summary(index_relation, &metadata);
+    let index_relation_nonnull = NonNull::new(index_relation)
+        .unwrap_or_else(|| pgrx::error!("ec_ivf drift snapshot received null index relation"));
+    let block_count =
+        crate::storage::relation::main_fork_block_count_handle(index_relation_nonnull);
 
     let total_live_tuples = metadata.total_live_tuples;
     let changed_row_count = metadata
@@ -139,15 +139,17 @@ pub(crate) unsafe fn index_drift_snapshot(index_relation: pg_sys::Relation) -> I
 
 pub(crate) unsafe fn index_admin_snapshot(index_relation: pg_sys::Relation) -> IndexAdminSnapshot {
     // SAFETY: `index_relation` is a live IVF index relation supplied by a SQL
-    // diagnostic wrapper; metadata and reloptions are read without ownership.
-    let metadata = unsafe { page::read_metadata_page(index_relation) };
-    let index_options = unsafe { options::relation_options(index_relation) };
+    // diagnostic wrapper; metadata is read without ownership.
+    let metadata = page::read_metadata_page(index_relation);
+    // SAFETY: caller guarantees `index_relation` is live for this diagnostic snapshot.
+    let index_relation_nonnull = NonNull::new(index_relation)
+        .unwrap_or_else(|| pgrx::error!("ec_ivf admin snapshot received null index relation"));
+    let index_options = options::relation_options(index_relation_nonnull);
     let nprobe = options::resolve_scan_nprobe(metadata.nlists, metadata.nprobe);
     let rerank_width = options::resolve_scan_rerank_width(index_options.rerank_width);
-    // SAFETY: the same live index relation is reused for the nested diagnostic
-    // snapshot, and PostgreSQL keeps relcache metadata valid for the call.
+    // SAFETY: same live IVF relation as this admin snapshot.
     let drift = unsafe { index_drift_snapshot(index_relation) };
-    let reltuples = unsafe { (*(*index_relation).rd_rel).reltuples } as f64;
+    let reltuples = crate::storage::relation::relation_reltuples_handle(index_relation_nonnull);
 
     IndexAdminSnapshot {
         block_count: drift.block_count,
@@ -186,19 +188,16 @@ pub(crate) unsafe fn index_page_ownership(
 ) -> Vec<IndexPageOwnershipSnapshot> {
     // SAFETY: `index_relation` is a live IVF index relation supplied by a SQL
     // diagnostic wrapper; metadata drives payload length selection.
-    let metadata = unsafe { page::read_metadata_page(index_relation) };
+    let metadata = page::read_metadata_page(index_relation);
     let quantizer = IvfQuantizer::resolve_with_pq_group_size(
         metadata.storage_format,
         usize::from(metadata.dimensions),
         metadata_pq_group_size(&metadata),
     )
     .unwrap_or_else(|err| pgrx::error!("{err}"));
-    // SAFETY: the page debug reader walks posting tuples for the live relation
-    // using the payload length implied by the validated metadata.
-    let summaries = unsafe {
+    let summaries =
         page::debug_ivf_posting_block_summaries(index_relation, quantizer.payload_len())
-            .unwrap_or_else(|err| pgrx::error!("{err}"))
-    };
+            .unwrap_or_else(|err| pgrx::error!("{err}"));
     summaries
         .into_iter()
         .map(|summary| {
@@ -248,10 +247,8 @@ unsafe fn directory_drift_summary(
     let mut next_tid = metadata.directory_head;
     let mut summary = DirectoryDriftSummary::default();
     for expected_list_id in 0..metadata.nlists {
-        // SAFETY: `next_tid` starts at the metadata directory head and advances
-        // through decoded directory tuples in the same live index relation.
         let (directory, following_tid) =
-            unsafe { page::read_ivf_list_directory_and_next(index_relation, next_tid) }
+            page::read_ivf_list_directory_and_next(index_relation, next_tid)
                 .unwrap_or_else(|e| pgrx::error!("{e}"));
         if directory.list_id != expected_list_id {
             pgrx::error!(

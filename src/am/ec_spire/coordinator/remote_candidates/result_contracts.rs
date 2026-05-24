@@ -164,26 +164,22 @@ pub(crate) fn remote_search_heap_resolution_contract_rows(
     ]
 }
 
-pub(crate) unsafe fn remote_search_finalization_summary_row(
-    index_relation: pg_sys::Relation,
+pub(crate) fn remote_search_finalization_summary_row(
+    index: SpireLiveIndexRelation,
     requested_epoch: u64,
     query: Vec<f32>,
     selected_pids: Vec<u64>,
     top_k: usize,
     consistency_mode: &str,
 ) -> SpireRemoteSearchFinalizationSummaryRow {
-    // SAFETY: The caller guarantees `index_relation` is a live SPIRE index
-    // relation for the duration of this diagnostic summary construction.
-    let merge_summary = unsafe {
-        remote_search_merge_input_summary_row(
-            index_relation,
-            requested_epoch,
-            query,
-            selected_pids,
-            top_k,
-            consistency_mode,
-        )
-    };
+    let merge_summary = remote_search_merge_input_summary_row(
+        index,
+        requested_epoch,
+        query,
+        selected_pids,
+        top_k,
+        consistency_mode,
+    );
     remote_search_finalization_summary_from_merge(&merge_summary)
 }
 

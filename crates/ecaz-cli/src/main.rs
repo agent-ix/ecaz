@@ -11,6 +11,8 @@ mod cli;
 mod commands;
 mod manifest;
 mod output;
+#[cfg(target_os = "macos")]
+mod pg_macos_stubs;
 mod profiles;
 mod psql;
 mod reloptions;

@@ -1,0 +1,367 @@
+diff --git a/src/am/ec_diskann/ambuild.rs b/src/am/ec_diskann/ambuild.rs
+index 16d2dc25..9e2207f5 100644
+--- a/src/am/ec_diskann/ambuild.rs
++++ b/src/am/ec_diskann/ambuild.rs
+@@ -789,8 +789,7 @@ fn write_metadata_to_buffer(
+     unsafe {
+         ptr::copy_nonoverlapping(metadata_bytes.as_ptr(), dst, metadata_bytes.len());
+     }
+-    // SAFETY: All metadata page writes were made through the registered page.
+-    unsafe { wal_txn.finish() };
++    wal_txn.finish();
+ }
+ 
+ pub(super) unsafe fn write_data_pages(index_relation: pg_sys::Relation, chain: &DataPageChain) {
+@@ -838,8 +837,7 @@ pub(super) unsafe fn write_data_pages(index_relation: pg_sys::Relation, chain: &
+             }
+         }
+ 
+-        // SAFETY: All data page writes were made through the registered page.
+-        unsafe { wal_txn.finish() };
++        wal_txn.finish();
+     }
+ }
+ 
+diff --git a/src/am/ec_diskann/insert.rs b/src/am/ec_diskann/insert.rs
+index d9d32a35..1cbb6918 100644
+--- a/src/am/ec_diskann/insert.rs
++++ b/src/am/ec_diskann/insert.rs
+@@ -816,9 +816,7 @@ unsafe fn apply_duplicate_bind_patches(
+         match page_result {
+             Ok(()) => {
+                 if page_changed {
+-                    // SAFETY: The registered page was mutated and must be
+-                    // committed through the active generic WAL transaction.
+-                    unsafe { wal_txn.finish() };
++                    wal_txn.finish();
+                 } else {
+                     std::mem::drop(wal_txn);
+                 }
+@@ -1229,8 +1227,7 @@ pub(super) unsafe fn with_locked_metadata_page<T>(
+     // SAFETY: `dst` points at the initialized special area, and source/dest do
+     // not overlap because `encoded` is owned Rust memory.
+     unsafe { ptr::copy_nonoverlapping(encoded.as_ptr(), dst, encoded.len()) };
+-    // SAFETY: All metadata page mutations are complete and can be committed.
+-    unsafe { wal_txn.finish() };
++    wal_txn.finish();
+     Ok(result)
+ }
+ 
+@@ -1451,9 +1448,7 @@ unsafe fn append_raw_tuple_payload(
+         return Err("ec_diskann failed to append live node tuple".into());
+     }
+ 
+-    // SAFETY: The page mutation is complete and can be committed through the
+-    // active generic WAL transaction.
+-    unsafe { wal_txn.finish() };
++    wal_txn.finish();
+     Ok(ItemPointer {
+         block_number,
+         offset_number,
+@@ -1557,9 +1552,7 @@ pub(super) unsafe fn add_backlinks_if_free(
+         match page_result {
+             Ok(page_changes) => {
+                 if page_changed {
+-                    // SAFETY: The registered page was mutated and must be
+-                    // committed through the active generic WAL transaction.
+-                    unsafe { wal_txn.finish() };
++                    wal_txn.finish();
+                     changed += page_changes;
+                 } else {
+                     std::mem::drop(wal_txn);
+@@ -1680,9 +1673,7 @@ pub(super) unsafe fn apply_backlink_mutations(
+         match page_result {
+             Ok(()) => {
+                 if page_changed {
+-                    // SAFETY: The registered page was mutated and must be
+-                    // committed through the active generic WAL transaction.
+-                    unsafe { wal_txn.finish() };
++                    wal_txn.finish();
+                 } else {
+                     std::mem::drop(wal_txn);
+                 }
+diff --git a/src/am/ec_hnsw/build.rs b/src/am/ec_hnsw/build.rs
+index 8708cd9d..18da42b9 100644
+--- a/src/am/ec_hnsw/build.rs
++++ b/src/am/ec_hnsw/build.rs
+@@ -2452,9 +2452,7 @@ pub(super) unsafe fn write_data_pages(
+             }
+         }
+ 
+-        // SAFETY: All page mutations for this registered buffer are complete
+-        // and can be committed through the generic WAL transaction.
+-        unsafe { wal_txn.finish() };
++        wal_txn.finish();
+     }
+ }
+ 
+diff --git a/src/am/ec_hnsw/insert.rs b/src/am/ec_hnsw/insert.rs
+index e9dc4c62..b0dd5f79 100644
+--- a/src/am/ec_hnsw/insert.rs
++++ b/src/am/ec_hnsw/insert.rs
+@@ -119,8 +119,7 @@ impl InsertPageWrite {
+             .wal_txn
+             .take()
+             .expect("insert page writer WAL transaction should be present");
+-        // SAFETY: The writer's page bytes contain their final intended state.
+-        unsafe { wal_txn.finish() };
++        wal_txn.finish();
+     }
+ }
+ 
+@@ -1396,9 +1395,7 @@ unsafe fn add_backlinks_on_page(
+     }
+ 
+     if changed {
+-        // SAFETY: The generic WAL transaction owns the registered page image
+-        // and must be finished after at least one tuple mutation.
+-        unsafe { wal_txn.finish() };
++        wal_txn.finish();
+     } else {
+         std::mem::drop(wal_txn);
+     }
+@@ -2449,15 +2446,11 @@ unsafe fn coalesce_duplicate_heap_tid(
+         )
+     };
+     if !tuple_changed {
+-        // SAFETY: Finishing a registered transaction without byte changes is
+-        // harmless and releases the generic WAL transaction.
+-        unsafe { wal_txn.finish() };
++        wal_txn.finish();
+         return;
+     }
+ 
+-    // SAFETY: The duplicate tuple bytes were updated in-place on the registered
+-    // page.
+-    unsafe { wal_txn.finish() };
++    wal_txn.finish();
+ }
+ 
+ unsafe fn coalesce_duplicate_turbo_hot_heap_tid(
+@@ -2533,15 +2526,11 @@ unsafe fn coalesce_duplicate_turbo_hot_heap_tid(
+         )
+     };
+     if !tuple_changed {
+-        // SAFETY: Finishing a registered transaction without byte changes is
+-        // harmless and releases the generic WAL transaction.
+-        unsafe { wal_txn.finish() };
++        wal_txn.finish();
+         return;
+     }
+ 
+-    // SAFETY: The duplicate hot tuple bytes were updated in-place on the
+-    // registered page.
+-    unsafe { wal_txn.finish() };
++    wal_txn.finish();
+ }
+ 
+ unsafe fn coalesce_duplicate_grouped_heap_tid(
+@@ -2618,15 +2607,11 @@ unsafe fn coalesce_duplicate_grouped_heap_tid(
+         )
+     };
+     if !tuple_changed {
+-        // SAFETY: Finishing a registered transaction without byte changes is
+-        // harmless and releases the generic WAL transaction.
+-        unsafe { wal_txn.finish() };
++        wal_txn.finish();
+         return;
+     }
+ 
+-    // SAFETY: The duplicate grouped tuple bytes were updated in-place on the
+-    // registered page.
+-    unsafe { wal_txn.finish() };
++    wal_txn.finish();
+ }
+ 
+ #[cfg(test)]
+diff --git a/src/am/ec_hnsw/vacuum.rs b/src/am/ec_hnsw/vacuum.rs
+index 90d3a612..a14fbb40 100644
+--- a/src/am/ec_hnsw/vacuum.rs
++++ b/src/am/ec_hnsw/vacuum.rs
+@@ -97,8 +97,7 @@ impl VacuumPageRewrite {
+             .wal_txn
+             .take()
+             .expect("vacuum page rewrite WAL transaction should be present");
+-        // SAFETY: The registered page contains its final intended bytes.
+-        unsafe { wal_txn.finish() };
++        wal_txn.finish();
+     }
+ }
+ 
+diff --git a/src/am/ec_ivf/build.rs b/src/am/ec_ivf/build.rs
+index 57fbed0c..693a34ca 100644
+--- a/src/am/ec_ivf/build.rs
++++ b/src/am/ec_ivf/build.rs
+@@ -599,9 +599,7 @@ unsafe fn write_data_pages(index_relation: pg_sys::Relation, data_pages: &DataPa
+             }
+         }
+ 
+-        // SAFETY: commits the generic WAL transaction started above after all
+-        // staged tuples have been copied into the registered page.
+-        unsafe { wal_txn.finish() };
++        wal_txn.finish();
+     }
+ }
+ 
+diff --git a/src/am/ec_ivf/page.rs b/src/am/ec_ivf/page.rs
+index 03eb6b1d..fb4e289e 100644
+--- a/src/am/ec_ivf/page.rs
++++ b/src/am/ec_ivf/page.rs
+@@ -1868,8 +1868,7 @@ unsafe fn try_append_ivf_posting_to_block(
+         ));
+     }
+ 
+-    // SAFETY: finishes the WAL transaction after the registered page mutation.
+-    unsafe { wal_txn.finish() };
++    wal_txn.finish();
+     registered.record_free_space(registered.free_space());
+     Ok(Some(ItemPointer {
+         block_number,
+@@ -1911,9 +1910,7 @@ unsafe fn append_ivf_posting_to_new_block(
+     }
+     let block_number = buffer.block_number();
+ 
+-    // SAFETY: finishes the WAL transaction after initializing and mutating the
+-    // registered new page.
+-    unsafe { wal_txn.finish() };
++    wal_txn.finish();
+     registered.record_free_space(registered.free_space());
+     Ok(ItemPointer {
+         block_number,
+@@ -1957,8 +1954,7 @@ pub(super) unsafe fn rewrite_ivf_list_directory(
+         std::mem::drop(wal_txn);
+         return Err(err);
+     }
+-    // SAFETY: finishes the WAL transaction after the registered page rewrite.
+-    unsafe { wal_txn.finish() };
++    wal_txn.finish();
+     Ok(())
+ }
+ 
+@@ -2023,8 +2019,7 @@ where
+         std::mem::drop(wal_txn);
+         return Err(err);
+     }
+-    // SAFETY: finishes the WAL transaction after the registered page rewrite.
+-    unsafe { wal_txn.finish() };
++    wal_txn.finish();
+     Ok(directory)
+ }
+ 
+@@ -2064,8 +2059,7 @@ pub(super) unsafe fn rewrite_ivf_posting(
+         std::mem::drop(wal_txn);
+         return Err(err);
+     }
+-    // SAFETY: finishes the WAL transaction after the registered page rewrite.
+-    unsafe { wal_txn.finish() };
++    wal_txn.finish();
+     Ok(())
+ }
+ 
+@@ -2329,8 +2323,7 @@ where
+     }
+ 
+     if changed {
+-        // SAFETY: finishes the WAL transaction after registered page changes.
+-        unsafe { wal_txn.finish() };
++        wal_txn.finish();
+     }
+     registered.record_free_space(registered.free_space());
+     Ok(())
+@@ -2631,8 +2624,7 @@ pub(super) unsafe fn initialize_metadata_page(
+     registered.init(page_size, special_size);
+     registered.copy_to_special(&metadata_bytes);
+ 
+-    // SAFETY: finishes the WAL transaction after initializing metadata.
+-    unsafe { wal_txn.finish() };
++    wal_txn.finish();
+ }
+ 
+ #[cfg(any(feature = "pg17", feature = "pg18"))]
+@@ -2696,8 +2688,7 @@ where
+ 
+     let encoded = metadata.encode();
+     registered.copy_to_special(&encoded);
+-    // SAFETY: finishes the WAL transaction after rewriting metadata bytes.
+-    unsafe { wal_txn.finish() };
++    wal_txn.finish();
+     Ok(metadata)
+ }
+ 
+diff --git a/src/am/ec_spire/page.rs b/src/am/ec_spire/page.rs
+index 6c506058..b20c9f5d 100644
+--- a/src/am/ec_spire/page.rs
++++ b/src/am/ec_spire/page.rs
+@@ -93,8 +93,7 @@ unsafe fn initialize_spire_metadata_block_zero(
+         );
+     }
+ 
+-    // SAFETY: all registered page mutations are complete before finishing WAL.
+-    unsafe { wal_txn.finish() };
++    wal_txn.finish();
+ }
+ 
+ pub(super) unsafe fn read_root_control_page(
+@@ -321,11 +320,10 @@ pub(super) unsafe fn rewrite_object_tuple_same_len(
+         })
+     };
+     match result {
+-        // SAFETY: mutation is complete and the registered page can be finished.
+-        Ok(()) => unsafe {
++        Ok(()) => {
+             wal_txn.finish();
+             Ok(())
+-        },
++        }
+         Err(error) => {
+             std::mem::drop(wal_txn);
+             Err(error)
+@@ -420,8 +418,7 @@ pub(super) unsafe fn delete_object_tuples_no_compact(
+             changed = true;
+         }
+         if changed {
+-            // SAFETY: all page deletions for this registered page are complete.
+-            unsafe { wal_txn.finish() };
++            wal_txn.finish();
+         }
+         // SAFETY: page remains valid while the buffer guard is live; free-space
+         // state is recorded after any deletion changes.
+@@ -486,8 +483,7 @@ unsafe fn try_append_object_tuple_to_block(
+         ));
+     }
+ 
+-    // SAFETY: append mutation is complete for the registered page.
+-    unsafe { wal_txn.finish() };
++    wal_txn.finish();
+     // SAFETY: page remains pinned while reading and recording free space.
+     let free_space = unsafe { pg_sys::PageGetFreeSpace(page) as usize };
+     // SAFETY: block_number identifies the same relation page just appended to.
+@@ -555,8 +551,7 @@ unsafe fn append_object_tuple_to_new_block(
+     }
+     let block_number = buffer.block_number();
+ 
+-    // SAFETY: append mutation is complete for the registered new page.
+-    unsafe { wal_txn.finish() };
++    wal_txn.finish();
+     // SAFETY: page remains pinned while reading and recording free space.
+     let free_space = unsafe { pg_sys::PageGetFreeSpace(page) as usize };
+     // SAFETY: block_number is the block assigned to the same buffer.
+diff --git a/src/storage/wal.rs b/src/storage/wal.rs
+index 82ef17dd..6fd7cf9c 100644
+--- a/src/storage/wal.rs
++++ b/src/storage/wal.rs
+@@ -74,10 +74,10 @@ impl GenericXLogTxn {
+ 
+     /// Finish the GenericXLog transaction and return the written WAL pointer.
+     ///
+-    /// # Safety
+-    ///
+-    /// All registered pages must already contain their final intended contents.
+-    pub unsafe fn finish(mut self) -> pg_sys::XLogRecPtr {
++    /// `GenericXLogTxn` owns the PostgreSQL WAL state and prevents double
++    /// finish through `self` ownership. Callers are still responsible for
++    /// writing final page contents before calling this method.
++    pub fn finish(mut self) -> pg_sys::XLogRecPtr {
+         self.finished = true;
+         // SAFETY: `self.state` came from `GenericXLogStart` and has not yet been finished/aborted.
+         unsafe { pg_sys::GenericXLogFinish(self.state) }

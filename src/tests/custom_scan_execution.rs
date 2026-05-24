@@ -81,12 +81,9 @@
         descriptor_label: &str,
         remote_index_regclass: &str,
     ) {
-        // SAFETY: This pg_test fixture owns the Postgres objects and test-only debug state for this boundary, and keeps the relevant relation, slot, or guard alive for the call.
-        unsafe {
-            for pid in &fixture.coord_leaf_pids {
+        for pid in &fixture.coord_leaf_pids {
                 am::debug_spire_rewrite_placement_node(fixture.index_oid, *pid as u64, node_id);
             }
-        }
 
         let register_result = Spi::get_one::<bool>(&format!(
             "SELECT ec_spire_register_remote_node_descriptor(\

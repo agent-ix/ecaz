@@ -1,0 +1,9 @@
+  797  12 HNSW
+  771  45 SPIRE
+  252  10 IVF
+  195   7 DiskANN
+  185  36 tests
+   84   7 AM common
+   57   4 root/other
+   55   2 quant
+   50   8 storage guards

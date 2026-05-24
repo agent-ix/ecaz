@@ -15,21 +15,16 @@ unsafe extern "C-unwind" fn ec_spire_explain_custom_scan(
         return;
     }
 
-    // SAFETY: PostgreSQL calls this callback with a live CustomScanState whose
-    // plan-private list was constructed by our planner callback.
-    let custom_scan = unsafe { custom_scan_plan(node) };
-    // SAFETY: `custom_scan` is the plan pointer from the live callback state.
-    let index_oid = unsafe { custom_scan_index_oid_from_plan(custom_scan) };
+    // SAFETY: PostgreSQL invokes ExplainCustomScan with a live provider
+    // CustomScanState for the duration of this callback.
+    let plan = unsafe { CustomScanPlan::from_state(node) };
+    let index_oid = plan.index_oid();
     let context = custom_scan_explain_context(index_oid);
 
     // SAFETY: `es` is the non-null ExplainState supplied by PostgreSQL for the
     // duration of this callback; property names and values are static C strings.
     unsafe {
-        pg_sys::ExplainPropertyText(
-            c"node".as_ptr(),
-            c"EcSpireDistributedScan".as_ptr(),
-            es,
-        );
+        pg_sys::ExplainPropertyText(c"node".as_ptr(), c"EcSpireDistributedScan".as_ptr(), es);
         pg_sys::ExplainPropertyUInteger(
             c"remote_fanout".as_ptr(),
             std::ptr::null(),
@@ -68,12 +63,10 @@ fn custom_scan_explain_context(index_oid: pg_sys::Oid) -> SpireCustomScanExplain
         };
     };
 
-    // SAFETY: The relation pointer is owned by `IndexRelationGuard` and
-    // remains open under AccessShareLock while these helpers read relation
-    // metadata.
-    let eligibility = unsafe { custom_scan_index_eligibility_row(index_relation.as_ptr()) };
-    // SAFETY: Same open index relation; the helper only reads reloptions.
-    let relation_options = unsafe { super::options::relation_options(index_relation.as_ptr()) };
+    let index = super::live_index_relation_from_guard(&index_relation);
+    let eligibility =
+        custom_scan_index_eligibility_result(index).unwrap_or_else(|e| pgrx::error!("{e}"));
+    let relation_options = super::options::relation_options(index_relation.as_ptr());
     let configured_nlists = u32::try_from(relation_options.nlists).unwrap_or(0);
     let relation_nprobe = u32::try_from(relation_options.nprobe).unwrap_or(0);
     let nprobe = super::options::resolve_scan_nprobe(configured_nlists, relation_nprobe);

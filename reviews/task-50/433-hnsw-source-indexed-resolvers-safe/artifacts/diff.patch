@@ -1,0 +1,193 @@
+diff --git a/src/am/ec_hnsw/build.rs b/src/am/ec_hnsw/build.rs
+index f78620706..3759da2a1 100644
+--- a/src/am/ec_hnsw/build.rs
++++ b/src/am/ec_hnsw/build.rs
+@@ -327,13 +327,13 @@ impl BuildState {
+             };
+             // SAFETY: The heap and index relations are live while BuildState is
+             // initialized, and the resolver validates the indexed attribute.
+-            let indexed_attribute = unsafe {
++            let indexed_attribute = 
+                 source::resolve_indexed_vector_attribute(
+                     heap_relation.as_ptr(),
+                     index_relation,
+                     "indexed column",
+                 )
+-            };
++            ;
+             indexed_attribute.kind
+         };
+         Self {
+@@ -685,13 +685,13 @@ pub(super) unsafe fn ec_hnsw_build_scan_with_source(
+         .expect("source scan should only run when build_source_column is configured");
+     // SAFETY: `heap_relation` and `index_info` are live during ambuild, and the
+     // resolver validates the indexed attribute for this index.
+-    let indexed_attribute = unsafe {
++    let indexed_attribute = 
+         source::resolve_indexed_vector_attribute_from_index_info(
+             heap_relation,
+             index_info,
+             "indexed column",
+         )
+-    };
++    ;
+     let source_attribute = source::resolve_source_attribute(
+         heap_relation,
+         &source_column,
+diff --git a/src/am/ec_hnsw/scan.rs b/src/am/ec_hnsw/scan.rs
+index f62afc7c0..5784b7038 100644
+--- a/src/am/ec_hnsw/scan.rs
++++ b/src/am/ec_hnsw/scan.rs
+@@ -1398,13 +1398,13 @@ unsafe fn index_has_default_heap_f32_source(index_relation: pg_sys::Relation) ->
+     };
+     // SAFETY: both relation pointers are live for this lookup; the heap is held
+     // by `HeapRelationGuard` and `index_relation` is owned by the caller scan.
+-    let indexed_attribute = unsafe {
++    let indexed_attribute = 
+         source::resolve_indexed_vector_attribute(
+             heap_relation.as_ptr(),
+             index_relation,
+             "indexed column",
+         )
+-    };
++    ;
+     matches!(indexed_attribute.kind, source::IndexedVectorKind::Ecvector)
+ }
+ 
+diff --git a/src/am/ec_hnsw/source.rs b/src/am/ec_hnsw/source.rs
+index 0d4ddc772..a30fdb132 100644
+--- a/src/am/ec_hnsw/source.rs
++++ b/src/am/ec_hnsw/source.rs
+@@ -332,7 +332,7 @@ pub(crate) fn resolve_source_attribute_by_attnum(
+     }
+ }
+ 
+-pub(crate) unsafe fn resolve_single_base_heap_index_attnum(
++pub(crate) fn resolve_single_base_heap_index_attnum(
+     index_info: *mut pg_sys::IndexInfo,
+     label: &str,
+ ) -> i32 {
+@@ -359,16 +359,16 @@ pub(crate) unsafe fn resolve_single_base_heap_index_attnum(
+     attnum
+ }
+ 
+-pub(crate) unsafe fn resolve_indexed_ecvector_attribute_from_index_info(
++pub(crate) fn resolve_indexed_ecvector_attribute_from_index_info(
+     heap_relation: pg_sys::Relation,
+     index_info: *mut pg_sys::IndexInfo,
+     label: &str,
+ ) -> SourceAttribute {
+     // SAFETY: The heap relation is live and `index_info` is callback-duration
+     // metadata owned by PostgreSQL.
+-    let indexed = unsafe {
++    let indexed = 
+         resolve_indexed_vector_attribute_from_index_info(heap_relation, index_info, label)
+-    };
++    ;
+     if indexed.kind != IndexedVectorKind::Ecvector {
+         pgrx::error!("ec_hnsw {label} must be ecvector");
+     }
+@@ -378,31 +378,31 @@ pub(crate) unsafe fn resolve_indexed_ecvector_attribute_from_index_info(
+     }
+ }
+ 
+-pub(crate) unsafe fn resolve_indexed_ecvector_attribute(
++pub(crate) fn resolve_indexed_ecvector_attribute(
+     heap_relation: pg_sys::Relation,
+     index_relation: pg_sys::Relation,
+     label: &str,
+ ) -> SourceAttribute {
+     let index_info = super::index_info::IndexInfoGuard::build(index_relation, label);
+     // SAFETY: `index_info` was checked non-null and belongs to this index.
+-    let attribute = unsafe {
++    let attribute = 
+         resolve_indexed_ecvector_attribute_from_index_info(
+             heap_relation,
+             index_info.as_ptr(),
+             label,
+         )
+-    };
++    ;
+     attribute
+ }
+ 
+-pub(crate) unsafe fn resolve_indexed_vector_attribute_from_index_info(
++pub(crate) fn resolve_indexed_vector_attribute_from_index_info(
+     heap_relation: pg_sys::Relation,
+     index_info: *mut pg_sys::IndexInfo,
+     label: &str,
+ ) -> IndexedVectorAttribute {
+     // SAFETY: `index_info` is callback-duration PostgreSQL metadata and the
+     // helper validates single-key base-column shape.
+-    let indexed_attnum = unsafe { resolve_single_base_heap_index_attnum(index_info, label) };
++    let indexed_attnum = resolve_single_base_heap_index_attnum(index_info, label);
+     let heap_relation = std::ptr::NonNull::new(heap_relation)
+         .unwrap_or_else(|| pgrx::error!("ec_hnsw source resolution needs a valid heap relation"));
+     let tuple_desc = crate::storage::relation::relation_tuple_desc_copy_handle(heap_relation);
+@@ -414,7 +414,7 @@ pub(crate) unsafe fn resolve_indexed_vector_attribute_from_index_info(
+     }
+ 
+     // SAFETY: `att.atttypid` comes from the copied tuple descriptor metadata.
+-    let kind = unsafe { resolve_indexed_vector_kind(att.atttypid) }
++    let kind = resolve_indexed_vector_kind(att.atttypid)
+         .unwrap_or_else(|| pgrx::error!("ec_hnsw {label} must be ecvector or tqvector"));
+     IndexedVectorAttribute {
+         attnum: indexed_attnum,
+@@ -422,20 +422,20 @@ pub(crate) unsafe fn resolve_indexed_vector_attribute_from_index_info(
+     }
+ }
+ 
+-pub(crate) unsafe fn resolve_indexed_vector_attribute(
++pub(crate) fn resolve_indexed_vector_attribute(
+     heap_relation: pg_sys::Relation,
+     index_relation: pg_sys::Relation,
+     label: &str,
+ ) -> IndexedVectorAttribute {
+     let index_info = super::index_info::IndexInfoGuard::build(index_relation, label);
+     // SAFETY: `index_info` was checked non-null and belongs to this index.
+-    let attribute = unsafe {
++    let attribute = 
+         resolve_indexed_vector_attribute_from_index_info(heap_relation, index_info.as_ptr(), label)
+-    };
++    ;
+     attribute
+ }
+ 
+-unsafe fn resolve_indexed_vector_kind(type_oid: pg_sys::Oid) -> Option<IndexedVectorKind> {
++fn resolve_indexed_vector_kind(type_oid: pg_sys::Oid) -> Option<IndexedVectorKind> {
+     let name = crate::storage::type_info::formatted_base_type_name(type_oid)?;
+     let type_name = name.rsplit('.').next().unwrap_or(&name).trim_matches('"');
+     match type_name {
+diff --git a/src/am/ec_hnsw/vacuum.rs b/src/am/ec_hnsw/vacuum.rs
+index feca85ff5..e88270302 100644
+--- a/src/am/ec_hnsw/vacuum.rs
++++ b/src/am/ec_hnsw/vacuum.rs
+@@ -264,13 +264,13 @@ impl VacuumSearchMetric {
+             None => {
+                 // SAFETY: The heap and index relations are live; this resolves
+                 // the indexed vector attribute from PostgreSQL metadata.
+-                let indexed_attribute = unsafe {
++                let indexed_attribute = 
+                     source::resolve_indexed_vector_attribute(
+                         heap_relation,
+                         index_relation,
+                         "indexed column",
+                     )
+-                };
++                ;
+                 match indexed_attribute.kind {
+                     // SAFETY: The indexed ecvector attribute can be read through
+                     // the heap relation during source-backed repair scoring.
+diff --git a/src/am/ec_ivf/scan.rs b/src/am/ec_ivf/scan.rs
+index e20d08908..74f27cb77 100644
+--- a/src/am/ec_ivf/scan.rs
++++ b/src/am/ec_ivf/scan.rs
+@@ -913,7 +913,7 @@ unsafe fn configure_heap_rerank_state(
+     // relation/snapshot resolvers either borrow callback-owned pointers or hold
+     // guards in the returned state, and the attribute resolver validates the
+     // indexed ecvector source attribute for heap_f32 rerank.
+-    let (heap_relation, snapshot, source_attribute) = unsafe {
++    let (heap_relation, snapshot, source_attribute) = {
+         let scan = IvfScanDescView::from_nonnull(
+             NonNull::new(scan)
+                 .unwrap_or_else(|| pgrx::error!("ec_ivf heap_f32 rerank received null scan")),

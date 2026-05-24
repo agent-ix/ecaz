@@ -1,0 +1,4 @@
+src/am/ec_hnsw/scan.rs 149
+src/am/ec_ivf/scan.rs 62
+src/am/ec_spire/scan/relation.rs 18
+src/am/common/scan_output.rs 0

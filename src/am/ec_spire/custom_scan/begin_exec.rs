@@ -53,66 +53,85 @@ unsafe extern "C-unwind" fn ec_spire_begin_custom_scan(
     _estate: *mut pg_sys::EState,
     _eflags: core::ffi::c_int,
 ) {
-    // SAFETY: PostgreSQL invokes BeginCustomScan with the live CustomScanState
-    // returned by this provider; the embedded plan belongs to that state.
-    unsafe {
-        let state = node.cast::<SpireCustomScanExecState>();
-        let custom_scan = custom_scan_plan(node);
-        let mode = custom_scan_mode_from_plan(custom_scan);
-        let index_oid = custom_scan_index_oid_from_plan(custom_scan);
-        match mode {
-            SpireCustomScanPlanMode::VectorOrderLimit => {
+    let state = custom_scan_exec_state_mut(node.cast(), "BeginCustomScan");
+    // SAFETY: PostgreSQL invokes BeginCustomScan with a live CustomScanState
+    // whose plan pointer is the provider-owned CustomScan built by the planner.
+    let plan = unsafe { CustomScanPlan::from_state(node) };
+    let custom_scan = plan.as_ptr();
+    let mode = plan.mode();
+    let index_oid = plan.index_oid();
+    match mode {
+        SpireCustomScanPlanMode::VectorOrderLimit => {
+            // SAFETY: PostgreSQL invokes BeginCustomScan with the live
+            // provider-owned CustomScanState and matching CustomScan plan. All
+            // tuple payload and query values are copied into Rust-owned state.
+            let (tuple_payload_columns, tuple_payload_inputs, query) = unsafe {
                 let (tuple_payload_columns, tuple_payload_inputs) =
                     custom_scan_tuple_payload_state_from_plan(node, custom_scan);
-                custom_scan_init_vector_order_limit_exec_state(
-                    &mut *state,
-                    index_oid,
-                    custom_scan_top_k_from_plan(custom_scan),
-                    custom_scan_query_from_plan(node, custom_scan),
-                    tuple_payload_columns,
-                    tuple_payload_inputs,
-                );
-            }
-            SpireCustomScanPlanMode::DmlPkSelectTuplePayload => {
-                (*state).mode = mode;
-                (*state).index_oid = index_oid;
-                custom_scan_init_tuple_payload_state(state, node, custom_scan);
-                (*state).dml_pk_column = custom_scan_dml_pk_column(node);
-                (*state).dml_pk_value = custom_scan_dml_pk_value_from_plan(node, custom_scan);
-                (*state).dml_updated_columns =
-                    custom_scan_dml_column_list_from_plan(custom_scan, 2, "updated columns");
-                (*state).dml_projected_columns =
-                    custom_scan_dml_column_list_from_plan(custom_scan, 3, "projected columns");
-                custom_scan_validate_dml_column_metadata(
-                    (*state).mode,
-                    &(*state).dml_updated_columns,
-                    &(*state).dml_projected_columns,
-                )
-                .unwrap_or_else(|e| pgrx::error!("{e}"));
-            }
-            SpireCustomScanPlanMode::DmlUpdateTuplePayload
-            | SpireCustomScanPlanMode::DmlDeleteTuplePayload => {
-                (*state).mode = mode;
-                (*state).index_oid = index_oid;
-                (*state).dml_pk_column = custom_scan_dml_pk_column_from_plan(custom_scan);
-                (*state).dml_pk_value = custom_scan_dml_pk_value_from_plan(node, custom_scan);
-                (*state).dml_updated_columns =
-                    custom_scan_dml_column_list_from_plan(custom_scan, 2, "updated columns");
-                (*state).dml_projected_columns =
-                    custom_scan_dml_column_list_from_plan(custom_scan, 3, "projected columns");
-                if (*state).mode == SpireCustomScanPlanMode::DmlUpdateTuplePayload {
-                    (*state).dml_update_value_exprs = custom_scan_dml_update_value_exprs_from_plan(
-                        custom_scan,
-                        (*state).dml_updated_columns.len(),
+                let expr =
+                    CustomScanExprList::from_custom_scan(custom_scan, "ORDER BY query expression")
+                        .expr(0, "ORDER BY query expression");
+                let Some(query_expr) = CustomScanExpr::new(expr) else {
+                    pgrx::error!(
+                        "EcSpireDistributedScan plan has a null ORDER BY query expression"
                     );
-                }
-                custom_scan_validate_dml_column_metadata(
-                    (*state).mode,
-                    &(*state).dml_updated_columns,
-                    &(*state).dml_projected_columns,
-                )
-                .unwrap_or_else(|e| pgrx::error!("{e}"));
-            }
+                };
+                let query = match query_expr.tag() {
+                    pg_sys::NodeTag::T_Const => query_expr.query_values_from_const().unwrap_or_else(|| {
+                        pgrx::error!(
+                            "EcSpireDistributedScan requires a non-null finite real[] ORDER BY query"
+                        )
+                    }),
+                    pg_sys::NodeTag::T_Param => {
+                        let expr_state = pg_sys::ExecInitExpr(expr, &mut (*node).ss.ps);
+                        if expr_state.is_null() {
+                            pgrx::error!("EcSpireDistributedScan failed to initialize ORDER BY query parameter expression");
+                        }
+                        let eval = (*expr_state).evalfunc.unwrap_or_else(|| {
+                            pgrx::error!(
+                                "EcSpireDistributedScan ORDER BY query expression has no evaluator"
+                            )
+                        });
+                        let mut is_null = false;
+                        let datum = eval(expr_state, (*node).ss.ps.ps_ExprContext, &mut is_null);
+                        if is_null {
+                            pgrx::error!(
+                                "EcSpireDistributedScan ORDER BY query parameter must not be NULL"
+                            );
+                        }
+                        Vec::<f32>::from_polymorphic_datum(datum, false, pg_sys::FLOAT4ARRAYOID)
+                            .filter(|values| {
+                                !values.is_empty() && values.iter().all(|value| value.is_finite())
+                            })
+                            .unwrap_or_else(|| {
+                                pgrx::error!(
+                                    "EcSpireDistributedScan requires a finite real[] ORDER BY query parameter"
+                                )
+                            })
+                    }
+                    _ => pgrx::error!(
+                        "EcSpireDistributedScan requires a constant or parameter real[] ORDER BY query"
+                    ),
+                };
+                (tuple_payload_columns, tuple_payload_inputs, query)
+            };
+            custom_scan_init_vector_order_limit_exec_state(
+                state,
+                index_oid,
+                custom_scan_top_k_from_plan(plan),
+                query,
+                tuple_payload_columns,
+                tuple_payload_inputs,
+            );
+        }
+        SpireCustomScanPlanMode::DmlPkSelectTuplePayload
+        | SpireCustomScanPlanMode::DmlUpdateTuplePayload
+        | SpireCustomScanPlanMode::DmlDeleteTuplePayload => {
+            // SAFETY: PostgreSQL invokes BeginCustomScan with the live
+            // provider-owned CustomScanState and matching CustomScan plan.
+            unsafe {
+                custom_scan_init_dml_exec_state(state, node, custom_scan, plan, mode, index_oid)
+            };
         }
     }
 }
@@ -142,33 +161,163 @@ fn custom_scan_init_vector_order_limit_exec_state(
 unsafe fn custom_scan_tuple_payload_state_from_plan(
     node: *mut pg_sys::CustomScanState,
     custom_scan: *mut pg_sys::CustomScan,
-) -> (
-    Vec<String>,
-    Vec<Option<SpireCustomScanPayloadAttrIo>>,
-) {
+) -> (Vec<String>, Vec<Option<SpireCustomScanPayloadAttrIo>>) {
     // SAFETY: node/custom_scan are the live executor state and matching plan;
     // the current relation tuple descriptor remains valid during BeginCustomScan.
     unsafe {
-        (
-            custom_scan_tuple_payload_columns(node, custom_scan),
-            custom_scan_payload_attr_io((*(*node).ss.ss_currentRelation).rd_att),
-        )
+        let relation = custom_scan_current_relation(node, "tuple payload input descriptor");
+        let relation = std::ptr::NonNull::new(relation).unwrap_or_else(|| {
+            pgrx::error!("tuple payload input descriptor needs a valid relation")
+        });
+        let tuple_desc_copy = crate::storage::relation::relation_tuple_desc_copy_handle(relation);
+        let tuple_desc =
+            TupleDescView::from_raw(tuple_desc_copy.as_ptr(), "EcSpireDistributedScan")
+                .unwrap_or_else(|error| pgrx::error!("{error}"));
+        let mut attr_numbers = std::collections::BTreeSet::new();
+        let mut can_narrow_projection = false;
+        if !custom_scan.is_null() && !(*custom_scan).scan.plan.targetlist.is_null() {
+            let target_list =
+                PgList::<pg_sys::TargetEntry>::from_pg((*custom_scan).scan.plan.targetlist);
+            can_narrow_projection = true;
+            for target_entry in target_list.iter_ptr() {
+                let Some(target_entry) = target_entry.as_ref() else {
+                    continue;
+                };
+                if target_entry.resjunk || target_entry.expr.is_null() {
+                    continue;
+                }
+                let expr = target_entry.expr.cast::<pg_sys::Node>();
+                if (*expr).type_ != pg_sys::NodeTag::T_Var {
+                    can_narrow_projection = false;
+                    break;
+                }
+                let var = &*target_entry.expr.cast::<pg_sys::Var>();
+                if var.varattno > 0 {
+                    attr_numbers.insert(var.varattno);
+                } else {
+                    can_narrow_projection = false;
+                    break;
+                }
+            }
+        }
+        if !can_narrow_projection {
+            attr_numbers.clear();
+        }
+        let natts = tuple_desc.natts();
+        let mut columns = Vec::with_capacity(usize::try_from(natts).unwrap_or(0));
+        for attr_index in 0..natts {
+            let Some(attr) = tuple_desc
+                .attribute(attr_index)
+                .unwrap_or_else(|error| pgrx::error!("{error}"))
+            else {
+                continue;
+            };
+            if !attr_numbers.is_empty() && !attr_numbers.contains(&attr.attnum) {
+                continue;
+            }
+            custom_scan_validate_tuple_payload_attr(&attr);
+            columns.push(attr.name);
+        }
+        (columns, custom_scan_payload_attr_io(&tuple_desc))
     }
 }
 
-unsafe fn custom_scan_init_tuple_payload_state(
-    state: *mut SpireCustomScanExecState,
+unsafe fn custom_scan_init_dml_exec_state(
+    state: &mut SpireCustomScanExecState,
     node: *mut pg_sys::CustomScanState,
     custom_scan: *mut pg_sys::CustomScan,
+    plan: CustomScanPlan<'_>,
+    mode: SpireCustomScanPlanMode,
+    index_oid: pg_sys::Oid,
 ) {
-    // SAFETY: state is this provider's live executor state and node/custom_scan
-    // are the matching executor state and plan.
+    state.mode = mode;
+    state.index_oid = index_oid;
+    // SAFETY: caller passes the live BeginCustomScan state and matching
+    // provider-owned CustomScan plan. All plan-private metadata reads are
+    // copied into Rust-owned state before the callback returns.
     unsafe {
-        let (tuple_payload_columns, tuple_payload_inputs) =
-            custom_scan_tuple_payload_state_from_plan(node, custom_scan);
-        (*state).tuple_payload_columns = tuple_payload_columns;
-        (*state).tuple_payload_inputs = tuple_payload_inputs;
+        if mode == SpireCustomScanPlanMode::DmlPkSelectTuplePayload {
+            let (tuple_payload_columns, tuple_payload_inputs) =
+                custom_scan_tuple_payload_state_from_plan(node, custom_scan);
+            state.tuple_payload_columns = tuple_payload_columns;
+            state.tuple_payload_inputs = tuple_payload_inputs;
+            let relation = custom_scan_current_relation(node, "DML path");
+            let relation = std::ptr::NonNull::new(relation)
+                .unwrap_or_else(|| pgrx::error!("DML path needs a valid relation"));
+            let relation_oid = crate::storage::relation::relation_oid_handle(relation);
+            let context = super::dml_frontdoor_relation_context_catalog_row(relation_oid)
+                .unwrap_or_else(|e| pgrx::error!("{e}"));
+            state.dml_pk_column = context.pk_column.unwrap_or_else(|| {
+                pgrx::error!("EcSpireDistributedScan DML path relation has no PK column")
+            });
+        } else {
+            state.dml_pk_column = plan.dml_pk_column();
+        }
+        let dml_exprs = CustomScanExprList::from_custom_scan(custom_scan, "DML expression list");
+        let pk_expr = dml_exprs.expr(0, "PK expression");
+        if pk_expr.is_null() {
+            pgrx::error!("EcSpireDistributedScan DML PK expression is null");
+        }
+        let pk_value = match (*pk_expr.cast::<pg_sys::Node>()).type_ {
+            pg_sys::NodeTag::T_Const => {
+                let const_expr = &*pk_expr.cast::<pg_sys::Const>();
+                if const_expr.constisnull {
+                    pgrx::error!("EcSpireDistributedScan DML constant PK is NULL");
+                }
+                match const_expr.consttype {
+                    pg_sys::INT2OID => i64::from(pg_sys::DatumGetInt16(const_expr.constvalue)),
+                    pg_sys::INT4OID => i64::from(pg_sys::DatumGetInt32(const_expr.constvalue)),
+                    pg_sys::INT8OID => pg_sys::DatumGetInt64(const_expr.constvalue),
+                    other => pgrx::error!(
+                        "EcSpireDistributedScan DML path unsupported PK type OID {}",
+                        other.to_u32()
+                    ),
+                }
+            }
+            pg_sys::NodeTag::T_Param => {
+                let param = &*pk_expr.cast::<pg_sys::Param>();
+                let expr_state = pg_sys::ExecInitExpr(pk_expr, &mut (*node).ss.ps);
+                if expr_state.is_null() {
+                    pgrx::error!("EcSpireDistributedScan failed to initialize DML PK parameter");
+                }
+                let eval = (*expr_state).evalfunc.unwrap_or_else(|| {
+                    pgrx::error!("EcSpireDistributedScan DML PK parameter has no evaluator")
+                });
+                let mut is_null = false;
+                let datum = eval(expr_state, (*node).ss.ps.ps_ExprContext, &mut is_null);
+                if is_null {
+                    pgrx::error!("EcSpireDistributedScan DML PK parameter must not be NULL");
+                }
+                match param.paramtype {
+                    pg_sys::INT2OID => i64::from(pg_sys::DatumGetInt16(datum)),
+                    pg_sys::INT4OID => i64::from(pg_sys::DatumGetInt32(datum)),
+                    pg_sys::INT8OID => pg_sys::DatumGetInt64(datum),
+                    other => pgrx::error!(
+                        "EcSpireDistributedScan DML path unsupported PK type OID {}",
+                        other.to_u32()
+                    ),
+                }
+            }
+            _ => pgrx::error!(
+                "EcSpireDistributedScan DML path requires a constant or parameter bigint PK"
+            ),
+        };
+        state.dml_pk_value = super::dml_frontdoor_bigint_pk_value_bytes(pk_value);
+        state.dml_updated_columns = plan.dml_column_list(2, "updated columns");
+        state.dml_projected_columns = plan.dml_column_list(3, "projected columns");
+        if mode == SpireCustomScanPlanMode::DmlUpdateTuplePayload {
+            state.dml_update_value_exprs = custom_scan_dml_update_value_exprs_from_list(
+                dml_exprs,
+                state.dml_updated_columns.len(),
+            );
+        }
     }
+    custom_scan_validate_dml_column_metadata(
+        state.mode,
+        &state.dml_updated_columns,
+        &state.dml_projected_columns,
+    )
+    .unwrap_or_else(|e| pgrx::error!("{e}"));
 }
 
 #[pg_guard]
@@ -211,8 +360,7 @@ unsafe extern "C-unwind" fn ec_spire_end_custom_scan(node: *mut pg_sys::CustomSc
 static CUSTOM_SCAN_END_CUSTOM_SCAN_COUNT: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(0);
 #[cfg(any(test, feature = "pg_test"))]
-static CUSTOM_SCAN_PFREE_COUNT: std::sync::atomic::AtomicU64 =
-    std::sync::atomic::AtomicU64::new(0);
+static CUSTOM_SCAN_PFREE_COUNT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 #[cfg(any(test, feature = "pg_test"))]
 static CUSTOM_SCAN_MEMORY_BASELINE_USED_BYTES: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(u64::MAX);
@@ -265,6 +413,8 @@ fn custom_scan_memory_context_used_bytes_for_test(context: pg_sys::MemoryContext
 #[cfg(any(test, feature = "pg_test"))]
 fn custom_scan_note_memory_baseline_for_test(context: pg_sys::MemoryContext) {
     CUSTOM_SCAN_MEMORY_BASELINE_USED_BYTES.store(
+        // SAFETY: this test-only instrumentation receives the MemoryContext
+        // captured from the CustomScan allocation path.
         custom_scan_memory_context_used_bytes_for_test(context),
         std::sync::atomic::Ordering::Relaxed,
     );
@@ -276,6 +426,8 @@ fn custom_scan_note_memory_baseline_for_test(_context: pg_sys::MemoryContext) {}
 #[cfg(any(test, feature = "pg_test"))]
 fn custom_scan_note_memory_after_end_for_test(context: pg_sys::MemoryContext) {
     CUSTOM_SCAN_MEMORY_AFTER_END_USED_BYTES.store(
+        // SAFETY: this test-only instrumentation receives the MemoryContext
+        // captured from the CustomScan allocation path before state release.
         custom_scan_memory_context_used_bytes_for_test(context),
         std::sync::atomic::Ordering::Relaxed,
     );
@@ -302,8 +454,8 @@ pub(crate) fn custom_scan_cleanup_counters_for_test() -> SpireCustomScanCleanupC
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) fn custom_scan_memory_context_snapshot_for_test(
-) -> SpireCustomScanMemoryContextSnapshot {
+pub(crate) fn custom_scan_memory_context_snapshot_for_test() -> SpireCustomScanMemoryContextSnapshot
+{
     let baseline_used_bytes =
         CUSTOM_SCAN_MEMORY_BASELINE_USED_BYTES.load(std::sync::atomic::Ordering::Relaxed);
     let after_end_used_bytes =
@@ -333,8 +485,10 @@ fn custom_scan_note_rescan_for_test(_state: &SpireCustomScanExecState) {}
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) fn custom_scan_reset_rescan_snapshot_for_test() {
     CUSTOM_SCAN_RESCAN_COUNT.store(0, std::sync::atomic::Ordering::Relaxed);
-    CUSTOM_SCAN_RESCAN_OUTPUTS_LEN_AFTER_RESET.store(usize::MAX, std::sync::atomic::Ordering::Relaxed);
-    CUSTOM_SCAN_RESCAN_NEXT_OUTPUT_AFTER_RESET.store(usize::MAX, std::sync::atomic::Ordering::Relaxed);
+    CUSTOM_SCAN_RESCAN_OUTPUTS_LEN_AFTER_RESET
+        .store(usize::MAX, std::sync::atomic::Ordering::Relaxed);
+    CUSTOM_SCAN_RESCAN_NEXT_OUTPUT_AFTER_RESET
+        .store(usize::MAX, std::sync::atomic::Ordering::Relaxed);
     CUSTOM_SCAN_RESCAN_LOADED_OUTPUTS_AFTER_RESET.store(true, std::sync::atomic::Ordering::Relaxed);
 }
 
@@ -353,13 +507,9 @@ pub(crate) fn custom_scan_rescan_snapshot_for_test() -> SpireCustomScanRescanSna
 
 #[pg_guard]
 unsafe extern "C-unwind" fn ec_spire_rescan_custom_scan(node: *mut pg_sys::CustomScanState) {
-    // SAFETY: PostgreSQL invokes ReScanCustomScan with this provider's live
-    // CustomScanState, so it can be cast back to SpireCustomScanExecState.
-    unsafe {
-        let state = node.cast::<SpireCustomScanExecState>();
-        custom_scan_reset_exec_state_for_rescan(&mut *state);
-        custom_scan_note_rescan_for_test(&*state);
-    }
+    let state = custom_scan_exec_state_mut(node.cast(), "ReScanCustomScan");
+    custom_scan_reset_exec_state_for_rescan(state);
+    custom_scan_note_rescan_for_test(state);
 }
 
 fn custom_scan_release_exec_state_for_end(state: &mut SpireCustomScanExecState) {
@@ -397,118 +547,148 @@ fn custom_scan_next_output_index(state: &mut SpireCustomScanExecState) -> Option
     Some(output_index)
 }
 
+#[derive(Clone, Copy)]
+struct CustomScanAccessState<'a> {
+    scan_state: *mut pg_sys::ScanState,
+    _scan_state: std::marker::PhantomData<&'a pg_sys::ScanState>,
+}
+
+impl<'a> CustomScanAccessState<'a> {
+    unsafe fn new(scan_state: *mut pg_sys::ScanState) -> Self {
+        if scan_state.is_null() {
+            pgrx::error!("EcSpireDistributedScan access method received null scan state");
+        }
+        Self {
+            scan_state,
+            _scan_state: std::marker::PhantomData,
+        }
+    }
+
+    fn as_ptr(self) -> *mut pg_sys::ScanState {
+        self.scan_state
+    }
+
+    fn tuple_slot(self) -> *mut pg_sys::TupleTableSlot {
+        // SAFETY: ExecScan invokes provider access callbacks with a live
+        // ScanState whose scan tuple slot is owned by the active executor node.
+        unsafe { (*self.scan_state).ss_ScanTupleSlot }
+    }
+
+    fn clear_tuple_slot(self) -> *mut pg_sys::TupleTableSlot {
+        // SAFETY: the slot belongs to the live scan state for this callback.
+        unsafe { pg_sys::ExecClearTuple(self.tuple_slot()) }
+    }
+
+    fn add_processed_count(self, processed: u64) {
+        // SAFETY: the executor estate belongs to the live scan callback;
+        // saturating arithmetic preserves PostgreSQL's processed-row counter.
+        unsafe {
+            let estate = (*self.scan_state).ps.state;
+            if !estate.is_null() {
+                (*estate).es_processed = (*estate).es_processed.saturating_add(processed);
+            }
+        }
+    }
+
+    fn fetch_row_version_into_scan_slot(self, tid: &mut pg_sys::ItemPointerData) -> bool {
+        // SAFETY: relation and slot are borrowed from the live scan state for
+        // the current callback; PostgreSQL writes the visible heap tuple into
+        // the scan tuple slot using the active estate snapshot.
+        unsafe {
+            let estate = (*self.scan_state).ps.state;
+            if estate.is_null() {
+                pgrx::error!("EcSpireDistributedScan missing executor estate");
+            }
+            pg_sys::table_tuple_fetch_row_version(
+                (*self.scan_state).ss_currentRelation,
+                tid,
+                (*estate).es_snapshot,
+                (*self.scan_state).ss_ScanTupleSlot,
+            )
+        }
+    }
+}
+
 #[pg_guard]
 unsafe extern "C-unwind" fn ec_spire_custom_scan_access(
     scan_state: *mut pg_sys::ScanState,
 ) -> *mut pg_sys::TupleTableSlot {
-    // SAFETY: ExecScan invokes this access callback with the live ScanState
-    // embedded in this provider's SpireCustomScanExecState.
-    unsafe {
-        if scan_state.is_null() {
-            pgrx::error!("EcSpireDistributedScan access method received null scan state");
-        }
-        let state = scan_state.cast::<SpireCustomScanExecState>();
-        if (*state).mode == SpireCustomScanPlanMode::DmlPkSelectTuplePayload {
-            return custom_scan_dml_pk_select_access(state, scan_state);
-        }
-        if (*state).mode == SpireCustomScanPlanMode::DmlUpdateTuplePayload {
-            return custom_scan_dml_update_access(state, scan_state);
-        }
-        if (*state).mode == SpireCustomScanPlanMode::DmlDeleteTuplePayload {
-            return custom_scan_dml_delete_access(state, scan_state);
-        }
-        custom_scan_ensure_outputs(state);
-        loop {
-            let Some(output_index) = custom_scan_next_output_index(&mut *state) else {
-                return pg_sys::ExecClearTuple((*scan_state).ss_ScanTupleSlot);
-            };
-            let output = &(&(*state).outputs)[output_index];
-            if !matches!(
-                output.heap_lookup_owner,
-                super::SPIRE_REMOTE_LOCAL_HEAP_RESOLUTION
-            ) {
-                return custom_scan_store_remote_tuple_payload(state, scan_state, output);
-            }
-
-            let mut tid = pg_sys::ItemPointerData::default();
-            pgrx::itemptr::item_pointer_set_all(&mut tid, output.heap_block, output.heap_offset);
-            pg_sys::ExecClearTuple((*scan_state).ss_ScanTupleSlot);
-            let estate = (*scan_state).ps.state;
-            if estate.is_null() {
-                pgrx::error!("EcSpireDistributedScan missing executor estate");
-            }
-            let visible = pg_sys::table_tuple_fetch_row_version(
-                (*scan_state).ss_currentRelation,
-                &mut tid,
-                (*estate).es_snapshot,
-                (*scan_state).ss_ScanTupleSlot,
-            );
-            if visible {
-                return (*scan_state).ss_ScanTupleSlot;
-            }
-        }
+    let state = custom_scan_exec_state_mut(scan_state.cast(), "access method");
+    // SAFETY: ExecScan invokes this provider callback with its live ScanState.
+    let access_state = unsafe { CustomScanAccessState::new(scan_state) };
+    if state.mode == SpireCustomScanPlanMode::DmlPkSelectTuplePayload {
+        return custom_scan_dml_pk_select_access(state, access_state);
     }
-}
-
-unsafe fn custom_scan_dml_pk_select_access(
-    state: *mut SpireCustomScanExecState,
-    scan_state: *mut pg_sys::ScanState,
-) -> *mut pg_sys::TupleTableSlot {
-    // SAFETY: state and scan_state are the live custom scan executor objects;
-    // this path emits at most one PK SELECT tuple payload.
-    unsafe {
-        custom_scan_ensure_dml_pk_select_payload(state);
-        if (*state).dml_payload_emitted {
-            return pg_sys::ExecClearTuple((*scan_state).ss_ScanTupleSlot);
-        }
-        (*state).dml_payload_emitted = true;
-        let Some(payload_json) = (*state).dml_tuple_payload_json.as_deref() else {
-            return pg_sys::ExecClearTuple((*scan_state).ss_ScanTupleSlot);
+    if state.mode == SpireCustomScanPlanMode::DmlUpdateTuplePayload {
+        return custom_scan_dml_update_access(state, access_state);
+    }
+    if state.mode == SpireCustomScanPlanMode::DmlDeleteTuplePayload {
+        return custom_scan_dml_delete_access(state, access_state);
+    }
+    custom_scan_ensure_outputs(state);
+    loop {
+        let Some(output_index) = custom_scan_next_output_index(state) else {
+            return access_state.clear_tuple_slot();
         };
-        custom_scan_store_tuple_payload_json(
-            (*scan_state).ss_ScanTupleSlot,
-            payload_json,
-            &mut (*state).tuple_payload_inputs,
-        )
+        let output = state.outputs[output_index].clone();
+        if !matches!(
+            output.heap_lookup_owner,
+            super::SPIRE_REMOTE_LOCAL_HEAP_RESOLUTION
+        ) {
+            return custom_scan_store_remote_tuple_payload(state, access_state, &output);
+        }
+
+        let mut tid = pg_sys::ItemPointerData::default();
+        pgrx::itemptr::item_pointer_set_all(&mut tid, output.heap_block, output.heap_offset);
+        access_state.clear_tuple_slot();
+        let visible = access_state.fetch_row_version_into_scan_slot(&mut tid);
+        if visible {
+            return access_state.tuple_slot();
+        }
     }
 }
 
-unsafe fn custom_scan_dml_update_access(
-    state: *mut SpireCustomScanExecState,
-    scan_state: *mut pg_sys::ScanState,
+fn custom_scan_dml_pk_select_access(
+    state: &mut SpireCustomScanExecState,
+    access_state: CustomScanAccessState<'_>,
 ) -> *mut pg_sys::TupleTableSlot {
-    // SAFETY: state and scan_state are live executor objects; this path performs
-    // the UPDATE once and reports the processed count through EState.
-    unsafe {
-        if !(*state).dml_payload_emitted {
-            let updated_count = custom_scan_execute_dml_update(state, scan_state);
-            let estate = (*scan_state).ps.state;
-            if !estate.is_null() {
-                (*estate).es_processed = (*estate).es_processed.saturating_add(updated_count);
-            }
-            (*state).dml_payload_emitted = true;
-        }
-        pg_sys::ExecClearTuple((*scan_state).ss_ScanTupleSlot)
+    custom_scan_ensure_dml_pk_select_payload(state);
+    if state.dml_payload_emitted {
+        return access_state.clear_tuple_slot();
     }
+    state.dml_payload_emitted = true;
+    let Some(payload_json) = state.dml_tuple_payload_json.as_deref() else {
+        return access_state.clear_tuple_slot();
+    };
+    custom_scan_store_tuple_payload_json(
+        access_state.tuple_slot(),
+        payload_json,
+        &mut state.tuple_payload_inputs,
+    )
 }
 
-unsafe fn custom_scan_dml_delete_access(
-    state: *mut SpireCustomScanExecState,
-    scan_state: *mut pg_sys::ScanState,
+fn custom_scan_dml_update_access(
+    state: &mut SpireCustomScanExecState,
+    access_state: CustomScanAccessState<'_>,
 ) -> *mut pg_sys::TupleTableSlot {
-    // SAFETY: state and scan_state are live executor objects; this path performs
-    // the DELETE once and reports the processed count through EState.
-    unsafe {
-        if !(*state).dml_payload_emitted {
-            let deleted_count = custom_scan_execute_dml_delete(state);
-            let estate = (*scan_state).ps.state;
-            if !estate.is_null() {
-                (*estate).es_processed = (*estate).es_processed.saturating_add(deleted_count);
-            }
-            (*state).dml_payload_emitted = true;
-        }
-        pg_sys::ExecClearTuple((*scan_state).ss_ScanTupleSlot)
+    if !state.dml_payload_emitted {
+        let updated_count = custom_scan_execute_dml_update(state, access_state);
+        access_state.add_processed_count(updated_count);
+        state.dml_payload_emitted = true;
     }
+    access_state.clear_tuple_slot()
+}
+
+fn custom_scan_dml_delete_access(
+    state: &mut SpireCustomScanExecState,
+    access_state: CustomScanAccessState<'_>,
+) -> *mut pg_sys::TupleTableSlot {
+    if !state.dml_payload_emitted {
+        let deleted_count = custom_scan_execute_dml_delete(state);
+        access_state.add_processed_count(deleted_count);
+        state.dml_payload_emitted = true;
+    }
+    access_state.clear_tuple_slot()
 }
 
 #[pg_guard]

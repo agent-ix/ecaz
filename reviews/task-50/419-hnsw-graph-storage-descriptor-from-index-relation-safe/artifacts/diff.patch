@@ -1,0 +1,83 @@
+diff --git a/src/am/ec_hnsw/graph.rs b/src/am/ec_hnsw/graph.rs
+index 29d9d9c9e..c9608e95c 100644
+--- a/src/am/ec_hnsw/graph.rs
++++ b/src/am/ec_hnsw/graph.rs
+@@ -31,7 +31,7 @@ pub(crate) enum GraphStorageDescriptor {
+ }
+ 
+ impl GraphStorageDescriptor {
+-    pub(crate) unsafe fn from_index_relation(
++    pub(crate) fn from_index_relation(
+         index_relation: pg_sys::Relation,
+         metadata: &page::MetadataPage,
+     ) -> Result<Self, String> {
+diff --git a/src/am/ec_hnsw/insert.rs b/src/am/ec_hnsw/insert.rs
+index e0483147c..b96904880 100644
+--- a/src/am/ec_hnsw/insert.rs
++++ b/src/am/ec_hnsw/insert.rs
+@@ -611,7 +611,7 @@ fn resolve_insert_format_adapter(
+ ) -> Result<InsertFormatAdapter, String> {
+     // SAFETY: `index_relation` is live for the insert, and `metadata` is the
+     // metadata page snapshot used to interpret graph storage.
+-    match unsafe { graph::GraphStorageDescriptor::from_index_relation(index_relation, metadata) }? {
++    match graph::GraphStorageDescriptor::from_index_relation(index_relation, metadata)? {
+         graph::GraphStorageDescriptor::TurboQuant { code_len } => {
+             Ok(InsertFormatAdapter::TurboQuant { code_len })
+         }
+diff --git a/src/am/ec_hnsw/scan.rs b/src/am/ec_hnsw/scan.rs
+index 2642f44e3..7c0317aa1 100644
+--- a/src/am/ec_hnsw/scan.rs
++++ b/src/am/ec_hnsw/scan.rs
+@@ -1123,7 +1123,7 @@ fn validate_runtime_scan_format(
+ ) -> Result<graph::GraphStorageDescriptor, String> {
+     // SAFETY: callers pass the live index relation from PostgreSQL's scan
+     // descriptor, and the metadata was read from that same relation.
+-    unsafe { graph::GraphStorageDescriptor::from_index_relation(index_relation, metadata) }
++    graph::GraphStorageDescriptor::from_index_relation(index_relation, metadata)
+ }
+ 
+ const INVALID_PARALLEL_SCAN_WORKER_SLOT: u32 = u32::MAX;
+diff --git a/src/am/ec_hnsw/scan_debug.rs b/src/am/ec_hnsw/scan_debug.rs
+index 42ee275d2..b2faf50d8 100644
+--- a/src/am/ec_hnsw/scan_debug.rs
++++ b/src/am/ec_hnsw/scan_debug.rs
+@@ -111,7 +111,7 @@ fn debug_graph_storage(
+ ) -> graph::GraphStorageDescriptor {
+     // SAFETY: Debug callers pass an open index relation and metadata read from
+     // that relation; descriptor construction validates the storage format.
+-    unsafe { graph::GraphStorageDescriptor::from_index_relation(index_relation, metadata) }
++    graph::GraphStorageDescriptor::from_index_relation(index_relation, metadata)
+         .unwrap_or_else(|e| pgrx::error!("ec_hnsw debug failed to resolve graph storage: {e}"))
+ }
+ 
+diff --git a/src/am/ec_hnsw/shared.rs b/src/am/ec_hnsw/shared.rs
+index fe4d02dda..e111265d7 100644
+--- a/src/am/ec_hnsw/shared.rs
++++ b/src/am/ec_hnsw/shared.rs
+@@ -157,11 +157,8 @@ pub(super) unsafe fn ec_hnsw_noop_vacuum_stats(
+ 
+ pub(super) unsafe fn count_element_tuples(index_relation: pg_sys::Relation) -> usize {
+     let metadata = read_metadata_page(index_relation);
+-    // SAFETY: Metadata was decoded from this index and describes its graph
+-    // storage layout.
+-    let storage =
+-        unsafe { graph::GraphStorageDescriptor::from_index_relation(index_relation, &metadata) }
+-            .unwrap_or_else(|e| pgrx::error!("{e}"));
++    let storage = graph::GraphStorageDescriptor::from_index_relation(index_relation, &metadata)
++        .unwrap_or_else(|e| pgrx::error!("{e}"));
+     let block_count = hnsw_main_block_count(index_relation);
+     if block_count <= page::FIRST_DATA_BLOCK_NUMBER {
+         return 0;
+diff --git a/src/am/ec_hnsw/vacuum.rs b/src/am/ec_hnsw/vacuum.rs
+index c35b8734b..b00d49ffe 100644
+--- a/src/am/ec_hnsw/vacuum.rs
++++ b/src/am/ec_hnsw/vacuum.rs
+@@ -470,7 +470,7 @@ fn resolve_vacuum_format_adapter(
+ ) -> Result<VacuumFormatAdapter, String> {
+     // SAFETY: `index_relation` is live for vacuum and `metadata` is the page
+     // snapshot used to interpret graph storage.
+-    match unsafe { graph::GraphStorageDescriptor::from_index_relation(index.as_ptr(), metadata) }? {
++    match graph::GraphStorageDescriptor::from_index_relation(index.as_ptr(), metadata)? {
+         graph::GraphStorageDescriptor::TurboQuant { code_len } => {
+             Ok(VacuumFormatAdapter::TurboQuant { code_len })
+         }

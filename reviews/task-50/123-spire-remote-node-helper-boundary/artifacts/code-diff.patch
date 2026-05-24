@@ -1,0 +1,112 @@
+commit e2ffd4c0d4922f57ba0dac2efec6130c49a3caa2
+Author:     Agent IX <agent@agent-ix.dev>
+AuthorDate: Wed May 20 17:57:14 2026 -0700
+Commit:     Agent IX <agent@agent-ix.dev>
+CommitDate: Wed May 20 17:57:14 2026 -0700
+
+    Reduce SPIRE remote node helper unsafes
+---
+ src/am/ec_spire/coordinator/remote_candidates/fanout.rs      | 4 +---
+ src/am/ec_spire/coordinator/remote_candidates/scan_output.rs | 8 ++------
+ src/am/ec_spire/coordinator/snapshots.rs                     | 6 +++---
+ src/lib.rs                                                   | 8 +++++---
+ 4 files changed, 11 insertions(+), 15 deletions(-)
+
+diff --git a/src/am/ec_spire/coordinator/remote_candidates/fanout.rs b/src/am/ec_spire/coordinator/remote_candidates/fanout.rs
+index 8d480da9..34e2b0c8 100644
+--- a/src/am/ec_spire/coordinator/remote_candidates/fanout.rs
++++ b/src/am/ec_spire/coordinator/remote_candidates/fanout.rs
+@@ -330,9 +330,7 @@ pub(crate) unsafe fn remote_search_target_readiness_rows(
+                 consistency_mode,
+             )
+         };
+-        // SAFETY: index_relation is the open SPIRE index relation used to read
+-        // the coordinator node snapshot.
+-        let node_rows = unsafe { remote_node_snapshot(index_relation) }
++        let node_rows = remote_node_snapshot(index_relation)
+             .into_iter()
+             .map(|row| (row.node_id, row))
+             .collect::<BTreeMap<_, _>>();
+diff --git a/src/am/ec_spire/coordinator/remote_candidates/scan_output.rs b/src/am/ec_spire/coordinator/remote_candidates/scan_output.rs
+index e65fd542..2758d1e7 100644
+--- a/src/am/ec_spire/coordinator/remote_candidates/scan_output.rs
++++ b/src/am/ec_spire/coordinator/remote_candidates/scan_output.rs
+@@ -810,12 +810,8 @@ pub(crate) unsafe fn remote_search_operator_diagnostics_row(
+     top_k: usize,
+ ) -> SpireRemoteSearchOperatorDiagnosticsRow {
+     let result = (|| -> Result<SpireRemoteSearchOperatorDiagnosticsRow, String> {
+-        // SAFETY: reads remote-node capability diagnostics through the live
+-        // index relation supplied by the SQL diagnostic wrapper.
+-        let capability = unsafe { remote_node_capability_summary(index_relation) };
+-        // SAFETY: reads remote-node snapshot diagnostics through the same live
+-        // index relation before filtering to non-local nodes.
+-        let remote_snapshots = unsafe { remote_node_snapshot(index_relation) }
++        let capability = remote_node_capability_summary(index_relation);
++        let remote_snapshots = remote_node_snapshot(index_relation)
+             .into_iter()
+             .filter(|row| row.node_id != meta::SPIRE_LOCAL_NODE_ID)
+             .collect::<Vec<_>>();
+diff --git a/src/am/ec_spire/coordinator/snapshots.rs b/src/am/ec_spire/coordinator/snapshots.rs
+index cbeedc65..57c852da 100644
+--- a/src/am/ec_spire/coordinator/snapshots.rs
++++ b/src/am/ec_spire/coordinator/snapshots.rs
+@@ -979,7 +979,7 @@ pub(crate) unsafe fn index_placement_snapshot(
+     result.unwrap_or_else(|e| pgrx::error!("{e}"))
+ }
+
+-pub(crate) unsafe fn remote_node_snapshot(
++pub(crate) fn remote_node_snapshot(
+     index_relation: pg_sys::Relation,
+ ) -> Vec<SpireRemoteNodeSnapshotRow> {
+     let result = (|| -> Result<Vec<SpireRemoteNodeSnapshotRow>, String> {
+@@ -1671,7 +1671,7 @@ pub(crate) unsafe fn remote_node_descriptor_readiness_summary(
+     summary
+ }
+
+-pub(crate) unsafe fn remote_node_capability_plan(
++pub(crate) fn remote_node_capability_plan(
+     index_relation: pg_sys::Relation,
+ ) -> Vec<SpireRemoteNodeCapabilityPlanRow> {
+     remote_node_snapshot(index_relation)
+@@ -1680,7 +1680,7 @@ pub(crate) unsafe fn remote_node_capability_plan(
+         .collect()
+ }
+
+-pub(crate) unsafe fn remote_node_capability_summary(
++pub(crate) fn remote_node_capability_summary(
+     index_relation: pg_sys::Relation,
+ ) -> SpireRemoteNodeCapabilitySummaryRow {
+     let root_control = live_index_relation(index_relation).root_control();
+diff --git a/src/lib.rs b/src/lib.rs
+index 32da5999..87f55bd5 100644
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -2109,7 +2109,7 @@ fn ec_spire_remote_node_snapshot(
+ > {
+     let index_relation =
+         open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_node_snapshot");
+-    let rows = with_live_index_relation!(index_relation, am::spire_remote_node_snapshot);
++    let rows = with_live_index_relation_safe!(index_relation, am::spire_remote_node_snapshot);
+
+     TableIterator::new(rows.into_iter().map(|row| {
+         (
+@@ -2604,7 +2604,8 @@ fn ec_spire_remote_node_capability_plan(
+ > {
+     let index_relation =
+         open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_node_capability_plan");
+-    let rows = with_live_index_relation!(index_relation, am::spire_remote_node_capability_plan);
++    let rows =
++        with_live_index_relation_safe!(index_relation, am::spire_remote_node_capability_plan);
+
+     TableIterator::new(rows.into_iter().map(|row| {
+         (
+@@ -2653,7 +2654,8 @@ fn ec_spire_remote_node_capability_summary(
+ > {
+     let index_relation =
+         open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_node_capability_summary");
+-    let row = with_live_index_relation!(index_relation, am::spire_remote_node_capability_summary);
++    let row =
++        with_live_index_relation_safe!(index_relation, am::spire_remote_node_capability_summary);
+
+     TableIterator::once((
+         i64::try_from(row.active_epoch).expect("active epoch should fit in i64"),

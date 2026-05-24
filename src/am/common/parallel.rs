@@ -4,6 +4,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 
 use pgrx::pg_sys;
 
+use super::callback::pg_callback;
 use super::parallel_slot::{
     load_worker_slot_snapshot, publish_worker_slot_runtime_snapshot, release_worker_slot,
     try_claim_worker_slot, EcParallelWorkerSlotFields,
@@ -477,9 +478,7 @@ pub(crate) unsafe extern "C-unwind" fn ec_amestimateparallelscan(
     _nkeys: c_int,
     _norderbys: c_int,
 ) -> pg_sys::Size {
-    // SAFETY: pgrx guard converts Rust panics into PostgreSQL errors at the C
-    // callback boundary; no raw PostgreSQL pointers are dereferenced here.
-    unsafe { pgrx::pgrx_extern_c_guard(ec_parallel_scan_descriptor_size) }
+    pg_callback!({ ec_parallel_scan_descriptor_size() })
 }
 
 #[cfg(feature = "pg18")]
@@ -488,34 +487,24 @@ pub(crate) unsafe extern "C-unwind" fn ec_amestimateparallelscan(
     _nkeys: c_int,
     _norderbys: c_int,
 ) -> pg_sys::Size {
-    // SAFETY: pgrx guard converts Rust panics into PostgreSQL errors at the C
-    // callback boundary; no raw PostgreSQL pointers are dereferenced here.
-    unsafe { pgrx::pgrx_extern_c_guard(ec_parallel_scan_descriptor_size) }
+    pg_callback!({ ec_parallel_scan_descriptor_size() })
 }
 
 pub(crate) unsafe extern "C-unwind" fn ec_aminitparallelscan(target: *mut c_void) {
-    // SAFETY: pgrx guard protects the PostgreSQL C callback boundary; the
-    // initializer validates the target pointer before writing AM state.
-    unsafe {
-        pgrx::pgrx_extern_c_guard(|| {
-            initialize_parallel_scan_target(target)
-                .unwrap_or_else(|err| pgrx::error!("ec_hnsw parallel scan init failed: {err}"));
-        })
-    }
+    pg_callback!({
+        initialize_parallel_scan_target(target)
+            .unwrap_or_else(|err| pgrx::error!("ec_hnsw parallel scan init failed: {err}"));
+    })
 }
 
 pub(crate) unsafe extern "C-unwind" fn ec_amparallelrescan(scan: pg_sys::IndexScanDesc) {
-    // SAFETY: pgrx guard protects the PostgreSQL C callback boundary; `scan`
-    // is checked for null before accessing PostgreSQL's parallel-scan pointer.
-    unsafe {
-        pgrx::pgrx_extern_c_guard(|| {
-            if scan.is_null() {
-                return;
-            }
-            reset_parallel_scan_state((*scan).parallel_scan)
-                .unwrap_or_else(|err| pgrx::error!("ec_hnsw parallel scan rescan failed: {err}"));
-        })
-    }
+    pg_callback!({
+        if scan.is_null() {
+            return;
+        }
+        reset_parallel_scan_state((*scan).parallel_scan)
+            .unwrap_or_else(|err| pgrx::error!("ec_hnsw parallel scan rescan failed: {err}"));
+    })
 }
 
 #[cfg(test)]

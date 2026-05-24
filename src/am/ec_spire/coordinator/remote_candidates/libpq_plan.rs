@@ -16,35 +16,40 @@ const SPIRE_REMOTE_SEARCH_ENDPOINT_IDENTITY_SQL_TEMPLATE: &str =
     "SELECT * FROM ec_spire_remote_search_endpoint_identity($1::oid)";
 const SPIRE_REMOTE_SEARCH_LIBPQ_PARAMETER_COUNT: u64 = 6;
 const SPIRE_REMOTE_SEARCH_RECEIVE_VALIDATOR: &str = "validate_remote_search_candidate_batch";
-const SPIRE_REMOTE_SEARCH_MERGE_FUNCTION: &str =
-    "merge_validated_remote_search_candidate_batches";
+const SPIRE_REMOTE_SEARCH_MERGE_FUNCTION: &str = "merge_validated_remote_search_candidate_batches";
+
+fn remote_candidate_index_oid(index: SpireLiveIndexRelation, context: &str) -> pg_sys::Oid {
+    if index.as_ptr().is_null() {
+        pgrx::error!("{context} received a null SPIRE index relation");
+    }
+    let index_oid = index.relid().into();
+    if index_oid == pg_sys::InvalidOid {
+        pgrx::error!("{context} received an invalid SPIRE index relation OID");
+    }
+    index_oid
+}
 
 fn remote_search_result_column_count() -> u64 {
     u64::try_from(remote_search_libpq_result_contract_rows().len())
         .expect("remote search result contract row count should fit in u64")
 }
 
-pub(crate) unsafe fn remote_search_libpq_request_plan_rows(
-    index_relation: pg_sys::Relation,
+pub(crate) fn remote_search_libpq_request_plan_rows(
+    index: SpireLiveIndexRelation,
     requested_epoch: u64,
     query: Vec<f32>,
     selected_pids: Vec<u64>,
     top_k: usize,
     consistency_mode: &str,
 ) -> Vec<SpireRemoteSearchLibpqRequestPlanRow> {
-    // SAFETY: forwards the live index relation and caller-validated remote
-    // search request fields into the execution planner that owns relation
-    // page/catalog reads.
-    let rows = unsafe {
-        remote_search_execution_plan_rows(
-            index_relation,
-            requested_epoch,
-            query,
-            selected_pids,
-            top_k,
-            consistency_mode,
-        )
-    };
+    let rows = remote_search_execution_plan_rows(
+        index,
+        requested_epoch,
+        query,
+        selected_pids,
+        top_k,
+        consistency_mode,
+    );
     remote_search_libpq_request_plan_rows_from_execution(&rows)
 }
 
@@ -73,8 +78,8 @@ fn remote_search_libpq_request_plan_rows_from_execution(
         .collect()
 }
 
-pub(crate) unsafe fn remote_search_libpq_request_summary_row(
-    index_relation: pg_sys::Relation,
+pub(crate) fn remote_search_libpq_request_summary_row(
+    index: SpireLiveIndexRelation,
     requested_epoch: u64,
     query: Vec<f32>,
     selected_pids: Vec<u64>,
@@ -85,18 +90,14 @@ pub(crate) unsafe fn remote_search_libpq_request_summary_row(
         let query_for_empty_plan = query.clone();
         let top_k_for_empty_plan = u64::try_from(top_k)
             .map_err(|_| "ec_spire remote search libpq request summary top_k exceeds u64")?;
-        // SAFETY: this SQL diagnostic wrapper forwards the live index relation
-        // and checked request fields to the request-plan builder.
-        let rows = unsafe {
-            remote_search_libpq_request_plan_rows(
-                index_relation,
-                requested_epoch,
-                query,
-                selected_pids,
-                top_k,
-                consistency_mode,
-            )
-        };
+        let rows = remote_search_libpq_request_plan_rows(
+            index,
+            requested_epoch,
+            query,
+            selected_pids,
+            top_k,
+            consistency_mode,
+        );
         let mut rollup = SpireRemoteCountRollup::default();
         let mut query_dimension = 0_u64;
         let mut top_k = 0_u64;
@@ -107,7 +108,11 @@ pub(crate) unsafe fn remote_search_libpq_request_summary_row(
             top_k = row.top_k;
             parsed_consistency_mode = row.consistency_mode;
             rollup.record_remote_target(row.pid_count, "remote search libpq request summary")?;
-            rollup.record_status(row.status, row.pid_count, "remote search libpq request summary")?;
+            rollup.record_status(
+                row.status,
+                row.pid_count,
+                "remote search libpq request summary",
+            )?;
         }
 
         if rows.is_empty() {
@@ -120,8 +125,9 @@ pub(crate) unsafe fn remote_search_libpq_request_summary_row(
                 consistency_mode_name(parse_remote_search_consistency_mode(consistency_mode)?);
         }
 
-        let request_count = u64::try_from(rows.len())
-            .map_err(|_| "ec_spire remote search libpq request summary request count exceeds u64")?;
+        let request_count = u64::try_from(rows.len()).map_err(|_| {
+            "ec_spire remote search libpq request summary request count exceeds u64"
+        })?;
         let status = rollup.summary_status(top_k, SpireRemoteSummaryStatusMode::LibpqRequest);
 
         Ok(SpireRemoteSearchLibpqRequestSummaryRow {
@@ -314,8 +320,8 @@ fn load_remote_libpq_connection_descriptors(
     })
 }
 
-pub(crate) unsafe fn remote_search_libpq_connection_plan_rows(
-    index_relation: pg_sys::Relation,
+pub(crate) fn remote_search_libpq_connection_plan_rows(
+    index: SpireLiveIndexRelation,
     requested_epoch: u64,
     query: Vec<f32>,
     selected_pids: Vec<u64>,
@@ -323,26 +329,16 @@ pub(crate) unsafe fn remote_search_libpq_connection_plan_rows(
     consistency_mode: &str,
 ) -> Vec<SpireRemoteSearchLibpqConnectionPlanRow> {
     let result = (|| -> Result<Vec<SpireRemoteSearchLibpqConnectionPlanRow>, String> {
-        // SAFETY: forwards the live index relation and checked request fields
-        // through the request-plan wrapper before local connection enrichment.
-        let request_rows = unsafe {
-            remote_search_libpq_request_plan_rows(
-                index_relation,
-                requested_epoch,
-                query,
-                selected_pids,
-                top_k,
-                consistency_mode,
-            )
-        };
-        // SAFETY: rd_id is stable while the caller keeps index_relation open;
-        // it is copied as an OID for descriptor lookups and not dereferenced
-        // after the relation lifetime ends.
-        let index_oid = unsafe { (*index_relation).rd_id };
-        remote_search_libpq_connection_plan_rows_from_requests(
-            index_oid,
-            &request_rows,
-        )
+        let request_rows = remote_search_libpq_request_plan_rows(
+            index,
+            requested_epoch,
+            query,
+            selected_pids,
+            top_k,
+            consistency_mode,
+        );
+        let index_oid = remote_candidate_index_oid(index, "ec_spire remote search connection plan");
+        remote_search_libpq_connection_plan_rows_from_requests(index_oid, &request_rows)
     })();
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
@@ -361,9 +357,8 @@ fn remote_search_libpq_connection_plan_rows_from_requests(
         .iter()
         .map(|row| {
             let descriptor = descriptors.get(&row.node_id);
-            let status =
-                remote_search_libpq_read_shape_status(index_relid, row, descriptor)?
-                    .unwrap_or(row.status);
+            let status = remote_search_libpq_read_shape_status(index_relid, row, descriptor)?
+                .unwrap_or(row.status);
             let read_shape_drift = status == SPIRE_REMOTE_STATUS_SCHEMA_DRIFT;
             let pipeline_ready = descriptor.is_some()
                 && row.status == SPIRE_REMOTE_STATUS_REQUIRES_LIBPQ
@@ -383,9 +378,7 @@ fn remote_search_libpq_connection_plan_rows_from_requests(
                 remote_index_regclass: descriptor
                     .map(|row| row.remote_index_regclass.clone())
                     .unwrap_or_else(|| SPIRE_REMOTE_NONE.to_owned()),
-                descriptor_generation: descriptor
-                    .map(|row| row.descriptor_generation)
-                    .unwrap_or(0),
+                descriptor_generation: descriptor.map(|row| row.descriptor_generation).unwrap_or(0),
                 remote_index_identity: descriptor
                     .map(|row| row.remote_index_identity.clone())
                     .unwrap_or_default(),
@@ -440,8 +433,8 @@ fn remote_search_libpq_read_shape_status(
     Ok(None)
 }
 
-pub(crate) unsafe fn remote_search_libpq_connection_summary_row(
-    index_relation: pg_sys::Relation,
+pub(crate) fn remote_search_libpq_connection_summary_row(
+    index: SpireLiveIndexRelation,
     requested_epoch: u64,
     query: Vec<f32>,
     selected_pids: Vec<u64>,
@@ -452,18 +445,14 @@ pub(crate) unsafe fn remote_search_libpq_connection_summary_row(
         let query_for_empty_plan = query.clone();
         let top_k_for_empty_plan = u64::try_from(top_k)
             .map_err(|_| "ec_spire remote search libpq connection summary top_k exceeds u64")?;
-        // SAFETY: forwards the live index relation and checked request fields
-        // to the connection-plan builder that performs descriptor enrichment.
-        let rows = unsafe {
-            remote_search_libpq_connection_plan_rows(
-                index_relation,
-                requested_epoch,
-                query,
-                selected_pids,
-                top_k,
-                consistency_mode,
-            )
-        };
+        let rows = remote_search_libpq_connection_plan_rows(
+            index,
+            requested_epoch,
+            query,
+            selected_pids,
+            top_k,
+            consistency_mode,
+        );
         let mut rollup = SpireRemoteCountRollup::default();
         let mut descriptor_resolved_connection_count = 0_u64;
         let mut missing_descriptor_connection_count = 0_u64;
@@ -477,16 +466,18 @@ pub(crate) unsafe fn remote_search_libpq_connection_summary_row(
             top_k = row.top_k;
             parsed_consistency_mode = row.consistency_mode;
             rollup.record_remote_target(row.pid_count, "remote search libpq connection summary")?;
-            rollup
-                .record_status(row.status, row.pid_count, "remote search libpq connection summary")?;
+            rollup.record_status(
+                row.status,
+                row.pid_count,
+                "remote search libpq connection summary",
+            )?;
             if row.conninfo_resolution == SPIRE_REMOTE_CONNINFO_READY {
-                descriptor_resolved_connection_count =
-                    descriptor_resolved_connection_count
-                        .checked_add(1)
-                        .ok_or_else(|| {
-                            "ec_spire remote search libpq connection summary resolved count overflow"
-                                .to_owned()
-                        })?;
+                descriptor_resolved_connection_count = descriptor_resolved_connection_count
+                    .checked_add(1)
+                    .ok_or_else(|| {
+                        "ec_spire remote search libpq connection summary resolved count overflow"
+                            .to_owned()
+                    })?;
             }
             if row.conninfo_resolution == SPIRE_REMOTE_STATUS_REQUIRES_DESCRIPTOR {
                 missing_descriptor_connection_count =
@@ -538,26 +529,22 @@ pub(crate) unsafe fn remote_search_libpq_connection_summary_row(
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
-pub(crate) unsafe fn remote_search_libpq_dispatch_plan_rows(
-    index_relation: pg_sys::Relation,
+pub(crate) fn remote_search_libpq_dispatch_plan_rows(
+    index: SpireLiveIndexRelation,
     requested_epoch: u64,
     query: Vec<f32>,
     selected_pids: Vec<u64>,
     top_k: usize,
     consistency_mode: &str,
 ) -> Vec<SpireRemoteSearchLibpqDispatchPlanRow> {
-    // SAFETY: forwards the live index relation and checked request fields into
-    // connection planning before deriving pure Rust dispatch rows.
-    let connection_rows = unsafe {
-        remote_search_libpq_connection_plan_rows(
-            index_relation,
-            requested_epoch,
-            query,
-            selected_pids,
-            top_k,
-            consistency_mode,
-        )
-    };
+    let connection_rows = remote_search_libpq_connection_plan_rows(
+        index,
+        requested_epoch,
+        query,
+        selected_pids,
+        top_k,
+        consistency_mode,
+    );
 
     remote_search_libpq_dispatch_plan_rows_from_connections(&connection_rows)
 }
@@ -623,14 +610,12 @@ fn remote_search_libpq_dispatch_plan_rows_from_connections(
         .collect()
 }
 
-pub(crate) unsafe fn coordinator_insert_dispatch_plan_row(
-    index_relation: pg_sys::Relation,
+pub(crate) fn coordinator_insert_dispatch_plan_row(
+    index: SpireLiveIndexRelation,
     node_id: u32,
     served_epoch: u64,
 ) -> SpireCoordinatorInsertDispatchPlanRow {
-    // SAFETY: rd_id is stable while the caller keeps index_relation open; this
-    // copies the OID for descriptor lookup and result reporting only.
-    let index_oid = unsafe { (*index_relation).rd_id };
+    let index_oid = remote_candidate_index_oid(index, "ec_spire coordinator insert dispatch plan");
     let result = (|| -> Result<SpireCoordinatorInsertDispatchPlanRow, String> {
         let descriptors = load_remote_libpq_connection_descriptors(index_oid, &[node_id])?;
         let Some(descriptor) = descriptors.get(&node_id) else {

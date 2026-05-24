@@ -49,6 +49,42 @@
             })
     }
 
+    fn custom_scan_payload_slot_datum(
+        slot: &crate::storage::slot_guard::TupleTableSlotGuard<'_>,
+        attnum: i32,
+    ) -> (pg_sys::Datum, bool) {
+        let mut is_null = false;
+        // SAFETY: Callers pass a live slot and an attribute number from the
+        // test relation populated by `spire_custom_scan_store_tuple_payload_json_for_test`.
+        let datum = unsafe { pg_sys::slot_getattr(slot.as_ptr(), attnum, &mut is_null) };
+        (datum, is_null)
+    }
+
+    fn custom_scan_payload_slot_bigint(
+        slot: &crate::storage::slot_guard::TupleTableSlotGuard<'_>,
+        attnum: i32,
+    ) -> Option<i64> {
+        let (datum, is_null) = custom_scan_payload_slot_datum(slot, attnum);
+        // SAFETY: The caller selects a bigint attribute from the payload slot.
+        unsafe { i64::from_datum(datum, is_null) }
+    }
+
+    fn custom_scan_payload_slot_text(
+        slot: &crate::storage::slot_guard::TupleTableSlotGuard<'_>,
+        attnum: i32,
+    ) -> Option<String> {
+        let (datum, is_null) = custom_scan_payload_slot_datum(slot, attnum);
+        // SAFETY: The caller selects a text attribute from the payload slot.
+        unsafe { String::from_datum(datum, is_null) }
+    }
+
+    fn custom_scan_payload_slot_is_null(
+        slot: &crate::storage::slot_guard::TupleTableSlotGuard<'_>,
+        attnum: i32,
+    ) -> bool {
+        custom_scan_payload_slot_datum(slot, attnum).1
+    }
+
     #[pg_test]
     fn test_ec_spire_customscan_tuple_payload_stores_virtual_slot() {
         Spi::run(
@@ -65,41 +101,16 @@
         let relation =
             crate::storage::relation_guard::HeapRelationGuard::try_access_share(relation_oid)
                 .expect("payload slot relation should open");
-        let slot =
-            crate::storage::slot_guard::TupleTableSlotGuard::single_for_heap(relation.as_ptr())
-                .expect("payload slot should allocate");
-        // SAFETY: `slot` is allocated for the live heap relation above, and
-        // the JSON payload only targets attributes from that relation.
-        // SAFETY: This pg_test fixture owns the Postgres objects and test-only debug state for this boundary, and keeps the relevant relation, slot, or guard alive for the call.
-        unsafe {
-            am::spire_custom_scan_store_tuple_payload_json_for_test(
-                slot.as_ptr(),
-                r#"{"id":42,"title":"remote alpha"}"#,
-            );
-        }
+        let slot = crate::storage::slot_guard::TupleTableSlotGuard::single_for_heap_guard(&relation)
+            .expect("payload slot should allocate");
+        am::spire_custom_scan_store_tuple_payload_json_for_test(
+            &slot,
+            r#"{"id":42,"title":"remote alpha"}"#,
+        );
 
-        let mut id_is_null = false;
-        // SAFETY: attribute 1 exists in the test relation created above, and
-        // `slot` remains live until after the value is decoded.
-        // SAFETY: This pg_test fixture owns the Postgres objects and test-only debug state for this boundary, and keeps the relevant relation, slot, or guard alive for the call.
-        let id_datum = unsafe { pg_sys::slot_getattr(slot.as_ptr(), 1, &mut id_is_null) };
-        // SAFETY: `id_datum` was read from the bigint primary-key column.
-        // SAFETY: This pg_test fixture owns the Postgres objects and test-only debug state for this boundary, and keeps the relevant relation, slot, or guard alive for the call.
-        let id = unsafe { i64::from_datum(id_datum, id_is_null) }.expect("id should decode");
-        let mut title_is_null = false;
-        // SAFETY: attribute 2 exists in the test relation created above, and
-        // `slot` remains live until after the value is decoded.
-        // SAFETY: This pg_test fixture owns the Postgres objects and test-only debug state for this boundary, and keeps the relevant relation, slot, or guard alive for the call.
-        let title_datum = unsafe { pg_sys::slot_getattr(slot.as_ptr(), 2, &mut title_is_null) };
-        // SAFETY: `title_datum` was read from the text column.
-        let title =
-            // SAFETY: This pg_test fixture owns the Postgres objects and test-only debug state for this boundary, and keeps the relevant relation, slot, or guard alive for the call.
-            unsafe { String::from_datum(title_datum, title_is_null) }.expect("title should decode");
-        let mut embedding_is_null = false;
-        // SAFETY: attribute 3 exists in the test relation created above, and
-        // this read only observes the slot null flag for the optional payload.
-        // SAFETY: This pg_test fixture owns the Postgres objects and test-only debug state for this boundary, and keeps the relevant relation, slot, or guard alive for the call.
-        let _ = unsafe { pg_sys::slot_getattr(slot.as_ptr(), 3, &mut embedding_is_null) };
+        let id = custom_scan_payload_slot_bigint(&slot, 1).expect("id should decode");
+        let title = custom_scan_payload_slot_text(&slot, 2).expect("title should decode");
+        let embedding_is_null = custom_scan_payload_slot_is_null(&slot, 3);
 
         assert_eq!(id, 42);
         assert_eq!(title, "remote alpha");
@@ -192,13 +203,9 @@
         assert_eq!(remote_active_epoch, active_epoch);
         assert_eq!(remote_leaf_pids, coord_leaf_pids);
 
-        // SAFETY: This pg_test fixture owns the Postgres objects and test-only debug state for this boundary, and keeps the relevant relation, slot, or guard alive for the call.
-
-        unsafe {
-            for pid in &coord_leaf_pids {
+        for pid in &coord_leaf_pids {
                 am::debug_spire_rewrite_placement_node(index_oid, *pid as u64, 2);
             }
-        }
         let register_result = Spi::get_one::<bool>(&format!(
             "SELECT ec_spire_register_remote_node_descriptor(\
                      '{}'::oid, 2, 91, 'spire/remote/customscan/payload', \
@@ -518,13 +525,9 @@
         assert_eq!(remote_leaf_pids, coord_leaf_pids);
         assert_eq!(coord_leaf_pids.len(), 4);
 
-        // SAFETY: This pg_test fixture owns the Postgres objects and test-only debug state for this boundary, and keeps the relevant relation, slot, or guard alive for the call.
-
-        unsafe {
-            for pid in &coord_leaf_pids {
+        for pid in &coord_leaf_pids {
                 am::debug_spire_rewrite_placement_node(index_oid, *pid as u64, 2);
             }
-        }
         let register_result = Spi::get_one::<bool>(&format!(
             "SELECT ec_spire_register_remote_node_descriptor(\
                      '{}'::oid, 2, 97, 'spire/remote/customscan/pid_payload', \
@@ -937,7 +940,7 @@
 
         // SAFETY: This pg_test fixture owns the Postgres objects and test-only debug state for this boundary, and keeps the relevant relation, slot, or guard alive for the call.
 
-        unsafe { am::debug_spire_rewrite_placement_node(index_oid, selected_pid as u64, 2) };
+        am::debug_spire_rewrite_placement_node(index_oid, selected_pid as u64, 2);
 
         let remote_status = Spi::get_one::<String>(&format!("SELECT status {eligibility_from}"))
             .expect("remote eligibility status query should succeed")
@@ -1014,12 +1017,9 @@
         .expect("leaf pid query should succeed")
         .expect("leaf pid should exist");
 
-        // SAFETY: This pg_test fixture owns the Postgres objects and test-only debug state for this boundary, and keeps the relevant relation, slot, or guard alive for the call.
-
-        unsafe {
-            am::debug_spire_rewrite_placement_node(index_oid, selected_pid as u64, 2);
+        am::debug_spire_rewrite_placement_node(index_oid, selected_pid as u64, 2);
             am::debug_spire_rewrite_placement_state(index_oid, selected_pid as u64, "unavailable");
-        }
+
 
         let eligibility_from = "FROM ec_spire_custom_scan_index_eligibility(\
              'ec_spire_customscan_unavailable_sql_idx'::regclass)";
@@ -1095,7 +1095,7 @@
 
         // SAFETY: This pg_test fixture owns the Postgres objects and test-only debug state for this boundary, and keeps the relevant relation, slot, or guard alive for the call.
 
-        unsafe { am::debug_spire_rewrite_placement_node(index_oid, selected_pid as u64, 2) };
+        am::debug_spire_rewrite_placement_node(index_oid, selected_pid as u64, 2);
         Spi::run("SET enable_seqscan = off").expect("disable seqscan should succeed");
         Spi::run("SET enable_indexscan = off").expect("disable indexscan should succeed");
 
@@ -1252,12 +1252,9 @@
         )
         .expect("coordinator leaf pid query should succeed")
         .expect("coordinator leaf pids should exist");
-        // SAFETY: This pg_test fixture owns the Postgres objects and test-only debug state for this boundary, and keeps the relevant relation, slot, or guard alive for the call.
-        unsafe {
-            for pid in &coord_leaf_pids {
+        for pid in &coord_leaf_pids {
                 am::debug_spire_rewrite_placement_node(index_oid, *pid as u64, 2);
             }
-        }
         let register_result = Spi::get_one::<bool>(&format!(
             "SELECT ec_spire_register_remote_node_descriptor(\
                      '{}'::oid, 2, 96, 'spire/remote/customscan/read_cancel', \
@@ -1275,8 +1272,7 @@
         Spi::run("SET LOCAL enable_indexscan = off").expect("disable indexscan should succeed");
         am::custom_scan_reset_cleanup_counters_for_test();
         let cancel_error = pg_sys::PgTryBuilder::new(|| {
-            // SAFETY: This pg_test fixture owns the Postgres objects and test-only debug state for this boundary, and keeps the relevant relation, slot, or guard alive for the call.
-            let _cancel_flags = unsafe { ScopedPgQueryCancelFlags::set_pending() }
+            let _cancel_flags = ScopedPgQueryCancelFlags::set_pending()
                 .expect("PostgreSQL query-cancel flags should resolve inside pg_test backend");
             Spi::run(
                 "SELECT id, title FROM ec_spire_customscan_read_cancel_coord_sql \
@@ -1377,7 +1373,7 @@
 
         // SAFETY: This pg_test fixture owns the Postgres objects and test-only debug state for this boundary, and keeps the relevant relation, slot, or guard alive for the call.
 
-        unsafe { am::debug_spire_rewrite_placement_node(index_oid, selected_pid as u64, 2) };
+        am::debug_spire_rewrite_placement_node(index_oid, selected_pid as u64, 2);
         let register_result = Spi::get_one::<bool>(&format!(
             "SELECT ec_spire_register_remote_node_descriptor(\
                      '{}'::oid, 2, 1, 'spire/remote/customscan/array', \

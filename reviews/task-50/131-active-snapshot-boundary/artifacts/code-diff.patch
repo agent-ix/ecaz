@@ -1,0 +1,120 @@
+commit f7e072c5af4b9e27aae2a7f955b7413b891621c9
+Author:     Agent IX <agent@agent-ix.dev>
+AuthorDate: Wed May 20 18:30:25 2026 -0700
+Commit:     Agent IX <agent@agent-ix.dev>
+CommitDate: Wed May 20 18:30:25 2026 -0700
+
+    Centralize active snapshot unsafe
+---
+ src/am/ec_diskann/scan_state.rs                    | 5 +----
+ src/am/ec_hnsw/scan.rs                             | 5 +----
+ src/am/ec_spire/coordinator/hierarchy_snapshots.rs | 8 ++------
+ src/am/ec_spire/coordinator/lifecycle.rs           | 9 ++-------
+ src/am/ec_spire/scan/relation.rs                   | 4 +---
+ src/storage/snapshot_guard.rs                      | 7 +++++++
+ 6 files changed, 14 insertions(+), 24 deletions(-)
+
+diff --git a/src/am/ec_diskann/scan_state.rs b/src/am/ec_diskann/scan_state.rs
+index 86a272a3..cd17f970 100644
+--- a/src/am/ec_diskann/scan_state.rs
++++ b/src/am/ec_diskann/scan_state.rs
+@@ -299,10 +299,7 @@ pub(super) unsafe fn resolve_scan_snapshot(
+         }));
+     }
+
+-    // SAFETY: PostgreSQL exposes the current active snapshot for this backend;
+-    // a null return is handled by registering our own snapshot below.
+-    let active_snapshot = unsafe { pg_sys::GetActiveSnapshot() };
+-    if !active_snapshot.is_null() {
++    if let Some(active_snapshot) = crate::storage::snapshot_guard::active_snapshot() {
+         return Ok(ResolvedScanSnapshot::borrowed(active_snapshot));
+     }
+
+diff --git a/src/am/ec_hnsw/scan.rs b/src/am/ec_hnsw/scan.rs
+index dc470aa1..048a9e22 100644
+--- a/src/am/ec_hnsw/scan.rs
++++ b/src/am/ec_hnsw/scan.rs
+@@ -1782,10 +1782,7 @@ unsafe fn resolve_scan_snapshot(scan: pg_sys::IndexScanDesc) -> ResolvedHnswScan
+         return ResolvedHnswScanSnapshot::borrowed(unsafe { (*scan).xs_snapshot });
+     }
+
+-    // SAFETY: `GetActiveSnapshot` is valid inside PostgreSQL backend scan
+-    // execution and returns a borrowed active snapshot or null.
+-    let active_snapshot = unsafe { pg_sys::GetActiveSnapshot() };
+-    if !active_snapshot.is_null() {
++    if let Some(active_snapshot) = crate::storage::snapshot_guard::active_snapshot() {
+         return ResolvedHnswScanSnapshot::borrowed(active_snapshot);
+     }
+
+diff --git a/src/am/ec_spire/coordinator/hierarchy_snapshots.rs b/src/am/ec_spire/coordinator/hierarchy_snapshots.rs
+index 4fccf4a7..f87f2ae9 100644
+--- a/src/am/ec_spire/coordinator/hierarchy_snapshots.rs
++++ b/src/am/ec_spire/coordinator/hierarchy_snapshots.rs
+@@ -189,12 +189,8 @@ unsafe fn remote_search_heap_candidate_rows_from_compact_candidates(
+         heap_oid,
+     )
+     .ok_or_else(|| "ec_spire remote heap resolution could not open heap relation".to_owned())?;
+-    // SAFETY: reads the backend-local active snapshot pointer and rejects null
+-    // before using it for heap row visibility checks.
+-    let snapshot = unsafe { pg_sys::GetActiveSnapshot() };
+-    if snapshot.is_null() {
+-        return Err("ec_spire remote heap resolution requires an active snapshot".to_owned());
+-    }
++    let snapshot = crate::storage::snapshot_guard::active_snapshot()
++        .ok_or_else(|| "ec_spire remote heap resolution requires an active snapshot".to_owned())?;
+     // SAFETY: heap_relation and index_relation are both open for this lookup;
+     // the helper resolves the indexed vector attribute for heap fetches.
+     let indexed_attribute = unsafe {
+diff --git a/src/am/ec_spire/coordinator/lifecycle.rs b/src/am/ec_spire/coordinator/lifecycle.rs
+index 89c8ef55..db71f3ff 100644
+--- a/src/am/ec_spire/coordinator/lifecycle.rs
++++ b/src/am/ec_spire/coordinator/lifecycle.rs
+@@ -40,13 +40,8 @@ unsafe fn open_spire_heap_relation_for_index(
+ }
+
+ unsafe fn active_spire_maintenance_snapshot() -> Result<pg_sys::Snapshot, String> {
+-    // SAFETY: GetActiveSnapshot returns PostgreSQL backend-local snapshot state;
+-    // the caller checks for null before using it.
+-    let snapshot = unsafe { pg_sys::GetActiveSnapshot() };
+-    if snapshot.is_null() {
+-        return Err("ec_spire maintenance requires an active heap snapshot".to_owned());
+-    }
+-    Ok(snapshot)
++    crate::storage::snapshot_guard::active_snapshot()
++        .ok_or_else(|| "ec_spire maintenance requires an active heap snapshot".to_owned())
+ }
+
+ pub(crate) fn register_gucs() {
+diff --git a/src/am/ec_spire/scan/relation.rs b/src/am/ec_spire/scan/relation.rs
+index e8faf900..99c0bb92 100644
+--- a/src/am/ec_spire/scan/relation.rs
++++ b/src/am/ec_spire/scan/relation.rs
+@@ -259,9 +259,7 @@ fn resolve_scan_snapshot(scan: pg_sys::IndexScanDesc) -> pg_sys::Snapshot {
+         return scan_ref.xs_snapshot;
+     }
+
+-    // SAFETY: Reads PostgreSQL backend-local active snapshot state.
+-    let active_snapshot = unsafe { pg_sys::GetActiveSnapshot() };
+-    if !active_snapshot.is_null() {
++    if let Some(active_snapshot) = crate::storage::snapshot_guard::active_snapshot() {
+         return active_snapshot;
+     }
+
+diff --git a/src/storage/snapshot_guard.rs b/src/storage/snapshot_guard.rs
+index d9953fcc..5c16b9af 100644
+--- a/src/storage/snapshot_guard.rs
++++ b/src/storage/snapshot_guard.rs
+@@ -4,6 +4,13 @@
+
+ use pgrx::pg_sys;
+
++pub(crate) fn active_snapshot() -> Option<pg_sys::Snapshot> {
++    // SAFETY: reads PostgreSQL backend-local active snapshot state and returns
++    // the pointer by value without taking ownership.
++    let snapshot = unsafe { pg_sys::GetActiveSnapshot() };
++    (!snapshot.is_null()).then_some(snapshot)
++}
++
+ pub(crate) struct RegisteredSnapshotGuard {
+     snapshot: pg_sys::Snapshot,
+ }

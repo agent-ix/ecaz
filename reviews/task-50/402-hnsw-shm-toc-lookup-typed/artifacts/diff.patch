@@ -1,0 +1,121 @@
+diff --git a/src/am/ec_hnsw/build_parallel.rs b/src/am/ec_hnsw/build_parallel.rs
+index 98ee0d633..ca4442938 100644
+--- a/src/am/ec_hnsw/build_parallel.rs
++++ b/src/am/ec_hnsw/build_parallel.rs
+@@ -1989,6 +1989,20 @@ fn checked_u16(value: i32, field: &str) -> u16 {
+     u16::try_from(value).unwrap_or_else(|_| panic!("parallel build {field} should fit in u16"))
+ }
+ 
++/// Typed TOC lookup. Returns a `*mut T` whose lifetime is bound to the
++/// surrounding DSM segment held alive by the parallel context.
++///
++/// Callers are inside a worker or leader scope where the entry under `key`
++/// was installed by the leader before `LaunchParallelWorkers` returned.
++/// `shm_toc_lookup` is called with `noerror = false`, so PostgreSQL itself
++/// ereports if the key is missing; the returned pointer is non-null on
++/// successful return.
++fn shm_toc_lookup_required<T>(toc: *mut pg_sys::shm_toc, key: u64) -> *mut T {
++    // SAFETY: see function-level contract; the TOC entry exists, PG ereports
++    // if missing, and the DSM segment outlives the returned pointer's use.
++    unsafe { pg_sys::shm_toc_lookup(toc, key, false) }.cast::<T>()
++}
++
+ /// Borrow the worker's shared build header.
+ ///
+ /// Workers receive `shared` from `shm_toc_lookup`; the leader initialized
+@@ -2746,12 +2760,8 @@ pub unsafe extern "C-unwind" fn ec_hnsw_parallel_graph_build_main(
+ }
+ 
+ unsafe fn parallel_build_worker_main(seg: *mut pg_sys::dsm_segment, toc: *mut pg_sys::shm_toc) {
+-    // SAFETY: The leader inserted this shared header in the worker TOC before
+-    // launch, and the key is required for all workers.
+-    let shared = unsafe {
+-        pg_sys::shm_toc_lookup(toc, PARALLEL_KEY_EC_HNSW_BUILD_SHARED, false)
+-            .cast::<EcHnswParallelBuildSharedHeader>()
+-    };
++    let shared: *mut EcHnswParallelBuildSharedHeader =
++        shm_toc_lookup_required(toc, PARALLEL_KEY_EC_HNSW_BUILD_SHARED);
+     shared_header_ref(shared).validate();
+ 
+     // SAFETY: PostgreSQL assigns ParallelWorkerNumber before invoking the
+@@ -2761,11 +2771,7 @@ unsafe fn parallel_build_worker_main(seg: *mut pg_sys::dsm_segment, toc: *mut pg
+         pgrx::error!("ec_hnsw parallel build worker started without a worker number");
+     }
+ 
+-    // SAFETY: The leader inserted this worker's queue under `queue_key`, and
+-    // the worker number was validated above.
+-    let queue = unsafe {
+-        pg_sys::shm_toc_lookup(toc, queue_key(worker_number), false).cast::<pg_sys::shm_mq>()
+-    };
++    let queue: *mut pg_sys::shm_mq = shm_toc_lookup_required(toc, queue_key(worker_number));
+     // SAFETY: The queue is this worker's shm_mq; the worker backend is the
+     // sender and attaches using the inherited DSM segment.
+     unsafe { pg_sys::shm_mq_set_sender(queue, pg_sys::MyProc) };
+@@ -2838,16 +2844,10 @@ unsafe fn parallel_build_worker_main(seg: *mut pg_sys::dsm_segment, toc: *mut pg
+         pg_sys::ConditionVariableSignal(&mut (*shared).workersdonecv);
+     }
+ 
+-    // SAFETY: The leader inserted the buffer usage array in the worker TOC.
+-    let bufferusage = unsafe {
+-        pg_sys::shm_toc_lookup(toc, PARALLEL_KEY_EC_HNSW_BUFFER_USAGE, false)
+-            .cast::<pg_sys::BufferUsage>()
+-    };
+-    // SAFETY: The leader inserted the WAL usage array in the worker TOC.
+-    let walusage = unsafe {
+-        pg_sys::shm_toc_lookup(toc, PARALLEL_KEY_EC_HNSW_WAL_USAGE, false)
+-            .cast::<pg_sys::WalUsage>()
+-    };
++    let bufferusage: *mut pg_sys::BufferUsage =
++        shm_toc_lookup_required(toc, PARALLEL_KEY_EC_HNSW_BUFFER_USAGE);
++    let walusage: *mut pg_sys::WalUsage =
++        shm_toc_lookup_required(toc, PARALLEL_KEY_EC_HNSW_WAL_USAGE);
+     // SAFETY: `worker_number` is non-negative and indexes this worker's
+     // accounting slot in arrays allocated by the leader.
+     unsafe {
+@@ -2861,11 +2861,8 @@ unsafe fn parallel_build_worker_main(seg: *mut pg_sys::dsm_segment, toc: *mut pg
+ }
+ 
+ unsafe fn parallel_graph_build_worker_main(toc: *mut pg_sys::shm_toc) {
+-    // SAFETY: The graph leader inserted this shared header before worker launch.
+-    let shared = unsafe {
+-        pg_sys::shm_toc_lookup(toc, PARALLEL_KEY_EC_HNSW_BUILD_SHARED, false)
+-            .cast::<EcHnswParallelBuildSharedHeader>()
+-    };
++    let shared: *mut EcHnswParallelBuildSharedHeader =
++        shm_toc_lookup_required(toc, PARALLEL_KEY_EC_HNSW_BUILD_SHARED);
+     shared_header_ref(shared).validate();
+ 
+     // SAFETY: PostgreSQL assigns ParallelWorkerNumber before invoking the
+@@ -2875,9 +2872,8 @@ unsafe fn parallel_graph_build_worker_main(toc: *mut pg_sys::shm_toc) {
+         pgrx::error!("ec_hnsw parallel graph build worker started without a worker number");
+     }
+ 
+-    // SAFETY: The graph leader inserted the graph image base in the worker TOC.
+-    let graph_base =
+-        unsafe { pg_sys::shm_toc_lookup(toc, PARALLEL_KEY_EC_HNSW_CONCURRENT_DSM_GRAPH, false) };
++    let graph_base: *mut c_void =
++        shm_toc_lookup_required(toc, PARALLEL_KEY_EC_HNSW_CONCURRENT_DSM_GRAPH);
+     let attachment = attach_concurrent_dsm_graph_image(graph_base);
+     let config = attachment.require_insert_config();
+     let mut scratch = EcHnswConcurrentDsmInsertScratch::new(
+@@ -2909,16 +2905,10 @@ unsafe fn parallel_graph_build_worker_main(toc: *mut pg_sys::shm_toc) {
+         pg_sys::ConditionVariableSignal(&mut (*shared).workersdonecv);
+     }
+ 
+-    // SAFETY: The graph leader inserted the buffer usage array in the worker TOC.
+-    let bufferusage = unsafe {
+-        pg_sys::shm_toc_lookup(toc, PARALLEL_KEY_EC_HNSW_BUFFER_USAGE, false)
+-            .cast::<pg_sys::BufferUsage>()
+-    };
+-    // SAFETY: The graph leader inserted the WAL usage array in the worker TOC.
+-    let walusage = unsafe {
+-        pg_sys::shm_toc_lookup(toc, PARALLEL_KEY_EC_HNSW_WAL_USAGE, false)
+-            .cast::<pg_sys::WalUsage>()
+-    };
++    let bufferusage: *mut pg_sys::BufferUsage =
++        shm_toc_lookup_required(toc, PARALLEL_KEY_EC_HNSW_BUFFER_USAGE);
++    let walusage: *mut pg_sys::WalUsage =
++        shm_toc_lookup_required(toc, PARALLEL_KEY_EC_HNSW_WAL_USAGE);
+     // SAFETY: `worker_number` is non-negative and indexes this worker's
+     // accounting slot in arrays allocated by the leader.
+     unsafe {

@@ -32,7 +32,7 @@
     }
 
     impl ScopedPgQueryCancelFlags {
-        unsafe fn set_pending() -> Option<Self> {
+        fn set_pending() -> Option<Self> {
             unsafe extern "C" {
                 fn dlsym(
                     handle: *mut std::ffi::c_void,
@@ -75,7 +75,7 @@
             })
         }
 
-        unsafe fn clear_pending_for_test() {
+        fn clear_pending_for_test() {
             unsafe extern "C" {
                 fn dlsym(
                     handle: *mut std::ffi::c_void,
@@ -141,7 +141,7 @@
     }
 
     impl ScopedPgStatementTimeoutSignal {
-        unsafe fn trigger_after_ms(delay_ms: std::ffi::c_int) -> Option<Self> {
+        fn trigger_after_ms(delay_ms: std::ffi::c_int) -> Option<Self> {
             unsafe extern "C" {
                 fn dlsym(
                     handle: *mut std::ffi::c_void,
@@ -278,7 +278,7 @@
         });
         // SAFETY: This test-only SQL wrapper validates argument domains before
         // delegating to the SPIRE placement debug rewrite helper.
-        unsafe { am::debug_spire_rewrite_placement_node(index_oid, pid, node_id) };
+        am::debug_spire_rewrite_placement_node(index_oid, pid, node_id);
         true
     }
 
@@ -306,7 +306,7 @@
             .collect::<Vec<_>>();
         // SAFETY: This test-only SQL wrapper validates paired rewrite inputs
         // before delegating to the SPIRE placement debug rewrite helper.
-        unsafe { am::debug_spire_rewrite_placement_nodes(index_oid, &rewrites) };
+        am::debug_spire_rewrite_placement_nodes(index_oid, &rewrites);
         true
     }
 
@@ -314,7 +314,7 @@
     fn ec_spire_test_rewrite_consistency_mode(index_oid: pg_sys::Oid, mode: String) -> bool {
         // SAFETY: The test-only SQL wrapper passes a bounded Rust string to
         // the SPIRE debug helper for the supplied test index OID.
-        unsafe { am::debug_spire_rewrite_consistency_mode(index_oid, &mode) };
+        am::debug_spire_rewrite_consistency_mode(index_oid, &mode);
         true
     }
 
@@ -757,10 +757,8 @@
         ),
     > {
         let _interrupt_lock = env_var_test_lock();
-        // SAFETY: The guard resolves PostgreSQL timeout symbols and restores
-        // process-global interrupt state when dropped.
         let timeout_signal =
-            unsafe { ScopedPgStatementTimeoutSignal::trigger_after_ms(statement_timeout_after_ms) }
+            ScopedPgStatementTimeoutSignal::trigger_after_ms(statement_timeout_after_ms)
                 .unwrap_or_else(|| {
                     pgrx::error!(
                         "ec_spire_test_prod_transport_stmt_timeout could not resolve PostgreSQL timeout symbols"
@@ -817,16 +815,13 @@
         ),
     > {
         let _interrupt_lock = env_var_test_lock();
-        // SAFETY: The guard resolves PostgreSQL timeout symbols and restores
-        // process-global interrupt state when dropped.
-        let timeout_signal = unsafe {
+        let timeout_signal =
             ScopedPgStatementTimeoutSignal::trigger_after_ms(statement_timeout_after_ms)
-        }
-        .unwrap_or_else(|| {
-            pgrx::error!(
-                "ec_spire_test_prod_transport_stmt_timeout_summary could not resolve PostgreSQL timeout symbols"
-            )
-        });
+                .unwrap_or_else(|| {
+                    pgrx::error!(
+                        "ec_spire_test_prod_transport_stmt_timeout_summary could not resolve PostgreSQL timeout symbols"
+                    )
+                });
         if !timeout_signal.statement_timeout_pending() {
             pgrx::error!(
                 "ec_spire_test_prod_transport_stmt_timeout_summary did not observe a pending statement timeout"
@@ -1453,16 +1448,15 @@
         let served_epoch_u64 = u64::try_from(served_epoch).expect("served_epoch should fit u64");
         let index_relation =
             open_valid_ec_spire_index_guard(index_oid, "test_prepare_coordinator_insert_remote_sql");
-        // SAFETY: The relation guard keeps the SPIRE index open while the
-        // coordinator prepare helper reads relation metadata for this test.
-        let row = unsafe {
-            am::spire_coordinator_insert_prepare_remote_sql(
-                index_relation.as_ptr(),
-                node_id_u32,
-                served_epoch_u64,
-                remote_sql,
-            )
-        }
+        // SAFETY: the guard keeps the validated SPIRE index relation open for
+        // the duration of this internal AM helper call.
+        let index = unsafe { am::spire_live_index_relation(index_relation.as_ptr()) };
+        let row = am::spire_coordinator_insert_prepare_remote_sql(
+            index,
+            node_id_u32,
+            served_epoch_u64,
+            remote_sql,
+        )
         .expect("remote insert prepare should succeed");
         drop(index_relation);
 
@@ -1509,17 +1503,16 @@
             index_oid,
             "test_prepare_coordinator_insert_remote_tuple_payload",
         );
-        // SAFETY: The relation guard keeps the SPIRE index open while the
-        // coordinator prepare helper reads relation metadata for this test.
-        let row = unsafe {
-            am::spire_coordinator_insert_prepare_remote_tuple_payload(
-                index_relation.as_ptr(),
-                node_id_u32,
-                served_epoch_u64,
-                row_payload_json,
-                &requested_columns,
-            )
-        }
+        // SAFETY: the guard keeps the validated SPIRE index relation open for
+        // the duration of this internal AM helper call.
+        let index = unsafe { am::spire_live_index_relation(index_relation.as_ptr()) };
+        let row = am::spire_coordinator_insert_prepare_remote_tuple_payload(
+            index,
+            node_id_u32,
+            served_epoch_u64,
+            row_payload_json,
+            &requested_columns,
+        )
         .expect("remote tuple payload insert prepare should succeed");
         drop(index_relation);
 
@@ -1855,9 +1848,7 @@
         index_oid: pg_sys::Oid,
         code_len: usize,
     ) -> ScalarElementsAndNeighbors {
-        // SAFETY: Test callers create the referenced HNSW index before asking
-        // the debug helper to decode its page image.
-        let (_block_count, metadata, data_pages) = unsafe { am::debug_index_pages(index_oid) };
+        let (_block_count, metadata, data_pages) = am::debug_index_pages(index_oid);
         let mut neighbors = HashMap::new();
 
         for page in &data_pages {
@@ -1884,9 +1875,7 @@
     fn decode_grouped_index_elements_and_neighbors(
         index_oid: pg_sys::Oid,
     ) -> GroupedElementsAndNeighbors {
-        // SAFETY: Test callers create the referenced HNSW index before asking
-        // the debug helper to decode its page image.
-        let (_block_count, metadata, data_pages) = unsafe { am::debug_index_pages(index_oid) };
+        let (_block_count, metadata, data_pages) = am::debug_index_pages(index_oid);
         let layout = match am::graph::GraphStorageDescriptor::from_metadata(&metadata).unwrap() {
             am::graph::GraphStorageDescriptor::PqFastScan(layout) => layout,
             am::graph::GraphStorageDescriptor::TurboQuant { .. }
@@ -2188,10 +2177,9 @@
         ctid_to_id: &HashMap<(u32, u16), usize>,
         k: usize,
     ) -> Vec<usize> {
-        // SAFETY: Test callers create the referenced IVF index before asking
-        // the debug helper to run a gettuple scan for the supplied query.
-        let (outputs, _orderby_cleared) =
-            unsafe { am::debug_ec_ivf_gettuple_outputs(index_oid, query) };
+        // SAFETY: ec_ivf debug entrypoint expects the live debug scan context
+        // and orderby state that this test fixture provides.
+        let (outputs, _orderby_cleared) = unsafe { am::debug_ec_ivf_gettuple_outputs(index_oid, query) };
         outputs
             .into_iter()
             .take(k)
@@ -2209,9 +2197,7 @@
         ctid_to_id: &HashMap<(u32, u16), usize>,
         k: usize,
     ) -> Vec<usize> {
-        // SAFETY: Test callers create the referenced HNSW index before asking
-        // the debug helper to run a gettuple scan for the supplied query.
-        unsafe { am::debug_gettuple_scan_heap_tids(index_oid, query) }
+        am::debug_gettuple_scan_heap_tids(index_oid, query)
             .into_iter()
             .take(k)
             .map(|heap_tid| {
@@ -2275,15 +2261,11 @@
 
     fn recall_index_block_count(index_oid: pg_sys::Oid, caller_name: &'static str) -> i32 {
         let index_relation = open_valid_ec_hnsw_index_guard(index_oid, caller_name);
-        // SAFETY: The relation guard keeps the HNSW index open while reading
-        // its main-fork block count from PostgreSQL.
-        let index_block_count = unsafe {
-            i32::try_from(pg_sys::RelationGetNumberOfBlocksInFork(
-                index_relation.as_ptr(),
-                pg_sys::ForkNumber::MAIN_FORKNUM,
+        let index_block_count =
+            i32::try_from(crate::storage::relation::main_fork_block_count_handle(
+                index_relation.handle(),
             ))
-            .expect("block count should fit into int")
-        };
+            .expect("block count should fit into int");
         drop(index_relation);
         index_block_count
     }
@@ -2453,10 +2435,7 @@
             .iter()
             .zip(ground_truth.iter())
             .map(|(query, true_top_k)| {
-                // SAFETY: Recall fixtures create the HNSW index before
-                // measuring debug gettuple results for each query vector.
-                let predicted =
-                    unsafe { am::debug_gettuple_scan_heap_tids(index_oid, query.clone()) };
+                let predicted = am::debug_gettuple_scan_heap_tids(index_oid, query.clone());
                 let predicted_top_k: HashSet<usize> = predicted
                     .iter()
                     .take(RECALL_K)
@@ -2531,39 +2510,6 @@
     include!("custom_scan_concurrency.rs");
 
     include!("custom_scan_lifecycle.rs");
-
-
-
-
-    unsafe fn analyzed_query(sql: &str) -> *mut pg_sys::Query {
-        let sql = CString::new(sql).expect("test SQL should not contain NUL");
-        // SAFETY: The SQL string is NUL-terminated and valid for the duration
-        // of PostgreSQL parsing in this test helper.
-        let raw_parses = unsafe { pg_sys::pg_parse_query(sql.as_ptr()) };
-        assert!(
-            !raw_parses.is_null(),
-            "parse should return a raw statement list"
-        );
-        // SAFETY: The parser returned a non-null list and this helper expects
-        // one statement in its test SQL input.
-        let raw_stmt = unsafe { pg_sys::list_nth(raw_parses, 0) }.cast::<pg_sys::RawStmt>();
-        // SAFETY: `raw_stmt` comes from PostgreSQL's parser output and the SQL
-        // string remains alive throughout analyze/rewrite.
-        let queries = unsafe {
-            pg_sys::pg_analyze_and_rewrite_fixedparams(
-                raw_stmt,
-                sql.as_ptr(),
-                std::ptr::null(),
-                0,
-                std::ptr::null_mut(),
-            )
-        };
-        assert!(!queries.is_null(), "analyze should return a query list");
-        // SAFETY: PostgreSQL returned a non-null query list and this helper
-        // expects the first analyzed query for its test SQL input.
-        unsafe { pg_sys::list_nth(queries, 0) }.cast::<pg_sys::Query>()
-    }
-
     include!("custom_scan.rs");
     include!("custom_scan_planner.rs");
     include!("custom_scan_fanout.rs");

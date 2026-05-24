@@ -81,8 +81,8 @@ fn coordinator_metadata_read_available_placement(
     placement
 }
 
-unsafe fn load_relation_epoch_manifests_for_boundary_placement_diagnostics(
-    index_relation: pg_sys::Relation,
+fn load_relation_epoch_manifests_for_boundary_placement_diagnostics(
+    index: SpireLiveIndexRelation,
     root_control: meta::SpireRootControlState,
 ) -> Result<
     (
@@ -95,18 +95,9 @@ unsafe fn load_relation_epoch_manifests_for_boundary_placement_diagnostics(
     if root_control.active_epoch == 0 {
         return Err("ec_spire cannot load manifests for empty active epoch".to_owned());
     }
-    // SAFETY: index_relation is the open SPIRE index relation, and the TID was
-    // read from its root/control page for the active epoch manifest.
-    let epoch_bytes =
-        unsafe { page::read_object_tuple(index_relation, root_control.epoch_manifest_tid)? };
-    // SAFETY: index_relation is the open SPIRE index relation, and the TID was
-    // read from its root/control page for the active object manifest.
-    let object_bytes =
-        unsafe { page::read_object_tuple(index_relation, root_control.object_manifest_tid)? };
-    // SAFETY: index_relation is the open SPIRE index relation, and the TID was
-    // read from its root/control page for the active placement directory.
-    let placement_bytes =
-        unsafe { page::read_object_tuple(index_relation, root_control.placement_directory_tid)? };
+    let epoch_bytes = index.object_tuple(root_control.epoch_manifest_tid)?;
+    let object_bytes = index.object_tuple(root_control.object_manifest_tid)?;
+    let placement_bytes = index.object_tuple(root_control.placement_directory_tid)?;
     let epoch_manifest = meta::SpireEpochManifest::decode(&epoch_bytes)?;
     let object_manifest = meta::SpireObjectManifest::decode(&object_bytes)?;
     let placement_directory = meta::SpirePlacementDirectory::decode(&placement_bytes)?;
@@ -131,32 +122,21 @@ unsafe fn load_relation_epoch_manifests_for_boundary_placement_diagnostics(
     Ok((epoch_manifest, object_manifest, placement_directory))
 }
 
-pub(crate) unsafe fn index_boundary_replica_identity_snapshot(
-    index_relation: pg_sys::Relation,
+pub(crate) fn index_boundary_replica_identity_snapshot(
+    index: SpireLiveIndexRelation,
 ) -> Vec<SpireBoundaryReplicaIdentitySnapshotRow> {
     let result = (|| -> Result<Vec<SpireBoundaryReplicaIdentitySnapshotRow>, String> {
-        // SAFETY: index_relation is the open SPIRE index relation inspected by
-        // this read-only diagnostic.
-        let root_control = unsafe { page::read_root_control_page(index_relation) };
-        if root_control.active_epoch == 0 {
+        let root_control = index.root_control();
+        let Some(anchor) = index.coordinator_fanout_anchor(root_control)? else {
             return Ok(Vec::new());
-        }
-        // SAFETY: root_control was read from the same open relation and names
-        // the active coordinator fanout manifest set.
-        let (_epoch_manifest, _object_manifest, placement_directory) =
-            unsafe { load_relation_epoch_manifests_for_coordinator_fanout(index_relation, root_control)? };
-        // SAFETY: placement_directory was decoded from the active relation
-        // manifests and is used to open the corresponding local object stores.
-        let object_store = unsafe {
-            storage::SpireRelationObjectStoreSet::for_index_relation_and_placements(
-                index_relation,
-                &placement_directory,
-                pg_sys::AccessShareLock as pg_sys::LOCKMODE,
-            )?
         };
+        let object_store = index.object_store_set(
+            &anchor.placement_directory,
+            pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+        )?;
         let mut groups = BTreeMap::<Vec<u8>, BoundaryReplicaIdentityAccumulator>::new();
 
-        for placement in &placement_directory.entries {
+        for placement in &anchor.placement_directory.entries {
             if placement.state != meta::SpirePlacementState::Available {
                 continue;
             }
@@ -178,25 +158,31 @@ pub(crate) unsafe fn index_boundary_replica_identity_snapshot(
                 let group = groups
                     .entry(assignment.vec_id.as_bytes().to_vec())
                     .or_default();
-                group.assignment_count = group
-                    .assignment_count
-                    .checked_add(1)
-                    .ok_or_else(|| "ec_spire boundary identity assignment count overflow".to_owned())?;
+                group.assignment_count =
+                    group.assignment_count.checked_add(1).ok_or_else(|| {
+                        "ec_spire boundary identity assignment count overflow".to_owned()
+                    })?;
                 if assignment.flags & storage::SPIRE_ASSIGNMENT_FLAG_PRIMARY != 0 {
-                    group.primary_assignment_count =
-                        group.primary_assignment_count.checked_add(1).ok_or_else(|| {
+                    group.primary_assignment_count = group
+                        .primary_assignment_count
+                        .checked_add(1)
+                        .ok_or_else(|| {
                             "ec_spire boundary identity primary count overflow".to_owned()
                         })?;
                 }
                 if assignment.flags & storage::SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA != 0 {
-                    group.boundary_replica_assignment_count =
-                        group.boundary_replica_assignment_count.checked_add(1).ok_or_else(|| {
+                    group.boundary_replica_assignment_count = group
+                        .boundary_replica_assignment_count
+                        .checked_add(1)
+                        .ok_or_else(|| {
                             "ec_spire boundary identity replica count overflow".to_owned()
                         })?;
                 }
                 if assignment.flags & storage::SPIRE_ASSIGNMENT_FLAG_DELTA_INSERT != 0 {
-                    group.delta_insert_assignment_count =
-                        group.delta_insert_assignment_count.checked_add(1).ok_or_else(|| {
+                    group.delta_insert_assignment_count = group
+                        .delta_insert_assignment_count
+                        .checked_add(1)
+                        .ok_or_else(|| {
                             "ec_spire boundary identity delta count overflow".to_owned()
                         })?;
                 }
@@ -243,33 +229,20 @@ pub(crate) unsafe fn index_boundary_replica_identity_snapshot(
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
-pub(crate) unsafe fn index_boundary_replica_placement_diagnostics(
-    index_relation: pg_sys::Relation,
+pub(crate) fn index_boundary_replica_placement_diagnostics(
+    index: SpireLiveIndexRelation,
 ) -> Vec<SpireBoundaryReplicaPlacementDiagnosticRow> {
     let result = (|| -> Result<Vec<SpireBoundaryReplicaPlacementDiagnosticRow>, String> {
-        // SAFETY: index_relation is the open SPIRE index relation inspected by
-        // this read-only diagnostic.
-        let root_control = unsafe { page::read_root_control_page(index_relation) };
+        let root_control = index.root_control();
         if root_control.active_epoch == 0 {
             return Ok(Vec::new());
         }
-        // SAFETY: root_control was read from the same open relation and names
-        // the active manifest set for boundary placement diagnostics.
-        let (_epoch_manifest, _object_manifest, placement_directory) = unsafe {
-            load_relation_epoch_manifests_for_boundary_placement_diagnostics(
-                index_relation,
-                root_control,
-            )?
-        };
-        // SAFETY: placement_directory was decoded from the active relation
-        // manifests and is used to open the corresponding local object stores.
-        let object_store = unsafe {
-            storage::SpireRelationObjectStoreSet::for_index_relation_and_placements(
-                index_relation,
-                &placement_directory,
-                pg_sys::AccessShareLock as pg_sys::LOCKMODE,
-            )?
-        };
+        let (_epoch_manifest, _object_manifest, placement_directory) =
+            load_relation_epoch_manifests_for_boundary_placement_diagnostics(index, root_control)?;
+        let object_store = index.object_store_set(
+            &placement_directory,
+            pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+        )?;
         let mut groups = BTreeMap::<Vec<u8>, BoundaryReplicaPlacementAccumulator>::new();
 
         for placement in &placement_directory.entries {
@@ -291,30 +264,34 @@ pub(crate) unsafe fn index_boundary_replica_placement_diagnostics(
                 let group = groups
                     .entry(assignment.vec_id.as_bytes().to_vec())
                     .or_default();
-                group.assignment_count = group.assignment_count.checked_add(1).ok_or_else(|| {
-                    "ec_spire boundary placement assignment count overflow".to_owned()
-                })?;
+                group.assignment_count =
+                    group.assignment_count.checked_add(1).ok_or_else(|| {
+                        "ec_spire boundary placement assignment count overflow".to_owned()
+                    })?;
                 if assignment.flags & storage::SPIRE_ASSIGNMENT_FLAG_PRIMARY != 0 {
-                    group.primary_assignment_count =
-                        group.primary_assignment_count.checked_add(1).ok_or_else(|| {
+                    group.primary_assignment_count = group
+                        .primary_assignment_count
+                        .checked_add(1)
+                        .ok_or_else(|| {
                             "ec_spire boundary placement primary count overflow".to_owned()
                         })?;
                 }
                 if assignment.flags & storage::SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA != 0 {
-                    group.boundary_replica_assignment_count =
-                        group.boundary_replica_assignment_count.checked_add(1).ok_or_else(|| {
+                    group.boundary_replica_assignment_count = group
+                        .boundary_replica_assignment_count
+                        .checked_add(1)
+                        .ok_or_else(|| {
                             "ec_spire boundary placement replica count overflow".to_owned()
                         })?;
                     match placement.state {
                         meta::SpirePlacementState::Available => {}
                         meta::SpirePlacementState::Stale => {
-                            group.stale_boundary_replica_count =
-                                group.stale_boundary_replica_count.checked_add(1).ok_or_else(
-                                    || {
-                                        "ec_spire boundary placement stale count overflow"
-                                            .to_owned()
-                                    },
-                                )?;
+                            group.stale_boundary_replica_count = group
+                                .stale_boundary_replica_count
+                                .checked_add(1)
+                                .ok_or_else(|| {
+                                    "ec_spire boundary placement stale count overflow".to_owned()
+                                })?;
                         }
                         meta::SpirePlacementState::Unavailable => {
                             group.unavailable_boundary_replica_count = group
@@ -582,4 +559,3 @@ fn apply_leaf_snapshot_base_row(
     row.maintenance_reason = "not_evaluated";
     row.leaf_object_bytes = u64::from(placement.object_bytes);
 }
-

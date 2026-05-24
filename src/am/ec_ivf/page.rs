@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::mem::size_of;
 #[cfg(any(feature = "pg17", feature = "pg18"))]
-use std::ptr;
+use std::ptr::{self, NonNull};
 use std::sync::{Mutex, OnceLock};
 
 #[cfg(any(feature = "pg17", feature = "pg18"))]
@@ -34,14 +34,14 @@ use super::options::{EcIvfOptions, RerankMode, StorageFormat};
 use super::P_NEW;
 #[cfg(not(any(feature = "pg17", feature = "pg18")))]
 const P_NEW: pg_sys::BlockNumber = u32::MAX;
-#[cfg(feature = "pg18")]
-use crate::am::stream::{BlockSequencePrefetchState, LinearPrefetchState};
 #[cfg(any(feature = "pg17", feature = "pg18"))]
 use crate::storage::page::{align_up, raw_tuple_storage_bytes, ALIGNMENT_BYTES, PAGE_HEADER_BYTES};
 use crate::storage::page::{
     aligned_tuple_bytes, usable_page_bytes, DataPage, DataPageChain, ItemPointer,
     HEAPTID_INLINE_CAPACITY, ITEM_POINTER_BYTES,
 };
+#[cfg(any(feature = "pg17", feature = "pg18"))]
+use crate::storage::relation::{main_fork_block_count_handle, relation_oid_handle, RelationHandle};
 #[cfg(any(feature = "pg17", feature = "pg18"))]
 use crate::storage::{buffer_guard::LockedBufferGuard, wal};
 
@@ -173,75 +173,90 @@ enum PageTupleVisit<R> {
 }
 
 #[cfg(any(feature = "pg17", feature = "pg18"))]
-struct PageTupleReader<'a> {
-    page_ptr: *mut u8,
-    page_size: usize,
-    block_number: pg_sys::BlockNumber,
-    line_pointer_count: u16,
-    _buffer: PhantomData<&'a LockedBufferGuard>,
+#[derive(Clone, Copy)]
+struct IvfPageRelation<'a> {
+    relation: RelationHandle,
+    _relation: PhantomData<&'a pg_sys::RelationData>,
 }
 
 #[cfg(any(feature = "pg17", feature = "pg18"))]
-impl<'a> PageTupleReader<'a> {
-    fn new(buffer: &'a LockedBufferGuard, block_number: pg_sys::BlockNumber) -> Self {
-        let page_ptr = buffer.page().cast::<u8>();
+impl<'a> IvfPageRelation<'a> {
+    fn new(relation: RelationHandle) -> Self {
         Self {
-            page_ptr,
-            page_size: buffer.page_size(),
-            block_number,
-            line_pointer_count: page_line_pointer_count(page_ptr),
-            _buffer: PhantomData,
+            relation,
+            _relation: PhantomData,
         }
     }
 
-    fn line_pointer_count(&self) -> u16 {
-        self.line_pointer_count
+    fn raw(self) -> pg_sys::Relation {
+        self.relation.as_ptr()
     }
 
-    fn visit_line<R, F>(
-        &self,
-        offset: u16,
-        tuple_kind: &str,
-        visit: F,
-    ) -> Result<PageTupleVisit<R>, String>
-    where
-        F: for<'tuple> FnOnce(&'tuple [u8]) -> Result<R, String>,
-    {
-        if offset > self.line_pointer_count {
-            return Err(format!(
-                "ec_ivf {tuple_kind} tuple offset {offset} out of range on block {}",
-                self.block_number
-            ));
-        }
+    fn relid(self) -> pg_sys::Oid {
+        relation_oid_handle(self.relation)
+    }
 
-        // SAFETY: this reader is constructed only from a live `LockedBufferGuard`;
-        // `offset` is checked against the cached line-pointer count before the
-        // helper exposes tuple bytes for the duration of `visit`.
+    fn number_of_blocks(self) -> pg_sys::BlockNumber {
+        main_fork_block_count_handle(self.relation)
+    }
+
+    fn page_with_free_space(self, required_space: usize) -> pg_sys::BlockNumber {
+        // SAFETY: this view is constructed only for a live IVF index relation;
+        // required_space is derived from the tuple size that will be inserted.
+        unsafe { pg_sys::GetPageWithFreeSpace(self.relation.as_ptr(), required_space) }
+    }
+
+    fn read_main(
+        self,
+        block_number: pg_sys::BlockNumber,
+        mode: pg_sys::ReadBufferMode::Type,
+        lockmode: i32,
+    ) -> Option<LockedBufferGuard> {
+        // SAFETY: this view owns the live-relation contract; callers choose a
+        // block/mode/lock combination appropriate for the local page operation.
         unsafe {
-            with_page_line_tuple_bytes(
-                self.page_ptr,
-                self.page_size,
-                self.block_number,
-                offset,
-                tuple_kind,
-                visit,
-            )
+            LockedBufferGuard::read_main(self.relation.as_ptr(), block_number, mode, lockmode)
         }
     }
 
-    fn visit_required<R, F>(&self, offset: u16, tuple_kind: &str, visit: F) -> Result<R, String>
-    where
-        F: for<'tuple> FnOnce(&'tuple [u8]) -> Result<R, String>,
-    {
-        match self.visit_line(offset, tuple_kind, visit)? {
-            PageTupleVisit::Unused => Err(format!("ec_ivf {tuple_kind} tuple slot is unused")),
-            PageTupleVisit::Present(tuple) => Ok(tuple),
-        }
+    fn read_main_locked(
+        self,
+        block_number: pg_sys::BlockNumber,
+        mode: pg_sys::ReadBufferMode::Type,
+    ) -> Option<LockedBufferGuard> {
+        // SAFETY: this view owns the live-relation contract; callers pass a
+        // read mode that returns an already-locked buffer.
+        unsafe { LockedBufferGuard::read_main_locked(self.relation.as_ptr(), block_number, mode) }
+    }
+
+    fn start_wal(self) -> wal::GenericXLogTxn {
+        // SAFETY: this view is constructed only for a live IVF index relation.
+        unsafe { wal::GenericXLogTxn::start(self.relation.as_ptr()) }
     }
 }
 
 #[cfg(any(feature = "pg17", feature = "pg18"))]
-struct PageTupleWriter {
+fn ivf_relation_nonnull(index_relation: pg_sys::Relation, context: &str) -> RelationHandle {
+    NonNull::new(index_relation).unwrap_or_else(|| pgrx::error!("{context} received null relation"))
+}
+
+#[cfg(any(feature = "pg17", feature = "pg18"))]
+fn read_posting_block(
+    index: IvfPageRelation<'_>,
+    block_number: pg_sys::BlockNumber,
+    context: &str,
+) -> Result<LockedBufferGuard, String> {
+    index
+        .read_main(
+            block_number,
+            pg_sys::ReadBufferMode::RBM_NORMAL,
+            pg_sys::BUFFER_LOCK_SHARE as i32,
+        )
+        .ok_or_else(|| format!("ec_ivf failed to open {context} block {block_number}"))
+}
+
+#[cfg(any(feature = "pg17", feature = "pg18"))]
+struct PageTuplePage {
     page_ptr: *mut u8,
     page_size: usize,
     block_number: pg_sys::BlockNumber,
@@ -249,9 +264,8 @@ struct PageTupleWriter {
 }
 
 #[cfg(any(feature = "pg17", feature = "pg18"))]
-impl PageTupleWriter {
-    fn new(page: pg_sys::Page, page_size: usize, block_number: pg_sys::BlockNumber) -> Self {
-        let page_ptr = page.cast::<u8>();
+impl PageTuplePage {
+    fn new(page_ptr: *mut u8, page_size: usize, block_number: pg_sys::BlockNumber) -> Self {
         Self {
             page_ptr,
             page_size,
@@ -273,38 +287,22 @@ impl PageTupleWriter {
     where
         F: for<'tuple> FnOnce(&'tuple [u8]) -> Result<R, String>,
     {
-        if offset > self.line_pointer_count {
-            return Err(format!(
-                "ec_ivf {tuple_kind} tuple offset {offset} out of range on block {}",
-                self.block_number
-            ));
-        }
+        let Some(slot) = self.optional_slot(offset, tuple_kind)? else {
+            return Ok(PageTupleVisit::Unused);
+        };
 
-        // SAFETY: this writer is constructed only from a WAL-registered page
-        // whose buffer remains locked by the caller. `offset` is checked
-        // against the cached line-pointer count before tuple bytes are exposed.
-        unsafe {
-            with_page_line_tuple_bytes(
-                self.page_ptr,
-                self.page_size,
-                self.block_number,
-                offset,
-                tuple_kind,
-                visit,
-            )
-        }
+        // SAFETY: tuple offset and length were checked against `page_size`, and
+        // the page remains locked for the duration of the visitor call.
+        let tuple_bytes =
+            unsafe { std::slice::from_raw_parts(self.page_ptr.add(slot.offset), slot.len) };
+        visit(tuple_bytes).map(PageTupleVisit::Present)
     }
 
-    fn visit_required<R, F>(
-        &self,
-        tid: ItemPointer,
-        tuple_kind: &str,
-        visit: F,
-    ) -> Result<R, String>
+    fn visit_required<R, F>(&self, offset: u16, tuple_kind: &str, visit: F) -> Result<R, String>
     where
         F: for<'tuple> FnOnce(&'tuple [u8]) -> Result<R, String>,
     {
-        match self.visit_line(tid.offset_number, tuple_kind, visit)? {
+        match self.visit_line(offset, tuple_kind, visit)? {
             PageTupleVisit::Unused => Err(format!("ec_ivf {tuple_kind} tuple slot is unused")),
             PageTupleVisit::Present(tuple) => Ok(tuple),
         }
@@ -338,6 +336,15 @@ impl PageTupleWriter {
     }
 
     fn required_slot(&self, offset: u16, tuple_kind: &str) -> Result<PageTupleSlot, String> {
+        self.optional_slot(offset, tuple_kind)?
+            .ok_or_else(|| format!("ec_ivf {tuple_kind} tuple slot is unused"))
+    }
+
+    fn optional_slot(
+        &self,
+        offset: u16,
+        tuple_kind: &str,
+    ) -> Result<Option<PageTupleSlot>, String> {
         if offset == 0 || offset > self.line_pointer_count {
             return Err(format!(
                 "ec_ivf {tuple_kind} tuple offset {offset} out of range on block {}",
@@ -345,11 +352,16 @@ impl PageTupleWriter {
             ));
         }
 
-        // SAFETY: offset is nonzero and bounded by this writer's cached
-        // line-pointer count.
-        let item_id = unsafe { &*page_item_id(self.page_ptr, offset) };
+        // SAFETY: offset is nonzero and range-checked against the page's line
+        // pointer count before computing the ItemId address.
+        let item_id = unsafe {
+            &*self
+                .page_ptr
+                .add(PAGE_HEADER_BYTES + ((offset - 1) as usize * size_of::<pg_sys::ItemIdData>()))
+                .cast::<pg_sys::ItemIdData>()
+        };
         if item_id.lp_flags() == 0 {
-            return Err(format!("ec_ivf {tuple_kind} tuple slot is unused"));
+            return Ok(None);
         }
         let tuple_offset = item_id.lp_off() as usize;
         let tuple_len = item_id.lp_len() as usize;
@@ -359,10 +371,101 @@ impl PageTupleWriter {
                 self.block_number
             ));
         }
-        Ok(PageTupleSlot {
+        Ok(Some(PageTupleSlot {
             offset: tuple_offset,
             len: tuple_len,
-        })
+        }))
+    }
+}
+
+#[cfg(any(feature = "pg17", feature = "pg18"))]
+struct PageTupleReader<'a> {
+    page: PageTuplePage,
+    _buffer: PhantomData<&'a LockedBufferGuard>,
+}
+
+#[cfg(any(feature = "pg17", feature = "pg18"))]
+impl<'a> PageTupleReader<'a> {
+    fn new(buffer: &'a LockedBufferGuard, block_number: pg_sys::BlockNumber) -> Self {
+        Self {
+            page: PageTuplePage::new(buffer.page().cast::<u8>(), buffer.page_size(), block_number),
+            _buffer: PhantomData,
+        }
+    }
+
+    fn line_pointer_count(&self) -> u16 {
+        self.page.line_pointer_count()
+    }
+
+    fn visit_line<R, F>(
+        &self,
+        offset: u16,
+        tuple_kind: &str,
+        visit: F,
+    ) -> Result<PageTupleVisit<R>, String>
+    where
+        F: for<'tuple> FnOnce(&'tuple [u8]) -> Result<R, String>,
+    {
+        self.page.visit_line(offset, tuple_kind, visit)
+    }
+
+    fn visit_required<R, F>(&self, offset: u16, tuple_kind: &str, visit: F) -> Result<R, String>
+    where
+        F: for<'tuple> FnOnce(&'tuple [u8]) -> Result<R, String>,
+    {
+        self.page.visit_required(offset, tuple_kind, visit)
+    }
+}
+
+#[cfg(any(feature = "pg17", feature = "pg18"))]
+struct PageTupleWriter {
+    page: PageTuplePage,
+}
+
+#[cfg(any(feature = "pg17", feature = "pg18"))]
+impl PageTupleWriter {
+    fn new(page: pg_sys::Page, page_size: usize, block_number: pg_sys::BlockNumber) -> Self {
+        Self {
+            page: PageTuplePage::new(page.cast::<u8>(), page_size, block_number),
+        }
+    }
+
+    fn line_pointer_count(&self) -> u16 {
+        self.page.line_pointer_count()
+    }
+
+    fn visit_line<R, F>(
+        &self,
+        offset: u16,
+        tuple_kind: &str,
+        visit: F,
+    ) -> Result<PageTupleVisit<R>, String>
+    where
+        F: for<'tuple> FnOnce(&'tuple [u8]) -> Result<R, String>,
+    {
+        self.page.visit_line(offset, tuple_kind, visit)
+    }
+
+    fn visit_required<R, F>(
+        &self,
+        tid: ItemPointer,
+        tuple_kind: &str,
+        visit: F,
+    ) -> Result<R, String>
+    where
+        F: for<'tuple> FnOnce(&'tuple [u8]) -> Result<R, String>,
+    {
+        self.page
+            .visit_required(tid.offset_number, tuple_kind, visit)
+    }
+
+    fn copy_required_exact(
+        &self,
+        tid: ItemPointer,
+        tuple_kind: &str,
+        encoded: &[u8],
+    ) -> Result<(), String> {
+        self.page.copy_required_exact(tid, tuple_kind, encoded)
     }
 }
 
@@ -1225,10 +1328,10 @@ pub(super) unsafe fn read_ivf_centroid_and_next(
     tid: ItemPointer,
     dimensions: usize,
 ) -> Result<(IvfCentroidTuple, ItemPointer), String> {
-    let (centroid, line_pointer_count) =
-        read_page_tuple(index_relation, tid, "centroid", |tuple_bytes| {
-            IvfCentroidTuple::decode(tuple_bytes, dimensions)
-        })?;
+    let index = IvfPageRelation::new(ivf_relation_nonnull(index_relation, "ec_ivf centroid read"));
+    let (centroid, line_pointer_count) = read_page_tuple(index, tid, "centroid", |tuple_bytes| {
+        IvfCentroidTuple::decode(tuple_bytes, dimensions)
+    })?;
     Ok((centroid, next_physical_tuple_tid(tid, line_pointer_count)?))
 }
 
@@ -1237,13 +1340,17 @@ pub(super) unsafe fn read_ivf_list_directory_and_next(
     index_relation: pg_sys::Relation,
     tid: ItemPointer,
 ) -> Result<(IvfListDirectoryTuple, ItemPointer), String> {
+    let index = IvfPageRelation::new(ivf_relation_nonnull(
+        index_relation,
+        "ec_ivf list directory read",
+    ));
     let (directory, line_pointer_count) =
-        read_page_tuple(index_relation, tid, "list directory", |tuple_bytes| {
+        read_page_tuple(index, tid, "list directory", |tuple_bytes| {
             IvfListDirectoryTuple::decode(tuple_bytes)
         })?;
     let physical_next = next_physical_tuple_tid(tid, line_pointer_count)?;
     let next_directory = find_next_tuple_with_tag(
-        index_relation,
+        index,
         physical_next,
         IVF_LIST_DIRECTORY_TAG,
         "list directory",
@@ -1257,7 +1364,11 @@ pub(super) unsafe fn read_ivf_pq_codebook(
     tid: ItemPointer,
     centroid_count: usize,
 ) -> Result<IvfPqCodebookTuple, String> {
-    let (codebook, _) = read_page_tuple(index_relation, tid, "pq codebook", |tuple_bytes| {
+    let index = IvfPageRelation::new(ivf_relation_nonnull(
+        index_relation,
+        "ec_ivf pq codebook read",
+    ));
+    let (codebook, _) = read_page_tuple(index, tid, "pq codebook", |tuple_bytes| {
         IvfPqCodebookTuple::decode(tuple_bytes, centroid_count)
     })?;
     Ok(codebook)
@@ -1272,21 +1383,17 @@ pub(super) unsafe fn read_ivf_postings_for_list_blocks(
     payload_len: usize,
 ) -> Result<Vec<IvfPostingTuple>, String> {
     let mut postings = Vec::new();
-    // SAFETY: the block range was supplied from IVF list metadata; the visitor
-    // helper validates range consistency and tuple bounds while collecting.
-    unsafe {
-        visit_ivf_postings_for_list_blocks(
-            index_relation,
-            list_id,
-            head_block,
-            tail_block,
-            payload_len,
-            |_, posting| {
-                postings.push(posting);
-                Ok(())
-            },
-        )?
-    };
+    visit_ivf_postings_for_list_blocks(
+        index_relation,
+        list_id,
+        head_block,
+        tail_block,
+        payload_len,
+        |_, posting| {
+            postings.push(posting);
+            Ok(())
+        },
+    )?;
     Ok(postings)
 }
 
@@ -1344,33 +1451,6 @@ where
 }
 
 #[cfg(any(feature = "pg17", feature = "pg18"))]
-pub(super) unsafe fn read_ivf_postings_for_list_blocks_with_tids(
-    index_relation: pg_sys::Relation,
-    list_id: u32,
-    head_block: BlockRef,
-    tail_block: BlockRef,
-    payload_len: usize,
-) -> Result<Vec<(ItemPointer, IvfPostingTuple)>, String> {
-    let mut postings = Vec::new();
-    // SAFETY: the block range was supplied from IVF list metadata; the visitor
-    // helper validates range consistency and tuple bounds while collecting TIDs.
-    unsafe {
-        visit_ivf_postings_for_list_blocks(
-            index_relation,
-            list_id,
-            head_block,
-            tail_block,
-            payload_len,
-            |posting_tid, posting| {
-                postings.push((posting_tid, posting));
-                Ok(())
-            },
-        )?
-    };
-    Ok(postings)
-}
-
-#[cfg(any(feature = "pg17", feature = "pg18"))]
 pub(super) unsafe fn rewrite_ivf_postings_for_list_blocks<F>(
     index_relation: pg_sys::Relation,
     list_id: u32,
@@ -1383,6 +1463,10 @@ pub(super) unsafe fn rewrite_ivf_postings_for_list_blocks<F>(
 where
     F: FnMut(ItemPointer, IvfPostingTuple) -> Result<IvfPostingRewrite, String>,
 {
+    let index = IvfPageRelation::new(ivf_relation_nonnull(
+        index_relation,
+        "ec_ivf posting rewrite",
+    ));
     if head_block == BlockRef::INVALID && tail_block == BlockRef::INVALID {
         return Ok(());
     }
@@ -1399,52 +1483,13 @@ where
 
     for block_number in head_block.block_number..=tail_block.block_number {
         rewrite_ivf_postings_for_list_block(
-            index_relation,
+            index,
             list_id,
             block_number,
             payload_len,
             !no_compact_blocks.contains(&block_number),
             &mut rewrite,
         )?;
-    }
-
-    Ok(())
-}
-
-#[cfg(any(feature = "pg17", feature = "pg18"))]
-pub(super) unsafe fn visit_ivf_postings_for_block_sequence<F>(
-    index_relation: pg_sys::Relation,
-    block_numbers: &[pg_sys::BlockNumber],
-    payload_len: usize,
-    mut visitor: F,
-) -> Result<(), String>
-where
-    F: FnMut(ItemPointer, IvfPostingTuple) -> Result<(), String>,
-{
-    if block_numbers.is_empty() {
-        return Ok(());
-    }
-
-    #[cfg(feature = "pg18")]
-    {
-        visit_ivf_posting_block_sequence_with_read_stream(
-            index_relation,
-            block_numbers,
-            payload_len,
-            &mut visitor,
-        )?;
-    }
-
-    #[cfg(not(feature = "pg18"))]
-    {
-        for block_number in block_numbers {
-            visit_all_ivf_postings_for_block(
-                index_relation,
-                *block_number,
-                payload_len,
-                &mut visitor,
-            )?;
-        }
     }
 
     Ok(())
@@ -1501,114 +1546,15 @@ fn visit_ivf_posting_blocks_with_read_stream<F>(
 where
     F: FnMut(ItemPointer, IvfPostingTuple) -> Result<(), String>,
 {
-    let mut state = LinearPrefetchState::new(head_block, tail_block);
-    // SAFETY: `index_relation` is live, `state` outlives the stream loop, and
-    // PostgreSQL stores block-number-sized per-buffer data via the callback.
-    let stream = unsafe {
-        pg_sys::read_stream_begin_relation(
-            pg_sys::READ_STREAM_SEQUENTIAL as i32,
-            ptr::null_mut(),
-            index_relation,
-            pg_sys::ForkNumber::MAIN_FORKNUM,
-            Some(crate::am::stream::linear_prefetch_cb),
-            (&mut state as *mut LinearPrefetchState).cast(),
-            size_of::<pg_sys::BlockNumber>(),
-        )
-    };
-
-    loop {
-        let mut per_buffer_data = ptr::null_mut();
-        // SAFETY: `stream` was created above and remains open until the
-        // explicit `read_stream_end` on normal or error exit.
-        let buffer = unsafe { pg_sys::read_stream_next_buffer(stream, &mut per_buffer_data) };
-        if buffer == pg_sys::InvalidBuffer as pg_sys::Buffer {
-            break;
-        }
-        let result = {
-            // SAFETY: PostgreSQL returned a valid pinned buffer from the read
-            // stream; the guard converts that pin into a shared buffer lock.
-            let buffer =
-                unsafe { LockedBufferGuard::lock_pinned(buffer, pg_sys::BUFFER_LOCK_SHARE as i32) }
-                    .ok_or_else(|| "ec_ivf read stream returned an invalid buffer".to_owned())?;
-            let block_number = if per_buffer_data.is_null() {
-                buffer.block_number()
-            } else {
-                // SAFETY: the read stream callback stores a `BlockNumber` in
-                // the per-buffer data slot when it is non-null.
-                unsafe { *per_buffer_data.cast::<pg_sys::BlockNumber>() }
-            };
-            visit_ivf_postings_from_buffer(&buffer, list_id, block_number, payload_len, visitor)
-        };
-        if let Err(err) = result {
-            // SAFETY: closes the stream created above before returning early.
-            unsafe { pg_sys::read_stream_end(stream) };
-            return Err(err);
-        }
-    }
-
-    // SAFETY: closes the stream created above after all buffers are consumed.
-    unsafe { pg_sys::read_stream_end(stream) };
-    Ok(())
-}
-
-#[cfg(feature = "pg18")]
-fn visit_ivf_posting_block_sequence_with_read_stream<F>(
-    index_relation: pg_sys::Relation,
-    block_numbers: &[pg_sys::BlockNumber],
-    payload_len: usize,
-    visitor: &mut F,
-) -> Result<(), String>
-where
-    F: FnMut(ItemPointer, IvfPostingTuple) -> Result<(), String>,
-{
-    let mut state = BlockSequencePrefetchState::new(block_numbers.to_vec());
-    // SAFETY: `index_relation` is live, `state` outlives the stream loop, and
-    // PostgreSQL stores block-number-sized per-buffer data via the callback.
-    let stream = unsafe {
-        pg_sys::read_stream_begin_relation(
-            pg_sys::READ_STREAM_SEQUENTIAL as i32,
-            ptr::null_mut(),
-            index_relation,
-            pg_sys::ForkNumber::MAIN_FORKNUM,
-            Some(crate::am::stream::block_sequence_prefetch_cb),
-            (&mut state as *mut BlockSequencePrefetchState).cast(),
-            size_of::<pg_sys::BlockNumber>(),
-        )
-    };
-
-    loop {
-        let mut per_buffer_data = ptr::null_mut();
-        // SAFETY: `stream` was created above and remains open until the
-        // explicit `read_stream_end` on normal or error exit.
-        let buffer = unsafe { pg_sys::read_stream_next_buffer(stream, &mut per_buffer_data) };
-        if buffer == pg_sys::InvalidBuffer as pg_sys::Buffer {
-            break;
-        }
-        let result = {
-            // SAFETY: PostgreSQL returned a valid pinned buffer from the read
-            // stream; the guard converts that pin into a shared buffer lock.
-            let buffer =
-                unsafe { LockedBufferGuard::lock_pinned(buffer, pg_sys::BUFFER_LOCK_SHARE as i32) }
-                    .ok_or_else(|| "ec_ivf read stream returned an invalid buffer".to_owned())?;
-            let block_number = if per_buffer_data.is_null() {
-                buffer.block_number()
-            } else {
-                // SAFETY: the read stream callback stores a `BlockNumber` in
-                // the per-buffer data slot when it is non-null.
-                unsafe { *per_buffer_data.cast::<pg_sys::BlockNumber>() }
-            };
-            visit_all_ivf_postings_from_buffer(&buffer, block_number, payload_len, visitor)
-        };
-        if let Err(err) = result {
-            // SAFETY: closes the stream created above before returning early.
-            unsafe { pg_sys::read_stream_end(stream) };
-            return Err(err);
-        }
-    }
-
-    // SAFETY: closes the stream created above after all buffers are consumed.
-    unsafe { pg_sys::read_stream_end(stream) };
-    Ok(())
+    crate::am::stream::visit_relation_linear_read_stream(
+        index_relation,
+        head_block,
+        tail_block,
+        "ec_ivf posting list",
+        |buffer, block_number| {
+            visit_ivf_postings_from_buffer(buffer, list_id, block_number, payload_len, visitor)
+        },
+    )
 }
 
 #[cfg(feature = "pg18")]
@@ -1621,54 +1567,14 @@ fn visit_ivf_posting_ref_block_sequence_with_read_stream<F>(
 where
     F: for<'a> FnMut(ItemPointer, IvfPostingTupleRef<'a>) -> Result<(), String>,
 {
-    let mut state = BlockSequencePrefetchState::new(block_numbers.to_vec());
-    // SAFETY: `index_relation` is live, `state` outlives the stream loop, and
-    // PostgreSQL stores block-number-sized per-buffer data via the callback.
-    let stream = unsafe {
-        pg_sys::read_stream_begin_relation(
-            pg_sys::READ_STREAM_SEQUENTIAL as i32,
-            ptr::null_mut(),
-            index_relation,
-            pg_sys::ForkNumber::MAIN_FORKNUM,
-            Some(crate::am::stream::block_sequence_prefetch_cb),
-            (&mut state as *mut BlockSequencePrefetchState).cast(),
-            size_of::<pg_sys::BlockNumber>(),
-        )
-    };
-
-    loop {
-        let mut per_buffer_data = ptr::null_mut();
-        // SAFETY: `stream` was created above and remains open until the
-        // explicit `read_stream_end` on normal or error exit.
-        let buffer = unsafe { pg_sys::read_stream_next_buffer(stream, &mut per_buffer_data) };
-        if buffer == pg_sys::InvalidBuffer as pg_sys::Buffer {
-            break;
-        }
-        let result = {
-            // SAFETY: PostgreSQL returned a valid pinned buffer from the read
-            // stream; the guard converts that pin into a shared buffer lock.
-            let buffer =
-                unsafe { LockedBufferGuard::lock_pinned(buffer, pg_sys::BUFFER_LOCK_SHARE as i32) }
-                    .ok_or_else(|| "ec_ivf read stream returned an invalid buffer".to_owned())?;
-            let block_number = if per_buffer_data.is_null() {
-                buffer.block_number()
-            } else {
-                // SAFETY: the read stream callback stores a `BlockNumber` in
-                // the per-buffer data slot when it is non-null.
-                unsafe { *per_buffer_data.cast::<pg_sys::BlockNumber>() }
-            };
-            visit_all_ivf_posting_refs_from_buffer(&buffer, block_number, payload_len, visitor)
-        };
-        if let Err(err) = result {
-            // SAFETY: closes the stream created above before returning early.
-            unsafe { pg_sys::read_stream_end(stream) };
-            return Err(err);
-        }
-    }
-
-    // SAFETY: closes the stream created above after all buffers are consumed.
-    unsafe { pg_sys::read_stream_end(stream) };
-    Ok(())
+    crate::am::stream::visit_relation_block_sequence_read_stream(
+        index_relation,
+        block_numbers,
+        "ec_ivf posting ref block sequence",
+        |buffer, block_number| {
+            visit_all_ivf_posting_refs_from_buffer(buffer, block_number, payload_len, visitor)
+        },
+    )
 }
 
 #[cfg(all(any(feature = "pg17", feature = "pg18"), not(feature = "pg18")))]
@@ -1682,46 +1588,14 @@ fn visit_ivf_postings_for_list_block<F>(
 where
     F: FnMut(ItemPointer, IvfPostingTuple) -> Result<(), String>,
 {
-    // SAFETY: the caller supplies a live index relation and a posting-list
-    // block number from IVF list metadata; the guard pins and share-locks it.
-    let buffer = unsafe {
-        LockedBufferGuard::read_main(
-            index_relation,
-            block_number,
-            pg_sys::ReadBufferMode::RBM_NORMAL,
-            pg_sys::BUFFER_LOCK_SHARE as i32,
-        )
-    }
-    .ok_or_else(|| format!("ec_ivf failed to open posting-list block {block_number}"))?;
+    let index = IvfPageRelation::new(ivf_relation_nonnull(
+        index_relation,
+        "ec_ivf posting-list read",
+    ));
+    let buffer = read_posting_block(index, block_number, "posting-list")?;
 
     let result =
         visit_ivf_postings_from_buffer(&buffer, list_id, block_number, payload_len, visitor);
-    result
-}
-
-#[cfg(all(any(feature = "pg17", feature = "pg18"), not(feature = "pg18")))]
-fn visit_all_ivf_postings_for_block<F>(
-    index_relation: pg_sys::Relation,
-    block_number: pg_sys::BlockNumber,
-    payload_len: usize,
-    visitor: &mut F,
-) -> Result<(), String>
-where
-    F: FnMut(ItemPointer, IvfPostingTuple) -> Result<(), String>,
-{
-    // SAFETY: the caller supplies a live index relation and a posting block
-    // from an IVF block sequence; the guard pins and share-locks it.
-    let buffer = unsafe {
-        LockedBufferGuard::read_main(
-            index_relation,
-            block_number,
-            pg_sys::ReadBufferMode::RBM_NORMAL,
-            pg_sys::BUFFER_LOCK_SHARE as i32,
-        )
-    }
-    .ok_or_else(|| format!("ec_ivf failed to open posting-list block {block_number}"))?;
-
-    let result = visit_all_ivf_postings_from_buffer(&buffer, block_number, payload_len, visitor);
     result
 }
 
@@ -1735,17 +1609,11 @@ fn visit_all_ivf_posting_refs_for_block<F>(
 where
     F: for<'a> FnMut(ItemPointer, IvfPostingTupleRef<'a>) -> Result<(), String>,
 {
-    // SAFETY: the caller supplies a live index relation and a posting block
-    // from an IVF block sequence; the guard pins and share-locks it.
-    let buffer = unsafe {
-        LockedBufferGuard::read_main(
-            index_relation,
-            block_number,
-            pg_sys::ReadBufferMode::RBM_NORMAL,
-            pg_sys::BUFFER_LOCK_SHARE as i32,
-        )
-    }
-    .ok_or_else(|| format!("ec_ivf failed to open posting-list block {block_number}"))?;
+    let index = IvfPageRelation::new(ivf_relation_nonnull(
+        index_relation,
+        "ec_ivf posting-list ref read",
+    ));
+    let buffer = read_posting_block(index, block_number, "posting-list")?;
 
     let result =
         visit_all_ivf_posting_refs_from_buffer(&buffer, block_number, payload_len, visitor);
@@ -1842,6 +1710,10 @@ pub(super) unsafe fn append_ivf_posting_to_list_range(
     block_range: Option<(pg_sys::BlockNumber, pg_sys::BlockNumber)>,
     tuple: &IvfPostingTuple,
 ) -> Result<ItemPointer, String> {
+    let index = IvfPageRelation::new(ivf_relation_nonnull(
+        index_relation,
+        "ec_ivf posting append",
+    ));
     if !posting_tuple_fits(tuple.payload.len(), pg_sys::BLCKSZ as usize) {
         return Err(format!(
             "ec_ivf posting payload {} does not fit on a page",
@@ -1858,19 +1730,13 @@ pub(super) unsafe fn append_ivf_posting_to_list_range(
             ));
         }
 
-        // SAFETY: callers pass a live index relation for this append; `rd_id`
-        // is stable for the relation lifetime and is used only as a hint key.
-        let relid = unsafe { (*index_relation).rd_id };
+        let relid = index.relid();
         let mut range_walk_start = tail_block.saturating_sub(1);
         let mut tried_tail_hint = false;
         if let Some(hint_block) = posting_free_hint(relid, tuple.list_id) {
             if block_in_range(hint_block, head_block, tail_block) {
                 tried_tail_hint = hint_block == tail_block;
-                // SAFETY: `hint_block` was checked against the current list
-                // range, and `payload` is an encoded posting that fits a page.
-                if let Some(tid) = unsafe {
-                    try_append_ivf_posting_to_block(index_relation, hint_block, &payload)?
-                } {
+                if let Some(tid) = try_append_ivf_posting_to_block(index, hint_block, &payload)? {
                     remember_posting_free_hint(relid, tuple.list_id, tid.block_number);
                     return Ok(tid);
                 }
@@ -1886,26 +1752,16 @@ pub(super) unsafe fn append_ivf_posting_to_list_range(
         }
 
         if !tried_tail_hint {
-            // SAFETY: `tail_block` comes from validated list metadata and
-            // `payload` is an encoded posting that fits a page.
-            if let Some(tid) =
-                unsafe { try_append_ivf_posting_to_block(index_relation, tail_block, &payload)? }
-            {
+            if let Some(tid) = try_append_ivf_posting_to_block(index, tail_block, &payload)? {
                 remember_posting_free_hint(relid, tuple.list_id, tid.block_number);
                 return Ok(tid);
             }
         }
 
         let required_space = raw_tuple_storage_bytes(payload.len());
-        // SAFETY: `index_relation` is live and `required_space` is derived
-        // from the encoded posting size; the returned FSM hint is checked.
-        let fsm_block = unsafe { pg_sys::GetPageWithFreeSpace(index_relation, required_space) };
+        let fsm_block = index.page_with_free_space(required_space);
         if block_in_range(fsm_block, head_block, tail_block) && fsm_block != tail_block {
-            // SAFETY: `fsm_block` was checked against the current list range,
-            // and `payload` is an encoded posting that fits a page.
-            if let Some(tid) =
-                unsafe { try_append_ivf_posting_to_block(index_relation, fsm_block, &payload)? }
-            {
+            if let Some(tid) = try_append_ivf_posting_to_block(index, fsm_block, &payload)? {
                 remember_posting_free_hint(relid, tuple.list_id, tid.block_number);
                 return Ok(tid);
             }
@@ -1915,11 +1771,7 @@ pub(super) unsafe fn append_ivf_posting_to_list_range(
         // intentionally conservative: use the global index FSM as a hint, then
         // fall back to a bounded range walk because free space is not list-keyed.
         for block_number in (head_block..=range_walk_start).rev() {
-            // SAFETY: `block_number` is produced by the bounded validated list
-            // range walk, and `payload` is an encoded posting that fits a page.
-            if let Some(tid) =
-                unsafe { try_append_ivf_posting_to_block(index_relation, block_number, &payload)? }
-            {
+            if let Some(tid) = try_append_ivf_posting_to_block(index, block_number, &payload)? {
                 remember_posting_free_hint(relid, tuple.list_id, tid.block_number);
                 return Ok(tid);
             }
@@ -1930,32 +1782,19 @@ pub(super) unsafe fn append_ivf_posting_to_list_range(
         // on either side so reuse does not turn one list into a wide scan range.
         if let Some(left_neighbor) = head_block.checked_sub(1) {
             if left_neighbor >= FIRST_DATA_BLOCK_NUMBER {
-                // SAFETY: `left_neighbor` is a bounded adjacent data block
-                // probe, and `payload` is an encoded posting that fits a page.
-                if let Some(tid) = unsafe {
-                    try_append_ivf_posting_to_block(index_relation, left_neighbor, &payload)?
-                } {
+                if let Some(tid) = try_append_ivf_posting_to_block(index, left_neighbor, &payload)?
+                {
                     remember_posting_free_hint(relid, tuple.list_id, tid.block_number);
                     return Ok(tid);
                 }
             }
         }
 
-        // SAFETY: `index_relation` is live; this only reads the current block
-        // count for bounding the adjacent right-neighbor probe.
-        let relation_blocks = unsafe {
-            pg_sys::RelationGetNumberOfBlocksInFork(
-                index_relation,
-                pg_sys::ForkNumber::MAIN_FORKNUM,
-            )
-        };
+        let relation_blocks = index.number_of_blocks();
         if let Some(right_neighbor) = tail_block.checked_add(1) {
             if right_neighbor < relation_blocks {
-                // SAFETY: `right_neighbor` is a bounded adjacent block probe,
-                // and `payload` is an encoded posting that fits a page.
-                if let Some(tid) = unsafe {
-                    try_append_ivf_posting_to_block(index_relation, right_neighbor, &payload)?
-                } {
+                if let Some(tid) = try_append_ivf_posting_to_block(index, right_neighbor, &payload)?
+                {
                     remember_posting_free_hint(relid, tuple.list_id, tid.block_number);
                     return Ok(tid);
                 }
@@ -1963,37 +1802,26 @@ pub(super) unsafe fn append_ivf_posting_to_list_range(
         }
     }
 
-    // SAFETY: no reusable block accepted the posting, so append using the live
-    // relation and an encoded posting payload that was size-checked above.
-    unsafe { append_ivf_posting_to_new_block(index_relation, &payload) }
+    append_ivf_posting_to_new_block(index, &payload)
 }
 
 #[cfg(any(feature = "pg17", feature = "pg18"))]
-unsafe fn try_append_ivf_posting_to_block(
-    index_relation: pg_sys::Relation,
+fn try_append_ivf_posting_to_block(
+    index: IvfPageRelation<'_>,
     block_number: pg_sys::BlockNumber,
     payload: &[u8],
 ) -> Result<Option<ItemPointer>, String> {
-    // SAFETY: `block_number` is selected by validated append-range logic, and
-    // an exclusive buffer lock is required before mutating the posting page.
-    let buffer = unsafe {
-        LockedBufferGuard::read_main(
-            index_relation,
+    let buffer = index
+        .read_main(
             block_number,
             pg_sys::ReadBufferMode::RBM_NORMAL,
             pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
         )
-    }
-    .ok_or_else(|| format!("ec_ivf failed to open posting-list block {block_number}"))?;
+        .ok_or_else(|| format!("ec_ivf failed to open posting-list block {block_number}"))?;
 
-    // SAFETY: starts a generic WAL transaction for the live index relation;
-    // registered buffers below remain exclusive-locked by `buffer`.
-    let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
-    // SAFETY: the buffer is exclusive-locked and registered as a full-page
-    // image, yielding a mutable page pointer for the transaction scope.
-    let page =
-        unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
-    let registered = WalRegisteredPage::new(index_relation, block_number, page);
+    let mut wal_txn = index.start_wal();
+    let page = wal_txn.register_locked_buffer_full_image(&buffer);
+    let registered = WalRegisteredPage::new(index.raw(), block_number, page);
     let free_space = registered.free_space();
     if free_space < raw_tuple_storage_bytes(payload.len()) {
         registered.record_free_space(free_space);
@@ -2009,8 +1837,7 @@ unsafe fn try_append_ivf_posting_to_block(
         ));
     }
 
-    // SAFETY: finishes the WAL transaction after the registered page mutation.
-    unsafe { wal_txn.finish() };
+    wal_txn.finish();
     registered.record_free_space(registered.free_space());
     Ok(Some(ItemPointer {
         block_number,
@@ -2019,30 +1846,18 @@ unsafe fn try_append_ivf_posting_to_block(
 }
 
 #[cfg(any(feature = "pg17", feature = "pg18"))]
-unsafe fn append_ivf_posting_to_new_block(
-    index_relation: pg_sys::Relation,
+fn append_ivf_posting_to_new_block(
+    index: IvfPageRelation<'_>,
     payload: &[u8],
 ) -> Result<ItemPointer, String> {
-    // SAFETY: `P_NEW` with zero-and-lock allocates a new main-fork block and
-    // returns it already locked for initialization.
-    let buffer = unsafe {
-        LockedBufferGuard::read_main_locked(
-            index_relation,
-            P_NEW,
-            pg_sys::ReadBufferMode::RBM_ZERO_AND_LOCK,
-        )
-    }
-    .ok_or_else(|| "ec_ivf failed to allocate posting-list block".to_owned())?;
+    let buffer = index
+        .read_main_locked(P_NEW, pg_sys::ReadBufferMode::RBM_ZERO_AND_LOCK)
+        .ok_or_else(|| "ec_ivf failed to allocate posting-list block".to_owned())?;
 
     let page_size = buffer.page_size();
-    // SAFETY: starts a generic WAL transaction for the live index relation;
-    // the newly allocated buffer remains locked by `buffer`.
-    let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
-    // SAFETY: the new buffer is locked and registered as a full-page image,
-    // yielding a mutable page pointer for initialization and insertion.
-    let page =
-        unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
-    let registered = WalRegisteredPage::new(index_relation, buffer.block_number(), page);
+    let mut wal_txn = index.start_wal();
+    let page = wal_txn.register_locked_buffer_full_image(&buffer);
+    let registered = WalRegisteredPage::new(index.raw(), buffer.block_number(), page);
     registered.init(page_size, 0);
 
     let offset = registered.add_item(payload);
@@ -2052,9 +1867,7 @@ unsafe fn append_ivf_posting_to_new_block(
     }
     let block_number = buffer.block_number();
 
-    // SAFETY: finishes the WAL transaction after initializing and mutating the
-    // registered new page.
-    unsafe { wal_txn.finish() };
+    wal_txn.finish();
     registered.record_free_space(registered.free_space());
     Ok(ItemPointer {
         block_number,
@@ -2068,38 +1881,32 @@ pub(super) unsafe fn rewrite_ivf_list_directory(
     directory_tid: ItemPointer,
     directory: IvfListDirectoryTuple,
 ) -> Result<(), String> {
+    let index = IvfPageRelation::new(ivf_relation_nonnull(
+        index_relation,
+        "ec_ivf directory rewrite",
+    ));
     let encoded = directory.encode();
-    // SAFETY: `directory_tid` identifies an existing directory tuple, and an
-    // exclusive buffer lock is required before rewriting its bytes in place.
-    let buffer = unsafe {
-        LockedBufferGuard::read_main(
-            index_relation,
+    let buffer = index
+        .read_main(
             directory_tid.block_number,
             pg_sys::ReadBufferMode::RBM_NORMAL,
             pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
         )
-    }
-    .ok_or_else(|| {
-        format!(
-            "ec_ivf failed to open directory block {}",
-            directory_tid.block_number
-        )
-    })?;
+        .ok_or_else(|| {
+            format!(
+                "ec_ivf failed to open directory block {}",
+                directory_tid.block_number
+            )
+        })?;
 
-    // SAFETY: starts a generic WAL transaction for the live index relation;
-    // the target buffer remains exclusive-locked by `buffer`.
-    let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
-    // SAFETY: the exclusive-locked buffer is registered as a full-page image,
-    // yielding a mutable page pointer for this transaction scope.
-    let page =
-        unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
+    let mut wal_txn = index.start_wal();
+    let page = wal_txn.register_locked_buffer_full_image(&buffer);
     let writer = PageTupleWriter::new(page, buffer.page_size(), directory_tid.block_number);
     if let Err(err) = writer.copy_required_exact(directory_tid, "directory", &encoded) {
         std::mem::drop(wal_txn);
         return Err(err);
     }
-    // SAFETY: finishes the WAL transaction after the registered page rewrite.
-    unsafe { wal_txn.finish() };
+    wal_txn.finish();
     Ok(())
 }
 
@@ -2112,30 +1919,25 @@ pub(super) unsafe fn update_ivf_list_directory<F>(
 where
     F: FnOnce(&mut IvfListDirectoryTuple) -> Result<(), String>,
 {
-    // SAFETY: `directory_tid` identifies an existing directory tuple, and an
-    // exclusive buffer lock is required before reading and rewriting it.
-    let buffer = unsafe {
-        LockedBufferGuard::read_main(
-            index_relation,
+    let index = IvfPageRelation::new(ivf_relation_nonnull(
+        index_relation,
+        "ec_ivf directory update",
+    ));
+    let buffer = index
+        .read_main(
             directory_tid.block_number,
             pg_sys::ReadBufferMode::RBM_NORMAL,
             pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
         )
-    }
-    .ok_or_else(|| {
-        format!(
-            "ec_ivf failed to open directory block {}",
-            directory_tid.block_number
-        )
-    })?;
+        .ok_or_else(|| {
+            format!(
+                "ec_ivf failed to open directory block {}",
+                directory_tid.block_number
+            )
+        })?;
 
-    // SAFETY: starts a generic WAL transaction for the live index relation;
-    // the target buffer remains exclusive-locked by `buffer`.
-    let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
-    // SAFETY: the exclusive-locked buffer is registered as a full-page image,
-    // yielding a mutable page pointer for this transaction scope.
-    let page =
-        unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
+    let mut wal_txn = index.start_wal();
+    let page = wal_txn.register_locked_buffer_full_image(&buffer);
     let writer = PageTupleWriter::new(page, buffer.page_size(), directory_tid.block_number);
     let mut directory = match writer.visit_required(directory_tid, "directory", |tuple_bytes| {
         if tuple_bytes.len() != IvfListDirectoryTuple::encoded_len() {
@@ -2164,50 +1966,8 @@ where
         std::mem::drop(wal_txn);
         return Err(err);
     }
-    // SAFETY: finishes the WAL transaction after the registered page rewrite.
-    unsafe { wal_txn.finish() };
+    wal_txn.finish();
     Ok(directory)
-}
-
-#[cfg(any(feature = "pg17", feature = "pg18"))]
-pub(super) unsafe fn rewrite_ivf_posting(
-    index_relation: pg_sys::Relation,
-    posting_tid: ItemPointer,
-    posting: &IvfPostingTuple,
-) -> Result<(), String> {
-    let encoded = posting.encode()?;
-    // SAFETY: `posting_tid` identifies an existing posting tuple, and an
-    // exclusive buffer lock is required before rewriting its bytes in place.
-    let buffer = unsafe {
-        LockedBufferGuard::read_main(
-            index_relation,
-            posting_tid.block_number,
-            pg_sys::ReadBufferMode::RBM_NORMAL,
-            pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
-        )
-    }
-    .ok_or_else(|| {
-        format!(
-            "ec_ivf failed to open posting block {}",
-            posting_tid.block_number
-        )
-    })?;
-
-    // SAFETY: starts a generic WAL transaction for the live index relation;
-    // the target buffer remains exclusive-locked by `buffer`.
-    let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
-    // SAFETY: the exclusive-locked buffer is registered as a full-page image,
-    // yielding a mutable page pointer for this transaction scope.
-    let page =
-        unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
-    let writer = PageTupleWriter::new(page, buffer.page_size(), posting_tid.block_number);
-    if let Err(err) = writer.copy_required_exact(posting_tid, "posting", &encoded) {
-        std::mem::drop(wal_txn);
-        return Err(err);
-    }
-    // SAFETY: finishes the WAL transaction after the registered page rewrite.
-    unsafe { wal_txn.finish() };
-    Ok(())
 }
 
 #[cfg(any(feature = "pg17", feature = "pg18"))]
@@ -2237,14 +1997,14 @@ pub(super) unsafe fn debug_ivf_posting_block_summaries(
     index_relation: pg_sys::Relation,
     payload_len: usize,
 ) -> Result<Vec<IvfPostingBlockSummary>, String> {
-    // SAFETY: `index_relation` is live; this only reads the current main-fork
-    // block count to bound the debug scan.
-    let block_count = unsafe {
-        pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
-    };
+    let index = IvfPageRelation::new(ivf_relation_nonnull(
+        index_relation,
+        "ec_ivf posting diagnostics",
+    ));
+    let block_count = index.number_of_blocks();
     let mut summaries = Vec::new();
     for block_number in FIRST_DATA_BLOCK_NUMBER..block_count {
-        let summary = debug_ivf_posting_block_summary(index_relation, block_number, payload_len)?;
+        let summary = debug_ivf_posting_block_summary(index, block_number, payload_len)?;
         if summary.line_pointer_count > 0
             || summary.posting_tuples > 0
             || summary.non_posting_tuples > 0
@@ -2258,7 +2018,7 @@ pub(super) unsafe fn debug_ivf_posting_block_summaries(
 
 #[cfg(any(feature = "pg17", feature = "pg18"))]
 fn rewrite_ivf_postings_for_list_block<F>(
-    index_relation: pg_sys::Relation,
+    index: IvfPageRelation<'_>,
     list_id: u32,
     block_number: pg_sys::BlockNumber,
     payload_len: usize,
@@ -2268,20 +2028,16 @@ fn rewrite_ivf_postings_for_list_block<F>(
 where
     F: FnMut(ItemPointer, IvfPostingTuple) -> Result<IvfPostingRewrite, String>,
 {
-    // SAFETY: `block_number` comes from IVF posting-list metadata, and an
-    // exclusive lock is required before rewriting or deleting tuples.
-    let buffer = unsafe {
-        LockedBufferGuard::read_main(
-            index_relation,
+    let buffer = index
+        .read_main(
             block_number,
             pg_sys::ReadBufferMode::RBM_NORMAL,
             pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
         )
-    }
-    .ok_or_else(|| format!("ec_ivf failed to open posting-list block {block_number}"))?;
+        .ok_or_else(|| format!("ec_ivf failed to open posting-list block {block_number}"))?;
 
     rewrite_ivf_postings_from_exclusive_buffer(
-        index_relation,
+        index,
         &buffer,
         list_id,
         block_number,
@@ -2293,21 +2049,17 @@ where
 
 #[cfg(any(feature = "pg17", feature = "pg18"))]
 fn debug_ivf_posting_block_summary(
-    index_relation: pg_sys::Relation,
+    index: IvfPageRelation<'_>,
     block_number: pg_sys::BlockNumber,
     payload_len: usize,
 ) -> Result<IvfPostingBlockSummary, String> {
-    // SAFETY: `block_number` is bounded by the caller's block-count scan, and
-    // a share lock is sufficient for read-only debug summarization.
-    let buffer = unsafe {
-        LockedBufferGuard::read_main(
-            index_relation,
+    let buffer = index
+        .read_main(
             block_number,
             pg_sys::ReadBufferMode::RBM_NORMAL,
             pg_sys::BUFFER_LOCK_SHARE as i32,
         )
-    }
-    .ok_or_else(|| format!("ec_ivf failed to open block {block_number}"))?;
+        .ok_or_else(|| format!("ec_ivf failed to open block {block_number}"))?;
 
     let result = (|| -> Result<IvfPostingBlockSummary, String> {
         let page = PageTupleReader::new(&buffer, block_number);
@@ -2367,7 +2119,7 @@ fn debug_ivf_posting_block_summary(
 
 #[cfg(any(feature = "pg17", feature = "pg18"))]
 fn rewrite_ivf_postings_from_exclusive_buffer<F>(
-    index_relation: pg_sys::Relation,
+    index: IvfPageRelation<'_>,
     buffer: &LockedBufferGuard,
     list_id: u32,
     block_number: pg_sys::BlockNumber,
@@ -2386,14 +2138,9 @@ where
         Delete,
     }
 
-    // SAFETY: starts a generic WAL transaction for the live index relation;
-    // the caller holds `buffer` with an exclusive lock for this block.
-    let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
-    // SAFETY: the exclusive-locked buffer is registered as a full-page image,
-    // yielding a mutable page pointer for rewrite/delete decisions.
-    let page =
-        unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
-    let registered = WalRegisteredPage::new(index_relation, block_number, page);
+    let mut wal_txn = index.start_wal();
+    let page = wal_txn.register_locked_buffer_full_image(&buffer);
+    let registered = WalRegisteredPage::new(index.raw(), block_number, page);
     let writer = PageTupleWriter::new(registered.page(), buffer.page_size(), block_number);
     let mut delete_offsets = Vec::new();
     let mut changed = false;
@@ -2470,8 +2217,7 @@ where
     }
 
     if changed {
-        // SAFETY: finishes the WAL transaction after registered page changes.
-        unsafe { wal_txn.finish() };
+        wal_txn.finish();
     }
     registered.record_free_space(registered.free_space());
     Ok(())
@@ -2524,7 +2270,7 @@ fn should_compact_posting_deletes(compact_deletes: bool, saw_non_posting_tuple: 
 
 #[cfg(any(feature = "pg17", feature = "pg18"))]
 fn read_page_tuple<T, DecodeFn>(
-    index_relation: pg_sys::Relation,
+    index: IvfPageRelation<'_>,
     tuple_tid: ItemPointer,
     tuple_kind: &str,
     decode: DecodeFn,
@@ -2532,22 +2278,18 @@ fn read_page_tuple<T, DecodeFn>(
 where
     DecodeFn: for<'a> FnOnce(&'a [u8]) -> Result<T, String>,
 {
-    // SAFETY: `tuple_tid` identifies a tuple on the live index relation; a
-    // share lock is sufficient because this helper only reads and decodes.
-    let buffer = unsafe {
-        LockedBufferGuard::read_main(
-            index_relation,
+    let buffer = index
+        .read_main(
             tuple_tid.block_number,
             pg_sys::ReadBufferMode::RBM_NORMAL,
             pg_sys::BUFFER_LOCK_SHARE as i32,
         )
-    }
-    .ok_or_else(|| {
-        format!(
-            "ec_ivf failed to open block {} for {tuple_kind} tuple",
-            tuple_tid.block_number
-        )
-    })?;
+        .ok_or_else(|| {
+            format!(
+                "ec_ivf failed to open block {} for {tuple_kind} tuple",
+                tuple_tid.block_number
+            )
+        })?;
 
     let page = PageTupleReader::new(&buffer, tuple_tid.block_number);
     let line_pointer_count = page.line_pointer_count();
@@ -2564,32 +2306,26 @@ where
 
 #[cfg(any(feature = "pg17", feature = "pg18"))]
 fn find_next_tuple_with_tag(
-    index_relation: pg_sys::Relation,
+    relation: IvfPageRelation<'_>,
     start_tid: ItemPointer,
     tag: u8,
     tuple_kind: &str,
 ) -> Result<ItemPointer, String> {
-    // SAFETY: `index_relation` is live; this only reads the main-fork block
-    // count to bound the forward scan.
-    let block_count = unsafe {
-        pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
-    };
+    let block_count = relation.number_of_blocks();
     let mut block_number = start_tid.block_number;
     let mut offset_number = start_tid.offset_number;
     while block_number < block_count {
-        // SAFETY: `block_number` is bounded by the relation block count above,
-        // and a share lock is sufficient for scanning tuple tags.
-        let buffer = unsafe {
-            LockedBufferGuard::read_main(
-                index_relation,
+        let buffer = relation
+            .read_main(
                 block_number,
                 pg_sys::ReadBufferMode::RBM_NORMAL,
                 pg_sys::BUFFER_LOCK_SHARE as i32,
             )
-        }
-        .ok_or_else(|| {
-            format!("ec_ivf failed to open block {block_number} while locating next {tuple_kind}")
-        })?;
+            .ok_or_else(|| {
+                format!(
+                    "ec_ivf failed to open block {block_number} while locating next {tuple_kind}"
+                )
+            })?;
 
         let page = PageTupleReader::new(&buffer, block_number);
         let line_pointer_count = page.line_pointer_count();
@@ -2643,55 +2379,6 @@ fn next_physical_tuple_tid(
     })
 }
 
-#[cfg(any(feature = "pg17", feature = "pg18"))]
-unsafe fn page_item_id(page_ptr: *mut u8, offset: u16) -> *const pg_sys::ItemIdData {
-    // SAFETY: callers pass a page pointer and a nonzero line pointer offset
-    // that has been range-checked against `page_line_pointer_count`.
-    unsafe {
-        page_ptr
-            .add(PAGE_HEADER_BYTES + ((offset - 1) as usize * size_of::<pg_sys::ItemIdData>()))
-            .cast::<pg_sys::ItemIdData>()
-    }
-}
-
-#[cfg(any(feature = "pg17", feature = "pg18"))]
-unsafe fn with_page_line_tuple_bytes<R, F>(
-    page_ptr: *mut u8,
-    page_size: usize,
-    block_number: pg_sys::BlockNumber,
-    offset: u16,
-    tuple_kind: &str,
-    visit: F,
-) -> Result<PageTupleVisit<R>, String>
-where
-    F: for<'a> FnOnce(&'a [u8]) -> Result<R, String>,
-{
-    if offset == 0 {
-        return Err(format!(
-            "ec_ivf {tuple_kind} tuple offset 0 out of range on block {block_number}"
-        ));
-    }
-
-    // SAFETY: `offset` is nonzero and callers only use this helper after
-    // bounding offsets by the page's line-pointer count.
-    let item_id = unsafe { &*page_item_id(page_ptr, offset) };
-    if item_id.lp_flags() == 0 {
-        return Ok(PageTupleVisit::Unused);
-    }
-
-    let tuple_offset = item_id.lp_off() as usize;
-    let tuple_len = item_id.lp_len() as usize;
-    if tuple_offset + tuple_len > page_size {
-        return Err(format!(
-            "ec_ivf {tuple_kind} tuple bounds exceed block {block_number}"
-        ));
-    }
-    // SAFETY: tuple offset and length were checked against `page_size`, and
-    // the page remains locked for the duration of the visitor call.
-    let tuple_bytes = unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
-    visit(tuple_bytes).map(PageTupleVisit::Present)
-}
-
 fn page_line_pointer_count(page_ptr: *mut u8) -> u16 {
     let page_header = page_ptr.cast::<pg_sys::PageHeaderData>();
     // SAFETY: callers pass a valid PostgreSQL page pointer; `pd_lower`
@@ -2725,11 +2412,8 @@ pub(super) unsafe fn initialize_metadata_page(
     index_relation: pg_sys::Relation,
     metadata: MetadataPage,
 ) {
-    // SAFETY: `index_relation` is live; this only reads the current main-fork
-    // block count to decide whether metadata must be allocated or rewritten.
-    let existing_blocks = unsafe {
-        pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
-    };
+    let index = IvfPageRelation::new(ivf_relation_nonnull(index_relation, "ec_ivf metadata init"));
+    let existing_blocks = index.number_of_blocks();
     let target_block = if existing_blocks == 0 {
         P_NEW
     } else {
@@ -2741,55 +2425,39 @@ pub(super) unsafe fn initialize_metadata_page(
         pg_sys::ReadBufferMode::RBM_NORMAL
     };
     let buffer = if target_block == P_NEW {
-        // SAFETY: `P_NEW` plus zero-and-lock allocates a new metadata block and
-        // returns it locked for initialization.
-        unsafe { LockedBufferGuard::read_main_locked(index_relation, target_block, read_mode) }
+        index.read_main_locked(target_block, read_mode)
     } else {
-        // SAFETY: metadata block zero already exists and must be locked
-        // exclusively before rewriting its special area.
-        unsafe {
-            LockedBufferGuard::read_main(
-                index_relation,
-                target_block,
-                read_mode,
-                pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
-            )
-        }
+        index.read_main(
+            target_block,
+            read_mode,
+            pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
+        )
     }
     .unwrap_or_else(|| pgrx::error!("ec_ivf failed to allocate metadata buffer"));
 
     let page_size = buffer.page_size();
-    // SAFETY: starts a generic WAL transaction for the live index relation;
-    // the metadata buffer remains locked by `buffer`.
-    let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
-    // SAFETY: the locked metadata buffer is registered as a full-page image for
-    // initialization and special-area writes.
-    let page =
-        unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
-    let registered = WalRegisteredPage::new(index_relation, buffer.block_number(), page);
+    let mut wal_txn = index.start_wal();
+    let page = wal_txn.register_locked_buffer_full_image(&buffer);
+    let registered = WalRegisteredPage::new(index.raw(), buffer.block_number(), page);
     let metadata_bytes = metadata.encode();
     let special_size = align_up(metadata_bytes.len(), ALIGNMENT_BYTES);
     registered.init(page_size, special_size);
     registered.copy_to_special(&metadata_bytes);
 
-    // SAFETY: finishes the WAL transaction after initializing metadata.
-    unsafe { wal_txn.finish() };
+    wal_txn.finish();
 }
 
 #[cfg(any(feature = "pg17", feature = "pg18"))]
 pub(super) unsafe fn read_metadata_page(index_relation: pg_sys::Relation) -> MetadataPage {
-    // SAFETY: metadata lives at block zero and is read under a share lock.
-    let buffer = unsafe {
-        LockedBufferGuard::read_main(
-            index_relation,
-            METADATA_BLOCK_NUMBER,
-            pg_sys::ReadBufferMode::RBM_NORMAL,
-            pg_sys::BUFFER_LOCK_SHARE as i32,
-        )
-    };
+    let index = IvfPageRelation::new(ivf_relation_nonnull(index_relation, "ec_ivf metadata read"));
+    let buffer = index.read_main(
+        METADATA_BLOCK_NUMBER,
+        pg_sys::ReadBufferMode::RBM_NORMAL,
+        pg_sys::BUFFER_LOCK_SHARE as i32,
+    );
     let buffer = buffer.unwrap_or_else(|| pgrx::error!("ec_ivf failed to open metadata buffer"));
 
-    let page = WalRegisteredPage::new(index_relation, METADATA_BLOCK_NUMBER, buffer.page());
+    let page = WalRegisteredPage::new(index.raw(), METADATA_BLOCK_NUMBER, buffer.page());
     let metadata_bytes = page.special_bytes(METADATA_BYTES);
     MetadataPage::decode(metadata_bytes).unwrap_or_else(|e| pgrx::error!("{e}"))
 }
@@ -2802,26 +2470,20 @@ pub(super) unsafe fn update_metadata_page<F>(
 where
     F: FnOnce(&mut MetadataPage) -> Result<(), String>,
 {
-    // SAFETY: metadata lives at block zero and must be exclusively locked
-    // before updating its encoded special-area bytes.
-    let buffer = unsafe {
-        LockedBufferGuard::read_main(
-            index_relation,
-            METADATA_BLOCK_NUMBER,
-            pg_sys::ReadBufferMode::RBM_NORMAL,
-            pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
-        )
-    };
+    let index = IvfPageRelation::new(ivf_relation_nonnull(
+        index_relation,
+        "ec_ivf metadata update",
+    ));
+    let buffer = index.read_main(
+        METADATA_BLOCK_NUMBER,
+        pg_sys::ReadBufferMode::RBM_NORMAL,
+        pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
+    );
     let buffer = buffer.ok_or_else(|| "ec_ivf failed to open metadata buffer".to_owned())?;
 
-    // SAFETY: starts a generic WAL transaction for the live index relation;
-    // the metadata buffer remains exclusive-locked by `buffer`.
-    let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
-    // SAFETY: the exclusive-locked metadata buffer is registered as a full-page
-    // image for in-place special-area updates.
-    let page =
-        unsafe { wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
-    let registered = WalRegisteredPage::new(index_relation, METADATA_BLOCK_NUMBER, page);
+    let mut wal_txn = index.start_wal();
+    let page = wal_txn.register_locked_buffer_full_image(&buffer);
+    let registered = WalRegisteredPage::new(index.raw(), METADATA_BLOCK_NUMBER, page);
     let metadata_bytes = registered.special_bytes(METADATA_BYTES);
     let mut metadata = match MetadataPage::decode(metadata_bytes) {
         Ok(metadata) => metadata,
@@ -2837,8 +2499,7 @@ where
 
     let encoded = metadata.encode();
     registered.copy_to_special(&encoded);
-    // SAFETY: finishes the WAL transaction after rewriting metadata bytes.
-    unsafe { wal_txn.finish() };
+    wal_txn.finish();
     Ok(metadata)
 }
 
@@ -3337,16 +2998,14 @@ mod tests {
     #[test]
     #[cfg(not(any(feature = "pg17", feature = "pg18")))]
     fn page_line_pointer_count_uses_header_lower_bound() {
-        let mut bytes =
-            vec![0_u8; size_of::<pg_sys::PageHeaderData>() + 4 * size_of::<pg_sys::ItemIdData>()];
-        let header = bytes.as_mut_ptr().cast::<pg_sys::PageHeaderData>();
-        // SAFETY: `bytes` is large enough for `PageHeaderData`, and this test
-        // writes only the synthetic `pd_lower` field before reading it back.
-        unsafe {
-            (*header).pd_lower =
-                (size_of::<pg_sys::PageHeaderData>() + 3 * size_of::<pg_sys::ItemIdData>()) as u16;
-        }
+        let mut header = pg_sys::PageHeaderData {
+            pd_lower: (size_of::<pg_sys::PageHeaderData>() + 3 * size_of::<pg_sys::ItemIdData>())
+                as u16,
+        };
 
-        assert_eq!(page_line_pointer_count(bytes.as_mut_ptr()), 3);
+        assert_eq!(
+            page_line_pointer_count(std::ptr::addr_of_mut!(header).cast()),
+            3
+        );
     }
 }

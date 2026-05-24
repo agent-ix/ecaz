@@ -1,0 +1,22 @@
+[loader] inspecting fixtures/m5_diskann_real10k/m5_diskann_real10k_corpus.tsv
+[loader] inspecting fixtures/m5_diskann_real10k/m5_diskann_real10k_queries.tsv
+[loader] corpus: 10000 rows, sha256=ed6012f8b12281edd80f72dfe1146a9cd09cb3192a5a0012aebb1c398290926f  queries: 200 rows, sha256=77d406729dabfe907824d74df69f64b5706a76579ec1deaf54e5619091c9f7ac
+[loader] no sibling manifest at fixtures/m5_diskann_real10k/m5_diskann_real10k_manifest.json; continuing without verification
+[loader] copied corpus table ec_real_10k_diskann_corpus in 2.31s
+[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...
+[loader] encoded corpus table ec_real_10k_diskann_corpus in 759.99ms
+[loader] copied queries table ec_real_10k_diskann_queries in 46.92ms
+[loader] building ec_real_10k_diskann_idx using ec_diskann (reloptions=[<none>]) ...
+[loader] built ec_real_10k_diskann_idx in 7.01s
+┌─────────┬─────────────────────────────────────────┐
+│ field   ┆ value                                   │
+╞═════════╪═════════════════════════════════════════╡
+│ profile ┆ ec_diskann                              │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ ec_real_10k_diskann_corpus (10000 rows) │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ ec_real_10k_diskann_queries (200 rows)  │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ ec_real_10k_diskann_idx [<default>]     │
+└─────────┴─────────────────────────────────────────┘
+[loader] completed prefix ec_real_10k_diskann in 10.72s

@@ -1,0 +1,54 @@
+Script started on 2026-05-20 13:56:23-07:00 [<not executed on terminal>]
+diff --git a/src/am/ec_spire/custom_scan/explain.rs b/src/am/ec_spire/custom_scan/explain.rs
+index 8dedc4b1..b7bf62c6 100644
+--- a/src/am/ec_spire/custom_scan/explain.rs
++++ b/src/am/ec_spire/custom_scan/explain.rs
+@@ -15,11 +15,8 @@ unsafe extern "C-unwind" fn ec_spire_explain_custom_scan(
+         return;
+     }
+ 
+-    // SAFETY: PostgreSQL calls this callback with a live CustomScanState whose
+-    // plan-private list was constructed by our planner callback.
+-    let custom_scan = unsafe { custom_scan_plan(node) };
+-    // SAFETY: `custom_scan` is the plan pointer from the live callback state.
+-    let index_oid = unsafe { custom_scan_index_oid_from_plan(custom_scan) };
++    let custom_scan = custom_scan_plan(node);
++    let index_oid = custom_scan_index_oid_from_plan(custom_scan);
+     let context = custom_scan_explain_context(index_oid);
+ 
+     // SAFETY: `es` is the non-null ExplainState supplied by PostgreSQL for the
+diff --git a/src/am/ec_spire/custom_scan/plan_private.rs b/src/am/ec_spire/custom_scan/plan_private.rs
+index 1cb631ff..ce025d72 100644
+--- a/src/am/ec_spire/custom_scan/plan_private.rs
++++ b/src/am/ec_spire/custom_scan/plan_private.rs
+@@ -27,7 +27,7 @@ fn custom_scan_query_values_from_const(const_expr: *mut pg_sys::Const) -> Option
+     Some(values)
+ }
+ 
+-unsafe fn custom_scan_plan(node: *mut pg_sys::CustomScanState) -> *mut pg_sys::CustomScan {
++fn custom_scan_plan(node: *mut pg_sys::CustomScanState) -> *mut pg_sys::CustomScan {
+     let Some(state) = custom_scan_pg_ref(node) else {
+         pgrx::error!("EcSpireDistributedScan executor state is NULL");
+     };
+@@ -58,9 +58,7 @@ unsafe fn custom_scan_index_oid_from_path(custom_path: *mut pg_sys::CustomPath)
+     }
+ }
+ 
+-unsafe fn custom_scan_mode_from_plan(
+-    custom_scan: *mut pg_sys::CustomScan,
+-) -> SpireCustomScanPlanMode {
++fn custom_scan_mode_from_plan(custom_scan: *mut pg_sys::CustomScan) -> SpireCustomScanPlanMode {
+     let custom_private = custom_scan_custom_private(custom_scan, "private mode");
+     let raw = custom_scan_plan_private_u32(custom_private, 0, "mode");
+     custom_scan_mode_from_u32(raw)
+@@ -95,7 +93,7 @@ fn custom_scan_plan_mode_for_dml_mode(
+     }
+ }
+ 
+-unsafe fn custom_scan_index_oid_from_plan(custom_scan: *mut pg_sys::CustomScan) -> pg_sys::Oid {
++fn custom_scan_index_oid_from_plan(custom_scan: *mut pg_sys::CustomScan) -> pg_sys::Oid {
+     let custom_private = custom_scan_custom_private(custom_scan, "private index OID");
+     pg_sys::Oid::from(custom_scan_plan_private_u32(custom_private, 1, "index OID"))
+ }
+
+Script done on 2026-05-20 13:56:23-07:00 [COMMAND_EXIT_CODE="0"]

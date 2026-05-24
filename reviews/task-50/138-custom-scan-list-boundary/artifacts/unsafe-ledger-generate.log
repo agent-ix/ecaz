@@ -1,0 +1,2 @@
+python3 scripts/unsafe_ledger.py generate --output reviews/task-50/138-custom-scan-list-boundary/artifacts/unsafe-ledger-after.jsonl --packet reviews/task-50/138-custom-scan-list-boundary src
+wrote 1544 unsafe ledger rows to reviews/task-50/138-custom-scan-list-boundary/artifacts/unsafe-ledger-after.jsonl

@@ -1,12 +1,3 @@
-    macro_rules! hnsw_storage_debug {
-        ($call:expr) => {{
-            // SAFETY: These pg_test fixtures create the referenced HNSW index
-            // before calling the extension's test-only storage debug helper.
-            // The helper owns PostgreSQL relation/page access for the OID.
-            unsafe { $call }
-        }};
-    }
-
     #[pg_test]
     fn test_raw_source_build_coalesces_duplicate_vectors() {
         Spi::run(
@@ -36,7 +27,7 @@
         .expect("SPI query should succeed")
         .expect("index oid should exist");
 
-        let (_block_count, metadata, data_pages) = hnsw_storage_debug!(am::debug_index_pages(index_oid));
+        let (_block_count, metadata, data_pages) = am::debug_index_pages(index_oid);
         assert_eq!(metadata.dimensions, 4);
         assert_eq!(metadata.bits, 4);
 
@@ -218,7 +209,7 @@
         let query = vec![
             0.1_f32, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6,
         ];
-        let observed = hnsw_storage_debug!(am::debug_gettuple_scan_heap_tids_with_score_comparisons(index_oid, query.clone()));
+        let observed = am::debug_gettuple_scan_heap_tids_with_score_comparisons(index_oid, query.clone());
         let exact_scores = (1..=16)
             .map(|id| {
                 let source = (0..16)
@@ -288,14 +279,14 @@
             Spi::get_one::<pg_sys::Oid>(&format!("SELECT '{index_name}'::regclass::oid"))
                 .expect("SPI query should succeed")
                 .expect("index oid should exist");
-        let observed = hnsw_storage_debug!(am::debug_gettuple_scan_heap_tids_with_score_comparisons(
-                index_oid,
-                pq_fastscan_binary_runtime_query(),
-            ));
-        let emitted_scores = hnsw_storage_debug!(am::debug_gettuple_scan_heap_tids_with_scores(
-                index_oid,
-                pq_fastscan_binary_runtime_query(),
-            ))
+        let observed = am::debug_gettuple_scan_heap_tids_with_score_comparisons(
+            index_oid,
+            pq_fastscan_binary_runtime_query(),
+        );
+        let emitted_scores = am::debug_gettuple_scan_heap_tids_with_scores(
+            index_oid,
+            pq_fastscan_binary_runtime_query(),
+        )
         .into_iter()
         .collect::<HashMap<_, _>>();
         let query = pq_fastscan_binary_runtime_query();
@@ -463,7 +454,7 @@
                 .expect("SPI query should succeed")
                 .expect("index oid should exist");
 
-        let (block_count, metadata, data_pages) = hnsw_storage_debug!(am::debug_index_pages(index_oid));
+        let (block_count, metadata, data_pages) = am::debug_index_pages(index_oid);
         assert!(block_count > 2, "build should span more than one data page");
         assert_eq!(metadata.dimensions, dim as u16);
         assert_eq!(metadata.bits, bits);
@@ -571,7 +562,7 @@
                 .expect("SPI query should succeed")
                 .expect("index oid should exist");
 
-        let (_block_count, metadata, data_pages) = hnsw_storage_debug!(am::debug_index_pages(index_oid));
+        let (_block_count, metadata, data_pages) = am::debug_index_pages(index_oid);
         let elements =
             decode_turboquant_elements_from_pages(&metadata, &data_pages, code_len(dim, bits));
 
@@ -613,7 +604,7 @@
                 .expect("SPI query should succeed")
                 .expect("index oid should exist");
 
-        let (_block_count, metadata, data_pages) = hnsw_storage_debug!(am::debug_index_pages(index_oid));
+        let (_block_count, metadata, data_pages) = am::debug_index_pages(index_oid);
         assert_eq!(metadata.dimensions, 4);
         assert_eq!(metadata.bits, 4);
         assert_eq!(metadata.seed, 42);
@@ -661,7 +652,7 @@
         .expect("SPI query should succeed")
         .expect("index oid should exist");
 
-        let (_block_count, metadata, data_pages) = hnsw_storage_debug!(am::debug_index_pages(index_oid));
+        let (_block_count, metadata, data_pages) = am::debug_index_pages(index_oid);
         assert_eq!(metadata.dimensions, 4);
         assert_eq!(metadata.bits, 4);
         assert_eq!(metadata.seed, 42);
@@ -714,7 +705,7 @@
             Spi::get_one::<pg_sys::Oid>("SELECT 'ec_hnsw_insert_append_idx'::regclass::oid")
                 .expect("SPI query should succeed")
                 .expect("index oid should exist");
-        let (_block_count, metadata, data_pages) = hnsw_storage_debug!(am::debug_index_pages(index_oid));
+        let (_block_count, metadata, data_pages) = am::debug_index_pages(index_oid);
         assert_eq!(metadata.dimensions, 4);
         assert_eq!(metadata.bits, 4);
         assert_eq!(metadata.seed, 42);
@@ -756,7 +747,7 @@
                 .expect("SPI query should succeed")
                 .expect("index oid should exist");
         let (before_block_count, _metadata, _data_pages) =
-            hnsw_storage_debug!(am::debug_index_pages(index_oid));
+            am::debug_index_pages(index_oid);
         assert_eq!(
             before_block_count, 2,
             "seed build should fit on one data page"
@@ -768,7 +759,7 @@
         )
         .expect("insert should succeed");
 
-        let (after_block_count, metadata, data_pages) = hnsw_storage_debug!(am::debug_index_pages(index_oid));
+        let (after_block_count, metadata, data_pages) = am::debug_index_pages(index_oid);
         assert_eq!(
             after_block_count, before_block_count,
             "insert should reuse existing tail page"
@@ -856,7 +847,7 @@
                 .expect("SPI query should succeed")
                 .expect("index oid should exist");
         let (before_block_count, metadata, _data_pages) =
-            hnsw_storage_debug!(am::debug_index_pages(index_oid));
+            am::debug_index_pages(index_oid);
         assert_eq!(
             before_block_count, 2,
             "seed build should occupy one data page"
@@ -873,7 +864,7 @@
         .expect("insert should succeed");
 
         let (after_block_count, _metadata, data_pages) =
-            hnsw_storage_debug!(am::debug_index_pages(index_oid));
+            am::debug_index_pages(index_oid);
         assert!(
             after_block_count > before_block_count,
             "insert should allocate a new data page when the tail page is full"
@@ -979,7 +970,7 @@
         .expect("SPI query should succeed")
         .expect("index oid should exist");
         let (before_block_count, metadata, before_pages) =
-            hnsw_storage_debug!(am::debug_index_pages(index_oid));
+            am::debug_index_pages(index_oid);
         assert_eq!(metadata.dimensions, dim);
         assert!(
             !before_pages.is_empty(),
@@ -995,7 +986,7 @@
         .expect("rollover insert should succeed");
 
         let (after_rollover_block_count, _metadata, after_rollover_pages) =
-            hnsw_storage_debug!(am::debug_index_pages(index_oid));
+            am::debug_index_pages(index_oid);
         assert!(
             after_rollover_block_count > before_block_count,
             "insert should allocate a new page once the original tail page is full"
@@ -1011,7 +1002,7 @@
         .expect("post-rollover insert should succeed");
 
         let (after_reuse_block_count, _metadata, after_reuse_pages) =
-            hnsw_storage_debug!(am::debug_index_pages(index_oid));
+            am::debug_index_pages(index_oid);
         assert_eq!(
             after_reuse_block_count, after_rollover_block_count,
             "insert after rollover should reuse the new tail page when space remains"
@@ -1042,7 +1033,7 @@
                 .expect("SPI query should succeed")
                 .expect("index oid should exist");
         let (before_block_count, metadata, data_pages) =
-            hnsw_storage_debug!(am::debug_index_pages(index_oid));
+            am::debug_index_pages(index_oid);
         assert_eq!(metadata.seed, 42);
         let before_tuple_count = data_pages
             .iter()
@@ -1056,7 +1047,7 @@
         .expect("duplicate insert should succeed");
 
         let (after_block_count, _metadata, data_pages) =
-            hnsw_storage_debug!(am::debug_index_pages(index_oid));
+            am::debug_index_pages(index_oid);
         assert_eq!(
             after_block_count, before_block_count,
             "duplicate insert should not allocate a new block"
@@ -1106,7 +1097,7 @@
         .expect("SPI query should succeed")
         .expect("index oid should exist");
         let (before_block_count, metadata, before_pages) =
-            hnsw_storage_debug!(am::debug_index_pages(index_oid));
+            am::debug_index_pages(index_oid);
         let before_tuple_count = before_pages
             .iter()
             .map(|page| page.tuples.len())
@@ -1119,7 +1110,7 @@
         .expect("gamma-distinct insert should succeed");
 
         let (after_block_count, _metadata, data_pages) =
-            hnsw_storage_debug!(am::debug_index_pages(index_oid));
+            am::debug_index_pages(index_oid);
         assert_eq!(
             after_block_count, before_block_count,
             "gamma-distinct same-code inserts should stay on the current tail page in this narrow test"
@@ -1389,7 +1380,7 @@
 
         let ctid_to_id = ctid_id_map("ec_hnsw_insert_empty_pq_fastscan_bootstrap");
         let observed_ids =
-            hnsw_storage_debug!(am::debug_gettuple_scan_heap_tids_with_scores(index_oid, inserted_query))
+            am::debug_gettuple_scan_heap_tids_with_scores(index_oid, inserted_query)
                 .into_iter()
                 .map(|(heap_tid, _score)| {
                     *ctid_to_id
@@ -1447,7 +1438,7 @@
         .expect("SPI query should succeed")
         .expect("index oid should exist");
         let (_before_block_count, before_metadata, before_pages) =
-            hnsw_storage_debug!(am::debug_index_pages(index_oid));
+            am::debug_index_pages(index_oid);
         let before_page_tuples = before_pages
             .iter()
             .flat_map(|page| {
@@ -1492,7 +1483,7 @@
         .expect("insert should succeed on a built PqFastScan index");
 
         let (_after_block_count, after_metadata, after_pages) =
-            hnsw_storage_debug!(am::debug_index_pages(index_oid));
+            am::debug_index_pages(index_oid);
         let after_page_tuples = after_pages
             .iter()
             .flat_map(|page| {
@@ -1552,27 +1543,25 @@
                     panic!("PqFastScan insert test should still decode as PqFastScan storage")
                 }
             };
-        let index_relation = open_valid_ec_hnsw_index_guard(
-            index_oid,
-            "test_ech_insert_appends_to_built_pq_fastscan_index",
-        );
-        // SAFETY: The guard keeps the HNSW index relation open while loading
-        // the freshly discovered hot tuple TID with the layout decoded from
-        // the same index metadata.
-        let new_hot = unsafe {
-            am::graph::load_grouped_graph_element(index_relation.as_ptr(), new_hot_tid, layout)
-        };
-        // SAFETY: `new_hot.reranktid` comes from the grouped graph element
-        // loaded from this relation, and the same decoded layout is used to
-        // interpret the colocated rerank payload.
-        let rerank = unsafe {
-            am::graph::load_grouped_rerank_payload(
-                index_relation.as_ptr(),
-                new_hot.reranktid,
-                layout,
-            )
-        };
-        drop(index_relation);
+        let (_new_hot_tid, new_hot_tuple) = after_page_tuples
+            .iter()
+            .find(|(tid, _tuple)| *tid == new_hot_tid)
+            .expect("fresh grouped-hot tuple should be present in debug page snapshot");
+        let new_hot = am::page::TqGroupedHotTuple::decode(
+            new_hot_tuple,
+            layout.binary_word_count,
+            layout.search_code_len,
+        )
+        .expect("fresh grouped-hot tuple should decode");
+        let (_rerank_tid, rerank_tuple) = after_page_tuples
+            .iter()
+            .find(|(tid, tuple)| {
+                *tid == new_hot.reranktid
+                    && tuple.first().copied() == Some(am::page::TQ_RERANK_TAG)
+            })
+            .expect("fresh grouped-hot tuple should reference a rerank payload");
+        let rerank = am::page::TqRerankTuple::decode(rerank_tuple, layout.rerank_code_len)
+            .expect("fresh rerank tuple should decode");
         assert!(!new_hot.deleted);
         assert_eq!(new_hot.heaptids.len(), 1);
         assert_eq!(new_hot.search_code.len(), layout.search_code_len);
@@ -1582,14 +1571,15 @@
         assert_eq!(rerank.code.len(), layout.rerank_code_len);
 
         let ctid_to_id = ctid_id_map("ec_hnsw_insert_pq_fastscan_live");
-        let observed_ids = hnsw_storage_debug!(am::debug_gettuple_scan_heap_tids_with_scores(index_oid, inserted_query.clone()))
-        .into_iter()
-        .map(|(heap_tid, _score)| {
-            *ctid_to_id
-                .get(&heap_tid)
-                .expect("inserted-row query heap tid should map back to a table row")
-        })
-        .collect::<Vec<_>>();
+        let observed_ids =
+            am::debug_gettuple_scan_heap_tids_with_scores(index_oid, inserted_query.clone())
+                .into_iter()
+                .map(|(heap_tid, _score)| {
+                    *ctid_to_id
+                        .get(&heap_tid)
+                        .expect("inserted-row query heap tid should map back to a table row")
+                })
+                .collect::<Vec<_>>();
         assert_eq!(
             observed_ids.first().copied(),
             Some(17),
@@ -1636,7 +1626,7 @@
         .expect("SPI query should succeed")
         .expect("index oid should exist");
         let (_before_block_count, _before_metadata, before_pages) =
-            hnsw_storage_debug!(am::debug_index_pages(index_oid));
+            am::debug_index_pages(index_oid);
         let before_tuple_count = before_pages
             .iter()
             .map(|page| page.tuples.len())
@@ -1651,7 +1641,7 @@
         .expect("duplicate insert should succeed on a built PqFastScan index");
 
         let (_after_block_count, after_metadata, after_pages) =
-            hnsw_storage_debug!(am::debug_index_pages(index_oid));
+            am::debug_index_pages(index_oid);
         let after_tuple_count = after_pages
             .iter()
             .map(|page| page.tuples.len())
@@ -1703,7 +1693,7 @@
             "ec_hnsw_vacuum_grouped_stats_idx",
         );
 
-        let stats = hnsw_storage_debug!(am::debug_vacuum_stats(index_oid));
+        let stats = am::debug_vacuum_stats(index_oid);
         let (_metadata, _layout, elements, _neighbors) =
             decode_grouped_index_elements_and_neighbors(index_oid);
 
@@ -1775,7 +1765,7 @@
         Spi::run("DELETE FROM ec_hnsw_vacuum_pass1_grouped_duplicates WHERE id = 2")
             .expect("delete should succeed");
 
-        let stats = hnsw_storage_debug!(am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]));
+        let stats = am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]);
         let (_metadata_after, _layout_after, elements_after, _neighbors_after) =
             decode_grouped_index_elements_and_neighbors(index_oid);
         let (_duplicate_tid_after, duplicate_after) =
@@ -1833,14 +1823,15 @@
             .map(|dim| (((deleted_row_id * 29 + dim) as f32) * 0.02).sin())
             .collect::<Vec<_>>();
         let ctid_to_id = ctid_id_map(table_name);
-        let observed_before_ids = hnsw_storage_debug!(am::debug_gettuple_scan_heap_tids_with_scores(index_oid, deleted_query.clone()))
-        .into_iter()
-        .map(|(heap_tid, _score)| {
-            *ctid_to_id
-                .get(&heap_tid)
-                .expect("pre-vacuum heap tid should map back to a table row")
-        })
-        .collect::<Vec<_>>();
+        let observed_before_ids =
+            am::debug_gettuple_scan_heap_tids_with_scores(index_oid, deleted_query.clone())
+                .into_iter()
+                .map(|(heap_tid, _score)| {
+                    *ctid_to_id
+                        .get(&heap_tid)
+                        .expect("pre-vacuum heap tid should map back to a table row")
+                })
+                .collect::<Vec<_>>();
         assert_eq!(
             observed_before_ids.first().copied(),
             Some(usize::try_from(deleted_row_id).expect("deleted row id should fit in usize")),
@@ -1852,7 +1843,7 @@
         ))
         .expect("delete should succeed");
 
-        hnsw_storage_debug!(am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]));
+        am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]);
 
         let (_metadata_after, _layout_after, elements_after, neighbors_after) =
             decode_grouped_index_elements_and_neighbors(index_oid);
@@ -1876,7 +1867,7 @@
         );
 
         let observed_after_ids =
-            hnsw_storage_debug!(am::debug_gettuple_scan_heap_tids_with_scores(index_oid, deleted_query))
+            am::debug_gettuple_scan_heap_tids_with_scores(index_oid, deleted_query)
                 .into_iter()
                 .map(|(heap_tid, _score)| {
                     *ctid_to_id
@@ -1956,7 +1947,7 @@
             "DELETE FROM {table_name} WHERE id = {deleted_row_id}"
         ))
         .expect("delete should succeed");
-        hnsw_storage_debug!(am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]));
+        am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]);
 
         let (metadata_after, _layout_after, elements_after, neighbors_after) =
             decode_grouped_index_elements_and_neighbors(index_oid);
@@ -2043,7 +2034,7 @@
             "DELETE FROM {table_name} WHERE id = {deleted_row_id}"
         ))
         .expect("delete should succeed");
-        hnsw_storage_debug!(am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]));
+        am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]);
 
         let observed_after_delete = observed_heap_tids_for_query(index_oid, deleted_query);
         assert!(
@@ -2126,7 +2117,7 @@
         ))
         .expect("ALTER INDEX should update the reloption without rewriting the index");
 
-        hnsw_storage_debug!(am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]));
+        am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]);
     }
 
     #[pg_test]
@@ -2205,7 +2196,7 @@
         ))
         .expect("ALTER INDEX should update the reloption without rewriting the index");
 
-        hnsw_storage_debug!(am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]));
+        am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]);
     }
 
     #[pg_test]
@@ -2222,7 +2213,7 @@
             .expect("REINDEX should rebuild the index to match the new storage format");
 
         let (_block_count, _m, _ef_construction, metadata) =
-            hnsw_storage_debug!(am::debug_index_metadata(index_oid));
+            am::debug_index_metadata(index_oid);
         assert_eq!(
             metadata
                 .graph_storage_format()
@@ -2255,7 +2246,7 @@
             "DELETE FROM {table_name} WHERE id = {deleted_row_id}"
         ))
         .expect("delete should succeed");
-        hnsw_storage_debug!(am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]));
+        am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]);
 
         let observed_after_delete = observed_heap_tids_for_query(index_oid, deleted_query);
         assert!(
@@ -2321,7 +2312,7 @@
             "DELETE FROM {table_name} WHERE id = {deleted_row_id}"
         ))
         .expect("delete should succeed");
-        hnsw_storage_debug!(am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]));
+        am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]);
 
         let observed_after_delete = observed_heap_tids_for_query(index_oid, deleted_query);
         assert!(
@@ -2519,7 +2510,7 @@
 
         Spi::run(&format!("DELETE FROM {table_name} WHERE id = {}", case.0))
             .expect("delete should succeed");
-        hnsw_storage_debug!(am::debug_vacuum_remove_heap_tids(index_oid, &[case.1]));
+        am::debug_vacuum_remove_heap_tids(index_oid, &[case.1]);
 
         let (metadata_after, elements_after, neighbors_after) =
             decode_index_elements_and_neighbors(index_oid, code_len(4, 4));

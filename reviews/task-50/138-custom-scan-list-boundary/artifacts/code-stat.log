@@ -1,0 +1,4 @@
+3c48f99a Centralize SPIRE custom scan list unsafe
+ src/am/ec_spire/custom_scan/cost_helpers.rs |  29 ++++
+ src/am/ec_spire/custom_scan/plan_private.rs | 224 +++++++++++++---------------
+ 2 files changed, 130 insertions(+), 123 deletions(-)

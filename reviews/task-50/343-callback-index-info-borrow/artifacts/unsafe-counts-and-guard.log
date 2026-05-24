@@ -1,0 +1,10 @@
+Script started on 2026-05-21 16:36:08-07:00 [<not executed on terminal>]
+src unsafe blocks: 1311
+
+IndexInfo raw borrow hits:
+src/am/common/pg_ptr.rs
+25:    unsafe { index_info.as_ref() }
+
+raw boundary guard hits:
+
+Script done on 2026-05-21 16:36:08-07:00 [COMMAND_EXIT_CODE="0"]

@@ -1,0 +1,5 @@
+d664d11b Remove borrowed relation tuple descriptor helper
+ src/am/ec_spire/custom_scan/begin_exec.rs |  7 ++++---
+ src/am/ec_spire/custom_scan/dml.rs        |  3 ++-
+ src/storage/relation.rs                   | 10 ----------
+ 3 files changed, 6 insertions(+), 14 deletions(-)

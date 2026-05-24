@@ -60,31 +60,30 @@ unsafe fn detoasted_varlena_bytes(datum: pg_sys::Datum, label: &str) -> Vec<u8> 
         .to_vec()
 }
 
-pub(super) unsafe fn decode_heap_tid(tid: pg_sys::ItemPointer, context: &str) -> ItemPointer {
+pub(super) fn decode_heap_tid(tid: pg_sys::ItemPointer, context: &str) -> ItemPointer {
     if tid.is_null() {
         pgrx::error!("ec_spire {context} received a null heap tid");
     }
-    // SAFETY: tid was checked non-null and points to PostgreSQL's callback-owned
-    // ItemPointerData for the current heap tuple.
-    let (block_number, offset_number) = item_pointer_get_both(unsafe { *tid });
-    ItemPointer {
-        block_number,
-        offset_number,
-    }
+    crate::am::common::pg_ptr::item_pointer(
+        std::ptr::NonNull::new(tid).expect("ec_spire heap tid should be non-null"),
+    )
 }
 
-pub(super) unsafe fn resolve_indexed_tuple_layout(
+pub(super) fn resolve_indexed_tuple_layout(
     heap_relation: pg_sys::Relation,
     index_info: *mut pg_sys::IndexInfo,
     options: &options::EcSpireOptions,
     context: &str,
 ) -> SpireIndexedTupleLayout {
+    if heap_relation.is_null() {
+        pgrx::error!("ec_spire {context} received a null heap relation");
+    }
     if index_info.is_null() {
         pgrx::error!("ec_spire {context} received a null IndexInfo");
     }
-    // SAFETY: index_info was checked non-null and PostgreSQL keeps the IndexInfo
-    // live for the duration of the build callback/setup path.
-    let index_info = unsafe { &*index_info };
+    let index_info = crate::am::common::pg_ptr::index_info(
+        std::ptr::NonNull::new(index_info).expect("ec_spire IndexInfo should be non-null"),
+    );
     if index_info.ii_NumIndexKeyAttrs != 1 {
         pgrx::error!("ec_spire currently supports exactly one vector key column");
     }
@@ -101,9 +100,7 @@ pub(super) unsafe fn resolve_indexed_tuple_layout(
     if index_info.ii_NumIndexAttrs != expected_index_attrs {
         match options.source_identity {
             options::SpireSourceIdentityProvider::None => {
-                pgrx::error!(
-                    "ec_spire INCLUDE columns require WITH (source_identity = 'include')"
-                );
+                pgrx::error!("ec_spire INCLUDE columns require WITH (source_identity = 'include')");
             }
             options::SpireSourceIdentityProvider::Include => {
                 pgrx::error!(
@@ -118,18 +115,16 @@ pub(super) unsafe fn resolve_indexed_tuple_layout(
         pgrx::error!("ec_spire requires a base heap column index key");
     }
 
-    // SAFETY: heap_relation is an open PostgreSQL relation and rd_att points to
-    // its live tuple descriptor; PgTupleDesc takes its own copy.
-    let tuple_desc = unsafe { PgTupleDesc::from_pg_copy((*heap_relation).rd_att) };
+    let heap_relation = std::ptr::NonNull::new(heap_relation)
+        .unwrap_or_else(|| pgrx::error!("ec_spire build needs a valid heap relation"));
+    let tuple_desc = crate::storage::relation::relation_tuple_desc_copy_handle(heap_relation);
     let att = tuple_desc
         .get(attnum as usize - 1)
         .expect("resolved indexed attribute should exist");
     if att.attisdropped {
         pgrx::error!("ec_spire indexed column references a dropped column");
     }
-    // SAFETY: att.atttypid is read from the copied tuple descriptor and passed
-    // to PostgreSQL type lookup helpers.
-    let vector_kind = unsafe { resolve_indexed_vector_kind_from_type(att.atttypid) }
+    let vector_kind = resolve_indexed_vector_kind_from_type(att.atttypid)
         .unwrap_or_else(|| pgrx::error!("ec_spire indexed column must be ecvector or tqvector"));
     let source_identity = match options.source_identity {
         options::SpireSourceIdentityProvider::None => None,
@@ -144,13 +139,9 @@ pub(super) unsafe fn resolve_indexed_tuple_layout(
             if identity_att.attisdropped {
                 pgrx::error!("ec_spire source_identity INCLUDE column references a dropped column");
             }
-            // SAFETY: identity_att.atttypid is read from the copied tuple
-            // descriptor and passed to PostgreSQL type lookup helpers.
-            let datum_kind = unsafe { resolve_source_identity_datum_kind(identity_att.atttypid) }
+            let datum_kind = resolve_source_identity_datum_kind(identity_att.atttypid)
                 .unwrap_or_else(|| {
-                    pgrx::error!(
-                        "ec_spire source_identity INCLUDE column must be uuid or bytea"
-                    )
+                    pgrx::error!("ec_spire source_identity INCLUDE column must be uuid or bytea")
                 });
             Some(SpireSourceIdentityAttribute {
                 index_attr_offset: 1,
@@ -165,24 +156,8 @@ pub(super) unsafe fn resolve_indexed_tuple_layout(
     }
 }
 
-unsafe fn resolve_indexed_vector_kind_from_type(
-    type_oid: pg_sys::Oid,
-) -> Option<SpireIndexedVectorKind> {
-    // SAFETY: type_oid comes from PostgreSQL tuple descriptor metadata.
-    let base_type_oid = unsafe { pg_sys::getBaseType(type_oid) };
-    // SAFETY: base_type_oid is the PostgreSQL base type OID returned above.
-    let formatted = unsafe { pg_sys::format_type_be(base_type_oid) };
-    if formatted.is_null() {
-        return None;
-    }
-    // SAFETY: format_type_be returns a non-null NUL-terminated string on
-    // success; it remains valid until pfree below.
-    let name = unsafe { CStr::from_ptr(formatted) }
-        .to_string_lossy()
-        .into_owned();
-    // SAFETY: formatted was allocated by PostgreSQL format_type_be and is no
-    // longer needed after copying into name.
-    unsafe { pg_sys::pfree(formatted.cast()) };
+fn resolve_indexed_vector_kind_from_type(type_oid: pg_sys::Oid) -> Option<SpireIndexedVectorKind> {
+    let name = crate::storage::type_info::formatted_base_type_name(type_oid)?;
     let type_name = name.rsplit('.').next().unwrap_or(&name).trim_matches('"');
     match type_name {
         "ecvector" => Some(SpireIndexedVectorKind::Ecvector),
@@ -191,11 +166,10 @@ unsafe fn resolve_indexed_vector_kind_from_type(
     }
 }
 
-unsafe fn resolve_source_identity_datum_kind(
+fn resolve_source_identity_datum_kind(
     type_oid: pg_sys::Oid,
 ) -> Option<SpireSourceIdentityDatumKind> {
-    // SAFETY: type_oid comes from PostgreSQL tuple descriptor metadata.
-    match unsafe { pg_sys::getBaseType(type_oid) } {
+    match crate::storage::type_info::base_type_oid(type_oid) {
         pg_sys::UUIDOID => Some(SpireSourceIdentityDatumKind::Uuid),
         pg_sys::BYTEAOID => Some(SpireSourceIdentityDatumKind::Bytea16),
         _ => None,
@@ -207,93 +181,81 @@ pub(super) unsafe extern "C-unwind" fn ec_spire_ambuild(
     index_relation: pg_sys::Relation,
     index_info: *mut pg_sys::IndexInfo,
 ) -> *mut pg_sys::IndexBuildResult {
-    // SAFETY: PostgreSQL invokes ambuild with live heap/index relations and an
-    // IndexInfo pointer; the guard converts Rust panics/errors into PostgreSQL
-    // error handling while the closure performs all catalog/build work.
-    unsafe {
-        pgrx::pgrx_extern_c_guard(|| {
-            let options = options::relation_options(index_relation);
-            let local_store_tablespace_plan =
-                options::resolve_local_store_tablespace_plan(index_relation, &options)
-                    .unwrap_or_else(|e| pgrx::error!("{e}"));
-            let local_store_relation_plan = plan_local_store_relations(
-                (*index_relation).rd_id.into(),
-                local_store_tablespace_plan
-                    .iter()
-                    .map(|entry| (entry.local_store_id, entry.tablespace_oid)),
-            )
-            .unwrap_or_else(|e| pgrx::error!("{e}"));
-            let store_relids =
-                create_local_store_relations_for_build(index_relation, &local_store_relation_plan)
-                    .unwrap_or_else(|e| pgrx::error!("{e}"));
-            let local_store_config = local_store_config_from_relation_plan(
-                SPIRE_INITIAL_EPOCH,
-                &local_store_relation_plan,
-                store_relids,
-            )
-            .unwrap_or_else(|e| pgrx::error!("{e}"));
-            let recursive_fanout = options.recursive_fanout();
-            let top_graph_plan = options
-                .top_graph_plan()
+    pg_am_callback!({
+        let options = options::relation_options(index_relation);
+        let local_store_tablespace_plan =
+            options::resolve_local_store_tablespace_plan(index_relation, &options)
                 .unwrap_or_else(|e| pgrx::error!("{e}"));
-            if top_graph_plan.enabled && recursive_fanout.is_none() {
-                pgrx::error!(
-                    "ec_spire top_graph_enabled requires recursive_fanout >= 2 during build"
-                );
-            }
-            page::initialize_root_control_page(index_relation, SpireRootControlState::empty());
-            let tuple_layout =
-                resolve_indexed_tuple_layout(heap_relation, index_info, &options, "ambuild");
-            let mut state = SpireBuildState::new(options, tuple_layout);
-            let heap_tuples = pg_sys::table_index_build_scan(
-                heap_relation,
+        let local_store_relation_plan = plan_local_store_relations(
+            (*index_relation).rd_id.into(),
+            local_store_tablespace_plan
+                .iter()
+                .map(|entry| (entry.local_store_id, entry.tablespace_oid)),
+        )
+        .unwrap_or_else(|e| pgrx::error!("{e}"));
+        let store_relids =
+            create_local_store_relations_for_build(index_relation, &local_store_relation_plan)
+                .unwrap_or_else(|e| pgrx::error!("{e}"));
+        let local_store_config = local_store_config_from_relation_plan(
+            SPIRE_INITIAL_EPOCH,
+            &local_store_relation_plan,
+            store_relids,
+        )
+        .unwrap_or_else(|e| pgrx::error!("{e}"));
+        let recursive_fanout = options.recursive_fanout();
+        let top_graph_plan = options
+            .top_graph_plan()
+            .unwrap_or_else(|e| pgrx::error!("{e}"));
+        if top_graph_plan.enabled && recursive_fanout.is_none() {
+            pgrx::error!("ec_spire top_graph_enabled requires recursive_fanout >= 2 during build");
+        }
+        page::initialize_root_control_page(index_relation, SpireRootControlState::empty());
+        let tuple_layout =
+            resolve_indexed_tuple_layout(heap_relation, index_info, &options, "ambuild");
+        let mut state = SpireBuildState::new(options, tuple_layout);
+        let heap_tuples = pg_sys::table_index_build_scan(
+            heap_relation,
+            index_relation,
+            index_info,
+            false,
+            false,
+            Some(ec_spire_build_callback),
+            (&mut state as *mut SpireBuildState).cast(),
+            ptr::null_mut(),
+        );
+        let index_tuples = if state.scanned_tuples == 0 {
+            0.0
+        } else if let Some(recursive_fanout) = recursive_fanout {
+            publish_relation_recursive_routing_build(
                 index_relation,
-                index_info,
-                false,
-                false,
-                Some(ec_spire_build_callback),
-                (&mut state as *mut SpireBuildState).cast(),
-                ptr::null_mut(),
-            );
-            let index_tuples = if state.scanned_tuples == 0 {
-                0.0
-            } else if let Some(recursive_fanout) = recursive_fanout {
-                publish_relation_recursive_routing_build(
-                    index_relation,
-                    &state,
-                    recursive_fanout,
-                    local_store_config,
-                )
-                .unwrap_or_else(|e| {
-                    pgrx::error!("ec_spire recursive populated ambuild failed: {e}")
-                }) as f64
-            } else {
-                publish_relation_partitioned_single_level_build(
-                    index_relation,
-                    &state,
-                    local_store_config,
-                )
-                .unwrap_or_else(|e| pgrx::error!("ec_spire populated ambuild failed: {e}"))
-                    as f64
-            };
+                &state,
+                recursive_fanout,
+                local_store_config,
+            )
+            .unwrap_or_else(|e| pgrx::error!("ec_spire recursive populated ambuild failed: {e}"))
+                as f64
+        } else {
+            publish_relation_partitioned_single_level_build(
+                index_relation,
+                &state,
+                local_store_config,
+            )
+            .unwrap_or_else(|e| pgrx::error!("ec_spire populated ambuild failed: {e}"))
+                as f64
+        };
 
-            crate::fault::maybe_fail_palloc("ec_spire ambuild result");
-            let mut result = PgBox::<pg_sys::IndexBuildResult>::alloc0();
-            result.heap_tuples = heap_tuples;
-            result.index_tuples = index_tuples;
-            result.into_pg()
-        })
-    }
+        crate::fault::maybe_fail_palloc("ec_spire ambuild result");
+        let mut result = PgBox::<pg_sys::IndexBuildResult>::alloc0();
+        result.heap_tuples = heap_tuples;
+        result.index_tuples = index_tuples;
+        result.into_pg()
+    })
 }
 
 pub(super) unsafe extern "C-unwind" fn ec_spire_ambuildempty(_index_relation: pg_sys::Relation) {
-    // SAFETY: PostgreSQL invokes ambuildempty with the target index relation
-    // open; the guarded closure initializes only that index's root page.
-    unsafe {
-        pgrx::pgrx_extern_c_guard(|| {
-            page::initialize_root_control_page(_index_relation, SpireRootControlState::empty());
-        })
-    }
+    pg_am_callback!({
+        page::initialize_root_control_page(_index_relation, SpireRootControlState::empty());
+    })
 }
 
 unsafe extern "C-unwind" fn ec_spire_build_callback(
@@ -304,21 +266,17 @@ unsafe extern "C-unwind" fn ec_spire_build_callback(
     _tuple_is_alive: bool,
     state: *mut c_void,
 ) {
-    // SAFETY: table_index_build_scan invokes this callback with Datum/null
-    // arrays and the SpireBuildState pointer supplied by ec_spire_ambuild.
-    unsafe {
-        pgrx::pgrx_extern_c_guard(|| {
-            let state = &mut *state.cast::<SpireBuildState>();
-            let heap_tid = decode_heap_tid(tid, "ambuild");
-            let tuple = build_spire_index_tuple(
-                values,
-                isnull,
-                heap_tid,
-                state.tuple_layout,
-                state.options.assignment_payload_format(),
-                "ambuild",
-            );
-            state.push(tuple);
-        })
-    }
+    pg_am_callback!({
+        let state = &mut *state.cast::<SpireBuildState>();
+        let heap_tid = decode_heap_tid(tid, "ambuild");
+        let tuple = build_spire_index_tuple(
+            values,
+            isnull,
+            heap_tid,
+            state.tuple_layout,
+            state.options.assignment_payload_format(),
+            "ambuild",
+        );
+        state.push(tuple);
+    })
 }

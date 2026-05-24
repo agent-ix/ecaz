@@ -87,14 +87,9 @@
         .expect("coordinator fanout leaf pids should exist");
         assert_eq!(coord_leaf_pids.len(), node_ids.len());
 
-        // SAFETY: This pg_test fixture owns the Postgres objects and test-only debug state for this boundary, and keeps the relevant relation, slot, or guard alive for the call.
-
-        unsafe {
-            for (pid, node_id) in coord_leaf_pids.iter().zip(node_ids.iter()) {
-                let node_id =
-                    u32::try_from(*node_id).expect("fixture node_id should fit u32");
-                am::debug_spire_rewrite_placement_node(index_oid, *pid as u64, node_id);
-            }
+        for (pid, node_id) in coord_leaf_pids.iter().zip(node_ids.iter()) {
+            let node_id = u32::try_from(*node_id).expect("fixture node_id should fit u32");
+            am::debug_spire_rewrite_placement_node(index_oid, *pid as u64, node_id);
         }
 
         let mut expected_rows = std::collections::BTreeSet::new();

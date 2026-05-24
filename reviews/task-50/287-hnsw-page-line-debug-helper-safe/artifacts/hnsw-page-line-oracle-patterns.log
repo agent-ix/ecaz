@@ -1,0 +1,33 @@
+Script started on 2026-05-21 11:26:48-07:00 [<not executed on terminal>]
+119:fn debug_with_page_line_tuple_bytes<R, F>(
+132:        super::shared::with_page_line_tuple_bytes(
+595:fn debug_with_oracle_score_parts<R>(
+682:struct DebugAmScan {
+688:impl DebugAmScan {
+714:    fn with_oracle_score_parts<R>(
+718:        debug_with_oracle_score_parts(self.scan, f)
+746:impl Drop for DebugAmScan {
+792:    let mut scan = DebugAmScan::begin(index_relation.as_ptr(), 0, 1);
+804:    let mut scan = DebugAmScan::begin(index_relation.as_ptr(), 0, 1);
+823:    let scan = DebugAmScan::begin(index_relation.as_ptr(), 0, 1);
+858:    let scan = DebugAmScan::begin(index_relation.as_ptr(), 0, 1);
+936:    let scan = DebugAmScan::begin(index_relation.as_ptr(), 0, 1);
+1024:    let scan = DebugAmScan::begin(index_relation.as_ptr(), 0, 1);
+1518:            let matches_element_tag = debug_with_page_line_tuple_bytes(
+1587:            let matches_element_tag = debug_with_page_line_tuple_bytes(
+1655:            let matches_element_tag = debug_with_page_line_tuple_bytes(
+1884:    let scan = DebugAmScan::begin(index_relation, 0, 1);
+1893:    let heap_tids = scan.with_oracle_score_parts(|parts| {
+1958:    let scan = DebugAmScan::begin(index_relation, 0, 1);
+1967:    let tids = scan.with_oracle_score_parts(|parts| {
+2072:    let scan = DebugAmScan::begin(index_relation, 0, 1);
+2081:    let tids = scan.with_oracle_score_parts(|parts| {
+2213:    let scan = DebugAmScan::begin(index_relation, 0, 1);
+2222:    let heap_tids = scan.with_oracle_score_parts(|parts| {
+2343:    let scan = DebugAmScan::begin(index_relation, 0, 1);
+2352:    let tids = scan.with_oracle_score_parts(|parts| {
+3068:    let (is_null, value_present, score) = debug_scan_orderby_score_state(scan);
+3074:    let (is_null, _value_present, score) = debug_scan_orderby_score_state(scan);
+3079:fn debug_scan_orderby_score_state(scan: pg_sys::IndexScanDesc) -> (bool, bool, f32) {
+
+Script done on 2026-05-21 11:26:48-07:00 [COMMAND_EXIT_CODE="0"]

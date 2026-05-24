@@ -78,6 +78,14 @@ Each remote node SHALL host:
 Primary key SHALL be `(index_oid, pk_value)`. A secondary identity index SHALL
 support lookup by `(index_oid, source_identity)`.
 
+## Schema
+
+```json
+{
+  "TODO": "describe the schema shape here"
+}
+```
+
 ## Acceptance Criteria
 
 ### FR-055-AC-1

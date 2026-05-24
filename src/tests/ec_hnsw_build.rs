@@ -1086,7 +1086,7 @@
                 .expect("SPI query should succeed")
                 .expect("index oid should exist");
 
-        let (block_count, metadata, data_pages) = hnsw_build_debug!(am::debug_index_pages(index_oid));
+        let (block_count, metadata, data_pages) = am::debug_index_pages(index_oid);
 
         assert!(
             block_count >= 2,
@@ -1320,7 +1320,7 @@
             Spi::get_one::<pg_sys::Oid>("SELECT 'ec_hnsw_parallel_build_idx'::regclass::oid")
                 .expect("SPI query should succeed")
                 .expect("index oid should exist");
-        let (_block_count, metadata, data_pages) = hnsw_build_debug!(am::debug_index_pages(index_oid));
+        let (_block_count, metadata, data_pages) = am::debug_index_pages(index_oid);
         let elements =
             decode_turboquant_elements_from_pages(&metadata, &data_pages, code_len(4, 4));
         let heap_tid_count = elements
@@ -1387,7 +1387,7 @@
             Spi::get_one::<pg_sys::Oid>("SELECT 'ec_hnsw_parallel_build_dsm_idx'::regclass::oid")
                 .expect("SPI query should succeed")
                 .expect("index oid should exist");
-        let (_block_count, metadata, data_pages) = hnsw_build_debug!(am::debug_index_pages(index_oid));
+        let (_block_count, metadata, data_pages) = am::debug_index_pages(index_oid);
         let elements =
             decode_turboquant_elements_from_pages(&metadata, &data_pages, code_len(4, 4));
         let heap_tid_count = elements
@@ -1497,7 +1497,7 @@
                 .expect("SPI query should succeed")
                 .expect("index oid should exist");
 
-        let (_block_count, metadata, data_pages) = hnsw_build_debug!(am::debug_index_pages(index_oid));
+        let (_block_count, metadata, data_pages) = am::debug_index_pages(index_oid);
         assert_eq!(metadata.m, 6);
         assert_eq!(metadata.ef_construction, 80);
         assert_eq!(metadata.dimensions, 4);
@@ -1564,7 +1564,7 @@
         .expect("SPI query should succeed")
         .expect("reloptions should exist");
 
-        let (_block_count, metadata, data_pages) = hnsw_build_debug!(am::debug_index_pages(index_oid));
+        let (_block_count, metadata, data_pages) = am::debug_index_pages(index_oid);
 
         assert!(reloptions.contains(&"storage_format=pq_fastscan".to_string()));
         assert_eq!(metadata.format_version, am::page::INDEX_FORMAT_V2_GROUPED);
@@ -1686,7 +1686,7 @@
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
-        let (_block_count, metadata, data_pages) = hnsw_build_debug!(am::debug_index_pages(index_oid));
+        let (_block_count, metadata, data_pages) = am::debug_index_pages(index_oid);
 
         let page_tuples = data_pages
             .iter()
@@ -1779,7 +1779,7 @@
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
-        let (_block_count, metadata, data_pages) = hnsw_build_debug!(am::debug_index_pages(index_oid));
+        let (_block_count, metadata, data_pages) = am::debug_index_pages(index_oid);
         let grouped_codebook_count = data_pages
             .iter()
             .flat_map(|page| page.tuples.iter())
@@ -1836,7 +1836,7 @@
         )
         .expect("SPI query should succeed")
         .expect("reloptions should exist");
-        let (_block_count, metadata, data_pages) = hnsw_build_debug!(am::debug_index_pages(index_oid));
+        let (_block_count, metadata, data_pages) = am::debug_index_pages(index_oid);
         let (decoded_metadata, elements, neighbors) =
             decode_index_elements_and_neighbors(index_oid, code_len(16, 4));
 
@@ -1953,7 +1953,7 @@
         .expect("SPI query should succeed")
         .expect("index oid should exist");
 
-        let (_block_count, metadata, _data_pages) = hnsw_build_debug!(am::debug_index_pages(index_oid));
+        let (_block_count, metadata, _data_pages) = am::debug_index_pages(index_oid);
         let layout = match am::graph::GraphStorageDescriptor::from_metadata(&metadata).unwrap() {
             am::graph::GraphStorageDescriptor::PqFastScan(layout) => layout,
             am::graph::GraphStorageDescriptor::TurboQuant { .. }
@@ -2064,7 +2064,7 @@
         .expect("SPI query should succeed")
         .expect("index oid should exist");
 
-        let (_block_count, metadata, _data_pages) = hnsw_build_debug!(am::debug_index_pages(index_oid));
+        let (_block_count, metadata, _data_pages) = am::debug_index_pages(index_oid);
         let layout = match am::graph::GraphStorageDescriptor::from_metadata(&metadata).unwrap() {
             am::graph::GraphStorageDescriptor::PqFastScan(layout) => layout,
             am::graph::GraphStorageDescriptor::TurboQuant { .. }
@@ -2140,7 +2140,7 @@
         .expect("SPI query should succeed")
         .expect("index oid should exist");
 
-        let (_block_count, metadata, _data_pages) = hnsw_build_debug!(am::debug_index_pages(index_oid));
+        let (_block_count, metadata, _data_pages) = am::debug_index_pages(index_oid);
         assert_ne!(
             metadata.grouped_codebook_head,
             am::page::ItemPointer::INVALID
@@ -2423,7 +2423,7 @@
         let query = vec![
             0.1_f32, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6,
         ];
-        let observed = hnsw_build_debug!(am::debug_gettuple_scan_heap_tids_with_score_comparisons(index_oid, query.clone()));
+        let observed = am::debug_gettuple_scan_heap_tids_with_score_comparisons(index_oid, query.clone());
         let exact_scores = (1..=16)
             .map(|id| {
                 let source = (0..16)

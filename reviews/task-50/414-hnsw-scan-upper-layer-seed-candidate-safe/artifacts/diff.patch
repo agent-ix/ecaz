@@ -1,0 +1,61 @@
+diff --git a/src/am/ec_hnsw/scan.rs b/src/am/ec_hnsw/scan.rs
+index dc08007e6..eaa843988 100644
+--- a/src/am/ec_hnsw/scan.rs
++++ b/src/am/ec_hnsw/scan.rs
+@@ -3391,9 +3391,9 @@ where
+     candidates
+ }
+ 
+-unsafe fn cached_upper_layer_seed_candidate(
++fn cached_upper_layer_seed_candidate(
+     index_relation: pg_sys::Relation,
+-    opaque: *mut TqScanOpaque,
++    opaque: &mut TqScanOpaque,
+     entry_candidate: search::BeamCandidate<page::ItemPointer>,
+     entry_level: u8,
+ ) -> search::BeamCandidate<page::ItemPointer> {
+@@ -3404,16 +3404,20 @@ unsafe fn cached_upper_layer_seed_candidate(
+     graph::greedy_descend_with_successors(
+         entry_candidate,
+         entry_level,
+-        // SAFETY: each successor expansion uses the same live relation and
+-        // scan opaque while greedy descent owns only value-copy TIDs/scores.
+-        |source_tid, layer| unsafe {
+-            cached_scan_successor_candidates_for_layer(
+-                index_relation,
+-                opaque,
+-                source_tid,
+-                layer,
+-                |_| true,
+-            )
++        |source_tid, layer| {
++            // SAFETY: `cached_scan_successor_candidates_for_layer` is still
++            // `unsafe fn` (its quantizer-borrow restructure is queued); the
++            // closure reborrows the parent's `&mut TqScanOpaque` as `*mut`
++            // at each invocation, then passes through.
++            unsafe {
++                cached_scan_successor_candidates_for_layer(
++                    index_relation,
++                    opaque,
++                    source_tid,
++                    layer,
++                    |_| true,
++                )
++            }
+         },
+     )
+ }
+@@ -4309,11 +4313,8 @@ unsafe fn initialize_scan_entry_candidate(
+     let opaque_ptr = opaque as *mut TqScanOpaque;
+     #[cfg(any(test, feature = "pg_test"))]
+     let upper_layer_started = Instant::now();
+-    // SAFETY: the entry candidate was loaded from this scan's live graph and
+-    // the opaque pointer remains valid while upper layers are traversed.
+-    let upper_layer_seed = unsafe {
+-        cached_upper_layer_seed_candidate(index_relation, opaque_ptr, entry_candidate, entry.level)
+-    };
++    let upper_layer_seed =
++        cached_upper_layer_seed_candidate(index_relation, opaque, entry_candidate, entry.level);
+     #[cfg(any(test, feature = "pg_test"))]
+     let upper_layer_elapsed_us =
+         u64::try_from(upper_layer_started.elapsed().as_micros()).expect("timing should fit in u64");

@@ -64,6 +64,14 @@ stateDiagram-v2
 9. Diagnostic functions SHALL distinguish dry planning surfaces from live
    libpq/TLS surfaces that open sockets.
 
+## Workflow
+
+```mermaid
+sequenceDiagram
+    participant TODO
+    TODO->>TODO: describe the workflow
+```
+
 ## Acceptance Criteria
 
 ### FR-057-AC-1

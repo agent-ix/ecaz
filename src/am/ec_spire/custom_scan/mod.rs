@@ -2,12 +2,16 @@ use pgrx::{pg_guard, pg_sys, FromDatum, PgBox, PgList, Spi};
 
 use std::{ffi::CString, ptr};
 
-use crate::am::common::cost::{current_planner_cost_constants, PlannerCostConstants};
+use crate::am::common::{
+    cost::{current_cpu_tuple_cost, current_planner_cost_constants, PlannerCostConstants},
+    heap_slot::{TupleDescView, TupleSlotAttribute, TupleSlotWriter},
+    pg_ptr::{pg_list as custom_scan_pg_list, pg_ref as custom_scan_pg_ref},
+};
 
 use super::meta;
+use super::SpireLiveIndexRelation;
 
 const CUSTOM_SCAN_NAME: &core::ffi::CStr = c"EcSpireDistributedScan";
-const EC_SPIRE_AM_NAME: &core::ffi::CStr = c"ec_spire";
 const CUSTOM_SCAN_ROUTING_SCORE_BOUND: f64 = 64.0;
 const CUSTOM_SCAN_REMOTE_DISPATCH_CPU_UNITS: f64 = 1024.0;
 const CUSTOM_SCAN_MERGE_CPU_UNITS: f64 = 0.5;

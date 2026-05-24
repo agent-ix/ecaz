@@ -1,0 +1,2 @@
+python3 scripts/unsafe_ledger.py generate --output reviews/task-50/040-hnsw-shared-read-stream-visitor/artifacts/unsafe-ledger-after.jsonl --packet reviews/task-50/040-hnsw-shared-read-stream-visitor src
+wrote 2375 unsafe ledger rows to reviews/task-50/040-hnsw-shared-read-stream-visitor/artifacts/unsafe-ledger-after.jsonl

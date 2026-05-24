@@ -11,11 +11,14 @@ use crate::quant::{grouped_pq::GROUPED_PQ_CENTROIDS, prod::ProdQuantizer};
 
 use super::{build_parallel, graph, insert, options, page, search, shared, source, P_NEW};
 use crate::am::common::{
+    callback::pg_am_callback,
     detoast::DetoastedVarlena,
+    heap_slot::TupleSlotReader,
     training::{self, GroupedPq4Model},
 };
 use crate::storage::{
-    buffer_guard::LockedBufferGuard, relation_guard::HeapRelationGuard, scan_guard::HeapScanGuard,
+    buffer_guard::LockedBufferGuard, relation::RelationHandle,
+    relation_guard::HeapRelationGuard, scan_guard::HeapScanGuard,
     slot_guard::TupleTableSlotGuard, snapshot_guard::ActiveSnapshotGuard, wal,
 };
 
@@ -105,17 +108,12 @@ pub(super) unsafe extern "C-unwind" fn ec_hnsw_build_callback(
     _tuple_is_alive: bool,
     state: *mut c_void,
 ) {
-    // SAFETY: PostgreSQL calls this callback with a `BuildState` pointer passed
-    // as callback state; `pgrx_extern_c_guard` converts Rust panics/errors at
-    // the C boundary while the synchronous callback owns the tuple arrays.
-    unsafe {
-        pgrx::pgrx_extern_c_guard(|| {
-            let state = &mut *state.cast::<BuildState>();
-            let heap_tid = shared::decode_heap_tid(tid);
-            let tuple = build_heap_tuple(values, isnull, heap_tid, state.indexed_vector_kind);
-            state.push(tuple);
-        })
-    }
+    pg_am_callback!({
+        let state = &mut *state.cast::<BuildState>();
+        let heap_tid = shared::decode_heap_tid(tid);
+        let tuple = build_heap_tuple(values, isnull, heap_tid, state.indexed_vector_kind);
+        state.push(tuple);
+    })
 }
 
 pub(crate) fn debug_last_build_timing() -> BuildTimingSnapshot {
@@ -187,149 +185,145 @@ pub(super) unsafe extern "C-unwind" fn ec_hnsw_ambuild(
     index_relation: pg_sys::Relation,
     index_info: *mut pg_sys::IndexInfo,
 ) -> *mut pg_sys::IndexBuildResult {
-    // SAFETY: This is PostgreSQL's `ambuild` entry point. The guard keeps Rust
-    // unwinding across the C boundary contained while all relation pointers and
-    // `index_info` are valid for the duration of the build call.
-    unsafe {
-        pgrx::pgrx_extern_c_guard(|| {
-            let mut state = BuildState::new(index_relation);
-            reset_debug_last_build_timing();
-            build_parallel::reset_debug_last_parallel_build_workers_launched();
-            let parallel_plan =
-                build_parallel::EcHnswParallelBuildPlan::from_index_info(index_info);
-            validate_grouped_rerank_source_column(heap_relation, &state.options);
+    pg_am_callback!({
+        let mut state = BuildState::new(index_relation);
+        reset_debug_last_build_timing();
+        build_parallel::reset_debug_last_parallel_build_workers_launched();
+        let parallel_plan = build_parallel::EcHnswParallelBuildPlan::from_index_info(index_info);
+        validate_grouped_rerank_source_column(heap_relation, &state.options);
 
-            shared::initialize_metadata_page(index_relation, state.initial_metadata());
+        shared::initialize_metadata_page(index_relation, state.initial_metadata());
 
-            let mut parallel_begin_us = 0_u64;
-            let mut parallel_drain_us = 0_u64;
-            let mut parallel_sort_push_us = 0_u64;
-            let heap_ingest_start = Instant::now();
-            let heap_tuples = if !parallel_plan.uses_serial_build_path() {
-                build_parallel::try_parallel_build(
-                    heap_relation,
-                    index_relation,
-                    index_info,
-                    &mut state,
-                    parallel_plan,
-                )
-                .map(|result| {
-                    parallel_begin_us = result.begin_us;
-                    parallel_drain_us = result.drain_us;
-                    parallel_sort_push_us = result.sort_push_us;
-                    result.heap_tuples
-                })
-                .unwrap_or_else(|| {
-                    if state.options.build_source_column.is_some() {
-                        ec_hnsw_build_scan_with_source(heap_relation, index_info, &mut state)
-                    } else {
-                        pg_sys::table_index_build_scan(
-                            heap_relation,
-                            index_relation,
-                            index_info,
-                            false,
-                            false,
-                            Some(ec_hnsw_build_callback),
-                            (&mut state as *mut BuildState).cast(),
-                            ptr::null_mut(),
-                        )
-                    }
-                })
-            } else if state.options.build_source_column.is_some() {
-                ec_hnsw_build_scan_with_source(heap_relation, index_info, &mut state)
-            } else {
-                pg_sys::table_index_build_scan(
-                    heap_relation,
-                    index_relation,
-                    index_info,
-                    false,
-                    false,
-                    Some(ec_hnsw_build_callback),
-                    (&mut state as *mut BuildState).cast(),
-                    ptr::null_mut(),
-                )
-            };
-            let heap_ingest_us = elapsed_us(heap_ingest_start);
-
-            let mut flush_timing = BuildFlushTiming::default();
-            let flush_start = Instant::now();
-            let index_tuples = if state.heap_tuples.is_empty() {
-                0.0
-            } else {
-                if let Some(graph_build) =
-                    build_parallel::try_parallel_concurrent_dsm_graph_build(&state, parallel_plan)
-                {
-                    flush_timing.graph_us = graph_build.graph_us;
-                    flush_timing.stage_us = graph_build.stage_us;
-                    let write_start = Instant::now();
-                    flush_build_output(index_relation, &graph_build.output);
-                    flush_timing.write_us = elapsed_us(write_start);
+        let mut parallel_begin_us = 0_u64;
+        let mut parallel_drain_us = 0_u64;
+        let mut parallel_sort_push_us = 0_u64;
+        let heap_ingest_start = Instant::now();
+        let heap_tuples = if !parallel_plan.uses_serial_build_path() {
+            build_parallel::try_parallel_build(
+                heap_relation,
+                index_relation,
+                index_info,
+                &mut state,
+                parallel_plan,
+            )
+            .map(|result| {
+                parallel_begin_us = result.begin_us;
+                parallel_drain_us = result.drain_us;
+                parallel_sort_push_us = result.sort_push_us;
+                result.heap_tuples
+            })
+            .unwrap_or_else(|| {
+                if state.options.build_source_column.is_some() {
+                    ec_hnsw_build_scan_with_source(heap_relation, index_info, &mut state)
                 } else {
-                    flush_build_state_with_timing(index_relation, &state, &mut flush_timing);
+                    pg_sys::table_index_build_scan(
+                        heap_relation,
+                        index_relation,
+                        index_info,
+                        false,
+                        false,
+                        Some(ec_hnsw_build_callback),
+                        (&mut state as *mut BuildState).cast(),
+                        ptr::null_mut(),
+                    )
                 }
-                state.heap_tuples.len() as f64
-            };
-            let flush_total_us = elapsed_us(flush_start);
+            })
+        } else if state.options.build_source_column.is_some() {
+            ec_hnsw_build_scan_with_source(heap_relation, index_info, &mut state)
+        } else {
+            pg_sys::table_index_build_scan(
+                heap_relation,
+                index_relation,
+                index_info,
+                false,
+                false,
+                Some(ec_hnsw_build_callback),
+                (&mut state as *mut BuildState).cast(),
+                ptr::null_mut(),
+            )
+        };
+        let heap_ingest_us = elapsed_us(heap_ingest_start);
 
-            if heap_tuples != state.scanned_tuples as f64 {
-                pgrx::error!(
-                    "ec_hnsw ambuild scanned {heap_tuples} heap tuples but observed {}",
-                    state.scanned_tuples
-                );
+        let mut flush_timing = BuildFlushTiming::default();
+        let flush_start = Instant::now();
+        let index_tuples = if state.heap_tuples.is_empty() {
+            0.0
+        } else {
+            if let Some(graph_build) =
+                build_parallel::try_parallel_concurrent_dsm_graph_build(&state, parallel_plan)
+            {
+                flush_timing.graph_us = graph_build.graph_us;
+                flush_timing.stage_us = graph_build.stage_us;
+                let write_start = Instant::now();
+                let flush_handle =
+                    std::ptr::NonNull::new(index_relation).unwrap_or_else(|| {
+                        pgrx::error!("ec_hnsw ambuild flush received a null index relation")
+                    });
+                flush_build_output(flush_handle, &graph_build.output);
+                flush_timing.write_us = elapsed_us(write_start);
+            } else {
+                flush_build_state_with_timing(index_relation, &state, &mut flush_timing);
             }
+            state.heap_tuples.len() as f64
+        };
+        let flush_total_us = elapsed_us(flush_start);
 
-            record_debug_last_build_timing(BuildTimingSnapshot {
-                requested_workers: nonnegative_i32_to_u64(parallel_plan.requested_workers),
-                workers_launched: nonnegative_i32_to_u64(
-                    build_parallel::debug_last_parallel_build_workers_launched(),
-                ),
-                heap_workers_launched: nonnegative_i32_to_u64(
-                    build_parallel::debug_last_parallel_heap_build_workers_launched(),
-                ),
-                graph_workers_launched: nonnegative_i32_to_u64(
-                    build_parallel::debug_last_parallel_graph_build_workers_launched(),
-                ),
-                heap_tuples: heap_tuples.max(0.0) as u64,
-                index_tuples: index_tuples.max(0.0) as u64,
-                heap_ingest_us,
-                parallel_begin_us,
-                parallel_drain_us,
-                parallel_sort_push_us,
-                flush_total_us,
-                graph_us: flush_timing.graph_us,
-                stage_us: flush_timing.stage_us,
-                write_us: flush_timing.write_us,
-            });
+        if heap_tuples != state.scanned_tuples as f64 {
+            pgrx::error!(
+                "ec_hnsw ambuild scanned {heap_tuples} heap tuples but observed {}",
+                state.scanned_tuples
+            );
+        }
 
-            crate::fault::maybe_fail_palloc("ec_hnsw ambuild result");
-            let mut result = PgBox::<pg_sys::IndexBuildResult>::alloc0();
-            result.heap_tuples = heap_tuples;
-            result.index_tuples = index_tuples;
-            result.into_pg()
-        })
-    }
+        record_debug_last_build_timing(BuildTimingSnapshot {
+            requested_workers: nonnegative_i32_to_u64(parallel_plan.requested_workers),
+            workers_launched: nonnegative_i32_to_u64(
+                build_parallel::debug_last_parallel_build_workers_launched(),
+            ),
+            heap_workers_launched: nonnegative_i32_to_u64(
+                build_parallel::debug_last_parallel_heap_build_workers_launched(),
+            ),
+            graph_workers_launched: nonnegative_i32_to_u64(
+                build_parallel::debug_last_parallel_graph_build_workers_launched(),
+            ),
+            heap_tuples: heap_tuples.max(0.0) as u64,
+            index_tuples: index_tuples.max(0.0) as u64,
+            heap_ingest_us,
+            parallel_begin_us,
+            parallel_drain_us,
+            parallel_sort_push_us,
+            flush_total_us,
+            graph_us: flush_timing.graph_us,
+            stage_us: flush_timing.stage_us,
+            write_us: flush_timing.write_us,
+        });
+
+        crate::fault::maybe_fail_palloc("ec_hnsw ambuild result");
+        let mut result = PgBox::<pg_sys::IndexBuildResult>::alloc0();
+        result.heap_tuples = heap_tuples;
+        result.index_tuples = index_tuples;
+        result.into_pg()
+    })
 }
 
 pub(super) unsafe extern "C-unwind" fn ec_hnsw_ambuildempty(index_relation: pg_sys::Relation) {
-    // SAFETY: This is PostgreSQL's `ambuildempty` entry point; the guard keeps
-    // Rust unwinding contained and PostgreSQL provides a live index relation.
-    unsafe {
-        pgrx::pgrx_extern_c_guard(|| {
-            let state = BuildState::new(index_relation);
-            validate_grouped_rerank_source_column_for_empty_build(index_relation, &state.options);
-            shared::initialize_metadata_page(index_relation, state.initial_metadata());
-        })
-    }
+    pg_am_callback!({
+        let state = BuildState::new(index_relation);
+        validate_grouped_rerank_source_column_for_empty_build(index_relation, &state.options);
+        shared::initialize_metadata_page(index_relation, state.initial_metadata());
+    })
 }
 
 impl BuildState {
     pub(super) fn new(index_relation: pg_sys::Relation) -> Self {
-        // SAFETY: BuildState is constructed from a live PostgreSQL index
-        // relation during build/empty-build setup.
-        let options = unsafe { options::relation_options(index_relation) };
-        // SAFETY: `index_relation` is live and its `rd_id` can be resolved to
-        // the heap relation OID, or InvalidOid for test-only detached state.
-        let heap_oid = unsafe { pg_sys::IndexGetRelation((*index_relation).rd_id, false) };
+        let options = options::relation_options(
+            std::ptr::NonNull::new(index_relation)
+                .expect("ec_hnsw build index relation should be non-null"),
+        );
+        let index_relation_handle = std::ptr::NonNull::new(index_relation)
+            .unwrap_or_else(|| pgrx::error!("ec_hnsw build received null index relation"));
+        let heap_oid =
+            crate::storage::relation::index_heap_relation_oid_handle(index_relation_handle);
         let indexed_vector_kind = if heap_oid == pg_sys::InvalidOid {
             source::IndexedVectorKind::Ecvector
         } else {
@@ -338,13 +332,13 @@ impl BuildState {
             };
             // SAFETY: The heap and index relations are live while BuildState is
             // initialized, and the resolver validates the indexed attribute.
-            let indexed_attribute = unsafe {
+            let indexed_attribute = 
                 source::resolve_indexed_vector_attribute(
                     heap_relation.as_ptr(),
                     index_relation,
                     "indexed column",
                 )
-            };
+            ;
             indexed_attribute.kind
         };
         Self {
@@ -511,16 +505,12 @@ fn validate_grouped_rerank_source_column(
         return;
     };
 
-    // SAFETY: `heap_relation` is live during build validation, and the source
-    // resolver validates that the configured rerank column is usable.
-    unsafe {
-        source::resolve_source_attribute(
-            heap_relation,
-            source_column,
-            "rerank_source_column",
-            source::SourceTypePolicy::RerankSource,
-        )
-    };
+    source::resolve_source_attribute(
+        heap_relation,
+        source_column,
+        "rerank_source_column",
+        source::SourceTypePolicy::RerankSource,
+    );
 }
 
 fn validate_grouped_rerank_source_column_for_empty_build(
@@ -531,9 +521,9 @@ fn validate_grouped_rerank_source_column_for_empty_build(
         return;
     }
 
-    // SAFETY: `index_relation` is live during empty-build validation, and
-    // PostgreSQL resolves its heap relation OID from the index relcache entry.
-    let heap_oid = unsafe { pg_sys::IndexGetRelation((*index_relation).rd_id, false) };
+    let index_relation_handle = std::ptr::NonNull::new(index_relation)
+        .unwrap_or_else(|| pgrx::error!("ec_hnsw empty build received null index relation"));
+    let heap_oid = crate::storage::relation::index_heap_relation_oid_handle(index_relation_handle);
     if heap_oid == pg_sys::InvalidOid {
         pgrx::error!("ec_hnsw rerank_source_column could not resolve heap relation for validation");
     }
@@ -556,18 +546,11 @@ pub(super) unsafe fn build_heap_tuple(
     if values.is_null() || isnull.is_null() {
         pgrx::error!("ec_hnsw ambuild received null tuple value arrays");
     }
-    // SAFETY: PostgreSQL passed a non-null `isnull` array for the indexed build
-    // value; only the first indexed column is read by this access method.
-    if unsafe { *isnull } {
-        pgrx::error!("ec_hnsw does not support NULL indexed values");
-    }
-
-    // SAFETY: PostgreSQL passed a non-null `values` array for the indexed build
-    // value, and NULL status was checked before reading the datum.
-    let datum = unsafe { *values };
-    if datum.is_null() {
-        pgrx::error!("ec_hnsw ambuild received a null indexed datum");
-    }
+    let values = crate::am::common::pg_ptr::DatumArrayView::new(
+        std::ptr::NonNull::new(values).expect("ec_hnsw values should be non-null"),
+        std::ptr::NonNull::new(isnull).expect("ec_hnsw isnull should be non-null"),
+    );
+    let datum = values.non_null_datum(0, "ec_hnsw ambuild", "indexed value");
 
     // SAFETY: The datum is non-null and comes from the indexed column; the
     // helper validates/detoasts according to the indexed vector kind.
@@ -707,23 +690,19 @@ pub(super) unsafe fn ec_hnsw_build_scan_with_source(
         .expect("source scan should only run when build_source_column is configured");
     // SAFETY: `heap_relation` and `index_info` are live during ambuild, and the
     // resolver validates the indexed attribute for this index.
-    let indexed_attribute = unsafe {
+    let indexed_attribute = 
         source::resolve_indexed_vector_attribute_from_index_info(
             heap_relation,
             index_info,
             "indexed column",
         )
-    };
-    // SAFETY: `heap_relation` is live during the scan, and the resolver
-    // validates the configured build source column and source policy.
-    let source_attribute = unsafe {
-        source::resolve_source_attribute(
-            heap_relation,
-            &source_column,
-            "build_source_column",
-            source::SourceTypePolicy::BuildSource,
-        )
-    };
+    ;
+    let source_attribute = source::resolve_source_attribute(
+        heap_relation,
+        &source_column,
+        "build_source_column",
+        source::SourceTypePolicy::BuildSource,
+    );
 
     let slot = TupleTableSlotGuard::single_for_heap(heap_relation)
         .unwrap_or_else(|| pgrx::error!("ec_hnsw ambuild failed to allocate heap scan slot"));
@@ -742,6 +721,10 @@ pub(super) unsafe fn ec_hnsw_build_scan_with_source(
     .unwrap_or_else(|| pgrx::error!("ec_hnsw ambuild failed to begin heap scan"));
 
     let mut scanned_tuples = 0.0_f64;
+    // SAFETY: `slot_ptr` is the heap-scan slot allocated for this build and is
+    // populated by PostgreSQL on each successful `heap_getnextslot` iteration.
+    let mut slot_reader = unsafe { TupleSlotReader::from_raw_slot(slot_ptr, "ec_hnsw") }
+        .unwrap_or_else(|error| pgrx::error!("{error}"));
     // SAFETY: The heap scan and slot remain live for the loop, and PostgreSQL
     // fills `slot_ptr` when `heap_getnextslot` returns true.
     while unsafe {
@@ -755,20 +738,12 @@ pub(super) unsafe fn ec_hnsw_build_scan_with_source(
         // SAFETY: `slot_ptr` contains the current tuple after heap_getnextslot
         // returned true.
         let heap_tid = unsafe { decode_slot_tid(slot_ptr) };
-        // SAFETY: The current slot is populated, and the resolver returned a
-        // valid indexed attribute number for this relation.
-        let vector_datum = unsafe {
-            source::required_slot_datum(slot_ptr, indexed_attribute.attnum, "indexed column")
-        };
-        // SAFETY: The current slot is populated, and the resolver returned a
-        // valid build-source attribute number for this relation.
-        let source_datum = unsafe {
-            source::required_slot_datum(
-                slot_ptr,
-                source_attribute.attnum,
-                "ec_hnsw build_source_column",
-            )
-        };
+        let vector_datum = slot_reader
+            .required_datum(indexed_attribute.attnum, "indexed column")
+            .unwrap_or_else(|error| pgrx::error!("{error}"));
+        let source_datum = slot_reader
+            .required_datum(source_attribute.attnum, "ec_hnsw build_source_column")
+            .unwrap_or_else(|error| pgrx::error!("{error}"));
         // SAFETY: `source_datum` comes from the validated source attribute; the
         // helper validates the flat float4 source representation.
         let source_vector = unsafe {
@@ -1617,15 +1592,16 @@ unsafe fn flush_build_state_with_timing(
     state: &BuildState,
     timing: &mut BuildFlushTiming,
 ) {
+    let handle = std::ptr::NonNull::new(index_relation).unwrap_or_else(|| {
+        pgrx::error!("ec_hnsw flush_build_state_with_timing received a null index relation")
+    });
     let output = match state.options.storage_format {
         options::StorageFormat::TurboQuant => current_format_flush_output(state, timing),
         options::StorageFormat::PqFastScan => default_pq_fastscan_flush_output(state)
             .unwrap_or_else(|e| pgrx::error!("ec_hnsw pq_fastscan build failed: {e}")),
     };
     let write_start = Instant::now();
-    // SAFETY: `output` was produced from the validated build state, and the
-    // live index relation is still held by ambuild while pages are written.
-    unsafe { flush_build_output(index_relation, &output) };
+    flush_build_output(handle, &output);
     timing.write_us = elapsed_us(write_start);
 }
 
@@ -1831,13 +1807,9 @@ fn current_format_flush_output_from_graph_nodes_with_timing(
     }
 }
 
-unsafe fn flush_build_output(index_relation: pg_sys::Relation, output: &BuildFlushOutput) {
-    // SAFETY: `output.data_pages` is an in-memory chain produced by the build
-    // planner, and `index_relation` is live while ambuild writes index pages.
-    unsafe { write_data_pages(index_relation, &output.data_pages) };
-    // SAFETY: The data pages have been written, and metadata was produced from
-    // the same validated build output for this live index relation.
-    unsafe { shared::initialize_metadata_page(index_relation, output.metadata.clone()) };
+fn flush_build_output(handle: RelationHandle, output: &BuildFlushOutput) {
+    write_data_pages(handle, &output.data_pages);
+    shared::initialize_metadata_page_handle(handle, output.metadata.clone());
 }
 
 pub(super) fn build_hnsw_graph(state: &BuildState) -> Vec<HnswBuildNode> {
@@ -2402,62 +2374,35 @@ fn entry_point_score(
         .sum()
 }
 
-pub(super) unsafe fn write_data_pages(
-    index_relation: pg_sys::Relation,
-    data_pages: &page::DataPageChain,
-) {
+pub(super) fn write_data_pages(handle: RelationHandle, data_pages: &page::DataPageChain) {
     for staged_page in data_pages.pages() {
-        // SAFETY: `index_relation` is live and P_NEW requests a new zeroed page
-        // locked exclusively for this build writer.
-        let buffer = unsafe {
-            LockedBufferGuard::read_main_locked(
-                index_relation,
-                P_NEW,
-                pg_sys::ReadBufferMode::RBM_ZERO_AND_LOCK,
-            )
-        };
-        let buffer = buffer.unwrap_or_else(|| {
+        let buffer = LockedBufferGuard::read_main_locked_handle(
+            handle,
+            P_NEW,
+            pg_sys::ReadBufferMode::RBM_ZERO_AND_LOCK,
+        )
+        .unwrap_or_else(|| {
             pgrx::error!(
                 "ec_hnsw failed to allocate data buffer for block {}",
                 staged_page.block_number()
             )
         });
 
-        let page_size = buffer.page_size();
-        // SAFETY: The live index relation is the WAL target for this page write.
-        let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
-        // SAFETY: The buffer is locked by `buffer`, and registering it with the
-        // active generic WAL transaction returns the page pointer to modify.
-        let page_ptr = unsafe {
-            wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32)
-        };
-        // SAFETY: `page_ptr` refers to the newly allocated zeroed page and
-        // `page_size` comes from the locked buffer.
-        unsafe { pg_sys::PageInit(page_ptr, page_size, 0) };
-
-        for tuple in staged_page.tuples() {
-            // SAFETY: `page_ptr` is initialized and locked, and each staged
-            // tuple byte slice remains live for the duration of the call.
-            let offset = unsafe {
-                pg_sys::PageAddItemExtended(
-                    page_ptr,
-                    tuple.as_ptr().cast_mut().cast(),
-                    tuple.len(),
-                    pg_sys::InvalidOffsetNumber,
-                    0,
-                )
-            };
-            if offset == pg_sys::InvalidOffsetNumber {
-                pgrx::error!(
-                    "ec_hnsw failed to write tuple to block {}",
-                    staged_page.block_number()
-                );
+        let mut wal_txn = wal::WalTxnScope::start_handle(handle);
+        {
+            let mut page = wal_txn.register_page(&buffer);
+            page.init(0);
+            for tuple in staged_page.tuples() {
+                page.add_item(tuple).unwrap_or_else(|err| {
+                    pgrx::error!(
+                        "ec_hnsw failed to write tuple to block {}",
+                        err.block_number
+                    )
+                });
             }
         }
 
-        // SAFETY: All page mutations for this registered buffer are complete
-        // and can be committed through the generic WAL transaction.
-        unsafe { wal_txn.finish() };
+        wal_txn.finish();
     }
 }
 

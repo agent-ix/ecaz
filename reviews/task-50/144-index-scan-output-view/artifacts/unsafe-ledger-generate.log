@@ -1,0 +1,2 @@
+python3 scripts/unsafe_ledger.py generate --output reviews/task-50/144-index-scan-output-view/artifacts/unsafe-ledger-after.jsonl --packet reviews/task-50/144-index-scan-output-view src
+wrote 1550 unsafe ledger rows to reviews/task-50/144-index-scan-output-view/artifacts/unsafe-ledger-after.jsonl

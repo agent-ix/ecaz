@@ -268,9 +268,10 @@ fn build_recursive_leaf_rows_by_pid(
             })
         })
         .collect::<Result<Vec<_>, String>>()?;
-    for placement in
-        build_boundary_leaf_assignment_placements_with_identity(local_vec_id_cursor, boundary_inputs)?
-    {
+    for placement in build_boundary_leaf_assignment_placements_with_identity(
+        local_vec_id_cursor,
+        boundary_inputs,
+    )? {
         let rows = rows_by_leaf_pid.get_mut(&placement.pid).ok_or_else(|| {
             format!(
                 "ec_spire recursive boundary assignment resolved unknown leaf pid {}",
@@ -541,13 +542,6 @@ pub(super) fn build_local_recursive_routing_epoch_draft(
     build_recursive_routing_epoch_draft_with_store(input, object_store)
 }
 
-pub(super) unsafe fn build_relation_recursive_routing_epoch_draft(
-    input: SpireRecursiveRoutingEpochInput,
-    object_store: &mut SpireRelationObjectStore,
-) -> Result<SpireRecursiveRoutingEpochDraft, String> {
-    build_recursive_routing_epoch_draft_with_store(input, object_store)
-}
-
 pub(super) fn build_local_recursive_top_graph_epoch_draft(
     input: SpireRecursiveTopGraphEpochInput,
     object_store: &mut SpireLocalObjectStore,
@@ -555,23 +549,9 @@ pub(super) fn build_local_recursive_top_graph_epoch_draft(
     build_recursive_top_graph_epoch_draft_with_store(input, object_store)
 }
 
-pub(super) unsafe fn build_relation_recursive_top_graph_epoch_draft(
-    input: SpireRecursiveTopGraphEpochInput,
-    object_store: &mut SpireRelationObjectStore,
-) -> Result<SpireRecursiveRoutingEpochDraft, String> {
-    build_recursive_top_graph_epoch_draft_with_store(input, object_store)
-}
-
 pub(super) fn build_local_recursive_routing_epoch_from_leaf_inputs(
     input: SpireRecursiveRoutingEpochObjectInput,
     object_store: &mut SpireLocalObjectStore,
-) -> Result<SpireRecursiveRoutingEpochDraft, String> {
-    build_recursive_routing_epoch_from_leaf_inputs_with_store(input, object_store)
-}
-
-pub(super) unsafe fn build_relation_recursive_routing_epoch_from_leaf_inputs(
-    input: SpireRecursiveRoutingEpochObjectInput,
-    object_store: &mut SpireRelationObjectStore,
 ) -> Result<SpireRecursiveRoutingEpochDraft, String> {
     build_recursive_routing_epoch_from_leaf_inputs_with_store(input, object_store)
 }
@@ -778,12 +758,11 @@ fn build_recursive_routing_epoch_draft_with_extra_placements(
 
     validate_recursive_epoch_leaf_placements(&input, &invariants.leaf_parent_pids, object_store)?;
 
-    let mut placements =
-        Vec::with_capacity(
-            input.routing_draft.routing_objects.len()
-                + input.leaf_placements.len()
-                + extra_placements.len(),
-        );
+    let mut placements = Vec::with_capacity(
+        input.routing_draft.routing_objects.len()
+            + input.leaf_placements.len()
+            + extra_placements.len(),
+    );
     for object in &input.routing_draft.routing_objects {
         placements.push(object_store.write_routing_object(input.epoch, object)?);
     }
@@ -1061,22 +1040,23 @@ pub(super) unsafe fn publish_relation_recursive_routing_epoch_draft(
         // SAFETY: index_relation is the open PostgreSQL index relation for this
         // publish, and the draft placement directory was validated while building
         // the recursive epoch before being serialized into relation pages.
-        unsafe { write_placement_entries_to_relation(index_relation, &draft.placement_directory) }?
+        write_placement_entries_to_relation(index_relation, &draft.placement_directory)?
     };
     let object_manifest = object_manifest_from_placement_writes(
         draft.epoch_manifest.epoch,
         &draft.placement_directory,
         &placement_evidence,
     )?;
-    let input = draft.relation_publish_input(&object_manifest, next_local_vec_seq, local_store_config);
+    let input =
+        draft.relation_publish_input(&object_manifest, next_local_vec_seq, local_store_config);
     let manifests = encode_manifest_bundle_for_publish(input.clone())?;
     // SAFETY: manifests were encoded from the just-assembled publish input, and
     // index_relation still names the target relation that receives those
     // manifest pages.
-    let locators = unsafe { write_manifest_bundle_to_relation(index_relation, &manifests)? };
+    let locators = write_manifest_bundle_to_relation(index_relation, &manifests)?;
     let root_control = root_control_state_for_publish(input, locators)?;
     // SAFETY: root_control references locators returned by the manifest write
     // above and is written to the root control page of the same open relation.
-    unsafe { page::initialize_root_control_page(index_relation, root_control) };
+    page::initialize_root_control_page(index_relation, root_control);
     Ok(())
 }

@@ -1,43 +1,51 @@
-use std::{collections::HashSet, ffi::c_void};
+use std::{collections::HashSet, ffi::c_void, ptr::NonNull};
 
-use pgrx::{itemptr::item_pointer_set_all, pg_sys, PgBox};
+use pgrx::{itemptr::item_pointer_set_all, pg_sys};
 
 use super::{graph, options, page, search, shared, source};
+use crate::am::common::{
+    callback::pg_am_callback,
+    heap_slot::HeapSlotReader,
+    vacuum::{
+        add_index_bulk_delete_tuples_removed, alloc_index_bulk_delete_result,
+        set_index_bulk_delete_summary,
+    },
+};
 #[cfg(any(test, feature = "pg_test"))]
 use crate::storage::relation_guard::{HeapRelationGuard, IndexRelationGuard};
-use crate::storage::{buffer_guard::LockedBufferGuard, slot_guard::TupleTableSlotGuard, wal};
+use crate::storage::{
+    buffer_guard::LockedBufferGuard, relation::RelationHandle,
+    slot_guard::TupleTableSlotGuard, wal,
+};
 type BulkDeleteCallback =
     unsafe extern "C-unwind" fn(itemptr: pg_sys::ItemPointer, state: *mut c_void) -> bool;
 
 #[derive(Debug, Clone, Copy)]
 struct VacuumIndexRelation {
-    relation: pg_sys::Relation,
+    handle: RelationHandle,
 }
 
 impl VacuumIndexRelation {
     unsafe fn new(relation: pg_sys::Relation) -> Self {
-        if relation.is_null() {
-            pgrx::error!("ec_hnsw vacuum received a null index relation");
-        }
-        Self { relation }
+        let handle = NonNull::new(relation)
+            .unwrap_or_else(|| pgrx::error!("ec_hnsw vacuum received a null index relation"));
+        Self { handle }
     }
 
     fn as_ptr(self) -> pg_sys::Relation {
-        self.relation
+        self.handle.as_ptr()
+    }
+
+    fn handle(self) -> RelationHandle {
+        self.handle
     }
 
     fn metadata(self) -> page::MetadataPage {
-        // SAFETY: This wrapper is constructed only for the live vacuum callback
-        // index relation and metadata reads do not outlive that callback.
-        unsafe { shared::read_metadata_page(self.relation) }
+        shared::read_metadata_page(self.as_ptr())
     }
 
     fn main_fork_block_count(self) -> pg_sys::BlockNumber {
-        // SAFETY: This wrapper owns the invariant that the relation pointer is
-        // live for the current vacuum callback.
-        unsafe {
-            pg_sys::RelationGetNumberOfBlocksInFork(self.relation, pg_sys::ForkNumber::MAIN_FORKNUM)
-        }
+        crate::storage::relation::main_fork_block_count_handle(self.handle)
     }
 
     fn read_main_locked(
@@ -46,44 +54,35 @@ impl VacuumIndexRelation {
         lockmode: i32,
         context: &str,
     ) -> LockedBufferGuard {
-        // SAFETY: The relation is live for this vacuum callback; the guard owns
-        // the returned pin and lock until drop.
-        unsafe {
-            LockedBufferGuard::read_main(
-                self.relation,
-                block_number,
-                pg_sys::ReadBufferMode::RBM_NORMAL,
-                lockmode,
-            )
-        }
+        LockedBufferGuard::read_main_handle(
+            self.handle,
+            block_number,
+            pg_sys::ReadBufferMode::RBM_NORMAL,
+            lockmode,
+        )
         .unwrap_or_else(|| pgrx::error!("ec_hnsw failed to open {context} block {block_number}"))
     }
 
-    fn begin_page_rewrite(self, buffer: &LockedBufferGuard) -> VacuumPageRewrite {
-        // SAFETY: The buffer belongs to this live relation and remains locked
-        // while the returned rewrite guard is active.
-        unsafe { VacuumPageRewrite::start(self.relation, buffer) }
+    fn begin_page_rewrite<'rel>(
+        self,
+        buffer: &LockedBufferGuard,
+    ) -> VacuumPageRewrite<'rel> {
+        VacuumPageRewrite::start(self.handle, buffer)
     }
 }
 
-struct VacuumPageRewrite {
-    wal_txn: Option<wal::GenericXLogTxn>,
+struct VacuumPageRewrite<'rel> {
+    wal_txn: Option<wal::WalTxnScope<'rel>>,
     page_ptr: *mut u8,
 }
 
-impl VacuumPageRewrite {
-    unsafe fn start(relation: pg_sys::Relation, buffer: &LockedBufferGuard) -> Self {
-        // SAFETY: The caller guarantees `relation` is live and `buffer` belongs
-        // to that relation for the GenericXLog transaction.
-        let (wal_txn, page_ptr) = unsafe {
-            let mut wal_txn = wal::GenericXLogTxn::start(relation);
-            let page_ptr =
-                wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32);
-            (wal_txn, page_ptr)
-        };
+impl<'rel> VacuumPageRewrite<'rel> {
+    fn start(handle: RelationHandle, buffer: &LockedBufferGuard) -> Self {
+        let mut wal_txn = wal::WalTxnScope::start_handle(handle);
+        let page_ptr = wal_txn.register_page(buffer).page_ptr().cast::<u8>();
         Self {
             wal_txn: Some(wal_txn),
-            page_ptr: page_ptr.cast::<u8>(),
+            page_ptr,
         }
     }
 
@@ -96,8 +95,7 @@ impl VacuumPageRewrite {
             .wal_txn
             .take()
             .expect("vacuum page rewrite WAL transaction should be present");
-        // SAFETY: The registered page contains its final intended bytes.
-        unsafe { wal_txn.finish() };
+        wal_txn.finish();
     }
 }
 
@@ -118,7 +116,7 @@ enum VacuumSearchMetric {
 struct VacuumHeapSourceScorer {
     heap_relation: pg_sys::Relation,
     snapshot: pg_sys::Snapshot,
-    slot: TupleTableSlotGuard,
+    slot: TupleTableSlotGuard<'static>,
     source_attribute: source::SourceAttribute,
 }
 
@@ -154,7 +152,21 @@ impl VacuumHeapSourceScorer {
         }
     }
 
-    unsafe fn averaged_source_vector(
+    fn heap_reader(&mut self) -> HeapSlotReader<'_> {
+        // SAFETY: `self.heap_relation`, snapshot, and tuple slot belong to this
+        // scorer for the vacuum planning scope.
+        unsafe {
+            HeapSlotReader::from_raw(
+                self.heap_relation,
+                self.snapshot,
+                self.slot.as_ptr(),
+                "ec_hnsw",
+            )
+        }
+        .unwrap_or_else(|error| pgrx::error!("{error}"))
+    }
+
+    fn averaged_source_vector(
         &mut self,
         heap_tids: &[page::ItemPointer],
         label: &str,
@@ -163,41 +175,36 @@ impl VacuumHeapSourceScorer {
         let mut count = 0usize;
 
         for heap_tid in heap_tids.iter().copied() {
-            // SAFETY: `heap_tid` comes from a graph element's heap TID list, and
-            // the scorer owns the heap relation, snapshot, and reusable slot;
-            // the slot is cleared after each row source is copied or accumulated.
-            unsafe {
-                source::with_source_from_heap_row(
-                    self.heap_relation,
-                    heap_tid,
-                    self.snapshot,
-                    self.slot.as_ptr(),
-                    self.source_attribute,
-                    label,
-                    |source| match representative.as_mut() {
-                        Some(existing) => {
-                            source::average_source_representatives(
-                                existing,
-                                count,
-                                source.as_slice(),
-                                1,
-                            );
-                            count += 1;
-                        }
-                        None => {
-                            representative = Some(source.as_slice().to_vec());
-                            count = 1;
-                        }
-                    },
-                );
-                pg_sys::ExecClearTuple(self.slot.as_ptr());
-            }
+            let source_attribute = self.source_attribute;
+            let mut reader = self.heap_reader();
+            source::with_source_from_heap_row_reader(
+                &mut reader,
+                heap_tid,
+                source_attribute,
+                label,
+                |source| match representative.as_mut() {
+                    Some(existing) => {
+                        source::average_source_representatives(
+                            existing,
+                            count,
+                            source.as_slice(),
+                            1,
+                        );
+                        count += 1;
+                    }
+                    None => {
+                        representative = Some(source.as_slice().to_vec());
+                        count = 1;
+                    }
+                },
+            );
+            reader.clear();
         }
 
         representative
     }
 
-    unsafe fn score_graph_element_pair(
+    fn score_graph_element_pair(
         &mut self,
         source_element: &graph::GraphElement,
         candidate_element: &graph::GraphElement,
@@ -210,20 +217,14 @@ impl VacuumHeapSourceScorer {
             return None;
         }
 
-        // SAFETY: Both graph elements have live heap representatives and are
-        // loaded through the same scorer-owned heap state.
-        let (source_vector, candidate_vector) = unsafe {
-            (
-                self.averaged_source_vector(
-                    &source_element.heaptids,
-                    "vacuum repair source-backed element",
-                )?,
-                self.averaged_source_vector(
-                    &candidate_element.heaptids,
-                    "vacuum repair source-backed candidate",
-                )?,
-            )
-        };
+        let source_vector = self.averaged_source_vector(
+            &source_element.heaptids,
+            "vacuum repair source-backed element",
+        )?;
+        let candidate_vector = self.averaged_source_vector(
+            &candidate_element.heaptids,
+            "vacuum repair source-backed candidate",
+        )?;
         Some(source::negative_inner_product(
             &source_vector,
             &candidate_vector,
@@ -240,10 +241,10 @@ impl VacuumSearchMetric {
             pgrx::error!("ec_hnsw vacuum requires a heap relation for source-backed indexes");
         }
 
-        // SAFETY: Both relations are live for the vacuum callback; this block
-        // reads relation options and resolves any heap source attribute needed
-        // for repair scoring.
-        let index_options = unsafe { options::relation_options(index_relation) };
+        let index_options = options::relation_options(
+            std::ptr::NonNull::new(index_relation)
+                .expect("ec_hnsw vacuum index relation should be non-null"),
+        );
         match index_options.build_source_column.as_deref() {
             Some(source_column) => {
                 // SAFETY: The heap relation is live and the configured source
@@ -261,13 +262,13 @@ impl VacuumSearchMetric {
             None => {
                 // SAFETY: The heap and index relations are live; this resolves
                 // the indexed vector attribute from PostgreSQL metadata.
-                let indexed_attribute = unsafe {
+                let indexed_attribute = 
                     source::resolve_indexed_vector_attribute(
                         heap_relation,
                         index_relation,
                         "indexed column",
                     )
-                };
+                ;
                 match indexed_attribute.kind {
                     // SAFETY: The indexed ecvector attribute can be read through
                     // the heap relation during source-backed repair scoring.
@@ -286,7 +287,7 @@ impl VacuumSearchMetric {
         }
     }
 
-    unsafe fn score_graph_element(
+    fn score_graph_element(
         &mut self,
         metadata: &page::MetadataPage,
         source_element: &graph::GraphElement,
@@ -296,11 +297,9 @@ impl VacuumSearchMetric {
             Self::Code => {
                 score_vacuum_code_element(metadata, &source_element.code, candidate_element)
             }
-            // SAFETY: Source-backed repair scoring loads heap representatives
-            // for graph elements that were already read from the index.
-            Self::Source(scorer) => unsafe {
+            Self::Source(scorer) => {
                 scorer.score_graph_element_pair(source_element, candidate_element)
-            },
+            }
         }
     }
 }
@@ -322,9 +321,7 @@ impl VacuumFormatAdapter {
         stats: *mut pg_sys::IndexBulkDeleteResult,
     ) -> *mut pg_sys::IndexBulkDeleteResult {
         let _ = self;
-        // SAFETY: PostgreSQL supplied the live index relation and optional
-        // stats pointer for this vacuum cleanup callback.
-        unsafe { shared::ec_hnsw_noop_vacuum_stats(index.as_ptr(), stats) }
+        shared::ec_hnsw_noop_vacuum_stats(index.as_ptr(), stats)
     }
 
     unsafe fn repair_graph_connections(
@@ -350,11 +347,7 @@ impl VacuumFormatAdapter {
         index: VacuumIndexRelation,
         deleted_tids: &[page::ItemPointer],
     ) {
-        // SAFETY: The adapter storage descriptor matches the index metadata
-        // resolved for this vacuum pass.
-        unsafe {
-            finalize_fully_dead_elements_with_storage(index, self.graph_storage(), deleted_tids)
-        }
+        finalize_fully_dead_elements_with_storage(index, self.graph_storage(), deleted_tids)
     }
 }
 
@@ -431,44 +424,36 @@ pub(super) unsafe extern "C-unwind" fn ec_hnsw_ambulkdelete(
     callback: pg_sys::IndexBulkDeleteCallback,
     callback_state: *mut c_void,
 ) -> *mut pg_sys::IndexBulkDeleteResult {
-    // SAFETY: PostgreSQL invokes ambulkdelete with callback-duration relation,
-    // stats, callback, and callback state pointers.
-    unsafe {
-        pgrx::pgrx_extern_c_guard(|| {
-            let index = VacuumIndexRelation::new((*info).index);
-            let metadata = index.metadata();
-            let format = resolve_vacuum_format_adapter(index, &metadata)
-                .unwrap_or_else(|e| pgrx::error!("{e}"));
-            let Some(callback) = callback else {
-                return shared::ec_hnsw_noop_vacuum_stats(index.as_ptr(), stats);
-            };
-            run_bulkdelete_with_adapter(
-                format,
-                index,
-                (*info).heaprel,
-                stats,
-                callback,
-                callback_state,
-            )
-        })
-    }
+    pg_am_callback!({
+        let index = VacuumIndexRelation::new((*info).index);
+        let metadata = index.metadata();
+        let format =
+            resolve_vacuum_format_adapter(index, &metadata).unwrap_or_else(|e| pgrx::error!("{e}"));
+        let Some(callback) = callback else {
+            return shared::ec_hnsw_noop_vacuum_stats(index.as_ptr(), stats);
+        };
+        run_bulkdelete_with_adapter(
+            format,
+            index,
+            (*info).heaprel,
+            stats,
+            callback,
+            callback_state,
+        )
+    })
 }
 
 pub(super) unsafe extern "C-unwind" fn ec_hnsw_amvacuumcleanup(
     info: *mut pg_sys::IndexVacuumInfo,
     stats: *mut pg_sys::IndexBulkDeleteResult,
 ) -> *mut pg_sys::IndexBulkDeleteResult {
-    // SAFETY: PostgreSQL invokes amvacuumcleanup with callback-duration relation
-    // and stats pointers.
-    unsafe {
-        pgrx::pgrx_extern_c_guard(|| {
-            let index = VacuumIndexRelation::new((*info).index);
-            let metadata = index.metadata();
-            let format = resolve_vacuum_format_adapter(index, &metadata)
-                .unwrap_or_else(|e| pgrx::error!("{e}"));
-            format.vacuum_cleanup(index, stats)
-        })
-    }
+    pg_am_callback!({
+        let index = VacuumIndexRelation::new((*info).index);
+        let metadata = index.metadata();
+        let format =
+            resolve_vacuum_format_adapter(index, &metadata).unwrap_or_else(|e| pgrx::error!("{e}"));
+        format.vacuum_cleanup(index, stats)
+    })
 }
 
 fn resolve_vacuum_format_adapter(
@@ -477,7 +462,7 @@ fn resolve_vacuum_format_adapter(
 ) -> Result<VacuumFormatAdapter, String> {
     // SAFETY: `index_relation` is live for vacuum and `metadata` is the page
     // snapshot used to interpret graph storage.
-    match unsafe { graph::GraphStorageDescriptor::from_index_relation(index.as_ptr(), metadata) }? {
+    match graph::GraphStorageDescriptor::from_index_relation(index.as_ptr(), metadata)? {
         graph::GraphStorageDescriptor::TurboQuant { code_len } => {
             Ok(VacuumFormatAdapter::TurboQuant { code_len })
         }
@@ -501,9 +486,7 @@ unsafe fn run_bulkdelete_with_adapter(
     let storage = format.graph_storage();
     let stats = if stats.is_null() {
         crate::fault::maybe_fail_palloc("ec_hnsw vacuum stats");
-        // SAFETY: PostgreSQL memory context allocation creates a zeroed
-        // IndexBulkDeleteResult owned by the current vacuum callback.
-        unsafe { PgBox::<pg_sys::IndexBulkDeleteResult>::alloc0().into_pg() }
+        alloc_index_bulk_delete_result().into()
     } else {
         stats
     };
@@ -520,18 +503,14 @@ unsafe fn run_bulkdelete_with_adapter(
 
             let share_page_ptr = share_buffer.page().cast::<u8>();
             let share_page_size = share_buffer.page_size();
-            // SAFETY: The shared buffer remains pinned/locked while pass-1
-            // planning reads tuple bytes on this page.
-            unsafe {
-                plan_page_pass1(
-                    share_page_ptr,
-                    share_page_size,
-                    block_number,
-                    storage,
-                    callback,
-                    callback_state,
-                )
-            }
+            plan_page_pass1(
+                share_page_ptr,
+                share_page_size,
+                block_number,
+                storage,
+                callback,
+                callback_state,
+            )
         };
 
         if share_plan.updates.is_empty() {
@@ -544,18 +523,14 @@ unsafe fn run_bulkdelete_with_adapter(
         let exclusive_buffer =
             index.read_main_locked(block_number, pg_sys::BUFFER_LOCK_EXCLUSIVE as i32, "vacuum");
 
-        // SAFETY: `exclusive_buffer` is locked for this block and the callback
-        // state is the same state PostgreSQL supplied to ambulkdelete.
-        let final_plan = unsafe {
-            rewrite_page_pass1(
-                index,
-                exclusive_buffer,
-                block_number,
-                storage,
-                callback,
-                callback_state,
-            )
-        };
+        let final_plan = rewrite_page_pass1(
+            index,
+            exclusive_buffer,
+            block_number,
+            storage,
+            callback,
+            callback_state,
+        );
         live_elements += final_plan.live_elements;
         removed_heap_tids += final_plan.removed_heap_tids;
         finalize_tids.extend(final_plan.finalize_tids);
@@ -569,14 +544,14 @@ unsafe fn run_bulkdelete_with_adapter(
         repair_metadata_entry_point_after_vacuum(index, storage, &finalize_tids);
     }
 
-    // SAFETY: `stats` is either PostgreSQL-supplied or allocated above for this
-    // callback and remains valid until returned.
-    unsafe {
-        (*stats).num_pages = block_count;
-        (*stats).estimated_count = false;
-        (*stats).num_index_tuples = live_elements as f64;
-        (*stats).tuples_removed += removed_heap_tids as f64;
-    }
+    let stats_handle =
+        NonNull::new(stats).unwrap_or_else(|| pgrx::error!("ec_hnsw vacuum stats is null"));
+    let live_elements = u64::try_from(live_elements)
+        .unwrap_or_else(|_| pgrx::error!("ec_hnsw vacuum live tuple count exceeds u64"));
+    let removed_heap_tids = u64::try_from(removed_heap_tids)
+        .unwrap_or_else(|_| pgrx::error!("ec_hnsw vacuum removed heap tid count exceeds u64"));
+    set_index_bulk_delete_summary(stats_handle, block_count, live_elements);
+    add_index_bulk_delete_tuples_removed(stats_handle, removed_heap_tids);
     stats
 }
 
@@ -590,33 +565,26 @@ unsafe fn repair_metadata_entry_point_after_vacuum(
     }
 
     let finalized: HashSet<_> = finalize_tids.iter().copied().collect();
-    // SAFETY: The storage descriptor matches this index and the helper only
-    // reads graph elements to find a replacement entry point.
-    let replacement =
-        unsafe { shared::highest_level_live_entry_candidate(index.as_ptr(), storage) };
+    let replacement = shared::highest_level_live_entry_candidate(index.as_ptr(), storage);
 
-    // SAFETY: Metadata is locked exclusively while entry point fields are
-    // updated after vacuum finalization.
-    unsafe {
-        shared::with_locked_metadata_page(index.as_ptr(), |metadata| {
-            if metadata.entry_point != page::ItemPointer::INVALID
-                && !finalized.contains(&metadata.entry_point)
-            {
-                return;
-            }
+    shared::with_locked_metadata_page_handle(index.handle(), |metadata| {
+        if metadata.entry_point != page::ItemPointer::INVALID
+            && !finalized.contains(&metadata.entry_point)
+        {
+            return;
+        }
 
-            if let Some(replacement) = replacement {
-                metadata.entry_point = replacement.tid;
-                metadata.max_level = replacement.level;
-            } else {
-                metadata.entry_point = page::ItemPointer::INVALID;
-                metadata.max_level = 0;
-            }
-        })
-    };
+        if let Some(replacement) = replacement {
+            metadata.entry_point = replacement.tid;
+            metadata.max_level = replacement.level;
+        } else {
+            metadata.entry_point = page::ItemPointer::INVALID;
+            metadata.max_level = 0;
+        }
+    });
 }
 
-unsafe fn rewrite_page_pass1(
+fn rewrite_page_pass1(
     index: VacuumIndexRelation,
     buffer: LockedBufferGuard,
     block_number: u32,
@@ -626,32 +594,26 @@ unsafe fn rewrite_page_pass1(
 ) -> PagePass1Plan {
     let page_ptr = buffer.page().cast::<u8>();
     let page_size = buffer.page_size();
-    // SAFETY: The buffer is locked for this block and remains pinned while
-    // pass-1 planning reads tuple bytes.
-    let plan = unsafe {
-        plan_page_pass1(
-            page_ptr,
-            page_size,
-            block_number,
-            storage,
-            callback,
-            callback_state,
-        )
-    };
+    let plan = plan_page_pass1(
+        page_ptr,
+        page_size,
+        block_number,
+        storage,
+        callback,
+        callback_state,
+    );
     if plan.updates.is_empty() {
         return plan;
     }
 
     let rewrite = index.begin_page_rewrite(&buffer);
     let wal_page_ptr = rewrite.page_ptr();
-    // SAFETY: Updates were planned from this same page/block and preserve tuple
-    // lengths when rewritten.
-    unsafe { apply_page_pass1_updates(wal_page_ptr, page_size, block_number, &plan.updates) };
+    apply_page_pass1_updates(wal_page_ptr, page_size, block_number, &plan.updates);
     rewrite.finish();
     plan
 }
 
-unsafe fn plan_page_pass1(
+fn plan_page_pass1(
     page_ptr: *mut u8,
     page_size: usize,
     block_number: u32,
@@ -667,16 +629,13 @@ unsafe fn plan_page_pass1(
             block_number,
             offset_number: offset,
         };
-        // SAFETY: The caller holds the page pinned/locked for reading and the
-        // helper validates each line pointer before exposing tuple bytes.
-        unsafe {
-            shared::with_page_line_tuple_bytes(
-                page_ptr,
-                page_size,
-                block_number,
-                offset,
-                "planning HNSW vacuum pass1",
-                |tuple_bytes| match storage {
+        shared::with_page_line_tuple_bytes(
+            page_ptr,
+            page_size,
+            block_number,
+            offset,
+            "planning HNSW vacuum pass1",
+            |tuple_bytes| match storage {
                     graph::GraphStorageDescriptor::TurboQuant { code_len } => {
                         if tuple_bytes.first().copied() != Some(page::TQ_ELEMENT_TAG) {
                             return;
@@ -776,14 +735,13 @@ unsafe fn plan_page_pass1(
                     }
                 },
             )
-            .unwrap_or_else(|e| pgrx::error!("{e}"))
-        };
+            .unwrap_or_else(|e| pgrx::error!("{e}"));
     }
 
     plan
 }
 
-unsafe fn apply_page_pass1_updates(
+fn apply_page_pass1_updates(
     page_ptr: *mut u8,
     page_size: usize,
     block_number: u32,
@@ -795,15 +753,12 @@ unsafe fn apply_page_pass1_updates(
             | ElementVacuumUpdate::TurboQuantHot { tid, .. }
             | ElementVacuumUpdate::PqFastScanHot { tid, .. } => *tid,
         };
-        // SAFETY: Each update was planned from this page and its re-encoded
-        // tuple must match the existing tuple byte length.
-        unsafe {
-            shared::with_writable_page_tuple_bytes(
-                page_ptr,
-                page_size,
-                tid,
-                "vacuum element",
-                |tuple_bytes| {
+        shared::with_writable_page_tuple_bytes(
+            page_ptr,
+            page_size,
+            tid,
+            "vacuum element",
+            |tuple_bytes| {
                     let encoded = match update {
                         ElementVacuumUpdate::TurboQuant { tuple, .. } => {
                             tuple.encode().unwrap_or_else(|e| {
@@ -837,7 +792,6 @@ unsafe fn apply_page_pass1_updates(
                     tuple_bytes.copy_from_slice(&encoded);
                 },
             )
-        }
     }
 }
 
@@ -868,12 +822,10 @@ unsafe fn repair_graph_connections_with_storage(
             &repair_requests,
         )
     };
-    // SAFETY: Repair plans target neighbor tuples from this index and are
-    // applied under page-exclusive locks.
-    unsafe { apply_repair_plans(index, metadata.m, &deleted_tids, &repair_plans) };
+    apply_repair_plans(index, metadata.m, &deleted_tids, &repair_plans);
 }
 
-unsafe fn collect_repair_requests(
+fn collect_repair_requests(
     index: VacuumIndexRelation,
     storage: graph::GraphStorageDescriptor,
     m: u16,
@@ -891,20 +843,16 @@ unsafe fn collect_repair_requests(
 
         let page_ptr = buffer.page().cast::<u8>();
         let page_size = buffer.page_size();
-        // SAFETY: The shared buffer remains pinned/locked while tuple bytes and
-        // same-index neighbor payloads are inspected.
-        unsafe {
-            collect_repair_requests_on_page(
-                index.as_ptr(),
-                page_ptr,
-                page_size,
-                block_number,
-                storage,
-                m,
-                deleted_tids,
-                &mut requests,
-            )
-        };
+        collect_repair_requests_on_page(
+            index.as_ptr(),
+            page_ptr,
+            page_size,
+            block_number,
+            storage,
+            m,
+            deleted_tids,
+            &mut requests,
+        );
     }
 
     requests.sort_unstable_by(|left, right| {
@@ -916,7 +864,7 @@ unsafe fn collect_repair_requests(
     requests
 }
 
-unsafe fn collect_repair_requests_on_page(
+fn collect_repair_requests_on_page(
     index_relation: pg_sys::Relation,
     page_ptr: *mut u8,
     page_size: usize,
@@ -931,7 +879,7 @@ unsafe fn collect_repair_requests_on_page(
     for offset in 1..=line_pointer_count {
         // SAFETY: The caller holds the page pinned/locked and the helper
         // validates each line pointer before exposing tuple bytes.
-        let element_fields = unsafe {
+        let element_fields =
             shared::with_page_line_tuple_bytes(
                 page_ptr,
                 page_size,
@@ -997,7 +945,6 @@ unsafe fn collect_repair_requests_on_page(
                     }
                 },
             )
-        }
         .unwrap_or_else(|e| pgrx::error!("{e}"))
         .flatten();
         let Some((level, deleted, heaptids_empty, neighbortid)) = element_fields else {
@@ -1009,7 +956,7 @@ unsafe fn collect_repair_requests_on_page(
 
         // SAFETY: `neighbortid` came from a live graph element decoded from the
         // same index storage format.
-        let neighbors = unsafe { graph::load_graph_neighbors(index_relation, neighbortid) };
+        let neighbors = graph::load_graph_neighbors(index_relation, neighbortid);
         let source_tid = page::ItemPointer {
             block_number,
             offset_number: offset,
@@ -1044,7 +991,7 @@ fn layer_slice_contains_deleted_ref(
         .any(|tid| deleted_tids.contains(tid))
 }
 
-unsafe fn unlink_deleted_graph_connections(
+fn unlink_deleted_graph_connections(
     index: VacuumIndexRelation,
     deleted_tids: &HashSet<page::ItemPointer>,
 ) {
@@ -1057,9 +1004,7 @@ unsafe fn unlink_deleted_graph_connections(
 
             let share_page_ptr = share_buffer.page().cast::<u8>();
             let share_page_size = share_buffer.page_size();
-            // SAFETY: The shared buffer remains pinned/locked while tuple bytes
-            // are scanned for deleted neighbor references.
-            unsafe { plan_page_pass2(share_page_ptr, share_page_size, block_number, deleted_tids) }
+            plan_page_pass2(share_page_ptr, share_page_size, block_number, deleted_tids)
         };
 
         if share_updates.is_empty() {
@@ -1069,9 +1014,7 @@ unsafe fn unlink_deleted_graph_connections(
         let exclusive_buffer =
             index.read_main_locked(block_number, pg_sys::BUFFER_LOCK_EXCLUSIVE as i32, "repair");
 
-        // SAFETY: The exclusive buffer belongs to this block and the deleted set
-        // came from the same vacuum pass.
-        unsafe { rewrite_page_pass2(index, exclusive_buffer, block_number, deleted_tids) };
+        rewrite_page_pass2(index, exclusive_buffer, block_number, deleted_tids);
     }
 }
 
@@ -1108,13 +1051,8 @@ unsafe fn plan_repair_replacement(
     deleted_tids: &HashSet<page::ItemPointer>,
     request: &LayerRepairRequest,
 ) -> Option<LayerRepairPlan> {
-    // SAFETY: `request.source_tid` and `source.neighbortid` were collected from
-    // this graph storage descriptor during repair-request scanning.
-    let (source, neighbors) = unsafe {
-        let source = graph::load_exact_graph_element(index.as_ptr(), request.source_tid, storage);
-        let neighbors = graph::load_graph_neighbors(index.as_ptr(), source.neighbortid);
-        (source, neighbors)
-    };
+    let source = graph::load_exact_graph_element(index.as_ptr(), request.source_tid, storage);
+    let neighbors = graph::load_graph_neighbors(index.as_ptr(), source.neighbortid);
     if source.deleted
         || source.heaptids.is_empty()
         || source.neighbortid != request.neighbor_tid
@@ -1167,17 +1105,13 @@ unsafe fn plan_repair_replacement(
         layer: request.layer,
     };
     if replacements.len() < free_slots {
-        // SAFETY: Linear top-up scans the same index/storage descriptor and
-        // appends only local candidate TIDs to `replacements`.
-        unsafe {
-            top_up_repair_replacements_from_linear_scan(
-                index,
-                metric,
-                &linear_planner,
-                &mut replacements,
-                free_slots,
-            )
-        };
+        top_up_repair_replacements_from_linear_scan(
+            index,
+            metric,
+            &linear_planner,
+            &mut replacements,
+            free_slots,
+        );
     }
     if replacements.is_empty() {
         return None;
@@ -1198,17 +1132,13 @@ unsafe fn search_repair_candidates_for_layer(
 ) -> Vec<page::ItemPointer> {
     let mut seeds = Vec::new();
 
-    // SAFETY: The planner metadata/storage/source were produced from this
-    // vacuum repair pass and metric owns any source-scoring heap state.
-    if let Some(entry_candidate) = unsafe {
-        load_vacuum_entry_candidate(
-            index,
-            planner.metadata,
-            planner.storage,
-            metric,
-            planner.source,
-        )
-    } {
+    if let Some(entry_candidate) = load_vacuum_entry_candidate(
+        index,
+        planner.metadata,
+        planner.storage,
+        metric,
+        planner.source,
+    ) {
         if planner.layer == 0 {
             // SAFETY: The entry candidate came from metadata and greedy descent
             // reads graph elements through the same storage descriptor.
@@ -1251,24 +1181,21 @@ unsafe fn search_repair_candidates_for_layer(
     }
 
     seeds.extend(planner.existing_layer.iter().filter_map(|tid| {
-        // SAFETY: Existing-layer TIDs came from the source neighbor slice and
-        // are loaded through the same graph storage descriptor.
-        unsafe {
-            let element = graph::load_exact_graph_element(index.as_ptr(), *tid, planner.storage);
-            metric
-                .score_graph_element(planner.metadata, planner.source, &element)
-                .map(|score| search::BeamCandidate::new(*tid, score))
-        }
+        let element = graph::load_exact_graph_element(index.as_ptr(), *tid, planner.storage);
+        metric
+            .score_graph_element(planner.metadata, planner.source, &element)
+            .map(|score| search::BeamCandidate::new(*tid, score))
     }));
     dedup_beam_candidates_by_tid(&mut seeds);
     if seeds.is_empty() {
         return Vec::new();
     }
 
-    let candidates = if planner.layer == 0 {
-        // SAFETY: Layer-0 repair search uses seeds gathered from this graph and
-        // excludes deleted/source TIDs before accepting candidates.
-        unsafe {
+    // SAFETY: Seeds were gathered from this graph using the same storage
+    // descriptor; both branches exclude deleted/source TIDs before accepting
+    // candidates.
+    let candidates = unsafe {
+        if planner.layer == 0 {
             graph::search_layer0_result_candidates_with_storage(
                 index.as_ptr(),
                 planner.storage,
@@ -1281,11 +1208,7 @@ unsafe fn search_repair_candidates_for_layer(
                 },
                 |neighbor| metric.score_graph_element(planner.metadata, planner.source, neighbor),
             )
-        }
-    } else {
-        // SAFETY: Upper-layer repair search uses seeds gathered from this graph
-        // and excludes deleted/source TIDs before accepting candidates.
-        unsafe {
+        } else {
             graph::search_layer_result_candidates_with_storage(
                 index.as_ptr(),
                 planner.storage,
@@ -1315,7 +1238,7 @@ unsafe fn search_repair_candidates_for_layer(
         .collect::<Vec<_>>()
 }
 
-unsafe fn load_vacuum_entry_candidate(
+fn load_vacuum_entry_candidate(
     index: VacuumIndexRelation,
     metadata: &page::MetadataPage,
     storage: graph::GraphStorageDescriptor,
@@ -1326,13 +1249,8 @@ unsafe fn load_vacuum_entry_candidate(
         return None;
     }
 
-    // SAFETY: Metadata names a non-invalid entry point, storage matches this
-    // vacuum repair snapshot, and metric owns any source-scoring heap state.
-    let (entry, entry_score) = unsafe {
-        let entry = graph::load_exact_graph_element(index.as_ptr(), metadata.entry_point, storage);
-        let entry_score = metric.score_graph_element(metadata, source_element, &entry)?;
-        (entry, entry_score)
-    };
+    let entry = graph::load_exact_graph_element(index.as_ptr(), metadata.entry_point, storage);
+    let entry_score = metric.score_graph_element(metadata, source_element, &entry)?;
     Some(search::BeamCandidate::new(entry.tid, entry_score))
 }
 
@@ -1366,7 +1284,7 @@ fn dedup_beam_candidates_by_tid(candidates: &mut Vec<search::BeamCandidate<page:
     candidates.retain(|candidate| seen.insert(candidate.node));
 }
 
-unsafe fn top_up_repair_replacements_from_linear_scan(
+fn top_up_repair_replacements_from_linear_scan(
     index: VacuumIndexRelation,
     metric: &mut VacuumSearchMetric,
     planner: &LinearRepairPlanner<'_>,
@@ -1389,20 +1307,16 @@ unsafe fn top_up_repair_replacements_from_linear_scan(
 
         let page_ptr = buffer.page().cast::<u8>();
         let page_size = buffer.page_size();
-        // SAFETY: The shared buffer remains pinned/locked while candidate tuple
-        // bytes are decoded and scored.
-        unsafe {
-            collect_linear_repair_candidates_on_page(
-                index,
-                page_ptr,
-                page_size,
-                block_number,
-                metric,
-                planner,
-                replacements,
-                &mut scored,
-            )
-        };
+        collect_linear_repair_candidates_on_page(
+            index,
+            page_ptr,
+            page_size,
+            block_number,
+            metric,
+            planner,
+            replacements,
+            &mut scored,
+        );
     }
 
     scored.sort_unstable_by(|left, right| {
@@ -1420,7 +1334,7 @@ unsafe fn top_up_repair_replacements_from_linear_scan(
     }
 }
 
-unsafe fn collect_linear_repair_candidates_on_page(
+fn collect_linear_repair_candidates_on_page(
     index: VacuumIndexRelation,
     page_ptr: *mut u8,
     page_size: usize,
@@ -1447,7 +1361,7 @@ unsafe fn collect_linear_repair_candidates_on_page(
 
         // SAFETY: The page is pinned/locked by the caller and the helper
         // validates the line pointer before exposing tuple bytes.
-        let candidate = unsafe {
+        let candidate =
             shared::with_page_line_tuple_bytes(
                 page_ptr,
                 page_size,
@@ -1534,8 +1448,7 @@ unsafe fn collect_linear_repair_candidates_on_page(
                         })
                     }
                 },
-            )
-        };
+            );
         let Some(candidate) = candidate.unwrap_or_else(|e| pgrx::error!("{e}")).flatten() else {
             continue;
         };
@@ -1545,15 +1458,13 @@ unsafe fn collect_linear_repair_candidates_on_page(
 
         // SAFETY: Candidate and source graph elements were loaded from the same
         // storage descriptor and metric owns any source-scoring heap state.
-        if let Some(score) =
-            unsafe { metric.score_graph_element(planner.metadata, planner.source, &candidate) }
-        {
+        if let Some(score) = metric.score_graph_element(planner.metadata, planner.source, &candidate) {
             scored.push((tid, score));
         }
     }
 }
 
-unsafe fn load_grouped_rerank_payload_for_linear_repair_candidate(
+fn load_grouped_rerank_payload_for_linear_repair_candidate(
     index: VacuumIndexRelation,
     page_ptr: *mut u8,
     page_size: usize,
@@ -1566,14 +1477,11 @@ unsafe fn load_grouped_rerank_payload_for_linear_repair_candidate(
     }
 
     if rerank_tid.block_number != block_number {
-        // SAFETY: Cross-page grouped rerank payloads are loaded through the
-        // graph helper using the persisted layout.
-        return unsafe { graph::load_grouped_rerank_payload(index.as_ptr(), rerank_tid, layout) };
+        return graph::load_grouped_rerank_payload(index.as_ptr(), rerank_tid, layout);
     }
 
     // SAFETY: Same-page rerank TID refers to the pinned page supplied by the
     // caller; the helper validates the line pointer before exposing bytes.
-    unsafe {
         shared::with_page_line_tuple_bytes(
             page_ptr,
             page_size,
@@ -1592,7 +1500,6 @@ unsafe fn load_grouped_rerank_payload_for_linear_repair_candidate(
                 }
             },
         )
-    }
     .unwrap_or_else(|e| pgrx::error!("{e}"))
     .unwrap_or_else(|| {
         pgrx::error!(
@@ -1603,7 +1510,7 @@ unsafe fn load_grouped_rerank_payload_for_linear_repair_candidate(
     })
 }
 
-unsafe fn apply_repair_plans(
+fn apply_repair_plans(
     index: VacuumIndexRelation,
     m: u16,
     deleted_tids: &HashSet<page::ItemPointer>,
@@ -1621,16 +1528,12 @@ unsafe fn apply_repair_plans(
             end += 1;
         }
 
-        // SAFETY: This slice contains only repair plans for one neighbor block,
-        // which will be locked exclusively before rewrite.
-        unsafe {
-            apply_repair_plans_on_page(index, block_number, m, deleted_tids, &plans[start..end])
-        };
+        apply_repair_plans_on_page(index, block_number, m, deleted_tids, &plans[start..end]);
         start = end;
     }
 }
 
-unsafe fn apply_repair_plans_on_page(
+fn apply_repair_plans_on_page(
     index: VacuumIndexRelation,
     block_number: u32,
     m: u16,
@@ -1655,9 +1558,7 @@ unsafe fn apply_repair_plans_on_page(
             end += 1;
         }
 
-        // SAFETY: `neighbor_tid` points at a tuple on the registered page and
-        // the closure preserves the encoded tuple length.
-        let tuple_changed = unsafe {
+        let tuple_changed =
             shared::with_writable_page_tuple_bytes(
                 page_ptr,
                 page_size,
@@ -1706,8 +1607,7 @@ unsafe fn apply_repair_plans_on_page(
                     tuple_bytes.copy_from_slice(&encoded);
                     true
                 },
-            )
-        };
+            );
         if !tuple_changed {
             start = end;
             continue;
@@ -1759,7 +1659,7 @@ fn apply_repair_plan(
     changed
 }
 
-unsafe fn rewrite_page_pass2(
+fn rewrite_page_pass2(
     index: VacuumIndexRelation,
     buffer: LockedBufferGuard,
     block_number: u32,
@@ -1767,22 +1667,18 @@ unsafe fn rewrite_page_pass2(
 ) {
     let page_ptr = buffer.page().cast::<u8>();
     let page_size = buffer.page_size();
-    // SAFETY: The caller holds the page locked and pinned while pass-2 planning
-    // reads neighbor tuple bytes.
-    let updates = unsafe { plan_page_pass2(page_ptr, page_size, block_number, deleted_tids) };
+    let updates = plan_page_pass2(page_ptr, page_size, block_number, deleted_tids);
     if updates.is_empty() {
         return;
     }
 
     let rewrite = index.begin_page_rewrite(&buffer);
     let wal_page_ptr = rewrite.page_ptr();
-    // SAFETY: Updates were planned from this same page/block and preserve tuple
-    // lengths when rewritten.
-    unsafe { apply_page_pass2_updates(wal_page_ptr, page_size, block_number, &updates) };
+    apply_page_pass2_updates(wal_page_ptr, page_size, block_number, &updates);
     rewrite.finish();
 }
 
-unsafe fn plan_page_pass2(
+fn plan_page_pass2(
     page_ptr: *mut u8,
     page_size: usize,
     block_number: u32,
@@ -1794,7 +1690,7 @@ unsafe fn plan_page_pass2(
     for offset in 1..=line_pointer_count {
         // SAFETY: The caller holds the page pinned/locked for reading and the
         // helper validates the line pointer before exposing tuple bytes.
-        let update = unsafe {
+        let update =
             shared::with_page_line_tuple_bytes(
                 page_ptr,
                 page_size,
@@ -1830,7 +1726,6 @@ unsafe fn plan_page_pass2(
                     })
                 },
             )
-        }
         .unwrap_or_else(|e| pgrx::error!("{e}"))
         .flatten();
         if let Some(update) = update {
@@ -1855,7 +1750,7 @@ fn unlink_deleted_neighbor_refs(
     changed
 }
 
-unsafe fn apply_page_pass2_updates(
+fn apply_page_pass2_updates(
     page_ptr: *mut u8,
     page_size: usize,
     block_number: u32,
@@ -1864,7 +1759,6 @@ unsafe fn apply_page_pass2_updates(
     for update in updates {
         // SAFETY: Each update was planned from this page and its re-encoded
         // tuple must match the existing tuple byte length.
-        unsafe {
             shared::with_writable_page_tuple_bytes(
                 page_ptr,
                 page_size,
@@ -1886,11 +1780,10 @@ unsafe fn apply_page_pass2_updates(
                     tuple_bytes.copy_from_slice(&encoded);
                 },
             )
-        }
     }
 }
 
-unsafe fn finalize_fully_dead_elements_with_storage(
+fn finalize_fully_dead_elements_with_storage(
     index: VacuumIndexRelation,
     storage: graph::GraphStorageDescriptor,
     tids: &[page::ItemPointer],
@@ -1911,21 +1804,17 @@ unsafe fn finalize_fully_dead_elements_with_storage(
             end += 1;
         }
 
-        // SAFETY: This slice contains only fully-dead element TIDs for one
-        // block, which will be locked exclusively before finalization.
-        unsafe {
-            finalize_fully_dead_elements_on_page_with_storage(
-                index,
-                block_number,
-                storage,
-                &tids[start..end],
-            )
-        };
+        finalize_fully_dead_elements_on_page_with_storage(
+            index,
+            block_number,
+            storage,
+            &tids[start..end],
+        );
         start = end;
     }
 }
 
-unsafe fn finalize_fully_dead_elements_on_page_with_storage(
+fn finalize_fully_dead_elements_on_page_with_storage(
     index: VacuumIndexRelation,
     block_number: u32,
     storage: graph::GraphStorageDescriptor,
@@ -1942,9 +1831,7 @@ unsafe fn finalize_fully_dead_elements_on_page_with_storage(
     let mut updates = Vec::new();
 
     for tid in tids {
-        // SAFETY: `tid` targets this locked page and the helper validates the
-        // line pointer before exposing tuple bytes.
-        let update = unsafe {
+        let update =
             shared::with_page_line_tuple_bytes(
                 page_ptr,
                 page_size,
@@ -2006,7 +1893,6 @@ unsafe fn finalize_fully_dead_elements_on_page_with_storage(
                     }
                 },
             )
-        }
         .unwrap_or_else(|e| pgrx::error!("{e}"))
         .unwrap_or_else(|| {
             pgrx::error!(
@@ -2026,9 +1912,7 @@ unsafe fn finalize_fully_dead_elements_on_page_with_storage(
 
     let rewrite = index.begin_page_rewrite(&buffer);
     let wal_page_ptr = rewrite.page_ptr();
-    // SAFETY: Updates were planned from this same page/block and preserve tuple
-    // lengths when rewritten.
-    unsafe { apply_page_pass1_updates(wal_page_ptr, page_size, block_number, &updates) };
+    apply_page_pass1_updates(wal_page_ptr, page_size, block_number, &updates);
     rewrite.finish();
 }
 
@@ -2041,15 +1925,15 @@ fn compare_item_pointers(
         .then_with(|| left.offset_number.cmp(&right.offset_number))
 }
 
-unsafe fn heap_tid_is_dead(
+fn heap_tid_is_dead(
     heap_tid: page::ItemPointer,
     callback: BulkDeleteCallback,
     callback_state: *mut c_void,
 ) -> bool {
     let mut tid = pg_sys::ItemPointerData::default();
     item_pointer_set_all(&mut tid, heap_tid.block_number, heap_tid.offset_number);
-    // SAFETY: The callback and callback state were supplied by PostgreSQL for
-    // this ambulkdelete invocation, and `tid` lives for the callback call.
+    // SAFETY: callers supply the PostgreSQL-provided bulkdelete callback and
+    // its state for this ambulkdelete invocation; `tid` lives for the call.
     unsafe { callback((&mut tid) as pg_sys::ItemPointer, callback_state) }
 }
 
@@ -2064,18 +1948,14 @@ unsafe extern "C-unwind" fn debug_vacuum_dead_tid_callback(
     itemptr: pg_sys::ItemPointer,
     state: *mut c_void,
 ) -> bool {
-    // SAFETY: Debug vacuum passes a `DebugVacuumCallbackState` pointer as the
-    // callback state for the duration of this guarded callback.
-    unsafe {
-        pgrx::pgrx_extern_c_guard(|| {
-            let state = &*(state.cast::<DebugVacuumCallbackState>());
-            state.dead_tids.contains(&shared::decode_heap_tid(itemptr))
-        })
-    }
+    crate::am::common::callback::pg_callback!({
+        let state = &*(state.cast::<DebugVacuumCallbackState>());
+        state.dead_tids.contains(&shared::decode_heap_tid(itemptr))
+    })
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_vacuum_remove_heap_tids(
+pub(crate) fn debug_vacuum_remove_heap_tids(
     index_oid: pg_sys::Oid,
     dead_tids: &[page::ItemPointer],
 ) -> pg_sys::IndexBulkDeleteResult {
@@ -2085,9 +1965,7 @@ pub(crate) unsafe fn debug_vacuum_remove_heap_tids(
     )
     .unwrap_or_else(|| pgrx::error!("ec_hnsw debug vacuum could not open index relation"));
     let index_relation = index_relation_guard.as_ptr();
-    // SAFETY: The opened index relation is valid and IndexGetRelation only
-    // resolves its heap OID.
-    let heap_oid = unsafe { pg_sys::IndexGetRelation((*index_relation).rd_id, false) };
+    let heap_oid = index_relation_guard.heap_relation_oid();
     let heap_relation_guard = if heap_oid == pg_sys::InvalidOid {
         None
     } else {
@@ -2100,7 +1978,9 @@ pub(crate) unsafe fn debug_vacuum_remove_heap_tids(
     let heap_relation = heap_relation_guard
         .as_ref()
         .map_or(std::ptr::null_mut(), HeapRelationGuard::as_ptr);
-    let mut info = PgBox::<pg_sys::IndexVacuumInfo>::alloc0();
+    // SAFETY: The debug helper immediately initializes the required vacuum
+    // fields before passing the struct to AM vacuum callbacks.
+    let mut info = crate::am::common::vacuum::alloc_index_vacuum_info();
     info.index = index_relation;
     info.heaprel = heap_relation;
     let info_ptr = (&mut *info) as *mut pg_sys::IndexVacuumInfo;
@@ -2109,21 +1989,20 @@ pub(crate) unsafe fn debug_vacuum_remove_heap_tids(
     };
 
     // SAFETY: Debug vacuum constructs callback-duration IndexVacuumInfo and
-    // callback state and invokes the AM bulkdelete entry point directly.
+    // callback state and invokes the AM bulkdelete + cleanup entry points
+    // directly with that same valid IndexVacuumInfo + stats pair.
     let stats = unsafe {
-        ec_hnsw_ambulkdelete(
+        let stats = ec_hnsw_ambulkdelete(
             info_ptr,
             std::ptr::null_mut(),
             Some(debug_vacuum_dead_tid_callback),
             (&mut callback_state as *mut DebugVacuumCallbackState).cast(),
-        )
+        );
+        ec_hnsw_amvacuumcleanup(info_ptr, stats)
     };
-    // SAFETY: The same debug IndexVacuumInfo and stats pointer are valid for the
-    // follow-up cleanup call.
-    let stats = unsafe { ec_hnsw_amvacuumcleanup(info_ptr, stats) };
-    // SAFETY: The AM returned a valid stats pointer owned by the current
-    // PostgreSQL memory context; copy the result before dropping guards.
-    let result = unsafe { *stats };
+    let result = crate::am::common::vacuum::copy_index_bulk_delete_result(
+        std::ptr::NonNull::new(stats).expect("ec_hnsw debug vacuum stats should be non-null"),
+    );
     drop(heap_relation_guard);
     drop(index_relation_guard);
     result

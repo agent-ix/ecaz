@@ -170,14 +170,6 @@
         Vec<i64>, // missed_ids
     );
 
-    macro_rules! hnsw_recall_debug {
-        ($call:expr) => {{
-            // SAFETY: These pg_test fixtures create the referenced HNSW index
-            // before invoking test-only recall/debug helpers for that index and query vector.
-            unsafe { $call }
-        }};
-    }
-
     fn recall_top_k_overlap(left: &[i64], right: &[i64]) -> i32 {
         i32::try_from(left.iter().filter(|id| right.contains(id)).count())
             .expect("top-k overlap should fit into int")
@@ -259,9 +251,9 @@
         Spi::run(&format!("SET LOCAL ec_hnsw.ef_search = {ef_search}"))
             .expect("setting ef_search should succeed");
         let (prefill_found, _, _, _, _, _, _, _) =
-            hnsw_recall_debug!(am::debug_gettuple_current_result_state(index_oid, query.clone()));
+            am::debug_gettuple_current_result_state(index_oid, query.clone());
         let predicted_heap_tids =
-            hnsw_recall_debug!(am::debug_gettuple_scan_heap_tids(index_oid, query.clone()));
+            am::debug_gettuple_scan_heap_tids(index_oid, query.clone());
         let predicted_ids = predicted_heap_tids
             .iter()
             .take(RECALL_K)
@@ -331,7 +323,7 @@
         Spi::run(&format!("SET LOCAL ec_hnsw.ef_search = {ef_search}"))
             .expect("setting ef_search should succeed");
         let (frontier_head, _, _, frontier_provenance, expanded_sources) =
-            hnsw_recall_debug!(am::debug_rescan_candidate_frontier(index_oid, query));
+            am::debug_rescan_candidate_frontier(index_oid, query);
 
         (
             probe.0,
@@ -409,9 +401,9 @@
         Spi::run(&format!("SET LOCAL ec_hnsw.ef_search = {ef_search}"))
             .expect("setting ef_search should succeed");
         let (prefill_found, _, _, _, _, _, _, _) =
-            hnsw_recall_debug!(am::debug_gettuple_current_result_state(index_oid, query.clone()));
+            am::debug_gettuple_current_result_state(index_oid, query.clone());
         let predicted_heap_tids =
-            hnsw_recall_debug!(am::debug_gettuple_scan_heap_tids(index_oid, query.clone()));
+            am::debug_gettuple_scan_heap_tids(index_oid, query.clone());
         let predicted_ids_full = predicted_heap_tids
             .iter()
             .map(|heap_tid| {
@@ -510,7 +502,7 @@
         Spi::run(&format!("SET LOCAL ec_hnsw.ef_search = {ef_search}"))
             .expect("setting ef_search should succeed");
         let predicted_with_scores =
-            hnsw_recall_debug!(am::debug_gettuple_scan_heap_tids_with_scores(index_oid, query.clone()));
+            am::debug_gettuple_scan_heap_tids_with_scores(index_oid, query.clone());
         let predicted_id_scores = predicted_with_scores
             .into_iter()
             .map(|(heap_tid, score)| {
@@ -645,7 +637,7 @@
                 .map(|id| i64::try_from(*id).expect("truth id should fit into bigint"))
                 .collect::<Vec<_>>();
             let predicted_ids =
-                hnsw_recall_debug!(am::debug_gettuple_scan_heap_tids(index_oid, query.clone()))
+                am::debug_gettuple_scan_heap_tids(index_oid, query.clone())
                     .into_iter()
                     .take(RECALL_K)
                     .map(|heap_tid| {
@@ -995,7 +987,7 @@
         {
             // Graph scan: returns heap tids plus operator-facing `<#>` scores.
             let predicted_row_indices_with_scores: Vec<(usize, f32)> =
-                hnsw_recall_debug!(am::debug_gettuple_scan_heap_tids_with_scores(index_oid, query.clone()))
+                am::debug_gettuple_scan_heap_tids_with_scores(index_oid, query.clone())
                     .into_iter()
                     .map(|(heap_tid, operator_score)| {
                         let row_index = *context
@@ -1126,7 +1118,7 @@
             .zip(context.ground_truth_top_k.iter())
         {
             let predicted_row_indices: Vec<i64> =
-                hnsw_recall_debug!(am::debug_gettuple_scan_heap_tids(index_oid, query.clone()))
+                am::debug_gettuple_scan_heap_tids(index_oid, query.clone())
                     .into_iter()
                     .map(|heap_tid| {
                         let row_index = *context
@@ -1240,7 +1232,7 @@
                 .map(|(idx, _)| *idx as i64)
                 .collect();
             let predicted_top_10_ids: Vec<i64> =
-                hnsw_recall_debug!(am::debug_gettuple_scan_heap_tids(index_oid, query.clone()))
+                am::debug_gettuple_scan_heap_tids(index_oid, query.clone())
                     .into_iter()
                     .take(RECALL_K)
                     .map(|heap_tid| {
@@ -1354,7 +1346,7 @@
                 .map(|(idx, _)| *idx as i64)
                 .collect();
             let predicted_top_10_row_indices: Vec<i64> =
-                hnsw_recall_debug!(am::debug_gettuple_scan_heap_tids(index_oid, query.clone()))
+                am::debug_gettuple_scan_heap_tids(index_oid, query.clone())
                     .into_iter()
                     .take(RECALL_K)
                     .map(|heap_tid| {
@@ -1455,7 +1447,7 @@
                 .map(|id| i64::try_from(*id).expect("truth id should fit into bigint"))
                 .collect::<Vec<_>>();
             let predicted_ids =
-                hnsw_recall_debug!(am::debug_gettuple_scan_heap_tids(index_oid, query.clone()))
+                am::debug_gettuple_scan_heap_tids(index_oid, query.clone())
                     .into_iter()
                     .take(RECALL_K)
                     .map(|heap_tid| {
@@ -1467,11 +1459,11 @@
                         .expect("graph id should fit into bigint")
                     })
                     .collect::<Vec<_>>();
-            let oracle_ids = hnsw_recall_debug!(am::debug_top_level_oracle_scan_heap_tids(
+            let oracle_ids = am::debug_top_level_oracle_scan_heap_tids(
                     index_oid,
                     query.clone(),
                     usize::try_from(ef_search).expect("ef_search should fit into usize"),
-                ))
+                )
             .into_iter()
             .take(RECALL_K)
             .map(|heap_tid| {
@@ -1593,7 +1585,7 @@
                 .map(|id| i64::try_from(*id).expect("truth id should fit into bigint"))
                 .collect::<Vec<_>>();
             let predicted_ids =
-                hnsw_recall_debug!(am::debug_gettuple_scan_heap_tids(index_oid, query.clone()))
+                am::debug_gettuple_scan_heap_tids(index_oid, query.clone())
                     .into_iter()
                     .take(RECALL_K)
                     .map(|heap_tid| {
@@ -1605,12 +1597,12 @@
                         .expect("graph id should fit into bigint")
                     })
                     .collect::<Vec<_>>();
-            let oracle_ids = hnsw_recall_debug!(am::debug_top_level_oracle_k_seed_scan_heap_tids(
+            let oracle_ids = am::debug_top_level_oracle_k_seed_scan_heap_tids(
                     index_oid,
                     query.clone(),
                     usize::try_from(ef_search).expect("ef_search should fit into usize"),
                     seed_count,
-                ))
+                )
             .into_iter()
             .take(RECALL_K)
             .map(|heap_tid| {
@@ -1734,7 +1726,7 @@
                 .map(|id| i64::try_from(*id).expect("truth id should fit into bigint"))
                 .collect::<Vec<_>>();
             let predicted_ids =
-                hnsw_recall_debug!(am::debug_gettuple_scan_heap_tids(index_oid, query.clone()))
+                am::debug_gettuple_scan_heap_tids(index_oid, query.clone())
                     .into_iter()
                     .take(RECALL_K)
                     .map(|heap_tid| {
@@ -1746,13 +1738,13 @@
                         .expect("graph id should fit into bigint")
                     })
                     .collect::<Vec<_>>();
-            let oracle_ids = hnsw_recall_debug!(am::debug_layer_oracle_k_carrydown_scan_heap_tids(
+            let oracle_ids = am::debug_layer_oracle_k_carrydown_scan_heap_tids(
                     index_oid,
                     query.clone(),
                     usize::try_from(ef_search).expect("ef_search should fit into usize"),
                     layer,
                     seed_count,
-                ))
+                )
             .into_iter()
             .take(RECALL_K)
             .map(|heap_tid| {
@@ -1877,7 +1869,7 @@
                 .map(|id| i64::try_from(*id).expect("truth id should fit into bigint"))
                 .collect::<Vec<_>>();
             let predicted_ids =
-                hnsw_recall_debug!(am::debug_gettuple_scan_heap_tids(index_oid, query.clone()))
+                am::debug_gettuple_scan_heap_tids(index_oid, query.clone())
                     .into_iter()
                     .take(RECALL_K)
                     .map(|heap_tid| {
@@ -1889,12 +1881,12 @@
                         .expect("graph id should fit into bigint")
                     })
                     .collect::<Vec<_>>();
-            let neighbor_ids = hnsw_recall_debug!(am::debug_layer_oracle_k_seed_layer0_neighbor_heap_tids(
+            let neighbor_ids = am::debug_layer_oracle_k_seed_layer0_neighbor_heap_tids(
                     index_oid,
                     query.clone(),
                     layer,
                     seed_count,
-                ))
+                )
             .into_iter()
             .take(RECALL_K)
             .map(|heap_tid| {
@@ -1979,7 +1971,7 @@
                 .expect("seed coverage fixture index oid query should succeed")
                 .expect("seed coverage fixture index oid should exist");
 
-        let all_top_level_ids = hnsw_recall_debug!(am::debug_all_top_level_heap_tids(index_oid))
+        let all_top_level_ids = am::debug_all_top_level_heap_tids(index_oid)
             .into_iter()
             .map(|heap_tid| {
                 i64::try_from(
@@ -1990,7 +1982,7 @@
                 .expect("top-level id should fit into bigint")
             })
             .collect::<std::collections::HashSet<_>>();
-        let reachable_top_level_ids = hnsw_recall_debug!(am::debug_top_level_reachable_heap_tids(index_oid))
+        let reachable_top_level_ids = am::debug_top_level_reachable_heap_tids(index_oid)
             .into_iter()
             .map(|heap_tid| {
                 i64::try_from(
@@ -2008,7 +2000,8 @@
         let mut fully_reachable_queries = 0_i32;
 
         for query in &queries {
-            let oracle_seed_ids = hnsw_recall_debug!(am::debug_top_level_oracle_k_seed_heap_tids(index_oid, query.clone(), seed_count))
+            let oracle_seed_ids =
+                am::debug_top_level_oracle_k_seed_heap_tids(index_oid, query.clone(), seed_count)
             .into_iter()
             .map(|heap_tid| {
                 i64::try_from(
@@ -2173,7 +2166,7 @@
                 .map(|id| i64::try_from(*id).expect("truth id should fit into bigint"))
                 .collect::<Vec<_>>();
             let predicted_ids =
-                hnsw_recall_debug!(am::debug_gettuple_scan_heap_tids(index_oid, query.clone()))
+                am::debug_gettuple_scan_heap_tids(index_oid, query.clone())
                     .into_iter()
                     .take(RECALL_K)
                     .map(|heap_tid| {
@@ -2216,12 +2209,12 @@
                 .copied()
                 .take(1)
                 .collect::<Vec<_>>();
-            let exact_seed1_ids = hnsw_recall_debug!(am::debug_exact_seed_scan_heap_tids(
+            let exact_seed1_ids = am::debug_exact_seed_scan_heap_tids(
                     index_oid,
                     query.clone(),
                     exact_seed1_input,
                     usize::try_from(ef_search).expect("ef_search should fit into usize"),
-                ))
+                )
             .into_iter()
             .take(RECALL_K)
             .map(|heap_tid| {
@@ -2233,12 +2226,12 @@
                 .expect("exact-seed1 id should fit into bigint")
             })
             .collect::<Vec<_>>();
-            let exact_seed10_ids = hnsw_recall_debug!(am::debug_exact_seed_scan_heap_tids(
+            let exact_seed10_ids = am::debug_exact_seed_scan_heap_tids(
                     index_oid,
                     query.clone(),
                     exact_seed_heap_tids,
                     usize::try_from(ef_search).expect("ef_search should fit into usize"),
-                ))
+                )
             .into_iter()
             .take(RECALL_K)
             .map(|heap_tid| {
@@ -2365,25 +2358,15 @@
             "ec_hnsw_graph_scan_recall_probe_idx",
             m,
         );
-        let index_relation =
-            open_valid_ec_hnsw_index_guard(index_oid, "ec_hnsw_graph_scan_recall_probe");
-        // SAFETY: `open_valid_ec_hnsw_index_guard` returned an open relation for the
-        // just-created HNSW index, and the guard keeps that relation valid for this call.
-        let index_block_count = unsafe {
-            i32::try_from(pg_sys::RelationGetNumberOfBlocksInFork(
-                index_relation.as_ptr(),
-                pg_sys::ForkNumber::MAIN_FORKNUM,
-            ))
-            .expect("block count should fit into int")
-        };
-        drop(index_relation);
+        let index_block_count =
+            recall_index_block_count(index_oid, "ec_hnsw_graph_scan_recall_probe");
 
         Spi::run(&format!("SET LOCAL ec_hnsw.ef_search = {ef_search}"))
             .expect("setting ef_search should succeed");
         let (prefill_found, _, _, _, _, _, _, _) =
-            hnsw_recall_debug!(am::debug_gettuple_current_result_state(index_oid, query.clone()));
+            am::debug_gettuple_current_result_state(index_oid, query.clone());
         let predicted_heap_tids =
-            hnsw_recall_debug!(am::debug_gettuple_scan_heap_tids(index_oid, query.clone()));
+            am::debug_gettuple_scan_heap_tids(index_oid, query.clone());
         let predicted_ids = predicted_heap_tids
             .iter()
             .take(RECALL_K)

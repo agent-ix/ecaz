@@ -4,12 +4,16 @@ use std::ptr;
 use std::time::Instant;
 
 #[cfg(any(test, feature = "pg_test"))]
+use hashbrown::HashSet;
+#[cfg(any(test, feature = "pg_test"))]
 use pgrx::{pg_sys, FromDatum};
 
 #[cfg(any(test, feature = "pg_test"))]
 use super::scan::*;
 #[cfg(any(test, feature = "pg_test"))]
 use super::{graph, page, search};
+#[cfg(any(test, feature = "pg_test"))]
+use crate::quant::prod::{PreparedQuery, ProdQuantizer};
 #[cfg(any(test, feature = "pg_test"))]
 use crate::storage::{
     buffer_guard::LockedBufferGuard,
@@ -36,6 +40,14 @@ type DebugCandidateFrontierSlots = Vec<DebugCandidateSlot>;
 
 #[cfg(any(test, feature = "pg_test"))]
 type DebugCandidateFrontierProvenanceSlots = Vec<DebugCandidateProvenanceSlot>;
+
+#[cfg(any(test, feature = "pg_test"))]
+struct DebugOracleScoreParts<'a> {
+    storage: graph::GraphStorageDescriptor,
+    scan_m: u16,
+    quantizer: &'a ProdQuantizer,
+    prepared_query: &'a PreparedQuery,
+}
 
 #[cfg(any(test, feature = "pg_test"))]
 type DebugCandidateFrontierLifecycle = (
@@ -88,10 +100,17 @@ fn debug_item_pointer_coords(tid: page::ItemPointer) -> HeapTidCoords {
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-unsafe fn debug_graph_storage(
+fn debug_read_metadata_page(index_relation: pg_sys::Relation) -> page::MetadataPage {
+    super::shared::read_metadata_page(index_relation)
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+fn debug_graph_storage(
     index_relation: pg_sys::Relation,
     metadata: &page::MetadataPage,
 ) -> graph::GraphStorageDescriptor {
+    // SAFETY: Debug callers pass an open index relation and metadata read from
+    // that relation; descriptor construction validates the storage format.
     graph::GraphStorageDescriptor::from_index_relation(index_relation, metadata)
         .unwrap_or_else(|e| pgrx::error!("ec_hnsw debug failed to resolve graph storage: {e}"))
 }
@@ -106,7 +125,7 @@ fn debug_graph_tuple_tag(storage: graph::GraphStorageDescriptor) -> u8 {
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-unsafe fn debug_with_page_line_tuple_bytes<R, F>(
+fn debug_with_page_line_tuple_bytes<R, F>(
     page_ptr: *mut u8,
     page_size: usize,
     offset: u16,
@@ -115,35 +134,153 @@ unsafe fn debug_with_page_line_tuple_bytes<R, F>(
 where
     F: for<'a> FnOnce(&'a [u8]) -> R,
 {
-    // SAFETY: Debug callers pass a locked page pointer and offset discovered
-    // while scanning relation pages; the shared helper validates the line
-    // pointer and tuple bounds before exposing bytes to `visit`.
-    unsafe {
-        super::shared::with_page_line_tuple_bytes(
-            page_ptr,
-            page_size,
-            0,
-            offset,
-            "debug scanning page tuples",
-            visit,
-        )
-    }
+    super::shared::with_page_line_tuple_bytes(
+        page_ptr,
+        page_size,
+        0,
+        offset,
+        "debug scanning page tuples",
+        visit,
+    )
     .unwrap_or(None)
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-unsafe fn debug_load_neighbor_tids_for_layer(
+fn debug_main_fork_block_count(index_relation: pg_sys::Relation) -> pg_sys::BlockNumber {
+    let index_relation = ptr::NonNull::new(index_relation)
+        .unwrap_or_else(|| pgrx::error!("ec_hnsw debug scan received null index relation"));
+    crate::storage::relation::main_fork_block_count_handle(index_relation)
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+fn debug_read_main_buffer(
+    index_relation: pg_sys::Relation,
+    block_number: pg_sys::BlockNumber,
+) -> LockedBufferGuard {
+    let handle = std::ptr::NonNull::new(index_relation).unwrap_or_else(|| {
+        pgrx::error!("ec_hnsw debug helper received a null index relation")
+    });
+    LockedBufferGuard::read_main_handle(
+        handle,
+        block_number,
+        pg_sys::ReadBufferMode::RBM_NORMAL,
+        pg_sys::BUFFER_LOCK_SHARE as i32,
+    )
+    .unwrap_or_else(|| pgrx::error!("ec_hnsw debug failed to open graph block {block_number}"))
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+fn debug_load_neighbor_tids_for_layer(
     index_relation: pg_sys::Relation,
     storage: graph::GraphStorageDescriptor,
     element_tid: page::ItemPointer,
     m: usize,
     layer: u8,
 ) -> Vec<page::ItemPointer> {
-    // SAFETY: Debug callers pass an element TID discovered from the graph
-    // relation; the graph loader validates storage-specific tuple contents.
-    let (element, neighbors) =
-        unsafe { graph::load_exact_graph_adjacency(index_relation, element_tid, storage) };
+    let (element, neighbors) = debug_load_graph_adjacency(index_relation, element_tid, storage);
     graph::valid_neighbor_tids_for_layer(&neighbors.tids, element.level, m, layer)
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+fn debug_load_graph_element(
+    index_relation: pg_sys::Relation,
+    element_tid: page::ItemPointer,
+    storage: graph::GraphStorageDescriptor,
+) -> graph::GraphElement {
+    graph::load_exact_graph_element(index_relation, element_tid, storage)
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+fn debug_load_graph_adjacency(
+    index_relation: pg_sys::Relation,
+    element_tid: page::ItemPointer,
+    storage: graph::GraphStorageDescriptor,
+) -> (graph::GraphElement, graph::GraphNeighbors) {
+    graph::load_exact_graph_adjacency(index_relation, element_tid, storage)
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+fn debug_prefetch_next_graph_traversal_result(
+    index_relation: pg_sys::Relation,
+    opaque: &mut TqScanOpaque,
+) -> bool {
+    // SAFETY: Debug callers pass the live scan opaque borrowed from the scan
+    // descriptor while the index relation guard keeps the relation open.
+    unsafe { prefetch_next_graph_traversal_result(index_relation, opaque) }
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+fn debug_consume_and_refill_bootstrap_frontier(
+    index_relation: pg_sys::Relation,
+    opaque: &mut TqScanOpaque,
+) -> Option<search::BeamCandidate<page::ItemPointer>> {
+    // SAFETY: Debug callers pass the live scan opaque borrowed from the scan
+    // descriptor while the index relation guard keeps the relation open.
+    unsafe { consume_and_refill_bootstrap_frontier(index_relation, opaque) }
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+fn debug_search_layer0_result_candidates<SeedIter, KeepFn, ScoreFn>(
+    index_relation: pg_sys::Relation,
+    storage: graph::GraphStorageDescriptor,
+    m: usize,
+    ef_search: usize,
+    seeds: SeedIter,
+    keep_neighbor_tid: KeepFn,
+    score_candidate: ScoreFn,
+) -> Vec<search::BeamCandidate<page::ItemPointer>>
+where
+    SeedIter: IntoIterator<Item = search::BeamCandidate<page::ItemPointer>>,
+    KeepFn: FnMut(page::ItemPointer) -> bool,
+    ScoreFn: FnMut(&graph::GraphElement) -> Option<f32>,
+{
+    // SAFETY: Debug callers pass seed candidates loaded from graph storage for
+    // this relation/storage pair; the graph search helper validates successor
+    // tuples while walking layer 0.
+    unsafe {
+        graph::search_layer0_result_candidates_with_storage(
+            index_relation,
+            storage,
+            m,
+            ef_search,
+            seeds,
+            keep_neighbor_tid,
+            score_candidate,
+        )
+    }
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+fn debug_search_layer_result_candidates<SeedIter, KeepFn, ScoreFn>(
+    index_relation: pg_sys::Relation,
+    storage: graph::GraphStorageDescriptor,
+    m: usize,
+    layer: u8,
+    ef_search: usize,
+    seeds: SeedIter,
+    keep_neighbor_tid: KeepFn,
+    score_candidate: ScoreFn,
+) -> Vec<search::BeamCandidate<page::ItemPointer>>
+where
+    SeedIter: IntoIterator<Item = search::BeamCandidate<page::ItemPointer>>,
+    KeepFn: FnMut(page::ItemPointer) -> bool,
+    ScoreFn: FnMut(&graph::GraphElement) -> Option<f32>,
+{
+    // SAFETY: Debug callers pass frontier candidates loaded from graph storage
+    // for this relation/storage pair; the graph search helper validates
+    // successor tuples while walking the requested layer.
+    unsafe {
+        graph::search_layer_result_candidates_with_storage(
+            index_relation,
+            storage,
+            m,
+            layer,
+            ef_search,
+            seeds,
+            keep_neighbor_tid,
+            score_candidate,
+        )
+    }
 }
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -193,6 +330,13 @@ fn debug_runtime_ordered_provenance_slots(
 #[cfg(any(test, feature = "pg_test"))]
 fn debug_scan_query(opaque: &TqScanOpaque) -> Vec<f32> {
     opaque.query_values_or_empty().to_vec()
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+fn debug_prepared_query_lengths(opaque: &TqScanOpaque) -> (usize, usize) {
+    scan_box_ref(opaque.prepared_query, opaque)
+        .map(|prepared| (prepared.lut.len(), prepared.sq.len()))
+        .unwrap_or((0, 0))
 }
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -268,51 +412,32 @@ type DebugBootstrapCandidateMaterializationState = (
 );
 
 #[cfg(any(test, feature = "pg_test"))]
-fn debug_sorted_visited_tids(opaque: &TqScanOpaque) -> Vec<HeapTidCoords> {
-    if opaque.visited_tids.is_null() {
-        return Vec::new();
-    }
-
-    // SAFETY: `visited_tids` is owned by the live scan opaque while the debug
-    // caller is inspecting the scan state, and null was handled above.
-    let mut tids = unsafe { &*opaque.visited_tids }
-        .iter()
+fn debug_sorted_tid_set(
+    opaque: &TqScanOpaque,
+    tids: *const HashSet<page::ItemPointer>,
+) -> Vec<HeapTidCoords> {
+    let mut tids = scan_box_ref(tids, opaque)
+        .into_iter()
+        .flatten()
         .map(|tid| (tid.block_number, tid.offset_number))
         .collect::<Vec<_>>();
     tids.sort_unstable();
     tids
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+fn debug_sorted_visited_tids(opaque: &TqScanOpaque) -> Vec<HeapTidCoords> {
+    debug_sorted_tid_set(opaque, opaque.visited_tids)
 }
 
 #[cfg(any(test, feature = "pg_test"))]
 fn debug_sorted_expanded_source_tids(opaque: &TqScanOpaque) -> Vec<HeapTidCoords> {
-    if opaque.expanded_source_tids.is_null() {
-        return Vec::new();
-    }
-
-    // SAFETY: `expanded_source_tids` is owned by the live scan opaque while the
-    // debug caller is inspecting the scan state, and null was handled above.
-    let mut tids = unsafe { &*opaque.expanded_source_tids }
-        .iter()
-        .map(|tid| (tid.block_number, tid.offset_number))
-        .collect::<Vec<_>>();
-    tids.sort_unstable();
-    tids
+    debug_sorted_tid_set(opaque, opaque.expanded_source_tids)
 }
 
 #[cfg(any(test, feature = "pg_test"))]
 fn debug_sorted_emitted_tids(opaque: &TqScanOpaque) -> Vec<HeapTidCoords> {
-    if opaque.emitted_result_tids.is_null() {
-        return Vec::new();
-    }
-
-    // SAFETY: `emitted_result_tids` is owned by the live scan opaque while the
-    // debug caller is inspecting the scan state, and null was handled above.
-    let mut tids = unsafe { &*opaque.emitted_result_tids }
-        .iter()
-        .map(|tid| (tid.block_number, tid.offset_number))
-        .collect::<Vec<_>>();
-    tids.sort_unstable();
-    tids
+    debug_sorted_tid_set(opaque, opaque.emitted_result_tids)
 }
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -384,6 +509,70 @@ type DebugScanProfile = (
 
 #[cfg(any(test, feature = "pg_test"))]
 type DebugScanHeapFetchProfile = (i64, i64, i64, i64, i64, i32, i32, i32);
+
+#[cfg(any(test, feature = "pg_test"))]
+fn debug_run_heap_fetch_profile_loop(
+    scan: pg_sys::IndexScanDesc,
+    slot: *mut pg_sys::TupleTableSlot,
+    orderby: &mut pg_sys::ScanKeyData,
+    result_limit: usize,
+    project_attnum: Option<i32>,
+) -> (i64, i64, i64, i64, i32, i32, i32) {
+    let rescan_started = Instant::now();
+    // SAFETY: The caller passes a live heap-backed index scan and tuple slot
+    // whose heap, index, snapshot, and slot guards outlive this profiling loop.
+    // `orderby` is one initialized order-by key. Successful slot fetches own
+    // the tuple slot contents until this helper clears them between iterations.
+    unsafe {
+        pg_sys::index_rescan(scan, ptr::null_mut(), 0, orderby, 1);
+        let rescan_elapsed_us = i64::try_from(rescan_started.elapsed().as_micros())
+            .expect("rescan timing should fit in i64");
+
+        let emit_started = Instant::now();
+        let mut result_count = 0_i32;
+        let mut slot_fetch_count = 0_i32;
+        let mut projected_count = 0_i32;
+        let mut slot_fetch_elapsed_us = 0_i64;
+        let mut projection_elapsed_us = 0_i64;
+
+        while usize::try_from(result_count).expect("result count should fit in usize")
+            < result_limit
+        {
+            let slot_fetch_started = Instant::now();
+            let found =
+                pg_sys::index_getnext_slot(scan, pg_sys::ScanDirection::ForwardScanDirection, slot);
+            slot_fetch_elapsed_us += i64::try_from(slot_fetch_started.elapsed().as_micros())
+                .expect("slot-fetch timing should fit in i64");
+            if !found {
+                break;
+            }
+
+            result_count += 1;
+            slot_fetch_count += 1;
+            if let Some(attnum) = project_attnum {
+                let projection_started = Instant::now();
+                let mut isnull = false;
+                let _ = pg_sys::slot_getattr(slot, attnum, &mut isnull);
+                projection_elapsed_us += i64::try_from(projection_started.elapsed().as_micros())
+                    .expect("projection timing should fit in i64");
+                projected_count += 1;
+            }
+            pg_sys::ExecClearTuple(slot);
+        }
+
+        let emit_elapsed_us = i64::try_from(emit_started.elapsed().as_micros())
+            .expect("emit timing should fit in i64");
+        (
+            rescan_elapsed_us,
+            emit_elapsed_us,
+            slot_fetch_elapsed_us,
+            projection_elapsed_us,
+            result_count,
+            slot_fetch_count,
+            projected_count,
+        )
+    }
+}
 
 #[cfg(any(test, feature = "pg_test"))]
 type DebugGroupedRerankProfile = (
@@ -533,54 +722,158 @@ fn debug_index_scan_end(scan: pg_sys::IndexScanDesc) {
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-unsafe fn debug_scan_opaque<'a>(scan: pg_sys::IndexScanDesc) -> &'a TqScanOpaque {
-    // SAFETY: Debug callers inspect the HNSW opaque while the scan descriptor is
-    // live and after begin/rescan initialized the opaque pointer.
-    unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() }
-}
-
-#[cfg(any(test, feature = "pg_test"))]
-unsafe fn debug_scan_opaque_mut<'a>(scan: pg_sys::IndexScanDesc) -> &'a mut TqScanOpaque {
-    // SAFETY: Debug callers take exclusive mutable access to the scan opaque
-    // while the live scan descriptor is not otherwise borrowed.
-    unsafe { &mut *(*scan).opaque.cast::<TqScanOpaque>() }
-}
-
-#[cfg(any(test, feature = "pg_test"))]
-unsafe fn debug_scan_has_opaque(scan: pg_sys::IndexScanDesc) -> bool {
-    // SAFETY: Debug callers pass a live scan descriptor and only read the
-    // descriptor's opaque pointer.
-    unsafe { !(*scan).opaque.is_null() }
-}
-
-#[cfg(any(test, feature = "pg_test"))]
-unsafe fn debug_scan_opaque_is_null(scan: pg_sys::IndexScanDesc) -> bool {
-    // SAFETY: Debug callers pass a live scan descriptor and only read the
-    // descriptor's opaque pointer.
+fn debug_scan_opaque_is_null(scan: pg_sys::IndexScanDesc) -> bool {
+    // SAFETY: Debug callers pass a live HNSW scan descriptor.
     unsafe { (*scan).opaque.is_null() }
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-unsafe fn debug_scan_heap_tid(scan: pg_sys::IndexScanDesc) -> HeapTidCoords {
+fn debug_with_scan_opaque<R>(
+    scan: pg_sys::IndexScanDesc,
+    f: impl for<'a> FnOnce(&'a TqScanOpaque) -> R,
+) -> R {
+    // SAFETY: Debug callers inspect the HNSW opaque while the scan descriptor is
+    // live and after begin/rescan initialized the opaque pointer. The closure
+    // binds the returned borrow to this call instead of exposing an unbounded
+    // lifetime from a raw scan pointer helper.
+    f(unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() })
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+fn debug_with_scan_opaque_mut<R>(
+    scan: pg_sys::IndexScanDesc,
+    f: impl for<'a> FnOnce(&'a mut TqScanOpaque) -> R,
+) -> R {
+    // SAFETY: Debug callers take exclusive mutable access to the scan opaque
+    // while the live scan descriptor is not otherwise borrowed. The closure
+    // binds the returned borrow to this call instead of exposing an unbounded
+    // lifetime from a raw scan pointer helper.
+    f(unsafe { &mut *(*scan).opaque.cast::<TqScanOpaque>() })
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+fn debug_oracle_score_parts(opaque: &TqScanOpaque) -> DebugOracleScoreParts<'_> {
+    DebugOracleScoreParts {
+        storage: opaque.scan_graph_storage,
+        scan_m: opaque.scan_m,
+        quantizer: scan_box_ref(opaque.cached_quantizer, opaque)
+            .expect("oracle debug helpers require a cached quantizer"),
+        prepared_query: scan_box_ref(opaque.prepared_query, opaque)
+            .expect("oracle debug helpers require a prepared query"),
+    }
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+fn debug_with_oracle_score_parts<R>(
+    scan: pg_sys::IndexScanDesc,
+    f: impl for<'a> FnOnce(DebugOracleScoreParts<'a>) -> R,
+) -> R {
+    debug_with_scan_opaque(scan, |opaque| f(debug_oracle_score_parts(opaque)))
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+fn debug_scan_heap_tid(scan: pg_sys::IndexScanDesc) -> HeapTidCoords {
     // SAFETY: Debug callers read xs_heaptid immediately after a successful
     // gettuple call on the same live scan descriptor.
     pgrx::itemptr::item_pointer_get_both(unsafe { (*scan).xs_heaptid })
 }
 
 #[cfg(any(test, feature = "pg_test"))]
+fn debug_am_gettuple_heap_tid(
+    scan: pg_sys::IndexScanDesc,
+    direction: pg_sys::ScanDirection::Type,
+) -> Option<HeapTidCoords> {
+    debug_am_gettuple(scan, direction).then(|| debug_scan_heap_tid(scan))
+}
+
+#[cfg(any(test, feature = "pg_test"))]
 struct DebugHeapBackedScan {
-    scan: IndexScanGuard,
+    scan: IndexScanGuard<'static, 'static, 'static>,
     _snapshot: ActiveSnapshotGuard,
     _index_relation: IndexRelationGuard,
     _heap_relation: HeapRelationGuard,
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-unsafe fn debug_begin_heap_backed_scan(index_oid: pg_sys::Oid) -> DebugHeapBackedScan {
+impl DebugHeapBackedScan {
+    fn as_ptr(&self) -> pg_sys::IndexScanDesc {
+        self.scan.as_ptr()
+    }
+
+    fn with_opaque<R>(&self, f: impl for<'a> FnOnce(&'a TqScanOpaque) -> R) -> R {
+        debug_with_scan_opaque(self.as_ptr(), f)
+    }
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+struct DebugAmScan {
+    scan: pg_sys::IndexScanDesc,
+    am_ended: bool,
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+impl DebugAmScan {
+    fn begin(index_relation: pg_sys::Relation, nkeys: i32, norderbys: i32) -> Self {
+        Self {
+            scan: debug_am_begin_scan(index_relation, nkeys, norderbys),
+            am_ended: false,
+        }
+    }
+
+    fn rescan(&self, keys: pg_sys::ScanKey, nkeys: i32, orderbys: pg_sys::ScanKey, norderbys: i32) {
+        debug_am_rescan(self.scan, keys, nkeys, orderbys, norderbys);
+    }
+
+    fn gettuple(&self, direction: pg_sys::ScanDirection::Type) -> bool {
+        debug_am_gettuple(self.scan, direction)
+    }
+
+    fn with_opaque<R>(&self, f: impl for<'a> FnOnce(&'a TqScanOpaque) -> R) -> R {
+        debug_with_scan_opaque(self.scan, f)
+    }
+
+    fn with_oracle_score_parts<R>(
+        &self,
+        f: impl for<'a> FnOnce(DebugOracleScoreParts<'a>) -> R,
+    ) -> R {
+        debug_with_oracle_score_parts(self.scan, f)
+    }
+
+    fn has_opaque(&self) -> bool {
+        !debug_scan_opaque_is_null(self.scan)
+    }
+
+    fn opaque_is_null(&self) -> bool {
+        debug_scan_opaque_is_null(self.scan)
+    }
+
+    fn end_am(&mut self) {
+        if !self.am_ended {
+            debug_am_end_scan(self.scan);
+            self.am_ended = true;
+        }
+    }
+
+    fn end_am_again_for_idempotence_probe(&self) {
+        debug_am_end_scan(self.scan);
+    }
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+impl Drop for DebugAmScan {
+    fn drop(&mut self) {
+        if !self.am_ended {
+            debug_am_end_scan(self.scan);
+        }
+        debug_index_scan_end(self.scan);
+    }
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+fn debug_begin_heap_backed_scan(index_oid: pg_sys::Oid) -> DebugHeapBackedScan {
     let index_relation =
         IndexRelationGuard::access_share(index_oid, "debug_begin_heap_backed_scan");
-    // SAFETY: `index_relation` is an open PostgreSQL index relation guard.
-    let heap_oid = unsafe { pg_sys::IndexGetRelation((*index_relation.as_ptr()).rd_id, false) };
+    let heap_oid = index_relation.heap_relation_oid();
     if heap_oid == pg_sys::InvalidOid {
         pgrx::error!("debug scan could not resolve heap relation for index {index_oid}");
     }
@@ -589,8 +882,18 @@ unsafe fn debug_begin_heap_backed_scan(index_oid: pg_sys::Oid) -> DebugHeapBacke
         .unwrap_or_else(|| pgrx::error!("debug scan failed to open heap relation"));
     let snapshot = ActiveSnapshotGuard::latest_after_command_counter()
         .unwrap_or_else(|| pgrx::error!("debug scan could not acquire a fresh latest snapshot"));
-    let scan = IndexScanGuard::begin(&heap_relation, &index_relation, &snapshot, 0, 1)
-        .unwrap_or_else(|| pgrx::error!("debug scan failed to begin heap-backed index scan"));
+    // SAFETY: this debug state owns the heap relation, index relation, and
+    // snapshot guards; field order drops the scan before those dependencies.
+    let scan = unsafe {
+        IndexScanGuard::begin_from_raw(
+            heap_relation.as_ptr(),
+            index_relation.as_ptr(),
+            snapshot.as_ptr(),
+            0,
+            1,
+        )
+    }
+    .unwrap_or_else(|| pgrx::error!("debug scan failed to begin heap-backed index scan"));
 
     DebugHeapBackedScan {
         scan,
@@ -601,68 +904,40 @@ unsafe fn debug_begin_heap_backed_scan(index_oid: pg_sys::Oid) -> DebugHeapBacke
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-unsafe fn debug_end_heap_backed_scan(state: DebugHeapBackedScan) {
-    drop(state);
-}
-
-#[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_begin_end_scan(index_oid: pg_sys::Oid) -> (bool, bool) {
+pub(crate) fn debug_begin_end_scan(index_oid: pg_sys::Oid) -> (bool, bool) {
     let index_relation = IndexRelationGuard::access_share(index_oid, "debug_begin_end_scan");
-    // SAFETY: The index relation guard keeps the relation open for the scan
-    // descriptor returned by the AM begin callback.
-    let scan = debug_am_begin_scan(index_relation.as_ptr(), 0, 1);
-    // SAFETY: `scan` is the descriptor returned by `ec_hnsw_ambeginscan`.
-    let has_opaque = debug_scan_has_opaque(scan);
+    let mut scan = DebugAmScan::begin(index_relation.as_ptr(), 0, 1);
+    let has_opaque = scan.has_opaque();
 
-    // SAFETY: The scan descriptor is live and belongs to the HNSW AM.
-    debug_am_end_scan(scan);
-    // SAFETY: `ec_hnsw_amendscan` clears the opaque field on the same live
-    // descriptor.
-    let cleared_opaque = debug_scan_opaque_is_null(scan);
+    scan.end_am();
+    let cleared_opaque = scan.opaque_is_null();
 
-    // SAFETY: The descriptor was allocated by `IndexScanBegin` through the AM
-    // begin path and has had AM cleanup run above.
-    debug_index_scan_end(scan);
     (has_opaque, cleared_opaque)
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_end_scan_twice(index_oid: pg_sys::Oid) -> (bool, bool, bool) {
+pub(crate) fn debug_end_scan_twice(index_oid: pg_sys::Oid) -> (bool, bool, bool) {
     let index_relation = IndexRelationGuard::access_share(index_oid, "debug_end_scan_twice");
-    // SAFETY: The index relation guard keeps the relation open for the scan
-    // descriptor returned by the AM begin callback.
-    let scan = debug_am_begin_scan(index_relation.as_ptr(), 0, 1);
-    // SAFETY: `scan` is the descriptor returned by `ec_hnsw_ambeginscan`.
-    let has_opaque = debug_scan_has_opaque(scan);
+    let mut scan = DebugAmScan::begin(index_relation.as_ptr(), 0, 1);
+    let has_opaque = scan.has_opaque();
 
-    // SAFETY: The scan descriptor is live and belongs to the HNSW AM.
-    debug_am_end_scan(scan);
-    // SAFETY: The descriptor remains allocated after AM cleanup for this debug
-    // idempotence check.
-    let cleared_after_first = debug_scan_opaque_is_null(scan);
+    scan.end_am();
+    let cleared_after_first = scan.opaque_is_null();
 
-    // SAFETY: This deliberately repeats AM cleanup on the same descriptor to
-    // verify the end callback tolerates an already-cleared opaque pointer.
-    debug_am_end_scan(scan);
-    // SAFETY: The descriptor remains allocated until `IndexScanEnd` below.
-    let cleared_after_second = debug_scan_opaque_is_null(scan);
+    scan.end_am_again_for_idempotence_probe();
+    let cleared_after_second = scan.opaque_is_null();
 
-    // SAFETY: The descriptor was allocated by the AM begin path and is freed
-    // exactly once after the idempotence probe.
-    debug_index_scan_end(scan);
     (has_opaque, cleared_after_first, cleared_after_second)
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_rescan_query_dimensions(
+pub(crate) fn debug_rescan_query_dimensions(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
 ) -> (bool, u16, Vec<f32>, u16, u8, usize, u32, bool, usize, usize) {
     let index_relation =
         IndexRelationGuard::access_share(index_oid, "debug_rescan_query_dimensions");
-    // SAFETY: The relation guard keeps the index relation open for the AM scan
-    // descriptor.
-    let scan = debug_am_begin_scan(index_relation.as_ptr(), 0, 1);
+    let scan = DebugAmScan::begin(index_relation.as_ptr(), 0, 1);
 
     let mut orderby = pg_sys::ScanKeyData {
         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
@@ -670,50 +945,34 @@ pub(crate) unsafe fn debug_rescan_query_dimensions(
     };
     // SAFETY: `scan` is live, there are no index quals, and `orderby` points to
     // one initialized order-by key for the duration of the rescan call.
-    debug_am_rescan(scan, ptr::null_mut(), 0, &mut orderby, 1);
+    scan.rescan(ptr::null_mut(), 0, &mut orderby, 1);
 
-    // SAFETY: `ec_hnsw_amrescan` initializes the HNSW scan opaque on the live
-    // scan descriptor.
-    let opaque = unsafe { debug_scan_opaque(scan) };
-    let result = (
-        opaque.rescan_called,
-        opaque.query_dimensions,
-        debug_scan_query(opaque),
-        opaque.scan_dimensions,
-        opaque.scan_bits,
-        opaque.scan_code_len,
-        opaque.scan_block_count,
-        !opaque.prepared_query.is_null(),
-        opaque
-            .prepared_query
-            .as_ref()
-            .map(|prepared| prepared.lut.len())
-            .unwrap_or(0),
-        opaque
-            .prepared_query
-            .as_ref()
-            .map(|prepared| prepared.sq.len())
-            .unwrap_or(0),
-    );
-
-    // SAFETY: The scan descriptor is live and belongs to the HNSW AM.
-    debug_am_end_scan(scan);
-    // SAFETY: AM cleanup has run, and the descriptor is released once here.
-    debug_index_scan_end(scan);
-    result
+    scan.with_opaque(|opaque| {
+        let (prepared_lut_len, prepared_sq_len) = debug_prepared_query_lengths(opaque);
+        (
+            opaque.rescan_called,
+            opaque.query_dimensions,
+            debug_scan_query(opaque),
+            opaque.scan_dimensions,
+            opaque.scan_bits,
+            opaque.scan_code_len,
+            opaque.scan_block_count,
+            !opaque.prepared_query.is_null(),
+            prepared_lut_len,
+            prepared_sq_len,
+        )
+    })
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_rescan_overwrites_query_dimensions(
+pub(crate) fn debug_rescan_overwrites_query_dimensions(
     index_oid: pg_sys::Oid,
     first_query: Vec<f32>,
     second_query: Vec<f32>,
 ) -> (bool, u16, Vec<f32>, u16, u8, usize, u32, bool, usize, usize) {
     let index_relation =
         IndexRelationGuard::access_share(index_oid, "debug_rescan_overwrites_query_dimensions");
-    // SAFETY: The relation guard keeps the index relation open for the AM scan
-    // descriptor.
-    let scan = debug_am_begin_scan(index_relation.as_ptr(), 0, 1);
+    let scan = DebugAmScan::begin(index_relation.as_ptr(), 0, 1);
 
     let mut first_orderby = pg_sys::ScanKeyData {
         sk_argument: pgrx::IntoDatum::into_datum(first_query)
@@ -722,7 +981,7 @@ pub(crate) unsafe fn debug_rescan_overwrites_query_dimensions(
     };
     // SAFETY: `scan` is live, there are no index quals, and `first_orderby`
     // points to one initialized order-by key for this rescan.
-    debug_am_rescan(scan, ptr::null_mut(), 0, &mut first_orderby, 1);
+    scan.rescan(ptr::null_mut(), 0, &mut first_orderby, 1);
 
     let mut second_orderby = pg_sys::ScanKeyData {
         sk_argument: pgrx::IntoDatum::into_datum(second_query)
@@ -731,41 +990,27 @@ pub(crate) unsafe fn debug_rescan_overwrites_query_dimensions(
     };
     // SAFETY: `scan` is live, there are no index quals, and `second_orderby`
     // points to one initialized order-by key for this overwrite rescan.
-    debug_am_rescan(scan, ptr::null_mut(), 0, &mut second_orderby, 1);
+    scan.rescan(ptr::null_mut(), 0, &mut second_orderby, 1);
 
-    // SAFETY: The second AM rescan leaves the HNSW scan opaque initialized on
-    // the live descriptor for debug inspection.
-    let opaque = unsafe { debug_scan_opaque(scan) };
-    let result = (
-        opaque.rescan_called,
-        opaque.query_dimensions,
-        debug_scan_query(opaque),
-        opaque.scan_dimensions,
-        opaque.scan_bits,
-        opaque.scan_code_len,
-        opaque.scan_block_count,
-        !opaque.prepared_query.is_null(),
-        opaque
-            .prepared_query
-            .as_ref()
-            .map(|prepared| prepared.lut.len())
-            .unwrap_or(0),
-        opaque
-            .prepared_query
-            .as_ref()
-            .map(|prepared| prepared.sq.len())
-            .unwrap_or(0),
-    );
-
-    // SAFETY: The scan descriptor is live and belongs to the HNSW AM.
-    debug_am_end_scan(scan);
-    // SAFETY: AM cleanup has run, and the descriptor is released once here.
-    debug_index_scan_end(scan);
-    result
+    scan.with_opaque(|opaque| {
+        let (prepared_lut_len, prepared_sq_len) = debug_prepared_query_lengths(opaque);
+        (
+            opaque.rescan_called,
+            opaque.query_dimensions,
+            debug_scan_query(opaque),
+            opaque.scan_dimensions,
+            opaque.scan_bits,
+            opaque.scan_code_len,
+            opaque.scan_block_count,
+            !opaque.prepared_query.is_null(),
+            prepared_lut_len,
+            prepared_sq_len,
+        )
+    })
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_rescan_null_query(index_oid: pg_sys::Oid) {
+pub(crate) fn debug_rescan_null_query(index_oid: pg_sys::Oid) {
     let index_relation = IndexRelationGuard::access_share(index_oid, "debug_rescan_null_query");
     // SAFETY: The relation guard keeps the index relation open for the AM scan
     // descriptor.
@@ -781,7 +1026,7 @@ pub(crate) unsafe fn debug_rescan_null_query(index_oid: pg_sys::Oid) {
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_rescan_with_index_qual(index_oid: pg_sys::Oid, query: Vec<f32>) {
+pub(crate) fn debug_rescan_with_index_qual(index_oid: pg_sys::Oid, query: Vec<f32>) {
     let index_relation =
         IndexRelationGuard::access_share(index_oid, "debug_rescan_with_index_qual");
     // SAFETY: The relation guard keeps the index relation open for the AM scan
@@ -799,63 +1044,42 @@ pub(crate) unsafe fn debug_rescan_with_index_qual(index_oid: pg_sys::Oid, query:
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_rescan_with_unused_key_buffer(
+pub(crate) fn debug_rescan_with_unused_key_buffer(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
 ) -> (bool, u16, Vec<f32>, u16, u8, usize, u32, bool, usize, usize) {
     let index_relation =
         IndexRelationGuard::access_share(index_oid, "debug_rescan_with_unused_key_buffer");
-    // SAFETY: The relation guard keeps the index relation open for the AM scan
-    // descriptor.
-    let scan = debug_am_begin_scan(index_relation.as_ptr(), 0, 1);
+    let scan = DebugAmScan::begin(index_relation.as_ptr(), 0, 1);
 
-    // SAFETY: PostgreSQL allocates zeroed memory in the current memory context;
-    // the pointer is freed before the descriptor is ended below.
-    let unused_keys = unsafe { pg_sys::palloc0(std::mem::size_of::<pg_sys::ScanKeyData>()) }
-        .cast::<pg_sys::ScanKeyData>();
+    let mut unused_key = pg_sys::ScanKeyData::default();
     let mut orderby = pg_sys::ScanKeyData {
         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
         ..Default::default()
     };
     // SAFETY: `scan` is live, the key count is intentionally zero so
     // `unused_keys` must be ignored, and `orderby` is a valid one-key buffer.
-    debug_am_rescan(scan, unused_keys, 0, &mut orderby, 1);
+    scan.rescan(&mut unused_key, 0, &mut orderby, 1);
 
-    // SAFETY: AM rescan initializes the HNSW scan opaque on the live descriptor.
-    let opaque = unsafe { debug_scan_opaque(scan) };
-    let result = (
-        opaque.rescan_called,
-        opaque.query_dimensions,
-        debug_scan_query(opaque),
-        opaque.scan_dimensions,
-        opaque.scan_bits,
-        opaque.scan_code_len,
-        opaque.scan_block_count,
-        !opaque.prepared_query.is_null(),
-        opaque
-            .prepared_query
-            .as_ref()
-            .map(|prepared| prepared.lut.len())
-            .unwrap_or(0),
-        opaque
-            .prepared_query
-            .as_ref()
-            .map(|prepared| prepared.sq.len())
-            .unwrap_or(0),
-    );
-
-    // SAFETY: `unused_keys` was allocated by `palloc0` above and has not been
-    // freed yet.
-    unsafe { pg_sys::pfree(unused_keys.cast()) };
-    // SAFETY: The scan descriptor is live and belongs to the HNSW AM.
-    debug_am_end_scan(scan);
-    // SAFETY: AM cleanup has run, and the descriptor is released once here.
-    debug_index_scan_end(scan);
-    result
+    scan.with_opaque(|opaque| {
+        let (prepared_lut_len, prepared_sq_len) = debug_prepared_query_lengths(opaque);
+        (
+            opaque.rescan_called,
+            opaque.query_dimensions,
+            debug_scan_query(opaque),
+            opaque.scan_dimensions,
+            opaque.scan_bits,
+            opaque.scan_code_len,
+            opaque.scan_block_count,
+            !opaque.prepared_query.is_null(),
+            prepared_lut_len,
+            prepared_sq_len,
+        )
+    })
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_rescan_with_multiple_orderbys(index_oid: pg_sys::Oid, query: Vec<f32>) {
+pub(crate) fn debug_rescan_with_multiple_orderbys(index_oid: pg_sys::Oid, query: Vec<f32>) {
     let index_relation =
         IndexRelationGuard::access_share(index_oid, "debug_rescan_with_multiple_orderbys");
     // SAFETY: The relation guard keeps the index relation open for the AM scan
@@ -879,7 +1103,7 @@ pub(crate) unsafe fn debug_rescan_with_multiple_orderbys(index_oid: pg_sys::Oid,
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_gettuple_without_rescan(index_oid: pg_sys::Oid) {
+pub(crate) fn debug_gettuple_without_rescan(index_oid: pg_sys::Oid) {
     let index_relation =
         IndexRelationGuard::access_share(index_oid, "debug_gettuple_without_rescan");
     // SAFETY: The relation guard keeps the index relation open for the AM scan
@@ -892,7 +1116,7 @@ pub(crate) unsafe fn debug_gettuple_without_rescan(index_oid: pg_sys::Oid) {
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_gettuple_after_rescan(index_oid: pg_sys::Oid, query: Vec<f32>) {
+pub(crate) fn debug_gettuple_after_rescan(index_oid: pg_sys::Oid, query: Vec<f32>) {
     let index_relation = IndexRelationGuard::access_share(index_oid, "debug_gettuple_after_rescan");
     // SAFETY: The relation guard keeps the index relation open for the AM scan
     // descriptor.
@@ -911,15 +1135,10 @@ pub(crate) unsafe fn debug_gettuple_after_rescan(index_oid: pg_sys::Oid, query: 
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_gettuple_after_rescan_result(
-    index_oid: pg_sys::Oid,
-    query: Vec<f32>,
-) -> bool {
+pub(crate) fn debug_gettuple_after_rescan_result(index_oid: pg_sys::Oid, query: Vec<f32>) -> bool {
     let index_relation =
         IndexRelationGuard::access_share(index_oid, "debug_gettuple_after_rescan_result");
-    // SAFETY: The relation guard keeps the index relation open for the AM scan
-    // descriptor.
-    let scan = debug_am_begin_scan(index_relation.as_ptr(), 0, 1);
+    let scan = DebugAmScan::begin(index_relation.as_ptr(), 0, 1);
 
     let mut orderby = pg_sys::ScanKeyData {
         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
@@ -927,72 +1146,55 @@ pub(crate) unsafe fn debug_gettuple_after_rescan_result(
     };
     // SAFETY: `scan` is live, there are no index quals, and `orderby` points to
     // one initialized order-by key.
-    debug_am_rescan(scan, ptr::null_mut(), 0, &mut orderby, 1);
+    scan.rescan(ptr::null_mut(), 0, &mut orderby, 1);
     // SAFETY: AM rescan initialized the HNSW opaque, so gettuple may advance the
     // live descriptor.
-    let result = debug_am_gettuple(scan, pg_sys::ScanDirection::ForwardScanDirection);
-
-    // SAFETY: The scan descriptor is live and belongs to the HNSW AM.
-    debug_am_end_scan(scan);
-    // SAFETY: AM cleanup has run, and the descriptor is released once here.
-    debug_index_scan_end(scan);
-    result
+    scan.gettuple(pg_sys::ScanDirection::ForwardScanDirection)
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_gettuple_scan_heap_tids(
+pub(crate) fn debug_gettuple_scan_heap_tids(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
 ) -> Vec<HeapTidCoords> {
-    // SAFETY: The debug helper opens the index, owning heap, and scan snapshot
-    // and keeps them alive in `scan_state`.
-    let scan_state = unsafe { debug_begin_heap_backed_scan(index_oid) };
-    let scan = scan_state.scan.as_ptr();
+    let scan_state = debug_begin_heap_backed_scan(index_oid);
+    let scan = scan_state.as_ptr();
 
     let mut orderby = pg_sys::ScanKeyData {
         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
         ..Default::default()
     };
-    // SAFETY: `scan_state` owns a live heap-backed scan, there are no index
-    // quals, and `orderby` is a valid one-key buffer.
+    // The scan state owns a live heap-backed scan, there are no index quals,
+    // and `orderby` is a valid one-key buffer.
     debug_am_rescan(scan, ptr::null_mut(), 0, &mut orderby, 1);
 
     let mut tids = Vec::new();
-    // SAFETY: AM rescan initialized the HNSW opaque, so repeated gettuple calls
-    // may advance the live scan descriptor.
-    while debug_am_gettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) {
-        // SAFETY: A successful gettuple call populated `xs_heaptid` for this
-        // live index scan descriptor.
-        let (block_number, offset_number) = debug_scan_heap_tid(scan);
+    while let Some((block_number, offset_number)) =
+        debug_am_gettuple_heap_tid(scan, pg_sys::ScanDirection::ForwardScanDirection)
+    {
         tids.push((block_number, offset_number));
     }
 
-    // SAFETY: `scan_state` owns the scan and relation guards and is consumed
-    // once after iteration completes.
-    unsafe { debug_end_heap_backed_scan(scan_state) };
+    drop(scan_state);
     tids
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_profile_ordered_scan(
+pub(crate) fn debug_profile_ordered_scan(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
 ) -> DebugScanProfile {
-    // SAFETY: This debug wrapper forwards the caller-provided index oid and
-    // query to the bounded profiler without changing ownership.
-    unsafe { debug_profile_ordered_scan_with_limit(index_oid, query, None) }
+    debug_profile_ordered_scan_with_limit(index_oid, query, None)
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_profile_ordered_scan_with_limit(
+pub(crate) fn debug_profile_ordered_scan_with_limit(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
     result_limit: Option<usize>,
 ) -> DebugScanProfile {
-    // SAFETY: The debug helper opens the index, owning heap, and scan snapshot
-    // and keeps them alive in `scan_state`.
-    let scan_state = unsafe { debug_begin_heap_backed_scan(index_oid) };
-    let scan = scan_state.scan.as_ptr();
+    let scan_state = debug_begin_heap_backed_scan(index_oid);
+    let scan = scan_state.as_ptr();
 
     let total_started = Instant::now();
     let rescan_started = Instant::now();
@@ -1006,21 +1208,33 @@ pub(crate) unsafe fn debug_profile_ordered_scan_with_limit(
     let rescan_elapsed_us = i64::try_from(rescan_started.elapsed().as_micros())
         .expect("rescan timing should fit in i64");
 
-    // SAFETY: AM rescan initialized the HNSW scan opaque on the live descriptor.
-    let opaque = debug_scan_opaque(scan);
-    let rescan_counters = opaque.explain_counters;
-    let rescan_phase = debug_execution_phase_label(opaque.execution_phase).to_string();
-    let rescan_current_result = active_result_state_ref(opaque).current().has_element();
-    let rescan_ordered_slots = i32::try_from(debug_runtime_ordered_slots(opaque).len())
-        .expect("slot count should fit in i32");
-    let rescan_pending_heap_tids = i32::from(active_result_state_ref(opaque).pending_count());
-    let rescan_visited_count = i32::try_from(debug_sorted_visited_tids(opaque).len())
-        .expect("visited count should fit in i32");
-    let rescan_expanded_count = i32::try_from(debug_sorted_expanded_source_tids(opaque).len())
-        .expect("expanded count should fit in i32");
-    let rescan_emitted_count = i32::try_from(debug_sorted_emitted_tids(opaque).len())
-        .expect("emitted count should fit in i32");
-    let rescan_debug_profile = opaque.debug_profile;
+    let (
+        rescan_counters,
+        rescan_phase,
+        rescan_current_result,
+        rescan_ordered_slots,
+        rescan_pending_heap_tids,
+        rescan_visited_count,
+        rescan_expanded_count,
+        rescan_emitted_count,
+        rescan_debug_profile,
+    ) = scan_state.with_opaque(|opaque| {
+        (
+            opaque.explain_counters,
+            debug_execution_phase_label(opaque.execution_phase).to_string(),
+            active_result_state_ref(opaque).current().has_element(),
+            i32::try_from(debug_runtime_ordered_slots(opaque).len())
+                .expect("slot count should fit in i32"),
+            i32::from(active_result_state_ref(opaque).pending_count()),
+            i32::try_from(debug_sorted_visited_tids(opaque).len())
+                .expect("visited count should fit in i32"),
+            i32::try_from(debug_sorted_expanded_source_tids(opaque).len())
+                .expect("expanded count should fit in i32"),
+            i32::try_from(debug_sorted_emitted_tids(opaque).len())
+                .expect("emitted count should fit in i32"),
+            opaque.debug_profile,
+        )
+    });
 
     let emit_started = Instant::now();
     let mut result_count = 0_i32;
@@ -1035,22 +1249,22 @@ pub(crate) unsafe fn debug_profile_ordered_scan_with_limit(
     let emit_elapsed_us =
         i64::try_from(emit_started.elapsed().as_micros()).expect("emit timing should fit in i64");
 
-    // SAFETY: The scan descriptor remains live until `debug_end_heap_backed_scan`
-    // consumes `scan_state` below.
-    let opaque = debug_scan_opaque(scan);
-    let total_counters = opaque.explain_counters;
-    let final_phase = debug_execution_phase_label(opaque.execution_phase).to_string();
-    let final_ordered_slots = i32::try_from(debug_runtime_ordered_slots(opaque).len())
-        .expect("slot count should fit in i32");
-    let final_emitted_count = i32::try_from(debug_sorted_emitted_tids(opaque).len())
-        .expect("emitted count should fit in i32");
+    let (total_counters, final_phase, final_ordered_slots, final_emitted_count) = scan_state
+        .with_opaque(|opaque| {
+            (
+                opaque.explain_counters,
+                debug_execution_phase_label(opaque.execution_phase).to_string(),
+                i32::try_from(debug_runtime_ordered_slots(opaque).len())
+                    .expect("slot count should fit in i32"),
+                i32::try_from(debug_sorted_emitted_tids(opaque).len())
+                    .expect("emitted count should fit in i32"),
+            )
+        });
 
     let total_elapsed_us =
         i64::try_from(total_started.elapsed().as_micros()).expect("total timing should fit in i64");
 
-    // SAFETY: `scan_state` owns the scan and relation guards and is consumed
-    // once after profiling completes.
-    unsafe { debug_end_heap_backed_scan(scan_state) };
+    drop(scan_state);
 
     (
         rescan_elapsed_us,
@@ -1143,7 +1357,7 @@ pub(crate) unsafe fn debug_profile_ordered_scan_with_limit(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_profile_ordered_scan_with_heap_fetch(
+pub(crate) fn debug_profile_ordered_scan_with_heap_fetch(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
     result_limit: usize,
@@ -1152,7 +1366,7 @@ pub(crate) unsafe fn debug_profile_ordered_scan_with_heap_fetch(
     // SAFETY: `index_oid` names the index relation supplied by the pg_test
     // caller; PostgreSQL resolves the owning heap oid without taking
     // ownership.
-    let heap_oid = unsafe { pg_sys::IndexGetRelation(index_oid, false) };
+    let heap_oid = crate::storage::relation::index_heap_relation_oid_from_index_oid(index_oid);
     if heap_oid == pg_sys::InvalidOid {
         pgrx::error!(
             "debug heap-fetch profile could not resolve heap relation for index {index_oid}"
@@ -1166,65 +1380,30 @@ pub(crate) unsafe fn debug_profile_ordered_scan_with_heap_fetch(
     let snapshot = ActiveSnapshotGuard::latest_after_command_counter().unwrap_or_else(|| {
         pgrx::error!("debug heap-fetch profile could not acquire a fresh latest snapshot")
     });
-    let slot_guard = TupleTableSlotGuard::single_for_heap(heap_relation.as_ptr())
+    let slot_guard = TupleTableSlotGuard::single_for_heap_guard(&heap_relation)
         .unwrap_or_else(|| pgrx::error!("debug heap-fetch profile failed to allocate tuple slot"));
-    let scan_guard = IndexScanGuard::begin(&heap_relation, &index_relation, &snapshot, 0, 1)
-        .unwrap_or_else(|| pgrx::error!("debug heap-fetch profile failed to begin index scan"));
+    // SAFETY: The heap, index, and snapshot guards stay alive for the full
+    // scan guard lifetime, and the helper supplies one order-by key slot.
+    let scan_guard =
+        unsafe { IndexScanGuard::begin(&heap_relation, &index_relation, &snapshot, 0, 1) }
+            .unwrap_or_else(|| pgrx::error!("debug heap-fetch profile failed to begin index scan"));
     let scan = scan_guard.as_ptr();
     let slot = slot_guard.as_ptr();
 
     let total_started = Instant::now();
-    let rescan_started = Instant::now();
     let mut orderby = pg_sys::ScanKeyData {
         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
         ..Default::default()
     };
-    // SAFETY: `scan` is a live heap-backed index scan, there are no index quals,
-    // and `orderby` points to one initialized order-by key.
-    unsafe { pg_sys::index_rescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
-    let rescan_elapsed_us = i64::try_from(rescan_started.elapsed().as_micros())
-        .expect("rescan timing should fit in i64");
-
-    let emit_started = Instant::now();
-    let mut result_count = 0_i32;
-    let mut slot_fetch_count = 0_i32;
-    let mut projected_count = 0_i32;
-    let mut slot_fetch_elapsed_us = 0_i64;
-    let mut projection_elapsed_us = 0_i64;
-    while usize::try_from(result_count).expect("result count should fit in usize") < result_limit {
-        let slot_fetch_started = Instant::now();
-        // SAFETY: `scan` and `slot` are live guards for the same heap-backed
-        // scan; PostgreSQL fills the slot when a tuple is found.
-        let found = unsafe {
-            pg_sys::index_getnext_slot(scan, pg_sys::ScanDirection::ForwardScanDirection, slot)
-        };
-        slot_fetch_elapsed_us += i64::try_from(slot_fetch_started.elapsed().as_micros())
-            .expect("slot-fetch timing should fit in i64");
-        if !found {
-            break;
-        }
-
-        result_count += 1;
-        slot_fetch_count += 1;
-        if let Some(attnum) = project_attnum {
-            let projection_started = Instant::now();
-            let mut isnull = false;
-            // SAFETY: `slot` contains the tuple produced by the successful
-            // `index_getnext_slot` call, and `attnum` is supplied by the debug
-            // caller for projection timing.
-            let _ = unsafe { pg_sys::slot_getattr(slot, attnum, &mut isnull) };
-            projection_elapsed_us += i64::try_from(projection_started.elapsed().as_micros())
-                .expect("projection timing should fit in i64");
-            projected_count += 1;
-        }
-        // SAFETY: `slot` is the tuple table slot allocated for this scan and may
-        // be cleared between successful fetches.
-        unsafe {
-            pg_sys::ExecClearTuple(slot);
-        }
-    }
-    let emit_elapsed_us =
-        i64::try_from(emit_started.elapsed().as_micros()).expect("emit timing should fit in i64");
+    let (
+        rescan_elapsed_us,
+        emit_elapsed_us,
+        slot_fetch_elapsed_us,
+        projection_elapsed_us,
+        result_count,
+        slot_fetch_count,
+        projected_count,
+    ) = debug_run_heap_fetch_profile_loop(scan, slot, &mut orderby, result_limit, project_attnum);
     let total_elapsed_us =
         i64::try_from(total_started.elapsed().as_micros()).expect("total timing should fit in i64");
 
@@ -1241,15 +1420,13 @@ pub(crate) unsafe fn debug_profile_ordered_scan_with_heap_fetch(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_grouped_rerank_profile(
+pub(crate) fn debug_grouped_rerank_profile(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
     limit_count: i32,
 ) -> DebugGroupedRerankProfile {
-    // SAFETY: The debug helper opens the index, owning heap, and scan snapshot
-    // and keeps them alive in `scan_state`.
-    let scan_state = unsafe { debug_begin_heap_backed_scan(index_oid) };
-    let scan = scan_state.scan.as_ptr();
+    let scan_state = debug_begin_heap_backed_scan(index_oid);
+    let scan = scan_state.as_ptr();
     let result_limit =
         usize::try_from(limit_count).expect("grouped rerank profile limit should fit in usize");
 
@@ -1276,14 +1453,9 @@ pub(crate) unsafe fn debug_grouped_rerank_profile(
     let total_elapsed_us =
         i64::try_from(total_started.elapsed().as_micros()).expect("total timing should fit in i64");
 
-    // SAFETY: The scan descriptor remains live until `debug_end_heap_backed_scan`
-    // consumes `scan_state` below.
-    let opaque = debug_scan_opaque(scan);
-    let debug_profile = opaque.debug_profile;
+    let debug_profile = scan_state.with_opaque(|opaque| opaque.debug_profile);
 
-    // SAFETY: `scan_state` owns the scan and relation guards and is consumed
-    // once after profiling completes.
-    unsafe { debug_end_heap_backed_scan(scan_state) };
+    drop(scan_state);
 
     (
         i64::try_from(debug_profile.amrescan_total_elapsed_us).expect("timing should fit in i64"),
@@ -1312,14 +1484,12 @@ pub(crate) unsafe fn debug_grouped_rerank_profile(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_turboquant_scan_stage_profile(
+pub(crate) fn debug_turboquant_scan_stage_profile(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
 ) -> DebugTurboQuantScanStageProfile {
-    // SAFETY: The debug helper opens the index, owning heap, and scan snapshot
-    // and keeps them alive in `scan_state`.
-    let scan_state = unsafe { debug_begin_heap_backed_scan(index_oid) };
-    let scan = scan_state.scan.as_ptr();
+    let scan_state = debug_begin_heap_backed_scan(index_oid);
+    let scan = scan_state.as_ptr();
 
     let mut orderby = pg_sys::ScanKeyData {
         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
@@ -1329,26 +1499,36 @@ pub(crate) unsafe fn debug_turboquant_scan_stage_profile(
     // quals, and `orderby` is a valid one-key buffer.
     debug_am_rescan(scan, ptr::null_mut(), 0, &mut orderby, 1);
 
-    // SAFETY: AM rescan initialized the HNSW scan opaque on the live descriptor.
-    let opaque = debug_scan_opaque(scan);
-    if !matches!(
-        opaque.scan_graph_storage,
-        graph::GraphStorageDescriptor::TurboQuant { .. }
-            | graph::GraphStorageDescriptor::TurboQuantHotCold(_)
-    ) {
-        // SAFETY: `scan_state` owns the scan and relation guards and is
-        // consumed before the debug error aborts this path.
-        unsafe { debug_end_heap_backed_scan(scan_state) };
+    let (
+        is_turboquant,
+        has_quantizer,
+        debug_profile,
+        exact_score_mode,
+        exact_score_uses_lut,
+        exact_score_uses_qjl,
+    ) = scan_state.with_opaque(|opaque| {
+        (
+            matches!(
+                opaque.scan_graph_storage,
+                graph::GraphStorageDescriptor::TurboQuant { .. }
+                    | graph::GraphStorageDescriptor::TurboQuantHotCold(_)
+            ),
+            !opaque.cached_quantizer.is_null(),
+            opaque.debug_profile,
+            turboquant_exact_score_mode_name(opaque).to_owned(),
+            turboquant_exact_score_uses_lut(opaque),
+            turboquant_exact_score_uses_qjl(opaque),
+        )
+    });
+    if !is_turboquant {
+        drop(scan_state);
         pgrx::error!("debug turboquant scan stage profile requires a turboquant index");
     }
-    if opaque.cached_quantizer.is_null() {
-        // SAFETY: `scan_state` owns the scan and relation guards and is
-        // consumed before the debug error aborts this path.
-        unsafe { debug_end_heap_backed_scan(scan_state) };
+    if !has_quantizer {
+        drop(scan_state);
         pgrx::error!("debug turboquant scan stage profile requires a prepared quantizer");
     }
 
-    let debug_profile = opaque.debug_profile;
     let rerank_score_calls = debug_profile
         .grouped_rerank_quantized_score_calls
         .saturating_add(debug_profile.grouped_rerank_heap_score_calls);
@@ -1360,13 +1540,8 @@ pub(crate) unsafe fn debug_turboquant_scan_stage_profile(
         .saturating_sub(debug_profile.binary_prefilter_score_elapsed_us)
         .saturating_sub(debug_profile.candidate_score_elapsed_us)
         .saturating_sub(rerank_score_elapsed_us);
-    let exact_score_mode = turboquant_exact_score_mode_name(opaque).to_owned();
-    let exact_score_uses_lut = turboquant_exact_score_uses_lut(opaque);
-    let exact_score_uses_qjl = turboquant_exact_score_uses_qjl(opaque);
 
-    // SAFETY: `scan_state` owns the scan and relation guards and is consumed
-    // once after profiling completes.
-    unsafe { debug_end_heap_backed_scan(scan_state) };
+    drop(scan_state);
 
     (
         i64::try_from(debug_profile.amrescan_total_elapsed_us).expect("timing should fit in i64"),
@@ -1388,65 +1563,41 @@ pub(crate) unsafe fn debug_turboquant_scan_stage_profile(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-unsafe fn debug_collect_element_tids_at_level(
+fn debug_collect_element_tids_at_level(
     index_relation: pg_sys::Relation,
     storage: graph::GraphStorageDescriptor,
     target_level: u8,
 ) -> Vec<page::ItemPointer> {
-    // SAFETY: `index_relation` is an open index relation supplied by the debug
-    // caller; PostgreSQL returns the current main-fork block count.
-    let block_count = unsafe {
-        pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
-    };
+    let block_count = debug_main_fork_block_count(index_relation);
     let element_tag = debug_graph_tuple_tag(storage);
     let mut tids = Vec::new();
 
     for block_number in page::FIRST_DATA_BLOCK_NUMBER..block_count {
-        // SAFETY: The block number is within the relation's main-fork block
-        // count and is read under a shared buffer lock for inspection.
-        let buffer = unsafe {
-            LockedBufferGuard::read_main(
-                index_relation,
-                block_number,
-                pg_sys::ReadBufferMode::RBM_NORMAL,
-                pg_sys::BUFFER_LOCK_SHARE as i32,
-            )
-        };
-        let buffer = buffer.unwrap_or_else(|| {
-            pgrx::error!("ec_hnsw debug failed to open graph block {block_number}")
-        });
+        let buffer = debug_read_main_buffer(index_relation, block_number);
         let page_ptr = buffer.page().cast::<u8>();
         let page_size = buffer.page_size();
         let line_pointer_count = super::shared::page_line_pointer_count(page_ptr);
 
         for offset_number in 1..=line_pointer_count {
-            // SAFETY: The buffer remains share-locked while the helper validates
-            // this line pointer and exposes tuple bytes only to the closure.
-            let matches_element_tag = unsafe {
-                debug_with_page_line_tuple_bytes(
-                    page_ptr,
-                    page_size,
-                    offset_number,
-                    |tuple_bytes| tuple_bytes.first().copied() == Some(element_tag),
-                )
-            }
+            let matches_element_tag = debug_with_page_line_tuple_bytes(
+                page_ptr,
+                page_size,
+                offset_number,
+                |tuple_bytes| tuple_bytes.first().copied() == Some(element_tag),
+            )
             .unwrap_or(false);
             if !matches_element_tag {
                 continue;
             }
 
-            // SAFETY: The tuple tag matched the graph element tag on a locked
-            // page, and the graph loader validates the storage-specific body.
-            let element = unsafe {
-                graph::load_exact_graph_element(
-                    index_relation,
-                    page::ItemPointer {
-                        block_number,
-                        offset_number,
-                    },
-                    storage,
-                )
-            };
+            let element = debug_load_graph_element(
+                index_relation,
+                page::ItemPointer {
+                    block_number,
+                    offset_number,
+                },
+                storage,
+            );
             if element.deleted || element.heaptids.is_empty() || element.level != target_level {
                 continue;
             }
@@ -1462,65 +1613,41 @@ unsafe fn debug_collect_element_tids_at_level(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-unsafe fn debug_collect_element_tids_at_or_above_level(
+fn debug_collect_element_tids_at_or_above_level(
     index_relation: pg_sys::Relation,
     storage: graph::GraphStorageDescriptor,
     min_level: u8,
 ) -> Vec<page::ItemPointer> {
-    // SAFETY: `index_relation` is an open index relation supplied by the debug
-    // caller; PostgreSQL returns the current main-fork block count.
-    let block_count = unsafe {
-        pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
-    };
+    let block_count = debug_main_fork_block_count(index_relation);
     let element_tag = debug_graph_tuple_tag(storage);
     let mut tids = Vec::new();
 
     for block_number in page::FIRST_DATA_BLOCK_NUMBER..block_count {
-        // SAFETY: The block number is within the relation's main-fork block
-        // count and is read under a shared buffer lock for inspection.
-        let buffer = unsafe {
-            LockedBufferGuard::read_main(
-                index_relation,
-                block_number,
-                pg_sys::ReadBufferMode::RBM_NORMAL,
-                pg_sys::BUFFER_LOCK_SHARE as i32,
-            )
-        };
-        let buffer = buffer.unwrap_or_else(|| {
-            pgrx::error!("ec_hnsw debug failed to open graph block {block_number}")
-        });
+        let buffer = debug_read_main_buffer(index_relation, block_number);
         let page_ptr = buffer.page().cast::<u8>();
         let page_size = buffer.page_size();
         let line_pointer_count = super::shared::page_line_pointer_count(page_ptr);
 
         for offset_number in 1..=line_pointer_count {
-            // SAFETY: The buffer remains share-locked while the helper validates
-            // this line pointer and exposes tuple bytes only to the closure.
-            let matches_element_tag = unsafe {
-                debug_with_page_line_tuple_bytes(
-                    page_ptr,
-                    page_size,
-                    offset_number,
-                    |tuple_bytes| tuple_bytes.first().copied() == Some(element_tag),
-                )
-            }
+            let matches_element_tag = debug_with_page_line_tuple_bytes(
+                page_ptr,
+                page_size,
+                offset_number,
+                |tuple_bytes| tuple_bytes.first().copied() == Some(element_tag),
+            )
             .unwrap_or(false);
             if !matches_element_tag {
                 continue;
             }
 
-            // SAFETY: The tuple tag matched the graph element tag on a locked
-            // page, and the graph loader validates the storage-specific body.
-            let element = unsafe {
-                graph::load_exact_graph_element(
-                    index_relation,
-                    page::ItemPointer {
-                        block_number,
-                        offset_number,
-                    },
-                    storage,
-                )
-            };
+            let element = debug_load_graph_element(
+                index_relation,
+                page::ItemPointer {
+                    block_number,
+                    offset_number,
+                },
+                storage,
+            );
             if element.deleted || element.heaptids.is_empty() || element.level < min_level {
                 continue;
             }
@@ -1536,64 +1663,40 @@ unsafe fn debug_collect_element_tids_at_or_above_level(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-unsafe fn debug_collect_element_tid_by_heap_tid(
+fn debug_collect_element_tid_by_heap_tid(
     index_relation: pg_sys::Relation,
     storage: graph::GraphStorageDescriptor,
 ) -> std::collections::HashMap<HeapTidCoords, page::ItemPointer> {
-    // SAFETY: `index_relation` is an open index relation supplied by the debug
-    // caller; PostgreSQL returns the current main-fork block count.
-    let block_count = unsafe {
-        pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
-    };
+    let block_count = debug_main_fork_block_count(index_relation);
     let element_tag = debug_graph_tuple_tag(storage);
     let mut map = std::collections::HashMap::new();
 
     for block_number in page::FIRST_DATA_BLOCK_NUMBER..block_count {
-        // SAFETY: The block number is within the relation's main-fork block
-        // count and is read under a shared buffer lock for inspection.
-        let buffer = unsafe {
-            LockedBufferGuard::read_main(
-                index_relation,
-                block_number,
-                pg_sys::ReadBufferMode::RBM_NORMAL,
-                pg_sys::BUFFER_LOCK_SHARE as i32,
-            )
-        };
-        let buffer = buffer.unwrap_or_else(|| {
-            pgrx::error!("ec_hnsw debug failed to open graph block {block_number}")
-        });
+        let buffer = debug_read_main_buffer(index_relation, block_number);
         let page_ptr = buffer.page().cast::<u8>();
         let page_size = buffer.page_size();
         let line_pointer_count = super::shared::page_line_pointer_count(page_ptr);
 
         for offset_number in 1..=line_pointer_count {
-            // SAFETY: The buffer remains share-locked while the helper validates
-            // this line pointer and exposes tuple bytes only to the closure.
-            let matches_element_tag = unsafe {
-                debug_with_page_line_tuple_bytes(
-                    page_ptr,
-                    page_size,
-                    offset_number,
-                    |tuple_bytes| tuple_bytes.first().copied() == Some(element_tag),
-                )
-            }
+            let matches_element_tag = debug_with_page_line_tuple_bytes(
+                page_ptr,
+                page_size,
+                offset_number,
+                |tuple_bytes| tuple_bytes.first().copied() == Some(element_tag),
+            )
             .unwrap_or(false);
             if !matches_element_tag {
                 continue;
             }
 
-            // SAFETY: The tuple tag matched the graph element tag on a locked
-            // page, and the graph loader validates the storage-specific body.
-            let element = unsafe {
-                graph::load_exact_graph_element(
-                    index_relation,
-                    page::ItemPointer {
-                        block_number,
-                        offset_number,
-                    },
-                    storage,
-                )
-            };
+            let element = debug_load_graph_element(
+                index_relation,
+                page::ItemPointer {
+                    block_number,
+                    offset_number,
+                },
+                storage,
+            );
             if element.deleted || element.heaptids.is_empty() {
                 continue;
             }
@@ -1612,43 +1715,32 @@ unsafe fn debug_collect_element_tid_by_heap_tid(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_top_level_oracle_scan_heap_tids(
+pub(crate) fn debug_top_level_oracle_scan_heap_tids(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
     ef_search: usize,
 ) -> Vec<HeapTidCoords> {
-    // SAFETY: This wrapper forwards the caller-provided index oid, query, and
-    // bounded search parameters to the k-seed oracle helper.
-    unsafe { debug_top_level_oracle_k_seed_scan_heap_tids(index_oid, query, ef_search, 1) }
+    debug_top_level_oracle_k_seed_scan_heap_tids(index_oid, query, ef_search, 1)
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_all_top_level_heap_tids(index_oid: pg_sys::Oid) -> Vec<HeapTidCoords> {
+pub(crate) fn debug_all_top_level_heap_tids(index_oid: pg_sys::Oid) -> Vec<HeapTidCoords> {
     let index_relation_guard =
         IndexRelationGuard::access_share(index_oid, "debug_all_top_level_heap_tids");
     let index_relation = index_relation_guard.as_ptr();
     // SAFETY: The relation guard keeps the index relation open while its
     // metadata page is read.
-    let metadata = unsafe { super::shared::read_metadata_page(index_relation) };
+    let metadata = debug_read_metadata_page(index_relation);
     if metadata.entry_point == page::ItemPointer::INVALID || metadata.dimensions == 0 {
         return Vec::new();
     }
 
-    // SAFETY: Metadata was read from the open index relation and validated
-    // enough to resolve the graph storage descriptor for debug inspection.
-    let storage = unsafe { debug_graph_storage(index_relation, &metadata) };
-    // SAFETY: The relation guard keeps the graph relation open while the helper
-    // scans locked pages for top-level element TIDs.
+    let storage = debug_graph_storage(index_relation, &metadata);
     let mut heap_tids =
-        unsafe { debug_collect_element_tids_at_level(index_relation, storage, metadata.max_level) }
+        debug_collect_element_tids_at_level(index_relation, storage, metadata.max_level)
             .into_iter()
             .filter_map(|element_tid| {
-                // SAFETY: `element_tid` was collected from graph pages matching
-                // the storage element tag, and the graph loader validates the
-                // tuple body.
-                let element = unsafe {
-                    graph::load_exact_graph_element(index_relation, element_tid, storage)
-                };
+                let element = debug_load_graph_element(index_relation, element_tid, storage);
                 if element.deleted {
                     return None;
                 }
@@ -1666,22 +1758,18 @@ pub(crate) unsafe fn debug_all_top_level_heap_tids(index_oid: pg_sys::Oid) -> Ve
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_top_level_reachable_heap_tids(
-    index_oid: pg_sys::Oid,
-) -> Vec<HeapTidCoords> {
+pub(crate) fn debug_top_level_reachable_heap_tids(index_oid: pg_sys::Oid) -> Vec<HeapTidCoords> {
     let index_relation_guard =
         IndexRelationGuard::access_share(index_oid, "debug_top_level_reachable_heap_tids");
     let index_relation = index_relation_guard.as_ptr();
     // SAFETY: The relation guard keeps the index relation open while its
     // metadata page is read.
-    let metadata = unsafe { super::shared::read_metadata_page(index_relation) };
+    let metadata = debug_read_metadata_page(index_relation);
     if metadata.entry_point == page::ItemPointer::INVALID || metadata.dimensions == 0 {
         return Vec::new();
     }
 
-    // SAFETY: Metadata was read from the open index relation and validated
-    // enough to resolve the graph storage descriptor for debug inspection.
-    let storage = unsafe { debug_graph_storage(index_relation, &metadata) };
+    let storage = debug_graph_storage(index_relation, &metadata);
     let m = usize::from(metadata.m);
     let mut queue = std::collections::VecDeque::from([metadata.entry_point]);
     let mut visited = std::collections::HashSet::new();
@@ -1692,11 +1780,7 @@ pub(crate) unsafe fn debug_top_level_reachable_heap_tids(
             continue;
         }
 
-        let element =
-            // SAFETY: `element_tid` is either the metadata entry point or a
-            // neighbor returned by graph adjacency loading; the graph loader
-            // validates the tuple body before returning it.
-            unsafe { graph::load_exact_graph_element(index_relation, element_tid, storage) };
+        let element = debug_load_graph_element(index_relation, element_tid, storage);
         if element.deleted {
             continue;
         }
@@ -1705,18 +1789,13 @@ pub(crate) unsafe fn debug_top_level_reachable_heap_tids(
             heap_tids.push(debug_item_pointer_coords(heap_tid));
         }
 
-        // SAFETY: The current element was loaded from graph storage and `m`
-        // comes from validated metadata; adjacency loading validates the graph
-        // tuple before returning layer neighbors.
-        for neighbor_tid in unsafe {
-            debug_load_neighbor_tids_for_layer(
-                index_relation,
-                storage,
-                element_tid,
-                m,
-                metadata.max_level,
-            )
-        } {
+        for neighbor_tid in debug_load_neighbor_tids_for_layer(
+            index_relation,
+            storage,
+            element_tid,
+            m,
+            metadata.max_level,
+        ) {
             if !visited.contains(&neighbor_tid) {
                 queue.push_back(neighbor_tid);
             }
@@ -1729,7 +1808,7 @@ pub(crate) unsafe fn debug_top_level_reachable_heap_tids(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_layer0_reachable_live_element_tids(
+pub(crate) fn debug_layer0_reachable_live_element_tids(
     index_oid: pg_sys::Oid,
 ) -> Vec<page::ItemPointer> {
     let index_relation_guard =
@@ -1737,14 +1816,12 @@ pub(crate) unsafe fn debug_layer0_reachable_live_element_tids(
     let index_relation = index_relation_guard.as_ptr();
     // SAFETY: The relation guard keeps the index relation open while its
     // metadata page is read.
-    let metadata = unsafe { super::shared::read_metadata_page(index_relation) };
+    let metadata = debug_read_metadata_page(index_relation);
     if metadata.entry_point == page::ItemPointer::INVALID || metadata.dimensions == 0 {
         return Vec::new();
     }
 
-    // SAFETY: Metadata was read from the open index relation and validated
-    // enough to resolve the graph storage descriptor for debug inspection.
-    let storage = unsafe { debug_graph_storage(index_relation, &metadata) };
+    let storage = debug_graph_storage(index_relation, &metadata);
     let m = usize::from(metadata.m);
     let mut queue = std::collections::VecDeque::from([metadata.entry_point]);
     let mut visited = std::collections::HashSet::new();
@@ -1755,22 +1832,15 @@ pub(crate) unsafe fn debug_layer0_reachable_live_element_tids(
             continue;
         }
 
-        let element =
-            // SAFETY: `element_tid` is either the metadata entry point or a
-            // neighbor returned by graph adjacency loading; the graph loader
-            // validates the tuple body before returning it.
-            unsafe { graph::load_exact_graph_element(index_relation, element_tid, storage) };
+        let element = debug_load_graph_element(index_relation, element_tid, storage);
         if element.deleted || element.heaptids.is_empty() {
             continue;
         }
         reachable.push(element_tid);
 
-        // SAFETY: The current element was loaded from graph storage and `m`
-        // comes from validated metadata; adjacency loading validates the graph
-        // tuple before returning layer-0 neighbors.
-        for neighbor_tid in unsafe {
+        for neighbor_tid in
             debug_load_neighbor_tids_for_layer(index_relation, storage, element_tid, m, 0)
-        } {
+        {
             if !visited.contains(&neighbor_tid) {
                 queue.push_back(neighbor_tid);
             }
@@ -1786,7 +1856,7 @@ pub(crate) unsafe fn debug_layer0_reachable_live_element_tids(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_top_level_oracle_k_seed_heap_tids(
+pub(crate) fn debug_top_level_oracle_k_seed_heap_tids(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
     top_level_seed_count: usize,
@@ -1796,7 +1866,7 @@ pub(crate) unsafe fn debug_top_level_oracle_k_seed_heap_tids(
     let index_relation = index_relation_guard.as_ptr();
     // SAFETY: The relation guard keeps the index relation open while its
     // metadata page is read.
-    let metadata = unsafe { super::shared::read_metadata_page(index_relation) };
+    let metadata = debug_read_metadata_page(index_relation);
     if metadata.entry_point == page::ItemPointer::INVALID
         || metadata.dimensions == 0
         || top_level_seed_count == 0
@@ -1804,66 +1874,54 @@ pub(crate) unsafe fn debug_top_level_oracle_k_seed_heap_tids(
         return Vec::new();
     }
 
-    // SAFETY: The relation guard keeps the index open for the AM scan
-    // descriptor used to prepare query state.
-    let scan = debug_am_begin_scan(index_relation, 0, 1);
+    let scan = DebugAmScan::begin(index_relation, 0, 1);
     let mut orderby = pg_sys::ScanKeyData {
         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
         ..Default::default()
     };
     // SAFETY: `scan` is live, there are no index quals, and `orderby` is a
     // valid one-key buffer.
-    debug_am_rescan(scan, ptr::null_mut(), 0, &mut orderby, 1);
+    scan.rescan(ptr::null_mut(), 0, &mut orderby, 1);
 
-    // SAFETY: AM rescan initialized the HNSW scan opaque on the live descriptor.
-    let opaque = debug_scan_opaque(scan);
-    let storage = opaque.scan_graph_storage;
-    // SAFETY: The opaque belongs to the live scan and rescan prepares a cached
-    // quantizer for score computation.
-    let quantizer = unsafe { &*opaque.cached_quantizer };
-    // SAFETY: The opaque belongs to the live scan and rescan prepares query
-    // storage for score computation.
-    let prepared_query = unsafe { &*opaque.prepared_query };
-    // SAFETY: The relation guard keeps the graph relation open while the helper
-    // scans locked pages for top-level element TIDs.
-    let top_level_tids =
-        unsafe { debug_collect_element_tids_at_level(index_relation, storage, metadata.max_level) };
+    let heap_tids = scan.with_oracle_score_parts(|parts| {
+        let top_level_tids =
+            debug_collect_element_tids_at_level(index_relation, parts.storage, metadata.max_level);
 
-    let mut heap_tids = top_level_tids
-        .into_iter()
-        .filter_map(|seed_tid| {
-            // SAFETY: `seed_tid` was collected from graph pages matching the
-            // storage element tag, and the graph loader validates the tuple.
-            let element =
-                unsafe { graph::load_exact_graph_element(index_relation, seed_tid, storage) };
-            if element.deleted || element.heaptids.is_empty() {
-                return None;
-            }
-            Some((
-                search::BeamCandidate::new(
-                    seed_tid,
-                    -quantizer.score_ip_from_parts(prepared_query, element.gamma, &element.code),
-                ),
-                debug_item_pointer_coords(*element.heaptids.first().expect("heaptids non-empty")),
-            ))
-        })
-        .collect::<Vec<_>>();
-    heap_tids.sort_by(|left, right| left.0.score.total_cmp(&right.0.score));
-    heap_tids.truncate(top_level_seed_count);
-    let heap_tids = heap_tids
-        .into_iter()
-        .map(|(_, heap_tid)| heap_tid)
-        .collect();
+        let mut heap_tids = top_level_tids
+            .into_iter()
+            .filter_map(|seed_tid| {
+                let element = debug_load_graph_element(index_relation, seed_tid, parts.storage);
+                if element.deleted || element.heaptids.is_empty() {
+                    return None;
+                }
+                Some((
+                    search::BeamCandidate::new(
+                        seed_tid,
+                        -parts.quantizer.score_ip_from_parts(
+                            parts.prepared_query,
+                            element.gamma,
+                            &element.code,
+                        ),
+                    ),
+                    debug_item_pointer_coords(
+                        *element.heaptids.first().expect("heaptids non-empty"),
+                    ),
+                ))
+            })
+            .collect::<Vec<_>>();
+        heap_tids.sort_by(|left, right| left.0.score.total_cmp(&right.0.score));
+        heap_tids.truncate(top_level_seed_count);
+        heap_tids
+            .into_iter()
+            .map(|(_, heap_tid)| heap_tid)
+            .collect()
+    });
 
-    // SAFETY: The scan descriptor is live and belongs to the HNSW AM.
-    debug_am_end_scan(scan);
-    // SAFETY: AM cleanup has run, and the descriptor is released once here.
-    debug_index_scan_end(scan);
     heap_tids
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_top_level_oracle_k_seed_scan_heap_tids(
+pub(crate) fn debug_top_level_oracle_k_seed_scan_heap_tids(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
     ef_search: usize,
@@ -1874,7 +1932,7 @@ pub(crate) unsafe fn debug_top_level_oracle_k_seed_scan_heap_tids(
     let index_relation = index_relation_guard.as_ptr();
     // SAFETY: The relation guard keeps the index relation open while its
     // metadata page is read.
-    let metadata = unsafe { super::shared::read_metadata_page(index_relation) };
+    let metadata = debug_read_metadata_page(index_relation);
     if metadata.entry_point == page::ItemPointer::INVALID
         || metadata.dimensions == 0
         || top_level_seed_count == 0
@@ -1882,102 +1940,81 @@ pub(crate) unsafe fn debug_top_level_oracle_k_seed_scan_heap_tids(
         return Vec::new();
     }
 
-    // SAFETY: The relation guard keeps the index open for the AM scan
-    // descriptor used to prepare query state.
-    let scan = debug_am_begin_scan(index_relation, 0, 1);
+    let scan = DebugAmScan::begin(index_relation, 0, 1);
     let mut orderby = pg_sys::ScanKeyData {
         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
         ..Default::default()
     };
     // SAFETY: `scan` is live, there are no index quals, and `orderby` is a
     // valid one-key buffer.
-    debug_am_rescan(scan, ptr::null_mut(), 0, &mut orderby, 1);
+    scan.rescan(ptr::null_mut(), 0, &mut orderby, 1);
 
-    // SAFETY: AM rescan initialized the HNSW scan opaque on the live descriptor.
-    let opaque = debug_scan_opaque(scan);
-    let storage = opaque.scan_graph_storage;
-    // SAFETY: The opaque belongs to the live scan and rescan prepares a cached
-    // quantizer for score computation.
-    let quantizer = unsafe { &*opaque.cached_quantizer };
-    // SAFETY: The opaque belongs to the live scan and rescan prepares query
-    // storage for score computation.
-    let prepared_query = unsafe { &*opaque.prepared_query };
-    // SAFETY: The relation guard keeps the graph relation open while the helper
-    // scans locked pages for top-level element TIDs.
-    let top_level_tids =
-        unsafe { debug_collect_element_tids_at_level(index_relation, storage, metadata.max_level) };
+    let tids = scan.with_oracle_score_parts(|parts| {
+        let top_level_tids =
+            debug_collect_element_tids_at_level(index_relation, parts.storage, metadata.max_level);
 
-    let mut seeds = top_level_tids
-        .into_iter()
-        .filter_map(|seed_tid| {
-            // SAFETY: `seed_tid` was collected from graph pages matching the
-            // storage element tag, and the graph loader validates the tuple.
-            let element =
-                unsafe { graph::load_exact_graph_element(index_relation, seed_tid, storage) };
-            if element.deleted || element.heaptids.is_empty() {
-                return None;
-            }
-            Some(search::BeamCandidate::new(
-                seed_tid,
-                -quantizer.score_ip_from_parts(prepared_query, element.gamma, &element.code),
-            ))
-        })
-        .collect::<Vec<_>>();
-    seeds.sort_by(|left, right| left.score.total_cmp(&right.score));
-    seeds.truncate(top_level_seed_count);
+        let mut seeds = top_level_tids
+            .into_iter()
+            .filter_map(|seed_tid| {
+                let element = debug_load_graph_element(index_relation, seed_tid, parts.storage);
+                if element.deleted || element.heaptids.is_empty() {
+                    return None;
+                }
+                Some(search::BeamCandidate::new(
+                    seed_tid,
+                    -parts.quantizer.score_ip_from_parts(
+                        parts.prepared_query,
+                        element.gamma,
+                        &element.code,
+                    ),
+                ))
+            })
+            .collect::<Vec<_>>();
+        seeds.sort_by(|left, right| left.score.total_cmp(&right.score));
+        seeds.truncate(top_level_seed_count);
 
-    let tids = if seeds.is_empty() {
-        Vec::new()
-    } else {
-        // SAFETY: The seed candidates were loaded from graph storage for this
-        // index, and the search helper validates neighbor tuples as it walks
-        // layer 0 with the supplied storage descriptor.
-        let ordered_candidates = unsafe {
-            graph::search_layer0_result_candidates_with_storage(
+        if seeds.is_empty() {
+            Vec::new()
+        } else {
+            let ordered_candidates = debug_search_layer0_result_candidates(
                 index_relation,
-                storage,
-                usize::from(opaque.scan_m),
+                parts.storage,
+                usize::from(parts.scan_m),
                 ef_search.max(1),
                 seeds,
                 |_| true,
                 |neighbor| {
-                    Some(-quantizer.score_ip_from_parts(
-                        prepared_query,
+                    Some(-parts.quantizer.score_ip_from_parts(
+                        parts.prepared_query,
                         neighbor.gamma,
                         &neighbor.code,
                     ))
                 },
-            )
-        };
-        let mut emitted_elements = std::collections::HashSet::new();
-        let mut heap_tids = Vec::new();
-        for candidate in ordered_candidates {
-            if !emitted_elements.insert(candidate.node) {
-                continue;
-            }
+            );
+            let mut emitted_elements = std::collections::HashSet::new();
+            let mut heap_tids = Vec::new();
+            for candidate in ordered_candidates {
+                if !emitted_elements.insert(candidate.node) {
+                    continue;
+                }
 
-            // SAFETY: Search candidates come from graph traversal on this
-            // relation/storage pair, and the loader validates the tuple body.
-            let element =
-                unsafe { graph::load_exact_graph_element(index_relation, candidate.node, storage) };
-            if element.deleted || element.heaptids.is_empty() {
-                continue;
-            }
+                let element =
+                    debug_load_graph_element(index_relation, candidate.node, parts.storage);
+                if element.deleted || element.heaptids.is_empty() {
+                    continue;
+                }
 
-            heap_tids.extend(element.heaptids.into_iter().map(debug_item_pointer_coords));
+                heap_tids.extend(element.heaptids.into_iter().map(debug_item_pointer_coords));
+            }
+            heap_tids
         }
-        heap_tids
-    };
+    });
 
-    // SAFETY: The scan descriptor is live and belongs to the HNSW AM.
-    debug_am_end_scan(scan);
-    // SAFETY: AM cleanup has run, and the descriptor is released once here.
-    debug_index_scan_end(scan);
     tids
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_layer_oracle_k_carrydown_scan_heap_tids(
+pub(crate) fn debug_layer_oracle_k_carrydown_scan_heap_tids(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
     ef_search: usize,
@@ -1991,7 +2028,7 @@ pub(crate) unsafe fn debug_layer_oracle_k_carrydown_scan_heap_tids(
     let index_relation = index_relation_guard.as_ptr();
     // SAFETY: The relation guard keeps the index relation open while its
     // metadata page is read.
-    let metadata = unsafe { super::shared::read_metadata_page(index_relation) };
+    let metadata = debug_read_metadata_page(index_relation);
     if metadata.entry_point == page::ItemPointer::INVALID
         || metadata.dimensions == 0
         || seed_count == 0
@@ -2001,130 +2038,104 @@ pub(crate) unsafe fn debug_layer_oracle_k_carrydown_scan_heap_tids(
         return Vec::new();
     }
 
-    // SAFETY: The relation guard keeps the index open for the AM scan
-    // descriptor used to prepare query state.
-    let scan = debug_am_begin_scan(index_relation, 0, 1);
+    let scan = DebugAmScan::begin(index_relation, 0, 1);
     let mut orderby = pg_sys::ScanKeyData {
         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
         ..Default::default()
     };
     // SAFETY: `scan` is live, there are no index quals, and `orderby` is a
     // valid one-key buffer.
-    debug_am_rescan(scan, ptr::null_mut(), 0, &mut orderby, 1);
+    scan.rescan(ptr::null_mut(), 0, &mut orderby, 1);
 
-    // SAFETY: AM rescan initialized the HNSW scan opaque on the live descriptor.
-    let opaque = debug_scan_opaque(scan);
-    let storage = opaque.scan_graph_storage;
-    // SAFETY: The opaque belongs to the live scan and rescan prepares a cached
-    // quantizer for score computation.
-    let quantizer = unsafe { &*opaque.cached_quantizer };
-    // SAFETY: The opaque belongs to the live scan and rescan prepares query
-    // storage for score computation.
-    let prepared_query = unsafe { &*opaque.prepared_query };
-    // SAFETY: The relation guard keeps the graph relation open while the helper
-    // scans locked pages for candidate element TIDs.
-    let layer_tids =
-        unsafe { debug_collect_element_tids_at_or_above_level(index_relation, storage, layer) };
+    let tids = scan.with_oracle_score_parts(|parts| {
+        let layer_tids =
+            debug_collect_element_tids_at_or_above_level(index_relation, parts.storage, layer);
 
-    let mut seeds = layer_tids
-        .into_iter()
-        .filter_map(|seed_tid| {
-            // SAFETY: `seed_tid` was collected from graph pages matching the
-            // storage element tag, and the graph loader validates the tuple.
-            let element =
-                unsafe { graph::load_exact_graph_element(index_relation, seed_tid, storage) };
-            if element.deleted || element.heaptids.is_empty() {
-                return None;
-            }
-            Some(search::BeamCandidate::new(
-                seed_tid,
-                -quantizer.score_ip_from_parts(prepared_query, element.gamma, &element.code),
-            ))
-        })
-        .collect::<Vec<_>>();
-    seeds.sort_by(|left, right| left.score.total_cmp(&right.score));
-    seeds.truncate(seed_count);
+        let mut seeds = layer_tids
+            .into_iter()
+            .filter_map(|seed_tid| {
+                let element = debug_load_graph_element(index_relation, seed_tid, parts.storage);
+                if element.deleted || element.heaptids.is_empty() {
+                    return None;
+                }
+                Some(search::BeamCandidate::new(
+                    seed_tid,
+                    -parts.quantizer.score_ip_from_parts(
+                        parts.prepared_query,
+                        element.gamma,
+                        &element.code,
+                    ),
+                ))
+            })
+            .collect::<Vec<_>>();
+        seeds.sort_by(|left, right| left.score.total_cmp(&right.score));
+        seeds.truncate(seed_count);
 
-    let tids = if seeds.is_empty() {
-        Vec::new()
-    } else {
-        let mut carrydown_seeds = seeds;
-        for current_layer in (1..=layer).rev() {
-            // SAFETY: The carrydown seeds were loaded from graph storage for
-            // this index, and the search helper validates neighbor tuples as it
-            // walks the requested upper layer.
-            carrydown_seeds = unsafe {
-                graph::search_layer_result_candidates_with_storage(
+        if seeds.is_empty() {
+            Vec::new()
+        } else {
+            let mut carrydown_seeds = seeds;
+            for current_layer in (1..=layer).rev() {
+                carrydown_seeds = debug_search_layer_result_candidates(
                     index_relation,
-                    storage,
-                    usize::from(opaque.scan_m),
+                    parts.storage,
+                    usize::from(parts.scan_m),
                     current_layer,
                     ef_search.max(1),
                     carrydown_seeds,
                     |_| true,
                     |neighbor| {
-                        Some(-quantizer.score_ip_from_parts(
-                            prepared_query,
+                        Some(-parts.quantizer.score_ip_from_parts(
+                            parts.prepared_query,
                             neighbor.gamma,
                             &neighbor.code,
                         ))
                     },
-                )
-            };
-            if carrydown_seeds.is_empty() {
-                break;
+                );
+                if carrydown_seeds.is_empty() {
+                    break;
+                }
             }
-        }
 
-        // SAFETY: The carrydown seeds came from upper-layer graph traversal on
-        // this relation/storage pair, and the layer-0 helper validates neighbor
-        // tuples as it walks.
-        let ordered_candidates = unsafe {
-            graph::search_layer0_result_candidates_with_storage(
+            let ordered_candidates = debug_search_layer0_result_candidates(
                 index_relation,
-                storage,
-                usize::from(opaque.scan_m),
+                parts.storage,
+                usize::from(parts.scan_m),
                 ef_search.max(1),
                 carrydown_seeds,
                 |_| true,
                 |neighbor| {
-                    Some(-quantizer.score_ip_from_parts(
-                        prepared_query,
+                    Some(-parts.quantizer.score_ip_from_parts(
+                        parts.prepared_query,
                         neighbor.gamma,
                         &neighbor.code,
                     ))
                 },
-            )
-        };
-        let mut emitted_elements = std::collections::HashSet::new();
-        let mut heap_tids = Vec::new();
-        for candidate in ordered_candidates {
-            if !emitted_elements.insert(candidate.node) {
-                continue;
-            }
+            );
+            let mut emitted_elements = std::collections::HashSet::new();
+            let mut heap_tids = Vec::new();
+            for candidate in ordered_candidates {
+                if !emitted_elements.insert(candidate.node) {
+                    continue;
+                }
 
-            // SAFETY: Search candidates come from graph traversal on this
-            // relation/storage pair, and the loader validates the tuple body.
-            let element =
-                unsafe { graph::load_exact_graph_element(index_relation, candidate.node, storage) };
-            if element.deleted || element.heaptids.is_empty() {
-                continue;
-            }
+                let element =
+                    debug_load_graph_element(index_relation, candidate.node, parts.storage);
+                if element.deleted || element.heaptids.is_empty() {
+                    continue;
+                }
 
-            heap_tids.extend(element.heaptids.into_iter().map(debug_item_pointer_coords));
+                heap_tids.extend(element.heaptids.into_iter().map(debug_item_pointer_coords));
+            }
+            heap_tids
         }
-        heap_tids
-    };
+    });
 
-    // SAFETY: The scan descriptor is live and belongs to the HNSW AM.
-    debug_am_end_scan(scan);
-    // SAFETY: AM cleanup has run, and the descriptor is released once here.
-    debug_index_scan_end(scan);
     tids
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_layer_oracle_k_seed_layer0_neighbor_heap_tids(
+pub(crate) fn debug_layer_oracle_k_seed_layer0_neighbor_heap_tids(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
     layer: u8,
@@ -2137,7 +2148,7 @@ pub(crate) unsafe fn debug_layer_oracle_k_seed_layer0_neighbor_heap_tids(
     let index_relation = index_relation_guard.as_ptr();
     // SAFETY: The relation guard keeps the index relation open while its
     // metadata page is read.
-    let metadata = unsafe { super::shared::read_metadata_page(index_relation) };
+    let metadata = debug_read_metadata_page(index_relation);
     if metadata.entry_point == page::ItemPointer::INVALID
         || metadata.dimensions == 0
         || seed_count == 0
@@ -2147,116 +2158,96 @@ pub(crate) unsafe fn debug_layer_oracle_k_seed_layer0_neighbor_heap_tids(
         return Vec::new();
     }
 
-    // SAFETY: The relation guard keeps the index open for the AM scan
-    // descriptor used to prepare query state.
-    let scan = debug_am_begin_scan(index_relation, 0, 1);
+    let scan = DebugAmScan::begin(index_relation, 0, 1);
     let mut orderby = pg_sys::ScanKeyData {
         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
         ..Default::default()
     };
     // SAFETY: `scan` is live, there are no index quals, and `orderby` is a
     // valid one-key buffer.
-    debug_am_rescan(scan, ptr::null_mut(), 0, &mut orderby, 1);
+    scan.rescan(ptr::null_mut(), 0, &mut orderby, 1);
 
-    // SAFETY: AM rescan initialized the HNSW scan opaque on the live descriptor.
-    let opaque = debug_scan_opaque(scan);
-    let storage = opaque.scan_graph_storage;
-    // SAFETY: The opaque belongs to the live scan and rescan prepares a cached
-    // quantizer for score computation.
-    let quantizer = unsafe { &*opaque.cached_quantizer };
-    // SAFETY: The opaque belongs to the live scan and rescan prepares query
-    // storage for score computation.
-    let prepared_query = unsafe { &*opaque.prepared_query };
-    // SAFETY: The relation guard keeps the graph relation open while the helper
-    // scans locked pages for candidate element TIDs.
-    let layer_tids =
-        unsafe { debug_collect_element_tids_at_or_above_level(index_relation, storage, layer) };
+    let heap_tids = scan.with_oracle_score_parts(|parts| {
+        let layer_tids =
+            debug_collect_element_tids_at_or_above_level(index_relation, parts.storage, layer);
 
-    let mut seeds = layer_tids
-        .into_iter()
-        .filter_map(|seed_tid| {
-            // SAFETY: `seed_tid` was collected from graph pages matching the
-            // storage element tag, and the graph loader validates the tuple.
-            let element =
-                unsafe { graph::load_exact_graph_element(index_relation, seed_tid, storage) };
-            if element.deleted || element.heaptids.is_empty() {
-                return None;
+        let mut seeds = layer_tids
+            .into_iter()
+            .filter_map(|seed_tid| {
+                let element = debug_load_graph_element(index_relation, seed_tid, parts.storage);
+                if element.deleted || element.heaptids.is_empty() {
+                    return None;
+                }
+                Some(search::BeamCandidate::new(
+                    seed_tid,
+                    -parts.quantizer.score_ip_from_parts(
+                        parts.prepared_query,
+                        element.gamma,
+                        &element.code,
+                    ),
+                ))
+            })
+            .collect::<Vec<_>>();
+        seeds.sort_by(|left, right| left.score.total_cmp(&right.score));
+        seeds.truncate(seed_count);
+
+        let mut scored_elements = Vec::new();
+        let mut visited_elements = std::collections::HashSet::new();
+        for seed in seeds {
+            if !visited_elements.insert(seed.node) {
+                continue;
             }
-            Some(search::BeamCandidate::new(
-                seed_tid,
-                -quantizer.score_ip_from_parts(prepared_query, element.gamma, &element.code),
-            ))
-        })
-        .collect::<Vec<_>>();
-    seeds.sort_by(|left, right| left.score.total_cmp(&right.score));
-    seeds.truncate(seed_count);
 
-    let mut scored_elements = Vec::new();
-    let mut visited_elements = std::collections::HashSet::new();
-    for seed in seeds {
-        if !visited_elements.insert(seed.node) {
-            continue;
-        }
+            let seed_element = debug_load_graph_element(index_relation, seed.node, parts.storage);
+            if !seed_element.deleted {
+                scored_elements.push((seed.score, seed_element.heaptids.clone()));
+            }
 
-        // SAFETY: Seed candidates were loaded from graph pages for this
-        // relation/storage pair, and the graph loader validates the tuple.
-        let seed_element =
-            unsafe { graph::load_exact_graph_element(index_relation, seed.node, storage) };
-        if !seed_element.deleted {
-            scored_elements.push((seed.score, seed_element.heaptids.clone()));
-        }
-
-        // SAFETY: The seed element was loaded from graph storage and `scan_m`
-        // comes from the initialized scan opaque; adjacency loading validates
-        // the graph tuple before returning layer-0 neighbors.
-        for neighbor_tid in unsafe {
-            debug_load_neighbor_tids_for_layer(
+            for neighbor_tid in debug_load_neighbor_tids_for_layer(
                 index_relation,
-                storage,
+                parts.storage,
                 seed.node,
-                usize::from(opaque.scan_m),
+                usize::from(parts.scan_m),
                 0,
-            )
-        } {
-            if !visited_elements.insert(neighbor_tid) {
-                continue;
-            }
+            ) {
+                if !visited_elements.insert(neighbor_tid) {
+                    continue;
+                }
 
-            // SAFETY: Neighbor TIDs come from graph adjacency loading for this
-            // relation/storage pair, and the loader validates the tuple body.
-            let neighbor =
-                unsafe { graph::load_exact_graph_element(index_relation, neighbor_tid, storage) };
-            if neighbor.deleted || neighbor.heaptids.is_empty() {
-                continue;
-            }
+                let neighbor =
+                    debug_load_graph_element(index_relation, neighbor_tid, parts.storage);
+                if neighbor.deleted || neighbor.heaptids.is_empty() {
+                    continue;
+                }
 
-            let score =
-                -quantizer.score_ip_from_parts(prepared_query, neighbor.gamma, &neighbor.code);
-            scored_elements.push((score, neighbor.heaptids));
-        }
-    }
-
-    scored_elements.sort_by(|left, right| left.0.total_cmp(&right.0));
-    let mut heap_tids = Vec::new();
-    let mut seen_heap_tids = std::collections::HashSet::new();
-    for (_score, element_heap_tids) in scored_elements {
-        for heap_tid in element_heap_tids {
-            let coords = debug_item_pointer_coords(heap_tid);
-            if seen_heap_tids.insert(coords) {
-                heap_tids.push(coords);
+                let score = -parts.quantizer.score_ip_from_parts(
+                    parts.prepared_query,
+                    neighbor.gamma,
+                    &neighbor.code,
+                );
+                scored_elements.push((score, neighbor.heaptids));
             }
         }
-    }
 
-    // SAFETY: The scan descriptor is live and belongs to the HNSW AM.
-    debug_am_end_scan(scan);
-    // SAFETY: AM cleanup has run, and the descriptor is released once here.
-    debug_index_scan_end(scan);
+        scored_elements.sort_by(|left, right| left.0.total_cmp(&right.0));
+        let mut heap_tids = Vec::new();
+        let mut seen_heap_tids = std::collections::HashSet::new();
+        for (_score, element_heap_tids) in scored_elements {
+            for heap_tid in element_heap_tids {
+                let coords = debug_item_pointer_coords(heap_tid);
+                if seen_heap_tids.insert(coords) {
+                    heap_tids.push(coords);
+                }
+            }
+        }
+        heap_tids
+    });
+
     heap_tids
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_exact_seed_scan_heap_tids(
+pub(crate) fn debug_exact_seed_scan_heap_tids(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
     seed_heap_tids: Vec<HeapTidCoords>,
@@ -2267,7 +2258,7 @@ pub(crate) unsafe fn debug_exact_seed_scan_heap_tids(
     let index_relation = index_relation_guard.as_ptr();
     // SAFETY: The relation guard keeps the index relation open while its
     // metadata page is read.
-    let metadata = unsafe { super::shared::read_metadata_page(index_relation) };
+    let metadata = debug_read_metadata_page(index_relation);
     if metadata.entry_point == page::ItemPointer::INVALID
         || metadata.dimensions == 0
         || seed_heap_tids.is_empty()
@@ -2275,162 +2266,127 @@ pub(crate) unsafe fn debug_exact_seed_scan_heap_tids(
         return Vec::new();
     }
 
-    // SAFETY: The relation guard keeps the index open for the AM scan
-    // descriptor used to prepare query state.
-    let scan = debug_am_begin_scan(index_relation, 0, 1);
+    let scan = DebugAmScan::begin(index_relation, 0, 1);
     let mut orderby = pg_sys::ScanKeyData {
         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
         ..Default::default()
     };
     // SAFETY: `scan` is live, there are no index quals, and `orderby` is a
     // valid one-key buffer.
-    debug_am_rescan(scan, ptr::null_mut(), 0, &mut orderby, 1);
+    scan.rescan(ptr::null_mut(), 0, &mut orderby, 1);
 
-    // SAFETY: AM rescan initialized the HNSW scan opaque on the live descriptor.
-    let opaque = debug_scan_opaque(scan);
-    let storage = opaque.scan_graph_storage;
-    // SAFETY: The opaque belongs to the live scan and rescan prepares a cached
-    // quantizer for score computation.
-    let quantizer = unsafe { &*opaque.cached_quantizer };
-    // SAFETY: The opaque belongs to the live scan and rescan prepares query
-    // storage for score computation.
-    let prepared_query = unsafe { &*opaque.prepared_query };
-    // SAFETY: The relation guard keeps the graph relation open while the helper
-    // scans locked graph pages and maps heap TIDs to element TIDs.
-    let element_by_heap_tid =
-        unsafe { debug_collect_element_tid_by_heap_tid(index_relation, storage) };
-    let seed_element_tids = seed_heap_tids
-        .into_iter()
-        .filter_map(|heap_tid| element_by_heap_tid.get(&heap_tid).copied())
-        .collect::<Vec<_>>();
-
-    let tids = if seed_element_tids.is_empty() {
-        Vec::new()
-    } else {
-        let seeds = seed_element_tids
+    let tids = scan.with_oracle_score_parts(|parts| {
+        let element_by_heap_tid =
+            debug_collect_element_tid_by_heap_tid(index_relation, parts.storage);
+        let seed_element_tids = seed_heap_tids
             .into_iter()
-            .filter_map(|seed_tid| {
-                // SAFETY: Seed element TIDs were resolved from graph pages for
-                // this relation/storage pair, and the loader validates tuples.
-                let element =
-                    unsafe { graph::load_exact_graph_element(index_relation, seed_tid, storage) };
-                if element.deleted || element.heaptids.is_empty() {
-                    return None;
-                }
-                Some(search::BeamCandidate::new(
-                    seed_tid,
-                    -quantizer.score_ip_from_parts(prepared_query, element.gamma, &element.code),
-                ))
-            })
+            .filter_map(|heap_tid| element_by_heap_tid.get(&heap_tid).copied())
             .collect::<Vec<_>>();
-        // SAFETY: Seed candidates were resolved from graph storage for this
-        // index, and the search helper validates neighbor tuples as it walks
-        // layer 0 with the supplied storage descriptor.
-        let ordered_candidates = unsafe {
-            graph::search_layer0_result_candidates_with_storage(
+
+        if seed_element_tids.is_empty() {
+            Vec::new()
+        } else {
+            let seeds = seed_element_tids
+                .into_iter()
+                .filter_map(|seed_tid| {
+                    let element = debug_load_graph_element(index_relation, seed_tid, parts.storage);
+                    if element.deleted || element.heaptids.is_empty() {
+                        return None;
+                    }
+                    Some(search::BeamCandidate::new(
+                        seed_tid,
+                        -parts.quantizer.score_ip_from_parts(
+                            parts.prepared_query,
+                            element.gamma,
+                            &element.code,
+                        ),
+                    ))
+                })
+                .collect::<Vec<_>>();
+            let ordered_candidates = debug_search_layer0_result_candidates(
                 index_relation,
-                storage,
-                usize::from(opaque.scan_m),
+                parts.storage,
+                usize::from(parts.scan_m),
                 ef_search.max(1),
                 seeds,
                 |_| true,
                 |neighbor| {
-                    Some(-quantizer.score_ip_from_parts(
-                        prepared_query,
+                    Some(-parts.quantizer.score_ip_from_parts(
+                        parts.prepared_query,
                         neighbor.gamma,
                         &neighbor.code,
                     ))
                 },
-            )
-        };
-        let mut emitted_elements = std::collections::HashSet::new();
-        let mut heap_tids = Vec::new();
-        for candidate in ordered_candidates {
-            if !emitted_elements.insert(candidate.node) {
-                continue;
-            }
+            );
+            let mut emitted_elements = std::collections::HashSet::new();
+            let mut heap_tids = Vec::new();
+            for candidate in ordered_candidates {
+                if !emitted_elements.insert(candidate.node) {
+                    continue;
+                }
 
-            // SAFETY: Search candidates come from graph traversal on this
-            // relation/storage pair, and the loader validates the tuple body.
-            let element =
-                unsafe { graph::load_exact_graph_element(index_relation, candidate.node, storage) };
-            if element.deleted || element.heaptids.is_empty() {
-                continue;
-            }
+                let element =
+                    debug_load_graph_element(index_relation, candidate.node, parts.storage);
+                if element.deleted || element.heaptids.is_empty() {
+                    continue;
+                }
 
-            heap_tids.extend(element.heaptids.into_iter().map(debug_item_pointer_coords));
+                heap_tids.extend(element.heaptids.into_iter().map(debug_item_pointer_coords));
+            }
+            heap_tids
         }
-        heap_tids
-    };
+    });
 
-    // SAFETY: The scan descriptor is live and belongs to the HNSW AM.
-    debug_am_end_scan(scan);
-    // SAFETY: AM cleanup has run, and the descriptor is released once here.
-    debug_index_scan_end(scan);
     tids
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_gettuple_scan_heap_tids_with_scores(
+pub(crate) fn debug_gettuple_scan_heap_tids_with_scores(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
 ) -> Vec<(HeapTidCoords, f32)> {
-    // SAFETY: The debug helper opens the index, owning heap, and scan snapshot
-    // and keeps them alive in `scan_state`.
-    let scan_state = unsafe { debug_begin_heap_backed_scan(index_oid) };
-    let scan = scan_state.scan.as_ptr();
+    let scan_state = debug_begin_heap_backed_scan(index_oid);
+    let scan = scan_state.as_ptr();
 
     let mut orderby = pg_sys::ScanKeyData {
         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
         ..Default::default()
     };
+    let mut tids = Vec::new();
     // SAFETY: `scan_state` owns a live heap-backed scan, there are no index
     // quals, and `orderby` is a valid one-key buffer.
     debug_am_rescan(scan, ptr::null_mut(), 0, &mut orderby, 1);
-
-    let mut tids = Vec::new();
-    // SAFETY: AM rescan initialized the HNSW opaque, so repeated gettuple calls
-    // may advance the live scan descriptor.
-    while debug_am_gettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) {
-        // SAFETY: A successful gettuple call populated `xs_heaptid` for this
-        // live index scan descriptor.
-        let heap_tid = debug_scan_heap_tid(scan);
+    while let Some(heap_tid) =
+        debug_am_gettuple_heap_tid(scan, pg_sys::ScanDirection::ForwardScanDirection)
+    {
         let score = debug_scan_orderby_score(scan)
             .expect("graph-first scan should publish an order-by score for emitted tuples");
         tids.push((heap_tid, score));
     }
 
-    // SAFETY: `scan_state` owns the scan and relation guards and is consumed
-    // once after iteration completes.
-    unsafe { debug_end_heap_backed_scan(scan_state) };
+    drop(scan_state);
     tids
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_gettuple_scan_heap_tids_with_score_comparisons(
+pub(crate) fn debug_gettuple_scan_heap_tids_with_score_comparisons(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
 ) -> Vec<(HeapTidCoords, f32, Option<f32>, Option<i32>)> {
-    // SAFETY: The debug helper opens the index, owning heap, and scan snapshot
-    // and keeps them alive in `scan_state`.
-    let scan_state = unsafe { debug_begin_heap_backed_scan(index_oid) };
-    let scan = scan_state.scan.as_ptr();
+    let scan_state = debug_begin_heap_backed_scan(index_oid);
+    let scan = scan_state.as_ptr();
 
     let mut orderby = pg_sys::ScanKeyData {
         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
         ..Default::default()
     };
+    let mut tids = Vec::new();
     // SAFETY: `scan_state` owns a live heap-backed scan, there are no index
     // quals, and `orderby` is a valid one-key buffer.
     debug_am_rescan(scan, ptr::null_mut(), 0, &mut orderby, 1);
-
-    let mut tids = Vec::new();
-    // SAFETY: AM rescan initialized the HNSW opaque, so repeated gettuple calls
-    // may advance the live scan descriptor.
-    while debug_am_gettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) {
-        // SAFETY: A successful gettuple call populated `xs_heaptid` for this
-        // live index scan descriptor.
-        let heap_tid = debug_scan_heap_tid(scan);
+    while let Some(heap_tid) =
+        debug_am_gettuple_heap_tid(scan, pg_sys::ScanDirection::ForwardScanDirection)
+    {
         let approx_score = debug_current_result_approx_score(scan)
             .or_else(|| debug_scan_orderby_score(scan))
             .expect("graph-first scan should publish an approximate score for emitted tuples");
@@ -2439,27 +2395,20 @@ pub(crate) unsafe fn debug_gettuple_scan_heap_tids_with_score_comparisons(
         tids.push((heap_tid, approx_score, comparison_score, approx_rank));
     }
 
-    // SAFETY: `scan_state` owns the scan and relation guards and is consumed
-    // once after iteration completes.
-    unsafe { debug_end_heap_backed_scan(scan_state) };
+    drop(scan_state);
     tids
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-unsafe fn debug_scan_uses_grouped_storage(index_oid: pg_sys::Oid) -> bool {
+fn debug_scan_uses_grouped_storage(index_oid: pg_sys::Oid) -> bool {
     let index_relation_guard =
         IndexRelationGuard::access_share(index_oid, "debug_scan_uses_grouped_storage");
     let index_relation = index_relation_guard.as_ptr();
     // SAFETY: The relation guard keeps the index relation open while its
     // metadata page is read.
-    let metadata = unsafe { super::shared::read_metadata_page(index_relation) };
+    let metadata = debug_read_metadata_page(index_relation);
     let grouped_results = matches!(
-        // SAFETY: Metadata was read from the open index relation and is used to
-        // resolve the graph storage descriptor for debug classification.
-        unsafe { graph::GraphStorageDescriptor::from_index_relation(index_relation, &metadata) }
-            .unwrap_or_else(|e| {
-                pgrx::error!("ec_hnsw debug grouped scan comparison requires valid metadata: {e}")
-            }),
+        debug_graph_storage(index_relation, &metadata),
         graph::GraphStorageDescriptor::PqFastScan(_)
     );
     grouped_results
@@ -2591,16 +2540,12 @@ fn debug_grouped_scan_windowed_rows_from_comparison_rows(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_grouped_scan_comparison_rows(
+pub(crate) fn debug_grouped_scan_comparison_rows(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
 ) -> Vec<DebugGroupedScanComparisonRow> {
-    // SAFETY: The debug wrapper forwards the caller-provided index oid to the
-    // grouped-storage classifier, which opens and reads index metadata.
-    let grouped_results = unsafe { debug_scan_uses_grouped_storage(index_oid) };
-    // SAFETY: The score-comparison helper owns its scan descriptor and returns
-    // materialized debug rows before cleanup.
-    let rows = unsafe { debug_gettuple_scan_heap_tids_with_score_comparisons(index_oid, query) };
+    let grouped_results = debug_scan_uses_grouped_storage(index_oid);
+    let rows = debug_gettuple_scan_heap_tids_with_score_comparisons(index_oid, query);
     let ordered_rows = if grouped_results {
         let mut ordered_rows = rows
             .into_iter()
@@ -2679,16 +2624,12 @@ pub(crate) unsafe fn debug_grouped_scan_comparison_rows(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_grouped_scan_comparison_summary(
+pub(crate) fn debug_grouped_scan_comparison_summary(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
 ) -> DebugGroupedScanComparisonSummary {
-    // SAFETY: The debug wrapper forwards the caller-provided index oid to the
-    // grouped-storage classifier, which opens and reads index metadata.
-    let grouped_results = unsafe { debug_scan_uses_grouped_storage(index_oid) };
-    // SAFETY: The score-comparison helper owns its scan descriptor and returns
-    // materialized debug rows before cleanup.
-    let rows = unsafe { debug_gettuple_scan_heap_tids_with_score_comparisons(index_oid, query) };
+    let grouped_results = debug_scan_uses_grouped_storage(index_oid);
+    let rows = debug_gettuple_scan_heap_tids_with_score_comparisons(index_oid, query);
     let emitted_result_count =
         i32::try_from(rows.len()).expect("debug comparison summary count should fit in i32");
     if !grouped_results {
@@ -2738,16 +2679,12 @@ pub(crate) unsafe fn debug_grouped_scan_comparison_summary(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_grouped_scan_order_drift_summary(
+pub(crate) fn debug_grouped_scan_order_drift_summary(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
 ) -> DebugGroupedScanOrderDriftSummary {
-    // SAFETY: The debug wrapper forwards the caller-provided index oid to the
-    // grouped-storage classifier, which opens and reads index metadata.
-    let grouped_results = unsafe { debug_scan_uses_grouped_storage(index_oid) };
-    // SAFETY: The comparison-row helper owns its scan descriptor and returns
-    // materialized debug rows before cleanup.
-    let rows = unsafe { debug_grouped_scan_comparison_rows(index_oid, query) };
+    let grouped_results = debug_scan_uses_grouped_storage(index_oid);
+    let rows = debug_grouped_scan_comparison_rows(index_oid, query);
     let emitted_result_count =
         i32::try_from(rows.len()).expect("debug order drift summary count should fit in i32");
     if !grouped_results {
@@ -2808,30 +2745,24 @@ pub(crate) unsafe fn debug_grouped_scan_order_drift_summary(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_grouped_scan_windowed_rows(
+pub(crate) fn debug_grouped_scan_windowed_rows(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
     window_size: i32,
 ) -> Vec<DebugGroupedScanWindowedRow> {
-    // SAFETY: The comparison-row helper owns its scan descriptor and returns
-    // materialized debug rows before cleanup.
-    let rows = unsafe { debug_grouped_scan_comparison_rows(index_oid, query) };
+    let rows = debug_grouped_scan_comparison_rows(index_oid, query);
     let window_size = debug_grouped_window_size(window_size);
     debug_grouped_scan_windowed_rows_from_comparison_rows(&rows, window_size)
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_grouped_scan_windowed_summary(
+pub(crate) fn debug_grouped_scan_windowed_summary(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
     window_size: i32,
 ) -> DebugGroupedScanWindowedSummary {
-    // SAFETY: The debug wrapper forwards the caller-provided index oid to the
-    // grouped-storage classifier, which opens and reads index metadata.
-    let grouped_results = unsafe { debug_scan_uses_grouped_storage(index_oid) };
-    // SAFETY: The comparison-row helper owns its scan descriptor and returns
-    // materialized debug rows before cleanup.
-    let rows = unsafe { debug_grouped_scan_comparison_rows(index_oid, query) };
+    let grouped_results = debug_scan_uses_grouped_storage(index_oid);
+    let rows = debug_grouped_scan_comparison_rows(index_oid, query);
     let window_size = debug_grouped_window_size(window_size);
     let emitted_result_count =
         i32::try_from(rows.len()).expect("debug grouped window summary count should fit in i32");
@@ -2898,7 +2829,7 @@ pub(crate) unsafe fn debug_grouped_scan_windowed_summary(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_gettuple_exhaustion_state(
+pub(crate) fn debug_gettuple_exhaustion_state(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
 ) -> (Vec<HeapTidCoords>, bool, bool) {
@@ -2918,14 +2849,10 @@ pub(crate) unsafe fn debug_gettuple_exhaustion_state(
     debug_am_rescan(scan, ptr::null_mut(), 0, &mut orderby, 1);
 
     let mut tids = Vec::new();
-    // SAFETY: AM rescan initialized the HNSW opaque, so repeated gettuple calls
-    // may advance the live scan descriptor.
-    while debug_am_gettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) {
-        // SAFETY: A successful gettuple call populated `xs_heaptid` for this
-        // live index scan descriptor.
-        tids.push(pgrx::itemptr::item_pointer_get_both(unsafe {
-            (*scan).xs_heaptid
-        }));
+    while let Some(heap_tid) =
+        debug_am_gettuple_heap_tid(scan, pg_sys::ScanDirection::ForwardScanDirection)
+    {
+        tids.push(heap_tid);
     }
 
     // SAFETY: The scan descriptor remains live after exhaustion for this debug
@@ -2943,7 +2870,7 @@ pub(crate) unsafe fn debug_gettuple_exhaustion_state(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_gettuple_current_result_state(
+pub(crate) fn debug_gettuple_current_result_state(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
 ) -> (
@@ -2971,24 +2898,28 @@ pub(crate) unsafe fn debug_gettuple_current_result_state(
     // valid one-key buffer.
     debug_am_rescan(scan, ptr::null_mut(), 0, &mut orderby, 1);
 
-    // SAFETY: AM rescan initialized the HNSW scan opaque on the live descriptor.
-    let opaque = debug_scan_opaque(scan);
-    let before_found = active_result_state_ref(opaque).current().has_element();
-    let before_tid =
-        debug_item_pointer_coords(active_result_state_ref(opaque).current().element_tid());
-    let before_score = active_result_state_ref(opaque).current().score_valid();
-    let before_score_value = active_result_state_ref(opaque).current().score();
+    let (before_found, before_tid, before_score, before_score_value) =
+        debug_with_scan_opaque(scan, |opaque| {
+            let current = active_result_state_ref(opaque).current();
+            (
+                current.has_element(),
+                debug_item_pointer_coords(current.element_tid()),
+                current.score_valid(),
+                current.score(),
+            )
+        });
 
     // SAFETY: AM rescan initialized the HNSW opaque, so gettuple may advance the
     // live descriptor and update current-result state.
     let found = debug_am_gettuple(scan, pg_sys::ScanDirection::ForwardScanDirection);
-    // SAFETY: The scan descriptor remains live after gettuple and still owns its
-    // HNSW opaque for debug inspection.
-    let opaque = debug_scan_opaque(scan);
-    let after_tid =
-        debug_item_pointer_coords(active_result_state_ref(opaque).current().element_tid());
-    let after_score = active_result_state_ref(opaque).current().score_valid();
-    let after_score_value = active_result_state_ref(opaque).current().score();
+    let (after_tid, after_score, after_score_value) = debug_with_scan_opaque(scan, |opaque| {
+        let current = active_result_state_ref(opaque).current();
+        (
+            debug_item_pointer_coords(current.element_tid()),
+            current.score_valid(),
+            current.score(),
+        )
+    });
 
     // SAFETY: The scan descriptor is live and belongs to the HNSW AM.
     debug_am_end_scan(scan);
@@ -3007,7 +2938,7 @@ pub(crate) unsafe fn debug_gettuple_current_result_state(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_gettuple_orderby_score(
+pub(crate) fn debug_gettuple_orderby_score(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
 ) -> (bool, bool, f32) {
@@ -3029,24 +2960,7 @@ pub(crate) unsafe fn debug_gettuple_orderby_score(
     // SAFETY: AM rescan initialized the HNSW opaque, so gettuple may advance the
     // live descriptor and publish order-by score slots.
     let found = debug_am_gettuple(scan, pg_sys::ScanDirection::ForwardScanDirection);
-    // SAFETY: `scan` is a live descriptor; null is checked before reading the
-    // order-by null flag.
-    let is_null = if unsafe { (*scan).xs_orderbynulls.is_null() } {
-        true
-    } else {
-        // SAFETY: The order-by nulls pointer was checked non-null above.
-        unsafe { *(*scan).xs_orderbynulls }
-    };
-    // SAFETY: `scan` is a live descriptor; null is checked before reading the
-    // order-by datum slot.
-    let score = if unsafe { (*scan).xs_orderbyvals.is_null() } {
-        0.0
-    } else {
-        // SAFETY: The order-by datum pointer was checked non-null above, and the
-        // HNSW AM publishes f32 scores in this debug path.
-        f32::from_datum(unsafe { *(*scan).xs_orderbyvals }, is_null)
-            .expect("orderby score should decode")
-    };
+    let (is_null, score) = debug_gettuple_orderby_score_slot(scan);
 
     // SAFETY: The scan descriptor is live and belongs to the HNSW AM.
     debug_am_end_scan(scan);
@@ -3057,52 +2971,66 @@ pub(crate) unsafe fn debug_gettuple_orderby_score(
 
 #[cfg(any(test, feature = "pg_test"))]
 fn debug_scan_orderby_score(scan: pg_sys::IndexScanDesc) -> Option<f32> {
-    // SAFETY: Callers pass a live scan descriptor; both order-by pointers are
-    // checked before dereference, and the AM publishes f32 order-by datums.
-    unsafe {
-        if (*scan).xs_orderbyvals.is_null() || (*scan).xs_orderbynulls.is_null() {
-            return None;
-        }
-        if *(*scan).xs_orderbynulls {
-            return None;
-        }
+    let (is_null, value_present, score) = debug_scan_orderby_score_state(scan);
+    (!is_null && value_present).then_some(score)
+}
 
-        f32::from_datum(*(*scan).xs_orderbyvals, false)
+#[cfg(any(test, feature = "pg_test"))]
+fn debug_gettuple_orderby_score_slot(scan: pg_sys::IndexScanDesc) -> (bool, f32) {
+    let (is_null, _value_present, score) = debug_scan_orderby_score_state(scan);
+    (is_null, score)
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+fn debug_scan_orderby_score_state(scan: pg_sys::IndexScanDesc) -> (bool, bool, f32) {
+    // SAFETY: Callers pass a live scan descriptor immediately after gettuple.
+    // The helper checks both order-by pointers before reading, and HNSW debug
+    // gettuple publishes f32 order-by datums when the value slot is present.
+    unsafe {
+        let is_null = if (*scan).xs_orderbynulls.is_null() {
+            true
+        } else {
+            *(*scan).xs_orderbynulls
+        };
+        let value_present = !(*scan).xs_orderbyvals.is_null();
+        let score = if value_present {
+            f32::from_datum(*(*scan).xs_orderbyvals, is_null).expect("orderby score should decode")
+        } else {
+            0.0
+        };
+        (is_null, value_present, score)
     }
 }
 
 #[cfg(any(test, feature = "pg_test"))]
 fn debug_current_result_comparison_score(scan: pg_sys::IndexScanDesc) -> Option<f32> {
-    // SAFETY: Callers pass a live HNSW scan descriptor whose opaque was
-    // initialized by AM rescan.
-    let opaque = unsafe { debug_scan_opaque(scan) };
-    opaque
-        .last_emitted_comparison_score_valid
-        .then_some(opaque.last_emitted_comparison_score)
+    debug_with_scan_opaque(scan, |opaque| {
+        opaque
+            .last_emitted_comparison_score_valid
+            .then_some(opaque.last_emitted_comparison_score)
+    })
 }
 
 #[cfg(any(test, feature = "pg_test"))]
 fn debug_current_result_approx_score(scan: pg_sys::IndexScanDesc) -> Option<f32> {
-    // SAFETY: Callers pass a live HNSW scan descriptor whose opaque was
-    // initialized by AM rescan.
-    let opaque = unsafe { debug_scan_opaque(scan) };
-    opaque
-        .last_emitted_approx_score_valid
-        .then_some(opaque.last_emitted_approx_score)
+    debug_with_scan_opaque(scan, |opaque| {
+        opaque
+            .last_emitted_approx_score_valid
+            .then_some(opaque.last_emitted_approx_score)
+    })
 }
 
 #[cfg(any(test, feature = "pg_test"))]
 fn debug_current_result_approx_rank(scan: pg_sys::IndexScanDesc) -> Option<i32> {
-    // SAFETY: Callers pass a live HNSW scan descriptor whose opaque was
-    // initialized by AM rescan.
-    let opaque = unsafe { debug_scan_opaque(scan) };
-    opaque
-        .last_emitted_approx_rank_valid
-        .then_some(opaque.last_emitted_approx_rank)
+    debug_with_scan_opaque(scan, |opaque| {
+        opaque
+            .last_emitted_approx_rank_valid
+            .then_some(opaque.last_emitted_approx_rank)
+    })
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_gettuple_orderby_score_lifecycle(
+pub(crate) fn debug_gettuple_orderby_score_lifecycle(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
 ) -> (Option<f32>, Option<f32>, Option<f32>, Option<f32>) {
@@ -3151,7 +3079,7 @@ pub(crate) unsafe fn debug_gettuple_orderby_score_lifecycle(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_rescan_entry_candidate_state(
+pub(crate) fn debug_rescan_entry_candidate_state(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
 ) -> (bool, HeapTidCoords, f32, bool, HeapTidCoords, f32) {
@@ -3170,28 +3098,26 @@ pub(crate) unsafe fn debug_rescan_entry_candidate_state(
     // valid one-key buffer.
     debug_am_rescan(scan, ptr::null_mut(), 0, &mut orderby, 1);
 
-    // SAFETY: AM rescan initialized the HNSW scan opaque on the live descriptor.
-    let opaque = debug_scan_opaque(scan);
-    let current = active_result_state_ref(opaque).current();
-    let (before_valid, before_tid, before_score) = if current.has_element() {
-        (
-            true,
-            debug_item_pointer_coords(current.element_tid()),
-            current.score(),
-        )
-    } else {
-        debug_candidate_slot(visible_frontier_slot(opaque, 0))
-    };
+    let (before_valid, before_tid, before_score) = debug_with_scan_opaque(scan, |opaque| {
+        let current = active_result_state_ref(opaque).current();
+        if current.has_element() {
+            (
+                true,
+                debug_item_pointer_coords(current.element_tid()),
+                current.score(),
+            )
+        } else {
+            debug_candidate_slot(visible_frontier_slot(opaque, 0))
+        }
+    });
 
     // SAFETY: AM rescan initialized the HNSW opaque, so repeated gettuple calls
     // may advance the live descriptor until exhaustion.
     while debug_am_gettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) {}
 
-    // SAFETY: The scan descriptor remains live after exhaustion and still owns
-    // its HNSW opaque for debug inspection.
-    let opaque = debug_scan_opaque(scan);
-    let (after_valid, after_tid, after_score) =
-        debug_candidate_slot(visible_frontier_slot(opaque, 0));
+    let (after_valid, after_tid, after_score) = debug_with_scan_opaque(scan, |opaque| {
+        debug_candidate_slot(visible_frontier_slot(opaque, 0))
+    });
 
     // SAFETY: The scan descriptor is live and belongs to the HNSW AM.
     debug_am_end_scan(scan);
@@ -3208,7 +3134,7 @@ pub(crate) unsafe fn debug_rescan_entry_candidate_state(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_rescan_successor_candidate_state(
+pub(crate) fn debug_rescan_successor_candidate_state(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
 ) -> (
@@ -3236,21 +3162,19 @@ pub(crate) unsafe fn debug_rescan_successor_candidate_state(
 
     // SAFETY: The relation guard keeps the index relation open while its
     // metadata page is read.
-    let metadata = unsafe { super::shared::read_metadata_page(index_relation) };
+    let metadata = debug_read_metadata_page(index_relation);
     let entry_tid = (
         metadata.entry_point.block_number,
         metadata.entry_point.offset_number,
     );
-    // SAFETY: The debug helper opens the same index and materializes entry
-    // point neighbor TIDs before returning.
-    let entry_neighbors = unsafe { super::debug_entry_point_neighbor_tids(index_oid) };
+    let entry_neighbors = super::debug_entry_point_neighbor_tids(index_oid);
 
-    // SAFETY: AM rescan initialized the HNSW scan opaque on the live descriptor.
-    let opaque = debug_scan_opaque(scan);
-    let successor_slot = debug_runtime_ordered_provenance_slots(opaque)
-        .get(1)
-        .copied()
-        .unwrap_or((false, (u32::MAX, u16::MAX), (u32::MAX, u16::MAX), 0.0));
+    let successor_slot = debug_with_scan_opaque(scan, |opaque| {
+        debug_runtime_ordered_provenance_slots(opaque)
+            .get(1)
+            .copied()
+            .unwrap_or((false, (u32::MAX, u16::MAX), (u32::MAX, u16::MAX), 0.0))
+    });
 
     // SAFETY: The scan descriptor is live and belongs to the HNSW AM.
     debug_am_end_scan(scan);
@@ -3267,7 +3191,7 @@ pub(crate) unsafe fn debug_rescan_successor_candidate_state(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_rescan_candidate_frontier(
+pub(crate) fn debug_rescan_candidate_frontier(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
 ) -> DebugBootstrapSeedState {
@@ -3286,13 +3210,21 @@ pub(crate) unsafe fn debug_rescan_candidate_frontier(
     // valid one-key buffer.
     debug_am_rescan(scan, ptr::null_mut(), 0, &mut orderby, 1);
 
-    // SAFETY: AM rescan initialized the HNSW scan opaque on the live descriptor.
-    let opaque = debug_scan_opaque_mut(scan);
-    let frontier_slots = debug_runtime_ordered_slots(opaque);
-    let frontier = frontier_slots.clone();
-    let frontier_provenance = debug_runtime_ordered_provenance_slots(opaque);
-    let expanded_sources = debug_sorted_expanded_source_tids(opaque);
-    let head = debug_runtime_ordered_head(opaque);
+    let (head, frontier, frontier_slots, frontier_provenance, expanded_sources) =
+        debug_with_scan_opaque_mut(scan, |opaque| {
+            let frontier_slots = debug_runtime_ordered_slots(opaque);
+            let frontier = frontier_slots.clone();
+            let frontier_provenance = debug_runtime_ordered_provenance_slots(opaque);
+            let expanded_sources = debug_sorted_expanded_source_tids(opaque);
+            let head = debug_runtime_ordered_head(opaque);
+            (
+                head,
+                frontier,
+                frontier_slots,
+                frontier_provenance,
+                expanded_sources,
+            )
+        });
 
     // SAFETY: The scan descriptor is live and belongs to the HNSW AM.
     debug_am_end_scan(scan);
@@ -3308,7 +3240,7 @@ pub(crate) unsafe fn debug_rescan_candidate_frontier(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_gettuple_consumes_bootstrap_candidate(
+pub(crate) fn debug_gettuple_consumes_bootstrap_candidate(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
 ) -> DebugBootstrapConsumeState {
@@ -3327,12 +3259,14 @@ pub(crate) unsafe fn debug_gettuple_consumes_bootstrap_candidate(
     // valid one-key buffer.
     debug_am_rescan(scan, ptr::null_mut(), 0, &mut orderby, 1);
 
-    // SAFETY: AM rescan initialized the HNSW scan opaque on the live descriptor.
-    let opaque = debug_scan_opaque_mut(scan);
-    let before_head = debug_runtime_ordered_head(opaque);
-    let before_slots = debug_runtime_ordered_slots(opaque);
-    let current_result_tid =
-        debug_item_pointer_coords(active_result_state_ref(opaque).current().element_tid());
+    let (before_head, before_slots, current_result_tid) =
+        debug_with_scan_opaque_mut(scan, |opaque| {
+            (
+                debug_runtime_ordered_head(opaque),
+                debug_runtime_ordered_slots(opaque),
+                debug_item_pointer_coords(active_result_state_ref(opaque).current().element_tid()),
+            )
+        });
 
     assert!(
         // SAFETY: AM rescan initialized the HNSW opaque, so gettuple may
@@ -3341,11 +3275,12 @@ pub(crate) unsafe fn debug_gettuple_consumes_bootstrap_candidate(
         "bootstrap-consume helper requires a first tuple"
     );
 
-    // SAFETY: The scan descriptor remains live after gettuple and still owns its
-    // HNSW opaque for debug inspection.
-    let opaque = debug_scan_opaque_mut(scan);
-    let after_head = debug_runtime_ordered_head(opaque);
-    let after_slots = debug_runtime_ordered_slots(opaque);
+    let (after_head, after_slots) = debug_with_scan_opaque_mut(scan, |opaque| {
+        (
+            debug_runtime_ordered_head(opaque),
+            debug_runtime_ordered_slots(opaque),
+        )
+    });
 
     // SAFETY: The scan descriptor is live and belongs to the HNSW AM.
     debug_am_end_scan(scan);
@@ -3361,7 +3296,7 @@ pub(crate) unsafe fn debug_gettuple_consumes_bootstrap_candidate(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_materialize_bootstrap_candidate_result(
+pub(crate) fn debug_materialize_bootstrap_candidate_result(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
 ) -> DebugBootstrapCandidateMaterializationState {
@@ -3380,36 +3315,41 @@ pub(crate) unsafe fn debug_materialize_bootstrap_candidate_result(
     // valid one-key buffer.
     debug_am_rescan(scan, ptr::null_mut(), 0, &mut orderby, 1);
 
-    // SAFETY: AM rescan initialized the HNSW scan opaque on the live descriptor.
-    let opaque = debug_scan_opaque_mut(scan);
-    let current = active_result_state_ref(opaque).current();
-    let candidate_before = if current.has_element() {
-        (
-            true,
-            debug_item_pointer_coords(current.element_tid()),
-            current.score(),
-        )
-    } else {
-        let candidate = current_candidate_frontier_head(opaque);
-        (
-            candidate.is_some(),
-            candidate
-                .map(|candidate| debug_item_pointer_coords(candidate.node))
-                .unwrap_or((u32::MAX, u16::MAX)),
-            candidate.map(|candidate| candidate.score).unwrap_or(0.0),
-        )
-    };
-    let materialized = current.has_element()
-        // SAFETY: `opaque` belongs to the live scan and `index_relation` is held
-        // open by the guard while prefetch materializes the next graph result.
-        || unsafe { prefetch_next_graph_traversal_result(index_relation, opaque) };
-    let current_result_tid =
-        debug_item_pointer_coords(active_result_state_ref(opaque).current().element_tid());
-    let pending_heap_tids = active_result_state_ref(opaque)
-        .pending_heap_tids()
-        .iter()
-        .map(|tid| (tid.block_number, tid.offset_number))
-        .collect::<Vec<_>>();
+    let (candidate_before, current_result_tid, pending_heap_tids, materialized) =
+        debug_with_scan_opaque_mut(scan, |opaque| {
+            let current = active_result_state_ref(opaque).current();
+            let candidate_before = if current.has_element() {
+                (
+                    true,
+                    debug_item_pointer_coords(current.element_tid()),
+                    current.score(),
+                )
+            } else {
+                let candidate = current_candidate_frontier_head(opaque);
+                (
+                    candidate.is_some(),
+                    candidate
+                        .map(|candidate| debug_item_pointer_coords(candidate.node))
+                        .unwrap_or((u32::MAX, u16::MAX)),
+                    candidate.map(|candidate| candidate.score).unwrap_or(0.0),
+                )
+            };
+            let materialized = current.has_element()
+                || debug_prefetch_next_graph_traversal_result(index_relation, opaque);
+            let current_result_tid =
+                debug_item_pointer_coords(active_result_state_ref(opaque).current().element_tid());
+            let pending_heap_tids = active_result_state_ref(opaque)
+                .pending_heap_tids()
+                .iter()
+                .map(|tid| (tid.block_number, tid.offset_number))
+                .collect::<Vec<_>>();
+            (
+                candidate_before,
+                current_result_tid,
+                pending_heap_tids,
+                materialized,
+            )
+        });
 
     // SAFETY: The scan descriptor is live and belongs to the HNSW AM.
     debug_am_end_scan(scan);
@@ -3424,7 +3364,7 @@ pub(crate) unsafe fn debug_materialize_bootstrap_candidate_result(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_bootstrap_phase_transition(
+pub(crate) fn debug_bootstrap_phase_transition(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
 ) -> DebugBootstrapPhaseTransition {
@@ -3444,29 +3384,31 @@ pub(crate) unsafe fn debug_bootstrap_phase_transition(
     // valid one-key buffer.
     debug_am_rescan(scan, ptr::null_mut(), 0, &mut orderby, 1);
 
-    // SAFETY: AM rescan initialized the HNSW scan opaque on the live descriptor.
-    let opaque = debug_scan_opaque_mut(scan);
-    let before_complete = !opaque.execution_phase.is_graph_traversal();
+    let before_complete =
+        debug_with_scan_opaque_mut(scan, |opaque| !opaque.execution_phase.is_graph_traversal());
 
-    while opaque.execution_phase.is_graph_traversal()
+    while debug_with_scan_opaque_mut(scan, |opaque| {
+        opaque.execution_phase.is_graph_traversal()
+    })
         // SAFETY: AM rescan initialized the HNSW opaque, so repeated gettuple
         // calls may advance the live descriptor through graph traversal.
         && debug_am_gettuple(scan, pg_sys::ScanDirection::ForwardScanDirection)
     {}
 
-    if opaque.execution_phase.is_graph_traversal() {
+    if debug_with_scan_opaque_mut(scan, |opaque| opaque.execution_phase.is_graph_traversal()) {
         // SAFETY: The descriptor remains live and this final gettuple probes the
         // transition out of graph traversal.
         let _ = debug_am_gettuple(scan, pg_sys::ScanDirection::ForwardScanDirection);
     }
 
-    // SAFETY: The scan descriptor remains live after traversal and still owns
-    // its HNSW opaque for debug inspection.
-    let opaque = debug_scan_opaque_mut(scan);
-    let after_complete = !opaque.execution_phase.is_graph_traversal();
-    let after_head = current_candidate_frontier_head(opaque)
-        .map(|candidate| debug_item_pointer_coords(candidate.node));
-    let after_frontier = debug_candidate_frontier_slots(opaque);
+    let (after_complete, after_head, after_frontier) = debug_with_scan_opaque_mut(scan, |opaque| {
+        (
+            !opaque.execution_phase.is_graph_traversal(),
+            current_candidate_frontier_head(opaque)
+                .map(|candidate| debug_item_pointer_coords(candidate.node)),
+            debug_candidate_frontier_slots(opaque),
+        )
+    });
 
     let mut rescan_orderby = pg_sys::ScanKeyData {
         sk_argument: query_datum,
@@ -3476,9 +3418,8 @@ pub(crate) unsafe fn debug_bootstrap_phase_transition(
     // valid one-key buffer for this reset probe.
     debug_am_rescan(scan, ptr::null_mut(), 0, &mut rescan_orderby, 1);
 
-    // SAFETY: AM rescan refreshed the HNSW scan opaque on the live descriptor.
-    let opaque = debug_scan_opaque_mut(scan);
-    let rescanned_complete = !opaque.execution_phase.is_graph_traversal();
+    let rescanned_complete =
+        debug_with_scan_opaque_mut(scan, |opaque| !opaque.execution_phase.is_graph_traversal());
 
     // SAFETY: The scan descriptor is live and belongs to the HNSW AM.
     debug_am_end_scan(scan);
@@ -3494,7 +3435,7 @@ pub(crate) unsafe fn debug_bootstrap_phase_transition(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_candidate_frontier_head_lifecycle(
+pub(crate) fn debug_candidate_frontier_head_lifecycle(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
 ) -> DebugCandidateFrontierLifecycle {
@@ -3514,10 +3455,12 @@ pub(crate) unsafe fn debug_candidate_frontier_head_lifecycle(
     // valid one-key buffer.
     debug_am_rescan(scan, ptr::null_mut(), 0, &mut orderby, 1);
 
-    // SAFETY: AM rescan initialized the HNSW scan opaque on the live descriptor.
-    let opaque = debug_scan_opaque_mut(scan);
-    let before_head = debug_runtime_ordered_head(opaque);
-    let before_frontier = debug_runtime_ordered_slots(opaque);
+    let (before_head, before_frontier) = debug_with_scan_opaque_mut(scan, |opaque| {
+        (
+            debug_runtime_ordered_head(opaque),
+            debug_runtime_ordered_slots(opaque),
+        )
+    });
 
     assert!(
         // SAFETY: AM rescan initialized the HNSW opaque, so gettuple may
@@ -3525,22 +3468,24 @@ pub(crate) unsafe fn debug_candidate_frontier_head_lifecycle(
         debug_am_gettuple(scan, pg_sys::ScanDirection::ForwardScanDirection),
         "frontier-head lifecycle helper requires a first tuple"
     );
-    // SAFETY: The scan descriptor remains live after gettuple and still owns its
-    // HNSW opaque for debug inspection.
-    let opaque = debug_scan_opaque_mut(scan);
-    let partial_head = debug_runtime_ordered_head(opaque);
-    let partial_frontier = debug_runtime_ordered_slots(opaque);
+    let (partial_head, partial_frontier) = debug_with_scan_opaque_mut(scan, |opaque| {
+        (
+            debug_runtime_ordered_head(opaque),
+            debug_runtime_ordered_slots(opaque),
+        )
+    });
 
     // SAFETY: AM rescan initialized the HNSW opaque, so repeated gettuple calls
     // may advance the live descriptor until exhaustion.
     while debug_am_gettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) {}
 
-    // SAFETY: The scan descriptor remains live after exhaustion and still owns
-    // its HNSW opaque for debug inspection.
-    let opaque = debug_scan_opaque_mut(scan);
-    let exhausted_head = current_candidate_frontier_head(opaque)
-        .map(|candidate| debug_item_pointer_coords(candidate.node));
-    let exhausted_frontier = debug_candidate_frontier_slots(opaque);
+    let (exhausted_head, exhausted_frontier) = debug_with_scan_opaque_mut(scan, |opaque| {
+        (
+            current_candidate_frontier_head(opaque)
+                .map(|candidate| debug_item_pointer_coords(candidate.node)),
+            debug_candidate_frontier_slots(opaque),
+        )
+    });
 
     // SAFETY: The scan descriptor is live and belongs to the HNSW AM.
     debug_am_end_scan(scan);
@@ -3557,7 +3502,7 @@ pub(crate) unsafe fn debug_candidate_frontier_head_lifecycle(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_consume_candidate_frontier_head(
+pub(crate) fn debug_consume_candidate_frontier_head(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
 ) -> DebugCandidateFrontierConsume {
@@ -3577,26 +3522,37 @@ pub(crate) unsafe fn debug_consume_candidate_frontier_head(
     // valid one-key buffer.
     debug_am_rescan(scan, ptr::null_mut(), 0, &mut orderby, 1);
 
-    // SAFETY: AM rescan initialized the HNSW scan opaque on the live descriptor.
-    let opaque = debug_scan_opaque_mut(scan);
-    let before_head = current_candidate_frontier_head(opaque)
-        .map(|candidate| debug_item_pointer_coords(candidate.node));
-    let before_frontier = debug_candidate_frontier_slots(opaque);
+    let (
+        before_head,
+        before_frontier,
+        after_first_head,
+        after_first_frontier,
+        after_second_head,
+        after_second_frontier,
+    ) = debug_with_scan_opaque_mut(scan, |opaque| {
+        let before_head = current_candidate_frontier_head(opaque)
+            .map(|candidate| debug_item_pointer_coords(candidate.node));
+        let before_frontier = debug_candidate_frontier_slots(opaque);
 
-    // SAFETY: `opaque` belongs to the live scan and `index_relation` is held
-    // open by the guard while the bootstrap frontier is consumed/refilled.
-    let first_consumed = unsafe { consume_and_refill_bootstrap_frontier(index_relation, opaque) };
-    debug_assert_eq!(first_consumed.is_some(), before_head.is_some());
-    let after_first_head = current_candidate_frontier_head(opaque)
-        .map(|candidate| debug_item_pointer_coords(candidate.node));
-    let after_first_frontier = debug_candidate_frontier_slots(opaque);
+        let first_consumed = debug_consume_and_refill_bootstrap_frontier(index_relation, opaque);
+        debug_assert_eq!(first_consumed.is_some(), before_head.is_some());
+        let after_first_head = current_candidate_frontier_head(opaque)
+            .map(|candidate| debug_item_pointer_coords(candidate.node));
+        let after_first_frontier = debug_candidate_frontier_slots(opaque);
 
-    // SAFETY: `opaque` still belongs to the live scan and `index_relation` is
-    // held open while the second frontier consumption is probed.
-    unsafe { consume_and_refill_bootstrap_frontier(index_relation, opaque) };
-    let after_second_head = current_candidate_frontier_head(opaque)
-        .map(|candidate| debug_item_pointer_coords(candidate.node));
-    let after_second_frontier = debug_candidate_frontier_slots(opaque);
+        debug_consume_and_refill_bootstrap_frontier(index_relation, opaque);
+        let after_second_head = current_candidate_frontier_head(opaque)
+            .map(|candidate| debug_item_pointer_coords(candidate.node));
+        let after_second_frontier = debug_candidate_frontier_slots(opaque);
+        (
+            before_head,
+            before_frontier,
+            after_first_head,
+            after_first_frontier,
+            after_second_head,
+            after_second_frontier,
+        )
+    });
 
     // SAFETY: The scan descriptor is live and belongs to the HNSW AM.
     debug_am_end_scan(scan);
@@ -3613,7 +3569,7 @@ pub(crate) unsafe fn debug_consume_candidate_frontier_head(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_consume_candidate_frontier_head_slots(
+pub(crate) fn debug_consume_candidate_frontier_head_slots(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
 ) -> DebugCandidateFrontierSlotConsume {
@@ -3633,41 +3589,52 @@ pub(crate) unsafe fn debug_consume_candidate_frontier_head_slots(
     // valid one-key buffer.
     debug_am_rescan(scan, ptr::null_mut(), 0, &mut orderby, 1);
 
-    // SAFETY: AM rescan initialized the HNSW scan opaque on the live descriptor.
-    let opaque = debug_scan_opaque_mut(scan);
-    let before_head = current_candidate_frontier_head(opaque)
-        .map(|candidate| debug_item_pointer_coords(candidate.node));
-    let before_slots = debug_candidate_frontier_slots(opaque);
-    // SAFETY: `opaque` belongs to the live scan and `index_relation` is held
-    // open by the guard while the bootstrap frontier is consumed/refilled.
-    let consumed = unsafe { consume_and_refill_bootstrap_frontier(index_relation, opaque) };
-    let consumed_tid = consumed
-        .map(|candidate| (candidate.node.block_number, candidate.node.offset_number))
-        .unwrap_or((u32::MAX, u16::MAX));
-    let consumed_neighbors = consumed
-        .map(|candidate| {
-            // SAFETY: The consumed candidate came from the scan's graph
-            // frontier; adjacency loading validates the graph tuple body.
-            let (_, neighbors) = unsafe {
-                graph::load_exact_graph_adjacency(
+    let (
+        before_head,
+        before_slots,
+        consumed_tid,
+        consumed_neighbors,
+        after_head,
+        after_slots,
+        after_provenance_slots,
+    ) = debug_with_scan_opaque_mut(scan, |opaque| {
+        let before_head = current_candidate_frontier_head(opaque)
+            .map(|candidate| debug_item_pointer_coords(candidate.node));
+        let before_slots = debug_candidate_frontier_slots(opaque);
+        let consumed = debug_consume_and_refill_bootstrap_frontier(index_relation, opaque);
+        let consumed_tid = consumed
+            .map(|candidate| (candidate.node.block_number, candidate.node.offset_number))
+            .unwrap_or((u32::MAX, u16::MAX));
+        let consumed_neighbors = consumed
+            .map(|candidate| {
+                let (_, neighbors) = debug_load_graph_adjacency(
                     index_relation,
                     candidate.node,
                     opaque.scan_graph_storage,
-                )
-            };
-            neighbors
-                .tids
-                .into_iter()
-                .map(|tid| (tid.block_number, tid.offset_number))
-                .filter(|tid| *tid != (u32::MAX, u16::MAX))
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
+                );
+                neighbors
+                    .tids
+                    .into_iter()
+                    .map(|tid| (tid.block_number, tid.offset_number))
+                    .filter(|tid| *tid != (u32::MAX, u16::MAX))
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
 
-    let after_head = current_candidate_frontier_head(opaque)
-        .map(|candidate| debug_item_pointer_coords(candidate.node));
-    let after_slots = debug_candidate_frontier_slots(opaque);
-    let after_provenance_slots = debug_candidate_frontier_provenance_slots(opaque);
+        let after_head = current_candidate_frontier_head(opaque)
+            .map(|candidate| debug_item_pointer_coords(candidate.node));
+        let after_slots = debug_candidate_frontier_slots(opaque);
+        let after_provenance_slots = debug_candidate_frontier_provenance_slots(opaque);
+        (
+            before_head,
+            before_slots,
+            consumed_tid,
+            consumed_neighbors,
+            after_head,
+            after_slots,
+            after_provenance_slots,
+        )
+    });
 
     // SAFETY: The scan descriptor is live and belongs to the HNSW AM.
     debug_am_end_scan(scan);
@@ -3685,7 +3652,7 @@ pub(crate) unsafe fn debug_consume_candidate_frontier_head_slots(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_visited_seed_lifecycle(
+pub(crate) fn debug_visited_seed_lifecycle(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
 ) -> DebugVisitedSeedsLifecycle {
@@ -3705,9 +3672,7 @@ pub(crate) unsafe fn debug_visited_seed_lifecycle(
     // valid one-key buffer.
     debug_am_rescan(scan, ptr::null_mut(), 0, &mut orderby, 1);
 
-    // SAFETY: AM rescan initialized the HNSW scan opaque on the live descriptor.
-    let opaque = debug_scan_opaque(scan);
-    let before = debug_sorted_visited_tids(opaque);
+    let before = debug_with_scan_opaque(scan, debug_sorted_visited_tids);
 
     assert!(
         // SAFETY: AM rescan initialized the HNSW opaque, so gettuple may
@@ -3715,18 +3680,12 @@ pub(crate) unsafe fn debug_visited_seed_lifecycle(
         debug_am_gettuple(scan, pg_sys::ScanDirection::ForwardScanDirection),
         "visited-seed lifecycle helper requires a first tuple"
     );
-    // SAFETY: The scan descriptor remains live after gettuple and still owns its
-    // HNSW opaque for debug inspection.
-    let opaque = debug_scan_opaque(scan);
-    let partial = debug_sorted_visited_tids(opaque);
+    let partial = debug_with_scan_opaque(scan, debug_sorted_visited_tids);
 
     // SAFETY: AM rescan initialized the HNSW opaque, so repeated gettuple calls
     // may advance the live descriptor until exhaustion.
     while debug_am_gettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) {}
-    // SAFETY: The scan descriptor remains live after exhaustion and still owns
-    // its HNSW opaque for debug inspection.
-    let opaque = debug_scan_opaque(scan);
-    let exhausted = debug_sorted_visited_tids(opaque);
+    let exhausted = debug_with_scan_opaque(scan, debug_sorted_visited_tids);
 
     // SAFETY: The scan descriptor is live and belongs to the HNSW AM.
     debug_am_end_scan(scan);
@@ -3736,7 +3695,7 @@ pub(crate) unsafe fn debug_visited_seed_lifecycle(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_entry_candidate_lifecycle(
+pub(crate) fn debug_entry_candidate_lifecycle(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
 ) -> (
@@ -3768,18 +3727,18 @@ pub(crate) unsafe fn debug_entry_candidate_lifecycle(
     // valid one-key buffer.
     debug_am_rescan(scan, ptr::null_mut(), 0, &mut orderby, 1);
 
-    // SAFETY: AM rescan initialized the HNSW scan opaque on the live descriptor.
-    let opaque = debug_scan_opaque(scan);
-    let current = active_result_state_ref(opaque).current();
-    let (before_valid, before_tid, before_score) = if current.has_element() {
-        (
-            true,
-            debug_item_pointer_coords(current.element_tid()),
-            current.score(),
-        )
-    } else {
-        debug_candidate_slot(visible_frontier_slot(opaque, 0))
-    };
+    let (before_valid, before_tid, before_score) = debug_with_scan_opaque(scan, |opaque| {
+        let current = active_result_state_ref(opaque).current();
+        if current.has_element() {
+            (
+                true,
+                debug_item_pointer_coords(current.element_tid()),
+                current.score(),
+            )
+        } else {
+            debug_candidate_slot(visible_frontier_slot(opaque, 0))
+        }
+    });
 
     assert!(
         // SAFETY: AM rescan initialized the HNSW opaque, so gettuple may
@@ -3787,24 +3746,27 @@ pub(crate) unsafe fn debug_entry_candidate_lifecycle(
         debug_am_gettuple(scan, pg_sys::ScanDirection::ForwardScanDirection),
         "entry-candidate lifecycle helper requires a first tuple"
     );
-    // SAFETY: The scan descriptor remains live after gettuple and still owns its
-    // HNSW opaque for debug inspection.
-    let opaque = debug_scan_opaque(scan);
-    let (partial_valid, partial_tid, partial_score) =
-        debug_candidate_slot(visible_frontier_slot(opaque, 0));
-    let partial_result_tid =
-        debug_item_pointer_coords(active_result_state_ref(opaque).current().element_tid());
-    let partial_exhausted = opaque.execution_phase.is_exhausted();
+    let (partial_valid, partial_tid, partial_score, partial_result_tid, partial_exhausted) =
+        debug_with_scan_opaque(scan, |opaque| {
+            let (partial_valid, partial_tid, partial_score) =
+                debug_candidate_slot(visible_frontier_slot(opaque, 0));
+            (
+                partial_valid,
+                partial_tid,
+                partial_score,
+                debug_item_pointer_coords(active_result_state_ref(opaque).current().element_tid()),
+                opaque.execution_phase.is_exhausted(),
+            )
+        });
 
     // SAFETY: AM rescan initialized the HNSW opaque, so repeated gettuple calls
     // may advance the live descriptor until exhaustion.
     while debug_am_gettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) {}
 
-    // SAFETY: The scan descriptor remains live after exhaustion and still owns
-    // its HNSW opaque for debug inspection.
-    let opaque = debug_scan_opaque(scan);
     let (exhausted_valid, exhausted_tid, exhausted_score) =
-        debug_candidate_slot(visible_frontier_slot(opaque, 0));
+        debug_with_scan_opaque(scan, |opaque| {
+            debug_candidate_slot(visible_frontier_slot(opaque, 0))
+        });
 
     // SAFETY: The scan descriptor is live and belongs to the HNSW AM.
     debug_am_end_scan(scan);
@@ -3826,7 +3788,7 @@ pub(crate) unsafe fn debug_entry_candidate_lifecycle(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_gettuple_current_result_lifecycle(
+pub(crate) fn debug_gettuple_current_result_lifecycle(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
 ) -> (
@@ -3862,11 +3824,9 @@ pub(crate) unsafe fn debug_gettuple_current_result_lifecycle(
         debug_am_gettuple(scan, pg_sys::ScanDirection::ForwardScanDirection),
         "first tuple production should succeed for lifecycle debug helper"
     );
-    // SAFETY: The scan descriptor remains live after gettuple and still owns its
-    // HNSW opaque for debug inspection.
-    let opaque = debug_scan_opaque(scan);
-    let first_tid =
-        debug_item_pointer_coords(active_result_state_ref(opaque).current().element_tid());
+    let first_tid = debug_with_scan_opaque(scan, |opaque| {
+        debug_item_pointer_coords(active_result_state_ref(opaque).current().element_tid())
+    });
 
     assert!(
         // SAFETY: The live descriptor may be advanced again to sample the second
@@ -3874,25 +3834,26 @@ pub(crate) unsafe fn debug_gettuple_current_result_lifecycle(
         debug_am_gettuple(scan, pg_sys::ScanDirection::ForwardScanDirection),
         "second tuple production should succeed for duplicate-drain lifecycle debug helper"
     );
-    // SAFETY: The scan descriptor remains live after the second gettuple and
-    // still owns its HNSW opaque for debug inspection.
-    let opaque = debug_scan_opaque(scan);
-    let second_tid =
-        debug_item_pointer_coords(active_result_state_ref(opaque).current().element_tid());
-    let second_score = active_result_state_ref(opaque).current().score_valid();
-    let second_score_value = active_result_state_ref(opaque).current().score();
+    let (second_tid, second_score, second_score_value) = debug_with_scan_opaque(scan, |opaque| {
+        (
+            debug_item_pointer_coords(active_result_state_ref(opaque).current().element_tid()),
+            active_result_state_ref(opaque).current().score_valid(),
+            active_result_state_ref(opaque).current().score(),
+        )
+    });
 
     // SAFETY: AM rescan initialized the HNSW opaque, so repeated gettuple calls
     // may advance the live descriptor until exhaustion.
     while debug_am_gettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) {}
 
-    // SAFETY: The scan descriptor remains live after exhaustion and still owns
-    // its HNSW opaque for debug inspection.
-    let opaque = debug_scan_opaque(scan);
-    let exhausted_tid =
-        debug_item_pointer_coords(active_result_state_ref(opaque).current().element_tid());
-    let exhausted_score = active_result_state_ref(opaque).current().score_valid();
-    let exhausted_score_value = active_result_state_ref(opaque).current().score();
+    let (exhausted_tid, exhausted_score, exhausted_score_value) =
+        debug_with_scan_opaque(scan, |opaque| {
+            (
+                debug_item_pointer_coords(active_result_state_ref(opaque).current().element_tid()),
+                active_result_state_ref(opaque).current().score_valid(),
+                active_result_state_ref(opaque).current().score(),
+            )
+        });
 
     let mut rescan_orderby = pg_sys::ScanKeyData {
         sk_argument: query_datum,
@@ -3902,11 +3863,12 @@ pub(crate) unsafe fn debug_gettuple_current_result_lifecycle(
     // valid one-key buffer for this lifecycle rescan.
     debug_am_rescan(scan, ptr::null_mut(), 0, &mut rescan_orderby, 1);
 
-    // SAFETY: AM rescan refreshed the HNSW scan opaque on the live descriptor.
-    let opaque = debug_scan_opaque(scan);
-    let rescanned_tid =
-        debug_item_pointer_coords(active_result_state_ref(opaque).current().element_tid());
-    let rescanned_score = active_result_state_ref(opaque).current().score_valid();
+    let (rescanned_tid, rescanned_score) = debug_with_scan_opaque(scan, |opaque| {
+        (
+            debug_item_pointer_coords(active_result_state_ref(opaque).current().element_tid()),
+            active_result_state_ref(opaque).current().score_valid(),
+        )
+    });
 
     // SAFETY: The scan descriptor is live and belongs to the HNSW AM.
     debug_am_end_scan(scan);
@@ -3926,7 +3888,7 @@ pub(crate) unsafe fn debug_gettuple_current_result_lifecycle(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_gettuple_current_result_neighbors(
+pub(crate) fn debug_gettuple_current_result_neighbors(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
 ) -> (HeapTidCoords, usize) {
@@ -3944,9 +3906,9 @@ pub(crate) unsafe fn debug_gettuple_current_result_neighbors(
     // SAFETY: `scan` is live, there are no index quals, and `orderby` is a
     // valid one-key buffer.
     debug_am_rescan(scan, ptr::null_mut(), 0, &mut orderby, 1);
-    // SAFETY: AM rescan initialized the HNSW scan opaque on the live descriptor.
-    let opaque = debug_scan_opaque(scan);
-    let prefetched_tid = active_result_state_ref(opaque).current().element_tid();
+    let prefetched_tid = debug_with_scan_opaque(scan, |opaque| {
+        active_result_state_ref(opaque).current().element_tid()
+    });
     assert!(
         // SAFETY: AM rescan initialized the HNSW opaque, so gettuple may
         // advance the live descriptor for the neighbor sample.
@@ -3954,23 +3916,18 @@ pub(crate) unsafe fn debug_gettuple_current_result_neighbors(
         "neighbor debug helper requires a non-empty scan result"
     );
 
-    // SAFETY: The scan descriptor remains live after gettuple and still owns its
-    // HNSW opaque for debug inspection.
-    let opaque = debug_scan_opaque(scan);
-    let current_result_tid = if active_result_state_ref(opaque).current().has_element() {
-        active_result_state_ref(opaque).current().element_tid()
-    } else {
-        prefetched_tid
-    };
-    // SAFETY: `current_result_tid` was produced by the live scan, and adjacency
-    // loading validates the graph tuple body.
-    let (_element, neighbors) = unsafe {
-        graph::load_exact_graph_adjacency(
-            index_relation,
-            current_result_tid,
+    let (current_result_tid, scan_graph_storage) = debug_with_scan_opaque(scan, |opaque| {
+        (
+            if active_result_state_ref(opaque).current().has_element() {
+                active_result_state_ref(opaque).current().element_tid()
+            } else {
+                prefetched_tid
+            },
             opaque.scan_graph_storage,
         )
-    };
+    });
+    let (_element, neighbors) =
+        debug_load_graph_adjacency(index_relation, current_result_tid, scan_graph_storage);
 
     // SAFETY: The scan descriptor is live and belongs to the HNSW AM.
     debug_am_end_scan(scan);
@@ -3983,7 +3940,7 @@ pub(crate) unsafe fn debug_gettuple_current_result_neighbors(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_gettuple_current_result_heap_progress(
+pub(crate) fn debug_gettuple_current_result_heap_progress(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
 ) -> (
@@ -4015,14 +3972,13 @@ pub(crate) unsafe fn debug_gettuple_current_result_heap_progress(
         debug_am_gettuple(scan, pg_sys::ScanDirection::ForwardScanDirection),
         "heap-progress debug helper requires a first tuple"
     );
-    // SAFETY: The scan descriptor remains live after gettuple and still owns its
-    // HNSW opaque for debug inspection.
-    let opaque = debug_scan_opaque(scan);
-    let first_heap_tid =
-        debug_item_pointer_coords(active_result_state_ref(opaque).current().heap_tid());
-    let element_tid =
-        debug_item_pointer_coords(active_result_state_ref(opaque).current().element_tid());
-    let first_score = active_result_state_ref(opaque).current().score();
+    let (first_heap_tid, element_tid, first_score) = debug_with_scan_opaque(scan, |opaque| {
+        (
+            debug_item_pointer_coords(active_result_state_ref(opaque).current().heap_tid()),
+            debug_item_pointer_coords(active_result_state_ref(opaque).current().element_tid()),
+            active_result_state_ref(opaque).current().score(),
+        )
+    });
 
     assert!(
         // SAFETY: The live descriptor may be advanced again to sample duplicate
@@ -4030,14 +3986,14 @@ pub(crate) unsafe fn debug_gettuple_current_result_heap_progress(
         debug_am_gettuple(scan, pg_sys::ScanDirection::ForwardScanDirection),
         "heap-progress debug helper requires a duplicate tuple"
     );
-    // SAFETY: The scan descriptor remains live after the second gettuple and
-    // still owns its HNSW opaque for debug inspection.
-    let opaque = debug_scan_opaque(scan);
-    let second_heap_tid =
-        debug_item_pointer_coords(active_result_state_ref(opaque).current().heap_tid());
-    let second_element_tid =
-        debug_item_pointer_coords(active_result_state_ref(opaque).current().element_tid());
-    let second_score = active_result_state_ref(opaque).current().score();
+    let (second_heap_tid, second_element_tid, second_score) =
+        debug_with_scan_opaque(scan, |opaque| {
+            (
+                debug_item_pointer_coords(active_result_state_ref(opaque).current().heap_tid()),
+                debug_item_pointer_coords(active_result_state_ref(opaque).current().element_tid()),
+                active_result_state_ref(opaque).current().score(),
+            )
+        });
 
     // SAFETY: The scan descriptor is live and belongs to the HNSW AM.
     debug_am_end_scan(scan);
@@ -4054,7 +4010,7 @@ pub(crate) unsafe fn debug_gettuple_current_result_heap_progress(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_gettuple_backward_after_rescan(index_oid: pg_sys::Oid, query: Vec<f32>) {
+pub(crate) fn debug_gettuple_backward_after_rescan(index_oid: pg_sys::Oid, query: Vec<f32>) {
     let index_relation_guard =
         IndexRelationGuard::access_share(index_oid, "debug_gettuple_backward_after_rescan");
     let index_relation = index_relation_guard.as_ptr();
@@ -4075,7 +4031,7 @@ pub(crate) unsafe fn debug_gettuple_backward_after_rescan(index_oid: pg_sys::Oid
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_gettuple_rescan_after_exhaustion(
+pub(crate) fn debug_gettuple_rescan_after_exhaustion(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
 ) -> (Vec<HeapTidCoords>, Vec<HeapTidCoords>) {
@@ -4096,14 +4052,10 @@ pub(crate) unsafe fn debug_gettuple_rescan_after_exhaustion(
     debug_am_rescan(scan, ptr::null_mut(), 0, &mut orderby, 1);
 
     let mut first_pass = Vec::new();
-    // SAFETY: AM rescan initialized the HNSW opaque, so repeated gettuple calls
-    // may advance the live descriptor until exhaustion.
-    while debug_am_gettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) {
-        // SAFETY: A successful gettuple call populated `xs_heaptid` for this
-        // live index scan descriptor.
-        first_pass.push(pgrx::itemptr::item_pointer_get_both(unsafe {
-            (*scan).xs_heaptid
-        }));
+    while let Some(heap_tid) =
+        debug_am_gettuple_heap_tid(scan, pg_sys::ScanDirection::ForwardScanDirection)
+    {
+        first_pass.push(heap_tid);
     }
 
     let mut rescan_orderby = pg_sys::ScanKeyData {
@@ -4115,14 +4067,10 @@ pub(crate) unsafe fn debug_gettuple_rescan_after_exhaustion(
     debug_am_rescan(scan, ptr::null_mut(), 0, &mut rescan_orderby, 1);
 
     let mut rescanned = Vec::new();
-    // SAFETY: The second AM rescan reinitialized the HNSW opaque, so repeated
-    // gettuple calls may advance the live descriptor.
-    while debug_am_gettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) {
-        // SAFETY: A successful gettuple call populated `xs_heaptid` for this
-        // live index scan descriptor.
-        rescanned.push(pgrx::itemptr::item_pointer_get_both(unsafe {
-            (*scan).xs_heaptid
-        }));
+    while let Some(heap_tid) =
+        debug_am_gettuple_heap_tid(scan, pg_sys::ScanDirection::ForwardScanDirection)
+    {
+        rescanned.push(heap_tid);
     }
 
     // SAFETY: The scan descriptor is live and belongs to the HNSW AM.
@@ -4133,7 +4081,7 @@ pub(crate) unsafe fn debug_gettuple_rescan_after_exhaustion(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_gettuple_rescan_after_partial(
+pub(crate) fn debug_gettuple_rescan_after_partial(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
 ) -> (HeapTidCoords, Vec<HeapTidCoords>) {
@@ -4153,16 +4101,8 @@ pub(crate) unsafe fn debug_gettuple_rescan_after_partial(
     // valid one-key buffer.
     debug_am_rescan(scan, ptr::null_mut(), 0, &mut orderby, 1);
 
-    // SAFETY: AM rescan initialized the HNSW opaque, so gettuple may advance the
-    // live descriptor for the partial first pass.
-    let found_first = debug_am_gettuple(scan, pg_sys::ScanDirection::ForwardScanDirection);
-    assert!(
-        found_first,
-        "partial scan should yield at least one heap tid"
-    );
-    // SAFETY: The successful gettuple call populated `xs_heaptid` for this live
-    // index scan descriptor.
-    let first_tid = debug_scan_heap_tid(scan);
+    let first_tid = debug_am_gettuple_heap_tid(scan, pg_sys::ScanDirection::ForwardScanDirection)
+        .expect("partial scan should yield at least one heap tid");
 
     let mut rescan_orderby = pg_sys::ScanKeyData {
         sk_argument: query_datum,
@@ -4173,14 +4113,10 @@ pub(crate) unsafe fn debug_gettuple_rescan_after_partial(
     debug_am_rescan(scan, ptr::null_mut(), 0, &mut rescan_orderby, 1);
 
     let mut tids = Vec::new();
-    // SAFETY: The second AM rescan reinitialized the HNSW opaque, so repeated
-    // gettuple calls may advance the live descriptor.
-    while debug_am_gettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) {
-        // SAFETY: A successful gettuple call populated `xs_heaptid` for this
-        // live index scan descriptor.
-        tids.push(pgrx::itemptr::item_pointer_get_both(unsafe {
-            (*scan).xs_heaptid
-        }));
+    while let Some(heap_tid) =
+        debug_am_gettuple_heap_tid(scan, pg_sys::ScanDirection::ForwardScanDirection)
+    {
+        tids.push(heap_tid);
     }
 
     // SAFETY: The scan descriptor is live and belongs to the HNSW AM.
@@ -4191,24 +4127,20 @@ pub(crate) unsafe fn debug_gettuple_rescan_after_partial(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_entry_point_neighbor_tids(index_oid: pg_sys::Oid) -> Vec<HeapTidCoords> {
+pub(crate) fn debug_entry_point_neighbor_tids(index_oid: pg_sys::Oid) -> Vec<HeapTidCoords> {
     let index_relation_guard =
         IndexRelationGuard::access_share(index_oid, "debug_entry_point_neighbor_tids");
     let index_relation = index_relation_guard.as_ptr();
     // SAFETY: The relation guard keeps the index relation open while its
     // metadata page is read.
-    let metadata = unsafe { super::shared::read_metadata_page(index_relation) };
+    let metadata = debug_read_metadata_page(index_relation);
     if metadata.entry_point == page::ItemPointer::INVALID || metadata.dimensions == 0 {
         return Vec::new();
     }
 
-    // SAFETY: Metadata was read from the open index relation and validated
-    // enough to resolve the graph storage descriptor for debug inspection.
-    let storage = unsafe { debug_graph_storage(index_relation, &metadata) };
-    // SAFETY: The metadata entry point is valid, and adjacency loading validates
-    // the graph tuple body before returning neighbors.
+    let storage = debug_graph_storage(index_relation, &metadata);
     let (_element, neighbors) =
-        unsafe { graph::load_exact_graph_adjacency(index_relation, metadata.entry_point, storage) };
+        debug_load_graph_adjacency(index_relation, metadata.entry_point, storage);
     neighbors
         .tids
         .into_iter()

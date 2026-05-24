@@ -729,7 +729,7 @@
             "ec_hnsw_graph_hierarchy_summary",
         ));
 
-        let (_block_count, metadata, data_pages) = hnsw_recall_export_debug!(am::debug_index_pages(index_oid));
+        let (_block_count, metadata, data_pages) = am::debug_index_pages(index_oid);
         let m = metadata.m as usize;
         let code_len = code_len(metadata.dimensions as usize, metadata.bits);
 
@@ -924,7 +924,7 @@
             _grouped_traversal_budgeted_expansions,
             _grouped_traversal_budgeted_candidates,
             _grouped_traversal_budgeted_exact_candidates,
-        ) = hnsw_recall_export_debug!(am::debug_profile_ordered_scan(index_oid, query));
+        ) = am::debug_profile_ordered_scan(index_oid, query);
 
         TableIterator::once((
             rescan_elapsed_us,
@@ -1053,11 +1053,11 @@
             _grouped_traversal_budgeted_expansions,
             _grouped_traversal_budgeted_candidates,
             _grouped_traversal_budgeted_exact_candidates,
-        ) = hnsw_recall_export_debug!(am::debug_profile_ordered_scan_with_limit(
-                index_oid,
-                query,
-                Some(usize::try_from(limit_count).expect("limit count should fit in usize")),
-            ));
+        ) = am::debug_profile_ordered_scan_with_limit(
+            index_oid,
+            query,
+            Some(usize::try_from(limit_count).expect("limit count should fit in usize")),
+        );
 
         TableIterator::once((
             rescan_elapsed_us,
@@ -1128,12 +1128,12 @@
             result_count,
             slot_fetch_count,
             projected_count,
-        ) = hnsw_recall_export_debug!(am::debug_profile_ordered_scan_with_heap_fetch(
+        ) = am::debug_profile_ordered_scan_with_heap_fetch(
                 index_oid,
                 query,
                 usize::try_from(limit_count).expect("limit count should fit in usize"),
                 (project_attnum > 0).then_some(project_attnum),
-            ));
+            );
 
         TableIterator::once((
             rescan_elapsed_us,
@@ -1234,7 +1234,7 @@
             "tests.ec_hnsw_debug_pq_fastscan_runtime_settings_for_index",
         );
         let (_block_count, _m, _ef_construction, metadata) =
-            hnsw_recall_export_debug!(am::debug_index_metadata(index_oid));
+            am::debug_index_metadata(index_oid);
         let storage = hnsw_recall_export_debug!(
             am::graph::GraphStorageDescriptor::from_index_relation(
                 index_relation.as_ptr(),
@@ -1490,7 +1490,7 @@
         index_oid: pg_sys::Oid,
         query: Vec<f32>,
     ) -> PqFastScanScanOrderDriftSummaryValues {
-        hnsw_recall_export_debug!(am::debug_grouped_scan_order_drift_summary(index_oid, query))
+        am::debug_grouped_scan_order_drift_summary(index_oid, query)
     }
 
     fn pq_fastscan_scan_windowed_rows_values(
@@ -1498,7 +1498,7 @@
         query: Vec<f32>,
         window_size: i32,
     ) -> Vec<PqFastScanScanWindowedRowValues> {
-        hnsw_recall_export_debug!(am::debug_grouped_scan_windowed_rows(index_oid, query, window_size))
+        am::debug_grouped_scan_windowed_rows(index_oid, query, window_size)
             .into_iter()
             .map(
                 |(
@@ -1532,14 +1532,14 @@
         query: Vec<f32>,
         window_size: i32,
     ) -> PqFastScanScanWindowedSummaryValues {
-        hnsw_recall_export_debug!(am::debug_grouped_scan_windowed_summary(index_oid, query, window_size))
+        am::debug_grouped_scan_windowed_summary(index_oid, query, window_size)
     }
 
     fn pq_fastscan_scan_comparison_rows_values(
         index_oid: pg_sys::Oid,
         query: Vec<f32>,
     ) -> Vec<PqFastScanScanComparisonRowValues> {
-        hnsw_recall_export_debug!(am::debug_grouped_scan_comparison_rows(index_oid, query))
+        am::debug_grouped_scan_comparison_rows(index_oid, query)
             .into_iter()
             .map(
                 |(
@@ -1568,7 +1568,7 @@
         index_oid: pg_sys::Oid,
         query: Vec<f32>,
     ) -> PqFastScanScanComparisonSummaryValues {
-        hnsw_recall_export_debug!(am::debug_grouped_scan_comparison_summary(index_oid, query))
+        am::debug_grouped_scan_comparison_summary(index_oid, query)
     }
 
     fn debug_scan_hot_path_profile_values(
@@ -1630,7 +1630,7 @@
             grouped_traversal_budgeted_expansions,
             grouped_traversal_budgeted_candidates,
             grouped_traversal_budgeted_exact_candidates,
-        ) = hnsw_recall_export_debug!(am::debug_profile_ordered_scan(index_oid, query));
+        ) = am::debug_profile_ordered_scan(index_oid, query);
 
         (
             rescan_amrescan_total_elapsed_us,
@@ -1671,14 +1671,14 @@
         query: Vec<f32>,
         limit_count: i32,
     ) -> PqFastScanRerankProfileValues {
-        hnsw_recall_export_debug!(am::debug_grouped_rerank_profile(index_oid, query, limit_count))
+        am::debug_grouped_rerank_profile(index_oid, query, limit_count)
     }
 
     fn turboquant_scan_stage_profile_values(
         index_oid: pg_sys::Oid,
         query: Vec<f32>,
     ) -> TurboQuantScanStageProfileValues {
-        hnsw_recall_export_debug!(am::debug_turboquant_scan_stage_profile(index_oid, query))
+        am::debug_turboquant_scan_stage_profile(index_oid, query)
     }
 
     #[pg_extern]
@@ -2085,7 +2085,7 @@
             "tests.ec_hnsw_debug_scan_result_count",
         ));
 
-        i32::try_from(hnsw_recall_export_debug!(am::debug_gettuple_scan_heap_tids(index_oid, query)).len())
+        i32::try_from(am::debug_gettuple_scan_heap_tids(index_oid, query).len())
             .expect("debug scan result count should fit in i32")
     }
 
@@ -2099,7 +2099,7 @@
             "tests.ec_hnsw_debug_scan_heap_tids",
         ));
 
-        let rows = hnsw_recall_export_debug!(am::debug_gettuple_scan_heap_tids(index_oid, query))
+        let rows = am::debug_gettuple_scan_heap_tids(index_oid, query)
             .into_iter()
             .map(|(block_number, offset_number)| {
                 (i64::from(block_number), i32::from(offset_number))
@@ -2554,6 +2554,6 @@
             "tests.ec_hnsw_debug_reachable_live_element_count",
         ));
 
-        i32::try_from(hnsw_recall_export_debug!(am::debug_layer0_reachable_live_element_tids(index_oid)).len())
+        i32::try_from(am::debug_layer0_reachable_live_element_tids(index_oid).len())
             .expect("debug reachable live element count should fit in i32")
     }

@@ -1,0 +1,184 @@
+Script started on 2026-05-20 15:55:20-07:00 [<not executed on terminal>]
+commit f84ec0b6188bc5cd1ff383de6defe61ba8811837 (HEAD -> task-50-unsafe-closeout, origin/task-50-unsafe-closeout)
+Author:     Agent IX <agent@agent-ix.dev>
+AuthorDate: Wed May 20 15:55:00 2026 -0700
+Commit:     Agent IX <agent@agent-ix.dev>
+CommitDate: Wed May 20 15:55:00 2026 -0700
+
+    Make SPIRE relation store set safe to call
+---
+ src/am/ec_spire/coordinator/debug.rs                       |  7 ++-----
+ src/am/ec_spire/coordinator/diagnostics.rs                 | 14 ++++----------
+ .../ec_spire/coordinator/remote_candidates/scan_output.rs  | 14 ++++----------
+ src/am/ec_spire/coordinator/snapshots.rs                   | 14 +++++---------
+ src/am/ec_spire/storage/relation_store.rs                  |  2 +-
+ src/am/ec_spire/vacuum/mod.rs                              | 14 +++++---------
+ 6 files changed, 21 insertions(+), 44 deletions(-)
+
+diff --git a/src/am/ec_spire/coordinator/debug.rs b/src/am/ec_spire/coordinator/debug.rs
+index 5a709cb7..b6cf3470 100644
+--- a/src/am/ec_spire/coordinator/debug.rs
++++ b/src/am/ec_spire/coordinator/debug.rs
+@@ -370,15 +370,12 @@ pub(crate) unsafe fn debug_spire_relation_two_store_scan_roundtrip(
+             &object_manifest,
+             &placement_directory,
+         )?;
+-        // SAFETY: opens relation-backed object stores for the debug placement
+-        // directory while the root relation guard remains live.
+-        let relation_store_set = unsafe {
++        let relation_store_set =
+             storage::SpireRelationObjectStoreSet::for_index_relation_and_placements(
+                 root_relation.as_ptr(),
+                 &placement_directory,
+                 pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+-            )?
+-        };
++            )?;
+         let candidates = scan::collect_quantized_routed_probe_candidates(
+             &snapshot,
+             &relation_store_set,
+diff --git a/src/am/ec_spire/coordinator/diagnostics.rs b/src/am/ec_spire/coordinator/diagnostics.rs
+index 39b43ac3..189d0de2 100644
+--- a/src/am/ec_spire/coordinator/diagnostics.rs
++++ b/src/am/ec_spire/coordinator/diagnostics.rs
+@@ -137,15 +137,12 @@ pub(crate) unsafe fn index_boundary_replica_identity_snapshot(
+         }
+         let (_epoch_manifest, _object_manifest, placement_directory) =
+             load_relation_epoch_manifests_for_coordinator_fanout(index_relation, root_control)?;
+-        // SAFETY: placement_directory was decoded from the active relation
+-        // manifests and is used to open the corresponding local object stores.
+-        let object_store = unsafe {
++        let object_store =
+             storage::SpireRelationObjectStoreSet::for_index_relation_and_placements(
+                 index_relation,
+                 &placement_directory,
+                 pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+-            )?
+-        };
++            )?;
+         let mut groups = BTreeMap::<Vec<u8>, BoundaryReplicaIdentityAccumulator>::new();
+ 
+         for placement in &placement_directory.entries {
+@@ -250,15 +247,12 @@ pub(crate) unsafe fn index_boundary_replica_placement_diagnostics(
+                 index_relation,
+                 root_control,
+             )?;
+-        // SAFETY: placement_directory was decoded from the active relation
+-        // manifests and is used to open the corresponding local object stores.
+-        let object_store = unsafe {
++        let object_store =
+             storage::SpireRelationObjectStoreSet::for_index_relation_and_placements(
+                 index_relation,
+                 &placement_directory,
+                 pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+-            )?
+-        };
++            )?;
+         let mut groups = BTreeMap::<Vec<u8>, BoundaryReplicaPlacementAccumulator>::new();
+ 
+         for placement in &placement_directory.entries {
+diff --git a/src/am/ec_spire/coordinator/remote_candidates/scan_output.rs b/src/am/ec_spire/coordinator/remote_candidates/scan_output.rs
+index 273e4533..6c0b8557 100644
+--- a/src/am/ec_spire/coordinator/remote_candidates/scan_output.rs
++++ b/src/am/ec_spire/coordinator/remote_candidates/scan_output.rs
+@@ -135,15 +135,12 @@ pub(crate) unsafe fn remote_search_production_scan_handoff_summary_row(
+             &object_manifest,
+             &placement_directory,
+         )?;
+-        // SAFETY: opens relation-backed object stores for placements from the
+-        // published epoch snapshot while holding AccessShareLock.
+-        let object_store = unsafe {
++        let object_store =
+             storage::SpireRelationObjectStoreSet::for_index_relation_and_placements(
+                 index_relation,
+                 &placement_directory,
+                 pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+-            )?
+-        };
++            )?;
+         // SAFETY: reads PostgreSQL reloptions from the live index relation for
+         // scan planning only.
+         let relation_options = unsafe { options::relation_options(index_relation) };
+@@ -533,15 +530,12 @@ unsafe fn remote_search_production_scan_heap_resolution_result_stream_impl(
+             &object_manifest,
+             &placement_directory,
+         )?;
+-        // SAFETY: opens relation-backed object stores for placements from the
+-        // active published epoch while holding AccessShareLock.
+-        let object_store = unsafe {
++        let object_store =
+             storage::SpireRelationObjectStoreSet::for_index_relation_and_placements(
+                 index_relation,
+                 &placement_directory,
+                 pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+-            )?
+-        };
++            )?;
+         // SAFETY: reads PostgreSQL reloptions from the live index relation for
+         // scan-plan and candidate-limit resolution only.
+         let relation_options = unsafe { options::relation_options(index_relation) };
+diff --git a/src/am/ec_spire/coordinator/snapshots.rs b/src/am/ec_spire/coordinator/snapshots.rs
+index 2ccd95fc..5e196786 100644
+--- a/src/am/ec_spire/coordinator/snapshots.rs
++++ b/src/am/ec_spire/coordinator/snapshots.rs
+@@ -67,15 +67,11 @@ impl SpireLiveIndexRelation {
+         placement_directory: &meta::SpirePlacementDirectory,
+         lockmode: pg_sys::LOCKMODE,
+     ) -> Result<storage::SpireRelationObjectStoreSet, String> {
+-        // SAFETY: this wrapper is constructed only for a live SPIRE index
+-        // relation; placements come from the active epoch loaded from it.
+-        unsafe {
+-            storage::SpireRelationObjectStoreSet::for_index_relation_and_placements(
+-                self.relation,
+-                placement_directory,
+-                lockmode,
+-            )
+-        }
++        storage::SpireRelationObjectStoreSet::for_index_relation_and_placements(
++            self.relation,
++            placement_directory,
++            lockmode,
++        )
+     }
+ 
+     fn object_store(self) -> Result<storage::SpireRelationObjectStore, String> {
+diff --git a/src/am/ec_spire/storage/relation_store.rs b/src/am/ec_spire/storage/relation_store.rs
+index 5a1cc5c2..83105fb0 100644
+--- a/src/am/ec_spire/storage/relation_store.rs
++++ b/src/am/ec_spire/storage/relation_store.rs
+@@ -1305,7 +1305,7 @@ impl SpireRelationObjectStoreSet {
+         })
+     }
+ 
+-    pub(super) unsafe fn for_index_relation_and_placements(
++    pub(super) fn for_index_relation_and_placements(
+         index_relation: pg_sys::Relation,
+         placement_directory: &SpirePlacementDirectory,
+         lockmode: pg_sys::LOCKMODE,
+diff --git a/src/am/ec_spire/vacuum/mod.rs b/src/am/ec_spire/vacuum/mod.rs
+index 346c700a..6d0205b3 100644
+--- a/src/am/ec_spire/vacuum/mod.rs
++++ b/src/am/ec_spire/vacuum/mod.rs
+@@ -94,15 +94,11 @@ impl SpireVacuumIndexRelation {
+         placement_directory: &SpirePlacementDirectory,
+         lockmode: pg_sys::LOCKMODE,
+     ) -> Result<SpireRelationObjectStoreSet, String> {
+-        // SAFETY: placements were loaded from the active epoch for this live
+-        // relation; store guards own opened relation-backed objects.
+-        unsafe {
+-            SpireRelationObjectStoreSet::for_index_relation_and_placements(
+-                self.relation,
+-                placement_directory,
+-                lockmode,
+-            )
+-        }
++        SpireRelationObjectStoreSet::for_index_relation_and_placements(
++            self.relation,
++            placement_directory,
++            lockmode,
++        )
+     }
+ 
+     fn object_store_set_for_config(
+
+Script done on 2026-05-20 15:55:20-07:00 [COMMAND_EXIT_CODE="0"]

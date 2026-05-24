@@ -68,11 +68,8 @@ fn not_implemented(callback: &str) -> ! {
     pgrx::error!("ec_ivf {callback} is not implemented yet")
 }
 
-pub(crate) use self::admin::{
-    index_admin_snapshot, index_drift_snapshot, index_page_ownership, IndexAdminSnapshot,
-    IndexDriftSnapshot, IndexPageOwnershipSnapshot,
-};
-pub(crate) use self::cost::{index_cost_snapshot, IndexCostSnapshot};
+pub(crate) use self::admin::{index_admin_snapshot, index_drift_snapshot, index_page_ownership};
+pub(crate) use self::cost::index_cost_snapshot;
 pub use self::options::{RerankMode as IvfRerankMode, StorageFormat as IvfStorageFormat};
 pub use self::page::{
     BlockRef as IvfBlockRef, IvfCentroidTuple, IvfListDirectoryTuple, IvfPostingTuple,

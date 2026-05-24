@@ -23,6 +23,15 @@ use pgrx::{pg_sys, Spi};
 
 use self::storage::SpireObjectReader;
 
+const EC_SPIRE_AM_NAME: &core::ffi::CStr = c"ec_spire";
+
+pub(crate) fn ec_spire_access_method_oid() -> Option<pg_sys::Oid> {
+    // SAFETY: get_index_am_oid reads PostgreSQL syscache by static C string;
+    // missing AM is represented by InvalidOid because missing_ok is true.
+    let am_oid = unsafe { pg_sys::get_index_am_oid(EC_SPIRE_AM_NAME.as_ptr(), true) };
+    (am_oid != pg_sys::InvalidOid).then_some(am_oid)
+}
+
 pub(crate) use self::cost::{index_cost_snapshot, index_cost_tuning_snapshot};
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) use self::custom_scan::custom_scan_dml_plan_private_copy_roundtrip_for_test;
@@ -35,24 +44,33 @@ pub(crate) use self::custom_scan::{
     custom_scan_reset_rescan_snapshot_for_test,
 };
 pub(crate) use self::custom_scan::{
-    custom_scan_index_eligibility_row, custom_scan_status_row, register_custom_scan,
+    custom_scan_index_eligibility_result, custom_scan_status_row, register_custom_scan,
 };
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) use self::dml_frontdoor::dml_frontdoor_const_plan_param_list_info;
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) use self::dml_frontdoor::DmlFrontdoorQueryView;
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) use self::dml_frontdoor::SpireDmlFrontdoorPkValuePlan;
 pub(crate) use self::dml_frontdoor::{
-    classify_dml_frontdoor_query, SpireDmlFrontdoorCustomScanMode, SpireDmlFrontdoorPkValuePlan,
-    SpireDmlFrontdoorQueryContext,
+    classify_dml_frontdoor_query, SpireDmlFrontdoorCustomScanMode, SpireDmlFrontdoorQueryContext,
 };
 pub(crate) use self::dml_frontdoor::{
     dml_frontdoor_bigint_pk_value_bytes, dml_frontdoor_hook_status_row,
-    dml_frontdoor_pk_argument_from_replacement_decision,
     dml_frontdoor_pk_select_primitive_plan_expr_from_baserel,
-    dml_frontdoor_primitive_invocation_from_plan,
     dml_frontdoor_primitive_plan_const_pk_value_bytes,
-    dml_frontdoor_primitive_plan_expr_catalog_row, dml_frontdoor_primitive_plan_expr_from_baserel,
+    dml_frontdoor_primitive_plan_expr_from_baserel,
     dml_frontdoor_primitive_plan_from_replacement_decision,
-    dml_frontdoor_primitive_plan_pk_value_bytes, dml_frontdoor_relation_context_cache_row,
-    dml_frontdoor_relation_context_catalog_row, dml_frontdoor_relation_context_row,
-    dml_frontdoor_replacement_decision_catalog_row, dml_frontdoor_target_relation_oid,
-    register_dml_frontdoor_planner_hook,
+    dml_frontdoor_relation_context_cache_row, dml_frontdoor_relation_context_catalog_row,
+    dml_frontdoor_relation_context_row, dml_frontdoor_replacement_decision_catalog_row,
+    dml_frontdoor_target_relation_oid, register_dml_frontdoor_planner_hook,
+    with_analyzed_dml_frontdoor_query_view, with_dml_frontdoor_baserel_view,
+};
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) use self::dml_frontdoor::{
+    dml_frontdoor_param_list_info, dml_frontdoor_pk_argument_from_replacement_decision,
+    dml_frontdoor_primitive_invocation_from_plan, dml_frontdoor_primitive_plan_expr_catalog_row,
+    dml_frontdoor_primitive_plan_pk_value_bytes,
 };
 pub use self::meta::{
     SpireConsistencyMode, SpireEpochManifest, SpireEpochState, SpireLocalStoreConfig,

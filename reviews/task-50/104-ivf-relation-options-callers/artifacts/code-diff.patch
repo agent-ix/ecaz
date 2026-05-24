@@ -1,0 +1,47 @@
+Script started on 2026-05-20 16:24:05-07:00 [<not executed on terminal>]
+commit 2ca55d98fbabaedd0e677a890e8ea9f7be121167 (HEAD -> task-50-unsafe-closeout, origin/task-50-unsafe-closeout)
+Author:     Agent IX <agent@agent-ix.dev>
+AuthorDate: Wed May 20 16:23:44 2026 -0700
+Commit:     Agent IX <agent@agent-ix.dev>
+CommitDate: Wed May 20 16:23:44 2026 -0700
+
+    Make IVF relation options safe to call
+---
+ src/am/ec_ivf/admin.rs   | 4 ++--
+ src/am/ec_ivf/options.rs | 5 ++++-
+ 2 files changed, 6 insertions(+), 3 deletions(-)
+
+diff --git a/src/am/ec_ivf/admin.rs b/src/am/ec_ivf/admin.rs
+index 20c7006a..3a3b2029 100644
+--- a/src/am/ec_ivf/admin.rs
++++ b/src/am/ec_ivf/admin.rs
+@@ -139,9 +139,9 @@ pub(crate) unsafe fn index_drift_snapshot(index_relation: pg_sys::Relation) -> I
+ 
+ pub(crate) unsafe fn index_admin_snapshot(index_relation: pg_sys::Relation) -> IndexAdminSnapshot {
+     // SAFETY: `index_relation` is a live IVF index relation supplied by a SQL
+-    // diagnostic wrapper; metadata and reloptions are read without ownership.
++    // diagnostic wrapper; metadata is read without ownership.
+     let metadata = page::read_metadata_page(index_relation);
+-    let index_options = unsafe { options::relation_options(index_relation) };
++    let index_options = options::relation_options(index_relation);
+     let nprobe = options::resolve_scan_nprobe(metadata.nlists, metadata.nprobe);
+     let rerank_width = options::resolve_scan_rerank_width(index_options.rerank_width);
+     // SAFETY: the same live index relation is reused for the nested diagnostic
+diff --git a/src/am/ec_ivf/options.rs b/src/am/ec_ivf/options.rs
+index 861e86e3..3fb12ac4 100644
+--- a/src/am/ec_ivf/options.rs
++++ b/src/am/ec_ivf/options.rs
+@@ -395,7 +395,10 @@ unsafe fn read_string_reloption(
+     Some(value.to_owned())
+ }
+ 
+-pub(super) unsafe fn relation_options(index_relation: pg_sys::Relation) -> EcIvfOptions {
++pub(super) fn relation_options(index_relation: pg_sys::Relation) -> EcIvfOptions {
++    if index_relation.is_null() {
++        pgrx::error!("ec_ivf relation options need a valid index relation");
++    }
+     // SAFETY: callers pass a live PostgreSQL relation; reading `rd_options` does
+     // not take ownership and PostgreSQL keeps the relcache entry valid here.
+     let rd_options = unsafe { (*index_relation).rd_options };
+
+Script done on 2026-05-20 16:24:05-07:00 [COMMAND_EXIT_CODE="0"]

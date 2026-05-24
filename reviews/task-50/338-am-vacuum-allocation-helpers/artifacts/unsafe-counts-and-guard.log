@@ -1,0 +1,13 @@
+Script started on 2026-05-21 16:13:20-07:00 [<not executed on terminal>]
+src unsafe blocks: 1327
+
+AM vacuum alloc0 hits:
+src/am/common/vacuum.rs
+18:    let stats = unsafe { PgBox::<pg_sys::IndexBulkDeleteResult>::alloc0().into_pg() };
+25:    unsafe { PgBox::<pg_sys::IndexVacuumInfo>::alloc0() }
+
+raw boundary guard hits:
+src/am/ec_hnsw/options.rs
+299:pub(crate) fn relation_options(index_relation: pg_sys::Relation) -> TqHnswOptions {
+
+Script done on 2026-05-21 16:13:20-07:00 [COMMAND_EXIT_CODE="0"]
