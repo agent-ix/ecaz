@@ -157,16 +157,15 @@ fn debug_read_main_buffer(
     index_relation: pg_sys::Relation,
     block_number: pg_sys::BlockNumber,
 ) -> LockedBufferGuard {
-    // SAFETY: Debug callers pass a live index relation and a block number
-    // bounded by `debug_main_fork_block_count`; the guard owns the shared lock.
-    unsafe {
-        LockedBufferGuard::read_main(
-            index_relation,
-            block_number,
-            pg_sys::ReadBufferMode::RBM_NORMAL,
-            pg_sys::BUFFER_LOCK_SHARE as i32,
-        )
-    }
+    let handle = std::ptr::NonNull::new(index_relation).unwrap_or_else(|| {
+        pgrx::error!("ec_hnsw debug helper received a null index relation")
+    });
+    LockedBufferGuard::read_main_handle(
+        handle,
+        block_number,
+        pg_sys::ReadBufferMode::RBM_NORMAL,
+        pg_sys::BUFFER_LOCK_SHARE as i32,
+    )
     .unwrap_or_else(|| pgrx::error!("ec_hnsw debug failed to open graph block {block_number}"))
 }
 
