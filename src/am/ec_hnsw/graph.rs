@@ -1271,18 +1271,16 @@ fn read_page_tuple<T, DecodeFn>(
 where
     DecodeFn: FnOnce(&[u8]) -> Result<T, String>,
 {
-    // SAFETY: callers supply a live index relation; the block number comes
-    // from an index tuple TID, and the guard pins and share-locks the page
-    // before any tuple bytes are inspected.
-    let buffer = unsafe {
-        LockedBufferGuard::read_main(
-            index_relation,
-            tuple_tid.block_number,
-            pg_sys::ReadBufferMode::RBM_NORMAL,
-            pg_sys::BUFFER_LOCK_SHARE as i32,
-        )
-    };
-    let buffer = buffer.unwrap_or_else(|| {
+    let handle = std::ptr::NonNull::new(index_relation).unwrap_or_else(|| {
+        pgrx::error!("ec_hnsw graph read_page_tuple received a null index relation")
+    });
+    let buffer = LockedBufferGuard::read_main_handle(
+        handle,
+        tuple_tid.block_number,
+        pg_sys::ReadBufferMode::RBM_NORMAL,
+        pg_sys::BUFFER_LOCK_SHARE as i32,
+    )
+    .unwrap_or_else(|| {
         pgrx::error!(
             "ec_hnsw graph read failed to open block {} for {tuple_kind} tuple",
             tuple_tid.block_number
