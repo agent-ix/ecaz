@@ -78,7 +78,8 @@ impl Profile {
     pub fn ebs_gb(self) -> u64 {
         match self {
             Profile::P10k => 20,
-            Profile::P10kMedium | Profile::Dev => 50,
+            Profile::Dev => 50,
+            Profile::P10kMedium => 100,
             Profile::P1m => 100,
             Profile::P10m => 500,
             Profile::P100m => 2048,

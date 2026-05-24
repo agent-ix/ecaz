@@ -1,6 +1,6 @@
 profile              = "10k-medium"
 db_instance_type     = "m8g.xlarge"
-db_volume_gb         = 50
+db_volume_gb         = 100
 loader_instance_type = "c8g.medium"
 ecaz_git_ref         = "main"
 region               = "us-west-2"
@@ -15,9 +15,9 @@ ssh_key_name         = "ecaz-bench"
 #   without OOM; 16 GB gives headroom without configuring swap, and
 #   the extra cores keep the SSM agent responsive during criterion +
 #   perf-stat runs without taskset pinning.
-# - Same EBS volume size as 10k. Snapshot/restore is interchangeable
-#   between the two profiles -- the volume is identical, only the
-#   instance type changes.
+# - Uses the retained 100 GB data volume required by the preserved 1M
+#   IVF/RaBitQ benchmark snapshot. The instance type changes without
+#   reloading or rebuilding the preserved corpus/index.
 # - Roughly 2x the per-hour cost of `10k.tfvars` (~$0.32/hr vs
 #   ~$0.16/hr), but cycle wall-time is roughly half, so total spend
 #   is comparable.

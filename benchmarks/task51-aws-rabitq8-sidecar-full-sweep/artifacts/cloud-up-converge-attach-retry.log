@@ -1,0 +1,8 @@
+
+   0: [91mterraform ["apply", "-auto-approve", "-input=false", "-no-color", "-state=/home/peter/.local/share/ecaz/cloud/10k-medium/terraform.tfstate", "-var-file=/home/peter/dev/ecaz/infra/cloud/terraform/profiles/10k-medium.tfvars", "-var=ecaz_git_ref=aws-optimization-ivf-rabitq-spire", "-var=from_snapshot_id=snap-0b72153293b0b749b"] failed: exit status: 1[0m
+
+Location:
+   [35mcrates/ecaz-cloud/src/terraform.rs[0m:[35m133[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.
