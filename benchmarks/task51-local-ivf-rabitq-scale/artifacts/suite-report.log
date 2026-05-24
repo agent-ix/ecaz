@@ -1,0 +1,134 @@
+# Suite Report: task51-local-ivf-rabitq-scale
+
+- config: `benchmarks/task51-local-ivf-rabitq-scale/suite.json`
+- config_sha256: `f68467c43a9e89d405922f6778e7baa3b07789db064b35745db779e2b83c1bc3`
+- dry_run: `false`
+- steps: completed 20, failed 0, skipped 0, dry-run 0, missing artifacts 0, stale 0
+
+| Step | Kind | Status | Duration ms | Artifacts |
+| --- | --- | --- | ---: | --- |
+| load-50k-rabitq1-n64-w50 | load | Succeeded | 54299 | `benchmarks/task51-local-ivf-rabitq-scale/artifacts/load-50k-rabitq1-n64-w50.log` |
+| recall-50k-rabitq1-n64-w50 | recall | Succeeded | 160528 | `benchmarks/task51-local-ivf-rabitq-scale/artifacts/recall-50k-rabitq1-n64-w50.log` |
+| latency-50k-rabitq1-n64-w50 | latency | Succeeded | 96808 | `benchmarks/task51-local-ivf-rabitq-scale/artifacts/latency-50k-rabitq1-n64-w50.log` |
+| storage-50k-rabitq1-n64-w50 | storage | Succeeded | 28 | `benchmarks/task51-local-ivf-rabitq-scale/artifacts/storage-50k-rabitq1-n64-w50.log` |
+| explain-50k-rabitq1-n64-w50 | explain | Succeeded | 212 | `benchmarks/task51-local-ivf-rabitq-scale/artifacts/explain-50k-rabitq1-n64-w50.sql`<br>`benchmarks/task51-local-ivf-rabitq-scale/artifacts/explain-50k-rabitq1-n64-w50.log` |
+| load-50k-rabitq1-n128-w50 | load | Succeeded | 64055 | `benchmarks/task51-local-ivf-rabitq-scale/artifacts/load-50k-rabitq1-n128-w50.log` |
+| recall-50k-rabitq1-n128-w50 | recall | Succeeded | 115724 | `benchmarks/task51-local-ivf-rabitq-scale/artifacts/recall-50k-rabitq1-n128-w50.log` |
+| latency-50k-rabitq1-n128-w50 | latency | Succeeded | 103752 | `benchmarks/task51-local-ivf-rabitq-scale/artifacts/latency-50k-rabitq1-n128-w50.log` |
+| storage-50k-rabitq1-n128-w50 | storage | Succeeded | 25 | `benchmarks/task51-local-ivf-rabitq-scale/artifacts/storage-50k-rabitq1-n128-w50.log` |
+| explain-50k-rabitq1-n128-w50 | explain | Succeeded | 112 | `benchmarks/task51-local-ivf-rabitq-scale/artifacts/explain-50k-rabitq1-n128-w50.sql`<br>`benchmarks/task51-local-ivf-rabitq-scale/artifacts/explain-50k-rabitq1-n128-w50.log` |
+| load-100k-rabitq1-n64-w50 | load | Succeeded | 103672 | `benchmarks/task51-local-ivf-rabitq-scale/artifacts/load-100k-rabitq1-n64-w50.log` |
+| recall-100k-rabitq1-n64-w50 | recall | Succeeded | 307692 | `benchmarks/task51-local-ivf-rabitq-scale/artifacts/recall-100k-rabitq1-n64-w50.log` |
+| latency-100k-rabitq1-n64-w50 | latency | Succeeded | 180163 | `benchmarks/task51-local-ivf-rabitq-scale/artifacts/latency-100k-rabitq1-n64-w50.log` |
+| storage-100k-rabitq1-n64-w50 | storage | Succeeded | 35 | `benchmarks/task51-local-ivf-rabitq-scale/artifacts/storage-100k-rabitq1-n64-w50.log` |
+| explain-100k-rabitq1-n64-w50 | explain | Succeeded | 401 | `benchmarks/task51-local-ivf-rabitq-scale/artifacts/explain-100k-rabitq1-n64-w50.sql`<br>`benchmarks/task51-local-ivf-rabitq-scale/artifacts/explain-100k-rabitq1-n64-w50.log` |
+| load-100k-rabitq1-n128-w50 | load | Succeeded | 109460 | `benchmarks/task51-local-ivf-rabitq-scale/artifacts/load-100k-rabitq1-n128-w50.log` |
+| recall-100k-rabitq1-n128-w50 | recall | Succeeded | 200832 | `benchmarks/task51-local-ivf-rabitq-scale/artifacts/recall-100k-rabitq1-n128-w50.log` |
+| latency-100k-rabitq1-n128-w50 | latency | Succeeded | 195847 | `benchmarks/task51-local-ivf-rabitq-scale/artifacts/latency-100k-rabitq1-n128-w50.log` |
+| storage-100k-rabitq1-n128-w50 | storage | Succeeded | 38 | `benchmarks/task51-local-ivf-rabitq-scale/artifacts/storage-100k-rabitq1-n128-w50.log` |
+| explain-100k-rabitq1-n128-w50 | explain | Succeeded | 251 | `benchmarks/task51-local-ivf-rabitq-scale/artifacts/explain-100k-rabitq1-n128-w50.sql`<br>`benchmarks/task51-local-ivf-rabitq-scale/artifacts/explain-100k-rabitq1-n128-w50.log` |
+
+## Parsed Results
+
+| Step | Kind | Metric | Values |
+| --- | --- | --- | --- |
+| load-50k-rabitq1-n64-w50 | load | load_timing | `phase=copy_corpus`, `seconds=23.220000`, `subject=task51_local_50k_ivf_rabitq1_n64_w50_corpus` |
+| load-50k-rabitq1-n64-w50 | load | load_timing | `phase=encode_corpus`, `seconds=9.130000`, `subject=task51_local_50k_ivf_rabitq1_n64_w50_corpus` |
+| load-50k-rabitq1-n64-w50 | load | load_timing | `phase=copy_queries`, `seconds=0.491260`, `subject=task51_local_50k_ivf_rabitq1_n64_w50_queries` |
+| load-50k-rabitq1-n64-w50 | load | load_timing | `phase=build_index`, `seconds=15.070000`, `subject=task51_local_50k_ivf_rabitq1_n64_w50_rabitq_idx` |
+| load-50k-rabitq1-n64-w50 | load | load_timing | `phase=total`, `seconds=54.290000`, `subject=task51_local_50k_ivf_rabitq1_n64_w50` |
+| recall-50k-rabitq1-n64-w50 | recall | recall | `mean q-time=52.70 ms`, `ndcg@k=0.9978`, `nprobe=16`, `queries=200`, `recall@k=0.9635`, `recall_ci95_high=0.9709`, `recall_ci95_low=0.9544`, `recall_p10=0.9000`, `recall_p50=1.0000`, `recall_p90=1.0000`, `recall_trials=2000` |
+| recall-50k-rabitq1-n64-w50 | recall | recall | `mean q-time=97.91 ms`, `ndcg@k=0.9992`, `nprobe=32`, `queries=200`, `recall@k=0.9875`, `recall_ci95_high=0.9915`, `recall_ci95_low=0.9816`, `recall_p10=0.9000`, `recall_p50=1.0000`, `recall_p90=1.0000`, `recall_trials=2000` |
+| recall-50k-rabitq1-n64-w50 | recall | recall | `mean q-time=141.40 ms`, `ndcg@k=0.9997`, `nprobe=48`, `queries=200`, `recall@k=0.9950`, `recall_ci95_high=0.9973`, `recall_ci95_low=0.9908`, `recall_p10=1.0000`, `recall_p50=1.0000`, `recall_p90=1.0000`, `recall_trials=2000` |
+| recall-50k-rabitq1-n64-w50 | recall | recall | `mean q-time=194.74 ms`, `ndcg@k=1.0000`, `nprobe=64`, `queries=200`, `recall@k=0.9975`, `recall_ci95_high=0.9989`, `recall_ci95_low=0.9942`, `recall_p10=1.0000`, `recall_p50=1.0000`, `recall_p90=1.0000`, `recall_trials=2000` |
+| latency-50k-rabitq1-n64-w50 | latency | latency | `count=200`, `max=84.5 ms`, `mean=49.2 ms`, `min=37.8 ms`, `nprobe=16`, `p50=47.8 ms`, `p95=60.6 ms`, `p99=65.6 ms`, `stddev=6.20 ms` |
+| latency-50k-rabitq1-n64-w50 | latency | latency | `count=200`, `max=140.0 ms`, `mean=95.1 ms`, `min=76.0 ms`, `nprobe=32`, `p50=93.1 ms`, `p95=115.6 ms`, `p99=121.5 ms`, `stddev=10.4 ms` |
+| latency-50k-rabitq1-n64-w50 | latency | latency | `count=200`, `max=202.4 ms`, `mean=141.5 ms`, `min=120.2 ms`, `nprobe=48`, `p50=140.6 ms`, `p95=164.2 ms`, `p99=175.5 ms`, `stddev=13.1 ms` |
+| latency-50k-rabitq1-n64-w50 | latency | latency | `count=200`, `max=228.2 ms`, `mean=192.0 ms`, `min=175.9 ms`, `nprobe=64`, `p50=190.2 ms`, `p95=214.7 ms`, `p99=220.5 ms`, `stddev=11.1 ms` |
+| storage-50k-rabitq1-n64-w50 | storage | storage_field | `field=prefix`, `value=task51_local_50k_ivf_rabitq1_n64_w50` |
+| storage-50k-rabitq1-n64-w50 | storage | storage_field | `field=corpus`, `value=task51_local_50k_ivf_rabitq1_n64_w50_corpus` |
+| storage-50k-rabitq1-n64-w50 | storage | storage_field | `field=rows`, `value=50000` |
+| storage-50k-rabitq1-n64-w50 | storage | storage_field | `field=heap`, `value=6.5 MiB` |
+| storage-50k-rabitq1-n64-w50 | storage | storage_field | `field=table (heap + toast + fsm/vm)`, `value=796.7 MiB` |
+| storage-50k-rabitq1-n64-w50 | storage | storage_field | `field=indexes`, `value=17.4 MiB` |
+| storage-50k-rabitq1-n64-w50 | storage | storage_field | `field=total`, `value=814.1 MiB` |
+| storage-50k-rabitq1-n64-w50 | storage | storage_field | `field=per row (total)`, `value=17072.5 B` |
+| storage-50k-rabitq1-n64-w50 | storage | storage_field | `field=per row (heap only)`, `value=136.8 B` |
+| storage-50k-rabitq1-n64-w50 | storage | storage_index | `access method=ec_ivf`, `index=task51_local_50k_ivf_rabitq1_n64_w50_rabitq_idx`, `per row=319.8 B`, `profile=ec_ivf`, `reloptions={nlists=64,nprobe=64,training_sample_rows=10000,quant_bits=1,rerank=heap_f32,rerank_width=50,storage_format=rabitq}`, `size=15.2 MiB` |
+| storage-50k-rabitq1-n64-w50 | storage | storage_index | `access method=btree`, `index=task51_local_50k_ivf_rabitq1_n64_w50_corpus_pkey`, `per row=45.1 B`, `profile=<unknown>`, `reloptions={}`, `size=2.1 MiB` |
+| explain-50k-rabitq1-n64-w50 | explain | planner_cost | `average_list_live_count=781.25`, `cpu_operator_cost=0.0025`, `dimensions=1536`, `effective_nprobe=64`, `effective_nprobe_source=session`, `estimated_candidate_rows=50000`, `estimated_centroid_scores=64`, `estimated_posting_pages=1902`, `estimated_selected_lists=64`, `index_pages=1952`, `modeled_correlation=0`, `modeled_selectivity=1`, `modeled_startup_cost=55.4576`, `modeled_total_cost=3123.8576000000003`, `nlists=64`, `ordering_compare_type=COMPARE_LT`, `pg18_strategy_translation_ready=t`, `pg18_tree_height_callback_ready=t`, `planner_gate_reason=planner scan selection is live: Task 28 IVF cost model active`, `planner_scan_enabled=t`, `random_page_cost=4`, `relation_nprobe=64`, `reltuples=50000`, `rerank=heap_f32`, `rerank_multiplier=1.35`, `resolved_tree_height=0`, `scoring_mode=rabitq_binary`, `scoring_multiplier=0.45`, `seq_page_cost=1`, `session_nprobe=64`, `storage_format=rabitq`, `tree_height_source=amgettreeheight_callback` |
+| load-50k-rabitq1-n128-w50 | load | load_timing | `phase=copy_corpus`, `seconds=25.650000`, `subject=task51_local_50k_ivf_rabitq1_n128_w50_corpus` |
+| load-50k-rabitq1-n128-w50 | load | load_timing | `phase=encode_corpus`, `seconds=6.830000`, `subject=task51_local_50k_ivf_rabitq1_n128_w50_corpus` |
+| load-50k-rabitq1-n128-w50 | load | load_timing | `phase=copy_queries`, `seconds=0.437580`, `subject=task51_local_50k_ivf_rabitq1_n128_w50_queries` |
+| load-50k-rabitq1-n128-w50 | load | load_timing | `phase=build_index`, `seconds=25.520000`, `subject=task51_local_50k_ivf_rabitq1_n128_w50_rabitq_idx` |
+| load-50k-rabitq1-n128-w50 | load | load_timing | `phase=total`, `seconds=64.050000`, `subject=task51_local_50k_ivf_rabitq1_n128_w50` |
+| recall-50k-rabitq1-n128-w50 | recall | recall | `mean q-time=26.14 ms`, `ndcg@k=0.9960`, `nprobe=16`, `queries=200`, `recall@k=0.9450`, `recall_ci95_high=0.9542`, `recall_ci95_low=0.9341`, `recall_p10=0.8000`, `recall_p50=1.0000`, `recall_p90=1.0000`, `recall_trials=2000` |
+| recall-50k-rabitq1-n128-w50 | recall | recall | `mean q-time=53.60 ms`, `ndcg@k=0.9992`, `nprobe=32`, `queries=200`, `recall@k=0.9800`, `recall_ci95_high=0.9853`, `recall_ci95_low=0.9729`, `recall_p10=0.9000`, `recall_p50=1.0000`, `recall_p90=1.0000`, `recall_trials=2000` |
+| recall-50k-rabitq1-n128-w50 | recall | recall | `mean q-time=104.59 ms`, `ndcg@k=0.9998`, `nprobe=64`, `queries=200`, `recall@k=0.9940`, `recall_ci95_high=0.9966`, `recall_ci95_low=0.9895`, `recall_p10=1.0000`, `recall_p50=1.0000`, `recall_p90=1.0000`, `recall_trials=2000` |
+| recall-50k-rabitq1-n128-w50 | recall | recall | `mean q-time=144.99 ms`, `ndcg@k=1.0000`, `nprobe=96`, `queries=200`, `recall@k=0.9975`, `recall_ci95_high=0.9989`, `recall_ci95_low=0.9942`, `recall_p10=1.0000`, `recall_p50=1.0000`, `recall_p90=1.0000`, `recall_trials=2000` |
+| recall-50k-rabitq1-n128-w50 | recall | recall | `mean q-time=202.30 ms`, `ndcg@k=1.0000`, `nprobe=128`, `queries=200`, `recall@k=0.9975`, `recall_ci95_high=0.9989`, `recall_ci95_low=0.9942`, `recall_p10=1.0000`, `recall_p50=1.0000`, `recall_p90=1.0000`, `recall_trials=2000` |
+| latency-50k-rabitq1-n128-w50 | latency | latency | `count=200`, `max=48.0 ms`, `mean=31.0 ms`, `min=19.9 ms`, `nprobe=16`, `p50=30.4 ms`, `p95=41.0 ms`, `p99=43.9 ms`, `stddev=5.39 ms` |
+| latency-50k-rabitq1-n128-w50 | latency | latency | `count=200`, `max=77.5 ms`, `mean=51.0 ms`, `min=37.0 ms`, `nprobe=32`, `p50=49.6 ms`, `p95=67.4 ms`, `p99=74.9 ms`, `stddev=8.04 ms` |
+| latency-50k-rabitq1-n128-w50 | latency | latency | `count=200`, `max=126.3 ms`, `mean=93.4 ms`, `min=79.3 ms`, `nprobe=64`, `p50=91.6 ms`, `p95=111.7 ms`, `p99=120.1 ms`, `stddev=9.13 ms` |
+| latency-50k-rabitq1-n128-w50 | latency | latency | `count=200`, `max=188.9 ms`, `mean=141.1 ms`, `min=122.9 ms`, `nprobe=96`, `p50=138.5 ms`, `p95=162.6 ms`, `p99=172.7 ms`, `stddev=12.1 ms` |
+| latency-50k-rabitq1-n128-w50 | latency | latency | `count=200`, `max=259.4 ms`, `mean=195.4 ms`, `min=176.1 ms`, `nprobe=128`, `p50=192.0 ms`, `p95=223.5 ms`, `p99=235.9 ms`, `stddev=13.9 ms` |
+| storage-50k-rabitq1-n128-w50 | storage | storage_field | `field=prefix`, `value=task51_local_50k_ivf_rabitq1_n128_w50` |
+| storage-50k-rabitq1-n128-w50 | storage | storage_field | `field=corpus`, `value=task51_local_50k_ivf_rabitq1_n128_w50_corpus` |
+| storage-50k-rabitq1-n128-w50 | storage | storage_field | `field=rows`, `value=50000` |
+| storage-50k-rabitq1-n128-w50 | storage | storage_field | `field=heap`, `value=6.5 MiB` |
+| storage-50k-rabitq1-n128-w50 | storage | storage_field | `field=table (heap + toast + fsm/vm)`, `value=796.7 MiB` |
+| storage-50k-rabitq1-n128-w50 | storage | storage_field | `field=indexes`, `value=18.1 MiB` |
+| storage-50k-rabitq1-n128-w50 | storage | storage_field | `field=total`, `value=814.8 MiB` |
+| storage-50k-rabitq1-n128-w50 | storage | storage_field | `field=per row (total)`, `value=17086.7 B` |
+| storage-50k-rabitq1-n128-w50 | storage | storage_field | `field=per row (heap only)`, `value=136.8 B` |
+| storage-50k-rabitq1-n128-w50 | storage | storage_index | `access method=ec_ivf`, `index=task51_local_50k_ivf_rabitq1_n128_w50_rabitq_idx`, `per row=334.1 B`, `profile=ec_ivf`, `reloptions={nlists=128,nprobe=128,training_sample_rows=10000,quant_bits=1,rerank=heap_f32,rerank_width=50,storage_format=rabitq}`, `size=15.9 MiB` |
+| storage-50k-rabitq1-n128-w50 | storage | storage_index | `access method=btree`, `index=task51_local_50k_ivf_rabitq1_n128_w50_corpus_pkey`, `per row=45.1 B`, `profile=<unknown>`, `reloptions={}`, `size=2.1 MiB` |
+| explain-50k-rabitq1-n128-w50 | explain | planner_cost | `average_list_live_count=390.625`, `cpu_operator_cost=0.0025`, `dimensions=1536`, `effective_nprobe=64`, `effective_nprobe_source=session`, `estimated_candidate_rows=25000`, `estimated_centroid_scores=128`, `estimated_posting_pages=970.5`, `estimated_selected_lists=64`, `index_pages=2039`, `modeled_correlation=0`, `modeled_selectivity=1`, `modeled_startup_cost=105.9152`, `modeled_total_cost=1659.6152`, `nlists=128`, `ordering_compare_type=COMPARE_LT`, `pg18_strategy_translation_ready=t`, `pg18_tree_height_callback_ready=t`, `planner_gate_reason=planner scan selection is live: Task 28 IVF cost model active`, `planner_scan_enabled=t`, `random_page_cost=4`, `relation_nprobe=128`, `reltuples=50000`, `rerank=heap_f32`, `rerank_multiplier=1.35`, `resolved_tree_height=0`, `scoring_mode=rabitq_binary`, `scoring_multiplier=0.45`, `seq_page_cost=1`, `session_nprobe=64`, `storage_format=rabitq`, `tree_height_source=amgettreeheight_callback` |
+| load-100k-rabitq1-n64-w50 | load | load_timing | `phase=copy_corpus`, `seconds=47.810000`, `subject=task51_local_100k_ivf_rabitq1_n64_w50_corpus` |
+| load-100k-rabitq1-n64-w50 | load | load_timing | `phase=encode_corpus`, `seconds=16.460000`, `subject=task51_local_100k_ivf_rabitq1_n64_w50_corpus` |
+| load-100k-rabitq1-n64-w50 | load | load_timing | `phase=copy_queries`, `seconds=0.451210`, `subject=task51_local_100k_ivf_rabitq1_n64_w50_queries` |
+| load-100k-rabitq1-n64-w50 | load | load_timing | `phase=build_index`, `seconds=23.550000`, `subject=task51_local_100k_ivf_rabitq1_n64_w50_rabitq_idx` |
+| load-100k-rabitq1-n64-w50 | load | load_timing | `phase=total`, `seconds=103.670000`, `subject=task51_local_100k_ivf_rabitq1_n64_w50` |
+| recall-100k-rabitq1-n64-w50 | recall | recall | `mean q-time=202.58 ms`, `ndcg@k=0.9977`, `nprobe=32`, `queries=200`, `recall@k=0.9775`, `recall_ci95_high=0.9831`, `recall_ci95_low=0.9700`, `recall_p10=0.9000`, `recall_p50=1.0000`, `recall_p90=1.0000`, `recall_trials=2000` |
+| recall-100k-rabitq1-n64-w50 | recall | recall | `mean q-time=308.09 ms`, `ndcg@k=0.9997`, `nprobe=48`, `queries=200`, `recall@k=0.9955`, `recall_ci95_high=0.9976`, `recall_ci95_low=0.9915`, `recall_p10=1.0000`, `recall_p50=1.0000`, `recall_p90=1.0000`, `recall_trials=2000` |
+| recall-100k-rabitq1-n64-w50 | recall | recall | `mean q-time=394.73 ms`, `ndcg@k=1.0000`, `nprobe=64`, `queries=200`, `recall@k=0.9985`, `recall_ci95_high=0.9995`, `recall_ci95_low=0.9956`, `recall_p10=1.0000`, `recall_p50=1.0000`, `recall_p90=1.0000`, `recall_trials=2000` |
+| latency-100k-rabitq1-n64-w50 | latency | latency | `count=200`, `max=256.7 ms`, `mean=199.9 ms`, `min=152.8 ms`, `nprobe=32`, `p50=197.7 ms`, `p95=234.3 ms`, `p99=241.6 ms`, `stddev=19.4 ms` |
+| latency-100k-rabitq1-n64-w50 | latency | latency | `count=200`, `max=396.4 ms`, `mean=309.8 ms`, `min=252.9 ms`, `nprobe=48`, `p50=306.5 ms`, `p95=350.3 ms`, `p99=381.5 ms`, `stddev=24.7 ms` |
+| latency-100k-rabitq1-n64-w50 | latency | latency | `count=200`, `max=465.6 ms`, `mean=384.4 ms`, `min=357.0 ms`, `nprobe=64`, `p50=379.5 ms`, `p95=419.3 ms`, `p99=436.1 ms`, `stddev=18.5 ms` |
+| storage-100k-rabitq1-n64-w50 | storage | storage_field | `field=prefix`, `value=task51_local_100k_ivf_rabitq1_n64_w50` |
+| storage-100k-rabitq1-n64-w50 | storage | storage_field | `field=corpus`, `value=task51_local_100k_ivf_rabitq1_n64_w50_corpus` |
+| storage-100k-rabitq1-n64-w50 | storage | storage_field | `field=rows`, `value=100000` |
+| storage-100k-rabitq1-n64-w50 | storage | storage_field | `field=heap`, `value=13.0 MiB` |
+| storage-100k-rabitq1-n64-w50 | storage | storage_field | `field=table (heap + toast + fsm/vm)`, `value=1.6 GiB` |
+| storage-100k-rabitq1-n64-w50 | storage | storage_field | `field=indexes`, `value=34.0 MiB` |
+| storage-100k-rabitq1-n64-w50 | storage | storage_field | `field=total`, `value=1.6 GiB` |
+| storage-100k-rabitq1-n64-w50 | storage | storage_field | `field=per row (total)`, `value=17063.3 B` |
+| storage-100k-rabitq1-n64-w50 | storage | storage_field | `field=per row (heap only)`, `value=136.8 B` |
+| storage-100k-rabitq1-n64-w50 | storage | storage_index | `access method=ec_ivf`, `index=task51_local_100k_ivf_rabitq1_n64_w50_rabitq_idx`, `per row=311.3 B`, `profile=ec_ivf`, `reloptions={nlists=64,nprobe=64,training_sample_rows=10000,quant_bits=1,rerank=heap_f32,rerank_width=50,storage_format=rabitq}`, `size=29.7 MiB` |
+| storage-100k-rabitq1-n64-w50 | storage | storage_index | `access method=btree`, `index=task51_local_100k_ivf_rabitq1_n64_w50_corpus_pkey`, `per row=45.1 B`, `profile=<unknown>`, `reloptions={}`, `size=4.3 MiB` |
+| explain-100k-rabitq1-n64-w50 | explain | planner_cost | `average_list_live_count=1562.5`, `cpu_operator_cost=0.0025`, `dimensions=1536`, `effective_nprobe=64`, `effective_nprobe_source=session`, `estimated_candidate_rows=100000`, `estimated_centroid_scores=64`, `estimated_posting_pages=3750`, `estimated_selected_lists=64`, `index_pages=3800`, `modeled_correlation=0`, `modeled_selectivity=1`, `modeled_startup_cost=55.4576`, `modeled_total_cost=6138.257600000001`, `nlists=64`, `ordering_compare_type=COMPARE_LT`, `pg18_strategy_translation_ready=t`, `pg18_tree_height_callback_ready=t`, `planner_gate_reason=planner scan selection is live: Task 28 IVF cost model active`, `planner_scan_enabled=t`, `random_page_cost=4`, `relation_nprobe=64`, `reltuples=100000`, `rerank=heap_f32`, `rerank_multiplier=1.35`, `resolved_tree_height=0`, `scoring_mode=rabitq_binary`, `scoring_multiplier=0.45`, `seq_page_cost=1`, `session_nprobe=64`, `storage_format=rabitq`, `tree_height_source=amgettreeheight_callback` |
+| load-100k-rabitq1-n128-w50 | load | load_timing | `phase=copy_corpus`, `seconds=46.630000`, `subject=task51_local_100k_ivf_rabitq1_n128_w50_corpus` |
+| load-100k-rabitq1-n128-w50 | load | load_timing | `phase=encode_corpus`, `seconds=13.110000`, `subject=task51_local_100k_ivf_rabitq1_n128_w50_corpus` |
+| load-100k-rabitq1-n128-w50 | load | load_timing | `phase=copy_queries`, `seconds=0.481370`, `subject=task51_local_100k_ivf_rabitq1_n128_w50_queries` |
+| load-100k-rabitq1-n128-w50 | load | load_timing | `phase=build_index`, `seconds=38.160000`, `subject=task51_local_100k_ivf_rabitq1_n128_w50_rabitq_idx` |
+| load-100k-rabitq1-n128-w50 | load | load_timing | `phase=total`, `seconds=109.450000`, `subject=task51_local_100k_ivf_rabitq1_n128_w50` |
+| recall-100k-rabitq1-n128-w50 | recall | recall | `mean q-time=99.89 ms`, `ndcg@k=0.9965`, `nprobe=32`, `queries=200`, `recall@k=0.9595`, `recall_ci95_high=0.9673`, `recall_ci95_low=0.9499`, `recall_p10=0.9000`, `recall_p50=1.0000`, `recall_p90=1.0000`, `recall_trials=2000` |
+| recall-100k-rabitq1-n128-w50 | recall | recall | `mean q-time=196.04 ms`, `ndcg@k=0.9989`, `nprobe=64`, `queries=200`, `recall@k=0.9870`, `recall_ci95_high=0.9911`, `recall_ci95_low=0.9810`, `recall_p10=0.9000`, `recall_p50=1.0000`, `recall_p90=1.0000`, `recall_trials=2000` |
+| recall-100k-rabitq1-n128-w50 | recall | recall | `mean q-time=299.67 ms`, `ndcg@k=0.9998`, `nprobe=96`, `queries=200`, `recall@k=0.9970`, `recall_ci95_high=0.9986`, `recall_ci95_low=0.9935`, `recall_p10=1.0000`, `recall_p50=1.0000`, `recall_p90=1.0000`, `recall_trials=2000` |
+| recall-100k-rabitq1-n128-w50 | recall | recall | `mean q-time=378.76 ms`, `ndcg@k=1.0000`, `nprobe=128`, `queries=200`, `recall@k=0.9985`, `recall_ci95_high=0.9995`, `recall_ci95_low=0.9956`, `recall_p10=1.0000`, `recall_p50=1.0000`, `recall_p90=1.0000`, `recall_trials=2000` |
+| latency-100k-rabitq1-n128-w50 | latency | latency | `count=200`, `max=137.3 ms`, `mean=99.1 ms`, `min=79.6 ms`, `nprobe=32`, `p50=96.8 ms`, `p95=116.3 ms`, `p99=132.3 ms`, `stddev=10.0 ms` |
+| latency-100k-rabitq1-n128-w50 | latency | latency | `count=200`, `max=255.7 ms`, `mean=198.2 ms`, `min=169.7 ms`, `nprobe=64`, `p50=196.6 ms`, `p95=225.1 ms`, `p99=245.0 ms`, `stddev=14.5 ms` |
+| latency-100k-rabitq1-n128-w50 | latency | latency | `count=200`, `max=368.1 ms`, `mean=294.6 ms`, `min=260.3 ms`, `nprobe=96`, `p50=290.3 ms`, `p95=325.1 ms`, `p99=339.7 ms`, `stddev=15.8 ms` |
+| latency-100k-rabitq1-n128-w50 | latency | latency | `count=200`, `max=452.7 ms`, `mean=381.2 ms`, `min=353.5 ms`, `nprobe=128`, `p50=377.7 ms`, `p95=418.0 ms`, `p99=440.9 ms`, `stddev=18.9 ms` |
+| storage-100k-rabitq1-n128-w50 | storage | storage_field | `field=prefix`, `value=task51_local_100k_ivf_rabitq1_n128_w50` |
+| storage-100k-rabitq1-n128-w50 | storage | storage_field | `field=corpus`, `value=task51_local_100k_ivf_rabitq1_n128_w50_corpus` |
+| storage-100k-rabitq1-n128-w50 | storage | storage_field | `field=rows`, `value=100000` |
+| storage-100k-rabitq1-n128-w50 | storage | storage_field | `field=heap`, `value=13.0 MiB` |
+| storage-100k-rabitq1-n128-w50 | storage | storage_field | `field=table (heap + toast + fsm/vm)`, `value=1.6 GiB` |
+| storage-100k-rabitq1-n128-w50 | storage | storage_field | `field=indexes`, `value=34.8 MiB` |
+| storage-100k-rabitq1-n128-w50 | storage | storage_field | `field=total`, `value=1.6 GiB` |
+| storage-100k-rabitq1-n128-w50 | storage | storage_field | `field=per row (total)`, `value=17071.4 B` |
+| storage-100k-rabitq1-n128-w50 | storage | storage_field | `field=per row (heap only)`, `value=136.8 B` |
+| storage-100k-rabitq1-n128-w50 | storage | storage_index | `access method=ec_ivf`, `index=task51_local_100k_ivf_rabitq1_n128_w50_rabitq_idx`, `per row=319.4 B`, `profile=ec_ivf`, `reloptions={nlists=128,nprobe=128,training_sample_rows=10000,quant_bits=1,rerank=heap_f32,rerank_width=50,storage_format=rabitq}`, `size=30.5 MiB` |
+| storage-100k-rabitq1-n128-w50 | storage | storage_index | `access method=btree`, `index=task51_local_100k_ivf_rabitq1_n128_w50_corpus_pkey`, `per row=45.1 B`, `profile=<unknown>`, `reloptions={}`, `size=4.3 MiB` |
+| explain-100k-rabitq1-n128-w50 | explain | planner_cost | `average_list_live_count=781.25`, `cpu_operator_cost=0.0025`, `dimensions=1536`, `effective_nprobe=64`, `effective_nprobe_source=session`, `estimated_candidate_rows=50000`, `estimated_centroid_scores=128`, `estimated_posting_pages=1900.5`, `estimated_selected_lists=64`, `index_pages=3899`, `modeled_correlation=0`, `modeled_selectivity=1`, `modeled_startup_cost=105.9152`, `modeled_total_cost=3172.8152`, `nlists=128`, `ordering_compare_type=COMPARE_LT`, `pg18_strategy_translation_ready=t`, `pg18_tree_height_callback_ready=t`, `planner_gate_reason=planner scan selection is live: Task 28 IVF cost model active`, `planner_scan_enabled=t`, `random_page_cost=4`, `relation_nprobe=128`, `reltuples=100000`, `rerank=heap_f32`, `rerank_multiplier=1.35`, `resolved_tree_height=0`, `scoring_mode=rabitq_binary`, `scoring_multiplier=0.45`, `seq_page_cost=1`, `session_nprobe=64`, `storage_format=rabitq`, `tree_height_source=amgettreeheight_callback` |

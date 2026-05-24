@@ -1481,8 +1481,9 @@ fn plan_vacuum_fill_candidates_for_target(
 }
 
 fn count_live_node_tuples(index_relation: pg_sys::Relation) -> Result<usize, String> {
-    let handle = ptr::NonNull::new(index_relation)
-        .ok_or_else(|| "ec_diskann count_live_node_tuples needs a valid index relation".to_owned())?;
+    let handle = ptr::NonNull::new(index_relation).ok_or_else(|| {
+        "ec_diskann count_live_node_tuples needs a valid index relation".to_owned()
+    })?;
     let (metadata, chain) = scan_state::materialize_chain_from_index_handle(handle)?;
     count_live_tuples_in_chain(
         &chain,
@@ -1513,8 +1514,9 @@ unsafe fn apply_tuple_rewrites(
     index_relation: pg_sys::Relation,
     rewrites: &[TupleRewrite],
 ) -> Result<VacuumRewriteApplyOutcome, String> {
-    let handle = std::ptr::NonNull::new(index_relation)
-        .ok_or_else(|| "ec_diskann apply_tuple_rewrites received a null index relation".to_owned())?;
+    let handle = std::ptr::NonNull::new(index_relation).ok_or_else(|| {
+        "ec_diskann apply_tuple_rewrites received a null index relation".to_owned()
+    })?;
     apply_tuple_rewrites_handle(handle, rewrites)
 }
 
@@ -1602,8 +1604,9 @@ unsafe fn write_raw_tuple_bytes(
     tid: ItemPointer,
     replacement_raw: &[u8],
 ) -> Result<(), String> {
-    let handle = std::ptr::NonNull::new(index_relation)
-        .ok_or_else(|| "ec_diskann write_raw_tuple_bytes received a null index relation".to_owned())?;
+    let handle = std::ptr::NonNull::new(index_relation).ok_or_else(|| {
+        "ec_diskann write_raw_tuple_bytes received a null index relation".to_owned()
+    })?;
     let buffer = LockedBufferGuard::read_main_handle(
         handle,
         tid.block_number,
@@ -1870,8 +1873,8 @@ mod tests {
         let index_relation_ptr = index_relation.as_ptr();
 
         let relation_options = super::options::relation_options(index_relation_ptr);
-        let session_handle = ptr::NonNull::new(index_relation_ptr)
-            .expect("guard keeps the index relation open");
+        let session_handle =
+            ptr::NonNull::new(index_relation_ptr).expect("guard keeps the index relation open");
         let (metadata, chain) = scan_state::materialize_chain_from_index_handle(session_handle)
             .expect("materialize_chain_from_index should succeed");
         let relation_opaque =

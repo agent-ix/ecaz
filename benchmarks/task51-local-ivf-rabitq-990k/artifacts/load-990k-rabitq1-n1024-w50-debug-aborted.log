@@ -1,0 +1,2 @@
+[loader] warning: profile "ec_ivf" does not list quant_bits as known reloption; passing through verbatim. Known reloptions: nlists, nprobe, rerank_width, training_sample_rows, seed, pq_group_size, storage_format, quantizer, rerank
+[loader] inspecting target/real-corpus/staged-task50/ec_real_ann_benchmarks_anchor_corpus.tsv

@@ -198,6 +198,7 @@ enum SuiteStep {
     Latency(LatencyStep),
     Storage(StorageStep),
     Explain(ExplainStep),
+    SidecarRerank(SidecarRerankStep),
     ComparePgvector(ComparePgvectorStep),
     CompareVectorscale(CompareVectorscaleStep),
     Raw(RawStep),
@@ -283,6 +284,14 @@ struct RecallStep {
     #[serde(default)]
     rerank_width: Option<i32>,
     #[serde(default)]
+    adaptive_nprobe: Option<bool>,
+    #[serde(default)]
+    adaptive_nprobe_score_gap_micros: Option<i32>,
+    #[serde(default)]
+    adaptive_nprobe_score_margin_ratio_bps: Option<i32>,
+    #[serde(default)]
+    ivf_scratch_soa_batch_decode: Option<bool>,
+    #[serde(default)]
     queries_limit: Option<usize>,
     #[serde(default)]
     profile: Option<String>,
@@ -329,6 +338,14 @@ struct LatencyStep {
     #[serde(default)]
     rerank_width: Option<i32>,
     #[serde(default)]
+    adaptive_nprobe: Option<bool>,
+    #[serde(default)]
+    adaptive_nprobe_score_gap_micros: Option<i32>,
+    #[serde(default)]
+    adaptive_nprobe_score_margin_ratio_bps: Option<i32>,
+    #[serde(default)]
+    ivf_scratch_soa_batch_decode: Option<bool>,
+    #[serde(default)]
     profile: Option<String>,
     #[serde(default)]
     bits: Option<i32>,
@@ -371,6 +388,8 @@ struct ExplainStep {
     nprobe: i32,
     rerank_width: i32,
     #[serde(default)]
+    ivf_scratch_soa_batch_decode: Option<bool>,
+    #[serde(default)]
     pg: Option<u16>,
     #[serde(default)]
     db: Option<String>,
@@ -380,6 +399,43 @@ struct ExplainStep {
     port: Option<u16>,
     sql_file: PathBuf,
     log_output: PathBuf,
+}
+
+#[derive(Debug, Deserialize)]
+struct SidecarRerankStep {
+    name: String,
+    #[serde(default)]
+    tags: Vec<String>,
+    prefix: String,
+    #[serde(default)]
+    profile: Option<String>,
+    #[serde(default)]
+    k: Option<usize>,
+    #[serde(default)]
+    candidate_k: Option<usize>,
+    #[serde(default)]
+    concurrency: Option<usize>,
+    sweep: Vec<i32>,
+    #[serde(default)]
+    queries_limit: Option<usize>,
+    #[serde(default)]
+    warmup_queries: Option<usize>,
+    #[serde(default)]
+    bits: Option<i32>,
+    #[serde(default)]
+    seed: Option<i64>,
+    #[serde(default)]
+    variants: Vec<String>,
+    #[serde(default)]
+    read_modes: Vec<String>,
+    #[serde(default)]
+    rebuild_sidecar_table: bool,
+    #[serde(default)]
+    force_index: Option<bool>,
+    #[serde(default)]
+    allow_unsafe_index_shape: bool,
+    #[serde(default)]
+    log_output: Option<PathBuf>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1034,7 +1090,7 @@ fn parse_result_rows(
     raw: &str,
 ) -> Vec<ResultRow> {
     match step.kind.as_str() {
-        "recall" | "latency" => parse_table_rows(raw)
+        "recall" | "latency" | "sidecar-rerank" => parse_table_rows(raw)
             .into_iter()
             .map(|values| ResultRow {
                 suite: manifest.suite.clone(),
@@ -1463,6 +1519,7 @@ impl SuiteStep {
             SuiteStep::Latency(step) => &step.name,
             SuiteStep::Storage(step) => &step.name,
             SuiteStep::Explain(step) => &step.name,
+            SuiteStep::SidecarRerank(step) => &step.name,
             SuiteStep::ComparePgvector(step) => &step.name,
             SuiteStep::CompareVectorscale(step) => &step.name,
             SuiteStep::Raw(step) => &step.name,
@@ -1479,6 +1536,7 @@ impl SuiteStep {
             SuiteStep::Latency(_) => "latency",
             SuiteStep::Storage(_) => "storage",
             SuiteStep::Explain(_) => "explain",
+            SuiteStep::SidecarRerank(_) => "sidecar-rerank",
             SuiteStep::ComparePgvector(_) => "compare-pgvector",
             SuiteStep::CompareVectorscale(_) => "compare-vectorscale",
             SuiteStep::Raw(_) => "raw",
@@ -1495,6 +1553,7 @@ impl SuiteStep {
             SuiteStep::Latency(step) => &step.tags,
             SuiteStep::Storage(step) => &step.tags,
             SuiteStep::Explain(step) => &step.tags,
+            SuiteStep::SidecarRerank(step) => &step.tags,
             SuiteStep::ComparePgvector(step) => &step.tags,
             SuiteStep::CompareVectorscale(step) => &step.tags,
             SuiteStep::Raw(step) => &step.tags,
@@ -1601,7 +1660,38 @@ impl SuiteStep {
                 Ok(())
             }
             SuiteStep::Explain(step) => {
-                validate_profile_name("explain profile", step.profile.as_deref())
+                validate_profile_name("explain profile", step.profile.as_deref())?;
+                let profile = profiles::resolve(step.profile.as_deref().unwrap_or("ec_ivf"))
+                    .unwrap_or(&profiles::EC_IVF);
+                super::validate_ivf_scratch_soa_batch_decode(
+                    profile,
+                    step.ivf_scratch_soa_batch_decode.unwrap_or(false),
+                )
+            }
+            SuiteStep::SidecarRerank(step) => {
+                validate_profile_name("sidecar-rerank profile", step.profile.as_deref())?;
+                if step.sweep.is_empty() {
+                    bail!(
+                        "sidecar-rerank step {:?} must include at least one sweep value",
+                        step.name
+                    )
+                }
+                if step.k == Some(0) {
+                    bail!("sidecar-rerank step {:?} must set k >= 1", step.name)
+                }
+                if step.candidate_k == Some(0) {
+                    bail!(
+                        "sidecar-rerank step {:?} must set candidate_k >= 1",
+                        step.name
+                    )
+                }
+                if step.concurrency == Some(0) {
+                    bail!(
+                        "sidecar-rerank step {:?} must set concurrency >= 1",
+                        step.name
+                    )
+                }
+                Ok(())
             }
             SuiteStep::ComparePgvector(step) => {
                 validate_profile_name("compare-pgvector profile", step.profile.as_deref())?;
@@ -1640,6 +1730,7 @@ impl SuiteStep {
             SuiteStep::Latency(step) => Ok(expand_latency(step, defaults)),
             SuiteStep::Storage(step) => Ok(expand_storage(step)),
             SuiteStep::Explain(step) => Ok(expand_explain(step, defaults, conn)),
+            SuiteStep::SidecarRerank(step) => Ok(expand_sidecar_rerank(step, defaults)),
             SuiteStep::ComparePgvector(step) => Ok(expand_compare_pgvector(step, defaults)),
             SuiteStep::CompareVectorscale(step) => Ok(expand_compare_vectorscale(step, defaults)),
             SuiteStep::Raw(step) => Ok(step.args.clone()),
@@ -1675,6 +1766,7 @@ impl SuiteStep {
             SuiteStep::Latency(step) => step.log_output.iter().cloned().collect(),
             SuiteStep::Storage(step) => step.log_file.iter().cloned().collect(),
             SuiteStep::Explain(step) => vec![step.sql_file.clone(), step.log_output.clone()],
+            SuiteStep::SidecarRerank(step) => step.log_output.iter().cloned().collect(),
             SuiteStep::ComparePgvector(step) => step.log_file.iter().cloned().collect(),
             SuiteStep::CompareVectorscale(step) => step.log_file.iter().cloned().collect(),
             SuiteStep::Raw(step) => step.expected_artifacts.clone(),
@@ -1886,6 +1978,26 @@ fn expand_recall(step: &RecallStep, defaults: &SuiteDefaults) -> Vec<String> {
     if let Some(width) = step.rerank_width {
         push_arg(&mut args, "--rerank-width", &width.to_string());
     }
+    if step.adaptive_nprobe.unwrap_or(false) {
+        args.push("--adaptive-nprobe".into());
+    }
+    if let Some(score_gap_micros) = step.adaptive_nprobe_score_gap_micros {
+        push_arg(
+            &mut args,
+            "--adaptive-nprobe-score-gap-micros",
+            &score_gap_micros.to_string(),
+        );
+    }
+    if let Some(score_margin_ratio_bps) = step.adaptive_nprobe_score_margin_ratio_bps {
+        push_arg(
+            &mut args,
+            "--adaptive-nprobe-score-margin-ratio-bps",
+            &score_margin_ratio_bps.to_string(),
+        );
+    }
+    if step.ivf_scratch_soa_batch_decode.unwrap_or(false) {
+        args.push("--ivf-scratch-soa-batch-decode".into());
+    }
     if let Some(limit) = step.queries_limit.or(defaults.queries_limit) {
         push_arg(&mut args, "--queries-limit", &limit.to_string());
     }
@@ -1952,6 +2064,26 @@ fn expand_latency(step: &LatencyStep, defaults: &SuiteDefaults) -> Vec<String> {
     if let Some(width) = step.rerank_width {
         push_arg(&mut args, "--rerank-width", &width.to_string());
     }
+    if step.adaptive_nprobe.unwrap_or(false) {
+        args.push("--adaptive-nprobe".into());
+    }
+    if let Some(score_gap_micros) = step.adaptive_nprobe_score_gap_micros {
+        push_arg(
+            &mut args,
+            "--adaptive-nprobe-score-gap-micros",
+            &score_gap_micros.to_string(),
+        );
+    }
+    if let Some(score_margin_ratio_bps) = step.adaptive_nprobe_score_margin_ratio_bps {
+        push_arg(
+            &mut args,
+            "--adaptive-nprobe-score-margin-ratio-bps",
+            &score_margin_ratio_bps.to_string(),
+        );
+    }
+    if step.ivf_scratch_soa_batch_decode.unwrap_or(false) {
+        args.push("--ivf-scratch-soa-batch-decode".into());
+    }
     push_arg(&mut args, "--bits", &bits(defaults, step.bits).to_string());
     push_arg(&mut args, "--seed", &seed(defaults, step.seed).to_string());
     if step.force_index.or(defaults.force_index).unwrap_or(false) {
@@ -2015,6 +2147,51 @@ fn expand_explain(
     args.push("--raw".into());
     push_arg_path(&mut args, "--file", &step.sql_file);
     push_arg_path(&mut args, "--log-output", &step.log_output);
+    args
+}
+
+fn expand_sidecar_rerank(step: &SidecarRerankStep, defaults: &SuiteDefaults) -> Vec<String> {
+    let mut args = vec!["bench".into(), "sidecar-rerank".into()];
+    push_arg(&mut args, "--prefix", &step.prefix);
+    push_arg(
+        &mut args,
+        "--profile",
+        &profile(defaults, step.profile.as_deref()),
+    );
+    push_arg(&mut args, "--k", &step.k.unwrap_or(10).to_string());
+    push_arg(
+        &mut args,
+        "--candidate-k",
+        &step.candidate_k.unwrap_or(50).to_string(),
+    );
+    if let Some(concurrency) = step.concurrency {
+        push_arg(&mut args, "--concurrency", &concurrency.to_string());
+    }
+    push_arg(&mut args, "--sweep", &join_i32(&step.sweep));
+    if let Some(limit) = step.queries_limit.or(defaults.queries_limit) {
+        push_arg(&mut args, "--queries-limit", &limit.to_string());
+    }
+    if let Some(warmup_queries) = step.warmup_queries {
+        push_arg(&mut args, "--warmup-queries", &warmup_queries.to_string());
+    }
+    push_arg(&mut args, "--bits", &bits(defaults, step.bits).to_string());
+    push_arg(&mut args, "--seed", &seed(defaults, step.seed).to_string());
+    for variant in &step.variants {
+        push_arg(&mut args, "--variant", variant);
+    }
+    for read_mode in &step.read_modes {
+        push_arg(&mut args, "--read-mode", read_mode);
+    }
+    if step.rebuild_sidecar_table {
+        args.push("--rebuild-sidecar-table".into());
+    }
+    if step.force_index.or(defaults.force_index).unwrap_or(false) {
+        args.push("--force-index".into());
+    }
+    if step.allow_unsafe_index_shape {
+        args.push("--allow-unsafe-index-shape".into());
+    }
+    push_opt_path(&mut args, "--log-output", step.log_output.as_deref());
     args
 }
 
@@ -2144,6 +2321,24 @@ fn explain_sql(step: &ExplainStep, defaults: &SuiteDefaults) -> String {
     let profile = explain_step_profile(step, defaults);
     let scan_guc = profile.ef_search_guc.unwrap_or("ec_ivf.nprobe");
     let rerank_guc = rerank_width_guc(profile);
+    let use_scratch_soa =
+        profile.name == "ec_ivf" && step.ivf_scratch_soa_batch_decode.unwrap_or(false);
+    let set_scratch_soa_sql = if use_scratch_soa {
+        "SET ec_ivf.scratch_soa_batch_decode = on;\n".to_owned()
+    } else {
+        String::new()
+    };
+    let current_scratch_soa_sql = if use_scratch_soa {
+        "current_setting('ec_ivf.scratch_soa_batch_decode') AS scratch_soa_batch_decode,\n           "
+            .to_owned()
+    } else {
+        String::new()
+    };
+    let reset_scratch_soa_sql = if use_scratch_soa {
+        "RESET ec_ivf.scratch_soa_batch_decode;\n".to_owned()
+    } else {
+        String::new()
+    };
     let set_rerank_sql = rerank_guc
         .map(|guc| {
             format!(
@@ -2179,10 +2374,12 @@ fn explain_sql(step: &ExplainStep, defaults: &SuiteDefaults) -> String {
          \\timing on\n\n\
          SET enable_seqscan = off;\n\
          SET {scan_guc} = {nprobe};\n\
+         {set_scratch_soa_sql}\
          {set_rerank_sql}\n\
          SELECT\n\
            current_setting('server_version') AS server_version,\n\
            current_setting('{scan_guc}') AS sweep_value,\n\
+           {current_scratch_soa_sql}\
            {current_rerank_sql}'{profile_name}' AS profile;\n\n\
          SELECT\n\
            '{index}' AS index_name,\n\
@@ -2202,10 +2399,13 @@ fn explain_sql(step: &ExplainStep, defaults: &SuiteDefaults) -> String {
          LIMIT 10;\n\n\
          RESET enable_seqscan;\n\
          RESET {scan_guc};\n\
+         {reset_scratch_soa_sql}\
          {reset_rerank_sql}",
         nprobe = step.nprobe,
         scan_guc = scan_guc,
+        set_scratch_soa_sql = set_scratch_soa_sql,
         set_rerank_sql = set_rerank_sql,
+        current_scratch_soa_sql = current_scratch_soa_sql,
         current_rerank_sql = current_rerank_sql,
         profile_name = profile.name,
         index = index,
@@ -2213,6 +2413,7 @@ fn explain_sql(step: &ExplainStep, defaults: &SuiteDefaults) -> String {
         cost_tuning_snapshot_sql = cost_tuning_snapshot_sql,
         corpus_table = corpus_table,
         query_table = query_table,
+        reset_scratch_soa_sql = reset_scratch_soa_sql,
         reset_rerank_sql = reset_rerank_sql
     )
 }
@@ -2528,6 +2729,10 @@ mod tests {
             k: 10,
             sweep: vec![48, 96],
             rerank_width: Some(500),
+            adaptive_nprobe: Some(true),
+            adaptive_nprobe_score_gap_micros: Some(1000),
+            adaptive_nprobe_score_margin_ratio_bps: Some(2500),
+            ivf_scratch_soa_batch_decode: Some(true),
             queries_limit: None,
             profile: None,
             bits: None,
@@ -2543,6 +2748,14 @@ mod tests {
         assert!(args.windows(2).any(|w| w == ["--queries-limit", "100"]));
         assert!(args.contains(&"--force-index".into()));
         assert!(args.windows(2).any(|w| w == ["--sweep", "48,96"]));
+        assert!(args.contains(&"--adaptive-nprobe".into()));
+        assert!(args
+            .windows(2)
+            .any(|w| w == ["--adaptive-nprobe-score-gap-micros", "1000"]));
+        assert!(args
+            .windows(2)
+            .any(|w| w == ["--adaptive-nprobe-score-margin-ratio-bps", "2500"]));
+        assert!(args.contains(&"--ivf-scratch-soa-batch-decode".into()));
         assert!(args
             .windows(2)
             .any(|w| w == ["--predictions-output", "predictions.json"]));
@@ -2598,6 +2811,53 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("must use label=path"));
+    }
+
+    #[test]
+    fn expands_sidecar_rerank_with_variants() {
+        let defaults = SuiteDefaults {
+            profile: Some("ec_ivf".into()),
+            queries_limit: Some(200),
+            force_index: Some(true),
+            ..SuiteDefaults::default()
+        };
+        let step = SidecarRerankStep {
+            name: "sidecar".into(),
+            tags: vec!["sidecar".into()],
+            prefix: "surface".into(),
+            profile: None,
+            k: Some(10),
+            candidate_k: Some(50),
+            concurrency: Some(4),
+            sweep: vec![64, 128],
+            queries_limit: None,
+            warmup_queries: Some(25),
+            bits: None,
+            seed: None,
+            variants: vec!["f32".into(), "f16".into(), "rabitq8".into()],
+            read_modes: vec!["free".into(), "random-id".into(), "tid-sorted".into()],
+            rebuild_sidecar_table: true,
+            force_index: None,
+            allow_unsafe_index_shape: false,
+            log_output: Some("sidecar.log".into()),
+        };
+        let args = expand_sidecar_rerank(&step, &defaults);
+        assert!(args.windows(2).any(|w| w == ["--profile", "ec_ivf"]));
+        assert!(args.windows(2).any(|w| w == ["--candidate-k", "50"]));
+        assert!(args.windows(2).any(|w| w == ["--concurrency", "4"]));
+        assert!(args.windows(2).any(|w| w == ["--sweep", "64,128"]));
+        assert!(args.windows(2).any(|w| w == ["--warmup-queries", "25"]));
+        assert!(args.windows(2).any(|w| w == ["--variant", "f32"]));
+        assert!(args.windows(2).any(|w| w == ["--variant", "f16"]));
+        assert!(args.windows(2).any(|w| w == ["--variant", "rabitq8"]));
+        assert!(args.windows(2).any(|w| w == ["--read-mode", "free"]));
+        assert!(args.windows(2).any(|w| w == ["--read-mode", "random-id"]));
+        assert!(args.windows(2).any(|w| w == ["--read-mode", "tid-sorted"]));
+        assert!(args.contains(&"--rebuild-sidecar-table".into()));
+        assert!(args.contains(&"--force-index".into()));
+        assert!(args
+            .windows(2)
+            .any(|w| w == ["--log-output", "sidecar.log"]));
     }
 
     #[test]
@@ -2684,6 +2944,10 @@ mod tests {
             k: 10,
             sweep: vec![48],
             rerank_width: None,
+            adaptive_nprobe: None,
+            adaptive_nprobe_score_gap_micros: None,
+            adaptive_nprobe_score_margin_ratio_bps: None,
+            ivf_scratch_soa_batch_decode: None,
             queries_limit: None,
             profile: None,
             bits: None,
@@ -2952,6 +3216,7 @@ mod tests {
             corpus_table: None,
             nprobe: 96,
             rerank_width: 1000,
+            ivf_scratch_soa_batch_decode: None,
             pg: None,
             db: None,
             socket_dir: None,
@@ -2978,6 +3243,7 @@ mod tests {
             corpus_table: None,
             nprobe: 96,
             rerank_width: 1000,
+            ivf_scratch_soa_batch_decode: None,
             pg: None,
             db: None,
             socket_dir: None,
@@ -2995,6 +3261,35 @@ mod tests {
     }
 
     #[test]
+    fn explain_sql_can_enable_ivf_scratch_soa() {
+        let step = ExplainStep {
+            name: "explain".into(),
+            tags: Vec::new(),
+            prefix: "pfx".into(),
+            profile: None,
+            index_name: None,
+            query_table: None,
+            corpus_table: None,
+            nprobe: 96,
+            rerank_width: 1000,
+            ivf_scratch_soa_batch_decode: Some(true),
+            pg: None,
+            db: None,
+            socket_dir: None,
+            port: None,
+            sql_file: "explain.sql".into(),
+            log_output: "explain.log".into(),
+        };
+        let sql = explain_sql(&step, &SuiteDefaults::default());
+
+        assert!(sql.contains("SET ec_ivf.scratch_soa_batch_decode = on;"));
+        assert!(sql.contains(
+            "current_setting('ec_ivf.scratch_soa_batch_decode') AS scratch_soa_batch_decode"
+        ));
+        assert!(sql.contains("RESET ec_ivf.scratch_soa_batch_decode;"));
+    }
+
+    #[test]
     fn explain_sql_uses_spire_profile_gucs_and_cost_snapshot() {
         let step = ExplainStep {
             name: "explain".into(),
@@ -3006,6 +3301,7 @@ mod tests {
             corpus_table: None,
             nprobe: 32,
             rerank_width: 500,
+            ivf_scratch_soa_batch_decode: None,
             pg: None,
             db: None,
             socket_dir: None,
@@ -3038,6 +3334,7 @@ mod tests {
             corpus_table: None,
             nprobe: 200,
             rerank_width: -1,
+            ivf_scratch_soa_batch_decode: None,
             pg: None,
             db: None,
             socket_dir: None,

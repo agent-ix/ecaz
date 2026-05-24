@@ -8,6 +8,7 @@ mod corpus;
 mod down;
 mod install;
 mod pause;
+mod repair_state;
 mod resume;
 mod snapshot;
 mod status;
@@ -32,6 +33,8 @@ pub enum CloudCommand {
     Resume(resume::ResumeArgs),
     /// Create an EBS snapshot of the DB volume; record the id locally.
     Snapshot(snapshot::SnapshotArgs),
+    /// Repair local Terraform state after an interrupted cloud lifecycle.
+    RepairState(repair_state::RepairStateArgs),
     /// `terraform destroy`; retains snapshots/bucket unless asked otherwise.
     Down(down::DownArgs),
     /// Print stack state, instance ids, $/hr, and recommended next verb.
@@ -48,6 +51,7 @@ impl CloudCommand {
             CloudCommand::Pause(args) => args.run(repo_root).await,
             CloudCommand::Resume(args) => args.run(repo_root).await,
             CloudCommand::Snapshot(args) => args.run(repo_root).await,
+            CloudCommand::RepairState(args) => args.run(repo_root).await,
             CloudCommand::Down(args) => args.run(repo_root).await,
             CloudCommand::Status(args) => args.run(repo_root).await,
         }

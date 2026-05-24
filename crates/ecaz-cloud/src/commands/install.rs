@@ -56,6 +56,7 @@ fn build_script(git_url: &str, git_ref: &str) -> String {
     // strict — the only caller-supplied strings are the URL and ref.
     let url = shell_escape(git_url);
     let r = shell_escape(git_ref);
+    let origin_ref = shell_escape(&format!("origin/{git_ref}"));
     format!(
         r#"#!/usr/bin/env bash
 set -euxo pipefail
@@ -68,12 +69,20 @@ sudo -u postgres bash -lc '
     git clone {url} /var/lib/pgsql/build/ecaz
   fi
   cd /var/lib/pgsql/build/ecaz
+  git reset --hard
+  git clean -fd
   git fetch --all --tags
-  git checkout {r}
-  git pull --ff-only origin {r} 2>/dev/null || true
-  cargo pgrx install --release --pg-config /usr/pgsql-18/bin/pg_config
+  git checkout --force {r} || git checkout --force {origin_ref}
+  if git rev-parse --verify {origin_ref} >/dev/null 2>&1; then
+    git reset --hard {origin_ref}
+  else
+    git reset --hard {r}
+  fi
+  cargo pgrx install --sudo --release --pg-config /usr/bin/pg_config
+  cargo build --release -p ecaz-cli
 '
-sudo systemctl restart postgresql-18
+sudo install -Dm755 /var/lib/pgsql/build/ecaz/target/release/ecaz /usr/local/bin/ecaz
+sudo systemctl restart postgresql
 sudo -u postgres psql -c 'DROP EXTENSION IF EXISTS ecaz;'
 sudo -u postgres psql -c 'CREATE EXTENSION ecaz;'
 sudo -u postgres psql -c "SELECT extname, extversion FROM pg_extension WHERE extname = 'ecaz';"

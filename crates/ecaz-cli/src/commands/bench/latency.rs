@@ -58,12 +58,18 @@ pub struct LatencyArgs {
     /// Use -1 for the index reloption, 0 for the full probed frontier.
     #[arg(long)]
     pub rerank_width: Option<i32>,
-    /// SPIRE-only: enable deterministic adaptive nprobe during the sweep.
+    /// IVF/SPIRE: enable deterministic adaptive nprobe during the sweep.
     #[arg(long)]
     pub adaptive_nprobe: bool,
-    /// SPIRE-only: score-gap threshold for adaptive nprobe decisions.
+    /// IVF/SPIRE: score-gap threshold for adaptive nprobe decisions.
     #[arg(long)]
     pub adaptive_nprobe_score_gap_micros: Option<i32>,
+    /// IVF-only: score margin-ratio threshold, in basis points, for adaptive nprobe decisions.
+    #[arg(long)]
+    pub adaptive_nprobe_score_margin_ratio_bps: Option<i32>,
+    /// IVF-only: enable experimental posting scratch SoA batch decode.
+    #[arg(long)]
+    pub ivf_scratch_soa_batch_decode: bool,
     /// Quantization bits used when encoding query vectors (must match loader).
     #[arg(long, default_value_t = 4)]
     pub bits: i32,
@@ -120,11 +126,13 @@ pub async fn run(conn: &ConnectionOptions, args: LatencyArgs) -> Result<()> {
         args.sweep.clone()
     };
     validate_rerank_width_arg(profile, args.rerank_width)?;
-    let adaptive_nprobe_options = super::SpireAdaptiveNprobeBenchOptions {
+    let adaptive_nprobe_options = super::AdaptiveNprobeBenchOptions {
         enabled: args.adaptive_nprobe,
         score_gap_micros: args.adaptive_nprobe_score_gap_micros,
+        score_margin_ratio_bps: args.adaptive_nprobe_score_margin_ratio_bps,
     };
-    super::validate_spire_adaptive_nprobe_options(profile, adaptive_nprobe_options)?;
+    super::validate_adaptive_nprobe_options(profile, adaptive_nprobe_options)?;
+    super::validate_ivf_scratch_soa_batch_decode(profile, args.ivf_scratch_soa_batch_decode)?;
 
     let corpus_table = format!("{}_corpus", args.prefix);
     let queries_table = format!("{}_queries", args.prefix);
@@ -175,6 +183,7 @@ pub async fn run(conn: &ConnectionOptions, args: LatencyArgs) -> Result<()> {
     for value in &sweep_values {
         let sweep = run_sweep_point(
             conn,
+            profile,
             guc,
             rerank_width_guc,
             super::sweep_value_label(profile, *value),
@@ -187,6 +196,7 @@ pub async fn run(conn: &ConnectionOptions, args: LatencyArgs) -> Result<()> {
             args.force_index,
             args.rerank_width,
             adaptive_nprobe_options,
+            args.ivf_scratch_soa_batch_decode,
             args.bits,
             args.seed,
             args.k,
@@ -233,6 +243,7 @@ pub async fn run(conn: &ConnectionOptions, args: LatencyArgs) -> Result<()> {
 #[allow(clippy::too_many_arguments)]
 async fn run_sweep_point(
     conn: &ConnectionOptions,
+    profile: &'static profiles::IndexProfile,
     guc: &str,
     rerank_width_guc: Option<&str>,
     sweep_label: String,
@@ -244,7 +255,8 @@ async fn run_sweep_point(
     encode_scan_query: bool,
     force_index: bool,
     rerank_width: Option<i32>,
-    adaptive_nprobe_options: super::SpireAdaptiveNprobeBenchOptions,
+    adaptive_nprobe_options: super::AdaptiveNprobeBenchOptions,
+    ivf_scratch_soa_batch_decode: bool,
     bits: i32,
     seed: i64,
     k: usize,
@@ -262,6 +274,7 @@ async fn run_sweep_point(
         _ => sweep_label,
     };
     let msg = super::append_adaptive_nprobe_label(msg, adaptive_nprobe_options);
+    let msg = super::append_ivf_scratch_soa_batch_decode_label(msg, ivf_scratch_soa_batch_decode);
     bar.set_message(msg);
     bar.enable_steady_tick(Duration::from_millis(250));
     let bar = Arc::new(bar);
@@ -279,6 +292,7 @@ async fn run_sweep_point(
         handles.push(tokio::spawn(async move {
             worker(
                 conn,
+                profile,
                 guc,
                 value,
                 sql,
@@ -290,6 +304,7 @@ async fn run_sweep_point(
                 rerank_width,
                 rerank_width_guc,
                 adaptive_nprobe_options,
+                ivf_scratch_soa_batch_decode,
                 bits,
                 seed,
                 k,
@@ -318,6 +333,7 @@ async fn run_sweep_point(
 #[allow(clippy::too_many_arguments)]
 async fn worker(
     conn: ConnectionOptions,
+    profile: &'static profiles::IndexProfile,
     guc: String,
     value: i32,
     sql: String,
@@ -328,7 +344,8 @@ async fn worker(
     force_index: bool,
     rerank_width: Option<i32>,
     rerank_width_guc: Option<String>,
-    adaptive_nprobe_options: super::SpireAdaptiveNprobeBenchOptions,
+    adaptive_nprobe_options: super::AdaptiveNprobeBenchOptions,
+    ivf_scratch_soa_batch_decode: bool,
     bits: i32,
     seed: i64,
     k: usize,
@@ -349,7 +366,9 @@ async fn worker(
                 .await?;
         }
     }
-    super::apply_spire_adaptive_nprobe_options(&client, adaptive_nprobe_options).await?;
+    super::apply_adaptive_nprobe_options(&client, profile, adaptive_nprobe_options).await?;
+    super::apply_ivf_scratch_soa_batch_decode(&client, profile, ivf_scratch_soa_batch_decode)
+        .await?;
     if force_index {
         client.batch_execute("SET enable_seqscan = off").await?;
     }

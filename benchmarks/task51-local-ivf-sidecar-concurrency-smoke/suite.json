@@ -1,0 +1,32 @@
+{
+  "name": "task51-local-ivf-sidecar-concurrency-smoke",
+  "schema_version": 1,
+  "artifact_dir": "benchmarks/task51-local-ivf-sidecar-concurrency-smoke/artifacts",
+  "defaults": {
+    "pg": 18,
+    "socket_dir": "/home/peter/.pgrx",
+    "bits": 4,
+    "seed": 42,
+    "queries_limit": 20,
+    "force_index": true
+  },
+  "steps": [
+    {
+      "kind": "sidecar-rerank",
+      "name": "sidecar-concurrency-c4-50k-rabitq1-n128-k50",
+      "tags": ["sidecar", "concurrency", "local_smoke", "ivf", "rabitq"],
+      "prefix": "task51_local_50k_ivf_rabitq1_n128_sidecar_off",
+      "profile": "ec_ivf",
+      "k": 10,
+      "candidate_k": 50,
+      "concurrency": 4,
+      "sweep": [96],
+      "queries_limit": 20,
+      "variants": ["f16", "rabitq8"],
+      "read_modes": ["random-id", "tid-sorted"],
+      "rebuild_sidecar_table": false,
+      "force_index": true,
+      "log_output": "benchmarks/task51-local-ivf-sidecar-concurrency-smoke/artifacts/sidecar-concurrency-c4-50k-rabitq1-n128-k50.log"
+    }
+  ]
+}

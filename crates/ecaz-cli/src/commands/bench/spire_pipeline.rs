@@ -154,9 +154,10 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
     let remote_enabled = args.include_remote
         || !args.remote_selected_pids.is_empty()
         || args.remote_requested_epoch.is_some();
-    let adaptive_nprobe_options = super::SpireAdaptiveNprobeBenchOptions {
+    let adaptive_nprobe_options = super::AdaptiveNprobeBenchOptions {
         enabled: args.adaptive_nprobe,
         score_gap_micros: args.adaptive_nprobe_score_gap_micros,
+        score_margin_ratio_bps: None,
     };
     let cost_tuning_options = SpireCostTuningOptions {
         routing_dimension_scale: args.cost_routing_dimension_scale,
@@ -166,7 +167,7 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
         storage_scoring_multiplier: args.cost_storage_scoring_multiplier,
         rerank_multiplier: args.cost_rerank_multiplier,
     };
-    super::validate_spire_adaptive_nprobe_options(&EC_SPIRE, adaptive_nprobe_options)?;
+    super::validate_adaptive_nprobe_options(&EC_SPIRE, adaptive_nprobe_options)?;
     let query_metrics_enabled = args.include_query_metrics || args.include_recall;
 
     let client = psql::connect(conn).await?;
@@ -629,7 +630,7 @@ async fn apply_session_options(
     rerank_width: Option<i32>,
     max_candidate_rows: Option<i32>,
     remote_tuple_transport: Option<SpireRemoteTupleTransportMode>,
-    adaptive_nprobe_options: super::SpireAdaptiveNprobeBenchOptions,
+    adaptive_nprobe_options: super::AdaptiveNprobeBenchOptions,
     cost_tuning_options: SpireCostTuningOptions,
 ) -> Result<()> {
     client
@@ -664,7 +665,7 @@ async fn apply_session_options(
                 )
             })?;
     }
-    super::apply_spire_adaptive_nprobe_options(client, adaptive_nprobe_options).await?;
+    super::apply_adaptive_nprobe_options(client, &EC_SPIRE, adaptive_nprobe_options).await?;
     apply_cost_tuning_options(client, cost_tuning_options).await?;
     Ok(())
 }
@@ -1379,7 +1380,7 @@ struct ReportInput<'a> {
     max_candidate_rows: Option<i32>,
     remote_tuple_transport: Option<SpireRemoteTupleTransportMode>,
     endpoint_identity: &'a EndpointIdentityRow,
-    adaptive_nprobe_options: super::SpireAdaptiveNprobeBenchOptions,
+    adaptive_nprobe_options: super::AdaptiveNprobeBenchOptions,
     cost_snapshot_enabled: bool,
     cost_tuning: &'a BTreeMap<i32, CostTuningRow>,
     remote_enabled: bool,
@@ -1897,9 +1898,10 @@ mod tests {
             max_candidate_rows: None,
             remote_tuple_transport: Some(SpireRemoteTupleTransportMode::PgBinaryAttrV1),
             endpoint_identity: &ready_endpoint_identity(),
-            adaptive_nprobe_options: super::super::SpireAdaptiveNprobeBenchOptions {
+            adaptive_nprobe_options: super::super::AdaptiveNprobeBenchOptions {
                 enabled: false,
                 score_gap_micros: None,
+                score_margin_ratio_bps: None,
             },
             cost_snapshot_enabled: true,
             cost_tuning: &BTreeMap::new(),

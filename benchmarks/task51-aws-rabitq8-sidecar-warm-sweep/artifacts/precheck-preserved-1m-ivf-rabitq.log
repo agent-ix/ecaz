@@ -1,0 +1,29 @@
+       db       | server_version 
+----------------+----------------
+ tqvector_bench | 18.3
+(1 row)
+
+ corpus_rows 
+-------------
+      990000
+(1 row)
+
+ query_rows 
+------------
+      10000
+(1 row)
+
+                relname                 | amname |                              reloptions                              
+----------------------------------------+--------+----------------------------------------------------------------------
+ real_1m_ivf_rabitq1_rerank_corpus_pkey | btree  | 
+ real_1m_ivf_rabitq1_rerank_rabitq_idx  | ec_ivf | {quant_bits=1,rerank=heap_f32,rerank_width=50,storage_format=rabitq}
+(2 rows)
+
+                   relname                    | estimated_rows 
+----------------------------------------------+----------------
+ real_1m_ivf_rabitq1_rerank_sidecar_rabitq8   |         989882
+ real_1m_ivf_rabitq1_rerank_sidecar_rabitq8c3 |         990014
+ real_1m_ivf_rabitq1_rerank_sidecar_rabitq8c4 |         989981
+ real_1m_ivf_rabitq1_rerank_sidecar_rabitq8ls |         990047
+(4 rows)
+

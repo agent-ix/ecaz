@@ -1,0 +1,46 @@
+{
+    "Command": {
+        "CommandId": "d05edcf7-ff66-4ba5-85ef-eb5fb0b621fe",
+        "DocumentName": "AWS-RunShellScript",
+        "DocumentVersion": "$DEFAULT",
+        "Comment": "",
+        "ExpiresAfter": "2026-05-23T13:25:25.355000-07:00",
+        "Parameters": {
+            "commands": [
+                "sudo -u postgres bash -lc 'set -eux; export PATH=$HOME/.cargo/bin:$PATH; cd /var/lib/pgsql/build/ecaz; git fetch origin; git checkout aws-optimization-ivf-rabitq-spire; git pull --ff-only origin aws-optimization-ivf-rabitq-spire; git rev-parse HEAD; test -f benchmarks/task51-aws-ivf-rabitq-current-head-final-gate/suite.json; target/release/ecaz --version || true'"
+            ]
+        },
+        "InstanceIds": [
+            "i-04ce81ce1c10db4bc"
+        ],
+        "Targets": [],
+        "RequestedDateTime": "2026-05-23T11:25:25.355000-07:00",
+        "Status": "Pending",
+        "StatusDetails": "Pending",
+        "OutputS3Region": "us-west-2",
+        "OutputS3BucketName": "",
+        "OutputS3KeyPrefix": "",
+        "MaxConcurrency": "50",
+        "MaxErrors": "0",
+        "TargetCount": 1,
+        "CompletedCount": 0,
+        "ErrorCount": 0,
+        "DeliveryTimedOutCount": 0,
+        "ServiceRole": "",
+        "NotificationConfig": {
+            "NotificationArn": "",
+            "NotificationEvents": [],
+            "NotificationType": ""
+        },
+        "CloudWatchOutputConfig": {
+            "CloudWatchLogGroupName": "",
+            "CloudWatchOutputEnabled": false
+        },
+        "TimeoutSeconds": 3600,
+        "AlarmConfiguration": {
+            "IgnorePollAlarmFailure": false,
+            "Alarms": []
+        },
+        "TriggeredAlarms": []
+    }
+}

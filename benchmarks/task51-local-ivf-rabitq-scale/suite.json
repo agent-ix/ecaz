@@ -1,0 +1,295 @@
+{
+  "name": "task51-local-ivf-rabitq-scale",
+  "schema_version": 1,
+  "artifact_dir": "benchmarks/task51-local-ivf-rabitq-scale/artifacts",
+  "defaults": {
+    "pg": 18,
+    "socket_dir": "/home/peter/.pgrx",
+    "bits": 4,
+    "seed": 42,
+    "queries_limit": 200,
+    "iterations": 200,
+    "force_index": true
+  },
+  "steps": [
+    {
+      "kind": "load",
+      "name": "load-50k-rabitq1-n64-w50",
+      "tags": ["load", "ec_real_50k", "ivf", "rabitq", "nlists64"],
+      "prefix": "task51_local_50k_ivf_rabitq1_n64_w50",
+      "profile": "ec_ivf",
+      "bits": 4,
+      "storage_format": "rabitq",
+      "corpus_file": "target/real-corpus/staged-task50/ec_real_50k_corpus.tsv",
+      "queries_file": "target/real-corpus/staged-task50/ec_real_50k_queries.tsv",
+      "manifest_file": "target/real-corpus/staged-task50/ec_real_50k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "nlists=64",
+        "nprobe=64",
+        "training_sample_rows=10000",
+        "quant_bits=1",
+        "rerank=heap_f32",
+        "rerank_width=50"
+      ],
+      "log_file": "benchmarks/task51-local-ivf-rabitq-scale/artifacts/load-50k-rabitq1-n64-w50.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-50k-rabitq1-n64-w50",
+      "tags": ["recall", "ec_real_50k", "ivf", "rabitq", "nlists64"],
+      "prefix": "task51_local_50k_ivf_rabitq1_n64_w50",
+      "profile": "ec_ivf",
+      "bits": 4,
+      "k": 10,
+      "sweep": [16, 32, 48, 64],
+      "rerank_width": 50,
+      "force_index": true,
+      "truth_cache_file": "benchmarks/task51-local-ivf-rabitq-scale/artifacts/truth-ec-real-50k-q200-k10.json",
+      "log_output": "benchmarks/task51-local-ivf-rabitq-scale/artifacts/recall-50k-rabitq1-n64-w50.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-50k-rabitq1-n64-w50",
+      "tags": ["latency", "ec_real_50k", "ivf", "rabitq", "nlists64"],
+      "prefix": "task51_local_50k_ivf_rabitq1_n64_w50",
+      "profile": "ec_ivf",
+      "bits": 4,
+      "sweep": [16, 32, 48, 64],
+      "rerank_width": 50,
+      "force_index": true,
+      "iterations": 200,
+      "concurrency": 1,
+      "log_output": "benchmarks/task51-local-ivf-rabitq-scale/artifacts/latency-50k-rabitq1-n64-w50.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-50k-rabitq1-n64-w50",
+      "tags": ["storage", "ec_real_50k", "ivf", "rabitq", "nlists64"],
+      "prefix": "task51_local_50k_ivf_rabitq1_n64_w50",
+      "log_file": "benchmarks/task51-local-ivf-rabitq-scale/artifacts/storage-50k-rabitq1-n64-w50.log"
+    },
+    {
+      "kind": "explain",
+      "name": "explain-50k-rabitq1-n64-w50",
+      "tags": ["explain", "ec_real_50k", "ivf", "rabitq", "nlists64"],
+      "prefix": "task51_local_50k_ivf_rabitq1_n64_w50",
+      "profile": "ec_ivf",
+      "index_name": "task51_local_50k_ivf_rabitq1_n64_w50_rabitq_idx",
+      "nprobe": 64,
+      "rerank_width": 50,
+      "sql_file": "benchmarks/task51-local-ivf-rabitq-scale/artifacts/explain-50k-rabitq1-n64-w50.sql",
+      "log_output": "benchmarks/task51-local-ivf-rabitq-scale/artifacts/explain-50k-rabitq1-n64-w50.log"
+    },
+
+    {
+      "kind": "load",
+      "name": "load-50k-rabitq1-n128-w50",
+      "tags": ["load", "ec_real_50k", "ivf", "rabitq", "nlists128"],
+      "prefix": "task51_local_50k_ivf_rabitq1_n128_w50",
+      "profile": "ec_ivf",
+      "bits": 4,
+      "storage_format": "rabitq",
+      "corpus_file": "target/real-corpus/staged-task50/ec_real_50k_corpus.tsv",
+      "queries_file": "target/real-corpus/staged-task50/ec_real_50k_queries.tsv",
+      "manifest_file": "target/real-corpus/staged-task50/ec_real_50k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "nlists=128",
+        "nprobe=128",
+        "training_sample_rows=10000",
+        "quant_bits=1",
+        "rerank=heap_f32",
+        "rerank_width=50"
+      ],
+      "log_file": "benchmarks/task51-local-ivf-rabitq-scale/artifacts/load-50k-rabitq1-n128-w50.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-50k-rabitq1-n128-w50",
+      "tags": ["recall", "ec_real_50k", "ivf", "rabitq", "nlists128"],
+      "prefix": "task51_local_50k_ivf_rabitq1_n128_w50",
+      "profile": "ec_ivf",
+      "bits": 4,
+      "k": 10,
+      "sweep": [16, 32, 64, 96, 128],
+      "rerank_width": 50,
+      "force_index": true,
+      "truth_cache_file": "benchmarks/task51-local-ivf-rabitq-scale/artifacts/truth-ec-real-50k-q200-k10.json",
+      "log_output": "benchmarks/task51-local-ivf-rabitq-scale/artifacts/recall-50k-rabitq1-n128-w50.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-50k-rabitq1-n128-w50",
+      "tags": ["latency", "ec_real_50k", "ivf", "rabitq", "nlists128"],
+      "prefix": "task51_local_50k_ivf_rabitq1_n128_w50",
+      "profile": "ec_ivf",
+      "bits": 4,
+      "sweep": [16, 32, 64, 96, 128],
+      "rerank_width": 50,
+      "force_index": true,
+      "iterations": 200,
+      "concurrency": 1,
+      "log_output": "benchmarks/task51-local-ivf-rabitq-scale/artifacts/latency-50k-rabitq1-n128-w50.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-50k-rabitq1-n128-w50",
+      "tags": ["storage", "ec_real_50k", "ivf", "rabitq", "nlists128"],
+      "prefix": "task51_local_50k_ivf_rabitq1_n128_w50",
+      "log_file": "benchmarks/task51-local-ivf-rabitq-scale/artifacts/storage-50k-rabitq1-n128-w50.log"
+    },
+    {
+      "kind": "explain",
+      "name": "explain-50k-rabitq1-n128-w50",
+      "tags": ["explain", "ec_real_50k", "ivf", "rabitq", "nlists128"],
+      "prefix": "task51_local_50k_ivf_rabitq1_n128_w50",
+      "profile": "ec_ivf",
+      "index_name": "task51_local_50k_ivf_rabitq1_n128_w50_rabitq_idx",
+      "nprobe": 64,
+      "rerank_width": 50,
+      "sql_file": "benchmarks/task51-local-ivf-rabitq-scale/artifacts/explain-50k-rabitq1-n128-w50.sql",
+      "log_output": "benchmarks/task51-local-ivf-rabitq-scale/artifacts/explain-50k-rabitq1-n128-w50.log"
+    },
+
+    {
+      "kind": "load",
+      "name": "load-100k-rabitq1-n64-w50",
+      "tags": ["load", "ec_real_100k", "ivf", "rabitq", "nlists64"],
+      "prefix": "task51_local_100k_ivf_rabitq1_n64_w50",
+      "profile": "ec_ivf",
+      "bits": 4,
+      "storage_format": "rabitq",
+      "corpus_file": "target/real-corpus/staged-task50/ec_real_100k_corpus.tsv",
+      "queries_file": "target/real-corpus/staged-task50/ec_real_100k_queries.tsv",
+      "manifest_file": "target/real-corpus/staged-task50/ec_real_100k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "nlists=64",
+        "nprobe=64",
+        "training_sample_rows=10000",
+        "quant_bits=1",
+        "rerank=heap_f32",
+        "rerank_width=50"
+      ],
+      "log_file": "benchmarks/task51-local-ivf-rabitq-scale/artifacts/load-100k-rabitq1-n64-w50.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-100k-rabitq1-n64-w50",
+      "tags": ["recall", "ec_real_100k", "ivf", "rabitq", "nlists64"],
+      "prefix": "task51_local_100k_ivf_rabitq1_n64_w50",
+      "profile": "ec_ivf",
+      "bits": 4,
+      "k": 10,
+      "sweep": [32, 48, 64],
+      "rerank_width": 50,
+      "force_index": true,
+      "truth_cache_file": "benchmarks/task51-local-ivf-rabitq-scale/artifacts/truth-ec-real-100k-q200-k10.json",
+      "log_output": "benchmarks/task51-local-ivf-rabitq-scale/artifacts/recall-100k-rabitq1-n64-w50.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-100k-rabitq1-n64-w50",
+      "tags": ["latency", "ec_real_100k", "ivf", "rabitq", "nlists64"],
+      "prefix": "task51_local_100k_ivf_rabitq1_n64_w50",
+      "profile": "ec_ivf",
+      "bits": 4,
+      "sweep": [32, 48, 64],
+      "rerank_width": 50,
+      "force_index": true,
+      "iterations": 200,
+      "concurrency": 1,
+      "log_output": "benchmarks/task51-local-ivf-rabitq-scale/artifacts/latency-100k-rabitq1-n64-w50.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-100k-rabitq1-n64-w50",
+      "tags": ["storage", "ec_real_100k", "ivf", "rabitq", "nlists64"],
+      "prefix": "task51_local_100k_ivf_rabitq1_n64_w50",
+      "log_file": "benchmarks/task51-local-ivf-rabitq-scale/artifacts/storage-100k-rabitq1-n64-w50.log"
+    },
+    {
+      "kind": "explain",
+      "name": "explain-100k-rabitq1-n64-w50",
+      "tags": ["explain", "ec_real_100k", "ivf", "rabitq", "nlists64"],
+      "prefix": "task51_local_100k_ivf_rabitq1_n64_w50",
+      "profile": "ec_ivf",
+      "index_name": "task51_local_100k_ivf_rabitq1_n64_w50_rabitq_idx",
+      "nprobe": 64,
+      "rerank_width": 50,
+      "sql_file": "benchmarks/task51-local-ivf-rabitq-scale/artifacts/explain-100k-rabitq1-n64-w50.sql",
+      "log_output": "benchmarks/task51-local-ivf-rabitq-scale/artifacts/explain-100k-rabitq1-n64-w50.log"
+    },
+
+    {
+      "kind": "load",
+      "name": "load-100k-rabitq1-n128-w50",
+      "tags": ["load", "ec_real_100k", "ivf", "rabitq", "nlists128"],
+      "prefix": "task51_local_100k_ivf_rabitq1_n128_w50",
+      "profile": "ec_ivf",
+      "bits": 4,
+      "storage_format": "rabitq",
+      "corpus_file": "target/real-corpus/staged-task50/ec_real_100k_corpus.tsv",
+      "queries_file": "target/real-corpus/staged-task50/ec_real_100k_queries.tsv",
+      "manifest_file": "target/real-corpus/staged-task50/ec_real_100k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "nlists=128",
+        "nprobe=128",
+        "training_sample_rows=10000",
+        "quant_bits=1",
+        "rerank=heap_f32",
+        "rerank_width=50"
+      ],
+      "log_file": "benchmarks/task51-local-ivf-rabitq-scale/artifacts/load-100k-rabitq1-n128-w50.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-100k-rabitq1-n128-w50",
+      "tags": ["recall", "ec_real_100k", "ivf", "rabitq", "nlists128"],
+      "prefix": "task51_local_100k_ivf_rabitq1_n128_w50",
+      "profile": "ec_ivf",
+      "bits": 4,
+      "k": 10,
+      "sweep": [32, 64, 96, 128],
+      "rerank_width": 50,
+      "force_index": true,
+      "truth_cache_file": "benchmarks/task51-local-ivf-rabitq-scale/artifacts/truth-ec-real-100k-q200-k10.json",
+      "log_output": "benchmarks/task51-local-ivf-rabitq-scale/artifacts/recall-100k-rabitq1-n128-w50.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-100k-rabitq1-n128-w50",
+      "tags": ["latency", "ec_real_100k", "ivf", "rabitq", "nlists128"],
+      "prefix": "task51_local_100k_ivf_rabitq1_n128_w50",
+      "profile": "ec_ivf",
+      "bits": 4,
+      "sweep": [32, 64, 96, 128],
+      "rerank_width": 50,
+      "force_index": true,
+      "iterations": 200,
+      "concurrency": 1,
+      "log_output": "benchmarks/task51-local-ivf-rabitq-scale/artifacts/latency-100k-rabitq1-n128-w50.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-100k-rabitq1-n128-w50",
+      "tags": ["storage", "ec_real_100k", "ivf", "rabitq", "nlists128"],
+      "prefix": "task51_local_100k_ivf_rabitq1_n128_w50",
+      "log_file": "benchmarks/task51-local-ivf-rabitq-scale/artifacts/storage-100k-rabitq1-n128-w50.log"
+    },
+    {
+      "kind": "explain",
+      "name": "explain-100k-rabitq1-n128-w50",
+      "tags": ["explain", "ec_real_100k", "ivf", "rabitq", "nlists128"],
+      "prefix": "task51_local_100k_ivf_rabitq1_n128_w50",
+      "profile": "ec_ivf",
+      "index_name": "task51_local_100k_ivf_rabitq1_n128_w50_rabitq_idx",
+      "nprobe": 64,
+      "rerank_width": 50,
+      "sql_file": "benchmarks/task51-local-ivf-rabitq-scale/artifacts/explain-100k-rabitq1-n128-w50.sql",
+      "log_output": "benchmarks/task51-local-ivf-rabitq-scale/artifacts/explain-100k-rabitq1-n128-w50.log"
+    }
+  ]
+}

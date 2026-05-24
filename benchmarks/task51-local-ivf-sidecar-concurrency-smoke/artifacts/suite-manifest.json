@@ -1,0 +1,76 @@
+{
+  "suite": "task51-local-ivf-sidecar-concurrency-smoke",
+  "schema_version": 1,
+  "config": "benchmarks/task51-local-ivf-sidecar-concurrency-smoke/suite.json",
+  "config_sha256": "26be33611394abdf0dae84dacc68432e8271ab87bcec76c4e36e57c77fd1c4e1",
+  "dry_run": false,
+  "generated_at_unix_ms": 1779555699839,
+  "connection": {
+    "database": "tqvector_bench",
+    "host": "/home/peter/.pgrx",
+    "port": 28818,
+    "user": null,
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "sidecar-concurrency-c4-50k-rabitq1-n128-k50",
+      "kind": "sidecar-rerank",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "sidecar-rerank",
+        "--prefix",
+        "task51_local_50k_ivf_rabitq1_n128_sidecar_off",
+        "--profile",
+        "ec_ivf",
+        "--k",
+        "10",
+        "--candidate-k",
+        "50",
+        "--concurrency",
+        "4",
+        "--sweep",
+        "96",
+        "--queries-limit",
+        "20",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--variant",
+        "f16",
+        "--variant",
+        "rabitq8",
+        "--read-mode",
+        "random-id",
+        "--read-mode",
+        "tid-sorted",
+        "--force-index",
+        "--log-output",
+        "benchmarks/task51-local-ivf-sidecar-concurrency-smoke/artifacts/sidecar-concurrency-c4-50k-rabitq1-n128-k50.log"
+      ],
+      "selected": true,
+      "tags": [
+        "sidecar",
+        "concurrency",
+        "local_smoke",
+        "ivf",
+        "rabitq"
+      ],
+      "expected_artifacts": [
+        "benchmarks/task51-local-ivf-sidecar-concurrency-smoke/artifacts/sidecar-concurrency-c4-50k-rabitq1-n128-k50.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1779555699840,
+      "finished_at_unix_ms": 1779555794625,
+      "duration_ms": 98690,
+      "exit_code": 0
+    }
+  ]
+}

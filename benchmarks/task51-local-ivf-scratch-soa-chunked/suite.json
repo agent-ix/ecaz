@@ -1,0 +1,100 @@
+{
+  "name": "task51-local-ivf-scratch-soa-chunked",
+  "schema_version": 1,
+  "artifact_dir": "benchmarks/task51-local-ivf-scratch-soa-chunked/artifacts",
+  "defaults": {
+    "pg": 18,
+    "socket_dir": "/home/peter/.pgrx",
+    "profile": "ec_ivf",
+    "bits": 4,
+    "seed": 42,
+    "queries_limit": 100,
+    "iterations": 100,
+    "force_index": true
+  },
+  "steps": [
+    {
+      "kind": "recall",
+      "name": "recall-static-990k-rabitq1-n1024-w50-p128",
+      "tags": ["recall", "ec_real_990k", "ivf", "rabitq", "scratch_off"],
+      "prefix": "task51_local_990k_ivf_rabitq1_n1024_w50",
+      "profile": "ec_ivf",
+      "bits": 4,
+      "k": 10,
+      "sweep": [128],
+      "rerank_width": 50,
+      "force_index": true,
+      "truth_cache_file": "benchmarks/task51-local-ivf-scratch-soa-chunked/artifacts/truth-ec-real-990k-q100-k10.json",
+      "log_output": "benchmarks/task51-local-ivf-scratch-soa-chunked/artifacts/recall-static-990k-rabitq1-n1024-w50-p128.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-chunked-scratch-990k-rabitq1-n1024-w50-p128",
+      "tags": ["recall", "ec_real_990k", "ivf", "rabitq", "scratch_on", "chunked_bits1"],
+      "prefix": "task51_local_990k_ivf_rabitq1_n1024_w50",
+      "profile": "ec_ivf",
+      "bits": 4,
+      "k": 10,
+      "sweep": [128],
+      "rerank_width": 50,
+      "force_index": true,
+      "ivf_scratch_soa_batch_decode": true,
+      "truth_cache_file": "benchmarks/task51-local-ivf-scratch-soa-chunked/artifacts/truth-ec-real-990k-q100-k10.json",
+      "log_output": "benchmarks/task51-local-ivf-scratch-soa-chunked/artifacts/recall-chunked-scratch-990k-rabitq1-n1024-w50-p128.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-static-990k-rabitq1-n1024-w50-p128",
+      "tags": ["latency", "ec_real_990k", "ivf", "rabitq", "scratch_off"],
+      "prefix": "task51_local_990k_ivf_rabitq1_n1024_w50",
+      "profile": "ec_ivf",
+      "bits": 4,
+      "sweep": [128],
+      "rerank_width": 50,
+      "force_index": true,
+      "iterations": 100,
+      "concurrency": 1,
+      "log_output": "benchmarks/task51-local-ivf-scratch-soa-chunked/artifacts/latency-static-990k-rabitq1-n1024-w50-p128.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-chunked-scratch-990k-rabitq1-n1024-w50-p128",
+      "tags": ["latency", "ec_real_990k", "ivf", "rabitq", "scratch_on", "chunked_bits1"],
+      "prefix": "task51_local_990k_ivf_rabitq1_n1024_w50",
+      "profile": "ec_ivf",
+      "bits": 4,
+      "sweep": [128],
+      "rerank_width": 50,
+      "force_index": true,
+      "ivf_scratch_soa_batch_decode": true,
+      "iterations": 100,
+      "concurrency": 1,
+      "log_output": "benchmarks/task51-local-ivf-scratch-soa-chunked/artifacts/latency-chunked-scratch-990k-rabitq1-n1024-w50-p128.log"
+    },
+    {
+      "kind": "explain",
+      "name": "explain-static-990k-rabitq1-n1024-w50-p128",
+      "tags": ["explain", "ec_real_990k", "ivf", "rabitq", "scratch_off"],
+      "prefix": "task51_local_990k_ivf_rabitq1_n1024_w50",
+      "profile": "ec_ivf",
+      "index_name": "task51_local_990k_ivf_rabitq1_n1024_w50_rabitq_idx",
+      "nprobe": 128,
+      "rerank_width": 50,
+      "sql_file": "benchmarks/task51-local-ivf-scratch-soa-chunked/artifacts/explain-static-990k-rabitq1-n1024-w50-p128.sql",
+      "log_output": "benchmarks/task51-local-ivf-scratch-soa-chunked/artifacts/explain-static-990k-rabitq1-n1024-w50-p128.log"
+    },
+    {
+      "kind": "explain",
+      "name": "explain-chunked-scratch-990k-rabitq1-n1024-w50-p128",
+      "tags": ["explain", "ec_real_990k", "ivf", "rabitq", "scratch_on", "chunked_bits1"],
+      "prefix": "task51_local_990k_ivf_rabitq1_n1024_w50",
+      "profile": "ec_ivf",
+      "index_name": "task51_local_990k_ivf_rabitq1_n1024_w50_rabitq_idx",
+      "nprobe": 128,
+      "rerank_width": 50,
+      "ivf_scratch_soa_batch_decode": true,
+      "sql_file": "benchmarks/task51-local-ivf-scratch-soa-chunked/artifacts/explain-chunked-scratch-990k-rabitq1-n1024-w50-p128.sql",
+      "log_output": "benchmarks/task51-local-ivf-scratch-soa-chunked/artifacts/explain-chunked-scratch-990k-rabitq1-n1024-w50-p128.log"
+    }
+  ]
+}

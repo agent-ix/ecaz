@@ -1,0 +1,27 @@
+# Suite Report: task51-local-ivf-scratch-soa-chunked
+
+- config: `benchmarks/task51-local-ivf-scratch-soa-chunked/suite.json`
+- config_sha256: `baae9df52978490d24ee688110c42b7edde03d124380c426a9659078d372b137`
+- dry_run: `false`
+- steps: completed 6, failed 0, skipped 0, dry-run 0, missing artifacts 0, stale 0
+
+| Step | Kind | Status | Duration ms | Artifacts |
+| --- | --- | --- | ---: | --- |
+| recall-static-990k-rabitq1-n1024-w50-p128 | recall | Succeeded | 60316 | `benchmarks/task51-local-ivf-scratch-soa-chunked/artifacts/recall-static-990k-rabitq1-n1024-w50-p128.log` |
+| recall-chunked-scratch-990k-rabitq1-n1024-w50-p128 | recall | Succeeded | 67864 | `benchmarks/task51-local-ivf-scratch-soa-chunked/artifacts/recall-chunked-scratch-990k-rabitq1-n1024-w50-p128.log` |
+| latency-static-990k-rabitq1-n1024-w50-p128 | latency | Succeeded | 71236 | `benchmarks/task51-local-ivf-scratch-soa-chunked/artifacts/latency-static-990k-rabitq1-n1024-w50-p128.log` |
+| latency-chunked-scratch-990k-rabitq1-n1024-w50-p128 | latency | Succeeded | 82771 | `benchmarks/task51-local-ivf-scratch-soa-chunked/artifacts/latency-chunked-scratch-990k-rabitq1-n1024-w50-p128.log` |
+| explain-static-990k-rabitq1-n1024-w50-p128 | explain | Succeeded | 684 | `benchmarks/task51-local-ivf-scratch-soa-chunked/artifacts/explain-static-990k-rabitq1-n1024-w50-p128.sql`<br>`benchmarks/task51-local-ivf-scratch-soa-chunked/artifacts/explain-static-990k-rabitq1-n1024-w50-p128.log` |
+| explain-chunked-scratch-990k-rabitq1-n1024-w50-p128 | explain | Succeeded | 654 | `benchmarks/task51-local-ivf-scratch-soa-chunked/artifacts/explain-chunked-scratch-990k-rabitq1-n1024-w50-p128.sql`<br>`benchmarks/task51-local-ivf-scratch-soa-chunked/artifacts/explain-chunked-scratch-990k-rabitq1-n1024-w50-p128.log` |
+
+## Parsed Results
+
+| Step | Kind | Metric | Values |
+| --- | --- | --- | --- |
+| recall-static-990k-rabitq1-n1024-w50-p128 | recall | recall | `mean q-time=584.59 ms`, `ndcg@k=0.9986`, `nprobe=128`, `queries=100`, `recall@k=0.9750`, `recall_ci95_high=0.9830`, `recall_ci95_low=0.9634`, `recall_p10=0.9000`, `recall_p50=1.0000`, `recall_p90=1.0000`, `recall_trials=1000`, `recall_worst=0.5000` |
+| recall-chunked-scratch-990k-rabitq1-n1024-w50-p128 | recall | recall | `mean q-time=660.99 ms`, `ndcg@k=0.9986`, `nprobe=128`, `queries=100`, `recall@k=0.9750`, `recall_ci95_high=0.9830`, `recall_ci95_low=0.9634`, `recall_p10=0.9000`, `recall_p50=1.0000`, `recall_p90=1.0000`, `recall_trials=1000`, `recall_worst=0.5000` |
+| latency-static-990k-rabitq1-n1024-w50-p128 | latency | latency | `count=100`, `max=660.9 ms`, `mean=553.1 ms`, `min=443.6 ms`, `nprobe=128`, `p50=549.1 ms`, `p95=636.9 ms`, `p99=660.3 ms`, `stddev=47.0 ms` |
+| latency-chunked-scratch-990k-rabitq1-n1024-w50-p128 | latency | latency | `count=100`, `max=1225.4 ms`, `mean=668.2 ms`, `min=540.3 ms`, `nprobe=128`, `p50=653.4 ms`, `p95=765.6 ms`, `p99=1095.3 ms`, `stddev=91.2 ms` |
+| explain-static-990k-rabitq1-n1024-w50-p128 | explain | planner_cost | `average_list_live_count=966.796875`, `cpu_operator_cost=0.0025`, `dimensions=1536`, `effective_nprobe=128`, `effective_nprobe_source=session`, `estimated_candidate_rows=123750`, `estimated_centroid_scores=1024`, `estimated_posting_pages=4676.75`, `estimated_selected_lists=128`, `index_pages=38184`, `modeled_correlation=0`, `modeled_selectivity=1`, `modeled_startup_cost=812.3216`, `modeled_total_cost=8375.9116`, `nlists=1024`, `ordering_compare_type=COMPARE_LT`, `pg18_strategy_translation_ready=t`, `pg18_tree_height_callback_ready=t`, `planner_gate_reason=planner scan selection is live: Task 28 IVF cost model active`, `planner_scan_enabled=t`, `random_page_cost=4`, `relation_nprobe=256`, `reltuples=990000`, `rerank=heap_f32`, `rerank_multiplier=1.35`, `resolved_tree_height=0`, `scoring_mode=rabitq_binary`, `scoring_multiplier=0.45`, `seq_page_cost=1`, `session_nprobe=128`, `storage_format=rabitq`, `tree_height_source=amgettreeheight_callback` |
+| explain-chunked-scratch-990k-rabitq1-n1024-w50-p128 | explain | planner_cost | `average_list_live_count=966.796875`, `cpu_operator_cost=0.0025`, `dimensions=1536`, `effective_nprobe=128`, `effective_nprobe_source=session`, `estimated_candidate_rows=123750`, `estimated_centroid_scores=1024`, `estimated_posting_pages=4676.75`, `estimated_selected_lists=128`, `index_pages=38184`, `modeled_correlation=0`, `modeled_selectivity=1`, `modeled_startup_cost=812.3216`, `modeled_total_cost=8375.9116`, `nlists=1024`, `ordering_compare_type=COMPARE_LT`, `pg18_strategy_translation_ready=t`, `pg18_tree_height_callback_ready=t`, `planner_gate_reason=planner scan selection is live: Task 28 IVF cost model active`, `planner_scan_enabled=t`, `random_page_cost=4`, `relation_nprobe=256`, `reltuples=990000`, `rerank=heap_f32`, `rerank_multiplier=1.35`, `resolved_tree_height=0`, `scoring_mode=rabitq_binary`, `scoring_multiplier=0.45`, `seq_page_cost=1`, `session_nprobe=128`, `storage_format=rabitq`, `tree_height_source=amgettreeheight_callback` |
+wrote benchmarks/task51-local-ivf-scratch-soa-chunked/artifacts/results-report.jsonl

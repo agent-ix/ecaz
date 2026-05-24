@@ -1,0 +1,202 @@
+{
+  "suite": "task51-aws-ivf-rabitq-final-gate",
+  "schema_version": 1,
+  "config": "benchmarks/task51-aws-ivf-rabitq-final-gate/suite.json",
+  "config_sha256": "1af993e79873e9679414bf60284a5307f38af0f49b434e6dcad36bc192b174e4",
+  "dry_run": true,
+  "generated_at_unix_ms": 1779523914393,
+  "connection": {
+    "database": "tqvector_bench",
+    "host": null,
+    "port": null,
+    "user": null,
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "recall-1m-rabitq1-rerank-q500",
+      "kind": "recall",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "bench",
+        "recall",
+        "--prefix",
+        "real_1m_ivf_rabitq1_rerank",
+        "--profile",
+        "ec_ivf",
+        "--k",
+        "10",
+        "--sweep",
+        "64,128,256",
+        "--rerank-width",
+        "50",
+        "--queries-limit",
+        "500",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--truth-cache-file",
+        "benchmarks/task51-aws-ivf-rabitq-final-gate/artifacts/truth-aws-real-1m-q500-k10.json",
+        "--log-output",
+        "benchmarks/task51-aws-ivf-rabitq-final-gate/artifacts/recall-1m-rabitq1-rerank-q500.log"
+      ],
+      "selected": true,
+      "tags": [
+        "aws",
+        "recall",
+        "ec_real_990k",
+        "ivf",
+        "rabitq",
+        "q500"
+      ],
+      "expected_artifacts": [
+        "benchmarks/task51-aws-ivf-rabitq-final-gate/artifacts/recall-1m-rabitq1-rerank-q500.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "latency-1m-rabitq1-rerank",
+      "kind": "latency",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "bench",
+        "latency",
+        "--prefix",
+        "real_1m_ivf_rabitq1_rerank",
+        "--profile",
+        "ec_ivf",
+        "--k",
+        "10",
+        "--concurrency",
+        "1",
+        "--iterations",
+        "200",
+        "--sweep",
+        "64,128,256",
+        "--rerank-width",
+        "50",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--memory-sample-interval-ms",
+        "25",
+        "--log-output",
+        "benchmarks/task51-aws-ivf-rabitq-final-gate/artifacts/latency-1m-rabitq1-rerank.log"
+      ],
+      "selected": true,
+      "tags": [
+        "aws",
+        "latency",
+        "ec_real_990k",
+        "ivf",
+        "rabitq"
+      ],
+      "expected_artifacts": [
+        "benchmarks/task51-aws-ivf-rabitq-final-gate/artifacts/latency-1m-rabitq1-rerank.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "storage-1m-rabitq1-rerank",
+      "kind": "storage",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--log-file",
+        "benchmarks/task51-aws-ivf-rabitq-final-gate/artifacts/storage-1m-rabitq1-rerank.log",
+        "bench",
+        "storage",
+        "--prefix",
+        "real_1m_ivf_rabitq1_rerank"
+      ],
+      "selected": true,
+      "tags": [
+        "aws",
+        "storage",
+        "ec_real_990k",
+        "ivf",
+        "rabitq"
+      ],
+      "expected_artifacts": [
+        "benchmarks/task51-aws-ivf-rabitq-final-gate/artifacts/storage-1m-rabitq1-rerank.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "explain-1m-rabitq1-rerank-p128",
+      "kind": "explain",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "dev",
+        "sql",
+        "--pg",
+        "18",
+        "--db",
+        "tqvector_bench",
+        "--socket-dir",
+        "/var/run/postgresql",
+        "--raw",
+        "--file",
+        "benchmarks/task51-aws-ivf-rabitq-final-gate/artifacts/explain-1m-rabitq1-rerank-p128.sql",
+        "--log-output",
+        "benchmarks/task51-aws-ivf-rabitq-final-gate/artifacts/explain-1m-rabitq1-rerank-p128.log"
+      ],
+      "selected": true,
+      "tags": [
+        "aws",
+        "explain",
+        "ec_real_990k",
+        "ivf",
+        "rabitq",
+        "nprobe128"
+      ],
+      "expected_artifacts": [
+        "benchmarks/task51-aws-ivf-rabitq-final-gate/artifacts/explain-1m-rabitq1-rerank-p128.sql",
+        "benchmarks/task51-aws-ivf-rabitq-final-gate/artifacts/explain-1m-rabitq1-rerank-p128.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "explain-1m-rabitq1-rerank-p256",
+      "kind": "explain",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "dev",
+        "sql",
+        "--pg",
+        "18",
+        "--db",
+        "tqvector_bench",
+        "--socket-dir",
+        "/var/run/postgresql",
+        "--raw",
+        "--file",
+        "benchmarks/task51-aws-ivf-rabitq-final-gate/artifacts/explain-1m-rabitq1-rerank-p256.sql",
+        "--log-output",
+        "benchmarks/task51-aws-ivf-rabitq-final-gate/artifacts/explain-1m-rabitq1-rerank-p256.log"
+      ],
+      "selected": true,
+      "tags": [
+        "aws",
+        "explain",
+        "ec_real_990k",
+        "ivf",
+        "rabitq",
+        "nprobe256"
+      ],
+      "expected_artifacts": [
+        "benchmarks/task51-aws-ivf-rabitq-final-gate/artifacts/explain-1m-rabitq1-rerank-p256.sql",
+        "benchmarks/task51-aws-ivf-rabitq-final-gate/artifacts/explain-1m-rabitq1-rerank-p256.log"
+      ],
+      "status": "dry-run"
+    }
+  ]
+}

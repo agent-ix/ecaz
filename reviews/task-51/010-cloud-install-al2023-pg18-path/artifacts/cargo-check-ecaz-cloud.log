@@ -1,0 +1,5 @@
+Script started on 2026-05-23 06:17:26-07:00 [<not executed on terminal>]
+    Checking ecaz-cloud v0.1.0 (/home/peter/dev/ecaz/crates/ecaz-cloud)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.47s
+
+Script done on 2026-05-23 06:17:27-07:00 [COMMAND_EXIT_CODE="0"]
