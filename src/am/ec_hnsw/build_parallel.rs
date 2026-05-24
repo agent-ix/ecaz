@@ -2453,7 +2453,9 @@ impl EcHnswParallelBuildLeader {
         // PostgreSQL's parallel scan sizing, the shared header allocation is
         // sized for the header type, and the parallel scan object is
         // initialized before workers can attach.
-        let shared = unsafe {
+        // SAFETY: `pcxt` is live and fully estimated; the early-return covers
+        // the InitializeParallelDSM-fail cleanup path.
+        unsafe {
             pg_sys::InitializeParallelDSM(pcxt);
             if (*pcxt).seg.is_null() {
                 pg_sys::DestroyParallelContext(pcxt);
@@ -2483,7 +2485,6 @@ impl EcHnswParallelBuildLeader {
                 PARALLEL_KEY_EC_HNSW_BUILD_SHARED,
                 shared.cast(),
             );
-            shared
         };
 
         // SAFETY: Queue chunks were estimated above; each queue allocation is
