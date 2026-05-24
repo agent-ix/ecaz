@@ -226,14 +226,6 @@ impl VisitedState {
         self.in_frontier.reserve(additional);
         self.visited.reserve(additional);
     }
-
-    /// Pre-reserve capacity only for frontier membership checks.
-    /// The scan traversal uses `in_frontier` as its duplicate guard
-    /// and keeps the best candidates separately, so reserving the
-    /// full visited set there only adds allocation work.
-    pub fn reserve_frontier(&mut self, additional: usize) {
-        self.in_frontier.reserve(additional);
-    }
 }
 
 /// `(tid, distance)` pair. Same semantics as [`Candidate`] but keyed
