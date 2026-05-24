@@ -1,0 +1,108 @@
+diff --git a/src/am/ec_spire/build/drafts.rs b/src/am/ec_spire/build/drafts.rs
+index b06e46fd..321b7d6e 100644
+--- a/src/am/ec_spire/build/drafts.rs
++++ b/src/am/ec_spire/build/drafts.rs
+@@ -218,8 +218,7 @@ unsafe fn publish_relation_partitioned_single_level_build(
+         return Ok(0);
+     }
+ 
+-    // SAFETY: reads PostgreSQL backend-local current timestamp state.
+-    let (published_at_micros, retain_until_micros) = unsafe { current_epoch_publish_times()? };
++    let (published_at_micros, retain_until_micros) = current_epoch_publish_times()?;
+     let epoch_manifest = SpireEpochManifest {
+         epoch: SPIRE_INITIAL_EPOCH,
+         state: SpireEpochState::Published,
+@@ -374,8 +373,7 @@ unsafe fn publish_relation_recursive_routing_build(
+         return Ok(0);
+     }
+ 
+-    // SAFETY: reads PostgreSQL backend-local current timestamp state.
+-    let (published_at_micros, retain_until_micros) = unsafe { current_epoch_publish_times()? };
++    let (published_at_micros, retain_until_micros) = current_epoch_publish_times()?;
+     let centroid_plan = state.train_centroid_plan()?;
+     let mut pid_allocator = SpirePidAllocator::default();
+     let mut local_vec_id_allocator = SpireLocalVecIdAllocator::default();
+@@ -452,7 +450,7 @@ unsafe fn publish_relation_recursive_routing_build(
+     Ok(state.scanned_tuples)
+ }
+ 
+-pub(super) unsafe fn current_epoch_publish_times() -> Result<(i64, i64), String> {
++pub(super) fn current_epoch_publish_times() -> Result<(i64, i64), String> {
+     // SAFETY: reads PostgreSQL backend-local current timestamp state.
+     let published_at_micros = unsafe { pg_sys::GetCurrentTimestamp() };
+     let retention_micros = i64::from(SPIRE_MIN_EPOCH_RETENTION_SECS)
+diff --git a/src/am/ec_spire/coordinator/maintenance.rs b/src/am/ec_spire/coordinator/maintenance.rs
+index 07ddf2ef..e6349d58 100644
+--- a/src/am/ec_spire/coordinator/maintenance.rs
++++ b/src/am/ec_spire/coordinator/maintenance.rs
+@@ -222,9 +222,7 @@ unsafe fn build_relation_selected_scheduled_maintenance_input(
+     )?;
+     let object_versions =
+         scheduled_replacement_object_version_plan(selected, parent.header.object_version, rows)?;
+-    let (published_at_micros, retain_until_micros) =
+-        // SAFETY: reads PostgreSQL backend-local current timestamp state.
+-        unsafe { build::current_epoch_publish_times()? };
++    let (published_at_micros, retain_until_micros) = build::current_epoch_publish_times()?;
+ 
+     match selected.decision.mode {
+         update::SpireLeafReplacementScheduleMode::Split => {
+diff --git a/src/am/ec_spire/insert.rs b/src/am/ec_spire/insert.rs
+index 506fe757..a2be5ee1 100644
+--- a/src/am/ec_spire/insert.rs
++++ b/src/am/ec_spire/insert.rs
+@@ -154,9 +154,7 @@ unsafe fn publish_insert_delta_epoch(
+         .active_epoch
+         .checked_add(1)
+         .ok_or_else(|| "ec_spire insert epoch overflow".to_owned())?;
+-    let (published_at_micros, retain_until_micros) =
+-        // SAFETY: reads PostgreSQL backend-local current timestamp state.
+-        unsafe { build::current_epoch_publish_times()? };
++    let (published_at_micros, retain_until_micros) = build::current_epoch_publish_times()?;
+ 
+     let mut pid_allocator = SpirePidAllocator::new(root_control.next_pid)?;
+     let mut local_vec_id_allocator =
+@@ -242,9 +240,7 @@ unsafe fn publish_empty_insert_bootstrap_epoch(
+         .active_epoch
+         .checked_add(1)
+         .ok_or_else(|| "ec_spire insert bootstrap epoch overflow".to_owned())?;
+-    let (published_at_micros, retain_until_micros) =
+-        // SAFETY: reads PostgreSQL backend-local current timestamp state.
+-        unsafe { build::current_epoch_publish_times()? };
++    let (published_at_micros, retain_until_micros) = build::current_epoch_publish_times()?;
+ 
+     let mut pid_allocator = SpirePidAllocator::new(root_control.next_pid)?;
+     let mut local_vec_id_allocator =
+diff --git a/src/am/ec_spire/vacuum/mod.rs b/src/am/ec_spire/vacuum/mod.rs
+index e03a5a48..8befe861 100644
+--- a/src/am/ec_spire/vacuum/mod.rs
++++ b/src/am/ec_spire/vacuum/mod.rs
+@@ -140,11 +140,6 @@ impl SpireVacuumIndexRelation {
+     }
+ }
+ 
+-fn spire_vacuum_publish_times() -> Result<(i64, i64), String> {
+-    // SAFETY: timestamp helper reads PostgreSQL time state for publish metadata.
+-    unsafe { build::current_epoch_publish_times() }
+-}
+-
+ pub(super) unsafe extern "C-unwind" fn ec_spire_ambulkdelete(
+     info: *mut pg_sys::IndexVacuumInfo,
+     stats: *mut pg_sys::IndexBulkDeleteResult,
+@@ -395,7 +390,7 @@ fn publish_compacted_delta_epoch_if_needed(
+         .active_epoch
+         .checked_add(1)
+         .ok_or_else(|| "ec_spire vacuum compaction epoch overflow".to_owned())?;
+-    let (published_at_micros, retain_until_micros) = spire_vacuum_publish_times()?;
++    let (published_at_micros, retain_until_micros) = build::current_epoch_publish_times()?;
+     let pid_allocator = SpirePidAllocator::new(root_control.next_pid)?;
+     let local_vec_id_allocator = SpireLocalVecIdAllocator::new(root_control.next_local_vec_seq)?;
+ 
+@@ -578,7 +573,7 @@ fn publish_delete_delta_epoch(
+         .active_epoch
+         .checked_add(1)
+         .ok_or_else(|| "ec_spire vacuum epoch overflow".to_owned())?;
+-    let (published_at_micros, retain_until_micros) = spire_vacuum_publish_times()?;
++    let (published_at_micros, retain_until_micros) = build::current_epoch_publish_times()?;
+     let mut pid_allocator = SpirePidAllocator::new(root_control.next_pid)?;
+     let local_vec_id_allocator = SpireLocalVecIdAllocator::new(root_control.next_local_vec_seq)?;
+     let local_store_config = index.local_store_config(root_control)?;

@@ -1,0 +1,6 @@
+[suite:task-54-005-closeout] wrote reviews/task-54/005-closeout/artifacts/suite-manifest.json
+[suite:task-54-005-closeout] load-10k-hnsw -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 --log-file reviews/task-54/005-closeout/artifacts/corpus-load-ec_real_10k-hnsw.log corpus load --prefix ec_real_10k_hnsw --profile ec_hnsw --corpus-file fixtures/m5_diskann_real10k/m5_diskann_real10k_corpus.tsv --queries-file fixtures/m5_diskann_real10k/m5_diskann_real10k_queries.tsv --allow-manifest-mismatch --bits 4 --seed 42 --m "8,16" --ef-construction 128
+[suite:task-54-005-closeout] wrote reviews/task-54/005-closeout/artifacts/suite-manifest.json
+[suite:task-54-005-closeout] wrote reviews/task-54/005-closeout/artifacts/suite-manifest.json
+[suite:task-54-005-closeout] wrote reviews/task-54/005-closeout/artifacts/results.jsonl
+[suite:task-54-005-closeout] wrote reviews/task-54/005-closeout/artifacts/suite-manifest.json

@@ -1,0 +1,19 @@
+Script started on 2026-05-21 18:37:16-07:00 [<not executed on terminal>]
+src/storage/string_info.rs
+8:    msg: pg_sys::StringInfo,
+9:    _marker: PhantomData<&'msg mut pg_sys::StringInfoData>,
+13:    pub(crate) fn from_internal(input: Internal, label: &str) -> Result<Self, String> {
+15:        // argument as a live `StringInfoData` input buffer for the duration of
+19:                .get::<pg_sys::StringInfoData>()
+21:                as *const pg_sys::StringInfoData as pg_sys::StringInfo
+34:    pub(crate) unsafe fn from_raw(msg: pg_sys::StringInfo, label: &str) -> Result<Self, String> {
+
+src/lib.rs
+614:fn recv_tqvector_message(
+744:fn recv_raw_f32_message(
+784:    let msg = crate::storage::string_info::StringInfoReader::from_internal(
+789:    let bytes = recv_raw_f32_message(msg, "ecvector")
+925:    let msg = crate::storage::string_info::StringInfoReader::from_internal(
+930:    recv_tqvector_message(msg).unwrap_or_else(|e| pgrx::error!("invalid tqvector binary: {e}"))
+
+Script done on 2026-05-21 18:37:17-07:00 [COMMAND_EXIT_CODE="0"]

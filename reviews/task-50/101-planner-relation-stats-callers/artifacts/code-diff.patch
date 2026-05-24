@@ -1,0 +1,255 @@
+Script started on 2026-05-20 16:10:42-07:00 [<not executed on terminal>]
+commit b1333a5eef6fe016791d2dd2836f07f13a08baf0 (HEAD -> task-50-unsafe-closeout, origin/task-50-unsafe-closeout)
+Author:     Agent IX <agent@agent-ix.dev>
+AuthorDate: Wed May 20 16:10:19 2026 -0700
+Commit:     Agent IX <agent@agent-ix.dev>
+CommitDate: Wed May 20 16:10:19 2026 -0700
+
+    Centralize planner relation stats reads
+---
+ src/am/common/cost.rs       | 34 ++++++++++++++++++++++++++--------
+ src/am/ec_diskann/cost.rs   | 19 ++++++-------------
+ src/am/ec_hnsw/shared.rs    |  4 +---
+ src/am/ec_ivf/cost.rs       | 21 +++++++--------------
+ src/am/ec_spire/cost/mod.rs | 30 ++++++++----------------------
+ 5 files changed, 48 insertions(+), 60 deletions(-)
+
+diff --git a/src/am/common/cost.rs b/src/am/common/cost.rs
+index 5f9499a3..310f6801 100644
+--- a/src/am/common/cost.rs
++++ b/src/am/common/cost.rs
+@@ -118,6 +118,30 @@ pub(crate) fn current_cpu_tuple_cost() -> f64 {
+     unsafe { pg_sys::cpu_tuple_cost }
+ }
+ 
++#[cfg(any(feature = "pg17", feature = "pg18"))]
++pub(crate) fn relation_main_fork_block_count(
++    index_relation: pg_sys::Relation,
++) -> pg_sys::BlockNumber {
++    if index_relation.is_null() {
++        pgrx::error!("planner relation block count needs a valid index relation");
++    }
++    // SAFETY: caller supplies a live index relation during AM planning or
++    // diagnostics; PostgreSQL accepts it for main-fork block counting.
++    unsafe {
++        pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
++    }
++}
++
++#[cfg(any(feature = "pg17", feature = "pg18"))]
++pub(crate) fn relation_reltuples(index_relation: pg_sys::Relation) -> f64 {
++    if index_relation.is_null() {
++        pgrx::error!("planner reltuples read needs a valid index relation");
++    }
++    // SAFETY: the live relation descriptor owns rd_rel for the relation
++    // lifetime; reltuples is copied by value.
++    unsafe { (*(*index_relation).rd_rel).reltuples as f64 }
++}
++
+ #[cfg_attr(feature = "pg18", allow(dead_code))]
+ pub(crate) fn metadata_fallback_tree_height(max_level: u8) -> PlannerTreeHeightInput {
+     PlannerTreeHeightInput {
+@@ -356,11 +380,7 @@ unsafe fn compute_amcostestimate(
+     // SAFETY: caller passes a live index relation for this planner callback.
+     let relation_options = unsafe { options::relation_options(index_relation) };
+     let tuning = options::resolve_scan_tuning(&relation_options);
+-    // SAFETY: `index_relation` is live and opened by the planner callback
+-    // wrapper while the main fork page count is read.
+-    let block_count = unsafe {
+-        pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
+-    };
++    let block_count = relation_main_fork_block_count(index_relation);
+     let index_pages = f64::from(block_count);
+     // Block 0 is always the metadata page; an index with no data pages still
+     // reports block_count == 1. FR-020's "Empty index (0 data pages)" gate
+@@ -369,9 +389,7 @@ unsafe fn compute_amcostestimate(
+     if block_count <= page::FIRST_DATA_BLOCK_NUMBER {
+         return gated_planner_cost_estimate(index_pages);
+     }
+-    // SAFETY: `index_relation` is live and its pg_class tuple is available for
+-    // planner metadata reads.
+-    let reltuples = unsafe { (*(*index_relation).rd_rel).reltuples } as f64;
++    let reltuples = relation_reltuples(index_relation);
+     // SAFETY: `index_relation` is a live ec_hnsw relation with block 0 present
+     // because the empty-index gate above returned for metadata-only indexes.
+     let metadata = unsafe { shared::read_metadata_page(index_relation) };
+diff --git a/src/am/ec_diskann/cost.rs b/src/am/ec_diskann/cost.rs
+index bd903331..b0df5cb6 100644
+--- a/src/am/ec_diskann/cost.rs
++++ b/src/am/ec_diskann/cost.rs
+@@ -3,7 +3,8 @@ use pgrx::pg_sys;
+ use crate::{
+     am::common::cost::{
+         current_planner_cost_constants, estimate_planner_cost, gated_planner_cost_estimate,
+-        PlannerCostEstimate, PlannerCostInputs,
++        relation_main_fork_block_count, relation_reltuples, PlannerCostEstimate,
++        PlannerCostInputs,
+     },
+     storage::{page::FIRST_DATA_BLOCK_NUMBER, relation_guard::IndexRelationGuard},
+ };
+@@ -93,17 +94,13 @@ unsafe fn compute_amcostestimate(index_relation: pg_sys::Relation) -> PlannerCos
+     // callback guard for the duration of this computation.
+     let relation_options = unsafe { options::relation_options(index_relation) };
+     let scan_tuning = options::resolve_scan_tuning(&relation_options);
+-    // SAFETY: `index_relation` is live while the planner callback computes cost.
+-    let block_count = unsafe {
+-        pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
+-    };
++    let block_count = relation_main_fork_block_count(index_relation);
+     let index_pages = f64::from(block_count);
+     if block_count <= FIRST_DATA_BLOCK_NUMBER {
+         return gated_planner_cost_estimate(index_pages);
+     }
+ 
+-    // SAFETY: PostgreSQL relation metadata is valid for an opened index relation.
+-    let reltuples = unsafe { (*(*index_relation).rd_rel).reltuples } as f64;
++    let reltuples = relation_reltuples(index_relation);
+     // A metadata decode failure means the index itself is structurally
+     // broken. Failing loudly during planning is preferable to masking
+     // corruption behind a gated cost and continuing with an invalid AM
+@@ -132,13 +129,9 @@ pub(crate) unsafe fn index_cost_snapshot(index_relation: pg_sys::Relation) -> In
+     // diagnostic wrapper.
+     let relation_options = unsafe { options::relation_options(index_relation) };
+     let scan_tuning = options::resolve_scan_tuning(&relation_options);
+-    // SAFETY: `index_relation` is live for the duration of the snapshot read.
+-    let block_count = unsafe {
+-        pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
+-    };
++    let block_count = relation_main_fork_block_count(index_relation);
+     let index_pages = f64::from(block_count);
+-    // SAFETY: PostgreSQL relation metadata is valid for an opened index relation.
+-    let reltuples = unsafe { (*(*index_relation).rd_rel).reltuples } as f64;
++    let reltuples = relation_reltuples(index_relation);
+     let constants = current_planner_cost_constants();
+ 
+     let (planner_scan_enabled, planner_gate_reason, dimensions, estimate) =
+diff --git a/src/am/ec_hnsw/shared.rs b/src/am/ec_hnsw/shared.rs
+index 254f1b29..d20d995c 100644
+--- a/src/am/ec_hnsw/shared.rs
++++ b/src/am/ec_hnsw/shared.rs
+@@ -740,9 +740,7 @@ pub(crate) unsafe fn index_cost_snapshot(index_relation: pg_sys::Relation) -> In
+     let metadata = unsafe { read_metadata_page(index_relation) };
+     let block_count = hnsw_main_block_count(index_relation);
+     let index_pages = f64::from(block_count);
+-    // SAFETY: `index_relation` is a live Relation and `rd_rel` points at
+-    // PostgreSQL's relation catalog tuple for the relation lifetime.
+-    let reltuples = unsafe { (*(*index_relation).rd_rel).reltuples } as f64;
++    let reltuples = super::cost::relation_reltuples(index_relation);
+     let tree_height = super::cost::resolved_tree_height_input(metadata.max_level);
+     let constants = super::cost::current_planner_cost_constants();
+     // Block 0 is always the metadata page; an empty index has block_count == 1.
+diff --git a/src/am/ec_ivf/cost.rs b/src/am/ec_ivf/cost.rs
+index ddcb7e05..80ac780f 100644
+--- a/src/am/ec_ivf/cost.rs
++++ b/src/am/ec_ivf/cost.rs
+@@ -5,8 +5,9 @@ use pgrx::pg_sys;
+ use super::{options, page};
+ use crate::am::common::callback::{am_callback, pg_am_callback};
+ use crate::am::common::cost::{
+-    current_planner_cost_constants, strategy_translation_snapshot, PlannerCostConstants,
+-    PlannerCostEstimate, PlannerTreeHeightInput, StrategyTranslationSnapshot,
++    current_planner_cost_constants, relation_main_fork_block_count, relation_reltuples,
++    strategy_translation_snapshot, PlannerCostConstants, PlannerCostEstimate,
++    PlannerTreeHeightInput, StrategyTranslationSnapshot,
+ };
+ use crate::storage::relation_guard::IndexRelationGuard;
+ 
+@@ -177,13 +178,9 @@ pub(crate) unsafe fn index_cost_snapshot(index_relation: pg_sys::Relation) -> In
+     // SAFETY: `index_relation` is a live PostgreSQL index relation supplied by
+     // a SQL diagnostic wrapper.
+     let metadata = page::read_metadata_page(index_relation);
+-    // SAFETY: `index_relation` is live for the duration of the snapshot read.
+-    let block_count = unsafe {
+-        pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
+-    };
++    let block_count = relation_main_fork_block_count(index_relation);
+     let index_pages = f64::from(block_count);
+-    // SAFETY: PostgreSQL relation metadata is valid for an opened index relation.
+-    let reltuples = unsafe { (*(*index_relation).rd_rel).reltuples } as f64;
++    let reltuples = relation_reltuples(index_relation);
+     let constants = current_planner_cost_constants();
+     let nprobe = options::resolve_scan_nprobe(metadata.nlists, metadata.nprobe);
+     let tree_height = resolved_ivf_tree_height_input();
+@@ -231,13 +228,9 @@ unsafe fn compute_amcostestimate(index_relation: pg_sys::Relation) -> PlannerCos
+     // SAFETY: `index_relation` is a live relation pointer owned by the planner
+     // callback guard for the duration of this computation.
+     let metadata = page::read_metadata_page(index_relation);
+-    // SAFETY: `index_relation` is live while the planner callback computes cost.
+-    let block_count = unsafe {
+-        pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
+-    };
++    let block_count = relation_main_fork_block_count(index_relation);
+     let index_pages = f64::from(block_count);
+-    // SAFETY: PostgreSQL relation metadata is valid for an opened index relation.
+-    let reltuples = unsafe { (*(*index_relation).rd_rel).reltuples } as f64;
++    let reltuples = relation_reltuples(index_relation);
+     let constants = current_planner_cost_constants();
+ 
+     estimate_ivf_cost(&metadata, index_pages, reltuples, constants)
+diff --git a/src/am/ec_spire/cost/mod.rs b/src/am/ec_spire/cost/mod.rs
+index d3871331..40e0a9b3 100644
+--- a/src/am/ec_spire/cost/mod.rs
++++ b/src/am/ec_spire/cost/mod.rs
+@@ -6,7 +6,8 @@ use super::{
+ };
+ use crate::am::common::callback::{am_callback, pg_am_callback};
+ use crate::am::common::cost::{
+-    self, current_planner_cost_constants, PlannerCostConstants, PlannerCostEstimate,
++    self, current_planner_cost_constants, relation_main_fork_block_count, relation_reltuples,
++    PlannerCostConstants, PlannerCostEstimate,
+ };
+ use crate::storage::relation_guard::IndexRelationGuard;
+ 
+@@ -90,14 +91,9 @@ pub(super) unsafe extern "C-unwind" fn ec_spire_amcostestimate(
+ pub(crate) unsafe fn index_cost_snapshot(
+     index_relation: pg_sys::Relation,
+ ) -> SpireIndexCostSnapshot {
+-    // SAFETY: caller passes the live SPIRE index relation; PostgreSQL accepts
+-    // it for main-fork block counting.
+-    let block_count = unsafe {
+-        pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
+-    };
++    let block_count = relation_main_fork_block_count(index_relation);
+     let index_pages = f64::from(block_count);
+-    // SAFETY: index_relation is live and rd_rel points to its relcache tuple.
+-    let reltuples = unsafe { (*(*index_relation).rd_rel).reltuples } as f64;
++    let reltuples = relation_reltuples(index_relation);
+     let constants = current_planner_cost_constants();
+     let relation_options = options::relation_options(index_relation);
+     // SAFETY: diagnostic snapshot only reads live SPIRE index metadata.
+@@ -157,14 +153,9 @@ pub(crate) unsafe fn index_cost_snapshot(
+ pub(crate) unsafe fn index_cost_tuning_snapshot(
+     index_relation: pg_sys::Relation,
+ ) -> SpireIndexCostTuningSnapshot {
+-    // SAFETY: caller passes the live SPIRE index relation; PostgreSQL accepts
+-    // it for main-fork block counting.
+-    let block_count = unsafe {
+-        pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
+-    };
++    let block_count = relation_main_fork_block_count(index_relation);
+     let index_pages = f64::from(block_count);
+-    // SAFETY: index_relation is live and rd_rel points to its relcache tuple.
+-    let reltuples = unsafe { (*(*index_relation).rd_rel).reltuples } as f64;
++    let reltuples = relation_reltuples(index_relation);
+     let relation_options = options::relation_options(index_relation);
+     // SAFETY: diagnostic snapshot only reads live SPIRE index metadata.
+     let diagnostics = unsafe { active_snapshot_diagnostics(index_relation) };
+@@ -200,14 +191,9 @@ pub(crate) unsafe fn index_cost_tuning_snapshot(
+ }
+ 
+ unsafe fn compute_amcostestimate(index_relation: pg_sys::Relation) -> PlannerCostEstimate {
+-    // SAFETY: caller passes the live SPIRE index relation; PostgreSQL accepts
+-    // it for main-fork block counting.
+-    let block_count = unsafe {
+-        pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
+-    };
++    let block_count = relation_main_fork_block_count(index_relation);
+     let index_pages = f64::from(block_count);
+-    // SAFETY: index_relation is live and rd_rel points to its relcache tuple.
+-    let reltuples = unsafe { (*(*index_relation).rd_rel).reltuples } as f64;
++    let reltuples = relation_reltuples(index_relation);
+     let constants = current_planner_cost_constants();
+     let relation_options = options::relation_options(index_relation);
+     // SAFETY: diagnostic snapshot only reads live SPIRE index metadata.
+
+Script done on 2026-05-20 16:10:42-07:00 [COMMAND_EXIT_CODE="0"]

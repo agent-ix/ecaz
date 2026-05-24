@@ -1,0 +1,18 @@
+[suite:task51-aws-ivf-rabitq-final-gate] wrote benchmarks/task51-aws-ivf-rabitq-final-gate/artifacts/suite-manifest.json
+[suite:task51-aws-ivf-rabitq-final-gate] recall-1m-rabitq1-rerank-q500 -> --database tqvector_bench --host /var/run/postgresql --user postgres bench recall --prefix real_1m_ivf_rabitq1_rerank --profile ec_ivf --k 10 --sweep "64,128,256" --rerank-width 50 --queries-limit 500 --bits 4 --seed 42 --force-index --truth-cache-file benchmarks/task51-aws-ivf-rabitq-final-gate/artifacts/truth-aws-real-1m-q500-k10.json --log-output benchmarks/task51-aws-ivf-rabitq-final-gate/artifacts/recall-1m-rabitq1-rerank-q500.log
+[suite:task51-aws-ivf-rabitq-final-gate] wrote benchmarks/task51-aws-ivf-rabitq-final-gate/artifacts/suite-manifest.json
+[suite:task51-aws-ivf-rabitq-final-gate] wrote benchmarks/task51-aws-ivf-rabitq-final-gate/artifacts/suite-manifest.json
+[suite:task51-aws-ivf-rabitq-final-gate] latency-1m-rabitq1-rerank -> --database tqvector_bench --host /var/run/postgresql --user postgres bench latency --prefix real_1m_ivf_rabitq1_rerank --profile ec_ivf --k 10 --concurrency 1 --iterations 200 --sweep "64,128,256" --rerank-width 50 --bits 4 --seed 42 --force-index --memory-sample-interval-ms 25 --log-output benchmarks/task51-aws-ivf-rabitq-final-gate/artifacts/latency-1m-rabitq1-rerank.log
+[suite:task51-aws-ivf-rabitq-final-gate] wrote benchmarks/task51-aws-ivf-rabitq-final-gate/artifacts/suite-manifest.json
+[suite:task51-aws-ivf-rabitq-final-gate] wrote benchmarks/task51-aws-ivf-rabitq-final-gate/artifacts/suite-manifest.json
+[suite:task51-aws-ivf-rabitq-final-gate] storage-1m-rabitq1-rerank -> --database tqvector_bench --host /var/run/postgresql --user postgres --log-file benchmarks/task51-aws-ivf-rabitq-final-gate/artifacts/storage-1m-rabitq1-rerank.log bench storage --prefix real_1m_ivf_rabitq1_rerank
+[suite:task51-aws-ivf-rabitq-final-gate] wrote benchmarks/task51-aws-ivf-rabitq-final-gate/artifacts/suite-manifest.json
+[suite:task51-aws-ivf-rabitq-final-gate] wrote benchmarks/task51-aws-ivf-rabitq-final-gate/artifacts/suite-manifest.json
+[suite:task51-aws-ivf-rabitq-final-gate] explain-1m-rabitq1-rerank-p128 -> --database tqvector_bench --host /var/run/postgresql --user postgres dev sql --pg 18 --db tqvector_bench --socket-dir /var/run/postgresql --raw --file benchmarks/task51-aws-ivf-rabitq-final-gate/artifacts/explain-1m-rabitq1-rerank-p128.sql --log-output benchmarks/task51-aws-ivf-rabitq-final-gate/artifacts/explain-1m-rabitq1-rerank-p128.log
+[suite:task51-aws-ivf-rabitq-final-gate] wrote benchmarks/task51-aws-ivf-rabitq-final-gate/artifacts/suite-manifest.json
+[suite:task51-aws-ivf-rabitq-final-gate] wrote benchmarks/task51-aws-ivf-rabitq-final-gate/artifacts/suite-manifest.json
+[suite:task51-aws-ivf-rabitq-final-gate] explain-1m-rabitq1-rerank-p256 -> --database tqvector_bench --host /var/run/postgresql --user postgres dev sql --pg 18 --db tqvector_bench --socket-dir /var/run/postgresql --raw --file benchmarks/task51-aws-ivf-rabitq-final-gate/artifacts/explain-1m-rabitq1-rerank-p256.sql --log-output benchmarks/task51-aws-ivf-rabitq-final-gate/artifacts/explain-1m-rabitq1-rerank-p256.log
+[suite:task51-aws-ivf-rabitq-final-gate] wrote benchmarks/task51-aws-ivf-rabitq-final-gate/artifacts/suite-manifest.json
+[suite:task51-aws-ivf-rabitq-final-gate] wrote benchmarks/task51-aws-ivf-rabitq-final-gate/artifacts/suite-manifest.json
+[suite:task51-aws-ivf-rabitq-final-gate] wrote benchmarks/task51-aws-ivf-rabitq-final-gate/artifacts/results.jsonl
+[suite:task51-aws-ivf-rabitq-final-gate] wrote benchmarks/task51-aws-ivf-rabitq-final-gate/artifacts/suite-manifest.json

@@ -8,7 +8,6 @@ mod ec_spire;
 
 #[allow(unused_imports)]
 pub(crate) use self::common::{cost, explain, stats, stream};
-pub(crate) use self::ec_diskann::diagnostics::DiskannGraphSummary;
 pub use self::ec_diskann::page::{
     VamanaMetadataPage, INDEX_FORMAT_V3_DISKANN, VAMANA_METADATA_ALPHA_OFFSET,
     VAMANA_METADATA_BUILD_LIST_SIZE_L_OFFSET, VAMANA_METADATA_BYTES,
@@ -32,15 +31,21 @@ pub use self::ec_diskann::vamana::{
     build_vamana_graph_with_stats, greedy_search, greedy_search_view, MetricSummary,
     VamanaBuildPassStats, VamanaBuildStats, VamanaGraph, VamanaGraphView,
 };
-pub(crate) use self::ec_diskann::IndexCostSnapshot as DiskannIndexCostSnapshot;
+pub(crate) use self::ec_diskann::{
+    diagnostics::graph_summary as diskann_graph_summary,
+    index_cost_snapshot as diskann_index_cost_snapshot,
+};
 pub use self::ec_diskann::{vamana_decode_overflow_tuple_fixture, VamanaOverflowTupleFixture};
 #[allow(unused_imports)]
 pub(crate) use self::ec_hnsw::{
-    graph, page, IndexAdminSnapshot, IndexCostSnapshot, PlannerIntegrationSnapshot,
+    graph, index_admin_snapshot, index_cost_snapshot, page, planner_integration_snapshot,
+    IndexAdminSnapshot, IndexCostSnapshot, PlannerIntegrationSnapshot,
 };
 pub(crate) use self::ec_ivf::{
-    IndexAdminSnapshot as IvfIndexAdminSnapshot, IndexCostSnapshot as IvfIndexCostSnapshot,
-    IndexDriftSnapshot, IndexPageOwnershipSnapshot as IvfIndexPageOwnershipSnapshot,
+    index_admin_snapshot as ivf_index_admin_snapshot,
+    index_cost_snapshot as ivf_index_cost_snapshot,
+    index_drift_snapshot as ivf_index_drift_snapshot,
+    index_page_ownership as ivf_index_page_ownership,
 };
 pub use self::ec_ivf::{
     IvfBlockRef, IvfCentroidTuple, IvfListDirectoryTuple, IvfMetadataPage, IvfPostingTuple,
@@ -80,6 +85,22 @@ pub(crate) use self::ec_spire::custom_scan_reset_cleanup_counters_for_test;
 pub(crate) use self::ec_spire::custom_scan_reset_rescan_snapshot_for_test;
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) use self::ec_spire::custom_scan_store_tuple_payload_json_for_test as spire_custom_scan_store_tuple_payload_json_for_test;
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) use self::ec_spire::dml_frontdoor_bigint_pk_value_bytes as spire_dml_frontdoor_bigint_pk_value_bytes;
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) use self::ec_spire::dml_frontdoor_const_plan_param_list_info as spire_dml_frontdoor_const_plan_param_list_info;
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) use self::ec_spire::dml_frontdoor_param_list_info as spire_dml_frontdoor_param_list_info;
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) use self::ec_spire::dml_frontdoor_pk_argument_from_replacement_decision as spire_dml_frontdoor_pk_argument_from_replacement_decision;
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) use self::ec_spire::dml_frontdoor_primitive_invocation_from_plan as spire_dml_frontdoor_primitive_invocation_from_plan;
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) use self::ec_spire::dml_frontdoor_primitive_plan_expr_catalog_row as spire_dml_frontdoor_primitive_plan_expr_catalog_row;
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) use self::ec_spire::dml_frontdoor_primitive_plan_pk_value_bytes as spire_dml_frontdoor_primitive_plan_pk_value_bytes;
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) use self::ec_spire::DmlFrontdoorQueryView as SpireDmlFrontdoorQueryView;
 pub(crate) use self::ec_spire::{
     active_epoch as spire_active_epoch,
     active_snapshot_diagnostics as spire_active_snapshot_diagnostics,
@@ -87,21 +108,15 @@ pub(crate) use self::ec_spire::{
     classify_dml_frontdoor_query as spire_classify_dml_frontdoor_query,
     coordinator_delete_prepare_remote_tuple_payload as spire_coordinator_delete_prepare_remote_tuple_payload,
     coordinator_insert_dispatch_plan_row as spire_coordinator_insert_dispatch_plan_row,
-    coordinator_insert_prepare_remote_sql as spire_coordinator_insert_prepare_remote_sql,
     coordinator_insert_prepare_remote_tuple_payload as spire_coordinator_insert_prepare_remote_tuple_payload,
     coordinator_insert_prepare_remote_tuple_payload_batch as spire_coordinator_insert_prepare_remote_tuple_payload_batch,
     coordinator_select_remote_tuple_payload as spire_coordinator_select_remote_tuple_payload,
     coordinator_update_remote_tuple_payload as spire_coordinator_update_remote_tuple_payload,
-    custom_scan_index_eligibility_row as spire_custom_scan_index_eligibility_row,
+    custom_scan_index_eligibility_result as spire_custom_scan_index_eligibility_result,
     custom_scan_status_row as spire_custom_scan_status_row,
-    dml_frontdoor_bigint_pk_value_bytes as spire_dml_frontdoor_bigint_pk_value_bytes,
     dml_frontdoor_hook_status_row as spire_dml_frontdoor_hook_status_row,
-    dml_frontdoor_pk_argument_from_replacement_decision as spire_dml_frontdoor_pk_argument_from_replacement_decision,
-    dml_frontdoor_primitive_invocation_from_plan as spire_dml_frontdoor_primitive_invocation_from_plan,
     dml_frontdoor_primitive_plan_const_pk_value_bytes as spire_dml_frontdoor_primitive_plan_const_pk_value_bytes,
-    dml_frontdoor_primitive_plan_expr_catalog_row as spire_dml_frontdoor_primitive_plan_expr_catalog_row,
     dml_frontdoor_primitive_plan_from_replacement_decision as spire_dml_frontdoor_primitive_plan_from_replacement_decision,
-    dml_frontdoor_primitive_plan_pk_value_bytes as spire_dml_frontdoor_primitive_plan_pk_value_bytes,
     dml_frontdoor_relation_context_cache_row as spire_dml_frontdoor_relation_context_cache_row,
     dml_frontdoor_relation_context_catalog_row as spire_dml_frontdoor_relation_context_catalog_row,
     dml_frontdoor_relation_context_row as spire_dml_frontdoor_relation_context_row,
@@ -136,8 +151,10 @@ pub(crate) use self::ec_spire::{
     index_selected_pid_placement_snapshot as spire_index_selected_pid_placement_snapshot,
     index_top_graph_snapshot as spire_index_top_graph_snapshot,
     index_writer_identity_snapshot as spire_index_writer_identity_snapshot,
+    live_index_relation as spire_live_index_relation,
     reap_orphaned_remote_prepared_xacts as spire_reap_orphaned_remote_prepared_xacts,
     reap_orphaned_remote_prepared_xacts_all as spire_reap_orphaned_remote_prepared_xacts_all,
+    register_dml_frontdoor_planner_hook,
     remote_catalog_lifecycle_contract_rows as spire_remote_catalog_lifecycle_contract_rows,
     remote_conninfo_secret_provider_lookup_key as spire_remote_conninfo_secret_provider_lookup_key,
     remote_conninfo_secret_resolution_contract_rows as spire_remote_conninfo_secret_resolution_contract_rows,
@@ -221,7 +238,13 @@ pub(crate) use self::ec_spire::{
     remote_search_target_readiness_rows as spire_remote_search_target_readiness_rows,
     remote_search_vector_identity_contract_rows as spire_remote_search_vector_identity_contract_rows,
     remote_write_shape_fingerprint_from_secret as spire_remote_write_shape_fingerprint_from_secret,
-    SpireDmlFrontdoorCustomScanMode, SpireDmlFrontdoorPkValuePlan, SpireDmlFrontdoorQueryContext,
+    with_analyzed_dml_frontdoor_query_view as spire_with_analyzed_dml_frontdoor_query_view,
+    SpireDmlFrontdoorQueryContext,
+};
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) use self::ec_spire::{
+    coordinator_insert_prepare_remote_sql as spire_coordinator_insert_prepare_remote_sql,
+    SpireDmlFrontdoorCustomScanMode, SpireDmlFrontdoorPkValuePlan,
 };
 pub use self::ec_spire::{
     spire_assignment_row_gamma_offset, spire_assignment_row_heap_tid_offset,
@@ -321,12 +344,6 @@ pub(crate) fn register_custom_scan() {
     ec_spire::register_custom_scan();
 }
 
-pub(crate) unsafe fn register_dml_frontdoor_planner_hook() {
-    // SAFETY: caller runs during extension initialization before concurrent
-    // planner-hook use; SPIRE owns the process-local hook state it installs.
-    unsafe { ec_spire::register_dml_frontdoor_planner_hook() };
-}
-
 #[cfg(any(test, feature = "bench"))]
 pub(crate) fn hnsw_source_inner_product_scalar_reference(left: &[f32], right: &[f32]) -> f32 {
     ec_hnsw::source::inner_product_scalar_reference(left, right)
@@ -406,78 +423,6 @@ pub(crate) use self::ec_spire::{
     remote_search_production_transport_probe_with_local_cancel_summary_for_test as spire_remote_search_production_transport_probe_with_local_cancel_summary_for_test,
     SpireRemoteProductionCandidateReceiveRequest, SpireRemoteProductionTransportProbeRequest,
 };
-
-pub(crate) unsafe fn index_cost_snapshot(
-    index_relation: pgrx::pg_sys::Relation,
-) -> IndexCostSnapshot {
-    // SAFETY: callers pass a live ec_hnsw index relation opened for the
-    // duration of the snapshot read.
-    unsafe { ec_hnsw::index_cost_snapshot(index_relation) }
-}
-
-pub(crate) unsafe fn index_admin_snapshot(
-    index_relation: pgrx::pg_sys::Relation,
-) -> IndexAdminSnapshot {
-    // SAFETY: callers pass a live ec_hnsw index relation opened for the
-    // duration of the metadata/admin snapshot read.
-    unsafe { ec_hnsw::index_admin_snapshot(index_relation) }
-}
-
-pub(crate) unsafe fn planner_integration_snapshot(
-    index_relation: pgrx::pg_sys::Relation,
-) -> PlannerIntegrationSnapshot {
-    // SAFETY: callers pass a live ec_hnsw index relation opened while planner
-    // integration metadata is read.
-    unsafe { ec_hnsw::planner_integration_snapshot(index_relation) }
-}
-
-pub(crate) unsafe fn ivf_index_drift_snapshot(
-    index_relation: pgrx::pg_sys::Relation,
-) -> IndexDriftSnapshot {
-    // SAFETY: callers pass a live ec_ivf index relation opened for this drift
-    // snapshot read.
-    unsafe { ec_ivf::index_drift_snapshot(index_relation) }
-}
-
-pub(crate) unsafe fn ivf_index_admin_snapshot(
-    index_relation: pgrx::pg_sys::Relation,
-) -> IvfIndexAdminSnapshot {
-    // SAFETY: callers pass a live ec_ivf index relation opened for this admin
-    // snapshot read.
-    unsafe { ec_ivf::index_admin_snapshot(index_relation) }
-}
-
-pub(crate) unsafe fn ivf_index_cost_snapshot(
-    index_relation: pgrx::pg_sys::Relation,
-) -> IvfIndexCostSnapshot {
-    // SAFETY: callers pass a live ec_ivf index relation opened for this cost
-    // snapshot read.
-    unsafe { ec_ivf::index_cost_snapshot(index_relation) }
-}
-
-pub(crate) unsafe fn ivf_index_page_ownership(
-    index_relation: pgrx::pg_sys::Relation,
-) -> Vec<IvfIndexPageOwnershipSnapshot> {
-    // SAFETY: callers pass a live ec_ivf index relation opened while page
-    // ownership metadata is inspected.
-    unsafe { ec_ivf::index_page_ownership(index_relation) }
-}
-
-pub(crate) unsafe fn diskann_graph_summary(
-    index_relation: pgrx::pg_sys::Relation,
-) -> Result<DiskannGraphSummary, String> {
-    // SAFETY: callers pass a live ec_diskann index relation opened for the
-    // duration of graph summary page reads.
-    unsafe { ec_diskann::diagnostics::graph_summary(index_relation) }
-}
-
-pub(crate) unsafe fn diskann_index_cost_snapshot(
-    index_relation: pgrx::pg_sys::Relation,
-) -> DiskannIndexCostSnapshot {
-    // SAFETY: callers pass a live ec_diskann index relation opened for this
-    // cost snapshot read.
-    unsafe { ec_diskann::index_cost_snapshot(index_relation) }
-}
 
 #[cfg(any(test, feature = "pg_test"))]
 #[allow(unused_imports)]

@@ -1,0 +1,84 @@
+diff --git a/src/am/ec_hnsw/build_parallel.rs b/src/am/ec_hnsw/build_parallel.rs
+index 9f8e4879..dca2f924 100644
+--- a/src/am/ec_hnsw/build_parallel.rs
++++ b/src/am/ec_hnsw/build_parallel.rs
+@@ -2047,8 +2047,7 @@ pub(super) unsafe fn try_parallel_build(
+     // SAFETY: `leader` owns the worker queue handles until `finish` destroys
+     // the parallel context.
+     unsafe { leader.drain_worker_messages(&mut worker_tuples) };
+-    // SAFETY: `leader` owns a live PostgreSQL ParallelContext created by begin.
+-    unsafe { leader.finish() };
++    leader.finish();
+     let drain_us = elapsed_us(drain_start);
+ 
+     let sort_push_start = Instant::now();
+@@ -2098,24 +2097,20 @@ pub(super) unsafe fn try_parallel_concurrent_dsm_graph_build(
+     // initialize the parallel DSM graph before workers are launched.
+     let mut leader = unsafe { EcHnswParallelGraphBuildLeader::begin(plan, &preassembly) }?;
+     if leader.workers_launched == 0 {
+-        // SAFETY: `leader` owns a live ParallelContext even when no workers
+-        // launched, so finish performs the paired cleanup.
+-        unsafe { leader.finish() };
++        leader.finish();
+         return None;
+     }
+ 
+     // SAFETY: The graph leader owns the DSM graph image and inserts the leader
+     // participant partitions before readback.
+     let attachment = unsafe { leader.insert_leader_partitions() };
+-    // SAFETY: The graph leader owns the ParallelContext and worker accounting.
+-    unsafe { leader.wait_for_workers() };
++    leader.wait_for_workers();
+     let graph_us = elapsed_us(graph_start);
+ 
+     let stage_start = Instant::now();
+     let output = current_format_flush_output_from_concurrent_dsm_graph(state, attachment);
+     let stage_us = elapsed_us(stage_start);
+-    // SAFETY: `leader` owns the ParallelContext and graph DSM lifetime.
+-    unsafe { leader.finish() };
++    leader.finish();
+ 
+     Some(EcHnswParallelGraphBuildResult {
+         output,
+@@ -2346,7 +2341,7 @@ impl EcHnswParallelGraphBuildLeader {
+         attachment
+     }
+ 
+-    unsafe fn wait_for_workers(&mut self) {
++    fn wait_for_workers(&mut self) {
+         if self.workers_finished {
+             return;
+         }
+@@ -2369,10 +2364,8 @@ impl EcHnswParallelGraphBuildLeader {
+         self.workers_finished = true;
+     }
+ 
+-    unsafe fn finish(mut self) {
+-        // SAFETY: `self` still owns the live ParallelContext and can wait once
+-        // before destruction.
+-        unsafe { self.wait_for_workers() };
++    fn finish(mut self) {
++        self.wait_for_workers();
+         // SAFETY: This is the paired cleanup for the ParallelContext and
+         // parallel mode entered by `begin`.
+         unsafe {
+@@ -2578,9 +2571,7 @@ impl EcHnswParallelBuildLeader {
+         };
+ 
+         if workers_launched == 0 {
+-            // SAFETY: `leader` owns the live ParallelContext and performs the
+-            // paired cleanup when no workers launch.
+-            unsafe { leader.finish() };
++            leader.finish();
+             return None;
+         }
+ 
+@@ -2663,7 +2654,7 @@ impl EcHnswParallelBuildLeader {
+         }
+     }
+ 
+-    unsafe fn finish(mut self) {
++    fn finish(mut self) {
+         // SAFETY: `self.pcxt` is the live ParallelContext owned by this leader.
+         unsafe { pg_sys::WaitForParallelWorkersToFinish(self.pcxt) };
+ 

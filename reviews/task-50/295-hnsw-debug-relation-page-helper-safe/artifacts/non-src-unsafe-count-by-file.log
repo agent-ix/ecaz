@@ -1,0 +1,10 @@
+Script started on 2026-05-21 12:01:31-07:00 [<not executed on terminal>]
+crates/ecaz-lints/fixtures/panic_across_ffi/src/lib.rs:5
+vendor/hnsw_rs/src/hnswio.rs:2
+vendor/hnsw_rs/src/libext.rs:92
+vendor/hnsw_rs/src/datamap.rs:4
+hardening/careful/src/spire.rs:59
+hardening/careful/src/pg_guards.rs:89
+crates/ecaz-cli/src/commands/dev/fault.rs:1
+
+Script done on 2026-05-21 12:01:31-07:00 [COMMAND_EXIT_CODE="0"]

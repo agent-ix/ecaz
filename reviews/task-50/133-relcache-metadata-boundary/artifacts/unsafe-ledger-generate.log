@@ -1,0 +1,2 @@
+python3 scripts/unsafe_ledger.py generate --output reviews/task-50/133-relcache-metadata-boundary/artifacts/unsafe-ledger-after.jsonl --packet reviews/task-50/133-relcache-metadata-boundary src
+wrote 1575 unsafe ledger rows to reviews/task-50/133-relcache-metadata-boundary/artifacts/unsafe-ledger-after.jsonl

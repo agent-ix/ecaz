@@ -414,23 +414,17 @@ fn open_valid_ec_index_guard(
     expected_am_name: &'static str,
 ) -> IndexRelationGuard {
     let index_relation = IndexRelationGuard::access_share(index_oid, caller_name);
-    // SAFETY: `index_relation` is live while the guard is in scope.
-    let rd_rel = unsafe { (*index_relation.as_ptr()).rd_rel.as_ref() }
-        .expect("opened index relation should expose pg_class metadata");
-    if rd_rel.relkind != pg_sys::RELKIND_INDEX as i8 as std::ffi::c_char {
-        // SAFETY: `rd_rel` belongs to the live opened relation and its relname
-        // field is PostgreSQL's fixed-size C string.
-        let relation_name = unsafe { std::ffi::CStr::from_ptr(rd_rel.relname.data.as_ptr()) }
-            .to_string_lossy()
-            .into_owned();
+    let relation = index_relation.as_ptr();
+    let relation = std::ptr::NonNull::new(relation)
+        .unwrap_or_else(|| pgrx::error!("{caller_name} opened a null index relation"));
+    if crate::storage::relation::relation_kind_handle(relation)
+        != pg_sys::RELKIND_INDEX as i8 as std::ffi::c_char
+    {
+        let relation_name = crate::storage::relation::relation_name_handle(relation);
         pgrx::error!("{caller_name} requires an index relation, got \"{relation_name}\"");
     }
-    if rd_rel.relam != expected_am_oid {
-        // SAFETY: `rd_rel` belongs to the live opened relation and its relname
-        // field is PostgreSQL's fixed-size C string.
-        let relation_name = unsafe { std::ffi::CStr::from_ptr(rd_rel.relname.data.as_ptr()) }
-            .to_string_lossy()
-            .into_owned();
+    if crate::storage::relation::relation_am_oid_handle(relation) != expected_am_oid {
+        let relation_name = crate::storage::relation::relation_name_handle(relation);
         pgrx::error!(
             "{caller_name} requires a {expected_am_name} index, got relation \"{relation_name}\""
         );
@@ -444,7 +438,21 @@ macro_rules! with_live_index_relation {
         // SAFETY: callers pass an `IndexRelationGuard` opened and validated
         // for the AM-specific SQL wrapper. The guard keeps the PostgreSQL
         // relation open for the full duration of the AM helper call.
+        // `unused_unsafe` allowed because callers pass a mix of `unsafe fn`
+        // and safe `fn` paths — the macro itself is shape-agnostic.
+        #[allow(unused_unsafe)]
         unsafe { $func(index_relation $(, $arg)*) }
+    }};
+}
+
+macro_rules! with_spire_live_index_relation {
+    ($guard:expr, $func:path $(, $arg:expr)* $(,)?) => {{
+        let index_relation = $guard.as_ptr();
+        // SAFETY: callers pass an `IndexRelationGuard` opened and validated
+        // for a SPIRE SQL wrapper. The guard keeps the PostgreSQL relation
+        // open for the full duration of the SPIRE helper call.
+        let index = unsafe { am::spire_live_index_relation(index_relation) };
+        $func(index $(, $arg)*)
     }};
 }
 
@@ -606,38 +614,18 @@ fn expected_binary_len(data: &[u8]) -> Result<usize, String> {
     Ok(MIN_BINARY_BYTES + code_len(dim as usize, bits))
 }
 
-unsafe fn recv_tqvector_message(msg: pg_sys::StringInfo) -> Result<Vec<u8>, String> {
-    if msg.is_null() {
-        return Err("invalid tqvector binary: missing input buffer".into());
-    }
-
-    // SAFETY: caller supplies PostgreSQL's live `StringInfo` for the current
-    // type receive call; the null pointer case is rejected above.
-    let total_len =
-        usize::try_from(unsafe { (*msg).len }).map_err(|_| "invalid tqvector binary length")?;
-    // SAFETY: same live `StringInfo`; reading the cursor field does not mutate
-    // the input buffer.
-    let cursor =
-        usize::try_from(unsafe { (*msg).cursor }).map_err(|_| "invalid tqvector binary cursor")?;
-    if cursor > total_len {
-        return Err("invalid tqvector binary cursor state".into());
-    }
-
-    let remaining = total_len - cursor;
+fn recv_tqvector_message(
+    mut msg: crate::storage::string_info::StringInfoReader<'_>,
+) -> Result<Vec<u8>, String> {
+    let remaining = msg.remaining_len("invalid tqvector binary")?;
     if remaining < MIN_BINARY_BYTES {
         return Err(format!(
             "tqvector too short: {remaining} bytes (need >= {MIN_BINARY_BYTES})"
         ));
     }
 
-    // SAFETY: `remaining >= MIN_BINARY_BYTES`, so PostgreSQL can advance the
-    // message cursor by the fixed tqvector prefix length.
-    let prefix = unsafe { pg_sys::pq_getmsgbytes(msg, MIN_BINARY_BYTES as i32) as *const u8 };
-    // SAFETY: `pq_getmsgbytes` returns a pointer to at least the requested
-    // prefix bytes inside the live message buffer.
-    let prefix = unsafe { std::slice::from_raw_parts(prefix, MIN_BINARY_BYTES) };
-
-    let expected_len = expected_binary_len(prefix)?;
+    let prefix = msg.read_bytes(MIN_BINARY_BYTES, "invalid tqvector binary")?;
+    let expected_len = expected_binary_len(&prefix)?;
     if remaining != expected_len {
         return Err(format!(
             "code length mismatch: got {} bytes, expected {}",
@@ -647,21 +635,15 @@ unsafe fn recv_tqvector_message(msg: pg_sys::StringInfo) -> Result<Vec<u8>, Stri
     }
 
     let mut bytes = Vec::with_capacity(expected_len);
-    bytes.extend_from_slice(prefix);
+    bytes.extend_from_slice(&prefix);
 
     let code_bytes_len = expected_len - MIN_BINARY_BYTES;
     if code_bytes_len > 0 {
-        // SAFETY: `remaining == expected_len`, and the prefix has already been
-        // consumed, so exactly `code_bytes_len` bytes remain in `msg`.
-        let codes = unsafe { pg_sys::pq_getmsgbytes(msg, code_bytes_len as i32) as *const u8 };
-        // SAFETY: PostgreSQL returned a pointer to the requested code payload
-        // bytes in the live message buffer.
-        let codes = unsafe { std::slice::from_raw_parts(codes, code_bytes_len) };
-        bytes.extend_from_slice(codes);
+        let codes = msg.read_bytes(code_bytes_len, "invalid tqvector binary")?;
+        bytes.extend_from_slice(&codes);
     }
 
-    // SAFETY: all bytes in the message have been consumed and validated.
-    unsafe { pg_sys::pq_getmsgend(msg) };
+    msg.finish()?;
     unpack(&bytes)?;
     Ok(bytes)
 }
@@ -762,37 +744,14 @@ fn raw_inner_product(left: &[f32], right: &[f32], label: &str) -> Result<f32, St
     Ok(left.iter().zip(right).map(|(l, r)| l * r).sum())
 }
 
-unsafe fn recv_raw_f32_message(msg: pg_sys::StringInfo, label: &str) -> Result<Vec<u8>, String> {
-    if msg.is_null() {
-        return Err(format!("{label}: missing input buffer"));
-    }
+fn recv_raw_f32_message(
+    mut msg: crate::storage::string_info::StringInfoReader<'_>,
+    label: &str,
+) -> Result<Vec<u8>, String> {
+    let remaining = msg.remaining_len(label)?;
+    let bytes = msg.read_bytes(remaining, label)?;
 
-    // SAFETY: caller supplies PostgreSQL's live `StringInfo` for the current
-    // type receive call; the null pointer case is rejected above.
-    let total_len = usize::try_from(unsafe { (*msg).len })
-        .map_err(|_| format!("{label}: invalid binary length"))?;
-    // SAFETY: same live `StringInfo`; reading the cursor field does not mutate
-    // the input buffer.
-    let cursor = usize::try_from(unsafe { (*msg).cursor })
-        .map_err(|_| format!("{label}: invalid binary cursor"))?;
-    if cursor > total_len {
-        return Err(format!("{label}: invalid binary cursor state"));
-    }
-
-    let remaining = total_len - cursor;
-    let mut bytes = Vec::with_capacity(remaining);
-    if remaining > 0 {
-        // SAFETY: `remaining` is computed from the live message length and
-        // cursor, and the cursor has been checked not to exceed the length.
-        let payload = unsafe { pg_sys::pq_getmsgbytes(msg, remaining as i32) as *const u8 };
-        // SAFETY: PostgreSQL returned a pointer to exactly the requested
-        // remaining payload bytes in the live message buffer.
-        let payload = unsafe { std::slice::from_raw_parts(payload, remaining) };
-        bytes.extend_from_slice(payload);
-    }
-
-    // SAFETY: all bytes in the message have been consumed and validated.
-    unsafe { pg_sys::pq_getmsgend(msg) };
+    msg.finish()?;
     unpack_raw_f32(&bytes, label)?;
     Ok(bytes)
 }
@@ -825,18 +784,12 @@ fn ecvector_send(vec: Vec<u8>) -> Vec<u8> {
 
 #[pg_extern(immutable, strict, parallel_safe, sql = false)]
 fn ecvector_recv(input: Internal, _type_oid: pg_sys::Oid, typmod: i32) -> Vec<u8> {
-    // SAFETY: PostgreSQL type receive functions are invoked with an `internal`
-    // argument pointing at a live `StringInfoData` input buffer.
-    let msg = unsafe {
-        input
-            .get::<pg_sys::StringInfoData>()
-            .unwrap_or_else(|| pgrx::error!("invalid ecvector binary: missing input buffer"))
-            as *const pg_sys::StringInfoData as pg_sys::StringInfo
-    };
-
-    // SAFETY: `msg` is a valid Postgres `StringInfo` owned by the current
-    // receive call.
-    let bytes = unsafe { recv_raw_f32_message(msg, "ecvector") }
+    let msg = crate::storage::string_info::StringInfoReader::from_internal(
+        input,
+        "invalid ecvector binary",
+    )
+    .unwrap_or_else(|e| pgrx::error!("{e}"));
+    let bytes = recv_raw_f32_message(msg, "ecvector")
         .unwrap_or_else(|e| pgrx::error!("invalid ecvector binary: {e}"));
     validate_ecvector_dim(bytes.len() / std::mem::size_of::<f32>(), typmod, "ecvector")
         .unwrap_or_else(|e| pgrx::error!("invalid ecvector binary: {e}"));
@@ -924,20 +877,22 @@ impl DetoastedTypmodArray {
     fn single_typmod(&self) -> i32 {
         let mut count = 0;
         // SAFETY: `self.array` is a detoasted PostgreSQL ArrayType varlena kept
-        // alive by this wrapper while PostgreSQL decodes integer typmods.
-        let raw_typmods = unsafe {
-            pg_sys::ArrayGetIntegerTypmods(
+        // alive by this wrapper while PostgreSQL decodes integer typmods. The
+        // returned pointer is read only after PostgreSQL reports exactly one
+        // typmod, so dereferencing the non-null pointer reads the single int4
+        // slot PostgreSQL says is present.
+        let typmod = unsafe {
+            let raw_typmods = pg_sys::ArrayGetIntegerTypmods(
                 self.array.as_ptr().cast::<pg_sys::ArrayType>(),
                 &mut count,
-            )
+            );
+            if count == 1 && !raw_typmods.is_null() {
+                Some(*raw_typmods)
+            } else {
+                None
+            }
         };
-        if count == 1 {
-            // SAFETY: PostgreSQL reported exactly one typmod element, so the
-            // returned pointer has a first `i32` value to read.
-            unsafe { *raw_typmods }
-        } else {
-            pgrx::error!("invalid type modifier");
-        }
+        typmod.unwrap_or_else(|| pgrx::error!("invalid type modifier"))
     }
 }
 
@@ -972,18 +927,12 @@ fn tqvector_send(vec: Vec<u8>) -> Vec<u8> {
 
 #[pg_extern(immutable, strict, parallel_safe, sql = false)]
 fn tqvector_recv(input: Internal) -> Vec<u8> {
-    // SAFETY: PostgreSQL type receive functions are invoked with an `internal`
-    // argument pointing at a live `StringInfoData` input buffer.
-    let msg = unsafe {
-        input
-            .get::<pg_sys::StringInfoData>()
-            .unwrap_or_else(|| pgrx::error!("invalid tqvector binary: missing input buffer"))
-            as *const pg_sys::StringInfoData as pg_sys::StringInfo
-    };
-
-    // SAFETY: `msg` is a valid Postgres `StringInfo` owned by the current receive call.
-    unsafe { recv_tqvector_message(msg) }
-        .unwrap_or_else(|e| pgrx::error!("invalid tqvector binary: {e}"))
+    let msg = crate::storage::string_info::StringInfoReader::from_internal(
+        input,
+        "invalid tqvector binary",
+    )
+    .unwrap_or_else(|e| pgrx::error!("{e}"));
+    recv_tqvector_message(msg).unwrap_or_else(|e| pgrx::error!("invalid tqvector binary: {e}"))
 }
 
 #[pg_extern(stable, strict)]
@@ -1346,9 +1295,7 @@ fn ec_spire_dml_frontdoor_relation_context_catalog(
         name!(next_step, &'static str),
     ),
 > {
-    // SAFETY: this SQL wrapper passes a heap relation OID supplied by
-    // PostgreSQL into the DML frontdoor catalog resolver for read-only lookup.
-    let row = unsafe { am::spire_dml_frontdoor_relation_context_catalog_row(heap_relation_oid) }
+    let row = am::spire_dml_frontdoor_relation_context_catalog_row(heap_relation_oid)
         .unwrap_or_else(|e| pgrx::error!("{e}"));
     TableIterator::once((
         row.heap_relation_oid,
@@ -1405,79 +1352,76 @@ fn ec_spire_dml_frontdoor_classify_sql(
         name!(next_step, &'static str),
     ),
 > {
-    // SAFETY: `analyze_single_dml_frontdoor_query` parses and analyzes this
-    // SQL text in the current backend memory context for immediate inspection.
-    let query = unsafe {
-        analyze_single_dml_frontdoor_query(sql)
-            .unwrap_or_else(|e| pgrx::error!("ec_spire DML frontdoor SQL analysis failed: {e}"))
-    };
-    // SAFETY: `query` is the analyzed Query pointer returned above and remains
-    // live for this SQL function call.
-    let Some(target_relation_oid) = (unsafe { am::spire_dml_frontdoor_target_relation_oid(query) })
-    else {
-        return TableIterator::once((
-            None,
-            None,
-            false,
-            "unsupported",
-            "unsupported_target_relation",
-            "unsupported_shape",
-            Some("ec_spire_distributed: DML front door requires one target heap relation"),
-            Some("See ADR-069 for the v1 SPIRE distributed DML shape."),
-            "rewrite query as single-table UPDATE, DELETE, or PK SELECT",
-        ));
-    };
-    let relation = am::spire_dml_frontdoor_relation_context_row(target_relation_oid)
-        .unwrap_or_else(|e| pgrx::error!("{e}"));
-    let pk_column = relation.pk_column.as_deref().unwrap_or("");
-    let column_names = relation
-        .column_names
-        .iter()
-        .map(|(attnum, name)| (*attnum, name.as_str()))
-        .collect::<Vec<_>>();
-    let embedding_columns = relation
-        .embedding_columns
-        .iter()
-        .map(String::as_str)
-        .collect::<Vec<_>>();
-    let query_context = am::SpireDmlFrontdoorQueryContext {
-        ec_spire_distributed_table: relation.ec_spire_distributed_table,
-        pk_column,
-        column_names: &column_names,
-        embedding_columns: &embedding_columns,
-    };
-    // SAFETY: `query_context` borrows local vectors that live through this
-    // immediate classifier call; `query` remains live from analysis above.
-    let Some(shape) = (unsafe { am::spire_classify_dml_frontdoor_query(query, query_context) })
-    else {
-        return TableIterator::once((
+    let Some(result) = am::spire_with_analyzed_dml_frontdoor_query_view(sql, |query_view| {
+        let Some(target_relation_oid) = am::spire_dml_frontdoor_target_relation_oid(query_view)
+        else {
+            return TableIterator::once((
+                None,
+                None,
+                false,
+                "unsupported",
+                "unsupported_target_relation",
+                "unsupported_shape",
+                Some("ec_spire_distributed: DML front door requires one target heap relation"),
+                Some("See ADR-069 for the v1 SPIRE distributed DML shape."),
+                "rewrite query as single-table UPDATE, DELETE, or PK SELECT",
+            ));
+        };
+        let relation = am::spire_dml_frontdoor_relation_context_row(target_relation_oid)
+            .unwrap_or_else(|e| pgrx::error!("{e}"));
+        let pk_column = relation.pk_column.as_deref().unwrap_or("");
+        let column_names = relation
+            .column_names
+            .iter()
+            .map(|(attnum, name)| (*attnum, name.as_str()))
+            .collect::<Vec<_>>();
+        let embedding_columns = relation
+            .embedding_columns
+            .iter()
+            .map(String::as_str)
+            .collect::<Vec<_>>();
+        let query_context = am::SpireDmlFrontdoorQueryContext {
+            ec_spire_distributed_table: relation.ec_spire_distributed_table,
+            pk_column,
+            column_names: &column_names,
+            embedding_columns: &embedding_columns,
+        };
+        let Some(shape) = am::spire_classify_dml_frontdoor_query(query_view, query_context) else {
+            return TableIterator::once((
+                Some(target_relation_oid),
+                Some(relation.status),
+                false,
+                "unsupported",
+                "unsupported_operation",
+                "unsupported_shape",
+                Some(
+                    "ec_spire_distributed: only UPDATE, DELETE, and PK SELECT are supported in v1",
+                ),
+                Some("See ADR-069 for the v1 SPIRE distributed DML shape."),
+                "rewrite query as single-table UPDATE, DELETE, or PK SELECT",
+            ));
+        };
+
+        TableIterator::once((
             Some(target_relation_oid),
             Some(relation.status),
-            false,
-            "unsupported",
-            "unsupported_operation",
-            "unsupported_shape",
-            Some("ec_spire_distributed: only UPDATE, DELETE, and PK SELECT are supported in v1"),
-            Some("See ADR-069 for the v1 SPIRE distributed DML shape."),
-            "rewrite query as single-table UPDATE, DELETE, or PK SELECT",
-        ));
+            shape.supported,
+            shape.operation,
+            shape.kind,
+            shape.status,
+            shape.error,
+            shape.hint,
+            if shape.supported {
+                "wire planner hook to CustomScan executor replacement"
+            } else {
+                "rewrite query to fit the ADR-069 v1 DML front-door shape"
+            },
+        ))
+    })
+    .unwrap_or_else(|e| pgrx::error!("ec_spire DML frontdoor SQL analysis failed: {e}")) else {
+        pgrx::error!("ec_spire DML frontdoor SQL analysis returned a null Query");
     };
-
-    TableIterator::once((
-        Some(target_relation_oid),
-        Some(relation.status),
-        shape.supported,
-        shape.operation,
-        shape.kind,
-        shape.status,
-        shape.error,
-        shape.hint,
-        if shape.supported {
-            "wire planner hook to CustomScan executor replacement"
-        } else {
-            "rewrite query to fit the ADR-069 v1 DML front-door shape"
-        },
-    ))
+    result
 }
 
 #[pg_extern(stable)]
@@ -1506,61 +1450,58 @@ fn ec_spire_dml_frontdoor_replacement_sql(
         name!(next_step, &'static str),
     ),
 > {
-    // SAFETY: the returned analyzed Query is inspected immediately during this
-    // SQL function call and is owned by PostgreSQL's current memory context.
-    let query = unsafe {
-        analyze_single_dml_frontdoor_query(sql)
-            .unwrap_or_else(|e| pgrx::error!("ec_spire DML frontdoor SQL analysis failed: {e}"))
-    };
-    // SAFETY: `query` remains live for the duration of this immediate
-    // replacement-decision catalog lookup.
-    let Some(decision) =
-        (unsafe { am::spire_dml_frontdoor_replacement_decision_catalog_row(query) })
-    else {
-        return TableIterator::once((
-            None,
-            None,
-            false,
-            "unsupported",
-            "unsupported_target_relation",
-            "unsupported_shape",
-            "none",
-            "none",
-            None,
-            "other",
-            None,
-            None,
-            Vec::new(),
-            Vec::new(),
-            Some("ec_spire_distributed: DML front door requires one target heap relation"),
-            Some("See ADR-069 for the v1 SPIRE distributed DML shape."),
-            "raise ADR-069 planner error instead of using coordinator heap path",
-        ));
-    };
+    let Some(result) = am::spire_with_analyzed_dml_frontdoor_query_view(sql, |query_view| {
+        let Some(decision) = am::spire_dml_frontdoor_replacement_decision_catalog_row(query_view)
+        else {
+            return TableIterator::once((
+                None,
+                None,
+                false,
+                "unsupported",
+                "unsupported_target_relation",
+                "unsupported_shape",
+                "none",
+                "none",
+                None,
+                "other",
+                None,
+                None,
+                Vec::new(),
+                Vec::new(),
+                Some("ec_spire_distributed: DML front door requires one target heap relation"),
+                Some("See ADR-069 for the v1 SPIRE distributed DML shape."),
+                "raise ADR-069 planner error instead of using coordinator heap path",
+            ));
+        };
 
-    TableIterator::once((
-        Some(decision.target_relation_oid),
-        if decision.index_oid == pg_sys::InvalidOid {
-            None
-        } else {
-            Some(decision.index_oid)
-        },
-        decision.supported,
-        decision.operation,
-        decision.kind,
-        decision.status,
-        decision.custom_scan_mode,
-        decision.primitive,
-        decision.pk_column,
-        decision.pk_value_kind,
-        decision.pk_value_const,
-        decision.pk_value_param_id,
-        decision.updated_columns,
-        decision.projected_columns,
-        decision.error,
-        decision.hint,
-        decision.next_step,
-    ))
+        TableIterator::once((
+            Some(decision.target_relation_oid),
+            if decision.index_oid == pg_sys::InvalidOid {
+                None
+            } else {
+                Some(decision.index_oid)
+            },
+            decision.supported,
+            decision.operation,
+            decision.kind,
+            decision.status,
+            decision.custom_scan_mode,
+            decision.primitive,
+            decision.pk_column,
+            decision.pk_value_kind,
+            decision.pk_value_const,
+            decision.pk_value_param_id,
+            decision.updated_columns,
+            decision.projected_columns,
+            decision.error,
+            decision.hint,
+            decision.next_step,
+        ))
+    })
+    .unwrap_or_else(|e| pgrx::error!("ec_spire DML frontdoor SQL analysis failed: {e}")) else {
+        pgrx::error!("ec_spire DML frontdoor SQL analysis returned a null Query");
+    };
+    result
 }
 
 #[pg_extern(stable)]
@@ -1587,148 +1528,107 @@ fn ec_spire_dml_frontdoor_primitive_plan_sql(
         name!(next_step, &'static str),
     ),
 > {
-    // SAFETY: the returned analyzed Query is inspected immediately during this
-    // SQL function call and is owned by PostgreSQL's current memory context.
-    let query = unsafe {
-        analyze_single_dml_frontdoor_query(sql)
-            .unwrap_or_else(|e| pgrx::error!("ec_spire DML frontdoor SQL analysis failed: {e}"))
-    };
-    // SAFETY: `query` remains live for the duration of this immediate
-    // replacement-decision catalog lookup.
-    let Some(decision) =
-        (unsafe { am::spire_dml_frontdoor_replacement_decision_catalog_row(query) })
-    else {
-        return TableIterator::once((
-            None,
-            None,
-            false,
-            "none",
-            "none",
-            None,
-            "other",
-            None,
-            None,
-            None,
-            Vec::new(),
-            Vec::new(),
-            "unsupported_shape",
-            Some(
-                "ec_spire_distributed: DML front door requires one target heap relation".to_owned(),
-            ),
-            "raise ADR-069 planner error instead of using coordinator heap path",
-        ));
-    };
-    let target_relation_oid = Some(decision.target_relation_oid);
-    let index_oid = if decision.index_oid == pg_sys::InvalidOid {
-        None
-    } else {
-        Some(decision.index_oid)
-    };
-    let custom_scan_mode = decision.custom_scan_mode;
-    let primitive = decision.primitive;
-    let pk_column = decision.pk_column.clone();
-    let pk_value_kind = decision.pk_value_kind;
-    let pk_value_const = decision.pk_value_const;
-    let pk_value_param_id = decision.pk_value_param_id;
-    let updated_columns = decision.updated_columns.clone();
-    let projected_columns = decision.projected_columns.clone();
-
-    let primitive_plan =
-        match am::spire_dml_frontdoor_primitive_plan_from_replacement_decision(&decision) {
-            Ok(plan) => plan,
-            Err(error) => {
+    let Some(result) = am::spire_with_analyzed_dml_frontdoor_query_view(sql, |query_view| {
+            let Some(decision) =
+                am::spire_dml_frontdoor_replacement_decision_catalog_row(query_view)
+            else {
                 return TableIterator::once((
-                    target_relation_oid,
-                    index_oid,
-                    false,
-                    custom_scan_mode,
-                    primitive,
-                    pk_column,
-                    pk_value_kind,
-                    pk_value_const,
-                    pk_value_param_id,
                     None,
-                    updated_columns,
-                    projected_columns,
-                    "primitive_plan_not_ready",
-                    Some(error),
-                    "fix the DML replacement decision before building a CustomScan executor node",
+                    None,
+                    false,
+                    "none",
+                    "none",
+                    None,
+                    "other",
+                    None,
+                    None,
+                    None,
+                    Vec::new(),
+                    Vec::new(),
+                    "unsupported_shape",
+                    Some(
+                        "ec_spire_distributed: DML front door requires one target heap relation"
+                            .to_owned(),
+                    ),
+                    "raise ADR-069 planner error instead of using coordinator heap path",
                 ));
-            }
-        };
-    let (pk_value_bytes, status, error, next_step) =
-        match am::spire_dml_frontdoor_primitive_plan_const_pk_value_bytes(&primitive_plan) {
-            Ok(bytes) => (
-                Some(bytes.to_vec()),
-                "primitive_plan_ready",
-                None,
-                "wire planner hook to DML CustomScan executor replacement",
-            ),
-            Err(error) => (
-                None,
-                "primitive_plan_requires_runtime_params",
-                Some(error),
-                "evaluate bound parameters in the DML CustomScan executor before invoking the coordinator primitive",
-            ),
-        };
+            };
+            let target_relation_oid = Some(decision.target_relation_oid);
+            let index_oid = if decision.index_oid == pg_sys::InvalidOid {
+                None
+            } else {
+                Some(decision.index_oid)
+            };
+            let custom_scan_mode = decision.custom_scan_mode;
+            let primitive = decision.primitive;
+            let pk_column = decision.pk_column.clone();
+            let pk_value_kind = decision.pk_value_kind;
+            let pk_value_const = decision.pk_value_const;
+            let pk_value_param_id = decision.pk_value_param_id;
+            let updated_columns = decision.updated_columns.clone();
+            let projected_columns = decision.projected_columns.clone();
 
-    TableIterator::once((
-        target_relation_oid,
-        index_oid,
-        true,
-        custom_scan_mode,
-        primitive,
-        pk_column,
-        pk_value_kind,
-        pk_value_const,
-        pk_value_param_id,
-        pk_value_bytes,
-        updated_columns,
-        projected_columns,
-        status,
-        error,
-        next_step,
-    ))
-}
+            let primitive_plan =
+                match am::spire_dml_frontdoor_primitive_plan_from_replacement_decision(&decision) {
+                    Ok(plan) => plan,
+                    Err(error) => {
+                        return TableIterator::once((
+                            target_relation_oid,
+                            index_oid,
+                            false,
+                            custom_scan_mode,
+                            primitive,
+                            pk_column,
+                            pk_value_kind,
+                            pk_value_const,
+                            pk_value_param_id,
+                            None,
+                            updated_columns,
+                            projected_columns,
+                            "primitive_plan_not_ready",
+                            Some(error),
+                            "fix the DML replacement decision before building a CustomScan executor node",
+                        ));
+                    }
+                };
+            let (pk_value_bytes, status, error, next_step) =
+                match am::spire_dml_frontdoor_primitive_plan_const_pk_value_bytes(&primitive_plan) {
+                    Ok(bytes) => (
+                        Some(bytes.to_vec()),
+                        "primitive_plan_ready",
+                        None,
+                        "wire planner hook to DML CustomScan executor replacement",
+                    ),
+                    Err(error) => (
+                        None,
+                        "primitive_plan_requires_runtime_params",
+                        Some(error),
+                        "evaluate bound parameters in the DML CustomScan executor before invoking the coordinator primitive",
+                    ),
+                };
 
-unsafe fn analyze_single_dml_frontdoor_query(sql: &str) -> Result<*mut pg_sys::Query, String> {
-    let sql = CString::new(sql).map_err(|_| "SQL text contains an interior NUL byte".to_owned())?;
-    // SAFETY: `sql` is a NUL-terminated CString that lives through this parser
-    // call in the current backend.
-    let raw_parses = unsafe { pg_sys::pg_parse_query(sql.as_ptr()) };
-    if raw_parses.is_null() {
-        return Err("parser returned no statements".to_owned());
-    }
-    // SAFETY: `raw_parses` is the non-null PostgreSQL List returned by
-    // `pg_parse_query`.
-    if unsafe { pg_sys::list_length(raw_parses) } != 1 {
-        return Err("expected exactly one SQL statement".to_owned());
-    }
-    // SAFETY: the list length check above guarantees element 0 exists and is a
-    // RawStmt pointer from PostgreSQL's parser.
-    let raw_stmt = unsafe { pg_sys::list_nth(raw_parses, 0) }.cast::<pg_sys::RawStmt>();
-    // SAFETY: `raw_stmt` and `sql` come from PostgreSQL parsing in this backend
-    // and are analyzed immediately with no external parameter values.
-    let queries = unsafe {
-        pg_sys::pg_analyze_and_rewrite_fixedparams(
-            raw_stmt,
-            sql.as_ptr(),
-            std::ptr::null(),
-            0,
-            std::ptr::null_mut(),
-        )
+            TableIterator::once((
+                target_relation_oid,
+                index_oid,
+                true,
+                custom_scan_mode,
+                primitive,
+                pk_column,
+                pk_value_kind,
+                pk_value_const,
+                pk_value_param_id,
+                pk_value_bytes,
+                updated_columns,
+                projected_columns,
+                status,
+                error,
+                next_step,
+            ))
+        })
+    .unwrap_or_else(|e| pgrx::error!("ec_spire DML frontdoor SQL analysis failed: {e}")) else {
+        pgrx::error!("ec_spire DML frontdoor SQL analysis returned a null Query");
     };
-    if queries.is_null() {
-        return Err("analyzer returned no query".to_owned());
-    }
-    // SAFETY: `queries` is the non-null PostgreSQL List returned by the
-    // analyzer/rewrite step.
-    if unsafe { pg_sys::list_length(queries) } != 1 {
-        return Err("expected exactly one analyzed query".to_owned());
-    }
-    // SAFETY: the list length check above guarantees element 0 exists and is
-    // the single analyzed Query pointer inspected by callers.
-    Ok(unsafe { pg_sys::list_nth(queries, 0) }.cast::<pg_sys::Query>())
+    result
 }
 
 #[pg_extern(stable, strict)]
@@ -1753,8 +1653,11 @@ fn ec_spire_custom_scan_index_eligibility(
 > {
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_custom_scan_index_eligibility");
-    let row =
-        with_live_index_relation!(index_relation, am::spire_custom_scan_index_eligibility_row);
+    let row = with_spire_live_index_relation!(
+        index_relation,
+        am::spire_custom_scan_index_eligibility_result
+    )
+    .unwrap_or_else(|e| pgrx::error!("{e}"));
 
     TableIterator::once((
         i64::try_from(row.active_epoch).expect("active epoch should fit in i64"),
@@ -1929,7 +1832,7 @@ fn ec_spire_index_active_snapshot_diagnostics(
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_active_snapshot_diagnostics");
     let diagnostics =
-        with_live_index_relation!(index_relation, am::spire_active_snapshot_diagnostics);
+        with_spire_live_index_relation!(index_relation, am::spire_active_snapshot_diagnostics);
 
     TableIterator::once((
         i64::try_from(diagnostics.active_epoch).expect("active epoch should fit in i64"),
@@ -1998,7 +1901,7 @@ fn ec_spire_index_allocator_snapshot(
         u64::try_from(warn_within).expect("non-negative warning threshold should fit in u64");
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_allocator_snapshot");
-    let snapshot = with_live_index_relation!(
+    let snapshot = with_spire_live_index_relation!(
         index_relation,
         am::spire_index_allocator_snapshot,
         warn_within
@@ -2052,7 +1955,7 @@ fn ec_spire_index_placement_snapshot(
     }
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_placement_snapshot");
-    let rows = with_live_index_relation!(index_relation, am::spire_index_placement_snapshot);
+    let rows = with_spire_live_index_relation!(index_relation, am::spire_index_placement_snapshot);
 
     TableIterator::new(rows.into_iter().map(|row| {
         (
@@ -2118,7 +2021,7 @@ fn ec_spire_remote_node_snapshot(
 > {
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_node_snapshot");
-    let rows = with_live_index_relation!(index_relation, am::spire_remote_node_snapshot);
+    let rows = with_spire_live_index_relation!(index_relation, am::spire_remote_node_snapshot);
 
     TableIterator::new(rows.into_iter().map(|row| {
         (
@@ -2526,7 +2429,7 @@ fn ec_spire_remote_node_descriptor_readiness(
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_node_descriptor_readiness");
     let rows =
-        with_live_index_relation!(index_relation, am::spire_remote_node_descriptor_readiness);
+        with_spire_live_index_relation!(index_relation, am::spire_remote_node_descriptor_readiness);
 
     TableIterator::new(rows.into_iter().map(|row| {
         (
@@ -2566,7 +2469,7 @@ fn ec_spire_remote_node_descriptor_readiness_summary(
         index_oid,
         "ec_spire_remote_node_descriptor_readiness_summary",
     );
-    let row = with_live_index_relation!(
+    let row = with_spire_live_index_relation!(
         index_relation,
         am::spire_remote_node_descriptor_readiness_summary
     );
@@ -2613,7 +2516,8 @@ fn ec_spire_remote_node_capability_plan(
 > {
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_node_capability_plan");
-    let rows = with_live_index_relation!(index_relation, am::spire_remote_node_capability_plan);
+    let rows =
+        with_spire_live_index_relation!(index_relation, am::spire_remote_node_capability_plan);
 
     TableIterator::new(rows.into_iter().map(|row| {
         (
@@ -2662,7 +2566,8 @@ fn ec_spire_remote_node_capability_summary(
 > {
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_node_capability_summary");
-    let row = with_live_index_relation!(index_relation, am::spire_remote_node_capability_summary);
+    let row =
+        with_spire_live_index_relation!(index_relation, am::spire_remote_node_capability_summary);
 
     TableIterator::once((
         i64::try_from(row.active_epoch).expect("active epoch should fit in i64"),
@@ -2706,7 +2611,7 @@ fn ec_spire_remote_epoch_publish_plan(
 > {
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_epoch_publish_plan");
-    let rows = with_live_index_relation!(index_relation, am::spire_remote_epoch_publish_plan);
+    let rows = with_spire_live_index_relation!(index_relation, am::spire_remote_epoch_publish_plan);
 
     TableIterator::new(rows.into_iter().map(|row| {
         (
@@ -2757,7 +2662,8 @@ fn ec_spire_remote_epoch_publish_readiness(
 > {
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_epoch_publish_readiness");
-    let row = with_live_index_relation!(index_relation, am::spire_remote_epoch_publish_readiness);
+    let row =
+        with_spire_live_index_relation!(index_relation, am::spire_remote_epoch_publish_readiness);
 
     TableIterator::once((
         i64::try_from(row.active_epoch).expect("active epoch should fit in i64"),
@@ -2804,8 +2710,10 @@ fn ec_spire_remote_epoch_publish_gate_summary(
 > {
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_epoch_publish_gate_summary");
-    let row =
-        with_live_index_relation!(index_relation, am::spire_remote_epoch_publish_gate_summary);
+    let row = with_spire_live_index_relation!(
+        index_relation,
+        am::spire_remote_epoch_publish_gate_summary
+    );
 
     TableIterator::once((
         i64::try_from(row.active_epoch).expect("active epoch should fit in i64"),
@@ -2850,7 +2758,8 @@ fn ec_spire_remote_epoch_manifest_plan(
 > {
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_epoch_manifest_plan");
-    let rows = with_live_index_relation!(index_relation, am::spire_remote_epoch_manifest_plan);
+    let rows =
+        with_spire_live_index_relation!(index_relation, am::spire_remote_epoch_manifest_plan);
 
     TableIterator::new(rows.into_iter().map(|row| {
         (
@@ -2894,7 +2803,8 @@ fn ec_spire_remote_epoch_manifest_summary(
 > {
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_epoch_manifest_summary");
-    let row = with_live_index_relation!(index_relation, am::spire_remote_epoch_manifest_summary);
+    let row =
+        with_spire_live_index_relation!(index_relation, am::spire_remote_epoch_manifest_summary);
 
     TableIterator::once((
         i64::try_from(row.active_epoch).expect("active epoch should fit in i64"),
@@ -2919,9 +2829,9 @@ fn ec_spire_persist_remote_epoch_manifest(index_oid: pg_sys::Oid) -> bool {
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_persist_remote_epoch_manifest");
     let summary =
-        with_live_index_relation!(index_relation, am::spire_remote_epoch_manifest_summary);
+        with_spire_live_index_relation!(index_relation, am::spire_remote_epoch_manifest_summary);
     let manifest_rows =
-        with_live_index_relation!(index_relation, am::spire_remote_epoch_manifest_plan);
+        with_spire_live_index_relation!(index_relation, am::spire_remote_epoch_manifest_plan);
 
     if summary.manifest_decision != "emit_distributed_epoch_manifest" {
         pgrx::error!(
@@ -2949,7 +2859,7 @@ fn ec_spire_persist_remote_epoch_manifest(index_oid: pg_sys::Oid) -> bool {
         .expect("remote placement count should fit in i64");
 
     let result = Spi::connect_mut(|client| {
-        let current_active_epoch = i64::try_from(with_live_index_relation!(
+        let current_active_epoch = i64::try_from(with_spire_live_index_relation!(
             index_relation,
             am::spire_active_epoch
         ))
@@ -3271,10 +3181,12 @@ fn ec_spire_remote_epoch_manifest_catalog_summary(
             index_oid,
             "ec_spire_remote_epoch_manifest_catalog_summary",
         );
-        let summary =
-            with_live_index_relation!(index_relation, am::spire_remote_epoch_manifest_summary);
+        let summary = with_spire_live_index_relation!(
+            index_relation,
+            am::spire_remote_epoch_manifest_summary
+        );
         let current_entries =
-            with_live_index_relation!(index_relation, am::spire_remote_epoch_manifest_plan)
+            with_spire_live_index_relation!(index_relation, am::spire_remote_epoch_manifest_plan)
                 .into_iter()
                 .filter(|row| row.manifest_action == "include_remote_node")
                 .collect::<Vec<_>>();
@@ -3683,7 +3595,7 @@ fn ec_spire_remote_epoch_manifest_publication_plan(
             index_oid,
             "ec_spire_remote_epoch_manifest_publication_plan",
         );
-        with_live_index_relation!(index_relation, am::spire_remote_epoch_manifest_plan)
+        with_spire_live_index_relation!(index_relation, am::spire_remote_epoch_manifest_plan)
     };
 
     let Some(active_epoch) = current_rows.first().map(|row| row.active_epoch) else {
@@ -7686,7 +7598,7 @@ fn ec_spire_index_scan_placement_snapshot(
     let rows = {
         let index_relation =
             open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_scan_placement_snapshot");
-        with_live_index_relation!(
+        with_spire_live_index_relation!(
             index_relation,
             am::spire_index_scan_placement_snapshot,
             query
@@ -7780,7 +7692,7 @@ fn ec_spire_index_selected_pid_placement_snapshot(
             index_oid,
             "ec_spire_index_selected_pid_placement_snapshot",
         );
-        with_live_index_relation!(
+        with_spire_live_index_relation!(
             index_relation,
             am::spire_index_selected_pid_placement_snapshot,
             selected_pids
@@ -7826,7 +7738,7 @@ fn ec_spire_index_scan_local_store_execution_snapshot(
             index_oid,
             "ec_spire_index_scan_local_store_execution_snapshot",
         );
-        with_live_index_relation!(
+        with_spire_live_index_relation!(
             index_relation,
             am::spire_index_scan_placement_snapshot,
             query
@@ -7876,7 +7788,7 @@ fn ec_spire_index_scan_local_store_read_overlap_harness(
             index_oid,
             "ec_spire_index_scan_local_store_read_overlap_harness",
         );
-        with_live_index_relation!(
+        with_spire_live_index_relation!(
             index_relation,
             am::spire_index_scan_placement_snapshot,
             query
@@ -7937,7 +7849,11 @@ fn ec_spire_index_scan_routing_snapshot(
     let rows = {
         let index_relation =
             open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_scan_routing_snapshot");
-        with_live_index_relation!(index_relation, am::spire_index_scan_routing_snapshot, query)
+        with_spire_live_index_relation!(
+            index_relation,
+            am::spire_index_scan_routing_snapshot,
+            query
+        )
     };
 
     TableIterator::new(rows.into_iter().map(|row| {
@@ -7993,12 +7909,12 @@ fn ec_spire_index_scan_pipeline_snapshot(
     let (routing_rows, placement_rows) = {
         let index_relation =
             open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_scan_pipeline_snapshot");
-        let routing_rows = with_live_index_relation!(
+        let routing_rows = with_spire_live_index_relation!(
             index_relation,
             am::spire_index_scan_routing_snapshot,
             query.clone()
         );
-        let placement_rows = with_live_index_relation!(
+        let placement_rows = with_spire_live_index_relation!(
             index_relation,
             am::spire_index_scan_placement_snapshot,
             query
@@ -8213,7 +8129,7 @@ fn ec_spire_index_root_routing_snapshot(
     let rows = {
         let index_relation =
             open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_root_routing_snapshot");
-        with_live_index_relation!(index_relation, am::spire_index_root_routing_snapshot)
+        with_spire_live_index_relation!(index_relation, am::spire_index_root_routing_snapshot)
     };
 
     TableIterator::new(rows.into_iter().map(|row| {
@@ -8274,7 +8190,7 @@ fn ec_spire_index_routing_centroid_snapshot(
     let rows = {
         let index_relation =
             open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_routing_centroid_snapshot");
-        with_live_index_relation!(index_relation, am::spire_index_routing_centroid_snapshot)
+        with_spire_live_index_relation!(index_relation, am::spire_index_routing_centroid_snapshot)
     };
 
     TableIterator::new(rows.into_iter().map(|row| {
@@ -8321,7 +8237,7 @@ fn ec_spire_classify_centroid(
     let classification = {
         let index_relation =
             open_valid_ec_spire_index_guard(index_oid, "ec_spire_classify_centroid");
-        with_live_index_relation!(index_relation, am::spire_classify_centroid, &embedding)
+        with_spire_live_index_relation!(index_relation, am::spire_classify_centroid, &embedding)
     };
     let (node_id, centroid_id, epoch) = classification.unwrap_or_else(|e| pgrx::error!("{e}"));
 
@@ -8359,7 +8275,7 @@ fn ec_spire_plan_coordinator_insert(
     let classification = {
         let index_relation =
             open_valid_ec_spire_index_guard(index_oid, "ec_spire_plan_coordinator_insert");
-        with_live_index_relation!(index_relation, am::spire_classify_centroid, &embedding)
+        with_spire_live_index_relation!(index_relation, am::spire_classify_centroid, &embedding)
     };
     let (node_id, centroid_id, epoch) = classification.unwrap_or_else(|e| pgrx::error!("{e}"));
 
@@ -8413,7 +8329,7 @@ fn ec_spire_plan_coordinator_insert_dispatch(
     let row = {
         let index_relation =
             open_valid_ec_spire_index_guard(index_oid, "ec_spire_plan_coordinator_insert_dispatch");
-        with_live_index_relation!(
+        with_spire_live_index_relation!(
             index_relation,
             am::spire_coordinator_insert_dispatch_plan_row,
             node_id,
@@ -8484,11 +8400,14 @@ fn ec_spire_prepare_coordinator_insert_tuple_payload(
             index_oid,
             "ec_spire_prepare_coordinator_insert_tuple_payload",
         );
-        let classification =
-            with_live_index_relation!(index_relation, am::spire_classify_centroid, &embedding)
-                .unwrap_or_else(|e| pgrx::error!("{e}"));
+        let classification = with_spire_live_index_relation!(
+            index_relation,
+            am::spire_classify_centroid,
+            &embedding
+        )
+        .unwrap_or_else(|e| pgrx::error!("{e}"));
         let row_payload_json = row_payload.0.to_string();
-        let prepare_row = with_live_index_relation!(
+        let prepare_row = with_spire_live_index_relation!(
             index_relation,
             am::spire_coordinator_insert_prepare_remote_tuple_payload,
             classification.0,
@@ -8716,7 +8635,7 @@ fn ec_spire_prepare_coordinator_insert_tuple_payload_batch(
             index_oid,
             "ec_spire_prepare_coordinator_insert_tuple_payload_batch",
         );
-        with_live_index_relation!(
+        with_spire_live_index_relation!(
             index_relation,
             am::spire_coordinator_insert_prepare_remote_tuple_payload_batch,
             batch_rows,
@@ -8992,7 +8911,7 @@ fn ec_spire_forward_coordinator_update_tuple_payload(
     if node_id < 0 {
         pgrx::error!("ec_spire coordinator update placement node_id must not be negative");
     }
-    let update_row = with_live_index_relation!(
+    let update_row = with_spire_live_index_relation!(
         index_relation,
         am::spire_coordinator_update_remote_tuple_payload,
         u32::try_from(node_id).expect("positive node_id should fit u32"),
@@ -9152,7 +9071,7 @@ fn ec_spire_prepare_coordinator_delete_tuple_payload(
             "done",
         ));
     }
-    let delete_row = with_live_index_relation!(
+    let delete_row = with_spire_live_index_relation!(
         index_relation,
         am::spire_coordinator_delete_prepare_remote_tuple_payload,
         u32::try_from(node_id).expect("positive node_id should fit u32"),
@@ -9313,7 +9232,7 @@ fn ec_spire_forward_coordinator_select_tuple_payload(
     if node_id < 0 {
         pgrx::error!("ec_spire coordinator select placement node_id must not be negative");
     }
-    let select_row = with_live_index_relation!(
+    let select_row = with_spire_live_index_relation!(
         index_relation,
         am::spire_coordinator_select_remote_tuple_payload,
         u32::try_from(node_id).expect("positive node_id should fit u32"),
@@ -9435,7 +9354,8 @@ fn ec_spire_index_hierarchy_snapshot(
     }
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_hierarchy_snapshot");
-    let snapshot = with_live_index_relation!(index_relation, am::spire_index_hierarchy_snapshot);
+    let snapshot =
+        with_spire_live_index_relation!(index_relation, am::spire_index_hierarchy_snapshot);
     drop(index_relation);
 
     TableIterator::once((
@@ -9509,7 +9429,8 @@ fn ec_spire_index_top_graph_snapshot(
     }
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_top_graph_snapshot");
-    let snapshot = with_live_index_relation!(index_relation, am::spire_index_top_graph_snapshot);
+    let snapshot =
+        with_spire_live_index_relation!(index_relation, am::spire_index_top_graph_snapshot);
     drop(index_relation);
 
     TableIterator::once((
@@ -9585,7 +9506,7 @@ fn ec_spire_remote_search_fanout_plan(
 
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_search_fanout_plan");
-    let rows = with_live_index_relation!(
+    let rows = with_spire_live_index_relation!(
         index_relation,
         am::spire_remote_search_fanout_plan_rows,
         requested_epoch,
@@ -9640,7 +9561,7 @@ fn ec_spire_remote_search_target_plan(
 
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_search_target_plan");
-    let rows = with_live_index_relation!(
+    let rows = with_spire_live_index_relation!(
         index_relation,
         am::spire_remote_search_target_plan_rows,
         requested_epoch,
@@ -9707,7 +9628,7 @@ fn ec_spire_remote_search_target_readiness(
 
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_search_target_readiness");
-    let rows = with_live_index_relation!(
+    let rows = with_spire_live_index_relation!(
         index_relation,
         am::spire_remote_search_target_readiness_rows,
         requested_epoch,
@@ -9779,7 +9700,7 @@ fn ec_spire_remote_search_request_plan(
 
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_search_request_plan");
-    let rows = with_live_index_relation!(
+    let rows = with_spire_live_index_relation!(
         index_relation,
         am::spire_remote_search_request_plan_rows,
         requested_epoch,
@@ -9860,7 +9781,7 @@ fn ec_spire_remote_search_request_readiness(
 
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_search_request_readiness");
-    let rows = with_live_index_relation!(
+    let rows = with_spire_live_index_relation!(
         index_relation,
         am::spire_remote_search_request_readiness_rows,
         requested_epoch,
@@ -9944,7 +9865,7 @@ fn ec_spire_remote_search_request_summary(
 
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_search_request_summary");
-    let row = with_live_index_relation!(
+    let row = with_spire_live_index_relation!(
         index_relation,
         am::spire_remote_search_request_summary_row,
         requested_epoch,
@@ -10029,7 +9950,7 @@ fn ec_spire_remote_search_readiness_summary(
 
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_search_readiness_summary");
-    let row = with_live_index_relation!(
+    let row = with_spire_live_index_relation!(
         index_relation,
         am::spire_remote_search_readiness_summary_row,
         requested_epoch,
@@ -10116,7 +10037,7 @@ fn ec_spire_remote_search_execution_plan(
 
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_search_execution_plan");
-    let rows = with_live_index_relation!(
+    let rows = with_spire_live_index_relation!(
         index_relation,
         am::spire_remote_search_execution_plan_rows,
         requested_epoch,
@@ -10204,7 +10125,7 @@ fn ec_spire_remote_search_execution_summary(
 
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_search_execution_summary");
-    let row = with_live_index_relation!(
+    let row = with_spire_live_index_relation!(
         index_relation,
         am::spire_remote_search_execution_summary_row,
         requested_epoch,
@@ -10289,7 +10210,7 @@ fn ec_spire_remote_search_libpq_request_plan(
 
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_search_libpq_request_plan");
-    let rows = with_live_index_relation!(
+    let rows = with_spire_live_index_relation!(
         index_relation,
         am::spire_remote_search_libpq_request_plan_rows,
         requested_epoch,
@@ -10374,7 +10295,7 @@ fn ec_spire_remote_search_libpq_request_summary(
 
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_search_libpq_request_summary");
-    let row = with_live_index_relation!(
+    let row = with_spire_live_index_relation!(
         index_relation,
         am::spire_remote_search_libpq_request_summary_row,
         requested_epoch,
@@ -10451,7 +10372,7 @@ fn ec_spire_remote_search_libpq_connection_plan(
 
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_search_libpq_connection_plan");
-    let rows = with_live_index_relation!(
+    let rows = with_spire_live_index_relation!(
         index_relation,
         am::spire_remote_search_libpq_connection_plan_rows,
         requested_epoch,
@@ -10534,7 +10455,7 @@ fn ec_spire_remote_search_libpq_connection_summary(
         index_oid,
         "ec_spire_remote_search_libpq_connection_summary",
     );
-    let row = with_live_index_relation!(
+    let row = with_spire_live_index_relation!(
         index_relation,
         am::spire_remote_search_libpq_connection_summary_row,
         requested_epoch,
@@ -10617,7 +10538,7 @@ fn ec_spire_remote_search_libpq_dispatch_plan(
 
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_search_libpq_dispatch_plan");
-    let rows = with_live_index_relation!(
+    let rows = with_spire_live_index_relation!(
         index_relation,
         am::spire_remote_search_libpq_dispatch_plan_rows,
         requested_epoch,
@@ -10700,7 +10621,7 @@ fn ec_spire_remote_search_libpq_bind_plan(
 
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_search_libpq_bind_plan");
-    let rows = with_live_index_relation!(
+    let rows = with_spire_live_index_relation!(
         index_relation,
         am::spire_remote_search_libpq_dispatch_plan_rows,
         requested_epoch,
@@ -10845,7 +10766,7 @@ fn ec_spire_remote_search_libpq_bind_summary(
 
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_search_libpq_bind_summary");
-    let rows = with_live_index_relation!(
+    let rows = with_spire_live_index_relation!(
         index_relation,
         am::spire_remote_search_libpq_dispatch_plan_rows,
         requested_epoch,
@@ -10961,7 +10882,7 @@ fn ec_spire_remote_search_libpq_secret_plan(
 
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_search_libpq_secret_plan");
-    let rows = with_live_index_relation!(
+    let rows = with_spire_live_index_relation!(
         index_relation,
         am::spire_remote_search_libpq_secret_plan_rows,
         requested_epoch,
@@ -11040,7 +10961,7 @@ fn ec_spire_remote_search_libpq_secret_summary(
 
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_search_libpq_secret_summary");
-    let row = with_live_index_relation!(
+    let row = with_spire_live_index_relation!(
         index_relation,
         am::spire_remote_search_libpq_secret_summary_row,
         requested_epoch,
@@ -11118,7 +11039,7 @@ fn ec_spire_remote_search_libpq_connection_open_plan(
         index_oid,
         "ec_spire_remote_search_libpq_connection_open_plan",
     );
-    let rows = with_live_index_relation!(
+    let rows = with_spire_live_index_relation!(
         index_relation,
         am::spire_remote_search_libpq_connection_open_plan_rows,
         requested_epoch,
@@ -11202,7 +11123,7 @@ fn ec_spire_remote_search_libpq_connection_open_summary(
         index_oid,
         "ec_spire_remote_search_libpq_connection_open_summary",
     );
-    let row = with_live_index_relation!(
+    let row = with_spire_live_index_relation!(
         index_relation,
         am::spire_remote_search_libpq_connection_open_summary_row,
         requested_epoch,
@@ -11280,7 +11201,7 @@ fn ec_spire_remote_search_libpq_executor_connection_check(
         index_oid,
         "ec_spire_remote_search_libpq_executor_connection_check",
     );
-    let rows = with_live_index_relation!(
+    let rows = with_spire_live_index_relation!(
         index_relation,
         am::spire_remote_search_libpq_connection_open_plan_rows,
         requested_epoch,
@@ -11418,7 +11339,7 @@ fn ec_spire_remote_search_libpq_executor_candidates(
         index_oid,
         "ec_spire_remote_search_libpq_executor_candidates",
     );
-    let rows = with_live_index_relation!(
+    let rows = with_spire_live_index_relation!(
         index_relation,
         am::spire_remote_search_libpq_executor_candidate_rows,
         requested_epoch,
@@ -11496,7 +11417,7 @@ fn ec_spire_remote_search_libpq_executor_receive_attempts(
         index_oid,
         "ec_spire_remote_search_libpq_executor_receive_attempts",
     );
-    let rows = with_live_index_relation!(
+    let rows = with_spire_live_index_relation!(
         index_relation,
         am::spire_remote_search_libpq_executor_receive_attempt_rows,
         requested_epoch,
@@ -11582,7 +11503,7 @@ fn ec_spire_remote_search_libpq_executor_heap_candidates(
         index_oid,
         "ec_spire_remote_search_libpq_executor_heap_candidates",
     );
-    let rows = with_live_index_relation!(
+    let rows = with_spire_live_index_relation!(
         index_relation,
         am::spire_remote_search_libpq_executor_heap_candidate_rows,
         requested_epoch,
@@ -11661,7 +11582,7 @@ fn ec_spire_remote_search_libpq_executor_heap_candidate_summary(
         index_oid,
         "ec_spire_remote_search_libpq_executor_heap_candidate_summary",
     );
-    let rows = with_live_index_relation!(
+    let rows = with_spire_live_index_relation!(
         index_relation,
         am::spire_remote_search_libpq_executor_heap_candidate_rows,
         requested_epoch,
@@ -11754,7 +11675,7 @@ fn ec_spire_remote_search_libpq_identity_cache_summary(
         index_oid,
         "ec_spire_remote_search_libpq_identity_cache_summary",
     );
-    let row = with_live_index_relation!(
+    let row = with_spire_live_index_relation!(
         index_relation,
         am::spire_remote_search_libpq_identity_cache_summary_row,
         requested_epoch,
@@ -11835,7 +11756,7 @@ fn ec_spire_remote_search_libpq_executor_work_plan(
         index_oid,
         "ec_spire_remote_search_libpq_executor_work_plan",
     );
-    let dispatch_rows = with_live_index_relation!(
+    let dispatch_rows = with_spire_live_index_relation!(
         index_relation,
         am::spire_remote_search_libpq_dispatch_plan_rows,
         requested_epoch,
@@ -11844,7 +11765,7 @@ fn ec_spire_remote_search_libpq_executor_work_plan(
         top_k,
         &consistency_mode,
     );
-    let readiness_row = with_live_index_relation!(
+    let readiness_row = with_spire_live_index_relation!(
         index_relation,
         am::spire_remote_search_libpq_executor_readiness_row,
         requested_epoch,
@@ -11943,7 +11864,7 @@ fn ec_spire_remote_search_libpq_executor_work_summary(
         index_oid,
         "ec_spire_remote_search_libpq_executor_work_summary",
     );
-    let rows = with_live_index_relation!(
+    let rows = with_spire_live_index_relation!(
         index_relation,
         am::spire_remote_search_libpq_dispatch_plan_rows,
         requested_epoch,
@@ -11952,7 +11873,7 @@ fn ec_spire_remote_search_libpq_executor_work_summary(
         top_k,
         &consistency_mode,
     );
-    let readiness = with_live_index_relation!(
+    let readiness = with_spire_live_index_relation!(
         index_relation,
         am::spire_remote_search_libpq_executor_readiness_row,
         requested_epoch,
@@ -12059,7 +11980,7 @@ fn ec_spire_remote_search_libpq_dispatch_summary(
 
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_search_libpq_dispatch_summary");
-    let row = with_live_index_relation!(
+    let row = with_spire_live_index_relation!(
         index_relation,
         am::spire_remote_search_libpq_dispatch_summary_row,
         requested_epoch,
@@ -12145,7 +12066,7 @@ fn ec_spire_remote_search_libpq_executor_budget_summary(
         index_oid,
         "ec_spire_remote_search_libpq_executor_budget_summary",
     );
-    let row = with_live_index_relation!(
+    let row = with_spire_live_index_relation!(
         index_relation,
         am::spire_remote_search_libpq_executor_budget_summary_row,
         requested_epoch,
@@ -12215,7 +12136,7 @@ fn ec_spire_remote_search_production_policy_summary(
         index_oid,
         "ec_spire_remote_search_production_policy_summary",
     );
-    let row = with_live_index_relation!(
+    let row = with_spire_live_index_relation!(
         index_relation,
         am::spire_remote_search_production_consistency_policy_summary_row,
         requested_epoch,
@@ -12270,7 +12191,7 @@ fn ec_spire_remote_search_production_policy_session_summary(
         index_oid,
         "ec_spire_remote_search_production_policy_session_summary",
     );
-    let row = with_live_index_relation!(
+    let row = with_spire_live_index_relation!(
         index_relation,
         am::spire_remote_search_production_session_consistency_policy_summary_row,
         requested_epoch,
@@ -12470,7 +12391,7 @@ fn ec_spire_remote_search_production_executor_state_summary(
         index_oid,
         "ec_spire_remote_search_production_executor_state_summary",
     );
-    let row = with_live_index_relation!(
+    let row = with_spire_live_index_relation!(
         index_relation,
         am::spire_remote_search_production_executor_state_summary_row,
         requested_epoch,
@@ -12574,7 +12495,7 @@ fn ec_spire_remote_search_degraded_skip_report(
 
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_search_degraded_skip_report");
-    let rows = with_live_index_relation!(
+    let rows = with_spire_live_index_relation!(
         index_relation,
         am::spire_remote_search_production_degraded_skip_report_rows,
         requested_epoch,
@@ -12647,7 +12568,7 @@ fn ec_spire_remote_search_production_executor_session_summary(
         index_oid,
         "ec_spire_remote_search_production_executor_session_summary",
     );
-    let row = with_live_index_relation!(
+    let row = with_spire_live_index_relation!(
         index_relation,
         am::spire_remote_search_production_executor_session_summary_row,
         requested_epoch,
@@ -12713,7 +12634,7 @@ fn ec_spire_remote_search_production_scan_handoff_summary(
         index_oid,
         "ec_spire_remote_search_production_scan_handoff_summary",
     );
-    let row = with_live_index_relation!(
+    let row = with_spire_live_index_relation!(
         index_relation,
         am::spire_remote_search_production_scan_handoff_summary_row,
         query,
@@ -12792,7 +12713,7 @@ fn ec_spire_remote_search_production_scan_heap_resolution_summary(
         index_oid,
         "ec_spire_remote_search_production_scan_heap_resolution_summary",
     );
-    let row = with_live_index_relation!(
+    let row = with_spire_live_index_relation!(
         index_relation,
         am::spire_remote_search_production_scan_heap_resolution_summary_row,
         query,
@@ -12845,7 +12766,7 @@ fn ec_spire_remote_search_production_read_profile(
         index_oid,
         "ec_spire_remote_search_production_read_profile",
     );
-    let row = with_live_index_relation!(
+    let row = with_spire_live_index_relation!(
         index_relation,
         am::spire_remote_search_production_read_profile_row,
         query,
@@ -13042,7 +12963,7 @@ fn ec_spire_remote_search_operator_diagnostics(
 
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_search_operator_diagnostics");
-    let row = with_live_index_relation!(
+    let row = with_spire_live_index_relation!(
         index_relation,
         am::spire_remote_search_operator_diagnostics_row,
         query,
@@ -13148,7 +13069,7 @@ fn ec_spire_remote_search_libpq_executor_readiness(
         index_oid,
         "ec_spire_remote_search_libpq_executor_readiness",
     );
-    let row = with_live_index_relation!(
+    let row = with_spire_live_index_relation!(
         index_relation,
         am::spire_remote_search_libpq_executor_readiness_row,
         requested_epoch,
@@ -13306,7 +13227,7 @@ fn ec_spire_remote_search_endpoint_identity(
 > {
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_search_endpoint_identity");
-    let row = with_live_index_relation!(
+    let row = with_spire_live_index_relation!(
         index_relation,
         am::spire_remote_search_endpoint_identity_row
     );
@@ -13500,7 +13421,7 @@ fn spire_remote_pipeline_step_rows(
 
     let (dispatch, connection_open_rows) = {
         let index_relation = open_valid_ec_spire_index_guard(index_oid, function_name);
-        let dispatch = with_live_index_relation!(
+        let dispatch = with_spire_live_index_relation!(
             index_relation,
             am::spire_remote_search_libpq_dispatch_summary_row,
             requested_epoch_u64,
@@ -13509,7 +13430,7 @@ fn spire_remote_pipeline_step_rows(
             top_k,
             &consistency_mode,
         );
-        let connection_open_rows = with_live_index_relation!(
+        let connection_open_rows = with_spire_live_index_relation!(
             index_relation,
             am::spire_remote_search_libpq_connection_open_plan_rows,
             requested_epoch_u64,
@@ -13633,7 +13554,7 @@ fn spire_remote_pipeline_step_rows(
         && connection_ready_count > 0
     {
         let index_relation = open_valid_ec_spire_index_guard(index_oid, function_name);
-        Some(with_live_index_relation!(
+        Some(with_spire_live_index_relation!(
             index_relation,
             am::spire_remote_search_libpq_identity_cache_summary_row,
             requested_epoch_u64,
@@ -13729,7 +13650,7 @@ fn spire_remote_pipeline_step_rows(
 
     let coordinator_result = if probe_remote_executor {
         let index_relation = open_valid_ec_spire_index_guard(index_oid, function_name);
-        Some(with_live_index_relation!(
+        Some(with_spire_live_index_relation!(
             index_relation,
             am::spire_remote_search_coordinator_result_summary_row,
             requested_epoch_u64,
@@ -14054,7 +13975,7 @@ fn ec_spire_remote_search_receive_plan(
 
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_search_receive_plan");
-    let rows = with_live_index_relation!(
+    let rows = with_spire_live_index_relation!(
         index_relation,
         am::spire_remote_search_receive_plan_rows,
         requested_epoch,
@@ -14132,7 +14053,7 @@ fn ec_spire_remote_search_receive_summary(
 
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_search_receive_summary");
-    let rows = with_live_index_relation!(
+    let rows = with_spire_live_index_relation!(
         index_relation,
         am::spire_remote_search_receive_plan_rows,
         requested_epoch,
@@ -14252,7 +14173,7 @@ fn ec_spire_remote_search_merge_input_summary(
 
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_search_merge_input_summary");
-    let row = with_live_index_relation!(
+    let row = with_spire_live_index_relation!(
         index_relation,
         am::spire_remote_search_merge_input_summary_row,
         requested_epoch,
@@ -14417,7 +14338,7 @@ fn ec_spire_remote_search_local_heap_resolution_plan(
         index_oid,
         "ec_spire_remote_search_local_heap_resolution_plan",
     );
-    let rows = with_live_index_relation!(
+    let rows = with_spire_live_index_relation!(
         index_relation,
         am::spire_remote_search_local_heap_resolution_plan_rows,
         requested_epoch,
@@ -14495,7 +14416,7 @@ fn ec_spire_remote_search_heap_resolution_summary(
         index_oid,
         "ec_spire_remote_search_heap_resolution_summary",
     );
-    let row = with_live_index_relation!(
+    let row = with_spire_live_index_relation!(
         index_relation,
         am::spire_remote_search_heap_resolution_summary_row,
         requested_epoch,
@@ -14574,7 +14495,7 @@ fn ec_spire_remote_search_local_heap_candidates(
 
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_search_local_heap_candidates");
-    let rows = with_live_index_relation!(
+    let rows = with_spire_live_index_relation!(
         index_relation,
         am::spire_remote_search_local_heap_candidate_rows,
         requested_epoch,
@@ -15501,7 +15422,7 @@ fn ec_spire_remote_search_tuple_payload(
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_search_tuple_payload");
     let heap_relation_oid = ec_spire_heap_relation_oid_from_index(&index_relation);
-    let rows = with_live_index_relation!(
+    let rows = with_spire_live_index_relation!(
         index_relation,
         am::spire_remote_search_local_heap_candidate_rows,
         requested_epoch,
@@ -15629,7 +15550,7 @@ fn ec_spire_remote_search_tuple_payload_typed(
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_search_tuple_payload_typed");
     let heap_relation_oid = ec_spire_heap_relation_oid_from_index(&index_relation);
-    let rows = with_live_index_relation!(
+    let rows = with_spire_live_index_relation!(
         index_relation,
         am::spire_remote_search_local_heap_candidate_rows,
         requested_epoch,
@@ -15788,7 +15709,7 @@ fn ec_spire_remote_search_local_heap_candidate_summary(
         index_oid,
         "ec_spire_remote_search_local_heap_candidate_summary",
     );
-    let row = with_live_index_relation!(
+    let row = with_spire_live_index_relation!(
         index_relation,
         am::spire_remote_search_local_heap_candidate_summary_row,
         requested_epoch,
@@ -15873,7 +15794,7 @@ fn ec_spire_remote_search_coordinator_result_summary(
         index_oid,
         "ec_spire_remote_search_coordinator_result_summary",
     );
-    let row = with_live_index_relation!(
+    let row = with_spire_live_index_relation!(
         index_relation,
         am::spire_remote_search_coordinator_result_summary_row,
         requested_epoch,
@@ -15955,7 +15876,7 @@ fn ec_spire_remote_search_finalization_summary(
 
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_search_finalization_summary");
-    let row = with_live_index_relation!(
+    let row = with_spire_live_index_relation!(
         index_relation,
         am::spire_remote_search_finalization_summary_row,
         requested_epoch,
@@ -16040,7 +15961,7 @@ fn ec_spire_remote_search_coordinator_gate_summary(
         index_oid,
         "ec_spire_remote_search_coordinator_gate_summary",
     );
-    let row = with_live_index_relation!(
+    let row = with_spire_live_index_relation!(
         index_relation,
         am::spire_remote_search_coordinator_gate_summary_row,
         requested_epoch,
@@ -16121,7 +16042,7 @@ fn ec_spire_remote_search_coordinator_local(
 
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_search_coordinator_local");
-    let rows = with_live_index_relation!(
+    let rows = with_spire_live_index_relation!(
         index_relation,
         am::spire_remote_search_coordinator_local_candidates,
         requested_epoch,
@@ -16196,7 +16117,7 @@ fn ec_spire_remote_search_coordinator_local_summary(
         index_oid,
         "ec_spire_remote_search_coordinator_local_summary",
     );
-    let row = with_live_index_relation!(
+    let row = with_spire_live_index_relation!(
         index_relation,
         am::spire_remote_search_coordinator_local_summary,
         requested_epoch,
@@ -16274,7 +16195,7 @@ fn ec_spire_remote_search(
         u64::try_from(requested_epoch).expect("positive requested_epoch should fit u64");
 
     let index_relation = open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_search");
-    let rows = with_live_index_relation!(
+    let rows = with_spire_live_index_relation!(
         index_relation,
         am::spire_remote_search_candidates,
         requested_epoch,
@@ -16283,7 +16204,7 @@ fn ec_spire_remote_search(
         top_k,
         &consistency_mode,
     );
-    let endpoint_identity = with_live_index_relation!(
+    let endpoint_identity = with_spire_live_index_relation!(
         index_relation,
         am::spire_remote_search_endpoint_identity_row
     );
@@ -16342,7 +16263,7 @@ fn ec_spire_index_object_snapshot(
     }
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_object_snapshot");
-    let rows = with_live_index_relation!(index_relation, am::spire_index_object_snapshot);
+    let rows = with_spire_live_index_relation!(index_relation, am::spire_index_object_snapshot);
     drop(index_relation);
 
     TableIterator::new(rows.into_iter().map(|row| {
@@ -16408,7 +16329,8 @@ fn ec_spire_index_options_snapshot(
 > {
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_options_snapshot");
-    let snapshot = with_live_index_relation!(index_relation, am::spire_index_options_snapshot);
+    let snapshot =
+        with_spire_live_index_relation!(index_relation, am::spire_index_options_snapshot);
     drop(index_relation);
 
     TableIterator::once((
@@ -16470,7 +16392,7 @@ fn ec_spire_index_writer_identity_snapshot(
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_writer_identity_snapshot");
     let snapshot =
-        with_live_index_relation!(index_relation, am::spire_index_writer_identity_snapshot);
+        with_spire_live_index_relation!(index_relation, am::spire_index_writer_identity_snapshot);
     drop(index_relation);
 
     TableIterator::once((
@@ -16507,7 +16429,7 @@ fn ec_spire_index_boundary_replica_identity_snapshot(
         index_oid,
         "ec_spire_index_boundary_replica_identity_snapshot",
     );
-    let rows = with_live_index_relation!(
+    let rows = with_spire_live_index_relation!(
         index_relation,
         am::spire_index_boundary_replica_identity_snapshot
     );
@@ -16567,7 +16489,7 @@ fn ec_spire_index_boundary_replica_placement_diagnostics(
         index_oid,
         "ec_spire_index_boundary_replica_placement_diagnostics",
     );
-    let rows = with_live_index_relation!(
+    let rows = with_spire_live_index_relation!(
         index_relation,
         am::spire_index_boundary_replica_placement_diagnostics
     );
@@ -16625,7 +16547,8 @@ fn ec_spire_index_level_parameter_snapshot(
 > {
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_level_parameter_snapshot");
-    let rows = with_live_index_relation!(index_relation, am::spire_index_level_parameter_snapshot);
+    let rows =
+        with_spire_live_index_relation!(index_relation, am::spire_index_level_parameter_snapshot);
     drop(index_relation);
 
     TableIterator::new(rows.into_iter().map(|row| {
@@ -16672,7 +16595,8 @@ fn ec_spire_index_scan_sanity_snapshot(
 > {
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_scan_sanity_snapshot");
-    let snapshot = with_live_index_relation!(index_relation, am::spire_index_scan_sanity_snapshot);
+    let snapshot =
+        with_spire_live_index_relation!(index_relation, am::spire_index_scan_sanity_snapshot);
     drop(index_relation);
 
     TableIterator::once((
@@ -16718,7 +16642,7 @@ fn ec_spire_index_health_snapshot(
     }
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_health_snapshot");
-    let snapshot = with_live_index_relation!(index_relation, am::spire_index_health_snapshot);
+    let snapshot = with_spire_live_index_relation!(index_relation, am::spire_index_health_snapshot);
     drop(index_relation);
 
     TableIterator::once((
@@ -16767,7 +16691,7 @@ fn ec_spire_index_relation_storage_snapshot(
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_relation_storage_snapshot");
     let snapshot =
-        with_live_index_relation!(index_relation, am::spire_index_relation_storage_snapshot);
+        with_spire_live_index_relation!(index_relation, am::spire_index_relation_storage_snapshot);
     drop(index_relation);
 
     TableIterator::once((
@@ -16813,7 +16737,7 @@ fn ec_spire_index_epoch_snapshot(
 > {
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_epoch_snapshot");
-    let rows = with_live_index_relation!(index_relation, am::spire_index_epoch_snapshot);
+    let rows = with_spire_live_index_relation!(index_relation, am::spire_index_epoch_snapshot);
     drop(index_relation);
 
     TableIterator::new(rows.into_iter().map(|row| {
@@ -16859,9 +16783,10 @@ fn ec_spire_index_epoch_cleanup_summary(
 > {
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_epoch_cleanup_summary");
-    let epoch_rows = with_live_index_relation!(index_relation, am::spire_index_epoch_snapshot);
+    let epoch_rows =
+        with_spire_live_index_relation!(index_relation, am::spire_index_epoch_snapshot);
     let storage_snapshot =
-        with_live_index_relation!(index_relation, am::spire_index_relation_storage_snapshot);
+        with_spire_live_index_relation!(index_relation, am::spire_index_relation_storage_snapshot);
     drop(index_relation);
 
     let active_root_manifest_count = epoch_rows
@@ -16953,7 +16878,7 @@ fn ec_spire_index_epoch_cleanup_run(
 > {
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_epoch_cleanup_run");
-    let result = with_live_index_relation!(index_relation, am::spire_index_epoch_cleanup_run);
+    let result = with_spire_live_index_relation!(index_relation, am::spire_index_epoch_cleanup_run);
     drop(index_relation);
 
     TableIterator::once((
@@ -17006,7 +16931,7 @@ fn ec_spire_index_leaf_snapshot(
         return TableIterator::new(Vec::new().into_iter());
     }
     let index_relation = open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_leaf_snapshot");
-    let rows = with_live_index_relation!(index_relation, am::spire_index_leaf_snapshot);
+    let rows = with_spire_live_index_relation!(index_relation, am::spire_index_leaf_snapshot);
     drop(index_relation);
 
     TableIterator::new(rows.into_iter().map(|row| {
@@ -17073,7 +16998,7 @@ fn ec_spire_index_maintenance_plan_snapshot(
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_maintenance_plan_snapshot");
     let snapshot =
-        with_live_index_relation!(index_relation, am::spire_index_maintenance_plan_snapshot);
+        with_spire_live_index_relation!(index_relation, am::spire_index_maintenance_plan_snapshot);
     drop(index_relation);
 
     TableIterator::once((
@@ -17118,7 +17043,7 @@ fn ec_spire_index_locked_maintenance_plan_snapshot(
         index_oid,
         "ec_spire_index_locked_maintenance_plan_snapshot",
     );
-    let snapshot = with_live_index_relation!(
+    let snapshot = with_spire_live_index_relation!(
         index_relation,
         am::spire_index_locked_maintenance_plan_snapshot
     );
@@ -17166,8 +17091,10 @@ fn ec_spire_index_locked_maintenance_run_plan(
 > {
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_locked_maintenance_run_plan");
-    let result =
-        with_live_index_relation!(index_relation, am::spire_index_locked_maintenance_run_plan);
+    let result = with_spire_live_index_relation!(
+        index_relation,
+        am::spire_index_locked_maintenance_run_plan
+    );
     drop(index_relation);
 
     TableIterator::once((
@@ -17214,7 +17141,7 @@ fn ec_spire_index_maintenance_scheduler_plan(
 > {
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_maintenance_scheduler_plan");
-    let snapshot = with_live_index_relation!(
+    let snapshot = with_spire_live_index_relation!(
         index_relation,
         am::spire_index_locked_maintenance_plan_snapshot
     );
@@ -17272,7 +17199,7 @@ fn ec_spire_index_maintenance_run(
 > {
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_maintenance_run");
-    let result = with_live_index_relation!(index_relation, am::spire_index_maintenance_run);
+    let result = with_spire_live_index_relation!(index_relation, am::spire_index_maintenance_run);
     drop(index_relation);
 
     TableIterator::once((
@@ -17324,7 +17251,7 @@ fn ec_spire_index_maintenance_scheduler_run(
 > {
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_maintenance_scheduler_run");
-    let result = with_live_index_relation!(index_relation, am::spire_index_maintenance_run);
+    let result = with_spire_live_index_relation!(index_relation, am::spire_index_maintenance_run);
     drop(index_relation);
 
     let scheduler_status = if result.published { "ran" } else { "idle" };
@@ -17380,7 +17307,7 @@ fn ec_spire_index_delta_snapshot(
     }
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_delta_snapshot");
-    let rows = with_live_index_relation!(index_relation, am::spire_index_delta_snapshot);
+    let rows = with_spire_live_index_relation!(index_relation, am::spire_index_delta_snapshot);
     drop(index_relation);
 
     TableIterator::new(rows.into_iter().map(|row| {
@@ -17425,7 +17352,8 @@ fn ec_spire_index_insert_debt_snapshot(
 > {
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_insert_debt_snapshot");
-    let snapshot = with_live_index_relation!(index_relation, am::spire_index_insert_debt_snapshot);
+    let snapshot =
+        with_spire_live_index_relation!(index_relation, am::spire_index_insert_debt_snapshot);
     drop(index_relation);
 
     TableIterator::once((
@@ -17530,7 +17458,7 @@ fn ec_spire_index_cost_snapshot(
     ),
 > {
     let index_relation = open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_cost_snapshot");
-    let snapshot = with_live_index_relation!(index_relation, am::spire_index_cost_snapshot);
+    let snapshot = with_spire_live_index_relation!(index_relation, am::spire_index_cost_snapshot);
     drop(index_relation);
 
     TableIterator::once((
@@ -17594,7 +17522,8 @@ fn ec_spire_index_cost_tuning_snapshot(
 > {
     let index_relation =
         open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_cost_tuning_snapshot");
-    let snapshot = with_live_index_relation!(index_relation, am::spire_index_cost_tuning_snapshot);
+    let snapshot =
+        with_spire_live_index_relation!(index_relation, am::spire_index_cost_tuning_snapshot);
     drop(index_relation);
 
     TableIterator::once((

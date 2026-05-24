@@ -79,12 +79,7 @@ pub mod pg_sys {
 
     pub struct ReadStream;
 
-    pub unsafe fn PrefetchBuffer(
-        _relation: Relation,
-        _fork: i32,
-        _block: BlockNumber,
-    ) {
-    }
+    pub unsafe fn PrefetchBuffer(_relation: Relation, _fork: i32, _block: BlockNumber) {}
 
     pub unsafe fn read_stream_begin_relation(
         _flags: i32,
@@ -282,10 +277,7 @@ pub mod pg_sys {
         unsafe { close_relation(relation) };
     }
 
-    pub unsafe fn table_slot_create(
-        _relation: Relation,
-        _estate: *mut (),
-    ) -> *mut TupleTableSlot {
+    pub unsafe fn table_slot_create(_relation: Relation, _estate: *mut ()) -> *mut TupleTableSlot {
         Box::into_raw(Box::new(TupleTableSlot))
     }
 
@@ -381,10 +373,7 @@ pub mod pg_sys {
     /// Sources the block count from the emulator's buffer registry. Returns 0
     /// when the relation is null (legacy pg_guards tests rely on this) or when
     /// no block has been allocated for the relation's OID yet.
-    pub unsafe fn RelationGetNumberOfBlocksInFork(
-        relation: Relation,
-        _fork: i32,
-    ) -> BlockNumber {
+    pub unsafe fn RelationGetNumberOfBlocksInFork(relation: Relation, _fork: i32) -> BlockNumber {
         if relation.is_null() {
             return 0;
         }
@@ -393,10 +382,7 @@ pub mod pg_sys {
         BUFFER_REGISTRY.with(|r| r.borrow().relation_block_count(rd_id).unwrap_or(0))
     }
 
-    pub unsafe fn GetPageWithFreeSpace(
-        _relation: Relation,
-        _required_space: usize,
-    ) -> BlockNumber {
+    pub unsafe fn GetPageWithFreeSpace(_relation: Relation, _required_space: usize) -> BlockNumber {
         BlockNumber::MAX
     }
 
@@ -534,10 +520,8 @@ pub mod pg_sys {
                 return;
             }
             if let Some(item) = self.line_pointers.get_mut((offset - 1) as usize) {
-                let aligned = emulator_align_up(
-                    item.lp_len_value as usize,
-                    EMULATOR_ALIGNMENT_BYTES,
-                );
+                let aligned =
+                    emulator_align_up(item.lp_len_value as usize, EMULATOR_ALIGNMENT_BYTES);
                 self.bytes_consumed = self.bytes_consumed.saturating_sub(aligned);
                 item.lp_flags_value = 0;
                 item.lp_len_value = 0;
@@ -574,9 +558,7 @@ pub mod pg_sys {
         fn allocate_block(&mut self, rd_id: Oid) -> BlockNumber {
             let count = self.relation_block_counts.entry(rd_id).or_insert(0);
             let block_number = *count;
-            *count = count
-                .checked_add(1)
-                .expect("emulator block count overflow");
+            *count = count.checked_add(1).expect("emulator block count overflow");
             let mut backing = Box::new(BackingPage::new());
             let bytes_ptr = backing.page_ptr();
             let raw = &mut *backing as *mut BackingPage;
@@ -854,8 +836,9 @@ mod tests {
             let _guard = unsafe { LwLockGuard::acquire_exclusive(&mut lock) };
         }
         {
-            let _guard =
-                unsafe { LwLockGuard::from_acquired_with_release(&mut lock, custom_lwlock_release) };
+            let _guard = unsafe {
+                LwLockGuard::from_acquired_with_release(&mut lock, custom_lwlock_release)
+            };
         }
 
         assert_eq!(pg_sys::LWLOCK_ACQUIRE_CALLS.load(Ordering::SeqCst), 2);
@@ -1064,14 +1047,8 @@ mod tests {
             assert!(!snapshot.as_ptr().is_null());
         }
 
-        assert_eq!(
-            pg_sys::UNREGISTER_SNAPSHOT_CALLS.load(Ordering::SeqCst),
-            3
-        );
-        assert_eq!(
-            pg_sys::PUSH_ACTIVE_SNAPSHOT_CALLS.load(Ordering::SeqCst),
-            1
-        );
+        assert_eq!(pg_sys::UNREGISTER_SNAPSHOT_CALLS.load(Ordering::SeqCst), 3);
+        assert_eq!(pg_sys::PUSH_ACTIVE_SNAPSHOT_CALLS.load(Ordering::SeqCst), 1);
         assert_eq!(pg_sys::POP_ACTIVE_SNAPSHOT_CALLS.load(Ordering::SeqCst), 1);
     }
 

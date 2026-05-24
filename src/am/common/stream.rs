@@ -1,5 +1,6 @@
-#[cfg(feature = "pg18")]
 use pgrx::pg_sys;
+
+use super::callback::pg_callback;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct GraphPrefetchState {
@@ -150,6 +151,317 @@ pub(crate) fn block_sequence_prefetch_callback(
     }
 }
 
+#[cfg(feature = "pg18")]
+pub(crate) fn prefetch_relation_blocks(
+    relation: pg_sys::Relation,
+    block_numbers: Vec<pg_sys::BlockNumber>,
+    context: &str,
+) {
+    if block_numbers.is_empty() {
+        return;
+    }
+
+    let mut state = BlockSequencePrefetchState::new(block_numbers);
+    // SAFETY: relation is open for the caller's scan, state lives until
+    // read_stream_end, and the callback-private pointer is only used by the
+    // block-sequence callback registered here.
+    let stream = unsafe {
+        pg_sys::read_stream_begin_relation(
+            pg_sys::READ_STREAM_DEFAULT as i32,
+            std::ptr::null_mut(),
+            relation,
+            pg_sys::ForkNumber::MAIN_FORKNUM,
+            Some(block_sequence_prefetch_cb),
+            (&mut state as *mut BlockSequencePrefetchState).cast(),
+            std::mem::size_of::<pg_sys::BlockNumber>(),
+        )
+    };
+
+    loop {
+        let mut per_buffer_data = std::ptr::null_mut();
+        // SAFETY: stream was created above and remains live until
+        // read_stream_end after exhaustion.
+        let buffer = unsafe { pg_sys::read_stream_next_buffer(stream, &mut per_buffer_data) };
+        if buffer == pg_sys::InvalidBuffer as pg_sys::Buffer {
+            break;
+        }
+        // SAFETY: read_stream_next_buffer returns a valid pinned buffer until
+        // the stream is exhausted; the guard owns the release.
+        let _buffer =
+            unsafe { crate::storage::buffer_guard::PinnedBufferGuard::from_pinned(buffer) }
+                .unwrap_or_else(|| {
+                    pgrx::error!("{context} read stream returned an invalid buffer")
+                });
+    }
+
+    // SAFETY: stream was opened by read_stream_begin_relation above and is no
+    // longer used after this call.
+    unsafe { pg_sys::read_stream_end(stream) };
+}
+
+#[cfg(not(feature = "pg18"))]
+pub(crate) fn prefetch_relation_blocks(
+    relation: pg_sys::Relation,
+    block_numbers: Vec<pg_sys::BlockNumber>,
+    _context: &str,
+) {
+    for block_number in block_numbers {
+        // SAFETY: relation is open for the caller's scan, and each block number
+        // came from candidate heap TIDs for that relation.
+        unsafe { pg_sys::PrefetchBuffer(relation, pg_sys::ForkNumber::MAIN_FORKNUM, block_number) };
+    }
+}
+
+#[cfg(feature = "pg18")]
+struct PgReadStreamGuard(*mut pg_sys::ReadStream);
+
+#[cfg(feature = "pg18")]
+impl PgReadStreamGuard {
+    unsafe fn new(
+        mode: i32,
+        relation: pg_sys::Relation,
+        callback: unsafe extern "C-unwind" fn(
+            *mut pg_sys::ReadStream,
+            *mut std::ffi::c_void,
+            *mut std::ffi::c_void,
+        ) -> pg_sys::BlockNumber,
+        callback_private_data: *mut std::ffi::c_void,
+    ) -> Self {
+        // SAFETY: caller keeps callback_private_data live until this guard is
+        // dropped and registers a callback matching that state type.
+        let stream = unsafe {
+            pg_sys::read_stream_begin_relation(
+                mode,
+                std::ptr::null_mut(),
+                relation,
+                pg_sys::ForkNumber::MAIN_FORKNUM,
+                Some(callback),
+                callback_private_data,
+                std::mem::size_of::<pg_sys::BlockNumber>(),
+            )
+        };
+        Self(stream)
+    }
+}
+
+#[cfg(feature = "pg18")]
+impl Drop for PgReadStreamGuard {
+    fn drop(&mut self) {
+        // SAFETY: stream was opened by read_stream_begin_relation and the guard
+        // owns the single read_stream_end call.
+        unsafe { pg_sys::read_stream_end(self.0) };
+    }
+}
+
+#[cfg(feature = "pg18")]
+fn read_stream_per_buffer_block_number(
+    per_buffer_data: *mut std::ffi::c_void,
+) -> Option<pg_sys::BlockNumber> {
+    if per_buffer_data.is_null() {
+        None
+    } else {
+        // SAFETY: registered read-stream callbacks store one BlockNumber in
+        // per-buffer data when PostgreSQL supplies the slot.
+        Some(unsafe { *per_buffer_data.cast::<pg_sys::BlockNumber>() })
+    }
+}
+
+#[cfg(feature = "pg18")]
+fn visit_read_stream<F>(
+    stream: &PgReadStreamGuard,
+    context: &str,
+    mut visitor: F,
+) -> Result<(), String>
+where
+    F: FnMut(
+        &crate::storage::buffer_guard::LockedBufferGuard,
+        pg_sys::BlockNumber,
+    ) -> Result<(), String>,
+{
+    loop {
+        let mut per_buffer_data = std::ptr::null_mut();
+        // SAFETY: stream is live for this loop and remains owned by the guard.
+        let buffer = unsafe { pg_sys::read_stream_next_buffer(stream.0, &mut per_buffer_data) };
+        if buffer == pg_sys::InvalidBuffer as pg_sys::Buffer {
+            break;
+        }
+
+        // SAFETY: PostgreSQL returned a valid pinned buffer from the read
+        // stream; the guard converts that pin into a shared buffer lock.
+        let buffer = unsafe {
+            crate::storage::buffer_guard::LockedBufferGuard::lock_pinned(
+                buffer,
+                pg_sys::BUFFER_LOCK_SHARE as i32,
+            )
+        }
+        .ok_or_else(|| format!("{context} read stream returned an invalid buffer"))?;
+        let block_number = read_stream_per_buffer_block_number(per_buffer_data)
+            .unwrap_or_else(|| buffer.block_number());
+        visitor(&buffer, block_number)?;
+    }
+    Ok(())
+}
+
+#[cfg(feature = "pg18")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ScanOwnedReadStreamControl {
+    Continue,
+    Stop,
+}
+
+#[cfg(feature = "pg18")]
+struct ScanOwnedReadStreamBuffer {
+    buffer: pg_sys::Buffer,
+    block_number: Option<pg_sys::BlockNumber>,
+}
+
+#[cfg(feature = "pg18")]
+fn next_scan_owned_read_stream_buffer(
+    stream: *mut pg_sys::ReadStream,
+) -> Option<ScanOwnedReadStreamBuffer> {
+    let mut per_buffer_data = std::ptr::null_mut();
+    // SAFETY: stream is a live scan-owned stream and remains owned by the
+    // caller; this helper only consumes the buffers yielded by it.
+    let buffer = unsafe { pg_sys::read_stream_next_buffer(stream, &mut per_buffer_data) };
+    if buffer == pg_sys::InvalidBuffer as pg_sys::Buffer {
+        return None;
+    }
+    let block_number = read_stream_per_buffer_block_number(per_buffer_data);
+    Some(ScanOwnedReadStreamBuffer {
+        buffer,
+        block_number,
+    })
+}
+
+#[cfg(feature = "pg18")]
+pub(crate) fn reset_scan_owned_read_stream(
+    stream: *mut pg_sys::ReadStream,
+    context: &str,
+) -> Result<(), String> {
+    if stream.is_null() {
+        return Err(format!("{context} read stream is not initialized"));
+    }
+    // SAFETY: callers pass a scan-owned read stream opened by
+    // read_stream_begin_relation and retained by the scan opaque.
+    unsafe { pg_sys::read_stream_reset(stream) };
+    Ok(())
+}
+
+#[cfg(feature = "pg18")]
+pub(crate) fn visit_scan_owned_read_stream_pinned<F>(
+    stream: *mut pg_sys::ReadStream,
+    context: &str,
+    mut visitor: F,
+) -> Result<(), String>
+where
+    F: FnMut(
+        crate::storage::buffer_guard::PinnedBufferGuard,
+        Option<pg_sys::BlockNumber>,
+    ) -> Result<ScanOwnedReadStreamControl, String>,
+{
+    if stream.is_null() {
+        return Err(format!("{context} read stream is not initialized"));
+    }
+    while let Some(next) = next_scan_owned_read_stream_buffer(stream) {
+        // SAFETY: PostgreSQL returned a pinned buffer from the read stream; the
+        // guard owns release of that pin after the visitor consumes it.
+        let buffer =
+            unsafe { crate::storage::buffer_guard::PinnedBufferGuard::from_pinned(next.buffer) }
+                .ok_or_else(|| format!("{context} read stream returned an invalid buffer"))?;
+        if visitor(buffer, next.block_number)? == ScanOwnedReadStreamControl::Stop {
+            break;
+        }
+    }
+    Ok(())
+}
+
+#[cfg(feature = "pg18")]
+pub(crate) fn visit_scan_owned_read_stream_locked<F>(
+    stream: *mut pg_sys::ReadStream,
+    lockmode: i32,
+    context: &str,
+    mut visitor: F,
+) -> Result<(), String>
+where
+    F: FnMut(
+        crate::storage::buffer_guard::LockedBufferGuard,
+        Option<pg_sys::BlockNumber>,
+    ) -> Result<ScanOwnedReadStreamControl, String>,
+{
+    if stream.is_null() {
+        return Err(format!("{context} read stream is not initialized"));
+    }
+    while let Some(next) = next_scan_owned_read_stream_buffer(stream) {
+        // SAFETY: PostgreSQL returned a pinned buffer from the read stream; the
+        // guard adds the requested lock and owns unlock/release.
+        let buffer = unsafe {
+            crate::storage::buffer_guard::LockedBufferGuard::lock_pinned(next.buffer, lockmode)
+        }
+        .ok_or_else(|| format!("{context} read stream returned an invalid buffer"))?;
+        if visitor(buffer, next.block_number)? == ScanOwnedReadStreamControl::Stop {
+            break;
+        }
+    }
+    Ok(())
+}
+
+#[cfg(feature = "pg18")]
+pub(crate) fn visit_relation_linear_read_stream<F>(
+    relation: pg_sys::Relation,
+    first_block: pg_sys::BlockNumber,
+    last_block: pg_sys::BlockNumber,
+    context: &str,
+    visitor: F,
+) -> Result<(), String>
+where
+    F: FnMut(
+        &crate::storage::buffer_guard::LockedBufferGuard,
+        pg_sys::BlockNumber,
+    ) -> Result<(), String>,
+{
+    let mut state = LinearPrefetchState::new(first_block, last_block);
+    // SAFETY: state lives until stream guard drop and matches linear_prefetch_cb.
+    let stream = unsafe {
+        PgReadStreamGuard::new(
+            pg_sys::READ_STREAM_SEQUENTIAL as i32,
+            relation,
+            linear_prefetch_cb,
+            (&mut state as *mut LinearPrefetchState).cast(),
+        )
+    };
+    visit_read_stream(&stream, context, visitor)
+}
+
+#[cfg(feature = "pg18")]
+pub(crate) fn visit_relation_block_sequence_read_stream<F>(
+    relation: pg_sys::Relation,
+    block_numbers: &[pg_sys::BlockNumber],
+    context: &str,
+    visitor: F,
+) -> Result<(), String>
+where
+    F: FnMut(
+        &crate::storage::buffer_guard::LockedBufferGuard,
+        pg_sys::BlockNumber,
+    ) -> Result<(), String>,
+{
+    if block_numbers.is_empty() {
+        return Ok(());
+    }
+    let mut state = BlockSequencePrefetchState::new(block_numbers.to_vec());
+    // SAFETY: state lives until stream guard drop and matches
+    // block_sequence_prefetch_cb.
+    let stream = unsafe {
+        PgReadStreamGuard::new(
+            pg_sys::READ_STREAM_SEQUENTIAL as i32,
+            relation,
+            block_sequence_prefetch_cb,
+            (&mut state as *mut BlockSequencePrefetchState).cast(),
+        )
+    };
+    visit_read_stream(&stream, context, visitor)
+}
+
 pub(crate) fn stream_snapshot() -> ReadStreamSnapshot {
     let graph = graph_callback_signature();
     let linear = linear_callback_signature();
@@ -183,25 +495,21 @@ pub(crate) unsafe extern "C-unwind" fn graph_prefetch_cb(
     callback_private_data: *mut std::ffi::c_void,
     per_buffer_data: *mut std::ffi::c_void,
 ) -> pg_sys::BlockNumber {
-    // SAFETY: ReadStream callbacks are invoked by PostgreSQL through the C
-    // callback ABI; the guard converts Rust panics into PostgreSQL errors.
-    unsafe {
-        pgrx::pgrx_extern_c_guard(|| {
-            if callback_private_data.is_null() {
-                return pg_sys::InvalidBlockNumber;
+    pg_callback!({
+        if callback_private_data.is_null() {
+            return pg_sys::InvalidBlockNumber;
+        }
+        // SAFETY: The graph stream is registered with a `GraphPrefetchState`
+        // callback-private pointer that outlives the callback invocation.
+        let state = &mut *callback_private_data.cast::<GraphPrefetchState>();
+        match graph_prefetch_callback(state) {
+            ReadStreamCallbackResult::Block(block_number) => {
+                write_stream_block(per_buffer_data, block_number);
+                block_number
             }
-            // SAFETY: The graph stream is registered with a `GraphPrefetchState`
-            // callback-private pointer that outlives the callback invocation.
-            let state = &mut *callback_private_data.cast::<GraphPrefetchState>();
-            match graph_prefetch_callback(state) {
-                ReadStreamCallbackResult::Block(block_number) => {
-                    write_stream_block(per_buffer_data, block_number);
-                    block_number
-                }
-                ReadStreamCallbackResult::EndOfStream => pg_sys::InvalidBlockNumber,
-            }
-        })
-    }
+            ReadStreamCallbackResult::EndOfStream => pg_sys::InvalidBlockNumber,
+        }
+    })
 }
 
 #[cfg(feature = "pg18")]
@@ -210,25 +518,21 @@ pub(crate) unsafe extern "C-unwind" fn linear_prefetch_cb(
     callback_private_data: *mut std::ffi::c_void,
     per_buffer_data: *mut std::ffi::c_void,
 ) -> pg_sys::BlockNumber {
-    // SAFETY: ReadStream callbacks are invoked by PostgreSQL through the C
-    // callback ABI; the guard converts Rust panics into PostgreSQL errors.
-    unsafe {
-        pgrx::pgrx_extern_c_guard(|| {
-            if callback_private_data.is_null() {
-                return pg_sys::InvalidBlockNumber;
+    pg_callback!({
+        if callback_private_data.is_null() {
+            return pg_sys::InvalidBlockNumber;
+        }
+        // SAFETY: The linear stream is registered with a `LinearPrefetchState`
+        // callback-private pointer that outlives the callback invocation.
+        let state = &mut *callback_private_data.cast::<LinearPrefetchState>();
+        match linear_prefetch_callback(state) {
+            ReadStreamCallbackResult::Block(block_number) => {
+                write_stream_block(per_buffer_data, block_number);
+                block_number
             }
-            // SAFETY: The linear stream is registered with a `LinearPrefetchState`
-            // callback-private pointer that outlives the callback invocation.
-            let state = &mut *callback_private_data.cast::<LinearPrefetchState>();
-            match linear_prefetch_callback(state) {
-                ReadStreamCallbackResult::Block(block_number) => {
-                    write_stream_block(per_buffer_data, block_number);
-                    block_number
-                }
-                ReadStreamCallbackResult::EndOfStream => pg_sys::InvalidBlockNumber,
-            }
-        })
-    }
+            ReadStreamCallbackResult::EndOfStream => pg_sys::InvalidBlockNumber,
+        }
+    })
 }
 
 #[cfg(feature = "pg18")]
@@ -237,26 +541,22 @@ pub(crate) unsafe extern "C-unwind" fn block_sequence_prefetch_cb(
     callback_private_data: *mut std::ffi::c_void,
     per_buffer_data: *mut std::ffi::c_void,
 ) -> pg_sys::BlockNumber {
-    // SAFETY: ReadStream callbacks are invoked by PostgreSQL through the C
-    // callback ABI; the guard converts Rust panics into PostgreSQL errors.
-    unsafe {
-        pgrx::pgrx_extern_c_guard(|| {
-            if callback_private_data.is_null() {
-                return pg_sys::InvalidBlockNumber;
+    pg_callback!({
+        if callback_private_data.is_null() {
+            return pg_sys::InvalidBlockNumber;
+        }
+        // SAFETY: The block-sequence stream is registered with a
+        // `BlockSequencePrefetchState` callback-private pointer that outlives
+        // the callback invocation.
+        let state = &mut *callback_private_data.cast::<BlockSequencePrefetchState>();
+        match block_sequence_prefetch_callback(state) {
+            ReadStreamCallbackResult::Block(block_number) => {
+                write_stream_block(per_buffer_data, block_number);
+                block_number
             }
-            // SAFETY: The block-sequence stream is registered with a
-            // `BlockSequencePrefetchState` callback-private pointer that
-            // outlives the callback invocation.
-            let state = &mut *callback_private_data.cast::<BlockSequencePrefetchState>();
-            match block_sequence_prefetch_callback(state) {
-                ReadStreamCallbackResult::Block(block_number) => {
-                    write_stream_block(per_buffer_data, block_number);
-                    block_number
-                }
-                ReadStreamCallbackResult::EndOfStream => pg_sys::InvalidBlockNumber,
-            }
-        })
-    }
+            ReadStreamCallbackResult::EndOfStream => pg_sys::InvalidBlockNumber,
+        }
+    })
 }
 
 #[cfg(test)]

@@ -1,0 +1,39 @@
+# Suite Report: task51-aws-ivf-rabitq-final-gate
+
+- config: `benchmarks/task51-aws-ivf-rabitq-final-gate/suite.json`
+- config_sha256: `1af993e79873e9679414bf60284a5307f38af0f49b434e6dcad36bc192b174e4`
+- dry_run: `false`
+- steps: completed 5, failed 0, skipped 0, dry-run 0, missing artifacts 0, stale 0
+
+| Step | Kind | Status | Duration ms | Artifacts |
+| --- | --- | --- | ---: | --- |
+| recall-1m-rabitq1-rerank-q500 | recall | Succeeded | 2319000 | `benchmarks/task51-aws-ivf-rabitq-final-gate/artifacts/recall-1m-rabitq1-rerank-q500.log` |
+| latency-1m-rabitq1-rerank | latency | Succeeded | 40179 | `benchmarks/task51-aws-ivf-rabitq-final-gate/artifacts/latency-1m-rabitq1-rerank.log` |
+| storage-1m-rabitq1-rerank | storage | Succeeded | 153 | `benchmarks/task51-aws-ivf-rabitq-final-gate/artifacts/storage-1m-rabitq1-rerank.log` |
+| explain-1m-rabitq1-rerank-p128 | explain | Succeeded | 60 | `benchmarks/task51-aws-ivf-rabitq-final-gate/artifacts/explain-1m-rabitq1-rerank-p128.sql`<br>`benchmarks/task51-aws-ivf-rabitq-final-gate/artifacts/explain-1m-rabitq1-rerank-p128.log` |
+| explain-1m-rabitq1-rerank-p256 | explain | Succeeded | 86 | `benchmarks/task51-aws-ivf-rabitq-final-gate/artifacts/explain-1m-rabitq1-rerank-p256.sql`<br>`benchmarks/task51-aws-ivf-rabitq-final-gate/artifacts/explain-1m-rabitq1-rerank-p256.log` |
+
+## Parsed Results
+
+| Step | Kind | Metric | Values |
+| --- | --- | --- | --- |
+| recall-1m-rabitq1-rerank-q500 | recall | recall | `mean q-time=1532.04 ms`, `ndcg@k=0.9983`, `nprobe=64`, `queries=500`, `recall@k=0.9716`, `recall_ci95_high=0.9759`, `recall_ci95_low=0.9666`, `recall_p10=0.9000`, `recall_p50=1.0000`, `recall_p90=1.0000`, `recall_trials=5000` |
+| recall-1m-rabitq1-rerank-q500 | recall | recall | `mean q-time=46.94 ms`, `ndcg@k=0.9993`, `nprobe=128`, `queries=500`, `recall@k=0.9864`, `recall_ci95_high=0.9893`, `recall_ci95_low=0.9828`, `recall_p10=0.9000`, `recall_p50=1.0000`, `recall_p90=1.0000`, `recall_trials=5000` |
+| recall-1m-rabitq1-rerank-q500 | recall | recall | `mean q-time=75.44 ms`, `ndcg@k=0.9998`, `nprobe=256`, `queries=500`, `recall@k=0.9936`, `recall_ci95_high=0.9955`, `recall_ci95_low=0.9910`, `recall_p10=1.0000`, `recall_p50=1.0000`, `recall_p90=1.0000`, `recall_trials=5000` |
+| latency-1m-rabitq1-rerank | latency | latency | `count=200`, `max=23.8 ms`, `mean=18.8 ms`, `min=14.4 ms`, `nprobe=64`, `p50=18.7 ms`, `p95=22.2 ms`, `p99=23.3 ms`, `stddev=1.96 ms` |
+| latency-1m-rabitq1-rerank | latency | latency | `count=200`, `max=50.0 ms`, `mean=35.1 ms`, `min=28.5 ms`, `nprobe=128`, `p50=34.6 ms`, `p95=41.5 ms`, `p99=48.0 ms`, `stddev=3.50 ms` |
+| latency-1m-rabitq1-rerank | latency | latency | `count=200`, `max=81.5 ms`, `mean=66.5 ms`, `min=56.7 ms`, `nprobe=256`, `p50=66.2 ms`, `p95=72.5 ms`, `p99=75.7 ms`, `stddev=3.74 ms` |
+| storage-1m-rabitq1-rerank | storage | storage_field | `field=prefix`, `value=real_1m_ivf_rabitq1_rerank` |
+| storage-1m-rabitq1-rerank | storage | storage_field | `field=corpus`, `value=real_1m_ivf_rabitq1_rerank_corpus` |
+| storage-1m-rabitq1-rerank | storage | storage_field | `field=rows`, `value=990000` |
+| storage-1m-rabitq1-rerank | storage | storage_field | `field=heap`, `value=129.2 MiB` |
+| storage-1m-rabitq1-rerank | storage | storage_field | `field=table (heap + toast + fsm/vm)`, `value=15.4 GiB` |
+| storage-1m-rabitq1-rerank | storage | storage_field | `field=indexes`, `value=340.4 MiB` |
+| storage-1m-rabitq1-rerank | storage | storage_field | `field=total`, `value=15.7 GiB` |
+| storage-1m-rabitq1-rerank | storage | storage_field | `field=per row (total)`, `value=17066.6 B` |
+| storage-1m-rabitq1-rerank | storage | storage_field | `field=per row (heap only)`, `value=136.8 B` |
+| storage-1m-rabitq1-rerank | storage | storage_index | `access method=ec_ivf`, `index=real_1m_ivf_rabitq1_rerank_rabitq_idx`, `per row=315.6 B`, `profile=ec_ivf`, `reloptions={quant_bits=1,rerank=heap_f32,rerank_width=50,storage_format=rabitq}`, `size=298.0 MiB` |
+| storage-1m-rabitq1-rerank | storage | storage_index | `access method=btree`, `index=real_1m_ivf_rabitq1_rerank_corpus_pkey`, `per row=44.9 B`, `profile=<unknown>`, `reloptions={}`, `size=42.4 MiB` |
+| explain-1m-rabitq1-rerank-p128 | explain | planner_cost | `average_list_live_count=994.9748743718593`, `cpu_operator_cost=0.0025`, `dimensions=1536`, `effective_nprobe=128`, `effective_nprobe_source=session`, `estimated_candidate_rows=127356.78391959799`, `estimated_centroid_scores=995`, `estimated_posting_pages=4810.484422110553`, `estimated_selected_lists=128`, `index_pages=38143`, `modeled_correlation=0`, `modeled_selectivity=1`, `modeled_startup_cost=790.208`, `modeled_total_cost=8571.671477386935`, `nlists=995`, `ordering_compare_type=COMPARE_LT`, `pg18_strategy_translation_ready=t`, `pg18_tree_height_callback_ready=t`, `planner_gate_reason=planner scan selection is live: Task 28 IVF cost model active`, `planner_scan_enabled=t`, `random_page_cost=4`, `relation_nprobe=0`, `reltuples=990000`, `rerank=heap_f32`, `rerank_multiplier=1.35`, `resolved_tree_height=0`, `scoring_mode=rabitq_binary`, `scoring_multiplier=0.45`, `seq_page_cost=1`, `session_nprobe=128`, `storage_format=rabitq`, `tree_height_source=amgettreeheight_callback` |
+| explain-1m-rabitq1-rerank-p256 | explain | planner_cost | `average_list_live_count=994.9748743718593`, `cpu_operator_cost=0.0025`, `dimensions=1536`, `effective_nprobe=256`, `effective_nprobe_source=session`, `estimated_candidate_rows=254713.56783919598`, `estimated_centroid_scores=995`, `estimated_posting_pages=9620.968844221106`, `estimated_selected_lists=256`, `index_pages=38143`, `modeled_correlation=0`, `modeled_selectivity=1`, `modeled_startup_cost=790.208`, `modeled_total_cost=16353.134954773872`, `nlists=995`, `ordering_compare_type=COMPARE_LT`, `pg18_strategy_translation_ready=t`, `pg18_tree_height_callback_ready=t`, `planner_gate_reason=planner scan selection is live: Task 28 IVF cost model active`, `planner_scan_enabled=t`, `random_page_cost=4`, `relation_nprobe=0`, `reltuples=990000`, `rerank=heap_f32`, `rerank_multiplier=1.35`, `resolved_tree_height=0`, `scoring_mode=rabitq_binary`, `scoring_multiplier=0.45`, `seq_page_cost=1`, `session_nprobe=256`, `storage_format=rabitq`, `tree_height_source=amgettreeheight_callback` |
+wrote benchmarks/task51-aws-ivf-rabitq-final-gate/artifacts/results-report.jsonl

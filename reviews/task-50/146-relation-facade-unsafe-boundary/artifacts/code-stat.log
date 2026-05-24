@@ -1,0 +1,35 @@
+3f1b57a6 Require unsafe context for relation metadata facade
+ src/am/common/cost.rs                              |  6 +++--
+ src/am/common/explain.rs                           |  4 +++-
+ src/am/ec_diskann/ambuild.rs                       | 10 +++++---
+ src/am/ec_diskann/diagnostics.rs                   |  3 ++-
+ src/am/ec_diskann/insert.rs                        |  8 +++++--
+ src/am/ec_diskann/options.rs                       |  3 ++-
+ src/am/ec_diskann/routine.rs                       | 13 +++++++----
+ src/am/ec_diskann/scan_state.rs                    |  6 +++--
+ src/am/ec_hnsw/build.rs                            |  6 +++--
+ src/am/ec_hnsw/insert.rs                           | 21 ++++++++++++-----
+ src/am/ec_hnsw/options.rs                          |  3 ++-
+ src/am/ec_hnsw/scan.rs                             |  7 ++++--
+ src/am/ec_hnsw/scan_debug.rs                       | 13 +++++++----
+ src/am/ec_hnsw/shared.rs                           |  3 ++-
+ src/am/ec_hnsw/source.rs                           |  6 +++--
+ src/am/ec_hnsw/vacuum.rs                           |  6 +++--
+ src/am/ec_ivf/admin.rs                             |  6 +++--
+ src/am/ec_ivf/insert.rs                            |  3 ++-
+ src/am/ec_ivf/vacuum.rs                            |  3 ++-
+ src/am/ec_spire/build/tuples.rs                    |  3 ++-
+ .../coordinator/remote_candidates/libpq_plan.rs    |  3 ++-
+ src/am/ec_spire/coordinator/snapshots.rs           |  3 ++-
+ src/am/ec_spire/dml_frontdoor/mod.rs               |  3 ++-
+ src/am/ec_spire/insert.rs                          |  6 +++--
+ src/am/ec_spire/options/mod.rs                     |  7 ++++--
+ src/am/ec_spire/page.rs                            |  3 ++-
+ src/am/ec_spire/scan/relation.rs                   |  4 +++-
+ src/am/ec_spire/storage/relation_plan.rs           | 10 +++++---
+ src/am/ec_spire/storage/relation_store.rs          | 11 ++++++---
+ src/lib.rs                                         | 13 +++++++----
+ src/storage/relation.rs                            | 27 +++++++++++-----------
+ src/tests/ec_hnsw_recall_helpers.rs                |  8 ++++---
+ src/tests/mod.rs                                   |  8 ++++---
+ 33 files changed, 160 insertions(+), 79 deletions(-)

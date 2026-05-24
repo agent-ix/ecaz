@@ -1,0 +1,5 @@
+Script started on 2026-05-20 11:20:28-07:00 [<not executed on terminal>]
+python3 scripts/unsafe_ledger.py check --ledger reviews/task-50/053-spire-snapshot-live-relation-view/artifacts/unsafe-ledger-after.jsonl src
+ledger covers 2228 current unsafe rows
+
+Script done on 2026-05-20 11:20:28-07:00 [COMMAND_EXIT_CODE="0"]

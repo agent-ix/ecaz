@@ -1,0 +1,7 @@
+Script started on 2026-05-21 07:28:11-07:00 [<not executed on terminal>]
+src/am/ec_hnsw/graph.rs unsafe lines: 68
+src/am/ec_hnsw/scan.rs unsafe lines: 202
+src unsafe lines: 2446
+deleted symbol references:
+
+Script done on 2026-05-21 07:28:11-07:00 [COMMAND_EXIT_CODE="0"]

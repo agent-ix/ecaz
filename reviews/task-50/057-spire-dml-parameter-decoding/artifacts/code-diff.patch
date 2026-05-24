@@ -1,0 +1,98 @@
+diff --git a/src/am/ec_spire/dml_frontdoor/mod.rs b/src/am/ec_spire/dml_frontdoor/mod.rs
+index 02aabd6f..cb51fe5b 100644
+--- a/src/am/ec_spire/dml_frontdoor/mod.rs
++++ b/src/am/ec_spire/dml_frontdoor/mod.rs
+@@ -970,41 +970,37 @@ unsafe fn dml_frontdoor_bound_param_bigint_value(
+             "ec_spire DML frontdoor PK parameter ${param_id} has no bound parameter list"
+         ));
+     }
+-    // SAFETY: null was rejected above; ParamListInfo is valid for the executor
+-    // callback and is only read while producing an owned i64.
+-    let params_ref = unsafe { &*params };
+-    if param_id > params_ref.numParams {
+-        return Err(format!(
+-            "ec_spire DML frontdoor PK parameter ${param_id} exceeds bound parameter count {}",
+-            params_ref.numParams
+-        ));
+-    }
+-    let param = if let Some(fetch) = params_ref.paramFetch {
++    // SAFETY: null was rejected above. ParamListInfo is valid for the executor
++    // callback; when paramFetch returns a pointer into the local workspace, the
++    // ParamExternData fields are copied before that workspace leaves scope.
++    let (isnull, value, ptype) = unsafe {
++        let params_ref = &*params;
++        if param_id > params_ref.numParams {
++            return Err(format!(
++                "ec_spire DML frontdoor PK parameter ${param_id} exceeds bound parameter count {}",
++                params_ref.numParams
++            ));
++        }
+         let mut workspace = pg_sys::ParamExternData::default();
+-        // paramFetch may return a pointer into workspace; consume it before
+-        // this function returns rather than handing it to a caller.
+-        // SAFETY: PostgreSQL's paramFetch contract accepts this workspace and
+-        // returns data valid at least until the next fetch or function return.
+-        unsafe { fetch(params, param_id, false, &mut workspace) }
+-    } else {
+-        // SAFETY: numParams bounds were checked above; params points to the
+-        // PostgreSQL parameter array for this executor invocation.
+-        unsafe { params_ref.params.as_ptr().add((param_id - 1) as usize) }
++        let param = if let Some(fetch) = params_ref.paramFetch {
++            fetch(params, param_id, false, &mut workspace)
++        } else {
++            params_ref.params.as_ptr().add((param_id - 1) as usize)
++        };
++        if param.is_null() {
++            return Err(format!(
++                "ec_spire DML frontdoor PK parameter ${param_id} fetch returned NULL"
++            ));
++        }
++        let param_ref = &*param;
++        (param_ref.isnull, param_ref.value, param_ref.ptype)
+     };
+-    if param.is_null() {
+-        return Err(format!(
+-            "ec_spire DML frontdoor PK parameter ${param_id} fetch returned NULL"
+-        ));
+-    }
+-    // SAFETY: paramFetch/direct lookup returned a non-null ParamExternData
+-    // pointer, which is consumed immediately.
+-    let param_ref = unsafe { &*param };
+-    if param_ref.isnull {
++    if isnull {
+         return Err(format!(
+             "ec_spire DML frontdoor PK parameter ${param_id} must not be NULL"
+         ));
+     }
+-    dml_frontdoor_param_datum_to_bigint(param_id, param_ref.value, param_ref.ptype)
++    dml_frontdoor_param_datum_to_bigint(param_id, value, ptype)
+ }
+ 
+ fn dml_frontdoor_param_datum_to_bigint(
+@@ -1012,15 +1008,17 @@ fn dml_frontdoor_param_datum_to_bigint(
+     datum: pg_sys::Datum,
+     typoid: pg_sys::Oid,
+ ) -> Result<i64, String> {
+-    match typoid {
+-        // SAFETY: typoid selects the matching by-value integer Datum accessor.
+-        pg_sys::INT2OID => Ok(i64::from(unsafe { pg_sys::DatumGetInt16(datum) })),
+-        pg_sys::INT4OID => Ok(i64::from(unsafe { pg_sys::DatumGetInt32(datum) })),
+-        pg_sys::INT8OID => Ok(unsafe { pg_sys::DatumGetInt64(datum) }),
+-        other => Err(format!(
+-            "ec_spire DML frontdoor PK parameter ${param_id} has unsupported type OID {}",
+-            other.to_u32()
+-        )),
++    // SAFETY: typoid selects the matching by-value integer Datum accessor.
++    unsafe {
++        match typoid {
++            pg_sys::INT2OID => Ok(i64::from(pg_sys::DatumGetInt16(datum))),
++            pg_sys::INT4OID => Ok(i64::from(pg_sys::DatumGetInt32(datum))),
++            pg_sys::INT8OID => Ok(pg_sys::DatumGetInt64(datum)),
++            other => Err(format!(
++                "ec_spire DML frontdoor PK parameter ${param_id} has unsupported type OID {}",
++                other.to_u32()
++            )),
++        }
+     }
+ }
+ 

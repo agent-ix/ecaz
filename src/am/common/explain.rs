@@ -1,7 +1,7 @@
 #[cfg(feature = "pg18")]
 use std::ffi::{c_void, CStr, CString};
 #[cfg(feature = "pg18")]
-use std::ptr;
+use std::ptr::{self, NonNull};
 #[cfg(feature = "pg18")]
 use std::sync::atomic::{AtomicBool, Ordering};
 #[cfg(feature = "pg18")]
@@ -9,6 +9,11 @@ use std::sync::OnceLock;
 
 #[cfg(feature = "pg18")]
 use pgrx::pg_sys;
+
+#[cfg(feature = "pg18")]
+use super::callback::pg_callback;
+#[cfg(feature = "pg18")]
+use crate::storage::relation::RelationHandle;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct ExplainOptionSnapshot {
@@ -78,7 +83,11 @@ pub(crate) struct IvfExplainCounters {
     pub stats_heap_tids_scored: u32,
     pub stats_candidates_scored: u32,
     pub stats_candidates_inserted: u32,
+    pub stats_candidates_emitted: u32,
     pub stats_rerank_rows: u32,
+    pub stats_heap_blocks_fetched: u32,
+    pub stats_approximate_scan_elapsed_us: u32,
+    pub stats_exact_rerank_elapsed_us: u32,
     pub stats_filtered_duplicates: u32,
 }
 
@@ -256,8 +265,30 @@ impl IvfExplainCounters {
         self.stats_candidates_inserted = self.stats_candidates_inserted.saturating_add(1);
     }
 
+    pub(crate) fn record_candidate_emitted(&mut self) {
+        self.stats_candidates_emitted = self.stats_candidates_emitted.saturating_add(1);
+    }
+
     pub(crate) fn record_rerank_row(&mut self) {
         self.stats_rerank_rows = self.stats_rerank_rows.saturating_add(1);
+    }
+
+    pub(crate) fn record_heap_blocks_fetched(&mut self, count: usize) {
+        self.stats_heap_blocks_fetched = self
+            .stats_heap_blocks_fetched
+            .saturating_add(u32::try_from(count).unwrap_or(u32::MAX));
+    }
+
+    pub(crate) fn record_approximate_scan_elapsed_us(&mut self, elapsed_us: u32) {
+        self.stats_approximate_scan_elapsed_us = self
+            .stats_approximate_scan_elapsed_us
+            .saturating_add(elapsed_us);
+    }
+
+    pub(crate) fn record_exact_rerank_elapsed_us(&mut self, elapsed_us: u32) {
+        self.stats_exact_rerank_elapsed_us = self
+            .stats_exact_rerank_elapsed_us
+            .saturating_add(elapsed_us);
     }
 
     pub(crate) fn record_filtered_duplicate(&mut self) {
@@ -268,7 +299,7 @@ impl IvfExplainCounters {
         *self = Self::default();
     }
 
-    pub(crate) fn explain_properties(self) -> [ExplainProperty; 11] {
+    pub(crate) fn explain_properties(self) -> [ExplainProperty; 15] {
         [
             ExplainProperty {
                 property_name: "Centroid Scores",
@@ -307,8 +338,24 @@ impl IvfExplainCounters {
                 value: ExplainPropertyValue::Integer(self.stats_candidates_inserted),
             },
             ExplainProperty {
+                property_name: "Candidates Emitted",
+                value: ExplainPropertyValue::Integer(self.stats_candidates_emitted),
+            },
+            ExplainProperty {
                 property_name: "Rerank Rows",
                 value: ExplainPropertyValue::Integer(self.stats_rerank_rows),
+            },
+            ExplainProperty {
+                property_name: "Heap Blocks Fetched",
+                value: ExplainPropertyValue::Integer(self.stats_heap_blocks_fetched),
+            },
+            ExplainProperty {
+                property_name: "Approximate Scan Elapsed Us",
+                value: ExplainPropertyValue::Integer(self.stats_approximate_scan_elapsed_us),
+            },
+            ExplainProperty {
+                property_name: "Exact Rerank Elapsed Us",
+                value: ExplainPropertyValue::Integer(self.stats_exact_rerank_elapsed_us),
             },
             ExplainProperty {
                 property_name: "Filtered Duplicates",
@@ -325,6 +372,13 @@ static PREVIOUS_EXPLAIN_PER_NODE_HOOK: OnceLock<pg_sys::explain_per_node_hook_ty
 static ECAZ_EXPLAIN_REGISTERED: AtomicBool = AtomicBool::new(false);
 
 #[cfg(feature = "pg18")]
+#[derive(Clone, Copy)]
+struct ExplainIndexScanNode {
+    index_state: NonNull<pg_sys::IndexScanState>,
+    index_relation: RelationHandle,
+}
+
+#[cfg(feature = "pg18")]
 fn previous_explain_per_node_hook() -> pg_sys::explain_per_node_hook_type {
     PREVIOUS_EXPLAIN_PER_NODE_HOOK
         .get()
@@ -333,81 +387,74 @@ fn previous_explain_per_node_hook() -> pg_sys::explain_per_node_hook_type {
 }
 
 #[cfg(feature = "pg18")]
-fn explain_extension_id() -> i32 {
-    // SAFETY: The literal is NUL-terminated and has static lifetime for
-    // PostgreSQL's extension EXPLAIN option lookup.
-    unsafe { pg_sys::GetExplainExtensionId(c"ecaz".as_ptr()) }
-}
-
-#[cfg(feature = "pg18")]
 unsafe fn explain_option_enabled(es: *mut pg_sys::ExplainState) -> bool {
     // SAFETY: `es` is the live ExplainState supplied by PostgreSQL's explain
     // hook; the extension id is registered by `register_pg18_explain_hooks`.
-    let state = unsafe { pg_sys::GetExplainExtensionState(es, explain_extension_id()) };
-    if state.is_null() {
-        return false;
-    }
+    unsafe {
+        let state =
+            pg_sys::GetExplainExtensionState(es, pg_sys::GetExplainExtensionId(c"ecaz".as_ptr()));
+        if state.is_null() {
+            return false;
+        }
 
-    // SAFETY: The option handler stores a `bool` allocated for this extension
-    // id, and a non-null state pointer therefore points at that bool.
-    unsafe { *(state.cast::<bool>()) }
-}
-
-#[cfg(feature = "pg18")]
-unsafe fn explain_node_kind(planstate: *mut pg_sys::PlanState) -> ExplainNodeKind {
-    // SAFETY: Callers pass PostgreSQL's non-null PlanState while processing the
-    // per-node EXPLAIN hook.
-    match unsafe { (*planstate).type_ } {
-        pg_sys::NodeTag::T_IndexScanState => ExplainNodeKind::IndexScan,
-        _ => ExplainNodeKind::Other,
+        // The option handler stores a `bool` allocated for this extension id,
+        // and a non-null state pointer therefore points at that bool.
+        *(state.cast::<bool>())
     }
 }
 
 #[cfg(feature = "pg18")]
-unsafe fn explain_access_method_name(index_state: *mut pg_sys::IndexScanState) -> Option<String> {
-    // SAFETY: `index_state` is a PlanState already identified as IndexScanState
-    // by the caller, so its relation descriptor field may be inspected.
-    let index_relation = unsafe { (*index_state).iss_RelationDesc };
-    if index_relation.is_null() {
-        return None;
-    }
+unsafe fn explain_index_scan_node(
+    planstate: *mut pg_sys::PlanState,
+) -> Option<ExplainIndexScanNode> {
+    let planstate = NonNull::new(planstate)?;
 
-    // SAFETY: The relation descriptor is non-null and PostgreSQL owns its
-    // relcache tuple for the duration of the hook.
-    let am_oid = unsafe { (*(*index_relation).rd_rel).relam };
+    // SAFETY: PostgreSQL invokes the per-node EXPLAIN hook with a live PlanState.
+    // This boundary checks the node tag before treating it as IndexScanState and
+    // copies only non-null executor-owned descriptor pointers for this hook call.
+    unsafe {
+        if (*planstate.as_ptr()).type_ != pg_sys::NodeTag::T_IndexScanState {
+            return None;
+        }
+        let index_state = NonNull::new(planstate.as_ptr().cast::<pg_sys::IndexScanState>())?;
+        let index_relation = NonNull::new((*index_state.as_ptr()).iss_RelationDesc)?;
+        Some(ExplainIndexScanNode {
+            index_state,
+            index_relation,
+        })
+    }
+}
+
+#[cfg(feature = "pg18")]
+fn explain_access_method_name(index_relation: RelationHandle) -> Option<String> {
+    let am_oid = crate::storage::relation::relation_am_oid_handle(index_relation);
     // SAFETY: `am_oid` comes from the relation descriptor; PostgreSQL returns a
-    // palloc-owned C string or null when no AM name exists.
-    let am_name_ptr = unsafe { pg_sys::get_am_name(am_oid) };
-    if am_name_ptr.is_null() {
-        return None;
+    // palloc-owned C string or null when no AM name exists. When present, the
+    // string is copied immediately and then released with `pfree`.
+    unsafe {
+        let am_name_ptr = pg_sys::get_am_name(am_oid);
+        if am_name_ptr.is_null() {
+            return None;
+        }
+        let name = CStr::from_ptr(am_name_ptr).to_string_lossy().into_owned();
+        pg_sys::pfree(am_name_ptr.cast());
+        Some(name)
     }
-
-    // SAFETY: `get_am_name` returned a non-null NUL-terminated C string.
-    let name = unsafe { CStr::from_ptr(am_name_ptr) }
-        .to_string_lossy()
-        .into_owned();
-    // SAFETY: PostgreSQL allocated the string returned by `get_am_name`, so it
-    // must be released with `pfree` after copying.
-    unsafe { pg_sys::pfree(am_name_ptr.cast()) };
-    Some(name)
 }
 
 #[cfg(feature = "pg18")]
 unsafe fn emit_explain_properties(es: *mut pg_sys::ExplainState, properties: &[ExplainProperty]) {
     let group = explain_output_group();
     let group_label = CString::new(group.group_label).expect("group label should not contain NUL");
-    // SAFETY: `es` is the live ExplainState from PostgreSQL, and the group
-    // labels are NUL-free CStrings that outlive the call.
+    // SAFETY: `es` is the live ExplainState from PostgreSQL. The group and
+    // property labels are NUL-free CStrings that outlive each PostgreSQL call,
+    // and the group is opened and closed within this boundary.
     unsafe {
         pg_sys::ExplainOpenGroup(group_label.as_ptr(), group_label.as_ptr(), true, es);
-    }
 
-    for property in properties {
-        let property_name =
-            CString::new(property.property_name).expect("property name should not contain NUL");
-        // SAFETY: `es` is live during hook execution and `property_name` is a
-        // NUL-free CString that outlives each ExplainProperty call.
-        unsafe {
+        for property in properties {
+            let property_name =
+                CString::new(property.property_name).expect("property name should not contain NUL");
             match property.value {
                 ExplainPropertyValue::Integer(value) => pg_sys::ExplainPropertyInteger(
                     property_name.as_ptr(),
@@ -420,11 +467,7 @@ unsafe fn emit_explain_properties(es: *mut pg_sys::ExplainState, properties: &[E
                 }
             }
         }
-    }
 
-    // SAFETY: This closes the group opened above on the same live ExplainState,
-    // using the same CString labels.
-    unsafe {
         pg_sys::ExplainCloseGroup(group_label.as_ptr(), group_label.as_ptr(), true, es);
     }
 }
@@ -435,19 +478,19 @@ unsafe extern "C-unwind" fn ecaz_explain_option_handler(
     opt: *mut pg_sys::DefElem,
     _pstate: *mut pg_sys::ParseState,
 ) {
-    // SAFETY: PostgreSQL invokes the option handler with live ExplainState and
-    // DefElem pointers; the guard contains Rust unwinding at the C boundary.
-    unsafe {
-        pgrx::pgrx_extern_c_guard(|| {
-            let enabled = pg_sys::defGetBoolean(opt);
-            let state = pg_sys::palloc0(std::mem::size_of::<bool>()).cast::<bool>();
-            if state.is_null() {
-                pgrx::error!("ecaz failed to allocate EXPLAIN option state");
-            }
-            *state = enabled;
-            pg_sys::SetExplainExtensionState(es, explain_extension_id(), state.cast::<c_void>());
-        })
-    }
+    pg_callback!({
+        let enabled = pg_sys::defGetBoolean(opt);
+        let state = pg_sys::palloc0(std::mem::size_of::<bool>()).cast::<bool>();
+        if state.is_null() {
+            pgrx::error!("ecaz failed to allocate EXPLAIN option state");
+        }
+        *state = enabled;
+        pg_sys::SetExplainExtensionState(
+            es,
+            pg_sys::GetExplainExtensionId(c"ecaz".as_ptr()),
+            state.cast::<c_void>(),
+        );
+    })
 }
 
 #[cfg(feature = "pg18")]
@@ -458,59 +501,54 @@ unsafe extern "C-unwind" fn ecaz_explain_per_node_hook(
     plan_name: *const std::ffi::c_char,
     es: *mut pg_sys::ExplainState,
 ) {
-    // SAFETY: PostgreSQL invokes the per-node hook with hook arguments valid for
-    // the duration of the call; the guard contains Rust unwinding at the C
-    // boundary while preserving previous-hook chaining below.
-    unsafe {
-        pgrx::pgrx_extern_c_guard(|| {
-            if !planstate.is_null()
-                && !es.is_null()
-                && (*planstate).type_ == pg_sys::NodeTag::T_IndexScanState
-            {
-                let explain_option_enabled = explain_option_enabled(es);
-                if !explain_option_enabled {
-                    if let Some(previous_hook) = previous_explain_per_node_hook() {
-                        previous_hook(planstate, ancestors, relationship, plan_name, es);
-                    }
-                    return;
+    pg_callback!({
+        if !es.is_null() {
+            let Some(index_node) = explain_index_scan_node(planstate) else {
+                if let Some(previous_hook) = previous_explain_per_node_hook() {
+                    previous_hook(planstate, ancestors, relationship, plan_name, es);
                 }
-
-                let index_state = planstate.cast::<pg_sys::IndexScanState>();
-                let access_method_name = explain_access_method_name(index_state)
-                    .unwrap_or_else(|| "<unknown>".to_owned());
-                let context = ExplainHookContext {
-                    explain_option_enabled,
-                    node_kind: explain_node_kind(planstate),
-                    access_method_name: access_method_name.as_str(),
-                };
-                if should_emit_explain_properties(context) {
-                    match access_method_name.as_str() {
-                        "ec_hnsw" => {
-                            let counters =
-                                crate::am::ec_hnsw::explain_counters_from_index_scan_state(
-                                    index_state,
-                                );
-                            let properties = counters.explain_properties();
-                            emit_explain_properties(es, &properties);
-                        }
-                        "ec_ivf" => {
-                            let counters =
-                                crate::am::ec_ivf::explain_counters_from_index_scan_state(
-                                    index_state,
-                                );
-                            let properties = counters.explain_properties();
-                            emit_explain_properties(es, &properties);
-                        }
-                        _ => {}
-                    }
+                return;
+            };
+            let explain_option_enabled = explain_option_enabled(es);
+            if !explain_option_enabled {
+                if let Some(previous_hook) = previous_explain_per_node_hook() {
+                    previous_hook(planstate, ancestors, relationship, plan_name, es);
                 }
+                return;
             }
 
-            if let Some(previous_hook) = previous_explain_per_node_hook() {
-                previous_hook(planstate, ancestors, relationship, plan_name, es);
+            let access_method_name = explain_access_method_name(index_node.index_relation)
+                .unwrap_or_else(|| "<unknown>".to_owned());
+            let context = ExplainHookContext {
+                explain_option_enabled,
+                node_kind: ExplainNodeKind::IndexScan,
+                access_method_name: access_method_name.as_str(),
+            };
+            if should_emit_explain_properties(context) {
+                match access_method_name.as_str() {
+                    "ec_hnsw" => {
+                        let counters = crate::am::ec_hnsw::explain_counters_from_index_scan_state(
+                            index_node.index_state.as_ptr(),
+                        );
+                        let properties = counters.explain_properties();
+                        emit_explain_properties(es, &properties);
+                    }
+                    "ec_ivf" => {
+                        let counters = crate::am::ec_ivf::explain_counters_from_index_scan_state(
+                            index_node.index_state.as_ptr(),
+                        );
+                        let properties = counters.explain_properties();
+                        emit_explain_properties(es, &properties);
+                    }
+                    _ => {}
+                }
             }
-        })
-    }
+        }
+
+        if let Some(previous_hook) = previous_explain_per_node_hook() {
+            previous_hook(planstate, ancestors, relationship, plan_name, es);
+        }
+    })
 }
 
 #[cfg(feature = "pg18")]
@@ -711,7 +749,11 @@ mod tests {
         counters.record_candidate_scored();
         counters.record_candidate_scored();
         counters.record_candidate_inserted();
+        counters.record_candidate_emitted();
         counters.record_rerank_row();
+        counters.record_heap_blocks_fetched(31);
+        counters.record_approximate_scan_elapsed_us(37);
+        counters.record_exact_rerank_elapsed_us(41);
         counters.record_filtered_duplicate();
 
         assert_eq!(
@@ -726,7 +768,11 @@ mod tests {
                 stats_heap_tids_scored: 9,
                 stats_candidates_scored: 2,
                 stats_candidates_inserted: 1,
+                stats_candidates_emitted: 1,
                 stats_rerank_rows: 1,
+                stats_heap_blocks_fetched: 31,
+                stats_approximate_scan_elapsed_us: 37,
+                stats_exact_rerank_elapsed_us: 41,
                 stats_filtered_duplicates: 1,
             }
         );
@@ -744,8 +790,12 @@ mod tests {
             stats_heap_tids_scored: 13,
             stats_candidates_scored: 17,
             stats_candidates_inserted: 19,
-            stats_rerank_rows: 23,
-            stats_filtered_duplicates: 29,
+            stats_candidates_emitted: 23,
+            stats_rerank_rows: 29,
+            stats_heap_blocks_fetched: 31,
+            stats_approximate_scan_elapsed_us: 37,
+            stats_exact_rerank_elapsed_us: 41,
+            stats_filtered_duplicates: 43,
         };
 
         assert_eq!(
@@ -788,12 +838,28 @@ mod tests {
                     value: ExplainPropertyValue::Integer(19),
                 },
                 ExplainProperty {
-                    property_name: "Rerank Rows",
+                    property_name: "Candidates Emitted",
                     value: ExplainPropertyValue::Integer(23),
                 },
                 ExplainProperty {
-                    property_name: "Filtered Duplicates",
+                    property_name: "Rerank Rows",
                     value: ExplainPropertyValue::Integer(29),
+                },
+                ExplainProperty {
+                    property_name: "Heap Blocks Fetched",
+                    value: ExplainPropertyValue::Integer(31),
+                },
+                ExplainProperty {
+                    property_name: "Approximate Scan Elapsed Us",
+                    value: ExplainPropertyValue::Integer(37),
+                },
+                ExplainProperty {
+                    property_name: "Exact Rerank Elapsed Us",
+                    value: ExplainPropertyValue::Integer(41),
+                },
+                ExplainProperty {
+                    property_name: "Filtered Duplicates",
+                    value: ExplainPropertyValue::Integer(43),
                 },
             ]
         );

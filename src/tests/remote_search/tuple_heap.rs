@@ -814,12 +814,9 @@
         .expect("leaf pids should exist");
         assert_eq!(selected_pids.len(), 2);
 
-        // SAFETY: This pg_test remote-search fixture builds a SPiRE index, derives target pids and epochs from fixture snapshots, and uses test-only debug hooks to force remote-search state.
-
-        unsafe {
-            am::debug_spire_rewrite_consistency_mode(index_oid, "degraded");
+        am::debug_spire_rewrite_consistency_mode(index_oid, "degraded");
             am::debug_spire_rewrite_placement_state(index_oid, selected_pids[1] as u64, "skipped");
-        }
+
         let args = format!(
             "'ec_spire_remote_local_heap_degraded_sql_idx'::regclass, \
              {active_epoch}, ARRAY[1.0, 0.0]::real[], \
@@ -956,7 +953,7 @@
 
         // SAFETY: This pg_test remote-search fixture builds a SPiRE index, derives target pids and epochs from fixture snapshots, and uses test-only debug hooks to force remote-search state.
 
-        unsafe { am::debug_spire_rewrite_placement_node(index_oid, selected_pids[1] as u64, 2) };
+        am::debug_spire_rewrite_placement_node(index_oid, selected_pids[1] as u64, 2);
         let summary_from = format!(
             "FROM ec_spire_remote_search_heap_resolution_summary(\
              'ec_spire_remote_heap_res_summary_sql_idx'::regclass, \

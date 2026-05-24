@@ -1,0 +1,2 @@
+python3 scripts/unsafe_ledger.py generate --output reviews/task-50/318-spire-remote-epoch-snapshot-safe-signatures/artifacts/unsafe-ledger-after.jsonl --packet reviews/task-50/318-spire-remote-epoch-snapshot-safe-signatures src
+wrote 1379 unsafe ledger rows to reviews/task-50/318-spire-remote-epoch-snapshot-safe-signatures/artifacts/unsafe-ledger-after.jsonl

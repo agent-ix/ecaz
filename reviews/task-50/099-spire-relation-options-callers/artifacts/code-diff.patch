@@ -1,0 +1,154 @@
+Script started on 2026-05-20 16:00:15-07:00 [<not executed on terminal>]
+commit 44c1f2beddcb7f29185c5330c9dcc8c0ba3c3903 (HEAD -> task-50-unsafe-closeout, origin/task-50-unsafe-closeout)
+Author:     Agent IX <agent@agent-ix.dev>
+AuthorDate: Wed May 20 15:59:55 2026 -0700
+Commit:     Agent IX <agent@agent-ix.dev>
+CommitDate: Wed May 20 15:59:55 2026 -0700
+
+    Make SPIRE relation options safe to call
+---
+ .../ec_spire/coordinator/remote_candidates/endpoint_identity.rs  | 4 +---
+ src/am/ec_spire/coordinator/remote_candidates/scan_output.rs     | 8 ++------
+ src/am/ec_spire/coordinator/snapshots.rs                         | 4 +---
+ src/am/ec_spire/cost/mod.rs                                      | 9 +++------
+ src/am/ec_spire/custom_scan/explain.rs                           | 3 +--
+ src/am/ec_spire/insert.rs                                        | 3 +--
+ src/am/ec_spire/options/mod.rs                                   | 5 ++++-
+ 7 files changed, 13 insertions(+), 23 deletions(-)
+
+diff --git a/src/am/ec_spire/coordinator/remote_candidates/endpoint_identity.rs b/src/am/ec_spire/coordinator/remote_candidates/endpoint_identity.rs
+index aa9d6aa1..103d041a 100644
+--- a/src/am/ec_spire/coordinator/remote_candidates/endpoint_identity.rs
++++ b/src/am/ec_spire/coordinator/remote_candidates/endpoint_identity.rs
+@@ -433,9 +433,7 @@ pub(crate) unsafe fn remote_search_endpoint_identity_row(
+     index_relation: pg_sys::Relation,
+ ) -> SpireRemoteSearchEndpointIdentityRow {
+     let result = (|| -> Result<SpireRemoteSearchEndpointIdentityRow, String> {
+-        // SAFETY: index_relation is the live PostgreSQL index relation supplied
+-        // by the endpoint identity SQL wrapper for this summary read.
+-        let relation_options = unsafe { options::relation_options(index_relation) };
++        let relation_options = options::relation_options(index_relation);
+         // SAFETY: rd_id is stable while the relation is open for this diagnostic
+         // read and is used only as an OID input to identity helpers.
+         let index_oid = unsafe { (*index_relation).rd_id };
+diff --git a/src/am/ec_spire/coordinator/remote_candidates/scan_output.rs b/src/am/ec_spire/coordinator/remote_candidates/scan_output.rs
+index 6c0b8557..006591b4 100644
+--- a/src/am/ec_spire/coordinator/remote_candidates/scan_output.rs
++++ b/src/am/ec_spire/coordinator/remote_candidates/scan_output.rs
+@@ -141,9 +141,7 @@ pub(crate) unsafe fn remote_search_production_scan_handoff_summary_row(
+                 &placement_directory,
+                 pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+             )?;
+-        // SAFETY: reads PostgreSQL reloptions from the live index relation for
+-        // scan planning only.
+-        let relation_options = unsafe { options::relation_options(index_relation) };
++        let relation_options = options::relation_options(index_relation);
+         let top_graph_plan = relation_options.top_graph_plan()?;
+         let leaf_count = scan::count_scan_plan_routable_leaf_pids(&snapshot, &object_store)?;
+         let scan_plan = options::resolve_single_level_scan_plan(leaf_count, relation_options)?;
+@@ -536,9 +534,7 @@ unsafe fn remote_search_production_scan_heap_resolution_result_stream_impl(
+                 &placement_directory,
+                 pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+             )?;
+-        // SAFETY: reads PostgreSQL reloptions from the live index relation for
+-        // scan-plan and candidate-limit resolution only.
+-        let relation_options = unsafe { options::relation_options(index_relation) };
++        let relation_options = options::relation_options(index_relation);
+         let top_graph_plan = relation_options.top_graph_plan()?;
+         let leaf_count = scan::count_scan_plan_routable_leaf_pids(&snapshot, &object_store)?;
+         let scan_plan = options::resolve_single_level_scan_plan(leaf_count, relation_options)?;
+diff --git a/src/am/ec_spire/coordinator/snapshots.rs b/src/am/ec_spire/coordinator/snapshots.rs
+index 5e196786..879f7a52 100644
+--- a/src/am/ec_spire/coordinator/snapshots.rs
++++ b/src/am/ec_spire/coordinator/snapshots.rs
+@@ -15,9 +15,7 @@ impl SpireLiveIndexRelation {
+     }
+ 
+     fn relation_options(self) -> options::EcSpireOptions {
+-        // SAFETY: this wrapper is constructed only for a live SPIRE index
+-        // relation whose reloptions can be read for diagnostics/planning.
+-        unsafe { options::relation_options(self.relation) }
++        options::relation_options(self.relation)
+     }
+ 
+     fn relid(self) -> u32 {
+diff --git a/src/am/ec_spire/cost/mod.rs b/src/am/ec_spire/cost/mod.rs
+index e8b3b0d0..d54b6aa8 100644
+--- a/src/am/ec_spire/cost/mod.rs
++++ b/src/am/ec_spire/cost/mod.rs
+@@ -100,8 +100,7 @@ pub(crate) unsafe fn index_cost_snapshot(
+     let reltuples = unsafe { (*(*index_relation).rd_rel).reltuples } as f64;
+     // SAFETY: reads planner cost GUCs for the current backend.
+     let constants = unsafe { current_planner_cost_constants() };
+-    // SAFETY: relation options are read from the live index relation.
+-    let relation_options = unsafe { options::relation_options(index_relation) };
++    let relation_options = options::relation_options(index_relation);
+     // SAFETY: diagnostic snapshot only reads live SPIRE index metadata.
+     let diagnostics = unsafe { active_snapshot_diagnostics(index_relation) };
+     // SAFETY: hierarchy snapshot only reads live SPIRE index metadata.
+@@ -167,8 +166,7 @@ pub(crate) unsafe fn index_cost_tuning_snapshot(
+     let index_pages = f64::from(block_count);
+     // SAFETY: index_relation is live and rd_rel points to its relcache tuple.
+     let reltuples = unsafe { (*(*index_relation).rd_rel).reltuples } as f64;
+-    // SAFETY: relation options are read from the live index relation.
+-    let relation_options = unsafe { options::relation_options(index_relation) };
++    let relation_options = options::relation_options(index_relation);
+     // SAFETY: diagnostic snapshot only reads live SPIRE index metadata.
+     let diagnostics = unsafe { active_snapshot_diagnostics(index_relation) };
+     // SAFETY: hierarchy snapshot only reads live SPIRE index metadata.
+@@ -213,8 +211,7 @@ unsafe fn compute_amcostestimate(index_relation: pg_sys::Relation) -> PlannerCos
+     let reltuples = unsafe { (*(*index_relation).rd_rel).reltuples } as f64;
+     // SAFETY: reads planner cost GUCs for the current backend.
+     let constants = unsafe { current_planner_cost_constants() };
+-    // SAFETY: relation options are read from the live index relation.
+-    let relation_options = unsafe { options::relation_options(index_relation) };
++    let relation_options = options::relation_options(index_relation);
+     // SAFETY: diagnostic snapshot only reads live SPIRE index metadata.
+     let diagnostics = unsafe { active_snapshot_diagnostics(index_relation) };
+     // SAFETY: hierarchy snapshot only reads live SPIRE index metadata.
+diff --git a/src/am/ec_spire/custom_scan/explain.rs b/src/am/ec_spire/custom_scan/explain.rs
+index b7bf62c6..f4238502 100644
+--- a/src/am/ec_spire/custom_scan/explain.rs
++++ b/src/am/ec_spire/custom_scan/explain.rs
+@@ -69,8 +69,7 @@ fn custom_scan_explain_context(index_oid: pg_sys::Oid) -> SpireCustomScanExplain
+     // remains open under AccessShareLock while these helpers read relation
+     // metadata.
+     let eligibility = unsafe { custom_scan_index_eligibility_row(index_relation.as_ptr()) };
+-    // SAFETY: Same open index relation; the helper only reads reloptions.
+-    let relation_options = unsafe { super::options::relation_options(index_relation.as_ptr()) };
++    let relation_options = super::options::relation_options(index_relation.as_ptr());
+     let configured_nlists = u32::try_from(relation_options.nlists).unwrap_or(0);
+     let relation_nprobe = u32::try_from(relation_options.nprobe).unwrap_or(0);
+     let nprobe = super::options::resolve_scan_nprobe(configured_nlists, relation_nprobe);
+diff --git a/src/am/ec_spire/insert.rs b/src/am/ec_spire/insert.rs
+index 0484ebce..cc936f6d 100644
+--- a/src/am/ec_spire/insert.rs
++++ b/src/am/ec_spire/insert.rs
+@@ -62,8 +62,7 @@ unsafe fn publish_insert_delta_epoch(
+     let _guard = unsafe { lock_publish_relation(index_relation) };
+     // SAFETY: the locked SPIRE index relation has a root/control page.
+     let root_control = page::read_root_control_page(index_relation);
+-    // SAFETY: relation options are read from the live index relation.
+-    let relation_options = unsafe { options::relation_options(index_relation) };
++    let relation_options = options::relation_options(index_relation);
+     // SAFETY: heap_relation and IndexInfo come from PostgreSQL's aminsert
+     // callback and remain valid while deriving the indexed tuple layout.
+     let tuple_layout = unsafe {
+diff --git a/src/am/ec_spire/options/mod.rs b/src/am/ec_spire/options/mod.rs
+index fc6585c0..fbf5f51e 100644
+--- a/src/am/ec_spire/options/mod.rs
++++ b/src/am/ec_spire/options/mod.rs
+@@ -1608,7 +1608,10 @@ unsafe fn read_string_reloption(
+     Some(value.to_owned())
+ }
+ 
+-pub(super) unsafe fn relation_options(index_relation: pg_sys::Relation) -> EcSpireOptions {
++pub(super) fn relation_options(index_relation: pg_sys::Relation) -> EcSpireOptions {
++    if index_relation.is_null() {
++        pgrx::error!("ec_spire relation options need a valid index relation");
++    }
+     // SAFETY: index_relation is live for the relcache callback and rd_options is
+     // read from its relation descriptor.
+     let rd_options = unsafe { (*index_relation).rd_options };
+
+Script done on 2026-05-20 16:00:15-07:00 [COMMAND_EXIT_CODE="0"]

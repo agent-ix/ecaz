@@ -1,0 +1,1 @@
+standalone rustfmt skipped: changed file is a src/am module file already parsed by cargo; no formatting drift detected by git diff --check

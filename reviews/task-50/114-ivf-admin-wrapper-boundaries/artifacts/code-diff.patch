@@ -1,0 +1,154 @@
+commit 48dee69cd2e3a320f4d5c7bd148a74a5bb808735
+Author:     Agent IX <agent@agent-ix.dev>
+AuthorDate: Wed May 20 17:21:42 2026 -0700
+Commit:     Agent IX <agent@agent-ix.dev>
+CommitDate: Wed May 20 17:21:42 2026 -0700
+
+    Reduce IVF admin unsafe wrappers
+---
+ src/am/ec_ivf/admin.rs | 17 +++++++++--------
+ src/am/mod.rs          | 18 ++++++------------
+ src/lib.rs             |  6 +++---
+ 3 files changed, 18 insertions(+), 23 deletions(-)
+
+diff --git a/src/am/ec_ivf/admin.rs b/src/am/ec_ivf/admin.rs
+index 3a3b2029..5e516404 100644
+--- a/src/am/ec_ivf/admin.rs
++++ b/src/am/ec_ivf/admin.rs
+@@ -79,11 +79,11 @@ struct DirectoryDriftSummary {
+     empty_lists: u32,
+ }
+
+-pub(crate) unsafe fn index_drift_snapshot(index_relation: pg_sys::Relation) -> IndexDriftSnapshot {
++pub(crate) fn index_drift_snapshot(index_relation: pg_sys::Relation) -> IndexDriftSnapshot {
+     // SAFETY: `index_relation` is a live IVF index relation supplied by a SQL
+     // diagnostic wrapper; page readers validate the metadata/directory layout.
+     let metadata = page::read_metadata_page(index_relation);
+-    let directory = unsafe { directory_drift_summary(index_relation, &metadata) };
++    let directory = directory_drift_summary(index_relation, &metadata);
+     // SAFETY: PostgreSQL owns the relation; querying the main fork block count
+     // is valid for the opened index relation.
+     let block_count = unsafe {
+@@ -137,7 +137,7 @@ pub(crate) unsafe fn index_drift_snapshot(index_relation: pg_sys::Relation) -> I
+     }
+ }
+
+-pub(crate) unsafe fn index_admin_snapshot(index_relation: pg_sys::Relation) -> IndexAdminSnapshot {
++pub(crate) fn index_admin_snapshot(index_relation: pg_sys::Relation) -> IndexAdminSnapshot {
+     // SAFETY: `index_relation` is a live IVF index relation supplied by a SQL
+     // diagnostic wrapper; metadata is read without ownership.
+     let metadata = page::read_metadata_page(index_relation);
+@@ -146,7 +146,7 @@ pub(crate) unsafe fn index_admin_snapshot(index_relation: pg_sys::Relation) -> I
+     let rerank_width = options::resolve_scan_rerank_width(index_options.rerank_width);
+     // SAFETY: the same live index relation is reused for the nested diagnostic
+     // snapshot, and PostgreSQL keeps relcache metadata valid for the call.
+-    let drift = unsafe { index_drift_snapshot(index_relation) };
++    let drift = index_drift_snapshot(index_relation);
+     let reltuples = unsafe { (*(*index_relation).rd_rel).reltuples } as f64;
+
+     IndexAdminSnapshot {
+@@ -181,7 +181,7 @@ pub(crate) unsafe fn index_admin_snapshot(index_relation: pg_sys::Relation) -> I
+     }
+ }
+
+-pub(crate) unsafe fn index_page_ownership(
++pub(crate) fn index_page_ownership(
+     index_relation: pg_sys::Relation,
+ ) -> Vec<IndexPageOwnershipSnapshot> {
+     // SAFETY: `index_relation` is a live IVF index relation supplied by a SQL
+@@ -193,8 +193,9 @@ pub(crate) unsafe fn index_page_ownership(
+         metadata_pq_group_size(&metadata),
+     )
+     .unwrap_or_else(|err| pgrx::error!("{err}"));
+-    let summaries = page::debug_ivf_posting_block_summaries(index_relation, quantizer.payload_len())
+-        .unwrap_or_else(|err| pgrx::error!("{err}"));
++    let summaries =
++        page::debug_ivf_posting_block_summaries(index_relation, quantizer.payload_len())
++            .unwrap_or_else(|err| pgrx::error!("{err}"));
+     summaries
+         .into_iter()
+         .map(|summary| {
+@@ -226,7 +227,7 @@ pub(crate) unsafe fn index_page_ownership(
+         .collect()
+ }
+
+-unsafe fn directory_drift_summary(
++fn directory_drift_summary(
+     index_relation: pg_sys::Relation,
+     metadata: &page::MetadataPage,
+ ) -> DirectoryDriftSummary {
+diff --git a/src/am/mod.rs b/src/am/mod.rs
+index 61982721..e235fd73 100644
+--- a/src/am/mod.rs
++++ b/src/am/mod.rs
+@@ -431,20 +431,16 @@ pub(crate) unsafe fn planner_integration_snapshot(
+     unsafe { ec_hnsw::planner_integration_snapshot(index_relation) }
+ }
+
+-pub(crate) unsafe fn ivf_index_drift_snapshot(
++pub(crate) fn ivf_index_drift_snapshot(
+     index_relation: pgrx::pg_sys::Relation,
+ ) -> IndexDriftSnapshot {
+-    // SAFETY: callers pass a live ec_ivf index relation opened for this drift
+-    // snapshot read.
+-    unsafe { ec_ivf::index_drift_snapshot(index_relation) }
++    ec_ivf::index_drift_snapshot(index_relation)
+ }
+
+-pub(crate) unsafe fn ivf_index_admin_snapshot(
++pub(crate) fn ivf_index_admin_snapshot(
+     index_relation: pgrx::pg_sys::Relation,
+ ) -> IvfIndexAdminSnapshot {
+-    // SAFETY: callers pass a live ec_ivf index relation opened for this admin
+-    // snapshot read.
+-    unsafe { ec_ivf::index_admin_snapshot(index_relation) }
++    ec_ivf::index_admin_snapshot(index_relation)
+ }
+
+ pub(crate) unsafe fn ivf_index_cost_snapshot(
+@@ -455,12 +451,10 @@ pub(crate) unsafe fn ivf_index_cost_snapshot(
+     unsafe { ec_ivf::index_cost_snapshot(index_relation) }
+ }
+
+-pub(crate) unsafe fn ivf_index_page_ownership(
++pub(crate) fn ivf_index_page_ownership(
+     index_relation: pgrx::pg_sys::Relation,
+ ) -> Vec<IvfIndexPageOwnershipSnapshot> {
+-    // SAFETY: callers pass a live ec_ivf index relation opened while page
+-    // ownership metadata is inspected.
+-    unsafe { ec_ivf::index_page_ownership(index_relation) }
++    ec_ivf::index_page_ownership(index_relation)
+ }
+
+ pub(crate) unsafe fn diskann_graph_summary(
+diff --git a/src/lib.rs b/src/lib.rs
+index 643052fa..ca457c94 100644
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -1790,7 +1790,7 @@ fn ec_ivf_index_drift_snapshot(
+     ),
+ > {
+     let index_relation = open_valid_ec_ivf_index_guard(index_oid, "ec_ivf_index_drift_snapshot");
+-    let snapshot = with_live_index_relation!(index_relation, am::ivf_index_drift_snapshot);
++    let snapshot = with_live_index_relation_safe!(index_relation, am::ivf_index_drift_snapshot);
+
+     TableIterator::once((
+         i64::from(snapshot.block_count),
+@@ -1849,7 +1849,7 @@ fn ec_ivf_index_admin_snapshot(
+     ),
+ > {
+     let index_relation = open_valid_ec_ivf_index_guard(index_oid, "ec_ivf_index_admin_snapshot");
+-    let snapshot = with_live_index_relation!(index_relation, am::ivf_index_admin_snapshot);
++    let snapshot = with_live_index_relation_safe!(index_relation, am::ivf_index_admin_snapshot);
+
+     TableIterator::once((
+         i64::from(snapshot.block_count),
+@@ -17457,7 +17457,7 @@ fn ec_ivf_index_page_ownership(
+     ),
+ > {
+     let index_relation = open_valid_ec_ivf_index_guard(index_oid, "ec_ivf_index_page_ownership");
+-    let rows = with_live_index_relation!(index_relation, am::ivf_index_page_ownership);
++    let rows = with_live_index_relation_safe!(index_relation, am::ivf_index_page_ownership);
+     drop(index_relation);
+
+     TableIterator::new(rows.into_iter().map(|row| {

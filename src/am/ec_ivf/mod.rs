@@ -18,6 +18,10 @@ pub(super) const EC_IVF_MAX_NLISTS: i32 = 1_000_000;
 pub(super) const EC_IVF_DEFAULT_NPROBE: i32 = 0;
 pub(super) const EC_IVF_MIN_NPROBE: i32 = 0;
 pub(super) const EC_IVF_MAX_NPROBE: i32 = 1_000_000;
+pub(super) const EC_IVF_DEFAULT_ADAPTIVE_NPROBE_SCORE_GAP_MICROS: i32 = 1000;
+pub(super) const EC_IVF_MAX_ADAPTIVE_NPROBE_SCORE_GAP_MICROS: i32 = 1_000_000;
+pub(super) const EC_IVF_DEFAULT_ADAPTIVE_NPROBE_SCORE_MARGIN_RATIO_BPS: i32 = 0;
+pub(super) const EC_IVF_MAX_ADAPTIVE_NPROBE_SCORE_MARGIN_RATIO_BPS: i32 = 1_000_000;
 // 0 historically meant "rerank every candidate" which at high nprobe
 // can run heap fetches for tens of thousands of candidates per query
 // (~80 ms on 50k @ nprobe=64). A small width is enough: at bits=1 +
@@ -64,11 +68,8 @@ fn not_implemented(callback: &str) -> ! {
     pgrx::error!("ec_ivf {callback} is not implemented yet")
 }
 
-pub(crate) use self::admin::{
-    index_admin_snapshot, index_drift_snapshot, index_page_ownership, IndexAdminSnapshot,
-    IndexDriftSnapshot, IndexPageOwnershipSnapshot,
-};
-pub(crate) use self::cost::{index_cost_snapshot, IndexCostSnapshot};
+pub(crate) use self::admin::{index_admin_snapshot, index_drift_snapshot, index_page_ownership};
+pub(crate) use self::cost::index_cost_snapshot;
 pub use self::options::{RerankMode as IvfRerankMode, StorageFormat as IvfStorageFormat};
 pub use self::page::{
     BlockRef as IvfBlockRef, IvfCentroidTuple, IvfListDirectoryTuple, IvfPostingTuple,

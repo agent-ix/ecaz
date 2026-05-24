@@ -1,0 +1,133 @@
+Script started on 2026-05-20 14:33:56-07:00 [<not executed on terminal>]
+commit 91be3bddd38563f8641732a6294d5d39329a6e08 (HEAD -> task-50-unsafe-closeout, origin/task-50-unsafe-closeout)
+Author:     Agent IX <agent@agent-ix.dev>
+AuthorDate: Wed May 20 14:33:36 2026 -0700
+Commit:     Agent IX <agent@agent-ix.dev>
+CommitDate: Wed May 20 14:33:36 2026 -0700
+
+    Narrow IVF page tuple visitor boundaries
+---
+ src/am/ec_ivf/admin.rs |  8 ++-----
+ src/am/ec_ivf/page.rs  | 59 ++++++++++++++++++--------------------------------
+ 2 files changed, 23 insertions(+), 44 deletions(-)
+
+diff --git a/src/am/ec_ivf/admin.rs b/src/am/ec_ivf/admin.rs
+index 2263a3d0..20c7006a 100644
+--- a/src/am/ec_ivf/admin.rs
++++ b/src/am/ec_ivf/admin.rs
+@@ -193,12 +193,8 @@ pub(crate) unsafe fn index_page_ownership(
+         metadata_pq_group_size(&metadata),
+     )
+     .unwrap_or_else(|err| pgrx::error!("{err}"));
+-    // SAFETY: the page debug reader walks posting tuples for the live relation
+-    // using the payload length implied by the validated metadata.
+-    let summaries = unsafe {
+-        page::debug_ivf_posting_block_summaries(index_relation, quantizer.payload_len())
+-            .unwrap_or_else(|err| pgrx::error!("{err}"))
+-    };
++    let summaries = page::debug_ivf_posting_block_summaries(index_relation, quantizer.payload_len())
++        .unwrap_or_else(|err| pgrx::error!("{err}"));
+     summaries
+         .into_iter()
+         .map(|summary| {
+diff --git a/src/am/ec_ivf/page.rs b/src/am/ec_ivf/page.rs
+index 763eab3f..ac6c5647 100644
+--- a/src/am/ec_ivf/page.rs
++++ b/src/am/ec_ivf/page.rs
+@@ -287,19 +287,14 @@ impl<'a> PageTupleReader<'a> {
+             ));
+         }
+ 
+-        // SAFETY: this reader is constructed only from a live `LockedBufferGuard`;
+-        // `offset` is checked against the cached line-pointer count before the
+-        // helper exposes tuple bytes for the duration of `visit`.
+-        unsafe {
+-            with_page_line_tuple_bytes(
+-                self.page_ptr,
+-                self.page_size,
+-                self.block_number,
+-                offset,
+-                tuple_kind,
+-                visit,
+-            )
+-        }
++        with_page_line_tuple_bytes(
++            self.page_ptr,
++            self.page_size,
++            self.block_number,
++            offset,
++            tuple_kind,
++            visit,
++        )
+     }
+ 
+     fn visit_required<R, F>(&self, offset: u16, tuple_kind: &str, visit: F) -> Result<R, String>
+@@ -353,19 +348,14 @@ impl PageTupleWriter {
+             ));
+         }
+ 
+-        // SAFETY: this writer is constructed only from a WAL-registered page
+-        // whose buffer remains locked by the caller. `offset` is checked
+-        // against the cached line-pointer count before tuple bytes are exposed.
+-        unsafe {
+-            with_page_line_tuple_bytes(
+-                self.page_ptr,
+-                self.page_size,
+-                self.block_number,
+-                offset,
+-                tuple_kind,
+-                visit,
+-            )
+-        }
++        with_page_line_tuple_bytes(
++            self.page_ptr,
++            self.page_size,
++            self.block_number,
++            offset,
++            tuple_kind,
++            visit,
++        )
+     }
+ 
+     fn visit_required<R, F>(
+@@ -2051,7 +2041,7 @@ pub(super) struct IvfPostingBlockSummary {
+ }
+ 
+ #[cfg(any(feature = "pg17", feature = "pg18"))]
+-pub(super) unsafe fn debug_ivf_posting_block_summaries(
++pub(super) fn debug_ivf_posting_block_summaries(
+     index_relation: pg_sys::Relation,
+     payload_len: usize,
+ ) -> Result<Vec<IvfPostingBlockSummary>, String> {
+@@ -2433,25 +2423,18 @@ fn next_physical_tuple_tid(
+ }
+ 
+ #[cfg(any(feature = "pg17", feature = "pg18"))]
+-unsafe fn page_item_id(page_ptr: *mut u8, offset: u16) -> *const pg_sys::ItemIdData {
++fn page_item_id_ref<'a>(page_ptr: *mut u8, offset: u16) -> &'a pg_sys::ItemIdData {
+     // SAFETY: callers pass a page pointer and a nonzero line pointer offset
+-    // that has been range-checked against `page_line_pointer_count`.
++    // already range-checked against `page_line_pointer_count`.
+     unsafe {
+-        page_ptr
++        &*page_ptr
+             .add(PAGE_HEADER_BYTES + ((offset - 1) as usize * size_of::<pg_sys::ItemIdData>()))
+             .cast::<pg_sys::ItemIdData>()
+     }
+ }
+ 
+ #[cfg(any(feature = "pg17", feature = "pg18"))]
+-fn page_item_id_ref<'a>(page_ptr: *mut u8, offset: u16) -> &'a pg_sys::ItemIdData {
+-    // SAFETY: callers pass a page pointer and a nonzero line pointer offset
+-    // already range-checked against `page_line_pointer_count`.
+-    unsafe { &*page_item_id(page_ptr, offset) }
+-}
+-
+-#[cfg(any(feature = "pg17", feature = "pg18"))]
+-unsafe fn with_page_line_tuple_bytes<R, F>(
++fn with_page_line_tuple_bytes<R, F>(
+     page_ptr: *mut u8,
+     page_size: usize,
+     block_number: pg_sys::BlockNumber,
+
+Script done on 2026-05-20 14:33:56-07:00 [COMMAND_EXIT_CODE="0"]

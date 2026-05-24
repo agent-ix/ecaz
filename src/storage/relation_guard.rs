@@ -8,6 +8,8 @@
 //! `table_open`, and `RelationGuard` uses generic `relation_open` for
 //! relkinds that are not known statically, such as SPIRE aux stores.
 
+use std::ptr::NonNull;
+
 use pgrx::pg_sys;
 
 pub(crate) struct IndexRelationGuard {
@@ -50,6 +52,17 @@ impl IndexRelationGuard {
     pub(crate) fn as_ptr(&self) -> pg_sys::Relation {
         self.relation
     }
+
+    #[cfg(any(test, feature = "pg_test"))]
+    pub(crate) fn handle(&self) -> crate::storage::relation::RelationHandle {
+        NonNull::new(self.relation)
+            .unwrap_or_else(|| pgrx::error!("index relation guard unexpectedly null"))
+    }
+
+    #[cfg(any(test, feature = "pg_test"))]
+    pub(crate) fn heap_relation_oid(&self) -> pg_sys::Oid {
+        crate::storage::relation::index_heap_relation_oid_handle(self.handle())
+    }
 }
 
 impl Drop for IndexRelationGuard {
@@ -85,6 +98,11 @@ impl HeapRelationGuard {
     pub(crate) fn as_ptr(&self) -> pg_sys::Relation {
         self.relation
     }
+
+    pub(crate) fn handle(&self) -> crate::storage::relation::RelationHandle {
+        NonNull::new(self.relation)
+            .unwrap_or_else(|| pgrx::error!("heap relation guard unexpectedly null"))
+    }
 }
 
 impl Drop for HeapRelationGuard {
@@ -115,6 +133,26 @@ impl RelationGuard {
 
     pub(crate) fn as_ptr(&self) -> pg_sys::Relation {
         self.relation
+    }
+
+    #[cfg(any(test, feature = "pg_test"))]
+    pub(crate) fn std_rd_options_autovacuum_enabled(&self) -> Option<bool> {
+        // SAFETY: this guard owns a live PostgreSQL relation descriptor. The
+        // reloptions pointer is relation-owned, borrowed only for this read,
+        // and this helper is limited to heap relations using StdRdOptions.
+        unsafe {
+            let relation = NonNull::new(self.relation)
+                .unwrap_or_else(|| pgrx::error!("relation guard unexpectedly null"));
+            let rd_options = crate::storage::relation::relation_options_handle(relation);
+            if rd_options.is_null() {
+                return None;
+            }
+            Some(
+                (*rd_options.cast::<pg_sys::StdRdOptions>())
+                    .autovacuum
+                    .enabled,
+            )
+        }
     }
 }
 

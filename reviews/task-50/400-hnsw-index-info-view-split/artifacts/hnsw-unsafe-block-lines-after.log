@@ -1,0 +1,540 @@
+src/am/ec_hnsw/vacuum.rs:55:        unsafe {
+src/am/ec_hnsw/vacuum.rs:69:        unsafe { VacuumPageRewrite::start(self.relation, buffer) }
+src/am/ec_hnsw/vacuum.rs:82:        let (wal_txn, page_ptr) = unsafe {
+src/am/ec_hnsw/vacuum.rs:132:        unsafe {
+src/am/ec_hnsw/vacuum.rs:162:        unsafe {
+src/am/ec_hnsw/vacuum.rs:256:                Self::Source(unsafe {
+src/am/ec_hnsw/vacuum.rs:269:                let indexed_attribute = unsafe {
+src/am/ec_hnsw/vacuum.rs:330:        unsafe { shared::ec_hnsw_noop_vacuum_stats(index.as_ptr(), stats) }
+src/am/ec_hnsw/vacuum.rs:341:        unsafe {
+src/am/ec_hnsw/vacuum.rs:358:        unsafe {
+src/am/ec_hnsw/vacuum.rs:475:    match unsafe { graph::GraphStorageDescriptor::from_index_relation(index.as_ptr(), metadata) }? {
+src/am/ec_hnsw/vacuum.rs:518:            unsafe {
+src/am/ec_hnsw/vacuum.rs:542:        let final_plan = unsafe {
+src/am/ec_hnsw/vacuum.rs:559:    unsafe {
+src/am/ec_hnsw/vacuum.rs:589:        unsafe { shared::highest_level_live_entry_candidate(index.as_ptr(), storage) };
+src/am/ec_hnsw/vacuum.rs:593:    unsafe {
+src/am/ec_hnsw/vacuum.rs:624:    let plan = unsafe {
+src/am/ec_hnsw/vacuum.rs:642:    unsafe { apply_page_pass1_updates(wal_page_ptr, page_size, block_number, &plan.updates) };
+src/am/ec_hnsw/vacuum.rs:665:        unsafe {
+src/am/ec_hnsw/vacuum.rs:793:        unsafe {
+src/am/ec_hnsw/vacuum.rs:851:    let repair_plans = unsafe {
+src/am/ec_hnsw/vacuum.rs:866:    unsafe { apply_repair_plans(index, metadata.m, &deleted_tids, &repair_plans) };
+src/am/ec_hnsw/vacuum.rs:889:        unsafe {
+src/am/ec_hnsw/vacuum.rs:927:        let element_fields = unsafe {
+src/am/ec_hnsw/vacuum.rs:1005:        let neighbors = unsafe { graph::load_graph_neighbors(index_relation, neighbortid) };
+src/am/ec_hnsw/vacuum.rs:1055:            unsafe { plan_page_pass2(share_page_ptr, share_page_size, block_number, deleted_tids) }
+src/am/ec_hnsw/vacuum.rs:1067:        unsafe { rewrite_page_pass2(index, exclusive_buffer, block_number, deleted_tids) };
+src/am/ec_hnsw/vacuum.rs:1084:            unsafe {
+src/am/ec_hnsw/vacuum.rs:1106:    let (source, neighbors) = unsafe {
+src/am/ec_hnsw/vacuum.rs:1152:    let replacements = unsafe { search_repair_candidates_for_layer(index, metric, &planner) };
+src/am/ec_hnsw/vacuum.rs:1165:        unsafe {
+src/am/ec_hnsw/vacuum.rs:1196:    if let Some(entry_candidate) = unsafe {
+src/am/ec_hnsw/vacuum.rs:1208:            seeds.push(unsafe {
+src/am/ec_hnsw/vacuum.rs:1224:                upper_seeds = unsafe {
+src/am/ec_hnsw/vacuum.rs:1249:        unsafe {
+src/am/ec_hnsw/vacuum.rs:1264:        unsafe {
+src/am/ec_hnsw/vacuum.rs:1281:        unsafe {
+src/am/ec_hnsw/vacuum.rs:1324:    let (entry, entry_score) = unsafe {
+src/am/ec_hnsw/vacuum.rs:1387:        unsafe {
+src/am/ec_hnsw/vacuum.rs:1443:        let candidate = unsafe {
+src/am/ec_hnsw/vacuum.rs:1542:            unsafe { metric.score_graph_element(planner.metadata, planner.source, &candidate) }
+src/am/ec_hnsw/vacuum.rs:1564:        return unsafe { graph::load_grouped_rerank_payload(index.as_ptr(), rerank_tid, layout) };
+src/am/ec_hnsw/vacuum.rs:1569:    unsafe {
+src/am/ec_hnsw/vacuum.rs:1619:        unsafe {
+src/am/ec_hnsw/vacuum.rs:1653:        let tuple_changed = unsafe {
+src/am/ec_hnsw/vacuum.rs:1765:    let updates = unsafe { plan_page_pass2(page_ptr, page_size, block_number, deleted_tids) };
+src/am/ec_hnsw/vacuum.rs:1774:    unsafe { apply_page_pass2_updates(wal_page_ptr, page_size, block_number, &updates) };
+src/am/ec_hnsw/vacuum.rs:1790:        let update = unsafe {
+src/am/ec_hnsw/vacuum.rs:1860:        unsafe {
+src/am/ec_hnsw/vacuum.rs:1909:        unsafe {
+src/am/ec_hnsw/vacuum.rs:1940:        let update = unsafe {
+src/am/ec_hnsw/vacuum.rs:2024:    unsafe { apply_page_pass1_updates(wal_page_ptr, page_size, block_number, &updates) };
+src/am/ec_hnsw/vacuum.rs:2046:    unsafe { callback((&mut tid) as pg_sys::ItemPointer, callback_state) }
+src/am/ec_hnsw/vacuum.rs:2102:    let stats = unsafe {
+src/am/ec_hnsw/vacuum.rs:2112:    let stats = unsafe { ec_hnsw_amvacuumcleanup(info_ptr, stats) };
+src/am/ec_hnsw/graph.rs:347:    let element = unsafe {
+src/am/ec_hnsw/graph.rs:372:        GraphStorageDescriptor::TurboQuant { code_len } => unsafe {
+src/am/ec_hnsw/graph.rs:378:            let hot = unsafe {
+src/am/ec_hnsw/graph.rs:386:            let rerank = unsafe {
+src/am/ec_hnsw/graph.rs:402:            let hot = unsafe { load_grouped_graph_element(index_relation, element_tid, layout) };
+src/am/ec_hnsw/graph.rs:406:                unsafe { load_grouped_rerank_payload(index_relation, hot.reranktid, layout) };
+src/am/ec_hnsw/graph.rs:428:    let element = unsafe {
+src/am/ec_hnsw/graph.rs:461:    unsafe {
+src/am/ec_hnsw/graph.rs:480:    unsafe {
+src/am/ec_hnsw/graph.rs:503:    unsafe {
+src/am/ec_hnsw/graph.rs:528:        GraphStorageDescriptor::TurboQuant { code_len } => unsafe {
+src/am/ec_hnsw/graph.rs:535:        GraphStorageDescriptor::TurboQuantHotCold(layout) => unsafe {
+src/am/ec_hnsw/graph.rs:542:        GraphStorageDescriptor::PqFastScan(layout) => unsafe {
+src/am/ec_hnsw/graph.rs:563:        GraphStorageDescriptor::TurboQuant { code_len } => unsafe {
+src/am/ec_hnsw/graph.rs:573:        GraphStorageDescriptor::TurboQuantHotCold(layout) => unsafe {
+src/am/ec_hnsw/graph.rs:582:        GraphStorageDescriptor::PqFastScan(layout) => unsafe {
+src/am/ec_hnsw/graph.rs:605:    let rerank = unsafe {
+src/am/ec_hnsw/graph.rs:626:    unsafe { load_rerank_payload(index_relation, rerank_tid, layout.rerank_code_len) }
+src/am/ec_hnsw/graph.rs:641:    unsafe {
+src/am/ec_hnsw/graph.rs:686:        let codebook = unsafe {
+src/am/ec_hnsw/graph.rs:760:    let neighbor = unsafe {
+src/am/ec_hnsw/graph.rs:791:    let element = unsafe { load_exact_graph_element(index_relation, element_tid, storage) };
+src/am/ec_hnsw/graph.rs:794:    let neighbors = unsafe { load_graph_neighbors(index_relation, element.neighbortid) };
+src/am/ec_hnsw/graph.rs:806:    let element = unsafe { load_grouped_graph_element(index_relation, element_tid, layout) };
+src/am/ec_hnsw/graph.rs:809:    let neighbors = unsafe { load_graph_neighbors(index_relation, element.neighbortid) };
+src/am/ec_hnsw/graph.rs:827:    unsafe {
+src/am/ec_hnsw/graph.rs:853:        unsafe { load_exact_graph_element(index_relation, entry_candidate.node, storage) };
+src/am/ec_hnsw/graph.rs:859:        unsafe {
+src/am/ec_hnsw/graph.rs:890:        unsafe {
+src/am/ec_hnsw/graph.rs:922:        unsafe {
+src/am/ec_hnsw/graph.rs:962:        unsafe {
+src/am/ec_hnsw/graph.rs:993:        unsafe {
+src/am/ec_hnsw/graph.rs:1306:        unsafe { load_exact_graph_adjacency(index_relation, source_tid, storage) };
+src/am/ec_hnsw/graph.rs:1318:        let neighbor = unsafe { load_exact_graph_element(index_relation, neighbor_tid, storage) };
+src/am/ec_hnsw/graph.rs:1366:    let buffer = unsafe {
+src/am/ec_hnsw/graph.rs:1393:    unsafe { with_page_tuple_bytes(page_ptr, page_size, tuple_tid, tuple_kind, decode) }
+src/am/ec_hnsw/graph.rs:1419:    unsafe { with_page_tuple_bytes(page_ptr, page_size, tuple_tid, tuple_kind, decode) }
+src/am/ec_hnsw/graph.rs:1434:    let item_id = unsafe { &*super::shared::page_item_id(page_ptr, tuple_tid.offset_number) };
+src/am/ec_hnsw/graph.rs:1450:    let tuple_bytes = unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
+src/am/ec_hnsw/build.rs:330:            let indexed_attribute = unsafe {
+src/am/ec_hnsw/build.rs:505:    unsafe {
+src/am/ec_hnsw/build.rs:556:    unsafe { build_heap_tuple_from_indexed_datum(datum, heap_tid, indexed_vector_kind, None) }
+src/am/ec_hnsw/build.rs:616:            let index_vector = unsafe {
+src/am/ec_hnsw/build.rs:638:            let bytes = unsafe { DetoastedVarlena::packed_from_datum(vector_datum) }
+src/am/ec_hnsw/build.rs:670:    unsafe {
+src/am/ec_hnsw/build.rs:692:    let indexed_attribute = unsafe {
+src/am/ec_hnsw/build.rs:701:    let source_attribute = unsafe {
+src/am/ec_hnsw/build.rs:729:    let mut slot_reader = unsafe { TupleSlotReader::from_raw_slot(slot_ptr, "ec_hnsw") }
+src/am/ec_hnsw/build.rs:733:    while unsafe {
+src/am/ec_hnsw/build.rs:743:        let heap_tid = unsafe { decode_slot_tid(slot_ptr) };
+src/am/ec_hnsw/build.rs:752:        let source_vector = unsafe {
+src/am/ec_hnsw/build.rs:763:        let tuple = unsafe {
+src/am/ec_hnsw/build.rs:780:    let heap_tid = unsafe { (*slot).tts_tid };
+src/am/ec_hnsw/build.rs:1590:    unsafe { flush_build_state_with_timing(index_relation, state, &mut timing) };
+src/am/ec_hnsw/build.rs:1606:    unsafe { flush_build_output(index_relation, &output) };
+src/am/ec_hnsw/build.rs:1815:    unsafe { write_data_pages(index_relation, &output.data_pages) };
+src/am/ec_hnsw/build.rs:1818:    unsafe { shared::initialize_metadata_page(index_relation, output.metadata.clone()) };
+src/am/ec_hnsw/build.rs:2390:        let buffer = unsafe {
+src/am/ec_hnsw/build.rs:2406:        let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
+src/am/ec_hnsw/build.rs:2410:        unsafe { pg_sys::PageInit(page_ptr, page_size, 0) };
+src/am/ec_hnsw/build.rs:2415:            let offset = unsafe {
+src/am/ec_hnsw/source.rs:84:            return unsafe { inner_product_avx2_fma(left, right) };
+src/am/ec_hnsw/source.rs:93:            return unsafe { inner_product_neon(left, right) };
+src/am/ec_hnsw/source.rs:115:    Some(unsafe { inner_product_avx2_fma(left, right) })
+src/am/ec_hnsw/source.rs:125:    Some(unsafe { inner_product_neon(left, right) })
+src/am/ec_hnsw/source.rs:157:        let (l0, r0, l1, r1, l2, r2, l3, r3) = unsafe {
+src/am/ec_hnsw/source.rs:178:        let (l, r) = unsafe {
+src/am/ec_hnsw/source.rs:195:    unsafe { _mm256_storeu_ps(lanes.as_mut_ptr(), acc) };
+src/am/ec_hnsw/source.rs:215:        let (l0, r0, l1, r1, l2, r2, l3, r3) = unsafe {
+src/am/ec_hnsw/source.rs:237:        let (l, r) = unsafe {
+src/am/ec_hnsw/source.rs:252:    unsafe { vst1q_f32(lanes.as_mut_ptr(), acc) };
+src/am/ec_hnsw/source.rs:269:    let attnum = unsafe { pg_sys::get_attnum((*heap_relation).rd_id, source_column.as_ptr()) };
+src/am/ec_hnsw/source.rs:289:        unsafe { resolve_source_attnum(heap_relation, source_column, source_label) };
+src/am/ec_hnsw/source.rs:292:    unsafe {
+src/am/ec_hnsw/source.rs:314:    let kind = unsafe { resolve_source_datum_kind(att.atttypid) }.unwrap_or_default();
+src/am/ec_hnsw/source.rs:376:    let indexed = unsafe {
+src/am/ec_hnsw/source.rs:395:    let attribute = unsafe {
+src/am/ec_hnsw/source.rs:412:    let indexed_attnum = unsafe { resolve_single_base_heap_index_attnum(index_info, label) };
+src/am/ec_hnsw/source.rs:424:    let kind = unsafe { resolve_indexed_vector_kind(att.atttypid) }
+src/am/ec_hnsw/source.rs:439:    let attribute = unsafe {
+src/am/ec_hnsw/source.rs:510:        let varlena = unsafe { DetoastedVarlena::plain_from_datum(datum) }
+src/am/ec_hnsw/source.rs:540:        let detoasted = unsafe { DetoastedFloat4Datum::from_datum(datum, label) };
+src/am/ec_hnsw/source.rs:544:        let ndim = match usize::try_from(unsafe { (*array_ptr).ndim }) {
+src/am/ec_hnsw/source.rs:553:        if unsafe { (*array_ptr).elemtype } != pg_sys::FLOAT4OID {
+src/am/ec_hnsw/source.rs:557:        if unsafe { pg_sys::array_contains_nulls(array_ptr) } {
+src/am/ec_hnsw/source.rs:562:        let dims_ptr = unsafe { flat_array_dims_ptr(array_ptr) };
+src/am/ec_hnsw/source.rs:564:        let len = usize::try_from(unsafe { pg_sys::ArrayGetNItems((*array_ptr).ndim, dims_ptr) })
+src/am/ec_hnsw/source.rs:568:        let data_ptr = unsafe {
+src/am/ec_hnsw/source.rs:589:        unsafe { std::slice::from_raw_parts(self.data_ptr, self.len) }
+src/am/ec_hnsw/source.rs:608:        let detoasted = unsafe { DetoastedFloat4Datum::from_datum(datum, label) };
+src/am/ec_hnsw/source.rs:616:            let (prefix, body, suffix) = unsafe { bytes.align_to::<f32>() };
+src/am/ec_hnsw/source.rs:634:        unsafe { std::slice::from_raw_parts(self.data_ptr, self.len) }
+src/am/ec_hnsw/source.rs:649:                Self::Array(unsafe { FlatFloat4ArrayRef::from_datum(datum, label) })
+src/am/ec_hnsw/source.rs:654:                Self::Varlena(unsafe { FlatFloat4VarlenaRef::from_datum(datum, label) })
+src/am/ec_hnsw/source.rs:678:    let source = unsafe { FlatFloat4SourceRef::from_datum(datum, kind, label) };
+src/am/ec_hnsw/source.rs:693:    unsafe { with_flat_float4_source_from_datum(source_datum, source_attribute.kind, label, f) }
+src/am/ec_hnsw/source.rs:705:    let source = unsafe { FlatFloat4VarlenaRef::from_datum(source_datum, label) };
+src/am/ec_hnsw/source.rs:738:    unsafe {
+src/am/ec_hnsw/source.rs:755:    let dataoffset = unsafe { (*array_ptr).dataoffset };
+src/am/ec_hnsw/build_parallel.rs:57:        unsafe { pg_sys::pg_atomic_read_u32(self.0) }
+src/am/ec_hnsw/build_parallel.rs:63:        unsafe {
+src/am/ec_hnsw/build_parallel.rs:74:        unsafe { pg_sys::pg_atomic_compare_exchange_u32(self.0, &mut expected, new) }
+src/am/ec_hnsw/build_parallel.rs:135:            unsafe { (*index_info).ii_ParallelWorkers }
+src/am/ec_hnsw/build_parallel.rs:253:        unsafe { &*self.header }
+src/am/ec_hnsw/build_parallel.rs:259:        unsafe { &mut *self.header }
+src/am/ec_hnsw/build_parallel.rs:264:        unsafe { self.nodes.add(node_idx as usize) }
+src/am/ec_hnsw/build_parallel.rs:270:        unsafe { &*self.node_ptr(node_idx) }
+src/am/ec_hnsw/build_parallel.rs:276:        unsafe { &mut *self.node_ptr(node_idx) }
+src/am/ec_hnsw/build_parallel.rs:282:        unsafe { ptr::addr_of_mut!((*self.node_ptr(node_idx)).lock) }
+src/am/ec_hnsw/build_parallel.rs:288:        unsafe {
+src/am/ec_hnsw/build_parallel.rs:550:        unsafe { (self.acquire_shared)(lock) }
+src/am/ec_hnsw/build_parallel.rs:556:        unsafe { (self.acquire_exclusive)(lock) }
+src/am/ec_hnsw/build_parallel.rs:863:        let header = unsafe { &*header };
+src/am/ec_hnsw/build_parallel.rs:1033:    unsafe { EcHnswConcurrentDsmGraphLayout::from_header(base.cast()) }
+src/am/ec_hnsw/build_parallel.rs:1046:    let header = unsafe { &*base.cast::<EcHnswConcurrentDsmGraphHeader>() };
+src/am/ec_hnsw/build_parallel.rs:1106:        header: unsafe {
+src/am/ec_hnsw/build_parallel.rs:1112:        nodes: unsafe {
+src/am/ec_hnsw/build_parallel.rs:1118:        neighbor_slots: unsafe { base.add(layout.neighbor_slots_offset).cast::<u32>() },
+src/am/ec_hnsw/build_parallel.rs:1121:        codes: unsafe { base.add(layout.codes_offset) },
+src/am/ec_hnsw/build_parallel.rs:1124:        sources: unsafe { base.add(layout.sources_offset).cast::<f32>() },
+src/am/ec_hnsw/build_parallel.rs:1222:    let nodes = unsafe { slice::from_raw_parts(parts.nodes, layout.node_count as usize) };
+src/am/ec_hnsw/build_parallel.rs:1232:        let raw_neighbor_slots = unsafe {
+src/am/ec_hnsw/build_parallel.rs:1412:    let _lock_guard = unsafe { locks.exclusive(lock) };
+src/am/ec_hnsw/build_parallel.rs:1432:    let node = unsafe { parts.nodes.add(node_idx as usize) };
+src/am/ec_hnsw/build_parallel.rs:1434:    let lock = unsafe { ptr::addr_of_mut!((*node).lock) };
+src/am/ec_hnsw/build_parallel.rs:1436:    let _lock_guard = unsafe { locks.exclusive(lock) };
+src/am/ec_hnsw/build_parallel.rs:1609:        let _source_lock_guard = unsafe { locks.shared(source_lock) };
+src/am/ec_hnsw/build_parallel.rs:1705:        let _target_lock_guard = unsafe { locks.exclusive(target_lock) };
+src/am/ec_hnsw/build_parallel.rs:1839:    let code = unsafe { slice::from_raw_parts(parts.codes.add(start), code_len) };
+src/am/ec_hnsw/build_parallel.rs:1861:    let source = unsafe { slice::from_raw_parts(parts.sources.add(start), source_dim) };
+src/am/ec_hnsw/build_parallel.rs:1876:    let slots = unsafe {
+src/am/ec_hnsw/build_parallel.rs:1894:    let slots = unsafe {
+src/am/ec_hnsw/build_parallel.rs:1912:    let slots = unsafe {
+src/am/ec_hnsw/build_parallel.rs:1925:    let codes = unsafe { slice::from_raw_parts_mut(parts.codes, code_bytes) };
+src/am/ec_hnsw/build_parallel.rs:1936:    let sources = unsafe { slice::from_raw_parts_mut(parts.sources, source_values) };
+src/am/ec_hnsw/build_parallel.rs:2041:    let mut leader = unsafe {
+src/am/ec_hnsw/build_parallel.rs:2050:    unsafe { leader.drain_worker_messages(&mut worker_tuples) };
+src/am/ec_hnsw/build_parallel.rs:2099:    let mut leader = unsafe { EcHnswParallelGraphBuildLeader::begin(plan, &preassembly) }?;
+src/am/ec_hnsw/build_parallel.rs:2107:    let attachment = unsafe { leader.insert_leader_partitions() };
+src/am/ec_hnsw/build_parallel.rs:2141:        unsafe { pg_sys::EnterParallelMode() };
+src/am/ec_hnsw/build_parallel.rs:2145:        let pcxt = unsafe {
+src/am/ec_hnsw/build_parallel.rs:2155:            unsafe { pg_sys::ExitParallelMode() };
+src/am/ec_hnsw/build_parallel.rs:2170:        unsafe {
+src/am/ec_hnsw/build_parallel.rs:2200:        unsafe { pg_sys::InitializeParallelDSM(pcxt) };
+src/am/ec_hnsw/build_parallel.rs:2201:        if unsafe { (*pcxt).seg.is_null() } {
+src/am/ec_hnsw/build_parallel.rs:2204:            unsafe {
+src/am/ec_hnsw/build_parallel.rs:2213:        let shared = unsafe {
+src/am/ec_hnsw/build_parallel.rs:2223:            unsafe { pg_sys::shm_toc_allocate((*pcxt).toc, preassembly.graph_layout.total_bytes) };
+src/am/ec_hnsw/build_parallel.rs:2226:        let tranche_id = unsafe { pg_sys::LWLockNewTrancheId() };
+src/am/ec_hnsw/build_parallel.rs:2229:        unsafe {
+src/am/ec_hnsw/build_parallel.rs:2262:        let walusage = unsafe {
+src/am/ec_hnsw/build_parallel.rs:2275:        let bufferusage = unsafe {
+src/am/ec_hnsw/build_parallel.rs:2289:        unsafe {
+src/am/ec_hnsw/build_parallel.rs:2300:        let workers_launched = unsafe { (*pcxt).nworkers_launched };
+src/am/ec_hnsw/build_parallel.rs:2305:            unsafe { pg_sys::WaitForParallelWorkersToAttach(pcxt) };
+src/am/ec_hnsw/build_parallel.rs:2350:        unsafe { pg_sys::WaitForParallelWorkersToFinish(self.pcxt) };
+src/am/ec_hnsw/build_parallel.rs:2354:        let launched = unsafe { (*self.pcxt).nworkers_launched.max(0) as usize };
+src/am/ec_hnsw/build_parallel.rs:2358:            unsafe {
+src/am/ec_hnsw/build_parallel.rs:2372:        unsafe {
+src/am/ec_hnsw/build_parallel.rs:2397:        unsafe { pg_sys::EnterParallelMode() };
+src/am/ec_hnsw/build_parallel.rs:2401:        let pcxt = unsafe {
+src/am/ec_hnsw/build_parallel.rs:2411:            unsafe { pg_sys::ExitParallelMode() };
+src/am/ec_hnsw/build_parallel.rs:2417:        let is_concurrent = unsafe { !index_info.is_null() && (*index_info).ii_Concurrent };
+src/am/ec_hnsw/build_parallel.rs:2433:        let shared_bytes = unsafe { parallel_build_shared_workspace_size(heap_relation, snapshot) };
+src/am/ec_hnsw/build_parallel.rs:2436:        unsafe {
+src/am/ec_hnsw/build_parallel.rs:2464:        unsafe { pg_sys::InitializeParallelDSM(pcxt) };
+src/am/ec_hnsw/build_parallel.rs:2465:        if unsafe { (*pcxt).seg.is_null() } {
+src/am/ec_hnsw/build_parallel.rs:2468:            unsafe {
+src/am/ec_hnsw/build_parallel.rs:2477:        let shared = unsafe {
+src/am/ec_hnsw/build_parallel.rs:2484:        unsafe {
+src/am/ec_hnsw/build_parallel.rs:2510:        unsafe {
+src/am/ec_hnsw/build_parallel.rs:2523:        let walusage = unsafe {
+src/am/ec_hnsw/build_parallel.rs:2536:        let bufferusage = unsafe {
+src/am/ec_hnsw/build_parallel.rs:2549:        unsafe {
+src/am/ec_hnsw/build_parallel.rs:2560:        unsafe { pg_sys::LaunchParallelWorkers(pcxt) };
+src/am/ec_hnsw/build_parallel.rs:2563:        let workers_launched = unsafe { (*pcxt).nworkers_launched };
+src/am/ec_hnsw/build_parallel.rs:2581:        unsafe {
+src/am/ec_hnsw/build_parallel.rs:2612:                    let result = unsafe {
+src/am/ec_hnsw/build_parallel.rs:2624:                            let bytes = unsafe { slice::from_raw_parts(data.cast::<u8>(), nbytes) };
+src/am/ec_hnsw/build_parallel.rs:2650:                unsafe {
+src/am/ec_hnsw/build_parallel.rs:2660:        unsafe { pg_sys::WaitForParallelWorkersToFinish(self.pcxt) };
+src/am/ec_hnsw/build_parallel.rs:2664:        let launched = unsafe { (*self.pcxt).nworkers_launched.max(0) as usize };
+src/am/ec_hnsw/build_parallel.rs:2668:            unsafe {
+src/am/ec_hnsw/build_parallel.rs:2680:        unsafe {
+src/am/ec_hnsw/build_parallel.rs:2735:    let shared = unsafe {
+src/am/ec_hnsw/build_parallel.rs:2740:    unsafe { (*shared).validate() };
+src/am/ec_hnsw/build_parallel.rs:2744:    let worker_number = unsafe { pg_sys::ParallelWorkerNumber };
+src/am/ec_hnsw/build_parallel.rs:2751:    let queue = unsafe {
+src/am/ec_hnsw/build_parallel.rs:2756:    unsafe { pg_sys::shm_mq_set_sender(queue, pg_sys::MyProc) };
+src/am/ec_hnsw/build_parallel.rs:2757:    let queue_handle = unsafe { pg_sys::shm_mq_attach(queue, seg, ptr::null_mut()) };
+src/am/ec_hnsw/build_parallel.rs:2761:    let is_concurrent = unsafe { (*shared).is_concurrent };
+src/am/ec_hnsw/build_parallel.rs:2777:        HeapRelationGuard::try_open(unsafe { (*shared).heaprelid }, heap_lockmode)
+src/am/ec_hnsw/build_parallel.rs:2782:        IndexRelationGuard::try_open(unsafe { (*shared).indexrelid }, index_lockmode)
+src/am/ec_hnsw/build_parallel.rs:2789:    unsafe { pg_sys::InstrStartParallelQuery() };
+src/am/ec_hnsw/build_parallel.rs:2804:    let scan = unsafe {
+src/am/ec_hnsw/build_parallel.rs:2809:    let scanned_tuples = unsafe {
+src/am/ec_hnsw/build_parallel.rs:2826:    unsafe {
+src/am/ec_hnsw/build_parallel.rs:2834:    let bufferusage = unsafe {
+src/am/ec_hnsw/build_parallel.rs:2839:    let walusage = unsafe {
+src/am/ec_hnsw/build_parallel.rs:2845:    unsafe {
+src/am/ec_hnsw/build_parallel.rs:2857:    let shared = unsafe {
+src/am/ec_hnsw/build_parallel.rs:2862:    unsafe { (*shared).validate() };
+src/am/ec_hnsw/build_parallel.rs:2866:    let worker_number = unsafe { pg_sys::ParallelWorkerNumber };
+src/am/ec_hnsw/build_parallel.rs:2873:        unsafe { pg_sys::shm_toc_lookup(toc, PARALLEL_KEY_EC_HNSW_CONCURRENT_DSM_GRAPH, false) };
+src/am/ec_hnsw/build_parallel.rs:2884:    unsafe { pg_sys::InstrStartParallelQuery() };
+src/am/ec_hnsw/build_parallel.rs:2887:    let inserted = unsafe {
+src/am/ec_hnsw/build_parallel.rs:2901:    unsafe {
+src/am/ec_hnsw/build_parallel.rs:2909:    let bufferusage = unsafe {
+src/am/ec_hnsw/build_parallel.rs:2914:    let walusage = unsafe {
+src/am/ec_hnsw/build_parallel.rs:2920:    unsafe {
+src/am/ec_hnsw/build_parallel.rs:2937:    unsafe { send_worker_message(queue_handle, &message) };
+src/am/ec_hnsw/build_parallel.rs:2944:    unsafe { send_worker_message(queue_handle, &message) };
+src/am/ec_hnsw/build_parallel.rs:2950:    let result = unsafe {
+src/am/ec_hnsw/build_parallel.rs:3133:        unsafe { pg_sys::table_parallelscan_estimate(heap_relation, snapshot) },
+src/am/ec_hnsw/build_parallel.rs:3144:    unsafe {
+src/am/ec_hnsw/build_parallel.rs:3157:    unsafe {
+src/am/ec_hnsw/build_parallel.rs:3169:    unsafe {
+src/am/ec_hnsw/build_parallel.rs:3639:        unsafe {
+src/am/ec_hnsw/build_parallel.rs:3746:        let _ = unsafe { EcHnswConcurrentDsmGraphLayout::from_header(&header) };
+src/am/ec_hnsw/build_parallel.rs:3779:        unsafe {
+src/am/ec_hnsw/build_parallel.rs:3809:        let node_levels = unsafe {
+src/am/ec_hnsw/build_parallel.rs:3872:        unsafe {
+src/am/ec_hnsw/build_parallel.rs:3962:        unsafe {
+src/am/ec_hnsw/build_parallel.rs:4081:            let ptr = unsafe { alloc_zeroed(layout) };
+src/am/ec_hnsw/build_parallel.rs:4101:            unsafe { dealloc(self.ptr, self.layout) };
+src/am/ec_hnsw/build_parallel.rs:4110:        unsafe {
+src/am/ec_hnsw/build_parallel.rs:4128:        unsafe { LwLockGuard::from_acquired_with_release(lock, test_lock_noop_release) }
+src/am/ec_hnsw/insert.rs:43:        let buffer = unsafe {
+src/am/ec_hnsw/insert.rs:59:        let mut writer = unsafe { Self::from_locked_buffer(index_relation, buffer) };
+src/am/ec_hnsw/insert.rs:69:        unsafe { Self::open_tail(index_relation, P_NEW, error_context) }
+src/am/ec_hnsw/insert.rs:79:        let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
+src/am/ec_hnsw/insert.rs:95:        unsafe { pg_sys::PageGetFreeSpace(self.page_ptr) as usize }
+src/am/ec_hnsw/insert.rs:100:        unsafe { pg_sys::PageInit(self.page_ptr, self.page_size, 0) };
+src/am/ec_hnsw/insert.rs:106:        let offset = unsafe {
+src/am/ec_hnsw/insert.rs:148:        let source_attribute = unsafe {
+src/am/ec_hnsw/insert.rs:157:        unsafe { Self::new_with_attribute(heap_relation, source_attribute) }
+src/am/ec_hnsw/insert.rs:179:        unsafe {
+src/am/ec_hnsw/insert.rs:314:            Self::Source(scorer) => unsafe {
+src/am/ec_hnsw/insert.rs:337:            Self::Source(scorer) => unsafe {
+src/am/ec_hnsw/insert.rs:392:        unsafe {
+src/am/ec_hnsw/insert.rs:430:        unsafe {
+src/am/ec_hnsw/insert.rs:453:        unsafe {
+src/am/ec_hnsw/insert.rs:481:        unsafe {
+src/am/ec_hnsw/insert.rs:515:        unsafe {
+src/am/ec_hnsw/insert.rs:619:    match unsafe { graph::GraphStorageDescriptor::from_index_relation(index_relation, metadata) }? {
+src/am/ec_hnsw/insert.rs:683:            let bootstrapped = unsafe {
+src/am/ec_hnsw/insert.rs:700:            return unsafe {
+src/am/ec_hnsw/insert.rs:832:            let entry = unsafe {
+src/am/ec_hnsw/insert.rs:1013:        (unsafe { load_insert_entry_candidate(index_relation, metadata, storage, tuple, metric) })
+src/am/ec_hnsw/insert.rs:1021:    unsafe {
+src/am/ec_hnsw/insert.rs:1037:    let descended_seed = unsafe {
+src/am/ec_hnsw/insert.rs:1048:    let layer0_candidates = unsafe {
+src/am/ec_hnsw/insert.rs:1079:        unsafe { graph::load_exact_graph_element(index_relation, metadata.entry_point, storage) };
+src/am/ec_hnsw/insert.rs:1082:    let entry_score = unsafe { metric.score_new_tuple_against_element(metadata, tuple, &entry) }?;
+src/am/ec_hnsw/insert.rs:1127:        seeds = unsafe {
+src/am/ec_hnsw/insert.rs:1203:            unsafe { plan_backlink_mutations(index_relation, &planner, metric, &pending) };
+src/am/ec_hnsw/insert.rs:1211:            unsafe { apply_backlink_mutations(index_relation, &mutations, new_element_tid, m) };
+src/am/ec_hnsw/insert.rs:1228:            unsafe {
+src/am/ec_hnsw/insert.rs:1276:            unsafe {
+src/am/ec_hnsw/insert.rs:1300:    let buffer = unsafe {
+src/am/ec_hnsw/insert.rs:1314:    let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
+src/am/ec_hnsw/insert.rs:1334:        let tuple_changed = unsafe {
+src/am/ec_hnsw/insert.rs:1432:    let replacement_slice = unsafe {
+src/am/ec_hnsw/insert.rs:1459:        score: unsafe {
+src/am/ec_hnsw/insert.rs:1471:            unsafe {
+src/am/ec_hnsw/insert.rs:1648:        unsafe { InsertPageWrite::open_tail(index_relation, target_block, "scalar") };
+src/am/ec_hnsw/insert.rs:1653:        return unsafe {
+src/am/ec_hnsw/insert.rs:1690:    let mut page_writer = unsafe { InsertPageWrite::open_new(index_relation, "fallback") };
+src/am/ec_hnsw/insert.rs:1790:        unsafe { InsertPageWrite::open_tail(index_relation, target_block, "TurboQuant V3") };
+src/am/ec_hnsw/insert.rs:1795:        return unsafe {
+src/am/ec_hnsw/insert.rs:1845:        unsafe { InsertPageWrite::open_new(index_relation, "fallback TurboQuant V3") };
+src/am/ec_hnsw/insert.rs:1907:    let model = unsafe { graph::load_grouped_codebook_model(index_relation, metadata) };
+src/am/ec_hnsw/insert.rs:1957:    let search_code = unsafe {
+src/am/ec_hnsw/insert.rs:2021:        unsafe { InsertPageWrite::open_tail(index_relation, target_block, "PqFastScan") };
+src/am/ec_hnsw/insert.rs:2026:        return unsafe {
+src/am/ec_hnsw/insert.rs:2078:        unsafe { InsertPageWrite::open_new(index_relation, "fallback PqFastScan") };
+src/am/ec_hnsw/insert.rs:2133:        let buffer = unsafe {
+src/am/ec_hnsw/insert.rs:2152:            let duplicate_tid = unsafe {
+src/am/ec_hnsw/insert.rs:2208:        let buffer = unsafe {
+src/am/ec_hnsw/insert.rs:2227:            let duplicate_tid = unsafe {
+src/am/ec_hnsw/insert.rs:2288:        let buffer = unsafe {
+src/am/ec_hnsw/insert.rs:2307:            let duplicate_tid = unsafe {
+src/am/ec_hnsw/insert.rs:2365:    let buffer = unsafe {
+src/am/ec_hnsw/insert.rs:2381:    let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
+src/am/ec_hnsw/insert.rs:2390:    let tuple_changed = unsafe {
+src/am/ec_hnsw/insert.rs:2442:    let buffer = unsafe {
+src/am/ec_hnsw/insert.rs:2458:    let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
+src/am/ec_hnsw/insert.rs:2467:    let tuple_changed = unsafe {
+src/am/ec_hnsw/insert.rs:2522:    let buffer = unsafe {
+src/am/ec_hnsw/insert.rs:2538:    let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
+src/am/ec_hnsw/insert.rs:2547:    let tuple_changed = unsafe {
+src/am/ec_hnsw/scan.rs:79:    unsafe { &*opaque }
+src/am/ec_hnsw/scan.rs:89:    unsafe { &mut *opaque }
+src/am/ec_hnsw/scan.rs:98:        Some(unsafe { &*ptr })
+src/am/ec_hnsw/scan.rs:108:        Some(unsafe { &mut *ptr })
+src/am/ec_hnsw/scan.rs:1126:    unsafe { graph::GraphStorageDescriptor::from_index_relation(index_relation, metadata) }
+src/am/ec_hnsw/scan.rs:1192:    match unsafe {
+src/am/ec_hnsw/scan.rs:1214:    match unsafe {
+src/am/ec_hnsw/scan.rs:1242:    match unsafe { super::parallel::parallel_scan_attachment((*scan).parallel_scan) } {
+src/am/ec_hnsw/scan.rs:1247:                unsafe { super::parallel::claim_parallel_scan_worker_slot(&attachment) }
+src/am/ec_hnsw/scan.rs:1401:    let indexed_attribute = unsafe {
+src/am/ec_hnsw/scan.rs:1473:    let has_default_heap_f32_source = unsafe { index_has_default_heap_f32_source(index_relation) };
+src/am/ec_hnsw/scan.rs:1758:    if !unsafe { (*scan).heapRelation }.is_null() {
+src/am/ec_hnsw/scan.rs:1761:        return ResolvedHnswScanHeapRelation::borrowed(unsafe { (*scan).heapRelation });
+src/am/ec_hnsw/scan.rs:1765:    let index_relation = unsafe { (*scan).indexRelation };
+src/am/ec_hnsw/scan.rs:1782:    if !unsafe { (*scan).xs_snapshot }.is_null() {
+src/am/ec_hnsw/scan.rs:1784:        return ResolvedHnswScanSnapshot::borrowed(unsafe { (*scan).xs_snapshot });
+src/am/ec_hnsw/scan.rs:1804:        drop(unsafe { Box::from_raw(state) });
+src/am/ec_hnsw/scan.rs:1814:    unsafe { free_grouped_heap_rerank_state(opaque) };
+src/am/ec_hnsw/scan.rs:1835:    let heap_relation = unsafe { resolve_scan_heap_relation(scan) };
+src/am/ec_hnsw/scan.rs:1838:    let snapshot = unsafe { resolve_scan_snapshot(scan) };
+src/am/ec_hnsw/scan.rs:1842:        unsafe {
+src/am/ec_hnsw/scan.rs:1853:        let indexed_attribute = unsafe {
+src/am/ec_hnsw/scan.rs:1971:    let scan_desc = unsafe { (*index_state).iss_ScanDesc };
+src/am/ec_hnsw/scan.rs:1978:    let opaque = unsafe { (*scan_desc).opaque };
+src/am/ec_hnsw/scan.rs:1985:    unsafe { (*opaque.cast::<TqScanOpaque>()).explain_counters }
+src/am/ec_hnsw/scan.rs:1995:    let query_values = unsafe { pg_sys::palloc(query_bytes) }.cast::<f32>();
+src/am/ec_hnsw/scan.rs:2002:    unsafe {
+src/am/ec_hnsw/scan.rs:2013:        unsafe { pg_sys::pfree(opaque.query_values.cast()) };
+src/am/ec_hnsw/scan.rs:2025:        drop(unsafe { Box::from_raw(ptr) });
+src/am/ec_hnsw/scan.rs:2035:        drop(unsafe { Arc::from_raw(ptr) });
+src/am/ec_hnsw/scan.rs:2180:    let model = unsafe { graph::load_grouped_codebook_model(index_relation, metadata) };
+src/am/ec_hnsw/scan.rs:2205:        unsafe { load_grouped_scan_query(index_relation, metadata, prepared_query) };
+src/am/ec_hnsw/scan.rs:2350:    let score = unsafe { score_scan_element_result(opaque, gamma, code_bytes) };
+src/am/ec_hnsw/scan.rs:2394:            (_, exact_payload) => unsafe {
+src/am/ec_hnsw/scan.rs:2433:    let (element, loaded_state) = unsafe {
+src/am/ec_hnsw/scan.rs:2485:    let (element, loaded_state) = unsafe {
+src/am/ec_hnsw/scan.rs:2514:    let element = unsafe {
+src/am/ec_hnsw/scan.rs:2564:                unsafe {
+src/am/ec_hnsw/scan.rs:2640:    let rerank = unsafe {
+src/am/ec_hnsw/scan.rs:2670:    let Some(heap_rerank_state) = (unsafe { opaque.grouped_heap_rerank_state.as_ref() }) else {
+src/am/ec_hnsw/scan.rs:2686:    let mut heap_reader = unsafe {
+src/am/ec_hnsw/scan.rs:2708:    let score = unsafe {
+src/am/ec_hnsw/scan.rs:2755:        let score = unsafe { score_grouped_heap_source_from_scan_state(opaque, heap_tid) };
+src/am/ec_hnsw/scan.rs:2787:    let payload = unsafe { load_grouped_score_rerank_payload(index_relation, grouped) }
+src/am/ec_hnsw/scan.rs:2792:    unsafe {
+src/am/ec_hnsw/scan.rs:2811:    let score = unsafe { exact_score_grouped_candidate_context(index_relation, opaque, grouped) };
+src/am/ec_hnsw/scan.rs:2855:        return unsafe { score_grouped_candidate_heap_rerank(opaque, element) };
+src/am/ec_hnsw/scan.rs:2869:        let score = unsafe {
+src/am/ec_hnsw/scan.rs:2892:    let score = unsafe { exact_score_grouped_candidate_context(index_relation, opaque, grouped) };
+src/am/ec_hnsw/scan.rs:2945:    let score = unsafe { score_grouped_search_code_from_scan_state(opaque, search_code) };
+src/am/ec_hnsw/scan.rs:3010:            unsafe { score_grouped_candidate_context_exact(index_relation, opaque, grouped) };
+src/am/ec_hnsw/scan.rs:3034:        return unsafe { score_grouped_candidate_context_exact(index_relation, opaque, grouped) };
+src/am/ec_hnsw/scan.rs:3041:        return unsafe { score_grouped_candidate_context_binary(opaque, grouped) };
+src/am/ec_hnsw/scan.rs:3046:    unsafe { score_grouped_candidate_context_approx(opaque, grouped) }
+src/am/ec_hnsw/scan.rs:3062:        CandidateScoreDispatch::Exact(loaded_state) => unsafe {
+src/am/ec_hnsw/scan.rs:3067:        CandidateScoreDispatch::Grouped(grouped) => unsafe {
+src/am/ec_hnsw/scan.rs:3082:        unsafe { cached_graph_element(index_relation, opaque, element_tid) };
+src/am/ec_hnsw/scan.rs:3088:    let score = unsafe {
+src/am/ec_hnsw/scan.rs:3122:    let neighbors = Arc::new(unsafe { graph::load_graph_neighbors(index_relation, neighbor_tid) });
+src/am/ec_hnsw/scan.rs:3139:    let (element, _) = unsafe { cached_graph_element(index_relation, opaque, element_tid) };
+src/am/ec_hnsw/scan.rs:3142:    let neighbors = unsafe { cached_graph_neighbors(index_relation, opaque, element.neighbortid) };
+src/am/ec_hnsw/scan.rs:3218:            let loaded = unsafe { cached_graph_element_from_buffer(opaque, &buffer, element_tid) };
+src/am/ec_hnsw/scan.rs:3225:    unsafe { cached_graph_element(index_relation, opaque, element_tid) }
+src/am/ec_hnsw/scan.rs:3241:        unsafe { cached_graph_adjacency(index_relation, opaque, source_tid) };
+src/am/ec_hnsw/scan.rs:3261:        Some(unsafe { prefetch_graph_buffers(index_relation, &mut *opaque, &neighbor_tids) });
+src/am/ec_hnsw/scan.rs:3274:                let (neighbor, loaded_state) = unsafe {
+src/am/ec_hnsw/scan.rs:3289:                        let score = unsafe {
+src/am/ec_hnsw/scan.rs:3308:                                unsafe { score_grouped_candidate_context_approx(opaque, grouped) };
+src/am/ec_hnsw/scan.rs:3318:                            let score = unsafe {
+src/am/ec_hnsw/scan.rs:3340:            candidates.extend(unsafe {
+src/am/ec_hnsw/scan.rs:3367:            let (neighbor, loaded_state) = unsafe {
+src/am/ec_hnsw/scan.rs:3438:                    unsafe {
+src/am/ec_hnsw/scan.rs:3463:                            unsafe { score_grouped_candidate_context_approx(opaque, grouped) }
+src/am/ec_hnsw/scan.rs:3484:                        unsafe {
+src/am/ec_hnsw/scan.rs:3501:        candidates.extend(unsafe {
+src/am/ec_hnsw/scan.rs:3531:        |source_tid, layer| unsafe {
+src/am/ec_hnsw/scan.rs:3618:        unsafe {
+src/am/ec_hnsw/scan.rs:3640:        if !unsafe { self.prefetch_next(index_relation, opaque as *mut TqScanOpaque) } {
+src/am/ec_hnsw/scan.rs:3718:        ScanExecutionPhase::GraphTraversal => unsafe {
+src/am/ec_hnsw/scan.rs:3723:        ScanExecutionPhase::LinearFallback => unsafe {
+src/am/ec_hnsw/scan.rs:3832:        || unsafe { (&*result_state).pending_count() != 0 }
+src/am/ec_hnsw/scan.rs:3840:        return unsafe {
+src/am/ec_hnsw/scan.rs:3848:        unsafe { refine_grouped_frontier_head_exact(index_relation, opaque) };
+src/am/ec_hnsw/scan.rs:3870:        if unsafe {
+src/am/ec_hnsw/scan.rs:3904:        unsafe { refine_grouped_frontier_head_exact(index_relation, opaque) };
+src/am/ec_hnsw/scan.rs:3926:        unsafe { buffer_grouped_graph_result_candidate(index_relation, opaque, candidate) };
+src/am/ec_hnsw/scan.rs:3943:    let result_state = unsafe { &mut *result_state };
+src/am/ec_hnsw/scan.rs:3968:    let (element, _) = unsafe { cached_graph_element(index_relation, opaque, candidate.node) };
+src/am/ec_hnsw/scan.rs:3976:    let comparison_score = unsafe {
+src/am/ec_hnsw/scan.rs:4017:    let (element, _) = unsafe { cached_graph_element(index_relation, opaque, candidate.node) };
+src/am/ec_hnsw/scan.rs:4028:    let comparison_score = unsafe {
+src/am/ec_hnsw/scan.rs:4039:    let result_state = unsafe { &mut *result_state };
+src/am/ec_hnsw/scan.rs:4126:        unsafe { pg_sys::read_stream_end(*stream) };
+src/am/ec_hnsw/scan.rs:4142:        opaque.graph_read_stream = unsafe {
+src/am/ec_hnsw/scan.rs:4165:        opaque.linear_read_stream = unsafe {
+src/am/ec_hnsw/scan.rs:4246:    unsafe { f(&*visible_frontier, &mut *expansion) }
+src/am/ec_hnsw/scan.rs:4258:    unsafe { f(&mut *visible_frontier, &mut *expansion) }
+src/am/ec_hnsw/scan.rs:4401:        let (entry, entry_score) = unsafe {
+src/am/ec_hnsw/scan.rs:4418:            let Some(fallback) = (unsafe {
+src/am/ec_hnsw/scan.rs:4428:            let (entry, entry_score) = unsafe {
+src/am/ec_hnsw/scan.rs:4447:    let upper_layer_seed = unsafe {
+src/am/ec_hnsw/scan.rs:4463:        |source_tid| unsafe {
+src/am/ec_hnsw/scan.rs:4511:    unsafe {
+src/am/ec_hnsw/scan.rs:4539:    unsafe {
+src/am/ec_hnsw/scan.rs:4633:            unsafe { cached_graph_element(index_relation, opaque_ptr, candidate.node) };
+src/am/ec_hnsw/scan.rs:4642:                CandidateScoreDispatch::Exact(loaded_state) => unsafe {
+src/am/ec_hnsw/scan.rs:4652:                CandidateScoreDispatch::Grouped(grouped) => unsafe {
+src/am/ec_hnsw/scan.rs:4690:        |source_tid, max_successor_candidates| unsafe {
+src/am/ec_hnsw/scan.rs:4734:            let expansion_trace = unsafe {
+src/am/ec_hnsw/scan.rs:4782:        |visible_frontier, expansion| unsafe {
+src/am/ec_hnsw/scan.rs:4818:    unsafe { refill_bootstrap_frontier_after_success(index_relation, opaque, consumed) };
+src/am/ec_hnsw/scan.rs:4900:    unsafe { graph_traversal_cursor(opaque).prefetch_next(index_relation, opaque_ptr) }
+src/am/ec_hnsw/scan.rs:4936:        unsafe {
+src/am/ec_hnsw/scan.rs:4965:        (unsafe { select_next_linear_scan_result(index_relation, opaque, code_len) })
+src/am/ec_hnsw/scan.rs:5013:                let selected = unsafe {
+src/am/ec_hnsw/scan.rs:5038:            let buffer = unsafe {
+src/am/ec_hnsw/scan.rs:5049:            let selected = unsafe {
+src/am/ec_hnsw/scan.rs:5083:        let element = unsafe {
+src/am/ec_hnsw/scan.rs:5670:    unsafe { std::slice::from_raw_parts(opaque.query_values, opaque.query_dimensions as usize) }
+src/am/ec_hnsw/scan.rs:5885:        unsafe {
+src/am/ec_hnsw/scan.rs:5891:        unsafe {
+src/am/ec_hnsw/scan.rs:5897:        let target = unsafe { storage.bytes.as_mut_ptr().add(64) }.cast::<std::ffi::c_void>();
+src/am/ec_hnsw/scan.rs:5900:        unsafe {
+src/am/ec_hnsw/scan.rs:5908:            unsafe { crate::am::ec_hnsw::parallel::reset_parallel_scan_state(parallel_scan) }
+src/am/ec_hnsw/scan.rs:5956:        unsafe {
+src/am/ec_hnsw/scan.rs:5962:        unsafe {
+src/am/ec_hnsw/scan.rs:5968:        let target = unsafe { storage.bytes.as_mut_ptr().add(64) }.cast::<std::ffi::c_void>();
+src/am/ec_hnsw/scan.rs:5971:        unsafe {
+src/am/ec_hnsw/scan.rs:5987:            unsafe { crate::am::ec_hnsw::parallel::parallel_scan_attachment(parallel_scan) }
+src/am/ec_hnsw/scan.rs:5993:            unsafe { &*attachment.coordinator }
+src/am/ec_hnsw/scan.rs:6004:            unsafe { crate::am::ec_hnsw::parallel::parallel_scan_attachment(parallel_scan) }
+src/am/ec_hnsw/scan.rs:6010:            unsafe { &*attachment.coordinator }
+src/am/ec_hnsw/scan.rs:6037:        unsafe {
+src/am/ec_hnsw/scan.rs:6043:        unsafe {
+src/am/ec_hnsw/scan.rs:6049:        let target = unsafe { storage.bytes.as_mut_ptr().add(64) }.cast::<std::ffi::c_void>();
+src/am/ec_hnsw/scan.rs:6052:        unsafe {
+src/am/ec_hnsw/scan.rs:6085:        let snapshot = unsafe {
+src/am/ec_hnsw/scan.rs:7382:            unsafe { score_scan_element_result(&mut *opaque_ptr, encoded.gamma, &code_bytes) };
+src/am/ec_hnsw/scan.rs:7386:        assert_eq!(unsafe { (*opaque_ptr).stats_delta.total_distance_calcs }, 1);
+src/am/ec_hnsw/index_info.rs:24:    let ptr = unsafe { pg_sys::BuildIndexInfo(index_relation.as_ptr()) };
+src/am/ec_hnsw/index_info.rs:49:        unsafe { pg_sys::pfree(self.ptr.as_ptr().cast()) };
+src/am/ec_hnsw/index_info.rs:74:        unsafe { self.ptr.as_mut() }
+src/am/ec_hnsw/shared.rs:50:    let page_contents = unsafe { pg_sys::PageGetSpecialPointer(page) }.cast::<u8>();
+src/am/ec_hnsw/shared.rs:53:    unsafe {
+src/am/ec_hnsw/shared.rs:73:    unsafe { LockedBufferGuard::read_main(index_relation, block_number, mode, lock_mode) }
+src/am/ec_hnsw/shared.rs:107:    let page_bytes = unsafe { std::slice::from_raw_parts(raw_page, page_size) };
+src/am/ec_hnsw/shared.rs:127:    unsafe {
+src/am/ec_hnsw/shared.rs:163:        unsafe { graph::GraphStorageDescriptor::from_index_relation(index_relation, &metadata) }
+src/am/ec_hnsw/shared.rs:183:                count += unsafe { count_live_elements_on_buffer(storage, buffer, block_number) };
+src/am/ec_hnsw/shared.rs:202:            count += unsafe { count_live_elements_on_buffer(storage, &buffer, block_number) };
+src/am/ec_hnsw/shared.rs:222:        unsafe {
+src/am/ec_hnsw/shared.rs:312:            let candidate = unsafe {
+src/am/ec_hnsw/shared.rs:421:    unsafe {
+src/am/ec_hnsw/shared.rs:434:    ((unsafe { (*page_header).pd_lower } as usize - size_of::<pg_sys::PageHeaderData>())
+src/am/ec_hnsw/shared.rs:451:    let item_id = unsafe { &*page_item_id(page_ptr, offset) };
+src/am/ec_hnsw/shared.rs:466:    let tuple_bytes = unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
+src/am/ec_hnsw/shared.rs:482:    let item_id = unsafe { &*page_item_id(page_ptr, tuple_tid.offset_number) };
+src/am/ec_hnsw/shared.rs:503:        unsafe { std::slice::from_raw_parts_mut(page_ptr.add(tuple_offset), tuple_len) };
+src/am/ec_hnsw/shared.rs:535:        data_pages.push(unsafe { read_data_page(index_relation.as_ptr(), block_number) });
+src/am/ec_hnsw/shared.rs:553:    let page_bytes = unsafe { std::slice::from_raw_parts(raw_page, page_size) };
+src/am/ec_hnsw/shared.rs:664:    let total_live_nodes = unsafe { count_element_tuples(index_relation) };
+src/am/ec_hnsw/shared.rs:700:    let admin = unsafe { index_admin_snapshot(index_relation) };
+src/am/ec_hnsw/shared.rs:735:    let constants = unsafe { super::cost::current_planner_cost_constants() };
+src/am/ec_hnsw/shared.rs:820:    let admin = unsafe { index_admin_snapshot(index_relation) };
+src/am/ec_hnsw/shared.rs:822:    let explain = unsafe { index_explain_snapshot(index_relation) };
+src/am/ec_hnsw/shared.rs:824:    let cost = unsafe { index_cost_snapshot(index_relation) };
+src/am/ec_hnsw/shared.rs:871:    let snapshot = unsafe { index_admin_snapshot(index_relation) };
+src/am/ec_hnsw/shared.rs:905:    let line_pointer_count = ((unsafe { (*page_header).pd_lower } as usize
+src/am/ec_hnsw/shared.rs:913:        if let Some(tuple) = unsafe {
+src/am/ec_hnsw/shared.rs:953:    unsafe { update_metadata_page(index_relation.as_ptr(), metadata) };
+src/am/ec_hnsw/shared.rs:997:    let stats = unsafe {
+src/am/ec_hnsw/shared.rs:1001:    let stats = unsafe { super::vacuum::ec_hnsw_amvacuumcleanup(info_ptr, stats) };
+src/am/ec_hnsw/scan_debug.rs:114:    unsafe { graph::GraphStorageDescriptor::from_index_relation(index_relation, metadata) }
+src/am/ec_hnsw/scan_debug.rs:140:    unsafe {
+src/am/ec_hnsw/scan_debug.rs:167:    unsafe {
+src/am/ec_hnsw/scan_debug.rs:199:    unsafe { graph::load_exact_graph_element(index_relation, element_tid, storage) }
+src/am/ec_hnsw/scan_debug.rs:211:    unsafe { graph::load_exact_graph_adjacency(index_relation, element_tid, storage) }
+src/am/ec_hnsw/scan_debug.rs:221:    unsafe { prefetch_next_graph_traversal_result(index_relation, opaque) }
+src/am/ec_hnsw/scan_debug.rs:231:    unsafe { consume_and_refill_bootstrap_frontier(index_relation, opaque) }
+src/am/ec_hnsw/scan_debug.rs:252:    unsafe {
+src/am/ec_hnsw/scan_debug.rs:284:    unsafe {
+src/am/ec_hnsw/scan_debug.rs:538:    unsafe {
+src/am/ec_hnsw/scan_debug.rs:700:    unsafe { ec_hnsw_ambeginscan(index_relation, nkeys, norderbys) }
+src/am/ec_hnsw/scan_debug.rs:713:    unsafe { ec_hnsw_amrescan(scan, keys, nkeys, orderbys, norderbys) };
+src/am/ec_hnsw/scan_debug.rs:719:    unsafe { ec_hnsw_amgettuple(scan, direction) }
+src/am/ec_hnsw/scan_debug.rs:726:    unsafe { ec_hnsw_amendscan(scan) };
+src/am/ec_hnsw/scan_debug.rs:733:    unsafe { pg_sys::IndexScanEnd(scan) };
+src/am/ec_hnsw/scan_debug.rs:739:    unsafe { (*scan).opaque.is_null() }
+src/am/ec_hnsw/scan_debug.rs:751:    f(unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() })
+src/am/ec_hnsw/scan_debug.rs:763:    f(unsafe { &mut *(*scan).opaque.cast::<TqScanOpaque>() })
+src/am/ec_hnsw/scan_debug.rs:790:    pgrx::itemptr::item_pointer_get_both(unsafe { (*scan).xs_heaptid })
+src/am/ec_hnsw/scan_debug.rs:899:    let scan = unsafe {
+src/am/ec_hnsw/scan_debug.rs:1400:        unsafe { IndexScanGuard::begin(&heap_relation, &index_relation, &snapshot, 0, 1) }
+src/am/ec_hnsw/scan_debug.rs:3001:    unsafe {

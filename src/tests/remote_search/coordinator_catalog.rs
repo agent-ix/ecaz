@@ -113,7 +113,7 @@
 
         // SAFETY: This pg_test remote-search fixture builds a SPiRE index, derives target pids and epochs from fixture snapshots, and uses test-only debug hooks to force remote-search state.
 
-        unsafe { am::debug_spire_rewrite_placement_node(index_oid, selected_pids[1] as u64, 2) };
+        am::debug_spire_rewrite_placement_node(index_oid, selected_pids[1] as u64, 2);
         let summary_from = format!(
             "FROM ec_spire_remote_search_finalization_summary(\
              'ec_spire_remote_final_blocked_sql_idx'::regclass, \
@@ -223,7 +223,7 @@
 
         // SAFETY: This pg_test remote-search fixture builds a SPiRE index, derives target pids and epochs from fixture snapshots, and uses test-only debug hooks to force remote-search state.
 
-        unsafe { am::debug_spire_rewrite_placement_node(index_oid, selected_pids[1] as u64, 2) };
+        am::debug_spire_rewrite_placement_node(index_oid, selected_pids[1] as u64, 2);
         let remote_gate_from = format!(
             "FROM ec_spire_remote_search_coordinator_gate_summary(\
              'ec_spire_remote_coord_gate_sql_idx'::regclass, \
@@ -390,7 +390,7 @@
 
         // SAFETY: This pg_test remote-search fixture builds a SPiRE index, derives target pids and epochs from fixture snapshots, and uses test-only debug hooks to force remote-search state.
 
-        unsafe { am::debug_spire_rewrite_placement_node(index_oid, selected_pid as u64, 2) };
+        am::debug_spire_rewrite_placement_node(index_oid, selected_pid as u64, 2);
         let snapshot_from = "FROM ec_spire_remote_node_snapshot(\
              'ec_spire_remote_node_missing_sql_idx'::regclass)";
         let row_count = Spi::get_one::<i64>(&format!("SELECT count(*) {snapshot_from}"))
@@ -468,7 +468,7 @@
 
         // SAFETY: This pg_test remote-search fixture builds a SPiRE index, derives target pids and epochs from fixture snapshots, and uses test-only debug hooks to force remote-search state.
 
-        unsafe { am::debug_spire_rewrite_placement_node(index_oid, selected_pid as u64, 2) };
+        am::debug_spire_rewrite_placement_node(index_oid, selected_pid as u64, 2);
         let register_result = Spi::get_one::<bool>(&format!(
             "SELECT ec_spire_register_remote_node_descriptor(\
                      '{}'::oid, 2, 7, 'spire/remote/2', decode('01', 'hex'), \
@@ -1141,16 +1141,14 @@
 
             if consistency_mode == "degraded" {
                 // SAFETY: This pg_test remote-search fixture builds a SPiRE index, derives target pids and epochs from fixture snapshots, and uses test-only debug hooks to force remote-search state.
-                unsafe { am::debug_spire_rewrite_consistency_mode(index_oid, "degraded") };
+                am::debug_spire_rewrite_consistency_mode(index_oid, "degraded");
             }
             // SAFETY: This pg_test remote-search fixture builds a SPiRE index, derives target pids and epochs from fixture snapshots, and uses test-only debug hooks to force remote-search state.
-            unsafe {
-                am::debug_spire_rewrite_placement_node(
+            am::debug_spire_rewrite_placement_node(
                     index_oid,
                     selected_pid as u64,
                     node_id as u32,
-                )
-            };
+                );
             let register_result = Spi::get_one::<bool>(&format!(
                 "SELECT ec_spire_register_remote_node_descriptor(\
                          '{}'::oid, {node_id}, {generation}, 'spire/remote/{prefix}', \

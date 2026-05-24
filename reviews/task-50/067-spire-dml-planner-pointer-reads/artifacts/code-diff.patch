@@ -1,0 +1,155 @@
+diff --git a/src/am/ec_spire/dml_frontdoor/mod.rs b/src/am/ec_spire/dml_frontdoor/mod.rs
+index 5d26d3fa..a817d694 100644
+--- a/src/am/ec_spire/dml_frontdoor/mod.rs
++++ b/src/am/ec_spire/dml_frontdoor/mod.rs
+@@ -11,6 +11,7 @@ use pgrx::{pg_guard, pg_sys, FromDatum, PgList, Spi};
+ 
+ use std::collections::HashMap;
+ use std::ffi::CStr;
++use std::os::raw::c_char;
+ use std::sync::atomic::{AtomicU64, Ordering};
+ use std::sync::{Mutex, OnceLock};
+ 
+@@ -1392,12 +1393,10 @@ fn dml_frontdoor_tuple_desc_for_relation(
+ }
+ 
+ fn dml_frontdoor_attr_name(attr: &pg_sys::FormData_pg_attribute) -> Result<String, String> {
+-    // SAFETY: FormData_pg_attribute::attname is PostgreSQL NameData and is
+-    // copied immediately into an owned Rust String.
+-    unsafe { CStr::from_ptr(attr.attname.data.as_ptr()) }
+-        .to_str()
+-        .map(str::to_owned)
+-        .map_err(|e| format!("ec_spire DML frontdoor catalog attribute name is not UTF-8: {e}"))
++    dml_frontdoor_c_string(
++        attr.attname.data.as_ptr(),
++        "ec_spire DML frontdoor catalog attribute name",
++    )
+ }
+ 
+ fn dml_frontdoor_relation_context_catalog_for_open_heap(
+@@ -2035,14 +2034,8 @@ fn dml_frontdoor_relation_oid_from_rtable(
+     if rtindex <= 0 || query.rtable.is_null() {
+         return None;
+     }
+-    // SAFETY: rtable is a PostgreSQL List owned by the live Query; the selected
+-    // RTE is checked for null and read immediately by value.
+-    let rte = unsafe {
+-        let rtable = PgList::<pg_sys::RangeTblEntry>::from_pg(query.rtable);
+-        rtable
+-            .get_ptr(usize::try_from(rtindex - 1).ok()?)?
+-            .as_ref()?
+-    };
++    let rtable = dml_frontdoor_pg_list::<pg_sys::RangeTblEntry>(query.rtable);
++    let rte = dml_frontdoor_pg_ref(rtable.get_ptr(usize::try_from(rtindex - 1).ok()?)?)?;
+     if rte.rtekind != pg_sys::RTEKind::RTE_RELATION || rte.relid == pg_sys::InvalidOid {
+         return None;
+     }
+@@ -2070,22 +2063,17 @@ fn dml_frontdoor_pk_predicate_from_baserestrictinfo(
+     if baserestrictinfo.is_null() {
+         return None;
+     }
+-    // SAFETY: baserestrictinfo is a planner-owned RestrictInfo List valid for
+-    // the set_rel_pathlist callback; list cells may be null and are checked
+-    // before their clauses are inspected.
+-    unsafe {
+-        let restrict_infos = PgList::<pg_sys::RestrictInfo>::from_pg(baserestrictinfo);
+-        for restrict_info in restrict_infos.iter_ptr() {
+-            let Some(restrict_info) = restrict_info.as_ref() else {
+-                continue;
+-            };
+-            if let Some(predicate) = dml_frontdoor_pk_predicate_from_clause(
+-                restrict_info.clause,
+-                target_rtindex,
+-                context,
+-            ) {
+-                return Some(predicate);
+-            }
++    let restrict_infos = dml_frontdoor_pg_list::<pg_sys::RestrictInfo>(baserestrictinfo);
++    for restrict_info in restrict_infos.iter_ptr() {
++        let Some(restrict_info) = dml_frontdoor_pg_ref(restrict_info) else {
++            continue;
++        };
++        if let Some(predicate) = dml_frontdoor_pk_predicate_from_clause(
++            restrict_info.clause,
++            target_rtindex,
++            context,
++        ) {
++            return Some(predicate);
+         }
+     }
+     None
+@@ -2572,6 +2560,24 @@ fn dml_frontdoor_pg_list<T>(list: *mut pg_sys::List) -> PgList<T> {
+     unsafe { PgList::<T>::from_pg(list) }
+ }
+ 
++fn dml_frontdoor_pg_ref<'a, T>(ptr: *mut T) -> Option<&'a T> {
++    // SAFETY: DML frontdoor callers pass pointers from PostgreSQL planner or
++    // relcache structures and copy/inspect the referenced fields immediately.
++    unsafe { ptr.as_ref() }
++}
++
++fn dml_frontdoor_c_string(ptr: *const c_char, context: &str) -> Result<String, String> {
++    if ptr.is_null() {
++        return Err(format!("{context} is NULL"));
++    }
++    // SAFETY: callers pass PostgreSQL-owned NUL-terminated strings and copy
++    // them immediately into owned Rust Strings.
++    unsafe { CStr::from_ptr(ptr) }
++        .to_str()
++        .map(str::to_owned)
++        .map_err(|e| format!("{context} is not UTF-8: {e}"))
++}
++
+ fn dml_frontdoor_range_table_ref_node<'a>(
+     node: *mut pg_sys::Node,
+ ) -> Option<&'a pg_sys::RangeTblRef> {
+@@ -2604,28 +2610,27 @@ fn dml_frontdoor_target_column_exprs(
+         return Vec::new();
+     }
+     let mut columns = Vec::new();
+-    // SAFETY: target_list is a PostgreSQL TargetEntry List from a live Query.
+-    // Each non-null entry and optional resname C string are copied immediately.
+-    unsafe {
+-        let targets = PgList::<pg_sys::TargetEntry>::from_pg(target_list);
+-        for target_entry in targets.iter_ptr() {
+-            let Some(target_entry) = target_entry.as_ref() else {
+-                continue;
+-            };
+-            if target_entry.resjunk {
+-                continue;
+-            }
+-            if let Some(column) = context.column_names.iter().find_map(|(attno, name)| {
+-                (*attno == target_entry.resno).then(|| (*name).to_owned())
+-            }) {
+-                columns.push((column, target_entry.expr));
+-                continue;
+-            }
+-            if !target_entry.resname.is_null() {
+-                if let Ok(column) = CStr::from_ptr(target_entry.resname).to_str() {
+-                    columns.push((column.to_owned(), target_entry.expr));
+-                }
+-            }
++    let targets = dml_frontdoor_pg_list::<pg_sys::TargetEntry>(target_list);
++    for target_entry in targets.iter_ptr() {
++        let Some(target_entry) = dml_frontdoor_pg_ref(target_entry) else {
++            continue;
++        };
++        if target_entry.resjunk {
++            continue;
++        }
++        if let Some(column) = context
++            .column_names
++            .iter()
++            .find_map(|(attno, name)| (*attno == target_entry.resno).then(|| (*name).to_owned()))
++        {
++            columns.push((column, target_entry.expr));
++            continue;
++        }
++        if let Ok(column) = dml_frontdoor_c_string(
++            target_entry.resname,
++            "ec_spire DML frontdoor target entry name",
++        ) {
++            columns.push((column, target_entry.expr));
+         }
+     }
+     columns

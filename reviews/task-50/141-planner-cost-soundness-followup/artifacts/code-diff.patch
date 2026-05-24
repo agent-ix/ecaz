@@ -1,0 +1,158 @@
+commit d888b912fd4371be8919478d0f587988619d3af0
+Author: Agent IX <agent@agent-ix.dev>
+Date:   Wed May 20 19:22:57 2026 -0700
+
+    Require unsafe context for planner cost globals
+---
+ src/am/common/cost.rs                       | 8 +++++---
+ src/am/ec_diskann/cost.rs                   | 8 ++++++--
+ src/am/ec_hnsw/shared.rs                    | 4 +++-
+ src/am/ec_ivf/cost.rs                       | 8 ++++++--
+ src/am/ec_spire/cost/mod.rs                 | 8 ++++++--
+ src/am/ec_spire/custom_scan/cost_helpers.rs | 7 +++++--
+ 6 files changed, 31 insertions(+), 12 deletions(-)
+
+diff --git a/src/am/common/cost.rs b/src/am/common/cost.rs
+index 9c6494f6..3db84deb 100644
+--- a/src/am/common/cost.rs
++++ b/src/am/common/cost.rs
+@@ -99,7 +99,7 @@ pub(crate) fn gated_planner_cost_estimate(index_pages: f64) -> PlannerCostEstima
+ }
+
+ #[cfg(any(feature = "pg17", feature = "pg18"))]
+-pub(crate) fn current_planner_cost_constants() -> PlannerCostConstants {
++pub(crate) unsafe fn current_planner_cost_constants() -> PlannerCostConstants {
+     // SAFETY: PostgreSQL exposes these backend-local planner cost globals for
+     // read-only access during planner callback execution.
+     let (random_page_cost, seq_page_cost, cpu_operator_cost) = unsafe {
+@@ -117,7 +117,7 @@ pub(crate) fn current_planner_cost_constants() -> PlannerCostConstants {
+ }
+
+ #[cfg(any(feature = "pg17", feature = "pg18"))]
+-pub(crate) fn current_cpu_tuple_cost() -> f64 {
++pub(crate) unsafe fn current_cpu_tuple_cost() -> f64 {
+     // SAFETY: PostgreSQL exposes this backend-local planner cost global for
+     // read-only access during planner callback execution.
+     unsafe { pg_sys::cpu_tuple_cost }
+@@ -389,7 +389,9 @@ unsafe fn compute_amcostestimate(
+     // because the empty-index gate above returned for metadata-only indexes.
+     let metadata = unsafe { shared::read_metadata_page(index_relation) };
+     let tree_height = planner_tree_height_from_index_info(index_info, metadata.max_level);
+-    let constants = current_planner_cost_constants();
++    // SAFETY: AM cost estimation runs inside PostgreSQL planner callback
++    // context where backend-local planner cost globals are valid to read.
++    let constants = unsafe { current_planner_cost_constants() };
+
+     estimate_planner_cost(
+         PlannerCostInputs {
+diff --git a/src/am/ec_diskann/cost.rs b/src/am/ec_diskann/cost.rs
+index 95a887d9..a05c9dba 100644
+--- a/src/am/ec_diskann/cost.rs
++++ b/src/am/ec_diskann/cost.rs
+@@ -105,7 +105,9 @@ unsafe fn compute_amcostestimate(index_relation: pg_sys::Relation) -> PlannerCos
+     // planner callback guard.
+     let metadata = unsafe { insert::read_metadata_page(index_relation) }
+         .unwrap_or_else(|e| pgrx::error!("ec_diskann planner could not read metadata: {e}"));
+-    let constants = current_planner_cost_constants();
++    // SAFETY: AM cost estimation runs inside PostgreSQL planner callback
++    // context where backend-local planner cost globals are valid to read.
++    let constants = unsafe { current_planner_cost_constants() };
+
+     estimate_planner_cost(
+         PlannerCostInputs {
+@@ -126,7 +128,9 @@ pub(crate) unsafe fn index_cost_snapshot(index_relation: pg_sys::Relation) -> In
+     let block_count = relation_main_fork_block_count(index_relation);
+     let index_pages = f64::from(block_count);
+     let reltuples = relation_reltuples(index_relation);
+-    let constants = current_planner_cost_constants();
++    // SAFETY: diagnostic snapshot reads planner cost globals in the current
++    // backend to report the same constants the planner would use.
++    let constants = unsafe { current_planner_cost_constants() };
+
+     let (planner_scan_enabled, planner_gate_reason, dimensions, estimate) =
+         if block_count <= FIRST_DATA_BLOCK_NUMBER {
+diff --git a/src/am/ec_hnsw/shared.rs b/src/am/ec_hnsw/shared.rs
+index 27498df7..eac6435b 100644
+--- a/src/am/ec_hnsw/shared.rs
++++ b/src/am/ec_hnsw/shared.rs
+@@ -733,7 +733,9 @@ pub(crate) unsafe fn index_cost_snapshot(index_relation: pg_sys::Relation) -> In
+     let index_pages = f64::from(block_count);
+     let reltuples = super::cost::relation_reltuples(index_relation);
+     let tree_height = super::cost::resolved_tree_height_input(metadata.max_level);
+-    let constants = super::cost::current_planner_cost_constants();
++    // SAFETY: diagnostic snapshot reads planner cost globals in the current
++    // backend to report the same constants the planner would use.
++    let constants = unsafe { super::cost::current_planner_cost_constants() };
+     // Block 0 is always the metadata page; an empty index has block_count == 1.
+     // FR-020's "Empty index (0 data pages)" gate must trip on
+     // `block_count <= FIRST_DATA_BLOCK_NUMBER`, not on `index_pages <= 0`.
+diff --git a/src/am/ec_ivf/cost.rs b/src/am/ec_ivf/cost.rs
+index 80ac780f..9022631f 100644
+--- a/src/am/ec_ivf/cost.rs
++++ b/src/am/ec_ivf/cost.rs
+@@ -181,7 +181,9 @@ pub(crate) unsafe fn index_cost_snapshot(index_relation: pg_sys::Relation) -> In
+     let block_count = relation_main_fork_block_count(index_relation);
+     let index_pages = f64::from(block_count);
+     let reltuples = relation_reltuples(index_relation);
+-    let constants = current_planner_cost_constants();
++    // SAFETY: diagnostic snapshot reads planner cost globals in the current
++    // backend to report the same constants the planner would use.
++    let constants = unsafe { current_planner_cost_constants() };
+     let nprobe = options::resolve_scan_nprobe(metadata.nlists, metadata.nprobe);
+     let tree_height = resolved_ivf_tree_height_input();
+     let translation = ivf_strategy_translation_snapshot();
+@@ -231,7 +233,9 @@ unsafe fn compute_amcostestimate(index_relation: pg_sys::Relation) -> PlannerCos
+     let block_count = relation_main_fork_block_count(index_relation);
+     let index_pages = f64::from(block_count);
+     let reltuples = relation_reltuples(index_relation);
+-    let constants = current_planner_cost_constants();
++    // SAFETY: AM cost estimation runs inside PostgreSQL planner callback
++    // context where backend-local planner cost globals are valid to read.
++    let constants = unsafe { current_planner_cost_constants() };
+
+     estimate_ivf_cost(&metadata, index_pages, reltuples, constants)
+ }
+diff --git a/src/am/ec_spire/cost/mod.rs b/src/am/ec_spire/cost/mod.rs
+index 971f6445..050403aa 100644
+--- a/src/am/ec_spire/cost/mod.rs
++++ b/src/am/ec_spire/cost/mod.rs
+@@ -94,7 +94,9 @@ pub(crate) unsafe fn index_cost_snapshot(
+     let block_count = relation_main_fork_block_count(index_relation);
+     let index_pages = f64::from(block_count);
+     let reltuples = relation_reltuples(index_relation);
+-    let constants = current_planner_cost_constants();
++    // SAFETY: diagnostic snapshot reads planner cost globals in the current
++    // backend to report the same constants the planner would use.
++    let constants = unsafe { current_planner_cost_constants() };
+     let relation_options = options::relation_options(index_relation);
+     let diagnostics = cost_active_snapshot_diagnostics(index_relation);
+     let hierarchy = cost_index_hierarchy_snapshot(index_relation);
+@@ -190,7 +192,9 @@ unsafe fn compute_amcostestimate(index_relation: pg_sys::Relation) -> PlannerCos
+     let block_count = relation_main_fork_block_count(index_relation);
+     let index_pages = f64::from(block_count);
+     let reltuples = relation_reltuples(index_relation);
+-    let constants = current_planner_cost_constants();
++    // SAFETY: AM cost estimation runs inside PostgreSQL planner callback
++    // context where backend-local planner cost globals are valid to read.
++    let constants = unsafe { current_planner_cost_constants() };
+     let relation_options = options::relation_options(index_relation);
+     let diagnostics = cost_active_snapshot_diagnostics(index_relation);
+     let hierarchy = cost_index_hierarchy_snapshot(index_relation);
+diff --git a/src/am/ec_spire/custom_scan/cost_helpers.rs b/src/am/ec_spire/custom_scan/cost_helpers.rs
+index 328bdab2..5eeb313d 100644
+--- a/src/am/ec_spire/custom_scan/cost_helpers.rs
++++ b/src/am/ec_spire/custom_scan/cost_helpers.rs
+@@ -10,8 +10,11 @@ unsafe fn estimate_custom_scan_cost(
+     target_width: f64,
+     eligibility: &SpireCustomScanIndexEligibilityRow,
+ ) -> SpireCustomScanCostEstimate {
+-    let constants = current_planner_cost_constants();
+-    let cpu_tuple_cost = current_cpu_tuple_cost();
++    // SAFETY: custom-scan costing runs inside PostgreSQL planner callback
++    // context where backend-local planner cost globals are valid to read.
++    let constants = unsafe { current_planner_cost_constants() };
++    // SAFETY: same planner callback context as above.
++    let cpu_tuple_cost = unsafe { current_cpu_tuple_cost() };
+     estimate_custom_scan_cost_with_constants(
+         output_rows,
+         rel_rows,

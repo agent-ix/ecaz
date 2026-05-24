@@ -1,19 +1,22 @@
 use std::mem::{offset_of, size_of};
-use std::ptr;
+use std::ptr::{self, NonNull};
 
 use pgrx::{pg_sys, GucContext, GucFlags, GucRegistry, GucSetting};
 
 use crate::am::common::callback::pg_am_callback;
 
 use super::{
-    EC_IVF_DEFAULT_NLISTS, EC_IVF_DEFAULT_NPROBE, EC_IVF_DEFAULT_POSTING_SLACK_PERCENT,
-    EC_IVF_DEFAULT_PQ_GROUP_SIZE, EC_IVF_DEFAULT_QUANT_BITS, EC_IVF_DEFAULT_RERANK_WIDTH,
-    EC_IVF_DEFAULT_SEED, EC_IVF_DEFAULT_TRAINING_SAMPLE_ROWS, EC_IVF_MAX_NLISTS,
-    EC_IVF_MAX_NPROBE, EC_IVF_MAX_POSTING_SLACK_PERCENT, EC_IVF_MAX_PQ_GROUP_SIZE,
-    EC_IVF_MAX_QUANT_BITS, EC_IVF_MAX_RERANK_WIDTH, EC_IVF_MAX_SEED,
-    EC_IVF_MAX_TRAINING_SAMPLE_ROWS, EC_IVF_MIN_NLISTS, EC_IVF_MIN_NPROBE,
-    EC_IVF_MIN_POSTING_SLACK_PERCENT, EC_IVF_MIN_PQ_GROUP_SIZE, EC_IVF_MIN_QUANT_BITS,
-    EC_IVF_MIN_RERANK_WIDTH, EC_IVF_MIN_SEED, EC_IVF_MIN_TRAINING_SAMPLE_ROWS,
+    EC_IVF_DEFAULT_ADAPTIVE_NPROBE_SCORE_GAP_MICROS,
+    EC_IVF_DEFAULT_ADAPTIVE_NPROBE_SCORE_MARGIN_RATIO_BPS, EC_IVF_DEFAULT_NLISTS,
+    EC_IVF_DEFAULT_NPROBE, EC_IVF_DEFAULT_POSTING_SLACK_PERCENT, EC_IVF_DEFAULT_PQ_GROUP_SIZE,
+    EC_IVF_DEFAULT_QUANT_BITS, EC_IVF_DEFAULT_RERANK_WIDTH, EC_IVF_DEFAULT_SEED,
+    EC_IVF_DEFAULT_TRAINING_SAMPLE_ROWS, EC_IVF_MAX_ADAPTIVE_NPROBE_SCORE_GAP_MICROS,
+    EC_IVF_MAX_ADAPTIVE_NPROBE_SCORE_MARGIN_RATIO_BPS, EC_IVF_MAX_NLISTS, EC_IVF_MAX_NPROBE,
+    EC_IVF_MAX_POSTING_SLACK_PERCENT, EC_IVF_MAX_PQ_GROUP_SIZE, EC_IVF_MAX_QUANT_BITS,
+    EC_IVF_MAX_RERANK_WIDTH, EC_IVF_MAX_SEED, EC_IVF_MAX_TRAINING_SAMPLE_ROWS, EC_IVF_MIN_NLISTS,
+    EC_IVF_MIN_NPROBE, EC_IVF_MIN_POSTING_SLACK_PERCENT, EC_IVF_MIN_PQ_GROUP_SIZE,
+    EC_IVF_MIN_QUANT_BITS, EC_IVF_MIN_RERANK_WIDTH, EC_IVF_MIN_SEED,
+    EC_IVF_MIN_TRAINING_SAMPLE_ROWS,
 };
 
 const EC_IVF_SESSION_NPROBE_UNSET: i32 = -1;
@@ -22,6 +25,12 @@ const EC_IVF_SESSION_RERANK_WIDTH_UNSET: i32 = -1;
 static EC_IVF_NPROBE_GUC: GucSetting<i32> = GucSetting::<i32>::new(EC_IVF_SESSION_NPROBE_UNSET);
 static EC_IVF_RERANK_WIDTH_GUC: GucSetting<i32> =
     GucSetting::<i32>::new(EC_IVF_SESSION_RERANK_WIDTH_UNSET);
+static EC_IVF_ADAPTIVE_NPROBE_GUC: GucSetting<bool> = GucSetting::<bool>::new(false);
+static EC_IVF_ADAPTIVE_NPROBE_SCORE_GAP_MICROS_GUC: GucSetting<i32> =
+    GucSetting::<i32>::new(EC_IVF_DEFAULT_ADAPTIVE_NPROBE_SCORE_GAP_MICROS);
+static EC_IVF_ADAPTIVE_NPROBE_SCORE_MARGIN_RATIO_BPS_GUC: GucSetting<i32> =
+    GucSetting::<i32>::new(EC_IVF_DEFAULT_ADAPTIVE_NPROBE_SCORE_MARGIN_RATIO_BPS);
+static EC_IVF_SCRATCH_SOA_BATCH_DECODE_GUC: GucSetting<bool> = GucSetting::<bool>::new(false);
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
@@ -217,6 +226,42 @@ pub(super) fn register_gucs() {
         GucContext::Userset,
         GucFlags::default(),
     );
+    GucRegistry::define_bool_guc(
+        c"ec_ivf.adaptive_nprobe",
+        c"Enable deterministic adaptive ec_ivf nprobe reduction.",
+        c"Diagnostic Task 51 mode; when enabled, scans may reduce nprobe by half when the centroid frontier has the configured score gap.",
+        &EC_IVF_ADAPTIVE_NPROBE_GUC,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
+    GucRegistry::define_int_guc(
+        c"ec_ivf.adaptive_nprobe_score_gap_micros",
+        c"Score-gap threshold for ec_ivf adaptive nprobe.",
+        c"Inner-product score gap, multiplied by 1,000,000, required between the retained adaptive frontier and the next centroid before adaptive nprobe reduces probe breadth.",
+        &EC_IVF_ADAPTIVE_NPROBE_SCORE_GAP_MICROS_GUC,
+        0,
+        EC_IVF_MAX_ADAPTIVE_NPROBE_SCORE_GAP_MICROS,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
+    GucRegistry::define_int_guc(
+        c"ec_ivf.adaptive_nprobe_score_margin_ratio_bps",
+        c"Score margin-ratio threshold for ec_ivf adaptive nprobe.",
+        c"Basis-point ratio of the boundary score gap to the top-to-boundary score margin. Values greater than zero switch adaptive nprobe to the ratio signal.",
+        &EC_IVF_ADAPTIVE_NPROBE_SCORE_MARGIN_RATIO_BPS_GUC,
+        0,
+        EC_IVF_MAX_ADAPTIVE_NPROBE_SCORE_MARGIN_RATIO_BPS,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
+    GucRegistry::define_bool_guc(
+        c"ec_ivf.scratch_soa_batch_decode",
+        c"Enable experimental ec_ivf posting scratch SoA batch decode.",
+        c"Task 51 diagnostic mode; batches decoded posting tuple fields into scan-local structure-of-arrays buffers before scoring. Disabled by default.",
+        &EC_IVF_SCRATCH_SOA_BATCH_DECODE_GUC,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
 }
 
 pub(super) fn current_session_nprobe() -> i32 {
@@ -225,6 +270,38 @@ pub(super) fn current_session_nprobe() -> i32 {
 
 pub(super) fn current_session_rerank_width() -> i32 {
     EC_IVF_RERANK_WIDTH_GUC.get()
+}
+
+pub(super) fn current_session_adaptive_nprobe() -> bool {
+    if cfg!(test) {
+        false
+    } else {
+        EC_IVF_ADAPTIVE_NPROBE_GUC.get()
+    }
+}
+
+pub(super) fn current_session_adaptive_nprobe_score_gap_micros() -> i32 {
+    if cfg!(test) {
+        EC_IVF_DEFAULT_ADAPTIVE_NPROBE_SCORE_GAP_MICROS
+    } else {
+        EC_IVF_ADAPTIVE_NPROBE_SCORE_GAP_MICROS_GUC.get()
+    }
+}
+
+pub(super) fn current_session_adaptive_nprobe_score_margin_ratio_bps() -> i32 {
+    if cfg!(test) {
+        EC_IVF_DEFAULT_ADAPTIVE_NPROBE_SCORE_MARGIN_RATIO_BPS
+    } else {
+        EC_IVF_ADAPTIVE_NPROBE_SCORE_MARGIN_RATIO_BPS_GUC.get()
+    }
+}
+
+pub(super) fn current_session_scratch_soa_batch_decode() -> bool {
+    if cfg!(test) {
+        false
+    } else {
+        EC_IVF_SCRATCH_SOA_BATCH_DECODE_GUC.get()
+    }
 }
 
 pub(super) fn resolve_scan_nprobe(nlists: u32, relation_nprobe: u32) -> NprobeResolution {
@@ -397,56 +474,51 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_amoptions(
     })
 }
 
-unsafe fn read_string_reloption(
-    rd_options: *mut pg_sys::varlena,
-    offset: i32,
-    name: &str,
-) -> Option<String> {
-    if offset == 0 {
-        return None;
-    }
-
-    // SAFETY: `rd_options` points at PostgreSQL's relation options allocation
-    // and `offset` is an option offset produced by the reloptions parser.
-    let value_ptr = unsafe {
-        rd_options
-            .cast::<u8>()
-            .add(offset as usize)
-            .cast::<std::ffi::c_char>()
-    };
-    // SAFETY: string reloptions are stored as NUL-terminated C strings at the
-    // parsed offset inside `rd_options`.
-    let value = unsafe { std::ffi::CStr::from_ptr(value_ptr) }
-        .to_str()
-        .unwrap_or_else(|e| pgrx::error!("invalid ec_ivf {name} reloption: {e}"));
-    if value.is_empty() {
-        pgrx::error!("invalid ec_ivf {name} reloption: value must not be empty");
-    }
-    Some(value.to_owned())
+struct EcIvfReloptionsView {
+    rd_options: crate::am::common::reloptions::ReloptionsBlob,
 }
 
-pub(super) unsafe fn relation_options(index_relation: pg_sys::Relation) -> EcIvfOptions {
-    // SAFETY: callers pass a live PostgreSQL relation; reading `rd_options` does
-    // not take ownership and PostgreSQL keeps the relcache entry valid here.
-    let rd_options = unsafe { (*index_relation).rd_options };
-    if rd_options.is_null() {
-        return EcIvfOptions::DEFAULT;
+impl EcIvfReloptionsView {
+    fn from_relation(index_relation: NonNull<pg_sys::RelationData>) -> Option<Self> {
+        let rd_options = crate::storage::relation::relation_options_handle(index_relation);
+        let rd_options = NonNull::new(rd_options)?;
+        Some(Self {
+            rd_options: crate::am::common::reloptions::ReloptionsBlob::new(rd_options),
+        })
     }
 
-    // SAFETY: `rd_options` was allocated using the `EcIvfReloptions` layout
-    // registered by `ec_ivf_amoptions`.
-    let reloptions = unsafe { &*rd_options.cast::<EcIvfReloptions>() };
-    // SAFETY: `storage_format_offset` comes from the parsed reloptions struct.
-    let storage_format_reloption = unsafe {
-        read_string_reloption(
-            rd_options,
-            reloptions.storage_format_offset,
-            "storage_format",
+    fn reloptions(&self) -> &EcIvfReloptions {
+        crate::storage::relation::relation_options_layout_ref(self.rd_options.handle())
+    }
+
+    fn read_string_reloption(&self, offset: i32, name: &str) -> Option<String> {
+        self.rd_options
+            .read_string_reloption(offset, "ec_ivf", name)
+    }
+
+    fn to_options(&self) -> EcIvfOptions {
+        let reloptions = self.reloptions();
+        let storage_format_reloption =
+            self.read_string_reloption(reloptions.storage_format_offset, "storage_format");
+        let quantizer_reloption =
+            self.read_string_reloption(reloptions.quantizer_offset, "quantizer");
+        let rerank_reloption = self.read_string_reloption(reloptions.rerank_offset, "rerank");
+
+        build_options_from_reloptions(
+            reloptions,
+            storage_format_reloption,
+            quantizer_reloption,
+            rerank_reloption,
         )
-    };
-    // SAFETY: `quantizer_offset` comes from the parsed reloptions struct.
-    let quantizer_reloption =
-        unsafe { read_string_reloption(rd_options, reloptions.quantizer_offset, "quantizer") };
+    }
+}
+
+fn build_options_from_reloptions(
+    reloptions: &EcIvfReloptions,
+    storage_format_reloption: Option<String>,
+    quantizer_reloption: Option<String>,
+    rerank_reloption: Option<String>,
+) -> EcIvfOptions {
     if let (Some(storage_format), Some(quantizer)) =
         (&storage_format_reloption, &quantizer_reloption)
     {
@@ -462,10 +534,7 @@ pub(super) unsafe fn relation_options(index_relation: pg_sys::Relation) -> EcIvf
         .or(quantizer_reloption)
         .map(|value| StorageFormat::parse_reloption(&value).unwrap_or_else(|e| pgrx::error!("{e}")))
         .unwrap_or(StorageFormat::Auto);
-    // SAFETY: `rerank_offset` comes from the parsed reloptions struct.
-    let rerank = match unsafe {
-        read_string_reloption(rd_options, reloptions.rerank_offset, "rerank")
-    } {
+    let rerank = match rerank_reloption {
         Some(value) => RerankMode::parse_reloption(&value).unwrap_or_else(|e| pgrx::error!("{e}")),
         None => RerankMode::Auto,
     };
@@ -482,4 +551,11 @@ pub(super) unsafe fn relation_options(index_relation: pg_sys::Relation) -> EcIvf
         storage_format,
         rerank,
     }
+}
+
+pub(super) fn relation_options(index_relation: NonNull<pg_sys::RelationData>) -> EcIvfOptions {
+    let Some(reloptions) = EcIvfReloptionsView::from_relation(index_relation) else {
+        return EcIvfOptions::DEFAULT;
+    };
+    reloptions.to_options()
 }

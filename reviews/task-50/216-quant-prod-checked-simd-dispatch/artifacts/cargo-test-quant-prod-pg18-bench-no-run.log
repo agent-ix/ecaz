@@ -1,0 +1,8 @@
+Script started on 2026-05-21 03:52:49-07:00 [<not executed on terminal>]
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.22s
+  Executable unittests src/lib.rs (target/debug/deps/ecaz-bd03b5ecc8756b91)
+
+Script done on 2026-05-21 03:52:49-07:00 [COMMAND_EXIT_CODE="0"]

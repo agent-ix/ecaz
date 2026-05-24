@@ -1,0 +1,12 @@
+Script started on 2026-05-21 07:37:57-07:00 [<not executed on terminal>]
+src/am/ec_spire/options/mod.rs unsafe lines: 7
+src unsafe lines: 2443
+free read_string_reloption refs:
+1583:    fn read_string_reloption(&self, offset: i32, name: &str) -> Option<String> {
+1634:            self.read_string_reloption(reloptions.storage_format_offset, "storage_format");
+1636:            self.read_string_reloption(reloptions.quantizer_offset, "quantizer");
+1655:            .read_string_reloption(reloptions.source_identity_offset, "source_identity")
+1662:            .read_string_reloption(
+1671:            .read_string_reloption(reloptions.nprobe_per_level_offset, "nprobe_per_level")
+
+Script done on 2026-05-21 07:37:57-07:00 [COMMAND_EXIT_CODE="0"]

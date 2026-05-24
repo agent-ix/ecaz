@@ -1,0 +1,37 @@
+Script started on 2026-05-21 11:23:24-07:00 [<not executed on terminal>]
+595:fn debug_with_oracle_score_parts<R>(
+682:struct DebugAmScan {
+688:impl DebugAmScan {
+714:    fn with_oracle_score_parts<R>(
+718:        debug_with_oracle_score_parts(self.scan, f)
+746:impl Drop for DebugAmScan {
+792:    let mut scan = DebugAmScan::begin(index_relation.as_ptr(), 0, 1);
+804:    let mut scan = DebugAmScan::begin(index_relation.as_ptr(), 0, 1);
+823:    let scan = DebugAmScan::begin(index_relation.as_ptr(), 0, 1);
+858:    let scan = DebugAmScan::begin(index_relation.as_ptr(), 0, 1);
+936:    let scan = DebugAmScan::begin(index_relation.as_ptr(), 0, 1);
+1024:    let scan = DebugAmScan::begin(index_relation.as_ptr(), 0, 1);
+1896:    let scan = DebugAmScan::begin(index_relation, 0, 1);
+1905:    let heap_tids = scan.with_oracle_score_parts(|parts| {
+1970:    let scan = DebugAmScan::begin(index_relation, 0, 1);
+1979:    let tids = scan.with_oracle_score_parts(|parts| {
+2084:    let scan = DebugAmScan::begin(index_relation, 0, 1);
+2093:    let tids = scan.with_oracle_score_parts(|parts| {
+2225:    let scan = DebugAmScan::begin(index_relation, 0, 1);
+2234:    let heap_tids = scan.with_oracle_score_parts(|parts| {
+2355:    let scan = DebugAmScan::begin(index_relation, 0, 1);
+2364:    let tids = scan.with_oracle_score_parts(|parts| {
+2463:        let score = debug_scan_orderby_score(scan)
+2492:            .or_else(|| debug_scan_orderby_score(scan))
+3069:    let (is_null, score) = debug_gettuple_orderby_score_slot(scan);
+3079:fn debug_scan_orderby_score(scan: pg_sys::IndexScanDesc) -> Option<f32> {
+3080:    let (is_null, value_present, score) = debug_scan_orderby_score_state(scan);
+3085:fn debug_gettuple_orderby_score_slot(scan: pg_sys::IndexScanDesc) -> (bool, f32) {
+3086:    let (is_null, _value_present, score) = debug_scan_orderby_score_state(scan);
+3091:fn debug_scan_orderby_score_state(scan: pg_sys::IndexScanDesc) -> (bool, bool, f32) {
+3160:    let before = debug_scan_orderby_score(scan);
+3165:    let after_first = debug_scan_orderby_score(scan);
+3170:    let exhausted = debug_scan_orderby_score(scan);
+3179:    let rescanned = debug_scan_orderby_score(scan);
+
+Script done on 2026-05-21 11:23:24-07:00 [COMMAND_EXIT_CODE="0"]

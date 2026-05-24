@@ -568,7 +568,7 @@ impl SpireScanOpaque {
     ) -> SpireRootControlState {
         // SAFETY: AM rescan invokes this with the live scan index relation, and
         // this helper only reads the root-control page before caching the result.
-        let observed = unsafe { page::read_root_control_page(index_relation) };
+        let observed = page::read_root_control_page(index_relation);
         self.observe_root_control_for_rescan(observed)
     }
 

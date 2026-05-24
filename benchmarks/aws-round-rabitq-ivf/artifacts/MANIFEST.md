@@ -1,5 +1,9 @@
 # Artifact manifest — aws-round-rabitq-ivf
 
+Packet-root provenance is now recorded in
+`benchmarks/aws-round-rabitq-ivf/manifest.md`. This artifact-local file keeps
+the detailed authoritative-vs-failed log inventory.
+
 Authoritative vs failed/incomplete logs in this packet's
 `artifacts/` directory. Annotated 2026-05-22 in response to
 reviewer feedback `2026-05-22-04-reviewer.md`.

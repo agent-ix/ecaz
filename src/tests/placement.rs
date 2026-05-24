@@ -369,10 +369,8 @@
         .expect("leaf snapshot query should succeed")
         .expect("leaf pid array should exist");
         assert_eq!(selected_pids.len(), 2);
-        // SAFETY: This pg_test fixture owns the Postgres objects and test-only debug state for this boundary, and keeps the relevant relation, slot, or guard alive for the call.
-        unsafe {
-            am::debug_spire_rewrite_placement_node(index_oid, selected_pids[1] as u64, 2);
-        }
+        am::debug_spire_rewrite_placement_node(index_oid, selected_pids[1] as u64, 2);
+
 
         let placement_map = Spi::get_one::<String>(&format!(
             "SELECT string_agg(\

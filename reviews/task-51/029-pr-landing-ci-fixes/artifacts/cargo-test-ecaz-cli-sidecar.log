@@ -1,0 +1,16 @@
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz)
+   Compiling ecaz-cli v0.1.0 (/home/peter/dev/ecaz/crates/ecaz-cli)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 31.06s
+     Running unittests src/main.rs (target/debug/deps/ecaz-d6a7979ea82a4d9a)
+
+running 7 tests
+test commands::bench::sidecar_rerank::tests::sidecar_read_mode_labels_distinguish_db_modes ... ok
+test commands::bench::sidecar_rerank::tests::dot_f16_bytes_matches_half_precision_dot ... ok
+test commands::bench::sidecar_rerank::tests::dot_f32_bytes_matches_plain_dot ... ok
+test commands::compare::pgvector::tests::sidecar_ddl_uses_if_not_exists_and_vector_dim ... ok
+test commands::bench::suite::tests::expands_sidecar_rerank_with_variants ... ok
+test commands::compare::pgvector::tests::pgvector_sidecar_name_is_suffixed_from_prefix ... ok
+test commands::compare::pgvector::tests::pgvector_index_name_is_sidecar_scoped ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 354 filtered out; finished in 0.00s
+

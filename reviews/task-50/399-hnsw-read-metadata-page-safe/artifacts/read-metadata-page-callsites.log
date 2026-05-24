@@ -1,0 +1,25 @@
+src/am/ec_hnsw/vacuum.rs:38:        shared::read_metadata_page(self.relation)
+src/am/ec_hnsw/insert.rs:547:        let metadata_snapshot = shared::read_metadata_page(index_relation);
+src/am/ec_hnsw/insert.rs:699:            let refreshed_metadata = shared::read_metadata_page(index_relation);
+src/am/ec_hnsw/shared.rs:159:    let metadata = read_metadata_page(index_relation);
+src/am/ec_hnsw/shared.rs:530:    let metadata = read_metadata_page(index_relation.as_ptr());
+src/am/ec_hnsw/shared.rs:541:pub(crate) fn read_metadata_page(index_relation: pg_sys::Relation) -> page::MetadataPage {
+src/am/ec_hnsw/shared.rs:661:    let metadata = read_metadata_page(index_relation);
+src/am/ec_hnsw/shared.rs:726:    let metadata = read_metadata_page(index_relation);
+src/am/ec_hnsw/shared.rs:943:    let metadata = read_metadata_page(index_relation.as_ptr());
+src/am/common/cost.rs:198:        let metadata = shared::read_metadata_page(rel);
+src/am/common/cost.rs:381:    let metadata = shared::read_metadata_page(index_relation);
+src/am/ec_hnsw/scan_debug.rs:103:fn debug_read_metadata_page(index_relation: pg_sys::Relation) -> page::MetadataPage {
+src/am/ec_hnsw/scan_debug.rs:104:    super::shared::read_metadata_page(index_relation)
+src/am/ec_hnsw/scan_debug.rs:1745:    let metadata = debug_read_metadata_page(index_relation);
+src/am/ec_hnsw/scan_debug.rs:1779:    let metadata = debug_read_metadata_page(index_relation);
+src/am/ec_hnsw/scan_debug.rs:1831:    let metadata = debug_read_metadata_page(index_relation);
+src/am/ec_hnsw/scan_debug.rs:1881:    let metadata = debug_read_metadata_page(index_relation);
+src/am/ec_hnsw/scan_debug.rs:1947:    let metadata = debug_read_metadata_page(index_relation);
+src/am/ec_hnsw/scan_debug.rs:2043:    let metadata = debug_read_metadata_page(index_relation);
+src/am/ec_hnsw/scan_debug.rs:2163:    let metadata = debug_read_metadata_page(index_relation);
+src/am/ec_hnsw/scan_debug.rs:2273:    let metadata = debug_read_metadata_page(index_relation);
+src/am/ec_hnsw/scan_debug.rs:2421:    let metadata = debug_read_metadata_page(index_relation);
+src/am/ec_hnsw/scan_debug.rs:3177:    let metadata = debug_read_metadata_page(index_relation);
+src/am/ec_hnsw/scan_debug.rs:4148:    let metadata = debug_read_metadata_page(index_relation);
+src/am/ec_hnsw/scan.rs:947:        let metadata = super::shared::read_metadata_page((*scan).indexRelation);

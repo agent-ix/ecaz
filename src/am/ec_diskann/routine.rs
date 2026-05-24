@@ -3,15 +3,24 @@ use std::sync::{
     atomic::{AtomicUsize, Ordering},
     Mutex, OnceLock,
 };
-use std::{cell::RefCell, collections::HashSet, ffi::c_void, ptr, slice};
+use std::{cell::RefCell, collections::HashSet, ffi::c_void, ptr};
 
-use pgrx::{pg_guard, pg_sys, AllocatedByRust, FromDatum, PgBox, PgMemoryContexts};
+use pgrx::{pg_guard, pg_sys, FromDatum, PgBox, PgMemoryContexts};
 
 use crate::{
+    am::common::{
+        callback::pg_am_callback,
+        routine::{alloc_index_am_routine, IndexAmRoutineBox},
+        vacuum::{
+            add_index_bulk_delete_tuples_removed, alloc_index_bulk_delete_result,
+            set_index_bulk_delete_summary,
+        },
+    },
     quant::grouped_pq::{build_grouped_pq_lut_f32, grouped_pq_score_f32, GROUPED_PQ_CENTROIDS},
     storage::{
-        buffer_guard::{LockedBufferGuard, PinnedBufferGuard},
+        buffer_guard::{LockedBufferGuard, LockedPageTupleVisit},
         page::{DataPageChain, ItemPointer},
+        relation::RelationHandle,
         relation_guard::HeapRelationGuard,
         wal,
     },
@@ -132,7 +141,7 @@ fn take_vacuum_rewrite_test_injection() -> Option<VacuumRewriteTestInjection> {
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-unsafe fn maybe_apply_vacuum_rewrite_test_injection(
+fn maybe_apply_vacuum_rewrite_test_injection(
     index_relation: pg_sys::Relation,
 ) -> Result<(), String> {
     let Some(injection) = take_vacuum_rewrite_test_injection() else {
@@ -150,17 +159,14 @@ unsafe fn maybe_apply_vacuum_rewrite_test_injection(
 }
 
 #[cfg(not(any(test, feature = "pg_test")))]
-unsafe fn maybe_apply_vacuum_rewrite_test_injection(
+fn maybe_apply_vacuum_rewrite_test_injection(
     _index_relation: pg_sys::Relation,
 ) -> Result<(), String> {
     Ok(())
 }
 
-fn build_ec_diskann_routine() -> PgBox<pg_sys::IndexAmRoutine, AllocatedByRust> {
-    // SAFETY: `IndexAmRoutine` is a PostgreSQL Node type and must be allocated
-    // with the corresponding node tag.
-    let mut amroutine =
-        unsafe { PgBox::<pg_sys::IndexAmRoutine>::alloc_node(pg_sys::NodeTag::T_IndexAmRoutine) };
+fn build_ec_diskann_routine() -> IndexAmRoutineBox {
+    let mut amroutine = alloc_index_am_routine();
 
     amroutine.amstrategies = 1;
     amroutine.amsupport = 1;
@@ -222,210 +228,202 @@ unsafe extern "C-unwind" fn ec_diskann_aminsert(
     _index_unchanged: bool,
     _index_info: *mut pg_sys::IndexInfo,
 ) -> bool {
-    // SAFETY: PostgreSQL calls aminsert with callback-duration relation
-    // pointers, Datum/null arrays, and heap TID pointers.
-    unsafe {
-        pgrx::pgrx_extern_c_guard(|| {
-            crate::fault::maybe_fail_palloc("ec_diskann aminsert entry");
-            if values.is_null() || isnull.is_null() {
-                pgrx::error!("ec_diskann aminsert received null datum arrays");
-            }
-            if *isnull {
-                pgrx::error!("ec_diskann does not support NULL indexed values");
-            }
-            let datum = *values;
-            if datum.is_null() {
-                pgrx::error!("ec_diskann aminsert received a null indexed datum");
-            }
+    pg_am_callback!({
+        crate::fault::maybe_fail_palloc("ec_diskann aminsert entry");
+        if values.is_null() || isnull.is_null() {
+            pgrx::error!("ec_diskann aminsert received null datum arrays");
+        }
+        if *isnull {
+            pgrx::error!("ec_diskann does not support NULL indexed values");
+        }
+        let datum = *values;
+        if datum.is_null() {
+            pgrx::error!("ec_diskann aminsert received a null indexed datum");
+        }
 
-            let source_vector = ambuild::ecvector_datum_to_vec(datum);
-            warn_on_non_unit_source_vector(&source_vector, "aminsert");
-            let heap_tid = ambuild::decode_heap_tid(heap_tid);
-            let metadata = insert::read_metadata_page(index_relation).unwrap_or_else(|e| {
-                pgrx::error!("ec_diskann aminsert failed to read metadata: {e}")
-            });
+        let source_vector = ambuild::ecvector_datum_to_vec(datum);
+        warn_on_non_unit_source_vector(&source_vector, "aminsert");
+        let heap_tid = ambuild::decode_heap_tid(heap_tid);
+        let insert_relation = insert::DiskannInsertRelation::from_raw(index_relation)
+            .unwrap_or_else(|e| pgrx::error!("ec_diskann aminsert relation error: {e}"));
+        let metadata = insert::read_metadata_page(&insert_relation)
+            .unwrap_or_else(|e| pgrx::error!("ec_diskann aminsert failed to read metadata: {e}"));
 
-            if metadata.dimensions == 0 && metadata.entry_point == ItemPointer::INVALID {
-                let bootstrapped = insert::with_locked_metadata_page(index_relation, |metadata| {
-                    if metadata.dimensions != 0 || metadata.entry_point != ItemPointer::INVALID {
-                        return Ok(false);
-                    }
-                    let output = insert::bootstrap_empty_insert_output(
-                        index_relation,
-                        heap_tid,
-                        &source_vector,
-                    )?;
-                    ambuild::write_data_pages(index_relation, &output.chain);
-                    *metadata = output.metadata;
-                    Ok(true)
-                })
-                .unwrap_or_else(|e| {
-                    pgrx::error!("ec_diskann empty-index bootstrap insert failed: {e}")
-                });
-                if bootstrapped {
-                    return false;
+        if metadata.dimensions == 0 && metadata.entry_point == ItemPointer::INVALID {
+            let bootstrapped = insert::with_locked_metadata_page(&insert_relation, |metadata| {
+                if metadata.dimensions != 0 || metadata.entry_point != ItemPointer::INVALID {
+                    return Ok(false);
                 }
-            }
-
-            let refreshed = insert::read_metadata_page(index_relation).unwrap_or_else(|e| {
-                pgrx::error!("ec_diskann aminsert failed to refresh metadata: {e}")
-            });
-            if refreshed.dimensions != 0 && source_vector.len() != refreshed.dimensions as usize {
-                pgrx::error!(
-                    "ec_diskann insert source dimension mismatch: source dim {}, index dim {}",
-                    source_vector.len(),
-                    refreshed.dimensions
-                );
-            }
-
-            let (materialized_metadata, chain) =
-                scan_state::materialize_chain_from_index(index_relation).unwrap_or_else(|e| {
-                    pgrx::error!("ec_diskann aminsert failed to materialize persisted chain: {e}")
-                });
-            let payload = insert::derive_insert_payload_from_persisted(
-                &materialized_metadata,
-                &chain,
-                &source_vector,
-            )
+                let output = insert::bootstrap_empty_insert_output(
+                    &insert_relation,
+                    heap_tid,
+                    &source_vector,
+                )?;
+                let bootstrap_handle = ptr::NonNull::new(index_relation).ok_or_else(|| {
+                    "ec_diskann bootstrap_empty_insert received a null index relation".to_owned()
+                })?;
+                ambuild::write_data_pages(bootstrap_handle, &output.chain);
+                *metadata = output.metadata;
+                Ok(true)
+            })
             .unwrap_or_else(|e| {
-                pgrx::error!("ec_diskann aminsert failed to derive insert payload: {e}")
+                pgrx::error!("ec_diskann empty-index bootstrap insert failed: {e}")
             });
-            let reader = PersistedGraphReader::new(
-                &chain,
-                materialized_metadata.graph_degree_r,
-                scan_state::metadata_binary_word_count(&materialized_metadata),
-                scan_state::metadata_search_code_len(&materialized_metadata),
+            if bootstrapped {
+                return false;
+            }
+        }
+
+        let refreshed = insert::read_metadata_page(&insert_relation).unwrap_or_else(|e| {
+            pgrx::error!("ec_diskann aminsert failed to refresh metadata: {e}")
+        });
+        if refreshed.dimensions != 0 && source_vector.len() != refreshed.dimensions as usize {
+            pgrx::error!(
+                "ec_diskann insert source dimension mismatch: source dim {}, index dim {}",
+                source_vector.len(),
+                refreshed.dimensions
             );
-            let duplicate_candidates =
-                insert::duplicate_candidate_tids_by_payload(&reader, &payload).unwrap_or_else(
-                    |e| pgrx::error!("ec_diskann aminsert failed to probe duplicate payloads: {e}"),
-                );
-            let source_attnum = indexed_ecvector_attnum(index_relation).unwrap_or_else(|e| {
-                pgrx::error!("ec_diskann aminsert could not resolve indexed ecvector column: {e}")
+        }
+
+        let (materialized_metadata, chain) =
+            scan_state::materialize_chain_from_index(index_relation).unwrap_or_else(|e| {
+                pgrx::error!("ec_diskann aminsert failed to materialize persisted chain: {e}")
             });
-            if !duplicate_candidates.is_empty() {
-                let slot =
-                    crate::storage::slot_guard::TupleTableSlotGuard::single_for_heap(heap_relation)
-                        .unwrap_or_else(|| {
-                            pgrx::error!(
-                                "ec_diskann aminsert could not allocate duplicate-probe slot"
-                            )
-                        });
-                let snapshot = std::ptr::addr_of_mut!(pg_sys::SnapshotSelfData);
-                let duplicate_tid = duplicate_candidates.into_iter().find(|candidate_tid| {
-                    let Ok(candidate_tuple) = reader.read_node(*candidate_tid) else {
-                        return false;
-                    };
-                    if candidate_tuple.primary_heaptid == ItemPointer::INVALID {
-                        return false;
-                    }
-                    let Ok(existing_vector) = fetch_heap_source_vector(
-                        heap_relation,
-                        snapshot,
-                        slot.as_ptr(),
-                        source_attnum,
-                        candidate_tuple.primary_heaptid,
-                        "duplicate probe source vector",
-                    ) else {
-                        return false;
-                    };
-                    existing_vector == source_vector
-                });
-                if let Some(existing_tid) = duplicate_tid {
-                    insert::bind_duplicate_heap_tid(index_relation, existing_tid, heap_tid)
-                        .unwrap_or_else(|e| pgrx::error!("ec_diskann duplicate bind failed: {e}"));
-                    return false;
-                }
-            }
-
-            let entry_point = scan::resolve_entry_point(&reader, materialized_metadata.entry_point)
-                .unwrap_or_else(|e| {
-                    pgrx::error!(
-                        "ec_diskann unique insert planning could not resolve entry point: {e}"
-                    )
-                });
-            let Some(entry_point) = entry_point else {
-                pgrx::error!("ec_diskann unique insert planning found no live entry point");
-            };
-
-            let group_count = usize::from(materialized_metadata.search_subvector_count);
-            let group_size = usize::from(materialized_metadata.search_subvector_dim);
-            if group_count == 0 || group_size == 0 {
-                pgrx::error!(
-                    "ec_diskann unique insert planning requires grouped-PQ metadata: group_count={}, group_size={}",
-                    group_count,
-                    group_size
-                );
-            }
-            let build_list_size = usize::from(materialized_metadata.build_list_size_l);
-            if build_list_size == 0 {
-                pgrx::error!("ec_diskann unique insert planning requires build_list_size_l > 0");
-            }
-            let (query_lut, helper_group_count) = build_grouped_pq_lut_from_persisted(
-                &chain,
-                materialized_metadata.grouped_codebook_head,
-                group_count,
-                group_size,
-                materialized_metadata.dimensions as usize,
-                materialized_metadata.seed,
-                &source_vector,
-            )
+        let payload = insert::derive_insert_payload_from_persisted(
+            &materialized_metadata,
+            &chain,
+            &source_vector,
+        )
+        .unwrap_or_else(|e| {
+            pgrx::error!("ec_diskann aminsert failed to derive insert payload: {e}")
+        });
+        let reader = PersistedGraphReader::new(
+            &chain,
+            materialized_metadata.graph_degree_r,
+            scan_state::metadata_binary_word_count(&materialized_metadata),
+            scan_state::metadata_search_code_len(&materialized_metadata),
+        );
+        let duplicate_candidates = insert::duplicate_candidate_tids_by_payload(&reader, &payload)
             .unwrap_or_else(|e| {
-                pgrx::error!(
-                    "ec_diskann unique insert planning failed to build grouped-PQ LUT: {e}"
-                )
+                pgrx::error!("ec_diskann aminsert failed to probe duplicate payloads: {e}")
             });
-            if helper_group_count != group_count {
-                pgrx::error!(
-                    "ec_diskann unique insert planning grouped-PQ helper returned group_count {}, expected {}",
-                    helper_group_count,
-                    group_count
-                );
-            }
-
+        let source_attnum = indexed_ecvector_attnum(index_relation).unwrap_or_else(|e| {
+            pgrx::error!("ec_diskann aminsert could not resolve indexed ecvector column: {e}")
+        });
+        if !duplicate_candidates.is_empty() {
             let slot =
                 crate::storage::slot_guard::TupleTableSlotGuard::single_for_heap(heap_relation)
                     .unwrap_or_else(|| {
-                        pgrx::error!(
-                            "ec_diskann unique insert planning could not allocate heap slot"
-                        )
+                        pgrx::error!("ec_diskann aminsert could not allocate duplicate-probe slot")
                     });
             let snapshot = std::ptr::addr_of_mut!(pg_sys::SnapshotSelfData);
-            let rerank_error = RefCell::new(None::<String>);
-            let mut visited = VisitedState::new();
-            let exact_candidates = scan::vamana_scan_with(
-                &reader,
-                &mut visited,
-                ScanParams {
-                    entry_point,
-                    list_size: build_list_size,
-                    rerank_budget: build_list_size,
-                    top_k: build_list_size,
-                },
-                |tuple| -grouped_pq_score_f32(&query_lut, group_count, &tuple.search_code),
-                |_: &[ItemPointer]| {},
-                |heap_tid| match exact_heap_rerank_distance(
+            let duplicate_tid = duplicate_candidates.into_iter().find(|candidate_tid| {
+                let Ok(candidate_tuple) = reader.read_node(*candidate_tid) else {
+                    return false;
+                };
+                if candidate_tuple.primary_heaptid == ItemPointer::INVALID {
+                    return false;
+                }
+                let Ok(existing_vector) = fetch_heap_source_vector(
                     heap_relation,
                     snapshot,
                     slot.as_ptr(),
                     source_attnum,
-                    &source_vector,
-                    heap_tid,
-                ) {
-                    Ok(distance) => distance,
-                    Err(error) => {
-                        if rerank_error.borrow().is_none() {
-                            *rerank_error.borrow_mut() = Some(error);
-                        }
-                        f32::INFINITY
-                    }
-                },
-            )
-            .unwrap_or_else(|e| pgrx::error!("ec_diskann unique insert planning scan failed: {e}"));
-            if let Some(error) = rerank_error.into_inner() {
-                pgrx::error!("ec_diskann unique insert planning exact rerank failed: {error}");
+                    candidate_tuple.primary_heaptid,
+                    "duplicate probe source vector",
+                ) else {
+                    return false;
+                };
+                existing_vector == source_vector
+            });
+            if let Some(existing_tid) = duplicate_tid {
+                insert::bind_duplicate_heap_tid(&insert_relation, existing_tid, heap_tid)
+                    .unwrap_or_else(|e| pgrx::error!("ec_diskann duplicate bind failed: {e}"));
+                return false;
             }
-            let planning_candidates = exact_candidates
+        }
+
+        let entry_point = scan::resolve_entry_point(&reader, materialized_metadata.entry_point)
+            .unwrap_or_else(|e| {
+                pgrx::error!("ec_diskann unique insert planning could not resolve entry point: {e}")
+            });
+        let Some(entry_point) = entry_point else {
+            pgrx::error!("ec_diskann unique insert planning found no live entry point");
+        };
+
+        let group_count = usize::from(materialized_metadata.search_subvector_count);
+        let group_size = usize::from(materialized_metadata.search_subvector_dim);
+        if group_count == 0 || group_size == 0 {
+            pgrx::error!(
+                    "ec_diskann unique insert planning requires grouped-PQ metadata: group_count={}, group_size={}",
+                    group_count,
+                    group_size
+                );
+        }
+        let build_list_size = usize::from(materialized_metadata.build_list_size_l);
+        if build_list_size == 0 {
+            pgrx::error!("ec_diskann unique insert planning requires build_list_size_l > 0");
+        }
+        let (query_lut, helper_group_count) = build_grouped_pq_lut_from_persisted(
+            &chain,
+            materialized_metadata.grouped_codebook_head,
+            group_count,
+            group_size,
+            materialized_metadata.dimensions as usize,
+            materialized_metadata.seed,
+            &source_vector,
+        )
+        .unwrap_or_else(|e| {
+            pgrx::error!("ec_diskann unique insert planning failed to build grouped-PQ LUT: {e}")
+        });
+        if helper_group_count != group_count {
+            pgrx::error!(
+                    "ec_diskann unique insert planning grouped-PQ helper returned group_count {}, expected {}",
+                    helper_group_count,
+                    group_count
+                );
+        }
+
+        let slot = crate::storage::slot_guard::TupleTableSlotGuard::single_for_heap(heap_relation)
+            .unwrap_or_else(|| {
+                pgrx::error!("ec_diskann unique insert planning could not allocate heap slot")
+            });
+        let snapshot = std::ptr::addr_of_mut!(pg_sys::SnapshotSelfData);
+        let rerank_error = RefCell::new(None::<String>);
+        let mut visited = VisitedState::new();
+        let exact_candidates = scan::vamana_scan_with(
+            &reader,
+            &mut visited,
+            ScanParams {
+                entry_point,
+                list_size: build_list_size,
+                rerank_budget: build_list_size,
+                top_k: build_list_size,
+            },
+            |tuple| -grouped_pq_score_f32(&query_lut, group_count, &tuple.search_code),
+            |_: &[ItemPointer]| {},
+            |heap_tid| match exact_heap_rerank_distance(
+                heap_relation,
+                snapshot,
+                slot.as_ptr(),
+                source_attnum,
+                &source_vector,
+                heap_tid,
+            ) {
+                Ok(distance) => distance,
+                Err(error) => {
+                    if rerank_error.borrow().is_none() {
+                        *rerank_error.borrow_mut() = Some(error);
+                    }
+                    f32::INFINITY
+                }
+            },
+        )
+        .unwrap_or_else(|e| pgrx::error!("ec_diskann unique insert planning scan failed: {e}"));
+        if let Some(error) = rerank_error.into_inner() {
+            pgrx::error!("ec_diskann unique insert planning exact rerank failed: {error}");
+        }
+        let planning_candidates = exact_candidates
                 .into_iter()
                 .map(|candidate| {
                     let source_vector = fetch_heap_source_vector(
@@ -448,40 +446,37 @@ unsafe extern "C-unwind" fn ec_diskann_aminsert(
                 })
                 .collect::<Vec<_>>();
 
-            let forward_neighbors = insert::select_insert_forward_neighbors(
-                &source_vector,
-                &planning_candidates,
-                materialized_metadata.alpha,
-                materialized_metadata.graph_degree_r as usize,
-            )
-            .unwrap_or_else(|e| {
-                pgrx::error!("ec_diskann unique insert forward-neighbor selection failed: {e}")
-            });
-            let new_tid = insert::append_live_node(
-                index_relation,
-                &materialized_metadata,
-                heap_tid,
-                &payload,
-                &forward_neighbors,
-            )
-            .unwrap_or_else(|e| pgrx::error!("ec_diskann unique insert append failed: {e}"));
-            install_backlinks_with_replan(
-                index_relation,
-                heap_relation,
-                source_attnum,
-                &forward_neighbors,
-                new_tid,
-                &source_vector,
-            )
-            .unwrap_or_else(|e| {
-                pgrx::error!("ec_diskann unique insert backlink update failed: {e}")
-            });
-            insert::increment_inserted_since_rebuild(index_relation).unwrap_or_else(|e| {
-                pgrx::error!("ec_diskann unique insert metadata update failed: {e}")
-            });
-            false
-        })
-    }
+        let forward_neighbors = insert::select_insert_forward_neighbors(
+            &source_vector,
+            &planning_candidates,
+            materialized_metadata.alpha,
+            materialized_metadata.graph_degree_r as usize,
+        )
+        .unwrap_or_else(|e| {
+            pgrx::error!("ec_diskann unique insert forward-neighbor selection failed: {e}")
+        });
+        let new_tid = insert::append_live_node(
+            &insert_relation,
+            &materialized_metadata,
+            heap_tid,
+            &payload,
+            &forward_neighbors,
+        )
+        .unwrap_or_else(|e| pgrx::error!("ec_diskann unique insert append failed: {e}"));
+        install_backlinks_with_replan(
+            index_relation,
+            heap_relation,
+            source_attnum,
+            &forward_neighbors,
+            new_tid,
+            &source_vector,
+        )
+        .unwrap_or_else(|e| pgrx::error!("ec_diskann unique insert backlink update failed: {e}"));
+        insert::increment_inserted_since_rebuild(&insert_relation).unwrap_or_else(|e| {
+            pgrx::error!("ec_diskann unique insert metadata update failed: {e}")
+        });
+        false
+    })
 }
 
 unsafe extern "C-unwind" fn ec_diskann_ambulkdelete(
@@ -490,38 +485,30 @@ unsafe extern "C-unwind" fn ec_diskann_ambulkdelete(
     callback: pg_sys::IndexBulkDeleteCallback,
     callback_state: *mut c_void,
 ) -> *mut pg_sys::IndexBulkDeleteResult {
-    // SAFETY: PostgreSQL invokes ambulkdelete with callback-duration relation,
-    // stats, callback, and callback-state pointers.
-    unsafe {
-        pgrx::pgrx_extern_c_guard(|| {
-            let Some(callback) = callback else {
-                return ec_diskann_noop_vacuum_stats((*info).index, stats)
-                    .unwrap_or_else(|e| pgrx::error!("ec_diskann ambulkdelete failed: {e}"));
-            };
-            run_diskann_bulkdelete(
-                (*info).index,
-                (*info).heaprel,
-                stats,
-                callback,
-                callback_state,
-            )
-            .unwrap_or_else(|e| pgrx::error!("ec_diskann ambulkdelete failed: {e}"))
-        })
-    }
+    pg_am_callback!({
+        let Some(callback) = callback else {
+            return ec_diskann_noop_vacuum_stats((*info).index, stats)
+                .unwrap_or_else(|e| pgrx::error!("ec_diskann ambulkdelete failed: {e}"));
+        };
+        run_diskann_bulkdelete(
+            (*info).index,
+            (*info).heaprel,
+            stats,
+            callback,
+            callback_state,
+        )
+        .unwrap_or_else(|e| pgrx::error!("ec_diskann ambulkdelete failed: {e}"))
+    })
 }
 
 unsafe extern "C-unwind" fn ec_diskann_amvacuumcleanup(
     info: *mut pg_sys::IndexVacuumInfo,
     stats: *mut pg_sys::IndexBulkDeleteResult,
 ) -> *mut pg_sys::IndexBulkDeleteResult {
-    // SAFETY: PostgreSQL invokes amvacuumcleanup with callback-duration relation
-    // and stats pointers.
-    unsafe {
-        pgrx::pgrx_extern_c_guard(|| {
-            ec_diskann_noop_vacuum_stats((*info).index, stats)
-                .unwrap_or_else(|e| pgrx::error!("ec_diskann amvacuumcleanup failed: {e}"))
-        })
-    }
+    pg_am_callback!({
+        ec_diskann_noop_vacuum_stats((*info).index, stats)
+            .unwrap_or_else(|e| pgrx::error!("ec_diskann amvacuumcleanup failed: {e}"))
+    })
 }
 
 unsafe extern "C-unwind" fn ec_diskann_ambeginscan(
@@ -529,30 +516,25 @@ unsafe extern "C-unwind" fn ec_diskann_ambeginscan(
     nkeys: std::ffi::c_int,
     norderbys: std::ffi::c_int,
 ) -> pg_sys::IndexScanDesc {
-    // SAFETY: PostgreSQL invokes ambeginscan with a live index relation and scan
-    // key counts; all raw descriptor writes stay inside the guard.
-    unsafe {
-        pgrx::pgrx_extern_c_guard(|| {
-            let scan = pg_sys::RelationGetIndexScan(index_relation, nkeys, norderbys);
-            if scan.is_null() {
-                pgrx::error!("ec_diskann failed to allocate scan descriptor");
-            }
+    pg_am_callback!({
+        let scan = pg_sys::RelationGetIndexScan(index_relation, nkeys, norderbys);
+        if scan.is_null() {
+            pgrx::error!("ec_diskann failed to allocate scan descriptor");
+        }
 
-            let (metadata, chain) = scan_state::materialize_chain_from_index(index_relation)
-                .unwrap_or_else(|e| pgrx::error!("ec_diskann ambeginscan failed: {e}"));
-            let options = options::relation_options(index_relation);
-            let opaque_state = DiskannScanOpaque::new(metadata, chain, options)
-                .unwrap_or_else(|e| pgrx::error!("ec_diskann ambeginscan failed: {e}"));
+        let (metadata, chain) = scan_state::materialize_chain_from_index(index_relation)
+            .unwrap_or_else(|e| pgrx::error!("ec_diskann ambeginscan failed: {e}"));
+        let options = options::relation_options(index_relation);
+        let opaque_state = DiskannScanOpaque::new(metadata, chain, options)
+            .unwrap_or_else(|e| pgrx::error!("ec_diskann ambeginscan failed: {e}"));
 
-            crate::fault::maybe_fail_palloc("ec_diskann ambeginscan opaque");
-            let opaque = PgBox::<DiskannScanOpaque>::alloc_in_context(
-                PgMemoryContexts::CurrentMemoryContext,
-            );
-            ptr::write(opaque.as_ptr(), opaque_state);
-            (*scan).opaque = opaque.into_pg().cast();
-            scan
-        })
-    }
+        crate::fault::maybe_fail_palloc("ec_diskann ambeginscan opaque");
+        let opaque =
+            PgBox::<DiskannScanOpaque>::alloc_in_context(PgMemoryContexts::CurrentMemoryContext);
+        ptr::write(opaque.as_ptr(), opaque_state);
+        (*scan).opaque = opaque.into_pg().cast();
+        scan
+    })
 }
 
 unsafe extern "C-unwind" fn ec_diskann_amrescan(
@@ -562,220 +544,200 @@ unsafe extern "C-unwind" fn ec_diskann_amrescan(
     orderbys: pg_sys::ScanKey,
     norderbys: std::ffi::c_int,
 ) {
-    // SAFETY: PostgreSQL invokes amrescan with a live scan descriptor and
-    // callback-duration scan key arrays.
-    unsafe {
-        pgrx::pgrx_extern_c_guard(|| {
-            if scan.is_null() {
-                pgrx::error!("ec_diskann amrescan received a null scan descriptor");
-            }
-            if nkeys != 0 {
-                pgrx::error!("ec_diskann scan does not support index quals");
-            }
-            if norderbys != 1 {
-                pgrx::error!("ec_diskann scan currently requires exactly one ORDER BY query");
-            }
-            if orderbys.is_null() {
-                pgrx::error!("ec_diskann amrescan received null order-by scan keys");
-            }
+    pg_am_callback!({
+        if scan.is_null() {
+            pgrx::error!("ec_diskann amrescan received a null scan descriptor");
+        }
+        if nkeys != 0 {
+            pgrx::error!("ec_diskann scan does not support index quals");
+        }
+        if norderbys != 1 {
+            pgrx::error!("ec_diskann scan currently requires exactly one ORDER BY query");
+        }
+        if orderbys.is_null() {
+            pgrx::error!("ec_diskann amrescan received null order-by scan keys");
+        }
 
-            let opaque_ptr = (*scan).opaque.cast::<DiskannScanOpaque>();
-            if opaque_ptr.is_null() {
-                pgrx::error!("ec_diskann amrescan missing scan opaque state");
-            }
-            let opaque = &mut *opaque_ptr;
-            let orderby = &*orderbys;
-            if (orderby.sk_flags as u32) & pg_sys::SK_ISNULL != 0 {
-                pgrx::error!("ec_diskann scan query must not be NULL");
-            }
+        let opaque_ptr = (*scan).opaque.cast::<DiskannScanOpaque>();
+        if opaque_ptr.is_null() {
+            pgrx::error!("ec_diskann amrescan missing scan opaque state");
+        }
+        let opaque = &mut *opaque_ptr;
+        let orderby = &*orderbys;
+        if (orderby.sk_flags as u32) & pg_sys::SK_ISNULL != 0 {
+            pgrx::error!("ec_diskann scan query must not be NULL");
+        }
 
-            let raw_query = Vec::<f32>::from_polymorphic_datum(
-                orderby.sk_argument,
-                false,
-                pg_sys::FLOAT4ARRAYOID,
-            )
-            .unwrap_or_else(|| pgrx::error!("ec_diskann scan requires a real[] ORDER BY query"));
-            if raw_query.is_empty() {
-                pgrx::error!("ec_diskann scan query must not be empty");
-            }
-            if opaque.metadata.dimensions != 0
-                && raw_query.len() != opaque.metadata.dimensions as usize
-            {
-                pgrx::error!(
-                    "ec_diskann scan query dimension mismatch: index dim {}, query dim {}",
-                    opaque.metadata.dimensions,
-                    raw_query.len()
-                );
-            }
-
-            (*scan).xs_recheck = false;
-            (*scan).xs_recheckorderby = false;
-            (*scan).xs_orderbyvals = ptr::null_mut();
-            (*scan).xs_orderbynulls = ptr::null_mut();
-
-            opaque.flat_codebooks.clear();
-            opaque.query_rotated.clear();
-            opaque.query_lut.clear();
-            opaque.query_binary_words.clear();
-            opaque.visited.clear();
-            opaque.result_buf.clear();
-            opaque.result_cursor = 0;
-
-            if opaque.metadata.dimensions == 0 {
-                opaque.rescan_called = true;
-                return;
-            }
-
-            let prefilter = prepare_prefilter(
-                &opaque.chain,
-                &opaque.metadata,
-                &raw_query,
-                options::current_prefilter_kind(),
-                "scan",
-            )
-            .unwrap_or_else(|e| pgrx::error!("ec_diskann scan prefilter setup failed: {e}"));
-
-            let reader = PersistedGraphReader::new(
-                &opaque.chain,
-                opaque.metadata.graph_degree_r,
-                opaque.binary_word_count(),
-                opaque.search_code_len(),
+        let raw_query =
+            Vec::<f32>::from_polymorphic_datum(orderby.sk_argument, false, pg_sys::FLOAT4ARRAYOID)
+                .unwrap_or_else(|| {
+                    pgrx::error!("ec_diskann scan requires a real[] ORDER BY query")
+                });
+        if raw_query.is_empty() {
+            pgrx::error!("ec_diskann scan query must not be empty");
+        }
+        if opaque.metadata.dimensions != 0 && raw_query.len() != opaque.metadata.dimensions as usize
+        {
+            pgrx::error!(
+                "ec_diskann scan query dimension mismatch: index dim {}, query dim {}",
+                opaque.metadata.dimensions,
+                raw_query.len()
             );
-            let entry_point = scan::resolve_entry_point(&reader, opaque.metadata.entry_point)
-                .unwrap_or_else(|e| {
-                    pgrx::error!("ec_diskann scan entry-point resolution failed: {e}")
-                });
-            let Some(entry_point) = entry_point else {
-                opaque.rescan_called = true;
-                return;
-            };
+        }
 
-            let heap_relation_state =
-                scan_state::resolve_scan_heap_relation(scan).unwrap_or_else(|e| {
-                    pgrx::error!("ec_diskann scan heap relation setup failed: {e}")
-                });
-            let snapshot_state = scan_state::resolve_scan_snapshot(scan)
-                .unwrap_or_else(|e| pgrx::error!("ec_diskann scan snapshot setup failed: {e}"));
-            let source_attnum =
-                indexed_ecvector_attnum((*scan).indexRelation).unwrap_or_else(|e| {
-                    pgrx::error!("ec_diskann scan source-column resolution failed: {e}")
-                });
-            let sql_result_cap = sql_scan_result_cap(opaque.top_k, opaque.rerank_budget);
-            let scan_params = ScanParams {
-                entry_point,
-                list_size: opaque.list_size,
-                rerank_budget: opaque.rerank_budget,
-                top_k: sql_result_cap,
-            };
-            let (results, rerank_error) = {
-                let heap_relation = heap_relation_state.as_ptr();
-                let snapshot = snapshot_state.as_ptr();
-                let slot =
-                    crate::storage::slot_guard::TupleTableSlotGuard::single_for_heap(heap_relation)
-                        .unwrap_or_else(|| pgrx::error!("ec_diskann scan heap slot setup failed"));
-                let rerank_error = RefCell::new(None::<String>);
-                let results = scan::vamana_scan_with(
-                    &reader,
-                    &mut opaque.visited,
-                    scan_params,
-                    |tuple| prefilter.score(tuple),
-                    |heap_tids: &[ItemPointer]| {
-                        prefetch_heap_rerank_blocks(heap_relation, heap_tids)
-                    },
-                    |heap_tid| match exact_heap_rerank_distance(
-                        heap_relation,
-                        snapshot,
-                        slot.as_ptr(),
-                        source_attnum,
-                        &raw_query,
-                        heap_tid,
-                    ) {
-                        Ok(distance) => distance,
-                        Err(error) => {
-                            if rerank_error.borrow().is_none() {
-                                *rerank_error.borrow_mut() = Some(error);
-                            }
-                            f32::INFINITY
-                        }
-                    },
-                );
-                (results, rerank_error.into_inner())
-            };
-            prefilter.load_into_scan_opaque(opaque);
+        (*scan).xs_recheck = false;
+        (*scan).xs_recheckorderby = false;
+        (*scan).xs_orderbyvals = ptr::null_mut();
+        (*scan).xs_orderbynulls = ptr::null_mut();
 
-            if let Some(error) = rerank_error {
-                pgrx::error!("ec_diskann scan heap rerank failed: {error}");
-            }
-            let node_results =
-                results.unwrap_or_else(|e| pgrx::error!("ec_diskann scan execution failed: {e}"));
-            opaque.result_buf = expand_scan_results_with_bound_heap_tids(
-                &opaque.chain,
-                &node_results,
-                sql_result_cap,
-            )
-            .unwrap_or_else(|e| pgrx::error!("ec_diskann duplicate expansion failed: {e}"));
-            opaque.result_cursor = 0;
+        opaque.flat_codebooks.clear();
+        opaque.query_rotated.clear();
+        opaque.query_lut.clear();
+        opaque.query_binary_words.clear();
+        opaque.visited.clear();
+        opaque.result_buf.clear();
+        opaque.result_cursor = 0;
+
+        if opaque.metadata.dimensions == 0 {
             opaque.rescan_called = true;
-        })
-    }
+            return;
+        }
+
+        let prefilter = prepare_prefilter(
+            &opaque.chain,
+            &opaque.metadata,
+            &raw_query,
+            options::current_prefilter_kind(),
+            "scan",
+        )
+        .unwrap_or_else(|e| pgrx::error!("ec_diskann scan prefilter setup failed: {e}"));
+
+        let reader = PersistedGraphReader::new(
+            &opaque.chain,
+            opaque.metadata.graph_degree_r,
+            opaque.binary_word_count(),
+            opaque.search_code_len(),
+        );
+        let entry_point = scan::resolve_entry_point(&reader, opaque.metadata.entry_point)
+            .unwrap_or_else(|e| pgrx::error!("ec_diskann scan entry-point resolution failed: {e}"));
+        let Some(entry_point) = entry_point else {
+            opaque.rescan_called = true;
+            return;
+        };
+
+        let scan_desc = scan_state::DiskannScanDescView::from_raw(scan, "ec_diskann amrescan");
+        let heap_relation_state = scan_desc
+            .resolve_heap_relation()
+            .unwrap_or_else(|e| pgrx::error!("ec_diskann scan heap relation setup failed: {e}"));
+        let snapshot_state = scan_desc
+            .resolve_snapshot()
+            .unwrap_or_else(|e| pgrx::error!("ec_diskann scan snapshot setup failed: {e}"));
+        let source_attnum =
+            indexed_ecvector_attnum(scan_desc.index_relation()).unwrap_or_else(|e| {
+                pgrx::error!("ec_diskann scan source-column resolution failed: {e}")
+            });
+        let sql_result_cap = sql_scan_result_cap(opaque.top_k, opaque.rerank_budget);
+        let scan_params = ScanParams {
+            entry_point,
+            list_size: opaque.list_size,
+            rerank_budget: opaque.rerank_budget,
+            top_k: sql_result_cap,
+        };
+        let (results, rerank_error) = {
+            let heap_relation = heap_relation_state.as_ptr();
+            let snapshot = snapshot_state.as_ptr();
+            let slot =
+                crate::storage::slot_guard::TupleTableSlotGuard::single_for_heap(heap_relation)
+                    .unwrap_or_else(|| pgrx::error!("ec_diskann scan heap slot setup failed"));
+            let rerank_error = RefCell::new(None::<String>);
+            let results = scan::vamana_scan_with(
+                &reader,
+                &mut opaque.visited,
+                scan_params,
+                |tuple| prefilter.score(tuple),
+                |heap_tids: &[ItemPointer]| prefetch_heap_rerank_blocks(heap_relation, heap_tids),
+                |heap_tid| match exact_heap_rerank_distance(
+                    heap_relation,
+                    snapshot,
+                    slot.as_ptr(),
+                    source_attnum,
+                    &raw_query,
+                    heap_tid,
+                ) {
+                    Ok(distance) => distance,
+                    Err(error) => {
+                        if rerank_error.borrow().is_none() {
+                            *rerank_error.borrow_mut() = Some(error);
+                        }
+                        f32::INFINITY
+                    }
+                },
+            );
+            (results, rerank_error.into_inner())
+        };
+        prefilter.load_into_scan_opaque(opaque);
+
+        if let Some(error) = rerank_error {
+            pgrx::error!("ec_diskann scan heap rerank failed: {error}");
+        }
+        let node_results =
+            results.unwrap_or_else(|e| pgrx::error!("ec_diskann scan execution failed: {e}"));
+        opaque.result_buf =
+            expand_scan_results_with_bound_heap_tids(&opaque.chain, &node_results, sql_result_cap)
+                .unwrap_or_else(|e| pgrx::error!("ec_diskann duplicate expansion failed: {e}"));
+        opaque.result_cursor = 0;
+        opaque.rescan_called = true;
+    })
 }
 
 unsafe extern "C-unwind" fn ec_diskann_amgettuple(
     scan: pg_sys::IndexScanDesc,
     direction: pg_sys::ScanDirection::Type,
 ) -> bool {
-    // SAFETY: PostgreSQL invokes amgettuple with a live scan descriptor; opaque
-    // access and heap TID writes are guarded and null-checked.
-    unsafe {
-        pgrx::pgrx_extern_c_guard(|| {
-            if scan.is_null() {
-                pgrx::error!("ec_diskann amgettuple received a null scan descriptor");
-            }
-            if direction != pg_sys::ScanDirection::ForwardScanDirection {
-                pgrx::error!("ec_diskann amgettuple only supports forward scan direction");
-            }
+    pg_am_callback!({
+        if scan.is_null() {
+            pgrx::error!("ec_diskann amgettuple received a null scan descriptor");
+        }
+        if direction != pg_sys::ScanDirection::ForwardScanDirection {
+            pgrx::error!("ec_diskann amgettuple only supports forward scan direction");
+        }
 
-            let opaque_ptr = (*scan).opaque.cast::<DiskannScanOpaque>();
-            if opaque_ptr.is_null() {
-                pgrx::error!("ec_diskann amgettuple missing scan opaque state");
-            }
-            let opaque = &mut *opaque_ptr;
-            if !opaque.rescan_called {
-                pgrx::error!("ec_diskann amgettuple requires amrescan before scan execution");
-            }
-            if opaque.result_cursor >= opaque.result_buf.len() {
-                return false;
-            }
+        let opaque_ptr = (*scan).opaque.cast::<DiskannScanOpaque>();
+        if opaque_ptr.is_null() {
+            pgrx::error!("ec_diskann amgettuple missing scan opaque state");
+        }
+        let opaque = &mut *opaque_ptr;
+        if !opaque.rescan_called {
+            pgrx::error!("ec_diskann amgettuple requires amrescan before scan execution");
+        }
+        if opaque.result_cursor >= opaque.result_buf.len() {
+            return false;
+        }
 
-            let hit = opaque.result_buf[opaque.result_cursor];
-            opaque.result_cursor += 1;
-            scan_state::set_scan_heap_tid(scan, hit.primary_heaptid);
-            (*scan).xs_recheckorderby = false;
-            true
-        })
-    }
+        let hit = opaque.result_buf[opaque.result_cursor];
+        opaque.result_cursor += 1;
+        scan_state::set_scan_heap_tid(scan, hit.primary_heaptid);
+        (*scan).xs_recheckorderby = false;
+        true
+    })
 }
 
 unsafe extern "C-unwind" fn ec_diskann_amendscan(scan: pg_sys::IndexScanDesc) {
-    // SAFETY: PostgreSQL owns the scan descriptor and this AM owns the opaque
-    // pointer it allocated in ambeginscan.
-    unsafe {
-        pgrx::pgrx_extern_c_guard(|| {
-            if scan.is_null() {
-                return;
-            }
+    pg_am_callback!({
+        if scan.is_null() {
+            return;
+        }
 
-            let opaque_ptr = (*scan).opaque.cast::<DiskannScanOpaque>();
-            if !opaque_ptr.is_null() {
-                ptr::drop_in_place(opaque_ptr);
-                pg_sys::pfree(opaque_ptr.cast());
-                (*scan).opaque = ptr::null_mut();
-            }
-        })
-    }
+        let opaque_ptr = (*scan).opaque.cast::<DiskannScanOpaque>();
+        if !opaque_ptr.is_null() {
+            ptr::drop_in_place(opaque_ptr);
+            pg_sys::pfree(opaque_ptr.cast());
+            (*scan).opaque = ptr::null_mut();
+        }
+    })
 }
 
-unsafe fn indexed_ecvector_attnum(index_relation: pg_sys::Relation) -> Result<i32, String> {
+fn indexed_ecvector_attnum(index_relation: pg_sys::Relation) -> Result<i32, String> {
     // SAFETY: The index relation is live; BuildIndexInfo returns palloc'd
     // metadata that remains valid until it is released at the end of this block.
     unsafe {
@@ -809,6 +771,9 @@ unsafe fn install_backlinks_with_replan(
 ) -> Result<(), String> {
     let mut pending = backlink_targets.to_vec();
     sort_and_dedup_item_pointers(&mut pending);
+    // SAFETY: The surrounding AM insert callback supplies a live DISKANN index
+    // relation for the duration of backlink planning and mutation.
+    let insert_relation = unsafe { insert::DiskannInsertRelation::from_raw(index_relation)? };
 
     for _ in 0..insert::MAX_BACKLINK_REPLAN_PASSES {
         if pending.is_empty() {
@@ -831,11 +796,8 @@ unsafe fn install_backlinks_with_replan(
             return Ok(());
         }
 
-        // SAFETY: Mutations were planned against the metadata snapshot returned
-        // above and are applied under page locks by the insert helper.
-        pending = unsafe {
-            insert::apply_backlink_mutations(index_relation, &metadata, &mutations, new_tid)?
-        };
+        pending =
+            insert::apply_backlink_mutations(&insert_relation, &metadata, &mutations, new_tid)?;
     }
 
     if pending.is_empty() {
@@ -857,9 +819,10 @@ unsafe fn plan_backlink_mutations(
     new_tid: ItemPointer,
     new_source_vector: &[f32],
 ) -> Result<(VamanaMetadataPage, Vec<insert::BacklinkMutation>), String> {
-    // SAFETY: The index relation is live and materialization only reads the
-    // persisted DiskANN page chain.
-    let (metadata, chain) = unsafe { scan_state::materialize_chain_from_index(index_relation)? };
+    let backlink_handle = ptr::NonNull::new(index_relation).ok_or_else(|| {
+        "ec_diskann plan_diskann_backlink_repair needs a valid index relation".to_owned()
+    })?;
+    let (metadata, chain) = scan_state::materialize_chain_from_index_handle(backlink_handle)?;
     let reader = PersistedGraphReader::new(
         &chain,
         metadata.graph_degree_r,
@@ -880,18 +843,14 @@ unsafe fn plan_backlink_mutations(
                 continue;
             }
 
-            // SAFETY: Target heap TID belongs to a live node from this index and
-            // the slot/snapshot are owned by this planning scope.
-            let target_source_vector = unsafe {
-                fetch_heap_source_vector(
-                    heap_relation,
-                    snapshot,
-                    slot.as_ptr(),
-                    source_attnum,
-                    target_tuple.primary_heaptid,
-                    "backlink planning target source vector",
-                )?
-            };
+            let target_source_vector = fetch_heap_source_vector(
+                heap_relation,
+                snapshot,
+                slot.as_ptr(),
+                source_attnum,
+                target_tuple.primary_heaptid,
+                "backlink planning target source vector",
+            )?;
             let mut existing_candidates = Vec::new();
             for neighbor_tid in target_tuple
                 .neighbors
@@ -911,18 +870,14 @@ unsafe fn plan_backlink_mutations(
                 {
                     continue;
                 }
-                // SAFETY: Neighbor heap TID belongs to a live node from this
-                // index and is read through the same slot/snapshot.
-                let neighbor_source_vector = unsafe {
-                    fetch_heap_source_vector(
-                        heap_relation,
-                        snapshot,
-                        slot.as_ptr(),
-                        source_attnum,
-                        neighbor_tuple.primary_heaptid,
-                        "backlink planning neighbor source vector",
-                    )?
-                };
+                let neighbor_source_vector = fetch_heap_source_vector(
+                    heap_relation,
+                    snapshot,
+                    slot.as_ptr(),
+                    source_attnum,
+                    neighbor_tuple.primary_heaptid,
+                    "backlink planning neighbor source vector",
+                )?;
                 existing_candidates.push(insert::ForwardNeighborCandidate {
                     tid: neighbor_tid,
                     source_vector: neighbor_source_vector,
@@ -957,23 +912,18 @@ unsafe fn ec_diskann_noop_vacuum_stats(
 ) -> Result<*mut pg_sys::IndexBulkDeleteResult, String> {
     let stats = if stats.is_null() {
         crate::fault::maybe_fail_palloc("ec_diskann noop vacuum stats");
-        // SAFETY: PostgreSQL memory-context allocation creates a zeroed stats
-        // struct owned by the current vacuum callback.
-        unsafe { PgBox::<pg_sys::IndexBulkDeleteResult>::alloc0().into_pg() }
+        alloc_index_bulk_delete_result().into()
     } else {
         stats
     };
-
-    // SAFETY: `stats` is either PostgreSQL-supplied or allocated above; the
-    // index relation is live while page count/live tuple stats are computed.
-    unsafe {
-        (*stats).num_pages = pg_sys::RelationGetNumberOfBlocksInFork(
-            index_relation,
-            pg_sys::ForkNumber::MAIN_FORKNUM,
-        );
-        (*stats).estimated_count = false;
-        (*stats).num_index_tuples = count_live_node_tuples(index_relation)? as f64;
-    }
+    let stats_handle =
+        ptr::NonNull::new(stats).ok_or_else(|| "ec_diskann vacuum stats is null".to_owned())?;
+    let index_relation_handle = ptr::NonNull::new(index_relation)
+        .ok_or_else(|| "ec_diskann vacuum stats needs a valid index relation".to_owned())?;
+    let block_count = crate::storage::relation::main_fork_block_count_handle(index_relation_handle);
+    let live_tuples = u64::try_from(count_live_node_tuples(index_relation)?)
+        .map_err(|_| "ec_diskann live tuple count exceeds u64".to_owned())?;
+    set_index_bulk_delete_summary(stats_handle, block_count, live_tuples);
 
     Ok(stats)
 }
@@ -987,12 +937,13 @@ unsafe fn run_diskann_bulkdelete(
 ) -> Result<*mut pg_sys::IndexBulkDeleteResult, String> {
     let stats = if stats.is_null() {
         crate::fault::maybe_fail_palloc("ec_diskann bulkdelete stats");
-        // SAFETY: PostgreSQL memory-context allocation creates a zeroed stats
-        // struct owned by the current vacuum callback.
-        unsafe { PgBox::<pg_sys::IndexBulkDeleteResult>::alloc0().into_pg() }
+        alloc_index_bulk_delete_result().into()
     } else {
         stats
     };
+    // SAFETY: The surrounding vacuum callback supplies a live DISKANN index
+    // relation for the duration of metadata updates in this pass.
+    let insert_relation = unsafe { insert::DiskannInsertRelation::from_raw(index_relation)? };
     let mut max_removed_heap_tids = 0usize;
     for _ in 0..MAX_REPAIR_REPLAN_PASSES {
         // SAFETY: The index/heap relations and callback state are valid for the
@@ -1004,24 +955,19 @@ unsafe fn run_diskann_bulkdelete(
         match pass.rewrite_outcome {
             VacuumRewriteApplyOutcome::Applied => {
                 if pass.entry_point_needs_medoid_refresh {
-                    // SAFETY: Metadata is locked before marking the medoid
-                    // refresh flag after a successful vacuum rewrite pass.
-                    unsafe {
-                        insert::with_locked_metadata_page(index_relation, |metadata| {
-                            metadata.needs_medoid_refresh = true;
-                            Ok(())
-                        })?
-                    };
+                    insert::with_locked_metadata_page(&insert_relation, |metadata| {
+                        metadata.needs_medoid_refresh = true;
+                        Ok(())
+                    })?
                 }
-
-                // SAFETY: `stats` is valid for this vacuum callback and updated
-                // only after the rewrite pass has applied.
-                unsafe {
-                    (*stats).num_pages = pass.block_count;
-                    (*stats).estimated_count = false;
-                    (*stats).num_index_tuples = pass.live_tuple_count as f64;
-                    (*stats).tuples_removed += max_removed_heap_tids as f64;
-                }
+                let stats_handle = ptr::NonNull::new(stats)
+                    .ok_or_else(|| "ec_diskann vacuum stats is null".to_owned())?;
+                let live_tuple_count = u64::try_from(pass.live_tuple_count)
+                    .map_err(|_| "ec_diskann live tuple count exceeds u64".to_owned())?;
+                let removed_heap_tids = u64::try_from(max_removed_heap_tids)
+                    .map_err(|_| "ec_diskann removed heap tid count exceeds u64".to_owned())?;
+                set_index_bulk_delete_summary(stats_handle, pass.block_count, live_tuple_count);
+                add_index_bulk_delete_tuples_removed(stats_handle, removed_heap_tids);
                 return Ok(stats);
             }
             VacuumRewriteApplyOutcome::RetryReplan => record_vacuum_replan_event(),
@@ -1039,15 +985,16 @@ unsafe fn run_diskann_bulkdelete_pass(
     callback: BulkDeleteCallback,
     callback_state: *mut c_void,
 ) -> Result<VacuumBulkDeletePassResult, String> {
-    // SAFETY: The index relation is live; this reads the current main-fork block
-    // count for the vacuum pass.
-    let block_count = unsafe {
-        pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
+    let index_relation_handle = ptr::NonNull::new(index_relation)
+        .ok_or_else(|| "ec_diskann bulkdelete needs a valid index relation".to_owned())?;
+    // SAFETY: `index_relation` is live while materializing the persisted
+    // DiskANN page chain for this vacuum pass.
+    let (block_count, metadata, original_chain) = unsafe {
+        let block_count =
+            crate::storage::relation::main_fork_block_count_handle(index_relation_handle);
+        let (metadata, original_chain) = scan_state::materialize_chain_from_index(index_relation)?;
+        (block_count, metadata, original_chain)
     };
-    // SAFETY: The index relation is live and materialization only reads the
-    // persisted DiskANN page chain.
-    let (metadata, original_chain) =
-        unsafe { scan_state::materialize_chain_from_index(index_relation)? };
     let graph_degree_r = metadata.graph_degree_r;
     let binary_word_count = scan_state::metadata_binary_word_count(&metadata);
     let search_code_len = scan_state::metadata_search_code_len(&metadata);
@@ -1073,14 +1020,10 @@ unsafe fn run_diskann_bulkdelete_pass(
             tid,
         )?;
         let original_tuple = tuple.clone();
-        removed_heap_tids += insert::vacuum_bound_heap_rows(
-            &mut mutated_chain,
-            tid,
-            &mut tuple,
-            // SAFETY: The callback and state were supplied by PostgreSQL for
-            // this ambulkdelete pass and are invoked synchronously.
-            |heap_tid| unsafe { callback_marks_heap_tid_dead(callback, callback_state, heap_tid) },
-        )?;
+        removed_heap_tids +=
+            insert::vacuum_bound_heap_rows(&mut mutated_chain, tid, &mut tuple, |heap_tid| {
+                callback_marks_heap_tid_dead(callback, callback_state, heap_tid)
+            })?;
         if tuple != original_tuple {
             write_chain_node(
                 &mut mutated_chain,
@@ -1123,22 +1066,15 @@ unsafe fn run_diskann_bulkdelete_pass(
                 )?;
             }
         }
-        // SAFETY: The heap relation is either supplied by PostgreSQL or opened
-        // from the index relation and remains alive through repair filling.
-        let heap_relation = unsafe { resolve_vacuum_heap_relation(index_relation, heap_relation)? };
-        // SAFETY: Repair targets/dead set were derived from this pass and the
-        // mutable chain is the pass-local rewrite plan.
-        let fill_result = unsafe {
-            fill_vacuum_neighbor_slots(
-                index_relation,
-                heap_relation.as_ptr(),
-                &metadata,
-                &mut mutated_chain,
-                &repair_target_tids,
-                &dead_set,
-            )
-        };
-        fill_result?;
+        let heap_relation = resolve_vacuum_heap_relation(index_relation, heap_relation)?;
+        fill_vacuum_neighbor_slots(
+            index_relation,
+            heap_relation.as_ptr(),
+            &metadata,
+            &mut mutated_chain,
+            &repair_target_tids,
+            &dead_set,
+        )?;
     }
 
     for &tid in &finalize_tids {
@@ -1164,9 +1100,7 @@ unsafe fn run_diskann_bulkdelete_pass(
     }
 
     let rewrites = collect_tuple_rewrites(&original_chain, &mutated_chain)?;
-    // SAFETY: Rewrites were diffed from the original and mutated chains for this
-    // index and are validated against current page bytes before applying.
-    let rewrite_outcome = unsafe { apply_tuple_rewrites(index_relation, &rewrites)? };
+    let rewrite_outcome = apply_tuple_rewrites_handle(index_relation_handle, &rewrites)?;
     Ok(VacuumBulkDeletePassResult {
         rewrite_outcome,
         block_count,
@@ -1184,7 +1118,7 @@ unsafe fn run_diskann_bulkdelete_pass(
     })
 }
 
-unsafe fn resolve_vacuum_heap_relation(
+fn resolve_vacuum_heap_relation(
     index_relation: pg_sys::Relation,
     heap_relation: pg_sys::Relation,
 ) -> Result<ResolvedVacuumHeapRelation, String> {
@@ -1192,9 +1126,9 @@ unsafe fn resolve_vacuum_heap_relation(
         return Ok(ResolvedVacuumHeapRelation::borrowed(heap_relation));
     }
 
-    // SAFETY: The index relation is live and IndexGetRelation resolves its heap
-    // relation OID without mutating state.
-    let heap_oid = unsafe { pg_sys::IndexGetRelation((*index_relation).rd_id, false) };
+    let index_relation = ptr::NonNull::new(index_relation)
+        .ok_or_else(|| "ec_diskann vacuum received null index relation".to_owned())?;
+    let heap_oid = crate::storage::relation::index_heap_relation_oid_handle(index_relation);
     if heap_oid == pg_sys::InvalidOid {
         return Err("ec_diskann vacuum could not resolve heap relation".into());
     }
@@ -1203,7 +1137,7 @@ unsafe fn resolve_vacuum_heap_relation(
         .ok_or_else(|| "ec_diskann vacuum could not open heap relation".into())
 }
 
-unsafe fn fill_vacuum_neighbor_slots(
+fn fill_vacuum_neighbor_slots(
     index_relation: pg_sys::Relation,
     heap_relation: pg_sys::Relation,
     metadata: &VamanaMetadataPage,
@@ -1214,11 +1148,12 @@ unsafe fn fill_vacuum_neighbor_slots(
     if repair_target_tids.is_empty() {
         return Ok(());
     }
-    // SAFETY: The index relation is live and the helper only reads index
-    // metadata to resolve the indexed ecvector attribute.
-    let source_attnum = unsafe { indexed_ecvector_attnum(index_relation)? };
-    let slot = crate::storage::slot_guard::TupleTableSlotGuard::single_for_heap(heap_relation)
-        .ok_or_else(|| "ec_diskann vacuum fill failed to allocate heap slot".to_owned())?;
+    let source_attnum = indexed_ecvector_attnum(index_relation)?;
+    // SAFETY: `heap_relation` is either PostgreSQL-supplied for this vacuum
+    // callback or owned by a relation guard in the caller.
+    let slot =
+        unsafe { crate::storage::slot_guard::TupleTableSlotGuard::single_for_heap(heap_relation) }
+            .ok_or_else(|| "ec_diskann vacuum fill failed to allocate heap slot".to_owned())?;
     let snapshot = std::ptr::addr_of_mut!(pg_sys::SnapshotSelfData);
     let mut visited = VisitedState::new();
 
@@ -1235,11 +1170,8 @@ unsafe fn fill_vacuum_neighbor_slots(
                 chain,
                 dead_set,
             };
-            // SAFETY: The planner owns heap slot/snapshot state and points at
-            // the pass-local mutated chain.
-            let fill_candidates = unsafe {
-                plan_vacuum_fill_candidates_for_target(&planner, target_tid, &mut visited)?
-            };
+            let fill_candidates =
+                plan_vacuum_fill_candidates_for_target(&planner, target_tid, &mut visited)?;
             if fill_candidates.is_empty() {
                 continue;
             }
@@ -1391,7 +1323,7 @@ fn prepare_prefilter(
     })
 }
 
-unsafe fn plan_vacuum_fill_candidates_for_target(
+fn plan_vacuum_fill_candidates_for_target(
     planner: &VacuumFillPlanner<'_>,
     target_tid: ItemPointer,
     visited: &mut VisitedState,
@@ -1414,18 +1346,14 @@ unsafe fn plan_vacuum_fill_candidates_for_target(
         return Ok(Vec::new());
     }
 
-    // SAFETY: Target tuple is live and has a valid heap TID; the planner owns
-    // the heap relation/snapshot/slot used for source lookup.
-    let target_source_vector = unsafe {
-        fetch_heap_source_vector(
-            planner.heap_relation,
-            planner.snapshot,
-            planner.slot,
-            planner.source_attnum,
-            target_tuple.primary_heaptid,
-            "vacuum repair target source vector",
-        )?
-    };
+    let target_source_vector = fetch_heap_source_vector(
+        planner.heap_relation,
+        planner.snapshot,
+        planner.slot,
+        planner.source_attnum,
+        target_tuple.primary_heaptid,
+        "vacuum repair target source vector",
+    )?;
     let existing_neighbor_tids = target_tuple
         .neighbors
         .iter()
@@ -1450,18 +1378,14 @@ unsafe fn plan_vacuum_fill_candidates_for_target(
         if !neighbor_tuple.is_live() || neighbor_tuple.primary_heaptid == ItemPointer::INVALID {
             continue;
         }
-        // SAFETY: Existing neighbor tuple is live and its primary heap TID can
-        // be read through the planner-owned heap slot.
-        let neighbor_source_vector = unsafe {
-            fetch_heap_source_vector(
-                planner.heap_relation,
-                planner.snapshot,
-                planner.slot,
-                planner.source_attnum,
-                neighbor_tuple.primary_heaptid,
-                "vacuum repair neighbor source vector",
-            )?
-        };
+        let neighbor_source_vector = fetch_heap_source_vector(
+            planner.heap_relation,
+            planner.snapshot,
+            planner.slot,
+            planner.source_attnum,
+            neighbor_tuple.primary_heaptid,
+            "vacuum repair neighbor source vector",
+        )?;
         planning_candidates.push(insert::ForwardNeighborCandidate {
             tid: *neighbor_tid,
             source_vector: neighbor_source_vector,
@@ -1521,18 +1445,14 @@ unsafe fn plan_vacuum_fill_candidates_for_target(
         if !candidate_tuple.is_live() || candidate_tuple.primary_heaptid == ItemPointer::INVALID {
             continue;
         }
-        // SAFETY: Frontier candidate tuple is live and its primary heap TID can
-        // be read through the planner-owned heap slot.
-        let candidate_source_vector = unsafe {
-            fetch_heap_source_vector(
-                planner.heap_relation,
-                planner.snapshot,
-                planner.slot,
-                planner.source_attnum,
-                candidate_tuple.primary_heaptid,
-                "vacuum repair candidate source vector",
-            )?
-        };
+        let candidate_source_vector = fetch_heap_source_vector(
+            planner.heap_relation,
+            planner.snapshot,
+            planner.slot,
+            planner.source_attnum,
+            candidate_tuple.primary_heaptid,
+            "vacuum repair candidate source vector",
+        )?;
         planning_candidates.push(insert::ForwardNeighborCandidate {
             tid: candidate.tid,
             source_vector: candidate_source_vector,
@@ -1561,9 +1481,10 @@ unsafe fn plan_vacuum_fill_candidates_for_target(
 }
 
 fn count_live_node_tuples(index_relation: pg_sys::Relation) -> Result<usize, String> {
-    // SAFETY: The index relation is live and materialization only reads the
-    // persisted DiskANN page chain.
-    let (metadata, chain) = unsafe { scan_state::materialize_chain_from_index(index_relation)? };
+    let handle = ptr::NonNull::new(index_relation).ok_or_else(|| {
+        "ec_diskann count_live_node_tuples needs a valid index relation".to_owned()
+    })?;
+    let (metadata, chain) = scan_state::materialize_chain_from_index_handle(handle)?;
     count_live_tuples_in_chain(
         &chain,
         metadata.graph_degree_r,
@@ -1593,13 +1514,21 @@ unsafe fn apply_tuple_rewrites(
     index_relation: pg_sys::Relation,
     rewrites: &[TupleRewrite],
 ) -> Result<VacuumRewriteApplyOutcome, String> {
+    let handle = std::ptr::NonNull::new(index_relation).ok_or_else(|| {
+        "ec_diskann apply_tuple_rewrites received a null index relation".to_owned()
+    })?;
+    apply_tuple_rewrites_handle(handle, rewrites)
+}
+
+fn apply_tuple_rewrites_handle(
+    handle: RelationHandle,
+    rewrites: &[TupleRewrite],
+) -> Result<VacuumRewriteApplyOutcome, String> {
     if rewrites.is_empty() {
         return Ok(VacuumRewriteApplyOutcome::Applied);
     }
 
-    // SAFETY: Test-only injection, when enabled, locks and rewrites the target
-    // page before the normal expected-byte validation below.
-    unsafe { maybe_apply_vacuum_rewrite_test_injection(index_relation)? };
+    maybe_apply_vacuum_rewrite_test_injection(handle.as_ptr())?;
     let mut cursor = 0usize;
     while cursor < rewrites.len() {
         let block_number = rewrites[cursor].tid.block_number;
@@ -1608,42 +1537,39 @@ unsafe fn apply_tuple_rewrites(
             cursor += 1;
         }
         let block_rewrites = &rewrites[block_start..cursor];
-        // SAFETY: Rewrites are grouped by block and each target page is locked
-        // exclusively before expected bytes are checked or modified.
-        let buffer = unsafe {
-            LockedBufferGuard::read_main(
-                index_relation,
-                block_number,
-                pg_sys::ReadBufferMode::RBM_NORMAL,
-                pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
-            )
-        }
+        let buffer = LockedBufferGuard::read_main_handle(
+            handle,
+            block_number,
+            pg_sys::ReadBufferMode::RBM_NORMAL,
+            pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
+        )
         .ok_or_else(|| {
             format!("ec_diskann vacuum rewrite could not open data block {block_number}")
         })?;
-        // SAFETY: The target page is locked exclusively for this rewrite group;
-        // expected bytes are validated before the registered page is mutated.
-        let page_result: Result<VacuumRewriteApplyOutcome, String> = unsafe {
-            let page = buffer.page();
-            let page_size = buffer.page_size();
-            for rewrite in block_rewrites {
-                let matches_expected =
-                    with_vacuum_page_tuple_bytes(page, page_size, rewrite.tid, |current_raw| {
-                        Ok(current_raw == rewrite.expected_raw.as_slice())
-                    })?;
-                if !matches_expected {
-                    return Ok(VacuumRewriteApplyOutcome::RetryReplan);
-                }
+        for rewrite in block_rewrites {
+            let visit = buffer.visit_tuple_bytes(
+                rewrite.tid,
+                "ec_diskann vacuum target",
+                |current_raw| Ok(current_raw == rewrite.expected_raw.as_slice()),
+            )?;
+            let LockedPageTupleVisit::Present(matches_expected) = visit else {
+                return Err(format!(
+                    "ec_diskann vacuum target ({},{}) points at an unused slot",
+                    rewrite.tid.block_number, rewrite.tid.offset_number
+                ));
+            };
+            if !matches_expected {
+                return Ok(VacuumRewriteApplyOutcome::RetryReplan);
             }
+        }
 
-            let mut wal_txn = wal::GenericXLogTxn::start(index_relation);
-            let writable_page =
-                wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32);
+        let mut wal_txn = wal::WalTxnScope::start_handle(handle);
+        let page_result: Result<VacuumRewriteApplyOutcome, String> = {
+            let mut writable_page = wal_txn.register_page(&buffer);
             for rewrite in block_rewrites {
-                with_vacuum_page_tuple_bytes_mut(
-                    writable_page,
-                    page_size,
+                writable_page.visit_tuple_bytes_mut(
                     rewrite.tid,
+                    "ec_diskann vacuum target",
                     |tuple_bytes| {
                         if tuple_bytes.len() != rewrite.replacement_raw.len() {
                             return Err(format!(
@@ -1678,16 +1604,15 @@ unsafe fn write_raw_tuple_bytes(
     tid: ItemPointer,
     replacement_raw: &[u8],
 ) -> Result<(), String> {
-    // SAFETY: Test helper locks the target block exclusively before overwriting
-    // tuple bytes.
-    let buffer = unsafe {
-        LockedBufferGuard::read_main(
-            index_relation,
-            tid.block_number,
-            pg_sys::ReadBufferMode::RBM_NORMAL,
-            pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
-        )
-    }
+    let handle = std::ptr::NonNull::new(index_relation).ok_or_else(|| {
+        "ec_diskann write_raw_tuple_bytes received a null index relation".to_owned()
+    })?;
+    let buffer = LockedBufferGuard::read_main_handle(
+        handle,
+        tid.block_number,
+        pg_sys::ReadBufferMode::RBM_NORMAL,
+        pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
+    )
     .ok_or_else(|| {
         format!(
             "ec_diskann vacuum test rewrite could not open data block {}",
@@ -1695,14 +1620,10 @@ unsafe fn write_raw_tuple_bytes(
         )
     })?;
 
-    // SAFETY: The target page is locked exclusively, the tuple location helper
-    // validates bounds, and the replacement length is checked before copying.
-    let page_result: Result<(), String> = unsafe {
-        let page_size = buffer.page_size();
-        let mut wal_txn = wal::GenericXLogTxn::start(index_relation);
-        let writable_page =
-            wal_txn.register_buffer(buffer.buffer(), pg_sys::GENERIC_XLOG_FULL_IMAGE as i32);
-        with_vacuum_page_tuple_bytes_mut(writable_page, page_size, tid, |tuple_bytes| {
+    let mut wal_txn = wal::WalTxnScope::start_handle(handle);
+    let page_result: Result<(), String> = {
+        let mut writable_page = wal_txn.register_page(&buffer);
+        writable_page.visit_tuple_bytes_mut(tid, "ec_diskann vacuum test target", |tuple_bytes| {
             if tuple_bytes.len() != replacement_raw.len() {
                 return Err(format!(
                             "ec_diskann vacuum test rewrite length mismatch at ({},{}): got {}, expected {}",
@@ -1721,7 +1642,7 @@ unsafe fn write_raw_tuple_bytes(
     page_result
 }
 
-unsafe fn callback_marks_heap_tid_dead(
+fn callback_marks_heap_tid_dead(
     callback: BulkDeleteCallback,
     callback_state: *mut c_void,
     heap_tid: ItemPointer,
@@ -1739,137 +1660,16 @@ unsafe fn callback_marks_heap_tid_dead(
     }
 }
 
-unsafe fn vacuum_page_tuple_location(
-    page: pg_sys::Page,
-    page_size: usize,
-    tid: ItemPointer,
-) -> Result<(*mut u8, usize), String> {
-    // SAFETY: The caller supplies a pinned PostgreSQL page; this reads its max
-    // line pointer offset.
-    let max_offset = unsafe { pg_sys::PageGetMaxOffsetNumber(page) };
-    if tid.offset_number == pg_sys::InvalidOffsetNumber || tid.offset_number > max_offset {
-        return Err(format!(
-            "ec_diskann vacuum target ({},{}) has invalid offset {} (max {})",
-            tid.block_number, tid.offset_number, tid.offset_number, max_offset
-        ));
-    }
-
-    // SAFETY: `tid.offset_number` was checked against the page max offset.
-    let item_id_ref = unsafe {
-        let item_id = pg_sys::PageGetItemId(page, tid.offset_number);
-        if item_id.is_null() {
-            return Err(format!(
-                "ec_diskann vacuum target ({},{}) returned a null item id",
-                tid.block_number, tid.offset_number
-            ));
-        }
-        &*item_id
-    };
-    if item_id_ref.lp_flags() == 0 {
-        return Err(format!(
-            "ec_diskann vacuum target ({},{}) points at an unused slot",
-            tid.block_number, tid.offset_number
-        ));
-    }
-
-    let tuple_offset = item_id_ref.lp_off() as usize;
-    let tuple_len = item_id_ref.lp_len() as usize;
-    if tuple_offset + tuple_len > page_size {
-        return Err(format!(
-            "ec_diskann vacuum target ({},{}) has invalid tuple bounds",
-            tid.block_number, tid.offset_number
-        ));
-    }
-
-    // SAFETY: Tuple bounds were validated against `page_size` above.
-    let tuple_ptr = unsafe { (page as *mut u8).add(tuple_offset) };
-    Ok((tuple_ptr, tuple_len))
-}
-
-unsafe fn with_vacuum_page_tuple_bytes<R, F>(
-    page: pg_sys::Page,
-    page_size: usize,
-    tid: ItemPointer,
-    visit: F,
-) -> Result<R, String>
-where
-    F: for<'a> FnOnce(&'a [u8]) -> Result<R, String>,
-{
-    // SAFETY: The caller owns the page pin/lock; tuple bounds are validated
-    // before constructing the immutable byte slice.
-    let tuple_bytes = unsafe {
-        let (tuple_ptr, tuple_len) = vacuum_page_tuple_location(page, page_size, tid)?;
-        slice::from_raw_parts(tuple_ptr.cast_const(), tuple_len)
-    };
-    visit(tuple_bytes)
-}
-
-unsafe fn with_vacuum_page_tuple_bytes_mut<R, F>(
-    page: pg_sys::Page,
-    page_size: usize,
-    tid: ItemPointer,
-    visit: F,
-) -> Result<R, String>
-where
-    F: for<'a> FnOnce(&'a mut [u8]) -> Result<R, String>,
-{
-    // SAFETY: The caller owns an exclusive page lock; tuple bounds are
-    // validated before constructing the mutable byte slice.
-    let tuple_bytes = unsafe {
-        let (tuple_ptr, tuple_len) = vacuum_page_tuple_location(page, page_size, tid)?;
-        slice::from_raw_parts_mut(tuple_ptr, tuple_len)
-    };
-    visit(tuple_bytes)
-}
-
-#[cfg(feature = "pg18")]
-unsafe fn prefetch_heap_rerank_blocks(heap_relation: pg_sys::Relation, heap_tids: &[ItemPointer]) {
-    if heap_tids.is_empty() {
-        return;
-    }
+fn prefetch_heap_rerank_blocks(heap_relation: pg_sys::Relation, heap_tids: &[ItemPointer]) {
     let block_numbers = heap_tids.iter().map(|tid| tid.block_number).collect();
-    let mut state = crate::am::stream::BlockSequencePrefetchState::new(block_numbers);
-    // SAFETY: The heap relation is live and the callback state lives until
-    // `read_stream_end`; each returned buffer pin is adopted and released by a guard.
-    unsafe {
-        let stream = pg_sys::read_stream_begin_relation(
-            pg_sys::READ_STREAM_DEFAULT as i32,
-            ptr::null_mut(),
-            heap_relation,
-            pg_sys::ForkNumber::MAIN_FORKNUM,
-            Some(crate::am::stream::block_sequence_prefetch_cb),
-            (&mut state as *mut crate::am::stream::BlockSequencePrefetchState).cast(),
-            std::mem::size_of::<pg_sys::BlockNumber>(),
-        );
-        loop {
-            let mut per_buffer_data = ptr::null_mut();
-            let buffer = pg_sys::read_stream_next_buffer(stream, &mut per_buffer_data);
-            if buffer == pg_sys::InvalidBuffer as pg_sys::Buffer {
-                break;
-            }
-            let _buffer = PinnedBufferGuard::from_pinned(buffer)
-                .unwrap_or_else(|| pgrx::error!("ec_diskann prefetch returned invalid buffer"));
-        }
-        pg_sys::read_stream_end(stream);
-    }
+    crate::am::stream::prefetch_relation_blocks(
+        heap_relation,
+        block_numbers,
+        "ec_diskann heap rerank",
+    );
 }
 
-#[cfg(not(feature = "pg18"))]
-unsafe fn prefetch_heap_rerank_blocks(heap_relation: pg_sys::Relation, heap_tids: &[ItemPointer]) {
-    for heap_tid in heap_tids {
-        // SAFETY: The heap relation is live and the block number comes from a
-        // bound heap TID in the scan result set.
-        unsafe {
-            pg_sys::PrefetchBuffer(
-                heap_relation,
-                pg_sys::ForkNumber::MAIN_FORKNUM,
-                heap_tid.block_number,
-            )
-        };
-    }
-}
-
-unsafe fn exact_heap_rerank_distance(
+fn exact_heap_rerank_distance(
     heap_relation: pg_sys::Relation,
     snapshot: pg_sys::Snapshot,
     slot: *mut pg_sys::TupleTableSlot,
@@ -1877,31 +1677,27 @@ unsafe fn exact_heap_rerank_distance(
     raw_query: &[f32],
     heap_tid: ItemPointer,
 ) -> Result<f32, String> {
-    // SAFETY: The heap relation/snapshot/slot are owned by the scan or planning
-    // scope and `heap_tid` is a candidate heap row from the index.
-    unsafe {
-        with_heap_source_vector(
-            heap_relation,
-            snapshot,
-            slot,
-            source_attnum,
-            heap_tid,
-            "heap rerank source vector",
-            |source_vector| {
-                if source_vector.len() != raw_query.len() {
-                    return Err(format!(
-                        "ec_diskann heap rerank dimension mismatch: query dim {}, heap dim {}",
-                        raw_query.len(),
-                        source_vector.len()
-                    ));
-                }
-                Ok(-ambuild::source_inner_product(raw_query, source_vector))
-            },
-        )
-    }
+    with_heap_source_vector(
+        heap_relation,
+        snapshot,
+        slot,
+        source_attnum,
+        heap_tid,
+        "heap rerank source vector",
+        |source_vector| {
+            if source_vector.len() != raw_query.len() {
+                return Err(format!(
+                    "ec_diskann heap rerank dimension mismatch: query dim {}, heap dim {}",
+                    raw_query.len(),
+                    source_vector.len()
+                ));
+            }
+            Ok(-ambuild::source_inner_product(raw_query, source_vector))
+        },
+    )
 }
 
-unsafe fn with_heap_source_vector<T>(
+fn with_heap_source_vector<T>(
     heap_relation: pg_sys::Relation,
     snapshot: pg_sys::Snapshot,
     slot: *mut pg_sys::TupleTableSlot,
@@ -1910,19 +1706,26 @@ unsafe fn with_heap_source_vector<T>(
     context: &str,
     f: impl for<'a> FnOnce(&'a [f32]) -> Result<T, String>,
 ) -> Result<T, String> {
-    // SAFETY: The heap relation/snapshot/slot are caller-owned and valid for
-    // this row-version fetch. The required datum is read from the fetched row
-    // and the slot is cleared after the visitor finishes.
-    unsafe {
-        scan_state::fetch_heap_row_version(heap_relation, heap_tid, snapshot, slot)?;
-        let datum = scan_state::required_slot_datum(slot, source_attnum, context)?;
-        let result = ambuild::with_ecvector_datum_slice(datum, f);
-        pg_sys::ExecClearTuple(slot);
-        result
-    }
+    // SAFETY: callers pass the heap relation/snapshot/slot owned by the scan or
+    // planning scope. The reader keeps all slot field access inside one helper.
+    let mut reader = unsafe {
+        crate::am::common::heap_slot::HeapSlotReader::from_raw(
+            heap_relation,
+            snapshot,
+            slot,
+            "ec_diskann",
+        )
+    }?;
+    scan_state::fetch_heap_row_version_with_reader(&mut reader, heap_tid)?;
+    let datum = scan_state::required_slot_datum_with_reader(&mut reader, source_attnum, context)?;
+    // SAFETY: The datum was read as the validated indexed ecvector source
+    // attribute from the fetched heap row.
+    let result = unsafe { ambuild::with_ecvector_datum_slice(datum, f) };
+    reader.clear();
+    result
 }
 
-unsafe fn fetch_heap_source_vector(
+fn fetch_heap_source_vector(
     heap_relation: pg_sys::Relation,
     snapshot: pg_sys::Snapshot,
     slot: *mut pg_sys::TupleTableSlot,
@@ -1930,19 +1733,15 @@ unsafe fn fetch_heap_source_vector(
     heap_tid: ItemPointer,
     context: &str,
 ) -> Result<Vec<f32>, String> {
-    // SAFETY: Delegates to `with_heap_source_vector` using caller-owned
-    // heap/snapshot/slot state and copies the borrowed source vector out.
-    unsafe {
-        with_heap_source_vector(
-            heap_relation,
-            snapshot,
-            slot,
-            source_attnum,
-            heap_tid,
-            context,
-            |source_vector| Ok(source_vector.to_vec()),
-        )
-    }
+    with_heap_source_vector(
+        heap_relation,
+        snapshot,
+        slot,
+        source_attnum,
+        heap_tid,
+        context,
+        |source_vector| Ok(source_vector.to_vec()),
+    )
 }
 
 #[pg_guard]
@@ -2031,23 +1830,20 @@ mod tests {
     fn index_metadata(index_name: &str) -> VamanaMetadataPage {
         let index_relation =
             IndexRelationGuard::access_share(index_oid(index_name), "index_metadata");
-        // SAFETY: The guard keeps the index relation open while the persisted
-        // chain is materialized for test inspection.
-        let (metadata, _) =
-            unsafe { scan_state::materialize_chain_from_index(index_relation.as_ptr()) }
-                .expect("materialize_chain_from_index should succeed");
+        let handle = ptr::NonNull::new(index_relation.as_ptr())
+            .expect("guard keeps the index relation open");
+        let (metadata, _) = scan_state::materialize_chain_from_index_handle(handle)
+            .expect("materialize_chain_from_index should succeed");
         metadata
     }
 
     fn index_materialized_chain(index_name: &str) -> (VamanaMetadataPage, DataPageChain) {
         let index_relation =
             IndexRelationGuard::access_share(index_oid(index_name), "index_materialized_chain");
-        // SAFETY: The guard keeps the index relation open while the persisted
-        // chain is materialized for test inspection.
-        let materialized =
-            unsafe { scan_state::materialize_chain_from_index(index_relation.as_ptr()) }
-                .expect("materialize_chain_from_index should succeed");
-        materialized
+        let handle = ptr::NonNull::new(index_relation.as_ptr())
+            .expect("guard keeps the index relation open");
+        scan_state::materialize_chain_from_index_handle(handle)
+            .expect("materialize_chain_from_index should succeed")
     }
 
     #[pg_test]
@@ -2076,14 +1872,11 @@ mod tests {
         );
         let index_relation_ptr = index_relation.as_ptr();
 
-        // SAFETY: The guard keeps the index relation open while relation
-        // options are read for test scan-state construction.
-        let relation_options = unsafe { super::options::relation_options(index_relation_ptr) };
-        // SAFETY: The guard keeps the index relation open while the persisted
-        // chain is materialized for test scan-state construction.
-        let (metadata, chain) =
-            unsafe { scan_state::materialize_chain_from_index(index_relation_ptr) }
-                .expect("materialize_chain_from_index should succeed");
+        let relation_options = super::options::relation_options(index_relation_ptr);
+        let session_handle =
+            ptr::NonNull::new(index_relation_ptr).expect("guard keeps the index relation open");
+        let (metadata, chain) = scan_state::materialize_chain_from_index_handle(session_handle)
+            .expect("materialize_chain_from_index should succeed");
         let relation_opaque =
             scan_state::DiskannScanOpaque::new(metadata, chain, relation_options.clone())
                 .expect("relation scan state should build");
@@ -2093,11 +1886,8 @@ mod tests {
         );
 
         Spi::run("SET ec_diskann.list_size = 7").expect("session override should succeed");
-        // SAFETY: The guard still owns the index relation during the second
-        // materialization under the session override.
-        let (metadata, chain) =
-            unsafe { scan_state::materialize_chain_from_index(index_relation_ptr) }
-                .expect("materialize_chain_from_index should succeed");
+        let (metadata, chain) = scan_state::materialize_chain_from_index_handle(session_handle)
+            .expect("materialize_chain_from_index should succeed");
         let session_opaque = scan_state::DiskannScanOpaque::new(metadata, chain, relation_options)
             .expect("session scan state should build");
         assert_eq!(
@@ -2313,18 +2103,14 @@ mod tests {
         let search_index_relation =
             IndexRelationGuard::access_share(index_oid(index_name), "find_vacuum_refill_fixture");
         let index_relation = search_index_relation.as_ptr();
-        // SAFETY: The index relation guard is live and IndexGetRelation only
-        // resolves the heap OID for this test fixture.
-        let heap_oid = unsafe { pg_sys::IndexGetRelation((*index_relation).rd_id, false) };
+        let heap_oid = search_index_relation.heap_relation_oid();
         assert_ne!(heap_oid, pg_sys::InvalidOid, "heap relation should resolve");
         let heap_relation = HeapRelationGuard::try_access_share(heap_oid)
             .expect("heap relation should open for fixture search");
         let heap_relation_ptr = heap_relation.as_ptr();
-        // SAFETY: The index relation is open and the helper only reads index
-        // metadata to resolve the indexed ecvector attribute.
-        let source_attnum = unsafe { super::indexed_ecvector_attnum(index_relation) }
+        let source_attnum = super::indexed_ecvector_attnum(index_relation)
             .expect("indexed source attnum should resolve");
-        let slot = TupleTableSlotGuard::single_for_heap(heap_relation_ptr)
+        let slot = unsafe { TupleTableSlotGuard::single_for_heap(heap_relation_ptr) }
             .expect("heap slot allocation should succeed");
         let snapshot = std::ptr::addr_of_mut!(pg_sys::SnapshotSelfData);
         let mut visited = super::VisitedState::new();
@@ -2456,15 +2242,11 @@ mod tests {
                             chain: &working_chain,
                             dead_set: &dead_set,
                         };
-                        // SAFETY: The fixture planner uses live guard-owned
-                        // heap state and a cloned in-memory chain.
-                        let fill_candidates = unsafe {
-                            super::plan_vacuum_fill_candidates_for_target(
-                                &planner,
-                                target_tid,
-                                &mut visited,
-                            )
-                        }
+                        let fill_candidates = super::plan_vacuum_fill_candidates_for_target(
+                            &planner,
+                            target_tid,
+                            &mut visited,
+                        )
                         .expect("fixture search should plan vacuum fill candidates");
                         if fill_candidates.contains(&replacement_tid) {
                             Some(VacuumRefillFixture {
@@ -2494,18 +2276,14 @@ mod tests {
         itemptr: pg_sys::ItemPointer,
         state: *mut c_void,
     ) -> bool {
-        // SAFETY: Debug vacuum passes a `DebugVacuumCallbackState` pointer as
-        // callback state for the duration of this guarded callback.
-        unsafe {
-            pgrx::pgrx_extern_c_guard(|| {
-                let state = &*(state.cast::<DebugVacuumCallbackState>());
-                let (block_number, offset_number) = pgrx::itemptr::item_pointer_get_both(*itemptr);
-                state.dead_tids.contains(&ItemPointer {
-                    block_number,
-                    offset_number,
-                })
+        crate::am::common::callback::pg_callback!({
+            let state = &*(state.cast::<DebugVacuumCallbackState>());
+            let (block_number, offset_number) = pgrx::itemptr::item_pointer_get_both(*itemptr);
+            state.dead_tids.contains(&ItemPointer {
+                block_number,
+                offset_number,
             })
-        }
+        })
     }
 
     fn debug_vacuum_stats(index_oid: pg_sys::Oid) -> pg_sys::IndexBulkDeleteResult {
@@ -2514,7 +2292,7 @@ mod tests {
         // SAFETY: The test constructs callback-duration vacuum info and invokes
         // the AM bulkdelete/cleanup entries with no delete callback for stats.
         unsafe {
-            let mut info = pgrx::PgBox::<pg_sys::IndexVacuumInfo>::alloc0();
+            let mut info = crate::am::common::vacuum::alloc_index_vacuum_info();
             info.index = index_relation.as_ptr();
             let info_ptr = (&mut *info) as *mut pg_sys::IndexVacuumInfo;
             let stats =
@@ -2534,9 +2312,7 @@ mod tests {
             "debug_vacuum_remove_heap_tids",
         );
         let index_relation_ptr = index_relation.as_ptr();
-        // SAFETY: The index relation guard is live and IndexGetRelation only
-        // resolves the heap OID for this test helper.
-        let heap_oid = unsafe { pg_sys::IndexGetRelation((*index_relation_ptr).rd_id, false) };
+        let heap_oid = index_relation.heap_relation_oid();
         let heap_relation = if heap_oid == pg_sys::InvalidOid {
             None
         } else {
@@ -2549,7 +2325,7 @@ mod tests {
         // SAFETY: The test constructs callback-duration vacuum info and callback
         // state and invokes the AM bulkdelete/cleanup entries directly.
         unsafe {
-            let mut info = pgrx::PgBox::<pg_sys::IndexVacuumInfo>::alloc0();
+            let mut info = crate::am::common::vacuum::alloc_index_vacuum_info();
             info.index = index_relation_ptr;
             info.heaprel = heap_relation
                 .as_ref()
@@ -3836,10 +3612,12 @@ mod tests {
             "test_ec_diskann_vacuum_refills_dead_neighbor_slot",
         );
         assert_eq!(
-            // SAFETY: The test holds the index relation open with row-exclusive
-            // lock while applying a fixture rewrite.
-            unsafe { super::apply_tuple_rewrites(index_relation.as_ptr(), &rewrites) }
-                .expect("fixture rewrite should apply"),
+            super::apply_tuple_rewrites_handle(
+                ptr::NonNull::new(index_relation.as_ptr())
+                    .expect("test holds the index relation open"),
+                &rewrites,
+            )
+            .expect("fixture rewrite should apply"),
             super::VacuumRewriteApplyOutcome::Applied,
         );
 
@@ -3970,10 +3748,12 @@ mod tests {
             "test_ec_diskann_vacuum_replans_on_stale_repair_tuple",
         );
         assert_eq!(
-            // SAFETY: The test holds the index relation open with row-exclusive
-            // lock while applying a fixture rewrite.
-            unsafe { super::apply_tuple_rewrites(index_relation.as_ptr(), &rewrites) }
-                .expect("fixture rewrite should apply"),
+            super::apply_tuple_rewrites_handle(
+                ptr::NonNull::new(index_relation.as_ptr())
+                    .expect("test holds the index relation open"),
+                &rewrites,
+            )
+            .expect("fixture rewrite should apply"),
             super::VacuumRewriteApplyOutcome::Applied,
         );
 

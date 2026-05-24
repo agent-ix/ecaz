@@ -1,0 +1,67 @@
+Script started on 2026-05-23 07:48:47-07:00 [<not executed on terminal>]
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz)
+warning: unused variable: `quant_bits`
+   --> src/am/ec_ivf/build.rs:701:5
+    |
+701 |     quant_bits: u8,
+    |     ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_quant_bits`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `fwht_in_place_scalar_reference` is never used
+  --> src/quant/hadamard.rs:46:8
+   |
+46 | pub fn fwht_in_place_scalar_reference(values: &mut [f32]) {
+   |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `fwht_in_place_avx2_for_test` is never used
+  --> src/quant/hadamard.rs:51:8
+   |
+51 | pub fn fwht_in_place_avx2_for_test(values: &mut [f32]) -> bool {
+   |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: `ecaz` (lib test) generated 3 warnings (run `cargo fix --lib -p ecaz --tests` to apply 1 suggestion)
+warning: unused imports: `SpireDmlFrontdoorCustomScanMode`, `SpireDmlFrontdoorPkValuePlan`, `coordinator_insert_prepare_remote_sql as spire_coordinator_insert_prepare_remote_sql`, `dml_frontdoor_bigint_pk_value_bytes as spire_dml_frontdoor_bigint_pk_value_bytes`, `dml_frontdoor_pk_argument_from_replacement_decision as spire_dml_frontdoor_pk_argument_from_replacement_decision`, `dml_frontdoor_primitive_invocation_from_plan as spire_dml_frontdoor_primitive_invocation_from_plan`, `dml_frontdoor_primitive_plan_expr_catalog_row as spire_dml_frontdoor_primitive_plan_expr_catalog_row`, and `dml_frontdoor_primitive_plan_pk_value_bytes as spire_dml_frontdoor_primitive_plan_pk_value_bytes`
+   --> src/am/mod.rs:90:5
+    |
+ 90 |     coordinator_insert_prepare_remote_sql as spire_coordinator_insert_prepare_remote_sql,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+ 97 |     dml_frontdoor_bigint_pk_value_bytes as spire_dml_frontdoor_bigint_pk_value_bytes,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ 98 |     dml_frontdoor_hook_status_row as spire_dml_frontdoor_hook_status_row,
+ 99 |     dml_frontdoor_pk_argument_from_replacement_decision as spire_dml_frontdoor_pk_argument_from_replacement_decision,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+100 |     dml_frontdoor_primitive_invocation_from_plan as spire_dml_frontdoor_primitive_invocation_from_plan,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+101 |     dml_frontdoor_primitive_plan_const_pk_value_bytes as spire_dml_frontdoor_primitive_plan_const_pk_value_bytes,
+102 |     dml_frontdoor_primitive_plan_expr_catalog_row as spire_dml_frontdoor_primitive_plan_expr_catalog_row,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+103 |     dml_frontdoor_primitive_plan_from_replacement_decision as spire_dml_frontdoor_primitive_plan_from_replacement_decision,
+104 |     dml_frontdoor_primitive_plan_pk_value_bytes as spire_dml_frontdoor_primitive_plan_pk_value_bytes,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+224 |     SpireDmlFrontdoorCustomScanMode, SpireDmlFrontdoorPkValuePlan, SpireDmlFrontdoorQueryContext,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `ecaz` (lib) generated 2 warnings (1 duplicate) (run `cargo fix --lib -p ecaz` to apply 1 suggestion)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2m 36s
+  Executable unittests src/lib.rs (target/debug/deps/ecaz-552491ddd7a9a784)
+  Executable unittests src/bin/approx_score_study.rs (target/debug/deps/approx_score_study-b7a4110d53144d2b)
+  Executable unittests src/bin/pgrx_embed.rs (target/debug/deps/pgrx_embed_ecaz-c51e0e766ea84ebf)
+  Executable unittests src/bin/simd_bench.rs (target/debug/deps/simd_bench-e57f1bf6623ce83a)
+  Executable tests/kani_item_pointer.rs (target/debug/deps/kani_item_pointer-ff952525777430eb)
+  Executable tests/on_disk_fixtures.rs (target/debug/deps/on_disk_fixtures-614ae0c120138bfc)
+  Executable tests/proptest_page.rs (target/debug/deps/proptest_page-f49e6655f27ae3a0)
+  Executable tests/proptest_quant.rs (target/debug/deps/proptest_quant-7cf759ad1c10a169)
+  Executable tests/recall_integration.rs (target/debug/deps/recall_integration-85da2d4f25cb223c)
+  Executable tests/simd_diff.rs (target/debug/deps/simd_diff-c776b5a393453aa3)
+  Executable tests/size_of_assertions.rs (target/debug/deps/size_of_assertions-4dfad4ce09aa2a51)
+  Executable tests/upgrade_matrix.rs (target/debug/deps/upgrade_matrix-a77eeedd9b45b8d1)
+  Executable tests/wal_policy.rs (target/debug/deps/wal_policy-e23d38b809604cae)
+
+Script done on 2026-05-23 07:51:17-07:00 [COMMAND_EXIT_CODE="0"]

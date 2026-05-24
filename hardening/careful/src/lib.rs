@@ -164,7 +164,10 @@ mod tests {
         let inserted = page.insert_raw_tuple(vec![0xaa; 16]).unwrap();
         assert_eq!(inserted, tid(9, 1));
         assert_eq!(page.tuples(), &[vec![0xaa; 16]]);
-        assert_eq!(page.free_bytes(), 96 - PAGE_HEADER_BYTES - raw_tuple_storage_bytes(16));
+        assert_eq!(
+            page.free_bytes(),
+            96 - PAGE_HEADER_BYTES - raw_tuple_storage_bytes(16)
+        );
     }
 
     #[test]
@@ -288,7 +291,10 @@ mod tests {
 
     #[test]
     fn quant_family_default_and_names_are_stable() {
-        assert_eq!(super::quant::Family::DEFAULT, super::quant::Family::TurboQuant);
+        assert_eq!(
+            super::quant::Family::DEFAULT,
+            super::quant::Family::TurboQuant
+        );
         assert_eq!(super::quant::Family::TurboQuant.as_str(), "turboquant");
         assert_eq!(super::quant::Family::PqFastScan.as_str(), "pq_fastscan");
     }

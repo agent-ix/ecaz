@@ -1,0 +1,2 @@
+python3 scripts/unsafe_ledger.py generate --output reviews/task-50/128-spire-relation-oid-boundary/artifacts/unsafe-ledger-after.jsonl --packet reviews/task-50/128-spire-relation-oid-boundary src
+wrote 1587 unsafe ledger rows to reviews/task-50/128-spire-relation-oid-boundary/artifacts/unsafe-ledger-after.jsonl

@@ -1,0 +1,106 @@
+diff --git a/src/am/ec_ivf/vacuum.rs b/src/am/ec_ivf/vacuum.rs
+index 5e9622f7..21168929 100644
+--- a/src/am/ec_ivf/vacuum.rs
++++ b/src/am/ec_ivf/vacuum.rs
+@@ -65,9 +65,7 @@ unsafe fn noop_vacuum_stats(
+ ) -> *mut pg_sys::IndexBulkDeleteResult {
+     // SAFETY: caller passes the live IVF index relation being vacuumed.
+     let metadata = unsafe { page::read_metadata_page(index_relation) };
+-    // SAFETY: same live relation and metadata; helper allocates stats if the
+-    // caller supplied null.
+-    unsafe { finish_vacuum_stats(index_relation, stats, &metadata) }
++    finish_vacuum_stats(index_relation, stats, &metadata)
+ }
+ 
+ unsafe fn run_bulkdelete(
+@@ -91,9 +89,7 @@ unsafe fn run_bulkdelete(
+         if metadata.total_live_tuples != 0 {
+             pgrx::error!("ec_ivf metadata has live tuples but no directory head");
+         }
+-        // SAFETY: relation and metadata are live; stats is either caller-owned
+-        // or allocated above.
+-        return unsafe { finish_vacuum_stats(index_relation, stats, &metadata) };
++        return finish_vacuum_stats(index_relation, stats, &metadata);
+     }
+ 
+     let payload_len = page_payload_len(&metadata).unwrap_or_else(|e| pgrx::error!("{e}"));
+@@ -115,20 +111,15 @@ unsafe fn run_bulkdelete(
+             );
+         }
+ 
+-        let list_result =
+-            // SAFETY: directory was read from this live relation; callback and
+-            // state are PostgreSQL-provided for this bulkdelete invocation.
+-            unsafe {
+-                bulkdelete_list_postings(
+-                    index_relation,
+-                    &directory,
+-                    directory_tid.block_number,
+-                    payload_len,
+-                    callback,
+-                    callback_state,
+-                )
+-            }
+-            .unwrap_or_else(|e| pgrx::error!("{e}"));
++        let list_result = bulkdelete_list_postings(
++            index_relation,
++            &directory,
++            directory_tid.block_number,
++            payload_len,
++            callback,
++            callback_state,
++        )
++        .unwrap_or_else(|e| pgrx::error!("{e}"));
+         live_heap_tids = live_heap_tids
+             .checked_add(list_result.live_heap_tids)
+             .unwrap_or_else(|| pgrx::error!("ec_ivf live heap tid count overflow during vacuum"));
+@@ -179,9 +170,7 @@ unsafe fn run_bulkdelete(
+         }
+     }
+ 
+-    // SAFETY: relation and metadata are live; stats is either caller-owned or
+-    // allocated by this function.
+-    unsafe { finish_vacuum_stats(index_relation, stats, &metadata) }
++    finish_vacuum_stats(index_relation, stats, &metadata)
+ }
+ 
+ fn page_payload_len(metadata: &page::MetadataPage) -> Result<usize, String> {
+@@ -200,7 +189,7 @@ fn page_payload_len(metadata: &page::MetadataPage) -> Result<usize, String> {
+     .map(|quantizer| quantizer.payload_len())
+ }
+ 
+-unsafe fn bulkdelete_list_postings(
++fn bulkdelete_list_postings(
+     index_relation: pg_sys::Relation,
+     directory: &page::IvfListDirectoryTuple,
+     directory_block_number: pg_sys::BlockNumber,
+@@ -248,10 +237,7 @@ fn bulkdelete_posting(
+     let starting_len = posting.heaptids.len();
+     posting
+         .heaptids
+-        // SAFETY: PostgreSQL's bulkdelete callback and opaque state remain
+-        // valid for this retain pass; each heap TID is copied into a local
+-        // ItemPointerData before callback invocation.
+-        .retain(|heap_tid| unsafe { !heap_tid_is_dead(*heap_tid, callback, callback_state) });
++        .retain(|heap_tid| !heap_tid_is_dead(*heap_tid, callback, callback_state));
+     let removed = starting_len.saturating_sub(posting.heaptids.len());
+ 
+     let rewrite = if posting.heaptids.is_empty() {
+@@ -277,7 +263,7 @@ fn bulkdelete_posting(
+     Ok(rewrite)
+ }
+ 
+-unsafe fn finish_vacuum_stats(
++fn finish_vacuum_stats(
+     index_relation: pg_sys::Relation,
+     stats: *mut pg_sys::IndexBulkDeleteResult,
+     metadata: &page::MetadataPage,
+@@ -307,7 +293,7 @@ unsafe fn finish_vacuum_stats(
+     stats
+ }
+ 
+-unsafe fn heap_tid_is_dead(
++fn heap_tid_is_dead(
+     heap_tid: ItemPointer,
+     callback: BulkDeleteCallback,
+     callback_state: *mut c_void,

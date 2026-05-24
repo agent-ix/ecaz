@@ -1,0 +1,2 @@
+python3 scripts/unsafe_ledger.py check --ledger reviews/task-50/145-string-info-reader-view/artifacts/unsafe-ledger-after.jsonl src
+ledger covers 1550 current unsafe rows

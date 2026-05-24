@@ -1,0 +1,14 @@
+Script started on 2026-05-21 15:39:48-07:00 [<not executed on terminal>]
+src/storage/query.rs
+5:pub(crate) fn analyze_single_query(sql: &str) -> Result<*mut pg_sys::Query, String> {
+
+src/am/ec_ivf/vacuum.rs
+316:pub(crate) fn debug_ec_ivf_vacuum_stats(index_oid: pg_sys::Oid) -> pg_sys::IndexBulkDeleteResult {
+
+src/am/ec_hnsw/options.rs
+299:pub(crate) fn relation_options(index_relation: pg_sys::Relation) -> TqHnswOptions {
+
+src/am/ec_hnsw/shared.rs
+959:pub(crate) fn debug_vacuum_stats(index_oid: pg_sys::Oid) -> pg_sys::IndexBulkDeleteResult {
+
+Script done on 2026-05-21 15:39:48-07:00 [COMMAND_EXIT_CODE="0"]

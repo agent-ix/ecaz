@@ -218,8 +218,7 @@ unsafe fn publish_relation_partitioned_single_level_build(
         return Ok(0);
     }
 
-    // SAFETY: reads PostgreSQL backend-local current timestamp state.
-    let (published_at_micros, retain_until_micros) = unsafe { current_epoch_publish_times()? };
+    let (published_at_micros, retain_until_micros) = current_epoch_publish_times()?;
     let epoch_manifest = SpireEpochManifest {
         epoch: SPIRE_INITIAL_EPOCH,
         state: SpireEpochState::Published,
@@ -284,15 +283,11 @@ unsafe fn publish_relation_partitioned_single_level_build(
         leaf_assignments_by_centroid[centroid_index].push(placement.row);
     }
 
-    // SAFETY: index_relation is a live SPIRE index relation and local_store_config
-    // was derived for this build publish; the store opens with row-exclusive lock.
-    let mut store = unsafe {
-        SpireRelationObjectStoreSet::for_index_relation_and_config(
-            index_relation,
-            local_store_config.clone(),
-            pg_sys::RowExclusiveLock as pg_sys::LOCKMODE,
-        )?
-    };
+    let mut store = SpireRelationObjectStoreSet::for_index_relation_and_config(
+        index_relation,
+        local_store_config.clone(),
+        pg_sys::RowExclusiveLock as pg_sys::LOCKMODE,
+    )?;
     let mut placements = Vec::with_capacity(centroid_count + 1);
     placements.push(store.insert_routing_object(SPIRE_INITIAL_EPOCH, &routing_object)?);
     for (pid, assignments) in centroid_pids
@@ -313,7 +308,7 @@ unsafe fn publish_relation_partitioned_single_level_build(
     let placement_evidence =
         // SAFETY: placement entries were just written for this live index
         // relation and are valid to append to the relation-backed directory.
-        unsafe { write_placement_entries_to_relation(index_relation, &placement_directory)? };
+        write_placement_entries_to_relation(index_relation, &placement_directory)?;
     let object_manifest = object_manifest_from_placement_writes(
         SPIRE_INITIAL_EPOCH,
         &placement_directory,
@@ -331,11 +326,11 @@ unsafe fn publish_relation_partitioned_single_level_build(
     let manifests = encode_manifest_bundle_for_publish(input.clone())?;
     // SAFETY: the encoded manifest bundle belongs to this initial publish for
     // the live SPIRE index relation.
-    let locators = unsafe { write_manifest_bundle_to_relation(index_relation, &manifests)? };
+    let locators = write_manifest_bundle_to_relation(index_relation, &manifests)?;
     let root_control = root_control_state_for_publish(input, locators)?;
     // SAFETY: initial publish owns initialization of the live index relation's
     // root/control page after all manifest locators are written.
-    unsafe { page::initialize_root_control_page(index_relation, root_control) };
+    page::initialize_root_control_page(index_relation, root_control);
     Ok(state.scanned_tuples)
 }
 
@@ -374,8 +369,7 @@ unsafe fn publish_relation_recursive_routing_build(
         return Ok(0);
     }
 
-    // SAFETY: reads PostgreSQL backend-local current timestamp state.
-    let (published_at_micros, retain_until_micros) = unsafe { current_epoch_publish_times()? };
+    let (published_at_micros, retain_until_micros) = current_epoch_publish_times()?;
     let centroid_plan = state.train_centroid_plan()?;
     let mut pid_allocator = SpirePidAllocator::default();
     let mut local_vec_id_allocator = SpireLocalVecIdAllocator::default();
@@ -398,15 +392,11 @@ unsafe fn publish_relation_recursive_routing_build(
         &mut pid_allocator,
         &mut local_vec_id_allocator,
     )?;
-    // SAFETY: index_relation is a live SPIRE index relation and local_store_config
-    // was derived for this recursive build publish.
-    let mut store = unsafe {
-        SpireRelationObjectStoreSet::for_index_relation_and_config(
-            index_relation,
-            local_store_config.clone(),
-            pg_sys::RowExclusiveLock as pg_sys::LOCKMODE,
-        )?
-    };
+    let mut store = SpireRelationObjectStoreSet::for_index_relation_and_config(
+        index_relation,
+        local_store_config.clone(),
+        pg_sys::RowExclusiveLock as pg_sys::LOCKMODE,
+    )?;
     let top_graph_plan = state.options.top_graph_plan()?;
     let expected_next_pid = if top_graph_plan.enabled {
         coordinator
@@ -452,9 +442,8 @@ unsafe fn publish_relation_recursive_routing_build(
     Ok(state.scanned_tuples)
 }
 
-pub(super) unsafe fn current_epoch_publish_times() -> Result<(i64, i64), String> {
-    // SAFETY: reads PostgreSQL backend-local current timestamp state.
-    let published_at_micros = unsafe { pg_sys::GetCurrentTimestamp() };
+pub(super) fn current_epoch_publish_times() -> Result<(i64, i64), String> {
+    let published_at_micros = crate::storage::time::current_timestamp_micros();
     let retention_micros = i64::from(SPIRE_MIN_EPOCH_RETENTION_SECS)
         .checked_mul(MICROS_PER_SECOND)
         .ok_or_else(|| "ec_spire epoch retention micros overflow".to_owned())?;
@@ -475,50 +464,39 @@ pub(super) unsafe fn build_spire_index_tuple(
     if values.is_null() || isnull.is_null() {
         pgrx::error!("ec_spire {context} received null tuple value arrays");
     }
-    // SAFETY: caller supplied non-null PostgreSQL values/isnull arrays and the
-    // indexed key column is at offset 0 for SPIRE index tuples.
-    if unsafe { *isnull } {
-        pgrx::error!("ec_spire does not support NULL indexed values");
-    }
-
-    // SAFETY: values is non-null and points at the indexed key datum.
-    let datum = unsafe { *values };
-    if datum.is_null() {
-        pgrx::error!("ec_spire {context} received a null indexed datum");
-    }
+    let values_view = crate::am::common::pg_ptr::DatumArrayView::new(
+        std::ptr::NonNull::new(values).expect("ec_spire values should be non-null"),
+        std::ptr::NonNull::new(isnull).expect("ec_spire isnull should be non-null"),
+    );
+    let datum = values_view.non_null_datum(0, "ec_spire", "indexed value");
 
     // SAFETY: datum is a non-null varlena Datum for the indexed vector column.
     let bytes = unsafe { detoasted_varlena_bytes(datum, "indexed vector column") };
     // SAFETY: values/isnull arrays and tuple_layout come from the same validated
     // index tuple layout for this build or insert callback.
     let vec_id_source_identity = unsafe {
-        build_source_identity_from_tuple_values(values, isnull, tuple_layout.source_identity, context)
+        build_source_identity_from_tuple_values(values_view, tuple_layout.source_identity, context)
     };
     match tuple_layout.vector_kind {
-        SpireIndexedVectorKind::Ecvector => {
-            build_spire_ecvector_tuple(
-                heap_tid,
-                &bytes,
-                payload_format,
-                vec_id_source_identity,
-                context,
-            )
-        }
-        SpireIndexedVectorKind::Tqvector => {
-            build_spire_tqvector_tuple(
-                heap_tid,
-                &bytes,
-                payload_format,
-                vec_id_source_identity,
-                context,
-            )
-        }
+        SpireIndexedVectorKind::Ecvector => build_spire_ecvector_tuple(
+            heap_tid,
+            &bytes,
+            payload_format,
+            vec_id_source_identity,
+            context,
+        ),
+        SpireIndexedVectorKind::Tqvector => build_spire_tqvector_tuple(
+            heap_tid,
+            &bytes,
+            payload_format,
+            vec_id_source_identity,
+            context,
+        ),
     }
 }
 
 unsafe fn build_source_identity_from_tuple_values(
-    values: *mut pg_sys::Datum,
-    isnull: *mut bool,
+    values: crate::am::common::pg_ptr::DatumArrayView,
     source_identity: Option<SpireSourceIdentityAttribute>,
     context: &str,
 ) -> SpireVecIdSourceIdentity {
@@ -526,17 +504,7 @@ unsafe fn build_source_identity_from_tuple_values(
         return SpireVecIdSourceIdentity::AllocateLocal;
     };
     let offset = source_identity.index_attr_offset;
-    // SAFETY: source_identity offset was resolved from IndexInfo and lies within
-    // the non-null callback isnull array for the indexed tuple.
-    if unsafe { *isnull.add(offset) } {
-        pgrx::error!("ec_spire {context} source_identity INCLUDE column must not be NULL");
-    }
-    // SAFETY: source_identity offset was resolved from IndexInfo and lies within
-    // the non-null callback values array for the indexed tuple.
-    let datum = unsafe { *values.add(offset) };
-    if datum.is_null() {
-        pgrx::error!("ec_spire {context} received a null source_identity datum");
-    }
+    let datum = values.non_null_datum(offset, "ec_spire", "source_identity INCLUDE column");
 
     // SAFETY: source_identity datum kind was resolved from the INCLUDE column
     // type; each branch decodes the non-null datum without taking ownership.

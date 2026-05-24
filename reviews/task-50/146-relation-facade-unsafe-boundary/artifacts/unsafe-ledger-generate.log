@@ -1,0 +1,2 @@
+python3 scripts/unsafe_ledger.py generate --output reviews/task-50/146-relation-facade-unsafe-boundary/artifacts/unsafe-ledger-after.jsonl --packet reviews/task-50/146-relation-facade-unsafe-boundary src
+wrote 1613 unsafe ledger rows to reviews/task-50/146-relation-facade-unsafe-boundary/artifacts/unsafe-ledger-after.jsonl

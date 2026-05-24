@@ -1,0 +1,83 @@
+{
+  "suite": "task51-local-rabitq8ls-sidecar",
+  "schema_version": 1,
+  "config": "benchmarks/task51-local-rabitq8ls-sidecar/suite.json",
+  "config_sha256": "9dee2c4f1ff6c4a7a9dbc938521b7cdb282bdb6be30a36a297d1c6a1f7b90d1f",
+  "dry_run": false,
+  "generated_at_unix_ms": 1779571778463,
+  "connection": {
+    "database": "tqvector_bench",
+    "host": "/home/peter/.pgrx",
+    "port": 28818,
+    "user": null,
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "rabitq8-scoring-variants-50k-k50-p128",
+      "kind": "sidecar-rerank",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "sidecar-rerank",
+        "--prefix",
+        "task51_local_50k_ivf_rabitq1_n128_sidecar_off",
+        "--profile",
+        "ec_ivf",
+        "--k",
+        "10",
+        "--candidate-k",
+        "50",
+        "--concurrency",
+        "1",
+        "--sweep",
+        "128",
+        "--queries-limit",
+        "100",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--variant",
+        "rabitq8",
+        "--variant",
+        "rabitq8ls",
+        "--variant",
+        "rabitq8c3",
+        "--variant",
+        "rabitq8c4",
+        "--read-mode",
+        "free",
+        "--read-mode",
+        "tid-sorted",
+        "--rebuild-sidecar-table",
+        "--force-index",
+        "--log-output",
+        "benchmarks/task51-local-rabitq8ls-sidecar/artifacts/rabitq8-scoring-variants-50k-k50-p128.log"
+      ],
+      "selected": true,
+      "tags": [
+        "sidecar",
+        "local",
+        "ivf",
+        "rabitq8",
+        "least_squares",
+        "clip_sweep",
+        "candidate_k50"
+      ],
+      "expected_artifacts": [
+        "benchmarks/task51-local-rabitq8ls-sidecar/artifacts/rabitq8-scoring-variants-50k-k50-p128.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1779571778464,
+      "finished_at_unix_ms": 1779571967789,
+      "duration_ms": 199041,
+      "exit_code": 0
+    }
+  ]
+}

@@ -1,12 +1,3 @@
-    macro_rules! hnsw_scan_debug {
-        ($call:expr) => {{
-            // SAFETY: These pg_test fixtures create the referenced HNSW index
-            // before calling the extension's test-only scan debug helper. The
-            // helper owns the PostgreSQL relation and scan access for the OID.
-            unsafe { $call }
-        }};
-    }
-
     #[pg_test]
     fn test_ech_debug_scan_result_count_matches_scan_helper() {
         Spi::run(
@@ -34,7 +25,7 @@
         .expect("SPI query should succeed")
         .expect("index oid should exist");
         let query = vec![1.0, 0.0, 0.5, -1.0];
-        let rust_count = i32::try_from(hnsw_scan_debug!(am::debug_gettuple_scan_heap_tids(index_oid, query.clone()).len()))
+        let rust_count = i32::try_from(am::debug_gettuple_scan_heap_tids(index_oid, query.clone()).len())
         .expect("scan result count should fit in i32");
         let sql_count = Spi::get_one::<i32>(
             "SELECT tests.ec_hnsw_debug_scan_result_count(
@@ -132,7 +123,7 @@
             grouped_traversal_budgeted_expansions,
             grouped_traversal_budgeted_candidates,
             grouped_traversal_budgeted_exact_candidates,
-        ) = hnsw_scan_debug!(am::debug_profile_ordered_scan(index_oid, vec![1.0, 0.0, 0.5, -1.0]));
+        ) = am::debug_profile_ordered_scan(index_oid, vec![1.0, 0.0, 0.5, -1.0]);
 
         assert_eq!(
             rescan_phase, "graph_traversal",
@@ -396,7 +387,7 @@
         .expect("SPI query should succeed")
         .expect("index oid should exist");
         let rust_count =
-            i32::try_from(hnsw_scan_debug!(am::debug_layer0_reachable_live_element_tids(index_oid).len()))
+            i32::try_from(am::debug_layer0_reachable_live_element_tids(index_oid).len())
                 .expect("reachable live element count should fit in i32");
         let sql_count = Spi::get_one::<i32>(
             "SELECT tests.ec_hnsw_debug_reachable_live_element_count(
@@ -442,7 +433,7 @@
             Spi::get_one::<pg_sys::Oid>("SELECT 'ec_hnsw_scan_scaffold_idx'::regclass::oid")
                 .expect("SPI query should succeed")
                 .expect("index oid should exist");
-        let (has_opaque, cleared_opaque) = hnsw_scan_debug!(am::debug_begin_end_scan(index_oid));
+        let (has_opaque, cleared_opaque) = am::debug_begin_end_scan(index_oid);
         assert!(has_opaque, "ambeginscan should allocate scan opaque state");
         assert!(cleared_opaque, "amendscan should release scan opaque state");
     }
@@ -470,7 +461,7 @@
         .expect("SPI query should succeed")
         .expect("index oid should exist");
         let (has_opaque, cleared_after_first, cleared_after_second) =
-            hnsw_scan_debug!(am::debug_end_scan_twice(index_oid));
+            am::debug_end_scan_twice(index_oid);
         assert!(has_opaque, "ambeginscan should allocate scan opaque state");
         assert!(
             cleared_after_first,
@@ -497,7 +488,7 @@
             has_prepared_query,
             prepared_lut_len,
             prepared_sq_len,
-        ) = hnsw_scan_debug!(am::debug_rescan_query_dimensions(index_oid, vec![1.0, 0.0, 0.5, -1.0]));
+        ) = am::debug_rescan_query_dimensions(index_oid, vec![1.0, 0.0, 0.5, -1.0]);
         assert!(
             rescan_called,
             "amrescan should mark scan state as initialized"
@@ -545,11 +536,11 @@
             has_prepared_query,
             prepared_lut_len,
             prepared_sq_len,
-        ) = hnsw_scan_debug!(am::debug_rescan_overwrites_query_dimensions(
+        ) = am::debug_rescan_overwrites_query_dimensions(
                 index_oid,
                 vec![1.0, 0.0, 0.5, -1.0],
                 second_query.clone(),
-            ));
+            );
         assert!(
             rescan_called,
             "repeated amrescan should keep scan state initialized"
@@ -578,21 +569,21 @@
     #[should_panic(expected = "ec_hnsw scan query dimension mismatch")]
     fn test_ech_rescan_scaffold_rejects_wrong_query_dimensions() {
         let index_oid = setup_rescan_scaffold_index("ec_hnsw_rescan_scaffold_mismatch");
-        let _ = hnsw_scan_debug!(am::debug_rescan_query_dimensions(index_oid, vec![1.0, 0.0, 0.5]));
+        let _ = am::debug_rescan_query_dimensions(index_oid, vec![1.0, 0.0, 0.5]);
     }
 
     #[pg_test]
     #[should_panic(expected = "ec_hnsw scan query must not be NULL")]
     fn test_ech_rescan_scaffold_rejects_null_query() {
         let index_oid = setup_rescan_scaffold_index("ec_hnsw_rescan_scaffold_null");
-        hnsw_scan_debug!(am::debug_rescan_null_query(index_oid));
+        am::debug_rescan_null_query(index_oid);
     }
 
     #[pg_test]
     #[should_panic(expected = "ec_hnsw scan query must not be empty")]
     fn test_ech_rescan_scaffold_rejects_empty_query() {
         let index_oid = setup_rescan_scaffold_index("ec_hnsw_rescan_scaffold_empty");
-        let _ = hnsw_scan_debug!(am::debug_rescan_query_dimensions(index_oid, vec![]));
+        let _ = am::debug_rescan_query_dimensions(index_oid, vec![]);
     }
 
     #[pg_test]
@@ -614,7 +605,7 @@
         .expect("SPI query should succeed")
         .expect("index oid should exist");
         let oversized_query = vec![0.0_f32; (u16::MAX as usize) + 1];
-        let _ = hnsw_scan_debug!(am::debug_rescan_query_dimensions(index_oid, oversized_query));
+        let _ = am::debug_rescan_query_dimensions(index_oid, oversized_query);
     }
 
     #[pg_test]
@@ -632,7 +623,7 @@
             has_prepared_query,
             prepared_lut_len,
             prepared_sq_len,
-        ) = hnsw_scan_debug!(am::debug_rescan_with_unused_key_buffer(index_oid, query.clone()));
+        ) = am::debug_rescan_with_unused_key_buffer(index_oid, query.clone());
 
         assert!(rescan_called, "amrescan should still initialize scan state");
         assert_eq!(query_dimensions, query.len() as u16);
@@ -656,14 +647,14 @@
     #[should_panic(expected = "ec_hnsw scan does not support index quals yet")]
     fn test_ech_rescan_scaffold_rejects_index_quals() {
         let index_oid = setup_rescan_scaffold_index("ec_hnsw_rescan_scaffold_quals");
-        hnsw_scan_debug!(am::debug_rescan_with_index_qual(index_oid, vec![1.0, 0.0, 0.5, -1.0]));
+        am::debug_rescan_with_index_qual(index_oid, vec![1.0, 0.0, 0.5, -1.0]);
     }
 
     #[pg_test]
     #[should_panic(expected = "ec_hnsw scan currently requires exactly one ORDER BY query")]
     fn test_ech_rescan_scaffold_rejects_multiple_orderbys() {
         let index_oid = setup_rescan_scaffold_index("ec_hnsw_rescan_scaffold_multi_orderby");
-        hnsw_scan_debug!(am::debug_rescan_with_multiple_orderbys(index_oid, vec![1.0, 0.0, 0.5, -1.0]));
+        am::debug_rescan_with_multiple_orderbys(index_oid, vec![1.0, 0.0, 0.5, -1.0]);
     }
 
     #[pg_test]
@@ -688,7 +679,7 @@
             Spi::get_one::<pg_sys::Oid>("SELECT 'ec_hnsw_gettuple_scaffold_idx'::regclass::oid")
                 .expect("SPI query should succeed")
                 .expect("index oid should exist");
-        hnsw_scan_debug!(am::debug_gettuple_without_rescan(index_oid));
+        am::debug_gettuple_without_rescan(index_oid);
     }
 
     #[pg_test]
@@ -716,7 +707,7 @@
         .expect("index oid should exist");
 
         let observed_tids =
-            hnsw_scan_debug!(am::debug_gettuple_scan_heap_tids(index_oid, vec![1.0, 0.0, 0.5, -1.0]));
+            am::debug_gettuple_scan_heap_tids(index_oid, vec![1.0, 0.0, 0.5, -1.0]);
         let expected_tids = Spi::connect(|client| {
             client
                 .select(
@@ -881,7 +872,7 @@
         .expect("SPI query should succeed")
         .expect("index oid should exist");
         let ctid_to_id = ctid_id_map("ec_hnsw_graph_first_ordered_scores");
-        let observed = hnsw_scan_debug!(am::debug_gettuple_scan_heap_tids_with_scores(index_oid, vec![1.0, 0.05, 0.0, 0.0]));
+        let observed = am::debug_gettuple_scan_heap_tids_with_scores(index_oid, vec![1.0, 0.05, 0.0, 0.0]);
 
         assert!(
             observed.len() >= 3,
@@ -943,7 +934,7 @@
             after_tid,
             after_score,
             after_score_value,
-        ) = hnsw_scan_debug!(am::debug_gettuple_current_result_state(index_oid, query.clone()));
+        ) = am::debug_gettuple_current_result_state(index_oid, query.clone());
         let expected_score = Spi::get_one::<f32>(&format!(
             "SELECT embedding <#> ARRAY[{},{},{},{}]::real[] \
              FROM ec_hnsw_gettuple_result_state WHERE id = 1",
@@ -1023,7 +1014,7 @@
         .expect("index oid should exist");
         let query = vec![1.0, 0.0, 0.5, -1.0];
         let (found, orderby_is_null, orderby_score) =
-            hnsw_scan_debug!(am::debug_gettuple_orderby_score(index_oid, query.clone()));
+            am::debug_gettuple_orderby_score(index_oid, query.clone());
         let expected_score = Spi::get_one::<f32>(&format!(
             "SELECT embedding <#> ARRAY[{},{},{},{}]::real[] \
              FROM ec_hnsw_gettuple_orderby_score WHERE id = 1",
@@ -1070,7 +1061,7 @@
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
-        let (before, after_first, exhausted, rescanned) = hnsw_scan_debug!(am::debug_gettuple_orderby_score_lifecycle(index_oid, vec![1.0, 0.0, 0.5, -1.0]));
+        let (before, after_first, exhausted, rescanned) = am::debug_gettuple_orderby_score_lifecycle(index_oid, vec![1.0, 0.0, 0.5, -1.0]);
 
         assert_eq!(
             before, None,
@@ -1124,7 +1115,7 @@
             exhausted_score_value,
             rescanned_tid,
             rescanned_score,
-        ) = hnsw_scan_debug!(am::debug_gettuple_current_result_lifecycle(index_oid, vec![1.0, 0.0, 0.5, -1.0]));
+        ) = am::debug_gettuple_current_result_lifecycle(index_oid, vec![1.0, 0.0, 0.5, -1.0]);
 
         assert_ne!(
             second_tid, first_tid,
@@ -1204,7 +1195,7 @@
             second_heap_tid,
             first_score,
             second_score,
-        ) = hnsw_scan_debug!(am::debug_gettuple_current_result_heap_progress(index_oid, vec![1.0, 0.0, 0.5, -1.0]));
+        ) = am::debug_gettuple_current_result_heap_progress(index_oid, vec![1.0, 0.0, 0.5, -1.0]);
 
         assert_ne!(
             element_tid,
@@ -1261,7 +1252,7 @@
         .expect("SPI query should succeed")
         .expect("index oid should exist");
         let (before_valid, before_tid, before_score, after_valid, after_tid, after_score) =
-            hnsw_scan_debug!(am::debug_rescan_entry_candidate_state(index_oid, vec![1.0, 0.0, 0.5, -1.0]));
+            am::debug_rescan_entry_candidate_state(index_oid, vec![1.0, 0.0, 0.5, -1.0]);
 
         assert!(
             before_valid,
@@ -1323,7 +1314,7 @@
             exhausted_valid,
             exhausted_tid,
             exhausted_score,
-        ) = hnsw_scan_debug!(am::debug_entry_candidate_lifecycle(index_oid, vec![1.0, 0.0, 0.5, -1.0]));
+        ) = am::debug_entry_candidate_lifecycle(index_oid, vec![1.0, 0.0, 0.5, -1.0]);
 
         assert!(
             before_valid,
@@ -1403,7 +1394,7 @@
             successor_tid,
             _successor_source_tid,
             successor_score,
-        ) = hnsw_scan_debug!(am::debug_rescan_successor_candidate_state(index_oid, vec![1.0, 0.0, 0.5, -1.0]));
+        ) = am::debug_rescan_successor_candidate_state(index_oid, vec![1.0, 0.0, 0.5, -1.0]);
 
         assert_ne!(
             entry_tid,
@@ -1468,8 +1459,8 @@
         .expect("SPI query should succeed")
         .expect("index oid should exist");
         let (head, frontier, frontier_slots, frontier_provenance, expanded_sources) =
-            hnsw_scan_debug!(am::debug_rescan_candidate_frontier(index_oid, vec![1.0, 0.0, 0.5, -1.0]));
-        let valid_entry_neighbors = hnsw_scan_debug!(am::debug_entry_point_neighbor_tids(index_oid))
+            am::debug_rescan_candidate_frontier(index_oid, vec![1.0, 0.0, 0.5, -1.0]);
+        let valid_entry_neighbors = am::debug_entry_point_neighbor_tids(index_oid)
             .into_iter()
             .filter(|tid| *tid != (u32::MAX, u16::MAX))
             .collect::<Vec<_>>();
@@ -1587,7 +1578,7 @@
         .expect("SPI query should succeed")
         .expect("index oid should exist");
         let (_head, frontier, frontier_slots, frontier_provenance, _expanded_sources) =
-            hnsw_scan_debug!(am::debug_rescan_candidate_frontier(index_oid, vec![1.0, 0.0, 0.5, -1.0]));
+            am::debug_rescan_candidate_frontier(index_oid, vec![1.0, 0.0, 0.5, -1.0]);
 
         assert_eq!(
             frontier.len(),
@@ -1632,7 +1623,7 @@
         .expect("SPI query should succeed")
         .expect("index oid should exist");
         let (_head, frontier, frontier_slots, frontier_provenance, _expanded_sources) =
-            hnsw_scan_debug!(am::debug_rescan_candidate_frontier(index_oid, vec![1.0, 0.0, 0.5, -1.0]));
+            am::debug_rescan_candidate_frontier(index_oid, vec![1.0, 0.0, 0.5, -1.0]);
 
         assert_eq!(
             frontier.len(),
@@ -1676,7 +1667,7 @@
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
-        let snapshot = hnsw_scan_debug!(am::debug_planner_tuning_snapshot(index_oid));
+        let snapshot = am::debug_planner_tuning_snapshot(index_oid);
 
         assert_eq!(snapshot.relation_ef_search, 111);
         assert_eq!(snapshot.session_ef_search, None);
@@ -1714,7 +1705,7 @@
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
-        let snapshot = hnsw_scan_debug!(am::debug_planner_tuning_snapshot(index_oid));
+        let snapshot = am::debug_planner_tuning_snapshot(index_oid);
 
         assert_eq!(snapshot.relation_ef_search, 111);
         assert_eq!(snapshot.session_ef_search, Some(7));
@@ -1758,7 +1749,7 @@
             partial_frontier,
             exhausted_head,
             exhausted_frontier,
-        ) = hnsw_scan_debug!(am::debug_candidate_frontier_head_lifecycle(index_oid, vec![1.0, 0.0, 0.5, -1.0]));
+        ) = am::debug_candidate_frontier_head_lifecycle(index_oid, vec![1.0, 0.0, 0.5, -1.0]);
 
         assert_ne!(
             before_head, None,
@@ -1814,7 +1805,7 @@
             after_first_frontier,
             after_second_head,
             after_second_frontier,
-        ) = hnsw_scan_debug!(am::debug_consume_candidate_frontier_head(index_oid, vec![1.0, 0.0, 0.5, -1.0]));
+        ) = am::debug_consume_candidate_frontier_head(index_oid, vec![1.0, 0.0, 0.5, -1.0]);
 
         if let Some(consumed_tid) = before_head {
             let remaining_slot = before_frontier
@@ -1896,7 +1887,7 @@
             Spi::get_one::<pg_sys::Oid>("SELECT 'ec_hnsw_frontier_head_refill_idx'::regclass::oid")
                 .expect("SPI query should succeed")
                 .expect("index oid should exist");
-        let valid_entry_neighbors = hnsw_scan_debug!(am::debug_entry_point_neighbor_tids(index_oid))
+        let valid_entry_neighbors = am::debug_entry_point_neighbor_tids(index_oid)
             .into_iter()
             .filter(|tid| *tid != (u32::MAX, u16::MAX))
             .collect::<Vec<_>>();
@@ -1908,7 +1899,7 @@
             after_head,
             after_slots,
             after_provenance_slots,
-        ) = hnsw_scan_debug!(am::debug_consume_candidate_frontier_head_slots(index_oid, vec![1.0, 0.0, 0.5, -1.0]));
+        ) = am::debug_consume_candidate_frontier_head_slots(index_oid, vec![1.0, 0.0, 0.5, -1.0]);
 
         let expected_visible_width = 1 + valid_entry_neighbors.len().min(2);
         assert!(
@@ -1993,7 +1984,11 @@
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
-        let (before_head, before_slots, current_result_tid, after_head, after_slots) = hnsw_scan_debug!(am::debug_gettuple_consumes_bootstrap_candidate(index_oid, vec![1.0, 0.0, 0.5, -1.0]));
+        let (before_head, before_slots, current_result_tid, after_head, after_slots) =
+            am::debug_gettuple_consumes_bootstrap_candidate(
+                index_oid,
+                vec![1.0, 0.0, 0.5, -1.0],
+            );
 
         let consumed_slot = before_slots
             .first()
@@ -2045,7 +2040,11 @@
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
-        let (candidate_before, current_result_tid, pending_heap_tids, materialized) = hnsw_scan_debug!(am::debug_materialize_bootstrap_candidate_result(index_oid, vec![1.0, 0.0, 0.5, -1.0]));
+        let (candidate_before, current_result_tid, pending_heap_tids, materialized) =
+            am::debug_materialize_bootstrap_candidate_result(
+                index_oid,
+                vec![1.0, 0.0, 0.5, -1.0],
+            );
 
         assert!(
             candidate_before.0,
@@ -2091,7 +2090,7 @@
         .expect("SPI query should succeed")
         .expect("index oid should exist");
         let (before_complete, after_complete, after_head, after_frontier, rescanned_complete) =
-            hnsw_scan_debug!(am::debug_bootstrap_phase_transition(index_oid, vec![1.0, 0.0, 0.5, -1.0]));
+            am::debug_bootstrap_phase_transition(index_oid, vec![1.0, 0.0, 0.5, -1.0]);
 
         assert!(
             !before_complete,
@@ -2141,9 +2140,9 @@
                 .expect("index oid should exist");
 
         let (head, _frontier, frontier_slots, _frontier_provenance, _expanded_sources) =
-            hnsw_scan_debug!(am::debug_rescan_candidate_frontier(index_oid, vec![1.0, 0.0, 0.5, -1.0]));
+            am::debug_rescan_candidate_frontier(index_oid, vec![1.0, 0.0, 0.5, -1.0]);
         let (before, partial, exhausted) =
-            hnsw_scan_debug!(am::debug_visited_seed_lifecycle(index_oid, vec![1.0, 0.0, 0.5, -1.0]));
+            am::debug_visited_seed_lifecycle(index_oid, vec![1.0, 0.0, 0.5, -1.0]);
 
         let mut expected = frontier_slots
             .into_iter()
@@ -2193,8 +2192,9 @@
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
-        let (current_result_tid, neighbor_count) = hnsw_scan_debug!(am::debug_gettuple_current_result_neighbors(index_oid, vec![1.0, 0.0, 0.5, -1.0]));
-        let (_block_count, metadata, _data_pages) = hnsw_scan_debug!(am::debug_index_pages(index_oid));
+        let (current_result_tid, neighbor_count) =
+            am::debug_gettuple_current_result_neighbors(index_oid, vec![1.0, 0.0, 0.5, -1.0]);
+        let (_block_count, metadata, _data_pages) = am::debug_index_pages(index_oid);
 
         assert_ne!(
             current_result_tid,
@@ -2231,8 +2231,8 @@
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
-        let neighbor_tids = hnsw_scan_debug!(am::debug_entry_point_neighbor_tids(index_oid));
-        let (_block_count, _metadata, data_pages) = hnsw_scan_debug!(am::debug_index_pages(index_oid));
+        let neighbor_tids = am::debug_entry_point_neighbor_tids(index_oid);
+        let (_block_count, _metadata, data_pages) = am::debug_index_pages(index_oid);
         let element_tids = data_pages
             .iter()
             .flat_map(|page| {
@@ -2279,7 +2279,7 @@
         .expect("index oid should exist");
 
         let observed_tids =
-            hnsw_scan_debug!(am::debug_gettuple_scan_heap_tids(index_oid, vec![1.0, 0.0, 0.5, -1.0]));
+            am::debug_gettuple_scan_heap_tids(index_oid, vec![1.0, 0.0, 0.5, -1.0]);
         let expected_tids = Spi::connect(|client| {
             client
                 .select(
@@ -2361,7 +2361,7 @@
                 .expect("SPI query should succeed")
                 .expect("index oid should exist");
         let (observed_tids, exhausted_once, exhausted_twice) =
-            hnsw_scan_debug!(am::debug_gettuple_exhaustion_state(index_oid, vec![1.0, 0.0, 0.5, -1.0]));
+            am::debug_gettuple_exhaustion_state(index_oid, vec![1.0, 0.0, 0.5, -1.0]);
 
         let expected_tids = Spi::connect(|client| {
             client
@@ -2452,7 +2452,10 @@
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
-        let (first_pass, rescanned_tids) = hnsw_scan_debug!(am::debug_gettuple_rescan_after_exhaustion(index_oid, vec![1.0, 0.0, 0.5, -1.0]));
+        let (first_pass, rescanned_tids) = am::debug_gettuple_rescan_after_exhaustion(
+            index_oid,
+            vec![1.0, 0.0, 0.5, -1.0],
+        );
 
         let expected_tids = Spi::connect(|client| {
             client
@@ -2535,7 +2538,10 @@
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
-        hnsw_scan_debug!(am::debug_gettuple_backward_after_rescan(index_oid, vec![1.0, 0.0, 0.5, -1.0]));
+        am::debug_gettuple_backward_after_rescan(
+            index_oid,
+            vec![1.0, 0.0, 0.5, -1.0],
+        );
     }
 
     #[pg_test]
@@ -2562,7 +2568,10 @@
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
-        let (first_tid, rescanned_tids) = hnsw_scan_debug!(am::debug_gettuple_rescan_after_partial(index_oid, vec![1.0, 0.0, 0.5, -1.0]));
+        let (first_tid, rescanned_tids) = am::debug_gettuple_rescan_after_partial(
+            index_oid,
+            vec![1.0, 0.0, 0.5, -1.0],
+        );
 
         let expected_tids = Spi::connect(|client| {
             client
@@ -2662,7 +2671,7 @@
         .expect("SPI query should succeed")
         .expect("index oid should exist");
 
-        let (block_count, _metadata, _data_pages) = hnsw_scan_debug!(am::debug_index_pages(index_oid));
+        let (block_count, _metadata, _data_pages) = am::debug_index_pages(index_oid);
         assert!(
             block_count > 2,
             "duplicate-heavy linear scan coverage should span multiple data pages"
@@ -2672,7 +2681,7 @@
         query[0] = 1.0;
         query[2] = 0.5;
         query[3] = -1.0;
-        let observed_tids = hnsw_scan_debug!(am::debug_gettuple_scan_heap_tids(index_oid, query));
+        let observed_tids = am::debug_gettuple_scan_heap_tids(index_oid, query);
         let expected_tids = Spi::connect(|client| {
             client
                 .select(
@@ -2750,7 +2759,7 @@
         .expect("SPI query should succeed")
         .expect("index oid should exist");
         let found_tuple =
-            hnsw_scan_debug!(am::debug_gettuple_after_rescan_result(index_oid, vec![1.0, 0.0, 0.5, -1.0]));
+            am::debug_gettuple_after_rescan_result(index_oid, vec![1.0, 0.0, 0.5, -1.0]);
         assert!(
             !found_tuple,
             "amgettuple should report no tuples for a valid rescan on an empty index"
@@ -2775,7 +2784,7 @@
         .expect("SPI query should succeed")
         .expect("index oid should exist");
         let (observed_tids, exhausted_once, exhausted_twice) =
-            hnsw_scan_debug!(am::debug_gettuple_exhaustion_state(index_oid, vec![1.0, 0.0, 0.5, -1.0]));
+            am::debug_gettuple_exhaustion_state(index_oid, vec![1.0, 0.0, 0.5, -1.0]);
 
         assert!(
             observed_tids.is_empty(),
@@ -2808,7 +2817,10 @@
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
-        let (first_pass, rescanned_tids) = hnsw_scan_debug!(am::debug_gettuple_rescan_after_exhaustion(index_oid, vec![1.0, 0.0, 0.5, -1.0]));
+        let (first_pass, rescanned_tids) = am::debug_gettuple_rescan_after_exhaustion(
+            index_oid,
+            vec![1.0, 0.0, 0.5, -1.0],
+        );
 
         assert!(
             first_pass.is_empty(),

@@ -1,0 +1,6 @@
+LOAD
+ ec_ivf.scratch_soa_batch_decode 
+---------------------------------
+ off
+(1 row)
+
