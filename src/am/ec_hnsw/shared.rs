@@ -80,9 +80,10 @@ fn read_main_buffer(
     lock_mode: i32,
     context: &str,
 ) -> LockedBufferGuard {
-    // SAFETY: Callers derive block numbers from this live relation and choose a
-    // PostgreSQL buffer mode/lock appropriate to the page access.
-    unsafe { LockedBufferGuard::read_main(index_relation, block_number, mode, lock_mode) }
+    let handle = NonNull::new(index_relation).unwrap_or_else(|| {
+        pgrx::error!("ec_hnsw read_main_buffer received a null index relation")
+    });
+    LockedBufferGuard::read_main_handle(handle, block_number, mode, lock_mode)
         .unwrap_or_else(|| pgrx::error!("ec_hnsw failed to open data buffer while {context}"))
 }
 
@@ -90,15 +91,25 @@ pub(super) unsafe fn update_metadata_page(
     index_relation: pg_sys::Relation,
     metadata: page::MetadataPage,
 ) {
-    let buffer = LockedBufferGuard::read_main(
-        index_relation,
+    let handle = NonNull::new(index_relation).unwrap_or_else(|| {
+        pgrx::error!("ec_hnsw update_metadata_page received a null index relation")
+    });
+    update_metadata_page_handle(handle, metadata);
+}
+
+pub(super) fn update_metadata_page_handle(
+    handle: crate::storage::relation::RelationHandle,
+    metadata: page::MetadataPage,
+) {
+    let buffer = LockedBufferGuard::read_main_handle(
+        handle,
         page::METADATA_BLOCK_NUMBER,
         pg_sys::ReadBufferMode::RBM_NORMAL,
         pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
     )
     .unwrap_or_else(|| pgrx::error!("ec_hnsw failed to open metadata buffer"));
     let page_size = buffer.page_size();
-    rewrite_metadata_buffer(index_relation, &buffer, page_size, metadata);
+    rewrite_metadata_buffer(handle.as_ptr(), &buffer, page_size, metadata);
 }
 
 pub(super) unsafe fn with_locked_metadata_page<T>(
@@ -141,18 +152,24 @@ fn rewrite_metadata_buffer(
     page_size: usize,
     metadata: page::MetadataPage,
 ) {
+    let _ = page_size;
+    let handle = NonNull::new(index_relation).unwrap_or_else(|| {
+        pgrx::error!("ec_hnsw rewrite_metadata_buffer received a null index relation")
+    });
     let metadata_bytes = metadata.encode();
     let special_size = (metadata_bytes.len() + 7) & !7;
-    // SAFETY: Callers supply a live index relation and an exclusively locked
-    // metadata buffer. The registered page is initialized with a special area
-    // large enough for the encoded metadata before the bytes are copied.
-    unsafe {
-        let mut wal_txn = wal::GenericXLogTxn::start(index_relation);
-        let page = wal_txn.register_locked_buffer_full_image(&buffer);
-        pg_sys::PageInit(page, page_size, special_size);
-        write_metadata_bytes(page, &metadata_bytes);
-        wal_txn.finish();
+    let mut wal_txn = wal::WalTxnScope::start_handle(handle);
+    {
+        let mut page = wal_txn.register_page(buffer);
+        page.init(special_size);
+        // SAFETY: `page` is the WAL-registered metadata page; the special area
+        // was just sized from the encoded metadata before this owned-memory
+        // copy.
+        unsafe {
+            write_metadata_bytes(page.page_ptr(), &metadata_bytes);
+        }
     }
+    wal_txn.finish();
 }
 
 pub(super) fn ec_hnsw_noop_vacuum_stats(
@@ -949,9 +966,9 @@ pub(crate) fn debug_index_metadata(index_oid: pg_sys::Oid) -> (u32, i32, i32, pa
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) fn debug_update_index_metadata(index_oid: pg_sys::Oid, metadata: page::MetadataPage) {
     let index_relation = IndexRelationGuard::access_share(index_oid, "debug_update_index_metadata");
-    // SAFETY: The index relation guard keeps the relation open while the
-    // metadata page is rewritten under exclusive lock.
-    unsafe { update_metadata_page(index_relation.as_ptr(), metadata) };
+    let handle = NonNull::new(index_relation.as_ptr())
+        .expect("ec_hnsw debug update relation should be non-null");
+    update_metadata_page_handle(handle, metadata);
 }
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -994,11 +1011,12 @@ pub(crate) fn debug_vacuum_stats(index_oid: pg_sys::Oid) -> DebugHnswVacuumStats
     let info_ptr = (&mut *info) as *mut pg_sys::IndexVacuumInfo;
 
     // SAFETY: The test constructs callback-duration vacuum info and invokes the
-    // AM bulkdelete entry with no delete callback for stats.
+    // AM bulkdelete + cleanup entry points directly with that same valid
+    // IndexVacuumInfo + stats pair.
     let stats = unsafe {
-        super::vacuum::ec_hnsw_ambulkdelete(info_ptr, ptr::null_mut(), None, ptr::null_mut())
+        let stats =
+            super::vacuum::ec_hnsw_ambulkdelete(info_ptr, ptr::null_mut(), None, ptr::null_mut());
+        super::vacuum::ec_hnsw_amvacuumcleanup(info_ptr, stats)
     };
-    // SAFETY: The same vacuum info and stats pointer are valid for cleanup.
-    let stats = unsafe { super::vacuum::ec_hnsw_amvacuumcleanup(info_ptr, stats) };
     debug_hnsw_vacuum_stats_row(stats)
 }

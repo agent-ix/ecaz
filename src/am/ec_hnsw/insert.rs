@@ -5,7 +5,10 @@ use pgrx::pg_sys;
 use super::{build, graph, options, page, search, shared, source};
 use crate::am::common::callback::pg_am_callback;
 use crate::am::common::heap_slot::HeapSlotReader;
-use crate::storage::{buffer_guard::LockedBufferGuard, slot_guard::TupleTableSlotGuard, wal};
+use crate::storage::{
+    buffer_guard::LockedBufferGuard, relation::RelationHandle,
+    slot_guard::TupleTableSlotGuard, wal,
+};
 
 const P_NEW: pg_sys::BlockNumber = u32::MAX;
 // One initial write pass plus up to two read-only replan retries for drifted full slices.
@@ -19,44 +22,42 @@ fn index_main_fork_block_count(index_relation: pg_sys::Relation) -> pg_sys::Bloc
     crate::storage::relation::main_fork_block_count_handle(index_relation)
 }
 
-struct InsertPageWrite {
+struct InsertPageWrite<'rel> {
     buffer: LockedBufferGuard,
-    wal_txn: Option<wal::GenericXLogTxn>,
+    wal_txn: Option<wal::WalTxnScope<'rel>>,
     page_ptr: pg_sys::Page,
     page_size: usize,
 }
 
-impl InsertPageWrite {
+impl<'rel> InsertPageWrite<'rel> {
     fn open_tail(
         index_relation: pg_sys::Relation,
         target_block: pg_sys::BlockNumber,
         error_context: &str,
     ) -> Self {
+        let handle = std::ptr::NonNull::new(index_relation).unwrap_or_else(|| {
+            pgrx::error!("ec_hnsw aminsert received a null index relation")
+        });
         let read_mode = if target_block == P_NEW {
             pg_sys::ReadBufferMode::RBM_ZERO_AND_LOCK
         } else {
             pg_sys::ReadBufferMode::RBM_NORMAL
         };
-        // SAFETY: callers supply a live index relation for this insert; the
-        // target is either P_NEW (which returns an already-locked buffer) or
-        // an existing tail block that is explicitly locked for append.
-        let buffer = unsafe {
-            if target_block == P_NEW {
-                LockedBufferGuard::read_main_locked(index_relation, target_block, read_mode)
-            } else {
-                LockedBufferGuard::read_main(
-                    index_relation,
-                    target_block,
-                    read_mode,
-                    pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
-                )
-            }
+        let buffer = if target_block == P_NEW {
+            LockedBufferGuard::read_main_locked_handle(handle, target_block, read_mode)
+        } else {
+            LockedBufferGuard::read_main_handle(
+                handle,
+                target_block,
+                read_mode,
+                pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
+            )
         }
         .unwrap_or_else(|| {
             pgrx::error!("ec_hnsw failed to allocate {error_context} data buffer for aminsert")
         });
 
-        let mut writer = Self::from_locked_buffer(index_relation, buffer);
+        let mut writer = Self::from_locked_buffer(handle, buffer);
         if target_block == P_NEW {
             writer.init_zeroed_page();
         }
@@ -67,12 +68,10 @@ impl InsertPageWrite {
         Self::open_tail(index_relation, P_NEW, error_context)
     }
 
-    fn from_locked_buffer(index_relation: pg_sys::Relation, buffer: LockedBufferGuard) -> Self {
+    fn from_locked_buffer(handle: RelationHandle, buffer: LockedBufferGuard) -> Self {
         let page_size = buffer.page_size();
-        // SAFETY: callers supply a live index relation and a `buffer` belonging
-        // to that relation for the GenericXLog transaction.
-        let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
-        let page_ptr = wal_txn.register_locked_buffer_full_image(&buffer);
+        let mut wal_txn = wal::WalTxnScope::start_handle(handle);
+        let page_ptr = wal_txn.register_page(&buffer).page_ptr();
         Self {
             buffer,
             wal_txn: Some(wal_txn),
@@ -1246,28 +1245,21 @@ fn add_backlinks_on_page(
     }
 
     let block_number = mutations[0].neighbor_tid.block_number;
-    // SAFETY: `block_number` is taken from planned neighbor TIDs and the page is
-    // locked exclusively before tuple bytes are rewritten.
-    let buffer = unsafe {
-        LockedBufferGuard::read_main(
-            index_relation,
-            block_number,
-            pg_sys::ReadBufferMode::RBM_NORMAL,
-            pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
-        )
-    };
-    let buffer = buffer.unwrap_or_else(|| {
+    let handle = std::ptr::NonNull::new(index_relation).unwrap_or_else(|| {
+        pgrx::error!("ec_hnsw backlink rewrite received a null index relation")
+    });
+    let buffer = LockedBufferGuard::read_main_handle(
+        handle,
+        block_number,
+        pg_sys::ReadBufferMode::RBM_NORMAL,
+        pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
+    )
+    .unwrap_or_else(|| {
         pgrx::error!("ec_hnsw failed to open backlink neighbor block {block_number}");
     });
 
-    // SAFETY: The relation is live for aminsert and the locked buffer belongs
-    // to that relation.
-    let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
-    // SAFETY: The buffer remains pinned/locked while registered in the generic
-    // WAL transaction; the full-image registration covers in-place tuple edits.
-    let page_ptr = wal_txn
-        .register_locked_buffer_full_image(&buffer)
-        .cast::<u8>();
+    let mut wal_txn = wal::WalTxnScope::start_handle(handle);
+    let page_ptr = wal_txn.register_page(&buffer).page_ptr().cast::<u8>();
     let page_size = buffer.page_size();
     let mut changed = false;
     let mut retries = Vec::new();
@@ -2050,19 +2042,18 @@ fn find_duplicate_element_tid(
     if block_count <= page::FIRST_DATA_BLOCK_NUMBER {
         return None;
     }
+    let handle = std::ptr::NonNull::new(index_relation).unwrap_or_else(|| {
+        pgrx::error!("ec_hnsw find_duplicate_element_tid received a null index relation")
+    });
 
     for block_number in page::FIRST_DATA_BLOCK_NUMBER..block_count {
-        // SAFETY: Each candidate page is pinned under a shared lock while its
-        // line pointers are inspected.
-        let buffer = unsafe {
-            LockedBufferGuard::read_main(
-                index_relation,
-                block_number,
-                pg_sys::ReadBufferMode::RBM_NORMAL,
-                pg_sys::BUFFER_LOCK_SHARE as i32,
-            )
-        };
-        let buffer = buffer.unwrap_or_else(|| {
+        let buffer = LockedBufferGuard::read_main_handle(
+            handle,
+            block_number,
+            pg_sys::ReadBufferMode::RBM_NORMAL,
+            pg_sys::BUFFER_LOCK_SHARE as i32,
+        )
+        .unwrap_or_else(|| {
             pgrx::error!("ec_hnsw failed to open duplicate scan block {block_number}")
         });
 
@@ -2124,19 +2115,18 @@ fn find_duplicate_turbo_hot_element_tid(
     if block_count <= page::FIRST_DATA_BLOCK_NUMBER {
         return None;
     }
+    let handle = std::ptr::NonNull::new(index_relation).unwrap_or_else(|| {
+        pgrx::error!("ec_hnsw find_duplicate_turbo_hot_element_tid received a null index relation")
+    });
 
     for block_number in page::FIRST_DATA_BLOCK_NUMBER..block_count {
-        // SAFETY: Each candidate page is pinned under a shared lock while its
-        // hot tuples are inspected.
-        let buffer = unsafe {
-            LockedBufferGuard::read_main(
-                index_relation,
-                block_number,
-                pg_sys::ReadBufferMode::RBM_NORMAL,
-                pg_sys::BUFFER_LOCK_SHARE as i32,
-            )
-        };
-        let buffer = buffer.unwrap_or_else(|| {
+        let buffer = LockedBufferGuard::read_main_handle(
+            handle,
+            block_number,
+            pg_sys::ReadBufferMode::RBM_NORMAL,
+            pg_sys::BUFFER_LOCK_SHARE as i32,
+        )
+        .unwrap_or_else(|| {
             pgrx::error!("ec_hnsw failed to open TurboQuant V3 duplicate scan block {block_number}")
         });
 
@@ -2203,19 +2193,18 @@ fn find_duplicate_grouped_element_tid(
     if block_count <= page::FIRST_DATA_BLOCK_NUMBER {
         return None;
     }
+    let handle = std::ptr::NonNull::new(index_relation).unwrap_or_else(|| {
+        pgrx::error!("ec_hnsw find_duplicate_grouped_element_tid received a null index relation")
+    });
 
     for block_number in page::FIRST_DATA_BLOCK_NUMBER..block_count {
-        // SAFETY: Each candidate page is pinned under a shared lock while its
-        // grouped hot tuples are inspected.
-        let buffer = unsafe {
-            LockedBufferGuard::read_main(
-                index_relation,
-                block_number,
-                pg_sys::ReadBufferMode::RBM_NORMAL,
-                pg_sys::BUFFER_LOCK_SHARE as i32,
-            )
-        };
-        let buffer = buffer.unwrap_or_else(|| {
+        let buffer = LockedBufferGuard::read_main_handle(
+            handle,
+            block_number,
+            pg_sys::ReadBufferMode::RBM_NORMAL,
+            pg_sys::BUFFER_LOCK_SHARE as i32,
+        )
+        .unwrap_or_else(|| {
             pgrx::error!("ec_hnsw failed to open grouped duplicate scan block {block_number}")
         });
 
@@ -2281,30 +2270,24 @@ fn coalesce_duplicate_heap_tid(
     code_len: usize,
     heap_tid: page::ItemPointer,
 ) {
-    // SAFETY: The duplicate element TID was found by scanning this index; the
-    // target page is locked exclusively before appending the heap TID.
-    let buffer = unsafe {
-        LockedBufferGuard::read_main(
-            index_relation,
-            element_tid.block_number,
-            pg_sys::ReadBufferMode::RBM_NORMAL,
-            pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
-        )
-    };
-    let buffer = buffer.unwrap_or_else(|| {
+    let handle = std::ptr::NonNull::new(index_relation).unwrap_or_else(|| {
+        pgrx::error!("ec_hnsw coalesce_duplicate_heap_tid received a null index relation")
+    });
+    let buffer = LockedBufferGuard::read_main_handle(
+        handle,
+        element_tid.block_number,
+        pg_sys::ReadBufferMode::RBM_NORMAL,
+        pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
+    )
+    .unwrap_or_else(|| {
         pgrx::error!(
             "ec_hnsw failed to open duplicate element block {}",
             element_tid.block_number
         )
     });
 
-    // SAFETY: The relation is live and the duplicate page buffer is locked.
-    let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
-    // SAFETY: The locked buffer is registered for generic WAL before in-place
-    // tuple byte mutation.
-    let page_ptr = wal_txn
-        .register_locked_buffer_full_image(&buffer)
-        .cast::<u8>();
+    let mut wal_txn = wal::WalTxnScope::start_handle(handle);
+    let page_ptr = wal_txn.register_page(&buffer).page_ptr().cast::<u8>();
     let page_size = buffer.page_size();
     // SAFETY: `element_tid` points at the duplicate tuple on the registered
     // page and the closure preserves the encoded tuple length.
@@ -2357,30 +2340,26 @@ fn coalesce_duplicate_turbo_hot_heap_tid(
     layout: graph::TurboQuantHotColdLayout,
     heap_tid: page::ItemPointer,
 ) {
-    // SAFETY: The duplicate hot tuple TID was found by scanning this index; the
-    // target page is locked exclusively before appending the heap TID.
-    let buffer = unsafe {
-        LockedBufferGuard::read_main(
-            index_relation,
-            element_tid.block_number,
-            pg_sys::ReadBufferMode::RBM_NORMAL,
-            pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
+    let handle = std::ptr::NonNull::new(index_relation).unwrap_or_else(|| {
+        pgrx::error!(
+            "ec_hnsw coalesce_duplicate_turbo_hot_heap_tid received a null index relation"
         )
-    };
-    let buffer = buffer.unwrap_or_else(|| {
+    });
+    let buffer = LockedBufferGuard::read_main_handle(
+        handle,
+        element_tid.block_number,
+        pg_sys::ReadBufferMode::RBM_NORMAL,
+        pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
+    )
+    .unwrap_or_else(|| {
         pgrx::error!(
             "ec_hnsw failed to open duplicate TurboQuant V3 element block {}",
             element_tid.block_number
         )
     });
 
-    // SAFETY: The relation is live and the duplicate page buffer is locked.
-    let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
-    // SAFETY: The locked buffer is registered for generic WAL before in-place
-    // tuple byte mutation.
-    let page_ptr = wal_txn
-        .register_locked_buffer_full_image(&buffer)
-        .cast::<u8>();
+    let mut wal_txn = wal::WalTxnScope::start_handle(handle);
+    let page_ptr = wal_txn.register_page(&buffer).page_ptr().cast::<u8>();
     let page_size = buffer.page_size();
     // SAFETY: `element_tid` points at the duplicate hot tuple on the registered
     // page and the closure preserves the encoded tuple length.
@@ -2436,30 +2415,24 @@ fn coalesce_duplicate_grouped_heap_tid(
     layout: graph::PqFastScanLayout,
     heap_tid: page::ItemPointer,
 ) {
-    // SAFETY: The duplicate grouped tuple TID was found by scanning this index;
-    // the target page is locked exclusively before appending the heap TID.
-    let buffer = unsafe {
-        LockedBufferGuard::read_main(
-            index_relation,
-            element_tid.block_number,
-            pg_sys::ReadBufferMode::RBM_NORMAL,
-            pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
-        )
-    };
-    let buffer = buffer.unwrap_or_else(|| {
+    let handle = std::ptr::NonNull::new(index_relation).unwrap_or_else(|| {
+        pgrx::error!("ec_hnsw coalesce_duplicate_grouped_heap_tid received a null index relation")
+    });
+    let buffer = LockedBufferGuard::read_main_handle(
+        handle,
+        element_tid.block_number,
+        pg_sys::ReadBufferMode::RBM_NORMAL,
+        pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
+    )
+    .unwrap_or_else(|| {
         pgrx::error!(
             "ec_hnsw failed to open duplicate PqFastScan element block {}",
             element_tid.block_number
         )
     });
 
-    // SAFETY: The relation is live and the duplicate page buffer is locked.
-    let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
-    // SAFETY: The locked buffer is registered for generic WAL before in-place
-    // tuple byte mutation.
-    let page_ptr = wal_txn
-        .register_locked_buffer_full_image(&buffer)
-        .cast::<u8>();
+    let mut wal_txn = wal::WalTxnScope::start_handle(handle);
+    let page_ptr = wal_txn.register_page(&buffer).page_ptr().cast::<u8>();
     let page_size = buffer.page_size();
     // SAFETY: `element_tid` points at the duplicate grouped tuple on the
     // registered page and the closure preserves the encoded tuple length.
