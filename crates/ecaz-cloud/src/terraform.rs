@@ -61,10 +61,13 @@ impl Terraform {
         .await
     }
 
-    pub async fn plan(&self) -> Result<()> {
+    pub async fn plan(&self, extra_vars: &[(&str, &str)]) -> Result<()> {
         let mut args: Vec<String> = vec!["plan".into()];
         args.extend(self.base_args());
         args.push(format!("-var-file={}", self.tfvars_path().display()));
+        for (k, v) in extra_vars {
+            args.push(format!("-var={}={}", k, v));
+        }
         run_terraform(
             &self.module_dir,
             &args.iter().map(String::as_str).collect::<Vec<_>>(),
@@ -90,6 +93,43 @@ impl Terraform {
         let mut args: Vec<String> = vec!["destroy".into(), "-auto-approve".into()];
         args.extend(self.base_args());
         args.push(format!("-var-file={}", self.tfvars_path().display()));
+        run_terraform(
+            &self.module_dir,
+            &args.iter().map(String::as_str).collect::<Vec<_>>(),
+        )
+        .await
+    }
+
+    pub async fn state_list(&self) -> Result<Vec<String>> {
+        let mut args: Vec<String> = vec!["state".into(), "list".into()];
+        args.push(format!("-state={}", self.state_path.display()));
+        let output = Command::new("terraform")
+            .args(&args)
+            .current_dir(&self.module_dir)
+            .output()
+            .await
+            .wrap_err("invoke terraform state list")?;
+        if !output.status.success() {
+            return Err(eyre!(
+                "terraform state list failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            ));
+        }
+        Ok(String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.is_empty())
+            .map(str::to_owned)
+            .collect())
+    }
+
+    pub async fn state_rm(&self, addresses: &[String]) -> Result<()> {
+        if addresses.is_empty() {
+            return Ok(());
+        }
+        let mut args: Vec<String> = vec!["state".into(), "rm".into()];
+        args.push(format!("-state={}", self.state_path.display()));
+        args.extend(addresses.iter().cloned());
         run_terraform(
             &self.module_dir,
             &args.iter().map(String::as_str).collect::<Vec<_>>(),

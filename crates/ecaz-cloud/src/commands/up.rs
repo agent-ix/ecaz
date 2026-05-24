@@ -53,17 +53,17 @@ impl UpArgs {
         aws::ensure_credentials().await?;
         let tf = Terraform::new(self.profile, &repo_root)?;
 
-        if self.dry_run {
-            tf.init().await?;
-            tf.plan().await?;
-            return Ok(());
-        }
-
         tf.init().await?;
         let mut vars: Vec<(&str, &str)> = vec![("ecaz_git_ref", self.git_ref.as_str())];
         if let Some(snap) = self.from_snapshot.as_deref() {
             vars.push(("from_snapshot_id", snap));
         }
+
+        if self.dry_run {
+            tf.plan(&vars).await?;
+            return Ok(());
+        }
+
         tf.apply(&vars).await?;
 
         let outputs = tf.outputs().await?;
