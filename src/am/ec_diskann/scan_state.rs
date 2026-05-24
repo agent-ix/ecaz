@@ -142,11 +142,18 @@ pub(super) fn metadata_search_code_len(metadata: &VamanaMetadataPage) -> usize {
 pub(super) unsafe fn materialize_chain_from_index(
     index_relation: pg_sys::Relation,
 ) -> Result<(VamanaMetadataPage, DataPageChain), String> {
+    let handle = NonNull::new(index_relation).ok_or_else(|| {
+        "ec_diskann scan materialization needs a valid index relation".to_owned()
+    })?;
+    materialize_chain_from_index_handle(handle)
+}
+
+pub(super) fn materialize_chain_from_index_handle(
+    handle: crate::storage::relation::RelationHandle,
+) -> Result<(VamanaMetadataPage, DataPageChain), String> {
     let metadata_result: Result<(VamanaMetadataPage, usize), String> = {
-        // SAFETY: `index_relation` is a live DISKANN index relation during
-        // beginscan, and block 0 is the metadata page read under a share lock.
-        let metadata_buffer = LockedBufferGuard::read_main(
-            index_relation,
+        let metadata_buffer = LockedBufferGuard::read_main_handle(
+            handle,
             0,
             pg_sys::ReadBufferMode::RBM_NORMAL,
             pg_sys::BUFFER_LOCK_SHARE as i32,
@@ -155,20 +162,19 @@ pub(super) unsafe fn materialize_chain_from_index(
         let page = metadata_buffer.page();
         let page_size = metadata_buffer.page_size();
         // SAFETY: `page` comes from the locked metadata buffer and remains
-        // pinned while the special area is inspected.
-        let special_size = unsafe { pg_sys::PageGetSpecialSize(page) as usize };
-        if special_size < VAMANA_METADATA_BYTES {
-            return Err(format!(
-                "ec_diskann metadata page special area too small: got {special_size}, expected at least {VAMANA_METADATA_BYTES}"
-            ));
-        }
-        // SAFETY: The special area is at least `VAMANA_METADATA_BYTES`, so the
-        // special pointer can be viewed as the serialized metadata payload.
-        let metadata_ptr = unsafe { pg_sys::PageGetSpecialPointer(page) }.cast::<u8>();
-        // SAFETY: `metadata_ptr` points into the locked metadata page special
-        // area, whose size was checked above.
-        let metadata_bytes =
-            unsafe { slice::from_raw_parts(metadata_ptr.cast_const(), VAMANA_METADATA_BYTES) };
+        // pinned while the special area is inspected; the special area is at
+        // least `VAMANA_METADATA_BYTES`, so the special pointer is viewed as
+        // the serialized metadata payload.
+        let metadata_bytes = unsafe {
+            let special_size = pg_sys::PageGetSpecialSize(page) as usize;
+            if special_size < VAMANA_METADATA_BYTES {
+                return Err(format!(
+                    "ec_diskann metadata page special area too small: got {special_size}, expected at least {VAMANA_METADATA_BYTES}"
+                ));
+            }
+            let metadata_ptr = pg_sys::PageGetSpecialPointer(page).cast::<u8>();
+            slice::from_raw_parts(metadata_ptr.cast_const(), VAMANA_METADATA_BYTES)
+        };
         let format_version =
             u16::from_le_bytes(metadata_bytes[0..2].try_into().expect("format bytes"));
         if format_version != INDEX_FORMAT_V3_DISKANN {
@@ -181,40 +187,32 @@ pub(super) unsafe fn materialize_chain_from_index(
     };
     let (metadata, page_size) = metadata_result?;
 
-    let index_relation_handle = NonNull::new(index_relation)
-        .ok_or_else(|| "ec_diskann scan materialization needs a valid index relation".to_owned())?;
-    let block_count = crate::storage::relation::main_fork_block_count_handle(index_relation_handle);
+    let block_count = crate::storage::relation::main_fork_block_count_handle(handle);
     let mut chain = DataPageChain::new(page_size);
     for block_number in FIRST_DATA_BLOCK_NUMBER..block_count {
-        let page_result: Result<(), String> = {
-            // SAFETY: `block_number` is within the reported main-fork block
-            // count and the buffer guard pins/share-locks the data page.
-            let buffer = LockedBufferGuard::read_main(
-                index_relation,
+        let buffer = LockedBufferGuard::read_main_handle(
+            handle,
+            block_number,
+            pg_sys::ReadBufferMode::RBM_NORMAL,
+            pg_sys::BUFFER_LOCK_SHARE as i32,
+        )
+        .ok_or_else(|| {
+            format!("ec_diskann beginscan could not open data block {block_number}")
+        })?;
+        let max_offset = buffer.max_offset_number();
+        for offset in 1..=max_offset {
+            let tid = ItemPointer {
                 block_number,
-                pg_sys::ReadBufferMode::RBM_NORMAL,
-                pg_sys::BUFFER_LOCK_SHARE as i32,
-            )
-            .ok_or_else(|| {
-                format!("ec_diskann beginscan could not open data block {block_number}")
-            })?;
-            let max_offset = buffer.max_offset_number();
-            for offset in 1..=max_offset {
-                let tid = ItemPointer {
-                    block_number,
-                    offset_number: offset,
-                };
-                let visit =
-                    buffer.visit_tuple_bytes(tid, "ec_diskann data block", |tuple_bytes| {
-                        Ok(tuple_bytes.to_vec())
-                    })?;
-                if let LockedPageTupleVisit::Present(tuple_bytes) = visit {
-                    chain.insert_raw_tuple(tuple_bytes)?;
-                }
+                offset_number: offset,
+            };
+            let visit =
+                buffer.visit_tuple_bytes(tid, "ec_diskann data block", |tuple_bytes| {
+                    Ok(tuple_bytes.to_vec())
+                })?;
+            if let LockedPageTupleVisit::Present(tuple_bytes) = visit {
+                chain.insert_raw_tuple(tuple_bytes)?;
             }
-            Ok(())
-        };
-        page_result?;
+        }
     }
 
     Ok((metadata, chain))

@@ -98,8 +98,7 @@ impl<'rel> DiskannInsertRelation<'rel> {
         mode: pg_sys::ReadBufferMode::Type,
         lockmode: i32,
     ) -> Option<LockedBufferGuard> {
-        // SAFETY: `Self` is constructed only from a live index relation borrow.
-        unsafe { LockedBufferGuard::read_main(self.relation, block_number, mode, lockmode) }
+        LockedBufferGuard::read_main_handle(self.handle(), block_number, mode, lockmode)
     }
 
     fn read_main_locked(
@@ -107,12 +106,12 @@ impl<'rel> DiskannInsertRelation<'rel> {
         block_number: pg_sys::BlockNumber,
         mode: pg_sys::ReadBufferMode::Type,
     ) -> Option<LockedBufferGuard> {
-        // SAFETY: `Self` is constructed only from a live index relation borrow.
-        unsafe { LockedBufferGuard::read_main_locked(self.relation, block_number, mode) }
+        LockedBufferGuard::read_main_locked_handle(self.handle(), block_number, mode)
     }
 
     fn start_wal(&self) -> wal::GenericXLogTxn {
-        // SAFETY: `Self` is constructed only from a live index relation borrow.
+        // SAFETY: `Self` is constructed only from a live index relation borrow;
+        // the handle invariant proves liveness.
         unsafe { wal::GenericXLogTxn::start(self.relation) }
     }
 }
@@ -894,9 +893,7 @@ pub(super) fn bind_duplicate_heap_tid(
 ) -> Result<DuplicateBindResult, String> {
     for _ in 0..MAX_BACKLINK_REPLAN_PASSES {
         let (metadata, chain) =
-            // SAFETY: `index_relation` is live for insert-time duplicate
-            // planning, and materialization copies page tuples into memory.
-            unsafe { scan_state::materialize_chain_from_index(index_relation.as_ptr())? };
+            scan_state::materialize_chain_from_index_handle(index_relation.handle())?;
         let reader = PersistedGraphReader::new(
             &chain,
             metadata.graph_degree_r,

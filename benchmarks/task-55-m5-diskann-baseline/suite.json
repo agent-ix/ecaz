@@ -1,0 +1,86 @@
+{
+  "name": "task-55-m5-diskann-baseline",
+  "schema_version": 1,
+  "artifact_dir": "benchmarks/task-55-m5-diskann-baseline/artifacts",
+  "defaults": {
+    "seed": 42,
+    "pg": 18,
+    "socket_dir": "/Users/peter/.pgrx"
+  },
+  "steps": [
+    {
+      "kind": "load",
+      "name": "load-10k-diskann",
+      "tags": ["load", "ec_real_10k", "diskann"],
+      "prefix": "ec_real_10k_diskann",
+      "profile": "ec_diskann",
+      "corpus_file": "fixtures/m5_diskann_real10k/m5_diskann_real10k_corpus.tsv",
+      "queries_file": "fixtures/m5_diskann_real10k/m5_diskann_real10k_queries.tsv",
+      "allow_manifest_mismatch": true,
+      "log_file": "benchmarks/task-55-m5-diskann-baseline/artifacts/corpus-load-ec_real_10k-diskann.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-10k-diskann",
+      "tags": ["recall", "ec_real_10k", "diskann"],
+      "prefix": "ec_real_10k_diskann",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [64, 128, 200, 400, 800],
+      "log_output": "benchmarks/task-55-m5-diskann-baseline/artifacts/recall-ec_real_10k-diskann.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-10k-diskann",
+      "tags": ["latency", "ec_real_10k", "diskann"],
+      "prefix": "ec_real_10k_diskann",
+      "profile": "ec_diskann",
+      "sweep": [64, 128, 200, 400, 800],
+      "log_output": "benchmarks/task-55-m5-diskann-baseline/artifacts/latency-ec_real_10k-diskann.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-10k-diskann",
+      "tags": ["storage", "ec_real_10k", "diskann"],
+      "prefix": "ec_real_10k_diskann",
+      "log_file": "benchmarks/task-55-m5-diskann-baseline/artifacts/storage-ec_real_10k-diskann.log"
+    },
+    {
+      "kind": "load",
+      "name": "load-100k-diskann",
+      "tags": ["load", "ec_real_100k", "diskann"],
+      "prefix": "ec_real_100k_diskann",
+      "profile": "ec_diskann",
+      "corpus_file": "fixtures/m5_diskann_real100k/m5_diskann_real100k_corpus.tsv",
+      "queries_file": "fixtures/m5_diskann_real100k/m5_diskann_real100k_queries.tsv",
+      "allow_manifest_mismatch": true,
+      "log_file": "benchmarks/task-55-m5-diskann-baseline/artifacts/corpus-load-ec_real_100k-diskann.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-100k-diskann",
+      "tags": ["recall", "ec_real_100k", "diskann"],
+      "prefix": "ec_real_100k_diskann",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [64, 128, 200, 400, 800],
+      "log_output": "benchmarks/task-55-m5-diskann-baseline/artifacts/recall-ec_real_100k-diskann.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-100k-diskann",
+      "tags": ["latency", "ec_real_100k", "diskann"],
+      "prefix": "ec_real_100k_diskann",
+      "profile": "ec_diskann",
+      "sweep": [64, 128, 200, 400, 800],
+      "log_output": "benchmarks/task-55-m5-diskann-baseline/artifacts/latency-ec_real_100k-diskann.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-100k-diskann",
+      "tags": ["storage", "ec_real_100k", "diskann"],
+      "prefix": "ec_real_100k_diskann",
+      "log_file": "benchmarks/task-55-m5-diskann-baseline/artifacts/storage-ec_real_100k-diskann.log"
+    }
+  ]
+}
