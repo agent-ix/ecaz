@@ -259,7 +259,10 @@ unsafe extern "C-unwind" fn ec_diskann_aminsert(
                     heap_tid,
                     &source_vector,
                 )?;
-                ambuild::write_data_pages(index_relation, &output.chain);
+                let bootstrap_handle = ptr::NonNull::new(index_relation).ok_or_else(|| {
+                    "ec_diskann bootstrap_empty_insert received a null index relation".to_owned()
+                })?;
+                ambuild::write_data_pages(bootstrap_handle, &output.chain);
                 *metadata = output.metadata;
                 Ok(true)
             })
