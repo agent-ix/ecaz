@@ -196,7 +196,8 @@ async fn remote_suite_script(
     );
     let write_config = if let Some(uri) = config_s3_uri {
         format!(
-            "aws s3 cp {} {} --region {} --only-show-errors",
+            "if [ ! -f {} ]; then aws s3 cp {} {} --region {} --only-show-errors; fi",
+            shell_escape(&remote_config),
             shell_escape(uri),
             shell_escape(&remote_config),
             shell_escape(region)
