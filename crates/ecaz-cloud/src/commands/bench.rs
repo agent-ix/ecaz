@@ -62,7 +62,11 @@ impl BenchArgs {
             "s3://{}/bench-artifacts/{}/{}/",
             out.s3_bucket, self.suite, run_id
         );
-        let config_s3_uri = if self.skip_upload {
+        let config_size = tokio::fs::metadata(&config)
+            .await
+            .with_context(|| format!("stat suite config {}", config.display()))?
+            .len();
+        let config_s3_uri = if self.skip_upload || config_size <= 7_000 {
             None
         } else {
             let uri = format!("{dest}suite-config.json");
