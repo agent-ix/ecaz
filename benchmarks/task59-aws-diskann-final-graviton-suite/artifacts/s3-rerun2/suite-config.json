@@ -46,6 +46,15 @@
       "output_dir": "/var/lib/pgsql/18/datasets/staged-task59-diskann-final"
     },
     {
+      "kind": "corpus-prepare",
+      "name": "prepare-ec-real-1m",
+      "tags": ["setup", "prepare", "ec_real_1m", "graviton", "task59"],
+      "profile": "ec_real_ann_benchmarks_anchor",
+      "parquet": "/var/lib/pgsql/18/datasets/dbpedia-openai3-1m/data",
+      "output_dir": "/var/lib/pgsql/18/datasets/staged-task59-diskann-final",
+      "chunk_rows": 25000
+    },
+    {
       "kind": "raw",
       "name": "precheck-host",
       "tags": ["setup", "precheck", "graviton", "task59"],
@@ -227,7 +236,7 @@
       "tags": ["load", "ec_real_1m", "diskann", "pq_fastscan", "graviton", "task59"],
       "prefix": "task59_real_1m_diskann",
       "profile": "ec_diskann",
-      "manifest_file": "/var/lib/pgsql/18/datasets/staged-1m/ec_real_ann_benchmarks_anchor_manifest.json",
+      "manifest_file": "/var/lib/pgsql/18/datasets/staged-task59-diskann-final/ec_real_ann_benchmarks_anchor_manifest.json",
       "allow_manifest_mismatch": true,
       "chunked": true,
       "log_file": "benchmarks/task59-aws-diskann-final-graviton-suite/artifacts/load-1m-diskann-default.log"
