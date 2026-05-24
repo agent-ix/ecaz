@@ -343,31 +343,33 @@ fn debug_ec_ivf_vacuum_stats_row(
     }
 }
 
+/// # Safety
+/// Debug helper runs the bulkdelete + vacuumcleanup callback pair on the
+/// live index relation with a zeroed vacuum-info struct allocated in the
+/// current PostgreSQL memory context; the stats pointer is reused into
+/// cleanup and consumed by `debug_ec_ivf_vacuum_stats_row`.
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) fn debug_ec_ivf_vacuum_stats(index_oid: pg_sys::Oid) -> DebugEcIvfVacuumStats {
+pub(crate) unsafe fn debug_ec_ivf_vacuum_stats(index_oid: pg_sys::Oid) -> DebugEcIvfVacuumStats {
     let index_relation = crate::storage::relation_guard::IndexRelationGuard::access_share(
         index_oid,
         "ec_ivf debug vacuum stats",
     );
-    // SAFETY: debug helper allocates a zeroed vacuum info struct in the
-    // current PostgreSQL memory context for the immediate callback call.
     let mut info = crate::am::common::vacuum::alloc_index_vacuum_info();
     info.index = index_relation.as_ptr();
     let info_ptr = (&mut *info) as *mut pg_sys::IndexVacuumInfo;
 
-    // SAFETY: `info` and the guarded index relation remain live for the
-    // bulkdelete + cleanup callback pair; null callback requests a stats-only
-    // pass and the stats pointer is reused into cleanup.
-    let stats = unsafe {
-        let stats =
-            ec_ivf_ambulkdelete(info_ptr, std::ptr::null_mut(), None, std::ptr::null_mut());
-        ec_ivf_amvacuumcleanup(info_ptr, stats)
-    };
+    let stats = ec_ivf_ambulkdelete(info_ptr, std::ptr::null_mut(), None, std::ptr::null_mut());
+    let stats = ec_ivf_amvacuumcleanup(info_ptr, stats);
     debug_ec_ivf_vacuum_stats_row(stats)
 }
 
+/// # Safety
+/// Debug helper runs the bulkdelete + vacuumcleanup callback pair on a
+/// share-update-exclusive-locked index with a zeroed vacuum-info struct in
+/// the current PostgreSQL memory context; `callback_state` outlives the
+/// callback invocations.
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) fn debug_ec_ivf_vacuum_remove_heap_tids(
+pub(crate) unsafe fn debug_ec_ivf_vacuum_remove_heap_tids(
     index_oid: pg_sys::Oid,
     dead_tids: &[ItemPointer],
 ) -> DebugEcIvfVacuumStats {
@@ -376,8 +378,6 @@ pub(crate) fn debug_ec_ivf_vacuum_remove_heap_tids(
         pg_sys::ShareUpdateExclusiveLock as pg_sys::LOCKMODE,
         "ec_ivf debug vacuum remove heap tids",
     );
-    // SAFETY: debug helper allocates a zeroed vacuum info struct in the
-    // current PostgreSQL memory context for the immediate callback call.
     let mut info = crate::am::common::vacuum::alloc_index_vacuum_info();
     info.index = index_relation.as_ptr();
     let info_ptr = (&mut *info) as *mut pg_sys::IndexVacuumInfo;
@@ -385,17 +385,12 @@ pub(crate) fn debug_ec_ivf_vacuum_remove_heap_tids(
         dead_tids: dead_tids.iter().copied().collect(),
     };
 
-    // SAFETY: `info`, guarded relation, and callback_state remain live for
-    // the duration of the bulkdelete + cleanup callback pair; the stats
-    // pointer is reused into cleanup.
-    let stats = unsafe {
-        let stats = ec_ivf_ambulkdelete(
-            info_ptr,
-            std::ptr::null_mut(),
-            Some(debug_vacuum_dead_tid_callback),
-            (&mut callback_state as *mut DebugVacuumCallbackState).cast(),
-        );
-        ec_ivf_amvacuumcleanup(info_ptr, stats)
-    };
+    let stats = ec_ivf_ambulkdelete(
+        info_ptr,
+        std::ptr::null_mut(),
+        Some(debug_vacuum_dead_tid_callback),
+        (&mut callback_state as *mut DebugVacuumCallbackState).cast(),
+    );
+    let stats = ec_ivf_amvacuumcleanup(info_ptr, stats);
     debug_ec_ivf_vacuum_stats_row(stats)
 }
