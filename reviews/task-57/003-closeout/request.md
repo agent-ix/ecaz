@@ -1,6 +1,18 @@
-# Task 57 Packet 003 — Closeout
+# Task 57 Packet 003 — Closeout (SUPERSEDED)
 
-Status: **proposed**
+Status: **superseded** by packet 005
+
+This packet's close at IVF subsystem total 100 (-11.5%) did not meet
+either the §Exit target (≤65) or the per-Task-50 floor (≤79). Per
+`feedback_no_premature_task_close` (HARD RULE 2026-05-23), the close
+was withdrawn and the burndown continued in packet 004
+(`reviews/task-57/004-additional-burndown/`). The replacement closeout
+is `reviews/task-57/005-closeout/request.md` (subsystem total 65,
+-42.5%, §Exit target met).
+
+The original draft body is retained below for review trail continuity.
+
+---
 
 ## §Exit Criteria summary
 
