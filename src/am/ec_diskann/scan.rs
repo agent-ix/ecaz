@@ -361,17 +361,16 @@ where
     loop {
         maybe_check_for_interrupts();
 
-        let Some(next) = peek_next_active(&mut next_heap, scratch) else {
+        let Some(next) = peek_next_active(&next_heap) else {
             break;
         };
         if visited_best.len() >= list_size && next >= visited_best[list_size - 1] {
             break;
         }
 
-        let picked_entry = pop_next_active(&mut next_heap, scratch)
-            .expect("peek_next_active returned an active candidate");
+        let picked_entry =
+            pop_next_active(&mut next_heap).expect("peek_next_active returned a candidate");
         let picked = picked_entry.candidate;
-        scratch.visited.insert(picked.tid);
         insert_visited_sorted(&mut visited_best, picked);
 
         for nbr in picked_entry.neighbors {
@@ -425,33 +424,12 @@ fn push_frontier_entry(
     }));
 }
 
-fn peek_next_active(
-    next_heap: &mut BinaryHeap<Reverse<FrontierEntry>>,
-    scratch: &VisitedState,
-) -> Option<ScanCandidate> {
-    while let Some(Reverse(entry)) = next_heap.peek() {
-        let candidate = entry.candidate;
-        if scratch.visited.contains(&candidate.tid) {
-            next_heap.pop();
-            continue;
-        }
-        return Some(candidate);
-    }
-    None
+fn peek_next_active(next_heap: &BinaryHeap<Reverse<FrontierEntry>>) -> Option<ScanCandidate> {
+    next_heap.peek().map(|Reverse(entry)| entry.candidate)
 }
 
-fn pop_next_active(
-    next_heap: &mut BinaryHeap<Reverse<FrontierEntry>>,
-    scratch: &VisitedState,
-) -> Option<FrontierEntry> {
-    while let Some(Reverse(entry)) = next_heap.pop() {
-        let candidate = entry.candidate;
-        if scratch.visited.contains(&candidate.tid) {
-            continue;
-        }
-        return Some(entry);
-    }
-    None
+fn pop_next_active(next_heap: &mut BinaryHeap<Reverse<FrontierEntry>>) -> Option<FrontierEntry> {
+    next_heap.pop().map(|Reverse(entry)| entry)
 }
 
 fn insert_visited_sorted(visited_best: &mut Vec<ScanCandidate>, candidate: ScanCandidate) {
