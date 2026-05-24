@@ -61,6 +61,7 @@ pub struct ScanResult {
     pub tid: ItemPointer,
     pub primary_heaptid: ItemPointer,
     pub distance: f32,
+    pub has_overflow_heaptids: bool,
 }
 
 /// Candidate carried through the greedy loop. Caches the tuple's
@@ -80,6 +81,7 @@ pub struct ScanCandidate {
     pub primary_heaptid: ItemPointer,
     pub score: f32,
     pub emittable: bool,
+    pub has_overflow_heaptids: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -265,6 +267,7 @@ where
                 tid: c.tid,
                 primary_heaptid: c.primary_heaptid,
                 distance: exact,
+                has_overflow_heaptids: c.has_overflow_heaptids,
             }
         })
         .collect();
@@ -326,6 +329,7 @@ where
         primary_heaptid: entry_tuple.primary_heaptid,
         score: entry_score,
         emittable: entry_tuple.is_live(),
+        has_overflow_heaptids: entry_tuple.has_overflow_heaptids,
     };
 
     let mut entries: HashMap<ItemPointer, FrontierEntry> = HashMap::with_capacity(list_size);
@@ -371,6 +375,7 @@ where
                 primary_heaptid: nbr_tuple.primary_heaptid,
                 score,
                 emittable: nbr_tuple.is_live(),
+                has_overflow_heaptids: nbr_tuple.has_overflow_heaptids,
             };
             push_frontier_entry(
                 &mut entries,
@@ -463,6 +468,7 @@ fn same_candidate(left: ScanCandidate, right: ScanCandidate) -> bool {
         && left.primary_heaptid == right.primary_heaptid
         && left.score.to_bits() == right.score.to_bits()
         && left.emittable == right.emittable
+        && left.has_overflow_heaptids == right.has_overflow_heaptids
 }
 
 #[cfg(test)]

@@ -823,6 +823,19 @@ fn expand_scan_results_with_bound_heap_tids_relation(
 ) -> Result<Vec<scan::ScanResult>, String> {
     let mut expanded = Vec::with_capacity(top_k.min(node_results.len()));
     for result in node_results {
+        if !result.has_overflow_heaptids {
+            expanded.push(scan::ScanResult {
+                tid: result.tid,
+                primary_heaptid: result.primary_heaptid,
+                distance: result.distance,
+                has_overflow_heaptids: false,
+            });
+            if expanded.len() >= top_k {
+                return Ok(expanded);
+            }
+            continue;
+        }
+
         let bound_heap_tids = bound_heap_tids_for_owner_relation(
             index_handle,
             metadata,
@@ -834,6 +847,7 @@ fn expand_scan_results_with_bound_heap_tids_relation(
                 tid: result.tid,
                 primary_heaptid: heap_tid,
                 distance: result.distance,
+                has_overflow_heaptids: result.has_overflow_heaptids,
             });
             if expanded.len() >= top_k {
                 return Ok(expanded);
@@ -855,6 +869,7 @@ fn bound_heap_tids_for_owner_relation(
     if primary_heaptid == ItemPointer::INVALID {
         return Err("ec_diskann bound heap tid expansion requires a valid primary heap tid".into());
     }
+    let mut heap_tids = vec![primary_heaptid];
 
     let reader = RelationGraphReader::new(
         index_handle,
@@ -863,7 +878,6 @@ fn bound_heap_tids_for_owner_relation(
         scan_state::metadata_search_code_len(metadata),
     );
     let owner_tuple = reader.read_node(owner_tid)?;
-    let mut heap_tids = vec![primary_heaptid];
     if !owner_tuple.has_overflow_heaptids {
         return Ok(heap_tids);
     }

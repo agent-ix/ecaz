@@ -25,8 +25,8 @@ That fixed-cost bug is closed, but the remaining curve still has real work:
 - 100k recall is healthy and unchanged, so we should optimize execution cost,
   not graph quality first.
 - We do not yet have a complete post-optimization AWS Graviton suite through
-  1M, so the next task must both tune and prove the tuned path at 10k, 100k,
-  50k, 100k, and 1M.
+  1M, so the next task must both tune and prove the tuned path at 10k, 50k,
+  100k, and 1M.
 - The live path now reads graph nodes on demand from the relation, so the next
   bottleneck is likely buffer/page reads, tuple decode, allocation churn,
   duplicate expansion, scoring, EBS/local-storage behavior, CPU saturation, or
