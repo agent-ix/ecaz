@@ -337,7 +337,7 @@ where
     Pre: Fn(&VamanaNodeTuple) -> f32,
 {
     scratch.clear();
-    scratch.reserve(list_size.saturating_mul(2));
+    scratch.reserve_frontier(list_size.saturating_mul(2));
 
     let entry_tuple = reader.read_node(entry_point)?;
     let entry_score = prefilter(&entry_tuple);
