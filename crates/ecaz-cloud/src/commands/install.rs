@@ -72,7 +72,9 @@ sudo -u postgres bash -lc '
   git checkout {r}
   git pull --ff-only origin {r} 2>/dev/null || true
   cargo pgrx install --sudo --release --pg-config /usr/bin/pg_config
+  cargo build --release -p ecaz-cli
 '
+sudo install -Dm755 /var/lib/pgsql/build/ecaz/target/release/ecaz /usr/local/bin/ecaz
 sudo systemctl restart postgresql
 sudo -u postgres psql -c 'DROP EXTENSION IF EXISTS ecaz;'
 sudo -u postgres psql -c 'CREATE EXTENSION ecaz;'

@@ -67,6 +67,7 @@ impl BenchArgs {
             &config,
             &artifacts_dir,
             &self.database,
+            &self.ecaz_bin,
             &dest,
             &out.region,
             self.skip_upload,
@@ -139,6 +140,7 @@ async fn remote_suite_script(
     config: &std::path::Path,
     artifacts_dir: &std::path::Path,
     database: &str,
+    ecaz_bin: &str,
     s3_dest: &str,
     region: &str,
     skip_upload: bool,
@@ -160,8 +162,9 @@ async fn remote_suite_script(
         )
     };
     let run_cmd = format!(
-        "cd {root}; export PATH=$HOME/.cargo/bin:$PATH; target/release/ecaz --database {db} --host /var/run/postgresql --user postgres --log-file {log} bench suite run --config {config} --manifest-output {manifest} --results-output {results}",
+        "cd {root}; export PATH=/usr/local/bin:$HOME/.cargo/bin:$PATH; {ecaz_bin} --database {db} --host /var/run/postgresql --user postgres --log-file {log} bench suite run --config {config} --manifest-output {manifest} --results-output {results}",
         root = shell_escape(remote_root),
+        ecaz_bin = shell_escape(ecaz_bin),
         db = shell_escape(database),
         log = shell_escape(&format!("{remote_artifacts}/suite-run.log")),
         config = shell_escape(&remote_config),
