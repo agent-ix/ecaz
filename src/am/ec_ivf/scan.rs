@@ -29,8 +29,14 @@ use crate::storage::{
 use super::options::StorageFormat;
 use super::quantizer::{self, IvfPqFastScanModel, IvfPreparedQuery, IvfQuantizer};
 
+// Manual `Debug` impl below; the `Option<Box<T>>` fields whose payload
+// types (`IvfHeapRerankState`, `IvfPqFastScanModel`) wrap pgrx guard
+// types that don't implement Debug, so `#[derive(Debug)]` is not
+// available. If those payloads ever derive Debug, replace the manual
+// impl with `#[derive(Debug)]`.
 #[derive(Default)]
 struct EcIvfScanOpaque {
+
     rescan_called: bool,
     query_dimensions: u16,
     query_values: *mut f32,
@@ -51,6 +57,33 @@ struct EcIvfScanOpaque {
     heap_rerank_state: Option<Box<IvfHeapRerankState>>,
     explain_counters: IvfExplainCounters,
     stats_delta: TqStatsCounters,
+}
+
+impl std::fmt::Debug for EcIvfScanOpaque {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("EcIvfScanOpaque")
+            .field("rescan_called", &self.rescan_called)
+            .field("query_dimensions", &self.query_dimensions)
+            .field("query_values", &self.query_values)
+            .field("scan_dimensions", &self.scan_dimensions)
+            .field("scan_nlists", &self.scan_nlists)
+            .field("scan_nprobe", &self.scan_nprobe)
+            .field("pq_fastscan_model", &self.pq_fastscan_model.is_some())
+            .field("prepared_query", &self.prepared_query)
+            .field("centroid_scores", &self.centroid_scores)
+            .field("centroid_score_count", &self.centroid_score_count)
+            .field("selected_lists", &self.selected_lists)
+            .field("selected_list_count", &self.selected_list_count)
+            .field("candidate_dedup", &self.candidate_dedup)
+            .field("posting_candidates", &self.posting_candidates)
+            .field("posting_candidate_count", &self.posting_candidate_count)
+            .field("next_candidate_index", &self.next_candidate_index)
+            .field("posting_scratch_soa", &self.posting_scratch_soa)
+            .field("heap_rerank_state", &self.heap_rerank_state.is_some())
+            .field("explain_counters", &self.explain_counters)
+            .field("stats_delta", &self.stats_delta)
+            .finish()
+    }
 }
 
 impl EcIvfScanOpaque {
