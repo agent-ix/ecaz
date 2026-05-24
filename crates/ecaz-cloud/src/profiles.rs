@@ -11,12 +11,11 @@ use serde::Serialize;
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 pub enum Profile {
     P10k,
-    /// `10k-medium` = bigger 10k bench host (m8g.xlarge / 4 vCPU /
-    /// 16 GB). Recommended default for bench cycles per
-    /// `infra/cloud/terraform/profiles/10k-medium.tfvars`: the
-    /// `[profile.bench]` build (lto=fat, codegen-units=1, debug=true)
-    /// needs > 8 GB to compile without OOM, and the extra cores keep
-    /// the SSM agent responsive during criterion + perf-stat runs.
+    /// `10k-medium` = bigger 10k bench host (m8g.2xlarge / 8 vCPU /
+    /// 32 GB). Recommended default for 1M sidecar bench cycles per
+    /// `infra/cloud/terraform/profiles/10k-medium.tfvars`: the sidecar
+    /// harness materializes the real corpus and sidecar payloads
+    /// in-process, and 16 GB is not enough for the 990k x 1536 fixture.
     P10kMedium,
     Dev,
     P1m,
@@ -58,7 +57,7 @@ impl Profile {
     pub fn db_instance_type(self) -> &'static str {
         match self {
             Profile::P10k | Profile::Dev => "m7g.large",
-            Profile::P10kMedium => "m8g.xlarge",
+            Profile::P10kMedium => "m8g.2xlarge",
             Profile::P1m => "m7g.xlarge",
             Profile::P10m => "m7g.4xlarge",
             Profile::P100m => "r7g.4xlarge",
@@ -92,7 +91,7 @@ impl Profile {
         // Rough Graviton on-demand list price, us-east-1.
         let db = match self {
             Profile::P10k | Profile::Dev => 0.0816, // m7g.large
-            Profile::P10kMedium => 0.1632,          // m8g.xlarge ≈ m7g.xlarge list
+            Profile::P10kMedium => 0.3264,          // m8g.2xlarge
             Profile::P1m => 0.1632,                 // m7g.xlarge
             Profile::P10m => 0.6528,                // m7g.4xlarge
             Profile::P100m => 0.8568,               // r7g.4xlarge
