@@ -4,6 +4,7 @@ use clap::Subcommand;
 use color_eyre::eyre::Result;
 
 mod bench;
+mod cleanup;
 mod corpus;
 mod down;
 mod install;
@@ -27,6 +28,8 @@ pub enum CloudCommand {
     },
     /// Run the bench suite against the remote DSN; upload artifacts to S3.
     Bench(bench::BenchArgs),
+    /// Remove task-scoped scratch staging on a cloud host.
+    CleanupScratch(cleanup::CleanupScratchArgs),
     /// Stop EC2 instances; retain EBS data. Restore via `resume`.
     Pause(pause::PauseArgs),
     /// Start previously paused instances; wait for Postgres.
@@ -48,6 +51,7 @@ impl CloudCommand {
             CloudCommand::Install(args) => args.run(repo_root).await,
             CloudCommand::Corpus { cmd } => cmd.run(repo_root).await,
             CloudCommand::Bench(args) => args.run(repo_root).await,
+            CloudCommand::CleanupScratch(args) => args.run(repo_root).await,
             CloudCommand::Pause(args) => args.run(repo_root).await,
             CloudCommand::Resume(args) => args.run(repo_root).await,
             CloudCommand::Snapshot(args) => args.run(repo_root).await,
