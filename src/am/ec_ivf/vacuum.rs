@@ -356,12 +356,13 @@ pub(crate) fn debug_ec_ivf_vacuum_stats(index_oid: pg_sys::Oid) -> DebugEcIvfVac
     let info_ptr = (&mut *info) as *mut pg_sys::IndexVacuumInfo;
 
     // SAFETY: `info` and the guarded index relation remain live for the
-    // callback; null callback requests a stats-only bulkdelete pass.
-    let stats =
-        unsafe { ec_ivf_ambulkdelete(info_ptr, std::ptr::null_mut(), None, std::ptr::null_mut()) };
-    // SAFETY: reuses the stats pointer returned by bulkdelete while `info` and
-    // the guarded relation are still live.
-    let stats = unsafe { ec_ivf_amvacuumcleanup(info_ptr, stats) };
+    // bulkdelete + cleanup callback pair; null callback requests a stats-only
+    // pass and the stats pointer is reused into cleanup.
+    let stats = unsafe {
+        let stats =
+            ec_ivf_ambulkdelete(info_ptr, std::ptr::null_mut(), None, std::ptr::null_mut());
+        ec_ivf_amvacuumcleanup(info_ptr, stats)
+    };
     debug_ec_ivf_vacuum_stats_row(stats)
 }
 
@@ -385,17 +386,16 @@ pub(crate) fn debug_ec_ivf_vacuum_remove_heap_tids(
     };
 
     // SAFETY: `info`, guarded relation, and callback_state remain live for
-    // the duration of the bulkdelete callback invocation.
+    // the duration of the bulkdelete + cleanup callback pair; the stats
+    // pointer is reused into cleanup.
     let stats = unsafe {
-        ec_ivf_ambulkdelete(
+        let stats = ec_ivf_ambulkdelete(
             info_ptr,
             std::ptr::null_mut(),
             Some(debug_vacuum_dead_tid_callback),
             (&mut callback_state as *mut DebugVacuumCallbackState).cast(),
-        )
+        );
+        ec_ivf_amvacuumcleanup(info_ptr, stats)
     };
-    // SAFETY: reuses the stats pointer returned by bulkdelete while `info` and
-    // the guarded relation are still live.
-    let stats = unsafe { ec_ivf_amvacuumcleanup(info_ptr, stats) };
     debug_ec_ivf_vacuum_stats_row(stats)
 }

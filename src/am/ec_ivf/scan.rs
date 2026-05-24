@@ -676,15 +676,17 @@ fn palloc_copy_slice<T: Copy>(values: &[T], context: &str) -> *mut T {
     let bytes = std::mem::size_of_val(values);
     crate::fault::maybe_fail_palloc(context);
     // SAFETY: allocates `bytes` in PostgreSQL memory for scan-local slice
-    // storage; callers have already rejected empty slices.
-    let ptr = unsafe { pg_sys::palloc(bytes) }.cast::<T>();
-    if ptr.is_null() {
-        pgrx::error!("{context}");
+    // storage; callers have already rejected empty slices. Source and
+    // destination do not overlap and `ptr` has space for exactly
+    // `values.len()` elements.
+    unsafe {
+        let ptr = pg_sys::palloc(bytes).cast::<T>();
+        if ptr.is_null() {
+            pgrx::error!("{context}");
+        }
+        ptr::copy_nonoverlapping(values.as_ptr(), ptr, values.len());
+        ptr
     }
-    // SAFETY: `ptr` points to space for exactly `values.len()` elements, and
-    // source/destination do not overlap.
-    unsafe { ptr::copy_nonoverlapping(values.as_ptr(), ptr, values.len()) };
-    ptr
 }
 
 fn pfree_scan_slice<T>(
@@ -1717,17 +1719,15 @@ unsafe fn prefetch_heap_rerank_blocks(heap_relation: pg_sys::Relation, block_num
 }
 
 unsafe fn resolve_scan_heap_relation(scan: pg_sys::IndexScanDesc) -> ResolvedIvfScanHeapRelation {
-    // SAFETY: `scan` is a live PostgreSQL scan descriptor; `heapRelation` may
-    // already be supplied by the executor.
-    if !unsafe { (*scan).heapRelation }.is_null() {
-        // SAFETY: same live scan descriptor; returning the borrowed relation
-        // keeps ownership with PostgreSQL.
-        return ResolvedIvfScanHeapRelation::borrowed(unsafe { (*scan).heapRelation });
-    }
-
-    // SAFETY: `scan.indexRelation` is live; PostgreSQL resolves the heap
-    // relation OID for the index relation id.
-    let heap_oid = unsafe { pg_sys::IndexGetRelation((*(*scan).indexRelation).rd_id, false) };
+    // SAFETY: `scan` is a live PostgreSQL scan descriptor; if `heapRelation`
+    // is already supplied by the executor we return that borrowed relation;
+    // otherwise we resolve the heap relation OID via PostgreSQL.
+    let heap_oid = unsafe {
+        if !(*scan).heapRelation.is_null() {
+            return ResolvedIvfScanHeapRelation::borrowed((*scan).heapRelation);
+        }
+        pg_sys::IndexGetRelation((*(*scan).indexRelation).rd_id, false)
+    };
     if heap_oid == pg_sys::InvalidOid {
         pgrx::error!("ec_ivf heap_f32 rerank could not resolve heap relation");
     }
@@ -1737,17 +1737,16 @@ unsafe fn resolve_scan_heap_relation(scan: pg_sys::IndexScanDesc) -> ResolvedIvf
 }
 
 unsafe fn resolve_scan_snapshot(scan: pg_sys::IndexScanDesc) -> ResolvedIvfScanSnapshot {
-    // SAFETY: `scan` is a live PostgreSQL scan descriptor; `xs_snapshot` may
-    // already be supplied by the executor.
-    if !unsafe { (*scan).xs_snapshot }.is_null() {
-        // SAFETY: same live scan descriptor; returning the borrowed snapshot
-        // keeps ownership with PostgreSQL.
-        return ResolvedIvfScanSnapshot::borrowed(unsafe { (*scan).xs_snapshot });
-    }
-
-    // SAFETY: reads PostgreSQL's active snapshot pointer for the current
-    // backend; null is handled below.
-    let active_snapshot = unsafe { pg_sys::GetActiveSnapshot() };
+    // SAFETY: `scan` is a live PostgreSQL scan descriptor; if `xs_snapshot`
+    // is already supplied by the executor we return that borrowed snapshot;
+    // otherwise we read PostgreSQL's active snapshot pointer for the
+    // current backend (null is handled below).
+    let active_snapshot = unsafe {
+        if !(*scan).xs_snapshot.is_null() {
+            return ResolvedIvfScanSnapshot::borrowed((*scan).xs_snapshot);
+        }
+        pg_sys::GetActiveSnapshot()
+    };
     if !active_snapshot.is_null() {
         return ResolvedIvfScanSnapshot::borrowed(active_snapshot);
     }
