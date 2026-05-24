@@ -19,7 +19,7 @@ use futures::{
     SinkExt,
 };
 use half::f16;
-use ndarray::Array2;
+use ndarray::{s, Array2};
 use tokio_postgres::Client;
 
 use ecaz::bench_api::{ProdQuantizer, Quantizer, RaBitQQuantizer};
@@ -108,6 +108,9 @@ pub struct SidecarRerankArgs {
     /// Cap the query set.
     #[arg(long)]
     pub queries_limit: Option<usize>,
+    /// Run this many untimed queries before collecting timed candidate and sidecar metrics.
+    #[arg(long, default_value_t = 0)]
+    pub warmup_queries: usize,
     /// Quantization bits used when encoding query vectors at scan time.
     #[arg(long, default_value_t = 4)]
     pub bits: i32,
@@ -225,6 +228,37 @@ pub async fn run(conn: &ConnectionOptions, args: SidecarRerankArgs) -> Result<()
         .await
         .wrap_err("preparing sidecar-rerank candidate statement")?;
 
+    let warmup_queries = if args.warmup_queries > 0 {
+        let warmup_count = args.warmup_queries.min(queries.nrows());
+        eprintln!(
+            "[sidecar-rerank] warming candidate path with {warmup_count} untimed queries ..."
+        );
+        Some(queries.slice(s![0..warmup_count, ..]).to_owned())
+    } else {
+        None
+    };
+
+    let mut warmup_candidate_runs = Vec::new();
+    if let Some(warmup_queries) = warmup_queries.as_ref() {
+        for value in &sweep {
+            client
+                .batch_execute(&format!("SET {scan_guc} = {value}"))
+                .await
+                .wrap_err_with(|| format!("SET {scan_guc} = {value}"))?;
+            let warmup_run = collect_candidates(
+                &client,
+                &stmt,
+                profile,
+                warmup_queries,
+                args.bits,
+                args.seed,
+                args.candidate_k,
+            )
+            .await?;
+            warmup_candidate_runs.push((*value, warmup_run));
+        }
+    }
+
     let mut candidate_runs = Vec::with_capacity(sweep.len());
     for value in &sweep {
         client
@@ -294,6 +328,40 @@ pub async fn run(conn: &ConnectionOptions, args: SidecarRerankArgs) -> Result<()
                 args.rebuild_sidecar_table,
             )
             .await?;
+        }
+        if let Some(warmup_queries) = warmup_queries.as_ref() {
+            eprintln!(
+                "[sidecar-rerank] warming sidecar path for {} with {} untimed queries ...",
+                sidecar.variant.label(),
+                warmup_queries.nrows()
+            );
+            for (_, warmup_candidate_run) in &warmup_candidate_runs {
+                for read_mode in &read_modes {
+                    match read_mode {
+                        SidecarReadMode::Free => {
+                            let _ = rerank_with_sidecar(
+                                &sidecar,
+                                &warmup_candidate_run.ids,
+                                &id_to_pos,
+                                &corpus,
+                                warmup_queries,
+                            )?;
+                        }
+                        SidecarReadMode::RandomId | SidecarReadMode::TidSorted => {
+                            let _ = rerank_with_sidecar_db(
+                                &client,
+                                &sidecar,
+                                *read_mode,
+                                &sidecar_table_name(&args.prefix, sidecar.variant),
+                                &warmup_candidate_run.ids,
+                                warmup_queries,
+                                args.concurrency,
+                            )
+                            .await?;
+                        }
+                    }
+                }
+            }
         }
         for (value, candidate_run) in &candidate_runs {
             for read_mode in &read_modes {

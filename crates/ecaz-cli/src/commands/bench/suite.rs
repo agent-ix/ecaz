@@ -419,6 +419,8 @@ struct SidecarRerankStep {
     #[serde(default)]
     queries_limit: Option<usize>,
     #[serde(default)]
+    warmup_queries: Option<usize>,
+    #[serde(default)]
     bits: Option<i32>,
     #[serde(default)]
     seed: Option<i64>,
@@ -2169,6 +2171,9 @@ fn expand_sidecar_rerank(step: &SidecarRerankStep, defaults: &SuiteDefaults) -> 
     if let Some(limit) = step.queries_limit.or(defaults.queries_limit) {
         push_arg(&mut args, "--queries-limit", &limit.to_string());
     }
+    if let Some(warmup_queries) = step.warmup_queries {
+        push_arg(&mut args, "--warmup-queries", &warmup_queries.to_string());
+    }
     push_arg(&mut args, "--bits", &bits(defaults, step.bits).to_string());
     push_arg(&mut args, "--seed", &seed(defaults, step.seed).to_string());
     for variant in &step.variants {
@@ -2826,6 +2831,7 @@ mod tests {
             concurrency: Some(4),
             sweep: vec![64, 128],
             queries_limit: None,
+            warmup_queries: Some(25),
             bits: None,
             seed: None,
             variants: vec!["f32".into(), "f16".into(), "rabitq8".into()],
@@ -2840,6 +2846,7 @@ mod tests {
         assert!(args.windows(2).any(|w| w == ["--candidate-k", "50"]));
         assert!(args.windows(2).any(|w| w == ["--concurrency", "4"]));
         assert!(args.windows(2).any(|w| w == ["--sweep", "64,128"]));
+        assert!(args.windows(2).any(|w| w == ["--warmup-queries", "25"]));
         assert!(args.windows(2).any(|w| w == ["--variant", "f32"]));
         assert!(args.windows(2).any(|w| w == ["--variant", "f16"]));
         assert!(args.windows(2).any(|w| w == ["--variant", "rabitq8"]));

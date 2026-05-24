@@ -1,0 +1,53 @@
+{
+  "name": "task51-aws-rabitq8-sidecar-warm-sweep",
+  "schema_version": 1,
+  "artifact_dir": "benchmarks/task51-aws-rabitq8-sidecar-warm-sweep/artifacts",
+  "defaults": {
+    "pg": 18,
+    "socket_dir": "/var/run/postgresql",
+    "profile": "ec_ivf",
+    "bits": 4,
+    "seed": 42,
+    "queries_limit": 200,
+    "force_index": true
+  },
+  "steps": [
+    {
+      "kind": "raw",
+      "name": "precheck-preserved-1m-ivf-rabitq",
+      "tags": ["aws", "precheck", "ivf", "rabitq", "sidecar", "warm"],
+      "args": [
+        "dev", "sql",
+        "--pg", "18",
+        "--db", "tqvector_bench",
+        "--socket-dir", "/var/run/postgresql",
+        "--raw",
+        "--sql",
+        "SELECT current_database() AS db, current_setting('server_version') AS server_version; SELECT count(*) AS corpus_rows FROM real_1m_ivf_rabitq1_rerank_corpus; SELECT count(*) AS query_rows FROM real_1m_ivf_rabitq1_rerank_queries; SELECT i.relname, pam.amname, i.reloptions FROM pg_class t JOIN pg_index ix ON ix.indrelid = t.oid JOIN pg_class i ON i.oid = ix.indexrelid JOIN pg_am pam ON pam.oid = i.relam WHERE t.relname = 'real_1m_ivf_rabitq1_rerank_corpus' ORDER BY i.relname; SELECT relname, reltuples::bigint AS estimated_rows FROM pg_class WHERE relname IN ('real_1m_ivf_rabitq1_rerank_sidecar_rabitq8', 'real_1m_ivf_rabitq1_rerank_sidecar_rabitq8ls', 'real_1m_ivf_rabitq1_rerank_sidecar_rabitq8c3', 'real_1m_ivf_rabitq1_rerank_sidecar_rabitq8c4') ORDER BY relname;",
+        "--log-output", "benchmarks/task51-aws-rabitq8-sidecar-warm-sweep/artifacts/precheck-preserved-1m-ivf-rabitq.log"
+      ],
+      "expected_artifacts": [
+        "benchmarks/task51-aws-rabitq8-sidecar-warm-sweep/artifacts/precheck-preserved-1m-ivf-rabitq.log"
+      ]
+    },
+    {
+      "kind": "sidecar-rerank",
+      "name": "warm-sidecar-1m-rabitq8-new-variants-k50-q200-warm200-c1-tid-sorted",
+      "tags": ["aws", "sidecar", "warm", "real_io", "ec_real_990k", "ivf", "rabitq", "rabitq8", "rabitq8ls", "rabitq8c3", "rabitq8c4", "concurrency1"],
+      "prefix": "real_1m_ivf_rabitq1_rerank",
+      "profile": "ec_ivf",
+      "k": 10,
+      "candidate_k": 50,
+      "concurrency": 1,
+      "sweep": [128],
+      "queries_limit": 200,
+      "warmup_queries": 200,
+      "variants": ["rabitq8", "rabitq8ls", "rabitq8c3", "rabitq8c4"],
+      "read_modes": ["tid-sorted"],
+      "rebuild_sidecar_table": false,
+      "force_index": true,
+      "allow_unsafe_index_shape": true,
+      "log_output": "benchmarks/task51-aws-rabitq8-sidecar-warm-sweep/artifacts/warm-sidecar-1m-rabitq8-new-variants-k50-q200-warm200-c1-tid-sorted.log"
+    }
+  ]
+}
