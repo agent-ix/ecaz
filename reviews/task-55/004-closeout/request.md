@@ -40,16 +40,18 @@ wrapper boundary already.
 
 `/Users/peter/.cargo/bin/ecaz bench suite run --config benchmarks/task-55-m5-diskann-baseline/suite.json`
 
-| Step | Status |
-| --- | --- |
-| load-10k-diskann | (filled by run) |
-| recall-10k-diskann | (filled by run) |
-| latency-10k-diskann | (filled by run) |
-| storage-10k-diskann | (filled by run) |
-| load-100k-diskann | (filled by run) |
-| recall-100k-diskann | (filled by run) |
-| latency-100k-diskann | (filled by run) |
-| storage-100k-diskann | (filled by run) |
+| Step | Status | Headline |
+| --- | --- | --- |
+| load-10k-diskann | ✓ | build 1.40s |
+| recall-10k-diskann | ✓ | recall@10 sweep 0.9965 → 0.9975 (list_size 64 → 800) |
+| latency-10k-diskann | ✓ | mean 2.22 → 2.96 ms |
+| storage-10k-diskann | ✓ | 494.0 B/row (m unconfigured, default ec_diskann reloptions) |
+| load-100k-diskann | ✓ | build 219.52s (3.66 min) |
+| recall-100k-diskann | ✓ | recall@10 sweep 0.9200 → 0.9780 (list_size 64 → 800) |
+| latency-100k-diskann | ✓ | mean 41.4 → 62.0 ms |
+| storage-100k-diskann | ✓ | 483.1 B/row |
+
+**8/8 steps green; exit 0 from `ecaz bench suite run`.**
 
 This establishes the new M5 DiskANN baseline at
 `benchmarks/task-55-m5-diskann-baseline/` (no prior reference
