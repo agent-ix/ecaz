@@ -19,7 +19,7 @@ use crate::{
     quant::grouped_pq::{build_grouped_pq_lut_f32, grouped_pq_score_f32, GROUPED_PQ_CENTROIDS},
     storage::{
         buffer_guard::{LockedBufferGuard, LockedPageTupleVisit},
-        page::{DataPageChain, ItemPointer},
+        page::{DataPageChain, ItemPointer, FIRST_DATA_BLOCK_NUMBER},
         relation::RelationHandle,
         relation_guard::HeapRelationGuard,
         wal,
@@ -29,13 +29,13 @@ use crate::{
 use super::{
     ambuild, cost, insert, maybe_check_for_interrupts, options,
     page::{VamanaMetadataPage, PAYLOAD_FLAG_BINARY_SIDECAR},
-    reader::{PersistedGraphReader, VisitedState},
+    reader::{GraphReader, PersistedGraphReader, VisitedState},
     scan::{self, ScanParams},
     scan_query::{
         build_grouped_pq_lut_from_persisted, encode_query_srht, hamming_xor_popcount,
         pack_query_sign_bits, read_grouped_codebook_chain,
     },
-    scan_state::{self, DiskannScanOpaque},
+    scan_state::{self, DiskannScanOpaque, RelationGraphReader},
     tuple::VamanaNodeTuple,
     vacuum, warn_on_non_unit_source_vector,
 };
@@ -522,10 +522,10 @@ unsafe extern "C-unwind" fn ec_diskann_ambeginscan(
             pgrx::error!("ec_diskann failed to allocate scan descriptor");
         }
 
-        let (metadata, chain) = scan_state::materialize_chain_from_index(index_relation)
+        let (metadata, _) = scan_state::read_metadata_from_index(index_relation)
             .unwrap_or_else(|e| pgrx::error!("ec_diskann ambeginscan failed: {e}"));
         let options = options::relation_options(index_relation);
-        let opaque_state = DiskannScanOpaque::new(metadata, chain, options)
+        let opaque_state = DiskannScanOpaque::new(metadata, options)
             .unwrap_or_else(|e| pgrx::error!("ec_diskann ambeginscan failed: {e}"));
 
         crate::fault::maybe_fail_palloc("ec_diskann ambeginscan opaque");
@@ -603,27 +603,25 @@ unsafe extern "C-unwind" fn ec_diskann_amrescan(
             return;
         }
 
+        let prefilter_kind = options::current_prefilter_kind();
+        let has_binary_sidecar = opaque.metadata.payload_flags & PAYLOAD_FLAG_BINARY_SIDECAR != 0;
+        let needs_materialized_chain = matches!(prefilter_kind, options::PrefilterKind::GroupedPq)
+            || (matches!(prefilter_kind, options::PrefilterKind::Auto) && !has_binary_sidecar);
+        if needs_materialized_chain && opaque.chain.is_none() {
+            let (_, chain) = scan_state::materialize_chain_from_index((*scan).indexRelation)
+                .unwrap_or_else(|e| {
+                    pgrx::error!("ec_diskann scan materialization fallback failed: {e}")
+                });
+            opaque.chain = Some(chain);
+        }
         let prefilter = prepare_prefilter(
-            &opaque.chain,
+            opaque.chain.as_ref(),
             &opaque.metadata,
             &raw_query,
-            options::current_prefilter_kind(),
+            prefilter_kind,
             "scan",
         )
         .unwrap_or_else(|e| pgrx::error!("ec_diskann scan prefilter setup failed: {e}"));
-
-        let reader = PersistedGraphReader::new(
-            &opaque.chain,
-            opaque.metadata.graph_degree_r,
-            opaque.binary_word_count(),
-            opaque.search_code_len(),
-        );
-        let entry_point = scan::resolve_entry_point(&reader, opaque.metadata.entry_point)
-            .unwrap_or_else(|e| pgrx::error!("ec_diskann scan entry-point resolution failed: {e}"));
-        let Some(entry_point) = entry_point else {
-            opaque.rescan_called = true;
-            return;
-        };
 
         let scan_desc = scan_state::DiskannScanDescView::from_raw(scan, "ec_diskann amrescan");
         let heap_relation_state = scan_desc
@@ -638,42 +636,73 @@ unsafe extern "C-unwind" fn ec_diskann_amrescan(
             });
         let sql_result_cap = sql_scan_result_cap(opaque.top_k, opaque.rerank_budget);
         let scan_params = ScanParams {
-            entry_point,
+            entry_point: ItemPointer::INVALID,
             list_size: opaque.list_size,
             rerank_budget: opaque.rerank_budget,
             top_k: sql_result_cap,
         };
-        let (results, rerank_error) = {
-            let heap_relation = heap_relation_state.as_ptr();
-            let snapshot = snapshot_state.as_ptr();
-            let slot =
-                crate::storage::slot_guard::TupleTableSlotGuard::single_for_heap(heap_relation)
-                    .unwrap_or_else(|| pgrx::error!("ec_diskann scan heap slot setup failed"));
-            let rerank_error = RefCell::new(None::<String>);
-            let results = scan::vamana_scan_with(
+        let heap_relation = heap_relation_state.as_ptr();
+        let snapshot = snapshot_state.as_ptr();
+        let slot = crate::storage::slot_guard::TupleTableSlotGuard::single_for_heap(heap_relation)
+            .unwrap_or_else(|| pgrx::error!("ec_diskann scan heap slot setup failed"));
+        let index_handle = std::ptr::NonNull::new((*scan).indexRelation)
+            .unwrap_or_else(|| pgrx::error!("ec_diskann scan received null index relation"));
+        let (node_results, rerank_error) = if let Some(chain) = opaque.chain.as_ref() {
+            let reader = PersistedGraphReader::new(
+                chain,
+                opaque.metadata.graph_degree_r,
+                opaque.binary_word_count(),
+                opaque.search_code_len(),
+            );
+            let entry_point = scan::resolve_entry_point(&reader, opaque.metadata.entry_point)
+                .unwrap_or_else(|e| {
+                    pgrx::error!("ec_diskann scan entry-point resolution failed: {e}")
+                });
+            let Some(entry_point) = entry_point else {
+                opaque.rescan_called = true;
+                return;
+            };
+            let mut params = scan_params;
+            params.entry_point = entry_point;
+            execute_diskann_scan(
                 &reader,
                 &mut opaque.visited,
-                scan_params,
-                |tuple| prefilter.score(tuple),
-                |heap_tids: &[ItemPointer]| prefetch_heap_rerank_blocks(heap_relation, heap_tids),
-                |heap_tid| match exact_heap_rerank_distance(
-                    heap_relation,
-                    snapshot,
-                    slot.as_ptr(),
-                    source_attnum,
-                    &raw_query,
-                    heap_tid,
-                ) {
-                    Ok(distance) => distance,
-                    Err(error) => {
-                        if rerank_error.borrow().is_none() {
-                            *rerank_error.borrow_mut() = Some(error);
-                        }
-                        f32::INFINITY
-                    }
-                },
+                params,
+                &prefilter,
+                heap_relation,
+                snapshot,
+                slot.as_ptr(),
+                source_attnum,
+                &raw_query,
+            )
+        } else {
+            let reader = RelationGraphReader::new(
+                index_handle,
+                opaque.metadata.graph_degree_r,
+                opaque.binary_word_count(),
+                opaque.search_code_len(),
             );
-            (results, rerank_error.into_inner())
+            let entry_point = scan::resolve_entry_point(&reader, opaque.metadata.entry_point)
+                .unwrap_or_else(|e| {
+                    pgrx::error!("ec_diskann scan entry-point resolution failed: {e}")
+                });
+            let Some(entry_point) = entry_point else {
+                opaque.rescan_called = true;
+                return;
+            };
+            let mut params = scan_params;
+            params.entry_point = entry_point;
+            execute_diskann_scan(
+                &reader,
+                &mut opaque.visited,
+                params,
+                &prefilter,
+                heap_relation,
+                snapshot,
+                slot.as_ptr(),
+                source_attnum,
+                &raw_query,
+            )
         };
         prefilter.load_into_scan_opaque(opaque);
 
@@ -681,10 +710,18 @@ unsafe extern "C-unwind" fn ec_diskann_amrescan(
             pgrx::error!("ec_diskann scan heap rerank failed: {error}");
         }
         let node_results =
-            results.unwrap_or_else(|e| pgrx::error!("ec_diskann scan execution failed: {e}"));
-        opaque.result_buf =
-            expand_scan_results_with_bound_heap_tids(&opaque.chain, &node_results, sql_result_cap)
-                .unwrap_or_else(|e| pgrx::error!("ec_diskann duplicate expansion failed: {e}"));
+            node_results.unwrap_or_else(|e| pgrx::error!("ec_diskann scan execution failed: {e}"));
+        opaque.result_buf = if let Some(chain) = opaque.chain.as_ref() {
+            expand_scan_results_with_bound_heap_tids(chain, &node_results, sql_result_cap)
+        } else {
+            expand_scan_results_with_bound_heap_tids_relation(
+                index_handle,
+                &opaque.metadata,
+                &node_results,
+                sql_result_cap,
+            )
+        }
+        .unwrap_or_else(|e| pgrx::error!("ec_diskann duplicate expansion failed: {e}"));
         opaque.result_cursor = 0;
         opaque.rescan_called = true;
     })
@@ -735,6 +772,149 @@ unsafe extern "C-unwind" fn ec_diskann_amendscan(scan: pg_sys::IndexScanDesc) {
             (*scan).opaque = ptr::null_mut();
         }
     })
+}
+
+fn execute_diskann_scan<R>(
+    reader: &R,
+    visited: &mut VisitedState,
+    scan_params: ScanParams,
+    prefilter: &PreparedPrefilter,
+    heap_relation: pg_sys::Relation,
+    snapshot: pg_sys::Snapshot,
+    slot: *mut pg_sys::TupleTableSlot,
+    source_attnum: i32,
+    raw_query: &[f32],
+) -> (Result<Vec<scan::ScanResult>, String>, Option<String>)
+where
+    R: GraphReader + ?Sized,
+{
+    let rerank_error = RefCell::new(None::<String>);
+    let results = scan::vamana_scan_with(
+        reader,
+        visited,
+        scan_params,
+        |tuple| prefilter.score(tuple),
+        |heap_tids: &[ItemPointer]| prefetch_heap_rerank_blocks(heap_relation, heap_tids),
+        |heap_tid| match exact_heap_rerank_distance(
+            heap_relation,
+            snapshot,
+            slot,
+            source_attnum,
+            raw_query,
+            heap_tid,
+        ) {
+            Ok(distance) => distance,
+            Err(error) => {
+                if rerank_error.borrow().is_none() {
+                    *rerank_error.borrow_mut() = Some(error);
+                }
+                f32::INFINITY
+            }
+        },
+    );
+    (results, rerank_error.into_inner())
+}
+
+fn expand_scan_results_with_bound_heap_tids_relation(
+    index_handle: RelationHandle,
+    metadata: &VamanaMetadataPage,
+    node_results: &[scan::ScanResult],
+    top_k: usize,
+) -> Result<Vec<scan::ScanResult>, String> {
+    let mut expanded = Vec::with_capacity(top_k.min(node_results.len()));
+    for result in node_results {
+        let bound_heap_tids = bound_heap_tids_for_owner_relation(
+            index_handle,
+            metadata,
+            result.tid,
+            result.primary_heaptid,
+        )?;
+        for heap_tid in bound_heap_tids {
+            expanded.push(scan::ScanResult {
+                tid: result.tid,
+                primary_heaptid: heap_tid,
+                distance: result.distance,
+            });
+            if expanded.len() >= top_k {
+                return Ok(expanded);
+            }
+        }
+    }
+    Ok(expanded)
+}
+
+fn bound_heap_tids_for_owner_relation(
+    index_handle: RelationHandle,
+    metadata: &VamanaMetadataPage,
+    owner_tid: ItemPointer,
+    primary_heaptid: ItemPointer,
+) -> Result<Vec<ItemPointer>, String> {
+    if owner_tid == ItemPointer::INVALID {
+        return Err("ec_diskann bound heap tid expansion requires a valid owner tid".into());
+    }
+    if primary_heaptid == ItemPointer::INVALID {
+        return Err("ec_diskann bound heap tid expansion requires a valid primary heap tid".into());
+    }
+
+    let reader = RelationGraphReader::new(
+        index_handle,
+        metadata.graph_degree_r,
+        scan_state::metadata_binary_word_count(metadata),
+        scan_state::metadata_search_code_len(metadata),
+    );
+    let owner_tuple = reader.read_node(owner_tid)?;
+    let mut heap_tids = vec![primary_heaptid];
+    if !owner_tuple.has_overflow_heaptids {
+        return Ok(heap_tids);
+    }
+
+    for (_, overflow) in overflow_tuple_refs_for_owner_relation(&reader, owner_tid)? {
+        heap_tids.extend(
+            overflow
+                .heap_tids
+                .iter()
+                .take(overflow.heap_tid_count as usize)
+                .copied(),
+        );
+    }
+    Ok(heap_tids)
+}
+
+fn overflow_tuple_refs_for_owner_relation(
+    reader: &RelationGraphReader,
+    owner_tid: ItemPointer,
+) -> Result<Vec<(ItemPointer, insert::VamanaOverflowTupleFixture)>, String> {
+    let block_count = crate::storage::relation::main_fork_block_count_handle(reader.handle());
+    let mut matches = Vec::new();
+    for block_number in FIRST_DATA_BLOCK_NUMBER..block_count {
+        let buffer = LockedBufferGuard::read_main_handle(
+            reader.handle(),
+            block_number,
+            pg_sys::ReadBufferMode::RBM_NORMAL,
+            pg_sys::BUFFER_LOCK_SHARE as i32,
+        )
+        .ok_or_else(|| format!("ec_diskann scan could not open data block {block_number}"))?;
+        let max_offset = buffer.max_offset_number();
+        for offset_number in 1..=max_offset {
+            let tid = ItemPointer {
+                block_number,
+                offset_number,
+            };
+            let visit = buffer.visit_tuple_bytes(tid, "ec_diskann overflow tuple", |raw| {
+                if raw.first().copied() != Some(insert::TQ_VAMANA_OVERFLOW_TAG) {
+                    return Ok(None);
+                }
+                insert::vamana_decode_overflow_tuple_fixture(raw).map(Some)
+            })?;
+            if let LockedPageTupleVisit::Present(Some(tuple)) = visit {
+                if tuple.owner_tid == owner_tid {
+                    matches.push((tid, tuple));
+                }
+            }
+        }
+    }
+    matches.sort_unstable_by(|left, right| insert::cmp_item_pointer_physical(&left.0, &right.0));
+    Ok(matches)
 }
 
 fn indexed_ecvector_attnum(index_relation: pg_sys::Relation) -> Result<i32, String> {
@@ -1265,7 +1445,7 @@ impl PreparedPrefilter {
 }
 
 fn prepare_prefilter(
-    chain: &DataPageChain,
+    chain: Option<&DataPageChain>,
     metadata: &VamanaMetadataPage,
     raw_query: &[f32],
     prefilter_kind: options::PrefilterKind,
@@ -1308,6 +1488,9 @@ fn prepare_prefilter(
             rotated_query.len()
         ));
     }
+    let chain = chain.ok_or_else(|| {
+        format!("ec_diskann {context} grouped-PQ prefilter requires materialized index chain")
+    })?;
     let flat_codebooks = read_grouped_codebook_chain(
         chain,
         metadata.grouped_codebook_head,
@@ -1399,7 +1582,7 @@ fn plan_vacuum_fill_candidates_for_target(
     let repair_scan_budget =
         vacuum_repair_scan_budget(build_list_size, planner.metadata.graph_degree_r as usize);
     let prefilter = prepare_prefilter(
-        planner.chain,
+        Some(planner.chain),
         planner.metadata,
         &target_source_vector,
         options::current_prefilter_kind(),
@@ -1875,10 +2058,10 @@ mod tests {
         let relation_options = super::options::relation_options(index_relation_ptr);
         let session_handle =
             ptr::NonNull::new(index_relation_ptr).expect("guard keeps the index relation open");
-        let (metadata, chain) = scan_state::materialize_chain_from_index_handle(session_handle)
-            .expect("materialize_chain_from_index should succeed");
+        let (metadata, _) = scan_state::read_metadata_from_index_handle(session_handle)
+            .expect("read_metadata_from_index should succeed");
         let relation_opaque =
-            scan_state::DiskannScanOpaque::new(metadata, chain, relation_options.clone())
+            scan_state::DiskannScanOpaque::new(metadata, relation_options.clone())
                 .expect("relation scan state should build");
         assert_eq!(
             relation_opaque.list_size, 111,
@@ -1886,9 +2069,9 @@ mod tests {
         );
 
         Spi::run("SET ec_diskann.list_size = 7").expect("session override should succeed");
-        let (metadata, chain) = scan_state::materialize_chain_from_index_handle(session_handle)
-            .expect("materialize_chain_from_index should succeed");
-        let session_opaque = scan_state::DiskannScanOpaque::new(metadata, chain, relation_options)
+        let (metadata, _) = scan_state::read_metadata_from_index_handle(session_handle)
+            .expect("read_metadata_from_index should succeed");
+        let session_opaque = scan_state::DiskannScanOpaque::new(metadata, relation_options)
             .expect("session scan state should build");
         assert_eq!(
             session_opaque.list_size, 7,
@@ -1929,7 +2112,7 @@ mod tests {
 
         Spi::run("RESET ec_diskann.prefilter_kind").expect("reset should succeed");
         let auto_prefilter = super::prepare_prefilter(
-            &chain,
+            Some(&chain),
             &metadata,
             &query,
             super::options::current_prefilter_kind(),
@@ -1947,7 +2130,7 @@ mod tests {
         Spi::run("SET ec_diskann.prefilter_kind = 'grouped_pq'")
             .expect("grouped_pq override should succeed");
         let grouped_prefilter = super::prepare_prefilter(
-            &chain,
+            Some(&chain),
             &metadata,
             &query,
             super::options::current_prefilter_kind(),
@@ -1965,7 +2148,7 @@ mod tests {
         Spi::run("SET ec_diskann.prefilter_kind = 'binary_sidecar'")
             .expect("binary_sidecar override should succeed");
         let binary_prefilter = super::prepare_prefilter(
-            &chain,
+            Some(&chain),
             &metadata,
             &query,
             super::options::current_prefilter_kind(),

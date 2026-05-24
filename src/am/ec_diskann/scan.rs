@@ -31,7 +31,7 @@
 
 use crate::am::ec_diskann::{
     maybe_check_for_interrupts,
-    reader::{PersistedGraphReader, VisitedState},
+    reader::{GraphReader, VisitedState},
     tuple::VamanaNodeTuple,
 };
 use crate::storage::page::ItemPointer;
@@ -119,7 +119,7 @@ impl PartialOrd for ScanCandidate {
 /// (ADR-047 §10 defers live-medoid migration to rebuild). The result
 /// feeds [`ScanParams::entry_point`].
 pub fn resolve_entry_point(
-    reader: &PersistedGraphReader<'_>,
+    reader: &(impl GraphReader + ?Sized),
     preferred: ItemPointer,
 ) -> Result<Option<ItemPointer>, String> {
     if preferred != ItemPointer::INVALID {
@@ -140,13 +140,14 @@ pub fn resolve_entry_point(
 /// greedy descent. `rerank(primary_heaptid) -> f32` is called at most
 /// `rerank_budget` times, on the candidates that survived the
 /// prefilter greedy.
-pub fn vamana_scan<Pre, Re>(
-    reader: &PersistedGraphReader<'_>,
+pub fn vamana_scan<R, Pre, Re>(
+    reader: &R,
     params: ScanParams,
     prefilter: Pre,
     rerank: Re,
 ) -> Result<Vec<ScanResult>, String>
 where
+    R: GraphReader + ?Sized,
     Pre: Fn(&VamanaNodeTuple) -> f32,
     Re: Fn(ItemPointer) -> f32,
 {
@@ -175,8 +176,8 @@ where
 /// rerank loop is still warming up. Callers that do not need
 /// prefetching (e.g. unit tests, the build / insert insert path with
 /// SnapshotSelf) pass a no-op closure.
-pub fn vamana_scan_with<Pre, Pf, Re>(
-    reader: &PersistedGraphReader<'_>,
+pub fn vamana_scan_with<R, Pre, Pf, Re>(
+    reader: &R,
     scratch: &mut VisitedState,
     params: ScanParams,
     prefilter: Pre,
@@ -184,6 +185,7 @@ pub fn vamana_scan_with<Pre, Pf, Re>(
     rerank: Re,
 ) -> Result<Vec<ScanResult>, String>
 where
+    R: GraphReader + ?Sized,
     Pre: Fn(&VamanaNodeTuple) -> f32,
     Pf: FnOnce(&[ItemPointer]),
     Re: Fn(ItemPointer) -> f32,
@@ -286,13 +288,14 @@ where
 /// descent + rerank in different transactions (useful if rerank wants
 /// to batch heap fetches, or if a future iterator-style amgettuple
 /// wants incremental rerank).
-pub fn greedy_descent<Pre>(
-    reader: &PersistedGraphReader<'_>,
+pub fn greedy_descent<R, Pre>(
+    reader: &R,
     entry_point: ItemPointer,
     list_size: usize,
     prefilter: &Pre,
 ) -> Result<Vec<ScanCandidate>, String>
 where
+    R: GraphReader + ?Sized,
     Pre: Fn(&VamanaNodeTuple) -> f32,
 {
     let mut scratch = VisitedState::new();
@@ -302,14 +305,15 @@ where
 /// Scratch-reusing variant of [`greedy_descent`]. See
 /// [`crate::am::ec_diskann::reader::greedy_search_persisted_with`] for
 /// the allocation rationale.
-pub fn greedy_descent_with<Pre>(
-    reader: &PersistedGraphReader<'_>,
+pub fn greedy_descent_with<R, Pre>(
+    reader: &R,
     scratch: &mut VisitedState,
     entry_point: ItemPointer,
     list_size: usize,
     prefilter: &Pre,
 ) -> Result<Vec<ScanCandidate>, String>
 where
+    R: GraphReader + ?Sized,
     Pre: Fn(&VamanaNodeTuple) -> f32,
 {
     scratch.clear();
@@ -350,11 +354,10 @@ where
         scratch.visited.insert(picked.tid);
         insert_visited_sorted(&mut visited_best, picked);
 
-        let Some(picked_entry) = entries.get(&picked.tid) else {
+        let Some(picked_entry) = entries.remove(&picked.tid) else {
             continue;
         };
-        let picked_neighbors = picked_entry.neighbors.clone();
-        for nbr in picked_neighbors {
+        for nbr in picked_entry.neighbors {
             if nbr == ItemPointer::INVALID {
                 continue;
             }
@@ -467,6 +470,7 @@ mod tests {
     use super::*;
     use crate::am::ec_diskann::build::{build_and_persist_vamana, BuildParams};
     use crate::am::ec_diskann::persist::{persist_vamana_graph, NodePayload};
+    use crate::am::ec_diskann::reader::PersistedGraphReader;
     use crate::am::ec_diskann::vamana::{approximate_medoid, build_vamana_graph, VamanaGraph};
     use crate::storage::page::DEFAULT_PAGE_SIZE;
     use rand::{Rng, SeedableRng};
