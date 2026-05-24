@@ -66,6 +66,9 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_amvacuumcleanup(
     })
 }
 
+/// # Safety
+/// Caller passes the live IVF `index_relation` being vacuumed; `stats`
+/// is either the running bulk-delete result or null on first entry.
 unsafe fn noop_vacuum_stats(
     index_relation: pg_sys::Relation,
     stats: *mut pg_sys::IndexBulkDeleteResult,
@@ -75,6 +78,10 @@ unsafe fn noop_vacuum_stats(
     finish_vacuum_stats(index_relation, stats, &metadata)
 }
 
+/// # Safety
+/// `index_relation` is the live IVF index being vacuumed; `callback` /
+/// `callback_state` (when non-None) come from PostgreSQL's bulkdelete
+/// entry point and remain valid for the duration of the call.
 unsafe fn run_bulkdelete(
     index_relation: pg_sys::Relation,
     stats: *mut pg_sys::IndexBulkDeleteResult,
@@ -188,6 +195,10 @@ fn page_payload_len(metadata: &page::MetadataPage) -> Result<usize, String> {
     .map(|quantizer| quantizer.payload_len())
 }
 
+/// # Safety
+/// `index_relation` is the live IVF index relation; `result` is the
+/// running aggregator owned by the bulkdelete pass; `callback` and
+/// `callback_state` remain valid for the duration of the call.
 unsafe fn bulkdelete_list_postings(
     index_relation: pg_sys::Relation,
     directory: &page::IvfListDirectoryTuple,
@@ -257,6 +268,10 @@ fn bulkdelete_posting(
     Ok(rewrite)
 }
 
+/// # Safety
+/// `index_relation` is the live IVF index relation being vacuumed and
+/// `metadata` was read from it; `stats` is either non-null running
+/// aggregator state or null on the cleanup-only path.
 unsafe fn finish_vacuum_stats(
     index_relation: pg_sys::Relation,
     stats: *mut pg_sys::IndexBulkDeleteResult,

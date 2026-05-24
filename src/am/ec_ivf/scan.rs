@@ -918,15 +918,20 @@ unsafe fn free_posting_scratch_soa(opaque: &mut EcIvfScanOpaque) {
     }
 }
 
+/// # Safety
+/// `heap_rerank_state` was created with `Box::into_raw` by this scan
+/// opaque and has not been freed while the pointer is non-null.
 unsafe fn free_heap_rerank_state(opaque: &mut EcIvfScanOpaque) {
     if !opaque.heap_rerank_state.is_null() {
-        // SAFETY: `heap_rerank_state` was created with `Box::into_raw` by this
-        // scan opaque and has not been freed while the pointer is non-null.
-        drop(unsafe { Box::from_raw(opaque.heap_rerank_state) });
+        drop(Box::from_raw(opaque.heap_rerank_state));
         opaque.heap_rerank_state = ptr::null_mut();
     }
 }
 
+/// # Safety
+/// `scan` is the live PostgreSQL scan descriptor from the AM callback
+/// path; `opaque` is the matching scan-opaque cleared by
+/// `free_heap_rerank_state` before a fresh state is configured.
 unsafe fn configure_heap_rerank_state(
     scan: pg_sys::IndexScanDesc,
     opaque: &mut EcIvfScanOpaque,
@@ -973,6 +978,10 @@ fn resolve_effective_nprobe(metadata: &super::page::MetadataPage) -> u32 {
     super::options::resolve_scan_nprobe(metadata.nlists, metadata.nprobe).effective_nprobe
 }
 
+/// # Safety
+/// `index_relation` is the live IVF index relation and `metadata` was
+/// read from it; the centroid chain `next_tid` is followed via the
+/// page helper which validates per-tuple layout.
 unsafe fn load_centroid_scores(
     index_relation: pg_sys::Relation,
     metadata: &super::page::MetadataPage,
@@ -1040,6 +1049,11 @@ fn inner_product_scalar(left: &[f32], right: &[f32]) -> f32 {
 /// centroids against the query (~`nlists` × `dimensions` ops at the
 /// start of every scan) — formerly a scalar `.sum()` loop, which at
 /// dim=1536 nlists=224 was ~1 ms of per-query fixed cost on Graviton 4.
+///
+/// # Safety
+/// NEON must be available at runtime (caller checks
+/// `is_aarch64_feature_detected!("neon")`) and `left.len() == right.len()`
+/// (the wrapping `inner_product` `assert_eq!`s this before dispatch).
 #[cfg(target_arch = "aarch64")]
 #[target_feature(enable = "neon")]
 unsafe fn inner_product_neon(left: &[f32], right: &[f32]) -> f32 {
@@ -1232,6 +1246,10 @@ fn choose_adaptive_nprobe(
     }
 }
 
+/// # Safety
+/// `scan` is the live AM scan descriptor and `index_relation` is the live
+/// IVF index relation it references; `opaque` is the matching scan-opaque
+/// and `metadata` was read from the same relation.
 unsafe fn materialize_probe_candidates(
     scan: pg_sys::IndexScanDesc,
     index_relation: pg_sys::Relation,
@@ -1559,6 +1577,9 @@ fn consume_live_tid_budget(
     Ok(true)
 }
 
+/// # Safety
+/// `opaque` is the live scan-opaque whose `heap_rerank_state` (if any)
+/// was configured by `configure_heap_rerank_state`.
 unsafe fn rerank_probe_candidates(
     _scan: pg_sys::IndexScanDesc,
     index_options: &super::options::EcIvfOptions,
@@ -1595,6 +1616,9 @@ fn resolve_rerank_len(rerank_width: i32, candidate_len: usize) -> usize {
         .min(candidate_len)
 }
 
+/// # Safety
+/// `opaque.heap_rerank_state` was created with `Box::into_raw` during scan
+/// configuration and remains live for the duration of this rerank pass.
 unsafe fn rerank_probe_candidates_heap_f32(
     opaque: &mut EcIvfScanOpaque,
     candidates: &mut [EcIvfScoredCandidate],
@@ -1677,6 +1701,10 @@ fn candidate_heap_blocks(candidates: &[EcIvfScoredCandidate]) -> Vec<u32> {
         .collect()
 }
 
+/// # Safety
+/// `heap_relation` is the live heap relation for the active scan and
+/// `block_numbers` references valid heap blocks discovered during the
+/// approximate probe phase.
 #[cfg(feature = "pg18")]
 unsafe fn prefetch_heap_rerank_blocks(heap_relation: pg_sys::Relation, block_numbers: &[u32]) {
     let mut state = crate::am::stream::BlockSequencePrefetchState::new(block_numbers.to_vec());
@@ -1712,6 +1740,10 @@ unsafe fn prefetch_heap_rerank_blocks(heap_relation: pg_sys::Relation, block_num
     unsafe { pg_sys::read_stream_end(stream) };
 }
 
+/// # Safety
+/// `heap_relation` is the live heap relation for the active scan and
+/// `block_numbers` references valid heap blocks discovered during the
+/// approximate probe phase; called on pre-pg18 best-effort prefetch path.
 #[cfg(not(feature = "pg18"))]
 unsafe fn prefetch_heap_rerank_blocks(heap_relation: pg_sys::Relation, block_numbers: &[u32]) {
     for &block_number in block_numbers {
@@ -1727,6 +1759,10 @@ unsafe fn prefetch_heap_rerank_blocks(heap_relation: pg_sys::Relation, block_num
     }
 }
 
+/// # Safety
+/// `scan` is the live AM scan descriptor; the resolver returns either a
+/// borrow of `(*scan).heapRelation` or an owned `HeapRelationGuard` for
+/// the resolved heap OID, both valid for the scan's lifetime.
 unsafe fn resolve_scan_heap_relation(scan: pg_sys::IndexScanDesc) -> ResolvedIvfScanHeapRelation {
     // SAFETY: `scan` is a live PostgreSQL scan descriptor; if `heapRelation`
     // is already supplied by the executor we return that borrowed relation;
@@ -1745,6 +1781,10 @@ unsafe fn resolve_scan_heap_relation(scan: pg_sys::IndexScanDesc) -> ResolvedIvf
     ResolvedIvfScanHeapRelation::owned(heap_relation)
 }
 
+/// # Safety
+/// `scan` is the live AM scan descriptor; the resolver returns either a
+/// borrow of `(*scan).xs_snapshot` or an owned `RegisteredSnapshotGuard`,
+/// both valid for the scan's lifetime.
 unsafe fn resolve_scan_snapshot(scan: pg_sys::IndexScanDesc) -> ResolvedIvfScanSnapshot {
     // SAFETY: `scan` is a live PostgreSQL scan descriptor; if `xs_snapshot`
     // is already supplied by the executor we return that borrowed snapshot;
@@ -1831,6 +1871,10 @@ fn metadata_pq_group_size(metadata: &super::page::MetadataPage) -> Option<usize>
     }
 }
 
+/// # Safety
+/// `index_relation` is the live IVF index relation, `metadata` was read
+/// from it, and `selected_list_ids` were validated against the centroid
+/// chain by the upstream centroid-score selection.
 unsafe fn build_selected_probe_plan(
     index_relation: pg_sys::Relation,
     metadata: &super::page::MetadataPage,
@@ -1901,6 +1945,10 @@ unsafe fn build_selected_probe_plan(
     })
 }
 
+/// # Safety
+/// `index_state` is the live executor `IndexScanState`; the IVF scan
+/// descriptor and its opaque are accessed under the executor's
+/// guarantee that both outlive this read.
 pub(crate) unsafe fn explain_counters_from_index_scan_state(
     index_state: *mut pg_sys::IndexScanState,
 ) -> IvfExplainCounters {
@@ -1927,6 +1975,10 @@ pub(crate) unsafe fn explain_counters_from_index_scan_state(
     unsafe { (*opaque.cast::<EcIvfScanOpaque>()).explain_counters }
 }
 
+/// # Safety
+/// `index_relation` is the live IVF index relation and `metadata` was
+/// read from it; the directory chain follows the metadata head pointer
+/// through validated page reads.
 unsafe fn load_directory_entries(
     index_relation: pg_sys::Relation,
     metadata: &super::page::MetadataPage,
@@ -2194,6 +2246,9 @@ fn debug_end_heap_backed_scan(state: DebugHeapBackedScan<'_, '_, '_>) {
 }
 
 #[cfg(any(test, feature = "pg_test"))]
+/// # Safety
+/// Test-only helper; caller is a pgrx-managed test fixture that holds
+/// the IVF index referenced by `index_oid` open for the call duration.
 pub(crate) unsafe fn debug_ec_ivf_gettuple_after_rescan_result(index_oid: pg_sys::Oid) -> bool {
     let state = debug_begin_heap_backed_scan(index_oid);
     let mut orderby = pg_sys::ScanKeyData {
@@ -2229,6 +2284,9 @@ pub(crate) struct EcIvfRescanDebugSnapshot {
 }
 
 #[cfg(any(test, feature = "pg_test"))]
+/// # Safety
+/// Test-only helper; caller is a pgrx-managed test fixture that holds
+/// the IVF index referenced by `index_oid` open for the call duration.
 pub(crate) unsafe fn debug_ec_ivf_rescan_query_prep(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
@@ -2267,6 +2325,9 @@ pub(crate) unsafe fn debug_ec_ivf_rescan_query_prep(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
+/// # Safety
+/// Test-only helper; caller is a pgrx-managed test fixture that holds
+/// the IVF index referenced by `index_oid` open for the call duration.
 pub(crate) unsafe fn debug_ec_ivf_pq_fastscan_model_cache_reused(index_oid: pg_sys::Oid) -> bool {
     let index_relation = crate::storage::relation_guard::IndexRelationGuard::access_share(
         index_oid,
@@ -2303,6 +2364,9 @@ pub(crate) unsafe fn debug_ec_ivf_pq_fastscan_model_cache_reused(index_oid: pg_s
 }
 
 #[cfg(any(test, feature = "pg_test"))]
+/// # Safety
+/// Test-only helper; caller is a pgrx-managed test fixture that holds
+/// the IVF index referenced by `index_oid` open for the call duration.
 pub(crate) unsafe fn debug_ec_ivf_gettuple_outputs(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
@@ -2334,6 +2398,9 @@ pub(crate) unsafe fn debug_ec_ivf_gettuple_outputs(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
+/// # Safety
+/// Test-only helper; caller is a pgrx-managed test fixture that holds
+/// the IVF index referenced by `index_oid` open for the call duration.
 pub(crate) unsafe fn debug_ec_ivf_metadata(index_oid: pg_sys::Oid) -> (u16, u32, u32, u32, u64) {
     let index_relation = crate::storage::relation_guard::IndexRelationGuard::access_share(
         index_oid,
@@ -2350,6 +2417,9 @@ pub(crate) unsafe fn debug_ec_ivf_metadata(index_oid: pg_sys::Oid) -> (u16, u32,
 }
 
 #[cfg(any(test, feature = "pg_test"))]
+/// # Safety
+/// Test-only helper; caller is a pgrx-managed test fixture that holds
+/// the IVF index referenced by `index_oid` open for the call duration.
 pub(crate) unsafe fn debug_ec_ivf_quantizer_cache_ptr(index_oid: pg_sys::Oid) -> Option<usize> {
     let index_relation = crate::storage::relation_guard::IndexRelationGuard::access_share(
         index_oid,
@@ -2367,6 +2437,9 @@ pub(crate) unsafe fn debug_ec_ivf_quantizer_cache_ptr(index_oid: pg_sys::Oid) ->
 }
 
 #[cfg(any(test, feature = "pg_test"))]
+/// # Safety
+/// Test-only helper; caller is a pgrx-managed test fixture that holds
+/// the IVF index referenced by `index_oid` open for the call duration.
 pub(crate) unsafe fn debug_ec_ivf_rerank_mode(index_oid: pg_sys::Oid) -> &'static str {
     let index_relation = crate::storage::relation_guard::IndexRelationGuard::access_share(
         index_oid,
@@ -2377,6 +2450,9 @@ pub(crate) unsafe fn debug_ec_ivf_rerank_mode(index_oid: pg_sys::Oid) -> &'stati
 }
 
 #[cfg(any(test, feature = "pg_test"))]
+/// # Safety
+/// Test-only helper; caller is a pgrx-managed test fixture that holds
+/// the IVF index referenced by `index_oid` open for the call duration.
 pub(crate) unsafe fn debug_ec_ivf_build_metadata(
     index_oid: pg_sys::Oid,
 ) -> (u16, u32, u16, u64, bool, bool) {
@@ -2396,6 +2472,9 @@ pub(crate) unsafe fn debug_ec_ivf_build_metadata(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
+/// # Safety
+/// Test-only helper; caller is a pgrx-managed test fixture that holds
+/// the IVF index referenced by `index_oid` open for the call duration.
 pub(crate) unsafe fn debug_ec_ivf_directory_summary(
     index_oid: pg_sys::Oid,
 ) -> (u32, u32, u64, u64, u64) {
@@ -2451,6 +2530,9 @@ pub(crate) unsafe fn debug_ec_ivf_directory_summary(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
+/// # Safety
+/// Test-only helper; caller is a pgrx-managed test fixture that holds
+/// the IVF index referenced by `index_oid` open for the call duration.
 pub(crate) unsafe fn debug_ec_ivf_directory_entry(
     index_oid: pg_sys::Oid,
     list_id: u32,
