@@ -1,0 +1,23 @@
+[loader] warning: profile "ec_ivf" does not list quant_bits as known reloption; passing through verbatim. Known reloptions: nlists, nprobe, rerank_width, training_sample_rows, seed, pq_group_size, storage_format, quantizer, rerank
+[loader] inspecting fixtures/m5_diskann_real10k/m5_diskann_real10k_corpus.tsv
+[loader] inspecting fixtures/m5_diskann_real10k/m5_diskann_real10k_queries.tsv
+[loader] corpus: 10000 rows, sha256=ed6012f8b12281edd80f72dfe1146a9cd09cb3192a5a0012aebb1c398290926f  queries: 200 rows, sha256=77d406729dabfe907824d74df69f64b5706a76579ec1deaf54e5619091c9f7ac
+[loader] no sibling manifest at fixtures/m5_diskann_real10k/m5_diskann_real10k_manifest.json; continuing without verification
+[loader] copied corpus table task57_005_10k_ivf_rabitq_n64_corpus in 2.39s
+[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...
+[loader] encoded corpus table task57_005_10k_ivf_rabitq_n64_corpus in 837.61ms
+[loader] copied queries table task57_005_10k_ivf_rabitq_n64_queries in 39.56ms
+[loader] building task57_005_10k_ivf_rabitq_n64_rabitq_idx using ec_ivf (reloptions=[nlists=64, nprobe=32, training_sample_rows=10000, quant_bits=1, rerank=heap_f32, rerank_width=50, storage_format=rabitq]) ...
+[loader] built task57_005_10k_ivf_rabitq_n64_rabitq_idx in 3.90s
+┌─────────┬────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ field   ┆ value                                                                                                                                                              │
+╞═════════╪════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════╡
+│ profile ┆ ec_ivf                                                                                                                                                             │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ task57_005_10k_ivf_rabitq_n64_corpus (10000 rows)                                                                                                                  │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ task57_005_10k_ivf_rabitq_n64_queries (200 rows)                                                                                                                   │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ task57_005_10k_ivf_rabitq_n64_rabitq_idx [nlists=64, nprobe=32, training_sample_rows=10000, quant_bits=1, rerank=heap_f32, rerank_width=50, storage_format=rabitq] │
+└─────────┴────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+[loader] completed prefix task57_005_10k_ivf_rabitq_n64 in 7.77s

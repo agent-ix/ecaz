@@ -1,0 +1,68 @@
+{
+  "name": "task-57-005-ivf-closeout-bench",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-57/005-closeout/artifacts",
+  "defaults": {
+    "seed": 42,
+    "pg": 18,
+    "socket_dir": "/Users/peter/.pgrx"
+  },
+  "steps": [
+    {
+      "kind": "load",
+      "name": "load-10k-ivf-rabitq-n64",
+      "tags": ["load", "ec_real_10k", "ivf", "rabitq", "nlists64"],
+      "prefix": "task57_005_10k_ivf_rabitq_n64",
+      "profile": "ec_ivf",
+      "bits": 4,
+      "storage_format": "rabitq",
+      "corpus_file": "fixtures/m5_diskann_real10k/m5_diskann_real10k_corpus.tsv",
+      "queries_file": "fixtures/m5_diskann_real10k/m5_diskann_real10k_queries.tsv",
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "nlists=64",
+        "nprobe=32",
+        "training_sample_rows=10000",
+        "quant_bits=1",
+        "rerank=heap_f32",
+        "rerank_width=50"
+      ],
+      "log_file": "reviews/task-57/005-closeout/artifacts/load-10k-ivf-rabitq-n64.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-10k-ivf-rabitq-n64",
+      "tags": ["recall", "ec_real_10k", "ivf", "rabitq", "nlists64"],
+      "prefix": "task57_005_10k_ivf_rabitq_n64",
+      "profile": "ec_ivf",
+      "bits": 4,
+      "k": 10,
+      "sweep": [8, 16, 24, 32, 48, 64],
+      "rerank_width": 50,
+      "force_index": true,
+      "truth_cache_file": "reviews/task-57/005-closeout/artifacts/truth-ec-real-10k-q200-k10.json",
+      "log_output": "reviews/task-57/005-closeout/artifacts/recall-10k-ivf-rabitq-n64.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-10k-ivf-rabitq-n64",
+      "tags": ["latency", "ec_real_10k", "ivf", "rabitq", "nlists64"],
+      "prefix": "task57_005_10k_ivf_rabitq_n64",
+      "profile": "ec_ivf",
+      "bits": 4,
+      "sweep": [8, 16, 24, 32, 48, 64],
+      "rerank_width": 50,
+      "force_index": true,
+      "iterations": 200,
+      "concurrency": 1,
+      "log_output": "reviews/task-57/005-closeout/artifacts/latency-10k-ivf-rabitq-n64.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-10k-ivf-rabitq-n64",
+      "tags": ["storage", "ec_real_10k", "ivf", "rabitq", "nlists64"],
+      "prefix": "task57_005_10k_ivf_rabitq_n64",
+      "log_file": "reviews/task-57/005-closeout/artifacts/storage-10k-ivf-rabitq-n64.log"
+    }
+  ]
+}
