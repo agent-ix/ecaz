@@ -157,9 +157,8 @@ fn debug_read_main_buffer(
     index_relation: pg_sys::Relation,
     block_number: pg_sys::BlockNumber,
 ) -> LockedBufferGuard {
-    let handle = std::ptr::NonNull::new(index_relation).unwrap_or_else(|| {
-        pgrx::error!("ec_hnsw debug helper received a null index relation")
-    });
+    let handle = std::ptr::NonNull::new(index_relation)
+        .unwrap_or_else(|| pgrx::error!("ec_hnsw debug helper received a null index relation"));
     LockedBufferGuard::read_main_handle(
         handle,
         block_number,

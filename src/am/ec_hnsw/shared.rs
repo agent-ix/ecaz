@@ -30,8 +30,7 @@ pub(super) fn initialize_metadata_page_handle(
     metadata: page::MetadataPage,
 ) {
     let index_relation = handle.as_ptr();
-    let existing_blocks =
-        crate::storage::relation::main_fork_block_count_handle(handle);
+    let existing_blocks = crate::storage::relation::main_fork_block_count_handle(handle);
     let target_block = if existing_blocks == 0 {
         P_NEW
     } else {
@@ -80,9 +79,8 @@ fn read_main_buffer(
     lock_mode: i32,
     context: &str,
 ) -> LockedBufferGuard {
-    let handle = NonNull::new(index_relation).unwrap_or_else(|| {
-        pgrx::error!("ec_hnsw read_main_buffer received a null index relation")
-    });
+    let handle = NonNull::new(index_relation)
+        .unwrap_or_else(|| pgrx::error!("ec_hnsw read_main_buffer received a null index relation"));
     LockedBufferGuard::read_main_handle(handle, block_number, mode, lock_mode)
         .unwrap_or_else(|| pgrx::error!("ec_hnsw failed to open data buffer while {context}"))
 }
@@ -258,52 +256,50 @@ fn count_live_elements_on_buffer(
             offset,
             "counting vacuum tuples",
             |tuple_bytes| match storage {
-                    graph::GraphStorageDescriptor::TurboQuant { code_len } => {
-                        if tuple_bytes.first().copied() == Some(page::TQ_ELEMENT_TAG) {
-                            let element = page::TqElementTuple::decode(tuple_bytes, code_len)
-                                    .unwrap_or_else(|e| {
-                                        pgrx::error!(
-                                            "ec_hnsw failed to decode element tuple while counting: {e}"
-                                        )
-                                    });
-                            if !element.deleted && !element.heaptids.is_empty() {
-                                count += 1;
-                            }
+                graph::GraphStorageDescriptor::TurboQuant { code_len } => {
+                    if tuple_bytes.first().copied() == Some(page::TQ_ELEMENT_TAG) {
+                        let element = page::TqElementTuple::decode(tuple_bytes, code_len)
+                            .unwrap_or_else(|e| {
+                                pgrx::error!(
+                                    "ec_hnsw failed to decode element tuple while counting: {e}"
+                                )
+                            });
+                        if !element.deleted && !element.heaptids.is_empty() {
+                            count += 1;
                         }
                     }
-                    graph::GraphStorageDescriptor::TurboQuantHotCold(layout) => {
-                        if tuple_bytes.first().copied() == Some(page::TQ_TURBO_HOT_TAG) {
-                            let element = page::TqTurboHotTuple::decode(
-                                    tuple_bytes,
-                                    layout.binary_word_count,
-                                )
+                }
+                graph::GraphStorageDescriptor::TurboQuantHotCold(layout) => {
+                    if tuple_bytes.first().copied() == Some(page::TQ_TURBO_HOT_TAG) {
+                        let element =
+                            page::TqTurboHotTuple::decode(tuple_bytes, layout.binary_word_count)
                                 .unwrap_or_else(|e| {
                                     pgrx::error!(
-                                        "ec_hnsw failed to decode TurboQuant V3 tuple while counting: {e}"
-                                    )
+                                "ec_hnsw failed to decode TurboQuant V3 tuple while counting: {e}"
+                            )
                                 });
-                            if !element.deleted && !element.heaptids.is_empty() {
-                                count += 1;
-                            }
+                        if !element.deleted && !element.heaptids.is_empty() {
+                            count += 1;
                         }
                     }
-                    graph::GraphStorageDescriptor::PqFastScan(layout) => {
-                        if tuple_bytes.first().copied() == Some(page::TQ_GROUPED_HOT_TAG) {
-                            let element = page::TqGroupedHotTuple::decode(
-                                    tuple_bytes,
-                                    layout.binary_word_count,
-                                    layout.search_code_len,
-                                )
-                                .unwrap_or_else(|e| {
-                                    pgrx::error!(
-                                        "ec_hnsw failed to decode grouped hot tuple while counting: {e}"
-                                    )
-                                });
-                            if !element.deleted && !element.heaptids.is_empty() {
-                                count += 1;
-                            }
+                }
+                graph::GraphStorageDescriptor::PqFastScan(layout) => {
+                    if tuple_bytes.first().copied() == Some(page::TQ_GROUPED_HOT_TAG) {
+                        let element = page::TqGroupedHotTuple::decode(
+                            tuple_bytes,
+                            layout.binary_word_count,
+                            layout.search_code_len,
+                        )
+                        .unwrap_or_else(|e| {
+                            pgrx::error!(
+                                "ec_hnsw failed to decode grouped hot tuple while counting: {e}"
+                            )
+                        });
+                        if !element.deleted && !element.heaptids.is_empty() {
+                            count += 1;
                         }
                     }
+                }
             },
         )
         .unwrap_or_else(|e| pgrx::error!("{e}"));
@@ -716,9 +712,7 @@ fn insert_drift_fraction(total_live_nodes: usize, inserted_since_rebuild: usize)
     inserted_since_rebuild as f64 / total_live_nodes as f64
 }
 
-pub(crate) fn index_explain_snapshot(
-    index_relation: pg_sys::Relation,
-) -> IndexExplainSnapshot {
+pub(crate) fn index_explain_snapshot(index_relation: pg_sys::Relation) -> IndexExplainSnapshot {
     let admin = index_admin_snapshot(index_relation);
     let translation = super::cost::strategy_translation_snapshot();
     let explain = super::explain::explain_option_snapshot();

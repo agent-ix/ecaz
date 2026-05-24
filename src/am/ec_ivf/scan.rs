@@ -2121,7 +2121,9 @@ struct DebugHeapBackedScan<'heap, 'index, 'snap> {
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-fn debug_begin_heap_backed_scan(index_oid: pg_sys::Oid) -> DebugHeapBackedScan<'static, 'static, 'static> {
+fn debug_begin_heap_backed_scan(
+    index_oid: pg_sys::Oid,
+) -> DebugHeapBackedScan<'static, 'static, 'static> {
     let index_relation =
         IndexRelationGuard::access_share(index_oid, "ec_ivf debug begin heap backed scan");
     let index_relation_ptr = index_relation.as_ptr();
@@ -2145,9 +2147,7 @@ fn debug_begin_heap_backed_scan(index_oid: pg_sys::Oid) -> DebugHeapBackedScan<'
             1,
         )
     }
-    .unwrap_or_else(|| {
-        pgrx::error!("ec_ivf debug scan failed to begin heap-backed index scan")
-    });
+    .unwrap_or_else(|| pgrx::error!("ec_ivf debug scan failed to begin heap-backed index scan"));
 
     DebugHeapBackedScan {
         scan,

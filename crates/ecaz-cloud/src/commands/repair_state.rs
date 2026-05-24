@@ -42,7 +42,10 @@ impl RepairStateArgs {
 
         let tf = Terraform::new(self.profile, &repo_root)?;
         if !tf.state_exists() {
-            println!("repair-state: no Terraform state exists for profile={}", self.profile);
+            println!(
+                "repair-state: no Terraform state exists for profile={}",
+                self.profile
+            );
             return Ok(());
         }
 
@@ -74,7 +77,10 @@ impl RepairStateArgs {
         }
 
         tf.state_rm(&targets).await?;
-        println!("repair-state: removed {} Terraform state entries", targets.len());
+        println!(
+            "repair-state: removed {} Terraform state entries",
+            targets.len()
+        );
         Ok(())
     }
 }

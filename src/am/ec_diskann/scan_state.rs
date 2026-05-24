@@ -142,9 +142,8 @@ pub(super) fn metadata_search_code_len(metadata: &VamanaMetadataPage) -> usize {
 pub(super) unsafe fn materialize_chain_from_index(
     index_relation: pg_sys::Relation,
 ) -> Result<(VamanaMetadataPage, DataPageChain), String> {
-    let handle = NonNull::new(index_relation).ok_or_else(|| {
-        "ec_diskann scan materialization needs a valid index relation".to_owned()
-    })?;
+    let handle = NonNull::new(index_relation)
+        .ok_or_else(|| "ec_diskann scan materialization needs a valid index relation".to_owned())?;
     materialize_chain_from_index_handle(handle)
 }
 
@@ -196,19 +195,16 @@ pub(super) fn materialize_chain_from_index_handle(
             pg_sys::ReadBufferMode::RBM_NORMAL,
             pg_sys::BUFFER_LOCK_SHARE as i32,
         )
-        .ok_or_else(|| {
-            format!("ec_diskann beginscan could not open data block {block_number}")
-        })?;
+        .ok_or_else(|| format!("ec_diskann beginscan could not open data block {block_number}"))?;
         let max_offset = buffer.max_offset_number();
         for offset in 1..=max_offset {
             let tid = ItemPointer {
                 block_number,
                 offset_number: offset,
             };
-            let visit =
-                buffer.visit_tuple_bytes(tid, "ec_diskann data block", |tuple_bytes| {
-                    Ok(tuple_bytes.to_vec())
-                })?;
+            let visit = buffer.visit_tuple_bytes(tid, "ec_diskann data block", |tuple_bytes| {
+                Ok(tuple_bytes.to_vec())
+            })?;
             if let LockedPageTupleVisit::Present(tuple_bytes) = visit {
                 chain.insert_raw_tuple(tuple_bytes)?;
             }

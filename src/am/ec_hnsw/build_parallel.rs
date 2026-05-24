@@ -2796,10 +2796,8 @@ unsafe fn parallel_build_worker_main(seg: *mut pg_sys::dsm_segment, toc: *mut pg
         encoded_tuples: 0,
     };
 
-    let mut index_info = super::index_info::IndexInfoView::build_borrowed(
-        index_relation,
-        "parallel build worker",
-    );
+    let mut index_info =
+        super::index_info::IndexInfoView::build_borrowed(index_relation, "parallel build worker");
     index_info.as_mut().ii_Concurrent = is_concurrent;
     // SAFETY: `shared` contains the table_parallelscan_initialize state and
     // `heap_relation` is open in this worker.

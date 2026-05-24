@@ -2501,12 +2501,7 @@ fn exact_score_cached_graph_element(
                 record_score_cache_hit(opaque);
                 score
             } else {
-                score_and_cache_scan_element(
-                    opaque,
-                    element_tid,
-                    loaded.gamma,
-                    &loaded.code_bytes,
-                )
+                score_and_cache_scan_element(opaque, element_tid, loaded.gamma, &loaded.code_bytes)
             }
         }
         LoadedElementState::ExactUnavailable => {
@@ -2727,7 +2722,12 @@ fn exact_score_grouped_candidate_context(
     let payload = load_grouped_score_rerank_payload(index_relation, grouped).unwrap_or_else(|| {
         pgrx::error!("ec_hnsw PqFastScan exact scoring requires metadata-aligned cold payload")
     });
-    score_and_cache_scan_element(opaque, grouped.element_tid, payload.rerank_gamma, &payload.rerank_code)
+    score_and_cache_scan_element(
+        opaque,
+        grouped.element_tid,
+        payload.rerank_gamma,
+        &payload.rerank_code,
+    )
 }
 
 fn score_grouped_candidate_context_exact(
@@ -3116,7 +3116,11 @@ where
     let neighbor_tids =
         graph::valid_neighbor_tids_for_layer(&neighbors.tids, element.level, scan_m, layer);
     #[cfg(feature = "pg18")]
-    let prefetched_buffers = Some(prefetch_graph_buffers(index_relation, opaque, &neighbor_tids));
+    let prefetched_buffers = Some(prefetch_graph_buffers(
+        index_relation,
+        opaque,
+        &neighbor_tids,
+    ));
     #[cfg(not(feature = "pg18"))]
     let prefetched_buffers: Option<PrefetchedGraphBuffers> = None;
 
@@ -3219,8 +3223,9 @@ where
             // immutable borrows on `opaque` end before any subsequent mutable
             // call later in the loop body.
             let approx_score = {
-                let quantizer = cached_quantizer_ref(opaque)
-                    .unwrap_or_else(|| pgrx::error!("ec_hnsw scan state is missing cached quantizer"));
+                let quantizer = cached_quantizer_ref(opaque).unwrap_or_else(|| {
+                    pgrx::error!("ec_hnsw scan state is missing cached quantizer")
+                });
                 let binary_query = binary_sign_query(opaque)
                     .expect("binary query should remain available during scan");
                 -quantizer.score_binary_sign_words_no_qjl_4bit(
@@ -3331,19 +3336,15 @@ fn cached_upper_layer_seed_candidate(
         return entry_candidate;
     }
 
-    graph::greedy_descend_with_successors(
-        entry_candidate,
-        entry_level,
-        |source_tid, layer| {
-            cached_scan_successor_candidates_for_layer(
-                index_relation,
-                opaque,
-                source_tid,
-                layer,
-                |_| true,
-            )
-        },
-    )
+    graph::greedy_descend_with_successors(entry_candidate, entry_level, |source_tid, layer| {
+        cached_scan_successor_candidates_for_layer(
+            index_relation,
+            opaque,
+            source_tid,
+            layer,
+            |_| true,
+        )
+    })
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -4201,8 +4202,12 @@ unsafe fn initialize_scan_entry_candidate(
             ) else {
                 return;
             };
-            let (entry, entry_score) =
-                cached_graph_element_and_score(index_relation, opaque, fallback.tid, fallback.level);
+            let (entry, entry_score) = cached_graph_element_and_score(
+                index_relation,
+                opaque,
+                fallback.tid,
+                fallback.level,
+            );
             if entry.deleted || entry.heaptids.is_empty() {
                 return;
             }
@@ -4401,8 +4406,7 @@ unsafe fn refine_grouped_frontier_head_exact(
             return;
         }
 
-        let (element, loaded_state) =
-            cached_graph_element(index_relation, opaque, candidate.node);
+        let (element, loaded_state) = cached_graph_element(index_relation, opaque, candidate.node);
         let opaque_ptr = opaque as *mut TqScanOpaque;
         if element.deleted || element.heaptids.is_empty() {
             return;
@@ -4416,13 +4420,11 @@ unsafe fn refine_grouped_frontier_head_exact(
                     element.tid,
                     loaded_state,
                 ),
-                CandidateScoreDispatch::Grouped(grouped) => {
-                    score_grouped_candidate_context_exact(
-                        index_relation,
-                        scan_opaque_mut(opaque_ptr),
-                        grouped,
-                    )
-                }
+                CandidateScoreDispatch::Grouped(grouped) => score_grouped_candidate_context_exact(
+                    index_relation,
+                    scan_opaque_mut(opaque_ptr),
+                    grouped,
+                ),
             };
         let updated = search::BeamCandidate {
             score: exact_score,
@@ -4850,8 +4852,8 @@ fn select_linear_scan_result_from_buffer(
                     return None;
                 }
 
-                let element = page::TqElementTuple::decode(tuple_bytes, code_len)
-                    .unwrap_or_else(|e| {
+                let element =
+                    page::TqElementTuple::decode(tuple_bytes, code_len).unwrap_or_else(|e| {
                         pgrx::error!("ec_hnsw failed to decode scan element tuple: {e}")
                     });
                 (!element.deleted && !element.heaptids.is_empty()).then_some(element)
@@ -4929,11 +4931,7 @@ where
     candidates
 }
 
-fn score_scan_element_result(
-    opaque: &mut TqScanOpaque,
-    gamma: f32,
-    code_bytes: &[u8],
-) -> f32 {
+fn score_scan_element_result(opaque: &mut TqScanOpaque, gamma: f32, code_bytes: &[u8]) -> f32 {
     if opaque.cached_quantizer.is_null() {
         pgrx::error!("ec_hnsw scan scoring requires a cached quantizer");
     }
@@ -7135,7 +7133,8 @@ mod tests {
 
         // SAFETY: `opaque_ptr` points to the live test scan opaque with
         // prepared query and quantizer fields initialized above.
-        let score = score_scan_element_result(unsafe { &mut *opaque_ptr }, encoded.gamma, &code_bytes);
+        let score =
+            score_scan_element_result(unsafe { &mut *opaque_ptr }, encoded.gamma, &code_bytes);
 
         assert!(score.is_finite());
         // SAFETY: `opaque_ptr` still points to the live test scan opaque.

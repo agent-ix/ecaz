@@ -14,8 +14,7 @@ use crate::am::common::{
 #[cfg(any(test, feature = "pg_test"))]
 use crate::storage::relation_guard::{HeapRelationGuard, IndexRelationGuard};
 use crate::storage::{
-    buffer_guard::LockedBufferGuard, relation::RelationHandle,
-    slot_guard::TupleTableSlotGuard, wal,
+    buffer_guard::LockedBufferGuard, relation::RelationHandle, slot_guard::TupleTableSlotGuard, wal,
 };
 type BulkDeleteCallback =
     unsafe extern "C-unwind" fn(itemptr: pg_sys::ItemPointer, state: *mut c_void) -> bool;
@@ -63,10 +62,7 @@ impl VacuumIndexRelation {
         .unwrap_or_else(|| pgrx::error!("ec_hnsw failed to open {context} block {block_number}"))
     }
 
-    fn begin_page_rewrite<'rel>(
-        self,
-        buffer: &LockedBufferGuard,
-    ) -> VacuumPageRewrite<'rel> {
+    fn begin_page_rewrite<'rel>(self, buffer: &LockedBufferGuard) -> VacuumPageRewrite<'rel> {
         VacuumPageRewrite::start(self.handle, buffer)
     }
 }
@@ -262,13 +258,11 @@ impl VacuumSearchMetric {
             None => {
                 // SAFETY: The heap and index relations are live; this resolves
                 // the indexed vector attribute from PostgreSQL metadata.
-                let indexed_attribute = 
-                    source::resolve_indexed_vector_attribute(
-                        heap_relation,
-                        index_relation,
-                        "indexed column",
-                    )
-                ;
+                let indexed_attribute = source::resolve_indexed_vector_attribute(
+                    heap_relation,
+                    index_relation,
+                    "indexed column",
+                );
                 match indexed_attribute.kind {
                     // SAFETY: The indexed ecvector attribute can be read through
                     // the heap relation during source-backed repair scoring.
@@ -636,106 +630,106 @@ fn plan_page_pass1(
             offset,
             "planning HNSW vacuum pass1",
             |tuple_bytes| match storage {
-                    graph::GraphStorageDescriptor::TurboQuant { code_len } => {
-                        if tuple_bytes.first().copied() != Some(page::TQ_ELEMENT_TAG) {
-                            return;
-                        }
-                        let mut element = page::TqElementTuple::decode(tuple_bytes, code_len)
-                            .unwrap_or_else(|e| {
-                                pgrx::error!("ec_hnsw failed to decode vacuum element tuple: {e}")
-                            });
-                        let starting_len = element.heaptids.len();
-                        element.heaptids.retain(|heap_tid| {
-                            !heap_tid_is_dead(*heap_tid, callback, callback_state)
-                        });
-                        let removed = starting_len.saturating_sub(element.heaptids.len());
-
-                        if !element.deleted && !element.heaptids.is_empty() {
-                            plan.live_elements += 1;
-                        }
-                        if !element.deleted && element.heaptids.is_empty() {
-                            plan.finalize_tids.push(tid);
-                        }
-                        if removed == 0 {
-                            return;
-                        }
-
-                        plan.removed_heap_tids += removed;
-                        plan.updates.push(ElementVacuumUpdate::TurboQuant {
-                            tid,
-                            tuple: element,
-                        });
+                graph::GraphStorageDescriptor::TurboQuant { code_len } => {
+                    if tuple_bytes.first().copied() != Some(page::TQ_ELEMENT_TAG) {
+                        return;
                     }
-                    graph::GraphStorageDescriptor::TurboQuantHotCold(layout) => {
-                        if tuple_bytes.first().copied() != Some(page::TQ_TURBO_HOT_TAG) {
-                            return;
-                        }
-                        let mut element =
-                            page::TqTurboHotTuple::decode(tuple_bytes, layout.binary_word_count)
-                                .unwrap_or_else(|e| {
-                                    pgrx::error!(
-                                        "ec_hnsw failed to decode vacuum TurboQuant V3 tuple: {e}"
-                                    )
-                                });
-                        let starting_len = element.heaptids.len();
-                        element.heaptids.retain(|heap_tid| {
-                            !heap_tid_is_dead(*heap_tid, callback, callback_state)
-                        });
-                        let removed = starting_len.saturating_sub(element.heaptids.len());
-
-                        if !element.deleted && !element.heaptids.is_empty() {
-                            plan.live_elements += 1;
-                        }
-                        if !element.deleted && element.heaptids.is_empty() {
-                            plan.finalize_tids.push(tid);
-                        }
-                        if removed == 0 {
-                            return;
-                        }
-
-                        plan.removed_heap_tids += removed;
-                        plan.updates.push(ElementVacuumUpdate::TurboQuantHot {
-                            tid,
-                            tuple: element,
-                        });
-                    }
-                    graph::GraphStorageDescriptor::PqFastScan(layout) => {
-                        if tuple_bytes.first().copied() != Some(page::TQ_GROUPED_HOT_TAG) {
-                            return;
-                        }
-                        let mut element = page::TqGroupedHotTuple::decode(
-                            tuple_bytes,
-                            layout.binary_word_count,
-                            layout.search_code_len,
-                        )
+                    let mut element = page::TqElementTuple::decode(tuple_bytes, code_len)
                         .unwrap_or_else(|e| {
-                            pgrx::error!("ec_hnsw failed to decode vacuum grouped hot tuple: {e}")
+                            pgrx::error!("ec_hnsw failed to decode vacuum element tuple: {e}")
                         });
-                        let starting_len = element.heaptids.len();
-                        element.heaptids.retain(|heap_tid| {
-                            !heap_tid_is_dead(*heap_tid, callback, callback_state)
-                        });
-                        let removed = starting_len.saturating_sub(element.heaptids.len());
+                    let starting_len = element.heaptids.len();
+                    element
+                        .heaptids
+                        .retain(|heap_tid| !heap_tid_is_dead(*heap_tid, callback, callback_state));
+                    let removed = starting_len.saturating_sub(element.heaptids.len());
 
-                        if !element.deleted && !element.heaptids.is_empty() {
-                            plan.live_elements += 1;
-                        }
-                        if !element.deleted && element.heaptids.is_empty() {
-                            plan.finalize_tids.push(tid);
-                        }
-                        if removed == 0 {
-                            return;
-                        }
-
-                        plan.removed_heap_tids += removed;
-                        plan.updates.push(ElementVacuumUpdate::PqFastScanHot {
-                            tid,
-                            tuple: element,
-                        });
+                    if !element.deleted && !element.heaptids.is_empty() {
+                        plan.live_elements += 1;
                     }
-                },
-            )
-            .unwrap_or_else(|e| pgrx::error!("{e}"));
+                    if !element.deleted && element.heaptids.is_empty() {
+                        plan.finalize_tids.push(tid);
+                    }
+                    if removed == 0 {
+                        return;
+                    }
+
+                    plan.removed_heap_tids += removed;
+                    plan.updates.push(ElementVacuumUpdate::TurboQuant {
+                        tid,
+                        tuple: element,
+                    });
+                }
+                graph::GraphStorageDescriptor::TurboQuantHotCold(layout) => {
+                    if tuple_bytes.first().copied() != Some(page::TQ_TURBO_HOT_TAG) {
+                        return;
+                    }
+                    let mut element =
+                        page::TqTurboHotTuple::decode(tuple_bytes, layout.binary_word_count)
+                            .unwrap_or_else(|e| {
+                                pgrx::error!(
+                                    "ec_hnsw failed to decode vacuum TurboQuant V3 tuple: {e}"
+                                )
+                            });
+                    let starting_len = element.heaptids.len();
+                    element
+                        .heaptids
+                        .retain(|heap_tid| !heap_tid_is_dead(*heap_tid, callback, callback_state));
+                    let removed = starting_len.saturating_sub(element.heaptids.len());
+
+                    if !element.deleted && !element.heaptids.is_empty() {
+                        plan.live_elements += 1;
+                    }
+                    if !element.deleted && element.heaptids.is_empty() {
+                        plan.finalize_tids.push(tid);
+                    }
+                    if removed == 0 {
+                        return;
+                    }
+
+                    plan.removed_heap_tids += removed;
+                    plan.updates.push(ElementVacuumUpdate::TurboQuantHot {
+                        tid,
+                        tuple: element,
+                    });
+                }
+                graph::GraphStorageDescriptor::PqFastScan(layout) => {
+                    if tuple_bytes.first().copied() != Some(page::TQ_GROUPED_HOT_TAG) {
+                        return;
+                    }
+                    let mut element = page::TqGroupedHotTuple::decode(
+                        tuple_bytes,
+                        layout.binary_word_count,
+                        layout.search_code_len,
+                    )
+                    .unwrap_or_else(|e| {
+                        pgrx::error!("ec_hnsw failed to decode vacuum grouped hot tuple: {e}")
+                    });
+                    let starting_len = element.heaptids.len();
+                    element
+                        .heaptids
+                        .retain(|heap_tid| !heap_tid_is_dead(*heap_tid, callback, callback_state));
+                    let removed = starting_len.saturating_sub(element.heaptids.len());
+
+                    if !element.deleted && !element.heaptids.is_empty() {
+                        plan.live_elements += 1;
+                    }
+                    if !element.deleted && element.heaptids.is_empty() {
+                        plan.finalize_tids.push(tid);
+                    }
+                    if removed == 0 {
+                        return;
+                    }
+
+                    plan.removed_heap_tids += removed;
+                    plan.updates.push(ElementVacuumUpdate::PqFastScanHot {
+                        tid,
+                        tuple: element,
+                    });
+                }
+            },
+        )
+        .unwrap_or_else(|e| pgrx::error!("{e}"));
     }
 
     plan
@@ -759,39 +753,35 @@ fn apply_page_pass1_updates(
             tid,
             "vacuum element",
             |tuple_bytes| {
-                    let encoded = match update {
-                        ElementVacuumUpdate::TurboQuant { tuple, .. } => {
-                            tuple.encode().unwrap_or_else(|e| {
-                                pgrx::error!("ec_hnsw failed to encode vacuum element tuple: {e}")
-                            })
-                        }
-                        ElementVacuumUpdate::TurboQuantHot { tuple, .. } => {
-                            tuple.encode().unwrap_or_else(|e| {
-                                pgrx::error!(
-                                    "ec_hnsw failed to encode vacuum TurboQuant V3 tuple: {e}"
-                                )
-                            })
-                        }
-                        ElementVacuumUpdate::PqFastScanHot { tuple, .. } => {
-                            tuple.encode().unwrap_or_else(|e| {
-                                pgrx::error!(
-                                    "ec_hnsw failed to encode vacuum grouped hot tuple: {e}"
-                                )
-                            })
-                        }
-                    };
-                    if encoded.len() != tuple_bytes.len() {
-                        pgrx::error!(
-                            "ec_hnsw vacuum element tuple size changed from {} to {} on block {}",
-                            tuple_bytes.len(),
-                            encoded.len(),
-                            block_number
-                        );
+                let encoded = match update {
+                    ElementVacuumUpdate::TurboQuant { tuple, .. } => {
+                        tuple.encode().unwrap_or_else(|e| {
+                            pgrx::error!("ec_hnsw failed to encode vacuum element tuple: {e}")
+                        })
                     }
+                    ElementVacuumUpdate::TurboQuantHot { tuple, .. } => {
+                        tuple.encode().unwrap_or_else(|e| {
+                            pgrx::error!("ec_hnsw failed to encode vacuum TurboQuant V3 tuple: {e}")
+                        })
+                    }
+                    ElementVacuumUpdate::PqFastScanHot { tuple, .. } => {
+                        tuple.encode().unwrap_or_else(|e| {
+                            pgrx::error!("ec_hnsw failed to encode vacuum grouped hot tuple: {e}")
+                        })
+                    }
+                };
+                if encoded.len() != tuple_bytes.len() {
+                    pgrx::error!(
+                        "ec_hnsw vacuum element tuple size changed from {} to {} on block {}",
+                        tuple_bytes.len(),
+                        encoded.len(),
+                        block_number
+                    );
+                }
 
-                    tuple_bytes.copy_from_slice(&encoded);
-                },
-            )
+                tuple_bytes.copy_from_slice(&encoded);
+            },
+        )
     }
 }
 
@@ -879,72 +869,71 @@ fn collect_repair_requests_on_page(
     for offset in 1..=line_pointer_count {
         // SAFETY: The caller holds the page pinned/locked and the helper
         // validates each line pointer before exposing tuple bytes.
-        let element_fields =
-            shared::with_page_line_tuple_bytes(
-                page_ptr,
-                page_size,
-                block_number,
-                offset,
-                "collecting HNSW repair requests",
-                |tuple_bytes| match storage {
-                    graph::GraphStorageDescriptor::TurboQuant { code_len } => {
-                        if tuple_bytes.first().copied() != Some(page::TQ_ELEMENT_TAG) {
-                            return None;
-                        }
-                        let element = page::TqElementTuple::decode(tuple_bytes, code_len)
-                            .unwrap_or_else(|e| {
-                                pgrx::error!(
-                                    "ec_hnsw failed to decode repair-request element tuple: {e}"
-                                )
-                            });
-                        Some((
-                            element.level,
-                            element.deleted,
-                            element.heaptids.is_empty(),
-                            element.neighbortid,
-                        ))
+        let element_fields = shared::with_page_line_tuple_bytes(
+            page_ptr,
+            page_size,
+            block_number,
+            offset,
+            "collecting HNSW repair requests",
+            |tuple_bytes| match storage {
+                graph::GraphStorageDescriptor::TurboQuant { code_len } => {
+                    if tuple_bytes.first().copied() != Some(page::TQ_ELEMENT_TAG) {
+                        return None;
                     }
-                    graph::GraphStorageDescriptor::TurboQuantHotCold(layout) => {
-                        if tuple_bytes.first().copied() != Some(page::TQ_TURBO_HOT_TAG) {
-                            return None;
-                        }
-                        let element =
-                            page::TqTurboHotTuple::decode(tuple_bytes, layout.binary_word_count)
-                                .unwrap_or_else(|e| {
-                                    pgrx::error!(
-                                "ec_hnsw failed to decode repair-request TurboQuant V3 tuple: {e}"
-                            )
-                                });
-                        Some((
-                            element.level,
-                            element.deleted,
-                            element.heaptids.is_empty(),
-                            element.neighbortid,
-                        ))
-                    }
-                    graph::GraphStorageDescriptor::PqFastScan(layout) => {
-                        if tuple_bytes.first().copied() != Some(page::TQ_GROUPED_HOT_TAG) {
-                            return None;
-                        }
-                        let element = page::TqGroupedHotTuple::decode(
-                            tuple_bytes,
-                            layout.binary_word_count,
-                            layout.search_code_len,
-                        )
+                    let element = page::TqElementTuple::decode(tuple_bytes, code_len)
                         .unwrap_or_else(|e| {
                             pgrx::error!(
-                                "ec_hnsw failed to decode repair-request grouped hot tuple: {e}"
+                                "ec_hnsw failed to decode repair-request element tuple: {e}"
                             )
                         });
-                        Some((
-                            element.level,
-                            element.deleted,
-                            element.heaptids.is_empty(),
-                            element.neighbortid,
-                        ))
+                    Some((
+                        element.level,
+                        element.deleted,
+                        element.heaptids.is_empty(),
+                        element.neighbortid,
+                    ))
+                }
+                graph::GraphStorageDescriptor::TurboQuantHotCold(layout) => {
+                    if tuple_bytes.first().copied() != Some(page::TQ_TURBO_HOT_TAG) {
+                        return None;
                     }
-                },
-            )
+                    let element =
+                        page::TqTurboHotTuple::decode(tuple_bytes, layout.binary_word_count)
+                            .unwrap_or_else(|e| {
+                                pgrx::error!(
+                                "ec_hnsw failed to decode repair-request TurboQuant V3 tuple: {e}"
+                            )
+                            });
+                    Some((
+                        element.level,
+                        element.deleted,
+                        element.heaptids.is_empty(),
+                        element.neighbortid,
+                    ))
+                }
+                graph::GraphStorageDescriptor::PqFastScan(layout) => {
+                    if tuple_bytes.first().copied() != Some(page::TQ_GROUPED_HOT_TAG) {
+                        return None;
+                    }
+                    let element = page::TqGroupedHotTuple::decode(
+                        tuple_bytes,
+                        layout.binary_word_count,
+                        layout.search_code_len,
+                    )
+                    .unwrap_or_else(|e| {
+                        pgrx::error!(
+                            "ec_hnsw failed to decode repair-request grouped hot tuple: {e}"
+                        )
+                    });
+                    Some((
+                        element.level,
+                        element.deleted,
+                        element.heaptids.is_empty(),
+                        element.neighbortid,
+                    ))
+                }
+            },
+        )
         .unwrap_or_else(|e| pgrx::error!("{e}"))
         .flatten();
         let Some((level, deleted, heaptids_empty, neighbortid)) = element_fields else {
@@ -1361,94 +1350,93 @@ fn collect_linear_repair_candidates_on_page(
 
         // SAFETY: The page is pinned/locked by the caller and the helper
         // validates the line pointer before exposing tuple bytes.
-        let candidate =
-            shared::with_page_line_tuple_bytes(
-                page_ptr,
-                page_size,
-                block_number,
-                offset,
-                "collecting HNSW linear-repair candidates",
-                |tuple_bytes| match planner.storage {
-                    graph::GraphStorageDescriptor::TurboQuant { code_len } => {
-                        if tuple_bytes.first().copied() != Some(page::TQ_ELEMENT_TAG) {
-                            return None;
-                        }
-                        let element = page::TqElementTuple::decode(tuple_bytes, code_len)
-                            .unwrap_or_else(|e| {
-                                pgrx::error!(
-                                    "ec_hnsw failed to decode linear-repair element tuple: {e}"
-                                )
-                            });
-                        Some(graph::GraphElement {
-                            tid,
-                            level: element.level,
-                            deleted: element.deleted,
-                            heaptids: element.heaptids,
-                            gamma: element.gamma,
-                            neighbortid: element.neighbortid,
-                            code: element.code,
-                        })
+        let candidate = shared::with_page_line_tuple_bytes(
+            page_ptr,
+            page_size,
+            block_number,
+            offset,
+            "collecting HNSW linear-repair candidates",
+            |tuple_bytes| match planner.storage {
+                graph::GraphStorageDescriptor::TurboQuant { code_len } => {
+                    if tuple_bytes.first().copied() != Some(page::TQ_ELEMENT_TAG) {
+                        return None;
                     }
-                    graph::GraphStorageDescriptor::TurboQuantHotCold(layout) => {
-                        if tuple_bytes.first().copied() != Some(page::TQ_TURBO_HOT_TAG) {
-                            return None;
-                        }
-                        let element =
-                            page::TqTurboHotTuple::decode(tuple_bytes, layout.binary_word_count)
-                                .unwrap_or_else(|e| {
-                                    pgrx::error!(
-                                "ec_hnsw failed to decode linear-repair TurboQuant V3 tuple: {e}"
-                            )
-                                });
-                        let rerank = graph::load_rerank_payload(
-                            index.as_ptr(),
-                            element.reranktid,
-                            layout.rerank_code_len,
-                        );
-                        Some(graph::GraphElement {
-                            tid,
-                            level: element.level,
-                            deleted: element.deleted,
-                            heaptids: element.heaptids,
-                            gamma: rerank.gamma,
-                            neighbortid: element.neighbortid,
-                            code: rerank.code,
-                        })
-                    }
-                    graph::GraphStorageDescriptor::PqFastScan(layout) => {
-                        if tuple_bytes.first().copied() != Some(page::TQ_GROUPED_HOT_TAG) {
-                            return None;
-                        }
-                        let element = page::TqGroupedHotTuple::decode(
-                            tuple_bytes,
-                            layout.binary_word_count,
-                            layout.search_code_len,
-                        )
+                    let element = page::TqElementTuple::decode(tuple_bytes, code_len)
                         .unwrap_or_else(|e| {
                             pgrx::error!(
-                                "ec_hnsw failed to decode linear-repair grouped hot tuple: {e}"
+                                "ec_hnsw failed to decode linear-repair element tuple: {e}"
                             )
                         });
-                        let rerank = load_grouped_rerank_payload_for_linear_repair_candidate(
-                            index,
-                            page_ptr,
-                            page_size,
-                            block_number,
-                            element.reranktid,
-                            layout,
-                        );
-                        Some(graph::GraphElement {
-                            tid,
-                            level: element.level,
-                            deleted: element.deleted,
-                            heaptids: element.heaptids,
-                            gamma: rerank.gamma,
-                            neighbortid: element.neighbortid,
-                            code: rerank.code,
-                        })
+                    Some(graph::GraphElement {
+                        tid,
+                        level: element.level,
+                        deleted: element.deleted,
+                        heaptids: element.heaptids,
+                        gamma: element.gamma,
+                        neighbortid: element.neighbortid,
+                        code: element.code,
+                    })
+                }
+                graph::GraphStorageDescriptor::TurboQuantHotCold(layout) => {
+                    if tuple_bytes.first().copied() != Some(page::TQ_TURBO_HOT_TAG) {
+                        return None;
                     }
-                },
-            );
+                    let element =
+                        page::TqTurboHotTuple::decode(tuple_bytes, layout.binary_word_count)
+                            .unwrap_or_else(|e| {
+                                pgrx::error!(
+                                "ec_hnsw failed to decode linear-repair TurboQuant V3 tuple: {e}"
+                            )
+                            });
+                    let rerank = graph::load_rerank_payload(
+                        index.as_ptr(),
+                        element.reranktid,
+                        layout.rerank_code_len,
+                    );
+                    Some(graph::GraphElement {
+                        tid,
+                        level: element.level,
+                        deleted: element.deleted,
+                        heaptids: element.heaptids,
+                        gamma: rerank.gamma,
+                        neighbortid: element.neighbortid,
+                        code: rerank.code,
+                    })
+                }
+                graph::GraphStorageDescriptor::PqFastScan(layout) => {
+                    if tuple_bytes.first().copied() != Some(page::TQ_GROUPED_HOT_TAG) {
+                        return None;
+                    }
+                    let element = page::TqGroupedHotTuple::decode(
+                        tuple_bytes,
+                        layout.binary_word_count,
+                        layout.search_code_len,
+                    )
+                    .unwrap_or_else(|e| {
+                        pgrx::error!(
+                            "ec_hnsw failed to decode linear-repair grouped hot tuple: {e}"
+                        )
+                    });
+                    let rerank = load_grouped_rerank_payload_for_linear_repair_candidate(
+                        index,
+                        page_ptr,
+                        page_size,
+                        block_number,
+                        element.reranktid,
+                        layout,
+                    );
+                    Some(graph::GraphElement {
+                        tid,
+                        level: element.level,
+                        deleted: element.deleted,
+                        heaptids: element.heaptids,
+                        gamma: rerank.gamma,
+                        neighbortid: element.neighbortid,
+                        code: rerank.code,
+                    })
+                }
+            },
+        );
         let Some(candidate) = candidate.unwrap_or_else(|e| pgrx::error!("{e}")).flatten() else {
             continue;
         };
@@ -1458,7 +1446,9 @@ fn collect_linear_repair_candidates_on_page(
 
         // SAFETY: Candidate and source graph elements were loaded from the same
         // storage descriptor and metric owns any source-scoring heap state.
-        if let Some(score) = metric.score_graph_element(planner.metadata, planner.source, &candidate) {
+        if let Some(score) =
+            metric.score_graph_element(planner.metadata, planner.source, &candidate)
+        {
             scored.push((tid, score));
         }
     }
@@ -1482,24 +1472,24 @@ fn load_grouped_rerank_payload_for_linear_repair_candidate(
 
     // SAFETY: Same-page rerank TID refers to the pinned page supplied by the
     // caller; the helper validates the line pointer before exposing bytes.
-        shared::with_page_line_tuple_bytes(
-            page_ptr,
-            page_size,
-            block_number,
-            rerank_tid.offset_number,
-            "loading same-page linear-repair rerank payload",
-            |tuple_bytes| {
-                let rerank = page::TqRerankTuple::decode(tuple_bytes, layout.rerank_code_len)
-                    .unwrap_or_else(|e| {
-                        pgrx::error!("ec_hnsw failed to decode linear-repair rerank tuple: {e}")
-                    });
-                graph::GroupedRerankPayload {
-                    tid: rerank_tid,
-                    gamma: rerank.gamma,
-                    code: rerank.code,
-                }
-            },
-        )
+    shared::with_page_line_tuple_bytes(
+        page_ptr,
+        page_size,
+        block_number,
+        rerank_tid.offset_number,
+        "loading same-page linear-repair rerank payload",
+        |tuple_bytes| {
+            let rerank = page::TqRerankTuple::decode(tuple_bytes, layout.rerank_code_len)
+                .unwrap_or_else(|e| {
+                    pgrx::error!("ec_hnsw failed to decode linear-repair rerank tuple: {e}")
+                });
+            graph::GroupedRerankPayload {
+                tid: rerank_tid,
+                gamma: rerank.gamma,
+                code: rerank.code,
+            }
+        },
+    )
     .unwrap_or_else(|e| pgrx::error!("{e}"))
     .unwrap_or_else(|| {
         pgrx::error!(
@@ -1558,56 +1548,54 @@ fn apply_repair_plans_on_page(
             end += 1;
         }
 
-        let tuple_changed =
-            shared::with_writable_page_tuple_bytes(
-                page_ptr,
-                page_size,
-                neighbor_tid,
-                "repair neighbor",
-                |tuple_bytes| {
-                    let mut neighbor =
-                        page::TqNeighborTuple::decode(tuple_bytes).unwrap_or_else(|e| {
-                            pgrx::error!("ec_hnsw failed to decode repair neighbor tuple: {e}")
-                        });
-                    if neighbor.count as usize > neighbor.tids.len() {
-                        pgrx::error!(
-                            "ec_hnsw repair neighbor tuple count {} exceeds payload tid count {}",
-                            neighbor.count,
-                            neighbor.tids.len()
-                        );
-                    }
-                    let mut tuple_changed =
-                        unlink_deleted_neighbor_refs(&mut neighbor.tids, deleted_tids);
-                    for plan in &plans[start..end] {
-                        tuple_changed |= apply_repair_plan(
-                            &mut neighbor.tids,
-                            plan.source_level,
-                            m,
-                            plan.layer,
-                            deleted_tids,
-                            &plan.replacement_tids,
-                        );
-                    }
-                    if !tuple_changed {
-                        return false;
-                    }
+        let tuple_changed = shared::with_writable_page_tuple_bytes(
+            page_ptr,
+            page_size,
+            neighbor_tid,
+            "repair neighbor",
+            |tuple_bytes| {
+                let mut neighbor = page::TqNeighborTuple::decode(tuple_bytes).unwrap_or_else(|e| {
+                    pgrx::error!("ec_hnsw failed to decode repair neighbor tuple: {e}")
+                });
+                if neighbor.count as usize > neighbor.tids.len() {
+                    pgrx::error!(
+                        "ec_hnsw repair neighbor tuple count {} exceeds payload tid count {}",
+                        neighbor.count,
+                        neighbor.tids.len()
+                    );
+                }
+                let mut tuple_changed =
+                    unlink_deleted_neighbor_refs(&mut neighbor.tids, deleted_tids);
+                for plan in &plans[start..end] {
+                    tuple_changed |= apply_repair_plan(
+                        &mut neighbor.tids,
+                        plan.source_level,
+                        m,
+                        plan.layer,
+                        deleted_tids,
+                        &plan.replacement_tids,
+                    );
+                }
+                if !tuple_changed {
+                    return false;
+                }
 
-                    let encoded = neighbor.encode().unwrap_or_else(|e| {
-                        pgrx::error!("ec_hnsw failed to encode repair neighbor tuple: {e}")
-                    });
-                    if encoded.len() != tuple_bytes.len() {
-                        pgrx::error!(
-                            "ec_hnsw repair neighbor tuple size changed from {} to {} on block {}",
-                            tuple_bytes.len(),
-                            encoded.len(),
-                            block_number
-                        );
-                    }
+                let encoded = neighbor.encode().unwrap_or_else(|e| {
+                    pgrx::error!("ec_hnsw failed to encode repair neighbor tuple: {e}")
+                });
+                if encoded.len() != tuple_bytes.len() {
+                    pgrx::error!(
+                        "ec_hnsw repair neighbor tuple size changed from {} to {} on block {}",
+                        tuple_bytes.len(),
+                        encoded.len(),
+                        block_number
+                    );
+                }
 
-                    tuple_bytes.copy_from_slice(&encoded);
-                    true
-                },
-            );
+                tuple_bytes.copy_from_slice(&encoded);
+                true
+            },
+        );
         if !tuple_changed {
             start = end;
             continue;
@@ -1690,42 +1678,40 @@ fn plan_page_pass2(
     for offset in 1..=line_pointer_count {
         // SAFETY: The caller holds the page pinned/locked for reading and the
         // helper validates the line pointer before exposing tuple bytes.
-        let update =
-            shared::with_page_line_tuple_bytes(
-                page_ptr,
-                page_size,
-                block_number,
-                offset,
-                "planning HNSW vacuum pass2 repair",
-                |tuple_bytes| {
-                    if tuple_bytes.first().copied() != Some(page::TQ_NEIGHBOR_TAG) {
-                        return None;
-                    }
+        let update = shared::with_page_line_tuple_bytes(
+            page_ptr,
+            page_size,
+            block_number,
+            offset,
+            "planning HNSW vacuum pass2 repair",
+            |tuple_bytes| {
+                if tuple_bytes.first().copied() != Some(page::TQ_NEIGHBOR_TAG) {
+                    return None;
+                }
 
-                    let mut neighbor =
-                        page::TqNeighborTuple::decode(tuple_bytes).unwrap_or_else(|e| {
-                            pgrx::error!("ec_hnsw failed to decode repair neighbor tuple: {e}")
-                        });
-                    if neighbor.count as usize > neighbor.tids.len() {
-                        pgrx::error!(
-                            "ec_hnsw repair neighbor tuple count {} exceeds payload tid count {}",
-                            neighbor.count,
-                            neighbor.tids.len()
-                        );
-                    }
-                    if !unlink_deleted_neighbor_refs(&mut neighbor.tids, deleted_tids) {
-                        return None;
-                    }
+                let mut neighbor = page::TqNeighborTuple::decode(tuple_bytes).unwrap_or_else(|e| {
+                    pgrx::error!("ec_hnsw failed to decode repair neighbor tuple: {e}")
+                });
+                if neighbor.count as usize > neighbor.tids.len() {
+                    pgrx::error!(
+                        "ec_hnsw repair neighbor tuple count {} exceeds payload tid count {}",
+                        neighbor.count,
+                        neighbor.tids.len()
+                    );
+                }
+                if !unlink_deleted_neighbor_refs(&mut neighbor.tids, deleted_tids) {
+                    return None;
+                }
 
-                    Some(NeighborVacuumUpdate {
-                        tid: page::ItemPointer {
-                            block_number,
-                            offset_number: offset,
-                        },
-                        tuple: neighbor,
-                    })
-                },
-            )
+                Some(NeighborVacuumUpdate {
+                    tid: page::ItemPointer {
+                        block_number,
+                        offset_number: offset,
+                    },
+                    tuple: neighbor,
+                })
+            },
+        )
         .unwrap_or_else(|e| pgrx::error!("{e}"))
         .flatten();
         if let Some(update) = update {
@@ -1759,27 +1745,27 @@ fn apply_page_pass2_updates(
     for update in updates {
         // SAFETY: Each update was planned from this page and its re-encoded
         // tuple must match the existing tuple byte length.
-            shared::with_writable_page_tuple_bytes(
-                page_ptr,
-                page_size,
-                update.tid,
-                "repair neighbor",
-                |tuple_bytes| {
-                    let encoded = update.tuple.encode().unwrap_or_else(|e| {
-                        pgrx::error!("ec_hnsw failed to encode repair neighbor tuple: {e}")
-                    });
-                    if encoded.len() != tuple_bytes.len() {
-                        pgrx::error!(
-                            "ec_hnsw repair neighbor tuple size changed from {} to {} on block {}",
-                            tuple_bytes.len(),
-                            encoded.len(),
-                            block_number
-                        );
-                    }
+        shared::with_writable_page_tuple_bytes(
+            page_ptr,
+            page_size,
+            update.tid,
+            "repair neighbor",
+            |tuple_bytes| {
+                let encoded = update.tuple.encode().unwrap_or_else(|e| {
+                    pgrx::error!("ec_hnsw failed to encode repair neighbor tuple: {e}")
+                });
+                if encoded.len() != tuple_bytes.len() {
+                    pgrx::error!(
+                        "ec_hnsw repair neighbor tuple size changed from {} to {} on block {}",
+                        tuple_bytes.len(),
+                        encoded.len(),
+                        block_number
+                    );
+                }
 
-                    tuple_bytes.copy_from_slice(&encoded);
-                },
-            )
+                tuple_bytes.copy_from_slice(&encoded);
+            },
+        )
     }
 }
 
@@ -1831,68 +1817,67 @@ fn finalize_fully_dead_elements_on_page_with_storage(
     let mut updates = Vec::new();
 
     for tid in tids {
-        let update =
-            shared::with_page_line_tuple_bytes(
-                page_ptr,
-                page_size,
-                block_number,
-                tid.offset_number,
-                "planning fully-dead element finalization",
-                |tuple_bytes| match storage {
-                    graph::GraphStorageDescriptor::TurboQuant { code_len } => {
-                        let mut element = page::TqElementTuple::decode(tuple_bytes, code_len)
-                            .unwrap_or_else(|e| {
-                                pgrx::error!("ec_hnsw failed to decode finalize element tuple: {e}")
-                            });
-                        if element.deleted || !element.heaptids.is_empty() {
-                            return None;
-                        }
-
-                        element.deleted = true;
-                        Some(ElementVacuumUpdate::TurboQuant {
-                            tid: *tid,
-                            tuple: element,
-                        })
-                    }
-                    graph::GraphStorageDescriptor::TurboQuantHotCold(layout) => {
-                        let mut element =
-                            page::TqTurboHotTuple::decode(tuple_bytes, layout.binary_word_count)
-                                .unwrap_or_else(|e| {
-                                    pgrx::error!(
-                                        "ec_hnsw failed to decode finalize TurboQuant V3 tuple: {e}"
-                                    )
-                                });
-                        if element.deleted || !element.heaptids.is_empty() {
-                            return None;
-                        }
-
-                        element.deleted = true;
-                        Some(ElementVacuumUpdate::TurboQuantHot {
-                            tid: *tid,
-                            tuple: element,
-                        })
-                    }
-                    graph::GraphStorageDescriptor::PqFastScan(layout) => {
-                        let mut element = page::TqGroupedHotTuple::decode(
-                            tuple_bytes,
-                            layout.binary_word_count,
-                            layout.search_code_len,
-                        )
+        let update = shared::with_page_line_tuple_bytes(
+            page_ptr,
+            page_size,
+            block_number,
+            tid.offset_number,
+            "planning fully-dead element finalization",
+            |tuple_bytes| match storage {
+                graph::GraphStorageDescriptor::TurboQuant { code_len } => {
+                    let mut element = page::TqElementTuple::decode(tuple_bytes, code_len)
                         .unwrap_or_else(|e| {
-                            pgrx::error!("ec_hnsw failed to decode finalize grouped hot tuple: {e}")
+                            pgrx::error!("ec_hnsw failed to decode finalize element tuple: {e}")
                         });
-                        if element.deleted || !element.heaptids.is_empty() {
-                            return None;
-                        }
-
-                        element.deleted = true;
-                        Some(ElementVacuumUpdate::PqFastScanHot {
-                            tid: *tid,
-                            tuple: element,
-                        })
+                    if element.deleted || !element.heaptids.is_empty() {
+                        return None;
                     }
-                },
-            )
+
+                    element.deleted = true;
+                    Some(ElementVacuumUpdate::TurboQuant {
+                        tid: *tid,
+                        tuple: element,
+                    })
+                }
+                graph::GraphStorageDescriptor::TurboQuantHotCold(layout) => {
+                    let mut element =
+                        page::TqTurboHotTuple::decode(tuple_bytes, layout.binary_word_count)
+                            .unwrap_or_else(|e| {
+                                pgrx::error!(
+                                    "ec_hnsw failed to decode finalize TurboQuant V3 tuple: {e}"
+                                )
+                            });
+                    if element.deleted || !element.heaptids.is_empty() {
+                        return None;
+                    }
+
+                    element.deleted = true;
+                    Some(ElementVacuumUpdate::TurboQuantHot {
+                        tid: *tid,
+                        tuple: element,
+                    })
+                }
+                graph::GraphStorageDescriptor::PqFastScan(layout) => {
+                    let mut element = page::TqGroupedHotTuple::decode(
+                        tuple_bytes,
+                        layout.binary_word_count,
+                        layout.search_code_len,
+                    )
+                    .unwrap_or_else(|e| {
+                        pgrx::error!("ec_hnsw failed to decode finalize grouped hot tuple: {e}")
+                    });
+                    if element.deleted || !element.heaptids.is_empty() {
+                        return None;
+                    }
+
+                    element.deleted = true;
+                    Some(ElementVacuumUpdate::PqFastScanHot {
+                        tid: *tid,
+                        tuple: element,
+                    })
+                }
+            },
+        )
         .unwrap_or_else(|e| pgrx::error!("{e}"))
         .unwrap_or_else(|| {
             pgrx::error!(

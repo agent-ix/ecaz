@@ -709,7 +709,9 @@ impl MetadataPage {
                 0 => 4,
                 b @ (1 | 2 | 4 | 8) => b,
                 other => {
-                    return Err(format!("invalid ec_ivf quant_bits stored in metadata: {other}"))
+                    return Err(format!(
+                        "invalid ec_ivf quant_bits stored in metadata: {other}"
+                    ))
                 }
             },
             centroid_head: ItemPointer::decode(&bytes[36..42])?,

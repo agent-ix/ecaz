@@ -794,7 +794,10 @@ pub(super) fn write_data_pages(handle: RelationHandle, chain: &DataPageChain) {
             page.init(0);
             for tuple in staged_page.tuples() {
                 page.add_item(tuple).unwrap_or_else(|err| {
-                    pgrx::error!("ec_diskann failed to write tuple to block {}", err.block_number)
+                    pgrx::error!(
+                        "ec_diskann failed to write tuple to block {}",
+                        err.block_number
+                    )
                 });
             }
         }

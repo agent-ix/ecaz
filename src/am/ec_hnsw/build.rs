@@ -17,9 +17,9 @@ use crate::am::common::{
     training::{self, GroupedPq4Model},
 };
 use crate::storage::{
-    buffer_guard::LockedBufferGuard, relation::RelationHandle,
-    relation_guard::HeapRelationGuard, scan_guard::HeapScanGuard,
-    slot_guard::TupleTableSlotGuard, snapshot_guard::ActiveSnapshotGuard, wal,
+    buffer_guard::LockedBufferGuard, relation::RelationHandle, relation_guard::HeapRelationGuard,
+    scan_guard::HeapScanGuard, slot_guard::TupleTableSlotGuard,
+    snapshot_guard::ActiveSnapshotGuard, wal,
 };
 
 const PQ_FASTSCAN_TARGET_GROUP_SIZE: usize = 16;
@@ -255,10 +255,9 @@ pub(super) unsafe extern "C-unwind" fn ec_hnsw_ambuild(
                 flush_timing.graph_us = graph_build.graph_us;
                 flush_timing.stage_us = graph_build.stage_us;
                 let write_start = Instant::now();
-                let flush_handle =
-                    std::ptr::NonNull::new(index_relation).unwrap_or_else(|| {
-                        pgrx::error!("ec_hnsw ambuild flush received a null index relation")
-                    });
+                let flush_handle = std::ptr::NonNull::new(index_relation).unwrap_or_else(|| {
+                    pgrx::error!("ec_hnsw ambuild flush received a null index relation")
+                });
                 flush_build_output(flush_handle, &graph_build.output);
                 flush_timing.write_us = elapsed_us(write_start);
             } else {
@@ -332,13 +331,11 @@ impl BuildState {
             };
             // SAFETY: The heap and index relations are live while BuildState is
             // initialized, and the resolver validates the indexed attribute.
-            let indexed_attribute = 
-                source::resolve_indexed_vector_attribute(
-                    heap_relation.as_ptr(),
-                    index_relation,
-                    "indexed column",
-                )
-            ;
+            let indexed_attribute = source::resolve_indexed_vector_attribute(
+                heap_relation.as_ptr(),
+                index_relation,
+                "indexed column",
+            );
             indexed_attribute.kind
         };
         Self {
@@ -690,13 +687,11 @@ pub(super) unsafe fn ec_hnsw_build_scan_with_source(
         .expect("source scan should only run when build_source_column is configured");
     // SAFETY: `heap_relation` and `index_info` are live during ambuild, and the
     // resolver validates the indexed attribute for this index.
-    let indexed_attribute = 
-        source::resolve_indexed_vector_attribute_from_index_info(
-            heap_relation,
-            index_info,
-            "indexed column",
-        )
-    ;
+    let indexed_attribute = source::resolve_indexed_vector_attribute_from_index_info(
+        heap_relation,
+        index_info,
+        "indexed column",
+    );
     let source_attribute = source::resolve_source_attribute(
         heap_relation,
         &source_column,

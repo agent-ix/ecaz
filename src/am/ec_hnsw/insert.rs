@@ -6,8 +6,7 @@ use super::{build, graph, options, page, search, shared, source};
 use crate::am::common::callback::pg_am_callback;
 use crate::am::common::heap_slot::HeapSlotReader;
 use crate::storage::{
-    buffer_guard::LockedBufferGuard, relation::RelationHandle,
-    slot_guard::TupleTableSlotGuard, wal,
+    buffer_guard::LockedBufferGuard, relation::RelationHandle, slot_guard::TupleTableSlotGuard, wal,
 };
 
 const P_NEW: pg_sys::BlockNumber = u32::MAX;
@@ -35,9 +34,8 @@ impl<'rel> InsertPageWrite<'rel> {
         target_block: pg_sys::BlockNumber,
         error_context: &str,
     ) -> Self {
-        let handle = std::ptr::NonNull::new(index_relation).unwrap_or_else(|| {
-            pgrx::error!("ec_hnsw aminsert received a null index relation")
-        });
+        let handle = std::ptr::NonNull::new(index_relation)
+            .unwrap_or_else(|| pgrx::error!("ec_hnsw aminsert received a null index relation"));
         let read_mode = if target_block == P_NEW {
             pg_sys::ReadBufferMode::RBM_ZERO_AND_LOCK
         } else {
@@ -387,12 +385,9 @@ impl InsertFormatAdapter {
                 &tuple.code,
                 layout,
             ),
-            Self::PqFastScan(layout) => find_duplicate_grouped_element_tid(
-                index_relation,
-                tuple.gamma,
-                &tuple.code,
-                layout,
-            ),
+            Self::PqFastScan(layout) => {
+                find_duplicate_grouped_element_tid(index_relation, tuple.gamma, &tuple.code, layout)
+            }
         }
     }
 
@@ -456,18 +451,12 @@ impl InsertFormatAdapter {
             Self::TurboQuant { code_len } => {
                 coalesce_duplicate_heap_tid(index_relation, element_tid, code_len, heap_tid)
             }
-            Self::TurboQuantHotCold(layout) => coalesce_duplicate_turbo_hot_heap_tid(
-                index_relation,
-                element_tid,
-                layout,
-                heap_tid,
-            ),
-            Self::PqFastScan(layout) => coalesce_duplicate_grouped_heap_tid(
-                index_relation,
-                element_tid,
-                layout,
-                heap_tid,
-            ),
+            Self::TurboQuantHotCold(layout) => {
+                coalesce_duplicate_turbo_hot_heap_tid(index_relation, element_tid, layout, heap_tid)
+            }
+            Self::PqFastScan(layout) => {
+                coalesce_duplicate_grouped_heap_tid(index_relation, element_tid, layout, heap_tid)
+            }
         }
     }
 
@@ -656,9 +645,7 @@ unsafe fn run_insert_with_adapter(
 
                     let output = bootstrap_empty_pq_fastscan_flush_output(index_relation, tuple);
                     let handle = std::ptr::NonNull::new(index_relation).unwrap_or_else(|| {
-                        pgrx::error!(
-                            "ec_hnsw aminsert bootstrap received a null index relation"
-                        )
+                        pgrx::error!("ec_hnsw aminsert bootstrap received a null index relation")
                     });
                     build::write_data_pages(handle, &output.data_pages);
                     *metadata = output.metadata;
@@ -800,7 +787,8 @@ unsafe fn run_insert_with_adapter(
     shared::with_locked_metadata_page(index_relation, |metadata| {
         metadata.inserted_since_rebuild = metadata.inserted_since_rebuild.saturating_add(1);
         let entry_point_needs_repair = metadata.entry_point == page::ItemPointer::INVALID || {
-            let entry = graph::load_exact_graph_element(index_relation, metadata.entry_point, storage);
+            let entry =
+                graph::load_exact_graph_element(index_relation, metadata.entry_point, storage);
             entry.deleted || entry.heaptids.is_empty()
         };
         if entry_point_needs_repair || insert_level > metadata.max_level {
@@ -1245,9 +1233,8 @@ fn add_backlinks_on_page(
     }
 
     let block_number = mutations[0].neighbor_tid.block_number;
-    let handle = std::ptr::NonNull::new(index_relation).unwrap_or_else(|| {
-        pgrx::error!("ec_hnsw backlink rewrite received a null index relation")
-    });
+    let handle = std::ptr::NonNull::new(index_relation)
+        .unwrap_or_else(|| pgrx::error!("ec_hnsw backlink rewrite received a null index relation"));
     let buffer = LockedBufferGuard::read_main_handle(
         handle,
         block_number,
@@ -1274,61 +1261,55 @@ fn add_backlinks_on_page(
 
         // SAFETY: `neighbor_tid` points at a tuple on the registered page and
         // the closure preserves the encoded tuple length.
-        let tuple_changed =
-            shared::with_writable_page_tuple_bytes(
-                page_ptr,
-                page_size,
-                neighbor_tid,
-                "backlink neighbor",
-                |tuple_bytes| {
-                    let mut neighbor =
-                        page::TqNeighborTuple::decode(tuple_bytes).unwrap_or_else(|e| {
-                            pgrx::error!("ec_hnsw failed to decode backlink neighbor tuple: {e}")
-                        });
-                    if neighbor.count as usize > neighbor.tids.len() {
-                        pgrx::error!(
-                            "ec_hnsw backlink neighbor tuple count {} exceeds payload tid count {}",
-                            neighbor.count,
-                            neighbor.tids.len()
-                        );
-                    }
+        let tuple_changed = shared::with_writable_page_tuple_bytes(
+            page_ptr,
+            page_size,
+            neighbor_tid,
+            "backlink neighbor",
+            |tuple_bytes| {
+                let mut neighbor = page::TqNeighborTuple::decode(tuple_bytes).unwrap_or_else(|e| {
+                    pgrx::error!("ec_hnsw failed to decode backlink neighbor tuple: {e}")
+                });
+                if neighbor.count as usize > neighbor.tids.len() {
+                    pgrx::error!(
+                        "ec_hnsw backlink neighbor tuple count {} exceeds payload tid count {}",
+                        neighbor.count,
+                        neighbor.tids.len()
+                    );
+                }
 
-                    let mut tuple_changed = false;
-                    for mutation in &mutations[start..end] {
-                        match apply_backlink_mutation(
-                            &mut neighbor.tids,
-                            new_element_tid,
-                            m,
-                            mutation,
-                        ) {
-                            BacklinkMutationOutcome::NoChange => {}
-                            BacklinkMutationOutcome::Changed => tuple_changed = true,
-                            BacklinkMutationOutcome::RetryReplan => {
-                                retries.push(LayerForwardSelection {
-                                    layer: mutation.layer,
-                                    element_tid: mutation.target_element_tid,
-                                })
-                            }
+                let mut tuple_changed = false;
+                for mutation in &mutations[start..end] {
+                    match apply_backlink_mutation(&mut neighbor.tids, new_element_tid, m, mutation)
+                    {
+                        BacklinkMutationOutcome::NoChange => {}
+                        BacklinkMutationOutcome::Changed => tuple_changed = true,
+                        BacklinkMutationOutcome::RetryReplan => {
+                            retries.push(LayerForwardSelection {
+                                layer: mutation.layer,
+                                element_tid: mutation.target_element_tid,
+                            })
                         }
                     }
-                    if !tuple_changed {
-                        return false;
-                    }
+                }
+                if !tuple_changed {
+                    return false;
+                }
 
-                    let encoded = neighbor.encode().unwrap_or_else(|e| {
-                        pgrx::error!("ec_hnsw failed to encode backlink neighbor tuple: {e}")
-                    });
-                    if encoded.len() != tuple_bytes.len() {
-                        pgrx::error!(
-                            "ec_hnsw backlink neighbor tuple size changed from {} to {}",
-                            tuple_bytes.len(),
-                            encoded.len()
-                        );
-                    }
-                    tuple_bytes.copy_from_slice(&encoded);
-                    true
-                },
-            );
+                let encoded = neighbor.encode().unwrap_or_else(|e| {
+                    pgrx::error!("ec_hnsw failed to encode backlink neighbor tuple: {e}")
+                });
+                if encoded.len() != tuple_bytes.len() {
+                    pgrx::error!(
+                        "ec_hnsw backlink neighbor tuple size changed from {} to {}",
+                        tuple_bytes.len(),
+                        encoded.len()
+                    );
+                }
+                tuple_bytes.copy_from_slice(&encoded);
+                true
+            },
+        );
         if !tuple_changed {
             start = end;
             continue;
@@ -1713,8 +1694,7 @@ fn append_turbo_hot_cold_tuple(
     };
     // SAFETY: The index relation is live for aminsert; the writer owns the
     // target page lock and GenericXLog registration for this append.
-    let mut page_writer =
-        InsertPageWrite::open_tail(index_relation, target_block, "TurboQuant V3");
+    let mut page_writer = InsertPageWrite::open_tail(index_relation, target_block, "TurboQuant V3");
     if target_block != P_NEW && page_writer.free_space() < required_bytes {
         std::mem::drop(page_writer);
         return append_turbo_hot_cold_tuple_to_new_page(
@@ -1764,8 +1744,7 @@ fn append_turbo_hot_cold_tuple_to_new_page(
     layout: graph::TurboQuantHotColdLayout,
 ) -> page::ItemPointer {
     // SAFETY: This fallback allocates a fresh page for the live index relation.
-    let mut page_writer =
-        InsertPageWrite::open_new(index_relation, "fallback TurboQuant V3");
+    let mut page_writer = InsertPageWrite::open_new(index_relation, "fallback TurboQuant V3");
 
     let block_number = page_writer.block_number();
     let neighbor_offset = page_writer.add_item(neighbor_payload, "fallback TurboQuant V3 neighbor");
@@ -1937,8 +1916,7 @@ fn append_pq_fastscan_tuple(
     };
     // SAFETY: The index relation is live for aminsert; the writer owns the
     // target page lock and GenericXLog registration for this append.
-    let mut page_writer =
-        InsertPageWrite::open_tail(index_relation, target_block, "PqFastScan");
+    let mut page_writer = InsertPageWrite::open_tail(index_relation, target_block, "PqFastScan");
     if target_block != P_NEW && page_writer.free_space() < required_bytes {
         std::mem::drop(page_writer);
         return append_pq_fastscan_tuple_to_new_page(
@@ -1990,8 +1968,7 @@ fn append_pq_fastscan_tuple_to_new_page(
     search_code: Vec<u8>,
 ) -> page::ItemPointer {
     // SAFETY: This fallback allocates a fresh page for the live index relation.
-    let mut page_writer =
-        InsertPageWrite::open_new(index_relation, "fallback PqFastScan");
+    let mut page_writer = InsertPageWrite::open_new(index_relation, "fallback PqFastScan");
 
     let block_number = page_writer.block_number();
     let neighbor_offset = page_writer.add_item(neighbor_payload, "fallback PqFastScan neighbor");
@@ -2064,34 +2041,31 @@ fn find_duplicate_element_tid(
         for offset in 1..=line_pointer_count {
             // SAFETY: The buffer page remains pinned/locked and the helper
             // validates the line pointer before exposing tuple bytes.
-            let duplicate_tid =
-                shared::with_page_line_tuple_bytes(
-                    page_ptr,
-                    page_size,
-                    block_number,
-                    offset,
-                    "scanning duplicate candidates",
-                    |tuple_bytes| {
-                        if tuple_bytes.first().copied() != Some(page::TQ_ELEMENT_TAG) {
-                            return None;
-                        }
+            let duplicate_tid = shared::with_page_line_tuple_bytes(
+                page_ptr,
+                page_size,
+                block_number,
+                offset,
+                "scanning duplicate candidates",
+                |tuple_bytes| {
+                    if tuple_bytes.first().copied() != Some(page::TQ_ELEMENT_TAG) {
+                        return None;
+                    }
 
-                        let element = page::TqElementTuple::decode(tuple_bytes, code_len)
-                            .unwrap_or_else(|e| {
-                                pgrx::error!(
-                                    "ec_hnsw failed to decode candidate duplicate tuple: {e}"
-                                )
-                            });
-                        (!element.deleted
-                            && !element.heaptids.is_empty()
-                            && element.code == code
-                            && element.gamma.to_bits() == gamma.to_bits())
-                        .then_some(page::ItemPointer {
-                            block_number,
-                            offset_number: offset,
-                        })
-                    },
-                )
+                    let element = page::TqElementTuple::decode(tuple_bytes, code_len)
+                        .unwrap_or_else(|e| {
+                            pgrx::error!("ec_hnsw failed to decode candidate duplicate tuple: {e}")
+                        });
+                    (!element.deleted
+                        && !element.heaptids.is_empty()
+                        && element.code == code
+                        && element.gamma.to_bits() == gamma.to_bits())
+                    .then_some(page::ItemPointer {
+                        block_number,
+                        offset_number: offset,
+                    })
+                },
+            )
             .unwrap_or_else(|e| pgrx::error!("{e}"))
             .flatten();
             if duplicate_tid.is_some() {
@@ -2137,41 +2111,41 @@ fn find_duplicate_turbo_hot_element_tid(
         for offset in 1..=line_pointer_count {
             // SAFETY: The page is locked and the helper validates the candidate
             // line pointer before exposing tuple bytes.
-            let duplicate_tid =
-                shared::with_page_line_tuple_bytes(
-                    page_ptr,
-                    page_size,
-                    block_number,
-                    offset,
-                    "scanning TurboQuant V3 duplicate candidates",
-                    |tuple_bytes| {
-                        if tuple_bytes.first().copied() != Some(page::TQ_TURBO_HOT_TAG) {
-                            return None;
-                        }
+            let duplicate_tid = shared::with_page_line_tuple_bytes(
+                page_ptr,
+                page_size,
+                block_number,
+                offset,
+                "scanning TurboQuant V3 duplicate candidates",
+                |tuple_bytes| {
+                    if tuple_bytes.first().copied() != Some(page::TQ_TURBO_HOT_TAG) {
+                        return None;
+                    }
 
-                        let element =
-                            page::TqTurboHotTuple::decode(tuple_bytes, layout.binary_word_count)
-                                .unwrap_or_else(|e| {
-                                    pgrx::error!(
-                                "ec_hnsw failed to decode candidate TurboQuant V3 tuple: {e}"
-                            )
-                                });
-                        if element.deleted || element.heaptids.is_empty() {
-                            return None;
-                        }
+                    let element =
+                        page::TqTurboHotTuple::decode(tuple_bytes, layout.binary_word_count)
+                            .unwrap_or_else(|e| {
+                                pgrx::error!(
+                                    "ec_hnsw failed to decode candidate TurboQuant V3 tuple: {e}"
+                                )
+                            });
+                    if element.deleted || element.heaptids.is_empty() {
+                        return None;
+                    }
 
-                        let rerank = graph::load_rerank_payload(
-                            index_relation,
-                            element.reranktid,
-                            layout.rerank_code_len,
-                        );
-                        (rerank.code == code && rerank.gamma.to_bits() == gamma.to_bits())
-                            .then_some(page::ItemPointer {
-                                block_number,
-                                offset_number: offset,
-                            })
-                    },
-                )
+                    let rerank = graph::load_rerank_payload(
+                        index_relation,
+                        element.reranktid,
+                        layout.rerank_code_len,
+                    );
+                    (rerank.code == code && rerank.gamma.to_bits() == gamma.to_bits()).then_some(
+                        page::ItemPointer {
+                            block_number,
+                            offset_number: offset,
+                        },
+                    )
+                },
+            )
             .unwrap_or_else(|e| pgrx::error!("{e}"))
             .flatten();
             if duplicate_tid.is_some() {
@@ -2215,44 +2189,44 @@ fn find_duplicate_grouped_element_tid(
         for offset in 1..=line_pointer_count {
             // SAFETY: The page is locked and the helper validates the candidate
             // line pointer before exposing tuple bytes.
-            let duplicate_tid =
-                shared::with_page_line_tuple_bytes(
-                    page_ptr,
-                    page_size,
-                    block_number,
-                    offset,
-                    "scanning grouped duplicate candidates",
-                    |tuple_bytes| {
-                        if tuple_bytes.first().copied() != Some(page::TQ_GROUPED_HOT_TAG) {
-                            return None;
-                        }
+            let duplicate_tid = shared::with_page_line_tuple_bytes(
+                page_ptr,
+                page_size,
+                block_number,
+                offset,
+                "scanning grouped duplicate candidates",
+                |tuple_bytes| {
+                    if tuple_bytes.first().copied() != Some(page::TQ_GROUPED_HOT_TAG) {
+                        return None;
+                    }
 
-                        let element = page::TqGroupedHotTuple::decode(
-                            tuple_bytes,
-                            layout.binary_word_count,
-                            layout.search_code_len,
+                    let element = page::TqGroupedHotTuple::decode(
+                        tuple_bytes,
+                        layout.binary_word_count,
+                        layout.search_code_len,
+                    )
+                    .unwrap_or_else(|e| {
+                        pgrx::error!(
+                            "ec_hnsw failed to decode candidate grouped duplicate tuple: {e}"
                         )
-                        .unwrap_or_else(|e| {
-                            pgrx::error!(
-                                "ec_hnsw failed to decode candidate grouped duplicate tuple: {e}"
-                            )
-                        });
-                        if element.deleted || element.heaptids.is_empty() {
-                            return None;
-                        }
+                    });
+                    if element.deleted || element.heaptids.is_empty() {
+                        return None;
+                    }
 
-                        let rerank = graph::load_grouped_rerank_payload(
-                            index_relation,
-                            element.reranktid,
-                            layout,
-                        );
-                        (rerank.code == code && rerank.gamma.to_bits() == gamma.to_bits())
-                            .then_some(page::ItemPointer {
-                                block_number,
-                                offset_number: offset,
-                            })
-                    },
-                )
+                    let rerank = graph::load_grouped_rerank_payload(
+                        index_relation,
+                        element.reranktid,
+                        layout,
+                    );
+                    (rerank.code == code && rerank.gamma.to_bits() == gamma.to_bits()).then_some(
+                        page::ItemPointer {
+                            block_number,
+                            offset_number: offset,
+                        },
+                    )
+                },
+            )
             .unwrap_or_else(|e| pgrx::error!("{e}"))
             .flatten();
             if duplicate_tid.is_some() {
@@ -2291,41 +2265,40 @@ fn coalesce_duplicate_heap_tid(
     let page_size = buffer.page_size();
     // SAFETY: `element_tid` points at the duplicate tuple on the registered
     // page and the closure preserves the encoded tuple length.
-    let tuple_changed =
-        shared::with_writable_page_tuple_bytes(
-            page_ptr,
-            page_size,
-            element_tid,
-            "duplicate element",
-            |tuple_bytes| {
-                let mut element = page::TqElementTuple::decode(tuple_bytes, code_len)
-                    .unwrap_or_else(|e| {
-                        pgrx::error!("ec_hnsw failed to decode duplicate element tuple: {e}")
-                    });
-                if element.heaptids.contains(&heap_tid) {
-                    return false;
-                }
-                if element.heaptids.len() >= page::HEAPTID_INLINE_CAPACITY {
-                    pgrx::error!(
-                        "ec_hnsw aminsert supports at most {} duplicate heap tids per encoded vector",
-                        page::HEAPTID_INLINE_CAPACITY
-                    );
-                }
-                element.heaptids.push(heap_tid);
-                let encoded = element.encode().unwrap_or_else(|e| {
-                    pgrx::error!("ec_hnsw failed to encode coalesced element tuple: {e}")
+    let tuple_changed = shared::with_writable_page_tuple_bytes(
+        page_ptr,
+        page_size,
+        element_tid,
+        "duplicate element",
+        |tuple_bytes| {
+            let mut element =
+                page::TqElementTuple::decode(tuple_bytes, code_len).unwrap_or_else(|e| {
+                    pgrx::error!("ec_hnsw failed to decode duplicate element tuple: {e}")
                 });
-                if encoded.len() != tuple_bytes.len() {
-                    pgrx::error!(
-                        "ec_hnsw duplicate element tuple size changed from {} to {}",
-                        tuple_bytes.len(),
-                        encoded.len()
-                    );
-                }
-                tuple_bytes.copy_from_slice(&encoded);
-                true
-            },
-        );
+            if element.heaptids.contains(&heap_tid) {
+                return false;
+            }
+            if element.heaptids.len() >= page::HEAPTID_INLINE_CAPACITY {
+                pgrx::error!(
+                    "ec_hnsw aminsert supports at most {} duplicate heap tids per encoded vector",
+                    page::HEAPTID_INLINE_CAPACITY
+                );
+            }
+            element.heaptids.push(heap_tid);
+            let encoded = element.encode().unwrap_or_else(|e| {
+                pgrx::error!("ec_hnsw failed to encode coalesced element tuple: {e}")
+            });
+            if encoded.len() != tuple_bytes.len() {
+                pgrx::error!(
+                    "ec_hnsw duplicate element tuple size changed from {} to {}",
+                    tuple_bytes.len(),
+                    encoded.len()
+                );
+            }
+            tuple_bytes.copy_from_slice(&encoded);
+            true
+        },
+    );
     if !tuple_changed {
         wal_txn.finish();
         return;
@@ -2341,9 +2314,7 @@ fn coalesce_duplicate_turbo_hot_heap_tid(
     heap_tid: page::ItemPointer,
 ) {
     let handle = std::ptr::NonNull::new(index_relation).unwrap_or_else(|| {
-        pgrx::error!(
-            "ec_hnsw coalesce_duplicate_turbo_hot_heap_tid received a null index relation"
-        )
+        pgrx::error!("ec_hnsw coalesce_duplicate_turbo_hot_heap_tid received a null index relation")
     });
     let buffer = LockedBufferGuard::read_main_handle(
         handle,
@@ -2363,44 +2334,40 @@ fn coalesce_duplicate_turbo_hot_heap_tid(
     let page_size = buffer.page_size();
     // SAFETY: `element_tid` points at the duplicate hot tuple on the registered
     // page and the closure preserves the encoded tuple length.
-    let tuple_changed =
-        shared::with_writable_page_tuple_bytes(
-            page_ptr,
-            page_size,
-            element_tid,
-            "duplicate TurboQuant V3 element",
-            |tuple_bytes| {
-                let mut element =
-                    page::TqTurboHotTuple::decode(tuple_bytes, layout.binary_word_count)
-                        .unwrap_or_else(|e| {
-                            pgrx::error!(
-                                "ec_hnsw failed to decode duplicate TurboQuant V3 tuple: {e}"
-                            )
-                        });
-                if element.heaptids.contains(&heap_tid) {
-                    return false;
-                }
-                if element.heaptids.len() >= page::HEAPTID_INLINE_CAPACITY {
-                    pgrx::error!(
-                        "ec_hnsw aminsert supports at most {} duplicate heap tids per encoded vector",
-                        page::HEAPTID_INLINE_CAPACITY
-                    );
-                }
-                element.heaptids.push(heap_tid);
-                let encoded = element.encode().unwrap_or_else(|e| {
-                    pgrx::error!("ec_hnsw failed to encode coalesced TurboQuant V3 tuple: {e}")
+    let tuple_changed = shared::with_writable_page_tuple_bytes(
+        page_ptr,
+        page_size,
+        element_tid,
+        "duplicate TurboQuant V3 element",
+        |tuple_bytes| {
+            let mut element = page::TqTurboHotTuple::decode(tuple_bytes, layout.binary_word_count)
+                .unwrap_or_else(|e| {
+                    pgrx::error!("ec_hnsw failed to decode duplicate TurboQuant V3 tuple: {e}")
                 });
-                if encoded.len() != tuple_bytes.len() {
-                    pgrx::error!(
-                        "ec_hnsw duplicate TurboQuant V3 tuple size changed from {} to {}",
-                        tuple_bytes.len(),
-                        encoded.len()
-                    );
-                }
-                tuple_bytes.copy_from_slice(&encoded);
-                true
-            },
-        );
+            if element.heaptids.contains(&heap_tid) {
+                return false;
+            }
+            if element.heaptids.len() >= page::HEAPTID_INLINE_CAPACITY {
+                pgrx::error!(
+                    "ec_hnsw aminsert supports at most {} duplicate heap tids per encoded vector",
+                    page::HEAPTID_INLINE_CAPACITY
+                );
+            }
+            element.heaptids.push(heap_tid);
+            let encoded = element.encode().unwrap_or_else(|e| {
+                pgrx::error!("ec_hnsw failed to encode coalesced TurboQuant V3 tuple: {e}")
+            });
+            if encoded.len() != tuple_bytes.len() {
+                pgrx::error!(
+                    "ec_hnsw duplicate TurboQuant V3 tuple size changed from {} to {}",
+                    tuple_bytes.len(),
+                    encoded.len()
+                );
+            }
+            tuple_bytes.copy_from_slice(&encoded);
+            true
+        },
+    );
     if !tuple_changed {
         wal_txn.finish();
         return;
@@ -2436,45 +2403,44 @@ fn coalesce_duplicate_grouped_heap_tid(
     let page_size = buffer.page_size();
     // SAFETY: `element_tid` points at the duplicate grouped tuple on the
     // registered page and the closure preserves the encoded tuple length.
-    let tuple_changed =
-        shared::with_writable_page_tuple_bytes(
-            page_ptr,
-            page_size,
-            element_tid,
-            "duplicate PqFastScan element",
-            |tuple_bytes| {
-                let mut element = page::TqGroupedHotTuple::decode(
-                    tuple_bytes,
-                    layout.binary_word_count,
-                    layout.search_code_len,
-                )
-                .unwrap_or_else(|e| {
-                    pgrx::error!("ec_hnsw failed to decode duplicate PqFastScan element tuple: {e}")
-                });
-                if element.heaptids.contains(&heap_tid) {
-                    return false;
-                }
-                if element.heaptids.len() >= page::HEAPTID_INLINE_CAPACITY {
-                    pgrx::error!(
-                        "ec_hnsw aminsert supports at most {} duplicate heap tids per encoded vector",
-                        page::HEAPTID_INLINE_CAPACITY
-                    );
-                }
-                element.heaptids.push(heap_tid);
-                let encoded = element.encode().unwrap_or_else(|e| {
-                    pgrx::error!("ec_hnsw failed to encode coalesced PqFastScan element tuple: {e}")
-                });
-                if encoded.len() != tuple_bytes.len() {
-                    pgrx::error!(
-                        "ec_hnsw duplicate PqFastScan element tuple size changed from {} to {}",
-                        tuple_bytes.len(),
-                        encoded.len()
-                    );
-                }
-                tuple_bytes.copy_from_slice(&encoded);
-                true
-            },
-        );
+    let tuple_changed = shared::with_writable_page_tuple_bytes(
+        page_ptr,
+        page_size,
+        element_tid,
+        "duplicate PqFastScan element",
+        |tuple_bytes| {
+            let mut element = page::TqGroupedHotTuple::decode(
+                tuple_bytes,
+                layout.binary_word_count,
+                layout.search_code_len,
+            )
+            .unwrap_or_else(|e| {
+                pgrx::error!("ec_hnsw failed to decode duplicate PqFastScan element tuple: {e}")
+            });
+            if element.heaptids.contains(&heap_tid) {
+                return false;
+            }
+            if element.heaptids.len() >= page::HEAPTID_INLINE_CAPACITY {
+                pgrx::error!(
+                    "ec_hnsw aminsert supports at most {} duplicate heap tids per encoded vector",
+                    page::HEAPTID_INLINE_CAPACITY
+                );
+            }
+            element.heaptids.push(heap_tid);
+            let encoded = element.encode().unwrap_or_else(|e| {
+                pgrx::error!("ec_hnsw failed to encode coalesced PqFastScan element tuple: {e}")
+            });
+            if encoded.len() != tuple_bytes.len() {
+                pgrx::error!(
+                    "ec_hnsw duplicate PqFastScan element tuple size changed from {} to {}",
+                    tuple_bytes.len(),
+                    encoded.len()
+                );
+            }
+            tuple_bytes.copy_from_slice(&encoded);
+            true
+        },
+    );
     if !tuple_changed {
         wal_txn.finish();
         return;

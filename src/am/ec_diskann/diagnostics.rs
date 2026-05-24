@@ -61,8 +61,7 @@ pub(crate) unsafe fn graph_summary(
     let index_relation_handle = NonNull::new(index_relation)
         .ok_or_else(|| "ec_diskann graph summary received null index relation".to_owned())?;
     let block_count = crate::storage::relation::main_fork_block_count_handle(index_relation_handle);
-    let (metadata, chain) =
-        scan_state::materialize_chain_from_index_handle(index_relation_handle)?;
+    let (metadata, chain) = scan_state::materialize_chain_from_index_handle(index_relation_handle)?;
     let reader = PersistedGraphReader::new(
         &chain,
         metadata.graph_degree_r,

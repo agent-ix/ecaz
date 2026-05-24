@@ -367,11 +367,10 @@ pub(crate) fn load_exact_graph_element(
             load_graph_element(index_relation, element_tid, code_len)
         }
         GraphStorageDescriptor::TurboQuantHotCold(layout) => {
-            let hot =
-                read_page_tuple(index_relation, element_tid, "turbo hot", |tuple_bytes| {
-                    page::TqTurboHotTuple::decode(tuple_bytes, layout.binary_word_count)
-                })
-                .unwrap_or_else(|e| pgrx::error!("ec_hnsw failed to decode turbo hot tuple: {e}"));
+            let hot = read_page_tuple(index_relation, element_tid, "turbo hot", |tuple_bytes| {
+                page::TqTurboHotTuple::decode(tuple_bytes, layout.binary_word_count)
+            })
+            .unwrap_or_else(|e| pgrx::error!("ec_hnsw failed to decode turbo hot tuple: {e}"));
             let rerank = load_rerank_payload(index_relation, hot.reranktid, layout.rerank_code_len);
             GraphElement {
                 tid: element_tid,
@@ -406,7 +405,11 @@ pub(crate) fn load_grouped_graph_element(
     layout: PqFastScanLayout,
 ) -> GroupedGraphElement {
     let element = read_page_tuple(index_relation, element_tid, "grouped hot", |tuple_bytes| {
-        page::TqGroupedHotTuple::decode(tuple_bytes, layout.binary_word_count, layout.search_code_len)
+        page::TqGroupedHotTuple::decode(
+            tuple_bytes,
+            layout.binary_word_count,
+            layout.search_code_len,
+        )
     })
     .unwrap_or_else(|e| pgrx::error!("ec_hnsw failed to decode grouped graph tuple: {e}"));
     GroupedGraphElement {
@@ -580,12 +583,17 @@ pub(crate) fn with_grouped_codebook_tuple<R, F>(
 where
     F: FnOnce(page::TqGroupedCodebookTupleRef<'_>) -> R,
 {
-    read_page_tuple(index_relation, codebook_tid, "grouped codebook", |tuple_bytes| {
-        Ok(f(page::TqGroupedCodebookTupleRef::decode(
-            tuple_bytes,
-            centroid_count,
-        )?))
-    })
+    read_page_tuple(
+        index_relation,
+        codebook_tid,
+        "grouped codebook",
+        |tuple_bytes| {
+            Ok(f(page::TqGroupedCodebookTupleRef::decode(
+                tuple_bytes,
+                centroid_count,
+            )?))
+        },
+    )
     .unwrap_or_else(|e| pgrx::error!("ec_hnsw failed to decode grouped codebook tuple: {e}"))
 }
 
