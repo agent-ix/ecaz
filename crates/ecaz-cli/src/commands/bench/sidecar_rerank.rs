@@ -10,10 +10,10 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Instant;
 
+use bytes::Bytes;
 use clap::{Args, ValueEnum};
 use color_eyre::eyre::{bail, eyre, Context, Result};
 use comfy_table::{presets::UTF8_FULL, Cell, Table};
-use bytes::Bytes;
 use futures::{
     stream::{self, StreamExt, TryStreamExt},
     SinkExt,
@@ -219,23 +219,34 @@ pub async fn run(conn: &ConnectionOptions, args: SidecarRerankArgs) -> Result<()
     } else {
         args.read_mode.clone()
     };
-    let sidecars = build_sidecars(&variants, &corpus, args.seed as u64)?;
-    if read_modes.iter().any(|mode| mode.uses_db()) {
-        ensure_sidecar_tables(
-            &client,
-            &args.prefix,
-            &sidecars,
-            &corpus_ids,
-            &corpus,
-            args.rebuild_sidecar_table,
-        )
-        .await?;
-    }
     let knn_sql = super::recall::build_knn_sql(profile, &corpus_table);
     let stmt = client
         .prepare(&knn_sql)
         .await
         .wrap_err("preparing sidecar-rerank candidate statement")?;
+
+    let mut candidate_runs = Vec::with_capacity(sweep.len());
+    for value in &sweep {
+        client
+            .batch_execute(&format!("SET {scan_guc} = {value}"))
+            .await
+            .wrap_err_with(|| format!("SET {scan_guc} = {value}"))?;
+        let candidate_run = collect_candidates(
+            &client,
+            &stmt,
+            profile,
+            &queries,
+            args.bits,
+            args.seed,
+            args.candidate_k,
+        )
+        .await?;
+        candidate_runs.push((*value, candidate_run));
+    }
+    client
+        .batch_execute(&format!("RESET {scan_guc}"))
+        .await
+        .wrap_err_with(|| format!("RESET {scan_guc}"))?;
 
     let mut table = Table::new();
     table.load_preset(UTF8_FULL);
@@ -270,26 +281,25 @@ pub async fn run(conn: &ConnectionOptions, args: SidecarRerankArgs) -> Result<()
         "sidecar_size",
     ]);
 
-    for value in &sweep {
-        client
-            .batch_execute(&format!("SET {scan_guc} = {value}"))
-            .await
-            .wrap_err_with(|| format!("SET {scan_guc} = {value}"))?;
-        let candidate_run = collect_candidates(
-            &client,
-            &stmt,
-            profile,
-            &queries,
-            args.bits,
-            args.seed,
-            args.candidate_k,
-        )
-        .await?;
-        for sidecar in &sidecars {
+    let uses_db_sidecars = read_modes.iter().any(|mode| mode.uses_db());
+    for variant in variants {
+        let sidecar = build_sidecar(variant, &corpus, args.seed as u64)?;
+        if uses_db_sidecars {
+            ensure_sidecar_tables(
+                &client,
+                &args.prefix,
+                std::slice::from_ref(&sidecar),
+                &corpus_ids,
+                &corpus,
+                args.rebuild_sidecar_table,
+            )
+            .await?;
+        }
+        for (value, candidate_run) in &candidate_runs {
             for read_mode in &read_modes {
                 let reranked = match read_mode {
                     SidecarReadMode::Free => rerank_with_sidecar(
-                        sidecar,
+                        &sidecar,
                         &candidate_run.ids,
                         &id_to_pos,
                         &corpus,
@@ -298,7 +308,7 @@ pub async fn run(conn: &ConnectionOptions, args: SidecarRerankArgs) -> Result<()
                     SidecarReadMode::RandomId | SidecarReadMode::TidSorted => {
                         rerank_with_sidecar_db(
                             &client,
-                            sidecar,
+                            &sidecar,
                             *read_mode,
                             &sidecar_table_name(&args.prefix, sidecar.variant),
                             &candidate_run.ids,
@@ -361,10 +371,6 @@ pub async fn run(conn: &ConnectionOptions, args: SidecarRerankArgs) -> Result<()
             }
         }
     }
-    client
-        .batch_execute(&format!("RESET {scan_guc}"))
-        .await
-        .wrap_err_with(|| format!("RESET {scan_guc}"))?;
 
     let output = table.to_string();
     println!("{output}");
@@ -631,60 +637,52 @@ fn sidecar_payload_bytes(sidecar: &Sidecar, corpus: &Array2<f32>, pos: usize) ->
     }
 }
 
-fn build_sidecars(
-    variants: &[SidecarVariant],
-    corpus: &Array2<f32>,
-    seed: u64,
-) -> Result<Vec<Sidecar>> {
-    let mut out = Vec::new();
-    for variant in variants {
-        match variant {
-            SidecarVariant::F32 => out.push(Sidecar {
-                variant: *variant,
-                bytes_per_vector: corpus.ncols() * std::mem::size_of::<f32>(),
-                storage: SidecarStorage::F32,
-            }),
-            SidecarVariant::F16 => {
-                let encoded = corpus
-                    .rows()
-                    .into_iter()
-                    .map(|row| row.iter().map(|value| f16::from_f32(*value)).collect())
-                    .collect();
-                out.push(Sidecar {
-                    variant: *variant,
-                    bytes_per_vector: corpus.ncols() * std::mem::size_of::<f16>(),
-                    storage: SidecarStorage::F16(encoded),
-                });
-            }
-            SidecarVariant::Rabitq8
-            | SidecarVariant::Rabitq8ls
-            | SidecarVariant::Rabitq8c3
-            | SidecarVariant::Rabitq8c4 => {
-                let prod = ProdQuantizer::cached(corpus.ncols(), 4, seed);
-                let clip = variant.rabitq_clip().expect("RaBitQ variant has a clip");
-                let quantizer = Arc::new(
-                    RaBitQQuantizer::with_srht_bits_clip(corpus.ncols(), prod, 8, clip).map_err(
-                        |err| eyre!("building bits=8 RaBitQ sidecar with clip {clip}: {err}"),
-                    )?,
-                );
-                let bytes_per_vector = <RaBitQQuantizer as Quantizer>::code_len(quantizer.as_ref());
-                let codes = corpus
-                    .rows()
-                    .into_iter()
-                    .map(|row| {
-                        let values: Vec<f32> = row.to_vec();
-                        <RaBitQQuantizer as Quantizer>::encode_code(quantizer.as_ref(), &values)
-                    })
-                    .collect();
-                out.push(Sidecar {
-                    variant: *variant,
-                    bytes_per_vector,
-                    storage: SidecarStorage::Rabitq8 { quantizer, codes },
-                });
-            }
+fn build_sidecar(variant: SidecarVariant, corpus: &Array2<f32>, seed: u64) -> Result<Sidecar> {
+    match variant {
+        SidecarVariant::F32 => Ok(Sidecar {
+            variant,
+            bytes_per_vector: corpus.ncols() * std::mem::size_of::<f32>(),
+            storage: SidecarStorage::F32,
+        }),
+        SidecarVariant::F16 => {
+            let encoded = corpus
+                .rows()
+                .into_iter()
+                .map(|row| row.iter().map(|value| f16::from_f32(*value)).collect())
+                .collect();
+            Ok(Sidecar {
+                variant,
+                bytes_per_vector: corpus.ncols() * std::mem::size_of::<f16>(),
+                storage: SidecarStorage::F16(encoded),
+            })
+        }
+        SidecarVariant::Rabitq8
+        | SidecarVariant::Rabitq8ls
+        | SidecarVariant::Rabitq8c3
+        | SidecarVariant::Rabitq8c4 => {
+            let prod = ProdQuantizer::cached(corpus.ncols(), 4, seed);
+            let clip = variant.rabitq_clip().expect("RaBitQ variant has a clip");
+            let quantizer = Arc::new(
+                RaBitQQuantizer::with_srht_bits_clip(corpus.ncols(), prod, 8, clip).map_err(
+                    |err| eyre!("building bits=8 RaBitQ sidecar with clip {clip}: {err}"),
+                )?,
+            );
+            let bytes_per_vector = <RaBitQQuantizer as Quantizer>::code_len(quantizer.as_ref());
+            let codes = corpus
+                .rows()
+                .into_iter()
+                .map(|row| {
+                    let values: Vec<f32> = row.to_vec();
+                    <RaBitQQuantizer as Quantizer>::encode_code(quantizer.as_ref(), &values)
+                })
+                .collect();
+            Ok(Sidecar {
+                variant,
+                bytes_per_vector,
+                storage: SidecarStorage::Rabitq8 { quantizer, codes },
+            })
         }
     }
-    Ok(out)
 }
 
 struct RerankRun {

@@ -43,7 +43,7 @@
       "queries_limit": 200,
       "variants": ["rabitq8", "rabitq8ls", "rabitq8c3", "rabitq8c4"],
       "read_modes": ["tid-sorted"],
-      "rebuild_sidecar_table": true,
+      "rebuild_sidecar_table": false,
       "force_index": true,
       "allow_unsafe_index_shape": true,
       "log_output": "benchmarks/task51-aws-rabitq8-sidecar-full-sweep/artifacts/sidecar-1m-rabitq8-new-variants-k50-q200-c1-tid-sorted.log"
