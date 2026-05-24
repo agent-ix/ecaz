@@ -1950,7 +1950,7 @@ pub extern "C-unwind" fn pg_finfo_ec_diskann_handler() -> *const pg_sys::Pg_finf
 #[cfg(any(test, feature = "pg_test"))]
 #[pgrx::pg_schema]
 mod tests {
-    use super::{insert, scan_state, PersistedGraphReader};
+    use super::{insert, scan, scan_state, GraphReader, PersistedGraphReader, ScanParams};
     use crate::am::ec_diskann::page::VamanaMetadataPage;
     use crate::storage::{
         page::{DataPageChain, ItemPointer},
@@ -2027,6 +2027,107 @@ mod tests {
             .expect("guard keeps the index relation open");
         scan_state::materialize_chain_from_index_handle(handle)
             .expect("materialize_chain_from_index should succeed")
+    }
+
+    fn heap_tid_distance(tid: ItemPointer) -> f32 {
+        (tid.block_number as f32 * 1024.0) + tid.offset_number as f32
+    }
+
+    #[pg_test]
+    fn test_ec_diskann_relation_reader_parity() {
+        Spi::run(
+            "CREATE TABLE ec_diskann_relation_reader_parity (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_diskann_relation_reader_parity VALUES
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.0, 0.0], 4, 42)),
+             (2, encode_to_ecvector(ARRAY[0.9, 0.1, 0.0, 0.0], 4, 42)),
+             (3, encode_to_ecvector(ARRAY[0.8, 0.2, 0.0, 0.0], 4, 42)),
+             (4, encode_to_ecvector(ARRAY[0.7, 0.3, 0.0, 0.0], 4, 42)),
+             (5, encode_to_ecvector(ARRAY[0.6, 0.4, 0.0, 0.0], 4, 42)),
+             (6, encode_to_ecvector(ARRAY[0.5, 0.5, 0.0, 0.0], 4, 42))",
+        )
+        .expect("fixture rows should insert");
+        Spi::run(
+            "CREATE INDEX ec_diskann_relation_reader_parity_idx ON ec_diskann_relation_reader_parity USING ec_diskann \
+             (embedding ecvector_diskann_ip_ops) WITH (list_size = 8, rerank_budget = 6, top_k = 4)",
+        )
+        .expect("index creation should succeed");
+
+        let (metadata, chain) = index_materialized_chain("ec_diskann_relation_reader_parity_idx");
+        let binary_word_count = scan_state::metadata_binary_word_count(&metadata);
+        let search_code_len = scan_state::metadata_search_code_len(&metadata);
+        let chain_reader = PersistedGraphReader::new(
+            &chain,
+            metadata.graph_degree_r,
+            binary_word_count,
+            search_code_len,
+        );
+
+        let index_relation = IndexRelationGuard::access_share(
+            index_oid("ec_diskann_relation_reader_parity_idx"),
+            "test_ec_diskann_relation_reader_parity",
+        );
+        let handle =
+            ptr::NonNull::new(index_relation.as_ptr()).expect("guard keeps index relation open");
+        let relation_reader = scan_state::RelationGraphReader::new(
+            handle,
+            metadata.graph_degree_r,
+            binary_word_count,
+            search_code_len,
+        );
+
+        let live_nodes = chain_reader
+            .iter_live_tids()
+            .collect::<Result<Vec<_>, _>>()
+            .expect("materialized live-node iteration should succeed");
+        assert!(
+            live_nodes.len() > 1,
+            "fixture should build more than one live DiskANN node"
+        );
+        for (tid, chain_tuple) in &live_nodes {
+            let relation_tuple = relation_reader
+                .read_node(*tid)
+                .expect("relation-backed node read should decode");
+            assert_eq!(
+                &relation_tuple, chain_tuple,
+                "relation-backed node read should match materialized chain at {:?}",
+                tid,
+            );
+        }
+
+        assert_eq!(
+            relation_reader
+                .first_live_tid()
+                .expect("relation first_live_tid should succeed"),
+            chain_reader
+                .first_live_tid()
+                .expect("chain first_live_tid should succeed"),
+            "relation-backed and chain-backed first_live_tid should match",
+        );
+
+        let entry_point = scan::resolve_entry_point(&chain_reader, metadata.entry_point)
+            .expect("chain entry point resolution should succeed")
+            .expect("fixture index should have a live entry point");
+        let params = ScanParams {
+            entry_point,
+            list_size: 6,
+            rerank_budget: 4,
+            top_k: 3,
+        };
+        let prefilter = |tuple: &crate::am::ec_diskann::tuple::VamanaNodeTuple| {
+            heap_tid_distance(tuple.primary_heaptid)
+        };
+        let chain_results = scan::vamana_scan(&chain_reader, params, prefilter, heap_tid_distance)
+            .expect("chain-backed scan should succeed");
+        let relation_results =
+            scan::vamana_scan(&relation_reader, params, prefilter, heap_tid_distance)
+                .expect("relation-backed scan should succeed");
+        assert_eq!(
+            relation_results, chain_results,
+            "relation-backed scan should match materialized-chain scan results",
+        );
     }
 
     #[pg_test]

@@ -26,7 +26,7 @@ That fixed-cost bug is closed, but the remaining curve still has real work:
   not graph quality first.
 - We do not yet have a complete post-optimization AWS Graviton suite through
   1M, so the next task must both tune and prove the tuned path at 10k, 100k,
-  and 1M.
+  50k, 100k, and 1M.
 - The live path now reads graph nodes on demand from the relation, so the next
   bottleneck is likely buffer/page reads, tuple decode, allocation churn,
   duplicate expansion, scoring, EBS/local-storage behavior, CPU saturation, or
@@ -67,8 +67,8 @@ The benchmark evidence commit is:
     storage behavior;
   - `c8g.xlarge` or `c8gd.xlarge` if counters show CPU traversal/scoring is
     the likely limit.
-- Required datasets: DBpedia/OpenAI3 `ec_real_10k`, `ec_real_100k`, and
-  `ec_real_1m`.
+- Required datasets: DBpedia/OpenAI3 `ec_real_10k`, `ec_real_50k`,
+  `ec_real_100k`, and `ec_real_1m`.
 - Suite runner: `ecaz bench suite` only. If the suite runner lacks a needed
   profiling step or metric, extend `ecaz-cli` first.
 
@@ -105,7 +105,7 @@ commit. The profiler/counter surface must separate at least:
 
 Minimum counter cells:
 
-- 100k `list_size` 200, 400, 800.
+- 50k and 100k `list_size` 200, 400, 800.
 - 1M `list_size` 200, 400, 800 on the smallest Graviton profile that can run
   without memory pressure invalidating the measurement.
 - 10k `list_size` 200 and 800 as a small-corpus sanity check.
@@ -114,6 +114,21 @@ The packet must make a clear call on both:
 
 - the next bottleneck class, and
 - the right Graviton profile/storage shape for the full 1M suite.
+
+## Carry-Forward Reviewer Gates
+
+Task 55 packet 005 reviewer feedback approved the scan-materialization
+optimization on merits, but held the public speedup claim on two hard asks.
+This task must close both before relying on the optimized DiskANN path for the
+full AWS suite:
+
+- **H1: 1M-scale validation.** The final suite must include 1M p50/p95/p99
+  latency and recall rows on the tuned Graviton profile.
+- **H2: live-PG relation-reader parity.** Add a focused `pgrx test pg18`
+  covering `RelationGraphReader` against a real PostgreSQL `ec_diskann` index:
+  every live node read must match `PersistedGraphReader`, `first_live_tid` must
+  match, and a relation-reader scan path must return the same result set as the
+  chain-reader path.
 
 ## Graviton Tuning Work
 
@@ -228,7 +243,10 @@ Known current reference:
 ## Full Benchmark Matrix Through 1M
 
 Every optimization slice must use a checked-in `SuiteConfig` under the owning
-benchmark packet. The closing suite must include 10k, 100k, and 1M rows.
+benchmark packet. Exploratory tuning/profile packets may use focused cells, but
+the final full benchmark suite runs only after the optimization and Graviton
+profile/config choices are settled. The closing suite must include 10k, 50k,
+100k, and 1M rows.
 
 Required rows for each corpus size:
 
@@ -258,9 +276,9 @@ This task can close when:
   bottleneck after `cbf037334`.
 - AWS Graviton tuning selects a cost-aware profile/config for the full suite.
 - At least one new targeted code optimization lands.
-- The AWS benchmark packet includes the full 10k / 100k / 1M suite and all
-  steps succeed or any skipped cells are explicitly justified as invalid
-  hardware-profile tuning attempts.
+- The AWS benchmark packet includes the full 10k / 50k / 100k / 1M suite after
+  optimizations are settled, and all steps succeed or any skipped cells are
+  explicitly justified as invalid hardware-profile tuning attempts.
 - 100k and 1M recall@10 do not regress at any measured `list_size`.
 - 100k and 1M storage do not increase unless the request explicitly justifies
   the tradeoff.
