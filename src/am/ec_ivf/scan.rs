@@ -1263,9 +1263,10 @@ unsafe fn materialize_probe_candidates(
     record_posting_pages_read(opaque, posting_pages);
     if use_scratch_soa_batch_decode(metadata) {
         let scratch = posting_scratch_soa(opaque, payload_len);
-        // SAFETY: `probe_plan.block_sequence` contains posting blocks from
-        // validated IVF directory metadata, and the visitor only borrows tuple refs
-        // for the duration of each callback.
+        // SAFETY: `scratch` is a scan-opaque-owned `*mut IvfPostingScratchSoa`
+        // allocated by `posting_scratch_soa`; the visitor and the post-loop
+        // drain are the only borrowers of this scratch buffer for the
+        // duration of the call.
         unsafe {
             super::page::visit_ivf_posting_refs_for_block_sequence(
                 index_relation,
@@ -1309,54 +1310,49 @@ unsafe fn materialize_probe_candidates(
             )?;
         }
     } else {
-        // SAFETY: `probe_plan.block_sequence` contains posting blocks from
-        // validated IVF directory metadata, and the visitor only borrows tuple refs
-        // for the duration of each callback.
-        unsafe {
-            super::page::visit_ivf_posting_refs_for_block_sequence(
-                index_relation,
-                &probe_plan.block_sequence,
-                payload_len,
-                |_, posting| {
-                    if !probe_plan.contains_list(posting.list_id) || posting.deleted {
-                        return Ok(());
-                    }
-                    opaque.explain_counters.record_posting_visited();
-                    let heap_tid_count = posting.heaptid_count();
-                    if !consume_live_tid_budget(
-                        &mut remaining_live_tids_by_list,
-                        posting.list_id,
-                        heap_tid_count,
-                    )? {
-                        return Ok(());
-                    }
-                    let min_ip_to_keep = running_top
-                        .as_ref()
-                        .and_then(CandidateTopK::worst_score_if_full)
-                        .map(|worst_score| -worst_score);
-                    let Some(ip) = quantizer.score_ip_from_parts_with_min_bound(
-                        prepared_query,
-                        posting.gamma,
-                        posting.payload,
-                        min_ip_to_keep,
-                    )?
-                    else {
-                        opaque.explain_counters.record_posting_pruned_by_bound();
-                        return Ok(());
-                    };
-                    let score = -ip;
-                    record_scored_posting_candidates(
-                        opaque,
-                        best_by_heap_tid,
-                        &mut running_top,
-                        posting.heaptids(),
-                        heap_tid_count,
-                        score,
-                    );
-                    Ok(())
-                },
-            )?
-        };
+        super::page::visit_ivf_posting_refs_for_block_sequence(
+            index_relation,
+            &probe_plan.block_sequence,
+            payload_len,
+            |_, posting| {
+                if !probe_plan.contains_list(posting.list_id) || posting.deleted {
+                    return Ok(());
+                }
+                opaque.explain_counters.record_posting_visited();
+                let heap_tid_count = posting.heaptid_count();
+                if !consume_live_tid_budget(
+                    &mut remaining_live_tids_by_list,
+                    posting.list_id,
+                    heap_tid_count,
+                )? {
+                    return Ok(());
+                }
+                let min_ip_to_keep = running_top
+                    .as_ref()
+                    .and_then(CandidateTopK::worst_score_if_full)
+                    .map(|worst_score| -worst_score);
+                let Some(ip) = quantizer.score_ip_from_parts_with_min_bound(
+                    prepared_query,
+                    posting.gamma,
+                    posting.payload,
+                    min_ip_to_keep,
+                )?
+                else {
+                    opaque.explain_counters.record_posting_pruned_by_bound();
+                    return Ok(());
+                };
+                let score = -ip;
+                record_scored_posting_candidates(
+                    opaque,
+                    best_by_heap_tid,
+                    &mut running_top,
+                    posting.heaptids(),
+                    heap_tid_count,
+                    score,
+                );
+                Ok(())
+            },
+        )?
     }
 
     // SAFETY: `best_by_heap_tid` points to the scan-owned dedup map populated

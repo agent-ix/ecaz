@@ -1492,7 +1492,7 @@ where
 }
 
 #[cfg(any(feature = "pg17", feature = "pg18"))]
-pub(super) unsafe fn visit_ivf_posting_refs_for_block_sequence<F>(
+pub(super) fn visit_ivf_posting_refs_for_block_sequence<F>(
     index_relation: pg_sys::Relation,
     block_numbers: &[pg_sys::BlockNumber],
     payload_len: usize,
