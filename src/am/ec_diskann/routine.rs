@@ -20,6 +20,7 @@ use crate::{
     storage::{
         buffer_guard::{LockedBufferGuard, LockedPageTupleVisit},
         page::{DataPageChain, ItemPointer},
+        relation::RelationHandle,
         relation_guard::HeapRelationGuard,
         wal,
     },
@@ -815,9 +816,10 @@ unsafe fn plan_backlink_mutations(
     new_tid: ItemPointer,
     new_source_vector: &[f32],
 ) -> Result<(VamanaMetadataPage, Vec<insert::BacklinkMutation>), String> {
-    // SAFETY: The index relation is live and materialization only reads the
-    // persisted DiskANN page chain.
-    let (metadata, chain) = unsafe { scan_state::materialize_chain_from_index(index_relation)? };
+    let backlink_handle = ptr::NonNull::new(index_relation).ok_or_else(|| {
+        "ec_diskann plan_diskann_backlink_repair needs a valid index relation".to_owned()
+    })?;
+    let (metadata, chain) = scan_state::materialize_chain_from_index_handle(backlink_handle)?;
     let reader = PersistedGraphReader::new(
         &chain,
         metadata.graph_degree_r,
@@ -1095,9 +1097,7 @@ unsafe fn run_diskann_bulkdelete_pass(
     }
 
     let rewrites = collect_tuple_rewrites(&original_chain, &mutated_chain)?;
-    // SAFETY: Rewrites were diffed from the original and mutated chains for this
-    // index and are validated against current page bytes before applying.
-    let rewrite_outcome = unsafe { apply_tuple_rewrites(index_relation, &rewrites)? };
+    let rewrite_outcome = apply_tuple_rewrites_handle(index_relation_handle, &rewrites)?;
     Ok(VacuumBulkDeletePassResult {
         rewrite_outcome,
         block_count,
@@ -1478,9 +1478,9 @@ fn plan_vacuum_fill_candidates_for_target(
 }
 
 fn count_live_node_tuples(index_relation: pg_sys::Relation) -> Result<usize, String> {
-    // SAFETY: The index relation is live and materialization only reads the
-    // persisted DiskANN page chain.
-    let (metadata, chain) = unsafe { scan_state::materialize_chain_from_index(index_relation)? };
+    let handle = ptr::NonNull::new(index_relation)
+        .ok_or_else(|| "ec_diskann count_live_node_tuples needs a valid index relation".to_owned())?;
+    let (metadata, chain) = scan_state::materialize_chain_from_index_handle(handle)?;
     count_live_tuples_in_chain(
         &chain,
         metadata.graph_degree_r,
@@ -1510,13 +1510,20 @@ unsafe fn apply_tuple_rewrites(
     index_relation: pg_sys::Relation,
     rewrites: &[TupleRewrite],
 ) -> Result<VacuumRewriteApplyOutcome, String> {
+    let handle = std::ptr::NonNull::new(index_relation)
+        .ok_or_else(|| "ec_diskann apply_tuple_rewrites received a null index relation".to_owned())?;
+    apply_tuple_rewrites_handle(handle, rewrites)
+}
+
+fn apply_tuple_rewrites_handle(
+    handle: RelationHandle,
+    rewrites: &[TupleRewrite],
+) -> Result<VacuumRewriteApplyOutcome, String> {
     if rewrites.is_empty() {
         return Ok(VacuumRewriteApplyOutcome::Applied);
     }
 
-    // SAFETY: Test-only injection, when enabled, locks and rewrites the target
-    // page before the normal expected-byte validation below.
-    maybe_apply_vacuum_rewrite_test_injection(index_relation)?;
+    maybe_apply_vacuum_rewrite_test_injection(handle.as_ptr())?;
     let mut cursor = 0usize;
     while cursor < rewrites.len() {
         let block_number = rewrites[cursor].tid.block_number;
@@ -1525,16 +1532,12 @@ unsafe fn apply_tuple_rewrites(
             cursor += 1;
         }
         let block_rewrites = &rewrites[block_start..cursor];
-        // SAFETY: Rewrites are grouped by block and each target page is locked
-        // exclusively before expected bytes are checked or modified.
-        let buffer = unsafe {
-            LockedBufferGuard::read_main(
-                index_relation,
-                block_number,
-                pg_sys::ReadBufferMode::RBM_NORMAL,
-                pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
-            )
-        }
+        let buffer = LockedBufferGuard::read_main_handle(
+            handle,
+            block_number,
+            pg_sys::ReadBufferMode::RBM_NORMAL,
+            pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
+        )
         .ok_or_else(|| {
             format!("ec_diskann vacuum rewrite could not open data block {block_number}")
         })?;
@@ -1555,12 +1558,9 @@ unsafe fn apply_tuple_rewrites(
             }
         }
 
-        // SAFETY: `index_relation` is the live relation for this vacuum
-        // callback, and the WAL transaction is finished or aborted in this
-        // scope.
-        let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
+        let mut wal_txn = wal::WalTxnScope::start_handle(handle);
         let page_result: Result<VacuumRewriteApplyOutcome, String> = {
-            let mut writable_page = wal_txn.register_locked_buffer_full_image_page(&buffer);
+            let mut writable_page = wal_txn.register_page(&buffer);
             for rewrite in block_rewrites {
                 writable_page.visit_tuple_bytes_mut(
                     rewrite.tid,
@@ -1599,16 +1599,14 @@ unsafe fn write_raw_tuple_bytes(
     tid: ItemPointer,
     replacement_raw: &[u8],
 ) -> Result<(), String> {
-    // SAFETY: Test helper locks the target block exclusively before overwriting
-    // tuple bytes.
-    let buffer = unsafe {
-        LockedBufferGuard::read_main(
-            index_relation,
-            tid.block_number,
-            pg_sys::ReadBufferMode::RBM_NORMAL,
-            pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
-        )
-    }
+    let handle = std::ptr::NonNull::new(index_relation)
+        .ok_or_else(|| "ec_diskann write_raw_tuple_bytes received a null index relation".to_owned())?;
+    let buffer = LockedBufferGuard::read_main_handle(
+        handle,
+        tid.block_number,
+        pg_sys::ReadBufferMode::RBM_NORMAL,
+        pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
+    )
     .ok_or_else(|| {
         format!(
             "ec_diskann vacuum test rewrite could not open data block {}",
@@ -1616,11 +1614,9 @@ unsafe fn write_raw_tuple_bytes(
         )
     })?;
 
-    // SAFETY: `index_relation` is the live relation for this test helper, and
-    // the WAL transaction is finished or aborted in this scope.
-    let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
+    let mut wal_txn = wal::WalTxnScope::start_handle(handle);
     let page_result: Result<(), String> = {
-        let mut writable_page = wal_txn.register_locked_buffer_full_image_page(&buffer);
+        let mut writable_page = wal_txn.register_page(&buffer);
         writable_page.visit_tuple_bytes_mut(tid, "ec_diskann vacuum test target", |tuple_bytes| {
             if tuple_bytes.len() != replacement_raw.len() {
                 return Err(format!(
@@ -1828,23 +1824,20 @@ mod tests {
     fn index_metadata(index_name: &str) -> VamanaMetadataPage {
         let index_relation =
             IndexRelationGuard::access_share(index_oid(index_name), "index_metadata");
-        // SAFETY: The guard keeps the index relation open while the persisted
-        // chain is materialized for test inspection.
-        let (metadata, _) =
-            unsafe { scan_state::materialize_chain_from_index(index_relation.as_ptr()) }
-                .expect("materialize_chain_from_index should succeed");
+        let handle = ptr::NonNull::new(index_relation.as_ptr())
+            .expect("guard keeps the index relation open");
+        let (metadata, _) = scan_state::materialize_chain_from_index_handle(handle)
+            .expect("materialize_chain_from_index should succeed");
         metadata
     }
 
     fn index_materialized_chain(index_name: &str) -> (VamanaMetadataPage, DataPageChain) {
         let index_relation =
             IndexRelationGuard::access_share(index_oid(index_name), "index_materialized_chain");
-        // SAFETY: The guard keeps the index relation open while the persisted
-        // chain is materialized for test inspection.
-        let materialized =
-            unsafe { scan_state::materialize_chain_from_index(index_relation.as_ptr()) }
-                .expect("materialize_chain_from_index should succeed");
-        materialized
+        let handle = ptr::NonNull::new(index_relation.as_ptr())
+            .expect("guard keeps the index relation open");
+        scan_state::materialize_chain_from_index_handle(handle)
+            .expect("materialize_chain_from_index should succeed")
     }
 
     #[pg_test]
@@ -1874,11 +1867,10 @@ mod tests {
         let index_relation_ptr = index_relation.as_ptr();
 
         let relation_options = super::options::relation_options(index_relation_ptr);
-        // SAFETY: The guard keeps the index relation open while the persisted
-        // chain is materialized for test scan-state construction.
-        let (metadata, chain) =
-            unsafe { scan_state::materialize_chain_from_index(index_relation_ptr) }
-                .expect("materialize_chain_from_index should succeed");
+        let session_handle = ptr::NonNull::new(index_relation_ptr)
+            .expect("guard keeps the index relation open");
+        let (metadata, chain) = scan_state::materialize_chain_from_index_handle(session_handle)
+            .expect("materialize_chain_from_index should succeed");
         let relation_opaque =
             scan_state::DiskannScanOpaque::new(metadata, chain, relation_options.clone())
                 .expect("relation scan state should build");
@@ -1888,11 +1880,8 @@ mod tests {
         );
 
         Spi::run("SET ec_diskann.list_size = 7").expect("session override should succeed");
-        // SAFETY: The guard still owns the index relation during the second
-        // materialization under the session override.
-        let (metadata, chain) =
-            unsafe { scan_state::materialize_chain_from_index(index_relation_ptr) }
-                .expect("materialize_chain_from_index should succeed");
+        let (metadata, chain) = scan_state::materialize_chain_from_index_handle(session_handle)
+            .expect("materialize_chain_from_index should succeed");
         let session_opaque = scan_state::DiskannScanOpaque::new(metadata, chain, relation_options)
             .expect("session scan state should build");
         assert_eq!(
@@ -3617,10 +3606,12 @@ mod tests {
             "test_ec_diskann_vacuum_refills_dead_neighbor_slot",
         );
         assert_eq!(
-            // SAFETY: The test holds the index relation open with row-exclusive
-            // lock while applying a fixture rewrite.
-            unsafe { super::apply_tuple_rewrites(index_relation.as_ptr(), &rewrites) }
-                .expect("fixture rewrite should apply"),
+            super::apply_tuple_rewrites_handle(
+                ptr::NonNull::new(index_relation.as_ptr())
+                    .expect("test holds the index relation open"),
+                &rewrites,
+            )
+            .expect("fixture rewrite should apply"),
             super::VacuumRewriteApplyOutcome::Applied,
         );
 
@@ -3751,10 +3742,12 @@ mod tests {
             "test_ec_diskann_vacuum_replans_on_stale_repair_tuple",
         );
         assert_eq!(
-            // SAFETY: The test holds the index relation open with row-exclusive
-            // lock while applying a fixture rewrite.
-            unsafe { super::apply_tuple_rewrites(index_relation.as_ptr(), &rewrites) }
-                .expect("fixture rewrite should apply"),
+            super::apply_tuple_rewrites_handle(
+                ptr::NonNull::new(index_relation.as_ptr())
+                    .expect("test holds the index relation open"),
+                &rewrites,
+            )
+            .expect("fixture rewrite should apply"),
             super::VacuumRewriteApplyOutcome::Applied,
         );
 

@@ -27,6 +27,7 @@ use crate::am::common::{callback::pg_am_callback, detoast::DetoastedVarlena, tra
 use crate::quant::prod::ProdQuantizer;
 use crate::storage::buffer_guard::LockedBufferGuard;
 use crate::storage::page::{DataPageChain, ItemPointer, METADATA_BLOCK_NUMBER};
+use crate::storage::relation::RelationHandle;
 use crate::storage::wal;
 use crate::{DEFAULT_QUANT_BITS, DEFAULT_QUANT_SEED};
 
@@ -416,14 +417,15 @@ unsafe fn flush_build_state(
     metadata.grouped_codebook_head = codebook_head;
 
     let write_pages_started = Instant::now();
-    // SAFETY: `chain` was staged from this build output and the index relation
-    // is live for the ambuild callback.
-    unsafe { write_data_pages(index_relation, &chain) };
+    let pages_handle = NonNull::new(index_relation).unwrap_or_else(|| {
+        pgrx::error!("ec_diskann ambuild write_data_pages received a null index relation")
+    });
+    write_data_pages(pages_handle, &chain);
     timing.write_pages_ms = elapsed_ms(write_pages_started.elapsed());
     let metadata_started = Instant::now();
     // SAFETY: Metadata was produced for this staged chain and is rewritten under
     // the metadata page's exclusive buffer lock.
-    unsafe { overwrite_metadata_page(index_relation, &metadata) };
+    overwrite_metadata_page_handle(pages_handle, &metadata);
     timing.metadata_ms = elapsed_ms(metadata_started.elapsed());
     timing.total_ms = elapsed_ms(total_started.elapsed());
     Ok(timing)
@@ -702,71 +704,81 @@ unsafe fn source_inner_product_neon(left: &[f32], right: &[f32]) -> f32 {
 }
 
 unsafe fn initialize_metadata_page(index_relation: pg_sys::Relation, metadata: VamanaMetadataPage) {
-    let index_relation_handle = NonNull::new(index_relation).unwrap_or_else(|| {
+    let handle = NonNull::new(index_relation).unwrap_or_else(|| {
         pgrx::error!("ec_diskann metadata initialization needs a valid index relation")
     });
-    let existing_blocks =
-        crate::storage::relation::main_fork_block_count_handle(index_relation_handle);
+    initialize_metadata_page_handle(handle, metadata);
+}
+
+fn initialize_metadata_page_handle(handle: RelationHandle, metadata: VamanaMetadataPage) {
+    let existing_blocks = crate::storage::relation::main_fork_block_count_handle(handle);
     let target_block = if existing_blocks == 0 {
         P_NEW
     } else {
         METADATA_BLOCK_NUMBER
     };
     let buffer = if target_block == P_NEW {
-        LockedBufferGuard::read_main_locked(
-            index_relation,
+        LockedBufferGuard::read_main_locked_handle(
+            handle,
             target_block,
             pg_sys::ReadBufferMode::RBM_ZERO_AND_LOCK,
         )
     } else {
-        LockedBufferGuard::read_main(
-            index_relation,
+        LockedBufferGuard::read_main_handle(
+            handle,
             target_block,
             pg_sys::ReadBufferMode::RBM_NORMAL,
             pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
         )
     }
     .unwrap_or_else(|| pgrx::error!("ec_diskann failed to allocate metadata buffer"));
-    write_metadata_to_buffer(index_relation, &buffer, &metadata);
+    write_metadata_to_buffer(handle, &buffer, &metadata);
 }
 
 unsafe fn overwrite_metadata_page(index_relation: pg_sys::Relation, metadata: &VamanaMetadataPage) {
-    let buffer = LockedBufferGuard::read_main(
-        index_relation,
+    let handle = NonNull::new(index_relation).unwrap_or_else(|| {
+        pgrx::error!("ec_diskann overwrite_metadata_page needs a valid index relation")
+    });
+    overwrite_metadata_page_handle(handle, metadata);
+}
+
+fn overwrite_metadata_page_handle(handle: RelationHandle, metadata: &VamanaMetadataPage) {
+    let buffer = LockedBufferGuard::read_main_handle(
+        handle,
         METADATA_BLOCK_NUMBER,
         pg_sys::ReadBufferMode::RBM_NORMAL,
         pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
     )
     .unwrap_or_else(|| pgrx::error!("ec_diskann failed to open metadata buffer"));
-    write_metadata_to_buffer(index_relation, &buffer, metadata);
+    write_metadata_to_buffer(handle, &buffer, metadata);
 }
 
 fn write_metadata_to_buffer(
-    index_relation: pg_sys::Relation,
+    handle: RelationHandle,
     buffer: &LockedBufferGuard,
     metadata: &VamanaMetadataPage,
 ) {
-    let page_size = buffer.page_size();
-    // SAFETY: The WAL transaction is scoped to this live index relation.
-    let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
-    let page_ptr = wal_txn.register_locked_buffer_full_image(&buffer);
-    let metadata_bytes = metadata.encode();
-    let special_size = (metadata_bytes.len() + 7) & !7;
-    // SAFETY: `page_ptr` is the WAL-registered metadata page and `page_size`
-    // comes from the locked buffer guard. The special area is sized from the
-    // encoded metadata before copying from owned Rust memory.
-    unsafe {
-        pg_sys::PageInit(page_ptr, page_size, special_size);
-        let dst = pg_sys::PageGetSpecialPointer(page_ptr).cast::<u8>();
-        ptr::copy_nonoverlapping(metadata_bytes.as_ptr(), dst, metadata_bytes.len());
+    let mut wal_txn = wal::WalTxnScope::start_handle(handle);
+    {
+        let mut page = wal_txn.register_page(buffer);
+        let metadata_bytes = metadata.encode();
+        let special_size = (metadata_bytes.len() + 7) & !7;
+        page.init(special_size);
+        // SAFETY: `page` is the WAL-registered metadata page; the special area
+        // was just sized from the encoded metadata before this owned-memory
+        // copy.
+        unsafe {
+            let dst = pg_sys::PageGetSpecialPointer(page.page_ptr()).cast::<u8>();
+            ptr::copy_nonoverlapping(metadata_bytes.as_ptr(), dst, metadata_bytes.len());
+        }
     }
     wal_txn.finish();
 }
 
-pub(super) unsafe fn write_data_pages(index_relation: pg_sys::Relation, chain: &DataPageChain) {
+pub(super) fn write_data_pages(handle: RelationHandle, chain: &DataPageChain) {
     for staged_page in chain.pages() {
-        let buffer = LockedBufferGuard::read_main_locked(
-            index_relation,
+        let buffer = LockedBufferGuard::read_main_locked_handle(
+            handle,
             P_NEW,
             pg_sys::ReadBufferMode::RBM_ZERO_AND_LOCK,
         )
@@ -776,33 +788,16 @@ pub(super) unsafe fn write_data_pages(index_relation: pg_sys::Relation, chain: &
                 staged_page.block_number()
             )
         });
-        let page_size = buffer.page_size();
-        // SAFETY: The WAL transaction is scoped to this live index relation.
-        let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
-        let page_ptr = wal_txn.register_locked_buffer_full_image(&buffer);
-        // SAFETY: `page_ptr` is the WAL-registered data page and `page_size`
-        // comes from the locked buffer guard. Each staged tuple byte slice is
-        // immutable and PageAddItemExtended copies it into the initialized page.
-        unsafe {
-            pg_sys::PageInit(page_ptr, page_size, 0);
-
+        let mut wal_txn = wal::WalTxnScope::start_handle(handle);
+        {
+            let mut page = wal_txn.register_page(&buffer);
+            page.init(0);
             for tuple in staged_page.tuples() {
-                let offset = pg_sys::PageAddItemExtended(
-                    page_ptr,
-                    tuple.as_ptr().cast_mut().cast(),
-                    tuple.len(),
-                    pg_sys::InvalidOffsetNumber,
-                    0,
-                );
-                if offset == pg_sys::InvalidOffsetNumber {
-                    pgrx::error!(
-                        "ec_diskann failed to write tuple to block {}",
-                        staged_page.block_number()
-                    );
-                }
+                page.add_item(tuple).unwrap_or_else(|err| {
+                    pgrx::error!("ec_diskann failed to write tuple to block {}", err.block_number)
+                });
             }
         }
-
         wal_txn.finish();
     }
 }
@@ -862,16 +857,16 @@ pub(super) unsafe fn with_ecvector_datum_slice<T>(
     f: impl for<'a> FnOnce(&'a [f32]) -> T,
 ) -> T {
     // SAFETY: The datum is expected to be a non-null ecvector varlena selected
-    // by ambuild type validation or caller metadata checks.
-    let detoasted = unsafe { DetoastedVarlena::plain_from_datum(datum) }
+    // by ambuild type validation or caller metadata checks; `align_to` only
+    // validates exact f32 alignment and rejects any non-empty prefix/suffix
+    // before exposing the body to the visitor.
+    let detoasted = DetoastedVarlena::plain_from_datum(datum)
         .unwrap_or_else(|| pgrx::error!("ec_diskann could not detoast indexed ecvector"));
     let bytes = detoasted.as_bytes();
     if bytes.len() % std::mem::size_of::<f32>() != 0 {
         pgrx::error!("ec_diskann indexed ecvector payload length must be a multiple of 4 bytes");
     }
-    // SAFETY: `align_to` is used only to validate exact f32 alignment; any
-    // non-empty prefix/suffix is rejected before exposing the body.
-    let (prefix, body, suffix) = unsafe { bytes.align_to::<f32>() };
+    let (prefix, body, suffix) = bytes.align_to::<f32>();
     if !prefix.is_empty() || !suffix.is_empty() {
         pgrx::error!("ec_diskann indexed ecvector payload is not aligned for float4 access");
     }
@@ -879,9 +874,7 @@ pub(super) unsafe fn with_ecvector_datum_slice<T>(
 }
 
 pub(super) unsafe fn ecvector_datum_to_vec(datum: pg_sys::Datum) -> Vec<f32> {
-    // SAFETY: Delegates to the scoped ecvector datum visitor and copies the
-    // borrowed f32 body before returning.
-    unsafe { with_ecvector_datum_slice(datum, |body| body.to_vec()) }
+    with_ecvector_datum_slice(datum, |body| body.to_vec())
 }
 
 #[cfg(test)]
