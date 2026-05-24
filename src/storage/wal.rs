@@ -3,6 +3,16 @@
 //! ECAZ currently writes PostgreSQL GenericXLog records only. Those records
 //! carry page images/deltas rather than an extension-owned record body, so the
 //! versioned byte contract lives in the page payloads themselves.
+//!
+//! P3 typed wrappers (Task 54):
+//!
+//! - [`WalTxnScope`] is the safe-surface name for [`GenericXLogTxn`]; it
+//!   encodes the relation-liveness invariant in the type and exposes
+//!   safe `register_page` / `finish` operations. Constructors remain
+//!   `unsafe fn` because PostgreSQL's `Relation` is an opaque pointer.
+//! - [`RegisteredBufferPage`] gains safe `init` and `add_item` operations
+//!   so consumers no longer need a per-call `unsafe { pg_sys::PageInit }`
+//!   / `unsafe { pg_sys::PageAddItemExtended }` block.
 
 use std::marker::PhantomData;
 
@@ -10,6 +20,7 @@ use pgrx::pg_sys;
 
 use crate::storage::buffer_guard::LockedBufferGuard;
 use crate::storage::page::ItemPointer;
+use crate::storage::relation::RelationHandle;
 
 /// Current format tag for future extension-owned ECAZ WAL payloads.
 pub const ECAZ_CUSTOM_WAL_RECORD_FORMAT_VERSION: u8 = 1;
@@ -190,5 +201,122 @@ impl Drop for GenericXLogTxn {
             // required cleanup path.
             unsafe { pg_sys::GenericXLogAbort(self.state) };
         }
+    }
+}
+
+#[allow(dead_code)] // Consumed by HNSW migration in Task 54 packets 003/004.
+impl RegisteredBufferPage<'_, '_> {
+    pub(crate) fn page_ptr(&self) -> pg_sys::Page {
+        self.page
+    }
+
+    /// Initialize this WAL-registered page (PageInit) with the given special
+    /// area size in bytes. Use `0` for a normal page with no special area.
+    pub(crate) fn init(&mut self, special_size: usize) {
+        // SAFETY: `self.page` is the WAL-registered writable image obtained
+        // from `GenericXLogRegisterBuffer` for the borrowed `LockedBufferGuard`.
+        // `page_size` is the size of the underlying locked buffer's page.
+        unsafe { pg_sys::PageInit(self.page, self.buffer.page_size(), special_size) };
+    }
+
+    /// Append `payload` to this WAL-registered page via `PageAddItemExtended`.
+    ///
+    /// Returns the new offset number on success, or `PageAddItemError` (with
+    /// the buffer's block number for caller-side diagnostics) when PostgreSQL
+    /// returns `InvalidOffsetNumber`.
+    pub(crate) fn add_item(
+        &mut self,
+        payload: &[u8],
+    ) -> Result<pg_sys::OffsetNumber, PageAddItemError> {
+        // SAFETY: `self.page` is the WAL-registered writable image. PostgreSQL
+        // copies `payload` bytes during `PageAddItemExtended`, so the slice
+        // needs only to remain live for the duration of this call.
+        let offset = unsafe {
+            pg_sys::PageAddItemExtended(
+                self.page,
+                payload.as_ptr().cast_mut().cast(),
+                payload.len(),
+                pg_sys::InvalidOffsetNumber,
+                0,
+            )
+        };
+        if offset == pg_sys::InvalidOffsetNumber {
+            Err(PageAddItemError {
+                block_number: self.buffer.block_number(),
+            })
+        } else {
+            Ok(offset)
+        }
+    }
+}
+
+/// Error returned by [`RegisteredBufferPage::add_item`] when PostgreSQL's
+/// `PageAddItemExtended` rejects the tuple (returns `InvalidOffsetNumber`).
+///
+/// Carries the target block number for caller-side error messages.
+#[allow(dead_code)] // Consumed by HNSW migration in Task 54 packets 003/004.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct PageAddItemError {
+    pub(crate) block_number: pg_sys::BlockNumber,
+}
+
+/// Typed RAII scope around a PostgreSQL `GenericXLog` transaction.
+///
+/// `WalTxnScope` is the safe-surface name for [`GenericXLogTxn`]; it wraps
+/// the same underlying state and exposes safe `register_page` / `finish`
+/// operations so consumers never need a per-call `unsafe { GenericXLogStart }`
+/// or `unsafe { GenericXLogFinish }` block.
+///
+/// The `'rel` lifetime marker carries the relation-liveness invariant from the
+/// `unsafe fn start` constructor through to every method on the scope.
+#[allow(dead_code)] // Consumed by HNSW migration in Task 54 packets 003/004.
+pub(crate) struct WalTxnScope<'rel> {
+    txn: GenericXLogTxn,
+    _rel: PhantomData<&'rel ()>,
+}
+
+#[allow(dead_code)] // Consumed by HNSW migration in Task 54 packets 003/004.
+impl<'rel> WalTxnScope<'rel> {
+    /// Start a new GenericXLog transaction for `relation`.
+    ///
+    /// # Safety
+    ///
+    /// `relation` must be a live PostgreSQL relation pointer; the `'rel`
+    /// lifetime must outlive every safe operation on the returned scope.
+    pub(crate) unsafe fn start(relation: pg_sys::Relation) -> Self {
+        // SAFETY: caller guarantees `relation` is a live relation pointer.
+        Self {
+            txn: unsafe { GenericXLogTxn::start(relation) },
+            _rel: PhantomData,
+        }
+    }
+
+    /// Start a new GenericXLog transaction for the relation behind `handle`.
+    ///
+    /// Safe variant of [`start`](Self::start) — callers that already hold a
+    /// validated [`RelationHandle`] pass it through this entry point so the
+    /// WAL scope inherits the handle's "live relation" SAFETY contract
+    /// instead of re-establishing it at every call site.
+    pub(crate) fn start_handle(handle: RelationHandle) -> Self {
+        // SAFETY: `RelationHandle` is a non-null pointer whose construction
+        // contract requires a live opened PostgreSQL relation; that contract
+        // satisfies `GenericXLogStart`'s precondition.
+        unsafe { Self::start(handle.as_ptr()) }
+    }
+
+    /// Register a locked buffer as a full-page image and return the writable
+    /// page wrapper. The returned [`RegisteredBufferPage`] exposes safe
+    /// `init` / `add_item` operations.
+    pub(crate) fn register_page<'txn, 'buffer>(
+        &'txn mut self,
+        buffer: &'buffer LockedBufferGuard,
+    ) -> RegisteredBufferPage<'txn, 'buffer> {
+        self.txn.register_locked_buffer_full_image_page(buffer)
+    }
+
+    /// Finish the underlying GenericXLog transaction and return the WAL
+    /// pointer.
+    pub(crate) fn finish(self) -> pg_sys::XLogRecPtr {
+        self.txn.finish()
     }
 }

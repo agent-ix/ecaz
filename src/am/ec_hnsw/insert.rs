@@ -656,7 +656,12 @@ unsafe fn run_insert_with_adapter(
                     }
 
                     let output = bootstrap_empty_pq_fastscan_flush_output(index_relation, tuple);
-                    build::write_data_pages(index_relation, &output.data_pages);
+                    let handle = std::ptr::NonNull::new(index_relation).unwrap_or_else(|| {
+                        pgrx::error!(
+                            "ec_hnsw aminsert bootstrap received a null index relation"
+                        )
+                    });
+                    build::write_data_pages(handle, &output.data_pages);
                     *metadata = output.metadata;
                     true
                 })

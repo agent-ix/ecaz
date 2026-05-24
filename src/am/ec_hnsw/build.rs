@@ -17,7 +17,8 @@ use crate::am::common::{
     training::{self, GroupedPq4Model},
 };
 use crate::storage::{
-    buffer_guard::LockedBufferGuard, relation_guard::HeapRelationGuard, scan_guard::HeapScanGuard,
+    buffer_guard::LockedBufferGuard, relation::RelationHandle,
+    relation_guard::HeapRelationGuard, scan_guard::HeapScanGuard,
     slot_guard::TupleTableSlotGuard, snapshot_guard::ActiveSnapshotGuard, wal,
 };
 
@@ -254,7 +255,11 @@ pub(super) unsafe extern "C-unwind" fn ec_hnsw_ambuild(
                 flush_timing.graph_us = graph_build.graph_us;
                 flush_timing.stage_us = graph_build.stage_us;
                 let write_start = Instant::now();
-                flush_build_output(index_relation, &graph_build.output);
+                let flush_handle =
+                    std::ptr::NonNull::new(index_relation).unwrap_or_else(|| {
+                        pgrx::error!("ec_hnsw ambuild flush received a null index relation")
+                    });
+                flush_build_output(flush_handle, &graph_build.output);
                 flush_timing.write_us = elapsed_us(write_start);
             } else {
                 flush_build_state_with_timing(index_relation, &state, &mut flush_timing);
@@ -1587,15 +1592,16 @@ unsafe fn flush_build_state_with_timing(
     state: &BuildState,
     timing: &mut BuildFlushTiming,
 ) {
+    let handle = std::ptr::NonNull::new(index_relation).unwrap_or_else(|| {
+        pgrx::error!("ec_hnsw flush_build_state_with_timing received a null index relation")
+    });
     let output = match state.options.storage_format {
         options::StorageFormat::TurboQuant => current_format_flush_output(state, timing),
         options::StorageFormat::PqFastScan => default_pq_fastscan_flush_output(state)
             .unwrap_or_else(|e| pgrx::error!("ec_hnsw pq_fastscan build failed: {e}")),
     };
     let write_start = Instant::now();
-    // SAFETY: `output` was produced from the validated build state, and the
-    // live index relation is still held by ambuild while pages are written.
-    unsafe { flush_build_output(index_relation, &output) };
+    flush_build_output(handle, &output);
     timing.write_us = elapsed_us(write_start);
 }
 
@@ -1801,13 +1807,9 @@ fn current_format_flush_output_from_graph_nodes_with_timing(
     }
 }
 
-unsafe fn flush_build_output(index_relation: pg_sys::Relation, output: &BuildFlushOutput) {
-    // SAFETY: `output.data_pages` is an in-memory chain produced by the build
-    // planner, and `index_relation` is live while ambuild writes index pages.
-    unsafe { write_data_pages(index_relation, &output.data_pages) };
-    // SAFETY: The data pages have been written, and metadata was produced from
-    // the same validated build output for this live index relation.
-    unsafe { shared::initialize_metadata_page(index_relation, output.metadata.clone()) };
+fn flush_build_output(handle: RelationHandle, output: &BuildFlushOutput) {
+    write_data_pages(handle, &output.data_pages);
+    shared::initialize_metadata_page_handle(handle, output.metadata.clone());
 }
 
 pub(super) fn build_hnsw_graph(state: &BuildState) -> Vec<HnswBuildNode> {
@@ -2372,52 +2374,31 @@ fn entry_point_score(
         .sum()
 }
 
-pub(super) unsafe fn write_data_pages(
-    index_relation: pg_sys::Relation,
-    data_pages: &page::DataPageChain,
-) {
+pub(super) fn write_data_pages(handle: RelationHandle, data_pages: &page::DataPageChain) {
     for staged_page in data_pages.pages() {
-        // SAFETY: `index_relation` is live and P_NEW requests a new zeroed page
-        // locked exclusively for this build writer.
-        let buffer = unsafe {
-            LockedBufferGuard::read_main_locked(
-                index_relation,
-                P_NEW,
-                pg_sys::ReadBufferMode::RBM_ZERO_AND_LOCK,
-            )
-        };
-        let buffer = buffer.unwrap_or_else(|| {
+        let buffer = LockedBufferGuard::read_main_locked_handle(
+            handle,
+            P_NEW,
+            pg_sys::ReadBufferMode::RBM_ZERO_AND_LOCK,
+        )
+        .unwrap_or_else(|| {
             pgrx::error!(
                 "ec_hnsw failed to allocate data buffer for block {}",
                 staged_page.block_number()
             )
         });
 
-        let page_size = buffer.page_size();
-        // SAFETY: The live index relation is the WAL target for this page write.
-        let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
-        let page_ptr = wal_txn.register_locked_buffer_full_image(&buffer);
-        // SAFETY: `page_ptr` refers to the newly allocated zeroed page and
-        // `page_size` comes from the locked buffer.
-        unsafe { pg_sys::PageInit(page_ptr, page_size, 0) };
-
-        for tuple in staged_page.tuples() {
-            // SAFETY: `page_ptr` is initialized and locked, and each staged
-            // tuple byte slice remains live for the duration of the call.
-            let offset = unsafe {
-                pg_sys::PageAddItemExtended(
-                    page_ptr,
-                    tuple.as_ptr().cast_mut().cast(),
-                    tuple.len(),
-                    pg_sys::InvalidOffsetNumber,
-                    0,
-                )
-            };
-            if offset == pg_sys::InvalidOffsetNumber {
-                pgrx::error!(
-                    "ec_hnsw failed to write tuple to block {}",
-                    staged_page.block_number()
-                );
+        let mut wal_txn = wal::WalTxnScope::start_handle(handle);
+        {
+            let mut page = wal_txn.register_page(&buffer);
+            page.init(0);
+            for tuple in staged_page.tuples() {
+                page.add_item(tuple).unwrap_or_else(|err| {
+                    pgrx::error!(
+                        "ec_hnsw failed to write tuple to block {}",
+                        err.block_number
+                    )
+                });
             }
         }
 

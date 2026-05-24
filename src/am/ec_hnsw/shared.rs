@@ -19,21 +19,33 @@ pub(super) unsafe fn initialize_metadata_page(
     index_relation: pg_sys::Relation,
     metadata: page::MetadataPage,
 ) {
-    let existing_blocks = hnsw_main_block_count(index_relation);
+    let handle = NonNull::new(index_relation).unwrap_or_else(|| {
+        pgrx::error!("ec_hnsw initialize_metadata_page received a null index relation")
+    });
+    initialize_metadata_page_handle(handle, metadata);
+}
+
+pub(super) fn initialize_metadata_page_handle(
+    handle: crate::storage::relation::RelationHandle,
+    metadata: page::MetadataPage,
+) {
+    let index_relation = handle.as_ptr();
+    let existing_blocks =
+        crate::storage::relation::main_fork_block_count_handle(handle);
     let target_block = if existing_blocks == 0 {
         P_NEW
     } else {
         page::METADATA_BLOCK_NUMBER
     };
     let buffer = if target_block == P_NEW {
-        LockedBufferGuard::read_main_locked(
-            index_relation,
+        LockedBufferGuard::read_main_locked_handle(
+            handle,
             target_block,
             pg_sys::ReadBufferMode::RBM_ZERO_AND_LOCK,
         )
     } else {
-        LockedBufferGuard::read_main(
-            index_relation,
+        LockedBufferGuard::read_main_handle(
+            handle,
             target_block,
             pg_sys::ReadBufferMode::RBM_NORMAL,
             pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
@@ -93,8 +105,18 @@ pub(super) unsafe fn with_locked_metadata_page<T>(
     index_relation: pg_sys::Relation,
     f: impl FnOnce(&mut page::MetadataPage) -> T,
 ) -> T {
-    let buffer = LockedBufferGuard::read_main(
-        index_relation,
+    let handle = NonNull::new(index_relation).unwrap_or_else(|| {
+        pgrx::error!("ec_hnsw with_locked_metadata_page received a null index relation")
+    });
+    with_locked_metadata_page_handle(handle, f)
+}
+
+pub(super) fn with_locked_metadata_page_handle<T>(
+    handle: crate::storage::relation::RelationHandle,
+    f: impl FnOnce(&mut page::MetadataPage) -> T,
+) -> T {
+    let buffer = LockedBufferGuard::read_main_handle(
+        handle,
         page::METADATA_BLOCK_NUMBER,
         pg_sys::ReadBufferMode::RBM_NORMAL,
         pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
@@ -109,7 +131,7 @@ pub(super) unsafe fn with_locked_metadata_page<T>(
         page::MetadataPage::decode_page(page_bytes).expect("metadata page should decode");
     let result = f(&mut metadata);
 
-    rewrite_metadata_buffer(index_relation, &buffer, page_size, metadata);
+    rewrite_metadata_buffer(handle.as_ptr(), &buffer, page_size, metadata);
     result
 }
 
