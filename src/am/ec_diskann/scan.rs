@@ -36,7 +36,7 @@ use crate::am::ec_diskann::{
 };
 use crate::storage::page::ItemPointer;
 use std::cmp::Reverse;
-use std::collections::{BinaryHeap, HashMap};
+use std::collections::BinaryHeap;
 
 /// Scan-time tuning parameters. Every value must be > 0.
 #[derive(Debug, Clone, Copy)]
@@ -88,6 +88,23 @@ pub struct ScanCandidate {
 struct FrontierEntry {
     candidate: ScanCandidate,
     neighbors: Vec<ItemPointer>,
+}
+
+impl PartialEq for FrontierEntry {
+    fn eq(&self, other: &Self) -> bool {
+        self.candidate == other.candidate
+    }
+}
+impl Eq for FrontierEntry {}
+impl Ord for FrontierEntry {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.candidate.cmp(&other.candidate)
+    }
+}
+impl PartialOrd for FrontierEntry {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
 }
 
 impl PartialEq for ScanCandidate {
@@ -332,10 +349,8 @@ where
         has_overflow_heaptids: entry_tuple.has_overflow_heaptids,
     };
 
-    let mut entries: HashMap<ItemPointer, FrontierEntry> = HashMap::with_capacity(list_size);
-    let mut next_heap: BinaryHeap<Reverse<ScanCandidate>> = BinaryHeap::new();
+    let mut next_heap: BinaryHeap<Reverse<FrontierEntry>> = BinaryHeap::with_capacity(list_size);
     push_frontier_entry(
-        &mut entries,
         &mut next_heap,
         scratch,
         entry,
@@ -346,21 +361,19 @@ where
     loop {
         maybe_check_for_interrupts();
 
-        let Some(next) = peek_next_active(&mut next_heap, &entries, scratch) else {
+        let Some(next) = peek_next_active(&mut next_heap, scratch) else {
             break;
         };
         if visited_best.len() >= list_size && next >= visited_best[list_size - 1] {
             break;
         }
 
-        let picked = pop_next_active(&mut next_heap, &entries, scratch)
+        let picked_entry = pop_next_active(&mut next_heap, scratch)
             .expect("peek_next_active returned an active candidate");
+        let picked = picked_entry.candidate;
         scratch.visited.insert(picked.tid);
         insert_visited_sorted(&mut visited_best, picked);
 
-        let Some(picked_entry) = entries.remove(&picked.tid) else {
-            continue;
-        };
         for nbr in picked_entry.neighbors {
             if nbr == ItemPointer::INVALID {
                 continue;
@@ -378,7 +391,6 @@ where
                 has_overflow_heaptids: nbr_tuple.has_overflow_heaptids,
             };
             push_frontier_entry(
-                &mut entries,
                 &mut next_heap,
                 scratch,
                 candidate,
@@ -401,59 +413,43 @@ fn neighbors_from_tuple(tuple: &VamanaNodeTuple) -> Vec<ItemPointer> {
 }
 
 fn push_frontier_entry(
-    entries: &mut HashMap<ItemPointer, FrontierEntry>,
-    next_heap: &mut BinaryHeap<Reverse<ScanCandidate>>,
+    next_heap: &mut BinaryHeap<Reverse<FrontierEntry>>,
     scratch: &mut VisitedState,
     candidate: ScanCandidate,
     neighbors: Vec<ItemPointer>,
 ) {
     scratch.in_frontier.insert(candidate.tid);
-    entries.insert(
-        candidate.tid,
-        FrontierEntry {
-            candidate,
-            neighbors,
-        },
-    );
-    next_heap.push(Reverse(candidate));
+    next_heap.push(Reverse(FrontierEntry {
+        candidate,
+        neighbors,
+    }));
 }
 
 fn peek_next_active(
-    next_heap: &mut BinaryHeap<Reverse<ScanCandidate>>,
-    entries: &HashMap<ItemPointer, FrontierEntry>,
+    next_heap: &mut BinaryHeap<Reverse<FrontierEntry>>,
     scratch: &VisitedState,
 ) -> Option<ScanCandidate> {
-    while let Some(Reverse(candidate)) = next_heap.peek().copied() {
+    while let Some(Reverse(entry)) = next_heap.peek() {
+        let candidate = entry.candidate;
         if scratch.visited.contains(&candidate.tid) {
             next_heap.pop();
             continue;
         }
-        if entries
-            .get(&candidate.tid)
-            .is_some_and(|entry| same_candidate(entry.candidate, candidate))
-        {
-            return Some(candidate);
-        }
-        next_heap.pop();
+        return Some(candidate);
     }
     None
 }
 
 fn pop_next_active(
-    next_heap: &mut BinaryHeap<Reverse<ScanCandidate>>,
-    entries: &HashMap<ItemPointer, FrontierEntry>,
+    next_heap: &mut BinaryHeap<Reverse<FrontierEntry>>,
     scratch: &VisitedState,
-) -> Option<ScanCandidate> {
-    while let Some(Reverse(candidate)) = next_heap.pop() {
+) -> Option<FrontierEntry> {
+    while let Some(Reverse(entry)) = next_heap.pop() {
+        let candidate = entry.candidate;
         if scratch.visited.contains(&candidate.tid) {
             continue;
         }
-        if entries
-            .get(&candidate.tid)
-            .is_some_and(|entry| same_candidate(entry.candidate, candidate))
-        {
-            return Some(candidate);
-        }
+        return Some(entry);
     }
     None
 }
@@ -461,14 +457,6 @@ fn pop_next_active(
 fn insert_visited_sorted(visited_best: &mut Vec<ScanCandidate>, candidate: ScanCandidate) {
     let idx = visited_best.partition_point(|existing| *existing < candidate);
     visited_best.insert(idx, candidate);
-}
-
-fn same_candidate(left: ScanCandidate, right: ScanCandidate) -> bool {
-    left.tid == right.tid
-        && left.primary_heaptid == right.primary_heaptid
-        && left.score.to_bits() == right.score.to_bits()
-        && left.emittable == right.emittable
-        && left.has_overflow_heaptids == right.has_overflow_heaptids
 }
 
 #[cfg(test)]
