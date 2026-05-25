@@ -16,7 +16,7 @@ out of scope for this phase.
 
 ## 13e.1 Static Remote Placement And Distributed Load
 
-- [ ] Add a distributed placement config consumed by `ecaz corpus load --profile ec_spire`.
+- [x] Add a distributed placement config consumed by `ecaz corpus load --profile ec_spire`.
 - [ ] Load each shard onto its owning remote, build and publish the remote SPIRE index, and register the remote descriptor on the coordinator.
 - [ ] Publish coordinator placement-directory entries with remote `node_id` values through production code, not test-only placement rewrites.
 - [ ] Add a local PG18 1-coordinator plus 3-remote fixture proving remote placements exist after load.
@@ -25,7 +25,7 @@ Acceptance:
 
 - [ ] Coordinator placement snapshot shows remote placements by node.
 - [ ] No AWS/local production fixture calls `tests.ec_spire_test_rewrite_placement_node`.
-- [ ] Empty or local-only placement directories fail the distributed smoke gate.
+- [x] Empty or local-only placement directories fail the distributed smoke gate.
 
 ## 13e.2 Distributed CustomScan Read Path
 
