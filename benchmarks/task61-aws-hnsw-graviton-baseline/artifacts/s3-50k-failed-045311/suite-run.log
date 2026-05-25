@@ -1,0 +1,15 @@
+[suite:task61-aws-hnsw-graviton-baseline-50k] wrote benchmarks/task61-aws-hnsw-graviton-baseline/artifacts/suite-manifest.json
+[suite:task61-aws-hnsw-graviton-baseline-50k] prepare-ec-real-50k -> --database postgres --host /var/run/postgresql --user postgres corpus prepare --profile ec_real_50k --parquet /var/lib/pgsql/18/datasets/dbpedia-openai3-1m/data --output-dir /var/lib/pgsql/18/datasets/staged-task61-hnsw-baseline
+[suite:task61-aws-hnsw-graviton-baseline-50k] wrote benchmarks/task61-aws-hnsw-graviton-baseline/artifacts/suite-manifest.json
+[suite:task61-aws-hnsw-graviton-baseline-50k] wrote benchmarks/task61-aws-hnsw-graviton-baseline/artifacts/suite-manifest.json
+[suite:task61-aws-hnsw-graviton-baseline-50k] load-50k-hnsw-default -> --database postgres --host /var/run/postgresql --user postgres --log-file benchmarks/task61-aws-hnsw-graviton-baseline/artifacts/load-50k-hnsw-default.log corpus load --prefix task61_real_50k_hnsw --profile ec_hnsw --corpus-file /var/lib/pgsql/18/datasets/staged-task61-hnsw-baseline/ec_real_50k_corpus.tsv --queries-file /var/lib/pgsql/18/datasets/staged-task61-hnsw-baseline/ec_real_50k_queries.tsv --manifest-file /var/lib/pgsql/18/datasets/staged-task61-hnsw-baseline/ec_real_50k_manifest.json --allow-manifest-mismatch --bits 4 --seed 42 --m 16 --ef-construction 128
+[suite:task61-aws-hnsw-graviton-baseline-50k] wrote benchmarks/task61-aws-hnsw-graviton-baseline/artifacts/suite-manifest.json
+[suite:task61-aws-hnsw-graviton-baseline-50k] wrote benchmarks/task61-aws-hnsw-graviton-baseline/artifacts/suite-manifest.json
+
+   0: [91msuite step "load-50k-hnsw-default" failed with exit code 1; rerun with --continue-on-error to keep going[0m
+
+Location:
+   [35mcrates/ecaz-cli/src/commands/bench/suite.rs[0m:[35m713[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.
