@@ -1,0 +1,24 @@
+107:        unsafe { f(&*self.coord) }
+187:        let slot = unsafe { &*self.base.cast::<u8>().add(offset).cast::<EcParallelWorkerSlot>() };
+197:        unsafe { EcParallelCoordinatorView::from_raw(self.coordinator) }
+204:        unsafe {
+314:    let max_workers = unsafe { pg_sys::max_parallel_workers_per_gather }.max(0) as u32;
+325:    unsafe {
+342:    unsafe {
+361:    unsafe {
+470:    let state = unsafe {
+492:    let state = unsafe {
+513:    Ok(Some(validate_parallel_scan_state(unsafe { &*state })?))
+526:        unsafe { &mut *target.cast::<EcParallelScanState>() },
+537:    unsafe {
+561:    let attachment = validate_parallel_scan_state(unsafe { &*state })?;
+576:    let attachment = validate_parallel_scan_state(unsafe { &*state })?;
+589:    let attachment = validate_parallel_scan_state(unsafe { &*state })?;
+603:    let state_ref = unsafe { &mut *state };
+672:            validate_parallel_scan_state(unsafe { &*self.0 })
+703:        unsafe {
+709:        unsafe {
+740:        unsafe { storage.bytes.as_mut_ptr().add(TEST_PARALLEL_SCAN_OFFSET) }.cast::<c_void>()
+746:        unsafe {
+758:        unsafe { parallel_scan_attachment(parallel_scan) }
+816:        unsafe { reset_parallel_scan_state(parallel_scan) }
