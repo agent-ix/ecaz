@@ -435,14 +435,12 @@ where
             return None;
         }
 
-        let candidate = self
+        let position = self
             .discovery_order
             .iter()
-            .find(|discovered| discovered.node == node)
-            .copied()?;
+            .position(|discovered| discovered.node == node)?;
+        let candidate = self.discovery_order.remove(position);
         self.visited.remove(&node);
-        self.discovery_order
-            .retain(|discovered| discovered.node != node);
         Some(candidate)
     }
 
