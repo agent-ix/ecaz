@@ -1,0 +1,60 @@
+{
+  "suite": "phase13e-spire-production-read-profile-smoke",
+  "schema_version": 1,
+  "config": "reviews/task-30/970-spire-phase13e-production-read-profile-suite/artifacts/spire-pipeline-suite.json",
+  "config_sha256": "1bd850d2f5f91e9357d5ff9f3421a15657f6b64aecb6bb0778a952ab24816454",
+  "dry_run": true,
+  "generated_at_unix_ms": 1779732971570,
+  "connection": {
+    "database": "tqvector_bench",
+    "host": null,
+    "port": null,
+    "user": null,
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "production-read-profile",
+      "kind": "spire-pipeline",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "bench",
+        "spire-pipeline",
+        "--prefix",
+        "phase13e_spire",
+        "--index",
+        "phase13e_spire_idx",
+        "--queries-limit",
+        "5",
+        "--sweep",
+        "3",
+        "--include-remote",
+        "--require-remote-placements",
+        "--top-k",
+        "10",
+        "--remote-tuple-transport",
+        "pg_binary_attr_v1",
+        "--include-query-metrics",
+        "--include-recall",
+        "--include-production-read-profile",
+        "--query-metric-k",
+        "10",
+        "--query-metric-projection-columns",
+        "title",
+        "--log-output",
+        "reviews/task-30/970-spire-phase13e-production-read-profile-suite/artifacts/spire-pipeline.log"
+      ],
+      "selected": true,
+      "tags": [
+        "phase13e",
+        "spire",
+        "profile"
+      ],
+      "expected_artifacts": [
+        "reviews/task-30/970-spire-phase13e-production-read-profile-suite/artifacts/spire-pipeline.log"
+      ],
+      "status": "dry-run"
+    }
+  ]
+}
