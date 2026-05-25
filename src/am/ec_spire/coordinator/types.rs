@@ -245,6 +245,22 @@ pub(crate) struct SpireRemoteSearchLocalHeapCandidateSummaryRow {
     pub(crate) recommendation: &'static str,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct SpireIndexLeafBaseAssignmentSnapshotRow {
+    pub(crate) active_epoch: u64,
+    pub(crate) leaf_pid: u64,
+    pub(crate) object_version: u64,
+    pub(crate) row_index: u32,
+    pub(crate) assignment_flags: u16,
+    pub(crate) vec_id: Vec<u8>,
+    pub(crate) row_locator: Vec<u8>,
+    pub(crate) heap_block: u32,
+    pub(crate) heap_offset: u16,
+    pub(crate) payload_format: u8,
+    pub(crate) gamma: f32,
+    pub(crate) encoded_payload: Vec<u8>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SpireRemoteSearchCoordinatorResultSummaryRow {
     pub(crate) requested_epoch: u64,

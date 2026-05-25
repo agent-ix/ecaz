@@ -95,6 +95,7 @@ jq -c '.remotes[]' "$PLAN_FILE" | while read -r remote_plan; do
   REQUIRED_PIDS="$LEAF_VERIFY_DIR/node-${NODE_ID}-coordinator-required-leaves.txt"
   OBSERVED_PIDS="$LEAF_VERIFY_DIR/node-${NODE_ID}-remote-observed-leaves.txt"
   MISSING_PIDS="$LEAF_VERIFY_DIR/node-${NODE_ID}-missing-or-mismatched-leaves.txt"
+  COORD_BASE_ASSIGNMENTS="$LEAF_VERIFY_DIR/node-${NODE_ID}-coordinator-base-assignments.tsv"
 
   ecaz dev sql \
     --host "$COORD_HOST" --user ecaz_coord --database postgres \
@@ -110,6 +111,14 @@ jq -c '.remotes[]' "$PLAN_FILE" | while read -r remote_plan; do
     --sql "SELECT leaf_pid::text || E'\t' || effective_assignment_count::text FROM ec_spire_index_leaf_snapshot(:'remote_index'::regclass::oid) WHERE placement_state = 'available' ORDER BY leaf_pid" \
     > "$OBSERVED_PIDS" \
     2> "$LEAF_VERIFY_DIR/node-${NODE_ID}-remote-observed-leaves.stderr.log"
+
+  ecaz dev sql \
+    --host "$COORD_HOST" --user ecaz_coord --database postgres \
+    --set "coord_index=$COORD_INDEX" \
+    --set "node_id=$NODE_ID" \
+    --file scripts/spire-aws/export-coordinator-leaf-base-assignments.sql \
+    > "$COORD_BASE_ASSIGNMENTS" \
+    2> "$LEAF_VERIFY_DIR/node-${NODE_ID}-coordinator-base-assignments.stderr.log"
 
   sort "$REQUIRED_PIDS" -o "$REQUIRED_PIDS"
   sort "$OBSERVED_PIDS" -o "$OBSERVED_PIDS"

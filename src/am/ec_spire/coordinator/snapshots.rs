@@ -2357,6 +2357,117 @@ pub(crate) fn index_leaf_snapshot(index: SpireLiveIndexRelation) -> Vec<SpireInd
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
+pub(crate) fn index_leaf_base_assignment_snapshot(
+    index: SpireLiveIndexRelation,
+    selected_leaf_pids: Vec<u64>,
+) -> Vec<SpireIndexLeafBaseAssignmentSnapshotRow> {
+    let result = (|| -> Result<Vec<SpireIndexLeafBaseAssignmentSnapshotRow>, String> {
+        let root_control = index.root_control();
+        let Some(anchor) = index.active_epoch_anchor(root_control)? else {
+            return Ok(Vec::new());
+        };
+        let snapshot = anchor.validated_snapshot()?;
+        let object_store = index.object_store()?;
+        let mut rows = Vec::new();
+
+        if selected_leaf_pids.is_empty() {
+            for manifest_entry in &snapshot.object_manifest().entries {
+                collect_leaf_base_assignment_snapshot_rows_for_pid(
+                    root_control.active_epoch,
+                    &snapshot,
+                    &object_store,
+                    manifest_entry.pid,
+                    false,
+                    &mut rows,
+                )?;
+            }
+        } else {
+            for leaf_pid in selected_leaf_pids {
+                collect_leaf_base_assignment_snapshot_rows_for_pid(
+                    root_control.active_epoch,
+                    &snapshot,
+                    &object_store,
+                    leaf_pid,
+                    true,
+                    &mut rows,
+                )?;
+            }
+        }
+
+        rows.sort_by_key(|row| (row.leaf_pid, row.row_index));
+        Ok(rows)
+    })();
+    result.unwrap_or_else(|e| pgrx::error!("{e}"))
+}
+
+fn collect_leaf_base_assignment_snapshot_rows_for_pid(
+    active_epoch: u64,
+    snapshot: &meta::SpireValidatedEpochSnapshot<'_>,
+    object_store: &impl storage::SpireObjectReader,
+    leaf_pid: u64,
+    explicit_selection: bool,
+    rows: &mut Vec<SpireIndexLeafBaseAssignmentSnapshotRow>,
+) -> Result<(), String> {
+    let lookup = snapshot.require_lookup(leaf_pid, "leaf base assignment snapshot")?;
+    let placement = lookup.placement;
+    if placement.state != meta::SpirePlacementState::Available {
+        if explicit_selection {
+            return Err(format!(
+                "ec_spire leaf base assignment snapshot selected leaf pid {leaf_pid} is not available"
+            ));
+        }
+        return Ok(());
+    }
+
+    let header = object_store.read_object_header(placement)?;
+    if header.kind != storage::SpirePartitionObjectKind::Leaf {
+        if explicit_selection {
+            return Err(format!(
+                "ec_spire leaf base assignment snapshot selected pid {leaf_pid} is not a leaf object"
+            ));
+        }
+        return Ok(());
+    }
+
+    let assignments = read_leaf_snapshot_base_assignments(object_store, placement)?;
+    for (row_index, assignment) in assignments.into_iter().enumerate() {
+        let row_index = u32::try_from(row_index)
+            .map_err(|_| "ec_spire leaf base assignment snapshot row index exceeds u32".to_owned())?;
+        rows.push(SpireIndexLeafBaseAssignmentSnapshotRow {
+            active_epoch,
+            leaf_pid,
+            object_version: lookup.manifest_entry.object_version,
+            row_index,
+            assignment_flags: assignment.flags,
+            vec_id: assignment.vec_id.as_bytes().to_vec(),
+            row_locator: remote_search_row_locator(assignment.heap_tid),
+            heap_block: assignment.heap_tid.block_number,
+            heap_offset: assignment.heap_tid.offset_number,
+            payload_format: assignment.payload_format,
+            gamma: assignment.gamma,
+            encoded_payload: assignment.encoded_payload,
+        });
+    }
+    Ok(())
+}
+
+fn read_leaf_snapshot_base_assignments(
+    object_store: &impl storage::SpireObjectReader,
+    placement: &meta::SpirePlacementEntry,
+) -> Result<Vec<storage::SpireLeafAssignmentRow>, String> {
+    match object_store.read_leaf_object_v2(placement) {
+        Ok(leaf_object) => leaf_object.assignment_rows(),
+        Err(v2_error) => object_store
+            .read_leaf_object(placement)
+            .map(|leaf_object| leaf_object.assignments)
+            .map_err(|v1_error| {
+                format!(
+                    "ec_spire leaf base assignment snapshot failed to read leaf object: v2 error: {v2_error}; v1 error: {v1_error}"
+                )
+            }),
+    }
+}
+
 fn collect_leaf_snapshot_rows(
     root_control: meta::SpireRootControlState,
     snapshot: &meta::SpireValidatedEpochSnapshot<'_>,

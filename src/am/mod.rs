@@ -133,6 +133,7 @@ pub(crate) use self::ec_spire::{
     index_health_snapshot as spire_index_health_snapshot,
     index_hierarchy_snapshot as spire_index_hierarchy_snapshot,
     index_insert_debt_snapshot as spire_index_insert_debt_snapshot,
+    index_leaf_base_assignment_snapshot as spire_index_leaf_base_assignment_snapshot,
     index_leaf_snapshot as spire_index_leaf_snapshot,
     index_level_parameter_snapshot as spire_index_level_parameter_snapshot,
     index_locked_maintenance_plan_snapshot as spire_index_locked_maintenance_plan_snapshot,

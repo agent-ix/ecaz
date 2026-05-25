@@ -17023,6 +17023,70 @@ fn ec_spire_index_leaf_snapshot(
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_spire_index_leaf_base_assignment_snapshot(
+    index_oid: pg_sys::Oid,
+    leaf_pids: Vec<i64>,
+) -> TableIterator<
+    'static,
+    (
+        name!(active_epoch, i64),
+        name!(leaf_pid, i64),
+        name!(object_version, i64),
+        name!(row_index, i64),
+        name!(assignment_flags, i16),
+        name!(vec_id, Vec<u8>),
+        name!(row_locator, Vec<u8>),
+        name!(heap_block, i64),
+        name!(heap_offset, i32),
+        name!(heap_ctid, String),
+        name!(payload_format, i32),
+        name!(gamma, f32),
+        name!(encoded_payload, Vec<u8>),
+    ),
+> {
+    if !relation_oid_exists(index_oid) {
+        return TableIterator::new(Vec::new().into_iter());
+    }
+    let leaf_pids = leaf_pids
+        .into_iter()
+        .map(|pid| {
+            u64::try_from(pid).unwrap_or_else(|_| {
+                pgrx::error!(
+                    "ec_spire_index_leaf_base_assignment_snapshot leaf PID {pid} is negative"
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    let index_relation =
+        open_valid_ec_spire_index_guard(index_oid, "ec_spire_index_leaf_base_assignment_snapshot");
+    let rows = with_spire_live_index_relation!(
+        index_relation,
+        am::spire_index_leaf_base_assignment_snapshot,
+        leaf_pids
+    );
+    drop(index_relation);
+
+    TableIterator::new(rows.into_iter().map(|row| {
+        (
+            i64::try_from(row.active_epoch).expect("active epoch should fit in i64"),
+            i64::try_from(row.leaf_pid).expect("leaf pid should fit in i64"),
+            i64::try_from(row.object_version).expect("object version should fit in i64"),
+            i64::from(row.row_index),
+            i16::try_from(row.assignment_flags).expect("assignment flags should fit in i16"),
+            row.vec_id,
+            row.row_locator,
+            i64::from(row.heap_block),
+            i32::from(row.heap_offset),
+            format!("({},{})", row.heap_block, row.heap_offset),
+            i32::from(row.payload_format),
+            row.gamma,
+            row.encoded_payload,
+        )
+    }))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_spire_index_maintenance_plan_snapshot(
     index_oid: pg_sys::Oid,
 ) -> TableIterator<
