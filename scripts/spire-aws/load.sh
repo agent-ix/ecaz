@@ -17,6 +17,7 @@ TOPOLOGY="${2:?topology JSON path required}"
 ARTIFACT_DIR="${3:?artifact directory required}"
 mkdir -p "$ARTIFACT_DIR"
 
+COORD_HOST=$(jq -r '.coordinator.private_ip' "$TOPOLOGY")
 WORK_DIR="${WORK_DIR:-/var/lib/ecaz}"
 
 write_distributed_placement_config() {
@@ -103,9 +104,17 @@ case "$TIER" in
       --corpus-file "$WORK_DIR/${PREFIX}_corpus.tsv" \
       --queries-file "$WORK_DIR/${PREFIX}_queries.tsv" \
       --profile ec_spire --dim 1536 --bits 4 --seed 42 \
+      --index-name "$COORD_INDEX" \
+      --log-output "$ARTIFACT_DIR/coordinator-load-${TIER}.log"
+    ecaz corpus load \
+      --host "$COORD_HOST" --user ecaz_coord --database postgres \
+      --prefix "$PREFIX" \
+      --corpus-file "$WORK_DIR/${PREFIX}_corpus.tsv" \
+      --queries-file "$WORK_DIR/${PREFIX}_queries.tsv" \
+      --profile ec_spire --dim 1536 --bits 4 --seed 42 \
       --distributed-placement-config "$PLACEMENT_CONFIG" \
       --distributed-placement-output-dir "$DISTRIBUTED_OUTPUT_DIR" \
-      --log-output "$ARTIFACT_DIR/corpus-load-${TIER}.log"
+      --log-output "$ARTIFACT_DIR/distributed-plan-${TIER}.log"
     ;;
   representative)
     PREFIX=ec_spire_aws_repr_1m
@@ -133,9 +142,19 @@ case "$TIER" in
       --manifest-file "$WORK_DIR/qdrant-dbpedia/prepared/${PREPARED_PREFIX}_manifest.json" \
       --allow-manifest-mismatch \
       --profile ec_spire --dim 1536 --bits 4 --seed 42 \
+      --index-name "$COORD_INDEX" \
+      --log-output "$ARTIFACT_DIR/coordinator-load-${TIER}.log"
+    ecaz corpus load \
+      --host "$COORD_HOST" --user ecaz_coord --database postgres \
+      --prefix "$PREFIX" \
+      --corpus-file "$WORK_DIR/qdrant-dbpedia/prepared/${PREPARED_PREFIX}_corpus.tsv" \
+      --queries-file "$WORK_DIR/qdrant-dbpedia/prepared/${PREPARED_PREFIX}_queries.tsv" \
+      --manifest-file "$WORK_DIR/qdrant-dbpedia/prepared/${PREPARED_PREFIX}_manifest.json" \
+      --allow-manifest-mismatch \
+      --profile ec_spire --dim 1536 --bits 4 --seed 42 \
       --distributed-placement-config "$PLACEMENT_CONFIG" \
       --distributed-placement-output-dir "$DISTRIBUTED_OUTPUT_DIR" \
-      --log-output "$ARTIFACT_DIR/corpus-load-${TIER}.log"
+      --log-output "$ARTIFACT_DIR/distributed-plan-${TIER}.log"
     ;;
   stress)
     PREFIX=ec_spire_aws_synth_10m
@@ -154,10 +173,18 @@ case "$TIER" in
       --prefix "$PREFIX" \
       --corpus-file "$WORK_DIR/${PREFIX}_corpus.tsv" \
       --queries-file "$WORK_DIR/${PREFIX}_queries.tsv" \
-      --profile ec_spire --dim 1536 --bits 4 --seed 42 --chunked \
+      --profile ec_spire --dim 1536 --bits 4 --seed 42 \
+      --index-name "$COORD_INDEX" \
+      --log-output "$ARTIFACT_DIR/coordinator-load-${TIER}.log"
+    ecaz corpus load \
+      --host "$COORD_HOST" --user ecaz_coord --database postgres \
+      --prefix "$PREFIX" \
+      --corpus-file "$WORK_DIR/${PREFIX}_corpus.tsv" \
+      --queries-file "$WORK_DIR/${PREFIX}_queries.tsv" \
+      --profile ec_spire --dim 1536 --bits 4 --seed 42 \
       --distributed-placement-config "$PLACEMENT_CONFIG" \
       --distributed-placement-output-dir "$DISTRIBUTED_OUTPUT_DIR" \
-      --log-output "$ARTIFACT_DIR/corpus-load-${TIER}.log"
+      --log-output "$ARTIFACT_DIR/distributed-plan-${TIER}.log"
     ;;
   *)
     echo "unknown tier: $TIER" >&2; exit 2 ;;

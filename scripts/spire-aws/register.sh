@@ -16,6 +16,7 @@ mkdir -p "$ARTIFACT_DIR"
 COORD_HOST=$(jq -r '.coordinator.private_ip' "$TOPOLOGY")
 IDENTITY_DIR="${ARTIFACT_DIR}/remote-identities"
 REGISTRATION_SQL="${ARTIFACT_DIR}/register-remotes-rendered.sql"
+PLACEMENT_REMOTES_JSON="${ARTIFACT_DIR}/placement-remotes.json"
 mkdir -p "$IDENTITY_DIR"
 
 if [[ ! -s "$PLAN_FILE" ]]; then
@@ -61,7 +62,22 @@ ecaz dev sql \
   --log-output "$ARTIFACT_DIR/register-remotes.log"
 
 COORD_INDEX=$(jq -r '.coordinator_index_name' "$PLAN_FILE")
+REMOTES_JSON=$(jq -c '.remotes | map({node_id})' "$PLAN_FILE")
+printf '%s\n' "$REMOTES_JSON" > "$PLACEMENT_REMOTES_JSON"
+
+ecaz dev sql \
+  --host "$COORD_HOST" --user ecaz_coord --database postgres \
+  --file scripts/spire-aws/publish-remote-placements.sql \
+  --set "coord_index=$COORD_INDEX" \
+  --set "remotes_json=$REMOTES_JSON" \
+  --log-output "$ARTIFACT_DIR/publish-remote-placements.log"
+
 ecaz dev sql \
   --host "$COORD_HOST" --user ecaz_coord --database postgres \
   --sql "SELECT * FROM ec_spire_remote_node_snapshot('${COORD_INDEX}'::regclass)" \
   --log-output "$ARTIFACT_DIR/remote-node-snapshot-baseline.log"
+
+ecaz dev sql \
+  --host "$COORD_HOST" --user ecaz_coord --database postgres \
+  --sql "SELECT * FROM ec_spire_index_placement_snapshot('${COORD_INDEX}'::regclass)" \
+  --log-output "$ARTIFACT_DIR/coordinator-placement-snapshot-after-remote-publish.log"

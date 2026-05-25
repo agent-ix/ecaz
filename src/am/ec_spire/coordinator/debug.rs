@@ -1,12 +1,10 @@
-#[cfg(any(test, feature = "pg_test"))]
 use crate::storage::relation_guard::IndexRelationGuard;
 
 fn not_implemented(callback: &str) -> ! {
     pgrx::error!("ec_spire {callback} is not implemented yet")
 }
 
-#[cfg(any(test, feature = "pg_test"))]
-unsafe fn debug_spire_manifest_bundle(
+unsafe fn spire_manifest_bundle_for_placement_publish(
     index_relation: pg_sys::Relation,
     root_control: meta::SpireRootControlState,
 ) -> Result<
@@ -31,6 +29,110 @@ unsafe fn debug_spire_manifest_bundle(
         object_manifest,
         placement_directory,
     ))
+}
+
+pub(crate) fn publish_static_remote_placement_nodes(
+    index_oid: pg_sys::Oid,
+    rewrites: &[(u64, u32)],
+) -> (u64, u64, u64) {
+    let lockmode = pg_sys::RowExclusiveLock as pg_sys::LOCKMODE;
+    let index_relation = IndexRelationGuard::open(
+        index_oid,
+        lockmode,
+        "ec_spire static remote placement publish",
+    );
+    let result = unsafe {
+        (|| -> Result<(u64, u64, u64), String> {
+            validate_static_remote_placement_rewrites(rewrites)?;
+            let root_control = page::read_root_control_page(index_relation.as_ptr());
+            let (local_store_config, epoch_manifest, object_manifest, mut placement_directory) =
+                spire_manifest_bundle_for_placement_publish(index_relation.as_ptr(), root_control)?;
+            let rewritten_count =
+                apply_static_remote_placement_rewrites(&mut placement_directory, rewrites)?;
+
+            let manifests = build::SpireEncodedManifestBundle {
+                epoch_manifest: epoch_manifest.encode()?,
+                object_manifest: object_manifest.encode()?,
+                placement_directory: placement_directory.encode()?,
+                local_store_config: local_store_config.encode()?,
+            };
+            let locators =
+                build::write_manifest_bundle_to_relation(index_relation.as_ptr(), &manifests)?;
+            let root_control = meta::SpireRootControlState::published_with_store_config(
+                root_control.active_epoch,
+                root_control.next_pid,
+                root_control.next_local_vec_seq,
+                locators.epoch_manifest_tid,
+                locators.object_manifest_tid,
+                locators.placement_directory_tid,
+                locators.local_store_config_tid,
+            )?;
+            page::initialize_root_control_page(index_relation.as_ptr(), root_control);
+            let remote_node_count = placement_directory
+                .entries
+                .iter()
+                .filter(|entry| entry.node_id != meta::SPIRE_LOCAL_NODE_ID)
+                .map(|entry| entry.node_id)
+                .collect::<std::collections::BTreeSet<_>>()
+                .len();
+            Ok((
+                root_control.active_epoch,
+                rewritten_count,
+                u64::try_from(remote_node_count)
+                    .map_err(|_| "ec_spire remote node count exceeds u64".to_owned())?,
+            ))
+        })()
+    };
+    result.unwrap_or_else(|e| pgrx::error!("{e}"))
+}
+
+fn validate_static_remote_placement_rewrites(rewrites: &[(u64, u32)]) -> Result<(), String> {
+    if rewrites.is_empty() {
+        return Err(
+            "ec_spire static remote placement publish requires at least one rewrite".to_owned(),
+        );
+    }
+    let mut seen = std::collections::BTreeSet::new();
+    for (pid, node_id) in rewrites {
+        if *pid == 0 {
+            return Err(
+                "ec_spire static remote placement publish pid must be greater than 0".to_owned(),
+            );
+        }
+        if *node_id == meta::SPIRE_LOCAL_NODE_ID {
+            return Err(format!(
+                "ec_spire static remote placement publish pid {pid} maps to local node_id {node_id}; use only remote node ids"
+            ));
+        }
+        if !seen.insert(*pid) {
+            return Err(format!(
+                "ec_spire static remote placement publish pid {pid} appears more than once"
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn apply_static_remote_placement_rewrites(
+    placement_directory: &mut meta::SpirePlacementDirectory,
+    rewrites: &[(u64, u32)],
+) -> Result<u64, String> {
+    let mut rewritten_count = 0_u64;
+    for (pid, node_id) in rewrites {
+        let placement = placement_directory
+            .entries
+            .iter_mut()
+            .find(|entry| entry.pid == *pid)
+            .ok_or_else(|| {
+                format!("ec_spire static remote placement publish missing pid {pid}")
+            })?;
+        placement.node_id = *node_id;
+        placement.local_store_id = *node_id;
+        rewritten_count = rewritten_count
+            .checked_add(1)
+            .ok_or_else(|| "ec_spire static remote placement rewrite count overflow".to_owned())?;
+    }
+    Ok(rewritten_count)
 }
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -483,7 +585,7 @@ pub(crate) fn debug_spire_rewrite_placement_state(
             // relation before rewriting placement state.
             let root_control = page::read_root_control_page(index_relation.as_ptr());
             let (local_store_config, epoch_manifest, object_manifest, mut placement_directory) =
-                debug_spire_manifest_bundle(index_relation.as_ptr(), root_control)?;
+                spire_manifest_bundle_for_placement_publish(index_relation.as_ptr(), root_control)?;
             let placement = placement_directory
                 .entries
                 .iter_mut()
@@ -551,7 +653,7 @@ pub(crate) fn debug_spire_rewrite_placement_nodes(
             // relation before rewriting placement nodes.
             let root_control = page::read_root_control_page(index_relation.as_ptr());
             let (local_store_config, epoch_manifest, object_manifest, mut placement_directory) =
-                debug_spire_manifest_bundle(index_relation.as_ptr(), root_control)?;
+                spire_manifest_bundle_for_placement_publish(index_relation.as_ptr(), root_control)?;
             for (pid, node_id) in rewrites {
                 let placement = placement_directory
                     .entries
@@ -602,7 +704,7 @@ pub(crate) fn debug_spire_rewrite_consistency_mode(index_oid: pg_sys::Oid, mode:
             // relation before rewriting consistency mode.
             let root_control = page::read_root_control_page(index_relation.as_ptr());
             let (local_store_config, mut epoch_manifest, object_manifest, placement_directory) =
-                debug_spire_manifest_bundle(index_relation.as_ptr(), root_control)?;
+                spire_manifest_bundle_for_placement_publish(index_relation.as_ptr(), root_control)?;
             epoch_manifest.consistency_mode = match mode {
                 "strict" => meta::SpireConsistencyMode::Strict,
                 "degraded" => meta::SpireConsistencyMode::Degraded,

@@ -1992,6 +1992,53 @@ fn ec_spire_index_placement_snapshot(
     }))
 }
 
+#[pg_extern]
+#[allow(clippy::type_complexity)]
+fn ec_spire_publish_static_remote_placement_nodes(
+    index_oid: pg_sys::Oid,
+    pids: Vec<i64>,
+    node_ids: Vec<i32>,
+) -> TableIterator<
+    'static,
+    (
+        name!(active_epoch, i64),
+        name!(rewritten_placement_count, i64),
+        name!(remote_node_count, i64),
+        name!(status, &'static str),
+    ),
+> {
+    validate_ec_spire_index(index_oid, "ec_spire_publish_static_remote_placement_nodes");
+    if pids.len() != node_ids.len() {
+        pgrx::error!(
+            "ec_spire_publish_static_remote_placement_nodes pids and node_ids lengths must match"
+        );
+    }
+    let rewrites = pids
+        .into_iter()
+        .zip(node_ids)
+        .map(|(pid, node_id)| {
+            let pid = u64::try_from(pid).unwrap_or_else(|_| {
+                pgrx::error!("ec_spire_publish_static_remote_placement_nodes pid {pid} is negative")
+            });
+            let node_id = u32::try_from(node_id).unwrap_or_else(|_| {
+                pgrx::error!(
+                    "ec_spire_publish_static_remote_placement_nodes node_id {node_id} is negative"
+                )
+            });
+            (pid, node_id)
+        })
+        .collect::<Vec<_>>();
+    let (active_epoch, rewritten_count, remote_node_count) =
+        am::spire_publish_static_remote_placement_nodes(index_oid, &rewrites);
+
+    TableIterator::once((
+        i64::try_from(active_epoch).expect("active epoch should fit in i64"),
+        i64::try_from(rewritten_count).expect("rewritten placement count should fit in i64"),
+        i64::try_from(remote_node_count).expect("remote node count should fit in i64"),
+        "published_static_remote_placements",
+    ))
+}
+
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
 fn ec_spire_remote_node_snapshot(
