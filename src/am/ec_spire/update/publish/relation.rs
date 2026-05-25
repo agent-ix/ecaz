@@ -14,23 +14,24 @@ impl SpireRelationScheduledPublishRelation {
         self.relation
     }
 
+    fn handle(&self) -> crate::storage::relation::RelationHandle {
+        std::ptr::NonNull::new(self.relation).unwrap_or_else(|| {
+            pgrx::error!("ec_spire scheduled replacement publish relation unexpectedly null")
+        })
+    }
+
     fn local_store_config_for_previous_epoch(
         &self,
         previous_epoch_manifest: &SpireEpochManifest,
     ) -> Result<SpireLocalStoreConfig, String> {
-        // SAFETY: this wrapper is constructed for the open SPIRE index relation
-        // being published. The root/control read and local-store config load are
-        // from the same relation and root/control state.
-        unsafe {
-            let root_control = page::read_root_control_page(self.relation);
-            if root_control.active_epoch != previous_epoch_manifest.epoch {
-                return Err(format!(
-                    "ec_spire scheduled replacement publish root/control epoch {} does not match previous epoch {}",
-                    root_control.active_epoch, previous_epoch_manifest.epoch
-                ));
-            }
-            load_relation_local_store_config(self.relation, root_control)
+        let root_control = page::read_root_control_page_handle(self.handle());
+        if root_control.active_epoch != previous_epoch_manifest.epoch {
+            return Err(format!(
+                "ec_spire scheduled replacement publish root/control epoch {} does not match previous epoch {}",
+                root_control.active_epoch, previous_epoch_manifest.epoch
+            ));
         }
+        load_relation_local_store_config_handle(self.handle(), root_control)
     }
 }
 

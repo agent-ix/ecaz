@@ -457,9 +457,7 @@ pub(crate) fn debug_spire_relation_two_store_scan_roundtrip(
 pub(crate) fn debug_spire_root_control(index_oid: pg_sys::Oid) -> (u64, u64, u64) {
     let lockmode = pg_sys::AccessShareLock as pg_sys::LOCKMODE;
     let index_relation = IndexRelationGuard::open(index_oid, lockmode, "ec_spire debug");
-    // SAFETY: reads root/control state through the guarded debug index relation
-    // and returns copied scalar fields.
-    let root_control = unsafe { page::read_root_control_page(index_relation.as_ptr()) };
+    let root_control = page::read_root_control_page_handle(index_relation.handle());
     (
         root_control.active_epoch,
         root_control.next_pid,

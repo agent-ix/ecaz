@@ -29,6 +29,10 @@ impl SpirePageRelation {
         Self { relation }
     }
 
+    fn from_handle(relation: RelationHandle) -> Self {
+        Self { relation }
+    }
+
     fn raw(self) -> pg_sys::Relation {
         self.relation.as_ptr()
     }
@@ -49,9 +53,7 @@ impl SpirePageRelation {
         mode: pg_sys::ReadBufferMode::Type,
         lockmode: i32,
     ) -> Option<LockedBufferGuard> {
-        // SAFETY: this view is constructed only for an open SPIRE relation;
-        // callers supply the block/mode/lock shape for the page operation.
-        unsafe { LockedBufferGuard::read_main(self.raw(), block_number, mode, lockmode) }
+        LockedBufferGuard::read_main_handle(self.relation, block_number, mode, lockmode)
     }
 
     fn read_main_locked(
@@ -59,14 +61,11 @@ impl SpirePageRelation {
         block_number: pg_sys::BlockNumber,
         mode: pg_sys::ReadBufferMode::Type,
     ) -> Option<LockedBufferGuard> {
-        // SAFETY: this view is constructed only for an open SPIRE relation;
-        // callers pass a read mode that returns an already-locked buffer.
-        unsafe { LockedBufferGuard::read_main_locked(self.raw(), block_number, mode) }
+        LockedBufferGuard::read_main_locked_handle(self.relation, block_number, mode)
     }
 
-    fn start_wal(self) -> wal::GenericXLogTxn {
-        // SAFETY: this view is constructed only for an open SPIRE relation.
-        unsafe { wal::GenericXLogTxn::start(self.raw()) }
+    fn start_wal(self) -> wal::WalTxnScope<'static> {
+        wal::WalTxnScope::start_handle(self.relation)
     }
 }
 
@@ -165,19 +164,24 @@ impl SpireRegisteredPage {
     }
 }
 
+/// # Safety
+/// Caller guarantees `index_relation` is live for metadata rewrite.
 pub(super) unsafe fn initialize_root_control_page(
     index_relation: pg_sys::Relation,
     root_control: SpireRootControlState,
 ) {
-    // SAFETY: caller guarantees `index_relation` is live for metadata rewrite.
-    unsafe { initialize_spire_metadata_block_zero(index_relation, root_control) };
+    initialize_spire_metadata_block_zero(index_relation, root_control);
 }
 
+/// # Safety
+/// Caller guarantees `store_relation` is live for metadata rewrite.
 pub(super) unsafe fn initialize_aux_store_metadata_page(store_relation: pg_sys::Relation) {
-    // SAFETY: caller guarantees `store_relation` is live for metadata rewrite.
-    unsafe { initialize_spire_metadata_block_zero(store_relation, SpireRootControlState::empty()) };
+    initialize_spire_metadata_block_zero(store_relation, SpireRootControlState::empty());
 }
 
+/// # Safety
+/// Caller passes a live SPIRE index or store relation that owns block 0
+/// for the metadata rewrite.
 unsafe fn initialize_spire_metadata_block_zero(
     index_relation: pg_sys::Relation,
     root_control: SpireRootControlState,
@@ -201,7 +205,7 @@ unsafe fn initialize_spire_metadata_block_zero(
     .unwrap_or_else(|| pgrx::error!("ec_spire failed to allocate root/control buffer"));
     let page_size = buffer.page_size();
     let mut wal_txn = relation.start_wal();
-    let page = wal_txn.register_locked_buffer_full_image(&buffer);
+    let page = wal_txn.register_page(&buffer).page_ptr();
     let registered = SpireRegisteredPage::new(relation.raw(), buffer.block_number(), page);
     let root_control_bytes = root_control
         .encode()
@@ -212,6 +216,19 @@ unsafe fn initialize_spire_metadata_block_zero(
     wal_txn.finish();
 }
 
+/// Safe handle-based variant of [`read_root_control_page`] — the
+/// `RelationHandle` carries the "live SPIRE index/store relation"
+/// invariant that the unsafe entrypoint requires.
+pub(super) fn read_root_control_page_handle(
+    index_relation: RelationHandle,
+) -> SpireRootControlState {
+    // SAFETY: `RelationHandle` is a non-null pointer for a live relation.
+    unsafe { read_root_control_page(index_relation.as_ptr()) }
+}
+
+/// # Safety
+/// Caller passes a live SPIRE index or store relation that owns the
+/// metadata block.
 pub(super) unsafe fn read_root_control_page(
     index_relation: pg_sys::Relation,
 ) -> SpireRootControlState {
@@ -241,6 +258,9 @@ pub(super) unsafe fn read_root_control_page(
     root_control
 }
 
+/// # Safety
+/// Caller passes a live SPIRE index relation whose root/control block
+/// has been initialized.
 pub(super) unsafe fn append_object_tuple(
     index_relation: pg_sys::Relation,
     payload: &[u8],
@@ -278,15 +298,30 @@ pub(super) unsafe fn append_object_tuple(
     append_object_tuple_to_new_block(relation, payload)
 }
 
+/// Safe handle-based variant of [`read_object_tuple`].
+pub(super) fn read_object_tuple_handle(
+    index_relation: RelationHandle,
+    tid: crate::storage::page::ItemPointer,
+) -> Result<Vec<u8>, String> {
+    // SAFETY: `RelationHandle` is a non-null pointer for a live relation.
+    unsafe { read_object_tuple(index_relation.as_ptr(), tid) }
+}
+
+/// # Safety
+/// Caller passes a live SPIRE index relation; the helper validates the
+/// TID and keeps the page share-locked while copying tuple bytes into an
+/// owned Vec.
 pub(super) unsafe fn read_object_tuple(
     index_relation: pg_sys::Relation,
     tid: crate::storage::page::ItemPointer,
 ) -> Result<Vec<u8>, String> {
-    // SAFETY: this helper validates the TID and keeps the page share-locked
-    // while copying tuple bytes into an owned Vec.
-    unsafe { with_pinned_object_tuple(index_relation, tid, |tuple| Ok(tuple.to_vec())) }
+    with_pinned_object_tuple(index_relation, tid, |tuple| Ok(tuple.to_vec()))
 }
 
+/// # Safety
+/// Caller passes a live SPIRE index relation; the helper validates the
+/// TID, share-locks the page, and exposes tuple bytes only for the
+/// callback's duration.
 pub(super) unsafe fn with_pinned_object_tuple<F, R>(
     index_relation: pg_sys::Relation,
     tid: crate::storage::page::ItemPointer,
@@ -318,6 +353,22 @@ where
     }
 }
 
+/// Safe handle-based variant of [`scan_object_tuples`].
+pub(super) fn scan_object_tuples_handle<F>(
+    index_relation: RelationHandle,
+    visit: F,
+) -> Result<(), String>
+where
+    F: FnMut(crate::storage::page::ItemPointer, &[u8]) -> Result<(), String>,
+{
+    // SAFETY: `RelationHandle` is a non-null pointer for a live relation.
+    unsafe { scan_object_tuples(index_relation.as_ptr(), visit) }
+}
+
+/// # Safety
+/// Caller passes a live SPIRE object relation; the visitor runs while
+/// each page is held under BUFFER_LOCK_SHARE and must not re-enter the
+/// relation. Tuple bytes are valid only for the callback's duration.
 pub(super) unsafe fn scan_object_tuples<F>(
     index_relation: pg_sys::Relation,
     mut visit: F,
@@ -358,6 +409,9 @@ where
     Ok(())
 }
 
+/// # Safety
+/// Caller passes a live SPIRE index relation; `tid` and `payload` must
+/// match an existing object tuple's slot length on the indicated page.
 pub(super) unsafe fn rewrite_object_tuple_same_len(
     index_relation: pg_sys::Relation,
     tid: crate::storage::page::ItemPointer,
@@ -372,7 +426,7 @@ pub(super) unsafe fn rewrite_object_tuple_same_len(
         )
         .ok_or_else(|| format!("ec_spire failed to open object block {}", tid.block_number))?;
     let mut wal_txn = relation.start_wal();
-    let mut page = wal_txn.register_locked_buffer_full_image_page(&buffer);
+    let mut page = wal_txn.register_page(&buffer);
     let result = page.visit_tuple_bytes_mut(tid, "ec_spire object", |tuple| {
         if tuple.len() != payload.len() {
             return Err(format!(
@@ -397,6 +451,9 @@ pub(super) unsafe fn rewrite_object_tuple_same_len(
     }
 }
 
+/// # Safety
+/// Caller passes a live SPIRE index relation; `tids` reference object
+/// tuples on existing data blocks.
 pub(super) unsafe fn delete_object_tuples_no_compact(
     index_relation: pg_sys::Relation,
     tids: &[crate::storage::page::ItemPointer],
@@ -429,7 +486,7 @@ pub(super) unsafe fn delete_object_tuples_no_compact(
             )
             .ok_or_else(|| format!("ec_spire failed to open object block {block_number}"))?;
         let mut wal_txn = relation.start_wal();
-        let page = wal_txn.register_locked_buffer_full_image(&buffer);
+        let page = wal_txn.register_page(&buffer).page_ptr();
         let registered = SpireRegisteredPage::new(relation.raw(), block_number, page);
         let mut changed = false;
         for offset in offsets.into_iter().rev() {
@@ -483,7 +540,7 @@ fn try_append_object_tuple_to_block(
         )
         .ok_or_else(|| format!("ec_spire failed to open object block {block_number}"))?;
     let mut wal_txn = relation.start_wal();
-    let page = wal_txn.register_locked_buffer_full_image(&buffer);
+    let page = wal_txn.register_page(&buffer).page_ptr();
     let registered = SpireRegisteredPage::new(relation.raw(), block_number, page);
     let page_size = buffer.page_size();
     if raw_tuple_storage_bytes(payload.len()) > page_size {
@@ -532,7 +589,7 @@ fn append_object_tuple_to_new_block(
         .ok_or_else(|| "ec_spire failed to allocate object block".to_owned())?;
     let page_size = buffer.page_size();
     let mut wal_txn = relation.start_wal();
-    let page = wal_txn.register_locked_buffer_full_image(&buffer);
+    let page = wal_txn.register_page(&buffer).page_ptr();
     let registered = SpireRegisteredPage::new(relation.raw(), buffer.block_number(), page);
     registered.init_empty(page_size);
 

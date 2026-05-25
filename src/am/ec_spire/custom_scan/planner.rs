@@ -100,6 +100,9 @@ fn load_custom_scan_placement_directory(
     Ok(placement_directory)
 }
 
+/// # Safety
+/// PostgreSQL invokes set_rel_pathlist hooks with live planner pointers;
+/// the previous hook receives the original arguments first.
 #[pg_guard]
 unsafe extern "C-unwind" fn ec_spire_set_rel_pathlist_hook(
     root: *mut pg_sys::PlannerInfo,
@@ -107,14 +110,10 @@ unsafe extern "C-unwind" fn ec_spire_set_rel_pathlist_hook(
     rti: pg_sys::Index,
     rte: *mut pg_sys::RangeTblEntry,
 ) {
-    // SAFETY: PostgreSQL invokes set_rel_pathlist hooks with live planner
-    // pointers; the previous hook receives the original arguments first.
-    unsafe {
-        if let Some(previous_hook) = PREVIOUS_SET_REL_PATHLIST_HOOK {
-            previous_hook(root, rel, rti, rte);
-        }
+    if let Some(previous_hook) = PREVIOUS_SET_REL_PATHLIST_HOOK {
+        previous_hook(root, rel, rti, rte);
     }
-    let Some(hook_input) = (unsafe { CustomScanRelPathlistInput::new(root, rel, rte) }) else {
+    let Some(hook_input) = CustomScanRelPathlistInput::new(root, rel, rte) else {
         return;
     };
     if let Some((index_oid, eligibility)) = hook_input.custom_scan_candidate_index_oid() {
@@ -193,6 +192,9 @@ unsafe extern "C-unwind" fn ec_spire_set_rel_pathlist_hook(
     }
 }
 
+/// # Safety
+/// PostgreSQL calls PlanCustomPath with live planner/path/list pointers;
+/// allocated plan nodes are returned to PostgreSQL ownership.
 #[pg_guard]
 unsafe extern "C-unwind" fn ec_spire_plan_custom_path(
     root: *mut pg_sys::PlannerInfo,
@@ -202,9 +204,7 @@ unsafe extern "C-unwind" fn ec_spire_plan_custom_path(
     clauses: *mut pg_sys::List,
     custom_plans: *mut pg_sys::List,
 ) -> *mut pg_sys::Plan {
-    // SAFETY: PostgreSQL calls PlanCustomPath with live planner/path/list
-    // pointers; allocated plan nodes are returned to PostgreSQL ownership.
-    unsafe {
+    {
         let path = CustomScanPath::new(best_path).unwrap_or_else(|| {
             pgrx::error!("EcSpireDistributedScan PlanCustomPath missing CustomPath")
         });
@@ -266,6 +266,9 @@ unsafe extern "C-unwind" fn ec_spire_plan_custom_path(
     }
 }
 
+/// # Safety
+/// Caller provides live PlanCustomPath pointers; DML handoff copies
+/// expression nodes into the CustomScan before returning it to PostgreSQL.
 unsafe fn plan_dml_custom_path(
     root: *mut pg_sys::PlannerInfo,
     rel: *mut pg_sys::RelOptInfo,
@@ -275,9 +278,7 @@ unsafe fn plan_dml_custom_path(
     custom_plans: *mut pg_sys::List,
     mode: SpireCustomScanPlanMode,
 ) -> *mut pg_sys::Plan {
-    // SAFETY: caller provides live PlanCustomPath pointers; DML handoff copies
-    // expression nodes into the CustomScan before returning it to PostgreSQL.
-    unsafe {
+    {
         let plan_expr = match super::with_dml_frontdoor_baserel_view(root, rel, |baserel| {
             super::dml_frontdoor_primitive_plan_expr_from_baserel(baserel)
         })
@@ -329,31 +330,31 @@ unsafe fn plan_dml_custom_path(
     }
 }
 
+/// # Safety
+/// `plan_expr` expression pointers come from the live planner tree;
+/// copyObjectImpl duplicates them into planner memory for CustomScan.
 unsafe fn custom_scan_dml_custom_exprs_from_plan_expr(
     plan_expr: &super::dml_frontdoor::SpireDmlFrontdoorPrimitivePlanExpr,
 ) -> *mut pg_sys::List {
-    // SAFETY: plan_expr expression pointers come from the live planner tree;
-    // copyObjectImpl duplicates them into planner memory for CustomScan.
-    unsafe {
-        let mut custom_exprs = pg_sys::lappend(
-            std::ptr::null_mut(),
-            pg_sys::copyObjectImpl(plan_expr.pk_value_expr.cast()).cast(),
-        );
-        for expr in &plan_expr.updated_value_exprs {
-            custom_exprs =
-                pg_sys::lappend(custom_exprs, pg_sys::copyObjectImpl((*expr).cast()).cast());
-        }
-        custom_exprs
+    let mut custom_exprs = pg_sys::lappend(
+        std::ptr::null_mut(),
+        pg_sys::copyObjectImpl(plan_expr.pk_value_expr.cast()).cast(),
+    );
+    for expr in &plan_expr.updated_value_exprs {
+        custom_exprs =
+            pg_sys::lappend(custom_exprs, pg_sys::copyObjectImpl((*expr).cast()).cast());
     }
+    custom_exprs
 }
 
+/// # Safety
+/// `fallback_plan`, when non-null, is a live PostgreSQL plan node; this
+/// constructs a replacement CustomScan node in planner memory.
 pub(crate) unsafe fn custom_scan_dml_replacement_plan(
     plan_expr: super::dml_frontdoor::SpireDmlFrontdoorPrimitivePlanExpr,
     fallback_plan: *mut pg_sys::Plan,
 ) -> *mut pg_sys::Plan {
-    // SAFETY: fallback_plan, when non-null, is a live PostgreSQL plan node; this
-    // constructs a replacement CustomScan node in planner memory.
-    unsafe {
+    {
         let mode = custom_scan_plan_mode_for_dml_mode(plan_expr.primitive_plan.mode);
         let custom_exprs = custom_scan_dml_custom_exprs_from_plan_expr(&plan_expr);
         let mut custom_scan =

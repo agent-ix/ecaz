@@ -197,13 +197,14 @@ pub(crate) struct DmlFrontdoorBaserelView<'a> {
     rel: &'a pg_sys::RelOptInfo,
 }
 
+/// # Safety
+/// Caller guarantees `query` is live for the callback duration; the
+/// callback prevents the borrowed query view from escaping.
 pub(crate) unsafe fn with_dml_frontdoor_query_view<R>(
     query: *mut pg_sys::Query,
     f: impl for<'a> FnOnce(DmlFrontdoorQueryView<'a>) -> R,
 ) -> Option<R> {
-    // SAFETY: caller guarantees `query` is live for the callback duration; the
-    // callback prevents the borrowed query view from escaping.
-    unsafe { DmlFrontdoorQueryView::from_raw(query).map(f) }
+    DmlFrontdoorQueryView::from_raw(query).map(f)
 }
 
 pub(crate) fn with_analyzed_dml_frontdoor_query_view<R>(
@@ -218,6 +219,10 @@ pub(crate) fn with_analyzed_dml_frontdoor_query_view<R>(
     }))
 }
 
+/// # Safety
+/// Caller passes a live PostgreSQL `ParamListInfo` (or null) from the
+/// active planner/executor callback; the returned wrapper only borrows
+/// the pointer for read-only parameter reads.
 pub(crate) unsafe fn dml_frontdoor_param_list_info(
     params: pg_sys::ParamListInfo,
 ) -> DmlFrontdoorParamListInfo {
@@ -231,6 +236,9 @@ pub(crate) fn dml_frontdoor_const_plan_param_list_info() -> DmlFrontdoorParamLis
     }
 }
 
+/// # Safety
+/// Caller guarantees `root` and `rel` are live planner callback pointers
+/// and the callback prevents the borrowed baserel view from escaping.
 pub(crate) unsafe fn with_dml_frontdoor_baserel_view<R>(
     root: *mut pg_sys::PlannerInfo,
     rel: *mut pg_sys::RelOptInfo,
@@ -239,17 +247,13 @@ pub(crate) unsafe fn with_dml_frontdoor_baserel_view<R>(
     if root.is_null() || rel.is_null() {
         return None;
     }
-    // SAFETY: caller guarantees root/rel are live planner callback pointers
-    // and the callback prevents the borrowed baserel view from escaping.
-    unsafe {
-        let root_ref = root.as_ref()?;
-        let rel_ref = rel.as_ref()?;
-        let query_view = DmlFrontdoorQueryView::from_raw(root_ref.parse)?;
-        Some(f(DmlFrontdoorBaserelView {
-            query_view,
-            rel: rel_ref,
-        }))
-    }
+    let root_ref = root.as_ref()?;
+    let rel_ref = rel.as_ref()?;
+    let query_view = DmlFrontdoorQueryView::from_raw(root_ref.parse)?;
+    Some(f(DmlFrontdoorBaserelView {
+        query_view,
+        rel: rel_ref,
+    }))
 }
 
 impl DmlFrontdoorParamListInfo {
@@ -259,19 +263,18 @@ impl DmlFrontdoorParamListInfo {
 }
 
 impl<'a> DmlFrontdoorQueryView<'a> {
+    /// # Safety
+    /// Callers establish that the Query comes from the active PostgreSQL
+    /// planner callback. The view never outlives that callback and only
+    /// exposes immediate read-only accessors.
     unsafe fn from_raw(query: *mut pg_sys::Query) -> Option<Self> {
         if query.is_null() {
             return None;
         }
-        // SAFETY: callers establish that the Query comes from the active
-        // PostgreSQL planner callback. The view never outlives that callback
-        // and only exposes immediate read-only accessors.
-        unsafe {
-            query.as_ref().map(|query| Self {
-                query,
-                jointree: query.jointree.as_ref(),
-            })
-        }
+        query.as_ref().map(|query| Self {
+            query,
+            jointree: query.jointree.as_ref(),
+        })
     }
 
     fn as_ref(self) -> &'a pg_sys::Query {
@@ -441,14 +444,13 @@ unsafe extern "C" {
 const ADR_069_HINT: &str = "See ADR-069 for the v1 SPIRE distributed DML shape.";
 const DML_FRONTDOOR_MAX_COERCION_WRAPPER_DEPTH: usize = 32;
 
+/// # Safety
+/// `planner_hook` is PostgreSQL backend-local process state; install only
+/// once during extension initialization and preserve the previous hook.
 pub(crate) unsafe fn register_dml_frontdoor_planner_hook() {
-    // SAFETY: planner_hook is PostgreSQL backend-local process state; install
-    // only once during extension initialization and preserve the previous hook.
-    unsafe {
-        if !PLANNER_HOOK_INSTALLED.swap(true, Ordering::Relaxed) {
-            PREVIOUS_PLANNER_HOOK = pg_sys::planner_hook;
-            pg_sys::planner_hook = Some(ec_spire_dml_frontdoor_planner_hook);
-        }
+    if !PLANNER_HOOK_INSTALLED.swap(true, Ordering::Relaxed) {
+        PREVIOUS_PLANNER_HOOK = pg_sys::planner_hook;
+        pg_sys::planner_hook = Some(ec_spire_dml_frontdoor_planner_hook);
     }
     dml_frontdoor_record_hook_install();
     dml_frontdoor_register_relcache_callback();
@@ -1135,6 +1137,10 @@ pub(crate) fn dml_frontdoor_primitive_invocation_from_plan(
     })
 }
 
+/// # Safety
+/// `params` wraps a live `ParamListInfo` from the active executor
+/// callback whose `paramFetch`/datum slot for `param_id` may be invoked
+/// to materialize the bigint value.
 unsafe fn dml_frontdoor_bound_param_bigint_value(
     params: DmlFrontdoorParamListInfo,
     param_id: i32,

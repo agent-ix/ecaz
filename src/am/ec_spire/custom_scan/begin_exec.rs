@@ -1,23 +1,22 @@
+/// # Safety
+/// PostgreSQL calls this provider callback during custom scan state
+/// creation; palloc0 allocates executor-lifetime memory for the state.
 #[pg_guard]
 unsafe extern "C-unwind" fn ec_spire_create_custom_scan_state(
     _cscan: *mut pg_sys::CustomScan,
 ) -> *mut pg_sys::Node {
-    // SAFETY: PostgreSQL calls this provider callback during custom scan state
-    // creation; palloc0 allocates executor-lifetime memory for the state.
-    unsafe {
-        let allocation_context = pg_sys::CurrentMemoryContext;
-        custom_scan_note_memory_baseline_for_test(allocation_context);
-        let state = pg_sys::palloc0(std::mem::size_of::<SpireCustomScanExecState>())
-            .cast::<SpireCustomScanExecState>();
-        ptr::write(state, custom_scan_default_exec_state());
-        #[cfg(any(test, feature = "pg_test"))]
-        {
-            (*state).allocation_context = allocation_context;
-        }
-        (*state).custom_scan_state.ss.ps.type_ = pg_sys::NodeTag::T_CustomScanState;
-        (*state).custom_scan_state.methods = &raw const CUSTOM_EXEC_METHODS;
-        state.cast::<pg_sys::Node>()
+    let allocation_context = pg_sys::CurrentMemoryContext;
+    custom_scan_note_memory_baseline_for_test(allocation_context);
+    let state = pg_sys::palloc0(std::mem::size_of::<SpireCustomScanExecState>())
+        .cast::<SpireCustomScanExecState>();
+    ptr::write(state, custom_scan_default_exec_state());
+    #[cfg(any(test, feature = "pg_test"))]
+    {
+        (*state).allocation_context = allocation_context;
     }
+    (*state).custom_scan_state.ss.ps.type_ = pg_sys::NodeTag::T_CustomScanState;
+    (*state).custom_scan_state.methods = &raw const CUSTOM_EXEC_METHODS;
+    state.cast::<pg_sys::Node>()
 }
 
 fn custom_scan_default_exec_state() -> SpireCustomScanExecState {
@@ -48,24 +47,24 @@ fn custom_scan_default_exec_state() -> SpireCustomScanExecState {
 }
 
 #[pg_guard]
+/// # Safety
+/// PostgreSQL invokes BeginCustomScan with a live CustomScanState whose
+/// plan pointer is the provider-owned CustomScan built by the planner;
+/// all tuple-payload and query values are copied into Rust-owned state
+/// before this function returns.
 unsafe extern "C-unwind" fn ec_spire_begin_custom_scan(
     node: *mut pg_sys::CustomScanState,
     _estate: *mut pg_sys::EState,
     _eflags: core::ffi::c_int,
 ) {
     let state = custom_scan_exec_state_mut(node.cast(), "BeginCustomScan");
-    // SAFETY: PostgreSQL invokes BeginCustomScan with a live CustomScanState
-    // whose plan pointer is the provider-owned CustomScan built by the planner.
-    let plan = unsafe { CustomScanPlan::from_state(node) };
+    let plan = CustomScanPlan::from_state(node);
     let custom_scan = plan.as_ptr();
     let mode = plan.mode();
     let index_oid = plan.index_oid();
     match mode {
         SpireCustomScanPlanMode::VectorOrderLimit => {
-            // SAFETY: PostgreSQL invokes BeginCustomScan with the live
-            // provider-owned CustomScanState and matching CustomScan plan. All
-            // tuple payload and query values are copied into Rust-owned state.
-            let (tuple_payload_columns, tuple_payload_inputs, query) = unsafe {
+            let (tuple_payload_columns, tuple_payload_inputs, query) = {
                 let (tuple_payload_columns, tuple_payload_inputs) =
                     custom_scan_tuple_payload_state_from_plan(node, custom_scan);
                 let expr =
@@ -127,11 +126,7 @@ unsafe extern "C-unwind" fn ec_spire_begin_custom_scan(
         SpireCustomScanPlanMode::DmlPkSelectTuplePayload
         | SpireCustomScanPlanMode::DmlUpdateTuplePayload
         | SpireCustomScanPlanMode::DmlDeleteTuplePayload => {
-            // SAFETY: PostgreSQL invokes BeginCustomScan with the live
-            // provider-owned CustomScanState and matching CustomScan plan.
-            unsafe {
-                custom_scan_init_dml_exec_state(state, node, custom_scan, plan, mode, index_oid)
-            };
+            custom_scan_init_dml_exec_state(state, node, custom_scan, plan, mode, index_oid);
         }
     }
 }
@@ -158,14 +153,15 @@ fn custom_scan_init_vector_order_limit_exec_state(
     state.dml_tuple_payload_json = None;
 }
 
+/// # Safety
+/// `node` and `custom_scan` are the live executor state and matching
+/// plan; the current relation tuple descriptor remains valid during
+/// BeginCustomScan.
 unsafe fn custom_scan_tuple_payload_state_from_plan(
     node: *mut pg_sys::CustomScanState,
     custom_scan: *mut pg_sys::CustomScan,
 ) -> (Vec<String>, Vec<Option<SpireCustomScanPayloadAttrIo>>) {
-    // SAFETY: node/custom_scan are the live executor state and matching plan;
-    // the current relation tuple descriptor remains valid during BeginCustomScan.
-    unsafe {
-        let relation = custom_scan_current_relation(node, "tuple payload input descriptor");
+    let relation = custom_scan_current_relation(node, "tuple payload input descriptor");
         let relation = std::ptr::NonNull::new(relation).unwrap_or_else(|| {
             pgrx::error!("tuple payload input descriptor needs a valid relation")
         });
@@ -215,13 +211,16 @@ unsafe fn custom_scan_tuple_payload_state_from_plan(
             if !attr_numbers.is_empty() && !attr_numbers.contains(&attr.attnum) {
                 continue;
             }
-            custom_scan_validate_tuple_payload_attr(&attr);
-            columns.push(attr.name);
-        }
-        (columns, custom_scan_payload_attr_io(&tuple_desc))
+        custom_scan_validate_tuple_payload_attr(&attr);
+        columns.push(attr.name);
     }
+    (columns, custom_scan_payload_attr_io(&tuple_desc))
 }
 
+/// # Safety
+/// Caller passes the live BeginCustomScan state and matching
+/// provider-owned CustomScan plan. All plan-private metadata reads are
+/// copied into Rust-owned state before the callback returns.
 unsafe fn custom_scan_init_dml_exec_state(
     state: &mut SpireCustomScanExecState,
     node: *mut pg_sys::CustomScanState,
@@ -232,10 +231,7 @@ unsafe fn custom_scan_init_dml_exec_state(
 ) {
     state.mode = mode;
     state.index_oid = index_oid;
-    // SAFETY: caller passes the live BeginCustomScan state and matching
-    // provider-owned CustomScan plan. All plan-private metadata reads are
-    // copied into Rust-owned state before the callback returns.
-    unsafe {
+    {
         if mode == SpireCustomScanPlanMode::DmlPkSelectTuplePayload {
             let (tuple_payload_columns, tuple_payload_inputs) =
                 custom_scan_tuple_payload_state_from_plan(node, custom_scan);
@@ -320,40 +316,39 @@ unsafe fn custom_scan_init_dml_exec_state(
     .unwrap_or_else(|e| pgrx::error!("{e}"));
 }
 
+/// # Safety
+/// PostgreSQL invokes ExecCustomScan with the live CustomScanState;
+/// ExecScan owns callback invocation and scan tuple slot handling.
 #[pg_guard]
 unsafe extern "C-unwind" fn ec_spire_exec_custom_scan(
     node: *mut pg_sys::CustomScanState,
 ) -> *mut pg_sys::TupleTableSlot {
-    // SAFETY: PostgreSQL invokes ExecCustomScan with the live CustomScanState;
-    // ExecScan owns callback invocation and scan tuple slot handling.
-    unsafe {
-        pg_sys::ExecScan(
-            &mut (*node).ss,
-            Some(ec_spire_custom_scan_access),
-            Some(ec_spire_custom_scan_recheck),
-        )
-    }
+    pg_sys::ExecScan(
+        &mut (*node).ss,
+        Some(ec_spire_custom_scan_access),
+        Some(ec_spire_custom_scan_recheck),
+    )
 }
 
+/// # Safety
+/// PostgreSQL invokes EndCustomScan at most once for the live state
+/// allocated by create_custom_scan_state; this path drops Rust fields then
+/// pfree's it.
 #[pg_guard]
 unsafe extern "C-unwind" fn ec_spire_end_custom_scan(node: *mut pg_sys::CustomScanState) {
-    // SAFETY: PostgreSQL invokes EndCustomScan at most once for the live state
-    // allocated by create_custom_scan_state; this path drops Rust fields then pfree's it.
-    unsafe {
-        if node.is_null() {
-            return;
-        }
-        custom_scan_note_end_custom_scan_for_test();
-        let state = node.cast::<SpireCustomScanExecState>();
-        #[cfg(any(test, feature = "pg_test"))]
-        let allocation_context = (*state).allocation_context;
-        custom_scan_release_exec_state_for_end(&mut *state);
-        ptr::drop_in_place(state);
-        custom_scan_note_pfree_for_test();
-        pg_sys::pfree(state.cast());
-        #[cfg(any(test, feature = "pg_test"))]
-        custom_scan_note_memory_after_end_for_test(allocation_context);
+    if node.is_null() {
+        return;
     }
+    custom_scan_note_end_custom_scan_for_test();
+    let state = node.cast::<SpireCustomScanExecState>();
+    #[cfg(any(test, feature = "pg_test"))]
+    let allocation_context = (*state).allocation_context;
+    custom_scan_release_exec_state_for_end(&mut *state);
+    ptr::drop_in_place(state);
+    custom_scan_note_pfree_for_test();
+    pg_sys::pfree(state.cast());
+    #[cfg(any(test, feature = "pg_test"))]
+    custom_scan_note_memory_after_end_for_test(allocation_context);
 }
 
 #[cfg(any(test, feature = "pg_test"))]

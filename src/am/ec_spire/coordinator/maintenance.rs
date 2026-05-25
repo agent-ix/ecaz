@@ -208,6 +208,11 @@ fn maintenance_run_result_from_rows(
     )
 }
 
+/// # Safety
+/// `index_relation` is a live SPIRE index relation; `snapshot`,
+/// `object_store`, and `selected` were derived from the same relation
+/// under the publish lock, and `rows` describe the leaf rows the
+/// scheduled-replacement plan acts on.
 unsafe fn build_relation_selected_scheduled_maintenance_input(
     index_relation: pg_sys::Relation,
     snapshot: &meta::SpirePublishedEpochSnapshot<'_>,
@@ -226,19 +231,13 @@ unsafe fn build_relation_selected_scheduled_maintenance_input(
 
     match selected.decision.mode {
         update::SpireLeafReplacementScheduleMode::Split => {
-            // SAFETY: index_relation is a live SPIRE index relation. The heap
-            // relation guard, active snapshot, and resolved indexed vector
-            // attribute are all used for this split replacement input build.
-            let (heap_relation, heap_snapshot, indexed_attribute) = unsafe {
-                let heap_relation = open_spire_heap_relation_for_index(index_relation)?;
-                let heap_snapshot = active_spire_maintenance_snapshot()?;
-                let indexed_attribute = crate::am::ec_hnsw::source::resolve_indexed_vector_attribute(
-                    heap_relation.as_ptr(),
-                    index_relation,
-                    "ec_spire maintenance split replacement source vector",
-                );
-                (heap_relation, heap_snapshot, indexed_attribute)
-            };
+            let heap_relation = open_spire_heap_relation_for_index(index_relation)?;
+            let heap_snapshot = active_spire_maintenance_snapshot()?;
+            let indexed_attribute = crate::am::ec_hnsw::source::resolve_indexed_vector_attribute(
+                heap_relation.as_ptr(),
+                index_relation,
+                "ec_spire maintenance split replacement source vector",
+            );
             let slot = crate::storage::slot_guard::TupleTableSlotGuard::single_for_heap_guard(
                 &heap_relation,
             )

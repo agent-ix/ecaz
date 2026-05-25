@@ -4,6 +4,9 @@ pub(crate) struct SpireLiveIndexRelation {
 }
 
 impl SpireLiveIndexRelation {
+    /// # Safety
+    /// Caller guarantees `relation` is the live SPIRE index relation for
+    /// the returned view's call scope.
     unsafe fn new(relation: pg_sys::Relation) -> Self {
         Self { relation }
     }
@@ -12,20 +15,20 @@ impl SpireLiveIndexRelation {
         self.relation
     }
 
+    fn handle(self) -> crate::storage::relation::RelationHandle {
+        std::ptr::NonNull::new(self.relation)
+            .unwrap_or_else(|| pgrx::error!("ec_spire live index relation unexpectedly null"))
+    }
+
     pub(in crate::am::ec_spire) fn root_control(self) -> meta::SpireRootControlState {
-        // SAFETY: this wrapper is constructed only for a live SPIRE index
-        // relation at PostgreSQL AM/SQL diagnostic entry points.
-        unsafe { page::read_root_control_page(self.relation) }
+        page::read_root_control_page_handle(self.handle())
     }
 
     pub(in crate::am::ec_spire) fn object_tuple(
         self,
         tid: crate::storage::page::ItemPointer,
     ) -> Result<Vec<u8>, String> {
-        // SAFETY: this wrapper is constructed only for a live SPIRE index
-        // relation. The page helper pins the buffer and returns owned bytes
-        // before the relation view can be reused by callers.
-        unsafe { page::read_object_tuple(self.relation, tid) }
+        page::read_object_tuple_handle(self.handle(), tid)
     }
 
     fn relation_options(self) -> options::EcSpireOptions {
@@ -33,15 +36,11 @@ impl SpireLiveIndexRelation {
     }
 
     fn publish_lock(self) -> SpireRelationLockGuard {
-        // SAFETY: this wrapper is constructed only for a live SPIRE index
-        // relation. The guard captures the relation OID and unlocks by OID.
-        unsafe { lock_publish_relation(self.relation) }
+        lock_publish_relation_handle(self.handle())
     }
 
     fn relid(self) -> u32 {
-        let relation = std::ptr::NonNull::new(self.relation)
-            .unwrap_or_else(|| pgrx::error!("ec_spire snapshot received null index relation"));
-        crate::storage::relation::relation_oid_handle(relation).into()
+        crate::storage::relation::relation_oid_handle(self.handle()).into()
     }
 
     fn active_epoch_anchor(
@@ -72,9 +71,7 @@ impl SpireLiveIndexRelation {
         ),
         String,
     > {
-        // SAFETY: `root_control` was read from this live relation and names the
-        // active manifest tuple IDs and local-store config for it.
-        unsafe { scan::load_relation_epoch_manifests(self.relation, root_control) }
+        scan::load_relation_epoch_manifests_handle(self.handle(), root_control)
     }
 
     fn coordinator_fanout_anchor(
@@ -146,20 +143,20 @@ impl SpireLiveObjectRelation {
     where
         F: FnMut(crate::storage::page::ItemPointer, &[u8]) -> Result<(), String>,
     {
-        // SAFETY: this wrapper is constructed only for a live SPIRE object
-        // relation; page::scan_object_tuples owns the page lock/tuple bounds.
-        unsafe { page::scan_object_tuples(self.relation, visit) }
+        page::scan_object_tuples_handle(self.handle(), visit)
     }
 }
 
+/// # Safety
+/// Caller guarantees `index_relation`, when non-null, is live for the
+/// returned view's immediate call scope.
 pub(crate) unsafe fn live_index_relation(
     index_relation: pg_sys::Relation,
 ) -> SpireLiveIndexRelation {
     if index_relation.is_null() {
         pgrx::error!("ec_spire live index relation view received a null relation");
     }
-    // SAFETY: caller guarantees `index_relation` is live for the returned view.
-    unsafe { SpireLiveIndexRelation::new(index_relation) }
+    SpireLiveIndexRelation::new(index_relation)
 }
 
 pub(crate) fn live_index_relation_from_guard(

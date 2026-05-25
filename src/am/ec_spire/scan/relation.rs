@@ -53,10 +53,11 @@ struct SpireIndexScanView<'a> {
 }
 
 impl<'a> SpireIndexScanView<'a> {
+    /// # Safety
+    /// AM callbacks supply a live `IndexScanDesc` for the duration of the
+    /// callback; null is rejected before safe accessors are exposed.
     unsafe fn from_raw(scan: pg_sys::IndexScanDesc, label: &str) -> Self {
-        // SAFETY: AM callbacks supply a live IndexScanDesc for the duration of
-        // the callback; null is rejected before safe accessors are exposed.
-        let Some(scan_ref) = (unsafe { scan.as_mut() }) else {
+        let Some(scan_ref) = scan.as_mut() else {
             pgrx::error!("ec_spire {label} received a null scan descriptor");
         };
         Self { scan_ref }
@@ -134,6 +135,27 @@ impl<'a> SpireIndexScanView<'a> {
     }
 }
 
+/// Safe handle-based variant of [`load_relation_epoch_manifests`].
+pub(super) fn load_relation_epoch_manifests_handle(
+    index_relation: crate::storage::relation::RelationHandle,
+    root_control: SpireRootControlState,
+) -> Result<
+    (
+        SpireEpochManifest,
+        SpireObjectManifest,
+        SpirePlacementDirectory,
+    ),
+    String,
+> {
+    // SAFETY: `RelationHandle` is a non-null pointer for a live SPIRE
+    // index relation; `root_control` is supplied by the caller alongside.
+    unsafe { load_relation_epoch_manifests(index_relation.as_ptr(), root_control) }
+}
+
+/// # Safety
+/// `index_relation` is open for the caller; `root_control` was read from
+/// the same live relation and names the active epoch's manifest tuple ids
+/// and local-store config tuple id.
 pub(super) unsafe fn load_relation_epoch_manifests(
     index_relation: pg_sys::Relation,
     root_control: SpireRootControlState,
@@ -148,20 +170,11 @@ pub(super) unsafe fn load_relation_epoch_manifests(
     if root_control.active_epoch == 0 {
         return Err("ec_spire cannot load manifests for empty active epoch".to_owned());
     }
-    // SAFETY: root_control belongs to this open relation and stores the active
-    // epoch manifest tuple id; page helper returns owned bytes.
     let epoch_bytes = page::read_object_tuple(index_relation, root_control.epoch_manifest_tid)?;
-    // SAFETY: root_control belongs to this open relation and stores the active
-    // object manifest tuple id; page helper returns owned bytes.
     let object_bytes = page::read_object_tuple(index_relation, root_control.object_manifest_tid)?;
-    // SAFETY: root_control belongs to this open relation and stores the active
-    // placement-directory tuple id; page helper returns owned bytes.
     let placement_bytes =
         page::read_object_tuple(index_relation, root_control.placement_directory_tid)?;
-    // SAFETY: root_control belongs to this relation and names the local store
-    // config for the same active epoch manifest set.
-    let local_store_config =
-        unsafe { load_relation_local_store_config(index_relation, root_control)? };
+    let local_store_config = load_relation_local_store_config(index_relation, root_control)?;
     let epoch_manifest = SpireEpochManifest::decode(&epoch_bytes)?;
     let object_manifest = SpireObjectManifest::decode(&object_bytes)?;
     let placement_directory = SpirePlacementDirectory::decode(&placement_bytes)?;
@@ -207,6 +220,19 @@ fn ensure_local_heap_placement_directory_is_deliverable(
     ))
 }
 
+/// Safe handle-based variant of [`load_relation_local_store_config`].
+pub(super) fn load_relation_local_store_config_handle(
+    index_relation: crate::storage::relation::RelationHandle,
+    root_control: SpireRootControlState,
+) -> Result<SpireLocalStoreConfig, String> {
+    // SAFETY: `RelationHandle` is a non-null pointer for a live relation.
+    unsafe { load_relation_local_store_config(index_relation.as_ptr(), root_control) }
+}
+
+/// # Safety
+/// `index_relation` is open for the caller; `root_control` was read from
+/// the same live relation and stores the active local-store config tuple
+/// id.
 pub(super) unsafe fn load_relation_local_store_config(
     index_relation: pg_sys::Relation,
     root_control: SpireRootControlState,
@@ -214,20 +240,19 @@ pub(super) unsafe fn load_relation_local_store_config(
     if root_control.active_epoch == 0 {
         return Err("ec_spire cannot load local store config for empty active epoch".to_owned());
     }
-    // SAFETY: root_control belongs to this open relation and stores the active
-    // local-store config tuple id; page helper returns owned bytes.
     let bytes = page::read_object_tuple(index_relation, root_control.local_store_config_tid)?;
     SpireLocalStoreConfig::decode(&bytes)
 }
 
+/// # Safety
+/// PostgreSQL passes a non-null first ORDER BY ScanKey from the live
+/// rescan callback.
 unsafe fn decode_scan_orderby_query(orderbys: pg_sys::ScanKey) -> Result<SpireScanQuery, String> {
     if orderbys.is_null() {
         return Err("ec_spire amrescan received null order-by scan keys".to_owned());
     }
 
-    // SAFETY: orderbys was checked non-null and points at PostgreSQL's first
-    // ORDER BY ScanKey for the active rescan callback.
-    let orderby = unsafe { &*orderbys };
+    let orderby = &*orderbys;
     if (orderby.sk_flags as u32) & pg_sys::SK_ISNULL != 0 {
         return Err("ec_spire scan query must not be NULL".to_owned());
     }
