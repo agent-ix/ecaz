@@ -568,12 +568,9 @@ impl EcHnswConcurrentDsmLockOps {
     /// - The returned [`LwLockGuard`] holds the lock until dropped; the
     ///   caller must not release the lock by any other path.
     unsafe fn shared(self, lock: *mut pg_sys::LWLock) -> LwLockGuard {
-        // SAFETY: Per the fn-level # Safety contract: caller passes an
-        // initialized LWLock pointer whose backing memory outlives the
-        // returned guard, and `self.acquire_shared` is one of the two
-        // constructor-installed function pointers whose contract this
-        // dispatch matches.
-        unsafe { (self.acquire_shared)(lock) }
+        // SAFETY of the inner dispatch is delegated to the fn-level
+        // # Safety contract above; no inner block needed.
+        (self.acquire_shared)(lock)
     }
 
     /// Acquire an exclusive guard over `lock` via the dispatch table's
@@ -589,8 +586,9 @@ impl EcHnswConcurrentDsmLockOps {
     /// - The returned guard releases the lock on drop; do not release by
     ///   any other path.
     unsafe fn exclusive(self, lock: *mut pg_sys::LWLock) -> LwLockGuard {
-        // SAFETY: Per the fn-level # Safety contract.
-        unsafe { (self.acquire_exclusive)(lock) }
+        // SAFETY of the inner dispatch is delegated to the fn-level
+        // # Safety contract above; no inner block needed.
+        (self.acquire_exclusive)(lock)
     }
 }
 
@@ -910,11 +908,11 @@ impl EcHnswConcurrentDsmGraphLayout {
             pgrx::error!("concurrent DSM graph header pointer is null");
         }
 
-        // SAFETY: Null was rejected above; per the fn-level # Safety
-        // contract the caller points at a fully-initialized
-        // EcHnswConcurrentDsmGraphHeader at the start of a live DSM
-        // graph image, and the borrow does not escape this frame.
-        let header = unsafe { &*header };
+        // Null was rejected above; per the fn-level # Safety contract
+        // the caller points at a fully-initialized header at the start
+        // of a live DSM graph image. The borrow does not escape this
+        // frame.
+        let header = &*header;
         let entry_idx = match header.entry_idx {
             EC_HNSW_CONCURRENT_DSM_INVALID_NODE_IDX => None,
             entry_idx if entry_idx < header.node_count => Some(entry_idx),
@@ -2117,18 +2115,19 @@ pub(super) unsafe fn try_parallel_build(
     }
 
     let begin_start = Instant::now();
-    // SAFETY: The build callback receives live PostgreSQL relation pointers and
-    // IndexInfo for the duration of the AM build, and `plan` selected parallel.
-    let mut leader = unsafe {
-        EcHnswParallelBuildLeader::begin(heap_relation, index_relation, index_info, plan)
-    }?;
+    // Per the fn-level # Safety contract: AM build callback owns live
+    // heap/index/IndexInfo handles, and `plan` selected the parallel
+    // path. `Leader::begin`'s own # Safety contract is satisfied.
+    let mut leader =
+        EcHnswParallelBuildLeader::begin(heap_relation, index_relation, index_info, plan)?;
     let begin_us = elapsed_us(begin_start);
 
     let drain_start = Instant::now();
     let mut worker_tuples = Vec::new();
-    // SAFETY: `leader` owns the worker queue handles until `finish` destroys
-    // the parallel context.
-    unsafe { leader.drain_worker_messages(&mut worker_tuples) };
+    // `leader` owns the worker queue handles until `finish` destroys
+    // the parallel context; `drain_worker_messages`'s # Safety
+    // contract is satisfied by the leader we just constructed.
+    leader.drain_worker_messages(&mut worker_tuples);
     leader.finish();
     let drain_us = elapsed_us(drain_start);
 
@@ -2193,17 +2192,20 @@ pub(super) unsafe fn try_parallel_concurrent_dsm_graph_build(
 
     let graph_start = Instant::now();
     let preassembly = EcHnswConcurrentDsmPreassemblyPlan::for_state(state);
-    // SAFETY: The preassembly plan owns the graph image inputs used to size and
-    // initialize the parallel DSM graph before workers are launched.
-    let mut leader = unsafe { EcHnswParallelGraphBuildLeader::begin(plan, &preassembly) }?;
+    // Per the fn-level # Safety contract: leader is the AM build
+    // process inside the build callback. `Leader::begin`'s own
+    // # Safety contract is satisfied by the preassembly plan and
+    // parallel-mode region this routine opens.
+    let mut leader = EcHnswParallelGraphBuildLeader::begin(plan, &preassembly)?;
     if leader.workers_launched == 0 {
         leader.finish();
         return None;
     }
 
-    // SAFETY: The graph leader owns the DSM graph image and inserts the leader
-    // participant partitions before readback.
-    let attachment = unsafe { leader.insert_leader_partitions() };
+    // The graph leader owns the DSM graph image and the leader-side
+    // partitions; `insert_leader_partitions`'s # Safety contract is
+    // satisfied by the freshly-constructed leader.
+    let attachment = leader.insert_leader_partitions();
     leader.wait_for_workers();
     let graph_us = elapsed_us(graph_start);
 
@@ -3305,14 +3307,13 @@ fn parallel_table_scan_from_shared(
 /// before `InitializeParallelDSM` has been called). The pointer must
 /// be valid for the duration of this call.
 unsafe fn estimate_chunk(estimator: *mut pg_sys::shm_toc_estimator, size: pg_sys::Size) {
-    // SAFETY: Per the fn-level # Safety contract.
-    unsafe {
-        (*estimator).space_for_chunks = checked_add_size(
-            (*estimator).space_for_chunks,
-            bufferalign(size),
-            "parallel build DSM chunk estimate",
-        );
-    }
+    // Per the fn-level # Safety contract: `estimator` is a live
+    // PG-owned estimator for the duration of the call.
+    (*estimator).space_for_chunks = checked_add_size(
+        (*estimator).space_for_chunks,
+        bufferalign(size),
+        "parallel build DSM chunk estimate",
+    );
 }
 
 /// Accumulate `keys` into a PG shm_toc estimator's `number_of_keys`
@@ -3324,14 +3325,13 @@ unsafe fn estimate_chunk(estimator: *mut pg_sys::shm_toc_estimator, size: pg_sys
 /// before `InitializeParallelDSM` has been called). The pointer must
 /// be valid for the duration of this call.
 unsafe fn estimate_keys(estimator: *mut pg_sys::shm_toc_estimator, keys: pg_sys::Size) {
-    // SAFETY: Per the fn-level # Safety contract.
-    unsafe {
-        (*estimator).number_of_keys = checked_add_size(
-            (*estimator).number_of_keys,
-            keys,
-            "parallel build DSM key estimate",
-        );
-    }
+    // Per the fn-level # Safety contract: `estimator` is a live
+    // PG-owned estimator for the duration of the call.
+    (*estimator).number_of_keys = checked_add_size(
+        (*estimator).number_of_keys,
+        keys,
+        "parallel build DSM key estimate",
+    );
 }
 
 fn queue_key(worker_index: i32) -> u64 {
@@ -4294,8 +4294,9 @@ mod tests {
     ///   so the lock is never actually released — this is fine in
     ///   the synthetic test setting where no contention is exercised.
     unsafe fn test_lock_guard(lock: *mut pg_sys::LWLock) -> LwLockGuard {
-        // SAFETY: Per the fn-level # Safety contract.
-        unsafe { LwLockGuard::from_acquired_with_release(lock, test_lock_noop_release) }
+        // Per the fn-level # Safety contract: synthetic test lock with
+        // a noop release. No real PG acquire is performed.
+        LwLockGuard::from_acquired_with_release(lock, test_lock_noop_release)
     }
 
     /// Test-only release function paired with [`test_lock_guard`]:
