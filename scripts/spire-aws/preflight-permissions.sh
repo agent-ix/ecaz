@@ -3,14 +3,19 @@ set -euo pipefail
 
 bucket_prefix="ecaz-spire-aws-"
 secret_prefix="ecaz-spire-aws"
+allow_preexisting_residue="${SPIRE_AWS_ALLOW_PREEXISTING_RESIDUE:-0}"
 
 usage() {
   cat <<'EOF'
-usage: preflight-permissions.sh [--bucket-prefix PREFIX] [--secret-prefix PREFIX]
+usage: preflight-permissions.sh [--allow-preexisting-residue] [--bucket-prefix PREFIX] [--secret-prefix PREFIX]
 
 Read-only AWS permission preflight for SPIRE AWS runs. This does not create,
 modify, or delete resources. It verifies the operator identity can enumerate
 SPIRE cleanup-sensitive resources before provisioning starts.
+
+By default, missing S3 version-list permission on matching buckets fails. Use
+--allow-preexisting-residue only when a packet has documented that the buckets
+are old residue outside the new run and local state has been archived.
 EOF
 }
 
@@ -23,6 +28,10 @@ while (($#)); do
     --secret-prefix)
       secret_prefix="${2:?missing value for --secret-prefix}"
       shift 2
+      ;;
+    --allow-preexisting-residue)
+      allow_preexisting_residue=1
+      shift
       ;;
     -h|--help)
       usage
@@ -60,8 +69,12 @@ for bucket in "${buckets[@]}"; do
     --output json >/dev/null; then
     printf 'S3 version-list permission ok for bucket %s\n' "$bucket"
   else
-    printf 'ERROR: missing s3:ListBucketVersions for bucket %s\n' "$bucket" >&2
-    failed=1
+    if [[ "$allow_preexisting_residue" == "1" ]]; then
+      printf 'WARNING: missing s3:ListBucketVersions for pre-existing residue bucket %s; continuing because override is set\n' "$bucket" >&2
+    else
+      printf 'ERROR: missing s3:ListBucketVersions for bucket %s\n' "$bucket" >&2
+      failed=1
+    fi
   fi
 done
 

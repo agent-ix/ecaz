@@ -161,6 +161,13 @@ Phase 13b.1 is reviewer-acceptable when:
   `scripts/spire-aws/cleanup-residue.sh` has been run in dry-run mode and,
   where permissions allow, `--execute` mode. Cleanup output must be stored in
   the owning packet before new provisioning starts.
+- [ ] If old buckets cannot be cleaned because the operator lacks
+  `s3:ListBucketVersions`, a packet explicitly records the old bucket names as
+  pre-existing residue, `make -C infra/spire-aws archive-local-state` archives
+  stale local state into packet artifacts, and
+  `SPIRE_AWS_ALLOW_PREEXISTING_RESIDUE=1 make -C infra/spire-aws
+  preflight-permissions` passes before provisioning. This exception applies
+  only to buckets created before the new run.
 - [ ] `aws` CLI is logged in with a role that can manage EC2, VPC,
   Secrets Manager, S3, and IAM in the target region.
 - [ ] `gh` CLI is logged in for packet pushes.
