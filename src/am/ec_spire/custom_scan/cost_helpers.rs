@@ -302,13 +302,14 @@ fn estimate_custom_scan_cost_with_constants(
     }
 }
 
+/// # Safety
+/// Caller guarantees `node` is the live `CustomScanState` for the
+/// current executor callback.
 unsafe fn custom_scan_current_relation(
     node: *mut pg_sys::CustomScanState,
     label: &str,
 ) -> pg_sys::Relation {
-    // SAFETY: caller guarantees node is the live CustomScanState for the
-    // current executor callback.
-    let Some(node) = (unsafe { custom_scan_pg_ref(node) }) else {
+    let Some(node) = custom_scan_pg_ref(node) else {
         pgrx::error!("EcSpireDistributedScan {label} missing custom scan state");
     };
     let relation = node.ss.ss_currentRelation;

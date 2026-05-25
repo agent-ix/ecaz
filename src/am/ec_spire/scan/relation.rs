@@ -53,10 +53,11 @@ struct SpireIndexScanView<'a> {
 }
 
 impl<'a> SpireIndexScanView<'a> {
+    /// # Safety
+    /// AM callbacks supply a live `IndexScanDesc` for the duration of the
+    /// callback; null is rejected before safe accessors are exposed.
     unsafe fn from_raw(scan: pg_sys::IndexScanDesc, label: &str) -> Self {
-        // SAFETY: AM callbacks supply a live IndexScanDesc for the duration of
-        // the callback; null is rejected before safe accessors are exposed.
-        let Some(scan_ref) = (unsafe { scan.as_mut() }) else {
+        let Some(scan_ref) = scan.as_mut() else {
             pgrx::error!("ec_spire {label} received a null scan descriptor");
         };
         Self { scan_ref }
@@ -134,6 +135,23 @@ impl<'a> SpireIndexScanView<'a> {
     }
 }
 
+/// Safe handle-based variant of [`load_relation_epoch_manifests`].
+pub(super) fn load_relation_epoch_manifests_handle(
+    index_relation: crate::storage::relation::RelationHandle,
+    root_control: SpireRootControlState,
+) -> Result<
+    (
+        SpireEpochManifest,
+        SpireObjectManifest,
+        SpirePlacementDirectory,
+    ),
+    String,
+> {
+    // SAFETY: `RelationHandle` is a non-null pointer for a live SPIRE
+    // index relation; `root_control` is supplied by the caller alongside.
+    unsafe { load_relation_epoch_manifests(index_relation.as_ptr(), root_control) }
+}
+
 /// # Safety
 /// `index_relation` is open for the caller; `root_control` was read from
 /// the same live relation and names the active epoch's manifest tuple ids
@@ -200,6 +218,15 @@ fn ensure_local_heap_placement_directory_is_deliverable(
         first_remote.pid,
         first_remote.node_id
     ))
+}
+
+/// Safe handle-based variant of [`load_relation_local_store_config`].
+pub(super) fn load_relation_local_store_config_handle(
+    index_relation: crate::storage::relation::RelationHandle,
+    root_control: SpireRootControlState,
+) -> Result<SpireLocalStoreConfig, String> {
+    // SAFETY: `RelationHandle` is a non-null pointer for a live relation.
+    unsafe { load_relation_local_store_config(index_relation.as_ptr(), root_control) }
 }
 
 /// # Safety

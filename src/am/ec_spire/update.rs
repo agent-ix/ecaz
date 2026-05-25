@@ -23,7 +23,7 @@ use super::meta::{
 use super::page;
 use super::scan::{
     collect_validated_snapshot_visible_primary_rows, load_indexed_source_vector_from_heap_row,
-    load_relation_local_store_config, SpireLeafScanRow,
+    load_relation_local_store_config, load_relation_local_store_config_handle, SpireLeafScanRow,
 };
 use super::storage::{
     is_delete_delta_assignment, is_visible_primary_assignment, is_visible_scored_assignment,

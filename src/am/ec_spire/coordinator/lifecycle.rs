@@ -13,6 +13,14 @@ impl Drop for SpireRelationLockGuard {
     }
 }
 
+/// Safe handle-based variant of [`lock_publish_relation`].
+pub(super) fn lock_publish_relation_handle(
+    index_relation: crate::storage::relation::RelationHandle,
+) -> SpireRelationLockGuard {
+    // SAFETY: `RelationHandle` is a non-null pointer for a live relation.
+    unsafe { lock_publish_relation(index_relation.as_ptr()) }
+}
+
 /// # Safety
 /// Callers hold an open Relation for the guard lifetime. `relid` is captured
 /// before locking and unlocked by relid in `SpireRelationLockGuard::drop`,
@@ -30,6 +38,9 @@ pub(super) unsafe fn lock_publish_relation(
     }
 }
 
+/// # Safety
+/// Caller passes the live SPIRE index relation whose heap relation OID is
+/// resolved and opened under AccessShareLock.
 unsafe fn open_spire_heap_relation_for_index(
     index_relation: pg_sys::Relation,
 ) -> Result<HeapRelationGuard, String> {
@@ -43,6 +54,9 @@ unsafe fn open_spire_heap_relation_for_index(
         .ok_or_else(|| "ec_spire maintenance failed to open heap relation".to_owned())
 }
 
+/// # Safety
+/// Caller is in a backend with the active snapshot stack populated by
+/// PostgreSQL for the current maintenance operation.
 unsafe fn active_spire_maintenance_snapshot() -> Result<pg_sys::Snapshot, String> {
     crate::storage::snapshot_guard::active_snapshot()
         .ok_or_else(|| "ec_spire maintenance requires an active heap snapshot".to_owned())

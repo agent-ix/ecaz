@@ -363,6 +363,10 @@ fn plan_boundary_assignment_identity_inputs(
         .collect()
 }
 
+/// # Safety
+/// Caller passes the live SPIRE index relation; `state` is the build-time
+/// scan accumulator whose tuples will be written to the relation-backed
+/// object store during this recursive routing publish.
 unsafe fn publish_relation_recursive_routing_build(
     index_relation: pg_sys::Relation,
     state: &SpireBuildState,

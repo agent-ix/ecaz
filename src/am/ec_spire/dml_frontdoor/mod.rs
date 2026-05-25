@@ -219,6 +219,10 @@ pub(crate) fn with_analyzed_dml_frontdoor_query_view<R>(
     }))
 }
 
+/// # Safety
+/// Caller passes a live PostgreSQL `ParamListInfo` (or null) from the
+/// active planner/executor callback; the returned wrapper only borrows
+/// the pointer for read-only parameter reads.
 pub(crate) unsafe fn dml_frontdoor_param_list_info(
     params: pg_sys::ParamListInfo,
 ) -> DmlFrontdoorParamListInfo {
@@ -1133,6 +1137,10 @@ pub(crate) fn dml_frontdoor_primitive_invocation_from_plan(
     })
 }
 
+/// # Safety
+/// `params` wraps a live `ParamListInfo` from the active executor
+/// callback whose `paramFetch`/datum slot for `param_id` may be invoked
+/// to materialize the bigint value.
 unsafe fn dml_frontdoor_bound_param_bigint_value(
     params: DmlFrontdoorParamListInfo,
     param_id: i32,

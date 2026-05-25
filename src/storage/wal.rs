@@ -79,20 +79,6 @@ impl GenericXLogTxn {
         }
     }
 
-    /// Start a new GenericXLog transaction for the relation behind `handle`.
-    ///
-    /// Safe variant of [`start`](Self::start) — callers that already hold a
-    /// validated [`RelationHandle`] pass it through this entry point so the
-    /// transaction inherits the handle's "live relation" SAFETY contract
-    /// instead of re-establishing it at every call site.
-    #[allow(dead_code)] // Consumed by SPIRE Task 56 / IVF Task 57 callers.
-    pub fn start_handle(handle: RelationHandle) -> Self {
-        // SAFETY: `RelationHandle` is a non-null pointer whose construction
-        // contract requires a live opened PostgreSQL relation; that contract
-        // satisfies `GenericXLogStart`'s precondition.
-        unsafe { Self::start(handle.as_ptr()) }
-    }
-
     /// Register a locked buffer as a full-page image and return the writable page.
     pub fn register_locked_buffer_full_image(
         &mut self,

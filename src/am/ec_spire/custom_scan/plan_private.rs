@@ -349,6 +349,10 @@ struct CustomScanPlanPrivateBuilder {
 }
 
 impl CustomScanPlanPrivateBuilder {
+    /// # Safety
+    /// Caller is in a context where the PostgreSQL planner memory context
+    /// is active so subsequent `append_*` lappends allocate into planner
+    /// memory.
     unsafe fn new() -> Self {
         Self {
             list: std::ptr::null_mut(),
