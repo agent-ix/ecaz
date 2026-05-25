@@ -5,6 +5,18 @@ fn not_implemented(callback: &str) -> ! {
     pgrx::error!("ec_spire {callback} is not implemented yet")
 }
 
+/// Test-only helper that reads the SPIRE manifest bundle (local-store
+/// config, epoch manifest, object manifest, placement directory) from the
+/// open index relation.
+///
+/// # Safety
+///
+/// `index_relation` must be a live SPIRE index relation that PostgreSQL
+/// has opened for the calling test and that remains open for the duration
+/// of this call. `root_control` must be the root-control state read from
+/// the same relation — passing a control state from a different relation
+/// will misroute the manifest loads. Only callable from test / `pg_test`
+/// fixtures (cfg-gated).
 #[cfg(any(test, feature = "pg_test"))]
 unsafe fn debug_spire_manifest_bundle(
     index_relation: pg_sys::Relation,

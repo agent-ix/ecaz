@@ -9,6 +9,18 @@ pub(super) struct SpireRelationObjectStore {
 }
 
 impl SpireRelationObjectStore {
+    /// Construct a SPIRE object store rooted at the open SPIRE index
+    /// relation (the single-local-store layout).
+    ///
+    /// # Safety
+    ///
+    /// `index_relation` must either be null or point at the SPIRE index
+    /// relation that PostgreSQL has already opened for the calling
+    /// statement, with the appropriate lock held. The relation must remain
+    /// open for the lifetime of the returned store, which is the
+    /// responsibility of the caller's relation guard (`pg_sys::Relation`
+    /// values are not refcounted by this wrapper). Returns `Err` when the
+    /// relation is null or carries an invalid OID.
     pub(super) unsafe fn for_index_relation(
         index_relation: pg_sys::Relation,
     ) -> Result<Self, String> {
@@ -31,6 +43,20 @@ impl SpireRelationObjectStore {
         })
     }
 
+    /// Build a SPIRE object store from a pre-opened store relation and the
+    /// `(local_store_id, store_relid)` pair that locates it inside a
+    /// multi-store SPIRE layout.
+    ///
+    /// # Safety
+    ///
+    /// `store_relation` must point at a relation PostgreSQL has already
+    /// opened for the calling statement, with the appropriate lock held;
+    /// it must remain live for the lifetime of the returned store (the
+    /// caller's relation guard / `OpenedRelationsGuard` owns the close).
+    /// `store_relid` must match the OID of `store_relation`, and
+    /// `local_store_id` must match the local-store-id assigned to that
+    /// relation by the active `SpireLocalStoreConfig` — passing
+    /// inconsistent identifiers will misroute object writes.
     pub(super) unsafe fn for_store_relation_id(
         store_relation: pg_sys::Relation,
         local_store_id: u32,
@@ -1215,6 +1241,19 @@ impl Drop for OpenedRelationsGuard {
 }
 
 impl SpireRelationObjectStoreSet {
+    /// Open every relation listed by `config` at `lockmode` and return a
+    /// `SpireRelationObjectStoreSet` whose stores cover the SPIRE
+    /// multi-local-store layout for `index_relation`.
+    ///
+    /// # Safety
+    ///
+    /// `index_relation` must either be null or point at the SPIRE index
+    /// relation that PostgreSQL has already opened for the calling
+    /// statement, with at least `lockmode` held. The relation must remain
+    /// open for the lifetime of the returned set. Per-store relations
+    /// referenced by `config.stores` are opened by this function's internal
+    /// `OpenedRelationsGuard` at `lockmode` and closed when the set drops;
+    /// callers must not concurrently close those relations.
     pub(super) unsafe fn for_index_relation_and_config(
         index_relation: pg_sys::Relation,
         config: SpireLocalStoreConfig,
@@ -1281,6 +1320,18 @@ impl SpireRelationObjectStoreSet {
         })
     }
 
+    /// Open every relation referenced by `placement_directory` at
+    /// `lockmode` and return a `SpireRelationObjectStoreSet` covering the
+    /// placement directory's local-store layout.
+    ///
+    /// # Safety
+    ///
+    /// Same contract as [`Self::for_index_relation_and_config`]:
+    /// `index_relation` must be null or already open at `lockmode` and
+    /// must remain open for the returned set's lifetime; per-placement
+    /// relations are opened internally and closed on drop, so callers
+    /// must not concurrently close them. The placement directory itself
+    /// is a borrowed snapshot — its data is copied into the set.
     pub(super) unsafe fn for_index_relation_and_placements(
         index_relation: pg_sys::Relation,
         placement_directory: &SpirePlacementDirectory,
