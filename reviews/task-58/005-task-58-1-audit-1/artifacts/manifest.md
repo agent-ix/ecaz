@@ -53,5 +53,15 @@
 
 ## Timestamp
 
-2026-05-25 — committed as `d7d019aa7` on
-`task-58-1-floor-recovery`.
+2026-05-25 — Audit 1 API shape committed as `d7d019aa7` on
+`task-58-1-floor-recovery`; review packet at `d60161669`;
+slice 002.1 doc-parity follow-up committed at `387103152`
+addressing reviewer seq 01 HARD BLOCK.
+
+## Slice 002.1 follow-up — doc parity
+
+- 15/15 `unsafe fn` declarations now documented (verified via
+  the `grep -cE`/`grep -c` parity pair from the reviewer's seq 01
+  feedback).
+- Block count unchanged at 84 (doc-only change).
+- `cargo check` passes; 0 clippy hits in `build_parallel.rs`.

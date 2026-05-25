@@ -87,6 +87,34 @@ Per the parent packet's reviewer feedback (`f64d7a4a7`):
 Slice 002 commit landed at `d7d019aa7`. Awaiting reviewer signoff
 before opening slice 003.
 
+## Update — slice 002.1 follow-up (doc-parity BLOCK resolved)
+
+Reviewer seq 01 (`feedback/2026-05-25-01-reviewer.md`) approved the
+Audit 1 API shape on merits but issued a HARD BLOCK on `/// # Safety`
+doc parity: 15 `unsafe fn` declarations in `build_parallel.rs`, 0
+documented. Per `feedback_dont_defer_safety_fixes` HARD RULE.
+
+Resolved as slice 002.1 follow-up commit `387103152`
+("Task 58.1/002.1: /// # Safety doc parity (15/15) for
+build_parallel.rs"). Each `unsafe fn` now carries a contract naming
+pointer validity, lifetime requirement, and concurrency requirement,
+per the Task 56.1 / Task 57 doc-fix template.
+
+Parity verified:
+
+```
+$ grep -cE "^[ \t]*(pub(\(.*\))?\s+)?unsafe fn" src/am/ec_hnsw/build_parallel.rs
+15
+$ grep -c "/// # Safety" src/am/ec_hnsw/build_parallel.rs
+15
+```
+
+`cargo check` still passes; 0 clippy hits in `build_parallel.rs`;
+block count holds at 84 (slice 002.1 is doc-only).
+
+Slice 002 + 002.1 combined disposition request: re-approve and
+clear for slice 003.
+
 ## Memory rules in play
 
 - `feedback_view_operations_not_accessors` — primary rule (Audit 1
