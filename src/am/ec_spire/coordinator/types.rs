@@ -981,6 +981,19 @@ pub(crate) struct SpireRemoteProductionReadProfileRow {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SpireRemoteProductionReadTimelineRow {
+    pub(crate) requested_epoch: u64,
+    pub(crate) phase: &'static str,
+    pub(crate) node_id: u32,
+    pub(crate) started_after_ms: u64,
+    pub(crate) completed_after_ms: u64,
+    pub(crate) elapsed_ms: u64,
+    pub(crate) candidate_count: u64,
+    pub(crate) status: &'static str,
+    pub(crate) failure_category: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SpireRemoteSearchOperatorDiagnosticsRow {
     pub(crate) active_epoch: u64,
     pub(crate) consistency_mode: &'static str,

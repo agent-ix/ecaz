@@ -13021,6 +13021,59 @@ fn ec_spire_remote_search_production_read_profile(
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_spire_remote_search_production_read_timeline(
+    index_oid: pg_sys::Oid,
+    query: Vec<f32>,
+    top_k: i32,
+    tuple_payload_columns: Vec<String>,
+) -> TableIterator<
+    'static,
+    (
+        name!(requested_epoch, i64),
+        name!(node_id, i32),
+        name!(phase, &'static str),
+        name!(started_after_ms, i64),
+        name!(completed_after_ms, i64),
+        name!(elapsed_ms, i64),
+        name!(candidate_count, i64),
+        name!(status, &'static str),
+        name!(failure_category, &'static str),
+    ),
+> {
+    if top_k < 0 {
+        pgrx::error!("ec_spire_remote_search_production_read_timeline top_k must be non-negative");
+    }
+    let top_k = usize::try_from(top_k).expect("non-negative top_k should fit usize");
+    let index_relation = open_valid_ec_spire_index_guard(
+        index_oid,
+        "ec_spire_remote_search_production_read_timeline",
+    );
+    let rows = with_spire_live_index_relation!(
+        index_relation,
+        am::spire_remote_search_production_read_timeline_rows,
+        query,
+        top_k,
+        &tuple_payload_columns
+    );
+    drop(index_relation);
+
+    TableIterator::new(rows.into_iter().map(|row| {
+        (
+            i64::try_from(row.requested_epoch).expect("requested epoch should fit in i64"),
+            i32::try_from(row.node_id).expect("node id should fit in i32"),
+            row.phase,
+            i64::try_from(row.started_after_ms).expect("started_after_ms should fit in i64"),
+            i64::try_from(row.completed_after_ms).expect("completed_after_ms should fit in i64"),
+            i64::try_from(row.elapsed_ms).expect("elapsed_ms should fit in i64"),
+            i64::try_from(row.candidate_count).expect("candidate count should fit in i64"),
+            row.status,
+            row.failure_category,
+        )
+    }))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_spire_remote_search_operator_diagnostics(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,

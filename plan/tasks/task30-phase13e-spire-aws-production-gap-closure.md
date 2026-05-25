@@ -43,14 +43,14 @@ Acceptance:
 
 ## 13e.3 Parallel Fanout And Performance Evidence
 
-- [ ] Keep the async production transport as the hot read path; diagnostic SQL libpq helpers are not performance evidence.
-- [ ] Prove candidate and heap receive overlap across remotes.
+- [x] Keep the async production transport as the hot read path; diagnostic SQL libpq helpers are not performance evidence.
+- [x] Prove candidate and heap receive overlap across remotes.
 - [x] Add production read profile capture to every local and AWS suite row.
 - [ ] Drive all read matrices through `ecaz bench suite`.
 
 Acceptance:
 
-- [ ] Local slow/fast remote fixture proves fast remote is not serialized behind slow remote.
+- [x] Local slow/fast remote fixture proves fast remote is not serialized behind slow remote.
 - [ ] AWS correctness tier captures selected PIDs, dispatch count, connect/TLS time, candidate time, heap time, payload bytes, merge time, timeout/cancel counts.
 - [ ] Representative tier captures p50/p95/p99 latency and recall.
 

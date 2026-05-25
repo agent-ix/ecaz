@@ -465,6 +465,83 @@ echo "exact_rows=$exact_rows"
 [[ "$read_rows" == *"doc "* ]]
 [[ "$read_rows" == "$exact_rows" ]]
 
+slow_lock_log="$LOG_DIR/slow-remote-node2-lock.log"
+timeline_log="$LOG_DIR/production-read-timeline.tsv"
+(
+  "${remote1_psql[@]}" <<'SQL'
+BEGIN;
+LOCK TABLE ec_spire_phase13e_remote_sql IN ACCESS EXCLUSIVE MODE;
+SELECT pg_sleep(0.75);
+COMMIT;
+SQL
+) >"$slow_lock_log" 2>&1 &
+slow_lock_pid=$!
+sleep 0.1
+PGOPTIONS="-c enable_seqscan=off -c enable_indexscan=off" \
+  "${coord_psql[@]}" -At -F '|' <<'SQL' >"$timeline_log"
+SELECT requested_epoch,
+       node_id,
+       phase,
+       started_after_ms,
+       completed_after_ms,
+       elapsed_ms,
+       candidate_count,
+       status,
+       failure_category
+FROM ec_spire_remote_search_production_read_timeline(
+    'ec_spire_phase13e_coord_idx'::regclass::oid,
+    ARRAY[1.0, 0.0]::real[],
+    6,
+    ARRAY['id', 'title']::text[]
+)
+ORDER BY phase, node_id;
+SQL
+wait "$slow_lock_pid"
+
+timeline_summary="$(awk -F '|' '
+BEGIN {
+  candidate_count = 0;
+  heap_count = 0;
+  slow_heap_completed = -1;
+  fastest_heap_completed = -1;
+  bad_status_count = 0;
+}
+$3 == "candidate_receive" {
+  candidate_count++;
+  if ($8 != "ready") {
+    bad_status_count++;
+  }
+}
+$3 == "heap_receive" {
+  heap_count++;
+  if ($8 != "ready") {
+    bad_status_count++;
+  }
+  if ($2 == "2") {
+    slow_heap_completed = $5 + 0;
+  } else if (fastest_heap_completed < 0 || ($5 + 0) < fastest_heap_completed) {
+    fastest_heap_completed = $5 + 0;
+  }
+}
+END {
+  print candidate_count "|" heap_count "|" slow_heap_completed "|" fastest_heap_completed "|" bad_status_count;
+}
+' "$timeline_log")"
+timeline_rows="$(tr '\n' ';' < "$timeline_log")"
+IFS='|' read -r timeline_candidate_count timeline_heap_count \
+  timeline_slow_heap_completed timeline_fastest_heap_completed timeline_bad_status_count \
+  <<< "$timeline_summary"
+
+echo "production_timeline_rows=$timeline_rows"
+echo "production_timeline_summary=$timeline_summary"
+
+[[ "$timeline_candidate_count" == "3" ]]
+[[ "$timeline_heap_count" == "3" ]]
+[[ "$timeline_bad_status_count" == "0" ]]
+[[ "$timeline_slow_heap_completed" -ge 250 ]]
+[[ "$timeline_fastest_heap_completed" -ge 0 ]]
+[[ "$timeline_fastest_heap_completed" -lt "$timeline_slow_heap_completed" ]]
+
 echo "stopping_remote_node=2"
 "$PG_CTL" -D "$REMOTE1_DATA" -m fast stop >/dev/null
 

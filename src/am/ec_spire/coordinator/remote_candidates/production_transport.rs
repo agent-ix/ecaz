@@ -950,7 +950,7 @@ impl SpireRemoteFanoutExecutor {
         consistency_mode: &str,
         tuple_payload_columns: Option<&[String]>,
         metrics: &mut SpireRemoteProductionReadMetrics,
-    ) -> Result<(), String> {
+    ) -> Result<SpireRemoteProductionCandidateAndHeapResult, String> {
         let requests = self.compact_candidate_receive_requests_with_metrics(
             query,
             top_k,
@@ -958,7 +958,11 @@ impl SpireRemoteFanoutExecutor {
             Some(metrics),
         )?;
         if requests.is_empty() {
-            return Ok(());
+            return Ok(SpireRemoteProductionCandidateAndHeapResult {
+                candidate_results: Vec::new(),
+                heap_results: Vec::new(),
+                metrics: SpireRemoteProductionReadMetrics::default(),
+            });
         }
         let result = SpireRemoteProductionTransportAdapter::run_candidate_and_heap_receive_requests(
             requests,
@@ -982,7 +986,7 @@ impl SpireRemoteFanoutExecutor {
                 consistency_mode,
             )?;
         }
-        Ok(())
+        Ok(result)
     }
 
     fn remote_heap_receive_requests(
