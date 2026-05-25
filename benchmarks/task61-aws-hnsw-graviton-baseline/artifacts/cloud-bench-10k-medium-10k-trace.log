@@ -1,0 +1,80 @@
+2026-05-25T03:52:09.468081Z  WARN ecaz_cloud::ssm: ssm invocation failed stderr=+ cd /var/lib/pgsql/build/ecaz
+++ dirname benchmarks/task61-aws-hnsw-graviton-baseline/suite-10k.json
++ mkdir -p benchmarks/task61-aws-hnsw-graviton-baseline benchmarks/task61-aws-hnsw-graviton-baseline/artifacts
++ trap 'status=$?; set +e; aws s3 sync benchmarks/task61-aws-hnsw-graviton-baseline/artifacts s3://ecaz-cloud-10k-medium-a02e4aea/bench-artifacts/smoke/20260525T035139Z/ --region us-west-2 --only-show-errors || true; exit $status' EXIT
++ cat
+++ dirname benchmarks/task61-aws-hnsw-graviton-baseline/suite-10k.json
++ chown -R postgres:postgres benchmarks/task61-aws-hnsw-graviton-baseline benchmarks/task61-aws-hnsw-graviton-baseline/artifacts
++ sudo -u postgres bash -lc 'cd '\''/var/lib/pgsql/build/ecaz'\''; export PATH=/usr/local/bin:$HOME/.cargo/bin:$PATH; '\''ecaz'\'' --database '\''postgres'\'' --host /var/run/postgresql --user postgres --log-file '\''benchmarks/task61-aws-hnsw-graviton-baseline/artifacts/suite-run.log'\'' bench suite run --config '\''benchmarks/task61-aws-hnsw-graviton-baseline/suite-10k.json'\'' --manifest-output '\''benchmarks/task61-aws-hnsw-graviton-baseline/artifacts/suite-manifest.json'\'' --results-output '\''benchmarks/task61-aws-hnsw-graviton-baseline/artifacts/results.jsonl'\'''
+[suite:task61-aws-hnsw-graviton-baseline-10k] wrote benchmarks/task61-aws-hnsw-graviton-baseline/artifacts/suite-manifest.json
+[suite:task61-aws-hnsw-graviton-baseline-10k] wrote benchmarks/task61-aws-hnsw-graviton-baseline/artifacts/suite-manifest.json
+[fetch] [1/26] skipping existing /var/lib/pgsql/18/datasets/dbpedia-openai3-1m/data/train-00000-of-00026.parquet
+[fetch] [2/26] skipping existing /var/lib/pgsql/18/datasets/dbpedia-openai3-1m/data/train-00001-of-00026.parquet
+[fetch] [3/26] skipping existing /var/lib/pgsql/18/datasets/dbpedia-openai3-1m/data/train-00002-of-00026.parquet
+[fetch] [4/26] skipping existing /var/lib/pgsql/18/datasets/dbpedia-openai3-1m/data/train-00003-of-00026.parquet
+[fetch] [5/26] skipping existing /var/lib/pgsql/18/datasets/dbpedia-openai3-1m/data/train-00004-of-00026.parquet
+[fetch] [6/26] skipping existing /var/lib/pgsql/18/datasets/dbpedia-openai3-1m/data/train-00005-of-00026.parquet
+[fetch] [7/26] skipping existing /var/lib/pgsql/18/datasets/dbpedia-openai3-1m/data/train-00006-of-00026.parquet
+[fetch] [8/26] skipping existing /var/lib/pgsql/18/datasets/dbpedia-openai3-1m/data/train-00007-of-00026.parquet
+[fetch] [9/26] skipping existing /var/lib/pgsql/18/datasets/dbpedia-openai3-1m/data/train-00008-of-00026.parquet
+[fetch] [10/26] skipping existing /var/lib/pgsql/18/datasets/dbpedia-openai3-1m/data/train-00009-of-00026.parquet
+[fetch] [11/26] skipping existing /var/lib/pgsql/18/datasets/dbpedia-openai3-1m/data/train-00010-of-00026.parquet
+[fetch] [12/26] skipping existing /var/lib/pgsql/18/datasets/dbpedia-openai3-1m/data/train-00011-of-00026.parquet
+[fetch] [13/26] skipping existing /var/lib/pgsql/18/datasets/dbpedia-openai3-1m/data/train-00012-of-00026.parquet
+[fetch] [14/26] skipping existing /var/lib/pgsql/18/datasets/dbpedia-openai3-1m/data/train-00013-of-00026.parquet
+[fetch] [15/26] skipping existing /var/lib/pgsql/18/datasets/dbpedia-openai3-1m/data/train-00014-of-00026.parquet
+[fetch] [16/26] skipping existing /var/lib/pgsql/18/datasets/dbpedia-openai3-1m/data/train-00015-of-00026.parquet
+[fetch] [17/26] skipping existing /var/lib/pgsql/18/datasets/dbpedia-openai3-1m/data/train-00016-of-00026.parquet
+[fetch] [18/26] skipping existing /var/lib/pgsql/18/datasets/dbpedia-openai3-1m/data/train-00017-of-00026.parquet
+[fetch] [19/26] skipping existing /var/lib/pgsql/18/datasets/dbpedia-openai3-1m/data/train-00018-of-00026.parquet
+[fetch] [20/26] skipping existing /var/lib/pgsql/18/datasets/dbpedia-openai3-1m/data/train-00019-of-00026.parquet
+[fetch] [21/26] skipping existing /var/lib/pgsql/18/datasets/dbpedia-openai3-1m/data/train-00020-of-00026.parquet
+[fetch] [22/26] skipping existing /var/lib/pgsql/18/datasets/dbpedia-openai3-1m/data/train-00021-of-00026.parquet
+[fetch] [23/26] skipping existing /var/lib/pgsql/18/datasets/dbpedia-openai3-1m/data/train-00022-of-00026.parquet
+[fetch] [24/26] skipping existing /var/lib/pgsql/18/datasets/dbpedia-openai3-1m/data/train-00023-of-00026.parquet
+[fetch] [25/26] skipping existing /var/lib/pgsql/18/datasets/dbpedia-openai3-1m/data/train-00024-of-00026.parquet
+[fetch] [26/26] skipping existing /var/lib/pgsql/18/datasets/dbpedia-openai3-1m/data/train-00025-of-00026.parquet
+[fetch] done. downloaded=0 skipped=26 parquet_dir=/var/lib/pgsql/18/datasets/dbpedia-openai3-1m/data
+[fetch] next: ecaz corpus prepare --profile ec_real_10k --parquet /var/lib/pgsql/18/datasets/dbpedia-openai3-1m/data --output-dir /path/to/staged
+[suite:task61-aws-hnsw-graviton-baseline-10k] wrote benchmarks/task61-aws-hnsw-graviton-baseline/artifacts/suite-manifest.json
+[suite:task61-aws-hnsw-graviton-baseline-10k] wrote benchmarks/task61-aws-hnsw-graviton-baseline/artifacts/suite-manifest.json
+[prepare] pass 1: scanning 26 shard(s) for sorted-id prefix (K=10200)
+[prepare] pass 2: materializing 10200 selected vectors
+[prepare] wrote /var/lib/pgsql/18/datasets/staged-task61-hnsw-baseline/ec_real_10k_corpus.tsv
+[prepare] wrote /var/lib/pgsql/18/datasets/staged-task61-hnsw-baseline/ec_real_10k_queries.tsv
+[prepare] wrote /var/lib/pgsql/18/datasets/staged-task61-hnsw-baseline/ec_real_10k_manifest.json
+[prepare] profile=ec_real_10k corpus_rows=10000 query_rows=200 sort_key='_id ascending lexicographic'
+[suite:task61-aws-hnsw-graviton-baseline-10k] wrote benchmarks/task61-aws-hnsw-graviton-baseline/artifacts/suite-manifest.json
+[suite:task61-aws-hnsw-graviton-baseline-10k] wrote benchmarks/task61-aws-hnsw-graviton-baseline/artifacts/suite-manifest.json
+psql: error: connection to server on socket "/var/run/postgresql/.s.PGSQL.5432" failed: Connection refused
+	Is the server running locally and accepting connections on that socket?
+
+   0: [91mCommand { std: "/usr/bin/psql" "-h" "/var/run/postgresql" "-U" "postgres" "-d" "postgres" "-v" "ON_ERROR_STOP=1" "-c" "SELECT now() AS captured_at, version() AS postgres_version, current_setting('shared_buffers') AS shared_buffers, current_setting('work_mem') AS work_mem, current_setting('maintenance_work_mem') AS maintenance_work_mem, current_setting('effective_cache_size') AS effective_cache_size; SELECT left(pg_read_file('/proc/cpuinfo', 0, 20000), 20000) AS cpuinfo_prefix; SELECT left(pg_read_file('/proc/meminfo', 0, 12000), 12000) AS meminfo_prefix;", kill_on_drop: false } failed with status exit status: 2[0m
+
+Location:
+   [35mcrates/ecaz-cli/src/commands/dev/sql.rs[0m:[35m193[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.
+[suite:task61-aws-hnsw-graviton-baseline-10k] wrote benchmarks/task61-aws-hnsw-graviton-baseline/artifacts/suite-manifest.json
+
+   0: [91msuite step "precheck-host" failed with exit code 1; rerun with --continue-on-error to keep going[0m
+
+Location:
+   [35mcrates/ecaz-cli/src/commands/bench/suite.rs[0m:[35m713[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.
++ status=1
++ set +e
++ aws s3 sync benchmarks/task61-aws-hnsw-graviton-baseline/artifacts s3://ecaz-cloud-10k-medium-a02e4aea/bench-artifacts/smoke/20260525T035139Z/ --region us-west-2 --only-show-errors
++ exit 1
+failed to run commands: exit status 1
+
+   0: [91mssm command 0caa0a48-cab7-4821-8bc0-e659733a6064 on i-0d46840c00f93dbb6 ended in Failed (rc=1): + cd /var/lib/pgsql/build/ecaz / ++ dirname benchmarks/task61-aws-hnsw-graviton-baseline/suite-10k.json / + mkdir -p benchmarks/task61-aws-hnsw-graviton-baseline benchmarks/task61-aws-hnsw-graviton-baseline/artifacts / + trap 'status=$?; set +e; aws s3 sync benchmarks/task61-aws-hnsw-graviton-baseline/artifacts s3://ecaz-cloud-10k-medium-a02e4aea/bench-artifacts/smoke/20260525T035139Z/ --region us-west-2 --only-show-errors || true; exit $status' EXIT / + cat[0m
+
+Location:
+   [35mcrates/ecaz-cloud/src/ssm.rs[0m:[35m111[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.

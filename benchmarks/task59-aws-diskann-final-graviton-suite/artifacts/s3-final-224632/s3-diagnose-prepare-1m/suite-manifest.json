@@ -1,0 +1,57 @@
+{
+  "suite": "task59-diagnose-prepare-1m",
+  "schema_version": 1,
+  "config": "benchmarks/task59-aws-diskann-final-graviton-suite/diagnose-prepare-1m.json",
+  "config_sha256": "15f0585adfdacbf32f9aaf5bed854e916716697e2bb12d54de608bd03f79f80f",
+  "dry_run": false,
+  "generated_at_unix_ms": 1779661496547,
+  "connection": {
+    "database": "postgres",
+    "host": "/var/run/postgresql",
+    "port": null,
+    "user": "postgres",
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "prepare-ec-real-1m-debug",
+      "kind": "raw",
+      "command": [
+        "--database",
+        "postgres",
+        "--host",
+        "/var/run/postgresql",
+        "--user",
+        "postgres",
+        "--log-file",
+        "benchmarks/task59-aws-diskann-final-graviton-suite/artifacts/diagnose-prepare-1m/prepare-ec-real-1m-debug.log",
+        "corpus",
+        "prepare",
+        "--profile",
+        "ec_real_ann_benchmarks_anchor",
+        "--parquet",
+        "/var/lib/pgsql/18/datasets/dbpedia-openai3-1m/data",
+        "--output-dir",
+        "/var/lib/pgsql/18/datasets/staged-task59-diskann-final",
+        "--chunk-rows",
+        "25000"
+      ],
+      "selected": true,
+      "tags": [
+        "diagnostic",
+        "prepare",
+        "ec_real_1m",
+        "graviton",
+        "task59"
+      ],
+      "expected_artifacts": [
+        "benchmarks/task59-aws-diskann-final-graviton-suite/artifacts/diagnose-prepare-1m/prepare-ec-real-1m-debug.log"
+      ],
+      "status": "failed",
+      "started_at_unix_ms": 1779661496548,
+      "finished_at_unix_ms": 1779661664146,
+      "duration_ms": 167597,
+      "exit_code": 1
+    }
+  ]
+}

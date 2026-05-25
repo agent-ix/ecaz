@@ -82,6 +82,9 @@ pub struct LatencyArgs {
     /// Sample each worker backend's /proc status while the latency sweep runs.
     #[arg(long)]
     pub sample_backend_memory: bool,
+    /// Operator-supplied cache-state label recorded with each latency row.
+    #[arg(long, default_value = "unspecified")]
+    pub cache_state: String,
     /// Milliseconds between backend RSS/HWM samples when --sample-backend-memory is set.
     #[arg(long, default_value_t = 25)]
     pub memory_sample_interval_ms: u64,
@@ -173,6 +176,7 @@ pub async fn run(conn: &ConnectionOptions, args: LatencyArgs) -> Result<()> {
         "p95",
         "p99",
         "max",
+        "cache_state",
     ];
     if args.sample_backend_memory {
         header.extend(["rss_peak_kb", "hwm_peak_kb", "memory_samples"]);
@@ -215,6 +219,7 @@ pub async fn run(conn: &ConnectionOptions, args: LatencyArgs) -> Result<()> {
             Cell::new(format_ms(stats.p95)),
             Cell::new(format_ms(stats.p99)),
             Cell::new(format_ms(stats.max)),
+            Cell::new(&args.cache_state),
         ];
         if args.sample_backend_memory {
             row.extend([

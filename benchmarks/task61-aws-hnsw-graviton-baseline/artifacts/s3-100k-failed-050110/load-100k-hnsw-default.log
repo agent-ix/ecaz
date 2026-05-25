@@ -1,0 +1,14 @@
+[loader] inspecting /var/lib/pgsql/18/datasets/staged-task61-hnsw-baseline/ec_real_100k_corpus.tsv
+[loader] inspecting /var/lib/pgsql/18/datasets/staged-task61-hnsw-baseline/ec_real_100k_queries.tsv
+[loader] corpus: 100000 rows, sha256=07275cfd5a7a4b415ddf5eacc086de98294ac978532df46ffae30f9202323a95  queries: 1000 rows, sha256=a7cbec6fc44f6c148234538f61339d00d2f10646febc8f667dcbe75d9cf41782
+[loader] warning: manifest verification failed for /var/lib/pgsql/18/datasets/staged-task61-hnsw-baseline/ec_real_100k_manifest.json: prefix="ec_real_100k" (expected "task61_real_100k_hnsw")
+
+   0: [91mconnecting to Postgres database "postgres"[0m
+   1: [91merror connecting to server[0m
+   2: [91mNo such file or directory (os error 2)[0m
+
+Location:
+   [35mcrates/ecaz-cli/src/psql.rs[0m:[35m95[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.

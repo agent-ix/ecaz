@@ -22,6 +22,14 @@ pub struct InstallArgs {
     /// min from a clean cargo cache; bump for cold runs at large scale.
     #[arg(long, default_value = "1800")]
     pub timeout: u64,
+
+    /// Skip `DROP EXTENSION` / `CREATE EXTENSION` after installing files.
+    ///
+    /// Use this when retaining benchmark tables that depend on extension-owned
+    /// types; the install still copies the new shared library, installs the
+    /// CLI, and restarts PostgreSQL.
+    #[arg(long)]
+    pub skip_extension_recreate: bool,
 }
 
 impl InstallArgs {
@@ -36,7 +44,8 @@ impl InstallArgs {
         }
         let out = tf.outputs().await?;
 
-        let script = build_script(&self.git_url, &self.git_ref);
+        let script =
+            build_script_with_options(&self.git_url, &self.git_ref, self.skip_extension_recreate);
         tracing::info!(profile = %self.profile, instance = %out.db_instance_id, "ssm: ecaz install");
         let stdout =
             ssm::run_shell(&out.region, &out.db_instance_id, &script, self.timeout).await?;
@@ -50,13 +59,26 @@ impl InstallArgs {
     }
 }
 
-fn build_script(git_url: &str, git_ref: &str) -> String {
+fn build_script_with_options(
+    git_url: &str,
+    git_ref: &str,
+    skip_extension_recreate: bool,
+) -> String {
     // Mirror the cloud-init build path so the same install command works
     // before and after the host's first boot. Shell-escaping is intentionally
     // strict — the only caller-supplied strings are the URL and ref.
     let url = shell_escape(git_url);
     let r = shell_escape(git_ref);
     let origin_ref = shell_escape(&format!("origin/{git_ref}"));
+    let extension_sql = if skip_extension_recreate {
+        "sudo -u postgres psql -c \"SELECT extname, extversion FROM pg_extension WHERE extname = 'ecaz';\""
+            .to_owned()
+    } else {
+        r#"sudo -u postgres psql -c 'DROP EXTENSION IF EXISTS ecaz;'
+sudo -u postgres psql -c 'CREATE EXTENSION ecaz;'
+sudo -u postgres psql -c "SELECT extname, extversion FROM pg_extension WHERE extname = 'ecaz';""#
+            .to_owned()
+    };
     format!(
         r#"#!/usr/bin/env bash
 set -euxo pipefail
@@ -83,9 +105,7 @@ sudo -u postgres bash -lc '
 '
 sudo install -Dm755 /var/lib/pgsql/build/ecaz/target/release/ecaz /usr/local/bin/ecaz
 sudo systemctl restart postgresql
-sudo -u postgres psql -c 'DROP EXTENSION IF EXISTS ecaz;'
-sudo -u postgres psql -c 'CREATE EXTENSION ecaz;'
-sudo -u postgres psql -c "SELECT extname, extversion FROM pg_extension WHERE extname = 'ecaz';"
+{extension_sql}
 "#
     )
 }

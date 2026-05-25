@@ -31,12 +31,12 @@
 
 use crate::am::ec_diskann::{
     maybe_check_for_interrupts,
-    reader::{PersistedGraphReader, VisitedState},
+    reader::{GraphReader, VisitedState},
     tuple::VamanaNodeTuple,
 };
 use crate::storage::page::ItemPointer;
 use std::cmp::Reverse;
-use std::collections::{BinaryHeap, HashMap};
+use std::collections::BinaryHeap;
 
 /// Scan-time tuning parameters. Every value must be > 0.
 #[derive(Debug, Clone, Copy)]
@@ -61,6 +61,7 @@ pub struct ScanResult {
     pub tid: ItemPointer,
     pub primary_heaptid: ItemPointer,
     pub distance: f32,
+    pub has_overflow_heaptids: bool,
 }
 
 /// Candidate carried through the greedy loop. Caches the tuple's
@@ -80,12 +81,30 @@ pub struct ScanCandidate {
     pub primary_heaptid: ItemPointer,
     pub score: f32,
     pub emittable: bool,
+    pub has_overflow_heaptids: bool,
 }
 
 #[derive(Debug, Clone)]
 struct FrontierEntry {
     candidate: ScanCandidate,
     neighbors: Vec<ItemPointer>,
+}
+
+impl PartialEq for FrontierEntry {
+    fn eq(&self, other: &Self) -> bool {
+        self.candidate == other.candidate
+    }
+}
+impl Eq for FrontierEntry {}
+impl Ord for FrontierEntry {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.candidate.cmp(&other.candidate)
+    }
+}
+impl PartialOrd for FrontierEntry {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
 }
 
 impl PartialEq for ScanCandidate {
@@ -119,7 +138,7 @@ impl PartialOrd for ScanCandidate {
 /// (ADR-047 §10 defers live-medoid migration to rebuild). The result
 /// feeds [`ScanParams::entry_point`].
 pub fn resolve_entry_point(
-    reader: &PersistedGraphReader<'_>,
+    reader: &(impl GraphReader + ?Sized),
     preferred: ItemPointer,
 ) -> Result<Option<ItemPointer>, String> {
     if preferred != ItemPointer::INVALID {
@@ -140,13 +159,14 @@ pub fn resolve_entry_point(
 /// greedy descent. `rerank(primary_heaptid) -> f32` is called at most
 /// `rerank_budget` times, on the candidates that survived the
 /// prefilter greedy.
-pub fn vamana_scan<Pre, Re>(
-    reader: &PersistedGraphReader<'_>,
+pub fn vamana_scan<R, Pre, Re>(
+    reader: &R,
     params: ScanParams,
     prefilter: Pre,
     rerank: Re,
 ) -> Result<Vec<ScanResult>, String>
 where
+    R: GraphReader + ?Sized,
     Pre: Fn(&VamanaNodeTuple) -> f32,
     Re: Fn(ItemPointer) -> f32,
 {
@@ -175,8 +195,8 @@ where
 /// rerank loop is still warming up. Callers that do not need
 /// prefetching (e.g. unit tests, the build / insert insert path with
 /// SnapshotSelf) pass a no-op closure.
-pub fn vamana_scan_with<Pre, Pf, Re>(
-    reader: &PersistedGraphReader<'_>,
+pub fn vamana_scan_with<R, Pre, Pf, Re>(
+    reader: &R,
     scratch: &mut VisitedState,
     params: ScanParams,
     prefilter: Pre,
@@ -184,6 +204,7 @@ pub fn vamana_scan_with<Pre, Pf, Re>(
     rerank: Re,
 ) -> Result<Vec<ScanResult>, String>
 where
+    R: GraphReader + ?Sized,
     Pre: Fn(&VamanaNodeTuple) -> f32,
     Pf: FnOnce(&[ItemPointer]),
     Re: Fn(ItemPointer) -> f32,
@@ -263,6 +284,7 @@ where
                 tid: c.tid,
                 primary_heaptid: c.primary_heaptid,
                 distance: exact,
+                has_overflow_heaptids: c.has_overflow_heaptids,
             }
         })
         .collect();
@@ -286,13 +308,14 @@ where
 /// descent + rerank in different transactions (useful if rerank wants
 /// to batch heap fetches, or if a future iterator-style amgettuple
 /// wants incremental rerank).
-pub fn greedy_descent<Pre>(
-    reader: &PersistedGraphReader<'_>,
+pub fn greedy_descent<R, Pre>(
+    reader: &R,
     entry_point: ItemPointer,
     list_size: usize,
     prefilter: &Pre,
 ) -> Result<Vec<ScanCandidate>, String>
 where
+    R: GraphReader + ?Sized,
     Pre: Fn(&VamanaNodeTuple) -> f32,
 {
     let mut scratch = VisitedState::new();
@@ -302,14 +325,15 @@ where
 /// Scratch-reusing variant of [`greedy_descent`]. See
 /// [`crate::am::ec_diskann::reader::greedy_search_persisted_with`] for
 /// the allocation rationale.
-pub fn greedy_descent_with<Pre>(
-    reader: &PersistedGraphReader<'_>,
+pub fn greedy_descent_with<R, Pre>(
+    reader: &R,
     scratch: &mut VisitedState,
     entry_point: ItemPointer,
     list_size: usize,
     prefilter: &Pre,
 ) -> Result<Vec<ScanCandidate>, String>
 where
+    R: GraphReader + ?Sized,
     Pre: Fn(&VamanaNodeTuple) -> f32,
 {
     scratch.clear();
@@ -322,12 +346,11 @@ where
         primary_heaptid: entry_tuple.primary_heaptid,
         score: entry_score,
         emittable: entry_tuple.is_live(),
+        has_overflow_heaptids: entry_tuple.has_overflow_heaptids,
     };
 
-    let mut entries: HashMap<ItemPointer, FrontierEntry> = HashMap::with_capacity(list_size);
-    let mut next_heap: BinaryHeap<Reverse<ScanCandidate>> = BinaryHeap::new();
+    let mut next_heap: BinaryHeap<Reverse<FrontierEntry>> = BinaryHeap::with_capacity(list_size);
     push_frontier_entry(
-        &mut entries,
         &mut next_heap,
         scratch,
         entry,
@@ -338,23 +361,19 @@ where
     loop {
         maybe_check_for_interrupts();
 
-        let Some(next) = peek_next_active(&mut next_heap, &entries, scratch) else {
+        let Some(next) = peek_next_active(&next_heap) else {
             break;
         };
         if visited_best.len() >= list_size && next >= visited_best[list_size - 1] {
             break;
         }
 
-        let picked = pop_next_active(&mut next_heap, &entries, scratch)
-            .expect("peek_next_active returned an active candidate");
-        scratch.visited.insert(picked.tid);
+        let picked_entry =
+            pop_next_active(&mut next_heap).expect("peek_next_active returned a candidate");
+        let picked = picked_entry.candidate;
         insert_visited_sorted(&mut visited_best, picked);
 
-        let Some(picked_entry) = entries.get(&picked.tid) else {
-            continue;
-        };
-        let picked_neighbors = picked_entry.neighbors.clone();
-        for nbr in picked_neighbors {
+        for nbr in picked_entry.neighbors {
             if nbr == ItemPointer::INVALID {
                 continue;
             }
@@ -368,9 +387,9 @@ where
                 primary_heaptid: nbr_tuple.primary_heaptid,
                 score,
                 emittable: nbr_tuple.is_live(),
+                has_overflow_heaptids: nbr_tuple.has_overflow_heaptids,
             };
             push_frontier_entry(
-                &mut entries,
                 &mut next_heap,
                 scratch,
                 candidate,
@@ -393,61 +412,24 @@ fn neighbors_from_tuple(tuple: &VamanaNodeTuple) -> Vec<ItemPointer> {
 }
 
 fn push_frontier_entry(
-    entries: &mut HashMap<ItemPointer, FrontierEntry>,
-    next_heap: &mut BinaryHeap<Reverse<ScanCandidate>>,
+    next_heap: &mut BinaryHeap<Reverse<FrontierEntry>>,
     scratch: &mut VisitedState,
     candidate: ScanCandidate,
     neighbors: Vec<ItemPointer>,
 ) {
     scratch.in_frontier.insert(candidate.tid);
-    entries.insert(
-        candidate.tid,
-        FrontierEntry {
-            candidate,
-            neighbors,
-        },
-    );
-    next_heap.push(Reverse(candidate));
+    next_heap.push(Reverse(FrontierEntry {
+        candidate,
+        neighbors,
+    }));
 }
 
-fn peek_next_active(
-    next_heap: &mut BinaryHeap<Reverse<ScanCandidate>>,
-    entries: &HashMap<ItemPointer, FrontierEntry>,
-    scratch: &VisitedState,
-) -> Option<ScanCandidate> {
-    while let Some(Reverse(candidate)) = next_heap.peek().copied() {
-        if scratch.visited.contains(&candidate.tid) {
-            next_heap.pop();
-            continue;
-        }
-        if entries
-            .get(&candidate.tid)
-            .is_some_and(|entry| same_candidate(entry.candidate, candidate))
-        {
-            return Some(candidate);
-        }
-        next_heap.pop();
-    }
-    None
+fn peek_next_active(next_heap: &BinaryHeap<Reverse<FrontierEntry>>) -> Option<ScanCandidate> {
+    next_heap.peek().map(|Reverse(entry)| entry.candidate)
 }
 
-fn pop_next_active(
-    next_heap: &mut BinaryHeap<Reverse<ScanCandidate>>,
-    entries: &HashMap<ItemPointer, FrontierEntry>,
-    scratch: &VisitedState,
-) -> Option<ScanCandidate> {
-    while let Some(Reverse(candidate)) = next_heap.pop() {
-        if scratch.visited.contains(&candidate.tid) {
-            continue;
-        }
-        if entries
-            .get(&candidate.tid)
-            .is_some_and(|entry| same_candidate(entry.candidate, candidate))
-        {
-            return Some(candidate);
-        }
-    }
-    None
+fn pop_next_active(next_heap: &mut BinaryHeap<Reverse<FrontierEntry>>) -> Option<FrontierEntry> {
+    next_heap.pop().map(|Reverse(entry)| entry)
 }
 
 fn insert_visited_sorted(visited_best: &mut Vec<ScanCandidate>, candidate: ScanCandidate) {
@@ -455,18 +437,12 @@ fn insert_visited_sorted(visited_best: &mut Vec<ScanCandidate>, candidate: ScanC
     visited_best.insert(idx, candidate);
 }
 
-fn same_candidate(left: ScanCandidate, right: ScanCandidate) -> bool {
-    left.tid == right.tid
-        && left.primary_heaptid == right.primary_heaptid
-        && left.score.to_bits() == right.score.to_bits()
-        && left.emittable == right.emittable
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::am::ec_diskann::build::{build_and_persist_vamana, BuildParams};
     use crate::am::ec_diskann::persist::{persist_vamana_graph, NodePayload};
+    use crate::am::ec_diskann::reader::PersistedGraphReader;
     use crate::am::ec_diskann::vamana::{approximate_medoid, build_vamana_graph, VamanaGraph};
     use crate::storage::page::DEFAULT_PAGE_SIZE;
     use rand::{Rng, SeedableRng};
