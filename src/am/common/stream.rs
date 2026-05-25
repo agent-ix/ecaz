@@ -162,41 +162,26 @@ pub(crate) fn prefetch_relation_blocks(
     }
 
     let mut state = BlockSequencePrefetchState::new(block_numbers);
-    // SAFETY: relation is open for the caller's scan, state lives until
-    // read_stream_end, and the callback-private pointer is only used by the
-    // block-sequence callback registered here.
-    let stream = unsafe {
-        pg_sys::read_stream_begin_relation(
+    // SAFETY: `relation` is open for the caller's scan; `state` lives until
+    // the returned scope drops; the registered callback only consumes a
+    // `BlockSequencePrefetchState` callback-private pointer.
+    let mut stream = unsafe {
+        ReadStreamScope::open(
             pg_sys::READ_STREAM_DEFAULT as i32,
-            std::ptr::null_mut(),
             relation,
-            pg_sys::ForkNumber::MAIN_FORKNUM,
-            Some(block_sequence_prefetch_cb),
+            block_sequence_prefetch_cb,
             (&mut state as *mut BlockSequencePrefetchState).cast(),
-            std::mem::size_of::<pg_sys::BlockNumber>(),
         )
     };
 
-    loop {
-        let mut per_buffer_data = std::ptr::null_mut();
-        // SAFETY: stream was created above and remains live until
-        // read_stream_end after exhaustion.
-        let buffer = unsafe { pg_sys::read_stream_next_buffer(stream, &mut per_buffer_data) };
-        if buffer == pg_sys::InvalidBuffer as pg_sys::Buffer {
-            break;
-        }
-        // SAFETY: read_stream_next_buffer returns a valid pinned buffer until
-        // the stream is exhausted; the guard owns the release.
-        let _buffer =
-            unsafe { crate::storage::buffer_guard::PinnedBufferGuard::from_pinned(buffer) }
-                .unwrap_or_else(|| {
-                    pgrx::error!("{context} read stream returned an invalid buffer")
-                });
+    while let Some(entry) = stream.next_pinned() {
+        let (_pinned, _block) = match entry {
+            Ok(pair) => pair,
+            Err(err) => pgrx::error!("{context} {err}"),
+        };
+        // The pinned buffer guard releases on drop; the loop discards the
+        // guard so each pin is acquired-and-released in order.
     }
-
-    // SAFETY: stream was opened by read_stream_begin_relation above and is no
-    // longer used after this call.
-    unsafe { pg_sys::read_stream_end(stream) };
 }
 
 #[cfg(not(feature = "pg18"))]
@@ -212,12 +197,44 @@ pub(crate) fn prefetch_relation_blocks(
     }
 }
 
+/// Typed RAII scope around `pg_sys::ReadStream` for the in-`stream.rs`
+/// prefetch / visit helpers.
+///
+/// * Construction (`open`) wraps `read_stream_begin_relation`.
+/// * `next_pinned` / `next_locked` consume one stream-yielded buffer per
+///   call and return it as a typed `PinnedBufferGuard` / `LockedBufferGuard`
+///   alongside the per-buffer-data block-number extraction.
+/// * `Drop` calls `read_stream_end` once.
+///
+/// Per `feedback_view_operations_not_accessors`, no safe accessor leaks
+/// the underlying `*mut pg_sys::ReadStream` or a raw `pg_sys::Buffer`.
+///
+/// Cross-AM consumers (`visit_scan_owned_read_stream_pinned/_locked`,
+/// `reset_scan_owned_read_stream`) operate on the raw `*mut
+/// pg_sys::ReadStream` held by the AM scan opaque; threading those
+/// through `ReadStreamScope` requires AM scan-opaque migration that is
+/// out of scope for Task 59 §Non-Goals.
 #[cfg(feature = "pg18")]
-struct PgReadStreamGuard(*mut pg_sys::ReadStream);
+pub(crate) struct ReadStreamScope<'rel> {
+    stream: *mut pg_sys::ReadStream,
+    _marker: std::marker::PhantomData<&'rel mut pg_sys::ReadStream>,
+}
 
 #[cfg(feature = "pg18")]
-impl PgReadStreamGuard {
-    unsafe fn new(
+impl<'rel> ReadStreamScope<'rel> {
+    /// Open a read stream over `relation` using `callback` for block
+    /// supply. The returned scope owns the single `read_stream_end` call
+    /// via `Drop`.
+    ///
+    /// # Safety
+    ///
+    /// `relation` must be open for the caller's scan with the appropriate
+    /// lock and remain open for the returned scope's lifetime.
+    /// `callback_private_data` must point at the state structure
+    /// `callback` expects, must remain live until the scope drops, and
+    /// must not be aliased outside the callback. The registered
+    /// `callback` must match the layout of the state.
+    pub(crate) unsafe fn open(
         mode: i32,
         relation: pg_sys::Relation,
         callback: unsafe extern "C-unwind" fn(
@@ -227,8 +244,8 @@ impl PgReadStreamGuard {
         ) -> pg_sys::BlockNumber,
         callback_private_data: *mut std::ffi::c_void,
     ) -> Self {
-        // SAFETY: caller keeps callback_private_data live until this guard is
-        // dropped and registers a callback matching that state type.
+        // SAFETY: caller asserts relation, callback, and callback-private
+        // contract per the doc above.
         let stream = unsafe {
             pg_sys::read_stream_begin_relation(
                 mode,
@@ -240,16 +257,99 @@ impl PgReadStreamGuard {
                 std::mem::size_of::<pg_sys::BlockNumber>(),
             )
         };
-        Self(stream)
+        Self {
+            stream,
+            _marker: std::marker::PhantomData,
+        }
+    }
+
+    /// Yield the next pinned buffer along with its per-buffer-data block
+    /// number (if the callback supplied one).
+    ///
+    /// Returns:
+    /// * `None` when the stream is exhausted (PG returns `InvalidBuffer`).
+    /// * `Some(Err)` if PG returned a buffer but the typed `PinnedBufferGuard`
+    ///   construction rejected it (defensive; should not happen in normal
+    ///   operation).
+    /// * `Some(Ok((guard, block)))` on a successful yield; the guard owns
+    ///   the pin release on drop.
+    pub(crate) fn next_pinned(
+        &mut self,
+    ) -> Option<
+        Result<
+            (
+                crate::storage::buffer_guard::PinnedBufferGuard,
+                Option<pg_sys::BlockNumber>,
+            ),
+            String,
+        >,
+    > {
+        let mut per_buffer_data = std::ptr::null_mut();
+        // SAFETY: `self.stream` was opened by `Self::open` and the scope
+        // owns it for `'rel`; PG returns either a pinned buffer or
+        // `InvalidBuffer` to signal end-of-stream.
+        let pinned = unsafe {
+            let buffer = pg_sys::read_stream_next_buffer(self.stream, &mut per_buffer_data);
+            if buffer == pg_sys::InvalidBuffer as pg_sys::Buffer {
+                return None;
+            }
+            crate::storage::buffer_guard::PinnedBufferGuard::from_pinned(buffer)
+        };
+        let block_number = read_stream_per_buffer_block_number(per_buffer_data);
+        Some(
+            pinned
+                .map(|p| (p, block_number))
+                .ok_or_else(|| "read stream returned an invalid buffer".to_owned()),
+        )
+    }
+
+    /// Yield the next buffer locked at `lockmode` along with the
+    /// callback-supplied block number (falling back to the buffer's own
+    /// block number when the callback did not write one).
+    ///
+    /// Returns:
+    /// * `None` when the stream is exhausted.
+    /// * `Some(Err)` if the lock acquisition rejected the pin (defensive).
+    /// * `Some(Ok((guard, block_number)))` on a successful yield.
+    pub(crate) fn next_locked(
+        &mut self,
+        lockmode: i32,
+    ) -> Option<
+        Result<
+            (
+                crate::storage::buffer_guard::LockedBufferGuard,
+                pg_sys::BlockNumber,
+            ),
+            String,
+        >,
+    > {
+        let mut per_buffer_data = std::ptr::null_mut();
+        // SAFETY: `self.stream` is live for the scope's lifetime; PG
+        // returns either a pinned buffer or `InvalidBuffer` for EOS, and
+        // the typed `LockedBufferGuard` wraps the pin + acquired lock.
+        let locked = unsafe {
+            let buffer = pg_sys::read_stream_next_buffer(self.stream, &mut per_buffer_data);
+            if buffer == pg_sys::InvalidBuffer as pg_sys::Buffer {
+                return None;
+            }
+            crate::storage::buffer_guard::LockedBufferGuard::lock_pinned(buffer, lockmode)
+        };
+        let Some(locked) = locked else {
+            return Some(Err("read stream returned an invalid buffer".to_owned()));
+        };
+        let block_number = read_stream_per_buffer_block_number(per_buffer_data)
+            .unwrap_or_else(|| locked.block_number());
+        Some(Ok((locked, block_number)))
     }
 }
 
 #[cfg(feature = "pg18")]
-impl Drop for PgReadStreamGuard {
+impl Drop for ReadStreamScope<'_> {
     fn drop(&mut self) {
-        // SAFETY: stream was opened by read_stream_begin_relation and the guard
-        // owns the single read_stream_end call.
-        unsafe { pg_sys::read_stream_end(self.0) };
+        // SAFETY: `self.stream` was opened by `read_stream_begin_relation`
+        // inside `Self::open`; the scope owns exactly one `read_stream_end`
+        // call.
+        unsafe { pg_sys::read_stream_end(self.stream) };
     }
 }
 
@@ -268,7 +368,7 @@ fn read_stream_per_buffer_block_number(
 
 #[cfg(feature = "pg18")]
 fn visit_read_stream<F>(
-    stream: &PgReadStreamGuard,
+    stream: &mut ReadStreamScope<'_>,
     context: &str,
     mut visitor: F,
 ) -> Result<(), String>
@@ -278,25 +378,8 @@ where
         pg_sys::BlockNumber,
     ) -> Result<(), String>,
 {
-    loop {
-        let mut per_buffer_data = std::ptr::null_mut();
-        // SAFETY: stream is live for this loop and remains owned by the guard.
-        let buffer = unsafe { pg_sys::read_stream_next_buffer(stream.0, &mut per_buffer_data) };
-        if buffer == pg_sys::InvalidBuffer as pg_sys::Buffer {
-            break;
-        }
-
-        // SAFETY: PostgreSQL returned a valid pinned buffer from the read
-        // stream; the guard converts that pin into a shared buffer lock.
-        let buffer = unsafe {
-            crate::storage::buffer_guard::LockedBufferGuard::lock_pinned(
-                buffer,
-                pg_sys::BUFFER_LOCK_SHARE as i32,
-            )
-        }
-        .ok_or_else(|| format!("{context} read stream returned an invalid buffer"))?;
-        let block_number = read_stream_per_buffer_block_number(per_buffer_data)
-            .unwrap_or_else(|| buffer.block_number());
+    while let Some(entry) = stream.next_locked(pg_sys::BUFFER_LOCK_SHARE as i32) {
+        let (buffer, block_number) = entry.map_err(|err| format!("{context} {err}"))?;
         visitor(&buffer, block_number)?;
     }
     Ok(())
@@ -309,28 +392,63 @@ pub(crate) enum ScanOwnedReadStreamControl {
     Stop,
 }
 
+/// Yield the next pinned buffer from a scan-owned `pg_sys::ReadStream`,
+/// or `None` at end-of-stream. Inner `None` indicates PG returned a
+/// buffer but `PinnedBufferGuard::from_pinned` rejected it (defensive).
 #[cfg(feature = "pg18")]
-struct ScanOwnedReadStreamBuffer {
-    buffer: pg_sys::Buffer,
-    block_number: Option<pg_sys::BlockNumber>,
+fn next_scan_owned_pinned(
+    stream: *mut pg_sys::ReadStream,
+) -> Option<
+    Option<(
+        crate::storage::buffer_guard::PinnedBufferGuard,
+        Option<pg_sys::BlockNumber>,
+    )>,
+> {
+    let mut per_buffer_data = std::ptr::null_mut();
+    // SAFETY: `stream` is a live scan-owned read stream retained by the
+    // AM scan opaque; the typed `PinnedBufferGuard` wraps the pin.
+    let guard = unsafe {
+        let buffer = pg_sys::read_stream_next_buffer(stream, &mut per_buffer_data);
+        if buffer == pg_sys::InvalidBuffer as pg_sys::Buffer {
+            return None;
+        }
+        crate::storage::buffer_guard::PinnedBufferGuard::from_pinned(buffer)
+    };
+    let block_number = read_stream_per_buffer_block_number(per_buffer_data);
+    Some(guard.map(|g| (g, block_number)))
 }
 
+/// Yield the next buffer from a scan-owned `pg_sys::ReadStream` locked
+/// at `lockmode`, along with the callback-supplied block number (falling
+/// back to the buffer's own block number when none was supplied). Inner
+/// `None` indicates PG returned a buffer but the lock acquisition
+/// rejected it.
 #[cfg(feature = "pg18")]
-fn next_scan_owned_read_stream_buffer(
+fn next_scan_owned_locked(
     stream: *mut pg_sys::ReadStream,
-) -> Option<ScanOwnedReadStreamBuffer> {
+    lockmode: i32,
+) -> Option<
+    Option<(
+        crate::storage::buffer_guard::LockedBufferGuard,
+        pg_sys::BlockNumber,
+    )>,
+> {
     let mut per_buffer_data = std::ptr::null_mut();
-    // SAFETY: stream is a live scan-owned stream and remains owned by the
-    // caller; this helper only consumes the buffers yielded by it.
-    let buffer = unsafe { pg_sys::read_stream_next_buffer(stream, &mut per_buffer_data) };
-    if buffer == pg_sys::InvalidBuffer as pg_sys::Buffer {
-        return None;
-    }
-    let block_number = read_stream_per_buffer_block_number(per_buffer_data);
-    Some(ScanOwnedReadStreamBuffer {
-        buffer,
-        block_number,
-    })
+    // SAFETY: `stream` is a live scan-owned read stream retained by the
+    // AM scan opaque; the typed `LockedBufferGuard` wraps the pin + lock.
+    let locked = unsafe {
+        let buffer = pg_sys::read_stream_next_buffer(stream, &mut per_buffer_data);
+        if buffer == pg_sys::InvalidBuffer as pg_sys::Buffer {
+            return None;
+        }
+        crate::storage::buffer_guard::LockedBufferGuard::lock_pinned(buffer, lockmode)
+    };
+    let Some(locked) = locked else {
+        return Some(None);
+    };
+    let block_number = read_stream_per_buffer_block_number(per_buffer_data)
+        .unwrap_or_else(|| locked.block_number());
+    Some(Some((locked, block_number)))
 }
 
 #[cfg(feature = "pg18")]
@@ -362,13 +480,10 @@ where
     if stream.is_null() {
         return Err(format!("{context} read stream is not initialized"));
     }
-    while let Some(next) = next_scan_owned_read_stream_buffer(stream) {
-        // SAFETY: PostgreSQL returned a pinned buffer from the read stream; the
-        // guard owns release of that pin after the visitor consumes it.
-        let buffer =
-            unsafe { crate::storage::buffer_guard::PinnedBufferGuard::from_pinned(next.buffer) }
-                .ok_or_else(|| format!("{context} read stream returned an invalid buffer"))?;
-        if visitor(buffer, next.block_number)? == ScanOwnedReadStreamControl::Stop {
+    while let Some(entry) = next_scan_owned_pinned(stream) {
+        let (buffer, block_number) =
+            entry.ok_or_else(|| format!("{context} read stream returned an invalid buffer"))?;
+        if visitor(buffer, block_number)? == ScanOwnedReadStreamControl::Stop {
             break;
         }
     }
@@ -391,14 +506,10 @@ where
     if stream.is_null() {
         return Err(format!("{context} read stream is not initialized"));
     }
-    while let Some(next) = next_scan_owned_read_stream_buffer(stream) {
-        // SAFETY: PostgreSQL returned a pinned buffer from the read stream; the
-        // guard adds the requested lock and owns unlock/release.
-        let buffer = unsafe {
-            crate::storage::buffer_guard::LockedBufferGuard::lock_pinned(next.buffer, lockmode)
-        }
-        .ok_or_else(|| format!("{context} read stream returned an invalid buffer"))?;
-        if visitor(buffer, next.block_number)? == ScanOwnedReadStreamControl::Stop {
+    while let Some(entry) = next_scan_owned_locked(stream, lockmode) {
+        let (buffer, block_number) =
+            entry.ok_or_else(|| format!("{context} read stream returned an invalid buffer"))?;
+        if visitor(buffer, Some(block_number))? == ScanOwnedReadStreamControl::Stop {
             break;
         }
     }
@@ -420,16 +531,18 @@ where
     ) -> Result<(), String>,
 {
     let mut state = LinearPrefetchState::new(first_block, last_block);
-    // SAFETY: state lives until stream guard drop and matches linear_prefetch_cb.
-    let stream = unsafe {
-        PgReadStreamGuard::new(
+    // SAFETY: `relation` is open for the caller's scan; `state` lives
+    // until the scope drops; `linear_prefetch_cb` matches the
+    // `LinearPrefetchState` layout.
+    let mut stream = unsafe {
+        ReadStreamScope::open(
             pg_sys::READ_STREAM_SEQUENTIAL as i32,
             relation,
             linear_prefetch_cb,
             (&mut state as *mut LinearPrefetchState).cast(),
         )
     };
-    visit_read_stream(&stream, context, visitor)
+    visit_read_stream(&mut stream, context, visitor)
 }
 
 #[cfg(feature = "pg18")]
@@ -449,17 +562,18 @@ where
         return Ok(());
     }
     let mut state = BlockSequencePrefetchState::new(block_numbers.to_vec());
-    // SAFETY: state lives until stream guard drop and matches
-    // block_sequence_prefetch_cb.
-    let stream = unsafe {
-        PgReadStreamGuard::new(
+    // SAFETY: `relation` is open for the caller's scan; `state` lives
+    // until the scope drops; `block_sequence_prefetch_cb` matches the
+    // `BlockSequencePrefetchState` layout.
+    let mut stream = unsafe {
+        ReadStreamScope::open(
             pg_sys::READ_STREAM_SEQUENTIAL as i32,
             relation,
             block_sequence_prefetch_cb,
             (&mut state as *mut BlockSequencePrefetchState).cast(),
         )
     };
-    visit_read_stream(&stream, context, visitor)
+    visit_read_stream(&mut stream, context, visitor)
 }
 
 pub(crate) fn stream_snapshot() -> ReadStreamSnapshot {

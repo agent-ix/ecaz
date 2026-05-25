@@ -272,6 +272,19 @@ fn filter_split_replacement_rows_to_fetched_sources(
         .collect())
 }
 
+/// Re-fetch the source vectors for the heap TIDs covered by
+/// `replacement_rows` so the split replacement can materialize fresh
+/// PID/code rows without trusting in-flight in-memory copies.
+///
+/// # Safety
+///
+/// `heap_relation`, `snapshot`, and `slot` must come from the calling
+/// statement's materialization scope: the heap relation is opened with
+/// the appropriate lock, the snapshot is the active scan snapshot, and
+/// the tuple slot is a reusable slot whose lifetime covers the entire
+/// call. All three pointers must remain live for the duration of this
+/// function. `indexed_attribute` must match the attribute number that
+/// produced the heap TIDs in `replacement_rows`.
 pub(super) unsafe fn fetch_split_replacement_source_vectors(
     heap_relation: pgrx::pg_sys::Relation,
     snapshot: pgrx::pg_sys::Snapshot,

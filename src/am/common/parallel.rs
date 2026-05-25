@@ -1,4 +1,5 @@
 use std::ffi::{c_int, c_void};
+use std::marker::PhantomData;
 use std::mem::size_of;
 use std::sync::atomic::{AtomicU32, Ordering};
 
@@ -72,28 +73,200 @@ pub(crate) struct ParallelScanAttachment {
     pub(crate) rescan_epoch: u32,
 }
 
-impl ParallelScanAttachment {
-    pub(crate) fn worker_slot(
-        &self,
+/// Typed view over the coordinator slot of a validated AM-private parallel
+/// scan descriptor.
+///
+/// Operations are value-returning / mutation-only per
+/// `feedback_view_operations_not_accessors`; no safe accessor returns
+/// `&'state EcParallelCoordinatorState`.
+#[derive(Copy, Clone)]
+pub(crate) struct EcParallelCoordinatorView<'state> {
+    coord: *const EcParallelCoordinatorState,
+    _marker: PhantomData<&'state EcParallelCoordinatorState>,
+}
+
+impl<'state> EcParallelCoordinatorView<'state> {
+    /// # Safety
+    ///
+    /// `coord` must aim at an initialized coordinator inside an AM-private
+    /// parallel scan descriptor that remains live for `'state`. Callers
+    /// typically obtain this view via
+    /// [`ParallelScanAttachment::coordinator_view`], which carries the
+    /// validation invariant from descriptor attachment.
+    unsafe fn from_raw(coord: *const EcParallelCoordinatorState) -> Self {
+        Self {
+            coord,
+            _marker: PhantomData,
+        }
+    }
+
+    /// Per-op safety contract: `from_raw` invariant holds.
+    fn with_coordinator<R>(self, f: impl FnOnce(&EcParallelCoordinatorState) -> R) -> R {
+        // SAFETY: constructor invariant guarantees `coord` aims at a live
+        // AM-private coordinator slot for the chosen `'state` lifetime.
+        unsafe { f(&*self.coord) }
+    }
+
+    pub(crate) fn claimed_worker_slots(self) -> u32 {
+        self.with_coordinator(|coord| coord.claimed_worker_slots.load(Ordering::Acquire))
+    }
+
+    pub(crate) fn record_worker_slot_claimed(self) {
+        self.with_coordinator(|coord| {
+            coord.claimed_worker_slots.fetch_add(1, Ordering::AcqRel);
+        });
+    }
+
+    pub(crate) fn record_worker_slot_released(self) {
+        self.with_coordinator(|coord| {
+            coord.claimed_worker_slots.fetch_sub(1, Ordering::AcqRel);
+        });
+    }
+
+    #[cfg(test)]
+    pub(crate) fn store_claimed_worker_slots_for_test(self, value: u32) {
+        self.with_coordinator(|coord| {
+            coord.claimed_worker_slots.store(value, Ordering::Release);
+        });
+    }
+}
+
+/// Typed view over the worker-slot array of a validated AM-private parallel
+/// scan descriptor.
+///
+/// Slot access is exposed through the `with_slot` closure form per
+/// `feedback_view_operations_not_accessors`; no safe accessor returns
+/// `&'state EcParallelWorkerSlot`.
+#[derive(Copy, Clone)]
+pub(crate) struct EcParallelWorkerSlotsView<'state> {
+    base: *mut EcParallelWorkerSlot,
+    count: u32,
+    stride: pg_sys::Size,
+    _marker: PhantomData<&'state EcParallelWorkerSlot>,
+}
+
+impl<'state> EcParallelWorkerSlotsView<'state> {
+    /// # Safety
+    ///
+    /// `base` must aim at `count` worker slots of `stride` bytes each, all
+    /// inside an AM-private parallel scan descriptor that remains live for
+    /// `'state`. Callers typically obtain this view via
+    /// [`ParallelScanAttachment::worker_slots_view`].
+    unsafe fn from_raw(base: *mut EcParallelWorkerSlot, count: u32, stride: pg_sys::Size) -> Self {
+        Self {
+            base,
+            count,
+            stride,
+            _marker: PhantomData,
+        }
+    }
+
+    pub(crate) fn count(self) -> u32 {
+        self.count
+    }
+
+    /// Run `f` against the slot at `slot_index`. Encapsulates the
+    /// bounds-checked stride deref so callers never receive an unbounded
+    /// `&'a EcParallelWorkerSlot`.
+    pub(crate) fn with_slot<R>(
+        self,
         slot_index: u32,
-    ) -> Result<&EcParallelWorkerSlot, &'static str> {
-        if slot_index >= self.worker_slot_count {
+        f: impl FnOnce(&EcParallelWorkerSlot) -> R,
+    ) -> Result<R, &'static str> {
+        if slot_index >= self.count {
             return Err("parallel worker slot index was outside the descriptor capacity");
         }
         let offset = checked_mul_size(
-            self.worker_slot_bytes,
+            self.stride,
             slot_index as pg_sys::Size,
             "parallel worker slot offset",
         );
-        // SAFETY: validated attachments seed `worker_slots` from a descriptor
-        // whose slot count and stride were bounds-checked above.
-        Ok(unsafe { &*self.worker_slots.cast::<u8>().add(offset).cast() })
+        // SAFETY: constructor invariant: `base` aims at `count` slots of
+        // `stride` bytes each in a live AM-private descriptor; `slot_index`
+        // is bounds-checked above.
+        let slot = unsafe {
+            &*self
+                .base
+                .cast::<u8>()
+                .add(offset)
+                .cast::<EcParallelWorkerSlot>()
+        };
+        Ok(f(slot))
+    }
+}
+
+impl ParallelScanAttachment {
+    /// Typed coordinator view; the view's lifetime is bounded by `self`.
+    pub(crate) fn coordinator_view(&self) -> EcParallelCoordinatorView<'_> {
+        // SAFETY: `parallel_scan_attachment` (the sole constructor) validates
+        // the descriptor header before populating `self.coordinator`.
+        unsafe { EcParallelCoordinatorView::from_raw(self.coordinator) }
     }
 
-    fn coordinator(&self) -> &EcParallelCoordinatorState {
-        // SAFETY: validated attachments derive `coordinator` from the same
-        // checked AM-private descriptor as the worker slots.
-        unsafe { &*self.coordinator }
+    /// Typed worker-slot view; the view's lifetime is bounded by `self`.
+    pub(crate) fn worker_slots_view(&self) -> EcParallelWorkerSlotsView<'_> {
+        // SAFETY: `parallel_scan_attachment` validated the descriptor header
+        // and recorded the slot base / count / stride that this view exposes.
+        unsafe {
+            EcParallelWorkerSlotsView::from_raw(
+                self.worker_slots,
+                self.worker_slot_count,
+                self.worker_slot_bytes,
+            )
+        }
+    }
+
+    /// Safe `claim_worker_slot` that operates through the typed views.
+    pub(crate) fn claim_worker_slot(&self) -> Result<u32, &'static str> {
+        let worker_slots = self.worker_slots_view();
+        for slot_index in 0..worker_slots.count() {
+            let claimed = worker_slots.with_slot(slot_index, |slot| {
+                try_claim_worker_slot(worker_slot_fields(slot), self.rescan_epoch)
+            })?;
+            if claimed {
+                self.coordinator_view().record_worker_slot_claimed();
+                return Ok(slot_index);
+            }
+        }
+        Err("parallel worker slot capacity was exhausted")
+    }
+
+    /// Safe `release_worker_slot` that operates through the typed views.
+    pub(crate) fn release_worker_slot(
+        &self,
+        slot_index: u32,
+        rescan_epoch: u32,
+    ) -> Result<bool, &'static str> {
+        let released = self.worker_slots_view().with_slot(slot_index, |slot| {
+            release_worker_slot(worker_slot_fields(slot), rescan_epoch)
+        })?;
+        if released {
+            self.coordinator_view().record_worker_slot_released();
+        }
+        Ok(released)
+    }
+
+    /// Safe `publish_worker_slot_runtime_snapshot` operating through the
+    /// typed worker-slot view.
+    pub(crate) fn publish_worker_slot_runtime_snapshot(
+        &self,
+        slot_index: u32,
+        rescan_epoch: u32,
+        snapshot: EcParallelWorkerSlotRuntimeSnapshot,
+    ) -> Result<bool, &'static str> {
+        self.worker_slots_view().with_slot(slot_index, |slot| {
+            publish_worker_slot_runtime_snapshot(worker_slot_fields(slot), rescan_epoch, snapshot)
+        })
+    }
+
+    /// Safe `read_worker_slot_snapshot` operating through the typed view.
+    pub(crate) fn read_worker_slot_snapshot(
+        &self,
+        slot_index: u32,
+    ) -> Result<EcParallelWorkerSlotSnapshot, &'static str> {
+        self.worker_slots_view().with_slot(slot_index, |slot| {
+            load_worker_slot_snapshot(worker_slot_fields(slot))
+        })
     }
 }
 
@@ -153,33 +326,44 @@ pub(crate) fn ec_parallel_scan_descriptor_size() -> pg_sys::Size {
     ec_parallel_scan_descriptor_size_for(ec_parallel_scan_worker_slot_capacity())
 }
 
-fn coordinator_ptr(state: &EcParallelScanState) -> *mut EcParallelCoordinatorState {
-    // SAFETY: callers pass the start of the AM-private descriptor; the
-    // coordinator immediately follows the MAXALIGN-sized state header.
-    unsafe {
-        (state as *const EcParallelScanState)
-            .cast::<u8>()
-            .add(ec_parallel_scan_state_size())
-            .cast::<EcParallelCoordinatorState>()
-            .cast_mut()
-    }
-}
-
-fn worker_slots_ptr(state: &EcParallelScanState) -> *mut EcParallelWorkerSlot {
+/// Resolve the coordinator and worker-slot region pointers inside the
+/// AM-private parallel scan descriptor that starts at `state`. The
+/// coordinator immediately follows the MAXALIGN-sized state header; the
+/// worker-slot array starts after the state header plus the recorded
+/// coordinator span.
+fn descriptor_region_ptrs(
+    state: &EcParallelScanState,
+) -> (*mut EcParallelCoordinatorState, *mut EcParallelWorkerSlot) {
+    let state_size = ec_parallel_scan_state_size();
     let coordinator_offset = checked_add_size(
-        ec_parallel_scan_state_size(),
+        state_size,
         state.coordinator_bytes,
         "parallel worker slot base offset",
     );
-    // SAFETY: the worker slot array starts after the state header plus the
-    // recorded coordinator span, both checked for overflow above.
+    // SAFETY: callers pass the start of the AM-private descriptor PG sized
+    // via `ec_amestimateparallelscan`; the descriptor places the coordinator
+    // after the MAXALIGN-sized state header and the worker-slot array after
+    // the recorded coordinator span. Both offsets are overflow-checked.
     unsafe {
-        (state as *const EcParallelScanState)
-            .cast::<u8>()
+        let base = (state as *const EcParallelScanState).cast::<u8>();
+        let coord = base
+            .add(state_size)
+            .cast::<EcParallelCoordinatorState>()
+            .cast_mut();
+        let slots = base
             .add(coordinator_offset)
             .cast::<EcParallelWorkerSlot>()
-            .cast_mut()
+            .cast_mut();
+        (coord, slots)
     }
+}
+
+fn coordinator_ptr(state: &EcParallelScanState) -> *mut EcParallelCoordinatorState {
+    descriptor_region_ptrs(state).0
+}
+
+fn worker_slots_ptr(state: &EcParallelScanState) -> *mut EcParallelWorkerSlot {
+    descriptor_region_ptrs(state).1
 }
 
 fn reset_parallel_scan_layout(state: &mut EcParallelScanState) {
@@ -188,8 +372,10 @@ fn reset_parallel_scan_layout(state: &mut EcParallelScanState) {
     let rescan_epoch = state.rescan_epoch;
     state.reserved_worker_slots = 0;
 
-    // SAFETY: the coordinator region is within the descriptor immediately
-    // after the initialized state header.
+    // SAFETY: the coordinator and worker-slot regions both sit inside the
+    // initialized AM-private descriptor; offsets are derived from the
+    // descriptor stride and the in-range loop index, so each slot is
+    // initialized exactly once during this reset pass.
     unsafe {
         *coordinator_ptr(state) = EcParallelCoordinatorState {
             flags: AtomicU32::new(0),
@@ -197,24 +383,15 @@ fn reset_parallel_scan_layout(state: &mut EcParallelScanState) {
             reserved0: 0,
             reserved1: 0,
         };
-    }
-
-    for slot_index in 0..worker_slot_count {
-        // SAFETY: slot offsets are derived from the descriptor stride and the
-        // in-range loop index, so each write targets one allocated slot.
-        let slot = unsafe {
-            worker_slots_ptr(state)
+        for slot_index in 0..worker_slot_count {
+            let slot = worker_slots_ptr(state)
                 .cast::<u8>()
                 .add(checked_mul_size(
                     worker_slot_bytes,
                     slot_index as pg_sys::Size,
                     "parallel worker slot reset offset",
                 ))
-                .cast::<EcParallelWorkerSlot>()
-        };
-        // SAFETY: `slot` points at a writable slot in the AM-private shared
-        // descriptor and is initialized exactly once during this reset pass.
-        unsafe {
+                .cast::<EcParallelWorkerSlot>();
             *slot = EcParallelWorkerSlot {
                 flags: AtomicU32::new(EC_PARALLEL_WORKER_SLOT_FREE),
                 slot_index,
@@ -299,38 +476,21 @@ fn validate_parallel_scan_state(
     })
 }
 
-#[cfg(feature = "pg17")]
 fn parallel_scan_state_ptr(
     parallel_scan: pg_sys::ParallelIndexScanDesc,
 ) -> Result<Option<*mut EcParallelScanState>, &'static str> {
     if parallel_scan.is_null() {
         return Ok(None);
     }
-    // SAFETY: PostgreSQL owns `parallel_scan`; pg17 stores `ps_offset` as a
-    // byte offset from the descriptor base to the AM-private state.
+    // SAFETY: PostgreSQL owns `parallel_scan`; pg17 stores the AM-private
+    // offset in `ps_offset` and pg18 in `ps_offset_am`. Either way, the
+    // offset is a byte offset from the descriptor base into PostgreSQL's
+    // allocation, so the resulting pointer aims into the AM-private region
+    // PostgreSQL sized via `ec_amestimateparallelscan`.
     let state = unsafe {
+        #[cfg(feature = "pg17")]
         let offset = (*parallel_scan).ps_offset;
-        if offset == 0 {
-            return Ok(None);
-        }
-        parallel_scan
-            .cast::<u8>()
-            .add(offset)
-            .cast::<EcParallelScanState>()
-    };
-    Ok(Some(state))
-}
-
-#[cfg(feature = "pg18")]
-fn parallel_scan_state_ptr(
-    parallel_scan: pg_sys::ParallelIndexScanDesc,
-) -> Result<Option<*mut EcParallelScanState>, &'static str> {
-    if parallel_scan.is_null() {
-        return Ok(None);
-    }
-    // SAFETY: PostgreSQL owns `parallel_scan`; pg18 stores `ps_offset_am` as a
-    // byte offset from the descriptor base to the AM-private state.
-    let state = unsafe {
+        #[cfg(feature = "pg18")]
         let offset = (*parallel_scan).ps_offset_am;
         if offset == 0 {
             return Ok(None);
@@ -343,6 +503,20 @@ fn parallel_scan_state_ptr(
     Ok(Some(state))
 }
 
+/// Decode the AM-private parallel scan descriptor that PostgreSQL passes via
+/// `IndexScanDescData::parallel_scan` and produce a validated
+/// [`ParallelScanAttachment`].
+///
+/// # Safety
+///
+/// `parallel_scan` must either be null or point at the
+/// `ParallelIndexScanDescData` PostgreSQL owns for the active scan, and the
+/// AM-private region at `ps_offset` / `ps_offset_am` must have been
+/// initialized by [`ec_aminitparallelscan`] (or [`initialize_parallel_scan_target`])
+/// for the same scan. The descriptor and AM-private region must remain live
+/// for the duration of the borrow embedded in the returned attachment. The
+/// returned `Option::None` means PostgreSQL did not allocate an AM-private
+/// region (e.g. serial scan).
 pub(crate) unsafe fn parallel_scan_attachment(
     parallel_scan: pg_sys::ParallelIndexScanDesc,
 ) -> Result<Option<ParallelScanAttachment>, &'static str> {
@@ -354,6 +528,17 @@ pub(crate) unsafe fn parallel_scan_attachment(
     Ok(Some(validate_parallel_scan_state(unsafe { &*state })?))
 }
 
+/// Initialize the AM-private parallel scan descriptor that PostgreSQL passes
+/// into [`ec_aminitparallelscan`] with the requested worker-slot capacity.
+///
+/// # Safety
+///
+/// `target` must be null or point at the AM-private buffer PostgreSQL
+/// reserved for this scan via [`ec_amestimateparallelscan`]. The buffer must
+/// be at least `ec_parallel_scan_descriptor_size_for(worker_slot_count)`
+/// bytes and exclusively owned by this initialization for the duration of
+/// the call. `worker_slot_count` must be the same value used to size the
+/// buffer.
 pub(crate) unsafe fn initialize_parallel_scan_target_with_worker_slots(
     target: *mut c_void,
     worker_slot_count: u32,
@@ -370,36 +555,36 @@ pub(crate) unsafe fn initialize_parallel_scan_target_with_worker_slots(
     Ok(())
 }
 
-pub(crate) unsafe fn initialize_parallel_scan_target(
-    target: *mut c_void,
-) -> Result<(), &'static str> {
-    // SAFETY: delegates to the checked initializer with the capacity derived
-    // from PostgreSQL's configured worker limit.
-    unsafe {
-        initialize_parallel_scan_target_with_worker_slots(
-            target,
-            ec_parallel_scan_worker_slot_capacity(),
-        )
-    }
-}
-
+/// Claim the first free worker slot in `attachment`. The caller is
+/// responsible for matching this with a subsequent
+/// [`release_parallel_scan_worker_slot`].
+///
+/// # Safety
+///
+/// `attachment` must have been produced by [`parallel_scan_attachment`] for
+/// the current scan and must remain live (the underlying AM-private
+/// descriptor must not be torn down) for the duration of this call. The
+/// caller must be running on a PostgreSQL worker backend attached to that
+/// scan; concurrent claims race through atomic CAS on the slot flags and
+/// remain safe.
 pub(crate) unsafe fn claim_parallel_scan_worker_slot(
     attachment: &ParallelScanAttachment,
 ) -> Result<u32, &'static str> {
-    for slot_index in 0..attachment.worker_slot_count {
-        let slot = attachment.worker_slot(slot_index)?;
-        if try_claim_worker_slot(worker_slot_fields(slot), attachment.rescan_epoch) {
-            attachment
-                .coordinator()
-                .claimed_worker_slots
-                .fetch_add(1, Ordering::AcqRel);
-            return Ok(slot_index);
-        }
-    }
-
-    Err("parallel worker slot capacity was exhausted")
+    attachment.claim_worker_slot()
 }
 
+/// Release the worker slot at `slot_index` if it is currently claimed for
+/// `rescan_epoch`. Returns `true` if a live claim was dropped, `false` if
+/// the slot was already free or staled by a rescan.
+///
+/// # Safety
+///
+/// `state` must either be null or point at the AM-private descriptor
+/// produced by [`initialize_parallel_scan_target_with_worker_slots`] for
+/// the current scan. The descriptor must remain live for the duration of
+/// the call. `rescan_epoch` must be the epoch observed when the slot was
+/// claimed; passing an epoch from a previous claim is safe (returns
+/// `Ok(false)`).
 pub(crate) unsafe fn release_parallel_scan_worker_slot(
     state: *mut EcParallelScanState,
     slot_index: u32,
@@ -408,19 +593,23 @@ pub(crate) unsafe fn release_parallel_scan_worker_slot(
     if state.is_null() {
         return Err("AM-private parallel scan state pointer was null");
     }
+    // SAFETY: caller asserts `state` aims at a live AM-private parallel scan
+    // descriptor; validation occurs below before any non-header access.
     let attachment = validate_parallel_scan_state(unsafe { &*state })?;
-    let slot = attachment.worker_slot(slot_index)?;
-    if release_worker_slot(worker_slot_fields(slot), rescan_epoch) {
-        attachment
-            .coordinator()
-            .claimed_worker_slots
-            .fetch_sub(1, Ordering::AcqRel);
-        return Ok(true);
-    }
-
-    Ok(false)
+    attachment.release_worker_slot(slot_index, rescan_epoch)
 }
 
+/// Publish a runtime snapshot for the worker slot at `slot_index`, observed
+/// for `rescan_epoch`. Returns `false` (without mutating the slot) if the
+/// observed epoch is stale relative to the live descriptor.
+///
+/// # Safety
+///
+/// Same contract as [`release_parallel_scan_worker_slot`]: `state` is
+/// either null or aims at a live AM-private descriptor for the current
+/// scan, and the descriptor must remain live for the duration of the call.
+/// The slot at `slot_index` must have been claimed by this worker (i.e.,
+/// the caller is responsible for not publishing into an unclaimed slot).
 pub(crate) unsafe fn publish_parallel_scan_worker_slot_runtime_snapshot(
     state: *mut EcParallelScanState,
     slot_index: u32,
@@ -430,15 +619,22 @@ pub(crate) unsafe fn publish_parallel_scan_worker_slot_runtime_snapshot(
     if state.is_null() {
         return Err("AM-private parallel scan state pointer was null");
     }
+    // SAFETY: caller asserts `state` aims at a live AM-private parallel scan
+    // descriptor; validation occurs below before any non-header access.
     let attachment = validate_parallel_scan_state(unsafe { &*state })?;
-    let slot = attachment.worker_slot(slot_index)?;
-    Ok(publish_worker_slot_runtime_snapshot(
-        worker_slot_fields(slot),
-        rescan_epoch,
-        snapshot,
-    ))
+    attachment.publish_worker_slot_runtime_snapshot(slot_index, rescan_epoch, snapshot)
 }
 
+/// Read the current snapshot of the worker slot at `slot_index`. Returns
+/// the slot's atomic state as a value, never an outstanding borrow.
+///
+/// # Safety
+///
+/// Same contract as [`release_parallel_scan_worker_slot`]: `state` is
+/// either null or aims at a live AM-private descriptor for the current
+/// scan, and the descriptor must remain live for the duration of the call.
+/// Concurrent reads / writes from other workers race through the slot's
+/// atomic fields and remain well-defined.
 pub(crate) unsafe fn read_parallel_scan_worker_slot_snapshot(
     state: *mut EcParallelScanState,
     slot_index: u32,
@@ -446,30 +642,44 @@ pub(crate) unsafe fn read_parallel_scan_worker_slot_snapshot(
     if state.is_null() {
         return Err("AM-private parallel scan state pointer was null");
     }
+    // SAFETY: caller asserts `state` aims at a live AM-private parallel scan
+    // descriptor; validation occurs below before any non-header access.
     let attachment = validate_parallel_scan_state(unsafe { &*state })?;
-    let slot = attachment.worker_slot(slot_index)?;
-    Ok(load_worker_slot_snapshot(worker_slot_fields(slot)))
+    attachment.read_worker_slot_snapshot(slot_index)
 }
 
+/// Advance the AM-private parallel scan descriptor for `parallel_scan` to
+/// a new rescan epoch and reset all worker-slot state to idle.
+///
+/// # Safety
+///
+/// `parallel_scan` must either be null or point at the
+/// `ParallelIndexScanDescData` PostgreSQL owns for the active scan, with an
+/// AM-private region initialized by [`ec_aminitparallelscan`] /
+/// [`initialize_parallel_scan_target`]. The descriptor must remain live for
+/// the duration of the call. Callers must ensure no concurrent reads /
+/// writes are in flight against the AM-private region — PostgreSQL
+/// guarantees this by invoking `IndexAmRoutine::amparallelrescan` only
+/// during the scan's rescan barrier.
 pub(crate) unsafe fn reset_parallel_scan_state(
     parallel_scan: pg_sys::ParallelIndexScanDesc,
 ) -> Result<Option<u32>, &'static str> {
     let Some(state) = parallel_scan_state_ptr(parallel_scan)? else {
         return Ok(None);
     };
-    let rescan_epoch = {
-        // SAFETY: the pointer came from PostgreSQL's AM-private offset; the
-        // header is checked before the rescan epoch is mutated.
-        let state_ref = unsafe { &mut *state };
-        if state_ref.magic != EC_PARALLEL_SCAN_STATE_MAGIC
-            || state_ref.version != EC_PARALLEL_SCAN_STATE_VERSION
-        {
-            return Err("AM-private parallel scan state was not initialized before rescan");
-        }
-        state_ref.rescan_epoch = state_ref.rescan_epoch.wrapping_add(1);
-        state_ref.rescan_epoch
-    };
-    reset_parallel_scan_layout(unsafe { &mut *state });
+    // SAFETY: the pointer came from PostgreSQL's AM-private offset; the
+    // header is checked below before any non-header field is touched, and
+    // `state_ref` is the sole `&mut` borrow used for both the epoch bump
+    // and the layout reset.
+    let state_ref = unsafe { &mut *state };
+    if state_ref.magic != EC_PARALLEL_SCAN_STATE_MAGIC
+        || state_ref.version != EC_PARALLEL_SCAN_STATE_VERSION
+    {
+        return Err("AM-private parallel scan state was not initialized before rescan");
+    }
+    state_ref.rescan_epoch = state_ref.rescan_epoch.wrapping_add(1);
+    let rescan_epoch = state_ref.rescan_epoch;
+    reset_parallel_scan_layout(state_ref);
     Ok(Some(rescan_epoch))
 }
 
@@ -492,8 +702,11 @@ pub(crate) unsafe extern "C-unwind" fn ec_amestimateparallelscan(
 
 pub(crate) unsafe extern "C-unwind" fn ec_aminitparallelscan(target: *mut c_void) {
     pg_callback!({
-        initialize_parallel_scan_target(target)
-            .unwrap_or_else(|err| pgrx::error!("ec_hnsw parallel scan init failed: {err}"));
+        initialize_parallel_scan_target_with_worker_slots(
+            target,
+            ec_parallel_scan_worker_slot_capacity(),
+        )
+        .unwrap_or_else(|err| pgrx::error!("ec_hnsw parallel scan init failed: {err}"));
     })
 }
 
@@ -557,6 +770,22 @@ mod tests {
     const TEST_PARALLEL_SCAN_OFFSET: usize = 64;
     const TEST_WORKER_SLOT_COUNT: u32 = 3;
 
+    fn set_test_parallel_scan_ps_offset(parallel_scan: pg_sys::ParallelIndexScanDesc) {
+        // SAFETY: `parallel_scan` points into aligned test storage large
+        // enough for PostgreSQL's parallel scan descriptor header; the
+        // descriptor lives on the test-thread stack for the entire test.
+        unsafe {
+            #[cfg(feature = "pg17")]
+            {
+                (*parallel_scan).ps_offset = TEST_PARALLEL_SCAN_OFFSET;
+            }
+            #[cfg(feature = "pg18")]
+            {
+                (*parallel_scan).ps_offset_am = TEST_PARALLEL_SCAN_OFFSET;
+            }
+        }
+    }
+
     fn test_parallel_scan_desc(
         storage: &mut TestParallelScanStorage,
     ) -> pg_sys::ParallelIndexScanDesc {
@@ -564,41 +793,19 @@ mod tests {
             .bytes
             .as_mut_ptr()
             .cast::<pg_sys::ParallelIndexScanDescData>();
-        #[cfg(feature = "pg17")]
-        {
-            // SAFETY: `parallel_scan` points into aligned test storage large
-            // enough for PostgreSQL's parallel scan descriptor header.
-            unsafe { (*parallel_scan).ps_offset = TEST_PARALLEL_SCAN_OFFSET };
-        }
-        #[cfg(feature = "pg18")]
-        {
-            // SAFETY: `parallel_scan` points into aligned test storage large
-            // enough for PostgreSQL's parallel scan descriptor header.
-            unsafe { (*parallel_scan).ps_offset_am = TEST_PARALLEL_SCAN_OFFSET };
-        }
+        set_test_parallel_scan_ps_offset(parallel_scan);
         parallel_scan
     }
 
     fn test_parallel_scan_desc_and_target(
         storage: &mut TestParallelScanStorage,
     ) -> (pg_sys::ParallelIndexScanDesc, *mut c_void) {
-        let base = storage.bytes.as_mut_ptr();
-        let parallel_scan = base.cast::<pg_sys::ParallelIndexScanDescData>();
-        #[cfg(feature = "pg17")]
-        {
-            // SAFETY: `parallel_scan` points into aligned test storage large
-            // enough for PostgreSQL's parallel scan descriptor header.
-            unsafe { (*parallel_scan).ps_offset = TEST_PARALLEL_SCAN_OFFSET };
-        }
-        #[cfg(feature = "pg18")]
-        {
-            // SAFETY: `parallel_scan` points into aligned test storage large
-            // enough for PostgreSQL's parallel scan descriptor header.
-            unsafe { (*parallel_scan).ps_offset_am = TEST_PARALLEL_SCAN_OFFSET };
-        }
-        // SAFETY: the fixed test offset stays within `TestParallelScanStorage`
-        // and leaves enough space for the AM-private descriptor under test.
-        let target = unsafe { base.add(TEST_PARALLEL_SCAN_OFFSET) }.cast::<c_void>();
+        let parallel_scan = storage
+            .bytes
+            .as_mut_ptr()
+            .cast::<pg_sys::ParallelIndexScanDescData>();
+        set_test_parallel_scan_ps_offset(parallel_scan);
+        let target = test_parallel_scan_target(storage);
         (parallel_scan, target)
     }
 
@@ -617,12 +824,19 @@ mod tests {
         .expect("parallel target should init");
     }
 
+    fn raw_test_parallel_scan_attachment(
+        parallel_scan: pg_sys::ParallelIndexScanDesc,
+    ) -> Result<Option<ParallelScanAttachment>, &'static str> {
+        // SAFETY: callers pass parallel scan descriptors initialized by the
+        // test helpers in this module; the negative-path caller intentionally
+        // passes an uninitialized descriptor and expects validation to fail.
+        unsafe { parallel_scan_attachment(parallel_scan) }
+    }
+
     fn test_parallel_scan_attachment(
         parallel_scan: pg_sys::ParallelIndexScanDesc,
     ) -> ParallelScanAttachment {
-        // SAFETY: test descriptors are initialized by `test_parallel_scan_desc`
-        // to point at the AM-private region inside `TestParallelScanStorage`.
-        unsafe { parallel_scan_attachment(parallel_scan) }
+        raw_test_parallel_scan_attachment(parallel_scan)
             .expect("parallel descriptor should validate")
             .expect("parallel descriptor should expose AM state")
     }
@@ -630,33 +844,26 @@ mod tests {
     fn test_parallel_scan_attachment_error(
         parallel_scan: pg_sys::ParallelIndexScanDesc,
     ) -> &'static str {
-        // SAFETY: this negative test intentionally passes an uninitialized
-        // descriptor region and expects validation to reject it.
-        unsafe { parallel_scan_attachment(parallel_scan) }
+        raw_test_parallel_scan_attachment(parallel_scan)
             .expect_err("attachment should reject uninitialized AM-private state")
     }
 
     fn claim_test_worker_slot(attachment: &ParallelScanAttachment) -> u32 {
-        // SAFETY: attachments used by tests come from validated test
-        // descriptors and remain live for the duration of each test.
-        unsafe { claim_parallel_scan_worker_slot(attachment) }.expect("claim should succeed")
+        attachment
+            .claim_worker_slot()
+            .expect("claim should succeed")
     }
 
     fn try_claim_test_worker_slot(
         attachment: &ParallelScanAttachment,
     ) -> Result<u32, &'static str> {
-        // SAFETY: attachments used by tests come from validated test
-        // descriptors and remain live for the duration of each test.
-        unsafe { claim_parallel_scan_worker_slot(attachment) }
+        attachment.claim_worker_slot()
     }
 
     fn release_test_worker_slot(attachment: &ParallelScanAttachment, slot_index: u32) -> bool {
-        // SAFETY: the attachment state and slot index are produced by the same
-        // initialized test descriptor.
-        unsafe {
-            release_parallel_scan_worker_slot(attachment.state, slot_index, attachment.rescan_epoch)
-        }
-        .expect("release should succeed")
+        attachment
+            .release_worker_slot(slot_index, attachment.rescan_epoch)
+            .expect("release should succeed")
     }
 
     fn publish_test_worker_slot_runtime_snapshot(
@@ -664,26 +871,17 @@ mod tests {
         slot_index: u32,
         runtime: EcParallelWorkerSlotRuntimeSnapshot,
     ) -> bool {
-        // SAFETY: the attachment state and slot index are produced by the same
-        // initialized test descriptor.
-        unsafe {
-            publish_parallel_scan_worker_slot_runtime_snapshot(
-                attachment.state,
-                slot_index,
-                attachment.rescan_epoch,
-                runtime,
-            )
-        }
-        .expect("publish should succeed")
+        attachment
+            .publish_worker_slot_runtime_snapshot(slot_index, attachment.rescan_epoch, runtime)
+            .expect("publish should succeed")
     }
 
     fn read_test_worker_slot_snapshot(
         attachment: &ParallelScanAttachment,
         slot_index: u32,
     ) -> EcParallelWorkerSlotSnapshot {
-        // SAFETY: the attachment state and slot index are produced by the same
-        // initialized test descriptor.
-        unsafe { read_parallel_scan_worker_slot_snapshot(attachment.state, slot_index) }
+        attachment
+            .read_worker_slot_snapshot(slot_index)
             .expect("worker slot snapshot should read back")
     }
 
@@ -695,21 +893,13 @@ mod tests {
             .expect("parallel rescan should see initialized state")
     }
 
-    fn worker_slot_for_test(
-        attachment: &ParallelScanAttachment,
-        slot_index: u32,
-    ) -> &EcParallelWorkerSlot {
-        attachment
-            .worker_slot(slot_index)
-            .expect("slot index should stay within the configured capacity")
-    }
-
     fn worker_slot_error_for_test(
         attachment: &ParallelScanAttachment,
         slot_index: u32,
     ) -> &'static str {
         attachment
-            .worker_slot(slot_index)
+            .worker_slots_view()
+            .with_slot(slot_index, |_| ())
             .expect_err("slot lookup should reject indices outside the descriptor capacity")
     }
 
@@ -717,27 +907,27 @@ mod tests {
         attachment: &ParallelScanAttachment,
         slot_index: u32,
     ) -> (u32, u32, u32) {
-        let slot = worker_slot_for_test(attachment, slot_index);
-        worker_slot_header_snapshot(slot)
+        attachment
+            .worker_slots_view()
+            .with_slot(slot_index, worker_slot_header_snapshot)
+            .expect("slot index should stay within the configured capacity")
     }
 
     fn coordinator_claimed_worker_slots(attachment: &ParallelScanAttachment) -> u32 {
-        attachment
-            .coordinator()
-            .claimed_worker_slots
-            .load(Ordering::Acquire)
+        attachment.coordinator_view().claimed_worker_slots()
     }
 
     fn stage_claimed_state_for_rescan_test(attachment: &ParallelScanAttachment) {
         attachment
-            .coordinator()
-            .claimed_worker_slots
-            .store(2, Ordering::Release);
+            .coordinator_view()
+            .store_claimed_worker_slots_for_test(2);
         attachment
-            .worker_slot(1)
-            .expect("slot index should stay in bounds")
-            .flags
-            .store(EC_PARALLEL_WORKER_SLOT_CLAIMED, Ordering::Release);
+            .worker_slots_view()
+            .with_slot(1, |slot| {
+                slot.flags
+                    .store(EC_PARALLEL_WORKER_SLOT_CLAIMED, Ordering::Release);
+            })
+            .expect("slot index should stay in bounds");
     }
 
     #[test]

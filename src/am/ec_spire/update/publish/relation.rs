@@ -35,6 +35,18 @@ impl SpireRelationScheduledPublishRelation {
     }
 }
 
+/// Publish a SPIRE scheduled-replacement epoch into the index relation and
+/// return the published epoch draft.
+///
+/// # Safety
+///
+/// `index_relation` must point at the SPIRE index relation PostgreSQL has
+/// already opened with at least `RowExclusiveLock` for the calling
+/// statement; it must remain open for the duration of this call. The
+/// `object_store` must be backed by the same index relation (constructed
+/// via one of `SpireRelationObjectStore::for_*`). `previous_epoch_manifest`
+/// must reflect the manifest that was live before this publish — passing a
+/// stale manifest can publish an inconsistent epoch.
 pub(super) unsafe fn publish_relation_scheduled_replacement_epoch(
     index_relation: pgrx::pg_sys::Relation,
     previous_epoch_manifest: SpireEpochManifest,
@@ -132,6 +144,17 @@ fn publish_relation_scheduled_replacement_epoch_impl(
     Ok(draft)
 }
 
+/// Publish a SPIRE scheduled-replacement epoch using a pre-selected
+/// publish lock plan and return the published epoch draft.
+///
+/// # Safety
+///
+/// Same contract as [`publish_relation_scheduled_replacement_epoch`]:
+/// `index_relation` must be the live SPIRE index relation already opened
+/// at `RowExclusiveLock` for the calling statement; it must remain open
+/// for the duration of this call. `object_store` must be backed by the
+/// same relation. `selected.lock_plan.pid_plan` must encode the PID
+/// schedule that was selected for the previous-epoch manifest passed in.
 pub(super) unsafe fn publish_relation_selected_scheduled_replacement_epoch(
     index_relation: pgrx::pg_sys::Relation,
     previous_epoch_manifest: SpireEpochManifest,

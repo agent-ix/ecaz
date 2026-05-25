@@ -535,6 +535,20 @@ pub(super) fn build_relation_selected_scheduled_split_replacement_execution_inpu
     )
 }
 
+/// Build the scheduled-replacement execution input for a selected publish
+/// lock plan by re-fetching source vectors from the heap relation.
+///
+/// # Safety
+///
+/// `heap_relation`, `heap_snapshot`, and `slot` must come from the
+/// calling statement's replacement-execution scope: the heap relation is
+/// opened with the appropriate lock, the snapshot is the active scan
+/// snapshot, and the tuple slot is a reusable slot whose lifetime covers
+/// the entire call. All three pointers must remain live for the duration
+/// of this function. `indexed_attribute` must match the attribute number
+/// that produced the heap TIDs encoded in `selected.lock_plan`.
+/// `object_store` must be backed by the same SPIRE index relation that
+/// produced `snapshot` / `selected`.
 pub(super) unsafe fn build_relation_selected_scheduled_split_replacement_execution_input_from_heap_sources(
     heap_relation: pgrx::pg_sys::Relation,
     heap_snapshot: pgrx::pg_sys::Snapshot,

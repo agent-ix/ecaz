@@ -52,6 +52,19 @@ fn build_dimensions(dimensions: usize, context: &str, label: &str) -> u16 {
     })
 }
 
+/// Detoast a varlena Datum produced by PostgreSQL tuple storage and
+/// return its packed bytes as an owned vector. `label` is used only for
+/// error messages.
+///
+/// # Safety
+///
+/// `datum` must be a valid varlena Datum sourced from a live PostgreSQL
+/// tuple slot or HeapTuple — that is, a pointer Datum whose pointed-at
+/// region is a well-formed PostgreSQL `varlena` (packed, compressed, or
+/// fully-detoasted). The pointed-at region must remain live for the
+/// duration of this call; the detoast wrapper copies the bytes before
+/// returning, so the resulting `Vec<u8>` outlives the input Datum
+/// safely.
 unsafe fn detoasted_varlena_bytes(datum: pg_sys::Datum, label: &str) -> Vec<u8> {
     // SAFETY: callers pass a varlena Datum from PostgreSQL tuple storage; the
     // detoast wrapper copies packed bytes before returning.
