@@ -91,6 +91,7 @@ These pre-lane task files are retained only for historical context under
 51. `51-ivf-rabitq-second-optimization-round.md` — follow-on AWS RaBitQ/IVF latency lane: paired same-host comparator baseline, 1M scan counters, `nlists`/nprobe geometry sweeps, local batch-decode scratch-SoA prototype, heap-rerank locality, adaptive nprobe/rerank width, and a gated Posting Layout v2 decision before any invasive on-disk format work.
 59. `59-diskann-aws-graviton-tuning-1m-suite.md` — AWS Graviton DiskANN tuning lane after the Task 55 scan-materialization win: profile the remaining relation-read/decode/allocation/scoring and host-shape costs, tune the Graviton profile/config, land targeted optimizations, and prove with a full `ecaz bench suite` through 1M rows; Intel is deferred and active AWS profiles stay up unless the operator requests teardown.
 60. `60-ec-diskann-rabitq-storage-format.md` — add `storage_format = 'rabitq'` to `ec_diskann` so operators can trade DiskANN's graph-traversal recall/latency curve against RaBitQ's much smaller on-disk footprint; target ≥30% index size reduction vs `pq_fastscan` at 1M with measured recall delta and packet 005's materialization-avoidance win preserved.
+61. `61-hnsw-aws-graviton-first-pass.md` — AWS Graviton first-pass tuning lane for `ec_hnsw`: establish repeatable low-cost Graviton baselines at 10k/50k/100k and 1M if feasible, identify whether build, scan, memory, or storage dominates, land only evidence-backed narrow tuning, and keep Intel comparator work deferred.
 
 ## Coordination rules
 
