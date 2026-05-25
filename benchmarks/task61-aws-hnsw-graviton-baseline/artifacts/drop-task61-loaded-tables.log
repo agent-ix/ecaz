@@ -1,0 +1,7 @@
+DROP TABLE
+DROP TABLE
+DROP TABLE
+DROP TABLE
+DROP TABLE
+DROP TABLE
+NOTICE:  table "task61_real_100k_hnsw_queries" does not exist, skipping

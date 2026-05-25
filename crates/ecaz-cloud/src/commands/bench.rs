@@ -62,6 +62,31 @@ impl BenchArgs {
             "s3://{}/bench-artifacts/{}/{}/",
             out.s3_bucket, self.suite, run_id
         );
+        let config_size = tokio::fs::metadata(&config)
+            .await
+            .with_context(|| format!("stat suite config {}", config.display()))?
+            .len();
+        let config_s3_uri = if self.skip_upload || config_size <= 7_000 {
+            None
+        } else {
+            let uri = format!("{dest}suite-config.json");
+            let status = Command::new("aws")
+                .args([
+                    "s3",
+                    "cp",
+                    config.to_str().expect("utf8 suite config path"),
+                    &uri,
+                    "--region",
+                    &out.region,
+                    "--only-show-errors",
+                ])
+                .status()
+                .await?;
+            if !status.success() {
+                return Err(eyre!("aws s3 cp suite config to {uri} failed"));
+            }
+            Some(uri)
+        };
         let script = remote_suite_script(
             &repo_root,
             &config,
@@ -69,6 +94,7 @@ impl BenchArgs {
             &self.database,
             &self.ecaz_bin,
             &dest,
+            config_s3_uri.as_deref(),
             &out.region,
             self.skip_upload,
         )
@@ -142,6 +168,7 @@ async fn remote_suite_script(
     database: &str,
     ecaz_bin: &str,
     s3_dest: &str,
+    config_s3_uri: Option<&str>,
     region: &str,
     skip_upload: bool,
 ) -> Result<String> {
@@ -171,6 +198,21 @@ async fn remote_suite_script(
         manifest = shell_escape(&format!("{remote_artifacts}/suite-manifest.json")),
         results = shell_escape(&format!("{remote_artifacts}/results.jsonl")),
     );
+    let write_config = if let Some(uri) = config_s3_uri {
+        format!(
+            "if [ ! -f {} ]; then aws s3 cp {} {} --region {} --only-show-errors; fi",
+            shell_escape(&remote_config),
+            shell_escape(uri),
+            shell_escape(&remote_config),
+            shell_escape(region)
+        )
+    } else {
+        format!(
+            "cat > {} <<'ECAZ_SUITE_CONFIG'\n{}\nECAZ_SUITE_CONFIG",
+            shell_escape(&remote_config),
+            config_text
+        )
+    };
 
     Ok(format!(
         r#"#!/usr/bin/env bash
@@ -178,15 +220,14 @@ set -euxo pipefail
 cd {root}
 mkdir -p "$(dirname {config_path})" {artifacts}
 trap 'status=$?; set +e; {upload}; exit $status' EXIT
-cat > {config_path} <<'ECAZ_SUITE_CONFIG'
-{config_text}
-ECAZ_SUITE_CONFIG
+{write_config}
 chown -R postgres:postgres "$(dirname {config_path})" {artifacts}
 sudo -u postgres bash -lc {run_cmd}
 "#,
         root = shell_escape(remote_root),
         config_path = shell_escape(&remote_config),
         artifacts = shell_escape(&remote_artifacts),
+        write_config = write_config,
         run_cmd = shell_escape(&run_cmd),
     ))
 }

@@ -1,0 +1,195 @@
+{
+  "suite": "task61-hnsw-scan-frontier-overhead-100k",
+  "schema_version": 1,
+  "config": "benchmarks/task61-hnsw-scan-frontier-overhead/suite-100k.json",
+  "config_sha256": "a64b57cda324227809256c2dce0ccf1b233dfa0a9047be8c8a8eafedfe6bcdcc",
+  "dry_run": true,
+  "generated_at_unix_ms": 1779688973797,
+  "connection": {
+    "database": "tqvector_bench",
+    "host": null,
+    "port": null,
+    "user": null,
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "prepare-ec-real-100k",
+      "kind": "corpus-prepare",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "corpus",
+        "prepare",
+        "--profile",
+        "ec_real_100k",
+        "--parquet",
+        "/var/lib/pgsql/18/datasets/dbpedia-openai3-1m/data",
+        "--output-dir",
+        "/var/lib/pgsql/18/datasets/staged-task61-hnsw-scan-frontier-overhead"
+      ],
+      "selected": true,
+      "expected_artifacts": [
+        "/var/lib/pgsql/18/datasets/staged-task61-hnsw-scan-frontier-overhead/ec_real_100k_corpus.tsv",
+        "/var/lib/pgsql/18/datasets/staged-task61-hnsw-scan-frontier-overhead/ec_real_100k_queries.tsv",
+        "/var/lib/pgsql/18/datasets/staged-task61-hnsw-scan-frontier-overhead/ec_real_100k_manifest.json"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "load-100k-hnsw-default",
+      "kind": "load",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--log-file",
+        "benchmarks/task61-hnsw-scan-frontier-overhead/artifacts/load-100k-hnsw-default.log",
+        "corpus",
+        "load",
+        "--prefix",
+        "task61_opt_100k_hnsw",
+        "--profile",
+        "ec_hnsw",
+        "--corpus-file",
+        "/var/lib/pgsql/18/datasets/staged-task61-hnsw-scan-frontier-overhead/ec_real_100k_corpus.tsv",
+        "--queries-file",
+        "/var/lib/pgsql/18/datasets/staged-task61-hnsw-scan-frontier-overhead/ec_real_100k_queries.tsv",
+        "--manifest-file",
+        "/var/lib/pgsql/18/datasets/staged-task61-hnsw-scan-frontier-overhead/ec_real_100k_manifest.json",
+        "--allow-manifest-mismatch",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--m",
+        "16",
+        "--ef-construction",
+        "128"
+      ],
+      "selected": true,
+      "expected_artifacts": [
+        "benchmarks/task61-hnsw-scan-frontier-overhead/artifacts/load-100k-hnsw-default.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "recall-100k-hnsw-default",
+      "kind": "recall",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "bench",
+        "recall",
+        "--prefix",
+        "task61_opt_100k_hnsw",
+        "--profile",
+        "ec_hnsw",
+        "--k",
+        "10",
+        "--sweep",
+        "40,64,100,128,160,200",
+        "--queries-limit",
+        "200",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--truth-cache-file",
+        "benchmarks/task61-hnsw-scan-frontier-overhead/artifacts/truth-100k-k10.json",
+        "--log-output",
+        "benchmarks/task61-hnsw-scan-frontier-overhead/artifacts/recall-100k-hnsw-default.log"
+      ],
+      "selected": true,
+      "expected_artifacts": [
+        "benchmarks/task61-hnsw-scan-frontier-overhead/artifacts/recall-100k-hnsw-default.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "latency-100k-hnsw-default",
+      "kind": "latency",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "bench",
+        "latency",
+        "--prefix",
+        "task61_opt_100k_hnsw",
+        "--profile",
+        "ec_hnsw",
+        "--k",
+        "10",
+        "--concurrency",
+        "1",
+        "--iterations",
+        "200",
+        "--sweep",
+        "40,64,100,128,160,200",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--sample-backend-memory",
+        "--cache-state",
+        "post_recall_warm",
+        "--memory-sample-interval-ms",
+        "25",
+        "--log-output",
+        "benchmarks/task61-hnsw-scan-frontier-overhead/artifacts/latency-100k-hnsw-default.log"
+      ],
+      "selected": true,
+      "expected_artifacts": [
+        "benchmarks/task61-hnsw-scan-frontier-overhead/artifacts/latency-100k-hnsw-default.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "storage-100k-hnsw-default",
+      "kind": "storage",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--log-file",
+        "benchmarks/task61-hnsw-scan-frontier-overhead/artifacts/storage-100k-hnsw-default.log",
+        "bench",
+        "storage",
+        "--prefix",
+        "task61_opt_100k_hnsw"
+      ],
+      "selected": true,
+      "expected_artifacts": [
+        "benchmarks/task61-hnsw-scan-frontier-overhead/artifacts/storage-100k-hnsw-default.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "explain-100k-hnsw-ef200",
+      "kind": "explain",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "dev",
+        "sql",
+        "--pg",
+        "18",
+        "--db",
+        "tqvector_bench",
+        "--socket-dir",
+        "/var/run/postgresql",
+        "--raw",
+        "--file",
+        "benchmarks/task61-hnsw-scan-frontier-overhead/artifacts/explain-100k-hnsw-ef200.sql",
+        "--log-output",
+        "benchmarks/task61-hnsw-scan-frontier-overhead/artifacts/explain-100k-hnsw-ef200.log"
+      ],
+      "selected": true,
+      "expected_artifacts": [
+        "benchmarks/task61-hnsw-scan-frontier-overhead/artifacts/explain-100k-hnsw-ef200.sql",
+        "benchmarks/task61-hnsw-scan-frontier-overhead/artifacts/explain-100k-hnsw-ef200.log"
+      ],
+      "status": "dry-run"
+    }
+  ]
+}

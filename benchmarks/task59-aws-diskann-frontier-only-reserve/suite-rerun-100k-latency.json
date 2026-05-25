@@ -1,0 +1,28 @@
+{
+  "name": "task59-aws-diskann-frontier-only-reserve-rerun-100k-latency",
+  "schema_version": 1,
+  "artifact_dir": "benchmarks/task59-aws-diskann-frontier-only-reserve/artifacts/rerun-100k-latency",
+  "defaults": {
+    "pg": 18,
+    "socket_dir": "/var/run/postgresql",
+    "profile": "ec_diskann",
+    "seed": 42,
+    "queries_limit": 200,
+    "iterations": 200,
+    "force_index": true
+  },
+  "steps": [
+    {
+      "kind": "latency",
+      "name": "latency-100k-diskann-default",
+      "tags": ["aws", "latency", "ec_real_100k", "diskann", "default", "task59", "rerun"],
+      "prefix": "task55_real_100k_diskann",
+      "profile": "ec_diskann",
+      "sweep": [64, 128, 200, 400, 800],
+      "iterations": 200,
+      "concurrency": 1,
+      "force_index": true,
+      "log_output": "benchmarks/task59-aws-diskann-frontier-only-reserve/artifacts/rerun-100k-latency/latency-100k-diskann-default.log"
+    }
+  ]
+}

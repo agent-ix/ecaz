@@ -1,0 +1,54 @@
+2026-05-25T05:02:19.437501Z  WARN ecaz_cloud::ssm: ssm invocation failed stderr=+ cd /var/lib/pgsql/build/ecaz
+++ dirname benchmarks/task61-aws-hnsw-graviton-baseline/suite-100k.json
++ mkdir -p benchmarks/task61-aws-hnsw-graviton-baseline benchmarks/task61-aws-hnsw-graviton-baseline/artifacts
++ trap 'status=$?; set +e; aws s3 sync benchmarks/task61-aws-hnsw-graviton-baseline/artifacts s3://ecaz-cloud-10k-medium-a02e4aea/bench-artifacts/smoke/20260525T050110Z/ --region us-west-2 --only-show-errors || true; exit $status' EXIT
++ cat
+++ dirname benchmarks/task61-aws-hnsw-graviton-baseline/suite-100k.json
++ chown -R postgres:postgres benchmarks/task61-aws-hnsw-graviton-baseline benchmarks/task61-aws-hnsw-graviton-baseline/artifacts
++ sudo -u postgres bash -lc 'cd '\''/var/lib/pgsql/build/ecaz'\''; export PATH=/usr/local/bin:$HOME/.cargo/bin:$PATH; '\''ecaz'\'' --database '\''postgres'\'' --host /var/run/postgresql --user postgres --log-file '\''benchmarks/task61-aws-hnsw-graviton-baseline/artifacts/suite-run.log'\'' bench suite run --config '\''benchmarks/task61-aws-hnsw-graviton-baseline/suite-100k.json'\'' --manifest-output '\''benchmarks/task61-aws-hnsw-graviton-baseline/artifacts/suite-manifest.json'\'' --results-output '\''benchmarks/task61-aws-hnsw-graviton-baseline/artifacts/results.jsonl'\'''
+[suite:task61-aws-hnsw-graviton-baseline-100k] wrote benchmarks/task61-aws-hnsw-graviton-baseline/artifacts/suite-manifest.json
+[suite:task61-aws-hnsw-graviton-baseline-100k] wrote benchmarks/task61-aws-hnsw-graviton-baseline/artifacts/suite-manifest.json
+[prepare] pass 1: scanning 26 shard(s) for sorted-id prefix (K=101000)
+[prepare] pass 2: materializing 101000 selected vectors
+[prepare] wrote /var/lib/pgsql/18/datasets/staged-task61-hnsw-baseline/ec_real_100k_corpus.tsv
+[prepare] wrote /var/lib/pgsql/18/datasets/staged-task61-hnsw-baseline/ec_real_100k_queries.tsv
+[prepare] wrote /var/lib/pgsql/18/datasets/staged-task61-hnsw-baseline/ec_real_100k_manifest.json
+[prepare] profile=ec_real_100k corpus_rows=100000 query_rows=1000 sort_key='_id ascending lexicographic'
+[suite:task61-aws-hnsw-graviton-baseline-100k] wrote benchmarks/task61-aws-hnsw-graviton-baseline/artifacts/suite-manifest.json
+[suite:task61-aws-hnsw-graviton-baseline-100k] wrote benchmarks/task61-aws-hnsw-graviton-baseline/artifacts/suite-manifest.json
+[loader] inspecting /var/lib/pgsql/18/datasets/staged-task61-hnsw-baseline/ec_real_100k_corpus.tsv
+[loader] inspecting /var/lib/pgsql/18/datasets/staged-task61-hnsw-baseline/ec_real_100k_queries.tsv
+[loader] corpus: 100000 rows, sha256=07275cfd5a7a4b415ddf5eacc086de98294ac978532df46ffae30f9202323a95  queries: 1000 rows, sha256=a7cbec6fc44f6c148234538f61339d00d2f10646febc8f667dcbe75d9cf41782
+[loader] warning: manifest verification failed for /var/lib/pgsql/18/datasets/staged-task61-hnsw-baseline/ec_real_100k_manifest.json: prefix="ec_real_100k" (expected "task61_real_100k_hnsw")
+
+   0: [91mconnecting to Postgres database "postgres"[0m
+   1: [91merror connecting to server[0m
+   2: [91mNo such file or directory (os error 2)[0m
+
+Location:
+   [35mcrates/ecaz-cli/src/psql.rs[0m:[35m95[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.
+[suite:task61-aws-hnsw-graviton-baseline-100k] wrote benchmarks/task61-aws-hnsw-graviton-baseline/artifacts/suite-manifest.json
+
+   0: [91msuite step "load-100k-hnsw-default" failed with exit code 1; rerun with --continue-on-error to keep going[0m
+
+Location:
+   [35mcrates/ecaz-cli/src/commands/bench/suite.rs[0m:[35m713[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.
++ status=1
++ set +e
++ aws s3 sync benchmarks/task61-aws-hnsw-graviton-baseline/artifacts s3://ecaz-cloud-10k-medium-a02e4aea/bench-artifacts/smoke/20260525T050110Z/ --region us-west-2 --only-show-errors
++ exit 1
+failed to run commands: exit status 1
+
+   0: [91mssm command 890d095d-cbe0-49ee-859e-baf6c47400a0 on i-0d46840c00f93dbb6 ended in Failed (rc=1): + cd /var/lib/pgsql/build/ecaz / ++ dirname benchmarks/task61-aws-hnsw-graviton-baseline/suite-100k.json / + mkdir -p benchmarks/task61-aws-hnsw-graviton-baseline benchmarks/task61-aws-hnsw-graviton-baseline/artifacts / + trap 'status=$?; set +e; aws s3 sync benchmarks/task61-aws-hnsw-graviton-baseline/artifacts s3://ecaz-cloud-10k-medium-a02e4aea/bench-artifacts/smoke/20260525T050110Z/ --region us-west-2 --only-show-errors || true; exit $status' EXIT / + cat[0m
+
+Location:
+   [35mcrates/ecaz-cloud/src/ssm.rs[0m:[35m111[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.

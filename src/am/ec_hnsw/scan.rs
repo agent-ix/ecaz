@@ -69,6 +69,20 @@ const PQ_FASTSCAN_EXACT_SCORE_UNAVAILABLE: &str =
 
 type PrefetchedGraphBuffers = HashMap<u32, PinnedBufferGuard>;
 
+#[cfg(any(test, feature = "pg18"))]
+fn unique_prefetch_blocks(neighbor_tids: &[page::ItemPointer]) -> Vec<u32> {
+    let mut blocks = Vec::with_capacity(neighbor_tids.len());
+    for neighbor_tid in neighbor_tids.iter().copied() {
+        if neighbor_tid == page::ItemPointer::INVALID {
+            continue;
+        }
+        if !blocks.contains(&neighbor_tid.block_number) {
+            blocks.push(neighbor_tid.block_number);
+        }
+    }
+    blocks
+}
+
 unsafe fn scan_opaque_ref<'a>(opaque: *mut TqScanOpaque) -> &'a TqScanOpaque {
     assert!(
         !opaque.is_null(),
@@ -3019,27 +3033,18 @@ fn prefetch_graph_buffers(
     opaque: &mut TqScanOpaque,
     neighbor_tids: &[page::ItemPointer],
 ) -> HashMap<u32, PinnedBufferGuard> {
-    let mut blocks = Vec::new();
-    let mut seen_blocks = HashSet::new();
-    for neighbor_tid in neighbor_tids.iter().copied() {
-        if neighbor_tid == page::ItemPointer::INVALID {
-            continue;
-        }
-        if seen_blocks.insert(neighbor_tid.block_number) {
-            blocks.push(neighbor_tid.block_number);
-        }
-    }
-
+    let blocks = unique_prefetch_blocks(neighbor_tids);
     if blocks.is_empty() {
         return HashMap::new();
     }
 
+    let block_count = blocks.len();
     reset_graph_prefetch_blocks(opaque, blocks);
     let stream = ensure_graph_read_stream(index_relation, opaque);
     super::stream::reset_scan_owned_read_stream(stream, "ec_hnsw graph prefetch")
         .unwrap_or_else(|error| pgrx::error!("{error}"));
 
-    let mut prefetched_buffers = HashMap::new();
+    let mut prefetched_buffers = HashMap::with_capacity(block_count);
     super::stream::visit_scan_owned_read_stream_pinned(
         stream,
         "ec_hnsw graph prefetch",
@@ -5509,6 +5514,22 @@ mod tests {
             block_number,
             offset_number,
         }
+    }
+
+    #[test]
+    fn unique_prefetch_blocks_keeps_first_block_order_and_skips_invalid_tids() {
+        assert_eq!(
+            unique_prefetch_blocks(&[
+                tid(7, 1),
+                tid(7, 2),
+                page::ItemPointer::INVALID,
+                tid(9, 1),
+                tid(8, 1),
+                tid(9, 2),
+            ]),
+            vec![7, 9, 8],
+            "prefetch block deduplication should stay ordered without retaining duplicates"
+        );
     }
 
     fn beam_candidate(

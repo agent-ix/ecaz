@@ -1,0 +1,35 @@
+{
+  "name": "task59-cleanup-duplicate-fetches",
+  "schema_version": 1,
+  "artifact_dir": "benchmarks/task59-aws-diskann-final-graviton-suite/artifacts/cleanup-duplicate-fetches",
+  "defaults": {
+    "pg": 18,
+    "socket_dir": "/var/run/postgresql"
+  },
+  "steps": [
+    {
+      "kind": "raw",
+      "name": "remove-duplicate-fetch-dirs",
+      "tags": ["cleanup", "space", "graviton", "task59"],
+      "args": [
+        "dev",
+        "sql",
+        "--pg",
+        "18",
+        "--db",
+        "postgres",
+        "--socket-dir",
+        "/var/run/postgresql",
+        "--raw",
+        "--sql",
+        "COPY (SELECT '') TO PROGRAM 'sh -c ''rm -rf /var/lib/pgsql/18/datasets/dbpedia /var/lib/pgsql/18/datasets/dbpedia-openai3-1m; du -h -d 1 /var/lib/pgsql/18/datasets | sort -h > /var/lib/pgsql/build/ecaz/benchmarks/task59-aws-diskann-final-graviton-suite/artifacts/cleanup-duplicate-fetches/cleanup-duplicate-fetches.log; df -h /var/lib/pgsql/18 >> /var/lib/pgsql/build/ecaz/benchmarks/task59-aws-diskann-final-graviton-suite/artifacts/cleanup-duplicate-fetches/cleanup-duplicate-fetches.log''';",
+        "--log-output",
+        "benchmarks/task59-aws-diskann-final-graviton-suite/artifacts/cleanup-duplicate-fetches/cleanup-duplicate-fetches-sql.log"
+      ],
+      "expected_artifacts": [
+        "benchmarks/task59-aws-diskann-final-graviton-suite/artifacts/cleanup-duplicate-fetches/cleanup-duplicate-fetches.log",
+        "benchmarks/task59-aws-diskann-final-graviton-suite/artifacts/cleanup-duplicate-fetches/cleanup-duplicate-fetches-sql.log"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,89 @@
+ database_size 
+---------------
+ 11 GB
+(1 row)
+
+ nspname  |                    relname                    | relkind | total_size | total_bytes 
+----------+-----------------------------------------------+---------+------------+-------------
+ public   | task59_real_1m_diskann_corpus                 | r       | 8246 MB    |  8646107136
+ pg_toast | pg_toast_5154209                              | t       | 8163 MB    |  8559894528
+ public   | task59_real_100k_diskann_corpus               | r       | 1644 MB    |  1723506688
+ pg_toast | pg_toast_4953190                              | t       | 1580 MB    |  1656971264
+ public   | task59_real_50k_diskann_corpus                | r       | 822 MB     |   861847552
+ pg_toast | pg_toast_4852171                              | t       | 790 MB     |   828506112
+ public   | task59_real_10k_diskann_corpus                | r       | 165 MB     |   172531712
+ pg_toast | pg_toast_4831952                              | t       | 158 MB     |   165724160
+ pg_toast | pg_toast_5154209_index                        | i       | 89 MB      |    93364224
+ public   | task59_real_100k_diskann_idx                  | i       | 46 MB      |    48308224
+ public   | task59_real_50k_diskann_idx                   | i       | 23 MB      |    24215552
+ public   | task59_real_1m_diskann_corpus_pkey            | i       | 22 MB      |    23232512
+ pg_toast | pg_toast_4953190_index                        | i       | 17 MB      |    18087936
+ pg_toast | pg_toast_4852171_index                        | i       | 8840 kB    |     9052160
+ public   | task59_real_100k_diskann_queries              | r       | 8264 kB    |     8462336
+ public   | task59_real_50k_diskann_queries               | r       | 8264 kB    |     8462336
+ pg_toast | pg_toast_5153199                              | t       | 8136 kB    |     8331264
+ pg_toast | pg_toast_4952180                              | t       | 8136 kB    |     8331264
+ public   | task59_real_10k_diskann_idx                   | i       | 4824 kB    |     4939776
+ public   | task59_real_100k_diskann_corpus_pkey          | i       | 4408 kB    |     4513792
+ public   | task59_real_50k_diskann_corpus_pkey           | i       | 2200 kB    |     2252800
+ pg_toast | pg_toast_4831952_index                        | i       | 1776 kB    |     1818624
+ public   | task59_real_10k_diskann_queries               | r       | 1720 kB    |     1761280
+ pg_toast | pg_toast_4851961                              | t       | 1664 kB    |     1703936
+ pg_toast | pg_toast_2618                                 | t       | 560 kB     |      573440
+ public   | task59_real_10k_diskann_corpus_pkey           | i       | 456 kB     |      466944
+ pg_toast | pg_toast_2619                                 | t       | 256 kB     |      262144
+ pg_toast | pg_toast_4952180_index                        | i       | 104 kB     |      106496
+ pg_toast | pg_toast_5153199_index                        | i       | 104 kB     |      106496
+ pg_toast | pg_toast_1255                                 | t       | 56 kB      |       57344
+ pg_toast | pg_toast_4851961_index                        | i       | 40 kB      |       40960
+ public   | task59_real_50k_diskann_queries_pkey          | i       | 40 kB      |       40960
+ public   | task59_real_100k_diskann_queries_pkey         | i       | 40 kB      |       40960
+ public   | ec_spire_placement                            | r       | 32 kB      |       32768
+ public   | ec_spire_remote_prepared_xact_intent          | r       | 32 kB      |       32768
+ public   | ec_spire_remote_epoch_manifest_applied        | r       | 16 kB      |       16384
+ public   | ec_spire_remote_epoch_manifest_applied_entry  | r       | 16 kB      |       16384
+ pg_toast | pg_toast_2619_index                           | i       | 16 kB      |       16384
+ public   | task59_real_10k_diskann_queries_pkey          | i       | 16 kB      |       16384
+ public   | ec_spire_remote_node_descriptor               | r       | 16 kB      |       16384
+ public   | ec_spire_remote_epoch_manifest                | r       | 16 kB      |       16384
+ pg_toast | pg_toast_1255_index                           | i       | 16 kB      |       16384
+ pg_toast | pg_toast_2618_index                           | i       | 16 kB      |       16384
+ public   | ec_spire_remote_epoch_manifest_entry          | r       | 16 kB      |       16384
+ pg_toast | pg_toast_3118_index                           | i       | 8192 bytes |        8192
+ pg_toast | pg_toast_3256                                 | t       | 8192 bytes |        8192
+ pg_toast | pg_toast_3256_index                           | i       | 8192 bytes |        8192
+ pg_toast | pg_toast_826                                  | t       | 8192 bytes |        8192
+ pg_toast | pg_toast_826_index                            | i       | 8192 bytes |        8192
+ pg_toast | pg_toast_3394                                 | t       | 8192 bytes |        8192
+ pg_toast | pg_toast_3394_index                           | i       | 8192 bytes |        8192
+ pg_toast | pg_toast_3596                                 | t       | 8192 bytes |        8192
+ pg_toast | pg_toast_3596_index                           | i       | 8192 bytes |        8192
+ pg_toast | pg_toast_3592                                 | t       | 8192 bytes |        8192
+ pg_toast | pg_toast_3592_index                           | i       | 8192 bytes |        8192
+ pg_toast | pg_toast_3456                                 | t       | 8192 bytes |        8192
+ pg_toast | pg_toast_3456_index                           | i       | 8192 bytes |        8192
+ pg_toast | pg_toast_6243                                 | t       | 8192 bytes |        8192
+ pg_toast | pg_toast_6243_index                           | i       | 8192 bytes |        8192
+ pg_toast | pg_toast_3350                                 | t       | 8192 bytes |        8192
+ pg_toast | pg_toast_3350_index                           | i       | 8192 bytes |        8192
+ pg_toast | pg_toast_6106                                 | t       | 8192 bytes |        8192
+ pg_toast | pg_toast_6106_index                           | i       | 8192 bytes |        8192
+ pg_toast | pg_toast_6100                                 | t       | 8192 bytes |        8192
+ pg_toast | pg_toast_6100_index                           | i       | 8192 bytes |        8192
+ pg_toast | pg_toast_14392                                | t       | 8192 bytes |        8192
+ pg_toast | pg_toast_14392_index                          | i       | 8192 bytes |        8192
+ pg_toast | pg_toast_14397                                | t       | 8192 bytes |        8192
+ pg_toast | pg_toast_14397_index                          | i       | 8192 bytes |        8192
+ pg_toast | pg_toast_14402                                | t       | 8192 bytes |        8192
+ pg_toast | pg_toast_14402_index                          | i       | 8192 bytes |        8192
+ pg_toast | pg_toast_14407_index                          | i       | 8192 bytes |        8192
+ pg_toast | pg_toast_4831467                              | t       | 8192 bytes |        8192
+ pg_toast | pg_toast_4831467_index                        | i       | 8192 bytes |        8192
+ public   | ec_spire_remote_node_descriptor_pkey          | i       | 8192 bytes |        8192
+ pg_toast | pg_toast_4831503                              | t       | 8192 bytes |        8192
+ pg_toast | pg_toast_4831503_index                        | i       | 8192 bytes |        8192
+ public   | ec_spire_remote_prepared_xact_intent_pkey     | i       | 8192 bytes |        8192
+ public   | ec_spire_remote_prepared_xact_intent_by_node  | i       | 8192 bytes |        8192
+ public   | ec_spire_remote_prepared_xact_intent_by_index | i       | 8192 bytes |        8192
+(80 rows)
+

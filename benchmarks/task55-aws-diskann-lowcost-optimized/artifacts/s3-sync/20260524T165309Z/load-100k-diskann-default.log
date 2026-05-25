@@ -1,0 +1,19 @@
+[loader] inspecting /var/lib/pgsql/18/datasets/staged-task55-diskann/ec_real_100k_corpus.tsv
+[loader] inspecting /var/lib/pgsql/18/datasets/staged-task55-diskann/ec_real_100k_queries.tsv
+[loader] corpus: 100000 rows, sha256=07275cfd5a7a4b415ddf5eacc086de98294ac978532df46ffae30f9202323a95  queries: 1000 rows, sha256=a7cbec6fc44f6c148234538f61339d00d2f10646febc8f667dcbe75d9cf41782
+[loader] warning: manifest verification failed for /var/lib/pgsql/18/datasets/staged-task55-diskann/ec_real_100k_manifest.json: prefix="ec_real_100k" (expected "task55_real_100k_diskann")
+[loader] task55_real_100k_diskann_corpus already has 100000 rows; skipping reload
+[loader] task55_real_100k_diskann_queries already has 1000 rows; skipping reload
+[loader] task55_real_100k_diskann_idx already exists with reloptions=[<none>]; skipping rebuild
+┌─────────┬───────────────────────────────────────────────┐
+│ field   ┆ value                                         │
+╞═════════╪═══════════════════════════════════════════════╡
+│ profile ┆ ec_diskann                                    │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ task55_real_100k_diskann_corpus (100000 rows) │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ task55_real_100k_diskann_queries (1000 rows)  │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ task55_real_100k_diskann_idx [<default>]      │
+└─────────┴───────────────────────────────────────────────┘
+[loader] completed prefix task55_real_100k_diskann in 11.95s

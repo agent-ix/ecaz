@@ -1,0 +1,179 @@
+2026-05-24T20:24:18.597119Z  WARN ecaz_cloud::ssm: ssm invocation failed stderr=+ sudo -u postgres bash -lc '
+  set -eux
+  export PATH=$HOME/.cargo/bin:$PATH
+  if [ ! -d /var/lib/pgsql/build/ecaz/.git ]; then
+    rm -rf /var/lib/pgsql/build
+    mkdir -p /var/lib/pgsql/build
+    git clone https://github.com/agent-ix/ecaz.git /var/lib/pgsql/build/ecaz
+  fi
+  cd /var/lib/pgsql/build/ecaz
+  git reset --hard
+  git clean -fd
+  git fetch --all --tags
+  git checkout --force diskann-aws-optimization || git checkout --force origin/diskann-aws-optimization
+  if git rev-parse --verify origin/diskann-aws-optimization >/dev/null 2>&1; then
+    git reset --hard origin/diskann-aws-optimization
+  else
+    git reset --hard diskann-aws-optimization
+  fi
+  cargo pgrx install --sudo --release --pg-config /usr/bin/pg_config
+  cargo build --release -p ecaz-cli
+'
++ export PATH=/var/lib/pgsql/.cargo/bin:/var/lib/pgsql/.cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/var/lib/snapd/snap/bin
++ PATH=/var/lib/pgsql/.cargo/bin:/var/lib/pgsql/.cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/var/lib/snapd/snap/bin
++ '[' '!' -d /var/lib/pgsql/build/ecaz/.git ']'
++ cd /var/lib/pgsql/build/ecaz
++ git reset --hard
++ git clean -fd
++ git fetch --all --tags
+From https://github.com/agent-ix/ecaz
+   7d12eca92..d37d08672  diskann-aws-optimization -> origin/diskann-aws-optimization
++ git checkout --force diskann-aws-optimization
+Already on 'diskann-aws-optimization'
++ git rev-parse --verify origin/diskann-aws-optimization
++ git reset --hard origin/diskann-aws-optimization
++ cargo pgrx install --sudo --release --pg-config /usr/bin/pg_config
+[32m[1m       Using[0m[39m [37m[1mPgConfig("pg18")[0m[39m and `pg_config` from [36m/usr/bin/pg_config[39m
+warning: ecaz@0.1.1: In file included from /usr/include/pgsql/server/utils/pgstat_internal.h:19,
+warning: ecaz@0.1.1:                  from csrc/pg18_pgstat_shim.c:10:
+warning: ecaz@0.1.1: /usr/include/pgsql/server/lib/ilist.h: In function 'dlist_next_node':
+warning: ecaz@0.1.1: /usr/include/pgsql/server/lib/ilist.h:537:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:   537 | dlist_next_node(dlist_head *head, dlist_node *node)
+warning: ecaz@0.1.1:       |                 ~~~~~~~~~~~~^~~~
+warning: ecaz@0.1.1: /usr/include/pgsql/server/lib/ilist.h: In function 'dlist_prev_node':
+warning: ecaz@0.1.1: /usr/include/pgsql/server/lib/ilist.h:547:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:   547 | dlist_prev_node(dlist_head *head, dlist_node *node)
+warning: ecaz@0.1.1:       |                 ~~~~~~~~~~~~^~~~
+warning: ecaz@0.1.1: /usr/include/pgsql/server/lib/ilist.h: In function 'slist_next_node':
+warning: ecaz@0.1.1: /usr/include/pgsql/server/lib/ilist.h:1054:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:  1054 | slist_next_node(slist_head *head, slist_node *node)
+warning: ecaz@0.1.1:       |                 ~~~~~~~~~~~~^~~~
+warning: ecaz@0.1.1: In file included from csrc/pg18_pgstat_shim.c:10:
+warning: ecaz@0.1.1: /usr/include/pgsql/server/utils/pgstat_internal.h: In function 'pgstat_cmp_hash_key':
+warning: ecaz@0.1.1: /usr/include/pgsql/server/utils/pgstat_internal.h:875:58: warning: unused parameter 'size' [-Wunused-parameter]
+warning: ecaz@0.1.1:   875 | pgstat_cmp_hash_key(const void *a, const void *b, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                   ~~~~~~~^~~~
+warning: ecaz@0.1.1: /usr/include/pgsql/server/utils/pgstat_internal.h:875:70: warning: unused parameter 'arg' [-Wunused-parameter]
+warning: ecaz@0.1.1:   875 | pgstat_cmp_hash_key(const void *a, const void *b, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                                ~~~~~~^~~
+warning: ecaz@0.1.1: /usr/include/pgsql/server/utils/pgstat_internal.h: In function 'pgstat_hash_hash_key':
+warning: ecaz@0.1.1: /usr/include/pgsql/server/utils/pgstat_internal.h:882:56: warning: unused parameter 'arg' [-Wunused-parameter]
+warning: ecaz@0.1.1:   882 | pgstat_hash_hash_key(const void *d, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                  ~~~~~~^~~
+   Compiling ecaz v0.1.1 (/var/lib/pgsql/build/ecaz)
+warning: inline asm clobber list contains reserved registers: FFR
+  --> /var/lib/pgsql/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/cee-scape-0.2.0/src/asm_based.rs:98:14
+   |
+98 |             "mov x0, x21", // move saved jbuf_ptr to sigsetjmp param position. (savemask is already in position)
+   |              ^^^^^^^^^^^
+
+note: Reserved registers on the clobber list may not be preserved across the asm statement, and clobbering them may lead to undefined behaviour.
+  --> /var/lib/pgsql/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/cee-scape-0.2.0/src/asm_based.rs:98:14
+   |
+98 |             "mov x0, x21", // move saved jbuf_ptr to sigsetjmp param position. (savemask is already in position)
+   |              ^^^^^^^^^^^
+
+warning: `ecaz` (lib) generated 1 warning
+    Finished `release` profile [optimized] target(s) in 2m 40s
+[32m[1m  Discovered[0m[39m [36m[1m218[0m[39m SQL entities: [36m[1m0[0m[39m schemas ([36m[1m0[0m[39m unique), [36m[1m217[0m[39m functions, [36m[1m0[0m[39m types, [36m[1m0[0m[39m enums, [36m[1m1[0m[39m sqls, [36m[1m0[0m[39m ords, [36m[1m0[0m[39m hashes, [36m[1m0[0m[39m aggregates, [36m[1m0[0m[39m triggers
+[32m[1m  Rebuilding[0m[39m [36mpgrx_embed[39m, in debug mode, for SQL generation with features [36mpg18[39m
+warning: ecaz@0.1.1: In file included from /usr/include/pgsql/server/utils/pgstat_internal.h:19,
+warning: ecaz@0.1.1:                  from csrc/pg18_pgstat_shim.c:10:
+warning: ecaz@0.1.1: /usr/include/pgsql/server/lib/ilist.h: In function 'dlist_next_node':
+warning: ecaz@0.1.1: /usr/include/pgsql/server/lib/ilist.h:537:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:   537 | dlist_next_node(dlist_head *head, dlist_node *node)
+warning: ecaz@0.1.1:       |                 ~~~~~~~~~~~~^~~~
+warning: ecaz@0.1.1: /usr/include/pgsql/server/lib/ilist.h: In function 'dlist_prev_node':
+warning: ecaz@0.1.1: /usr/include/pgsql/server/lib/ilist.h:547:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:   547 | dlist_prev_node(dlist_head *head, dlist_node *node)
+warning: ecaz@0.1.1:       |                 ~~~~~~~~~~~~^~~~
+warning: ecaz@0.1.1: /usr/include/pgsql/server/lib/ilist.h: In function 'slist_next_node':
+warning: ecaz@0.1.1: /usr/include/pgsql/server/lib/ilist.h:1054:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:  1054 | slist_next_node(slist_head *head, slist_node *node)
+warning: ecaz@0.1.1:       |                 ~~~~~~~~~~~~^~~~
+warning: ecaz@0.1.1: In file included from csrc/pg18_pgstat_shim.c:10:
+warning: ecaz@0.1.1: /usr/include/pgsql/server/utils/pgstat_internal.h: In function 'pgstat_cmp_hash_key':
+warning: ecaz@0.1.1: /usr/include/pgsql/server/utils/pgstat_internal.h:875:58: warning: unused parameter 'size' [-Wunused-parameter]
+warning: ecaz@0.1.1:   875 | pgstat_cmp_hash_key(const void *a, const void *b, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                   ~~~~~~~^~~~
+warning: ecaz@0.1.1: /usr/include/pgsql/server/utils/pgstat_internal.h:875:70: warning: unused parameter 'arg' [-Wunused-parameter]
+warning: ecaz@0.1.1:   875 | pgstat_cmp_hash_key(const void *a, const void *b, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                                ~~~~~~^~~
+warning: ecaz@0.1.1: /usr/include/pgsql/server/utils/pgstat_internal.h: In function 'pgstat_hash_hash_key':
+warning: ecaz@0.1.1: /usr/include/pgsql/server/utils/pgstat_internal.h:882:56: warning: unused parameter 'arg' [-Wunused-parameter]
+warning: ecaz@0.1.1:   882 | pgstat_hash_hash_key(const void *d, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                  ~~~~~~^~~
+   Compiling ecaz v0.1.1 (/var/lib/pgsql/build/ecaz)
+warning: inline asm clobber list contains reserved registers: FFR
+
+note: Reserved registers on the clobber list may not be preserved across the asm statement, and clobbering them may lead to undefined behaviour.
+
+warning: `ecaz` (bin "pgrx_embed_ecaz") generated 1 warning
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1m 20s
+[32m[1m     Writing[0m[39m SQL entities to /var/lib/pgsql/build/ecaz/target/release/ecaz-pg18/usr/share/pgsql/extension/ecaz--0.1.1.sql
+
+Using sudo to copy extension files from [36m/var/lib/pgsql/build/ecaz/target/release/ecaz-pg18[39m
++ cargo build --release -p ecaz-cli
+warning: ecaz@0.1.1: In file included from /usr/include/pgsql/server/utils/pgstat_internal.h:19,
+warning: ecaz@0.1.1:                  from csrc/pg18_pgstat_shim.c:10:
+warning: ecaz@0.1.1: /usr/include/pgsql/server/lib/ilist.h: In function 'dlist_next_node':
+warning: ecaz@0.1.1: /usr/include/pgsql/server/lib/ilist.h:537:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:   537 | dlist_next_node(dlist_head *head, dlist_node *node)
+warning: ecaz@0.1.1:       |                 ~~~~~~~~~~~~^~~~
+warning: ecaz@0.1.1: /usr/include/pgsql/server/lib/ilist.h: In function 'dlist_prev_node':
+warning: ecaz@0.1.1: /usr/include/pgsql/server/lib/ilist.h:547:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:   547 | dlist_prev_node(dlist_head *head, dlist_node *node)
+warning: ecaz@0.1.1:       |                 ~~~~~~~~~~~~^~~~
+warning: ecaz@0.1.1: /usr/include/pgsql/server/lib/ilist.h: In function 'slist_next_node':
+warning: ecaz@0.1.1: /usr/include/pgsql/server/lib/ilist.h:1054:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:  1054 | slist_next_node(slist_head *head, slist_node *node)
+warning: ecaz@0.1.1:       |                 ~~~~~~~~~~~~^~~~
+warning: ecaz@0.1.1: In file included from csrc/pg18_pgstat_shim.c:10:
+warning: ecaz@0.1.1: /usr/include/pgsql/server/utils/pgstat_internal.h: In function 'pgstat_cmp_hash_key':
+warning: ecaz@0.1.1: /usr/include/pgsql/server/utils/pgstat_internal.h:875:58: warning: unused parameter 'size' [-Wunused-parameter]
+warning: ecaz@0.1.1:   875 | pgstat_cmp_hash_key(const void *a, const void *b, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                   ~~~~~~~^~~~
+warning: ecaz@0.1.1: /usr/include/pgsql/server/utils/pgstat_internal.h:875:70: warning: unused parameter 'arg' [-Wunused-parameter]
+warning: ecaz@0.1.1:   875 | pgstat_cmp_hash_key(const void *a, const void *b, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                                ~~~~~~^~~
+warning: ecaz@0.1.1: /usr/include/pgsql/server/utils/pgstat_internal.h: In function 'pgstat_hash_hash_key':
+warning: ecaz@0.1.1: /usr/include/pgsql/server/utils/pgstat_internal.h:882:56: warning: unused parameter 'arg' [-Wunused-parameter]
+warning: ecaz@0.1.1:   882 | pgstat_hash_hash_key(const void *d, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                  ~~~~~~^~~
+   Compiling ecaz v0.1.1 (/var/lib/pgsql/build/ecaz)
+warning: inline asm clobber list contains reserved registers: FFR
+  --> /var/lib/pgsql/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/cee-scape-0.2.0/src/asm_based.rs:98:14
+   |
+98 |             "mov x0, x21", // move saved jbuf_ptr to sigsetjmp param position. (savemask is already in position)
+   |              ^^^^^^^^^^^
+
+note: Reserved registers on the clobber list may not be preserved across the asm statement, and clobbering them may lead to undefined behaviour.
+  --> /var/lib/pgsql/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/cee-scape-0.2.0/src/asm_based.rs:98:14
+   |
+98 |             "mov x0, x21", // move saved jbuf_ptr to sigsetjmp param position. (savemask is already in position)
+   |              ^^^^^^^^^^^
+
+warning: `ecaz` (lib) generated 1 warning
+   Compiling ecaz-cli v0.1.0 (/var/lib/pgsql/build/ecaz/crates/ecaz-cli)
+warning: inline asm clobber list contains reserved registers: FFR
+
+note: Reserved registers on the clobber list may not be preserved across the asm statement, and clobbering them may lead to undefined behaviour.
+
+warning: `ecaz-cli` (bin "ecaz") generated 1 warning
+    Finished `release` profile [optimized] target(s) in 6m 08s
++ sudo install -Dm755 /var/lib/pgsql/build/ecaz/target/release/ecaz /usr/local/bin/ecaz
++ sudo systemctl restart postgresql
++ sudo -u postgres psql -c 'DROP EXTENSION IF EXISTS ecaz;'
+ERROR:  cannot drop extension ecaz because other objects depend on it
+DETAIL:  column embedding of table task55_real_10k_diskann_corpus depends on type ecvector
+column embedding of table task55_real_100k_diskann_corpus depends on type ecvector
+HINT:  Use DROP ... CASCADE to drop the dependent objects too.
+failed to run commands: exit status 1
+
+   0: [91mssm command 14c2e5b2-4ce6-4d63-8830-ed844f29a6f1 on i-016b1d90a929d1572 ended in Failed (rc=1): + sudo -u postgres bash -lc ' /   set -eux /   export PATH=$HOME/.cargo/bin:$PATH /   if [ ! -d /var/lib/pgsql/build/ecaz/.git ]; then /     rm -rf /var/lib/pgsql/build[0m
+
+Location:
+   [35mcrates/ecaz-cloud/src/ssm.rs[0m:[35m111[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.

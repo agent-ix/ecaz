@@ -6,6 +6,7 @@ use crate::am::common::heap_slot;
 use crate::storage::{
     buffer_guard::{LockedBufferGuard, LockedPageTupleVisit},
     page::{DataPageChain, ItemPointer, FIRST_DATA_BLOCK_NUMBER},
+    relation::RelationHandle,
     relation_guard::HeapRelationGuard,
     snapshot_guard::RegisteredSnapshotGuard,
 };
@@ -16,14 +17,15 @@ use super::{
         VamanaMetadataPage, INDEX_FORMAT_V3_DISKANN, PAYLOAD_FLAG_BINARY_SIDECAR,
         VAMANA_METADATA_BYTES,
     },
-    reader::VisitedState,
+    reader::{GraphReader, VisitedState},
     scan::ScanResult,
+    tuple::{VamanaNodeTuple, TQ_VAMANA_NODE_TAG},
 };
 
 #[derive(Debug)]
 pub(super) struct DiskannScanOpaque {
     pub(super) metadata: VamanaMetadataPage,
-    pub(super) chain: DataPageChain,
+    pub(super) chain: Option<DataPageChain>,
     pub(super) flat_codebooks: Vec<f32>,
     pub(super) query_rotated: Vec<f32>,
     pub(super) query_lut: Vec<f32>,
@@ -92,13 +94,12 @@ impl ResolvedScanSnapshot {
 impl DiskannScanOpaque {
     pub(super) fn new(
         metadata: VamanaMetadataPage,
-        chain: DataPageChain,
         options: TqDiskannOptions,
     ) -> Result<Self, String> {
         let scan_tuning = super::options::resolve_scan_tuning(&options);
         Ok(Self {
             metadata,
-            chain,
+            chain: None,
             flat_codebooks: Vec::new(),
             query_rotated: Vec::new(),
             query_lut: Vec::new(),
@@ -147,44 +148,54 @@ pub(super) unsafe fn materialize_chain_from_index(
     materialize_chain_from_index_handle(handle)
 }
 
-pub(super) fn materialize_chain_from_index_handle(
-    handle: crate::storage::relation::RelationHandle,
-) -> Result<(VamanaMetadataPage, DataPageChain), String> {
-    let metadata_result: Result<(VamanaMetadataPage, usize), String> = {
-        let metadata_buffer = LockedBufferGuard::read_main_handle(
-            handle,
-            0,
-            pg_sys::ReadBufferMode::RBM_NORMAL,
-            pg_sys::BUFFER_LOCK_SHARE as i32,
-        )
-        .ok_or_else(|| "ec_diskann beginscan could not open metadata page".to_owned())?;
-        let page = metadata_buffer.page();
-        let page_size = metadata_buffer.page_size();
-        // SAFETY: `page` comes from the locked metadata buffer and remains
-        // pinned while the special area is inspected; the special area is at
-        // least `VAMANA_METADATA_BYTES`, so the special pointer is viewed as
-        // the serialized metadata payload.
-        let metadata_bytes = unsafe {
-            let special_size = pg_sys::PageGetSpecialSize(page) as usize;
-            if special_size < VAMANA_METADATA_BYTES {
-                return Err(format!(
-                    "ec_diskann metadata page special area too small: got {special_size}, expected at least {VAMANA_METADATA_BYTES}"
-                ));
-            }
-            let metadata_ptr = pg_sys::PageGetSpecialPointer(page).cast::<u8>();
-            slice::from_raw_parts(metadata_ptr.cast_const(), VAMANA_METADATA_BYTES)
-        };
-        let format_version =
-            u16::from_le_bytes(metadata_bytes[0..2].try_into().expect("format bytes"));
-        if format_version != INDEX_FORMAT_V3_DISKANN {
+pub(super) unsafe fn read_metadata_from_index(
+    index_relation: pg_sys::Relation,
+) -> Result<(VamanaMetadataPage, usize), String> {
+    let handle = NonNull::new(index_relation)
+        .ok_or_else(|| "ec_diskann metadata read needs a valid index relation".to_owned())?;
+    read_metadata_from_index_handle(handle)
+}
+
+pub(super) fn read_metadata_from_index_handle(
+    handle: RelationHandle,
+) -> Result<(VamanaMetadataPage, usize), String> {
+    let metadata_buffer = LockedBufferGuard::read_main_handle(
+        handle,
+        0,
+        pg_sys::ReadBufferMode::RBM_NORMAL,
+        pg_sys::BUFFER_LOCK_SHARE as i32,
+    )
+    .ok_or_else(|| "ec_diskann beginscan could not open metadata page".to_owned())?;
+    let page = metadata_buffer.page();
+    let page_size = metadata_buffer.page_size();
+    // SAFETY: `page` comes from the locked metadata buffer and remains
+    // pinned while the special area is inspected; the special area is at
+    // least `VAMANA_METADATA_BYTES`, so the special pointer is viewed as
+    // the serialized metadata payload.
+    let metadata_bytes = unsafe {
+        let special_size = pg_sys::PageGetSpecialSize(page) as usize;
+        if special_size < VAMANA_METADATA_BYTES {
             return Err(format!(
-                "ec_diskann metadata format mismatch: got {format_version}, expected {INDEX_FORMAT_V3_DISKANN}"
+                "ec_diskann metadata page special area too small: got {special_size}, expected at least {VAMANA_METADATA_BYTES}"
             ));
         }
-        let metadata = VamanaMetadataPage::decode(metadata_bytes)?;
-        Ok((metadata, page_size))
+        let metadata_ptr = pg_sys::PageGetSpecialPointer(page).cast::<u8>();
+        slice::from_raw_parts(metadata_ptr.cast_const(), VAMANA_METADATA_BYTES)
     };
-    let (metadata, page_size) = metadata_result?;
+    let format_version = u16::from_le_bytes(metadata_bytes[0..2].try_into().expect("format bytes"));
+    if format_version != INDEX_FORMAT_V3_DISKANN {
+        return Err(format!(
+            "ec_diskann metadata format mismatch: got {format_version}, expected {INDEX_FORMAT_V3_DISKANN}"
+        ));
+    }
+    let metadata = VamanaMetadataPage::decode(metadata_bytes)?;
+    Ok((metadata, page_size))
+}
+
+pub(super) fn materialize_chain_from_index_handle(
+    handle: RelationHandle,
+) -> Result<(VamanaMetadataPage, DataPageChain), String> {
+    let (metadata, page_size) = read_metadata_from_index_handle(handle)?;
 
     let block_count = crate::storage::relation::main_fork_block_count_handle(handle);
     let mut chain = DataPageChain::new(page_size);
@@ -212,6 +223,112 @@ pub(super) fn materialize_chain_from_index_handle(
     }
 
     Ok((metadata, chain))
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(super) struct RelationGraphReader {
+    handle: RelationHandle,
+    graph_degree_r: u16,
+    binary_word_count: usize,
+    search_code_len: usize,
+}
+
+impl RelationGraphReader {
+    pub(super) fn new(
+        handle: RelationHandle,
+        graph_degree_r: u16,
+        binary_word_count: usize,
+        search_code_len: usize,
+    ) -> Self {
+        Self {
+            handle,
+            graph_degree_r,
+            binary_word_count,
+            search_code_len,
+        }
+    }
+
+    pub(super) fn handle(&self) -> RelationHandle {
+        self.handle
+    }
+
+    pub(super) fn read_tuple_bytes<R>(
+        &self,
+        tid: ItemPointer,
+        tuple_kind: &str,
+        visit: impl FnOnce(&[u8]) -> Result<R, String>,
+    ) -> Result<R, String> {
+        let buffer = LockedBufferGuard::read_main_handle(
+            self.handle,
+            tid.block_number,
+            pg_sys::ReadBufferMode::RBM_NORMAL,
+            pg_sys::BUFFER_LOCK_SHARE as i32,
+        )
+        .ok_or_else(|| {
+            format!(
+                "ec_diskann scan could not open data block {}",
+                tid.block_number
+            )
+        })?;
+        match buffer.visit_tuple_bytes(tid, tuple_kind, visit)? {
+            LockedPageTupleVisit::Present(value) => Ok(value),
+            LockedPageTupleVisit::Unused => Err(format!(
+                "{tuple_kind} tuple ({},{}) is unused",
+                tid.block_number, tid.offset_number
+            )),
+        }
+    }
+}
+
+impl GraphReader for RelationGraphReader {
+    fn read_node(&self, tid: ItemPointer) -> Result<VamanaNodeTuple, String> {
+        self.read_tuple_bytes(tid, "ec_diskann scan node", |raw| {
+            VamanaNodeTuple::decode(
+                raw,
+                self.graph_degree_r,
+                self.binary_word_count,
+                self.search_code_len,
+            )
+        })
+    }
+
+    fn first_live_tid(&self) -> Result<Option<ItemPointer>, String> {
+        let block_count = crate::storage::relation::main_fork_block_count_handle(self.handle);
+        for block_number in FIRST_DATA_BLOCK_NUMBER..block_count {
+            let buffer = LockedBufferGuard::read_main_handle(
+                self.handle,
+                block_number,
+                pg_sys::ReadBufferMode::RBM_NORMAL,
+                pg_sys::BUFFER_LOCK_SHARE as i32,
+            )
+            .ok_or_else(|| format!("ec_diskann scan could not open data block {block_number}"))?;
+            let max_offset = buffer.max_offset_number();
+            for offset_number in 1..=max_offset {
+                let tid = ItemPointer {
+                    block_number,
+                    offset_number,
+                };
+                let visit = buffer.visit_tuple_bytes(tid, "ec_diskann scan node", |raw| {
+                    if raw.first().copied() != Some(TQ_VAMANA_NODE_TAG) {
+                        return Ok(None);
+                    }
+                    VamanaNodeTuple::decode(
+                        raw,
+                        self.graph_degree_r,
+                        self.binary_word_count,
+                        self.search_code_len,
+                    )
+                    .map(Some)
+                })?;
+                if let LockedPageTupleVisit::Present(Some(tuple)) = visit {
+                    if tuple.is_live() {
+                        return Ok(Some(tid));
+                    }
+                }
+            }
+        }
+        Ok(None)
+    }
 }
 
 pub(super) struct DiskannScanDescView<'a> {

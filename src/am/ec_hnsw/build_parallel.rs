@@ -1097,28 +1097,17 @@ pub(super) fn concurrent_dsm_graph_parts(
     }
 
     let base = base.cast::<u8>();
-    EcHnswConcurrentDsmGraphParts {
-        // SAFETY: `layout` was computed from this image and header_offset is
-        // the beginning of the allocation.
-        header: unsafe {
-            base.add(layout.header_offset)
-                .cast::<EcHnswConcurrentDsmGraphHeader>()
-        },
-        // SAFETY: `layout.nodes_offset` is aligned and bounds-checked while the
-        // layout is constructed from header values.
-        nodes: unsafe {
-            base.add(layout.nodes_offset)
-                .cast::<EcHnswConcurrentDsmNode>()
-        },
-        // SAFETY: The neighbor slot offset is aligned and within the DSM image
-        // described by `layout`.
-        neighbor_slots: unsafe { base.add(layout.neighbor_slots_offset).cast::<u32>() },
-        // SAFETY: The code corpus offset is aligned and within the DSM image
-        // described by `layout`.
-        codes: unsafe { base.add(layout.codes_offset) },
-        // SAFETY: The source corpus offset is aligned and within the DSM image
-        // described by `layout`.
-        sources: unsafe { base.add(layout.sources_offset).cast::<f32>() },
+    // SAFETY: `layout` was computed from this image; each offset is aligned
+    // and bounds-checked at layout construction, so `base.add(offset)`
+    // produces typed region pointers within the DSM allocation.
+    unsafe {
+        EcHnswConcurrentDsmGraphParts {
+            header: base.add(layout.header_offset).cast::<EcHnswConcurrentDsmGraphHeader>(),
+            nodes: base.add(layout.nodes_offset).cast::<EcHnswConcurrentDsmNode>(),
+            neighbor_slots: base.add(layout.neighbor_slots_offset).cast::<u32>(),
+            codes: base.add(layout.codes_offset),
+            sources: base.add(layout.sources_offset).cast::<f32>(),
+        }
     }
 }
 
@@ -1425,12 +1414,14 @@ fn complete_concurrent_dsm_graph_node_insert(
     selected_slots: &[u32],
     locks: EcHnswConcurrentDsmLockOps,
 ) {
-    // SAFETY: Callers only complete bounded node inserts in the attached graph.
-    let node = unsafe { parts.nodes.add(node_idx as usize) };
-    // SAFETY: `node` points at an initialized DSM node containing an LWLock.
-    let lock = unsafe { ptr::addr_of_mut!((*node).lock) };
-    // SAFETY: `lock` is the initialized per-node lock for this DSM graph.
-    let _lock_guard = unsafe { locks.exclusive(lock) };
+    // SAFETY: Callers only complete bounded node inserts in the attached
+    // graph; the resolved node pointer carries the initialized per-node
+    // LWLock for this DSM graph.
+    let (node, _lock_guard) = unsafe {
+        let node = parts.nodes.add(node_idx as usize);
+        let lock = ptr::addr_of_mut!((*node).lock);
+        (node, locks.exclusive(lock))
+    };
     let slot_count = parts.node_neighbor_slot_count(node_idx);
     if selected_slots.len() != slot_count {
         pgrx::error!("concurrent DSM graph insert selected slot count mismatch");
@@ -2207,37 +2198,31 @@ impl EcHnswParallelGraphBuildLeader {
         }
 
         // SAFETY: `pcxt` is a live ParallelContext with all chunks/keys
-        // estimated above.
-        unsafe { pg_sys::InitializeParallelDSM(pcxt) };
-        if unsafe { (*pcxt).seg.is_null() } {
-            // SAFETY: `pcxt` was created and parallel mode was entered; both
-            // must be torn down if DSM initialization fails.
-            unsafe {
+        // estimated above; on InitializeParallelDSM failure both the context
+        // and parallel mode must be torn down.
+        let (shared, graph_base) = unsafe {
+            pg_sys::InitializeParallelDSM(pcxt);
+            if (*pcxt).seg.is_null() {
                 pg_sys::DestroyParallelContext(pcxt);
                 pg_sys::ExitParallelMode();
+                return None;
             }
-            return None;
-        }
-
-        // SAFETY: The DSM segment and TOC exist after InitializeParallelDSM;
-        // the allocation size is aligned for the shared header type.
-        let shared = unsafe {
-            pg_sys::shm_toc_allocate(
+            // DSM segment + TOC exist; allocations are sized for the shared
+            // header type and the graph image layout.
+            let shared = pg_sys::shm_toc_allocate(
                 (*pcxt).toc,
                 bufferalign(size_of::<EcHnswParallelBuildSharedHeader>() as pg_sys::Size),
             )
-            .cast::<EcHnswParallelBuildSharedHeader>()
+            .cast::<EcHnswParallelBuildSharedHeader>();
+            let graph_base =
+                pg_sys::shm_toc_allocate((*pcxt).toc, preassembly.graph_layout.total_bytes);
+            (shared, graph_base)
         };
-        // SAFETY: The DSM segment and TOC exist, and the graph layout computed
-        // the byte size for the graph image allocation.
-        let graph_base =
-            unsafe { pg_sys::shm_toc_allocate((*pcxt).toc, preassembly.graph_layout.total_bytes) };
-        // SAFETY: PostgreSQL returns a tranche id for this backend's LWLock
-        // tranche registration before lock initialization.
-        let tranche_id = unsafe { pg_sys::LWLockNewTrancheId() };
-        // SAFETY: All pointers are DSM allocations from this TOC; the shared
-        // header and graph image are initialized before insertion/worker launch.
+        // SAFETY: All pointers are DSM allocations from this TOC; the tranche
+        // id is registered before any LWLock initialization; the shared header
+        // and graph image are initialized before insertion/worker launch.
         unsafe {
+            let tranche_id = pg_sys::LWLockNewTrancheId();
             pg_sys::LWLockRegisterTranche(
                 tranche_id,
                 EC_HNSW_CONCURRENT_DSM_GRAPH_LWLOCK_TRANCHE.as_ptr().cast(),
@@ -2268,10 +2253,13 @@ impl EcHnswParallelGraphBuildLeader {
             );
         }
 
-        // SAFETY: The WAL usage array allocation is sized for launched worker
-        // accounting and stored in this ParallelContext's DSM TOC.
-        let walusage = unsafe {
-            pg_sys::shm_toc_allocate(
+        // SAFETY: The WAL and buffer usage array allocations are sized for
+        // launched worker accounting and stored in this ParallelContext's DSM
+        // TOC; workers are launched only after shared state, graph image, and
+        // accounting arrays are inserted; `pcxt` remains live after worker
+        // launch and records the number of launched workers.
+        let (walusage, bufferusage, workers_launched) = unsafe {
+            let walusage = pg_sys::shm_toc_allocate(
                 (*pcxt).toc,
                 checked_mul_size(
                     size_of::<pg_sys::WalUsage>() as pg_sys::Size,
@@ -2279,12 +2267,8 @@ impl EcHnswParallelGraphBuildLeader {
                     "parallel graph build WAL usage allocation",
                 ),
             )
-            .cast::<pg_sys::WalUsage>()
-        };
-        // SAFETY: The buffer usage array allocation is sized for launched
-        // worker accounting and stored in this ParallelContext's DSM TOC.
-        let bufferusage = unsafe {
-            pg_sys::shm_toc_allocate(
+            .cast::<pg_sys::WalUsage>();
+            let bufferusage = pg_sys::shm_toc_allocate(
                 (*pcxt).toc,
                 checked_mul_size(
                     size_of::<pg_sys::BufferUsage>() as pg_sys::Size,
@@ -2292,12 +2276,7 @@ impl EcHnswParallelGraphBuildLeader {
                     "parallel graph build buffer usage allocation",
                 ),
             )
-            .cast::<pg_sys::BufferUsage>()
-        };
-        // SAFETY: All TOC entries point at allocations in this DSM; workers are
-        // launched only after shared state, graph image, and accounting arrays
-        // are inserted.
-        unsafe {
+            .cast::<pg_sys::BufferUsage>();
             pg_sys::shm_toc_insert((*pcxt).toc, PARALLEL_KEY_EC_HNSW_WAL_USAGE, walusage.cast());
             pg_sys::shm_toc_insert(
                 (*pcxt).toc,
@@ -2305,10 +2284,9 @@ impl EcHnswParallelGraphBuildLeader {
                 bufferusage.cast(),
             );
             pg_sys::LaunchParallelWorkers(pcxt);
-        }
-        // SAFETY: `pcxt` remains live after worker launch and records the
-        // number of launched workers.
-        let workers_launched = unsafe { (*pcxt).nworkers_launched };
+            let workers_launched = (*pcxt).nworkers_launched;
+            (walusage, bufferusage, workers_launched)
+        };
         record_debug_parallel_graph_build_workers_launched(workers_launched);
 
         if workers_launched > 0 {
@@ -2357,16 +2335,14 @@ impl EcHnswParallelGraphBuildLeader {
         if self.workers_finished {
             return;
         }
-        // SAFETY: `self.pcxt` is the live ParallelContext owned by this leader.
-        unsafe { pg_sys::WaitForParallelWorkersToFinish(self.pcxt) };
-
-        // SAFETY: Worker count and accounting arrays belong to this live
-        // ParallelContext and were allocated for requested workers.
-        let launched = unsafe { (*self.pcxt).nworkers_launched.max(0) as usize };
-        for worker_index in 0..launched {
-            // SAFETY: `worker_index < launched`, so the usage array offsets are
-            // inside the arrays allocated in `begin`.
-            unsafe {
+        // SAFETY: `self.pcxt` is the live ParallelContext owned by this
+        // leader; the worker accounting arrays were allocated for requested
+        // workers; `worker_index < launched` confirms each usage-array
+        // offset is in bounds.
+        unsafe {
+            pg_sys::WaitForParallelWorkersToFinish(self.pcxt);
+            let launched = (*self.pcxt).nworkers_launched.max(0) as usize;
+            for worker_index in 0..launched {
                 pg_sys::InstrAccumParallelQuery(
                     self.bufferusage.add(worker_index),
                     self.walusage.add(worker_index),
@@ -2471,28 +2447,23 @@ impl EcHnswParallelBuildLeader {
             estimate_keys(&mut (*pcxt).estimator, 1);
         }
 
-        // SAFETY: `pcxt` is live and fully estimated.
-        unsafe { pg_sys::InitializeParallelDSM(pcxt) };
-        if unsafe { (*pcxt).seg.is_null() } {
-            // SAFETY: `pcxt` was created and parallel mode entered; both are
-            // cleaned up if DSM initialization fails.
-            unsafe {
+        // SAFETY: `pcxt` is live and fully estimated; on InitializeParallelDSM
+        // failure both the context and parallel mode are torn down. After
+        // success the DSM segment + TOC exist, `shared_bytes` was computed by
+        // PostgreSQL's parallel scan sizing, the shared header allocation is
+        // sized for the header type, and the parallel scan object is
+        // initialized before workers can attach.
+        // SAFETY: `pcxt` is live and fully estimated; the early-return covers
+        // the InitializeParallelDSM-fail cleanup path.
+        unsafe {
+            pg_sys::InitializeParallelDSM(pcxt);
+            if (*pcxt).seg.is_null() {
                 pg_sys::DestroyParallelContext(pcxt);
                 pg_sys::ExitParallelMode();
+                return None;
             }
-            return None;
-        }
-
-        // SAFETY: The DSM segment and TOC exist after InitializeParallelDSM;
-        // `shared_bytes` was computed by PostgreSQL's parallel scan sizing.
-        let shared = unsafe {
-            pg_sys::shm_toc_allocate((*pcxt).toc, shared_bytes)
-                .cast::<EcHnswParallelBuildSharedHeader>()
-        };
-        // SAFETY: The shared header allocation is large enough for the header,
-        // relation OIDs come from live relation pointers, and the parallel scan
-        // object is initialized before workers can attach.
-        unsafe {
+            let shared = pg_sys::shm_toc_allocate((*pcxt).toc, shared_bytes)
+                .cast::<EcHnswParallelBuildSharedHeader>();
             ptr::write(
                 shared,
                 EcHnswParallelBuildSharedHeader::new(
@@ -2514,7 +2485,7 @@ impl EcHnswParallelBuildLeader {
                 PARALLEL_KEY_EC_HNSW_BUILD_SHARED,
                 shared.cast(),
             );
-        }
+        };
 
         // SAFETY: Queue chunks were estimated above; each queue allocation is
         // inserted into this ParallelContext's DSM TOC before worker launch.
@@ -2529,10 +2500,12 @@ impl EcHnswParallelBuildLeader {
             }
         }
 
-        // SAFETY: The WAL usage array is sized for requested worker accounting
-        // and belongs to this ParallelContext DSM.
-        let walusage = unsafe {
-            pg_sys::shm_toc_allocate(
+        // SAFETY: The WAL and buffer usage arrays are sized for requested
+        // worker accounting and belong to this ParallelContext DSM; they are
+        // inserted before workers are launched; `pcxt` remains live and
+        // records the launched worker count after `LaunchParallelWorkers`.
+        let (walusage, bufferusage, workers_launched) = unsafe {
+            let walusage = pg_sys::shm_toc_allocate(
                 (*pcxt).toc,
                 checked_mul_size(
                     size_of::<pg_sys::WalUsage>() as pg_sys::Size,
@@ -2540,12 +2513,8 @@ impl EcHnswParallelBuildLeader {
                     "parallel build WAL usage allocation",
                 ),
             )
-            .cast::<pg_sys::WalUsage>()
-        };
-        // SAFETY: The buffer usage array is sized for requested worker
-        // accounting and belongs to this ParallelContext DSM.
-        let bufferusage = unsafe {
-            pg_sys::shm_toc_allocate(
+            .cast::<pg_sys::WalUsage>();
+            let bufferusage = pg_sys::shm_toc_allocate(
                 (*pcxt).toc,
                 checked_mul_size(
                     size_of::<pg_sys::BufferUsage>() as pg_sys::Size,
@@ -2553,25 +2522,17 @@ impl EcHnswParallelBuildLeader {
                     "parallel build buffer usage allocation",
                 ),
             )
-            .cast::<pg_sys::BufferUsage>()
-        };
-        // SAFETY: The accounting arrays are DSM allocations in this TOC and are
-        // inserted before workers are launched.
-        unsafe {
+            .cast::<pg_sys::BufferUsage>();
             pg_sys::shm_toc_insert((*pcxt).toc, PARALLEL_KEY_EC_HNSW_WAL_USAGE, walusage.cast());
             pg_sys::shm_toc_insert(
                 (*pcxt).toc,
                 PARALLEL_KEY_EC_HNSW_BUFFER_USAGE,
                 bufferusage.cast(),
             );
-        }
-
-        // SAFETY: Shared state, worker queues, and accounting arrays have all
-        // been initialized in the ParallelContext DSM.
-        unsafe { pg_sys::LaunchParallelWorkers(pcxt) };
-        // SAFETY: `pcxt` remains live after launch and records the launched
-        // worker count.
-        let workers_launched = unsafe { (*pcxt).nworkers_launched };
+            pg_sys::LaunchParallelWorkers(pcxt);
+            let workers_launched = (*pcxt).nworkers_launched;
+            (walusage, bufferusage, workers_launched)
+        };
         record_debug_parallel_heap_build_workers_launched(workers_launched);
 
         let mut leader = Self {
@@ -2667,16 +2628,13 @@ impl EcHnswParallelBuildLeader {
     }
 
     fn finish(mut self) {
-        // SAFETY: `self.pcxt` is the live ParallelContext owned by this leader.
-        unsafe { pg_sys::WaitForParallelWorkersToFinish(self.pcxt) };
-
-        // SAFETY: Worker count and accounting arrays belong to this live
-        // ParallelContext and were allocated for requested workers.
-        let launched = unsafe { (*self.pcxt).nworkers_launched.max(0) as usize };
-        for worker_index in 0..launched {
-            // SAFETY: `worker_index < launched`, so usage array offsets are
-            // within the arrays allocated during begin.
-            unsafe {
+        // SAFETY: `self.pcxt` is the live ParallelContext owned by this
+        // leader; the accounting arrays were allocated for requested workers
+        // and `worker_index < launched` confirms each offset is in bounds.
+        unsafe {
+            pg_sys::WaitForParallelWorkersToFinish(self.pcxt);
+            let launched = (*self.pcxt).nworkers_launched.max(0) as usize;
+            for worker_index in 0..launched {
                 pg_sys::InstrAccumParallelQuery(
                     self.bufferusage.add(worker_index),
                     self.walusage.add(worker_index),
@@ -2763,8 +2721,10 @@ unsafe fn parallel_build_worker_main(seg: *mut pg_sys::dsm_segment, toc: *mut pg
     let queue: *mut pg_sys::shm_mq = shm_toc_lookup_required(toc, queue_key(worker_number));
     // SAFETY: The queue is this worker's shm_mq; the worker backend is the
     // sender and attaches using the inherited DSM segment.
-    unsafe { pg_sys::shm_mq_set_sender(queue, pg_sys::MyProc) };
-    let queue_handle = unsafe { pg_sys::shm_mq_attach(queue, seg, ptr::null_mut()) };
+    let queue_handle = unsafe {
+        pg_sys::shm_mq_set_sender(queue, pg_sys::MyProc);
+        pg_sys::shm_mq_attach(queue, seg, ptr::null_mut())
+    };
 
     let is_concurrent = header.is_concurrent;
     let (heap_lockmode, index_lockmode) = if is_concurrent {
@@ -2800,13 +2760,14 @@ unsafe fn parallel_build_worker_main(seg: *mut pg_sys::dsm_segment, toc: *mut pg
         super::index_info::IndexInfoView::build_borrowed(index_relation, "parallel build worker");
     index_info.as_mut().ii_Concurrent = is_concurrent;
     // SAFETY: `shared` contains the table_parallelscan_initialize state and
-    // `heap_relation` is open in this worker.
-    let scan = unsafe {
-        pg_sys::table_beginscan_parallel(heap_relation, parallel_table_scan_from_shared(shared))
-    };
-    // SAFETY: All relation, IndexInfo, callback state, and scan pointers are
-    // live for the duration of this worker table build scan.
+    // `heap_relation` is open in this worker; all relation, IndexInfo,
+    // callback state, and scan pointers are live for the duration of this
+    // worker table build scan.
     let scanned_tuples = unsafe {
+        let scan = pg_sys::table_beginscan_parallel(
+            heap_relation,
+            parallel_table_scan_from_shared(shared),
+        );
         pg_sys::table_index_build_scan(
             heap_relation,
             index_relation,

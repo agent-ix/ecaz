@@ -1,0 +1,237 @@
+{
+  "name": "task61-aws-hnsw-graviton-baseline",
+  "schema_version": 1,
+  "artifact_dir": "benchmarks/task61-aws-hnsw-graviton-baseline/artifacts",
+  "defaults": {
+    "pg": 18,
+    "socket_dir": "/var/run/postgresql",
+    "profile": "ec_hnsw",
+    "seed": 42,
+    "queries_limit": 200,
+    "iterations": 200,
+    "force_index": true,
+    "sample_backend_memory": true,
+    "memory_sample_interval_ms": 25
+  },
+  "steps": [
+    {
+      "kind": "corpus-fetch",
+      "name": "fetch-dbpedia-openai3-1m",
+      "tags": ["setup", "fetch", "dbpedia", "graviton", "task61"],
+      "dataset": "qdrant-dbpedia-openai3-large-1536-1m",
+      "output_dir": "/var/lib/pgsql/18/datasets/dbpedia-openai3-1m"
+    },
+    {
+      "kind": "corpus-prepare",
+      "name": "prepare-ec-real-10k",
+      "tags": ["setup", "prepare", "ec_real_10k", "graviton", "task61"],
+      "profile": "ec_real_10k",
+      "parquet": "/var/lib/pgsql/18/datasets/dbpedia-openai3-1m/data",
+      "output_dir": "/var/lib/pgsql/18/datasets/staged-task61-hnsw-baseline"
+    },
+    {
+      "kind": "corpus-prepare",
+      "name": "prepare-ec-real-50k",
+      "tags": ["setup", "prepare", "ec_real_50k", "graviton", "task61"],
+      "profile": "ec_real_50k",
+      "parquet": "/var/lib/pgsql/18/datasets/dbpedia-openai3-1m/data",
+      "output_dir": "/var/lib/pgsql/18/datasets/staged-task61-hnsw-baseline"
+    },
+    {
+      "kind": "corpus-prepare",
+      "name": "prepare-ec-real-100k",
+      "tags": ["setup", "prepare", "ec_real_100k", "graviton", "task61"],
+      "profile": "ec_real_100k",
+      "parquet": "/var/lib/pgsql/18/datasets/dbpedia-openai3-1m/data",
+      "output_dir": "/var/lib/pgsql/18/datasets/staged-task61-hnsw-baseline"
+    },
+    {
+      "kind": "raw",
+      "name": "precheck-host",
+      "tags": ["setup", "precheck", "graviton", "task61"],
+      "args": [
+        "dev",
+        "sql",
+        "--pg",
+        "18",
+        "--db",
+        "postgres",
+        "--socket-dir",
+        "/var/run/postgresql",
+        "--raw",
+        "--sql",
+        "SELECT now() AS captured_at, version() AS postgres_version, current_setting('shared_buffers') AS shared_buffers, current_setting('work_mem') AS work_mem, current_setting('maintenance_work_mem') AS maintenance_work_mem, current_setting('effective_cache_size') AS effective_cache_size; SELECT left(pg_read_file('/proc/cpuinfo', 0, 20000), 20000) AS cpuinfo_prefix; SELECT left(pg_read_file('/proc/meminfo', 0, 12000), 12000) AS meminfo_prefix;",
+        "--log-output",
+        "benchmarks/task61-aws-hnsw-graviton-baseline/artifacts/precheck-host.log"
+      ],
+      "expected_artifacts": [
+        "benchmarks/task61-aws-hnsw-graviton-baseline/artifacts/precheck-host.log"
+      ]
+    },
+    {
+      "kind": "load",
+      "name": "load-10k-hnsw-default",
+      "tags": ["load", "ec_real_10k", "hnsw", "graviton", "task61"],
+      "prefix": "task61_real_10k_hnsw",
+      "profile": "ec_hnsw",
+      "corpus_file": "/var/lib/pgsql/18/datasets/staged-task61-hnsw-baseline/ec_real_10k_corpus.tsv",
+      "queries_file": "/var/lib/pgsql/18/datasets/staged-task61-hnsw-baseline/ec_real_10k_queries.tsv",
+      "manifest_file": "/var/lib/pgsql/18/datasets/staged-task61-hnsw-baseline/ec_real_10k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "m": [16],
+      "ef_construction": 128,
+      "log_file": "benchmarks/task61-aws-hnsw-graviton-baseline/artifacts/load-10k-hnsw-default.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-10k-hnsw-default",
+      "tags": ["recall", "ec_real_10k", "hnsw", "graviton", "task61"],
+      "prefix": "task61_real_10k_hnsw",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [40, 64, 100, 128, 160, 200],
+      "truth_cache_file": "benchmarks/task61-aws-hnsw-graviton-baseline/artifacts/truth-10k-k10.json",
+      "log_output": "benchmarks/task61-aws-hnsw-graviton-baseline/artifacts/recall-10k-hnsw-default.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-10k-hnsw-default",
+      "tags": ["latency", "ec_real_10k", "hnsw", "graviton", "task61"],
+      "prefix": "task61_real_10k_hnsw",
+      "profile": "ec_hnsw",
+      "sweep": [40, 64, 100, 128, 160, 200],
+      "concurrency": 1,
+      "cache_state": "post_recall_warm",
+      "log_output": "benchmarks/task61-aws-hnsw-graviton-baseline/artifacts/latency-10k-hnsw-default.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-10k-hnsw-default",
+      "tags": ["storage", "ec_real_10k", "hnsw", "graviton", "task61"],
+      "prefix": "task61_real_10k_hnsw",
+      "log_file": "benchmarks/task61-aws-hnsw-graviton-baseline/artifacts/storage-10k-hnsw-default.log"
+    },
+    {
+      "kind": "explain",
+      "name": "explain-10k-hnsw-ef200",
+      "tags": ["explain", "ec_real_10k", "hnsw", "graviton", "task61"],
+      "prefix": "task61_real_10k_hnsw",
+      "profile": "ec_hnsw",
+      "index_name": "task61_real_10k_hnsw_m16_idx",
+      "nprobe": 200,
+      "rerank_width": 0,
+      "sql_file": "benchmarks/task61-aws-hnsw-graviton-baseline/artifacts/explain-10k-hnsw-ef200.sql",
+      "log_output": "benchmarks/task61-aws-hnsw-graviton-baseline/artifacts/explain-10k-hnsw-ef200.log"
+    },
+    {
+      "kind": "load",
+      "name": "load-50k-hnsw-default",
+      "tags": ["load", "ec_real_50k", "hnsw", "graviton", "task61"],
+      "prefix": "task61_real_50k_hnsw",
+      "profile": "ec_hnsw",
+      "corpus_file": "/var/lib/pgsql/18/datasets/staged-task61-hnsw-baseline/ec_real_50k_corpus.tsv",
+      "queries_file": "/var/lib/pgsql/18/datasets/staged-task61-hnsw-baseline/ec_real_50k_queries.tsv",
+      "manifest_file": "/var/lib/pgsql/18/datasets/staged-task61-hnsw-baseline/ec_real_50k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "m": [16],
+      "ef_construction": 128,
+      "log_file": "benchmarks/task61-aws-hnsw-graviton-baseline/artifacts/load-50k-hnsw-default.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-50k-hnsw-default",
+      "tags": ["recall", "ec_real_50k", "hnsw", "graviton", "task61"],
+      "prefix": "task61_real_50k_hnsw",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [40, 64, 100, 128, 160, 200],
+      "truth_cache_file": "benchmarks/task61-aws-hnsw-graviton-baseline/artifacts/truth-50k-k10.json",
+      "log_output": "benchmarks/task61-aws-hnsw-graviton-baseline/artifacts/recall-50k-hnsw-default.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-50k-hnsw-default",
+      "tags": ["latency", "ec_real_50k", "hnsw", "graviton", "task61"],
+      "prefix": "task61_real_50k_hnsw",
+      "profile": "ec_hnsw",
+      "sweep": [40, 64, 100, 128, 160, 200],
+      "concurrency": 1,
+      "cache_state": "post_recall_warm",
+      "log_output": "benchmarks/task61-aws-hnsw-graviton-baseline/artifacts/latency-50k-hnsw-default.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-50k-hnsw-default",
+      "tags": ["storage", "ec_real_50k", "hnsw", "graviton", "task61"],
+      "prefix": "task61_real_50k_hnsw",
+      "log_file": "benchmarks/task61-aws-hnsw-graviton-baseline/artifacts/storage-50k-hnsw-default.log"
+    },
+    {
+      "kind": "explain",
+      "name": "explain-50k-hnsw-ef200",
+      "tags": ["explain", "ec_real_50k", "hnsw", "graviton", "task61"],
+      "prefix": "task61_real_50k_hnsw",
+      "profile": "ec_hnsw",
+      "index_name": "task61_real_50k_hnsw_m16_idx",
+      "nprobe": 200,
+      "rerank_width": 0,
+      "sql_file": "benchmarks/task61-aws-hnsw-graviton-baseline/artifacts/explain-50k-hnsw-ef200.sql",
+      "log_output": "benchmarks/task61-aws-hnsw-graviton-baseline/artifacts/explain-50k-hnsw-ef200.log"
+    },
+    {
+      "kind": "load",
+      "name": "load-100k-hnsw-default",
+      "tags": ["load", "ec_real_100k", "hnsw", "graviton", "task61"],
+      "prefix": "task61_real_100k_hnsw",
+      "profile": "ec_hnsw",
+      "corpus_file": "/var/lib/pgsql/18/datasets/staged-task61-hnsw-baseline/ec_real_100k_corpus.tsv",
+      "queries_file": "/var/lib/pgsql/18/datasets/staged-task61-hnsw-baseline/ec_real_100k_queries.tsv",
+      "manifest_file": "/var/lib/pgsql/18/datasets/staged-task61-hnsw-baseline/ec_real_100k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "m": [16],
+      "ef_construction": 128,
+      "log_file": "benchmarks/task61-aws-hnsw-graviton-baseline/artifacts/load-100k-hnsw-default.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-100k-hnsw-default",
+      "tags": ["recall", "ec_real_100k", "hnsw", "graviton", "task61"],
+      "prefix": "task61_real_100k_hnsw",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [40, 64, 100, 128, 160, 200],
+      "truth_cache_file": "benchmarks/task61-aws-hnsw-graviton-baseline/artifacts/truth-100k-k10.json",
+      "log_output": "benchmarks/task61-aws-hnsw-graviton-baseline/artifacts/recall-100k-hnsw-default.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-100k-hnsw-default",
+      "tags": ["latency", "ec_real_100k", "hnsw", "graviton", "task61"],
+      "prefix": "task61_real_100k_hnsw",
+      "profile": "ec_hnsw",
+      "sweep": [40, 64, 100, 128, 160, 200],
+      "concurrency": 1,
+      "cache_state": "post_recall_warm",
+      "log_output": "benchmarks/task61-aws-hnsw-graviton-baseline/artifacts/latency-100k-hnsw-default.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-100k-hnsw-default",
+      "tags": ["storage", "ec_real_100k", "hnsw", "graviton", "task61"],
+      "prefix": "task61_real_100k_hnsw",
+      "log_file": "benchmarks/task61-aws-hnsw-graviton-baseline/artifacts/storage-100k-hnsw-default.log"
+    },
+    {
+      "kind": "explain",
+      "name": "explain-100k-hnsw-ef200",
+      "tags": ["explain", "ec_real_100k", "hnsw", "graviton", "task61"],
+      "prefix": "task61_real_100k_hnsw",
+      "profile": "ec_hnsw",
+      "index_name": "task61_real_100k_hnsw_m16_idx",
+      "nprobe": 200,
+      "rerank_width": 0,
+      "sql_file": "benchmarks/task61-aws-hnsw-graviton-baseline/artifacts/explain-100k-hnsw-ef200.sql",
+      "log_output": "benchmarks/task61-aws-hnsw-graviton-baseline/artifacts/explain-100k-hnsw-ef200.log"
+    }
+  ]
+}

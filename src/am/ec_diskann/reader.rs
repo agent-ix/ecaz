@@ -32,6 +32,17 @@ use std::collections::HashSet;
 use crate::am::ec_diskann::tuple::{VamanaNodeTuple, TQ_VAMANA_NODE_TAG};
 use crate::storage::page::{DataPageChain, ItemPointer};
 
+/// Minimal graph access surface needed by scan-time greedy descent.
+///
+/// The persisted chain implementation is convenient for tests and build-time
+/// callers. PostgreSQL scans can implement the same surface over a live index
+/// relation so they do not have to copy the whole index into process memory at
+/// `ambeginscan` time.
+pub trait GraphReader {
+    fn read_node(&self, tid: ItemPointer) -> Result<VamanaNodeTuple, String>;
+    fn first_live_tid(&self) -> Result<Option<ItemPointer>, String>;
+}
+
 /// Handle to a persisted Vamana graph. Holds a borrowed
 /// [`DataPageChain`] and the metadata-page `(R, W, C)` triple needed
 /// to decode tuples.
@@ -162,6 +173,16 @@ impl<'a> PersistedGraphReader<'a> {
             Some(item) => item.map(|(tid, _)| Some(tid)),
             None => Ok(None),
         }
+    }
+}
+
+impl GraphReader for PersistedGraphReader<'_> {
+    fn read_node(&self, tid: ItemPointer) -> Result<VamanaNodeTuple, String> {
+        Self::read_node(self, tid)
+    }
+
+    fn first_live_tid(&self) -> Result<Option<ItemPointer>, String> {
+        Self::first_live_tid(self)
     }
 }
 
