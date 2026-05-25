@@ -15,7 +15,7 @@ use color_eyre::eyre::{eyre, Context, Result};
 use comfy_table::{presets::UTF8_FULL, Cell, Table};
 use futures::SinkExt;
 use indicatif::{ProgressBar, ProgressStyle};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 use tokio_postgres::{Client, Transaction};
@@ -95,6 +95,14 @@ pub struct LoadArgs {
     /// Force chunked-manifest loading via `--manifest-file`.
     #[arg(long)]
     pub chunked: bool,
+
+    /// Static SPIRE remote placement config for distributed corpus loading.
+    ///
+    /// This is accepted only with `--profile ec_spire`. Until Task 30 Phase 13e.1
+    /// materializes remote shards, a valid config fails closed instead of
+    /// silently producing a local-only fixture.
+    #[arg(long)]
+    pub distributed_placement_config: Option<PathBuf>,
 }
 
 struct IndexJob {
@@ -127,6 +135,44 @@ struct ChunkStateRow {
 struct LoadedChunkedManifest {
     manifest: manifest::ChunkedManifest,
     base_dir: PathBuf,
+}
+
+#[derive(Debug)]
+struct LoadedDistributedPlacementConfig {
+    path: PathBuf,
+    config: DistributedPlacementConfig,
+}
+
+#[derive(Debug, Clone, serde::Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+struct DistributedPlacementConfig {
+    version: u32,
+    coordinator: DistributedPlacementCoordinator,
+    remotes: Vec<DistributedPlacementRemote>,
+    shard_policy: DistributedShardPolicy,
+}
+
+#[derive(Debug, Clone, serde::Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+struct DistributedPlacementCoordinator {
+    index_name: String,
+}
+
+#[derive(Debug, Clone, serde::Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+struct DistributedPlacementRemote {
+    node_id: u32,
+    conninfo_secret_name: String,
+    remote_index_regclass: String,
+    shard_ids: Vec<u32>,
+}
+
+#[derive(Debug, Clone, serde::Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+struct DistributedShardPolicy {
+    kind: String,
+    shard_count: u32,
+    source_identity_column: String,
 }
 
 pub async fn run(conn: &ConnectionOptions, args: LoadArgs) -> Result<()> {
@@ -178,6 +224,14 @@ pub async fn run(conn: &ConnectionOptions, args: LoadArgs) -> Result<()> {
         return Err(eyre!(
             "{formatted}. Use the native CLI flag or drop the --reloption, not both"
         ));
+    }
+
+    let distributed_placement_config = load_distributed_placement_config_if_requested(
+        args.distributed_placement_config.as_deref(),
+        profile,
+    )?;
+    if let Some(config) = &distributed_placement_config {
+        return Err(distributed_spire_load_not_implemented_error(config));
     }
 
     let corpus_table = format!("{}_corpus", args.prefix);
@@ -358,6 +412,151 @@ fn load_chunked_manifest_if_requested(
             .map(Path::to_path_buf)
             .unwrap_or_else(|| PathBuf::from(".")),
     }))
+}
+
+fn load_distributed_placement_config_if_requested(
+    path: Option<&Path>,
+    profile: &IndexProfile,
+) -> Result<Option<LoadedDistributedPlacementConfig>> {
+    let Some(path) = path else {
+        return Ok(None);
+    };
+    if profile.name != "ec_spire" {
+        return Err(eyre!(
+            "--distributed-placement-config is only supported with --profile ec_spire, not {:?}",
+            profile.name
+        ));
+    }
+    let raw = std::fs::read_to_string(path)
+        .wrap_err_with(|| format!("reading distributed placement config {}", path.display()))?;
+    let config: DistributedPlacementConfig = serde_json::from_str(&raw)
+        .wrap_err_with(|| format!("parsing distributed placement config {}", path.display()))?;
+    validate_distributed_placement_config(&config)?;
+    Ok(Some(LoadedDistributedPlacementConfig {
+        path: path.to_path_buf(),
+        config,
+    }))
+}
+
+fn validate_distributed_placement_config(config: &DistributedPlacementConfig) -> Result<()> {
+    if config.version != 1 {
+        return Err(eyre!(
+            "distributed placement config version {} is not supported; expected 1",
+            config.version
+        ));
+    }
+    if config.coordinator.index_name.trim().is_empty() {
+        return Err(eyre!(
+            "distributed placement config coordinator.index_name must not be empty"
+        ));
+    }
+    if config.remotes.is_empty() {
+        return Err(eyre!(
+            "distributed placement config must define at least one remote"
+        ));
+    }
+    if config.shard_policy.kind != "hash_source_identity" {
+        return Err(eyre!(
+            "distributed placement config shard_policy.kind {:?} is not supported; expected \"hash_source_identity\"",
+            config.shard_policy.kind
+        ));
+    }
+    if config.shard_policy.shard_count == 0 {
+        return Err(eyre!(
+            "distributed placement config shard_policy.shard_count must be greater than zero"
+        ));
+    }
+    profiles::validate_ident(&config.shard_policy.source_identity_column).wrap_err_with(|| {
+        format!(
+            "invalid distributed placement source identity column {:?}",
+            config.shard_policy.source_identity_column
+        )
+    })?;
+
+    let mut node_ids = HashSet::new();
+    let mut seen_shards = HashSet::new();
+    for remote in &config.remotes {
+        if remote.node_id <= 1 {
+            return Err(eyre!(
+                "distributed placement remote node_id {} is invalid; remote node ids must be greater than 1",
+                remote.node_id
+            ));
+        }
+        if !node_ids.insert(remote.node_id) {
+            return Err(eyre!(
+                "distributed placement config repeats remote node_id {}",
+                remote.node_id
+            ));
+        }
+        if remote.conninfo_secret_name.trim().is_empty() {
+            return Err(eyre!(
+                "distributed placement remote node_id {} has empty conninfo_secret_name",
+                remote.node_id
+            ));
+        }
+        if remote.remote_index_regclass.trim().is_empty() {
+            return Err(eyre!(
+                "distributed placement remote node_id {} has empty remote_index_regclass",
+                remote.node_id
+            ));
+        }
+        if remote.shard_ids.is_empty() {
+            return Err(eyre!(
+                "distributed placement remote node_id {} owns no shards",
+                remote.node_id
+            ));
+        }
+        for shard_id in &remote.shard_ids {
+            if *shard_id >= config.shard_policy.shard_count {
+                return Err(eyre!(
+                    "distributed placement shard_id {} is outside shard_count {}",
+                    shard_id,
+                    config.shard_policy.shard_count
+                ));
+            }
+            if !seen_shards.insert(*shard_id) {
+                return Err(eyre!(
+                    "distributed placement shard_id {} is assigned more than once",
+                    shard_id
+                ));
+            }
+        }
+    }
+
+    let missing: Vec<u32> = (0..config.shard_policy.shard_count)
+        .filter(|shard_id| !seen_shards.contains(shard_id))
+        .take(16)
+        .collect();
+    if !missing.is_empty() {
+        let suffix = if seen_shards.len() + missing.len() < config.shard_policy.shard_count as usize
+        {
+            ", ..."
+        } else {
+            ""
+        };
+        return Err(eyre!(
+            "distributed placement config is missing shard ids: {}{}",
+            missing
+                .iter()
+                .map(u32::to_string)
+                .collect::<Vec<_>>()
+                .join(", "),
+            suffix
+        ));
+    }
+
+    Ok(())
+}
+
+fn distributed_spire_load_not_implemented_error(
+    input: &LoadedDistributedPlacementConfig,
+) -> color_eyre::eyre::Report {
+    eyre!(
+        "distributed SPIRE placement config {} is valid for {} remotes and {} shards, but distributed corpus load is not implemented yet; complete Task 30 Phase 13e.1 before running AWS distributed load",
+        input.path.display(),
+        input.config.remotes.len(),
+        input.config.shard_policy.shard_count
+    )
 }
 
 /// Verify a sibling manifest if one was requested or auto-discovered.
@@ -1221,7 +1420,7 @@ fn print_summary(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::profiles::{EC_DISKANN, EC_HNSW, EC_IVF};
+    use crate::profiles::{EC_DISKANN, EC_HNSW, EC_IVF, EC_SPIRE};
     use crate::tsv::VectorFileStats;
     use std::io::Write as _;
     use tempfile::TempDir;
@@ -1464,6 +1663,145 @@ mod tests {
         assert!(err.contains("DROP INDEX dbpedia_10k_idx"));
         assert!(err.contains("graph_degree=48"));
         assert!(err.contains("build_list_size=128"));
+    }
+
+    // --- distributed SPIRE placement config ---
+
+    fn distributed_placement_config_json() -> String {
+        serde_json::json!({
+            "version": 1,
+            "coordinator": {
+                "index_name": "aws_spire_idx"
+            },
+            "remotes": [
+                {
+                    "node_id": 2,
+                    "conninfo_secret_name": "spire/remote/a",
+                    "remote_index_regclass": "public.aws_spire_remote_a_idx",
+                    "shard_ids": [0, 2]
+                },
+                {
+                    "node_id": 3,
+                    "conninfo_secret_name": "spire/remote/b",
+                    "remote_index_regclass": "public.aws_spire_remote_b_idx",
+                    "shard_ids": [1, 3]
+                }
+            ],
+            "shard_policy": {
+                "kind": "hash_source_identity",
+                "shard_count": 4,
+                "source_identity_column": "id"
+            }
+        })
+        .to_string()
+    }
+
+    #[test]
+    fn distributed_placement_config_accepts_complete_static_shard_map() {
+        let td = TempDir::new().unwrap();
+        let path = write(&td, "placement.json", &distributed_placement_config_json());
+        let loaded = load_distributed_placement_config_if_requested(Some(&path), &EC_SPIRE)
+            .unwrap()
+            .unwrap();
+        assert_eq!(loaded.path, path);
+        assert_eq!(loaded.config.remotes.len(), 2);
+        assert_eq!(loaded.config.shard_policy.shard_count, 4);
+    }
+
+    #[test]
+    fn distributed_placement_config_rejects_non_spire_profile() {
+        let td = TempDir::new().unwrap();
+        let path = write(&td, "placement.json", &distributed_placement_config_json());
+        let err = load_distributed_placement_config_if_requested(Some(&path), &EC_DISKANN)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("only supported with --profile ec_spire"),
+            "err: {err}"
+        );
+    }
+
+    #[test]
+    fn distributed_placement_config_rejects_local_node_id() {
+        let config: DistributedPlacementConfig = serde_json::from_value(serde_json::json!({
+            "version": 1,
+            "coordinator": {"index_name": "aws_spire_idx"},
+            "remotes": [{
+                "node_id": 1,
+                "conninfo_secret_name": "spire/remote/a",
+                "remote_index_regclass": "public.aws_spire_remote_a_idx",
+                "shard_ids": [0]
+            }],
+            "shard_policy": {
+                "kind": "hash_source_identity",
+                "shard_count": 1,
+                "source_identity_column": "id"
+            }
+        }))
+        .unwrap();
+        let err = validate_distributed_placement_config(&config)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("remote node ids must be greater than 1"),
+            "err: {err}"
+        );
+    }
+
+    #[test]
+    fn distributed_placement_config_rejects_duplicate_shard_assignment() {
+        let config: DistributedPlacementConfig = serde_json::from_value(serde_json::json!({
+            "version": 1,
+            "coordinator": {"index_name": "aws_spire_idx"},
+            "remotes": [
+                {
+                    "node_id": 2,
+                    "conninfo_secret_name": "spire/remote/a",
+                    "remote_index_regclass": "public.aws_spire_remote_a_idx",
+                    "shard_ids": [0]
+                },
+                {
+                    "node_id": 3,
+                    "conninfo_secret_name": "spire/remote/b",
+                    "remote_index_regclass": "public.aws_spire_remote_b_idx",
+                    "shard_ids": [0]
+                }
+            ],
+            "shard_policy": {
+                "kind": "hash_source_identity",
+                "shard_count": 1,
+                "source_identity_column": "id"
+            }
+        }))
+        .unwrap();
+        let err = validate_distributed_placement_config(&config)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("assigned more than once"), "err: {err}");
+    }
+
+    #[test]
+    fn distributed_placement_config_rejects_missing_shards() {
+        let config: DistributedPlacementConfig = serde_json::from_value(serde_json::json!({
+            "version": 1,
+            "coordinator": {"index_name": "aws_spire_idx"},
+            "remotes": [{
+                "node_id": 2,
+                "conninfo_secret_name": "spire/remote/a",
+                "remote_index_regclass": "public.aws_spire_remote_a_idx",
+                "shard_ids": [0, 2]
+            }],
+            "shard_policy": {
+                "kind": "hash_source_identity",
+                "shard_count": 4,
+                "source_identity_column": "id"
+            }
+        }))
+        .unwrap();
+        let err = validate_distributed_placement_config(&config)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("missing shard ids: 1, 3"), "err: {err}");
     }
 
     // --- manifest orchestration ---
