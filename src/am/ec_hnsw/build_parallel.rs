@@ -551,15 +551,45 @@ impl EcHnswConcurrentDsmLockOps {
         }
     }
 
+    /// Acquire a shared guard over `lock` via the dispatch table's
+    /// `acquire_shared` entry.
+    ///
+    /// # Safety
+    /// - `lock` must point at a `pg_sys::LWLock` that has been initialized
+    ///   (e.g. via `LWLockInitialize`) and lives for the duration of the
+    ///   returned guard — typically a per-node lock inside an attached DSM
+    ///   graph image whose segment is held by the caller.
+    /// - The dispatch entry (`self.acquire_shared`) must have been
+    ///   constructed by [`EcHnswConcurrentDsmLockOps::postgres`] for
+    ///   production paths or by the test-only constructor in this module's
+    ///   `#[cfg(test)]` section. Both constructors install function
+    ///   pointers whose contract matches PostgreSQL's `LWLockAcquire`
+    ///   semantics.
+    /// - The returned [`LwLockGuard`] holds the lock until dropped; the
+    ///   caller must not release the lock by any other path.
     unsafe fn shared(self, lock: *mut pg_sys::LWLock) -> LwLockGuard {
-        // SAFETY: Callers pass an initialized LWLock pointer from the DSM graph;
-        // the selected lock operation returns a guard that releases it.
+        // SAFETY: Per the fn-level # Safety contract: caller passes an
+        // initialized LWLock pointer whose backing memory outlives the
+        // returned guard, and `self.acquire_shared` is one of the two
+        // constructor-installed function pointers whose contract this
+        // dispatch matches.
         unsafe { (self.acquire_shared)(lock) }
     }
 
+    /// Acquire an exclusive guard over `lock` via the dispatch table's
+    /// `acquire_exclusive` entry.
+    ///
+    /// # Safety
+    /// Same contract as [`Self::shared`], substituting "exclusive" for
+    /// "shared":
+    /// - `lock` must point at an initialized `pg_sys::LWLock` whose
+    ///   backing memory outlives the returned guard.
+    /// - `self.acquire_exclusive` must have been installed by one of the
+    ///   sanctioned constructors.
+    /// - The returned guard releases the lock on drop; do not release by
+    ///   any other path.
     unsafe fn exclusive(self, lock: *mut pg_sys::LWLock) -> LwLockGuard {
-        // SAFETY: Callers pass an initialized LWLock pointer from the DSM graph;
-        // the selected lock operation returns a guard that releases it.
+        // SAFETY: Per the fn-level # Safety contract.
         unsafe { (self.acquire_exclusive)(lock) }
     }
 }
@@ -860,13 +890,30 @@ impl EcHnswConcurrentDsmGraphLayout {
         )
     }
 
+    /// Recover an [`EcHnswConcurrentDsmGraphLayout`] from a header
+    /// pointer at the start of an attached DSM graph image.
+    ///
+    /// # Safety
+    /// - `header` must either be null (this routine raises a PG error)
+    ///   or point at a fully-initialized `EcHnswConcurrentDsmGraphHeader`
+    ///   at the start of a DSM graph image owned by an attached segment
+    ///   that outlives this call.
+    /// - The image's `node_count`, `entry_idx`, `max_level`,
+    ///   `total_neighbor_slots`, `code_len`, and `source_dim` fields
+    ///   must have been written by
+    ///   [`initialize_concurrent_dsm_graph_image`] (or a routine with
+    ///   the same invariants) before any worker reads them.
+    /// - The function does not retain the pointer past the call; the
+    ///   returned `Layout` is a plain `Copy` value.
     unsafe fn from_header(header: *const EcHnswConcurrentDsmGraphHeader) -> Self {
         if header.is_null() {
             pgrx::error!("concurrent DSM graph header pointer is null");
         }
 
-        // SAFETY: Null was rejected above; the caller points at the header bytes
-        // at the beginning of a DSM graph image.
+        // SAFETY: Null was rejected above; per the fn-level # Safety
+        // contract the caller points at a fully-initialized
+        // EcHnswConcurrentDsmGraphHeader at the start of a live DSM
+        // graph image, and the borrow does not escape this frame.
         let header = unsafe { &*header };
         let entry_idx = match header.entry_idx {
             EC_HNSW_CONCURRENT_DSM_INVALID_NODE_IDX => None,
@@ -2040,6 +2087,24 @@ pub(crate) fn debug_last_parallel_graph_build_workers_launched() -> i32 {
     LAST_PARALLEL_GRAPH_BUILD_WORKERS_LAUNCHED.load(Ordering::Acquire)
 }
 
+/// Try to run the heap-scan phase of an HNSW build under PostgreSQL's
+/// parallel-build infrastructure, returning `None` if the configured
+/// plan asks for the serial path.
+///
+/// # Safety
+/// Caller must invoke this routine from inside an AM build callback
+/// where:
+/// - `heap_relation` and `index_relation` are live, locked
+///   `pg_sys::Relation` handles for the build's heap and index, valid
+///   for at least the duration of this call (PostgreSQL keeps the
+///   relations open across the whole `aminsert` / `ambuild`
+///   callback).
+/// - `index_info` points at a live `pg_sys::IndexInfo` for the same
+///   build (PostgreSQL allocates this in the AM's memory context).
+/// - The current process is inside the leader's transaction (the
+///   parallel-mode region this routine opens is scoped to the call).
+/// - `state` is the leader-side build state for this index build; the
+///   routine drains worker tuples into it before returning.
 pub(super) unsafe fn try_parallel_build(
     heap_relation: pg_sys::Relation,
     index_relation: pg_sys::Relation,
@@ -2097,6 +2162,24 @@ pub(super) struct EcHnswParallelGraphBuildResult {
     pub(super) stage_us: u64,
 }
 
+/// Try to run the graph-assembly phase of an HNSW build under
+/// PostgreSQL's parallel-build infrastructure, sized from the leader's
+/// already-drained tuple set.
+///
+/// # Safety
+/// Caller must invoke this routine after [`try_parallel_build`] has
+/// returned with the heap-scan phase complete, and from inside an AM
+/// build callback where:
+/// - `state` is the leader-side build state holding the heap tuples
+///   that drive preassembly sizing; the routine reads but does not
+///   retain a reference past return.
+/// - The current process is the parallel-build leader and is still
+///   inside the AM build callback so that opening a new
+///   parallel-mode region for the graph-build phase is sound.
+/// - The DSM segment created by this call is owned by the returned
+///   `EcHnswParallelGraphBuildResult`-bearing leader; workers' access
+///   is bounded by `WaitForParallelWorkersToFinish` before the leader
+///   returns.
 pub(super) unsafe fn try_parallel_concurrent_dsm_graph_build(
     state: &build::BuildState,
     plan: EcHnswParallelBuildPlan,
@@ -2147,6 +2230,25 @@ struct EcHnswParallelGraphBuildLeader {
 }
 
 impl EcHnswParallelGraphBuildLeader {
+    /// Open the graph-build phase's parallel-mode region, create the
+    /// `ParallelContext`, allocate the concurrent-DSM graph image, and
+    /// launch workers up to `plan.requested_workers`.
+    ///
+    /// # Safety
+    /// - Must be called from the leader process of an HNSW build,
+    ///   from inside the AM build callback (so the surrounding
+    ///   transaction owns the parallel-mode entry/exit pair this
+    ///   routine opens).
+    /// - `plan.requested_workers` must be positive (asserted via
+    ///   `debug_assert!` and enforced upstream by the build plan
+    ///   sizing logic).
+    /// - `preassembly` must reflect the heap tuples already drained by
+    ///   [`try_parallel_build`] so that the DSM image is sized
+    ///   correctly before any worker attaches.
+    /// - On the `None` return path the routine has already balanced
+    ///   the parallel-mode region; on the `Some` return path the
+    ///   caller must call `finish` (which destroys the context and
+    ///   exits parallel mode) before dropping the leader.
     unsafe fn begin(
         plan: EcHnswParallelBuildPlan,
         preassembly: &EcHnswConcurrentDsmPreassemblyPlan,
@@ -2319,6 +2421,22 @@ impl EcHnswParallelGraphBuildLeader {
         })
     }
 
+    /// Insert the leader's share of the partition workload into the
+    /// attached concurrent-DSM graph image and return the leader's
+    /// attachment handle.
+    ///
+    /// # Safety
+    /// - `self.graph_base` must reference the DSM-backed graph image
+    ///   allocated by [`Self::begin`] for this build; the image must
+    ///   be initialized (header written, node array zeroed) before
+    ///   this call.
+    /// - The graph image must still be live (the leader has not yet
+    ///   destroyed its `ParallelContext`).
+    /// - This routine reads and mutates the DSM image directly; it
+    ///   assumes the leader currently holds exclusive logical access
+    ///   to its own partition slice (workers have not yet been
+    ///   launched for graph build, or have already finished and been
+    ///   joined upstream).
     unsafe fn insert_leader_partitions(&mut self) -> EcHnswConcurrentDsmGraphAttachment {
         let attachment = attach_concurrent_dsm_graph_image(self.graph_base);
         let config = attachment.require_insert_config();
@@ -2386,6 +2504,22 @@ struct EcHnswParallelBuildLeader {
 }
 
 impl EcHnswParallelBuildLeader {
+    /// Open the heap-scan phase's parallel-mode region, create the
+    /// `ParallelContext`, allocate the leader/worker shared state and
+    /// per-worker shm_mq pipes, and launch workers.
+    ///
+    /// # Safety
+    /// - Must be called from the leader process of an HNSW build,
+    ///   inside the AM build callback where `heap_relation`,
+    ///   `index_relation`, and `index_info` are live PG handles for
+    ///   the duration of the parallel-mode region this routine opens.
+    /// - `plan.requested_workers` must be positive; the build plan's
+    ///   sizing logic enforces this.
+    /// - On `None` return the routine has already balanced the
+    ///   parallel-mode region; on `Some` return the caller must
+    ///   subsequently drain worker messages and call `finish` before
+    ///   dropping the leader so that the matching `ExitParallelMode`
+    ///   runs.
     unsafe fn begin(
         heap_relation: pg_sys::Relation,
         index_relation: pg_sys::Relation,
@@ -2578,6 +2712,21 @@ impl EcHnswParallelBuildLeader {
         Some(leader)
     }
 
+    /// Block-read from each worker's `shm_mq_handle` until every
+    /// worker reports DONE, appending received `BuildTuple`s into
+    /// `tuples`.
+    ///
+    /// # Safety
+    /// - The leader must currently own the parallel-mode region
+    ///   opened by [`Self::begin`]; this routine assumes the
+    ///   `ParallelContext` and the per-worker queue handles in
+    ///   `self.queue_handles` are still live and have not been
+    ///   destroyed.
+    /// - Workers must have been launched (via
+    ///   `LaunchParallelWorkers` inside `begin`) so that the queue
+    ///   sends can complete; the routine waits via
+    ///   `shm_mq_receive` and trusts PostgreSQL's worker-failure
+    ///   error propagation.
     unsafe fn drain_worker_messages(&mut self, tuples: &mut Vec<build::BuildTuple>) {
         let mut done = vec![false; self.queue_handles.len()];
         let mut done_count = 0_usize;
@@ -2712,6 +2861,24 @@ pub unsafe extern "C-unwind" fn ec_hnsw_parallel_graph_build_main(
     })
 }
 
+/// Heap-scan worker entrypoint for the HNSW parallel build.
+/// PostgreSQL invokes this from a background worker process attached
+/// to the leader's DSM segment.
+///
+/// # Safety
+/// - `seg` and `toc` must be the live `dsm_segment` and `shm_toc` PG
+///   passes to this worker after `LaunchParallelWorkers` and
+///   `AttachToParallelContext`. Both remain valid for the duration of
+///   the worker's execution; PostgreSQL's parallel-worker
+///   infrastructure cleans them up after this function returns.
+/// - The worker must be running inside a PG background worker that
+///   has already initialized its connection, signal handlers, and
+///   memory context (PostgreSQL's parallel-worker harness does this
+///   before calling the entrypoint).
+/// - The leader must have inserted the `EcHnswParallelBuildSharedHeader`
+///   under `PARALLEL_KEY_EC_HNSW_BUILD_SHARED` into `toc` before
+///   launching this worker; this routine asserts and errors if the
+///   header is missing or invalid.
 unsafe fn parallel_build_worker_main(seg: *mut pg_sys::dsm_segment, toc: *mut pg_sys::shm_toc) {
     let shared: *mut EcHnswParallelBuildSharedHeader =
         shm_toc_lookup_required(toc, PARALLEL_KEY_EC_HNSW_BUILD_SHARED);
@@ -2821,6 +2988,22 @@ unsafe fn parallel_build_worker_main(seg: *mut pg_sys::dsm_segment, toc: *mut pg
     drop(heap_relation_guard);
 }
 
+/// Graph-build worker entrypoint for the HNSW parallel build. PG
+/// invokes this from a background worker for the graph-assembly
+/// phase that follows the heap-scan phase.
+///
+/// # Safety
+/// - `toc` must be the live `shm_toc` PG passes to this worker after
+///   `LaunchParallelWorkers` and `AttachToParallelContext` (no
+///   `dsm_segment` argument since the graph-build worker accesses
+///   shared state exclusively through the TOC).
+/// - The graph-build leader must have inserted both the
+///   `EcHnswParallelBuildSharedHeader` and the concurrent-DSM graph
+///   image under the documented `PARALLEL_KEY_*` keys before this
+///   worker launches; the routine errors if either is absent.
+/// - Like [`parallel_build_worker_main`], this routine relies on PG's
+///   parallel-worker harness having already initialized the worker's
+///   connection, signals, and memory context.
 unsafe fn parallel_graph_build_worker_main(toc: *mut pg_sys::shm_toc) {
     let shared: *mut EcHnswParallelBuildSharedHeader =
         shm_toc_lookup_required(toc, PARALLEL_KEY_EC_HNSW_BUILD_SHARED);
@@ -3113,9 +3296,16 @@ fn parallel_table_scan_from_shared(
     }
 }
 
+/// Accumulate a `bufferalign(size)`-bytes chunk into a PG shm_toc
+/// estimator's `space_for_chunks` counter.
+///
+/// # Safety
+/// `estimator` must point at a live `pg_sys::shm_toc_estimator` owned
+/// by a `ParallelContext` whose DSM is currently being sized (i.e.
+/// before `InitializeParallelDSM` has been called). The pointer must
+/// be valid for the duration of this call.
 unsafe fn estimate_chunk(estimator: *mut pg_sys::shm_toc_estimator, size: pg_sys::Size) {
-    // SAFETY: `estimator` is PostgreSQL's live DSM estimator owned by the
-    // ParallelContext being prepared.
+    // SAFETY: Per the fn-level # Safety contract.
     unsafe {
         (*estimator).space_for_chunks = checked_add_size(
             (*estimator).space_for_chunks,
@@ -3125,9 +3315,16 @@ unsafe fn estimate_chunk(estimator: *mut pg_sys::shm_toc_estimator, size: pg_sys
     }
 }
 
+/// Accumulate `keys` into a PG shm_toc estimator's `number_of_keys`
+/// counter.
+///
+/// # Safety
+/// `estimator` must point at a live `pg_sys::shm_toc_estimator` owned
+/// by a `ParallelContext` whose DSM is currently being sized (i.e.
+/// before `InitializeParallelDSM` has been called). The pointer must
+/// be valid for the duration of this call.
 unsafe fn estimate_keys(estimator: *mut pg_sys::shm_toc_estimator, keys: pg_sys::Size) {
-    // SAFETY: `estimator` is PostgreSQL's live DSM estimator owned by the
-    // ParallelContext being prepared.
+    // SAFETY: Per the fn-level # Safety contract.
     unsafe {
         (*estimator).number_of_keys = checked_add_size(
             (*estimator).number_of_keys,
@@ -4084,12 +4281,33 @@ mod tests {
         }
     }
 
+    /// Test-only dispatch entry that returns a synthetic
+    /// [`LwLockGuard`] whose release is the noop
+    /// [`test_lock_noop_release`].
+    ///
+    /// # Safety
+    /// - `lock` must point at a `pg_sys::LWLock`-shaped value owned
+    ///   by the test fixture (typically a stack-allocated default
+    ///   value); the synthetic guard does not perform any PG-side
+    ///   acquire, so it does not require a real initialized LWLock.
+    /// - The returned guard is bound to [`test_lock_noop_release`],
+    ///   so the lock is never actually released — this is fine in
+    ///   the synthetic test setting where no contention is exercised.
     unsafe fn test_lock_guard(lock: *mut pg_sys::LWLock) -> LwLockGuard {
-        // SAFETY: Test callers pass an initialized LWLock pointer and the noop
-        // release function is valid for the synthetic test lock.
+        // SAFETY: Per the fn-level # Safety contract.
         unsafe { LwLockGuard::from_acquired_with_release(lock, test_lock_noop_release) }
     }
 
+    /// Test-only release function paired with [`test_lock_guard`]:
+    /// drops the synthetic lock on the floor.
+    ///
+    /// # Safety
+    /// The function does not dereference its argument; it is `unsafe`
+    /// only to match the signature `unsafe fn(*mut LWLock)` required
+    /// by the [`EcHnswConcurrentDsmLockOps`] dispatch table and by
+    /// [`LwLockGuard::from_acquired_with_release`]. The caller need
+    /// only ensure the pointer's type matches the dispatch signature;
+    /// validity is not required.
     unsafe fn test_lock_noop_release(_lock: *mut pg_sys::LWLock) {}
 
     fn test_insert_config(dimensions: usize) -> EcHnswConcurrentDsmInsertConfig {
