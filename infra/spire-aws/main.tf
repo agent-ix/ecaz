@@ -137,6 +137,7 @@ resource "aws_security_group_rule" "coord_to_remote_pg" {
 
 resource "aws_s3_bucket" "artifacts" {
   bucket_prefix = "ecaz-spire-aws-"
+  force_destroy = true
 }
 
 resource "aws_s3_bucket_versioning" "artifacts" {

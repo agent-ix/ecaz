@@ -168,6 +168,9 @@ What it does:
   defaults.
 - Writes the `topology` Terraform output to
   `$(ARTIFACT_DIR)/aws-topology.json`.
+- Creates the versioned artifact bucket with Terraform `force_destroy =
+  true`, so failed runs can destroy bucket object versions and delete
+  markers during teardown instead of leaving billable cleanup debt.
 
 Verification:
 
