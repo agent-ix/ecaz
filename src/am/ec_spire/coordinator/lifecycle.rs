@@ -13,17 +13,17 @@ impl Drop for SpireRelationLockGuard {
     }
 }
 
+/// # Safety
+/// Callers hold an open Relation for the guard lifetime. `relid` is captured
+/// before locking and unlocked by relid in `SpireRelationLockGuard::drop`,
+/// so Drop never dereferences the pointer.
 pub(super) unsafe fn lock_publish_relation(
     index_relation: pg_sys::Relation,
 ) -> SpireRelationLockGuard {
-    // Callers hold an open Relation for the guard lifetime. Capture the relid
-    // before locking and unlock by relid so Drop never dereferences the pointer.
     let index_relation_handle = std::ptr::NonNull::new(index_relation)
         .unwrap_or_else(|| pgrx::error!("ec_spire publish lock needs a valid index relation"));
     let relid = crate::storage::relation::relation_oid_handle(index_relation_handle);
-    // SAFETY: relid identifies the open index relation and the lock mode is the
-    // fixed publish lock mode paired with SpireRelationLockGuard::drop.
-    unsafe { pg_sys::LockRelationOid(relid, SPIRE_PUBLISH_LOCK_MODE) };
+    pg_sys::LockRelationOid(relid, SPIRE_PUBLISH_LOCK_MODE);
     SpireRelationLockGuard {
         relid,
         lockmode: SPIRE_PUBLISH_LOCK_MODE,

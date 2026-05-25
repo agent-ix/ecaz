@@ -714,18 +714,18 @@ pub(crate) fn debug_spire_vacuum_remove_heap_tids(
         dead_tids: dead_tids.iter().copied().collect(),
     };
 
-    // SAFETY: info references the open debug index relation and callback_state
-    // lives until ambulkdelete returns.
+    // SAFETY: info references the open debug index relation, callback_state
+    // lives until ambulkdelete returns, and amvacuumcleanup re-uses the
+    // same vacuum-info pointer plus the stats pointer returned above.
     let stats = unsafe {
-        ec_spire_ambulkdelete(
+        let stats = ec_spire_ambulkdelete(
             info_ptr,
             std::ptr::null_mut(),
             Some(debug_vacuum_dead_tid_callback),
             (&mut callback_state as *mut DebugVacuumCallbackState).cast(),
-        )
+        );
+        ec_spire_amvacuumcleanup(info_ptr, stats)
     };
-    // SAFETY: info_ptr and stats are still live from the debug bulk-delete call.
-    let stats = unsafe { ec_spire_amvacuumcleanup(info_ptr, stats) };
     crate::am::common::vacuum::copy_index_bulk_delete_result(
         std::ptr::NonNull::new(stats).expect("ec_spire debug vacuum stats should be non-null"),
     )

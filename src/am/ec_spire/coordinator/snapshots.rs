@@ -152,14 +152,16 @@ impl SpireLiveObjectRelation {
     }
 }
 
+/// # Safety
+/// Caller guarantees `index_relation`, when non-null, is live for the
+/// returned view's immediate call scope.
 pub(crate) unsafe fn live_index_relation(
     index_relation: pg_sys::Relation,
 ) -> SpireLiveIndexRelation {
     if index_relation.is_null() {
         pgrx::error!("ec_spire live index relation view received a null relation");
     }
-    // SAFETY: caller guarantees `index_relation` is live for the returned view.
-    unsafe { SpireLiveIndexRelation::new(index_relation) }
+    SpireLiveIndexRelation::new(index_relation)
 }
 
 pub(crate) fn live_index_relation_from_guard(
