@@ -934,6 +934,10 @@ async fn report_manifest(path: &Path, results_output: Option<&Path>) -> Result<(
                 format_metric_values(&row.values)
             );
         }
+        if let Some(pooling_gate) = render_spire_pooling_gate_section(&rows) {
+            crate::ecaz_println!("");
+            crate::ecaz_println!("{pooling_gate}");
+        }
     }
     if !manifest.threshold_results.is_empty() {
         crate::ecaz_println!("");
@@ -1503,6 +1507,138 @@ fn format_metric_values(values: &BTreeMap<String, String>) -> String {
         .map(|(key, value)| format!("`{key}={value}`"))
         .collect::<Vec<_>>()
         .join(", ")
+}
+
+#[derive(Debug, Clone)]
+struct SpirePoolingGateRow {
+    step: String,
+    nprobe: String,
+    connect_p50_ms: f64,
+    connect_p95_ms: f64,
+    latency_p95_ms: Option<f64>,
+}
+
+impl SpirePoolingGateRow {
+    fn triggered_by_p50(&self) -> bool {
+        self.connect_p50_ms >= 1.0
+    }
+
+    fn connect_latency_ratio(&self) -> Option<f64> {
+        let latency_p95_ms = self.latency_p95_ms?;
+        if latency_p95_ms <= 0.0 {
+            return None;
+        }
+        Some(self.connect_p95_ms / latency_p95_ms)
+    }
+
+    fn triggered_by_ratio(&self) -> bool {
+        self.connect_latency_ratio()
+            .map(|ratio| ratio >= 0.15)
+            .unwrap_or(false)
+    }
+
+    fn decision(&self) -> &'static str {
+        if self.triggered_by_p50() || self.triggered_by_ratio() {
+            "pooling_candidate"
+        } else if self.latency_p95_ms.is_some() {
+            "pooling_not_justified"
+        } else {
+            "missing_latency_p95"
+        }
+    }
+}
+
+fn render_spire_pooling_gate_section(rows: &[ResultRow]) -> Option<String> {
+    let gate_rows = spire_pooling_gate_rows(rows);
+    if gate_rows.is_empty() {
+        return None;
+    }
+
+    let mut body = String::from("## SPIRE Connection Pooling Gate\n\n");
+    body.push_str("| Step | nprobe | connect_p50_ms | connect_p95_ms | latency_p95_ms | connect_p95/read_p95 | decision |\n");
+    body.push_str("| --- | ---: | ---: | ---: | ---: | ---: | --- |\n");
+    for row in gate_rows {
+        let latency = row
+            .latency_p95_ms
+            .map(|value| format!("{value:.3}"))
+            .unwrap_or_else(|| "-".into());
+        let ratio = row
+            .connect_latency_ratio()
+            .map(|value| format!("{value:.4}"))
+            .unwrap_or_else(|| "-".into());
+        body.push_str(&format!(
+            "| {} | {} | {:.3} | {:.3} | {} | {} | {} |\n",
+            row.step,
+            row.nprobe,
+            row.connect_p50_ms,
+            row.connect_p95_ms,
+            latency,
+            ratio,
+            row.decision()
+        ));
+    }
+    Some(body.trim_end().to_owned())
+}
+
+fn spire_pooling_gate_rows(rows: &[ResultRow]) -> Vec<SpirePoolingGateRow> {
+    let mut latency_by_step_nprobe = BTreeMap::<(String, String), f64>::new();
+    for row in rows {
+        if row.kind != "spire-pipeline" {
+            continue;
+        }
+        let Some(nprobe) = row.values.get("nprobe") else {
+            continue;
+        };
+        let Some(latency_p95_ms) = row
+            .values
+            .get("latency_p95")
+            .and_then(|value| parse_duration_ms(value))
+        else {
+            continue;
+        };
+        latency_by_step_nprobe.insert((row.step.clone(), nprobe.clone()), latency_p95_ms);
+    }
+
+    rows.iter()
+        .filter(|row| row.kind == "spire-pipeline")
+        .filter_map(|row| {
+            let nprobe = row.values.get("nprobe")?.clone();
+            let connect_p50_ms = row
+                .values
+                .get("connect_p50")
+                .and_then(|value| parse_duration_ms(value))?;
+            let connect_p95_ms = row
+                .values
+                .get("connect_p95")
+                .and_then(|value| parse_duration_ms(value))?;
+            let latency_p95_ms = latency_by_step_nprobe
+                .get(&(row.step.clone(), nprobe.clone()))
+                .copied();
+            Some(SpirePoolingGateRow {
+                step: row.step.clone(),
+                nprobe,
+                connect_p50_ms,
+                connect_p95_ms,
+                latency_p95_ms,
+            })
+        })
+        .collect()
+}
+
+fn parse_duration_ms(value: &str) -> Option<f64> {
+    let value = value.trim();
+    let split_at = value
+        .find(|ch: char| !(ch.is_ascii_digit() || ch == '.'))
+        .unwrap_or(value.len());
+    let amount = value[..split_at].parse::<f64>().ok()?;
+    let unit = value[split_at..].trim();
+    match unit {
+        "ms" => Some(amount),
+        "" => Some(amount),
+        "s" => Some(amount * 1000.0),
+        "m" | "min" => Some(amount * 60_000.0),
+        _ => None,
+    }
 }
 
 fn selected_step_names(manifest: &SuiteManifest) -> HashSet<&str> {
@@ -3358,6 +3494,68 @@ mod tests {
         assert!(args
             .windows(2)
             .any(|w| { w == ["--log-output", "artifacts/aws/profile_k10.log",] }));
+    }
+
+    #[test]
+    fn spire_pooling_gate_reports_not_justified_and_candidates() {
+        let rows = vec![
+            ResultRow {
+                suite: "suite".into(),
+                step: "profile".into(),
+                kind: "spire-pipeline".into(),
+                metric: "spire-pipeline".into(),
+                artifact: "profile.log".into(),
+                values: BTreeMap::from([
+                    ("nprobe".into(), "8".into()),
+                    ("latency_p95".into(), "10.000 ms".into()),
+                ]),
+            },
+            ResultRow {
+                suite: "suite".into(),
+                step: "profile".into(),
+                kind: "spire-pipeline".into(),
+                metric: "spire-pipeline".into(),
+                artifact: "profile.log".into(),
+                values: BTreeMap::from([
+                    ("nprobe".into(), "8".into()),
+                    ("connect_p50".into(), "0.500 ms".into()),
+                    ("connect_p95".into(), "1.000 ms".into()),
+                ]),
+            },
+            ResultRow {
+                suite: "suite".into(),
+                step: "profile".into(),
+                kind: "spire-pipeline".into(),
+                metric: "spire-pipeline".into(),
+                artifact: "profile.log".into(),
+                values: BTreeMap::from([
+                    ("nprobe".into(), "16".into()),
+                    ("latency_p95".into(), "10.000 ms".into()),
+                ]),
+            },
+            ResultRow {
+                suite: "suite".into(),
+                step: "profile".into(),
+                kind: "spire-pipeline".into(),
+                metric: "spire-pipeline".into(),
+                artifact: "profile.log".into(),
+                values: BTreeMap::from([
+                    ("nprobe".into(), "16".into()),
+                    ("connect_p50".into(), "1.200 ms".into()),
+                    ("connect_p95".into(), "1.600 ms".into()),
+                ]),
+            },
+        ];
+
+        let gate_rows = spire_pooling_gate_rows(&rows);
+        assert_eq!(gate_rows.len(), 2);
+        assert_eq!(gate_rows[0].decision(), "pooling_not_justified");
+        assert_eq!(gate_rows[1].decision(), "pooling_candidate");
+        let report =
+            render_spire_pooling_gate_section(&rows).expect("pooling gate section should render");
+        assert!(report.contains("connect_p95/read_p95"));
+        assert!(report.contains("pooling_not_justified"));
+        assert!(report.contains("pooling_candidate"));
     }
 
     #[test]

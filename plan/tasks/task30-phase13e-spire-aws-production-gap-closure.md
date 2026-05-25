@@ -56,7 +56,7 @@ Acceptance:
 
 ## 13e.4 Evidence-Gated Connection Pooling
 
-- [ ] Do not implement pooling before corrected AWS smoke/profile evidence.
+- [x] Do not implement pooling before corrected AWS smoke/profile evidence.
 - [ ] Implement bounded per-backend pooling only if connect/TLS setup is at least 15% of read p95 latency or at least 1 ms p50 per query.
 - [ ] If triggered, key the pool by node descriptor generation, secret name, remote index identity, TLS mode, user/db, and statement-timeout class.
 - [ ] Invalidate on descriptor change, auth/TLS failure, schema drift, endpoint identity mismatch, or disconnect.
