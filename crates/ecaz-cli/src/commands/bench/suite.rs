@@ -196,6 +196,7 @@ enum SuiteStep {
     Recall(RecallStep),
     CrossAm(CrossAmStep),
     Latency(LatencyStep),
+    SpirePipeline(SpirePipelineStep),
     Storage(StorageStep),
     Explain(ExplainStep),
     SidecarRerank(SidecarRerankStep),
@@ -359,6 +360,69 @@ struct LatencyStep {
     cache_state: Option<String>,
     #[serde(default)]
     memory_sample_interval_ms: Option<u64>,
+    #[serde(default)]
+    log_output: Option<PathBuf>,
+}
+
+#[derive(Debug, Deserialize)]
+struct SpirePipelineStep {
+    name: String,
+    #[serde(default)]
+    tags: Vec<String>,
+    prefix: String,
+    #[serde(default)]
+    index: Option<String>,
+    #[serde(default)]
+    queries_limit: Option<usize>,
+    sweep: Vec<i32>,
+    #[serde(default)]
+    rerank_width: Option<i32>,
+    #[serde(default)]
+    max_candidate_rows: Option<i32>,
+    #[serde(default)]
+    adaptive_nprobe: Option<bool>,
+    #[serde(default)]
+    adaptive_nprobe_score_gap_micros: Option<i32>,
+    #[serde(default)]
+    include_remote: Option<bool>,
+    #[serde(default)]
+    require_remote_placements: Option<bool>,
+    #[serde(default)]
+    include_local_store_overlap: Option<bool>,
+    #[serde(default)]
+    remote_selected_pids: Vec<i64>,
+    #[serde(default)]
+    remote_requested_epoch: Option<i64>,
+    #[serde(default)]
+    top_k: Option<i32>,
+    #[serde(default)]
+    consistency_mode: Option<String>,
+    #[serde(default)]
+    remote_tuple_transport: Option<String>,
+    #[serde(default)]
+    include_cost_snapshot: Option<bool>,
+    #[serde(default)]
+    cost_routing_dimension_scale: Option<f64>,
+    #[serde(default)]
+    cost_leaf_dimension_scale: Option<f64>,
+    #[serde(default)]
+    cost_index_page_scale: Option<f64>,
+    #[serde(default)]
+    cost_local_store_page_fanout_scale: Option<f64>,
+    #[serde(default)]
+    cost_storage_scoring_multiplier: Option<f64>,
+    #[serde(default)]
+    cost_rerank_multiplier: Option<f64>,
+    #[serde(default)]
+    include_query_metrics: Option<bool>,
+    #[serde(default)]
+    include_recall: Option<bool>,
+    #[serde(default)]
+    include_production_read_profile: Option<bool>,
+    #[serde(default)]
+    query_metric_k: Option<usize>,
+    #[serde(default)]
+    query_metric_projection_columns: Vec<String>,
     #[serde(default)]
     log_output: Option<PathBuf>,
 }
@@ -1092,7 +1156,7 @@ fn parse_result_rows(
     raw: &str,
 ) -> Vec<ResultRow> {
     match step.kind.as_str() {
-        "recall" | "latency" | "sidecar-rerank" => parse_table_rows(raw)
+        "recall" | "latency" | "sidecar-rerank" | "spire-pipeline" => parse_table_rows(raw)
             .into_iter()
             .map(|values| ResultRow {
                 suite: manifest.suite.clone(),
@@ -1519,6 +1583,7 @@ impl SuiteStep {
             SuiteStep::Recall(step) => &step.name,
             SuiteStep::CrossAm(step) => &step.name,
             SuiteStep::Latency(step) => &step.name,
+            SuiteStep::SpirePipeline(step) => &step.name,
             SuiteStep::Storage(step) => &step.name,
             SuiteStep::Explain(step) => &step.name,
             SuiteStep::SidecarRerank(step) => &step.name,
@@ -1536,6 +1601,7 @@ impl SuiteStep {
             SuiteStep::Recall(_) => "recall",
             SuiteStep::CrossAm(_) => "cross-am",
             SuiteStep::Latency(_) => "latency",
+            SuiteStep::SpirePipeline(_) => "spire-pipeline",
             SuiteStep::Storage(_) => "storage",
             SuiteStep::Explain(_) => "explain",
             SuiteStep::SidecarRerank(_) => "sidecar-rerank",
@@ -1553,6 +1619,7 @@ impl SuiteStep {
             SuiteStep::Recall(step) => &step.tags,
             SuiteStep::CrossAm(step) => &step.tags,
             SuiteStep::Latency(step) => &step.tags,
+            SuiteStep::SpirePipeline(step) => &step.tags,
             SuiteStep::Storage(step) => &step.tags,
             SuiteStep::Explain(step) => &step.tags,
             SuiteStep::SidecarRerank(step) => &step.tags,
@@ -1661,6 +1728,43 @@ impl SuiteStep {
                 }
                 Ok(())
             }
+            SuiteStep::SpirePipeline(step) => {
+                if step.sweep.is_empty() {
+                    bail!(
+                        "spire-pipeline step {:?} must include at least one sweep value",
+                        step.name
+                    )
+                }
+                if step.queries_limit == Some(0) {
+                    bail!(
+                        "spire-pipeline step {:?} must set queries_limit >= 1",
+                        step.name
+                    )
+                }
+                if step.top_k.map(|value| value < 0).unwrap_or(false) {
+                    bail!("spire-pipeline step {:?} must set top_k >= 0", step.name)
+                }
+                if step.query_metric_k == Some(0) {
+                    bail!(
+                        "spire-pipeline step {:?} must set query_metric_k >= 1",
+                        step.name
+                    )
+                }
+                if step
+                    .remote_requested_epoch
+                    .map(|epoch| epoch <= 0)
+                    .unwrap_or(false)
+                {
+                    bail!(
+                        "spire-pipeline step {:?} must set remote_requested_epoch > 0",
+                        step.name
+                    )
+                }
+                if let Some(mode) = step.remote_tuple_transport.as_deref() {
+                    validate_spire_remote_tuple_transport(mode)?;
+                }
+                Ok(())
+            }
             SuiteStep::Explain(step) => {
                 validate_profile_name("explain profile", step.profile.as_deref())?;
                 let profile = profiles::resolve(step.profile.as_deref().unwrap_or("ec_ivf"))
@@ -1730,6 +1834,7 @@ impl SuiteStep {
             SuiteStep::Recall(step) => Ok(expand_recall(step, defaults)),
             SuiteStep::CrossAm(step) => Ok(expand_cross_am(step)),
             SuiteStep::Latency(step) => Ok(expand_latency(step, defaults)),
+            SuiteStep::SpirePipeline(step) => Ok(expand_spire_pipeline(step, defaults)),
             SuiteStep::Storage(step) => Ok(expand_storage(step)),
             SuiteStep::Explain(step) => Ok(expand_explain(step, defaults, conn)),
             SuiteStep::SidecarRerank(step) => Ok(expand_sidecar_rerank(step, defaults)),
@@ -1766,6 +1871,7 @@ impl SuiteStep {
                 .collect(),
             SuiteStep::CrossAm(step) => vec![step.log_output.clone()],
             SuiteStep::Latency(step) => step.log_output.iter().cloned().collect(),
+            SuiteStep::SpirePipeline(step) => step.log_output.iter().cloned().collect(),
             SuiteStep::Storage(step) => step.log_file.iter().cloned().collect(),
             SuiteStep::Explain(step) => vec![step.sql_file.clone(), step.log_output.clone()],
             SuiteStep::SidecarRerank(step) => step.log_output.iter().cloned().collect(),
@@ -2110,6 +2216,124 @@ fn expand_latency(step: &LatencyStep, defaults: &SuiteDefaults) -> Vec<String> {
             .unwrap_or(25)
             .to_string(),
     );
+    push_opt_path(&mut args, "--log-output", step.log_output.as_deref());
+    args
+}
+
+fn expand_spire_pipeline(step: &SpirePipelineStep, defaults: &SuiteDefaults) -> Vec<String> {
+    let mut args = vec!["bench".into(), "spire-pipeline".into()];
+    push_arg(&mut args, "--prefix", &step.prefix);
+    push_opt_arg(&mut args, "--index", step.index.as_deref());
+    push_arg(
+        &mut args,
+        "--queries-limit",
+        &step
+            .queries_limit
+            .or(defaults.queries_limit)
+            .unwrap_or(1)
+            .to_string(),
+    );
+    push_arg(&mut args, "--sweep", &join_i32(&step.sweep));
+    if let Some(width) = step.rerank_width {
+        push_arg(&mut args, "--rerank-width", &width.to_string());
+    }
+    if let Some(max_candidate_rows) = step.max_candidate_rows {
+        push_arg(
+            &mut args,
+            "--max-candidate-rows",
+            &max_candidate_rows.to_string(),
+        );
+    }
+    if step.adaptive_nprobe.unwrap_or(false) {
+        args.push("--adaptive-nprobe".into());
+    }
+    if let Some(score_gap_micros) = step.adaptive_nprobe_score_gap_micros {
+        push_arg(
+            &mut args,
+            "--adaptive-nprobe-score-gap-micros",
+            &score_gap_micros.to_string(),
+        );
+    }
+    if step.include_remote.unwrap_or(false) {
+        args.push("--include-remote".into());
+    }
+    if step.require_remote_placements.unwrap_or(false) {
+        args.push("--require-remote-placements".into());
+    }
+    if step.include_local_store_overlap.unwrap_or(false) {
+        args.push("--include-local-store-overlap".into());
+    }
+    if !step.remote_selected_pids.is_empty() {
+        push_arg(
+            &mut args,
+            "--remote-selected-pids",
+            &join_i64(&step.remote_selected_pids),
+        );
+    }
+    if let Some(epoch) = step.remote_requested_epoch {
+        push_arg(&mut args, "--remote-requested-epoch", &epoch.to_string());
+    }
+    if let Some(top_k) = step.top_k {
+        push_arg(&mut args, "--top-k", &top_k.to_string());
+    }
+    if let Some(consistency_mode) = step.consistency_mode.as_deref() {
+        push_arg(&mut args, "--consistency-mode", consistency_mode);
+    }
+    if let Some(mode) = step.remote_tuple_transport.as_deref() {
+        push_arg(&mut args, "--remote-tuple-transport", mode);
+    }
+    if step.include_cost_snapshot.unwrap_or(false) {
+        args.push("--include-cost-snapshot".into());
+    }
+    push_opt_f64(
+        &mut args,
+        "--cost-routing-dimension-scale",
+        step.cost_routing_dimension_scale,
+    );
+    push_opt_f64(
+        &mut args,
+        "--cost-leaf-dimension-scale",
+        step.cost_leaf_dimension_scale,
+    );
+    push_opt_f64(
+        &mut args,
+        "--cost-index-page-scale",
+        step.cost_index_page_scale,
+    );
+    push_opt_f64(
+        &mut args,
+        "--cost-local-store-page-fanout-scale",
+        step.cost_local_store_page_fanout_scale,
+    );
+    push_opt_f64(
+        &mut args,
+        "--cost-storage-scoring-multiplier",
+        step.cost_storage_scoring_multiplier,
+    );
+    push_opt_f64(
+        &mut args,
+        "--cost-rerank-multiplier",
+        step.cost_rerank_multiplier,
+    );
+    if step.include_query_metrics.unwrap_or(false) {
+        args.push("--include-query-metrics".into());
+    }
+    if step.include_recall.unwrap_or(false) {
+        args.push("--include-recall".into());
+    }
+    if step.include_production_read_profile.unwrap_or(false) {
+        args.push("--include-production-read-profile".into());
+    }
+    if let Some(k) = step.query_metric_k {
+        push_arg(&mut args, "--query-metric-k", &k.to_string());
+    }
+    if !step.query_metric_projection_columns.is_empty() {
+        push_arg(
+            &mut args,
+            "--query-metric-projection-columns",
+            &step.query_metric_projection_columns.join(","),
+        );
+    }
     push_opt_path(&mut args, "--log-output", step.log_output.as_deref());
     args
 }
@@ -2492,9 +2716,23 @@ fn join_i32(values: &[i32]) -> String {
         .join(",")
 }
 
+fn join_i64(values: &[i64]) -> String {
+    values
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
 fn push_arg(args: &mut Vec<String>, flag: &str, value: &str) {
     args.push(flag.into());
     args.push(value.into());
+}
+
+fn push_opt_arg(args: &mut Vec<String>, flag: &str, value: Option<&str>) {
+    if let Some(value) = value {
+        push_arg(args, flag, value);
+    }
 }
 
 fn push_arg_path(args: &mut Vec<String>, flag: &str, value: &Path) {
@@ -2504,6 +2742,22 @@ fn push_arg_path(args: &mut Vec<String>, flag: &str, value: &Path) {
 fn push_opt_path(args: &mut Vec<String>, flag: &str, value: Option<&Path>) {
     if let Some(value) = value {
         push_arg_path(args, flag, value);
+    }
+}
+
+fn push_opt_f64(args: &mut Vec<String>, flag: &str, value: Option<f64>) {
+    if let Some(value) = value {
+        push_arg(args, flag, &value.to_string());
+    }
+}
+
+fn validate_spire_remote_tuple_transport(value: &str) -> Result<()> {
+    match value {
+        "auto" | "json_tuple_payload_v1" | "pg_binary_attr_v1" => Ok(()),
+        other => bail!(
+            "unsupported spire-pipeline remote_tuple_transport {:?}; supported: auto, json_tuple_payload_v1, pg_binary_attr_v1",
+            other
+        ),
     }
 }
 
@@ -2930,6 +3184,69 @@ mod tests {
         assert!(args
             .windows(2)
             .any(|w| w == ["--cache-state", "post_recall_warm"]));
+    }
+
+    #[test]
+    fn expands_spire_pipeline_with_production_profile() {
+        let defaults = SuiteDefaults {
+            queries_limit: Some(5),
+            ..SuiteDefaults::default()
+        };
+        let step = SpirePipelineStep {
+            name: "spire-profile".into(),
+            tags: vec!["spire".into(), "profile".into()],
+            prefix: "aws_spire".into(),
+            index: Some("aws_spire_idx".into()),
+            queries_limit: None,
+            sweep: vec![3, 6],
+            rerank_width: Some(0),
+            max_candidate_rows: Some(1000),
+            adaptive_nprobe: Some(true),
+            adaptive_nprobe_score_gap_micros: Some(500),
+            include_remote: Some(true),
+            require_remote_placements: Some(true),
+            include_local_store_overlap: Some(false),
+            remote_selected_pids: vec![10, 11],
+            remote_requested_epoch: Some(1),
+            top_k: Some(10),
+            consistency_mode: Some("strict".into()),
+            remote_tuple_transport: Some("pg_binary_attr_v1".into()),
+            include_cost_snapshot: Some(true),
+            cost_routing_dimension_scale: Some(0.02),
+            cost_leaf_dimension_scale: None,
+            cost_index_page_scale: None,
+            cost_local_store_page_fanout_scale: None,
+            cost_storage_scoring_multiplier: None,
+            cost_rerank_multiplier: None,
+            include_query_metrics: Some(true),
+            include_recall: Some(true),
+            include_production_read_profile: Some(true),
+            query_metric_k: Some(10),
+            query_metric_projection_columns: vec!["title".into()],
+            log_output: Some("spire-profile.log".into()),
+        };
+
+        let args = expand_spire_pipeline(&step, &defaults);
+        assert_eq!(args[..2], ["bench", "spire-pipeline"]);
+        assert!(args.windows(2).any(|w| w == ["--prefix", "aws_spire"]));
+        assert!(args.windows(2).any(|w| w == ["--index", "aws_spire_idx"]));
+        assert!(args.windows(2).any(|w| w == ["--queries-limit", "5"]));
+        assert!(args.windows(2).any(|w| w == ["--sweep", "3,6"]));
+        assert!(args.contains(&"--include-remote".into()));
+        assert!(args.contains(&"--require-remote-placements".into()));
+        assert!(args.contains(&"--include-production-read-profile".into()));
+        assert!(args
+            .windows(2)
+            .any(|w| w == ["--remote-selected-pids", "10,11"]));
+        assert!(args
+            .windows(2)
+            .any(|w| w == ["--remote-tuple-transport", "pg_binary_attr_v1"]));
+        assert!(args
+            .windows(2)
+            .any(|w| w == ["--query-metric-projection-columns", "title"]));
+        assert!(args
+            .windows(2)
+            .any(|w| w == ["--log-output", "spire-profile.log"]));
     }
 
     #[test]
