@@ -49,9 +49,7 @@ impl SpirePageRelation {
         mode: pg_sys::ReadBufferMode::Type,
         lockmode: i32,
     ) -> Option<LockedBufferGuard> {
-        // SAFETY: this view is constructed only for an open SPIRE relation;
-        // callers supply the block/mode/lock shape for the page operation.
-        unsafe { LockedBufferGuard::read_main(self.raw(), block_number, mode, lockmode) }
+        LockedBufferGuard::read_main_handle(self.relation, block_number, mode, lockmode)
     }
 
     fn read_main_locked(
@@ -59,14 +57,11 @@ impl SpirePageRelation {
         block_number: pg_sys::BlockNumber,
         mode: pg_sys::ReadBufferMode::Type,
     ) -> Option<LockedBufferGuard> {
-        // SAFETY: this view is constructed only for an open SPIRE relation;
-        // callers pass a read mode that returns an already-locked buffer.
-        unsafe { LockedBufferGuard::read_main_locked(self.raw(), block_number, mode) }
+        LockedBufferGuard::read_main_locked_handle(self.relation, block_number, mode)
     }
 
     fn start_wal(self) -> wal::GenericXLogTxn {
-        // SAFETY: this view is constructed only for an open SPIRE relation.
-        unsafe { wal::GenericXLogTxn::start(self.raw()) }
+        wal::GenericXLogTxn::start_handle(self.relation)
     }
 }
 
@@ -165,17 +160,19 @@ impl SpireRegisteredPage {
     }
 }
 
+/// # Safety
+/// Caller guarantees `index_relation` is live for metadata rewrite.
 pub(super) unsafe fn initialize_root_control_page(
     index_relation: pg_sys::Relation,
     root_control: SpireRootControlState,
 ) {
-    // SAFETY: caller guarantees `index_relation` is live for metadata rewrite.
-    unsafe { initialize_spire_metadata_block_zero(index_relation, root_control) };
+    initialize_spire_metadata_block_zero(index_relation, root_control);
 }
 
+/// # Safety
+/// Caller guarantees `store_relation` is live for metadata rewrite.
 pub(super) unsafe fn initialize_aux_store_metadata_page(store_relation: pg_sys::Relation) {
-    // SAFETY: caller guarantees `store_relation` is live for metadata rewrite.
-    unsafe { initialize_spire_metadata_block_zero(store_relation, SpireRootControlState::empty()) };
+    initialize_spire_metadata_block_zero(store_relation, SpireRootControlState::empty());
 }
 
 unsafe fn initialize_spire_metadata_block_zero(
@@ -278,13 +275,15 @@ pub(super) unsafe fn append_object_tuple(
     append_object_tuple_to_new_block(relation, payload)
 }
 
+/// # Safety
+/// Caller passes a live SPIRE index relation; the helper validates the
+/// TID and keeps the page share-locked while copying tuple bytes into an
+/// owned Vec.
 pub(super) unsafe fn read_object_tuple(
     index_relation: pg_sys::Relation,
     tid: crate::storage::page::ItemPointer,
 ) -> Result<Vec<u8>, String> {
-    // SAFETY: this helper validates the TID and keeps the page share-locked
-    // while copying tuple bytes into an owned Vec.
-    unsafe { with_pinned_object_tuple(index_relation, tid, |tuple| Ok(tuple.to_vec())) }
+    with_pinned_object_tuple(index_relation, tid, |tuple| Ok(tuple.to_vec()))
 }
 
 pub(super) unsafe fn with_pinned_object_tuple<F, R>(
