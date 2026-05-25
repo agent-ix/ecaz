@@ -11,23 +11,25 @@ struct CustomScanPlannerRel<'a> {
 }
 
 impl<'a> CustomScanPlannerRel<'a> {
+    /// # Safety
+    /// Caller guarantees `root` / `rel` are the live planner callback
+    /// pointers for immediate inspection during this callback.
     unsafe fn new(root: *mut pg_sys::PlannerInfo, rel: *mut pg_sys::RelOptInfo) -> Option<Self> {
-        // SAFETY: caller guarantees root/rel are the live planner callback
-        // pointers for immediate inspection during this callback.
-        let (root_ref, rel_ref) = unsafe { (custom_scan_pg_ref(root)?, custom_scan_pg_ref(rel)?) };
+        let (root_ref, rel_ref) = (custom_scan_pg_ref(root)?, custom_scan_pg_ref(rel)?);
         Some(Self { root_ref, rel_ref })
     }
 
+    /// # Safety
+    /// Caller guarantees `root` / `rel` / `rte` are live planner hook
+    /// pointers; retaining root/rel and validating rte here ties later safe
+    /// accessors to this callback-owned view instead of arbitrary pointers.
     unsafe fn new_base_rel(
         root: *mut pg_sys::PlannerInfo,
         rel: *mut pg_sys::RelOptInfo,
         rte: *mut pg_sys::RangeTblEntry,
     ) -> Option<Self> {
-        // SAFETY: caller guarantees root/rel/rte are live planner hook
-        // pointers; retaining root/rel and validating rte here ties later safe
-        // accessors to this callback-owned view instead of arbitrary pointers.
-        let planner_rel = unsafe { Self::new(root, rel)? };
-        let _rte = unsafe { custom_scan_pg_ref(rte)? };
+        let planner_rel = Self::new(root, rel)?;
+        let _rte = custom_scan_pg_ref(rte)?;
         Some(planner_rel)
     }
 
@@ -162,10 +164,11 @@ struct CustomScanExpr<'a> {
 }
 
 impl<'a> CustomScanExpr<'a> {
+    /// # Safety
+    /// Caller guarantees `expr`, when non-null, is a live PostgreSQL
+    /// expression node for immediate tag-checked inspection.
     unsafe fn new(expr: *mut pg_sys::Expr) -> Option<Self> {
-        // SAFETY: caller guarantees expr, when non-null, is a live PostgreSQL
-        // expression node for immediate tag-checked inspection.
-        let node_ref = unsafe { custom_scan_pg_ref(expr.cast::<pg_sys::Node>())? };
+        let node_ref = custom_scan_pg_ref(expr.cast::<pg_sys::Node>())?;
         Some(Self { expr, node_ref })
     }
 

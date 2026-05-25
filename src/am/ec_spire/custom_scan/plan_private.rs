@@ -7,10 +7,11 @@ struct CustomScanPlanPrivate<'a> {
 }
 
 impl<'a> CustomScanPlanPrivate<'a> {
+    /// # Safety
+    /// Caller guarantees `list`, when non-null, is a provider-owned
+    /// PostgreSQL List that remains live for immediate plan-private reads.
     unsafe fn new(list: *mut pg_sys::List) -> Option<Self> {
-        // SAFETY: caller guarantees `list`, when non-null, is a provider-owned
-        // PostgreSQL List that remains live for immediate plan-private reads.
-        let list_ref = unsafe { custom_scan_pg_ref(list)? };
+        let list_ref = custom_scan_pg_ref(list)?;
         Some(Self {
             list,
             len: list_ref.length,
@@ -121,20 +122,22 @@ struct CustomScanPlan<'a> {
 }
 
 impl<'a> CustomScanPlan<'a> {
+    /// # Safety
+    /// Caller guarantees `plan` is the provider-owned CustomScan node
+    /// for immediate inspection during the current PostgreSQL callback.
     unsafe fn new(plan: *mut pg_sys::CustomScan) -> Option<Self> {
-        // SAFETY: caller guarantees `plan` is the provider-owned CustomScan
-        // node for immediate inspection during the current PostgreSQL callback.
-        let plan_ref = unsafe { custom_scan_pg_ref(plan)? };
+        let plan_ref = custom_scan_pg_ref(plan)?;
         Some(Self { plan, plan_ref })
     }
 
+    /// # Safety
+    /// Caller guarantees `node` is the live CustomScanState for the
+    /// current executor/explain callback.
     unsafe fn from_state(node: *mut pg_sys::CustomScanState) -> Self {
-        // SAFETY: caller guarantees node is the live CustomScanState for the
-        // current executor/explain callback.
-        let Some(state) = (unsafe { custom_scan_pg_ref(node) }) else {
+        let Some(state) = custom_scan_pg_ref(node) else {
             pgrx::error!("EcSpireDistributedScan executor state is NULL");
         };
-        unsafe { Self::new(state.ss.ps.plan.cast::<pg_sys::CustomScan>()) }
+        Self::new(state.ss.ps.plan.cast::<pg_sys::CustomScan>())
             .unwrap_or_else(|| pgrx::error!("EcSpireDistributedScan plan is NULL"))
     }
 
@@ -194,10 +197,11 @@ struct CustomScanPathPlanFields {
 }
 
 impl<'a> CustomScanPath<'a> {
+    /// # Safety
+    /// Caller guarantees `path` is the provider-owned CustomPath supplied
+    /// by PostgreSQL for immediate PlanCustomPath inspection.
     unsafe fn new(path: *mut pg_sys::CustomPath) -> Option<Self> {
-        // SAFETY: caller guarantees `path` is the provider-owned CustomPath
-        // supplied by PostgreSQL for immediate PlanCustomPath inspection.
-        let path_ref = unsafe { custom_scan_pg_ref(path)? };
+        let path_ref = custom_scan_pg_ref(path)?;
         Some(Self { path_ref })
     }
 
@@ -280,6 +284,8 @@ fn custom_scan_plan_mode_for_dml_mode(
     }
 }
 
+/// # Safety
+/// Caller guarantees PostgreSQL planner memory context is active.
 unsafe fn custom_scan_dml_plan_private(
     mode: SpireCustomScanPlanMode,
     index_oid: pg_sys::Oid,
@@ -287,8 +293,7 @@ unsafe fn custom_scan_dml_plan_private(
     updated_columns: &[String],
     projected_columns: &[String],
 ) -> *mut pg_sys::List {
-    // SAFETY: caller guarantees PostgreSQL planner memory context is active.
-    let mut custom_private = unsafe { CustomScanPlanPrivateBuilder::new() };
+    let mut custom_private = CustomScanPlanPrivateBuilder::new();
     custom_private.append_string(&mode.raw().to_string());
     custom_private.append_string(&index_oid.to_u32().to_string());
     custom_private.append_counted_column_list(updated_columns);
