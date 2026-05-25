@@ -12,6 +12,7 @@ tmp/
 **/.terraform/
 *.tfstate
 *.tfstate.*
+infra/spire-aws/terraform.tfvars
 
 # Local agent/session state and downloaded paper copies.
 .claude/

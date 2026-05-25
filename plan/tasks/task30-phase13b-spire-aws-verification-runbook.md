@@ -153,6 +153,10 @@ Phase 13b.1 is reviewer-acceptable when:
 - [ ] `make -C infra/spire-aws preflight-state` passes. This refuses to
   provision over stale local Terraform state from an earlier failed SPIRE
   AWS run; cleanup or state movement must have packet-local evidence.
+- [ ] If `preflight-state` or AWS inventory shows residue from a failed run,
+  `scripts/spire-aws/cleanup-residue.sh` has been run in dry-run mode and,
+  where permissions allow, `--execute` mode. Cleanup output must be stored in
+  the owning packet before new provisioning starts.
 - [ ] `aws` CLI is logged in with a role that can manage EC2, VPC,
   Secrets Manager, S3, and IAM in the target region.
 - [ ] `gh` CLI is logged in for packet pushes.
