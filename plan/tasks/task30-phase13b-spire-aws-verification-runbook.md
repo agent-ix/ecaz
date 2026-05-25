@@ -153,6 +153,10 @@ Phase 13b.1 is reviewer-acceptable when:
 - [ ] `make -C infra/spire-aws preflight-state` passes. This refuses to
   provision over stale local Terraform state from an earlier failed SPIRE
   AWS run; cleanup or state movement must have packet-local evidence.
+- [ ] `make -C infra/spire-aws preflight-permissions` passes. This read-only
+  check confirms the AWS identity can enumerate SPIRE buckets, list bucket
+  versions for cleanup-sensitive versioned buckets, and list matching Secrets
+  Manager entries before provisioning starts.
 - [ ] If `preflight-state` or AWS inventory shows residue from a failed run,
   `scripts/spire-aws/cleanup-residue.sh` has been run in dry-run mode and,
   where permissions allow, `--execute` mode. Cleanup output must be stored in
