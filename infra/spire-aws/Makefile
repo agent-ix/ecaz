@@ -24,7 +24,7 @@ DISTRIBUTED_PLAN ?= $(ARTIFACT_DIR)/distributed-correctness/distributed-placemen
 
 export SPIRE_AWS_DIR REPO_ROOT ARTIFACT_DIR TOPOLOGY
 
-.PHONY: preflight provision setup install-extension install register-remotes register register-correctness register-representative register-stress \
+.PHONY: preflight preflight-operator provision setup install-extension install register-remotes register register-correctness register-representative register-stress \
         load-correctness load-representative load-stress \
         smoke smoke-correctness smoke-representative smoke-stress \
         bench-correctness bench-representative bench-stress \
@@ -40,7 +40,10 @@ preflight:
 	cd $(REPO_ROOT) && if command -v shellcheck >/dev/null 2>&1; then shellcheck scripts/spire-aws/*.sh; else echo "shellcheck not found; skipping shellcheck"; fi
 	cd $(REPO_ROOT) && jq empty scripts/spire-aws/suite-correctness.json scripts/spire-aws/suite-representative.json scripts/spire-aws/suite-stress.json
 
-provision:
+preflight-operator:
+	cd $(REPO_ROOT) && $(SCRIPTS)/preflight-operator.sh $(SPIRE_AWS_DIR)/terraform.tfvars
+
+provision: preflight-operator
 	@mkdir -p $(ARTIFACT_DIR)
 	cd $(SPIRE_AWS_DIR) && terraform init
 	cd $(SPIRE_AWS_DIR) && terraform apply -auto-approve

@@ -147,6 +147,9 @@ Phase 13b.1 is reviewer-acceptable when:
   SPIRE AWS evidence.
 - [ ] Cost-tag set per **13a.8** is defined in
   `infra/spire-aws/terraform.tfvars` (`owner`, `auto_stop_at`).
+- [ ] `make -C infra/spire-aws preflight-operator` passes. This checks
+  the real `terraform.tfvars`, verifies Graviton instance families, and
+  confirms the selected AMI resolves to `arm64` before any provisioning.
 - [ ] `aws` CLI is logged in with a role that can manage EC2, VPC,
   Secrets Manager, S3, and IAM in the target region.
 - [ ] `gh` CLI is logged in for packet pushes.
