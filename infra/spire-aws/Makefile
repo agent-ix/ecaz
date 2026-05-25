@@ -20,10 +20,11 @@ SCRIPTS       := $(REPO_ROOT)/scripts/spire-aws
 ARTIFACT_DIR ?= $(REPO_ROOT)/reviews/task-30/957-spire-aws-verification/artifacts
 TOPOLOGY     ?= $(ARTIFACT_DIR)/aws-topology.json
 PREFIX       ?= ec_spire_aws_synth_10k
+DISTRIBUTED_PLAN ?= $(ARTIFACT_DIR)/distributed-correctness/distributed-placement-plan.json
 
 export SPIRE_AWS_DIR REPO_ROOT ARTIFACT_DIR TOPOLOGY
 
-.PHONY: preflight provision setup install-extension install register-remotes register \
+.PHONY: preflight provision setup install-extension install register-remotes register register-correctness register-representative register-stress \
         load-correctness load-representative load-stress \
         smoke smoke-correctness smoke-representative smoke-stress \
         bench-correctness bench-representative bench-stress \
@@ -53,9 +54,18 @@ install-extension:
 install: install-extension
 
 register-remotes:
-	cd $(REPO_ROOT) && $(SCRIPTS)/register.sh $(TOPOLOGY) $(ARTIFACT_DIR)
+	cd $(REPO_ROOT) && $(SCRIPTS)/register.sh $(TOPOLOGY) $(ARTIFACT_DIR) $(DISTRIBUTED_PLAN)
 
 register: register-remotes
+
+register-correctness: DISTRIBUTED_PLAN = $(ARTIFACT_DIR)/distributed-correctness/distributed-placement-plan.json
+register-correctness: register-remotes
+
+register-representative: DISTRIBUTED_PLAN = $(ARTIFACT_DIR)/distributed-representative/distributed-placement-plan.json
+register-representative: register-remotes
+
+register-stress: DISTRIBUTED_PLAN = $(ARTIFACT_DIR)/distributed-stress/distributed-placement-plan.json
+register-stress: register-remotes
 
 load-correctness:
 	cd $(REPO_ROOT) && $(SCRIPTS)/load.sh correctness $(TOPOLOGY) $(ARTIFACT_DIR)
@@ -111,10 +121,10 @@ teardown:
 clean:
 	cd $(SPIRE_AWS_DIR) && rm -rf .terraform terraform.tfstate*
 
-pass-correctness: provision install-extension register-remotes load-correctness smoke-correctness bench-correctness fault-degraded fault-strict teardown
+pass-correctness: provision install-extension load-correctness register-correctness smoke-correctness bench-correctness fault-degraded fault-strict teardown
 
 all-correctness: pass-correctness
 
-pass-representative: provision install-extension register-remotes load-representative smoke-representative bench-representative fault-2pc fault-schema-drift teardown
+pass-representative: provision install-extension load-representative register-representative smoke-representative bench-representative fault-2pc fault-schema-drift teardown
 
 all-representative: pass-representative

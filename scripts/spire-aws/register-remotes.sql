@@ -1,6 +1,6 @@
--- Phase 13b.6 — register one remote on the coordinator.
--- Operator invokes via `ecaz dev sql --file ... --set coord_index=... --set node_id=...`.
--- All variables come from the topology JSON or the Phase 13b register.sh wrapper.
+-- Phase 13b.6 legacy helper — register one remote on the coordinator.
+-- Prefer `scripts/spire-aws/register.sh` with a distributed placement plan so
+-- the remote identity is queried from the live remote endpoint.
 
 \set ON_ERROR_STOP on
 
@@ -9,7 +9,7 @@ SELECT ec_spire_register_remote_node_descriptor(
   (:'node_id')::int,
   (:'descriptor_generation')::bigint,
   :'conninfo_secret',
-  decode(lpad(to_hex((:'node_id')::int), 2, '0'), 'hex'),
+  decode(:'remote_index_identity_hex', 'hex'),
   :'remote_index',
   :'state',
   (:'served_epoch')::bigint,
