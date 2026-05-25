@@ -1,0 +1,100 @@
+#!/usr/bin/env bash
+# Start local SSM port forwards for every PostgreSQL node in a Phase 13
+# topology and write an operator topology that scripts/spire-aws/*.sh can use.
+
+set -euo pipefail
+
+TOPOLOGY="${1:?topology JSON path required}"
+ARTIFACT_DIR="${2:?artifact directory required}"
+TUNNELED_TOPOLOGY="${3:?output topology JSON path required}"
+shift 3
+
+mkdir -p "$ARTIFACT_DIR"
+
+REGION=$(jq -r '.region' "$TOPOLOGY")
+BASE_PORT="${SPIRE_AWS_TUNNEL_BASE_PORT:-15432}"
+LOCAL_HOST="${SPIRE_AWS_TUNNEL_HOST:-127.0.0.1}"
+
+if ! command -v session-manager-plugin >/dev/null 2>&1; then
+  echo "session-manager-plugin is required for SSM port forwarding" >&2
+  exit 2
+fi
+
+jq \
+  --arg host "$LOCAL_HOST" \
+  --argjson base_port "$BASE_PORT" \
+  '.coordinator.operator_host = $host
+   | .coordinator.operator_port = $base_port
+   | .remotes |= to_entries
+     | .remotes = (.remotes | map(.value + {
+         operator_host: $host,
+         operator_port: ($base_port + 1 + .key)
+       }))' \
+  "$TOPOLOGY" > "$TUNNELED_TOPOLOGY"
+
+PIDS=()
+cleanup() {
+  for pid in "${PIDS[@]:-}"; do
+    kill "$pid" >/dev/null 2>&1 || true
+  done
+}
+trap cleanup EXIT
+
+start_tunnel() {
+  local label="$1"
+  local instance_id="$2"
+  local local_port="$3"
+  local log="$ARTIFACT_DIR/tunnel-${label}.log"
+
+  aws ssm start-session \
+    --region "$REGION" \
+    --target "$instance_id" \
+    --document-name AWS-StartPortForwardingSession \
+    --parameters "{\"portNumber\":[\"5432\"],\"localPortNumber\":[\"${local_port}\"]}" \
+    > "$log" 2>&1 &
+  PIDS+=("$!")
+}
+
+wait_for_port() {
+  local label="$1"
+  local port="$2"
+  local deadline=$((SECONDS + 60))
+
+  while (( SECONDS < deadline )); do
+    if (: > "/dev/tcp/${LOCAL_HOST}/${port}") >/dev/null 2>&1; then
+      echo "tunnel ${label} ready on ${LOCAL_HOST}:${port}"
+      return 0
+    fi
+    sleep 1
+  done
+
+  echo "timed out waiting for tunnel ${label} on ${LOCAL_HOST}:${port}" >&2
+  return 1
+}
+
+COORD_ID=$(jq -r '.coordinator.instance_id' "$TOPOLOGY")
+COORD_PORT=$(jq -r '.coordinator.operator_port' "$TUNNELED_TOPOLOGY")
+start_tunnel coordinator "$COORD_ID" "$COORD_PORT"
+
+mapfile -t REMOTE_ROWS < <(jq -c '.remotes[]' "$TUNNELED_TOPOLOGY")
+for remote in "${REMOTE_ROWS[@]}"; do
+  label="remote-$(jq -r '.node_id' <<< "$remote")"
+  instance_id=$(jq -r '.instance_id' <<< "$remote")
+  port=$(jq -r '.operator_port' <<< "$remote")
+  start_tunnel "$label" "$instance_id" "$port"
+done
+
+wait_for_port coordinator "$COORD_PORT"
+for remote in "${REMOTE_ROWS[@]}"; do
+  label="remote-$(jq -r '.node_id' <<< "$remote")"
+  port=$(jq -r '.operator_port' <<< "$remote")
+  wait_for_port "$label" "$port"
+done
+
+if [[ "${1:-}" == "--" ]]; then
+  shift
+  "$@"
+else
+  echo "tunneled topology: $TUNNELED_TOPOLOGY"
+  wait
+fi

@@ -17,7 +17,9 @@ TOPOLOGY="${2:?topology JSON path required}"
 ARTIFACT_DIR="${3:?artifact directory required}"
 mkdir -p "$ARTIFACT_DIR"
 
-COORD_HOST=$(jq -r '.coordinator.private_ip' "$TOPOLOGY")
+COORD_HOST=$(jq -r '.coordinator.operator_host // .coordinator.private_ip' "$TOPOLOGY")
+COORD_PORT=$(jq -r '.coordinator.operator_port // 5432' "$TOPOLOGY")
+ECAZ_BIN="${ECAZ_BIN:-ecaz}"
 WORK_DIR="${WORK_DIR:-/var/lib/ecaz}"
 
 write_distributed_placement_config() {
@@ -63,7 +65,9 @@ load_remote_shards() {
     local log_prefix
     node_id=$(jq -r '.node_id' <<< "$remote_plan")
     remote_host=$(jq -r --argjson node_id "$node_id" \
-      '.remotes[] | select(.node_id == $node_id) | .private_ip' "$TOPOLOGY")
+      '.remotes[] | select(.node_id == $node_id) | (.operator_host // .private_ip)' "$TOPOLOGY")
+    remote_port=$(jq -r --argjson node_id "$node_id" \
+      '.remotes[] | select(.node_id == $node_id) | (.operator_port // 5432)' "$TOPOLOGY")
     remote_prefix=$(jq -r '.remote_prefix' <<< "$remote_plan")
     log_prefix="$ARTIFACT_DIR/remote-node-${node_id}"
 
@@ -73,13 +77,13 @@ load_remote_shards() {
     fi
 
     mapfile -t remote_load_args < <(jq -r '.remote_load_args[]' <<< "$remote_plan")
-    ecaz corpus load \
-      --host "$remote_host" --user ecaz_coord --database postgres \
+    "$ECAZ_BIN" corpus load \
+      --host "$remote_host" --port "$remote_port" --user ecaz_coord --database postgres \
       "${remote_load_args[@]}" \
       --log-output "${log_prefix}-load-${TIER}.log"
 
-    ecaz corpus inspect \
-      --host "$remote_host" --user ecaz_coord --database postgres \
+    "$ECAZ_BIN" corpus inspect \
+      --host "$remote_host" --port "$remote_port" --user ecaz_coord --database postgres \
       --prefix "$remote_prefix" \
       --log-output "${log_prefix}-inspect-${TIER}.log"
   done
@@ -94,20 +98,20 @@ case "$TIER" in
     PLACEMENT_CONFIG="${DISTRIBUTED_OUTPUT_DIR}/distributed-placement-config.json"
     PLAN_FILE="${DISTRIBUTED_OUTPUT_DIR}/distributed-placement-plan.json"
     write_distributed_placement_config
-    ecaz corpus generate --rows 10000 --dim 1536 \
+    "$ECAZ_BIN" corpus generate --rows 10000 --dim 1536 \
       --output "$WORK_DIR/${PREFIX}_corpus.tsv"
-    ecaz corpus generate --rows 100 --dim 1536 \
+    "$ECAZ_BIN" corpus generate --rows 100 --dim 1536 \
       --output "$WORK_DIR/${PREFIX}_queries.tsv"
-    ecaz corpus load \
-      --host "$COORD_HOST" --user ecaz_coord --database postgres \
+    "$ECAZ_BIN" corpus load \
+      --host "$COORD_HOST" --port "$COORD_PORT" --user ecaz_coord --database postgres \
       --prefix "$PREFIX" \
       --corpus-file "$WORK_DIR/${PREFIX}_corpus.tsv" \
       --queries-file "$WORK_DIR/${PREFIX}_queries.tsv" \
       --profile ec_spire --dim 1536 --bits 4 --seed 42 \
       --index-name "$COORD_INDEX" \
       --log-output "$ARTIFACT_DIR/coordinator-load-${TIER}.log"
-    ecaz corpus load \
-      --host "$COORD_HOST" --user ecaz_coord --database postgres \
+    "$ECAZ_BIN" corpus load \
+      --host "$COORD_HOST" --port "$COORD_PORT" --user ecaz_coord --database postgres \
       --prefix "$PREFIX" \
       --corpus-file "$WORK_DIR/${PREFIX}_corpus.tsv" \
       --queries-file "$WORK_DIR/${PREFIX}_queries.tsv" \
@@ -125,17 +129,17 @@ case "$TIER" in
     PLACEMENT_CONFIG="${DISTRIBUTED_OUTPUT_DIR}/distributed-placement-config.json"
     PLAN_FILE="${DISTRIBUTED_OUTPUT_DIR}/distributed-placement-plan.json"
     write_distributed_placement_config
-    ecaz corpus fetch \
+    "$ECAZ_BIN" corpus fetch \
       --dataset qdrant-dbpedia-openai3-large-1536-1m \
       --output-dir "$WORK_DIR/qdrant-dbpedia/"
-    ecaz corpus prepare \
+    "$ECAZ_BIN" corpus prepare \
       --profile "$PREPARED_PREFIX" \
       --parquet "$WORK_DIR/qdrant-dbpedia/data/0000.parquet" \
       --output-dir "$WORK_DIR/qdrant-dbpedia/prepared/" \
       --dim 1536 \
       --source-dataset qdrant-dbpedia-openai3-large-1536-1m
-    ecaz corpus load \
-      --host "$COORD_HOST" --user ecaz_coord --database postgres \
+    "$ECAZ_BIN" corpus load \
+      --host "$COORD_HOST" --port "$COORD_PORT" --user ecaz_coord --database postgres \
       --prefix "$PREFIX" \
       --corpus-file "$WORK_DIR/qdrant-dbpedia/prepared/${PREPARED_PREFIX}_corpus.tsv" \
       --queries-file "$WORK_DIR/qdrant-dbpedia/prepared/${PREPARED_PREFIX}_queries.tsv" \
@@ -144,8 +148,8 @@ case "$TIER" in
       --profile ec_spire --dim 1536 --bits 4 --seed 42 \
       --index-name "$COORD_INDEX" \
       --log-output "$ARTIFACT_DIR/coordinator-load-${TIER}.log"
-    ecaz corpus load \
-      --host "$COORD_HOST" --user ecaz_coord --database postgres \
+    "$ECAZ_BIN" corpus load \
+      --host "$COORD_HOST" --port "$COORD_PORT" --user ecaz_coord --database postgres \
       --prefix "$PREFIX" \
       --corpus-file "$WORK_DIR/qdrant-dbpedia/prepared/${PREPARED_PREFIX}_corpus.tsv" \
       --queries-file "$WORK_DIR/qdrant-dbpedia/prepared/${PREPARED_PREFIX}_queries.tsv" \
@@ -164,20 +168,20 @@ case "$TIER" in
     PLACEMENT_CONFIG="${DISTRIBUTED_OUTPUT_DIR}/distributed-placement-config.json"
     PLAN_FILE="${DISTRIBUTED_OUTPUT_DIR}/distributed-placement-plan.json"
     write_distributed_placement_config
-    ecaz corpus generate --rows 10000000 --dim 1536 \
+    "$ECAZ_BIN" corpus generate --rows 10000000 --dim 1536 \
       --output "$WORK_DIR/${PREFIX}_corpus.tsv"
-    ecaz corpus generate --rows 10000 --dim 1536 \
+    "$ECAZ_BIN" corpus generate --rows 10000 --dim 1536 \
       --output "$WORK_DIR/${PREFIX}_queries.tsv"
-    ecaz corpus load \
-      --host "$COORD_HOST" --user ecaz_coord --database postgres \
+    "$ECAZ_BIN" corpus load \
+      --host "$COORD_HOST" --port "$COORD_PORT" --user ecaz_coord --database postgres \
       --prefix "$PREFIX" \
       --corpus-file "$WORK_DIR/${PREFIX}_corpus.tsv" \
       --queries-file "$WORK_DIR/${PREFIX}_queries.tsv" \
       --profile ec_spire --dim 1536 --bits 4 --seed 42 \
       --index-name "$COORD_INDEX" \
       --log-output "$ARTIFACT_DIR/coordinator-load-${TIER}.log"
-    ecaz corpus load \
-      --host "$COORD_HOST" --user ecaz_coord --database postgres \
+    "$ECAZ_BIN" corpus load \
+      --host "$COORD_HOST" --port "$COORD_PORT" --user ecaz_coord --database postgres \
       --prefix "$PREFIX" \
       --corpus-file "$WORK_DIR/${PREFIX}_corpus.tsv" \
       --queries-file "$WORK_DIR/${PREFIX}_queries.tsv" \

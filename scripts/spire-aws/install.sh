@@ -23,6 +23,7 @@ BUCKET=$(jq -r '.artifact_bucket' "$TOPOLOGY")
 COORD_ID=$(jq -r '.coordinator.instance_id' "$TOPOLOGY")
 REMOTE_IDS=$(jq -r '.remotes[].instance_id' "$TOPOLOGY")
 TARBALL_KEY="${ECAZ_SPIRE_AWS_TARBALL_KEY:-ecaz-latest.tar.gz}"
+TARBALL_PATH="${ECAZ_SPIRE_AWS_TARBALL_PATH:-}"
 
 ALL_IDS=("$COORD_ID")
 while IFS= read -r id; do ALL_IDS+=("$id"); done <<< "$REMOTE_IDS"
@@ -32,6 +33,14 @@ aws s3 cp \
   "s3://${BUCKET}/bootstrap-node.sh" \
   --region "$REGION" \
   > "$ARTIFACT_DIR/bootstrap-upload.log"
+
+if [[ -n "$TARBALL_PATH" ]]; then
+  aws s3 cp \
+    "$TARBALL_PATH" \
+    "s3://${BUCKET}/${TARBALL_KEY}" \
+    --region "$REGION" \
+    > "$ARTIFACT_DIR/tarball-upload.log"
+fi
 
 CMD_ID=$(aws ssm send-command \
   --region "$REGION" \

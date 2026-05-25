@@ -15,7 +15,9 @@ TOPOLOGY="${2:?topology JSON path required}"
 ARTIFACT_DIR="${3:?artifact directory required}"
 mkdir -p "$ARTIFACT_DIR"
 
-COORD_HOST=$(jq -r '.coordinator.private_ip' "$TOPOLOGY")
+COORD_HOST=$(jq -r '.coordinator.operator_host // .coordinator.private_ip' "$TOPOLOGY")
+COORD_PORT=$(jq -r '.coordinator.operator_port // 5432' "$TOPOLOGY")
+ECAZ_BIN="${ECAZ_BIN:-ecaz}"
 
 case "$TIER" in
   correctness)   SUITE=scripts/spire-aws/suite-correctness.json ;;
@@ -27,8 +29,8 @@ esac
 RUN_SUITE="$ARTIFACT_DIR/suite-${TIER}.json"
 jq --arg artifact_dir "$ARTIFACT_DIR" '.artifact_dir = $artifact_dir' "$SUITE" > "$RUN_SUITE"
 
-ecaz bench suite run \
-  --host "$COORD_HOST" --user ecaz_coord --database postgres \
+"$ECAZ_BIN" bench suite run \
+  --host "$COORD_HOST" --port "$COORD_PORT" --user ecaz_coord --database postgres \
   --config "$RUN_SUITE" \
   --manifest-output "$ARTIFACT_DIR/suite-manifest-${TIER}.json" \
   --results-output "$ARTIFACT_DIR/suite-results-${TIER}.jsonl"
