@@ -71,4 +71,8 @@ Acceptance:
 - [ ] Each implementation slice gets a code commit and a task-local review packet under `reviews/task-30/`.
 - [ ] Test and benchmark logs live under packet-local `artifacts/`.
 - [ ] AWS proof cannot begin until 13e.1 and 13e.2 pass locally.
+- [ ] AWS proof uses the established Graviton/aarch64 lane from Phase 13a/13b
+  and the checked-in SPIRE runbook/module. New hardware shapes, regions, or
+  setup procedures require an explicit task/runbook amendment before any
+  provisioning run.
 - [ ] Product-scale claims require accepted AWS correctness, performance, and operations packets.

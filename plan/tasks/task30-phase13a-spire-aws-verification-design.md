@@ -58,15 +58,18 @@ Document and obtain reviewer acceptance for every topology decision below.
   permit either. The Phase 13 evidence cites "AWS/EC2 self-managed PG18",
   not "AWS/RDS"; the parent gate file's "AWS/RDS-class verification"
   wording will be amended at Phase 13 closeout.
-- [ ] **Coordinator node.** Decision: `r6i.4xlarge` (16 vCPU, 128 GiB
-  RAM). Storage: 200 GiB gp3, 3000 IOPS, 125 MiB/s. OS: Amazon Linux
-  2023. PG settings: `max_prepared_transactions >= 64`,
+- [ ] **Coordinator node.** Decision: `r7g.4xlarge` (Graviton/aarch64,
+  16 vCPU, 128 GiB RAM). Storage: 200 GiB gp3, 3000 IOPS,
+  125 MiB/s. OS: Amazon Linux 2023 arm64. PG settings:
+  `max_prepared_transactions >= 64`,
   `shared_buffers = 32 GiB`, `work_mem = 64 MiB`,
   `maintenance_work_mem = 2 GiB`. The `max_prepared_transactions` value is
   load-bearing per `docs/SPIRE_LIBPQ_RUNBOOK.md`; if it is not set the
-  coordinator INSERT path fails closed.
-- [ ] **Remote nodes.** Decision: 3 remotes, each `r6i.2xlarge`
-  (8 vCPU, 64 GiB), 100 GiB gp3. Rationale: exercises governance caps
+  coordinator INSERT path fails closed. This is the Graviton equivalent of
+  the original memory/vCPU target and aligns SPIRE with the established AWS
+  benchmark lane; x86/r6i substitutions are not valid Phase 13 evidence.
+- [ ] **Remote nodes.** Decision: 3 remotes, each `r7g.2xlarge`
+  (Graviton/aarch64, 8 vCPU, 64 GiB), 100 GiB gp3. Rationale: exercises governance caps
   `ec_spire.remote_search_max_nodes` and
   `ec_spire.remote_search_max_pids_per_node` with non-minimal fanout; the
   1-remote and 2-remote shapes are already covered by Phase 12

@@ -33,8 +33,11 @@ No AWS resources have been provisioned for this packet yet.
   deferrals.
 - [ ] Reviewer accepts Phase 13d read-profile packet `766`.
 - [ ] Reviewer accepts Phase 13 AWS preflight packet `767`.
-- [ ] AWS account quota for `r6i.4xlarge` plus three `r6i.2xlarge` instances is
-  confirmed in the selected region.
+- [ ] AWS account quota for the Phase 13a Graviton topology (`r7g.4xlarge`
+  plus three `r7g.2xlarge` instances, 40 vCPU total) is confirmed in the
+  selected region, or a reviewer-accepted Graviton profile amendment is
+  recorded before provisioning. x86/r6i hardware is not valid for SPIRE AWS
+  evidence.
 - [ ] `infra/spire-aws/terraform.tfvars` is created from
   `terraform.tfvars.example` with real `region`, `availability_zone`, `ami_id`,
   `owner`, and `auto_stop_at`.
