@@ -25,8 +25,13 @@ this change is the cloud benchmark packet.
 - `cargo test -p ecaz --no-run unique_prefetch_blocks_keeps_first_block_order_and_skips_invalid_tids`
   passed; see `artifacts/cargo-test-no-run-unique-prefetch.log`.
 
-## Benchmark Plan
+## Benchmark Result
 
-Run only the requested 10k, 50k, and 100k Graviton cells using checked-in
+Ran only the requested 10k, 50k, and 100k Graviton cells using checked-in
 `ecaz bench suite` configs under
-`benchmarks/task61-hnsw-scan-frontier-overhead/`, then shut down the cloud host.
+`benchmarks/task61-hnsw-scan-frontier-overhead/`.
+
+- 10k and 50k completed and show lower latency at the same recall.
+- 100k failed during load with `No space left on device`; the failure is
+  recorded in `benchmarks/task61-hnsw-scan-frontier-overhead/artifacts/ssm-100k-failure.json`.
+- The `10k-medium` host was cleaned up and paused after the run.
