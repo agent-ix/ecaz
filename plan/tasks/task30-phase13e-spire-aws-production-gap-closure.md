@@ -46,7 +46,7 @@ Acceptance:
 - [x] Keep the async production transport as the hot read path; diagnostic SQL libpq helpers are not performance evidence.
 - [x] Prove candidate and heap receive overlap across remotes.
 - [x] Add production read profile capture to every local and AWS suite row.
-- [ ] Drive all read matrices through `ecaz bench suite`.
+- [x] Drive all read matrices through `ecaz bench suite`.
 
 Acceptance:
 

@@ -1,6 +1,7 @@
 {
   "name": "spire-aws-correctness",
   "schema_version": 1,
+  "artifact_dir": "scripts/spire-aws/artifacts/correctness",
   "defaults": {
     "profile": "ec_spire",
     "bits": 4,
@@ -24,6 +25,22 @@
       "sweep": [8, 16, 24, 32],
       "concurrency": 1,
       "iterations": 200
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "13e3-production-read-profile-k10",
+      "tags": ["phase13e", "production-read-profile"],
+      "prefix": "ec_spire_aws_synth_10k",
+      "queries_limit": 100,
+      "sweep": [8, 16, 24, 32],
+      "top_k": 10,
+      "include_remote": true,
+      "require_remote_placements": true,
+      "include_query_metrics": true,
+      "include_recall": true,
+      "include_production_read_profile": true,
+      "query_metric_k": 10,
+      "query_metric_projection_columns": ["id"]
     }
   ]
 }

@@ -288,35 +288,14 @@ make -C infra/spire-aws bench-stress   # reviewer-gated
 Each invocation produces `suite-manifest-<tier>.json` and
 `suite-results-<tier>.jsonl` under the artifact directory. The suite
 configurations cover the read rows from **13a.3.a** (k=10 and k=100,
-concurrency 1/4/8) and **13a.3.f** (PK SELECT at concurrency 32).
-Every read sub-packet also captures a packet-local
-`production-read-profile-<tier>-k<k>-c<concurrency>.log` rowset for at
-least the representative query sample used to explain any latency
-regression.
+concurrency 1/4/8), **13a.3.b** (remote tuple transport sweep), and
+**13a.3.f** (PK SELECT at concurrency 32). Every read sub-packet also
+captures packet-local `spire-pipeline` logs with
+`--include-production-read-profile` for the representative query sample
+used to explain any latency regression.
 
 Rows that the suite schema does not cover today are driven directly:
 
-- [ ] **13b.8.b Transport sweep (row 13a.3.b).** For each value in
-  {`auto`, `json_tuple_payload_v1`, `pg_binary_attr_v1`}:
-
-  ```
-  ecaz dev sql --host <coord-ip> --user ecaz_coord --database postgres \
-    --sql "SET ec_spire.remote_tuple_transport = '<value>'"
-
-  ecaz bench latency --host <coord-ip> --user ecaz_coord --database postgres \
-    --prefix ec_spire_aws_repr_1m --profile ec_spire \
-    --k 10 --sweep 32 --concurrency 1 --iterations 1000 \
-    --log-output <pkt>/artifacts/bench-latency-transport-<value>-c1.log
-
-  ecaz bench spire-pipeline --host <coord-ip> --user ecaz_coord --database postgres \
-    --prefix ec_spire_aws_repr_1m \
-    --queries-limit 100 --remote-tuple-transport <value> \
-    --include-remote --include-query-metrics \
-    --log-output <pkt>/artifacts/bench-pipeline-transport-<value>.log
-  ```
-
-  If counter **13a.5.1** is deferred, grade 13a.3.b on latency and
-  throughput only and record the deferral in the sub-packet.
 - [ ] **13b.8.c Write rows (13a.3.c, 13a.3.d, 13a.3.e).** Drive each
   with `ecaz dev sql --file scripts/spire-aws/write-*.sql`:
 

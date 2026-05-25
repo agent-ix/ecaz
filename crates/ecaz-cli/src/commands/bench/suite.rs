@@ -707,7 +707,8 @@ impl From<RunArgs> for SuiteRunOptions {
 }
 
 async fn run_suite(conn: &ConnectionOptions, args: SuiteRunOptions) -> Result<()> {
-    let (raw, config) = load_config(&args.config).await?;
+    let (raw, mut config) = load_config(&args.config).await?;
+    apply_default_artifact_logs(&mut config);
     validate_config(&config)?;
 
     let mut manifest = build_manifest(conn, &args, &raw, &config)?;
@@ -799,7 +800,8 @@ async fn run_suite(conn: &ConnectionOptions, args: SuiteRunOptions) -> Result<()
 }
 
 async fn audit_suite(config_path: &Path) -> Result<()> {
-    let (_raw, config) = load_config(config_path).await?;
+    let (_raw, mut config) = load_config(config_path).await?;
+    apply_default_artifact_logs(&mut config);
     let mut findings = Vec::new();
     let mut produced = HashSet::new();
     if let Err(err) = validate_config(&config) {
@@ -967,6 +969,45 @@ async fn load_config(path: &Path) -> Result<(String, SuiteConfig)> {
     let config: SuiteConfig =
         serde_json::from_str(&raw).wrap_err_with(|| format!("parsing {}", path.display()))?;
     Ok((raw, config))
+}
+
+fn apply_default_artifact_logs(config: &mut SuiteConfig) {
+    let Some(artifact_dir) = config.artifact_dir.clone() else {
+        return;
+    };
+    for step in &mut config.steps {
+        match step {
+            SuiteStep::Recall(step) if step.log_output.is_none() => {
+                step.log_output =
+                    Some(artifact_dir.join(format!("{}.log", artifact_safe_step_name(&step.name))));
+            }
+            SuiteStep::Latency(step) if step.log_output.is_none() => {
+                step.log_output =
+                    Some(artifact_dir.join(format!("{}.log", artifact_safe_step_name(&step.name))));
+            }
+            SuiteStep::SpirePipeline(step) if step.log_output.is_none() => {
+                step.log_output =
+                    Some(artifact_dir.join(format!("{}.log", artifact_safe_step_name(&step.name))));
+            }
+            SuiteStep::SidecarRerank(step) if step.log_output.is_none() => {
+                step.log_output =
+                    Some(artifact_dir.join(format!("{}.log", artifact_safe_step_name(&step.name))));
+            }
+            _ => {}
+        }
+    }
+}
+
+fn artifact_safe_step_name(name: &str) -> String {
+    name.chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' || ch == '.' {
+                ch
+            } else {
+                '_'
+            }
+        })
+        .collect()
 }
 
 async fn load_manifest(path: &Path) -> Result<SuiteManifest> {
@@ -3247,6 +3288,76 @@ mod tests {
         assert!(args
             .windows(2)
             .any(|w| w == ["--log-output", "spire-profile.log"]));
+    }
+
+    #[test]
+    fn artifact_dir_supplies_default_spire_pipeline_log_output() {
+        let mut config = SuiteConfig {
+            name: "aws-suite".into(),
+            schema_version: 1,
+            artifact_dir: Some("artifacts/aws".into()),
+            defaults: SuiteDefaults::default(),
+            thresholds: Vec::new(),
+            steps: vec![SuiteStep::SpirePipeline(SpirePipelineStep {
+                name: "profile k10".into(),
+                tags: Vec::new(),
+                prefix: "aws_spire".into(),
+                index: None,
+                queries_limit: Some(10),
+                sweep: vec![8, 16],
+                rerank_width: None,
+                max_candidate_rows: None,
+                adaptive_nprobe: None,
+                adaptive_nprobe_score_gap_micros: None,
+                include_remote: Some(true),
+                require_remote_placements: Some(true),
+                include_local_store_overlap: None,
+                remote_selected_pids: Vec::new(),
+                remote_requested_epoch: None,
+                top_k: Some(10),
+                consistency_mode: None,
+                remote_tuple_transport: None,
+                include_cost_snapshot: None,
+                cost_routing_dimension_scale: None,
+                cost_leaf_dimension_scale: None,
+                cost_index_page_scale: None,
+                cost_local_store_page_fanout_scale: None,
+                cost_storage_scoring_multiplier: None,
+                cost_rerank_multiplier: None,
+                include_query_metrics: Some(true),
+                include_recall: Some(true),
+                include_production_read_profile: Some(true),
+                query_metric_k: Some(10),
+                query_metric_projection_columns: Vec::new(),
+                log_output: None,
+            })],
+        };
+
+        apply_default_artifact_logs(&mut config);
+        let SuiteStep::SpirePipeline(step) = &config.steps[0] else {
+            panic!("expected spire-pipeline step");
+        };
+        assert_eq!(
+            step.log_output.as_deref(),
+            Some(Path::new("artifacts/aws/profile_k10.log"))
+        );
+        assert_eq!(
+            config.steps[0].expected_artifacts(),
+            vec![PathBuf::from("artifacts/aws/profile_k10.log")]
+        );
+        let conn = ConnectionOptions {
+            database: "postgres".into(),
+            host: None,
+            port: None,
+            user: None,
+            password: None,
+        };
+        let args = config.steps[0]
+            .expand(&config.defaults, &conn)
+            .expect("spire-pipeline expansion should succeed");
+        assert!(args
+            .windows(2)
+            .any(|w| { w == ["--log-output", "artifacts/aws/profile_k10.log",] }));
     }
 
     #[test]

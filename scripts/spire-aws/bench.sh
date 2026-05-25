@@ -24,8 +24,11 @@ case "$TIER" in
   *) echo "unknown tier: $TIER" >&2; exit 2 ;;
 esac
 
+RUN_SUITE="$ARTIFACT_DIR/suite-${TIER}.json"
+jq --arg artifact_dir "$ARTIFACT_DIR" '.artifact_dir = $artifact_dir' "$SUITE" > "$RUN_SUITE"
+
 ecaz bench suite run \
   --host "$COORD_HOST" --user ecaz_coord --database postgres \
-  --config "$SUITE" \
+  --config "$RUN_SUITE" \
   --manifest-output "$ARTIFACT_DIR/suite-manifest-${TIER}.json" \
   --results-output "$ARTIFACT_DIR/suite-results-${TIER}.jsonl"
