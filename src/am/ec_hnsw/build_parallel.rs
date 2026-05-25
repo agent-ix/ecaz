@@ -244,16 +244,21 @@ pub(super) struct EcHnswConcurrentDsmGraphParts {
 
 #[allow(dead_code)]
 impl EcHnswConcurrentDsmGraphParts {
-    fn header(&self) -> &EcHnswConcurrentDsmGraphHeader {
+    fn with_header<R>(&self, f: impl FnOnce(&EcHnswConcurrentDsmGraphHeader) -> R) -> R {
         // SAFETY: graph parts are derived from an attached DSM graph image; the
-        // header pointer targets the initialized header for that image.
-        unsafe { &*self.header }
+        // header pointer targets the initialized header for that image, and the
+        // borrow is scoped to `f` so no `&'a T` leaks past the call.
+        f(unsafe { &*self.header })
     }
 
-    fn header_mut(&mut self) -> &mut EcHnswConcurrentDsmGraphHeader {
+    fn with_header_mut<R>(
+        &mut self,
+        f: impl FnOnce(&mut EcHnswConcurrentDsmGraphHeader) -> R,
+    ) -> R {
         // SAFETY: graph parts are used during exclusive image initialization
-        // when mutable header access is required.
-        unsafe { &mut *self.header }
+        // when mutable header access is required; the `&mut self` receiver
+        // statically prevents aliasing into the closure scope.
+        f(unsafe { &mut *self.header })
     }
 
     fn node_ptr(&self, node_idx: u32) -> *mut EcHnswConcurrentDsmNode {
@@ -261,16 +266,21 @@ impl EcHnswConcurrentDsmGraphParts {
         unsafe { self.nodes.add(node_idx as usize) }
     }
 
-    fn node(&self, node_idx: u32) -> &EcHnswConcurrentDsmNode {
+    fn with_node<R>(&self, node_idx: u32, f: impl FnOnce(&EcHnswConcurrentDsmNode) -> R) -> R {
         // SAFETY: `node_ptr` returns a pointer into the initialized DSM node
-        // array for a caller-validated node index.
-        unsafe { &*self.node_ptr(node_idx) }
+        // array for a caller-validated node index; the borrow is scoped to `f`.
+        f(unsafe { &*self.node_ptr(node_idx) })
     }
 
-    fn node_mut(&mut self, node_idx: u32) -> &mut EcHnswConcurrentDsmNode {
+    fn with_node_mut<R>(
+        &mut self,
+        node_idx: u32,
+        f: impl FnOnce(&mut EcHnswConcurrentDsmNode) -> R,
+    ) -> R {
         // SAFETY: callers hold or establish exclusive access to this DSM node
-        // before mutating it.
-        unsafe { &mut *self.node_ptr(node_idx) }
+        // before mutating it; the `&mut self` receiver statically prevents
+        // aliasing into the closure scope.
+        f(unsafe { &mut *self.node_ptr(node_idx) })
     }
 
     fn node_lock(&self, node_idx: u32) -> *mut pg_sys::LWLock {
@@ -288,15 +298,15 @@ impl EcHnswConcurrentDsmGraphParts {
     }
 
     fn node_level(&self, node_idx: u32) -> u8 {
-        self.node(node_idx).level
+        self.with_node(node_idx, |n| n.level)
     }
 
     fn node_neighbor_slot_count(&self, node_idx: u32) -> usize {
-        self.node(node_idx).neighbor_slot_count as usize
+        self.with_node(node_idx, |n| n.neighbor_slot_count as usize)
     }
 
     fn node_insert_state_value(&self, node_idx: u32) -> u32 {
-        self.node(node_idx).insert_state.value
+        self.with_node(node_idx, |n| n.insert_state.value)
     }
 }
 
@@ -1131,25 +1141,27 @@ pub(super) fn initialize_concurrent_dsm_graph_image(
             ef_construction: 0,
         });
 
-    *parts.header_mut() = EcHnswConcurrentDsmGraphHeader {
-        node_count: layout.node_count,
-        entry_idx: layout
-            .entry_idx
-            .unwrap_or(EC_HNSW_CONCURRENT_DSM_INVALID_NODE_IDX),
-        total_neighbor_slots: layout.total_neighbor_slots,
-        code_len: layout.code_len,
-        source_dim: layout.source_dim,
-        dimensions: checked_u32(insert_config.dimensions, "concurrent DSM graph dimensions"),
-        m: checked_u32(insert_config.m, "concurrent DSM graph m"),
-        ef_construction: checked_u32(
-            insert_config.ef_construction,
-            "concurrent DSM graph ef_construction",
-        ),
-        seed: insert_config.seed,
-        max_level: layout.max_level,
-        bits: insert_config.bits,
-        reserved0: [0; 2],
-    };
+    parts.with_header_mut(|h| {
+        *h = EcHnswConcurrentDsmGraphHeader {
+            node_count: layout.node_count,
+            entry_idx: layout
+                .entry_idx
+                .unwrap_or(EC_HNSW_CONCURRENT_DSM_INVALID_NODE_IDX),
+            total_neighbor_slots: layout.total_neighbor_slots,
+            code_len: layout.code_len,
+            source_dim: layout.source_dim,
+            dimensions: checked_u32(insert_config.dimensions, "concurrent DSM graph dimensions"),
+            m: checked_u32(insert_config.m, "concurrent DSM graph m"),
+            ef_construction: checked_u32(
+                insert_config.ef_construction,
+                "concurrent DSM graph ef_construction",
+            ),
+            seed: insert_config.seed,
+            max_level: layout.max_level,
+            bits: insert_config.bits,
+            reserved0: [0; 2],
+        };
+    });
 
     for (node_idx, node_layout) in plan.node_layout.nodes.iter().copied().enumerate() {
         let node_idx = checked_graph_u32(node_idx, "concurrent DSM initialized node index");
@@ -1158,16 +1170,18 @@ pub(super) fn initialize_concurrent_dsm_graph_image(
         } else {
             EC_HNSW_CONCURRENT_DSM_INSERT_STATE_UNINSERTED
         };
-        *parts.node_mut(node_idx) = EcHnswConcurrentDsmNode {
-            lock: pg_sys::LWLock::default(),
-            level: node_layout.level,
-            reserved0: [0; 3],
-            neighbor_slot_offset: node_layout.neighbor_slot_offset,
-            neighbor_slot_count: node_layout.neighbor_slot_count,
-            insert_state: pg_sys::pg_atomic_uint32 {
-                value: insert_state,
-            },
-        };
+        parts.with_node_mut(node_idx, |n| {
+            *n = EcHnswConcurrentDsmNode {
+                lock: pg_sys::LWLock::default(),
+                level: node_layout.level,
+                reserved0: [0; 3],
+                neighbor_slot_offset: node_layout.neighbor_slot_offset,
+                neighbor_slot_count: node_layout.neighbor_slot_count,
+                insert_state: pg_sys::pg_atomic_uint32 {
+                    value: insert_state,
+                },
+            };
+        });
         initialize_node_lock(parts.node_lock(node_idx));
     }
 
@@ -1275,7 +1289,7 @@ pub(super) fn insert_concurrent_dsm_graph_node(
         return false;
     };
 
-    let entry_idx = parts.header().entry_idx;
+    let entry_idx = parts.with_header(|h| h.entry_idx);
     if entry_idx == EC_HNSW_CONCURRENT_DSM_INVALID_NODE_IDX {
         let selected_slot_count = parts.node_neighbor_slot_count(node_idx);
         let selected_slots = vec![EC_HNSW_CONCURRENT_DSM_INVALID_NODE_IDX; selected_slot_count];
