@@ -1,0 +1,26 @@
+Script started on 2026-05-25 09:35:44-07:00 [<not executed on terminal>]
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.21s
+     Running unittests src/main.rs (target/debug/deps/ecaz-d6a7979ea82a4d9a)
+
+running 16 tests
+test commands::bench::spire_pipeline::tests::mixed_value_reports_stable_or_mixed_values ... [32mok[m
+test commands::bench::spire_pipeline::tests::spire_pipeline_defaults_to_spire_sweep_values ... [32mok[m
+test commands::bench::spire_pipeline::tests::spire_pipeline_query_matrix_requires_fixed_dimensions ... [32mok[m
+test commands::bench::spire_pipeline::tests::spire_pipeline_query_metric_sql_projects_payload_columns ... [32mok[m
+test commands::bench::spire_pipeline::tests::spire_pipeline_rejects_out_of_range_sweep_values ... [32mok[m
+test commands::bench::spire_pipeline::tests::spire_pipeline_remote_placement_gate_accepts_remote_placements ... [32mok[m
+test commands::bench::spire_pipeline::tests::spire_pipeline_remote_placement_gate_rejects_empty_or_local_only ... [32mok[m
+test commands::bench::spire_pipeline::tests::spire_pipeline_renders_cost_tuning_snapshot ... [32mok[m
+test commands::bench::spire_pipeline::tests::spire_pipeline_renders_degraded_skip_counters ... [32mok[m
+test commands::bench::spire_pipeline::tests::spire_pipeline_renders_endpoint_identity_readiness ... [32mok[m
+test commands::bench::spire_pipeline::tests::spire_pipeline_renders_local_store_overlap_counters ... [32mok[m
+test commands::bench::spire_pipeline::tests::spire_pipeline_reports_remote_tuple_transport_override ... [32mok[m
+test commands::bench::spire_pipeline::tests::spire_pipeline_sql_uses_public_snapshot_contracts ... [32mok[m
+test commands::bench::spire_pipeline::tests::spire_pipeline_renders_query_metrics_with_recall ... [32mok[m
+test commands::bench::spire_pipeline::tests::spire_pipeline_rejects_invalid_limits ... [32mok[m
+test cli::tests::cli_parses_spire_pipeline_remote_tuple_transport ... [32mok[m
+
+test result: [32mok[m. 16 passed; 0 failed; 0 ignored; 0 measured; 355 filtered out; finished in 0.00s
+
+
+Script done on 2026-05-25 09:35:44-07:00 [COMMAND_EXIT_CODE="0"]
