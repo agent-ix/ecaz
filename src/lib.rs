@@ -17091,6 +17091,7 @@ fn ec_spire_index_leaf_base_assignment_snapshot(
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
 fn ec_spire_materialize_static_remote_leaf_assignments(
     index_oid: pg_sys::Oid,
+    target_epoch: i64,
     leaf_pids: Vec<i64>,
     parent_pids: Vec<i64>,
     object_versions: Vec<i64>,
@@ -17118,6 +17119,9 @@ fn ec_spire_materialize_static_remote_leaf_assignments(
             "ec_spire_materialize_static_remote_leaf_assignments index_oid does not exist"
         );
     }
+    let target_epoch = u64::try_from(target_epoch).unwrap_or_else(|_| {
+        pgrx::error!("ec_spire_materialize_static_remote_leaf_assignments target_epoch is negative")
+    });
     let leaf_pids = leaf_pids
         .into_iter()
         .map(|value| {
@@ -17220,6 +17224,7 @@ fn ec_spire_materialize_static_remote_leaf_assignments(
         .collect::<Vec<_>>();
     let row = am::spire_materialize_static_remote_leaf_assignments(
         index_oid,
+        target_epoch,
         leaf_pids,
         parent_pids,
         object_versions,

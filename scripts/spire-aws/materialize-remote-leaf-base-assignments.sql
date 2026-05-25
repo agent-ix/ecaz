@@ -22,11 +22,11 @@ CREATE TEMP TABLE ec_spire_leaf_base_assignment_import (
   payload_format int NOT NULL,
   gamma real NOT NULL,
   encoded_payload_hex text NOT NULL
-) ON COMMIT DROP;
+);
 
-\copy ec_spire_leaf_base_assignment_import FROM :'assignment_file' WITH (FORMAT text, DELIMITER E'\t')
+\copy ec_spire_leaf_base_assignment_import FROM '__ECAZ_ASSIGNMENT_FILE__' WITH (FORMAT text, DELIMITER E'\t')
 
-CREATE TEMP TABLE ec_spire_leaf_base_materialization_input ON COMMIT DROP AS
+CREATE TEMP TABLE ec_spire_leaf_base_materialization_input AS
 SELECT src.leaf_pid,
        src.parent_pid,
        src.object_version,
@@ -47,6 +47,8 @@ DO $$
 DECLARE
   imported_rows bigint;
   matched_rows bigint;
+  min_active_epoch bigint;
+  max_active_epoch bigint;
 BEGIN
   SELECT count(*) INTO imported_rows FROM ec_spire_leaf_base_assignment_import;
   SELECT count(*) INTO matched_rows FROM ec_spire_leaf_base_materialization_input;
@@ -56,11 +58,21 @@ BEGIN
       matched_rows,
       imported_rows;
   END IF;
+  SELECT min(active_epoch), max(active_epoch)
+    INTO min_active_epoch, max_active_epoch
+    FROM ec_spire_leaf_base_assignment_import;
+  IF min_active_epoch IS NULL OR min_active_epoch <> max_active_epoch THEN
+    RAISE EXCEPTION
+      'remote heap materialization requires exactly one exported coordinator active epoch, got min % max %',
+      min_active_epoch,
+      max_active_epoch;
+  END IF;
 END $$;
 
 SELECT materialized.*
   FROM ec_spire_materialize_static_remote_leaf_assignments(
        :'remote_index'::regclass::oid,
+       (SELECT min(active_epoch) FROM ec_spire_leaf_base_assignment_import),
        (SELECT array_agg(leaf_pid ORDER BY leaf_pid, row_index) FROM ec_spire_leaf_base_materialization_input),
        (SELECT array_agg(parent_pid ORDER BY leaf_pid, row_index) FROM ec_spire_leaf_base_materialization_input),
        (SELECT array_agg(object_version ORDER BY leaf_pid, row_index) FROM ec_spire_leaf_base_materialization_input),

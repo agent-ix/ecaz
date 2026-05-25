@@ -9,6 +9,7 @@ struct SpireRemoteLeafMaterializationInputRow {
 
 pub(crate) fn materialize_static_remote_leaf_assignments(
     index_oid: pg_sys::Oid,
+    target_epoch: u64,
     leaf_pids: Vec<u64>,
     parent_pids: Vec<u64>,
     object_versions: Vec<u64>,
@@ -43,6 +44,9 @@ pub(crate) fn materialize_static_remote_leaf_assignments(
                 encoded_payloads,
             )?;
             let root_control = page::read_root_control_page(index_relation.as_ptr());
+            if target_epoch == 0 {
+                return Err("ec_spire remote leaf materialization target_epoch must be greater than zero".to_owned());
+            }
             let previous_epoch = if root_control.active_epoch == 0 {
                 None
             } else {
@@ -51,11 +55,13 @@ pub(crate) fn materialize_static_remote_leaf_assignments(
                     load_relation_epoch_manifests_for_coordinator_fanout(index, root_control)?;
                 Some(epoch_manifest)
             };
-            let publish_epoch = root_control
-                .active_epoch
-                .checked_add(1)
-                .filter(|epoch| *epoch > 0)
-                .ok_or_else(|| "ec_spire remote leaf materialization epoch overflow".to_owned())?;
+            if root_control.active_epoch > target_epoch {
+                return Err(format!(
+                    "ec_spire remote leaf materialization target_epoch {target_epoch} is behind remote active epoch {}",
+                    root_control.active_epoch
+                ));
+            }
+            let publish_epoch = target_epoch;
             let store =
                 storage::SpireRelationObjectStore::for_index_relation(index_relation.as_ptr())?;
 

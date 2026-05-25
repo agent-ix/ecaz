@@ -3,12 +3,30 @@
 
 \set ON_ERROR_STOP on
 
-WITH assigned_leaf_pids AS (
-  SELECT leaf_pid
-    FROM ec_spire_index_leaf_snapshot(:'coord_index'::regclass::oid)
-   WHERE placement_state = 'available'
-     AND node_id = :node_id::int
-   ORDER BY leaf_pid
+WITH remote_nodes AS (
+  SELECT
+      ordinality::int AS remote_ordinal,
+      (remote->>'node_id')::int AS node_id
+    FROM jsonb_array_elements(:'remotes_json'::jsonb) WITH ORDINALITY AS t(remote, ordinality)
+),
+remote_count AS (
+  SELECT count(*)::int AS value FROM remote_nodes
+),
+assigned_leaf_pids AS (
+  SELECT leaf_plan.leaf_pid
+    FROM (
+      SELECT
+          leaf_pid,
+          (((row_number() OVER (ORDER BY leaf_pid))::int - 1) % remote_count.value) + 1
+              AS remote_ordinal
+        FROM ec_spire_index_leaf_snapshot(:'coord_index'::regclass::oid)
+        CROSS JOIN remote_count
+       WHERE placement_state = 'available'
+         AND remote_count.value > 0
+    ) AS leaf_plan
+    JOIN remote_nodes USING (remote_ordinal)
+   WHERE remote_nodes.node_id = :node_id::int
+   ORDER BY leaf_plan.leaf_pid
 ),
 selected_assignments AS (
   SELECT *
