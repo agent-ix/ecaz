@@ -15,7 +15,9 @@ use color_eyre::eyre::{eyre, Context, Result};
 use comfy_table::{presets::UTF8_FULL, Cell, Table};
 use futures::SinkExt;
 use indicatif::{ProgressBar, ProgressStyle};
-use std::collections::{HashMap, HashSet};
+use sha2::{Digest, Sha256};
+use std::collections::{BTreeMap, HashMap, HashSet};
+use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 use tokio_postgres::{Client, Transaction};
@@ -103,6 +105,14 @@ pub struct LoadArgs {
     /// silently producing a local-only fixture.
     #[arg(long)]
     pub distributed_placement_config: Option<PathBuf>,
+
+    /// Directory for static SPIRE distributed-load artifacts.
+    ///
+    /// When paired with `--distributed-placement-config`, the loader splits
+    /// corpus rows into per-remote TSV files and writes a placement plan JSON,
+    /// then exits before any local-only coordinator load can occur.
+    #[arg(long)]
+    pub distributed_placement_output_dir: Option<PathBuf>,
 }
 
 struct IndexJob {
@@ -175,6 +185,49 @@ struct DistributedShardPolicy {
     source_identity_column: String,
 }
 
+#[derive(Debug, Clone, serde::Serialize, PartialEq, Eq)]
+struct DistributedPlacementOutputPlan {
+    version: u32,
+    prefix: String,
+    profile: String,
+    coordinator_index_name: String,
+    source_identity_column: String,
+    shard_policy: String,
+    shard_count: u32,
+    total_rows: usize,
+    remotes: Vec<DistributedRemoteOutputPlan>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, PartialEq, Eq)]
+struct DistributedRemoteOutputPlan {
+    node_id: u32,
+    conninfo_secret_name: String,
+    conninfo_provider_lookup_key: String,
+    remote_index_regclass: String,
+    shard_ids: Vec<u32>,
+    corpus_file: String,
+    row_count: usize,
+    shard_row_counts: Vec<DistributedShardRowCount>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, PartialEq, Eq)]
+struct DistributedShardRowCount {
+    shard_id: u32,
+    row_count: usize,
+}
+
+struct DistributedRemoteWriter {
+    node_id: u32,
+    conninfo_secret_name: String,
+    conninfo_provider_lookup_key: String,
+    remote_index_regclass: String,
+    shard_ids: Vec<u32>,
+    corpus_file: PathBuf,
+    writer: std::io::BufWriter<std::fs::File>,
+    row_count: usize,
+    shard_row_counts: BTreeMap<u32, usize>,
+}
+
 pub async fn run(conn: &ConnectionOptions, args: LoadArgs) -> Result<()> {
     let total_started = Instant::now();
     profiles::validate_ident(&args.prefix)
@@ -230,8 +283,10 @@ pub async fn run(conn: &ConnectionOptions, args: LoadArgs) -> Result<()> {
         args.distributed_placement_config.as_deref(),
         profile,
     )?;
-    if let Some(config) = &distributed_placement_config {
-        return Err(distributed_spire_load_not_implemented_error(config));
+    if distributed_placement_config.is_some() && args.distributed_placement_output_dir.is_none() {
+        return Err(eyre!(
+            "--distributed-placement-config requires --distributed-placement-output-dir so distributed corpus rows are materialized explicitly instead of falling back to local-only load"
+        ));
     }
 
     let corpus_table = format!("{}_corpus", args.prefix);
@@ -261,6 +316,29 @@ pub async fn run(conn: &ConnectionOptions, args: LoadArgs) -> Result<()> {
     }
 
     if let Some(chunked_manifest) = chunked_manifest {
+        if let Some(config) = &distributed_placement_config {
+            let output_dir = args
+                .distributed_placement_output_dir
+                .as_deref()
+                .expect("validated distributed placement output dir should exist");
+            let corpus_paths = chunked_manifest
+                .manifest
+                .corpus
+                .chunks
+                .iter()
+                .map(|chunk| chunked_manifest.base_dir.join(&chunk.path))
+                .collect::<Vec<_>>();
+            let plan = write_distributed_placement_outputs(
+                output_dir,
+                config,
+                &args.prefix,
+                profile,
+                &corpus_paths,
+                args.dim,
+            )?;
+            print_distributed_placement_output_summary(output_dir, &plan);
+            return Ok(());
+        }
         let mut client = psql::connect(conn).await?;
         let corpus_table = format!("{}_corpus", args.prefix);
         let queries_table = format!("{}_queries", args.prefix);
@@ -327,6 +405,23 @@ pub async fn run(conn: &ConnectionOptions, args: LoadArgs) -> Result<()> {
         &query_stats,
         args.allow_manifest_mismatch,
     )?;
+
+    if let Some(config) = &distributed_placement_config {
+        let output_dir = args
+            .distributed_placement_output_dir
+            .as_deref()
+            .expect("validated distributed placement output dir should exist");
+        let plan = write_distributed_placement_outputs(
+            output_dir,
+            config,
+            &args.prefix,
+            profile,
+            &[corpus_file.to_path_buf()],
+            args.dim,
+        )?;
+        print_distributed_placement_output_summary(output_dir, &plan);
+        return Ok(());
+    }
 
     let client = psql::connect(conn).await?;
     client
@@ -548,15 +643,223 @@ fn validate_distributed_placement_config(config: &DistributedPlacementConfig) ->
     Ok(())
 }
 
-fn distributed_spire_load_not_implemented_error(
+fn write_distributed_placement_outputs(
+    output_dir: &Path,
     input: &LoadedDistributedPlacementConfig,
-) -> color_eyre::eyre::Report {
-    eyre!(
-        "distributed SPIRE placement config {} is valid for {} remotes and {} shards, but distributed corpus load is not implemented yet; complete Task 30 Phase 13e.1 before running AWS distributed load",
-        input.path.display(),
-        input.config.remotes.len(),
-        input.config.shard_policy.shard_count
-    )
+    prefix: &str,
+    profile: &IndexProfile,
+    corpus_paths: &[PathBuf],
+    dim: usize,
+) -> Result<DistributedPlacementOutputPlan> {
+    if input.config.shard_policy.source_identity_column != "id" {
+        return Err(eyre!(
+            "distributed placement source_identity_column {:?} is not supported by this loader slice yet; use \"id\"",
+            input.config.shard_policy.source_identity_column
+        ));
+    }
+    if corpus_paths.is_empty() {
+        return Err(eyre!(
+            "distributed placement output requires at least one corpus input path"
+        ));
+    }
+
+    std::fs::create_dir_all(output_dir).wrap_err_with(|| {
+        format!(
+            "creating distributed placement output dir {}",
+            output_dir.display()
+        )
+    })?;
+
+    let mut shard_to_node = HashMap::new();
+    for remote in &input.config.remotes {
+        for shard_id in &remote.shard_ids {
+            shard_to_node.insert(*shard_id, remote.node_id);
+        }
+    }
+
+    let mut writers = BTreeMap::new();
+    for remote in &input.config.remotes {
+        let remote_dir = output_dir.join(format!("node-{}", remote.node_id));
+        std::fs::create_dir_all(&remote_dir).wrap_err_with(|| {
+            format!(
+                "creating distributed placement remote output dir {}",
+                remote_dir.display()
+            )
+        })?;
+        let corpus_file = remote_dir.join(format!("{prefix}_node_{}_corpus.tsv", remote.node_id));
+        let file = std::fs::File::create(&corpus_file).wrap_err_with(|| {
+            format!(
+                "creating distributed placement corpus shard {}",
+                corpus_file.display()
+            )
+        })?;
+        writers.insert(
+            remote.node_id,
+            DistributedRemoteWriter {
+                node_id: remote.node_id,
+                conninfo_secret_name: remote.conninfo_secret_name.clone(),
+                conninfo_provider_lookup_key: spire_remote_conninfo_provider_lookup_key(
+                    &remote.conninfo_secret_name,
+                )?,
+                remote_index_regclass: remote.remote_index_regclass.clone(),
+                shard_ids: remote.shard_ids.clone(),
+                corpus_file,
+                writer: std::io::BufWriter::new(file),
+                row_count: 0,
+                shard_row_counts: BTreeMap::new(),
+            },
+        );
+    }
+
+    let mut total_rows = 0usize;
+    for corpus_path in corpus_paths {
+        for row in tsv::iter_rows(corpus_path, dim)? {
+            let row = row?;
+            let source_identity = spire_static_source_identity_from_i64(row.id);
+            let shard_id =
+                spire_static_shard_id(&source_identity, input.config.shard_policy.shard_count);
+            let node_id = shard_to_node.get(&shard_id).copied().ok_or_else(|| {
+                eyre!(
+                    "distributed placement config has no remote owner for shard_id {}",
+                    shard_id
+                )
+            })?;
+            let writer = writers.get_mut(&node_id).ok_or_else(|| {
+                eyre!(
+                    "distributed placement config maps shard_id {} to missing node_id {}",
+                    shard_id,
+                    node_id
+                )
+            })?;
+            writeln!(
+                writer.writer,
+                "{}\t{}",
+                row.id,
+                serde_json::to_string(&row.values)
+                    .expect("serializing parsed f32 vector should not fail")
+            )
+            .wrap_err_with(|| {
+                format!(
+                    "writing distributed placement row {} to {}",
+                    row.id,
+                    writer.corpus_file.display()
+                )
+            })?;
+            writer.row_count += 1;
+            *writer.shard_row_counts.entry(shard_id).or_default() += 1;
+            total_rows += 1;
+        }
+    }
+
+    let mut remotes = Vec::with_capacity(writers.len());
+    for (_, mut writer) in writers {
+        writer.writer.flush().wrap_err_with(|| {
+            format!(
+                "flushing distributed placement corpus shard {}",
+                writer.corpus_file.display()
+            )
+        })?;
+        remotes.push(DistributedRemoteOutputPlan {
+            node_id: writer.node_id,
+            conninfo_secret_name: writer.conninfo_secret_name,
+            conninfo_provider_lookup_key: writer.conninfo_provider_lookup_key,
+            remote_index_regclass: writer.remote_index_regclass,
+            shard_ids: writer.shard_ids,
+            corpus_file: writer.corpus_file.display().to_string(),
+            row_count: writer.row_count,
+            shard_row_counts: writer
+                .shard_row_counts
+                .into_iter()
+                .map(|(shard_id, row_count)| DistributedShardRowCount {
+                    shard_id,
+                    row_count,
+                })
+                .collect(),
+        });
+    }
+
+    let plan = DistributedPlacementOutputPlan {
+        version: 1,
+        prefix: prefix.to_owned(),
+        profile: profile.name.to_owned(),
+        coordinator_index_name: input.config.coordinator.index_name.clone(),
+        source_identity_column: input.config.shard_policy.source_identity_column.clone(),
+        shard_policy: input.config.shard_policy.kind.clone(),
+        shard_count: input.config.shard_policy.shard_count,
+        total_rows,
+        remotes,
+    };
+    let plan_path = output_dir.join("distributed-placement-plan.json");
+    let plan_json =
+        serde_json::to_string_pretty(&plan).expect("serializing distributed placement plan");
+    std::fs::write(&plan_path, format!("{plan_json}\n"))
+        .wrap_err_with(|| format!("writing distributed placement plan {}", plan_path.display()))?;
+
+    Ok(plan)
+}
+
+fn spire_static_source_identity_from_i64(id: i64) -> [u8; 16] {
+    let digest = Sha256::digest(id.to_be_bytes());
+    let mut identity = [0_u8; 16];
+    identity.copy_from_slice(&digest[..16]);
+    identity
+}
+
+fn spire_static_shard_id(source_identity: &[u8; 16], shard_count: u32) -> u32 {
+    let mut shard_bytes = [0_u8; 8];
+    shard_bytes.copy_from_slice(&source_identity[..8]);
+    (u64::from_be_bytes(shard_bytes) % u64::from(shard_count)) as u32
+}
+
+fn spire_remote_conninfo_provider_lookup_key(conninfo_secret_name: &str) -> Result<String> {
+    if conninfo_secret_name.is_empty() {
+        return Err(eyre!("conninfo_secret_name must be nonempty"));
+    }
+    let mut key = String::from("EC_SPIRE_REMOTE_CONNINFO_");
+    for byte in conninfo_secret_name.bytes() {
+        if byte.is_ascii_alphanumeric() {
+            key.push(char::from(byte).to_ascii_uppercase());
+        } else {
+            key.push('_');
+        }
+    }
+    Ok(key)
+}
+
+fn print_distributed_placement_output_summary(
+    output_dir: &Path,
+    plan: &DistributedPlacementOutputPlan,
+) {
+    let mut t = Table::new();
+    t.load_preset(UTF8_FULL);
+    t.set_header(vec!["field", "value"]);
+    t.add_row(vec![
+        "mode".into(),
+        Cell::new("distributed-placement-output"),
+    ]);
+    t.add_row(vec!["output_dir".into(), Cell::new(output_dir.display())]);
+    t.add_row(vec!["prefix".into(), Cell::new(&plan.prefix)]);
+    t.add_row(vec![
+        "coordinator_index".into(),
+        Cell::new(&plan.coordinator_index_name),
+    ]);
+    t.add_row(vec!["total_rows".into(), Cell::new(plan.total_rows)]);
+    let remotes = plan
+        .remotes
+        .iter()
+        .map(|remote| {
+            format!(
+                "node {}: {} rows, shards {:?}, env {}",
+                remote.node_id,
+                remote.row_count,
+                remote.shard_ids,
+                remote.conninfo_provider_lookup_key
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    t.add_row(vec!["remotes".into(), Cell::new(remotes)]);
+    crate::ecaz_println!("{t}");
 }
 
 /// Verify a sibling manifest if one was requested or auto-discovered.
@@ -1422,7 +1725,6 @@ mod tests {
     use super::*;
     use crate::profiles::{EC_DISKANN, EC_HNSW, EC_IVF, EC_SPIRE};
     use crate::tsv::VectorFileStats;
-    use std::io::Write as _;
     use tempfile::TempDir;
 
     fn opt(k: &str, v: &str) -> (String, String) {
@@ -1802,6 +2104,96 @@ mod tests {
             .unwrap_err()
             .to_string();
         assert!(err.contains("missing shard ids: 1, 3"), "err: {err}");
+    }
+
+    #[test]
+    fn distributed_placement_output_splits_corpus_by_static_shard() {
+        let td = TempDir::new().unwrap();
+        let config_path = write(&td, "placement.json", &distributed_placement_config_json());
+        let corpus_path = write(
+            &td,
+            "corpus.tsv",
+            "1\t[0.1, 0.2]\n2\t[0.3, 0.4]\n3\t[0.5, 0.6]\n4\t[0.7, 0.8]\n5\t[0.9, 1.0]\n",
+        );
+        let output_dir = td.path().join("distributed");
+        let loaded = load_distributed_placement_config_if_requested(Some(&config_path), &EC_SPIRE)
+            .unwrap()
+            .unwrap();
+
+        let plan = write_distributed_placement_outputs(
+            &output_dir,
+            &loaded,
+            "aws_spire",
+            &EC_SPIRE,
+            &[corpus_path],
+            2,
+        )
+        .unwrap();
+
+        assert_eq!(plan.total_rows, 5);
+        assert_eq!(plan.remotes.len(), 2);
+        assert_eq!(
+            plan.remotes
+                .iter()
+                .map(|remote| remote.row_count)
+                .sum::<usize>(),
+            5
+        );
+        assert!(output_dir.join("distributed-placement-plan.json").exists());
+        for remote in &plan.remotes {
+            assert!(remote
+                .conninfo_provider_lookup_key
+                .starts_with("EC_SPIRE_REMOTE_CONNINFO_"));
+            let body = std::fs::read_to_string(&remote.corpus_file).unwrap();
+            assert_eq!(body.lines().count(), remote.row_count);
+        }
+
+        let plan_json: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(output_dir.join("distributed-placement-plan.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(plan_json["total_rows"], 5);
+        assert_eq!(plan_json["shard_count"], 4);
+    }
+
+    #[test]
+    fn distributed_placement_output_rejects_non_id_source_identity_column() {
+        let config: DistributedPlacementConfig = serde_json::from_value(serde_json::json!({
+            "version": 1,
+            "coordinator": {"index_name": "aws_spire_idx"},
+            "remotes": [{
+                "node_id": 2,
+                "conninfo_secret_name": "spire/remote/a",
+                "remote_index_regclass": "public.aws_spire_remote_a_idx",
+                "shard_ids": [0]
+            }],
+            "shard_policy": {
+                "kind": "hash_source_identity",
+                "shard_count": 1,
+                "source_identity_column": "external_id"
+            }
+        }))
+        .unwrap();
+        let loaded = LoadedDistributedPlacementConfig {
+            path: PathBuf::from("placement.json"),
+            config,
+        };
+        let td = TempDir::new().unwrap();
+        let corpus_path = write(&td, "corpus.tsv", "1\t[0.1]\n");
+
+        let err = write_distributed_placement_outputs(
+            td.path(),
+            &loaded,
+            "aws_spire",
+            &EC_SPIRE,
+            &[corpus_path],
+            1,
+        )
+        .unwrap_err()
+        .to_string();
+
+        assert!(err.contains("source_identity_column"), "err: {err}");
+        assert!(err.contains("use \"id\""), "err: {err}");
     }
 
     // --- manifest orchestration ---
