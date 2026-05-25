@@ -465,38 +465,21 @@ fn validate_parallel_scan_state(
     })
 }
 
-#[cfg(feature = "pg17")]
 fn parallel_scan_state_ptr(
     parallel_scan: pg_sys::ParallelIndexScanDesc,
 ) -> Result<Option<*mut EcParallelScanState>, &'static str> {
     if parallel_scan.is_null() {
         return Ok(None);
     }
-    // SAFETY: PostgreSQL owns `parallel_scan`; pg17 stores `ps_offset` as a
-    // byte offset from the descriptor base to the AM-private state.
+    // SAFETY: PostgreSQL owns `parallel_scan`; pg17 stores the AM-private
+    // offset in `ps_offset` and pg18 in `ps_offset_am`. Either way, the
+    // offset is a byte offset from the descriptor base into PostgreSQL's
+    // allocation, so the resulting pointer aims into the AM-private region
+    // PostgreSQL sized via `ec_amestimateparallelscan`.
     let state = unsafe {
+        #[cfg(feature = "pg17")]
         let offset = (*parallel_scan).ps_offset;
-        if offset == 0 {
-            return Ok(None);
-        }
-        parallel_scan
-            .cast::<u8>()
-            .add(offset)
-            .cast::<EcParallelScanState>()
-    };
-    Ok(Some(state))
-}
-
-#[cfg(feature = "pg18")]
-fn parallel_scan_state_ptr(
-    parallel_scan: pg_sys::ParallelIndexScanDesc,
-) -> Result<Option<*mut EcParallelScanState>, &'static str> {
-    if parallel_scan.is_null() {
-        return Ok(None);
-    }
-    // SAFETY: PostgreSQL owns `parallel_scan`; pg18 stores `ps_offset_am` as a
-    // byte offset from the descriptor base to the AM-private state.
-    let state = unsafe {
+        #[cfg(feature = "pg18")]
         let offset = (*parallel_scan).ps_offset_am;
         if offset == 0 {
             return Ok(None);
@@ -509,6 +492,20 @@ fn parallel_scan_state_ptr(
     Ok(Some(state))
 }
 
+/// Decode the AM-private parallel scan descriptor that PostgreSQL passes via
+/// `IndexScanDescData::parallel_scan` and produce a validated
+/// [`ParallelScanAttachment`].
+///
+/// # Safety
+///
+/// `parallel_scan` must either be null or point at the
+/// `ParallelIndexScanDescData` PostgreSQL owns for the active scan, and the
+/// AM-private region at `ps_offset` / `ps_offset_am` must have been
+/// initialized by [`ec_aminitparallelscan`] (or [`initialize_parallel_scan_target`])
+/// for the same scan. The descriptor and AM-private region must remain live
+/// for the duration of the borrow embedded in the returned attachment. The
+/// returned `Option::None` means PostgreSQL did not allocate an AM-private
+/// region (e.g. serial scan).
 pub(crate) unsafe fn parallel_scan_attachment(
     parallel_scan: pg_sys::ParallelIndexScanDesc,
 ) -> Result<Option<ParallelScanAttachment>, &'static str> {
@@ -520,6 +517,17 @@ pub(crate) unsafe fn parallel_scan_attachment(
     Ok(Some(validate_parallel_scan_state(unsafe { &*state })?))
 }
 
+/// Initialize the AM-private parallel scan descriptor that PostgreSQL passes
+/// into [`ec_aminitparallelscan`] with the requested worker-slot capacity.
+///
+/// # Safety
+///
+/// `target` must be null or point at the AM-private buffer PostgreSQL
+/// reserved for this scan via [`ec_amestimateparallelscan`]. The buffer must
+/// be at least `ec_parallel_scan_descriptor_size_for(worker_slot_count)`
+/// bytes and exclusively owned by this initialization for the duration of
+/// the call. `worker_slot_count` must be the same value used to size the
+/// buffer.
 pub(crate) unsafe fn initialize_parallel_scan_target_with_worker_slots(
     target: *mut c_void,
     worker_slot_count: u32,
@@ -536,6 +544,19 @@ pub(crate) unsafe fn initialize_parallel_scan_target_with_worker_slots(
     Ok(())
 }
 
+/// Initialize the AM-private parallel scan descriptor with the worker-slot
+/// capacity derived from PostgreSQL's `max_parallel_workers_per_gather` GUC.
+///
+/// # Safety
+///
+/// Same contract as
+/// [`initialize_parallel_scan_target_with_worker_slots`]: `target` must be
+/// the AM-private buffer PostgreSQL reserved via
+/// [`ec_amestimateparallelscan`] for this scan and exclusively owned for the
+/// duration of the call. The buffer must be at least
+/// [`ec_parallel_scan_descriptor_size`] bytes, which is the size
+/// `ec_amestimateparallelscan` returns when called with the same backend
+/// GUC value.
 pub(crate) unsafe fn initialize_parallel_scan_target(
     target: *mut c_void,
 ) -> Result<(), &'static str> {
@@ -549,12 +570,36 @@ pub(crate) unsafe fn initialize_parallel_scan_target(
     }
 }
 
+/// Claim the first free worker slot in `attachment`. The caller is
+/// responsible for matching this with a subsequent
+/// [`release_parallel_scan_worker_slot`].
+///
+/// # Safety
+///
+/// `attachment` must have been produced by [`parallel_scan_attachment`] for
+/// the current scan and must remain live (the underlying AM-private
+/// descriptor must not be torn down) for the duration of this call. The
+/// caller must be running on a PostgreSQL worker backend attached to that
+/// scan; concurrent claims race through atomic CAS on the slot flags and
+/// remain safe.
 pub(crate) unsafe fn claim_parallel_scan_worker_slot(
     attachment: &ParallelScanAttachment,
 ) -> Result<u32, &'static str> {
     attachment.claim_worker_slot()
 }
 
+/// Release the worker slot at `slot_index` if it is currently claimed for
+/// `rescan_epoch`. Returns `true` if a live claim was dropped, `false` if
+/// the slot was already free or staled by a rescan.
+///
+/// # Safety
+///
+/// `state` must either be null or point at the AM-private descriptor
+/// produced by [`initialize_parallel_scan_target_with_worker_slots`] for
+/// the current scan. The descriptor must remain live for the duration of
+/// the call. `rescan_epoch` must be the epoch observed when the slot was
+/// claimed; passing an epoch from a previous claim is safe (returns
+/// `Ok(false)`).
 pub(crate) unsafe fn release_parallel_scan_worker_slot(
     state: *mut EcParallelScanState,
     slot_index: u32,
@@ -569,6 +614,17 @@ pub(crate) unsafe fn release_parallel_scan_worker_slot(
     attachment.release_worker_slot(slot_index, rescan_epoch)
 }
 
+/// Publish a runtime snapshot for the worker slot at `slot_index`, observed
+/// for `rescan_epoch`. Returns `false` (without mutating the slot) if the
+/// observed epoch is stale relative to the live descriptor.
+///
+/// # Safety
+///
+/// Same contract as [`release_parallel_scan_worker_slot`]: `state` is
+/// either null or aims at a live AM-private descriptor for the current
+/// scan, and the descriptor must remain live for the duration of the call.
+/// The slot at `slot_index` must have been claimed by this worker (i.e.,
+/// the caller is responsible for not publishing into an unclaimed slot).
 pub(crate) unsafe fn publish_parallel_scan_worker_slot_runtime_snapshot(
     state: *mut EcParallelScanState,
     slot_index: u32,
@@ -584,6 +640,16 @@ pub(crate) unsafe fn publish_parallel_scan_worker_slot_runtime_snapshot(
     attachment.publish_worker_slot_runtime_snapshot(slot_index, rescan_epoch, snapshot)
 }
 
+/// Read the current snapshot of the worker slot at `slot_index`. Returns
+/// the slot's atomic state as a value, never an outstanding borrow.
+///
+/// # Safety
+///
+/// Same contract as [`release_parallel_scan_worker_slot`]: `state` is
+/// either null or aims at a live AM-private descriptor for the current
+/// scan, and the descriptor must remain live for the duration of the call.
+/// Concurrent reads / writes from other workers race through the slot's
+/// atomic fields and remain well-defined.
 pub(crate) unsafe fn read_parallel_scan_worker_slot_snapshot(
     state: *mut EcParallelScanState,
     slot_index: u32,
@@ -597,6 +663,19 @@ pub(crate) unsafe fn read_parallel_scan_worker_slot_snapshot(
     attachment.read_worker_slot_snapshot(slot_index)
 }
 
+/// Advance the AM-private parallel scan descriptor for `parallel_scan` to
+/// a new rescan epoch and reset all worker-slot state to idle.
+///
+/// # Safety
+///
+/// `parallel_scan` must either be null or point at the
+/// `ParallelIndexScanDescData` PostgreSQL owns for the active scan, with an
+/// AM-private region initialized by [`ec_aminitparallelscan`] /
+/// [`initialize_parallel_scan_target`]. The descriptor must remain live for
+/// the duration of the call. Callers must ensure no concurrent reads /
+/// writes are in flight against the AM-private region — PostgreSQL
+/// guarantees this by invoking `IndexAmRoutine::amparallelrescan` only
+/// during the scan's rescan barrier.
 pub(crate) unsafe fn reset_parallel_scan_state(
     parallel_scan: pg_sys::ParallelIndexScanDesc,
 ) -> Result<Option<u32>, &'static str> {
@@ -704,18 +783,19 @@ mod tests {
     const TEST_WORKER_SLOT_COUNT: u32 = 3;
 
     fn set_test_parallel_scan_ps_offset(parallel_scan: pg_sys::ParallelIndexScanDesc) {
-        #[cfg(feature = "pg17")]
         // SAFETY: `parallel_scan` points into aligned test storage large
-        // enough for PostgreSQL's parallel scan descriptor header.
+        // enough for PostgreSQL's parallel scan descriptor header; the
+        // descriptor lives on the test-thread stack for the entire test.
         unsafe {
-            (*parallel_scan).ps_offset = TEST_PARALLEL_SCAN_OFFSET
-        };
-        #[cfg(feature = "pg18")]
-        // SAFETY: `parallel_scan` points into aligned test storage large
-        // enough for PostgreSQL's parallel scan descriptor header.
-        unsafe {
-            (*parallel_scan).ps_offset_am = TEST_PARALLEL_SCAN_OFFSET
-        };
+            #[cfg(feature = "pg17")]
+            {
+                (*parallel_scan).ps_offset = TEST_PARALLEL_SCAN_OFFSET;
+            }
+            #[cfg(feature = "pg18")]
+            {
+                (*parallel_scan).ps_offset_am = TEST_PARALLEL_SCAN_OFFSET;
+            }
+        }
     }
 
     fn test_parallel_scan_desc(

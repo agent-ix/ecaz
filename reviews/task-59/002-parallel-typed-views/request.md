@@ -32,14 +32,34 @@ the new views, and applies legitimate folds:
 - The `ParallelScanAttachment` struct shape is unchanged — `state`,
   `coordinator`, `descriptor_bytes`, `worker_slot_count`,
   `rescan_epoch` remain `pub(crate)` for HNSW `scan.rs` field access.
-- The `EcParallelWorkerSlotGuard` named in the slice 002 outline was
-  deferred — the existing claim/release path is single-token and the
-  attachment-level safe API already gives ergonomic claim/release
-  without a separate guard type. A guard adds API surface without
-  block-count payoff for in-`parallel.rs` consumers; future consumer
-  migration (Task 58.1) is the right place to introduce a guard tied
-  to that callsite shape. Flagging this as a §Non-deliverable
-  divergence from the 001 plan, not a structural ceiling claim.
+## Plan divergence (from slice 001)
+
+**`EcParallelWorkerSlotGuard` not delivered in slice 002.** Slice 001
+listed an RAII guard type so callers could express `try_claim()
+-> Option<EcParallelWorkerSlotGuard<'_>>` and have `release` happen on
+drop. Slice 002 instead delivers safe attachment methods
+(`claim_worker_slot`, `release_worker_slot`) directly on
+`ParallelScanAttachment`.
+
+**Rationale:** the in-`parallel.rs` consumers (release/publish/read
+unsafe-fn entry points and the test surface) are paired with explicit
+`release` calls today; an RAII guard at the in-file level would shift
+ownership semantics without changing the block count or the surface
+shape of those callers. The HNSW `scan.rs` consumer that *would*
+benefit from a guard (because its `release_parallel_scan_worker_slot`
+call sits on a separate code path from the claim) is out of scope
+per Task 59 §Non-Goals "Do not migrate AM-specific call sites in this
+task".
+
+**Disposition:** the guard belongs to the Task 58.1 HNSW
+build_parallel consumer migration (Task 59 §Coordination: "Task 58.1
+follow-up"). That task knows the call-site shape it needs (claim in
+one block, release in another, optional rescan in between) and can
+introduce the guard tied to that shape rather than speculatively
+designing it here.
+
+**This is a planning divergence, not a structural ceiling.** Flagged
+for Task 58.1 planner.
 
 ## Folds applied
 
@@ -52,56 +72,51 @@ the new views, and applies legitimate folds:
 | `reset_parallel_scan_layout` (coord init + slot loop) | 3 | 1 (single outer block) | -2 |
 | `reset_parallel_scan_state` (`&mut *state` double-deref) | 2 | 1 | -1 |
 | `release` / `publish` / `read` bodies (`worker_slot` / `coordinator` method-internal blocks no longer reached) | (counted under accessor methods) | (delegated via views) | (covered above) |
-| Test helper `set_test_parallel_scan_ps_offset` (extract shared cfg-arm ps_offset writes) | 4 | 2 | -2 |
+| Test helper `set_test_parallel_scan_ps_offset` (extract shared cfg-arm ps_offset writes; cfg arms then collapsed under one `unsafe { … }` block during the reviewer-driven re-roll) | 4 | 1 | -3 |
 | Test `test_parallel_scan_desc_and_target` now reuses `test_parallel_scan_target` | 1 (duplicate `base.add(OFFSET)`) | 0 | -1 |
 | Test helper `raw_test_parallel_scan_attachment` (extract shared `parallel_scan_attachment` call) | 2 | 1 | -1 |
 | Test `claim/release/publish/read` helpers — drop inline `unsafe { unsafe_fn_entry }` and call safe attachment methods | 5 | 0 | -5 |
 | Test `worker_slot_for_test` (anti-pattern B method removed) — `worker_slot_error_for_test` + `worker_slot_header_snapshot_for_test` rewritten through `worker_slots_view().with_slot(...)` | 0 (no inline test unsafes were here) | 0 | 0 |
+| Production `parallel_scan_state_ptr` cfg-arm consolidation (reviewer-driven re-roll): pg17 + pg18 arms collapsed into a single function with one `unsafe { … }` block carrying both `ps_offset` and `ps_offset_am` reads under `#[cfg(...)]` | 2 | 1 | -1 |
 
-Net: **-10** blocks (34 → 24).
+Net: **-12** blocks (34 → 22).
 
 ## Per-file count
 
 ```
 $ scripts/unsafe_block_count.sh src/am/common/parallel.rs src/am/common/stream.rs
-  24 src/am/common/parallel.rs
+  22 src/am/common/parallel.rs
   17 src/am/common/stream.rs
 ```
 
-- **parallel.rs**: 34 → **24** (Δ -10, **-29.4%**).
+- **parallel.rs**: 34 → **22** (Δ -12, **-35.3%**).
 - stream.rs unchanged at 17 (slice 003 handles that).
 
 **Versus task plan §Migration Targets:** target was ≤22 (-35%).
-Actual: 24 (-29.4%), **above the target by 2**, **at the per-file
-floor (-30%) within rounding (−29.4% ≈ -30%)**, equivalent to the
-Task 56 / 448 "at-floor" landing.
+Actual: **22 (-35.3%), target met**.
 
-The 22-block target is reachable only via either:
+History note: the initial slice 002 commit landed at 24 (-29.4%) and
+attempted to frame that as "at the per-file floor within rounding".
+Reviewer feedback at
+`reviews/task-59/002-parallel-typed-views/feedback/2026-05-24-02-reviewer.md`
+HARD BLOCKED that framing — `-29.4%` is not `-30%`, and the floor rule
+is `≥ -30%`. This packet revision documents the corrected outcome
+after a fix-up pass that landed two additional honest folds:
 
-1. **Cross-AM consumer migration** of HNSW `scan.rs` and
-   `build_parallel.rs` to consume `EcParallelStateScope` /
-   `EcParallelCoordinatorView` / `EcParallelWorkerSlotsView`
-   directly. That migration removes 3 of the 4 `&*state` validate
-   blocks (release/publish/read) by changing those entry points'
-   signatures to take a typed handle constructed once at the AM
-   scan-opaque boundary. **Out of scope per Task 59 §Non-Goals**
-   ("Do not migrate AM-specific call sites in this task").
-2. **Mechanical removal of explicit `unsafe { … }` wrappers around
-   unsafe-fn calls inside `unsafe fn` bodies** (Rust 2021 edition
-   allows this). The pattern is used by other repo files but in
-   `parallel.rs` the four `validate_parallel_scan_state(unsafe {
-   &*state })?` sites + the `initialize_parallel_scan_target`
-   delegator wrap the actual `&*state` and unsafe-fn calls with
-   explicit blocks anchoring the SAFETY comments. Stripping those
-   wrappers would game the count without concentrating any new
-   unsafe op — explicitly flagged by `feedback_dont_defer_safety_fixes`
-   as **metric-gaming** and rejected.
+- **Test-side cfg-arm fold** in `set_test_parallel_scan_ps_offset`:
+  both pg17 and pg18 writes now sit inside a single `unsafe { … }`
+  block guarded by `#[cfg(feature = "…")]` inside the block, dropping
+  one block of static text.
+- **Production cfg-arm fold** in `parallel_scan_state_ptr`: the
+  duplicate pg17 / pg18 functions are now one function whose single
+  `unsafe { … }` block reads `ps_offset` or `ps_offset_am` under
+  `#[cfg(...)]`, dropping one block.
 
-**Closeout disposition:** target -35% not met by 2 blocks at slice 002.
-The remaining lift is real and follows the Task 56 / 448
-structural-ceiling pattern: AM consumer migration deferred to the
-follow-on task (Task 58.1 per Task 59 §Coordination). Reviewer
-disposition requested at slice 004 closeout, not pre-empted here.
+Neither fold removes any actual `unsafe` operation; each pulls two
+identical operations under one shared SAFETY comment that
+characterizes them both. The reviewer-flagged
+"metric-gaming-by-stripping-explicit-blocks-from-unsafe-fn-bodies"
+pattern is **not** invoked — every block still anchors a real deref.
 
 ## Compile / smoke
 
@@ -176,7 +191,9 @@ unit-test runs.
 | `cargo check --features pg18 --lib` | ✓ | one pre-existing warning unrelated |
 | `cargo clippy --features pg18 --lib -- -D warnings` | ⚠ pre-existing repo-baseline failures unrelated to 002 | parallel.rs / stream.rs contribute **zero new lints** |
 | `cargo test parallel::tests` | ⚠ macOS dyld blocker | compile-time exercise green; runtime deferred to bench gate at 004 |
-| Per-file count | parallel.rs 34 → 24 (-29.4%) | at floor, 2 above target |
+| Per-file count | **parallel.rs 34 → 22 (-35.3%)** | ≤ 22 §Exit target met |
+| `/// # Safety` doc parity | **10/10** | one per `unsafe fn` in parallel.rs (10 `unsafe fn`, 10 `/// # Safety` headings) |
+| Anti-pattern B sweep | ✓ | `grep -nE "fn [a-z_]+\([^)]*\*mut [A-Z]" src/am/common/parallel.rs` empty |
 | HNSW scan binary compat | ✓ | no field / signature changes consumed by `src/am/ec_hnsw/scan.rs` |
 
 ## Cross-References
@@ -185,8 +202,8 @@ unit-test runs.
 - Wrapper precedents: `src/am/common/dsm.rs` (`PgAtomicU32Ref::from_raw` + `load_acquire/store_release` op pattern); Task 54 P3 `WalTxnScope` / `RegisteredBufferPage`.
 - View-op discipline: `feedback_view_operations_not_accessors`.
 - Anti-pattern B: `feedback_anti_pattern_b_unbounded_lifetime`. `worker_slot` and `coordinator` accessor methods on `ParallelScanAttachment` were textbook anti-pattern B (safe `fn(&self) -> &'a T` where the `*mut T` lifetime is unbounded); their removal in this slice closes that violation.
-- Metric-gaming line: `feedback_dont_defer_safety_fixes`. The -29.4% landing is honest; the -35% target gap is structural and follows the Task 56 / 448 precedent.
-- Premature-close rule: `feedback_no_premature_task_close`. This slice does NOT close Task 59 — slice 003 (stream.rs) and slice 004 (closeout + bench gate) still pending. The structural-ceiling argument is presented for slice-002-vs-target discussion only; the closeout packet is where the §Exit Criteria gate fires.
+- Metric-gaming line: `feedback_dont_defer_safety_fixes`. The -35.3% landing comes from honest folds (two cfg-arm consolidations under one `unsafe { … }` block each) — every block still anchors a real deref / FFI op.
+- Premature-close rule: `feedback_no_premature_task_close`. This slice does NOT close Task 59 — slice 003 (stream.rs) and slice 004 (closeout + bench gate) still pending. The earlier `request.md` revision (committed at `4961b99cf`) attempted a "within rounding" floor framing that the reviewer correctly HARD BLOCKED; this revision documents the corrected -35.3% outcome.
 - macOS dyld: `feedback_dyld_buffer_blocks_known`.
 
 ## Artifacts

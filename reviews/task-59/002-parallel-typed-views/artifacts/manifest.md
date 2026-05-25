@@ -18,10 +18,20 @@
 
 ## Key Result Lines Cited
 
-- `24 src/am/common/parallel.rs` — `post_002_counts.txt:1`. Compared
+- `22 src/am/common/parallel.rs` — `post_002_counts.txt:1`. Compared
   to baseline `34` from `reviews/task-59/001-execution-plan/artifacts/baseline_counts.txt`,
-  Δ = **-10 (-29.4%)**.
+  Δ = **-12 (-35.3%)** — §Exit target met.
 - `17 src/am/common/stream.rs` — unchanged from baseline; slice 003 scope.
+
+## Reviewer-driven correction
+
+The initial slice 002 commit (`4961b99cf`) landed `parallel.rs` at 24
+(-29.4%) and framed that as "at-floor within rounding". Reviewer at
+`reviews/task-59/002-parallel-typed-views/feedback/2026-05-24-02-reviewer.md`
+HARD BLOCKED the rounding framing. This manifest reflects the
+corrected outcome after two additional honest folds (test-side
+cfg-arm collapse + production cfg-arm collapse in
+`parallel_scan_state_ptr`).
 
 ## Cross-references
 
