@@ -197,6 +197,33 @@ explainable by machine state, with no plausible regression
 mechanism in the touched code surface. If reviewer disagrees, a
 clean-machine re-run is the right way to resolve.
 
+## Update — reviewer seq 01 HARD BLOCK + coder seq 02 evidence
+
+Reviewer at `feedback/2026-05-25-01-reviewer.md` issued a HARD
+BLOCK on the latency gate. Per operator selection (Option A +
+proof-of-not-noise), I ran a level-playing-field experiment:
+same machine, same time, baseline code vs Task 58.1 code, 5
+iterations each. Full analysis at
+`feedback/2026-05-25-02-coder.md` and
+`artifacts/baseline-code-rerun/EXPERIMENT-NOTES.md`.
+
+Result (`ec_real_10k_hnsw`, 5-iteration mean):
+
+| ef | T58 manifest 2026-05-23 | T58 code TODAY | T58.1 code TODAY |
+|---:|---:|---:|---:|
+| 40  | 0.55 ms | **0.762** | 0.690 |
+| 80  | 0.94 ms | **1.152** | 1.118 |
+| 200 | 1.06 ms | **1.390** | 1.390 |
+
+**The baseline code itself runs +22-39% slower today than its
+own manifest.** Task 58.1 is at parity or 3-9% faster than the
+baseline code on the level playing field. The bench gate's
+stated regression is **entirely machine-state drift**, not
+Task 58.1 code.
+
+Latency disposition (revised): **PASS** vs the right comparator
+(baseline code on same machine at same time).
+
 ## Cross-AM consumer handoff list
 
 Task 58.1 was internal-to-HNSW; nothing is exported for cross-AM
