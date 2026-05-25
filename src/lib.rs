@@ -17031,6 +17031,7 @@ fn ec_spire_index_leaf_base_assignment_snapshot(
     (
         name!(active_epoch, i64),
         name!(leaf_pid, i64),
+        name!(parent_pid, i64),
         name!(object_version, i64),
         name!(row_index, i64),
         name!(assignment_flags, i16),
@@ -17070,6 +17071,7 @@ fn ec_spire_index_leaf_base_assignment_snapshot(
         (
             i64::try_from(row.active_epoch).expect("active epoch should fit in i64"),
             i64::try_from(row.leaf_pid).expect("leaf pid should fit in i64"),
+            i64::try_from(row.parent_pid).expect("parent pid should fit in i64"),
             i64::try_from(row.object_version).expect("object version should fit in i64"),
             i64::from(row.row_index),
             i16::try_from(row.assignment_flags).expect("assignment flags should fit in i16"),
@@ -17083,6 +17085,161 @@ fn ec_spire_index_leaf_base_assignment_snapshot(
             row.encoded_payload,
         )
     }))
+}
+
+#[pg_extern(strict)]
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
+fn ec_spire_materialize_static_remote_leaf_assignments(
+    index_oid: pg_sys::Oid,
+    leaf_pids: Vec<i64>,
+    parent_pids: Vec<i64>,
+    object_versions: Vec<i64>,
+    row_indices: Vec<i64>,
+    assignment_flags: Vec<i32>,
+    vec_id_hexes: Vec<String>,
+    heap_blocks: Vec<i64>,
+    heap_offsets: Vec<i32>,
+    payload_formats: Vec<i32>,
+    gammas: Vec<f32>,
+    encoded_payload_hexes: Vec<String>,
+) -> TableIterator<
+    'static,
+    (
+        name!(active_epoch, i64),
+        name!(leaf_count, i64),
+        name!(assignment_count, i64),
+        name!(next_pid, i64),
+        name!(next_local_vec_seq, i64),
+        name!(status, &'static str),
+    ),
+> {
+    if !relation_oid_exists(index_oid) {
+        pgrx::error!(
+            "ec_spire_materialize_static_remote_leaf_assignments index_oid does not exist"
+        );
+    }
+    let leaf_pids = leaf_pids
+        .into_iter()
+        .map(|value| {
+            u64::try_from(value).unwrap_or_else(|_| {
+                pgrx::error!(
+                    "ec_spire_materialize_static_remote_leaf_assignments leaf_pid {value} is negative"
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    let parent_pids = parent_pids
+        .into_iter()
+        .map(|value| {
+            u64::try_from(value).unwrap_or_else(|_| {
+                pgrx::error!(
+                    "ec_spire_materialize_static_remote_leaf_assignments parent_pid {value} is negative"
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    let object_versions = object_versions
+        .into_iter()
+        .map(|value| {
+            u64::try_from(value).unwrap_or_else(|_| {
+                pgrx::error!(
+                    "ec_spire_materialize_static_remote_leaf_assignments object_version {value} is negative"
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    let row_indices = row_indices
+        .into_iter()
+        .map(|value| {
+            u32::try_from(value).unwrap_or_else(|_| {
+                pgrx::error!(
+                    "ec_spire_materialize_static_remote_leaf_assignments row_index {value} is outside u32"
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    let assignment_flags = assignment_flags
+        .into_iter()
+        .map(|value| {
+            u16::try_from(value).unwrap_or_else(|_| {
+                pgrx::error!(
+                    "ec_spire_materialize_static_remote_leaf_assignments assignment_flags {value} is outside u16"
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    let vec_ids = vec_id_hexes
+        .iter()
+        .map(|value| {
+            hex::decode(value).unwrap_or_else(|_| {
+                pgrx::error!(
+                    "ec_spire_materialize_static_remote_leaf_assignments vec_id hex is invalid"
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    let heap_blocks = heap_blocks
+        .into_iter()
+        .map(|value| {
+            u32::try_from(value).unwrap_or_else(|_| {
+                pgrx::error!(
+                    "ec_spire_materialize_static_remote_leaf_assignments heap_block {value} is outside u32"
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    let heap_offsets = heap_offsets
+        .into_iter()
+        .map(|value| {
+            u16::try_from(value).unwrap_or_else(|_| {
+                pgrx::error!(
+                    "ec_spire_materialize_static_remote_leaf_assignments heap_offset {value} is outside u16"
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    let payload_formats = payload_formats
+        .into_iter()
+        .map(|value| {
+            u8::try_from(value).unwrap_or_else(|_| {
+                pgrx::error!(
+                    "ec_spire_materialize_static_remote_leaf_assignments payload_format {value} is outside u8"
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    let encoded_payloads = encoded_payload_hexes
+        .iter()
+        .map(|value| {
+            hex::decode(value).unwrap_or_else(|_| {
+                pgrx::error!(
+                    "ec_spire_materialize_static_remote_leaf_assignments encoded_payload hex is invalid"
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    let row = am::spire_materialize_static_remote_leaf_assignments(
+        index_oid,
+        leaf_pids,
+        parent_pids,
+        object_versions,
+        row_indices,
+        assignment_flags,
+        vec_ids,
+        heap_blocks,
+        heap_offsets,
+        payload_formats,
+        gammas,
+        encoded_payloads,
+    );
+    TableIterator::once((
+        i64::try_from(row.active_epoch).expect("active epoch should fit in i64"),
+        i64::try_from(row.leaf_count).expect("leaf count should fit in i64"),
+        i64::try_from(row.assignment_count).expect("assignment count should fit in i64"),
+        i64::try_from(row.next_pid).expect("next pid should fit in i64"),
+        i64::try_from(row.next_local_vec_seq).expect("next local vec seq should fit in i64"),
+        row.status,
+    ))
 }
 
 #[pg_extern(stable, strict)]

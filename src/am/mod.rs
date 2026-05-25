@@ -153,6 +153,7 @@ pub(crate) use self::ec_spire::{
     index_top_graph_snapshot as spire_index_top_graph_snapshot,
     index_writer_identity_snapshot as spire_index_writer_identity_snapshot,
     live_index_relation as spire_live_index_relation,
+    materialize_static_remote_leaf_assignments as spire_materialize_static_remote_leaf_assignments,
     publish_static_remote_placement_nodes as spire_publish_static_remote_placement_nodes,
     reap_orphaned_remote_prepared_xacts as spire_reap_orphaned_remote_prepared_xacts,
     reap_orphaned_remote_prepared_xacts_all as spire_reap_orphaned_remote_prepared_xacts_all,

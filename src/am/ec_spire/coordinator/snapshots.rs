@@ -2436,6 +2436,7 @@ fn collect_leaf_base_assignment_snapshot_rows_for_pid(
         rows.push(SpireIndexLeafBaseAssignmentSnapshotRow {
             active_epoch,
             leaf_pid,
+            parent_pid: header.parent_pid,
             object_version: lookup.manifest_entry.object_version,
             row_index,
             assignment_flags: assignment.flags,

@@ -14,6 +14,8 @@ PLAN_FILE="${3:?distributed-placement-plan.json path required}"
 mkdir -p "$ARTIFACT_DIR"
 
 COORD_HOST=$(jq -r '.coordinator.private_ip' "$TOPOLOGY")
+PLAN_PREFIX=$(jq -r '.prefix' "$PLAN_FILE")
+COORD_TABLE="${PLAN_PREFIX}_corpus"
 IDENTITY_DIR="${ARTIFACT_DIR}/remote-identities"
 LEAF_VERIFY_DIR="${ARTIFACT_DIR}/remote-leaf-materialization"
 REGISTRATION_SQL="${ARTIFACT_DIR}/register-remotes-rendered.sql"
@@ -80,6 +82,8 @@ ecaz dev sql \
 jq -c '.remotes[]' "$PLAN_FILE" | while read -r remote_plan; do
   NODE_ID=$(jq -r '.node_id' <<< "$remote_plan")
   REMOTE_INDEX=$(jq -r '.remote_index_regclass' <<< "$remote_plan")
+  REMOTE_PREFIX=$(jq -r '.remote_prefix' <<< "$remote_plan")
+  REMOTE_TABLE="${REMOTE_PREFIX}_corpus"
   REMOTE_HOST=$(jq -r --argjson node_id "$NODE_ID" \
     '.remotes[] | select(.node_id == $node_id) | .private_ip' "$TOPOLOGY")
 
@@ -89,6 +93,10 @@ jq -c '.remotes[]' "$PLAN_FILE" | while read -r remote_plan; do
   fi
   if [[ -z "$REMOTE_INDEX" || "$REMOTE_INDEX" == "null" ]]; then
     echo "placement plan does not contain remote_index_regclass for node_id=${NODE_ID}" >&2
+    exit 2
+  fi
+  if [[ -z "$REMOTE_PREFIX" || "$REMOTE_PREFIX" == "null" ]]; then
+    echo "placement plan does not contain remote_prefix for node_id=${NODE_ID}" >&2
     exit 2
   fi
 
@@ -106,19 +114,29 @@ jq -c '.remotes[]' "$PLAN_FILE" | while read -r remote_plan; do
     2> "$LEAF_VERIFY_DIR/node-${NODE_ID}-coordinator-required-leaves.stderr.log"
 
   ecaz dev sql \
+    --host "$COORD_HOST" --user ecaz_coord --database postgres \
+    --set "coord_index=$COORD_INDEX" \
+    --set "coord_table=$COORD_TABLE" \
+    --set "node_id=$NODE_ID" \
+    --file scripts/spire-aws/export-coordinator-leaf-base-assignments.sql \
+    > "$COORD_BASE_ASSIGNMENTS" \
+    2> "$LEAF_VERIFY_DIR/node-${NODE_ID}-coordinator-base-assignments.stderr.log"
+
+  ecaz dev sql \
+    --host "$REMOTE_HOST" --user ecaz_coord --database postgres \
+    --set "remote_index=$REMOTE_INDEX" \
+    --set "remote_table=$REMOTE_TABLE" \
+    --set "assignment_file=$COORD_BASE_ASSIGNMENTS" \
+    --file scripts/spire-aws/materialize-remote-leaf-base-assignments.sql \
+    > "$LEAF_VERIFY_DIR/node-${NODE_ID}-remote-materialize.log" \
+    2> "$LEAF_VERIFY_DIR/node-${NODE_ID}-remote-materialize.stderr.log"
+
+  ecaz dev sql \
     --host "$REMOTE_HOST" --user ecaz_coord --database postgres \
     --set "remote_index=$REMOTE_INDEX" \
     --sql "SELECT leaf_pid::text || E'\t' || effective_assignment_count::text FROM ec_spire_index_leaf_snapshot(:'remote_index'::regclass::oid) WHERE placement_state = 'available' ORDER BY leaf_pid" \
     > "$OBSERVED_PIDS" \
     2> "$LEAF_VERIFY_DIR/node-${NODE_ID}-remote-observed-leaves.stderr.log"
-
-  ecaz dev sql \
-    --host "$COORD_HOST" --user ecaz_coord --database postgres \
-    --set "coord_index=$COORD_INDEX" \
-    --set "node_id=$NODE_ID" \
-    --file scripts/spire-aws/export-coordinator-leaf-base-assignments.sql \
-    > "$COORD_BASE_ASSIGNMENTS" \
-    2> "$LEAF_VERIFY_DIR/node-${NODE_ID}-coordinator-base-assignments.stderr.log"
 
   sort "$REQUIRED_PIDS" -o "$REQUIRED_PIDS"
   sort "$OBSERVED_PIDS" -o "$OBSERVED_PIDS"

@@ -217,6 +217,7 @@ include!("coordinator/remote_candidates/mod.rs");
 include!("coordinator/diagnostics.rs");
 include!("coordinator/hierarchy_shape.rs");
 include!("coordinator/snapshots.rs");
+include!("coordinator/materialization.rs");
 include!("coordinator/maintenance.rs");
 include!("coordinator/hierarchy_snapshots.rs");
 include!("coordinator/debug.rs");

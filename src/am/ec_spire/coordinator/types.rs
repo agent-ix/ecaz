@@ -249,6 +249,7 @@ pub(crate) struct SpireRemoteSearchLocalHeapCandidateSummaryRow {
 pub(crate) struct SpireIndexLeafBaseAssignmentSnapshotRow {
     pub(crate) active_epoch: u64,
     pub(crate) leaf_pid: u64,
+    pub(crate) parent_pid: u64,
     pub(crate) object_version: u64,
     pub(crate) row_index: u32,
     pub(crate) assignment_flags: u16,
@@ -259,6 +260,16 @@ pub(crate) struct SpireIndexLeafBaseAssignmentSnapshotRow {
     pub(crate) payload_format: u8,
     pub(crate) gamma: f32,
     pub(crate) encoded_payload: Vec<u8>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SpireRemoteLeafMaterializationSummaryRow {
+    pub(crate) active_epoch: u64,
+    pub(crate) leaf_count: u64,
+    pub(crate) assignment_count: u64,
+    pub(crate) next_pid: u64,
+    pub(crate) next_local_vec_seq: u64,
+    pub(crate) status: &'static str,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

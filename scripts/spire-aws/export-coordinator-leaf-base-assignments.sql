@@ -20,6 +20,7 @@ selected_assignments AS (
 )
 SELECT active_epoch,
        leaf_pid,
+       parent_pid,
        object_version,
        row_index,
        assignment_flags,
@@ -28,8 +29,11 @@ SELECT active_epoch,
        heap_block,
        heap_offset,
        heap_ctid,
+       heap_row.id AS row_id,
        payload_format,
        gamma,
        encode(encoded_payload, 'hex') AS encoded_payload_hex
   FROM selected_assignments
+  JOIN :coord_table AS heap_row
+    ON heap_row.ctid = selected_assignments.heap_ctid::tid
  ORDER BY leaf_pid, row_index;
