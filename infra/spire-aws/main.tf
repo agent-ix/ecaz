@@ -205,9 +205,13 @@ resource "random_password" "remote" {
   special = false
 }
 
+resource "random_id" "run" {
+  byte_length = 4
+}
+
 resource "aws_secretsmanager_secret" "remote" {
-  count = var.remote_count
-  name  = "ecaz-spire-aws-remote-${count.index + 1}"
+  count       = var.remote_count
+  name_prefix = "ecaz-spire-aws-${random_id.run.hex}-remote-${count.index + 1}-"
 }
 
 resource "aws_secretsmanager_secret_version" "remote" {
