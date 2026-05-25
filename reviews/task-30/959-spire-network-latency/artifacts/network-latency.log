@@ -1,0 +1,31 @@
+SPIRE AWS Tier-1 inter-node network latency probe
+==================================================
+Topology   : 1 coord (r8g.large) + 1 remote (r8g.large), same subnet, us-west-2a
+Coord      : i-091b9082bdb774123 @ 10.42.1.162
+Remote     : i-0b9367e808370713d @ 10.42.1.58
+Direction  : coord -> remote (10.42.1.58:5432)
+Probe      : scripts captured via SSM AWS-RunShellScript
+Run        : 2026-05-25 (UTC), SSM command 2c3be242-c6cb-4680-85c9-09e1f2c61cf8
+
+ICMP ping  : BLOCKED by security group (100% loss) — SG only permits tcp/5432
+             between nodes. RTT measured via TCP connect instead.
+
+=== TCP connect RTT x100 (pure network, SYN->SYN/ACK->connect) ===
+tcp_connect_ms n=100 min=0.043 p50=0.065 p95=0.108 p99=0.146 max=0.146 mean=0.068
+
+=== libpq connect + SELECT 1 x100 (fresh connection each iteration) ===
+psql=/usr/bin/psql  (-U ecaz_coord -d postgres)
+libpq_select1_ms n=100 errs=0 min=9.230 p50=10.212 p95=11.436 p99=145.029 max=145.029 mean=11.595
+
+Interpretation
+--------------
+- Raw inter-node network RTT same-AZ on ENA is ~65 microseconds (p50),
+  sub-150us worst case. Network is NOT a bottleneck for dispatch.
+- libpq SELECT 1 is ~10 ms p50, dominated by per-connection backend
+  fork + auth + teardown (fresh psql process each iteration), NOT the
+  ~0.065 ms network hop. A pooled/persistent connection would cost
+  ~network + query (sub-millisecond). Relevant only if SPIRE opens a
+  fresh remote connection per fanout; if it pools, the 10 ms does not
+  apply per query.
+- One 145 ms libpq outlier (p99=max) — single cold connection, not
+  representative.
