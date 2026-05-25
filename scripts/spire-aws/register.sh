@@ -15,9 +15,10 @@ mkdir -p "$ARTIFACT_DIR"
 
 COORD_HOST=$(jq -r '.coordinator.private_ip' "$TOPOLOGY")
 IDENTITY_DIR="${ARTIFACT_DIR}/remote-identities"
+LEAF_VERIFY_DIR="${ARTIFACT_DIR}/remote-leaf-materialization"
 REGISTRATION_SQL="${ARTIFACT_DIR}/register-remotes-rendered.sql"
 PLACEMENT_REMOTES_JSON="${ARTIFACT_DIR}/placement-remotes.json"
-mkdir -p "$IDENTITY_DIR"
+mkdir -p "$IDENTITY_DIR" "$LEAF_VERIFY_DIR"
 
 if [[ ! -s "$PLAN_FILE" ]]; then
   echo "distributed placement plan not found or empty: $PLAN_FILE" >&2
@@ -75,6 +76,50 @@ ecaz dev sql \
   --set "coord_index=$COORD_INDEX" \
   --set "remotes_json=$REMOTES_JSON" \
   --log-output "$ARTIFACT_DIR/publish-remote-placements.log"
+
+jq -c '.remotes[]' "$PLAN_FILE" | while read -r remote_plan; do
+  NODE_ID=$(jq -r '.node_id' <<< "$remote_plan")
+  REMOTE_INDEX=$(jq -r '.remote_index_regclass' <<< "$remote_plan")
+  REMOTE_HOST=$(jq -r --argjson node_id "$NODE_ID" \
+    '.remotes[] | select(.node_id == $node_id) | .private_ip' "$TOPOLOGY")
+
+  if [[ -z "$REMOTE_HOST" || "$REMOTE_HOST" == "null" ]]; then
+    echo "topology does not contain remote node_id=${NODE_ID}" >&2
+    exit 2
+  fi
+  if [[ -z "$REMOTE_INDEX" || "$REMOTE_INDEX" == "null" ]]; then
+    echo "placement plan does not contain remote_index_regclass for node_id=${NODE_ID}" >&2
+    exit 2
+  fi
+
+  REQUIRED_PIDS="$LEAF_VERIFY_DIR/node-${NODE_ID}-coordinator-required-leaves.txt"
+  OBSERVED_PIDS="$LEAF_VERIFY_DIR/node-${NODE_ID}-remote-observed-leaves.txt"
+  MISSING_PIDS="$LEAF_VERIFY_DIR/node-${NODE_ID}-missing-or-mismatched-leaves.txt"
+
+  ecaz dev sql \
+    --host "$COORD_HOST" --user ecaz_coord --database postgres \
+    --set "coord_index=$COORD_INDEX" \
+    --set "node_id=$NODE_ID" \
+    --sql "SELECT leaf_pid::text || E'\t' || effective_assignment_count::text FROM ec_spire_index_leaf_snapshot(:'coord_index'::regclass::oid) WHERE placement_state = 'available' AND node_id = :node_id::int ORDER BY leaf_pid" \
+    > "$REQUIRED_PIDS" \
+    2> "$LEAF_VERIFY_DIR/node-${NODE_ID}-coordinator-required-leaves.stderr.log"
+
+  ecaz dev sql \
+    --host "$REMOTE_HOST" --user ecaz_coord --database postgres \
+    --set "remote_index=$REMOTE_INDEX" \
+    --sql "SELECT leaf_pid::text || E'\t' || effective_assignment_count::text FROM ec_spire_index_leaf_snapshot(:'remote_index'::regclass::oid) WHERE placement_state = 'available' ORDER BY leaf_pid" \
+    > "$OBSERVED_PIDS" \
+    2> "$LEAF_VERIFY_DIR/node-${NODE_ID}-remote-observed-leaves.stderr.log"
+
+  sort "$REQUIRED_PIDS" -o "$REQUIRED_PIDS"
+  sort "$OBSERVED_PIDS" -o "$OBSERVED_PIDS"
+  comm -23 "$REQUIRED_PIDS" "$OBSERVED_PIDS" > "$MISSING_PIDS"
+  if [[ -s "$MISSING_PIDS" ]]; then
+    echo "remote node_id=${NODE_ID} index ${REMOTE_INDEX} is missing coordinator-assigned leaf PID/count entries; leaf-owned materialization is required before distributed SPIRE reads are valid" >&2
+    echo "missing or mismatched leaf list: $MISSING_PIDS" >&2
+    exit 2
+  fi
+done
 
 ecaz dev sql \
   --host "$COORD_HOST" --user ecaz_coord --database postgres \
