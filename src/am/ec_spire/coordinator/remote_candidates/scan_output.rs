@@ -184,11 +184,15 @@ pub(crate) fn remote_search_production_scan_handoff_summary_row(
             root_control.active_epoch,
             &dispatch_rows,
         );
+        let parsed_consistency_mode = parse_remote_search_consistency_mode(consistency_mode)?;
+        if parsed_consistency_mode == meta::SpireConsistencyMode::Degraded {
+            executor.apply_blocked_before_dispatch_degraded_skips();
+        }
         executor.mark_planned_dispatches_candidate_receive_ready();
         executor.run_compact_candidate_receive(&query, top_k, consistency_mode)?;
         let summary = executor.summary(
             "ec_spire.remote_search_consistency_mode",
-            consistency_mode_name(parse_remote_search_consistency_mode(consistency_mode)?),
+            consistency_mode_name(parsed_consistency_mode),
         )?;
         let should_merge = matches!(
             summary.status,
@@ -609,6 +613,10 @@ fn remote_search_production_scan_heap_resolution_result_stream_impl(
         root_control.active_epoch,
         &dispatch_rows,
     );
+    let parsed_consistency_mode = parse_remote_search_consistency_mode(consistency_mode)?;
+    if parsed_consistency_mode == meta::SpireConsistencyMode::Degraded {
+        executor.apply_blocked_before_dispatch_degraded_skips();
+    }
     executor.mark_planned_dispatches_candidate_receive_ready();
     executor.run_candidate_and_heap_receive_reusing_sessions(
         &query,
@@ -619,7 +627,7 @@ fn remote_search_production_scan_heap_resolution_result_stream_impl(
     )?;
     let executor_summary = executor.summary(
         "ec_spire.remote_search_consistency_mode",
-        consistency_mode_name(parse_remote_search_consistency_mode(consistency_mode)?),
+        consistency_mode_name(parsed_consistency_mode),
     );
     let executor_summary = executor_summary?;
     let (
@@ -681,7 +689,9 @@ fn remote_search_production_scan_heap_resolution_result_stream_impl(
     } else if returned_candidate_count > 0 {
         (
             SPIRE_REMOTE_NONE,
-            if execution_summary.skipped_pid_count > 0 {
+            if execution_summary.skipped_pid_count > 0
+                || executor_summary.degraded_skipped_dispatch_count > 0
+            {
                 SPIRE_REMOTE_STATUS_DEGRADED_READY
             } else {
                 SPIRE_REMOTE_STATUS_READY

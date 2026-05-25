@@ -35,6 +35,14 @@ pub(crate) fn publish_static_remote_placement_nodes(
     index_oid: pg_sys::Oid,
     rewrites: &[(u64, u32)],
 ) -> (u64, u64, u64) {
+    publish_static_remote_placement_nodes_with_mode(index_oid, rewrites, "strict")
+}
+
+pub(crate) fn publish_static_remote_placement_nodes_with_mode(
+    index_oid: pg_sys::Oid,
+    rewrites: &[(u64, u32)],
+    consistency_mode: &str,
+) -> (u64, u64, u64) {
     let lockmode = pg_sys::RowExclusiveLock as pg_sys::LOCKMODE;
     let index_relation = IndexRelationGuard::open(
         index_oid,
@@ -44,9 +52,11 @@ pub(crate) fn publish_static_remote_placement_nodes(
     let result = unsafe {
         (|| -> Result<(u64, u64, u64), String> {
             validate_static_remote_placement_rewrites(rewrites)?;
+            let consistency_mode = parse_static_remote_consistency_mode(consistency_mode)?;
             let root_control = page::read_root_control_page(index_relation.as_ptr());
-            let (local_store_config, epoch_manifest, object_manifest, mut placement_directory) =
+            let (local_store_config, mut epoch_manifest, object_manifest, mut placement_directory) =
                 spire_manifest_bundle_for_placement_publish(index_relation.as_ptr(), root_control)?;
+            epoch_manifest.consistency_mode = consistency_mode;
             let rewritten_count =
                 apply_static_remote_placement_rewrites(&mut placement_directory, rewrites)?;
 
@@ -84,6 +94,16 @@ pub(crate) fn publish_static_remote_placement_nodes(
         })()
     };
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
+}
+
+fn parse_static_remote_consistency_mode(input: &str) -> Result<meta::SpireConsistencyMode, String> {
+    match input {
+        "strict" => Ok(meta::SpireConsistencyMode::Strict),
+        "degraded" => Ok(meta::SpireConsistencyMode::Degraded),
+        other => Err(format!(
+            "ec_spire static remote placement publish consistency_mode must be 'strict' or 'degraded', got '{other}'"
+        )),
+    }
 }
 
 fn validate_static_remote_placement_rewrites(rewrites: &[(u64, u32)]) -> Result<(), String> {

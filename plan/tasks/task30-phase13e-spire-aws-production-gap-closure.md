@@ -29,17 +29,17 @@ Acceptance:
 
 ## 13e.2 Distributed CustomScan Read Path
 
-- [ ] Use `EcSpireDistributedScan` as the production AWS read path.
-- [ ] Select local and remote PIDs from the coordinator placement directory.
-- [ ] Fan out to remote nodes, receive candidate plus heap tuple payload rows, merge globally by score, and return visible SQL tuples.
-- [ ] Preserve strict/degraded semantics and expose skipped/failure counters.
+- [x] Use `EcSpireDistributedScan` as the production AWS read path.
+- [x] Select local and remote PIDs from the coordinator placement directory.
+- [x] Fan out to remote nodes, receive candidate plus heap tuple payload rows, merge globally by score, and return visible SQL tuples.
+- [x] Preserve strict/degraded semantics and expose skipped/failure counters.
 
 Acceptance:
 
-- [ ] `EXPLAIN` contains `Custom Scan (EcSpireDistributedScan)`.
-- [ ] Top-k results include remote-owned rows and match exact baseline recall thresholds.
-- [ ] Strict remote failure returns no partial rows.
-- [ ] Degraded remote failure returns partial rows with skip diagnostics.
+- [x] `EXPLAIN` contains `Custom Scan (EcSpireDistributedScan)`.
+- [x] Top-k results include remote-owned rows and match exact baseline recall thresholds.
+- [x] Strict remote failure returns no partial rows.
+- [x] Degraded remote failure returns partial rows with skip diagnostics.
 
 ## 13e.3 Parallel Fanout And Performance Evidence
 

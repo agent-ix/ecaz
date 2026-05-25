@@ -191,6 +191,86 @@ CREATE INDEX ec_spire_phase13e_coord_idx
     WITH (nlists = 3, nprobe = 3, storage_format = 'rabitq');
 SQL
 
+materialize_remote_shard_mode() {
+  local node_id="$1"
+  local -n remote_psql_ref="$2"
+  local consistency_mode="$3"
+  local assignment_file="$ASSIGNMENT_DIR/node-${node_id}-assignments.tsv"
+  local materialize_sql="$RUN_DIR/node-${node_id}-materialize-${consistency_mode}-rendered.sql"
+  local assignment_file_sql="${assignment_file//\'/\'\'}"
+  sed "s|__ECAZ_ASSIGNMENT_FILE__|$assignment_file_sql|g" \
+    "$ROOT_DIR/scripts/spire-aws/materialize-remote-leaf-base-assignments.sql" \
+    > "$materialize_sql"
+
+  "${remote_psql_ref[@]}" \
+    -v remote_index=ec_spire_phase13e_remote_idx \
+    -v remote_table=ec_spire_phase13e_remote_sql \
+    -v consistency_mode="$consistency_mode" \
+    -f "$materialize_sql" \
+    > "$LOG_DIR/node-${node_id}-materialize-${consistency_mode}.log"
+}
+
+write_remote_identity() {
+  local node_id="$1"
+  local -n remote_psql_ref="$2"
+
+  "${remote_psql_ref[@]}" -At -v remote_index=ec_spire_phase13e_remote_idx \
+    > "$IDENTITY_DIR/node-${node_id}-identity.json" <<'SQL'
+SELECT jsonb_build_object(
+  'remote_index_regclass', 'ec_spire_phase13e_remote_idx',
+  'last_served_epoch', a.active_epoch,
+  'min_retained_epoch', a.active_epoch,
+  'extension_version', e.extension_version,
+  'remote_index_identity_hex', e.profile_fingerprint,
+  'endpoint_status', e.status,
+  'tuple_transport_status', e.tuple_transport_status
+)::text
+FROM ec_spire_remote_search_endpoint_identity(:'remote_index'::regclass::oid) e
+CROSS JOIN ec_spire_index_active_snapshot_diagnostics(:'remote_index'::regclass::oid) a;
+SQL
+}
+
+publish_remote_placements_from_assignment_files() {
+  local consistency_mode="$1"
+  local pids=()
+  local node_ids=()
+  local -A seen_leaf_pids=()
+
+  for node_id in 2 3 4; do
+    local assignment_file="$ASSIGNMENT_DIR/node-${node_id}-assignments.tsv"
+    while IFS=$'\t' read -r _active_epoch leaf_pid _rest; do
+      if [[ -z "${seen_leaf_pids[$leaf_pid]+x}" ]]; then
+        seen_leaf_pids[$leaf_pid]=1
+        pids+=("$leaf_pid")
+        node_ids+=("$node_id")
+      fi
+    done < "$assignment_file"
+  done
+
+  if [[ "${#pids[@]}" -eq 0 ]]; then
+    echo "no leaf pids available for static remote placement publish" >&2
+    exit 3
+  fi
+
+  local pid_csv
+  local node_id_csv
+  pid_csv="$(IFS=,; echo "${pids[*]}")"
+  node_id_csv="$(IFS=,; echo "${node_ids[*]}")"
+
+  "${coord_psql[@]}" \
+    -v pid_csv="$pid_csv" \
+    -v node_id_csv="$node_id_csv" \
+    -v consistency_mode="$consistency_mode" <<'SQL' >/dev/null
+SELECT *
+  FROM ec_spire_publish_static_remote_placement_nodes_with_mode(
+       'ec_spire_phase13e_coord_idx'::regclass::oid,
+       string_to_array(:'pid_csv', ',')::bigint[],
+       string_to_array(:'node_id_csv', ',')::int[],
+       :'consistency_mode'
+  );
+SQL
+}
+
 create_remote_shard() {
   local node_id="$1"
   local -n remote_psql_ref="$2"
@@ -255,32 +335,8 @@ CREATE INDEX ec_spire_phase13e_remote_idx
     WITH (nlists = 3, nprobe = 3, storage_format = 'rabitq');
 SQL
 
-  local materialize_sql="$RUN_DIR/node-${node_id}-materialize-rendered.sql"
-  local assignment_file_sql="${assignment_file//\'/\'\'}"
-  sed "s|__ECAZ_ASSIGNMENT_FILE__|$assignment_file_sql|g" \
-    "$ROOT_DIR/scripts/spire-aws/materialize-remote-leaf-base-assignments.sql" \
-    > "$materialize_sql"
-
-  "${remote_psql_ref[@]}" \
-    -v remote_index=ec_spire_phase13e_remote_idx \
-    -v remote_table=ec_spire_phase13e_remote_sql \
-    -f "$materialize_sql" \
-    > "$LOG_DIR/node-${node_id}-materialize.log"
-
-  "${remote_psql_ref[@]}" -At -v remote_index=ec_spire_phase13e_remote_idx \
-    > "$IDENTITY_DIR/node-${node_id}-identity.json" <<'SQL'
-SELECT jsonb_build_object(
-  'remote_index_regclass', 'ec_spire_phase13e_remote_idx',
-  'last_served_epoch', a.active_epoch,
-  'min_retained_epoch', a.active_epoch,
-  'extension_version', e.extension_version,
-  'remote_index_identity_hex', e.profile_fingerprint,
-  'endpoint_status', e.status,
-  'tuple_transport_status', e.tuple_transport_status
-)::text
-FROM ec_spire_remote_search_endpoint_identity(:'remote_index'::regclass::oid) e
-CROSS JOIN ec_spire_index_active_snapshot_diagnostics(:'remote_index'::regclass::oid) a;
-SQL
+  materialize_remote_shard_mode "$node_id" "$2" strict
+  write_remote_identity "$node_id" "$2"
 }
 
 create_remote_shard 2 remote1_psql
@@ -296,6 +352,7 @@ extversion="$("${coord_psql[@]}" -At -c "SELECT extversion FROM pg_extension WHE
 
 register_remote() {
   local node_id="$1"
+  local descriptor_generation="${2:-1301}"
   local secret_name="spire/remote/phase13e/node${node_id}"
   local identity_file="$IDENTITY_DIR/node-${node_id}-identity.json"
   local identity_hex
@@ -306,6 +363,7 @@ register_remote() {
   retained_epoch="$(jq -r '.min_retained_epoch' "$identity_file")"
   "${coord_psql[@]}" \
     -v node_id="$node_id" \
+    -v descriptor_generation="$descriptor_generation" \
     -v secret_name="$secret_name" \
     -v identity_hex="$identity_hex" \
     -v served_epoch="$served_epoch" \
@@ -314,7 +372,7 @@ register_remote() {
 SELECT ec_spire_register_remote_node_descriptor(
     'ec_spire_phase13e_coord_idx'::regclass::oid,
     :node_id::int,
-    1301,
+    :descriptor_generation::bigint,
     :'secret_name',
     decode(:'identity_hex', 'hex'),
     'ec_spire_phase13e_remote_idx',
@@ -370,6 +428,19 @@ ORDER BY embedding <#> ARRAY[1.0, 0.0]::real[]
 LIMIT 6;
 SQL
 )"
+exact_rows="$("${coord_psql[@]}" -At -F ',' <<'SQL'
+SELECT id, title
+FROM ec_spire_phase13e_coord_sql
+ORDER BY CASE (id % 4)
+           WHEN 1 THEN 0
+           WHEN 2 THEN 1
+           WHEN 0 THEN 2
+           ELSE 3
+         END,
+         id
+LIMIT 6;
+SQL
+)"
 
 IFS='|' read -r profile_status profile_dispatch_count profile_socket_count \
   profile_candidate_count profile_heap_count profile_returned_count \
@@ -379,6 +450,7 @@ echo "placement_summary=$placement_summary"
 echo "profile_summary=$profile_summary"
 echo "plan=$plan"
 echo "read_rows=$read_rows"
+echo "exact_rows=$exact_rows"
 
 [[ "$placement_summary" == *"2:"* ]]
 [[ "$placement_summary" == *"3:"* ]]
@@ -391,5 +463,85 @@ echo "read_rows=$read_rows"
 [[ "$profile_heap_count" == "3" ]]
 [[ "$profile_returned_count" != "0" ]]
 [[ "$read_rows" == *"doc "* ]]
+[[ "$read_rows" == "$exact_rows" ]]
+
+echo "stopping_remote_node=2"
+"$PG_CTL" -D "$REMOTE1_DATA" -m fast stop >/dev/null
+
+strict_failure_log="$LOG_DIR/strict-remote-node2-failure.log"
+set +e
+PGOPTIONS="-c enable_seqscan=off -c enable_indexscan=off -c ec_spire.remote_search_consistency_mode=strict" \
+  "${coord_psql[@]}" -At -F ',' <<'SQL' >"$strict_failure_log" 2>&1
+SELECT id, title
+FROM ec_spire_phase13e_coord_sql
+ORDER BY embedding <#> ARRAY[1.0, 0.0]::real[]
+LIMIT 6;
+SQL
+strict_failure_exit_code=$?
+set -e
+strict_failure_text="$(tr '\n' ' ' < "$strict_failure_log")"
+echo "strict_remote_failure_exit_code=$strict_failure_exit_code"
+echo "strict_remote_failure_text=$strict_failure_text"
+[[ "$strict_failure_exit_code" -ne 0 ]]
+[[ "$strict_failure_text" == *"node_id 2"* ]]
+
+echo "republishing_degraded_epoch=1"
+materialize_remote_shard_mode 3 remote2_psql degraded
+materialize_remote_shard_mode 4 remote3_psql degraded
+write_remote_identity 3 remote2_psql
+write_remote_identity 4 remote3_psql
+register_remote 3 1302
+register_remote 4 1302
+publish_remote_placements_from_assignment_files degraded
+
+degraded_profile_summary="$(PGOPTIONS="-c enable_seqscan=off -c enable_indexscan=off -c ec_spire.remote_search_consistency_mode=degraded" "${coord_psql[@]}" -At -F '|' <<'SQL'
+WITH profile AS (
+    SELECT metric, value
+    FROM ec_spire_remote_search_production_read_profile(
+        'ec_spire_phase13e_coord_idx'::regclass::oid,
+        ARRAY[1.0, 0.0]::real[],
+        6
+    )
+)
+SELECT max(value) FILTER (WHERE metric = 'status') || '|'
+       || max(value) FILTER (WHERE metric = 'dispatch_count') || '|'
+       || max(value) FILTER (WHERE metric = 'socket_open_count') || '|'
+       || max(value) FILTER (WHERE metric = 'candidate_receive_query_count') || '|'
+       || max(value) FILTER (WHERE metric = 'heap_receive_query_count') || '|'
+       || max(value) FILTER (WHERE metric = 'degraded_skipped_dispatch_count') || '|'
+       || max(value) FILTER (WHERE metric = 'remote_timeout_count') || '|'
+       || max(value) FILTER (WHERE metric = 'remote_cancel_count') || '|'
+       || max(value) FILTER (WHERE metric = 'returned_candidate_count') || '|'
+       || max(value) FILTER (WHERE metric = 'next_blocker')
+FROM profile;
+SQL
+)"
+degraded_rows="$(PGOPTIONS="-c enable_seqscan=off -c enable_indexscan=off -c ec_spire.remote_search_consistency_mode=degraded" "${coord_psql[@]}" -At -F ',' <<'SQL'
+SELECT id, title
+FROM ec_spire_phase13e_coord_sql
+ORDER BY embedding <#> ARRAY[1.0, 0.0]::real[]
+LIMIT 6;
+SQL
+)"
+
+IFS='|' read -r degraded_status degraded_dispatch_count degraded_socket_count \
+  degraded_candidate_count degraded_heap_count degraded_skipped_count \
+  degraded_timeout_count degraded_cancel_count degraded_returned_count \
+  degraded_next_blocker <<< "$degraded_profile_summary"
+
+echo "degraded_profile_summary=$degraded_profile_summary"
+echo "degraded_rows=$degraded_rows"
+
+[[ "$degraded_status" == "degraded_ready" ]]
+[[ "$degraded_dispatch_count" == "3" ]]
+[[ "$degraded_socket_count" == "2" ]]
+[[ "$degraded_candidate_count" == "2" ]]
+[[ "$degraded_heap_count" == "2" ]]
+[[ "$degraded_skipped_count" == "1" ]]
+[[ "$degraded_timeout_count" == "0" ]]
+[[ "$degraded_cancel_count" == "0" ]]
+[[ "$degraded_returned_count" != "0" ]]
+[[ "$degraded_next_blocker" == "none" ]]
+[[ "$degraded_rows" == *"doc "* ]]
 
 echo "SPIRE Phase 13e static remote placement PG18 fixture passed"

@@ -2039,6 +2039,63 @@ fn ec_spire_publish_static_remote_placement_nodes(
     ))
 }
 
+#[pg_extern]
+#[allow(clippy::type_complexity)]
+fn ec_spire_publish_static_remote_placement_nodes_with_mode(
+    index_oid: pg_sys::Oid,
+    pids: Vec<i64>,
+    node_ids: Vec<i32>,
+    consistency_mode: String,
+) -> TableIterator<
+    'static,
+    (
+        name!(active_epoch, i64),
+        name!(rewritten_placement_count, i64),
+        name!(remote_node_count, i64),
+        name!(status, &'static str),
+    ),
+> {
+    validate_ec_spire_index(
+        index_oid,
+        "ec_spire_publish_static_remote_placement_nodes_with_mode",
+    );
+    if pids.len() != node_ids.len() {
+        pgrx::error!(
+            "ec_spire_publish_static_remote_placement_nodes_with_mode pids and node_ids lengths must match"
+        );
+    }
+    let rewrites = pids
+        .into_iter()
+        .zip(node_ids)
+        .map(|(pid, node_id)| {
+            let pid = u64::try_from(pid).unwrap_or_else(|_| {
+                pgrx::error!(
+                    "ec_spire_publish_static_remote_placement_nodes_with_mode pid {pid} is negative"
+                )
+            });
+            let node_id = u32::try_from(node_id).unwrap_or_else(|_| {
+                pgrx::error!(
+                    "ec_spire_publish_static_remote_placement_nodes_with_mode node_id {node_id} is negative"
+                )
+            });
+            (pid, node_id)
+        })
+        .collect::<Vec<_>>();
+    let (active_epoch, rewritten_count, remote_node_count) =
+        am::spire_publish_static_remote_placement_nodes_with_mode(
+            index_oid,
+            &rewrites,
+            &consistency_mode,
+        );
+
+    TableIterator::once((
+        i64::try_from(active_epoch).expect("active epoch should fit in i64"),
+        i64::try_from(rewritten_count).expect("rewritten placement count should fit in i64"),
+        i64::try_from(remote_node_count).expect("remote node count should fit in i64"),
+        "published_static_remote_placements",
+    ))
+}
+
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
 fn ec_spire_remote_node_snapshot(
@@ -17236,6 +17293,170 @@ fn ec_spire_materialize_static_remote_leaf_assignments(
         payload_formats,
         gammas,
         encoded_payloads,
+    );
+    TableIterator::once((
+        i64::try_from(row.active_epoch).expect("active epoch should fit in i64"),
+        i64::try_from(row.leaf_count).expect("leaf count should fit in i64"),
+        i64::try_from(row.assignment_count).expect("assignment count should fit in i64"),
+        i64::try_from(row.next_pid).expect("next pid should fit in i64"),
+        i64::try_from(row.next_local_vec_seq).expect("next local vec seq should fit in i64"),
+        row.status,
+    ))
+}
+
+#[pg_extern(strict)]
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
+fn ec_spire_materialize_static_remote_leaf_assignments_with_mode(
+    index_oid: pg_sys::Oid,
+    target_epoch: i64,
+    leaf_pids: Vec<i64>,
+    parent_pids: Vec<i64>,
+    object_versions: Vec<i64>,
+    row_indices: Vec<i64>,
+    assignment_flags: Vec<i32>,
+    vec_id_hexes: Vec<String>,
+    heap_blocks: Vec<i64>,
+    heap_offsets: Vec<i32>,
+    payload_formats: Vec<i32>,
+    gammas: Vec<f32>,
+    encoded_payload_hexes: Vec<String>,
+    consistency_mode: String,
+) -> TableIterator<
+    'static,
+    (
+        name!(active_epoch, i64),
+        name!(leaf_count, i64),
+        name!(assignment_count, i64),
+        name!(next_pid, i64),
+        name!(next_local_vec_seq, i64),
+        name!(status, &'static str),
+    ),
+> {
+    if !relation_oid_exists(index_oid) {
+        pgrx::error!(
+            "ec_spire_materialize_static_remote_leaf_assignments_with_mode index_oid does not exist"
+        );
+    }
+    let target_epoch = u64::try_from(target_epoch).unwrap_or_else(|_| {
+        pgrx::error!(
+            "ec_spire_materialize_static_remote_leaf_assignments_with_mode target_epoch is negative"
+        )
+    });
+    let leaf_pids = leaf_pids
+        .into_iter()
+        .map(|value| {
+            u64::try_from(value).unwrap_or_else(|_| {
+                pgrx::error!(
+                    "ec_spire_materialize_static_remote_leaf_assignments_with_mode leaf_pid {value} is negative"
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    let parent_pids = parent_pids
+        .into_iter()
+        .map(|value| {
+            u64::try_from(value).unwrap_or_else(|_| {
+                pgrx::error!(
+                    "ec_spire_materialize_static_remote_leaf_assignments_with_mode parent_pid {value} is negative"
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    let object_versions = object_versions
+        .into_iter()
+        .map(|value| {
+            u64::try_from(value).unwrap_or_else(|_| {
+                pgrx::error!(
+                    "ec_spire_materialize_static_remote_leaf_assignments_with_mode object_version {value} is negative"
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    let row_indices = row_indices
+        .into_iter()
+        .map(|value| {
+            u32::try_from(value).unwrap_or_else(|_| {
+                pgrx::error!(
+                    "ec_spire_materialize_static_remote_leaf_assignments_with_mode row_index {value} is outside u32"
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    let assignment_flags = assignment_flags
+        .into_iter()
+        .map(|value| {
+            u16::try_from(value).unwrap_or_else(|_| {
+                pgrx::error!(
+                    "ec_spire_materialize_static_remote_leaf_assignments_with_mode assignment_flags {value} is outside u16"
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    let vec_ids = vec_id_hexes
+        .iter()
+        .map(|value| {
+            hex::decode(value).unwrap_or_else(|_| {
+                pgrx::error!(
+                    "ec_spire_materialize_static_remote_leaf_assignments_with_mode vec_id hex is invalid"
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    let heap_blocks = heap_blocks
+        .into_iter()
+        .map(|value| {
+            u32::try_from(value).unwrap_or_else(|_| {
+                pgrx::error!(
+                    "ec_spire_materialize_static_remote_leaf_assignments_with_mode heap_block {value} is outside u32"
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    let heap_offsets = heap_offsets
+        .into_iter()
+        .map(|value| {
+            u16::try_from(value).unwrap_or_else(|_| {
+                pgrx::error!(
+                    "ec_spire_materialize_static_remote_leaf_assignments_with_mode heap_offset {value} is outside u16"
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    let payload_formats = payload_formats
+        .into_iter()
+        .map(|value| {
+            u8::try_from(value).unwrap_or_else(|_| {
+                pgrx::error!(
+                    "ec_spire_materialize_static_remote_leaf_assignments_with_mode payload_format {value} is outside u8"
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    let encoded_payloads = encoded_payload_hexes
+        .iter()
+        .map(|value| {
+            hex::decode(value).unwrap_or_else(|_| {
+                pgrx::error!(
+                    "ec_spire_materialize_static_remote_leaf_assignments_with_mode encoded_payload hex is invalid"
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    let row = am::spire_materialize_static_remote_leaf_assignments_with_mode(
+        index_oid,
+        target_epoch,
+        leaf_pids,
+        parent_pids,
+        object_versions,
+        row_indices,
+        assignment_flags,
+        vec_ids,
+        heap_blocks,
+        heap_offsets,
+        payload_formats,
+        gammas,
+        encoded_payloads,
+        &consistency_mode,
     );
     TableIterator::once((
         i64::try_from(row.active_epoch).expect("active epoch should fit in i64"),

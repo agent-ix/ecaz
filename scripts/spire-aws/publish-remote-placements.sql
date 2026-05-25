@@ -6,6 +6,10 @@
 -- function, not the test-only rewrite helpers.
 
 \set ON_ERROR_STOP on
+\if :{?consistency_mode}
+\else
+\set consistency_mode strict
+\endif
 
 WITH remote_nodes AS (
   SELECT
@@ -33,8 +37,9 @@ assignment AS (
     JOIN remote_nodes USING (remote_ordinal)
 )
 SELECT *
-  FROM ec_spire_publish_static_remote_placement_nodes(
+  FROM ec_spire_publish_static_remote_placement_nodes_with_mode(
        :'coord_index'::regclass::oid,
        (SELECT COALESCE(array_agg(leaf_pid::bigint ORDER BY leaf_pid), ARRAY[]::bigint[]) FROM assignment),
-       (SELECT COALESCE(array_agg(node_id::int ORDER BY leaf_pid), ARRAY[]::int[]) FROM assignment)
+       (SELECT COALESCE(array_agg(node_id::int ORDER BY leaf_pid), ARRAY[]::int[]) FROM assignment),
+       :'consistency_mode'
   );

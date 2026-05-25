@@ -22,6 +22,40 @@ pub(crate) fn materialize_static_remote_leaf_assignments(
     gammas: Vec<f32>,
     encoded_payloads: Vec<Vec<u8>>,
 ) -> SpireRemoteLeafMaterializationSummaryRow {
+    materialize_static_remote_leaf_assignments_with_mode(
+        index_oid,
+        target_epoch,
+        leaf_pids,
+        parent_pids,
+        object_versions,
+        row_indices,
+        assignment_flags,
+        vec_ids,
+        heap_blocks,
+        heap_offsets,
+        payload_formats,
+        gammas,
+        encoded_payloads,
+        "strict",
+    )
+}
+
+pub(crate) fn materialize_static_remote_leaf_assignments_with_mode(
+    index_oid: pg_sys::Oid,
+    target_epoch: u64,
+    leaf_pids: Vec<u64>,
+    parent_pids: Vec<u64>,
+    object_versions: Vec<u64>,
+    row_indices: Vec<u32>,
+    assignment_flags: Vec<u16>,
+    vec_ids: Vec<Vec<u8>>,
+    heap_blocks: Vec<u32>,
+    heap_offsets: Vec<u16>,
+    payload_formats: Vec<u8>,
+    gammas: Vec<f32>,
+    encoded_payloads: Vec<Vec<u8>>,
+    consistency_mode: &str,
+) -> SpireRemoteLeafMaterializationSummaryRow {
     let lockmode = pg_sys::RowExclusiveLock as pg_sys::LOCKMODE;
     let index_relation = crate::storage::relation_guard::IndexRelationGuard::open(
         index_oid,
@@ -47,6 +81,7 @@ pub(crate) fn materialize_static_remote_leaf_assignments(
             if target_epoch == 0 {
                 return Err("ec_spire remote leaf materialization target_epoch must be greater than zero".to_owned());
             }
+            let consistency_mode = parse_static_remote_leaf_materialization_consistency_mode(consistency_mode)?;
             let previous_epoch = if root_control.active_epoch == 0 {
                 None
             } else {
@@ -141,7 +176,7 @@ pub(crate) fn materialize_static_remote_leaf_assignments(
             let epoch_manifest = meta::SpireEpochManifest {
                 epoch: publish_epoch,
                 state: meta::SpireEpochState::Published,
-                consistency_mode: meta::SpireConsistencyMode::Strict,
+                consistency_mode,
                 published_at_micros,
                 retain_until_micros,
                 active_query_count: 0,
@@ -197,6 +232,18 @@ pub(crate) fn materialize_static_remote_leaf_assignments(
         })()
     };
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
+}
+
+fn parse_static_remote_leaf_materialization_consistency_mode(
+    input: &str,
+) -> Result<meta::SpireConsistencyMode, String> {
+    match input {
+        "strict" => Ok(meta::SpireConsistencyMode::Strict),
+        "degraded" => Ok(meta::SpireConsistencyMode::Degraded),
+        other => Err(format!(
+            "ec_spire remote leaf materialization consistency_mode must be 'strict' or 'degraded', got '{other}'"
+        )),
+    }
 }
 
 fn static_remote_leaf_materialization_rows(

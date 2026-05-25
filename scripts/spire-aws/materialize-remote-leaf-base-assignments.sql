@@ -5,6 +5,10 @@
 -- remote leaf objects.
 
 \set ON_ERROR_STOP on
+\if :{?consistency_mode}
+\else
+\set consistency_mode strict
+\endif
 
 CREATE TEMP TABLE ec_spire_leaf_base_assignment_import (
   active_epoch bigint NOT NULL,
@@ -70,7 +74,7 @@ BEGIN
 END $$;
 
 SELECT materialized.*
-  FROM ec_spire_materialize_static_remote_leaf_assignments(
+  FROM ec_spire_materialize_static_remote_leaf_assignments_with_mode(
        :'remote_index'::regclass::oid,
        (SELECT min(active_epoch) FROM ec_spire_leaf_base_assignment_import),
        (SELECT array_agg(leaf_pid ORDER BY leaf_pid, row_index) FROM ec_spire_leaf_base_materialization_input),
@@ -83,5 +87,6 @@ SELECT materialized.*
        (SELECT array_agg(remote_heap_offset ORDER BY leaf_pid, row_index) FROM ec_spire_leaf_base_materialization_input),
        (SELECT array_agg(payload_format ORDER BY leaf_pid, row_index) FROM ec_spire_leaf_base_materialization_input),
        (SELECT array_agg(gamma ORDER BY leaf_pid, row_index) FROM ec_spire_leaf_base_materialization_input),
-       (SELECT array_agg(encoded_payload_hex ORDER BY leaf_pid, row_index) FROM ec_spire_leaf_base_materialization_input)
+       (SELECT array_agg(encoded_payload_hex ORDER BY leaf_pid, row_index) FROM ec_spire_leaf_base_materialization_input),
+       :'consistency_mode'
   ) AS materialized;
