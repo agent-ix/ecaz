@@ -99,6 +99,7 @@
       "profile": "ec_diskann",
       "sweep": [64, 128, 200, 400, 800],
       "concurrency": 1,
+      "cache_state": "post_recall_warm",
       "log_output": "benchmarks/task59-aws-diskann-final-graviton-suite/artifacts/latency-10k-diskann-default.log"
     },
     {
@@ -150,6 +151,7 @@
       "profile": "ec_diskann",
       "sweep": [64, 128, 200, 400, 800],
       "concurrency": 1,
+      "cache_state": "post_recall_warm",
       "log_output": "benchmarks/task59-aws-diskann-final-graviton-suite/artifacts/latency-50k-diskann-default.log"
     },
     {
@@ -201,6 +203,7 @@
       "profile": "ec_diskann",
       "sweep": [64, 128, 200, 400, 800],
       "concurrency": 1,
+      "cache_state": "post_recall_warm",
       "log_output": "benchmarks/task59-aws-diskann-final-graviton-suite/artifacts/latency-100k-diskann-default.log"
     },
     {
@@ -227,9 +230,10 @@
       "tags": ["load", "ec_real_1m", "diskann", "pq_fastscan", "graviton", "task59"],
       "prefix": "task59_real_1m_diskann",
       "profile": "ec_diskann",
+      "corpus_file": "/var/lib/pgsql/18/datasets/staged-1m/ec_real_ann_benchmarks_anchor_corpus.tsv",
+      "queries_file": "/var/lib/pgsql/18/datasets/staged-1m/ec_real_ann_benchmarks_anchor_queries.tsv",
       "manifest_file": "/var/lib/pgsql/18/datasets/staged-1m/ec_real_ann_benchmarks_anchor_manifest.json",
       "allow_manifest_mismatch": true,
-      "chunked": true,
       "log_file": "benchmarks/task59-aws-diskann-final-graviton-suite/artifacts/load-1m-diskann-default.log"
     },
     {
@@ -251,6 +255,7 @@
       "profile": "ec_diskann",
       "sweep": [64, 128, 200, 400, 800],
       "concurrency": 1,
+      "cache_state": "post_recall_warm",
       "log_output": "benchmarks/task59-aws-diskann-final-graviton-suite/artifacts/latency-1m-diskann-default.log"
     },
     {
