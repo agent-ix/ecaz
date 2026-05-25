@@ -995,7 +995,6 @@ fn distributed_remote_identity_query_sql(remote_index_regclass: &str) -> String 
     format!(
         "SELECT jsonb_build_object(\
             'remote_index_regclass', {remote_index_literal}, \
-            'active_epoch', a.active_epoch, \
             'last_served_epoch', a.active_epoch, \
             'min_retained_epoch', a.active_epoch, \
             'extension_version', e.extension_version, \
@@ -2505,6 +2504,7 @@ mod tests {
         assert!(identity_sql.contains("'remote_index_identity_hex', e.profile_fingerprint"));
         assert!(identity_sql.contains("'last_served_epoch', a.active_epoch"));
         assert!(identity_sql.contains("'min_retained_epoch', a.active_epoch"));
+        assert!(!identity_sql.contains("'active_epoch'"));
 
         let register_sql = distributed_coordinator_register_descriptor_sql_template(
             "public.coord_idx",

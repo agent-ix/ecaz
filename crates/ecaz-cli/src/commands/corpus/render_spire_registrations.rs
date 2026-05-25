@@ -265,6 +265,39 @@ mod tests {
     }
 
     #[test]
+    fn parses_identity_shape_emitted_by_distributed_remote_identity_query() {
+        let identity: RemoteEndpointIdentity = serde_json::from_str(&identity_json()).unwrap();
+
+        assert_eq!(
+            identity.remote_index_regclass.as_deref(),
+            Some("public.remote_idx")
+        );
+        assert_eq!(identity.remote_index_identity_hex, "aabbccdd");
+        assert_eq!(identity.last_served_epoch, 7);
+        assert_eq!(identity.min_retained_epoch, 5);
+    }
+
+    #[test]
+    fn rejects_unexpected_identity_fields() {
+        let raw = serde_json::json!({
+            "remote_index_regclass": "public.remote_idx",
+            "remote_index_identity_hex": "aabbccdd",
+            "active_epoch": 7,
+            "last_served_epoch": 7,
+            "min_retained_epoch": 5,
+            "extension_version": "0.1.2",
+            "endpoint_status": "ready",
+            "tuple_transport_status": "ready"
+        })
+        .to_string();
+
+        let err = serde_json::from_str::<RemoteEndpointIdentity>(&raw)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("active_epoch"), "err: {err}");
+    }
+
+    #[test]
     fn renders_descriptor_registration_sql_from_plan_and_identity() {
         let td = TempDir::new().unwrap();
         let plan_path = td.path().join("distributed-placement-plan.json");

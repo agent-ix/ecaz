@@ -44,10 +44,14 @@ jq -c '.remotes[]' "$PLAN_FILE" | while read -r remote_plan; do
     exit 2
   fi
 
+  IDENTITY_FILE="$IDENTITY_DIR/node-${NODE_ID}-identity.json"
+  IDENTITY_STDERR="$IDENTITY_DIR/node-${NODE_ID}-identity.stderr.log"
   ecaz dev sql \
     --host "$REMOTE_HOST" --user ecaz_coord --database postgres \
+    --env "PGOPTIONS=-c client_min_messages=error" \
     --sql "$IDENTITY_SQL" \
-    --log-output "$IDENTITY_DIR/node-${NODE_ID}-identity.json"
+    > "$IDENTITY_FILE" \
+    2> "$IDENTITY_STDERR"
 done
 
 ecaz corpus render-spire-registrations \
