@@ -226,6 +226,8 @@ struct DistributedRemoteOutputPlan {
     shard_ids: Vec<u32>,
     corpus_file: String,
     remote_load_args: Vec<String>,
+    remote_identity_query_sql: String,
+    coordinator_register_descriptor_sql_template: String,
     row_count: usize,
     shard_row_counts: Vec<DistributedShardRowCount>,
 }
@@ -850,7 +852,7 @@ fn write_distributed_placement_outputs(
         })?;
         remotes.push(DistributedRemoteOutputPlan {
             node_id: writer.node_id,
-            conninfo_secret_name: writer.conninfo_secret_name,
+            conninfo_secret_name: writer.conninfo_secret_name.clone(),
             conninfo_provider_lookup_key: writer.conninfo_provider_lookup_key,
             remote_index_regclass: writer.remote_index_regclass.clone(),
             remote_prefix: writer.remote_prefix.clone(),
@@ -866,6 +868,16 @@ fn write_distributed_placement_outputs(
                 storage_format,
                 reloptions,
             ),
+            remote_identity_query_sql: distributed_remote_identity_query_sql(
+                &writer.remote_index_regclass,
+            ),
+            coordinator_register_descriptor_sql_template:
+                distributed_coordinator_register_descriptor_sql_template(
+                    &plan_coordinator_index_name(&input.config),
+                    writer.node_id,
+                    &writer.conninfo_secret_name,
+                    &writer.remote_index_regclass,
+                ),
             row_count: writer.row_count,
             shard_row_counts: writer
                 .shard_row_counts
@@ -973,6 +985,58 @@ fn distributed_remote_load_args(
         args.push(format!("{key}={value}"));
     }
     args
+}
+
+fn plan_coordinator_index_name(config: &DistributedPlacementConfig) -> String {
+    config.coordinator.index_name.clone()
+}
+
+fn distributed_remote_identity_query_sql(remote_index_regclass: &str) -> String {
+    format!(
+        "SELECT jsonb_build_object(\
+            'remote_index_regclass', {remote_index_literal}, \
+            'active_epoch', a.active_epoch, \
+            'last_served_epoch', a.active_epoch, \
+            'min_retained_epoch', a.active_epoch, \
+            'extension_version', e.extension_version, \
+            'remote_index_identity_hex', e.profile_fingerprint, \
+            'endpoint_status', e.status, \
+            'tuple_transport_status', e.tuple_transport_status\
+        )::text \
+         FROM ec_spire_remote_search_endpoint_identity({remote_index_literal}::regclass::oid) e \
+         CROSS JOIN ec_spire_index_active_snapshot_diagnostics({remote_index_literal}::regclass::oid) a",
+        remote_index_literal = sql_string_literal(remote_index_regclass)
+    )
+}
+
+fn distributed_coordinator_register_descriptor_sql_template(
+    coordinator_index_name: &str,
+    node_id: u32,
+    conninfo_secret_name: &str,
+    remote_index_regclass: &str,
+) -> String {
+    format!(
+        "SELECT ec_spire_register_remote_node_descriptor(\
+            {coordinator_index}::regclass::oid, \
+            {node_id}, \
+            1, \
+            {conninfo_secret}, \
+            decode('{{remote_index_identity_hex}}', 'hex'), \
+            {remote_index}, \
+            'active', \
+            {{last_served_epoch}}, \
+            {{min_retained_epoch}}, \
+            '{{extension_version}}', \
+            'none'\
+        ) AS registered",
+        coordinator_index = sql_string_literal(coordinator_index_name),
+        conninfo_secret = sql_string_literal(conninfo_secret_name),
+        remote_index = sql_string_literal(remote_index_regclass)
+    )
+}
+
+fn sql_string_literal(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "''"))
 }
 
 fn print_distributed_placement_output_summary(
@@ -2408,6 +2472,21 @@ mod tests {
             assert!(remote.remote_load_args.contains(&"rabitq".to_owned()));
             assert!(remote.remote_load_args.contains(&"--reloption".to_owned()));
             assert!(remote.remote_load_args.contains(&"nlists=8".to_owned()));
+            assert!(remote
+                .remote_identity_query_sql
+                .contains("ec_spire_remote_search_endpoint_identity"));
+            assert!(remote
+                .remote_identity_query_sql
+                .contains("ec_spire_index_active_snapshot_diagnostics"));
+            assert!(remote
+                .coordinator_register_descriptor_sql_template
+                .contains("ec_spire_register_remote_node_descriptor"));
+            assert!(remote
+                .coordinator_register_descriptor_sql_template
+                .contains("decode('{remote_index_identity_hex}', 'hex')"));
+            assert!(remote
+                .coordinator_register_descriptor_sql_template
+                .contains("'{extension_version}'"));
         }
 
         let plan_json: serde_json::Value = serde_json::from_str(
@@ -2417,6 +2496,32 @@ mod tests {
         assert_eq!(plan_json["total_rows"], 5);
         assert_eq!(plan_json["dimension"], 2);
         assert_eq!(plan_json["shard_count"], 4);
+    }
+
+    #[test]
+    fn distributed_descriptor_registration_sql_uses_remote_endpoint_identity() {
+        let identity_sql = distributed_remote_identity_query_sql("public.remote_idx");
+        assert!(identity_sql.contains("'public.remote_idx'::regclass::oid"));
+        assert!(identity_sql.contains("'remote_index_identity_hex', e.profile_fingerprint"));
+        assert!(identity_sql.contains("'last_served_epoch', a.active_epoch"));
+        assert!(identity_sql.contains("'min_retained_epoch', a.active_epoch"));
+
+        let register_sql = distributed_coordinator_register_descriptor_sql_template(
+            "public.coord_idx",
+            2,
+            "spire/remote/a",
+            "public.remote_idx",
+        );
+        assert!(register_sql.contains("'public.coord_idx'::regclass::oid"));
+        assert!(register_sql.contains("2"));
+        assert!(register_sql.contains("'spire/remote/a'"));
+        assert!(register_sql.contains("decode('{remote_index_identity_hex}', 'hex')"));
+        assert!(register_sql.contains("'{extension_version}'"));
+    }
+
+    #[test]
+    fn sql_string_literal_escapes_single_quotes() {
+        assert_eq!(sql_string_literal("a'b"), "'a''b'");
     }
 
     #[test]
