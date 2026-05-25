@@ -1,0 +1,268 @@
+{
+  "name": "task60-diskann-rabitq-format",
+  "schema_version": 1,
+  "artifact_dir": "benchmarks/task60-diskann-rabitq-format/artifacts",
+  "defaults": {
+    "pg": 18,
+    "socket_dir": "/var/run/postgresql",
+    "profile": "ec_diskann",
+    "seed": 42,
+    "queries_limit": 200,
+    "iterations": 200,
+    "force_index": true,
+    "sample_backend_memory": true,
+    "memory_sample_interval_ms": 25
+  },
+  "steps": [
+    {
+      "kind": "corpus-fetch",
+      "name": "fetch-dbpedia-openai3-1m",
+      "tags": ["setup", "fetch", "dbpedia", "graviton", "task60"],
+      "dataset": "qdrant-dbpedia-openai3-large-1536-1m",
+      "output_dir": "/var/lib/pgsql/18/datasets/dbpedia-openai3-1m"
+    },
+    {
+      "kind": "corpus-prepare",
+      "name": "prepare-ec-real-100k",
+      "tags": ["setup", "prepare", "ec_real_100k", "graviton", "task60"],
+      "profile": "ec_real_100k",
+      "parquet": "/var/lib/pgsql/18/datasets/dbpedia-openai3-1m/data",
+      "output_dir": "/var/lib/pgsql/18/datasets/staged-task60-diskann-rabitq"
+    },
+    {
+      "kind": "raw",
+      "name": "precheck-host",
+      "tags": ["setup", "precheck", "graviton", "task60"],
+      "args": [
+        "dev",
+        "sql",
+        "--pg",
+        "18",
+        "--db",
+        "postgres",
+        "--socket-dir",
+        "/var/run/postgresql",
+        "--raw",
+        "--sql",
+        "SELECT now() AS captured_at, version() AS postgres_version, current_setting('shared_buffers') AS shared_buffers, current_setting('work_mem') AS work_mem, current_setting('maintenance_work_mem') AS maintenance_work_mem, current_setting('effective_cache_size') AS effective_cache_size; SELECT left(pg_read_file('/proc/cpuinfo', 0, 20000), 20000) AS cpuinfo_prefix; SELECT left(pg_read_file('/proc/meminfo', 0, 12000), 12000) AS meminfo_prefix;",
+        "--log-output",
+        "benchmarks/task60-diskann-rabitq-format/artifacts/precheck-host.log"
+      ],
+      "expected_artifacts": [
+        "benchmarks/task60-diskann-rabitq-format/artifacts/precheck-host.log"
+      ]
+    },
+    {
+      "kind": "load",
+      "name": "load-100k-diskann-pq-fastscan",
+      "tags": ["load", "ec_real_100k", "diskann", "pq_fastscan", "graviton", "task60"],
+      "prefix": "task60_real_100k_diskann_pq",
+      "profile": "ec_diskann",
+      "storage_format": "pq_fastscan",
+      "corpus_file": "/var/lib/pgsql/18/datasets/staged-task60-diskann-rabitq/ec_real_100k_corpus.tsv",
+      "queries_file": "/var/lib/pgsql/18/datasets/staged-task60-diskann-rabitq/ec_real_100k_queries.tsv",
+      "manifest_file": "/var/lib/pgsql/18/datasets/staged-task60-diskann-rabitq/ec_real_100k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "log_file": "benchmarks/task60-diskann-rabitq-format/artifacts/load-100k-diskann-pq-fastscan.log"
+    },
+    {
+      "kind": "load",
+      "name": "load-100k-diskann-rabitq",
+      "tags": ["load", "ec_real_100k", "diskann", "rabitq", "graviton", "task60"],
+      "prefix": "task60_real_100k_diskann_rabitq",
+      "profile": "ec_diskann",
+      "storage_format": "rabitq",
+      "corpus_file": "/var/lib/pgsql/18/datasets/staged-task60-diskann-rabitq/ec_real_100k_corpus.tsv",
+      "queries_file": "/var/lib/pgsql/18/datasets/staged-task60-diskann-rabitq/ec_real_100k_queries.tsv",
+      "manifest_file": "/var/lib/pgsql/18/datasets/staged-task60-diskann-rabitq/ec_real_100k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "log_file": "benchmarks/task60-diskann-rabitq-format/artifacts/load-100k-diskann-rabitq.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-100k-diskann-pq-fastscan",
+      "tags": ["recall", "ec_real_100k", "diskann", "pq_fastscan", "graviton", "task60"],
+      "prefix": "task60_real_100k_diskann_pq",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [64, 128, 200, 400, 800],
+      "truth_cache_file": "benchmarks/task60-diskann-rabitq-format/artifacts/truth-100k-k10.json",
+      "log_output": "benchmarks/task60-diskann-rabitq-format/artifacts/recall-100k-diskann-pq-fastscan.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-100k-diskann-rabitq",
+      "tags": ["recall", "ec_real_100k", "diskann", "rabitq", "graviton", "task60"],
+      "prefix": "task60_real_100k_diskann_rabitq",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [64, 128, 200, 400, 800],
+      "truth_cache_file": "benchmarks/task60-diskann-rabitq-format/artifacts/truth-100k-k10.json",
+      "log_output": "benchmarks/task60-diskann-rabitq-format/artifacts/recall-100k-diskann-rabitq.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-100k-diskann-pq-fastscan",
+      "tags": ["latency", "ec_real_100k", "diskann", "pq_fastscan", "post_recall_warm", "graviton", "task60"],
+      "prefix": "task60_real_100k_diskann_pq",
+      "profile": "ec_diskann",
+      "sweep": [64, 128, 200, 400, 800],
+      "concurrency": 1,
+      "cache_state": "post_recall_warm",
+      "log_output": "benchmarks/task60-diskann-rabitq-format/artifacts/latency-100k-diskann-pq-fastscan.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-100k-diskann-rabitq",
+      "tags": ["latency", "ec_real_100k", "diskann", "rabitq", "post_recall_warm", "graviton", "task60"],
+      "prefix": "task60_real_100k_diskann_rabitq",
+      "profile": "ec_diskann",
+      "sweep": [64, 128, 200, 400, 800],
+      "concurrency": 1,
+      "cache_state": "post_recall_warm",
+      "log_output": "benchmarks/task60-diskann-rabitq-format/artifacts/latency-100k-diskann-rabitq.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-100k-diskann-pq-fastscan",
+      "tags": ["storage", "ec_real_100k", "diskann", "pq_fastscan", "graviton", "task60"],
+      "prefix": "task60_real_100k_diskann_pq",
+      "log_file": "benchmarks/task60-diskann-rabitq-format/artifacts/storage-100k-diskann-pq-fastscan.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-100k-diskann-rabitq",
+      "tags": ["storage", "ec_real_100k", "diskann", "rabitq", "graviton", "task60"],
+      "prefix": "task60_real_100k_diskann_rabitq",
+      "log_file": "benchmarks/task60-diskann-rabitq-format/artifacts/storage-100k-diskann-rabitq.log"
+    },
+    {
+      "kind": "explain",
+      "name": "explain-100k-diskann-pq-fastscan-l800",
+      "tags": ["explain", "ec_real_100k", "diskann", "pq_fastscan", "graviton", "task60"],
+      "prefix": "task60_real_100k_diskann_pq",
+      "profile": "ec_diskann",
+      "nprobe": 800,
+      "rerank_width": 0,
+      "sql_file": "benchmarks/task60-diskann-rabitq-format/artifacts/explain-100k-diskann-pq-fastscan-l800.sql",
+      "log_output": "benchmarks/task60-diskann-rabitq-format/artifacts/explain-100k-diskann-pq-fastscan-l800.log"
+    },
+    {
+      "kind": "explain",
+      "name": "explain-100k-diskann-rabitq-l800",
+      "tags": ["explain", "ec_real_100k", "diskann", "rabitq", "graviton", "task60"],
+      "prefix": "task60_real_100k_diskann_rabitq",
+      "profile": "ec_diskann",
+      "nprobe": 800,
+      "rerank_width": 0,
+      "sql_file": "benchmarks/task60-diskann-rabitq-format/artifacts/explain-100k-diskann-rabitq-l800.sql",
+      "log_output": "benchmarks/task60-diskann-rabitq-format/artifacts/explain-100k-diskann-rabitq-l800.log"
+    },
+    {
+      "kind": "load",
+      "name": "load-1m-diskann-pq-fastscan",
+      "tags": ["load", "ec_real_1m", "diskann", "pq_fastscan", "graviton", "task60"],
+      "prefix": "task60_real_1m_diskann_pq",
+      "profile": "ec_diskann",
+      "storage_format": "pq_fastscan",
+      "corpus_file": "/var/lib/pgsql/18/datasets/staged-1m/ec_real_ann_benchmarks_anchor_corpus.tsv",
+      "queries_file": "/var/lib/pgsql/18/datasets/staged-1m/ec_real_ann_benchmarks_anchor_queries.tsv",
+      "manifest_file": "/var/lib/pgsql/18/datasets/staged-1m/ec_real_ann_benchmarks_anchor_manifest.json",
+      "allow_manifest_mismatch": true,
+      "log_file": "benchmarks/task60-diskann-rabitq-format/artifacts/load-1m-diskann-pq-fastscan.log"
+    },
+    {
+      "kind": "load",
+      "name": "load-1m-diskann-rabitq",
+      "tags": ["load", "ec_real_1m", "diskann", "rabitq", "graviton", "task60"],
+      "prefix": "task60_real_1m_diskann_rabitq",
+      "profile": "ec_diskann",
+      "storage_format": "rabitq",
+      "corpus_file": "/var/lib/pgsql/18/datasets/staged-1m/ec_real_ann_benchmarks_anchor_corpus.tsv",
+      "queries_file": "/var/lib/pgsql/18/datasets/staged-1m/ec_real_ann_benchmarks_anchor_queries.tsv",
+      "manifest_file": "/var/lib/pgsql/18/datasets/staged-1m/ec_real_ann_benchmarks_anchor_manifest.json",
+      "allow_manifest_mismatch": true,
+      "log_file": "benchmarks/task60-diskann-rabitq-format/artifacts/load-1m-diskann-rabitq.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-1m-diskann-pq-fastscan",
+      "tags": ["recall", "ec_real_1m", "diskann", "pq_fastscan", "graviton", "task60"],
+      "prefix": "task60_real_1m_diskann_pq",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [64, 128, 200, 400, 800],
+      "truth_cache_file": "benchmarks/task60-diskann-rabitq-format/artifacts/truth-1m-k10.json",
+      "log_output": "benchmarks/task60-diskann-rabitq-format/artifacts/recall-1m-diskann-pq-fastscan.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-1m-diskann-rabitq",
+      "tags": ["recall", "ec_real_1m", "diskann", "rabitq", "graviton", "task60"],
+      "prefix": "task60_real_1m_diskann_rabitq",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [64, 128, 200, 400, 800],
+      "truth_cache_file": "benchmarks/task60-diskann-rabitq-format/artifacts/truth-1m-k10.json",
+      "log_output": "benchmarks/task60-diskann-rabitq-format/artifacts/recall-1m-diskann-rabitq.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-1m-diskann-pq-fastscan",
+      "tags": ["latency", "ec_real_1m", "diskann", "pq_fastscan", "post_recall_warm", "graviton", "task60"],
+      "prefix": "task60_real_1m_diskann_pq",
+      "profile": "ec_diskann",
+      "sweep": [64, 128, 200, 400, 800],
+      "concurrency": 1,
+      "cache_state": "post_recall_warm",
+      "log_output": "benchmarks/task60-diskann-rabitq-format/artifacts/latency-1m-diskann-pq-fastscan.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-1m-diskann-rabitq",
+      "tags": ["latency", "ec_real_1m", "diskann", "rabitq", "post_recall_warm", "graviton", "task60"],
+      "prefix": "task60_real_1m_diskann_rabitq",
+      "profile": "ec_diskann",
+      "sweep": [64, 128, 200, 400, 800],
+      "concurrency": 1,
+      "cache_state": "post_recall_warm",
+      "log_output": "benchmarks/task60-diskann-rabitq-format/artifacts/latency-1m-diskann-rabitq.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-1m-diskann-pq-fastscan",
+      "tags": ["storage", "ec_real_1m", "diskann", "pq_fastscan", "graviton", "task60"],
+      "prefix": "task60_real_1m_diskann_pq",
+      "log_file": "benchmarks/task60-diskann-rabitq-format/artifacts/storage-1m-diskann-pq-fastscan.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-1m-diskann-rabitq",
+      "tags": ["storage", "ec_real_1m", "diskann", "rabitq", "graviton", "task60"],
+      "prefix": "task60_real_1m_diskann_rabitq",
+      "log_file": "benchmarks/task60-diskann-rabitq-format/artifacts/storage-1m-diskann-rabitq.log"
+    },
+    {
+      "kind": "explain",
+      "name": "explain-1m-diskann-pq-fastscan-l800",
+      "tags": ["explain", "ec_real_1m", "diskann", "pq_fastscan", "graviton", "task60"],
+      "prefix": "task60_real_1m_diskann_pq",
+      "profile": "ec_diskann",
+      "nprobe": 800,
+      "rerank_width": 0,
+      "sql_file": "benchmarks/task60-diskann-rabitq-format/artifacts/explain-1m-diskann-pq-fastscan-l800.sql",
+      "log_output": "benchmarks/task60-diskann-rabitq-format/artifacts/explain-1m-diskann-pq-fastscan-l800.log"
+    },
+    {
+      "kind": "explain",
+      "name": "explain-1m-diskann-rabitq-l800",
+      "tags": ["explain", "ec_real_1m", "diskann", "rabitq", "graviton", "task60"],
+      "prefix": "task60_real_1m_diskann_rabitq",
+      "profile": "ec_diskann",
+      "nprobe": 800,
+      "rerank_width": 0,
+      "sql_file": "benchmarks/task60-diskann-rabitq-format/artifacts/explain-1m-diskann-rabitq-l800.sql",
+      "log_output": "benchmarks/task60-diskann-rabitq-format/artifacts/explain-1m-diskann-rabitq-l800.log"
+    }
+  ]
+}
