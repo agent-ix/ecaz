@@ -326,33 +326,44 @@ pub(crate) fn ec_parallel_scan_descriptor_size() -> pg_sys::Size {
     ec_parallel_scan_descriptor_size_for(ec_parallel_scan_worker_slot_capacity())
 }
 
-fn coordinator_ptr(state: &EcParallelScanState) -> *mut EcParallelCoordinatorState {
-    // SAFETY: callers pass the start of the AM-private descriptor; the
-    // coordinator immediately follows the MAXALIGN-sized state header.
-    unsafe {
-        (state as *const EcParallelScanState)
-            .cast::<u8>()
-            .add(ec_parallel_scan_state_size())
-            .cast::<EcParallelCoordinatorState>()
-            .cast_mut()
-    }
-}
-
-fn worker_slots_ptr(state: &EcParallelScanState) -> *mut EcParallelWorkerSlot {
+/// Resolve the coordinator and worker-slot region pointers inside the
+/// AM-private parallel scan descriptor that starts at `state`. The
+/// coordinator immediately follows the MAXALIGN-sized state header; the
+/// worker-slot array starts after the state header plus the recorded
+/// coordinator span.
+fn descriptor_region_ptrs(
+    state: &EcParallelScanState,
+) -> (*mut EcParallelCoordinatorState, *mut EcParallelWorkerSlot) {
+    let state_size = ec_parallel_scan_state_size();
     let coordinator_offset = checked_add_size(
-        ec_parallel_scan_state_size(),
+        state_size,
         state.coordinator_bytes,
         "parallel worker slot base offset",
     );
-    // SAFETY: the worker slot array starts after the state header plus the
-    // recorded coordinator span, both checked for overflow above.
+    // SAFETY: callers pass the start of the AM-private descriptor PG sized
+    // via `ec_amestimateparallelscan`; the descriptor places the coordinator
+    // after the MAXALIGN-sized state header and the worker-slot array after
+    // the recorded coordinator span. Both offsets are overflow-checked.
     unsafe {
-        (state as *const EcParallelScanState)
-            .cast::<u8>()
+        let base = (state as *const EcParallelScanState).cast::<u8>();
+        let coord = base
+            .add(state_size)
+            .cast::<EcParallelCoordinatorState>()
+            .cast_mut();
+        let slots = base
             .add(coordinator_offset)
             .cast::<EcParallelWorkerSlot>()
-            .cast_mut()
+            .cast_mut();
+        (coord, slots)
     }
+}
+
+fn coordinator_ptr(state: &EcParallelScanState) -> *mut EcParallelCoordinatorState {
+    descriptor_region_ptrs(state).0
+}
+
+fn worker_slots_ptr(state: &EcParallelScanState) -> *mut EcParallelWorkerSlot {
+    descriptor_region_ptrs(state).1
 }
 
 fn reset_parallel_scan_layout(state: &mut EcParallelScanState) {
@@ -544,32 +555,6 @@ pub(crate) unsafe fn initialize_parallel_scan_target_with_worker_slots(
     Ok(())
 }
 
-/// Initialize the AM-private parallel scan descriptor with the worker-slot
-/// capacity derived from PostgreSQL's `max_parallel_workers_per_gather` GUC.
-///
-/// # Safety
-///
-/// Same contract as
-/// [`initialize_parallel_scan_target_with_worker_slots`]: `target` must be
-/// the AM-private buffer PostgreSQL reserved via
-/// [`ec_amestimateparallelscan`] for this scan and exclusively owned for the
-/// duration of the call. The buffer must be at least
-/// [`ec_parallel_scan_descriptor_size`] bytes, which is the size
-/// `ec_amestimateparallelscan` returns when called with the same backend
-/// GUC value.
-pub(crate) unsafe fn initialize_parallel_scan_target(
-    target: *mut c_void,
-) -> Result<(), &'static str> {
-    // SAFETY: delegates to the checked initializer with the capacity derived
-    // from PostgreSQL's configured worker limit.
-    unsafe {
-        initialize_parallel_scan_target_with_worker_slots(
-            target,
-            ec_parallel_scan_worker_slot_capacity(),
-        )
-    }
-}
-
 /// Claim the first free worker slot in `attachment`. The caller is
 /// responsible for matching this with a subsequent
 /// [`release_parallel_scan_worker_slot`].
@@ -717,8 +702,11 @@ pub(crate) unsafe extern "C-unwind" fn ec_amestimateparallelscan(
 
 pub(crate) unsafe extern "C-unwind" fn ec_aminitparallelscan(target: *mut c_void) {
     pg_callback!({
-        initialize_parallel_scan_target(target)
-            .unwrap_or_else(|err| pgrx::error!("ec_hnsw parallel scan init failed: {err}"));
+        initialize_parallel_scan_target_with_worker_slots(
+            target,
+            ec_parallel_scan_worker_slot_capacity(),
+        )
+        .unwrap_or_else(|err| pgrx::error!("ec_hnsw parallel scan init failed: {err}"));
     })
 }
 
