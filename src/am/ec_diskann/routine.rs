@@ -16,7 +16,6 @@ use crate::{
             set_index_bulk_delete_summary,
         },
     },
-    quant::grouped_pq::{build_grouped_pq_lut_f32, grouped_pq_score_f32, GROUPED_PQ_CENTROIDS},
     storage::{
         buffer_guard::{LockedBufferGuard, LockedPageTupleVisit},
         page::{DataPageChain, ItemPointer, FIRST_DATA_BLOCK_NUMBER},
@@ -28,13 +27,10 @@ use crate::{
 
 use super::{
     ambuild, cost, insert, maybe_check_for_interrupts, options,
-    page::{VamanaMetadataPage, PAYLOAD_FLAG_BINARY_SIDECAR},
+    page::{VamanaMetadataPage, PAYLOAD_FLAG_BINARY_SIDECAR, VAMANA_SEARCH_CODEC_GROUPED_PQ},
+    quantizer::{prepare_prefilter, DiskannPreparedPrefilter},
     reader::{GraphReader, PersistedGraphReader, VisitedState},
     scan::{self, ScanParams},
-    scan_query::{
-        build_grouped_pq_lut_from_persisted, encode_query_srht, hamming_xor_popcount,
-        pack_query_sign_bits, read_grouped_codebook_chain,
-    },
     scan_state::{self, DiskannScanOpaque, RelationGraphReader},
     tuple::VamanaNodeTuple,
     vacuum, warn_on_non_unit_source_vector,
@@ -351,38 +347,20 @@ unsafe extern "C-unwind" fn ec_diskann_aminsert(
             pgrx::error!("ec_diskann unique insert planning found no live entry point");
         };
 
-        let group_count = usize::from(materialized_metadata.search_subvector_count);
-        let group_size = usize::from(materialized_metadata.search_subvector_dim);
-        if group_count == 0 || group_size == 0 {
-            pgrx::error!(
-                    "ec_diskann unique insert planning requires grouped-PQ metadata: group_count={}, group_size={}",
-                    group_count,
-                    group_size
-                );
-        }
         let build_list_size = usize::from(materialized_metadata.build_list_size_l);
         if build_list_size == 0 {
             pgrx::error!("ec_diskann unique insert planning requires build_list_size_l > 0");
         }
-        let (query_lut, helper_group_count) = build_grouped_pq_lut_from_persisted(
-            &chain,
-            materialized_metadata.grouped_codebook_head,
-            group_count,
-            group_size,
-            materialized_metadata.dimensions as usize,
-            materialized_metadata.seed,
+        let prefilter = prepare_prefilter(
+            Some(&chain),
+            &materialized_metadata,
             &source_vector,
+            options::PrefilterKind::Auto,
+            "unique insert planning",
         )
         .unwrap_or_else(|e| {
-            pgrx::error!("ec_diskann unique insert planning failed to build grouped-PQ LUT: {e}")
+            pgrx::error!("ec_diskann unique insert planning prefilter failed: {e}")
         });
-        if helper_group_count != group_count {
-            pgrx::error!(
-                    "ec_diskann unique insert planning grouped-PQ helper returned group_count {}, expected {}",
-                    helper_group_count,
-                    group_count
-                );
-        }
 
         let slot = crate::storage::slot_guard::TupleTableSlotGuard::single_for_heap(heap_relation)
             .unwrap_or_else(|| {
@@ -400,7 +378,7 @@ unsafe extern "C-unwind" fn ec_diskann_aminsert(
                 rerank_budget: build_list_size,
                 top_k: build_list_size,
             },
-            |tuple| -grouped_pq_score_f32(&query_lut, group_count, &tuple.search_code),
+            |tuple| prefilter.score(tuple),
             |_: &[ItemPointer]| {},
             |heap_tid| match exact_heap_rerank_distance(
                 heap_relation,
@@ -605,8 +583,11 @@ unsafe extern "C-unwind" fn ec_diskann_amrescan(
 
         let prefilter_kind = options::current_prefilter_kind();
         let has_binary_sidecar = opaque.metadata.payload_flags & PAYLOAD_FLAG_BINARY_SIDECAR != 0;
+        let uses_grouped_pq = opaque.metadata.search_codec_kind == VAMANA_SEARCH_CODEC_GROUPED_PQ;
         let needs_materialized_chain = matches!(prefilter_kind, options::PrefilterKind::GroupedPq)
-            || (matches!(prefilter_kind, options::PrefilterKind::Auto) && !has_binary_sidecar);
+            || (uses_grouped_pq
+                && matches!(prefilter_kind, options::PrefilterKind::Auto)
+                && !has_binary_sidecar);
         if needs_materialized_chain && opaque.chain.is_none() {
             let (_, chain) = scan_state::materialize_chain_from_index((*scan).indexRelation)
                 .unwrap_or_else(|e| {
@@ -778,7 +759,7 @@ fn execute_diskann_scan<R>(
     reader: &R,
     visited: &mut VisitedState,
     scan_params: ScanParams,
-    prefilter: &PreparedPrefilter,
+    prefilter: &DiskannPreparedPrefilter,
     heap_relation: pg_sys::Relation,
     snapshot: pg_sys::Snapshot,
     slot: *mut pg_sys::TupleTableSlot,
@@ -1405,119 +1386,6 @@ struct VacuumFillPlanner<'a> {
     metadata: &'a VamanaMetadataPage,
     chain: &'a DataPageChain,
     dead_set: &'a HashSet<ItemPointer>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-enum PreparedPrefilter {
-    BinarySidecar {
-        rotated_query: Vec<f32>,
-        query_words: Vec<u64>,
-    },
-    GroupedPq {
-        rotated_query: Vec<f32>,
-        flat_codebooks: Vec<f32>,
-        query_lut: Vec<f32>,
-        group_count: usize,
-    },
-}
-
-impl PreparedPrefilter {
-    fn score(&self, tuple: &VamanaNodeTuple) -> f32 {
-        match self {
-            Self::BinarySidecar { query_words, .. } => {
-                hamming_xor_popcount(query_words, &tuple.binary_words) as f32
-            }
-            Self::GroupedPq {
-                query_lut,
-                group_count,
-                ..
-            } => -grouped_pq_score_f32(query_lut, *group_count, &tuple.search_code),
-        }
-    }
-
-    fn load_into_scan_opaque(self, opaque: &mut DiskannScanOpaque) {
-        match self {
-            Self::BinarySidecar {
-                rotated_query,
-                query_words,
-            } => {
-                opaque.query_rotated = rotated_query;
-                opaque.query_binary_words = query_words;
-            }
-            Self::GroupedPq {
-                rotated_query,
-                flat_codebooks,
-                query_lut,
-                ..
-            } => {
-                opaque.query_rotated = rotated_query;
-                opaque.flat_codebooks = flat_codebooks;
-                opaque.query_lut = query_lut;
-            }
-        }
-    }
-}
-
-fn prepare_prefilter(
-    chain: Option<&DataPageChain>,
-    metadata: &VamanaMetadataPage,
-    raw_query: &[f32],
-    prefilter_kind: options::PrefilterKind,
-    context: &str,
-) -> Result<PreparedPrefilter, String> {
-    let has_binary_sidecar = metadata.payload_flags & PAYLOAD_FLAG_BINARY_SIDECAR != 0;
-    let use_binary_sidecar = match prefilter_kind {
-        options::PrefilterKind::Auto => has_binary_sidecar,
-        options::PrefilterKind::BinarySidecar => {
-            if !has_binary_sidecar {
-                return Err(format!(
-                    "ec_diskann.prefilter_kind=binary_sidecar requested but {context} has no binary sidecar"
-                ));
-            }
-            true
-        }
-        options::PrefilterKind::GroupedPq => false,
-    };
-
-    let dimensions = metadata.dimensions as usize;
-    let rotated_query = encode_query_srht(raw_query, dimensions, metadata.seed);
-    if use_binary_sidecar {
-        return Ok(PreparedPrefilter::BinarySidecar {
-            query_words: pack_query_sign_bits(&rotated_query, dimensions),
-            rotated_query,
-        });
-    }
-
-    let group_count = usize::from(metadata.search_subvector_count);
-    let group_size = usize::from(metadata.search_subvector_dim);
-    if group_count == 0 || group_size == 0 {
-        return Err(format!(
-            "ec_diskann {context} requires grouped-PQ metadata: group_count={}, group_size={}",
-            group_count, group_size
-        ));
-    }
-    if rotated_query.len() != group_count * group_size {
-        return Err(format!(
-            "ec_diskann {context} rotated query length {} does not match group_count {group_count} * group_size {group_size}",
-            rotated_query.len()
-        ));
-    }
-    let chain = chain.ok_or_else(|| {
-        format!("ec_diskann {context} grouped-PQ prefilter requires materialized index chain")
-    })?;
-    let flat_codebooks = read_grouped_codebook_chain(
-        chain,
-        metadata.grouped_codebook_head,
-        group_count,
-        GROUPED_PQ_CENTROIDS * group_size,
-    )?;
-    let query_lut = build_grouped_pq_lut_f32(&rotated_query, &flat_codebooks, group_size);
-    Ok(PreparedPrefilter::GroupedPq {
-        rotated_query,
-        flat_codebooks,
-        query_lut,
-        group_count,
-    })
 }
 
 fn plan_vacuum_fill_candidates_for_target(
@@ -2237,7 +2105,7 @@ mod tests {
         assert!(
             matches!(
                 auto_prefilter,
-                super::PreparedPrefilter::BinarySidecar { .. }
+                super::DiskannPreparedPrefilter::BinarySidecar { .. }
             ),
             "auto should use the persisted binary sidecar when present",
         );
@@ -2255,7 +2123,7 @@ mod tests {
         assert!(
             matches!(
                 grouped_prefilter,
-                super::PreparedPrefilter::GroupedPq { .. }
+                super::DiskannPreparedPrefilter::GroupedPq { .. }
             ),
             "grouped_pq should force the legacy grouped-PQ prefilter",
         );
@@ -2273,7 +2141,7 @@ mod tests {
         assert!(
             matches!(
                 binary_prefilter,
-                super::PreparedPrefilter::BinarySidecar { .. }
+                super::DiskannPreparedPrefilter::BinarySidecar { .. }
             ),
             "binary_sidecar should force the sidecar prefilter when persisted",
         );

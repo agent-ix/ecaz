@@ -30,6 +30,7 @@ use crate::am::ec_diskann::page::{
     PAYLOAD_FLAG_GROUPED_SEARCH_CODE, VAMANA_SEARCH_CODEC_GROUPED_PQ, VAMANA_TRANSFORM_KIND_SRHT,
 };
 use crate::am::ec_diskann::persist::{persist_vamana_graph, NodePayload, PersistedGraph};
+use crate::am::ec_diskann::quantizer;
 use crate::am::ec_diskann::vamana::{
     approximate_medoid, build_vamana_graph_with_stats, VamanaBuildStats,
 };
@@ -61,6 +62,8 @@ pub struct BuildParams {
     pub search_subvector_count: u16,
     /// Width (in source dims) of each grouped-PQ subvector.
     pub search_subvector_dim: u16,
+    /// Search-code family stored in each node tuple.
+    pub search_codec_kind: u8,
     /// Deterministic seed for medoid sample + insertion-order shuffle.
     pub seed: u64,
     /// PostgreSQL page size (`BLCKSZ`). Threaded so non-pgrx tests can
@@ -84,7 +87,26 @@ impl BuildParams {
     /// `C = M.div_ceil(2)` for PQ4 nibble packing. Derivation rule
     /// from ADR-045 reference layout.
     pub fn search_code_len(&self) -> usize {
-        (self.search_subvector_count as usize).div_ceil(2)
+        match self.search_codec_kind {
+            VAMANA_SEARCH_CODEC_GROUPED_PQ => (self.search_subvector_count as usize).div_ceil(2),
+            _ => {
+                let metadata = VamanaMetadataPage {
+                    search_codec_kind: self.search_codec_kind,
+                    dimensions: self.dimensions,
+                    search_subvector_count: self.search_subvector_count,
+                    search_subvector_dim: self.search_subvector_dim,
+                    ..VamanaMetadataPage::empty(
+                        self.graph_degree_r,
+                        self.build_list_size_l,
+                        self.alpha,
+                        self.dimensions,
+                        self.seed,
+                    )
+                };
+                quantizer::metadata_search_code_len(&metadata)
+                    .expect("validated DiskANN search codec should have a payload length")
+            }
+        }
     }
 
     /// Initial `payload_flags` byte for the metadata page.
@@ -96,7 +118,11 @@ impl BuildParams {
     /// does not exist and trip the scan path's rerank wiring. A future
     /// ADR-044 C1 reopen is the only path that sets it (packet 11018).
     pub fn payload_flags(&self) -> u8 {
-        let mut flags = PAYLOAD_FLAG_GROUPED_SEARCH_CODE;
+        let mut flags = if self.search_codec_kind == VAMANA_SEARCH_CODEC_GROUPED_PQ {
+            PAYLOAD_FLAG_GROUPED_SEARCH_CODE
+        } else {
+            0
+        };
         if self.has_binary_sidecar {
             flags |= PAYLOAD_FLAG_BINARY_SIDECAR;
         }
@@ -202,7 +228,7 @@ where
         inserted_since_rebuild: 0,
         needs_medoid_refresh: false,
         transform_kind: VAMANA_TRANSFORM_KIND_SRHT,
-        search_codec_kind: VAMANA_SEARCH_CODEC_GROUPED_PQ,
+        search_codec_kind: params.search_codec_kind,
         payload_flags: params.payload_flags(),
         search_subvector_count: params.search_subvector_count,
         search_subvector_dim: params.search_subvector_dim,
@@ -263,6 +289,7 @@ mod tests {
             dimensions: n_dims,
             search_subvector_count: 16,
             search_subvector_dim: n_dims / 16,
+            search_codec_kind: VAMANA_SEARCH_CODEC_GROUPED_PQ,
             seed: 17,
             page_size: DEFAULT_PAGE_SIZE,
             has_binary_sidecar: true,

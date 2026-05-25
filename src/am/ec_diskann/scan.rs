@@ -920,6 +920,7 @@ mod tests {
             dimensions: 64,
             search_subvector_count: 8,
             search_subvector_dim: 8,
+            search_codec_kind: crate::am::ec_diskann::page::VAMANA_SEARCH_CODEC_GROUPED_PQ,
             seed: 37,
             page_size: DEFAULT_PAGE_SIZE,
             has_binary_sidecar: false,

@@ -29,6 +29,7 @@ pub const PAYLOAD_FLAG_COLD_RERANK_PAYLOAD: u8 = 1 << 2;
 
 pub const VAMANA_TRANSFORM_KIND_SRHT: u8 = 1;
 pub const VAMANA_SEARCH_CODEC_GROUPED_PQ: u8 = 2;
+pub const VAMANA_SEARCH_CODEC_RABITQ: u8 = 3;
 
 /// Size of the encoded metadata page payload. Locked at 48 bytes for
 /// the v0 layout; any field additions must bump the format tag.
@@ -137,6 +138,16 @@ impl VamanaMetadataPage {
             ));
         }
 
+        let search_codec_kind = input[36];
+        if !matches!(
+            search_codec_kind,
+            VAMANA_SEARCH_CODEC_GROUPED_PQ | VAMANA_SEARCH_CODEC_RABITQ
+        ) {
+            return Err(format!(
+                "invalid vamana metadata search codec kind: got {search_codec_kind}"
+            ));
+        }
+
         Ok(Self {
             format_version,
             entry_point: ItemPointer::decode(&input[2..8])?,
@@ -156,7 +167,7 @@ impl VamanaMetadataPage {
             ),
             needs_medoid_refresh: input[34] != 0,
             transform_kind: input[35],
-            search_codec_kind: input[36],
+            search_codec_kind,
             payload_flags: input[37],
             search_subvector_count: u16::from_le_bytes(
                 input[38..40]
@@ -264,6 +275,24 @@ mod tests {
             0,
             "grouped-PQ4 flag still set",
         );
+    }
+
+    #[test]
+    fn metadata_roundtrip_preserves_rabitq_codec_fields() {
+        let mut metadata = VamanaMetadataPage::empty(32, 100, 1.2, 1536, 0);
+        metadata.search_codec_kind = VAMANA_SEARCH_CODEC_RABITQ;
+        metadata.payload_flags = 0;
+        metadata.search_subvector_count = 0;
+        metadata.search_subvector_dim = 1;
+
+        let encoded = metadata.encode();
+        let decoded = VamanaMetadataPage::decode(&encoded).expect("decode");
+
+        assert_eq!(decoded.search_codec_kind, VAMANA_SEARCH_CODEC_RABITQ);
+        assert_eq!(decoded.payload_flags, 0);
+        assert_eq!(decoded.search_subvector_count, 0);
+        assert_eq!(decoded.search_subvector_dim, 1);
+        assert_eq!(decoded.grouped_codebook_head, ItemPointer::INVALID);
     }
 
     // LA-006: needs_medoid_refresh flag toggles round-trip correctly.

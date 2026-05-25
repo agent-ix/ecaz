@@ -15,6 +15,7 @@ pub use self::insert::{vamana_decode_overflow_tuple_fixture, VamanaOverflowTuple
 mod options;
 pub mod page;
 pub mod persist;
+mod quantizer;
 pub mod reader;
 mod routine;
 pub mod scan;
