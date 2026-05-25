@@ -154,3 +154,124 @@ impl<'a> ConditionVariableRef<'a> {
         unsafe { pg_sys::ConditionVariableSignal(self.ptr) }
     }
 }
+
+/// Leader-side typed wrapper over a PostgreSQL `shm_toc`.
+///
+/// The leader allocates DSM-backed structures and registers them under
+/// integer keys; workers attach and look those keys up later. The wrapper
+/// carries an explicit `'a` lifetime tied to the toc's backing DSM
+/// segment, so the leader cannot inadvertently emit references to
+/// memory it has already released.
+///
+/// The compound pattern this wrapper absorbs from `build_parallel.rs` is:
+///
+/// ```text
+/// shm_toc_estimate(&mut (*pcxt).estimator);
+/// shm_toc_allocate((*pcxt).toc, size)       // -> *mut c_void
+/// shm_toc_insert((*pcxt).toc, KEY, ptr)
+/// ```
+///
+/// becoming
+///
+/// ```text
+/// builder.allocate_bytes(size) -> *mut c_void
+/// builder.insert(KEY, ptr)
+/// ```
+///
+/// with the unsafe DSM-segment-lifetime contract stated once at the
+/// `unsafe fn new` call site, not at every allocate / insert pair.
+#[derive(Debug, Copy, Clone)]
+pub(crate) struct ShmTocBuilder<'a> {
+    toc: *mut pg_sys::shm_toc,
+    _marker: std::marker::PhantomData<&'a mut pg_sys::shm_toc>,
+}
+
+impl<'a> ShmTocBuilder<'a> {
+    /// Construct a builder over a leader-owned toc.
+    ///
+    /// # Safety
+    /// `toc` must point at a `shm_toc` created by `shm_toc_create` (or
+    /// supplied by `(*ParallelContext).toc`) whose backing DSM segment
+    /// outlives `'a`.
+    pub(crate) unsafe fn new(toc: *mut pg_sys::shm_toc) -> Self {
+        Self {
+            toc,
+            _marker: std::marker::PhantomData,
+        }
+    }
+
+    /// Allocate `nbytes` of typeless storage in the toc's segment.
+    ///
+    /// Returns a raw pointer; callers cast and initialize. PG ereports on
+    /// allocation failure so the returned pointer is non-null.
+    pub(crate) fn allocate_bytes(&self, nbytes: pg_sys::Size) -> *mut std::ffi::c_void {
+        // SAFETY: `self.toc` is a live toc per `new`'s contract.
+        unsafe { pg_sys::shm_toc_allocate(self.toc, nbytes) }
+    }
+
+    /// Allocate `nbytes` of typeless storage and re-type the result.
+    ///
+    /// Convenience over [`allocate_bytes`] for the common
+    /// `.cast::<T>()` site. Caller is still responsible for the cast's
+    /// validity (size, alignment, initialization of the returned
+    /// region).
+    pub(crate) fn allocate_typed<T>(&self, nbytes: pg_sys::Size) -> *mut T {
+        self.allocate_bytes(nbytes).cast::<T>()
+    }
+
+    /// Register `address` under integer `key` in this toc.
+    pub(crate) fn insert<T>(&self, key: u64, address: *mut T) {
+        // SAFETY: `self.toc` is live; `address` is caller-supplied. PG
+        // copies the (key, address) pair into the toc's index.
+        unsafe { pg_sys::shm_toc_insert(self.toc, key, address.cast::<std::ffi::c_void>()) }
+    }
+}
+
+/// Worker-side typed wrapper over an attached `shm_toc`.
+///
+/// Workers attach to the leader's DSM segment and look up the leader-
+/// registered structures by key. The wrapper carries the segment's
+/// lifetime so a returned `&'a T` cannot outlive the worker's view of
+/// the DSM region.
+///
+/// `lookup_required` is the safe replacement for the previous local
+/// `shm_toc_lookup_required<T>` helper in
+/// `src/am/ec_hnsw/build_parallel.rs`: PG ereports on a missing key, so
+/// the returned pointer is non-null on successful return.
+#[derive(Debug, Copy, Clone)]
+pub(crate) struct ShmTocReader<'a> {
+    toc: *mut pg_sys::shm_toc,
+    _marker: std::marker::PhantomData<&'a pg_sys::shm_toc>,
+}
+
+impl<'a> ShmTocReader<'a> {
+    /// Construct a reader over an attached toc.
+    ///
+    /// # Safety
+    /// `toc` must point at a `shm_toc` that the caller has either
+    /// received from `(*ParallelContext).toc` or attached via
+    /// `shm_toc_attach`, and the backing DSM segment must outlive `'a`.
+    pub(crate) unsafe fn attach(toc: *mut pg_sys::shm_toc) -> Self {
+        Self {
+            toc,
+            _marker: std::marker::PhantomData,
+        }
+    }
+
+    /// Look up `key`, returning the raw pointer. Returns null when the
+    /// key is absent.
+    pub(crate) fn lookup_raw<T>(&self, key: u64) -> *mut T {
+        // SAFETY: `self.toc` is live per `attach`'s contract. PG performs
+        // the index walk in-process; passing `noerror = true` lets the
+        // caller decide what to do with a missing key.
+        unsafe { pg_sys::shm_toc_lookup(self.toc, key, true) }.cast::<T>()
+    }
+
+    /// Look up `key`. PG ereports on a missing key, so the returned
+    /// pointer is non-null on successful return.
+    pub(crate) fn lookup_required<T>(&self, key: u64) -> *mut T {
+        // SAFETY: `self.toc` is live; `noerror = false` makes PG handle
+        // the missing-key case via ereport.
+        unsafe { pg_sys::shm_toc_lookup(self.toc, key, false) }.cast::<T>()
+    }
+}
