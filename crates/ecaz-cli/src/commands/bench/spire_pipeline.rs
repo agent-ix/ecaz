@@ -56,6 +56,11 @@ pub struct SpirePipelineArgs {
     /// provided this records the empty-fanout remote diagnostic shape.
     #[arg(long)]
     pub include_remote: bool,
+    /// Fail before reporting when the SPIRE placement directory has no remote
+    /// placements. This is the AWS distributed smoke gate; it prevents
+    /// local-only fixtures from being mistaken for distributed reads.
+    #[arg(long)]
+    pub require_remote_placements: bool,
     /// Also aggregate local-store read-overlap counters for sampled queries.
     #[arg(long)]
     pub include_local_store_overlap: bool,
@@ -181,6 +186,10 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
         ));
     }
     let index = resolve_spire_index(&client, &corpus_table, args.index.as_deref()).await?;
+    if args.require_remote_placements {
+        let placement_gate = query_remote_placement_gate(&client, &index).await?;
+        enforce_remote_placement_gate(&index, &placement_gate)?;
+    }
     let endpoint_identity = query_endpoint_identity(&client, &index).await?;
     let queries = fetch_queries(&client, &queries_table, args.queries_limit).await?;
     if queries.is_empty() {
@@ -821,6 +830,14 @@ async fn query_degraded_skip_rows(
     Ok(rows.into_iter().map(DegradedSkipRow::from).collect())
 }
 
+async fn query_remote_placement_gate(client: &Client, index: &str) -> Result<RemotePlacementGate> {
+    let row = client
+        .query_one(remote_placement_gate_sql(), &[&index])
+        .await
+        .wrap_err("querying ec_spire_index_placement_snapshot remote placement gate")?;
+    Ok(RemotePlacementGate::from(row))
+}
+
 async fn query_cost_tuning_row(client: &Client, index: &str) -> Result<CostTuningRow> {
     let row = client
         .query_one(cost_tuning_snapshot_sql(), &[&index])
@@ -889,6 +906,16 @@ fn endpoint_identity_sql() -> &'static str {
      FROM ec_spire_remote_search_endpoint_identity($1::text::regclass::oid)"
 }
 
+fn remote_placement_gate_sql() -> &'static str {
+    "SELECT coalesce(sum(placement_count), 0)::bigint AS total_placement_count,
+            coalesce(sum(placement_count) FILTER (WHERE node_id > 1), 0)::bigint
+                AS remote_placement_count,
+            coalesce(sum(placement_count) FILTER (WHERE node_id <= 1), 0)::bigint
+                AS local_placement_count,
+            count(*) FILTER (WHERE node_id > 1)::bigint AS remote_node_count
+     FROM ec_spire_index_placement_snapshot($1::text::regclass::oid)"
+}
+
 fn cost_tuning_snapshot_sql() -> &'static str {
     "SELECT storage_format, effective_rerank_width,
             cost_routing_dimension_scale, cost_leaf_dimension_scale,
@@ -919,6 +946,38 @@ struct RoutingRow {
     selected_child_count: i64,
     deduped_route_count: i64,
     truncation_reason: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct RemotePlacementGate {
+    total_placement_count: i64,
+    remote_placement_count: i64,
+    local_placement_count: i64,
+    remote_node_count: i64,
+}
+
+impl From<Row> for RemotePlacementGate {
+    fn from(row: Row) -> Self {
+        Self {
+            total_placement_count: row.get("total_placement_count"),
+            remote_placement_count: row.get("remote_placement_count"),
+            local_placement_count: row.get("local_placement_count"),
+            remote_node_count: row.get("remote_node_count"),
+        }
+    }
+}
+
+fn enforce_remote_placement_gate(index: &str, row: &RemotePlacementGate) -> Result<()> {
+    if row.remote_placement_count <= 0 {
+        return Err(eyre!(
+            "distributed SPIRE placement gate failed for index {:?}: remote placement count is 0 (total placements {}, local placements {}, remote nodes {}). Run distributed placement/materialization before AWS distributed read verification.",
+            index,
+            row.total_placement_count,
+            row.local_placement_count,
+            row.remote_node_count
+        ));
+    }
+    Ok(())
 }
 
 impl From<Row> for RoutingRow {
@@ -1772,6 +1831,7 @@ mod tests {
             adaptive_nprobe: false,
             adaptive_nprobe_score_gap_micros: None,
             include_remote: false,
+            require_remote_placements: false,
             include_local_store_overlap: false,
             remote_selected_pids: vec![],
             remote_requested_epoch: None,
@@ -1865,8 +1925,46 @@ mod tests {
         assert!(degraded_skip_report_sql().contains("$4::bigint[]"));
         assert!(endpoint_identity_sql().contains("ec_spire_remote_search_endpoint_identity"));
         assert!(endpoint_identity_sql().contains("tuple_transport_capabilities"));
+        assert!(remote_placement_gate_sql().contains("ec_spire_index_placement_snapshot"));
+        assert!(remote_placement_gate_sql().contains("node_id > 1"));
         assert!(cost_tuning_snapshot_sql().contains("ec_spire_index_cost_tuning_snapshot"));
         assert!(cost_tuning_snapshot_sql().contains("cost_routing_dimension_scale"));
+    }
+
+    #[test]
+    fn spire_pipeline_remote_placement_gate_rejects_empty_or_local_only() {
+        let empty = RemotePlacementGate {
+            total_placement_count: 0,
+            remote_placement_count: 0,
+            local_placement_count: 0,
+            remote_node_count: 0,
+        };
+        let err = enforce_remote_placement_gate("pfx_idx", &empty)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("remote placement count is 0"), "err: {err}");
+
+        let local_only = RemotePlacementGate {
+            total_placement_count: 7,
+            remote_placement_count: 0,
+            local_placement_count: 7,
+            remote_node_count: 0,
+        };
+        let err = enforce_remote_placement_gate("pfx_idx", &local_only)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("local placements 7"), "err: {err}");
+    }
+
+    #[test]
+    fn spire_pipeline_remote_placement_gate_accepts_remote_placements() {
+        let row = RemotePlacementGate {
+            total_placement_count: 11,
+            remote_placement_count: 4,
+            local_placement_count: 7,
+            remote_node_count: 2,
+        };
+        enforce_remote_placement_gate("pfx_idx", &row).unwrap();
     }
 
     #[test]
