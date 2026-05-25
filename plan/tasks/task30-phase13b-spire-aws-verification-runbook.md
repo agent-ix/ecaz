@@ -140,11 +140,11 @@ Phase 13b.1 is reviewer-acceptable when:
   with `request.md` and `artifacts/manifest.md` on a feature branch.
 - [ ] `make -C infra/spire-aws preflight` passes from the branch that will
   provision AWS.
-- [ ] AWS account quota for the Phase 13a Graviton topology
-  (`r7g.4xlarge` + 3× `r7g.2xlarge`, 40 vCPU total) confirmed in the
-  target region, or a reviewer-accepted Graviton profile amendment is
-  recorded before provisioning. Do not substitute x86/r6i hardware for
-  SPIRE AWS evidence.
+- [ ] AWS account quota for the Phase 13e correctness Graviton topology
+  (`m7g.large` + 3× `m7g.large`, 8 vCPU total) confirmed in the target
+  region. Representative/stress tiers require separate quota proof for the
+  larger `r7g.4xlarge` + 3× `r7g.2xlarge` topology (40 vCPU total). Do not
+  substitute x86/r6i hardware for SPIRE AWS evidence.
 - [ ] Cost-tag set per **13a.8** is defined in
   `infra/spire-aws/terraform.tfvars` (`owner`, `auto_stop_at`).
 - [ ] `make -C infra/spire-aws preflight-operator` passes. This checks

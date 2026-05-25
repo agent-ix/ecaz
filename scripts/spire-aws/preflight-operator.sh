@@ -51,8 +51,8 @@ coordinator_instance_type="$(read_tfvar coordinator_instance_type)"
 remote_instance_type="$(read_tfvar remote_instance_type)"
 remote_count="$(read_tfvar remote_count)"
 
-coordinator_instance_type="${coordinator_instance_type:-r7g.4xlarge}"
-remote_instance_type="${remote_instance_type:-r7g.2xlarge}"
+coordinator_instance_type="${coordinator_instance_type:-m7g.large}"
+remote_instance_type="${remote_instance_type:-m7g.large}"
 remote_count="${remote_count:-3}"
 
 [[ "$region" =~ ^[a-z]{2}-[a-z]+-[0-9]$ ]] || die "region does not look like an AWS region: $region"

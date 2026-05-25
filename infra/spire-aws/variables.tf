@@ -26,9 +26,9 @@ variable "ami_id" {
 }
 
 variable "coordinator_instance_type" {
-  description = "Graviton EC2 instance type for the SPIRE coordinator. Phase 13a.1 default is r7g.4xlarge."
+  description = "Graviton EC2 instance type for the SPIRE coordinator. Phase 13e correctness default is m7g.large; representative/stress runs override to r7g.* after quota proof."
   type        = string
-  default     = "r7g.4xlarge"
+  default     = "m7g.large"
 
   validation {
     condition     = can(regex("^(m7g|m8g|r7g|c7g|c8g)\\.", var.coordinator_instance_type))
@@ -37,9 +37,9 @@ variable "coordinator_instance_type" {
 }
 
 variable "remote_instance_type" {
-  description = "Graviton EC2 instance type for each SPIRE remote. Phase 13a.1 default is r7g.2xlarge."
+  description = "Graviton EC2 instance type for each SPIRE remote. Phase 13e correctness default is m7g.large; representative/stress runs override to r7g.* after quota proof."
   type        = string
-  default     = "r7g.2xlarge"
+  default     = "m7g.large"
 
   validation {
     condition     = can(regex("^(m7g|m8g|r7g|c7g|c8g)\\.", var.remote_instance_type))

@@ -24,11 +24,25 @@ install -o postgres -g postgres -m 0600 /tmp/ecaz-node-tls/server.key "${PGDATA}
 install -o postgres -g postgres -m 0644 /tmp/ecaz-node-tls/server.crt "${PGDATA}/server.crt"
 install -o root -g root -m 0644 /tmp/ecaz-node-tls/ca.crt /etc/ssl/certs/ecaz-spire-aws-ca.pem
 
+mem_total_kb=$(awk '/MemTotal:/ { print $2 }' /proc/meminfo)
+mem_total_gb=$((mem_total_kb / 1024 / 1024))
+if ((mem_total_gb >= 96)); then
+  shared_buffers="${ECAZ_SPIRE_AWS_SHARED_BUFFERS:-32GB}"
+  maintenance_work_mem="${ECAZ_SPIRE_AWS_MAINTENANCE_WORK_MEM:-2GB}"
+elif ((mem_total_gb >= 32)); then
+  shared_buffers="${ECAZ_SPIRE_AWS_SHARED_BUFFERS:-8GB}"
+  maintenance_work_mem="${ECAZ_SPIRE_AWS_MAINTENANCE_WORK_MEM:-1GB}"
+else
+  shared_buffers="${ECAZ_SPIRE_AWS_SHARED_BUFFERS:-2GB}"
+  maintenance_work_mem="${ECAZ_SPIRE_AWS_MAINTENANCE_WORK_MEM:-512MB}"
+fi
+work_mem="${ECAZ_SPIRE_AWS_WORK_MEM:-64MB}"
+
 cat >> "${PGDATA}/postgresql.conf" <<EOF
 listen_addresses = '*'
-shared_buffers = 32GB
-work_mem = 64MB
-maintenance_work_mem = 2GB
+shared_buffers = ${shared_buffers}
+work_mem = ${work_mem}
+maintenance_work_mem = ${maintenance_work_mem}
 max_prepared_transactions = 64
 shared_preload_libraries = 'ecaz'
 ssl = on
