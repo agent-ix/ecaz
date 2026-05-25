@@ -1,0 +1,5 @@
+Script started on 2026-05-25 14:48:02-07:00 [<not executed on terminal>]
+
+aws: [ERROR]: An error occurred (AccessDenied) when calling the ListObjectVersions operation: User: arn:aws:iam::932658697181:user/ecaz-operator is not authorized to perform: s3:ListBucketVersions on resource: "arn:aws:s3:::ecaz-spire-aws-20260525201045387900000003" because no identity-based policy allows the s3:ListBucketVersions action
+
+Script done on 2026-05-25 14:48:03-07:00 [COMMAND_EXIT_CODE="254"]
