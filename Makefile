@@ -360,6 +360,19 @@ fuzz-vector-normalize:
 fuzz-all-short:
 	bash scripts/hardening.sh fuzz-all-short --seconds $(FUZZ_SECONDS)
 
+## Minimize every fuzz corpus in place (Task 46 §Exit Criteria #4).
+## Use after a long campaign to keep fuzz/corpus/ bounded before
+## committing.
+fuzz-corpus-minimize:
+	cd fuzz && for target in fuzz_parse_text fuzz_parse_text_structured \
+			fuzz_unpack_mse fuzz_unpack_mse_structured \
+			fuzz_element_tuple_decode fuzz_neighbor_tuple_decode \
+			fuzz_diskann_metadata_decode fuzz_item_pointer_decode \
+			fuzz_vector_normalize; do \
+		echo "cmin $$target" && \
+		cargo +nightly fuzz cmin $$target; \
+	done
+
 afl-decoders:
 	bash scripts/hardening.sh afl-decoders
 

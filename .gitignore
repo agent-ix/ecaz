@@ -1,7 +1,8 @@
 /target
 /fuzz/target
 /fuzz/artifacts
-/fuzz/corpus
+# /fuzz/corpus is intentionally tracked — `make fuzz-corpus-minimize`
+# keeps it bounded after long campaigns (Task 46 §Exit Criteria #4).
 /hardening/*/target
 /.pgrx
 Cargo.lock
