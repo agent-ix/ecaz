@@ -1833,7 +1833,10 @@ pub extern "C-unwind" fn pg_finfo_ec_diskann_handler() -> *const pg_sys::Pg_finf
 #[pgrx::pg_schema]
 mod tests {
     use super::{insert, scan, scan_state, GraphReader, PersistedGraphReader, ScanParams};
-    use crate::am::ec_diskann::page::VamanaMetadataPage;
+    use crate::am::ec_diskann::page::{
+        VamanaMetadataPage, PAYLOAD_FLAG_BINARY_SIDECAR, PAYLOAD_FLAG_GROUPED_SEARCH_CODE,
+        VAMANA_SEARCH_CODEC_GROUPED_PQ, VAMANA_SEARCH_CODEC_RABITQ,
+    };
     use crate::storage::{
         page::{DataPageChain, ItemPointer},
         relation_guard::{HeapRelationGuard, IndexRelationGuard},
@@ -2569,6 +2572,120 @@ mod tests {
             ordered_ids[0], 1,
             "runtime ordered ec_diskann scan should return the nearest vector first"
         );
+    }
+
+    #[pg_test]
+    fn test_ec_diskann_storage_formats_build_and_scan_sql_surface() {
+        for (suffix, storage_format, expected_codec) in [
+            ("pq_fastscan", "pq_fastscan", VAMANA_SEARCH_CODEC_GROUPED_PQ),
+            ("rabitq", "rabitq", VAMANA_SEARCH_CODEC_RABITQ),
+        ] {
+            let table_name = format!("ec_diskann_format_{suffix}");
+            let index_name = format!("ec_diskann_format_{suffix}_idx");
+            Spi::run(&format!(
+                "CREATE TABLE {table_name} (id bigint primary key, embedding ecvector)"
+            ))
+            .expect("table creation should succeed");
+            Spi::run(&format!(
+                "INSERT INTO {table_name} VALUES
+                 (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.0, 0.0], 4, 42)),
+                 (2, encode_to_ecvector(ARRAY[0.0, 1.0, 0.0, 0.0], 4, 42)),
+                 (3, encode_to_ecvector(ARRAY[0.0, 0.0, 1.0, 0.0], 4, 42)),
+                 (4, encode_to_ecvector(ARRAY[0.0, 0.0, 0.0, 1.0], 4, 42)),
+                 (5, encode_to_ecvector(ARRAY[0.70710677, 0.70710677, 0.0, 0.0], 4, 42)),
+                 (6, encode_to_ecvector(ARRAY[0.70710677, 0.0, 0.70710677, 0.0], 4, 42))"
+            ))
+            .expect("fixture rows should insert");
+            Spi::run(&format!(
+                "CREATE INDEX {index_name} ON {table_name} USING ec_diskann \
+                 (embedding ecvector_diskann_ip_ops) \
+                 WITH (graph_degree = 4, build_list_size = 10, list_size = 64, storage_format = '{storage_format}')"
+            ))
+            .expect("index creation should succeed");
+
+            let metadata = index_metadata(&index_name);
+            assert_eq!(
+                metadata.search_codec_kind, expected_codec,
+                "{storage_format} should persist the expected DiskANN search codec discriminator",
+            );
+            match expected_codec {
+                VAMANA_SEARCH_CODEC_GROUPED_PQ => {
+                    assert_ne!(
+                        metadata.payload_flags & PAYLOAD_FLAG_GROUPED_SEARCH_CODE,
+                        0,
+                        "pq_fastscan should advertise grouped-PQ search codes",
+                    );
+                    assert_ne!(
+                        metadata.grouped_codebook_head,
+                        ItemPointer::INVALID,
+                        "pq_fastscan should persist a grouped-PQ codebook chain",
+                    );
+                }
+                VAMANA_SEARCH_CODEC_RABITQ => {
+                    assert_eq!(
+                        metadata.payload_flags & PAYLOAD_FLAG_GROUPED_SEARCH_CODE,
+                        0,
+                        "rabitq should not advertise grouped-PQ search codes",
+                    );
+                    assert_eq!(
+                        metadata.payload_flags & PAYLOAD_FLAG_BINARY_SIDECAR,
+                        0,
+                        "rabitq stores its search code directly and should not advertise a binary sidecar",
+                    );
+                    assert_eq!(
+                        metadata.search_subvector_count, 0,
+                        "rabitq metadata should not expose grouped-PQ subvector count",
+                    );
+                    assert_eq!(
+                        metadata.search_subvector_dim, 1,
+                        "rabitq metadata stores the RaBitQ bit width in search_subvector_dim",
+                    );
+                    assert_eq!(
+                        metadata.grouped_codebook_head,
+                        ItemPointer::INVALID,
+                        "rabitq should not persist a grouped-PQ codebook chain",
+                    );
+                }
+                other => panic!("unexpected DiskANN search codec in test: {other}"),
+            }
+
+            Spi::run("SET LOCAL enable_seqscan = off").expect("SET LOCAL should succeed");
+            Spi::run("SET LOCAL enable_bitmapscan = off").expect("SET LOCAL should succeed");
+            Spi::run("SET LOCAL enable_sort = off").expect("SET LOCAL should succeed");
+            let plan =
+                explain_ordered_diskann_ids(&table_name, "ARRAY[1.0, 0.0, 0.0, 0.0]::real[]", 3);
+            assert!(
+                plan.contains(&format!("Index Scan using {index_name}")),
+                "{storage_format} ordered scan should route through its ec_diskann index: {plan}",
+            );
+
+            let ordered_ids = Spi::connect(|client| {
+                client
+                    .select(
+                        &format!(
+                            "SELECT id FROM {table_name} \
+                             ORDER BY embedding <#> ARRAY[1.0, 0.0, 0.0, 0.0]::real[] \
+                             LIMIT 3"
+                        ),
+                        None,
+                        &[],
+                    )
+                    .expect("ordered SELECT should succeed")
+                    .map(|row| {
+                        row["id"]
+                            .value::<i64>()
+                            .expect("id should decode")
+                            .expect("id should be non-null")
+                    })
+                    .collect::<Vec<_>>()
+            });
+
+            assert_eq!(
+                ordered_ids.first().copied(),
+                Some(1),
+                "{storage_format} ordered scan should return the nearest vector first",
+            );
+        }
     }
 
     #[pg_test]
