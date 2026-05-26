@@ -23,6 +23,7 @@ TARGET_SECRET=$(jq -r '.remotes[0].secret_arn' "$TOPOLOGY")
 LOG="$ARTIFACT_DIR/fault-${DRILL}.log"
 ECAZ_BIN="${ECAZ_BIN:-ecaz}"
 REMOTE_STOPPED=0
+QUERY_VECTOR_LITERAL=""
 
 restart_remote_if_needed() {
   if [[ "$REMOTE_STOPPED" == "1" ]]; then
@@ -40,21 +41,45 @@ stop_remote() {
   REMOTE_STOPPED=1
 }
 
+query_vector_literal() {
+  if [[ -n "$QUERY_VECTOR_LITERAL" ]]; then
+    printf '%s\n' "$QUERY_VECTOR_LITERAL"
+    return 0
+  fi
+
+  local raw literal
+  raw="$("$ECAZ_BIN" dev sql \
+    --host "$COORD_HOST" --port "$COORD_PORT" --user ecaz_coord --database postgres \
+    --sql "SELECT 'ARRAY[' || array_to_string(source, ',') || ']::real[]' FROM ${PREFIX}_queries WHERE id = 0" \
+    --log-output "$ARTIFACT_DIR/fault-${DRILL}-query-vector.log")"
+  literal="$(printf '%s\n' "$raw" | tr -d '\r' | sed -n '/^ARRAY\[/p' | head -n 1)"
+  if [[ -z "$literal" ]]; then
+    echo "failed to render finite query vector literal for ${PREFIX}_queries id=0" | tee -a "$LOG" >&2
+    return 1
+  fi
+  QUERY_VECTOR_LITERAL="$literal"
+  printf '%s\n' "$QUERY_VECTOR_LITERAL"
+}
+
 run_knn_query() {
   local mode="${1:?mode required}"
+  local query_vector
+  query_vector="$(query_vector_literal)"
   "$ECAZ_BIN" dev sql \
     --host "$COORD_HOST" --port "$COORD_PORT" --user ecaz_coord --database postgres \
     --env "PGOPTIONS=-c enable_seqscan=off -c enable_indexscan=off -c ec_spire.remote_search_consistency_mode=$mode" \
-    --sql "SELECT id FROM ${PREFIX}_corpus ORDER BY embedding <#> (SELECT source FROM ${PREFIX}_queries WHERE id = 0)::real[] LIMIT 10" \
+    --sql "SELECT id FROM ${PREFIX}_corpus ORDER BY embedding <#> ${query_vector} LIMIT 10" \
     --log-output "$ARTIFACT_DIR/fault-${DRILL}-knn-${mode}.log"
 }
 
 snapshot_diag() {
   local mode="${1:?mode required}"
+  local query_vector
+  query_vector="$(query_vector_literal)"
   "$ECAZ_BIN" dev sql \
     --host "$COORD_HOST" --port "$COORD_PORT" --user ecaz_coord --database postgres \
     --env "PGOPTIONS=-c enable_seqscan=off -c enable_indexscan=off -c ec_spire.remote_search_consistency_mode=$mode" \
-    --sql "SELECT * FROM ec_spire_remote_search_production_read_profile('${COORD_INDEX}'::regclass, (SELECT source FROM ${PREFIX}_queries WHERE id = 0)::real[], 10)" \
+    --sql "SELECT * FROM ec_spire_remote_search_production_read_profile('${COORD_INDEX}'::regclass, ${query_vector}, 10)" \
     --log-output "$ARTIFACT_DIR/fault-${DRILL}-session-summary.log"
   "$ECAZ_BIN" dev sql \
     --host "$COORD_HOST" --port "$COORD_PORT" --user ecaz_coord --database postgres \
@@ -63,10 +88,12 @@ snapshot_diag() {
 }
 
 assert_degraded_ready() {
+  local query_vector
+  query_vector="$(query_vector_literal)"
   "$ECAZ_BIN" dev sql \
     --host "$COORD_HOST" --port "$COORD_PORT" --user ecaz_coord --database postgres \
     --env "PGOPTIONS=-c enable_seqscan=off -c enable_indexscan=off -c ec_spire.remote_search_consistency_mode=degraded" \
-    --sql "WITH profile AS (SELECT metric, value FROM ec_spire_remote_search_production_read_profile('${COORD_INDEX}'::regclass, (SELECT source FROM ${PREFIX}_queries WHERE id = 0)::real[], 10)), summary AS (SELECT max(value) FILTER (WHERE metric = 'status') AS status, max(value) FILTER (WHERE metric = 'degraded_skipped_dispatch_count')::int AS skipped, max(value) FILTER (WHERE metric = 'returned_candidate_count')::int AS returned, max(value) FILTER (WHERE metric = 'next_blocker') AS next_blocker FROM profile) SELECT CASE WHEN status = 'degraded_ready' AND skipped > 0 AND returned > 0 AND next_blocker = 'none' THEN 'degraded_ok' ELSE (1 / COALESCE(NULLIF(skipped - skipped, 0), 0))::text END FROM summary" \
+    --sql "WITH profile AS (SELECT metric, value FROM ec_spire_remote_search_production_read_profile('${COORD_INDEX}'::regclass, ${query_vector}, 10)), summary AS (SELECT max(value) FILTER (WHERE metric = 'status') AS status, max(value) FILTER (WHERE metric = 'degraded_skipped_dispatch_count')::int AS skipped, max(value) FILTER (WHERE metric = 'returned_candidate_count')::int AS returned, max(value) FILTER (WHERE metric = 'next_blocker') AS next_blocker FROM profile) SELECT CASE WHEN status = 'degraded_ready' AND skipped > 0 AND returned > 0 AND next_blocker = 'none' THEN 'degraded_ok' ELSE (1 / COALESCE(NULLIF(skipped - skipped, 0), 0))::text END FROM summary" \
     --log-output "$ARTIFACT_DIR/fault-${DRILL}-assertion.log"
 }
 
