@@ -1284,18 +1284,44 @@ fn parse_storage_rows(raw: &str) -> Vec<(String, BTreeMap<String, String>)> {
     let mut rows = Vec::new();
     for table_row in parse_table_rows(raw) {
         if let (Some(field), Some(value)) = (table_row.get("field"), table_row.get("value")) {
-            rows.push((
-                "storage_field".into(),
-                BTreeMap::from([
-                    ("field".into(), field.clone()),
-                    ("value".into(), value.clone()),
-                ]),
-            ));
+            let mut values = BTreeMap::from([
+                ("field".into(), field.clone()),
+                ("value".into(), value.clone()),
+            ]);
+            if let Some(bytes) = parse_byte_value(value) {
+                values.insert("value_bytes".into(), format!("{bytes:.0}"));
+            }
+            rows.push(("storage_field".into(), values));
         } else if table_row.contains_key("index") {
-            rows.push(("storage_index".into(), table_row));
+            let mut values = table_row;
+            if let Some(bytes) = values.get("size").and_then(|value| parse_byte_value(value)) {
+                values.insert("size_bytes".into(), format!("{bytes:.0}"));
+            }
+            if let Some(bytes) = values
+                .get("per row")
+                .and_then(|value| parse_byte_value(value))
+            {
+                values.insert("per_row_bytes".into(), format!("{bytes:.1}"));
+            }
+            rows.push(("storage_index".into(), values));
         }
     }
     rows
+}
+
+fn parse_byte_value(value: &str) -> Option<f64> {
+    let mut parts = value.split_whitespace();
+    let amount = parts.next()?.parse::<f64>().ok()?;
+    let unit = parts.next().unwrap_or("B");
+    let multiplier = match unit {
+        "B" => 1.0,
+        "KiB" => 1024.0,
+        "MiB" => 1024.0 * 1024.0,
+        "GiB" => 1024.0 * 1024.0 * 1024.0,
+        "TiB" => 1024.0 * 1024.0 * 1024.0 * 1024.0,
+        _ => return None,
+    };
+    Some(amount * multiplier)
 }
 
 fn parse_compare_table_rows(raw: &str) -> Vec<BTreeMap<String, String>> {
@@ -3250,6 +3276,36 @@ mod tests {
         assert_eq!(
             rows[1].1.get("seconds").map(String::as_str),
             Some("0.183480")
+        );
+    }
+
+    #[test]
+    fn parses_storage_rows_with_raw_byte_fields() {
+        let rows = parse_storage_rows(
+            "┌────────┬──────────┐\n\
+             │ field  ┆ value    │\n\
+             ╞════════╪══════════╡\n\
+             │ total  ┆ 1.5 MiB  │\n\
+             └────────┴──────────┘\n\
+             ┌────────┬───────────────┬──────────┬────────────┬──────────┬─────────┐\n\
+             │ index  ┆ access method ┆ profile  ┆ reloptions ┆ size     ┆ per row │\n\
+             ╞════════╪═══════════════╪══════════╪════════════╪══════════╪═════════╡\n\
+             │ ix     ┆ ec_diskann    ┆ diskann  ┆ {}         ┆ 13.0 MiB ┆ 494.0 B │\n\
+             └────────┴───────────────┴──────────┴────────────┴──────────┴─────────┘\n",
+        );
+
+        assert_eq!(rows.len(), 2);
+        assert_eq!(
+            rows[0].1.get("value_bytes").map(String::as_str),
+            Some("1572864")
+        );
+        assert_eq!(
+            rows[1].1.get("size_bytes").map(String::as_str),
+            Some("13631488")
+        );
+        assert_eq!(
+            rows[1].1.get("per_row_bytes").map(String::as_str),
+            Some("494.0")
         );
     }
 
