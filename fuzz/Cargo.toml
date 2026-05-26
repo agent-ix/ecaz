@@ -58,3 +58,8 @@ doc = false
 name = "fuzz_unpack_mse_structured"
 path = "fuzz_targets/unpack_mse_structured.rs"
 doc = false
+
+[[bin]]
+name = "fuzz_parse_text_structured"
+path = "fuzz_targets/parse_text_structured.rs"
+doc = false
