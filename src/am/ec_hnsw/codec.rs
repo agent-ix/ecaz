@@ -73,6 +73,28 @@ impl HnswStorageCodec {
             },
         }
     }
+
+    pub(crate) fn build_tuple_fits_on_page(
+        self,
+        code_len: usize,
+        binary_word_count: usize,
+        page_size: usize,
+    ) -> bool {
+        let usable_bytes = page_size.saturating_sub(page::PAGE_HEADER_BYTES);
+        match self {
+            Self::TurboQuant => {
+                page::raw_tuple_storage_bytes(page::TqTurboHotTuple::encoded_len(binary_word_count))
+                    + page::raw_tuple_storage_bytes(page::TqRerankTuple::encoded_len(code_len))
+                    <= usable_bytes
+            }
+            Self::PqFastScan => {
+                page::raw_tuple_storage_bytes(page::TqElementTuple::encoded_len_with_binary(
+                    code_len,
+                    binary_word_count,
+                )) <= usable_bytes
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -122,5 +144,14 @@ mod tests {
             HnswStorageCodec::from_metadata(&grouped).unwrap(),
             HnswStorageCodec::PqFastScan
         );
+    }
+
+    #[test]
+    fn build_tuple_fit_check_preserves_existing_format_shapes() {
+        assert!(HnswStorageCodec::TurboQuant.build_tuple_fits_on_page(768, 24, 8192));
+        assert!(HnswStorageCodec::PqFastScan.build_tuple_fits_on_page(768, 24, 8192));
+
+        assert!(!HnswStorageCodec::TurboQuant.build_tuple_fits_on_page(8192, 24, 8192));
+        assert!(!HnswStorageCodec::PqFastScan.build_tuple_fits_on_page(8192, 24, 8192));
     }
 }

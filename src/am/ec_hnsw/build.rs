@@ -370,23 +370,13 @@ impl BuildState {
                 self.dimensions = Some(tuple.dimensions);
                 self.bits = Some(tuple.bits);
                 self.seed = Some(tuple.seed);
-                let fits_on_page = match self.options.storage_format {
-                    options::StorageFormat::TurboQuant => {
-                        page::raw_tuple_storage_bytes(page::TqTurboHotTuple::encoded_len(
-                            binary_word_count,
-                        )) + page::raw_tuple_storage_bytes(page::TqRerankTuple::encoded_len(
+                let fits_on_page =
+                    codec::HnswStorageCodec::from_storage_format(self.options.storage_format)
+                        .build_tuple_fits_on_page(
                             tuple.code.len(),
-                        )) <= self.page_size.saturating_sub(page::PAGE_HEADER_BYTES)
-                    }
-                    options::StorageFormat::PqFastScan => {
-                        page::raw_tuple_storage_bytes(
-                            page::TqElementTuple::encoded_len_with_binary(
-                                tuple.code.len(),
-                                binary_word_count,
-                            ),
-                        ) <= self.page_size.saturating_sub(page::PAGE_HEADER_BYTES)
-                    }
-                };
+                            binary_word_count,
+                            self.page_size,
+                        );
                 if !fits_on_page {
                     pgrx::error!(
                         "ec_hnsw tuple payload for dim {} bits {} does not fit on a page",
