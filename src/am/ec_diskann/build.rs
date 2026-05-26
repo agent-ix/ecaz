@@ -369,6 +369,26 @@ mod tests {
         assert_eq!(params.search_code_len(), 8);
     }
 
+    #[test]
+    fn rabitq_build_params_use_direct_search_code_without_sidecar_flags() {
+        let params = BuildParams {
+            graph_degree_r: 32,
+            build_list_size_l: 100,
+            alpha: 1.2,
+            dimensions: 1536,
+            search_subvector_count: 0,
+            search_subvector_dim: u16::from(quantizer::DISKANN_RABITQ_BITS),
+            search_codec_kind: crate::am::ec_diskann::page::VAMANA_SEARCH_CODEC_RABITQ,
+            seed: 42,
+            page_size: DEFAULT_PAGE_SIZE,
+            has_binary_sidecar: false,
+        };
+
+        assert_eq!(params.binary_word_count(), 0);
+        assert_eq!(params.search_code_len(), 204);
+        assert_eq!(params.payload_flags(), 0);
+    }
+
     // BO-005: end-to-end build with synthetic L2 vectors. Asserts
     // metadata fields are populated, every node has a valid TID, and
     // the entry_point matches `node_to_tid[medoid]`.
