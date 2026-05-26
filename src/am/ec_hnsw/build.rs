@@ -1680,6 +1680,11 @@ fn rabitq_flush_output(
     })
 }
 
+pub(super) fn default_rabitq_flush_output(state: &BuildState) -> Result<BuildFlushOutput, String> {
+    let mut timing = BuildFlushTiming::default();
+    rabitq_flush_output(state, &mut timing)
+}
+
 fn derive_rabitq_search_codes_from_sources(
     state: &BuildState,
     dimensions: u16,

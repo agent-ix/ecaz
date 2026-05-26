@@ -100,6 +100,7 @@ enum VacuumFormatAdapter {
     TurboQuant { code_len: usize },
     TurboQuantHotCold(graph::TurboQuantHotColdLayout),
     PqFastScan(graph::PqFastScanLayout),
+    RaBitQ(graph::PqFastScanLayout),
 }
 
 #[derive(Debug)]
@@ -306,6 +307,7 @@ impl VacuumFormatAdapter {
                 graph::GraphStorageDescriptor::TurboQuantHotCold(layout)
             }
             Self::PqFastScan(layout) => graph::GraphStorageDescriptor::PqFastScan(layout),
+            Self::RaBitQ(layout) => graph::GraphStorageDescriptor::RaBitQ(layout),
         }
     }
 
@@ -466,9 +468,7 @@ fn resolve_vacuum_format_adapter(
         graph::GraphStorageDescriptor::PqFastScan(layout) => {
             Ok(VacuumFormatAdapter::PqFastScan(layout))
         }
-        graph::GraphStorageDescriptor::RaBitQ(_) => {
-            Err("ec_hnsw RaBitQ vacuum support is not implemented yet".to_owned())
-        }
+        graph::GraphStorageDescriptor::RaBitQ(layout) => Ok(VacuumFormatAdapter::RaBitQ(layout)),
     }
 }
 
