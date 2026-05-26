@@ -2096,6 +2096,33 @@ fn ec_spire_publish_static_remote_placement_nodes_with_mode(
     ))
 }
 
+#[pg_extern]
+#[allow(clippy::type_complexity)]
+fn ec_spire_set_static_remote_placement_consistency_mode(
+    index_oid: pg_sys::Oid,
+    consistency_mode: String,
+) -> TableIterator<
+    'static,
+    (
+        name!(active_epoch, i64),
+        name!(remote_node_count, i64),
+        name!(status, &'static str),
+    ),
+> {
+    validate_ec_spire_index(
+        index_oid,
+        "ec_spire_set_static_remote_placement_consistency_mode",
+    );
+    let (active_epoch, remote_node_count) =
+        am::spire_set_static_remote_placement_consistency_mode(index_oid, &consistency_mode);
+
+    TableIterator::once((
+        i64::try_from(active_epoch).expect("active epoch should fit in i64"),
+        i64::try_from(remote_node_count).expect("remote node count should fit in i64"),
+        "set_static_remote_placement_consistency_mode",
+    ))
+}
+
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
 fn ec_spire_remote_node_snapshot(

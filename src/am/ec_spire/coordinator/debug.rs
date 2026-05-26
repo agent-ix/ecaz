@@ -96,6 +96,59 @@ pub(crate) fn publish_static_remote_placement_nodes_with_mode(
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
+pub(crate) fn set_static_remote_placement_consistency_mode(
+    index_oid: pg_sys::Oid,
+    consistency_mode: &str,
+) -> (u64, u64) {
+    let lockmode = pg_sys::RowExclusiveLock as pg_sys::LOCKMODE;
+    let index_relation = IndexRelationGuard::open(
+        index_oid,
+        lockmode,
+        "ec_spire static remote placement consistency mode set",
+    );
+    let result = unsafe {
+        (|| -> Result<(u64, u64), String> {
+            let consistency_mode = parse_static_remote_consistency_mode(consistency_mode)?;
+            let root_control = page::read_root_control_page(index_relation.as_ptr());
+            let (local_store_config, mut epoch_manifest, object_manifest, placement_directory) =
+                spire_manifest_bundle_for_placement_publish(index_relation.as_ptr(), root_control)?;
+            epoch_manifest.consistency_mode = consistency_mode;
+
+            let manifests = build::SpireEncodedManifestBundle {
+                epoch_manifest: epoch_manifest.encode()?,
+                object_manifest: object_manifest.encode()?,
+                placement_directory: placement_directory.encode()?,
+                local_store_config: local_store_config.encode()?,
+            };
+            let locators =
+                build::write_manifest_bundle_to_relation(index_relation.as_ptr(), &manifests)?;
+            let root_control = meta::SpireRootControlState::published_with_store_config(
+                root_control.active_epoch,
+                root_control.next_pid,
+                root_control.next_local_vec_seq,
+                locators.epoch_manifest_tid,
+                locators.object_manifest_tid,
+                locators.placement_directory_tid,
+                locators.local_store_config_tid,
+            )?;
+            page::initialize_root_control_page(index_relation.as_ptr(), root_control);
+            let remote_node_count = placement_directory
+                .entries
+                .iter()
+                .filter(|entry| entry.node_id != meta::SPIRE_LOCAL_NODE_ID)
+                .map(|entry| entry.node_id)
+                .collect::<std::collections::BTreeSet<_>>()
+                .len();
+            Ok((
+                root_control.active_epoch,
+                u64::try_from(remote_node_count)
+                    .map_err(|_| "ec_spire remote node count exceeds u64".to_owned())?,
+            ))
+        })()
+    };
+    result.unwrap_or_else(|e| pgrx::error!("{e}"))
+}
+
 fn parse_static_remote_consistency_mode(input: &str) -> Result<meta::SpireConsistencyMode, String> {
     match input {
         "strict" => Ok(meta::SpireConsistencyMode::Strict),

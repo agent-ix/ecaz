@@ -17,12 +17,15 @@ COORD_HOST=$(jq -r '.coordinator.operator_host // .coordinator.private_ip' "$TOP
 COORD_PORT=$(jq -r '.coordinator.operator_port // 5432' "$TOPOLOGY")
 PREFIX="${PREFIX:-ec_spire_aws_repr_1m}"
 COORD_INDEX="${COORD_INDEX:-${PREFIX}_idx}"
+REMOTE_INDEX="${REMOTE_INDEX:-${PREFIX}_remote_idx}"
 TARGET_REMOTE_ID=$(jq -r '.remotes[0].instance_id' "$TOPOLOGY")
 TARGET_NODE_ID=$(jq -r '.remotes[0].node_id' "$TOPOLOGY")
 TARGET_SECRET=$(jq -r '.remotes[0].secret_arn' "$TOPOLOGY")
 LOG="$ARTIFACT_DIR/fault-${DRILL}.log"
 ECAZ_BIN="${ECAZ_BIN:-ecaz}"
+FAULT_NPROBE="${SPIRE_AWS_FAULT_NPROBE:-100}"
 REMOTE_STOPPED=0
+RESTORE_STRICT_ON_EXIT=0
 QUERY_VECTOR_LITERAL=""
 
 restart_remote_if_needed() {
@@ -33,7 +36,36 @@ restart_remote_if_needed() {
   fi
 }
 
-trap restart_remote_if_needed EXIT
+publish_coord_consistency_mode() {
+  local mode="${1:?mode required}"
+  "$ECAZ_BIN" dev sql \
+    --host "$COORD_HOST" --port "$COORD_PORT" --user ecaz_coord --database postgres \
+    --sql "SELECT * FROM ec_spire_set_static_remote_placement_consistency_mode('${COORD_INDEX}'::regclass::oid, '$mode')" \
+    --log-output "$ARTIFACT_DIR/fault-${DRILL}-publish-${mode}.log"
+
+  jq -c '.remotes[]' "$TOPOLOGY" | while read -r remote; do
+    local remote_node_id remote_host remote_port
+    remote_node_id="$(jq -r '.node_id' <<< "$remote")"
+    remote_host="$(jq -r '.operator_host // .private_ip' <<< "$remote")"
+    remote_port="$(jq -r '.operator_port // 5432' <<< "$remote")"
+    "$ECAZ_BIN" dev sql \
+      --host "$remote_host" --port "$remote_port" --user ecaz_coord --database postgres \
+      --sql "SELECT * FROM ec_spire_set_static_remote_placement_consistency_mode('${REMOTE_INDEX}'::regclass::oid, '$mode')" \
+      --log-output "$ARTIFACT_DIR/fault-${DRILL}-publish-node-${remote_node_id}-${mode}.log"
+  done
+}
+
+cleanup() {
+  local status=0
+  restart_remote_if_needed || status=$?
+  if [[ "$RESTORE_STRICT_ON_EXIT" == "1" ]]; then
+    publish_coord_consistency_mode strict || status=$?
+    RESTORE_STRICT_ON_EXIT=0
+  fi
+  return "$status"
+}
+
+trap cleanup EXIT
 
 stop_remote() {
   aws ec2 stop-instances --region "$REGION" --instance-ids "$TARGET_REMOTE_ID" | tee -a "$LOG"
@@ -67,7 +99,7 @@ run_knn_query() {
   query_vector="$(query_vector_literal)"
   "$ECAZ_BIN" dev sql \
     --host "$COORD_HOST" --port "$COORD_PORT" --user ecaz_coord --database postgres \
-    --env "PGOPTIONS=-c enable_seqscan=off -c enable_indexscan=off -c ec_spire.remote_search_consistency_mode=$mode" \
+    --env "PGOPTIONS=-c enable_seqscan=off -c enable_indexscan=off -c ec_spire.nprobe=$FAULT_NPROBE -c ec_spire.remote_search_consistency_mode=$mode" \
     --sql "SELECT id FROM ${PREFIX}_corpus ORDER BY embedding <#> ${query_vector} LIMIT 10" \
     --log-output "$ARTIFACT_DIR/fault-${DRILL}-knn-${mode}.log"
 }
@@ -78,7 +110,7 @@ snapshot_diag() {
   query_vector="$(query_vector_literal)"
   "$ECAZ_BIN" dev sql \
     --host "$COORD_HOST" --port "$COORD_PORT" --user ecaz_coord --database postgres \
-    --env "PGOPTIONS=-c enable_seqscan=off -c enable_indexscan=off -c ec_spire.remote_search_consistency_mode=$mode" \
+    --env "PGOPTIONS=-c enable_seqscan=off -c enable_indexscan=off -c ec_spire.nprobe=$FAULT_NPROBE -c ec_spire.remote_search_consistency_mode=$mode" \
     --sql "SELECT * FROM ec_spire_remote_search_production_read_profile('${COORD_INDEX}'::regclass, ${query_vector}, 10)" \
     --log-output "$ARTIFACT_DIR/fault-${DRILL}-session-summary.log"
   "$ECAZ_BIN" dev sql \
@@ -92,7 +124,7 @@ assert_degraded_ready() {
   query_vector="$(query_vector_literal)"
   "$ECAZ_BIN" dev sql \
     --host "$COORD_HOST" --port "$COORD_PORT" --user ecaz_coord --database postgres \
-    --env "PGOPTIONS=-c enable_seqscan=off -c enable_indexscan=off -c ec_spire.remote_search_consistency_mode=degraded" \
+    --env "PGOPTIONS=-c enable_seqscan=off -c enable_indexscan=off -c ec_spire.nprobe=$FAULT_NPROBE -c ec_spire.remote_search_consistency_mode=degraded" \
     --sql "WITH profile AS (SELECT metric, value FROM ec_spire_remote_search_production_read_profile('${COORD_INDEX}'::regclass, ${query_vector}, 10)), summary AS (SELECT max(value) FILTER (WHERE metric = 'status') AS status, max(value) FILTER (WHERE metric = 'degraded_skipped_dispatch_count')::int AS skipped, max(value) FILTER (WHERE metric = 'returned_candidate_count')::int AS returned, max(value) FILTER (WHERE metric = 'next_blocker') AS next_blocker FROM profile) SELECT CASE WHEN status = 'degraded_ready' AND skipped > 0 AND returned > 0 AND next_blocker = 'none' THEN 'degraded_ok' ELSE (1 / COALESCE(NULLIF(skipped - skipped, 0), 0))::text END FROM summary" \
     --log-output "$ARTIFACT_DIR/fault-${DRILL}-assertion.log"
 }
@@ -109,13 +141,18 @@ assert_strict_fails() {
 
 case "$DRILL" in
   degraded)
+    publish_coord_consistency_mode degraded
+    RESTORE_STRICT_ON_EXIT=1
     stop_remote
     run_knn_query degraded
     snapshot_diag degraded
     assert_degraded_ready
     restart_remote_if_needed
+    publish_coord_consistency_mode strict
+    RESTORE_STRICT_ON_EXIT=0
     ;;
   strict)
+    publish_coord_consistency_mode strict
     stop_remote
     assert_strict_fails
     snapshot_diag strict || true

@@ -216,5 +216,61 @@ plan_file="$(cat "$LOG_DIR/distributed-placement-plan-correctness.path")"
 scripts/spire-aws/register.sh "$TOPOLOGY" "$LOG_DIR" "$plan_file"
 PREFIX=ec_spire_aws_synth_10k scripts/spire-aws/smoke.sh "$TOPOLOGY" "$LOG_DIR"
 
+query_vector="$("${coord_psql[@]}" -At -c "SELECT 'ARRAY[' || array_to_string(source, ',') || ']::real[]' FROM ec_spire_aws_synth_10k_queries WHERE id = 0")"
+fault_nprobe="${SPIRE_AWS_FAULT_NPROBE:-100}"
+
+publish_coord_mode() {
+  local mode="${1:?mode required}"
+  "${coord_psql[@]}" \
+    -c "SELECT * FROM ec_spire_set_static_remote_placement_consistency_mode('ec_spire_aws_synth_10k_idx'::regclass::oid, '$mode')" \
+    > "$LOG_DIR/aws-local-fault-publish-${mode}.log"
+  "${remote1_psql[@]}" \
+    -c "SELECT * FROM ec_spire_set_static_remote_placement_consistency_mode('ec_spire_aws_synth_10k_remote_idx'::regclass::oid, '$mode')" \
+    > "$LOG_DIR/aws-local-fault-publish-node-2-${mode}.log"
+  "${remote2_psql[@]}" \
+    -c "SELECT * FROM ec_spire_set_static_remote_placement_consistency_mode('ec_spire_aws_synth_10k_remote_idx'::regclass::oid, '$mode')" \
+    > "$LOG_DIR/aws-local-fault-publish-node-3-${mode}.log"
+  "${remote3_psql[@]}" \
+    -c "SELECT * FROM ec_spire_set_static_remote_placement_consistency_mode('ec_spire_aws_synth_10k_remote_idx'::regclass::oid, '$mode')" \
+    > "$LOG_DIR/aws-local-fault-publish-node-4-${mode}.log"
+}
+
+restart_remote1() {
+  "$PG_CTL" -w -D "$REMOTE1_DATA" -l "$LOG_DIR/remote1-postgres.log" \
+    -o "-p $REMOTE1_PORT -k $SOCKET_DIR -c listen_addresses=''" start >/dev/null
+}
+
+echo "aws_local_fault_drill=degraded"
+publish_coord_mode degraded
+"$PG_CTL" -D "$REMOTE1_DATA" -m fast stop >/dev/null
+
+degraded_pgoptions="-c enable_seqscan=off -c enable_indexscan=off -c ec_spire.nprobe=$fault_nprobe -c ec_spire.remote_search_consistency_mode=degraded"
+PGOPTIONS="$degraded_pgoptions" "${coord_psql[@]}" \
+  -c "SELECT id FROM ec_spire_aws_synth_10k_corpus ORDER BY embedding <#> ${query_vector} LIMIT 10" \
+  > "$LOG_DIR/aws-local-fault-degraded-knn.log"
+
+degraded_summary="$(PGOPTIONS="$degraded_pgoptions" "${coord_psql[@]}" -At -F '|' -c "WITH profile AS (SELECT metric, value FROM ec_spire_remote_search_production_read_profile('ec_spire_aws_synth_10k_idx'::regclass, ${query_vector}, 10)), summary AS (SELECT max(value) FILTER (WHERE metric = 'status') AS status, max(value) FILTER (WHERE metric = 'degraded_skipped_dispatch_count')::int AS skipped, max(value) FILTER (WHERE metric = 'returned_candidate_count')::int AS returned, max(value) FILTER (WHERE metric = 'next_blocker') AS next_blocker FROM profile) SELECT status, skipped, returned, next_blocker FROM summary")"
+printf '%s\n' "$degraded_summary" > "$LOG_DIR/aws-local-fault-degraded-summary.log"
+IFS='|' read -r degraded_status degraded_skipped degraded_returned degraded_next_blocker <<< "$degraded_summary"
+if [[ "$degraded_status" != "degraded_ready" || "$degraded_skipped" -le 0 || "$degraded_returned" -le 0 || "$degraded_next_blocker" != "none" ]]; then
+  echo "AWS local degraded fault drill failed: $degraded_summary" >&2
+  exit 1
+fi
+restart_remote1
+
+echo "aws_local_fault_drill=strict"
+publish_coord_mode strict
+"$PG_CTL" -D "$REMOTE1_DATA" -m fast stop >/dev/null
+strict_pgoptions="-c enable_seqscan=off -c enable_indexscan=off -c ec_spire.nprobe=$fault_nprobe -c ec_spire.remote_search_consistency_mode=strict"
+strict_status=0
+PGOPTIONS="$strict_pgoptions" "${coord_psql[@]}" \
+  -c "SELECT id FROM ec_spire_aws_synth_10k_corpus ORDER BY embedding <#> ${query_vector} LIMIT 10" \
+  > "$LOG_DIR/aws-local-fault-strict-knn.log" 2> "$LOG_DIR/aws-local-fault-strict-knn.stderr.log" || strict_status=$?
+if [[ "$strict_status" -eq 0 ]]; then
+  echo "AWS local strict fault drill unexpectedly succeeded with remote1 stopped" >&2
+  exit 1
+fi
+restart_remote1
+
 echo "SPIRE Phase 13e AWS harness local PG18 fixture passed"
 echo "HARNESS PASSED"

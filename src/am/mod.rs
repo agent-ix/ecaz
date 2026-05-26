@@ -244,6 +244,7 @@ pub(crate) use self::ec_spire::{
     remote_search_target_readiness_rows as spire_remote_search_target_readiness_rows,
     remote_search_vector_identity_contract_rows as spire_remote_search_vector_identity_contract_rows,
     remote_write_shape_fingerprint_from_secret as spire_remote_write_shape_fingerprint_from_secret,
+    set_static_remote_placement_consistency_mode as spire_set_static_remote_placement_consistency_mode,
     with_analyzed_dml_frontdoor_query_view as spire_with_analyzed_dml_frontdoor_query_view,
     SpireDmlFrontdoorQueryContext,
 };
