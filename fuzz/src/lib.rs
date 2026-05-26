@@ -108,7 +108,7 @@ pub mod bench_api {
         CurrentFormatMetadata, MetadataPage, TqElementTuple, TqNeighborTuple,
     };
     pub use crate::parse_text;
-    pub use crate::quant::prod::{unpack_mse_indices, ProdQuantizer};
+    pub use crate::quant::prod::{pack_mse_indices, unpack_mse_indices, ProdQuantizer};
     pub use crate::quant::Quantizer;
     pub use crate::storage::page::ItemPointer;
 }
