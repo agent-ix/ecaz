@@ -360,6 +360,14 @@ fuzz-vector-normalize:
 fuzz-all-short:
 	bash scripts/hardening.sh fuzz-all-short --seconds $(FUZZ_SECONDS)
 
+## Resource exhaustion: sweep the six Task 48 §Scope scenarios. Requires
+## a live PG18 cluster (DATABASE env var or default). Restart-only GUC
+## scenarios (max-locks, max-connections, shared-buffers) read the
+## current setting and return PrereqUnmet if the cluster isn't
+## pre-configured low — see docs/build-matrix.md.
+resource-exhaustion:
+	cargo run --release --bin ecaz -- dev resource-test
+
 ## Soak: drive the pure-Rust quantizer-cache harness for $(SOAK_DURATION)
 ## (default 5s; pass SOAK_DURATION=24h or any humantime parseable value).
 ## Use `make soak DURATION=24h` per docs/build-matrix.md.
