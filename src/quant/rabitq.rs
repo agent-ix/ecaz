@@ -416,6 +416,25 @@ impl RaBitQQuantizer {
         debug_assert_eq!(out.len(), self.dimensions);
         out
     }
+
+    pub fn prepare_ip_query(&self, query: &[f32]) -> RaBitQScorer {
+        let rotated = self.rotated(query);
+        let norm = l2_norm(&rotated);
+        let dequant_lut =
+            build_dequant_lut(self.dimensions, self.bits_per_dim as usize, self.quant_clip);
+        let bits1_byte_lut = build_bits1_byte_lut_boxed(&dequant_lut, self.bits_per_dim);
+        let (query_bf16, dequant_lut_bf16) = prepare_bf16_state(&rotated, &dequant_lut);
+        RaBitQScorer {
+            query_rotated: rotated,
+            query_norm: norm,
+            dimensions: self.dimensions,
+            bits_per_dim: self.bits_per_dim,
+            dequant_lut,
+            bits1_byte_lut,
+            query_bf16,
+            dequant_lut_bf16,
+        }
+    }
 }
 
 impl crate::quant::Quantizer for RaBitQQuantizer {
@@ -476,22 +495,7 @@ impl crate::quant::Quantizer for RaBitQQuantizer {
         &self,
         query: &[f32],
     ) -> Box<dyn crate::quant::QueryScorer + Send + Sync + '_> {
-        let rotated = self.rotated(query);
-        let norm = l2_norm(&rotated);
-        let dequant_lut =
-            build_dequant_lut(self.dimensions, self.bits_per_dim as usize, self.quant_clip);
-        let bits1_byte_lut = build_bits1_byte_lut_boxed(&dequant_lut, self.bits_per_dim);
-        let (query_bf16, dequant_lut_bf16) = prepare_bf16_state(&rotated, &dequant_lut);
-        Box::new(RaBitQScorer {
-            query_rotated: rotated,
-            query_norm: norm,
-            dimensions: self.dimensions,
-            bits_per_dim: self.bits_per_dim,
-            dequant_lut,
-            bits1_byte_lut,
-            query_bf16,
-            dequant_lut_bf16,
-        })
+        Box::new(self.prepare_ip_query(query))
     }
 
     fn code_len(&self) -> usize {
