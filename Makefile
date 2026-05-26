@@ -360,6 +360,17 @@ fuzz-vector-normalize:
 fuzz-all-short:
 	bash scripts/hardening.sh fuzz-all-short --seconds $(FUZZ_SECONDS)
 
+## Soak: drive the pure-Rust quantizer-cache harness for $(SOAK_DURATION)
+## (default 5s; pass SOAK_DURATION=24h or any humantime parseable value).
+## Use `make soak DURATION=24h` per docs/build-matrix.md.
+SOAK_DURATION ?= 5
+SOAK_SLOPE_TOLERANCE ?= 1024
+DURATION ?= $(SOAK_DURATION)
+soak:
+	cargo run --release --bin ecaz -- stress soak-quant-cache \
+		--duration-seconds $$(scripts/parse_humantime.sh $(DURATION)) \
+		--slope-tolerance-bytes-per-iter $(SOAK_SLOPE_TOLERANCE)
+
 ## Minimize every fuzz corpus in place (Task 46 §Exit Criteria #4).
 ## Use after a long campaign to keep fuzz/corpus/ bounded before
 ## committing.

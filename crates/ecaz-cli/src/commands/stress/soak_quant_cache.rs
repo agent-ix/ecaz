@@ -37,6 +37,82 @@ use serde::Serialize;
 const SHARED_SEED_BASE: u64 = 0xBEEF_0101_BEEF_0101;
 const PRIVATE_SEED_BASE: u64 = 0x1234_5678_9ABC_DEF0;
 
+/// Cross-platform current-RSS sampler. Returns `None` on unsupported
+/// platforms; the soak loop records `None` in those iterations and the
+/// slope-fit check skips them cleanly.
+#[cfg(target_os = "linux")]
+fn current_rss_bytes() -> Option<u64> {
+    let statm = std::fs::read_to_string("/proc/self/statm").ok()?;
+    let resident_pages: u64 = statm.split_whitespace().nth(1)?.parse().ok()?;
+    // SAFETY: `sysconf(_SC_PAGESIZE)` is a safe POSIX query; no preconditions.
+    let page_size = unsafe { libc::sysconf(libc::_SC_PAGESIZE) };
+    if page_size <= 0 {
+        return None;
+    }
+    Some(resident_pages * page_size as u64)
+}
+
+#[cfg(target_os = "macos")]
+fn current_rss_bytes() -> Option<u64> {
+    use std::mem::MaybeUninit;
+    // SAFETY: `getpid` has no preconditions; `proc_pid_rusage` writes
+    // exactly `sizeof(rusage_info_v2)` into a uninit buffer of the
+    // matching type. We assume_init only on success (ret == 0).
+    let pid = unsafe { libc::getpid() };
+    let mut info: MaybeUninit<libc::rusage_info_v2> = MaybeUninit::uninit();
+    let ret = unsafe {
+        libc::proc_pid_rusage(
+            pid,
+            libc::RUSAGE_INFO_V2,
+            info.as_mut_ptr().cast::<libc::rusage_info_t>(),
+        )
+    };
+    if ret != 0 {
+        return None;
+    }
+    // SAFETY: `proc_pid_rusage` returned success above, which per the
+    // macOS contract means the destination buffer is fully initialized.
+    let info = unsafe { info.assume_init() };
+    Some(info.ri_resident_size)
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+fn current_rss_bytes() -> Option<u64> {
+    None
+}
+
+/// Linear least-squares slope (bytes-per-iteration) of `(iter_index, rss)`
+/// pairs over the second half of the run. Returns `None` if too few
+/// samples or any sample is `None`.
+fn slope_bytes_per_iter(records: &[IterationRecord]) -> Option<f64> {
+    let half = records.len() / 2;
+    if records.len() < 4 {
+        return None;
+    }
+    let tail = &records[half..];
+    let n = tail.len() as f64;
+    if n < 2.0 {
+        return None;
+    }
+    let xs: Vec<f64> = tail.iter().map(|r| r.iter_index as f64).collect();
+    let ys: Vec<f64> = tail
+        .iter()
+        .map(|r| r.rss_bytes.map(|b| b as f64))
+        .collect::<Option<Vec<_>>>()?;
+    let mean_x = xs.iter().sum::<f64>() / n;
+    let mean_y = ys.iter().sum::<f64>() / n;
+    let mut num = 0.0;
+    let mut den = 0.0;
+    for (x, y) in xs.iter().zip(ys.iter()) {
+        num += (x - mean_x) * (y - mean_y);
+        den += (x - mean_x).powi(2);
+    }
+    if den == 0.0 {
+        return None;
+    }
+    Some(num / den)
+}
+
 #[derive(Args, Debug)]
 pub struct SoakQuantCacheArgs {
     /// Wall-clock duration for the soak loop (seconds).
@@ -60,6 +136,12 @@ pub struct SoakQuantCacheArgs {
     /// Write the JSON summary to this path in addition to stdout.
     #[arg(long)]
     pub log_output: Option<PathBuf>,
+    /// Maximum tolerated linear-fit slope of RSS-per-iteration over the
+    /// second half of the run. Exceeding this exits non-zero so soak
+    /// runs can act as a leak gate. Set to 0 to disable the slope
+    /// check entirely (the slope is still recorded in the JSON).
+    #[arg(long, default_value_t = 1024)]
+    pub slope_tolerance_bytes_per_iter: u64,
 }
 
 #[derive(Debug, Serialize)]
@@ -70,6 +152,9 @@ struct IterationRecord {
     ops_per_sec: f64,
     shared_arc_strong_count_max: usize,
     distinct_shared_keys_observed: usize,
+    /// Current RSS in bytes at the end of the iteration. `None` on
+    /// platforms where `current_rss_bytes` is unavailable.
+    rss_bytes: Option<u64>,
 }
 
 #[derive(Debug, Serialize)]
@@ -80,10 +165,19 @@ struct SoakSummary {
     bits: u8,
     shared_keys: u32,
     private_keys_per_iter: u32,
+    slope_tolerance_bytes_per_iter: u64,
     iterations_completed: u64,
     total_ops: u64,
     wall_elapsed_ms: u128,
     mean_ops_per_sec: f64,
+    /// Linear-fit slope of RSS vs. iteration index over the second
+    /// half of the run; `None` if the platform did not supply RSS
+    /// samples or there are too few records.
+    slope_bytes_per_iter: Option<f64>,
+    /// `true` iff `slope_bytes_per_iter` is present and below the
+    /// configured tolerance, OR the tolerance is 0 (gate disabled).
+    /// `false` triggers a non-zero exit.
+    slope_check_passed: bool,
     iterations: Vec<IterationRecord>,
 }
 
@@ -201,6 +295,7 @@ pub fn run(args: SoakQuantCacheArgs) -> Result<()> {
             ops_per_sec,
             shared_arc_strong_count_max: strong_max,
             distinct_shared_keys_observed: distinct_shared,
+            rss_bytes: current_rss_bytes(),
         });
         total_ops_acc = total_ops_acc.saturating_add(iter_ops);
         iter_index += 1;
@@ -213,6 +308,13 @@ pub fn run(args: SoakQuantCacheArgs) -> Result<()> {
         0.0
     };
 
+    let slope = slope_bytes_per_iter(&iterations);
+    let slope_check_passed = match (slope, args.slope_tolerance_bytes_per_iter) {
+        (_, 0) => true,
+        (None, _) => true,
+        (Some(s), tol) => s <= tol as f64,
+    };
+
     let summary = SoakSummary {
         duration_seconds_requested: args.duration_seconds,
         workers: args.workers,
@@ -220,10 +322,13 @@ pub fn run(args: SoakQuantCacheArgs) -> Result<()> {
         bits: args.bits,
         shared_keys: args.shared_keys,
         private_keys_per_iter: args.private_keys_per_iter,
+        slope_tolerance_bytes_per_iter: args.slope_tolerance_bytes_per_iter,
         iterations_completed: iter_index,
         total_ops: total_ops_acc,
         wall_elapsed_ms: wall_elapsed.as_millis(),
         mean_ops_per_sec,
+        slope_bytes_per_iter: slope,
+        slope_check_passed,
         iterations,
     };
 
@@ -234,6 +339,15 @@ pub fn run(args: SoakQuantCacheArgs) -> Result<()> {
     if let Some(path) = args.log_output {
         std::fs::write(&path, &json)
             .wrap_err_with(|| format!("write soak summary to {}", path.display()))?;
+    }
+
+    if !slope_check_passed {
+        return Err(eyre!(
+            "soak slope check failed: slope {:?} bytes/iter exceeds tolerance {} bytes/iter; \
+             treat as a memory-leak gate failure",
+            slope,
+            args.slope_tolerance_bytes_per_iter,
+        ));
     }
 
     Ok(())
