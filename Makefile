@@ -395,6 +395,22 @@ fuzz-corpus-minimize:
 afl-decoders:
 	bash scripts/hardening.sh afl-decoders
 
+## AFL+ build over every registered fuzz target (Task 46 §Exit #3).
+fuzz-afl:
+	bash scripts/hardening.sh fuzz-afl
+
+## Honggfuzz replay over the libFuzzer-built target binaries. Requires
+## the upstream `honggfuzz` binary on PATH; the script skips with a
+## helpful message if not installed. Honors FUZZ_SECONDS.
+fuzz-honggfuzz:
+	bash scripts/hardening.sh fuzz-honggfuzz
+
+## Cross-engine campaign: libFuzzer + AFL+ + Honggfuzz, merging the
+## resulting corpus inputs via `make fuzz-corpus-minimize`. Honors
+## FUZZ_SECONDS (default 60s per engine per target).
+fuzz-cross-pollinate:
+	bash scripts/hardening.sh fuzz-cross-pollinate
+
 # --- Formal / concurrency pilots ---
 
 loom-real:

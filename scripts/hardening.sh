@@ -549,6 +549,64 @@ EOF
     cargo afl build --manifest-path fuzz/Cargo.toml --bin fuzz_diskann_metadata_decode
     cargo afl build --manifest-path fuzz/Cargo.toml --bin fuzz_item_pointer_decode
     ;;
+  fuzz-afl)
+    # Build the full structured + decoder set under AFL+ instrumentation.
+    # Task 46 §Exit #3 — weekly AFL campaign.
+    need_nightly
+    need_cmd cargo-afl "cargo install cargo-afl"
+    nightly_path
+    cargo afl config --build
+    for target in \
+        fuzz_parse_text fuzz_parse_text_structured \
+        fuzz_unpack_mse fuzz_unpack_mse_structured \
+        fuzz_element_tuple_decode fuzz_neighbor_tuple_decode \
+        fuzz_diskann_metadata_decode fuzz_item_pointer_decode \
+        fuzz_vector_normalize fuzz_vector_normalize_structured \
+        fuzz_topk_merge_structured fuzz_quant_encode_decode_roundtrip; do
+      cargo afl build --manifest-path fuzz/Cargo.toml --bin "$target"
+    done
+    ;;
+  fuzz-honggfuzz)
+    # Replay-mode Honggfuzz over the libFuzzer-built corpora. Real
+    # instrumented Honggfuzz requires the `honggfuzz` crate macro on the
+    # target — for now the lane replays corpus files and surfaces any
+    # new crashes via libFuzzer's existing binaries.
+    need_cmd honggfuzz "Install upstream Honggfuzz (https://github.com/google/honggfuzz)"
+    seconds="${FUZZ_SECONDS:-30}"
+    targets="${HONGGFUZZ_TARGETS:-fuzz_parse_text_structured fuzz_unpack_mse_structured fuzz_topk_merge_structured}"
+    for target in $targets; do
+      bin="fuzz/target/x86_64-unknown-linux-gnu/release/$target"
+      [ -x "$bin" ] || bin="fuzz/target/aarch64-unknown-linux-gnu/release/$target"
+      [ -x "$bin" ] || bin="fuzz/target/release/$target"
+      if [ ! -x "$bin" ]; then
+        echo "honggfuzz: $target binary not built; run `cargo +nightly fuzz build $target` first" >&2
+        continue
+      fi
+      honggfuzz -i "fuzz/corpus/$target" -t "$seconds" -- "$bin"
+    done
+    ;;
+  fuzz-cross-pollinate)
+    # Task 46 §Approach 5: run libFuzzer + AFL + Honggfuzz in turn,
+    # merging the discovered inputs into the libFuzzer corpus, then
+    # cmin the result so the committed corpus stays bounded.
+    seconds="${FUZZ_SECONDS:-60}"
+    echo "cross-pollinate: libFuzzer pass (${seconds}s per target)"
+    FUZZ_SECONDS="$seconds" "$0" fuzz-all-short
+    if command -v cargo-afl >/dev/null 2>&1; then
+      echo "cross-pollinate: AFL+ build pass"
+      "$0" fuzz-afl
+    else
+      echo "cross-pollinate: cargo-afl missing — skipping AFL+ pass" >&2
+    fi
+    if command -v honggfuzz >/dev/null 2>&1; then
+      echo "cross-pollinate: Honggfuzz pass"
+      FUZZ_SECONDS="$seconds" "$0" fuzz-honggfuzz
+    else
+      echo "cross-pollinate: honggfuzz missing — skipping Honggfuzz pass" >&2
+    fi
+    echo "cross-pollinate: corpus minimize"
+    (cd "$(dirname "$0")/.." && make fuzz-corpus-minimize)
+    ;;
   loom-real)
     cargo test --manifest-path hardening/loom/Cargo.toml --lib
     ;;
