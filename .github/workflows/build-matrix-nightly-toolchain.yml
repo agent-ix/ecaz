@@ -1,0 +1,56 @@
+name: Build Matrix — nightly toolchain
+
+# Task 48 §Exit Criteria #1 + docs/build-matrix.md "nightly" cadence.
+# Runs Miri, cargo-careful, and the sanitizer lanes under a nightly
+# Rust toolchain on x86_64-linux-gnu. Failures are blocking for the
+# next merge to main.
+
+on:
+  schedule:
+    - cron: "47 5 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: build-matrix-nightly-toolchain
+  cancel-in-progress: false
+
+jobs:
+  hardening-nightly:
+    name: hardening-nightly-local subset
+    runs-on: ubuntu-24.04
+    env:
+      PGRX_HOME: /tmp/tqvector_pgrx_home
+      PGRX_PG_CONFIG_PATH: /usr/lib/postgresql/18/bin/pg_config
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install nightly + miri
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: miri, rust-src
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: build-matrix-nightly-toolchain
+
+      - name: Install PG headers
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          mkdir -p "$PGRX_HOME"
+          sudo curl --fail --show-error --location \
+            --output /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+            https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt noble-pgdg main" | \
+            sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update
+          sudo apt-get install -y postgresql-server-dev-18 clang llvm pkg-config libssl-dev
+
+      - name: make miri (stacked borrows)
+        run: make miri-expanded
+
+      - name: make miri-tree
+        run: make miri-tree
+
+      - name: make miri-many-seeds
+        run: make miri-many-seeds
+
+      - name: make fuzz-all-short
+        run: make fuzz-all-short FUZZ_SECONDS=30

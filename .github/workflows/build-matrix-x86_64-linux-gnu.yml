@@ -1,0 +1,66 @@
+name: Build Matrix — x86_64-unknown-linux-gnu
+
+# Task 48 §Exit Criteria #1: per-PR lane for the production primary
+# triple. Runs cargo check + clippy + cargo test on pg17 + pg18, both
+# stable.
+#
+# Status: blocking (per docs/build-matrix.md cadence policy).
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: build-matrix-x86_64-linux-gnu-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  matrix:
+    name: ${{ matrix.pg }} / ${{ matrix.toolchain }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        pg: [pg17, pg18]
+        toolchain: [stable]
+    env:
+      PGRX_HOME: /tmp/tqvector_pgrx_home
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ matrix.toolchain }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.pg }}-${{ matrix.toolchain }}
+
+      - name: Install PG headers
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          mkdir -p "$PGRX_HOME"
+          sudo curl --fail --show-error --location \
+            --output /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+            https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt noble-pgdg main" | \
+            sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update
+          # Install both PG17 and PG18 server-dev; the matrix variable selects which one is "primary"
+          sudo apt-get install -y postgresql-server-dev-17 postgresql-server-dev-18 clang llvm pkg-config libssl-dev
+
+      - name: Set PGRX_PG_CONFIG_PATH (pg17)
+        if: matrix.pg == 'pg17'
+        run: echo "PGRX_PG_CONFIG_PATH=/usr/lib/postgresql/17/bin/pg_config" >> $GITHUB_ENV
+      - name: Set PGRX_PG_CONFIG_PATH (pg18)
+        if: matrix.pg == 'pg18'
+        run: echo "PGRX_PG_CONFIG_PATH=/usr/lib/postgresql/18/bin/pg_config" >> $GITHUB_ENV
+
+      - name: cargo check
+        run: cargo check --all-targets --no-default-features --features ${{ matrix.pg }}
+
+      - name: cargo clippy
+        run: cargo clippy --all-targets --no-default-features --features ${{ matrix.pg }} -- -D warnings
+
+      - name: cargo test
+        run: cargo test --no-default-features --features ${{ matrix.pg }}
