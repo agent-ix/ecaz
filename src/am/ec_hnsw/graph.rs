@@ -4,7 +4,7 @@ use std::collections::BinaryHeap;
 use hashbrown::HashSet;
 use pgrx::pg_sys;
 
-use super::{options, page, search};
+use super::{codec, options, page, search};
 use crate::quant::grouped_pq::GROUPED_PQ_CENTROIDS;
 use crate::storage::buffer_guard::LockedBufferGuard;
 #[cfg(feature = "pg18")]
@@ -41,20 +41,20 @@ impl GraphStorageDescriptor {
                 .expect("ec_hnsw graph index relation should be non-null"),
         )
         .storage_format;
-        if descriptor.matches_storage_format(expected) {
+        if descriptor.codec().matches_storage_format(expected) {
             return Ok(descriptor);
         }
 
         Err(format!(
             "ec_hnsw index reloption storage_format={} does not match on-disk metadata format={}; REINDEX after switching formats",
             expected.as_str(),
-            descriptor.storage_format_name(),
+            descriptor.codec().storage_format_name(),
         ))
     }
 
     pub(crate) fn from_metadata(metadata: &page::MetadataPage) -> Result<Self, String> {
-        match metadata.graph_storage_format()? {
-            page::GraphStorageFormat::TurboQuant => {
+        match codec::HnswStorageCodec::from_metadata(metadata)? {
+            codec::HnswStorageCodec::TurboQuant => {
                 if metadata.format_version == page::INDEX_FORMAT_V3_TURBO_HOT_COLD {
                     if metadata.dimensions == 0 {
                         return Ok(Self::TurboQuantHotCold(TurboQuantHotColdLayout {
@@ -109,7 +109,7 @@ impl GraphStorageDescriptor {
                     },
                 })
             }
-            page::GraphStorageFormat::PqFastScan => {
+            codec::HnswStorageCodec::PqFastScan => {
                 if metadata.dimensions == 0 {
                     return Ok(Self::PqFastScan(PqFastScanLayout {
                         binary_word_count: 0,
@@ -179,23 +179,13 @@ impl GraphStorageDescriptor {
         }
     }
 
-    fn storage_format_name(self) -> &'static str {
+    pub(crate) fn codec(self) -> codec::HnswStorageCodec {
         match self {
             Self::TurboQuant { .. } | Self::TurboQuantHotCold(_) => {
-                options::StorageFormat::TurboQuant.as_str()
+                codec::HnswStorageCodec::TurboQuant
             }
-            Self::PqFastScan(_) => options::StorageFormat::PqFastScan.as_str(),
+            Self::PqFastScan(_) => codec::HnswStorageCodec::PqFastScan,
         }
-    }
-
-    fn matches_storage_format(self, storage_format: options::StorageFormat) -> bool {
-        matches!(
-            (self, storage_format),
-            (
-                Self::TurboQuant { .. } | Self::TurboQuantHotCold(_),
-                options::StorageFormat::TurboQuant
-            ) | (Self::PqFastScan(_), options::StorageFormat::PqFastScan)
-        )
     }
 }
 

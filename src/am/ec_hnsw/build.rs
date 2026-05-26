@@ -9,7 +9,7 @@ use pgrx::{itemptr::item_pointer_get_both, pg_sys, PgBox};
 
 use crate::quant::{grouped_pq::GROUPED_PQ_CENTROIDS, prod::ProdQuantizer};
 
-use super::{build_parallel, graph, insert, options, page, search, shared, source, P_NEW};
+use super::{build_parallel, codec, graph, insert, options, page, search, shared, source, P_NEW};
 use crate::am::common::{
     callback::pg_am_callback,
     detoast::DetoastedVarlena,
@@ -356,41 +356,8 @@ impl BuildState {
         let ef_construction = u16::try_from(self.options.ef_construction)
             .expect("validated ef_construction should fit into u16");
 
-        match self.options.storage_format {
-            options::StorageFormat::TurboQuant => {
-                page::MetadataPage::current_v3_turbo_hot_cold(page::CurrentFormatMetadata {
-                    m,
-                    ef_construction,
-                    entry_point: page::ItemPointer::INVALID,
-                    dimensions: 0,
-                    bits: 0,
-                    max_level: 0,
-                    seed: 0,
-                    inserted_since_rebuild: 0,
-                    persisted_binary_sidecar: false,
-                })
-            }
-            options::StorageFormat::PqFastScan => page::MetadataPage {
-                m,
-                ef_construction,
-                entry_point: page::ItemPointer::INVALID,
-                dimensions: 0,
-                bits: 0,
-                max_level: 0,
-                seed: 0,
-                inserted_since_rebuild: 0,
-                format_version: page::INDEX_FORMAT_V2_GROUPED,
-                transform_kind: page::TransformKind::Srht,
-                search_codec_kind: page::SearchCodecKind::GroupedPq,
-                payload_flags: page::PAYLOAD_FLAG_GROUPED_SEARCH_CODE
-                    | page::PAYLOAD_FLAG_COLD_RERANK_PAYLOAD,
-                search_bits: 4,
-                rerank_codec_kind: page::RerankCodecKind::ScalarQuantized,
-                search_subvector_count: 0,
-                search_subvector_dim: 0,
-                grouped_codebook_head: page::ItemPointer::INVALID,
-            },
-        }
+        codec::HnswStorageCodec::from_storage_format(self.options.storage_format)
+            .initial_metadata(m, ef_construction)
     }
 
     pub(super) fn push(&mut self, tuple: BuildTuple) {
