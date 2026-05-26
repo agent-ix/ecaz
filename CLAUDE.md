@@ -173,10 +173,12 @@ Invoked to implement, continue, or close out a task on the current branch.
 
 ### Inbox: Process Feedback Before New Work
 
-- At the start of a turn, scan the owning task bucket under `reviews/` for new
-  feedback files you have not processed.
-- Also scan legacy `review/` only when working on a deferred Task 41 packet
-  that has not been migrated yet.
+- At the start of a turn, scan **every task bucket you have active work in**
+  under `reviews/task-{id}/` for new feedback files you have not processed.
+  If you are working on more than one task this cycle (e.g. parallel lanes
+  like Tasks 43 + 46 + 48), scan all of their buckets — not just the bucket
+  for the last commit you made. Walk each bucket's `feedback/` subdirs and
+  diff against feedback you've already acknowledged.
 - For benchmark/measurement work, scan `benchmarks/<topic>/` for the latest
   packet manifests in the same lane.
 - If new feedback is present for a topic you own, process it before starting
