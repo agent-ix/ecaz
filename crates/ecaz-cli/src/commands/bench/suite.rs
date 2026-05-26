@@ -356,6 +356,8 @@ struct LatencyStep {
     #[serde(default)]
     sample_backend_memory: Option<bool>,
     #[serde(default)]
+    cache_state: Option<String>,
+    #[serde(default)]
     memory_sample_interval_ms: Option<u64>,
     #[serde(default)]
     log_output: Option<PathBuf>,
@@ -2096,6 +2098,9 @@ fn expand_latency(step: &LatencyStep, defaults: &SuiteDefaults) -> Vec<String> {
     {
         args.push("--sample-backend-memory".into());
     }
+    if let Some(cache_state) = &step.cache_state {
+        push_arg(&mut args, "--cache-state", cache_state);
+    }
     push_arg(
         &mut args,
         "--memory-sample-interval-ms",
@@ -2895,6 +2900,36 @@ mod tests {
             .any(|w| w == ["--manifest-file", "stage/anchor_manifest.json"]));
         assert!(!args.iter().any(|arg| arg == "--corpus-file"));
         assert!(!args.iter().any(|arg| arg == "--queries-file"));
+    }
+
+    #[test]
+    fn expands_latency_with_cache_state_label() {
+        let step = LatencyStep {
+            name: "latency".into(),
+            tags: vec!["latency".into()],
+            prefix: "surface".into(),
+            sweep: vec![64, 128],
+            k: None,
+            concurrency: None,
+            iterations: Some(10),
+            rerank_width: None,
+            adaptive_nprobe: None,
+            adaptive_nprobe_score_gap_micros: None,
+            adaptive_nprobe_score_margin_ratio_bps: None,
+            ivf_scratch_soa_batch_decode: None,
+            profile: Some("ec_diskann".into()),
+            bits: None,
+            seed: None,
+            force_index: None,
+            sample_backend_memory: None,
+            cache_state: Some("post_recall_warm".into()),
+            memory_sample_interval_ms: None,
+            log_output: Some("latency.log".into()),
+        };
+        let args = expand_latency(&step, &SuiteDefaults::default());
+        assert!(args
+            .windows(2)
+            .any(|w| w == ["--cache-state", "post_recall_warm"]));
     }
 
     #[test]

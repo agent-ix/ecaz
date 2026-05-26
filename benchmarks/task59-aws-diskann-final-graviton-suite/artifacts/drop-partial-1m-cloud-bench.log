@@ -1,0 +1,8 @@
+
+   0: [91mssm command dcac3512-fbad-4386-ad3e-5921ce9a12f0 on i-0d46840c00f93dbb6 ended in Failed (rc=1): + cd /var/lib/pgsql/build/ecaz / ++ dirname benchmarks/task59-aws-diskann-final-graviton-suite/drop-partial-1m.json / + mkdir -p benchmarks/task59-aws-diskann-final-graviton-suite benchmarks/task59-aws-diskann-final-graviton-suite/artifacts/drop-partial-1m / + trap 'status=$?; set +e; aws s3 sync benchmarks/task59-aws-diskann-final-graviton-suite/artifacts/drop-partial-1m s3://ecaz-cloud-10k-medium-a02e4aea/bench-artifacts/smoke/20260524T231235Z/ --region us-west-2 --only-show-errors || true; exit $status' EXIT / + cat[0m
+
+Location:
+   [35mcrates/ecaz-cloud/src/ssm.rs[0m:[35m111[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.
