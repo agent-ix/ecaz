@@ -39,7 +39,7 @@ suite audit` can verify the full fetch -> prepare -> load dependency chain.
 Dry-run validation:
 
 ```sh
-cargo run -p ecaz-cli -- \
+ecaz \
   --log-file benchmarks/task60-diskann-rabitq-format/artifacts/suite-dry-run.log \
   bench suite run \
   --config benchmarks/task60-diskann-rabitq-format/suite.json \
@@ -50,7 +50,7 @@ cargo run -p ecaz-cli -- \
 Full run on the benchmark host:
 
 ```sh
-cargo run -p ecaz-cli -- \
+ecaz \
   --log-file benchmarks/task60-diskann-rabitq-format/artifacts/suite-run.log \
   bench suite run \
   --config benchmarks/task60-diskann-rabitq-format/suite.json \
@@ -60,7 +60,7 @@ cargo run -p ecaz-cli -- \
 Report extraction after the full run:
 
 ```sh
-cargo run -p ecaz-cli -- \
+ecaz \
   --log-file benchmarks/task60-diskann-rabitq-format/artifacts/suite-report.log \
   bench suite report \
   --manifest benchmarks/task60-diskann-rabitq-format/artifacts/suite-manifest.json \
