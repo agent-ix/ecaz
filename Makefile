@@ -411,6 +411,21 @@ fuzz-honggfuzz:
 fuzz-cross-pollinate:
 	bash scripts/hardening.sh fuzz-cross-pollinate
 
+## ECAZ-grammar SQLsmith (Task 46 §Exit #2). Streams generated
+## statements to the cluster at $(SQLSMITH_DSN) — clean ERRORs are
+## tolerated; PANIC / broken-connection events fail the run. Seed
+## corpus committed under fixtures/sqlsmith-ecaz/.
+SQLSMITH_ECAZ_SEED ?= 42
+SQLSMITH_ECAZ_COUNT ?= 256
+sqlsmith-ecaz:
+	@if [ -z "$(SQLSMITH_DSN)" ]; then \
+		echo "set SQLSMITH_DSN=postgresql://… first" >&2; exit 2; \
+	fi
+	cargo run --release -p ecaz-sqlgen -- execute \
+		--dsn "$(SQLSMITH_DSN)" \
+		--seed $(SQLSMITH_ECAZ_SEED) \
+		--count $(SQLSMITH_ECAZ_COUNT)
+
 # --- Formal / concurrency pilots ---
 
 loom-real:
