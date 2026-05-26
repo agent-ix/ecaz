@@ -327,10 +327,18 @@ pub(super) fn prepare_prefilter(
 ) -> Result<DiskannPreparedPrefilter, String> {
     match metadata.search_codec_kind {
         VAMANA_SEARCH_CODEC_RABITQ => {
-            if matches!(prefilter_kind, super::options::PrefilterKind::GroupedPq) {
-                return Err(format!(
-                    "ec_diskann.prefilter_kind=grouped_pq requested but {context} is a RaBitQ index"
-                ));
+            match prefilter_kind {
+                super::options::PrefilterKind::Auto => {}
+                super::options::PrefilterKind::BinarySidecar => {
+                    return Err(format!(
+                        "ec_diskann.prefilter_kind=binary_sidecar requested but {context} is a RaBitQ index with no binary sidecar"
+                    ));
+                }
+                super::options::PrefilterKind::GroupedPq => {
+                    return Err(format!(
+                        "ec_diskann.prefilter_kind=grouped_pq requested but {context} is a RaBitQ index"
+                    ));
+                }
             }
             let bits = rabitq_bits_from_metadata(metadata)?;
             let quantizer = RaBitQQuantizer::cached_seeded_srht_bits(
@@ -449,6 +457,36 @@ mod tests {
         assert_eq!(
             payload.search_code.len(),
             code_len_for(8, DISKANN_RABITQ_BITS).unwrap()
+        );
+    }
+
+    #[test]
+    fn rabitq_prefilter_rejects_binary_sidecar_override() {
+        let metadata = VamanaMetadataPage {
+            search_codec_kind: VAMANA_SEARCH_CODEC_RABITQ,
+            search_subvector_count: 0,
+            search_subvector_dim: u16::from(DISKANN_RABITQ_BITS),
+            payload_flags: 0,
+            dimensions: 8,
+            seed: 42,
+            ..VamanaMetadataPage::empty(4, 16, 1.2, 8, 42)
+        };
+        let query = vec![1.0_f32; 8];
+
+        let err = match prepare_prefilter(
+            None,
+            &metadata,
+            &query,
+            super::super::options::PrefilterKind::BinarySidecar,
+            "test",
+        ) {
+            Ok(_) => panic!("RaBitQ indexes should not satisfy a binary_sidecar override"),
+            Err(err) => err,
+        };
+
+        assert!(
+            err.contains("no binary sidecar"),
+            "error should explain the forced sidecar mismatch: {err}"
         );
     }
 }
