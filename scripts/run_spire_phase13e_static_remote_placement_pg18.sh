@@ -96,7 +96,7 @@ if [[ -n "$ARTIFACT_DIR" ]]; then
 else
   LOG_DIR="$RUN_DIR/logs"
 fi
-SOCKET_DIR="$RUN_DIR/s"
+SOCKET_DIR="$ROOT_DIR/target/spire-phase13e-sockets-$RUN_ID"
 COORD_DATA="$RUN_DIR/coord"
 REMOTE1_DATA="$RUN_DIR/remote1"
 REMOTE2_DATA="$RUN_DIR/remote2"
@@ -169,24 +169,29 @@ remote3_psql=("$PSQL" -v ON_ERROR_STOP=1 -h "$SOCKET_DIR" -p "$REMOTE3_PORT" -U 
 "${remote3_psql[@]}" -c "CREATE EXTENSION ecaz" >/dev/null
 
 "${coord_psql[@]}" <<'SQL' >/dev/null
-CREATE TABLE ec_spire_phase13e_coord_sql
-    (id bigint primary key, title text not null, embedding ecvector);
-INSERT INTO ec_spire_phase13e_coord_sql (id, title, embedding)
+CREATE TABLE ec_spire_phase13e_coord_corpus
+    (id bigint primary key, title text not null, embedding ecvector, source real[] not null);
+INSERT INTO ec_spire_phase13e_coord_corpus (id, title, embedding, source)
 SELECT id,
        format('doc %s', id),
-       encode_to_ecvector(
-         CASE (id % 4)
-           WHEN 1 THEN ARRAY[1.0, 0.0]::real[]
-           WHEN 2 THEN ARRAY[0.6, 0.4]::real[]
-           WHEN 3 THEN ARRAY[-1.0, 0.0]::real[]
-           ELSE ARRAY[0.0, 1.0]::real[]
-         END,
-         4,
-         42
-       )
-  FROM generate_series(1, 12) AS id;
+       encode_to_ecvector(source, 4, 42),
+       source
+  FROM (
+    SELECT id,
+           CASE (id % 4)
+             WHEN 1 THEN ARRAY[1.0, 0.0]::real[]
+             WHEN 2 THEN ARRAY[0.6, 0.4]::real[]
+             WHEN 3 THEN ARRAY[-1.0, 0.0]::real[]
+             ELSE ARRAY[0.0, 1.0]::real[]
+           END AS source
+      FROM generate_series(1, 12) AS id
+  ) AS rows;
+CREATE TABLE ec_spire_phase13e_coord_queries
+    (id bigint primary key, source real[] not null);
+INSERT INTO ec_spire_phase13e_coord_queries (id, source) VALUES
+    (1, ARRAY[1.0, 0.0]::real[]);
 CREATE INDEX ec_spire_phase13e_coord_idx
-    ON ec_spire_phase13e_coord_sql USING ec_spire
+    ON ec_spire_phase13e_coord_corpus USING ec_spire
     (embedding ecvector_spire_ip_ops)
     WITH (nlists = 3, nprobe = 3, storage_format = 'rabitq');
 SQL
@@ -278,7 +283,7 @@ create_remote_shard() {
 
   "${coord_psql[@]}" -At -F $'\t' \
     -v coord_index=ec_spire_phase13e_coord_idx \
-    -v coord_table=ec_spire_phase13e_coord_sql \
+    -v coord_table=ec_spire_phase13e_coord_corpus \
     -v node_id="$node_id" \
     -v remotes_json='[{"node_id":2},{"node_id":3},{"node_id":4}]' \
     -f "$ROOT_DIR/scripts/spire-aws/export-coordinator-leaf-base-assignments.sql" \
@@ -309,25 +314,34 @@ CREATE TEMP TABLE ec_spire_phase13e_assignment_import (
 );
 \copy ec_spire_phase13e_assignment_import FROM '$assignment_file' WITH (FORMAT text, DELIMITER E'\t')
 CREATE TABLE ec_spire_phase13e_remote_sql
-    (id bigint primary key, title text not null, embedding ecvector);
-INSERT INTO ec_spire_phase13e_remote_sql (id, title, embedding)
+    (id bigint primary key, title text not null, embedding ecvector, source real[] not null);
+INSERT INTO ec_spire_phase13e_remote_sql (id, title, embedding, source)
 WITH shard_rows AS (
   SELECT DISTINCT row_id
   FROM ec_spire_phase13e_assignment_import
-)
+),
+encoded AS (
 SELECT row_id,
-       format('doc %s', row_id),
+       format('doc %s', row_id) AS title,
+       source,
        encode_to_ecvector(
-         CASE (row_id % 4)
-           WHEN 1 THEN ARRAY[1.0, 0.0]::real[]
-           WHEN 2 THEN ARRAY[0.6, 0.4]::real[]
-           WHEN 3 THEN ARRAY[-1.0, 0.0]::real[]
-           ELSE ARRAY[0.0, 1.0]::real[]
-         END,
+         source,
          4,
          42
-       )
-  FROM shard_rows
+       ) AS embedding
+  FROM (
+    SELECT row_id,
+           CASE (row_id % 4)
+             WHEN 1 THEN ARRAY[1.0, 0.0]::real[]
+             WHEN 2 THEN ARRAY[0.6, 0.4]::real[]
+             WHEN 3 THEN ARRAY[-1.0, 0.0]::real[]
+             ELSE ARRAY[0.0, 1.0]::real[]
+           END AS source
+      FROM shard_rows
+  ) AS rows
+)
+SELECT row_id, title, embedding, source
+  FROM encoded
  ORDER BY row_id;
 CREATE INDEX ec_spire_phase13e_remote_idx
     ON ec_spire_phase13e_remote_sql USING ec_spire
@@ -416,21 +430,21 @@ SQL
 plan="$(PGOPTIONS="-c enable_seqscan=off -c enable_indexscan=off" "${coord_psql[@]}" -At <<'SQL'
 EXPLAIN (COSTS OFF)
 SELECT id, title
-FROM ec_spire_phase13e_coord_sql
+FROM ec_spire_phase13e_coord_corpus
 ORDER BY embedding <#> ARRAY[1.0, 0.0]::real[]
 LIMIT 6;
 SQL
 )"
 read_rows="$(PGOPTIONS="-c enable_seqscan=off -c enable_indexscan=off" "${coord_psql[@]}" -At -F ',' <<'SQL'
 SELECT id, title
-FROM ec_spire_phase13e_coord_sql
+FROM ec_spire_phase13e_coord_corpus
 ORDER BY embedding <#> ARRAY[1.0, 0.0]::real[]
 LIMIT 6;
 SQL
 )"
 exact_rows="$("${coord_psql[@]}" -At -F ',' <<'SQL'
 SELECT id, title
-FROM ec_spire_phase13e_coord_sql
+FROM ec_spire_phase13e_coord_corpus
 ORDER BY CASE (id % 4)
            WHEN 1 THEN 0
            WHEN 2 THEN 1
@@ -464,6 +478,66 @@ echo "exact_rows=$exact_rows"
 [[ "$profile_returned_count" != "0" ]]
 [[ "$read_rows" == *"doc "* ]]
 [[ "$read_rows" == "$exact_rows" ]]
+
+suite_artifact_dir="$LOG_DIR/bench-suite"
+suite_config="$suite_artifact_dir/phase13e-local-spire-pipeline-suite.json"
+mkdir -p "$suite_artifact_dir"
+remote_selected_pids="$(
+  awk -F $'\t' '!seen[$2]++ { print $2 + 0 }' "$ASSIGNMENT_DIR"/node-*-assignments.tsv \
+    | sort -n \
+    | jq -Rsc 'split("\n") | map(select(length > 0) | tonumber)'
+)"
+if [[ -z "$remote_selected_pids" || "$remote_selected_pids" == "null" ]]; then
+  echo "no remote selected pids available for bench suite gate" >&2
+  exit 6
+fi
+jq -n \
+  --arg artifact_dir "$suite_artifact_dir" \
+  --arg log_output "$suite_artifact_dir/spire-pipeline.log" \
+  --argjson remote_selected_pids "$remote_selected_pids" \
+  '{
+    name: "phase13e-local-spire-pipeline",
+    schema_version: 1,
+    artifact_dir: $artifact_dir,
+    defaults: {
+      queries_limit: 1,
+      pg: 18
+    },
+    steps: [
+      {
+        kind: "spire-pipeline",
+        name: "phase13e-local-spire-pipeline-read",
+        tags: ["phase13e", "local", "production-read"],
+        prefix: "ec_spire_phase13e_coord",
+        index: "ec_spire_phase13e_coord_idx",
+        queries_limit: 1,
+        sweep: [3],
+        include_remote: true,
+        require_remote_placements: true,
+        include_query_metrics: true,
+        include_recall: true,
+        include_production_read_profile: true,
+        production_read_only: true,
+        query_metric_k: 6,
+        top_k: 6,
+        consistency_mode: "strict",
+        remote_tuple_transport: "pg_binary_attr_v1",
+        remote_selected_pids: $remote_selected_pids,
+        log_output: $log_output
+      }
+    ]
+  }' > "$suite_config"
+ECAZ_BIN="${ECAZ_BIN:-$ROOT_DIR/target/release/ecaz}"
+if [[ ! -x "$ECAZ_BIN" ]]; then
+  ECAZ_BIN="ecaz"
+fi
+"$ECAZ_BIN" \
+  --host "$SOCKET_DIR" --port "$COORD_PORT" --user postgres --database postgres \
+  bench suite run --config "$suite_config" \
+  --manifest-output "$suite_artifact_dir/suite-manifest.json" \
+  --results-output "$suite_artifact_dir/results.jsonl" \
+  > "$suite_artifact_dir/suite-run.log" 2>&1
+echo "bench_suite_summary=passed|$suite_config|$suite_artifact_dir/suite-manifest.json|$suite_artifact_dir/results.jsonl"
 
 slow_lock_log="$LOG_DIR/slow-remote-node2-lock.log"
 timeline_log="$LOG_DIR/production-read-timeline.tsv"
@@ -550,7 +624,7 @@ set +e
 PGOPTIONS="-c enable_seqscan=off -c enable_indexscan=off -c ec_spire.remote_search_consistency_mode=strict" \
   "${coord_psql[@]}" -At -F ',' <<'SQL' >"$strict_failure_log" 2>&1
 SELECT id, title
-FROM ec_spire_phase13e_coord_sql
+FROM ec_spire_phase13e_coord_corpus
 ORDER BY embedding <#> ARRAY[1.0, 0.0]::real[]
 LIMIT 6;
 SQL
@@ -595,7 +669,7 @@ SQL
 )"
 degraded_rows="$(PGOPTIONS="-c enable_seqscan=off -c enable_indexscan=off -c ec_spire.remote_search_consistency_mode=degraded" "${coord_psql[@]}" -At -F ',' <<'SQL'
 SELECT id, title
-FROM ec_spire_phase13e_coord_sql
+FROM ec_spire_phase13e_coord_corpus
 ORDER BY embedding <#> ARRAY[1.0, 0.0]::real[]
 LIMIT 6;
 SQL

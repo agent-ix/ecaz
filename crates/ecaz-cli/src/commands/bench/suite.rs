@@ -420,6 +420,8 @@ struct SpirePipelineStep {
     #[serde(default)]
     include_production_read_profile: Option<bool>,
     #[serde(default)]
+    production_read_only: Option<bool>,
+    #[serde(default)]
     query_metric_k: Option<usize>,
     #[serde(default)]
     query_metric_projection_columns: Vec<String>,
@@ -2501,6 +2503,9 @@ fn expand_spire_pipeline(step: &SpirePipelineStep, defaults: &SuiteDefaults) -> 
     if step.include_production_read_profile.unwrap_or(false) {
         args.push("--include-production-read-profile".into());
     }
+    if step.production_read_only.unwrap_or(false) {
+        args.push("--production-read-only".into());
+    }
     if let Some(k) = step.query_metric_k {
         push_arg(&mut args, "--query-metric-k", &k.to_string());
     }
@@ -3398,6 +3403,7 @@ mod tests {
             include_query_metrics: Some(true),
             include_recall: Some(true),
             include_production_read_profile: Some(true),
+            production_read_only: Some(true),
             query_metric_k: Some(10),
             query_metric_projection_columns: vec!["title".into()],
             log_output: Some("spire-profile.log".into()),
@@ -3412,6 +3418,7 @@ mod tests {
         assert!(args.contains(&"--include-remote".into()));
         assert!(args.contains(&"--require-remote-placements".into()));
         assert!(args.contains(&"--include-production-read-profile".into()));
+        assert!(args.contains(&"--production-read-only".into()));
         assert!(args
             .windows(2)
             .any(|w| w == ["--remote-selected-pids", "10,11"]));
@@ -3463,6 +3470,7 @@ mod tests {
                 include_query_metrics: Some(true),
                 include_recall: Some(true),
                 include_production_read_profile: Some(true),
+                production_read_only: Some(true),
                 query_metric_k: Some(10),
                 query_metric_projection_columns: Vec::new(),
                 log_output: None,

@@ -1899,7 +1899,7 @@ pub(crate) fn classify_centroid(
     }
 
     let root_control = index.root_control();
-    let Some(anchor) = index.active_epoch_anchor(root_control)? else {
+    let Some(anchor) = index.coordinator_fanout_anchor(root_control)? else {
         return Err(
             "ec_spire_classify_centroid requires an active ec_spire routing epoch".to_owned(),
         );

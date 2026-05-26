@@ -26,14 +26,12 @@ pub struct RenderSpireRegistrationsArgs {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
 struct DistributedPlacementPlan {
     coordinator_index_name: String,
     remotes: Vec<DistributedPlacementRemote>,
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
 struct DistributedPlacementRemote {
     node_id: u32,
     conninfo_secret_name: String,
@@ -241,11 +239,14 @@ mod tests {
 
     fn plan_json() -> String {
         serde_json::json!({
+            "version": 1,
+            "prefix": "fixture",
             "coordinator_index_name": "public.coord_idx",
             "remotes": [{
                 "node_id": 2,
                 "conninfo_secret_name": "spire/remote/a",
-                "remote_index_regclass": "public.remote_idx"
+                "remote_index_regclass": "public.remote_idx",
+                "remote_prefix": "fixture_node_2"
             }]
         })
         .to_string()

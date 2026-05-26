@@ -111,6 +111,11 @@ pub struct SpirePipelineArgs {
     /// query and report production read-path transport counters.
     #[arg(long)]
     pub include_production_read_profile: bool,
+    /// Skip SQL-visible local/remote pipeline diagnostics and measure only the
+    /// production KNN/read-profile path. Use this when remote placements make
+    /// local heap diagnostics intentionally fail closed.
+    #[arg(long)]
+    pub production_read_only: bool,
     /// k for optional query latency and recall metrics.
     #[arg(long, default_value_t = 10)]
     pub query_metric_k: usize,
@@ -215,6 +220,12 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
     };
     if query_metrics_enabled {
         psql::prefer_ordered_ann_path(&client).await?;
+        if args.production_read_only {
+            client
+                .batch_execute("SET enable_indexscan = off")
+                .await
+                .wrap_err("forcing SPIRE CustomScan tuple delivery path")?;
+        }
     }
     let query_metric_stmt = if query_metrics_enabled {
         let sql = build_query_metric_sql(&corpus_table, &args.query_metric_projection_columns);
@@ -256,67 +267,27 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
         }
 
         for query in &queries {
-            let routing_rows = query_routing_rows(&client, &index, &query.source).await?;
-            for row in routing_rows {
-                routing
-                    .entry(RoutingKey {
-                        nprobe: *nprobe,
-                        routing_level: row.routing_level,
-                    })
-                    .or_default()
-                    .record(row);
-            }
-
-            let local_rows = query_local_pipeline_rows(&client, &index, &query.source).await?;
-            if remote_epoch.is_none() {
-                remote_epoch = local_rows
-                    .iter()
-                    .find(|row| row.active_epoch > 0)
-                    .map(|row| row.active_epoch);
-            }
-            for row in local_rows {
-                local
-                    .entry(StepKey {
-                        nprobe: *nprobe,
-                        step_ordinal: row.step_ordinal,
-                        step_name: row.step_name.clone(),
-                    })
-                    .or_default()
-                    .record(row);
-            }
-            if args.include_local_store_overlap {
-                let overlap_rows =
-                    query_local_store_overlap_rows(&client, &index, &query.source).await?;
-                for row in overlap_rows {
-                    local_store_overlap
-                        .entry(LocalStoreOverlapKey {
+            if !args.production_read_only {
+                let routing_rows = query_routing_rows(&client, &index, &query.source).await?;
+                for row in routing_rows {
+                    routing
+                        .entry(RoutingKey {
                             nprobe: *nprobe,
-                            node_id: row.node_id,
-                            local_store_id: row.local_store_id,
+                            routing_level: row.routing_level,
                         })
                         .or_default()
                         .record(row);
                 }
-            }
 
-            if remote_enabled {
-                let requested_epoch = remote_epoch.ok_or_else(|| {
-                    eyre!(
-                        "remote pipeline requested but no active epoch was observed; pass --remote-requested-epoch"
-                    )
-                })?;
-                let remote_rows = query_remote_pipeline_rows(
-                    &client,
-                    &index,
-                    requested_epoch,
-                    &query.source,
-                    &args.remote_selected_pids,
-                    args.top_k,
-                    &args.consistency_mode,
-                )
-                .await?;
-                for row in remote_rows {
-                    remote
+                let local_rows = query_local_pipeline_rows(&client, &index, &query.source).await?;
+                if remote_epoch.is_none() {
+                    remote_epoch = local_rows
+                        .iter()
+                        .find(|row| row.active_epoch > 0)
+                        .map(|row| row.active_epoch);
+                }
+                for row in local_rows {
+                    local
                         .entry(StepKey {
                             nprobe: *nprobe,
                             step_ordinal: row.step_ordinal,
@@ -325,24 +296,66 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
                         .or_default()
                         .record(row);
                 }
-                let degraded_skip_rows = query_degraded_skip_rows(
-                    &client,
-                    &index,
-                    requested_epoch,
-                    &query.source,
-                    &args.remote_selected_pids,
-                    args.top_k,
-                    &args.consistency_mode,
-                )
-                .await?;
-                for row in degraded_skip_rows {
-                    degraded_skip
-                        .entry(DegradedSkipKey {
-                            nprobe: *nprobe,
-                            node_id: row.node_id,
-                        })
-                        .or_default()
-                        .record(row);
+                if args.include_local_store_overlap {
+                    let overlap_rows =
+                        query_local_store_overlap_rows(&client, &index, &query.source).await?;
+                    for row in overlap_rows {
+                        local_store_overlap
+                            .entry(LocalStoreOverlapKey {
+                                nprobe: *nprobe,
+                                node_id: row.node_id,
+                                local_store_id: row.local_store_id,
+                            })
+                            .or_default()
+                            .record(row);
+                    }
+                }
+
+                if remote_enabled {
+                    let requested_epoch = remote_epoch.ok_or_else(|| {
+                        eyre!(
+                            "remote pipeline requested but no active epoch was observed; pass --remote-requested-epoch"
+                        )
+                    })?;
+                    let remote_rows = query_remote_pipeline_rows(
+                        &client,
+                        &index,
+                        requested_epoch,
+                        &query.source,
+                        &args.remote_selected_pids,
+                        args.top_k,
+                        &args.consistency_mode,
+                    )
+                    .await?;
+                    for row in remote_rows {
+                        remote
+                            .entry(StepKey {
+                                nprobe: *nprobe,
+                                step_ordinal: row.step_ordinal,
+                                step_name: row.step_name.clone(),
+                            })
+                            .or_default()
+                            .record(row);
+                    }
+                    let degraded_skip_rows = query_degraded_skip_rows(
+                        &client,
+                        &index,
+                        requested_epoch,
+                        &query.source,
+                        &args.remote_selected_pids,
+                        args.top_k,
+                        &args.consistency_mode,
+                    )
+                    .await?;
+                    for row in degraded_skip_rows {
+                        degraded_skip
+                            .entry(DegradedSkipKey {
+                                nprobe: *nprobe,
+                                node_id: row.node_id,
+                            })
+                            .or_default()
+                            .record(row);
+                    }
                 }
             }
 
@@ -395,6 +408,7 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
         query_metric_k: args.query_metric_k,
         query_metric_projection_columns: &args.query_metric_projection_columns,
         production_read_profile_enabled: args.include_production_read_profile,
+        production_read_only: args.production_read_only,
         local_store_overlap_enabled: args.include_local_store_overlap,
         routing: &routing,
         local: &local,
@@ -427,6 +441,15 @@ fn validate_args(args: &SpirePipelineArgs) -> Result<()> {
     }
     if args.query_metric_k == 0 {
         return Err(eyre!("--query-metric-k must be >= 1"));
+    }
+    if args.production_read_only
+        && !args.include_query_metrics
+        && !args.include_recall
+        && !args.include_production_read_profile
+    {
+        return Err(eyre!(
+            "--production-read-only requires --include-query-metrics, --include-recall, or --include-production-read-profile"
+        ));
     }
     for column in &args.query_metric_projection_columns {
         profiles::validate_ident(column).wrap_err_with(|| {
@@ -953,7 +976,7 @@ fn remote_placement_gate_sql() -> &'static str {
             coalesce(sum(placement_count) FILTER (WHERE node_id <= 1), 0)::bigint
                 AS local_placement_count,
             count(*) FILTER (WHERE node_id > 1)::bigint AS remote_node_count
-     FROM ec_spire_index_placement_snapshot($1::text::regclass::oid)"
+     FROM ec_spire_remote_node_snapshot($1::text::regclass::oid)"
 }
 
 fn cost_tuning_snapshot_sql() -> &'static str {
@@ -1578,6 +1601,7 @@ struct ReportInput<'a> {
     query_metric_k: usize,
     query_metric_projection_columns: &'a [String],
     production_read_profile_enabled: bool,
+    production_read_only: bool,
     local_store_overlap_enabled: bool,
     routing: &'a BTreeMap<RoutingKey, RoutingAggregate>,
     local: &'a BTreeMap<StepKey, LocalStepAggregate>,
@@ -1627,7 +1651,7 @@ fn render_header(input: &ReportInput<'_>) -> String {
         "off".to_owned()
     };
     format!(
-        "SPIRE pipeline benchmark\nprefix: {prefix}\nindex: {index}\nqueries: {queries}\nsweep: {sweep:?}\nrerank_width: {rerank_width}\nmax_candidate_rows: {max_candidate_rows}\nremote_tuple_transport: {remote_tuple_transport}\nadaptive_nprobe: {adaptive}\ncost_snapshot: {cost_snapshot}\nremote: {remote}\nremote_selected_pids: {remote_selected_pids:?}\nremote_requested_epoch: {remote_epoch}\nlocal_store_overlap: {local_store_overlap}\nquery_metrics: {query_metrics}\nquery_metric_k: {query_metric_k}\nquery_metric_projection_columns: {query_metric_projection_columns}\nquery_recall: {query_recall}\nproduction_read_profile: {production_read_profile}",
+        "SPIRE pipeline benchmark\nprefix: {prefix}\nindex: {index}\nqueries: {queries}\nsweep: {sweep:?}\nrerank_width: {rerank_width}\nmax_candidate_rows: {max_candidate_rows}\nremote_tuple_transport: {remote_tuple_transport}\nadaptive_nprobe: {adaptive}\ncost_snapshot: {cost_snapshot}\nremote: {remote}\nremote_selected_pids: {remote_selected_pids:?}\nremote_requested_epoch: {remote_epoch}\nlocal_store_overlap: {local_store_overlap}\nquery_metrics: {query_metrics}\nquery_metric_k: {query_metric_k}\nquery_metric_projection_columns: {query_metric_projection_columns}\nquery_recall: {query_recall}\nproduction_read_profile: {production_read_profile}\nproduction_read_only: {production_read_only}",
         prefix = input.prefix,
         index = input.index,
         queries = input.queries,
@@ -1649,6 +1673,7 @@ fn render_header(input: &ReportInput<'_>) -> String {
         },
         query_recall = input.include_recall,
         production_read_profile = input.production_read_profile_enabled,
+        production_read_only = input.production_read_only,
     )
 }
 
@@ -2032,6 +2057,7 @@ mod tests {
             include_query_metrics: false,
             include_recall: false,
             include_production_read_profile: false,
+            production_read_only: false,
             query_metric_k: 10,
             query_metric_projection_columns: vec![],
             adaptive_nprobe: false,
@@ -2134,7 +2160,7 @@ mod tests {
         assert!(production_read_profile_sql().contains("$2::real[]"));
         assert!(endpoint_identity_sql().contains("ec_spire_remote_search_endpoint_identity"));
         assert!(endpoint_identity_sql().contains("tuple_transport_capabilities"));
-        assert!(remote_placement_gate_sql().contains("ec_spire_index_placement_snapshot"));
+        assert!(remote_placement_gate_sql().contains("ec_spire_remote_node_snapshot"));
         assert!(remote_placement_gate_sql().contains("node_id > 1"));
         assert!(cost_tuning_snapshot_sql().contains("ec_spire_index_cost_tuning_snapshot"));
         assert!(cost_tuning_snapshot_sql().contains("cost_routing_dimension_scale"));
@@ -2220,6 +2246,7 @@ mod tests {
             query_metric_k: 10,
             query_metric_projection_columns: &["title".to_owned(), "body".to_owned()],
             production_read_profile_enabled: true,
+            production_read_only: true,
             local_store_overlap_enabled: true,
             routing: &routing,
             local: &local,
@@ -2237,6 +2264,7 @@ mod tests {
         assert!(header.contains("query_metric_projection_columns: id,title,body"));
         assert!(header.contains("query_recall: false"));
         assert!(header.contains("production_read_profile: true"));
+        assert!(header.contains("production_read_only: true"));
     }
 
     #[test]

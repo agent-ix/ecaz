@@ -24,6 +24,8 @@ COORD_ID=$(jq -r '.coordinator.instance_id' "$TOPOLOGY")
 REMOTE_IDS=$(jq -r '.remotes[].instance_id' "$TOPOLOGY")
 TARBALL_KEY="${ECAZ_SPIRE_AWS_TARBALL_KEY:-ecaz-latest.tar.gz}"
 TARBALL_PATH="${ECAZ_SPIRE_AWS_TARBALL_PATH:-}"
+SOURCE_KEY="${ECAZ_SPIRE_AWS_SOURCE_KEY:-ecaz-source.tar.gz}"
+SOURCE_PATH="${ECAZ_SPIRE_AWS_SOURCE_PATH:-$ARTIFACT_DIR/ecaz-source.tar.gz}"
 TLS_DIR="$ARTIFACT_DIR/tls"
 
 ALL_IDS=("$COORD_ID")
@@ -41,6 +43,16 @@ if [[ -n "$TARBALL_PATH" ]]; then
     "s3://${BUCKET}/${TARBALL_KEY}" \
     --region "$REGION" \
     > "$ARTIFACT_DIR/tarball-upload.log"
+fi
+
+if [[ -s "$SOURCE_PATH" ]]; then
+  aws s3 cp \
+    "$SOURCE_PATH" \
+    "s3://${BUCKET}/${SOURCE_KEY}" \
+    --region "$REGION" \
+    > "$ARTIFACT_DIR/source-upload.log"
+else
+  SOURCE_KEY=""
 fi
 
 mkdir -p "$TLS_DIR"
@@ -92,12 +104,13 @@ send_install_command() {
   commands_json=$(jq -cn \
     --arg bucket "$BUCKET" \
     --arg tarball_key "$TARBALL_KEY" \
+    --arg source_key "$SOURCE_KEY" \
     --arg tls_key "tls/${instance_id}.tar.gz" \
     --arg secret_name "$secret_name" \
     --arg region "$REGION" \
     '[
       "sudo aws s3 cp s3://\($bucket)/bootstrap-node.sh /tmp/bootstrap-node.sh",
-      "sudo ECAZ_SPIRE_AWS_BUCKET=\($bucket) ECAZ_SPIRE_AWS_TARBALL_KEY=\($tarball_key) ECAZ_SPIRE_AWS_TLS_KEY=\($tls_key) ECAZ_SPIRE_AWS_REMOTE_SECRET_NAME=\($secret_name) ECAZ_SPIRE_AWS_REGION=\($region) bash /tmp/bootstrap-node.sh"
+      "sudo ECAZ_SPIRE_AWS_BUCKET=\($bucket) ECAZ_SPIRE_AWS_TARBALL_KEY=\($tarball_key) ECAZ_SPIRE_AWS_SOURCE_KEY=\($source_key) ECAZ_SPIRE_AWS_TLS_KEY=\($tls_key) ECAZ_SPIRE_AWS_REMOTE_SECRET_NAME=\($secret_name) ECAZ_SPIRE_AWS_REGION=\($region) bash /tmp/bootstrap-node.sh"
     ]')
   parameters_json=$(jq -cn --argjson commands "$commands_json" '{commands: $commands}')
 
@@ -112,10 +125,34 @@ send_install_command() {
     --query "Command.CommandId" --output text)
 
   echo "${instance_id} ssm command id: ${cmd_id}" | tee -a "$ARTIFACT_DIR/install.log"
-  aws ssm wait command-executed --region "$REGION" --command-id "$cmd_id" --instance-id "$instance_id"
+  local wait_status=0
+  local status="Pending"
+  local deadline=$((SECONDS + ${SPIRE_AWS_SSM_TIMEOUT_SECONDS:-3600}))
+  while (( SECONDS < deadline )); do
+    status=$(aws ssm get-command-invocation \
+      --region "$REGION" --command-id "$cmd_id" --instance-id "$instance_id" \
+      --query Status --output text 2>/dev/null || echo "Pending")
+    case "$status" in
+      Success)
+        wait_status=0
+        break
+        ;;
+      Failed|Cancelled|Cancelling|TimedOut)
+        wait_status=1
+        break
+        ;;
+      *)
+        sleep 15
+        ;;
+    esac
+  done
+  if [[ "$status" != "Success" && "$wait_status" == 0 ]]; then
+    wait_status=124
+  fi
   aws ssm get-command-invocation \
     --region "$REGION" --command-id "$cmd_id" --instance-id "$instance_id" \
     > "$ARTIFACT_DIR/install-${instance_id}.log"
+  return "$wait_status"
 }
 
 coord_ip=$(jq -r '.coordinator.private_ip' "$TOPOLOGY")

@@ -3,20 +3,43 @@
 # Installs PostgreSQL 18, the ecaz extension tarball from S3, and sets
 # the load-bearing Phase 13a.1.b GUCs. Idempotent.
 
-set -euxo pipefail
+set -euo pipefail
 
 PG_VERSION=18
 BUCKET="${ECAZ_SPIRE_AWS_BUCKET:?bucket must be set by SSM document}"
 ECAZ_KEY="${ECAZ_SPIRE_AWS_TARBALL_KEY:-ecaz-latest.tar.gz}"
+SOURCE_KEY="${ECAZ_SPIRE_AWS_SOURCE_KEY:-}"
 TLS_KEY="${ECAZ_SPIRE_AWS_TLS_KEY:?TLS material key must be set by SSM document}"
 REMOTE_SECRET_NAME="${ECAZ_SPIRE_AWS_REMOTE_SECRET_NAME:-}"
 REGION="${ECAZ_SPIRE_AWS_REGION:?region must be set by SSM document}"
 
-dnf -y install postgresql${PG_VERSION}-server postgresql${PG_VERSION}-contrib jq awscli openssl
+dnf -y install postgresql${PG_VERSION}-server postgresql${PG_VERSION}-contrib postgresql${PG_VERSION}-server-devel jq awscli openssl
 
-/usr/pgsql-${PG_VERSION}/bin/postgresql-${PG_VERSION}-setup initdb || true
+if [[ -x "/usr/pgsql-${PG_VERSION}/bin/postgres" ]]; then
+  PG_BIN="/usr/pgsql-${PG_VERSION}/bin"
+  PGDATA=/var/lib/pgsql/${PG_VERSION}/data
+  PG_SERVICE="postgresql-${PG_VERSION}"
+else
+  PG_BIN="/usr/bin"
+  PGDATA=/var/lib/pgsql/data
+  PG_SERVICE="postgresql"
+fi
 
-PGDATA=/var/lib/pgsql/${PG_VERSION}/data
+if [[ ! -s "${PGDATA}/PG_VERSION" ]]; then
+  if [[ -x "/usr/pgsql-${PG_VERSION}/bin/postgresql-${PG_VERSION}-setup" ]]; then
+    "/usr/pgsql-${PG_VERSION}/bin/postgresql-${PG_VERSION}-setup" initdb || true
+  elif command -v "postgresql-${PG_VERSION}-setup" >/dev/null 2>&1; then
+    "postgresql-${PG_VERSION}-setup" initdb || true
+  elif command -v postgresql-setup >/dev/null 2>&1; then
+    postgresql-setup --initdb || postgresql-setup --initdb --unit "$PG_SERVICE" || true
+  fi
+fi
+
+if [[ ! -s "${PGDATA}/PG_VERSION" ]]; then
+  install -o postgres -g postgres -m 0700 -d "$PGDATA"
+  sudo -u postgres "${PG_BIN}/initdb" -D "$PGDATA"
+fi
+
 aws s3 cp "s3://${BUCKET}/${TLS_KEY}" /tmp/ecaz-node-tls.tar.gz
 mkdir -p /tmp/ecaz-node-tls
 tar -xzf /tmp/ecaz-node-tls.tar.gz -C /tmp/ecaz-node-tls
@@ -50,19 +73,52 @@ ssl_cert_file = 'server.crt'
 ssl_key_file = 'server.key'
 EOF
 
-cat >> "${PGDATA}/pg_hba.conf" <<EOF
+tmp_hba=$(mktemp)
+cat > "$tmp_hba" <<EOF
 host all ecaz_coord 127.0.0.1/32 trust
 host all ecaz_coord ::1/128 trust
 hostssl all ecaz_coord 10.42.0.0/16 scram-sha-256
 EOF
+grep -vE 'ecaz_coord (127\.0\.0\.1/32|::1/128|10\.42\.0\.0/16)' "${PGDATA}/pg_hba.conf" >> "$tmp_hba"
+install -o postgres -g postgres -m 0600 "$tmp_hba" "${PGDATA}/pg_hba.conf"
+rm -f "$tmp_hba"
 
 aws s3 cp "s3://${BUCKET}/${ECAZ_KEY}" /tmp/ecaz.tar.gz
 mkdir -p /tmp/ecaz && tar -xzf /tmp/ecaz.tar.gz -C /tmp/ecaz
-cp /tmp/ecaz/lib/*.so "/usr/pgsql-${PG_VERSION}/lib/"
-cp /tmp/ecaz/extension/* "/usr/pgsql-${PG_VERSION}/share/extension/"
+if [[ -x "${PG_BIN}/pg_config" ]]; then
+  PKGLIBDIR=$("${PG_BIN}/pg_config" --pkglibdir)
+  SHAREDIR=$("${PG_BIN}/pg_config" --sharedir)
+elif command -v pg_config >/dev/null 2>&1; then
+  PKGLIBDIR=$(pg_config --pkglibdir)
+  SHAREDIR=$(pg_config --sharedir)
+else
+  PKGLIBDIR="/usr/lib64/pgsql"
+  SHAREDIR="/usr/share/pgsql"
+fi
+EXTENSION_DIR="${SHAREDIR}/extension"
+install -d "$PKGLIBDIR" "$EXTENSION_DIR"
+cp /tmp/ecaz/extension/* "$EXTENSION_DIR/"
 
-systemctl enable --now "postgresql-${PG_VERSION}"
-systemctl restart "postgresql-${PG_VERSION}"
+if [[ -n "$SOURCE_KEY" ]]; then
+  dnf -y install rust cargo rustfmt gcc gcc-c++ make clang
+  aws s3 cp "s3://${BUCKET}/${SOURCE_KEY}" /tmp/ecaz-source.tar.gz
+  rm -rf /tmp/ecaz-source && mkdir -p /tmp/ecaz-source
+  tar -xzf /tmp/ecaz-source.tar.gz -C /tmp/ecaz-source
+  (
+    cd /tmp/ecaz-source
+    PG_CONFIG="${PG_BIN}/pg_config" \
+      PGRX_PG_CONFIG_PATH="${PG_BIN}/pg_config" \
+      CARGO_PROFILE_RELEASE_LTO=thin \
+      CARGO_PROFILE_RELEASE_CODEGEN_UNITS=4 \
+      cargo build --release --lib --package ecaz --no-default-features --features pg18 --offline
+  )
+  install -m 0755 /tmp/ecaz-source/target/release/libecaz.so "${PKGLIBDIR}/ecaz.so"
+else
+  cp /tmp/ecaz/lib/*.so "${PKGLIBDIR}/"
+fi
+
+systemctl enable --now "$PG_SERVICE"
+systemctl restart "$PG_SERVICE"
 
 ROLE_PASSWORD=""
 if [[ -n "$REMOTE_SECRET_NAME" ]]; then
@@ -74,7 +130,7 @@ if [[ -n "$REMOTE_SECRET_NAME" ]]; then
 fi
 
 if [[ -n "$ROLE_PASSWORD" ]]; then
-  sudo -u postgres /usr/pgsql-${PG_VERSION}/bin/psql -v ON_ERROR_STOP=1 -v role_password="$ROLE_PASSWORD" <<'SQL'
+  sudo -u postgres "${PG_BIN}/psql" -v ON_ERROR_STOP=1 -v role_password="$ROLE_PASSWORD" <<'SQL'
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'ecaz_coord') THEN
@@ -84,7 +140,7 @@ END $$;
 ALTER ROLE ecaz_coord WITH LOGIN SUPERUSER PASSWORD :'role_password';
 SQL
 else
-  sudo -u postgres /usr/pgsql-${PG_VERSION}/bin/psql -v ON_ERROR_STOP=1 <<'SQL'
+  sudo -u postgres "${PG_BIN}/psql" -v ON_ERROR_STOP=1 <<'SQL'
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'ecaz_coord') THEN
@@ -94,5 +150,5 @@ END $$;
 SQL
 fi
 
-sudo -u postgres /usr/pgsql-${PG_VERSION}/bin/psql -c "CREATE EXTENSION IF NOT EXISTS ecaz" || true
-sudo -u postgres /usr/pgsql-${PG_VERSION}/bin/psql -c "SELECT extversion FROM pg_extension WHERE extname='ecaz'"
+sudo -u postgres "${PG_BIN}/psql" -c "CREATE EXTENSION IF NOT EXISTS ecaz" || true
+sudo -u postgres "${PG_BIN}/psql" -c "SELECT extversion FROM pg_extension WHERE extname='ecaz'"
