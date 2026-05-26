@@ -63,3 +63,18 @@ doc = false
 name = "fuzz_parse_text_structured"
 path = "fuzz_targets/parse_text_structured.rs"
 doc = false
+
+[[bin]]
+name = "fuzz_vector_normalize_structured"
+path = "fuzz_targets/vector_normalize_structured.rs"
+doc = false
+
+[[bin]]
+name = "fuzz_topk_merge_structured"
+path = "fuzz_targets/topk_merge_structured.rs"
+doc = false
+
+[[bin]]
+name = "fuzz_quant_encode_decode_roundtrip"
+path = "fuzz_targets/quant_encode_decode_roundtrip.rs"
+doc = false
