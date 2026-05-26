@@ -466,6 +466,9 @@ fn resolve_vacuum_format_adapter(
         graph::GraphStorageDescriptor::PqFastScan(layout) => {
             Ok(VacuumFormatAdapter::PqFastScan(layout))
         }
+        graph::GraphStorageDescriptor::RaBitQ(_) => {
+            Err("ec_hnsw RaBitQ vacuum support is not implemented yet".to_owned())
+        }
     }
 }
 
@@ -693,7 +696,8 @@ fn plan_page_pass1(
                         tuple: element,
                     });
                 }
-                graph::GraphStorageDescriptor::PqFastScan(layout) => {
+                graph::GraphStorageDescriptor::PqFastScan(layout)
+                | graph::GraphStorageDescriptor::RaBitQ(layout) => {
                     if tuple_bytes.first().copied() != Some(page::TQ_GROUPED_HOT_TAG) {
                         return;
                     }
@@ -911,7 +915,8 @@ fn collect_repair_requests_on_page(
                         element.neighbortid,
                     ))
                 }
-                graph::GraphStorageDescriptor::PqFastScan(layout) => {
+                graph::GraphStorageDescriptor::PqFastScan(layout)
+                | graph::GraphStorageDescriptor::RaBitQ(layout) => {
                     if tuple_bytes.first().copied() != Some(page::TQ_GROUPED_HOT_TAG) {
                         return None;
                     }
@@ -1403,7 +1408,8 @@ fn collect_linear_repair_candidates_on_page(
                         code: rerank.code,
                     })
                 }
-                graph::GraphStorageDescriptor::PqFastScan(layout) => {
+                graph::GraphStorageDescriptor::PqFastScan(layout)
+                | graph::GraphStorageDescriptor::RaBitQ(layout) => {
                     if tuple_bytes.first().copied() != Some(page::TQ_GROUPED_HOT_TAG) {
                         return None;
                     }
@@ -1857,7 +1863,8 @@ fn finalize_fully_dead_elements_on_page_with_storage(
                         tuple: element,
                     })
                 }
-                graph::GraphStorageDescriptor::PqFastScan(layout) => {
+                graph::GraphStorageDescriptor::PqFastScan(layout)
+                | graph::GraphStorageDescriptor::RaBitQ(layout) => {
                     let mut element = page::TqGroupedHotTuple::decode(
                         tuple_bytes,
                         layout.binary_word_count,
@@ -2043,6 +2050,9 @@ mod tests {
                 graph::GraphStorageDescriptor::PqFastScan(layout) => {
                     VacuumFormatAdapter::PqFastScan(layout)
                 }
+                graph::GraphStorageDescriptor::RaBitQ(_) => {
+                    panic!("vacuum format helper does not expect RaBitQ storage")
+                }
             };
         assert_eq!(
             format,
@@ -2064,6 +2074,9 @@ mod tests {
                 }
                 graph::GraphStorageDescriptor::PqFastScan(layout) => {
                     VacuumFormatAdapter::PqFastScan(layout)
+                }
+                graph::GraphStorageDescriptor::RaBitQ(_) => {
+                    panic!("PqFastScan vacuum test should not decode as RaBitQ storage")
                 }
             };
         assert_eq!(

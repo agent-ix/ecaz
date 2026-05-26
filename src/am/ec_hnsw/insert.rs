@@ -583,6 +583,9 @@ fn resolve_insert_format_adapter(
         graph::GraphStorageDescriptor::PqFastScan(layout) => {
             Ok(InsertFormatAdapter::PqFastScan(layout))
         }
+        graph::GraphStorageDescriptor::RaBitQ(_) => {
+            Err("ec_hnsw RaBitQ insert support is not implemented yet".to_owned())
+        }
     }
 }
 
@@ -2483,6 +2486,9 @@ mod tests {
             graph::GraphStorageDescriptor::PqFastScan(layout) => {
                 InsertFormatAdapter::PqFastScan(layout)
             }
+            graph::GraphStorageDescriptor::RaBitQ(_) => {
+                panic!("insert format helper does not expect RaBitQ storage")
+            }
         };
         assert_eq!(
             format,
@@ -2523,6 +2529,9 @@ mod tests {
             }
             graph::GraphStorageDescriptor::PqFastScan(layout) => {
                 InsertFormatAdapter::PqFastScan(layout)
+            }
+            graph::GraphStorageDescriptor::RaBitQ(_) => {
+                panic!("PqFastScan insert test should not decode as RaBitQ storage")
             }
         };
 

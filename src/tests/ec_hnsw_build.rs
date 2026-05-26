@@ -1957,7 +1957,8 @@
         let layout = match am::graph::GraphStorageDescriptor::from_metadata(&metadata).unwrap() {
             am::graph::GraphStorageDescriptor::PqFastScan(layout) => layout,
             am::graph::GraphStorageDescriptor::TurboQuant { .. }
-            | am::graph::GraphStorageDescriptor::TurboQuantHotCold(_) => {
+            | am::graph::GraphStorageDescriptor::TurboQuantHotCold(_)
+            | am::graph::GraphStorageDescriptor::RaBitQ(_) => {
                 panic!("PqFastScan build should not decode as TurboQuant storage")
             }
         };
@@ -2068,7 +2069,8 @@
         let layout = match am::graph::GraphStorageDescriptor::from_metadata(&metadata).unwrap() {
             am::graph::GraphStorageDescriptor::PqFastScan(layout) => layout,
             am::graph::GraphStorageDescriptor::TurboQuant { .. }
-            | am::graph::GraphStorageDescriptor::TurboQuantHotCold(_) => {
+            | am::graph::GraphStorageDescriptor::TurboQuantHotCold(_)
+            | am::graph::GraphStorageDescriptor::RaBitQ(_) => {
                 panic!("PqFastScan build should not decode as TurboQuant storage")
             }
         };

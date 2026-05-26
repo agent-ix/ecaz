@@ -1539,7 +1539,8 @@
             match am::graph::GraphStorageDescriptor::from_metadata(&after_metadata).unwrap() {
                 am::graph::GraphStorageDescriptor::PqFastScan(layout) => layout,
                 am::graph::GraphStorageDescriptor::TurboQuant { .. }
-                | am::graph::GraphStorageDescriptor::TurboQuantHotCold(_) => {
+                | am::graph::GraphStorageDescriptor::TurboQuantHotCold(_)
+                | am::graph::GraphStorageDescriptor::RaBitQ(_) => {
                     panic!("PqFastScan insert test should still decode as PqFastScan storage")
                 }
             };
@@ -1655,7 +1656,8 @@
             match am::graph::GraphStorageDescriptor::from_metadata(&after_metadata).unwrap() {
                 am::graph::GraphStorageDescriptor::PqFastScan(layout) => layout,
                 am::graph::GraphStorageDescriptor::TurboQuant { .. }
-                | am::graph::GraphStorageDescriptor::TurboQuantHotCold(_) => {
+                | am::graph::GraphStorageDescriptor::TurboQuantHotCold(_)
+                | am::graph::GraphStorageDescriptor::RaBitQ(_) => {
                     panic!("PqFastScan duplicate test should still decode as PqFastScan storage")
                 }
             };

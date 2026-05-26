@@ -1245,7 +1245,8 @@
         let layout = match storage {
             am::graph::GraphStorageDescriptor::PqFastScan(layout) => layout,
             am::graph::GraphStorageDescriptor::TurboQuant { .. }
-            | am::graph::GraphStorageDescriptor::TurboQuantHotCold(_) => {
+            | am::graph::GraphStorageDescriptor::TurboQuantHotCold(_)
+            | am::graph::GraphStorageDescriptor::RaBitQ(_) => {
                 drop(index_relation);
                 pgrx::error!(
                     "tests.ec_hnsw_debug_pq_fastscan_runtime_settings_for_index requires a pq_fastscan index"

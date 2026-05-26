@@ -465,6 +465,7 @@ impl GroupedScoreShape {
         match scan_graph_storage {
             graph::GraphStorageDescriptor::TurboQuant { .. }
             | graph::GraphStorageDescriptor::TurboQuantHotCold(_) => None,
+            graph::GraphStorageDescriptor::RaBitQ(_) => None,
             graph::GraphStorageDescriptor::PqFastScan(layout) => Some(Self {
                 binary_word_count: layout.binary_word_count,
                 search_code_len: layout.search_code_len,
@@ -1306,12 +1307,11 @@ pub(crate) fn resolve_pq_fastscan_traversal_score_mode_decision(
                     PqFastScanTraversalScoreModeResolution::FallbackGroupedPqMissingBinarySidecar,
             },
             graph::GraphStorageDescriptor::TurboQuant { .. }
-            | graph::GraphStorageDescriptor::TurboQuantHotCold(_) => {
-                PqFastScanTraversalScoreModeDecision {
-                    mode: GroupedTraversalScoreMode::GroupedPq,
-                    resolution: PqFastScanTraversalScoreModeResolution::NonPqFastScanStorage,
-                }
-            }
+            | graph::GraphStorageDescriptor::TurboQuantHotCold(_)
+            | graph::GraphStorageDescriptor::RaBitQ(_) => PqFastScanTraversalScoreModeDecision {
+                mode: GroupedTraversalScoreMode::GroupedPq,
+                resolution: PqFastScanTraversalScoreModeResolution::NonPqFastScanStorage,
+            },
         };
     };
 

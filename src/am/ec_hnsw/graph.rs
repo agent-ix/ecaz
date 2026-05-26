@@ -6,6 +6,7 @@ use pgrx::pg_sys;
 
 use super::{codec, options, page, search};
 use crate::quant::grouped_pq::GROUPED_PQ_CENTROIDS;
+use crate::quant::rabitq;
 use crate::storage::buffer_guard::LockedBufferGuard;
 #[cfg(feature = "pg18")]
 use crate::storage::buffer_guard::PinnedBufferLockGuard;
@@ -28,6 +29,7 @@ pub(crate) enum GraphStorageDescriptor {
     TurboQuant { code_len: usize },
     TurboQuantHotCold(TurboQuantHotColdLayout),
     PqFastScan(PqFastScanLayout),
+    RaBitQ(PqFastScanLayout),
 }
 
 impl GraphStorageDescriptor {
@@ -177,7 +179,58 @@ impl GraphStorageDescriptor {
                 }))
             }
             codec::HnswStorageCodec::RaBitQ => {
-                Err("ec_hnsw RaBitQ graph storage descriptor is not implemented yet".to_owned())
+                if metadata.dimensions == 0 {
+                    return Ok(Self::RaBitQ(PqFastScanLayout {
+                        binary_word_count: 0,
+                        search_code_len: 0,
+                        rerank_code_len: 0,
+                    }));
+                }
+                if metadata.payload_flags & page::PAYLOAD_FLAG_COLD_RERANK_PAYLOAD == 0 {
+                    return Err("RaBitQ metadata must advertise cold rerank payloads".to_owned());
+                }
+                if metadata.payload_flags & page::PAYLOAD_FLAG_BINARY_SIDECAR != 0 {
+                    return Err("RaBitQ metadata must not advertise a binary sidecar".to_owned());
+                }
+                if metadata.search_codec_kind != page::SearchCodecKind::RaBitQ {
+                    return Err(format!(
+                        "unsupported RaBitQ search codec: {:?}",
+                        metadata.search_codec_kind
+                    ));
+                }
+                if metadata.search_bits == 0 {
+                    return Err("RaBitQ metadata must record non-zero search bits".to_owned());
+                }
+                if metadata.search_subvector_count != 0 {
+                    return Err(
+                        "RaBitQ metadata must not record grouped search subvectors".to_owned()
+                    );
+                }
+                if metadata.search_subvector_dim != u16::from(metadata.search_bits) {
+                    return Err(format!(
+                        "RaBitQ metadata search_subvector_dim {} must match search_bits {}",
+                        metadata.search_subvector_dim, metadata.search_bits
+                    ));
+                }
+                if metadata.rerank_codec_kind != page::RerankCodecKind::ScalarQuantized {
+                    return Err(format!(
+                        "unsupported RaBitQ rerank codec: {:?}",
+                        metadata.rerank_codec_kind
+                    ));
+                }
+                if metadata.grouped_codebook_head != page::ItemPointer::INVALID {
+                    return Err(
+                        "RaBitQ metadata must not advertise a grouped codebook chain".to_owned(),
+                    );
+                }
+                Ok(Self::RaBitQ(PqFastScanLayout {
+                    binary_word_count: 0,
+                    search_code_len: rabitq::code_len_for(
+                        metadata.dimensions as usize,
+                        metadata.search_bits,
+                    )?,
+                    rerank_code_len: crate::code_len(metadata.dimensions as usize, metadata.bits),
+                }))
             }
         }
     }
@@ -188,6 +241,7 @@ impl GraphStorageDescriptor {
                 codec::HnswStorageCodec::TurboQuant
             }
             Self::PqFastScan(_) => codec::HnswStorageCodec::PqFastScan,
+            Self::RaBitQ(_) => codec::HnswStorageCodec::RaBitQ,
         }
     }
 }
@@ -375,7 +429,7 @@ pub(crate) fn load_exact_graph_element(
                 code: rerank.code,
             }
         }
-        GraphStorageDescriptor::PqFastScan(layout) => {
+        GraphStorageDescriptor::PqFastScan(layout) | GraphStorageDescriptor::RaBitQ(layout) => {
             let hot = load_grouped_graph_element(index_relation, element_tid, layout);
             let rerank = load_grouped_rerank_payload(index_relation, hot.reranktid, layout);
             GraphElement {
@@ -491,7 +545,7 @@ where
                 f(GraphTupleRef::TurboHot(tuple))
             })
         }
-        GraphStorageDescriptor::PqFastScan(layout) => {
+        GraphStorageDescriptor::PqFastScan(layout) | GraphStorageDescriptor::RaBitQ(layout) => {
             with_grouped_graph_tuple(index_relation, element_tid, layout, |tuple| {
                 f(GraphTupleRef::GroupedHot(tuple))
             })
@@ -525,7 +579,7 @@ where
                 )))
             })
         }
-        GraphStorageDescriptor::PqFastScan(layout) => {
+        GraphStorageDescriptor::PqFastScan(layout) | GraphStorageDescriptor::RaBitQ(layout) => {
             read_page_tuple_from_buffer(buffer, element_tid, "grouped hot", |tuple_bytes| {
                 Ok(f(GraphTupleRef::GroupedHot(
                     page::TqGroupedHotTupleRef::decode(
@@ -1391,6 +1445,28 @@ mod tests {
         }
     }
 
+    fn rabitq_metadata() -> page::MetadataPage {
+        page::MetadataPage {
+            m: 8,
+            ef_construction: 40,
+            entry_point: page::ItemPointer::INVALID,
+            dimensions: 96,
+            bits: 4,
+            max_level: 0,
+            seed: 42,
+            inserted_since_rebuild: 0,
+            format_version: page::INDEX_FORMAT_V4_RABITQ,
+            transform_kind: page::TransformKind::Srht,
+            search_codec_kind: page::SearchCodecKind::RaBitQ,
+            payload_flags: page::PAYLOAD_FLAG_COLD_RERANK_PAYLOAD,
+            search_bits: 1,
+            rerank_codec_kind: page::RerankCodecKind::ScalarQuantized,
+            search_subvector_count: 0,
+            search_subvector_dim: 1,
+            grouped_codebook_head: page::ItemPointer::INVALID,
+        }
+    }
+
     #[test]
     fn graph_storage_descriptor_uses_scalar_code_len_for_v1_metadata() {
         let metadata = page::MetadataPage::current_v1_scalar(page::CurrentFormatMetadata {
@@ -1453,6 +1529,31 @@ mod tests {
                 search_code_len: 0,
                 rerank_code_len: 0,
             })
+        );
+    }
+
+    #[test]
+    fn graph_storage_descriptor_uses_rabitq_code_len_for_v4_metadata() {
+        assert_eq!(
+            GraphStorageDescriptor::from_metadata(&rabitq_metadata()).unwrap(),
+            GraphStorageDescriptor::RaBitQ(PqFastScanLayout {
+                binary_word_count: 0,
+                search_code_len: rabitq::code_len_for(96, 1).unwrap(),
+                rerank_code_len: crate::code_len(96, 4),
+            })
+        );
+    }
+
+    #[test]
+    fn graph_storage_descriptor_rejects_rabitq_codebook_head() {
+        let metadata = page::MetadataPage {
+            grouped_codebook_head: tid(2, 1),
+            ..rabitq_metadata()
+        };
+
+        assert_eq!(
+            GraphStorageDescriptor::from_metadata(&metadata),
+            Err("RaBitQ metadata must not advertise a grouped codebook chain".to_owned())
         );
     }
 

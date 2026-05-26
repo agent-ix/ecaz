@@ -1782,6 +1782,9 @@
             am::graph::GraphStorageDescriptor::PqFastScan(_) => {
                 panic!("turboquant decode helper requires a turboquant index")
             }
+            am::graph::GraphStorageDescriptor::RaBitQ(_) => {
+                panic!("turboquant decode helper requires a turboquant index")
+            }
         };
         let mut elements = Vec::new();
         let mut hot_elements = Vec::new();
@@ -1879,7 +1882,8 @@
         let layout = match am::graph::GraphStorageDescriptor::from_metadata(&metadata).unwrap() {
             am::graph::GraphStorageDescriptor::PqFastScan(layout) => layout,
             am::graph::GraphStorageDescriptor::TurboQuant { .. }
-            | am::graph::GraphStorageDescriptor::TurboQuantHotCold(_) => {
+            | am::graph::GraphStorageDescriptor::TurboQuantHotCold(_)
+            | am::graph::GraphStorageDescriptor::RaBitQ(_) => {
                 panic!("grouped decode helper requires a PqFastScan index")
             }
         };
