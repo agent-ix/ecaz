@@ -2385,6 +2385,92 @@ mod tests {
         let _ = q.score_ip_codes_lite(&code_a, &code_b);
     }
 
+    /// Second real concurrent `miri_` test alongside
+    /// `miri_parallel_worker_slots_are_unique_under_threaded_contention`
+    /// (see `src/am/common/parallel.rs`). Stresses the `OnceLock<Mutex<HashMap>>`
+    /// init path and the `entry().or_insert_with(Arc::new)` race window:
+    /// concurrent threads must observe the same `Arc<ProdQuantizer>` for a
+    /// shared key and distinct `Arc`s for thread-local keys.
+    ///
+    /// Use distinctive seed namespaces so that pollution from other tests
+    /// running in the same process cannot collide with the assertions here.
+    #[test]
+    fn miri_quantizer_cache_concurrent_init_under_contention() {
+        use std::sync::{Arc as StdArc, Barrier};
+        use std::thread;
+
+        const SHARED_KEY: QuantizerKey = (8, 4, 0xCAFE_BABE_FACE_FEED_u64);
+        const PRIVATE_SEED_BASE: u64 = 0xA5A5_5A5A_C3C3_3C3C_u64;
+        const WORKER_COUNT: usize = 4;
+
+        let start = StdArc::new(Barrier::new(WORKER_COUNT));
+        let shared_results: StdArc<Mutex<Vec<Arc<ProdQuantizer>>>> =
+            StdArc::new(Mutex::new(Vec::with_capacity(WORKER_COUNT)));
+        let private_results: StdArc<Mutex<Vec<(u64, Arc<ProdQuantizer>)>>> =
+            StdArc::new(Mutex::new(Vec::with_capacity(WORKER_COUNT)));
+
+        thread::scope(|scope| {
+            for worker_id in 0..WORKER_COUNT {
+                let start = StdArc::clone(&start);
+                let shared_results = StdArc::clone(&shared_results);
+                let private_results = StdArc::clone(&private_results);
+                scope.spawn(move || {
+                    start.wait();
+
+                    let shared = ProdQuantizer::cached(SHARED_KEY.0, SHARED_KEY.1, SHARED_KEY.2);
+                    shared_results
+                        .lock()
+                        .expect("shared collector mutex")
+                        .push(shared);
+
+                    let private_seed = PRIVATE_SEED_BASE ^ (worker_id as u64);
+                    let private =
+                        ProdQuantizer::cached(SHARED_KEY.0, SHARED_KEY.1, private_seed);
+                    private_results
+                        .lock()
+                        .expect("private collector mutex")
+                        .push((private_seed, private));
+                });
+            }
+        });
+
+        let shared = shared_results.lock().expect("shared collector mutex");
+        assert_eq!(
+            shared.len(),
+            WORKER_COUNT,
+            "every worker should record the shared-key arc"
+        );
+        let canonical = shared.first().expect("at least one shared arc");
+        for other in shared.iter().skip(1) {
+            assert!(
+                Arc::ptr_eq(canonical, other),
+                "concurrent cache init must yield a single canonical arc for the shared key",
+            );
+        }
+
+        let private = private_results.lock().expect("private collector mutex");
+        assert_eq!(
+            private.len(),
+            WORKER_COUNT,
+            "every worker should record its thread-local arc"
+        );
+        for (seed_a, arc_a) in private.iter() {
+            assert!(
+                !Arc::ptr_eq(canonical, arc_a),
+                "private-seed arc for {seed_a:#x} must not alias the shared-key arc",
+            );
+            for (seed_b, arc_b) in private.iter() {
+                if seed_a == seed_b {
+                    continue;
+                }
+                assert!(
+                    !Arc::ptr_eq(arc_a, arc_b),
+                    "distinct private seeds ({seed_a:#x} vs {seed_b:#x}) must yield distinct arcs",
+                );
+            }
+        }
+    }
+
     #[test]
     fn dispatched_score_matches_scalar_on_random_inputs() {
         let mut rng = ChaCha8Rng::seed_from_u64(77);
