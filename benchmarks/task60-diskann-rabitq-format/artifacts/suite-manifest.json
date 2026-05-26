@@ -4,7 +4,7 @@
   "config": "benchmarks/task60-diskann-rabitq-format/suite.json",
   "config_sha256": "de71a69e7032267555a50e7d4ba067ee807e7ef1278a79ea0989f1e920d0a506",
   "dry_run": true,
-  "generated_at_unix_ms": 1779759182576,
+  "generated_at_unix_ms": 1779761525273,
   "connection": {
     "database": "tqvector_bench",
     "host": null,

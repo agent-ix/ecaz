@@ -39,7 +39,9 @@ suite audit` can verify the full fetch -> prepare -> load dependency chain.
 Dry-run validation:
 
 ```sh
-cargo run -p ecaz-cli -- bench suite run \
+cargo run -p ecaz-cli -- \
+  --log-file benchmarks/task60-diskann-rabitq-format/artifacts/suite-dry-run.log \
+  bench suite run \
   --config benchmarks/task60-diskann-rabitq-format/suite.json \
   --dry-run \
   --manifest-output benchmarks/task60-diskann-rabitq-format/artifacts/suite-manifest.json
@@ -48,7 +50,9 @@ cargo run -p ecaz-cli -- bench suite run \
 Full run on the benchmark host:
 
 ```sh
-cargo run -p ecaz-cli -- bench suite run \
+cargo run -p ecaz-cli -- \
+  --log-file benchmarks/task60-diskann-rabitq-format/artifacts/suite-run.log \
+  bench suite run \
   --config benchmarks/task60-diskann-rabitq-format/suite.json \
   --manifest-output benchmarks/task60-diskann-rabitq-format/artifacts/suite-manifest.json
 ```
@@ -56,10 +60,29 @@ cargo run -p ecaz-cli -- bench suite run \
 Report extraction after the full run:
 
 ```sh
-cargo run -p ecaz-cli -- bench suite report \
+cargo run -p ecaz-cli -- \
+  --log-file benchmarks/task60-diskann-rabitq-format/artifacts/suite-report.log \
+  bench suite report \
   --manifest benchmarks/task60-diskann-rabitq-format/artifacts/suite-manifest.json \
-  --results-output benchmarks/task60-diskann-rabitq-format/artifacts/results.jsonl
+  --results-output benchmarks/task60-diskann-rabitq-format/artifacts/results-report.jsonl
 ```
+
+Final packet evidence should include:
+
+- `artifacts/suite-run.log`
+- `artifacts/suite-report.log`
+- `artifacts/suite-manifest.json`
+- `artifacts/results.jsonl` from `suite run`
+- `artifacts/results-report.jsonl` from `suite report`
+- the four storage logs for 100k and 1M
+- the four recall logs for 100k and 1M
+- the four latency logs for 100k and 1M
+- `artifacts/precheck-host.log`
+
+The 1M shipping decision is recorded manually from the storage logs:
+`1 - (rabitq ec_diskann index bytes / pq_fastscan ec_diskann index bytes)`.
+If that value is below `0.30`, the packet records "not worth shipping" instead
+of treating the format as accepted.
 
 ## Current State
 
