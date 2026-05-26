@@ -79,10 +79,14 @@ Final packet evidence should include:
 - the four latency logs for 100k and 1M
 - `artifacts/precheck-host.log`
 
-The 1M shipping decision is recorded manually from the storage logs:
-`1 - (rabitq ec_diskann index bytes / pq_fastscan ec_diskann index bytes)`.
-If that value is below `0.30`, the packet records "not worth shipping" instead
-of treating the format as accepted.
+The 1M shipping decision is recorded manually from the storage rows. Use the
+`storage_index` rows for `storage-1m-diskann-rabitq` and
+`storage-1m-diskann-pq-fastscan` in `artifacts/results-report.jsonl`, filtered
+to `access method=ec_diskann`, and calculate:
+`1 - (rabitq size_bytes / pq_fastscan size_bytes)`. The underlying storage logs
+remain the durable source artifacts. If the calculated value is below `0.30`,
+the packet records "not worth shipping" instead of treating the format as
+accepted.
 
 ## Current State
 
