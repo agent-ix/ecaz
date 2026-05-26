@@ -1,6 +1,6 @@
 # Task 30 Phase 13e: SPIRE AWS Production Gap Closure
 
-Status: local functionality gates passed; AWS correctness/performance verification pending
+Status: local functionality gates passed; AWS correctness core passed on Graviton, AWS fault rerun pending after harness fix
 Owner: coder1 / SPIRE AWS production track
 Priority: P0 before any AWS product-scale claim
 
@@ -51,7 +51,7 @@ Acceptance:
 Acceptance:
 
 - [x] Local slow/fast remote fixture proves fast remote is not serialized behind slow remote.
-- [ ] AWS correctness tier captures selected PIDs, dispatch count, connect/TLS time, candidate time, heap time, payload bytes, merge time, timeout/cancel counts.
+- [x] AWS correctness tier captures selected PIDs, dispatch count, connect/TLS time, candidate time, heap time, payload bytes, merge time, timeout/cancel counts.
 - [ ] Representative tier captures p50/p95/p99 latency and recall.
 
 ## 13e.4 Evidence-Gated Connection Pooling
@@ -77,3 +77,15 @@ Acceptance:
   setup procedures require an explicit task/runbook amendment before any
   provisioning run.
 - [ ] Product-scale claims require accepted AWS correctness, performance, and operations packets.
+
+## Current AWS Evidence Note
+
+- 2026-05-26 Graviton correctness rerun reached real remote placement and
+  distributed reads before the fault-drill phase: three remote shards, three
+  remote dispatches, `remote_heap_candidates`, zero socket opens on warm pooled
+  read profiles, and suite output for recall/latency/production read profile.
+- The run failed only in `scripts/spire-aws/fault.sh` after stopping a remote:
+  the script set `ec_spire.remote_search_consistency_mode` in a separate
+  session from the benchmark query. That made the degraded drill run under the
+  default strict behavior. AWS was torn down, no Phase 13 instances remain, and
+  the harness now keeps fault-mode GUCs in the query/profile session.

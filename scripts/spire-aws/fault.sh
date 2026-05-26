@@ -22,19 +22,39 @@ TARGET_NODE_ID=$(jq -r '.remotes[0].node_id' "$TOPOLOGY")
 TARGET_SECRET=$(jq -r '.remotes[0].secret_arn' "$TOPOLOGY")
 LOG="$ARTIFACT_DIR/fault-${DRILL}.log"
 ECAZ_BIN="${ECAZ_BIN:-ecaz}"
+REMOTE_STOPPED=0
 
-run_query() {
-  "$ECAZ_BIN" bench latency \
+restart_remote_if_needed() {
+  if [[ "$REMOTE_STOPPED" == "1" ]]; then
+    aws ec2 start-instances --region "$REGION" --instance-ids "$TARGET_REMOTE_ID" | tee -a "$LOG"
+    aws ec2 wait instance-running --region "$REGION" --instance-ids "$TARGET_REMOTE_ID"
+    REMOTE_STOPPED=0
+  fi
+}
+
+trap restart_remote_if_needed EXIT
+
+stop_remote() {
+  aws ec2 stop-instances --region "$REGION" --instance-ids "$TARGET_REMOTE_ID" | tee -a "$LOG"
+  aws ec2 wait instance-stopped --region "$REGION" --instance-ids "$TARGET_REMOTE_ID"
+  REMOTE_STOPPED=1
+}
+
+run_knn_query() {
+  local mode="${1:?mode required}"
+  "$ECAZ_BIN" dev sql \
     --host "$COORD_HOST" --port "$COORD_PORT" --user ecaz_coord --database postgres \
-    --prefix "$PREFIX" --profile ec_spire \
-    --k 10 --sweep 32 --concurrency 1 --iterations 100 \
-    --log-output "$ARTIFACT_DIR/fault-${DRILL}-bench.log" || true
+    --env "PGOPTIONS=-c enable_seqscan=off -c enable_indexscan=off -c ec_spire.remote_search_consistency_mode=$mode" \
+    --sql "SELECT id FROM ${PREFIX}_corpus ORDER BY embedding <#> (SELECT source FROM ${PREFIX}_queries WHERE id = 0)::real[] LIMIT 10" \
+    --log-output "$ARTIFACT_DIR/fault-${DRILL}-knn-${mode}.log"
 }
 
 snapshot_diag() {
+  local mode="${1:?mode required}"
   "$ECAZ_BIN" dev sql \
     --host "$COORD_HOST" --port "$COORD_PORT" --user ecaz_coord --database postgres \
-    --sql "SELECT * FROM ec_spire_remote_search_production_executor_session_summary('${COORD_INDEX}'::regclass, 1, ARRAY[]::real[], ARRAY[]::bigint[], 10)" \
+    --env "PGOPTIONS=-c enable_seqscan=off -c enable_indexscan=off -c ec_spire.remote_search_consistency_mode=$mode" \
+    --sql "SELECT * FROM ec_spire_remote_search_production_read_profile('${COORD_INDEX}'::regclass, (SELECT source FROM ${PREFIX}_queries WHERE id = 0)::real[], 10)" \
     --log-output "$ARTIFACT_DIR/fault-${DRILL}-session-summary.log"
   "$ECAZ_BIN" dev sql \
     --host "$COORD_HOST" --port "$COORD_PORT" --user ecaz_coord --database postgres \
@@ -42,26 +62,37 @@ snapshot_diag() {
     --log-output "$ARTIFACT_DIR/fault-${DRILL}-placement.log"
 }
 
+assert_degraded_ready() {
+  "$ECAZ_BIN" dev sql \
+    --host "$COORD_HOST" --port "$COORD_PORT" --user ecaz_coord --database postgres \
+    --env "PGOPTIONS=-c enable_seqscan=off -c enable_indexscan=off -c ec_spire.remote_search_consistency_mode=degraded" \
+    --sql "WITH profile AS (SELECT metric, value FROM ec_spire_remote_search_production_read_profile('${COORD_INDEX}'::regclass, (SELECT source FROM ${PREFIX}_queries WHERE id = 0)::real[], 10)), summary AS (SELECT max(value) FILTER (WHERE metric = 'status') AS status, max(value) FILTER (WHERE metric = 'degraded_skipped_dispatch_count')::int AS skipped, max(value) FILTER (WHERE metric = 'returned_candidate_count')::int AS returned, max(value) FILTER (WHERE metric = 'next_blocker') AS next_blocker FROM profile) SELECT CASE WHEN status = 'degraded_ready' AND skipped > 0 AND returned > 0 AND next_blocker = 'none' THEN 'degraded_ok' ELSE (1 / COALESCE(NULLIF(skipped - skipped, 0), 0))::text END FROM summary" \
+    --log-output "$ARTIFACT_DIR/fault-${DRILL}-assertion.log"
+}
+
+assert_strict_fails() {
+  local status=0
+  run_knn_query strict || status=$?
+  if [[ "$status" -eq 0 ]]; then
+    echo "strict fault drill unexpectedly succeeded with remote node ${TARGET_NODE_ID} stopped" | tee -a "$LOG" >&2
+    return 1
+  fi
+  echo "strict fault drill failed closed as expected for node_id=${TARGET_NODE_ID}" | tee -a "$LOG"
+}
+
 case "$DRILL" in
   degraded)
-    aws ec2 stop-instances --region "$REGION" --instance-ids "$TARGET_REMOTE_ID" | tee -a "$LOG"
-    aws ec2 wait instance-stopped --region "$REGION" --instance-ids "$TARGET_REMOTE_ID"
-    "$ECAZ_BIN" dev sql --host "$COORD_HOST" --port "$COORD_PORT" --user ecaz_coord --database postgres \
-      --sql "SET ec_spire.remote_search_consistency_mode = 'degraded'"
-    run_query
-    snapshot_diag
-    aws ec2 start-instances --region "$REGION" --instance-ids "$TARGET_REMOTE_ID" | tee -a "$LOG"
-    aws ec2 wait instance-running --region "$REGION" --instance-ids "$TARGET_REMOTE_ID"
+    stop_remote
+    run_knn_query degraded
+    snapshot_diag degraded
+    assert_degraded_ready
+    restart_remote_if_needed
     ;;
   strict)
-    aws ec2 stop-instances --region "$REGION" --instance-ids "$TARGET_REMOTE_ID" | tee -a "$LOG"
-    aws ec2 wait instance-stopped --region "$REGION" --instance-ids "$TARGET_REMOTE_ID"
-    "$ECAZ_BIN" dev sql --host "$COORD_HOST" --port "$COORD_PORT" --user ecaz_coord --database postgres \
-      --sql "SET ec_spire.remote_search_consistency_mode = 'strict'"
-    run_query
-    snapshot_diag
-    aws ec2 start-instances --region "$REGION" --instance-ids "$TARGET_REMOTE_ID" | tee -a "$LOG"
-    aws ec2 wait instance-running --region "$REGION" --instance-ids "$TARGET_REMOTE_ID"
+    stop_remote
+    assert_strict_fails
+    snapshot_diag strict || true
+    restart_remote_if_needed
     ;;
   orphaned-2pc)
     "$ECAZ_BIN" dev sql --host "$COORD_HOST" --port "$COORD_PORT" --user ecaz_coord --database postgres \
@@ -71,7 +102,7 @@ case "$DRILL" in
     "$ECAZ_BIN" dev sql --host "$COORD_HOST" --port "$COORD_PORT" --user ecaz_coord --database postgres \
       --sql "SELECT * FROM ec_spire_reap_orphaned_remote_prepared_xacts(${TARGET_NODE_ID})" \
       --log-output "$ARTIFACT_DIR/fault-${DRILL}-reap.log"
-    snapshot_diag
+    snapshot_diag strict
     ;;
   missing-guc)
     echo "operator step: SSM into remote, set max_prepared_transactions=0, restart PG, retry INSERT, restore" | tee "$LOG"
@@ -82,8 +113,8 @@ case "$DRILL" in
   auth-failure)
     aws secretsmanager put-secret-value --region "$REGION" \
       --secret-id "$TARGET_SECRET" --secret-string '{"password":"INVALID"}' | tee -a "$LOG"
-    run_query
-    snapshot_diag
+    run_knn_query strict || true
+    snapshot_diag strict || true
     echo "operator step: restore the prior secret version via aws secretsmanager restore-secret" | tee -a "$LOG"
     ;;
   *)

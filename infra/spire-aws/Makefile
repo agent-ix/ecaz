@@ -188,6 +188,7 @@ fault-auth:
 	cd $(REPO_ROOT) && $(SCRIPTS)/fault.sh auth-failure $(TOPOLOGY) $(ARTIFACT_DIR)
 
 teardown:
+	cd $(REPO_ROOT) && $(SCRIPTS)/empty-artifact-bucket.sh $(SPIRE_AWS_DIR)
 	cd $(SPIRE_AWS_DIR) && terraform destroy -auto-approve
 
 clean:
