@@ -295,6 +295,58 @@ mod tests {
         assert_eq!(decoded.grouped_codebook_head, ItemPointer::INVALID);
     }
 
+    #[test]
+    fn decode_preserves_existing_grouped_pq_metadata() {
+        let mut encoded = vec![0_u8; VAMANA_METADATA_BYTES];
+        encoded[VAMANA_METADATA_FORMAT_VERSION_OFFSET..VAMANA_METADATA_ENTRY_POINT_OFFSET]
+            .copy_from_slice(&INDEX_FORMAT_V3_DISKANN.to_le_bytes());
+        encoded[VAMANA_METADATA_ENTRY_POINT_OFFSET..VAMANA_METADATA_GRAPH_DEGREE_R_OFFSET]
+            .copy_from_slice(&[7, 0, 0, 0, 3, 0]);
+        encoded[VAMANA_METADATA_GRAPH_DEGREE_R_OFFSET..VAMANA_METADATA_BUILD_LIST_SIZE_L_OFFSET]
+            .copy_from_slice(&32_u16.to_le_bytes());
+        encoded[VAMANA_METADATA_BUILD_LIST_SIZE_L_OFFSET..VAMANA_METADATA_ALPHA_OFFSET]
+            .copy_from_slice(&100_u16.to_le_bytes());
+        encoded[VAMANA_METADATA_ALPHA_OFFSET..VAMANA_METADATA_DIMENSIONS_OFFSET]
+            .copy_from_slice(&1.2_f32.to_le_bytes());
+        encoded[VAMANA_METADATA_DIMENSIONS_OFFSET..VAMANA_METADATA_SEED_OFFSET]
+            .copy_from_slice(&1536_u16.to_le_bytes());
+        encoded[VAMANA_METADATA_SEED_OFFSET..VAMANA_METADATA_INSERTED_SINCE_REBUILD_OFFSET]
+            .copy_from_slice(&42_u64.to_le_bytes());
+        encoded[VAMANA_METADATA_TRANSFORM_KIND_OFFSET] = VAMANA_TRANSFORM_KIND_SRHT;
+        encoded[VAMANA_METADATA_SEARCH_CODEC_KIND_OFFSET] = VAMANA_SEARCH_CODEC_GROUPED_PQ;
+        encoded[VAMANA_METADATA_PAYLOAD_FLAGS_OFFSET] =
+            PAYLOAD_FLAG_BINARY_SIDECAR | PAYLOAD_FLAG_GROUPED_SEARCH_CODE;
+        encoded[VAMANA_METADATA_SEARCH_SUBVECTOR_COUNT_OFFSET
+            ..VAMANA_METADATA_SEARCH_SUBVECTOR_DIM_OFFSET]
+            .copy_from_slice(&192_u16.to_le_bytes());
+        encoded[VAMANA_METADATA_SEARCH_SUBVECTOR_DIM_OFFSET
+            ..VAMANA_METADATA_GROUPED_CODEBOOK_HEAD_OFFSET]
+            .copy_from_slice(&8_u16.to_le_bytes());
+        encoded[VAMANA_METADATA_GROUPED_CODEBOOK_HEAD_OFFSET..VAMANA_METADATA_BYTES]
+            .copy_from_slice(&[12, 0, 0, 0, 1, 0]);
+        let decoded = VamanaMetadataPage::decode(&encoded).expect("decode legacy grouped-PQ");
+
+        assert_eq!(decoded.search_codec_kind, VAMANA_SEARCH_CODEC_GROUPED_PQ);
+        assert_eq!(
+            decoded.entry_point,
+            ItemPointer {
+                block_number: 7,
+                offset_number: 3,
+            }
+        );
+        assert_ne!(decoded.payload_flags & PAYLOAD_FLAG_GROUPED_SEARCH_CODE, 0);
+        assert_ne!(decoded.payload_flags & PAYLOAD_FLAG_BINARY_SIDECAR, 0);
+        assert_eq!(decoded.search_subvector_count, 192);
+        assert_eq!(decoded.search_subvector_dim, 8);
+        assert_eq!(
+            decoded.grouped_codebook_head,
+            ItemPointer {
+                block_number: 12,
+                offset_number: 1,
+            }
+        );
+    }
+
     // LA-006: needs_medoid_refresh flag toggles round-trip correctly.
     #[test]
     fn la_006_needs_medoid_refresh_flag_roundtrips() {
