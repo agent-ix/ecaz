@@ -17,11 +17,12 @@ dataset, query set, breadth sweep, cache-state label, and PG18 socket.
 | size | profile | storage formats | recall/latency sweep | cache state |
 | --- | --- | --- | --- | --- |
 | 100k | `ec_real_100k` | `pq_fastscan`, `rabitq` | `64,128,200,400,800` | `post_recall_warm` |
-| 1M | existing staged 1M anchor | `pq_fastscan`, `rabitq` | `64,128,200,400,800` | `post_recall_warm` |
+| 1M | `ec_real_ann_benchmarks_anchor` | `pq_fastscan`, `rabitq` | `64,128,200,400,800` | `post_recall_warm` |
 
-The 1M rows reuse the Task 59 staged anchor paths under
-`/var/lib/pgsql/18/datasets/staged-1m/` so the comparison is against the same
-1M fixture already used for DiskANN final measurements.
+The 1M rows prepare the same DBpedia-derived anchor fixture used by prior
+DiskANN final measurements, but stage it under
+`/var/lib/pgsql/18/datasets/staged-task60-diskann-rabitq/` so `ecaz bench
+suite audit` can verify the full fetch -> prepare -> load dependency chain.
 
 ## Acceptance Checks
 

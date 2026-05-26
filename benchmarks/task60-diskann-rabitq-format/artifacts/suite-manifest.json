@@ -2,9 +2,9 @@
   "suite": "task60-diskann-rabitq-format",
   "schema_version": 1,
   "config": "benchmarks/task60-diskann-rabitq-format/suite.json",
-  "config_sha256": "617e2b3414b795c60452b1b35a6ff7a9eee9d5fe18bb2241e8288bdb42db8116",
+  "config_sha256": "de71a69e7032267555a50e7d4ba067ee807e7ef1278a79ea0989f1e920d0a506",
   "dry_run": true,
-  "generated_at_unix_ms": 1779747685133,
+  "generated_at_unix_ms": 1779759182576,
   "connection": {
     "database": "tqvector_bench",
     "host": null,
@@ -66,6 +66,36 @@
         "/var/lib/pgsql/18/datasets/staged-task60-diskann-rabitq/ec_real_100k_corpus.tsv",
         "/var/lib/pgsql/18/datasets/staged-task60-diskann-rabitq/ec_real_100k_queries.tsv",
         "/var/lib/pgsql/18/datasets/staged-task60-diskann-rabitq/ec_real_100k_manifest.json"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "prepare-ec-real-1m-anchor",
+      "kind": "corpus-prepare",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "corpus",
+        "prepare",
+        "--profile",
+        "ec_real_ann_benchmarks_anchor",
+        "--parquet",
+        "/var/lib/pgsql/18/datasets/dbpedia-openai3-1m/data",
+        "--output-dir",
+        "/var/lib/pgsql/18/datasets/staged-task60-diskann-rabitq"
+      ],
+      "selected": true,
+      "tags": [
+        "setup",
+        "prepare",
+        "ec_real_1m",
+        "graviton",
+        "task60"
+      ],
+      "expected_artifacts": [
+        "/var/lib/pgsql/18/datasets/staged-task60-diskann-rabitq/ec_real_ann_benchmarks_anchor_corpus.tsv",
+        "/var/lib/pgsql/18/datasets/staged-task60-diskann-rabitq/ec_real_ann_benchmarks_anchor_queries.tsv",
+        "/var/lib/pgsql/18/datasets/staged-task60-diskann-rabitq/ec_real_ann_benchmarks_anchor_manifest.json"
       ],
       "status": "dry-run"
     },
@@ -504,11 +534,11 @@
         "--profile",
         "ec_diskann",
         "--corpus-file",
-        "/var/lib/pgsql/18/datasets/staged-1m/ec_real_ann_benchmarks_anchor_corpus.tsv",
+        "/var/lib/pgsql/18/datasets/staged-task60-diskann-rabitq/ec_real_ann_benchmarks_anchor_corpus.tsv",
         "--queries-file",
-        "/var/lib/pgsql/18/datasets/staged-1m/ec_real_ann_benchmarks_anchor_queries.tsv",
+        "/var/lib/pgsql/18/datasets/staged-task60-diskann-rabitq/ec_real_ann_benchmarks_anchor_queries.tsv",
         "--manifest-file",
-        "/var/lib/pgsql/18/datasets/staged-1m/ec_real_ann_benchmarks_anchor_manifest.json",
+        "/var/lib/pgsql/18/datasets/staged-task60-diskann-rabitq/ec_real_ann_benchmarks_anchor_manifest.json",
         "--allow-manifest-mismatch",
         "--bits",
         "4",
@@ -546,11 +576,11 @@
         "--profile",
         "ec_diskann",
         "--corpus-file",
-        "/var/lib/pgsql/18/datasets/staged-1m/ec_real_ann_benchmarks_anchor_corpus.tsv",
+        "/var/lib/pgsql/18/datasets/staged-task60-diskann-rabitq/ec_real_ann_benchmarks_anchor_corpus.tsv",
         "--queries-file",
-        "/var/lib/pgsql/18/datasets/staged-1m/ec_real_ann_benchmarks_anchor_queries.tsv",
+        "/var/lib/pgsql/18/datasets/staged-task60-diskann-rabitq/ec_real_ann_benchmarks_anchor_queries.tsv",
         "--manifest-file",
-        "/var/lib/pgsql/18/datasets/staged-1m/ec_real_ann_benchmarks_anchor_manifest.json",
+        "/var/lib/pgsql/18/datasets/staged-task60-diskann-rabitq/ec_real_ann_benchmarks_anchor_manifest.json",
         "--allow-manifest-mismatch",
         "--bits",
         "4",

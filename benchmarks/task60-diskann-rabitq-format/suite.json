@@ -30,6 +30,14 @@
       "output_dir": "/var/lib/pgsql/18/datasets/staged-task60-diskann-rabitq"
     },
     {
+      "kind": "corpus-prepare",
+      "name": "prepare-ec-real-1m-anchor",
+      "tags": ["setup", "prepare", "ec_real_1m", "graviton", "task60"],
+      "profile": "ec_real_ann_benchmarks_anchor",
+      "parquet": "/var/lib/pgsql/18/datasets/dbpedia-openai3-1m/data",
+      "output_dir": "/var/lib/pgsql/18/datasets/staged-task60-diskann-rabitq"
+    },
+    {
       "kind": "raw",
       "name": "precheck-host",
       "tags": ["setup", "precheck", "graviton", "task60"],
@@ -165,9 +173,9 @@
       "prefix": "task60_real_1m_diskann_pq",
       "profile": "ec_diskann",
       "storage_format": "pq_fastscan",
-      "corpus_file": "/var/lib/pgsql/18/datasets/staged-1m/ec_real_ann_benchmarks_anchor_corpus.tsv",
-      "queries_file": "/var/lib/pgsql/18/datasets/staged-1m/ec_real_ann_benchmarks_anchor_queries.tsv",
-      "manifest_file": "/var/lib/pgsql/18/datasets/staged-1m/ec_real_ann_benchmarks_anchor_manifest.json",
+      "corpus_file": "/var/lib/pgsql/18/datasets/staged-task60-diskann-rabitq/ec_real_ann_benchmarks_anchor_corpus.tsv",
+      "queries_file": "/var/lib/pgsql/18/datasets/staged-task60-diskann-rabitq/ec_real_ann_benchmarks_anchor_queries.tsv",
+      "manifest_file": "/var/lib/pgsql/18/datasets/staged-task60-diskann-rabitq/ec_real_ann_benchmarks_anchor_manifest.json",
       "allow_manifest_mismatch": true,
       "log_file": "benchmarks/task60-diskann-rabitq-format/artifacts/load-1m-diskann-pq-fastscan.log"
     },
@@ -178,9 +186,9 @@
       "prefix": "task60_real_1m_diskann_rabitq",
       "profile": "ec_diskann",
       "storage_format": "rabitq",
-      "corpus_file": "/var/lib/pgsql/18/datasets/staged-1m/ec_real_ann_benchmarks_anchor_corpus.tsv",
-      "queries_file": "/var/lib/pgsql/18/datasets/staged-1m/ec_real_ann_benchmarks_anchor_queries.tsv",
-      "manifest_file": "/var/lib/pgsql/18/datasets/staged-1m/ec_real_ann_benchmarks_anchor_manifest.json",
+      "corpus_file": "/var/lib/pgsql/18/datasets/staged-task60-diskann-rabitq/ec_real_ann_benchmarks_anchor_corpus.tsv",
+      "queries_file": "/var/lib/pgsql/18/datasets/staged-task60-diskann-rabitq/ec_real_ann_benchmarks_anchor_queries.tsv",
+      "manifest_file": "/var/lib/pgsql/18/datasets/staged-task60-diskann-rabitq/ec_real_ann_benchmarks_anchor_manifest.json",
       "allow_manifest_mismatch": true,
       "log_file": "benchmarks/task60-diskann-rabitq-format/artifacts/load-1m-diskann-rabitq.log"
     },
