@@ -1454,6 +1454,9 @@ fn default_grouped_rerank_mode_resolution(
         super::options::StorageFormat::TurboQuant => {
             PqFastScanRerankModeResolution::DefaultQuantizedTurboQuantStorage
         }
+        super::options::StorageFormat::RaBitQ => {
+            PqFastScanRerankModeResolution::DefaultQuantizedTurboQuantStorage
+        }
     }
 }
 

@@ -176,6 +176,9 @@ impl GraphStorageDescriptor {
                     rerank_code_len: crate::code_len(metadata.dimensions as usize, metadata.bits),
                 }))
             }
+            codec::HnswStorageCodec::RaBitQ => {
+                Err("ec_hnsw RaBitQ graph storage descriptor is not implemented yet".to_owned())
+            }
         }
     }
 

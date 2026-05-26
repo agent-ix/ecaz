@@ -4,6 +4,7 @@ use super::{options, page};
 pub(crate) enum HnswStorageCodec {
     TurboQuant,
     PqFastScan,
+    RaBitQ,
 }
 
 impl HnswStorageCodec {
@@ -11,6 +12,7 @@ impl HnswStorageCodec {
         match storage_format {
             options::StorageFormat::TurboQuant => Self::TurboQuant,
             options::StorageFormat::PqFastScan => Self::PqFastScan,
+            options::StorageFormat::RaBitQ => Self::RaBitQ,
         }
     }
 
@@ -18,6 +20,7 @@ impl HnswStorageCodec {
         match metadata.graph_storage_format()? {
             page::GraphStorageFormat::TurboQuant => Ok(Self::TurboQuant),
             page::GraphStorageFormat::PqFastScan => Ok(Self::PqFastScan),
+            page::GraphStorageFormat::RaBitQ => Ok(Self::RaBitQ),
         }
     }
 
@@ -25,6 +28,7 @@ impl HnswStorageCodec {
         match self {
             Self::TurboQuant => options::StorageFormat::TurboQuant,
             Self::PqFastScan => options::StorageFormat::PqFastScan,
+            Self::RaBitQ => options::StorageFormat::RaBitQ,
         }
     }
 
@@ -71,6 +75,25 @@ impl HnswStorageCodec {
                 search_subvector_dim: 0,
                 grouped_codebook_head: page::ItemPointer::INVALID,
             },
+            Self::RaBitQ => page::MetadataPage {
+                m,
+                ef_construction,
+                entry_point: page::ItemPointer::INVALID,
+                dimensions: 0,
+                bits: 0,
+                max_level: 0,
+                seed: 0,
+                inserted_since_rebuild: 0,
+                format_version: page::INDEX_FORMAT_V4_RABITQ,
+                transform_kind: page::TransformKind::Srht,
+                search_codec_kind: page::SearchCodecKind::RaBitQ,
+                payload_flags: page::PAYLOAD_FLAG_COLD_RERANK_PAYLOAD,
+                search_bits: crate::DEFAULT_QUANT_BITS,
+                rerank_codec_kind: page::RerankCodecKind::ScalarQuantized,
+                search_subvector_count: 0,
+                search_subvector_dim: u16::from(crate::DEFAULT_QUANT_BITS),
+                grouped_codebook_head: page::ItemPointer::INVALID,
+            },
         }
     }
 
@@ -93,6 +116,11 @@ impl HnswStorageCodec {
                     binary_word_count,
                 )) <= usable_bytes
             }
+            Self::RaBitQ => {
+                page::raw_tuple_storage_bytes(page::TqGroupedHotTuple::encoded_len(0, code_len))
+                    + page::raw_tuple_storage_bytes(page::TqRerankTuple::encoded_len(code_len))
+                    <= usable_bytes
+            }
         }
     }
 }
@@ -113,6 +141,11 @@ mod tests {
                 .storage_format_name(),
             "pq_fastscan"
         );
+        assert_eq!(
+            HnswStorageCodec::from_storage_format(options::StorageFormat::RaBitQ)
+                .storage_format_name(),
+            "rabitq"
+        );
     }
 
     #[test]
@@ -127,6 +160,14 @@ mod tests {
         assert_eq!(grouped.search_codec_kind, page::SearchCodecKind::GroupedPq);
         assert_eq!(
             grouped.rerank_codec_kind,
+            page::RerankCodecKind::ScalarQuantized
+        );
+
+        let rabitq = HnswStorageCodec::RaBitQ.initial_metadata(8, 64);
+        assert_eq!(rabitq.format_version, page::INDEX_FORMAT_V4_RABITQ);
+        assert_eq!(rabitq.search_codec_kind, page::SearchCodecKind::RaBitQ);
+        assert_eq!(
+            rabitq.rerank_codec_kind,
             page::RerankCodecKind::ScalarQuantized
         );
     }
@@ -144,14 +185,22 @@ mod tests {
             HnswStorageCodec::from_metadata(&grouped).unwrap(),
             HnswStorageCodec::PqFastScan
         );
+
+        let rabitq = HnswStorageCodec::RaBitQ.initial_metadata(8, 64);
+        assert_eq!(
+            HnswStorageCodec::from_metadata(&rabitq).unwrap(),
+            HnswStorageCodec::RaBitQ
+        );
     }
 
     #[test]
     fn build_tuple_fit_check_preserves_existing_format_shapes() {
         assert!(HnswStorageCodec::TurboQuant.build_tuple_fits_on_page(768, 24, 8192));
         assert!(HnswStorageCodec::PqFastScan.build_tuple_fits_on_page(768, 24, 8192));
+        assert!(HnswStorageCodec::RaBitQ.build_tuple_fits_on_page(204, 0, 8192));
 
         assert!(!HnswStorageCodec::TurboQuant.build_tuple_fits_on_page(8192, 24, 8192));
         assert!(!HnswStorageCodec::PqFastScan.build_tuple_fits_on_page(8192, 24, 8192));
+        assert!(!HnswStorageCodec::RaBitQ.build_tuple_fits_on_page(8192, 0, 8192));
     }
 }

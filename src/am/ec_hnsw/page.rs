@@ -98,6 +98,7 @@ const METADATA_SPECIAL_BYTES: usize = align_up(METADATA_BYTES, ALIGNMENT_BYTES);
 pub const INDEX_FORMAT_V1_SCALAR: u16 = 1;
 pub const INDEX_FORMAT_V2_GROUPED: u16 = 2;
 pub const INDEX_FORMAT_V3_TURBO_HOT_COLD: u16 = 3;
+pub const INDEX_FORMAT_V4_RABITQ: u16 = 4;
 pub const PAYLOAD_FLAG_BINARY_SIDECAR: u8 = 0b0000_0001;
 pub const PAYLOAD_FLAG_GROUPED_SEARCH_CODE: u8 = 1 << 1;
 pub const PAYLOAD_FLAG_COLD_RERANK_PAYLOAD: u8 = 1 << 2;
@@ -127,6 +128,7 @@ pub enum SearchCodecKind {
     Unknown = 0,
     ScalarQuantized = 1,
     GroupedPq = 2,
+    RaBitQ = 3,
 }
 
 impl SearchCodecKind {
@@ -135,6 +137,7 @@ impl SearchCodecKind {
             0 => Ok(Self::Unknown),
             1 => Ok(Self::ScalarQuantized),
             2 => Ok(Self::GroupedPq),
+            3 => Ok(Self::RaBitQ),
             other => Err(format!("invalid search codec kind: {other}")),
         }
     }
@@ -163,6 +166,7 @@ impl RerankCodecKind {
 pub enum GraphStorageFormat {
     TurboQuant,
     PqFastScan,
+    RaBitQ,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -206,6 +210,7 @@ impl MetadataPage {
                 Ok(GraphStorageFormat::TurboQuant)
             }
             INDEX_FORMAT_V2_GROUPED => Ok(GraphStorageFormat::PqFastScan),
+            INDEX_FORMAT_V4_RABITQ => Ok(GraphStorageFormat::RaBitQ),
             other => Err(format!("unsupported metadata format version: {other}")),
         }
     }
@@ -321,7 +326,10 @@ impl MetadataPage {
             u16::from_le_bytes(input[30..32].try_into().expect("format version bytes"));
         if !matches!(
             format_version,
-            INDEX_FORMAT_V1_SCALAR | INDEX_FORMAT_V2_GROUPED | INDEX_FORMAT_V3_TURBO_HOT_COLD
+            INDEX_FORMAT_V1_SCALAR
+                | INDEX_FORMAT_V2_GROUPED
+                | INDEX_FORMAT_V3_TURBO_HOT_COLD
+                | INDEX_FORMAT_V4_RABITQ
         ) {
             return Err(format!("invalid metadata format version: {format_version}"));
         }

@@ -1551,6 +1551,9 @@ unsafe fn flush_build_state_with_timing(
         options::StorageFormat::TurboQuant => current_format_flush_output(state, timing),
         options::StorageFormat::PqFastScan => default_pq_fastscan_flush_output(state)
             .unwrap_or_else(|e| pgrx::error!("ec_hnsw pq_fastscan build failed: {e}")),
+        options::StorageFormat::RaBitQ => pgrx::error!(
+            "ec_hnsw storage_format='rabitq' metadata is recognized but build payload support is not implemented yet"
+        ),
     };
     let write_start = Instant::now();
     flush_build_output(handle, &output);
