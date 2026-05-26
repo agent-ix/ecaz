@@ -61,7 +61,7 @@ export ECAZ_SPIRE_AWS_TARBALL_PATH ?= $(PACKAGE_TARBALL)
         bench-correctness bench-representative bench-stress \
         fault-degraded fault-strict fault-2pc fault-missing-guc fault-schema-drift fault-auth \
         teardown clean \
-        verify-correctness-tunneled pass-correctness pass-representative all-correctness all-representative
+        verify-correctness-tunneled verify-correctness-full-tunneled verify-representative-full-tunneled pass-correctness pass-representative all-correctness all-representative
 
 preflight:
 	cd $(SPIRE_AWS_DIR) && terraform fmt -check
@@ -150,6 +150,16 @@ verify-correctness-tunneled:
 	cd $(REPO_ROOT) && $(SCRIPTS)/with-ssm-port-forwards.sh $(TOPOLOGY) $(ARTIFACT_DIR) $(TUNNELED_TOPOLOGY) -- \
 	  $(MAKE) -C $(SPIRE_AWS_DIR) ARTIFACT_DIR=$(ARTIFACT_DIR) TOPOLOGY=$(TUNNELED_TOPOLOGY) WORK_DIR=$(WORK_DIR) ECAZ_BIN=$(ECAZ_BIN) load-correctness register-correctness smoke-correctness
 
+verify-correctness-full-tunneled:
+	@mkdir -p $(ARTIFACT_DIR) $(WORK_DIR)
+	cd $(REPO_ROOT) && $(SCRIPTS)/with-ssm-port-forwards.sh $(TOPOLOGY) $(ARTIFACT_DIR) $(TUNNELED_TOPOLOGY) -- \
+	  $(MAKE) -C $(SPIRE_AWS_DIR) ARTIFACT_DIR=$(ARTIFACT_DIR) TOPOLOGY=$(TUNNELED_TOPOLOGY) WORK_DIR=$(WORK_DIR) ECAZ_BIN=$(ECAZ_BIN) PREFIX=ec_spire_aws_synth_10k COORD_INDEX=ec_spire_aws_synth_10k_idx load-correctness register-correctness smoke-correctness bench-correctness fault-degraded fault-strict
+
+verify-representative-full-tunneled:
+	@mkdir -p $(ARTIFACT_DIR) $(WORK_DIR)
+	cd $(REPO_ROOT) && $(SCRIPTS)/with-ssm-port-forwards.sh $(TOPOLOGY) $(ARTIFACT_DIR) $(TUNNELED_TOPOLOGY) -- \
+	  $(MAKE) -C $(SPIRE_AWS_DIR) ARTIFACT_DIR=$(ARTIFACT_DIR) TOPOLOGY=$(TUNNELED_TOPOLOGY) WORK_DIR=$(WORK_DIR) ECAZ_BIN=$(ECAZ_BIN) PREFIX=ec_spire_aws_repr_1m COORD_INDEX=ec_spire_aws_repr_1m_idx load-representative register-representative smoke-representative bench-representative fault-2pc fault-schema-drift
+
 bench-correctness:
 	cd $(REPO_ROOT) && $(SCRIPTS)/bench.sh correctness $(TOPOLOGY) $(ARTIFACT_DIR)
 
@@ -183,10 +193,32 @@ teardown:
 clean:
 	cd $(SPIRE_AWS_DIR) && rm -rf .terraform terraform.tfstate*
 
-pass-correctness: provision install-extension load-correctness register-correctness smoke-correctness bench-correctness fault-degraded fault-strict teardown
+pass-correctness:
+	@status=0; \
+	cleanup() { \
+	  teardown_status=0; \
+	  $(MAKE) -C $(SPIRE_AWS_DIR) ARTIFACT_DIR=$(ARTIFACT_DIR) teardown || teardown_status=$$?; \
+	  if [ $$status -eq 0 ]; then exit $$teardown_status; fi; \
+	  exit $$status; \
+	}; \
+	trap cleanup EXIT; \
+	$(MAKE) -C $(SPIRE_AWS_DIR) ARTIFACT_DIR=$(ARTIFACT_DIR) provision || status=$$?; \
+	if [ $$status -eq 0 ]; then $(MAKE) -C $(SPIRE_AWS_DIR) ARTIFACT_DIR=$(ARTIFACT_DIR) install-extension || status=$$?; fi; \
+	if [ $$status -eq 0 ]; then $(MAKE) -C $(SPIRE_AWS_DIR) ARTIFACT_DIR=$(ARTIFACT_DIR) verify-correctness-full-tunneled || status=$$?; fi
 
 all-correctness: pass-correctness
 
-pass-representative: provision install-extension load-representative register-representative smoke-representative bench-representative fault-2pc fault-schema-drift teardown
+pass-representative:
+	@status=0; \
+	cleanup() { \
+	  teardown_status=0; \
+	  $(MAKE) -C $(SPIRE_AWS_DIR) ARTIFACT_DIR=$(ARTIFACT_DIR) teardown || teardown_status=$$?; \
+	  if [ $$status -eq 0 ]; then exit $$teardown_status; fi; \
+	  exit $$status; \
+	}; \
+	trap cleanup EXIT; \
+	$(MAKE) -C $(SPIRE_AWS_DIR) ARTIFACT_DIR=$(ARTIFACT_DIR) provision || status=$$?; \
+	if [ $$status -eq 0 ]; then $(MAKE) -C $(SPIRE_AWS_DIR) ARTIFACT_DIR=$(ARTIFACT_DIR) install-extension || status=$$?; fi; \
+	if [ $$status -eq 0 ]; then $(MAKE) -C $(SPIRE_AWS_DIR) ARTIFACT_DIR=$(ARTIFACT_DIR) verify-representative-full-tunneled || status=$$?; fi
 
 all-representative: pass-representative

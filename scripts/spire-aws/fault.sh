@@ -15,7 +15,8 @@ mkdir -p "$ARTIFACT_DIR"
 REGION=$(jq -r '.region' "$TOPOLOGY")
 COORD_HOST=$(jq -r '.coordinator.operator_host // .coordinator.private_ip' "$TOPOLOGY")
 COORD_PORT=$(jq -r '.coordinator.operator_port // 5432' "$TOPOLOGY")
-COORD_INDEX="${COORD_INDEX:-ec_spire_aws_repr_1m_idx}"
+PREFIX="${PREFIX:-ec_spire_aws_repr_1m}"
+COORD_INDEX="${COORD_INDEX:-${PREFIX}_idx}"
 TARGET_REMOTE_ID=$(jq -r '.remotes[0].instance_id' "$TOPOLOGY")
 TARGET_NODE_ID=$(jq -r '.remotes[0].node_id' "$TOPOLOGY")
 TARGET_SECRET=$(jq -r '.remotes[0].secret_arn' "$TOPOLOGY")
@@ -25,7 +26,7 @@ ECAZ_BIN="${ECAZ_BIN:-ecaz}"
 run_query() {
   "$ECAZ_BIN" bench latency \
     --host "$COORD_HOST" --port "$COORD_PORT" --user ecaz_coord --database postgres \
-    --prefix ec_spire_aws_repr_1m --profile ec_spire \
+    --prefix "$PREFIX" --profile ec_spire \
     --k 10 --sweep 32 --concurrency 1 --iterations 100 \
     --log-output "$ARTIFACT_DIR/fault-${DRILL}-bench.log" || true
 }
