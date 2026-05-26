@@ -12,6 +12,14 @@ SELECT format('%I_corpus', :'prefix') AS corpus_table,
        format('%I_idx', :'prefix') AS index_name
 \gset
 
+SET enable_seqscan = off;
+SET enable_indexscan = off;
+
+SELECT source::text AS query_source
+FROM :queries_table
+WHERE id = 0
+\gset
+
 \echo === Registered remote nodes ===
 SELECT node_id, descriptor_state, placement_count
 FROM ec_spire_remote_node_snapshot(
@@ -21,18 +29,16 @@ ORDER BY node_id;
 
 \echo === EXPLAIN ANALYZE: vector ORDER BY LIMIT through CustomScan ===
 EXPLAIN (ANALYZE, BUFFERS, FORMAT TEXT)
-SELECT vec_id
+SELECT id
 FROM :corpus_table
-ORDER BY embedding <#> (
-  SELECT embedding FROM :queries_table WHERE vec_id = 0
-)
+ORDER BY embedding <#> :'query_source'::real[]
 LIMIT 10;
 
 \echo === Handoff summary ===
 SELECT *
 FROM ec_spire_remote_search_production_scan_handoff_summary(
   :'index_name'::regclass,
-  (SELECT embedding FROM :queries_table WHERE vec_id = 0)::real[],
+  :'query_source'::real[],
   10
 );
 
@@ -40,6 +46,6 @@ FROM ec_spire_remote_search_production_scan_handoff_summary(
 SELECT *
 FROM ec_spire_remote_search_production_read_profile(
   :'index_name'::regclass,
-  (SELECT embedding FROM :queries_table WHERE vec_id = 0)::real[],
+  :'query_source'::real[],
   10
 );

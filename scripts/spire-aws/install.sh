@@ -94,6 +94,125 @@ EOF
     > "$ARTIFACT_DIR/tls-upload-${instance_id}.log"
 }
 
+conninfo_lookup_key() {
+  local secret_name="$1"
+  local key="EC_SPIRE_REMOTE_CONNINFO_"
+  local i char
+  for ((i = 0; i < ${#secret_name}; i++)); do
+    char="${secret_name:i:1}"
+    if [[ "$char" =~ [[:alnum:]] ]]; then
+      key+="${char^^}"
+    else
+      key+="_"
+    fi
+  done
+  printf '%s\n' "$key"
+}
+
+conninfo_from_secret_json() {
+  jq -r '[
+      "host=" + (.host | tostring),
+      "port=" + (.port | tostring),
+      "dbname=" + (.dbname | tostring),
+      "user=" + (.user | tostring),
+      "password=" + (.password | tostring),
+      "sslmode=" + (.sslmode | tostring),
+      "sslrootcert=" + (.sslrootcert | tostring)
+    ] | join(" ")'
+}
+
+single_quote_env_value() {
+  local value="$1"
+  local escaped
+  escaped="$(printf '%s' "$value" | sed "s/'/'\\\\''/g")"
+  printf "'%s'" "$escaped"
+}
+
+configure_coordinator_remote_conninfo() {
+  local env_content=""
+  local redacted_log="$ARTIFACT_DIR/coordinator-remote-conninfo-env.redacted.log"
+  : > "$redacted_log"
+
+  while IFS= read -r remote; do
+    local node_id secret_name key secret_json conninfo quoted
+    node_id=$(jq -r '.node_id' <<< "$remote")
+    secret_name=$(jq -r '.secret_name' <<< "$remote")
+    key="$(conninfo_lookup_key "$secret_name")"
+    secret_json="$(aws secretsmanager get-secret-value \
+      --region "$REGION" \
+      --secret-id "$secret_name" \
+      --query SecretString \
+      --output text)"
+    conninfo="$(conninfo_from_secret_json <<< "$secret_json")"
+    quoted="$(single_quote_env_value "$conninfo")"
+    env_content+="${key}=${quoted}"$'\n'
+    printf 'node_id=%s secret_name=%s provider_lookup_key=%s status=configured\n' \
+      "$node_id" "$secret_name" "$key" >> "$redacted_log"
+  done < <(jq -c '.remotes[]' "$TOPOLOGY")
+
+  if [[ -z "$env_content" ]]; then
+    echo "no remote conninfo entries to configure on coordinator" >&2
+    exit 2
+  fi
+
+  local commands_json parameters_json cmd_id status wait_status
+  commands_json=$(jq -cn --arg env_content "$env_content" '{
+    commands: [
+      "set -euo pipefail",
+      "if systemctl list-unit-files postgresql-18.service --no-legend 2>/dev/null | grep -q '\''^postgresql-18.service'\''; then PG_SERVICE=postgresql-18; else PG_SERVICE=postgresql; fi",
+      "install -d -m 0755 /etc/ecaz",
+      "install -d -m 0755 \"/etc/systemd/system/${PG_SERVICE}.service.d\"",
+      "cat > /etc/ecaz/spire-remote-conninfo.env <<'\''EOF'\''\n\($env_content)EOF",
+      "chmod 0600 /etc/ecaz/spire-remote-conninfo.env",
+      "cat > \"/etc/systemd/system/${PG_SERVICE}.service.d/10-ecaz-spire-remote-conninfo.conf\" <<'\''EOF'\''\n[Service]\nEnvironmentFile=/etc/ecaz/spire-remote-conninfo.env\nEOF",
+      "systemctl daemon-reload",
+      "systemctl restart \"$PG_SERVICE\"",
+      "sudo -u postgres psql -Atc \"SELECT extversion FROM pg_extension WHERE extname='\''ecaz'\''\""
+    ]
+  }')
+  parameters_json=$(jq -cn --argjson commands "$commands_json" '{commands: $commands}')
+
+  cmd_id=$(aws ssm send-command \
+    --region "$REGION" \
+    --document-name "AWS-RunShellScript" \
+    --instance-ids "$COORD_ID" \
+    --parameters "$parameters_json" \
+    --output-s3-bucket-name "$BUCKET" \
+    --output-s3-key-prefix "spire-aws/coordinator-conninfo" \
+    --comment "ecaz Phase 13e coordinator remote conninfo" \
+    --query "Command.CommandId" --output text)
+
+  echo "coordinator remote conninfo ssm command id: ${cmd_id}" | tee -a "$ARTIFACT_DIR/install.log"
+  wait_status=0
+  status="Pending"
+  local deadline=$((SECONDS + ${SPIRE_AWS_SSM_TIMEOUT_SECONDS:-3600}))
+  while (( SECONDS < deadline )); do
+    status=$(aws ssm get-command-invocation \
+      --region "$REGION" --command-id "$cmd_id" --instance-id "$COORD_ID" \
+      --query Status --output text 2>/dev/null || echo "Pending")
+    case "$status" in
+      Success)
+        wait_status=0
+        break
+        ;;
+      Failed|Cancelled|Cancelling|TimedOut)
+        wait_status=1
+        break
+        ;;
+      *)
+        sleep 15
+        ;;
+    esac
+  done
+  if [[ "$status" != "Success" && "$wait_status" == 0 ]]; then
+    wait_status=124
+  fi
+  aws ssm get-command-invocation \
+    --region "$REGION" --command-id "$cmd_id" --instance-id "$COORD_ID" \
+    > "$ARTIFACT_DIR/install-coordinator-remote-conninfo.log"
+  return "$wait_status"
+}
+
 send_install_command() {
   local instance_id="$1"
   local secret_name="$2"
@@ -166,3 +285,5 @@ jq -c '.remotes[]' "$TOPOLOGY" | while read -r remote; do
   write_tls_bundle "$instance_id" "$private_ip"
   send_install_command "$instance_id" "$secret_name"
 done
+
+configure_coordinator_remote_conninfo

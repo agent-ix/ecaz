@@ -39,6 +39,7 @@
       "include_query_metrics": true,
       "include_recall": true,
       "include_production_read_profile": true,
+      "production_read_only": true,
       "query_metric_k": 10,
       "query_metric_projection_columns": ["id"]
     }

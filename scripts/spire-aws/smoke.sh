@@ -24,7 +24,7 @@ ECAZ_BIN="${ECAZ_BIN:-ecaz}"
 
 "$ECAZ_BIN" dev sql \
   --host "$COORD_HOST" --port "$COORD_PORT" --user ecaz_coord --database postgres \
-  --sql "SELECT * FROM ec_spire_remote_search_production_read_profile(format('%s_idx', '${PREFIX}')::regclass, (SELECT embedding FROM ${PREFIX}_queries WHERE vec_id = 0)::real[], 10)" \
+  --sql "SET enable_seqscan = off; SET enable_indexscan = off; SELECT * FROM ec_spire_remote_search_production_read_profile(format('%s_idx', '${PREFIX}')::regclass, (SELECT source FROM ${PREFIX}_queries WHERE id = 0)::real[], 10)" \
   --log-output "$ARTIFACT_DIR/production-read-profile-smoke.log"
 
 "$ECAZ_BIN" bench spire-pipeline \
@@ -33,4 +33,6 @@ ECAZ_BIN="${ECAZ_BIN:-ecaz}"
   --queries-limit 5 --sweep 8,16,32 \
   --include-remote --consistency-mode epoch \
   --include-cost-snapshot --include-query-metrics \
+  --include-recall --include-production-read-profile --production-read-only \
+  --remote-tuple-transport pg_binary_attr_v1 --query-metric-k 10 \
   --log-output "$ARTIFACT_DIR/bench-spire-pipeline-smoke.log"
