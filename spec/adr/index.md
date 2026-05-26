@@ -61,6 +61,7 @@ This index is the canonical navigation surface for Ecaz architecture decisions. 
 | SPANN | `ADR-035-spann-billion-scale.md` | DROPPED | Dropped from active roadmap. |
 | On-disk forward-compat encoding convention | `ADR-070-on-disk-forward-compat-encoding-convention.md` | PROPOSED | Realises NFR-016. Selects per-payload posture: reject-unknown (default), flag-byte optional regions, or length-prefixed TLV extension block. Blesses existing HNSW/DiskANN `payload_flags` as Option B. |
 | Unified quantizer interface | `ADR-071-unified-quantizer-interface.md` | PROPOSED | Aspirational shared quantizer contract across HNSW, DiskANN, and IVF; defer extraction until repeated AM integrations expose stable shape. |
+| Index-local quantized codec adapters | `ADR-072-index-local-quantized-codec-adapters.md` | PROPOSED | Companion to ADR-071. Shared quantizer math stays separate from AM-owned codec adapters for DiskANN, HNSW, and IVF storage/traversal binding. |
 
 ## Superseded Historical Decisions
 

@@ -94,6 +94,7 @@ These pre-lane task files are retained only for historical context under
 61. `61-hnsw-aws-graviton-first-pass.md` — AWS Graviton first-pass tuning lane for `ec_hnsw`: establish repeatable low-cost Graviton baselines at 10k/50k/100k and 1M if feasible, identify whether build, scan, memory, or storage dominates, land only evidence-backed narrow tuning, and keep Intel comparator work deferred.
 62. `62-hnsw-graviton-full-optimization.md` — follow-through HNSW Graviton lane after Task 61: benchmark TurboQuant and PqFastScan on isolated 10k/50k/100k HNSW surfaces, decide whether the next wins are general HNSW, PqFastScan-specific, or Graviton-specific, and land only packet-backed optimization slices.
 63. `63-hnsw-rabitq-storage-format.md` — design-gated storage-format task for adding `storage_format = 'rabitq'` to `ec_hnsw`, including traversal viability, hot/cold payload layout, insert/vacuum parity, and matched recall/latency/storage evidence against TurboQuant and PqFastScan.
+64. `64-hnsw-quantized-codec-adapters.md` — companion to Task 63: extract a narrow HNSW-local codec adapter seam for TurboQuant/PqFastScan first so RaBitQ can plug into HNSW without a broad refactor or premature cross-AM codec trait.
 
 ## Coordination rules
 

@@ -30,6 +30,10 @@ expectations. The task must answer:
 - Task 60 tracks RaBitQ for `ec_diskann`; it is not an HNSW task.
 - Task 62 tracks full HNSW Graviton optimization for existing formats and must
   not silently absorb this storage-format expansion.
+- Task 64 is the companion HNSW codec-adapter extraction task. Use it to
+  disentangle TurboQuant/PqFastScan payload, metadata, and scorer seams before
+  or alongside this task; Task 63 remains responsible for the actual RaBitQ
+  format and benchmark gate.
 
 ## Design Gate
 
