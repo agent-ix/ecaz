@@ -406,6 +406,7 @@ struct SpireRemoteProductionDispatch {
     pid_count: u64,
     conninfo_secret_name: String,
     remote_index_regclass: String,
+    descriptor_generation: u64,
     remote_index_identity: Vec<u8>,
     state: SpireRemoteProductionDispatchState,
     status: &'static str,
@@ -430,6 +431,7 @@ impl SpireRemoteProductionDispatch {
                 pid_count: row.pid_count,
                 conninfo_secret_name: row.conninfo_secret_name.clone(),
                 remote_index_regclass: row.remote_index_regclass.clone(),
+                descriptor_generation: row.descriptor_generation,
                 remote_index_identity: row.remote_index_identity.clone(),
                 state: SpireRemoteProductionDispatchState::Planned,
                 status: SPIRE_REMOTE_STATUS_REQUIRES_PRODUCTION_TRANSPORT,
@@ -451,6 +453,7 @@ impl SpireRemoteProductionDispatch {
                 pid_count: row.pid_count,
                 conninfo_secret_name: row.conninfo_secret_name.clone(),
                 remote_index_regclass: row.remote_index_regclass.clone(),
+                descriptor_generation: row.descriptor_generation,
                 remote_index_identity: row.remote_index_identity.clone(),
                 state: SpireRemoteProductionDispatchState::BlockedBeforeDispatch,
                 status: row.status,
@@ -909,17 +912,21 @@ impl SpireRemoteFanoutExecutor {
                 add_profile_elapsed(&mut metrics.conninfo_secret_lookup_elapsed_ms, secret_start);
             }
             match conninfo_result {
-                Ok(conninfo) => requests.push(SpireRemoteProductionCandidateReceiveRequest {
-                    node_id: dispatch.node_id,
-                    conninfo,
-                    remote_index_regclass: dispatch.remote_index_regclass.clone(),
-                    remote_index_identity: dispatch.remote_index_identity.clone(),
-                    requested_epoch: self.requested_epoch,
-                    query: query.to_vec(),
-                    selected_pids: dispatch.selected_pids.clone(),
-                    top_k,
-                    consistency_mode: consistency_mode.to_owned(),
-                }),
+                Ok(conninfo) => {
+                    requests.push(SpireRemoteProductionCandidateReceiveRequest {
+                        node_id: dispatch.node_id,
+                        conninfo_secret_name: dispatch.conninfo_secret_name.clone(),
+                        conninfo,
+                        remote_index_regclass: dispatch.remote_index_regclass.clone(),
+                        descriptor_generation: dispatch.descriptor_generation,
+                        remote_index_identity: dispatch.remote_index_identity.clone(),
+                        requested_epoch: self.requested_epoch,
+                        query: query.to_vec(),
+                        selected_pids: dispatch.selected_pids.clone(),
+                        top_k,
+                        consistency_mode: consistency_mode.to_owned(),
+                    });
+                }
                 Err(_) if degraded => dispatch.apply_degraded_skip(SPIRE_REMOTE_STATUS_REQUIRES_SECRET),
                 Err(_) => dispatch.apply_candidate_receive_failure(SPIRE_REMOTE_STATUS_REQUIRES_SECRET),
             }
@@ -1013,8 +1020,10 @@ impl SpireRemoteFanoutExecutor {
             match remote_conninfo_secret_value(&dispatch.conninfo_secret_name) {
                 Ok(conninfo) => requests.push(SpireRemoteProductionHeapReceiveRequest {
                     node_id: dispatch.node_id,
+                    conninfo_secret_name: dispatch.conninfo_secret_name.clone(),
                     conninfo,
                     remote_index_regclass: dispatch.remote_index_regclass.clone(),
+                    descriptor_generation: dispatch.descriptor_generation,
                     remote_index_identity: dispatch.remote_index_identity.clone(),
                     requested_epoch: self.requested_epoch,
                     query: query.to_vec(),

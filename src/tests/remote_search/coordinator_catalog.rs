@@ -1046,8 +1046,8 @@
         assert_eq!(secret_summary_next_step, "open_libpq_connection");
         assert_eq!(secret_summary_status, "resolved_conninfo");
         assert_eq!(connection_open_action, "open_libpq_connection");
-        assert_eq!(connection_open_lifecycle, "per_query");
-        assert_eq!(connection_open_pooling, "no_pooling_v1");
+        assert_eq!(connection_open_lifecycle, "per_backend_reusable_idle_session");
+        assert_eq!(connection_open_pooling, "bounded_per_backend_v1");
         assert_eq!(connection_open_next_step, "enter_libpq_pipeline_mode");
         assert_eq!(connection_open_status, "requires_libpq_executor");
         assert_eq!(connection_open_summary_ready_count, 1);

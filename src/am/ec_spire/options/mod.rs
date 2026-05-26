@@ -40,6 +40,8 @@ const EC_SPIRE_MAX_REMOTE_SEARCH_LIMIT: i32 = 1_000_000;
 const EC_SPIRE_MAX_REMOTE_SEARCH_CONCURRENCY_LIMIT: i32 = 4096;
 const EC_SPIRE_DEFAULT_REMOTE_SEARCH_TIMEOUT_MS: i32 = 0;
 const EC_SPIRE_MAX_REMOTE_SEARCH_TIMEOUT_MS: i32 = 3_600_000;
+const EC_SPIRE_DEFAULT_REMOTE_SEARCH_CONNECTION_POOL_SIZE: i32 = 16;
+const EC_SPIRE_MAX_REMOTE_SEARCH_CONNECTION_POOL_SIZE: i32 = 1024;
 const EC_SPIRE_DEFAULT_MAX_REMOTE_PAYLOAD_BYTES_PER_ROW: i32 = 1024;
 const EC_SPIRE_MAX_REMOTE_PAYLOAD_BYTES_PER_ROW: i32 = 1_073_741_824;
 const EC_SPIRE_DEFAULT_MAX_REMOTE_PAYLOAD_ROWS_PER_BATCH: i32 = 64;
@@ -76,6 +78,8 @@ static EC_SPIRE_REMOTE_SEARCH_CONNECT_TIMEOUT_MS_GUC: GucSetting<i32> =
     GucSetting::<i32>::new(EC_SPIRE_DEFAULT_REMOTE_SEARCH_TIMEOUT_MS);
 static EC_SPIRE_REMOTE_SEARCH_STATEMENT_TIMEOUT_MS_GUC: GucSetting<i32> =
     GucSetting::<i32>::new(EC_SPIRE_DEFAULT_REMOTE_SEARCH_TIMEOUT_MS);
+static EC_SPIRE_REMOTE_SEARCH_CONNECTION_POOL_SIZE_GUC: GucSetting<i32> =
+    GucSetting::<i32>::new(EC_SPIRE_DEFAULT_REMOTE_SEARCH_CONNECTION_POOL_SIZE);
 static EC_SPIRE_MAX_REMOTE_PAYLOAD_BYTES_PER_ROW_GUC: GucSetting<i32> =
     GucSetting::<i32>::new(EC_SPIRE_DEFAULT_MAX_REMOTE_PAYLOAD_BYTES_PER_ROW);
 static EC_SPIRE_MAX_REMOTE_PAYLOAD_ROWS_PER_BATCH_GUC: GucSetting<i32> =
@@ -829,6 +833,16 @@ pub(super) fn register_gucs() {
         GucFlags::default(),
     );
     GucRegistry::define_int_guc(
+        c"ec_spire.remote_search_connection_pool_size",
+        c"Per-backend ec_spire remote-search connection pool size.",
+        c"Maximum idle remote-search libpq/TLS sessions retained by one coordinator backend; 0 disables pooling.",
+        &EC_SPIRE_REMOTE_SEARCH_CONNECTION_POOL_SIZE_GUC,
+        0,
+        EC_SPIRE_MAX_REMOTE_SEARCH_CONNECTION_POOL_SIZE,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
+    GucRegistry::define_int_guc(
         c"ec_spire.max_remote_payload_bytes_per_row",
         c"Session cap for one ec_spire remote typed tuple payload row.",
         c"Maximum decoded tuple-payload bytes accepted from one remote heap row before strict mode fails closed; default 1024 comes from packet 30975 payload measurements plus a rounded 4x safety margin.",
@@ -1030,6 +1044,14 @@ pub(super) fn current_session_remote_search_statement_timeout_ms() -> i32 {
         EC_SPIRE_DEFAULT_REMOTE_SEARCH_TIMEOUT_MS
     } else {
         EC_SPIRE_REMOTE_SEARCH_STATEMENT_TIMEOUT_MS_GUC.get()
+    }
+}
+
+pub(super) fn current_session_remote_search_connection_pool_size() -> i32 {
+    if cfg!(test) {
+        EC_SPIRE_DEFAULT_REMOTE_SEARCH_CONNECTION_POOL_SIZE
+    } else {
+        EC_SPIRE_REMOTE_SEARCH_CONNECTION_POOL_SIZE_GUC.get()
     }
 }
 

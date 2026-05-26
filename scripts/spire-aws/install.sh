@@ -31,6 +31,41 @@ TLS_DIR="$ARTIFACT_DIR/tls"
 ALL_IDS=("$COORD_ID")
 while IFS= read -r id; do ALL_IDS+=("$id"); done <<< "$REMOTE_IDS"
 
+wait_for_ssm_online() {
+  local deadline=$((SECONDS + ${SPIRE_AWS_SSM_ONLINE_TIMEOUT_SECONDS:-600}))
+  local pending=()
+
+  while (( SECONDS < deadline )); do
+    pending=()
+    for instance_id in "${ALL_IDS[@]}"; do
+      local status
+      status=$(aws ssm describe-instance-information \
+        --region "$REGION" \
+        --filters "Key=InstanceIds,Values=${instance_id}" \
+        --query 'InstanceInformationList[0].PingStatus' \
+        --output text 2>/dev/null || true)
+      if [[ "$status" != "Online" ]]; then
+        pending+=("${instance_id}:${status}")
+      fi
+    done
+
+    if ((${#pending[@]} == 0)); then
+      printf 'ssm_online instance_count=%s status=ready\n' "${#ALL_IDS[@]}" \
+        | tee -a "$ARTIFACT_DIR/install.log"
+      return 0
+    fi
+
+    printf 'waiting_for_ssm_online pending=%s\n' "${pending[*]}" \
+      | tee -a "$ARTIFACT_DIR/install.log"
+    sleep 15
+  done
+
+  printf 'ERROR: timed out waiting for SSM online pending=%s\n' "${pending[*]}" >&2
+  return 124
+}
+
+wait_for_ssm_online
+
 aws s3 cp \
   "$REPO_ROOT/scripts/spire-aws/bootstrap-node.sh" \
   "s3://${BUCKET}/bootstrap-node.sh" \
@@ -156,8 +191,7 @@ configure_coordinator_remote_conninfo() {
   fi
 
   local commands_json parameters_json cmd_id status wait_status
-  commands_json=$(jq -cn --arg env_content "$env_content" '{
-    commands: [
+  commands_json=$(jq -cn --arg env_content "$env_content" '[
       "set -euo pipefail",
       "if systemctl list-unit-files postgresql-18.service --no-legend 2>/dev/null | grep -q '\''^postgresql-18.service'\''; then PG_SERVICE=postgresql-18; else PG_SERVICE=postgresql; fi",
       "install -d -m 0755 /etc/ecaz",
@@ -168,8 +202,7 @@ configure_coordinator_remote_conninfo() {
       "systemctl daemon-reload",
       "systemctl restart \"$PG_SERVICE\"",
       "sudo -u postgres psql -Atc \"SELECT extversion FROM pg_extension WHERE extname='\''ecaz'\''\""
-    ]
-  }')
+    ]')
   parameters_json=$(jq -cn --argjson commands "$commands_json" '{commands: $commands}')
 
   cmd_id=$(aws ssm send-command \
@@ -273,6 +306,11 @@ send_install_command() {
     > "$ARTIFACT_DIR/install-${instance_id}.log"
   return "$wait_status"
 }
+
+if [[ "${SPIRE_AWS_INSTALL_SKIP_NODE_BOOTSTRAP:-0}" == "1" ]]; then
+  configure_coordinator_remote_conninfo
+  exit $?
+fi
 
 coord_ip=$(jq -r '.coordinator.private_ip' "$TOPOLOGY")
 write_tls_bundle "$COORD_ID" "$coord_ip"

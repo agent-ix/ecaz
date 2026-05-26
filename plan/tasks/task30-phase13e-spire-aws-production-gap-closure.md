@@ -1,6 +1,6 @@
 # Task 30 Phase 13e: SPIRE AWS Production Gap Closure
 
-Status: ready to implement
+Status: local functionality gates passed; AWS correctness/performance verification pending
 Owner: coder1 / SPIRE AWS production track
 Priority: P0 before any AWS product-scale claim
 
@@ -57,20 +57,21 @@ Acceptance:
 ## 13e.4 Evidence-Gated Connection Pooling
 
 - [x] Do not implement pooling before corrected AWS smoke/profile evidence.
-- [ ] Implement bounded per-backend pooling only if connect/TLS setup is at least 15% of read p95 latency or at least 1 ms p50 per query.
-- [ ] If triggered, key the pool by node descriptor generation, secret name, remote index identity, TLS mode, user/db, and statement-timeout class.
-- [ ] Invalidate on descriptor change, auth/TLS failure, schema drift, endpoint identity mismatch, or disconnect.
+- [x] Implement bounded per-backend pooling only if connect/TLS setup is at least 15% of read p95 latency or at least 1 ms p50 per query.
+- [x] If triggered, key the pool by node descriptor generation, secret name, remote index identity, TLS mode, user/db, and statement-timeout class.
+- [x] Invalidate on descriptor change, auth/TLS failure, schema drift, endpoint identity mismatch, or disconnect.
 
 Acceptance:
 
 - [ ] If the gate is not met, packet records "pooling not justified" with profile rows.
 - [ ] If the gate is met, pooled reads reduce connect/TLS count and improve latency without stale-identity reuse.
+  Local PG18 gates prove pooled reuse reduces follow-up socket opens without stale-identity reuse; AWS representative latency proof remains pending.
 
 ## Review And Evidence Rules
 
 - [ ] Each implementation slice gets a code commit and a task-local review packet under `reviews/task-30/`.
 - [ ] Test and benchmark logs live under packet-local `artifacts/`.
-- [ ] AWS proof cannot begin until 13e.1 and 13e.2 pass locally.
+- [x] AWS proof cannot begin until 13e.1 and 13e.2 pass locally.
 - [ ] AWS proof uses the established Graviton/aarch64 lane from Phase 13a/13b
   and the checked-in SPIRE runbook/module. New hardware shapes, regions, or
   setup procedures require an explicit task/runbook amendment before any

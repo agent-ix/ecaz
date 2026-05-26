@@ -45,9 +45,11 @@
         let rows = am::spire_remote_search_production_candidate_receive_for_test(vec![
             am::SpireRemoteProductionCandidateReceiveRequest {
                 node_id: 2,
+                conninfo_secret_name: "tests/remote".to_owned(),
                 conninfo: loopback_conninfo,
                 remote_index_regclass: "ec_spire_production_candidate_receive_remote_idx"
                     .to_owned(),
+                descriptor_generation: 1,
                 remote_index_identity,
                 requested_epoch,
                 query: vec![1.0, 0.0],
@@ -121,8 +123,10 @@
         let rows = am::spire_remote_search_production_candidate_receive_for_test(vec![
             am::SpireRemoteProductionCandidateReceiveRequest {
                 node_id: 2,
+                conninfo_secret_name: "tests/remote".to_owned(),
                 conninfo: loopback_conninfo,
                 remote_index_regclass: "ec_spire_candidate_receive_top_k_zero_idx".to_owned(),
+                descriptor_generation: 1,
                 remote_index_identity,
                 requested_epoch: u64::try_from(active_epoch).expect("epoch should fit u64"),
                 query: vec![1.0, 0.0],
@@ -204,8 +208,10 @@
                        consistency_mode: &str| {
             am::SpireRemoteProductionCandidateReceiveRequest {
                 node_id,
+                conninfo_secret_name: "tests/remote".to_owned(),
                 conninfo: loopback_conninfo.clone(),
                 remote_index_regclass: remote_index_regclass.to_owned(),
+                descriptor_generation: 1,
                 remote_index_identity,
                 requested_epoch: u64::try_from(active_epoch).expect("epoch should fit u64"),
                 query: vec![1.0, 0.0],
@@ -337,8 +343,10 @@
             let request = |node_id: u32, remote_index_regclass: &str, remote_index_identity: Vec<u8>| {
                 am::SpireRemoteProductionCandidateReceiveRequest {
                     node_id,
+                    conninfo_secret_name: "tests/remote".to_owned(),
                     conninfo: loopback_conninfo.clone(),
                     remote_index_regclass: remote_index_regclass.to_owned(),
+                    descriptor_generation: 1,
                     remote_index_identity,
                     requested_epoch: u64::try_from(active_epoch).expect("epoch should fit u64"),
                     query: vec![1.0, 0.0],
@@ -463,8 +471,10 @@
                        consistency_mode: &str| {
             am::SpireRemoteProductionCandidateReceiveRequest {
                 node_id,
+                conninfo_secret_name: "tests/remote".to_owned(),
                 conninfo: loopback_conninfo.clone(),
                 remote_index_regclass: remote_index_regclass.to_owned(),
+                descriptor_generation: 1,
                 remote_index_identity,
                 requested_epoch: u64::try_from(active_epoch).expect("epoch should fit u64"),
                 query: vec![1.0, 0.0],
@@ -594,8 +604,10 @@
             let request = |node_id: u32, remote_index_regclass: &str, remote_index_identity: Vec<u8>| {
                 am::SpireRemoteProductionCandidateReceiveRequest {
                     node_id,
+                    conninfo_secret_name: "tests/remote".to_owned(),
                     conninfo: loopback_conninfo.clone(),
                     remote_index_regclass: remote_index_regclass.to_owned(),
+                    descriptor_generation: 1,
                     remote_index_identity,
                     requested_epoch: u64::try_from(active_epoch).expect("epoch should fit u64"),
                     query: vec![1.0, 0.0],
@@ -743,8 +755,11 @@
             let request = |node_id: u32, remote_index_regclass: &str, remote_index_identity: Vec<u8>| {
                 am::SpireRemoteProductionCandidateReceiveRequest {
                     node_id,
+                    conninfo_secret_name: "tests/remote".to_owned(),
                     conninfo: loopback_conninfo.clone(),
                     remote_index_regclass: remote_index_regclass.to_owned(),
+                    descriptor_generation: u64::try_from(descriptor_generation)
+                        .expect("descriptor generation should fit u64"),
                     remote_index_identity,
                     requested_epoch: u64::try_from(active_epoch).expect("epoch should fit u64"),
                     query: vec![1.0, 0.0],
@@ -897,8 +912,10 @@
         let rows = am::spire_remote_search_production_candidate_receive_for_test(vec![
             am::SpireRemoteProductionCandidateReceiveRequest {
                 node_id: 2,
+                conninfo_secret_name: "tests/remote".to_owned(),
                 conninfo: timeout_conninfo,
                 remote_index_regclass: "ec_spire_candidate_receive_timeout_remote_idx".to_owned(),
+                descriptor_generation: 1,
                 remote_index_identity,
                 requested_epoch: u64::try_from(active_epoch).expect("epoch should fit u64"),
                 query: vec![1.0, 0.0],
@@ -984,8 +1001,10 @@
         let rows = am::spire_remote_search_production_candidate_receive_for_test(vec![
             am::SpireRemoteProductionCandidateReceiveRequest {
                 node_id: 2,
+                conninfo_secret_name: "tests/remote".to_owned(),
                 conninfo: cancel_conninfo,
                 remote_index_regclass: "ec_spire_candidate_receive_cancel_remote_idx".to_owned(),
+                descriptor_generation: 1,
                 remote_index_identity,
                 requested_epoch: u64::try_from(active_epoch).expect("epoch should fit u64"),
                 query: vec![1.0, 0.0],
@@ -1080,9 +1099,11 @@
         let rows = am::spire_remote_search_production_candidate_receive_with_local_cancel_for_test(
             vec![am::SpireRemoteProductionCandidateReceiveRequest {
                 node_id: 2,
+                conninfo_secret_name: "tests/remote".to_owned(),
                 conninfo: local_cancel_conninfo,
                 remote_index_regclass: "ec_spire_candidate_receive_local_cancel_remote_idx"
                     .to_owned(),
+                descriptor_generation: 1,
                 remote_index_identity,
                 requested_epoch: u64::try_from(active_epoch).expect("epoch should fit u64"),
                 query: vec![1.0, 0.0],
@@ -1129,8 +1150,10 @@
         let rows = am::spire_remote_search_production_candidate_receive_for_test(vec![
             am::SpireRemoteProductionCandidateReceiveRequest {
                 node_id: 2,
+                conninfo_secret_name: "tests/remote".to_owned(),
                 conninfo: "invalid_conninfo_before_candidate_receive_open".to_owned(),
                 remote_index_regclass: "ec_spire_missing_remote_idx".to_owned(),
+                descriptor_generation: 1,
                 remote_index_identity: vec![0xaa],
                 requested_epoch: 1,
                 query: vec![1.0, 0.0],
@@ -1211,8 +1234,10 @@
         let rows = am::spire_remote_search_production_candidate_receive_for_test(vec![
             am::SpireRemoteProductionCandidateReceiveRequest {
                 node_id: 2,
+                conninfo_secret_name: "tests/remote".to_owned(),
                 conninfo: identity_conninfo,
                 remote_index_regclass: "ec_spire_candidate_receive_identity_remote_idx".to_owned(),
+                descriptor_generation: 1,
                 remote_index_identity: vec![0xaa],
                 requested_epoch: u64::try_from(active_epoch).expect("epoch should fit u64"),
                 query: vec![1.0, 0.0],
@@ -1301,8 +1326,10 @@
         let rows = am::spire_remote_search_production_candidate_receive_for_test(vec![
             am::SpireRemoteProductionCandidateReceiveRequest {
                 node_id: 2,
+                conninfo_secret_name: "tests/remote".to_owned(),
                 conninfo: stale_epoch_conninfo,
                 remote_index_regclass: "ec_spire_candidate_receive_stale_epoch_idx".to_owned(),
+                descriptor_generation: 1,
                 remote_index_identity,
                 requested_epoch: u64::try_from(active_epoch).expect("epoch should fit u64"),
                 query: vec![1.0, 0.0],
@@ -1388,8 +1415,10 @@
         let rows = am::spire_remote_search_production_candidate_receive_for_test(vec![
             am::SpireRemoteProductionCandidateReceiveRequest {
                 node_id: 2,
+                conninfo_secret_name: "tests/remote".to_owned(),
                 conninfo: terminate_conninfo,
                 remote_index_regclass: "ec_spire_candidate_receive_terminate_remote_idx".to_owned(),
+                descriptor_generation: 1,
                 remote_index_identity,
                 requested_epoch: u64::try_from(active_epoch).expect("epoch should fit u64"),
                 query: vec![1.0, 0.0],
@@ -1517,8 +1546,10 @@
                        consistency_mode: &str| {
             am::SpireRemoteProductionCandidateReceiveRequest {
                 node_id,
+                conninfo_secret_name: "tests/remote".to_owned(),
                 conninfo,
                 remote_index_regclass: remote_index_regclass.to_owned(),
+                descriptor_generation: 1,
                 remote_index_identity,
                 requested_epoch,
                 query,

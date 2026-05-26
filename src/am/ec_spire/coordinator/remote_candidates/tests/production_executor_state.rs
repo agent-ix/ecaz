@@ -696,8 +696,10 @@ mod production_executor_state_tests {
             SpireRemoteProductionTransportAdapter::run_candidate_receive_requests(vec![
                 SpireRemoteProductionCandidateReceiveRequest {
                     node_id: 2,
+                    conninfo_secret_name: "tests/remote".to_owned(),
                     conninfo: "host=/conninfo/should/not/be/used".to_owned(),
                     remote_index_regclass: "ec_spire_remote_2_idx".to_owned(),
+                    descriptor_generation: 1,
                     remote_index_identity: vec![2],
                     requested_epoch: 7,
                     query: vec![1.0, 0.0],
@@ -721,8 +723,10 @@ mod production_executor_state_tests {
         let heap_results = SpireRemoteProductionTransportAdapter::run_heap_receive_requests(vec![
             SpireRemoteProductionHeapReceiveRequest {
                 node_id: 2,
+                conninfo_secret_name: "tests/remote".to_owned(),
                 conninfo: "host=/conninfo/should/not/be/used".to_owned(),
                 remote_index_regclass: "ec_spire_remote_2_idx".to_owned(),
+                descriptor_generation: 1,
                 remote_index_identity: vec![2],
                 requested_epoch: 7,
                 query: vec![1.0, 0.0],

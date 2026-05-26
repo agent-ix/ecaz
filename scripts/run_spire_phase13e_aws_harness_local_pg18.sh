@@ -217,3 +217,4 @@ scripts/spire-aws/register.sh "$TOPOLOGY" "$LOG_DIR" "$plan_file"
 PREFIX=ec_spire_aws_synth_10k scripts/spire-aws/smoke.sh "$TOPOLOGY" "$LOG_DIR"
 
 echo "SPIRE Phase 13e AWS harness local PG18 fixture passed"
+echo "HARNESS PASSED"

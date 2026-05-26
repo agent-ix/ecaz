@@ -213,7 +213,7 @@ fn remote_search_libpq_connection_open_plan_rows_from_secrets(
                         "open_libpq_connection",
                         "enter_libpq_pipeline_mode",
                         SPIRE_REMOTE_EXECUTOR_REQUIRED,
-                        "open per-query libpq connection with executor-owned resolved conninfo",
+                        "open or reuse backend-local pooled libpq connection with executor-owned resolved conninfo",
                     )
                 } else {
                     (
@@ -232,8 +232,8 @@ fn remote_search_libpq_connection_open_plan_rows_from_secrets(
                 conninfo_secret_name: row.conninfo_secret_name.clone(),
                 provider_lookup_key: row.provider_lookup_key.clone(),
                 resolved_conninfo_bytes: row.resolved_conninfo_bytes,
-                connection_lifecycle_policy: "per_query",
-                pooling_policy: "no_pooling_v1",
+                connection_lifecycle_policy: "per_backend_reusable_idle_session",
+                pooling_policy: "bounded_per_backend_v1",
                 connection_action,
                 next_executor_step,
                 status,
