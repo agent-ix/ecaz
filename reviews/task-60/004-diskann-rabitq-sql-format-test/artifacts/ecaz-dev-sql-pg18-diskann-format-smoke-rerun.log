@@ -1,0 +1,12 @@
+CREATE EXTENSION
+DROP TABLE
+DROP TABLE
+CREATE TABLE
+CREATE TABLE
+INSERT 0 6
+INSERT 0 6
+NOTICE:  extension "ecaz" already exists, skipping
+NOTICE:  table "task60_diskann_pq" does not exist, skipping
+NOTICE:  table "task60_diskann_rabitq" does not exist, skipping
+ERROR:  value 8 out of bounds for option "build_list_size"
+DETAIL:  Valid values are between "10" and "1000".

@@ -1,0 +1,26 @@
+CREATE EXTENSION
+DROP TABLE
+DROP TABLE
+CREATE TABLE
+CREATE TABLE
+INSERT 0 6
+INSERT 0 6
+CREATE INDEX
+CREATE INDEX
+SET
+SET
+SET
+NOTICE:  extension "ecaz" already exists, skipping
+NOTICE:  table "task60_diskann_pq" does not exist, skipping
+NOTICE:  table "task60_diskann_rabitq" does not exist, skipping
+WARNING:  ec_diskann ambuild requires unit-normalized source vectors for the v0 distance wrapper; sampled 6 vector(s) with mean ||v|| = 0.9966 and range [0.9899, 1.0000], expected within [0.9900, 1.0100]; first outlier at sample 4 had ||v|| = 0.9899
+NOTICE:  ec_diskann_vamana_pass_timing index=task60_diskann_pq_idx pass=0 alpha=1 elapsed_ms=0 greedy_search_ms=0 candidate_pool_ms=0 robust_prune_ms=0 backlink_ms=0 greedy_distance_calls=21 candidate_pool_distance_calls=20 robust_prune_distance_calls=14 backlink_distance_calls=0 visited_mean=3.50 visited_p95=6 candidate_pool_mean=3.33 candidate_pool_p95=5 reprunes=0
+NOTICE:  ec_diskann_vamana_pass_timing index=task60_diskann_pq_idx pass=1 alpha=1.2 elapsed_ms=0 greedy_search_ms=0 candidate_pool_ms=0 robust_prune_ms=0 backlink_ms=0 greedy_distance_calls=34 candidate_pool_distance_calls=29 robust_prune_distance_calls=32 backlink_distance_calls=0 visited_mean=5.67 visited_p95=6 candidate_pool_mean=4.83 candidate_pool_p95=5 reprunes=0
+NOTICE:  ec_diskann_ambuild_timing index=task60_diskann_pq_idx phase=complete heap_tuples=6 scanned_tuples=6 unique_tuples=6 data_pages=1 heap_scan_ms=0 source_ref_ms=0 training_ms=77 sidecar_setup_ms=0 payload_derivation_ms=0 build_persist_ms=0 core_medoid_ms=0 core_graph_ms=0 core_persist_ms=0 overflow_ms=0 codebook_ms=0 write_pages_ms=0 metadata_ms=0 flush_total_ms=77 total_ms=77
+WARNING:  ec_diskann ambuild requires unit-normalized source vectors for the v0 distance wrapper; sampled 6 vector(s) with mean ||v|| = 0.9966 and range [0.9899, 1.0000], expected within [0.9900, 1.0100]; first outlier at sample 4 had ||v|| = 0.9899
+NOTICE:  ec_diskann_vamana_pass_timing index=task60_diskann_rabitq_idx pass=0 alpha=1 elapsed_ms=0 greedy_search_ms=0 candidate_pool_ms=0 robust_prune_ms=0 backlink_ms=0 greedy_distance_calls=21 candidate_pool_distance_calls=20 robust_prune_distance_calls=14 backlink_distance_calls=0 visited_mean=3.50 visited_p95=6 candidate_pool_mean=3.33 candidate_pool_p95=5 reprunes=0
+NOTICE:  ec_diskann_vamana_pass_timing index=task60_diskann_rabitq_idx pass=1 alpha=1.2 elapsed_ms=0 greedy_search_ms=0 candidate_pool_ms=0 robust_prune_ms=0 backlink_ms=0 greedy_distance_calls=34 candidate_pool_distance_calls=29 robust_prune_distance_calls=32 backlink_distance_calls=0 visited_mean=5.67 visited_p95=6 candidate_pool_mean=4.83 candidate_pool_p95=5 reprunes=0
+NOTICE:  ec_diskann_ambuild_timing index=task60_diskann_rabitq_idx phase=complete heap_tuples=6 scanned_tuples=6 unique_tuples=6 data_pages=1 heap_scan_ms=0 source_ref_ms=0 training_ms=0 sidecar_setup_ms=0 payload_derivation_ms=0 build_persist_ms=0 core_medoid_ms=0 core_graph_ms=0 core_persist_ms=0 overflow_ms=0 codebook_ms=0 write_pages_ms=0 metadata_ms=0 flush_total_ms=0 total_ms=0
+ERROR:  ec_diskann scan execution failed: rerank_budget 64 must be <= list_size 8
+CONTEXT:  SQL statement "SELECT id          FROM task60_diskann_pq ORDER BY embedding <#> ARRAY[1.0,0.0,0.0,0.0]::real[] LIMIT 1"
+PL/pgSQL function inline_code_block line 1 at SQL statement
