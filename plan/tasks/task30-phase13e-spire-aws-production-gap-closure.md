@@ -134,3 +134,7 @@ Acceptance:
   `s3:ListBucketVersions`; the next AWS run must either use that reviewed
   residue exception with packet-local evidence or run after the permission /
   residue issue is resolved.
+- Packet `1030` adds an operator preflight guard requiring `auto_stop_at` to be
+  at least `18000` seconds after preflight time, so the representative run
+  cannot start with less than the four-hour watchdog budget plus buffer. The
+  active Graviton `terraform.tfvars` passes this guard as of the packet run.

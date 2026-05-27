@@ -76,6 +76,11 @@ now_epoch="${SPIRE_AWS_PREFLIGHT_NOW_EPOCH:-$(date -u +%s)}"
 [[ "$now_epoch" =~ ^[0-9]+$ ]] || die "SPIRE_AWS_PREFLIGHT_NOW_EPOCH must be an epoch-second integer, got: $now_epoch"
 ((auto_stop_epoch > now_epoch)) ||
   die "auto_stop_at must be in the future before provisioning, got: $auto_stop_at"
+min_auto_stop_lead_seconds="${SPIRE_AWS_MIN_AUTO_STOP_LEAD_SECONDS:-18000}"
+[[ "$min_auto_stop_lead_seconds" =~ ^[0-9]+$ ]] ||
+  die "SPIRE_AWS_MIN_AUTO_STOP_LEAD_SECONDS must be an integer second count, got: $min_auto_stop_lead_seconds"
+((auto_stop_epoch - now_epoch >= min_auto_stop_lead_seconds)) ||
+  die "auto_stop_at must be at least ${min_auto_stop_lead_seconds}s after preflight time for the representative pass watchdog budget, got: $auto_stop_at"
 
 require_graviton_family coordinator_instance_type "$coordinator_instance_type"
 require_graviton_family remote_instance_type "$remote_instance_type"
