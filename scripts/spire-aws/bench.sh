@@ -10,7 +10,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="${REPO_ROOT:-$(cd "$SCRIPT_DIR/../.." && pwd)}"
 cd "$REPO_ROOT"
 
-TIER="${1:?tier required (correctness|representative|stress)}"
+TIER="${1:?tier required (correctness|representative-priority|representative|representative-pooling|stress)}"
 TOPOLOGY="${2:?topology JSON path required}"
 ARTIFACT_DIR="${3:?artifact directory required}"
 mkdir -p "$ARTIFACT_DIR"
@@ -21,6 +21,7 @@ ECAZ_BIN="${ECAZ_BIN:-ecaz}"
 
 case "$TIER" in
   correctness)   SUITE=scripts/spire-aws/suite-correctness.json ;;
+  representative-priority) SUITE=scripts/spire-aws/suite-representative-priority.json ;;
   representative) SUITE=scripts/spire-aws/suite-representative.json ;;
   representative-pooling) SUITE=scripts/spire-aws/suite-representative-pooling.json ;;
   stress)        SUITE=scripts/spire-aws/suite-stress.json ;;

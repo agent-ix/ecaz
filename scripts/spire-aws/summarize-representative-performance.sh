@@ -6,7 +6,10 @@ set -euo pipefail
 artifact_dir="${1:?usage: summarize-representative-performance.sh <artifact-dir> [output-dir]}"
 output_dir="${2:-$artifact_dir}"
 
-representative_results="${artifact_dir}/suite-results-representative.jsonl"
+representative_results="${artifact_dir}/suite-results-representative-priority.jsonl"
+if [[ ! -s "$representative_results" ]]; then
+  representative_results="${artifact_dir}/suite-results-representative.jsonl"
+fi
 pooling_results="${artifact_dir}/suite-results-representative-pooling.jsonl"
 
 mkdir -p "$output_dir"
