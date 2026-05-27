@@ -1,0 +1,6 @@
+Script started on 2026-05-27 10:53:12-07:00 [<not executed on terminal>]
+[33m09f3265bf[m[33m ([m[1;36mHEAD -> [m[1;32mdiskann-aws-optimization[m[33m)[m Gate SPIRE representative pass order
+ .../preflight-representative-performance.sh        | 54 [32m++++++++++++++++++++++[m
+ 1 file changed, 54 insertions(+)
+
+Script done on 2026-05-27 10:53:12-07:00 [COMMAND_EXIT_CODE="0"]
