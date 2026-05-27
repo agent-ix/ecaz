@@ -39,36 +39,36 @@ require_file "$production_profile"
 require_file "$pooling_comparison"
 require_file "$pooling_delta"
 
-require_awk "representative latency p50/p95/p99 row" "$latency_recall" '
+require_awk "representative latency p50/p95/p99 rows for all priority nprobe values" "$latency_recall" '
   function present(v) { return v != "" && v != "null" }
   NR > 1 && $1 == "latency" && present($6) && present($7) && present($8) {
-    found = 1
+    seen[$4] = 1
   }
-  END { exit(found ? 0 : 1) }
+  END { exit(seen[8] && seen[16] && seen[24] && seen[32] ? 0 : 1) }
 '
 
-require_awk "representative recall@k row" "$latency_recall" '
+require_awk "representative recall@k rows for all priority nprobe values" "$latency_recall" '
   function present(v) { return v != "" && v != "null" }
   NR > 1 && $1 == "recall" && present($9) {
-    found = 1
+    seen[$4] = 1
   }
-  END { exit(found ? 0 : 1) }
+  END { exit(seen[8] && seen[16] && seen[24] && seen[32] ? 0 : 1) }
 '
 
-require_awk "production SPIRE pipeline latency and recall row" "$latency_recall" '
+require_awk "production SPIRE pipeline latency and recall rows for all priority nprobe values" "$latency_recall" '
   function present(v) { return v != "" && v != "null" }
   NR > 1 && $1 == "spire-pipeline" && present($6) && present($7) && present($8) && present($9) {
-    found = 1
+    seen[$4] = 1
   }
-  END { exit(found ? 0 : 1) }
+  END { exit(seen[8] && seen[16] && seen[24] && seen[32] ? 0 : 1) }
 '
 
-require_awk "production read profile row" "$production_profile" '
+require_awk "production read profile rows for all priority nprobe values" "$production_profile" '
   function present(v) { return v != "" && v != "null" }
   NR > 1 && present($4) && present($5) && present($6) && present($7) && present($9) && present($11) && present($19) && present($22) {
-    found = 1
+    seen[$2] = 1
   }
-  END { exit(found ? 0 : 1) }
+  END { exit(seen[8] && seen[16] && seen[24] && seen[32] ? 0 : 1) }
 '
 
 require_awk "pooled and unpooled comparison rows" "$pooling_comparison" '
@@ -102,10 +102,10 @@ require_awk "pooling delta improvement row" "$pooling_delta" '
         ($25 + 0) > 0 &&
         ($29 + 0) > 0 &&
         abs($33 + 0) <= 0.000001) {
-      found = 1
+      seen[$1] = 1
     }
   }
-  END { exit(found ? 0 : 1) }
+  END { exit(seen[8] && seen[16] && seen[24] && seen[32] ? 0 : 1) }
 '
 
 printf 'representative performance summary verified: %s\n' "$artifact_dir"
