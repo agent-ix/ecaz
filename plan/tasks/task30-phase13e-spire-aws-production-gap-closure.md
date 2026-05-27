@@ -102,7 +102,7 @@ Acceptance:
   `pass-representative-performance`. Fault rerun/resilience evidence remains
   valuable, but is lower priority than the representative performance and
   pooling packet.
-- Local AWS harness hardening packets `1009` through `1024` now make that
+- Local AWS harness hardening packets `1009` through `1026` now make that
   representative pass fail closed before provisioning unless the priority path
   runs the representative preflight, excludes fault reruns, and verifies suite
   plus summary evidence for latency/recall, pooled-vs-unpooled socket reduction,
@@ -119,4 +119,7 @@ Acceptance:
   the actual `PGOPTIONS` pool-size settings (`0` versus `16`) in packet-local
   evidence. Packet `1024` adds a local preflight gate requiring the
   representative performance pass to use the AWS teardown watchdog and a
-  representative-tier timeout before any EC2 provisioning starts.
+  representative-tier timeout before any EC2 provisioning starts. Packet `1026`
+  requires the representative performance pass to run the ordered
+  preflight/provision/install/verify chain, and the tunneled verify step to run
+  load/register/smoke/priority bench/pooling bench/summarize/verify in order.
