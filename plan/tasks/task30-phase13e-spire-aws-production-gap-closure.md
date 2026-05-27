@@ -138,3 +138,9 @@ Acceptance:
   at least `18000` seconds after preflight time, so the representative run
   cannot start with less than the four-hour watchdog budget plus buffer. The
   active Graviton `terraform.tfvars` passes this guard as of the packet run.
+- Packet `1031` adds `scripts/spire-aws/run-representative-performance-pass.sh`
+  as the standard dry-run-by-default entrypoint for the remaining AWS proof. It
+  requires a task-local `ARTIFACT_DIR`, runs the current preflight stack with
+  the reviewed residue exception by default, prints the exact
+  `pass-representative-performance` command, and only provisions when rerun with
+  `--execute` after explicit AWS approval.
