@@ -23,9 +23,9 @@ impl SpireLiveIndexRelation {
         tid: crate::storage::page::ItemPointer,
     ) -> Result<Vec<u8>, String> {
         // SAFETY: this wrapper is constructed only for a live SPIRE index
-        // relation. The page helper pins the buffer and returns owned bytes
-        // before the relation view can be reused by callers.
-        unsafe { page::read_object_tuple(self.relation, tid) }
+        // relation. Current callers use this helper for root/control manifest
+        // locators, which may point at a chained manifest blob at scale.
+        unsafe { page::read_manifest_blob_tuple(self.relation, tid) }
     }
 
     fn relation_options(self) -> options::EcSpireOptions {
@@ -620,10 +620,30 @@ pub(crate) fn index_relation_storage_snapshot(
         let mut active_tids = HashSet::<(u32, crate::storage::page::ItemPointer)>::new();
         let mut storage_relids = HashSet::from([index_relid]);
         if root_control.active_epoch != 0 {
-            active_tids.insert((index_relid, root_control.epoch_manifest_tid));
-            active_tids.insert((index_relid, root_control.object_manifest_tid));
-            active_tids.insert((index_relid, root_control.placement_directory_tid));
-            active_tids.insert((index_relid, root_control.local_store_config_tid));
+            protect_manifest_blob_tuple(
+                index,
+                &mut active_tids,
+                index_relid,
+                root_control.epoch_manifest_tid,
+            )?;
+            protect_manifest_blob_tuple(
+                index,
+                &mut active_tids,
+                index_relid,
+                root_control.object_manifest_tid,
+            )?;
+            protect_manifest_blob_tuple(
+                index,
+                &mut active_tids,
+                index_relid,
+                root_control.placement_directory_tid,
+            )?;
+            protect_manifest_blob_tuple(
+                index,
+                &mut active_tids,
+                index_relid,
+                root_control.local_store_config_tid,
+            )?;
 
             let Some(anchor) = index.active_epoch_anchor(root_control)? else {
                 return Err(
@@ -804,6 +824,20 @@ fn protect_tuple(
     }
 }
 
+fn protect_manifest_blob_tuple(
+    index: SpireLiveIndexRelation,
+    protected: &mut HashSet<SpireStorageTupleRef>,
+    relid: u32,
+    tid: crate::storage::page::ItemPointer,
+) -> Result<(), String> {
+    // SAFETY: `index` is a live relation view and `tid` came from its active
+    // root/control state or a scanned manifest tuple.
+    for locator in unsafe { page::manifest_blob_tuple_locators(index.as_ptr(), tid) }? {
+        protect_tuple(protected, relid, locator);
+    }
+    Ok(())
+}
+
 fn collect_physical_cleanup_candidates(
     index: SpireLiveIndexRelation,
     root_control: meta::SpireRootControlState,
@@ -821,22 +855,42 @@ fn collect_physical_cleanup_candidates(
     let mut protected = HashSet::<SpireStorageTupleRef>::new();
     let mut storage_relids = HashSet::from([index_relid]);
     let mut protected_directories = Vec::new();
-    protect_tuple(&mut protected, index_relid, root_control.epoch_manifest_tid);
-    protect_tuple(
+    protect_manifest_blob_tuple(
+        index,
+        &mut protected,
+        index_relid,
+        root_control.epoch_manifest_tid,
+    )?;
+    protect_manifest_blob_tuple(
+        index,
         &mut protected,
         index_relid,
         root_control.object_manifest_tid,
-    );
-    protect_tuple(
+    )?;
+    protect_manifest_blob_tuple(
+        index,
         &mut protected,
         index_relid,
         root_control.placement_directory_tid,
-    );
-    protect_tuple(
+    )?;
+    protect_manifest_blob_tuple(
+        index,
         &mut protected,
         index_relid,
         root_control.local_store_config_tid,
-    );
+    )?;
+
+    if root_control.active_epoch != 0 {
+        if let Some(anchor) = index.active_epoch_anchor(root_control)? {
+            for entry in &anchor.object_manifest.entries {
+                protect_tuple(&mut protected, index_relid, entry.placement_tid);
+            }
+            for placement in &anchor.placement_directory.entries {
+                storage_relids.insert(placement.store_relid);
+            }
+            protected_directories.push(anchor.placement_directory);
+        }
+    }
 
     index.scan_object_tuples(|tid, tuple| {
         if let Ok(manifest) = meta::SpireEpochManifest::decode(tuple) {

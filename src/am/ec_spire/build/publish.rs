@@ -51,6 +51,12 @@ impl SpirePublishRelation {
         unsafe { page::append_object_tuple(self.relation, payload) }
     }
 
+    fn append_manifest_blob_tuple(self, payload: &[u8]) -> Result<ItemPointer, String> {
+        // SAFETY: this wrapper is constructed only for a live SPIRE index
+        // relation during publish while callers hold the required lock scope.
+        unsafe { page::append_manifest_blob_tuple(self.relation, payload) }
+    }
+
     fn initialize_root_control(self, root_control: SpireRootControlState) {
         // SAFETY: root_control points at manifest locators just appended to
         // this open index relation and publishes the epoch atomically.
@@ -475,10 +481,11 @@ pub(super) fn write_manifest_bundle_to_relation(
     manifests: &SpireEncodedManifestBundle,
 ) -> Result<SpirePublishedManifestLocators, String> {
     let relation = SpirePublishRelation::new(index_relation);
-    let epoch_manifest_tid = relation.append_object_tuple(&manifests.epoch_manifest)?;
-    let object_manifest_tid = relation.append_object_tuple(&manifests.object_manifest)?;
-    let placement_directory_tid = relation.append_object_tuple(&manifests.placement_directory)?;
-    let local_store_config_tid = relation.append_object_tuple(&manifests.local_store_config)?;
+    let epoch_manifest_tid = relation.append_manifest_blob_tuple(&manifests.epoch_manifest)?;
+    let object_manifest_tid = relation.append_manifest_blob_tuple(&manifests.object_manifest)?;
+    let placement_directory_tid =
+        relation.append_manifest_blob_tuple(&manifests.placement_directory)?;
+    let local_store_config_tid = relation.append_manifest_blob_tuple(&manifests.local_store_config)?;
     Ok(SpirePublishedManifestLocators {
         epoch_manifest_tid,
         object_manifest_tid,
@@ -511,7 +518,7 @@ pub(super) fn write_retired_epoch_manifest_to_relation(
     // Replacement publishes append this retired copy before the new manifest
     // bundle while holding the publish/extension lock, so its TID orders after
     // the original published manifest for snapshot dedupe.
-    SpirePublishRelation::new(index_relation).append_object_tuple(&encoded)
+    SpirePublishRelation::new(index_relation).append_manifest_blob_tuple(&encoded)
 }
 
 pub(super) fn publish_replacement_epoch_to_relation(
