@@ -2,9 +2,9 @@
   "suite": "task63-hnsw-rabitq-format",
   "schema_version": 1,
   "config": "benchmarks/task63-hnsw-rabitq-format/suite.json",
-  "config_sha256": "9ba413ed8e219b9207e80ed9e64ef71161535ef45e59118b67c0d33cd13a6b22",
+  "config_sha256": "9f3c4550429838bb75971f34379d450eeb94eaed737894170e6a4eb64dcbfcae",
   "dry_run": true,
-  "generated_at_unix_ms": 1779841019690,
+  "generated_at_unix_ms": 1779842864169,
   "connection": {
     "database": "tqvector_bench",
     "host": null,
@@ -31,7 +31,7 @@
         "setup",
         "fetch",
         "dbpedia",
-        "graviton",
+        "benchmark-host",
         "task63"
       ],
       "expected_artifacts": [
@@ -59,7 +59,7 @@
         "setup",
         "prepare",
         "ec_real_50k",
-        "graviton",
+        "benchmark-host",
         "task63"
       ],
       "expected_artifacts": [
@@ -89,7 +89,7 @@
         "setup",
         "prepare",
         "ec_real_100k",
-        "graviton",
+        "benchmark-host",
         "task63"
       ],
       "expected_artifacts": [
@@ -123,7 +123,7 @@
       "tags": [
         "setup",
         "precheck",
-        "graviton",
+        "benchmark-host",
         "task63"
       ],
       "expected_artifacts": [
@@ -169,7 +169,7 @@
         "ec_real_50k",
         "hnsw",
         "turboquant",
-        "graviton",
+        "benchmark-host",
         "task63"
       ],
       "expected_artifacts": [
@@ -215,7 +215,7 @@
         "ec_real_50k",
         "hnsw",
         "pq_fastscan",
-        "graviton",
+        "benchmark-host",
         "task63"
       ],
       "expected_artifacts": [
@@ -261,7 +261,7 @@
         "ec_real_50k",
         "hnsw",
         "rabitq",
-        "graviton",
+        "benchmark-host",
         "task63"
       ],
       "expected_artifacts": [
@@ -303,7 +303,7 @@
         "ec_real_50k",
         "hnsw",
         "turboquant",
-        "graviton",
+        "benchmark-host",
         "task63"
       ],
       "expected_artifacts": [
@@ -345,7 +345,7 @@
         "ec_real_50k",
         "hnsw",
         "pq_fastscan",
-        "graviton",
+        "benchmark-host",
         "task63"
       ],
       "expected_artifacts": [
@@ -387,7 +387,7 @@
         "ec_real_50k",
         "hnsw",
         "rabitq",
-        "graviton",
+        "benchmark-host",
         "task63"
       ],
       "expected_artifacts": [
@@ -435,7 +435,7 @@
         "hnsw",
         "turboquant",
         "post_recall_warm",
-        "graviton",
+        "benchmark-host",
         "task63"
       ],
       "expected_artifacts": [
@@ -483,7 +483,7 @@
         "hnsw",
         "pq_fastscan",
         "post_recall_warm",
-        "graviton",
+        "benchmark-host",
         "task63"
       ],
       "expected_artifacts": [
@@ -531,7 +531,7 @@
         "hnsw",
         "rabitq",
         "post_recall_warm",
-        "graviton",
+        "benchmark-host",
         "task63"
       ],
       "expected_artifacts": [
@@ -558,7 +558,7 @@
         "ec_real_50k",
         "hnsw",
         "turboquant",
-        "graviton",
+        "benchmark-host",
         "task63"
       ],
       "expected_artifacts": [
@@ -585,7 +585,7 @@
         "ec_real_50k",
         "hnsw",
         "pq_fastscan",
-        "graviton",
+        "benchmark-host",
         "task63"
       ],
       "expected_artifacts": [
@@ -612,7 +612,7 @@
         "ec_real_50k",
         "hnsw",
         "rabitq",
-        "graviton",
+        "benchmark-host",
         "task63"
       ],
       "expected_artifacts": [
@@ -658,7 +658,7 @@
         "ec_real_100k",
         "hnsw",
         "turboquant",
-        "graviton",
+        "benchmark-host",
         "task63"
       ],
       "expected_artifacts": [
@@ -704,7 +704,7 @@
         "ec_real_100k",
         "hnsw",
         "pq_fastscan",
-        "graviton",
+        "benchmark-host",
         "task63"
       ],
       "expected_artifacts": [
@@ -750,7 +750,7 @@
         "ec_real_100k",
         "hnsw",
         "rabitq",
-        "graviton",
+        "benchmark-host",
         "task63"
       ],
       "expected_artifacts": [
@@ -792,7 +792,7 @@
         "ec_real_100k",
         "hnsw",
         "turboquant",
-        "graviton",
+        "benchmark-host",
         "task63"
       ],
       "expected_artifacts": [
@@ -834,7 +834,7 @@
         "ec_real_100k",
         "hnsw",
         "pq_fastscan",
-        "graviton",
+        "benchmark-host",
         "task63"
       ],
       "expected_artifacts": [
@@ -876,7 +876,7 @@
         "ec_real_100k",
         "hnsw",
         "rabitq",
-        "graviton",
+        "benchmark-host",
         "task63"
       ],
       "expected_artifacts": [
@@ -924,7 +924,7 @@
         "hnsw",
         "turboquant",
         "post_recall_warm",
-        "graviton",
+        "benchmark-host",
         "task63"
       ],
       "expected_artifacts": [
@@ -972,7 +972,7 @@
         "hnsw",
         "pq_fastscan",
         "post_recall_warm",
-        "graviton",
+        "benchmark-host",
         "task63"
       ],
       "expected_artifacts": [
@@ -1020,7 +1020,7 @@
         "hnsw",
         "rabitq",
         "post_recall_warm",
-        "graviton",
+        "benchmark-host",
         "task63"
       ],
       "expected_artifacts": [
@@ -1047,7 +1047,7 @@
         "ec_real_100k",
         "hnsw",
         "turboquant",
-        "graviton",
+        "benchmark-host",
         "task63"
       ],
       "expected_artifacts": [
@@ -1074,7 +1074,7 @@
         "ec_real_100k",
         "hnsw",
         "pq_fastscan",
-        "graviton",
+        "benchmark-host",
         "task63"
       ],
       "expected_artifacts": [
@@ -1101,7 +1101,7 @@
         "ec_real_100k",
         "hnsw",
         "rabitq",
-        "graviton",
+        "benchmark-host",
         "task63"
       ],
       "expected_artifacts": [

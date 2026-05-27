@@ -44,6 +44,18 @@ benchmark hosts. The older 64GB AMD workstation may be used for local
 smoke/tuning only; do not cite AMD-local partial runs as the Task 63 acceptance
 matrix.
 
+Record each publishable host in this packet before citing its numbers:
+
+- host label (`newer-intel` or `m5-laptop`)
+- CPU model, core/thread count, memory, OS, and PostgreSQL socket/port
+- extension HEAD SHA and install command
+- whether datasets were freshly fetched/prepared or reused from a prior packet
+- suite command, report command, and exact result artifact paths
+
+Use the same checked-in `suite.json` on both benchmark hosts. Host-local path
+adjustments should be made only when required by that host's PostgreSQL layout,
+and the manifest must state the path delta next to the host result summary.
+
 ## Commands
 
 Dry-run validation:
@@ -93,6 +105,30 @@ Final packet evidence should include:
 - the six latency logs for 50k and 100k
 - `artifacts/precheck-host.log`
 
+## Result Summary Template
+
+Copy this section once per publishable benchmark host after a full suite run.
+
+### Host: `<newer-intel|m5-laptop>`
+
+| Field | Value |
+| --- | --- |
+| HEAD SHA | `<sha>` |
+| Captured | `<timestamp and timezone>` |
+| Host | `<hostname>` |
+| CPU | `<model>` |
+| Memory | `<GiB>` |
+| OS | `<name/version/arch>` |
+| PostgreSQL | `18, socket <path>, port <port>` |
+| Extension build | `<command>` |
+| Suite status | `<completed>/<total> succeeded, failed=<n>` |
+| Dataset source | `<fresh fetch/prepare or reused path>` |
+
+Recall, latency, build time, and storage tables should be generated from
+`artifacts/results-report.jsonl` plus the six `load-*` and `storage-*` logs.
+The Task 63 operating-point decision must cite the host label and the matched
+`ef_search` row that justifies the recommendation.
+
 ## Current State
 
 The suite is scaffolded for the required 50k and 100k Task 63 matrix and was
@@ -103,4 +139,5 @@ locally audited and dry-run validated. The checks wrote:
 - `artifacts/suite-manifest.json`
 
 Measurement artifacts are pending until this branch is installed on a PG18
-benchmark host with the staged DBpedia fixtures.
+benchmark host with the staged DBpedia fixtures. AMD-local baseline/tuning logs
+are intentionally excluded from this packet's final acceptance evidence.

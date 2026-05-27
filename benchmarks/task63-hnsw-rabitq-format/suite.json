@@ -17,14 +17,14 @@
     {
       "kind": "corpus-fetch",
       "name": "fetch-dbpedia-openai3-1m",
-      "tags": ["setup", "fetch", "dbpedia", "graviton", "task63"],
+      "tags": ["setup", "fetch", "dbpedia", "benchmark-host", "task63"],
       "dataset": "qdrant-dbpedia-openai3-large-1536-1m",
       "output_dir": "/var/lib/pgsql/18/datasets/dbpedia-openai3-1m"
     },
     {
       "kind": "corpus-prepare",
       "name": "prepare-ec-real-50k",
-      "tags": ["setup", "prepare", "ec_real_50k", "graviton", "task63"],
+      "tags": ["setup", "prepare", "ec_real_50k", "benchmark-host", "task63"],
       "profile": "ec_real_50k",
       "parquet": "/var/lib/pgsql/18/datasets/dbpedia-openai3-1m/data",
       "output_dir": "/var/lib/pgsql/18/datasets/staged-task63-hnsw-rabitq"
@@ -32,7 +32,7 @@
     {
       "kind": "corpus-prepare",
       "name": "prepare-ec-real-100k",
-      "tags": ["setup", "prepare", "ec_real_100k", "graviton", "task63"],
+      "tags": ["setup", "prepare", "ec_real_100k", "benchmark-host", "task63"],
       "profile": "ec_real_100k",
       "parquet": "/var/lib/pgsql/18/datasets/dbpedia-openai3-1m/data",
       "output_dir": "/var/lib/pgsql/18/datasets/staged-task63-hnsw-rabitq"
@@ -40,7 +40,7 @@
     {
       "kind": "raw",
       "name": "precheck-host",
-      "tags": ["setup", "precheck", "graviton", "task63"],
+      "tags": ["setup", "precheck", "benchmark-host", "task63"],
       "args": [
         "dev",
         "sql",
@@ -63,7 +63,7 @@
     {
       "kind": "load",
       "name": "load-50k-hnsw-turboquant",
-      "tags": ["load", "ec_real_50k", "hnsw", "turboquant", "graviton", "task63"],
+      "tags": ["load", "ec_real_50k", "hnsw", "turboquant", "benchmark-host", "task63"],
       "prefix": "task63_real_50k_hnsw_turboquant",
       "profile": "ec_hnsw",
       "storage_format": "turboquant",
@@ -78,7 +78,7 @@
     {
       "kind": "load",
       "name": "load-50k-hnsw-pq-fastscan",
-      "tags": ["load", "ec_real_50k", "hnsw", "pq_fastscan", "graviton", "task63"],
+      "tags": ["load", "ec_real_50k", "hnsw", "pq_fastscan", "benchmark-host", "task63"],
       "prefix": "task63_real_50k_hnsw_pq",
       "profile": "ec_hnsw",
       "storage_format": "pq_fastscan",
@@ -93,7 +93,7 @@
     {
       "kind": "load",
       "name": "load-50k-hnsw-rabitq",
-      "tags": ["load", "ec_real_50k", "hnsw", "rabitq", "graviton", "task63"],
+      "tags": ["load", "ec_real_50k", "hnsw", "rabitq", "benchmark-host", "task63"],
       "prefix": "task63_real_50k_hnsw_rabitq",
       "profile": "ec_hnsw",
       "storage_format": "rabitq",
@@ -108,7 +108,7 @@
     {
       "kind": "recall",
       "name": "recall-50k-hnsw-turboquant",
-      "tags": ["recall", "ec_real_50k", "hnsw", "turboquant", "graviton", "task63"],
+      "tags": ["recall", "ec_real_50k", "hnsw", "turboquant", "benchmark-host", "task63"],
       "prefix": "task63_real_50k_hnsw_turboquant",
       "profile": "ec_hnsw",
       "k": 10,
@@ -119,7 +119,7 @@
     {
       "kind": "recall",
       "name": "recall-50k-hnsw-pq-fastscan",
-      "tags": ["recall", "ec_real_50k", "hnsw", "pq_fastscan", "graviton", "task63"],
+      "tags": ["recall", "ec_real_50k", "hnsw", "pq_fastscan", "benchmark-host", "task63"],
       "prefix": "task63_real_50k_hnsw_pq",
       "profile": "ec_hnsw",
       "k": 10,
@@ -130,7 +130,7 @@
     {
       "kind": "recall",
       "name": "recall-50k-hnsw-rabitq",
-      "tags": ["recall", "ec_real_50k", "hnsw", "rabitq", "graviton", "task63"],
+      "tags": ["recall", "ec_real_50k", "hnsw", "rabitq", "benchmark-host", "task63"],
       "prefix": "task63_real_50k_hnsw_rabitq",
       "profile": "ec_hnsw",
       "k": 10,
@@ -141,7 +141,7 @@
     {
       "kind": "latency",
       "name": "latency-50k-hnsw-turboquant",
-      "tags": ["latency", "ec_real_50k", "hnsw", "turboquant", "post_recall_warm", "graviton", "task63"],
+      "tags": ["latency", "ec_real_50k", "hnsw", "turboquant", "post_recall_warm", "benchmark-host", "task63"],
       "prefix": "task63_real_50k_hnsw_turboquant",
       "profile": "ec_hnsw",
       "sweep": [40, 64, 100, 128, 160, 200],
@@ -152,7 +152,7 @@
     {
       "kind": "latency",
       "name": "latency-50k-hnsw-pq-fastscan",
-      "tags": ["latency", "ec_real_50k", "hnsw", "pq_fastscan", "post_recall_warm", "graviton", "task63"],
+      "tags": ["latency", "ec_real_50k", "hnsw", "pq_fastscan", "post_recall_warm", "benchmark-host", "task63"],
       "prefix": "task63_real_50k_hnsw_pq",
       "profile": "ec_hnsw",
       "sweep": [40, 64, 100, 128, 160, 200],
@@ -163,7 +163,7 @@
     {
       "kind": "latency",
       "name": "latency-50k-hnsw-rabitq",
-      "tags": ["latency", "ec_real_50k", "hnsw", "rabitq", "post_recall_warm", "graviton", "task63"],
+      "tags": ["latency", "ec_real_50k", "hnsw", "rabitq", "post_recall_warm", "benchmark-host", "task63"],
       "prefix": "task63_real_50k_hnsw_rabitq",
       "profile": "ec_hnsw",
       "sweep": [40, 64, 100, 128, 160, 200],
@@ -174,28 +174,28 @@
     {
       "kind": "storage",
       "name": "storage-50k-hnsw-turboquant",
-      "tags": ["storage", "ec_real_50k", "hnsw", "turboquant", "graviton", "task63"],
+      "tags": ["storage", "ec_real_50k", "hnsw", "turboquant", "benchmark-host", "task63"],
       "prefix": "task63_real_50k_hnsw_turboquant",
       "log_file": "benchmarks/task63-hnsw-rabitq-format/artifacts/storage-50k-hnsw-turboquant.log"
     },
     {
       "kind": "storage",
       "name": "storage-50k-hnsw-pq-fastscan",
-      "tags": ["storage", "ec_real_50k", "hnsw", "pq_fastscan", "graviton", "task63"],
+      "tags": ["storage", "ec_real_50k", "hnsw", "pq_fastscan", "benchmark-host", "task63"],
       "prefix": "task63_real_50k_hnsw_pq",
       "log_file": "benchmarks/task63-hnsw-rabitq-format/artifacts/storage-50k-hnsw-pq-fastscan.log"
     },
     {
       "kind": "storage",
       "name": "storage-50k-hnsw-rabitq",
-      "tags": ["storage", "ec_real_50k", "hnsw", "rabitq", "graviton", "task63"],
+      "tags": ["storage", "ec_real_50k", "hnsw", "rabitq", "benchmark-host", "task63"],
       "prefix": "task63_real_50k_hnsw_rabitq",
       "log_file": "benchmarks/task63-hnsw-rabitq-format/artifacts/storage-50k-hnsw-rabitq.log"
     },
     {
       "kind": "load",
       "name": "load-100k-hnsw-turboquant",
-      "tags": ["load", "ec_real_100k", "hnsw", "turboquant", "graviton", "task63"],
+      "tags": ["load", "ec_real_100k", "hnsw", "turboquant", "benchmark-host", "task63"],
       "prefix": "task63_real_100k_hnsw_turboquant",
       "profile": "ec_hnsw",
       "storage_format": "turboquant",
@@ -210,7 +210,7 @@
     {
       "kind": "load",
       "name": "load-100k-hnsw-pq-fastscan",
-      "tags": ["load", "ec_real_100k", "hnsw", "pq_fastscan", "graviton", "task63"],
+      "tags": ["load", "ec_real_100k", "hnsw", "pq_fastscan", "benchmark-host", "task63"],
       "prefix": "task63_real_100k_hnsw_pq",
       "profile": "ec_hnsw",
       "storage_format": "pq_fastscan",
@@ -225,7 +225,7 @@
     {
       "kind": "load",
       "name": "load-100k-hnsw-rabitq",
-      "tags": ["load", "ec_real_100k", "hnsw", "rabitq", "graviton", "task63"],
+      "tags": ["load", "ec_real_100k", "hnsw", "rabitq", "benchmark-host", "task63"],
       "prefix": "task63_real_100k_hnsw_rabitq",
       "profile": "ec_hnsw",
       "storage_format": "rabitq",
@@ -240,7 +240,7 @@
     {
       "kind": "recall",
       "name": "recall-100k-hnsw-turboquant",
-      "tags": ["recall", "ec_real_100k", "hnsw", "turboquant", "graviton", "task63"],
+      "tags": ["recall", "ec_real_100k", "hnsw", "turboquant", "benchmark-host", "task63"],
       "prefix": "task63_real_100k_hnsw_turboquant",
       "profile": "ec_hnsw",
       "k": 10,
@@ -251,7 +251,7 @@
     {
       "kind": "recall",
       "name": "recall-100k-hnsw-pq-fastscan",
-      "tags": ["recall", "ec_real_100k", "hnsw", "pq_fastscan", "graviton", "task63"],
+      "tags": ["recall", "ec_real_100k", "hnsw", "pq_fastscan", "benchmark-host", "task63"],
       "prefix": "task63_real_100k_hnsw_pq",
       "profile": "ec_hnsw",
       "k": 10,
@@ -262,7 +262,7 @@
     {
       "kind": "recall",
       "name": "recall-100k-hnsw-rabitq",
-      "tags": ["recall", "ec_real_100k", "hnsw", "rabitq", "graviton", "task63"],
+      "tags": ["recall", "ec_real_100k", "hnsw", "rabitq", "benchmark-host", "task63"],
       "prefix": "task63_real_100k_hnsw_rabitq",
       "profile": "ec_hnsw",
       "k": 10,
@@ -273,7 +273,7 @@
     {
       "kind": "latency",
       "name": "latency-100k-hnsw-turboquant",
-      "tags": ["latency", "ec_real_100k", "hnsw", "turboquant", "post_recall_warm", "graviton", "task63"],
+      "tags": ["latency", "ec_real_100k", "hnsw", "turboquant", "post_recall_warm", "benchmark-host", "task63"],
       "prefix": "task63_real_100k_hnsw_turboquant",
       "profile": "ec_hnsw",
       "sweep": [40, 64, 100, 128, 160, 200],
@@ -284,7 +284,7 @@
     {
       "kind": "latency",
       "name": "latency-100k-hnsw-pq-fastscan",
-      "tags": ["latency", "ec_real_100k", "hnsw", "pq_fastscan", "post_recall_warm", "graviton", "task63"],
+      "tags": ["latency", "ec_real_100k", "hnsw", "pq_fastscan", "post_recall_warm", "benchmark-host", "task63"],
       "prefix": "task63_real_100k_hnsw_pq",
       "profile": "ec_hnsw",
       "sweep": [40, 64, 100, 128, 160, 200],
@@ -295,7 +295,7 @@
     {
       "kind": "latency",
       "name": "latency-100k-hnsw-rabitq",
-      "tags": ["latency", "ec_real_100k", "hnsw", "rabitq", "post_recall_warm", "graviton", "task63"],
+      "tags": ["latency", "ec_real_100k", "hnsw", "rabitq", "post_recall_warm", "benchmark-host", "task63"],
       "prefix": "task63_real_100k_hnsw_rabitq",
       "profile": "ec_hnsw",
       "sweep": [40, 64, 100, 128, 160, 200],
@@ -306,21 +306,21 @@
     {
       "kind": "storage",
       "name": "storage-100k-hnsw-turboquant",
-      "tags": ["storage", "ec_real_100k", "hnsw", "turboquant", "graviton", "task63"],
+      "tags": ["storage", "ec_real_100k", "hnsw", "turboquant", "benchmark-host", "task63"],
       "prefix": "task63_real_100k_hnsw_turboquant",
       "log_file": "benchmarks/task63-hnsw-rabitq-format/artifacts/storage-100k-hnsw-turboquant.log"
     },
     {
       "kind": "storage",
       "name": "storage-100k-hnsw-pq-fastscan",
-      "tags": ["storage", "ec_real_100k", "hnsw", "pq_fastscan", "graviton", "task63"],
+      "tags": ["storage", "ec_real_100k", "hnsw", "pq_fastscan", "benchmark-host", "task63"],
       "prefix": "task63_real_100k_hnsw_pq",
       "log_file": "benchmarks/task63-hnsw-rabitq-format/artifacts/storage-100k-hnsw-pq-fastscan.log"
     },
     {
       "kind": "storage",
       "name": "storage-100k-hnsw-rabitq",
-      "tags": ["storage", "ec_real_100k", "hnsw", "rabitq", "graviton", "task63"],
+      "tags": ["storage", "ec_real_100k", "hnsw", "rabitq", "benchmark-host", "task63"],
       "prefix": "task63_real_100k_hnsw_rabitq",
       "log_file": "benchmarks/task63-hnsw-rabitq-format/artifacts/storage-100k-hnsw-rabitq.log"
     }
