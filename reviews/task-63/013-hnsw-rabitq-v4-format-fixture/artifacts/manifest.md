@@ -1,6 +1,6 @@
 # Artifact Manifest: Task 63 HNSW RaBitQ V4 Format Fixture
 
-- head SHA: pending commit
+- head SHA: `133cd263a1a7b53d56b0e2146eca37aeeeecb0e3`
 - task bucket: `reviews/task-63/`
 - packet path: `reviews/task-63/013-hnsw-rabitq-v4-format-fixture/`
 - lane: HNSW RaBitQ on-disk format fixture and upgrade matrix
