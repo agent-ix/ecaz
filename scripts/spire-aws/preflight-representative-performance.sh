@@ -81,6 +81,44 @@ require_make_target_order() {
     die "Makefile target $target must run $before before $after"
 }
 
+require_make_target_sequence() {
+  local target="$1"
+  shift
+  local expected
+
+  expected="$(printf '%s\n' "$@")"
+  awk -v target="$target" -v expected="$expected" '
+    BEGIN {
+      expected_count = split(expected, wanted, "\n")
+    }
+    $0 ~ "^[A-Za-z0-9_.-]+:" {
+      if (in_target && $0 !~ "^" target ":") {
+        in_target = 0
+      }
+      if ($0 ~ "^" target ":") {
+        in_target = 1
+      }
+    }
+    in_target {
+      body = body "\n" $0
+    }
+    END {
+      cursor = 1
+      for (i = 1; i <= expected_count; i++) {
+        if (wanted[i] == "") {
+          continue
+        }
+        found = index(substr(body, cursor), wanted[i])
+        if (!found) {
+          exit 1
+        }
+        cursor += found + length(wanted[i]) - 1
+      }
+    }
+  ' "$makefile" ||
+    die "Makefile target $target must run sequence: $*"
+}
+
 require_watchdog_timeout() {
   local target="$1"
   local minimum_seconds="$2"
@@ -297,6 +335,22 @@ require_make_target_contains "verify-representative-performance-tunneled" "verif
 require_make_target_absent "verify-representative-performance-tunneled" "fault-"
 require_make_target_contains "pass-representative-performance" "run-pass-with-watchdog.sh pass-representative-performance-body"
 require_make_target_order "pass-representative-performance-body" "preflight-representative-performance" "provision"
+require_make_target_sequence \
+  "pass-representative-performance-body" \
+  "preflight-representative-performance" \
+  "provision" \
+  "install-extension" \
+  "verify-representative-performance-tunneled"
+require_make_target_sequence \
+  "verify-representative-performance-tunneled" \
+  "with-ssm-port-forwards.sh" \
+  "load-representative" \
+  "register-representative" \
+  "smoke-representative" \
+  "bench-representative-priority" \
+  "bench-representative-pooling" \
+  "summarize-representative-performance" \
+  "verify-representative-performance-summary"
 require_watchdog_timeout "pass-representative-performance-body" 14400
 run_summary_gate_self_check
 run_watchdog_gate_self_check
