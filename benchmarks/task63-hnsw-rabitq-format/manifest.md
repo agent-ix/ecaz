@@ -44,6 +44,11 @@ benchmark hosts. The older 64GB AMD workstation may be used for local
 smoke/tuning only; do not cite AMD-local partial runs as the Task 63 acceptance
 matrix.
 
+On the older local workstation, keep any tuning run HNSW-only and limited to
+10k or 50k rows. Leave the 100k acceptance matrix and any larger runs to agents
+on faster benchmark hosts. Do not use this host for 1M, IVF, DiskANN, SPIRE, or
+cross-lane benchmark work.
+
 Record each publishable host in this packet before citing its numbers:
 
 - host label (`newer-intel` or `m5-laptop`)
