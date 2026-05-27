@@ -169,9 +169,7 @@ execute_env=(SPIRE_AWS_CONFIRM_PROVISION=yes)
 if ((allow_preexisting_residue)); then
   execute_env+=(SPIRE_AWS_ALLOW_PREEXISTING_RESIDUE=1)
 fi
-if ((reuse_artifact_dir)); then
-  execute_env+=(SPIRE_AWS_REUSE_ARTIFACT_DIR=1)
-fi
+execute_env+=(SPIRE_AWS_REUSE_ARTIFACT_DIR=1)
 
 env "${execute_env[@]}" \
   make -C "$aws_dir" \
