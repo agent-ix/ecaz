@@ -8,6 +8,7 @@ repo_root="$(cd -- "$script_dir/../.." && pwd)"
 priority_suite="${SPIRE_AWS_REPRESENTATIVE_PRIORITY_SUITE:-$script_dir/suite-representative-priority.json}"
 pooling_suite="${SPIRE_AWS_REPRESENTATIVE_POOLING_SUITE:-$script_dir/suite-representative-pooling.json}"
 makefile="${SPIRE_AWS_REPRESENTATIVE_MAKEFILE:-$repo_root/infra/spire-aws/Makefile}"
+watchdog="${SPIRE_AWS_REPRESENTATIVE_WATCHDOG:-$script_dir/run-pass-with-watchdog.sh}"
 summarizer="$script_dir/summarize-representative-performance.sh"
 verifier="$script_dir/verify-representative-performance-summary.sh"
 
@@ -80,6 +81,30 @@ require_make_target_order() {
     die "Makefile target $target must run $before before $after"
 }
 
+require_watchdog_timeout() {
+  local target="$1"
+  local minimum_seconds="$2"
+
+  awk -v target="$target" -v minimum="$minimum_seconds" '
+    $0 ~ "^[[:space:]]*" target "\\)" {
+      in_target = 1
+      next
+    }
+    in_target && /^[[:space:]]*[A-Za-z0-9_-]+[-A-Za-z0-9_]*\)/ {
+      in_target = 0
+    }
+    in_target && /default_timeout=/ {
+      split($0, parts, "=")
+      value = parts[2] + 0
+      if (value >= minimum) {
+        found = 1
+      }
+    }
+    END { exit(found ? 0 : 1) }
+  ' "$watchdog" ||
+    die "watchdog target $target must default to at least ${minimum_seconds}s"
+}
+
 run_summary_gate_self_check() {
   local parent_dir="${SPIRE_AWS_REPRESENTATIVE_PREFLIGHT_WORKDIR:-$repo_root/target}"
   local work_dir sample_input sample_output bad_summary bad_recall_summary
@@ -148,11 +173,40 @@ JSONL
   fi
 }
 
+run_watchdog_gate_self_check() {
+  local parent_dir="${SPIRE_AWS_REPRESENTATIVE_PREFLIGHT_WORKDIR:-$repo_root/target}"
+  local work_dir short_watchdog
+
+  mkdir -p "$parent_dir"
+  work_dir="$(mktemp -d "$parent_dir/spire-representative-watchdog.XXXXXX")"
+  trap 'rm -rf "$work_dir"; trap - RETURN' RETURN
+
+  short_watchdog="$work_dir/run-pass-with-watchdog-short.sh"
+  cat > "$short_watchdog" <<'SH'
+case "$target" in
+  pass-representative-performance-body)
+    default_timeout=60
+    ;;
+esac
+SH
+
+  if SPIRE_AWS_REPRESENTATIVE_WATCHDOG="$short_watchdog" "$0" --watchdog-timeout-self-check >/dev/null 2>&1; then
+    die "representative preflight accepted watchdog timeout below representative-tier minimum"
+  fi
+}
+
+if [[ "${1:-}" == "--watchdog-timeout-self-check" ]]; then
+  require_watchdog_timeout "pass-representative-performance-body" 14400
+  exit 0
+fi
+
 require_file "$priority_suite"
 require_file "$pooling_suite"
 require_file "$makefile"
+require_file "$watchdog"
 require_executable "$summarizer"
 require_executable "$verifier"
+require_executable "$watchdog"
 
 jq empty "$priority_suite" "$pooling_suite" >/dev/null
 bash -n "$summarizer" "$verifier"
@@ -241,8 +295,11 @@ require_make_target_contains "verify-representative-performance-tunneled" "bench
 require_make_target_contains "verify-representative-performance-tunneled" "summarize-representative-performance"
 require_make_target_contains "verify-representative-performance-tunneled" "verify-representative-performance-summary"
 require_make_target_absent "verify-representative-performance-tunneled" "fault-"
+require_make_target_contains "pass-representative-performance" "run-pass-with-watchdog.sh pass-representative-performance-body"
 require_make_target_order "pass-representative-performance-body" "preflight-representative-performance" "provision"
+require_watchdog_timeout "pass-representative-performance-body" 14400
 run_summary_gate_self_check
+run_watchdog_gate_self_check
 
 printf 'SPIRE representative performance preflight passed: priority=%s pooling=%s\n' \
   "$priority_suite" \
