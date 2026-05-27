@@ -41,7 +41,7 @@ while (( SECONDS < deadline )); do
 
   attempt_deadline=$((SECONDS + 10))
   while (( SECONDS < attempt_deadline && SECONDS < deadline )); do
-    if (: > "/dev/tcp/${LOCAL_HOST}/${LOCAL_PORT}") >/dev/null 2>&1; then
+    if grep -Eq "Port ${LOCAL_PORT} opened for sessionId" "$LAST_LOG" 2>/dev/null; then
       echo "tunnel ${LABEL} restarted on ${LOCAL_HOST}:${LOCAL_PORT} after ${attempt} attempt(s)"
       exit 0
     fi

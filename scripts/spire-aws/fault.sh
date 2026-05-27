@@ -59,6 +59,9 @@ wait_remote_sql_ready() {
   attempt=0
   while (( SECONDS < deadline )); do
     attempt=$((attempt + 1))
+    if [[ -n "${SPIRE_AWS_TUNNEL_RESTART_COMMAND:-}" ]]; then
+      restart_operator_tunnel_if_available || true
+    fi
     status=0
     "$ECAZ_BIN" dev sql \
       --host "$TARGET_REMOTE_HOST" --port "$TARGET_REMOTE_PORT" --user ecaz_coord --database postgres \
@@ -68,6 +71,9 @@ wait_remote_sql_ready() {
     if [[ "$status" -eq 0 ]]; then
       echo "remote node ${TARGET_NODE_ID} SQL ready after ${attempt} attempt(s)" | tee -a "$LOG"
       return 0
+    fi
+    if [[ -n "${SPIRE_AWS_TUNNEL_RESTART_COMMAND:-}" ]]; then
+      echo "remote node ${TARGET_NODE_ID} SQL probe attempt ${attempt} failed after tunnel restart" | tee -a "$LOG"
     fi
     sleep 5
   done
@@ -150,7 +156,6 @@ restart_remote_if_needed() {
     REMOTE_STOPPED=0
     wait_target_ssm_online
     restart_target_postgres
-    restart_operator_tunnel_if_available
     wait_remote_sql_ready
   fi
 }
