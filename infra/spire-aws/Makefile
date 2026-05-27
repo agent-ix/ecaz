@@ -61,7 +61,7 @@ export ECAZ_SPIRE_AWS_TARBALL_PATH ?= $(PACKAGE_TARBALL)
         bench-correctness bench-representative-priority bench-representative bench-representative-pooling summarize-representative-performance verify-representative-performance-summary bench-stress \
         fault-degraded fault-strict fault-2pc fault-missing-guc fault-schema-drift fault-auth \
         teardown clean \
-        verify-correctness-tunneled verify-correctness-full-tunneled verify-representative-performance-tunneled verify-representative-full-tunneled pass-correctness pass-correctness-body pass-representative-performance pass-representative-performance-body pass-representative pass-representative-body all-correctness all-representative all-representative-performance
+        verify-correctness-tunneled verify-correctness-full-tunneled verify-representative-performance-tunneled verify-representative-full-tunneled plan-representative-performance pass-correctness pass-correctness-body pass-representative-performance pass-representative-performance-body pass-representative pass-representative-body all-correctness all-representative all-representative-performance
 
 preflight:
 	cd $(SPIRE_AWS_DIR) && terraform fmt -check
@@ -83,6 +83,9 @@ preflight-permissions:
 
 preflight-representative-performance:
 	cd $(REPO_ROOT) && $(SCRIPTS)/preflight-representative-performance.sh
+
+plan-representative-performance:
+	cd $(REPO_ROOT) && $(SCRIPTS)/run-representative-performance-pass.sh --artifact-dir $(ARTIFACT_DIR)
 
 confirm-provision:
 	cd $(REPO_ROOT) && $(SCRIPTS)/confirm-provision.sh

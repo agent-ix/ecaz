@@ -144,3 +144,6 @@ Acceptance:
   the reviewed residue exception by default, prints the exact
   `pass-representative-performance` command, and only provisions when rerun with
   `--execute` after explicit AWS approval.
+- Packet `1032` wires that dry-run entrypoint into
+  `make -C infra/spire-aws plan-representative-performance` and makes the
+  representative preflight require the entrypoint to stay executable.

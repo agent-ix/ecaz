@@ -11,6 +11,7 @@ makefile="${SPIRE_AWS_REPRESENTATIVE_MAKEFILE:-$repo_root/infra/spire-aws/Makefi
 watchdog="${SPIRE_AWS_REPRESENTATIVE_WATCHDOG:-$script_dir/run-pass-with-watchdog.sh}"
 summarizer="$script_dir/summarize-representative-performance.sh"
 verifier="$script_dir/verify-representative-performance-summary.sh"
+representative_pass_entrypoint="$script_dir/run-representative-performance-pass.sh"
 
 die() {
   printf 'ERROR: %s\n' "$*" >&2
@@ -245,6 +246,7 @@ require_file "$watchdog"
 require_executable "$summarizer"
 require_executable "$verifier"
 require_executable "$watchdog"
+require_executable "$representative_pass_entrypoint"
 
 jq empty "$priority_suite" "$pooling_suite" >/dev/null
 bash -n "$summarizer" "$verifier"
