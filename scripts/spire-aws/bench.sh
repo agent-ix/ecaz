@@ -22,6 +22,7 @@ ECAZ_BIN="${ECAZ_BIN:-ecaz}"
 case "$TIER" in
   correctness)   SUITE=scripts/spire-aws/suite-correctness.json ;;
   representative) SUITE=scripts/spire-aws/suite-representative.json ;;
+  representative-pooling) SUITE=scripts/spire-aws/suite-representative-pooling.json ;;
   stress)        SUITE=scripts/spire-aws/suite-stress.json ;;
   *) echo "unknown tier: $TIER" >&2; exit 2 ;;
 esac

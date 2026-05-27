@@ -328,6 +328,8 @@ struct LatencyStep {
     name: String,
     #[serde(default)]
     tags: Vec<String>,
+    #[serde(default)]
+    pgoptions: Option<String>,
     prefix: String,
     sweep: Vec<i32>,
     #[serde(default)]
@@ -369,6 +371,8 @@ struct SpirePipelineStep {
     name: String,
     #[serde(default)]
     tags: Vec<String>,
+    #[serde(default)]
+    pgoptions: Option<String>,
     prefix: String,
     #[serde(default)]
     index: Option<String>,
@@ -615,6 +619,8 @@ struct StepRecord {
     kind: String,
     command: Vec<String>,
     selected: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pgoptions: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     tags: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -759,13 +765,16 @@ async fn run_suite(conn: &ConnectionOptions, args: SuiteRunOptions) -> Result<()
         write_manifest_if_requested(&args, &config, &manifest).await?;
 
         let started = Instant::now();
-        let status = spawn_step(&exe, &command, conn).await.wrap_err_with(|| {
-            format!(
-                "running suite step {:?}: {}",
-                manifest.steps[idx].name,
-                shell_join(&command)
-            )
-        })?;
+        let pgoptions = manifest.steps[idx].pgoptions.clone();
+        let status = spawn_step(&exe, &command, conn, pgoptions.as_deref())
+            .await
+            .wrap_err_with(|| {
+                format!(
+                    "running suite step {:?}: {}",
+                    manifest.steps[idx].name,
+                    shell_join(&command)
+                )
+            })?;
         manifest.steps[idx].finished_at_unix_ms = Some(now_ms());
         manifest.steps[idx].duration_ms = Some(started.elapsed().as_millis());
         manifest.steps[idx].exit_code = status.code();
@@ -1059,6 +1068,7 @@ fn build_manifest(
             kind: step.kind().to_string(),
             command,
             selected,
+            pgoptions: step.pgoptions().map(ToOwned::to_owned),
             tags: step.tags().to_vec(),
             expected_artifacts: step
                 .expected_artifacts()
@@ -1808,6 +1818,14 @@ impl SuiteStep {
         }
     }
 
+    fn pgoptions(&self) -> Option<&str> {
+        match self {
+            SuiteStep::Latency(step) => step.pgoptions.as_deref(),
+            SuiteStep::SpirePipeline(step) => step.pgoptions.as_deref(),
+            _ => None,
+        }
+    }
+
     fn validate(&self) -> Result<()> {
         match self {
             SuiteStep::CorpusPrepare(step) => {
@@ -2149,11 +2167,19 @@ async fn prepare_step(step: &SuiteStep, defaults: &SuiteDefaults) -> Result<()> 
     Ok(())
 }
 
-async fn spawn_step(exe: &Path, args: &[String], conn: &ConnectionOptions) -> Result<ExitStatus> {
+async fn spawn_step(
+    exe: &Path,
+    args: &[String],
+    conn: &ConnectionOptions,
+    pgoptions: Option<&str>,
+) -> Result<ExitStatus> {
     let mut command = Command::new(exe);
     command.args(args);
     if let Some(password) = &conn.password {
         command.env("PGPASSWORD", password);
+    }
+    if let Some(pgoptions) = pgoptions {
+        command.env("PGOPTIONS", pgoptions);
     }
     command
         .status()
@@ -3343,6 +3369,7 @@ mod tests {
         let step = LatencyStep {
             name: "latency".into(),
             tags: vec!["latency".into()],
+            pgoptions: None,
             prefix: "surface".into(),
             sweep: vec![64, 128],
             k: None,
@@ -3377,6 +3404,7 @@ mod tests {
         let step = SpirePipelineStep {
             name: "spire-profile".into(),
             tags: vec!["spire".into(), "profile".into()],
+            pgoptions: None,
             prefix: "aws_spire".into(),
             index: Some("aws_spire_idx".into()),
             queries_limit: None,
@@ -3444,6 +3472,7 @@ mod tests {
             steps: vec![SuiteStep::SpirePipeline(SpirePipelineStep {
                 name: "profile k10".into(),
                 tags: Vec::new(),
+                pgoptions: None,
                 prefix: "aws_spire".into(),
                 index: None,
                 queries_limit: Some(10),

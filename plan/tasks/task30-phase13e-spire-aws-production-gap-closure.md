@@ -1,6 +1,6 @@
 # Task 30 Phase 13e: SPIRE AWS Production Gap Closure
 
-Status: local functionality gates passed; AWS correctness core passed on Graviton, AWS fault rerun and representative tier pending; AWS rerun paused behind pass watchdog
+Status: local functionality gates passed; AWS correctness core passed on Graviton; next AWS proof is representative latency/recall plus pooling A/B before fault rerun
 Owner: coder1 / SPIRE AWS production track
 Priority: P0 before any AWS product-scale claim
 
@@ -94,8 +94,10 @@ Acceptance:
   port log line, and fault restore now restarts the operator tunnel on each SQL
   readiness attempt.
 - A follow-up AWS rerun after that fix was intentionally interrupted during
-  install at operator request. Terraform teardown destroyed the provisioned
-  Graviton resources, the Phase 13 EC2 query returned no running/stopped
-  instances, and local Terraform state preflight is clean. Further AWS reruns
-  are paused until the pass watchdog is landed so timeout/interruption also
-  performs teardown through the standard target.
+  install at operator request. The provisioned Graviton EC2 instances were
+  terminated and the local Terraform state no longer lists EC2 instances.
+- The next AWS proof should prioritize representative p50/p95/p99 latency,
+  recall, and pooled-vs-unpooled production read profile evidence through
+  `pass-representative-performance`. Fault rerun/resilience evidence remains
+  valuable, but is lower priority than the representative performance and
+  pooling packet.

@@ -67,6 +67,9 @@ case "$target" in
   pass-representative-body)
     default_timeout=14400
     ;;
+  pass-representative-performance-body)
+    default_timeout=14400
+    ;;
   *)
     default_timeout=7200
     ;;
