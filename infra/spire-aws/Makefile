@@ -61,7 +61,7 @@ export ECAZ_SPIRE_AWS_TARBALL_PATH ?= $(PACKAGE_TARBALL)
         bench-correctness bench-representative bench-stress \
         fault-degraded fault-strict fault-2pc fault-missing-guc fault-schema-drift fault-auth \
         teardown clean \
-        verify-correctness-tunneled verify-correctness-full-tunneled verify-representative-full-tunneled pass-correctness pass-representative all-correctness all-representative
+        verify-correctness-tunneled verify-correctness-full-tunneled verify-representative-full-tunneled pass-correctness pass-correctness-body pass-representative pass-representative-body all-correctness all-representative
 
 preflight:
 	cd $(SPIRE_AWS_DIR) && terraform fmt -check
@@ -195,31 +195,25 @@ clean:
 	cd $(SPIRE_AWS_DIR) && rm -rf .terraform terraform.tfstate*
 
 pass-correctness:
+	cd $(REPO_ROOT) && $(SCRIPTS)/run-pass-with-watchdog.sh pass-correctness-body "$(ARTIFACT_DIR)"
+
+pass-correctness-body:
 	@status=0; \
-	cleanup() { \
-	  teardown_status=0; \
-	  $(MAKE) -C $(SPIRE_AWS_DIR) ARTIFACT_DIR=$(ARTIFACT_DIR) teardown || teardown_status=$$?; \
-	  if [ $$status -eq 0 ]; then exit $$teardown_status; fi; \
-	  exit $$status; \
-	}; \
-	trap cleanup EXIT; \
 	$(MAKE) -C $(SPIRE_AWS_DIR) ARTIFACT_DIR=$(ARTIFACT_DIR) provision || status=$$?; \
 	if [ $$status -eq 0 ]; then $(MAKE) -C $(SPIRE_AWS_DIR) ARTIFACT_DIR=$(ARTIFACT_DIR) install-extension || status=$$?; fi; \
-	if [ $$status -eq 0 ]; then $(MAKE) -C $(SPIRE_AWS_DIR) ARTIFACT_DIR=$(ARTIFACT_DIR) verify-correctness-full-tunneled || status=$$?; fi
+	if [ $$status -eq 0 ]; then $(MAKE) -C $(SPIRE_AWS_DIR) ARTIFACT_DIR=$(ARTIFACT_DIR) verify-correctness-full-tunneled || status=$$?; fi; \
+	exit $$status
 
 all-correctness: pass-correctness
 
 pass-representative:
+	cd $(REPO_ROOT) && $(SCRIPTS)/run-pass-with-watchdog.sh pass-representative-body "$(ARTIFACT_DIR)"
+
+pass-representative-body:
 	@status=0; \
-	cleanup() { \
-	  teardown_status=0; \
-	  $(MAKE) -C $(SPIRE_AWS_DIR) ARTIFACT_DIR=$(ARTIFACT_DIR) teardown || teardown_status=$$?; \
-	  if [ $$status -eq 0 ]; then exit $$teardown_status; fi; \
-	  exit $$status; \
-	}; \
-	trap cleanup EXIT; \
 	$(MAKE) -C $(SPIRE_AWS_DIR) ARTIFACT_DIR=$(ARTIFACT_DIR) provision || status=$$?; \
 	if [ $$status -eq 0 ]; then $(MAKE) -C $(SPIRE_AWS_DIR) ARTIFACT_DIR=$(ARTIFACT_DIR) install-extension || status=$$?; fi; \
-	if [ $$status -eq 0 ]; then $(MAKE) -C $(SPIRE_AWS_DIR) ARTIFACT_DIR=$(ARTIFACT_DIR) verify-representative-full-tunneled || status=$$?; fi
+	if [ $$status -eq 0 ]; then $(MAKE) -C $(SPIRE_AWS_DIR) ARTIFACT_DIR=$(ARTIFACT_DIR) verify-representative-full-tunneled || status=$$?; fi; \
+	exit $$status
 
 all-representative: pass-representative
