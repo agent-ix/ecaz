@@ -55,7 +55,7 @@ export SPIRE_AWS_DIR REPO_ROOT ARTIFACT_DIR TOPOLOGY PACKAGE_TARBALL
 export ECAZ_BIN WORK_DIR
 export ECAZ_SPIRE_AWS_TARBALL_PATH ?= $(PACKAGE_TARBALL)
 
-.PHONY: preflight preflight-operator preflight-state preflight-permissions confirm-provision archive-local-state cleanup-residue provision topology setup package-extension install-extension install configure-pg-hba register-remotes register register-correctness register-representative register-stress \
+.PHONY: preflight preflight-operator preflight-state preflight-permissions preflight-representative-performance confirm-provision archive-local-state cleanup-residue provision topology setup package-extension install-extension install configure-pg-hba register-remotes register register-correctness register-representative register-stress \
         load-correctness load-representative load-stress \
         smoke smoke-correctness smoke-representative smoke-stress \
         bench-correctness bench-representative-priority bench-representative bench-representative-pooling summarize-representative-performance verify-representative-performance-summary bench-stress \
@@ -70,6 +70,7 @@ preflight:
 	cd $(REPO_ROOT) && bash -n scripts/spire-aws/*.sh
 	cd $(REPO_ROOT) && if command -v shellcheck >/dev/null 2>&1; then shellcheck scripts/spire-aws/*.sh; else echo "shellcheck not found; skipping shellcheck"; fi
 	cd $(REPO_ROOT) && jq empty scripts/spire-aws/suite-correctness.json scripts/spire-aws/suite-representative-priority.json scripts/spire-aws/suite-representative.json scripts/spire-aws/suite-representative-pooling.json scripts/spire-aws/suite-stress.json
+	cd $(REPO_ROOT) && $(SCRIPTS)/preflight-representative-performance.sh
 
 preflight-operator:
 	cd $(REPO_ROOT) && $(SCRIPTS)/preflight-operator.sh $(SPIRE_AWS_DIR)/terraform.tfvars
@@ -79,6 +80,9 @@ preflight-state:
 
 preflight-permissions:
 	cd $(REPO_ROOT) && $(SCRIPTS)/preflight-permissions.sh
+
+preflight-representative-performance:
+	cd $(REPO_ROOT) && $(SCRIPTS)/preflight-representative-performance.sh
 
 confirm-provision:
 	cd $(REPO_ROOT) && $(SCRIPTS)/confirm-provision.sh
