@@ -1,6 +1,6 @@
 # Artifact Manifest: Task 63 HNSW RaBitQ Handoff Head Wording
 
-- head SHA: pending commit
+- head SHA: `c7f573f971f38b3094efb76de7ce118170d9a743`
 - task bucket: `reviews/task-63/017-hnsw-rabitq-handoff-head-wording/`
 - lane: HNSW RaBitQ benchmark handoff metadata
 - fixture: none
