@@ -1,6 +1,6 @@
 # Task 64: HNSW Quantized Codec Adapters
 
-Status: **proposed**
+Status: **complete on `task/60-diskann-rabitq`**
 
 Companion task to Task 63. Extract a narrow HNSW-local quantized codec adapter
 surface so HNSW RaBitQ can integrate cleanly without a broad HNSW refactor or a
@@ -18,6 +18,20 @@ This implements the direction in ADR-072:
 - shared quantizer families own quantization math;
 - HNSW-local codec adapters own graph storage binding, tuple layout,
   reloption/metadata mapping, and traversal scoring hooks.
+
+## Completion Evidence
+
+Task 64 is complete on branch `task/60-diskann-rabitq`:
+
+- `reviews/task-64/001-hnsw-codec-adapter/` records the initial HNSW-local
+  codec adapter foundation.
+- `reviews/task-64/002-hnsw-codec-build-sizing/` records build-time tuple
+  sizing moving behind the adapter.
+- `reviews/task-64/003-hnsw-codec-existing-format-smoke/` validates existing
+  TurboQuant and PqFastScan behavior after the adapter extraction and Task 63
+  consumption: build, scan, live insert, delete, vacuum, and post-vacuum scan.
+- The adapter remains HNSW-local, keeps shared quantizer math in `src/quant`,
+  and does not introduce a premature cross-AM codec trait.
 
 ## Why
 
