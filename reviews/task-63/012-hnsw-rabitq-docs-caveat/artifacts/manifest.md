@@ -1,6 +1,6 @@
 # Artifact Manifest: Task 63 HNSW RaBitQ Docs Caveat
 
-- head SHA: `fe62a80fc96f4403b11ed2cd223d687dae1f937d`
+- head SHA: `96536aea4fe9c7254d592e4d6c0cd5785cad19c0`
 - task bucket: `reviews/task-63/`
 - packet path: `reviews/task-63/012-hnsw-rabitq-docs-caveat/`
 - lane: HNSW RaBitQ documentation status caveat
