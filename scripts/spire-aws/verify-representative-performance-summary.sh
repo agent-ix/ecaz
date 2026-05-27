@@ -223,4 +223,6 @@ require_awk "pooling delta improvement row" "$pooling_delta" '
   }
 '
 
-printf 'representative performance summary verified: %s\n' "$artifact_dir"
+printf 'representative performance summary verified: %s nprobes=[%s]\n' \
+  "$artifact_dir" \
+  "$expected_nprobes"
