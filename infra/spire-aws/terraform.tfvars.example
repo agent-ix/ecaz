@@ -1,5 +1,5 @@
-region            = "us-east-1"
-availability_zone = "us-east-1a"
+region            = "us-west-2"
+availability_zone = "us-west-2a"
 
 # Amazon Linux 2023 arm64 AMI for the chosen region; pick the latest patched id.
 ami_id = "ami-0123456789abcdef0"
@@ -10,9 +10,7 @@ auto_stop_at = "2026-05-15T18:00:00Z"
 # Optional: leave null for Session-Manager-only access.
 # key_name = "ecaz-spire-aws-ops"
 
-# Defaults below match the Phase 13e correctness-tier Graviton/aarch64
-# topology. Representative/stress tiers override to the larger Phase 13a
-# r7g shapes only after quota proof.
+# Defaults below match the established Phase 13e Graviton/aarch64 lane.
 # Do not substitute r6i/x86 for SPIRE AWS verification evidence.
 # coordinator_instance_type = "m7g.large"
 # remote_instance_type      = "m7g.large"

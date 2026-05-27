@@ -39,6 +39,14 @@ require_graviton_family() {
     die "$key must use the established Graviton/aarch64 lane, got: $value"
 }
 
+require_expected_lane_value() {
+  local key="$1"
+  local value="$2"
+  local expected="$3"
+  [[ "$value" == "$expected" ]] ||
+    die "$key must match the established Phase 13e Graviton lane (${expected}); got: $value. Amend the task/runbook before changing AWS lane."
+}
+
 [[ -f "$tfvars" ]] || die "missing $tfvars; create it from infra/spire-aws/terraform.tfvars.example before provisioning"
 
 region="$(require_tfvar region)"
@@ -65,6 +73,10 @@ remote_count="${remote_count:-3}"
 
 require_graviton_family coordinator_instance_type "$coordinator_instance_type"
 require_graviton_family remote_instance_type "$remote_instance_type"
+require_expected_lane_value region "$region" "us-west-2"
+require_expected_lane_value availability_zone "$availability_zone" "us-west-2a"
+require_expected_lane_value coordinator_instance_type "$coordinator_instance_type" "m7g.large"
+require_expected_lane_value remote_instance_type "$remote_instance_type" "m7g.large"
 
 architecture="$(aws ec2 describe-images \
   --region "$region" \
