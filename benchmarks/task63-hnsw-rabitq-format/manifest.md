@@ -2,6 +2,7 @@
 
 - task: `plan/tasks/63-hnsw-rabitq-storage-format.md`
 - branch: `task/60-diskann-rabitq`
+- required source head: `36807d607606808717e0b645cde9b251d3fa2e23`
 - suite config: `benchmarks/task63-hnsw-rabitq-format/suite.json`
 - artifact directory: `benchmarks/task63-hnsw-rabitq-format/artifacts/`
 
@@ -37,6 +38,12 @@ DiskANN benchmark packets and stages it under
 - Decision: record the recommended RaBitQ operating point, or mark the format
   experimental/shelved if the measured recall/storage tradeoff is not useful.
 
+The decision row must use measurements taken at or after source head
+`36807d607606808717e0b645cde9b251d3fa2e23`. Earlier local AMD runs are useful
+for trend diagnosis only. They predate the latest scalar 1-bit RaBitQ byte-LUT
+scorer checkpoint and must not be used to make the final Task 63 ship/shelve
+decision.
+
 ## Host Scope
 
 Final Task 63 benchmark evidence should come from the newer Intel and m5 laptop
@@ -60,6 +67,10 @@ Record each publishable host in this packet before citing its numbers:
 Use the same checked-in `suite.json` on both benchmark hosts. Host-local path
 adjustments should be made only when required by that host's PostgreSQL layout,
 and the manifest must state the path delta next to the host result summary.
+
+Both publishable hosts should install the required source head unless the
+manifest is updated with a newer commit. If only one host is available, keep the
+second host section pending rather than backfilling it with AMD-local output.
 
 ## Commands
 
@@ -134,6 +145,17 @@ Recall, latency, build time, and storage tables should be generated from
 The Task 63 operating-point decision must cite the host label and the matched
 `ef_search` row that justifies the recommendation.
 
+### Decision Row
+
+| Host | Size | Format | `ef_search` | recall@10 | p50 / p95 / p99 latency | build time | storage | Decision |
+| --- | --- | --- | ---: | ---: | --- | ---: | ---: | --- |
+| `<host>` | `<50k|100k>` | `rabitq` | `<n>` | `<value>` | `<ms>` | `<duration>` | `<bytes/row>` | `<recommend|experimental|shelve>` |
+
+Recommend RaBitQ only if the publishable host results show a meaningful storage
+win at a recall/latency point that is competitive with matched TurboQuant and
+PqFastScan. If RaBitQ remains at storage parity with worse recall or latency,
+record the format as experimental/shelved for HNSW and cite the matched rows.
+
 ## Current State
 
 The suite is scaffolded for the required 50k and 100k Task 63 matrix and was
@@ -146,3 +168,15 @@ locally audited and dry-run validated. The checks wrote:
 Measurement artifacts are pending until this branch is installed on a PG18
 benchmark host with the staged DBpedia fixtures. AMD-local baseline/tuning logs
 are intentionally excluded from this packet's final acceptance evidence.
+
+Local HNSW-only 10k/50k smoke packets already showed that binary RaBitQ search
+codes fixed the earlier storage regression, but did not establish a useful
+RaBitQ HNSW operating point on the older AMD workstation:
+
+- `reviews/task-63/008-hnsw-rabitq-binary-search-code/` records the local 10k
+  tuning snapshot and the binary 1-bit search-code change.
+- `reviews/task-63/009-hnsw-rabitq-local-50k-smoke/` records the local 50k
+  tuning snapshot.
+- `reviews/task-63/010-rabitq-bits1-scalar-byte-lut/` adds the later common
+  scalar 1-bit RaBitQ scorer improvement, so publishable host measurements
+  must be rerun after that checkpoint before making the final decision.
