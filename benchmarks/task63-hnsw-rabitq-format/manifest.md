@@ -2,6 +2,7 @@
 
 - task: `plan/tasks/63-hnsw-rabitq-storage-format.md`
 - branch: `task/60-diskann-rabitq`
+- current branch head for host install: `f20e91c3494060ba64927bf9482112a3011438a0`
 - minimum code source head: `36807d607606808717e0b645cde9b251d3fa2e23`
 - suite config: `benchmarks/task63-hnsw-rabitq-format/suite.json`
 - artifact directory: `benchmarks/task63-hnsw-rabitq-format/artifacts/`
@@ -68,10 +69,12 @@ Use the same checked-in `suite.json` on both benchmark hosts. Host-local path
 adjustments should be made only when required by that host's PostgreSQL layout,
 and the manifest must state the path delta next to the host result summary.
 
-Both publishable hosts should install at least the minimum code source head
-unless the manifest is updated with a newer commit. If only one host is
-available, keep the second host section pending rather than backfilling it with
-AMD-local output.
+Both publishable hosts should install the current branch head unless the
+manifest is updated with a newer commit. The minimum code source head is the
+oldest acceptable benchmark code point because it contains the post-local-smoke
+1-bit scalar byte-LUT scorer change; newer heads include docs, fixtures, and
+handoff cleanups. If only one host is available, keep the second host section
+pending rather than backfilling it with AMD-local output.
 
 ## Commands
 
@@ -181,3 +184,9 @@ RaBitQ HNSW operating point on the older AMD workstation:
 - `reviews/task-63/010-rabitq-bits1-scalar-byte-lut/` adds the later common
   scalar 1-bit RaBitQ scorer improvement, so publishable host measurements
   must be rerun after that checkpoint before making the final decision.
+- `reviews/task-63/011-hnsw-rabitq-benchmark-handoff/` through
+  `reviews/task-63/015-rabitq-byte-lut-allocation-audit/` record the final
+  local handoff/status cleanup before faster-host measurement: benchmark
+  manifest gating, user docs caveat, HNSW V4 RaBitQ on-disk fixture and upgrade
+  matrix, reloption/spec docs, and confirmation that non-1-bit RaBitQ prepared
+  queries do not retain the 1-bit byte LUT.
