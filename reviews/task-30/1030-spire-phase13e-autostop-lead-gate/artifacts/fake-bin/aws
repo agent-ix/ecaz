@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ "${1:-}" == "ec2" && "${2:-}" == "describe-images" ]]; then
+  printf 'arm64\n'
+  exit 0
+fi
+
+printf 'unexpected fake aws command: %s\n' "$*" >&2
+exit 2
