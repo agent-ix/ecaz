@@ -1,0 +1,12 @@
+Script started on 2026-05-27 08:23:23-07:00 [<not executed on terminal>]
+ERROR: refusing to provision SPIRE AWS resources without explicit confirmation.
+
+Set:
+
+  SPIRE_AWS_CONFIRM_PROVISION=yes
+
+This guard runs before Terraform provisioning so plain make pass targets cannot
+accidentally start EC2 instances. Preflight and teardown targets do not require
+this confirmation.
+
+Script done on 2026-05-27 08:23:23-07:00 [COMMAND_EXIT_CODE="2"]
