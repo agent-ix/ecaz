@@ -732,7 +732,7 @@ async fn run_suite(conn: &ConnectionOptions, args: SuiteRunOptions) -> Result<()
                     "[suite:{}] {} -> {}",
                     config.name,
                     record.name,
-                    shell_join(&record.command)
+                    shell_join_with_pgoptions(&record.command, record.pgoptions.as_deref())
                 );
             }
         }
@@ -758,7 +758,7 @@ async fn run_suite(conn: &ConnectionOptions, args: SuiteRunOptions) -> Result<()
             "[suite:{}] {} -> {}",
             config.name,
             manifest.steps[idx].name,
-            shell_join(&command)
+            shell_join_with_pgoptions(&command, manifest.steps[idx].pgoptions.as_deref())
         );
         manifest.steps[idx].status = Some(StepStatus::Pending);
         manifest.steps[idx].started_at_unix_ms = Some(now_ms());
@@ -878,7 +878,7 @@ async fn status_manifest(path: &Path) -> Result<()> {
             "{:<12} {:<36} {}",
             format!("{status:?}"),
             step.name,
-            shell_join(&step.command)
+            shell_join_with_pgoptions(&step.command, step.pgoptions.as_deref())
         );
     }
     Ok(())
@@ -2996,6 +2996,19 @@ fn shell_join(args: &[String]) -> String {
         .join(" ")
 }
 
+fn shell_join_with_pgoptions(args: &[String], pgoptions: Option<&str>) -> String {
+    let command = shell_join(args);
+    match pgoptions {
+        Some(pgoptions) if !pgoptions.is_empty() => {
+            format!(
+                "PGOPTIONS={} {command}",
+                shell_join(&[pgoptions.to_string()])
+            )
+        }
+        _ => command,
+    }
+}
+
 fn format_exit_status(status: ExitStatus) -> String {
     status
         .code()
@@ -3065,6 +3078,26 @@ mod tests {
             user: None,
             password: Some("secret".into()),
         }
+    }
+
+    #[test]
+    fn shell_join_with_pgoptions_renders_environment_prefix() {
+        let command = vec![
+            "--database".into(),
+            "postgres".into(),
+            "bench".into(),
+            "spire-pipeline".into(),
+        ];
+
+        let rendered = shell_join_with_pgoptions(
+            &command,
+            Some("-c ec_spire.remote_search_connection_pool_size=0"),
+        );
+
+        assert!(
+            rendered.starts_with("PGOPTIONS=\"-c ec_spire.remote_search_connection_pool_size=0\" ")
+        );
+        assert!(rendered.contains("bench spire-pipeline"));
     }
 
     #[test]
