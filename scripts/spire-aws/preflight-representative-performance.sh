@@ -119,7 +119,11 @@ JSONL
 {"kind":"spire-pipeline","metric":"spire-pipeline","step":"13e4-pooling-enabled-profile-k10","values":{"nprobe":32,"queries":1000,"profiles":1000,"status":"ok","result_source":"remote","latency_p50":"11.0 ms","latency_p95":"20.0 ms","latency_p99":"30.0 ms","recall@k":0.99,"dispatch_sum":1000,"socket_open_sum":4,"connect_p50":"0.1 ms","connect_p95":"0.2 ms","endpoint_identity_p50":"0.1 ms","endpoint_identity_p95":"0.2 ms","endpoint_identity_query_sum":4,"total_p50":"11.0 ms","total_p95":"20.0 ms"}}
 JSONL
 
+  cp "$priority_suite" "$sample_input/suite-representative-priority.json"
+  cp "$pooling_suite" "$sample_input/suite-representative-pooling.json"
   "$summarizer" "$sample_input" "$sample_output" >/dev/null
+  cp "$sample_input/suite-representative-priority.json" "$sample_output/"
+  cp "$sample_input/suite-representative-pooling.json" "$sample_output/"
   "$verifier" "$sample_output" >/dev/null
 
   cp "$sample_output"/representative-*.tsv "$bad_summary"/
