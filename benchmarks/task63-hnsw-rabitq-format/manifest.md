@@ -2,7 +2,7 @@
 
 - task: `plan/tasks/63-hnsw-rabitq-storage-format.md`
 - branch: `task/60-diskann-rabitq`
-- required source head: `36807d607606808717e0b645cde9b251d3fa2e23`
+- minimum code source head: `36807d607606808717e0b645cde9b251d3fa2e23`
 - suite config: `benchmarks/task63-hnsw-rabitq-format/suite.json`
 - artifact directory: `benchmarks/task63-hnsw-rabitq-format/artifacts/`
 
@@ -68,9 +68,10 @@ Use the same checked-in `suite.json` on both benchmark hosts. Host-local path
 adjustments should be made only when required by that host's PostgreSQL layout,
 and the manifest must state the path delta next to the host result summary.
 
-Both publishable hosts should install the required source head unless the
-manifest is updated with a newer commit. If only one host is available, keep the
-second host section pending rather than backfilling it with AMD-local output.
+Both publishable hosts should install at least the minimum code source head
+unless the manifest is updated with a newer commit. If only one host is
+available, keep the second host section pending rather than backfilling it with
+AMD-local output.
 
 ## Commands
 
