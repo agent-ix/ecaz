@@ -55,7 +55,7 @@ export SPIRE_AWS_DIR REPO_ROOT ARTIFACT_DIR TOPOLOGY PACKAGE_TARBALL
 export ECAZ_BIN WORK_DIR
 export ECAZ_SPIRE_AWS_TARBALL_PATH ?= $(PACKAGE_TARBALL)
 
-.PHONY: preflight preflight-operator preflight-state preflight-permissions archive-local-state cleanup-residue provision topology setup package-extension install-extension install configure-pg-hba register-remotes register register-correctness register-representative register-stress \
+.PHONY: preflight preflight-operator preflight-state preflight-permissions confirm-provision archive-local-state cleanup-residue provision topology setup package-extension install-extension install configure-pg-hba register-remotes register register-correctness register-representative register-stress \
         load-correctness load-representative load-stress \
         smoke smoke-correctness smoke-representative smoke-stress \
         bench-correctness bench-representative bench-representative-pooling summarize-representative-performance bench-stress \
@@ -80,6 +80,9 @@ preflight-state:
 preflight-permissions:
 	cd $(REPO_ROOT) && $(SCRIPTS)/preflight-permissions.sh
 
+confirm-provision:
+	cd $(REPO_ROOT) && $(SCRIPTS)/confirm-provision.sh
+
 archive-local-state:
 	@mkdir -p $(ARTIFACT_DIR)
 	cd $(REPO_ROOT) && $(SCRIPTS)/archive-local-state.sh $(SPIRE_AWS_DIR)/terraform.tfstate $(ARTIFACT_DIR)
@@ -87,7 +90,7 @@ archive-local-state:
 cleanup-residue:
 	cd $(REPO_ROOT) && $(SCRIPTS)/cleanup-residue.sh
 
-provision: preflight-operator preflight-state preflight-permissions
+provision: confirm-provision preflight-operator preflight-state preflight-permissions
 	@mkdir -p $(ARTIFACT_DIR)
 	cd $(SPIRE_AWS_DIR) && terraform init
 	cd $(SPIRE_AWS_DIR) && terraform apply -auto-approve
