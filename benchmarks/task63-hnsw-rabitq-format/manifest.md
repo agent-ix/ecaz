@@ -4,7 +4,8 @@
 - branch: `task/60-diskann-rabitq`
 - recommended host install head or newer: `f20e91c3494060ba64927bf9482112a3011438a0`
 - minimum code source head: `36807d607606808717e0b645cde9b251d3fa2e23`
-- suite config: `benchmarks/task63-hnsw-rabitq-format/suite.json`
+- Linux/newer-Intel suite config: `benchmarks/task63-hnsw-rabitq-format/suite.json`
+- m5 laptop suite config: `benchmarks/task63-hnsw-rabitq-format/suite-m5.json`
 - artifact directory: `benchmarks/task63-hnsw-rabitq-format/artifacts/`
 
 ## Purpose
@@ -66,13 +67,12 @@ Record each publishable host in this packet before citing its numbers:
 - checked-in suite config path, suite command, report command, and exact result
   artifact paths
 
-The checked-in `suite.json` is the Linux/newer-Intel benchmark-host config. Do
-not run publishable Task 63 measurements from an untracked host-local copy of
-that config. If the m5 laptop needs different PostgreSQL socket or staged
-dataset paths, add a checked-in sibling SuiteConfig in this packet with only
-those host path changes, then cite that config path and its generated
-`suite-manifest.json` SHA in the m5 host summary. This keeps `ecaz bench suite`
-provenance auditable while allowing host-local path differences.
+The checked-in `suite.json` is the Linux/newer-Intel benchmark-host config. The
+checked-in `suite-m5.json` is the m5 laptop config, with the same HNSW
+50k/100k matrix, M5 socket path, M5 staged DBpedia paths, and separate
+`artifacts/m5-laptop/` outputs. Do not run publishable Task 63 measurements
+from an untracked host-local edit of either config. Cite the config path and
+the generated `suite-manifest.json` SHA in each host summary.
 
 Both publishable hosts should install the recommended host install head or a
 newer branch head. The minimum code source head is the oldest acceptable
@@ -106,6 +106,17 @@ ecaz \
   --results-output benchmarks/task63-hnsw-rabitq-format/artifacts/results.jsonl
 ```
 
+Full run on the m5 laptop:
+
+```sh
+ecaz \
+  --log-file benchmarks/task63-hnsw-rabitq-format/artifacts/m5-laptop/suite-run.log \
+  bench suite run \
+  --config benchmarks/task63-hnsw-rabitq-format/suite-m5.json \
+  --manifest-output benchmarks/task63-hnsw-rabitq-format/artifacts/m5-laptop/suite-manifest.json \
+  --results-output benchmarks/task63-hnsw-rabitq-format/artifacts/m5-laptop/results.jsonl
+```
+
 Report extraction after the full run:
 
 ```sh
@@ -114,6 +125,16 @@ ecaz \
   bench suite report \
   --manifest benchmarks/task63-hnsw-rabitq-format/artifacts/suite-manifest.json \
   --results-output benchmarks/task63-hnsw-rabitq-format/artifacts/results-report.jsonl
+```
+
+Report extraction after the m5 full run:
+
+```sh
+ecaz \
+  --log-file benchmarks/task63-hnsw-rabitq-format/artifacts/m5-laptop/suite-report.log \
+  bench suite report \
+  --manifest benchmarks/task63-hnsw-rabitq-format/artifacts/m5-laptop/suite-manifest.json \
+  --results-output benchmarks/task63-hnsw-rabitq-format/artifacts/m5-laptop/results-report.jsonl
 ```
 
 Final packet evidence should include:
@@ -129,6 +150,9 @@ Final packet evidence should include:
 - the six recall logs for 50k and 100k
 - the six latency logs for 50k and 100k
 - `artifacts/precheck-host.log`
+
+For the m5 laptop, use the corresponding paths under
+`artifacts/m5-laptop/`.
 
 ## Result Summary Template
 
