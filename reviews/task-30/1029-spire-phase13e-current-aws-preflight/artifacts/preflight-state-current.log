@@ -1,0 +1,4 @@
+Script started on 2026-05-27 11:01:53-07:00 [<not executed on terminal>]
+SPIRE AWS state preflight passed: local Terraform state has no managed resources
+
+Script done on 2026-05-27 11:01:53-07:00 [COMMAND_EXIT_CODE="0"]
