@@ -1,6 +1,6 @@
 # Artifact Manifest: Task 63 HNSW RaBitQ Reloption Docs
 
-- head SHA: pending commit
+- head SHA: `26e1546db88743cef21d2a9612728a18aaf89d10`
 - task bucket: `reviews/task-63/`
 - packet path: `reviews/task-63/014-hnsw-rabitq-reloption-docs/`
 - lane: HNSW RaBitQ reloption help/spec alignment
