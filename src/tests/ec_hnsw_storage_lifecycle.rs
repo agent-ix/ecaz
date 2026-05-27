@@ -2331,6 +2331,119 @@
     }
 
     #[pg_test]
+    fn test_ech_rabitq_build_scan_insert_vacuum_round_trip() {
+        let _lock = env_var_test_lock();
+
+        Spi::run(
+            "CREATE TABLE ec_hnsw_rabitq_round_trip (
+                id bigint primary key,
+                source real[],
+                embedding ecvector
+            )",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_hnsw_rabitq_round_trip VALUES
+             (1, ARRAY[1.0, 0.0, 0.0, 0.0]::real[], encode_to_ecvector(ARRAY[1.0, 0.0, 0.0, 0.0]::real[], 4, 42)),
+             (2, ARRAY[0.0, 1.0, 0.0, 0.0]::real[], encode_to_ecvector(ARRAY[0.0, 1.0, 0.0, 0.0]::real[], 4, 42)),
+             (3, ARRAY[0.0, 0.0, 1.0, 0.0]::real[], encode_to_ecvector(ARRAY[0.0, 0.0, 1.0, 0.0]::real[], 4, 42)),
+             (4, ARRAY[0.0, 0.0, 0.0, 1.0]::real[], encode_to_ecvector(ARRAY[0.0, 0.0, 0.0, 1.0]::real[], 4, 42)),
+             (5, ARRAY[0.8, 0.2, 0.0, 0.0]::real[], encode_to_ecvector(ARRAY[0.8, 0.2, 0.0, 0.0]::real[], 4, 42)),
+             (6, ARRAY[0.2, 0.8, 0.0, 0.0]::real[], encode_to_ecvector(ARRAY[0.2, 0.8, 0.0, 0.0]::real[], 4, 42)),
+             (7, ARRAY[0.0, 0.2, 0.8, 0.0]::real[], encode_to_ecvector(ARRAY[0.0, 0.2, 0.8, 0.0]::real[], 4, 42)),
+             (8, ARRAY[0.0, 0.0, 0.2, 0.8]::real[], encode_to_ecvector(ARRAY[0.0, 0.0, 0.2, 0.8]::real[], 4, 42))",
+        )
+        .expect("seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_hnsw_rabitq_round_trip_idx ON ec_hnsw_rabitq_round_trip USING ec_hnsw \
+             (embedding ecvector_ip_ops) WITH (m = 4, ef_construction = 40, build_source_column = 'source', storage_format = 'rabitq')",
+        )
+        .expect("RaBitQ HNSW index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'ec_hnsw_rabitq_round_trip_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+        let (metadata, layout, elements, _neighbors) =
+            decode_grouped_index_elements_and_neighbors(index_oid);
+        assert_eq!(metadata.format_version, am::page::INDEX_FORMAT_V4_RABITQ);
+        assert_eq!(metadata.search_codec_kind, am::page::SearchCodecKind::RaBitQ);
+        assert_eq!(metadata.grouped_codebook_head, am::page::ItemPointer::INVALID);
+        assert_eq!(layout.binary_word_count, 0);
+        assert_eq!(elements.len(), 8);
+        assert!(
+            elements
+                .iter()
+                .all(|(_, element)| element.search_code.len() == layout.search_code_len
+                    && element.binary_words.is_empty()
+                    && element.reranktid != am::page::ItemPointer::INVALID),
+            "RaBitQ build should write grouped hot tuples with RaBitQ search codes and cold rerank tids",
+        );
+
+        let ctid_to_id = ctid_id_map("ec_hnsw_rabitq_round_trip");
+        let query_one = vec![1.0_f32, 0.0, 0.0, 0.0];
+        let observed_before_insert =
+            am::debug_gettuple_scan_heap_tids_with_scores(index_oid, query_one.clone())
+                .into_iter()
+                .map(|(heap_tid, _score)| {
+                    *ctid_to_id
+                        .get(&heap_tid)
+                        .expect("RaBitQ scan heap tid should map back to a row id")
+                })
+                .collect::<Vec<_>>();
+        assert_eq!(
+            observed_before_insert.first().copied(),
+            Some(1),
+            "RaBitQ HNSW scan should rank the matching build-time row first",
+        );
+
+        Spi::run(
+            "INSERT INTO ec_hnsw_rabitq_round_trip VALUES
+             (9, ARRAY[1.2, 0.05, 0.0, 0.0]::real[], encode_to_ecvector(ARRAY[1.2, 0.05, 0.0, 0.0]::real[], 4, 42))",
+        )
+        .expect("live insert should succeed on a RaBitQ HNSW index");
+        let inserted_query = vec![1.2_f32, 0.05, 0.0, 0.0];
+        let ctid_to_id_after_insert = ctid_id_map("ec_hnsw_rabitq_round_trip");
+        let observed_after_insert =
+            am::debug_gettuple_scan_heap_tids_with_scores(index_oid, inserted_query)
+                .into_iter()
+                .map(|(heap_tid, _score)| {
+                    *ctid_to_id_after_insert
+                        .get(&heap_tid)
+                        .expect("inserted RaBitQ scan heap tid should map back to a row id")
+                })
+                .collect::<Vec<_>>();
+        assert_eq!(
+            observed_after_insert.first().copied(),
+            Some(9),
+            "RaBitQ HNSW scan should rank the live-inserted row first for its own vector",
+        );
+
+        let deleted_heap_tid = heap_tid_for_row("ec_hnsw_rabitq_round_trip", 1);
+        Spi::run("DELETE FROM ec_hnsw_rabitq_round_trip WHERE id = 1")
+            .expect("delete should succeed");
+        am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]);
+
+        let observed_after_vacuum =
+            am::debug_gettuple_scan_heap_tids_with_scores(index_oid, query_one)
+                .into_iter()
+                .map(|(heap_tid, _score)| heap_tid)
+                .collect::<Vec<_>>();
+        assert!(
+            !observed_after_vacuum.is_empty(),
+            "vacuumed RaBitQ HNSW index should still emit ordered scan results",
+        );
+        assert!(
+            !observed_after_vacuum.contains(&(
+                deleted_heap_tid.block_number,
+                deleted_heap_tid.offset_number,
+            )),
+            "vacuumed RaBitQ HNSW scan results should not include the deleted row",
+        );
+    }
+
+    #[pg_test]
     fn test_vacuum_source_backed_repair_prefers_source_candidate() {
         let table_name = "ec_hnsw_vacuum_source_metric";
         let index_name = "ec_hnsw_vacuum_source_metric_idx";

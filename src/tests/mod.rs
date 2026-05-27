@@ -1880,11 +1880,11 @@
     ) -> GroupedElementsAndNeighbors {
         let (_block_count, metadata, data_pages) = am::debug_index_pages(index_oid);
         let layout = match am::graph::GraphStorageDescriptor::from_metadata(&metadata).unwrap() {
-            am::graph::GraphStorageDescriptor::PqFastScan(layout) => layout,
+            am::graph::GraphStorageDescriptor::PqFastScan(layout)
+            | am::graph::GraphStorageDescriptor::RaBitQ(layout) => layout,
             am::graph::GraphStorageDescriptor::TurboQuant { .. }
-            | am::graph::GraphStorageDescriptor::TurboQuantHotCold(_)
-            | am::graph::GraphStorageDescriptor::RaBitQ(_) => {
-                panic!("grouped decode helper requires a PqFastScan index")
+            | am::graph::GraphStorageDescriptor::TurboQuantHotCold(_) => {
+                panic!("grouped decode helper requires grouped hot/cold storage")
             }
         };
         let mut elements = Vec::new();
