@@ -147,3 +147,6 @@ Acceptance:
 - Packet `1032` wires that dry-run entrypoint into
   `make -C infra/spire-aws plan-representative-performance` and makes the
   representative preflight require the entrypoint to stay executable.
+- Packet `1033` makes the representative execute entrypoint refuse to reuse an
+  artifact directory that already contains representative topology, suite, or
+  summary output unless the operator passes `--reuse-artifact-dir` explicitly.

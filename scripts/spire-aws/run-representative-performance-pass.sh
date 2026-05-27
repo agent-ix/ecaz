@@ -11,6 +11,7 @@ artifact_dir=""
 execute=0
 allow_preexisting_residue=1
 run_preflight=1
+reuse_artifact_dir=0
 
 usage() {
   cat <<'EOF'
@@ -24,6 +25,7 @@ Options:
   --execute             Actually run make pass-representative-performance.
   --strict-residue      Do not set SPIRE_AWS_ALLOW_PREEXISTING_RESIDUE=1.
   --skip-preflight      Skip read-only local/AWS preflight checks before execute.
+  --reuse-artifact-dir  Allow execute to reuse a directory with prior pass output.
 
 The execute path sets SPIRE_AWS_CONFIRM_PROVISION=yes and runs:
 
@@ -54,6 +56,10 @@ while (($#)); do
       run_preflight=0
       shift
       ;;
+    --reuse-artifact-dir)
+      reuse_artifact_dir=1
+      shift
+      ;;
     -h|--help)
       usage
       exit 0
@@ -82,6 +88,7 @@ printf 'SPIRE representative performance pass\n'
 printf '  artifact_dir=%s\n' "$artifact_dir"
 printf '  execute=%s\n' "$execute"
 printf '  allow_preexisting_residue=%s\n' "$allow_preexisting_residue"
+printf '  reuse_artifact_dir=%s\n' "$reuse_artifact_dir"
 
 if ((run_preflight)); then
   preflight_env=()
@@ -107,6 +114,29 @@ if ((execute == 0)); then
 fi
 
 mkdir -p "$artifact_dir"
+if ((reuse_artifact_dir == 0)); then
+  existing_artifact="$(
+    find "$artifact_dir" -maxdepth 1 \
+      \( \
+        -name 'aws-topology*.json' -o \
+        -name 'suite-results-representative*.jsonl' -o \
+        -name 'suite-manifest-representative*.json' -o \
+        -name 'suite-representative*.json' -o \
+        -name 'representative-*.tsv' -o \
+        -name '.representative-performance-pass.started' \
+      \) \
+      -print -quit
+  )"
+  if [[ -n "$existing_artifact" ]]; then
+    die "refusing to reuse artifact directory with prior representative output: $existing_artifact"
+  fi
+
+  marker="$artifact_dir/.representative-performance-pass.started"
+  if ! (set -o noclobber; printf 'started_at=%s\n' "$(date -Iseconds)" > "$marker") 2>/dev/null; then
+    die "refusing to reuse artifact directory with existing representative pass marker: $marker"
+  fi
+fi
+
 execute_env=(SPIRE_AWS_CONFIRM_PROVISION=yes)
 if ((allow_preexisting_residue)); then
   execute_env+=(SPIRE_AWS_ALLOW_PREEXISTING_RESIDUE=1)
