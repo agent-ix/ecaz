@@ -1,6 +1,6 @@
 # Artifact Manifest: Task 63 HNSW RaBitQ Host Config Provenance
 
-- head SHA: pending commit
+- head SHA: `5d5d61512e5f5b76c8c9639f70d8e738fce6735f`
 - task bucket: `reviews/task-63/019-hnsw-rabitq-host-config-provenance/`
 - lane: HNSW RaBitQ benchmark handoff metadata
 - fixture: none
