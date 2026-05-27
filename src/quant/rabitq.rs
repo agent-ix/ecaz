@@ -1481,6 +1481,16 @@ fn sum_query_dequant_with_bf16(
             }
         }
     }
+    if bits == 1 {
+        if let Some(bits1_byte_lut) = bits1_byte_lut {
+            return sum_query_dequant_bits1_byte_lut_scalar(
+                query_rotated,
+                dimensions,
+                bits1_byte_lut,
+                code,
+            );
+        }
+    }
     sum_query_dequant_scalar(query_rotated, dimensions, bits, lut, code)
 }
 
@@ -1497,6 +1507,38 @@ fn sum_query_dequant_scalar(
         let level = read_level(code, i, bits) as usize;
         sum += query_i * lut[level];
     }
+    sum
+}
+
+#[inline]
+fn sum_query_dequant_bits1_byte_lut_scalar(
+    query_rotated: &[f32],
+    dimensions: usize,
+    byte_lut: &[[f32; 8]; 256],
+    code: &[u8],
+) -> f32 {
+    let mut sum = 0.0_f32;
+    let mut dim_index = 0_usize;
+
+    while dim_index + 8 <= dimensions {
+        let row = &byte_lut[code[dim_index / 8] as usize];
+        sum += query_rotated[dim_index] * row[0]
+            + query_rotated[dim_index + 1] * row[1]
+            + query_rotated[dim_index + 2] * row[2]
+            + query_rotated[dim_index + 3] * row[3]
+            + query_rotated[dim_index + 4] * row[4]
+            + query_rotated[dim_index + 5] * row[5]
+            + query_rotated[dim_index + 6] * row[6]
+            + query_rotated[dim_index + 7] * row[7];
+        dim_index += 8;
+    }
+
+    while dim_index < dimensions {
+        let bit = (code[dim_index / 8] >> (dim_index % 8)) & 1;
+        sum += query_rotated[dim_index] * byte_lut[usize::from(bit)][0];
+        dim_index += 1;
+    }
+
     sum
 }
 
@@ -3201,6 +3243,31 @@ mod tests {
             }
         }
         assert!(build_bits1_byte_lut_boxed(&lut, 4).is_none());
+    }
+
+    #[test]
+    fn bits1_byte_lut_scalar_sum_matches_per_bit_decode() {
+        for &dim in &[1_usize, 7, 8, 9, 15, 16, 31, 32, 65, 1536] {
+            let bits = 1_usize;
+            let packed_bytes = (dim * bits).div_ceil(8);
+            let mut code = vec![0_u8; packed_bytes + RABITQ_SCALAR_LEN];
+            for i in 0..dim {
+                let level = ((i * 17 + 3) as u32) & 1;
+                write_level(&mut code, i, bits, level);
+            }
+            let query: Vec<f32> = (0..dim).map(|i| ((i as f32) * 0.03125).sin()).collect();
+            let lut = build_dequant_lut(dim, bits, RABITQ_DEFAULT_QUANT_CLIP);
+            let byte_lut = build_bits1_byte_lut_boxed(&lut, 1).expect("bits=1 builds byte LUT");
+
+            let per_bit = sum_query_dequant_scalar(&query, dim, bits, &lut, &code);
+            let byte_lut_sum =
+                sum_query_dequant_bits1_byte_lut_scalar(&query, dim, &byte_lut, &code);
+            let tol = 1e-5_f32 * per_bit.abs().max(1.0);
+            assert!(
+                (per_bit - byte_lut_sum).abs() <= tol,
+                "bits=1 dim={dim}: per_bit={per_bit} byte_lut={byte_lut_sum}"
+            );
+        }
     }
 
     #[test]
