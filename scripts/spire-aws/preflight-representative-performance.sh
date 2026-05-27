@@ -392,6 +392,7 @@ require_make_target_order "pass-representative-performance-body" "preflight-repr
 require_make_target_sequence \
   "pass-representative-performance-body" \
   "preflight-representative-performance" \
+  "mark-representative-performance-start" \
   "provision" \
   "install-extension" \
   "verify-representative-performance-tunneled"

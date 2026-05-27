@@ -154,3 +154,6 @@ Acceptance:
   `preflight-representative-performance`, so direct Make execution also fails
   before provisioning when `ARTIFACT_DIR` is the legacy default or already
   contains representative output.
+- Packet `1035` adds a direct-Make start marker between representative
+  preflight and provisioning, so an interrupted `pass-representative-performance`
+  run reserves its packet before EC2 resources can be created.
