@@ -61,6 +61,12 @@ artifact_dir="${2:?usage: run-pass-with-watchdog.sh <make-target> <artifact-dir>
 aws_dir="${SPIRE_AWS_DIR:-$repo_root/infra/spire-aws}"
 
 case "$target" in
+  pass-correctness-body|pass-representative-body|pass-representative-performance-body)
+    "$repo_root/scripts/spire-aws/confirm-provision.sh"
+    ;;
+esac
+
+case "$target" in
   pass-correctness-body)
     default_timeout=7200
     ;;
