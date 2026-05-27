@@ -1,0 +1,4 @@
+Script started on 2026-05-27 08:34:10-07:00 [<not executed on terminal>]
+ERROR: region must match the established Phase 13e Graviton lane (us-west-2); got: us-east-1. Amend the task/runbook before changing AWS lane.
+
+Script done on 2026-05-27 08:34:10-07:00 [COMMAND_EXIT_CODE="2"]
