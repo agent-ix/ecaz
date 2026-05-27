@@ -1,6 +1,6 @@
 # Artifact Manifest: Task 63 HNSW RaBitQ M5 Suite Config
 
-- head SHA: pending commit
+- head SHA: `b0c7deeeadbf55cd72ef3376e11f44477fc4dfc9`
 - task bucket: `reviews/task-63/020-hnsw-rabitq-m5-suite-config/`
 - lane: HNSW RaBitQ benchmark handoff config
 - fixture: `ec_real_50k`, `ec_real_100k`
