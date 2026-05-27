@@ -150,3 +150,7 @@ Acceptance:
 - Packet `1033` makes the representative execute entrypoint refuse to reuse an
   artifact directory that already contains representative topology, suite, or
   summary output unless the operator passes `--reuse-artifact-dir` explicitly.
+- Packet `1034` moves the same artifact-directory guard into
+  `preflight-representative-performance`, so direct Make execution also fails
+  before provisioning when `ARTIFACT_DIR` is the legacy default or already
+  contains representative output.

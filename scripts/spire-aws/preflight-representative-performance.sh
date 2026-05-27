@@ -28,6 +28,55 @@ require_executable() {
   [[ -x "$path" ]] || die "expected executable script: $path"
 }
 
+require_representative_artifact_dir() {
+  local artifact_dir="$1"
+  local absolute_artifact_dir existing_artifact
+
+  [[ -n "$artifact_dir" ]] || die "ARTIFACT_DIR is empty"
+  case "$artifact_dir" in
+    /*)
+      absolute_artifact_dir="$artifact_dir"
+      ;;
+    *)
+      absolute_artifact_dir="$repo_root/$artifact_dir"
+      ;;
+  esac
+  absolute_artifact_dir="$(realpath -m -- "$absolute_artifact_dir")"
+
+  case "$absolute_artifact_dir" in
+    "$repo_root"/reviews/task-30/*/artifacts)
+      ;;
+    *)
+      die "ARTIFACT_DIR must be packet-local under reviews/task-30/<packet>/artifacts: $artifact_dir"
+      ;;
+  esac
+
+  if [[ "$absolute_artifact_dir" == "$repo_root/reviews/task-30/957-spire-aws-verification/artifacts" ]]; then
+    die "ARTIFACT_DIR must not use the legacy default packet: $absolute_artifact_dir"
+  fi
+
+  if [[ "${SPIRE_AWS_REUSE_ARTIFACT_DIR:-0}" == "1" ]]; then
+    return
+  fi
+
+  if [[ -d "$absolute_artifact_dir" ]]; then
+    existing_artifact="$(
+      find "$absolute_artifact_dir" -maxdepth 1 \
+        \( \
+          -name 'aws-topology*.json' -o \
+          -name 'suite-results-representative*.jsonl' -o \
+          -name 'suite-manifest-representative*.json' -o \
+          -name 'suite-representative*.json' -o \
+          -name 'representative-*.tsv' -o \
+          -name '.representative-performance-pass.started' \
+        \) \
+        -print -quit
+    )"
+    [[ -z "$existing_artifact" ]] ||
+      die "ARTIFACT_DIR already contains representative run output: $existing_artifact"
+  fi
+}
+
 require_jq() {
   local description="$1"
   local file="$2"
@@ -247,6 +296,9 @@ require_executable "$summarizer"
 require_executable "$verifier"
 require_executable "$watchdog"
 require_executable "$representative_pass_entrypoint"
+if [[ -n "${ARTIFACT_DIR:-}" ]]; then
+  require_representative_artifact_dir "$ARTIFACT_DIR"
+fi
 
 jq empty "$priority_suite" "$pooling_suite" >/dev/null
 bash -n "$summarizer" "$verifier"

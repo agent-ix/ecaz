@@ -95,6 +95,9 @@ if ((run_preflight)); then
   if ((allow_preexisting_residue)); then
     preflight_env+=(SPIRE_AWS_ALLOW_PREEXISTING_RESIDUE=1)
   fi
+  if ((reuse_artifact_dir)); then
+    preflight_env+=(SPIRE_AWS_REUSE_ARTIFACT_DIR=1)
+  fi
   env "${preflight_env[@]}" \
     make -C "$aws_dir" \
       ARTIFACT_DIR="$artifact_dir" \
@@ -104,6 +107,9 @@ fi
 printf 'Command:\n'
 if ((allow_preexisting_residue)); then
   printf '  SPIRE_AWS_ALLOW_PREEXISTING_RESIDUE=1 \\\n'
+fi
+if ((reuse_artifact_dir)); then
+  printf '  SPIRE_AWS_REUSE_ARTIFACT_DIR=1 \\\n'
 fi
 printf '  SPIRE_AWS_CONFIRM_PROVISION=yes \\\n'
 printf '  make -C %q ARTIFACT_DIR=%q pass-representative-performance\n' "$aws_dir" "$artifact_dir"
@@ -140,6 +146,9 @@ fi
 execute_env=(SPIRE_AWS_CONFIRM_PROVISION=yes)
 if ((allow_preexisting_residue)); then
   execute_env+=(SPIRE_AWS_ALLOW_PREEXISTING_RESIDUE=1)
+fi
+if ((reuse_artifact_dir)); then
+  execute_env+=(SPIRE_AWS_REUSE_ARTIFACT_DIR=1)
 fi
 
 env "${execute_env[@]}" \
