@@ -1,0 +1,8 @@
+Script started on 2026-05-27 11:26:48-07:00 [<not executed on terminal>]
+[33mbbb9bcef2[m[33m ([m[1;36mHEAD -> [m[1;32mdiskann-aws-optimization[m[33m)[m Guard SPIRE representative Make artifact reuse
+ ...30-phase13e-spire-aws-production-gap-closure.md |  4 [32m++[m
+ .../preflight-representative-performance.sh        | 52 [32m++++++++++++++++++++++[m
+ .../run-representative-performance-pass.sh         |  9 [32m++++[m
+ 3 files changed, 65 insertions(+)
+
+Script done on 2026-05-27 11:26:48-07:00 [COMMAND_EXIT_CODE="0"]
