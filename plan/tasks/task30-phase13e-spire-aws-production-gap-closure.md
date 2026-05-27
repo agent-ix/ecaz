@@ -65,7 +65,10 @@ Acceptance:
 
 - [ ] If the gate is not met, packet records "pooling not justified" with profile rows.
 - [ ] If the gate is met, pooled reads reduce connect/TLS count and improve latency without stale-identity reuse.
-  Local PG18 gates prove pooled reuse reduces follow-up socket opens without stale-identity reuse; AWS representative latency proof remains pending.
+  Local PG18 gates and packet `998-spire-phase13e-pooling-evidence-local`
+  prove pooled reuse reduces follow-up socket opens and that a failed pooled
+  remote connection is dropped before post-restart reuse; AWS representative
+  latency proof remains pending.
 
 ## Review And Evidence Rules
 

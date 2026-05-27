@@ -219,6 +219,254 @@ PREFIX=ec_spire_aws_synth_10k scripts/spire-aws/smoke.sh "$TOPOLOGY" "$LOG_DIR"
 query_vector="$("${coord_psql[@]}" -At -c "SELECT 'ARRAY[' || array_to_string(source, ',') || ']::real[]' FROM ec_spire_aws_synth_10k_queries WHERE id = 0")"
 fault_nprobe="${SPIRE_AWS_FAULT_NPROBE:-100}"
 
+pooling_log="$LOG_DIR/pooling-socket-open-comparison.tsv"
+pooling_sql="$RUN_DIR/pooling-socket-open-comparison.sql"
+pooling_stop_remote1="$RUN_DIR/pooling-stop-remote1.sh"
+pooling_start_remote1="$RUN_DIR/pooling-start-remote1.sh"
+pooling_set_degraded="$RUN_DIR/pooling-set-degraded.sh"
+pooling_set_strict="$RUN_DIR/pooling-set-strict.sh"
+
+cat > "$pooling_stop_remote1" <<SCRIPT
+#!/usr/bin/env bash
+set -euo pipefail
+"$PG_CTL" -D "$REMOTE1_DATA" -m fast stop >/dev/null
+SCRIPT
+cat > "$pooling_start_remote1" <<SCRIPT
+#!/usr/bin/env bash
+set -euo pipefail
+"$PG_CTL" -w -D "$REMOTE1_DATA" -l "$LOG_DIR/remote1-postgres.log" -o "-p $REMOTE1_PORT -k $SOCKET_DIR -c listen_addresses=''" start >/dev/null
+SCRIPT
+cat > "$pooling_set_degraded" <<SCRIPT
+#!/usr/bin/env bash
+set -euo pipefail
+"$PSQL" -v ON_ERROR_STOP=1 -h "$SOCKET_DIR" -p "$COORD_PORT" -U postgres -d postgres -c "SELECT * FROM ec_spire_set_static_remote_placement_consistency_mode('ec_spire_aws_synth_10k_idx'::regclass::oid, 'degraded')" >/dev/null
+"$PSQL" -v ON_ERROR_STOP=1 -h "$SOCKET_DIR" -p "$REMOTE1_PORT" -U postgres -d postgres -c "SELECT * FROM ec_spire_set_static_remote_placement_consistency_mode('ec_spire_aws_synth_10k_remote_idx'::regclass::oid, 'degraded')" >/dev/null
+"$PSQL" -v ON_ERROR_STOP=1 -h "$SOCKET_DIR" -p "$REMOTE2_PORT" -U postgres -d postgres -c "SELECT * FROM ec_spire_set_static_remote_placement_consistency_mode('ec_spire_aws_synth_10k_remote_idx'::regclass::oid, 'degraded')" >/dev/null
+"$PSQL" -v ON_ERROR_STOP=1 -h "$SOCKET_DIR" -p "$REMOTE3_PORT" -U postgres -d postgres -c "SELECT * FROM ec_spire_set_static_remote_placement_consistency_mode('ec_spire_aws_synth_10k_remote_idx'::regclass::oid, 'degraded')" >/dev/null
+SCRIPT
+cat > "$pooling_set_strict" <<SCRIPT
+#!/usr/bin/env bash
+set -euo pipefail
+"$PSQL" -v ON_ERROR_STOP=1 -h "$SOCKET_DIR" -p "$COORD_PORT" -U postgres -d postgres -c "SELECT * FROM ec_spire_set_static_remote_placement_consistency_mode('ec_spire_aws_synth_10k_idx'::regclass::oid, 'strict')" >/dev/null
+"$PSQL" -v ON_ERROR_STOP=1 -h "$SOCKET_DIR" -p "$REMOTE1_PORT" -U postgres -d postgres -c "SELECT * FROM ec_spire_set_static_remote_placement_consistency_mode('ec_spire_aws_synth_10k_remote_idx'::regclass::oid, 'strict')" >/dev/null
+"$PSQL" -v ON_ERROR_STOP=1 -h "$SOCKET_DIR" -p "$REMOTE2_PORT" -U postgres -d postgres -c "SELECT * FROM ec_spire_set_static_remote_placement_consistency_mode('ec_spire_aws_synth_10k_remote_idx'::regclass::oid, 'strict')" >/dev/null
+"$PSQL" -v ON_ERROR_STOP=1 -h "$SOCKET_DIR" -p "$REMOTE3_PORT" -U postgres -d postgres -c "SELECT * FROM ec_spire_set_static_remote_placement_consistency_mode('ec_spire_aws_synth_10k_remote_idx'::regclass::oid, 'strict')" >/dev/null
+SCRIPT
+chmod +x "$pooling_stop_remote1" "$pooling_start_remote1" "$pooling_set_degraded" "$pooling_set_strict"
+
+cat > "$pooling_sql" <<SQL
+SET enable_seqscan = off;
+SET enable_indexscan = off;
+SET ec_spire.nprobe = $fault_nprobe;
+SET ec_spire.remote_search_consistency_mode = strict;
+SET ec_spire.remote_search_connection_pool_size = 0;
+
+WITH profile AS (
+  SELECT metric, value
+  FROM ec_spire_remote_search_production_read_profile(
+      'ec_spire_aws_synth_10k_idx'::regclass,
+      $query_vector,
+      10
+  )
+)
+SELECT 'pool_disabled_1',
+       max(value) FILTER (WHERE metric = 'status'),
+       max(value) FILTER (WHERE metric = 'result_source'),
+       max(value) FILTER (WHERE metric = 'dispatch_count'),
+       max(value) FILTER (WHERE metric = 'socket_open_count'),
+       max(value) FILTER (WHERE metric = 'candidate_receive_query_count'),
+       max(value) FILTER (WHERE metric = 'heap_receive_query_count'),
+       max(value) FILTER (WHERE metric = 'degraded_skipped_dispatch_count'),
+       max(value) FILTER (WHERE metric = 'returned_candidate_count'),
+       max(value) FILTER (WHERE metric = 'next_blocker')
+FROM profile;
+
+WITH profile AS (
+  SELECT metric, value
+  FROM ec_spire_remote_search_production_read_profile(
+      'ec_spire_aws_synth_10k_idx'::regclass,
+      $query_vector,
+      10
+  )
+)
+SELECT 'pool_disabled_2',
+       max(value) FILTER (WHERE metric = 'status'),
+       max(value) FILTER (WHERE metric = 'result_source'),
+       max(value) FILTER (WHERE metric = 'dispatch_count'),
+       max(value) FILTER (WHERE metric = 'socket_open_count'),
+       max(value) FILTER (WHERE metric = 'candidate_receive_query_count'),
+       max(value) FILTER (WHERE metric = 'heap_receive_query_count'),
+       max(value) FILTER (WHERE metric = 'degraded_skipped_dispatch_count'),
+       max(value) FILTER (WHERE metric = 'returned_candidate_count'),
+       max(value) FILTER (WHERE metric = 'next_blocker')
+FROM profile;
+
+SET ec_spire.remote_search_connection_pool_size = 16;
+
+WITH profile AS (
+  SELECT metric, value
+  FROM ec_spire_remote_search_production_read_profile(
+      'ec_spire_aws_synth_10k_idx'::regclass,
+      $query_vector,
+      10
+  )
+)
+SELECT 'pooled_warmup',
+       max(value) FILTER (WHERE metric = 'status'),
+       max(value) FILTER (WHERE metric = 'result_source'),
+       max(value) FILTER (WHERE metric = 'dispatch_count'),
+       max(value) FILTER (WHERE metric = 'socket_open_count'),
+       max(value) FILTER (WHERE metric = 'candidate_receive_query_count'),
+       max(value) FILTER (WHERE metric = 'heap_receive_query_count'),
+       max(value) FILTER (WHERE metric = 'degraded_skipped_dispatch_count'),
+       max(value) FILTER (WHERE metric = 'returned_candidate_count'),
+       max(value) FILTER (WHERE metric = 'next_blocker')
+FROM profile;
+
+WITH profile AS (
+  SELECT metric, value
+  FROM ec_spire_remote_search_production_read_profile(
+      'ec_spire_aws_synth_10k_idx'::regclass,
+      $query_vector,
+      10
+  )
+)
+SELECT 'pooled_followup_1',
+       max(value) FILTER (WHERE metric = 'status'),
+       max(value) FILTER (WHERE metric = 'result_source'),
+       max(value) FILTER (WHERE metric = 'dispatch_count'),
+       max(value) FILTER (WHERE metric = 'socket_open_count'),
+       max(value) FILTER (WHERE metric = 'candidate_receive_query_count'),
+       max(value) FILTER (WHERE metric = 'heap_receive_query_count'),
+       max(value) FILTER (WHERE metric = 'degraded_skipped_dispatch_count'),
+       max(value) FILTER (WHERE metric = 'returned_candidate_count'),
+       max(value) FILTER (WHERE metric = 'next_blocker')
+FROM profile;
+
+WITH profile AS (
+  SELECT metric, value
+  FROM ec_spire_remote_search_production_read_profile(
+      'ec_spire_aws_synth_10k_idx'::regclass,
+      $query_vector,
+      10
+  )
+)
+SELECT 'pooled_followup_2',
+       max(value) FILTER (WHERE metric = 'status'),
+       max(value) FILTER (WHERE metric = 'result_source'),
+       max(value) FILTER (WHERE metric = 'dispatch_count'),
+       max(value) FILTER (WHERE metric = 'socket_open_count'),
+       max(value) FILTER (WHERE metric = 'candidate_receive_query_count'),
+       max(value) FILTER (WHERE metric = 'heap_receive_query_count'),
+       max(value) FILTER (WHERE metric = 'degraded_skipped_dispatch_count'),
+       max(value) FILTER (WHERE metric = 'returned_candidate_count'),
+       max(value) FILTER (WHERE metric = 'next_blocker')
+FROM profile;
+
+\! "$pooling_set_degraded"
+\! "$pooling_stop_remote1"
+SET ec_spire.remote_search_consistency_mode = degraded;
+
+WITH profile AS (
+  SELECT metric, value
+  FROM ec_spire_remote_search_production_read_profile(
+      'ec_spire_aws_synth_10k_idx'::regclass,
+      $query_vector,
+      10
+  )
+)
+SELECT 'pooled_remote_down_degraded',
+       max(value) FILTER (WHERE metric = 'status'),
+       max(value) FILTER (WHERE metric = 'result_source'),
+       max(value) FILTER (WHERE metric = 'dispatch_count'),
+       max(value) FILTER (WHERE metric = 'socket_open_count'),
+       max(value) FILTER (WHERE metric = 'candidate_receive_query_count'),
+       max(value) FILTER (WHERE metric = 'heap_receive_query_count'),
+       max(value) FILTER (WHERE metric = 'degraded_skipped_dispatch_count'),
+       max(value) FILTER (WHERE metric = 'returned_candidate_count'),
+       max(value) FILTER (WHERE metric = 'next_blocker')
+FROM profile;
+
+\! "$pooling_start_remote1"
+\! "$pooling_set_strict"
+SET ec_spire.remote_search_consistency_mode = strict;
+
+WITH profile AS (
+  SELECT metric, value
+  FROM ec_spire_remote_search_production_read_profile(
+      'ec_spire_aws_synth_10k_idx'::regclass,
+      $query_vector,
+      10
+  )
+)
+SELECT 'pooled_after_restart',
+       max(value) FILTER (WHERE metric = 'status'),
+       max(value) FILTER (WHERE metric = 'result_source'),
+       max(value) FILTER (WHERE metric = 'dispatch_count'),
+       max(value) FILTER (WHERE metric = 'socket_open_count'),
+       max(value) FILTER (WHERE metric = 'candidate_receive_query_count'),
+       max(value) FILTER (WHERE metric = 'heap_receive_query_count'),
+       max(value) FILTER (WHERE metric = 'degraded_skipped_dispatch_count'),
+       max(value) FILTER (WHERE metric = 'returned_candidate_count'),
+       max(value) FILTER (WHERE metric = 'next_blocker')
+FROM profile;
+SQL
+
+printf 'phase\tstatus\tresult_source\tdispatch_count\tsocket_open_count\tcandidate_receive_query_count\theap_receive_query_count\tdegraded_skipped_dispatch_count\treturned_candidate_count\tnext_blocker\n' > "$pooling_log"
+"${coord_psql[@]}" -At -F $'\t' -f "$pooling_sql" >> "$pooling_log"
+
+pooling_summary="$(awk -F '\t' '
+NR == 1 { next }
+$1 ~ /^pool_disabled_/ {
+  disabled_socket_sum += $5;
+  disabled_rows++;
+  if ($2 != "ready" || $5 != 3) bad++;
+}
+$1 == "pooled_warmup" {
+  pooled_warmup_socket = $5;
+  if ($2 != "ready") bad++;
+}
+$1 ~ /^pooled_followup_/ {
+  pooled_followup_socket_sum += $5;
+  pooled_followup_rows++;
+  if ($2 != "ready" || $5 != 0) bad++;
+}
+$1 == "pooled_remote_down_degraded" {
+  degraded_status = $2;
+  degraded_socket = $5;
+  degraded_skipped = $8;
+  if ($2 != "degraded_ready" || $8 < 1) bad++;
+}
+$1 == "pooled_after_restart" {
+  after_restart_status = $2;
+  after_restart_socket = $5;
+  if ($2 != "ready" || $5 != 1) bad++;
+}
+END {
+  printf "disabled_rows=%d|disabled_socket_sum=%d|pooled_warmup_socket=%d|pooled_followup_rows=%d|pooled_followup_socket_sum=%d|degraded_status=%s|degraded_socket=%d|degraded_skipped=%d|after_restart_status=%s|after_restart_socket=%d|bad=%d\n",
+    disabled_rows,
+    disabled_socket_sum,
+    pooled_warmup_socket,
+    pooled_followup_rows,
+    pooled_followup_socket_sum,
+    degraded_status,
+    degraded_socket,
+    degraded_skipped,
+    after_restart_status,
+    after_restart_socket,
+    bad;
+}' "$pooling_log")"
+echo "pooling_socket_open_comparison=$pooling_summary"
+[[ "$pooling_summary" == *"disabled_rows=2"* ]]
+[[ "$pooling_summary" == *"disabled_socket_sum=6"* ]]
+[[ "$pooling_summary" == *"pooled_warmup_socket=3"* ]]
+[[ "$pooling_summary" == *"pooled_followup_rows=2"* ]]
+[[ "$pooling_summary" == *"pooled_followup_socket_sum=0"* ]]
+[[ "$pooling_summary" == *"degraded_status=degraded_ready"* ]]
+[[ "$pooling_summary" == *"after_restart_status=ready"* ]]
+[[ "$pooling_summary" == *"after_restart_socket=1"* ]]
+[[ "$pooling_summary" == *"bad=0"* ]]
+
 publish_coord_mode() {
   local mode="${1:?mode required}"
   "${coord_psql[@]}" \
