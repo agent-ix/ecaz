@@ -67,8 +67,9 @@ Acceptance:
 - [ ] If the gate is met, pooled reads reduce connect/TLS count and improve latency without stale-identity reuse.
   Local PG18 gates and packet `998-spire-phase13e-pooling-evidence-local`
   prove pooled reuse reduces follow-up socket opens and that a failed pooled
-  remote connection is dropped before post-restart reuse; AWS representative
-  latency proof remains pending.
+  remote connection is dropped before post-restart reuse. Reviewer feedback on
+  packet `998` confirms the local pooling mechanism evidence is complete; AWS
+  representative latency proof remains pending.
 
 ## Review And Evidence Rules
 
@@ -101,7 +102,7 @@ Acceptance:
   `pass-representative-performance`. Fault rerun/resilience evidence remains
   valuable, but is lower priority than the representative performance and
   pooling packet.
-- Local AWS harness hardening packets `1009` through `1019` now make that
+- Local AWS harness hardening packets `1009` through `1022` now make that
   representative pass fail closed before provisioning unless the priority path
   runs the representative preflight, excludes fault reruns, and verifies suite
   plus summary evidence for latency/recall, pooled-vs-unpooled socket reduction,
@@ -112,4 +113,8 @@ Acceptance:
   evidence for the suite-configured top-k=10 nprobe cells and reject priority /
   pooling sweep mismatches. Packet `1019` makes the summary verifier print the
   accepted suite-driven nprobe list, so the AWS packet can show exactly which
-  recall/latency sweep was accepted before any fault rerun work resumes.
+  recall/latency sweep was accepted before any fault rerun work resumes. Packet
+  `1021` adds a representative `recall@k >= 0.95` floor for the priority and
+  pooling suites, and packet `1022` makes pooling A/B dry-run/status output show
+  the actual `PGOPTIONS` pool-size settings (`0` versus `16`) in packet-local
+  evidence.
