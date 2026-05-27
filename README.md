@@ -19,7 +19,8 @@ of quantization and index options rather than a single fixed architecture.
 
 - `turboquant` — default; simplest operational path
 - `pq_fastscan` — grouped PQ with a hot path and colder rerank payload; for latency-critical workloads
-- `rabitq` — binary quantization with float correction; IVF and SPIRE serving paths
+- `rabitq` — binary quantization with float correction; IVF and SPIRE serving
+  paths, with HNSW support still benchmark-gated
 
 #### Index Families
 
@@ -184,7 +185,7 @@ comparisons.
 
 | Access method | Best fit | Storage formats | Notes |
 | --- | --- | --- | --- |
-| `ec_hnsw` | General-purpose ANN graph search | `turboquant`, `pq_fastscan` | Lowest local latency, larger index footprint |
+| `ec_hnsw` | General-purpose ANN graph search | `turboquant`, `pq_fastscan`, benchmark-gated `rabitq` | Lowest local latency today; RaBitQ HNSW awaits Task 63 publishable 50k/100k decision |
 | `ec_ivf` | Posting-list experiments and high-ingest tradeoffs | `turboquant`, `pq_fastscan`, `rabitq` | Recall controlled by `nprobe`/`nlists`; Apple M5 tuning is active |
 | `ec_diskann` | DiskANN/Vamana research and compact graph indexes | `pq_fastscan` | Requires unit-normalized source vectors; Apple M5 tuning is active |
 | `ec_spire` | Partitioned local and distributed search | `turboquant`, `rabitq`; `pq_fastscan` deferred for serving | RaBitQ is the first remote-serving storage profile; product-scale evidence remains gated |
