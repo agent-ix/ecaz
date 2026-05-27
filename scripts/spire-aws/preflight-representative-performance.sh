@@ -61,6 +61,25 @@ require_make_target_absent() {
     die "Makefile target $target must not contain $forbidden"
 }
 
+require_make_target_order() {
+  local target="$1"
+  local before="$2"
+  local after="$3"
+  awk -v target="$target" -v before="$before" -v after="$after" '
+    $0 ~ "^[A-Za-z0-9_.-]+:" {
+      in_target = ($0 ~ "^" target ":")
+    }
+    in_target && index($0, before) && before_line == 0 {
+      before_line = NR
+    }
+    in_target && index($0, after) && after_line == 0 {
+      after_line = NR
+    }
+    END { exit(before_line > 0 && after_line > 0 && before_line < after_line ? 0 : 1) }
+  ' "$makefile" ||
+    die "Makefile target $target must run $before before $after"
+}
+
 require_file "$priority_suite"
 require_file "$pooling_suite"
 require_file "$makefile"
@@ -118,6 +137,7 @@ require_make_target_contains "verify-representative-performance-tunneled" "bench
 require_make_target_contains "verify-representative-performance-tunneled" "summarize-representative-performance"
 require_make_target_contains "verify-representative-performance-tunneled" "verify-representative-performance-summary"
 require_make_target_absent "verify-representative-performance-tunneled" "fault-"
+require_make_target_order "pass-representative-performance-body" "preflight-representative-performance" "provision"
 
 printf 'SPIRE representative performance preflight passed: priority=%s pooling=%s\n' \
   "$priority_suite" \

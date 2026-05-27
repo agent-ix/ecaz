@@ -239,7 +239,8 @@ pass-representative-performance:
 
 pass-representative-performance-body:
 	@status=0; \
-	$(MAKE) -C $(SPIRE_AWS_DIR) ARTIFACT_DIR=$(ARTIFACT_DIR) provision || status=$$?; \
+	$(MAKE) -C $(SPIRE_AWS_DIR) ARTIFACT_DIR=$(ARTIFACT_DIR) preflight-representative-performance || status=$$?; \
+	if [ $$status -eq 0 ]; then $(MAKE) -C $(SPIRE_AWS_DIR) ARTIFACT_DIR=$(ARTIFACT_DIR) provision || status=$$?; fi; \
 	if [ $$status -eq 0 ]; then $(MAKE) -C $(SPIRE_AWS_DIR) ARTIFACT_DIR=$(ARTIFACT_DIR) install-extension || status=$$?; fi; \
 	if [ $$status -eq 0 ]; then $(MAKE) -C $(SPIRE_AWS_DIR) ARTIFACT_DIR=$(ARTIFACT_DIR) verify-representative-performance-tunneled || status=$$?; fi; \
 	exit $$status
