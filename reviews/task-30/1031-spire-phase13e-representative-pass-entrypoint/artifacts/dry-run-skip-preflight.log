@@ -1,0 +1,12 @@
+Script started on 2026-05-27 11:11:15-07:00 [<not executed on terminal>]
+SPIRE representative performance pass
+  artifact_dir=/home/peter/dev/ecaz/reviews/task-30/1031-spire-phase13e-representative-pass-entrypoint/artifacts
+  execute=0
+  allow_preexisting_residue=1
+Command:
+  SPIRE_AWS_ALLOW_PREEXISTING_RESIDUE=1 \
+  SPIRE_AWS_CONFIRM_PROVISION=yes \
+  make -C /home/peter/dev/ecaz/infra/spire-aws ARTIFACT_DIR=/home/peter/dev/ecaz/reviews/task-30/1031-spire-phase13e-representative-pass-entrypoint/artifacts pass-representative-performance
+Dry run only. Re-run with --execute after explicit AWS approval.
+
+Script done on 2026-05-27 11:11:15-07:00 [COMMAND_EXIT_CODE="0"]
