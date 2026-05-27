@@ -1,6 +1,6 @@
 # Artifact Manifest: Task 63 HNSW RaBitQ Final Packet Index Cleanup
 
-- head SHA: pending commit
+- head SHA: `d19bda36903ab57021ee14ef5522894547c76a41`
 - task bucket: `reviews/task-63/018-hnsw-rabitq-final-packet-index/`
 - lane: HNSW RaBitQ benchmark handoff metadata
 - fixture: none
