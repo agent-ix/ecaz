@@ -75,6 +75,11 @@ checked-in `suite-m5.json` is the m5 laptop config, with the same HNSW
 from an untracked host-local edit of either config. Cite the config path and
 the generated `suite-manifest.json` SHA in each host summary.
 
+Static audit note: `suite.json` audits cleanly on this host. `suite-m5.json`
+must be audited on the m5 laptop after `data/task31_m5_dbpedia_staged/` is
+present; auditing it on this non-M5 host reports the expected missing M5 staged
+fixture files.
+
 Both publishable hosts should install the recommended host install head or a
 newer branch head. The minimum code source head is the oldest acceptable
 benchmark code point because it contains the post-local-smoke 1-bit scalar
@@ -215,10 +220,11 @@ RaBitQ HNSW operating point on the older AMD workstation:
   scalar 1-bit RaBitQ scorer improvement, so publishable host measurements
   must be rerun after that checkpoint before making the final decision.
 - `reviews/task-63/011-hnsw-rabitq-benchmark-handoff/` through
-  `reviews/task-63/020-hnsw-rabitq-m5-suite-config/` record the final
+  `reviews/task-63/022-hnsw-rabitq-suite-audit-handoff/` record the final
   local handoff/status cleanup before faster-host measurement: benchmark
   manifest gating, user docs caveat, HNSW V4 RaBitQ on-disk fixture and upgrade
   matrix, reloption/spec docs, confirmation that non-1-bit RaBitQ prepared
   queries do not retain the 1-bit byte LUT, the final local handoff checkpoint,
   the host-install-head wording correction, explicit host SuiteConfig
-  provenance, and the checked-in m5 laptop suite config.
+  provenance, the checked-in m5 laptop suite config, and static suite audit
+  handoff notes.
