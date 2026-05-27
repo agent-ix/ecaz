@@ -54,12 +54,28 @@ wait_remote_sql_ready() {
   return 1
 }
 
+restart_operator_tunnel_if_available() {
+  local restart_command label
+  restart_command="${SPIRE_AWS_TUNNEL_RESTART_COMMAND:-}"
+  if [[ -z "$restart_command" ]]; then
+    return 0
+  fi
+  if [[ ! -x "$restart_command" ]]; then
+    echo "configured tunnel restart command is not executable: ${restart_command}" | tee -a "$LOG" >&2
+    return 1
+  fi
+
+  label="remote-${TARGET_NODE_ID}"
+  "$restart_command" "$label" "$TARGET_REMOTE_ID" "$TARGET_REMOTE_PORT" "$ARTIFACT_DIR" | tee -a "$LOG"
+}
+
 restart_remote_if_needed() {
   if [[ "$REMOTE_STOPPED" == "1" ]]; then
     aws ec2 start-instances --region "$REGION" --instance-ids "$TARGET_REMOTE_ID" | tee -a "$LOG"
     aws ec2 wait instance-running --region "$REGION" --instance-ids "$TARGET_REMOTE_ID"
-    wait_remote_sql_ready
     REMOTE_STOPPED=0
+    restart_operator_tunnel_if_available
+    wait_remote_sql_ready
   fi
 }
 

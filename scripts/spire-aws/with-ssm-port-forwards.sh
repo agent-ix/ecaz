@@ -4,16 +4,24 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="${REPO_ROOT:-$(cd "$SCRIPT_DIR/../.." && pwd)}"
+
 TOPOLOGY="${1:?topology JSON path required}"
 ARTIFACT_DIR="${2:?artifact directory required}"
 TUNNELED_TOPOLOGY="${3:?output topology JSON path required}"
 shift 3
 
-mkdir -p "$ARTIFACT_DIR"
-
 REGION=$(jq -r '.region' "$TOPOLOGY")
 BASE_PORT="${SPIRE_AWS_TUNNEL_BASE_PORT:-15432}"
 LOCAL_HOST="${SPIRE_AWS_TUNNEL_HOST:-127.0.0.1}"
+TUNNEL_STATE_DIR="${SPIRE_AWS_TUNNEL_STATE_DIR:-$ARTIFACT_DIR/tunnel-state}"
+
+mkdir -p "$ARTIFACT_DIR" "$TUNNEL_STATE_DIR"
+export SPIRE_AWS_TUNNEL_REGION="$REGION"
+export SPIRE_AWS_TUNNEL_HOST="$LOCAL_HOST"
+export SPIRE_AWS_TUNNEL_STATE_DIR="$TUNNEL_STATE_DIR"
+export SPIRE_AWS_TUNNEL_RESTART_COMMAND="$REPO_ROOT/scripts/spire-aws/restart-ssm-port-forward.sh"
 
 if ! command -v session-manager-plugin >/dev/null 2>&1; then
   echo "session-manager-plugin is required for SSM port forwarding" >&2
@@ -34,9 +42,18 @@ jq \
 
 PIDS=()
 cleanup() {
+  local pid pid_file
   for pid in "${PIDS[@]:-}"; do
     kill "$pid" >/dev/null 2>&1 || true
   done
+  if [[ -d "$TUNNEL_STATE_DIR" ]]; then
+    while IFS= read -r pid_file; do
+      pid="$(cat "$pid_file" 2>/dev/null || true)"
+      if [[ -n "$pid" ]]; then
+        kill "$pid" >/dev/null 2>&1 || true
+      fi
+    done < <(find "$TUNNEL_STATE_DIR" -type f -name '*.pid')
+  fi
 }
 trap cleanup EXIT
 
@@ -52,7 +69,9 @@ start_tunnel() {
     --document-name AWS-StartPortForwardingSession \
     --parameters "{\"portNumber\":[\"5432\"],\"localPortNumber\":[\"${local_port}\"]}" \
     > "$log" 2>&1 &
-  PIDS+=("$!")
+  local pid="$!"
+  PIDS+=("$pid")
+  printf '%s\n' "$pid" > "$TUNNEL_STATE_DIR/${label}.pid"
 }
 
 wait_for_port() {
