@@ -101,11 +101,13 @@ Acceptance:
   `pass-representative-performance`. Fault rerun/resilience evidence remains
   valuable, but is lower priority than the representative performance and
   pooling packet.
-- Local AWS harness hardening packets `1009` through `1014` now make that
+- Local AWS harness hardening packets `1009` through `1017` now make that
   representative pass fail closed before provisioning unless the priority path
   runs the representative preflight, excludes fault reruns, and verifies suite
   plus summary evidence for latency/recall, pooled-vs-unpooled socket reduction,
   p50/p95/p99 latency improvement, zero recall regression, and endpoint identity
   profile counters. Packet `1014` embeds a good/bad summary self-check in the
   preflight so summary-gate regressions are caught locally before AWS resources
-  are started.
+  are started. Packets `1016` and `1017` require complete representative sweep
+  evidence for the suite-configured top-k=10 nprobe cells and reject priority /
+  pooling sweep mismatches.
