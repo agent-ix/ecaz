@@ -1,6 +1,6 @@
 # Artifact Manifest: Task 63 HNSW RaBitQ Suite Audit Handoff
 
-- head SHA: pending commit
+- head SHA: `45e710bf5bd377be4b9159a8b107161645946d30`
 - task bucket: `reviews/task-63/022-hnsw-rabitq-suite-audit-handoff/`
 - lane: HNSW RaBitQ benchmark handoff config audit
 - fixture: `ec_real_50k`, `ec_real_100k`
