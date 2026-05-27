@@ -48,16 +48,16 @@ The HNSW RaBitQ implementation has landed on branch
   lifecycle smoke evidence in `reviews/task-63/007-*` through `010-*`.
 - Task 64's HNSW-local codec adapter is the integration seam; no cross-AM codec
   trait was introduced.
-- Follow-up packets `reviews/task-63/011-*` through `017-*` keep the benchmark
+- Follow-up packets `reviews/task-63/011-*` through `020-*` keep the benchmark
   handoff, user-facing docs, HNSW V4 RaBitQ fixture/upgrade matrix, reloption
   help/spec text, and common RaBitQ byte-LUT allocation audit aligned with the
   landed implementation.
 
 The remaining completion gate is benchmark evidence and decision recording:
 
-- run the checked-in HNSW-only `ecaz bench suite` at
-  `benchmarks/task63-hnsw-rabitq-format/suite.json` on the newer Intel and m5
-  laptop hosts;
+- run the checked-in HNSW-only `ecaz bench suite` configs at
+  `benchmarks/task63-hnsw-rabitq-format/suite.json` on the newer Intel host
+  and `benchmarks/task63-hnsw-rabitq-format/suite-m5.json` on the m5 laptop;
 - report 50k and 100k recall@10, p50/p95/p99 latency, build time, and storage
   against TurboQuant and PqFastScan at matched `ef_search`;
 - record the recommended RaBitQ HNSW operating point, or mark the format

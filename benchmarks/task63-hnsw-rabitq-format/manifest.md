@@ -23,8 +23,9 @@ PqFastScan, and RaBitQ on the same benchmark host, dataset, query set, HNSW
 | 100k | `ec_real_100k` | `turboquant`, `pq_fastscan`, `rabitq` | `40,64,100,128,160,200` | `post_recall_warm` |
 
 The suite uses the DBpedia-derived 1536d fixture used by adjacent HNSW and
-DiskANN benchmark packets and stages it under
-`/var/lib/pgsql/18/datasets/staged-task63-hnsw-rabitq/`.
+DiskANN benchmark packets. The Linux/newer-Intel config stages it under
+`/var/lib/pgsql/18/datasets/staged-task63-hnsw-rabitq/`; the m5 config reuses
+the existing `data/task31_m5_dbpedia_staged/` staged fixtures.
 
 ## Acceptance Checks
 
@@ -214,9 +215,10 @@ RaBitQ HNSW operating point on the older AMD workstation:
   scalar 1-bit RaBitQ scorer improvement, so publishable host measurements
   must be rerun after that checkpoint before making the final decision.
 - `reviews/task-63/011-hnsw-rabitq-benchmark-handoff/` through
-  `reviews/task-63/017-hnsw-rabitq-handoff-head-wording/` record the final
+  `reviews/task-63/020-hnsw-rabitq-m5-suite-config/` record the final
   local handoff/status cleanup before faster-host measurement: benchmark
   manifest gating, user docs caveat, HNSW V4 RaBitQ on-disk fixture and upgrade
   matrix, reloption/spec docs, confirmation that non-1-bit RaBitQ prepared
   queries do not retain the 1-bit byte LUT, the final local handoff checkpoint,
-  and the host-install-head wording correction.
+  the host-install-head wording correction, explicit host SuiteConfig
+  provenance, and the checked-in m5 laptop suite config.
