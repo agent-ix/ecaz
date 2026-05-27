@@ -3,6 +3,8 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 LABEL="${1:?tunnel label required}"
 INSTANCE_ID="${2:?instance id required}"
 LOCAL_PORT="${3:?local port required}"
@@ -39,17 +41,15 @@ while (( SECONDS < deadline )); do
   PID="$!"
   printf '%s\n' "$PID" > "$PID_FILE"
 
-  attempt_deadline=$((SECONDS + 10))
-  while (( SECONDS < attempt_deadline && SECONDS < deadline )); do
-    if grep -Eq "Port ${LOCAL_PORT} opened for sessionId" "$LAST_LOG" 2>/dev/null; then
-      echo "tunnel ${LABEL} restarted on ${LOCAL_HOST}:${LOCAL_PORT} after ${attempt} attempt(s)"
-      exit 0
-    fi
-    if ! kill -0 "$PID" >/dev/null 2>&1; then
-      break
-    fi
-    sleep 1
-  done
+  attempt_timeout=10
+  remaining=$((deadline - SECONDS))
+  if (( remaining < attempt_timeout )); then
+    attempt_timeout="$remaining"
+  fi
+  if (( attempt_timeout > 0 )) && "$SCRIPT_DIR/wait-for-ssm-port-forward-ready.sh" "$LABEL" "$LOCAL_PORT" "$LAST_LOG" "$PID" "$attempt_timeout"; then
+    echo "tunnel ${LABEL} restarted on ${LOCAL_HOST}:${LOCAL_PORT} after ${attempt} attempt(s)"
+    exit 0
+  fi
 
   kill "$PID" >/dev/null 2>&1 || true
   sleep 1

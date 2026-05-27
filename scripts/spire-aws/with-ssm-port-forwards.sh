@@ -16,6 +16,7 @@ REGION=$(jq -r '.region' "$TOPOLOGY")
 BASE_PORT="${SPIRE_AWS_TUNNEL_BASE_PORT:-15432}"
 LOCAL_HOST="${SPIRE_AWS_TUNNEL_HOST:-127.0.0.1}"
 TUNNEL_STATE_DIR="${SPIRE_AWS_TUNNEL_STATE_DIR:-$ARTIFACT_DIR/tunnel-state}"
+TUNNEL_READY_TIMEOUT_SECONDS="${SPIRE_AWS_TUNNEL_READY_TIMEOUT_SECONDS:-60}"
 
 mkdir -p "$ARTIFACT_DIR" "$TUNNEL_STATE_DIR"
 export SPIRE_AWS_TUNNEL_REGION="$REGION"
@@ -74,21 +75,15 @@ start_tunnel() {
   printf '%s\n' "$pid" > "$TUNNEL_STATE_DIR/${label}.pid"
 }
 
-wait_for_port() {
+wait_for_tunnel_ready() {
   local label="$1"
   local port="$2"
-  local deadline=$((SECONDS + 60))
+  local log="$ARTIFACT_DIR/tunnel-${label}.log"
+  local pid_file="$TUNNEL_STATE_DIR/${label}.pid"
+  local pid
 
-  while (( SECONDS < deadline )); do
-    if (: > "/dev/tcp/${LOCAL_HOST}/${port}") >/dev/null 2>&1; then
-      echo "tunnel ${label} ready on ${LOCAL_HOST}:${port}"
-      return 0
-    fi
-    sleep 1
-  done
-
-  echo "timed out waiting for tunnel ${label} on ${LOCAL_HOST}:${port}" >&2
-  return 1
+  pid="$(cat "$pid_file")"
+  "$SCRIPT_DIR/wait-for-ssm-port-forward-ready.sh" "$label" "$port" "$log" "$pid" "$TUNNEL_READY_TIMEOUT_SECONDS"
 }
 
 COORD_ID=$(jq -r '.coordinator.instance_id' "$TOPOLOGY")
@@ -103,11 +98,11 @@ for remote in "${REMOTE_ROWS[@]}"; do
   start_tunnel "$label" "$instance_id" "$port"
 done
 
-wait_for_port coordinator "$COORD_PORT"
+wait_for_tunnel_ready coordinator "$COORD_PORT"
 for remote in "${REMOTE_ROWS[@]}"; do
   label="remote-$(jq -r '.node_id' <<< "$remote")"
   port=$(jq -r '.operator_port' <<< "$remote")
-  wait_for_port "$label" "$port"
+  wait_for_tunnel_ready "$label" "$port"
 done
 
 if [[ "${1:-}" == "--" ]]; then
