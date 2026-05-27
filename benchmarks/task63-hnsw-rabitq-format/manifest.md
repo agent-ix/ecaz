@@ -35,6 +35,13 @@ DiskANN benchmark packets and stages it under
 - Decision: record the recommended RaBitQ operating point, or mark the format
   experimental/shelved if the measured recall/storage tradeoff is not useful.
 
+## Host Scope
+
+Final Task 63 benchmark evidence should come from the newer Intel and m5 laptop
+benchmark hosts. The older 64GB AMD workstation may be used for local
+smoke/tuning only; do not cite AMD-local partial runs as the Task 63 acceptance
+matrix.
+
 ## Commands
 
 Dry-run validation:
