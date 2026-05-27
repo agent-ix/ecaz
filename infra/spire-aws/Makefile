@@ -58,7 +58,7 @@ export ECAZ_SPIRE_AWS_TARBALL_PATH ?= $(PACKAGE_TARBALL)
 .PHONY: preflight preflight-operator preflight-state preflight-permissions confirm-provision archive-local-state cleanup-residue provision topology setup package-extension install-extension install configure-pg-hba register-remotes register register-correctness register-representative register-stress \
         load-correctness load-representative load-stress \
         smoke smoke-correctness smoke-representative smoke-stress \
-        bench-correctness bench-representative-priority bench-representative bench-representative-pooling summarize-representative-performance bench-stress \
+        bench-correctness bench-representative-priority bench-representative bench-representative-pooling summarize-representative-performance verify-representative-performance-summary bench-stress \
         fault-degraded fault-strict fault-2pc fault-missing-guc fault-schema-drift fault-auth \
         teardown clean \
         verify-correctness-tunneled verify-correctness-full-tunneled verify-representative-performance-tunneled verify-representative-full-tunneled pass-correctness pass-correctness-body pass-representative-performance pass-representative-performance-body pass-representative pass-representative-body all-correctness all-representative all-representative-performance
@@ -167,7 +167,7 @@ verify-representative-performance-tunneled:
 	@mkdir -p $(ARTIFACT_DIR) $(WORK_DIR)
 	cd $(REPO_ROOT) && $(SCRIPTS)/with-ssm-port-forwards.sh $(TOPOLOGY) $(ARTIFACT_DIR) $(TUNNELED_TOPOLOGY) -- \
 	  $(MAKE) -C $(SPIRE_AWS_DIR) ARTIFACT_DIR=$(ARTIFACT_DIR) TOPOLOGY=$(TUNNELED_TOPOLOGY) WORK_DIR=$(WORK_DIR) ECAZ_BIN=$(ECAZ_BIN) PREFIX=ec_spire_aws_repr_1m COORD_INDEX=ec_spire_aws_repr_1m_idx load-representative register-representative smoke-representative bench-representative-priority bench-representative-pooling
-	$(MAKE) -C $(SPIRE_AWS_DIR) ARTIFACT_DIR=$(ARTIFACT_DIR) summarize-representative-performance
+	$(MAKE) -C $(SPIRE_AWS_DIR) ARTIFACT_DIR=$(ARTIFACT_DIR) summarize-representative-performance verify-representative-performance-summary
 
 bench-correctness:
 	cd $(REPO_ROOT) && $(SCRIPTS)/bench.sh correctness $(TOPOLOGY) $(ARTIFACT_DIR)
@@ -183,6 +183,9 @@ bench-representative-pooling:
 
 summarize-representative-performance:
 	cd $(REPO_ROOT) && $(SCRIPTS)/summarize-representative-performance.sh $(ARTIFACT_DIR)
+
+verify-representative-performance-summary:
+	cd $(REPO_ROOT) && $(SCRIPTS)/verify-representative-performance-summary.sh $(ARTIFACT_DIR)
 
 bench-stress:
 	cd $(REPO_ROOT) && $(SCRIPTS)/bench.sh stress $(TOPOLOGY) $(ARTIFACT_DIR)
