@@ -1,6 +1,6 @@
 # Artifact Manifest: Task 63 HNSW RaBitQ Suite Index Cleanup
 
-- head SHA: pending commit
+- head SHA: `603699582dbf3f5f4fef89fb375434e4a5e8faae`
 - task bucket: `reviews/task-63/021-hnsw-rabitq-suite-index-cleanup/`
 - lane: HNSW RaBitQ benchmark handoff metadata
 - fixture: `ec_real_50k`, `ec_real_100k`
