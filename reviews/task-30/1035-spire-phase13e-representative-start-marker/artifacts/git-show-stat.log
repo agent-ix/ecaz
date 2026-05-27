@@ -1,0 +1,9 @@
+Script started on 2026-05-27 11:32:37-07:00 [<not executed on terminal>]
+[33mc9d41be59[m[33m ([m[1;36mHEAD -> [m[1;32mdiskann-aws-optimization[m[33m)[m Reserve SPIRE representative packet before provisioning
+ infra/spire-aws/Makefile                           |  6 [32m+[m[31m-[m
+ ...30-phase13e-spire-aws-production-gap-closure.md |  3 [32m+[m
+ .../preflight-representative-performance.sh        |  1 [32m+[m
+ .../run-representative-performance-pass.sh         | 68 [32m++++++++++++++[m[31m--------[m
+ 4 files changed, 54 insertions(+), 24 deletions(-)
+
+Script done on 2026-05-27 11:32:37-07:00 [COMMAND_EXIT_CODE="0"]
