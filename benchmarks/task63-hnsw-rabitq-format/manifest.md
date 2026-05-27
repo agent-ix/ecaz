@@ -185,8 +185,9 @@ RaBitQ HNSW operating point on the older AMD workstation:
   scalar 1-bit RaBitQ scorer improvement, so publishable host measurements
   must be rerun after that checkpoint before making the final decision.
 - `reviews/task-63/011-hnsw-rabitq-benchmark-handoff/` through
-  `reviews/task-63/015-rabitq-byte-lut-allocation-audit/` record the final
+  `reviews/task-63/017-hnsw-rabitq-handoff-head-wording/` record the final
   local handoff/status cleanup before faster-host measurement: benchmark
   manifest gating, user docs caveat, HNSW V4 RaBitQ on-disk fixture and upgrade
-  matrix, reloption/spec docs, and confirmation that non-1-bit RaBitQ prepared
-  queries do not retain the 1-bit byte LUT.
+  matrix, reloption/spec docs, confirmation that non-1-bit RaBitQ prepared
+  queries do not retain the 1-bit byte LUT, the final local handoff checkpoint,
+  and the host-install-head wording correction.
