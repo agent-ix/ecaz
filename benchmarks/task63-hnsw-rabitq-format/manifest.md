@@ -63,11 +63,16 @@ Record each publishable host in this packet before citing its numbers:
 - CPU model, core/thread count, memory, OS, and PostgreSQL socket/port
 - extension HEAD SHA and install command
 - whether datasets were freshly fetched/prepared or reused from a prior packet
-- suite command, report command, and exact result artifact paths
+- checked-in suite config path, suite command, report command, and exact result
+  artifact paths
 
-Use the same checked-in `suite.json` on both benchmark hosts. Host-local path
-adjustments should be made only when required by that host's PostgreSQL layout,
-and the manifest must state the path delta next to the host result summary.
+The checked-in `suite.json` is the Linux/newer-Intel benchmark-host config. Do
+not run publishable Task 63 measurements from an untracked host-local copy of
+that config. If the m5 laptop needs different PostgreSQL socket or staged
+dataset paths, add a checked-in sibling SuiteConfig in this packet with only
+those host path changes, then cite that config path and its generated
+`suite-manifest.json` SHA in the m5 host summary. This keeps `ecaz bench suite`
+provenance auditable while allowing host-local path differences.
 
 Both publishable hosts should install the recommended host install head or a
 newer branch head. The minimum code source head is the oldest acceptable
