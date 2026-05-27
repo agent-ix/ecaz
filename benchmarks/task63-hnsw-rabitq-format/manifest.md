@@ -85,8 +85,9 @@ Final packet evidence should include:
 ## Current State
 
 The suite is scaffolded for the required 50k and 100k Task 63 matrix and was
-locally dry-run validated. The dry run wrote:
+locally audited and dry-run validated. The checks wrote:
 
+- `artifacts/suite-audit.log`
 - `artifacts/suite-dry-run.log`
 - `artifacts/suite-manifest.json`
 
