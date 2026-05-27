@@ -13,6 +13,7 @@ ARTIFACT_DIR="${3:?artifact directory required}"
 mkdir -p "$ARTIFACT_DIR"
 
 REGION=$(jq -r '.region' "$TOPOLOGY")
+BUCKET=$(jq -r '.artifact_bucket' "$TOPOLOGY")
 COORD_HOST=$(jq -r '.coordinator.operator_host // .coordinator.private_ip' "$TOPOLOGY")
 COORD_PORT=$(jq -r '.coordinator.operator_port // 5432' "$TOPOLOGY")
 PREFIX="${PREFIX:-ec_spire_aws_repr_1m}"
@@ -30,6 +31,27 @@ REMOTE_SQL_READY_TIMEOUT_SECONDS="${SPIRE_AWS_REMOTE_SQL_READY_TIMEOUT_SECONDS:-
 REMOTE_STOPPED=0
 RESTORE_STRICT_ON_EXIT=0
 QUERY_VECTOR_LITERAL=""
+
+wait_target_ssm_online() {
+  local deadline status
+  deadline=$((SECONDS + ${SPIRE_AWS_SSM_ONLINE_TIMEOUT_SECONDS:-600}))
+  while (( SECONDS < deadline )); do
+    status=$(aws ssm describe-instance-information \
+      --region "$REGION" \
+      --filters "Key=InstanceIds,Values=${TARGET_REMOTE_ID}" \
+      --query 'InstanceInformationList[0].PingStatus' \
+      --output text 2>/dev/null || true)
+    if [[ "$status" == "Online" ]]; then
+      echo "remote node ${TARGET_NODE_ID} SSM online" | tee -a "$LOG"
+      return 0
+    fi
+    echo "waiting for remote node ${TARGET_NODE_ID} SSM online: ${status}" | tee -a "$LOG"
+    sleep 10
+  done
+
+  echo "remote node ${TARGET_NODE_ID} SSM did not become online" | tee -a "$LOG" >&2
+  return 1
+}
 
 wait_remote_sql_ready() {
   local deadline attempt status
@@ -54,6 +76,58 @@ wait_remote_sql_ready() {
   return 1
 }
 
+restart_target_postgres() {
+  local commands_json parameters_json cmd_id status wait_status deadline
+  commands_json=$(jq -cn '[
+    "set -euo pipefail",
+    "if systemctl list-unit-files postgresql-18.service --no-legend 2>/dev/null | grep -q '\''^postgresql-18.service'\''; then PG_SERVICE=postgresql-18; else PG_SERVICE=postgresql; fi",
+    "systemctl start \"$PG_SERVICE\" || systemctl restart \"$PG_SERVICE\"",
+    "systemctl is-active \"$PG_SERVICE\"",
+    "sudo -u postgres psql -Atc \"SELECT 1\""
+  ]')
+  parameters_json=$(jq -cn --argjson commands "$commands_json" '{commands: $commands}')
+
+  cmd_id=$(aws ssm send-command \
+    --region "$REGION" \
+    --document-name "AWS-RunShellScript" \
+    --instance-ids "$TARGET_REMOTE_ID" \
+    --parameters "$parameters_json" \
+    --output-s3-bucket-name "$BUCKET" \
+    --output-s3-key-prefix "spire-aws/fault/${DRILL}/postgres-restart/${TARGET_REMOTE_ID}" \
+    --comment "ecaz Phase 13e restart PostgreSQL after fault restore" \
+    --query "Command.CommandId" --output text)
+
+  echo "remote node ${TARGET_NODE_ID} PostgreSQL restart ssm command id: ${cmd_id}" | tee -a "$LOG"
+  wait_status=0
+  status="Pending"
+  deadline=$((SECONDS + ${SPIRE_AWS_SSM_TIMEOUT_SECONDS:-600}))
+  while (( SECONDS < deadline )); do
+    status=$(aws ssm get-command-invocation \
+      --region "$REGION" --command-id "$cmd_id" --instance-id "$TARGET_REMOTE_ID" \
+      --query Status --output text 2>/dev/null || echo "Pending")
+    case "$status" in
+      Success)
+        wait_status=0
+        break
+        ;;
+      Failed|Cancelled|Cancelling|TimedOut)
+        wait_status=1
+        break
+        ;;
+      *)
+        sleep 5
+        ;;
+    esac
+  done
+  if [[ "$status" != "Success" && "$wait_status" == 0 ]]; then
+    wait_status=124
+  fi
+  aws ssm get-command-invocation \
+    --region "$REGION" --command-id "$cmd_id" --instance-id "$TARGET_REMOTE_ID" \
+    > "$ARTIFACT_DIR/fault-${DRILL}-remote-${TARGET_NODE_ID}-postgres-restart.json"
+  return "$wait_status"
+}
+
 restart_operator_tunnel_if_available() {
   local restart_command label
   restart_command="${SPIRE_AWS_TUNNEL_RESTART_COMMAND:-}"
@@ -74,6 +148,8 @@ restart_remote_if_needed() {
     aws ec2 start-instances --region "$REGION" --instance-ids "$TARGET_REMOTE_ID" | tee -a "$LOG"
     aws ec2 wait instance-running --region "$REGION" --instance-ids "$TARGET_REMOTE_ID"
     REMOTE_STOPPED=0
+    wait_target_ssm_online
+    restart_target_postgres
     restart_operator_tunnel_if_available
     wait_remote_sql_ready
   fi
