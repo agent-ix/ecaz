@@ -70,6 +70,12 @@ remote_count="${remote_count:-3}"
 [[ "$owner" != "your-gh-handle" ]] || die "owner must be set to the operator/reviewer-visible handle"
 [[ "$auto_stop_at" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]] ||
   die "auto_stop_at must be UTC ISO-8601 like 2026-05-25T23:00:00Z"
+auto_stop_epoch="$(date -u -d "$auto_stop_at" +%s 2>/dev/null)" ||
+  die "auto_stop_at is not parseable by date: $auto_stop_at"
+now_epoch="${SPIRE_AWS_PREFLIGHT_NOW_EPOCH:-$(date -u +%s)}"
+[[ "$now_epoch" =~ ^[0-9]+$ ]] || die "SPIRE_AWS_PREFLIGHT_NOW_EPOCH must be an epoch-second integer, got: $now_epoch"
+((auto_stop_epoch > now_epoch)) ||
+  die "auto_stop_at must be in the future before provisioning, got: $auto_stop_at"
 
 require_graviton_family coordinator_instance_type "$coordinator_instance_type"
 require_graviton_family remote_instance_type "$remote_instance_type"

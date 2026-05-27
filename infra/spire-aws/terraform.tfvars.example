@@ -5,7 +5,7 @@ availability_zone = "us-west-2a"
 ami_id = "ami-0123456789abcdef0"
 
 owner        = "your-gh-handle"
-auto_stop_at = "2026-05-15T18:00:00Z"
+auto_stop_at = "2030-01-01T00:00:00Z"
 
 # Optional: leave null for Session-Manager-only access.
 # key_name = "ecaz-spire-aws-ops"
