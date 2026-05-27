@@ -123,3 +123,14 @@ Acceptance:
   requires the representative performance pass to run the ordered
   preflight/provision/install/verify chain, and the tunneled verify step to run
   load/register/smoke/priority bench/pooling bench/summarize/verify in order.
+- Packet `1028` reran the representative performance preflight at current head
+  and verified zero non-terminated EC2 instances in `us-west-2`. Packet `1029`
+  verified the active `terraform.tfvars` still targets the established
+  Graviton lane (`us-west-2`, `us-west-2a`, `m7g.large`, three remotes), local
+  Terraform state has no managed resources, and the combined preflight passes
+  only when the documented pre-existing S3 bucket residue override is enabled.
+  Without `SPIRE_AWS_ALLOW_PREEXISTING_RESIDUE=1`, permission preflight still
+  fails on old `ecaz-spire-aws-*` buckets because the operator identity lacks
+  `s3:ListBucketVersions`; the next AWS run must either use that reviewed
+  residue exception with packet-local evidence or run after the permission /
+  residue issue is resolved.
