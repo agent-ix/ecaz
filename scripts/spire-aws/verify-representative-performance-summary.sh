@@ -74,7 +74,7 @@ require_awk "production read profile row" "$production_profile" '
 require_awk "pooled and unpooled comparison rows" "$pooling_comparison" '
   function present(v) { return v != "" && v != "null" }
   NR > 1 && ($1 == "disabled" || $1 == "enabled") {
-    if (!(present($8) && present($16) && present($18) && present($19))) {
+    if (!(present($8) && present($15) && present($16) && present($17) && present($18) && present($19))) {
       bad = 1
     }
     if ($1 == "disabled") {
@@ -90,8 +90,18 @@ require_awk "pooling delta improvement row" "$pooling_delta" '
   function present(v) { return v != "" && v != "null" }
   function numeric(v) { return v ~ /^-?[0-9]+([.][0-9]+)?$/ }
   function abs(v) { return v < 0 ? -v : v }
-  NR > 1 && present($6) && present($8) && present($9) && present($21) && present($25) && numeric($6) && numeric($8) && numeric($9) && numeric($21) && numeric($25) {
-    if (($6 + 0) > 0 && ($8 + 0) > 0 && ($9 + 0) > 0 && ($21 + 0) > 0 && abs($25 + 0) <= 0.000001) {
+  NR > 1 &&
+    present($6) && present($8) && present($9) &&
+    present($21) && present($25) && present($29) && present($33) &&
+    numeric($6) && numeric($8) && numeric($9) &&
+    numeric($21) && numeric($25) && numeric($29) && numeric($33) {
+    if (($6 + 0) > 0 &&
+        ($8 + 0) > 0 &&
+        ($9 + 0) > 0 &&
+        ($21 + 0) > 0 &&
+        ($25 + 0) > 0 &&
+        ($29 + 0) > 0 &&
+        abs($33 + 0) <= 0.000001) {
       found = 1
     }
   }
