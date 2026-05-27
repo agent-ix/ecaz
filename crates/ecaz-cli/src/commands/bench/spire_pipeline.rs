@@ -1467,12 +1467,14 @@ struct ProductionReadProfileAggregate {
     socket_open_count_sum: i64,
     candidate_receive_query_count_sum: i64,
     heap_receive_query_count_sum: i64,
+    endpoint_identity_query_count_sum: i64,
     payload_decode_bytes_sum: i64,
     remote_timeout_count_sum: i64,
     remote_cancel_count_sum: i64,
     degraded_skipped_dispatch_count_sum: i64,
     returned_candidate_count_sum: i64,
     connect_elapsed: Vec<Duration>,
+    endpoint_identity_elapsed: Vec<Duration>,
     candidate_receive_elapsed: Vec<Duration>,
     heap_receive_elapsed: Vec<Duration>,
     merge_elapsed: Vec<Duration>,
@@ -1491,6 +1493,7 @@ impl ProductionReadProfileAggregate {
         self.socket_open_count_sum += row.i64_metric("socket_open_count");
         self.candidate_receive_query_count_sum += row.i64_metric("candidate_receive_query_count");
         self.heap_receive_query_count_sum += row.i64_metric("heap_receive_query_count");
+        self.endpoint_identity_query_count_sum += row.i64_metric("endpoint_identity_query_count");
         self.payload_decode_bytes_sum += row.i64_metric("payload_decode_bytes");
         self.remote_timeout_count_sum += row.i64_metric("remote_timeout_count");
         self.remote_cancel_count_sum += row.i64_metric("remote_cancel_count");
@@ -1499,6 +1502,8 @@ impl ProductionReadProfileAggregate {
         self.returned_candidate_count_sum += row.i64_metric("returned_candidate_count");
         self.connect_elapsed
             .push(row.duration_metric("connect_elapsed_ms"));
+        self.endpoint_identity_elapsed
+            .push(row.duration_metric("endpoint_identity_elapsed_ms"));
         self.candidate_receive_elapsed
             .push(row.duration_metric("candidate_receive_elapsed_ms"));
         self.heap_receive_elapsed
@@ -1975,6 +1980,8 @@ fn render_production_read_profile_table(
         "socket_open_sum",
         "connect_p50",
         "connect_p95",
+        "endpoint_identity_p50",
+        "endpoint_identity_p95",
         "candidate_p50",
         "candidate_p95",
         "heap_p50",
@@ -1985,6 +1992,7 @@ fn render_production_read_profile_table(
         "total_p95",
         "candidate_query_sum",
         "heap_query_sum",
+        "endpoint_identity_query_sum",
         "payload_bytes_sum",
         "timeout_sum",
         "cancel_sum",
@@ -1993,6 +2001,7 @@ fn render_production_read_profile_table(
     ]);
     for (nprobe, aggregate) in rows {
         let connect = summarize_durations(&aggregate.connect_elapsed);
+        let endpoint_identity = summarize_durations(&aggregate.endpoint_identity_elapsed);
         let candidate = summarize_durations(&aggregate.candidate_receive_elapsed);
         let heap = summarize_durations(&aggregate.heap_receive_elapsed);
         let merge = summarize_durations(&aggregate.merge_elapsed);
@@ -2008,6 +2017,8 @@ fn render_production_read_profile_table(
             Cell::new(aggregate.socket_open_count_sum),
             Cell::new(format_duration_ms(connect.p50)),
             Cell::new(format_duration_ms(connect.p95)),
+            Cell::new(format_duration_ms(endpoint_identity.p50)),
+            Cell::new(format_duration_ms(endpoint_identity.p95)),
             Cell::new(format_duration_ms(candidate.p50)),
             Cell::new(format_duration_ms(candidate.p95)),
             Cell::new(format_duration_ms(heap.p50)),
@@ -2018,6 +2029,7 @@ fn render_production_read_profile_table(
             Cell::new(format_duration_ms(total.p95)),
             Cell::new(aggregate.candidate_receive_query_count_sum),
             Cell::new(aggregate.heap_receive_query_count_sum),
+            Cell::new(aggregate.endpoint_identity_query_count_sum),
             Cell::new(aggregate.payload_decode_bytes_sum),
             Cell::new(aggregate.remote_timeout_count_sum),
             Cell::new(aggregate.remote_cancel_count_sum),
@@ -2388,12 +2400,14 @@ mod tests {
                 ("dispatch_count".into(), "2".into()),
                 ("socket_open_count".into(), "2".into()),
                 ("connect_elapsed_ms".into(), "1".into()),
+                ("endpoint_identity_elapsed_ms".into(), "2".into()),
                 ("candidate_receive_elapsed_ms".into(), "5".into()),
                 ("heap_receive_elapsed_ms".into(), "7".into()),
                 ("merge_elapsed_ms".into(), "1".into()),
                 ("total_elapsed_ms".into(), "10".into()),
                 ("candidate_receive_query_count".into(), "2".into()),
                 ("heap_receive_query_count".into(), "2".into()),
+                ("endpoint_identity_query_count".into(), "2".into()),
                 ("payload_decode_bytes".into(), "256".into()),
                 ("remote_timeout_count".into(), "0".into()),
                 ("remote_cancel_count".into(), "0".into()),
@@ -2407,6 +2421,7 @@ mod tests {
         let rendered = render_production_read_profile_table(&rows);
         assert!(rendered.contains("Production read profile"));
         assert!(rendered.contains("connect_p95"));
+        assert!(rendered.contains("endpoint_identity_query_sum"));
         assert!(rendered.contains("remote_heap_candidates"));
         assert!(rendered.contains("payload_bytes_sum"));
         assert!(rendered.contains("256"));

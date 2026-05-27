@@ -77,7 +77,7 @@ pooling_delta_out="${output_dir}/representative-pooling-delta-summary.tsv"
 } > "$latency_recall_out"
 
 {
-  printf 'step\tnprobe\tprofiles\tstatus\tresult_source\tdispatch_sum\tsocket_open_sum\tconnect_p50\tconnect_p95\tcandidate_p50\tcandidate_p95\theap_p50\theap_p95\tmerge_p50\tmerge_p95\ttotal_p50\ttotal_p95\ttimeout_sum\tcancel_sum\tdegraded_skip_sum\treturned_sum\n'
+  printf 'step\tnprobe\tprofiles\tstatus\tresult_source\tdispatch_sum\tsocket_open_sum\tconnect_p50\tconnect_p95\tendpoint_identity_p50\tendpoint_identity_p95\tcandidate_p50\tcandidate_p95\theap_p50\theap_p95\tmerge_p50\tmerge_p95\ttotal_p50\ttotal_p95\tcandidate_query_sum\theap_query_sum\tendpoint_identity_query_sum\tpayload_bytes_sum\ttimeout_sum\tcancel_sum\tdegraded_skip_sum\treturned_sum\n'
   jq -r '
     select(.kind == "spire-pipeline" and .metric == "spire-pipeline" and (.values.socket_open_sum? != null))
     | [
@@ -90,6 +90,8 @@ pooling_delta_out="${output_dir}/representative-pooling-delta-summary.tsv"
         (.values.socket_open_sum // ""),
         (.values.connect_p50 // ""),
         (.values.connect_p95 // ""),
+        (.values.endpoint_identity_p50 // ""),
+        (.values.endpoint_identity_p95 // ""),
         (.values.candidate_p50 // ""),
         (.values.candidate_p95 // ""),
         (.values.heap_p50 // ""),
@@ -98,6 +100,10 @@ pooling_delta_out="${output_dir}/representative-pooling-delta-summary.tsv"
         (.values.merge_p95 // ""),
         (.values.total_p50 // ""),
         (.values.total_p95 // ""),
+        (.values.candidate_query_sum // ""),
+        (.values.heap_query_sum // ""),
+        (.values.endpoint_identity_query_sum // ""),
+        (.values.payload_bytes_sum // ""),
         (.values.timeout_sum // ""),
         (.values.cancel_sum // ""),
         (.values.degraded_skip_sum // ""),
@@ -107,7 +113,7 @@ pooling_delta_out="${output_dir}/representative-pooling-delta-summary.tsv"
 } > "$profile_out"
 
 {
-  printf 'mode\tstep\tnprobe\tprofiles\tstatus\tresult_source\tdispatch_sum\tsocket_open_sum\tconnect_p50\tconnect_p95\ttotal_p50\ttotal_p95\tlatency_p50\tlatency_p95\tlatency_p99\trecall_at_k\n'
+  printf 'mode\tstep\tnprobe\tprofiles\tstatus\tresult_source\tdispatch_sum\tsocket_open_sum\tconnect_p50\tconnect_p95\tendpoint_identity_p50\tendpoint_identity_p95\ttotal_p50\ttotal_p95\tlatency_p50\tlatency_p95\tlatency_p99\trecall_at_k\tendpoint_identity_query_sum\n'
   jq -r '
     select(.kind == "spire-pipeline" and .metric == "spire-pipeline")
     | (
@@ -129,12 +135,15 @@ pooling_delta_out="${output_dir}/representative-pooling-delta-summary.tsv"
         (.values.socket_open_sum // ""),
         (.values.connect_p50 // ""),
         (.values.connect_p95 // ""),
+        (.values.endpoint_identity_p50 // ""),
+        (.values.endpoint_identity_p95 // ""),
         (.values.total_p50 // ""),
         (.values.total_p95 // ""),
         (.values.latency_p50 // ""),
         (.values.latency_p95 // ""),
         (.values.latency_p99 // ""),
-        (.values["recall@k"] // "")
+        (.values["recall@k"] // ""),
+        (.values.endpoint_identity_query_sum // "")
       ] | @tsv
   ' "$pooling_results"
 } > "$pooling_out"
@@ -160,8 +169,11 @@ jq -s -r '
       recall_at_k: parse_num("recall@k"),
       socket_open_sum: parse_num("socket_open_sum"),
       dispatch_sum: parse_num("dispatch_sum"),
+      endpoint_identity_query_sum: parse_num("endpoint_identity_query_sum"),
       connect_p50_ms: parse_ms("connect_p50"),
       connect_p95_ms: parse_ms("connect_p95"),
+      endpoint_identity_p50_ms: parse_ms("endpoint_identity_p50"),
+      endpoint_identity_p95_ms: parse_ms("endpoint_identity_p95"),
       total_p50_ms: parse_ms("total_p50"),
       total_p95_ms: parse_ms("total_p95")
     };
@@ -176,8 +188,11 @@ jq -s -r '
       | (if $row.recall_at_k != null then .recall_at_k = $row.recall_at_k else . end)
       | (if $row.socket_open_sum != null then .socket_open_sum = $row.socket_open_sum else . end)
       | (if $row.dispatch_sum != null then .dispatch_sum = $row.dispatch_sum else . end)
+      | (if $row.endpoint_identity_query_sum != null then .endpoint_identity_query_sum = $row.endpoint_identity_query_sum else . end)
       | (if $row.connect_p50_ms != null then .connect_p50_ms = $row.connect_p50_ms else . end)
       | (if $row.connect_p95_ms != null then .connect_p95_ms = $row.connect_p95_ms else . end)
+      | (if $row.endpoint_identity_p50_ms != null then .endpoint_identity_p50_ms = $row.endpoint_identity_p50_ms else . end)
+      | (if $row.endpoint_identity_p95_ms != null then .endpoint_identity_p95_ms = $row.endpoint_identity_p95_ms else . end)
       | (if $row.total_p50_ms != null then .total_p50_ms = $row.total_p50_ms else . end)
       | (if $row.total_p95_ms != null then .total_p95_ms = $row.total_p95_ms else . end)
     );
@@ -202,6 +217,11 @@ jq -s -r '
     "enabled_socket_open_sum",
     "socket_open_delta",
     "socket_open_reduction_pct",
+    "disabled_endpoint_identity_query_sum",
+    "enabled_endpoint_identity_query_sum",
+    "endpoint_identity_query_delta",
+    "disabled_endpoint_identity_p95_ms",
+    "enabled_endpoint_identity_p95_ms",
     "disabled_connect_p95_ms",
     "enabled_connect_p95_ms",
     "connect_p95_delta_ms",
@@ -241,6 +261,11 @@ jq -s -r '
         (.enabled.socket_open_sum | fmt),
         (delta(.disabled; .enabled; "socket_open_sum") | fmt),
         (pct(.disabled; .enabled; "socket_open_sum") | fmt),
+        (.disabled.endpoint_identity_query_sum | fmt),
+        (.enabled.endpoint_identity_query_sum | fmt),
+        (delta(.disabled; .enabled; "endpoint_identity_query_sum") | fmt),
+        (.disabled.endpoint_identity_p95_ms | fmt),
+        (.enabled.endpoint_identity_p95_ms | fmt),
         (.disabled.connect_p95_ms | fmt),
         (.enabled.connect_p95_ms | fmt),
         (delta(.disabled; .enabled; "connect_p95_ms") | fmt),
