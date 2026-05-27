@@ -295,7 +295,7 @@ case "$TIER" in
       --output-dir "$WORK_DIR/qdrant-dbpedia/"
     "$ECAZ_BIN" corpus prepare \
       --profile "$PREPARED_PREFIX" \
-      --parquet "$WORK_DIR/qdrant-dbpedia/data/0000.parquet" \
+      --parquet "$WORK_DIR/qdrant-dbpedia/data" \
       --output-dir "$WORK_DIR/qdrant-dbpedia/prepared/" \
       --dim 1536 \
       --source-dataset qdrant-dbpedia-openai3-large-1536-1m
