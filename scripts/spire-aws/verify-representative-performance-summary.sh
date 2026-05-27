@@ -39,6 +39,8 @@ pooling_comparison="representative-pooling-comparison.tsv"
 pooling_delta="representative-pooling-delta-summary.tsv"
 priority_suite="suite-representative-priority.json"
 pooling_suite="suite-representative-pooling.json"
+recall_floor_nprobe="${SPIRE_AWS_REPRESENTATIVE_RECALL_FLOOR_NPROBE:-32}"
+recall_floor="${SPIRE_AWS_REPRESENTATIVE_RECALL_FLOOR:-0.95}"
 
 require_file "$latency_recall"
 require_file "$production_profile"
@@ -47,6 +49,46 @@ require_file "$pooling_delta"
 require_file "$priority_suite"
 require_file "$pooling_suite"
 require_jq
+
+jq -e --arg nprobe "$recall_floor_nprobe" --argjson floor "$recall_floor" '
+  any(.thresholds[];
+    .step == "13a3a-recall-k10"
+    and .metric == "recall"
+    and .field == "recall@k"
+    and .op == "gte"
+    and .value >= $floor
+    and .filters.nprobe == $nprobe
+  )
+  and any(.thresholds[];
+    .step == "13e3-production-read-profile-k10"
+    and .metric == "spire-pipeline"
+    and .field == "recall@k"
+    and .op == "gte"
+    and .value >= $floor
+    and .filters.nprobe == $nprobe
+  )
+' "$artifact_dir/$priority_suite" >/dev/null ||
+  fail "representative priority suite must gate recall@k >= $recall_floor at nprobe=$recall_floor_nprobe"
+
+jq -e --arg nprobe "$recall_floor_nprobe" --argjson floor "$recall_floor" '
+  any(.thresholds[];
+    .step == "13e4-pooling-disabled-profile-k10"
+    and .metric == "spire-pipeline"
+    and .field == "recall@k"
+    and .op == "gte"
+    and .value >= $floor
+    and .filters.nprobe == $nprobe
+  )
+  and any(.thresholds[];
+    .step == "13e4-pooling-enabled-profile-k10"
+    and .metric == "spire-pipeline"
+    and .field == "recall@k"
+    and .op == "gte"
+    and .value >= $floor
+    and .filters.nprobe == $nprobe
+  )
+' "$artifact_dir/$pooling_suite" >/dev/null ||
+  fail "representative pooling suite must gate recall@k >= $recall_floor at nprobe=$recall_floor_nprobe"
 
 expected_nprobes="$(
   jq -r '
@@ -127,6 +169,18 @@ require_awk "representative recall@k rows for all priority nprobe values" "$late
     }
   }
 '
+
+awk -F '\t' -v nprobe="$recall_floor_nprobe" -v floor="$recall_floor" '
+  function numeric(v) { return v ~ /^-?[0-9]+([.][0-9]+)?$/ }
+  NR > 1 && $1 == "recall" && $4 == nprobe && numeric($9) && ($9 + 0) >= floor {
+    recall = 1
+  }
+  NR > 1 && $1 == "spire-pipeline" && $4 == nprobe && numeric($9) && ($9 + 0) >= floor {
+    pipeline = 1
+  }
+  END { exit(recall && pipeline ? 0 : 1) }
+' "$artifact_dir/$latency_recall" ||
+  fail "representative recall floor not met at nprobe=$recall_floor_nprobe floor=$recall_floor"
 
 require_awk "production SPIRE pipeline latency and recall rows for all priority nprobe values" "$latency_recall" '
   function present(v) { return v != "" && v != "null" }
@@ -222,6 +276,17 @@ require_awk "pooling delta improvement row" "$pooling_delta" '
     }
   }
 '
+
+awk -F '\t' -v nprobe="$recall_floor_nprobe" -v floor="$recall_floor" '
+  function numeric(v) { return v ~ /^-?[0-9]+([.][0-9]+)?$/ }
+  NR > 1 && $1 == nprobe &&
+    numeric($31) && numeric($32) &&
+    ($31 + 0) >= floor && ($32 + 0) >= floor {
+    passed = 1
+  }
+  END { exit(passed ? 0 : 1) }
+' "$artifact_dir/$pooling_delta" ||
+  fail "representative pooling recall floor not met at nprobe=$recall_floor_nprobe floor=$recall_floor"
 
 printf 'representative performance summary verified: %s nprobes=[%s]\n' \
   "$artifact_dir" \

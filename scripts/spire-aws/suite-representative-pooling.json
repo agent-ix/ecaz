@@ -8,6 +8,30 @@
     "seed": 42,
     "pg": 18
   },
+  "thresholds": [
+    {
+      "name": "representative-pooling-disabled-k10-nprobe32-recall-floor",
+      "step": "13e4-pooling-disabled-profile-k10",
+      "metric": "spire-pipeline",
+      "filters": {
+        "nprobe": "32"
+      },
+      "field": "recall@k",
+      "op": "gte",
+      "value": 0.95
+    },
+    {
+      "name": "representative-pooling-enabled-k10-nprobe32-recall-floor",
+      "step": "13e4-pooling-enabled-profile-k10",
+      "metric": "spire-pipeline",
+      "filters": {
+        "nprobe": "32"
+      },
+      "field": "recall@k",
+      "op": "gte",
+      "value": 0.95
+    }
+  ],
   "steps": [
     {
       "kind": "spire-pipeline",

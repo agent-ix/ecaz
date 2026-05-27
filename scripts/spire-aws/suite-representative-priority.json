@@ -8,6 +8,30 @@
     "seed": 42,
     "pg": 18
   },
+  "thresholds": [
+    {
+      "name": "representative-recall-k10-nprobe32-floor",
+      "step": "13a3a-recall-k10",
+      "metric": "recall",
+      "filters": {
+        "nprobe": "32"
+      },
+      "field": "recall@k",
+      "op": "gte",
+      "value": 0.95
+    },
+    {
+      "name": "representative-production-read-k10-nprobe32-recall-floor",
+      "step": "13e3-production-read-profile-k10",
+      "metric": "spire-pipeline",
+      "filters": {
+        "nprobe": "32"
+      },
+      "field": "recall@k",
+      "op": "gte",
+      "value": 0.95
+    }
+  ],
   "steps": [
     {
       "kind": "recall",

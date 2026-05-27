@@ -82,7 +82,7 @@ require_make_target_order() {
 
 run_summary_gate_self_check() {
   local parent_dir="${SPIRE_AWS_REPRESENTATIVE_PREFLIGHT_WORKDIR:-$repo_root/target}"
-  local work_dir sample_input sample_output bad_summary
+  local work_dir sample_input sample_output bad_summary bad_recall_summary
 
   mkdir -p "$parent_dir"
   work_dir="$(mktemp -d "$parent_dir/spire-representative-preflight.XXXXXX")"
@@ -91,7 +91,8 @@ run_summary_gate_self_check() {
   sample_input="$work_dir/sample-input"
   sample_output="$work_dir/sample-output"
   bad_summary="$work_dir/bad-summary"
-  mkdir -p "$sample_input" "$sample_output" "$bad_summary"
+  bad_recall_summary="$work_dir/bad-recall-summary"
+  mkdir -p "$sample_input" "$sample_output" "$bad_summary" "$bad_recall_summary"
 
   cat > "$sample_input/suite-results-representative-priority.jsonl" <<'JSONL'
 {"kind":"latency","metric":"latency","step":"13a3a-latency-k10-c1","values":{"nprobe":8,"count":1000,"p50":"10.0 ms","p95":"20.0 ms","p99":"30.0 ms"}}
@@ -127,12 +128,23 @@ JSONL
   "$verifier" "$sample_output" >/dev/null
 
   cp "$sample_output"/representative-*.tsv "$bad_summary"/
+  cp "$sample_output"/suite-representative-*.json "$bad_summary"/
   awk 'BEGIN{FS=OFS="\t"} NR==1 {print; next} {$29=0; print}' \
     "$sample_output/representative-pooling-delta-summary.tsv" \
     > "$bad_summary/representative-pooling-delta-summary.tsv"
 
   if "$verifier" "$bad_summary" >/dev/null 2>&1; then
     die "representative summary verifier accepted missing p99 pooling latency improvement"
+  fi
+
+  cp "$sample_output"/representative-*.tsv "$bad_recall_summary"/
+  cp "$sample_output"/suite-representative-*.json "$bad_recall_summary"/
+  awk 'BEGIN{FS=OFS="\t"} NR==1 {print; next} ($1 == "recall" || $1 == "spire-pipeline") && $4 == 32 {$9=0.5} {print}' \
+    "$sample_output/representative-latency-recall-summary.tsv" \
+    > "$bad_recall_summary/representative-latency-recall-summary.tsv"
+
+  if "$verifier" "$bad_recall_summary" >/dev/null 2>&1; then
+    die "representative summary verifier accepted recall below the representative floor"
   fi
 }
 
@@ -163,6 +175,24 @@ require_jq "representative priority suite production profile coverage" "$priorit
      and .production_read_only == true
      and (.queries_limit // 0) >= 1000)] | length >= 1
 '
+require_jq "representative priority suite recall thresholds" "$priority_suite" '
+  any(.thresholds[];
+    .step == "13a3a-recall-k10"
+    and .metric == "recall"
+    and .field == "recall@k"
+    and .op == "gte"
+    and .filters.nprobe == "32"
+    and .value >= 0.95
+  )
+  and any(.thresholds[];
+    .step == "13e3-production-read-profile-k10"
+    and .metric == "spire-pipeline"
+    and .field == "recall@k"
+    and .op == "gte"
+    and .filters.nprobe == "32"
+    and .value >= 0.95
+  )
+'
 require_jq "representative pooling suite disabled profile" "$pooling_suite" '
   [.steps[]
    | select(.kind == "spire-pipeline"
@@ -174,6 +204,24 @@ require_jq "representative pooling suite disabled profile" "$pooling_suite" '
      and .include_production_read_profile == true
      and .production_read_only == true
      and (.queries_limit // 0) >= 1000)] | length >= 1
+'
+require_jq "representative pooling suite recall thresholds" "$pooling_suite" '
+  any(.thresholds[];
+    .step == "13e4-pooling-disabled-profile-k10"
+    and .metric == "spire-pipeline"
+    and .field == "recall@k"
+    and .op == "gte"
+    and .filters.nprobe == "32"
+    and .value >= 0.95
+  )
+  and any(.thresholds[];
+    .step == "13e4-pooling-enabled-profile-k10"
+    and .metric == "spire-pipeline"
+    and .field == "recall@k"
+    and .op == "gte"
+    and .filters.nprobe == "32"
+    and .value >= 0.95
+  )
 '
 require_jq "representative pooling suite enabled profile" "$pooling_suite" '
   [.steps[]
