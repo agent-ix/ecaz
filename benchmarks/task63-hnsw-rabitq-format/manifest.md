@@ -31,6 +31,8 @@ DiskANN benchmark packets and stages it under
 - Recall: report recall@10 for all three formats at matched `ef_search`.
 - Latency: report p50/p95/p99 latency for all three formats at matched
   `ef_search` after the recall pass has warmed the cache.
+- Build time: use the six `load-*` logs and the `load_timing` /
+  `build_index` rows in `results.jsonl` or `results-report.jsonl`.
 - Storage: record `ecaz bench storage` output for all six prefixes.
 - Decision: record the recommended RaBitQ operating point, or mark the format
   experimental/shelved if the measured recall/storage tradeoff is not useful.
@@ -84,6 +86,8 @@ Final packet evidence should include:
 - `artifacts/suite-manifest.json`
 - `artifacts/results.jsonl` from `suite run`
 - `artifacts/results-report.jsonl` from `suite report`
+- the six load logs for 50k and 100k; these are the durable source for
+  per-format build times via `[loader] built ... in ...`
 - the six storage logs for 50k and 100k
 - the six recall logs for 50k and 100k
 - the six latency logs for 50k and 100k
