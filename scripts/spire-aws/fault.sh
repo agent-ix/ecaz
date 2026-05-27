@@ -21,17 +21,44 @@ REMOTE_INDEX="${REMOTE_INDEX:-${PREFIX}_remote_idx}"
 TARGET_REMOTE_ID=$(jq -r '.remotes[0].instance_id' "$TOPOLOGY")
 TARGET_NODE_ID=$(jq -r '.remotes[0].node_id' "$TOPOLOGY")
 TARGET_SECRET=$(jq -r '.remotes[0].secret_arn' "$TOPOLOGY")
+TARGET_REMOTE_HOST=$(jq -r '.remotes[0].operator_host // .remotes[0].private_ip' "$TOPOLOGY")
+TARGET_REMOTE_PORT=$(jq -r '.remotes[0].operator_port // 5432' "$TOPOLOGY")
 LOG="$ARTIFACT_DIR/fault-${DRILL}.log"
 ECAZ_BIN="${ECAZ_BIN:-ecaz}"
 FAULT_NPROBE="${SPIRE_AWS_FAULT_NPROBE:-100}"
+REMOTE_SQL_READY_TIMEOUT_SECONDS="${SPIRE_AWS_REMOTE_SQL_READY_TIMEOUT_SECONDS:-300}"
 REMOTE_STOPPED=0
 RESTORE_STRICT_ON_EXIT=0
 QUERY_VECTOR_LITERAL=""
+
+wait_remote_sql_ready() {
+  local deadline attempt status
+  deadline=$((SECONDS + REMOTE_SQL_READY_TIMEOUT_SECONDS))
+  attempt=0
+  while (( SECONDS < deadline )); do
+    attempt=$((attempt + 1))
+    status=0
+    "$ECAZ_BIN" dev sql \
+      --host "$TARGET_REMOTE_HOST" --port "$TARGET_REMOTE_PORT" --user ecaz_coord --database postgres \
+      --sql "SELECT 1" \
+      --log-output "$ARTIFACT_DIR/fault-${DRILL}-remote-${TARGET_NODE_ID}-sql-ready-attempt-${attempt}.log" \
+      >/dev/null 2>&1 || status=$?
+    if [[ "$status" -eq 0 ]]; then
+      echo "remote node ${TARGET_NODE_ID} SQL ready after ${attempt} attempt(s)" | tee -a "$LOG"
+      return 0
+    fi
+    sleep 5
+  done
+
+  echo "remote node ${TARGET_NODE_ID} SQL did not become ready within ${REMOTE_SQL_READY_TIMEOUT_SECONDS}s" | tee -a "$LOG" >&2
+  return 1
+}
 
 restart_remote_if_needed() {
   if [[ "$REMOTE_STOPPED" == "1" ]]; then
     aws ec2 start-instances --region "$REGION" --instance-ids "$TARGET_REMOTE_ID" | tee -a "$LOG"
     aws ec2 wait instance-running --region "$REGION" --instance-ids "$TARGET_REMOTE_ID"
+    wait_remote_sql_ready
     REMOTE_STOPPED=0
   fi
 }
