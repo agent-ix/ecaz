@@ -1,5 +1,7 @@
 use super::{options, page};
 
+pub(crate) const HNSW_RABITQ_BITS: u8 = 1;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum HnswStorageCodec {
     TurboQuant,
@@ -88,10 +90,10 @@ impl HnswStorageCodec {
                 transform_kind: page::TransformKind::Srht,
                 search_codec_kind: page::SearchCodecKind::RaBitQ,
                 payload_flags: page::PAYLOAD_FLAG_COLD_RERANK_PAYLOAD,
-                search_bits: crate::DEFAULT_QUANT_BITS,
+                search_bits: HNSW_RABITQ_BITS,
                 rerank_codec_kind: page::RerankCodecKind::ScalarQuantized,
                 search_subvector_count: 0,
-                search_subvector_dim: u16::from(crate::DEFAULT_QUANT_BITS),
+                search_subvector_dim: u16::from(HNSW_RABITQ_BITS),
                 grouped_codebook_head: page::ItemPointer::INVALID,
             },
         }
@@ -166,6 +168,8 @@ mod tests {
         let rabitq = HnswStorageCodec::RaBitQ.initial_metadata(8, 64);
         assert_eq!(rabitq.format_version, page::INDEX_FORMAT_V4_RABITQ);
         assert_eq!(rabitq.search_codec_kind, page::SearchCodecKind::RaBitQ);
+        assert_eq!(rabitq.search_bits, HNSW_RABITQ_BITS);
+        assert_eq!(rabitq.search_subvector_dim, u16::from(HNSW_RABITQ_BITS));
         assert_eq!(
             rabitq.rerank_codec_kind,
             page::RerankCodecKind::ScalarQuantized

@@ -2369,8 +2369,11 @@
             decode_grouped_index_elements_and_neighbors(index_oid);
         assert_eq!(metadata.format_version, am::page::INDEX_FORMAT_V4_RABITQ);
         assert_eq!(metadata.search_codec_kind, am::page::SearchCodecKind::RaBitQ);
+        assert_eq!(metadata.search_bits, 1);
+        assert_eq!(metadata.search_subvector_dim, 1);
         assert_eq!(metadata.grouped_codebook_head, am::page::ItemPointer::INVALID);
         assert_eq!(layout.binary_word_count, 0);
+        assert_eq!(layout.search_code_len, crate::quant::rabitq::code_len_for(4, 1).unwrap());
         assert_eq!(elements.len(), 8);
         assert!(
             elements

@@ -1671,10 +1671,10 @@ fn rabitq_flush_output(
             transform_kind: page::TransformKind::Srht,
             search_codec_kind: page::SearchCodecKind::RaBitQ,
             payload_flags: page::PAYLOAD_FLAG_COLD_RERANK_PAYLOAD,
-            search_bits: crate::DEFAULT_QUANT_BITS,
+            search_bits: codec::HNSW_RABITQ_BITS,
             rerank_codec_kind: page::RerankCodecKind::ScalarQuantized,
             search_subvector_count: 0,
-            search_subvector_dim: u16::from(crate::DEFAULT_QUANT_BITS),
+            search_subvector_dim: u16::from(codec::HNSW_RABITQ_BITS),
             grouped_codebook_head: page::ItemPointer::INVALID,
         },
     })
@@ -1693,7 +1693,7 @@ fn derive_rabitq_search_codes_from_sources(
     let quantizer = RaBitQQuantizer::cached_seeded_srht_bits(
         dimensions as usize,
         seed,
-        crate::DEFAULT_QUANT_BITS,
+        codec::HNSW_RABITQ_BITS,
     )?;
     state
         .heap_tuples
@@ -4104,6 +4104,83 @@ mod tests {
         assert!(tuple_tags.contains(&page::TQ_NEIGHBOR_TAG));
         assert!(tuple_tags.contains(&page::TQ_GROUPED_CODEBOOK_TAG));
         assert!(!tuple_tags.contains(&page::TQ_ELEMENT_TAG));
+    }
+
+    #[test]
+    fn rabitq_flush_output_uses_binary_search_codes_and_scalar_rerank() {
+        let seed = 42_u64;
+        let bits = 4_u8;
+        let tuples = (0..16)
+            .map(|i| {
+                let source = (0..16)
+                    .map(|dim| ((i * 23 + dim) as f32 * 0.04).sin())
+                    .collect::<Vec<_>>();
+                BuildTuple {
+                    heap_tids: vec![page::ItemPointer {
+                        block_number: 1,
+                        offset_number: (i + 1) as u16,
+                    }],
+                    dimensions: 16,
+                    bits,
+                    seed,
+                    gamma: 0.05 * i as f32,
+                    code: encoded_code(&source, bits, seed),
+                    source_vector: Some(source),
+                    source_count: 1,
+                }
+            })
+            .collect::<Vec<_>>();
+        let state = BuildState {
+            options: options::TqHnswOptions {
+                m: 2,
+                ef_construction: 32,
+                ef_search: 40,
+                build_source_column: Some("source".to_owned()),
+                rerank_source_column: None,
+                storage_format: options::StorageFormat::RaBitQ,
+            },
+            indexed_vector_kind: source::IndexedVectorKind::Ecvector,
+            page_size: pg_sys::BLCKSZ as usize,
+            scanned_tuples: tuples.len(),
+            heap_tuples: tuples,
+            tuple_index_by_payload: HashMap::new(),
+            dimensions: Some(16),
+            bits: Some(bits),
+            seed: Some(seed),
+        };
+
+        let output = default_rabitq_flush_output(&state).unwrap();
+
+        assert_eq!(output.metadata.format_version, page::INDEX_FORMAT_V4_RABITQ);
+        assert_eq!(
+            output.metadata.search_codec_kind,
+            page::SearchCodecKind::RaBitQ
+        );
+        assert_eq!(output.metadata.search_bits, codec::HNSW_RABITQ_BITS);
+        assert_eq!(
+            output.metadata.search_subvector_dim,
+            u16::from(codec::HNSW_RABITQ_BITS)
+        );
+        assert_eq!(output.metadata.search_subvector_count, 0);
+        assert_eq!(
+            output.metadata.rerank_codec_kind,
+            page::RerankCodecKind::ScalarQuantized
+        );
+        assert_eq!(
+            output.metadata.grouped_codebook_head,
+            page::ItemPointer::INVALID
+        );
+
+        let layout = graph::GraphStorageDescriptor::from_metadata(&output.metadata).unwrap();
+        assert_eq!(
+            layout,
+            graph::GraphStorageDescriptor::RaBitQ(graph::PqFastScanLayout {
+                binary_word_count: 0,
+                search_code_len: crate::quant::rabitq::code_len_for(16, codec::HNSW_RABITQ_BITS)
+                    .unwrap(),
+                rerank_code_len: crate::code_len(16, bits),
+            })
+        );
     }
 
     #[test]
