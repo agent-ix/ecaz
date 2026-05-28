@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run an AWS verification pass with teardown on exit and a detached timeout guard.
+# Run an AWS verification pass with a detached timeout guard.
 
 set -euo pipefail
 
@@ -87,6 +87,16 @@ if [[ ! "$timeout_seconds" =~ ^[0-9]+$ ]] || ((timeout_seconds <= 0)); then
   exit 2
 fi
 
+teardown_on_exit="${SPIRE_AWS_TEARDOWN_ON_EXIT:-success}"
+case "$teardown_on_exit" in
+  always|success|never)
+    ;;
+  *)
+    printf 'ERROR: SPIRE_AWS_TEARDOWN_ON_EXIT must be always, success, or never; got: %s\n' "$teardown_on_exit" >&2
+    exit 2
+    ;;
+esac
+
 mkdir -p "$artifact_dir"
 log_file="$artifact_dir/aws-pass-watchdog.log"
 done_file="$artifact_dir/.aws-pass-watchdog.done"
@@ -124,7 +134,21 @@ cleanup() {
   trap - EXIT INT TERM HUP
   touch "$done_file"
   stop_watchdog
-  teardown_once "$aws_dir" "$artifact_dir" "$log_file" "$lock_dir" || rc=$?
+  case "$teardown_on_exit" in
+    always)
+      teardown_once "$aws_dir" "$artifact_dir" "$log_file" "$lock_dir" || rc=$?
+      ;;
+    success)
+      if ((rc == 0)); then
+        teardown_once "$aws_dir" "$artifact_dir" "$log_file" "$lock_dir" || rc=$?
+      else
+        log_line "$log_file" "$target failed with status $rc; preserving AWS resources for in-place diagnosis"
+      fi
+      ;;
+    never)
+      log_line "$log_file" "SPIRE_AWS_TEARDOWN_ON_EXIT=never; preserving AWS resources"
+      ;;
+  esac
   log_line "$log_file" "$target exiting with status $rc"
   exit "$rc"
 }

@@ -55,7 +55,7 @@ export SPIRE_AWS_DIR REPO_ROOT ARTIFACT_DIR TOPOLOGY PACKAGE_TARBALL
 export ECAZ_BIN WORK_DIR
 export ECAZ_SPIRE_AWS_TARBALL_PATH ?= $(PACKAGE_TARBALL)
 
-.PHONY: preflight preflight-operator preflight-state preflight-permissions preflight-representative-performance mark-representative-performance-start confirm-provision archive-local-state cleanup-residue provision topology setup package-extension install-extension install configure-pg-hba register-remotes register register-correctness register-representative register-stress \
+.PHONY: preflight preflight-operator preflight-state preflight-permissions preflight-representative-performance mark-representative-performance-start confirm-provision archive-local-state cleanup-residue build-operator-cli provision topology setup package-extension install-extension install configure-pg-hba register-remotes register register-correctness register-representative register-stress \
         load-correctness load-representative load-stress \
         smoke smoke-correctness smoke-representative smoke-stress \
         bench-correctness bench-representative-priority bench-representative bench-representative-pooling summarize-representative-performance verify-representative-performance-summary bench-stress \
@@ -99,6 +99,9 @@ archive-local-state:
 
 cleanup-residue:
 	cd $(REPO_ROOT) && $(SCRIPTS)/cleanup-residue.sh
+
+build-operator-cli:
+	cd $(REPO_ROOT) && cargo build --release --bin ecaz --package ecaz-cli
 
 provision: confirm-provision preflight-operator preflight-state preflight-permissions
 	@mkdir -p $(ARTIFACT_DIR)
@@ -247,6 +250,7 @@ pass-representative-performance-body:
 	@status=0; \
 	$(MAKE) -C $(SPIRE_AWS_DIR) ARTIFACT_DIR=$(ARTIFACT_DIR) preflight-representative-performance || status=$$?; \
 	if [ $$status -eq 0 ]; then $(MAKE) -C $(SPIRE_AWS_DIR) ARTIFACT_DIR=$(ARTIFACT_DIR) mark-representative-performance-start || status=$$?; fi; \
+	if [ $$status -eq 0 ]; then $(MAKE) -C $(SPIRE_AWS_DIR) ARTIFACT_DIR=$(ARTIFACT_DIR) build-operator-cli || status=$$?; fi; \
 	if [ $$status -eq 0 ]; then $(MAKE) -C $(SPIRE_AWS_DIR) ARTIFACT_DIR=$(ARTIFACT_DIR) provision || status=$$?; fi; \
 	if [ $$status -eq 0 ]; then $(MAKE) -C $(SPIRE_AWS_DIR) ARTIFACT_DIR=$(ARTIFACT_DIR) install-extension || status=$$?; fi; \
 	if [ $$status -eq 0 ]; then $(MAKE) -C $(SPIRE_AWS_DIR) ARTIFACT_DIR=$(ARTIFACT_DIR) verify-representative-performance-tunneled || status=$$?; fi; \

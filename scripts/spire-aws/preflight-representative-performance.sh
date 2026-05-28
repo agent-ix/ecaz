@@ -182,7 +182,7 @@ require_script_contains() {
   local script="$1"
   local expected="$2"
 
-  grep -Fq "$expected" "$script" ||
+  grep -Fq -- "$expected" "$script" ||
     die "script $script must contain $expected"
 }
 
@@ -423,6 +423,7 @@ require_make_target_sequence \
   "pass-representative-performance-body" \
   "preflight-representative-performance" \
   "mark-representative-performance-start" \
+  "build-operator-cli" \
   "provision" \
   "install-extension" \
   "verify-representative-performance-tunneled"
@@ -455,6 +456,8 @@ require_script_contains "$representative_bench_script" "SPIRE_AWS_REPRESENTATIVE
 require_script_contains "$representative_bench_script" "SPIRE_AWS_BENCH_RENDER_SUITE_ONLY"
 require_script_contains "$representative_bench_script" "truth_corpus_file"
 require_script_contains "$representative_bench_script" "truth_cache_file"
+require_script_contains "$smoke_script" "SPIRE_AWS_REPRESENTATIVE_TRUTH_CORPUS_FILE"
+require_script_contains "$smoke_script" "--truth-corpus-file"
 require_script_contains "$smoke_sql" "ORDER BY id"
 require_script_contains "$smoke_sql" "LIMIT 1"
 require_script_contains "$smoke_script" "ORDER BY id LIMIT 1"

@@ -16,6 +16,14 @@ COORD_PORT=$(jq -r '.coordinator.operator_port // 5432' "$TOPOLOGY")
 PREFIX="${PREFIX:-ec_spire_aws_synth_10k}"
 ECAZ_BIN="${ECAZ_BIN:-ecaz}"
 
+truth_args=()
+case "$PREFIX" in
+  ec_spire_aws_repr_1m)
+    truth_corpus_file="${SPIRE_AWS_REPRESENTATIVE_TRUTH_CORPUS_FILE:-${WORK_DIR:-$ARTIFACT_DIR/work}/qdrant-dbpedia/prepared/ec_real_100k_corpus.tsv}"
+    truth_args+=(--truth-corpus-file "$truth_corpus_file")
+    ;;
+esac
+
 "$ECAZ_BIN" dev sql \
   --host "$COORD_HOST" --port "$COORD_PORT" --user ecaz_coord --database postgres \
   --file scripts/spire-aws/smoke-customscan-read.sql \
@@ -35,4 +43,5 @@ ECAZ_BIN="${ECAZ_BIN:-ecaz}"
   --include-cost-snapshot --include-query-metrics \
   --include-recall --include-production-read-profile --production-read-only \
   --remote-tuple-transport pg_binary_attr_v1 --query-metric-k 10 \
+  "${truth_args[@]}" \
   --log-output "$ARTIFACT_DIR/bench-spire-pipeline-smoke.log"
