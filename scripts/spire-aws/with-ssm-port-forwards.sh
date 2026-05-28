@@ -42,17 +42,32 @@ jq \
   "$TOPOLOGY" > "$TUNNELED_TOPOLOGY"
 
 PIDS=()
+stop_tunnel_process() {
+  local pid="$1"
+  local pgid=""
+
+  if [[ -z "$pid" ]]; then
+    return
+  fi
+
+  pgid="$(ps -o pgid= -p "$pid" 2>/dev/null | tr -d ' ' || true)"
+  if [[ -n "$pgid" && "$pgid" == "$pid" ]]; then
+    kill -- "-$pgid" >/dev/null 2>&1 || true
+  else
+    kill "$pid" >/dev/null 2>&1 || true
+  fi
+  wait "$pid" >/dev/null 2>&1 || true
+}
+
 cleanup() {
   local pid pid_file
   for pid in "${PIDS[@]:-}"; do
-    kill "$pid" >/dev/null 2>&1 || true
+    stop_tunnel_process "$pid"
   done
   if [[ -d "$TUNNEL_STATE_DIR" ]]; then
     while IFS= read -r pid_file; do
       pid="$(cat "$pid_file" 2>/dev/null || true)"
-      if [[ -n "$pid" ]]; then
-        kill "$pid" >/dev/null 2>&1 || true
-      fi
+      stop_tunnel_process "$pid"
     done < <(find "$TUNNEL_STATE_DIR" -type f -name '*.pid')
   fi
 }
@@ -64,12 +79,21 @@ start_tunnel() {
   local local_port="$3"
   local log="$ARTIFACT_DIR/tunnel-${label}.log"
 
-  aws ssm start-session \
-    --region "$REGION" \
-    --target "$instance_id" \
-    --document-name AWS-StartPortForwardingSession \
-    --parameters "{\"portNumber\":[\"5432\"],\"localPortNumber\":[\"${local_port}\"]}" \
-    > "$log" 2>&1 &
+  if command -v setsid >/dev/null 2>&1; then
+    setsid aws ssm start-session \
+      --region "$REGION" \
+      --target "$instance_id" \
+      --document-name AWS-StartPortForwardingSession \
+      --parameters "{\"portNumber\":[\"5432\"],\"localPortNumber\":[\"${local_port}\"]}" \
+      > "$log" 2>&1 &
+  else
+    aws ssm start-session \
+      --region "$REGION" \
+      --target "$instance_id" \
+      --document-name AWS-StartPortForwardingSession \
+      --parameters "{\"portNumber\":[\"5432\"],\"localPortNumber\":[\"${local_port}\"]}" \
+      > "$log" 2>&1 &
+  fi
   local pid="$!"
   PIDS+=("$pid")
   printf '%s\n' "$pid" > "$TUNNEL_STATE_DIR/${label}.pid"
