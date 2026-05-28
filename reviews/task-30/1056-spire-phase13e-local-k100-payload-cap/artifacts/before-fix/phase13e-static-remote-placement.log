@@ -1,0 +1,33 @@
+run_dir=/home/peter/dev/ecaz/target/spire-phase13e-static-remote-local-k100-before
+coord_port=39440
+remote1_port=39441
+remote2_port=39442
+remote3_port=39443
+fixture_rows=480
+bench_top_k=100
+bench_queries_limit=1
+bench_sweep=3
+NOTICE:  ec_spire_register_remote_node_descriptor remote node_id 2 reports max_prepared_transactions = 0; coordinator-routed SPIRE writes require max_prepared_transactions > 0 and enough free prepared transaction slots
+NOTICE:  ec_spire_register_remote_node_descriptor remote node_id 3 reports max_prepared_transactions = 0; coordinator-routed SPIRE writes require max_prepared_transactions > 0 and enough free prepared transaction slots
+NOTICE:  ec_spire_register_remote_node_descriptor remote node_id 4 reports max_prepared_transactions = 0; coordinator-routed SPIRE writes require max_prepared_transactions > 0 and enough free prepared transaction slots
+placement_summary=2:1,3:1,4:1
+profile_summary=ready|3|3|3|3|6
+plan=Limit
+  ->  Custom Scan (EcSpireDistributedScan) on ec_spire_phase13e_coord_corpus
+        node: EcSpireDistributedScan
+        remote_fanout: 3
+        tuple_transport_status: ready
+        nprobe: 3
+        rerank_width: 0
+read_rows=1,doc 1
+5,doc 5
+9,doc 9
+13,doc 13
+17,doc 17
+21,doc 21
+exact_rows=1,doc 1
+5,doc 5
+9,doc 9
+13,doc 13
+17,doc 17
+21,doc 21
