@@ -246,7 +246,7 @@ configure_coordinator_remote_conninfo() {
   return "$wait_status"
 }
 
-send_install_command() {
+start_install_command() {
   local instance_id="$1"
   local secret_name="$2"
   local commands_json
@@ -276,10 +276,17 @@ send_install_command() {
     --comment "ecaz Phase 13b.5 install ${instance_id}" \
     --query "Command.CommandId" --output text)
 
-  echo "${instance_id} ssm command id: ${cmd_id}" | tee -a "$ARTIFACT_DIR/install.log"
+  echo "${instance_id} ssm command id: ${cmd_id}" | tee -a "$ARTIFACT_DIR/install.log" >&2
+  printf '%s\n' "$cmd_id"
+}
+
+wait_install_command() {
+  local instance_id="$1"
+  local cmd_id="$2"
   local wait_status=0
   local status="Pending"
   local deadline=$((SECONDS + ${SPIRE_AWS_SSM_TIMEOUT_SECONDS:-3600}))
+
   while (( SECONDS < deadline )); do
     status=$(aws ssm get-command-invocation \
       --region "$REGION" --command-id "$cmd_id" --instance-id "$instance_id" \
@@ -307,6 +314,35 @@ send_install_command() {
   return "$wait_status"
 }
 
+run_install_commands() {
+  local instance_ids=()
+  local secret_names=()
+  local command_ids=()
+  local wait_status=0
+  local i cmd_id
+
+  instance_ids+=("$COORD_ID")
+  secret_names+=("")
+
+  while IFS= read -r remote; do
+    instance_ids+=("$(jq -r '.instance_id' <<< "$remote")")
+    secret_names+=("$(jq -r '.secret_name' <<< "$remote")")
+  done < <(jq -c '.remotes[]' "$TOPOLOGY")
+
+  for ((i = 0; i < ${#instance_ids[@]}; i++)); do
+    cmd_id="$(start_install_command "${instance_ids[$i]}" "${secret_names[$i]}")"
+    command_ids+=("$cmd_id")
+  done
+
+  for ((i = 0; i < ${#instance_ids[@]}; i++)); do
+    if ! wait_install_command "${instance_ids[$i]}" "${command_ids[$i]}"; then
+      wait_status=1
+    fi
+  done
+
+  return "$wait_status"
+}
+
 if [[ "${SPIRE_AWS_INSTALL_SKIP_NODE_BOOTSTRAP:-0}" == "1" ]]; then
   configure_coordinator_remote_conninfo
   exit $?
@@ -314,14 +350,12 @@ fi
 
 coord_ip=$(jq -r '.coordinator.private_ip' "$TOPOLOGY")
 write_tls_bundle "$COORD_ID" "$coord_ip"
-send_install_command "$COORD_ID" ""
 
 jq -c '.remotes[]' "$TOPOLOGY" | while read -r remote; do
   instance_id=$(jq -r '.instance_id' <<< "$remote")
   private_ip=$(jq -r '.private_ip' <<< "$remote")
-  secret_name=$(jq -r '.secret_name' <<< "$remote")
   write_tls_bundle "$instance_id" "$private_ip"
-  send_install_command "$instance_id" "$secret_name"
 done
 
+run_install_commands
 configure_coordinator_remote_conninfo
