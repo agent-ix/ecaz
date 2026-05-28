@@ -156,8 +156,8 @@ pub struct SearchScratch {
     in_frontier: BitSet,
     visited: BitSet,
     seen_candidates: BitSet,
-    heap: BinaryHeap<Reverse<Candidate>>,
-    frontier: Vec<Candidate>,
+    unexpanded: BinaryHeap<Reverse<Candidate>>,
+    retained: BinaryHeap<Candidate>,
     visited_order: Vec<u32>,
 }
 
@@ -167,8 +167,8 @@ impl SearchScratch {
             in_frontier: BitSet::new(node_count),
             visited: BitSet::new(node_count),
             seen_candidates: BitSet::new(node_count),
-            heap: BinaryHeap::with_capacity(list_size.saturating_add(1)),
-            frontier: Vec::with_capacity(list_size.saturating_add(1)),
+            unexpanded: BinaryHeap::with_capacity(list_size.saturating_add(1)),
+            retained: BinaryHeap::with_capacity(list_size.saturating_add(1)),
             visited_order: Vec::with_capacity(list_size),
         }
     }
@@ -176,8 +176,8 @@ impl SearchScratch {
     fn clear_search(&mut self) {
         self.in_frontier.clear();
         self.visited.clear();
-        self.heap.clear();
-        self.frontier.clear();
+        self.unexpanded.clear();
+        self.retained.clear();
         self.visited_order.clear();
     }
 
@@ -310,13 +310,11 @@ where
         node: start,
         distance: start_dist,
     };
-    scratch.frontier.push(start_candidate);
-    scratch.heap.push(Reverse(start_candidate));
-    scratch.in_frontier.insert(start);
+    push_frontier_candidate(scratch, list_size, start_candidate);
 
     loop {
         let next = loop {
-            let Some(Reverse(candidate)) = scratch.heap.pop() else {
+            let Some(Reverse(candidate)) = scratch.unexpanded.pop() else {
                 break None;
             };
             if scratch.in_frontier.contains(candidate.node)
@@ -340,25 +338,50 @@ where
                 node: neighbor,
                 distance: d,
             };
-            scratch.frontier.push(candidate);
-            scratch.heap.push(Reverse(candidate));
-            scratch.in_frontier.insert(neighbor);
-        }
-
-        if scratch.frontier.len() > list_size {
-            scratch.frontier.sort_unstable();
-            for c in &scratch.frontier[list_size..] {
-                scratch.in_frontier.remove(c.node);
-            }
-            scratch.frontier.truncate(list_size);
+            push_frontier_candidate(scratch, list_size, candidate);
         }
     }
 
-    scratch.frontier.sort_unstable();
+    let mut frontier: Vec<Candidate> = scratch
+        .retained
+        .iter()
+        .copied()
+        .filter(|candidate| scratch.in_frontier.contains(candidate.node))
+        .collect();
+    frontier.sort_unstable();
     GreedySearchResult {
-        frontier: scratch.frontier.clone(),
+        frontier,
         visited: scratch.visited_order.clone(),
     }
+}
+
+fn push_frontier_candidate(scratch: &mut SearchScratch, list_size: usize, candidate: Candidate) {
+    if list_size == 0 || scratch.in_frontier.contains(candidate.node) {
+        return;
+    }
+
+    if scratch.retained.len() < list_size {
+        scratch.in_frontier.insert(candidate.node);
+        scratch.retained.push(candidate);
+        scratch.unexpanded.push(Reverse(candidate));
+        return;
+    }
+
+    let Some(&worst) = scratch.retained.peek() else {
+        return;
+    };
+    if candidate >= worst {
+        return;
+    }
+
+    let evicted = scratch
+        .retained
+        .pop()
+        .expect("peeked retained frontier should be poppable");
+    scratch.in_frontier.remove(evicted.node);
+    scratch.in_frontier.insert(candidate.node);
+    scratch.retained.push(candidate);
+    scratch.unexpanded.push(Reverse(candidate));
 }
 
 /// α-pruning: select up to `max_degree` neighbors from `candidates` for
