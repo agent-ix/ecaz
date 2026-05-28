@@ -13,6 +13,8 @@ allow_preexisting_residue=1
 run_preflight=1
 reuse_artifact_dir="${SPIRE_AWS_REUSE_ARTIFACT_DIR:-0}"
 reserve_artifact_dir=0
+refresh_auto_stop="${SPIRE_AWS_REFRESH_AUTO_STOP_AT:-1}"
+auto_stop_hours="${SPIRE_AWS_AUTO_STOP_HOURS:-8}"
 
 usage() {
   cat <<'EOF'
@@ -27,6 +29,9 @@ Options:
   --strict-residue      Do not set SPIRE_AWS_ALLOW_PREEXISTING_RESIDUE=1.
   --skip-preflight      Skip read-only local/AWS preflight checks before execute.
   --reuse-artifact-dir  Allow execute to reuse a directory with prior pass output.
+  --no-refresh-auto-stop-at
+                        Do not refresh the ignored local tfvars auto_stop_at.
+  --auto-stop-hours N   Refresh auto_stop_at to now + N hours (default: 8).
   --reserve-artifact-dir
                         Create only the representative pass start marker.
 
@@ -63,6 +68,14 @@ while (($#)); do
       reuse_artifact_dir=1
       shift
       ;;
+    --no-refresh-auto-stop-at)
+      refresh_auto_stop=0
+      shift
+      ;;
+    --auto-stop-hours)
+      auto_stop_hours="${2:?missing value for --auto-stop-hours}"
+      shift 2
+      ;;
     --reserve-artifact-dir)
       reserve_artifact_dir=1
       run_preflight=0
@@ -98,6 +111,8 @@ printf '  execute=%s\n' "$execute"
 printf '  allow_preexisting_residue=%s\n' "$allow_preexisting_residue"
 printf '  reuse_artifact_dir=%s\n' "$reuse_artifact_dir"
 printf '  reserve_artifact_dir=%s\n' "$reserve_artifact_dir"
+printf '  refresh_auto_stop=%s\n' "$refresh_auto_stop"
+printf '  auto_stop_hours=%s\n' "$auto_stop_hours"
 
 reserve_artifact_dir_once() {
   local existing_artifact marker
@@ -127,6 +142,9 @@ reserve_artifact_dir_once() {
 }
 
 if ((run_preflight)); then
+  if ((refresh_auto_stop)); then
+    "$script_dir/refresh-auto-stop-at.sh" "$aws_dir/terraform.tfvars" "$auto_stop_hours"
+  fi
   preflight_env=()
   if ((allow_preexisting_residue)); then
     preflight_env+=(SPIRE_AWS_ALLOW_PREEXISTING_RESIDUE=1)
