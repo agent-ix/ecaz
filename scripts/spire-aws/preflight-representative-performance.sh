@@ -13,6 +13,8 @@ summarizer="$script_dir/summarize-representative-performance.sh"
 verifier="$script_dir/verify-representative-performance-summary.sh"
 representative_pass_entrypoint="$script_dir/run-representative-performance-pass.sh"
 representative_load_script="$script_dir/load.sh"
+smoke_script="$script_dir/smoke.sh"
+smoke_sql="$script_dir/smoke-customscan-read.sql"
 bootstrap_node_script="$script_dir/bootstrap-node.sh"
 watchdog_local_check="$script_dir/check-watchdog-local.sh"
 cleanup_residue_local_check="$script_dir/check-cleanup-residue-local.sh"
@@ -447,6 +449,9 @@ require_script_contains "$representative_load_script" 'PG_BIN=/usr/pgsql-18/bin'
 require_script_contains "$representative_load_script" 'ON_ERROR_STOP=1 -h 127.0.0.1'
 require_script_contains "$representative_load_script" "restart_all_operator_tunnels_if_available"
 require_script_contains "$representative_load_script" 'if [[ "$TIER" == "representative" ]]; then'
+require_script_contains "$smoke_sql" "ORDER BY id"
+require_script_contains "$smoke_sql" "LIMIT 1"
+require_script_contains "$smoke_script" "ORDER BY id LIMIT 1"
 run_summary_gate_self_check
 run_watchdog_gate_self_check
 run_shutdown_cleanup_self_checks

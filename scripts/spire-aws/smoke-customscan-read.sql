@@ -17,7 +17,8 @@ SET enable_indexscan = off;
 
 SELECT source::text AS query_source
 FROM :queries_table
-WHERE id = 0
+ORDER BY id
+LIMIT 1
 \gset
 
 \echo === Registered remote nodes ===
