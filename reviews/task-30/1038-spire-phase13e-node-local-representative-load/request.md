@@ -17,8 +17,9 @@ The failure happened while streaming the large representative TSV through the SS
 
 - `scripts/spire-aws/bootstrap-node.sh` now builds and installs `/usr/local/bin/ecaz` on each AWS node from the same vendored source bundle used for the extension build.
 - `scripts/spire-aws/load.sh` stages representative coordinator and remote TSV inputs to the artifact S3 bucket, runs `ecaz corpus load` node-local through SSM, and downloads node-side load/reset/inspect logs back into the packet.
+- After node-local load phases, the harness restarts the operator SSM tunnels so the following assignment export, registration, smoke, and suite steps do not inherit idle port-forward sessions.
 - Correctness and stress load paths are left on the existing operator/tunnel flow.
-- `scripts/spire-aws/preflight-representative-performance.sh` now fails closed unless the representative load script retains the node-local coordinator and remote load path and bootstrap installs the CLI binary.
+- `scripts/spire-aws/preflight-representative-performance.sh` now fails closed unless the representative load script retains the node-local coordinator/remote load path, the post-load tunnel restart guard, and bootstrap installs the CLI binary.
 
 ## Validation
 
@@ -30,4 +31,3 @@ The failure happened while streaming the large representative TSV through the SS
 ## Remaining
 
 This is a local harness hardening checkpoint. The representative AWS proof still needs a fresh Graviton run to capture p50/p95/p99 latency, recall, and pooled-vs-unpooled profile evidence.
-

@@ -12,15 +12,16 @@
 
 ### `bash-n.log`
 
-- command: `bash -n scripts/spire-aws/load.sh scripts/spire-aws/bootstrap-node.sh scripts/spire-aws/preflight-representative-performance.sh`
-- timestamp: 2026-05-27T17:23:01-07:00
+- command: `bash -n scripts/spire-aws/load.sh scripts/spire-aws/preflight-representative-performance.sh`
+- timestamp: 2026-05-27T17:30:xx-07:00
 - result: exit code 0
 
 ### `representative-preflight.log`
 
 - command: `ARTIFACT_DIR=reviews/task-30/1038-spire-phase13e-node-local-representative-load/artifacts scripts/spire-aws/preflight-representative-performance.sh`
-- timestamp: 2026-05-27T17:23:01-07:00
+- timestamp: 2026-05-27T17:30:xx-07:00
 - key result: `SPIRE representative performance preflight passed`
+- coverage: preflight now guards the node-local coordinator/remote load path and post-load tunnel restart guard.
 
 ### `cargo-build-ecaz-cli.log`
 
@@ -32,6 +33,5 @@
 ### `git-diff-check.log`
 
 - command: `git diff --check`
-- timestamp: 2026-05-27T17:23:xx-07:00
+- timestamp: 2026-05-27T17:30:xx-07:00
 - result: exit code 0
-
