@@ -552,6 +552,8 @@ mod production_executor_state_tests {
                 .expect_err("batch over cap should fail");
         assert!(batch_error.contains(SPIRE_REMOTE_STATUS_REMOTE_PAYLOAD_TOO_LARGE));
         assert!(batch_error.contains("ec_spire.max_remote_payload_rows_per_batch"));
+        validate_remote_payload_batch_row_count(100, "phase 13 k=100 remote payload batch")
+            .expect("default remote payload row cap should admit the phase 13 k=100 lane");
 
         let payload_values = vec!["0a0b".to_owned(), "ff".to_owned()];
         assert_eq!(typed_payload_hex_decoded_bytes(&payload_values).unwrap(), 3);

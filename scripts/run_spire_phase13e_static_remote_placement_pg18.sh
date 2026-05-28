@@ -13,6 +13,10 @@ RUN_ID="${RUN_ID:-$(date -u +%Y%m%dT%H%M%SZ)}"
 RUN_DIR_OVERRIDE="${RUN_DIR:-}"
 ARTIFACT_DIR=""
 SMOKE_LOG="${SMOKE_LOG:-}"
+FIXTURE_ROWS="${FIXTURE_ROWS:-12}"
+BENCH_TOP_K="${BENCH_TOP_K:-6}"
+BENCH_QUERIES_LIMIT="${BENCH_QUERIES_LIMIT:-1}"
+BENCH_SWEEP="${BENCH_SWEEP:-3}"
 
 usage() {
   cat <<'USAGE'
@@ -27,6 +31,11 @@ Options:
   --remote3-port PORT  Third remote PostgreSQL port. Default: 39443.
   --run-dir DIR        Run directory. Default: target/spire-phase13e-static-remote-$RUN_ID.
   --run-id ID          Run id used in the default run directory.
+  --fixture-rows N     Coordinator fixture row count. Default: 12.
+  --bench-top-k K      Top-k for the local ecaz bench suite gate. Default: 6.
+  --bench-queries-limit N
+                      Query count for the local ecaz bench suite gate. Default: 1.
+  --bench-sweep LIST   Comma-separated nprobe sweep for the suite gate. Default: 3.
   --skip-install       Skip cargo pgrx install.
   --smoke-log FILE     Tee smoke output to FILE.
   -h, --help           Show this help.
@@ -67,6 +76,22 @@ while [[ $# -gt 0 ]]; do
       ;;
     --run-id)
       RUN_ID="$2"
+      shift 2
+      ;;
+    --fixture-rows)
+      FIXTURE_ROWS="$2"
+      shift 2
+      ;;
+    --bench-top-k)
+      BENCH_TOP_K="$2"
+      shift 2
+      ;;
+    --bench-queries-limit)
+      BENCH_QUERIES_LIMIT="$2"
+      shift 2
+      ;;
+    --bench-sweep)
+      BENCH_SWEEP="$2"
       shift 2
       ;;
     --skip-install)
@@ -134,6 +159,10 @@ echo "coord_port=$COORD_PORT"
 echo "remote1_port=$REMOTE1_PORT"
 echo "remote2_port=$REMOTE2_PORT"
 echo "remote3_port=$REMOTE3_PORT"
+echo "fixture_rows=$FIXTURE_ROWS"
+echo "bench_top_k=$BENCH_TOP_K"
+echo "bench_queries_limit=$BENCH_QUERIES_LIMIT"
+echo "bench_sweep=$BENCH_SWEEP"
 
 if [[ "${ECAZ_SKIP_INSTALL:-0}" != "1" ]]; then
   (cd "$ROOT_DIR" && cargo pgrx install --test --pg-config "$PGBIN/pg_config" \
@@ -168,7 +197,7 @@ remote3_psql=("$PSQL" -v ON_ERROR_STOP=1 -h "$SOCKET_DIR" -p "$REMOTE3_PORT" -U 
 "${remote2_psql[@]}" -c "CREATE EXTENSION ecaz" >/dev/null
 "${remote3_psql[@]}" -c "CREATE EXTENSION ecaz" >/dev/null
 
-"${coord_psql[@]}" <<'SQL' >/dev/null
+"${coord_psql[@]}" -v fixture_rows="$FIXTURE_ROWS" <<'SQL' >/dev/null
 CREATE TABLE ec_spire_phase13e_coord_corpus
     (id bigint primary key, title text not null, embedding ecvector, source real[] not null);
 INSERT INTO ec_spire_phase13e_coord_corpus (id, title, embedding, source)
@@ -184,7 +213,7 @@ SELECT id,
              WHEN 3 THEN ARRAY[-1.0, 0.0]::real[]
              ELSE ARRAY[0.0, 1.0]::real[]
            END AS source
-      FROM generate_series(1, 12) AS id
+      FROM generate_series(1, :fixture_rows) AS id
   ) AS rows;
 CREATE TABLE ec_spire_phase13e_coord_queries
     (id bigint primary key, source real[] not null);
@@ -491,16 +520,20 @@ if [[ -z "$remote_selected_pids" || "$remote_selected_pids" == "null" ]]; then
   echo "no remote selected pids available for bench suite gate" >&2
   exit 6
 fi
+bench_sweep_json="$(printf '%s' "$BENCH_SWEEP" | jq -R 'split(",") | map(tonumber)')"
 jq -n \
   --arg artifact_dir "$suite_artifact_dir" \
   --arg log_output "$suite_artifact_dir/spire-pipeline.log" \
+  --argjson bench_sweep "$bench_sweep_json" \
+  --argjson bench_top_k "$BENCH_TOP_K" \
+  --argjson bench_queries_limit "$BENCH_QUERIES_LIMIT" \
   --argjson remote_selected_pids "$remote_selected_pids" \
   '{
     name: "phase13e-local-spire-pipeline",
     schema_version: 1,
     artifact_dir: $artifact_dir,
     defaults: {
-      queries_limit: 1,
+      queries_limit: $bench_queries_limit,
       pg: 18
     },
     steps: [
@@ -510,16 +543,16 @@ jq -n \
         tags: ["phase13e", "local", "production-read"],
         prefix: "ec_spire_phase13e_coord",
         index: "ec_spire_phase13e_coord_idx",
-        queries_limit: 1,
-        sweep: [3],
+        queries_limit: $bench_queries_limit,
+        sweep: $bench_sweep,
         include_remote: true,
         require_remote_placements: true,
         include_query_metrics: true,
         include_recall: true,
         include_production_read_profile: true,
         production_read_only: true,
-        query_metric_k: 6,
-        top_k: 6,
+        query_metric_k: $bench_top_k,
+        top_k: $bench_top_k,
         consistency_mode: "strict",
         remote_tuple_transport: "pg_binary_attr_v1",
         remote_selected_pids: $remote_selected_pids,

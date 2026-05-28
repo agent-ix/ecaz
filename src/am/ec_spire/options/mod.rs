@@ -44,7 +44,7 @@ const EC_SPIRE_DEFAULT_REMOTE_SEARCH_CONNECTION_POOL_SIZE: i32 = 16;
 const EC_SPIRE_MAX_REMOTE_SEARCH_CONNECTION_POOL_SIZE: i32 = 1024;
 const EC_SPIRE_DEFAULT_MAX_REMOTE_PAYLOAD_BYTES_PER_ROW: i32 = 1024;
 const EC_SPIRE_MAX_REMOTE_PAYLOAD_BYTES_PER_ROW: i32 = 1_073_741_824;
-const EC_SPIRE_DEFAULT_MAX_REMOTE_PAYLOAD_ROWS_PER_BATCH: i32 = 64;
+const EC_SPIRE_DEFAULT_MAX_REMOTE_PAYLOAD_ROWS_PER_BATCH: i32 = 128;
 const EC_SPIRE_MAX_REMOTE_PAYLOAD_ROWS_PER_BATCH: i32 = 1_000_000;
 pub(super) const EC_SPIRE_DEFAULT_COST_ROUTING_DIMENSION_SCALE: f64 = 0.01;
 pub(super) const EC_SPIRE_DEFAULT_COST_LEAF_DIMENSION_SCALE: f64 = 0.01;
@@ -855,7 +855,7 @@ pub(super) fn register_gucs() {
     GucRegistry::define_int_guc(
         c"ec_spire.max_remote_payload_rows_per_batch",
         c"Session cap for one ec_spire remote payload batch.",
-        c"Maximum selected PIDs or returned remote heap rows accepted for one remote payload batch before strict mode fails closed; default 64 matches the Phase 12 local capacity target.",
+        c"Maximum selected PIDs or returned remote heap rows accepted for one remote payload batch before strict mode fails closed; default 128 covers the Phase 13 representative k=100 lane with a small safety margin.",
         &EC_SPIRE_MAX_REMOTE_PAYLOAD_ROWS_PER_BATCH_GUC,
         1,
         EC_SPIRE_MAX_REMOTE_PAYLOAD_ROWS_PER_BATCH,
