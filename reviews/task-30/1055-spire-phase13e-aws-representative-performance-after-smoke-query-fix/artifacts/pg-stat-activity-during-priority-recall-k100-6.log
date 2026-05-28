@@ -1,0 +1,2 @@
+42892	active	Client	ClientWrite	00:22:06.096144	SELECT id, source FROM ec_spire_aws_repr_1m_corpus ORDER BY id
+43521	active			00:00:00	select pid, state, wait_event_type, wait_event, now() - query_start as age, left(query, 180) as query from pg_stat_activity where datname = 'postgres' and state <> 'idle' order by 
