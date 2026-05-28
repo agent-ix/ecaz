@@ -30,7 +30,10 @@ mod fault;
 #[cfg(feature = "pg18")]
 mod pg18_pgstat_shim;
 mod quant;
-#[cfg(all(test, target_arch = "x86_64", target_os = "linux"))]
+#[cfg(all(
+    test,
+    any(all(target_arch = "x86_64", target_os = "linux"), target_os = "macos")
+))]
 mod standalone_pg_backend_stubs;
 pub(crate) mod storage;
 

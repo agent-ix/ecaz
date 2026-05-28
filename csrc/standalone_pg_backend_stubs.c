@@ -86,6 +86,10 @@ MemoryContext PostmasterContext = &tqvector_postmaster_context_storage;
 ErrorContextCallback *error_context_stack = NULL;
 void *PG_exception_stack = NULL;
 
+char *BufferBlocks = NULL;
+uint32_t CheckXidAlive = 0;
+bool bsysscan = false;
+void **LocalBufferBlockPointers = NULL;
 uint64_t SPI_processed = 0;
 void *SPI_tuptable = NULL;
 

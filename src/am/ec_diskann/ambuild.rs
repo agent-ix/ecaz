@@ -218,10 +218,13 @@ unsafe extern "C-unwind" fn ec_diskann_build_callback(
     tid: pg_sys::ItemPointer,
     values: *mut pg_sys::Datum,
     isnull: *mut bool,
-    _tuple_is_alive: bool,
+    tuple_is_alive: bool,
     state: *mut c_void,
 ) {
     pg_am_callback!({
+        if !tuple_is_alive {
+            return;
+        }
         let state = &mut *state.cast::<BuildState>();
         if values.is_null() || isnull.is_null() {
             pgrx::error!("ec_diskann ambuild received null tuple value arrays");

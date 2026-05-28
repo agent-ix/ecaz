@@ -2749,7 +2749,7 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_ec_diskann_build_coalesces_duplicate_vectors() {
+    fn test_ec_diskann_build_keeps_duplicate_vectors_as_distinct_nodes() {
         Spi::run(
             "CREATE TABLE ec_diskann_duplicate_build (id bigint primary key, embedding ecvector)",
         )
@@ -2780,19 +2780,27 @@ mod tests {
             .expect("node tid iteration should succeed");
         assert_eq!(
             node_tids.len(),
-            1,
-            "duplicate build rows should share one DiskANN graph node",
+            12,
+            "build-time duplicate vectors should remain distinct DiskANN graph nodes",
         );
 
-        let node_tid = node_tids[0];
-        let node_tuple = reader
-            .read_node(node_tid)
-            .expect("node tuple should decode");
-        assert!(node_tuple.has_overflow_heaptids);
-        let bound_heap_tids =
-            insert::bound_heap_tids_for_owner(&chain, node_tid, node_tuple.primary_heaptid)
-                .expect("bound heap tids should decode");
-        assert_eq!(bound_heap_tids.len(), 12);
+        let mut primary_heap_blocks = Vec::with_capacity(node_tids.len());
+        for node_tid in node_tids {
+            let node_tuple = reader
+                .read_node(node_tid)
+                .expect("node tuple should decode");
+            assert!(
+                !node_tuple.has_overflow_heaptids,
+                "build-time duplicate vectors should not create overflow chains",
+            );
+            primary_heap_blocks.push(node_tuple.primary_heaptid.block_number);
+        }
+        primary_heap_blocks.sort_unstable();
+        assert_eq!(
+            primary_heap_blocks.len(),
+            12,
+            "every duplicate build row should own its own graph node",
+        );
 
         Spi::run("SET LOCAL enable_seqscan = off").expect("SET LOCAL should succeed");
         Spi::run("SET LOCAL enable_bitmapscan = off").expect("SET LOCAL should succeed");
