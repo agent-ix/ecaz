@@ -26,6 +26,7 @@ TARBALL_KEY="${ECAZ_SPIRE_AWS_TARBALL_KEY:-ecaz-latest.tar.gz}"
 TARBALL_PATH="${ECAZ_SPIRE_AWS_TARBALL_PATH:-}"
 SOURCE_KEY="${ECAZ_SPIRE_AWS_SOURCE_KEY:-ecaz-source.tar.gz}"
 SOURCE_PATH="${ECAZ_SPIRE_AWS_SOURCE_PATH:-$ARTIFACT_DIR/ecaz-source.tar.gz}"
+RUNTIME_KEY="${ECAZ_SPIRE_AWS_RUNTIME_KEY:-ecaz-runtime-linux-aarch64.tar.gz}"
 TLS_DIR="$ARTIFACT_DIR/tls"
 
 ALL_IDS=("$COORD_ID")
@@ -249,6 +250,9 @@ configure_coordinator_remote_conninfo() {
 start_install_command() {
   local instance_id="$1"
   local secret_name="$2"
+  local source_key="$3"
+  local build_runtime="$4"
+  local wait_runtime="$5"
   local commands_json
   local parameters_json
   local cmd_id
@@ -256,13 +260,16 @@ start_install_command() {
   commands_json=$(jq -cn \
     --arg bucket "$BUCKET" \
     --arg tarball_key "$TARBALL_KEY" \
-    --arg source_key "$SOURCE_KEY" \
+    --arg source_key "$source_key" \
+    --arg runtime_key "$RUNTIME_KEY" \
+    --arg build_runtime "$build_runtime" \
+    --arg wait_runtime "$wait_runtime" \
     --arg tls_key "tls/${instance_id}.tar.gz" \
     --arg secret_name "$secret_name" \
     --arg region "$REGION" \
     '[
       "sudo aws s3 cp s3://\($bucket)/bootstrap-node.sh /tmp/bootstrap-node.sh",
-      "sudo ECAZ_SPIRE_AWS_BUCKET=\($bucket) ECAZ_SPIRE_AWS_TARBALL_KEY=\($tarball_key) ECAZ_SPIRE_AWS_SOURCE_KEY=\($source_key) ECAZ_SPIRE_AWS_TLS_KEY=\($tls_key) ECAZ_SPIRE_AWS_REMOTE_SECRET_NAME=\($secret_name) ECAZ_SPIRE_AWS_REGION=\($region) bash /tmp/bootstrap-node.sh"
+      "sudo ECAZ_SPIRE_AWS_BUCKET=\($bucket) ECAZ_SPIRE_AWS_TARBALL_KEY=\($tarball_key) ECAZ_SPIRE_AWS_SOURCE_KEY=\($source_key) ECAZ_SPIRE_AWS_RUNTIME_KEY=\($runtime_key) ECAZ_SPIRE_AWS_BUILD_RUNTIME=\($build_runtime) ECAZ_SPIRE_AWS_WAIT_RUNTIME=\($wait_runtime) ECAZ_SPIRE_AWS_TLS_KEY=\($tls_key) ECAZ_SPIRE_AWS_REMOTE_SECRET_NAME=\($secret_name) ECAZ_SPIRE_AWS_REGION=\($region) bash /tmp/bootstrap-node.sh"
     ]')
   parameters_json=$(jq -cn --argjson commands "$commands_json" '{commands: $commands}')
 
@@ -317,20 +324,45 @@ wait_install_command() {
 run_install_commands() {
   local instance_ids=()
   local secret_names=()
+  local source_keys=()
+  local build_runtime_flags=()
+  local wait_runtime_flags=()
   local command_ids=()
   local wait_status=0
   local i cmd_id
 
   instance_ids+=("$COORD_ID")
   secret_names+=("")
+  source_keys+=("$SOURCE_KEY")
+  if [[ -n "$SOURCE_KEY" && -n "$RUNTIME_KEY" ]]; then
+    build_runtime_flags+=("1")
+    wait_runtime_flags+=("0")
+  else
+    build_runtime_flags+=("0")
+    wait_runtime_flags+=("0")
+  fi
 
   while IFS= read -r remote; do
     instance_ids+=("$(jq -r '.instance_id' <<< "$remote")")
     secret_names+=("$(jq -r '.secret_name' <<< "$remote")")
+    if [[ -n "$SOURCE_KEY" && -n "$RUNTIME_KEY" ]]; then
+      source_keys+=("")
+      build_runtime_flags+=("0")
+      wait_runtime_flags+=("1")
+    else
+      source_keys+=("$SOURCE_KEY")
+      build_runtime_flags+=("0")
+      wait_runtime_flags+=("0")
+    fi
   done < <(jq -c '.remotes[]' "$TOPOLOGY")
 
   for ((i = 0; i < ${#instance_ids[@]}; i++)); do
-    cmd_id="$(start_install_command "${instance_ids[$i]}" "${secret_names[$i]}")"
+    cmd_id="$(start_install_command \
+      "${instance_ids[$i]}" \
+      "${secret_names[$i]}" \
+      "${source_keys[$i]}" \
+      "${build_runtime_flags[$i]}" \
+      "${wait_runtime_flags[$i]}")"
     command_ids+=("$cmd_id")
   done
 

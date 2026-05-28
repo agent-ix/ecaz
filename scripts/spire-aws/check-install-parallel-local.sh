@@ -21,6 +21,7 @@ topology="$work_dir/topology.json"
 events="$work_dir/events.log"
 mkdir -p "$bin_dir" "$artifact_dir"
 : > "$events"
+printf 'source fixture\n' > "$artifact_dir/ecaz-source.tar.gz"
 
 cat > "$topology" <<'JSON'
 {
@@ -101,11 +102,19 @@ case "${service}:${operation}" in
   ssm:send-command)
     instance_id="$(arg_value --instance-ids "$@")"
     comment="$(arg_value --comment "$@" || true)"
+    parameters="$(arg_value --parameters "$@")"
     if [[ "$comment" == *"coordinator remote conninfo"* ]]; then
       printf 'conninfo-send %s\n' "$instance_id" >> "$events"
       printf 'cmd-conninfo-%s\n' "$instance_id"
     else
+      command_line="$(jq -r '.commands[1]' <<< "$parameters")"
+      source_key="$(grep -o 'ECAZ_SPIRE_AWS_SOURCE_KEY=[^ ]*' <<< "$command_line" | cut -d= -f2-)"
+      build_runtime="$(grep -o 'ECAZ_SPIRE_AWS_BUILD_RUNTIME=[^ ]*' <<< "$command_line" | cut -d= -f2-)"
+      wait_runtime="$(grep -o 'ECAZ_SPIRE_AWS_WAIT_RUNTIME=[^ ]*' <<< "$command_line" | cut -d= -f2-)"
+      runtime_key="$(grep -o 'ECAZ_SPIRE_AWS_RUNTIME_KEY=[^ ]*' <<< "$command_line" | cut -d= -f2-)"
       printf 'install-send %s\n' "$instance_id" >> "$events"
+      printf 'install-mode %s source=%s runtime=%s build=%s wait=%s\n' \
+        "$instance_id" "$source_key" "$runtime_key" "$build_runtime" "$wait_runtime" >> "$events"
       printf 'cmd-install-%s\n' "$instance_id"
     fi
     ;;
@@ -190,6 +199,20 @@ if ! grep -q '^conninfo-send i-coord$' "$events"; then
   cat "$events" >&2
   exit 1
 fi
+
+if ! grep -q '^install-mode i-coord source=ecaz-source.tar.gz runtime=ecaz-runtime-linux-aarch64.tar.gz build=1 wait=0$' "$events"; then
+  printf 'ERROR: coordinator install mode did not build and publish runtime\n' >&2
+  cat "$events" >&2
+  exit 1
+fi
+
+for remote in i-remote-1 i-remote-2 i-remote-3; do
+  if ! grep -q "^install-mode ${remote} source= runtime=ecaz-runtime-linux-aarch64.tar.gz build=0 wait=1$" "$events"; then
+    printf 'ERROR: remote install mode did not wait for coordinator runtime: %s\n' "$remote" >&2
+    cat "$events" >&2
+    exit 1
+  fi
+done
 
 cat "$events"
 printf 'SPIRE AWS install parallel self-check passed: install_sends=%s install_waits=%s\n' \

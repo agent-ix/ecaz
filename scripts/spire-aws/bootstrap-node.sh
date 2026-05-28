@@ -9,6 +9,10 @@ PG_VERSION=18
 BUCKET="${ECAZ_SPIRE_AWS_BUCKET:?bucket must be set by SSM document}"
 ECAZ_KEY="${ECAZ_SPIRE_AWS_TARBALL_KEY:-ecaz-latest.tar.gz}"
 SOURCE_KEY="${ECAZ_SPIRE_AWS_SOURCE_KEY:-}"
+RUNTIME_KEY="${ECAZ_SPIRE_AWS_RUNTIME_KEY:-}"
+BUILD_RUNTIME="${ECAZ_SPIRE_AWS_BUILD_RUNTIME:-0}"
+WAIT_RUNTIME="${ECAZ_SPIRE_AWS_WAIT_RUNTIME:-0}"
+RUNTIME_WAIT_SECONDS="${ECAZ_SPIRE_AWS_RUNTIME_WAIT_SECONDS:-3600}"
 TLS_KEY="${ECAZ_SPIRE_AWS_TLS_KEY:?TLS material key must be set by SSM document}"
 REMOTE_SECRET_NAME="${ECAZ_SPIRE_AWS_REMOTE_SECRET_NAME:-}"
 REGION="${ECAZ_SPIRE_AWS_REGION:?region must be set by SSM document}"
@@ -121,6 +125,44 @@ EXTENSION_DIR="${SHAREDIR}/extension"
 install -d "$PKGLIBDIR" "$EXTENSION_DIR"
 cp "${package_dir}/extension/"* "$EXTENSION_DIR/"
 
+install_runtime_package() {
+  local runtime_archive="$1"
+  local runtime_dir="${NODE_WORK_BASE}/ecaz-runtime-package"
+
+  rm -rf "$runtime_dir" && mkdir -p "$runtime_dir"
+  tar -xzf "$runtime_archive" -C "$runtime_dir"
+  install -m 0755 "${runtime_dir}/lib/ecaz.so" "${PKGLIBDIR}/ecaz.so"
+  install -m 0755 "${runtime_dir}/bin/ecaz" /usr/local/bin/ecaz
+}
+
+wait_for_runtime_package() {
+  local runtime_archive="${NODE_WORK_BASE}/ecaz-runtime.tar.gz"
+  local deadline=$((SECONDS + RUNTIME_WAIT_SECONDS))
+
+  while ((SECONDS < deadline)); do
+    if aws s3 cp "s3://${BUCKET}/${RUNTIME_KEY}" "$runtime_archive"; then
+      install_runtime_package "$runtime_archive"
+      return 0
+    fi
+    sleep 15
+  done
+
+  echo "ERROR: timed out waiting for runtime package s3://${BUCKET}/${RUNTIME_KEY}" >&2
+  return 124
+}
+
+publish_runtime_package() {
+  local runtime_dir="${NODE_WORK_BASE}/ecaz-runtime-publish"
+  local runtime_archive="${NODE_WORK_BASE}/ecaz-runtime.tar.gz"
+
+  rm -rf "$runtime_dir"
+  mkdir -p "$runtime_dir/lib" "$runtime_dir/bin"
+  cp "${PKGLIBDIR}/ecaz.so" "$runtime_dir/lib/ecaz.so"
+  cp /usr/local/bin/ecaz "$runtime_dir/bin/ecaz"
+  tar -C "$runtime_dir" -czf "$runtime_archive" lib bin
+  aws s3 cp "$runtime_archive" "s3://${BUCKET}/${RUNTIME_KEY}"
+}
+
 if [[ -n "$SOURCE_KEY" ]]; then
   dnf -y install rust cargo rustfmt gcc gcc-c++ make clang
   source_archive="${NODE_WORK_BASE}/ecaz-source.tar.gz"
@@ -143,7 +185,20 @@ if [[ -n "$SOURCE_KEY" ]]; then
   )
   install -m 0755 "${source_dir}/target/release/libecaz.so" "${PKGLIBDIR}/ecaz.so"
   install -m 0755 "${source_dir}/target/release/ecaz" /usr/local/bin/ecaz
+  if [[ "$BUILD_RUNTIME" == "1" ]]; then
+    if [[ -z "$RUNTIME_KEY" ]]; then
+      echo "ERROR: ECAZ_SPIRE_AWS_RUNTIME_KEY is required when BUILD_RUNTIME=1" >&2
+      exit 2
+    fi
+    publish_runtime_package
+  fi
   rm -rf "$source_dir" "$source_archive"
+elif [[ "$WAIT_RUNTIME" == "1" ]]; then
+  if [[ -z "$RUNTIME_KEY" ]]; then
+    echo "ERROR: ECAZ_SPIRE_AWS_RUNTIME_KEY is required when WAIT_RUNTIME=1" >&2
+    exit 2
+  fi
+  wait_for_runtime_package
 else
   cp "${package_dir}/lib/"*.so "${PKGLIBDIR}/"
 fi
