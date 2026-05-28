@@ -1,0 +1,7 @@
+Script started on 2026-05-28 15:18:54-07:00 [<not executed on terminal>]
+13e3-production-read-profile-k10	reviews/task-30/1059-spire-phase13e-representative-truth-corpus-harness/artifacts/render-check/work/qdrant-dbpedia/prepared/ec_real_100k_corpus.tsv
+13e3-production-read-profile-k100	reviews/task-30/1059-spire-phase13e-representative-truth-corpus-harness/artifacts/render-check/work/qdrant-dbpedia/prepared/ec_real_100k_corpus.tsv
+13e4-pooling-disabled-profile-k10	reviews/task-30/1059-spire-phase13e-representative-truth-corpus-harness/artifacts/render-check/work/qdrant-dbpedia/prepared/ec_real_100k_corpus.tsv
+13e4-pooling-enabled-profile-k10	reviews/task-30/1059-spire-phase13e-representative-truth-corpus-harness/artifacts/render-check/work/qdrant-dbpedia/prepared/ec_real_100k_corpus.tsv
+
+Script done on 2026-05-28 15:18:54-07:00 [COMMAND_EXIT_CODE="0"]
