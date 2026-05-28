@@ -232,6 +232,7 @@ load_remote_shards_node_local() {
     local node_id instance_id remote_prefix remote_index corpus_file
     local node_dir remote_corpus_key node_corpus_path node_load_log node_inspect_log
     local load_log_key inspect_log_key drop_log_key commands_json log_prefix
+    local drop_sql
     node_id=$(jq -r '.node_id' <<< "$remote_plan")
     instance_id=$(jq -r --argjson node_id "$node_id" \
       '.remotes[] | select(.node_id == $node_id) | .instance_id' "$TOPOLOGY")
@@ -247,6 +248,7 @@ load_remote_shards_node_local() {
     inspect_log_key="representative-load/${TIER}/node-${node_id}/inspect.log"
     drop_log_key="representative-load/${TIER}/node-${node_id}/drop.log"
     log_prefix="$ARTIFACT_DIR/remote-node-${node_id}"
+    drop_sql="DROP TABLE IF EXISTS ${remote_prefix}_queries CASCADE; DROP TABLE IF EXISTS ${remote_prefix}_corpus CASCADE;"
 
     upload_load_file "$corpus_file" "$remote_corpus_key" "${log_prefix}-upload-${TIER}.log"
 
@@ -263,16 +265,19 @@ load_remote_shards_node_local() {
       --arg drop_log_key "$drop_log_key" \
       --arg remote_prefix "$remote_prefix" \
       --arg remote_index "$remote_index" \
+      --arg drop_sql "$drop_sql" \
       --arg storage_format "$SPIRE_AWS_STORAGE_FORMAT" \
       '[
         "set -euo pipefail",
         "command -v /usr/local/bin/ecaz >/dev/null",
+        "PG_BIN=/usr/pgsql-18/bin; if [ ! -x \"$PG_BIN/psql\" ]; then PG_BIN=$(dirname \"$(command -v psql)\"); fi",
         "rm -rf \($node_dir)",
         "mkdir -p \($node_dir)",
         "df -h \($node_dir)",
         "aws s3 cp s3://\($bucket)/\($corpus_key) \($node_corpus_path) --region \($region)",
         "set +e",
-        "/usr/local/bin/ecaz dev sql --host 127.0.0.1 --port 5432 --user ecaz_coord --database postgres --sql \"DROP TABLE IF EXISTS \($remote_prefix)_queries CASCADE; DROP TABLE IF EXISTS \($remote_prefix)_corpus CASCADE;\" --log-output \($node_dir)/drop.log",
+        "printf '\''%s\\n'\'' \($drop_sql|@sh) > \($node_dir)/drop.sql",
+        "\"$PG_BIN/psql\" -v ON_ERROR_STOP=1 -h 127.0.0.1 -p 5432 -U ecaz_coord -d postgres -f \($node_dir)/drop.sql > \($node_dir)/drop.log 2>&1",
         "drop_status=$?",
         "aws s3 cp \($node_dir)/drop.log s3://\($bucket)/\($drop_log_key) --region \($region) || true",
         "if [ \"$drop_status\" -ne 0 ]; then exit \"$drop_status\"; fi",
@@ -298,7 +303,7 @@ load_coordinator_representative_node_local() {
   local queries_file="$2"
   local manifest_file="$3"
   local coord_id node_dir node_corpus_path node_queries_path node_manifest_path
-  local corpus_key queries_key manifest_key load_log_key reset_log_key commands_json
+  local corpus_key queries_key manifest_key load_log_key reset_log_key commands_json reset_sql
 
   coord_id=$(jq -r '.coordinator.instance_id' "$TOPOLOGY")
   node_dir="${SPIRE_AWS_NODE_LOAD_BASE_DIR}/${TIER}/coordinator"
@@ -310,6 +315,7 @@ load_coordinator_representative_node_local() {
   manifest_key="representative-load/${TIER}/coordinator/$(basename "$manifest_file")"
   load_log_key="representative-load/${TIER}/coordinator/load.log"
   reset_log_key="representative-load/${TIER}/coordinator/reset-index.log"
+  reset_sql="DROP INDEX IF EXISTS ${COORD_INDEX};"
 
   upload_load_file "$corpus_file" "$corpus_key" "$ARTIFACT_DIR/coordinator-corpus-upload-${TIER}.log"
   upload_load_file "$queries_file" "$queries_key" "$ARTIFACT_DIR/coordinator-queries-upload-${TIER}.log"
@@ -331,9 +337,11 @@ load_coordinator_representative_node_local() {
     --arg load_log_key "$load_log_key" \
     --arg reset_log_key "$reset_log_key" \
     --arg reset_requested "$SPIRE_AWS_RESET_COORDINATOR_INDEX" \
+    --arg reset_sql "$reset_sql" \
     '[
       "set -euo pipefail",
       "command -v /usr/local/bin/ecaz >/dev/null",
+      "PG_BIN=/usr/pgsql-18/bin; if [ ! -x \"$PG_BIN/psql\" ]; then PG_BIN=$(dirname \"$(command -v psql)\"); fi",
       "rm -rf \($node_dir)",
       "mkdir -p \($node_dir)",
       "df -h \($node_dir)",
@@ -341,7 +349,7 @@ load_coordinator_representative_node_local() {
       "aws s3 cp s3://\($bucket)/\($queries_key) \($node_queries_path) --region \($region)",
       "aws s3 cp s3://\($bucket)/\($manifest_key) \($node_manifest_path) --region \($region)",
       "set +e",
-      "if [ \($reset_requested) = 1 ]; then /usr/local/bin/ecaz dev sql --host 127.0.0.1 --port 5432 --user ecaz_coord --database postgres --sql \"DROP INDEX IF EXISTS \($coord_index);\" --log-output \($node_dir)/reset-index.log; else printf \"reset skipped\\n\" > \($node_dir)/reset-index.log; fi",
+      "if [ \($reset_requested|@sh) = '\''1'\'' ]; then printf '\''%s\\n'\'' \($reset_sql|@sh) > \($node_dir)/reset-index.sql; \"$PG_BIN/psql\" -v ON_ERROR_STOP=1 -h 127.0.0.1 -p 5432 -U ecaz_coord -d postgres -f \($node_dir)/reset-index.sql > \($node_dir)/reset-index.log 2>&1; else printf \"reset skipped\\n\" > \($node_dir)/reset-index.log; fi",
       "reset_status=$?",
       "aws s3 cp \($node_dir)/reset-index.log s3://\($bucket)/\($reset_log_key) --region \($region) || true",
       "if [ \"$reset_status\" -ne 0 ]; then exit \"$reset_status\"; fi",

@@ -429,6 +429,8 @@ require_script_contains "$representative_load_script" "load_coordinator_represen
 require_script_contains "$representative_load_script" "load_remote_shards_node_local"
 require_script_contains "$representative_load_script" 'SPIRE_AWS_NODE_LOAD_BASE_DIR="${SPIRE_AWS_NODE_LOAD_BASE_DIR:-/var/tmp/ecaz-spire-aws-load}"'
 require_script_contains "$representative_load_script" 'node_dir="${SPIRE_AWS_NODE_LOAD_BASE_DIR}/${TIER}/coordinator"'
+require_script_contains "$representative_load_script" 'PG_BIN=/usr/pgsql-18/bin'
+require_script_contains "$representative_load_script" 'ON_ERROR_STOP=1 -h 127.0.0.1'
 require_script_contains "$representative_load_script" "restart_all_operator_tunnels_if_available"
 require_script_contains "$representative_load_script" 'if [[ "$TIER" == "representative" ]]; then'
 run_summary_gate_self_check
