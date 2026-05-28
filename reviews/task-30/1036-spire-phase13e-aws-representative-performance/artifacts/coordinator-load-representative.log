@@ -1,0 +1,14 @@
+[loader] inspecting /home/peter/dev/ecaz/reviews/task-30/1036-spire-phase13e-aws-representative-performance/artifacts/work/qdrant-dbpedia/prepared/ec_real_100k_corpus.tsv
+[loader] inspecting /home/peter/dev/ecaz/reviews/task-30/1036-spire-phase13e-aws-representative-performance/artifacts/work/qdrant-dbpedia/prepared/ec_real_100k_queries.tsv
+[loader] corpus: 100000 rows, sha256=07275cfd5a7a4b415ddf5eacc086de98294ac978532df46ffae30f9202323a95  queries: 1000 rows, sha256=a7cbec6fc44f6c148234538f61339d00d2f10646febc8f667dcbe75d9cf41782
+[loader] warning: manifest verification failed for /home/peter/dev/ecaz/reviews/task-30/1036-spire-phase13e-aws-representative-performance/artifacts/work/qdrant-dbpedia/prepared/ec_real_100k_manifest.json: prefix="ec_real_100k" (expected "ec_spire_aws_repr_1m")
+2026-05-28T00:12:07.865368Z ERROR ecaz::psql: postgres connection task failed error=connection closed
+
+   0: [91mCOPY finish failed for ec_spire_aws_repr_1m_corpus[0m
+   1: [91mconnection closed[0m
+
+Location:
+   [35mcrates/ecaz-cli/src/commands/corpus/load.rs[0m:[35m1834[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.
