@@ -115,7 +115,8 @@ download_optional_s3_log() {
 
 restart_operator_tunnel_if_available() {
   local label="$1"
-  local port="$2"
+  local instance_id="$2"
+  local port="$3"
   local restart_command="${SPIRE_AWS_TUNNEL_RESTART_COMMAND:-}"
   local log="$ARTIFACT_DIR/tunnel-restart-after-node-local-load.log"
 
@@ -126,19 +127,21 @@ restart_operator_tunnel_if_available() {
     echo "configured tunnel restart command is not executable: ${restart_command}" | tee -a "$log" >&2
     return 2
   fi
-  "$restart_command" "$label" "$port" >> "$log" 2>&1
+  "$restart_command" "$label" "$instance_id" "$port" "$ARTIFACT_DIR" >> "$log" 2>&1
 }
 
 restart_all_operator_tunnels_if_available() {
-  local coord_port
+  local coord_id coord_port
+  coord_id=$(jq -r '.coordinator.instance_id' "$TOPOLOGY")
   coord_port=$(jq -r '.coordinator.operator_port // 5432' "$TOPOLOGY")
-  restart_operator_tunnel_if_available coordinator "$coord_port"
+  restart_operator_tunnel_if_available coordinator "$coord_id" "$coord_port"
 
   jq -c '.remotes[]' "$TOPOLOGY" | while read -r remote; do
-    local node_id port
+    local node_id instance_id port
     node_id=$(jq -r '.node_id' <<< "$remote")
+    instance_id=$(jq -r '.instance_id' <<< "$remote")
     port=$(jq -r '.operator_port // 5432' <<< "$remote")
-    restart_operator_tunnel_if_available "remote-${node_id}" "$port"
+    restart_operator_tunnel_if_available "remote-${node_id}" "$instance_id" "$port"
   done
 }
 
@@ -557,7 +560,7 @@ case "$TIER" in
       "$WORK_DIR/qdrant-dbpedia/prepared/${PREPARED_PREFIX}_corpus.tsv" \
       "$WORK_DIR/qdrant-dbpedia/prepared/${PREPARED_PREFIX}_queries.tsv" \
       "$WORK_DIR/qdrant-dbpedia/prepared/${PREPARED_PREFIX}_manifest.json"
-    restart_operator_tunnel_if_available coordinator "$COORD_PORT"
+    restart_operator_tunnel_if_available coordinator "$(jq -r '.coordinator.instance_id' "$TOPOLOGY")" "$COORD_PORT"
     write_leaf_owned_distributed_plan "$WORK_DIR/qdrant-dbpedia/prepared/${PREPARED_PREFIX}_corpus.tsv" 1536 4 42 ec_spire "$SPIRE_AWS_STORAGE_FORMAT" \
       > "$ARTIFACT_DIR/distributed-plan-${TIER}.log"
     ;;

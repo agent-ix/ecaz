@@ -17,6 +17,7 @@ bootstrap_node_script="$script_dir/bootstrap-node.sh"
 watchdog_local_check="$script_dir/check-watchdog-local.sh"
 cleanup_residue_local_check="$script_dir/check-cleanup-residue-local.sh"
 refresh_auto_stop_script="$script_dir/refresh-auto-stop-at.sh"
+load_tunnel_restart_local_check="$script_dir/check-load-tunnel-restart-local.sh"
 
 die() {
   printf 'ERROR: %s\n' "$*" >&2
@@ -299,6 +300,7 @@ SH
 run_shutdown_cleanup_self_checks() {
   "$watchdog_local_check" >/dev/null
   "$cleanup_residue_local_check" >/dev/null
+  "$load_tunnel_restart_local_check" >/dev/null
 }
 
 if [[ "${1:-}" == "--watchdog-timeout-self-check" ]]; then
@@ -319,6 +321,7 @@ require_executable "$representative_pass_entrypoint"
 require_executable "$watchdog_local_check"
 require_executable "$cleanup_residue_local_check"
 require_executable "$refresh_auto_stop_script"
+require_executable "$load_tunnel_restart_local_check"
 if [[ -n "${ARTIFACT_DIR:-}" ]]; then
   require_representative_artifact_dir "$ARTIFACT_DIR"
 fi
