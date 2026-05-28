@@ -307,6 +307,8 @@ struct RecallStep {
     #[serde(default)]
     truth_cache_dir: Option<PathBuf>,
     #[serde(default)]
+    truth_corpus_file: Option<PathBuf>,
+    #[serde(default)]
     log_output: Option<PathBuf>,
     #[serde(default)]
     predictions_output: Option<PathBuf>,
@@ -421,6 +423,8 @@ struct SpirePipelineStep {
     include_query_metrics: Option<bool>,
     #[serde(default)]
     include_recall: Option<bool>,
+    #[serde(default)]
+    truth_corpus_file: Option<PathBuf>,
     #[serde(default)]
     include_production_read_profile: Option<bool>,
     #[serde(default)]
@@ -2329,6 +2333,11 @@ fn expand_recall(step: &RecallStep, defaults: &SuiteDefaults) -> Vec<String> {
         "--truth-cache-dir",
         step.truth_cache_dir.as_deref(),
     );
+    push_opt_path(
+        &mut args,
+        "--truth-corpus-file",
+        step.truth_corpus_file.as_deref(),
+    );
     push_opt_path(&mut args, "--log-output", step.log_output.as_deref());
     push_opt_path(
         &mut args,
@@ -2526,6 +2535,11 @@ fn expand_spire_pipeline(step: &SpirePipelineStep, defaults: &SuiteDefaults) -> 
     if step.include_recall.unwrap_or(false) {
         args.push("--include-recall".into());
     }
+    push_opt_path(
+        &mut args,
+        "--truth-corpus-file",
+        step.truth_corpus_file.as_deref(),
+    );
     if step.include_production_read_profile.unwrap_or(false) {
         args.push("--include-production-read-profile".into());
     }
@@ -3240,6 +3254,7 @@ mod tests {
             force_index: None,
             truth_cache_file: Some("truth.json".into()),
             truth_cache_dir: None,
+            truth_corpus_file: Some("corpus.tsv".into()),
             log_output: Some("recall.log".into()),
             predictions_output: Some("predictions.json".into()),
         };
@@ -3249,6 +3264,9 @@ mod tests {
         assert!(args.contains(&"--force-index".into()));
         assert!(args.windows(2).any(|w| w == ["--sweep", "48,96"]));
         assert!(args.contains(&"--adaptive-nprobe".into()));
+        assert!(args
+            .windows(2)
+            .any(|w| w == ["--truth-corpus-file", "corpus.tsv"]));
         assert!(args
             .windows(2)
             .any(|w| w == ["--adaptive-nprobe-score-gap-micros", "1000"]));
@@ -3463,6 +3481,7 @@ mod tests {
             cost_rerank_multiplier: None,
             include_query_metrics: Some(true),
             include_recall: Some(true),
+            truth_corpus_file: Some("truth-corpus.tsv".into()),
             include_production_read_profile: Some(true),
             production_read_only: Some(true),
             query_metric_k: Some(10),
@@ -3489,6 +3508,9 @@ mod tests {
         assert!(args
             .windows(2)
             .any(|w| w == ["--query-metric-projection-columns", "title"]));
+        assert!(args
+            .windows(2)
+            .any(|w| w == ["--truth-corpus-file", "truth-corpus.tsv"]));
         assert!(args
             .windows(2)
             .any(|w| w == ["--log-output", "spire-profile.log"]));
@@ -3531,6 +3553,7 @@ mod tests {
                 cost_rerank_multiplier: None,
                 include_query_metrics: Some(true),
                 include_recall: Some(true),
+                truth_corpus_file: None,
                 include_production_read_profile: Some(true),
                 production_read_only: Some(true),
                 query_metric_k: Some(10),
@@ -3686,6 +3709,7 @@ mod tests {
             force_index: None,
             truth_cache_file: None,
             truth_cache_dir: None,
+            truth_corpus_file: None,
             log_output: None,
             predictions_output: None,
         });

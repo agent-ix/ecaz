@@ -107,6 +107,12 @@ pub struct SpirePipelineArgs {
     /// Also compute exact local truth and report recall@k for coordinator KNN queries.
     #[arg(long)]
     pub include_recall: bool,
+    /// Optional local `<id>\t<json_array>` corpus TSV to use for exact truth.
+    ///
+    /// This avoids streaming the full corpus table through a remote SQL tunnel
+    /// when the same staged corpus file is already available to the operator.
+    #[arg(long)]
+    pub truth_corpus_file: Option<PathBuf>,
     /// Also call ec_spire_remote_search_production_read_profile for each sampled
     /// query and report production read-path transport counters.
     #[arg(long)]
@@ -205,11 +211,25 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
         return Err(eyre!("queries table {queries_table:?} is empty"));
     }
     let query_truth = if args.include_recall {
-        let (corpus_ids, corpus) =
+        let (corpus_ids, corpus) = if let Some(path) = args.truth_corpus_file.as_deref() {
+            super::recall::load_sources_tsv_file(path)
+                .wrap_err_with(|| format!("loading exact-truth corpus from {}", path.display()))?
+        } else {
             super::recall::fetch_sources_public(&client, &corpus_table, None)
                 .await
-                .wrap_err_with(|| format!("fetching exact-truth corpus from {corpus_table}"))?;
+                .wrap_err_with(|| format!("fetching exact-truth corpus from {corpus_table}"))?
+        };
         let query_matrix = query_matrix(&queries)?;
+        if corpus.nrows() == 0 {
+            return Err(eyre!("exact-truth corpus is empty"));
+        }
+        if corpus.ncols() != query_matrix.ncols() {
+            return Err(eyre!(
+                "exact-truth corpus dim {} does not match query dim {}",
+                corpus.ncols(),
+                query_matrix.ncols()
+            ));
+        }
         let truth = super::recall::brute_force_top_k(&corpus, &query_matrix, args.query_metric_k);
         Some(super::recall::map_indices_to_ids(
             &truth.indices,
@@ -2068,6 +2088,7 @@ mod tests {
             cost_rerank_multiplier: None,
             include_query_metrics: false,
             include_recall: false,
+            truth_corpus_file: None,
             include_production_read_profile: false,
             production_read_only: false,
             query_metric_k: 10,
