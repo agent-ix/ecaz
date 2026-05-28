@@ -19,11 +19,98 @@ mkdir -p "$ARTIFACT_DIR"
 
 COORD_HOST=$(jq -r '.coordinator.operator_host // .coordinator.private_ip' "$TOPOLOGY")
 COORD_PORT=$(jq -r '.coordinator.operator_port // 5432' "$TOPOLOGY")
+REGION=$(jq -r '.region' "$TOPOLOGY")
+BUCKET=$(jq -r '.artifact_bucket' "$TOPOLOGY")
 ECAZ_BIN="${ECAZ_BIN:-ecaz}"
 WORK_DIR="${WORK_DIR:-$ARTIFACT_DIR/work}"
 SPIRE_AWS_RESET_COORDINATOR_INDEX="${SPIRE_AWS_RESET_COORDINATOR_INDEX:-1}"
 SPIRE_AWS_STORAGE_FORMAT="${SPIRE_AWS_STORAGE_FORMAT:-rabitq}"
 mkdir -p "$WORK_DIR"
+
+ssm_wait_command() {
+  local instance_id="$1"
+  local cmd_id="$2"
+  local log_file="$3"
+  local timeout="${SPIRE_AWS_SSM_TIMEOUT_SECONDS:-3600}"
+  local deadline=$((SECONDS + timeout))
+  local status="Pending"
+
+  while (( SECONDS < deadline )); do
+    status=$(aws ssm get-command-invocation \
+      --region "$REGION" \
+      --command-id "$cmd_id" \
+      --instance-id "$instance_id" \
+      --query Status \
+      --output text 2>/dev/null || echo "Pending")
+    case "$status" in
+      Success)
+        aws ssm get-command-invocation \
+          --region "$REGION" \
+          --command-id "$cmd_id" \
+          --instance-id "$instance_id" \
+          > "$log_file"
+        return 0
+        ;;
+      Failed|Cancelled|Cancelling|TimedOut)
+        aws ssm get-command-invocation \
+          --region "$REGION" \
+          --command-id "$cmd_id" \
+          --instance-id "$instance_id" \
+          > "$log_file" || true
+        return 1
+        ;;
+      *)
+        sleep 15
+        ;;
+    esac
+  done
+
+  aws ssm get-command-invocation \
+    --region "$REGION" \
+    --command-id "$cmd_id" \
+    --instance-id "$instance_id" \
+    > "$log_file" || true
+  echo "SSM command ${cmd_id} timed out for ${instance_id}" >&2
+  return 124
+}
+
+ssm_run_shell() {
+  local instance_id="$1"
+  local comment="$2"
+  local log_file="$3"
+  local commands_json="$4"
+  local parameters_json
+  local cmd_id
+
+  parameters_json=$(jq -cn --argjson commands "$commands_json" '{commands: $commands}')
+  cmd_id=$(aws ssm send-command \
+    --region "$REGION" \
+    --document-name "AWS-RunShellScript" \
+    --instance-ids "$instance_id" \
+    --parameters "$parameters_json" \
+    --output-s3-bucket-name "$BUCKET" \
+    --output-s3-key-prefix "spire-aws/load-ssm" \
+    --comment "$comment" \
+    --query "Command.CommandId" \
+    --output text)
+  echo "${comment} ssm command id: ${cmd_id}" | tee -a "$ARTIFACT_DIR/load-${TIER}.ssm.log"
+  ssm_wait_command "$instance_id" "$cmd_id" "$log_file"
+}
+
+upload_load_file() {
+  local local_path="$1"
+  local s3_key="$2"
+  local log_file="$3"
+
+  aws s3 cp "$local_path" "s3://${BUCKET}/${s3_key}" --region "$REGION" > "$log_file"
+}
+
+download_optional_s3_log() {
+  local s3_key="$1"
+  local local_path="$2"
+
+  aws s3 cp "s3://${BUCKET}/${s3_key}" "$local_path" --region "$REGION" >/dev/null 2>&1 || true
+}
 
 write_distributed_placement_config() {
   local remote_count
@@ -108,6 +195,131 @@ load_remote_shards() {
       --prefix "$remote_prefix" \
       --log-file "${log_prefix}-inspect-${TIER}.log"
   done
+}
+
+load_remote_shards_node_local() {
+  jq -c '.remotes[]' "$PLAN_FILE" | while read -r remote_plan; do
+    local node_id instance_id remote_prefix remote_index corpus_file
+    local node_dir remote_corpus_key node_corpus_path node_load_log node_inspect_log
+    local load_log_key inspect_log_key drop_log_key commands_json log_prefix
+    node_id=$(jq -r '.node_id' <<< "$remote_plan")
+    instance_id=$(jq -r --argjson node_id "$node_id" \
+      '.remotes[] | select(.node_id == $node_id) | .instance_id' "$TOPOLOGY")
+    remote_prefix=$(jq -r '.remote_prefix' <<< "$remote_plan")
+    remote_index=$(jq -r '.remote_index_regclass' <<< "$remote_plan")
+    corpus_file=$(jq -r '.corpus_file' <<< "$remote_plan")
+    node_dir="/tmp/ecaz-spire-aws-${TIER}-node-${node_id}"
+    node_corpus_path="${node_dir}/$(basename "$corpus_file")"
+    node_load_log="${node_dir}/load.log"
+    node_inspect_log="${node_dir}/inspect.log"
+    remote_corpus_key="representative-load/${TIER}/node-${node_id}/$(basename "$corpus_file")"
+    load_log_key="representative-load/${TIER}/node-${node_id}/load.log"
+    inspect_log_key="representative-load/${TIER}/node-${node_id}/inspect.log"
+    drop_log_key="representative-load/${TIER}/node-${node_id}/drop.log"
+    log_prefix="$ARTIFACT_DIR/remote-node-${node_id}"
+
+    upload_load_file "$corpus_file" "$remote_corpus_key" "${log_prefix}-upload-${TIER}.log"
+
+    commands_json=$(jq -cn \
+      --arg bucket "$BUCKET" \
+      --arg region "$REGION" \
+      --arg corpus_key "$remote_corpus_key" \
+      --arg node_dir "$node_dir" \
+      --arg node_corpus_path "$node_corpus_path" \
+      --arg node_load_log "$node_load_log" \
+      --arg node_inspect_log "$node_inspect_log" \
+      --arg load_log_key "$load_log_key" \
+      --arg inspect_log_key "$inspect_log_key" \
+      --arg drop_log_key "$drop_log_key" \
+      --arg remote_prefix "$remote_prefix" \
+      --arg remote_index "$remote_index" \
+      --arg storage_format "$SPIRE_AWS_STORAGE_FORMAT" \
+      '[
+        "set -euo pipefail",
+        "command -v /usr/local/bin/ecaz >/dev/null",
+        "mkdir -p \($node_dir)",
+        "aws s3 cp s3://\($bucket)/\($corpus_key) \($node_corpus_path) --region \($region)",
+        "set +e",
+        "/usr/local/bin/ecaz dev sql --host 127.0.0.1 --port 5432 --user ecaz_coord --database postgres --sql \"DROP TABLE IF EXISTS \($remote_prefix)_queries CASCADE; DROP TABLE IF EXISTS \($remote_prefix)_corpus CASCADE;\" --log-output \($node_dir)/drop.log",
+        "drop_status=$?",
+        "aws s3 cp \($node_dir)/drop.log s3://\($bucket)/\($drop_log_key) --region \($region) || true",
+        "if [ \"$drop_status\" -ne 0 ]; then exit \"$drop_status\"; fi",
+        "/usr/local/bin/ecaz corpus load --host 127.0.0.1 --port 5432 --user ecaz_coord --database postgres --profile ec_spire --prefix \($remote_prefix) --dim 1536 --bits 4 --seed 42 --corpus-file \($node_corpus_path) --corpus-only --storage-format \($storage_format) --index-name \($remote_index) --log-file \($node_load_log)",
+        "load_status=$?",
+        "aws s3 cp \($node_load_log) s3://\($bucket)/\($load_log_key) --region \($region) || true",
+        "if [ \"$load_status\" -ne 0 ]; then exit \"$load_status\"; fi",
+        "/usr/local/bin/ecaz corpus inspect --host 127.0.0.1 --port 5432 --user ecaz_coord --database postgres --prefix \($remote_prefix) --log-file \($node_inspect_log)",
+        "inspect_status=$?",
+        "aws s3 cp \($node_inspect_log) s3://\($bucket)/\($inspect_log_key) --region \($region) || true",
+        "exit \"$inspect_status\""
+      ]')
+    ssm_run_shell "$instance_id" "ecaz Phase 13e node-local remote load ${TIER} node ${node_id}" \
+      "${log_prefix}-load-${TIER}.ssm.json" "$commands_json"
+    download_optional_s3_log "$drop_log_key" "${log_prefix}-drop-${TIER}.log"
+    download_optional_s3_log "$load_log_key" "${log_prefix}-load-${TIER}.log"
+    download_optional_s3_log "$inspect_log_key" "${log_prefix}-inspect-${TIER}.log"
+  done
+}
+
+load_coordinator_representative_node_local() {
+  local corpus_file="$1"
+  local queries_file="$2"
+  local manifest_file="$3"
+  local coord_id node_dir node_corpus_path node_queries_path node_manifest_path
+  local corpus_key queries_key manifest_key load_log_key reset_log_key commands_json
+
+  coord_id=$(jq -r '.coordinator.instance_id' "$TOPOLOGY")
+  node_dir="/tmp/ecaz-spire-aws-${TIER}-coordinator"
+  node_corpus_path="${node_dir}/$(basename "$corpus_file")"
+  node_queries_path="${node_dir}/$(basename "$queries_file")"
+  node_manifest_path="${node_dir}/$(basename "$manifest_file")"
+  corpus_key="representative-load/${TIER}/coordinator/$(basename "$corpus_file")"
+  queries_key="representative-load/${TIER}/coordinator/$(basename "$queries_file")"
+  manifest_key="representative-load/${TIER}/coordinator/$(basename "$manifest_file")"
+  load_log_key="representative-load/${TIER}/coordinator/load.log"
+  reset_log_key="representative-load/${TIER}/coordinator/reset-index.log"
+
+  upload_load_file "$corpus_file" "$corpus_key" "$ARTIFACT_DIR/coordinator-corpus-upload-${TIER}.log"
+  upload_load_file "$queries_file" "$queries_key" "$ARTIFACT_DIR/coordinator-queries-upload-${TIER}.log"
+  upload_load_file "$manifest_file" "$manifest_key" "$ARTIFACT_DIR/coordinator-manifest-upload-${TIER}.log"
+
+  commands_json=$(jq -cn \
+    --arg bucket "$BUCKET" \
+    --arg region "$REGION" \
+    --arg node_dir "$node_dir" \
+    --arg corpus_key "$corpus_key" \
+    --arg queries_key "$queries_key" \
+    --arg manifest_key "$manifest_key" \
+    --arg node_corpus_path "$node_corpus_path" \
+    --arg node_queries_path "$node_queries_path" \
+    --arg node_manifest_path "$node_manifest_path" \
+    --arg prefix "$PREFIX" \
+    --arg coord_index "$COORD_INDEX" \
+    --arg storage_format "$SPIRE_AWS_STORAGE_FORMAT" \
+    --arg load_log_key "$load_log_key" \
+    --arg reset_log_key "$reset_log_key" \
+    --arg reset_requested "$SPIRE_AWS_RESET_COORDINATOR_INDEX" \
+    '[
+      "set -euo pipefail",
+      "command -v /usr/local/bin/ecaz >/dev/null",
+      "mkdir -p \($node_dir)",
+      "aws s3 cp s3://\($bucket)/\($corpus_key) \($node_corpus_path) --region \($region)",
+      "aws s3 cp s3://\($bucket)/\($queries_key) \($node_queries_path) --region \($region)",
+      "aws s3 cp s3://\($bucket)/\($manifest_key) \($node_manifest_path) --region \($region)",
+      "set +e",
+      "if [ \($reset_requested) = 1 ]; then /usr/local/bin/ecaz dev sql --host 127.0.0.1 --port 5432 --user ecaz_coord --database postgres --sql \"DROP INDEX IF EXISTS \($coord_index);\" --log-output \($node_dir)/reset-index.log; else printf \"reset skipped\\n\" > \($node_dir)/reset-index.log; fi",
+      "reset_status=$?",
+      "aws s3 cp \($node_dir)/reset-index.log s3://\($bucket)/\($reset_log_key) --region \($region) || true",
+      "if [ \"$reset_status\" -ne 0 ]; then exit \"$reset_status\"; fi",
+      "/usr/local/bin/ecaz corpus load --host 127.0.0.1 --port 5432 --user ecaz_coord --database postgres --prefix \($prefix) --corpus-file \($node_corpus_path) --queries-file \($node_queries_path) --manifest-file \($node_manifest_path) --allow-manifest-mismatch --profile ec_spire --dim 1536 --bits 4 --seed 42 --storage-format \($storage_format) --index-name \($coord_index) --log-file \($node_dir)/load.log",
+      "load_status=$?",
+      "aws s3 cp \($node_dir)/load.log s3://\($bucket)/\($load_log_key) --region \($region) || true",
+      "exit \"$load_status\""
+    ]')
+  ssm_run_shell "$coord_id" "ecaz Phase 13e node-local coordinator load ${TIER}" \
+    "$ARTIFACT_DIR/coordinator-load-${TIER}.ssm.json" "$commands_json"
+  download_optional_s3_log "$reset_log_key" "$ARTIFACT_DIR/coordinator-reset-index-${TIER}.log"
+  download_optional_s3_log "$load_log_key" "$ARTIFACT_DIR/coordinator-load-${TIER}.log"
 }
 
 conninfo_lookup_key() {
@@ -299,18 +511,10 @@ case "$TIER" in
       --output-dir "$WORK_DIR/qdrant-dbpedia/prepared/" \
       --dim 1536 \
       --source-dataset qdrant-dbpedia-openai3-large-1536-1m
-    reset_coordinator_index_if_requested
-    "$ECAZ_BIN" corpus load \
-      --host "$COORD_HOST" --port "$COORD_PORT" --user ecaz_coord --database postgres \
-      --prefix "$PREFIX" \
-      --corpus-file "$WORK_DIR/qdrant-dbpedia/prepared/${PREPARED_PREFIX}_corpus.tsv" \
-      --queries-file "$WORK_DIR/qdrant-dbpedia/prepared/${PREPARED_PREFIX}_queries.tsv" \
-      --manifest-file "$WORK_DIR/qdrant-dbpedia/prepared/${PREPARED_PREFIX}_manifest.json" \
-      --allow-manifest-mismatch \
-      --profile ec_spire --dim 1536 --bits 4 --seed 42 \
-      --storage-format "$SPIRE_AWS_STORAGE_FORMAT" \
-      --index-name "$COORD_INDEX" \
-      --log-file "$ARTIFACT_DIR/coordinator-load-${TIER}.log"
+    load_coordinator_representative_node_local \
+      "$WORK_DIR/qdrant-dbpedia/prepared/${PREPARED_PREFIX}_corpus.tsv" \
+      "$WORK_DIR/qdrant-dbpedia/prepared/${PREPARED_PREFIX}_queries.tsv" \
+      "$WORK_DIR/qdrant-dbpedia/prepared/${PREPARED_PREFIX}_manifest.json"
     write_leaf_owned_distributed_plan "$WORK_DIR/qdrant-dbpedia/prepared/${PREPARED_PREFIX}_corpus.tsv" 1536 4 42 ec_spire "$SPIRE_AWS_STORAGE_FORMAT" \
       > "$ARTIFACT_DIR/distributed-plan-${TIER}.log"
     ;;
@@ -343,6 +547,10 @@ case "$TIER" in
     echo "unknown tier: $TIER" >&2; exit 2 ;;
 esac
 
-load_remote_shards
+if [[ "$TIER" == "representative" ]]; then
+  load_remote_shards_node_local
+else
+  load_remote_shards
+fi
 
 echo "$PLAN_FILE" > "$ARTIFACT_DIR/distributed-placement-plan-${TIER}.path"

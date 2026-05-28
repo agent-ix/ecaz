@@ -12,6 +12,8 @@ watchdog="${SPIRE_AWS_REPRESENTATIVE_WATCHDOG:-$script_dir/run-pass-with-watchdo
 summarizer="$script_dir/summarize-representative-performance.sh"
 verifier="$script_dir/verify-representative-performance-summary.sh"
 representative_pass_entrypoint="$script_dir/run-representative-performance-pass.sh"
+representative_load_script="$script_dir/load.sh"
+bootstrap_node_script="$script_dir/bootstrap-node.sh"
 
 die() {
   printf 'ERROR: %s\n' "$*" >&2
@@ -169,6 +171,14 @@ require_make_target_sequence() {
     die "Makefile target $target must run sequence: $*"
 }
 
+require_script_contains() {
+  local script="$1"
+  local expected="$2"
+
+  grep -Fq "$expected" "$script" ||
+    die "script $script must contain $expected"
+}
+
 require_watchdog_timeout() {
   local target="$1"
   local minimum_seconds="$2"
@@ -292,6 +302,8 @@ require_file "$priority_suite"
 require_file "$pooling_suite"
 require_file "$makefile"
 require_file "$watchdog"
+require_file "$representative_load_script"
+require_file "$bootstrap_node_script"
 require_executable "$summarizer"
 require_executable "$verifier"
 require_executable "$watchdog"
@@ -407,6 +419,12 @@ require_make_target_sequence \
   "summarize-representative-performance" \
   "verify-representative-performance-summary"
 require_watchdog_timeout "pass-representative-performance-body" 14400
+require_script_contains "$bootstrap_node_script" "cargo build --release --bin ecaz --package ecaz-cli --offline"
+require_script_contains "$bootstrap_node_script" "install -m 0755 /tmp/ecaz-source/target/release/ecaz /usr/local/bin/ecaz"
+require_script_contains "$representative_load_script" "ssm_run_shell"
+require_script_contains "$representative_load_script" "load_coordinator_representative_node_local"
+require_script_contains "$representative_load_script" "load_remote_shards_node_local"
+require_script_contains "$representative_load_script" 'if [[ "$TIER" == "representative" ]]; then'
 run_summary_gate_self_check
 run_watchdog_gate_self_check
 
