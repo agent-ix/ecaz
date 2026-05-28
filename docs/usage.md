@@ -68,7 +68,9 @@ HNSW `storage_format = 'rabitq'` is implemented for build, scan, live insert,
 and vacuum, but its final operating-point decision is still gated on the Task
 63 publishable 50k/100k benchmark matrix. Keep `turboquant` or `pq_fastscan`
 for production-style HNSW comparisons until that packet records a recommend or
-shelve decision.
+shelve decision. RaBitQ derives search codes from raw source vectors; when the
+indexed column is `tqvector`, provide `build_source_column` for bulk build and
+keep raw source data available for live inserts, or index `ecvector` directly.
 
 Override scan width for a session:
 

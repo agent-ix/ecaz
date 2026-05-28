@@ -193,6 +193,11 @@ comparisons.
 Changing an index storage format requires `REINDEX`; there is no in-place
 format upgrade.
 
+HNSW `storage_format = 'rabitq'` requires raw source vectors to derive RaBitQ
+search codes. For `tqvector` inputs, set `build_source_column` for bulk build
+and keep raw source data available for live inserts, or index `ecvector`
+directly.
+
 ## Development
 
 - [Rust](https://rustup.rs/) stable
