@@ -97,20 +97,33 @@ rm -rf "$lock_dir"
 log_line "$log_file" "starting $target with timeout=${timeout_seconds}s"
 
 watchdog_pid=""
+watchdog_process_group=0
 if command -v setsid >/dev/null 2>&1; then
   setsid bash "$0" --watchdog "$$" "$timeout_seconds" "$aws_dir" "$artifact_dir" "$log_file" "$done_file" "$lock_dir" >/dev/null 2>&1 &
+  watchdog_process_group=1
 else
   nohup bash "$0" --watchdog "$$" "$timeout_seconds" "$aws_dir" "$artifact_dir" "$log_file" "$done_file" "$lock_dir" >/dev/null 2>&1 &
 fi
 watchdog_pid="$!"
 
+stop_watchdog() {
+  if [[ -z "$watchdog_pid" ]]; then
+    return 0
+  fi
+
+  if ((watchdog_process_group)); then
+    kill -TERM -- "-$watchdog_pid" 2>/dev/null || true
+  else
+    kill -TERM "$watchdog_pid" 2>/dev/null || true
+  fi
+  wait "$watchdog_pid" 2>/dev/null || true
+}
+
 cleanup() {
   local rc=$?
   trap - EXIT INT TERM HUP
   touch "$done_file"
-  if [[ -n "$watchdog_pid" ]]; then
-    kill "$watchdog_pid" 2>/dev/null || true
-  fi
+  stop_watchdog
   teardown_once "$aws_dir" "$artifact_dir" "$log_file" "$lock_dir" || rc=$?
   log_line "$log_file" "$target exiting with status $rc"
   exit "$rc"

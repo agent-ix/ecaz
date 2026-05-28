@@ -104,17 +104,46 @@ delete_security_group_rules() {
   local sg_id="$1"
   local ingress_json
   local egress_json
+  local err_file
 
   ingress_json="$(mktemp)"
   egress_json="$(mktemp)"
-  aws ec2 describe-security-groups \
+  err_file="$(mktemp)"
+  if ! aws ec2 describe-security-groups \
     --group-ids "$sg_id" \
     --query 'SecurityGroups[0].IpPermissions' \
-    --output json >"$ingress_json"
-  aws ec2 describe-security-groups \
+    --output json >"$ingress_json" 2>"$err_file"; then
+    if grep -q 'InvalidGroup.NotFound' "$err_file"; then
+      printf 'Security group %s was already deleted before rule cleanup\n' "$sg_id"
+      delete_json_file "$ingress_json"
+      delete_json_file "$egress_json"
+      delete_json_file "$err_file"
+      return 0
+    fi
+    cat "$err_file" >&2
+    delete_json_file "$ingress_json"
+    delete_json_file "$egress_json"
+    delete_json_file "$err_file"
+    return 1
+  fi
+
+  if ! aws ec2 describe-security-groups \
     --group-ids "$sg_id" \
     --query 'SecurityGroups[0].IpPermissionsEgress' \
-    --output json >"$egress_json"
+    --output json >"$egress_json" 2>"$err_file"; then
+    if grep -q 'InvalidGroup.NotFound' "$err_file"; then
+      printf 'Security group %s was already deleted before egress cleanup\n' "$sg_id"
+      delete_json_file "$ingress_json"
+      delete_json_file "$egress_json"
+      delete_json_file "$err_file"
+      return 0
+    fi
+    cat "$err_file" >&2
+    delete_json_file "$ingress_json"
+    delete_json_file "$egress_json"
+    delete_json_file "$err_file"
+    return 1
+  fi
 
   if (($(json_array_length "$ingress_json") > 0)); then
     aws ec2 revoke-security-group-ingress \
@@ -129,6 +158,29 @@ delete_security_group_rules() {
 
   delete_json_file "$ingress_json"
   delete_json_file "$egress_json"
+  delete_json_file "$err_file"
+}
+
+delete_security_group_if_present() {
+  local sg_id="$1"
+  local err_file
+
+  err_file="$(mktemp)"
+  if aws ec2 delete-security-group --group-id "$sg_id" >/dev/null 2>"$err_file"; then
+    printf 'Deleted security group %s\n' "$sg_id"
+    delete_json_file "$err_file"
+    return 0
+  fi
+
+  if grep -q 'InvalidGroup.NotFound' "$err_file"; then
+    printf 'Security group %s was already deleted\n' "$sg_id"
+    delete_json_file "$err_file"
+    return 0
+  fi
+
+  cat "$err_file" >&2
+  delete_json_file "$err_file"
+  return 1
 }
 
 wait_for_vpc_endpoints_deleted() {
@@ -276,8 +328,7 @@ for vpc_id in "${vpcs[@]}"; do
       delete_security_group_rules "$sg_id"
     done
     for sg_id in "${security_group_ids[@]}"; do
-      aws ec2 delete-security-group --group-id "$sg_id" >/dev/null
-      printf 'Deleted security group %s\n' "$sg_id"
+      delete_security_group_if_present "$sg_id"
     done
 
     for subnet_id in "${subnet_ids[@]}"; do
