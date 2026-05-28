@@ -1,6 +1,6 @@
 # Artifact Manifest: Task 64 HNSW Codec Adapter Review Feedback Response
 
-- head SHA: pending commit
+- head SHA: `11d93a7fed74c005ba4c4b207fdc1ea631a18c8b`
 - task bucket: `reviews/task-64/005-hnsw-codec-adapter-review-feedback-response/`
 - lane: HNSW codec adapter review feedback response
 - fixture: none

@@ -1,6 +1,6 @@
 # Artifact Manifest: Task 63 HNSW RaBitQ Review Feedback Response
 
-- head SHA: pending commit
+- head SHA: `11d93a7fed74c005ba4c4b207fdc1ea631a18c8b`
 - task bucket: `reviews/task-63/023-hnsw-rabitq-review-feedback-response/`
 - lane: HNSW RaBitQ review feedback response
 - fixture: none
