@@ -12,8 +12,25 @@ SOURCE_KEY="${ECAZ_SPIRE_AWS_SOURCE_KEY:-}"
 TLS_KEY="${ECAZ_SPIRE_AWS_TLS_KEY:?TLS material key must be set by SSM document}"
 REMOTE_SECRET_NAME="${ECAZ_SPIRE_AWS_REMOTE_SECRET_NAME:-}"
 REGION="${ECAZ_SPIRE_AWS_REGION:?region must be set by SSM document}"
+NODE_WORK_BASE="${ECAZ_SPIRE_AWS_NODE_WORK_BASE:-/var/tmp/ecaz-spire-aws}"
 
-dnf -y install postgresql${PG_VERSION}-server postgresql${PG_VERSION}-contrib postgresql${PG_VERSION}-server-devel jq awscli openssl
+dnf -y install postgresql${PG_VERSION}-server postgresql${PG_VERSION}-contrib postgresql${PG_VERSION}-server-devel jq awscli openssl cloud-utils-growpart xfsprogs e2fsprogs
+
+root_source=$(findmnt -n -o SOURCE / || true)
+root_fstype=$(findmnt -n -o FSTYPE / || true)
+if [[ "$root_source" =~ ^/dev/ ]]; then
+  root_parent="/dev/$(lsblk -no PKNAME "$root_source" 2>/dev/null | head -n 1 || true)"
+  root_partition=$(lsblk -no PARTN "$root_source" 2>/dev/null | head -n 1 || true)
+  if [[ -n "$root_parent" && -n "$root_partition" ]]; then
+    growpart "$root_parent" "$root_partition" || true
+    case "$root_fstype" in
+      xfs) xfs_growfs / || true ;;
+      ext2|ext3|ext4) resize2fs "$root_source" || true ;;
+    esac
+  fi
+fi
+
+install -d -m 0755 "$NODE_WORK_BASE"
 
 if [[ -x "/usr/pgsql-${PG_VERSION}/bin/postgres" ]]; then
   PG_BIN="/usr/pgsql-${PG_VERSION}/bin"
@@ -40,12 +57,14 @@ if [[ ! -s "${PGDATA}/PG_VERSION" ]]; then
   sudo -u postgres "${PG_BIN}/initdb" -D "$PGDATA"
 fi
 
-aws s3 cp "s3://${BUCKET}/${TLS_KEY}" /tmp/ecaz-node-tls.tar.gz
-mkdir -p /tmp/ecaz-node-tls
-tar -xzf /tmp/ecaz-node-tls.tar.gz -C /tmp/ecaz-node-tls
-install -o postgres -g postgres -m 0600 /tmp/ecaz-node-tls/server.key "${PGDATA}/server.key"
-install -o postgres -g postgres -m 0644 /tmp/ecaz-node-tls/server.crt "${PGDATA}/server.crt"
-install -o root -g root -m 0644 /tmp/ecaz-node-tls/ca.crt /etc/ssl/certs/ecaz-spire-aws-ca.pem
+tls_archive="${NODE_WORK_BASE}/ecaz-node-tls.tar.gz"
+tls_dir="${NODE_WORK_BASE}/ecaz-node-tls"
+aws s3 cp "s3://${BUCKET}/${TLS_KEY}" "$tls_archive"
+rm -rf "$tls_dir" && mkdir -p "$tls_dir"
+tar -xzf "$tls_archive" -C "$tls_dir"
+install -o postgres -g postgres -m 0600 "${tls_dir}/server.key" "${PGDATA}/server.key"
+install -o postgres -g postgres -m 0644 "${tls_dir}/server.crt" "${PGDATA}/server.crt"
+install -o root -g root -m 0644 "${tls_dir}/ca.crt" /etc/ssl/certs/ecaz-spire-aws-ca.pem
 
 mem_total_kb=$(awk '/MemTotal:/ { print $2 }' /proc/meminfo)
 mem_total_gb=$((mem_total_kb / 1024 / 1024))
@@ -83,8 +102,11 @@ grep -vE 'ecaz_coord (127\.0\.0\.1/32|::1/128|10\.42\.0\.0/16)' "${PGDATA}/pg_hb
 install -o postgres -g postgres -m 0600 "$tmp_hba" "${PGDATA}/pg_hba.conf"
 rm -f "$tmp_hba"
 
-aws s3 cp "s3://${BUCKET}/${ECAZ_KEY}" /tmp/ecaz.tar.gz
-mkdir -p /tmp/ecaz && tar -xzf /tmp/ecaz.tar.gz -C /tmp/ecaz
+package_archive="${NODE_WORK_BASE}/ecaz.tar.gz"
+package_dir="${NODE_WORK_BASE}/ecaz-package"
+aws s3 cp "s3://${BUCKET}/${ECAZ_KEY}" "$package_archive"
+rm -rf "$package_dir" && mkdir -p "$package_dir"
+tar -xzf "$package_archive" -C "$package_dir"
 if [[ -x "${PG_BIN}/pg_config" ]]; then
   PKGLIBDIR=$("${PG_BIN}/pg_config" --pkglibdir)
   SHAREDIR=$("${PG_BIN}/pg_config" --sharedir)
@@ -97,15 +119,17 @@ else
 fi
 EXTENSION_DIR="${SHAREDIR}/extension"
 install -d "$PKGLIBDIR" "$EXTENSION_DIR"
-cp /tmp/ecaz/extension/* "$EXTENSION_DIR/"
+cp "${package_dir}/extension/"* "$EXTENSION_DIR/"
 
 if [[ -n "$SOURCE_KEY" ]]; then
   dnf -y install rust cargo rustfmt gcc gcc-c++ make clang
-  aws s3 cp "s3://${BUCKET}/${SOURCE_KEY}" /tmp/ecaz-source.tar.gz
-  rm -rf /tmp/ecaz-source && mkdir -p /tmp/ecaz-source
-  tar -xzf /tmp/ecaz-source.tar.gz -C /tmp/ecaz-source
+  source_archive="${NODE_WORK_BASE}/ecaz-source.tar.gz"
+  source_dir="${NODE_WORK_BASE}/ecaz-source"
+  aws s3 cp "s3://${BUCKET}/${SOURCE_KEY}" "$source_archive"
+  rm -rf "$source_dir" && mkdir -p "$source_dir"
+  tar -xzf "$source_archive" -C "$source_dir"
   (
-    cd /tmp/ecaz-source
+    cd "$source_dir"
     PG_CONFIG="${PG_BIN}/pg_config" \
       PGRX_PG_CONFIG_PATH="${PG_BIN}/pg_config" \
       CARGO_PROFILE_RELEASE_LTO=thin \
@@ -117,10 +141,11 @@ if [[ -n "$SOURCE_KEY" ]]; then
       CARGO_PROFILE_RELEASE_CODEGEN_UNITS=4 \
       cargo build --release --bin ecaz --package ecaz-cli --offline
   )
-  install -m 0755 /tmp/ecaz-source/target/release/libecaz.so "${PKGLIBDIR}/ecaz.so"
-  install -m 0755 /tmp/ecaz-source/target/release/ecaz /usr/local/bin/ecaz
+  install -m 0755 "${source_dir}/target/release/libecaz.so" "${PKGLIBDIR}/ecaz.so"
+  install -m 0755 "${source_dir}/target/release/ecaz" /usr/local/bin/ecaz
+  rm -rf "$source_dir" "$source_archive"
 else
-  cp /tmp/ecaz/lib/*.so "${PKGLIBDIR}/"
+  cp "${package_dir}/lib/"*.so "${PKGLIBDIR}/"
 fi
 
 systemctl enable --now "$PG_SERVICE"

@@ -25,6 +25,7 @@ ECAZ_BIN="${ECAZ_BIN:-ecaz}"
 WORK_DIR="${WORK_DIR:-$ARTIFACT_DIR/work}"
 SPIRE_AWS_RESET_COORDINATOR_INDEX="${SPIRE_AWS_RESET_COORDINATOR_INDEX:-1}"
 SPIRE_AWS_STORAGE_FORMAT="${SPIRE_AWS_STORAGE_FORMAT:-rabitq}"
+SPIRE_AWS_NODE_LOAD_BASE_DIR="${SPIRE_AWS_NODE_LOAD_BASE_DIR:-/var/tmp/ecaz-spire-aws-load}"
 mkdir -p "$WORK_DIR"
 
 ssm_wait_command() {
@@ -237,7 +238,7 @@ load_remote_shards_node_local() {
     remote_prefix=$(jq -r '.remote_prefix' <<< "$remote_plan")
     remote_index=$(jq -r '.remote_index_regclass' <<< "$remote_plan")
     corpus_file=$(jq -r '.corpus_file' <<< "$remote_plan")
-    node_dir="/tmp/ecaz-spire-aws-${TIER}-node-${node_id}"
+    node_dir="${SPIRE_AWS_NODE_LOAD_BASE_DIR}/${TIER}/node-${node_id}"
     node_corpus_path="${node_dir}/$(basename "$corpus_file")"
     node_load_log="${node_dir}/load.log"
     node_inspect_log="${node_dir}/inspect.log"
@@ -266,7 +267,9 @@ load_remote_shards_node_local() {
       '[
         "set -euo pipefail",
         "command -v /usr/local/bin/ecaz >/dev/null",
+        "rm -rf \($node_dir)",
         "mkdir -p \($node_dir)",
+        "df -h \($node_dir)",
         "aws s3 cp s3://\($bucket)/\($corpus_key) \($node_corpus_path) --region \($region)",
         "set +e",
         "/usr/local/bin/ecaz dev sql --host 127.0.0.1 --port 5432 --user ecaz_coord --database postgres --sql \"DROP TABLE IF EXISTS \($remote_prefix)_queries CASCADE; DROP TABLE IF EXISTS \($remote_prefix)_corpus CASCADE;\" --log-output \($node_dir)/drop.log",
@@ -298,7 +301,7 @@ load_coordinator_representative_node_local() {
   local corpus_key queries_key manifest_key load_log_key reset_log_key commands_json
 
   coord_id=$(jq -r '.coordinator.instance_id' "$TOPOLOGY")
-  node_dir="/tmp/ecaz-spire-aws-${TIER}-coordinator"
+  node_dir="${SPIRE_AWS_NODE_LOAD_BASE_DIR}/${TIER}/coordinator"
   node_corpus_path="${node_dir}/$(basename "$corpus_file")"
   node_queries_path="${node_dir}/$(basename "$queries_file")"
   node_manifest_path="${node_dir}/$(basename "$manifest_file")"
@@ -331,7 +334,9 @@ load_coordinator_representative_node_local() {
     '[
       "set -euo pipefail",
       "command -v /usr/local/bin/ecaz >/dev/null",
+      "rm -rf \($node_dir)",
       "mkdir -p \($node_dir)",
+      "df -h \($node_dir)",
       "aws s3 cp s3://\($bucket)/\($corpus_key) \($node_corpus_path) --region \($region)",
       "aws s3 cp s3://\($bucket)/\($queries_key) \($node_queries_path) --region \($region)",
       "aws s3 cp s3://\($bucket)/\($manifest_key) \($node_manifest_path) --region \($region)",
