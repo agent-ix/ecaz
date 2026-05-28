@@ -16,12 +16,17 @@
 //! ADR-046 frozen rule 1 / ADR-047 frozen rule 4: `PAYLOAD_FLAG_COLD_RERANK_PAYLOAD`
 //! stays clear on V0 builds. The V0 rerank source is the heap
 //! `ecvector` row (ADR-044 default).
+//!
+//! Build-time exact duplicate vectors are intentionally represented as
+//! distinct graph nodes. Runtime insert still supports overflow heap TIDs, but
+//! ambuild avoids the prior O(N^2) exact-match scan over all collected rows.
 
 use std::ffi::c_void;
 use std::ptr::{self, NonNull};
 use std::time::{Duration, Instant};
 
 use pgrx::{pg_sys, PgBox};
+use rayon::prelude::*;
 
 use crate::am::common::{callback::pg_am_callback, detoast::DetoastedVarlena};
 use crate::storage::buffer_guard::LockedBufferGuard;
@@ -31,7 +36,6 @@ use crate::storage::wal;
 use crate::DEFAULT_QUANT_SEED;
 
 use super::build::{build_and_persist_vamana, BuildOutput, BuildParams};
-use super::insert;
 use super::options::{self, TqDiskannOptions};
 use super::page::VamanaMetadataPage;
 use super::persist::{stage_grouped_codebook_chain, NodePayload};
@@ -49,7 +53,6 @@ const P_NEW: pg_sys::BlockNumber = u32::MAX;
 #[derive(Debug)]
 struct RawHeapTuple {
     primary_heap_tid: ItemPointer,
-    overflow_heap_tids: Vec<ItemPointer>,
     source_vector: Vec<f32>,
 }
 
@@ -131,28 +134,11 @@ impl BuildState {
                 "ec_diskann ambuild requires a single dimension; saw {dim} after {existing}"
             ),
         }
-        if let Some(existing) = self
-            .heap_tuples
-            .iter_mut()
-            .find(|existing| source_vectors_match_exactly(&existing.source_vector, &source_vector))
-        {
-            existing.overflow_heap_tids.push(heap_tid);
-            return;
-        }
         self.heap_tuples.push(RawHeapTuple {
             primary_heap_tid: heap_tid,
-            overflow_heap_tids: Vec::new(),
             source_vector,
         });
     }
-}
-
-fn source_vectors_match_exactly(left: &[f32], right: &[f32]) -> bool {
-    left.len() == right.len()
-        && left
-            .iter()
-            .zip(right.iter())
-            .all(|(lhs, rhs)| lhs.to_bits() == rhs.to_bits())
 }
 
 pub(super) unsafe extern "C-unwind" fn ec_diskann_ambuild(
@@ -312,7 +298,7 @@ unsafe fn flush_build_state(
     let payload_started = Instant::now();
     let payloads: Vec<NodePayload> = state
         .heap_tuples
-        .iter()
+        .par_iter()
         .map(|t| {
             let encoded = codec.encode(&t.source_vector);
             NodePayload {
@@ -379,20 +365,6 @@ unsafe fn flush_build_state(
         .collect();
     let mut chain = persisted.chain;
     timing.data_pages = chain.pages().len();
-    let binary_word_count = params.binary_word_count();
-    let search_code_len = params.search_code_len();
-    let overflow_started = Instant::now();
-    for (node_index, tuple) in state.heap_tuples.iter().enumerate() {
-        insert::stage_overflow_heap_tids_in_chain(
-            &mut chain,
-            metadata.graph_degree_r,
-            binary_word_count,
-            search_code_len,
-            persisted.node_to_tid[node_index],
-            &tuple.overflow_heap_tids,
-        )?;
-    }
-    timing.overflow_ms = elapsed_ms(overflow_started.elapsed());
     let mut metadata = metadata;
     if let Some(model) = codec.pq_model() {
         let codebook_started = Instant::now();
