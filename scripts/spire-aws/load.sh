@@ -112,6 +112,35 @@ download_optional_s3_log() {
   aws s3 cp "s3://${BUCKET}/${s3_key}" "$local_path" --region "$REGION" >/dev/null 2>&1 || true
 }
 
+restart_operator_tunnel_if_available() {
+  local label="$1"
+  local port="$2"
+  local restart_command="${SPIRE_AWS_TUNNEL_RESTART_COMMAND:-}"
+  local log="$ARTIFACT_DIR/tunnel-restart-after-node-local-load.log"
+
+  if [[ -z "$restart_command" ]]; then
+    return
+  fi
+  if [[ ! -x "$restart_command" ]]; then
+    echo "configured tunnel restart command is not executable: ${restart_command}" | tee -a "$log" >&2
+    return 2
+  fi
+  "$restart_command" "$label" "$port" >> "$log" 2>&1
+}
+
+restart_all_operator_tunnels_if_available() {
+  local coord_port
+  coord_port=$(jq -r '.coordinator.operator_port // 5432' "$TOPOLOGY")
+  restart_operator_tunnel_if_available coordinator "$coord_port"
+
+  jq -c '.remotes[]' "$TOPOLOGY" | while read -r remote; do
+    local node_id port
+    node_id=$(jq -r '.node_id' <<< "$remote")
+    port=$(jq -r '.operator_port // 5432' <<< "$remote")
+    restart_operator_tunnel_if_available "remote-${node_id}" "$port"
+  done
+}
+
 write_distributed_placement_config() {
   local remote_count
   local remotes
@@ -515,6 +544,7 @@ case "$TIER" in
       "$WORK_DIR/qdrant-dbpedia/prepared/${PREPARED_PREFIX}_corpus.tsv" \
       "$WORK_DIR/qdrant-dbpedia/prepared/${PREPARED_PREFIX}_queries.tsv" \
       "$WORK_DIR/qdrant-dbpedia/prepared/${PREPARED_PREFIX}_manifest.json"
+    restart_operator_tunnel_if_available coordinator "$COORD_PORT"
     write_leaf_owned_distributed_plan "$WORK_DIR/qdrant-dbpedia/prepared/${PREPARED_PREFIX}_corpus.tsv" 1536 4 42 ec_spire "$SPIRE_AWS_STORAGE_FORMAT" \
       > "$ARTIFACT_DIR/distributed-plan-${TIER}.log"
     ;;
@@ -549,6 +579,7 @@ esac
 
 if [[ "$TIER" == "representative" ]]; then
   load_remote_shards_node_local
+  restart_all_operator_tunnels_if_available
 else
   load_remote_shards
 fi

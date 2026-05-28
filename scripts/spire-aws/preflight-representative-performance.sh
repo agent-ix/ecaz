@@ -424,6 +424,7 @@ require_script_contains "$bootstrap_node_script" "install -m 0755 /tmp/ecaz-sour
 require_script_contains "$representative_load_script" "ssm_run_shell"
 require_script_contains "$representative_load_script" "load_coordinator_representative_node_local"
 require_script_contains "$representative_load_script" "load_remote_shards_node_local"
+require_script_contains "$representative_load_script" "restart_all_operator_tunnels_if_available"
 require_script_contains "$representative_load_script" 'if [[ "$TIER" == "representative" ]]; then'
 run_summary_gate_self_check
 run_watchdog_gate_self_check
