@@ -1,0 +1,17 @@
+2026-05-26 15:58:41.610 PDT [2658100] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-05-26 15:58:41.613 PDT [2658100] LOG:  listening on Unix socket "/home/peter/dev/ecaz/target/spire-phase13e-aws-local-sockets-20260526T225836Z/.s.PGSQL.39703"
+2026-05-26 15:58:41.619 PDT [2658106] LOG:  database system was shut down at 2026-05-26 15:58:41 PDT
+2026-05-26 15:58:41.623 PDT [2658100] LOG:  database system is ready to accept connections
+2026-05-26 16:03:39.917 PDT [2663807] LOG:  could not send data to client: Broken pipe
+2026-05-26 16:03:39.917 PDT [2663807] FATAL:  connection to client lost
+2026-05-26 16:03:41.187 PDT [2658104] LOG:  checkpoint starting: time
+2026-05-26 16:03:59.814 PDT [2664679] ERROR:  ec_spire remote search requested consistency_mode 'degraded' does not match active epoch consistency mode 'strict'
+2026-05-26 16:03:59.814 PDT [2664679] STATEMENT:  SELECT * FROM ec_spire_remote_search($1::oid, $2::bigint, $3::real[], $4::bigint[], $5::integer, $6::text)
+2026-05-26 16:04:00.222 PDT [2658100] LOG:  received fast shutdown request
+2026-05-26 16:04:00.249 PDT [2658100] LOG:  aborting any active transactions
+2026-05-26 16:04:00.249 PDT [2658100] LOG:  background worker "logical replication launcher" (PID 2658109) exited with exit code 1
+2026-05-26 16:04:00.353 PDT [2658104] LOG:  checkpoint complete: wrote 7744 buffers (47.3%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 3 recycled; write=19.090 s, sync=0.061 s, total=19.167 s; sync files=156, longest=0.007 s, average=0.001 s; distance=51893 kB, estimate=51893 kB; lsn=0/4D03438, redo lsn=0/4A01B20
+2026-05-26 16:04:00.353 PDT [2658104] LOG:  shutting down
+2026-05-26 16:04:00.355 PDT [2658104] LOG:  checkpoint starting: shutdown immediate
+2026-05-26 16:04:00.372 PDT [2658104] LOG:  checkpoint complete: wrote 370 buffers (2.3%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.004 s, sync=0.006 s, total=0.019 s; sync files=13, longest=0.002 s, average=0.001 s; distance=3078 kB, estimate=47011 kB; lsn=0/4D034B0, redo lsn=0/4D034B0
+2026-05-26 16:04:00.388 PDT [2658100] LOG:  database system is shut down

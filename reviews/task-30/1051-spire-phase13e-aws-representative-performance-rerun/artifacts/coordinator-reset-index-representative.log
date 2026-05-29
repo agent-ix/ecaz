@@ -1,0 +1,2 @@
+psql:/var/tmp/ecaz-spire-aws-load/representative/coordinator/reset-index.sql:1: NOTICE:  index "ec_spire_aws_repr_1m_idx" does not exist, skipping
+DROP INDEX

@@ -1,0 +1,75 @@
+{
+    "StoppingInstances": [
+        {
+            "InstanceId": "i-0e761cde872199f70",
+            "CurrentState": {
+                "Code": 64,
+                "Name": "stopping"
+            },
+            "PreviousState": {
+                "Code": 16,
+                "Name": "running"
+            }
+        }
+    ]
+}
+{
+    "StoppingInstances": [
+        {
+            "InstanceId": "i-0f85c3bc8c0d54f90",
+            "CurrentState": {
+                "Code": 64,
+                "Name": "stopping"
+            },
+            "PreviousState": {
+                "Code": 16,
+                "Name": "running"
+            }
+        }
+    ]
+}
+{
+    "StartingInstances": [
+        {
+            "InstanceId": "i-0f85c3bc8c0d54f90",
+            "CurrentState": {
+                "Code": 0,
+                "Name": "pending"
+            },
+            "PreviousState": {
+                "Code": 80,
+                "Name": "stopped"
+            }
+        }
+    ]
+}
+{
+    "StoppingInstances": [
+        {
+            "InstanceId": "i-0cf83e7415b07f58f",
+            "CurrentState": {
+                "Code": 64,
+                "Name": "stopping"
+            },
+            "PreviousState": {
+                "Code": 16,
+                "Name": "running"
+            }
+        }
+    ]
+}
+{
+    "StartingInstances": [
+        {
+            "InstanceId": "i-0cf83e7415b07f58f",
+            "CurrentState": {
+                "Code": 0,
+                "Name": "pending"
+            },
+            "PreviousState": {
+                "Code": 80,
+                "Name": "stopped"
+            }
+        }
+    ]
+}

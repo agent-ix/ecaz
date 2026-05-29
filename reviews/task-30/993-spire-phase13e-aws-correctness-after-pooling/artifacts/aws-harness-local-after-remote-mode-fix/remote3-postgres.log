@@ -1,0 +1,15 @@
+2026-05-26 16:41:51.940 PDT [2702987] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-05-26 16:41:51.942 PDT [2702987] LOG:  listening on Unix socket "/home/peter/dev/ecaz/target/spire-phase13e-aws-local-sockets-20260526T234146Z/.s.PGSQL.39703"
+2026-05-26 16:41:51.949 PDT [2702993] LOG:  database system was shut down at 2026-05-26 16:41:51 PDT
+2026-05-26 16:41:51.954 PDT [2702987] LOG:  database system is ready to accept connections
+2026-05-26 16:46:22.359 PDT [2706042] LOG:  skipping vacuum of "ec_spire_aws_synth_10k_node_4_corpus" --- lock not available
+2026-05-26 16:46:43.692 PDT [2706217] LOG:  could not receive data from client: Connection reset by peer
+2026-05-26 16:46:51.479 PDT [2702991] LOG:  checkpoint starting: time
+2026-05-26 16:47:04.119 PDT [2702987] LOG:  received fast shutdown request
+2026-05-26 16:47:04.123 PDT [2702987] LOG:  aborting any active transactions
+2026-05-26 16:47:04.123 PDT [2702987] LOG:  background worker "logical replication launcher" (PID 2702996) exited with exit code 1
+2026-05-26 16:47:04.221 PDT [2702991] LOG:  checkpoint complete: wrote 8112 buffers (49.5%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 3 recycled; write=12.663 s, sync=0.046 s, total=12.743 s; sync files=158, longest=0.002 s, average=0.001 s; distance=55232 kB, estimate=55232 kB; lsn=0/4D50268, redo lsn=0/4D446D8
+2026-05-26 16:47:04.221 PDT [2702991] LOG:  shutting down
+2026-05-26 16:47:04.223 PDT [2702991] LOG:  checkpoint starting: shutdown immediate
+2026-05-26 16:47:04.235 PDT [2702991] LOG:  checkpoint complete: wrote 2 buffers (0.0%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.002 s, sync=0.003 s, total=0.015 s; sync files=3, longest=0.002 s, average=0.001 s; distance=47 kB, estimate=49713 kB; lsn=0/4D502E0, redo lsn=0/4D502E0
+2026-05-26 16:47:04.252 PDT [2702987] LOG:  database system is shut down

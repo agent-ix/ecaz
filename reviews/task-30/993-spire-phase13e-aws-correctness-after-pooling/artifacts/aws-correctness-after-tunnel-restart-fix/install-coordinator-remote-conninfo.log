@@ -1,0 +1,22 @@
+{
+    "CommandId": "446db52a-b277-48b8-bfb2-504eb243f0ed",
+    "InstanceId": "i-08b235b1ba7a7429d",
+    "Comment": "ecaz Phase 13e coordinator remote conninfo",
+    "DocumentName": "AWS-RunShellScript",
+    "DocumentVersion": "$DEFAULT",
+    "PluginName": "aws:runShellScript",
+    "ResponseCode": 0,
+    "ExecutionStartDateTime": "2026-05-27T02:48:26.140Z",
+    "ExecutionElapsedTime": "PT0.612S",
+    "ExecutionEndDateTime": "2026-05-27T02:48:26.140Z",
+    "Status": "Success",
+    "StatusDetails": "Success",
+    "StandardOutputContent": "0.1.1\n",
+    "StandardOutputUrl": "https://s3.us-west-2.amazonaws.com/ecaz-spire-aws-20260527021409123700000007/spire-aws/coordinator-conninfo/446db52a-b277-48b8-bfb2-504eb243f0ed/i-08b235b1ba7a7429d/awsrunShellScript/0.awsrunShellScript/stdout",
+    "StandardErrorContent": "",
+    "StandardErrorUrl": "https://s3.us-west-2.amazonaws.com/ecaz-spire-aws-20260527021409123700000007/spire-aws/coordinator-conninfo/446db52a-b277-48b8-bfb2-504eb243f0ed/i-08b235b1ba7a7429d/awsrunShellScript/0.awsrunShellScript/stderr",
+    "CloudWatchOutputConfig": {
+        "CloudWatchLogGroupName": "",
+        "CloudWatchOutputEnabled": false
+    }
+}

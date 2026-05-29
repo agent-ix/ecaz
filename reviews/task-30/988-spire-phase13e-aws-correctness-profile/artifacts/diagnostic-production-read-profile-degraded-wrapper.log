@@ -1,0 +1,19 @@
+Script started on 2026-05-26 09:43:09-07:00 [<not executed on terminal>]
+tunnel coordinator ready on 127.0.0.1:15432
+tunnel remote-2 ready on 127.0.0.1:15433
+tunnel remote-3 ready on 127.0.0.1:15434
+tunnel remote-4 ready on 127.0.0.1:15435
+SET
+SET
+SET
+ERROR:  ec_spire remote search target plan requested consistency_mode 'degraded' does not match active epoch consistency mode 'strict'
+
+   0: [91mCommand { std: "/home/peter/.pgrx/18.3/pgrx-install/bin/psql" "-h" "127.0.0.1" "-p" "15432" "-U" "ecaz_coord" "-d" "postgres" "-v" "ON_ERROR_STOP=1" "-A" "-t" "-F" "\t" "-c" "SET enable_seqscan = off; SET enable_indexscan = off; SET ec_spire.remote_search_consistency_mode = degraded; SELECT * FROM ec_spire_remote_search_production_read_profile('ec_spire_aws_synth_10k_idx'::regclass, (SELECT source FROM ec_spire_aws_synth_10k_queries WHERE id = 0)::real[], 10);", kill_on_drop: false } failed with status exit status: 1[0m
+
+Location:
+   [35mcrates/ecaz-cli/src/commands/dev/sql.rs[0m:[35m193[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.
+
+Script done on 2026-05-26 09:43:11-07:00 [COMMAND_EXIT_CODE="1"]

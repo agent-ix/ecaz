@@ -1,0 +1,4 @@
+psql:/var/tmp/ecaz-spire-aws-load/representative/node-2/drop.sql:1: NOTICE:  table "ec_spire_aws_repr_1m_node_2_queries" does not exist, skipping
+DROP TABLE
+psql:/var/tmp/ecaz-spire-aws-load/representative/node-2/drop.sql:1: NOTICE:  table "ec_spire_aws_repr_1m_node_2_corpus" does not exist, skipping
+DROP TABLE

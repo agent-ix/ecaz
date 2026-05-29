@@ -1,0 +1,3 @@
+SET
+SET
+psql:scripts/spire-aws/smoke-customscan-read.sql:21: error: no rows returned for \gset

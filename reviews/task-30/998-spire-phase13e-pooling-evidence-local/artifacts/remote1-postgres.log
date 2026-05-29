@@ -1,0 +1,51 @@
+2026-05-26 22:00:39.334 PDT [2947497] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-05-26 22:00:39.336 PDT [2947497] LOG:  listening on Unix socket "/home/peter/dev/ecaz/target/spire-phase13e-aws-local-sockets-20260527T050034Z/.s.PGSQL.39701"
+2026-05-26 22:00:39.342 PDT [2947503] LOG:  database system was shut down at 2026-05-26 22:00:36 PDT
+2026-05-26 22:00:39.346 PDT [2947497] LOG:  database system is ready to accept connections
+2026-05-26 22:04:09.651 PDT [2949916] LOG:  skipping vacuum of "ec_spire_aws_synth_10k_node_2_corpus" --- lock not available
+2026-05-26 22:04:26.590 PDT [2950066] LOG:  could not send data to client: Broken pipe
+2026-05-26 22:04:26.590 PDT [2950066] FATAL:  connection to client lost
+2026-05-26 22:05:39.598 PDT [2947501] LOG:  checkpoint starting: time
+2026-05-26 22:05:45.645 PDT [2947497] LOG:  received fast shutdown request
+2026-05-26 22:05:45.647 PDT [2947497] LOG:  aborting any active transactions
+2026-05-26 22:05:45.648 PDT [2951725] FATAL:  terminating connection due to administrator command
+2026-05-26 22:05:45.648 PDT [2947497] LOG:  background worker "logical replication launcher" (PID 2947506) exited with exit code 1
+2026-05-26 22:05:45.748 PDT [2947501] LOG:  checkpoint complete: wrote 7907 buffers (48.3%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 3 recycled; write=6.088 s, sync=0.047 s, total=6.150 s; sync files=159, longest=0.005 s, average=0.001 s; distance=53857 kB, estimate=53857 kB; lsn=0/4BF4BC0, redo lsn=0/4BECBD0
+2026-05-26 22:05:45.748 PDT [2947501] LOG:  shutting down
+2026-05-26 22:05:45.750 PDT [2947501] LOG:  checkpoint starting: shutdown immediate
+2026-05-26 22:05:45.761 PDT [2947501] LOG:  checkpoint complete: wrote 0 buffers (0.0%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.002 s, sync=0.001 s, total=0.013 s; sync files=1, longest=0.001 s, average=0.001 s; distance=32 kB, estimate=48475 kB; lsn=0/4BF4C38, redo lsn=0/4BF4C38
+2026-05-26 22:05:45.776 PDT [2947497] LOG:  database system is shut down
+2026-05-26 22:05:46.091 PDT [2951772] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-05-26 22:05:46.093 PDT [2951772] LOG:  listening on Unix socket "/home/peter/dev/ecaz/target/spire-phase13e-aws-local-sockets-20260527T050034Z/.s.PGSQL.39701"
+2026-05-26 22:05:46.100 PDT [2951778] LOG:  database system was shut down at 2026-05-26 22:05:45 PDT
+2026-05-26 22:05:46.104 PDT [2951772] LOG:  database system is ready to accept connections
+2026-05-26 22:05:46.489 PDT [2951795] LOG:  could not receive data from client: Connection reset by peer
+2026-05-26 22:05:46.540 PDT [2951772] LOG:  received fast shutdown request
+2026-05-26 22:05:46.546 PDT [2951772] LOG:  aborting any active transactions
+2026-05-26 22:05:46.547 PDT [2951772] LOG:  background worker "logical replication launcher" (PID 2951781) exited with exit code 1
+2026-05-26 22:05:46.547 PDT [2951776] LOG:  shutting down
+2026-05-26 22:05:46.552 PDT [2951776] LOG:  checkpoint starting: shutdown immediate
+2026-05-26 22:05:46.568 PDT [2951776] LOG:  checkpoint complete: wrote 3 buffers (0.0%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.004 s, sync=0.004 s, total=0.022 s; sync files=4, longest=0.002 s, average=0.001 s; distance=30 kB, estimate=30 kB; lsn=0/4BFC6E0, redo lsn=0/4BFC6E0
+2026-05-26 22:05:46.576 PDT [2951772] LOG:  database system is shut down
+2026-05-26 22:05:47.203 PDT [2951844] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-05-26 22:05:47.205 PDT [2951844] LOG:  listening on Unix socket "/home/peter/dev/ecaz/target/spire-phase13e-aws-local-sockets-20260527T050034Z/.s.PGSQL.39701"
+2026-05-26 22:05:47.212 PDT [2951850] LOG:  database system was shut down at 2026-05-26 22:05:46 PDT
+2026-05-26 22:05:47.216 PDT [2951844] LOG:  database system is ready to accept connections
+2026-05-26 22:05:47.353 PDT [2951844] LOG:  received fast shutdown request
+2026-05-26 22:05:47.356 PDT [2951844] LOG:  aborting any active transactions
+2026-05-26 22:05:47.356 PDT [2951844] LOG:  background worker "logical replication launcher" (PID 2951853) exited with exit code 1
+2026-05-26 22:05:47.356 PDT [2951848] LOG:  shutting down
+2026-05-26 22:05:47.358 PDT [2951848] LOG:  checkpoint starting: shutdown immediate
+2026-05-26 22:05:47.372 PDT [2951848] LOG:  checkpoint complete: wrote 4 buffers (0.0%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.004 s, sync=0.004 s, total=0.016 s; sync files=4, longest=0.002 s, average=0.001 s; distance=25 kB, estimate=25 kB; lsn=0/4C02B18, redo lsn=0/4C02B18
+2026-05-26 22:05:47.379 PDT [2951844] LOG:  database system is shut down
+2026-05-26 22:05:47.544 PDT [2951868] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-05-26 22:05:47.546 PDT [2951868] LOG:  listening on Unix socket "/home/peter/dev/ecaz/target/spire-phase13e-aws-local-sockets-20260527T050034Z/.s.PGSQL.39701"
+2026-05-26 22:05:47.553 PDT [2951874] LOG:  database system was shut down at 2026-05-26 22:05:47 PDT
+2026-05-26 22:05:47.558 PDT [2951868] LOG:  database system is ready to accept connections
+2026-05-26 22:05:47.833 PDT [2951868] LOG:  received fast shutdown request
+2026-05-26 22:05:47.836 PDT [2951868] LOG:  aborting any active transactions
+2026-05-26 22:05:47.836 PDT [2951868] LOG:  background worker "logical replication launcher" (PID 2951877) exited with exit code 1
+2026-05-26 22:05:47.836 PDT [2951872] LOG:  shutting down
+2026-05-26 22:05:47.838 PDT [2951872] LOG:  checkpoint starting: shutdown immediate
+2026-05-26 22:05:47.850 PDT [2951872] LOG:  checkpoint complete: wrote 0 buffers (0.0%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.004 s, sync=0.002 s, total=0.014 s; sync files=2, longest=0.001 s, average=0.001 s; distance=0 kB, estimate=0 kB; lsn=0/4C02B90, redo lsn=0/4C02B90
+2026-05-26 22:05:47.857 PDT [2951868] LOG:  database system is shut down

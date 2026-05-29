@@ -1,0 +1,6 @@
+waiting_for_ssm_online pending=i-03b92b16c5c79d92f:None i-0dc29542517f4fcd7:None i-0779c9ed6d278abed:None i-030d0d05de4c52316:None
+waiting_for_ssm_online pending=i-03b92b16c5c79d92f:None i-0dc29542517f4fcd7:None i-0779c9ed6d278abed:None i-030d0d05de4c52316:None
+waiting_for_ssm_online pending=i-0779c9ed6d278abed:None i-030d0d05de4c52316:None
+waiting_for_ssm_online pending=i-0779c9ed6d278abed:None
+ssm_online instance_count=4 status=ready
+i-03b92b16c5c79d92f ssm command id: 58bee809-333f-45b9-83db-b828deea9614

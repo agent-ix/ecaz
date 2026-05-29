@@ -1,0 +1,12 @@
+Script started on 2026-05-26 10:19:10-07:00 [<not executed on terminal>]
+make: Entering directory '/home/peter/dev/ecaz/infra/spire-aws'
+cd /home/peter/dev/ecaz && /home/peter/dev/ecaz/scripts/spire-aws/package-extension.sh /home/peter/dev/ecaz/reviews/task-30/991-spire-phase13e-aws-correctness-profile-after-local-gates/artifacts /home/peter/dev/ecaz/reviews/task-30/991-spire-phase13e-aws-correctness-profile-after-local-gates/artifacts/ecaz-latest.tar.gz
+cd /home/peter/dev/ecaz && /home/peter/dev/ecaz/scripts/spire-aws/install.sh /home/peter/dev/ecaz/reviews/task-30/991-spire-phase13e-aws-correctness-profile-after-local-gates/artifacts/aws-topology.json /home/peter/dev/ecaz/reviews/task-30/991-spire-phase13e-aws-correctness-profile-after-local-gates/artifacts
+Certificate request self-signature ok
+subject=CN = 10.42.1.106
+
+aws: [ERROR]: An error occurred (InvalidInstanceId) when calling the SendCommand operation: Instances not in a valid state for account
+make: *** [Makefile:106: install-extension] Error 254
+make: Leaving directory '/home/peter/dev/ecaz/infra/spire-aws'
+
+Script done on 2026-05-26 10:21:09-07:00 [COMMAND_EXIT_CODE="2"]

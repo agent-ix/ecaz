@@ -1,0 +1,3 @@
+DROP TABLE
+DROP TABLE
+NOTICE:  table "ec_spire_aws_synth_10k_node_3_queries" does not exist, skipping

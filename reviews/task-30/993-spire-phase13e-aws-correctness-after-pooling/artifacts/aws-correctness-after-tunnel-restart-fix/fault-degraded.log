@@ -1,0 +1,32 @@
+{
+    "StoppingInstances": [
+        {
+            "InstanceId": "i-0fbd1d97ba770d7ef",
+            "CurrentState": {
+                "Code": 64,
+                "Name": "stopping"
+            },
+            "PreviousState": {
+                "Code": 16,
+                "Name": "running"
+            }
+        }
+    ]
+}
+{
+    "StartingInstances": [
+        {
+            "InstanceId": "i-0fbd1d97ba770d7ef",
+            "CurrentState": {
+                "Code": 0,
+                "Name": "pending"
+            },
+            "PreviousState": {
+                "Code": 80,
+                "Name": "stopped"
+            }
+        }
+    ]
+}
+tunnel remote-2 restarted on 127.0.0.1:15433 after 1 attempt(s)
+remote node 2 SQL did not become ready within 300s

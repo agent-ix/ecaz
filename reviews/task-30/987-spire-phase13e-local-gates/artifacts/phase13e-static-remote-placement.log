@@ -1,0 +1,45 @@
+run_dir=/home/peter/dev/ecaz/target/spire-phase13e-static-remote-20260526T020919Z
+coord_port=39540
+remote1_port=39541
+remote2_port=39542
+remote3_port=39543
+NOTICE:  ec_spire_register_remote_node_descriptor remote node_id 2 reports max_prepared_transactions = 0; coordinator-routed SPIRE writes require max_prepared_transactions > 0 and enough free prepared transaction slots
+NOTICE:  ec_spire_register_remote_node_descriptor remote node_id 3 reports max_prepared_transactions = 0; coordinator-routed SPIRE writes require max_prepared_transactions > 0 and enough free prepared transaction slots
+NOTICE:  ec_spire_register_remote_node_descriptor remote node_id 4 reports max_prepared_transactions = 0; coordinator-routed SPIRE writes require max_prepared_transactions > 0 and enough free prepared transaction slots
+placement_summary=2:1,3:1,4:1
+profile_summary=ready|3|3|3|3|6
+plan=Limit
+  ->  Custom Scan (EcSpireDistributedScan) on ec_spire_phase13e_coord_sql
+        node: EcSpireDistributedScan
+        remote_fanout: 3
+        tuple_transport_status: ready
+        nprobe: 3
+        rerank_width: 0
+read_rows=1,doc 1
+5,doc 5
+9,doc 9
+2,doc 2
+6,doc 6
+10,doc 10
+exact_rows=1,doc 1
+5,doc 5
+9,doc 9
+2,doc 2
+6,doc 6
+10,doc 10
+production_timeline_rows=1|2|candidate_receive|0|14|14|6|ready|none;1|3|candidate_receive|0|13|13|3|ready|none;1|4|candidate_receive|0|13|13|3|ready|none;1|2|heap_receive|0|628|628|6|ready|none;1|3|heap_receive|0|27|27|3|ready|none;1|4|heap_receive|0|27|26|3|ready|none;
+production_timeline_summary=3|3|628|27|0
+stopping_remote_node=2
+strict_remote_failure_exit_code=3
+strict_remote_failure_text=ERROR:  ec_spire remote write shape fingerprint failed to open connection for node_id 2 
+republishing_degraded_epoch=1
+NOTICE:  ec_spire_register_remote_node_descriptor remote node_id 3 reports max_prepared_transactions = 0; coordinator-routed SPIRE writes require max_prepared_transactions > 0 and enough free prepared transaction slots
+NOTICE:  ec_spire_register_remote_node_descriptor remote node_id 4 reports max_prepared_transactions = 0; coordinator-routed SPIRE writes require max_prepared_transactions > 0 and enough free prepared transaction slots
+degraded_profile_summary=degraded_ready|3|2|2|2|1|0|0|6|none
+degraded_rows=4,doc 4
+8,doc 8
+12,doc 12
+3,doc 3
+7,doc 7
+11,doc 11
+SPIRE Phase 13e static remote placement PG18 fixture passed

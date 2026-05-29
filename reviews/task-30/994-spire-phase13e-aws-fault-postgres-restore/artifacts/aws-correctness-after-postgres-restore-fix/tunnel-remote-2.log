@@ -1,0 +1,10 @@
+
+Starting session with SessionId: ecaz-operator-pnn8cf5f3epyqojpy62u6yxzoe
+Port 15433 opened for sessionId ecaz-operator-pnn8cf5f3epyqojpy62u6yxzoe.
+Waiting for connections...
+
+Connection accepted for session [ecaz-operator-pnn8cf5f3epyqojpy62u6yxzoe]
+
+
+SessionId: ecaz-operator-pnn8cf5f3epyqojpy62u6yxzoe : document process failed unexpectedly: ipc messaging received timeout signal , check [ssm-document-worker]/[ssm-session-worker] log for crash reason
+

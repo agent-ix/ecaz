@@ -1,0 +1,16 @@
+2026-05-25 20:25:43.334 PDT [1906149] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-05-25 20:25:43.336 PDT [1906149] LOG:  listening on Unix socket "/home/peter/dev/ecaz/target/spire-phase13e-static-remote-20260526T032538Z/s/.s.PGSQL.39600"
+2026-05-25 20:25:43.342 PDT [1906155] LOG:  database system was shut down at 2026-05-25 20:25:39 PDT
+2026-05-25 20:25:43.347 PDT [1906149] LOG:  database system is ready to accept connections
+2026-05-25 20:25:45.984 PDT [1906307] ERROR:  ec_spire remote write shape fingerprint failed to open connection for node_id 2
+2026-05-25 20:25:45.984 PDT [1906307] STATEMENT:  SELECT id, title
+	FROM ec_spire_phase13e_coord_sql
+	ORDER BY embedding <#> ARRAY[1.0, 0.0]::real[]
+	LIMIT 6;
+2026-05-25 20:25:46.390 PDT [1906149] LOG:  received fast shutdown request
+2026-05-25 20:25:46.397 PDT [1906149] LOG:  aborting any active transactions
+2026-05-25 20:25:46.398 PDT [1906149] LOG:  background worker "logical replication launcher" (PID 1906158) exited with exit code 1
+2026-05-25 20:25:46.398 PDT [1906153] LOG:  shutting down
+2026-05-25 20:25:46.400 PDT [1906153] LOG:  checkpoint starting: shutdown immediate
+2026-05-25 20:25:46.480 PDT [1906153] LOG:  checkpoint complete: wrote 297 buffers (1.8%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.008 s, sync=0.066 s, total=0.082 s; sync files=130, longest=0.004 s, average=0.001 s; distance=2375 kB, estimate=2375 kB; lsn=0/19A6540, redo lsn=0/19A6540
+2026-05-25 20:25:46.487 PDT [1906149] LOG:  database system is shut down

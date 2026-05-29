@@ -1,0 +1,28 @@
+Script started on 2026-05-26 09:42:16-07:00 [<not executed on terminal>]
+tunnel coordinator ready on 127.0.0.1:15432
+tunnel remote-2 ready on 127.0.0.1:15433
+tunnel remote-3 ready on 127.0.0.1:15434
+tunnel remote-4 ready on 127.0.0.1:15435
+make: Entering directory '/home/peter/dev/ecaz/infra/spire-aws'
+cd /home/peter/dev/ecaz && PREFIX=ec_spire_aws_synth_10k /home/peter/dev/ecaz/scripts/spire-aws/smoke.sh /home/peter/dev/ecaz/reviews/task-30/988-spire-phase13e-aws-correctness-profile/artifacts/aws-topology.tunneled.json /home/peter/dev/ecaz/reviews/task-30/988-spire-phase13e-aws-correctness-profile/artifacts
+SET
+SET
+=== Registered remote nodes ===
+0	active	1
+2	active	34
+3	active	33
+4	active	33
+=== EXPLAIN ANALYZE: vector ORDER BY LIMIT through CustomScan ===
+psql:scripts/spire-aws/smoke-customscan-read.sql:32: ERROR:  EcSpireDistributedScan requires a finite real[] ORDER BY query parameter
+
+   0: [91mCommand { std: "/home/peter/.pgrx/18.3/pgrx-install/bin/psql" "-h" "127.0.0.1" "-p" "15432" "-U" "ecaz_coord" "-d" "postgres" "-v" "ON_ERROR_STOP=1" "-v" "prefix=ec_spire_aws_synth_10k" "-A" "-t" "-F" "\t" "-f" "scripts/spire-aws/smoke-customscan-read.sql", kill_on_drop: false } failed with status exit status: 3[0m
+
+Location:
+   [35mcrates/ecaz-cli/src/commands/dev/sql.rs[0m:[35m193[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.
+make: *** [Makefile:137: smoke] Error 1
+make: Leaving directory '/home/peter/dev/ecaz/infra/spire-aws'
+
+Script done on 2026-05-26 09:42:19-07:00 [COMMAND_EXIT_CODE="2"]

@@ -1,0 +1,19 @@
+2026-05-25 20:27:21.817 PDT [1908750] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-05-25 20:27:21.819 PDT [1908750] LOG:  listening on Unix socket "/home/peter/dev/ecaz/target/s-3887116576/.s.PGSQL.39647"
+2026-05-25 20:27:21.825 PDT [1908756] LOG:  database system was shut down at 2026-05-25 20:27:20 PDT
+2026-05-25 20:27:21.829 PDT [1908750] LOG:  database system is ready to accept connections
+2026-05-25 20:27:22.267 PDT [1908798] FATAL:  terminating connection due to administrator command
+2026-05-25 20:27:22.267 PDT [1908798] STATEMENT:  SELECT pg_terminate_backend(pg_backend_pid())
+2026-05-25 20:27:22.280 PDT [1908802] FATAL:  terminating connection due to administrator command
+2026-05-25 20:27:22.280 PDT [1908802] STATEMENT:  SELECT pg_terminate_backend(pg_backend_pid())
+2026-05-25 20:27:22.295 PDT [1908808] FATAL:  terminating connection due to administrator command
+2026-05-25 20:27:22.295 PDT [1908808] STATEMENT:  SELECT pg_terminate_backend(pg_backend_pid())
+2026-05-25 20:27:22.307 PDT [1908812] FATAL:  terminating connection due to administrator command
+2026-05-25 20:27:22.307 PDT [1908812] STATEMENT:  SELECT pg_terminate_backend(pg_backend_pid())
+2026-05-25 20:27:22.413 PDT [1908750] LOG:  received fast shutdown request
+2026-05-25 20:27:22.415 PDT [1908750] LOG:  aborting any active transactions
+2026-05-25 20:27:22.416 PDT [1908750] LOG:  background worker "logical replication launcher" (PID 1908759) exited with exit code 1
+2026-05-25 20:27:22.416 PDT [1908754] LOG:  shutting down
+2026-05-25 20:27:22.418 PDT [1908754] LOG:  checkpoint starting: shutdown immediate
+2026-05-25 20:27:22.429 PDT [1908754] LOG:  checkpoint complete: wrote 0 buffers (0.0%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.004 s, sync=0.002 s, total=0.014 s; sync files=2, longest=0.001 s, average=0.001 s; distance=0 kB, estimate=0 kB; lsn=0/1754600, redo lsn=0/1754600
+2026-05-25 20:27:22.437 PDT [1908750] LOG:  database system is shut down

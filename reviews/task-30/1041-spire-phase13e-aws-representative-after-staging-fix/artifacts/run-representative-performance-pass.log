@@ -1,0 +1,14 @@
+Script started on 2026-05-27 19:07:53-07:00 [<not executed on terminal>]
+SPIRE representative performance pass
+  artifact_dir=/home/peter/dev/ecaz/reviews/task-30/1041-spire-phase13e-aws-representative-after-staging-fix/artifacts
+  execute=1
+  allow_preexisting_residue=1
+  reuse_artifact_dir=0
+  reserve_artifact_dir=0
+make: Entering directory '/home/peter/dev/ecaz/infra/spire-aws'
+cd /home/peter/dev/ecaz && /home/peter/dev/ecaz/scripts/spire-aws/preflight-operator.sh /home/peter/dev/ecaz/infra/spire-aws/terraform.tfvars
+ERROR: auto_stop_at must be at least 18000s after preflight time for the representative pass watchdog budget, got: 2026-05-28T06:00:00Z
+make: *** [Makefile:76: preflight-operator] Error 2
+make: Leaving directory '/home/peter/dev/ecaz/infra/spire-aws'
+
+Script done on 2026-05-27 19:07:53-07:00 [COMMAND_EXIT_CODE="2"]

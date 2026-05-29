@@ -1,0 +1,38 @@
+2026-05-26 19:05:08.648 PDT [2824034] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-05-26 19:05:08.650 PDT [2824034] LOG:  listening on Unix socket "/home/peter/dev/ecaz/target/spire-phase13e-aws-local-sockets-20260527T020504Z/.s.PGSQL.39701"
+2026-05-26 19:05:08.657 PDT [2824042] LOG:  database system was shut down at 2026-05-26 19:05:06 PDT
+2026-05-26 19:05:08.660 PDT [2824034] LOG:  database system is ready to accept connections
+2026-05-26 19:08:39.065 PDT [2826551] LOG:  skipping vacuum of "ec_spire_aws_synth_10k_node_2_corpus" --- lock not available
+2026-05-26 19:08:53.407 PDT [2826704] LOG:  could not send data to client: Broken pipe
+2026-05-26 19:08:53.407 PDT [2826704] FATAL:  connection to client lost
+2026-05-26 19:10:08.414 PDT [2824040] LOG:  checkpoint starting: time
+2026-05-26 19:10:12.400 PDT [2824034] LOG:  received fast shutdown request
+2026-05-26 19:10:12.403 PDT [2824034] LOG:  aborting any active transactions
+2026-05-26 19:10:12.404 PDT [2824034] LOG:  background worker "logical replication launcher" (PID 2824045) exited with exit code 1
+2026-05-26 19:10:12.508 PDT [2824040] LOG:  checkpoint complete: wrote 7907 buffers (48.3%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 3 recycled; write=4.022 s, sync=0.050 s, total=4.095 s; sync files=159, longest=0.003 s, average=0.001 s; distance=53857 kB, estimate=53857 kB; lsn=0/4BF4938, redo lsn=0/4BECBA0
+2026-05-26 19:10:12.509 PDT [2824040] LOG:  shutting down
+2026-05-26 19:10:12.510 PDT [2824040] LOG:  checkpoint starting: shutdown immediate
+2026-05-26 19:10:12.524 PDT [2824040] LOG:  checkpoint complete: wrote 0 buffers (0.0%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.006 s, sync=0.001 s, total=0.016 s; sync files=1, longest=0.001 s, average=0.001 s; distance=31 kB, estimate=48474 kB; lsn=0/4BF49B0, redo lsn=0/4BF49B0
+2026-05-26 19:10:12.540 PDT [2824034] LOG:  database system is shut down
+2026-05-26 19:10:13.225 PDT [2828412] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-05-26 19:10:13.227 PDT [2828412] LOG:  listening on Unix socket "/home/peter/dev/ecaz/target/spire-phase13e-aws-local-sockets-20260527T020504Z/.s.PGSQL.39701"
+2026-05-26 19:10:13.234 PDT [2828418] LOG:  database system was shut down at 2026-05-26 19:10:12 PDT
+2026-05-26 19:10:13.238 PDT [2828412] LOG:  database system is ready to accept connections
+2026-05-26 19:10:13.307 PDT [2828412] LOG:  received fast shutdown request
+2026-05-26 19:10:13.310 PDT [2828412] LOG:  aborting any active transactions
+2026-05-26 19:10:13.310 PDT [2828412] LOG:  background worker "logical replication launcher" (PID 2828421) exited with exit code 1
+2026-05-26 19:10:13.310 PDT [2828416] LOG:  shutting down
+2026-05-26 19:10:13.312 PDT [2828416] LOG:  checkpoint starting: shutdown immediate
+2026-05-26 19:10:13.329 PDT [2828416] LOG:  checkpoint complete: wrote 3 buffers (0.0%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.004 s, sync=0.005 s, total=0.019 s; sync files=4, longest=0.003 s, average=0.002 s; distance=11 kB, estimate=11 kB; lsn=0/4BF76C8, redo lsn=0/4BF76C8
+2026-05-26 19:10:13.337 PDT [2828412] LOG:  database system is shut down
+2026-05-26 19:10:13.596 PDT [2828436] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-05-26 19:10:13.598 PDT [2828436] LOG:  listening on Unix socket "/home/peter/dev/ecaz/target/spire-phase13e-aws-local-sockets-20260527T020504Z/.s.PGSQL.39701"
+2026-05-26 19:10:13.606 PDT [2828442] LOG:  database system was shut down at 2026-05-26 19:10:13 PDT
+2026-05-26 19:10:13.610 PDT [2828436] LOG:  database system is ready to accept connections
+2026-05-26 19:10:13.889 PDT [2828436] LOG:  received fast shutdown request
+2026-05-26 19:10:13.897 PDT [2828436] LOG:  aborting any active transactions
+2026-05-26 19:10:13.898 PDT [2828436] LOG:  background worker "logical replication launcher" (PID 2828445) exited with exit code 1
+2026-05-26 19:10:13.898 PDT [2828440] LOG:  shutting down
+2026-05-26 19:10:13.900 PDT [2828440] LOG:  checkpoint starting: shutdown immediate
+2026-05-26 19:10:13.914 PDT [2828440] LOG:  checkpoint complete: wrote 0 buffers (0.0%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.006 s, sync=0.002 s, total=0.017 s; sync files=2, longest=0.001 s, average=0.001 s; distance=0 kB, estimate=0 kB; lsn=0/4BF7740, redo lsn=0/4BF7740
+2026-05-26 19:10:13.921 PDT [2828436] LOG:  database system is shut down

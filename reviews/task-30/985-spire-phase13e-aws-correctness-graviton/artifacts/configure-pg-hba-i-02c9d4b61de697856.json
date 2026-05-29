@@ -1,0 +1,22 @@
+{
+    "CommandId": "73c2d07b-79d6-42b4-ac55-01ceed347457",
+    "InstanceId": "i-02c9d4b61de697856",
+    "Comment": "ecaz Phase 13 pg_hba repair",
+    "DocumentName": "AWS-RunShellScript",
+    "DocumentVersion": "$DEFAULT",
+    "PluginName": "aws:runShellScript",
+    "ResponseCode": 0,
+    "ExecutionStartDateTime": "2026-05-26T00:46:47.108Z",
+    "ExecutionElapsedTime": "PT0.224S",
+    "ExecutionEndDateTime": "2026-05-26T00:46:47.108Z",
+    "Status": "Success",
+    "StatusDetails": "Success",
+    "StandardOutputContent": "ecaz_coord\n",
+    "StandardOutputUrl": "",
+    "StandardErrorContent": "",
+    "StandardErrorUrl": "",
+    "CloudWatchOutputConfig": {
+        "CloudWatchLogGroupName": "",
+        "CloudWatchOutputEnabled": false
+    }
+}

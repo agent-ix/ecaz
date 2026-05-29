@@ -1,0 +1,1372 @@
+Script started on 2026-05-26 11:49:14-07:00 [<not executed on terminal>]
+make: Entering directory '/home/peter/dev/ecaz/infra/spire-aws'
+cd /home/peter/dev/ecaz && /home/peter/dev/ecaz/scripts/spire-aws/preflight-operator.sh /home/peter/dev/ecaz/infra/spire-aws/terraform.tfvars
+SPIRE AWS operator preflight passed: region=us-west-2 az=us-west-2a ami=ami-04e0d7d889f694536 coordinator=m7g.large remote=m7g.large remote_count=3
+cd /home/peter/dev/ecaz && /home/peter/dev/ecaz/scripts/spire-aws/preflight-state.sh /home/peter/dev/ecaz/infra/spire-aws/terraform.tfstate
+SPIRE AWS state preflight passed: no local Terraform state file
+cd /home/peter/dev/ecaz && /home/peter/dev/ecaz/scripts/spire-aws/preflight-permissions.sh
+AWS identity: arn:aws:iam::932658697181:user/ecaz-operator
+S3 buckets matched prefix ecaz-spire-aws-:
+  ecaz-spire-aws-20260523165108075000000003
+  ecaz-spire-aws-20260525201045387900000003
+  ecaz-spire-aws-20260525221947629900000007
+  ecaz-spire-aws-20260526155520698800000007
+  ecaz-spire-aws-20260526171747646900000007
+
+aws: [ERROR]: An error occurred (AccessDenied) when calling the ListObjectVersions operation: User: arn:aws:iam::932658697181:user/ecaz-operator is not authorized to perform: s3:ListBucketVersions on resource: "arn:aws:s3:::ecaz-spire-aws-20260523165108075000000003" because no identity-based policy allows the s3:ListBucketVersions action
+WARNING: missing s3:ListBucketVersions for pre-existing residue bucket ecaz-spire-aws-20260523165108075000000003; continuing because override is set
+
+aws: [ERROR]: An error occurred (AccessDenied) when calling the ListObjectVersions operation: User: arn:aws:iam::932658697181:user/ecaz-operator is not authorized to perform: s3:ListBucketVersions on resource: "arn:aws:s3:::ecaz-spire-aws-20260525201045387900000003" because no identity-based policy allows the s3:ListBucketVersions action
+WARNING: missing s3:ListBucketVersions for pre-existing residue bucket ecaz-spire-aws-20260525201045387900000003; continuing because override is set
+
+aws: [ERROR]: An error occurred (AccessDenied) when calling the ListObjectVersions operation: User: arn:aws:iam::932658697181:user/ecaz-operator is not authorized to perform: s3:ListBucketVersions on resource: "arn:aws:s3:::ecaz-spire-aws-20260525221947629900000007" because no identity-based policy allows the s3:ListBucketVersions action
+WARNING: missing s3:ListBucketVersions for pre-existing residue bucket ecaz-spire-aws-20260525221947629900000007; continuing because override is set
+
+aws: [ERROR]: An error occurred (AccessDenied) when calling the ListObjectVersions operation: User: arn:aws:iam::932658697181:user/ecaz-operator is not authorized to perform: s3:ListBucketVersions on resource: "arn:aws:s3:::ecaz-spire-aws-20260526155520698800000007" because no identity-based policy allows the s3:ListBucketVersions action
+WARNING: missing s3:ListBucketVersions for pre-existing residue bucket ecaz-spire-aws-20260526155520698800000007; continuing because override is set
+
+aws: [ERROR]: An error occurred (AccessDenied) when calling the ListObjectVersions operation: User: arn:aws:iam::932658697181:user/ecaz-operator is not authorized to perform: s3:ListBucketVersions on resource: "arn:aws:s3:::ecaz-spire-aws-20260526171747646900000007" because no identity-based policy allows the s3:ListBucketVersions action
+WARNING: missing s3:ListBucketVersions for pre-existing residue bucket ecaz-spire-aws-20260526171747646900000007; continuing because override is set
+Secrets Manager list permission ok for prefix ecaz-spire-aws
+SPIRE AWS permission preflight passed
+cd /home/peter/dev/ecaz/infra/spire-aws && terraform init
+[0m[1mInitializing provider plugins found in the configuration...[0m
+- Reusing previous version of hashicorp/aws from the dependency lock file
+- Reusing previous version of hashicorp/random from the dependency lock file
+- Using previously-installed hashicorp/random v3.9.0
+- Using previously-installed hashicorp/aws v5.100.0
+
+[0m[1mInitializing the backend...[0m
+
+
+
+[0m[1m[32mTerraform has been successfully initialized![0m[32m[0m
+[0m[32m
+You may now begin working with Terraform. Try running "terraform plan" to see
+any changes that are required for your infrastructure. All Terraform commands
+should now work.
+
+If you ever set or change modules or backend configuration for Terraform,
+rerun this command to reinitialize your working directory. If you forget, other
+commands will detect it and remind you to do so if necessary.[0m
+cd /home/peter/dev/ecaz/infra/spire-aws && terraform apply -auto-approve
+
+Terraform used the selected providers to generate the following execution plan. Resource actions are indicated with the following symbols:
+  [32m+[0m create[0m
+
+Terraform will perform the following actions:
+
+[1m  # aws_iam_instance_profile.node[0m will be created
+[0m  [32m+[0m[0m resource "aws_iam_instance_profile" "node" {
+      [32m+[0m[0m arn         = (known after apply)
+      [32m+[0m[0m create_date = (known after apply)
+      [32m+[0m[0m id          = (known after apply)
+      [32m+[0m[0m name        = "ecaz-spire-aws-node"
+      [32m+[0m[0m name_prefix = (known after apply)
+      [32m+[0m[0m path        = "/"
+      [32m+[0m[0m role        = "ecaz-spire-aws-node"
+      [32m+[0m[0m tags_all    = {
+          [32m+[0m[0m "AutoStop" = "2026-05-27T06:00:00Z"
+          [32m+[0m[0m "Owner"    = "coder1"
+          [32m+[0m[0m "Phase"    = "13-spire-aws-verification"
+          [32m+[0m[0m "Project"  = "ecaz"
+        }
+      [32m+[0m[0m unique_id   = (known after apply)
+    }
+
+[1m  # aws_iam_role.node[0m will be created
+[0m  [32m+[0m[0m resource "aws_iam_role" "node" {
+      [32m+[0m[0m arn                   = (known after apply)
+      [32m+[0m[0m assume_role_policy    = jsonencode(
+            {
+              [32m+[0m[0m Statement = [
+                  [32m+[0m[0m {
+                      [32m+[0m[0m Action    = "sts:AssumeRole"
+                      [32m+[0m[0m Effect    = "Allow"
+                      [32m+[0m[0m Principal = {
+                          [32m+[0m[0m Service = "ec2.amazonaws.com"
+                        }
+                    },
+                ]
+              [32m+[0m[0m Version   = "2012-10-17"
+            }
+        )
+      [32m+[0m[0m create_date           = (known after apply)
+      [32m+[0m[0m force_detach_policies = false
+      [32m+[0m[0m id                    = (known after apply)
+      [32m+[0m[0m managed_policy_arns   = (known after apply)
+      [32m+[0m[0m max_session_duration  = 3600
+      [32m+[0m[0m name                  = "ecaz-spire-aws-node"
+      [32m+[0m[0m name_prefix           = (known after apply)
+      [32m+[0m[0m path                  = "/"
+      [32m+[0m[0m tags_all              = {
+          [32m+[0m[0m "AutoStop" = "2026-05-27T06:00:00Z"
+          [32m+[0m[0m "Owner"    = "coder1"
+          [32m+[0m[0m "Phase"    = "13-spire-aws-verification"
+          [32m+[0m[0m "Project"  = "ecaz"
+        }
+      [32m+[0m[0m unique_id             = (known after apply)
+
+      [32m+[0m[0m inline_policy (known after apply)
+    }
+
+[1m  # aws_iam_role_policy.node_artifacts_secrets[0m will be created
+[0m  [32m+[0m[0m resource "aws_iam_role_policy" "node_artifacts_secrets" {
+      [32m+[0m[0m id          = (known after apply)
+      [32m+[0m[0m name        = "ecaz-spire-aws-node-artifacts-secrets"
+      [32m+[0m[0m name_prefix = (known after apply)
+      [32m+[0m[0m policy      = (known after apply)
+      [32m+[0m[0m role        = (known after apply)
+    }
+
+[1m  # aws_iam_role_policy_attachment.node_ssm[0m will be created
+[0m  [32m+[0m[0m resource "aws_iam_role_policy_attachment" "node_ssm" {
+      [32m+[0m[0m id         = (known after apply)
+      [32m+[0m[0m policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+      [32m+[0m[0m role       = "ecaz-spire-aws-node"
+    }
+
+[1m  # aws_instance.coordinator[0m will be created
+[0m  [32m+[0m[0m resource "aws_instance" "coordinator" {
+      [32m+[0m[0m ami                                  = "ami-04e0d7d889f694536"
+      [32m+[0m[0m arn                                  = (known after apply)
+      [32m+[0m[0m associate_public_ip_address          = (known after apply)
+      [32m+[0m[0m availability_zone                    = (known after apply)
+      [32m+[0m[0m cpu_core_count                       = (known after apply)
+      [32m+[0m[0m cpu_threads_per_core                 = (known after apply)
+      [32m+[0m[0m disable_api_stop                     = (known after apply)
+      [32m+[0m[0m disable_api_termination              = (known after apply)
+      [32m+[0m[0m ebs_optimized                        = (known after apply)
+      [32m+[0m[0m enable_primary_ipv6                  = (known after apply)
+      [32m+[0m[0m get_password_data                    = false
+      [32m+[0m[0m host_id                              = (known after apply)
+      [32m+[0m[0m host_resource_group_arn              = (known after apply)
+      [32m+[0m[0m iam_instance_profile                 = "ecaz-spire-aws-node"
+      [32m+[0m[0m id                                   = (known after apply)
+      [32m+[0m[0m instance_initiated_shutdown_behavior = (known after apply)
+      [32m+[0m[0m instance_lifecycle                   = (known after apply)
+      [32m+[0m[0m instance_state                       = (known after apply)
+      [32m+[0m[0m instance_type                        = "m7g.large"
+      [32m+[0m[0m ipv6_address_count                   = (known after apply)
+      [32m+[0m[0m ipv6_addresses                       = (known after apply)
+      [32m+[0m[0m key_name                             = (known after apply)
+      [32m+[0m[0m monitoring                           = (known after apply)
+      [32m+[0m[0m outpost_arn                          = (known after apply)
+      [32m+[0m[0m password_data                        = (known after apply)
+      [32m+[0m[0m placement_group                      = (known after apply)
+      [32m+[0m[0m placement_partition_number           = (known after apply)
+      [32m+[0m[0m primary_network_interface_id         = (known after apply)
+      [32m+[0m[0m private_dns                          = (known after apply)
+      [32m+[0m[0m private_ip                           = (known after apply)
+      [32m+[0m[0m public_dns                           = (known after apply)
+      [32m+[0m[0m public_ip                            = (known after apply)
+      [32m+[0m[0m secondary_private_ips                = (known after apply)
+      [32m+[0m[0m security_groups                      = (known after apply)
+      [32m+[0m[0m source_dest_check                    = true
+      [32m+[0m[0m spot_instance_request_id             = (known after apply)
+      [32m+[0m[0m subnet_id                            = (known after apply)
+      [32m+[0m[0m tags                                 = {
+          [32m+[0m[0m "Name" = "ecaz-spire-aws-coord"
+          [32m+[0m[0m "Role" = "coordinator"
+        }
+      [32m+[0m[0m tags_all                             = {
+          [32m+[0m[0m "AutoStop" = "2026-05-27T06:00:00Z"
+          [32m+[0m[0m "Name"     = "ecaz-spire-aws-coord"
+          [32m+[0m[0m "Owner"    = "coder1"
+          [32m+[0m[0m "Phase"    = "13-spire-aws-verification"
+          [32m+[0m[0m "Project"  = "ecaz"
+          [32m+[0m[0m "Role"     = "coordinator"
+        }
+      [32m+[0m[0m tenancy                              = (known after apply)
+      [32m+[0m[0m user_data                            = (known after apply)
+      [32m+[0m[0m user_data_base64                     = (known after apply)
+      [32m+[0m[0m user_data_replace_on_change          = false
+      [32m+[0m[0m vpc_security_group_ids               = (known after apply)
+
+      [32m+[0m[0m capacity_reservation_specification (known after apply)
+
+      [32m+[0m[0m cpu_options (known after apply)
+
+      [32m+[0m[0m ebs_block_device (known after apply)
+
+      [32m+[0m[0m enclave_options (known after apply)
+
+      [32m+[0m[0m ephemeral_block_device (known after apply)
+
+      [32m+[0m[0m instance_market_options (known after apply)
+
+      [32m+[0m[0m maintenance_options (known after apply)
+
+      [32m+[0m[0m metadata_options {
+          [32m+[0m[0m http_endpoint               = "enabled"
+          [32m+[0m[0m http_protocol_ipv6          = "disabled"
+          [32m+[0m[0m http_put_response_hop_limit = (known after apply)
+          [32m+[0m[0m http_tokens                 = "required"
+          [32m+[0m[0m instance_metadata_tags      = (known after apply)
+        }
+
+      [32m+[0m[0m network_interface (known after apply)
+
+      [32m+[0m[0m private_dns_name_options (known after apply)
+
+      [32m+[0m[0m root_block_device {
+          [32m+[0m[0m delete_on_termination = true
+          [32m+[0m[0m device_name           = (known after apply)
+          [32m+[0m[0m encrypted             = true
+          [32m+[0m[0m iops                  = 3000
+          [32m+[0m[0m kms_key_id            = (known after apply)
+          [32m+[0m[0m tags_all              = (known after apply)
+          [32m+[0m[0m throughput            = 125
+          [32m+[0m[0m volume_id             = (known after apply)
+          [32m+[0m[0m volume_size           = 200
+          [32m+[0m[0m volume_type           = "gp3"
+        }
+    }
+
+[1m  # aws_instance.remote[0][0m will be created
+[0m  [32m+[0m[0m resource "aws_instance" "remote" {
+      [32m+[0m[0m ami                                  = "ami-04e0d7d889f694536"
+      [32m+[0m[0m arn                                  = (known after apply)
+      [32m+[0m[0m associate_public_ip_address          = (known after apply)
+      [32m+[0m[0m availability_zone                    = (known after apply)
+      [32m+[0m[0m cpu_core_count                       = (known after apply)
+      [32m+[0m[0m cpu_threads_per_core                 = (known after apply)
+      [32m+[0m[0m disable_api_stop                     = (known after apply)
+      [32m+[0m[0m disable_api_termination              = (known after apply)
+      [32m+[0m[0m ebs_optimized                        = (known after apply)
+      [32m+[0m[0m enable_primary_ipv6                  = (known after apply)
+      [32m+[0m[0m get_password_data                    = false
+      [32m+[0m[0m host_id                              = (known after apply)
+      [32m+[0m[0m host_resource_group_arn              = (known after apply)
+      [32m+[0m[0m iam_instance_profile                 = "ecaz-spire-aws-node"
+      [32m+[0m[0m id                                   = (known after apply)
+      [32m+[0m[0m instance_initiated_shutdown_behavior = (known after apply)
+      [32m+[0m[0m instance_lifecycle                   = (known after apply)
+      [32m+[0m[0m instance_state                       = (known after apply)
+      [32m+[0m[0m instance_type                        = "m7g.large"
+      [32m+[0m[0m ipv6_address_count                   = (known after apply)
+      [32m+[0m[0m ipv6_addresses                       = (known after apply)
+      [32m+[0m[0m key_name                             = (known after apply)
+      [32m+[0m[0m monitoring                           = (known after apply)
+      [32m+[0m[0m outpost_arn                          = (known after apply)
+      [32m+[0m[0m password_data                        = (known after apply)
+      [32m+[0m[0m placement_group                      = (known after apply)
+      [32m+[0m[0m placement_partition_number           = (known after apply)
+      [32m+[0m[0m primary_network_interface_id         = (known after apply)
+      [32m+[0m[0m private_dns                          = (known after apply)
+      [32m+[0m[0m private_ip                           = (known after apply)
+      [32m+[0m[0m public_dns                           = (known after apply)
+      [32m+[0m[0m public_ip                            = (known after apply)
+      [32m+[0m[0m secondary_private_ips                = (known after apply)
+      [32m+[0m[0m security_groups                      = (known after apply)
+      [32m+[0m[0m source_dest_check                    = true
+      [32m+[0m[0m spot_instance_request_id             = (known after apply)
+      [32m+[0m[0m subnet_id                            = (known after apply)
+      [32m+[0m[0m tags                                 = {
+          [32m+[0m[0m "Name" = "ecaz-spire-aws-remote-1"
+          [32m+[0m[0m "Role" = "remote"
+        }
+      [32m+[0m[0m tags_all                             = {
+          [32m+[0m[0m "AutoStop" = "2026-05-27T06:00:00Z"
+          [32m+[0m[0m "Name"     = "ecaz-spire-aws-remote-1"
+          [32m+[0m[0m "Owner"    = "coder1"
+          [32m+[0m[0m "Phase"    = "13-spire-aws-verification"
+          [32m+[0m[0m "Project"  = "ecaz"
+          [32m+[0m[0m "Role"     = "remote"
+        }
+      [32m+[0m[0m tenancy                              = (known after apply)
+      [32m+[0m[0m user_data                            = (known after apply)
+      [32m+[0m[0m user_data_base64                     = (known after apply)
+      [32m+[0m[0m user_data_replace_on_change          = false
+      [32m+[0m[0m vpc_security_group_ids               = (known after apply)
+
+      [32m+[0m[0m capacity_reservation_specification (known after apply)
+
+      [32m+[0m[0m cpu_options (known after apply)
+
+      [32m+[0m[0m ebs_block_device (known after apply)
+
+      [32m+[0m[0m enclave_options (known after apply)
+
+      [32m+[0m[0m ephemeral_block_device (known after apply)
+
+      [32m+[0m[0m instance_market_options (known after apply)
+
+      [32m+[0m[0m maintenance_options (known after apply)
+
+      [32m+[0m[0m metadata_options {
+          [32m+[0m[0m http_endpoint               = "enabled"
+          [32m+[0m[0m http_protocol_ipv6          = "disabled"
+          [32m+[0m[0m http_put_response_hop_limit = (known after apply)
+          [32m+[0m[0m http_tokens                 = "required"
+          [32m+[0m[0m instance_metadata_tags      = (known after apply)
+        }
+
+      [32m+[0m[0m network_interface (known after apply)
+
+      [32m+[0m[0m private_dns_name_options (known after apply)
+
+      [32m+[0m[0m root_block_device {
+          [32m+[0m[0m delete_on_termination = true
+          [32m+[0m[0m device_name           = (known after apply)
+          [32m+[0m[0m encrypted             = true
+          [32m+[0m[0m iops                  = 3000
+          [32m+[0m[0m kms_key_id            = (known after apply)
+          [32m+[0m[0m tags_all              = (known after apply)
+          [32m+[0m[0m throughput            = 125
+          [32m+[0m[0m volume_id             = (known after apply)
+          [32m+[0m[0m volume_size           = 100
+          [32m+[0m[0m volume_type           = "gp3"
+        }
+    }
+
+[1m  # aws_instance.remote[1][0m will be created
+[0m  [32m+[0m[0m resource "aws_instance" "remote" {
+      [32m+[0m[0m ami                                  = "ami-04e0d7d889f694536"
+      [32m+[0m[0m arn                                  = (known after apply)
+      [32m+[0m[0m associate_public_ip_address          = (known after apply)
+      [32m+[0m[0m availability_zone                    = (known after apply)
+      [32m+[0m[0m cpu_core_count                       = (known after apply)
+      [32m+[0m[0m cpu_threads_per_core                 = (known after apply)
+      [32m+[0m[0m disable_api_stop                     = (known after apply)
+      [32m+[0m[0m disable_api_termination              = (known after apply)
+      [32m+[0m[0m ebs_optimized                        = (known after apply)
+      [32m+[0m[0m enable_primary_ipv6                  = (known after apply)
+      [32m+[0m[0m get_password_data                    = false
+      [32m+[0m[0m host_id                              = (known after apply)
+      [32m+[0m[0m host_resource_group_arn              = (known after apply)
+      [32m+[0m[0m iam_instance_profile                 = "ecaz-spire-aws-node"
+      [32m+[0m[0m id                                   = (known after apply)
+      [32m+[0m[0m instance_initiated_shutdown_behavior = (known after apply)
+      [32m+[0m[0m instance_lifecycle                   = (known after apply)
+      [32m+[0m[0m instance_state                       = (known after apply)
+      [32m+[0m[0m instance_type                        = "m7g.large"
+      [32m+[0m[0m ipv6_address_count                   = (known after apply)
+      [32m+[0m[0m ipv6_addresses                       = (known after apply)
+      [32m+[0m[0m key_name                             = (known after apply)
+      [32m+[0m[0m monitoring                           = (known after apply)
+      [32m+[0m[0m outpost_arn                          = (known after apply)
+      [32m+[0m[0m password_data                        = (known after apply)
+      [32m+[0m[0m placement_group                      = (known after apply)
+      [32m+[0m[0m placement_partition_number           = (known after apply)
+      [32m+[0m[0m primary_network_interface_id         = (known after apply)
+      [32m+[0m[0m private_dns                          = (known after apply)
+      [32m+[0m[0m private_ip                           = (known after apply)
+      [32m+[0m[0m public_dns                           = (known after apply)
+      [32m+[0m[0m public_ip                            = (known after apply)
+      [32m+[0m[0m secondary_private_ips                = (known after apply)
+      [32m+[0m[0m security_groups                      = (known after apply)
+      [32m+[0m[0m source_dest_check                    = true
+      [32m+[0m[0m spot_instance_request_id             = (known after apply)
+      [32m+[0m[0m subnet_id                            = (known after apply)
+      [32m+[0m[0m tags                                 = {
+          [32m+[0m[0m "Name" = "ecaz-spire-aws-remote-2"
+          [32m+[0m[0m "Role" = "remote"
+        }
+      [32m+[0m[0m tags_all                             = {
+          [32m+[0m[0m "AutoStop" = "2026-05-27T06:00:00Z"
+          [32m+[0m[0m "Name"     = "ecaz-spire-aws-remote-2"
+          [32m+[0m[0m "Owner"    = "coder1"
+          [32m+[0m[0m "Phase"    = "13-spire-aws-verification"
+          [32m+[0m[0m "Project"  = "ecaz"
+          [32m+[0m[0m "Role"     = "remote"
+        }
+      [32m+[0m[0m tenancy                              = (known after apply)
+      [32m+[0m[0m user_data                            = (known after apply)
+      [32m+[0m[0m user_data_base64                     = (known after apply)
+      [32m+[0m[0m user_data_replace_on_change          = false
+      [32m+[0m[0m vpc_security_group_ids               = (known after apply)
+
+      [32m+[0m[0m capacity_reservation_specification (known after apply)
+
+      [32m+[0m[0m cpu_options (known after apply)
+
+      [32m+[0m[0m ebs_block_device (known after apply)
+
+      [32m+[0m[0m enclave_options (known after apply)
+
+      [32m+[0m[0m ephemeral_block_device (known after apply)
+
+      [32m+[0m[0m instance_market_options (known after apply)
+
+      [32m+[0m[0m maintenance_options (known after apply)
+
+      [32m+[0m[0m metadata_options {
+          [32m+[0m[0m http_endpoint               = "enabled"
+          [32m+[0m[0m http_protocol_ipv6          = "disabled"
+          [32m+[0m[0m http_put_response_hop_limit = (known after apply)
+          [32m+[0m[0m http_tokens                 = "required"
+          [32m+[0m[0m instance_metadata_tags      = (known after apply)
+        }
+
+      [32m+[0m[0m network_interface (known after apply)
+
+      [32m+[0m[0m private_dns_name_options (known after apply)
+
+      [32m+[0m[0m root_block_device {
+          [32m+[0m[0m delete_on_termination = true
+          [32m+[0m[0m device_name           = (known after apply)
+          [32m+[0m[0m encrypted             = true
+          [32m+[0m[0m iops                  = 3000
+          [32m+[0m[0m kms_key_id            = (known after apply)
+          [32m+[0m[0m tags_all              = (known after apply)
+          [32m+[0m[0m throughput            = 125
+          [32m+[0m[0m volume_id             = (known after apply)
+          [32m+[0m[0m volume_size           = 100
+          [32m+[0m[0m volume_type           = "gp3"
+        }
+    }
+
+[1m  # aws_instance.remote[2][0m will be created
+[0m  [32m+[0m[0m resource "aws_instance" "remote" {
+      [32m+[0m[0m ami                                  = "ami-04e0d7d889f694536"
+      [32m+[0m[0m arn                                  = (known after apply)
+      [32m+[0m[0m associate_public_ip_address          = (known after apply)
+      [32m+[0m[0m availability_zone                    = (known after apply)
+      [32m+[0m[0m cpu_core_count                       = (known after apply)
+      [32m+[0m[0m cpu_threads_per_core                 = (known after apply)
+      [32m+[0m[0m disable_api_stop                     = (known after apply)
+      [32m+[0m[0m disable_api_termination              = (known after apply)
+      [32m+[0m[0m ebs_optimized                        = (known after apply)
+      [32m+[0m[0m enable_primary_ipv6                  = (known after apply)
+      [32m+[0m[0m get_password_data                    = false
+      [32m+[0m[0m host_id                              = (known after apply)
+      [32m+[0m[0m host_resource_group_arn              = (known after apply)
+      [32m+[0m[0m iam_instance_profile                 = "ecaz-spire-aws-node"
+      [32m+[0m[0m id                                   = (known after apply)
+      [32m+[0m[0m instance_initiated_shutdown_behavior = (known after apply)
+      [32m+[0m[0m instance_lifecycle                   = (known after apply)
+      [32m+[0m[0m instance_state                       = (known after apply)
+      [32m+[0m[0m instance_type                        = "m7g.large"
+      [32m+[0m[0m ipv6_address_count                   = (known after apply)
+      [32m+[0m[0m ipv6_addresses                       = (known after apply)
+      [32m+[0m[0m key_name                             = (known after apply)
+      [32m+[0m[0m monitoring                           = (known after apply)
+      [32m+[0m[0m outpost_arn                          = (known after apply)
+      [32m+[0m[0m password_data                        = (known after apply)
+      [32m+[0m[0m placement_group                      = (known after apply)
+      [32m+[0m[0m placement_partition_number           = (known after apply)
+      [32m+[0m[0m primary_network_interface_id         = (known after apply)
+      [32m+[0m[0m private_dns                          = (known after apply)
+      [32m+[0m[0m private_ip                           = (known after apply)
+      [32m+[0m[0m public_dns                           = (known after apply)
+      [32m+[0m[0m public_ip                            = (known after apply)
+      [32m+[0m[0m secondary_private_ips                = (known after apply)
+      [32m+[0m[0m security_groups                      = (known after apply)
+      [32m+[0m[0m source_dest_check                    = true
+      [32m+[0m[0m spot_instance_request_id             = (known after apply)
+      [32m+[0m[0m subnet_id                            = (known after apply)
+      [32m+[0m[0m tags                                 = {
+          [32m+[0m[0m "Name" = "ecaz-spire-aws-remote-3"
+          [32m+[0m[0m "Role" = "remote"
+        }
+      [32m+[0m[0m tags_all                             = {
+          [32m+[0m[0m "AutoStop" = "2026-05-27T06:00:00Z"
+          [32m+[0m[0m "Name"     = "ecaz-spire-aws-remote-3"
+          [32m+[0m[0m "Owner"    = "coder1"
+          [32m+[0m[0m "Phase"    = "13-spire-aws-verification"
+          [32m+[0m[0m "Project"  = "ecaz"
+          [32m+[0m[0m "Role"     = "remote"
+        }
+      [32m+[0m[0m tenancy                              = (known after apply)
+      [32m+[0m[0m user_data                            = (known after apply)
+      [32m+[0m[0m user_data_base64                     = (known after apply)
+      [32m+[0m[0m user_data_replace_on_change          = false
+      [32m+[0m[0m vpc_security_group_ids               = (known after apply)
+
+      [32m+[0m[0m capacity_reservation_specification (known after apply)
+
+      [32m+[0m[0m cpu_options (known after apply)
+
+      [32m+[0m[0m ebs_block_device (known after apply)
+
+      [32m+[0m[0m enclave_options (known after apply)
+
+      [32m+[0m[0m ephemeral_block_device (known after apply)
+
+      [32m+[0m[0m instance_market_options (known after apply)
+
+      [32m+[0m[0m maintenance_options (known after apply)
+
+      [32m+[0m[0m metadata_options {
+          [32m+[0m[0m http_endpoint               = "enabled"
+          [32m+[0m[0m http_protocol_ipv6          = "disabled"
+          [32m+[0m[0m http_put_response_hop_limit = (known after apply)
+          [32m+[0m[0m http_tokens                 = "required"
+          [32m+[0m[0m instance_metadata_tags      = (known after apply)
+        }
+
+      [32m+[0m[0m network_interface (known after apply)
+
+      [32m+[0m[0m private_dns_name_options (known after apply)
+
+      [32m+[0m[0m root_block_device {
+          [32m+[0m[0m delete_on_termination = true
+          [32m+[0m[0m device_name           = (known after apply)
+          [32m+[0m[0m encrypted             = true
+          [32m+[0m[0m iops                  = 3000
+          [32m+[0m[0m kms_key_id            = (known after apply)
+          [32m+[0m[0m tags_all              = (known after apply)
+          [32m+[0m[0m throughput            = 125
+          [32m+[0m[0m volume_id             = (known after apply)
+          [32m+[0m[0m volume_size           = 100
+          [32m+[0m[0m volume_type           = "gp3"
+        }
+    }
+
+[1m  # aws_route_table.spire_aws_data[0m will be created
+[0m  [32m+[0m[0m resource "aws_route_table" "spire_aws_data" {
+      [32m+[0m[0m arn              = (known after apply)
+      [32m+[0m[0m id               = (known after apply)
+      [32m+[0m[0m owner_id         = (known after apply)
+      [32m+[0m[0m propagating_vgws = (known after apply)
+      [32m+[0m[0m route            = (known after apply)
+      [32m+[0m[0m tags             = {
+          [32m+[0m[0m "Name" = "ecaz-spire-aws-data"
+        }
+      [32m+[0m[0m tags_all         = {
+          [32m+[0m[0m "AutoStop" = "2026-05-27T06:00:00Z"
+          [32m+[0m[0m "Name"     = "ecaz-spire-aws-data"
+          [32m+[0m[0m "Owner"    = "coder1"
+          [32m+[0m[0m "Phase"    = "13-spire-aws-verification"
+          [32m+[0m[0m "Project"  = "ecaz"
+        }
+      [32m+[0m[0m vpc_id           = (known after apply)
+    }
+
+[1m  # aws_route_table_association.spire_aws_data[0m will be created
+[0m  [32m+[0m[0m resource "aws_route_table_association" "spire_aws_data" {
+      [32m+[0m[0m id             = (known after apply)
+      [32m+[0m[0m route_table_id = (known after apply)
+      [32m+[0m[0m subnet_id      = (known after apply)
+    }
+
+[1m  # aws_s3_bucket.artifacts[0m will be created
+[0m  [32m+[0m[0m resource "aws_s3_bucket" "artifacts" {
+      [32m+[0m[0m acceleration_status         = (known after apply)
+      [32m+[0m[0m acl                         = (known after apply)
+      [32m+[0m[0m arn                         = (known after apply)
+      [32m+[0m[0m bucket                      = (known after apply)
+      [32m+[0m[0m bucket_domain_name          = (known after apply)
+      [32m+[0m[0m bucket_prefix               = "ecaz-spire-aws-"
+      [32m+[0m[0m bucket_regional_domain_name = (known after apply)
+      [32m+[0m[0m force_destroy               = true
+      [32m+[0m[0m hosted_zone_id              = (known after apply)
+      [32m+[0m[0m id                          = (known after apply)
+      [32m+[0m[0m object_lock_enabled         = (known after apply)
+      [32m+[0m[0m policy                      = (known after apply)
+      [32m+[0m[0m region                      = (known after apply)
+      [32m+[0m[0m request_payer               = (known after apply)
+      [32m+[0m[0m tags_all                    = {
+          [32m+[0m[0m "AutoStop" = "2026-05-27T06:00:00Z"
+          [32m+[0m[0m "Owner"    = "coder1"
+          [32m+[0m[0m "Phase"    = "13-spire-aws-verification"
+          [32m+[0m[0m "Project"  = "ecaz"
+        }
+      [32m+[0m[0m website_domain              = (known after apply)
+      [32m+[0m[0m website_endpoint            = (known after apply)
+
+      [32m+[0m[0m cors_rule (known after apply)
+
+      [32m+[0m[0m grant (known after apply)
+
+      [32m+[0m[0m lifecycle_rule (known after apply)
+
+      [32m+[0m[0m logging (known after apply)
+
+      [32m+[0m[0m object_lock_configuration (known after apply)
+
+      [32m+[0m[0m replication_configuration (known after apply)
+
+      [32m+[0m[0m server_side_encryption_configuration (known after apply)
+
+      [32m+[0m[0m versioning (known after apply)
+
+      [32m+[0m[0m website (known after apply)
+    }
+
+[1m  # aws_s3_bucket_server_side_encryption_configuration.artifacts[0m will be created
+[0m  [32m+[0m[0m resource "aws_s3_bucket_server_side_encryption_configuration" "artifacts" {
+      [32m+[0m[0m bucket = (known after apply)
+      [32m+[0m[0m id     = (known after apply)
+
+      [32m+[0m[0m rule {
+          [32m+[0m[0m apply_server_side_encryption_by_default {
+              [32m+[0m[0m sse_algorithm     = "AES256"
+                [90m# (1 unchanged attribute hidden)[0m[0m
+            }
+        }
+    }
+
+[1m  # aws_s3_bucket_versioning.artifacts[0m will be created
+[0m  [32m+[0m[0m resource "aws_s3_bucket_versioning" "artifacts" {
+      [32m+[0m[0m bucket = (known after apply)
+      [32m+[0m[0m id     = (known after apply)
+
+      [32m+[0m[0m versioning_configuration {
+          [32m+[0m[0m mfa_delete = (known after apply)
+          [32m+[0m[0m status     = "Enabled"
+        }
+    }
+
+[1m  # aws_secretsmanager_secret.remote[0][0m will be created
+[0m  [32m+[0m[0m resource "aws_secretsmanager_secret" "remote" {
+      [32m+[0m[0m arn                            = (known after apply)
+      [32m+[0m[0m force_overwrite_replica_secret = false
+      [32m+[0m[0m id                             = (known after apply)
+      [32m+[0m[0m name                           = (known after apply)
+      [32m+[0m[0m name_prefix                    = (known after apply)
+      [32m+[0m[0m policy                         = (known after apply)
+      [32m+[0m[0m recovery_window_in_days        = 30
+      [32m+[0m[0m tags_all                       = {
+          [32m+[0m[0m "AutoStop" = "2026-05-27T06:00:00Z"
+          [32m+[0m[0m "Owner"    = "coder1"
+          [32m+[0m[0m "Phase"    = "13-spire-aws-verification"
+          [32m+[0m[0m "Project"  = "ecaz"
+        }
+
+      [32m+[0m[0m replica (known after apply)
+    }
+
+[1m  # aws_secretsmanager_secret.remote[1][0m will be created
+[0m  [32m+[0m[0m resource "aws_secretsmanager_secret" "remote" {
+      [32m+[0m[0m arn                            = (known after apply)
+      [32m+[0m[0m force_overwrite_replica_secret = false
+      [32m+[0m[0m id                             = (known after apply)
+      [32m+[0m[0m name                           = (known after apply)
+      [32m+[0m[0m name_prefix                    = (known after apply)
+      [32m+[0m[0m policy                         = (known after apply)
+      [32m+[0m[0m recovery_window_in_days        = 30
+      [32m+[0m[0m tags_all                       = {
+          [32m+[0m[0m "AutoStop" = "2026-05-27T06:00:00Z"
+          [32m+[0m[0m "Owner"    = "coder1"
+          [32m+[0m[0m "Phase"    = "13-spire-aws-verification"
+          [32m+[0m[0m "Project"  = "ecaz"
+        }
+
+      [32m+[0m[0m replica (known after apply)
+    }
+
+[1m  # aws_secretsmanager_secret.remote[2][0m will be created
+[0m  [32m+[0m[0m resource "aws_secretsmanager_secret" "remote" {
+      [32m+[0m[0m arn                            = (known after apply)
+      [32m+[0m[0m force_overwrite_replica_secret = false
+      [32m+[0m[0m id                             = (known after apply)
+      [32m+[0m[0m name                           = (known after apply)
+      [32m+[0m[0m name_prefix                    = (known after apply)
+      [32m+[0m[0m policy                         = (known after apply)
+      [32m+[0m[0m recovery_window_in_days        = 30
+      [32m+[0m[0m tags_all                       = {
+          [32m+[0m[0m "AutoStop" = "2026-05-27T06:00:00Z"
+          [32m+[0m[0m "Owner"    = "coder1"
+          [32m+[0m[0m "Phase"    = "13-spire-aws-verification"
+          [32m+[0m[0m "Project"  = "ecaz"
+        }
+
+      [32m+[0m[0m replica (known after apply)
+    }
+
+[1m  # aws_secretsmanager_secret_version.remote[0][0m will be created
+[0m  [32m+[0m[0m resource "aws_secretsmanager_secret_version" "remote" {
+      [32m+[0m[0m arn                  = (known after apply)
+      [32m+[0m[0m has_secret_string_wo = (known after apply)
+      [32m+[0m[0m id                   = (known after apply)
+      [32m+[0m[0m secret_id            = (known after apply)
+      [32m+[0m[0m secret_string        = (sensitive value)
+      [32m+[0m[0m secret_string_wo     = (write-only attribute)
+      [32m+[0m[0m version_id           = (known after apply)
+      [32m+[0m[0m version_stages       = (known after apply)
+    }
+
+[1m  # aws_secretsmanager_secret_version.remote[1][0m will be created
+[0m  [32m+[0m[0m resource "aws_secretsmanager_secret_version" "remote" {
+      [32m+[0m[0m arn                  = (known after apply)
+      [32m+[0m[0m has_secret_string_wo = (known after apply)
+      [32m+[0m[0m id                   = (known after apply)
+      [32m+[0m[0m secret_id            = (known after apply)
+      [32m+[0m[0m secret_string        = (sensitive value)
+      [32m+[0m[0m secret_string_wo     = (write-only attribute)
+      [32m+[0m[0m version_id           = (known after apply)
+      [32m+[0m[0m version_stages       = (known after apply)
+    }
+
+[1m  # aws_secretsmanager_secret_version.remote[2][0m will be created
+[0m  [32m+[0m[0m resource "aws_secretsmanager_secret_version" "remote" {
+      [32m+[0m[0m arn                  = (known after apply)
+      [32m+[0m[0m has_secret_string_wo = (known after apply)
+      [32m+[0m[0m id                   = (known after apply)
+      [32m+[0m[0m secret_id            = (known after apply)
+      [32m+[0m[0m secret_string        = (sensitive value)
+      [32m+[0m[0m secret_string_wo     = (write-only attribute)
+      [32m+[0m[0m version_id           = (known after apply)
+      [32m+[0m[0m version_stages       = (known after apply)
+    }
+
+[1m  # aws_security_group.coordinator[0m will be created
+[0m  [32m+[0m[0m resource "aws_security_group" "coordinator" {
+      [32m+[0m[0m arn                    = (known after apply)
+      [32m+[0m[0m description            = "SPIRE coordinator: no public ingress; egress to remote SG on 5432."
+      [32m+[0m[0m egress                 = [
+          [32m+[0m[0m {
+              [32m+[0m[0m cidr_blocks      = [
+                  [32m+[0m[0m "0.0.0.0/0",
+                ]
+              [32m+[0m[0m from_port        = 0
+              [32m+[0m[0m ipv6_cidr_blocks = []
+              [32m+[0m[0m prefix_list_ids  = []
+              [32m+[0m[0m protocol         = "-1"
+              [32m+[0m[0m security_groups  = []
+              [32m+[0m[0m self             = false
+              [32m+[0m[0m to_port          = 0
+                [90m# (1 unchanged attribute hidden)[0m[0m
+            },
+        ]
+      [32m+[0m[0m id                     = (known after apply)
+      [32m+[0m[0m ingress                = (known after apply)
+      [32m+[0m[0m name                   = "ecaz-spire-aws-coord"
+      [32m+[0m[0m name_prefix            = (known after apply)
+      [32m+[0m[0m owner_id               = (known after apply)
+      [32m+[0m[0m revoke_rules_on_delete = false
+      [32m+[0m[0m tags                   = {
+          [32m+[0m[0m "Name" = "ecaz-spire-aws-coord"
+        }
+      [32m+[0m[0m tags_all               = {
+          [32m+[0m[0m "AutoStop" = "2026-05-27T06:00:00Z"
+          [32m+[0m[0m "Name"     = "ecaz-spire-aws-coord"
+          [32m+[0m[0m "Owner"    = "coder1"
+          [32m+[0m[0m "Phase"    = "13-spire-aws-verification"
+          [32m+[0m[0m "Project"  = "ecaz"
+        }
+      [32m+[0m[0m vpc_id                 = (known after apply)
+    }
+
+[1m  # aws_security_group.endpoint[0m will be created
+[0m  [32m+[0m[0m resource "aws_security_group" "endpoint" {
+      [32m+[0m[0m arn                    = (known after apply)
+      [32m+[0m[0m description            = "Allow data-plane SGs to reach interface VPC endpoints."
+      [32m+[0m[0m egress                 = [
+          [32m+[0m[0m {
+              [32m+[0m[0m cidr_blocks      = [
+                  [32m+[0m[0m "0.0.0.0/0",
+                ]
+              [32m+[0m[0m from_port        = 0
+              [32m+[0m[0m ipv6_cidr_blocks = []
+              [32m+[0m[0m prefix_list_ids  = []
+              [32m+[0m[0m protocol         = "-1"
+              [32m+[0m[0m security_groups  = []
+              [32m+[0m[0m self             = false
+              [32m+[0m[0m to_port          = 0
+                [90m# (1 unchanged attribute hidden)[0m[0m
+            },
+        ]
+      [32m+[0m[0m id                     = (known after apply)
+      [32m+[0m[0m ingress                = [
+          [32m+[0m[0m {
+              [32m+[0m[0m cidr_blocks      = [
+                  [32m+[0m[0m "10.42.1.0/24",
+                ]
+              [32m+[0m[0m description      = "HTTPS from the data plane."
+              [32m+[0m[0m from_port        = 443
+              [32m+[0m[0m ipv6_cidr_blocks = []
+              [32m+[0m[0m prefix_list_ids  = []
+              [32m+[0m[0m protocol         = "tcp"
+              [32m+[0m[0m security_groups  = []
+              [32m+[0m[0m self             = false
+              [32m+[0m[0m to_port          = 443
+            },
+        ]
+      [32m+[0m[0m name                   = "ecaz-spire-aws-endpoint"
+      [32m+[0m[0m name_prefix            = (known after apply)
+      [32m+[0m[0m owner_id               = (known after apply)
+      [32m+[0m[0m revoke_rules_on_delete = false
+      [32m+[0m[0m tags_all               = {
+          [32m+[0m[0m "AutoStop" = "2026-05-27T06:00:00Z"
+          [32m+[0m[0m "Owner"    = "coder1"
+          [32m+[0m[0m "Phase"    = "13-spire-aws-verification"
+          [32m+[0m[0m "Project"  = "ecaz"
+        }
+      [32m+[0m[0m vpc_id                 = (known after apply)
+    }
+
+[1m  # aws_security_group.remote[0m will be created
+[0m  [32m+[0m[0m resource "aws_security_group" "remote" {
+      [32m+[0m[0m arn                    = (known after apply)
+      [32m+[0m[0m description            = "SPIRE remote: ingress only from the coordinator SG on 5432."
+      [32m+[0m[0m egress                 = [
+          [32m+[0m[0m {
+              [32m+[0m[0m cidr_blocks      = [
+                  [32m+[0m[0m "0.0.0.0/0",
+                ]
+              [32m+[0m[0m from_port        = 0
+              [32m+[0m[0m ipv6_cidr_blocks = []
+              [32m+[0m[0m prefix_list_ids  = []
+              [32m+[0m[0m protocol         = "-1"
+              [32m+[0m[0m security_groups  = []
+              [32m+[0m[0m self             = false
+              [32m+[0m[0m to_port          = 0
+                [90m# (1 unchanged attribute hidden)[0m[0m
+            },
+        ]
+      [32m+[0m[0m id                     = (known after apply)
+      [32m+[0m[0m ingress                = (known after apply)
+      [32m+[0m[0m name                   = "ecaz-spire-aws-remote"
+      [32m+[0m[0m name_prefix            = (known after apply)
+      [32m+[0m[0m owner_id               = (known after apply)
+      [32m+[0m[0m revoke_rules_on_delete = false
+      [32m+[0m[0m tags                   = {
+          [32m+[0m[0m "Name" = "ecaz-spire-aws-remote"
+        }
+      [32m+[0m[0m tags_all               = {
+          [32m+[0m[0m "AutoStop" = "2026-05-27T06:00:00Z"
+          [32m+[0m[0m "Name"     = "ecaz-spire-aws-remote"
+          [32m+[0m[0m "Owner"    = "coder1"
+          [32m+[0m[0m "Phase"    = "13-spire-aws-verification"
+          [32m+[0m[0m "Project"  = "ecaz"
+        }
+      [32m+[0m[0m vpc_id                 = (known after apply)
+    }
+
+[1m  # aws_security_group_rule.coord_to_remote_pg[0m will be created
+[0m  [32m+[0m[0m resource "aws_security_group_rule" "coord_to_remote_pg" {
+      [32m+[0m[0m description              = "PG from coordinator to remote."
+      [32m+[0m[0m from_port                = 5432
+      [32m+[0m[0m id                       = (known after apply)
+      [32m+[0m[0m protocol                 = "tcp"
+      [32m+[0m[0m security_group_id        = (known after apply)
+      [32m+[0m[0m security_group_rule_id   = (known after apply)
+      [32m+[0m[0m self                     = false
+      [32m+[0m[0m source_security_group_id = (known after apply)
+      [32m+[0m[0m to_port                  = 5432
+      [32m+[0m[0m type                     = "ingress"
+    }
+
+[1m  # aws_subnet.spire_aws_data[0m will be created
+[0m  [32m+[0m[0m resource "aws_subnet" "spire_aws_data" {
+      [32m+[0m[0m arn                                            = (known after apply)
+      [32m+[0m[0m assign_ipv6_address_on_creation                = false
+      [32m+[0m[0m availability_zone                              = "us-west-2a"
+      [32m+[0m[0m availability_zone_id                           = (known after apply)
+      [32m+[0m[0m cidr_block                                     = "10.42.1.0/24"
+      [32m+[0m[0m enable_dns64                                   = false
+      [32m+[0m[0m enable_resource_name_dns_a_record_on_launch    = false
+      [32m+[0m[0m enable_resource_name_dns_aaaa_record_on_launch = false
+      [32m+[0m[0m id                                             = (known after apply)
+      [32m+[0m[0m ipv6_cidr_block_association_id                 = (known after apply)
+      [32m+[0m[0m ipv6_native                                    = false
+      [32m+[0m[0m map_public_ip_on_launch                        = false
+      [32m+[0m[0m owner_id                                       = (known after apply)
+      [32m+[0m[0m private_dns_hostname_type_on_launch            = (known after apply)
+      [32m+[0m[0m tags                                           = {
+          [32m+[0m[0m "Name" = "ecaz-spire-aws-data"
+        }
+      [32m+[0m[0m tags_all                                       = {
+          [32m+[0m[0m "AutoStop" = "2026-05-27T06:00:00Z"
+          [32m+[0m[0m "Name"     = "ecaz-spire-aws-data"
+          [32m+[0m[0m "Owner"    = "coder1"
+          [32m+[0m[0m "Phase"    = "13-spire-aws-verification"
+          [32m+[0m[0m "Project"  = "ecaz"
+        }
+      [32m+[0m[0m vpc_id                                         = (known after apply)
+    }
+
+[1m  # aws_vpc.spire_aws[0m will be created
+[0m  [32m+[0m[0m resource "aws_vpc" "spire_aws" {
+      [32m+[0m[0m arn                                  = (known after apply)
+      [32m+[0m[0m cidr_block                           = "10.42.0.0/16"
+      [32m+[0m[0m default_network_acl_id               = (known after apply)
+      [32m+[0m[0m default_route_table_id               = (known after apply)
+      [32m+[0m[0m default_security_group_id            = (known after apply)
+      [32m+[0m[0m dhcp_options_id                      = (known after apply)
+      [32m+[0m[0m enable_dns_hostnames                 = true
+      [32m+[0m[0m enable_dns_support                   = true
+      [32m+[0m[0m enable_network_address_usage_metrics = (known after apply)
+      [32m+[0m[0m id                                   = (known after apply)
+      [32m+[0m[0m instance_tenancy                     = "default"
+      [32m+[0m[0m ipv6_association_id                  = (known after apply)
+      [32m+[0m[0m ipv6_cidr_block                      = (known after apply)
+      [32m+[0m[0m ipv6_cidr_block_network_border_group = (known after apply)
+      [32m+[0m[0m main_route_table_id                  = (known after apply)
+      [32m+[0m[0m owner_id                             = (known after apply)
+      [32m+[0m[0m tags                                 = {
+          [32m+[0m[0m "Name" = "ecaz-spire-aws"
+        }
+      [32m+[0m[0m tags_all                             = {
+          [32m+[0m[0m "AutoStop" = "2026-05-27T06:00:00Z"
+          [32m+[0m[0m "Name"     = "ecaz-spire-aws"
+          [32m+[0m[0m "Owner"    = "coder1"
+          [32m+[0m[0m "Phase"    = "13-spire-aws-verification"
+          [32m+[0m[0m "Project"  = "ecaz"
+        }
+    }
+
+[1m  # aws_vpc_endpoint.ec2messages[0m will be created
+[0m  [32m+[0m[0m resource "aws_vpc_endpoint" "ec2messages" {
+      [32m+[0m[0m arn                   = (known after apply)
+      [32m+[0m[0m cidr_blocks           = (known after apply)
+      [32m+[0m[0m dns_entry             = (known after apply)
+      [32m+[0m[0m id                    = (known after apply)
+      [32m+[0m[0m ip_address_type       = (known after apply)
+      [32m+[0m[0m network_interface_ids = (known after apply)
+      [32m+[0m[0m owner_id              = (known after apply)
+      [32m+[0m[0m policy                = (known after apply)
+      [32m+[0m[0m prefix_list_id        = (known after apply)
+      [32m+[0m[0m private_dns_enabled   = true
+      [32m+[0m[0m requester_managed     = (known after apply)
+      [32m+[0m[0m route_table_ids       = (known after apply)
+      [32m+[0m[0m security_group_ids    = (known after apply)
+      [32m+[0m[0m service_name          = "com.amazonaws.us-west-2.ec2messages"
+      [32m+[0m[0m service_region        = (known after apply)
+      [32m+[0m[0m state                 = (known after apply)
+      [32m+[0m[0m subnet_ids            = (known after apply)
+      [32m+[0m[0m tags_all              = {
+          [32m+[0m[0m "AutoStop" = "2026-05-27T06:00:00Z"
+          [32m+[0m[0m "Owner"    = "coder1"
+          [32m+[0m[0m "Phase"    = "13-spire-aws-verification"
+          [32m+[0m[0m "Project"  = "ecaz"
+        }
+      [32m+[0m[0m vpc_endpoint_type     = "Interface"
+      [32m+[0m[0m vpc_id                = (known after apply)
+
+      [32m+[0m[0m dns_options (known after apply)
+
+      [32m+[0m[0m subnet_configuration (known after apply)
+    }
+
+[1m  # aws_vpc_endpoint.s3[0m will be created
+[0m  [32m+[0m[0m resource "aws_vpc_endpoint" "s3" {
+      [32m+[0m[0m arn                   = (known after apply)
+      [32m+[0m[0m cidr_blocks           = (known after apply)
+      [32m+[0m[0m dns_entry             = (known after apply)
+      [32m+[0m[0m id                    = (known after apply)
+      [32m+[0m[0m ip_address_type       = (known after apply)
+      [32m+[0m[0m network_interface_ids = (known after apply)
+      [32m+[0m[0m owner_id              = (known after apply)
+      [32m+[0m[0m policy                = (known after apply)
+      [32m+[0m[0m prefix_list_id        = (known after apply)
+      [32m+[0m[0m private_dns_enabled   = (known after apply)
+      [32m+[0m[0m requester_managed     = (known after apply)
+      [32m+[0m[0m route_table_ids       = (known after apply)
+      [32m+[0m[0m security_group_ids    = (known after apply)
+      [32m+[0m[0m service_name          = "com.amazonaws.us-west-2.s3"
+      [32m+[0m[0m service_region        = (known after apply)
+      [32m+[0m[0m state                 = (known after apply)
+      [32m+[0m[0m subnet_ids            = (known after apply)
+      [32m+[0m[0m tags_all              = {
+          [32m+[0m[0m "AutoStop" = "2026-05-27T06:00:00Z"
+          [32m+[0m[0m "Owner"    = "coder1"
+          [32m+[0m[0m "Phase"    = "13-spire-aws-verification"
+          [32m+[0m[0m "Project"  = "ecaz"
+        }
+      [32m+[0m[0m vpc_endpoint_type     = "Gateway"
+      [32m+[0m[0m vpc_id                = (known after apply)
+
+      [32m+[0m[0m dns_options (known after apply)
+
+      [32m+[0m[0m subnet_configuration (known after apply)
+    }
+
+[1m  # aws_vpc_endpoint.secretsmanager[0m will be created
+[0m  [32m+[0m[0m resource "aws_vpc_endpoint" "secretsmanager" {
+      [32m+[0m[0m arn                   = (known after apply)
+      [32m+[0m[0m cidr_blocks           = (known after apply)
+      [32m+[0m[0m dns_entry             = (known after apply)
+      [32m+[0m[0m id                    = (known after apply)
+      [32m+[0m[0m ip_address_type       = (known after apply)
+      [32m+[0m[0m network_interface_ids = (known after apply)
+      [32m+[0m[0m owner_id              = (known after apply)
+      [32m+[0m[0m policy                = (known after apply)
+      [32m+[0m[0m prefix_list_id        = (known after apply)
+      [32m+[0m[0m private_dns_enabled   = true
+      [32m+[0m[0m requester_managed     = (known after apply)
+      [32m+[0m[0m route_table_ids       = (known after apply)
+      [32m+[0m[0m security_group_ids    = (known after apply)
+      [32m+[0m[0m service_name          = "com.amazonaws.us-west-2.secretsmanager"
+      [32m+[0m[0m service_region        = (known after apply)
+      [32m+[0m[0m state                 = (known after apply)
+      [32m+[0m[0m subnet_ids            = (known after apply)
+      [32m+[0m[0m tags_all              = {
+          [32m+[0m[0m "AutoStop" = "2026-05-27T06:00:00Z"
+          [32m+[0m[0m "Owner"    = "coder1"
+          [32m+[0m[0m "Phase"    = "13-spire-aws-verification"
+          [32m+[0m[0m "Project"  = "ecaz"
+        }
+      [32m+[0m[0m vpc_endpoint_type     = "Interface"
+      [32m+[0m[0m vpc_id                = (known after apply)
+
+      [32m+[0m[0m dns_options (known after apply)
+
+      [32m+[0m[0m subnet_configuration (known after apply)
+    }
+
+[1m  # aws_vpc_endpoint.ssm[0m will be created
+[0m  [32m+[0m[0m resource "aws_vpc_endpoint" "ssm" {
+      [32m+[0m[0m arn                   = (known after apply)
+      [32m+[0m[0m cidr_blocks           = (known after apply)
+      [32m+[0m[0m dns_entry             = (known after apply)
+      [32m+[0m[0m id                    = (known after apply)
+      [32m+[0m[0m ip_address_type       = (known after apply)
+      [32m+[0m[0m network_interface_ids = (known after apply)
+      [32m+[0m[0m owner_id              = (known after apply)
+      [32m+[0m[0m policy                = (known after apply)
+      [32m+[0m[0m prefix_list_id        = (known after apply)
+      [32m+[0m[0m private_dns_enabled   = true
+      [32m+[0m[0m requester_managed     = (known after apply)
+      [32m+[0m[0m route_table_ids       = (known after apply)
+      [32m+[0m[0m security_group_ids    = (known after apply)
+      [32m+[0m[0m service_name          = "com.amazonaws.us-west-2.ssm"
+      [32m+[0m[0m service_region        = (known after apply)
+      [32m+[0m[0m state                 = (known after apply)
+      [32m+[0m[0m subnet_ids            = (known after apply)
+      [32m+[0m[0m tags_all              = {
+          [32m+[0m[0m "AutoStop" = "2026-05-27T06:00:00Z"
+          [32m+[0m[0m "Owner"    = "coder1"
+          [32m+[0m[0m "Phase"    = "13-spire-aws-verification"
+          [32m+[0m[0m "Project"  = "ecaz"
+        }
+      [32m+[0m[0m vpc_endpoint_type     = "Interface"
+      [32m+[0m[0m vpc_id                = (known after apply)
+
+      [32m+[0m[0m dns_options (known after apply)
+
+      [32m+[0m[0m subnet_configuration (known after apply)
+    }
+
+[1m  # aws_vpc_endpoint.ssmmessages[0m will be created
+[0m  [32m+[0m[0m resource "aws_vpc_endpoint" "ssmmessages" {
+      [32m+[0m[0m arn                   = (known after apply)
+      [32m+[0m[0m cidr_blocks           = (known after apply)
+      [32m+[0m[0m dns_entry             = (known after apply)
+      [32m+[0m[0m id                    = (known after apply)
+      [32m+[0m[0m ip_address_type       = (known after apply)
+      [32m+[0m[0m network_interface_ids = (known after apply)
+      [32m+[0m[0m owner_id              = (known after apply)
+      [32m+[0m[0m policy                = (known after apply)
+      [32m+[0m[0m prefix_list_id        = (known after apply)
+      [32m+[0m[0m private_dns_enabled   = true
+      [32m+[0m[0m requester_managed     = (known after apply)
+      [32m+[0m[0m route_table_ids       = (known after apply)
+      [32m+[0m[0m security_group_ids    = (known after apply)
+      [32m+[0m[0m service_name          = "com.amazonaws.us-west-2.ssmmessages"
+      [32m+[0m[0m service_region        = (known after apply)
+      [32m+[0m[0m state                 = (known after apply)
+      [32m+[0m[0m subnet_ids            = (known after apply)
+      [32m+[0m[0m tags_all              = {
+          [32m+[0m[0m "AutoStop" = "2026-05-27T06:00:00Z"
+          [32m+[0m[0m "Owner"    = "coder1"
+          [32m+[0m[0m "Phase"    = "13-spire-aws-verification"
+          [32m+[0m[0m "Project"  = "ecaz"
+        }
+      [32m+[0m[0m vpc_endpoint_type     = "Interface"
+      [32m+[0m[0m vpc_id                = (known after apply)
+
+      [32m+[0m[0m dns_options (known after apply)
+
+      [32m+[0m[0m subnet_configuration (known after apply)
+    }
+
+[1m  # random_id.run[0m will be created
+[0m  [32m+[0m[0m resource "random_id" "run" {
+      [32m+[0m[0m b64_std     = (known after apply)
+      [32m+[0m[0m b64_url     = (known after apply)
+      [32m+[0m[0m byte_length = 4
+      [32m+[0m[0m dec         = (known after apply)
+      [32m+[0m[0m hex         = (known after apply)
+      [32m+[0m[0m id          = (known after apply)
+    }
+
+[1m  # random_password.remote[0][0m will be created
+[0m  [32m+[0m[0m resource "random_password" "remote" {
+      [32m+[0m[0m bcrypt_hash = (sensitive value)
+      [32m+[0m[0m id          = (known after apply)
+      [32m+[0m[0m length      = 32
+      [32m+[0m[0m lower       = true
+      [32m+[0m[0m min_lower   = 0
+      [32m+[0m[0m min_numeric = 0
+      [32m+[0m[0m min_special = 0
+      [32m+[0m[0m min_upper   = 0
+      [32m+[0m[0m number      = true
+      [32m+[0m[0m numeric     = true
+      [32m+[0m[0m result      = (sensitive value)
+      [32m+[0m[0m special     = false
+      [32m+[0m[0m upper       = true
+    }
+
+[1m  # random_password.remote[1][0m will be created
+[0m  [32m+[0m[0m resource "random_password" "remote" {
+      [32m+[0m[0m bcrypt_hash = (sensitive value)
+      [32m+[0m[0m id          = (known after apply)
+      [32m+[0m[0m length      = 32
+      [32m+[0m[0m lower       = true
+      [32m+[0m[0m min_lower   = 0
+      [32m+[0m[0m min_numeric = 0
+      [32m+[0m[0m min_special = 0
+      [32m+[0m[0m min_upper   = 0
+      [32m+[0m[0m number      = true
+      [32m+[0m[0m numeric     = true
+      [32m+[0m[0m result      = (sensitive value)
+      [32m+[0m[0m special     = false
+      [32m+[0m[0m upper       = true
+    }
+
+[1m  # random_password.remote[2][0m will be created
+[0m  [32m+[0m[0m resource "random_password" "remote" {
+      [32m+[0m[0m bcrypt_hash = (sensitive value)
+      [32m+[0m[0m id          = (known after apply)
+      [32m+[0m[0m length      = 32
+      [32m+[0m[0m lower       = true
+      [32m+[0m[0m min_lower   = 0
+      [32m+[0m[0m min_numeric = 0
+      [32m+[0m[0m min_special = 0
+      [32m+[0m[0m min_upper   = 0
+      [32m+[0m[0m number      = true
+      [32m+[0m[0m numeric     = true
+      [32m+[0m[0m result      = (sensitive value)
+      [32m+[0m[0m special     = false
+      [32m+[0m[0m upper       = true
+    }
+
+[1mPlan:[0m [0m34 to add, 0 to change, 0 to destroy.
+
+Changes to Outputs:
+  [32m+[0m[0m artifact_bucket         = (known after apply)
+  [32m+[0m[0m availability_zone       = "us-west-2a"
+  [32m+[0m[0m coordinator_instance_id = (known after apply)
+  [32m+[0m[0m coordinator_private_ip  = (known after apply)
+  [32m+[0m[0m coordinator_sg_id       = (known after apply)
+  [32m+[0m[0m region                  = "us-west-2"
+  [32m+[0m[0m remote_instance_ids     = [
+      [32m+[0m[0m (known after apply),
+      [32m+[0m[0m (known after apply),
+      [32m+[0m[0m (known after apply),
+    ]
+  [32m+[0m[0m remote_private_ips      = [
+      [32m+[0m[0m (known after apply),
+      [32m+[0m[0m (known after apply),
+      [32m+[0m[0m (known after apply),
+    ]
+  [32m+[0m[0m remote_secret_arns      = [
+      [32m+[0m[0m (known after apply),
+      [32m+[0m[0m (known after apply),
+      [32m+[0m[0m (known after apply),
+    ]
+  [32m+[0m[0m remote_sg_id            = (known after apply)
+  [32m+[0m[0m subnet_id               = (known after apply)
+  [32m+[0m[0m topology                = {
+      [32m+[0m[0m artifact_bucket   = (known after apply)
+      [32m+[0m[0m availability_zone = "us-west-2a"
+      [32m+[0m[0m coordinator       = {
+          [32m+[0m[0m instance_id = (known after apply)
+          [32m+[0m[0m private_ip  = (known after apply)
+        }
+      [32m+[0m[0m region            = "us-west-2"
+      [32m+[0m[0m remotes           = [
+          [32m+[0m[0m {
+              [32m+[0m[0m instance_id = (known after apply)
+              [32m+[0m[0m node_id     = 2
+              [32m+[0m[0m private_ip  = (known after apply)
+              [32m+[0m[0m secret_arn  = (known after apply)
+              [32m+[0m[0m secret_name = (known after apply)
+            },
+          [32m+[0m[0m {
+              [32m+[0m[0m instance_id = (known after apply)
+              [32m+[0m[0m node_id     = 3
+              [32m+[0m[0m private_ip  = (known after apply)
+              [32m+[0m[0m secret_arn  = (known after apply)
+              [32m+[0m[0m secret_name = (known after apply)
+            },
+          [32m+[0m[0m {
+              [32m+[0m[0m instance_id = (known after apply)
+              [32m+[0m[0m node_id     = 4
+              [32m+[0m[0m private_ip  = (known after apply)
+              [32m+[0m[0m secret_arn  = (known after apply)
+              [32m+[0m[0m secret_name = (known after apply)
+            },
+        ]
+    }
+  [32m+[0m[0m vpc_id                  = (known after apply)
+[0m[1mrandom_id.run: Creating...[0m[0m
+[0m[1mrandom_id.run: Creation complete after 0s [id=EambGQ][0m
+[0m[1mrandom_password.remote[1]: Creating...[0m[0m
+[0m[1mrandom_password.remote[2]: Creating...[0m[0m
+[0m[1mrandom_password.remote[0]: Creating...[0m[0m
+[0m[1mrandom_password.remote[0]: Creation complete after 0s [id=none][0m
+[0m[1mrandom_password.remote[2]: Creation complete after 0s [id=none][0m
+[0m[1mrandom_password.remote[1]: Creation complete after 0s [id=none][0m
+[0m[1maws_secretsmanager_secret.remote[2]: Creating...[0m[0m
+[0m[1maws_secretsmanager_secret.remote[0]: Creating...[0m[0m
+[0m[1maws_secretsmanager_secret.remote[1]: Creating...[0m[0m
+[0m[1maws_iam_role.node: Creating...[0m[0m
+[0m[1maws_vpc.spire_aws: Creating...[0m[0m
+[0m[1maws_s3_bucket.artifacts: Creating...[0m[0m
+[0m[1maws_secretsmanager_secret.remote[0]: Creation complete after 0s [id=arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-spire-aws-11a99b19-remote-1-20260526184930632600000003-0xFpXE][0m
+[0m[1maws_secretsmanager_secret.remote[1]: Creation complete after 0s [id=arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-spire-aws-11a99b19-remote-2-20260526184930632600000005-A8VXbq][0m
+[0m[1maws_secretsmanager_secret.remote[2]: Creation complete after 0s [id=arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-spire-aws-11a99b19-remote-3-20260526184930632600000001-43qLyq][0m
+[0m[1maws_iam_role.node: Creation complete after 0s [id=ecaz-spire-aws-node][0m
+[0m[1maws_iam_role_policy_attachment.node_ssm: Creating...[0m[0m
+[0m[1maws_iam_instance_profile.node: Creating...[0m[0m
+[0m[1maws_iam_role_policy_attachment.node_ssm: Creation complete after 1s [id=ecaz-spire-aws-node-20260526184931524300000008][0m
+[0m[1maws_s3_bucket.artifacts: Creation complete after 1s [id=ecaz-spire-aws-20260526184930637300000007][0m
+[0m[1maws_s3_bucket_versioning.artifacts: Creating...[0m[0m
+[0m[1maws_iam_role_policy.node_artifacts_secrets: Creating...[0m[0m
+[0m[1maws_s3_bucket_server_side_encryption_configuration.artifacts: Creating...[0m[0m
+[0m[1maws_s3_bucket_server_side_encryption_configuration.artifacts: Creation complete after 1s [id=ecaz-spire-aws-20260526184930637300000007][0m
+[0m[1maws_iam_role_policy.node_artifacts_secrets: Creation complete after 1s [id=ecaz-spire-aws-node:ecaz-spire-aws-node-artifacts-secrets][0m
+[0m[1maws_s3_bucket_versioning.artifacts: Creation complete after 2s [id=ecaz-spire-aws-20260526184930637300000007][0m
+[0m[1maws_iam_instance_profile.node: Creation complete after 7s [id=ecaz-spire-aws-node][0m
+[0m[1maws_vpc.spire_aws: Still creating... [00m10s elapsed][0m[0m
+[0m[1maws_vpc.spire_aws: Creation complete after 11s [id=vpc-038e180a3e2f5233e][0m
+[0m[1maws_subnet.spire_aws_data: Creating...[0m[0m
+[0m[1maws_route_table.spire_aws_data: Creating...[0m[0m
+[0m[1maws_security_group.remote: Creating...[0m[0m
+[0m[1maws_security_group.coordinator: Creating...[0m[0m
+[0m[1maws_security_group.endpoint: Creating...[0m[0m
+[0m[1maws_route_table.spire_aws_data: Creation complete after 1s [id=rtb-090a9ea0bf60abd28][0m
+[0m[1maws_vpc_endpoint.s3: Creating...[0m[0m
+[0m[1maws_subnet.spire_aws_data: Creation complete after 1s [id=subnet-0f64985b9adf0cbd2][0m
+[0m[1maws_route_table_association.spire_aws_data: Creating...[0m[0m
+[0m[1maws_route_table_association.spire_aws_data: Creation complete after 0s [id=rtbassoc-05ddb452cd4c612ad][0m
+[0m[1maws_security_group.coordinator: Creation complete after 2s [id=sg-0d1ec8da15ae3ff04][0m
+[0m[1maws_security_group.remote: Creation complete after 2s [id=sg-0d9299cbfa248f282][0m
+[0m[1maws_instance.coordinator: Creating...[0m[0m
+[0m[1maws_security_group_rule.coord_to_remote_pg: Creating...[0m[0m
+[0m[1maws_instance.remote[1]: Creating...[0m[0m
+[0m[1maws_instance.remote[2]: Creating...[0m[0m
+[0m[1maws_instance.remote[0]: Creating...[0m[0m
+[0m[1maws_security_group.endpoint: Creation complete after 3s [id=sg-05459e927b6d958e0][0m
+[0m[1maws_vpc_endpoint.ssm: Creating...[0m[0m
+[0m[1maws_vpc_endpoint.ec2messages: Creating...[0m[0m
+[0m[1maws_vpc_endpoint.ssmmessages: Creating...[0m[0m
+[0m[1maws_vpc_endpoint.secretsmanager: Creating...[0m[0m
+[0m[1maws_security_group_rule.coord_to_remote_pg: Creation complete after 1s [id=sgrule-3643691982][0m
+[0m[1maws_vpc_endpoint.s3: Creation complete after 6s [id=vpce-0ec742b46d3dcdb4a][0m
+[0m[1maws_instance.coordinator: Still creating... [00m10s elapsed][0m[0m
+[0m[1maws_instance.remote[2]: Still creating... [00m10s elapsed][0m[0m
+[0m[1maws_instance.remote[1]: Still creating... [00m10s elapsed][0m[0m
+[0m[1maws_instance.remote[0]: Still creating... [00m10s elapsed][0m[0m
+[0m[1maws_vpc_endpoint.ssm: Still creating... [00m10s elapsed][0m[0m
+[0m[1maws_vpc_endpoint.ssmmessages: Still creating... [00m10s elapsed][0m[0m
+[0m[1maws_vpc_endpoint.ec2messages: Still creating... [00m10s elapsed][0m[0m
+[0m[1maws_vpc_endpoint.secretsmanager: Still creating... [00m10s elapsed][0m[0m
+[0m[1maws_instance.remote[2]: Creation complete after 13s [id=i-0d54c0d03a2b3f4d7][0m
+[0m[1maws_instance.remote[1]: Creation complete after 13s [id=i-00c557d2bd3a7c4d1][0m
+[0m[1maws_instance.remote[0]: Creation complete after 13s [id=i-0ba56d83cba3e12bb][0m
+[0m[1maws_instance.coordinator: Creation complete after 13s [id=i-0ae2686c74f8f1113][0m
+[0m[1maws_secretsmanager_secret_version.remote[2]: Creating...[0m[0m
+[0m[1maws_secretsmanager_secret_version.remote[1]: Creating...[0m[0m
+[0m[1maws_secretsmanager_secret_version.remote[0]: Creating...[0m[0m
+[0m[1maws_secretsmanager_secret_version.remote[2]: Creation complete after 0s [id=arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-spire-aws-11a99b19-remote-3-20260526184930632600000001-43qLyq|terraform-20260526184957250900000013][0m
+[0m[1maws_secretsmanager_secret_version.remote[1]: Creation complete after 0s [id=arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-spire-aws-11a99b19-remote-2-20260526184930632600000005-A8VXbq|terraform-20260526184957251100000015][0m
+[0m[1maws_secretsmanager_secret_version.remote[0]: Creation complete after 0s [id=arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-spire-aws-11a99b19-remote-1-20260526184930632600000003-0xFpXE|terraform-20260526184957250900000014][0m
+[0m[1maws_vpc_endpoint.secretsmanager: Still creating... [00m20s elapsed][0m[0m
+[0m[1maws_vpc_endpoint.ec2messages: Still creating... [00m20s elapsed][0m[0m
+[0m[1maws_vpc_endpoint.ssm: Still creating... [00m20s elapsed][0m[0m
+[0m[1maws_vpc_endpoint.ssmmessages: Still creating... [00m20s elapsed][0m[0m
+[0m[1maws_vpc_endpoint.ssmmessages: Still creating... [00m30s elapsed][0m[0m
+[0m[1maws_vpc_endpoint.secretsmanager: Still creating... [00m30s elapsed][0m[0m
+[0m[1maws_vpc_endpoint.ec2messages: Still creating... [00m30s elapsed][0m[0m
+[0m[1maws_vpc_endpoint.ssm: Still creating... [00m30s elapsed][0m[0m
+[0m[1maws_vpc_endpoint.ssm: Still creating... [00m40s elapsed][0m[0m
+[0m[1maws_vpc_endpoint.secretsmanager: Still creating... [00m40s elapsed][0m[0m
+[0m[1maws_vpc_endpoint.ec2messages: Still creating... [00m40s elapsed][0m[0m
+[0m[1maws_vpc_endpoint.ssmmessages: Still creating... [00m40s elapsed][0m[0m
+[0m[1maws_vpc_endpoint.ec2messages: Creation complete after 41s [id=vpce-0d35670aec51f3d7a][0m
+[0m[1maws_vpc_endpoint.ssmmessages: Creation complete after 42s [id=vpce-0081ea798d49d58c8][0m
+[0m[1maws_vpc_endpoint.secretsmanager: Still creating... [00m50s elapsed][0m[0m
+[0m[1maws_vpc_endpoint.ssm: Still creating... [00m50s elapsed][0m[0m
+[0m[1maws_vpc_endpoint.secretsmanager: Creation complete after 51s [id=vpce-02e1e89ddd703c9de][0m
+[0m[1maws_vpc_endpoint.ssm: Creation complete after 52s [id=vpce-0ec223b403347e2f8][0m
+[0m[1m[32m
+Apply complete! Resources: 34 added, 0 changed, 0 destroyed.[0m
+[0m[1m[32m
+Outputs:
+
+[0martifact_bucket = "ecaz-spire-aws-20260526184930637300000007"
+availability_zone = "us-west-2a"
+coordinator_instance_id = "i-0ae2686c74f8f1113"
+coordinator_private_ip = "10.42.1.23"
+coordinator_sg_id = "sg-0d1ec8da15ae3ff04"
+region = "us-west-2"
+remote_instance_ids = [
+  "i-0ba56d83cba3e12bb",
+  "i-00c557d2bd3a7c4d1",
+  "i-0d54c0d03a2b3f4d7",
+]
+remote_private_ips = [
+  "10.42.1.225",
+  "10.42.1.117",
+  "10.42.1.222",
+]
+remote_secret_arns = [
+  "arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-spire-aws-11a99b19-remote-1-20260526184930632600000003-0xFpXE",
+  "arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-spire-aws-11a99b19-remote-2-20260526184930632600000005-A8VXbq",
+  "arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-spire-aws-11a99b19-remote-3-20260526184930632600000001-43qLyq",
+]
+remote_sg_id = "sg-0d9299cbfa248f282"
+subnet_id = "subnet-0f64985b9adf0cbd2"
+topology = {
+  "artifact_bucket" = "ecaz-spire-aws-20260526184930637300000007"
+  "availability_zone" = "us-west-2a"
+  "coordinator" = {
+    "instance_id" = "i-0ae2686c74f8f1113"
+    "private_ip" = "10.42.1.23"
+  }
+  "region" = "us-west-2"
+  "remotes" = [
+    {
+      "instance_id" = "i-0ba56d83cba3e12bb"
+      "node_id" = 2
+      "private_ip" = "10.42.1.225"
+      "secret_arn" = "arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-spire-aws-11a99b19-remote-1-20260526184930632600000003-0xFpXE"
+      "secret_name" = "ecaz-spire-aws-11a99b19-remote-1-20260526184930632600000003"
+    },
+    {
+      "instance_id" = "i-00c557d2bd3a7c4d1"
+      "node_id" = 3
+      "private_ip" = "10.42.1.117"
+      "secret_arn" = "arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-spire-aws-11a99b19-remote-2-20260526184930632600000005-A8VXbq"
+      "secret_name" = "ecaz-spire-aws-11a99b19-remote-2-20260526184930632600000005"
+    },
+    {
+      "instance_id" = "i-0d54c0d03a2b3f4d7"
+      "node_id" = 4
+      "private_ip" = "10.42.1.222"
+      "secret_arn" = "arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-spire-aws-11a99b19-remote-3-20260526184930632600000001-43qLyq"
+      "secret_name" = "ecaz-spire-aws-11a99b19-remote-3-20260526184930632600000001"
+    },
+  ]
+}
+vpc_id = "vpc-038e180a3e2f5233e"
+cd /home/peter/dev/ecaz/infra/spire-aws && terraform output -json topology > /home/peter/dev/ecaz/reviews/task-30/993-spire-phase13e-aws-correctness-after-pooling/artifacts/aws-topology.json
+cd /home/peter/dev/ecaz && /home/peter/dev/ecaz/scripts/spire-aws/package-extension.sh /home/peter/dev/ecaz/reviews/task-30/993-spire-phase13e-aws-correctness-after-pooling/artifacts /home/peter/dev/ecaz/reviews/task-30/993-spire-phase13e-aws-correctness-after-pooling/artifacts/ecaz-latest.tar.gz
+cd /home/peter/dev/ecaz && /home/peter/dev/ecaz/scripts/spire-aws/install.sh /home/peter/dev/ecaz/reviews/task-30/993-spire-phase13e-aws-correctness-after-pooling/artifacts/aws-topology.json /home/peter/dev/ecaz/reviews/task-30/993-spire-phase13e-aws-correctness-after-pooling/artifacts
+ssm_online instance_count=4 status=ready
+Certificate request self-signature ok
+subject=CN = 10.42.1.23
+i-0ae2686c74f8f1113 ssm command id: 6b523eaa-2caf-4074-b8e1-1f542f73a668
+Certificate request self-signature ok
+subject=CN = 10.42.1.225
+i-0ba56d83cba3e12bb ssm command id: 845265ac-4eba-4f22-b20a-88747a65e4e7
+Certificate request self-signature ok
+subject=CN = 10.42.1.117
+i-00c557d2bd3a7c4d1 ssm command id: c32a9774-d773-4b95-97a4-c9e8500a3632
+Certificate request self-signature ok
+subject=CN = 10.42.1.222
+i-0d54c0d03a2b3f4d7 ssm command id: be7ba662-7ca9-4497-8c9f-2bddafc00632
+coordinator remote conninfo ssm command id: acd164f9-14ce-4dc5-93f1-1f807d07b79e
+cd /home/peter/dev/ecaz && /home/peter/dev/ecaz/scripts/spire-aws/load.sh correctness /home/peter/dev/ecaz/reviews/task-30/993-spire-phase13e-aws-correctness-after-pooling/artifacts/aws-topology.json /home/peter/dev/ecaz/reviews/task-30/993-spire-phase13e-aws-correctness-after-pooling/artifacts
+[generate] wrote 10000 × dim 1536 rows to /home/peter/dev/ecaz/reviews/task-30/993-spire-phase13e-aws-correctness-after-pooling/artifacts/work/ec_spire_aws_synth_10k_corpus.tsv (kind=Corpus, seed=42)
+[generate] wrote 100 × dim 1536 rows to /home/peter/dev/ecaz/reviews/task-30/993-spire-phase13e-aws-correctness-after-pooling/artifacts/work/ec_spire_aws_synth_10k_queries.tsv (kind=Corpus, seed=42)
+psql: error: connection to server at "10.42.1.23", port 5432 failed: Connection timed out
+	Is the server running on that host and accepting TCP/IP connections?
+
+   0: [91mCommand { std: "/home/peter/.pgrx/18.3/pgrx-install/bin/psql" "-h" "10.42.1.23" "-p" "5432" "-U" "ecaz_coord" "-d" "postgres" "-v" "ON_ERROR_STOP=1" "-A" "-t" "-F" "\t" "-c" "DROP INDEX IF EXISTS ec_spire_aws_synth_10k_idx;", kill_on_drop: false } failed with status exit status: 2[0m
+
+Location:
+   [35mcrates/ecaz-cli/src/commands/dev/sql.rs[0m:[35m193[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.
+make: *** [Makefile:128: load-correctness] Error 1
+make: Leaving directory '/home/peter/dev/ecaz/infra/spire-aws'
+
+Script done on 2026-05-26 12:28:25-07:00 [COMMAND_EXIT_CODE="2"]

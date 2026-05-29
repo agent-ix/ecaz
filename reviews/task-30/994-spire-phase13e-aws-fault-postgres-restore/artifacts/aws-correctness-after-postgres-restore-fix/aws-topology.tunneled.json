@@ -1,0 +1,40 @@
+{
+  "artifact_bucket": "ecaz-spire-aws-20260527031730375100000007",
+  "availability_zone": "us-west-2a",
+  "coordinator": {
+    "instance_id": "i-0e77ab266380fd2d3",
+    "private_ip": "10.42.1.165",
+    "operator_host": "127.0.0.1",
+    "operator_port": 15432
+  },
+  "region": "us-west-2",
+  "remotes": [
+    {
+      "instance_id": "i-0abaae41cfb699302",
+      "node_id": 2,
+      "private_ip": "10.42.1.185",
+      "secret_arn": "arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-spire-aws-47c4b6d3-remote-1-20260527031730373600000005-jhoAUM",
+      "secret_name": "ecaz-spire-aws-47c4b6d3-remote-1-20260527031730373600000005",
+      "operator_host": "127.0.0.1",
+      "operator_port": 15433
+    },
+    {
+      "instance_id": "i-0da2ecc519dae8a57",
+      "node_id": 3,
+      "private_ip": "10.42.1.141",
+      "secret_arn": "arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-spire-aws-47c4b6d3-remote-2-20260527031730373300000003-rOsNLA",
+      "secret_name": "ecaz-spire-aws-47c4b6d3-remote-2-20260527031730373300000003",
+      "operator_host": "127.0.0.1",
+      "operator_port": 15434
+    },
+    {
+      "instance_id": "i-0a72e35b4bf1c0b7c",
+      "node_id": 4,
+      "private_ip": "10.42.1.115",
+      "secret_arn": "arn:aws:secretsmanager:us-west-2:932658697181:secret:ecaz-spire-aws-47c4b6d3-remote-3-20260527031730372700000001-dWa3cC",
+      "secret_name": "ecaz-spire-aws-47c4b6d3-remote-3-20260527031730372700000001",
+      "operator_host": "127.0.0.1",
+      "operator_port": 15435
+    }
+  ]
+}
