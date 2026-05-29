@@ -16,6 +16,7 @@
   - `7a9f08b956b02f0b5c433ee2e80ffac9171ad480` - allow PG18 CI extension installs against apt-owned PostgreSQL directories
   - `3e6395fa3e0f44e6aa826b956c445acbe61a26bb` - route host-side CI tests away from raw execution of the PostgreSQL extension crate
   - `7854ff96cf37b410ca417a01fbfe976f6fc05b9c` - make Stage E CI run directories unique per GitHub run attempt
+  - `e25cfac638c23a9bd63801a28565cbc1c4865a53` - fix IVF v1 fixture expectation after IVF metadata format version bump
 - Packet: `reviews/task-30/1000-spire-merge-ci-hotfix`
 
 ## Summary
@@ -39,6 +40,7 @@ This hotfix stabilizes the post-merge CI failures from PR #6 without changing SP
 - Fixes the PG18 Stage E CI setup by making apt-owned PG18 extension install directories writable by the runner before fixture scripts call `cargo pgrx install`; this addresses a setup permission failure, not SPIRE runtime behavior.
 - Replaces raw host execution of the `ecaz` extension crate test binary with host-side crate tests plus PG18 extension test compilation; actual backend execution remains in `cargo pgrx test pg18`.
 - Avoids Stage E fixture run-directory collisions when GitHub restores cached `target/` contents by using a run-id that includes the GitHub run id and attempt.
+- Fixes the IVF v1 on-disk fixture assertion to check the fixture's stored format version `1` and the legacy decoded `quant_bits = 4`, rather than comparing a v1 fixture to the moving current writer format constant.
 
 ## Validation
 
@@ -70,5 +72,10 @@ This hotfix stabilizes the post-merge CI failures from PR #6 without changing SP
 - `artifacts/cargo-test-no-run-pg18-host-routing.log` - `cargo test --no-run --no-default-features --features pg18` passed locally for the extension test compile path.
 - `artifacts/ci-spire-stage-e-remote-timeout-run-dir-cache-collision.log` - CI failure log showing Stage E refused to reuse a cached `target/spire-stage-e-transport-fault-pg18-ci-remote_statement_timeout` directory.
 - `artifacts/ci-spire-stage-e-run-id-unique-diff-check.log` - unique Stage E CI run-id fix has no whitespace errors.
+- `artifacts/ci-rust-checks-ivf-v1-fixture-format-expectation.log` - CI failure log showing `ivf_metadata_v1_fixture_decodes` expected current format `2` while the v1 fixture decoded format `1`.
+- `artifacts/ivf-v1-fixture-expectation-diff-check.log` - IVF v1 fixture expectation fix has no whitespace errors.
+- `artifacts/cargo-fmt-check-ivf-v1-fixture.log` - `cargo fmt --all -- --check` passed after formatting the IVF fixture fix.
+- `artifacts/cargo-test-ivf-v1-fixture.log` - focused `ivf_metadata_v1_fixture_decodes` passed locally.
+- `artifacts/cargo-test-on-disk-fixtures-after-ivf-v1.log` - full `cargo test --features bench --test on_disk_fixtures` passed locally with `47 passed`.
 
 Note: a local `cargo +1.95.0 clippy --all-targets --no-default-features --features pg18,bench -- -D warnings` validation was attempted after clearing a stale PG17 cargo process, but it ran too long without diagnostics and was stopped. The authoritative validation for this follow-up is the PR CI rerun on the same pinned toolchain.

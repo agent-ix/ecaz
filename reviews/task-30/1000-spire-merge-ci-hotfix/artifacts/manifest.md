@@ -1,9 +1,9 @@
 # Manifest: SPIRE Merge CI Hotfix
 
-- head SHA: `7854ff96cf37b410ca417a01fbfe976f6fc05b9c`
+- head SHA: `e25cfac638c23a9bd63801a28565cbc1c4865a53`
 - task bucket: `reviews/task-30`
 - packet path: `reviews/task-30/1000-spire-merge-ci-hotfix`
-- timestamp: `2026-05-29T20:13:54Z`
+- timestamp: `2026-05-29T20:24:27Z`
 - lane: post-merge CI stabilization
 - fixture/storage/rerank mode: not applicable
 - isolated one-index-per-table or shared-table surface: not applicable
@@ -40,3 +40,8 @@
 | `cargo-test-no-run-pg18-host-routing.log` | `cargo test --no-run --no-default-features --features pg18` | extension test binaries compiled without host execution |
 | `ci-spire-stage-e-remote-timeout-run-dir-cache-collision.log` | `gh api /repos/agent-ix/ecaz/actions/jobs/78578784924/logs` | Stage E `remote_statement_timeout` refused to reuse a cached `target/spire-stage-e-transport-fault-pg18-ci-remote_statement_timeout` run directory |
 | `ci-spire-stage-e-run-id-unique-diff-check.log` | `git diff --check` | no whitespace errors in the unique Stage E CI run-id fix |
+| `ci-rust-checks-ivf-v1-fixture-format-expectation.log` | `gh api /repos/agent-ix/ecaz/actions/jobs/78579609704/logs` | `ivf_metadata_v1_fixture_decodes` decoded format `1`, while the test expected current writer format `2` |
+| `ivf-v1-fixture-expectation-diff-check.log` | `git diff --check` | no whitespace errors in the IVF v1 fixture expectation fix |
+| `cargo-fmt-check-ivf-v1-fixture.log` | `cargo fmt --all -- --check` | exited 0 after the IVF v1 fixture expectation fix |
+| `cargo-test-ivf-v1-fixture.log` | `cargo test --features bench --test on_disk_fixtures ivf_metadata_v1_fixture_decodes` | focused IVF v1 fixture test passed |
+| `cargo-test-on-disk-fixtures-after-ivf-v1.log` | `cargo test --features bench --test on_disk_fixtures` | `test result: ok. 47 passed; 0 failed` |
