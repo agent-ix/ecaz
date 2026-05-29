@@ -172,7 +172,19 @@ pub async fn run(conn: &ConnectionOptions, args: RecallArgs) -> Result<()> {
     let mut corpus_for_ndcg: Option<(Vec<i64>, Array2<f32>)> = None;
     let truth = if let Some(path) = args.truth_cache_file.as_deref() {
         match load_truth_cache_file_if_valid(path, &query_ids, &queries, args.k).await? {
-            Some(truth) => truth,
+            Some(truth) => {
+                if args.truth_corpus_file.is_some() {
+                    let (corpus_ids, corpus) = load_truth_corpus(
+                        &client,
+                        &corpus_table,
+                        args.truth_corpus_file.as_deref(),
+                    )
+                    .await?;
+                    validate_corpus_and_queries(&corpus_table, &corpus, &queries)?;
+                    corpus_for_ndcg = Some((corpus_ids, corpus));
+                }
+                truth
+            }
             None => {
                 let (corpus_ids, corpus) =
                     load_truth_corpus(&client, &corpus_table, args.truth_corpus_file.as_deref())

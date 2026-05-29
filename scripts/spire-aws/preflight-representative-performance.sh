@@ -233,10 +233,12 @@ run_summary_gate_self_check() {
 {"kind":"recall","metric":"recall","step":"13a3a-recall-k10","values":{"nprobe":16,"queries":1000,"recall@k":0.99}}
 {"kind":"recall","metric":"recall","step":"13a3a-recall-k10","values":{"nprobe":24,"queries":1000,"recall@k":0.99}}
 {"kind":"recall","metric":"recall","step":"13a3a-recall-k10","values":{"nprobe":32,"queries":1000,"recall@k":0.99}}
+{"kind":"recall","metric":"recall","step":"13a3a-recall-k10","values":{"nprobe":64,"queries":1000,"recall@k":0.99}}
 {"kind":"spire-pipeline","metric":"spire-pipeline","step":"13e3-production-read-profile-k10","values":{"nprobe":8,"queries":1000,"profiles":1000,"status":"ok","result_source":"remote","latency_p50":"11.0 ms","latency_p95":"22.0 ms","latency_p99":"33.0 ms","recall@k":0.99,"dispatch_sum":1000,"socket_open_sum":10,"connect_p50":"0.1 ms","connect_p95":"0.3 ms","endpoint_identity_p50":"0.1 ms","endpoint_identity_p95":"0.2 ms","candidate_p50":"5.0 ms","candidate_p95":"8.0 ms","heap_p50":"1.0 ms","heap_p95":"2.0 ms","merge_p50":"0.5 ms","merge_p95":"1.0 ms","total_p50":"11.0 ms","total_p95":"22.0 ms","candidate_query_sum":1000,"heap_query_sum":1000,"endpoint_identity_query_sum":1000,"payload_bytes_sum":4096,"timeout_sum":0,"cancel_sum":0,"degraded_skip_sum":0,"returned_sum":10000}}
 {"kind":"spire-pipeline","metric":"spire-pipeline","step":"13e3-production-read-profile-k10","values":{"nprobe":16,"queries":1000,"profiles":1000,"status":"ok","result_source":"remote","latency_p50":"11.0 ms","latency_p95":"22.0 ms","latency_p99":"33.0 ms","recall@k":0.99,"dispatch_sum":1000,"socket_open_sum":10,"connect_p50":"0.1 ms","connect_p95":"0.3 ms","endpoint_identity_p50":"0.1 ms","endpoint_identity_p95":"0.2 ms","candidate_p50":"5.0 ms","candidate_p95":"8.0 ms","heap_p50":"1.0 ms","heap_p95":"2.0 ms","merge_p50":"0.5 ms","merge_p95":"1.0 ms","total_p50":"11.0 ms","total_p95":"22.0 ms","candidate_query_sum":1000,"heap_query_sum":1000,"endpoint_identity_query_sum":1000,"payload_bytes_sum":4096,"timeout_sum":0,"cancel_sum":0,"degraded_skip_sum":0,"returned_sum":10000}}
 {"kind":"spire-pipeline","metric":"spire-pipeline","step":"13e3-production-read-profile-k10","values":{"nprobe":24,"queries":1000,"profiles":1000,"status":"ok","result_source":"remote","latency_p50":"11.0 ms","latency_p95":"22.0 ms","latency_p99":"33.0 ms","recall@k":0.99,"dispatch_sum":1000,"socket_open_sum":10,"connect_p50":"0.1 ms","connect_p95":"0.3 ms","endpoint_identity_p50":"0.1 ms","endpoint_identity_p95":"0.2 ms","candidate_p50":"5.0 ms","candidate_p95":"8.0 ms","heap_p50":"1.0 ms","heap_p95":"2.0 ms","merge_p50":"0.5 ms","merge_p95":"1.0 ms","total_p50":"11.0 ms","total_p95":"22.0 ms","candidate_query_sum":1000,"heap_query_sum":1000,"endpoint_identity_query_sum":1000,"payload_bytes_sum":4096,"timeout_sum":0,"cancel_sum":0,"degraded_skip_sum":0,"returned_sum":10000}}
 {"kind":"spire-pipeline","metric":"spire-pipeline","step":"13e3-production-read-profile-k10","values":{"nprobe":32,"queries":1000,"profiles":1000,"status":"ok","result_source":"remote","latency_p50":"11.0 ms","latency_p95":"22.0 ms","latency_p99":"33.0 ms","recall@k":0.99,"dispatch_sum":1000,"socket_open_sum":10,"connect_p50":"0.1 ms","connect_p95":"0.3 ms","endpoint_identity_p50":"0.1 ms","endpoint_identity_p95":"0.2 ms","candidate_p50":"5.0 ms","candidate_p95":"8.0 ms","heap_p50":"1.0 ms","heap_p95":"2.0 ms","merge_p50":"0.5 ms","merge_p95":"1.0 ms","total_p50":"11.0 ms","total_p95":"22.0 ms","candidate_query_sum":1000,"heap_query_sum":1000,"endpoint_identity_query_sum":1000,"payload_bytes_sum":4096,"timeout_sum":0,"cancel_sum":0,"degraded_skip_sum":0,"returned_sum":10000}}
+{"kind":"spire-pipeline","metric":"spire-pipeline","step":"13e3-production-read-profile-k10","values":{"nprobe":64,"queries":1000,"profiles":1000,"status":"ok","result_source":"remote","latency_p50":"11.0 ms","latency_p95":"22.0 ms","latency_p99":"33.0 ms","recall@k":0.99,"dispatch_sum":1000,"socket_open_sum":10,"connect_p50":"0.1 ms","connect_p95":"0.3 ms","endpoint_identity_p50":"0.1 ms","endpoint_identity_p95":"0.2 ms","candidate_p50":"5.0 ms","candidate_p95":"8.0 ms","heap_p50":"1.0 ms","heap_p95":"2.0 ms","merge_p50":"0.5 ms","merge_p95":"1.0 ms","total_p50":"11.0 ms","total_p95":"22.0 ms","candidate_query_sum":1000,"heap_query_sum":1000,"endpoint_identity_query_sum":1000,"payload_bytes_sum":4096,"timeout_sum":0,"cancel_sum":0,"degraded_skip_sum":0,"returned_sum":10000}}
 JSONL
 
   cat > "$sample_input/suite-results-representative-pooling.jsonl" <<'JSONL'
@@ -248,6 +250,8 @@ JSONL
 {"kind":"spire-pipeline","metric":"spire-pipeline","step":"13e4-pooling-enabled-profile-k10","values":{"nprobe":24,"queries":1000,"profiles":1000,"status":"ok","result_source":"remote","latency_p50":"11.0 ms","latency_p95":"20.0 ms","latency_p99":"30.0 ms","recall@k":0.99,"dispatch_sum":1000,"socket_open_sum":4,"connect_p50":"0.1 ms","connect_p95":"0.2 ms","endpoint_identity_p50":"0.1 ms","endpoint_identity_p95":"0.2 ms","endpoint_identity_query_sum":4,"total_p50":"11.0 ms","total_p95":"20.0 ms"}}
 {"kind":"spire-pipeline","metric":"spire-pipeline","step":"13e4-pooling-disabled-profile-k10","values":{"nprobe":32,"queries":1000,"profiles":1000,"status":"ok","result_source":"remote","latency_p50":"12.0 ms","latency_p95":"24.0 ms","latency_p99":"36.0 ms","recall@k":0.99,"dispatch_sum":1000,"socket_open_sum":1000,"connect_p50":"0.2 ms","connect_p95":"1.0 ms","endpoint_identity_p50":"0.2 ms","endpoint_identity_p95":"0.5 ms","endpoint_identity_query_sum":1000,"total_p50":"12.0 ms","total_p95":"24.0 ms"}}
 {"kind":"spire-pipeline","metric":"spire-pipeline","step":"13e4-pooling-enabled-profile-k10","values":{"nprobe":32,"queries":1000,"profiles":1000,"status":"ok","result_source":"remote","latency_p50":"11.0 ms","latency_p95":"20.0 ms","latency_p99":"30.0 ms","recall@k":0.99,"dispatch_sum":1000,"socket_open_sum":4,"connect_p50":"0.1 ms","connect_p95":"0.2 ms","endpoint_identity_p50":"0.1 ms","endpoint_identity_p95":"0.2 ms","endpoint_identity_query_sum":4,"total_p50":"11.0 ms","total_p95":"20.0 ms"}}
+{"kind":"spire-pipeline","metric":"spire-pipeline","step":"13e4-pooling-disabled-profile-k10","values":{"nprobe":64,"queries":1000,"profiles":1000,"status":"ok","result_source":"remote","latency_p50":"12.0 ms","latency_p95":"24.0 ms","latency_p99":"36.0 ms","recall@k":0.99,"dispatch_sum":1000,"socket_open_sum":1000,"connect_p50":"0.2 ms","connect_p95":"1.0 ms","endpoint_identity_p50":"0.2 ms","endpoint_identity_p95":"0.5 ms","endpoint_identity_query_sum":1000,"total_p50":"12.0 ms","total_p95":"24.0 ms"}}
+{"kind":"spire-pipeline","metric":"spire-pipeline","step":"13e4-pooling-enabled-profile-k10","values":{"nprobe":64,"queries":1000,"profiles":1000,"status":"ok","result_source":"remote","latency_p50":"11.0 ms","latency_p95":"20.0 ms","latency_p99":"30.0 ms","recall@k":0.99,"dispatch_sum":1000,"socket_open_sum":4,"connect_p50":"0.1 ms","connect_p95":"0.2 ms","endpoint_identity_p50":"0.1 ms","endpoint_identity_p95":"0.2 ms","endpoint_identity_query_sum":4,"total_p50":"11.0 ms","total_p95":"20.0 ms"}}
 JSONL
 
   cp "$priority_suite" "$sample_input/suite-representative-priority.json"
@@ -269,7 +273,7 @@ JSONL
 
   cp "$sample_output"/representative-*.tsv "$bad_recall_summary"/
   cp "$sample_output"/suite-representative-*.json "$bad_recall_summary"/
-  awk 'BEGIN{FS=OFS="\t"} NR==1 {print; next} ($1 == "recall" || $1 == "spire-pipeline") && $4 == 32 {$9=0.5} {print}' \
+  awk 'BEGIN{FS=OFS="\t"} NR==1 {print; next} ($1 == "recall" || $1 == "spire-pipeline") && $4 == 64 {$9=0.5} {print}' \
     "$sample_output/representative-latency-recall-summary.tsv" \
     > "$bad_recall_summary/representative-latency-recall-summary.tsv"
 
@@ -357,7 +361,7 @@ require_jq "representative priority suite recall thresholds" "$priority_suite" '
     and .metric == "recall"
     and .field == "recall@k"
     and .op == "gte"
-    and .filters.nprobe == "32"
+    and .filters.nprobe == "64"
     and .value >= 0.95
   )
   and any(.thresholds[];
@@ -365,7 +369,7 @@ require_jq "representative priority suite recall thresholds" "$priority_suite" '
     and .metric == "spire-pipeline"
     and .field == "recall@k"
     and .op == "gte"
-    and .filters.nprobe == "32"
+    and .filters.nprobe == "64"
     and .value >= 0.95
   )
 '
@@ -387,7 +391,7 @@ require_jq "representative pooling suite recall thresholds" "$pooling_suite" '
     and .metric == "spire-pipeline"
     and .field == "recall@k"
     and .op == "gte"
-    and .filters.nprobe == "32"
+    and .filters.nprobe == "64"
     and .value >= 0.95
   )
   and any(.thresholds[];
@@ -395,7 +399,7 @@ require_jq "representative pooling suite recall thresholds" "$pooling_suite" '
     and .metric == "spire-pipeline"
     and .field == "recall@k"
     and .op == "gte"
-    and .filters.nprobe == "32"
+    and .filters.nprobe == "64"
     and .value >= 0.95
   )
 '

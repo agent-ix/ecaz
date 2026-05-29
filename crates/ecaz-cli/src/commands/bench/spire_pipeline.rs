@@ -8,6 +8,7 @@
 use clap::{Args, ValueEnum};
 use color_eyre::eyre::{eyre, Context, Result};
 use comfy_table::{presets::UTF8_FULL, Cell, Table};
+use indicatif::{ProgressBar, ProgressStyle};
 use ndarray::Array2;
 use std::collections::BTreeMap;
 use std::fmt;
@@ -286,6 +287,16 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
             cost_tuning.insert(*nprobe, query_cost_tuning_row(&client, &index).await?);
         }
 
+        let bar = ProgressBar::new(queries.len() as u64);
+        bar.set_style(
+            ProgressStyle::with_template(
+                "[spire-pipeline {msg}] {wide_bar} {pos}/{len} ({per_sec})",
+            )
+            .unwrap(),
+        );
+        bar.set_message(spire_pipeline_progress_label(*nprobe, &args));
+        bar.enable_steady_tick(Duration::from_millis(250));
+
         for query in &queries {
             if !args.production_read_only {
                 let routing_rows = query_routing_rows(&client, &index, &query.source).await?;
@@ -400,7 +411,9 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
                     .or_default()
                     .record(row);
             }
+            bar.inc(1);
         }
+        bar.finish_and_clear();
     }
     if let Some(truth_ids) = query_truth.as_ref() {
         for aggregate in query_metrics.values_mut() {
@@ -450,6 +463,23 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
             .wrap_err_with(|| format!("writing {}", path.display()))?;
     }
     Ok(())
+}
+
+fn spire_pipeline_progress_label(nprobe: i32, args: &SpirePipelineArgs) -> String {
+    let mut parts = vec![format!("nprobe={nprobe}")];
+    if args.include_recall {
+        parts.push("recall".to_string());
+    }
+    if args.include_query_metrics {
+        parts.push("query-metrics".to_string());
+    }
+    if args.include_production_read_profile {
+        parts.push("production-read".to_string());
+    }
+    if args.production_read_only {
+        parts.push("read-only".to_string());
+    }
+    parts.join(" ")
 }
 
 fn validate_args(args: &SpirePipelineArgs) -> Result<()> {

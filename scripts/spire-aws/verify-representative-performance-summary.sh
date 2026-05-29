@@ -39,7 +39,7 @@ pooling_comparison="representative-pooling-comparison.tsv"
 pooling_delta="representative-pooling-delta-summary.tsv"
 priority_suite="suite-representative-priority.json"
 pooling_suite="suite-representative-pooling.json"
-recall_floor_nprobe="${SPIRE_AWS_REPRESENTATIVE_RECALL_FLOOR_NPROBE:-32}"
+recall_floor_nprobe="${SPIRE_AWS_REPRESENTATIVE_RECALL_FLOOR_NPROBE:-64}"
 recall_floor="${SPIRE_AWS_REPRESENTATIVE_RECALL_FLOOR:-0.95}"
 
 require_file "$latency_recall"
@@ -90,15 +90,39 @@ jq -e --arg nprobe "$recall_floor_nprobe" --argjson floor "$recall_floor" '
 ' "$artifact_dir/$pooling_suite" >/dev/null ||
   fail "representative pooling suite must gate recall@k >= $recall_floor at nprobe=$recall_floor_nprobe"
 
-expected_nprobes="$(
+latency_nprobes="$(
   jq -r '
     [
       .steps[]
-      | select(
-          (.kind == "latency" and .k == 10)
-          or (.kind == "recall" and .k == 10)
-          or (.kind == "spire-pipeline" and .top_k == 10 and .include_recall == true)
-        )
+      | select(.kind == "latency" and .k == 10)
+      | .sweep[]
+    ]
+    | unique
+    | sort_by(.)
+    | map(tostring)
+    | join(" ")
+  ' "$artifact_dir/$priority_suite"
+)"
+
+recall_nprobes="$(
+  jq -r '
+    [
+      .steps[]
+      | select(.kind == "recall" and .k == 10)
+      | .sweep[]
+    ]
+    | unique
+    | sort_by(.)
+    | map(tostring)
+    | join(" ")
+  ' "$artifact_dir/$priority_suite"
+)"
+
+pipeline_nprobes="$(
+  jq -r '
+    [
+      .steps[]
+      | select(.kind == "spire-pipeline" and .top_k == 10 and .include_recall == true)
       | .sweep[]
     ]
     | unique
@@ -122,11 +146,14 @@ pooling_nprobes="$(
   ' "$artifact_dir/$pooling_suite"
 )"
 
-[[ -n "$expected_nprobes" ]] || fail "expected nprobe sweep is empty in $artifact_dir/$priority_suite"
-[[ "$expected_nprobes" == "$pooling_nprobes" ]] ||
-  fail "representative priority and pooling nprobe sweeps differ: priority=[$expected_nprobes] pooling=[$pooling_nprobes]"
+[[ -n "$latency_nprobes" ]] || fail "expected latency nprobe sweep is empty in $artifact_dir/$priority_suite"
+[[ -n "$recall_nprobes" ]] || fail "expected recall nprobe sweep is empty in $artifact_dir/$priority_suite"
+[[ -n "$pipeline_nprobes" ]] || fail "expected production-read nprobe sweep is empty in $artifact_dir/$priority_suite"
+[[ "$pipeline_nprobes" == "$pooling_nprobes" ]] ||
+  fail "representative priority and pooling production-read nprobe sweeps differ: priority=[$pipeline_nprobes] pooling=[$pooling_nprobes]"
 
-require_awk "representative latency p50/p95/p99 rows for all priority nprobe values" "$latency_recall" '
+expected_nprobes="$latency_nprobes"
+require_awk "representative latency p50/p95/p99 rows for all priority latency nprobe values" "$latency_recall" '
   function present(v) { return v != "" && v != "null" }
   BEGIN {
     split(expected, wanted, /[[:space:]]+/)
@@ -148,7 +175,8 @@ require_awk "representative latency p50/p95/p99 rows for all priority nprobe val
   }
 '
 
-require_awk "representative recall@k rows for all priority nprobe values" "$latency_recall" '
+expected_nprobes="$recall_nprobes"
+require_awk "representative recall@k rows for all priority recall nprobe values" "$latency_recall" '
   function present(v) { return v != "" && v != "null" }
   BEGIN {
     split(expected, wanted, /[[:space:]]+/)
@@ -182,7 +210,8 @@ awk -F '\t' -v nprobe="$recall_floor_nprobe" -v floor="$recall_floor" '
 ' "$artifact_dir/$latency_recall" ||
   fail "representative recall floor not met at nprobe=$recall_floor_nprobe floor=$recall_floor"
 
-require_awk "production SPIRE pipeline latency and recall rows for all priority nprobe values" "$latency_recall" '
+expected_nprobes="$pipeline_nprobes"
+require_awk "production SPIRE pipeline latency and recall rows for all priority production-read nprobe values" "$latency_recall" '
   function present(v) { return v != "" && v != "null" }
   BEGIN {
     split(expected, wanted, /[[:space:]]+/)
@@ -204,7 +233,7 @@ require_awk "production SPIRE pipeline latency and recall rows for all priority 
   }
 '
 
-require_awk "production read profile rows for all priority nprobe values" "$production_profile" '
+require_awk "production read profile rows for all priority production-read nprobe values" "$production_profile" '
   function present(v) { return v != "" && v != "null" }
   BEGIN {
     split(expected, wanted, /[[:space:]]+/)
@@ -241,6 +270,7 @@ require_awk "pooled and unpooled comparison rows" "$pooling_comparison" '
   END { exit(disabled && enabled && !bad ? 0 : 1) }
 '
 
+expected_nprobes="$pooling_nprobes"
 require_awk "pooling delta improvement row" "$pooling_delta" '
   function present(v) { return v != "" && v != "null" }
   function numeric(v) { return v ~ /^-?[0-9]+([.][0-9]+)?$/ }
@@ -290,4 +320,4 @@ awk -F '\t' -v nprobe="$recall_floor_nprobe" -v floor="$recall_floor" '
 
 printf 'representative performance summary verified: %s nprobes=[%s]\n' \
   "$artifact_dir" \
-  "$expected_nprobes"
+  "latency:$latency_nprobes recall:$recall_nprobes production:$pipeline_nprobes pooling:$pooling_nprobes"

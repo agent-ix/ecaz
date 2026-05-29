@@ -9,7 +9,8 @@
 //! global flags (`--database`, `--host`, `--port`, `--user`, `--password`)
 //! with libpq env vars as fallback. This module consumes the concrete
 //! connection options so commands can target a fixture DB or scratch
-//! cluster without mutating process environment.
+//! cluster. `PGOPTIONS` is passed through to match libpq startup-GUC
+//! behavior for benchmark suite session overrides.
 
 use color_eyre::eyre::{Context, Result};
 use tokio_postgres::{Client, Config, NoTls};
@@ -38,6 +39,11 @@ impl ConnectionOptions {
         }
         if let Some(password) = &self.password {
             config.password(password);
+        }
+        if let Ok(options) = std::env::var("PGOPTIONS") {
+            if !options.is_empty() {
+                config.options(options);
+            }
         }
         config
     }
@@ -223,6 +229,9 @@ pub fn build_create_index_sql(
 mod tests {
     use super::*;
     use crate::profiles::{EC_DISKANN, EC_HNSW, EC_IVF, EC_SPIRE};
+    use std::sync::Mutex;
+
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
     fn connection_options_config_sets_explicit_overrides() {
@@ -239,6 +248,40 @@ mod tests {
         assert_eq!(config.get_ports(), &[28818]);
         assert_eq!(config.get_user(), Some("peter"));
         assert_eq!(config.get_password(), Some(&b"secret"[..]));
+    }
+
+    #[test]
+    fn connection_options_config_passes_pgoptions_startup_gucs() {
+        let _guard = ENV_LOCK.lock().expect("env lock poisoned");
+        let previous = std::env::var_os("PGOPTIONS");
+        unsafe {
+            std::env::set_var(
+                "PGOPTIONS",
+                "-c ec_spire.remote_search_connection_pool_size=0",
+            );
+        }
+
+        let options = ConnectionOptions {
+            database: "bench".into(),
+            host: None,
+            port: None,
+            user: None,
+            password: None,
+        };
+        let config = options.config();
+
+        match previous {
+            Some(value) => unsafe {
+                std::env::set_var("PGOPTIONS", value);
+            },
+            None => unsafe {
+                std::env::remove_var("PGOPTIONS");
+            },
+        }
+        assert_eq!(
+            config.get_options(),
+            Some("-c ec_spire.remote_search_connection_pool_size=0")
+        );
     }
 
     #[test]
