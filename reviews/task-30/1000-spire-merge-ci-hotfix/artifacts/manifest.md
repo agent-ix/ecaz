@@ -1,9 +1,9 @@
 # Manifest: SPIRE Merge CI Hotfix
 
-- head SHA: `a20b893b06f839a056912323fd5be71aa1e279e7`
+- head SHA: `291912215301da54d68b6fb417ffc9766a4764b8`
 - task bucket: `reviews/task-30`
 - packet path: `reviews/task-30/1000-spire-merge-ci-hotfix`
-- timestamp: `2026-05-29T21:35:46Z`
+- timestamp: `2026-05-29T21:46:32Z`
 - lane: post-merge CI stabilization
 - fixture/storage/rerank mode: not applicable
 - isolated one-index-per-table or shared-table surface: not applicable
@@ -53,3 +53,7 @@
 | `git-diff-check-after-task66-merge-warning-fix.log` | `git diff --check` | no whitespace errors after resolving the task 66 merge conflict |
 | `cargo-fmt-check-after-task66-merge-warning-fix.log` | `cargo fmt --all -- --check` | exited 0 after resolving the task 66 merge conflict |
 | `cargo-test-no-run-pg18-after-task66-merge-warning-fix.log` | `cargo test --no-run --no-default-features --features pg18` | `Finished test profile` after resolving task 66 and fixing the target-dependent unused-argument warning |
+| `ci-pgrx-pg18-preload-validation-failure.log` | `gh api /repos/agent-ix/ecaz/actions/jobs/78591356345/logs` | installed-extension preload smoke loaded `ecaz`, then PostgreSQL failed to create `/var/run/postgresql/.s.PGSQL.28818.lock` as the CI runner |
+| `git-diff-check-pgrx-pg18-socket-dir-fix.log` | `git diff --check` | no whitespace errors in the repo-local socket-dir fix |
+| `cargo-fmt-check-pgrx-pg18-socket-dir-fix.log` | `cargo fmt --all -- --check` | exited 0 after the repo-local socket-dir fix |
+| `cargo-check-ecaz-cli-pgrx-pg18-socket-dir-fix.log` | `cargo check -p ecaz-cli` | `Finished dev profile`; only pre-existing `LoadedDistributedPlacementConfig::path` warning remains |
