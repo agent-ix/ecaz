@@ -1,12 +1,32 @@
 # Task 65: DiskANN Build Performance — Vamana Core Overhaul
 
-Status: **proposed** 2026-05-28. Direct follow-up to Task 29c
+Status: **complete** 2026-05-28. Direct follow-up to Task 29c
 (`plan/tasks/29c-diskann-build-perf.md`) and packet `11104`'s
 pass-1 Vamana timing split. Single-process build only; parallel
 graph construction is out of scope (deferred to Task 65b,
 `plan/tasks/65b-diskann-build-parallel-graph-construction.md`).
 
-Owner: coder (to be assigned). One coder, one branch, no fan-out.
+Owner: coder. One coder, one branch, no fan-out.
+
+Completion evidence:
+
+- Code packets:
+  `reviews/task-65/001-vamana-core-build-perf/request.md`
+  and reviewer feedback in the same packet.
+- Measurement packet:
+  `reviews/task-65/002-vamana-core-measurement/request.md`
+  and `reviews/task-65/002-vamana-core-measurement/artifacts/manifest.md`.
+- Final code and packet closure commits:
+  `8e860324c` (`Add Vamana build dhat profiler`) and
+  `8e3109c25` (`Update DiskANN Vamana measurement closure evidence`).
+- Final real10k build evidence: R32/L200 fixed-loader release build
+  `14.92s` vs the `16s` target.
+- Final recall evidence: real10k R32/L200 `0.9975 / 0.9975 / 0.9975`
+  at L=`64,128,200`; synth10k R32/L200 `0.1610 / 0.2625 / 0.3270`
+  at L=`64,200,800`, including L=200 within 0.5pp of the Task 29
+  smoke baseline.
+- Memory evidence: `dhat_vamana_build` first-1k real10k smoke plus
+  static hot-loop audit under the measurement packet artifacts.
 
 Investigation source: `plan/design/diskann-build-performance.md`.
 Read that document first — it carries the line-by-line evidence
