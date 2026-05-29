@@ -1,0 +1,16 @@
+CREATE EXTENSION
+DROP TABLE
+CREATE TABLE
+INSERT 0 8
+CREATE INDEX
+SET
+SET
+SET
+DO
+                 status                 | index_bytes 
+----------------------------------------+-------------
+ task63_hnsw_rabitq_setup_insert_passed |       16384
+(1 row)
+
+NOTICE:  extension "ecaz" already exists, skipping
+NOTICE:  table "task63_hnsw_rabitq" does not exist, skipping

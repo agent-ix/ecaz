@@ -1,0 +1,5 @@
+          captured_at          |                                            postgres_version                                             | shared_buffers | work_mem | maintenance_work_mem | effective_cache_size 
+-------------------------------+---------------------------------------------------------------------------------------------------------+----------------+----------+----------------------+----------------------
+ 2026-05-26 21:22:34.610503-07 | PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0, 64-bit | 128MB          | 4MB      | 64MB                 | 4GB
+(1 row)
+

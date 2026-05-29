@@ -14,6 +14,7 @@ use crate::quant::prod::{
     BinarySignNoQjl4BitQuery, Int8ApproxNoQjl4BitQuery, PreparedLutNoQjl4BitQuery, PreparedQuery,
     PreparedTiledLutNoQjl4BitQuery, ProdQuantizer,
 };
+use crate::quant::rabitq::{RaBitQQuantizer, RaBitQScorer};
 use crate::storage::{
     buffer_guard::{LockedBufferGuard, PinnedBufferGuard, PinnedBufferLockGuard},
     relation_guard::HeapRelationGuard,
@@ -465,6 +466,11 @@ impl GroupedScoreShape {
         match scan_graph_storage {
             graph::GraphStorageDescriptor::TurboQuant { .. }
             | graph::GraphStorageDescriptor::TurboQuantHotCold(_) => None,
+            graph::GraphStorageDescriptor::RaBitQ(layout) => Some(Self {
+                binary_word_count: layout.binary_word_count,
+                search_code_len: layout.search_code_len,
+                rerank_code_len: layout.rerank_code_len,
+            }),
             graph::GraphStorageDescriptor::PqFastScan(layout) => Some(Self {
                 binary_word_count: layout.binary_word_count,
                 search_code_len: layout.search_code_len,
@@ -1066,6 +1072,7 @@ pub(super) unsafe extern "C-unwind" fn ec_hnsw_amrescan(
         let prepare_started = Instant::now();
         store_scan_prepared_query(opaque, &query, &metadata);
         store_grouped_scan_query((*scan).indexRelation, opaque, &metadata);
+        store_rabitq_scan_query(opaque, &metadata);
         #[cfg(any(test, feature = "pg_test"))]
         let prepare_elapsed_us =
             u64::try_from(prepare_started.elapsed().as_micros()).expect("timing should fit in u64");
@@ -1306,12 +1313,11 @@ pub(crate) fn resolve_pq_fastscan_traversal_score_mode_decision(
                     PqFastScanTraversalScoreModeResolution::FallbackGroupedPqMissingBinarySidecar,
             },
             graph::GraphStorageDescriptor::TurboQuant { .. }
-            | graph::GraphStorageDescriptor::TurboQuantHotCold(_) => {
-                PqFastScanTraversalScoreModeDecision {
-                    mode: GroupedTraversalScoreMode::GroupedPq,
-                    resolution: PqFastScanTraversalScoreModeResolution::NonPqFastScanStorage,
-                }
-            }
+            | graph::GraphStorageDescriptor::TurboQuantHotCold(_)
+            | graph::GraphStorageDescriptor::RaBitQ(_) => PqFastScanTraversalScoreModeDecision {
+                mode: GroupedTraversalScoreMode::GroupedPq,
+                resolution: PqFastScanTraversalScoreModeResolution::NonPqFastScanStorage,
+            },
         };
     };
 
@@ -1452,6 +1458,9 @@ fn default_grouped_rerank_mode_resolution(
             }
         }
         super::options::StorageFormat::TurboQuant => {
+            PqFastScanRerankModeResolution::DefaultQuantizedTurboQuantStorage
+        }
+        super::options::StorageFormat::RaBitQ => {
             PqFastScanRerankModeResolution::DefaultQuantizedTurboQuantStorage
         }
     }
@@ -2141,6 +2150,7 @@ fn store_scan_prepared_query(
 
 fn free_scan_prepared_query(opaque: &mut TqScanOpaque) {
     drop_boxed_scan_ptr(&mut opaque.grouped_query);
+    drop_boxed_scan_ptr(&mut opaque.rabitq_query);
     drop_boxed_scan_ptr(&mut opaque.prepared_query);
     drop_boxed_scan_ptr(&mut opaque.binary_sign_query);
     drop_boxed_scan_ptr(&mut opaque.turboquant_lut_query);
@@ -2212,6 +2222,30 @@ unsafe fn store_grouped_scan_query(
 
 fn grouped_scan_query(opaque: &TqScanOpaque) -> Option<&PreparedGroupedScanQuery> {
     scan_box_ref(opaque.grouped_query, opaque)
+}
+
+fn store_rabitq_scan_query(opaque: &mut TqScanOpaque, metadata: &page::MetadataPage) {
+    if !matches!(
+        opaque.scan_graph_storage,
+        graph::GraphStorageDescriptor::RaBitQ(_)
+    ) {
+        return;
+    }
+    if metadata.dimensions == 0 {
+        return;
+    }
+    let quantizer = RaBitQQuantizer::cached_seeded_srht_bits(
+        metadata.dimensions as usize,
+        metadata.seed,
+        metadata.search_bits,
+    )
+    .unwrap_or_else(|e| pgrx::error!("ec_hnsw RaBitQ scan query preparation failed: {e}"));
+    let prepared = quantizer.prepare_ip_query(opaque.query_values());
+    opaque.rabitq_query = Box::into_raw(Box::new(prepared));
+}
+
+fn rabitq_scan_query(opaque: &TqScanOpaque) -> Option<&RaBitQScorer> {
+    scan_box_ref(opaque.rabitq_query, opaque)
 }
 
 fn reset_scan_position(opaque: &mut TqScanOpaque) {
@@ -2772,7 +2806,21 @@ fn score_grouped_search_code_result(
     -prepared_query.score(search_code)
 }
 
+fn score_rabitq_search_code_result(prepared_query: &RaBitQScorer, search_code: &[u8]) -> f32 {
+    use crate::quant::QueryScorer;
+    -prepared_query.score(search_code)
+}
+
 fn score_grouped_search_code_from_scan_state(opaque: &TqScanOpaque, search_code: &[u8]) -> f32 {
+    if matches!(
+        opaque.scan_graph_storage,
+        graph::GraphStorageDescriptor::RaBitQ(_)
+    ) {
+        let prepared_query = rabitq_scan_query(opaque)
+            .unwrap_or_else(|| pgrx::error!("ec_hnsw RaBitQ scan is missing RaBitQ query state"));
+        return score_rabitq_search_code_result(prepared_query, search_code);
+    }
+
     let prepared_query = grouped_scan_query(opaque).unwrap_or_else(|| {
         pgrx::error!("ec_hnsw PqFastScan scan is missing PqFastScan query state")
     });
@@ -3551,7 +3599,7 @@ fn clear_graph_traversal_state(opaque: &mut TqScanOpaque) {
 fn grouped_live_rerank_enabled(opaque: &TqScanOpaque) -> bool {
     matches!(
         opaque.scan_graph_storage,
-        graph::GraphStorageDescriptor::PqFastScan(_)
+        graph::GraphStorageDescriptor::PqFastScan(_) | graph::GraphStorageDescriptor::RaBitQ(_)
     ) || turboquant_binary_live_rerank_enabled(opaque)
 }
 
@@ -3622,6 +3670,7 @@ fn grouped_live_rerank_output_score(
             opaque.scan_graph_storage,
             graph::GraphStorageDescriptor::TurboQuant { .. }
                 | graph::GraphStorageDescriptor::TurboQuantHotCold(_)
+                | graph::GraphStorageDescriptor::RaBitQ(_)
         )
     {
         buffered.comparison_score.unwrap_or(buffered.approx_score)
@@ -5348,6 +5397,7 @@ pub(super) struct TqScanOpaque {
     pub(super) query_values: *mut f32,
     pub(super) prepared_query: *mut PreparedQuery,
     pub(super) grouped_query: *mut PreparedGroupedScanQuery,
+    pub(super) rabitq_query: *mut RaBitQScorer,
     pub(super) binary_sign_query: *mut BinarySignNoQjl4BitQuery,
     pub(super) turboquant_lut_query: *mut PreparedLutNoQjl4BitQuery,
     pub(super) turboquant_tiled_lut_query: *mut PreparedTiledLutNoQjl4BitQuery,
@@ -5442,6 +5492,7 @@ impl Default for TqScanOpaque {
             query_values: ptr::null_mut(),
             prepared_query: ptr::null_mut(),
             grouped_query: ptr::null_mut(),
+            rabitq_query: ptr::null_mut(),
             binary_sign_query: ptr::null_mut(),
             turboquant_lut_query: ptr::null_mut(),
             turboquant_tiled_lut_query: ptr::null_mut(),

@@ -17,9 +17,6 @@ use std::{cmp::Ordering, marker::PhantomData, ptr, slice};
 
 use pgrx::pg_sys;
 
-use crate::am::common::training;
-use crate::quant::grouped_pq::{encode_grouped_pq, GROUPED_PQ_CENTROIDS};
-use crate::quant::prod::ProdQuantizer;
 use crate::storage::wal;
 use crate::storage::{
     buffer_guard::LockedBufferGuard,
@@ -28,18 +25,15 @@ use crate::storage::{
         FIRST_DATA_BLOCK_NUMBER, HEAPTID_INLINE_CAPACITY, ITEM_POINTER_BYTES,
     },
 };
-use crate::{DEFAULT_QUANT_BITS, DEFAULT_QUANT_SEED};
+use crate::DEFAULT_QUANT_SEED;
 
-use super::scan_query::{encode_query_srht, read_grouped_codebook_chain};
 use super::{
     ambuild,
     build::{build_and_persist_vamana, BuildOutput, BuildParams},
     options,
-    page::{
-        VamanaMetadataPage, PAYLOAD_FLAG_BINARY_SIDECAR, VAMANA_METADATA_BYTES,
-        VAMANA_SEARCH_CODEC_GROUPED_PQ, VAMANA_TRANSFORM_KIND_SRHT,
-    },
+    page::{VamanaMetadataPage, VAMANA_METADATA_BYTES, VAMANA_TRANSFORM_KIND_SRHT},
     persist::{stage_grouped_codebook_chain, NodePayload},
+    quantizer::{self, DiskannBuildCodec},
     reader::PersistedGraphReader,
     scan_state,
     tuple::VamanaNodeTuple,
@@ -337,74 +331,11 @@ pub(super) fn derive_insert_payload_from_persisted(
             VAMANA_TRANSFORM_KIND_SRHT, metadata.transform_kind
         ));
     }
-    if metadata.search_codec_kind != VAMANA_SEARCH_CODEC_GROUPED_PQ {
-        return Err(format!(
-            "ec_diskann insert payload derivation only supports grouped-PQ codec kind {}, got {}",
-            VAMANA_SEARCH_CODEC_GROUPED_PQ, metadata.search_codec_kind
-        ));
-    }
-
-    let group_count = usize::from(metadata.search_subvector_count);
-    let group_size = usize::from(metadata.search_subvector_dim);
-    if group_count == 0 || group_size == 0 {
-        return Err(
-            "ec_diskann insert payload derivation requires non-zero grouped search shape".into(),
-        );
-    }
-    if metadata.grouped_codebook_head == ItemPointer::INVALID {
-        return Err(
-            "ec_diskann insert payload derivation requires persisted grouped codebooks".into(),
-        );
-    }
-
-    let centroid_count = group_size * GROUPED_PQ_CENTROIDS;
-    let flat_codebooks = read_grouped_codebook_chain(
-        chain,
-        metadata.grouped_codebook_head,
-        group_count,
-        centroid_count,
-    )?;
-
-    let rotated = encode_query_srht(source_vector, dimensions, metadata.seed);
-    let expected_rotated_len = group_count
-        .checked_mul(group_size)
-        .ok_or_else(|| "ec_diskann grouped search shape overflows usize".to_owned())?;
-    if rotated.len() != expected_rotated_len {
-        return Err(format!(
-            "ec_diskann insert payload rotated query length mismatch: got {}, expected {} from metadata",
-            rotated.len(),
-            expected_rotated_len
-        ));
-    }
-
-    let codebook_chunk_len = GROUPED_PQ_CENTROIDS * group_size;
-    let search_code = encode_grouped_pq(
-        &rotated,
-        flat_codebooks.chunks_exact(codebook_chunk_len),
-        group_size,
-    );
-    let expected_search_code_len = group_count.div_ceil(2);
-    if search_code.len() != expected_search_code_len {
-        return Err(format!(
-            "ec_diskann insert payload search code length mismatch: got {}, expected {}",
-            search_code.len(),
-            expected_search_code_len
-        ));
-    }
-
-    let binary_words = if (metadata.payload_flags & PAYLOAD_FLAG_BINARY_SIDECAR) != 0 {
-        let quantizer = ProdQuantizer::cached(dimensions, DEFAULT_QUANT_BITS, metadata.seed);
-        let encoded = quantizer.encode(source_vector);
-        let mut code = encoded.mse_packed;
-        code.extend_from_slice(&encoded.qjl_packed);
-        training::derive_persisted_binary_words(&quantizer, &code)
-    } else {
-        Vec::new()
-    };
+    let encoded = quantizer::encode_insert_payload(metadata, chain, source_vector)?;
 
     Ok(DerivedInsertPayload {
-        binary_words,
-        search_code,
+        binary_words: encoded.binary_words,
+        search_code: encoded.search_code,
     })
 }
 
@@ -1264,9 +1195,11 @@ pub(super) fn bootstrap_empty_insert_output(
         )
     })?;
     let seed = DEFAULT_QUANT_SEED;
+    let relopts = options::relation_options(index_relation.as_ptr());
     let group_size = ambuild::default_group_size(dimensions);
     let source_refs = vec![source_vector];
-    let model = training::train_grouped_pq4_model(
+    let codec = DiskannBuildCodec::prepare(
+        relopts.storage_format,
         &source_refs,
         source_vector.len(),
         seed,
@@ -1274,27 +1207,14 @@ pub(super) fn bootstrap_empty_insert_output(
         1,
         EMPTY_INSERT_BOOTSTRAP_KMEANS_ITERS,
     )?;
-
-    let sidecar_word_count =
-        training::persisted_binary_sidecar_word_count(dimensions, DEFAULT_QUANT_BITS, seed);
-    let has_binary_sidecar = sidecar_word_count > 0;
-    let binary_words = if has_binary_sidecar {
-        let quantizer = ProdQuantizer::cached(source_vector.len(), DEFAULT_QUANT_BITS, seed);
-        let encoded = quantizer.encode(source_vector);
-        let mut code = encoded.mse_packed;
-        code.extend_from_slice(&encoded.qjl_packed);
-        training::derive_persisted_binary_words(&quantizer, &code)
-    } else {
-        Vec::new()
-    };
+    let encoded = codec.encode(source_vector);
 
     let payloads = vec![NodePayload {
         primary_heaptid: heap_tid,
-        binary_words,
-        search_code: training::derive_grouped_pq4_code(source_vector, &model),
+        binary_words: encoded.binary_words,
+        search_code: encoded.search_code,
     }];
 
-    let relopts = options::relation_options(index_relation.as_ptr());
     let params = BuildParams {
         graph_degree_r: u16::try_from(relopts.graph_degree)
             .map_err(|_| "graph_degree does not fit in u16".to_owned())?,
@@ -1302,13 +1222,12 @@ pub(super) fn bootstrap_empty_insert_output(
             .map_err(|_| "build_list_size does not fit in u16".to_owned())?,
         alpha: relopts.alpha,
         dimensions,
-        search_subvector_count: u16::try_from(model.group_count)
-            .map_err(|_| "search_subvector_count does not fit in u16".to_owned())?,
-        search_subvector_dim: u16::try_from(model.group_size)
-            .map_err(|_| "search_subvector_dim does not fit in u16".to_owned())?,
+        search_subvector_count: codec.search_subvector_count(),
+        search_subvector_dim: codec.search_subvector_dim(),
+        search_codec_kind: codec.search_codec_kind(),
         seed,
         page_size: pg_sys::BLCKSZ as usize,
-        has_binary_sidecar,
+        has_binary_sidecar: codec.has_binary_sidecar(),
     };
 
     let BuildOutput {
@@ -1317,8 +1236,10 @@ pub(super) fn bootstrap_empty_insert_output(
         ..
     } = build_and_persist_vamana(params, &payloads, |_, _| 0.0)?;
     let mut chain = persisted.chain;
-    let codebook_head = stage_grouped_codebook_chain(&mut chain, &model)?;
-    metadata.grouped_codebook_head = codebook_head;
+    if let Some(model) = codec.pq_model() {
+        let codebook_head = stage_grouped_codebook_chain(&mut chain, &model)?;
+        metadata.grouped_codebook_head = codebook_head;
+    }
     metadata.inserted_since_rebuild = 1;
 
     Ok(EmptyInsertBootstrapOutput { metadata, chain })
@@ -1687,10 +1608,14 @@ fn source_inner_product_distance(left: &[f32], right: &[f32]) -> Result<f32, Str
 mod tests {
     use super::*;
     use crate::am::common::training::{self, train_grouped_pq4_model};
-    use crate::am::ec_diskann::page::PAYLOAD_FLAG_GROUPED_SEARCH_CODE;
+    use crate::am::ec_diskann::page::{
+        PAYLOAD_FLAG_BINARY_SIDECAR, PAYLOAD_FLAG_GROUPED_SEARCH_CODE,
+    };
     use crate::am::ec_diskann::persist::stage_grouped_codebook_chain;
     use crate::am::ec_diskann::tuple::VamanaNodeTuple;
+    use crate::quant::prod::ProdQuantizer;
     use crate::storage::page::DEFAULT_PAGE_SIZE;
+    use crate::DEFAULT_QUANT_BITS;
 
     fn training_vectors() -> Vec<Vec<f32>> {
         vec![

@@ -1,0 +1,328 @@
+{
+  "name": "task63-hnsw-rabitq-format",
+  "schema_version": 1,
+  "artifact_dir": "benchmarks/task63-hnsw-rabitq-format/artifacts",
+  "defaults": {
+    "pg": 18,
+    "socket_dir": "/var/run/postgresql",
+    "profile": "ec_hnsw",
+    "seed": 42,
+    "queries_limit": 200,
+    "iterations": 200,
+    "force_index": true,
+    "sample_backend_memory": true,
+    "memory_sample_interval_ms": 25
+  },
+  "steps": [
+    {
+      "kind": "corpus-fetch",
+      "name": "fetch-dbpedia-openai3-1m",
+      "tags": ["setup", "fetch", "dbpedia", "benchmark-host", "task63"],
+      "dataset": "qdrant-dbpedia-openai3-large-1536-1m",
+      "output_dir": "/var/lib/pgsql/18/datasets/dbpedia-openai3-1m"
+    },
+    {
+      "kind": "corpus-prepare",
+      "name": "prepare-ec-real-50k",
+      "tags": ["setup", "prepare", "ec_real_50k", "benchmark-host", "task63"],
+      "profile": "ec_real_50k",
+      "parquet": "/var/lib/pgsql/18/datasets/dbpedia-openai3-1m/data",
+      "output_dir": "/var/lib/pgsql/18/datasets/staged-task63-hnsw-rabitq"
+    },
+    {
+      "kind": "corpus-prepare",
+      "name": "prepare-ec-real-100k",
+      "tags": ["setup", "prepare", "ec_real_100k", "benchmark-host", "task63"],
+      "profile": "ec_real_100k",
+      "parquet": "/var/lib/pgsql/18/datasets/dbpedia-openai3-1m/data",
+      "output_dir": "/var/lib/pgsql/18/datasets/staged-task63-hnsw-rabitq"
+    },
+    {
+      "kind": "raw",
+      "name": "precheck-host",
+      "tags": ["setup", "precheck", "benchmark-host", "task63"],
+      "args": [
+        "dev",
+        "sql",
+        "--pg",
+        "18",
+        "--db",
+        "postgres",
+        "--socket-dir",
+        "/var/run/postgresql",
+        "--raw",
+        "--sql",
+        "SELECT now() AS captured_at, version() AS postgres_version, current_setting('shared_buffers') AS shared_buffers, current_setting('work_mem') AS work_mem, current_setting('maintenance_work_mem') AS maintenance_work_mem, current_setting('effective_cache_size') AS effective_cache_size; SELECT left(pg_read_file('/proc/cpuinfo', 0, 20000), 20000) AS cpuinfo_prefix; SELECT left(pg_read_file('/proc/meminfo', 0, 12000), 12000) AS meminfo_prefix;",
+        "--log-output",
+        "benchmarks/task63-hnsw-rabitq-format/artifacts/precheck-host.log"
+      ],
+      "expected_artifacts": [
+        "benchmarks/task63-hnsw-rabitq-format/artifacts/precheck-host.log"
+      ]
+    },
+    {
+      "kind": "load",
+      "name": "load-50k-hnsw-turboquant",
+      "tags": ["load", "ec_real_50k", "hnsw", "turboquant", "benchmark-host", "task63"],
+      "prefix": "task63_real_50k_hnsw_turboquant",
+      "profile": "ec_hnsw",
+      "storage_format": "turboquant",
+      "corpus_file": "/var/lib/pgsql/18/datasets/staged-task63-hnsw-rabitq/ec_real_50k_corpus.tsv",
+      "queries_file": "/var/lib/pgsql/18/datasets/staged-task63-hnsw-rabitq/ec_real_50k_queries.tsv",
+      "manifest_file": "/var/lib/pgsql/18/datasets/staged-task63-hnsw-rabitq/ec_real_50k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "m": [16],
+      "ef_construction": 128,
+      "log_file": "benchmarks/task63-hnsw-rabitq-format/artifacts/load-50k-hnsw-turboquant.log"
+    },
+    {
+      "kind": "load",
+      "name": "load-50k-hnsw-pq-fastscan",
+      "tags": ["load", "ec_real_50k", "hnsw", "pq_fastscan", "benchmark-host", "task63"],
+      "prefix": "task63_real_50k_hnsw_pq",
+      "profile": "ec_hnsw",
+      "storage_format": "pq_fastscan",
+      "corpus_file": "/var/lib/pgsql/18/datasets/staged-task63-hnsw-rabitq/ec_real_50k_corpus.tsv",
+      "queries_file": "/var/lib/pgsql/18/datasets/staged-task63-hnsw-rabitq/ec_real_50k_queries.tsv",
+      "manifest_file": "/var/lib/pgsql/18/datasets/staged-task63-hnsw-rabitq/ec_real_50k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "m": [16],
+      "ef_construction": 128,
+      "log_file": "benchmarks/task63-hnsw-rabitq-format/artifacts/load-50k-hnsw-pq-fastscan.log"
+    },
+    {
+      "kind": "load",
+      "name": "load-50k-hnsw-rabitq",
+      "tags": ["load", "ec_real_50k", "hnsw", "rabitq", "benchmark-host", "task63"],
+      "prefix": "task63_real_50k_hnsw_rabitq",
+      "profile": "ec_hnsw",
+      "storage_format": "rabitq",
+      "corpus_file": "/var/lib/pgsql/18/datasets/staged-task63-hnsw-rabitq/ec_real_50k_corpus.tsv",
+      "queries_file": "/var/lib/pgsql/18/datasets/staged-task63-hnsw-rabitq/ec_real_50k_queries.tsv",
+      "manifest_file": "/var/lib/pgsql/18/datasets/staged-task63-hnsw-rabitq/ec_real_50k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "m": [16],
+      "ef_construction": 128,
+      "log_file": "benchmarks/task63-hnsw-rabitq-format/artifacts/load-50k-hnsw-rabitq.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-50k-hnsw-turboquant",
+      "tags": ["recall", "ec_real_50k", "hnsw", "turboquant", "benchmark-host", "task63"],
+      "prefix": "task63_real_50k_hnsw_turboquant",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [40, 64, 100, 128, 160, 200],
+      "truth_cache_file": "benchmarks/task63-hnsw-rabitq-format/artifacts/truth-50k-k10.json",
+      "log_output": "benchmarks/task63-hnsw-rabitq-format/artifacts/recall-50k-hnsw-turboquant.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-50k-hnsw-pq-fastscan",
+      "tags": ["recall", "ec_real_50k", "hnsw", "pq_fastscan", "benchmark-host", "task63"],
+      "prefix": "task63_real_50k_hnsw_pq",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [40, 64, 100, 128, 160, 200],
+      "truth_cache_file": "benchmarks/task63-hnsw-rabitq-format/artifacts/truth-50k-k10.json",
+      "log_output": "benchmarks/task63-hnsw-rabitq-format/artifacts/recall-50k-hnsw-pq-fastscan.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-50k-hnsw-rabitq",
+      "tags": ["recall", "ec_real_50k", "hnsw", "rabitq", "benchmark-host", "task63"],
+      "prefix": "task63_real_50k_hnsw_rabitq",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [40, 64, 100, 128, 160, 200],
+      "truth_cache_file": "benchmarks/task63-hnsw-rabitq-format/artifacts/truth-50k-k10.json",
+      "log_output": "benchmarks/task63-hnsw-rabitq-format/artifacts/recall-50k-hnsw-rabitq.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-50k-hnsw-turboquant",
+      "tags": ["latency", "ec_real_50k", "hnsw", "turboquant", "post_recall_warm", "benchmark-host", "task63"],
+      "prefix": "task63_real_50k_hnsw_turboquant",
+      "profile": "ec_hnsw",
+      "sweep": [40, 64, 100, 128, 160, 200],
+      "concurrency": 1,
+      "cache_state": "post_recall_warm",
+      "log_output": "benchmarks/task63-hnsw-rabitq-format/artifacts/latency-50k-hnsw-turboquant.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-50k-hnsw-pq-fastscan",
+      "tags": ["latency", "ec_real_50k", "hnsw", "pq_fastscan", "post_recall_warm", "benchmark-host", "task63"],
+      "prefix": "task63_real_50k_hnsw_pq",
+      "profile": "ec_hnsw",
+      "sweep": [40, 64, 100, 128, 160, 200],
+      "concurrency": 1,
+      "cache_state": "post_recall_warm",
+      "log_output": "benchmarks/task63-hnsw-rabitq-format/artifacts/latency-50k-hnsw-pq-fastscan.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-50k-hnsw-rabitq",
+      "tags": ["latency", "ec_real_50k", "hnsw", "rabitq", "post_recall_warm", "benchmark-host", "task63"],
+      "prefix": "task63_real_50k_hnsw_rabitq",
+      "profile": "ec_hnsw",
+      "sweep": [40, 64, 100, 128, 160, 200],
+      "concurrency": 1,
+      "cache_state": "post_recall_warm",
+      "log_output": "benchmarks/task63-hnsw-rabitq-format/artifacts/latency-50k-hnsw-rabitq.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-50k-hnsw-turboquant",
+      "tags": ["storage", "ec_real_50k", "hnsw", "turboquant", "benchmark-host", "task63"],
+      "prefix": "task63_real_50k_hnsw_turboquant",
+      "log_file": "benchmarks/task63-hnsw-rabitq-format/artifacts/storage-50k-hnsw-turboquant.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-50k-hnsw-pq-fastscan",
+      "tags": ["storage", "ec_real_50k", "hnsw", "pq_fastscan", "benchmark-host", "task63"],
+      "prefix": "task63_real_50k_hnsw_pq",
+      "log_file": "benchmarks/task63-hnsw-rabitq-format/artifacts/storage-50k-hnsw-pq-fastscan.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-50k-hnsw-rabitq",
+      "tags": ["storage", "ec_real_50k", "hnsw", "rabitq", "benchmark-host", "task63"],
+      "prefix": "task63_real_50k_hnsw_rabitq",
+      "log_file": "benchmarks/task63-hnsw-rabitq-format/artifacts/storage-50k-hnsw-rabitq.log"
+    },
+    {
+      "kind": "load",
+      "name": "load-100k-hnsw-turboquant",
+      "tags": ["load", "ec_real_100k", "hnsw", "turboquant", "benchmark-host", "task63"],
+      "prefix": "task63_real_100k_hnsw_turboquant",
+      "profile": "ec_hnsw",
+      "storage_format": "turboquant",
+      "corpus_file": "/var/lib/pgsql/18/datasets/staged-task63-hnsw-rabitq/ec_real_100k_corpus.tsv",
+      "queries_file": "/var/lib/pgsql/18/datasets/staged-task63-hnsw-rabitq/ec_real_100k_queries.tsv",
+      "manifest_file": "/var/lib/pgsql/18/datasets/staged-task63-hnsw-rabitq/ec_real_100k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "m": [16],
+      "ef_construction": 128,
+      "log_file": "benchmarks/task63-hnsw-rabitq-format/artifacts/load-100k-hnsw-turboquant.log"
+    },
+    {
+      "kind": "load",
+      "name": "load-100k-hnsw-pq-fastscan",
+      "tags": ["load", "ec_real_100k", "hnsw", "pq_fastscan", "benchmark-host", "task63"],
+      "prefix": "task63_real_100k_hnsw_pq",
+      "profile": "ec_hnsw",
+      "storage_format": "pq_fastscan",
+      "corpus_file": "/var/lib/pgsql/18/datasets/staged-task63-hnsw-rabitq/ec_real_100k_corpus.tsv",
+      "queries_file": "/var/lib/pgsql/18/datasets/staged-task63-hnsw-rabitq/ec_real_100k_queries.tsv",
+      "manifest_file": "/var/lib/pgsql/18/datasets/staged-task63-hnsw-rabitq/ec_real_100k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "m": [16],
+      "ef_construction": 128,
+      "log_file": "benchmarks/task63-hnsw-rabitq-format/artifacts/load-100k-hnsw-pq-fastscan.log"
+    },
+    {
+      "kind": "load",
+      "name": "load-100k-hnsw-rabitq",
+      "tags": ["load", "ec_real_100k", "hnsw", "rabitq", "benchmark-host", "task63"],
+      "prefix": "task63_real_100k_hnsw_rabitq",
+      "profile": "ec_hnsw",
+      "storage_format": "rabitq",
+      "corpus_file": "/var/lib/pgsql/18/datasets/staged-task63-hnsw-rabitq/ec_real_100k_corpus.tsv",
+      "queries_file": "/var/lib/pgsql/18/datasets/staged-task63-hnsw-rabitq/ec_real_100k_queries.tsv",
+      "manifest_file": "/var/lib/pgsql/18/datasets/staged-task63-hnsw-rabitq/ec_real_100k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "m": [16],
+      "ef_construction": 128,
+      "log_file": "benchmarks/task63-hnsw-rabitq-format/artifacts/load-100k-hnsw-rabitq.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-100k-hnsw-turboquant",
+      "tags": ["recall", "ec_real_100k", "hnsw", "turboquant", "benchmark-host", "task63"],
+      "prefix": "task63_real_100k_hnsw_turboquant",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [40, 64, 100, 128, 160, 200],
+      "truth_cache_file": "benchmarks/task63-hnsw-rabitq-format/artifacts/truth-100k-k10.json",
+      "log_output": "benchmarks/task63-hnsw-rabitq-format/artifacts/recall-100k-hnsw-turboquant.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-100k-hnsw-pq-fastscan",
+      "tags": ["recall", "ec_real_100k", "hnsw", "pq_fastscan", "benchmark-host", "task63"],
+      "prefix": "task63_real_100k_hnsw_pq",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [40, 64, 100, 128, 160, 200],
+      "truth_cache_file": "benchmarks/task63-hnsw-rabitq-format/artifacts/truth-100k-k10.json",
+      "log_output": "benchmarks/task63-hnsw-rabitq-format/artifacts/recall-100k-hnsw-pq-fastscan.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-100k-hnsw-rabitq",
+      "tags": ["recall", "ec_real_100k", "hnsw", "rabitq", "benchmark-host", "task63"],
+      "prefix": "task63_real_100k_hnsw_rabitq",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [40, 64, 100, 128, 160, 200],
+      "truth_cache_file": "benchmarks/task63-hnsw-rabitq-format/artifacts/truth-100k-k10.json",
+      "log_output": "benchmarks/task63-hnsw-rabitq-format/artifacts/recall-100k-hnsw-rabitq.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-100k-hnsw-turboquant",
+      "tags": ["latency", "ec_real_100k", "hnsw", "turboquant", "post_recall_warm", "benchmark-host", "task63"],
+      "prefix": "task63_real_100k_hnsw_turboquant",
+      "profile": "ec_hnsw",
+      "sweep": [40, 64, 100, 128, 160, 200],
+      "concurrency": 1,
+      "cache_state": "post_recall_warm",
+      "log_output": "benchmarks/task63-hnsw-rabitq-format/artifacts/latency-100k-hnsw-turboquant.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-100k-hnsw-pq-fastscan",
+      "tags": ["latency", "ec_real_100k", "hnsw", "pq_fastscan", "post_recall_warm", "benchmark-host", "task63"],
+      "prefix": "task63_real_100k_hnsw_pq",
+      "profile": "ec_hnsw",
+      "sweep": [40, 64, 100, 128, 160, 200],
+      "concurrency": 1,
+      "cache_state": "post_recall_warm",
+      "log_output": "benchmarks/task63-hnsw-rabitq-format/artifacts/latency-100k-hnsw-pq-fastscan.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-100k-hnsw-rabitq",
+      "tags": ["latency", "ec_real_100k", "hnsw", "rabitq", "post_recall_warm", "benchmark-host", "task63"],
+      "prefix": "task63_real_100k_hnsw_rabitq",
+      "profile": "ec_hnsw",
+      "sweep": [40, 64, 100, 128, 160, 200],
+      "concurrency": 1,
+      "cache_state": "post_recall_warm",
+      "log_output": "benchmarks/task63-hnsw-rabitq-format/artifacts/latency-100k-hnsw-rabitq.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-100k-hnsw-turboquant",
+      "tags": ["storage", "ec_real_100k", "hnsw", "turboquant", "benchmark-host", "task63"],
+      "prefix": "task63_real_100k_hnsw_turboquant",
+      "log_file": "benchmarks/task63-hnsw-rabitq-format/artifacts/storage-100k-hnsw-turboquant.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-100k-hnsw-pq-fastscan",
+      "tags": ["storage", "ec_real_100k", "hnsw", "pq_fastscan", "benchmark-host", "task63"],
+      "prefix": "task63_real_100k_hnsw_pq",
+      "log_file": "benchmarks/task63-hnsw-rabitq-format/artifacts/storage-100k-hnsw-pq-fastscan.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-100k-hnsw-rabitq",
+      "tags": ["storage", "ec_real_100k", "hnsw", "rabitq", "benchmark-host", "task63"],
+      "prefix": "task63_real_100k_hnsw_rabitq",
+      "log_file": "benchmarks/task63-hnsw-rabitq-format/artifacts/storage-100k-hnsw-rabitq.log"
+    }
+  ]
+}

@@ -1,0 +1,580 @@
+{
+  "name": "task63-hnsw-rabitq-format-m5",
+  "schema_version": 1,
+  "artifact_dir": "benchmarks/task63-hnsw-rabitq-format/artifacts/m5-laptop",
+  "defaults": {
+    "pg": 18,
+    "socket_dir": "/Users/peter/.pgrx",
+    "profile": "ec_hnsw",
+    "seed": 42,
+    "queries_limit": 200,
+    "iterations": 200,
+    "force_index": true,
+    "sample_backend_memory": true,
+    "memory_sample_interval_ms": 25
+  },
+  "steps": [
+    {
+      "kind": "raw",
+      "name": "precheck-host",
+      "tags": [
+        "setup",
+        "precheck",
+        "benchmark-host",
+        "task63"
+      ],
+      "args": [
+        "dev",
+        "sql",
+        "--pg",
+        "18",
+        "--db",
+        "postgres",
+        "--socket-dir",
+        "/Users/peter/.pgrx",
+        "--raw",
+        "--sql",
+        "SELECT now() AS captured_at, version() AS postgres_version, current_setting('shared_buffers') AS shared_buffers, current_setting('work_mem') AS work_mem, current_setting('maintenance_work_mem') AS maintenance_work_mem, current_setting('effective_cache_size') AS effective_cache_size;",
+        "--log-output",
+        "benchmarks/task63-hnsw-rabitq-format/artifacts/m5-laptop/precheck-host.log"
+      ],
+      "expected_artifacts": [
+        "benchmarks/task63-hnsw-rabitq-format/artifacts/m5-laptop/precheck-host.log"
+      ]
+    },
+    {
+      "kind": "load",
+      "name": "load-50k-hnsw-turboquant",
+      "tags": [
+        "load",
+        "ec_real_50k",
+        "hnsw",
+        "turboquant",
+        "benchmark-host",
+        "task63"
+      ],
+      "prefix": "task63_real_50k_hnsw_turboquant",
+      "profile": "ec_hnsw",
+      "storage_format": "turboquant",
+      "corpus_file": "data/task31_m5_dbpedia_staged/ec_real_50k_corpus.tsv",
+      "queries_file": "data/task31_m5_dbpedia_staged/ec_real_50k_queries.tsv",
+      "manifest_file": "data/task31_m5_dbpedia_staged/ec_real_50k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "m": [
+        16
+      ],
+      "ef_construction": 128,
+      "log_file": "benchmarks/task63-hnsw-rabitq-format/artifacts/m5-laptop/load-50k-hnsw-turboquant.log"
+    },
+    {
+      "kind": "load",
+      "name": "load-50k-hnsw-pq-fastscan",
+      "tags": [
+        "load",
+        "ec_real_50k",
+        "hnsw",
+        "pq_fastscan",
+        "benchmark-host",
+        "task63"
+      ],
+      "prefix": "task63_real_50k_hnsw_pq",
+      "profile": "ec_hnsw",
+      "storage_format": "pq_fastscan",
+      "corpus_file": "data/task31_m5_dbpedia_staged/ec_real_50k_corpus.tsv",
+      "queries_file": "data/task31_m5_dbpedia_staged/ec_real_50k_queries.tsv",
+      "manifest_file": "data/task31_m5_dbpedia_staged/ec_real_50k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "m": [
+        16
+      ],
+      "ef_construction": 128,
+      "log_file": "benchmarks/task63-hnsw-rabitq-format/artifacts/m5-laptop/load-50k-hnsw-pq-fastscan.log"
+    },
+    {
+      "kind": "load",
+      "name": "load-50k-hnsw-rabitq",
+      "tags": [
+        "load",
+        "ec_real_50k",
+        "hnsw",
+        "rabitq",
+        "benchmark-host",
+        "task63"
+      ],
+      "prefix": "task63_real_50k_hnsw_rabitq",
+      "profile": "ec_hnsw",
+      "storage_format": "rabitq",
+      "corpus_file": "data/task31_m5_dbpedia_staged/ec_real_50k_corpus.tsv",
+      "queries_file": "data/task31_m5_dbpedia_staged/ec_real_50k_queries.tsv",
+      "manifest_file": "data/task31_m5_dbpedia_staged/ec_real_50k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "m": [
+        16
+      ],
+      "ef_construction": 128,
+      "log_file": "benchmarks/task63-hnsw-rabitq-format/artifacts/m5-laptop/load-50k-hnsw-rabitq.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-50k-hnsw-turboquant",
+      "tags": [
+        "recall",
+        "ec_real_50k",
+        "hnsw",
+        "turboquant",
+        "benchmark-host",
+        "task63"
+      ],
+      "prefix": "task63_real_50k_hnsw_turboquant",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        40,
+        64,
+        100,
+        128,
+        160,
+        200
+      ],
+      "truth_cache_file": "benchmarks/task63-hnsw-rabitq-format/artifacts/m5-laptop/truth-50k-k10.json",
+      "log_output": "benchmarks/task63-hnsw-rabitq-format/artifacts/m5-laptop/recall-50k-hnsw-turboquant.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-50k-hnsw-pq-fastscan",
+      "tags": [
+        "recall",
+        "ec_real_50k",
+        "hnsw",
+        "pq_fastscan",
+        "benchmark-host",
+        "task63"
+      ],
+      "prefix": "task63_real_50k_hnsw_pq",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        40,
+        64,
+        100,
+        128,
+        160,
+        200
+      ],
+      "truth_cache_file": "benchmarks/task63-hnsw-rabitq-format/artifacts/m5-laptop/truth-50k-k10.json",
+      "log_output": "benchmarks/task63-hnsw-rabitq-format/artifacts/m5-laptop/recall-50k-hnsw-pq-fastscan.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-50k-hnsw-rabitq",
+      "tags": [
+        "recall",
+        "ec_real_50k",
+        "hnsw",
+        "rabitq",
+        "benchmark-host",
+        "task63"
+      ],
+      "prefix": "task63_real_50k_hnsw_rabitq",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        40,
+        64,
+        100,
+        128,
+        160,
+        200
+      ],
+      "truth_cache_file": "benchmarks/task63-hnsw-rabitq-format/artifacts/m5-laptop/truth-50k-k10.json",
+      "log_output": "benchmarks/task63-hnsw-rabitq-format/artifacts/m5-laptop/recall-50k-hnsw-rabitq.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-50k-hnsw-turboquant",
+      "tags": [
+        "latency",
+        "ec_real_50k",
+        "hnsw",
+        "turboquant",
+        "post_recall_warm",
+        "benchmark-host",
+        "task63"
+      ],
+      "prefix": "task63_real_50k_hnsw_turboquant",
+      "profile": "ec_hnsw",
+      "sweep": [
+        40,
+        64,
+        100,
+        128,
+        160,
+        200
+      ],
+      "concurrency": 1,
+      "cache_state": "post_recall_warm",
+      "log_output": "benchmarks/task63-hnsw-rabitq-format/artifacts/m5-laptop/latency-50k-hnsw-turboquant.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-50k-hnsw-pq-fastscan",
+      "tags": [
+        "latency",
+        "ec_real_50k",
+        "hnsw",
+        "pq_fastscan",
+        "post_recall_warm",
+        "benchmark-host",
+        "task63"
+      ],
+      "prefix": "task63_real_50k_hnsw_pq",
+      "profile": "ec_hnsw",
+      "sweep": [
+        40,
+        64,
+        100,
+        128,
+        160,
+        200
+      ],
+      "concurrency": 1,
+      "cache_state": "post_recall_warm",
+      "log_output": "benchmarks/task63-hnsw-rabitq-format/artifacts/m5-laptop/latency-50k-hnsw-pq-fastscan.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-50k-hnsw-rabitq",
+      "tags": [
+        "latency",
+        "ec_real_50k",
+        "hnsw",
+        "rabitq",
+        "post_recall_warm",
+        "benchmark-host",
+        "task63"
+      ],
+      "prefix": "task63_real_50k_hnsw_rabitq",
+      "profile": "ec_hnsw",
+      "sweep": [
+        40,
+        64,
+        100,
+        128,
+        160,
+        200
+      ],
+      "concurrency": 1,
+      "cache_state": "post_recall_warm",
+      "log_output": "benchmarks/task63-hnsw-rabitq-format/artifacts/m5-laptop/latency-50k-hnsw-rabitq.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-50k-hnsw-turboquant",
+      "tags": [
+        "storage",
+        "ec_real_50k",
+        "hnsw",
+        "turboquant",
+        "benchmark-host",
+        "task63"
+      ],
+      "prefix": "task63_real_50k_hnsw_turboquant",
+      "log_file": "benchmarks/task63-hnsw-rabitq-format/artifacts/m5-laptop/storage-50k-hnsw-turboquant.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-50k-hnsw-pq-fastscan",
+      "tags": [
+        "storage",
+        "ec_real_50k",
+        "hnsw",
+        "pq_fastscan",
+        "benchmark-host",
+        "task63"
+      ],
+      "prefix": "task63_real_50k_hnsw_pq",
+      "log_file": "benchmarks/task63-hnsw-rabitq-format/artifacts/m5-laptop/storage-50k-hnsw-pq-fastscan.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-50k-hnsw-rabitq",
+      "tags": [
+        "storage",
+        "ec_real_50k",
+        "hnsw",
+        "rabitq",
+        "benchmark-host",
+        "task63"
+      ],
+      "prefix": "task63_real_50k_hnsw_rabitq",
+      "log_file": "benchmarks/task63-hnsw-rabitq-format/artifacts/m5-laptop/storage-50k-hnsw-rabitq.log"
+    },
+    {
+      "kind": "load",
+      "name": "load-100k-hnsw-turboquant",
+      "tags": [
+        "load",
+        "ec_real_100k",
+        "hnsw",
+        "turboquant",
+        "benchmark-host",
+        "task63"
+      ],
+      "prefix": "task63_real_100k_hnsw_turboquant",
+      "profile": "ec_hnsw",
+      "storage_format": "turboquant",
+      "corpus_file": "data/task31_m5_dbpedia_staged/ec_real_100k_corpus.tsv",
+      "queries_file": "data/task31_m5_dbpedia_staged/ec_real_100k_queries.tsv",
+      "manifest_file": "data/task31_m5_dbpedia_staged/ec_real_100k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "m": [
+        16
+      ],
+      "ef_construction": 128,
+      "log_file": "benchmarks/task63-hnsw-rabitq-format/artifacts/m5-laptop/load-100k-hnsw-turboquant.log"
+    },
+    {
+      "kind": "load",
+      "name": "load-100k-hnsw-pq-fastscan",
+      "tags": [
+        "load",
+        "ec_real_100k",
+        "hnsw",
+        "pq_fastscan",
+        "benchmark-host",
+        "task63"
+      ],
+      "prefix": "task63_real_100k_hnsw_pq",
+      "profile": "ec_hnsw",
+      "storage_format": "pq_fastscan",
+      "corpus_file": "data/task31_m5_dbpedia_staged/ec_real_100k_corpus.tsv",
+      "queries_file": "data/task31_m5_dbpedia_staged/ec_real_100k_queries.tsv",
+      "manifest_file": "data/task31_m5_dbpedia_staged/ec_real_100k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "m": [
+        16
+      ],
+      "ef_construction": 128,
+      "log_file": "benchmarks/task63-hnsw-rabitq-format/artifacts/m5-laptop/load-100k-hnsw-pq-fastscan.log"
+    },
+    {
+      "kind": "load",
+      "name": "load-100k-hnsw-rabitq",
+      "tags": [
+        "load",
+        "ec_real_100k",
+        "hnsw",
+        "rabitq",
+        "benchmark-host",
+        "task63"
+      ],
+      "prefix": "task63_real_100k_hnsw_rabitq",
+      "profile": "ec_hnsw",
+      "storage_format": "rabitq",
+      "corpus_file": "data/task31_m5_dbpedia_staged/ec_real_100k_corpus.tsv",
+      "queries_file": "data/task31_m5_dbpedia_staged/ec_real_100k_queries.tsv",
+      "manifest_file": "data/task31_m5_dbpedia_staged/ec_real_100k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "m": [
+        16
+      ],
+      "ef_construction": 128,
+      "log_file": "benchmarks/task63-hnsw-rabitq-format/artifacts/m5-laptop/load-100k-hnsw-rabitq.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-100k-hnsw-turboquant",
+      "tags": [
+        "recall",
+        "ec_real_100k",
+        "hnsw",
+        "turboquant",
+        "benchmark-host",
+        "task63"
+      ],
+      "prefix": "task63_real_100k_hnsw_turboquant",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        40,
+        64,
+        100,
+        128,
+        160,
+        200
+      ],
+      "truth_cache_file": "benchmarks/task63-hnsw-rabitq-format/artifacts/m5-laptop/truth-100k-k10.json",
+      "log_output": "benchmarks/task63-hnsw-rabitq-format/artifacts/m5-laptop/recall-100k-hnsw-turboquant.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-100k-hnsw-pq-fastscan",
+      "tags": [
+        "recall",
+        "ec_real_100k",
+        "hnsw",
+        "pq_fastscan",
+        "benchmark-host",
+        "task63"
+      ],
+      "prefix": "task63_real_100k_hnsw_pq",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        40,
+        64,
+        100,
+        128,
+        160,
+        200
+      ],
+      "truth_cache_file": "benchmarks/task63-hnsw-rabitq-format/artifacts/m5-laptop/truth-100k-k10.json",
+      "log_output": "benchmarks/task63-hnsw-rabitq-format/artifacts/m5-laptop/recall-100k-hnsw-pq-fastscan.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-100k-hnsw-rabitq",
+      "tags": [
+        "recall",
+        "ec_real_100k",
+        "hnsw",
+        "rabitq",
+        "benchmark-host",
+        "task63"
+      ],
+      "prefix": "task63_real_100k_hnsw_rabitq",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        40,
+        64,
+        100,
+        128,
+        160,
+        200
+      ],
+      "truth_cache_file": "benchmarks/task63-hnsw-rabitq-format/artifacts/m5-laptop/truth-100k-k10.json",
+      "log_output": "benchmarks/task63-hnsw-rabitq-format/artifacts/m5-laptop/recall-100k-hnsw-rabitq.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-100k-hnsw-turboquant",
+      "tags": [
+        "latency",
+        "ec_real_100k",
+        "hnsw",
+        "turboquant",
+        "post_recall_warm",
+        "benchmark-host",
+        "task63"
+      ],
+      "prefix": "task63_real_100k_hnsw_turboquant",
+      "profile": "ec_hnsw",
+      "sweep": [
+        40,
+        64,
+        100,
+        128,
+        160,
+        200
+      ],
+      "concurrency": 1,
+      "cache_state": "post_recall_warm",
+      "log_output": "benchmarks/task63-hnsw-rabitq-format/artifacts/m5-laptop/latency-100k-hnsw-turboquant.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-100k-hnsw-pq-fastscan",
+      "tags": [
+        "latency",
+        "ec_real_100k",
+        "hnsw",
+        "pq_fastscan",
+        "post_recall_warm",
+        "benchmark-host",
+        "task63"
+      ],
+      "prefix": "task63_real_100k_hnsw_pq",
+      "profile": "ec_hnsw",
+      "sweep": [
+        40,
+        64,
+        100,
+        128,
+        160,
+        200
+      ],
+      "concurrency": 1,
+      "cache_state": "post_recall_warm",
+      "log_output": "benchmarks/task63-hnsw-rabitq-format/artifacts/m5-laptop/latency-100k-hnsw-pq-fastscan.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-100k-hnsw-rabitq",
+      "tags": [
+        "latency",
+        "ec_real_100k",
+        "hnsw",
+        "rabitq",
+        "post_recall_warm",
+        "benchmark-host",
+        "task63"
+      ],
+      "prefix": "task63_real_100k_hnsw_rabitq",
+      "profile": "ec_hnsw",
+      "sweep": [
+        40,
+        64,
+        100,
+        128,
+        160,
+        200
+      ],
+      "concurrency": 1,
+      "cache_state": "post_recall_warm",
+      "log_output": "benchmarks/task63-hnsw-rabitq-format/artifacts/m5-laptop/latency-100k-hnsw-rabitq.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-100k-hnsw-turboquant",
+      "tags": [
+        "storage",
+        "ec_real_100k",
+        "hnsw",
+        "turboquant",
+        "benchmark-host",
+        "task63"
+      ],
+      "prefix": "task63_real_100k_hnsw_turboquant",
+      "log_file": "benchmarks/task63-hnsw-rabitq-format/artifacts/m5-laptop/storage-100k-hnsw-turboquant.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-100k-hnsw-pq-fastscan",
+      "tags": [
+        "storage",
+        "ec_real_100k",
+        "hnsw",
+        "pq_fastscan",
+        "benchmark-host",
+        "task63"
+      ],
+      "prefix": "task63_real_100k_hnsw_pq",
+      "log_file": "benchmarks/task63-hnsw-rabitq-format/artifacts/m5-laptop/storage-100k-hnsw-pq-fastscan.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-100k-hnsw-rabitq",
+      "tags": [
+        "storage",
+        "ec_real_100k",
+        "hnsw",
+        "rabitq",
+        "benchmark-host",
+        "task63"
+      ],
+      "prefix": "task63_real_100k_hnsw_rabitq",
+      "log_file": "benchmarks/task63-hnsw-rabitq-format/artifacts/m5-laptop/storage-100k-hnsw-rabitq.log"
+    }
+  ]
+}

@@ -16,26 +16,30 @@
 //! ADR-046 frozen rule 1 / ADR-047 frozen rule 4: `PAYLOAD_FLAG_COLD_RERANK_PAYLOAD`
 //! stays clear on V0 builds. The V0 rerank source is the heap
 //! `ecvector` row (ADR-044 default).
+//!
+//! Build-time exact duplicate vectors are intentionally represented as
+//! distinct graph nodes. Runtime insert still supports overflow heap TIDs, but
+//! ambuild avoids the prior O(N^2) exact-match scan over all collected rows.
 
 use std::ffi::c_void;
 use std::ptr::{self, NonNull};
 use std::time::{Duration, Instant};
 
 use pgrx::{pg_sys, PgBox};
+use rayon::prelude::*;
 
-use crate::am::common::{callback::pg_am_callback, detoast::DetoastedVarlena, training};
-use crate::quant::prod::ProdQuantizer;
+use crate::am::common::{callback::pg_am_callback, detoast::DetoastedVarlena};
 use crate::storage::buffer_guard::LockedBufferGuard;
 use crate::storage::page::{DataPageChain, ItemPointer, METADATA_BLOCK_NUMBER};
 use crate::storage::relation::RelationHandle;
 use crate::storage::wal;
-use crate::{DEFAULT_QUANT_BITS, DEFAULT_QUANT_SEED};
+use crate::DEFAULT_QUANT_SEED;
 
 use super::build::{build_and_persist_vamana, BuildOutput, BuildParams};
-use super::insert;
 use super::options::{self, TqDiskannOptions};
 use super::page::VamanaMetadataPage;
 use super::persist::{stage_grouped_codebook_chain, NodePayload};
+use super::quantizer::DiskannBuildCodec;
 use super::{
     warn_on_non_unit_source_vector_sample, ECDISKANN_UNIT_NORM_BUILD_SAMPLE_CAP,
     ECDISKANN_UNIT_NORM_DISTANCE_BIAS,
@@ -49,7 +53,6 @@ const P_NEW: pg_sys::BlockNumber = u32::MAX;
 #[derive(Debug)]
 struct RawHeapTuple {
     primary_heap_tid: ItemPointer,
-    overflow_heap_tids: Vec<ItemPointer>,
     source_vector: Vec<f32>,
 }
 
@@ -131,28 +134,11 @@ impl BuildState {
                 "ec_diskann ambuild requires a single dimension; saw {dim} after {existing}"
             ),
         }
-        if let Some(existing) = self
-            .heap_tuples
-            .iter_mut()
-            .find(|existing| source_vectors_match_exactly(&existing.source_vector, &source_vector))
-        {
-            existing.overflow_heap_tids.push(heap_tid);
-            return;
-        }
         self.heap_tuples.push(RawHeapTuple {
             primary_heap_tid: heap_tid,
-            overflow_heap_tids: Vec::new(),
             source_vector,
         });
     }
-}
-
-fn source_vectors_match_exactly(left: &[f32], right: &[f32]) -> bool {
-    left.len() == right.len()
-        && left
-            .iter()
-            .zip(right.iter())
-            .all(|(lhs, rhs)| lhs.to_bits() == rhs.to_bits())
 }
 
 pub(super) unsafe extern "C-unwind" fn ec_diskann_ambuild(
@@ -297,8 +283,9 @@ unsafe fn flush_build_state(
     );
     timing.source_ref_ms = elapsed_ms(source_ref_started.elapsed());
 
-    let training_started = Instant::now();
-    let model = training::train_grouped_pq4_model(
+    let codec_started = Instant::now();
+    let codec = DiskannBuildCodec::prepare(
+        state.options.storage_format,
         &source_refs,
         dimensions as usize,
         seed,
@@ -306,35 +293,18 @@ unsafe fn flush_build_state(
         train_size,
         PQ_FASTSCAN_DEFAULT_KMEANS_ITERS,
     )?;
-    timing.training_ms = elapsed_ms(training_started.elapsed());
-
-    let sidecar_setup_started = Instant::now();
-    let sidecar_word_count =
-        training::persisted_binary_sidecar_word_count(dimensions, DEFAULT_QUANT_BITS, seed);
-    let has_binary_sidecar = sidecar_word_count > 0;
-    let persisted_binary_quantizer = has_binary_sidecar
-        .then(|| ProdQuantizer::cached(dimensions as usize, DEFAULT_QUANT_BITS, seed));
-    timing.sidecar_setup_ms = elapsed_ms(sidecar_setup_started.elapsed());
+    timing.training_ms = elapsed_ms(codec_started.elapsed());
 
     let payload_started = Instant::now();
     let payloads: Vec<NodePayload> = state
         .heap_tuples
-        .iter()
+        .par_iter()
         .map(|t| {
-            let search_code = training::derive_grouped_pq4_code(&t.source_vector, &model);
-            let binary_words = match &persisted_binary_quantizer {
-                Some(q) => {
-                    let encoded = q.encode(&t.source_vector);
-                    let mut code = encoded.mse_packed;
-                    code.extend_from_slice(&encoded.qjl_packed);
-                    training::derive_persisted_binary_words(q, &code)
-                }
-                None => Vec::new(),
-            };
+            let encoded = codec.encode(&t.source_vector);
             NodePayload {
                 primary_heaptid: t.primary_heap_tid,
-                binary_words,
-                search_code,
+                binary_words: encoded.binary_words,
+                search_code: encoded.search_code,
             }
         })
         .collect();
@@ -347,13 +317,12 @@ unsafe fn flush_build_state(
             .map_err(|_| "build_list_size does not fit in u16".to_owned())?,
         alpha: state.options.alpha,
         dimensions,
-        search_subvector_count: u16::try_from(model.group_count)
-            .map_err(|_| "search_subvector_count does not fit in u16".to_owned())?,
-        search_subvector_dim: u16::try_from(model.group_size)
-            .map_err(|_| "search_subvector_dim does not fit in u16".to_owned())?,
+        search_subvector_count: codec.search_subvector_count(),
+        search_subvector_dim: codec.search_subvector_dim(),
+        search_codec_kind: codec.search_codec_kind(),
         seed,
         page_size: state.page_size,
-        has_binary_sidecar,
+        has_binary_sidecar: codec.has_binary_sidecar(),
     };
 
     let build_persist_started = Instant::now();
@@ -396,25 +365,13 @@ unsafe fn flush_build_state(
         .collect();
     let mut chain = persisted.chain;
     timing.data_pages = chain.pages().len();
-    let binary_word_count = params.binary_word_count();
-    let search_code_len = params.search_code_len();
-    let overflow_started = Instant::now();
-    for (node_index, tuple) in state.heap_tuples.iter().enumerate() {
-        insert::stage_overflow_heap_tids_in_chain(
-            &mut chain,
-            metadata.graph_degree_r,
-            binary_word_count,
-            search_code_len,
-            persisted.node_to_tid[node_index],
-            &tuple.overflow_heap_tids,
-        )?;
-    }
-    timing.overflow_ms = elapsed_ms(overflow_started.elapsed());
-    let codebook_started = Instant::now();
-    let codebook_head = stage_grouped_codebook_chain(&mut chain, &model)?;
-    timing.codebook_ms = elapsed_ms(codebook_started.elapsed());
     let mut metadata = metadata;
-    metadata.grouped_codebook_head = codebook_head;
+    if let Some(model) = codec.pq_model() {
+        let codebook_started = Instant::now();
+        let codebook_head = stage_grouped_codebook_chain(&mut chain, &model)?;
+        timing.codebook_ms = elapsed_ms(codebook_started.elapsed());
+        metadata.grouped_codebook_head = codebook_head;
+    }
 
     let write_pages_started = Instant::now();
     let pages_handle = NonNull::new(index_relation).unwrap_or_else(|| {

@@ -62,7 +62,15 @@ WITH (
 | `m` | 8 | Graph degree per layer. Higher usually improves recall and storage cost. |
 | `ef_construction` | 64 | Build-time search width. Higher usually improves graph quality and build cost. |
 | `ef_search` | 40 | Relation default for scan width. |
-| `storage_format` | `turboquant` | `turboquant` or `pq_fastscan`. |
+| `storage_format` | `turboquant` | `turboquant`, `pq_fastscan`, or benchmark-gated `rabitq`. |
+
+HNSW `storage_format = 'rabitq'` is implemented for build, scan, live insert,
+and vacuum, but its final operating-point decision is still gated on the Task
+63 publishable 50k/100k benchmark matrix. Keep `turboquant` or `pq_fastscan`
+for production-style HNSW comparisons until that packet records a recommend or
+shelve decision. RaBitQ derives search codes from raw source vectors; when the
+indexed column is `tqvector`, provide `build_source_column` for bulk build and
+keep raw source data available for live inserts, or index `ecvector` directly.
 
 Override scan width for a session:
 

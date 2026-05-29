@@ -2,6 +2,7 @@ am,format_version,can_read,can_write,fixture,notes
 hnsw,1,true,false,fixtures/on-disk/hnsw_metadata_v3.hex,legacy scalar metadata reader remains supported
 hnsw,2,true,false,fixtures/on-disk/hnsw_grouped_hot_tuple_v2.hex,grouped hot tuple reader remains supported
 hnsw,3,true,true,fixtures/on-disk/hnsw_metadata_v3.hex,current turbo hot/cold HNSW format
+hnsw,4,true,true,fixtures/on-disk/hnsw_metadata_v4_rabitq.hex,current RaBitQ HNSW format
 diskann,3,true,true,fixtures/on-disk/diskann_vamana_metadata_v3.hex,current DiskANN Vamana format
 ivf,1,true,true,fixtures/on-disk/ivf_metadata_v1.hex,current IVF format
 spire-partition,1,true,true,fixtures/on-disk/spire_leaf_partition_object_v1.hex,SPIRE V1 partition objects remain readable and writable

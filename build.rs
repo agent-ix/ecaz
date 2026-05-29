@@ -10,7 +10,7 @@ fn main() {
     let target_arch = std::env::var("CARGO_CFG_TARGET_ARCH").unwrap_or_default();
     let out_dir = std::env::var("OUT_DIR").expect("OUT_DIR should be present for build scripts");
 
-    if target_os == "linux" && target_arch == "x86_64" {
+    if (target_os == "linux" && target_arch == "x86_64") || target_os == "macos" {
         cc::Build::new()
             .file("csrc/standalone_pg_backend_stubs.c")
             .cargo_metadata(false)

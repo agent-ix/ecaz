@@ -38,6 +38,7 @@ Current fixture coverage:
 | Fixture | Coverage |
 | --- | --- |
 | `hnsw_metadata_v3.hex` | HNSW current metadata decode and swapped-version rejection |
+| `hnsw_metadata_v4_rabitq.hex` | HNSW RaBitQ metadata decode and swapped-version rejection |
 | `hnsw_element_tuple_v3.hex` | HNSW element tuple decode |
 | `hnsw_grouped_hot_tuple_v2.hex` | HNSW grouped-hot tuple decode |
 | `hnsw_turbo_hot_tuple_v3.hex` | HNSW turbo-hot tuple decode |
@@ -75,7 +76,7 @@ before interpreting the rest of the payload:
 
 | AM | Current tags | Reader behavior |
 | --- | --- | --- |
-| HNSW | `1`, `2`, `3` | accepts known tags, rejects unknown tags |
+| HNSW | `1`, `2`, `3`, `4` | accepts known tags, rejects unknown tags |
 | DiskANN | `3` | accepts the DiskANN tag, rejects foreign tags |
 | IVF | `1` | accepts the current tag, rejects unknown tags |
 | SPIRE partition objects | `1`, `2` | accepts known object versions, rejects unknown versions |
@@ -90,11 +91,12 @@ can_write)` table. `make upgrade-smoke` validates that the matrix has unique
 rows, that writable formats are readable, that each row points at a committed
 fixture, and that the current writable set is explicit.
 
-Today there is only one writable format per AM, so this lane is a registry
-consistency check. When a second writable format ships, the matrix must grow a
-live upgrade rehearsal for the old writable version per NFR-016-EV-3: build the
-old corpus, upgrade the extension, scan it with the new reader, and record the
-recall floor beside the historical fixture directory.
+HNSW currently has two writable format tags because TurboQuant/PqFastScan and
+RaBitQ are selected by `storage_format` rather than by an in-place migration.
+For any future incompatible replacement of an existing writable tag, the matrix
+must grow a live upgrade rehearsal for the old writable version per
+NFR-016-EV-3: build the old corpus, upgrade the extension, scan it with the new
+reader, and record the recall floor beside the historical fixture directory.
 
 ## Cross-Arch Decode
 
