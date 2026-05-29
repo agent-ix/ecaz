@@ -1,6 +1,6 @@
 # Manifest: SPIRE Merge CI Hotfix
 
-- head SHA: `2bd73e16be0b30e482ad750b54dc7ab9a7f21e2a`
+- head SHA: `c6bfb0baf4cf01d8f94142fc0f0def8f1eda065f`
 - task bucket: `reviews/task-30`
 - packet path: `reviews/task-30/1000-spire-merge-ci-hotfix`
 - timestamp: `2026-05-29T17:23:35Z`
