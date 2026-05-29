@@ -11,6 +11,7 @@ Code checkpoints:
 - `da2807c0e` - `Bound DiskANN greedy frontier with heaps`
 - `4bd460081` - `Fix DiskANN build validation edges`
 - `a8b0b8789` - `Fix DiskANN build visibility handling`
+- `de2ef72e4` - `Trim DiskANN Vamana build hot path`
 
 ## Results
 
@@ -56,6 +57,8 @@ Memory/code audit:
 - Runtime insert overflow remains covered by existing insert/overflow tests.
 - Build greedy search uses `SearchScratch` with `Vec<u64>` bitsets and bounded
   heaps.
+- Build-path greedy search no longer constructs the sorted top-`L` frontier
+  vector that only scan/tests need.
 - No build hot-loop `vec![false; n]`, linear `min_by` frontier search, or
   repeated `frontier.sort()/truncate()` remains.
 - `heaptrack` / standalone `dhat` were unavailable on this host, so the packet
@@ -66,6 +69,7 @@ Reviewer feedback resolution:
 - Packet 001 B1/B2: addressed by `a8b0b8789`. DiskANN ambuild no longer skips
   `tuple_is_alive = false`; the non-chunked loader no longer creates dead NULL
   indexed tuples before `CREATE INDEX`.
+- Packet 001 non-blocking Vamana clone/counter nit: addressed by `de2ef72e4`.
 - Packet 002 synth10k L=200: still documented as a residual sign-off item.
 - Packet 002 memory profiler evidence: still static-only on this host.
 

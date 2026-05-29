@@ -1,6 +1,6 @@
 # Task 65 Hot-Loop Static Allocation Audit
 
-Head: `a8b0b87893a7868023b0ef49cbb00cc9225a7ac8`
+Head: `de2ef72e40472b8c9259e203be76cfdc0313c4d5`
 
 Scope: `src/am/ec_diskann/ambuild.rs` and
 `src/am/ec_diskann/vamana.rs`.
@@ -39,6 +39,9 @@ Interpretation:
 
 - Build-time greedy search uses `SearchScratch` with `Vec<u64>` bitsets and
   two bounded heaps, not per-search `vec![false; n]` allocations.
+- The build path uses `greedy_search_visited_with_scratch`, so it does not
+  construct the sorted top-`L` frontier vector needed only by scan/test
+  callers.
 - The remaining `vec![false; n]` is in the persisted-graph BFS helper, not in
   the Vamana pivot build loop.
 - The remaining `frontier.sort_unstable()` is final output ordering after

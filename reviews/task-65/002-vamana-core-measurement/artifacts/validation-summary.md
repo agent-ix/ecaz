@@ -1,6 +1,6 @@
 # Task 65 Validation Summary
 
-Head: `a8b0b87893a7868023b0ef49cbb00cc9225a7ac8`
+Head: `de2ef72e40472b8c9259e203be76cfdc0313c4d5`
 
 ## Commands
 
@@ -49,7 +49,7 @@ running 182 tests
 ...
 test am::ec_diskann::routine::tests::pg_test_ec_diskann_build_keeps_duplicate_vectors_as_distinct_nodes ... ok
 ...
-test result: ok. 182 passed; 0 failed; 0 ignored; 0 measured; 1735 filtered out; finished in 87.33s
+test result: ok. 182 passed; 0 failed; 0 ignored; 0 measured; 1735 filtered out; finished in 70.42s
 ...
 process exited with code 0
 ```
@@ -57,6 +57,9 @@ process exited with code 0
 This also verifies the macOS standalone-loader fix: the command reached and
 ran the DiskANN tests instead of aborting before test execution with the prior
 `_BufferBlocks` dyld error.
+
+This run was repeated after `de2ef72e4` so the test evidence matches the
+committed Vamana hot-path cleanup rather than a dirty worktree.
 
 ### `/Users/peter/.cargo/bin/ecaz dev install ecaz-pg-test --pg 18 --log-file reviews/task-65/002-vamana-core-measurement/artifacts/install-ecaz-pg-test-after-loader-fix.log`
 
