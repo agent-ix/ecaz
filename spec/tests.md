@@ -196,7 +196,7 @@ presence alone.
 
 | Test Case | Option Set | Required Coverage | Expected Behavior |
 | --- | --- | --- | --- |
-| TC-004 | `ec_hnsw.storage_format` | `auto`, TurboQuant/PQ-FastScan-family formats supported by current code | Valid formats build/scan; incompatible live storage-format changes reject until rebuild |
+| TC-004 | `ec_hnsw.storage_format` | `turboquant`, `pq_fastscan`, `rabitq` | Valid formats build/scan; incompatible live storage-format changes reject until rebuild |
 | TC-004 | `ec_hnsw.ef_search` | relation default, session override, reset | Effective scan breadth follows session override when set |
 | TC-006 | `ec_hnsw.enable_parallel_build_concurrent_dsm` | true, false | true uses concurrent DSM path when eligible; false uses diagnostic fallback |
 | TC-007 | `ec_ivf.storage_format` | `auto`, `turboquant`, `pq_fastscan`, `rabitq` | Valid formats build; invalid strings reject |

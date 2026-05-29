@@ -11,6 +11,7 @@ use crate::psql::ConnectionOptions;
 mod fault;
 mod install;
 mod pg_upgrade;
+mod resource_test;
 mod scratch;
 mod spire_multicluster;
 mod sql;
@@ -48,6 +49,10 @@ pub enum DevCommand {
         #[command(subcommand)]
         command: test::TestCommand,
     },
+    /// Resource-exhaustion sweep over the six Task 48 §Scope scenarios
+    /// (max-locks, max-connections, work-mem-min, temp-file-limit,
+    /// shared-buffers-thrash, disk-full).
+    ResourceTest(resource_test::ResourceTestArgs),
 }
 
 impl DevCommand {
@@ -60,6 +65,7 @@ impl DevCommand {
             DevCommand::Sql(args) => sql::run(conn, args).await,
             DevCommand::PgUpgradeSmoke(args) => pg_upgrade::run(args).await,
             DevCommand::Test { command } => command.run(&conn.database).await,
+            DevCommand::ResourceTest(args) => resource_test::run(conn, args).await,
         }
     }
 }

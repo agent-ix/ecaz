@@ -221,7 +221,7 @@ pub(super) unsafe extern "C-unwind" fn ec_hnsw_amoptions(
         pg_sys::add_local_string_reloption(
             &mut relopts,
             b"storage_format\0".as_ptr().cast(),
-            b"Index storage format: 'turboquant' (default) or 'pq_fastscan'.\0"
+            b"Index storage format: 'turboquant' (default), 'pq_fastscan', or 'rabitq'.\0"
                 .as_ptr()
                 .cast(),
             ptr::null(),
@@ -369,6 +369,10 @@ mod tests {
             StorageFormat::parse_reloption("pq_fastscan"),
             Ok(StorageFormat::PqFastScan)
         );
+        assert_eq!(
+            StorageFormat::parse_reloption("rabitq"),
+            Ok(StorageFormat::RaBitQ)
+        );
     }
 
     #[test]
@@ -377,5 +381,6 @@ mod tests {
         assert!(error.contains("storage_format"));
         assert!(error.contains("turboquant"));
         assert!(error.contains("pq_fastscan"));
+        assert!(error.contains("rabitq"));
     }
 }

@@ -562,6 +562,17 @@ impl SpireScanOpaque {
         self.cursor.reset(Vec::new());
     }
 
+    /// Read and cache the SPIRE root-control state observed at rescan
+    /// time.
+    ///
+    /// # Safety
+    ///
+    /// `index_relation` must be the live SPIRE index relation that the AM
+    /// scan rescan callback is operating on; PostgreSQL guarantees the
+    /// relation is open and locked for the duration of the rescan call.
+    /// The helper only reads the root-control page; it must not be called
+    /// concurrently with a publish that mutates that page (the AM scan
+    /// state machine ensures this).
     unsafe fn root_control_for_rescan(
         &mut self,
         index_relation: pg_sys::Relation,

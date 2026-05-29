@@ -120,7 +120,9 @@ fn debug_graph_tuple_tag(storage: graph::GraphStorageDescriptor) -> u8 {
     match storage {
         graph::GraphStorageDescriptor::TurboQuant { .. } => page::TQ_ELEMENT_TAG,
         graph::GraphStorageDescriptor::TurboQuantHotCold(_) => page::TQ_TURBO_HOT_TAG,
-        graph::GraphStorageDescriptor::PqFastScan(_) => page::TQ_GROUPED_HOT_TAG,
+        graph::GraphStorageDescriptor::PqFastScan(_) | graph::GraphStorageDescriptor::RaBitQ(_) => {
+            page::TQ_GROUPED_HOT_TAG
+        }
     }
 }
 

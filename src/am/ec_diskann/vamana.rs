@@ -3,8 +3,8 @@
 //! Implements the algorithmic core of `ec_diskann`'s build pipeline:
 //! [`GreedySearch`] (best-first traversal with bounded frontier),
 //! [`RobustPrune`] (α-dominance candidate pruning), and
-//! [`build_vamana_graph`] (the two-pass build driver from the design doc
-//! at `plan/design/diskann-build-algorithm.md`).
+//! [`build_vamana_graph`] (the single-pass, growing-alpha build driver from
+//! the Task 65 performance overhaul).
 //!
 //! Distance is abstract: callers pass an `&impl Fn(u32, u32) -> f32`
 //! (build-time) or `&impl Fn(u32) -> f32` (query-time) so the algorithm
@@ -19,7 +19,7 @@
 
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
-use std::{cell::Cell, time::Instant};
+use std::{cmp::Reverse, collections::BinaryHeap, time::Instant};
 
 /// In-memory adjacency list. `neighbors[i]` is the out-edge set of node `i`.
 ///
@@ -150,6 +150,87 @@ pub struct GreedySearchResult {
     pub visited: Vec<u32>,
 }
 
+/// Reusable build-time scratch for Vamana search and candidate de-duplication.
+#[derive(Debug, Clone)]
+pub struct SearchScratch {
+    in_frontier: BitSet,
+    visited: BitSet,
+    seen_candidates: BitSet,
+    unexpanded: BinaryHeap<Reverse<Candidate>>,
+    retained: BinaryHeap<Candidate>,
+    visited_order: Vec<u32>,
+}
+
+impl SearchScratch {
+    pub fn new(node_count: usize, list_size: usize) -> Self {
+        Self {
+            in_frontier: BitSet::new(node_count),
+            visited: BitSet::new(node_count),
+            seen_candidates: BitSet::new(node_count),
+            unexpanded: BinaryHeap::with_capacity(list_size.saturating_add(1)),
+            retained: BinaryHeap::with_capacity(list_size.saturating_add(1)),
+            visited_order: Vec::with_capacity(list_size),
+        }
+    }
+
+    fn clear_search(&mut self) {
+        self.in_frontier.clear();
+        self.visited.clear();
+        self.unexpanded.clear();
+        self.retained.clear();
+        self.visited_order.clear();
+    }
+
+    fn clear_candidates(&mut self) {
+        self.seen_candidates.clear();
+    }
+}
+
+#[derive(Debug, Clone)]
+struct BitSet {
+    words: Vec<u64>,
+}
+
+impl BitSet {
+    fn new(bits: usize) -> Self {
+        Self {
+            words: vec![0; bits.div_ceil(64)],
+        }
+    }
+
+    fn clear(&mut self) {
+        self.words.fill(0);
+    }
+
+    fn contains(&self, bit: u32) -> bool {
+        let bit = bit as usize;
+        let word = bit / 64;
+        let mask = 1u64 << (bit % 64);
+        self.words
+            .get(word)
+            .map(|value| value & mask != 0)
+            .unwrap_or(false)
+    }
+
+    fn insert(&mut self, bit: u32) {
+        let bit = bit as usize;
+        let word = bit / 64;
+        let mask = 1u64 << (bit % 64);
+        if let Some(value) = self.words.get_mut(word) {
+            *value |= mask;
+        }
+    }
+
+    fn remove(&mut self, bit: u32) {
+        let bit = bit as usize;
+        let word = bit / 64;
+        let mask = 1u64 << (bit % 64);
+        if let Some(value) = self.words.get_mut(word) {
+            *value &= !mask;
+        }
+    }
+}
+
 /// `(node id, distance)` pair. `Ord` is by distance ascending so a
 /// `BinaryHeap<Reverse<Candidate>>` becomes a min-heap.
 #[derive(Debug, Clone, Copy)]
@@ -208,63 +289,154 @@ where
     G: VamanaGraphView + ?Sized,
     D: Fn(u32) -> f32,
 {
-    let n = graph.node_count();
-    let mut in_frontier = vec![false; n];
-    let mut visited_flag = vec![false; n];
-    let mut visited_order = Vec::new();
+    let mut scratch = SearchScratch::new(graph.node_count(), list_size);
+    greedy_search_view_with_scratch(graph, start, list_size, &mut scratch, query_dist)
+}
 
+pub fn greedy_search_view_with_scratch<G, D>(
+    graph: &G,
+    start: u32,
+    list_size: usize,
+    scratch: &mut SearchScratch,
+    query_dist: D,
+) -> GreedySearchResult
+where
+    G: VamanaGraphView + ?Sized,
+    D: Fn(u32) -> f32,
+{
+    scratch.clear_search();
     let start_dist = query_dist(start);
-    let mut frontier = vec![Candidate {
+    let start_candidate = Candidate {
         node: start,
         distance: start_dist,
-    }];
-    in_frontier[start as usize] = true;
+    };
+    push_frontier_candidate(scratch, list_size, start_candidate);
 
     loop {
-        // Find closest unvisited entry in frontier.
-        let next = frontier
-            .iter()
-            .copied()
-            .filter(|c| !visited_flag[c.node as usize])
-            .min_by(|a, b| a.cmp(b));
+        let next = loop {
+            let Some(Reverse(candidate)) = scratch.unexpanded.pop() else {
+                break None;
+            };
+            if scratch.in_frontier.contains(candidate.node)
+                && !scratch.visited.contains(candidate.node)
+            {
+                break Some(candidate);
+            }
+        };
         let Some(picked) = next else {
             break;
         };
-        visited_flag[picked.node as usize] = true;
-        visited_order.push(picked.node);
+        scratch.visited.insert(picked.node);
+        scratch.visited_order.push(picked.node);
 
         for &neighbor in graph.neighbors(picked.node) {
-            if in_frontier[neighbor as usize] {
+            if scratch.in_frontier.contains(neighbor) {
                 continue;
             }
             let d = query_dist(neighbor);
-            frontier.push(Candidate {
+            let candidate = Candidate {
                 node: neighbor,
                 distance: d,
-            });
-            in_frontier[neighbor as usize] = true;
-        }
-
-        // Truncate to L, keeping smallest distances. Using a max-heap on
-        // the tail to drop largest is O(F log L) but for the sizes we
-        // care about (L <= 200), a sort suffices.
-        if frontier.len() > list_size {
-            frontier.sort();
-            // Mark any nodes that fell off the end as no longer in
-            // frontier so they cannot be re-added on subsequent
-            // expansions.
-            for c in &frontier[list_size..] {
-                in_frontier[c.node as usize] = false;
-            }
-            frontier.truncate(list_size);
+            };
+            push_frontier_candidate(scratch, list_size, candidate);
         }
     }
 
-    frontier.sort();
+    let mut frontier: Vec<Candidate> = scratch
+        .retained
+        .iter()
+        .copied()
+        .filter(|candidate| scratch.in_frontier.contains(candidate.node))
+        .collect();
+    frontier.sort_unstable();
     GreedySearchResult {
         frontier,
-        visited: visited_order,
+        visited: std::mem::take(&mut scratch.visited_order),
     }
+}
+
+/// Build-path variant of [`greedy_search_view_with_scratch`] that skips
+/// constructing the sorted top-`L` frontier. The build driver only reads
+/// the visited list, so the frontier build is pure waste in that hot path.
+pub fn greedy_search_visited_with_scratch<G, D>(
+    graph: &G,
+    start: u32,
+    list_size: usize,
+    scratch: &mut SearchScratch,
+    query_dist: D,
+) -> Vec<u32>
+where
+    G: VamanaGraphView + ?Sized,
+    D: Fn(u32) -> f32,
+{
+    scratch.clear_search();
+    let start_dist = query_dist(start);
+    let start_candidate = Candidate {
+        node: start,
+        distance: start_dist,
+    };
+    push_frontier_candidate(scratch, list_size, start_candidate);
+
+    loop {
+        let next = loop {
+            let Some(Reverse(candidate)) = scratch.unexpanded.pop() else {
+                break None;
+            };
+            if scratch.in_frontier.contains(candidate.node)
+                && !scratch.visited.contains(candidate.node)
+            {
+                break Some(candidate);
+            }
+        };
+        let Some(picked) = next else {
+            break;
+        };
+        scratch.visited.insert(picked.node);
+        scratch.visited_order.push(picked.node);
+
+        for &neighbor in graph.neighbors(picked.node) {
+            if scratch.in_frontier.contains(neighbor) {
+                continue;
+            }
+            let d = query_dist(neighbor);
+            let candidate = Candidate {
+                node: neighbor,
+                distance: d,
+            };
+            push_frontier_candidate(scratch, list_size, candidate);
+        }
+    }
+
+    std::mem::take(&mut scratch.visited_order)
+}
+
+fn push_frontier_candidate(scratch: &mut SearchScratch, list_size: usize, candidate: Candidate) {
+    if list_size == 0 || scratch.in_frontier.contains(candidate.node) {
+        return;
+    }
+
+    if scratch.retained.len() < list_size {
+        scratch.in_frontier.insert(candidate.node);
+        scratch.retained.push(candidate);
+        scratch.unexpanded.push(Reverse(candidate));
+        return;
+    }
+
+    let Some(&worst) = scratch.retained.peek() else {
+        return;
+    };
+    if candidate >= worst {
+        return;
+    }
+
+    let evicted = scratch
+        .retained
+        .pop()
+        .expect("peeked retained frontier should be poppable");
+    scratch.in_frontier.remove(evicted.node);
+    scratch.in_frontier.insert(candidate.node);
+    scratch.retained.push(candidate);
+    scratch.unexpanded.push(Reverse(candidate));
 }
 
 /// α-pruning: select up to `max_degree` neighbors from `candidates` for
@@ -278,7 +450,7 @@ where
 pub fn robust_prune<D>(
     pivot: u32,
     mut candidates: Vec<Candidate>,
-    alpha: f32,
+    max_alpha: f32,
     max_degree: usize,
     dist: D,
 ) -> Vec<u32>
@@ -291,6 +463,25 @@ where
     }
     candidates.sort();
 
+    let mut alpha = 1.0f32;
+    loop {
+        let best = robust_prune_at_alpha(&candidates, alpha, max_degree, &dist);
+        if best.len() >= max_degree || alpha >= max_alpha {
+            return best;
+        }
+        alpha = (alpha * 1.2).min(max_alpha);
+    }
+}
+
+fn robust_prune_at_alpha<D>(
+    candidates: &[Candidate],
+    alpha: f32,
+    max_degree: usize,
+    dist: &D,
+) -> Vec<u32>
+where
+    D: Fn(u32, u32) -> f32,
+{
     let mut result: Vec<u32> = Vec::with_capacity(max_degree);
     let mut active = vec![true; candidates.len()];
     let mut remaining = candidates.len();
@@ -330,12 +521,13 @@ fn candidate_pool_for_prune<D>(
     visited: impl IntoIterator<Item = u32>,
     existing_neighbors: impl IntoIterator<Item = u32>,
     node_count: usize,
+    scratch: &mut SearchScratch,
     dist: D,
 ) -> Vec<Candidate>
 where
     D: Fn(u32, u32) -> f32,
 {
-    let mut seen = vec![false; node_count];
+    scratch.clear_candidates();
     let mut candidates = Vec::new();
 
     for node in visited.into_iter().chain(existing_neighbors) {
@@ -348,10 +540,10 @@ where
             node,
             node_count
         );
-        if (node as usize) >= node_count || seen[node as usize] {
+        if (node as usize) >= node_count || scratch.seen_candidates.contains(node) {
             continue;
         }
-        seen[node as usize] = true;
+        scratch.seen_candidates.insert(node);
         candidates.push(Candidate {
             node,
             distance: dist(node, pivot),
@@ -366,22 +558,24 @@ fn append_candidates_for_prune<D>(
     candidates: &mut Vec<Candidate>,
     extra: impl IntoIterator<Item = u32>,
     node_count: usize,
+    scratch: &mut SearchScratch,
     dist: D,
 ) where
     D: Fn(u32, u32) -> f32,
 {
-    let mut seen = vec![false; node_count];
+    scratch.clear_candidates();
     for candidate in candidates.iter() {
         if (candidate.node as usize) < node_count {
-            seen[candidate.node as usize] = true;
+            scratch.seen_candidates.insert(candidate.node);
         }
     }
 
     for node in extra {
-        if node == pivot || (node as usize) >= node_count || seen[node as usize] {
+        if node == pivot || (node as usize) >= node_count || scratch.seen_candidates.contains(node)
+        {
             continue;
         }
-        seen[node as usize] = true;
+        scratch.seen_candidates.insert(node);
         candidates.push(Candidate {
             node,
             distance: dist(node, pivot),
@@ -427,9 +621,10 @@ where
     best_node
 }
 
-/// Build a Vamana graph in two α-pruning passes (α=1.0, then
-/// `alpha_final`). `medoid` is the entry point; `list_size` is the
-/// search-list bound `L`; `max_degree` is `R`.
+/// Build a Vamana graph in one shuffled pivot pass. Robust pruning grows
+/// α from 1.0 up to `alpha_final` while looking for enough neighbors.
+/// `medoid` is the entry point; `list_size` is the search-list bound `L`;
+/// `max_degree` is `R`.
 ///
 /// `dist(a, b)` is the build-time distance between two node ids; it
 /// must be nonnegative (see [`robust_prune`]). The same `dist` is used
@@ -504,143 +699,123 @@ where
 
     let mut rng = ChaCha8Rng::seed_from_u64(seed);
     let mut permutation: Vec<u32> = (0..node_count as u32).collect();
-    let mut passes = Vec::with_capacity(2);
+    let mut passes = Vec::with_capacity(1);
 
-    for (pass_index, &alpha) in [1.0f32, alpha_final].iter().enumerate() {
-        let pass_started = Instant::now();
-        // Re-shuffle each pass so insertion order is independent.
-        for i in (1..permutation.len()).rev() {
-            let j = rng.gen_range(0..=i);
-            permutation.swap(i, j);
-        }
+    let pass_started = Instant::now();
+    for i in (1..permutation.len()).rev() {
+        let j = rng.gen_range(0..=i);
+        permutation.swap(i, j);
+    }
 
-        let mut visited_counts = Vec::with_capacity(permutation.len());
-        let mut existing_neighbor_counts = Vec::with_capacity(permutation.len());
-        let mut candidate_pool_counts = Vec::with_capacity(permutation.len());
-        let mut selected_neighbor_counts = Vec::with_capacity(permutation.len());
-        let mut backlinks_added = 0usize;
-        let mut reprunes = 0usize;
-        let mut greedy_search_ms = 0u128;
-        let mut candidate_pool_ms = 0u128;
-        let mut robust_prune_ms = 0u128;
-        let mut backlink_ms = 0u128;
-        let greedy_distance_calls = Cell::new(0usize);
-        let candidate_pool_distance_calls = Cell::new(0usize);
-        let robust_prune_distance_calls = Cell::new(0usize);
-        let backlink_distance_calls = Cell::new(0usize);
+    let mut visited_counts = Vec::with_capacity(permutation.len());
+    let mut existing_neighbor_counts = Vec::with_capacity(permutation.len());
+    let mut candidate_pool_counts = Vec::with_capacity(permutation.len());
+    let mut selected_neighbor_counts = Vec::with_capacity(permutation.len());
+    let mut backlinks_added = 0usize;
+    let mut reprunes = 0usize;
+    let mut greedy_search_ms = 0u128;
+    let mut candidate_pool_ms = 0u128;
+    let mut robust_prune_ms = 0u128;
+    let mut backlink_ms = 0u128;
+    let mut scratch = SearchScratch::new(node_count, list_size);
 
-        for &i in &permutation {
-            // Greedy search from medoid toward i; collect visited set
-            // plus i's existing out-neighbors as the candidate pool.
-            // Vamana's RobustPrune folds the old neighborhood into
-            // the fresh visited set so later passes refine, rather
-            // than replace, prior graph structure.
-            let greedy_started = Instant::now();
-            let result = greedy_search(&graph, medoid, list_size, |n| {
-                greedy_distance_calls.set(greedy_distance_calls.get() + 1);
+    for &i in &permutation {
+        // Greedy search from medoid toward i; collect visited set
+        // plus i's existing out-neighbors as the candidate pool.
+        // Vamana's RobustPrune folds the old neighborhood into
+        // the fresh visited set so later passes refine, rather
+        // than replace, prior graph structure.
+        let greedy_started = Instant::now();
+        let visited =
+            greedy_search_visited_with_scratch(&graph, medoid, list_size, &mut scratch, |n| {
                 dist(n, i)
             });
-            greedy_search_ms += greedy_started.elapsed().as_millis();
-            let visited_count = result.visited.len();
-            let existing_neighbor_count = graph.neighbors[i as usize].len();
-            let candidate_pool_started = Instant::now();
-            let mut candidates = candidate_pool_for_prune(
+        greedy_search_ms += greedy_started.elapsed().as_millis();
+        let visited_count = visited.len();
+        let existing_neighbor_count = graph.neighbors[i as usize].len();
+        let candidate_pool_started = Instant::now();
+        let mut candidates = candidate_pool_for_prune(
+            i,
+            visited,
+            graph.neighbors[i as usize].iter().copied(),
+            node_count,
+            &mut scratch,
+            |node, pivot| dist(node, pivot),
+        );
+        if let Some(extra) = pass1_extra_candidates.get(i as usize) {
+            append_candidates_for_prune(
                 i,
-                result.visited,
-                graph.neighbors[i as usize].iter().copied(),
+                &mut candidates,
+                extra.iter().copied(),
                 node_count,
-                |node, pivot| {
-                    candidate_pool_distance_calls.set(candidate_pool_distance_calls.get() + 1);
-                    dist(node, pivot)
-                },
+                &mut scratch,
+                |node, pivot| dist(node, pivot),
             );
-            if pass_index == 0 {
-                if let Some(extra) = pass1_extra_candidates.get(i as usize) {
-                    append_candidates_for_prune(
-                        i,
-                        &mut candidates,
-                        extra.iter().copied(),
-                        node_count,
-                        |node, pivot| {
-                            candidate_pool_distance_calls
-                                .set(candidate_pool_distance_calls.get() + 1);
-                            dist(node, pivot)
-                        },
-                    );
-                }
-            }
-            candidate_pool_ms += candidate_pool_started.elapsed().as_millis();
-            let candidate_count = candidates.len();
-
-            let robust_prune_started = Instant::now();
-            let pruned = robust_prune(i, candidates, alpha, max_degree, |left, right| {
-                robust_prune_distance_calls.set(robust_prune_distance_calls.get() + 1);
-                dist(left, right)
-            });
-            robust_prune_ms += robust_prune_started.elapsed().as_millis();
-            let selected_count = pruned.len();
-            graph.neighbors[i as usize] = pruned.clone();
-
-            let backlink_started = Instant::now();
-            for j in pruned {
-                let neighbors_j = &mut graph.neighbors[j as usize];
-                if neighbors_j.contains(&i) {
-                    continue;
-                }
-                if neighbors_j.len() < max_degree {
-                    neighbors_j.push(i);
-                    backlinks_added += 1;
-                } else {
-                    // Re-prune j's neighborhood including i.
-                    let mut combined: Vec<Candidate> = neighbors_j
-                        .iter()
-                        .copied()
-                        .chain(std::iter::once(i))
-                        .map(|n| Candidate {
-                            node: n,
-                            distance: {
-                                backlink_distance_calls.set(backlink_distance_calls.get() + 1);
-                                dist(j, n)
-                            },
-                        })
-                        .collect();
-                    combined.sort();
-                    let repruned = robust_prune(j, combined, alpha, max_degree, |left, right| {
-                        robust_prune_distance_calls.set(robust_prune_distance_calls.get() + 1);
-                        dist(left, right)
-                    });
-                    graph.neighbors[j as usize] = repruned;
-                    reprunes += 1;
-                }
-            }
-            backlink_ms += backlink_started.elapsed().as_millis();
-
-            visited_counts.push(visited_count);
-            existing_neighbor_counts.push(existing_neighbor_count);
-            candidate_pool_counts.push(candidate_count);
-            selected_neighbor_counts.push(selected_count);
         }
+        candidate_pool_ms += candidate_pool_started.elapsed().as_millis();
+        let candidate_count = candidates.len();
 
-        passes.push(VamanaBuildPassStats {
-            alpha,
-            pivot_count: permutation.len(),
-            elapsed_ms: pass_started.elapsed().as_millis(),
-            greedy_search_ms,
-            candidate_pool_ms,
-            robust_prune_ms,
-            backlink_ms,
-            greedy_distance_calls: greedy_distance_calls.get(),
-            candidate_pool_distance_calls: candidate_pool_distance_calls.get(),
-            robust_prune_distance_calls: robust_prune_distance_calls.get(),
-            backlink_distance_calls: backlink_distance_calls.get(),
-            visited: MetricSummary::from_values(&visited_counts),
-            existing_neighbors: MetricSummary::from_values(&existing_neighbor_counts),
-            candidate_pool: MetricSummary::from_values(&candidate_pool_counts),
-            selected_neighbors: MetricSummary::from_values(&selected_neighbor_counts),
-            backlinks_added,
-            reprunes,
-        });
+        let robust_prune_started = Instant::now();
+        let pruned = robust_prune(i, candidates, alpha_final, max_degree, dist);
+        robust_prune_ms += robust_prune_started.elapsed().as_millis();
+        let selected_count = pruned.len();
+        graph.neighbors[i as usize].clone_from(&pruned);
+
+        let backlink_started = Instant::now();
+        for j in pruned {
+            let neighbors_j = &mut graph.neighbors[j as usize];
+            if neighbors_j.contains(&i) {
+                continue;
+            }
+            if neighbors_j.len() < max_degree {
+                neighbors_j.push(i);
+                backlinks_added += 1;
+            } else {
+                // Re-prune j's neighborhood including i.
+                let mut combined: Vec<Candidate> = neighbors_j
+                    .iter()
+                    .copied()
+                    .chain(std::iter::once(i))
+                    .map(|n| Candidate {
+                        node: n,
+                        distance: dist(j, n),
+                    })
+                    .collect();
+                combined.sort();
+                let repruned = robust_prune(j, combined, alpha_final, max_degree, dist);
+                graph.neighbors[j as usize] = repruned;
+                reprunes += 1;
+            }
+        }
+        backlink_ms += backlink_started.elapsed().as_millis();
+
+        visited_counts.push(visited_count);
+        existing_neighbor_counts.push(existing_neighbor_count);
+        candidate_pool_counts.push(candidate_count);
+        selected_neighbor_counts.push(selected_count);
     }
+
+    passes.push(VamanaBuildPassStats {
+        alpha: alpha_final,
+        pivot_count: permutation.len(),
+        elapsed_ms: pass_started.elapsed().as_millis(),
+        greedy_search_ms,
+        candidate_pool_ms,
+        robust_prune_ms,
+        backlink_ms,
+        // Per-call counters dropped from the hot path; fields preserved for
+        // log-line compatibility, populated to 0 in release builds.
+        greedy_distance_calls: 0,
+        candidate_pool_distance_calls: 0,
+        robust_prune_distance_calls: 0,
+        backlink_distance_calls: 0,
+        visited: MetricSummary::from_values(&visited_counts),
+        existing_neighbors: MetricSummary::from_values(&existing_neighbor_counts),
+        candidate_pool: MetricSummary::from_values(&candidate_pool_counts),
+        selected_neighbors: MetricSummary::from_values(&selected_neighbor_counts),
+        backlinks_added,
+        reprunes,
+    });
 
     let final_out_degrees: Vec<usize> = graph.neighbors.iter().map(Vec::len).collect();
     let mut final_in_degrees = vec![0usize; graph.node_count()];
@@ -757,9 +932,11 @@ mod tests {
 
     #[test]
     fn candidate_pool_includes_existing_out_neighbors() {
-        let pool = candidate_pool_for_prune(0, vec![1, 2, 2], vec![2, 3, 0], 4, |a, b| {
-            (a as i32 - b as i32).unsigned_abs() as f32
-        });
+        let mut scratch = SearchScratch::new(4, 4);
+        let pool =
+            candidate_pool_for_prune(0, vec![1, 2, 2], vec![2, 3, 0], 4, &mut scratch, |a, b| {
+                (a as i32 - b as i32).unsigned_abs() as f32
+            });
         let nodes: Vec<u32> = pool.iter().map(|c| c.node).collect();
         assert_eq!(nodes, vec![1, 2, 3]);
         assert_eq!(
@@ -770,12 +947,18 @@ mod tests {
 
     #[test]
     fn append_candidates_for_prune_deduplicates_extra_nodes() {
-        let mut pool = candidate_pool_for_prune(0, vec![1], Vec::new(), 4, |a, b| {
+        let mut scratch = SearchScratch::new(4, 4);
+        let mut pool = candidate_pool_for_prune(0, vec![1], Vec::new(), 4, &mut scratch, |a, b| {
             (a as i32 - b as i32).unsigned_abs() as f32
         });
-        append_candidates_for_prune(0, &mut pool, vec![1, 2, 2, 0, 3], 4, |a, b| {
-            (a as i32 - b as i32).unsigned_abs() as f32
-        });
+        append_candidates_for_prune(
+            0,
+            &mut pool,
+            vec![1, 2, 2, 0, 3],
+            4,
+            &mut scratch,
+            |a, b| (a as i32 - b as i32).unsigned_abs() as f32,
+        );
         let nodes: Vec<u32> = pool.iter().map(|c| c.node).collect();
         assert_eq!(nodes, vec![1, 2, 3]);
     }
@@ -827,9 +1010,8 @@ mod tests {
             reachable.len(),
             graph.node_count()
         );
-        assert_eq!(stats.passes.len(), 2);
+        assert_eq!(stats.passes.len(), 1);
         assert_eq!(stats.passes[0].pivot_count, points.len());
-        assert_eq!(stats.passes[1].pivot_count, points.len());
         assert_eq!(stats.final_out_degree.count, points.len());
         assert_eq!(stats.final_in_degree.count, points.len());
     }
@@ -869,7 +1051,7 @@ mod tests {
             assert!(neighbors.len() <= graph.max_degree, "node {i} exceeds R");
         }
         assert_eq!(bfs_reachable(&graph, medoid).len(), graph.node_count());
-        assert_eq!(stats.passes.len(), 2);
+        assert_eq!(stats.passes.len(), 1);
         assert_eq!(stats.final_out_degree.count, points.len());
         assert_eq!(stats.final_in_degree.count, points.len());
     }

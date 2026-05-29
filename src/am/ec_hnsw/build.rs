@@ -7,9 +7,11 @@ use std::time::Instant;
 
 use pgrx::{itemptr::item_pointer_get_both, pg_sys, PgBox};
 
-use crate::quant::{grouped_pq::GROUPED_PQ_CENTROIDS, prod::ProdQuantizer};
+use crate::quant::{
+    grouped_pq::GROUPED_PQ_CENTROIDS, prod::ProdQuantizer, rabitq::RaBitQQuantizer, Quantizer,
+};
 
-use super::{build_parallel, graph, insert, options, page, search, shared, source, P_NEW};
+use super::{build_parallel, codec, graph, insert, options, page, search, shared, source, P_NEW};
 use crate::am::common::{
     callback::pg_am_callback,
     detoast::DetoastedVarlena,
@@ -356,41 +358,8 @@ impl BuildState {
         let ef_construction = u16::try_from(self.options.ef_construction)
             .expect("validated ef_construction should fit into u16");
 
-        match self.options.storage_format {
-            options::StorageFormat::TurboQuant => {
-                page::MetadataPage::current_v3_turbo_hot_cold(page::CurrentFormatMetadata {
-                    m,
-                    ef_construction,
-                    entry_point: page::ItemPointer::INVALID,
-                    dimensions: 0,
-                    bits: 0,
-                    max_level: 0,
-                    seed: 0,
-                    inserted_since_rebuild: 0,
-                    persisted_binary_sidecar: false,
-                })
-            }
-            options::StorageFormat::PqFastScan => page::MetadataPage {
-                m,
-                ef_construction,
-                entry_point: page::ItemPointer::INVALID,
-                dimensions: 0,
-                bits: 0,
-                max_level: 0,
-                seed: 0,
-                inserted_since_rebuild: 0,
-                format_version: page::INDEX_FORMAT_V2_GROUPED,
-                transform_kind: page::TransformKind::Srht,
-                search_codec_kind: page::SearchCodecKind::GroupedPq,
-                payload_flags: page::PAYLOAD_FLAG_GROUPED_SEARCH_CODE
-                    | page::PAYLOAD_FLAG_COLD_RERANK_PAYLOAD,
-                search_bits: 4,
-                rerank_codec_kind: page::RerankCodecKind::ScalarQuantized,
-                search_subvector_count: 0,
-                search_subvector_dim: 0,
-                grouped_codebook_head: page::ItemPointer::INVALID,
-            },
-        }
+        codec::HnswStorageCodec::from_storage_format(self.options.storage_format)
+            .initial_metadata(m, ef_construction)
     }
 
     pub(super) fn push(&mut self, tuple: BuildTuple) {
@@ -403,23 +372,13 @@ impl BuildState {
                 self.dimensions = Some(tuple.dimensions);
                 self.bits = Some(tuple.bits);
                 self.seed = Some(tuple.seed);
-                let fits_on_page = match self.options.storage_format {
-                    options::StorageFormat::TurboQuant => {
-                        page::raw_tuple_storage_bytes(page::TqTurboHotTuple::encoded_len(
-                            binary_word_count,
-                        )) + page::raw_tuple_storage_bytes(page::TqRerankTuple::encoded_len(
+                let fits_on_page =
+                    codec::HnswStorageCodec::from_storage_format(self.options.storage_format)
+                        .build_tuple_fits_on_page(
                             tuple.code.len(),
-                        )) <= self.page_size.saturating_sub(page::PAGE_HEADER_BYTES)
-                    }
-                    options::StorageFormat::PqFastScan => {
-                        page::raw_tuple_storage_bytes(
-                            page::TqElementTuple::encoded_len_with_binary(
-                                tuple.code.len(),
-                                binary_word_count,
-                            ),
-                        ) <= self.page_size.saturating_sub(page::PAGE_HEADER_BYTES)
-                    }
-                };
+                            binary_word_count,
+                            self.page_size,
+                        );
                 if !fits_on_page {
                     pgrx::error!(
                         "ec_hnsw tuple payload for dim {} bits {} does not fit on a page",
@@ -1594,6 +1553,8 @@ unsafe fn flush_build_state_with_timing(
         options::StorageFormat::TurboQuant => current_format_flush_output(state, timing),
         options::StorageFormat::PqFastScan => default_pq_fastscan_flush_output(state)
             .unwrap_or_else(|e| pgrx::error!("ec_hnsw pq_fastscan build failed: {e}")),
+        options::StorageFormat::RaBitQ => rabitq_flush_output(state, timing)
+            .unwrap_or_else(|e| pgrx::error!("ec_hnsw rabitq build failed: {e}")),
     };
     let write_start = Instant::now();
     flush_build_output(handle, &output);
@@ -1672,6 +1633,157 @@ pub(super) fn default_pq_fastscan_flush_output(
         PQ_FASTSCAN_DEFAULT_KMEANS_ITERS,
     )?;
     pq_fastscan_flush_output(state, &plan, group_size)
+}
+
+fn rabitq_flush_output(
+    state: &BuildState,
+    timing: &mut BuildFlushTiming,
+) -> Result<BuildFlushOutput, String> {
+    let dimensions = state
+        .dimensions
+        .expect("non-empty build should record dimensions");
+    let bits = state.bits.expect("non-empty build should record bits");
+    let seed = state.seed.expect("non-empty build should record seed");
+    let graph_start = Instant::now();
+    let graph_nodes = build_hnsw_graph(state);
+    timing.graph_us = elapsed_us(graph_start);
+    let stage_start = Instant::now();
+    let search_codes = derive_rabitq_search_codes_from_sources(state, dimensions, seed)?;
+    let staged_chain = stage_rabitq_page_chain(state, &graph_nodes, &search_codes)?;
+    let entry_point = choose_entry_point(&staged_chain.hot_tids, &graph_nodes, state)
+        .unwrap_or(page::ItemPointer::INVALID);
+    let max_level = graph_nodes.iter().map(|node| node.level).max().unwrap_or(0);
+    timing.stage_us = elapsed_us(stage_start);
+
+    Ok(BuildFlushOutput {
+        data_pages: staged_chain.data_pages,
+        metadata: page::MetadataPage {
+            m: u16::try_from(state.options.m).expect("validated m should fit into u16"),
+            ef_construction: u16::try_from(state.options.ef_construction)
+                .expect("validated ef_construction should fit into u16"),
+            entry_point,
+            dimensions,
+            bits,
+            max_level,
+            seed,
+            inserted_since_rebuild: 0,
+            format_version: page::INDEX_FORMAT_V4_RABITQ,
+            transform_kind: page::TransformKind::Srht,
+            search_codec_kind: page::SearchCodecKind::RaBitQ,
+            payload_flags: page::PAYLOAD_FLAG_COLD_RERANK_PAYLOAD,
+            search_bits: codec::HNSW_RABITQ_BITS,
+            rerank_codec_kind: page::RerankCodecKind::ScalarQuantized,
+            search_subvector_count: 0,
+            search_subvector_dim: u16::from(codec::HNSW_RABITQ_BITS),
+            grouped_codebook_head: page::ItemPointer::INVALID,
+        },
+    })
+}
+
+pub(super) fn default_rabitq_flush_output(state: &BuildState) -> Result<BuildFlushOutput, String> {
+    let mut timing = BuildFlushTiming::default();
+    rabitq_flush_output(state, &mut timing)
+}
+
+fn derive_rabitq_search_codes_from_sources(
+    state: &BuildState,
+    dimensions: u16,
+    seed: u64,
+) -> Result<Vec<Vec<u8>>, String> {
+    let quantizer = RaBitQQuantizer::cached_seeded_srht_bits(
+        dimensions as usize,
+        seed,
+        codec::HNSW_RABITQ_BITS,
+    )?;
+    state
+        .heap_tuples
+        .iter()
+        .map(|tuple| {
+            let source = tuple.source_vector.as_deref().ok_or_else(|| {
+                "ec_hnsw rabitq build requires source vectors; index ecvector directly or set build_source_column for tqvector inputs".to_owned()
+            })?;
+            Ok(quantizer.encode_code(source).into_vec())
+        })
+        .collect()
+}
+
+pub(super) fn stage_rabitq_page_chain(
+    state: &BuildState,
+    graph_nodes: &[HnswBuildNode],
+    search_codes: &[Vec<u8>],
+) -> Result<V2GroupedStagedChain, String> {
+    if state.heap_tuples.len() != graph_nodes.len() || state.heap_tuples.len() != search_codes.len()
+    {
+        return Err(format!(
+            "staged rabitq inputs length mismatch: tuples={} graph_nodes={} search_codes={}",
+            state.heap_tuples.len(),
+            graph_nodes.len(),
+            search_codes.len()
+        ));
+    }
+
+    let mut data_pages = page::DataPageChain::new(state.page_size);
+    let mut hot_tids = Vec::with_capacity(state.heap_tuples.len());
+    let mut rerank_tids = Vec::with_capacity(state.heap_tuples.len());
+    let mut neighbor_tids = Vec::with_capacity(state.heap_tuples.len());
+
+    for ((tuple, graph_node), search_code) in state
+        .heap_tuples
+        .iter()
+        .zip(graph_nodes.iter())
+        .zip(search_codes.iter())
+    {
+        let slot_count = graph_node.neighbor_slots.len();
+        let placeholder_neighbor = page::TqNeighborTuple {
+            count: slot_count as u16,
+            tids: vec![page::ItemPointer::INVALID; slot_count],
+        };
+        let neighbor_tid = data_pages.insert_neighbor(&placeholder_neighbor)?;
+        let rerank_tid = data_pages.insert_rerank(&page::TqRerankTuple {
+            gamma: tuple.gamma,
+            code: tuple.code.clone(),
+        })?;
+        let hot_tid = data_pages.insert_grouped_hot(&page::TqGroupedHotTuple {
+            level: graph_node.level,
+            deleted: false,
+            heaptids: tuple.heap_tids.clone(),
+            neighbortid: neighbor_tid,
+            reranktid: rerank_tid,
+            binary_words: Vec::new(),
+            search_code: search_code.clone(),
+        })?;
+
+        hot_tids.push(hot_tid);
+        rerank_tids.push(rerank_tid);
+        neighbor_tids.push(neighbor_tid);
+    }
+
+    for (idx, neighbor_tid) in neighbor_tids.iter().copied().enumerate() {
+        let neighbor_refs = graph_nodes[idx]
+            .neighbor_slots
+            .iter()
+            .map(|neighbor_idx| {
+                neighbor_idx
+                    .map(|ni| hot_tids[ni])
+                    .unwrap_or(page::ItemPointer::INVALID)
+            })
+            .collect::<Vec<_>>();
+
+        data_pages.update_neighbor(
+            neighbor_tid,
+            &page::TqNeighborTuple {
+                count: neighbor_refs.len() as u16,
+                tids: neighbor_refs,
+            },
+        )?;
+    }
+
+    Ok(V2GroupedStagedChain {
+        data_pages,
+        hot_tids,
+        rerank_tids,
+        neighbor_tids,
+    })
 }
 
 fn default_pq_fastscan_group_size(dimensions: u16) -> usize {
@@ -3992,6 +4104,83 @@ mod tests {
         assert!(tuple_tags.contains(&page::TQ_NEIGHBOR_TAG));
         assert!(tuple_tags.contains(&page::TQ_GROUPED_CODEBOOK_TAG));
         assert!(!tuple_tags.contains(&page::TQ_ELEMENT_TAG));
+    }
+
+    #[test]
+    fn rabitq_flush_output_uses_binary_search_codes_and_scalar_rerank() {
+        let seed = 42_u64;
+        let bits = 4_u8;
+        let tuples = (0..16)
+            .map(|i| {
+                let source = (0..16)
+                    .map(|dim| ((i * 23 + dim) as f32 * 0.04).sin())
+                    .collect::<Vec<_>>();
+                BuildTuple {
+                    heap_tids: vec![page::ItemPointer {
+                        block_number: 1,
+                        offset_number: (i + 1) as u16,
+                    }],
+                    dimensions: 16,
+                    bits,
+                    seed,
+                    gamma: 0.05 * i as f32,
+                    code: encoded_code(&source, bits, seed),
+                    source_vector: Some(source),
+                    source_count: 1,
+                }
+            })
+            .collect::<Vec<_>>();
+        let state = BuildState {
+            options: options::TqHnswOptions {
+                m: 2,
+                ef_construction: 32,
+                ef_search: 40,
+                build_source_column: Some("source".to_owned()),
+                rerank_source_column: None,
+                storage_format: options::StorageFormat::RaBitQ,
+            },
+            indexed_vector_kind: source::IndexedVectorKind::Ecvector,
+            page_size: pg_sys::BLCKSZ as usize,
+            scanned_tuples: tuples.len(),
+            heap_tuples: tuples,
+            tuple_index_by_payload: HashMap::new(),
+            dimensions: Some(16),
+            bits: Some(bits),
+            seed: Some(seed),
+        };
+
+        let output = default_rabitq_flush_output(&state).unwrap();
+
+        assert_eq!(output.metadata.format_version, page::INDEX_FORMAT_V4_RABITQ);
+        assert_eq!(
+            output.metadata.search_codec_kind,
+            page::SearchCodecKind::RaBitQ
+        );
+        assert_eq!(output.metadata.search_bits, codec::HNSW_RABITQ_BITS);
+        assert_eq!(
+            output.metadata.search_subvector_dim,
+            u16::from(codec::HNSW_RABITQ_BITS)
+        );
+        assert_eq!(output.metadata.search_subvector_count, 0);
+        assert_eq!(
+            output.metadata.rerank_codec_kind,
+            page::RerankCodecKind::ScalarQuantized
+        );
+        assert_eq!(
+            output.metadata.grouped_codebook_head,
+            page::ItemPointer::INVALID
+        );
+
+        let layout = graph::GraphStorageDescriptor::from_metadata(&output.metadata).unwrap();
+        assert_eq!(
+            layout,
+            graph::GraphStorageDescriptor::RaBitQ(graph::PqFastScanLayout {
+                binary_word_count: 0,
+                search_code_len: crate::quant::rabitq::code_len_for(16, codec::HNSW_RABITQ_BITS)
+                    .unwrap(),
+                rerank_code_len: crate::code_len(16, bits),
+            })
+        );
     }
 
     #[test]

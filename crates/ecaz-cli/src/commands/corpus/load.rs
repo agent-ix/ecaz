@@ -491,14 +491,14 @@ pub async fn run(conn: &ConnectionOptions, args: LoadArgs) -> Result<()> {
         return Ok(());
     }
 
-    let client = psql::connect(conn).await?;
+    let mut client = psql::connect(conn).await?;
     client
         .batch_execute("CREATE EXTENSION IF NOT EXISTS ecaz")
         .await
         .wrap_err("ensuring ecaz extension")?;
 
     let corpus_loaded = ensure_corpus_table(
-        &client,
+        &mut client,
         &corpus_table,
         corpus_file,
         args.dim,
@@ -1682,7 +1682,7 @@ async fn load_one_chunk(
 }
 
 async fn ensure_corpus_table(
-    client: &Client,
+    client: &mut Client,
     table: &str,
     path: &Path,
     dim: usize,
@@ -1707,7 +1707,7 @@ async fn ensure_corpus_table(
             "CREATE TABLE {table} (
                 id        bigint PRIMARY KEY,
                 source    real[] NOT NULL,
-                embedding {embedding}
+                embedding {embedding} NOT NULL
             )",
             embedding = profile.embedding_type
         ))
@@ -1715,7 +1715,16 @@ async fn ensure_corpus_table(
         .wrap_err_with(|| format!("creating table {table}"))?;
 
     let copy_started = Instant::now();
-    copy_rows_from_tsv(client, table, path, dim, expected_rows, "corpus").await?;
+    let tx = client.transaction().await?;
+    tx.batch_execute(
+        "CREATE TEMP TABLE ecaz_corpus_stage (
+            id bigint NOT NULL,
+            source real[] NOT NULL
+        ) ON COMMIT DROP",
+    )
+    .await
+    .wrap_err("creating ecaz_corpus_stage")?;
+    copy_corpus_rows_to_stage(&tx, path, dim, expected_rows).await?;
     crate::ecaz_eprintln!(
         "[loader] copied corpus table {table} in {:.2?}",
         copy_started.elapsed()
@@ -1727,18 +1736,82 @@ async fn ensure_corpus_table(
         fn_name = profile.encoder_function
     );
     let encode_started = Instant::now();
-    client
-        .batch_execute(&format!(
-            "UPDATE {table} SET embedding = {fn_name}(source, {bits}, {seed})",
-            fn_name = profile.encoder_function
-        ))
+    tx.batch_execute(&format!(
+        "INSERT INTO {table} (id, source, embedding)
+             SELECT id, source, {fn_name}(source, {bits}, {seed})
+             FROM ecaz_corpus_stage
+             ORDER BY id",
+        fn_name = profile.encoder_function
+    ))
+    .await
+    .wrap_err_with(|| format!("encoding embeddings for {table}"))?;
+    tx.commit()
         .await
-        .wrap_err_with(|| format!("encoding embeddings for {table}"))?;
+        .wrap_err_with(|| format!("committing corpus load for {table}"))?;
     crate::ecaz_eprintln!(
         "[loader] encoded corpus table {table} in {:.2?}",
         encode_started.elapsed()
     );
     psql::row_count(client, table).await.map(|n| n as usize)
+}
+
+async fn copy_corpus_rows_to_stage(
+    tx: &Transaction<'_>,
+    path: &Path,
+    dim: usize,
+    expected_rows: usize,
+) -> Result<()> {
+    let sink = tx
+        .copy_in::<_, bytes::Bytes>(
+            "COPY ecaz_corpus_stage (id, source) FROM STDIN WITH (FORMAT text, DELIMITER E'\\t')",
+        )
+        .await
+        .wrap_err("opening COPY stream for ecaz_corpus_stage")?;
+    futures::pin_mut!(sink);
+
+    let bar = ProgressBar::new(expected_rows as u64);
+    bar.set_style(
+        ProgressStyle::with_template(
+            "[loader] {msg} {wide_bar} {human_pos}/{human_len} ({per_sec}, eta {eta})",
+        )
+        .unwrap(),
+    );
+    bar.set_message("loading corpus into ecaz_corpus_stage");
+    bar.enable_steady_tick(Duration::from_millis(250));
+
+    let mut buf = BytesMut::with_capacity(COPY_CHUNK_BYTES + 4096);
+    let mut sent = 0u64;
+    for row in tsv::iter_rows(path, dim)? {
+        let row = row?;
+        use std::io::Write as _;
+        let mut w = (&mut buf).writer();
+        write!(w, "{}\t", row.id).expect("bytesmut writer is infallible");
+        // Reuse the shared array-literal formatter so the COPY payload and
+        // any other place we render vectors agree on float repr.
+        let lit = tsv::format_real_array_literal(&row.values);
+        buf.put_slice(lit.as_bytes());
+        buf.put_u8(b'\n');
+        sent += 1;
+        if buf.len() >= COPY_CHUNK_BYTES {
+            sink.send(buf.split().freeze())
+                .await
+                .wrap_err("COPY send failed for ecaz_corpus_stage")?;
+            bar.set_position(sent);
+        }
+    }
+    if !buf.is_empty() {
+        sink.send(buf.split().freeze())
+            .await
+            .wrap_err("COPY send failed for ecaz_corpus_stage")?;
+    }
+    let finished = sink
+        .finish()
+        .await
+        .wrap_err("COPY finish failed for ecaz_corpus_stage")?;
+    bar.finish_with_message(format!(
+        "staged {finished} corpus rows into ecaz_corpus_stage"
+    ));
+    Ok(())
 }
 
 async fn ensure_queries_table(

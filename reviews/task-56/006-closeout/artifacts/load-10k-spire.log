@@ -1,0 +1,22 @@
+[loader] inspecting fixtures/m5_diskann_real10k/m5_diskann_real10k_corpus.tsv
+[loader] inspecting fixtures/m5_diskann_real10k/m5_diskann_real10k_queries.tsv
+[loader] corpus: 10000 rows, sha256=ed6012f8b12281edd80f72dfe1146a9cd09cb3192a5a0012aebb1c398290926f  queries: 200 rows, sha256=77d406729dabfe907824d74df69f64b5706a76579ec1deaf54e5619091c9f7ac
+[loader] no sibling manifest at fixtures/m5_diskann_real10k/m5_diskann_real10k_manifest.json; continuing without verification
+[loader] copied corpus table task56_006_10k_spire_corpus in 1.99s
+[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...
+[loader] encoded corpus table task56_006_10k_spire_corpus in 1.04s
+[loader] copied queries table task56_006_10k_spire_queries in 47.61ms
+[loader] building task56_006_10k_spire_idx using ec_spire (reloptions=[<none>]) ...
+[loader] built task56_006_10k_spire_idx in 7.58s
+┌─────────┬──────────────────────────────────────────┐
+│ field   ┆ value                                    │
+╞═════════╪══════════════════════════════════════════╡
+│ profile ┆ ec_spire                                 │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ task56_006_10k_spire_corpus (10000 rows) │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ task56_006_10k_spire_queries (200 rows)  │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ task56_006_10k_spire_idx [<default>]     │
+└─────────┴──────────────────────────────────────────┘
+[loader] completed prefix task56_006_10k_spire in 11.26s

@@ -1,0 +1,911 @@
+{
+  "suite": "task60-diskann-rabitq-format",
+  "schema_version": 1,
+  "config": "benchmarks/task60-diskann-rabitq-format/suite.json",
+  "config_sha256": "de71a69e7032267555a50e7d4ba067ee807e7ef1278a79ea0989f1e920d0a506",
+  "dry_run": true,
+  "generated_at_unix_ms": 1779761525273,
+  "connection": {
+    "database": "tqvector_bench",
+    "host": null,
+    "port": null,
+    "user": null,
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "fetch-dbpedia-openai3-1m",
+      "kind": "corpus-fetch",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "corpus",
+        "fetch",
+        "--dataset",
+        "qdrant-dbpedia-openai3-large-1536-1m",
+        "--output-dir",
+        "/var/lib/pgsql/18/datasets/dbpedia-openai3-1m"
+      ],
+      "selected": true,
+      "tags": [
+        "setup",
+        "fetch",
+        "dbpedia",
+        "graviton",
+        "task60"
+      ],
+      "expected_artifacts": [
+        "/var/lib/pgsql/18/datasets/dbpedia-openai3-1m/ecaz_fetch_manifest.json"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "prepare-ec-real-100k",
+      "kind": "corpus-prepare",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "corpus",
+        "prepare",
+        "--profile",
+        "ec_real_100k",
+        "--parquet",
+        "/var/lib/pgsql/18/datasets/dbpedia-openai3-1m/data",
+        "--output-dir",
+        "/var/lib/pgsql/18/datasets/staged-task60-diskann-rabitq"
+      ],
+      "selected": true,
+      "tags": [
+        "setup",
+        "prepare",
+        "ec_real_100k",
+        "graviton",
+        "task60"
+      ],
+      "expected_artifacts": [
+        "/var/lib/pgsql/18/datasets/staged-task60-diskann-rabitq/ec_real_100k_corpus.tsv",
+        "/var/lib/pgsql/18/datasets/staged-task60-diskann-rabitq/ec_real_100k_queries.tsv",
+        "/var/lib/pgsql/18/datasets/staged-task60-diskann-rabitq/ec_real_100k_manifest.json"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "prepare-ec-real-1m-anchor",
+      "kind": "corpus-prepare",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "corpus",
+        "prepare",
+        "--profile",
+        "ec_real_ann_benchmarks_anchor",
+        "--parquet",
+        "/var/lib/pgsql/18/datasets/dbpedia-openai3-1m/data",
+        "--output-dir",
+        "/var/lib/pgsql/18/datasets/staged-task60-diskann-rabitq"
+      ],
+      "selected": true,
+      "tags": [
+        "setup",
+        "prepare",
+        "ec_real_1m",
+        "graviton",
+        "task60"
+      ],
+      "expected_artifacts": [
+        "/var/lib/pgsql/18/datasets/staged-task60-diskann-rabitq/ec_real_ann_benchmarks_anchor_corpus.tsv",
+        "/var/lib/pgsql/18/datasets/staged-task60-diskann-rabitq/ec_real_ann_benchmarks_anchor_queries.tsv",
+        "/var/lib/pgsql/18/datasets/staged-task60-diskann-rabitq/ec_real_ann_benchmarks_anchor_manifest.json"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "precheck-host",
+      "kind": "raw",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "dev",
+        "sql",
+        "--pg",
+        "18",
+        "--db",
+        "postgres",
+        "--socket-dir",
+        "/var/run/postgresql",
+        "--raw",
+        "--sql",
+        "SELECT now() AS captured_at, version() AS postgres_version, current_setting('shared_buffers') AS shared_buffers, current_setting('work_mem') AS work_mem, current_setting('maintenance_work_mem') AS maintenance_work_mem, current_setting('effective_cache_size') AS effective_cache_size; SELECT left(pg_read_file('/proc/cpuinfo', 0, 20000), 20000) AS cpuinfo_prefix; SELECT left(pg_read_file('/proc/meminfo', 0, 12000), 12000) AS meminfo_prefix;",
+        "--log-output",
+        "benchmarks/task60-diskann-rabitq-format/artifacts/precheck-host.log"
+      ],
+      "selected": true,
+      "tags": [
+        "setup",
+        "precheck",
+        "graviton",
+        "task60"
+      ],
+      "expected_artifacts": [
+        "benchmarks/task60-diskann-rabitq-format/artifacts/precheck-host.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "load-100k-diskann-pq-fastscan",
+      "kind": "load",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--log-file",
+        "benchmarks/task60-diskann-rabitq-format/artifacts/load-100k-diskann-pq-fastscan.log",
+        "corpus",
+        "load",
+        "--prefix",
+        "task60_real_100k_diskann_pq",
+        "--profile",
+        "ec_diskann",
+        "--corpus-file",
+        "/var/lib/pgsql/18/datasets/staged-task60-diskann-rabitq/ec_real_100k_corpus.tsv",
+        "--queries-file",
+        "/var/lib/pgsql/18/datasets/staged-task60-diskann-rabitq/ec_real_100k_queries.tsv",
+        "--manifest-file",
+        "/var/lib/pgsql/18/datasets/staged-task60-diskann-rabitq/ec_real_100k_manifest.json",
+        "--allow-manifest-mismatch",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--storage-format",
+        "pq_fastscan"
+      ],
+      "selected": true,
+      "tags": [
+        "load",
+        "ec_real_100k",
+        "diskann",
+        "pq_fastscan",
+        "graviton",
+        "task60"
+      ],
+      "expected_artifacts": [
+        "benchmarks/task60-diskann-rabitq-format/artifacts/load-100k-diskann-pq-fastscan.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "load-100k-diskann-rabitq",
+      "kind": "load",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--log-file",
+        "benchmarks/task60-diskann-rabitq-format/artifacts/load-100k-diskann-rabitq.log",
+        "corpus",
+        "load",
+        "--prefix",
+        "task60_real_100k_diskann_rabitq",
+        "--profile",
+        "ec_diskann",
+        "--corpus-file",
+        "/var/lib/pgsql/18/datasets/staged-task60-diskann-rabitq/ec_real_100k_corpus.tsv",
+        "--queries-file",
+        "/var/lib/pgsql/18/datasets/staged-task60-diskann-rabitq/ec_real_100k_queries.tsv",
+        "--manifest-file",
+        "/var/lib/pgsql/18/datasets/staged-task60-diskann-rabitq/ec_real_100k_manifest.json",
+        "--allow-manifest-mismatch",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--storage-format",
+        "rabitq"
+      ],
+      "selected": true,
+      "tags": [
+        "load",
+        "ec_real_100k",
+        "diskann",
+        "rabitq",
+        "graviton",
+        "task60"
+      ],
+      "expected_artifacts": [
+        "benchmarks/task60-diskann-rabitq-format/artifacts/load-100k-diskann-rabitq.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "recall-100k-diskann-pq-fastscan",
+      "kind": "recall",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "bench",
+        "recall",
+        "--prefix",
+        "task60_real_100k_diskann_pq",
+        "--profile",
+        "ec_diskann",
+        "--k",
+        "10",
+        "--sweep",
+        "64,128,200,400,800",
+        "--queries-limit",
+        "200",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--truth-cache-file",
+        "benchmarks/task60-diskann-rabitq-format/artifacts/truth-100k-k10.json",
+        "--log-output",
+        "benchmarks/task60-diskann-rabitq-format/artifacts/recall-100k-diskann-pq-fastscan.log"
+      ],
+      "selected": true,
+      "tags": [
+        "recall",
+        "ec_real_100k",
+        "diskann",
+        "pq_fastscan",
+        "graviton",
+        "task60"
+      ],
+      "expected_artifacts": [
+        "benchmarks/task60-diskann-rabitq-format/artifacts/recall-100k-diskann-pq-fastscan.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "recall-100k-diskann-rabitq",
+      "kind": "recall",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "bench",
+        "recall",
+        "--prefix",
+        "task60_real_100k_diskann_rabitq",
+        "--profile",
+        "ec_diskann",
+        "--k",
+        "10",
+        "--sweep",
+        "64,128,200,400,800",
+        "--queries-limit",
+        "200",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--truth-cache-file",
+        "benchmarks/task60-diskann-rabitq-format/artifacts/truth-100k-k10.json",
+        "--log-output",
+        "benchmarks/task60-diskann-rabitq-format/artifacts/recall-100k-diskann-rabitq.log"
+      ],
+      "selected": true,
+      "tags": [
+        "recall",
+        "ec_real_100k",
+        "diskann",
+        "rabitq",
+        "graviton",
+        "task60"
+      ],
+      "expected_artifacts": [
+        "benchmarks/task60-diskann-rabitq-format/artifacts/recall-100k-diskann-rabitq.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "latency-100k-diskann-pq-fastscan",
+      "kind": "latency",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "bench",
+        "latency",
+        "--prefix",
+        "task60_real_100k_diskann_pq",
+        "--profile",
+        "ec_diskann",
+        "--k",
+        "10",
+        "--concurrency",
+        "1",
+        "--iterations",
+        "200",
+        "--sweep",
+        "64,128,200,400,800",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--sample-backend-memory",
+        "--cache-state",
+        "post_recall_warm",
+        "--memory-sample-interval-ms",
+        "25",
+        "--log-output",
+        "benchmarks/task60-diskann-rabitq-format/artifacts/latency-100k-diskann-pq-fastscan.log"
+      ],
+      "selected": true,
+      "tags": [
+        "latency",
+        "ec_real_100k",
+        "diskann",
+        "pq_fastscan",
+        "post_recall_warm",
+        "graviton",
+        "task60"
+      ],
+      "expected_artifacts": [
+        "benchmarks/task60-diskann-rabitq-format/artifacts/latency-100k-diskann-pq-fastscan.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "latency-100k-diskann-rabitq",
+      "kind": "latency",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "bench",
+        "latency",
+        "--prefix",
+        "task60_real_100k_diskann_rabitq",
+        "--profile",
+        "ec_diskann",
+        "--k",
+        "10",
+        "--concurrency",
+        "1",
+        "--iterations",
+        "200",
+        "--sweep",
+        "64,128,200,400,800",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--sample-backend-memory",
+        "--cache-state",
+        "post_recall_warm",
+        "--memory-sample-interval-ms",
+        "25",
+        "--log-output",
+        "benchmarks/task60-diskann-rabitq-format/artifacts/latency-100k-diskann-rabitq.log"
+      ],
+      "selected": true,
+      "tags": [
+        "latency",
+        "ec_real_100k",
+        "diskann",
+        "rabitq",
+        "post_recall_warm",
+        "graviton",
+        "task60"
+      ],
+      "expected_artifacts": [
+        "benchmarks/task60-diskann-rabitq-format/artifacts/latency-100k-diskann-rabitq.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "storage-100k-diskann-pq-fastscan",
+      "kind": "storage",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--log-file",
+        "benchmarks/task60-diskann-rabitq-format/artifacts/storage-100k-diskann-pq-fastscan.log",
+        "bench",
+        "storage",
+        "--prefix",
+        "task60_real_100k_diskann_pq"
+      ],
+      "selected": true,
+      "tags": [
+        "storage",
+        "ec_real_100k",
+        "diskann",
+        "pq_fastscan",
+        "graviton",
+        "task60"
+      ],
+      "expected_artifacts": [
+        "benchmarks/task60-diskann-rabitq-format/artifacts/storage-100k-diskann-pq-fastscan.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "storage-100k-diskann-rabitq",
+      "kind": "storage",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--log-file",
+        "benchmarks/task60-diskann-rabitq-format/artifacts/storage-100k-diskann-rabitq.log",
+        "bench",
+        "storage",
+        "--prefix",
+        "task60_real_100k_diskann_rabitq"
+      ],
+      "selected": true,
+      "tags": [
+        "storage",
+        "ec_real_100k",
+        "diskann",
+        "rabitq",
+        "graviton",
+        "task60"
+      ],
+      "expected_artifacts": [
+        "benchmarks/task60-diskann-rabitq-format/artifacts/storage-100k-diskann-rabitq.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "explain-100k-diskann-pq-fastscan-l800",
+      "kind": "explain",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "dev",
+        "sql",
+        "--pg",
+        "18",
+        "--db",
+        "tqvector_bench",
+        "--socket-dir",
+        "/var/run/postgresql",
+        "--raw",
+        "--file",
+        "benchmarks/task60-diskann-rabitq-format/artifacts/explain-100k-diskann-pq-fastscan-l800.sql",
+        "--log-output",
+        "benchmarks/task60-diskann-rabitq-format/artifacts/explain-100k-diskann-pq-fastscan-l800.log"
+      ],
+      "selected": true,
+      "tags": [
+        "explain",
+        "ec_real_100k",
+        "diskann",
+        "pq_fastscan",
+        "graviton",
+        "task60"
+      ],
+      "expected_artifacts": [
+        "benchmarks/task60-diskann-rabitq-format/artifacts/explain-100k-diskann-pq-fastscan-l800.sql",
+        "benchmarks/task60-diskann-rabitq-format/artifacts/explain-100k-diskann-pq-fastscan-l800.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "explain-100k-diskann-rabitq-l800",
+      "kind": "explain",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "dev",
+        "sql",
+        "--pg",
+        "18",
+        "--db",
+        "tqvector_bench",
+        "--socket-dir",
+        "/var/run/postgresql",
+        "--raw",
+        "--file",
+        "benchmarks/task60-diskann-rabitq-format/artifacts/explain-100k-diskann-rabitq-l800.sql",
+        "--log-output",
+        "benchmarks/task60-diskann-rabitq-format/artifacts/explain-100k-diskann-rabitq-l800.log"
+      ],
+      "selected": true,
+      "tags": [
+        "explain",
+        "ec_real_100k",
+        "diskann",
+        "rabitq",
+        "graviton",
+        "task60"
+      ],
+      "expected_artifacts": [
+        "benchmarks/task60-diskann-rabitq-format/artifacts/explain-100k-diskann-rabitq-l800.sql",
+        "benchmarks/task60-diskann-rabitq-format/artifacts/explain-100k-diskann-rabitq-l800.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "load-1m-diskann-pq-fastscan",
+      "kind": "load",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--log-file",
+        "benchmarks/task60-diskann-rabitq-format/artifacts/load-1m-diskann-pq-fastscan.log",
+        "corpus",
+        "load",
+        "--prefix",
+        "task60_real_1m_diskann_pq",
+        "--profile",
+        "ec_diskann",
+        "--corpus-file",
+        "/var/lib/pgsql/18/datasets/staged-task60-diskann-rabitq/ec_real_ann_benchmarks_anchor_corpus.tsv",
+        "--queries-file",
+        "/var/lib/pgsql/18/datasets/staged-task60-diskann-rabitq/ec_real_ann_benchmarks_anchor_queries.tsv",
+        "--manifest-file",
+        "/var/lib/pgsql/18/datasets/staged-task60-diskann-rabitq/ec_real_ann_benchmarks_anchor_manifest.json",
+        "--allow-manifest-mismatch",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--storage-format",
+        "pq_fastscan"
+      ],
+      "selected": true,
+      "tags": [
+        "load",
+        "ec_real_1m",
+        "diskann",
+        "pq_fastscan",
+        "graviton",
+        "task60"
+      ],
+      "expected_artifacts": [
+        "benchmarks/task60-diskann-rabitq-format/artifacts/load-1m-diskann-pq-fastscan.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "load-1m-diskann-rabitq",
+      "kind": "load",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--log-file",
+        "benchmarks/task60-diskann-rabitq-format/artifacts/load-1m-diskann-rabitq.log",
+        "corpus",
+        "load",
+        "--prefix",
+        "task60_real_1m_diskann_rabitq",
+        "--profile",
+        "ec_diskann",
+        "--corpus-file",
+        "/var/lib/pgsql/18/datasets/staged-task60-diskann-rabitq/ec_real_ann_benchmarks_anchor_corpus.tsv",
+        "--queries-file",
+        "/var/lib/pgsql/18/datasets/staged-task60-diskann-rabitq/ec_real_ann_benchmarks_anchor_queries.tsv",
+        "--manifest-file",
+        "/var/lib/pgsql/18/datasets/staged-task60-diskann-rabitq/ec_real_ann_benchmarks_anchor_manifest.json",
+        "--allow-manifest-mismatch",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--storage-format",
+        "rabitq"
+      ],
+      "selected": true,
+      "tags": [
+        "load",
+        "ec_real_1m",
+        "diskann",
+        "rabitq",
+        "graviton",
+        "task60"
+      ],
+      "expected_artifacts": [
+        "benchmarks/task60-diskann-rabitq-format/artifacts/load-1m-diskann-rabitq.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "recall-1m-diskann-pq-fastscan",
+      "kind": "recall",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "bench",
+        "recall",
+        "--prefix",
+        "task60_real_1m_diskann_pq",
+        "--profile",
+        "ec_diskann",
+        "--k",
+        "10",
+        "--sweep",
+        "64,128,200,400,800",
+        "--queries-limit",
+        "200",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--truth-cache-file",
+        "benchmarks/task60-diskann-rabitq-format/artifacts/truth-1m-k10.json",
+        "--log-output",
+        "benchmarks/task60-diskann-rabitq-format/artifacts/recall-1m-diskann-pq-fastscan.log"
+      ],
+      "selected": true,
+      "tags": [
+        "recall",
+        "ec_real_1m",
+        "diskann",
+        "pq_fastscan",
+        "graviton",
+        "task60"
+      ],
+      "expected_artifacts": [
+        "benchmarks/task60-diskann-rabitq-format/artifacts/recall-1m-diskann-pq-fastscan.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "recall-1m-diskann-rabitq",
+      "kind": "recall",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "bench",
+        "recall",
+        "--prefix",
+        "task60_real_1m_diskann_rabitq",
+        "--profile",
+        "ec_diskann",
+        "--k",
+        "10",
+        "--sweep",
+        "64,128,200,400,800",
+        "--queries-limit",
+        "200",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--truth-cache-file",
+        "benchmarks/task60-diskann-rabitq-format/artifacts/truth-1m-k10.json",
+        "--log-output",
+        "benchmarks/task60-diskann-rabitq-format/artifacts/recall-1m-diskann-rabitq.log"
+      ],
+      "selected": true,
+      "tags": [
+        "recall",
+        "ec_real_1m",
+        "diskann",
+        "rabitq",
+        "graviton",
+        "task60"
+      ],
+      "expected_artifacts": [
+        "benchmarks/task60-diskann-rabitq-format/artifacts/recall-1m-diskann-rabitq.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "latency-1m-diskann-pq-fastscan",
+      "kind": "latency",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "bench",
+        "latency",
+        "--prefix",
+        "task60_real_1m_diskann_pq",
+        "--profile",
+        "ec_diskann",
+        "--k",
+        "10",
+        "--concurrency",
+        "1",
+        "--iterations",
+        "200",
+        "--sweep",
+        "64,128,200,400,800",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--sample-backend-memory",
+        "--cache-state",
+        "post_recall_warm",
+        "--memory-sample-interval-ms",
+        "25",
+        "--log-output",
+        "benchmarks/task60-diskann-rabitq-format/artifacts/latency-1m-diskann-pq-fastscan.log"
+      ],
+      "selected": true,
+      "tags": [
+        "latency",
+        "ec_real_1m",
+        "diskann",
+        "pq_fastscan",
+        "post_recall_warm",
+        "graviton",
+        "task60"
+      ],
+      "expected_artifacts": [
+        "benchmarks/task60-diskann-rabitq-format/artifacts/latency-1m-diskann-pq-fastscan.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "latency-1m-diskann-rabitq",
+      "kind": "latency",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "bench",
+        "latency",
+        "--prefix",
+        "task60_real_1m_diskann_rabitq",
+        "--profile",
+        "ec_diskann",
+        "--k",
+        "10",
+        "--concurrency",
+        "1",
+        "--iterations",
+        "200",
+        "--sweep",
+        "64,128,200,400,800",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--sample-backend-memory",
+        "--cache-state",
+        "post_recall_warm",
+        "--memory-sample-interval-ms",
+        "25",
+        "--log-output",
+        "benchmarks/task60-diskann-rabitq-format/artifacts/latency-1m-diskann-rabitq.log"
+      ],
+      "selected": true,
+      "tags": [
+        "latency",
+        "ec_real_1m",
+        "diskann",
+        "rabitq",
+        "post_recall_warm",
+        "graviton",
+        "task60"
+      ],
+      "expected_artifacts": [
+        "benchmarks/task60-diskann-rabitq-format/artifacts/latency-1m-diskann-rabitq.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "storage-1m-diskann-pq-fastscan",
+      "kind": "storage",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--log-file",
+        "benchmarks/task60-diskann-rabitq-format/artifacts/storage-1m-diskann-pq-fastscan.log",
+        "bench",
+        "storage",
+        "--prefix",
+        "task60_real_1m_diskann_pq"
+      ],
+      "selected": true,
+      "tags": [
+        "storage",
+        "ec_real_1m",
+        "diskann",
+        "pq_fastscan",
+        "graviton",
+        "task60"
+      ],
+      "expected_artifacts": [
+        "benchmarks/task60-diskann-rabitq-format/artifacts/storage-1m-diskann-pq-fastscan.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "storage-1m-diskann-rabitq",
+      "kind": "storage",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--log-file",
+        "benchmarks/task60-diskann-rabitq-format/artifacts/storage-1m-diskann-rabitq.log",
+        "bench",
+        "storage",
+        "--prefix",
+        "task60_real_1m_diskann_rabitq"
+      ],
+      "selected": true,
+      "tags": [
+        "storage",
+        "ec_real_1m",
+        "diskann",
+        "rabitq",
+        "graviton",
+        "task60"
+      ],
+      "expected_artifacts": [
+        "benchmarks/task60-diskann-rabitq-format/artifacts/storage-1m-diskann-rabitq.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "explain-1m-diskann-pq-fastscan-l800",
+      "kind": "explain",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "dev",
+        "sql",
+        "--pg",
+        "18",
+        "--db",
+        "tqvector_bench",
+        "--socket-dir",
+        "/var/run/postgresql",
+        "--raw",
+        "--file",
+        "benchmarks/task60-diskann-rabitq-format/artifacts/explain-1m-diskann-pq-fastscan-l800.sql",
+        "--log-output",
+        "benchmarks/task60-diskann-rabitq-format/artifacts/explain-1m-diskann-pq-fastscan-l800.log"
+      ],
+      "selected": true,
+      "tags": [
+        "explain",
+        "ec_real_1m",
+        "diskann",
+        "pq_fastscan",
+        "graviton",
+        "task60"
+      ],
+      "expected_artifacts": [
+        "benchmarks/task60-diskann-rabitq-format/artifacts/explain-1m-diskann-pq-fastscan-l800.sql",
+        "benchmarks/task60-diskann-rabitq-format/artifacts/explain-1m-diskann-pq-fastscan-l800.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "explain-1m-diskann-rabitq-l800",
+      "kind": "explain",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "dev",
+        "sql",
+        "--pg",
+        "18",
+        "--db",
+        "tqvector_bench",
+        "--socket-dir",
+        "/var/run/postgresql",
+        "--raw",
+        "--file",
+        "benchmarks/task60-diskann-rabitq-format/artifacts/explain-1m-diskann-rabitq-l800.sql",
+        "--log-output",
+        "benchmarks/task60-diskann-rabitq-format/artifacts/explain-1m-diskann-rabitq-l800.log"
+      ],
+      "selected": true,
+      "tags": [
+        "explain",
+        "ec_real_1m",
+        "diskann",
+        "rabitq",
+        "graviton",
+        "task60"
+      ],
+      "expected_artifacts": [
+        "benchmarks/task60-diskann-rabitq-format/artifacts/explain-1m-diskann-rabitq-l800.sql",
+        "benchmarks/task60-diskann-rabitq-format/artifacts/explain-1m-diskann-rabitq-l800.log"
+      ],
+      "status": "dry-run"
+    }
+  ]
+}

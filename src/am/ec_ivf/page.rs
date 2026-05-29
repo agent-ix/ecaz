@@ -212,11 +212,7 @@ impl<'a> IvfPageRelation<'a> {
         mode: pg_sys::ReadBufferMode::Type,
         lockmode: i32,
     ) -> Option<LockedBufferGuard> {
-        // SAFETY: this view owns the live-relation contract; callers choose a
-        // block/mode/lock combination appropriate for the local page operation.
-        unsafe {
-            LockedBufferGuard::read_main(self.relation.as_ptr(), block_number, mode, lockmode)
-        }
+        LockedBufferGuard::read_main_handle(self.relation, block_number, mode, lockmode)
     }
 
     fn read_main_locked(
@@ -224,9 +220,7 @@ impl<'a> IvfPageRelation<'a> {
         block_number: pg_sys::BlockNumber,
         mode: pg_sys::ReadBufferMode::Type,
     ) -> Option<LockedBufferGuard> {
-        // SAFETY: this view owns the live-relation contract; callers pass a
-        // read mode that returns an already-locked buffer.
-        unsafe { LockedBufferGuard::read_main_locked(self.relation.as_ptr(), block_number, mode) }
+        LockedBufferGuard::read_main_locked_handle(self.relation, block_number, mode)
     }
 
     fn start_wal(self) -> wal::GenericXLogTxn {
@@ -1498,8 +1492,8 @@ where
 }
 
 #[cfg(any(feature = "pg17", feature = "pg18"))]
-pub(super) unsafe fn visit_ivf_posting_refs_for_block_sequence<F>(
-    index_relation: pg_sys::Relation,
+pub(super) fn visit_ivf_posting_refs_for_block_sequence<F>(
+    index_relation: RelationHandle,
     block_numbers: &[pg_sys::BlockNumber],
     payload_len: usize,
     mut visitor: F,
@@ -1514,7 +1508,7 @@ where
     #[cfg(feature = "pg18")]
     {
         visit_ivf_posting_ref_block_sequence_with_read_stream(
-            index_relation,
+            index_relation.as_ptr(),
             block_numbers,
             payload_len,
             &mut visitor,
@@ -1525,7 +1519,7 @@ where
     {
         for block_number in block_numbers {
             visit_all_ivf_posting_refs_for_block(
-                index_relation,
+                index_relation.as_ptr(),
                 *block_number,
                 payload_len,
                 &mut visitor,

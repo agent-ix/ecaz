@@ -42,6 +42,7 @@ pub use traits::{Quantizer, QueryScorer};
 pub enum Family {
     TurboQuant,
     PqFastScan,
+    RaBitQ,
 }
 
 impl Family {
@@ -51,6 +52,7 @@ impl Family {
         match self {
             Self::TurboQuant => "turboquant",
             Self::PqFastScan => "pq_fastscan",
+            Self::RaBitQ => "rabitq",
         }
     }
 
@@ -58,8 +60,9 @@ impl Family {
         match raw {
             "turboquant" => Ok(Self::TurboQuant),
             "pq_fastscan" => Ok(Self::PqFastScan),
+            "rabitq" => Ok(Self::RaBitQ),
             other => Err(format!(
-                "invalid ec_hnsw storage_format reloption: expected one of [turboquant, pq_fastscan], got {:?}",
+                "invalid ec_hnsw storage_format reloption: expected one of [turboquant, pq_fastscan, rabitq], got {:?}",
                 other
             )),
         }

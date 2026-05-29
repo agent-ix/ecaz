@@ -179,6 +179,76 @@ make sqlsmith-pg18 SQLSMITH_DSN='postgresql://localhost/postgres'
 Use a PG18 cluster with `ecaz` installed. Capture crashes and raw SQLsmith logs
 under the relevant review packet before citing findings.
 
+### Engine Matrix
+
+Task 46 introduces three orthogonal fuzz engines and a target-shape taxonomy.
+Each engine and target shape has a distinct role and cadence; do not
+substitute one for another without a packet recording why.
+
+| Engine | Make lane | Cadence | Strengths | Notes |
+|---|---|---|---|---|
+| libFuzzer (cargo-fuzz) | `make fuzz-all-short`, `make fuzz-*` | per-PR (smoke) + nightly (long) | fast in-process, structure-aware via `arbitrary` | default engine; every target compiles under it |
+| Honggfuzz | `make fuzz-honggfuzz` | weekly | persistent-mode, different mutators than libFuzzer | reuses same `fuzz_targets/*.rs`; requires `honggfuzz-rs` + system `honggfuzz` |
+| AFL+ (`cargo-afl`) | `make afl-decoders`, `make fuzz-afl` | weekly | forkserver, deterministic stages | already wired for the decoder family; `make fuzz-afl` extends to the structured targets |
+| ECAZ-grammar SQLsmith | `make sqlsmith-ecaz SQLSMITH_DSN=…` | nightly | biases toward `<-> `/`<#>` operators, CustomScan plan shapes, REINDEX/VACUUM interleavings | requires live PG18 + ecaz installed; complements upstream `make sqlsmith-pg18` |
+| Cross-pollination | `make fuzz-cross-pollinate` | weekly | merges libFuzzer + Honggfuzz + AFL+ corpora | re-runs `make fuzz-corpus-minimize` over the merged corpus before committing |
+
+#### Target shape taxonomy
+
+Fuzz targets fall into two shapes; the choice is per-target and is documented
+in the target's module doc-comment:
+
+- **Decoder targets** consume raw bytes by definition — the input *is* bytes
+  (`ItemPointer::decode`, `VamanaMetadataPage::decode`, the element/neighbor
+  tuple decoders, `fuzz_item_pointer_decode`). Keep these on raw-byte
+  `fuzz_target!(|data: &[u8]| ...)`. Wrapping a decoder in `Arbitrary` would
+  obscure the bytes-in test it exists to perform.
+- **Structured-input targets** consume a logical tuple/record (a
+  `(dim, bits, indices)` triple for `unpack_mse_structured`, a
+  `(dim, gamma, codes)` triple for `parse_text_structured`, a sorted-list
+  pair for `fuzz_topk_merge_structured`). These use
+  `#[derive(arbitrary::Arbitrary)]` on an input struct so the fuzzer mutates
+  *inside* the valid shape rather than against the structural gates that
+  would reject most random bytes. Per Task 46 §Why this trades exec/sec for
+  coverage density; target the success path and pair with a separate
+  error-path target if the surface has a non-trivial error tree.
+
+#### Corpus management
+
+`fuzz/corpus/` is **committed** (see `.gitignore` notes). Initial commit at
+`5d84cedc9` ships the minimized spanning set across all registered targets;
+re-minimize after every long campaign:
+
+```sh
+make fuzz-corpus-minimize    # cargo fuzz cmin over every registered target
+```
+
+`make fuzz-cross-pollinate` runs the multi-engine merge then calls
+`fuzz-corpus-minimize` before committing. Cmin is deterministic for a fixed
+target binary + input corpus; a no-op re-cmin signals the committed corpus is
+already minimal.
+
+`fuzz/target/` and `fuzz/artifacts/` stay gitignored — those are build
+products and crash inputs, not curated test material.
+
+#### When to add a new structured target
+
+- New higher-level decoder or codec arrives in `src/` and would otherwise be
+  fuzzed via raw bytes against a multi-stage validator.
+- Existing raw target spends most of its budget rejecting at the first gate
+  (cmin shows < 2× cov-per-corp-entry density delta versus a structured
+  sibling).
+- A property assertion (round-trip, monotonicity, equivalence) is available
+  that the raw target cannot make.
+
+New structured targets must:
+
+1. Live next to their raw sibling under `fuzz/fuzz_targets/`.
+2. Use `#[derive(arbitrary::Arbitrary)]` on a small input struct.
+3. Land with a matched-run coverage comparison vs the raw sibling in the
+   owning review packet (10 s `-max_total_time` is the established budget).
+4. Update this engine matrix only if they introduce a new engine or lane.
+
 ## Test Quality
 
 Task 39 adds measurement lanes for the quality of existing tests:

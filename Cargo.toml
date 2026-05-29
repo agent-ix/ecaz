@@ -35,6 +35,7 @@ pgrx = "0.17"
 hex = "0.4"
 rand = "0.8"
 rand_chacha = "0.3"
+rayon = "1"
 hashbrown = "0.15"
 postgres = "0.19"
 tokio = { version = "1.51", features = ["rt", "time", "net"] }
@@ -166,3 +167,8 @@ required-features = ["dhat-heap"]
 name = "dhat_score"
 path = "benches/dhat/score.rs"
 required-features = ["dhat-heap"]
+
+[[bin]]
+name = "dhat_vamana_build"
+path = "benches/dhat/vamana_build.rs"
+required-features = ["bench", "dhat-heap"]

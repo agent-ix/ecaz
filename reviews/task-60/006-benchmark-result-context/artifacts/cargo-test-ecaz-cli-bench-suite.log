@@ -1,0 +1,37 @@
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz)
+   Compiling ecaz-cli v0.1.0 (/home/peter/dev/ecaz/crates/ecaz-cli)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 41.75s
+     Running unittests src/main.rs (target/debug/deps/ecaz-570f58e78b216ec8)
+
+running 28 tests
+test commands::bench::suite::tests::expands_cross_am_with_inputs_and_log_output ... ok
+test commands::bench::suite::tests::expands_explain_with_connection_defaults ... ok
+test commands::bench::suite::tests::expands_chunked_load_without_corpus_query_paths ... ok
+test commands::bench::suite::tests::evaluates_thresholds_against_result_rows ... ok
+test commands::bench::suite::tests::expands_latency_with_cache_state_label ... ok
+test commands::bench::suite::tests::expands_recall_with_defaults ... ok
+test commands::bench::suite::tests::expands_sidecar_rerank_with_variants ... ok
+test commands::bench::suite::tests::explain_sql_can_enable_ivf_scratch_soa ... ok
+test commands::bench::suite::tests::explain_sql_uses_diskann_profile_guc_and_cost_snapshot ... ok
+test commands::bench::suite::tests::explain_sql_uses_spire_profile_gucs_and_cost_snapshot ... ok
+test commands::bench::suite::tests::explain_sql_uses_suite_fields ... ok
+test commands::bench::suite::tests::parses_explain_planner_cost_rows ... ok
+test commands::bench::suite::tests::parses_cross_am_result_table_for_thresholds ... ok
+test commands::bench::suite::tests::parses_explain_planner_cost_rows_from_psql_aligned_output ... ok
+test commands::bench::suite::tests::parses_loader_timing_rows ... ok
+test commands::bench::suite::tests::parses_minimal_suite_config ... ok
+test commands::bench::suite::tests::parses_fetch_prepare_suite_config ... ok
+test commands::bench::suite::tests::prefixes_child_commands_with_connection_flags ... ok
+test commands::bench::suite::tests::parses_recall_result_table ... ok
+test commands::bench::suite::tests::rejects_duplicate_step_names ... ok
+test commands::bench::suite::tests::rejects_unknown_profile_names ... ok
+test commands::bench::suite::tests::result_rows_include_suite_context_fields ... ok
+test commands::bench::suite::tests::skips_thresholds_for_unselected_steps ... ok
+test commands::bench::suite::tests::step_selection_requires_name_and_tag_matches ... ok
+test commands::bench::suite::tests::threshold_filters_select_matching_sweep_row ... ok
+test commands::bench::suite::tests::validates_cross_am_inputs_are_labeled_paths ... ok
+test commands::bench::suite::tests::parses_legacy_dry_run_alias ... ok
+test commands::bench::suite::tests::parses_nested_run_command ... ok
+
+test result: ok. 28 passed; 0 failed; 0 ignored; 0 measured; 335 filtered out; finished in 0.00s
+

@@ -1,0 +1,532 @@
+{
+"dhatFileVersion": 2,
+"mode": "rust-heap",
+"verb": "Allocated",
+"bklt": true,
+"bkacc": false,
+"tu": "µs",
+"Mtu": "s",
+"tuth": 10,
+"cmd": "target/release/dhat_vamana_build --input fixtures/m5_diskann_real10k/m5_diskann_real10k_corpus.tsv --rows 1000 --graph-degree 32 --list-size 200 --alpha 1.2 --seed 42 --output reviews/task-65/002-vamana-core-measurement/artifacts/dhat-vamana-build-real1k-r32-l200.json --summary-output reviews/task-65/002-vamana-core-measurement/artifacts/dhat-vamana-build-real1k-r32-l200-summary.md",
+"pid": 2819,
+"tg": 14049156,
+"te": 14049162,
+"pps": [
+{
+"tb": 1608,
+"tbk": 1,
+"tl": 14049089,
+"mb": 1608,
+"mbk": 1,
+"gb": 1608,
+"gbk": 1,
+"eb": 0,
+"ebk": 0,
+"fs": [
+1,
+2,
+3
+]
+},
+{
+"tb": 128,
+"tbk": 1,
+"tl": 14049102,
+"mb": 128,
+"mbk": 1,
+"gb": 128,
+"gbk": 1,
+"eb": 0,
+"ebk": 0,
+"fs": [
+1,
+4,
+3
+]
+},
+{
+"tb": 8000,
+"tbk": 1,
+"tl": 1,
+"mb": 8000,
+"mbk": 1,
+"gb": 0,
+"gbk": 0,
+"eb": 0,
+"ebk": 0,
+"fs": [
+1,
+5,
+6
+]
+},
+{
+"tb": 8000,
+"tbk": 1,
+"tl": 35,
+"mb": 8000,
+"mbk": 1,
+"gb": 8000,
+"gbk": 1,
+"eb": 0,
+"ebk": 0,
+"fs": [
+1,
+7
+]
+},
+{
+"tb": 240,
+"tbk": 4,
+"tl": 144971,
+"mb": 128,
+"mbk": 1,
+"gb": 0,
+"gbk": 0,
+"eb": 0,
+"ebk": 0,
+"fs": [
+1,
+8,
+9,
+10
+]
+},
+{
+"tb": 8000,
+"tbk": 1,
+"tl": 2,
+"mb": 8000,
+"mbk": 1,
+"gb": 0,
+"gbk": 0,
+"eb": 0,
+"ebk": 0,
+"fs": [
+1,
+5,
+11
+]
+},
+{
+"tb": 256000,
+"tbk": 2000,
+"tl": 12572302,
+"mb": 128,
+"mbk": 1,
+"gb": 0,
+"gbk": 0,
+"eb": 0,
+"ebk": 0,
+"fs": [
+1,
+12,
+13
+]
+},
+{
+"tb": 368,
+"tbk": 1,
+"tl": 14049132,
+"mb": 368,
+"mbk": 1,
+"gb": 368,
+"gbk": 1,
+"eb": 368,
+"ebk": 1,
+"fs": [
+1,
+14
+]
+},
+{
+"tb": 8000,
+"tbk": 1,
+"tl": 14049106,
+"mb": 8000,
+"mbk": 1,
+"gb": 8000,
+"gbk": 1,
+"eb": 0,
+"ebk": 0,
+"fs": [
+1,
+15
+]
+},
+{
+"tb": 800,
+"tbk": 1,
+"tl": 18,
+"mb": 800,
+"mbk": 1,
+"gb": 0,
+"gbk": 0,
+"eb": 0,
+"ebk": 0,
+"fs": [
+1,
+16,
+3
+]
+},
+{
+"tb": 8000,
+"tbk": 1,
+"tl": 14049118,
+"mb": 8000,
+"mbk": 1,
+"gb": 8000,
+"gbk": 1,
+"eb": 0,
+"ebk": 0,
+"fs": [
+1,
+17
+]
+},
+{
+"tb": 163156,
+"tbk": 1236,
+"tl": 424017228,
+"mb": 10704,
+"mbk": 73,
+"gb": 9960,
+"gbk": 68,
+"eb": 9960,
+"ebk": 68,
+"fs": [
+1,
+18,
+19,
+20
+]
+},
+{
+"tb": 8000,
+"tbk": 1,
+"tl": 2,
+"mb": 8000,
+"mbk": 1,
+"gb": 0,
+"gbk": 0,
+"eb": 0,
+"ebk": 0,
+"fs": [
+1,
+5,
+21
+]
+},
+{
+"tb": 8000,
+"tbk": 1,
+"tl": 1,
+"mb": 8000,
+"mbk": 1,
+"gb": 0,
+"gbk": 0,
+"eb": 0,
+"ebk": 0,
+"fs": [
+1,
+5,
+22
+]
+},
+{
+"tb": 5593856,
+"tbk": 43702,
+"tl": 7768104938,
+"mb": 119424,
+"mbk": 933,
+"gb": 119296,
+"gbk": 932,
+"eb": 119296,
+"ebk": 932,
+"fs": [
+1,
+12,
+23
+]
+},
+{
+"tb": 4000,
+"tbk": 1,
+"tl": 14049134,
+"mb": 4000,
+"mbk": 1,
+"gb": 4000,
+"gbk": 1,
+"eb": 0,
+"ebk": 0,
+"fs": [
+1,
+24
+]
+},
+{
+"tb": 8000,
+"tbk": 1,
+"tl": 14049110,
+"mb": 8000,
+"mbk": 1,
+"gb": 8000,
+"gbk": 1,
+"eb": 0,
+"ebk": 0,
+"fs": [
+1,
+25
+]
+},
+{
+"tb": 128,
+"tbk": 1,
+"tl": 14049095,
+"mb": 128,
+"mbk": 1,
+"gb": 128,
+"gbk": 1,
+"eb": 0,
+"ebk": 0,
+"fs": [
+1,
+26,
+3
+]
+},
+{
+"tb": 360946,
+"tbk": 2000,
+"tl": 2357774,
+"mb": 212,
+"mbk": 1,
+"gb": 0,
+"gbk": 0,
+"eb": 0,
+"ebk": 0,
+"fs": [
+1,
+27,
+13
+]
+},
+{
+"tb": 5768664,
+"tbk": 21851,
+"tl": 10142242,
+"mb": 264,
+"mbk": 1,
+"gb": 0,
+"gbk": 0,
+"eb": 0,
+"ebk": 0,
+"fs": [
+1,
+28
+]
+},
+{
+"tb": 8000,
+"tbk": 1,
+"tl": 48,
+"mb": 8000,
+"mbk": 1,
+"gb": 8000,
+"gbk": 1,
+"eb": 0,
+"ebk": 0,
+"fs": [
+1,
+29
+]
+},
+{
+"tb": 4824,
+"tbk": 2,
+"tl": 12344027,
+"mb": 3216,
+"mbk": 1,
+"gb": 3216,
+"gbk": 1,
+"eb": 0,
+"ebk": 0,
+"fs": [
+1,
+30,
+3
+]
+},
+{
+"tb": 24000,
+"tbk": 1,
+"tl": 14049143,
+"mb": 24000,
+"mbk": 1,
+"gb": 24000,
+"gbk": 1,
+"eb": 24000,
+"ebk": 1,
+"fs": [
+1,
+31
+]
+},
+{
+"tb": 3714560,
+"tbk": 6748,
+"tl": 2416288,
+"mb": 2048,
+"mbk": 1,
+"gb": 0,
+"gbk": 0,
+"eb": 0,
+"ebk": 0,
+"fs": [
+1,
+32,
+33,
+34
+]
+},
+{
+"tb": 128,
+"tbk": 1,
+"tl": 14049098,
+"mb": 128,
+"mbk": 1,
+"gb": 128,
+"gbk": 1,
+"eb": 0,
+"ebk": 0,
+"fs": [
+1,
+35,
+3
+]
+},
+{
+"tb": 8000,
+"tbk": 1,
+"tl": 3,
+"mb": 8000,
+"mbk": 1,
+"gb": 0,
+"gbk": 0,
+"eb": 0,
+"ebk": 0,
+"fs": [
+1,
+5,
+36
+]
+},
+{
+"tb": 8000,
+"tbk": 1,
+"tl": 14049112,
+"mb": 8000,
+"mbk": 1,
+"gb": 8000,
+"gbk": 1,
+"eb": 0,
+"ebk": 0,
+"fs": [
+1,
+37
+]
+},
+{
+"tb": 8000,
+"tbk": 1,
+"tl": 4,
+"mb": 8000,
+"mbk": 1,
+"gb": 8000,
+"gbk": 1,
+"eb": 0,
+"ebk": 0,
+"fs": [
+1,
+5,
+38
+]
+},
+{
+"tb": 1857264,
+"tbk": 6747,
+"tl": 737691,
+"mb": 1024,
+"mbk": 1,
+"gb": 0,
+"gbk": 0,
+"eb": 0,
+"ebk": 0,
+"fs": [
+1,
+8,
+9,
+39
+]
+},
+{
+"tb": 1442166,
+"tbk": 43702,
+"tl": 9351961,
+"mb": 33,
+"mbk": 1,
+"gb": 0,
+"gbk": 0,
+"eb": 0,
+"ebk": 0,
+"fs": [
+1,
+27,
+23
+]
+}
+],
+"ftbl": [
+"[root]",
+"0x102f635e8: <dhat::Alloc as core::alloc::global::GlobalAlloc>::alloc (???:0:0)",
+"0x102f649ac: ecaz::am::ec_diskann::vamana::SearchScratch::new (???:0:0)",
+"0x102f33308: dhat_vamana_build::main (???:0:0)",
+"0x102f648e4: ecaz::am::ec_diskann::vamana::SearchScratch::new (???:0:0)",
+"0x102f669dc: ecaz::am::ec_diskann::vamana::MetricSummary::from_values (???:0:0)",
+"0x102f34594: dhat_vamana_build::main (???:0:0)",
+"0x102f349e8: dhat_vamana_build::main (???:0:0)",
+"0x102fb2d70: alloc::raw_vec::RawVecInner<A>::finish_grow (???:0:0)",
+"0x102fb2cc8: alloc::raw_vec::RawVec<T,A>::grow_one (???:0:0)",
+"0x102f33ed0: dhat_vamana_build::main (???:0:0)",
+"0x102f345a4: dhat_vamana_build::main (???:0:0)",
+"0x102f35af8: ecaz::am::ec_diskann::vamana::robust_prune (???:0:0)",
+"0x102f33d2c: dhat_vamana_build::main (???:0:0)",
+"0x102f331f8: dhat_vamana_build::main (???:0:0)",
+"0x102f332e4: dhat_vamana_build::main (???:0:0)",
+"0x102f649fc: ecaz::am::ec_diskann::vamana::SearchScratch::new (???:0:0)",
+"0x102f33290: dhat_vamana_build::main (???:0:0)",
+"0x102fa8960: alloc::raw_vec::RawVecInner<A>::finish_grow (???:0:0)",
+"0x102fa89ec: alloc::raw_vec::RawVecInner<A>::reserve::do_reserve_and_handle (???:0:0)",
+"0x102f34518: dhat_vamana_build::main (???:0:0)",
+"0x102f345b4: dhat_vamana_build::main (???:0:0)",
+"0x102f347b4: dhat_vamana_build::main (???:0:0)",
+"0x102f342e0: dhat_vamana_build::main (???:0:0)",
+"0x102f33108: dhat_vamana_build::main (???:0:0)",
+"0x102f332c8: dhat_vamana_build::main (???:0:0)",
+"0x102f6491c: ecaz::am::ec_diskann::vamana::SearchScratch::new (???:0:0)",
+"0x102f35b1c: ecaz::am::ec_diskann::vamana::robust_prune (???:0:0)",
+"0x102f33f08: dhat_vamana_build::main (???:0:0)",
+"0x102f34734: dhat_vamana_build::main (???:0:0)",
+"0x102f64998: ecaz::am::ec_diskann::vamana::SearchScratch::new (???:0:0)",
+"0x102f32ee0: dhat_vamana_build::main (???:0:0)",
+"0x102fad74c: alloc::raw_vec::RawVecInner<A>::finish_grow (???:0:0)",
+"0x102fad894: alloc::raw_vec::RawVec<T,A>::grow_one (???:0:0)",
+"0x102f33ca0: dhat_vamana_build::main (???:0:0)",
+"0x102f64900: ecaz::am::ec_diskann::vamana::SearchScratch::new (???:0:0)",
+"0x102f34584: dhat_vamana_build::main (???:0:0)",
+"0x102f332ac: dhat_vamana_build::main (???:0:0)",
+"0x102f347c4: dhat_vamana_build::main (???:0:0)",
+"0x102f3374c: dhat_vamana_build::main (???:0:0)"
+]
+}

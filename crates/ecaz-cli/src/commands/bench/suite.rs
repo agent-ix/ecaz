@@ -1225,7 +1225,7 @@ fn parse_result_rows(
                 kind: step.kind.clone(),
                 metric: step.kind.clone(),
                 artifact: artifact.into(),
-                values,
+                values: add_result_context(manifest, step, values),
             })
             .collect(),
         "cross-am" => parse_table_rows(raw)
@@ -1236,7 +1236,7 @@ fn parse_result_rows(
                 kind: step.kind.clone(),
                 metric: "cross_am".into(),
                 artifact: artifact.into(),
-                values,
+                values: add_result_context(manifest, step, values),
             })
             .collect(),
         "storage" => parse_storage_rows(raw)
@@ -1247,7 +1247,7 @@ fn parse_result_rows(
                 kind: step.kind.clone(),
                 metric,
                 artifact: artifact.into(),
-                values,
+                values: add_result_context(manifest, step, values),
             })
             .collect(),
         "load" => parse_load_rows(raw)
@@ -1258,7 +1258,7 @@ fn parse_result_rows(
                 kind: step.kind.clone(),
                 metric,
                 artifact: artifact.into(),
-                values,
+                values: add_result_context(manifest, step, values),
             })
             .collect(),
         "compare-pgvector" | "compare-vectorscale" => {
@@ -1270,7 +1270,7 @@ fn parse_result_rows(
                     kind: step.kind.clone(),
                     metric: "compare".into(),
                     artifact: artifact.into(),
-                    values,
+                    values: add_result_context(manifest, step, values),
                 })
                 .collect();
             rows.extend(
@@ -1282,7 +1282,7 @@ fn parse_result_rows(
                         kind: step.kind.clone(),
                         metric,
                         artifact: artifact.into(),
-                        values,
+                        values: add_result_context(manifest, step, values),
                     }),
             );
             rows
@@ -1295,11 +1295,90 @@ fn parse_result_rows(
                 kind: step.kind.clone(),
                 metric,
                 artifact: artifact.into(),
-                values,
+                values: add_result_context(manifest, step, values),
             })
             .collect(),
         _ => Vec::new(),
     }
+}
+
+fn add_result_context(
+    manifest: &SuiteManifest,
+    step: &StepRecord,
+    mut values: BTreeMap<String, String>,
+) -> BTreeMap<String, String> {
+    insert_if_absent(
+        &mut values,
+        "suite_database",
+        Some(manifest.connection.database.as_str()),
+    );
+    insert_if_absent(
+        &mut values,
+        "suite_host",
+        manifest.connection.host.as_deref().or(Some("local_socket")),
+    );
+    insert_if_absent(
+        &mut values,
+        "suite_port",
+        manifest
+            .connection
+            .port
+            .map(|port| port.to_string())
+            .as_deref(),
+    );
+    insert_if_absent(
+        &mut values,
+        "socket_dir",
+        command_flag_value(&step.command, "--socket-dir").as_deref(),
+    );
+    insert_if_absent(
+        &mut values,
+        "prefix",
+        command_flag_value(&step.command, "--prefix").as_deref(),
+    );
+    insert_if_absent(
+        &mut values,
+        "profile",
+        command_flag_value(&step.command, "--profile").as_deref(),
+    );
+    insert_if_absent(
+        &mut values,
+        "storage_format",
+        command_flag_value(&step.command, "--storage-format")
+            .or_else(|| known_tag_value(&step.tags, &["rabitq", "pq_fastscan", "turboquant"]))
+            .as_deref(),
+    );
+    insert_if_absent(
+        &mut values,
+        "cache_state",
+        command_flag_value(&step.command, "--cache-state")
+            .or_else(|| known_tag_value(&step.tags, &["post_recall_warm", "warm", "cold"]))
+            .as_deref(),
+    );
+    values
+}
+
+fn insert_if_absent(values: &mut BTreeMap<String, String>, key: &str, value: Option<&str>) {
+    if let Some(value) = value {
+        values
+            .entry(key.to_owned())
+            .or_insert_with(|| value.to_owned());
+    }
+}
+
+fn command_flag_value(command: &[String], flag: &str) -> Option<String> {
+    command
+        .windows(2)
+        .find(|window| window.first().map(String::as_str) == Some(flag))
+        .and_then(|window| window.get(1))
+        .cloned()
+}
+
+fn known_tag_value(tags: &[String], known: &[&str]) -> Option<String> {
+    known
+        .iter()
+        .find(|candidate| tags.iter().any(|tag| tag == **candidate))
+        .map(|candidate| (*candidate).to_owned())
 }
 
 fn parse_table_rows(raw: &str) -> Vec<BTreeMap<String, String>> {
@@ -1330,18 +1409,44 @@ fn parse_storage_rows(raw: &str) -> Vec<(String, BTreeMap<String, String>)> {
     let mut rows = Vec::new();
     for table_row in parse_table_rows(raw) {
         if let (Some(field), Some(value)) = (table_row.get("field"), table_row.get("value")) {
-            rows.push((
-                "storage_field".into(),
-                BTreeMap::from([
-                    ("field".into(), field.clone()),
-                    ("value".into(), value.clone()),
-                ]),
-            ));
+            let mut values = BTreeMap::from([
+                ("field".into(), field.clone()),
+                ("value".into(), value.clone()),
+            ]);
+            if let Some(bytes) = parse_byte_value(value) {
+                values.insert("value_bytes".into(), format!("{bytes:.0}"));
+            }
+            rows.push(("storage_field".into(), values));
         } else if table_row.contains_key("index") {
-            rows.push(("storage_index".into(), table_row));
+            let mut values = table_row;
+            if let Some(bytes) = values.get("size").and_then(|value| parse_byte_value(value)) {
+                values.insert("size_bytes".into(), format!("{bytes:.0}"));
+            }
+            if let Some(bytes) = values
+                .get("per row")
+                .and_then(|value| parse_byte_value(value))
+            {
+                values.insert("per_row_bytes".into(), format!("{bytes:.1}"));
+            }
+            rows.push(("storage_index".into(), values));
         }
     }
     rows
+}
+
+fn parse_byte_value(value: &str) -> Option<f64> {
+    let mut parts = value.split_whitespace();
+    let amount = parts.next()?.parse::<f64>().ok()?;
+    let unit = parts.next().unwrap_or("B");
+    let multiplier = match unit {
+        "B" => 1.0,
+        "KiB" => 1024.0,
+        "MiB" => 1024.0 * 1024.0,
+        "GiB" => 1024.0 * 1024.0 * 1024.0,
+        "TiB" => 1024.0 * 1024.0 * 1024.0 * 1024.0,
+        _ => return None,
+    };
+    Some(amount * multiplier)
 }
 
 fn parse_compare_table_rows(raw: &str) -> Vec<BTreeMap<String, String>> {
@@ -3755,6 +3860,89 @@ mod tests {
     }
 
     #[test]
+    fn result_rows_include_suite_context_fields() {
+        let manifest = SuiteManifest {
+            suite: "task60".into(),
+            schema_version: 1,
+            config: "suite.json".into(),
+            config_sha256: "hash".into(),
+            dry_run: false,
+            generated_at_unix_ms: 0,
+            connection: ManifestConnection {
+                database: "tqvector_bench".into(),
+                host: None,
+                port: Some(28818),
+                user: None,
+                password_configured: false,
+            },
+            steps: Vec::new(),
+            threshold_results: Vec::new(),
+        };
+        let step = StepRecord {
+            name: "recall-100k-diskann-rabitq".into(),
+            kind: "recall".into(),
+            command: vec![
+                "--database".into(),
+                "tqvector_bench".into(),
+                "bench".into(),
+                "recall".into(),
+                "--prefix".into(),
+                "task60_real_100k_diskann_rabitq".into(),
+                "--profile".into(),
+                "ec_diskann".into(),
+                "--socket-dir".into(),
+                "/var/run/postgresql".into(),
+            ],
+            selected: true,
+            tags: vec!["recall".into(), "rabitq".into(), "task60".into()],
+            expected_artifacts: vec!["recall.log".into()],
+            status: Some(StepStatus::Succeeded),
+            started_at_unix_ms: None,
+            finished_at_unix_ms: None,
+            duration_ms: None,
+            exit_code: None,
+        };
+        let rows = parse_result_rows(
+            &manifest,
+            &step,
+            "recall.log",
+            "┌────────┬─────────┬───────────────┬──────────┐\n\
+             │ nprobe ┆ queries ┆ recall_trials ┆ recall@k │\n\
+             ╞════════╪═════════╪═══════════════╪══════════╡\n\
+             │ 800    ┆ 200     ┆ 2000          ┆ 0.9910   │\n\
+             └────────┴─────────┴───────────────┴──────────┘\n",
+        );
+
+        assert_eq!(rows.len(), 1);
+        let values = &rows[0].values;
+        assert_eq!(
+            values.get("storage_format").map(String::as_str),
+            Some("rabitq")
+        );
+        assert_eq!(
+            values.get("prefix").map(String::as_str),
+            Some("task60_real_100k_diskann_rabitq")
+        );
+        assert_eq!(
+            values.get("profile").map(String::as_str),
+            Some("ec_diskann")
+        );
+        assert_eq!(
+            values.get("suite_database").map(String::as_str),
+            Some("tqvector_bench")
+        );
+        assert_eq!(
+            values.get("suite_host").map(String::as_str),
+            Some("local_socket")
+        );
+        assert_eq!(values.get("suite_port").map(String::as_str), Some("28818"));
+        assert_eq!(
+            values.get("socket_dir").map(String::as_str),
+            Some("/var/run/postgresql")
+        );
+    }
+
+    #[test]
     fn parses_cross_am_result_table_for_thresholds() {
         let rows = parse_table_rows(
             "┌──────────────┬─────────┬───┬───────────┬───────────────┐\n\
@@ -3808,6 +3996,36 @@ mod tests {
         assert_eq!(
             rows[1].1.get("seconds").map(String::as_str),
             Some("0.183480")
+        );
+    }
+
+    #[test]
+    fn parses_storage_rows_with_raw_byte_fields() {
+        let rows = parse_storage_rows(
+            "┌────────┬──────────┐\n\
+             │ field  ┆ value    │\n\
+             ╞════════╪══════════╡\n\
+             │ total  ┆ 1.5 MiB  │\n\
+             └────────┴──────────┘\n\
+             ┌────────┬───────────────┬──────────┬────────────┬──────────┬─────────┐\n\
+             │ index  ┆ access method ┆ profile  ┆ reloptions ┆ size     ┆ per row │\n\
+             ╞════════╪═══════════════╪══════════╪════════════╪══════════╪═════════╡\n\
+             │ ix     ┆ ec_diskann    ┆ diskann  ┆ {}         ┆ 13.0 MiB ┆ 494.0 B │\n\
+             └────────┴───────────────┴──────────┴────────────┴──────────┴─────────┘\n",
+        );
+
+        assert_eq!(rows.len(), 2);
+        assert_eq!(
+            rows[0].1.get("value_bytes").map(String::as_str),
+            Some("1572864")
+        );
+        assert_eq!(
+            rows[1].1.get("size_bytes").map(String::as_str),
+            Some("13631488")
+        );
+        assert_eq!(
+            rows[1].1.get("per_row_bytes").map(String::as_str),
+            Some("494.0")
         );
     }
 

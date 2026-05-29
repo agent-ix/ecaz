@@ -5,6 +5,7 @@ use pgrx::pg_sys;
 use super::{build, graph, options, page, search, shared, source};
 use crate::am::common::callback::pg_am_callback;
 use crate::am::common::heap_slot::HeapSlotReader;
+use crate::quant::{rabitq::RaBitQQuantizer, Quantizer};
 use crate::storage::{
     buffer_guard::LockedBufferGuard, relation::RelationHandle, slot_guard::TupleTableSlotGuard, wal,
 };
@@ -340,6 +341,7 @@ enum InsertFormatAdapter {
     TurboQuant { code_len: usize },
     TurboQuantHotCold(graph::TurboQuantHotColdLayout),
     PqFastScan(graph::PqFastScanLayout),
+    RaBitQ(graph::PqFastScanLayout),
 }
 
 impl InsertFormatAdapter {
@@ -350,6 +352,7 @@ impl InsertFormatAdapter {
                 graph::GraphStorageDescriptor::TurboQuantHotCold(layout)
             }
             Self::PqFastScan(layout) => graph::GraphStorageDescriptor::PqFastScan(layout),
+            Self::RaBitQ(layout) => graph::GraphStorageDescriptor::RaBitQ(layout),
         }
     }
 
@@ -357,7 +360,7 @@ impl InsertFormatAdapter {
         match self {
             Self::TurboQuant { code_len } => code_len.max(tuple.code.len()),
             Self::TurboQuantHotCold(layout) => layout.rerank_code_len.max(tuple.code.len()),
-            Self::PqFastScan(_) => tuple.code.len(),
+            Self::PqFastScan(_) | Self::RaBitQ(_) => tuple.code.len(),
         }
     }
 
@@ -386,6 +389,9 @@ impl InsertFormatAdapter {
                 layout,
             ),
             Self::PqFastScan(layout) => {
+                find_duplicate_grouped_element_tid(index_relation, tuple.gamma, &tuple.code, layout)
+            }
+            Self::RaBitQ(layout) => {
                 find_duplicate_grouped_element_tid(index_relation, tuple.gamma, &tuple.code, layout)
             }
         }
@@ -438,6 +444,14 @@ impl InsertFormatAdapter {
                 neighbor_tids,
                 layout,
             ),
+            Self::RaBitQ(layout) => append_rabitq_tuple(
+                index_relation,
+                metadata,
+                tuple,
+                level,
+                neighbor_tids,
+                layout,
+            ),
         }
     }
 
@@ -455,6 +469,9 @@ impl InsertFormatAdapter {
                 coalesce_duplicate_turbo_hot_heap_tid(index_relation, element_tid, layout, heap_tid)
             }
             Self::PqFastScan(layout) => {
+                coalesce_duplicate_grouped_heap_tid(index_relation, element_tid, layout, heap_tid)
+            }
+            Self::RaBitQ(layout) => {
                 coalesce_duplicate_grouped_heap_tid(index_relation, element_tid, layout, heap_tid)
             }
         }
@@ -583,6 +600,7 @@ fn resolve_insert_format_adapter(
         graph::GraphStorageDescriptor::PqFastScan(layout) => {
             Ok(InsertFormatAdapter::PqFastScan(layout))
         }
+        graph::GraphStorageDescriptor::RaBitQ(layout) => Ok(InsertFormatAdapter::RaBitQ(layout)),
     }
 }
 
@@ -615,6 +633,9 @@ fn initialized_empty_insert_metadata(
         InsertFormatAdapter::PqFastScan(_) => {
             panic!("empty grouped metadata initialization should use the dedicated bootstrap path")
         }
+        InsertFormatAdapter::RaBitQ(_) => {
+            panic!("empty RaBitQ metadata initialization should use the dedicated bootstrap path")
+        }
     }
 }
 
@@ -634,7 +655,10 @@ unsafe fn run_insert_with_adapter(
     // old exclusive path because shape init atomicity still matters, and the
     // duplicate scan is degenerate on an effectively empty index.
     if metadata_snapshot.dimensions == 0 && metadata_snapshot.bits == 0 {
-        if matches!(format, InsertFormatAdapter::PqFastScan(_)) {
+        if matches!(
+            format,
+            InsertFormatAdapter::PqFastScan(_) | InsertFormatAdapter::RaBitQ(_)
+        ) {
             // SAFETY: The metadata lock serializes first grouped-format
             // initialization; the closure writes metadata/data pages atomically.
             let bootstrapped = unsafe {
@@ -643,7 +667,18 @@ unsafe fn run_insert_with_adapter(
                         return false;
                     }
 
-                    let output = bootstrap_empty_pq_fastscan_flush_output(index_relation, tuple);
+                    let output = match format {
+                        InsertFormatAdapter::PqFastScan(_) => {
+                            bootstrap_empty_pq_fastscan_flush_output(index_relation, tuple)
+                        }
+                        InsertFormatAdapter::RaBitQ(_) => {
+                            bootstrap_empty_rabitq_flush_output(index_relation, tuple)
+                        }
+                        InsertFormatAdapter::TurboQuant { .. }
+                        | InsertFormatAdapter::TurboQuantHotCold(_) => {
+                            unreachable!("non-grouped bootstrap should use metadata initialization")
+                        }
+                    };
                     let handle = std::ptr::NonNull::new(index_relation).unwrap_or_else(|| {
                         pgrx::error!("ec_hnsw aminsert bootstrap received a null index relation")
                     });
@@ -1846,6 +1881,30 @@ fn bootstrap_empty_pq_fastscan_flush_output(
         .unwrap_or_else(|e| pgrx::error!("ec_hnsw failed to bootstrap empty PqFastScan index: {e}"))
 }
 
+fn bootstrap_empty_rabitq_flush_output(
+    index_relation: pg_sys::Relation,
+    tuple: &build::BuildTuple,
+) -> build::BuildFlushOutput {
+    let options = options::relation_options(
+        std::ptr::NonNull::new(index_relation)
+            .expect("ec_hnsw bootstrap index relation should be non-null"),
+    );
+    let state = build::BuildState {
+        options,
+        indexed_vector_kind: source::IndexedVectorKind::Ecvector,
+        page_size: pg_sys::BLCKSZ as usize,
+        scanned_tuples: tuple.heap_tids.len(),
+        heap_tuples: vec![tuple.clone()],
+        tuple_index_by_payload: HashMap::new(),
+        dimensions: Some(tuple.dimensions),
+        bits: Some(tuple.bits),
+        seed: Some(tuple.seed),
+    };
+
+    build::default_rabitq_flush_output(&state)
+        .unwrap_or_else(|e| pgrx::error!("ec_hnsw failed to bootstrap empty RaBitQ index: {e}"))
+}
+
 fn append_pq_fastscan_tuple(
     index_relation: pg_sys::Relation,
     metadata: &page::MetadataPage,
@@ -1999,6 +2058,184 @@ fn append_pq_fastscan_tuple_to_new_page(
         pgrx::error!("ec_hnsw failed to encode fallback PqFastScan hot tuple: {e}")
     });
     let hot_offset = page_writer.add_item(&hot_payload, "fallback PqFastScan hot");
+    page_writer.finish();
+    page::ItemPointer {
+        block_number,
+        offset_number: hot_offset,
+    }
+}
+
+fn derive_rabitq_search_code_for_insert(
+    metadata: &page::MetadataPage,
+    tuple: &build::BuildTuple,
+    layout: graph::PqFastScanLayout,
+) -> Vec<u8> {
+    let source_vector = tuple
+        .source_vector
+        .as_deref()
+        .unwrap_or_else(|| pgrx::error!("ec_hnsw RaBitQ live insert requires raw source data"));
+    let quantizer = RaBitQQuantizer::cached_seeded_srht_bits(
+        metadata.dimensions as usize,
+        metadata.seed,
+        metadata.search_bits,
+    )
+    .unwrap_or_else(|e| pgrx::error!("ec_hnsw failed to prepare RaBitQ live insert encoder: {e}"));
+    let search_code = quantizer.encode_code(source_vector).into_vec();
+    if search_code.len() != layout.search_code_len {
+        pgrx::error!(
+            "ec_hnsw derived RaBitQ search code len {} does not match metadata layout {}",
+            search_code.len(),
+            layout.search_code_len
+        );
+    }
+    search_code
+}
+
+fn encode_rabitq_hot_tuple(
+    tuple: &build::BuildTuple,
+    level: u8,
+    neighbortid: page::ItemPointer,
+    reranktid: page::ItemPointer,
+    search_code: Vec<u8>,
+    layout: graph::PqFastScanLayout,
+    context: &str,
+) -> Vec<u8> {
+    if layout.binary_word_count != 0 {
+        pgrx::error!("ec_hnsw RaBitQ hot tuple layout must not include binary sidecar words");
+    }
+    page::TqGroupedHotTuple {
+        level,
+        deleted: false,
+        heaptids: tuple.heap_tids.clone(),
+        neighbortid,
+        reranktid,
+        binary_words: Vec::new(),
+        search_code,
+    }
+    .encode()
+    .unwrap_or_else(|e| pgrx::error!("ec_hnsw failed to encode {context} RaBitQ hot tuple: {e}"))
+}
+
+fn append_rabitq_tuple(
+    index_relation: pg_sys::Relation,
+    metadata: &page::MetadataPage,
+    tuple: &build::BuildTuple,
+    level: u8,
+    neighbor_tids: &[page::ItemPointer],
+    layout: graph::PqFastScanLayout,
+) -> page::ItemPointer {
+    let search_code = derive_rabitq_search_code_for_insert(metadata, tuple, layout);
+    let neighbor_payload = page::TqNeighborTuple {
+        count: u16::try_from(neighbor_tids.len()).expect("neighbor slot count should fit in u16"),
+        tids: neighbor_tids.to_vec(),
+    }
+    .encode()
+    .unwrap_or_else(|e| pgrx::error!("ec_hnsw failed to encode RaBitQ neighbor tuple: {e}"));
+    let rerank_payload = page::TqRerankTuple {
+        gamma: tuple.gamma,
+        code: tuple.code.clone(),
+    }
+    .encode();
+    let hot_tuple_len =
+        page::TqGroupedHotTuple::encoded_len(layout.binary_word_count, search_code.len());
+    let required_bytes = page::raw_tuple_storage_bytes(neighbor_payload.len())
+        + page::raw_tuple_storage_bytes(rerank_payload.len())
+        + page::raw_tuple_storage_bytes(hot_tuple_len);
+
+    let mut staged_page =
+        page::DataPage::new(page::FIRST_DATA_BLOCK_NUMBER, pg_sys::BLCKSZ as usize);
+    staged_page
+        .insert_raw_tuple(neighbor_payload.clone())
+        .unwrap_or_else(|e| {
+            pgrx::error!("ec_hnsw failed to stage RaBitQ aminsert neighbor tuple: {e}")
+        });
+    staged_page
+        .insert_raw_tuple(rerank_payload.clone())
+        .unwrap_or_else(|e| {
+            pgrx::error!("ec_hnsw failed to stage RaBitQ aminsert rerank tuple: {e}")
+        });
+    if !staged_page.can_fit_raw_tuple(hot_tuple_len) {
+        pgrx::error!(
+            "ec_hnsw aminsert does not yet support RaBitQ tuples that require more than one fresh data page"
+        );
+    }
+
+    let existing_blocks = index_main_fork_block_count(index_relation);
+    let target_block = if existing_blocks > page::FIRST_DATA_BLOCK_NUMBER {
+        existing_blocks - 1
+    } else {
+        P_NEW
+    };
+    let mut page_writer = InsertPageWrite::open_tail(index_relation, target_block, "RaBitQ");
+    if target_block != P_NEW && page_writer.free_space() < required_bytes {
+        std::mem::drop(page_writer);
+        return append_rabitq_tuple_to_new_page(
+            index_relation,
+            tuple,
+            level,
+            &neighbor_payload,
+            &rerank_payload,
+            search_code,
+            layout,
+        );
+    }
+
+    let block_number = page_writer.block_number();
+    let neighbor_offset = page_writer.add_item(&neighbor_payload, "RaBitQ neighbor");
+    let rerank_offset = page_writer.add_item(&rerank_payload, "RaBitQ rerank");
+    let hot_payload = encode_rabitq_hot_tuple(
+        tuple,
+        level,
+        page::ItemPointer {
+            block_number,
+            offset_number: neighbor_offset,
+        },
+        page::ItemPointer {
+            block_number,
+            offset_number: rerank_offset,
+        },
+        search_code,
+        layout,
+        "live insert",
+    );
+    let hot_offset = page_writer.add_item(&hot_payload, "RaBitQ hot");
+    page_writer.finish();
+    page::ItemPointer {
+        block_number,
+        offset_number: hot_offset,
+    }
+}
+
+fn append_rabitq_tuple_to_new_page(
+    index_relation: pg_sys::Relation,
+    tuple: &build::BuildTuple,
+    level: u8,
+    neighbor_payload: &[u8],
+    rerank_payload: &[u8],
+    search_code: Vec<u8>,
+    layout: graph::PqFastScanLayout,
+) -> page::ItemPointer {
+    let mut page_writer = InsertPageWrite::open_new(index_relation, "fallback RaBitQ");
+
+    let block_number = page_writer.block_number();
+    let neighbor_offset = page_writer.add_item(neighbor_payload, "fallback RaBitQ neighbor");
+    let rerank_offset = page_writer.add_item(rerank_payload, "fallback RaBitQ rerank");
+    let hot_payload = encode_rabitq_hot_tuple(
+        tuple,
+        level,
+        page::ItemPointer {
+            block_number,
+            offset_number: neighbor_offset,
+        },
+        page::ItemPointer {
+            block_number,
+            offset_number: rerank_offset,
+        },
+        search_code,
+        layout,
+        "fallback",
+    );
+    let hot_offset = page_writer.add_item(&hot_payload, "fallback RaBitQ hot");
     page_writer.finish();
     page::ItemPointer {
         block_number,
@@ -2483,6 +2720,9 @@ mod tests {
             graph::GraphStorageDescriptor::PqFastScan(layout) => {
                 InsertFormatAdapter::PqFastScan(layout)
             }
+            graph::GraphStorageDescriptor::RaBitQ(_) => {
+                panic!("insert format helper does not expect RaBitQ storage")
+            }
         };
         assert_eq!(
             format,
@@ -2523,6 +2763,9 @@ mod tests {
             }
             graph::GraphStorageDescriptor::PqFastScan(layout) => {
                 InsertFormatAdapter::PqFastScan(layout)
+            }
+            graph::GraphStorageDescriptor::RaBitQ(_) => {
+                panic!("PqFastScan insert test should not decode as RaBitQ storage")
             }
         };
 

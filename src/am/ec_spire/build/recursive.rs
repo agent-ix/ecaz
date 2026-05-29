@@ -1030,6 +1030,19 @@ impl SpireRecursiveRoutingEpochDraft {
     }
 }
 
+/// Publish a finished SPIRE recursive-routing epoch draft to the index
+/// relation, writing placement entries and the manifest bundle in WAL.
+///
+/// # Safety
+///
+/// `index_relation` must be the SPIRE index relation that PostgreSQL has
+/// opened for the calling `ambuild` / publish phase with at least
+/// `AccessExclusiveLock`; it must remain open for the duration of this
+/// call. The `draft` placement directory must have been validated by
+/// recursive routing against the same relation. `next_local_vec_seq` and
+/// `local_store_config` must reflect the state captured at the start of
+/// the recursive build — passing values from an earlier or later epoch
+/// will publish an inconsistent manifest.
 pub(super) unsafe fn publish_relation_recursive_routing_epoch_draft(
     index_relation: pg_sys::Relation,
     draft: &SpireRecursiveRoutingEpochDraft,

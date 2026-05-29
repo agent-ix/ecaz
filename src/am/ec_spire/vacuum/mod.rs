@@ -21,7 +21,7 @@ use super::storage::{
     SpireLeafAssignmentRow, SpireObjectReader, SpirePartitionObjectKind,
     SpireRelationObjectStoreSet, SpireVecId, SPIRE_ASSIGNMENT_FLAG_DELTA_INSERT,
 };
-use super::{lock_publish_relation, page, scan};
+use super::{lock_publish_relation_handle, page, scan};
 use crate::am::common::{
     callback::pg_am_callback,
     vacuum::{
@@ -58,17 +58,17 @@ impl SpireVacuumIndexRelation {
         Self { relation }
     }
 
+    fn handle(self) -> crate::storage::relation::RelationHandle {
+        std::ptr::NonNull::new(self.relation)
+            .unwrap_or_else(|| pgrx::error!("ec_spire vacuum relation unexpectedly null"))
+    }
+
     fn root_control(self) -> SpireRootControlState {
-        // SAFETY: this wrapper is constructed only for the live SPIRE index
-        // relation supplied to vacuum callbacks.
-        unsafe { page::read_root_control_page(self.relation) }
+        page::read_root_control_page_handle(self.handle())
     }
 
     fn publish_lock(self) -> super::SpireRelationLockGuard {
-        // SAFETY: this wrapper is constructed only for the live SPIRE index
-        // relation supplied to vacuum callbacks. The guard unlocks by copied
-        // relation OID.
-        unsafe { lock_publish_relation(self.relation) }
+        lock_publish_relation_handle(self.handle())
     }
 
     fn active_epoch_manifests(
@@ -82,18 +82,14 @@ impl SpireVacuumIndexRelation {
         ),
         String,
     > {
-        // SAFETY: root_control was read from this live vacuum relation and
-        // names the active epoch manifests.
-        unsafe { scan::load_relation_epoch_manifests(self.relation, root_control) }
+        scan::load_relation_epoch_manifests_handle(self.handle(), root_control)
     }
 
     fn local_store_config(
         self,
         root_control: SpireRootControlState,
     ) -> Result<SpireLocalStoreConfig, String> {
-        // SAFETY: root_control was read from this live vacuum relation and
-        // names its local object-store config.
-        unsafe { scan::load_relation_local_store_config(self.relation, root_control) }
+        scan::load_relation_local_store_config_handle(self.handle(), root_control)
     }
 
     fn object_store_set_for_placements(
@@ -191,6 +187,9 @@ pub(super) unsafe extern "C-unwind" fn ec_spire_amvacuumcleanup(
     })
 }
 
+/// # Safety
+/// PostgreSQL invokes amvacuumcleanup with the live `index_relation`
+/// passed via `IndexVacuumInfo`.
 unsafe fn run_vacuum_cleanup(index_relation: pg_sys::Relation) -> Result<u64, String> {
     let index = SpireVacuumIndexRelation::from_vacuum_callback(index_relation);
     let _guard = index.publish_lock();
@@ -202,6 +201,10 @@ unsafe fn run_vacuum_cleanup(index_relation: pg_sys::Relation) -> Result<u64, St
     collect_live_assignment_count(index)
 }
 
+/// # Safety
+/// PostgreSQL invokes ambulkdelete with the live `index_relation` from
+/// `IndexVacuumInfo`; `callback` / `callback_state` are the PG-supplied
+/// dead-tid oracle that remains valid for the duration of the call.
 unsafe fn run_bulkdelete(
     index_relation: pg_sys::Relation,
     callback: BulkDeleteCallback,
@@ -642,6 +645,10 @@ fn publish_delete_delta_epoch(
     Ok(())
 }
 
+/// # Safety
+/// PostgreSQL invokes the vacuum callbacks with the live `index_relation`
+/// from `IndexVacuumInfo`; `stats`, when non-null, is the running
+/// aggregator owned by the same vacuum pass.
 unsafe fn finish_vacuum_stats(
     index_relation: pg_sys::Relation,
     stats: *mut pg_sys::IndexBulkDeleteResult,
@@ -714,18 +721,18 @@ pub(crate) fn debug_spire_vacuum_remove_heap_tids(
         dead_tids: dead_tids.iter().copied().collect(),
     };
 
-    // SAFETY: info references the open debug index relation and callback_state
-    // lives until ambulkdelete returns.
+    // SAFETY: info references the open debug index relation, callback_state
+    // lives until ambulkdelete returns, and amvacuumcleanup re-uses the
+    // same vacuum-info pointer plus the stats pointer returned above.
     let stats = unsafe {
-        ec_spire_ambulkdelete(
+        let stats = ec_spire_ambulkdelete(
             info_ptr,
             std::ptr::null_mut(),
             Some(debug_vacuum_dead_tid_callback),
             (&mut callback_state as *mut DebugVacuumCallbackState).cast(),
-        )
+        );
+        ec_spire_amvacuumcleanup(info_ptr, stats)
     };
-    // SAFETY: info_ptr and stats are still live from the debug bulk-delete call.
-    let stats = unsafe { ec_spire_amvacuumcleanup(info_ptr, stats) };
     crate::am::common::vacuum::copy_index_bulk_delete_result(
         std::ptr::NonNull::new(stats).expect("ec_spire debug vacuum stats should be non-null"),
     )

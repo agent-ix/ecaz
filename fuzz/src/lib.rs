@@ -27,8 +27,8 @@ use quant::prod::payload_len;
 
 pub const HEADER_BYTES: usize = 2;
 pub const MIN_BINARY_BYTES: usize = HEADER_BYTES + 4;
-pub(crate) const DEFAULT_QUANT_BITS: u8 = 4;
-pub(crate) const DEFAULT_QUANT_SEED: u64 = 42;
+pub const DEFAULT_QUANT_BITS: u8 = 4;
+pub const DEFAULT_QUANT_SEED: u64 = 42;
 
 fn validate_bits(bits: u8) -> Result<(), String> {
     if !(2..=8).contains(&bits) {
@@ -108,7 +108,8 @@ pub mod bench_api {
         CurrentFormatMetadata, MetadataPage, TqElementTuple, TqNeighborTuple,
     };
     pub use crate::parse_text;
-    pub use crate::quant::prod::{unpack_mse_indices, ProdQuantizer};
+    pub use crate::quant::prod::{pack_mse_indices, payload_len, unpack_mse_indices, ProdQuantizer};
     pub use crate::quant::Quantizer;
     pub use crate::storage::page::ItemPointer;
+    pub use crate::{DEFAULT_QUANT_BITS, DEFAULT_QUANT_SEED};
 }

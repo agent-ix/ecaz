@@ -1,6 +1,6 @@
 # Task 63: HNSW RaBitQ Storage Format
 
-Status: **proposed**
+Status: **implementation landed; publishable benchmark decision pending**
 
 Add a first-class RaBitQ storage format to `ec_hnsw`, or produce an
 evidence-backed design decision explaining why HNSW should stay limited to
@@ -23,13 +23,46 @@ expectations. The task must answer:
 - whether this work should land before or after the Task 62 PqFastScan HNSW
   optimization pass.
 
-## Current State
+## Original State
 
 - `ec_hnsw` supports `storage_format = 'turboquant' | 'pq_fastscan'`.
 - `ec_ivf` and `ec_spire` support `storage_format = 'rabitq'`.
 - Task 60 tracks RaBitQ for `ec_diskann`; it is not an HNSW task.
 - Task 62 tracks full HNSW Graviton optimization for existing formats and must
   not silently absorb this storage-format expansion.
+- Task 64 is the companion HNSW codec-adapter extraction task. Use it to
+  disentangle TurboQuant/PqFastScan payload, metadata, and scorer seams before
+  or alongside this task; Task 63 remains responsible for the actual RaBitQ
+  format and benchmark gate.
+
+## Current State
+
+The HNSW RaBitQ implementation has landed on branch
+`task/60-diskann-rabitq`:
+
+- `ec_hnsw` accepts `storage_format = 'rabitq'`.
+- HNSW RaBitQ uses the shared `src/quant/rabitq.rs` quantizer/scorer.
+- HNSW stores 1-bit RaBitQ search codes plus scalar rerank payloads rather than
+  forking a separate HNSW-only RaBitQ kernel.
+- Build, scan, live insert, delete, vacuum, and post-vacuum scans have PG18
+  lifecycle smoke evidence in `reviews/task-63/007-*` through `010-*`.
+- Task 64's HNSW-local codec adapter is the integration seam; no cross-AM codec
+  trait was introduced.
+- Follow-up packets `reviews/task-63/011-*` through `022-*` keep the benchmark
+  handoff, user-facing docs, HNSW V4 RaBitQ fixture/upgrade matrix, reloption
+  help/spec text, and common RaBitQ byte-LUT allocation audit aligned with the
+  landed implementation.
+
+The remaining completion gate is benchmark evidence and decision recording:
+
+- run the checked-in HNSW-only `ecaz bench suite` configs at
+  `benchmarks/task63-hnsw-rabitq-format/suite.json` on the newer Intel host
+  and `benchmarks/task63-hnsw-rabitq-format/suite-m5.json` on the m5 laptop;
+- report 50k and 100k recall@10, p50/p95/p99 latency, build time, and storage
+  against TurboQuant and PqFastScan at matched `ef_search`;
+- record the recommended RaBitQ HNSW operating point, or mark the format
+  experimental/shelved if the measured recall/storage/latency tradeoff is not
+  useful.
 
 ## Design Gate
 

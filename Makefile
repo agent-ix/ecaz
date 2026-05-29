@@ -360,8 +360,71 @@ fuzz-vector-normalize:
 fuzz-all-short:
 	bash scripts/hardening.sh fuzz-all-short --seconds $(FUZZ_SECONDS)
 
+## Resource exhaustion: sweep the six Task 48 §Scope scenarios. Requires
+## a live PG18 cluster (DATABASE env var or default). Restart-only GUC
+## scenarios (max-locks, max-connections, shared-buffers) read the
+## current setting and return PrereqUnmet if the cluster isn't
+## pre-configured low — see docs/build-matrix.md.
+resource-exhaustion:
+	cargo run --release --bin ecaz -- dev resource-test
+
+## Soak: drive the pure-Rust quantizer-cache harness for $(SOAK_DURATION)
+## (default 5s; pass SOAK_DURATION=24h or any humantime parseable value).
+## Use `make soak DURATION=24h` per docs/build-matrix.md.
+SOAK_DURATION ?= 5
+SOAK_SLOPE_TOLERANCE ?= 1024
+DURATION ?= $(SOAK_DURATION)
+soak:
+	cargo run --release --bin ecaz -- stress soak-quant-cache \
+		--duration-seconds $$(scripts/parse_humantime.sh $(DURATION)) \
+		--slope-tolerance-bytes-per-iter $(SOAK_SLOPE_TOLERANCE)
+
+## Minimize every fuzz corpus in place (Task 46 §Exit Criteria #4).
+## Use after a long campaign to keep fuzz/corpus/ bounded before
+## committing.
+fuzz-corpus-minimize:
+	cd fuzz && for target in fuzz_parse_text fuzz_parse_text_structured \
+			fuzz_unpack_mse fuzz_unpack_mse_structured \
+			fuzz_element_tuple_decode fuzz_neighbor_tuple_decode \
+			fuzz_diskann_metadata_decode fuzz_item_pointer_decode \
+			fuzz_vector_normalize; do \
+		echo "cmin $$target" && \
+		cargo +nightly fuzz cmin $$target; \
+	done
+
 afl-decoders:
 	bash scripts/hardening.sh afl-decoders
+
+## AFL+ build over every registered fuzz target (Task 46 §Exit #3).
+fuzz-afl:
+	bash scripts/hardening.sh fuzz-afl
+
+## Honggfuzz replay over the libFuzzer-built target binaries. Requires
+## the upstream `honggfuzz` binary on PATH; the script skips with a
+## helpful message if not installed. Honors FUZZ_SECONDS.
+fuzz-honggfuzz:
+	bash scripts/hardening.sh fuzz-honggfuzz
+
+## Cross-engine campaign: libFuzzer + AFL+ + Honggfuzz, merging the
+## resulting corpus inputs via `make fuzz-corpus-minimize`. Honors
+## FUZZ_SECONDS (default 60s per engine per target).
+fuzz-cross-pollinate:
+	bash scripts/hardening.sh fuzz-cross-pollinate
+
+## ECAZ-grammar SQLsmith (Task 46 §Exit #2). Streams generated
+## statements to the cluster at $(SQLSMITH_DSN) — clean ERRORs are
+## tolerated; PANIC / broken-connection events fail the run. Seed
+## corpus committed under fixtures/sqlsmith-ecaz/.
+SQLSMITH_ECAZ_SEED ?= 42
+SQLSMITH_ECAZ_COUNT ?= 256
+sqlsmith-ecaz:
+	@if [ -z "$(SQLSMITH_DSN)" ]; then \
+		echo "set SQLSMITH_DSN=postgresql://… first" >&2; exit 2; \
+	fi
+	cargo run --release -p ecaz-sqlgen -- execute \
+		--dsn "$(SQLSMITH_DSN)" \
+		--seed $(SQLSMITH_ECAZ_SEED) \
+		--count $(SQLSMITH_ECAZ_COUNT)
 
 # --- Formal / concurrency pilots ---
 

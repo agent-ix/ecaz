@@ -4,6 +4,15 @@ fn not_implemented(callback: &str) -> ! {
     pgrx::error!("ec_spire {callback} is not implemented yet")
 }
 
+/// Helper that reads the SPIRE manifest bundle (local-store config, epoch
+/// manifest, object manifest, placement directory) from the open index
+/// relation for debug/operator placement rewrites.
+///
+/// # Safety
+///
+/// `index_relation` must be a live SPIRE index relation that PostgreSQL has
+/// opened for this call and `root_control` must be the root-control state read
+/// from the same relation.
 unsafe fn spire_manifest_bundle_for_placement_publish(
     index_relation: pg_sys::Relation,
     root_control: meta::SpireRootControlState,
@@ -632,9 +641,7 @@ pub(crate) fn debug_spire_relation_two_store_scan_roundtrip(
 pub(crate) fn debug_spire_root_control(index_oid: pg_sys::Oid) -> (u64, u64, u64) {
     let lockmode = pg_sys::AccessShareLock as pg_sys::LOCKMODE;
     let index_relation = IndexRelationGuard::open(index_oid, lockmode, "ec_spire debug");
-    // SAFETY: reads root/control state through the guarded debug index relation
-    // and returns copied scalar fields.
-    let root_control = unsafe { page::read_root_control_page(index_relation.as_ptr()) };
+    let root_control = page::read_root_control_page_handle(index_relation.handle());
     (
         root_control.active_epoch,
         root_control.next_pid,

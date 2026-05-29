@@ -1,0 +1,260 @@
+[32m[1m       Using[0m[39m [37m[1mCliArgument("pg18")[0m[39m and `pg_config` from [36m/opt/homebrew/opt/postgresql@18/bin/pg_config[39m
+CARGO_TARGET_DIR="/Users/peter/dev/tqvector/target" PGRX_ALL_FEATURES="false" PGRX_BUILD_PROFILE="dev" PGRX_FEATURES="pg18 pg_test" PGRX_NO_DEFAULT_FEATURES="true" PGRX_NO_SCHEMA="false" "/opt/homebrew/bin/cargo" "test" "--features" "pg18 pg_test" "--no-default-features" "ec_diskann"
+warning: ecaz@0.1.1: In file included from csrc/pg18_pgstat_shim.c:10:
+warning: ecaz@0.1.1: In file included from /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:19:
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/lib/ilist.h:537:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:   537 | dlist_next_node(dlist_head *head, dlist_node *node)
+warning: ecaz@0.1.1:       |                             ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/lib/ilist.h:547:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:   547 | dlist_prev_node(dlist_head *head, dlist_node *node)
+warning: ecaz@0.1.1:       |                             ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/lib/ilist.h:1054:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:  1054 | slist_next_node(slist_head *head, slist_node *node)
+warning: ecaz@0.1.1:       |                             ^
+warning: ecaz@0.1.1: In file included from csrc/pg18_pgstat_shim.c:10:
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:875:58: warning: unused parameter 'size' [-Wunused-parameter]
+warning: ecaz@0.1.1:   875 | pgstat_cmp_hash_key(const void *a, const void *b, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                          ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:875:70: warning: unused parameter 'arg' [-Wunused-parameter]
+warning: ecaz@0.1.1:   875 | pgstat_cmp_hash_key(const void *a, const void *b, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                                      ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:882:56: warning: unused parameter 'arg' [-Wunused-parameter]
+warning: ecaz@0.1.1:   882 | pgstat_hash_hash_key(const void *d, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                        ^
+warning: ecaz@0.1.1: 6 warnings generated.
+   Compiling ecaz v0.1.1 (/Users/peter/dev/tqvector)
+error[E0599]: no method named `block_number` found for struct `ItemPointer` in the current scope
+    --> src/am/ec_diskann/routine.rs:2796:65
+     |
+2796 |             primary_heap_blocks.push(node_tuple.primary_heaptid.block_number());
+     |                                                                 ^^^^^^^^^^^^-- help: remove the arguments
+     |                                                                 |
+     |                                                                 field, not a method
+     |
+    ::: src/storage/page.rs:32:1
+     |
+  32 | pub struct ItemPointer {
+     | ---------------------- method `block_number` not found for this struct
+
+warning: unnecessary `unsafe` block
+   --> src/am/ec_hnsw/shared.rs:885:20
+    |
+885 |     let snapshot = unsafe { index_admin_snapshot(index_relation) };
+    |                    ^^^^^^ unnecessary `unsafe` block
+    |
+    = note: `#[warn(unused_unsafe)]` (part of `#[warn(unused)]`) on by default
+
+warning: unnecessary `unsafe` block
+   --> src/am/ec_hnsw/shared.rs:927:30
+    |
+927 |         if let Some(tuple) = unsafe {
+    |                              ^^^^^^ unnecessary `unsafe` block
+
+warning: unnecessary `unsafe` block
+    --> src/tests/ec_hnsw_build.rs:5:13
+     |
+   5 |               unsafe { $call }
+     |               ^^^^^^ unnecessary `unsafe` block
+...
+1969 | /         hnsw_build_debug!(am::graph::with_graph_storage_tuple(
+1970 | |             index_relation.as_ptr(),
+1971 | |             metadata.entry_point,
+1972 | |             am::graph::GraphStorageDescriptor::PqFastScan(layout),
+...    |
+1982 | |             },
+1983 | |         ));
+     | |__________- in this macro invocation
+     |
+     = note: this warning originates in the macro `hnsw_build_debug` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: unnecessary `unsafe` block
+    --> src/tests/ec_hnsw_build.rs:5:13
+     |
+   5 |               unsafe { $call }
+     |               ^^^^^^ unnecessary `unsafe` block
+...
+1985 |           let (entry, neighbors) = hnsw_build_debug!(am::graph::load_grouped_graph_adjacency(
+     |  __________________________________-
+1986 | |             index_relation.as_ptr(),
+1987 | |             metadata.entry_point,
+1988 | |             layout,
+1989 | |         ));
+     | |__________- in this macro invocation
+     |
+     = note: this warning originates in the macro `hnsw_build_debug` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: unnecessary `unsafe` block
+    --> src/tests/ec_hnsw_build.rs:5:13
+     |
+   5 |               unsafe { $call }
+     |               ^^^^^^ unnecessary `unsafe` block
+...
+2013 |           let neighbor = hnsw_build_debug!(am::graph::load_grouped_graph_element(
+     |  ________________________-
+2014 | |             index_relation.as_ptr(),
+2015 | |             first_neighbor_tid,
+2016 | |             layout,
+2017 | |         ));
+     | |__________- in this macro invocation
+     |
+     = note: this warning originates in the macro `hnsw_build_debug` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: unnecessary `unsafe` block
+    --> src/tests/ec_hnsw_build.rs:5:13
+     |
+   5 |               unsafe { $call }
+     |               ^^^^^^ unnecessary `unsafe` block
+...
+2082 |           let entry = hnsw_build_debug!(am::graph::load_grouped_graph_element(
+     |  _____________________-
+2083 | |             index_relation.as_ptr(),
+2084 | |             metadata.entry_point,
+2085 | |             layout,
+2086 | |         ));
+     | |__________- in this macro invocation
+     |
+     = note: this warning originates in the macro `hnsw_build_debug` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: unnecessary `unsafe` block
+    --> src/tests/ec_hnsw_build.rs:5:13
+     |
+   5 |               unsafe { $call }
+     |               ^^^^^^ unnecessary `unsafe` block
+...
+2087 |           let rerank = hnsw_build_debug!(am::graph::load_grouped_rerank_payload(
+     |  ______________________-
+2088 | |             index_relation.as_ptr(),
+2089 | |             entry.reranktid,
+2090 | |             layout,
+2091 | |         ));
+     | |__________- in this macro invocation
+     |
+     = note: this warning originates in the macro `hnsw_build_debug` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: unnecessary `unsafe` block
+    --> src/tests/ec_hnsw_build.rs:5:13
+     |
+   5 |             unsafe { $call }
+     |             ^^^^^^ unnecessary `unsafe` block
+...
+2156 |             hnsw_build_debug!(am::graph::load_grouped_codebook_model(index_relation.as_ptr(), &metadata));
+     |             --------------------------------------------------------------------------------------------- in this macro invocation
+     |
+     = note: this warning originates in the macro `hnsw_build_debug` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: unnecessary `unsafe` block
+    --> src/tests/ec_hnsw_build.rs:5:13
+     |
+   5 |               unsafe { $call }
+     |               ^^^^^^ unnecessary `unsafe` block
+...
+2170 |           let head = hnsw_build_debug!(am::graph::with_grouped_codebook_tuple(
+     |  ____________________-
+2171 | |             index_relation.as_ptr(),
+2172 | |             model.head_tid,
+2173 | |             model.group_size * crate::quant::grouped_pq::GROUPED_PQ_CENTROIDS,
+2174 | |             |tuple| (tuple.group_index, tuple.nexttid),
+2175 | |         ));
+     | |__________- in this macro invocation
+     |
+     = note: this warning originates in the macro `hnsw_build_debug` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: unnecessary `unsafe` block
+    --> src/tests/ec_hnsw_recall_debug_exports.rs:5:13
+     |
+   5 |               unsafe { $call }
+     |               ^^^^^^ unnecessary `unsafe` block
+...
+1238 |           let storage = hnsw_recall_export_debug!(
+     |  _______________________-
+1239 | |             am::graph::GraphStorageDescriptor::from_index_relation(
+1240 | |                 index_relation.as_ptr(),
+1241 | |                 &metadata,
+1242 | |             )
+1243 | |         )
+     | |_________- in this macro invocation
+     |
+     = note: this warning originates in the macro `hnsw_recall_export_debug` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: unnecessary `unsafe` block
+    --> src/tests/ec_hnsw_recall_debug_exports.rs:5:13
+     |
+   5 |             unsafe { $call }
+     |             ^^^^^^ unnecessary `unsafe` block
+...
+1258 |             hnsw_recall_export_debug!(am::resolve_pq_fastscan_rerank_mode_decision(index_relation.as_ptr(), storage));
+     |             --------------------------------------------------------------------------------------------------------- in this macro invocation
+     |
+     = note: this warning originates in the macro `hnsw_recall_export_debug` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+For more information about this error, try `rustc --explain E0599`.
+warning: `ecaz` (lib) generated 11 warnings
+warning: ecaz@0.1.1: In file included from csrc/pg18_pgstat_shim.c:10:
+warning: ecaz@0.1.1: In file included from /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:19:
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/lib/ilist.h:537:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:   537 | dlist_next_node(dlist_head *head, dlist_node *node)
+warning: ecaz@0.1.1:       |                             ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/lib/ilist.h:547:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:   547 | dlist_prev_node(dlist_head *head, dlist_node *node)
+warning: ecaz@0.1.1:       |                             ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/lib/ilist.h:1054:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:  1054 | slist_next_node(slist_head *head, slist_node *node)
+warning: ecaz@0.1.1:       |                             ^
+warning: ecaz@0.1.1: In file included from csrc/pg18_pgstat_shim.c:10:
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:875:58: warning: unused parameter 'size' [-Wunused-parameter]
+warning: ecaz@0.1.1:   875 | pgstat_cmp_hash_key(const void *a, const void *b, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                          ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:875:70: warning: unused parameter 'arg' [-Wunused-parameter]
+warning: ecaz@0.1.1:   875 | pgstat_cmp_hash_key(const void *a, const void *b, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                                      ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:882:56: warning: unused parameter 'arg' [-Wunused-parameter]
+warning: ecaz@0.1.1:   882 | pgstat_hash_hash_key(const void *d, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                        ^
+warning: ecaz@0.1.1: 6 warnings generated.
+error: could not compile `ecaz` (lib) due to 1 previous error; 11 warnings emitted
+warning: build failed, waiting for other jobs to finish...
+error[E0599]: no method named `block_number` found for struct `storage::page::ItemPointer` in the current scope
+    --> src/am/ec_diskann/routine.rs:2796:65
+     |
+2796 |             primary_heap_blocks.push(node_tuple.primary_heaptid.block_number());
+     |                                                                 ^^^^^^^^^^^^-- help: remove the arguments
+     |                                                                 |
+     |                                                                 field, not a method
+     |
+    ::: src/storage/page.rs:32:1
+     |
+  32 | pub struct ItemPointer {
+     | ---------------------- method `block_number` not found for this struct
+
+warning: unused variable: `sqrt_d`
+    --> src/quant/rabitq.rs:3301:17
+     |
+3301 |             let sqrt_d = (dim as f32).sqrt();
+     |                 ^^^^^^ help: if this is intentional, prefix it with an underscore: `_sqrt_d`
+     |
+     = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: `ecaz` (lib test) generated 12 warnings (11 duplicates)
+warning: ecaz@0.1.1: In file included from csrc/pg18_pgstat_shim.c:10:
+warning: ecaz@0.1.1: In file included from /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:19:
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/lib/ilist.h:537:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:   537 | dlist_next_node(dlist_head *head, dlist_node *node)
+warning: ecaz@0.1.1:       |                             ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/lib/ilist.h:547:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:   547 | dlist_prev_node(dlist_head *head, dlist_node *node)
+warning: ecaz@0.1.1:       |                             ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/lib/ilist.h:1054:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:  1054 | slist_next_node(slist_head *head, slist_node *node)
+warning: ecaz@0.1.1:       |                             ^
+warning: ecaz@0.1.1: In file included from csrc/pg18_pgstat_shim.c:10:
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:875:58: warning: unused parameter 'size' [-Wunused-parameter]
+warning: ecaz@0.1.1:   875 | pgstat_cmp_hash_key(const void *a, const void *b, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                          ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:875:70: warning: unused parameter 'arg' [-Wunused-parameter]
+warning: ecaz@0.1.1:   875 | pgstat_cmp_hash_key(const void *a, const void *b, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                                      ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:882:56: warning: unused parameter 'arg' [-Wunused-parameter]
+warning: ecaz@0.1.1:   882 | pgstat_hash_hash_key(const void *d, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                        ^
+warning: ecaz@0.1.1: 6 warnings generated.
+error: could not compile `ecaz` (lib test) due to 1 previous error; 12 warnings emitted

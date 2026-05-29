@@ -4,6 +4,7 @@ mod build;
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) use build::debug_last_build_timing;
 mod build_parallel;
+mod codec;
 mod concurrent_dsm_state;
 mod index_info;
 pub(crate) use crate::am::common::{cost, explain, parallel, stats, stream};

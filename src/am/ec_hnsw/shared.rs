@@ -283,7 +283,8 @@ fn count_live_elements_on_buffer(
                         }
                     }
                 }
-                graph::GraphStorageDescriptor::PqFastScan(layout) => {
+                graph::GraphStorageDescriptor::PqFastScan(layout)
+                | graph::GraphStorageDescriptor::RaBitQ(layout) => {
                     if tuple_bytes.first().copied() == Some(page::TQ_GROUPED_HOT_TAG) {
                         let element = page::TqGroupedHotTuple::decode(
                             tuple_bytes,
@@ -380,7 +381,8 @@ pub(super) fn highest_level_live_entry_candidate(
                                 )
                             }
                         }
-                        graph::GraphStorageDescriptor::PqFastScan(layout) => {
+                        graph::GraphStorageDescriptor::PqFastScan(layout)
+                        | graph::GraphStorageDescriptor::RaBitQ(layout) => {
                             if tuple_bytes.first().copied() != Some(page::TQ_GROUPED_HOT_TAG) {
                                 None
                             } else {

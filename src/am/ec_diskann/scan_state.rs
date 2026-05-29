@@ -137,7 +137,8 @@ pub(super) fn metadata_binary_word_count(metadata: &VamanaMetadataPage) -> usize
 }
 
 pub(super) fn metadata_search_code_len(metadata: &VamanaMetadataPage) -> usize {
-    usize::from(metadata.search_subvector_count).div_ceil(2)
+    super::quantizer::metadata_search_code_len(metadata)
+        .expect("ec_diskann metadata should carry a supported search codec")
 }
 
 pub(super) unsafe fn materialize_chain_from_index(

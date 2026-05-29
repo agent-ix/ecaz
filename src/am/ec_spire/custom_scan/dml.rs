@@ -148,19 +148,17 @@ struct CustomScanExprList<'a> {
 }
 
 impl<'a> CustomScanExprList<'a> {
+    /// # Safety
+    /// Caller guarantees `custom_scan` is a live provider-owned
+    /// CustomScan plan node for the current executor callback.
     unsafe fn from_custom_scan(custom_scan: *mut pg_sys::CustomScan, label: &str) -> Self {
-        // SAFETY: caller guarantees custom_scan is a live provider-owned
-        // CustomScan plan node for the current executor callback.
-        let Some(custom_scan) = (unsafe { custom_scan_pg_ref(custom_scan) }) else {
+        let Some(custom_scan) = custom_scan_pg_ref(custom_scan) else {
             pgrx::error!("EcSpireDistributedScan plan is missing {label}");
         };
         if custom_scan.custom_exprs.is_null() {
             pgrx::error!("EcSpireDistributedScan plan is missing {label}");
         }
-        // SAFETY: custom_exprs is null-checked above and belongs to the live
-        // provider-owned CustomScan plan node represented by this view.
-        let Some(custom_exprs_ref) = (unsafe { custom_scan_pg_ref(custom_scan.custom_exprs) })
-        else {
+        let Some(custom_exprs_ref) = custom_scan_pg_ref(custom_scan.custom_exprs) else {
             pgrx::error!("EcSpireDistributedScan plan expression list is NULL");
         };
         Self {

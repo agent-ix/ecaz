@@ -78,6 +78,63 @@ fn hnsw_metadata_v3_byteswapped_version_is_rejected() {
 }
 
 #[test]
+fn hnsw_metadata_v4_rabitq_fixture_decodes() {
+    let bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/hnsw_metadata_v4_rabitq.hex"
+    ));
+
+    let metadata = MetadataPage::decode(&bytes).expect("hnsw v4 RaBitQ metadata should decode");
+
+    assert_eq!(metadata.m, 16);
+    assert_eq!(metadata.ef_construction, 200);
+    assert_eq!(
+        metadata.entry_point,
+        ItemPointer {
+            block_number: 5,
+            offset_number: 2
+        }
+    );
+    assert_eq!(metadata.dimensions, 128);
+    assert_eq!(metadata.bits, 4);
+    assert_eq!(metadata.max_level, 3);
+    assert_eq!(metadata.seed, 0x0102_0304_0506_0708);
+    assert_eq!(metadata.inserted_since_rebuild, 42);
+    assert_eq!(metadata.format_version, 4);
+    assert_eq!(metadata.transform_kind as u8, 1);
+    assert_eq!(metadata.search_codec_kind as u8, 3);
+    assert_eq!(metadata.payload_flags, 1 << 2);
+    assert_eq!(metadata.search_bits, 1);
+    assert_eq!(metadata.rerank_codec_kind as u8, 1);
+    assert_eq!(metadata.search_subvector_count, 0);
+    assert_eq!(metadata.search_subvector_dim, 1);
+    assert_eq!(
+        metadata.grouped_codebook_head,
+        ItemPointer {
+            block_number: u32::MAX,
+            offset_number: u16::MAX
+        }
+    );
+}
+
+#[test]
+fn hnsw_metadata_v4_rabitq_byteswapped_version_is_rejected() {
+    let mut bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/hnsw_metadata_v4_rabitq.hex"
+    ));
+    bytes.swap(
+        HNSW_METADATA_FORMAT_VERSION_OFFSET,
+        HNSW_METADATA_FORMAT_VERSION_OFFSET + 1,
+    );
+
+    let err = MetadataPage::decode(&bytes).expect_err("byte-swapped version should fail");
+
+    assert!(
+        err.contains("invalid metadata format version"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
 fn diskann_metadata_v3_fixture_decodes() {
     let bytes = decode_hex_fixture(include_str!(
         "../fixtures/on-disk/diskann_vamana_metadata_v3.hex"

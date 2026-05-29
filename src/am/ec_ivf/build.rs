@@ -13,6 +13,7 @@ use crate::quant::prod::ProdQuantizer;
 use crate::storage::{
     buffer_guard::LockedBufferGuard,
     page::{DataPageChain, ItemPointer},
+    relation::RelationHandle,
     wal,
 };
 
@@ -566,61 +567,45 @@ pub(super) unsafe fn flush_build_plan(index_relation: pg_sys::Relation, plan: &I
     debug_assert!(plan.data_page_count() > 0);
     debug_assert_eq!(plan.total_live_tuples(), plan.posting_count() as u64);
 
-    unsafe { write_data_pages(index_relation, &plan.data_pages) };
+    let handle = NonNull::new(index_relation).unwrap_or_else(|| {
+        pgrx::error!("ec_ivf flush_build_plan received a null index relation")
+    });
+    write_data_pages(handle, &plan.data_pages);
     // SAFETY: same live relation; metadata belongs to the staged plan just
     // flushed to disk.
     page::initialize_metadata_page(index_relation, plan.metadata);
 }
 
-unsafe fn write_data_pages(index_relation: pg_sys::Relation, data_pages: &DataPageChain) {
+fn write_data_pages(handle: RelationHandle, data_pages: &DataPageChain) {
     for staged_page in data_pages.pages() {
-        unsafe { write_data_page(index_relation, staged_page) };
+        write_data_page(handle, staged_page);
     }
 }
 
-unsafe fn write_data_page(
-    index_relation: pg_sys::Relation,
-    staged_page: &crate::storage::page::DataPage,
-) {
-    // SAFETY: caller passes the live index relation; P_NEW returns a new locked
-    // zeroed main-fork block, then the generic WAL image owns all page mutation
-    // until `finish`.
-    unsafe {
-        let buffer = LockedBufferGuard::read_main_locked(
-            index_relation,
-            P_NEW,
-            pg_sys::ReadBufferMode::RBM_ZERO_AND_LOCK,
+fn write_data_page(handle: RelationHandle, staged_page: &crate::storage::page::DataPage) {
+    let buffer = LockedBufferGuard::read_main_locked_handle(
+        handle,
+        P_NEW,
+        pg_sys::ReadBufferMode::RBM_ZERO_AND_LOCK,
+    )
+    .unwrap_or_else(|| {
+        pgrx::error!(
+            "ec_ivf failed to allocate data buffer for block {}",
+            staged_page.block_number()
         )
-        .unwrap_or_else(|| {
-            pgrx::error!(
-                "ec_ivf failed to allocate data buffer for block {}",
-                staged_page.block_number()
-            )
-        });
+    });
 
-        let page_size = buffer.page_size();
-        let mut wal_txn = wal::GenericXLogTxn::start(index_relation);
-        let page_ptr = wal_txn.register_locked_buffer_full_image(&buffer);
-        pg_sys::PageInit(page_ptr, page_size, 0);
-
+    let mut wal_txn = wal::WalTxnScope::start_handle(handle);
+    {
+        let mut page = wal_txn.register_page(&buffer);
+        page.init(0);
         for tuple in staged_page.tuples() {
-            let offset = pg_sys::PageAddItemExtended(
-                page_ptr,
-                tuple.as_ptr().cast_mut().cast(),
-                tuple.len(),
-                pg_sys::InvalidOffsetNumber,
-                0,
-            );
-            if offset == pg_sys::InvalidOffsetNumber {
-                pgrx::error!(
-                    "ec_ivf failed to write tuple to block {}",
-                    staged_page.block_number()
-                );
-            }
+            page.add_item(tuple).unwrap_or_else(|err| {
+                pgrx::error!("ec_ivf failed to write tuple to block {}", err.block_number)
+            });
         }
-
-        wal_txn.finish();
     }
+    wal_txn.finish();
 }
 
 fn list_id_u32(list_id: usize) -> Result<u32, String> {

@@ -209,6 +209,10 @@ fn group_assignments_by_centroid(
     Ok(assignments_by_centroid)
 }
 
+/// # Safety
+/// Caller passes the live SPIRE index relation; `state` is the
+/// build-time scan accumulator whose tuples will be written to the
+/// relation-backed object store during this publish.
 unsafe fn publish_relation_partitioned_single_level_build(
     index_relation: pg_sys::Relation,
     state: &SpireBuildState,
@@ -359,6 +363,10 @@ fn plan_boundary_assignment_identity_inputs(
         .collect()
 }
 
+/// # Safety
+/// Caller passes the live SPIRE index relation; `state` is the build-time
+/// scan accumulator whose tuples will be written to the relation-backed
+/// object store during this recursive routing publish.
 unsafe fn publish_relation_recursive_routing_build(
     index_relation: pg_sys::Relation,
     state: &SpireBuildState,
@@ -453,6 +461,10 @@ pub(super) fn current_epoch_publish_times() -> Result<(i64, i64), String> {
     Ok((published_at_micros, retain_until_micros))
 }
 
+/// # Safety
+/// Caller passes the live PG-supplied tuple `values` / `isnull` arrays
+/// from a build or insert callback; `tuple_layout` matches the indexed
+/// columns including the optional source_identity INCLUDE column.
 pub(super) unsafe fn build_spire_index_tuple(
     values: *mut pg_sys::Datum,
     isnull: *mut bool,
@@ -470,13 +482,9 @@ pub(super) unsafe fn build_spire_index_tuple(
     );
     let datum = values_view.non_null_datum(0, "ec_spire", "indexed value");
 
-    // SAFETY: datum is a non-null varlena Datum for the indexed vector column.
-    let bytes = unsafe { detoasted_varlena_bytes(datum, "indexed vector column") };
-    // SAFETY: values/isnull arrays and tuple_layout come from the same validated
-    // index tuple layout for this build or insert callback.
-    let vec_id_source_identity = unsafe {
-        build_source_identity_from_tuple_values(values_view, tuple_layout.source_identity, context)
-    };
+    let bytes = detoasted_varlena_bytes(datum, "indexed vector column");
+    let vec_id_source_identity =
+        build_source_identity_from_tuple_values(values_view, tuple_layout.source_identity, context);
     match tuple_layout.vector_kind {
         SpireIndexedVectorKind::Ecvector => build_spire_ecvector_tuple(
             heap_tid,
@@ -495,6 +503,10 @@ pub(super) unsafe fn build_spire_index_tuple(
     }
 }
 
+/// # Safety
+/// `values` view is from a live PG tuple-values array for this build /
+/// insert callback; `source_identity` came from the same validated index
+/// tuple layout.
 unsafe fn build_source_identity_from_tuple_values(
     values: crate::am::common::pg_ptr::DatumArrayView,
     source_identity: Option<SpireSourceIdentityAttribute>,
@@ -506,13 +518,9 @@ unsafe fn build_source_identity_from_tuple_values(
     let offset = source_identity.index_attr_offset;
     let datum = values.non_null_datum(offset, "ec_spire", "source_identity INCLUDE column");
 
-    // SAFETY: source_identity datum kind was resolved from the INCLUDE column
-    // type; each branch decodes the non-null datum without taking ownership.
     let payload = match source_identity.datum_kind {
-        SpireSourceIdentityDatumKind::Uuid => unsafe { uuid_source_identity_payload(datum) },
-        // SAFETY: the non-null datum is from a bytea(16)-compatible
-        // source_identity INCLUDE column.
-        SpireSourceIdentityDatumKind::Bytea16 => unsafe {
+        SpireSourceIdentityDatumKind::Uuid => uuid_source_identity_payload(datum),
+        SpireSourceIdentityDatumKind::Bytea16 => {
             let bytes = detoasted_varlena_bytes(datum, "source_identity INCLUDE column");
             <[u8; SPIRE_STABLE_GLOBAL_SOURCE_ID_PAYLOAD_BYTES]>::try_from(bytes.as_slice())
                 .unwrap_or_else(|_| {
@@ -522,31 +530,31 @@ unsafe fn build_source_identity_from_tuple_values(
                         SPIRE_STABLE_GLOBAL_SOURCE_ID_PAYLOAD_BYTES
                     )
                 })
-        },
+        }
     };
     SpireVecIdSourceIdentity::stable_fixed_global_payload(payload)
 }
 
+/// # Safety
+/// Caller supplies a non-null UUID Datum for the source_identity INCLUDE
+/// column.
 unsafe fn uuid_source_identity_payload(
     datum: pg_sys::Datum,
 ) -> [u8; SPIRE_STABLE_GLOBAL_SOURCE_ID_PAYLOAD_BYTES] {
-    // SAFETY: caller supplies a non-null UUID Datum for the source_identity
-    // INCLUDE column.
-    unsafe { with_uuid_payload_bytes(datum, |bytes| *bytes) }
+    with_uuid_payload_bytes(datum, |bytes| *bytes)
 }
 
+/// # Safety
+/// PostgreSQL UUID datums are fixed 16-byte payloads; caller already
+/// verified this Datum came from a non-null UUID source_identity column.
 unsafe fn with_uuid_payload_bytes<R>(
     datum: pg_sys::Datum,
     f: impl for<'a> FnOnce(&'a [u8; SPIRE_STABLE_GLOBAL_SOURCE_ID_PAYLOAD_BYTES]) -> R,
 ) -> R {
-    // SAFETY: PostgreSQL UUID datums are fixed 16-byte payloads; caller already
-    // verified this Datum came from a non-null UUID source_identity column.
-    let bytes = unsafe {
-        std::slice::from_raw_parts(
-            datum.cast_mut_ptr::<u8>(),
-            SPIRE_STABLE_GLOBAL_SOURCE_ID_PAYLOAD_BYTES,
-        )
-    };
+    let bytes = std::slice::from_raw_parts(
+        datum.cast_mut_ptr::<u8>(),
+        SPIRE_STABLE_GLOBAL_SOURCE_ID_PAYLOAD_BYTES,
+    );
     let mut payload = [0_u8; SPIRE_STABLE_GLOBAL_SOURCE_ID_PAYLOAD_BYTES];
     payload.copy_from_slice(bytes);
     f(&payload)
