@@ -1,9 +1,9 @@
 # Manifest: SPIRE Merge CI Hotfix
 
-- head SHA: `109d4cc75d44a78b4b1d8e42cd2e63348ed5c87e`
+- head SHA: `609cf836670833480430cb0cf02016a180c0a846`
 - task bucket: `reviews/task-30`
 - packet path: `reviews/task-30/1000-spire-merge-ci-hotfix`
-- timestamp: `2026-05-29T18:41:24Z`
+- timestamp: `2026-05-29T18:45:52Z`
 - lane: post-merge CI stabilization
 - fixture/storage/rerank mode: not applicable
 - isolated one-index-per-table or shared-table surface: not applicable
@@ -24,3 +24,6 @@
 | `ci-string-info-ptr-cast-diff-check.log` | `git show --check --stat --oneline HEAD` | no whitespace errors in the portable StringInfo pointer-cast commit |
 | `cargo-fmt-check-string-info.log` | `cargo fmt --all -- --check` | exited 0 after the StringInfo pointer-cast fix |
 | `cargo-check-pg18-string-info.log` | `cargo check --no-default-features --features pg18` | `Finished dev profile` |
+| `ci-string-info-target-split-diff-check.log` | `git show --check --stat --oneline HEAD` | no whitespace errors in the narrowed StringInfo target-split commit |
+| `cargo-fmt-check-string-info-target-split.log` | `cargo fmt --all -- --check` | exited 0 after narrowing the StringInfo target split |
+| `cargo-check-pg18-string-info-target-split.log` | `cargo check --no-default-features --features pg18` | `Finished dev profile` |

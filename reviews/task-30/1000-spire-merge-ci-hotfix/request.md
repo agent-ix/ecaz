@@ -11,6 +11,7 @@
   - `f316c0de91370ec0caca64c015bf7caf2e5dc7b2` - fix macOS PG18 clippy findings in aarch64-only RabitQ code
   - `a812112b52894d85d2c8828d0541030bb4e7c2e1` - fix arm PG18 CI findings
   - `109d4cc75d44a78b4b1d8e42cd2e63348ed5c87e` - fix portable `StringInfo` byte pointer casts
+  - `609cf836670833480430cb0cf02016a180c0a846` - narrow the `StringInfo` no-cast target split to Linux-style aarch64
 - Packet: `reviews/task-30/1000-spire-merge-ci-hotfix`
 
 ## Summary
@@ -29,7 +30,7 @@ This hotfix stabilizes the post-merge CI failures from PR #6 without changing SP
 - Restores required macOS pgrx linker flags when overriding `RUSTFLAGS`, and removes an aarch64 PG18 clippy unnecessary cast.
 - Replaces shallow moving-branch PR changed-file diffs with immutable PR-base-SHA diffs.
 - Records the current clippy baseline explicitly and applies mechanical `cargo fmt` output.
-- Keeps `pq_getmsgbytes` byte reads portable across PG18 CI targets: aarch64 keeps the native `u8` pointer while x86/macOS casts PostgreSQL's `c_char` pointer to `u8`.
+- Keeps `pq_getmsgbytes` byte reads portable across PG18 CI targets: Linux-style aarch64 keeps the native `u8` pointer while x86 and macOS cast PostgreSQL's `c_char` pointer to `u8`.
 
 ## Validation
 
@@ -45,5 +46,8 @@ This hotfix stabilizes the post-merge CI failures from PR #6 without changing SP
 - `artifacts/ci-string-info-ptr-cast-diff-check.log` - portable `StringInfo` pointer-cast commit has no whitespace errors.
 - `artifacts/cargo-fmt-check-string-info.log` - `cargo fmt --all -- --check` passed after the `StringInfo` fix.
 - `artifacts/cargo-check-pg18-string-info.log` - `cargo check --no-default-features --features pg18` passed after the `StringInfo` fix.
+- `artifacts/ci-string-info-target-split-diff-check.log` - narrowed `StringInfo` target-split commit has no whitespace errors.
+- `artifacts/cargo-fmt-check-string-info-target-split.log` - `cargo fmt --all -- --check` passed after narrowing the target split.
+- `artifacts/cargo-check-pg18-string-info-target-split.log` - `cargo check --no-default-features --features pg18` passed after narrowing the target split.
 
 Note: a local `cargo +1.95.0 clippy --all-targets --no-default-features --features pg18,bench -- -D warnings` validation was attempted after clearing a stale PG17 cargo process, but it ran too long without diagnostics and was stopped. The authoritative validation for this follow-up is the PR CI rerun on the same pinned toolchain.
