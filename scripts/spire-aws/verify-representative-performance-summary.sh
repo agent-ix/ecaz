@@ -258,8 +258,11 @@ require_awk "production read profile rows for all priority production-read nprob
 require_awk "pooled and unpooled comparison rows" "$pooling_comparison" '
   function present(v) { return v != "" && v != "null" }
   NR > 1 && ($1 == "disabled" || $1 == "enabled") {
-    if (!(present($8) && present($15) && present($16) && present($17) && present($18) && present($19))) {
-      bad = 1
+    if (present($8) && present($9) && present($10) && present($13) && present($14) && present($19)) {
+      profile[$1] = 1
+    }
+    if (present($15) && present($16) && present($17) && present($18)) {
+      latency[$1] = 1
     }
     if ($1 == "disabled") {
       disabled = 1
@@ -267,7 +270,11 @@ require_awk "pooled and unpooled comparison rows" "$pooling_comparison" '
       enabled = 1
     }
   }
-  END { exit(disabled && enabled && !bad ? 0 : 1) }
+  END {
+    exit(disabled && enabled &&
+      profile["disabled"] && profile["enabled"] &&
+      latency["disabled"] && latency["enabled"] ? 0 : 1)
+  }
 '
 
 expected_nprobes="$pooling_nprobes"
