@@ -6,6 +6,7 @@
   - `2bd73e16be0b30e482ad750b54dc7ab9a7f21e2a` - install pinned Rust CI components
   - `c6bfb0baf4cf01d8f94142fc0f0def8f1eda065f` - work around macOS arm64 `ring` feature assertion
   - `fea9c59f357d44da1db5e705b6321bbc1269750c` - limit PR CI to PG18 targets
+  - `113c9293df000b664f6860a1b59a49e5f92f4871` - fix PG18 clippy findings from the pinned-toolchain CI rerun
 - Packet: `reviews/task-30/1000-spire-merge-ci-hotfix`
 
 ## Summary
@@ -18,6 +19,7 @@ This hotfix stabilizes the post-merge CI failures from PR #6 without changing SP
 - Applies the macOS arm64 `ring` workaround with `RUSTFLAGS=-C target-feature=-sha3`.
 - Installs actual PG18 server packages in jobs that run PG18 `cargo pgrx init`.
 - Limits blocking PR CI to PG18, which is the current target; the PG17 pgrx job is manual-only and was not debugged locally.
+- Fixes PG18 clippy findings reported by the pinned `1.95.0` CI rerun: dead-code allowances for Hadamard test helpers and key-based sort suggestions in the CustomScan test.
 - Replaces shallow moving-branch PR changed-file diffs with immutable PR-base-SHA diffs.
 - Records the current clippy baseline explicitly and applies mechanical `cargo fmt` output.
 
@@ -28,3 +30,6 @@ This hotfix stabilizes the post-merge CI failures from PR #6 without changing SP
 - `artifacts/cargo-test-ecaz-cli-steprecord.log` - focused `StepRecord` regression test passed.
 - `artifacts/cargo-test-no-run-pg18.log` - PG18 no-run compile passed.
 - `artifacts/ci-pg18-scope-diff-check.log` - PG18-only CI scope commit has no whitespace errors.
+- `artifacts/ci-pg18-clippy-fix-diff-check.log` - PG18 clippy-fix commit has no whitespace errors.
+
+Note: a local `cargo +1.95.0 clippy --all-targets --no-default-features --features pg18,bench -- -D warnings` validation was attempted after clearing a stale PG17 cargo process, but it ran too long without diagnostics and was stopped. The authoritative validation for this follow-up is the PR CI rerun on the same pinned toolchain.
