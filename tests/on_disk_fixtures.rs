@@ -13,13 +13,12 @@ use ecaz::bench_api::{
     SpirePlacementDirectory, SpirePlacementEntry, SpirePlacementState, TqElementTuple,
     TqGroupedCodebookTuple, TqGroupedHotTuple, TqNeighborTuple, TqRerankTuple, TqTurboHotTuple,
     VamanaCodebookTuple, VamanaMetadataPage, VamanaNodeTuple, EC_IVF_CENTROID_DIMENSIONS_OFFSET,
-    EC_IVF_INDEX_FORMAT_VERSION, EC_IVF_METADATA_FORMAT_VERSION_OFFSET,
-    HNSW_METADATA_FORMAT_VERSION_OFFSET, INDEX_FORMAT_V3_DISKANN,
-    SPIRE_EPOCH_MANIFEST_FORMAT_VERSION_OFFSET, SPIRE_LOCAL_STORE_CONFIG_FORMAT_VERSION_OFFSET,
-    SPIRE_MANIFEST_ENTRY_FORMAT_VERSION_OFFSET, SPIRE_OBJECT_MANIFEST_FORMAT_VERSION_OFFSET,
-    SPIRE_PARTITION_OBJECT_FORMAT_VERSION_OFFSET, SPIRE_PLACEMENT_DIRECTORY_FORMAT_VERSION_OFFSET,
-    SPIRE_PLACEMENT_ENTRY_FORMAT_VERSION_OFFSET, VAMANA_METADATA_FORMAT_VERSION_OFFSET,
-    VAMANA_NODE_NEIGHBOR_COUNT_OFFSET,
+    EC_IVF_METADATA_FORMAT_VERSION_OFFSET, HNSW_METADATA_FORMAT_VERSION_OFFSET,
+    INDEX_FORMAT_V3_DISKANN, SPIRE_EPOCH_MANIFEST_FORMAT_VERSION_OFFSET,
+    SPIRE_LOCAL_STORE_CONFIG_FORMAT_VERSION_OFFSET, SPIRE_MANIFEST_ENTRY_FORMAT_VERSION_OFFSET,
+    SPIRE_OBJECT_MANIFEST_FORMAT_VERSION_OFFSET, SPIRE_PARTITION_OBJECT_FORMAT_VERSION_OFFSET,
+    SPIRE_PLACEMENT_DIRECTORY_FORMAT_VERSION_OFFSET, SPIRE_PLACEMENT_ENTRY_FORMAT_VERSION_OFFSET,
+    VAMANA_METADATA_FORMAT_VERSION_OFFSET, VAMANA_NODE_NEIGHBOR_COUNT_OFFSET,
 };
 
 fn decode_hex_fixture(contents: &str) -> Vec<u8> {
@@ -511,7 +510,7 @@ fn ivf_metadata_v1_fixture_decodes() {
 
     let metadata = IvfMetadataPage::decode(&bytes).expect("ivf metadata fixture should decode");
 
-    assert_eq!(metadata.format_version, EC_IVF_INDEX_FORMAT_VERSION);
+    assert_eq!(metadata.format_version, 1);
     assert_eq!(metadata.dimensions, 128);
     assert_eq!(metadata.nlists, 16);
     assert_eq!(metadata.nprobe, 4);
@@ -520,6 +519,7 @@ fn ivf_metadata_v1_fixture_decodes() {
     assert_eq!(metadata.seed, 0x0102_0304_0506_0708);
     assert_eq!(metadata.storage_format, IvfStorageFormat::PqFastScan);
     assert_eq!(metadata.rerank, IvfRerankMode::HeapF32);
+    assert_eq!(metadata.quant_bits, 4);
     assert_eq!(
         metadata.centroid_head,
         ItemPointer {
