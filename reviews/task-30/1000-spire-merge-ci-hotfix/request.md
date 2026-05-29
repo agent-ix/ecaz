@@ -9,6 +9,7 @@
   - `113c9293df000b664f6860a1b59a49e5f92f4871` - fix PG18 clippy findings from the pinned-toolchain CI rerun
   - `18cbbbccd0ab859a94ef20ca684d59ce4ed7961d` - use portable CPU flags on hosted CI runners
   - `f316c0de91370ec0caca64c015bf7caf2e5dc7b2` - fix macOS PG18 clippy findings in aarch64-only RabitQ code
+  - `a812112b52894d85d2c8828d0541030bb4e7c2e1` - fix arm PG18 CI findings
 - Packet: `reviews/task-30/1000-spire-merge-ci-hotfix`
 
 ## Summary
@@ -24,6 +25,7 @@ This hotfix stabilizes the post-merge CI failures from PR #6 without changing SP
 - Fixes PG18 clippy findings reported by the pinned `1.95.0` CI rerun: dead-code allowances for Hadamard test helpers and key-based sort suggestions in the CustomScan test.
 - Overrides hosted CI jobs away from repo-local `target-cpu=native` so build scripts do not SIGILL on heterogeneous GitHub x86 runners.
 - Fixes macOS/aarch64 PG18 clippy findings in RabitQ doc comments and tests.
+- Restores required macOS pgrx linker flags when overriding `RUSTFLAGS`, and removes an aarch64 PG18 clippy unnecessary cast.
 - Replaces shallow moving-branch PR changed-file diffs with immutable PR-base-SHA diffs.
 - Records the current clippy baseline explicitly and applies mechanical `cargo fmt` output.
 
@@ -37,5 +39,6 @@ This hotfix stabilizes the post-merge CI failures from PR #6 without changing SP
 - `artifacts/ci-pg18-clippy-fix-diff-check.log` - PG18 clippy-fix commit has no whitespace errors.
 - `artifacts/ci-hosted-portable-rustflags-diff-check.log` - hosted CI portable-RUSTFLAGS commit has no whitespace errors.
 - `artifacts/ci-macos-pg18-clippy-fix-diff-check.log` - macOS PG18 clippy-fix commit has no whitespace errors.
+- `artifacts/ci-arm-pg18-fix-diff-check.log` - arm PG18 CI-fix commit has no whitespace errors.
 
 Note: a local `cargo +1.95.0 clippy --all-targets --no-default-features --features pg18,bench -- -D warnings` validation was attempted after clearing a stale PG17 cargo process, but it ran too long without diagnostics and was stopped. The authoritative validation for this follow-up is the PR CI rerun on the same pinned toolchain.
