@@ -164,6 +164,14 @@ pub(super) struct EcIvfOptions {
     pub(super) posting_slack_percent: i32,
     pub(super) storage_format: StorageFormat,
     pub(super) rerank: RerankMode,
+    pub(super) quant_bits: u8,
+}
+
+#[cfg(not(any(feature = "pg17", feature = "pg18")))]
+impl EcIvfOptions {
+    fn effective_quant_bits(&self) -> u8 {
+        self.quant_bits
+    }
 }
 
 #[cfg(any(feature = "pg17", feature = "pg18"))]
