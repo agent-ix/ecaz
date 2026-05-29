@@ -1,7 +1,9 @@
 # Review Request: SPIRE Merge CI Hotfix
 
 - Task: Task 30 Phase 13e SPIRE AWS production gap closure
-- Code commit: `6bcde972bb9da54b9b083525236b44d0b37b7f3f`
+- Code commits:
+  - `6bcde972bb9da54b9b083525236b44d0b37b7f3f` - stabilize SPIRE merge CI
+  - `2bd73e16be0b30e482ad750b54dc7ab9a7f21e2a` - install pinned Rust CI components
 - Packet: `reviews/task-30/1000-spire-merge-ci-hotfix`
 
 ## Summary
@@ -10,6 +12,7 @@ This hotfix stabilizes the post-merge CI failures from PR #6 without changing SP
 
 - Fixes the real merge miss by adding `pgoptions: None` to the `StepRecord` test fixture.
 - Pins CI stable Rust toolchains to `1.95.0` so workflow behavior does not drift under a floating `stable`.
+- Installs required `rustfmt`/`clippy` components for pinned toolchain jobs.
 - Installs actual PG17/PG18 server packages in jobs that run `cargo pgrx init`.
 - Replaces shallow moving-branch PR changed-file diffs with immutable PR-base-SHA diffs.
 - Records the current clippy baseline explicitly and applies mechanical `cargo fmt` output.
