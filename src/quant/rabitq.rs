@@ -1957,9 +1957,7 @@ unsafe fn sum_query_dequant_neon_bits1(
     while dim_index + 32 <= dimensions {
         let byte_base = dim_index / 8;
         if byte_base + 64 < dimensions.div_ceil(8) {
-            // SAFETY: prefetch is a non-faulting hint; pointer is derived from
-            // the in-bounds code allocation and may point ahead within it.
-            unsafe { prefetch_read_l1(code.as_ptr().add(byte_base + 64)) };
+            prefetch_read_l1(code.as_ptr().add(byte_base + 64));
         }
         // SAFETY: dim_index + 32 <= dimensions ⇒ byte_base + 4 <= packed_bytes.
         let b0 = *code.get_unchecked(byte_base) as usize;
@@ -2168,9 +2166,7 @@ unsafe fn sum_query_dequant_neon_bits8(
     let mut dim_index = 0_usize;
     while dim_index + 16 <= dimensions {
         if dim_index + 64 < dimensions {
-            // SAFETY: prefetch is a non-faulting hint; pointer is derived from
-            // the in-bounds code allocation and may point ahead within it.
-            unsafe { prefetch_read_l1(code.as_ptr().add(dim_index + 64)) };
+            prefetch_read_l1(code.as_ptr().add(dim_index + 64));
         }
 
         let packed = vld1q_u8(code.as_ptr().add(dim_index));
@@ -2213,14 +2209,15 @@ unsafe fn sum_query_dequant_neon_bits8(
     sum
 }
 
-/// # Safety
-///
-/// `ptr` may be any readable-address-derived pointer. The instruction is a
-/// non-faulting cache hint and does not dereference the pointer architecturally.
 #[cfg(target_arch = "aarch64")]
 #[inline]
-unsafe fn prefetch_read_l1(ptr: *const u8) {
-    core::arch::asm!("prfm pldl1keep, [{ptr}]", ptr = in(reg) ptr, options(nostack, preserves_flags));
+fn prefetch_read_l1(ptr: *const u8) {
+    // SAFETY: `prfm pldl1keep` is a non-faulting cache hint and does not
+    // architecturally dereference `ptr`; callers pass pointers derived from
+    // the code allocation and may point ahead within that allocation.
+    unsafe {
+        core::arch::asm!("prfm pldl1keep, [{ptr}]", ptr = in(reg) ptr, options(nostack, preserves_flags));
+    }
 }
 
 /// # Safety
