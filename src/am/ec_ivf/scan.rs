@@ -1387,7 +1387,7 @@ unsafe fn materialize_probe_candidates(
 fn use_scratch_soa_batch_decode(metadata: &super::page::MetadataPage) -> bool {
     super::options::current_session_scratch_soa_batch_decode()
         && metadata.storage_format == StorageFormat::RaBitQ
-        && metadata.quant_bits == 1
+        && (metadata.quant_bits == 1 || metadata.quant_bits == 8)
 }
 
 fn process_scratch_soa_postings(

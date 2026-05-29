@@ -793,12 +793,34 @@ fn rerank_with_sidecar(
             }
             SidecarStorage::Rabitq8 { quantizer, codes } => {
                 let prepared = quantizer.prepare_estimator(&query);
-                for id in ids {
-                    let pos = *id_to_pos.get(id).ok_or_else(|| {
-                        eyre!("candidate id {id} not present in corpus source map")
-                    })?;
-                    let score = rabitq_sidecar_score(sidecar.variant, &prepared, &codes[pos]);
-                    scored.push((*id, score));
+                if matches!(
+                    sidecar.variant,
+                    SidecarVariant::Rabitq8 | SidecarVariant::Rabitq8c3 | SidecarVariant::Rabitq8c4
+                ) {
+                    let mut slab = Vec::with_capacity(ids.len() * sidecar.bytes_per_vector);
+                    for id in ids {
+                        let pos = *id_to_pos.get(id).ok_or_else(|| {
+                            eyre!("candidate id {id} not present in corpus source map")
+                        })?;
+                        slab.extend_from_slice(&codes[pos]);
+                    }
+                    let mut scores = Vec::new();
+                    prepared
+                        .estimate_ip_batch(&slab, sidecar.bytes_per_vector, &mut scores)
+                        .map_err(|err| {
+                            eyre!("{} batch scoring failed: {err}", sidecar.variant.label())
+                        })?;
+                    for (id, score) in ids.iter().copied().zip(scores) {
+                        scored.push((id, score));
+                    }
+                } else {
+                    for id in ids {
+                        let pos = *id_to_pos.get(id).ok_or_else(|| {
+                            eyre!("candidate id {id} not present in corpus source map")
+                        })?;
+                        let score = rabitq_sidecar_score(sidecar.variant, &prepared, &codes[pos]);
+                        scored.push((*id, score));
+                    }
                 }
             }
         }
@@ -981,17 +1003,44 @@ fn score_sidecar_payloads(
         }
         SidecarStorage::Rabitq8 { quantizer, .. } => {
             let prepared = quantizer.prepare_estimator(query);
-            for (id, payload) in payloads {
-                if payload.len() != sidecar.bytes_per_vector {
-                    bail!(
-                        "{} sidecar payload for id {id} has {} bytes, expected {}",
-                        sidecar.variant.label(),
-                        payload.len(),
-                        sidecar.bytes_per_vector
-                    );
+            if matches!(
+                sidecar.variant,
+                SidecarVariant::Rabitq8 | SidecarVariant::Rabitq8c3 | SidecarVariant::Rabitq8c4
+            ) {
+                let mut slab = Vec::with_capacity(payloads.len() * sidecar.bytes_per_vector);
+                for (id, payload) in payloads {
+                    if payload.len() != sidecar.bytes_per_vector {
+                        bail!(
+                            "{} sidecar payload for id {id} has {} bytes, expected {}",
+                            sidecar.variant.label(),
+                            payload.len(),
+                            sidecar.bytes_per_vector
+                        );
+                    }
+                    slab.extend_from_slice(payload);
                 }
-                let score = rabitq_sidecar_score(sidecar.variant, &prepared, payload);
-                scored.push((*id, score));
+                let mut scores = Vec::new();
+                prepared
+                    .estimate_ip_batch(&slab, sidecar.bytes_per_vector, &mut scores)
+                    .map_err(|err| {
+                        eyre!("{} batch scoring failed: {err}", sidecar.variant.label())
+                    })?;
+                for ((id, _), score) in payloads.iter().zip(scores) {
+                    scored.push((*id, score));
+                }
+            } else {
+                for (id, payload) in payloads {
+                    if payload.len() != sidecar.bytes_per_vector {
+                        bail!(
+                            "{} sidecar payload for id {id} has {} bytes, expected {}",
+                            sidecar.variant.label(),
+                            payload.len(),
+                            sidecar.bytes_per_vector
+                        );
+                    }
+                    let score = rabitq_sidecar_score(sidecar.variant, &prepared, payload);
+                    scored.push((*id, score));
+                }
             }
         }
     }
