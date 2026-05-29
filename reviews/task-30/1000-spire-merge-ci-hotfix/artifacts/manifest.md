@@ -1,9 +1,9 @@
 # Manifest: SPIRE Merge CI Hotfix
 
-- head SHA: `a812112b52894d85d2c8828d0541030bb4e7c2e1`
+- head SHA: `109d4cc75d44a78b4b1d8e42cd2e63348ed5c87e`
 - task bucket: `reviews/task-30`
 - packet path: `reviews/task-30/1000-spire-merge-ci-hotfix`
-- timestamp: `2026-05-29T18:34:52Z`
+- timestamp: `2026-05-29T18:41:24Z`
 - lane: post-merge CI stabilization
 - fixture/storage/rerank mode: not applicable
 - isolated one-index-per-table or shared-table surface: not applicable
@@ -21,3 +21,6 @@
 | `ci-hosted-portable-rustflags-diff-check.log` | `git show --check --stat --oneline HEAD` | no whitespace errors in the hosted-CI portable RUSTFLAGS commit |
 | `ci-macos-pg18-clippy-fix-diff-check.log` | `git show --check --stat --oneline HEAD` | no whitespace errors in the macOS PG18 clippy-fix commit |
 | `ci-arm-pg18-fix-diff-check.log` | `git show --check --stat --oneline HEAD` | no whitespace errors in the arm PG18 CI-fix commit |
+| `ci-string-info-ptr-cast-diff-check.log` | `git show --check --stat --oneline HEAD` | no whitespace errors in the portable StringInfo pointer-cast commit |
+| `cargo-fmt-check-string-info.log` | `cargo fmt --all -- --check` | exited 0 after the StringInfo pointer-cast fix |
+| `cargo-check-pg18-string-info.log` | `cargo check --no-default-features --features pg18` | `Finished dev profile` |
