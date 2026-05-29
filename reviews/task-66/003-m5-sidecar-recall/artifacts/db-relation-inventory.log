@@ -1,0 +1,29 @@
+                   relname                    
+----------------------------------------------
+ task57_005_10k_ivf_rabitq_n64_corpus
+ task57_005_10k_ivf_rabitq_n64_corpus_pkey
+ task57_005_10k_ivf_rabitq_n64_queries
+ task57_005_10k_ivf_rabitq_n64_queries_pkey
+ task57_005_10k_ivf_rabitq_n64_rabitq_idx
+ task60_real_100k_diskann_rabitq_corpus
+ task60_real_100k_diskann_rabitq_corpus_pkey
+ task60_real_100k_diskann_rabitq_idx
+ task60_real_100k_diskann_rabitq_queries
+ task60_real_100k_diskann_rabitq_queries_pkey
+ task60_real_1m_diskann_rabitq_corpus
+ task60_real_1m_diskann_rabitq_corpus_pkey
+ task60_real_1m_diskann_rabitq_queries
+ task60_real_1m_diskann_rabitq_queries_pkey
+ task60_real_1m_diskann_rabitq_rabitq_idx
+ task63_real_100k_hnsw_rabitq_corpus
+ task63_real_100k_hnsw_rabitq_corpus_pkey
+ task63_real_100k_hnsw_rabitq_queries
+ task63_real_100k_hnsw_rabitq_queries_pkey
+ task63_real_100k_hnsw_rabitq_rabitq_m16_idx
+ task63_real_50k_hnsw_rabitq_corpus
+ task63_real_50k_hnsw_rabitq_corpus_pkey
+ task63_real_50k_hnsw_rabitq_queries
+ task63_real_50k_hnsw_rabitq_queries_pkey
+ task63_real_50k_hnsw_rabitq_rabitq_m16_idx
+(25 rows)
+

@@ -1,0 +1,42 @@
+{
+  "name": "task66-m5-sidecar-recall-scalar",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-66/003-m5-sidecar-recall/artifacts",
+  "defaults": {
+    "pg": 18,
+    "socket_dir": "/Users/peter/.pgrx",
+    "profile": "ec_ivf",
+    "bits": 4,
+    "seed": 42,
+    "queries_limit": 100,
+    "force_index": true
+  },
+  "steps": [
+    {
+      "kind": "sidecar-rerank",
+      "name": "scalar-rabitq8-variants-task57-10k-k50-p32",
+      "tags": [
+        "task66",
+        "m5",
+        "scalar",
+        "ivf",
+        "rabitq8",
+        "least_squares",
+        "clip_sweep",
+        "candidate_k50"
+      ],
+      "prefix": "task66_m5_10k_ivf_rabitq1_n64_sidecar_off",
+      "profile": "ec_ivf",
+      "k": 10,
+      "candidate_k": 50,
+      "concurrency": 1,
+      "sweep": [32],
+      "queries_limit": 100,
+      "variants": ["rabitq8", "rabitq8ls", "rabitq8c3", "rabitq8c4"],
+      "read_modes": ["free", "tid-sorted"],
+      "rebuild_sidecar_table": false,
+      "force_index": true,
+      "log_output": "reviews/task-66/003-m5-sidecar-recall/artifacts/scalar-rabitq8-variants-task57-10k-k50-p32.log"
+    }
+  ]
+}
