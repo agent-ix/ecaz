@@ -178,8 +178,14 @@ jobs:
       - name: Initialize pgrx for pg18
         run: cargo pgrx init --pg18 /usr/lib/postgresql/18/bin/pg_config
 
-      - name: pg18 tests
-        run: cargo pgrx test pg18
+      - name: Install ecaz for pg18 validation
+        run: cargo pgrx install --test --pg-config /usr/lib/postgresql/18/bin/pg_config --features "pg18 pg_test" --no-default-features
+
+      - name: Build operator CLI
+        run: cargo build -p ecaz-cli
+
+      - name: pg18 preload validation
+        run: target/debug/ecaz dev test pg18-preload-pgstat --pgrx-home "$PGRX_HOME"
 
   recall-cost-gates:
     name: Recall and Cost Gates

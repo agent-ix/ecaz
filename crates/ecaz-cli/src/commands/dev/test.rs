@@ -228,12 +228,14 @@ LIMIT 1
 }
 
 fn assert_preload_install_ready(install: &super::support::PgrxInstall) -> Result<()> {
-    let control_file = install.root.join("share/postgresql/extension/ecaz.control");
-    let library_file = install.root.join("lib/postgresql/ecaz.so");
+    let control_file = install.sharedir.join("extension/ecaz.control");
+    let library_file = install.pkglibdir.join("ecaz.so");
     if !control_file.is_file() || !library_file.is_file() {
         bail!(
-            "ecaz is not installed in the local PG18 pgrx tree at {}; run `cargo pgrx test pg18` or `cargo pgrx install --features 'pg18 pg_test' --no-default-features` first",
-            install.root.display()
+            "ecaz is not installed for PG18 via {}; missing {} or {}; run `cargo pgrx install --features 'pg18 pg_test' --no-default-features` first",
+            install.pg_config.display(),
+            control_file.display(),
+            library_file.display()
         );
     }
     Ok(())
