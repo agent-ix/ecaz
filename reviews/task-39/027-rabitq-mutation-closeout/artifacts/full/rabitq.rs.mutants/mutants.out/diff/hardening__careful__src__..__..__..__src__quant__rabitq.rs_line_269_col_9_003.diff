@@ -1,0 +1,29 @@
+--- hardening/careful/src/../../../src/quant/rabitq.rs
++++ replace <impl Rotation for SrhtRotation>::apply -> Vec<f32> with vec![-1.0]
+@@ -261,25 +261,17 @@
+ }
+ 
+ impl Rotation for SrhtRotation {
+     fn dimensions(&self) -> usize {
+         self.dimensions
+     }
+ 
+     fn apply(&self, v: &[f32]) -> Vec<f32> {
+-        assert_eq!(
+-            v.len(),
+-            self.dimensions,
+-            "SRHT input length mismatch: got {}, expected {}",
+-            v.len(),
+-            self.dimensions,
+-        );
+-        let padded = rotation::srht_padded(v, &self.signs);
+-        padded[..self.dimensions].to_vec()
++        vec![-1.0] /* ~ changed by cargo-mutants ~ */
+     }
+ }
+ 
+ /// One RaBitQ quantizer instance. Owns the rotation via the
+ /// [`Rotation`] trait object seam and the per-vector encoding
+ /// parameters (dimensions, bits-per-dim). Build and scan paths
+ /// share one `Arc<RaBitQQuantizer>`.
+ pub struct RaBitQQuantizer {

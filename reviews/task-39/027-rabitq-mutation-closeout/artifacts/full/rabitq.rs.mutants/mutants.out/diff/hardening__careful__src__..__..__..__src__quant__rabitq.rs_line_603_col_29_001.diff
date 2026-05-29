@@ -1,0 +1,21 @@
+--- hardening/careful/src/../../../src/quant/rabitq.rs
++++ replace * with / in RaBitQQuantizer::encode_code_centered
+@@ -595,17 +595,17 @@
+             }
+         }
+ 
+         let inv_denom = if residual_mag > 0.0 {
+             1.0 / (residual_mag * sqrt_d)
+         } else {
+             0.0
+         };
+-        let o_dot = sum_abs * inv_denom;
++        let o_dot = sum_abs / /* ~ changed by cargo-mutants ~ */ inv_denom;
+         // ⟨x̄, c_tilde⟩ = (1/√D) · Σ c_tilde_i · sign(r_i), since
+         // x̄ has elements ±1/√D and we accumulated with ±1 weights.
+         let center_dot = sum_center_sign / sqrt_d;
+ 
+         let s = packed_bytes;
+         out[s..s + RABITQ_NORM_LEN].copy_from_slice(&residual_mag.to_le_bytes());
+         out[s + RABITQ_NORM_LEN..s + RABITQ_NORM_LEN + RABITQ_UNIT_DOT_LEN]
+             .copy_from_slice(&o_dot.to_le_bytes());

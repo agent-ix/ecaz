@@ -1,0 +1,107 @@
+--- hardening/careful/src/../../../src/quant/rabitq.rs
++++ replace CenteredScorer::score_at -> DistanceEstimate with Default::default()
+@@ -692,103 +692,17 @@
+     /// code produced by
+     /// [`RaBitQQuantizer::encode_code_centered(v, c)`] and the
+     /// same `center` context. Returns `DistanceEstimate` on the
+     /// unit-residual inner product; the AM combines with
+     /// `||q − c||` and the stored `||v − c||` (via
+     /// [`RaBitQQuantizer::centered_residual_magnitude`]) per paper
+     /// eq. (2) to recover L2 distance.
+     pub fn score_at(&self, code: &[u8], center: &CenterContext) -> DistanceEstimate {
+-        assert_eq!(
+-            center.rotated.len(),
+-            self.dimensions,
+-            "center context dimensions mismatch",
+-        );
+-        let packed_bytes = self.dimensions.div_ceil(8);
+-        assert!(
+-            code.len() >= packed_bytes + RABITQ_SCALAR_LEN,
+-            "centered code too short: got {}, expected at least {}",
+-            code.len(),
+-            packed_bytes + RABITQ_SCALAR_LEN,
+-        );
+-        let s = packed_bytes;
+-        let residual_mag = f32::from_le_bytes(
+-            code[s..s + RABITQ_NORM_LEN]
+-                .try_into()
+-                .expect("residual_mag slice is always 4 bytes"),
+-        );
+-        let o_dot = f32::from_le_bytes(
+-            code[s + RABITQ_NORM_LEN..s + RABITQ_NORM_LEN + RABITQ_UNIT_DOT_LEN]
+-                .try_into()
+-                .expect("o_dot slice is always 4 bytes"),
+-        );
+-        let center_dot = f32::from_le_bytes(
+-            code[s + RABITQ_NORM_LEN + RABITQ_UNIT_DOT_LEN..s + RABITQ_SCALAR_LEN]
+-                .try_into()
+-                .expect("center_dot slice is always 4 bytes"),
+-        );
+-
+-        // ⟨x̄, q_tilde⟩ = (1/√D) · Σ q_tilde_i · sign(r_i). The
+-        // per-neighbor hot loop in Stage 3 will replace this with
+-        // FastScan / signed POPCNT kernels; scalar form here is
+-        // the correctness reference.
+-        let mut sum_q_sign = 0.0_f32;
+-        for i in 0..self.dimensions {
+-            let byte = code[i / 8];
+-            let bit = (byte >> (i % 8)) & 1;
+-            if bit == 1 {
+-                sum_q_sign += self.query_rotated[i];
+-            } else {
+-                sum_q_sign -= self.query_rotated[i];
+-            }
+-        }
+-        let sqrt_d = (self.dimensions as f32).sqrt();
+-        let query_dot_code = sum_q_sign / sqrt_d;
+-
+-        // ||q_r − c||. Rotation preserves L2 so we can use either
+-        // raw or rotated vectors; rotated keeps everything in one
+-        // frame, raw saves a rotation. Use raw.
+-        let mut query_residual_sq = 0.0_f32;
+-        for i in 0..self.dimensions {
+-            let d = self.query_raw[i] - center.raw[i];
+-            query_residual_sq += d * d;
+-        }
+-        let query_residual_mag = query_residual_sq.sqrt();
+-
+-        // Paper eq (6):
+-        //   ⟨x̄, q_tilde_unit⟩ = (query_dot_code − center_dot) / ||q_r − c||
+-        //
+-        // RaBitQ estimator (residual unit vectors):
+-        //   ⟨q_unit_res, o_unit_res⟩ ≈ ⟨x̄, q_tilde_unit⟩ / o_dot
+-        const O_DOT_FLOOR: f32 = 1e-6;
+-        const QR_FLOOR: f32 = 1e-6;
+-        if o_dot.abs() < O_DOT_FLOOR
+-            || !o_dot.is_finite()
+-            || query_residual_mag < QR_FLOOR
+-            || residual_mag <= 0.0
+-        {
+-            return DistanceEstimate {
+-                estimate: 0.0,
+-                bound: f32::INFINITY,
+-            };
+-        }
+-        let x_dot_q_unit = (query_dot_code - center_dot) / query_residual_mag;
+-        let estimate = x_dot_q_unit / o_dot;
+-
+-        // ε-concentration bound in the unit-residual frame; both
+-        // residuals are unit vectors so the ||·|| factors from the
+-        // absolute path collapse to 1.
+-        let o_dot_sq = o_dot * o_dot;
+-        let epsilon_sq = ((1.0 - o_dot_sq).max(0.0)) / (self.dimensions as f32 * o_dot_sq);
+-        let bound = RABITQ_BOUND_CONFIDENCE * epsilon_sq.sqrt();
+-
+-        // Silence unused warnings on state kept for AM tooling.
+-        let _ = residual_mag;
+-
+-        DistanceEstimate { estimate, bound }
++        Default::default() /* ~ changed by cargo-mutants ~ */
+     }
+ }
+ 
+ /// Prepared estimator state for one query. Separate from
+ /// `RaBitQScorer` so callers that want just the scalar inner-product
+ /// estimate can use the plain `QueryScorer::score` trait seam, while
+ /// callers that need the error bound (Stage 3, task 27) go through
+ /// [`RaBitQQuantizer::estimate_ip`].

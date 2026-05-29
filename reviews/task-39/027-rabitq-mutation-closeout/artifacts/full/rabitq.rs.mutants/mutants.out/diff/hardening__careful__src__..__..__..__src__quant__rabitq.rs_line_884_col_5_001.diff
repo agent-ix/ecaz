@@ -1,0 +1,46 @@
+--- hardening/careful/src/../../../src/quant/rabitq.rs
++++ replace sign_words_from_packed_4bit -> Vec<u64> with vec![0]
+@@ -876,42 +876,17 @@
+ /// sign of each codebook entry. `sign_lookup[i] != 0` means codebook
+ /// entry `i` is non-negative (bit set). Word layout matches
+ /// [`sign_words_from_rotated`].
+ pub(crate) fn sign_words_from_packed_4bit(
+     code_bytes: &[u8],
+     dim: usize,
+     sign_lookup: &[u8; 16],
+ ) -> Vec<u64> {
+-    let mut words = vec![0_u64; dim.div_ceil(64)];
+-    let mut dim_index = 0usize;
+-
+-    for &packed in code_bytes {
+-        if dim_index >= dim {
+-            break;
+-        }
+-
+-        let low_nibble = (packed & 0x0F) as usize;
+-        if sign_lookup[low_nibble] != 0 {
+-            words[dim_index / 64] |= 1_u64 << (dim_index % 64);
+-        }
+-        dim_index += 1;
+-
+-        if dim_index >= dim {
+-            break;
+-        }
+-
+-        let high_nibble = (packed >> 4) as usize;
+-        if sign_lookup[high_nibble] != 0 {
+-            words[dim_index / 64] |= 1_u64 << (dim_index % 64);
+-        }
+-        dim_index += 1;
+-    }
+-
+-    words
++    vec![0] /* ~ changed by cargo-mutants ~ */
+ }
+ 
+ /// Hamming-based similarity used by the ADR-031 prefilter:
+ /// `dim - 2 * hamming(q, c)` so higher = closer.
+ pub(crate) fn hamming_similarity(query_words: &[u64], candidate_words: &[u64], dim: usize) -> f32 {
+     let hamming_distance = query_words
+         .iter()
+         .zip(candidate_words.iter())

@@ -1,0 +1,21 @@
+--- hardening/careful/src/../../../src/quant/rabitq.rs
++++ replace SrhtRotation::seed -> Option<u64> with Some(0)
+@@ -251,17 +251,17 @@
+         self.prod.as_ref()
+     }
+ 
+     /// Seed used to construct this rotation, when it was built via
+     /// [`Self::with_seed`]. Returns `None` for quantizer-backed
+     /// rotations — those inherit their signs from the
+     /// `ProdQuantizer`'s own seed-derived state.
+     pub fn seed(&self) -> Option<u64> {
+-        self.seed
++        Some(0) /* ~ changed by cargo-mutants ~ */
+     }
+ }
+ 
+ impl Rotation for SrhtRotation {
+     fn dimensions(&self) -> usize {
+         self.dimensions
+     }
+ 

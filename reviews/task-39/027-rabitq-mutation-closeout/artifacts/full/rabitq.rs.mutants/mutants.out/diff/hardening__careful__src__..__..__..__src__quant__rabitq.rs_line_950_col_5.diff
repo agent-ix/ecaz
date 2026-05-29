@@ -1,0 +1,26 @@
+--- hardening/careful/src/../../../src/quant/rabitq.rs
++++ replace persisted_sidecar_word_count -> usize with 0
+@@ -942,22 +942,17 @@
+ // Persisted-sidecar helpers — moved from `src/am/common/training.rs`
+ // in slice 2. AM callers now reach into this module directly.
+ // ---------------------------------------------------------------------------
+ 
+ /// Number of `u64` words a per-vector sidecar occupies for this
+ /// (dim, bits, seed) triple. Returns 0 when RaBitQ is not supported
+ /// for the quantizer's lane.
+ pub fn persisted_sidecar_word_count(dimensions: u16, bits: u8, seed: u64) -> usize {
+-    let quantizer = ProdQuantizer::cached(dimensions as usize, bits, seed);
+-    if quantizer.binary_sign_no_qjl_4bit_supported() {
+-        usize::from(dimensions).div_ceil(64)
+-    } else {
+-        0
+-    }
++    0 /* ~ changed by cargo-mutants ~ */
+ }
+ 
+ /// Derive the sidecar sign words for a single vector from its
+ /// already-PQ-packed code. Returns an empty vector when RaBitQ is
+ /// not supported for the quantizer's lane. This is the ADR-031
+ /// optimization path that reuses the PQ code rather than re-rotating
+ /// the raw vector.
+ pub fn derive_persisted_sidecar_words(quantizer: &ProdQuantizer, code: &[u8]) -> Vec<u64> {

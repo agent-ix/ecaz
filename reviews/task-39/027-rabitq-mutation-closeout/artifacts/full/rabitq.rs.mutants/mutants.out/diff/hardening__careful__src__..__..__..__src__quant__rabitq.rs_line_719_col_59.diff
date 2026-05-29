@@ -1,0 +1,21 @@
+--- hardening/careful/src/../../../src/quant/rabitq.rs
++++ replace + with - in CenteredScorer::score_at
+@@ -711,17 +711,17 @@
+         );
+         let s = packed_bytes;
+         let residual_mag = f32::from_le_bytes(
+             code[s..s + RABITQ_NORM_LEN]
+                 .try_into()
+                 .expect("residual_mag slice is always 4 bytes"),
+         );
+         let o_dot = f32::from_le_bytes(
+-            code[s + RABITQ_NORM_LEN..s + RABITQ_NORM_LEN + RABITQ_UNIT_DOT_LEN]
++            code[s + RABITQ_NORM_LEN..s + RABITQ_NORM_LEN - /* ~ changed by cargo-mutants ~ */ RABITQ_UNIT_DOT_LEN]
+                 .try_into()
+                 .expect("o_dot slice is always 4 bytes"),
+         );
+         let center_dot = f32::from_le_bytes(
+             code[s + RABITQ_NORM_LEN + RABITQ_UNIT_DOT_LEN..s + RABITQ_SCALAR_LEN]
+                 .try_into()
+                 .expect("center_dot slice is always 4 bytes"),
+         );

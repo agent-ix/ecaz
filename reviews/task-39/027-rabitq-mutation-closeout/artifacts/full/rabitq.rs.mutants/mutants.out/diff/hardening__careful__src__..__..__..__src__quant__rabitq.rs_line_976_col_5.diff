@@ -1,0 +1,21 @@
+--- hardening/careful/src/../../../src/quant/rabitq.rs
++++ replace l2_norm -> f32 with 0.0
+@@ -968,17 +968,17 @@
+     }
+ }
+ 
+ // ---------------------------------------------------------------------------
+ // Internal helpers used only by the Quantizer trait impl above.
+ // ---------------------------------------------------------------------------
+ 
+ fn l2_norm(rotated: &[f32]) -> f32 {
+-    rotated.iter().map(|x| x * x).sum::<f32>().sqrt()
++    0.0 /* ~ changed by cargo-mutants ~ */
+ }
+ 
+ /// Quantize one unit-vector coordinate `o_hat_i = o_i / ||o||` to
+ /// a `bits`-bit signed level. Returns `(level_index, dequant_value)`:
+ /// the level index is what gets packed into the code; the dequant
+ /// value is the reconstruction used by the encoder to compute
+ /// `⟨o, x_dec⟩` and `||x_dec||` in-line.
+ ///

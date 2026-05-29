@@ -56,9 +56,9 @@
       "prefix": "task63_real_50k_hnsw_turboquant",
       "profile": "ec_hnsw",
       "storage_format": "turboquant",
-      "corpus_file": "data/task31_m5_dbpedia_staged/ec_real_50k_corpus.tsv",
-      "queries_file": "data/task31_m5_dbpedia_staged/ec_real_50k_queries.tsv",
-      "manifest_file": "data/task31_m5_dbpedia_staged/ec_real_50k_manifest.json",
+      "corpus_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_50k_corpus.tsv",
+      "queries_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_50k_queries.tsv",
+      "manifest_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_50k_manifest.json",
       "allow_manifest_mismatch": true,
       "m": [
         16
@@ -80,9 +80,9 @@
       "prefix": "task63_real_50k_hnsw_pq",
       "profile": "ec_hnsw",
       "storage_format": "pq_fastscan",
-      "corpus_file": "data/task31_m5_dbpedia_staged/ec_real_50k_corpus.tsv",
-      "queries_file": "data/task31_m5_dbpedia_staged/ec_real_50k_queries.tsv",
-      "manifest_file": "data/task31_m5_dbpedia_staged/ec_real_50k_manifest.json",
+      "corpus_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_50k_corpus.tsv",
+      "queries_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_50k_queries.tsv",
+      "manifest_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_50k_manifest.json",
       "allow_manifest_mismatch": true,
       "m": [
         16
@@ -104,9 +104,9 @@
       "prefix": "task63_real_50k_hnsw_rabitq",
       "profile": "ec_hnsw",
       "storage_format": "rabitq",
-      "corpus_file": "data/task31_m5_dbpedia_staged/ec_real_50k_corpus.tsv",
-      "queries_file": "data/task31_m5_dbpedia_staged/ec_real_50k_queries.tsv",
-      "manifest_file": "data/task31_m5_dbpedia_staged/ec_real_50k_manifest.json",
+      "corpus_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_50k_corpus.tsv",
+      "queries_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_50k_queries.tsv",
+      "manifest_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_50k_manifest.json",
       "allow_manifest_mismatch": true,
       "m": [
         16
@@ -323,9 +323,9 @@
       "prefix": "task63_real_100k_hnsw_turboquant",
       "profile": "ec_hnsw",
       "storage_format": "turboquant",
-      "corpus_file": "data/task31_m5_dbpedia_staged/ec_real_100k_corpus.tsv",
-      "queries_file": "data/task31_m5_dbpedia_staged/ec_real_100k_queries.tsv",
-      "manifest_file": "data/task31_m5_dbpedia_staged/ec_real_100k_manifest.json",
+      "corpus_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_100k_corpus.tsv",
+      "queries_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_100k_queries.tsv",
+      "manifest_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_100k_manifest.json",
       "allow_manifest_mismatch": true,
       "m": [
         16
@@ -347,9 +347,9 @@
       "prefix": "task63_real_100k_hnsw_pq",
       "profile": "ec_hnsw",
       "storage_format": "pq_fastscan",
-      "corpus_file": "data/task31_m5_dbpedia_staged/ec_real_100k_corpus.tsv",
-      "queries_file": "data/task31_m5_dbpedia_staged/ec_real_100k_queries.tsv",
-      "manifest_file": "data/task31_m5_dbpedia_staged/ec_real_100k_manifest.json",
+      "corpus_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_100k_corpus.tsv",
+      "queries_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_100k_queries.tsv",
+      "manifest_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_100k_manifest.json",
       "allow_manifest_mismatch": true,
       "m": [
         16
@@ -371,9 +371,9 @@
       "prefix": "task63_real_100k_hnsw_rabitq",
       "profile": "ec_hnsw",
       "storage_format": "rabitq",
-      "corpus_file": "data/task31_m5_dbpedia_staged/ec_real_100k_corpus.tsv",
-      "queries_file": "data/task31_m5_dbpedia_staged/ec_real_100k_queries.tsv",
-      "manifest_file": "data/task31_m5_dbpedia_staged/ec_real_100k_manifest.json",
+      "corpus_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_100k_corpus.tsv",
+      "queries_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_100k_queries.tsv",
+      "manifest_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_100k_manifest.json",
       "allow_manifest_mismatch": true,
       "m": [
         16
