@@ -1,0 +1,22 @@
+[loader] inspecting fixtures/m5_diskann_synth10k/m5_diskann_synth10k_corpus.tsv
+[loader] inspecting fixtures/m5_diskann_synth10k/m5_diskann_synth10k_queries.tsv
+[loader] corpus: 10000 rows, sha256=ccd9a13cdf99eded145fe92ba65d135a57495b55513444caf35c54d5bdcc6f2f  queries: 200 rows, sha256=a93d23a9b17e3a9ebd8912c9610863453f1ac95728efda3036beef96b7df933f
+[loader] no sibling manifest at fixtures/m5_diskann_synth10k/m5_diskann_synth10k_manifest.json; continuing without verification
+[loader] copied corpus table task65_synth10k_diskann_pq_rel_r32_l100_corpus in 1.64s
+[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...
+[loader] encoded corpus table task65_synth10k_diskann_pq_rel_r32_l100_corpus in 810.91ms
+[loader] copied queries table task65_synth10k_diskann_pq_rel_r32_l100_queries in 29.67ms
+[loader] building task65_synth10k_diskann_pq_rel_r32_l100_pq_fastscan_idx using ec_diskann (reloptions=[graph_degree=32, build_list_size=100, alpha=1.2, storage_format=pq_fastscan]) ...
+[loader] built task65_synth10k_diskann_pq_rel_r32_l100_pq_fastscan_idx in 28.71s
+┌─────────┬───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ field   ┆ value                                                                                                                                 │
+╞═════════╪═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════╡
+│ profile ┆ ec_diskann                                                                                                                            │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ task65_synth10k_diskann_pq_rel_r32_l100_corpus (10000 rows)                                                                           │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ task65_synth10k_diskann_pq_rel_r32_l100_queries (200 rows)                                                                            │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ task65_synth10k_diskann_pq_rel_r32_l100_pq_fastscan_idx [graph_degree=32, build_list_size=100, alpha=1.2, storage_format=pq_fastscan] │
+└─────────┴───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+[loader] completed prefix task65_synth10k_diskann_pq_rel_r32_l100 in 31.65s
