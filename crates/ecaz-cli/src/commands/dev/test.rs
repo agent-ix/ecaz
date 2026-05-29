@@ -106,7 +106,8 @@ async fn run_pg18_preload_pgstat(args: Pg18PreloadPgstatArgs) -> Result<()> {
             .arg(&log_file)
             .arg("-o")
             .arg(format!(
-                "-p {candidate} -c listen_addresses=127.0.0.1 -c shared_preload_libraries=ecaz"
+                "-p {candidate} -c listen_addresses=127.0.0.1 -c unix_socket_directories={} -c shared_preload_libraries=ecaz",
+                cluster_root.display()
             ))
             .arg("-w")
             .arg("start")
