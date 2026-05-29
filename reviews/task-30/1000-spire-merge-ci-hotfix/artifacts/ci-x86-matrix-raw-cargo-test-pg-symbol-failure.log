@@ -1,0 +1,1498 @@
+﻿2026-05-29T19:53:37.0822740Z Current runner version: '2.334.0'
+2026-05-29T19:53:37.0856808Z ##[group]Runner Image Provisioner
+2026-05-29T19:53:37.0858333Z Hosted Compute Agent
+2026-05-29T19:53:37.0859378Z Version: 20260520.533
+2026-05-29T19:53:37.0860443Z Commit: 189110e25284a9812c124fd27b339e2fb4f2f9db
+2026-05-29T19:53:37.0861673Z Build Date: 2026-05-20T17:44:04Z
+2026-05-29T19:53:37.0862757Z Worker ID: {9fe06716-877b-4cc7-9edc-3e0295957858}
+2026-05-29T19:53:37.0863815Z Azure Region: eastus
+2026-05-29T19:53:37.0864776Z ##[endgroup]
+2026-05-29T19:53:37.0866957Z ##[group]Operating System
+2026-05-29T19:53:37.0868290Z Ubuntu
+2026-05-29T19:53:37.0869162Z 24.04.4
+2026-05-29T19:53:37.0869949Z LTS
+2026-05-29T19:53:37.0870880Z ##[endgroup]
+2026-05-29T19:53:37.0871789Z ##[group]Runner Image
+2026-05-29T19:53:37.0872687Z Image: ubuntu-24.04
+2026-05-29T19:53:37.0873680Z Version: 20260525.161.1
+2026-05-29T19:53:37.0875804Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260525.161/images/ubuntu/Ubuntu2404-Readme.md
+2026-05-29T19:53:37.0878786Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260525.161
+2026-05-29T19:53:37.0880412Z ##[endgroup]
+2026-05-29T19:53:37.0882375Z ##[group]GITHUB_TOKEN Permissions
+2026-05-29T19:53:37.0885302Z Contents: read
+2026-05-29T19:53:37.0886435Z Metadata: read
+2026-05-29T19:53:37.0887325Z Packages: read
+2026-05-29T19:53:37.0888514Z ##[endgroup]
+2026-05-29T19:53:37.0891325Z Secret source: Actions
+2026-05-29T19:53:37.0892945Z Prepare workflow directory
+2026-05-29T19:53:37.1426085Z Prepare all required actions
+2026-05-29T19:53:37.1478356Z Getting action download info
+2026-05-29T19:53:37.4568813Z Download action repository 'actions/checkout@v4' (SHA:34e114876b0b11c390a56381ad16ebd13914f8d5)
+2026-05-29T19:53:37.5546779Z Download action repository 'dtolnay/rust-toolchain@1.95.0' (SHA:e081816240890017053eacbb1bdf337761dc5582)
+2026-05-29T19:53:37.6554045Z Download action repository 'Swatinem/rust-cache@v2' (SHA:e18b497796c12c097a38f9edb9d0641fb99eee32)
+2026-05-29T19:53:38.0007179Z Complete job name: pg18 / 1.95.0
+2026-05-29T19:53:38.0882492Z ##[group]Run actions/checkout@v4
+2026-05-29T19:53:38.0883964Z with:
+2026-05-29T19:53:38.0884770Z   repository: agent-ix/ecaz
+2026-05-29T19:53:38.0893837Z   token: ***
+2026-05-29T19:53:38.0894689Z   ssh-strict: true
+2026-05-29T19:53:38.0895488Z   ssh-user: git
+2026-05-29T19:53:38.0896295Z   persist-credentials: true
+2026-05-29T19:53:38.0897189Z   clean: true
+2026-05-29T19:53:38.0898267Z   sparse-checkout-cone-mode: true
+2026-05-29T19:53:38.0899286Z   fetch-depth: 1
+2026-05-29T19:53:38.0900088Z   fetch-tags: false
+2026-05-29T19:53:38.0900943Z   show-progress: true
+2026-05-29T19:53:38.0901778Z   lfs: false
+2026-05-29T19:53:38.0902539Z   submodules: false
+2026-05-29T19:53:38.0903368Z   set-safe-directory: true
+2026-05-29T19:53:38.0904603Z env:
+2026-05-29T19:53:38.0905421Z   PGRX_HOME: /tmp/tqvector_pgrx_home
+2026-05-29T19:53:38.0906882Z   RUSTFLAGS: -C target-cpu=x86-64 -C link-arg=-Wl,--unresolved-symbols=ignore-all
+2026-05-29T19:53:38.0908703Z ##[endgroup]
+2026-05-29T19:53:38.2154579Z Syncing repository: agent-ix/ecaz
+2026-05-29T19:53:38.2158923Z ##[group]Getting Git version info
+2026-05-29T19:53:38.2159903Z Working directory is '/home/runner/work/ecaz/ecaz'
+2026-05-29T19:53:38.2161047Z [command]/usr/bin/git version
+2026-05-29T19:53:38.2199976Z git version 2.54.0
+2026-05-29T19:53:38.2225136Z ##[endgroup]
+2026-05-29T19:53:38.2241028Z Temporarily overriding HOME='/home/runner/work/_temp/05b57f40-f0b8-4881-84f7-023aee8aae51' before making global git config changes
+2026-05-29T19:53:38.2243795Z Adding repository directory to the temporary git global config as a safe directory
+2026-05-29T19:53:38.2247178Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/ecaz/ecaz
+2026-05-29T19:53:38.2287394Z Deleting the contents of '/home/runner/work/ecaz/ecaz'
+2026-05-29T19:53:38.2291030Z ##[group]Initializing the repository
+2026-05-29T19:53:38.2295224Z [command]/usr/bin/git init /home/runner/work/ecaz/ecaz
+2026-05-29T19:53:38.2373847Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-05-29T19:53:38.2375339Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-05-29T19:53:38.2376526Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-05-29T19:53:38.2377537Z hint: call:
+2026-05-29T19:53:38.2378555Z hint:
+2026-05-29T19:53:38.2379151Z hint: 	git config --global init.defaultBranch <name>
+2026-05-29T19:53:38.2379894Z hint:
+2026-05-29T19:53:38.2380569Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-05-29T19:53:38.2381715Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-05-29T19:53:38.2382689Z hint:
+2026-05-29T19:53:38.2383147Z hint: 	git branch -m <name>
+2026-05-29T19:53:38.2383671Z hint:
+2026-05-29T19:53:38.2384685Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-05-29T19:53:38.2385718Z Initialized empty Git repository in /home/runner/work/ecaz/ecaz/.git/
+2026-05-29T19:53:38.2387557Z [command]/usr/bin/git remote add origin https://github.com/agent-ix/ecaz
+2026-05-29T19:53:38.2422171Z ##[endgroup]
+2026-05-29T19:53:38.2423009Z ##[group]Disabling automatic garbage collection
+2026-05-29T19:53:38.2426244Z [command]/usr/bin/git config --local gc.auto 0
+2026-05-29T19:53:38.2455024Z ##[endgroup]
+2026-05-29T19:53:38.2455839Z ##[group]Setting up auth
+2026-05-29T19:53:38.2461792Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-05-29T19:53:38.2493972Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-05-29T19:53:38.2788817Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-05-29T19:53:38.2820937Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-05-29T19:53:38.3048840Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-05-29T19:53:38.3089675Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-05-29T19:53:38.3324596Z [command]/usr/bin/git config --local http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-05-29T19:53:38.3359210Z ##[endgroup]
+2026-05-29T19:53:38.3438305Z ##[group]Fetching the repository
+2026-05-29T19:53:38.3440836Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +d66f2f50d8c9041d462f3635708237bc973334d3:refs/remotes/pull/7/merge
+2026-05-29T19:53:41.8605654Z From https://github.com/agent-ix/ecaz
+2026-05-29T19:53:41.8608995Z  * [new ref]           d66f2f50d8c9041d462f3635708237bc973334d3 -> pull/7/merge
+2026-05-29T19:53:41.8643643Z ##[endgroup]
+2026-05-29T19:53:41.8645275Z ##[group]Determining the checkout info
+2026-05-29T19:53:41.8646952Z ##[endgroup]
+2026-05-29T19:53:41.8650392Z [command]/usr/bin/git sparse-checkout disable
+2026-05-29T19:53:41.8692762Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-05-29T19:53:41.8720872Z ##[group]Checking out the ref
+2026-05-29T19:53:41.8723986Z [command]/usr/bin/git checkout --progress --force refs/remotes/pull/7/merge
+2026-05-29T19:53:43.0599017Z Updating files:  64% (13575/21001)
+2026-05-29T19:53:43.2083638Z Updating files:  65% (13651/21001)
+2026-05-29T19:53:43.2190278Z Updating files:  66% (13861/21001)
+2026-05-29T19:53:43.2301428Z Updating files:  67% (14071/21001)
+2026-05-29T19:53:43.2421026Z Updating files:  68% (14281/21001)
+2026-05-29T19:53:43.2537114Z Updating files:  69% (14491/21001)
+2026-05-29T19:53:43.2645850Z Updating files:  70% (14701/21001)
+2026-05-29T19:53:43.2769194Z Updating files:  71% (14911/21001)
+2026-05-29T19:53:43.2902863Z Updating files:  72% (15121/21001)
+2026-05-29T19:53:43.3015900Z Updating files:  73% (15331/21001)
+2026-05-29T19:53:43.3283313Z Updating files:  74% (15541/21001)
+2026-05-29T19:53:43.3598916Z Updating files:  75% (15751/21001)
+2026-05-29T19:53:43.3885079Z Updating files:  76% (15961/21001)
+2026-05-29T19:53:43.4159757Z Updating files:  77% (16171/21001)
+2026-05-29T19:53:43.4478373Z Updating files:  78% (16381/21001)
+2026-05-29T19:53:43.4730014Z Updating files:  79% (16591/21001)
+2026-05-29T19:53:43.4913853Z Updating files:  80% (16801/21001)
+2026-05-29T19:53:43.5141468Z Updating files:  81% (17011/21001)
+2026-05-29T19:53:43.5325085Z Updating files:  82% (17221/21001)
+2026-05-29T19:53:43.5416176Z Updating files:  83% (17431/21001)
+2026-05-29T19:53:43.5517998Z Updating files:  84% (17641/21001)
+2026-05-29T19:53:43.5605409Z Updating files:  85% (17851/21001)
+2026-05-29T19:53:43.5815038Z Updating files:  86% (18061/21001)
+2026-05-29T19:53:43.6021235Z Updating files:  87% (18271/21001)
+2026-05-29T19:53:43.6268458Z Updating files:  88% (18481/21001)
+2026-05-29T19:53:43.6481037Z Updating files:  89% (18691/21001)
+2026-05-29T19:53:43.6676037Z Updating files:  90% (18901/21001)
+2026-05-29T19:53:43.6833586Z Updating files:  91% (19111/21001)
+2026-05-29T19:53:43.6951478Z Updating files:  92% (19321/21001)
+2026-05-29T19:53:43.7067283Z Updating files:  93% (19531/21001)
+2026-05-29T19:53:43.7213174Z Updating files:  94% (19741/21001)
+2026-05-29T19:53:43.7331428Z Updating files:  95% (19951/21001)
+2026-05-29T19:53:43.7450201Z Updating files:  96% (20161/21001)
+2026-05-29T19:53:43.7578202Z Updating files:  97% (20371/21001)
+2026-05-29T19:53:43.7782009Z Updating files:  98% (20581/21001)
+2026-05-29T19:53:43.7996463Z Updating files:  99% (20791/21001)
+2026-05-29T19:53:43.7996803Z Updating files: 100% (21001/21001)
+2026-05-29T19:53:43.8298719Z Updating files: 100% (21001/21001), done.
+2026-05-29T19:53:43.8299265Z Note: switching to 'refs/remotes/pull/7/merge'.
+2026-05-29T19:53:43.8299667Z 
+2026-05-29T19:53:43.8299999Z You are in 'detached HEAD' state. You can look around, make experimental
+2026-05-29T19:53:43.8301029Z changes and commit them, and you can discard any commits you make in this
+2026-05-29T19:53:43.8301758Z state without impacting any branches by switching back to a branch.
+2026-05-29T19:53:43.8302169Z 
+2026-05-29T19:53:43.8302485Z If you want to create a new branch to retain commits you create, you may
+2026-05-29T19:53:43.8303162Z do so (now or later) by using -c with the switch command. Example:
+2026-05-29T19:53:43.8303550Z 
+2026-05-29T19:53:43.8303712Z   git switch -c <new-branch-name>
+2026-05-29T19:53:43.8303974Z 
+2026-05-29T19:53:43.8304126Z Or undo this operation with:
+2026-05-29T19:53:43.8304380Z 
+2026-05-29T19:53:43.8304513Z   git switch -
+2026-05-29T19:53:43.8304699Z 
+2026-05-29T19:53:43.8305024Z Turn off this advice by setting config variable advice.detachedHead to false
+2026-05-29T19:53:43.8305567Z 
+2026-05-29T19:53:43.8306073Z HEAD is now at d66f2f50 Merge f6c1cb5f6fa545e4356e1d7b232f1a8055ed7ccf into 038e1a499962a799a52eb5b91d00c08820898d19
+2026-05-29T19:53:43.8361985Z ##[endgroup]
+2026-05-29T19:53:43.8405489Z [command]/usr/bin/git log -1 --format=%H
+2026-05-29T19:53:43.8429976Z d66f2f50d8c9041d462f3635708237bc973334d3
+2026-05-29T19:53:43.8727699Z ##[warning]Unexpected input(s) 'toolchain', valid inputs are ['targets', 'target', 'components']
+2026-05-29T19:53:43.8742764Z ##[group]Run dtolnay/rust-toolchain@1.95.0
+2026-05-29T19:53:43.8743073Z with:
+2026-05-29T19:53:43.8743281Z   toolchain: 1.95.0
+2026-05-29T19:53:43.8743507Z   components: clippy
+2026-05-29T19:53:43.8743740Z env:
+2026-05-29T19:53:43.8743952Z   PGRX_HOME: /tmp/tqvector_pgrx_home
+2026-05-29T19:53:43.8744374Z   RUSTFLAGS: -C target-cpu=x86-64 -C link-arg=-Wl,--unresolved-symbols=ignore-all
+2026-05-29T19:53:43.8744784Z ##[endgroup]
+2026-05-29T19:53:43.8859862Z ##[group]Run : parse toolchain version
+2026-05-29T19:53:43.8860255Z [36;1m: parse toolchain version[0m
+2026-05-29T19:53:43.8860567Z [36;1mif [[ -z $toolchain ]]; then[0m
+2026-05-29T19:53:43.8861114Z [36;1m  # GitHub does not enforce `required: true` inputs itself. https://github.com/actions/runner/issues/1070[0m
+2026-05-29T19:53:43.8861894Z [36;1m  echo "'toolchain' is a required input" >&2[0m
+2026-05-29T19:53:43.8862236Z [36;1m  exit 1[0m
+2026-05-29T19:53:43.8862588Z [36;1melif [[ $toolchain =~ ^stable' '[0-9]+' '(year|month|week|day)s?' 'ago$ ]]; then[0m
+2026-05-29T19:53:43.8862999Z [36;1m  if [[ Linux == macOS ]]; then[0m
+2026-05-29T19:53:43.8863535Z [36;1m    echo "toolchain=1.$((($(date -v-$(sed 's/stable \([0-9]*\) \(.\).*/\1\2/' <<< $toolchain) +%s)/60/60/24-16569)/7/6))" >> $GITHUB_OUTPUT[0m
+2026-05-29T19:53:43.8864033Z [36;1m  else[0m
+2026-05-29T19:53:43.8864445Z [36;1m    echo "toolchain=1.$((($(date --date "${toolchain#stable }" +%s)/60/60/24-16569)/7/6))" >> $GITHUB_OUTPUT[0m
+2026-05-29T19:53:43.8864912Z [36;1m  fi[0m
+2026-05-29T19:53:43.8865233Z [36;1melif [[ $toolchain =~ ^stable' 'minus' '[0-9]+' 'releases?$ ]]; then[0m
+2026-05-29T19:53:43.8865786Z [36;1m  echo "toolchain=1.$((($(date +%s)/60/60/24-16569)/7/6-${toolchain//[^0-9]/}))" >> $GITHUB_OUTPUT[0m
+2026-05-29T19:53:43.8866253Z [36;1melif [[ $toolchain =~ ^1\.[0-9]+$ ]]; then[0m
+2026-05-29T19:53:43.8866770Z [36;1m  echo "toolchain=1.$((i=${toolchain#1.}, c=($(date +%s)/60/60/24-16569)/7/6, i+9*i*(10*i<=c)+90*i*(100*i<=c)))" >> $GITHUB_OUTPUT[0m
+2026-05-29T19:53:43.8867252Z [36;1melse[0m
+2026-05-29T19:53:43.8867512Z [36;1m  echo "toolchain=$toolchain" >> $GITHUB_OUTPUT[0m
+2026-05-29T19:53:43.8868093Z [36;1mfi[0m
+2026-05-29T19:53:43.8900908Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-05-29T19:53:43.8901270Z env:
+2026-05-29T19:53:43.8901498Z   PGRX_HOME: /tmp/tqvector_pgrx_home
+2026-05-29T19:53:43.8901925Z   RUSTFLAGS: -C target-cpu=x86-64 -C link-arg=-Wl,--unresolved-symbols=ignore-all
+2026-05-29T19:53:43.8902342Z   toolchain: 1.95.0
+2026-05-29T19:53:43.8902563Z ##[endgroup]
+2026-05-29T19:53:43.9042728Z ##[group]Run : construct rustup command line
+2026-05-29T19:53:43.9043081Z [36;1m: construct rustup command line[0m
+2026-05-29T19:53:43.9043571Z [36;1mecho "targets=$(for t in ${targets//,/ }; do echo -n ' --target' $t; done)" >> $GITHUB_OUTPUT[0m
+2026-05-29T19:53:43.9044217Z [36;1mecho "components=$(for c in ${components//,/ }; do echo -n ' --component' $c; done)" >> $GITHUB_OUTPUT[0m
+2026-05-29T19:53:43.9044727Z [36;1mecho "downgrade=" >> $GITHUB_OUTPUT[0m
+2026-05-29T19:53:43.9071227Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-05-29T19:53:43.9071579Z env:
+2026-05-29T19:53:43.9071804Z   PGRX_HOME: /tmp/tqvector_pgrx_home
+2026-05-29T19:53:43.9072218Z   RUSTFLAGS: -C target-cpu=x86-64 -C link-arg=-Wl,--unresolved-symbols=ignore-all
+2026-05-29T19:53:43.9072625Z   targets: 
+2026-05-29T19:53:43.9072835Z   components: clippy
+2026-05-29T19:53:43.9073071Z ##[endgroup]
+2026-05-29T19:53:43.9158842Z ##[group]Run : set $CARGO_HOME
+2026-05-29T19:53:43.9159138Z [36;1m: set $CARGO_HOME[0m
+2026-05-29T19:53:43.9159471Z [36;1mecho CARGO_HOME=${CARGO_HOME:-"$HOME/.cargo"} >> $GITHUB_ENV[0m
+2026-05-29T19:53:43.9185555Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-05-29T19:53:43.9185934Z env:
+2026-05-29T19:53:43.9186219Z   PGRX_HOME: /tmp/tqvector_pgrx_home
+2026-05-29T19:53:43.9186909Z   RUSTFLAGS: -C target-cpu=x86-64 -C link-arg=-Wl,--unresolved-symbols=ignore-all
+2026-05-29T19:53:43.9187328Z ##[endgroup]
+2026-05-29T19:53:43.9270766Z ##[group]Run : install rustup if needed
+2026-05-29T19:53:43.9271099Z [36;1m: install rustup if needed[0m
+2026-05-29T19:53:43.9271416Z [36;1mif ! command -v rustup &>/dev/null; then[0m
+2026-05-29T19:53:43.9272188Z [36;1m  curl --proto '=https' --tlsv1.2 --retry 10 --retry-connrefused --location --silent --show-error --fail https://sh.rustup.rs | sh -s -- --default-toolchain none -y[0m
+2026-05-29T19:53:43.9272920Z [36;1m  echo "$CARGO_HOME/bin" >> $GITHUB_PATH[0m
+2026-05-29T19:53:43.9273216Z [36;1mfi[0m
+2026-05-29T19:53:43.9299414Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-05-29T19:53:43.9299769Z env:
+2026-05-29T19:53:43.9299995Z   PGRX_HOME: /tmp/tqvector_pgrx_home
+2026-05-29T19:53:43.9300585Z   RUSTFLAGS: -C target-cpu=x86-64 -C link-arg=-Wl,--unresolved-symbols=ignore-all
+2026-05-29T19:53:43.9301045Z   CARGO_HOME: /home/runner/.cargo
+2026-05-29T19:53:43.9301324Z ##[endgroup]
+2026-05-29T19:53:43.9382762Z ##[group]Run rustup toolchain install 1.95.0 --component clippy --profile minimal --no-self-update
+2026-05-29T19:53:43.9383409Z [36;1mrustup toolchain install 1.95.0 --component clippy --profile minimal --no-self-update[0m
+2026-05-29T19:53:43.9410915Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-05-29T19:53:43.9411271Z env:
+2026-05-29T19:53:43.9411495Z   PGRX_HOME: /tmp/tqvector_pgrx_home
+2026-05-29T19:53:43.9411917Z   RUSTFLAGS: -C target-cpu=x86-64 -C link-arg=-Wl,--unresolved-symbols=ignore-all
+2026-05-29T19:53:43.9412349Z   CARGO_HOME: /home/runner/.cargo
+2026-05-29T19:53:43.9412637Z   RUSTUP_PERMIT_COPY_RENAME: 1
+2026-05-29T19:53:43.9412897Z ##[endgroup]
+2026-05-29T19:53:43.9753254Z info: syncing channel updates for 1.95.0-x86_64-unknown-linux-gnu
+2026-05-29T19:53:44.1725681Z info: latest update on 2026-04-16 for version 1.95.0 (59807616e 2026-04-14)
+2026-05-29T19:53:44.1733168Z info: downloading 4 components
+2026-05-29T19:53:52.5875767Z 
+2026-05-29T19:53:52.5950422Z   1.95.0-x86_64-unknown-linux-gnu installed - rustc 1.95.0 (59807616e 2026-04-14)
+2026-05-29T19:53:52.5950929Z 
+2026-05-29T19:53:52.6044201Z ##[group]Run rustup default 1.95.0
+2026-05-29T19:53:52.6044533Z [36;1mrustup default 1.95.0[0m
+2026-05-29T19:53:52.6072031Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-05-29T19:53:52.6072390Z env:
+2026-05-29T19:53:52.6072618Z   PGRX_HOME: /tmp/tqvector_pgrx_home
+2026-05-29T19:53:52.6073040Z   RUSTFLAGS: -C target-cpu=x86-64 -C link-arg=-Wl,--unresolved-symbols=ignore-all
+2026-05-29T19:53:52.6073480Z   CARGO_HOME: /home/runner/.cargo
+2026-05-29T19:53:52.6073748Z ##[endgroup]
+2026-05-29T19:53:52.6176293Z info: using existing install for 1.95.0-x86_64-unknown-linux-gnu
+2026-05-29T19:53:52.6181029Z info: default toolchain set to 1.95.0-x86_64-unknown-linux-gnu
+2026-05-29T19:53:52.6181492Z 
+2026-05-29T19:53:52.6251320Z   1.95.0-x86_64-unknown-linux-gnu unchanged - rustc 1.95.0 (59807616e 2026-04-14)
+2026-05-29T19:53:52.6251698Z 
+2026-05-29T19:53:52.6286364Z ##[group]Run : create cachekey
+2026-05-29T19:53:52.6286668Z [36;1m: create cachekey[0m
+2026-05-29T19:53:52.6287179Z [36;1mDATE=$(rustc +1.95.0 --version --verbose | sed -ne 's/^commit-date: \(20[0-9][0-9]\)-\([01][0-9]\)-\([0-3][0-9]\)$/\1\2\3/p')[0m
+2026-05-29T19:53:52.6288066Z [36;1mHASH=$(rustc +1.95.0 --version --verbose | sed -ne 's/^commit-hash: //p')[0m
+2026-05-29T19:53:52.6288637Z [36;1mecho "cachekey=$(echo $DATE$HASH | head -c12)" >> $GITHUB_OUTPUT[0m
+2026-05-29T19:53:52.6313722Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-05-29T19:53:52.6314065Z env:
+2026-05-29T19:53:52.6314285Z   PGRX_HOME: /tmp/tqvector_pgrx_home
+2026-05-29T19:53:52.6314699Z   RUSTFLAGS: -C target-cpu=x86-64 -C link-arg=-Wl,--unresolved-symbols=ignore-all
+2026-05-29T19:53:52.6315121Z   CARGO_HOME: /home/runner/.cargo
+2026-05-29T19:53:52.6315386Z ##[endgroup]
+2026-05-29T19:53:52.6670019Z ##[group]Run : disable incremental compilation
+2026-05-29T19:53:52.6670413Z [36;1m: disable incremental compilation[0m
+2026-05-29T19:53:52.6670758Z [36;1mif [ -z "${CARGO_INCREMENTAL+set}" ]; then[0m
+2026-05-29T19:53:52.6671100Z [36;1m  echo CARGO_INCREMENTAL=0 >> $GITHUB_ENV[0m
+2026-05-29T19:53:52.6671402Z [36;1mfi[0m
+2026-05-29T19:53:52.6698338Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-05-29T19:53:52.6698685Z env:
+2026-05-29T19:53:52.6698908Z   PGRX_HOME: /tmp/tqvector_pgrx_home
+2026-05-29T19:53:52.6699339Z   RUSTFLAGS: -C target-cpu=x86-64 -C link-arg=-Wl,--unresolved-symbols=ignore-all
+2026-05-29T19:53:52.6699781Z   CARGO_HOME: /home/runner/.cargo
+2026-05-29T19:53:52.6700040Z ##[endgroup]
+2026-05-29T19:53:52.6766436Z ##[group]Run : enable colors in Cargo output
+2026-05-29T19:53:52.6766786Z [36;1m: enable colors in Cargo output[0m
+2026-05-29T19:53:52.6767278Z [36;1mif [ -z "${CARGO_TERM_COLOR+set}" ]; then[0m
+2026-05-29T19:53:52.6767626Z [36;1m  echo CARGO_TERM_COLOR=always >> $GITHUB_ENV[0m
+2026-05-29T19:53:52.6768221Z [36;1mfi[0m
+2026-05-29T19:53:52.6792158Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-05-29T19:53:52.6792503Z env:
+2026-05-29T19:53:52.6792720Z   PGRX_HOME: /tmp/tqvector_pgrx_home
+2026-05-29T19:53:52.6793138Z   RUSTFLAGS: -C target-cpu=x86-64 -C link-arg=-Wl,--unresolved-symbols=ignore-all
+2026-05-29T19:53:52.6793553Z   CARGO_HOME: /home/runner/.cargo
+2026-05-29T19:53:52.6793811Z   CARGO_INCREMENTAL: 0
+2026-05-29T19:53:52.6794040Z ##[endgroup]
+2026-05-29T19:53:52.6860253Z ##[group]Run : enable Cargo sparse registry
+2026-05-29T19:53:52.6860613Z [36;1m: enable Cargo sparse registry[0m
+2026-05-29T19:53:52.6860986Z [36;1m# implemented in 1.66, stabilized in 1.68, made default in 1.70[0m
+2026-05-29T19:53:52.6861703Z [36;1mif [ -z "${CARGO_REGISTRIES_CRATES_IO_PROTOCOL+set}" -o -f "/home/runner/work/_temp"/.implicit_cargo_registries_crates_io_protocol ]; then[0m
+2026-05-29T19:53:52.6862424Z [36;1m  if rustc +1.95.0 --version --verbose | grep -q '^release: 1\.6[89]\.'; then[0m
+2026-05-29T19:53:52.6862993Z [36;1m    touch "/home/runner/work/_temp"/.implicit_cargo_registries_crates_io_protocol || true[0m
+2026-05-29T19:53:52.6863535Z [36;1m    echo CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse >> $GITHUB_ENV[0m
+2026-05-29T19:53:52.6864026Z [36;1m  elif rustc +1.95.0 --version --verbose | grep -q '^release: 1\.6[67]\.'; then[0m
+2026-05-29T19:53:52.6864570Z [36;1m    touch "/home/runner/work/_temp"/.implicit_cargo_registries_crates_io_protocol || true[0m
+2026-05-29T19:53:52.6865077Z [36;1m    echo CARGO_REGISTRIES_CRATES_IO_PROTOCOL=git >> $GITHUB_ENV[0m
+2026-05-29T19:53:52.6865433Z [36;1m  fi[0m
+2026-05-29T19:53:52.6865648Z [36;1mfi[0m
+2026-05-29T19:53:52.6890010Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-05-29T19:53:52.6890364Z env:
+2026-05-29T19:53:52.6890593Z   PGRX_HOME: /tmp/tqvector_pgrx_home
+2026-05-29T19:53:52.6891036Z   RUSTFLAGS: -C target-cpu=x86-64 -C link-arg=-Wl,--unresolved-symbols=ignore-all
+2026-05-29T19:53:52.6891459Z   CARGO_HOME: /home/runner/.cargo
+2026-05-29T19:53:52.6891726Z   CARGO_INCREMENTAL: 0
+2026-05-29T19:53:52.6891965Z   CARGO_TERM_COLOR: always
+2026-05-29T19:53:52.6892207Z ##[endgroup]
+2026-05-29T19:53:52.7221393Z ##[group]Run : work around spurious network errors in curl 8.0
+2026-05-29T19:53:52.7221864Z [36;1m: work around spurious network errors in curl 8.0[0m
+2026-05-29T19:53:52.7222447Z [36;1m# https://rust-lang.zulipchat.com/#narrow/stream/246057-t-cargo/topic/timeout.20investigation[0m
+2026-05-29T19:53:52.7223064Z [36;1mif rustc +1.95.0 --version --verbose | grep -q '^release: 1\.7[01]\.'; then[0m
+2026-05-29T19:53:52.7223550Z [36;1m  echo CARGO_HTTP_MULTIPLEXING=false >> $GITHUB_ENV[0m
+2026-05-29T19:53:52.7223893Z [36;1mfi[0m
+2026-05-29T19:53:52.7251007Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-05-29T19:53:52.7251372Z env:
+2026-05-29T19:53:52.7251596Z   PGRX_HOME: /tmp/tqvector_pgrx_home
+2026-05-29T19:53:52.7252187Z   RUSTFLAGS: -C target-cpu=x86-64 -C link-arg=-Wl,--unresolved-symbols=ignore-all
+2026-05-29T19:53:52.7252612Z   CARGO_HOME: /home/runner/.cargo
+2026-05-29T19:53:52.7252882Z   CARGO_INCREMENTAL: 0
+2026-05-29T19:53:52.7253116Z   CARGO_TERM_COLOR: always
+2026-05-29T19:53:52.7253370Z ##[endgroup]
+2026-05-29T19:53:52.7457112Z ##[group]Run rustc +1.95.0 --version --verbose
+2026-05-29T19:53:52.7457496Z [36;1mrustc +1.95.0 --version --verbose[0m
+2026-05-29T19:53:52.7483462Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-05-29T19:53:52.7483818Z env:
+2026-05-29T19:53:52.7484049Z   PGRX_HOME: /tmp/tqvector_pgrx_home
+2026-05-29T19:53:52.7484478Z   RUSTFLAGS: -C target-cpu=x86-64 -C link-arg=-Wl,--unresolved-symbols=ignore-all
+2026-05-29T19:53:52.7484897Z   CARGO_HOME: /home/runner/.cargo
+2026-05-29T19:53:52.7485165Z   CARGO_INCREMENTAL: 0
+2026-05-29T19:53:52.7485398Z   CARGO_TERM_COLOR: always
+2026-05-29T19:53:52.7485820Z ##[endgroup]
+2026-05-29T19:53:52.7648667Z rustc 1.95.0 (59807616e 2026-04-14)
+2026-05-29T19:53:52.7649256Z binary: rustc
+2026-05-29T19:53:52.7649658Z commit-hash: 59807616e1fa2540724bfbac14d7976d7e4a3860
+2026-05-29T19:53:52.7650051Z commit-date: 2026-04-14
+2026-05-29T19:53:52.7650311Z host: x86_64-unknown-linux-gnu
+2026-05-29T19:53:52.7650644Z release: 1.95.0
+2026-05-29T19:53:52.7650972Z LLVM version: 22.1.2
+2026-05-29T19:53:52.7783927Z ##[group]Run Swatinem/rust-cache@v2
+2026-05-29T19:53:52.7784216Z with:
+2026-05-29T19:53:52.7784433Z   key: pg18-1.95.0
+2026-05-29T19:53:52.7784669Z   prefix-key: v0-rust
+2026-05-29T19:53:52.7784906Z   add-job-id-key: true
+2026-05-29T19:53:52.7785157Z   add-rust-environment-hash-key: true
+2026-05-29T19:53:52.7785444Z   cache-targets: true
+2026-05-29T19:53:52.7785683Z   cache-all-crates: false
+2026-05-29T19:53:52.7785939Z   cache-workspace-crates: false
+2026-05-29T19:53:52.7786193Z   save-if: true
+2026-05-29T19:53:52.7786416Z   cache-provider: github
+2026-05-29T19:53:52.7786669Z   cache-bin: true
+2026-05-29T19:53:52.7786895Z   lookup-only: false
+2026-05-29T19:53:52.7787119Z   cmd-format: {0}
+2026-05-29T19:53:52.7787329Z env:
+2026-05-29T19:53:52.7787546Z   PGRX_HOME: /tmp/tqvector_pgrx_home
+2026-05-29T19:53:52.7788244Z   RUSTFLAGS: -C target-cpu=x86-64 -C link-arg=-Wl,--unresolved-symbols=ignore-all
+2026-05-29T19:53:52.7788667Z   CARGO_HOME: /home/runner/.cargo
+2026-05-29T19:53:52.7788974Z   CARGO_INCREMENTAL: 0
+2026-05-29T19:53:52.7789210Z   CARGO_TERM_COLOR: always
+2026-05-29T19:53:52.7789447Z ##[endgroup]
+2026-05-29T19:53:53.0533274Z (node:2374) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+2026-05-29T19:53:53.0534584Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-05-29T19:53:55.0525800Z ##[group]Cache Configuration
+2026-05-29T19:53:55.0598046Z Cache Provider:
+2026-05-29T19:53:55.0598538Z     github
+2026-05-29T19:53:55.0598974Z Workspaces:
+2026-05-29T19:53:55.0599304Z     /home/runner/work/ecaz/ecaz
+2026-05-29T19:53:55.0599588Z Cache Paths:
+2026-05-29T19:53:55.0599807Z     /home/runner/.cargo/bin
+2026-05-29T19:53:55.0600070Z     /home/runner/.cargo/.crates.toml
+2026-05-29T19:53:55.0600355Z     /home/runner/.cargo/.crates2.json
+2026-05-29T19:53:55.0600733Z     /home/runner/.cargo/registry
+2026-05-29T19:53:55.0600991Z     /home/runner/.cargo/git
+2026-05-29T19:53:55.0601262Z     /home/runner/work/ecaz/ecaz/target
+2026-05-29T19:53:55.0601531Z Restore Key:
+2026-05-29T19:53:55.0601786Z     v0-rust-pg18-1.95.0-matrix-Linux-x64-eed618fe
+2026-05-29T19:53:55.0602089Z Cache Key:
+2026-05-29T19:53:55.0602358Z     v0-rust-pg18-1.95.0-matrix-Linux-x64-eed618fe-63a41ab8
+2026-05-29T19:53:55.0602674Z .. Prefix:
+2026-05-29T19:53:55.0602897Z   - v0-rust-pg18-1.95.0-matrix-Linux-x64
+2026-05-29T19:53:55.0603194Z .. Environment considered:
+2026-05-29T19:53:55.0603430Z   - Rust Versions:
+2026-05-29T19:53:55.0603763Z     - 1.95.0 x86_64-unknown-linux-gnu 59807616e1fa2540724bfbac14d7976d7e4a3860
+2026-05-29T19:53:55.0604241Z     - 1.95.0 x86_64-unknown-linux-gnu 59807616e1fa2540724bfbac14d7976d7e4a3860
+2026-05-29T19:53:55.0604672Z     - 1.95.0 x86_64-unknown-linux-gnu 59807616e1fa2540724bfbac14d7976d7e4a3860
+2026-05-29T19:53:55.0605013Z   - CARGO_HOME
+2026-05-29T19:53:55.0605225Z   - CARGO_INCREMENTAL
+2026-05-29T19:53:55.0605547Z   - CARGO_TERM_COLOR
+2026-05-29T19:53:55.0605768Z   - RUSTFLAGS
+2026-05-29T19:53:55.0605980Z .. Lockfiles considered:
+2026-05-29T19:53:55.0606256Z   - /home/runner/work/ecaz/ecaz/.cargo/config.toml
+2026-05-29T19:53:55.0606572Z   - /home/runner/work/ecaz/ecaz/Cargo.toml
+2026-05-29T19:53:55.0606901Z   - /home/runner/work/ecaz/ecaz/crates/ecaz-cli/Cargo.toml
+2026-05-29T19:53:55.0607277Z   - /home/runner/work/ecaz/ecaz/crates/ecaz-cloud/Cargo.toml
+2026-05-29T19:53:55.0607785Z   - /home/runner/work/ecaz/ecaz/crates/ecaz-fault-injection/Cargo.toml
+2026-05-29T19:53:55.0611661Z   - /home/runner/work/ecaz/ecaz/crates/ecaz-lints/.cargo/config.toml
+2026-05-29T19:53:55.0612658Z   - /home/runner/work/ecaz/ecaz/crates/ecaz-lints/Cargo.toml
+2026-05-29T19:53:55.0613304Z   - /home/runner/work/ecaz/ecaz/crates/ecaz-lints/rust-toolchain
+2026-05-29T19:53:55.0613916Z   - /home/runner/work/ecaz/ecaz/crates/ecaz-sqlgen/Cargo.toml
+2026-05-29T19:53:55.0614492Z   - /home/runner/work/ecaz/ecaz/hardening/careful/Cargo.toml
+2026-05-29T19:53:55.0615368Z ##[endgroup]
+2026-05-29T19:53:55.0615555Z 
+2026-05-29T19:53:55.0616007Z ... Restoring cache ...
+2026-05-29T19:53:55.1143875Z No cache found.
+2026-05-29T19:53:55.1298478Z ##[group]Run sudo install -d /usr/share/postgresql-common/pgdg
+2026-05-29T19:53:55.1298982Z [36;1msudo install -d /usr/share/postgresql-common/pgdg[0m
+2026-05-29T19:53:55.1299337Z [36;1mmkdir -p "$PGRX_HOME"[0m
+2026-05-29T19:53:55.1299648Z [36;1msudo curl --fail --show-error --location \[0m
+2026-05-29T19:53:55.1300106Z [36;1m  --output /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \[0m
+2026-05-29T19:53:55.1300602Z [36;1m  https://www.postgresql.org/media/keys/ACCC4CF8.asc[0m
+2026-05-29T19:53:55.1301329Z [36;1mecho "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt noble-pgdg main" | \[0m
+2026-05-29T19:53:55.1302021Z [36;1m  sudo tee /etc/apt/sources.list.d/pgdg.list[0m
+2026-05-29T19:53:55.1302354Z [36;1msudo apt-get update[0m
+2026-05-29T19:53:55.1302775Z [36;1msudo apt-get install -y postgresql-server-dev-18 clang llvm pkg-config libssl-dev[0m
+2026-05-29T19:53:55.1331476Z shell: /usr/bin/bash -e {0}
+2026-05-29T19:53:55.1331741Z env:
+2026-05-29T19:53:55.1331971Z   PGRX_HOME: /tmp/tqvector_pgrx_home
+2026-05-29T19:53:55.1332394Z   RUSTFLAGS: -C target-cpu=x86-64 -C link-arg=-Wl,--unresolved-symbols=ignore-all
+2026-05-29T19:53:55.1332815Z   CARGO_HOME: /home/runner/.cargo
+2026-05-29T19:53:55.1333081Z   CARGO_INCREMENTAL: 0
+2026-05-29T19:53:55.1333321Z   CARGO_TERM_COLOR: always
+2026-05-29T19:53:55.1333570Z   CACHE_ON_FAILURE: false
+2026-05-29T19:53:55.1333813Z ##[endgroup]
+2026-05-29T19:53:55.1603190Z   % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+2026-05-29T19:53:55.1603900Z                                  Dload  Upload   Total   Spent    Left  Speed
+2026-05-29T19:53:55.1604234Z 
+2026-05-29T19:53:55.2251508Z   0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0
+2026-05-29T19:53:55.6964907Z   0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0
+2026-05-29T19:53:55.6965422Z 100  4812  100  4812    0     0   8972      0 --:--:-- --:--:-- --:--:--  8960
+2026-05-29T19:53:55.7071441Z deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt noble-pgdg main
+2026-05-29T19:53:56.0915701Z Get:1 file:/etc/apt/apt-mirrors.txt Mirrorlist [144 B]
+2026-05-29T19:53:56.1363146Z Hit:6 https://packages.microsoft.com/repos/azure-cli noble InRelease
+2026-05-29T19:53:56.1363967Z Hit:2 http://azure.archive.ubuntu.com/ubuntu noble InRelease
+2026-05-29T19:53:56.1364733Z Get:7 https://packages.microsoft.com/ubuntu/24.04/prod noble InRelease [3600 B]
+2026-05-29T19:53:56.1773806Z Get:8 https://dl.google.com/linux/chrome-stable/deb stable InRelease [1825 B]
+2026-05-29T19:53:56.1792219Z Get:3 http://azure.archive.ubuntu.com/ubuntu noble-updates InRelease [126 kB]
+2026-05-29T19:53:56.1829244Z Get:4 http://azure.archive.ubuntu.com/ubuntu noble-backports InRelease [126 kB]
+2026-05-29T19:53:56.1846370Z Get:5 http://azure.archive.ubuntu.com/ubuntu noble-security InRelease [126 kB]
+2026-05-29T19:53:56.2277174Z Get:9 https://apt.postgresql.org/pub/repos/apt noble-pgdg InRelease [180 kB]
+2026-05-29T19:53:56.5888782Z Get:10 https://packages.microsoft.com/ubuntu/24.04/prod noble/main amd64 Packages [163 kB]
+2026-05-29T19:53:56.6069237Z Get:11 https://packages.microsoft.com/ubuntu/24.04/prod noble/main arm64 Packages [134 kB]
+2026-05-29T19:53:56.6941499Z Get:12 http://azure.archive.ubuntu.com/ubuntu noble-updates/main amd64 Packages [2049 kB]
+2026-05-29T19:53:56.7277460Z Get:22 https://dl.google.com/linux/chrome-stable/deb stable/main amd64 Packages [1218 B]
+2026-05-29T19:53:56.7769475Z Get:13 http://azure.archive.ubuntu.com/ubuntu noble-updates/main Translation-en [360 kB]
+2026-05-29T19:53:56.7797452Z Get:14 http://azure.archive.ubuntu.com/ubuntu noble-updates/main amd64 Components [177 kB]
+2026-05-29T19:53:57.2329649Z Get:15 http://azure.archive.ubuntu.com/ubuntu noble-updates/universe amd64 Packages [1694 kB]
+2026-05-29T19:53:57.2509384Z Get:34 https://apt.postgresql.org/pub/repos/apt noble-pgdg/main amd64 Packages [560 kB]
+2026-05-29T19:53:57.2523804Z Get:16 http://azure.archive.ubuntu.com/ubuntu noble-updates/universe Translation-en [330 kB]
+2026-05-29T19:53:57.2773905Z Get:17 http://azure.archive.ubuntu.com/ubuntu noble-updates/universe amd64 Components [386 kB]
+2026-05-29T19:53:57.3253861Z Get:18 http://azure.archive.ubuntu.com/ubuntu noble-updates/restricted amd64 Packages [3278 kB]
+2026-05-29T19:53:57.3562693Z Get:19 http://azure.archive.ubuntu.com/ubuntu noble-updates/restricted Translation-en [760 kB]
+2026-05-29T19:53:57.3879754Z Get:20 http://azure.archive.ubuntu.com/ubuntu noble-updates/multiverse Translation-en [11.3 kB]
+2026-05-29T19:53:57.4363232Z Get:21 http://azure.archive.ubuntu.com/ubuntu noble-updates/multiverse amd64 Components [940 B]
+2026-05-29T19:53:57.4806044Z Get:23 http://azure.archive.ubuntu.com/ubuntu noble-backports/main amd64 Components [5760 B]
+2026-05-29T19:53:57.4814980Z Get:24 http://azure.archive.ubuntu.com/ubuntu noble-backports/universe amd64 Components [10.5 kB]
+2026-05-29T19:53:57.4825834Z Get:25 http://azure.archive.ubuntu.com/ubuntu noble-security/main amd64 Packages [1704 kB]
+2026-05-29T19:53:57.4915803Z Get:26 http://azure.archive.ubuntu.com/ubuntu noble-security/main Translation-en [268 kB]
+2026-05-29T19:53:57.4935935Z Get:27 http://azure.archive.ubuntu.com/ubuntu noble-security/main amd64 Components [42.5 kB]
+2026-05-29T19:53:57.4947758Z Get:28 http://azure.archive.ubuntu.com/ubuntu noble-security/universe amd64 Packages [1192 kB]
+2026-05-29T19:53:57.5013803Z Get:29 http://azure.archive.ubuntu.com/ubuntu noble-security/universe Translation-en [230 kB]
+2026-05-29T19:53:57.5033168Z Get:30 http://azure.archive.ubuntu.com/ubuntu noble-security/universe amd64 Components [74.2 kB]
+2026-05-29T19:53:57.5046508Z Get:31 http://azure.archive.ubuntu.com/ubuntu noble-security/restricted amd64 Packages [3006 kB]
+2026-05-29T19:53:57.5203808Z Get:32 http://azure.archive.ubuntu.com/ubuntu noble-security/restricted Translation-en [698 kB]
+2026-05-29T19:53:57.5245085Z Get:33 http://azure.archive.ubuntu.com/ubuntu noble-security/multiverse Translation-en [9000 B]
+2026-05-29T19:54:02.0790518Z Fetched 17.7 MB in 3s (5932 kB/s)
+2026-05-29T19:54:02.8796887Z Reading package lists...
+2026-05-29T19:54:02.9136390Z Reading package lists...
+2026-05-29T19:54:03.1009811Z Building dependency tree...
+2026-05-29T19:54:03.1016686Z Reading state information...
+2026-05-29T19:54:03.2836064Z pkg-config is already the newest version (1.8.1-2build1).
+2026-05-29T19:54:03.2836759Z libssl-dev is already the newest version (3.0.13-0ubuntu3.9).
+2026-05-29T19:54:03.2837391Z The following additional packages will be installed:
+2026-05-29T19:54:03.2838260Z   clang-19 libclang-common-19-dev libclang-cpp19 libclang-rt-19-dev
+2026-05-29T19:54:03.2841417Z   libclang1-19 llvm-19 llvm-19-dev llvm-19-linker-tools llvm-19-runtime
+2026-05-29T19:54:03.2843253Z   llvm-19-tools llvm-runtime postgresql-client-18
+2026-05-29T19:54:03.2848534Z Suggested packages:
+2026-05-29T19:54:03.2849038Z   clang-19-doc wasi-libc llvm-19-doc postgresql-18 postgresql-doc-18
+2026-05-29T19:54:03.3175536Z The following NEW packages will be installed:
+2026-05-29T19:54:03.3176360Z   clang clang-19 libclang-common-19-dev libclang-cpp19 libclang-rt-19-dev
+2026-05-29T19:54:03.3181214Z   libclang1-19 llvm llvm-19 llvm-19-dev llvm-19-linker-tools llvm-19-runtime
+2026-05-29T19:54:03.3183495Z   llvm-19-tools llvm-runtime postgresql-client-18 postgresql-server-dev-18
+2026-05-29T19:54:03.3417399Z 0 upgraded, 15 newly installed, 0 to remove and 48 not upgraded.
+2026-05-29T19:54:03.3418544Z Need to get 98.5 MB of archives.
+2026-05-29T19:54:03.3422298Z After this operation, 628 MB of additional disk space will be used.
+2026-05-29T19:54:03.3422931Z Get:1 file:/etc/apt/apt-mirrors.txt Mirrorlist [144 B]
+2026-05-29T19:54:03.3840739Z Get:2 http://azure.archive.ubuntu.com/ubuntu noble/universe amd64 clang amd64 1:18.0-59~exp2 [5846 B]
+2026-05-29T19:54:03.3975415Z Get:3 http://azure.archive.ubuntu.com/ubuntu noble-updates/universe amd64 libclang-cpp19 amd64 1:19.1.1-1ubuntu1~24.04.2 [14.3 MB]
+2026-05-29T19:54:03.3983464Z Get:15 https://apt.postgresql.org/pub/repos/apt noble-pgdg/main amd64 postgresql-client-18 amd64 18.4-1.pgdg24.04+1 [2095 kB]
+2026-05-29T19:54:03.4356551Z Get:16 https://apt.postgresql.org/pub/repos/apt noble-pgdg/main amd64 postgresql-server-dev-18 amd64 18.4-1.pgdg24.04+1 [1397 kB]
+2026-05-29T19:54:03.8135216Z Get:4 http://azure.archive.ubuntu.com/ubuntu noble-updates/universe amd64 libclang-common-19-dev amd64 1:19.1.1-1ubuntu1~24.04.2 [743 kB]
+2026-05-29T19:54:03.8378688Z Get:5 http://azure.archive.ubuntu.com/ubuntu noble-updates/universe amd64 llvm-19-linker-tools amd64 1:19.1.1-1ubuntu1~24.04.2 [1314 kB]
+2026-05-29T19:54:03.8799517Z Get:6 http://azure.archive.ubuntu.com/ubuntu noble-updates/universe amd64 libclang1-19 amd64 1:19.1.1-1ubuntu1~24.04.2 [8272 kB]
+2026-05-29T19:54:04.0180255Z Get:7 http://azure.archive.ubuntu.com/ubuntu noble-updates/universe amd64 clang-19 amd64 1:19.1.1-1ubuntu1~24.04.2 [78.9 kB]
+2026-05-29T19:54:04.0261595Z Get:8 http://azure.archive.ubuntu.com/ubuntu noble-updates/universe amd64 libclang-rt-19-dev amd64 1:19.1.1-1ubuntu1~24.04.2 [3893 kB]
+2026-05-29T19:54:04.0899537Z Get:9 http://azure.archive.ubuntu.com/ubuntu noble/universe amd64 llvm-runtime amd64 1:18.0-59~exp2 [5496 B]
+2026-05-29T19:54:04.0966459Z Get:10 http://azure.archive.ubuntu.com/ubuntu noble/universe amd64 llvm amd64 1:18.0-59~exp2 [4146 B]
+2026-05-29T19:54:04.1034935Z Get:11 http://azure.archive.ubuntu.com/ubuntu noble-updates/universe amd64 llvm-19-runtime amd64 1:19.1.1-1ubuntu1~24.04.2 [553 kB]
+2026-05-29T19:54:04.1164984Z Get:12 http://azure.archive.ubuntu.com/ubuntu noble-updates/universe amd64 llvm-19 amd64 1:19.1.1-1ubuntu1~24.04.2 [17.8 MB]
+2026-05-29T19:54:04.3368417Z Get:13 http://azure.archive.ubuntu.com/ubuntu noble-updates/universe amd64 llvm-19-tools amd64 1:19.1.1-1ubuntu1~24.04.2 [541 kB]
+2026-05-29T19:54:04.3494629Z Get:14 http://azure.archive.ubuntu.com/ubuntu noble-updates/universe amd64 llvm-19-dev amd64 1:19.1.1-1ubuntu1~24.04.2 [47.5 MB]
+2026-05-29T19:54:05.1537972Z Fetched 98.5 MB in 2s (63.2 MB/s)
+2026-05-29T19:54:05.1756826Z Selecting previously unselected package clang.
+2026-05-29T19:54:05.1983706Z (Reading database ... 
+2026-05-29T19:54:05.1984112Z (Reading database ... 5%
+2026-05-29T19:54:05.1984465Z (Reading database ... 10%
+2026-05-29T19:54:05.1984715Z (Reading database ... 15%
+2026-05-29T19:54:05.1984941Z (Reading database ... 20%
+2026-05-29T19:54:05.1985165Z (Reading database ... 25%
+2026-05-29T19:54:05.1985406Z (Reading database ... 30%
+2026-05-29T19:54:05.1985778Z (Reading database ... 35%
+2026-05-29T19:54:05.1986134Z (Reading database ... 40%
+2026-05-29T19:54:05.1986498Z (Reading database ... 45%
+2026-05-29T19:54:05.1986855Z (Reading database ... 50%
+2026-05-29T19:54:05.2015630Z (Reading database ... 55%
+2026-05-29T19:54:05.3389394Z (Reading database ... 60%
+2026-05-29T19:54:05.5274677Z (Reading database ... 65%
+2026-05-29T19:54:05.6873087Z (Reading database ... 70%
+2026-05-29T19:54:05.8269038Z (Reading database ... 75%
+2026-05-29T19:54:06.0324553Z (Reading database ... 80%
+2026-05-29T19:54:06.2386495Z (Reading database ... 85%
+2026-05-29T19:54:06.4314941Z (Reading database ... 90%
+2026-05-29T19:54:06.5943683Z (Reading database ... 95%
+2026-05-29T19:54:06.5944026Z (Reading database ... 100%
+2026-05-29T19:54:06.5944389Z (Reading database ... 202271 files and directories currently installed.)
+2026-05-29T19:54:06.5987466Z Preparing to unpack .../00-clang_1%3a18.0-59~exp2_amd64.deb ...
+2026-05-29T19:54:06.6012551Z Unpacking clang (1:18.0-59~exp2) ...
+2026-05-29T19:54:06.6229696Z Selecting previously unselected package libclang-cpp19.
+2026-05-29T19:54:06.6356264Z Preparing to unpack .../01-libclang-cpp19_1%3a19.1.1-1ubuntu1~24.04.2_amd64.deb ...
+2026-05-29T19:54:06.6371860Z Unpacking libclang-cpp19 (1:19.1.1-1ubuntu1~24.04.2) ...
+2026-05-29T19:54:06.8769881Z Selecting previously unselected package libclang-common-19-dev:amd64.
+2026-05-29T19:54:06.8899798Z Preparing to unpack .../02-libclang-common-19-dev_1%3a19.1.1-1ubuntu1~24.04.2_amd64.deb ...
+2026-05-29T19:54:06.8906261Z Unpacking libclang-common-19-dev:amd64 (1:19.1.1-1ubuntu1~24.04.2) ...
+2026-05-29T19:54:06.9779589Z Selecting previously unselected package llvm-19-linker-tools.
+2026-05-29T19:54:06.9910587Z Preparing to unpack .../03-llvm-19-linker-tools_1%3a19.1.1-1ubuntu1~24.04.2_amd64.deb ...
+2026-05-29T19:54:06.9917110Z Unpacking llvm-19-linker-tools (1:19.1.1-1ubuntu1~24.04.2) ...
+2026-05-29T19:54:07.0285475Z Selecting previously unselected package libclang1-19.
+2026-05-29T19:54:07.0412928Z Preparing to unpack .../04-libclang1-19_1%3a19.1.1-1ubuntu1~24.04.2_amd64.deb ...
+2026-05-29T19:54:07.0419835Z Unpacking libclang1-19 (1:19.1.1-1ubuntu1~24.04.2) ...
+2026-05-29T19:54:07.1888951Z Selecting previously unselected package clang-19.
+2026-05-29T19:54:07.2021224Z Preparing to unpack .../05-clang-19_1%3a19.1.1-1ubuntu1~24.04.2_amd64.deb ...
+2026-05-29T19:54:07.2030142Z Unpacking clang-19 (1:19.1.1-1ubuntu1~24.04.2) ...
+2026-05-29T19:54:07.2282976Z Selecting previously unselected package libclang-rt-19-dev:amd64.
+2026-05-29T19:54:07.2410379Z Preparing to unpack .../06-libclang-rt-19-dev_1%3a19.1.1-1ubuntu1~24.04.2_amd64.deb ...
+2026-05-29T19:54:07.2416466Z Unpacking libclang-rt-19-dev:amd64 (1:19.1.1-1ubuntu1~24.04.2) ...
+2026-05-29T19:54:07.4053819Z Selecting previously unselected package llvm-runtime:amd64.
+2026-05-29T19:54:07.4186495Z Preparing to unpack .../07-llvm-runtime_1%3a18.0-59~exp2_amd64.deb ...
+2026-05-29T19:54:07.4193667Z Unpacking llvm-runtime:amd64 (1:18.0-59~exp2) ...
+2026-05-29T19:54:07.4390586Z Selecting previously unselected package llvm.
+2026-05-29T19:54:07.4517160Z Preparing to unpack .../08-llvm_1%3a18.0-59~exp2_amd64.deb ...
+2026-05-29T19:54:07.4546796Z Unpacking llvm (1:18.0-59~exp2) ...
+2026-05-29T19:54:07.4852449Z Selecting previously unselected package llvm-19-runtime.
+2026-05-29T19:54:07.4978768Z Preparing to unpack .../09-llvm-19-runtime_1%3a19.1.1-1ubuntu1~24.04.2_amd64.deb ...
+2026-05-29T19:54:07.4986455Z Unpacking llvm-19-runtime (1:19.1.1-1ubuntu1~24.04.2) ...
+2026-05-29T19:54:07.5260876Z Selecting previously unselected package llvm-19.
+2026-05-29T19:54:07.5388709Z Preparing to unpack .../10-llvm-19_1%3a19.1.1-1ubuntu1~24.04.2_amd64.deb ...
+2026-05-29T19:54:07.5395013Z Unpacking llvm-19 (1:19.1.1-1ubuntu1~24.04.2) ...
+2026-05-29T19:54:07.8353144Z Selecting previously unselected package llvm-19-tools.
+2026-05-29T19:54:07.8485998Z Preparing to unpack .../11-llvm-19-tools_1%3a19.1.1-1ubuntu1~24.04.2_amd64.deb ...
+2026-05-29T19:54:07.8492340Z Unpacking llvm-19-tools (1:19.1.1-1ubuntu1~24.04.2) ...
+2026-05-29T19:54:07.9618865Z Selecting previously unselected package llvm-19-dev.
+2026-05-29T19:54:07.9752730Z Preparing to unpack .../12-llvm-19-dev_1%3a19.1.1-1ubuntu1~24.04.2_amd64.deb ...
+2026-05-29T19:54:07.9760503Z Unpacking llvm-19-dev (1:19.1.1-1ubuntu1~24.04.2) ...
+2026-05-29T19:54:09.3200748Z Selecting previously unselected package postgresql-client-18.
+2026-05-29T19:54:09.3343168Z Preparing to unpack .../13-postgresql-client-18_18.4-1.pgdg24.04+1_amd64.deb ...
+2026-05-29T19:54:09.3349199Z Unpacking postgresql-client-18 (18.4-1.pgdg24.04+1) ...
+2026-05-29T19:54:09.5076176Z Selecting previously unselected package postgresql-server-dev-18.
+2026-05-29T19:54:09.5212133Z Preparing to unpack .../14-postgresql-server-dev-18_18.4-1.pgdg24.04+1_amd64.deb ...
+2026-05-29T19:54:09.5219181Z Unpacking postgresql-server-dev-18 (18.4-1.pgdg24.04+1) ...
+2026-05-29T19:54:09.7140425Z Setting up libclang1-19 (1:19.1.1-1ubuntu1~24.04.2) ...
+2026-05-29T19:54:09.7160307Z Setting up postgresql-client-18 (18.4-1.pgdg24.04+1) ...
+2026-05-29T19:54:10.0945514Z update-alternatives: using /usr/share/postgresql/18/man/man1/psql.1.gz to provide /usr/share/man/man1/psql.1.gz (psql.1.gz) in auto mode
+2026-05-29T19:54:10.1198134Z Setting up libclang-common-19-dev:amd64 (1:19.1.1-1ubuntu1~24.04.2) ...
+2026-05-29T19:54:10.1214872Z Setting up clang (1:18.0-59~exp2) ...
+2026-05-29T19:54:10.1430999Z Setting up llvm-runtime:amd64 (1:18.0-59~exp2) ...
+2026-05-29T19:54:10.1447450Z Setting up llvm (1:18.0-59~exp2) ...
+2026-05-29T19:54:10.1466154Z Setting up libclang-rt-19-dev:amd64 (1:19.1.1-1ubuntu1~24.04.2) ...
+2026-05-29T19:54:10.1482103Z Setting up llvm-19-linker-tools (1:19.1.1-1ubuntu1~24.04.2) ...
+2026-05-29T19:54:10.1501042Z Setting up llvm-19-runtime (1:19.1.1-1ubuntu1~24.04.2) ...
+2026-05-29T19:54:10.1528926Z Setting up llvm-19-tools (1:19.1.1-1ubuntu1~24.04.2) ...
+2026-05-29T19:54:10.1547056Z Setting up libclang-cpp19 (1:19.1.1-1ubuntu1~24.04.2) ...
+2026-05-29T19:54:10.1564199Z Setting up clang-19 (1:19.1.1-1ubuntu1~24.04.2) ...
+2026-05-29T19:54:10.1580805Z Setting up llvm-19 (1:19.1.1-1ubuntu1~24.04.2) ...
+2026-05-29T19:54:10.1596604Z Setting up llvm-19-dev (1:19.1.1-1ubuntu1~24.04.2) ...
+2026-05-29T19:54:10.1613928Z Setting up postgresql-server-dev-18 (18.4-1.pgdg24.04+1) ...
+2026-05-29T19:54:10.1636543Z Processing triggers for man-db (2.12.0-4build2) ...
+2026-05-29T19:54:10.1657453Z Not building database; man-db/auto-update is not 'true'.
+2026-05-29T19:54:10.1672422Z Processing triggers for postgresql-common (291.pgdg24.04+1) ...
+2026-05-29T19:54:10.3327664Z Building PostgreSQL dictionaries from installed myspell/hunspell packages...
+2026-05-29T19:54:10.3421463Z   en_us
+2026-05-29T19:54:10.3998746Z Removing obsolete dictionary files:
+2026-05-29T19:54:10.4196045Z Processing triggers for libc-bin (2.39-0ubuntu8.7) ...
+2026-05-29T19:54:10.4473521Z Processing triggers for systemd (255.4-1ubuntu8.15) ...
+2026-05-29T19:54:11.0638846Z 
+2026-05-29T19:54:11.0639369Z Running kernel seems to be up-to-date.
+2026-05-29T19:54:11.0639671Z 
+2026-05-29T19:54:11.0639779Z No services need to be restarted.
+2026-05-29T19:54:11.0639970Z 
+2026-05-29T19:54:11.0640075Z No containers need to be restarted.
+2026-05-29T19:54:11.0640266Z 
+2026-05-29T19:54:11.0640396Z No user sessions are running outdated binaries.
+2026-05-29T19:54:11.0640616Z 
+2026-05-29T19:54:11.0640824Z No VM guests are running outdated hypervisor (qemu) binaries on this host.
+2026-05-29T19:54:11.9718212Z ##[group]Run echo "PGRX_PG_CONFIG_PATH=/usr/lib/postgresql/18/bin/pg_config" >> $GITHUB_ENV
+2026-05-29T19:54:11.9719262Z [36;1mecho "PGRX_PG_CONFIG_PATH=/usr/lib/postgresql/18/bin/pg_config" >> $GITHUB_ENV[0m
+2026-05-29T19:54:11.9749230Z shell: /usr/bin/bash -e {0}
+2026-05-29T19:54:11.9749508Z env:
+2026-05-29T19:54:11.9749740Z   PGRX_HOME: /tmp/tqvector_pgrx_home
+2026-05-29T19:54:11.9750184Z   RUSTFLAGS: -C target-cpu=x86-64 -C link-arg=-Wl,--unresolved-symbols=ignore-all
+2026-05-29T19:54:11.9750624Z   CARGO_HOME: /home/runner/.cargo
+2026-05-29T19:54:11.9750894Z   CARGO_INCREMENTAL: 0
+2026-05-29T19:54:11.9751143Z   CARGO_TERM_COLOR: always
+2026-05-29T19:54:11.9751390Z   CACHE_ON_FAILURE: false
+2026-05-29T19:54:11.9751625Z ##[endgroup]
+2026-05-29T19:54:11.9823161Z ##[group]Run cargo check --all-targets --no-default-features --features pg18
+2026-05-29T19:54:11.9823716Z [36;1mcargo check --all-targets --no-default-features --features pg18[0m
+2026-05-29T19:54:11.9848576Z shell: /usr/bin/bash -e {0}
+2026-05-29T19:54:11.9848839Z env:
+2026-05-29T19:54:11.9849063Z   PGRX_HOME: /tmp/tqvector_pgrx_home
+2026-05-29T19:54:11.9849481Z   RUSTFLAGS: -C target-cpu=x86-64 -C link-arg=-Wl,--unresolved-symbols=ignore-all
+2026-05-29T19:54:11.9849898Z   CARGO_HOME: /home/runner/.cargo
+2026-05-29T19:54:11.9850165Z   CARGO_INCREMENTAL: 0
+2026-05-29T19:54:11.9850399Z   CARGO_TERM_COLOR: always
+2026-05-29T19:54:11.9850646Z   CACHE_ON_FAILURE: false
+2026-05-29T19:54:11.9850945Z   PGRX_PG_CONFIG_PATH: /usr/lib/postgresql/18/bin/pg_config
+2026-05-29T19:54:11.9851299Z ##[endgroup]
+2026-05-29T19:54:12.0241576Z [1m[92m    Updating[0m crates.io index
+2026-05-29T19:54:13.6871839Z [1m[92m     Locking[0m 474 packages to latest compatible versions
+2026-05-29T19:54:13.6886916Z [1m[92m      Adding[0m arrow-array v55.2.0 [1m[33m(available: v58.3.0)[0m
+2026-05-29T19:54:13.6897120Z [1m[92m      Adding[0m arrow-schema v55.2.0 [1m[33m(available: v58.3.0)[0m
+2026-05-29T19:54:13.6976148Z [1m[92m      Adding[0m criterion v0.5.1 [1m[33m(available: v0.8.2)[0m
+2026-05-29T19:54:13.6986857Z [1m[92m      Adding[0m directories v5.0.1 [1m[33m(available: v6.0.0)[0m
+2026-05-29T19:54:13.7010605Z [1m[92m      Adding[0m generic-array v0.14.7 [1m[33m(available: v0.14.9)[0m
+2026-05-29T19:54:13.7024041Z [1m[92m      Adding[0m hashbrown v0.15.5 [1m[33m(available: v0.17.1)[0m
+2026-05-29T19:54:13.7052688Z [1m[92m      Adding[0m iai-callgrind v0.14.2 [1m[33m(available: v0.16.1)[0m
+2026-05-29T19:54:13.7067260Z [1m[92m      Adding[0m indicatif v0.17.11 [1m[33m(available: v0.18.4)[0m
+2026-05-29T19:54:13.7096690Z [1m[92m      Adding[0m ndarray v0.16.1 [1m[33m(available: v0.17.2)[0m
+2026-05-29T19:54:13.7171956Z [1m[92m      Adding[0m parquet v55.2.0 [1m[33m(available: v58.3.0)[0m
+2026-05-29T19:54:13.7182873Z [1m[92m      Adding[0m pgrx v0.17.0 [1m[33m(available: v0.18.0)[0m
+2026-05-29T19:54:13.7188223Z [1m[92m      Adding[0m pgrx-pg-config v0.17.0 [1m[33m(available: v0.18.0)[0m
+2026-05-29T19:54:13.7195673Z [1m[92m      Adding[0m pgrx-tests v0.17.0 [1m[33m(available: v0.18.0)[0m
+2026-05-29T19:54:13.7224811Z [1m[92m      Adding[0m rand v0.8.6 [1m[33m(available: v0.10.1)[0m
+2026-05-29T19:54:13.7229852Z [1m[92m      Adding[0m rand_chacha v0.3.1 [1m[33m(available: v0.10.0)[0m
+2026-05-29T19:54:13.7231941Z [1m[92m      Adding[0m rand_distr v0.4.3 [1m[33m(available: v0.6.0)[0m
+2026-05-29T19:54:13.7260962Z [1m[92m      Adding[0m reqwest v0.12.28 [1m[33m(available: v0.13.4)[0m
+2026-05-29T19:54:13.7367176Z [1m[92m      Adding[0m sha2 v0.10.9 [1m[33m(available: v0.11.0)[0m
+2026-05-29T19:54:13.7681187Z [1m[92m Downloading[0m crates ...
+2026-05-29T19:54:13.9170780Z [1m[92m  Downloaded[0m futures-task v0.3.32
+2026-05-29T19:54:13.9266575Z [1m[92m  Downloaded[0m postgres-types v0.2.13
+2026-05-29T19:54:13.9676577Z [1m[92m  Downloaded[0m iai-callgrind v0.14.2
+2026-05-29T19:54:13.9809832Z [1m[92m  Downloaded[0m hashbrown v0.15.5
+2026-05-29T19:54:14.1294722Z [1m[92m  Downloaded[0m futures-channel v0.3.32
+2026-05-29T19:54:14.1690874Z [1m[92m  Downloaded[0m fallible-iterator v0.2.0
+2026-05-29T19:54:14.1710157Z [1m[92m  Downloaded[0m thiserror v1.0.69
+2026-05-29T19:54:14.1773293Z [1m[92m  Downloaded[0m bitflags v2.11.1
+2026-05-29T19:54:14.1849419Z [1m[92m  Downloaded[0m ciborium-io v0.2.2
+2026-05-29T19:54:14.1884356Z [1m[92m  Downloaded[0m anes v0.1.6
+2026-05-29T19:54:14.2003812Z [1m[92m  Downloaded[0m icu_collections v2.2.0
+2026-05-29T19:54:14.2089087Z [1m[92m  Downloaded[0m derive_more-impl v2.1.1
+2026-05-29T19:54:14.2165896Z [1m[92m  Downloaded[0m clang-sys v1.8.1
+2026-05-29T19:54:14.2387538Z [1m[92m  Downloaded[0m icu_normalizer_data v2.2.0
+2026-05-29T19:54:14.2416056Z [1m[92m  Downloaded[0m const-oid v0.10.2
+2026-05-29T19:54:14.2446230Z [1m[92m  Downloaded[0m foldhash v0.1.5
+2026-05-29T19:54:14.2497365Z [1m[92m  Downloaded[0m icu_properties_data v2.2.0
+2026-05-29T19:54:14.2611088Z [1m[92m  Downloaded[0m idna_adapter v1.2.2
+2026-05-29T19:54:14.2626720Z [1m[92m  Downloaded[0m hybrid-array v0.4.12
+2026-05-29T19:54:14.2656475Z [1m[92m  Downloaded[0m toml_parser v1.1.2+spec-1.1.0
+2026-05-29T19:54:14.2686829Z [1m[92m  Downloaded[0m getrandom v0.3.4
+2026-05-29T19:54:14.2726691Z [1m[92m  Downloaded[0m ciborium v0.2.2
+2026-05-29T19:54:14.2759681Z [1m[92m  Downloaded[0m ctutils v0.4.2
+2026-05-29T19:54:14.2787021Z [1m[92m  Downloaded[0m base64 v0.22.1
+2026-05-29T19:54:14.2832457Z [1m[92m  Downloaded[0m is-terminal v0.4.17
+2026-05-29T19:54:14.2846128Z [1m[92m  Downloaded[0m bindgen v0.72.1
+2026-05-29T19:54:14.2917623Z [1m[92m  Downloaded[0m hashbrown v0.17.1
+2026-05-29T19:54:14.2977417Z [1m[92m  Downloaded[0m tinytemplate v1.2.1
+2026-05-29T19:54:14.2999334Z [1m[92m  Downloaded[0m clap_lex v1.1.0
+2026-05-29T19:54:14.3039586Z [1m[92m  Downloaded[0m fnv v1.0.7
+2026-05-29T19:54:14.3053375Z [1m[92m  Downloaded[0m camino v1.2.2
+2026-05-29T19:54:14.3078632Z [1m[92m  Downloaded[0m futures-macro v0.3.32
+2026-05-29T19:54:14.3172543Z [1m[92m  Downloaded[0m cast v0.3.0
+2026-05-29T19:54:14.3228988Z [1m[92m  Downloaded[0m errno v0.3.14
+2026-05-29T19:54:14.3252259Z [1m[92m  Downloaded[0m half v2.7.1
+2026-05-29T19:54:14.3284788Z [1m[92m  Downloaded[0m convert_case v0.8.0
+2026-05-29T19:54:14.3303566Z [1m[92m  Downloaded[0m async-trait v0.1.89
+2026-05-29T19:54:14.3346524Z [1m[92m  Downloaded[0m enum-map v2.7.3
+2026-05-29T19:54:14.3422903Z [1m[92m  Downloaded[0m criterion v0.5.1
+2026-05-29T19:54:14.3536800Z [1m[92m  Downloaded[0m cargo_metadata v0.18.1
+2026-05-29T19:54:14.3561307Z [1m[92m  Downloaded[0m crossbeam-deque v0.8.6
+2026-05-29T19:54:14.3666741Z [1m[92m  Downloaded[0m cexpr v0.6.0
+2026-05-29T19:54:14.4519914Z [1m[92m  Downloaded[0m bitvec v1.0.1
+2026-05-29T19:54:14.4912214Z [1m[92m  Downloaded[0m tap v1.0.1
+2026-05-29T19:54:14.4926397Z [1m[92m  Downloaded[0m rand_chacha v0.3.1
+2026-05-29T19:54:14.4942703Z [1m[92m  Downloaded[0m tinyvec_macros v0.1.1
+2026-05-29T19:54:14.5192653Z [1m[92m  Downloaded[0m plotters-svg v0.3.7
+2026-05-29T19:54:14.5205953Z [1m[92m  Downloaded[0m pgrx-bindgen v0.17.0
+2026-05-29T19:54:14.5582310Z [1m[92m  Downloaded[0m tokio-util v0.7.18
+2026-05-29T19:54:14.5700967Z [1m[92m  Downloaded[0m bincode v1.3.3
+2026-05-29T19:54:14.5788594Z [1m[92m  Downloaded[0m thiserror-impl v1.0.69
+2026-05-29T19:54:14.5838934Z [1m[92m  Downloaded[0m shlex v1.3.0
+2026-05-29T19:54:14.5855305Z [1m[92m  Downloaded[0m serde_derive v1.0.228
+2026-05-29T19:54:14.6006844Z [1m[92m  Downloaded[0m toml v0.9.12+spec-1.1.0
+2026-05-29T19:54:14.6053261Z [1m[92m  Downloaded[0m libloading v0.8.9
+2026-05-29T19:54:14.6158320Z [1m[92m  Downloaded[0m semver v1.0.28
+2026-05-29T19:54:14.6185804Z [1m[92m  Downloaded[0m itoa v1.0.18
+2026-05-29T19:54:14.6229591Z [1m[92m  Downloaded[0m proc-macro-error-attr2 v2.0.0
+2026-05-29T19:54:14.6244232Z [1m[92m  Downloaded[0m stringprep v0.1.5
+2026-05-29T19:54:14.6262755Z [1m[92m  Downloaded[0m quote v1.0.45
+2026-05-29T19:54:14.6294329Z [1m[92m  Downloaded[0m stable_deref_trait v1.2.1
+2026-05-29T19:54:14.6308145Z [1m[92m  Downloaded[0m log v0.4.30
+2026-05-29T19:54:14.6336481Z [1m[92m  Downloaded[0m litemap v0.8.2
+2026-05-29T19:54:14.6402171Z [1m[92m  Downloaded[0m thiserror-impl v2.0.18
+2026-05-29T19:54:14.6430100Z [1m[92m  Downloaded[0m rustc-hash v2.1.2
+2026-05-29T19:54:14.6488569Z [1m[92m  Downloaded[0m synstructure v0.13.2
+2026-05-29T19:54:14.6541459Z [1m[92m  Downloaded[0m rustix v1.1.4
+2026-05-29T19:54:14.6823571Z [1m[92m  Downloaded[0m wait-timeout v0.2.1
+2026-05-29T19:54:14.6848663Z [1m[92m  Downloaded[0m is_ci v1.2.0
+2026-05-29T19:54:14.6866319Z [1m[92m  Downloaded[0m lock_api v0.4.14
+2026-05-29T19:54:14.6885800Z [1m[92m  Downloaded[0m iai-callgrind-runner v0.14.2
+2026-05-29T19:54:14.7008463Z [1m[92m  Downloaded[0m untrusted v0.9.0
+2026-05-29T19:54:14.7031970Z [1m[92m  Downloaded[0m once_cell v1.21.4
+2026-05-29T19:54:14.7064617Z [1m[92m  Downloaded[0m petgraph v0.8.3
+2026-05-29T19:54:14.7284508Z [1m[92m  Downloaded[0m zerofrom v0.1.8
+2026-05-29T19:54:14.7302265Z [1m[92m  Downloaded[0m sysinfo v0.34.2
+2026-05-29T19:54:14.7412857Z [1m[92m  Downloaded[0m siphasher v1.0.3
+2026-05-29T19:54:14.7433543Z [1m[92m  Downloaded[0m rand_core v0.9.5
+2026-05-29T19:54:14.7450060Z [1m[92m  Downloaded[0m aho-corasick v1.1.4
+2026-05-29T19:54:14.7510378Z [1m[92m  Downloaded[0m supports-color v3.0.2
+2026-05-29T19:54:14.7528539Z [1m[92m  Downloaded[0m proc-macro2 v1.0.106
+2026-05-29T19:54:14.7564976Z [1m[92m  Downloaded[0m postgres v0.19.13
+2026-05-29T19:54:14.7595452Z [1m[92m  Downloaded[0m serde v1.0.228
+2026-05-29T19:54:14.7633975Z [1m[92m  Downloaded[0m nom v7.1.3
+2026-05-29T19:54:14.7688303Z [1m[92m  Downloaded[0m unicode-normalization v0.1.25
+2026-05-29T19:54:14.7728577Z [1m[92m  Downloaded[0m pgrx-pg-config v0.17.0
+2026-05-29T19:54:14.7744008Z [1m[92m  Downloaded[0m cpufeatures v0.3.0
+2026-05-29T19:54:14.7763056Z [1m[92m  Downloaded[0m idna v1.1.0
+2026-05-29T19:54:14.7804818Z [1m[92m  Downloaded[0m slab v0.4.12
+2026-05-29T19:54:14.7822264Z [1m[92m  Downloaded[0m sha2 v0.11.0
+2026-05-29T19:54:14.7865373Z [1m[92m  Downloaded[0m serde_core v1.0.228
+2026-05-29T19:54:14.7899339Z [1m[92m  Downloaded[0m same-file v1.0.6
+2026-05-29T19:54:14.7916925Z [1m[92m  Downloaded[0m byteorder v1.5.0
+2026-05-29T19:54:14.7936907Z [1m[92m  Downloaded[0m form_urlencoded v1.2.2
+2026-05-29T19:54:14.7947408Z [1m[92m  Downloaded[0m find-msvc-tools v0.1.9
+2026-05-29T19:54:14.7968428Z [1m[92m  Downloaded[0m winnow v0.7.15
+2026-05-29T19:54:14.8079640Z [1m[92m  Downloaded[0m serde_spanned v1.1.1
+2026-05-29T19:54:14.8096154Z [1m[92m  Downloaded[0m plotters-backend v0.3.7
+2026-05-29T19:54:14.8112339Z [1m[92m  Downloaded[0m pathsearch v0.2.0
+2026-05-29T19:54:14.8123996Z [1m[92m  Downloaded[0m rand v0.9.4
+2026-05-29T19:54:14.8169919Z [1m[92m  Downloaded[0m postgres-protocol v0.6.11
+2026-05-29T19:54:14.8192414Z [1m[92m  Downloaded[0m cargo-platform v0.1.9
+2026-05-29T19:54:14.8206956Z [1m[92m  Downloaded[0m ring v0.17.14
+2026-05-29T19:54:14.8645515Z [1m[92m  Downloaded[0m zeroize v1.8.2
+2026-05-29T19:54:14.8664860Z [1m[92m  Downloaded[0m zerocopy-derive v0.8.50
+2026-05-29T19:54:14.8768374Z [1m[92m  Downloaded[0m winnow v1.0.3
+2026-05-29T19:54:14.8873487Z [1m[92m  Downloaded[0m yoke v0.8.2
+2026-05-29T19:54:14.8896775Z [1m[92m  Downloaded[0m thiserror v2.0.18
+2026-05-29T19:54:14.8968500Z [1m[92m  Downloaded[0m rand_chacha v0.9.0
+2026-05-29T19:54:14.8982657Z [1m[92m  Downloaded[0m parking_lot_core v0.9.12
+2026-05-29T19:54:14.9005163Z [1m[92m  Downloaded[0m minimal-lexical v0.2.1
+2026-05-29T19:54:14.9052057Z [1m[92m  Downloaded[0m eyre v0.6.12
+2026-05-29T19:54:14.9091873Z [1m[92m  Downloaded[0m rustls-pki-types v1.14.1
+2026-05-29T19:54:14.9122308Z [1m[92m  Downloaded[0m serde_cbor v0.11.2
+2026-05-29T19:54:14.9153989Z [1m[92m  Downloaded[0m potential_utf v0.1.5
+2026-05-29T19:54:14.9166490Z [1m[92m  Downloaded[0m autocfg v1.5.1
+2026-05-29T19:54:14.9187978Z [1m[92m  Downloaded[0m clap v4.6.1
+2026-05-29T19:54:14.9291228Z [1m[92m  Downloaded[0m yoke-derive v0.8.2
+2026-05-29T19:54:14.9304514Z [1m[92m  Downloaded[0m quick-error v1.2.3
+2026-05-29T19:54:14.9319284Z [1m[92m  Downloaded[0m bit-set v0.8.0
+2026-05-29T19:54:14.9335377Z [1m[92m  Downloaded[0m clap-cargo v0.14.1
+2026-05-29T19:54:14.9351235Z [1m[92m  Downloaded[0m icu_provider v2.2.0
+2026-05-29T19:54:14.9381209Z [1m[92m  Downloaded[0m percent-encoding v2.3.2
+2026-05-29T19:54:14.9392295Z [1m[92m  Downloaded[0m unicode-bidi v0.3.18
+2026-05-29T19:54:14.9421794Z [1m[92m  Downloaded[0m unicode-properties v0.1.4
+2026-05-29T19:54:14.9443288Z [1m[92m  Downloaded[0m md-5 v0.11.0
+2026-05-29T19:54:14.9465527Z [1m[92m  Downloaded[0m pin-project-lite v0.2.17
+2026-05-29T19:54:14.9535384Z [1m[92m  Downloaded[0m wyz v0.5.1
+2026-05-29T19:54:14.9552425Z [1m[92m  Downloaded[0m itertools v0.10.5
+2026-05-29T19:54:14.9619090Z [1m[92m  Downloaded[0m futures-sink v0.3.32
+2026-05-29T19:54:14.9631032Z [1m[92m  Downloaded[0m fixedbitset v0.5.7
+2026-05-29T19:54:14.9653533Z [1m[92m  Downloaded[0m anyhow v1.0.102
+2026-05-29T19:54:14.9705485Z [1m[92m  Downloaded[0m unicode-width v0.2.2
+2026-05-29T19:54:14.9767179Z [1m[92m  Downloaded[0m rusty-fork v0.3.1
+2026-05-29T19:54:14.9783689Z [1m[92m  Downloaded[0m half v1.8.3
+2026-05-29T19:54:14.9807379Z [1m[92m  Downloaded[0m equivalent v1.0.2
+2026-05-29T19:54:14.9819761Z [1m[92m  Downloaded[0m indexmap v2.14.0
+2026-05-29T19:54:14.9867216Z [1m[92m  Downloaded[0m socket2 v0.6.4
+2026-05-29T19:54:14.9888467Z [1m[92m  Downloaded[0m rayon-core v1.13.0
+2026-05-29T19:54:14.9935628Z [1m[92m  Downloaded[0m ppv-lite86 v0.2.21
+2026-05-29T19:54:14.9951673Z [1m[92m  Downloaded[0m getrandom v0.4.2
+2026-05-29T19:54:14.9991533Z [1m[92m  Downloaded[0m criterion-plot v0.5.0
+2026-05-29T19:54:15.0011868Z [1m[92m  Downloaded[0m rustls-webpki v0.103.13
+2026-05-29T19:54:15.0045276Z [1m[92m  Downloaded[0m cargo_toml v0.22.3
+2026-05-29T19:54:15.0061611Z [1m[92m  Downloaded[0m heck v0.5.0
+2026-05-29T19:54:15.0075524Z [1m[92m  Downloaded[0m regex-automata v0.4.14
+2026-05-29T19:54:15.0235450Z [1m[92m  Downloaded[0m url v2.5.8
+2026-05-29T19:54:15.0269377Z [1m[92m  Downloaded[0m toml_writer v1.1.1+spec-1.1.0
+2026-05-29T19:54:15.0288454Z [1m[92m  Downloaded[0m whoami v2.1.2
+2026-05-29T19:54:15.0310663Z [1m[92m  Downloaded[0m tokio-rustls v0.26.4
+2026-05-29T19:54:15.0332632Z [1m[92m  Downloaded[0m either v1.16.0
+2026-05-29T19:54:15.0349052Z [1m[92m  Downloaded[0m clap_builder v4.6.0
+2026-05-29T19:54:15.0413347Z [1m[92m  Downloaded[0m icu_normalizer v2.2.0
+2026-05-29T19:54:15.0456494Z [1m[92m  Downloaded[0m tinystr v0.8.3
+2026-05-29T19:54:15.0479098Z [1m[92m  Downloaded[0m radium v0.7.0
+2026-05-29T19:54:15.0490245Z [1m[92m  Downloaded[0m proptest v1.11.0
+2026-05-29T19:54:15.0599470Z [1m[92m  Downloaded[0m mio v1.2.1
+2026-05-29T19:54:15.0660581Z [1m[92m  Downloaded[0m pgrx-pg-sys v0.17.0
+2026-05-29T19:54:15.0938816Z [1m[92m  Downloaded[0m unarray v0.1.4
+2026-05-29T19:54:15.0954366Z [1m[92m  Downloaded[0m phf v0.13.1
+2026-05-29T19:54:15.0967303Z [1m[92m  Downloaded[0m libc v0.2.186
+2026-05-29T19:54:15.1389185Z [1m[92m  Downloaded[0m smallvec v1.15.1
+2026-05-29T19:54:15.1420660Z [1m[92m  Downloaded[0m zerovec v0.11.6
+2026-05-29T19:54:15.1490148Z [1m[92m  Downloaded[0m webpki-roots v1.0.7
+2026-05-29T19:54:15.1528352Z [1m[92m  Downloaded[0m rand_core v0.10.1
+2026-05-29T19:54:15.1548346Z [1m[92m  Downloaded[0m typenum v1.20.1
+2026-05-29T19:54:15.1588495Z [1m[92m  Downloaded[0m tokio-postgres v0.7.17
+2026-05-29T19:54:15.1646598Z [1m[92m  Downloaded[0m utf8_iter v1.0.4
+2026-05-29T19:54:15.1658791Z [1m[92m  Downloaded[0m uuid v1.23.2
+2026-05-29T19:54:15.1694394Z [1m[92m  Downloaded[0m paste v1.0.15
+2026-05-29T19:54:15.1729194Z [1m[92m  Downloaded[0m regex v1.12.3
+2026-05-29T19:54:15.1785152Z [1m[92m  Downloaded[0m writeable v0.6.3
+2026-05-29T19:54:15.1810300Z [1m[92m  Downloaded[0m plotters v0.3.7
+2026-05-29T19:54:15.1912789Z [1m[92m  Downloaded[0m unicode-segmentation v1.13.2
+2026-05-29T19:54:15.1946911Z [1m[92m  Downloaded[0m zerocopy v0.8.50
+2026-05-29T19:54:15.2177530Z [1m[92m  Downloaded[0m rand v0.10.1
+2026-05-29T19:54:15.2225796Z [1m[92m  Downloaded[0m unescape v0.1.0
+2026-05-29T19:54:15.2235776Z [1m[92m  Downloaded[0m getrandom v0.2.17
+2026-05-29T19:54:15.2267594Z [1m[92m  Downloaded[0m rustc_version v0.4.1
+2026-05-29T19:54:15.2281628Z [1m[92m  Downloaded[0m icu_locale_core v2.2.0
+2026-05-29T19:54:15.2360888Z [1m[92m  Downloaded[0m anstyle v1.0.14
+2026-05-29T19:54:15.2376885Z [1m[92m  Downloaded[0m regex-syntax v0.8.10
+2026-05-29T19:54:15.2448456Z [1m[92m  Downloaded[0m rayon v1.12.0
+2026-05-29T19:54:15.2545145Z [1m[92m  Downloaded[0m rand_core v0.6.4
+2026-05-29T19:54:15.2559438Z [1m[92m  Downloaded[0m icu_properties v2.2.0
+2026-05-29T19:54:15.2585335Z [1m[92m  Downloaded[0m iai-callgrind-macros v0.5.1
+2026-05-29T19:54:15.2603266Z [1m[92m  Downloaded[0m annotate-snippets v0.11.5
+2026-05-29T19:54:15.2626609Z [1m[92m  Downloaded[0m oorandom v11.1.5
+2026-05-29T19:54:15.2639473Z [1m[92m  Downloaded[0m chacha20 v0.10.0
+2026-05-29T19:54:15.2664416Z [1m[92m  Downloaded[0m zerotrie v0.2.4
+2026-05-29T19:54:15.2708108Z [1m[92m  Downloaded[0m tokio v1.52.3
+2026-05-29T19:54:15.3158950Z [1m[92m  Downloaded[0m unicode-ident v1.0.24
+2026-05-29T19:54:15.3188848Z [1m[92m  Downloaded[0m cfg-if v1.0.4
+2026-05-29T19:54:15.3204353Z [1m[92m  Downloaded[0m zmij v1.0.21
+2026-05-29T19:54:15.3225660Z [1m[92m  Downloaded[0m pgrx-tests v0.17.0
+2026-05-29T19:54:15.3241949Z [1m[92m  Downloaded[0m bit-vec v0.8.0
+2026-05-29T19:54:15.3258957Z [1m[92m  Downloaded[0m rustls v0.23.40
+2026-05-29T19:54:15.3377578Z [1m[92m  Downloaded[0m allocator-api2 v0.2.21
+2026-05-29T19:54:15.3404976Z [1m[92m  Downloaded[0m pgrx-macros v0.17.0
+2026-05-29T19:54:15.3416262Z [1m[92m  Downloaded[0m zerovec-derive v0.11.3
+2026-05-29T19:54:15.3431890Z [1m[92m  Downloaded[0m linux-raw-sys v0.12.1
+2026-05-29T19:54:15.4059666Z [1m[92m  Downloaded[0m pgrx v0.17.0
+2026-05-29T19:54:15.4147248Z [1m[92m  Downloaded[0m owo-colors v4.3.0
+2026-05-29T19:54:15.4177472Z [1m[92m  Downloaded[0m futures-util v0.3.32
+2026-05-29T19:54:15.4310704Z [1m[92m  Downloaded[0m tinyvec v1.11.0
+2026-05-29T19:54:15.4336320Z [1m[92m  Downloaded[0m num-traits v0.2.19
+2026-05-29T19:54:15.4362399Z [1m[92m  Downloaded[0m cc v1.2.63
+2026-05-29T19:54:15.4392327Z [1m[92m  Downloaded[0m tempfile v3.27.0
+2026-05-29T19:54:15.4417965Z [1m[92m  Downloaded[0m shlex v2.0.1
+2026-05-29T19:54:15.4431415Z [1m[92m  Downloaded[0m rand_xorshift v0.4.0
+2026-05-29T19:54:15.4442403Z [1m[92m  Downloaded[0m hex v0.4.3
+2026-05-29T19:54:15.4458439Z [1m[92m  Downloaded[0m glob v0.3.3
+2026-05-29T19:54:15.4473533Z [1m[92m  Downloaded[0m funty v2.0.0
+2026-05-29T19:54:15.4481820Z [1m[92m  Downloaded[0m fastrand v2.4.1
+2026-05-29T19:54:15.4495736Z [1m[92m  Downloaded[0m futures-core v0.3.32
+2026-05-29T19:54:15.4509679Z [1m[92m  Downloaded[0m displaydoc v0.2.6
+2026-05-29T19:54:15.4530045Z [1m[92m  Downloaded[0m walkdir v2.5.0
+2026-05-29T19:54:15.4548367Z [1m[92m  Downloaded[0m enum-map-derive v0.17.0
+2026-05-29T19:54:15.4558984Z [1m[92m  Downloaded[0m seahash v4.1.0
+2026-05-29T19:54:15.4575042Z [1m[92m  Downloaded[0m clap_derive v4.6.1
+2026-05-29T19:54:15.4596516Z [1m[92m  Downloaded[0m hmac v0.13.0
+2026-05-29T19:54:15.4618010Z [1m[92m  Downloaded[0m digest v0.11.3
+2026-05-29T19:54:15.4641460Z [1m[92m  Downloaded[0m derive_more v2.1.1
+2026-05-29T19:54:15.4769006Z [1m[92m  Downloaded[0m crossbeam-epoch v0.9.18
+2026-05-29T19:54:15.4793721Z [1m[92m  Downloaded[0m block-buffer v0.12.0
+2026-05-29T19:54:15.4806850Z [1m[92m  Downloaded[0m syn v2.0.117
+2026-05-29T19:54:15.4911607Z [1m[92m  Downloaded[0m scopeguard v1.2.0
+2026-05-29T19:54:15.4923939Z [1m[92m  Downloaded[0m rand v0.8.6
+2026-05-29T19:54:15.4957178Z [1m[92m  Downloaded[0m bytes v1.11.1
+2026-05-29T19:54:15.4999116Z [1m[92m  Downloaded[0m crypto-common v0.2.2
+2026-05-29T19:54:15.5010840Z [1m[92m  Downloaded[0m crossbeam-utils v0.8.21
+2026-05-29T19:54:15.5037354Z [1m[92m  Downloaded[0m memchr v2.8.1
+2026-05-29T19:54:15.5092865Z [1m[92m  Downloaded[0m serde_json v1.0.150
+2026-05-29T19:54:15.5165473Z [1m[92m  Downloaded[0m pgrx-sql-entity-graph v0.17.0
+2026-05-29T19:54:15.5212885Z [1m[92m  Downloaded[0m indenter v0.3.4
+2026-05-29T19:54:15.5225618Z [1m[92m  Downloaded[0m cmov v0.5.4
+2026-05-29T19:54:15.5243420Z [1m[92m  Downloaded[0m ciborium-ll v0.2.2
+2026-05-29T19:54:15.5254467Z [1m[92m  Downloaded[0m cee-scape v0.2.0
+2026-05-29T19:54:15.5269400Z [1m[92m  Downloaded[0m toml_datetime v0.7.5+spec-1.1.0
+2026-05-29T19:54:15.5281813Z [1m[92m  Downloaded[0m subtle v2.6.1
+2026-05-29T19:54:15.5294348Z [1m[92m  Downloaded[0m proc-macro-error2 v2.0.1
+2026-05-29T19:54:15.6680414Z [1m[92m  Downloaded[0m itertools v0.13.0
+2026-05-29T19:54:15.8045223Z [1m[92m  Downloaded[0m phf_shared v0.13.1
+2026-05-29T19:54:15.8312647Z [1m[92m  Downloaded[0m zerofrom-derive v0.1.7
+2026-05-29T19:54:16.0240837Z [1m[92m  Downloaded[0m parking_lot v0.12.5
+2026-05-29T19:54:16.3433809Z [1m[92m   Compiling[0m proc-macro2 v1.0.106
+2026-05-29T19:54:16.3434448Z [1m[92m   Compiling[0m quote v1.0.45
+2026-05-29T19:54:16.3434982Z [1m[92m   Compiling[0m unicode-ident v1.0.24
+2026-05-29T19:54:16.3435657Z [1m[92m   Compiling[0m libc v0.2.186
+2026-05-29T19:54:16.4089370Z [1m[92m    Checking[0m cfg-if v1.0.4
+2026-05-29T19:54:16.4388501Z [1m[92m   Compiling[0m serde_core v1.0.228
+2026-05-29T19:54:16.5279456Z [1m[92m   Compiling[0m stable_deref_trait v1.2.1
+2026-05-29T19:54:16.5594900Z [1m[92m   Compiling[0m icu_properties_data v2.2.0
+2026-05-29T19:54:16.6459528Z [1m[92m   Compiling[0m zmij v1.0.21
+2026-05-29T19:54:16.8040205Z [1m[92m   Compiling[0m icu_normalizer_data v2.2.0
+2026-05-29T19:54:17.2962787Z [1m[92m   Compiling[0m syn v2.0.117
+2026-05-29T19:54:17.3238990Z [1m[92m   Compiling[0m shlex v2.0.1
+2026-05-29T19:54:17.4399316Z [1m[92m   Compiling[0m find-msvc-tools v0.1.9
+2026-05-29T19:54:17.4689185Z [1m[92m   Compiling[0m memchr v2.8.1
+2026-05-29T19:54:17.6097228Z [1m[92m   Compiling[0m cc v1.2.63
+2026-05-29T19:54:18.4569456Z [1m[92m   Compiling[0m serde v1.0.228
+2026-05-29T19:54:18.6567355Z [1m[92m   Compiling[0m thiserror v2.0.18
+2026-05-29T19:54:18.8569603Z [1m[92m   Compiling[0m eyre v0.6.12
+2026-05-29T19:54:18.9199765Z [1m[92m   Compiling[0m writeable v0.6.3
+2026-05-29T19:54:19.0189436Z [1m[92m   Compiling[0m litemap v0.8.2
+2026-05-29T19:54:19.2959243Z [1m[92m   Compiling[0m anyhow v1.0.102
+2026-05-29T19:54:19.3999351Z [1m[92m   Compiling[0m utf8_iter v1.0.4
+2026-05-29T19:54:19.6669453Z [1m[92m   Compiling[0m owo-colors v4.3.0
+2026-05-29T19:54:19.6797390Z [1m[92m   Compiling[0m smallvec v1.15.1
+2026-05-29T19:54:19.8364784Z [1m[92m   Compiling[0m getrandom v0.4.2
+2026-05-29T19:54:19.8479222Z [1m[92m    Checking[0m rand_core v0.10.1
+2026-05-29T19:54:19.9229466Z [1m[92m   Compiling[0m zerocopy v0.8.50
+2026-05-29T19:54:19.9679671Z [1m[92m   Compiling[0m serde_json v1.0.150
+2026-05-29T19:54:20.2149285Z [1m[92m    Checking[0m typenum v1.20.1
+2026-05-29T19:54:20.3559285Z [1m[92m   Compiling[0m winnow v1.0.3
+2026-05-29T19:54:20.6660041Z [1m[92m   Compiling[0m synstructure v0.13.2
+2026-05-29T19:54:21.0096815Z [1m[92m   Compiling[0m once_cell v1.21.4
+2026-05-29T19:54:21.1345679Z [1m[92m   Compiling[0m indenter v0.3.4
+2026-05-29T19:54:21.1398898Z [1m[92m   Compiling[0m itoa v1.0.18
+2026-05-29T19:54:21.1460562Z [1m[92m    Checking[0m hybrid-array v0.4.12
+2026-05-29T19:54:21.4120757Z [1m[92m   Compiling[0m toml_parser v1.1.2+spec-1.1.0
+2026-05-29T19:54:21.6249110Z [1m[92m   Compiling[0m serde_spanned v1.1.1
+2026-05-29T19:54:21.7059910Z [1m[92m   Compiling[0m toml_datetime v0.7.5+spec-1.1.0
+2026-05-29T19:54:21.9999388Z [1m[92m   Compiling[0m winnow v0.7.15
+2026-05-29T19:54:22.0149349Z [1m[92m   Compiling[0m percent-encoding v2.3.2
+2026-05-29T19:54:22.1239463Z [1m[92m   Compiling[0m is_ci v1.2.0
+2026-05-29T19:54:22.1799418Z [1m[92m   Compiling[0m glob v0.3.3
+2026-05-29T19:54:22.2160132Z [1m[92m   Compiling[0m zerofrom-derive v0.1.7
+2026-05-29T19:54:22.2699458Z [1m[92m   Compiling[0m yoke-derive v0.8.2
+2026-05-29T19:54:22.4719989Z [1m[92m   Compiling[0m zerovec-derive v0.11.3
+2026-05-29T19:54:23.1632476Z [1m[92m   Compiling[0m displaydoc v0.2.6
+2026-05-29T19:54:23.2739373Z [1m[92m   Compiling[0m serde_derive v1.0.228
+2026-05-29T19:54:23.4449487Z [1m[92m   Compiling[0m zerofrom v0.1.8
+2026-05-29T19:54:23.5130155Z [1m[92m   Compiling[0m yoke v0.8.2
+2026-05-29T19:54:23.5219105Z [1m[92m   Compiling[0m thiserror-impl v2.0.18
+2026-05-29T19:54:23.6549705Z [1m[92m   Compiling[0m zerovec v0.11.6
+2026-05-29T19:54:23.7511181Z [1m[92m   Compiling[0m zerotrie v0.2.4
+2026-05-29T19:54:24.1409754Z [1m[92m   Compiling[0m tinystr v0.8.3
+2026-05-29T19:54:24.2702270Z [1m[92m   Compiling[0m icu_locale_core v2.2.0
+2026-05-29T19:54:24.5085659Z [1m[92m   Compiling[0m potential_utf v0.1.5
+2026-05-29T19:54:24.5853082Z [1m[92m   Compiling[0m icu_collections v2.2.0
+2026-05-29T19:54:24.6129408Z [1m[92m   Compiling[0m zerocopy-derive v0.8.50
+2026-05-29T19:54:25.0269725Z [1m[92m   Compiling[0m toml_writer v1.1.1+spec-1.1.0
+2026-05-29T19:54:25.1749520Z [1m[92m   Compiling[0m icu_provider v2.2.0
+2026-05-29T19:54:25.3455562Z [1m[92m   Compiling[0m toml v0.9.12+spec-1.1.0
+2026-05-29T19:54:25.4189445Z [1m[92m   Compiling[0m icu_properties v2.2.0
+2026-05-29T19:54:25.8959559Z [1m[92m   Compiling[0m icu_normalizer v2.2.0
+2026-05-29T19:54:26.5865201Z [1m[92m   Compiling[0m idna_adapter v1.2.2
+2026-05-29T19:54:26.6404028Z [1m[92m   Compiling[0m idna v1.1.0
+2026-05-29T19:54:26.6789392Z [1m[92m   Compiling[0m clang-sys v1.8.1
+2026-05-29T19:54:26.8676551Z [1m[92m   Compiling[0m supports-color v3.0.2
+2026-05-29T19:54:26.8910053Z [1m[92m   Compiling[0m form_urlencoded v1.2.2
+2026-05-29T19:54:27.1219694Z [1m[92m    Checking[0m cmov v0.5.4
+2026-05-29T19:54:27.2009407Z [1m[92m   Compiling[0m pathsearch v0.2.0
+2026-05-29T19:54:27.2329534Z [1m[92m   Compiling[0m url v2.5.8
+2026-05-29T19:54:27.2520260Z [1m[92m    Checking[0m ctutils v0.4.2
+2026-05-29T19:54:27.4069583Z [1m[92m   Compiling[0m cargo_toml v0.22.3
+2026-05-29T19:54:28.0040644Z [1m[92m    Checking[0m crypto-common v0.2.2
+2026-05-29T19:54:28.0129533Z [1m[92m    Checking[0m block-buffer v0.12.0
+2026-05-29T19:54:28.0920673Z [1m[92m   Compiling[0m aho-corasick v1.1.4
+2026-05-29T19:54:28.6609663Z [1m[92m    Checking[0m const-oid v0.10.2
+2026-05-29T19:54:28.7489845Z [1m[92m   Compiling[0m minimal-lexical v0.2.1
+2026-05-29T19:54:28.9229188Z [1m[92m   Compiling[0m regex-syntax v0.8.10
+2026-05-29T19:54:30.0079323Z [1m[92m   Compiling[0m libloading v0.8.9
+2026-05-29T19:54:30.1259180Z [1m[92m   Compiling[0m nom v7.1.3
+2026-05-29T19:54:30.3199421Z [1m[92m    Checking[0m digest v0.11.3
+2026-05-29T19:54:30.4349485Z [1m[92m   Compiling[0m regex-automata v0.4.14
+2026-05-29T19:54:30.5999467Z [1m[92m   Compiling[0m pgrx-pg-config v0.17.0
+2026-05-29T19:54:31.4630008Z [1m[92m    Checking[0m tinyvec_macros v0.1.1
+2026-05-29T19:54:31.4929260Z [1m[92m   Compiling[0m bindgen v0.72.1
+2026-05-29T19:54:31.5225758Z [1m[92m    Checking[0m cpufeatures v0.3.0
+2026-05-29T19:54:31.6210273Z [1m[92m   Compiling[0m anstyle v1.0.14
+2026-05-29T19:54:31.6319643Z [1m[92m   Compiling[0m unicode-width v0.2.2
+2026-05-29T19:54:31.6659272Z [1m[92m   Compiling[0m either v1.16.0
+2026-05-29T19:54:31.7759680Z [1m[92m    Checking[0m bytes v1.11.1
+2026-05-29T19:54:31.7939595Z [1m[92m   Compiling[0m itertools v0.13.0
+2026-05-29T19:54:31.8245294Z [1m[92m   Compiling[0m annotate-snippets v0.11.5
+2026-05-29T19:54:32.4369476Z [1m[92m   Compiling[0m regex v1.12.3
+2026-05-29T19:54:32.7572337Z [1m[92m   Compiling[0m cexpr v0.6.0
+2026-05-29T19:54:32.7789596Z [1m[92m    Checking[0m tinyvec v1.11.0
+2026-05-29T19:54:33.1579324Z [1m[92m    Checking[0m getrandom v0.2.17
+2026-05-29T19:54:33.2554699Z [1m[92m    Checking[0m pin-project-lite v0.2.17
+2026-05-29T19:54:33.3010738Z [1m[92m   Compiling[0m foldhash v0.1.5
+2026-05-29T19:54:33.3999824Z [1m[92m   Compiling[0m rustc-hash v2.1.2
+2026-05-29T19:54:33.4119618Z [1m[92m   Compiling[0m hashbrown v0.17.1
+2026-05-29T19:54:33.4639853Z [1m[92m   Compiling[0m bitflags v2.11.1
+2026-05-29T19:54:33.4709011Z [1m[92m    Checking[0m equivalent v1.0.2
+2026-05-29T19:54:33.5039347Z [1m[92m   Compiling[0m shlex v1.3.0
+2026-05-29T19:54:33.5861043Z [1m[92m   Compiling[0m crossbeam-utils v0.8.21
+2026-05-29T19:54:33.6510015Z [1m[92m   Compiling[0m same-file v1.0.6
+2026-05-29T19:54:33.7519176Z [1m[92m   Compiling[0m walkdir v2.5.0
+2026-05-29T19:54:33.9582207Z [1m[92m   Compiling[0m indexmap v2.14.0
+2026-05-29T19:54:33.9627044Z [1m[92m   Compiling[0m hashbrown v0.15.5
+2026-05-29T19:54:34.0869419Z [1m[92m    Checking[0m unicode-normalization v0.1.25
+2026-05-29T19:54:34.4090295Z [1m[92m    Checking[0m chacha20 v0.10.0
+2026-05-29T19:54:34.4199536Z [1m[92m    Checking[0m ppv-lite86 v0.2.21
+2026-05-29T19:54:34.5499579Z [1m[92m   Compiling[0m ring v0.17.14
+2026-05-29T19:54:34.5712352Z [1m[92m    Checking[0m socket2 v0.6.4
+2026-05-29T19:54:34.6852677Z [1m[92m    Checking[0m mio v1.2.1
+2026-05-29T19:54:34.9289501Z [1m[92m   Compiling[0m parking_lot_core v0.9.12
+2026-05-29T19:54:35.0263364Z [1m[92m   Compiling[0m unicode-segmentation v1.13.2
+2026-05-29T19:54:35.3709378Z [1m[92m    Checking[0m futures-core v0.3.32
+2026-05-29T19:54:35.4298425Z [1m[92m    Checking[0m allocator-api2 v0.2.21
+2026-05-29T19:54:35.4840091Z [1m[92m    Checking[0m unicode-bidi v0.3.18
+2026-05-29T19:54:35.7309928Z [1m[92m    Checking[0m futures-sink v0.3.32
+2026-05-29T19:54:35.7769968Z [1m[92m   Compiling[0m fixedbitset v0.5.7
+2026-05-29T19:54:35.8379887Z [1m[92m    Checking[0m unicode-properties v0.1.4
+2026-05-29T19:54:35.9579342Z [1m[92m    Checking[0m stringprep v0.1.5
+2026-05-29T19:54:35.9939828Z [1m[92m   Compiling[0m petgraph v0.8.3
+2026-05-29T19:54:36.7276042Z [1m[92m   Compiling[0m convert_case v0.8.0
+2026-05-29T19:54:37.1519746Z [1m[92m    Checking[0m tokio v1.52.3
+2026-05-29T19:54:38.7629602Z [1m[92m   Compiling[0m pgrx-bindgen v0.17.0
+2026-05-29T19:54:39.5205855Z [1m[92m    Checking[0m rand v0.10.1
+2026-05-29T19:54:39.9260595Z [1m[92m    Checking[0m sha2 v0.11.0
+2026-05-29T19:54:40.0439550Z [1m[92m    Checking[0m md-5 v0.11.0
+2026-05-29T19:54:40.1227109Z [1m[92m    Checking[0m hmac v0.13.0
+2026-05-29T19:54:40.1571963Z [1m[92m   Compiling[0m cee-scape v0.2.0
+2026-05-29T19:54:40.2041524Z [1m[92m   Compiling[0m radium v0.7.0
+2026-05-29T19:54:40.3341059Z [1m[92m   Compiling[0m unescape v0.1.0
+2026-05-29T19:54:40.3429669Z [1m[92m    Checking[0m fallible-iterator v0.2.0
+2026-05-29T19:54:40.4000733Z [1m[92m    Checking[0m byteorder v1.5.0
+2026-05-29T19:54:40.4045659Z [1m[92m    Checking[0m siphasher v1.0.3
+2026-05-29T19:54:40.5049067Z [1m[92m    Checking[0m zeroize v1.8.2
+2026-05-29T19:54:40.5279840Z [1m[92m    Checking[0m base64 v0.22.1
+2026-05-29T19:54:40.5806964Z [1m[92m    Checking[0m scopeguard v1.2.0
+2026-05-29T19:54:40.6173927Z [1m[92m    Checking[0m lock_api v0.4.14
+2026-05-29T19:54:40.6695830Z [1m[92m    Checking[0m postgres-protocol v0.6.11
+2026-05-29T19:54:40.7585966Z [1m[92m    Checking[0m rustls-pki-types v1.14.1
+2026-05-29T19:54:40.8544564Z [1m[92m    Checking[0m phf_shared v0.13.1
+2026-05-29T19:54:40.8628119Z [1m[92m   Compiling[0m pgrx-sql-entity-graph v0.17.0
+2026-05-29T19:54:42.0409636Z [1m[92m    Checking[0m crossbeam-epoch v0.9.18
+2026-05-29T19:54:42.1512467Z [1m[92m   Compiling[0m pgrx-pg-sys v0.17.0
+2026-05-29T19:54:43.4505959Z [1m[92m   Compiling[0m futures-macro v0.3.32
+2026-05-29T19:54:43.8777331Z [1m[92m    Checking[0m futures-task v0.3.32
+2026-05-29T19:54:43.9606482Z [1m[92m    Checking[0m untrusted v0.9.0
+2026-05-29T19:54:43.9659377Z [1m[92m   Compiling[0m getrandom v0.3.4
+2026-05-29T19:54:43.9951314Z [1m[92m    Checking[0m slab v0.4.12
+2026-05-29T19:54:44.0619433Z [1m[92m    Checking[0m tap v1.0.1
+2026-05-29T19:54:44.0999935Z [1m[92m   Compiling[0m rayon-core v1.13.0
+2026-05-29T19:54:44.1649130Z [1m[92m    Checking[0m wyz v0.5.1
+2026-05-29T19:54:44.1965544Z [1m[92m    Checking[0m futures-util v0.3.32
+2026-05-29T19:54:44.8140075Z [1m[92m    Checking[0m parking_lot v0.12.5
+2026-05-29T19:54:45.1279952Z [1m[92m   Compiling[0m pgrx-macros v0.17.0
+2026-05-29T19:54:45.7432515Z [1m[92m    Checking[0m crossbeam-deque v0.8.6
+2026-05-29T19:54:45.9198456Z [1m[92m    Checking[0m phf v0.13.1
+2026-05-29T19:54:45.9889537Z [1m[92m    Checking[0m postgres-types v0.2.13
+2026-05-29T19:54:46.0286756Z [1m[92m    Checking[0m tokio-util v0.7.18
+2026-05-29T19:54:46.1268733Z [1m[92m    Checking[0m futures-channel v0.3.32
+2026-05-29T19:54:46.2207743Z [1m[92m   Compiling[0m async-trait v0.1.89
+2026-05-29T19:54:46.2582375Z [1m[92m   Compiling[0m enum-map-derive v0.17.0
+2026-05-29T19:54:46.2975149Z [1m[92m    Checking[0m whoami v2.1.2
+2026-05-29T19:54:46.4249363Z [1m[92m    Checking[0m log v0.4.30
+2026-05-29T19:54:46.5109638Z [1m[92m   Compiling[0m autocfg v1.5.1
+2026-05-29T19:54:46.5389696Z [1m[92m    Checking[0m half v1.8.3
+2026-05-29T19:54:46.6529971Z [1m[92m   Compiling[0m rustls v0.23.40
+2026-05-29T19:54:46.7247485Z [1m[92m    Checking[0m funty v2.0.0
+2026-05-29T19:54:46.7745479Z [1m[92m   Compiling[0m num-traits v0.2.19
+2026-05-29T19:54:46.8559276Z [1m[92m    Checking[0m serde_cbor v0.11.2
+2026-05-29T19:54:46.8702864Z [1m[92m    Checking[0m tokio-postgres v0.7.17
+2026-05-29T19:54:47.0175686Z [1m[92m    Checking[0m bitvec v1.0.1
+2026-05-29T19:54:47.1156008Z [1m[92m    Checking[0m enum-map v2.7.3
+2026-05-29T19:54:47.5504490Z [1m[92m    Checking[0m rustls-webpki v0.103.13
+2026-05-29T19:54:48.2479553Z [1m[92m    Checking[0m rand_core v0.6.4
+2026-05-29T19:54:48.3129420Z [1m[92m    Checking[0m uuid v1.23.2
+2026-05-29T19:54:48.3539974Z [1m[92m   Compiling[0m rustix v1.1.4
+2026-05-29T19:54:48.5221179Z [1m[92m    Checking[0m seahash v4.1.0
+2026-05-29T19:54:48.5717471Z [1m[92m    Checking[0m subtle v2.6.1
+2026-05-29T19:54:48.6539525Z [1m[92m    Checking[0m rand_chacha v0.3.1
+2026-05-29T19:54:48.7869465Z [1m[92m    Checking[0m postgres v0.19.13
+2026-05-29T19:54:48.8104452Z [1m[92m    Checking[0m rand_core v0.9.5
+2026-05-29T19:54:48.9269606Z [1m[92m    Checking[0m rayon v1.12.0
+2026-05-29T19:54:49.0419399Z [1m[92m   Compiling[0m ecaz v0.1.1 (/home/runner/work/ecaz/ecaz)
+2026-05-29T19:54:49.5069802Z [1m[92m    Checking[0m clap_lex v1.1.0
+2026-05-29T19:54:50.6554600Z [1m[92m    Checking[0m linux-raw-sys v0.12.1
+2026-05-29T19:54:50.9089597Z [1m[92m   Compiling[0m thiserror v1.0.69
+2026-05-29T19:54:50.9114063Z [1m[92m   Compiling[0m camino v1.2.2
+2026-05-29T19:54:51.0339364Z [1m[92m   Compiling[0m heck v0.5.0
+2026-05-29T19:54:51.1069502Z [1m[92m    Checking[0m clap_builder v4.6.0
+2026-05-29T19:54:51.1138941Z [1m[92m    Checking[0m tokio-rustls v0.26.4
+2026-05-29T19:54:51.1902664Z [1m[92m   Compiling[0m clap_derive v4.6.1
+2026-05-29T19:54:52.8055517Z [1m[92m    Checking[0m rand v0.8.6
+2026-05-29T19:54:52.9005389Z [1m[33mwarning[0m: ecaz@0.1.1: In file included from /usr/include/postgresql/18/server/utils/pgstat_internal.h:19,
+2026-05-29T19:54:52.9006830Z [1m[33mwarning[0m: ecaz@0.1.1:                  from csrc/pg18_pgstat_shim.c:10:
+2026-05-29T19:54:52.9008423Z [1m[33mwarning[0m: ecaz@0.1.1: /usr/include/postgresql/18/server/lib/ilist.h: In function 'dlist_next_node':
+2026-05-29T19:54:52.9010059Z [1m[33mwarning[0m: ecaz@0.1.1: /usr/include/postgresql/18/server/lib/ilist.h:537:29: warning: unused parameter 'head' [-Wunused-parameter]
+2026-05-29T19:54:52.9011453Z [1m[33mwarning[0m: ecaz@0.1.1:   537 | dlist_next_node(dlist_head *head, dlist_node *node)
+2026-05-29T19:54:52.9012470Z [1m[33mwarning[0m: ecaz@0.1.1:       |                 ~~~~~~~~~~~~^~~~
+2026-05-29T19:54:52.9013625Z [1m[33mwarning[0m: ecaz@0.1.1: /usr/include/postgresql/18/server/lib/ilist.h: In function 'dlist_prev_node':
+2026-05-29T19:54:52.9015155Z [1m[33mwarning[0m: ecaz@0.1.1: /usr/include/postgresql/18/server/lib/ilist.h:547:29: warning: unused parameter 'head' [-Wunused-parameter]
+2026-05-29T19:54:52.9016516Z [1m[33mwarning[0m: ecaz@0.1.1:   547 | dlist_prev_node(dlist_head *head, dlist_node *node)
+2026-05-29T19:54:52.9017517Z [1m[33mwarning[0m: ecaz@0.1.1:       |                 ~~~~~~~~~~~~^~~~
+2026-05-29T19:54:52.9018848Z [1m[33mwarning[0m: ecaz@0.1.1: /usr/include/postgresql/18/server/lib/ilist.h: In function 'slist_next_node':
+2026-05-29T19:54:52.9020772Z [1m[33mwarning[0m: ecaz@0.1.1: /usr/include/postgresql/18/server/lib/ilist.h:1054:29: warning: unused parameter 'head' [-Wunused-parameter]
+2026-05-29T19:54:52.9022247Z [1m[33mwarning[0m: ecaz@0.1.1:  1054 | slist_next_node(slist_head *head, slist_node *node)
+2026-05-29T19:54:52.9023278Z [1m[33mwarning[0m: ecaz@0.1.1:       |                 ~~~~~~~~~~~~^~~~
+2026-05-29T19:54:52.9024576Z [1m[33mwarning[0m: ecaz@0.1.1: /usr/include/postgresql/18/server/utils/pgstat_internal.h: In function 'pgstat_cmp_hash_key':
+2026-05-29T19:54:52.9026307Z [1m[33mwarning[0m: ecaz@0.1.1: /usr/include/postgresql/18/server/utils/pgstat_internal.h:875:58: warning: unused parameter 'size' [-Wunused-parameter]
+2026-05-29T19:54:52.9028034Z [1m[33mwarning[0m: ecaz@0.1.1:   875 | pgstat_cmp_hash_key(const void *a, const void *b, size_t size, void *arg)
+2026-05-29T19:54:52.9029465Z [1m[33mwarning[0m: ecaz@0.1.1:       |                                                   ~~~~~~~^~~~
+2026-05-29T19:54:52.9030956Z [1m[33mwarning[0m: ecaz@0.1.1: /usr/include/postgresql/18/server/utils/pgstat_internal.h:875:70: warning: unused parameter 'arg' [-Wunused-parameter]
+2026-05-29T19:54:52.9032584Z [1m[33mwarning[0m: ecaz@0.1.1:   875 | pgstat_cmp_hash_key(const void *a, const void *b, size_t size, void *arg)
+2026-05-29T19:54:52.9033816Z [1m[33mwarning[0m: ecaz@0.1.1:       |                                                                ~~~~~~^~~
+2026-05-29T19:54:52.9035196Z [1m[33mwarning[0m: ecaz@0.1.1: /usr/include/postgresql/18/server/utils/pgstat_internal.h: In function 'pgstat_hash_hash_key':
+2026-05-29T19:54:52.9036929Z [1m[33mwarning[0m: ecaz@0.1.1: /usr/include/postgresql/18/server/utils/pgstat_internal.h:882:56: warning: unused parameter 'arg' [-Wunused-parameter]
+2026-05-29T19:54:52.9039316Z [1m[33mwarning[0m: ecaz@0.1.1:   882 | pgstat_hash_hash_key(const void *d, size_t size, void *arg)
+2026-05-29T19:54:52.9040475Z [1m[33mwarning[0m: ecaz@0.1.1:       |                                                  ~~~~~~^~~
+2026-05-29T19:54:52.9041332Z [1m[92m    Checking[0m webpki-roots v1.0.7
+2026-05-29T19:54:52.9359586Z [1m[92m   Compiling[0m thiserror-impl v1.0.69
+2026-05-29T19:54:52.9590391Z [1m[92m   Compiling[0m derive_more-impl v2.1.1
+2026-05-29T19:54:54.0359896Z [1m[92m    Checking[0m fastrand v2.4.1
+2026-05-29T19:54:54.1413962Z [1m[92m    Checking[0m hex v0.4.3
+2026-05-29T19:54:54.1469629Z [1m[92m    Checking[0m tempfile v3.27.0
+2026-05-29T19:54:54.3449291Z [1m[92m    Checking[0m clap v4.6.1
+2026-05-29T19:54:54.5669313Z [1m[92m    Checking[0m rand_chacha v0.9.0
+2026-05-29T19:54:54.6919272Z [1m[92m    Checking[0m half v2.7.1
+2026-05-29T19:54:54.8959263Z [1m[92m    Checking[0m cargo-platform v0.1.9
+2026-05-29T19:54:55.1414410Z [1m[92m    Checking[0m semver v1.0.28
+2026-05-29T19:54:55.3028158Z [1m[92m    Checking[0m wait-timeout v0.2.1
+2026-05-29T19:54:55.3909364Z [1m[92m   Compiling[0m proc-macro-error-attr2 v2.0.0
+2026-05-29T19:54:55.8019488Z [1m[92m    Checking[0m fnv v1.0.7
+2026-05-29T19:54:55.8209132Z [1m[92m    Checking[0m plotters-backend v0.3.7
+2026-05-29T19:54:55.8405128Z [1m[92m    Checking[0m bit-vec v0.8.0
+2026-05-29T19:54:55.8659204Z [1m[92m   Compiling[0m paste v1.0.15
+2026-05-29T19:54:55.9799331Z [1m[92m    Checking[0m quick-error v1.2.3
+2026-05-29T19:54:56.0069315Z [1m[92m   Compiling[0m iai-callgrind-runner v0.14.2
+2026-05-29T19:54:56.0397782Z [1m[92m    Checking[0m ciborium-io v0.2.2
+2026-05-29T19:54:56.0906180Z [1m[92m    Checking[0m ciborium-ll v0.2.2
+2026-05-29T19:54:56.1289702Z [1m[92m    Checking[0m rusty-fork v0.3.1
+2026-05-29T19:54:56.1368577Z [1m[92m    Checking[0m plotters-svg v0.3.7
+2026-05-29T19:54:56.2239153Z [1m[92m    Checking[0m bit-set v0.8.0
+2026-05-29T19:54:56.3319150Z [1m[92m   Compiling[0m proc-macro-error2 v2.0.1
+2026-05-29T19:54:56.5489420Z [1m[92m    Checking[0m cargo_metadata v0.18.1
+2026-05-29T19:54:56.6539203Z [1m[92m    Checking[0m rand v0.9.4
+2026-05-29T19:54:57.1399533Z [1m[92m   Compiling[0m derive_more v2.1.1
+2026-05-29T19:54:57.1729348Z [1m[92m    Checking[0m rand_xorshift v0.4.0
+2026-05-29T19:54:57.2284930Z [1m[92m    Checking[0m itertools v0.10.5
+2026-05-29T19:54:57.2489363Z [1m[92m    Checking[0m unarray v0.1.4
+2026-05-29T19:54:57.3449504Z [1m[92m    Checking[0m cast v0.3.0
+2026-05-29T19:54:57.4409417Z [1m[92m   Compiling[0m iai-callgrind v0.14.2
+2026-05-29T19:54:57.6395003Z [1m[92m    Checking[0m proptest v1.11.0
+2026-05-29T19:54:57.8079147Z [1m[92m    Checking[0m clap-cargo v0.14.1
+2026-05-29T19:54:57.9159155Z [1m[92m   Compiling[0m iai-callgrind-macros v0.5.1
+2026-05-29T19:54:58.1139429Z [1m[92m    Checking[0m criterion-plot v0.5.0
+2026-05-29T19:54:58.2878959Z [1m[92m    Checking[0m ciborium v0.2.2
+2026-05-29T19:54:58.6755619Z [1m[92m    Checking[0m plotters v0.3.7
+2026-05-29T19:54:59.4824747Z [1m[92m    Checking[0m tinytemplate v1.2.1
+2026-05-29T19:54:59.5110453Z [1m[92m    Checking[0m bincode v1.3.3
+2026-05-29T19:54:59.6319863Z [1m[92m    Checking[0m sysinfo v0.34.2
+2026-05-29T19:54:59.7739480Z [1m[92m    Checking[0m is-terminal v0.4.17
+2026-05-29T19:54:59.8089551Z [1m[92m    Checking[0m oorandom v11.1.5
+2026-05-29T19:54:59.8549183Z [1m[92m    Checking[0m anes v0.1.6
+2026-05-29T19:54:59.9789834Z [1m[92m    Checking[0m criterion v0.5.1
+2026-05-29T19:55:09.6107068Z [1m[92m    Checking[0m pgrx v0.17.0
+2026-05-29T19:55:11.0843357Z [1m[92m    Checking[0m pgrx-tests v0.17.0
+2026-05-29T19:55:35.6431990Z [1m[92m    Finished[0m `dev` profile [unoptimized + debuginfo] target(s) in 1m 23s
+2026-05-29T19:55:35.7613612Z ##[group]Run cargo clippy --all-targets --no-default-features --features pg18 -- -D warnings
+2026-05-29T19:55:35.7614272Z [36;1mcargo clippy --all-targets --no-default-features --features pg18 -- -D warnings[0m
+2026-05-29T19:55:35.7642126Z shell: /usr/bin/bash -e {0}
+2026-05-29T19:55:35.7642401Z env:
+2026-05-29T19:55:35.7642625Z   PGRX_HOME: /tmp/tqvector_pgrx_home
+2026-05-29T19:55:35.7643046Z   RUSTFLAGS: -C target-cpu=x86-64 -C link-arg=-Wl,--unresolved-symbols=ignore-all
+2026-05-29T19:55:35.7643455Z   CARGO_HOME: /home/runner/.cargo
+2026-05-29T19:55:35.7643709Z   CARGO_INCREMENTAL: 0
+2026-05-29T19:55:35.7643950Z   CARGO_TERM_COLOR: always
+2026-05-29T19:55:35.7644188Z   CACHE_ON_FAILURE: false
+2026-05-29T19:55:35.7644481Z   PGRX_PG_CONFIG_PATH: /usr/lib/postgresql/18/bin/pg_config
+2026-05-29T19:55:35.7644814Z ##[endgroup]
+2026-05-29T19:55:36.2635205Z [1m[92m   Compiling[0m pgrx-pg-sys v0.17.0
+2026-05-29T19:55:36.2679755Z [1m[92m   Compiling[0m ecaz v0.1.1 (/home/runner/work/ecaz/ecaz)
+2026-05-29T19:55:36.8121997Z [1m[33mwarning[0m: ecaz@0.1.1: In file included from /usr/include/postgresql/18/server/utils/pgstat_internal.h:19,
+2026-05-29T19:55:36.8123146Z [1m[33mwarning[0m: ecaz@0.1.1:                  from csrc/pg18_pgstat_shim.c:10:
+2026-05-29T19:55:36.8124276Z [1m[33mwarning[0m: ecaz@0.1.1: /usr/include/postgresql/18/server/lib/ilist.h: In function 'dlist_next_node':
+2026-05-29T19:55:36.8125660Z [1m[33mwarning[0m: ecaz@0.1.1: /usr/include/postgresql/18/server/lib/ilist.h:537:29: warning: unused parameter 'head' [-Wunused-parameter]
+2026-05-29T19:55:36.8126868Z [1m[33mwarning[0m: ecaz@0.1.1:   537 | dlist_next_node(dlist_head *head, dlist_node *node)
+2026-05-29T19:55:36.8127701Z [1m[33mwarning[0m: ecaz@0.1.1:       |                 ~~~~~~~~~~~~^~~~
+2026-05-29T19:55:36.8128978Z [1m[33mwarning[0m: ecaz@0.1.1: /usr/include/postgresql/18/server/lib/ilist.h: In function 'dlist_prev_node':
+2026-05-29T19:55:36.8130424Z [1m[33mwarning[0m: ecaz@0.1.1: /usr/include/postgresql/18/server/lib/ilist.h:547:29: warning: unused parameter 'head' [-Wunused-parameter]
+2026-05-29T19:55:36.8131637Z [1m[33mwarning[0m: ecaz@0.1.1:   547 | dlist_prev_node(dlist_head *head, dlist_node *node)
+2026-05-29T19:55:36.8132469Z [1m[33mwarning[0m: ecaz@0.1.1:       |                 ~~~~~~~~~~~~^~~~
+2026-05-29T19:55:36.8133451Z [1m[33mwarning[0m: ecaz@0.1.1: /usr/include/postgresql/18/server/lib/ilist.h: In function 'slist_next_node':
+2026-05-29T19:55:36.8134837Z [1m[33mwarning[0m: ecaz@0.1.1: /usr/include/postgresql/18/server/lib/ilist.h:1054:29: warning: unused parameter 'head' [-Wunused-parameter]
+2026-05-29T19:55:36.8136036Z [1m[33mwarning[0m: ecaz@0.1.1:  1054 | slist_next_node(slist_head *head, slist_node *node)
+2026-05-29T19:55:36.8136854Z [1m[33mwarning[0m: ecaz@0.1.1:       |                 ~~~~~~~~~~~~^~~~
+2026-05-29T19:55:36.8138108Z [1m[33mwarning[0m: ecaz@0.1.1: /usr/include/postgresql/18/server/utils/pgstat_internal.h: In function 'pgstat_cmp_hash_key':
+2026-05-29T19:55:36.8139674Z [1m[33mwarning[0m: ecaz@0.1.1: /usr/include/postgresql/18/server/utils/pgstat_internal.h:875:58: warning: unused parameter 'size' [-Wunused-parameter]
+2026-05-29T19:55:36.8141067Z [1m[33mwarning[0m: ecaz@0.1.1:   875 | pgstat_cmp_hash_key(const void *a, const void *b, size_t size, void *arg)
+2026-05-29T19:55:36.8142409Z [1m[33mwarning[0m: ecaz@0.1.1:       |                                                   ~~~~~~~^~~~
+2026-05-29T19:55:36.8143694Z [1m[33mwarning[0m: ecaz@0.1.1: /usr/include/postgresql/18/server/utils/pgstat_internal.h:875:70: warning: unused parameter 'arg' [-Wunused-parameter]
+2026-05-29T19:55:36.8145063Z [1m[33mwarning[0m: ecaz@0.1.1:   875 | pgstat_cmp_hash_key(const void *a, const void *b, size_t size, void *arg)
+2026-05-29T19:55:36.8146123Z [1m[33mwarning[0m: ecaz@0.1.1:       |                                                                ~~~~~~^~~
+2026-05-29T19:55:36.8147562Z [1m[33mwarning[0m: ecaz@0.1.1: /usr/include/postgresql/18/server/utils/pgstat_internal.h: In function 'pgstat_hash_hash_key':
+2026-05-29T19:55:36.8149521Z [1m[33mwarning[0m: ecaz@0.1.1: /usr/include/postgresql/18/server/utils/pgstat_internal.h:882:56: warning: unused parameter 'arg' [-Wunused-parameter]
+2026-05-29T19:55:36.8150841Z [1m[33mwarning[0m: ecaz@0.1.1:   882 | pgstat_hash_hash_key(const void *d, size_t size, void *arg)
+2026-05-29T19:55:36.8151799Z [1m[33mwarning[0m: ecaz@0.1.1:       |                                                  ~~~~~~^~~
+2026-05-29T19:55:53.4264659Z [1m[92m    Checking[0m pgrx v0.17.0
+2026-05-29T19:55:54.8829341Z [1m[92m    Checking[0m pgrx-tests v0.17.0
+2026-05-29T19:56:31.9434915Z [1m[92m    Finished[0m `dev` profile [unoptimized + debuginfo] target(s) in 56.14s
+2026-05-29T19:56:31.9814767Z ##[group]Run cargo test --no-default-features --features pg18
+2026-05-29T19:56:31.9815228Z [36;1mcargo test --no-default-features --features pg18[0m
+2026-05-29T19:56:31.9842738Z shell: /usr/bin/bash -e {0}
+2026-05-29T19:56:31.9842998Z env:
+2026-05-29T19:56:31.9843223Z   PGRX_HOME: /tmp/tqvector_pgrx_home
+2026-05-29T19:56:31.9843641Z   RUSTFLAGS: -C target-cpu=x86-64 -C link-arg=-Wl,--unresolved-symbols=ignore-all
+2026-05-29T19:56:31.9844052Z   CARGO_HOME: /home/runner/.cargo
+2026-05-29T19:56:31.9844317Z   CARGO_INCREMENTAL: 0
+2026-05-29T19:56:31.9844563Z   CARGO_TERM_COLOR: always
+2026-05-29T19:56:31.9844802Z   CACHE_ON_FAILURE: false
+2026-05-29T19:56:31.9845095Z   PGRX_PG_CONFIG_PATH: /usr/lib/postgresql/18/bin/pg_config
+2026-05-29T19:56:31.9845419Z ##[endgroup]
+2026-05-29T19:56:32.4400516Z [1m[92m   Compiling[0m unicode-ident v1.0.24
+2026-05-29T19:56:32.4401116Z [1m[92m   Compiling[0m cfg-if v1.0.4
+2026-05-29T19:56:32.4401683Z [1m[92m   Compiling[0m libc v0.2.186
+2026-05-29T19:56:32.4403114Z [1m[92m   Compiling[0m stable_deref_trait v1.2.1
+2026-05-29T19:56:32.4709625Z [1m[92m   Compiling[0m serde_core v1.0.228
+2026-05-29T19:56:32.4805153Z [1m[92m   Compiling[0m once_cell v1.21.4
+2026-05-29T19:56:32.5087190Z [1m[92m   Compiling[0m proc-macro2 v1.0.106
+2026-05-29T19:56:32.6219988Z [1m[92m   Compiling[0m smallvec v1.15.1
+2026-05-29T19:56:32.7819559Z [1m[92m   Compiling[0m zmij v1.0.21
+2026-05-29T19:56:33.0470347Z [1m[92m   Compiling[0m quote v1.0.45
+2026-05-29T19:56:33.3130046Z [1m[92m   Compiling[0m syn v2.0.117
+2026-05-29T19:56:33.3199973Z [1m[92m   Compiling[0m litemap v0.8.2
+2026-05-29T19:56:33.4419572Z [1m[92m   Compiling[0m itoa v1.0.18
+2026-05-29T19:56:33.5649701Z [1m[92m   Compiling[0m writeable v0.6.3
+2026-05-29T19:56:33.6368799Z [1m[92m   Compiling[0m utf8_iter v1.0.4
+2026-05-29T19:56:33.6929468Z [1m[92m   Compiling[0m memchr v2.8.1
+2026-05-29T19:56:33.7222321Z [1m[92m   Compiling[0m icu_properties_data v2.2.0
+2026-05-29T19:56:33.8159991Z [1m[92m   Compiling[0m icu_normalizer_data v2.2.0
+2026-05-29T19:56:33.8570503Z [1m[92m   Compiling[0m winnow v1.0.3
+2026-05-29T19:56:34.1769786Z [1m[92m   Compiling[0m toml_parser v1.1.2+spec-1.1.0
+2026-05-29T19:56:34.4549597Z [1m[92m   Compiling[0m winnow v0.7.15
+2026-05-29T19:56:34.6219456Z [1m[92m   Compiling[0m toml_writer v1.1.1+spec-1.1.0
+2026-05-29T19:56:34.7609548Z [1m[92m   Compiling[0m indenter v0.3.4
+2026-05-29T19:56:34.8049446Z [1m[92m   Compiling[0m eyre v0.6.12
+2026-05-29T19:56:34.9799964Z [1m[92m   Compiling[0m regex-syntax v0.8.10
+2026-05-29T19:56:35.1289741Z [1m[92m   Compiling[0m rand_core v0.10.1
+2026-05-29T19:56:35.2209392Z [1m[92m   Compiling[0m typenum v1.20.1
+2026-05-29T19:56:35.9759292Z [1m[92m   Compiling[0m anstyle v1.0.14
+2026-05-29T19:56:36.0479738Z [1m[92m   Compiling[0m is_ci v1.2.0
+2026-05-29T19:56:36.1129771Z [1m[92m   Compiling[0m supports-color v3.0.2
+2026-05-29T19:56:36.1349235Z [1m[92m   Compiling[0m hybrid-array v0.4.12
+2026-05-29T19:56:36.2109289Z [1m[92m   Compiling[0m getrandom v0.4.2
+2026-05-29T19:56:36.3479823Z [1m[92m   Compiling[0m anyhow v1.0.102
+2026-05-29T19:56:36.6179763Z [1m[92m   Compiling[0m synstructure v0.13.2
+2026-05-29T19:56:36.7379487Z [1m[92m   Compiling[0m serde_json v1.0.150
+2026-05-29T19:56:37.0929454Z [1m[92m   Compiling[0m serde_spanned v1.1.1
+2026-05-29T19:56:37.1699862Z [1m[92m   Compiling[0m toml_datetime v0.7.5+spec-1.1.0
+2026-05-29T19:56:37.4149848Z [1m[92m   Compiling[0m form_urlencoded v1.2.2
+2026-05-29T19:56:37.5269353Z [1m[92m   Compiling[0m toml v0.9.12+spec-1.1.0
+2026-05-29T19:56:37.7379311Z [1m[92m   Compiling[0m pathsearch v0.2.0
+2026-05-29T19:56:37.8390399Z [1m[92m   Compiling[0m owo-colors v4.3.0
+2026-05-29T19:56:38.1389747Z [1m[92m   Compiling[0m zerofrom-derive v0.1.7
+2026-05-29T19:56:38.3322440Z [1m[92m   Compiling[0m serde_derive v1.0.228
+2026-05-29T19:56:38.6369768Z [1m[92m   Compiling[0m yoke-derive v0.8.2
+2026-05-29T19:56:39.1839747Z [1m[92m   Compiling[0m zerovec-derive v0.11.3
+2026-05-29T19:56:39.1970885Z [1m[92m   Compiling[0m zerofrom v0.1.8
+2026-05-29T19:56:39.2679398Z [1m[92m   Compiling[0m displaydoc v0.2.6
+2026-05-29T19:56:39.5415815Z [1m[92m   Compiling[0m yoke v0.8.2
+2026-05-29T19:56:39.6719948Z [1m[92m   Compiling[0m thiserror-impl v2.0.18
+2026-05-29T19:56:39.8210090Z [1m[92m   Compiling[0m zerotrie v0.2.4
+2026-05-29T19:56:40.0566266Z [1m[92m   Compiling[0m zerocopy-derive v0.8.50
+2026-05-29T19:56:40.1209862Z [1m[92m   Compiling[0m zerovec v0.11.6
+2026-05-29T19:56:40.6099611Z [1m[92m   Compiling[0m tinystr v0.8.3
+2026-05-29T19:56:40.7409366Z [1m[92m   Compiling[0m icu_locale_core v2.2.0
+2026-05-29T19:56:40.8029521Z [1m[92m   Compiling[0m potential_utf v0.1.5
+2026-05-29T19:56:40.8899766Z [1m[92m   Compiling[0m icu_collections v2.2.0
+2026-05-29T19:56:41.2029828Z [1m[92m   Compiling[0m serde v1.0.228
+2026-05-29T19:56:41.3529381Z [1m[92m   Compiling[0m thiserror v2.0.18
+2026-05-29T19:56:41.4519980Z [1m[92m   Compiling[0m zerocopy v0.8.50
+2026-05-29T19:56:41.7340001Z [1m[92m   Compiling[0m icu_provider v2.2.0
+2026-05-29T19:56:41.8925602Z [1m[92m   Compiling[0m foldhash v0.1.5
+2026-05-29T19:56:41.9930028Z [1m[92m   Compiling[0m icu_normalizer v2.2.0
+2026-05-29T19:56:42.0048883Z [1m[92m   Compiling[0m icu_properties v2.2.0
+2026-05-29T19:56:42.0337608Z [1m[92m   Compiling[0m cmov v0.5.4
+2026-05-29T19:56:42.1751045Z [1m[92m   Compiling[0m equivalent v1.0.2
+2026-05-29T19:56:42.2069543Z [1m[92m   Compiling[0m ctutils v0.4.2
+2026-05-29T19:56:42.3619700Z [1m[92m   Compiling[0m cargo_toml v0.22.3
+2026-05-29T19:56:42.6839483Z [1m[92m   Compiling[0m crypto-common v0.2.2
+2026-05-29T19:56:43.3699272Z [1m[92m   Compiling[0m idna_adapter v1.2.2
+2026-05-29T19:56:43.4318509Z [1m[92m   Compiling[0m idna v1.1.0
+2026-05-29T19:56:43.8869787Z [1m[92m   Compiling[0m url v2.5.8
+2026-05-29T19:56:44.4119562Z [1m[92m   Compiling[0m block-buffer v0.12.0
+2026-05-29T19:56:44.4959970Z [1m[92m   Compiling[0m aho-corasick v1.1.4
+2026-05-29T19:56:44.7539474Z [1m[92m   Compiling[0m hashbrown v0.17.1
+2026-05-29T19:56:45.0799360Z [1m[92m   Compiling[0m const-oid v0.10.2
+2026-05-29T19:56:45.2360113Z [1m[92m   Compiling[0m indexmap v2.14.0
+2026-05-29T19:56:45.2578722Z [1m[92m   Compiling[0m digest v0.11.3
+2026-05-29T19:56:45.3819401Z [1m[92m   Compiling[0m regex-automata v0.4.14
+2026-05-29T19:56:45.8324824Z [1m[92m   Compiling[0m pgrx-pg-config v0.17.0
+2026-05-29T19:56:46.4576802Z [1m[92m   Compiling[0m libloading v0.8.9
+2026-05-29T19:56:46.5699979Z [1m[92m   Compiling[0m same-file v1.0.6
+2026-05-29T19:56:46.6729777Z [1m[92m   Compiling[0m tinyvec_macros v0.1.1
+2026-05-29T19:56:46.7044220Z [1m[92m   Compiling[0m cpufeatures v0.3.0
+2026-05-29T19:56:46.7369381Z [1m[92m   Compiling[0m bytes v1.11.1
+2026-05-29T19:56:46.8469329Z [1m[92m   Compiling[0m fixedbitset v0.5.7
+2026-05-29T19:56:46.9109277Z [1m[92m   Compiling[0m annotate-snippets v0.11.5
+2026-05-29T19:56:47.1379657Z [1m[92m   Compiling[0m tinyvec v1.11.0
+2026-05-29T19:56:47.4027655Z [1m[92m   Compiling[0m regex v1.12.3
+2026-05-29T19:56:47.4123472Z [1m[92m   Compiling[0m walkdir v2.5.0
+2026-05-29T19:56:47.4989670Z [1m[92m   Compiling[0m clang-sys v1.8.1
+2026-05-29T19:56:47.8039213Z [1m[92m   Compiling[0m getrandom v0.2.17
+2026-05-29T19:56:47.9501751Z [1m[92m   Compiling[0m shlex v1.3.0
+2026-05-29T19:56:48.1039472Z [1m[92m   Compiling[0m pin-project-lite v0.2.17
+2026-05-29T19:56:48.1409550Z [1m[92m   Compiling[0m unicode-segmentation v1.13.2
+2026-05-29T19:56:48.5409854Z [1m[92m   Compiling[0m convert_case v0.8.0
+2026-05-29T19:56:48.9979448Z [1m[92m   Compiling[0m unicode-normalization v0.1.25
+2026-05-29T19:56:49.1160002Z [1m[92m   Compiling[0m chacha20 v0.10.0
+2026-05-29T19:56:49.2728359Z [1m[92m   Compiling[0m bindgen v0.72.1
+2026-05-29T19:56:49.3029299Z [1m[92m   Compiling[0m ppv-lite86 v0.2.21
+2026-05-29T19:56:49.3999355Z [1m[92m   Compiling[0m hashbrown v0.15.5
+2026-05-29T19:56:49.5850634Z [1m[92m   Compiling[0m mio v1.2.1
+2026-05-29T19:56:49.8509385Z [1m[92m   Compiling[0m socket2 v0.6.4
+2026-05-29T19:56:50.1579473Z [1m[92m   Compiling[0m bitflags v2.11.1
+2026-05-29T19:56:50.3259957Z [1m[92m   Compiling[0m percent-encoding v2.3.2
+2026-05-29T19:56:50.4139859Z [1m[92m   Compiling[0m unicode-bidi v0.3.18
+2026-05-29T19:56:50.4649401Z [1m[92m   Compiling[0m futures-core v0.3.32
+2026-05-29T19:56:50.5479878Z [1m[92m   Compiling[0m unicode-properties v0.1.4
+2026-05-29T19:56:50.7080212Z [1m[92m   Compiling[0m allocator-api2 v0.2.21
+2026-05-29T19:56:50.9909683Z [1m[92m   Compiling[0m unescape v0.1.0
+2026-05-29T19:56:51.0108070Z [1m[92m   Compiling[0m futures-sink v0.3.32
+2026-05-29T19:56:51.0800990Z [1m[92m   Compiling[0m stringprep v0.1.5
+2026-05-29T19:56:51.0849155Z [1m[92m   Compiling[0m tokio v1.52.3
+2026-05-29T19:56:51.5626935Z [1m[92m   Compiling[0m petgraph v0.8.3
+2026-05-29T19:56:51.7311055Z [1m[92m   Compiling[0m rand v0.10.1
+2026-05-29T19:56:52.3919182Z [1m[92m   Compiling[0m crossbeam-utils v0.8.21
+2026-05-29T19:56:52.8509799Z [1m[92m   Compiling[0m pgrx-bindgen v0.17.0
+2026-05-29T19:56:53.5129433Z [1m[92m   Compiling[0m sha2 v0.11.0
+2026-05-29T19:56:53.6909379Z [1m[92m   Compiling[0m md-5 v0.11.0
+2026-05-29T19:56:53.8159321Z [1m[92m   Compiling[0m hmac v0.13.0
+2026-05-29T19:56:53.9099860Z [1m[92m   Compiling[0m byteorder v1.5.0
+2026-05-29T19:56:54.0829920Z [1m[92m   Compiling[0m base64 v0.22.1
+2026-05-29T19:56:54.3640148Z [1m[92m   Compiling[0m siphasher v1.0.3
+2026-05-29T19:56:54.4449798Z [1m[92m   Compiling[0m scopeguard v1.2.0
+2026-05-29T19:56:54.4829591Z [1m[92m   Compiling[0m zeroize v1.8.2
+2026-05-29T19:56:54.5019656Z [1m[92m   Compiling[0m fallible-iterator v0.2.0
+2026-05-29T19:56:54.5889275Z [1m[92m   Compiling[0m rustls-pki-types v1.14.1
+2026-05-29T19:56:54.7379499Z [1m[92m   Compiling[0m pgrx-pg-sys v0.17.0
+2026-05-29T19:56:54.7799854Z [1m[92m   Compiling[0m postgres-protocol v0.6.11
+2026-05-29T19:56:55.1009481Z [1m[92m   Compiling[0m lock_api v0.4.14
+2026-05-29T19:56:55.2429751Z [1m[92m   Compiling[0m phf_shared v0.13.1
+2026-05-29T19:56:55.2989881Z [1m[92m   Compiling[0m pgrx-sql-entity-graph v0.17.0
+2026-05-29T19:56:55.3607580Z [1m[92m   Compiling[0m crossbeam-epoch v0.9.18
+2026-05-29T19:56:55.6474496Z [1m[92m   Compiling[0m parking_lot_core v0.9.12
+2026-05-29T19:56:55.8559430Z [1m[92m   Compiling[0m futures-macro v0.3.32
+2026-05-29T19:56:56.4659829Z [1m[92m   Compiling[0m tap v1.0.1
+2026-05-29T19:56:56.5179439Z [1m[92m   Compiling[0m futures-task v0.3.32
+2026-05-29T19:56:56.6139860Z [1m[92m   Compiling[0m slab v0.4.12
+2026-05-29T19:56:56.7170009Z [1m[92m   Compiling[0m either v1.16.0
+2026-05-29T19:56:56.8609436Z [1m[92m   Compiling[0m untrusted v0.9.0
+2026-05-29T19:56:56.9120994Z [1m[92m   Compiling[0m ring v0.17.14
+2026-05-29T19:56:57.4550130Z [1m[92m   Compiling[0m futures-util v0.3.32
+2026-05-29T19:56:59.5759856Z [1m[92m   Compiling[0m wyz v0.5.1
+2026-05-29T19:56:59.7029289Z [1m[92m   Compiling[0m parking_lot v0.12.5
+2026-05-29T19:57:00.1479468Z [1m[92m   Compiling[0m crossbeam-deque v0.8.6
+2026-05-29T19:57:00.2739628Z [1m[92m   Compiling[0m phf v0.13.1
+2026-05-29T19:57:00.3661773Z [1m[92m   Compiling[0m cee-scape v0.2.0
+2026-05-29T19:57:00.4169704Z [1m[92m   Compiling[0m radium v0.7.0
+2026-05-29T19:57:00.5029496Z [1m[92m   Compiling[0m pgrx-macros v0.17.0
+2026-05-29T19:57:01.6450133Z [1m[92m   Compiling[0m postgres-types v0.2.13
+2026-05-29T19:57:02.1069350Z [1m[92m   Compiling[0m tokio-util v0.7.18
+2026-05-29T19:57:02.6089463Z [1m[92m   Compiling[0m futures-channel v0.3.32
+2026-05-29T19:57:02.8649506Z [1m[92m   Compiling[0m enum-map-derive v0.17.0
+2026-05-29T19:57:02.8658687Z [1m[92m   Compiling[0m async-trait v0.1.89
+2026-05-29T19:57:03.1499348Z [1m[92m   Compiling[0m whoami v2.1.2
+2026-05-29T19:57:03.5669276Z [1m[92m   Compiling[0m funty v2.0.0
+2026-05-29T19:57:03.5728984Z [1m[92m   Compiling[0m log v0.4.30
+2026-05-29T19:57:03.6909333Z [1m[92m   Compiling[0m half v1.8.3
+2026-05-29T19:57:03.8919309Z [1m[92m   Compiling[0m serde_cbor v0.11.2
+2026-05-29T19:57:04.3000463Z [1m[92m   Compiling[0m bitvec v1.0.1
+2026-05-29T19:57:04.5329423Z [1m[92m   Compiling[0m tokio-postgres v0.7.17
+2026-05-29T19:57:05.6179662Z [1m[92m   Compiling[0m enum-map v2.7.3
+2026-05-29T19:57:06.1882418Z [1m[92m   Compiling[0m rayon-core v1.13.0
+2026-05-29T19:57:06.5959870Z [1m[92m   Compiling[0m rustls-webpki v0.103.13
+2026-05-29T19:57:07.0469135Z [1m[92m   Compiling[0m getrandom v0.3.4
+2026-05-29T19:57:07.1889784Z [1m[92m   Compiling[0m rand_core v0.6.4
+2026-05-29T19:57:07.3419759Z [1m[92m   Compiling[0m uuid v1.23.2
+2026-05-29T19:57:07.6979163Z [1m[92m   Compiling[0m seahash v4.1.0
+2026-05-29T19:57:07.8359237Z [1m[92m   Compiling[0m subtle v2.6.1
+2026-05-29T19:57:07.9295651Z [1m[92m   Compiling[0m rand_chacha v0.3.1
+2026-05-29T19:57:07.9679311Z [1m[92m   Compiling[0m rustls v0.23.40
+2026-05-29T19:57:08.0342718Z [1m[92m   Compiling[0m rand_core v0.9.5
+2026-05-29T19:57:08.1729761Z [1m[92m   Compiling[0m rayon v1.12.0
+2026-05-29T19:57:08.8331300Z [1m[92m   Compiling[0m postgres v0.19.13
+2026-05-29T19:57:10.1869622Z [1m[92m   Compiling[0m ecaz v0.1.1 (/home/runner/work/ecaz/ecaz)
+2026-05-29T19:57:10.4629923Z [1m[92m   Compiling[0m clap_lex v1.1.0
+2026-05-29T19:57:10.6349714Z [1m[92m   Compiling[0m linux-raw-sys v0.12.1
+2026-05-29T19:57:10.9399352Z [1m[92m   Compiling[0m clap_derive v4.6.1
+2026-05-29T19:57:12.5320591Z [1m[92m   Compiling[0m tokio-rustls v0.26.4
+2026-05-29T19:57:12.7309575Z [1m[92m   Compiling[0m rustix v1.1.4
+2026-05-29T19:57:13.1410053Z [1m[92m   Compiling[0m clap_builder v4.6.0
+2026-05-29T19:57:15.2099826Z [1m[33mwarning[0m: ecaz@0.1.1: In file included from /usr/include/postgresql/18/server/utils/pgstat_internal.h:19,
+2026-05-29T19:57:15.2138825Z [1m[33mwarning[0m: ecaz@0.1.1:                  from csrc/pg18_pgstat_shim.c:10:
+2026-05-29T19:57:15.2168971Z [1m[33mwarning[0m: ecaz@0.1.1: /usr/include/postgresql/18/server/lib/ilist.h: In function 'dlist_next_node':
+2026-05-29T19:57:15.2199327Z [1m[33mwarning[0m: ecaz@0.1.1: /usr/include/postgresql/18/server/lib/ilist.h:537:29: warning: unused parameter 'head' [-Wunused-parameter]
+2026-05-29T19:57:15.2228940Z [1m[33mwarning[0m: ecaz@0.1.1:   537 | dlist_next_node(dlist_head *head, dlist_node *node)
+2026-05-29T19:57:15.2231729Z [1m[33mwarning[0m: ecaz@0.1.1:       |                 ~~~~~~~~~~~~^~~~
+2026-05-29T19:57:15.2233004Z [1m[33mwarning[0m: ecaz@0.1.1: /usr/include/postgresql/18/server/lib/ilist.h: In function 'dlist_prev_node':
+2026-05-29T19:57:15.2279303Z [1m[33mwarning[0m: ecaz@0.1.1: /usr/include/postgresql/18/server/lib/ilist.h:547:29: warning: unused parameter 'head' [-Wunused-parameter]
+2026-05-29T19:57:15.2281274Z [1m[33mwarning[0m: ecaz@0.1.1:   547 | dlist_prev_node(dlist_head *head, dlist_node *node)
+2026-05-29T19:57:15.2308746Z [1m[33mwarning[0m: ecaz@0.1.1:       |                 ~~~~~~~~~~~~^~~~
+2026-05-29T19:57:15.2339049Z [1m[33mwarning[0m: ecaz@0.1.1: /usr/include/postgresql/18/server/lib/ilist.h: In function 'slist_next_node':
+2026-05-29T19:57:15.2349056Z [1m[33mwarning[0m: ecaz@0.1.1: /usr/include/postgresql/18/server/lib/ilist.h:1054:29: warning: unused parameter 'head' [-Wunused-parameter]
+2026-05-29T19:57:15.2378770Z [1m[33mwarning[0m: ecaz@0.1.1:  1054 | slist_next_node(slist_head *head, slist_node *node)
+2026-05-29T19:57:15.2398853Z [1m[33mwarning[0m: ecaz@0.1.1:       |                 ~~~~~~~~~~~~^~~~
+2026-05-29T19:57:15.2429434Z [1m[33mwarning[0m: ecaz@0.1.1: /usr/include/postgresql/18/server/utils/pgstat_internal.h: In function 'pgstat_cmp_hash_key':
+2026-05-29T19:57:15.2439131Z [1m[33mwarning[0m: ecaz@0.1.1: /usr/include/postgresql/18/server/utils/pgstat_internal.h:875:58: warning: unused parameter 'size' [-Wunused-parameter]
+2026-05-29T19:57:15.2459543Z [1m[33mwarning[0m: ecaz@0.1.1:   875 | pgstat_cmp_hash_key(const void *a, const void *b, size_t size, void *arg)
+2026-05-29T19:57:15.2488998Z [1m[33mwarning[0m: ecaz@0.1.1:       |                                                   ~~~~~~~^~~~
+2026-05-29T19:57:15.2519154Z [1m[33mwarning[0m: ecaz@0.1.1: /usr/include/postgresql/18/server/utils/pgstat_internal.h:875:70: warning: unused parameter 'arg' [-Wunused-parameter]
+2026-05-29T19:57:15.2528873Z [1m[33mwarning[0m: ecaz@0.1.1:   875 | pgstat_cmp_hash_key(const void *a, const void *b, size_t size, void *arg)
+2026-05-29T19:57:15.2548829Z [1m[33mwarning[0m: ecaz@0.1.1:       |                                                                ~~~~~~^~~
+2026-05-29T19:57:15.2579188Z [1m[33mwarning[0m: ecaz@0.1.1: /usr/include/postgresql/18/server/utils/pgstat_internal.h: In function 'pgstat_hash_hash_key':
+2026-05-29T19:57:15.2589154Z [1m[33mwarning[0m: ecaz@0.1.1: /usr/include/postgresql/18/server/utils/pgstat_internal.h:882:56: warning: unused parameter 'arg' [-Wunused-parameter]
+2026-05-29T19:57:15.2618799Z [1m[33mwarning[0m: ecaz@0.1.1:   882 | pgstat_hash_hash_key(const void *d, size_t size, void *arg)
+2026-05-29T19:57:15.2638770Z [1m[33mwarning[0m: ecaz@0.1.1:       |                                                  ~~~~~~^~~
+2026-05-29T19:57:15.2668676Z [1m[92m   Compiling[0m num-traits v0.2.19
+2026-05-29T19:57:15.7636101Z [1m[92m   Compiling[0m rand v0.8.6
+2026-05-29T19:57:15.8549264Z [1m[92m   Compiling[0m webpki-roots v1.0.7
+2026-05-29T19:57:15.9149231Z [1m[92m   Compiling[0m thiserror-impl v1.0.69
+2026-05-29T19:57:16.3969275Z [1m[92m   Compiling[0m derive_more-impl v2.1.1
+2026-05-29T19:57:17.0589510Z [1m[92m   Compiling[0m hex v0.4.3
+2026-05-29T19:57:17.2379235Z [1m[92m   Compiling[0m fastrand v2.4.1
+2026-05-29T19:57:17.4183396Z [1m[92m   Compiling[0m tempfile v3.27.0
+2026-05-29T19:57:19.3589889Z [1m[92m   Compiling[0m thiserror v1.0.69
+2026-05-29T19:57:19.3999231Z [1m[92m   Compiling[0m clap v4.6.1
+2026-05-29T19:57:19.4359242Z [1m[92m   Compiling[0m camino v1.2.2
+2026-05-29T19:57:19.5399800Z [1m[92m   Compiling[0m rand_chacha v0.9.0
+2026-05-29T19:57:19.8329586Z [1m[92m   Compiling[0m half v2.7.1
+2026-05-29T19:57:19.9969770Z [1m[92m   Compiling[0m cargo-platform v0.1.9
+2026-05-29T19:57:20.0386007Z [1m[92m   Compiling[0m semver v1.0.28
+2026-05-29T19:57:20.2019969Z [1m[92m   Compiling[0m proc-macro-error-attr2 v2.0.0
+2026-05-29T19:57:20.3319480Z [1m[92m   Compiling[0m wait-timeout v0.2.1
+2026-05-29T19:57:20.4190969Z [1m[92m   Compiling[0m quick-error v1.2.3
+2026-05-29T19:57:20.4624253Z [1m[92m   Compiling[0m ciborium-io v0.2.2
+2026-05-29T19:57:20.5009195Z [1m[92m   Compiling[0m fnv v1.0.7
+2026-05-29T19:57:20.5385932Z [1m[92m   Compiling[0m plotters-backend v0.3.7
+2026-05-29T19:57:20.5879113Z [1m[92m   Compiling[0m bit-vec v0.8.0
+2026-05-29T19:57:20.7059446Z [1m[92m   Compiling[0m plotters-svg v0.3.7
+2026-05-29T19:57:20.7439753Z [1m[92m   Compiling[0m bit-set v0.8.0
+2026-05-29T19:57:20.8187757Z [1m[92m   Compiling[0m rusty-fork v0.3.1
+2026-05-29T19:57:20.8300071Z [1m[92m   Compiling[0m ciborium-ll v0.2.2
+2026-05-29T19:57:20.9539733Z [1m[92m   Compiling[0m proc-macro-error2 v2.0.1
+2026-05-29T19:57:21.1352909Z [1m[92m   Compiling[0m cargo_metadata v0.18.1
+2026-05-29T19:57:21.1909361Z [1m[92m   Compiling[0m rand v0.9.4
+2026-05-29T19:57:22.1909863Z [1m[92m   Compiling[0m derive_more v2.1.1
+2026-05-29T19:57:22.2189952Z [1m[92m   Compiling[0m rand_xorshift v0.4.0
+2026-05-29T19:57:22.2969436Z [1m[92m   Compiling[0m itertools v0.10.5
+2026-05-29T19:57:22.8869778Z [1m[92m   Compiling[0m unarray v0.1.4
+2026-05-29T19:57:22.9389116Z [1m[92m   Compiling[0m cast v0.3.0
+2026-05-29T19:57:23.0479873Z [1m[92m   Compiling[0m proptest v1.11.0
+2026-05-29T19:57:24.7359726Z [1m[92m   Compiling[0m criterion-plot v0.5.0
+2026-05-29T19:57:25.0829540Z [1m[92m   Compiling[0m iai-callgrind-macros v0.5.1
+2026-05-29T19:57:25.8909448Z [1m[92m   Compiling[0m clap-cargo v0.14.1
+2026-05-29T19:57:26.3672506Z [1m[92m   Compiling[0m ciborium v0.2.2
+2026-05-29T19:57:26.8524135Z [1m[92m   Compiling[0m iai-callgrind-runner v0.14.2
+2026-05-29T19:57:26.8969306Z [1m[92m   Compiling[0m plotters v0.3.7
+2026-05-29T19:57:27.7909344Z [1m[92m   Compiling[0m tinytemplate v1.2.1
+2026-05-29T19:57:27.7989034Z [1m[92m   Compiling[0m bincode v1.3.3
+2026-05-29T19:57:28.1379438Z [1m[92m   Compiling[0m sysinfo v0.34.2
+2026-05-29T19:57:28.1463577Z [1m[92m   Compiling[0m is-terminal v0.4.17
+2026-05-29T19:57:28.1900912Z [1m[92m   Compiling[0m anes v0.1.6
+2026-05-29T19:57:28.2049280Z [1m[92m   Compiling[0m oorandom v11.1.5
+2026-05-29T19:57:28.2649795Z [1m[92m   Compiling[0m iai-callgrind v0.14.2
+2026-05-29T19:57:28.3469459Z [1m[92m   Compiling[0m criterion v0.5.1
+2026-05-29T19:57:30.1806916Z [1m[92m   Compiling[0m pgrx v0.17.0
+2026-05-29T19:57:34.1516176Z [1m[92m   Compiling[0m pgrx-tests v0.17.0
+2026-05-29T20:03:03.2888207Z [1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 6m 31s
+2026-05-29T20:03:03.3122319Z [1m[92m     Running[0m unittests src/lib.rs (target/debug/deps/ecaz-fc5433e752d68eea)
+2026-05-29T20:03:03.3145540Z /home/runner/work/ecaz/ecaz/target/debug/deps/ecaz-fc5433e752d68eea: symbol lookup error: /home/runner/work/ecaz/ecaz/target/debug/deps/ecaz-fc5433e752d68eea: undefined symbol: CacheRegisterRelcacheCallback
+2026-05-29T20:03:03.3147071Z [1m[91merror[0m: test failed, to rerun pass `--lib`
+2026-05-29T20:03:03.3147419Z 
+2026-05-29T20:03:03.3147538Z Caused by:
+2026-05-29T20:03:03.3148421Z   process didn't exit successfully: `/home/runner/work/ecaz/ecaz/target/debug/deps/ecaz-fc5433e752d68eea` (exit status: 127)
+2026-05-29T20:03:03.3149652Z [1m[92mnote[0m: test exited abnormally; to see the full output pass --no-capture to the harness.
+2026-05-29T20:03:03.3215264Z ##[error]Process completed with exit code 127.
+2026-05-29T20:03:03.3291911Z Post job cleanup.
+2026-05-29T20:03:03.4290221Z [command]/usr/bin/git version
+2026-05-29T20:03:03.4326143Z git version 2.54.0
+2026-05-29T20:03:03.4365601Z Temporarily overriding HOME='/home/runner/work/_temp/03656f0f-5c51-4254-a6a8-46411d237cf0' before making global git config changes
+2026-05-29T20:03:03.4366631Z Adding repository directory to the temporary git global config as a safe directory
+2026-05-29T20:03:03.4378378Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/ecaz/ecaz
+2026-05-29T20:03:03.4414021Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-05-29T20:03:03.4447431Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-05-29T20:03:03.4705985Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-05-29T20:03:03.4731030Z http.https://github.com/.extraheader
+2026-05-29T20:03:03.4744426Z [command]/usr/bin/git config --local --unset-all http.https://github.com/.extraheader
+2026-05-29T20:03:03.4775691Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-05-29T20:03:03.5032640Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-05-29T20:03:03.5064657Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-05-29T20:03:03.5466910Z Cleaning up orphan processes
+2026-05-29T20:03:03.5762001Z ##[warning]Node.js 20 actions are deprecated. The following actions are running on Node.js 20 and may not work as expected: actions/checkout@v4. Actions will be forced to run with Node.js 24 by default starting June 16th, 2026. Node.js 20 will be removed from the runner on September 16th, 2026. Please check if updated versions of these actions are available that support Node.js 24. To opt into Node.js 24 now, set the FORCE_JAVASCRIPT_ACTIONS_TO_NODE24=true environment variable on the runner or in your workflow file. Once Node.js 24 becomes the default, you can temporarily opt out by setting ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
