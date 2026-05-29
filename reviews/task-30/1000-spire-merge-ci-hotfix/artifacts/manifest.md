@@ -1,9 +1,9 @@
 # Manifest: SPIRE Merge CI Hotfix
 
-- head SHA: `e25cfac638c23a9bd63801a28565cbc1c4865a53`
+- head SHA: `cb4b71fe03ab151fe40cbfd0ef27afefaa198a1c`
 - task bucket: `reviews/task-30`
 - packet path: `reviews/task-30/1000-spire-merge-ci-hotfix`
-- timestamp: `2026-05-29T20:24:27Z`
+- timestamp: `2026-05-29T21:26:33Z`
 - lane: post-merge CI stabilization
 - fixture/storage/rerank mode: not applicable
 - isolated one-index-per-table or shared-table surface: not applicable
@@ -45,3 +45,8 @@
 | `cargo-fmt-check-ivf-v1-fixture.log` | `cargo fmt --all -- --check` | exited 0 after the IVF v1 fixture expectation fix |
 | `cargo-test-ivf-v1-fixture.log` | `cargo test --features bench --test on_disk_fixtures ivf_metadata_v1_fixture_decodes` | focused IVF v1 fixture test passed |
 | `cargo-test-on-disk-fixtures-after-ivf-v1.log` | `cargo test --features bench --test on_disk_fixtures` | `test result: ok. 47 passed; 0 failed` |
+| `ci-pgrx-pg18-raw-host-lib-symbol-failure.log` | `gh api /repos/agent-ix/ecaz/actions/jobs/78581225390/logs` | `cargo pgrx test pg18` raw-executed the extension crate test binary and failed loading outside PostgreSQL with undefined symbol `LockBuffer` |
+| `git-diff-check-pgrx-pg18-preload-ci-final.log` | `git diff --check` | no whitespace errors in the PG18 preload CI workflow fix |
+| `cargo-fmt-check-pgrx-pg18-preload-ci-final.log` | `cargo fmt --all -- --check` | exited 0 after the PG18 preload CI workflow fix |
+| `cargo-check-ecaz-cli-pgrx-pg18-preload-ci-final.log` | `cargo check -p ecaz-cli` | `Finished dev profile`; only pre-existing `LoadedDistributedPlacementConfig::path` warning remains |
+| `cargo-test-ecaz-cli-dev-support-pgrx-paths.log` | `cargo test -p ecaz-cli commands::dev::support::tests` | `test result: ok. 4 passed; 0 failed` |
