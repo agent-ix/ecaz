@@ -1,12 +1,14 @@
 # Task 65 Validation Summary
 
-Head: `de2ef72e40472b8c9259e203be76cfdc0313c4d5`
+Head: `8e860324c1fa2a009bab209502962375f0207642`
 
 ## Commands
 
 ### `cargo fmt --check`
 
 Result: passed.
+
+Repeated after adding `dhat_vamana_build`.
 
 ### `cargo check -p ecaz --lib --no-default-features --features pg18`
 
@@ -38,6 +40,16 @@ Key output:
 Finished `dev` profile [unoptimized + debuginfo] target(s) in 3m 16s
 ```
 
+### `cargo check --features bench,dhat-heap --bin dhat_vamana_build`
+
+Result: passed.
+
+Key output:
+
+```text
+Finished `dev` profile [unoptimized + debuginfo] target(s) in 6.36s
+```
+
 ### `cargo test -p ecaz --features pg18 ec_diskann`
 
 Result: passed.
@@ -61,7 +73,7 @@ ran the DiskANN tests instead of aborting before test execution with the prior
 This run was repeated after `de2ef72e4` so the test evidence matches the
 committed Vamana hot-path cleanup rather than a dirty worktree.
 
-### `/Users/peter/.cargo/bin/ecaz dev install ecaz-pg-test --pg 18 --log-file reviews/task-65/002-vamana-core-measurement/artifacts/install-ecaz-pg-test-after-loader-fix.log`
+### `/Users/peter/.cargo/bin/ecaz dev install ecaz-pg-test --pg 18 --log-file reviews/task-65/002-vamana-core-measurement/artifacts/install-ecaz-pg-test-after-hotpath-trim.log`
 
 Result: passed.
 
@@ -69,7 +81,7 @@ Key output:
 
 ```text
 [install] installed_backend=/opt/homebrew/lib/postgresql@18/ecaz.dylib
-[install] sha256=fbe83817a4e22b919c98f89ccb9e207ca33ff76c5699b0ee8e1a6ebd2f952f05
+[install] sha256=b36dac9a7f8900dc38fa398bc3bcbb1080341baf76394401b25bfa476ca3c1c1
 ```
 
 ### `cargo run -p ecaz-cli --bin ecaz -- ... corpus load --prefix task65_lfix_r10k ...`
@@ -101,6 +113,73 @@ Key output:
 list_size=64  recall@k=0.9965  mean q-time=0.69 ms
 list_size=128 recall@k=0.9970  mean q-time=0.78 ms
 list_size=200 recall@k=0.9975  mean q-time=0.91 ms
+```
+
+### `cargo run -p ecaz-cli --bin ecaz -- ... corpus load --prefix task65_real_l200 ...`
+
+Result: passed.
+
+Key output:
+
+```text
+[loader] copied corpus table task65_real_l200_corpus in 5.67s
+[loader] encoded corpus table task65_real_l200_corpus in 1.78s
+[loader] built task65_real_l200_pq_fastscan_idx in 14.92s
+[loader] completed prefix task65_real_l200 in 32.10s
+```
+
+### `cargo run -p ecaz-cli --bin ecaz -- ... bench recall --prefix task65_real_l200 ...`
+
+Result: passed.
+
+Key output:
+
+```text
+list_size=64  recall@k=0.9975  mean q-time=0.72 ms
+list_size=128 recall@k=0.9975  mean q-time=0.82 ms
+list_size=200 recall@k=0.9975  mean q-time=0.96 ms
+```
+
+### `cargo run -p ecaz-cli --bin ecaz -- ... corpus load --prefix task65_syn_l200 ...`
+
+Result: passed.
+
+Key output:
+
+```text
+[loader] copied corpus table task65_syn_l200_corpus in 4.90s
+[loader] encoded corpus table task65_syn_l200_corpus in 2.15s
+[loader] built task65_syn_l200_pq_fastscan_idx in 35.67s
+[loader] completed prefix task65_syn_l200 in 50.38s
+```
+
+### `cargo run -p ecaz-cli --bin ecaz -- ... bench recall --prefix task65_syn_l200 ...`
+
+Result: passed.
+
+Key output:
+
+```text
+list_size=64  recall@k=0.1610  mean q-time=1.09 ms
+list_size=200 recall@k=0.2625  mean q-time=1.75 ms
+list_size=800 recall@k=0.3270  mean q-time=3.21 ms
+```
+
+### `cargo run --release --features bench,dhat-heap --bin dhat_vamana_build -- ...`
+
+Result: passed on the first 1,000 rows from the real10k m5 fixture.
+
+Key output is in `dhat-vamana-build-real1k-r32-l200-summary.md`:
+
+```text
+rows=1000
+graph_degree=32
+build_list_size=200
+elapsed_ms=14050
+greedy_search_ms=924
+robust_prune_ms=1880
+backlink_ms=9735
+dhat_output=reviews/task-65/002-vamana-core-measurement/artifacts/dhat-vamana-build-real1k-r32-l200.json
 ```
 
 ## Notes

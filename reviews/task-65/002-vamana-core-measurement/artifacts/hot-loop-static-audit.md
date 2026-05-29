@@ -1,6 +1,6 @@
 # Task 65 Hot-Loop Static Allocation Audit
 
-Head: `de2ef72e40472b8c9259e203be76cfdc0313c4d5`
+Head: `8e860324c1fa2a009bab209502962375f0207642`
 
 Scope: `src/am/ec_diskann/ambuild.rs` and
 `src/am/ec_diskann/vamana.rs`.
@@ -49,5 +49,14 @@ Interpretation:
 - The search found no build-time `source_vectors_match_exactly`,
   `overflow_heap_tids`, or `stage_overflow_heap_tids_in_chain` references in
   `ambuild.rs`; runtime insert overflow remains outside the build path.
-- `heaptrack` and standalone `dhat` commands are not installed on this host,
-  so this packet uses the code-shape audit as the memory-gate evidence.
+
+Runtime smoke:
+
+```text
+cargo run --release --features bench,dhat-heap --bin dhat_vamana_build -- --input fixtures/m5_diskann_real10k/m5_diskann_real10k_corpus.tsv --rows 1000 --graph-degree 32 --list-size 200 --alpha 1.2 --seed 42 --output reviews/task-65/002-vamana-core-measurement/artifacts/dhat-vamana-build-real1k-r32-l200.json --summary-output reviews/task-65/002-vamana-core-measurement/artifacts/dhat-vamana-build-real1k-r32-l200-summary.md
+```
+
+The profiler starts after TSV parsing and medoid selection and stops
+immediately after `build_vamana_graph_with_stats`. The JSON backtraces show the
+expected one-time `SearchScratch::new` and graph/prune allocations, with no
+`bfs_reachable` or per-search `vec![false; n]` path in the profiled build call.
