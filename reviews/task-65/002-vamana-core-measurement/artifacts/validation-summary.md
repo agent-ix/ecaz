@@ -54,6 +54,9 @@ Finished `dev` profile [unoptimized + debuginfo] target(s) in 6.36s
 
 Result: passed.
 
+Repeated again after the Task 65 closeout docs commit. See
+`cargo-test-ec-diskann-pg18-current-summary.md`.
+
 Key output:
 
 ```text
@@ -61,7 +64,7 @@ running 182 tests
 ...
 test am::ec_diskann::routine::tests::pg_test_ec_diskann_build_keeps_duplicate_vectors_as_distinct_nodes ... ok
 ...
-test result: ok. 182 passed; 0 failed; 0 ignored; 0 measured; 1735 filtered out; finished in 70.42s
+test result: ok. 182 passed; 0 failed; 0 ignored; 0 measured; 1735 filtered out; finished in 90.68s
 ...
 process exited with code 0
 ```
@@ -70,8 +73,9 @@ This also verifies the macOS standalone-loader fix: the command reached and
 ran the DiskANN tests instead of aborting before test execution with the prior
 `_BufferBlocks` dyld error.
 
-This run was repeated after `de2ef72e4` so the test evidence matches the
-committed Vamana hot-path cleanup rather than a dirty worktree.
+This run was repeated after `de2ef72e4` and again after `8e355577f`, so the
+test evidence matches the committed Vamana hot-path cleanup and closeout docs
+rather than a dirty worktree.
 
 ### `/Users/peter/.cargo/bin/ecaz dev install ecaz-pg-test --pg 18 --log-file reviews/task-65/002-vamana-core-measurement/artifacts/install-ecaz-pg-test-after-hotpath-trim.log`
 
