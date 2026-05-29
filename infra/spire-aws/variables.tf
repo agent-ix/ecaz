@@ -21,20 +21,30 @@ variable "subnet_cidr" {
 }
 
 variable "ami_id" {
-  description = "Amazon Linux 2023 AMI id. Operator picks the latest patched AMI for the region."
+  description = "Amazon Linux 2023 arm64 AMI id. SPIRE AWS verification follows the repo AWS Graviton/aarch64 lane."
   type        = string
 }
 
 variable "coordinator_instance_type" {
-  description = "EC2 instance type for the SPIRE coordinator. Phase 13a.1 default is r6i.4xlarge."
+  description = "Graviton EC2 instance type for the SPIRE coordinator. Phase 13e correctness default is m7g.large; representative/stress runs override to r7g.* after quota proof."
   type        = string
-  default     = "r6i.4xlarge"
+  default     = "m7g.large"
+
+  validation {
+    condition     = can(regex("^(m7g|m8g|r7g|c7g|c8g)\\.", var.coordinator_instance_type))
+    error_message = "SPIRE AWS verification must use the established Graviton/aarch64 lane: m7g, m8g, r7g, c7g, or c8g."
+  }
 }
 
 variable "remote_instance_type" {
-  description = "EC2 instance type for each SPIRE remote. Phase 13a.1 default is r6i.2xlarge."
+  description = "Graviton EC2 instance type for each SPIRE remote. Phase 13e correctness default is m7g.large; representative/stress runs override to r7g.* after quota proof."
   type        = string
-  default     = "r6i.2xlarge"
+  default     = "m7g.large"
+
+  validation {
+    condition     = can(regex("^(m7g|m8g|r7g|c7g|c8g)\\.", var.remote_instance_type))
+    error_message = "SPIRE AWS verification must use the established Graviton/aarch64 lane: m7g, m8g, r7g, c7g, or c8g."
+  }
 }
 
 variable "remote_count" {

@@ -292,14 +292,14 @@ pub(crate) fn remote_libpq_connection_lifecycle_contract_rows(
     vec![
         SpireRemoteLibpqConnectionLifecycleContractRow {
             surface: "ec_spire_remote_search_libpq_executor",
-            connection_lifecycle_policy: "per_query",
-            pooling_policy: "no_pooling_v1",
+            connection_lifecycle_policy: "per_backend_reusable_idle_session",
+            pooling_policy: "bounded_per_backend_v1",
             secret_resolution_policy: "conninfo_secret_name_resolved_by_executor",
             conninfo_exposure_policy: "never_expose_raw_conninfo_in_sql",
             failure_policy: "fail_closed_no_implicit_retry",
-            resource_limit_policy: "bounded_by_ec_spire_remote_search_session_caps",
-            validator: "must_close_connection_before_coordinator_returns",
-            recommendation: "enforce remote executor budgets before secret lookup or socket open",
+            resource_limit_policy: "bounded_by_ec_spire_remote_search_session_caps_and_connection_pool_size",
+            validator: "pool_key_must_include_descriptor_secret_identity_tls_user_db_and_timeout",
+            recommendation: "reuse only validated idle backend-local sessions and drop on identity drift, failure, or pool eviction",
         },
         SpireRemoteLibpqConnectionLifecycleContractRow {
             surface: "ec_spire_remote_epoch_manifest_publication_libpq_executor",

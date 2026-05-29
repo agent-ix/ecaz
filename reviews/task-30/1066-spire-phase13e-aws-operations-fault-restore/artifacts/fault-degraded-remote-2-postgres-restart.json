@@ -1,0 +1,22 @@
+{
+    "CommandId": "238b6e9c-d072-476a-a580-49d70d8d4127",
+    "InstanceId": "i-0b0e5ae9daea017d3",
+    "Comment": "ecaz Phase 13e restart PostgreSQL after fault restore",
+    "DocumentName": "AWS-RunShellScript",
+    "DocumentVersion": "$DEFAULT",
+    "PluginName": "aws:runShellScript",
+    "ResponseCode": 0,
+    "ExecutionStartDateTime": "2026-05-29T15:16:42.137Z",
+    "ExecutionElapsedTime": "PT0.493S",
+    "ExecutionEndDateTime": "2026-05-29T15:16:42.137Z",
+    "Status": "Success",
+    "StatusDetails": "Success",
+    "StandardOutputContent": "active\n1\n",
+    "StandardOutputUrl": "https://s3.us-west-2.amazonaws.com/ecaz-spire-aws-20260528234028485600000007/spire-aws/fault/degraded/postgres-restart/i-0b0e5ae9daea017d3/238b6e9c-d072-476a-a580-49d70d8d4127/i-0b0e5ae9daea017d3/awsrunShellScript/0.awsrunShellScript/stdout",
+    "StandardErrorContent": "",
+    "StandardErrorUrl": "https://s3.us-west-2.amazonaws.com/ecaz-spire-aws-20260528234028485600000007/spire-aws/fault/degraded/postgres-restart/i-0b0e5ae9daea017d3/238b6e9c-d072-476a-a580-49d70d8d4127/i-0b0e5ae9daea017d3/awsrunShellScript/0.awsrunShellScript/stderr",
+    "CloudWatchOutputConfig": {
+        "CloudWatchLogGroupName": "",
+        "CloudWatchOutputEnabled": false
+    }
+}

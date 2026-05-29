@@ -13,9 +13,16 @@ tmp/
 **/.terraform/
 *.tfstate
 *.tfstate.*
+infra/spire-aws/terraform.tfvars
 
 # Local agent/session state and downloaded paper copies.
 .claude/
 CLAUDE.md
 handoff.md
 *.pdf
+
+# Review packets may record TLS setup logs, but never private key material or
+# compiled extension payloads.
+reviews/**/artifacts/tls/**/*.key
+reviews/**/artifacts/**/*.tar.gz
+reviews/**/artifacts/**/*.so

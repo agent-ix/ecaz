@@ -1,0 +1,17 @@
+mode	step	nprobe	profiles	status	result_source	dispatch_sum	socket_open_sum	connect_p50	connect_p95	total_p50	total_p95	latency_p50	latency_p95	latency_p99	recall_at_k
+disabled	13e4-pooling-disabled-profile-k10	8	100									68.970 ms	78.168 ms	81.730 ms	0.2400
+disabled	13e4-pooling-disabled-profile-k10	16	100									71.024 ms	76.191 ms	81.119 ms	0.3530
+disabled	13e4-pooling-disabled-profile-k10	24	100									71.378 ms	79.924 ms	80.838 ms	0.4480
+disabled	13e4-pooling-disabled-profile-k10	32	100									72.819 ms	79.863 ms	87.363 ms	0.5180
+disabled	13e4-pooling-disabled-profile-k10	8	100	ready	remote_heap_candidates	285	0	0.000 ms	0.000 ms	29.000 ms	29.000 ms				
+disabled	13e4-pooling-disabled-profile-k10	16	100	ready	remote_heap_candidates	299	0	0.000 ms	0.000 ms	29.000 ms	30.000 ms				
+disabled	13e4-pooling-disabled-profile-k10	24	100	ready	remote_heap_candidates	300	0	0.000 ms	0.000 ms	30.000 ms	31.000 ms				
+disabled	13e4-pooling-disabled-profile-k10	32	100	ready	remote_heap_candidates	300	0	0.000 ms	0.000 ms	31.000 ms	32.000 ms				
+enabled	13e4-pooling-enabled-profile-k10	8	100									68.970 ms	78.168 ms	81.730 ms	0.2400
+enabled	13e4-pooling-enabled-profile-k10	16	100									71.024 ms	76.191 ms	81.119 ms	0.3530
+enabled	13e4-pooling-enabled-profile-k10	24	100									71.378 ms	79.924 ms	80.838 ms	0.4480
+enabled	13e4-pooling-enabled-profile-k10	32	100									72.819 ms	79.863 ms	87.363 ms	0.5180
+enabled	13e4-pooling-enabled-profile-k10	8	100	ready	remote_heap_candidates	285	0	0.000 ms	0.000 ms	29.000 ms	29.000 ms				
+enabled	13e4-pooling-enabled-profile-k10	16	100	ready	remote_heap_candidates	299	0	0.000 ms	0.000 ms	29.000 ms	30.000 ms				
+enabled	13e4-pooling-enabled-profile-k10	24	100	ready	remote_heap_candidates	300	0	0.000 ms	0.000 ms	30.000 ms	31.000 ms				
+enabled	13e4-pooling-enabled-profile-k10	32	100	ready	remote_heap_candidates	300	0	0.000 ms	0.000 ms	31.000 ms	32.000 ms				

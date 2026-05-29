@@ -208,19 +208,14 @@ if [[ "$remote_pids" != "$coord_pids" ]]; then
   exit 4
 fi
 
+"${coord_psql[@]}" \
+  -v coord_index=ec_spire_insert_read_coord_idx \
+  -v remotes_json='[{"node_id":2}]' \
+  -f "$ROOT_DIR/scripts/spire-aws/publish-remote-placements.sql" >/dev/null
+
 "${coord_psql[@]}" -v coord_epoch="$coord_epoch" -v remote_epoch="$remote_epoch" \
   -v extversion="$extversion" \
   -v remote_identity_hex="$remote_identity_hex" <<'SQL' >/dev/null
-WITH rewritten AS (
-    SELECT tests.ec_spire_test_rewrite_placement_node(
-        'ec_spire_insert_read_coord_idx'::regclass::oid,
-        leaf_pid,
-        2
-    )
-    FROM ec_spire_index_leaf_snapshot('ec_spire_insert_read_coord_idx'::regclass)
-)
-SELECT count(*) FROM rewritten;
-
 SELECT ec_spire_register_remote_node_descriptor(
     'ec_spire_insert_read_coord_idx'::regclass,
     2,

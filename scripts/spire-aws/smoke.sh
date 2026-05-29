@@ -11,24 +11,37 @@ TOPOLOGY="${1:?topology JSON path required}"
 ARTIFACT_DIR="${2:?artifact directory required}"
 mkdir -p "$ARTIFACT_DIR"
 
-COORD_HOST=$(jq -r '.coordinator.private_ip' "$TOPOLOGY")
+COORD_HOST=$(jq -r '.coordinator.operator_host // .coordinator.private_ip' "$TOPOLOGY")
+COORD_PORT=$(jq -r '.coordinator.operator_port // 5432' "$TOPOLOGY")
 PREFIX="${PREFIX:-ec_spire_aws_synth_10k}"
+ECAZ_BIN="${ECAZ_BIN:-ecaz}"
 
-ecaz dev sql \
-  --host "$COORD_HOST" --user ecaz_coord --database postgres \
+truth_args=()
+case "$PREFIX" in
+  ec_spire_aws_repr_1m)
+    truth_corpus_file="${SPIRE_AWS_REPRESENTATIVE_TRUTH_CORPUS_FILE:-${WORK_DIR:-$ARTIFACT_DIR/work}/qdrant-dbpedia/prepared/ec_real_100k_corpus.tsv}"
+    truth_args+=(--truth-corpus-file "$truth_corpus_file")
+    ;;
+esac
+
+"$ECAZ_BIN" dev sql \
+  --host "$COORD_HOST" --port "$COORD_PORT" --user ecaz_coord --database postgres \
   --file scripts/spire-aws/smoke-customscan-read.sql \
   --set "prefix=$PREFIX" \
   --log-output "$ARTIFACT_DIR/smoke-customscan-read.log"
 
-ecaz dev sql \
-  --host "$COORD_HOST" --user ecaz_coord --database postgres \
-  --sql "SELECT * FROM ec_spire_remote_search_production_read_profile(format('%s_idx', '${PREFIX}')::regclass, (SELECT embedding FROM ${PREFIX}_queries WHERE vec_id = 0)::real[], 10)" \
+"$ECAZ_BIN" dev sql \
+  --host "$COORD_HOST" --port "$COORD_PORT" --user ecaz_coord --database postgres \
+  --sql "SET enable_seqscan = off; SET enable_indexscan = off; SELECT * FROM ec_spire_remote_search_production_read_profile(format('%s_idx', '${PREFIX}')::regclass, (SELECT source FROM ${PREFIX}_queries ORDER BY id LIMIT 1)::real[], 10)" \
   --log-output "$ARTIFACT_DIR/production-read-profile-smoke.log"
 
-ecaz bench spire-pipeline \
-  --host "$COORD_HOST" --user ecaz_coord --database postgres \
+"$ECAZ_BIN" bench spire-pipeline \
+  --host "$COORD_HOST" --port "$COORD_PORT" --user ecaz_coord --database postgres \
   --prefix "$PREFIX" \
   --queries-limit 5 --sweep 8,16,32 \
   --include-remote --consistency-mode epoch \
   --include-cost-snapshot --include-query-metrics \
+  --include-recall --include-production-read-profile --production-read-only \
+  --remote-tuple-transport pg_binary_attr_v1 --query-metric-k 10 \
+  "${truth_args[@]}" \
   --log-output "$ARTIFACT_DIR/bench-spire-pipeline-smoke.log"

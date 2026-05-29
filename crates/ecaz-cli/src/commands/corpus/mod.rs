@@ -17,12 +17,14 @@ mod inspect;
 mod list;
 mod load;
 mod prepare;
+mod render_spire_registrations;
 
 pub use fetch::FetchArgs;
 pub use generate::GenerateArgs;
 pub use inspect::InspectArgs;
 pub use load::LoadArgs;
 pub use prepare::PrepareArgs;
+pub use render_spire_registrations::RenderSpireRegistrationsArgs;
 
 #[derive(Subcommand, Debug)]
 pub enum CorpusCommand {
@@ -41,6 +43,9 @@ pub enum CorpusCommand {
     /// Convert a Qdrant-DBpedia-style parquet release into canonical
     /// `<prefix>_corpus.tsv` + `<prefix>_queries.tsv` + manifest.
     Prepare(PrepareArgs),
+    /// Render coordinator SPIRE remote descriptor registration SQL from
+    /// distributed placement output and per-remote identity JSON.
+    RenderSpireRegistrations(RenderSpireRegistrationsArgs),
 }
 
 impl CorpusCommand {
@@ -52,6 +57,9 @@ impl CorpusCommand {
             CorpusCommand::List => list::run(conn).await,
             CorpusCommand::Generate(args) => generate::run(conn, args).await,
             CorpusCommand::Prepare(args) => prepare::run(conn, args).await,
+            CorpusCommand::RenderSpireRegistrations(args) => {
+                render_spire_registrations::run(args).await
+            }
         }
     }
 }

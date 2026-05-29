@@ -1,0 +1,12 @@
+Script started on 2026-05-28 15:17:54-07:00 [<not executed on terminal>]
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.19s
+     Running unittests src/main.rs (target/debug/deps/ecaz-d6a7979ea82a4d9a)
+
+running 2 tests
+test commands::bench::recall::tests::load_sources_tsv_file_rejects_dimension_drift ... [32mok[m
+test commands::bench::recall::tests::load_sources_tsv_file_parses_ids_and_vectors ... [32mok[m
+
+test result: [32mok[m. 2 passed; 0 failed; 0 ignored; 0 measured; 388 filtered out; finished in 0.00s
+
+
+Script done on 2026-05-28 15:17:54-07:00 [COMMAND_EXIT_CODE="0"]

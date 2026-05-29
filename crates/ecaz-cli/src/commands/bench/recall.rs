@@ -28,7 +28,8 @@ use ndarray::Array2;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::io::ErrorKind;
+use std::fs::File;
+use std::io::{BufRead, BufReader, ErrorKind};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 use tokio_postgres::Client;
@@ -91,6 +92,12 @@ pub struct RecallArgs {
     /// this file.
     #[arg(long)]
     pub truth_cache_file: Option<PathBuf>,
+    /// Optional local `<id>\t<json_array>` corpus TSV to use for exact truth.
+    ///
+    /// This avoids streaming the full corpus table through a remote SQL tunnel
+    /// when the same staged corpus file is already available to the operator.
+    #[arg(long)]
+    pub truth_corpus_file: Option<PathBuf>,
     /// Write the final recall table to this path in addition to stdout.
     #[arg(long)]
     pub log_output: Option<PathBuf>,
@@ -165,10 +172,23 @@ pub async fn run(conn: &ConnectionOptions, args: RecallArgs) -> Result<()> {
     let mut corpus_for_ndcg: Option<(Vec<i64>, Array2<f32>)> = None;
     let truth = if let Some(path) = args.truth_cache_file.as_deref() {
         match load_truth_cache_file_if_valid(path, &query_ids, &queries, args.k).await? {
-            Some(truth) => truth,
+            Some(truth) => {
+                if args.truth_corpus_file.is_some() {
+                    let (corpus_ids, corpus) = load_truth_corpus(
+                        &client,
+                        &corpus_table,
+                        args.truth_corpus_file.as_deref(),
+                    )
+                    .await?;
+                    validate_corpus_and_queries(&corpus_table, &corpus, &queries)?;
+                    corpus_for_ndcg = Some((corpus_ids, corpus));
+                }
+                truth
+            }
             None => {
-                eprintln!("[recall] fetching corpus from {corpus_table} ...");
-                let (corpus_ids, corpus) = fetch_sources(&client, &corpus_table, None).await?;
+                let (corpus_ids, corpus) =
+                    load_truth_corpus(&client, &corpus_table, args.truth_corpus_file.as_deref())
+                        .await?;
                 validate_corpus_and_queries(&corpus_table, &corpus, &queries)?;
                 let truth = load_or_compute_truth_file(
                     path,
@@ -184,8 +204,8 @@ pub async fn run(conn: &ConnectionOptions, args: RecallArgs) -> Result<()> {
             }
         }
     } else {
-        eprintln!("[recall] fetching corpus from {corpus_table} ...");
-        let (corpus_ids, corpus) = fetch_sources(&client, &corpus_table, None).await?;
+        let (corpus_ids, corpus) =
+            load_truth_corpus(&client, &corpus_table, args.truth_corpus_file.as_deref()).await?;
         validate_corpus_and_queries(&corpus_table, &corpus, &queries)?;
         let truth = load_or_compute_truth(
             args.truth_cache_dir.as_deref(),
@@ -664,6 +684,64 @@ pub async fn fetch_sources_public(
     fetch_sources(client, table, limit).await
 }
 
+pub fn load_sources_tsv_file(path: &Path) -> Result<(Vec<i64>, Array2<f32>)> {
+    let file = File::open(path).wrap_err_with(|| format!("opening {}", path.display()))?;
+    let reader = BufReader::new(file);
+    let mut ids = Vec::new();
+    let mut flat = Vec::new();
+    let mut dim = None;
+
+    for (idx, line) in reader.lines().enumerate() {
+        let line_number = idx + 1;
+        let raw = line.wrap_err_with(|| format!("{}:{line_number}: read error", path.display()))?;
+        let trimmed = raw.trim_end_matches(['\r', '\n']);
+        if trimmed.is_empty() {
+            continue;
+        }
+        let (id_str, json_str) = trimmed.split_once('\t').ok_or_else(|| {
+            eyre!(
+                "{}:{line_number}: expected '<id>\\t<json_array>' line",
+                path.display()
+            )
+        })?;
+        let id = id_str.parse::<i64>().map_err(|_| {
+            eyre!(
+                "{}:{line_number}: id {:?} is not an integer",
+                path.display(),
+                id_str
+            )
+        })?;
+        let values: Vec<f32> = serde_json::from_str(json_str).map_err(|e| {
+            eyre!(
+                "{}:{line_number}: embedding column is not valid JSON: {e}",
+                path.display()
+            )
+        })?;
+        match dim {
+            Some(expected) if values.len() != expected => {
+                return Err(eyre!(
+                    "{}:{line_number}: expected dim {}, got {}",
+                    path.display(),
+                    expected,
+                    values.len()
+                ));
+            }
+            None => dim = Some(values.len()),
+            _ => {}
+        }
+        ids.push(id);
+        flat.extend_from_slice(&values);
+    }
+
+    let dim = dim.unwrap_or(0);
+    let arr = if dim == 0 {
+        Array2::<f32>::zeros((0, 0))
+    } else {
+        Array2::from_shape_vec((ids.len(), dim), flat)?
+    };
+    Ok((ids, arr))
+}
+
 async fn fetch_sources(
     client: &Client,
     table: &str,
@@ -700,6 +778,21 @@ async fn fetch_sources(
     }
     let arr = Array2::from_shape_vec((rows.len(), dim), flat)?;
     Ok((ids, arr))
+}
+
+async fn load_truth_corpus(
+    client: &Client,
+    corpus_table: &str,
+    truth_corpus_file: Option<&Path>,
+) -> Result<(Vec<i64>, Array2<f32>)> {
+    if let Some(path) = truth_corpus_file {
+        eprintln!("[recall] loading truth corpus from {} ...", path.display());
+        return load_sources_tsv_file(path)
+            .wrap_err_with(|| format!("loading truth corpus from {}", path.display()));
+    }
+
+    eprintln!("[recall] fetching corpus from {corpus_table} ...");
+    fetch_sources(client, corpus_table, None).await
 }
 
 async fn fetch_sources_for_predicted_ids(
@@ -1074,6 +1167,8 @@ mod tests {
     use super::*;
     use crate::profiles::{EC_DISKANN, EC_HNSW, EC_IVF, EC_SPIRE};
     use ndarray::arr2;
+    use std::io::Write;
+    use tempfile::NamedTempFile;
 
     // --- top_k_desc ---
 
@@ -1325,6 +1420,29 @@ mod tests {
             truth_cache_path(Path::new("cache"), &d1),
             truth_cache_path(Path::new("cache"), &d2)
         );
+    }
+
+    #[test]
+    fn load_sources_tsv_file_parses_ids_and_vectors() {
+        let mut file = NamedTempFile::new().unwrap();
+        writeln!(file, "10\t[1.0, 0.0]").unwrap();
+        writeln!(file, "20\t[0.25, 0.75]").unwrap();
+
+        let (ids, values) = load_sources_tsv_file(file.path()).unwrap();
+
+        assert_eq!(ids, vec![10, 20]);
+        assert_eq!(values, arr2(&[[1.0_f32, 0.0], [0.25, 0.75]]));
+    }
+
+    #[test]
+    fn load_sources_tsv_file_rejects_dimension_drift() {
+        let mut file = NamedTempFile::new().unwrap();
+        writeln!(file, "10\t[1.0, 0.0]").unwrap();
+        writeln!(file, "20\t[0.25]").unwrap();
+
+        let err = load_sources_tsv_file(file.path()).unwrap_err().to_string();
+
+        assert!(err.contains("expected dim 2, got 1"), "{err}");
     }
 
     // --- build_knn_sql ---

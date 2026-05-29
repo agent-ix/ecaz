@@ -1,0 +1,1 @@
+ERROR: coordinator_instance_type must use the established Graviton/aarch64 lane, got: r6i.4xlarge

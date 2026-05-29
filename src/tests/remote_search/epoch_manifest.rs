@@ -1739,7 +1739,10 @@
             "stage_e_manifest_freshness_assertion"
         );
         assert_eq!(libpq_lifecycle_count, 2);
-        assert_eq!(search_connection_policy, "per_query");
+        assert_eq!(
+            search_connection_policy,
+            "per_backend_reusable_idle_session"
+        );
         assert_eq!(
             search_secret_policy,
             "conninfo_secret_name_resolved_by_executor"

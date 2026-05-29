@@ -1,0 +1,11 @@
+Script started on 2026-05-28 15:17:58-07:00 [<not executed on terminal>]
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.21s
+     Running unittests src/main.rs (target/debug/deps/ecaz-d6a7979ea82a4d9a)
+
+running 1 test
+test commands::bench::suite::tests::expands_recall_with_defaults ... [32mok[m
+
+test result: [32mok[m. 1 passed; 0 failed; 0 ignored; 0 measured; 389 filtered out; finished in 0.00s
+
+
+Script done on 2026-05-28 15:17:59-07:00 [COMMAND_EXIT_CODE="0"]

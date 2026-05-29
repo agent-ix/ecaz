@@ -28,7 +28,10 @@ impl SpireLiveIndexRelation {
         self,
         tid: crate::storage::page::ItemPointer,
     ) -> Result<Vec<u8>, String> {
-        page::read_object_tuple_handle(self.handle(), tid)
+        // SAFETY: this wrapper is constructed only for a live SPIRE index
+        // relation. Current callers use this helper for root/control manifest
+        // locators, which may point at a chained manifest blob at scale.
+        unsafe { page::read_manifest_blob_tuple(self.relation, tid) }
     }
 
     fn relation_options(self) -> options::EcSpireOptions {
@@ -617,10 +620,30 @@ pub(crate) fn index_relation_storage_snapshot(
         let mut active_tids = HashSet::<(u32, crate::storage::page::ItemPointer)>::new();
         let mut storage_relids = HashSet::from([index_relid]);
         if root_control.active_epoch != 0 {
-            active_tids.insert((index_relid, root_control.epoch_manifest_tid));
-            active_tids.insert((index_relid, root_control.object_manifest_tid));
-            active_tids.insert((index_relid, root_control.placement_directory_tid));
-            active_tids.insert((index_relid, root_control.local_store_config_tid));
+            protect_manifest_blob_tuple(
+                index,
+                &mut active_tids,
+                index_relid,
+                root_control.epoch_manifest_tid,
+            )?;
+            protect_manifest_blob_tuple(
+                index,
+                &mut active_tids,
+                index_relid,
+                root_control.object_manifest_tid,
+            )?;
+            protect_manifest_blob_tuple(
+                index,
+                &mut active_tids,
+                index_relid,
+                root_control.placement_directory_tid,
+            )?;
+            protect_manifest_blob_tuple(
+                index,
+                &mut active_tids,
+                index_relid,
+                root_control.local_store_config_tid,
+            )?;
 
             let Some(anchor) = index.active_epoch_anchor(root_control)? else {
                 return Err(
@@ -801,6 +824,20 @@ fn protect_tuple(
     }
 }
 
+fn protect_manifest_blob_tuple(
+    index: SpireLiveIndexRelation,
+    protected: &mut HashSet<SpireStorageTupleRef>,
+    relid: u32,
+    tid: crate::storage::page::ItemPointer,
+) -> Result<(), String> {
+    // SAFETY: `index` is a live relation view and `tid` came from its active
+    // root/control state or a scanned manifest tuple.
+    for locator in unsafe { page::manifest_blob_tuple_locators(index.as_ptr(), tid) }? {
+        protect_tuple(protected, relid, locator);
+    }
+    Ok(())
+}
+
 fn collect_physical_cleanup_candidates(
     index: SpireLiveIndexRelation,
     root_control: meta::SpireRootControlState,
@@ -818,22 +855,42 @@ fn collect_physical_cleanup_candidates(
     let mut protected = HashSet::<SpireStorageTupleRef>::new();
     let mut storage_relids = HashSet::from([index_relid]);
     let mut protected_directories = Vec::new();
-    protect_tuple(&mut protected, index_relid, root_control.epoch_manifest_tid);
-    protect_tuple(
+    protect_manifest_blob_tuple(
+        index,
+        &mut protected,
+        index_relid,
+        root_control.epoch_manifest_tid,
+    )?;
+    protect_manifest_blob_tuple(
+        index,
         &mut protected,
         index_relid,
         root_control.object_manifest_tid,
-    );
-    protect_tuple(
+    )?;
+    protect_manifest_blob_tuple(
+        index,
         &mut protected,
         index_relid,
         root_control.placement_directory_tid,
-    );
-    protect_tuple(
+    )?;
+    protect_manifest_blob_tuple(
+        index,
         &mut protected,
         index_relid,
         root_control.local_store_config_tid,
-    );
+    )?;
+
+    if root_control.active_epoch != 0 {
+        if let Some(anchor) = index.active_epoch_anchor(root_control)? {
+            for entry in &anchor.object_manifest.entries {
+                protect_tuple(&mut protected, index_relid, entry.placement_tid);
+            }
+            for placement in &anchor.placement_directory.entries {
+                storage_relids.insert(placement.store_relid);
+            }
+            protected_directories.push(anchor.placement_directory);
+        }
+    }
 
     index.scan_object_tuples(|tid, tuple| {
         if let Ok(manifest) = meta::SpireEpochManifest::decode(tuple) {
@@ -2352,6 +2409,118 @@ pub(crate) fn index_leaf_snapshot(index: SpireLiveIndexRelation) -> Vec<SpireInd
         collect_leaf_snapshot_rows(root_control, &snapshot, &object_store)
     })();
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
+}
+
+pub(crate) fn index_leaf_base_assignment_snapshot(
+    index: SpireLiveIndexRelation,
+    selected_leaf_pids: Vec<u64>,
+) -> Vec<SpireIndexLeafBaseAssignmentSnapshotRow> {
+    let result = (|| -> Result<Vec<SpireIndexLeafBaseAssignmentSnapshotRow>, String> {
+        let root_control = index.root_control();
+        let Some(anchor) = index.active_epoch_anchor(root_control)? else {
+            return Ok(Vec::new());
+        };
+        let snapshot = anchor.validated_snapshot()?;
+        let object_store = index.object_store()?;
+        let mut rows = Vec::new();
+
+        if selected_leaf_pids.is_empty() {
+            for manifest_entry in &snapshot.object_manifest().entries {
+                collect_leaf_base_assignment_snapshot_rows_for_pid(
+                    root_control.active_epoch,
+                    &snapshot,
+                    &object_store,
+                    manifest_entry.pid,
+                    false,
+                    &mut rows,
+                )?;
+            }
+        } else {
+            for leaf_pid in selected_leaf_pids {
+                collect_leaf_base_assignment_snapshot_rows_for_pid(
+                    root_control.active_epoch,
+                    &snapshot,
+                    &object_store,
+                    leaf_pid,
+                    true,
+                    &mut rows,
+                )?;
+            }
+        }
+
+        rows.sort_by_key(|row| (row.leaf_pid, row.row_index));
+        Ok(rows)
+    })();
+    result.unwrap_or_else(|e| pgrx::error!("{e}"))
+}
+
+fn collect_leaf_base_assignment_snapshot_rows_for_pid(
+    active_epoch: u64,
+    snapshot: &meta::SpireValidatedEpochSnapshot<'_>,
+    object_store: &impl storage::SpireObjectReader,
+    leaf_pid: u64,
+    explicit_selection: bool,
+    rows: &mut Vec<SpireIndexLeafBaseAssignmentSnapshotRow>,
+) -> Result<(), String> {
+    let lookup = snapshot.require_lookup(leaf_pid, "leaf base assignment snapshot")?;
+    let placement = lookup.placement;
+    if placement.state != meta::SpirePlacementState::Available {
+        if explicit_selection {
+            return Err(format!(
+                "ec_spire leaf base assignment snapshot selected leaf pid {leaf_pid} is not available"
+            ));
+        }
+        return Ok(());
+    }
+
+    let header = object_store.read_object_header(placement)?;
+    if header.kind != storage::SpirePartitionObjectKind::Leaf {
+        if explicit_selection {
+            return Err(format!(
+                "ec_spire leaf base assignment snapshot selected pid {leaf_pid} is not a leaf object"
+            ));
+        }
+        return Ok(());
+    }
+
+    let assignments = read_leaf_snapshot_base_assignments(object_store, placement)?;
+    for (row_index, assignment) in assignments.into_iter().enumerate() {
+        let row_index = u32::try_from(row_index)
+            .map_err(|_| "ec_spire leaf base assignment snapshot row index exceeds u32".to_owned())?;
+        rows.push(SpireIndexLeafBaseAssignmentSnapshotRow {
+            active_epoch,
+            leaf_pid,
+            parent_pid: header.parent_pid,
+            object_version: lookup.manifest_entry.object_version,
+            row_index,
+            assignment_flags: assignment.flags,
+            vec_id: assignment.vec_id.as_bytes().to_vec(),
+            row_locator: remote_search_row_locator(assignment.heap_tid),
+            heap_block: assignment.heap_tid.block_number,
+            heap_offset: assignment.heap_tid.offset_number,
+            payload_format: assignment.payload_format,
+            gamma: assignment.gamma,
+            encoded_payload: assignment.encoded_payload,
+        });
+    }
+    Ok(())
+}
+
+fn read_leaf_snapshot_base_assignments(
+    object_store: &impl storage::SpireObjectReader,
+    placement: &meta::SpirePlacementEntry,
+) -> Result<Vec<storage::SpireLeafAssignmentRow>, String> {
+    match object_store.read_leaf_object_v2(placement) {
+        Ok(leaf_object) => leaf_object.assignment_rows(),
+        Err(v2_error) => object_store
+            .read_leaf_object(placement)
+            .map(|leaf_object| leaf_object.assignments)
+            .map_err(|v1_error| {
+                format!(
+                    "ec_spire leaf base assignment snapshot failed to read leaf object: v2 error: {v2_error}; v1 error: {v1_error}"
+                )
+            }),
+    }
 }
 
 fn collect_leaf_snapshot_rows(

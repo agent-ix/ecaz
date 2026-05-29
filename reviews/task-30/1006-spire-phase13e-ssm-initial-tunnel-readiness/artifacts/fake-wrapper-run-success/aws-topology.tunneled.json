@@ -1,0 +1,23 @@
+{
+  "region": "us-west-2",
+  "coordinator": {
+    "node_id": 1,
+    "instance_id": "i-coordinator",
+    "operator_host": "127.0.0.1",
+    "operator_port": 15432
+  },
+  "remotes": [
+    {
+      "node_id": 2,
+      "instance_id": "i-remote-2",
+      "operator_host": "127.0.0.1",
+      "operator_port": 15433
+    },
+    {
+      "node_id": 3,
+      "instance_id": "i-remote-3",
+      "operator_host": "127.0.0.1",
+      "operator_port": 15434
+    }
+  ]
+}

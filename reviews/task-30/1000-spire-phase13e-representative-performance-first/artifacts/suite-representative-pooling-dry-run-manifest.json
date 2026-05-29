@@ -1,0 +1,111 @@
+{
+  "suite": "spire-aws-representative-pooling",
+  "schema_version": 1,
+  "config": "scripts/spire-aws/suite-representative-pooling.json",
+  "config_sha256": "ad92c94fe0b2982a53f519ae4c81825390b324ab70060288232390fb893b48b5",
+  "dry_run": true,
+  "generated_at_unix_ms": 1779892227516,
+  "connection": {
+    "database": "postgres",
+    "host": "127.0.0.1",
+    "port": 5432,
+    "user": "ecaz_coord",
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "13e4-pooling-disabled-profile-k10",
+      "kind": "spire-pipeline",
+      "command": [
+        "--database",
+        "postgres",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "5432",
+        "--user",
+        "ecaz_coord",
+        "bench",
+        "spire-pipeline",
+        "--prefix",
+        "ec_spire_aws_repr_1m",
+        "--queries-limit",
+        "1000",
+        "--sweep",
+        "8,16,24,32",
+        "--include-remote",
+        "--require-remote-placements",
+        "--top-k",
+        "10",
+        "--include-query-metrics",
+        "--include-recall",
+        "--include-production-read-profile",
+        "--production-read-only",
+        "--query-metric-k",
+        "10",
+        "--query-metric-projection-columns",
+        "id",
+        "--log-output",
+        "scripts/spire-aws/artifacts/representative-pooling/13e4-pooling-disabled-profile-k10.log"
+      ],
+      "selected": true,
+      "pgoptions": "-c enable_seqscan=off -c enable_indexscan=off -c ec_spire.remote_search_connection_pool_size=0",
+      "tags": [
+        "phase13e",
+        "pooling-compare",
+        "pool-disabled"
+      ],
+      "expected_artifacts": [
+        "scripts/spire-aws/artifacts/representative-pooling/13e4-pooling-disabled-profile-k10.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "13e4-pooling-enabled-profile-k10",
+      "kind": "spire-pipeline",
+      "command": [
+        "--database",
+        "postgres",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "5432",
+        "--user",
+        "ecaz_coord",
+        "bench",
+        "spire-pipeline",
+        "--prefix",
+        "ec_spire_aws_repr_1m",
+        "--queries-limit",
+        "1000",
+        "--sweep",
+        "8,16,24,32",
+        "--include-remote",
+        "--require-remote-placements",
+        "--top-k",
+        "10",
+        "--include-query-metrics",
+        "--include-recall",
+        "--include-production-read-profile",
+        "--production-read-only",
+        "--query-metric-k",
+        "10",
+        "--query-metric-projection-columns",
+        "id",
+        "--log-output",
+        "scripts/spire-aws/artifacts/representative-pooling/13e4-pooling-enabled-profile-k10.log"
+      ],
+      "selected": true,
+      "pgoptions": "-c enable_seqscan=off -c enable_indexscan=off -c ec_spire.remote_search_connection_pool_size=16",
+      "tags": [
+        "phase13e",
+        "pooling-compare",
+        "pool-enabled"
+      ],
+      "expected_artifacts": [
+        "scripts/spire-aws/artifacts/representative-pooling/13e4-pooling-enabled-profile-k10.log"
+      ],
+      "status": "dry-run"
+    }
+  ]
+}

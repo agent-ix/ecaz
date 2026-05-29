@@ -917,8 +917,10 @@
                     });
                     am::SpireRemoteProductionCandidateReceiveRequest {
                         node_id,
+                        conninfo_secret_name: conninfo_secret_name.clone(),
                         conninfo,
                         remote_index_regclass,
+                        descriptor_generation: 1,
                         remote_index_identity,
                         requested_epoch,
                         query: query.clone(),

@@ -58,19 +58,30 @@ Document and obtain reviewer acceptance for every topology decision below.
   permit either. The Phase 13 evidence cites "AWS/EC2 self-managed PG18",
   not "AWS/RDS"; the parent gate file's "AWS/RDS-class verification"
   wording will be amended at Phase 13 closeout.
-- [ ] **Coordinator node.** Decision: `r6i.4xlarge` (16 vCPU, 128 GiB
-  RAM). Storage: 200 GiB gp3, 3000 IOPS, 125 MiB/s. OS: Amazon Linux
-  2023. PG settings: `max_prepared_transactions >= 64`,
-  `shared_buffers = 32 GiB`, `work_mem = 64 MiB`,
-  `maintenance_work_mem = 2 GiB`. The `max_prepared_transactions` value is
-  load-bearing per `docs/SPIRE_LIBPQ_RUNBOOK.md`; if it is not set the
-  coordinator INSERT path fails closed.
-- [ ] **Remote nodes.** Decision: 3 remotes, each `r6i.2xlarge`
-  (8 vCPU, 64 GiB), 100 GiB gp3. Rationale: exercises governance caps
+- [ ] **Correctness-tier coordinator node.** Decision: `m7g.large`
+  (Graviton/aarch64, 2 vCPU, 8 GiB RAM). Storage: 200 GiB gp3,
+  3000 IOPS, 125 MiB/s. OS: Amazon Linux 2023 arm64. This is the default
+  topology for the 10k synthetic correctness tier because it fits the
+  observed 16-vCPU account limit while staying on the established Graviton
+  lane.
+- [ ] **Correctness-tier remote nodes.** Decision: 3 remotes, each
+  `m7g.large` (Graviton/aarch64, 2 vCPU, 8 GiB), 100 GiB gp3. The
+  1-coordinator plus 3-remote correctness topology uses 8 vCPU total.
+  Rationale: exercises governance caps
   `ec_spire.remote_search_max_nodes` and
   `ec_spire.remote_search_max_pids_per_node` with non-minimal fanout; the
   1-remote and 2-remote shapes are already covered by Phase 12
   multicluster fixtures.
+- [ ] **Representative/stress sizing.** Decision: representative and stress
+  tiers use `r7g.4xlarge` coordinator plus `r7g.2xlarge` remotes only after
+  quota proof for the 40-vCPU topology is recorded in the owning packet.
+  x86/r6i substitutions are not valid Phase 13 evidence.
+- [ ] **PostgreSQL memory settings.** Decision: `max_prepared_transactions >=
+  64` is load-bearing per `docs/SPIRE_LIBPQ_RUNBOOK.md`; if it is not set the
+  coordinator INSERT path fails closed. Memory GUCs are selected by bootstrap
+  from host RAM: `shared_buffers = 32 GiB` and `maintenance_work_mem = 2 GiB`
+  on the large `r7g` profile, smaller values on the correctness `m7g.large`
+  profile. `work_mem = 64 MiB` unless explicitly overridden.
 - [ ] **Placement.** Decision: one VPC, one private subnet, one AZ for
   baseline. Single-AZ removes cross-AZ latency variance from headline
   evidence; cross-AZ runs as a separate workload row (Phase 13a.3.i).

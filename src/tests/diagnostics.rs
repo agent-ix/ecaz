@@ -1098,6 +1098,59 @@
     }
 
     #[pg_test]
+    fn test_ec_spire_large_manifest_blob_builds_and_scans() {
+        Spi::run(
+            "CREATE TABLE ec_spire_large_manifest_sql \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_large_manifest_sql (id, embedding) \
+             SELECT i, encode_to_ecvector(\
+               ARRAY(SELECT (((i * d + d * d) % 997)::real / 997.0)::real \
+                     FROM generate_series(1, 16) AS d), \
+               4, 42) \
+             FROM generate_series(1, 256) AS i",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_large_manifest_idx ON ec_spire_large_manifest_sql \
+             USING ec_spire (embedding ecvector_spire_ip_ops) \
+             WITH (nlists = 256, nprobe = 16, rerank_width = 25)",
+        )
+        .expect("large manifest ec_spire index creation should succeed");
+
+        let object_count = Spi::get_one::<i64>(
+            "SELECT object_count FROM \
+             ec_spire_index_active_snapshot_diagnostics('ec_spire_large_manifest_idx'::regclass)",
+        )
+        .expect("diagnostics query should succeed")
+        .expect("diagnostics row should exist");
+        let placement_count = Spi::get_one::<i64>(
+            "SELECT placement_count FROM \
+             ec_spire_index_active_snapshot_diagnostics('ec_spire_large_manifest_idx'::regclass)",
+        )
+        .expect("diagnostics query should succeed")
+        .expect("diagnostics row should exist");
+        let rows = Spi::get_one::<i64>(
+            "SELECT count(*) FROM (\
+               SELECT id FROM ec_spire_large_manifest_sql \
+               ORDER BY embedding <#> encode_to_ecvector(\
+                 ARRAY(SELECT (((17 * d + d * d) % 997)::real / 997.0)::real \
+                       FROM generate_series(1, 16) AS d), \
+                 4, 42) \
+               LIMIT 10\
+             ) AS ranked",
+        )
+        .expect("ordered ec_spire query should succeed")
+        .expect("count row should exist");
+
+        assert!(object_count > 240);
+        assert!(placement_count > 240);
+        assert_eq!(rows, 10);
+    }
+
+    #[pg_test]
     fn test_ec_spire_allocator_snapshot_sql() {
         Spi::run("CREATE TABLE ec_spire_alloc_sql (id bigint primary key, embedding ecvector)")
             .expect("table creation should succeed");

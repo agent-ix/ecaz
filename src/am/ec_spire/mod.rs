@@ -1,6 +1,8 @@
 //! ec_spire access-method scaffold.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::cell::RefCell;
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
+use std::hash::{Hash, Hasher};
 
 mod assign;
 mod build;
@@ -217,6 +219,7 @@ include!("coordinator/remote_candidates/mod.rs");
 include!("coordinator/diagnostics.rs");
 include!("coordinator/hierarchy_shape.rs");
 include!("coordinator/snapshots.rs");
+include!("coordinator/materialization.rs");
 include!("coordinator/maintenance.rs");
 include!("coordinator/hierarchy_snapshots.rs");
 include!("coordinator/debug.rs");

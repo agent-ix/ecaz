@@ -1,0 +1,5 @@
+mode	step	nprobe	profiles	status	result_source	dispatch_sum	socket_open_sum	connect_p50	connect_p95	endpoint_identity_p50	endpoint_identity_p95	total_p50	total_p95	latency_p50	latency_p95	latency_p99	recall_at_k	endpoint_identity_query_sum
+disabled	13e4-pooling-disabled-profile-k10	64	1000											111.222 ms	120.175 ms	126.429 ms	0.9573	
+disabled	13e4-pooling-disabled-profile-k10	64	1000	ready	remote_heap_candidates	3000	3000	18.000 ms	19.000 ms	3.000 ms	4.000 ms	56.000 ms	59.000 ms					3000
+enabled	13e4-pooling-enabled-profile-k10	64	1000											99.703 ms	107.893 ms	112.356 ms	0.9573	
+enabled	13e4-pooling-enabled-profile-k10	64	1000	ready	remote_heap_candidates	3000	0	0.000 ms	0.000 ms	0.000 ms	0.000 ms	46.000 ms	49.000 ms					3000

@@ -1,0 +1,9 @@
+CREATE TABLE
+COPY 6
+SELECT 6
+DO
+ active_epoch | leaf_count | assignment_count | next_pid | next_local_vec_seq |    status    
+--------------+------------+------------------+----------+--------------------+--------------
+            1 |          1 |                6 |        5 |                 11 | materialized
+(1 row)
+

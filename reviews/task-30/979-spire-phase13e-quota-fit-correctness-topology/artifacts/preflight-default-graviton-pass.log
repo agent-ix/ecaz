@@ -1,0 +1,1 @@
+SPIRE AWS operator preflight passed: region=us-west-2 az=us-west-2a ami=ami-0123456789abcdef0 coordinator=m7g.large remote=m7g.large remote_count=3

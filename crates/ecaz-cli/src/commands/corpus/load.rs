@@ -15,7 +15,9 @@ use color_eyre::eyre::{eyre, Context, Result};
 use comfy_table::{presets::UTF8_FULL, Cell, Table};
 use futures::SinkExt;
 use indicatif::{ProgressBar, ProgressStyle};
-use std::collections::HashMap;
+use sha2::{Digest, Sha256};
+use std::collections::{BTreeMap, HashMap, HashSet};
+use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 use tokio_postgres::{Client, Transaction};
@@ -78,6 +80,13 @@ pub struct LoadArgs {
     #[arg(long)]
     pub storage_format: Option<String>,
 
+    /// Optional exact index name for single-index profiles.
+    ///
+    /// This is primarily used by SPIRE remote shard materialization, where the
+    /// coordinator descriptor already names the remote index regclass.
+    #[arg(long)]
+    pub index_name: Option<String>,
+
     /// AM-specific reloption passthrough. Repeatable.
     /// Example: `--reloption graph_degree=48 --reloption alpha=1.2`.
     #[arg(long = "reloption", value_parser = crate::reloptions::parse_cli)]
@@ -95,8 +104,30 @@ pub struct LoadArgs {
     /// Force chunked-manifest loading via `--manifest-file`.
     #[arg(long)]
     pub chunked: bool,
+
+    /// Load and index the corpus table only. Query tables are intentionally
+    /// skipped for remote SPIRE shard materialization.
+    #[arg(long)]
+    pub corpus_only: bool,
+
+    /// Static SPIRE remote placement config for distributed corpus loading.
+    ///
+    /// This is accepted only with `--profile ec_spire`. Until Task 30 Phase 13e.1
+    /// materializes remote shards, a valid config fails closed instead of
+    /// silently producing a local-only fixture.
+    #[arg(long)]
+    pub distributed_placement_config: Option<PathBuf>,
+
+    /// Directory for static SPIRE distributed-load artifacts.
+    ///
+    /// When paired with `--distributed-placement-config`, the loader splits
+    /// corpus rows into per-remote TSV files and writes a placement plan JSON,
+    /// then exits before any local-only coordinator load can occur.
+    #[arg(long)]
+    pub distributed_placement_output_dir: Option<PathBuf>,
 }
 
+#[derive(Debug)]
 struct IndexJob {
     name: String,
     reloptions: Vec<(String, String)>,
@@ -129,6 +160,97 @@ struct LoadedChunkedManifest {
     base_dir: PathBuf,
 }
 
+#[derive(Debug)]
+struct LoadedDistributedPlacementConfig {
+    path: PathBuf,
+    config: DistributedPlacementConfig,
+}
+
+#[derive(Debug, Clone, serde::Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+struct DistributedPlacementConfig {
+    version: u32,
+    coordinator: DistributedPlacementCoordinator,
+    remotes: Vec<DistributedPlacementRemote>,
+    shard_policy: DistributedShardPolicy,
+}
+
+#[derive(Debug, Clone, serde::Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+struct DistributedPlacementCoordinator {
+    index_name: String,
+}
+
+#[derive(Debug, Clone, serde::Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+struct DistributedPlacementRemote {
+    node_id: u32,
+    conninfo_secret_name: String,
+    remote_index_regclass: String,
+    shard_ids: Vec<u32>,
+}
+
+#[derive(Debug, Clone, serde::Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+struct DistributedShardPolicy {
+    kind: String,
+    shard_count: u32,
+    source_identity_column: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize, PartialEq, Eq)]
+struct DistributedPlacementOutputPlan {
+    version: u32,
+    prefix: String,
+    profile: String,
+    dimension: usize,
+    bits: i32,
+    seed: i64,
+    storage_format: Option<String>,
+    reloptions: Vec<String>,
+    coordinator_index_name: String,
+    source_identity_column: String,
+    shard_policy: String,
+    shard_count: u32,
+    total_rows: usize,
+    remotes: Vec<DistributedRemoteOutputPlan>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, PartialEq, Eq)]
+struct DistributedRemoteOutputPlan {
+    node_id: u32,
+    conninfo_secret_name: String,
+    conninfo_provider_lookup_key: String,
+    remote_index_regclass: String,
+    remote_prefix: String,
+    shard_ids: Vec<u32>,
+    corpus_file: String,
+    remote_load_args: Vec<String>,
+    remote_identity_query_sql: String,
+    coordinator_register_descriptor_sql_template: String,
+    row_count: usize,
+    shard_row_counts: Vec<DistributedShardRowCount>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, PartialEq, Eq)]
+struct DistributedShardRowCount {
+    shard_id: u32,
+    row_count: usize,
+}
+
+struct DistributedRemoteWriter {
+    node_id: u32,
+    conninfo_secret_name: String,
+    conninfo_provider_lookup_key: String,
+    remote_index_regclass: String,
+    remote_prefix: String,
+    shard_ids: Vec<u32>,
+    corpus_file: PathBuf,
+    writer: std::io::BufWriter<std::fs::File>,
+    row_count: usize,
+    shard_row_counts: BTreeMap<u32, usize>,
+}
+
 pub async fn run(conn: &ConnectionOptions, args: LoadArgs) -> Result<()> {
     let total_started = Instant::now();
     profiles::validate_ident(&args.prefix)
@@ -146,6 +268,10 @@ pub async fn run(conn: &ConnectionOptions, args: LoadArgs) -> Result<()> {
     }
     if !profile.sweep_axis_is_m() && args.ef_construction.is_some() {
         return Err(eyre!(unsupported_ef_construction_error(profile)));
+    }
+    if let Some(index_name) = args.index_name.as_deref() {
+        validate_qualified_ident(index_name)
+            .wrap_err_with(|| format!("invalid --index-name {:?}", index_name))?;
     }
     let hnsw_only_reloptions = foreign_hnsw_reloption_keys(profile, &args.reloptions);
     if !hnsw_only_reloptions.is_empty() {
@@ -180,20 +306,31 @@ pub async fn run(conn: &ConnectionOptions, args: LoadArgs) -> Result<()> {
         ));
     }
 
+    let distributed_placement_config = load_distributed_placement_config_if_requested(
+        args.distributed_placement_config.as_deref(),
+        profile,
+    )?;
+    if distributed_placement_config.is_some() && args.distributed_placement_output_dir.is_none() {
+        return Err(eyre!(
+            "--distributed-placement-config requires --distributed-placement-output-dir so distributed corpus rows are materialized explicitly instead of falling back to local-only load"
+        ));
+    }
+
     let corpus_table = format!("{}_corpus", args.prefix);
     let queries_table = format!("{}_queries", args.prefix);
     let index_prefix = match args.storage_format.as_deref() {
         Some(sf) => format!("{}_{sf}", args.prefix),
         None => args.prefix.clone(),
     };
-    let index_jobs = plan_index_jobs(
+    let index_jobs = plan_index_jobs_with_optional_name(
         profile,
         &index_prefix,
         &args.m,
         args.ef_construction.unwrap_or(DEFAULT_HNSW_EF_CONSTRUCTION),
         args.storage_format.as_deref(),
         &args.reloptions,
-    );
+        args.index_name.as_deref(),
+    )?;
     let chunked_manifest = load_chunked_manifest_if_requested(
         args.manifest_file.as_deref(),
         args.chunked,
@@ -207,6 +344,33 @@ pub async fn run(conn: &ConnectionOptions, args: LoadArgs) -> Result<()> {
     }
 
     if let Some(chunked_manifest) = chunked_manifest {
+        if let Some(config) = &distributed_placement_config {
+            let output_dir = args
+                .distributed_placement_output_dir
+                .as_deref()
+                .expect("validated distributed placement output dir should exist");
+            let corpus_paths = chunked_manifest
+                .manifest
+                .corpus
+                .chunks
+                .iter()
+                .map(|chunk| chunked_manifest.base_dir.join(&chunk.path))
+                .collect::<Vec<_>>();
+            let plan = write_distributed_placement_outputs(
+                output_dir,
+                config,
+                &args.prefix,
+                profile,
+                &corpus_paths,
+                args.dim,
+                args.bits,
+                args.seed,
+                args.storage_format.as_deref(),
+                &args.reloptions,
+            )?;
+            print_distributed_placement_output_summary(output_dir, &plan);
+            return Ok(());
+        }
         let mut client = psql::connect(conn).await?;
         let corpus_table = format!("{}_corpus", args.prefix);
         let queries_table = format!("{}_queries", args.prefix);
@@ -219,8 +383,14 @@ pub async fn run(conn: &ConnectionOptions, args: LoadArgs) -> Result<()> {
             profile,
         )
         .await?;
-        let queries_loaded =
-            ensure_chunked_queries_table(&mut client, &queries_table, &chunked_manifest).await?;
+        let queries_loaded = if args.corpus_only {
+            None
+        } else {
+            Some(
+                ensure_chunked_queries_table(&mut client, &queries_table, &chunked_manifest)
+                    .await?,
+            )
+        };
         for job in &index_jobs {
             ensure_index(&client, &corpus_table, job, profile).await?;
         }
@@ -228,7 +398,11 @@ pub async fn run(conn: &ConnectionOptions, args: LoadArgs) -> Result<()> {
             profile,
             &corpus_table,
             corpus_loaded,
-            &queries_table,
+            if args.corpus_only {
+                None
+            } else {
+                Some(queries_table.as_str())
+            },
             queries_loaded,
             &index_jobs,
         );
@@ -243,36 +417,79 @@ pub async fn run(conn: &ConnectionOptions, args: LoadArgs) -> Result<()> {
     let corpus_file = args.corpus_file.as_deref().ok_or_else(|| {
         eyre!("--corpus-file is required unless --manifest-file points to a chunked manifest")
     })?;
-    let queries_file = args.queries_file.as_deref().ok_or_else(|| {
-        eyre!("--queries-file is required unless --manifest-file points to a chunked manifest")
-    })?;
+    let queries_file = if args.corpus_only {
+        None
+    } else {
+        Some(args.queries_file.as_deref().ok_or_else(|| {
+            eyre!("--queries-file is required unless --manifest-file points to a chunked manifest or --corpus-only is set")
+        })?)
+    };
 
     // Inspect inputs first: row counts drive progress bars and manifest
     // verification, and we want to fail fast on malformed files before we
     // open any transactions.
     crate::ecaz_eprintln!("[loader] inspecting {}", corpus_file.display());
     let corpus_stats = tsv::inspect(corpus_file, args.dim)?;
-    crate::ecaz_eprintln!("[loader] inspecting {}", queries_file.display());
-    let query_stats = tsv::inspect(queries_file, args.dim)?;
+    let query_stats = if let Some(queries_file) = queries_file {
+        crate::ecaz_eprintln!("[loader] inspecting {}", queries_file.display());
+        Some(tsv::inspect(queries_file, args.dim)?)
+    } else {
+        None
+    };
 
-    crate::ecaz_eprintln!(
-        "[loader] corpus: {} rows, sha256={}  queries: {} rows, sha256={}",
-        corpus_stats.rows,
-        corpus_stats.sha256_hex,
-        query_stats.rows,
-        query_stats.sha256_hex
-    );
+    if let Some(query_stats) = &query_stats {
+        crate::ecaz_eprintln!(
+            "[loader] corpus: {} rows, sha256={}  queries: {} rows, sha256={}",
+            corpus_stats.rows,
+            corpus_stats.sha256_hex,
+            query_stats.rows,
+            query_stats.sha256_hex
+        );
+    } else {
+        crate::ecaz_eprintln!(
+            "[loader] corpus: {} rows, sha256={}  queries: skipped (--corpus-only)",
+            corpus_stats.rows,
+            corpus_stats.sha256_hex
+        );
+    }
 
-    verify_manifest_if_present(
-        args.manifest_file.as_deref(),
-        corpus_file,
-        queries_file,
-        &args.prefix,
-        args.dim,
-        &corpus_stats,
-        &query_stats,
-        args.allow_manifest_mismatch,
-    )?;
+    if let (Some(queries_file), Some(query_stats)) = (queries_file, query_stats.as_ref()) {
+        verify_manifest_if_present(
+            args.manifest_file.as_deref(),
+            corpus_file,
+            queries_file,
+            &args.prefix,
+            args.dim,
+            &corpus_stats,
+            query_stats,
+            args.allow_manifest_mismatch,
+        )?;
+    } else if args.manifest_file.is_some() {
+        return Err(eyre!(
+            "--manifest-file verification requires --queries-file unless --manifest-file points to a chunked manifest; omit --manifest-file for --corpus-only remote shard loads"
+        ));
+    }
+
+    if let Some(config) = &distributed_placement_config {
+        let output_dir = args
+            .distributed_placement_output_dir
+            .as_deref()
+            .expect("validated distributed placement output dir should exist");
+        let plan = write_distributed_placement_outputs(
+            output_dir,
+            config,
+            &args.prefix,
+            profile,
+            &[corpus_file.to_path_buf()],
+            args.dim,
+            args.bits,
+            args.seed,
+            args.storage_format.as_deref(),
+            &args.reloptions,
+        )?;
+        print_distributed_placement_output_summary(output_dir, &plan);
+        return Ok(());
+    }
 
     let mut client = psql::connect(conn).await?;
     client
@@ -291,14 +508,21 @@ pub async fn run(conn: &ConnectionOptions, args: LoadArgs) -> Result<()> {
         corpus_stats.rows,
     )
     .await?;
-    let queries_loaded = ensure_queries_table(
-        &client,
-        &queries_table,
-        queries_file,
-        args.dim,
-        query_stats.rows,
-    )
-    .await?;
+    let queries_loaded =
+        if let (Some(queries_file), Some(query_stats)) = (queries_file, query_stats) {
+            Some(
+                ensure_queries_table(
+                    &client,
+                    &queries_table,
+                    queries_file,
+                    args.dim,
+                    query_stats.rows,
+                )
+                .await?,
+            )
+        } else {
+            None
+        };
 
     for job in &index_jobs {
         ensure_index(&client, &corpus_table, job, profile).await?;
@@ -308,7 +532,11 @@ pub async fn run(conn: &ConnectionOptions, args: LoadArgs) -> Result<()> {
         profile,
         &corpus_table,
         corpus_loaded,
-        &queries_table,
+        if args.corpus_only {
+            None
+        } else {
+            Some(queries_table.as_str())
+        },
         queries_loaded,
         &index_jobs,
     );
@@ -358,6 +586,492 @@ fn load_chunked_manifest_if_requested(
             .map(Path::to_path_buf)
             .unwrap_or_else(|| PathBuf::from(".")),
     }))
+}
+
+fn load_distributed_placement_config_if_requested(
+    path: Option<&Path>,
+    profile: &IndexProfile,
+) -> Result<Option<LoadedDistributedPlacementConfig>> {
+    let Some(path) = path else {
+        return Ok(None);
+    };
+    if profile.name != "ec_spire" {
+        return Err(eyre!(
+            "--distributed-placement-config is only supported with --profile ec_spire, not {:?}",
+            profile.name
+        ));
+    }
+    let raw = std::fs::read_to_string(path)
+        .wrap_err_with(|| format!("reading distributed placement config {}", path.display()))?;
+    let config: DistributedPlacementConfig = serde_json::from_str(&raw)
+        .wrap_err_with(|| format!("parsing distributed placement config {}", path.display()))?;
+    validate_distributed_placement_config(&config)?;
+    Ok(Some(LoadedDistributedPlacementConfig {
+        path: path.to_path_buf(),
+        config,
+    }))
+}
+
+fn validate_distributed_placement_config(config: &DistributedPlacementConfig) -> Result<()> {
+    if config.version != 1 {
+        return Err(eyre!(
+            "distributed placement config version {} is not supported; expected 1",
+            config.version
+        ));
+    }
+    if config.coordinator.index_name.trim().is_empty() {
+        return Err(eyre!(
+            "distributed placement config coordinator.index_name must not be empty"
+        ));
+    }
+    if config.remotes.is_empty() {
+        return Err(eyre!(
+            "distributed placement config must define at least one remote"
+        ));
+    }
+    if config.shard_policy.kind != "hash_source_identity" {
+        return Err(eyre!(
+            "distributed placement config shard_policy.kind {:?} is not supported; expected \"hash_source_identity\"",
+            config.shard_policy.kind
+        ));
+    }
+    if config.shard_policy.shard_count == 0 {
+        return Err(eyre!(
+            "distributed placement config shard_policy.shard_count must be greater than zero"
+        ));
+    }
+    profiles::validate_ident(&config.shard_policy.source_identity_column).wrap_err_with(|| {
+        format!(
+            "invalid distributed placement source identity column {:?}",
+            config.shard_policy.source_identity_column
+        )
+    })?;
+
+    let mut node_ids = HashSet::new();
+    let mut seen_shards = HashSet::new();
+    for remote in &config.remotes {
+        if remote.node_id <= 1 {
+            return Err(eyre!(
+                "distributed placement remote node_id {} is invalid; remote node ids must be greater than 1",
+                remote.node_id
+            ));
+        }
+        if !node_ids.insert(remote.node_id) {
+            return Err(eyre!(
+                "distributed placement config repeats remote node_id {}",
+                remote.node_id
+            ));
+        }
+        if remote.conninfo_secret_name.trim().is_empty() {
+            return Err(eyre!(
+                "distributed placement remote node_id {} has empty conninfo_secret_name",
+                remote.node_id
+            ));
+        }
+        if remote.remote_index_regclass.trim().is_empty() {
+            return Err(eyre!(
+                "distributed placement remote node_id {} has empty remote_index_regclass",
+                remote.node_id
+            ));
+        }
+        validate_qualified_ident(&remote.remote_index_regclass).wrap_err_with(|| {
+            format!(
+                "invalid distributed placement remote_index_regclass {:?} for node_id {}",
+                remote.remote_index_regclass, remote.node_id
+            )
+        })?;
+        if remote.shard_ids.is_empty() {
+            return Err(eyre!(
+                "distributed placement remote node_id {} owns no shards",
+                remote.node_id
+            ));
+        }
+        for shard_id in &remote.shard_ids {
+            if *shard_id >= config.shard_policy.shard_count {
+                return Err(eyre!(
+                    "distributed placement shard_id {} is outside shard_count {}",
+                    shard_id,
+                    config.shard_policy.shard_count
+                ));
+            }
+            if !seen_shards.insert(*shard_id) {
+                return Err(eyre!(
+                    "distributed placement shard_id {} is assigned more than once",
+                    shard_id
+                ));
+            }
+        }
+    }
+
+    let missing: Vec<u32> = (0..config.shard_policy.shard_count)
+        .filter(|shard_id| !seen_shards.contains(shard_id))
+        .take(16)
+        .collect();
+    if !missing.is_empty() {
+        let suffix = if seen_shards.len() + missing.len() < config.shard_policy.shard_count as usize
+        {
+            ", ..."
+        } else {
+            ""
+        };
+        return Err(eyre!(
+            "distributed placement config is missing shard ids: {}{}",
+            missing
+                .iter()
+                .map(u32::to_string)
+                .collect::<Vec<_>>()
+                .join(", "),
+            suffix
+        ));
+    }
+
+    Ok(())
+}
+
+fn write_distributed_placement_outputs(
+    output_dir: &Path,
+    input: &LoadedDistributedPlacementConfig,
+    prefix: &str,
+    profile: &IndexProfile,
+    corpus_paths: &[PathBuf],
+    dim: usize,
+    bits: i32,
+    seed: i64,
+    storage_format: Option<&str>,
+    reloptions: &[(String, String)],
+) -> Result<DistributedPlacementOutputPlan> {
+    if input.config.shard_policy.source_identity_column != "id" {
+        return Err(eyre!(
+            "distributed placement source_identity_column {:?} is not supported by this loader slice yet; use \"id\"",
+            input.config.shard_policy.source_identity_column
+        ));
+    }
+    if corpus_paths.is_empty() {
+        return Err(eyre!(
+            "distributed placement output requires at least one corpus input path"
+        ));
+    }
+
+    std::fs::create_dir_all(output_dir).wrap_err_with(|| {
+        format!(
+            "creating distributed placement output dir {}",
+            output_dir.display()
+        )
+    })?;
+
+    let mut shard_to_node = HashMap::new();
+    for remote in &input.config.remotes {
+        for shard_id in &remote.shard_ids {
+            shard_to_node.insert(*shard_id, remote.node_id);
+        }
+    }
+
+    let mut writers = BTreeMap::new();
+    for remote in &input.config.remotes {
+        let remote_dir = output_dir.join(format!("node-{}", remote.node_id));
+        std::fs::create_dir_all(&remote_dir).wrap_err_with(|| {
+            format!(
+                "creating distributed placement remote output dir {}",
+                remote_dir.display()
+            )
+        })?;
+        let corpus_file = remote_dir.join(format!("{prefix}_node_{}_corpus.tsv", remote.node_id));
+        let remote_prefix = format!("{prefix}_node_{}", remote.node_id);
+        let file = std::fs::File::create(&corpus_file).wrap_err_with(|| {
+            format!(
+                "creating distributed placement corpus shard {}",
+                corpus_file.display()
+            )
+        })?;
+        writers.insert(
+            remote.node_id,
+            DistributedRemoteWriter {
+                node_id: remote.node_id,
+                conninfo_secret_name: remote.conninfo_secret_name.clone(),
+                conninfo_provider_lookup_key: spire_remote_conninfo_provider_lookup_key(
+                    &remote.conninfo_secret_name,
+                )?,
+                remote_index_regclass: remote.remote_index_regclass.clone(),
+                remote_prefix,
+                shard_ids: remote.shard_ids.clone(),
+                corpus_file,
+                writer: std::io::BufWriter::new(file),
+                row_count: 0,
+                shard_row_counts: BTreeMap::new(),
+            },
+        );
+    }
+
+    let mut total_rows = 0usize;
+    for corpus_path in corpus_paths {
+        for row in tsv::iter_rows(corpus_path, dim)? {
+            let row = row?;
+            let source_identity = spire_static_source_identity_from_i64(row.id);
+            let shard_id =
+                spire_static_shard_id(&source_identity, input.config.shard_policy.shard_count);
+            let node_id = shard_to_node.get(&shard_id).copied().ok_or_else(|| {
+                eyre!(
+                    "distributed placement config has no remote owner for shard_id {}",
+                    shard_id
+                )
+            })?;
+            let writer = writers.get_mut(&node_id).ok_or_else(|| {
+                eyre!(
+                    "distributed placement config maps shard_id {} to missing node_id {}",
+                    shard_id,
+                    node_id
+                )
+            })?;
+            writeln!(
+                writer.writer,
+                "{}\t{}",
+                row.id,
+                serde_json::to_string(&row.values)
+                    .expect("serializing parsed f32 vector should not fail")
+            )
+            .wrap_err_with(|| {
+                format!(
+                    "writing distributed placement row {} to {}",
+                    row.id,
+                    writer.corpus_file.display()
+                )
+            })?;
+            writer.row_count += 1;
+            *writer.shard_row_counts.entry(shard_id).or_default() += 1;
+            total_rows += 1;
+        }
+    }
+
+    let mut remotes = Vec::with_capacity(writers.len());
+    for (_, mut writer) in writers {
+        writer.writer.flush().wrap_err_with(|| {
+            format!(
+                "flushing distributed placement corpus shard {}",
+                writer.corpus_file.display()
+            )
+        })?;
+        remotes.push(DistributedRemoteOutputPlan {
+            node_id: writer.node_id,
+            conninfo_secret_name: writer.conninfo_secret_name.clone(),
+            conninfo_provider_lookup_key: writer.conninfo_provider_lookup_key,
+            remote_index_regclass: writer.remote_index_regclass.clone(),
+            remote_prefix: writer.remote_prefix.clone(),
+            shard_ids: writer.shard_ids,
+            corpus_file: writer.corpus_file.display().to_string(),
+            remote_load_args: distributed_remote_load_args(
+                &writer.remote_prefix,
+                &writer.corpus_file,
+                &writer.remote_index_regclass,
+                dim,
+                bits,
+                seed,
+                storage_format,
+                reloptions,
+            ),
+            remote_identity_query_sql: distributed_remote_identity_query_sql(
+                &writer.remote_index_regclass,
+            ),
+            coordinator_register_descriptor_sql_template:
+                distributed_coordinator_register_descriptor_sql_template(
+                    &plan_coordinator_index_name(&input.config),
+                    writer.node_id,
+                    &writer.conninfo_secret_name,
+                    &writer.remote_index_regclass,
+                ),
+            row_count: writer.row_count,
+            shard_row_counts: writer
+                .shard_row_counts
+                .into_iter()
+                .map(|(shard_id, row_count)| DistributedShardRowCount {
+                    shard_id,
+                    row_count,
+                })
+                .collect(),
+        });
+    }
+
+    let plan = DistributedPlacementOutputPlan {
+        version: 1,
+        prefix: prefix.to_owned(),
+        profile: profile.name.to_owned(),
+        dimension: dim,
+        bits,
+        seed,
+        storage_format: storage_format.map(str::to_owned),
+        reloptions: reloptions
+            .iter()
+            .map(|(key, value)| format!("{key}={value}"))
+            .collect(),
+        coordinator_index_name: input.config.coordinator.index_name.clone(),
+        source_identity_column: input.config.shard_policy.source_identity_column.clone(),
+        shard_policy: input.config.shard_policy.kind.clone(),
+        shard_count: input.config.shard_policy.shard_count,
+        total_rows,
+        remotes,
+    };
+    let plan_path = output_dir.join("distributed-placement-plan.json");
+    let plan_json =
+        serde_json::to_string_pretty(&plan).expect("serializing distributed placement plan");
+    std::fs::write(&plan_path, format!("{plan_json}\n"))
+        .wrap_err_with(|| format!("writing distributed placement plan {}", plan_path.display()))?;
+
+    Ok(plan)
+}
+
+fn spire_static_source_identity_from_i64(id: i64) -> [u8; 16] {
+    let digest = Sha256::digest(id.to_be_bytes());
+    let mut identity = [0_u8; 16];
+    identity.copy_from_slice(&digest[..16]);
+    identity
+}
+
+fn spire_static_shard_id(source_identity: &[u8; 16], shard_count: u32) -> u32 {
+    let mut shard_bytes = [0_u8; 8];
+    shard_bytes.copy_from_slice(&source_identity[..8]);
+    (u64::from_be_bytes(shard_bytes) % u64::from(shard_count)) as u32
+}
+
+fn spire_remote_conninfo_provider_lookup_key(conninfo_secret_name: &str) -> Result<String> {
+    if conninfo_secret_name.is_empty() {
+        return Err(eyre!("conninfo_secret_name must be nonempty"));
+    }
+    let mut key = String::from("EC_SPIRE_REMOTE_CONNINFO_");
+    for byte in conninfo_secret_name.bytes() {
+        if byte.is_ascii_alphanumeric() {
+            key.push(char::from(byte).to_ascii_uppercase());
+        } else {
+            key.push('_');
+        }
+    }
+    Ok(key)
+}
+
+fn distributed_remote_load_args(
+    remote_prefix: &str,
+    corpus_file: &Path,
+    remote_index_regclass: &str,
+    dim: usize,
+    bits: i32,
+    seed: i64,
+    storage_format: Option<&str>,
+    reloptions: &[(String, String)],
+) -> Vec<String> {
+    let mut args = vec![
+        "ecaz".to_owned(),
+        "corpus".to_owned(),
+        "load".to_owned(),
+        "--profile".to_owned(),
+        "ec_spire".to_owned(),
+        "--prefix".to_owned(),
+        remote_prefix.to_owned(),
+        "--dim".to_owned(),
+        dim.to_string(),
+        "--bits".to_owned(),
+        bits.to_string(),
+        "--seed".to_owned(),
+        seed.to_string(),
+        "--corpus-file".to_owned(),
+        corpus_file.display().to_string(),
+        "--corpus-only".to_owned(),
+        "--index-name".to_owned(),
+        remote_index_regclass.to_owned(),
+    ];
+    if let Some(storage_format) = storage_format {
+        args.push("--storage-format".to_owned());
+        args.push(storage_format.to_owned());
+    }
+    for (key, value) in reloptions {
+        args.push("--reloption".to_owned());
+        args.push(format!("{key}={value}"));
+    }
+    args
+}
+
+fn plan_coordinator_index_name(config: &DistributedPlacementConfig) -> String {
+    config.coordinator.index_name.clone()
+}
+
+fn distributed_remote_identity_query_sql(remote_index_regclass: &str) -> String {
+    format!(
+        "SELECT jsonb_build_object(\
+            'remote_index_regclass', {remote_index_literal}, \
+            'last_served_epoch', a.active_epoch, \
+            'min_retained_epoch', a.active_epoch, \
+            'extension_version', e.extension_version, \
+            'remote_index_identity_hex', e.profile_fingerprint, \
+            'endpoint_status', e.status, \
+            'tuple_transport_status', e.tuple_transport_status\
+        )::text \
+         FROM ec_spire_remote_search_endpoint_identity({remote_index_literal}::regclass::oid) e \
+         CROSS JOIN ec_spire_index_active_snapshot_diagnostics({remote_index_literal}::regclass::oid) a",
+        remote_index_literal = sql_string_literal(remote_index_regclass)
+    )
+}
+
+fn distributed_coordinator_register_descriptor_sql_template(
+    coordinator_index_name: &str,
+    node_id: u32,
+    conninfo_secret_name: &str,
+    remote_index_regclass: &str,
+) -> String {
+    format!(
+        "SELECT ec_spire_register_remote_node_descriptor(\
+            {coordinator_index}::regclass::oid, \
+            {node_id}, \
+            1, \
+            {conninfo_secret}, \
+            decode('{{remote_index_identity_hex}}', 'hex'), \
+            {remote_index}, \
+            'active', \
+            {{last_served_epoch}}, \
+            {{min_retained_epoch}}, \
+            '{{extension_version}}', \
+            'none'\
+        ) AS registered",
+        coordinator_index = sql_string_literal(coordinator_index_name),
+        conninfo_secret = sql_string_literal(conninfo_secret_name),
+        remote_index = sql_string_literal(remote_index_regclass)
+    )
+}
+
+fn sql_string_literal(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "''"))
+}
+
+fn print_distributed_placement_output_summary(
+    output_dir: &Path,
+    plan: &DistributedPlacementOutputPlan,
+) {
+    let mut t = Table::new();
+    t.load_preset(UTF8_FULL);
+    t.set_header(vec!["field", "value"]);
+    t.add_row(vec![
+        "mode".into(),
+        Cell::new("distributed-placement-output"),
+    ]);
+    t.add_row(vec!["output_dir".into(), Cell::new(output_dir.display())]);
+    t.add_row(vec!["prefix".into(), Cell::new(&plan.prefix)]);
+    t.add_row(vec![
+        "coordinator_index".into(),
+        Cell::new(&plan.coordinator_index_name),
+    ]);
+    t.add_row(vec!["total_rows".into(), Cell::new(plan.total_rows)]);
+    let remotes = plan
+        .remotes
+        .iter()
+        .map(|remote| {
+            format!(
+                "node {}: {} rows, shards {:?}, env {}",
+                remote.node_id,
+                remote.row_count,
+                remote.shard_ids,
+                remote.conninfo_provider_lookup_key
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    t.add_row(vec!["remotes".into(), Cell::new(remotes)]);
+    crate::ecaz_println!("{t}");
 }
 
 /// Verify a sibling manifest if one was requested or auto-discovered.
@@ -588,6 +1302,46 @@ fn plan_index_jobs(
             reloptions: opts,
         }]
     }
+}
+
+fn plan_index_jobs_with_optional_name(
+    profile: &IndexProfile,
+    index_prefix: &str,
+    m_values: &[i32],
+    ef_construction: i32,
+    storage_format: Option<&str>,
+    extra: &[(String, String)],
+    index_name: Option<&str>,
+) -> Result<Vec<IndexJob>> {
+    let mut jobs = plan_index_jobs(
+        profile,
+        index_prefix,
+        m_values,
+        ef_construction,
+        storage_format,
+        extra,
+    );
+    if let Some(index_name) = index_name {
+        if jobs.len() != 1 {
+            return Err(eyre!(
+                "--index-name is only supported for single-index profiles; profile {:?} planned {} indexes",
+                profile.name,
+                jobs.len()
+            ));
+        }
+        jobs[0].name = index_name.to_owned();
+    }
+    Ok(jobs)
+}
+
+fn validate_qualified_ident(value: &str) -> Result<()> {
+    if value.is_empty() {
+        return Err(eyre!("identifier must not be empty"));
+    }
+    for part in value.split('.') {
+        profiles::validate_ident(part)?;
+    }
+    Ok(())
 }
 
 fn dedup_preserve_order(values: Vec<i32>) -> Vec<i32> {
@@ -1259,8 +2013,8 @@ fn print_summary(
     profile: &IndexProfile,
     corpus_table: &str,
     corpus_rows: usize,
-    queries_table: &str,
-    queries_rows: usize,
+    queries_table: Option<&str>,
+    queries_rows: Option<usize>,
     jobs: &[IndexJob],
 ) {
     let mut t = Table::new();
@@ -1271,10 +2025,11 @@ fn print_summary(
         "corpus".into(),
         Cell::new(format!("{corpus_table} ({corpus_rows} rows)")),
     ]);
-    t.add_row(vec![
-        "queries".into(),
-        Cell::new(format!("{queries_table} ({queries_rows} rows)")),
-    ]);
+    let queries = match (queries_table, queries_rows) {
+        (Some(table), Some(rows)) => format!("{table} ({rows} rows)"),
+        _ => "skipped (--corpus-only)".to_owned(),
+    };
+    t.add_row(vec!["queries".into(), Cell::new(queries)]);
     let indexes = jobs
         .iter()
         .map(|j| {
@@ -1294,9 +2049,8 @@ fn print_summary(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::profiles::{EC_DISKANN, EC_HNSW, EC_IVF};
+    use crate::profiles::{EC_DISKANN, EC_HNSW, EC_IVF, EC_SPIRE};
     use crate::tsv::VectorFileStats;
-    use std::io::Write as _;
     use tempfile::TempDir;
 
     fn opt(k: &str, v: &str) -> (String, String) {
@@ -1427,6 +2181,51 @@ mod tests {
             .any(|(k, _)| k == "build_source_column"));
     }
 
+    #[test]
+    fn single_index_plan_honors_explicit_index_name() {
+        let jobs = plan_index_jobs_with_optional_name(
+            &EC_SPIRE,
+            "aws_spire_node_2",
+            &[],
+            128,
+            Some("rabitq"),
+            &[opt("nlists", "8")],
+            Some("public.aws_spire_remote_a_idx"),
+        )
+        .unwrap();
+        assert_eq!(jobs.len(), 1);
+        assert_eq!(jobs[0].name, "public.aws_spire_remote_a_idx");
+        assert!(jobs[0]
+            .reloptions
+            .contains(&opt("storage_format", "rabitq")));
+        assert!(jobs[0].reloptions.contains(&opt("nlists", "8")));
+    }
+
+    #[test]
+    fn index_name_override_rejects_sweep_profiles() {
+        let err = plan_index_jobs_with_optional_name(
+            &EC_HNSW,
+            "pfx",
+            &[],
+            128,
+            None,
+            &[],
+            Some("custom_idx"),
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(err.contains("--index-name is only supported"), "err: {err}");
+    }
+
+    #[test]
+    fn qualified_identifier_validation_rejects_injection_shape() {
+        validate_qualified_ident("public.valid_idx").unwrap();
+        let err = validate_qualified_ident("public.bad;drop")
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("must match"), "err: {err}");
+    }
+
     // --- reloption / CLI flag collisions ---
 
     #[test]
@@ -1537,6 +2336,309 @@ mod tests {
         assert!(err.contains("DROP INDEX dbpedia_10k_idx"));
         assert!(err.contains("graph_degree=48"));
         assert!(err.contains("build_list_size=128"));
+    }
+
+    // --- distributed SPIRE placement config ---
+
+    fn distributed_placement_config_json() -> String {
+        serde_json::json!({
+            "version": 1,
+            "coordinator": {
+                "index_name": "aws_spire_idx"
+            },
+            "remotes": [
+                {
+                    "node_id": 2,
+                    "conninfo_secret_name": "spire/remote/a",
+                    "remote_index_regclass": "public.aws_spire_remote_a_idx",
+                    "shard_ids": [0, 2]
+                },
+                {
+                    "node_id": 3,
+                    "conninfo_secret_name": "spire/remote/b",
+                    "remote_index_regclass": "public.aws_spire_remote_b_idx",
+                    "shard_ids": [1, 3]
+                }
+            ],
+            "shard_policy": {
+                "kind": "hash_source_identity",
+                "shard_count": 4,
+                "source_identity_column": "id"
+            }
+        })
+        .to_string()
+    }
+
+    #[test]
+    fn distributed_placement_config_accepts_complete_static_shard_map() {
+        let td = TempDir::new().unwrap();
+        let path = write(&td, "placement.json", &distributed_placement_config_json());
+        let loaded = load_distributed_placement_config_if_requested(Some(&path), &EC_SPIRE)
+            .unwrap()
+            .unwrap();
+        assert_eq!(loaded.path, path);
+        assert_eq!(loaded.config.remotes.len(), 2);
+        assert_eq!(loaded.config.shard_policy.shard_count, 4);
+    }
+
+    #[test]
+    fn distributed_placement_config_rejects_non_spire_profile() {
+        let td = TempDir::new().unwrap();
+        let path = write(&td, "placement.json", &distributed_placement_config_json());
+        let err = load_distributed_placement_config_if_requested(Some(&path), &EC_DISKANN)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("only supported with --profile ec_spire"),
+            "err: {err}"
+        );
+    }
+
+    #[test]
+    fn distributed_placement_config_rejects_local_node_id() {
+        let config: DistributedPlacementConfig = serde_json::from_value(serde_json::json!({
+            "version": 1,
+            "coordinator": {"index_name": "aws_spire_idx"},
+            "remotes": [{
+                "node_id": 1,
+                "conninfo_secret_name": "spire/remote/a",
+                "remote_index_regclass": "public.aws_spire_remote_a_idx",
+                "shard_ids": [0]
+            }],
+            "shard_policy": {
+                "kind": "hash_source_identity",
+                "shard_count": 1,
+                "source_identity_column": "id"
+            }
+        }))
+        .unwrap();
+        let err = validate_distributed_placement_config(&config)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("remote node ids must be greater than 1"),
+            "err: {err}"
+        );
+    }
+
+    #[test]
+    fn distributed_placement_config_rejects_duplicate_shard_assignment() {
+        let config: DistributedPlacementConfig = serde_json::from_value(serde_json::json!({
+            "version": 1,
+            "coordinator": {"index_name": "aws_spire_idx"},
+            "remotes": [
+                {
+                    "node_id": 2,
+                    "conninfo_secret_name": "spire/remote/a",
+                    "remote_index_regclass": "public.aws_spire_remote_a_idx",
+                    "shard_ids": [0]
+                },
+                {
+                    "node_id": 3,
+                    "conninfo_secret_name": "spire/remote/b",
+                    "remote_index_regclass": "public.aws_spire_remote_b_idx",
+                    "shard_ids": [0]
+                }
+            ],
+            "shard_policy": {
+                "kind": "hash_source_identity",
+                "shard_count": 1,
+                "source_identity_column": "id"
+            }
+        }))
+        .unwrap();
+        let err = validate_distributed_placement_config(&config)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("assigned more than once"), "err: {err}");
+    }
+
+    #[test]
+    fn distributed_placement_config_rejects_missing_shards() {
+        let config: DistributedPlacementConfig = serde_json::from_value(serde_json::json!({
+            "version": 1,
+            "coordinator": {"index_name": "aws_spire_idx"},
+            "remotes": [{
+                "node_id": 2,
+                "conninfo_secret_name": "spire/remote/a",
+                "remote_index_regclass": "public.aws_spire_remote_a_idx",
+                "shard_ids": [0, 2]
+            }],
+            "shard_policy": {
+                "kind": "hash_source_identity",
+                "shard_count": 4,
+                "source_identity_column": "id"
+            }
+        }))
+        .unwrap();
+        let err = validate_distributed_placement_config(&config)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("missing shard ids: 1, 3"), "err: {err}");
+    }
+
+    #[test]
+    fn distributed_placement_output_splits_corpus_by_static_shard() {
+        let td = TempDir::new().unwrap();
+        let config_path = write(&td, "placement.json", &distributed_placement_config_json());
+        let corpus_path = write(
+            &td,
+            "corpus.tsv",
+            "1\t[0.1, 0.2]\n2\t[0.3, 0.4]\n3\t[0.5, 0.6]\n4\t[0.7, 0.8]\n5\t[0.9, 1.0]\n",
+        );
+        let output_dir = td.path().join("distributed");
+        let loaded = load_distributed_placement_config_if_requested(Some(&config_path), &EC_SPIRE)
+            .unwrap()
+            .unwrap();
+
+        let plan = write_distributed_placement_outputs(
+            &output_dir,
+            &loaded,
+            "aws_spire",
+            &EC_SPIRE,
+            &[corpus_path],
+            2,
+            6,
+            99,
+            Some("rabitq"),
+            &[opt("nlists", "8")],
+        )
+        .unwrap();
+
+        assert_eq!(plan.total_rows, 5);
+        assert_eq!(plan.dimension, 2);
+        assert_eq!(plan.bits, 6);
+        assert_eq!(plan.seed, 99);
+        assert_eq!(plan.storage_format.as_deref(), Some("rabitq"));
+        assert_eq!(plan.reloptions, vec!["nlists=8".to_owned()]);
+        assert_eq!(plan.remotes.len(), 2);
+        assert_eq!(
+            plan.remotes
+                .iter()
+                .map(|remote| remote.row_count)
+                .sum::<usize>(),
+            5
+        );
+        assert!(output_dir.join("distributed-placement-plan.json").exists());
+        for remote in &plan.remotes {
+            assert!(remote
+                .conninfo_provider_lookup_key
+                .starts_with("EC_SPIRE_REMOTE_CONNINFO_"));
+            let body = std::fs::read_to_string(&remote.corpus_file).unwrap();
+            assert_eq!(body.lines().count(), remote.row_count);
+            assert_eq!(
+                remote.remote_prefix,
+                format!("aws_spire_node_{}", remote.node_id)
+            );
+            assert!(remote
+                .remote_load_args
+                .contains(&"--corpus-only".to_owned()));
+            assert!(remote
+                .remote_load_args
+                .contains(&remote.remote_index_regclass));
+            assert!(remote.remote_load_args.contains(&"--dim".to_owned()));
+            assert!(remote.remote_load_args.contains(&"2".to_owned()));
+            assert!(remote
+                .remote_load_args
+                .contains(&"--storage-format".to_owned()));
+            assert!(remote.remote_load_args.contains(&"rabitq".to_owned()));
+            assert!(remote.remote_load_args.contains(&"--reloption".to_owned()));
+            assert!(remote.remote_load_args.contains(&"nlists=8".to_owned()));
+            assert!(remote
+                .remote_identity_query_sql
+                .contains("ec_spire_remote_search_endpoint_identity"));
+            assert!(remote
+                .remote_identity_query_sql
+                .contains("ec_spire_index_active_snapshot_diagnostics"));
+            assert!(remote
+                .coordinator_register_descriptor_sql_template
+                .contains("ec_spire_register_remote_node_descriptor"));
+            assert!(remote
+                .coordinator_register_descriptor_sql_template
+                .contains("decode('{remote_index_identity_hex}', 'hex')"));
+            assert!(remote
+                .coordinator_register_descriptor_sql_template
+                .contains("'{extension_version}'"));
+        }
+
+        let plan_json: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(output_dir.join("distributed-placement-plan.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(plan_json["total_rows"], 5);
+        assert_eq!(plan_json["dimension"], 2);
+        assert_eq!(plan_json["shard_count"], 4);
+    }
+
+    #[test]
+    fn distributed_descriptor_registration_sql_uses_remote_endpoint_identity() {
+        let identity_sql = distributed_remote_identity_query_sql("public.remote_idx");
+        assert!(identity_sql.contains("'public.remote_idx'::regclass::oid"));
+        assert!(identity_sql.contains("'remote_index_identity_hex', e.profile_fingerprint"));
+        assert!(identity_sql.contains("'last_served_epoch', a.active_epoch"));
+        assert!(identity_sql.contains("'min_retained_epoch', a.active_epoch"));
+        assert!(!identity_sql.contains("'active_epoch'"));
+
+        let register_sql = distributed_coordinator_register_descriptor_sql_template(
+            "public.coord_idx",
+            2,
+            "spire/remote/a",
+            "public.remote_idx",
+        );
+        assert!(register_sql.contains("'public.coord_idx'::regclass::oid"));
+        assert!(register_sql.contains("2"));
+        assert!(register_sql.contains("'spire/remote/a'"));
+        assert!(register_sql.contains("decode('{remote_index_identity_hex}', 'hex')"));
+        assert!(register_sql.contains("'{extension_version}'"));
+    }
+
+    #[test]
+    fn sql_string_literal_escapes_single_quotes() {
+        assert_eq!(sql_string_literal("a'b"), "'a''b'");
+    }
+
+    #[test]
+    fn distributed_placement_output_rejects_non_id_source_identity_column() {
+        let config: DistributedPlacementConfig = serde_json::from_value(serde_json::json!({
+            "version": 1,
+            "coordinator": {"index_name": "aws_spire_idx"},
+            "remotes": [{
+                "node_id": 2,
+                "conninfo_secret_name": "spire/remote/a",
+                "remote_index_regclass": "public.aws_spire_remote_a_idx",
+                "shard_ids": [0]
+            }],
+            "shard_policy": {
+                "kind": "hash_source_identity",
+                "shard_count": 1,
+                "source_identity_column": "external_id"
+            }
+        }))
+        .unwrap();
+        let loaded = LoadedDistributedPlacementConfig {
+            path: PathBuf::from("placement.json"),
+            config,
+        };
+        let td = TempDir::new().unwrap();
+        let corpus_path = write(&td, "corpus.tsv", "1\t[0.1]\n");
+
+        let err = write_distributed_placement_outputs(
+            td.path(),
+            &loaded,
+            "aws_spire",
+            &EC_SPIRE,
+            &[corpus_path],
+            1,
+            4,
+            42,
+            None,
+            &[],
+        )
+        .unwrap_err()
+        .to_string();
+
+        assert!(err.contains("source_identity_column"), "err: {err}");
+        assert!(err.contains("use \"id\""), "err: {err}");
     }
 
     // --- manifest orchestration ---

@@ -1,0 +1,3 @@
+mode	step	nprobe	profiles	status	result_source	dispatch_sum	socket_open_sum	connect_p50	connect_p95	total_p50	total_p95	latency_p50	latency_p95	latency_p99	recall_at_k
+disabled	13e4-pooling-disabled-profile-k10	8	1000	ok	remote	1000	1000	0.2 ms	1.0 ms	12.0 ms	24.0 ms	12.0 ms	24.0 ms	36.0 ms	0.99
+enabled	13e4-pooling-enabled-profile-k10	8	1000	ok	remote	1000	4	0.1 ms	0.2 ms	11.0 ms	20.0 ms	11.0 ms	20.0 ms	30.0 ms	0.99

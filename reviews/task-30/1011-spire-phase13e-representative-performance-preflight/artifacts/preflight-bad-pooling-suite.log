@@ -1,0 +1,4 @@
+Script started on 2026-05-27 08:58:19-07:00 [<not executed on terminal>]
+ERROR: representative pooling suite enabled profile failed in reviews/task-30/1011-spire-phase13e-representative-performance-preflight/artifacts/bad-suite/suite-representative-pooling.json
+
+Script done on 2026-05-27 08:58:19-07:00 [COMMAND_EXIT_CODE="2"]

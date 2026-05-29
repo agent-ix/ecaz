@@ -8,6 +8,7 @@
 use clap::{Args, ValueEnum};
 use color_eyre::eyre::{eyre, Context, Result};
 use comfy_table::{presets::UTF8_FULL, Cell, Table};
+use indicatif::{ProgressBar, ProgressStyle};
 use ndarray::Array2;
 use std::collections::BTreeMap;
 use std::fmt;
@@ -56,6 +57,11 @@ pub struct SpirePipelineArgs {
     /// provided this records the empty-fanout remote diagnostic shape.
     #[arg(long)]
     pub include_remote: bool,
+    /// Fail before reporting when the SPIRE placement directory has no remote
+    /// placements. This is the AWS distributed smoke gate; it prevents
+    /// local-only fixtures from being mistaken for distributed reads.
+    #[arg(long)]
+    pub require_remote_placements: bool,
     /// Also aggregate local-store read-overlap counters for sampled queries.
     #[arg(long)]
     pub include_local_store_overlap: bool,
@@ -102,6 +108,21 @@ pub struct SpirePipelineArgs {
     /// Also compute exact local truth and report recall@k for coordinator KNN queries.
     #[arg(long)]
     pub include_recall: bool,
+    /// Optional local `<id>\t<json_array>` corpus TSV to use for exact truth.
+    ///
+    /// This avoids streaming the full corpus table through a remote SQL tunnel
+    /// when the same staged corpus file is already available to the operator.
+    #[arg(long)]
+    pub truth_corpus_file: Option<PathBuf>,
+    /// Also call ec_spire_remote_search_production_read_profile for each sampled
+    /// query and report production read-path transport counters.
+    #[arg(long)]
+    pub include_production_read_profile: bool,
+    /// Skip SQL-visible local/remote pipeline diagnostics and measure only the
+    /// production KNN/read-profile path. Use this when remote placements make
+    /// local heap diagnostics intentionally fail closed.
+    #[arg(long)]
+    pub production_read_only: bool,
     /// k for optional query latency and recall metrics.
     #[arg(long, default_value_t = 10)]
     pub query_metric_k: usize,
@@ -181,17 +202,35 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
         ));
     }
     let index = resolve_spire_index(&client, &corpus_table, args.index.as_deref()).await?;
+    if args.require_remote_placements {
+        let placement_gate = query_remote_placement_gate(&client, &index).await?;
+        enforce_remote_placement_gate(&index, &placement_gate)?;
+    }
     let endpoint_identity = query_endpoint_identity(&client, &index).await?;
     let queries = fetch_queries(&client, &queries_table, args.queries_limit).await?;
     if queries.is_empty() {
         return Err(eyre!("queries table {queries_table:?} is empty"));
     }
     let query_truth = if args.include_recall {
-        let (corpus_ids, corpus) =
+        let (corpus_ids, corpus) = if let Some(path) = args.truth_corpus_file.as_deref() {
+            super::recall::load_sources_tsv_file(path)
+                .wrap_err_with(|| format!("loading exact-truth corpus from {}", path.display()))?
+        } else {
             super::recall::fetch_sources_public(&client, &corpus_table, None)
                 .await
-                .wrap_err_with(|| format!("fetching exact-truth corpus from {corpus_table}"))?;
+                .wrap_err_with(|| format!("fetching exact-truth corpus from {corpus_table}"))?
+        };
         let query_matrix = query_matrix(&queries)?;
+        if corpus.nrows() == 0 {
+            return Err(eyre!("exact-truth corpus is empty"));
+        }
+        if corpus.ncols() != query_matrix.ncols() {
+            return Err(eyre!(
+                "exact-truth corpus dim {} does not match query dim {}",
+                corpus.ncols(),
+                query_matrix.ncols()
+            ));
+        }
         let truth = super::recall::brute_force_top_k(&corpus, &query_matrix, args.query_metric_k);
         Some(super::recall::map_indices_to_ids(
             &truth.indices,
@@ -202,6 +241,12 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
     };
     if query_metrics_enabled {
         psql::prefer_ordered_ann_path(&client).await?;
+        if args.production_read_only {
+            client
+                .batch_execute("SET enable_indexscan = off")
+                .await
+                .wrap_err("forcing SPIRE CustomScan tuple delivery path")?;
+        }
     }
     let query_metric_stmt = if query_metrics_enabled {
         let sql = build_query_metric_sql(&corpus_table, &args.query_metric_projection_columns);
@@ -222,6 +267,7 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
         BTreeMap::<LocalStoreOverlapKey, LocalStoreOverlapAggregate>::new();
     let mut degraded_skip = BTreeMap::<DegradedSkipKey, DegradedSkipAggregate>::new();
     let mut query_metrics = BTreeMap::<i32, QueryMetricAggregate>::new();
+    let mut production_read_profile = BTreeMap::<i32, ProductionReadProfileAggregate>::new();
     let mut cost_tuning = BTreeMap::<i32, CostTuningRow>::new();
     let mut remote_epoch = args.remote_requested_epoch;
 
@@ -241,68 +287,38 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
             cost_tuning.insert(*nprobe, query_cost_tuning_row(&client, &index).await?);
         }
 
-        for query in &queries {
-            let routing_rows = query_routing_rows(&client, &index, &query.source).await?;
-            for row in routing_rows {
-                routing
-                    .entry(RoutingKey {
-                        nprobe: *nprobe,
-                        routing_level: row.routing_level,
-                    })
-                    .or_default()
-                    .record(row);
-            }
+        let bar = ProgressBar::new(queries.len() as u64);
+        bar.set_style(
+            ProgressStyle::with_template(
+                "[spire-pipeline {msg}] {wide_bar} {pos}/{len} ({per_sec})",
+            )
+            .unwrap(),
+        );
+        bar.set_message(spire_pipeline_progress_label(*nprobe, &args));
+        bar.enable_steady_tick(Duration::from_millis(250));
 
-            let local_rows = query_local_pipeline_rows(&client, &index, &query.source).await?;
-            if remote_epoch.is_none() {
-                remote_epoch = local_rows
-                    .iter()
-                    .find(|row| row.active_epoch > 0)
-                    .map(|row| row.active_epoch);
-            }
-            for row in local_rows {
-                local
-                    .entry(StepKey {
-                        nprobe: *nprobe,
-                        step_ordinal: row.step_ordinal,
-                        step_name: row.step_name.clone(),
-                    })
-                    .or_default()
-                    .record(row);
-            }
-            if args.include_local_store_overlap {
-                let overlap_rows =
-                    query_local_store_overlap_rows(&client, &index, &query.source).await?;
-                for row in overlap_rows {
-                    local_store_overlap
-                        .entry(LocalStoreOverlapKey {
+        for query in &queries {
+            if !args.production_read_only {
+                let routing_rows = query_routing_rows(&client, &index, &query.source).await?;
+                for row in routing_rows {
+                    routing
+                        .entry(RoutingKey {
                             nprobe: *nprobe,
-                            node_id: row.node_id,
-                            local_store_id: row.local_store_id,
+                            routing_level: row.routing_level,
                         })
                         .or_default()
                         .record(row);
                 }
-            }
 
-            if remote_enabled {
-                let requested_epoch = remote_epoch.ok_or_else(|| {
-                    eyre!(
-                        "remote pipeline requested but no active epoch was observed; pass --remote-requested-epoch"
-                    )
-                })?;
-                let remote_rows = query_remote_pipeline_rows(
-                    &client,
-                    &index,
-                    requested_epoch,
-                    &query.source,
-                    &args.remote_selected_pids,
-                    args.top_k,
-                    &args.consistency_mode,
-                )
-                .await?;
-                for row in remote_rows {
-                    remote
+                let local_rows = query_local_pipeline_rows(&client, &index, &query.source).await?;
+                if remote_epoch.is_none() {
+                    remote_epoch = local_rows
+                        .iter()
+                        .find(|row| row.active_epoch > 0)
+                        .map(|row| row.active_epoch);
+                }
+                for row in local_rows {
+                    local
                         .entry(StepKey {
                             nprobe: *nprobe,
                             step_ordinal: row.step_ordinal,
@@ -311,24 +327,66 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
                         .or_default()
                         .record(row);
                 }
-                let degraded_skip_rows = query_degraded_skip_rows(
-                    &client,
-                    &index,
-                    requested_epoch,
-                    &query.source,
-                    &args.remote_selected_pids,
-                    args.top_k,
-                    &args.consistency_mode,
-                )
-                .await?;
-                for row in degraded_skip_rows {
-                    degraded_skip
-                        .entry(DegradedSkipKey {
-                            nprobe: *nprobe,
-                            node_id: row.node_id,
-                        })
-                        .or_default()
-                        .record(row);
+                if args.include_local_store_overlap {
+                    let overlap_rows =
+                        query_local_store_overlap_rows(&client, &index, &query.source).await?;
+                    for row in overlap_rows {
+                        local_store_overlap
+                            .entry(LocalStoreOverlapKey {
+                                nprobe: *nprobe,
+                                node_id: row.node_id,
+                                local_store_id: row.local_store_id,
+                            })
+                            .or_default()
+                            .record(row);
+                    }
+                }
+
+                if remote_enabled {
+                    let requested_epoch = remote_epoch.ok_or_else(|| {
+                        eyre!(
+                            "remote pipeline requested but no active epoch was observed; pass --remote-requested-epoch"
+                        )
+                    })?;
+                    let remote_rows = query_remote_pipeline_rows(
+                        &client,
+                        &index,
+                        requested_epoch,
+                        &query.source,
+                        &args.remote_selected_pids,
+                        args.top_k,
+                        &args.consistency_mode,
+                    )
+                    .await?;
+                    for row in remote_rows {
+                        remote
+                            .entry(StepKey {
+                                nprobe: *nprobe,
+                                step_ordinal: row.step_ordinal,
+                                step_name: row.step_name.clone(),
+                            })
+                            .or_default()
+                            .record(row);
+                    }
+                    let degraded_skip_rows = query_degraded_skip_rows(
+                        &client,
+                        &index,
+                        requested_epoch,
+                        &query.source,
+                        &args.remote_selected_pids,
+                        args.top_k,
+                        &args.consistency_mode,
+                    )
+                    .await?;
+                    for row in degraded_skip_rows {
+                        degraded_skip
+                            .entry(DegradedSkipKey {
+                                nprobe: *nprobe,
+                                node_id: row.node_id,
+                            })
+                            .or_default()
+                            .record(row);
+                    }
                 }
             }
 
@@ -340,7 +398,22 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
                     .or_default()
                     .record(measured.duration, measured.predicted_ids);
             }
+            if args.include_production_read_profile {
+                let row = query_production_read_profile_row(
+                    &client,
+                    &index,
+                    &query.source,
+                    args.query_metric_k,
+                )
+                .await?;
+                production_read_profile
+                    .entry(*nprobe)
+                    .or_default()
+                    .record(row);
+            }
+            bar.inc(1);
         }
+        bar.finish_and_clear();
     }
     if let Some(truth_ids) = query_truth.as_ref() {
         for aggregate in query_metrics.values_mut() {
@@ -367,6 +440,8 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
         include_recall: args.include_recall,
         query_metric_k: args.query_metric_k,
         query_metric_projection_columns: &args.query_metric_projection_columns,
+        production_read_profile_enabled: args.include_production_read_profile,
+        production_read_only: args.production_read_only,
         local_store_overlap_enabled: args.include_local_store_overlap,
         routing: &routing,
         local: &local,
@@ -374,6 +449,7 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
         local_store_overlap: &local_store_overlap,
         degraded_skip: &degraded_skip,
         query_metrics: &query_metrics,
+        production_read_profile: &production_read_profile,
     });
     println!("{output}");
     if let Some(path) = args.log_output {
@@ -389,6 +465,23 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
     Ok(())
 }
 
+fn spire_pipeline_progress_label(nprobe: i32, args: &SpirePipelineArgs) -> String {
+    let mut parts = vec![format!("nprobe={nprobe}")];
+    if args.include_recall {
+        parts.push("recall".to_string());
+    }
+    if args.include_query_metrics {
+        parts.push("query-metrics".to_string());
+    }
+    if args.include_production_read_profile {
+        parts.push("production-read".to_string());
+    }
+    if args.production_read_only {
+        parts.push("read-only".to_string());
+    }
+    parts.join(" ")
+}
+
 fn validate_args(args: &SpirePipelineArgs) -> Result<()> {
     if args.queries_limit == 0 {
         return Err(eyre!("--queries-limit must be >= 1"));
@@ -398,6 +491,15 @@ fn validate_args(args: &SpirePipelineArgs) -> Result<()> {
     }
     if args.query_metric_k == 0 {
         return Err(eyre!("--query-metric-k must be >= 1"));
+    }
+    if args.production_read_only
+        && !args.include_query_metrics
+        && !args.include_recall
+        && !args.include_production_read_profile
+    {
+        return Err(eyre!(
+            "--production-read-only requires --include-query-metrics, --include-recall, or --include-production-read-profile"
+        ));
     }
     for column in &args.query_metric_projection_columns {
         profiles::validate_ident(column).wrap_err_with(|| {
@@ -821,6 +923,28 @@ async fn query_degraded_skip_rows(
     Ok(rows.into_iter().map(DegradedSkipRow::from).collect())
 }
 
+async fn query_production_read_profile_row(
+    client: &Client,
+    index: &str,
+    query: &[f32],
+    top_k: usize,
+) -> Result<ProductionReadProfileRow> {
+    let top_k = i32::try_from(top_k).map_err(|_| eyre!("query metric k exceeds i32"))?;
+    let rows = client
+        .query(production_read_profile_sql(), &[&index, &query, &top_k])
+        .await
+        .wrap_err("querying ec_spire_remote_search_production_read_profile")?;
+    Ok(ProductionReadProfileRow::from_metric_rows(rows))
+}
+
+async fn query_remote_placement_gate(client: &Client, index: &str) -> Result<RemotePlacementGate> {
+    let row = client
+        .query_one(remote_placement_gate_sql(), &[&index])
+        .await
+        .wrap_err("querying ec_spire_index_placement_snapshot remote placement gate")?;
+    Ok(RemotePlacementGate::from(row))
+}
+
 async fn query_cost_tuning_row(client: &Client, index: &str) -> Result<CostTuningRow> {
     let row = client
         .query_one(cost_tuning_snapshot_sql(), &[&index])
@@ -883,10 +1007,26 @@ fn degraded_skip_report_sql() -> &'static str {
      ORDER BY node_id"
 }
 
+fn production_read_profile_sql() -> &'static str {
+    "SELECT metric, value
+       FROM ec_spire_remote_search_production_read_profile(
+            $1::text::regclass::oid, $2::real[], $3::integer)"
+}
+
 fn endpoint_identity_sql() -> &'static str {
     "SELECT tuple_transport_capabilities, tuple_transport_default,
             tuple_transport_status, status, recommendation
      FROM ec_spire_remote_search_endpoint_identity($1::text::regclass::oid)"
+}
+
+fn remote_placement_gate_sql() -> &'static str {
+    "SELECT coalesce(sum(placement_count), 0)::bigint AS total_placement_count,
+            coalesce(sum(placement_count) FILTER (WHERE node_id > 1), 0)::bigint
+                AS remote_placement_count,
+            coalesce(sum(placement_count) FILTER (WHERE node_id <= 1), 0)::bigint
+                AS local_placement_count,
+            count(*) FILTER (WHERE node_id > 1)::bigint AS remote_node_count
+     FROM ec_spire_remote_node_snapshot($1::text::regclass::oid)"
 }
 
 fn cost_tuning_snapshot_sql() -> &'static str {
@@ -919,6 +1059,38 @@ struct RoutingRow {
     selected_child_count: i64,
     deduped_route_count: i64,
     truncation_reason: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct RemotePlacementGate {
+    total_placement_count: i64,
+    remote_placement_count: i64,
+    local_placement_count: i64,
+    remote_node_count: i64,
+}
+
+impl From<Row> for RemotePlacementGate {
+    fn from(row: Row) -> Self {
+        Self {
+            total_placement_count: row.get("total_placement_count"),
+            remote_placement_count: row.get("remote_placement_count"),
+            local_placement_count: row.get("local_placement_count"),
+            remote_node_count: row.get("remote_node_count"),
+        }
+    }
+}
+
+fn enforce_remote_placement_gate(index: &str, row: &RemotePlacementGate) -> Result<()> {
+    if row.remote_placement_count <= 0 {
+        return Err(eyre!(
+            "distributed SPIRE placement gate failed for index {:?}: remote placement count is 0 (total placements {}, local placements {}, remote nodes {}). Run distributed placement/materialization before AWS distributed read verification.",
+            index,
+            row.total_placement_count,
+            row.local_placement_count,
+            row.remote_node_count
+        ));
+    }
+    Ok(())
 }
 
 impl From<Row> for RoutingRow {
@@ -1020,6 +1192,40 @@ impl From<Row> for DegradedSkipRow {
             first_skip_category: row.get(3),
             status: row.get(4),
         }
+    }
+}
+
+#[derive(Debug, Default)]
+struct ProductionReadProfileRow {
+    values: BTreeMap<String, String>,
+}
+
+impl ProductionReadProfileRow {
+    fn from_metric_rows(rows: Vec<Row>) -> Self {
+        let values = rows
+            .into_iter()
+            .map(|row| (row.get::<_, String>(0), row.get::<_, String>(1)))
+            .collect();
+        Self { values }
+    }
+
+    fn string_metric(&self, metric: &str) -> String {
+        self.values
+            .get(metric)
+            .cloned()
+            .unwrap_or_else(|| "missing".to_owned())
+    }
+
+    fn i64_metric(&self, metric: &str) -> i64 {
+        self.values
+            .get(metric)
+            .and_then(|value| value.parse::<i64>().ok())
+            .unwrap_or(0)
+    }
+
+    fn duration_metric(&self, metric: &str) -> Duration {
+        let millis = self.i64_metric(metric).max(0) as u64;
+        Duration::from_millis(millis)
     }
 }
 
@@ -1300,6 +1506,65 @@ impl QueryMetricAggregate {
     }
 }
 
+#[derive(Debug, Default)]
+struct ProductionReadProfileAggregate {
+    profiles: usize,
+    status: MixedValue,
+    result_source: MixedValue,
+    selected_pid_count_sum: i64,
+    remote_pid_count_sum: i64,
+    dispatch_count_sum: i64,
+    socket_open_count_sum: i64,
+    candidate_receive_query_count_sum: i64,
+    heap_receive_query_count_sum: i64,
+    endpoint_identity_query_count_sum: i64,
+    payload_decode_bytes_sum: i64,
+    remote_timeout_count_sum: i64,
+    remote_cancel_count_sum: i64,
+    degraded_skipped_dispatch_count_sum: i64,
+    returned_candidate_count_sum: i64,
+    connect_elapsed: Vec<Duration>,
+    endpoint_identity_elapsed: Vec<Duration>,
+    candidate_receive_elapsed: Vec<Duration>,
+    heap_receive_elapsed: Vec<Duration>,
+    merge_elapsed: Vec<Duration>,
+    total_elapsed: Vec<Duration>,
+}
+
+impl ProductionReadProfileAggregate {
+    fn record(&mut self, row: ProductionReadProfileRow) {
+        self.profiles += 1;
+        self.status.record(row.string_metric("status"));
+        self.result_source
+            .record(row.string_metric("result_source"));
+        self.selected_pid_count_sum += row.i64_metric("selected_pid_count");
+        self.remote_pid_count_sum += row.i64_metric("remote_pid_count");
+        self.dispatch_count_sum += row.i64_metric("dispatch_count");
+        self.socket_open_count_sum += row.i64_metric("socket_open_count");
+        self.candidate_receive_query_count_sum += row.i64_metric("candidate_receive_query_count");
+        self.heap_receive_query_count_sum += row.i64_metric("heap_receive_query_count");
+        self.endpoint_identity_query_count_sum += row.i64_metric("endpoint_identity_query_count");
+        self.payload_decode_bytes_sum += row.i64_metric("payload_decode_bytes");
+        self.remote_timeout_count_sum += row.i64_metric("remote_timeout_count");
+        self.remote_cancel_count_sum += row.i64_metric("remote_cancel_count");
+        self.degraded_skipped_dispatch_count_sum +=
+            row.i64_metric("degraded_skipped_dispatch_count");
+        self.returned_candidate_count_sum += row.i64_metric("returned_candidate_count");
+        self.connect_elapsed
+            .push(row.duration_metric("connect_elapsed_ms"));
+        self.endpoint_identity_elapsed
+            .push(row.duration_metric("endpoint_identity_elapsed_ms"));
+        self.candidate_receive_elapsed
+            .push(row.duration_metric("candidate_receive_elapsed_ms"));
+        self.heap_receive_elapsed
+            .push(row.duration_metric("heap_receive_elapsed_ms"));
+        self.merge_elapsed
+            .push(row.duration_metric("merge_elapsed_ms"));
+        self.total_elapsed
+            .push(row.duration_metric("total_elapsed_ms"));
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 struct DurationStats {
     count: usize,
@@ -1390,6 +1655,8 @@ struct ReportInput<'a> {
     include_recall: bool,
     query_metric_k: usize,
     query_metric_projection_columns: &'a [String],
+    production_read_profile_enabled: bool,
+    production_read_only: bool,
     local_store_overlap_enabled: bool,
     routing: &'a BTreeMap<RoutingKey, RoutingAggregate>,
     local: &'a BTreeMap<StepKey, LocalStepAggregate>,
@@ -1397,6 +1664,7 @@ struct ReportInput<'a> {
     local_store_overlap: &'a BTreeMap<LocalStoreOverlapKey, LocalStoreOverlapAggregate>,
     degraded_skip: &'a BTreeMap<DegradedSkipKey, DegradedSkipAggregate>,
     query_metrics: &'a BTreeMap<i32, QueryMetricAggregate>,
+    production_read_profile: &'a BTreeMap<i32, ProductionReadProfileAggregate>,
 }
 
 fn render_report(input: ReportInput<'_>) -> String {
@@ -1420,6 +1688,11 @@ fn render_report(input: ReportInput<'_>) -> String {
             input.include_recall,
         ));
     }
+    if input.production_read_profile_enabled {
+        sections.push(render_production_read_profile_table(
+            input.production_read_profile,
+        ));
+    }
     sections.join("\n\n")
 }
 
@@ -1433,7 +1706,7 @@ fn render_header(input: &ReportInput<'_>) -> String {
         "off".to_owned()
     };
     format!(
-        "SPIRE pipeline benchmark\nprefix: {prefix}\nindex: {index}\nqueries: {queries}\nsweep: {sweep:?}\nrerank_width: {rerank_width}\nmax_candidate_rows: {max_candidate_rows}\nremote_tuple_transport: {remote_tuple_transport}\nadaptive_nprobe: {adaptive}\ncost_snapshot: {cost_snapshot}\nremote: {remote}\nremote_selected_pids: {remote_selected_pids:?}\nremote_requested_epoch: {remote_epoch}\nlocal_store_overlap: {local_store_overlap}\nquery_metrics: {query_metrics}\nquery_metric_k: {query_metric_k}\nquery_metric_projection_columns: {query_metric_projection_columns}\nquery_recall: {query_recall}",
+        "SPIRE pipeline benchmark\nprefix: {prefix}\nindex: {index}\nqueries: {queries}\nsweep: {sweep:?}\nrerank_width: {rerank_width}\nmax_candidate_rows: {max_candidate_rows}\nremote_tuple_transport: {remote_tuple_transport}\nadaptive_nprobe: {adaptive}\ncost_snapshot: {cost_snapshot}\nremote: {remote}\nremote_selected_pids: {remote_selected_pids:?}\nremote_requested_epoch: {remote_epoch}\nlocal_store_overlap: {local_store_overlap}\nquery_metrics: {query_metrics}\nquery_metric_k: {query_metric_k}\nquery_metric_projection_columns: {query_metric_projection_columns}\nquery_recall: {query_recall}\nproduction_read_profile: {production_read_profile}\nproduction_read_only: {production_read_only}",
         prefix = input.prefix,
         index = input.index,
         queries = input.queries,
@@ -1454,6 +1727,8 @@ fn render_header(input: &ReportInput<'_>) -> String {
             format!("id,{}", input.query_metric_projection_columns.join(","))
         },
         query_recall = input.include_recall,
+        production_read_profile = input.production_read_profile_enabled,
+        production_read_only = input.production_read_only,
     )
 }
 
@@ -1739,6 +2014,82 @@ fn render_query_metrics_table(
     format!("Coordinator query metrics\n{table}")
 }
 
+fn render_production_read_profile_table(
+    rows: &BTreeMap<i32, ProductionReadProfileAggregate>,
+) -> String {
+    let mut table = Table::new();
+    table.load_preset(UTF8_FULL);
+    table.set_header(vec![
+        "nprobe",
+        "profiles",
+        "status",
+        "result_source",
+        "selected_pid_sum",
+        "remote_pid_sum",
+        "dispatch_sum",
+        "socket_open_sum",
+        "connect_p50",
+        "connect_p95",
+        "endpoint_identity_p50",
+        "endpoint_identity_p95",
+        "candidate_p50",
+        "candidate_p95",
+        "heap_p50",
+        "heap_p95",
+        "merge_p50",
+        "merge_p95",
+        "total_p50",
+        "total_p95",
+        "candidate_query_sum",
+        "heap_query_sum",
+        "endpoint_identity_query_sum",
+        "payload_bytes_sum",
+        "timeout_sum",
+        "cancel_sum",
+        "degraded_skip_sum",
+        "returned_sum",
+    ]);
+    for (nprobe, aggregate) in rows {
+        let connect = summarize_durations(&aggregate.connect_elapsed);
+        let endpoint_identity = summarize_durations(&aggregate.endpoint_identity_elapsed);
+        let candidate = summarize_durations(&aggregate.candidate_receive_elapsed);
+        let heap = summarize_durations(&aggregate.heap_receive_elapsed);
+        let merge = summarize_durations(&aggregate.merge_elapsed);
+        let total = summarize_durations(&aggregate.total_elapsed);
+        table.add_row(vec![
+            Cell::new(nprobe),
+            Cell::new(aggregate.profiles),
+            Cell::new(aggregate.status.label()),
+            Cell::new(aggregate.result_source.label()),
+            Cell::new(aggregate.selected_pid_count_sum),
+            Cell::new(aggregate.remote_pid_count_sum),
+            Cell::new(aggregate.dispatch_count_sum),
+            Cell::new(aggregate.socket_open_count_sum),
+            Cell::new(format_duration_ms(connect.p50)),
+            Cell::new(format_duration_ms(connect.p95)),
+            Cell::new(format_duration_ms(endpoint_identity.p50)),
+            Cell::new(format_duration_ms(endpoint_identity.p95)),
+            Cell::new(format_duration_ms(candidate.p50)),
+            Cell::new(format_duration_ms(candidate.p95)),
+            Cell::new(format_duration_ms(heap.p50)),
+            Cell::new(format_duration_ms(heap.p95)),
+            Cell::new(format_duration_ms(merge.p50)),
+            Cell::new(format_duration_ms(merge.p95)),
+            Cell::new(format_duration_ms(total.p50)),
+            Cell::new(format_duration_ms(total.p95)),
+            Cell::new(aggregate.candidate_receive_query_count_sum),
+            Cell::new(aggregate.heap_receive_query_count_sum),
+            Cell::new(aggregate.endpoint_identity_query_count_sum),
+            Cell::new(aggregate.payload_decode_bytes_sum),
+            Cell::new(aggregate.remote_timeout_count_sum),
+            Cell::new(aggregate.remote_cancel_count_sum),
+            Cell::new(aggregate.degraded_skipped_dispatch_count_sum),
+            Cell::new(aggregate.returned_candidate_count_sum),
+        ]);
+    }
+    format!("Production read profile\n{table}")
+}
+
 fn option_label<T: std::fmt::Display>(value: Option<T>) -> String {
     value
         .map(|value| value.to_string())
@@ -1767,11 +2118,15 @@ mod tests {
             cost_rerank_multiplier: None,
             include_query_metrics: false,
             include_recall: false,
+            truth_corpus_file: None,
+            include_production_read_profile: false,
+            production_read_only: false,
             query_metric_k: 10,
             query_metric_projection_columns: vec![],
             adaptive_nprobe: false,
             adaptive_nprobe_score_gap_micros: None,
             include_remote: false,
+            require_remote_placements: false,
             include_local_store_overlap: false,
             remote_selected_pids: vec![],
             remote_requested_epoch: None,
@@ -1863,10 +2218,51 @@ mod tests {
         assert!(remote_pipeline_steps_sql().contains("$4::bigint[]"));
         assert!(degraded_skip_report_sql().contains("ec_spire_remote_search_degraded_skip_report"));
         assert!(degraded_skip_report_sql().contains("$4::bigint[]"));
+        assert!(production_read_profile_sql()
+            .contains("ec_spire_remote_search_production_read_profile"));
+        assert!(production_read_profile_sql().contains("$2::real[]"));
         assert!(endpoint_identity_sql().contains("ec_spire_remote_search_endpoint_identity"));
         assert!(endpoint_identity_sql().contains("tuple_transport_capabilities"));
+        assert!(remote_placement_gate_sql().contains("ec_spire_remote_node_snapshot"));
+        assert!(remote_placement_gate_sql().contains("node_id > 1"));
         assert!(cost_tuning_snapshot_sql().contains("ec_spire_index_cost_tuning_snapshot"));
         assert!(cost_tuning_snapshot_sql().contains("cost_routing_dimension_scale"));
+    }
+
+    #[test]
+    fn spire_pipeline_remote_placement_gate_rejects_empty_or_local_only() {
+        let empty = RemotePlacementGate {
+            total_placement_count: 0,
+            remote_placement_count: 0,
+            local_placement_count: 0,
+            remote_node_count: 0,
+        };
+        let err = enforce_remote_placement_gate("pfx_idx", &empty)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("remote placement count is 0"), "err: {err}");
+
+        let local_only = RemotePlacementGate {
+            total_placement_count: 7,
+            remote_placement_count: 0,
+            local_placement_count: 7,
+            remote_node_count: 0,
+        };
+        let err = enforce_remote_placement_gate("pfx_idx", &local_only)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("local placements 7"), "err: {err}");
+    }
+
+    #[test]
+    fn spire_pipeline_remote_placement_gate_accepts_remote_placements() {
+        let row = RemotePlacementGate {
+            total_placement_count: 11,
+            remote_placement_count: 4,
+            local_placement_count: 7,
+            remote_node_count: 2,
+        };
+        enforce_remote_placement_gate("pfx_idx", &row).unwrap();
     }
 
     #[test]
@@ -1912,6 +2308,8 @@ mod tests {
             include_recall: false,
             query_metric_k: 10,
             query_metric_projection_columns: &["title".to_owned(), "body".to_owned()],
+            production_read_profile_enabled: true,
+            production_read_only: true,
             local_store_overlap_enabled: true,
             routing: &routing,
             local: &local,
@@ -1919,6 +2317,7 @@ mod tests {
             local_store_overlap: &BTreeMap::new(),
             degraded_skip: &BTreeMap::new(),
             query_metrics: &BTreeMap::new(),
+            production_read_profile: &BTreeMap::new(),
         });
         assert!(header.contains("remote_tuple_transport: pg_binary_attr_v1"));
         assert!(header.contains("cost_snapshot: true"));
@@ -1927,6 +2326,8 @@ mod tests {
         assert!(header.contains("query_metric_k: 10"));
         assert!(header.contains("query_metric_projection_columns: id,title,body"));
         assert!(header.contains("query_recall: false"));
+        assert!(header.contains("production_read_profile: true"));
+        assert!(header.contains("production_read_only: true"));
     }
 
     #[test]
@@ -2036,6 +2437,45 @@ mod tests {
         assert!(rendered.contains("latency_p50"));
         assert!(rendered.contains("recall@k"));
         assert!(rendered.contains("0.7500"));
+    }
+
+    #[test]
+    fn spire_pipeline_renders_production_read_profile() {
+        let mut aggregate = ProductionReadProfileAggregate::default();
+        aggregate.record(ProductionReadProfileRow {
+            values: BTreeMap::from([
+                ("status".into(), "ready".into()),
+                ("result_source".into(), "remote_heap_candidates".into()),
+                ("selected_pid_count".into(), "3".into()),
+                ("remote_pid_count".into(), "3".into()),
+                ("dispatch_count".into(), "2".into()),
+                ("socket_open_count".into(), "2".into()),
+                ("connect_elapsed_ms".into(), "1".into()),
+                ("endpoint_identity_elapsed_ms".into(), "2".into()),
+                ("candidate_receive_elapsed_ms".into(), "5".into()),
+                ("heap_receive_elapsed_ms".into(), "7".into()),
+                ("merge_elapsed_ms".into(), "1".into()),
+                ("total_elapsed_ms".into(), "10".into()),
+                ("candidate_receive_query_count".into(), "2".into()),
+                ("heap_receive_query_count".into(), "2".into()),
+                ("endpoint_identity_query_count".into(), "2".into()),
+                ("payload_decode_bytes".into(), "256".into()),
+                ("remote_timeout_count".into(), "0".into()),
+                ("remote_cancel_count".into(), "0".into()),
+                ("degraded_skipped_dispatch_count".into(), "0".into()),
+                ("returned_candidate_count".into(), "6".into()),
+            ]),
+        });
+        let mut rows = BTreeMap::new();
+        rows.insert(3, aggregate);
+
+        let rendered = render_production_read_profile_table(&rows);
+        assert!(rendered.contains("Production read profile"));
+        assert!(rendered.contains("connect_p95"));
+        assert!(rendered.contains("endpoint_identity_query_sum"));
+        assert!(rendered.contains("remote_heap_candidates"));
+        assert!(rendered.contains("payload_bytes_sum"));
+        assert!(rendered.contains("256"));
     }
 
     #[test]

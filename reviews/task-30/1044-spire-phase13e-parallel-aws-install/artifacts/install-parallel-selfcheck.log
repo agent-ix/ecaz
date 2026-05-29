@@ -1,0 +1,19 @@
+Script started on 2026-05-27 22:01:12-07:00 [<not executed on terminal>]
+install-send i-coord
+install-send i-remote-1
+install-send i-remote-2
+install-send i-remote-3
+install-wait i-coord
+install-fetch i-coord
+install-wait i-remote-1
+install-fetch i-remote-1
+install-wait i-remote-2
+install-fetch i-remote-2
+install-wait i-remote-3
+install-fetch i-remote-3
+conninfo-send i-coord
+conninfo-wait i-coord
+conninfo-fetch i-coord
+SPIRE AWS install parallel self-check passed: install_sends=4 install_waits=4
+
+Script done on 2026-05-27 22:01:12-07:00 [COMMAND_EXIT_CODE="0"]

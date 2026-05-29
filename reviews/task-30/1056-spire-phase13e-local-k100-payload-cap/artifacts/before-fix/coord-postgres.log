@@ -1,0 +1,13 @@
+2026-05-28 13:26:03.031 PDT [447653] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-05-28 13:26:03.034 PDT [447653] LOG:  listening on Unix socket "/home/peter/dev/ecaz/target/spire-phase13e-sockets-local-k100-before/.s.PGSQL.39440"
+2026-05-28 13:26:03.043 PDT [447659] LOG:  database system was shut down at 2026-05-28 13:25:58 PDT
+2026-05-28 13:26:03.047 PDT [447653] LOG:  database system is ready to accept connections
+2026-05-28 13:26:05.173 PDT [447805] ERROR:  ec_spire production executor cannot merge remote heap candidates while node_id 2 is in state CandidateReceiveFailed with status remote_candidate_receive_failed
+2026-05-28 13:26:05.173 PDT [447805] STATEMENT:  SELECT id FROM ec_spire_phase13e_coord_corpus ORDER BY embedding <#> $1::real[] LIMIT $2
+2026-05-28 13:26:05.180 PDT [447653] LOG:  received fast shutdown request
+2026-05-28 13:26:05.185 PDT [447653] LOG:  aborting any active transactions
+2026-05-28 13:26:05.185 PDT [447653] LOG:  background worker "logical replication launcher" (PID 447662) exited with exit code 1
+2026-05-28 13:26:05.186 PDT [447657] LOG:  shutting down
+2026-05-28 13:26:05.188 PDT [447657] LOG:  checkpoint starting: shutdown immediate
+2026-05-28 13:26:05.275 PDT [447657] LOG:  checkpoint complete: wrote 313 buffers (1.9%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.009 s, sync=0.073 s, total=0.090 s; sync files=135, longest=0.003 s, average=0.001 s; distance=2558 kB, estimate=2558 kB; lsn=0/19D3F40, redo lsn=0/19D3F40
+2026-05-28 13:26:05.283 PDT [447653] LOG:  database system is shut down

@@ -140,10 +140,34 @@ Phase 13b.1 is reviewer-acceptable when:
   with `request.md` and `artifacts/manifest.md` on a feature branch.
 - [ ] `make -C infra/spire-aws preflight` passes from the branch that will
   provision AWS.
-- [ ] AWS account quota for `r6i.4xlarge` + 3× `r6i.2xlarge` confirmed
-  in the target region.
+- [ ] AWS account quota for the Phase 13e correctness Graviton topology
+  (`m7g.large` + 3× `m7g.large`, 8 vCPU total) confirmed in the target
+  region. Representative/stress tiers require separate quota proof for the
+  larger `r7g.4xlarge` + 3× `r7g.2xlarge` topology (40 vCPU total). Do not
+  substitute x86/r6i hardware for SPIRE AWS evidence.
 - [ ] Cost-tag set per **13a.8** is defined in
   `infra/spire-aws/terraform.tfvars` (`owner`, `auto_stop_at`).
+- [ ] `make -C infra/spire-aws preflight-operator` passes. This checks
+  the real `terraform.tfvars`, verifies Graviton instance families, and
+  confirms the selected AMI resolves to `arm64` before any provisioning.
+- [ ] `make -C infra/spire-aws preflight-state` passes. This refuses to
+  provision over stale local Terraform state from an earlier failed SPIRE
+  AWS run; cleanup or state movement must have packet-local evidence.
+- [ ] `make -C infra/spire-aws preflight-permissions` passes. This read-only
+  check confirms the AWS identity can enumerate SPIRE buckets, list bucket
+  versions for cleanup-sensitive versioned buckets, and list matching Secrets
+  Manager entries before provisioning starts.
+- [ ] If `preflight-state` or AWS inventory shows residue from a failed run,
+  `scripts/spire-aws/cleanup-residue.sh` has been run in dry-run mode and,
+  where permissions allow, `--execute` mode. Cleanup output must be stored in
+  the owning packet before new provisioning starts.
+- [ ] If old buckets cannot be cleaned because the operator lacks
+  `s3:ListBucketVersions`, a packet explicitly records the old bucket names as
+  pre-existing residue, `make -C infra/spire-aws archive-local-state` archives
+  stale local state into packet artifacts, and
+  `SPIRE_AWS_ALLOW_PREEXISTING_RESIDUE=1 make -C infra/spire-aws
+  preflight-permissions` passes before provisioning. This exception applies
+  only to buckets created before the new run.
 - [ ] `aws` CLI is logged in with a role that can manage EC2, VPC,
   Secrets Manager, S3, and IAM in the target region.
 - [ ] `gh` CLI is logged in for packet pushes.
@@ -165,9 +189,14 @@ What it does:
   defaults.
 - Writes the `topology` Terraform output to
   `$(ARTIFACT_DIR)/aws-topology.json`.
+- Creates the versioned artifact bucket with Terraform `force_destroy =
+  true`, so failed runs can destroy bucket object versions and delete
+  markers during teardown instead of leaving billable cleanup debt.
 
 Verification:
 
+- [ ] `terraform.tfvars` uses an Amazon Linux 2023 arm64 AMI and Graviton
+  instance families (`m7g`/`m8g`/`r7g`/`c7g`/`c8g`) only.
 - [ ] `aws-topology.json` lists one coordinator and three remotes.
 - [ ] Every instance carries the cost-tag set from **13a.8**.
 - [ ] No security group permits public ingress.
@@ -288,35 +317,14 @@ make -C infra/spire-aws bench-stress   # reviewer-gated
 Each invocation produces `suite-manifest-<tier>.json` and
 `suite-results-<tier>.jsonl` under the artifact directory. The suite
 configurations cover the read rows from **13a.3.a** (k=10 and k=100,
-concurrency 1/4/8) and **13a.3.f** (PK SELECT at concurrency 32).
-Every read sub-packet also captures a packet-local
-`production-read-profile-<tier>-k<k>-c<concurrency>.log` rowset for at
-least the representative query sample used to explain any latency
-regression.
+concurrency 1/4/8), **13a.3.b** (remote tuple transport sweep), and
+**13a.3.f** (PK SELECT at concurrency 32). Every read sub-packet also
+captures packet-local `spire-pipeline` logs with
+`--include-production-read-profile` for the representative query sample
+used to explain any latency regression.
 
 Rows that the suite schema does not cover today are driven directly:
 
-- [ ] **13b.8.b Transport sweep (row 13a.3.b).** For each value in
-  {`auto`, `json_tuple_payload_v1`, `pg_binary_attr_v1`}:
-
-  ```
-  ecaz dev sql --host <coord-ip> --user ecaz_coord --database postgres \
-    --sql "SET ec_spire.remote_tuple_transport = '<value>'"
-
-  ecaz bench latency --host <coord-ip> --user ecaz_coord --database postgres \
-    --prefix ec_spire_aws_repr_1m --profile ec_spire \
-    --k 10 --sweep 32 --concurrency 1 --iterations 1000 \
-    --log-output <pkt>/artifacts/bench-latency-transport-<value>-c1.log
-
-  ecaz bench spire-pipeline --host <coord-ip> --user ecaz_coord --database postgres \
-    --prefix ec_spire_aws_repr_1m \
-    --queries-limit 100 --remote-tuple-transport <value> \
-    --include-remote --include-query-metrics \
-    --log-output <pkt>/artifacts/bench-pipeline-transport-<value>.log
-  ```
-
-  If counter **13a.5.1** is deferred, grade 13a.3.b on latency and
-  throughput only and record the deferral in the sub-packet.
 - [ ] **13b.8.c Write rows (13a.3.c, 13a.3.d, 13a.3.e).** Drive each
   with `ecaz dev sql --file scripts/spire-aws/write-*.sql`:
 

@@ -1,0 +1,22 @@
+[loader] inspecting /var/tmp/ecaz-spire-aws-load/representative/coordinator/ec_real_100k_corpus.tsv
+[loader] inspecting /var/tmp/ecaz-spire-aws-load/representative/coordinator/ec_real_100k_queries.tsv
+[loader] corpus: 100000 rows, sha256=07275cfd5a7a4b415ddf5eacc086de98294ac978532df46ffae30f9202323a95  queries: 1000 rows, sha256=a7cbec6fc44f6c148234538f61339d00d2f10646febc8f667dcbe75d9cf41782
+[loader] warning: manifest verification failed for /var/tmp/ecaz-spire-aws-load/representative/coordinator/ec_real_100k_manifest.json: prefix="ec_real_100k" (expected "ec_spire_aws_repr_1m")
+[loader] copied corpus table ec_spire_aws_repr_1m_corpus in 33.91s
+[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...
+[loader] encoded corpus table ec_spire_aws_repr_1m_corpus in 21.39s
+[loader] copied queries table ec_spire_aws_repr_1m_queries in 497.72ms
+[loader] building ec_spire_aws_repr_1m_idx using ec_spire (reloptions=[storage_format=rabitq]) ...
+[loader] built ec_spire_aws_repr_1m_idx in 135.02s
+┌─────────┬──────────────────────────────────────────────────┐
+│ field   ┆ value                                            │
+╞═════════╪══════════════════════════════════════════════════╡
+│ profile ┆ ec_spire                                         │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ ec_spire_aws_repr_1m_corpus (100000 rows)        │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ ec_spire_aws_repr_1m_queries (1000 rows)         │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ ec_spire_aws_repr_1m_idx [storage_format=rabitq] │
+└─────────┴──────────────────────────────────────────────────┘
+[loader] completed prefix ec_spire_aws_repr_1m in 203.98s

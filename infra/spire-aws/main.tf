@@ -137,13 +137,7 @@ resource "aws_security_group_rule" "coord_to_remote_pg" {
 
 resource "aws_s3_bucket" "artifacts" {
   bucket_prefix = "ecaz-spire-aws-"
-}
-
-resource "aws_s3_bucket_versioning" "artifacts" {
-  bucket = aws_s3_bucket.artifacts.id
-  versioning_configuration {
-    status = "Enabled"
-  }
+  force_destroy = false
 }
 
 resource "aws_s3_bucket_server_side_encryption_configuration" "artifacts" {
@@ -205,9 +199,13 @@ resource "random_password" "remote" {
   special = false
 }
 
+resource "random_id" "run" {
+  byte_length = 4
+}
+
 resource "aws_secretsmanager_secret" "remote" {
-  count = var.remote_count
-  name  = "ecaz-spire-aws-remote-${count.index + 1}"
+  count       = var.remote_count
+  name_prefix = "ecaz-spire-aws-${random_id.run.hex}-remote-${count.index + 1}-"
 }
 
 resource "aws_secretsmanager_secret_version" "remote" {

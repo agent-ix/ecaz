@@ -1,0 +1,21 @@
+Script started on 2026-05-25 11:58:04-07:00 [<not executed on terminal>]
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on build directory
+warning: field `path` is never read
+   --> crates/ecaz-cli/src/commands/corpus/load.rs:165:5
+    |
+164 | struct LoadedDistributedPlacementConfig {
+    |        -------------------------------- field in this struct
+165 |     path: PathBuf,
+    |     ^^^^
+    |
+    = note: `LoadedDistributedPlacementConfig` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `ecaz-cli` (bin "ecaz") generated 1 warning
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.67s
+
+Script done on 2026-05-25 11:58:05-07:00 [COMMAND_EXIT_CODE="0"]

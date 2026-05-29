@@ -196,6 +196,7 @@ enum SuiteStep {
     Recall(RecallStep),
     CrossAm(CrossAmStep),
     Latency(LatencyStep),
+    SpirePipeline(SpirePipelineStep),
     Storage(StorageStep),
     Explain(ExplainStep),
     SidecarRerank(SidecarRerankStep),
@@ -306,6 +307,8 @@ struct RecallStep {
     #[serde(default)]
     truth_cache_dir: Option<PathBuf>,
     #[serde(default)]
+    truth_corpus_file: Option<PathBuf>,
+    #[serde(default)]
     log_output: Option<PathBuf>,
     #[serde(default)]
     predictions_output: Option<PathBuf>,
@@ -327,6 +330,8 @@ struct LatencyStep {
     name: String,
     #[serde(default)]
     tags: Vec<String>,
+    #[serde(default)]
+    pgoptions: Option<String>,
     prefix: String,
     sweep: Vec<i32>,
     #[serde(default)]
@@ -359,6 +364,75 @@ struct LatencyStep {
     cache_state: Option<String>,
     #[serde(default)]
     memory_sample_interval_ms: Option<u64>,
+    #[serde(default)]
+    log_output: Option<PathBuf>,
+}
+
+#[derive(Debug, Deserialize)]
+struct SpirePipelineStep {
+    name: String,
+    #[serde(default)]
+    tags: Vec<String>,
+    #[serde(default)]
+    pgoptions: Option<String>,
+    prefix: String,
+    #[serde(default)]
+    index: Option<String>,
+    #[serde(default)]
+    queries_limit: Option<usize>,
+    sweep: Vec<i32>,
+    #[serde(default)]
+    rerank_width: Option<i32>,
+    #[serde(default)]
+    max_candidate_rows: Option<i32>,
+    #[serde(default)]
+    adaptive_nprobe: Option<bool>,
+    #[serde(default)]
+    adaptive_nprobe_score_gap_micros: Option<i32>,
+    #[serde(default)]
+    include_remote: Option<bool>,
+    #[serde(default)]
+    require_remote_placements: Option<bool>,
+    #[serde(default)]
+    include_local_store_overlap: Option<bool>,
+    #[serde(default)]
+    remote_selected_pids: Vec<i64>,
+    #[serde(default)]
+    remote_requested_epoch: Option<i64>,
+    #[serde(default)]
+    top_k: Option<i32>,
+    #[serde(default)]
+    consistency_mode: Option<String>,
+    #[serde(default)]
+    remote_tuple_transport: Option<String>,
+    #[serde(default)]
+    include_cost_snapshot: Option<bool>,
+    #[serde(default)]
+    cost_routing_dimension_scale: Option<f64>,
+    #[serde(default)]
+    cost_leaf_dimension_scale: Option<f64>,
+    #[serde(default)]
+    cost_index_page_scale: Option<f64>,
+    #[serde(default)]
+    cost_local_store_page_fanout_scale: Option<f64>,
+    #[serde(default)]
+    cost_storage_scoring_multiplier: Option<f64>,
+    #[serde(default)]
+    cost_rerank_multiplier: Option<f64>,
+    #[serde(default)]
+    include_query_metrics: Option<bool>,
+    #[serde(default)]
+    include_recall: Option<bool>,
+    #[serde(default)]
+    truth_corpus_file: Option<PathBuf>,
+    #[serde(default)]
+    include_production_read_profile: Option<bool>,
+    #[serde(default)]
+    production_read_only: Option<bool>,
+    #[serde(default)]
+    query_metric_k: Option<usize>,
+    #[serde(default)]
+    query_metric_projection_columns: Vec<String>,
     #[serde(default)]
     log_output: Option<PathBuf>,
 }
@@ -549,6 +623,8 @@ struct StepRecord {
     kind: String,
     command: Vec<String>,
     selected: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pgoptions: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     tags: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -643,7 +719,8 @@ impl From<RunArgs> for SuiteRunOptions {
 }
 
 async fn run_suite(conn: &ConnectionOptions, args: SuiteRunOptions) -> Result<()> {
-    let (raw, config) = load_config(&args.config).await?;
+    let (raw, mut config) = load_config(&args.config).await?;
+    apply_default_artifact_logs(&mut config);
     validate_config(&config)?;
 
     let mut manifest = build_manifest(conn, &args, &raw, &config)?;
@@ -659,7 +736,7 @@ async fn run_suite(conn: &ConnectionOptions, args: SuiteRunOptions) -> Result<()
                     "[suite:{}] {} -> {}",
                     config.name,
                     record.name,
-                    shell_join(&record.command)
+                    shell_join_with_pgoptions(&record.command, record.pgoptions.as_deref())
                 );
             }
         }
@@ -685,20 +762,23 @@ async fn run_suite(conn: &ConnectionOptions, args: SuiteRunOptions) -> Result<()
             "[suite:{}] {} -> {}",
             config.name,
             manifest.steps[idx].name,
-            shell_join(&command)
+            shell_join_with_pgoptions(&command, manifest.steps[idx].pgoptions.as_deref())
         );
         manifest.steps[idx].status = Some(StepStatus::Pending);
         manifest.steps[idx].started_at_unix_ms = Some(now_ms());
         write_manifest_if_requested(&args, &config, &manifest).await?;
 
         let started = Instant::now();
-        let status = spawn_step(&exe, &command, conn).await.wrap_err_with(|| {
-            format!(
-                "running suite step {:?}: {}",
-                manifest.steps[idx].name,
-                shell_join(&command)
-            )
-        })?;
+        let pgoptions = manifest.steps[idx].pgoptions.clone();
+        let status = spawn_step(&exe, &command, conn, pgoptions.as_deref())
+            .await
+            .wrap_err_with(|| {
+                format!(
+                    "running suite step {:?}: {}",
+                    manifest.steps[idx].name,
+                    shell_join(&command)
+                )
+            })?;
         manifest.steps[idx].finished_at_unix_ms = Some(now_ms());
         manifest.steps[idx].duration_ms = Some(started.elapsed().as_millis());
         manifest.steps[idx].exit_code = status.code();
@@ -735,7 +815,8 @@ async fn run_suite(conn: &ConnectionOptions, args: SuiteRunOptions) -> Result<()
 }
 
 async fn audit_suite(config_path: &Path) -> Result<()> {
-    let (_raw, config) = load_config(config_path).await?;
+    let (_raw, mut config) = load_config(config_path).await?;
+    apply_default_artifact_logs(&mut config);
     let mut findings = Vec::new();
     let mut produced = HashSet::new();
     if let Err(err) = validate_config(&config) {
@@ -801,7 +882,7 @@ async fn status_manifest(path: &Path) -> Result<()> {
             "{:<12} {:<36} {}",
             format!("{status:?}"),
             step.name,
-            shell_join(&step.command)
+            shell_join_with_pgoptions(&step.command, step.pgoptions.as_deref())
         );
     }
     Ok(())
@@ -868,6 +949,10 @@ async fn report_manifest(path: &Path, results_output: Option<&Path>) -> Result<(
                 format_metric_values(&row.values)
             );
         }
+        if let Some(pooling_gate) = render_spire_pooling_gate_section(&rows) {
+            crate::ecaz_println!("");
+            crate::ecaz_println!("{pooling_gate}");
+        }
     }
     if !manifest.threshold_results.is_empty() {
         crate::ecaz_println!("");
@@ -903,6 +988,45 @@ async fn load_config(path: &Path) -> Result<(String, SuiteConfig)> {
     let config: SuiteConfig =
         serde_json::from_str(&raw).wrap_err_with(|| format!("parsing {}", path.display()))?;
     Ok((raw, config))
+}
+
+fn apply_default_artifact_logs(config: &mut SuiteConfig) {
+    let Some(artifact_dir) = config.artifact_dir.clone() else {
+        return;
+    };
+    for step in &mut config.steps {
+        match step {
+            SuiteStep::Recall(step) if step.log_output.is_none() => {
+                step.log_output =
+                    Some(artifact_dir.join(format!("{}.log", artifact_safe_step_name(&step.name))));
+            }
+            SuiteStep::Latency(step) if step.log_output.is_none() => {
+                step.log_output =
+                    Some(artifact_dir.join(format!("{}.log", artifact_safe_step_name(&step.name))));
+            }
+            SuiteStep::SpirePipeline(step) if step.log_output.is_none() => {
+                step.log_output =
+                    Some(artifact_dir.join(format!("{}.log", artifact_safe_step_name(&step.name))));
+            }
+            SuiteStep::SidecarRerank(step) if step.log_output.is_none() => {
+                step.log_output =
+                    Some(artifact_dir.join(format!("{}.log", artifact_safe_step_name(&step.name))));
+            }
+            _ => {}
+        }
+    }
+}
+
+fn artifact_safe_step_name(name: &str) -> String {
+    name.chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' || ch == '.' {
+                ch
+            } else {
+                '_'
+            }
+        })
+        .collect()
 }
 
 async fn load_manifest(path: &Path) -> Result<SuiteManifest> {
@@ -948,6 +1072,7 @@ fn build_manifest(
             kind: step.kind().to_string(),
             command,
             selected,
+            pgoptions: step.pgoptions().map(ToOwned::to_owned),
             tags: step.tags().to_vec(),
             expected_artifacts: step
                 .expected_artifacts()
@@ -1092,7 +1217,7 @@ fn parse_result_rows(
     raw: &str,
 ) -> Vec<ResultRow> {
     match step.kind.as_str() {
-        "recall" | "latency" | "sidecar-rerank" => parse_table_rows(raw)
+        "recall" | "latency" | "sidecar-rerank" | "spire-pipeline" => parse_table_rows(raw)
             .into_iter()
             .map(|values| ResultRow {
                 suite: manifest.suite.clone(),
@@ -1505,6 +1630,138 @@ fn format_metric_values(values: &BTreeMap<String, String>) -> String {
         .join(", ")
 }
 
+#[derive(Debug, Clone)]
+struct SpirePoolingGateRow {
+    step: String,
+    nprobe: String,
+    connect_p50_ms: f64,
+    connect_p95_ms: f64,
+    latency_p95_ms: Option<f64>,
+}
+
+impl SpirePoolingGateRow {
+    fn triggered_by_p50(&self) -> bool {
+        self.connect_p50_ms >= 1.0
+    }
+
+    fn connect_latency_ratio(&self) -> Option<f64> {
+        let latency_p95_ms = self.latency_p95_ms?;
+        if latency_p95_ms <= 0.0 {
+            return None;
+        }
+        Some(self.connect_p95_ms / latency_p95_ms)
+    }
+
+    fn triggered_by_ratio(&self) -> bool {
+        self.connect_latency_ratio()
+            .map(|ratio| ratio >= 0.15)
+            .unwrap_or(false)
+    }
+
+    fn decision(&self) -> &'static str {
+        if self.triggered_by_p50() || self.triggered_by_ratio() {
+            "pooling_candidate"
+        } else if self.latency_p95_ms.is_some() {
+            "pooling_not_justified"
+        } else {
+            "missing_latency_p95"
+        }
+    }
+}
+
+fn render_spire_pooling_gate_section(rows: &[ResultRow]) -> Option<String> {
+    let gate_rows = spire_pooling_gate_rows(rows);
+    if gate_rows.is_empty() {
+        return None;
+    }
+
+    let mut body = String::from("## SPIRE Connection Pooling Gate\n\n");
+    body.push_str("| Step | nprobe | connect_p50_ms | connect_p95_ms | latency_p95_ms | connect_p95/read_p95 | decision |\n");
+    body.push_str("| --- | ---: | ---: | ---: | ---: | ---: | --- |\n");
+    for row in gate_rows {
+        let latency = row
+            .latency_p95_ms
+            .map(|value| format!("{value:.3}"))
+            .unwrap_or_else(|| "-".into());
+        let ratio = row
+            .connect_latency_ratio()
+            .map(|value| format!("{value:.4}"))
+            .unwrap_or_else(|| "-".into());
+        body.push_str(&format!(
+            "| {} | {} | {:.3} | {:.3} | {} | {} | {} |\n",
+            row.step,
+            row.nprobe,
+            row.connect_p50_ms,
+            row.connect_p95_ms,
+            latency,
+            ratio,
+            row.decision()
+        ));
+    }
+    Some(body.trim_end().to_owned())
+}
+
+fn spire_pooling_gate_rows(rows: &[ResultRow]) -> Vec<SpirePoolingGateRow> {
+    let mut latency_by_step_nprobe = BTreeMap::<(String, String), f64>::new();
+    for row in rows {
+        if row.kind != "spire-pipeline" {
+            continue;
+        }
+        let Some(nprobe) = row.values.get("nprobe") else {
+            continue;
+        };
+        let Some(latency_p95_ms) = row
+            .values
+            .get("latency_p95")
+            .and_then(|value| parse_duration_ms(value))
+        else {
+            continue;
+        };
+        latency_by_step_nprobe.insert((row.step.clone(), nprobe.clone()), latency_p95_ms);
+    }
+
+    rows.iter()
+        .filter(|row| row.kind == "spire-pipeline")
+        .filter_map(|row| {
+            let nprobe = row.values.get("nprobe")?.clone();
+            let connect_p50_ms = row
+                .values
+                .get("connect_p50")
+                .and_then(|value| parse_duration_ms(value))?;
+            let connect_p95_ms = row
+                .values
+                .get("connect_p95")
+                .and_then(|value| parse_duration_ms(value))?;
+            let latency_p95_ms = latency_by_step_nprobe
+                .get(&(row.step.clone(), nprobe.clone()))
+                .copied();
+            Some(SpirePoolingGateRow {
+                step: row.step.clone(),
+                nprobe,
+                connect_p50_ms,
+                connect_p95_ms,
+                latency_p95_ms,
+            })
+        })
+        .collect()
+}
+
+fn parse_duration_ms(value: &str) -> Option<f64> {
+    let value = value.trim();
+    let split_at = value
+        .find(|ch: char| !(ch.is_ascii_digit() || ch == '.'))
+        .unwrap_or(value.len());
+    let amount = value[..split_at].parse::<f64>().ok()?;
+    let unit = value[split_at..].trim();
+    match unit {
+        "ms" => Some(amount),
+        "" => Some(amount),
+        "s" => Some(amount * 1000.0),
+        "m" | "min" => Some(amount * 60_000.0),
+        _ => None,
+    }
+}
+
 fn selected_step_names(manifest: &SuiteManifest) -> HashSet<&str> {
     manifest
         .steps
@@ -1624,6 +1881,7 @@ impl SuiteStep {
             SuiteStep::Recall(step) => &step.name,
             SuiteStep::CrossAm(step) => &step.name,
             SuiteStep::Latency(step) => &step.name,
+            SuiteStep::SpirePipeline(step) => &step.name,
             SuiteStep::Storage(step) => &step.name,
             SuiteStep::Explain(step) => &step.name,
             SuiteStep::SidecarRerank(step) => &step.name,
@@ -1641,6 +1899,7 @@ impl SuiteStep {
             SuiteStep::Recall(_) => "recall",
             SuiteStep::CrossAm(_) => "cross-am",
             SuiteStep::Latency(_) => "latency",
+            SuiteStep::SpirePipeline(_) => "spire-pipeline",
             SuiteStep::Storage(_) => "storage",
             SuiteStep::Explain(_) => "explain",
             SuiteStep::SidecarRerank(_) => "sidecar-rerank",
@@ -1658,12 +1917,21 @@ impl SuiteStep {
             SuiteStep::Recall(step) => &step.tags,
             SuiteStep::CrossAm(step) => &step.tags,
             SuiteStep::Latency(step) => &step.tags,
+            SuiteStep::SpirePipeline(step) => &step.tags,
             SuiteStep::Storage(step) => &step.tags,
             SuiteStep::Explain(step) => &step.tags,
             SuiteStep::SidecarRerank(step) => &step.tags,
             SuiteStep::ComparePgvector(step) => &step.tags,
             SuiteStep::CompareVectorscale(step) => &step.tags,
             SuiteStep::Raw(step) => &step.tags,
+        }
+    }
+
+    fn pgoptions(&self) -> Option<&str> {
+        match self {
+            SuiteStep::Latency(step) => step.pgoptions.as_deref(),
+            SuiteStep::SpirePipeline(step) => step.pgoptions.as_deref(),
+            _ => None,
         }
     }
 
@@ -1766,6 +2034,43 @@ impl SuiteStep {
                 }
                 Ok(())
             }
+            SuiteStep::SpirePipeline(step) => {
+                if step.sweep.is_empty() {
+                    bail!(
+                        "spire-pipeline step {:?} must include at least one sweep value",
+                        step.name
+                    )
+                }
+                if step.queries_limit == Some(0) {
+                    bail!(
+                        "spire-pipeline step {:?} must set queries_limit >= 1",
+                        step.name
+                    )
+                }
+                if step.top_k.map(|value| value < 0).unwrap_or(false) {
+                    bail!("spire-pipeline step {:?} must set top_k >= 0", step.name)
+                }
+                if step.query_metric_k == Some(0) {
+                    bail!(
+                        "spire-pipeline step {:?} must set query_metric_k >= 1",
+                        step.name
+                    )
+                }
+                if step
+                    .remote_requested_epoch
+                    .map(|epoch| epoch <= 0)
+                    .unwrap_or(false)
+                {
+                    bail!(
+                        "spire-pipeline step {:?} must set remote_requested_epoch > 0",
+                        step.name
+                    )
+                }
+                if let Some(mode) = step.remote_tuple_transport.as_deref() {
+                    validate_spire_remote_tuple_transport(mode)?;
+                }
+                Ok(())
+            }
             SuiteStep::Explain(step) => {
                 validate_profile_name("explain profile", step.profile.as_deref())?;
                 let profile = profiles::resolve(step.profile.as_deref().unwrap_or("ec_ivf"))
@@ -1835,6 +2140,7 @@ impl SuiteStep {
             SuiteStep::Recall(step) => Ok(expand_recall(step, defaults)),
             SuiteStep::CrossAm(step) => Ok(expand_cross_am(step)),
             SuiteStep::Latency(step) => Ok(expand_latency(step, defaults)),
+            SuiteStep::SpirePipeline(step) => Ok(expand_spire_pipeline(step, defaults)),
             SuiteStep::Storage(step) => Ok(expand_storage(step)),
             SuiteStep::Explain(step) => Ok(expand_explain(step, defaults, conn)),
             SuiteStep::SidecarRerank(step) => Ok(expand_sidecar_rerank(step, defaults)),
@@ -1871,6 +2177,7 @@ impl SuiteStep {
                 .collect(),
             SuiteStep::CrossAm(step) => vec![step.log_output.clone()],
             SuiteStep::Latency(step) => step.log_output.iter().cloned().collect(),
+            SuiteStep::SpirePipeline(step) => step.log_output.iter().cloned().collect(),
             SuiteStep::Storage(step) => step.log_file.iter().cloned().collect(),
             SuiteStep::Explain(step) => vec![step.sql_file.clone(), step.log_output.clone()],
             SuiteStep::SidecarRerank(step) => step.log_output.iter().cloned().collect(),
@@ -1969,11 +2276,19 @@ async fn prepare_step(step: &SuiteStep, defaults: &SuiteDefaults) -> Result<()> 
     Ok(())
 }
 
-async fn spawn_step(exe: &Path, args: &[String], conn: &ConnectionOptions) -> Result<ExitStatus> {
+async fn spawn_step(
+    exe: &Path,
+    args: &[String],
+    conn: &ConnectionOptions,
+    pgoptions: Option<&str>,
+) -> Result<ExitStatus> {
     let mut command = Command::new(exe);
     command.args(args);
     if let Some(password) = &conn.password {
         command.env("PGPASSWORD", password);
+    }
+    if let Some(pgoptions) = pgoptions {
+        command.env("PGOPTIONS", pgoptions);
     }
     command
         .status()
@@ -2123,6 +2438,11 @@ fn expand_recall(step: &RecallStep, defaults: &SuiteDefaults) -> Vec<String> {
         "--truth-cache-dir",
         step.truth_cache_dir.as_deref(),
     );
+    push_opt_path(
+        &mut args,
+        "--truth-corpus-file",
+        step.truth_corpus_file.as_deref(),
+    );
     push_opt_path(&mut args, "--log-output", step.log_output.as_deref());
     push_opt_path(
         &mut args,
@@ -2215,6 +2535,132 @@ fn expand_latency(step: &LatencyStep, defaults: &SuiteDefaults) -> Vec<String> {
             .unwrap_or(25)
             .to_string(),
     );
+    push_opt_path(&mut args, "--log-output", step.log_output.as_deref());
+    args
+}
+
+fn expand_spire_pipeline(step: &SpirePipelineStep, defaults: &SuiteDefaults) -> Vec<String> {
+    let mut args = vec!["bench".into(), "spire-pipeline".into()];
+    push_arg(&mut args, "--prefix", &step.prefix);
+    push_opt_arg(&mut args, "--index", step.index.as_deref());
+    push_arg(
+        &mut args,
+        "--queries-limit",
+        &step
+            .queries_limit
+            .or(defaults.queries_limit)
+            .unwrap_or(1)
+            .to_string(),
+    );
+    push_arg(&mut args, "--sweep", &join_i32(&step.sweep));
+    if let Some(width) = step.rerank_width {
+        push_arg(&mut args, "--rerank-width", &width.to_string());
+    }
+    if let Some(max_candidate_rows) = step.max_candidate_rows {
+        push_arg(
+            &mut args,
+            "--max-candidate-rows",
+            &max_candidate_rows.to_string(),
+        );
+    }
+    if step.adaptive_nprobe.unwrap_or(false) {
+        args.push("--adaptive-nprobe".into());
+    }
+    if let Some(score_gap_micros) = step.adaptive_nprobe_score_gap_micros {
+        push_arg(
+            &mut args,
+            "--adaptive-nprobe-score-gap-micros",
+            &score_gap_micros.to_string(),
+        );
+    }
+    if step.include_remote.unwrap_or(false) {
+        args.push("--include-remote".into());
+    }
+    if step.require_remote_placements.unwrap_or(false) {
+        args.push("--require-remote-placements".into());
+    }
+    if step.include_local_store_overlap.unwrap_or(false) {
+        args.push("--include-local-store-overlap".into());
+    }
+    if !step.remote_selected_pids.is_empty() {
+        push_arg(
+            &mut args,
+            "--remote-selected-pids",
+            &join_i64(&step.remote_selected_pids),
+        );
+    }
+    if let Some(epoch) = step.remote_requested_epoch {
+        push_arg(&mut args, "--remote-requested-epoch", &epoch.to_string());
+    }
+    if let Some(top_k) = step.top_k {
+        push_arg(&mut args, "--top-k", &top_k.to_string());
+    }
+    if let Some(consistency_mode) = step.consistency_mode.as_deref() {
+        push_arg(&mut args, "--consistency-mode", consistency_mode);
+    }
+    if let Some(mode) = step.remote_tuple_transport.as_deref() {
+        push_arg(&mut args, "--remote-tuple-transport", mode);
+    }
+    if step.include_cost_snapshot.unwrap_or(false) {
+        args.push("--include-cost-snapshot".into());
+    }
+    push_opt_f64(
+        &mut args,
+        "--cost-routing-dimension-scale",
+        step.cost_routing_dimension_scale,
+    );
+    push_opt_f64(
+        &mut args,
+        "--cost-leaf-dimension-scale",
+        step.cost_leaf_dimension_scale,
+    );
+    push_opt_f64(
+        &mut args,
+        "--cost-index-page-scale",
+        step.cost_index_page_scale,
+    );
+    push_opt_f64(
+        &mut args,
+        "--cost-local-store-page-fanout-scale",
+        step.cost_local_store_page_fanout_scale,
+    );
+    push_opt_f64(
+        &mut args,
+        "--cost-storage-scoring-multiplier",
+        step.cost_storage_scoring_multiplier,
+    );
+    push_opt_f64(
+        &mut args,
+        "--cost-rerank-multiplier",
+        step.cost_rerank_multiplier,
+    );
+    if step.include_query_metrics.unwrap_or(false) {
+        args.push("--include-query-metrics".into());
+    }
+    if step.include_recall.unwrap_or(false) {
+        args.push("--include-recall".into());
+    }
+    push_opt_path(
+        &mut args,
+        "--truth-corpus-file",
+        step.truth_corpus_file.as_deref(),
+    );
+    if step.include_production_read_profile.unwrap_or(false) {
+        args.push("--include-production-read-profile".into());
+    }
+    if step.production_read_only.unwrap_or(false) {
+        args.push("--production-read-only".into());
+    }
+    if let Some(k) = step.query_metric_k {
+        push_arg(&mut args, "--query-metric-k", &k.to_string());
+    }
+    if !step.query_metric_projection_columns.is_empty() {
+        push_arg(
+            &mut args,
+            "--query-metric-projection-columns",
+            &step.query_metric_projection_columns.join(","),
+        );
+    }
     push_opt_path(&mut args, "--log-output", step.log_output.as_deref());
     args
 }
@@ -2597,9 +3043,23 @@ fn join_i32(values: &[i32]) -> String {
         .join(",")
 }
 
+fn join_i64(values: &[i64]) -> String {
+    values
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
 fn push_arg(args: &mut Vec<String>, flag: &str, value: &str) {
     args.push(flag.into());
     args.push(value.into());
+}
+
+fn push_opt_arg(args: &mut Vec<String>, flag: &str, value: Option<&str>) {
+    if let Some(value) = value {
+        push_arg(args, flag, value);
+    }
 }
 
 fn push_arg_path(args: &mut Vec<String>, flag: &str, value: &Path) {
@@ -2609,6 +3069,22 @@ fn push_arg_path(args: &mut Vec<String>, flag: &str, value: &Path) {
 fn push_opt_path(args: &mut Vec<String>, flag: &str, value: Option<&Path>) {
     if let Some(value) = value {
         push_arg_path(args, flag, value);
+    }
+}
+
+fn push_opt_f64(args: &mut Vec<String>, flag: &str, value: Option<f64>) {
+    if let Some(value) = value {
+        push_arg(args, flag, &value.to_string());
+    }
+}
+
+fn validate_spire_remote_tuple_transport(value: &str) -> Result<()> {
+    match value {
+        "auto" | "json_tuple_payload_v1" | "pg_binary_attr_v1" => Ok(()),
+        other => bail!(
+            "unsupported spire-pipeline remote_tuple_transport {:?}; supported: auto, json_tuple_payload_v1, pg_binary_attr_v1",
+            other
+        ),
     }
 }
 
@@ -2637,6 +3113,19 @@ fn shell_join(args: &[String]) -> String {
         })
         .collect::<Vec<_>>()
         .join(" ")
+}
+
+fn shell_join_with_pgoptions(args: &[String], pgoptions: Option<&str>) -> String {
+    let command = shell_join(args);
+    match pgoptions {
+        Some(pgoptions) if !pgoptions.is_empty() => {
+            format!(
+                "PGOPTIONS={} {command}",
+                shell_join(&[pgoptions.to_string()])
+            )
+        }
+        _ => command,
+    }
 }
 
 fn format_exit_status(status: ExitStatus) -> String {
@@ -2708,6 +3197,26 @@ mod tests {
             user: None,
             password: Some("secret".into()),
         }
+    }
+
+    #[test]
+    fn shell_join_with_pgoptions_renders_environment_prefix() {
+        let command = vec![
+            "--database".into(),
+            "postgres".into(),
+            "bench".into(),
+            "spire-pipeline".into(),
+        ];
+
+        let rendered = shell_join_with_pgoptions(
+            &command,
+            Some("-c ec_spire.remote_search_connection_pool_size=0"),
+        );
+
+        assert!(
+            rendered.starts_with("PGOPTIONS=\"-c ec_spire.remote_search_connection_pool_size=0\" ")
+        );
+        assert!(rendered.contains("bench spire-pipeline"));
     }
 
     #[test]
@@ -2850,6 +3359,7 @@ mod tests {
             force_index: None,
             truth_cache_file: Some("truth.json".into()),
             truth_cache_dir: None,
+            truth_corpus_file: Some("corpus.tsv".into()),
             log_output: Some("recall.log".into()),
             predictions_output: Some("predictions.json".into()),
         };
@@ -2859,6 +3369,9 @@ mod tests {
         assert!(args.contains(&"--force-index".into()));
         assert!(args.windows(2).any(|w| w == ["--sweep", "48,96"]));
         assert!(args.contains(&"--adaptive-nprobe".into()));
+        assert!(args
+            .windows(2)
+            .any(|w| w == ["--truth-corpus-file", "corpus.tsv"]));
         assert!(args
             .windows(2)
             .any(|w| w == ["--adaptive-nprobe-score-gap-micros", "1000"]));
@@ -3012,6 +3525,7 @@ mod tests {
         let step = LatencyStep {
             name: "latency".into(),
             tags: vec!["latency".into()],
+            pgoptions: None,
             prefix: "surface".into(),
             sweep: vec![64, 128],
             k: None,
@@ -3035,6 +3549,211 @@ mod tests {
         assert!(args
             .windows(2)
             .any(|w| w == ["--cache-state", "post_recall_warm"]));
+    }
+
+    #[test]
+    fn expands_spire_pipeline_with_production_profile() {
+        let defaults = SuiteDefaults {
+            queries_limit: Some(5),
+            ..SuiteDefaults::default()
+        };
+        let step = SpirePipelineStep {
+            name: "spire-profile".into(),
+            tags: vec!["spire".into(), "profile".into()],
+            pgoptions: None,
+            prefix: "aws_spire".into(),
+            index: Some("aws_spire_idx".into()),
+            queries_limit: None,
+            sweep: vec![3, 6],
+            rerank_width: Some(0),
+            max_candidate_rows: Some(1000),
+            adaptive_nprobe: Some(true),
+            adaptive_nprobe_score_gap_micros: Some(500),
+            include_remote: Some(true),
+            require_remote_placements: Some(true),
+            include_local_store_overlap: Some(false),
+            remote_selected_pids: vec![10, 11],
+            remote_requested_epoch: Some(1),
+            top_k: Some(10),
+            consistency_mode: Some("strict".into()),
+            remote_tuple_transport: Some("pg_binary_attr_v1".into()),
+            include_cost_snapshot: Some(true),
+            cost_routing_dimension_scale: Some(0.02),
+            cost_leaf_dimension_scale: None,
+            cost_index_page_scale: None,
+            cost_local_store_page_fanout_scale: None,
+            cost_storage_scoring_multiplier: None,
+            cost_rerank_multiplier: None,
+            include_query_metrics: Some(true),
+            include_recall: Some(true),
+            truth_corpus_file: Some("truth-corpus.tsv".into()),
+            include_production_read_profile: Some(true),
+            production_read_only: Some(true),
+            query_metric_k: Some(10),
+            query_metric_projection_columns: vec!["title".into()],
+            log_output: Some("spire-profile.log".into()),
+        };
+
+        let args = expand_spire_pipeline(&step, &defaults);
+        assert_eq!(args[..2], ["bench", "spire-pipeline"]);
+        assert!(args.windows(2).any(|w| w == ["--prefix", "aws_spire"]));
+        assert!(args.windows(2).any(|w| w == ["--index", "aws_spire_idx"]));
+        assert!(args.windows(2).any(|w| w == ["--queries-limit", "5"]));
+        assert!(args.windows(2).any(|w| w == ["--sweep", "3,6"]));
+        assert!(args.contains(&"--include-remote".into()));
+        assert!(args.contains(&"--require-remote-placements".into()));
+        assert!(args.contains(&"--include-production-read-profile".into()));
+        assert!(args.contains(&"--production-read-only".into()));
+        assert!(args
+            .windows(2)
+            .any(|w| w == ["--remote-selected-pids", "10,11"]));
+        assert!(args
+            .windows(2)
+            .any(|w| w == ["--remote-tuple-transport", "pg_binary_attr_v1"]));
+        assert!(args
+            .windows(2)
+            .any(|w| w == ["--query-metric-projection-columns", "title"]));
+        assert!(args
+            .windows(2)
+            .any(|w| w == ["--truth-corpus-file", "truth-corpus.tsv"]));
+        assert!(args
+            .windows(2)
+            .any(|w| w == ["--log-output", "spire-profile.log"]));
+    }
+
+    #[test]
+    fn artifact_dir_supplies_default_spire_pipeline_log_output() {
+        let mut config = SuiteConfig {
+            name: "aws-suite".into(),
+            schema_version: 1,
+            artifact_dir: Some("artifacts/aws".into()),
+            defaults: SuiteDefaults::default(),
+            thresholds: Vec::new(),
+            steps: vec![SuiteStep::SpirePipeline(SpirePipelineStep {
+                name: "profile k10".into(),
+                tags: Vec::new(),
+                pgoptions: None,
+                prefix: "aws_spire".into(),
+                index: None,
+                queries_limit: Some(10),
+                sweep: vec![8, 16],
+                rerank_width: None,
+                max_candidate_rows: None,
+                adaptive_nprobe: None,
+                adaptive_nprobe_score_gap_micros: None,
+                include_remote: Some(true),
+                require_remote_placements: Some(true),
+                include_local_store_overlap: None,
+                remote_selected_pids: Vec::new(),
+                remote_requested_epoch: None,
+                top_k: Some(10),
+                consistency_mode: None,
+                remote_tuple_transport: None,
+                include_cost_snapshot: None,
+                cost_routing_dimension_scale: None,
+                cost_leaf_dimension_scale: None,
+                cost_index_page_scale: None,
+                cost_local_store_page_fanout_scale: None,
+                cost_storage_scoring_multiplier: None,
+                cost_rerank_multiplier: None,
+                include_query_metrics: Some(true),
+                include_recall: Some(true),
+                truth_corpus_file: None,
+                include_production_read_profile: Some(true),
+                production_read_only: Some(true),
+                query_metric_k: Some(10),
+                query_metric_projection_columns: Vec::new(),
+                log_output: None,
+            })],
+        };
+
+        apply_default_artifact_logs(&mut config);
+        let SuiteStep::SpirePipeline(step) = &config.steps[0] else {
+            panic!("expected spire-pipeline step");
+        };
+        assert_eq!(
+            step.log_output.as_deref(),
+            Some(Path::new("artifacts/aws/profile_k10.log"))
+        );
+        assert_eq!(
+            config.steps[0].expected_artifacts(),
+            vec![PathBuf::from("artifacts/aws/profile_k10.log")]
+        );
+        let conn = ConnectionOptions {
+            database: "postgres".into(),
+            host: None,
+            port: None,
+            user: None,
+            password: None,
+        };
+        let args = config.steps[0]
+            .expand(&config.defaults, &conn)
+            .expect("spire-pipeline expansion should succeed");
+        assert!(args
+            .windows(2)
+            .any(|w| { w == ["--log-output", "artifacts/aws/profile_k10.log",] }));
+    }
+
+    #[test]
+    fn spire_pooling_gate_reports_not_justified_and_candidates() {
+        let rows = vec![
+            ResultRow {
+                suite: "suite".into(),
+                step: "profile".into(),
+                kind: "spire-pipeline".into(),
+                metric: "spire-pipeline".into(),
+                artifact: "profile.log".into(),
+                values: BTreeMap::from([
+                    ("nprobe".into(), "8".into()),
+                    ("latency_p95".into(), "10.000 ms".into()),
+                ]),
+            },
+            ResultRow {
+                suite: "suite".into(),
+                step: "profile".into(),
+                kind: "spire-pipeline".into(),
+                metric: "spire-pipeline".into(),
+                artifact: "profile.log".into(),
+                values: BTreeMap::from([
+                    ("nprobe".into(), "8".into()),
+                    ("connect_p50".into(), "0.500 ms".into()),
+                    ("connect_p95".into(), "1.000 ms".into()),
+                ]),
+            },
+            ResultRow {
+                suite: "suite".into(),
+                step: "profile".into(),
+                kind: "spire-pipeline".into(),
+                metric: "spire-pipeline".into(),
+                artifact: "profile.log".into(),
+                values: BTreeMap::from([
+                    ("nprobe".into(), "16".into()),
+                    ("latency_p95".into(), "10.000 ms".into()),
+                ]),
+            },
+            ResultRow {
+                suite: "suite".into(),
+                step: "profile".into(),
+                kind: "spire-pipeline".into(),
+                metric: "spire-pipeline".into(),
+                artifact: "profile.log".into(),
+                values: BTreeMap::from([
+                    ("nprobe".into(), "16".into()),
+                    ("connect_p50".into(), "1.200 ms".into()),
+                    ("connect_p95".into(), "1.600 ms".into()),
+                ]),
+            },
+        ];
+
+        let gate_rows = spire_pooling_gate_rows(&rows);
+        assert_eq!(gate_rows.len(), 2);
+        assert_eq!(gate_rows[0].decision(), "pooling_not_justified");
+        assert_eq!(gate_rows[1].decision(), "pooling_candidate");
+        let report =
+            render_spire_pooling_gate_section(&rows).expect("pooling gate section should render");
+        assert!(report.contains("connect_p95/read_p95"));
+        assert!(report.contains("pooling_not_justified"));
+        assert!(report.contains("pooling_candidate"));
     }
 
     #[test]
@@ -3095,6 +3814,7 @@ mod tests {
             force_index: None,
             truth_cache_file: None,
             truth_cache_dir: None,
+            truth_corpus_file: None,
             log_output: None,
             predictions_output: None,
         });

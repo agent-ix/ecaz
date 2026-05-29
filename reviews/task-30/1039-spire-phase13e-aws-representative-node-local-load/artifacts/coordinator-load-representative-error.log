@@ -1,0 +1,5 @@
+Script started on 2026-05-27 19:04:21-07:00 [<not executed on terminal>]
+download failed: s3://ecaz-spire-aws-20260528002751517400000007/representative-load/representative/coordinator/ec_real_100k_corpus.tsv to ../../tmp/ecaz-spire-aws-representative-coordinator/ec_real_100k_corpus.tsv [Errno 28] No space left on device
+failed to run commands: exit status 1
+
+Script done on 2026-05-27 19:04:21-07:00 [COMMAND_EXIT_CODE="0"]

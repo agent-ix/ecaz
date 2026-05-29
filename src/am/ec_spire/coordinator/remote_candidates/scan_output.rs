@@ -184,11 +184,15 @@ pub(crate) fn remote_search_production_scan_handoff_summary_row(
             root_control.active_epoch,
             &dispatch_rows,
         );
+        let parsed_consistency_mode = parse_remote_search_consistency_mode(consistency_mode)?;
+        if parsed_consistency_mode == meta::SpireConsistencyMode::Degraded {
+            executor.apply_blocked_before_dispatch_degraded_skips();
+        }
         executor.mark_planned_dispatches_candidate_receive_ready();
         executor.run_compact_candidate_receive(&query, top_k, consistency_mode)?;
         let summary = executor.summary(
             "ec_spire.remote_search_consistency_mode",
-            consistency_mode_name(parse_remote_search_consistency_mode(consistency_mode)?),
+            consistency_mode_name(parsed_consistency_mode),
         )?;
         let should_merge = matches!(
             summary.status,
@@ -382,17 +386,67 @@ fn production_scan_result_stream(
 struct SpireRemoteProductionProfiledScanResult {
     stream: SpireRemoteProductionScanResultStream,
     metrics: SpireRemoteProductionReadMetrics,
+    timeline: Vec<SpireRemoteProductionReadTimelineRow>,
 }
 
 fn production_profiled_scan_result_stream(
     summary: SpireRemoteProductionScanHeapResolutionSummaryRow,
     outputs: Vec<SpireRemoteProductionScanOutputRow>,
     metrics: SpireRemoteProductionReadMetrics,
+    timeline: Vec<SpireRemoteProductionReadTimelineRow>,
 ) -> Result<SpireRemoteProductionProfiledScanResult, String> {
     Ok(SpireRemoteProductionProfiledScanResult {
         stream: production_scan_result_stream(summary, outputs)?,
         metrics,
+        timeline,
     })
+}
+
+fn production_read_timeline_rows(
+    requested_epoch: u64,
+    result: &SpireRemoteProductionCandidateAndHeapResult,
+) -> Vec<SpireRemoteProductionReadTimelineRow> {
+    let mut rows = Vec::new();
+    rows.extend(
+        result
+            .candidate_results
+            .iter()
+            .map(|result| SpireRemoteProductionReadTimelineRow {
+                requested_epoch,
+                phase: "candidate_receive",
+                node_id: result.node_id,
+                started_after_ms: result.started_after_ms,
+                completed_after_ms: result.completed_after_ms,
+                elapsed_ms: result.elapsed_ms,
+                candidate_count: result.candidate_count,
+                status: result.status,
+                failure_category: result.failure_category,
+            }),
+    );
+    rows.extend(
+        result
+            .heap_results
+            .iter()
+            .map(|result| SpireRemoteProductionReadTimelineRow {
+                requested_epoch,
+                phase: "heap_receive",
+                node_id: result.node_id,
+                started_after_ms: result.started_after_ms,
+                completed_after_ms: result.completed_after_ms,
+                elapsed_ms: result.elapsed_ms,
+                candidate_count: result.candidate_count,
+                status: result.status,
+                failure_category: result.failure_category,
+            }),
+    );
+    rows.sort_by(|left, right| {
+        left.started_after_ms
+            .cmp(&right.started_after_ms)
+            .then_with(|| left.completed_after_ms.cmp(&right.completed_after_ms))
+            .then_with(|| left.phase.cmp(&right.phase))
+            .then_with(|| left.node_id.cmp(&right.node_id))
+    });
+    rows
 }
 
 fn production_read_profile_row(
@@ -499,6 +553,7 @@ fn remote_search_production_scan_heap_resolution_result_stream_impl(
             },
             Vec::new(),
             metrics,
+            Vec::new(),
         );
     }
 
@@ -569,6 +624,7 @@ fn remote_search_production_scan_heap_resolution_result_stream_impl(
             },
             Vec::new(),
             metrics,
+            Vec::new(),
         );
     }
 
@@ -609,17 +665,22 @@ fn remote_search_production_scan_heap_resolution_result_stream_impl(
         root_control.active_epoch,
         &dispatch_rows,
     );
+    let parsed_consistency_mode = parse_remote_search_consistency_mode(consistency_mode)?;
+    if parsed_consistency_mode == meta::SpireConsistencyMode::Degraded {
+        executor.apply_blocked_before_dispatch_degraded_skips();
+    }
     executor.mark_planned_dispatches_candidate_receive_ready();
-    executor.run_candidate_and_heap_receive_reusing_sessions(
+    let fanout_result = executor.run_candidate_and_heap_receive_reusing_sessions(
         &query,
         top_k,
         consistency_mode,
         tuple_payload_columns,
         &mut metrics,
     )?;
+    let timeline = production_read_timeline_rows(root_control.active_epoch, &fanout_result);
     let executor_summary = executor.summary(
         "ec_spire.remote_search_consistency_mode",
-        consistency_mode_name(parse_remote_search_consistency_mode(consistency_mode)?),
+        consistency_mode_name(parsed_consistency_mode),
     );
     let executor_summary = executor_summary?;
     let (
@@ -681,7 +742,9 @@ fn remote_search_production_scan_heap_resolution_result_stream_impl(
     } else if returned_candidate_count > 0 {
         (
             SPIRE_REMOTE_NONE,
-            if execution_summary.skipped_pid_count > 0 {
+            if execution_summary.skipped_pid_count > 0
+                || executor_summary.degraded_skipped_dispatch_count > 0
+            {
                 SPIRE_REMOTE_STATUS_DEGRADED_READY
             } else {
                 SPIRE_REMOTE_STATUS_READY
@@ -723,6 +786,7 @@ fn remote_search_production_scan_heap_resolution_result_stream_impl(
         },
         production_scan_outputs_from_heap_candidates(&merged),
         metrics,
+        timeline,
     )
 }
 
@@ -793,6 +857,21 @@ pub(crate) fn remote_search_production_read_profile_row(
     );
     let profiled = result.unwrap_or_else(|e| pgrx::error!("{e}"));
     production_read_profile_row(&profiled.stream.summary, &profiled.metrics)
+}
+
+pub(crate) fn remote_search_production_read_timeline_rows(
+    index: SpireLiveIndexRelation,
+    query: Vec<f32>,
+    top_k: usize,
+    tuple_payload_columns: &[String],
+) -> Vec<SpireRemoteProductionReadTimelineRow> {
+    let result = remote_search_production_scan_heap_resolution_result_stream_impl(
+        index,
+        query,
+        Some(top_k),
+        Some(tuple_payload_columns),
+    );
+    result.unwrap_or_else(|e| pgrx::error!("{e}")).timeline
 }
 
 pub(crate) fn remote_search_operator_diagnostics_row(

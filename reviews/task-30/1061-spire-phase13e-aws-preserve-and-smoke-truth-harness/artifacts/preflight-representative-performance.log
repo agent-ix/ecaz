@@ -1,0 +1,5 @@
+Script started on 2026-05-28 16:38:04-07:00 [<not executed on terminal>]
+make: *** [Makefile:8: pass-correctness-body] Error 42
+SPIRE representative performance preflight passed: priority=/home/peter/dev/ecaz/scripts/spire-aws/suite-representative-priority.json pooling=/home/peter/dev/ecaz/scripts/spire-aws/suite-representative-pooling.json
+
+Script done on 2026-05-28 16:38:15-07:00 [COMMAND_EXIT_CODE="0"]

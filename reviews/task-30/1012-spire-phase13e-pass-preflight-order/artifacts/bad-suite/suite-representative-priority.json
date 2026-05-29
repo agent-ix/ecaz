@@ -1,0 +1,99 @@
+{
+  "name": "spire-aws-representative-priority",
+  "schema_version": 1,
+  "artifact_dir": "scripts/spire-aws/artifacts/representative-priority",
+  "defaults": {
+    "profile": "ec_spire",
+    "bits": 4,
+    "seed": 42,
+    "pg": 18
+  },
+  "steps": [
+    {
+      "kind": "recall",
+      "name": "13a3a-recall-k10",
+      "prefix": "ec_spire_aws_repr_1m",
+      "k": 10,
+      "sweep": [8, 16, 24, 32],
+      "queries_limit": 1000
+    },
+    {
+      "kind": "recall",
+      "name": "13a3a-recall-k100",
+      "prefix": "ec_spire_aws_repr_1m",
+      "k": 100,
+      "sweep": [8, 16, 24, 32],
+      "queries_limit": 1000
+    },
+    {
+      "kind": "latency",
+      "name": "13a3a-latency-k10-c1",
+      "prefix": "ec_spire_aws_repr_1m",
+      "k": 10,
+      "sweep": [8, 16, 24, 32],
+      "concurrency": 1,
+      "iterations": 1000
+    },
+    {
+      "kind": "latency",
+      "name": "13a3a-latency-k10-c4",
+      "prefix": "ec_spire_aws_repr_1m",
+      "k": 10,
+      "sweep": [8, 16, 24, 32],
+      "concurrency": 4,
+      "iterations": 1000
+    },
+    {
+      "kind": "latency",
+      "name": "13a3a-latency-k10-c8",
+      "prefix": "ec_spire_aws_repr_1m",
+      "k": 10,
+      "sweep": [8, 16, 24, 32],
+      "concurrency": 8,
+      "iterations": 1000
+    },
+    {
+      "kind": "latency",
+      "name": "13a3f-pk-c32",
+      "prefix": "ec_spire_aws_repr_1m",
+      "k": 1,
+      "sweep": [32],
+      "concurrency": 32,
+      "iterations": 5000
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "13e3-production-read-profile-k10",
+      "tags": ["phase13e", "production-read-profile"],
+      "prefix": "ec_spire_aws_repr_1m",
+      "queries_limit": 1000,
+      "sweep": [8, 16, 24, 32],
+      "top_k": 10,
+      "include_remote": true,
+      "require_remote_placements": true,
+      "include_query_metrics": true,
+      "include_recall": true,
+      "include_production_read_profile": true,
+      "production_read_only": true,
+      "query_metric_k": 10,
+      "query_metric_projection_columns": ["id"]
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "13e3-production-read-profile-k100",
+      "tags": ["phase13e", "production-read-profile"],
+      "prefix": "ec_spire_aws_repr_1m",
+      "queries_limit": 1000,
+      "sweep": [8, 16, 24, 32],
+      "top_k": 100,
+      "include_remote": true,
+      "require_remote_placements": true,
+      "include_query_metrics": true,
+      "include_recall": true,
+      "include_production_read_profile": true,
+      "production_read_only": true,
+      "query_metric_k": 100,
+      "query_metric_projection_columns": ["id"]
+    }
+  ]
+}

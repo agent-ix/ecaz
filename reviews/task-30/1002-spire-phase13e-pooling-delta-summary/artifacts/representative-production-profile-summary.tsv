@@ -1,0 +1,5 @@
+step	nprobe	profiles	status	result_source	dispatch_sum	socket_open_sum	connect_p50	connect_p95	candidate_p50	candidate_p95	heap_p50	heap_p95	merge_p50	merge_p95	total_p50	total_p95	timeout_sum	cancel_sum	degraded_skip_sum	returned_sum
+13e3-production-read-profile-k10	8	100	ready	remote_heap_candidates	285	0	0.000 ms	0.000 ms	1.000 ms	2.000 ms	1.000 ms	1.000 ms	0.000 ms	0.000 ms	29.000 ms	29.000 ms	0	0	0	1000
+13e3-production-read-profile-k10	16	100	ready	remote_heap_candidates	299	0	0.000 ms	0.000 ms	3.000 ms	3.000 ms	2.000 ms	3.000 ms	0.000 ms	0.000 ms	29.000 ms	30.000 ms	0	0	0	1000
+13e3-production-read-profile-k10	24	100	ready	remote_heap_candidates	300	0	0.000 ms	0.000 ms	3.000 ms	3.000 ms	3.000 ms	3.000 ms	0.000 ms	0.000 ms	30.000 ms	31.000 ms	0	0	0	1000
+13e3-production-read-profile-k10	32	100	ready	remote_heap_candidates	300	0	0.000 ms	0.000 ms	3.000 ms	4.000 ms	3.000 ms	4.000 ms	0.000 ms	0.000 ms	31.000 ms	32.000 ms	0	0	0	1000

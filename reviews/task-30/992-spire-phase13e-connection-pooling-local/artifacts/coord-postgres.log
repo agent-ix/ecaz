@@ -1,0 +1,16 @@
+2026-05-26 11:33:35.090 PDT [2464037] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-05-26 11:33:35.092 PDT [2464037] LOG:  listening on Unix socket "/home/peter/dev/ecaz/target/spire-phase13e-aws-local-sockets-20260526T183219Z/.s.PGSQL.39700"
+2026-05-26 11:33:35.098 PDT [2464043] LOG:  database system was shut down at 2026-05-26 11:33:30 PDT
+2026-05-26 11:33:35.102 PDT [2464037] LOG:  database system is ready to accept connections
+2026-05-26 11:34:35.209 PDT [2464770] LOG:  skipping vacuum of "ec_spire_aws_synth_10k_corpus" --- lock not available
+2026-05-26 11:35:05.221 PDT [2465069] LOG:  skipping vacuum of "ec_spire_aws_synth_10k_corpus" --- lock not available
+2026-05-26 11:36:05.311 PDT [2465654] LOG:  skipping vacuum of "ec_spire_aws_synth_10k_corpus" --- lock not available
+2026-05-26 11:38:35.150 PDT [2464041] LOG:  checkpoint starting: time
+2026-05-26 11:38:39.207 PDT [2464037] LOG:  received fast shutdown request
+2026-05-26 11:38:39.211 PDT [2464037] LOG:  aborting any active transactions
+2026-05-26 11:38:39.212 PDT [2464037] LOG:  background worker "logical replication launcher" (PID 2464046) exited with exit code 1
+2026-05-26 11:38:39.315 PDT [2464041] LOG:  checkpoint complete: wrote 6015 buffers (36.7%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 9 recycled; write=4.093 s, sync=0.044 s, total=4.166 s; sync files=163, longest=0.002 s, average=0.001 s; distance=148878 kB, estimate=148878 kB; lsn=0/A8B84D8, redo lsn=0/A8B7F08
+2026-05-26 11:38:39.315 PDT [2464041] LOG:  shutting down
+2026-05-26 11:38:39.317 PDT [2464041] LOG:  checkpoint starting: shutdown immediate
+2026-05-26 11:38:39.327 PDT [2464041] LOG:  checkpoint complete: wrote 0 buffers (0.0%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.002 s, sync=0.001 s, total=0.013 s; sync files=1, longest=0.001 s, average=0.001 s; distance=1 kB, estimate=133990 kB; lsn=0/A8B8550, redo lsn=0/A8B8550
+2026-05-26 11:38:39.348 PDT [2464037] LOG:  database system is shut down

@@ -1,0 +1,19 @@
+region            = "us-west-2"
+availability_zone = "us-west-2a"
+
+# Amazon Linux 2023 arm64 AMI for the chosen region; pick the latest patched id.
+ami_id = "ami-0123456789abcdef0"
+
+owner        = "your-gh-handle"
+auto_stop_at = "2026-05-28T21:08:52Z"
+
+# Optional: leave null for Session-Manager-only access.
+# key_name = "ecaz-spire-aws-ops"
+
+# Defaults below match the established Phase 13e Graviton/aarch64 lane.
+# Do not substitute r6i/x86 for SPIRE AWS verification evidence.
+# coordinator_instance_type = "m7g.large"
+# remote_instance_type      = "m7g.large"
+# remote_count              = 3
+# coordinator_storage_gb    = 200
+# remote_storage_gb         = 100

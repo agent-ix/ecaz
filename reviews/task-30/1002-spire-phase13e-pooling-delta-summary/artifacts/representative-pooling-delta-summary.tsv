@@ -1,0 +1,5 @@
+nprobe	disabled_profiles_or_queries	enabled_profiles_or_queries	disabled_socket_open_sum	enabled_socket_open_sum	socket_open_delta	socket_open_reduction_pct	disabled_connect_p95_ms	enabled_connect_p95_ms	connect_p95_delta_ms	disabled_total_p95_ms	enabled_total_p95_ms	total_p95_delta_ms	disabled_latency_p95_ms	enabled_latency_p95_ms	latency_p95_delta_ms	latency_p95_reduction_pct	disabled_recall_at_k	enabled_recall_at_k	recall_delta
+8	100	100	0	0	0		0	0	0	29	29	0	78.168	78.168	0	0	0.24	0.24	0
+16	100	100	0	0	0		0	0	0	30	30	0	76.191	76.191	0	0	0.353	0.353	0
+24	100	100	0	0	0		0	0	0	31	31	0	79.924	79.924	0	0	0.448	0.448	0
+32	100	100	0	0	0		0	0	0	32	32	0	79.863	79.863	0	0	0.518	0.518	0
