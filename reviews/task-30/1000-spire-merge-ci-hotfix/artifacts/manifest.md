@@ -1,9 +1,9 @@
 # Manifest: SPIRE Merge CI Hotfix
 
-- head SHA: `3e6395fa3e0f44e6aa826b956c445acbe61a26bb`
+- head SHA: `7854ff96cf37b410ca417a01fbfe976f6fc05b9c`
 - task bucket: `reviews/task-30`
 - packet path: `reviews/task-30/1000-spire-merge-ci-hotfix`
-- timestamp: `2026-05-29T20:08:34Z`
+- timestamp: `2026-05-29T20:13:54Z`
 - lane: post-merge CI stabilization
 - fixture/storage/rerank mode: not applicable
 - isolated one-index-per-table or shared-table surface: not applicable
@@ -38,3 +38,5 @@
 | `ci-host-test-routing-diff-check.log` | `git diff --check` | no whitespace errors in the host-test routing workflow fix |
 | `cargo-test-host-side-crates.log` | `cargo test -p ecaz-cloud -p ecaz-fault-injection -p ecaz-sqlgen` | `12 passed; 0 failed` across host-side crate unit tests |
 | `cargo-test-no-run-pg18-host-routing.log` | `cargo test --no-run --no-default-features --features pg18` | extension test binaries compiled without host execution |
+| `ci-spire-stage-e-remote-timeout-run-dir-cache-collision.log` | `gh api /repos/agent-ix/ecaz/actions/jobs/78578784924/logs` | Stage E `remote_statement_timeout` refused to reuse a cached `target/spire-stage-e-transport-fault-pg18-ci-remote_statement_timeout` run directory |
+| `ci-spire-stage-e-run-id-unique-diff-check.log` | `git diff --check` | no whitespace errors in the unique Stage E CI run-id fix |
