@@ -1,0 +1,28 @@
+--- hardening/careful/src/../../../src/quant/rabitq.rs
++++ replace RaBitQQuantizer::prepare_estimator -> PreparedEstimator with Default::default()
+@@ -474,24 +474,17 @@
+ }
+ 
+ impl RaBitQQuantizer {
+     /// Prepare the estimator state for `query`. The returned
+     /// `PreparedEstimator` holds the rotated query coordinates in
+     /// full f32 precision (the asymmetric half of the estimator) and
+     /// the query's L2 norm.
+     pub fn prepare_estimator(&self, query: &[f32]) -> PreparedEstimator {
+-        let rotated = self.rotated(query);
+-        let norm = l2_norm(&rotated);
+-        PreparedEstimator {
+-            query_rotated: rotated,
+-            query_norm: norm,
+-            dimensions: self.dimensions,
+-            bits_per_dim: self.bits_per_dim,
+-        }
++        Default::default() /* ~ changed by cargo-mutants ~ */
+     }
+ 
+     /// Paper-faithful RaBitQ inner-product estimate between
+     /// `prepared` and a code, plus an ε-concentration bound at
+     /// ~99% confidence (see [`RABITQ_BOUND_CONFIDENCE`]). The
+     /// formula is unified across `bits_per_dim`; the bound
+     /// formula remains the q=1 Gaussian-tail form and is
+     /// conservative (loose) at q>1.

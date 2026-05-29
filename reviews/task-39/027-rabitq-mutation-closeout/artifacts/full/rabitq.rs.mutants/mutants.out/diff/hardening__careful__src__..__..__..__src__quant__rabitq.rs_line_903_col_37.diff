@@ -1,0 +1,21 @@
+--- hardening/careful/src/../../../src/quant/rabitq.rs
++++ replace != with == in sign_words_from_packed_4bit
+@@ -895,17 +895,17 @@
+         }
+         dim_index += 1;
+ 
+         if dim_index >= dim {
+             break;
+         }
+ 
+         let high_nibble = (packed >> 4) as usize;
+-        if sign_lookup[high_nibble] != 0 {
++        if sign_lookup[high_nibble] == /* ~ changed by cargo-mutants ~ */ 0 {
+             words[dim_index / 64] |= 1_u64 << (dim_index % 64);
+         }
+         dim_index += 1;
+     }
+ 
+     words
+ }
+ 

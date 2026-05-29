@@ -1,0 +1,23 @@
+--- hardening/careful/src/../../../src/quant/rabitq.rs
++++ replace RaBitQQuantizer::packed_bytes -> usize with 0
+@@ -373,19 +373,17 @@
+ 
+     pub fn bits_per_dim(&self) -> u8 {
+         self.bits_per_dim
+     }
+ 
+     /// Number of bytes in the packed-levels portion of a code.
+     /// At `bits = 1` this is `⌈D/8⌉`; generalizes as `⌈D·bits/8⌉`.
+     pub fn packed_bytes(&self) -> usize {
+-        code_len_for(self.dimensions, self.bits_per_dim)
+-            .expect("validated RaBitQ bits should have a code length")
+-            - RABITQ_SCALAR_LEN
++        0 /* ~ changed by cargo-mutants ~ */
+     }
+ 
+     /// Retained for slice-1 / slice-2 call-site compatibility —
+     /// returns [`Self::packed_bytes`] since the canonical
+     /// `bits = 1` shape has one sign bit per dim.
+     pub fn sign_bytes(&self) -> usize {
+         self.packed_bytes()
+     }

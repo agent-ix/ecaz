@@ -1,0 +1,32 @@
+--- hardening/careful/src/../../../src/quant/rabitq.rs
++++ replace RaBitQQuantizer::prepare_center -> CenterContext with Default::default()
+@@ -519,28 +519,17 @@
+     // ---------------------------------------------------------------
+ 
+     /// Precompute the rotation of `center` once per vertex at index-
+     /// build time. The returned [`CenterContext`] is what both
+     /// [`Self::encode_code_centered`] (for each of that vertex's
+     /// neighbors) and [`CenteredScorer::score_at`] (at each
+     /// beam-search visit) consume.
+     pub fn prepare_center(&self, center: &[f32]) -> CenterContext {
+-        assert_eq!(
+-            center.len(),
+-            self.dimensions,
+-            "center length mismatch: got {}, expected {}",
+-            center.len(),
+-            self.dimensions,
+-        );
+-        let rotated = self.rotated(center);
+-        CenterContext {
+-            rotated,
+-            raw: center.to_vec(),
+-        }
++        Default::default() /* ~ changed by cargo-mutants ~ */
+     }
+ 
+     /// Encode `v` as the unit-normalized rotated residual against
+     /// `center`. Code layout at `bits = 1`:
+     ///
+     /// ```text
+     /// [sign bits: ⌈D/8⌉ B][||v − c|| : 4 B][o_dot : 4 B][center_dot : 4 B]
+     /// ```

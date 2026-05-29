@@ -1,0 +1,21 @@
+--- hardening/careful/src/../../../src/quant/rabitq.rs
++++ replace / with % in quantize_level
+@@ -998,17 +998,17 @@
+             (1, 1.0)
+         } else {
+             (0, -1.0)
+         }
+     } else {
+         let levels = 1_u32 << bits;
+         let c = RABITQ_QUANT_CLIP;
+         let scaled = o_hat_i * sqrt_d;
+-        let t = ((scaled + c) / RABITQ_QUANT_RANGE).clamp(0.0, 1.0);
++        let t = ((scaled + c) % /* ~ changed by cargo-mutants ~ */ RABITQ_QUANT_RANGE).clamp(0.0, 1.0);
+         let level = ((t * levels as f32) as u32).min(levels - 1);
+         // Bin center, mapped back to unit-vector scale.
+         let center_scaled = (level as f32 + 0.5) / levels as f32 * RABITQ_QUANT_RANGE - c;
+         let dequant = center_scaled / sqrt_d;
+         (level, dequant)
+     }
+ }
+ 

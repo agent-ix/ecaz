@@ -1,0 +1,21 @@
+--- hardening/careful/src/../../../src/quant/rabitq.rs
++++ replace >> with << in CenteredScorer::score_at
+@@ -728,17 +728,17 @@
+ 
+         // ⟨x̄, q_tilde⟩ = (1/√D) · Σ q_tilde_i · sign(r_i). The
+         // per-neighbor hot loop in Stage 3 will replace this with
+         // FastScan / signed POPCNT kernels; scalar form here is
+         // the correctness reference.
+         let mut sum_q_sign = 0.0_f32;
+         for i in 0..self.dimensions {
+             let byte = code[i / 8];
+-            let bit = (byte >> (i % 8)) & 1;
++            let bit = (byte << /* ~ changed by cargo-mutants ~ */ (i % 8)) & 1;
+             if bit == 1 {
+                 sum_q_sign += self.query_rotated[i];
+             } else {
+                 sum_q_sign -= self.query_rotated[i];
+             }
+         }
+         let sqrt_d = (self.dimensions as f32).sqrt();
+         let query_dot_code = sum_q_sign / sqrt_d;

@@ -1,0 +1,30 @@
+--- hardening/careful/src/../../../src/quant/rabitq.rs
++++ replace binary_sign_lookup_4bit -> [u8; 16] with [1; 16]
+@@ -921,26 +921,17 @@
+     let distance_i32 = i32::try_from(hamming_distance).expect("hamming distance should fit in i32");
+     (dim_i32 - (2 * distance_i32)) as f32
+ }
+ 
+ /// Sign lookup for a 4-bit, 16-entry MSE codebook. Used by
+ /// [`sign_words_from_packed_4bit`] to translate a packed code index
+ /// into a sign bit.
+ pub(crate) fn binary_sign_lookup_4bit(codebook: &[f32]) -> [u8; 16] {
+-    assert_eq!(
+-        codebook.len(),
+-        16,
+-        "binary sign lookup requires a 16-entry 4-bit codebook"
+-    );
+-    let mut signs = [0_u8; 16];
+-    for (index, value) in codebook.iter().copied().enumerate() {
+-        signs[index] = u8::from(value >= 0.0);
+-    }
+-    signs
++    [1; 16] /* ~ changed by cargo-mutants ~ */
+ }
+ 
+ // ---------------------------------------------------------------------------
+ // Persisted-sidecar helpers — moved from `src/am/common/training.rs`
+ // in slice 2. AM callers now reach into this module directly.
+ // ---------------------------------------------------------------------------
+ 
+ /// Number of `u64` words a per-vector sidecar occupies for this

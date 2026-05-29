@@ -1,0 +1,81 @@
+
+*** hardening/careful/src/../../../src/quant/rabitq.rs:355:9: replace RaBitQQuantizer::with_srht_bits -> Result<Self, String> with Ok(Default::default())
+
+*** mutation diff:
+--- hardening/careful/src/../../../src/quant/rabitq.rs
++++ replace RaBitQQuantizer::with_srht_bits -> Result<Self, String> with Ok(Default::default())
+@@ -347,18 +347,17 @@
+     }
+ 
+     /// Like [`Self::with_srht`] but at a specific `bits_per_dim`.
+     pub fn with_srht_bits(
+         dimensions: usize,
+         prod: Arc<ProdQuantizer>,
+         bits: u8,
+     ) -> Result<Self, String> {
+-        let rotation: Arc<dyn Rotation> = Arc::new(SrhtRotation::new(dimensions, prod));
+-        Self::with_bits(rotation, bits)
++        Ok(Default::default()) /* ~ changed by cargo-mutants ~ */
+     }
+ 
+     /// Convenience: build a RaBitQ quantizer with a freshly-seeded
+     /// SRHT rotation (no `ProdQuantizer` dependency). Recommended
+     /// for prod call sites where the seed is recorded in the
+     /// index metadata so different indexes get independent rotations.
+     pub fn with_seeded_srht_bits(dimensions: usize, seed: u64, bits: u8) -> Result<Self, String> {
+         #[cfg(test)]
+
+
+*** cargo test --no-run --verbose --package=ecaz-careful-hardening@0.1.0
+       Fresh cfg-if v1.0.4
+       Fresh allocator-api2 v0.2.21
+       Fresh equivalent v1.0.2
+       Fresh foldhash v0.1.5
+       Fresh libc v0.2.186
+       Fresh hashbrown v0.15.5
+       Fresh zerocopy v0.8.48
+       Fresh getrandom v0.2.17
+       Fresh ppv-lite86 v0.2.21
+       Fresh rand_core v0.6.4
+       Fresh rand_chacha v0.3.1
+       Fresh rand v0.8.6
+       Dirty ecaz-careful-hardening v0.1.0 (/private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-7b9noS.tmp/hardening/careful): couldn't read metadata for file `target/debug/deps/libecaz_careful_hardening-48cfc8e37a0985df.rlib`
+   Compiling ecaz-careful-hardening v0.1.0 (/private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-7b9noS.tmp/hardening/careful)
+     Running `rustc --crate-name ecaz_careful_hardening --edition=2021 hardening/careful/src/lib.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --crate-type lib --emit=dep-info,metadata,link -C linker-plugin-lto -C debuginfo=2 -C split-debuginfo=unpacked --check-cfg 'cfg(docsrs,test)' --check-cfg 'cfg(feature, values("bench", "pg17", "pg18", "pg_test"))' -C metadata=f055a7a7910e821f -C extra-filename=-48cfc8e37a0985df --out-dir /private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-7b9noS.tmp/target/debug/deps -C incremental=/private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-7b9noS.tmp/target/debug/incremental -L dependency=/private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-7b9noS.tmp/target/debug/deps --extern hashbrown=/private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-7b9noS.tmp/target/debug/deps/libhashbrown-a11478429b79192f.rmeta --extern rand=/private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-7b9noS.tmp/target/debug/deps/librand-d3f4ad8ecd072b17.rmeta --extern rand_chacha=/private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-7b9noS.tmp/target/debug/deps/librand_chacha-3b2dcfba3561f35f.rmeta -C target-cpu=native -C link-arg=-undefined -C link-arg=dynamic_lookup`
+     Running `rustc --crate-name ecaz_careful_hardening --edition=2021 hardening/careful/src/lib.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --emit=dep-info,link -C lto=thin -C debuginfo=2 -C split-debuginfo=unpacked --test --check-cfg 'cfg(docsrs,test)' --check-cfg 'cfg(feature, values("bench", "pg17", "pg18", "pg_test"))' -C metadata=fea95cb08e562e2e -C extra-filename=-3bca8b65b65b7ce7 --out-dir /private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-7b9noS.tmp/target/debug/deps -C incremental=/private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-7b9noS.tmp/target/debug/incremental -L dependency=/private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-7b9noS.tmp/target/debug/deps --extern hashbrown=/private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-7b9noS.tmp/target/debug/deps/libhashbrown-a11478429b79192f.rlib --extern rand=/private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-7b9noS.tmp/target/debug/deps/librand-d3f4ad8ecd072b17.rlib --extern rand_chacha=/private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-7b9noS.tmp/target/debug/deps/librand_chacha-3b2dcfba3561f35f.rlib -C target-cpu=native -C link-arg=-undefined -C link-arg=dynamic_lookup`
+error[E0277]: the trait bound `RaBitQQuantizer: Default` is not satisfied
+   --> hardening/careful/src/../../../src/quant/rabitq.rs:355:12
+    |
+355 |         Ok(Default::default()) /* ~ changed by cargo-mutants ~ */
+    |            ^^^^^^^^^^^^^^^^^^ unsatisfied trait bound
+    |
+help: the trait `Default` is not implemented for `RaBitQQuantizer`
+   --> hardening/careful/src/../../../src/quant/rabitq.rs:285:1
+    |
+285 | pub struct RaBitQQuantizer {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+For more information about this error, try `rustc --explain E0277`.
+error: could not compile `ecaz-careful-hardening` (lib) due to 1 previous error
+
+Caused by:
+  process didn't exit successfully: `rustc --crate-name ecaz_careful_hardening --edition=2021 hardening/careful/src/lib.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --crate-type lib --emit=dep-info,metadata,link -C linker-plugin-lto -C debuginfo=2 -C split-debuginfo=unpacked --check-cfg 'cfg(docsrs,test)' --check-cfg 'cfg(feature, values("bench", "pg17", "pg18", "pg_test"))' -C metadata=f055a7a7910e821f -C extra-filename=-48cfc8e37a0985df --out-dir /private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-7b9noS.tmp/target/debug/deps -C incremental=/private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-7b9noS.tmp/target/debug/incremental -L dependency=/private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-7b9noS.tmp/target/debug/deps --extern hashbrown=/private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-7b9noS.tmp/target/debug/deps/libhashbrown-a11478429b79192f.rmeta --extern rand=/private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-7b9noS.tmp/target/debug/deps/librand-d3f4ad8ecd072b17.rmeta --extern rand_chacha=/private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-7b9noS.tmp/target/debug/deps/librand_chacha-3b2dcfba3561f35f.rmeta -C target-cpu=native -C link-arg=-undefined -C link-arg=dynamic_lookup` (exit status: 1)
+warning: build failed, waiting for other jobs to finish...
+error[E0277]: the trait bound `rabitq::RaBitQQuantizer: Default` is not satisfied
+   --> hardening/careful/src/../../../src/quant/rabitq.rs:355:12
+    |
+355 |         Ok(Default::default()) /* ~ changed by cargo-mutants ~ */
+    |            ^^^^^^^^^^^^^^^^^^ unsatisfied trait bound
+    |
+help: the trait `Default` is not implemented for `rabitq::RaBitQQuantizer`
+   --> hardening/careful/src/../../../src/quant/rabitq.rs:285:1
+    |
+285 | pub struct RaBitQQuantizer {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: could not compile `ecaz-careful-hardening` (lib test) due to 1 previous error
+
+Caused by:
+  process didn't exit successfully: `rustc --crate-name ecaz_careful_hardening --edition=2021 hardening/careful/src/lib.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --emit=dep-info,link -C lto=thin -C debuginfo=2 -C split-debuginfo=unpacked --test --check-cfg 'cfg(docsrs,test)' --check-cfg 'cfg(feature, values("bench", "pg17", "pg18", "pg_test"))' -C metadata=fea95cb08e562e2e -C extra-filename=-3bca8b65b65b7ce7 --out-dir /private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-7b9noS.tmp/target/debug/deps -C incremental=/private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-7b9noS.tmp/target/debug/incremental -L dependency=/private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-7b9noS.tmp/target/debug/deps --extern hashbrown=/private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-7b9noS.tmp/target/debug/deps/libhashbrown-a11478429b79192f.rlib --extern rand=/private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-7b9noS.tmp/target/debug/deps/librand-d3f4ad8ecd072b17.rlib --extern rand_chacha=/private/var/folders/0n/3kslqxjj7jv57nm5n4jg1sr40000gn/T/cargo-mutants-tqvector-7b9noS.tmp/target/debug/deps/librand_chacha-3b2dcfba3561f35f.rlib -C target-cpu=native -C link-arg=-undefined -C link-arg=dynamic_lookup` (exit status: 1)
+
+*** result: Failure(101)

@@ -1,0 +1,21 @@
+--- hardening/careful/src/../../../src/quant/rabitq.rs
++++ replace || with && in CenteredScorer::score_at
+@@ -758,17 +758,17 @@
+         //
+         // RaBitQ estimator (residual unit vectors):
+         //   ⟨q_unit_res, o_unit_res⟩ ≈ ⟨x̄, q_tilde_unit⟩ / o_dot
+         const O_DOT_FLOOR: f32 = 1e-6;
+         const QR_FLOOR: f32 = 1e-6;
+         if o_dot.abs() < O_DOT_FLOOR
+             || !o_dot.is_finite()
+             || query_residual_mag < QR_FLOOR
+-            || residual_mag <= 0.0
++            && /* ~ changed by cargo-mutants ~ */ residual_mag <= 0.0
+         {
+             return DistanceEstimate {
+                 estimate: 0.0,
+                 bound: f32::INFINITY,
+             };
+         }
+         let x_dot_q_unit = (query_dot_code - center_dot) / query_residual_mag;
+         let estimate = x_dot_q_unit / o_dot;

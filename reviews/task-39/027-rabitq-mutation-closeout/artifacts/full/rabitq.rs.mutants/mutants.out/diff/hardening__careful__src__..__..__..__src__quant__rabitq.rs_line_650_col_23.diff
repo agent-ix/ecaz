@@ -1,0 +1,21 @@
+--- hardening/careful/src/../../../src/quant/rabitq.rs
++++ replace + with - in RaBitQQuantizer::centered_residual_magnitude
+@@ -642,17 +642,17 @@
+     /// Read `||v − center||` from a centered code produced by
+     /// [`Self::encode_code_centered`]. Exposed so the AM can
+     /// combine the stored residual magnitude with the per-visit
+     /// query-residual magnitude via paper eq. (2) without re-
+     /// parsing the code.
+     pub fn centered_residual_magnitude(&self, code: &[u8]) -> f32 {
+         let s = self.packed_bytes();
+         f32::from_le_bytes(
+-            code[s..s + RABITQ_NORM_LEN]
++            code[s..s - /* ~ changed by cargo-mutants ~ */ RABITQ_NORM_LEN]
+                 .try_into()
+                 .expect("residual_mag slice is always 4 bytes"),
+         )
+     }
+ }
+ 
+ /// Per-vertex precomputed state for Symphony's centered RaBitQ
+ /// path. Built once per vertex at index-build time via

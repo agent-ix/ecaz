@@ -1,0 +1,37 @@
+--- hardening/careful/src/../../../src/quant/rabitq.rs
++++ replace quantize_level -> (u32, f32) with (0, -1.0)
+@@ -988,33 +988,17 @@
+ ///
+ /// At `bits ≥ 2`: multiply by `sqrt_d` to put the coordinate
+ /// distribution on `N(0, 1)` (coord std of a unit vector is
+ /// `1/√D`), clip to `[-C, +C]` with `C = RABITQ_QUANT_CLIP`, then
+ /// bin uniformly into `2^bits` cells. The level stored is the
+ /// unsigned bin index `0..2^bits - 1`; the dequantized value is
+ /// the bin center mapped back to the unit-vector scale.
+ fn quantize_level(o_hat_i: f32, bits: usize, sqrt_d: f32) -> (u32, f32) {
+-    if bits == 1 {
+-        if o_hat_i >= 0.0 {
+-            (1, 1.0)
+-        } else {
+-            (0, -1.0)
+-        }
+-    } else {
+-        let levels = 1_u32 << bits;
+-        let c = RABITQ_QUANT_CLIP;
+-        let scaled = o_hat_i * sqrt_d;
+-        let t = ((scaled + c) / RABITQ_QUANT_RANGE).clamp(0.0, 1.0);
+-        let level = ((t * levels as f32) as u32).min(levels - 1);
+-        // Bin center, mapped back to unit-vector scale.
+-        let center_scaled = (level as f32 + 0.5) / levels as f32 * RABITQ_QUANT_RANGE - c;
+-        let dequant = center_scaled / sqrt_d;
+-        (level, dequant)
+-    }
++    (0, -1.0) /* ~ changed by cargo-mutants ~ */
+ }
+ 
+ /// Inverse of [`quantize_level`]: given a stored level index and
+ /// `bits`, return the dequantized coordinate value.
+ fn dequant_level(level: u32, bits: usize, sqrt_d: f32) -> f32 {
+     if bits == 1 {
+         if level == 1 {
+             1.0

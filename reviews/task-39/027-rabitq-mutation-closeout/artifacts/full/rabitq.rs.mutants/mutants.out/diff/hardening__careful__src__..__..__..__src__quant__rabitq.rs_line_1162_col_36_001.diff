@@ -1,0 +1,21 @@
+--- hardening/careful/src/../../../src/quant/rabitq.rs
++++ replace * with / in estimate_ip_impl
+@@ -1154,17 +1154,17 @@
+     //   ⟨q, o⟩ = ||q|| · ||o|| · ⟨q_unit, o_unit⟩
+     //         ≈ ||o|| · ⟨q, x̄⟩ / o_dot
+     //         = ||o|| · ⟨q, x_dec⟩ / (o_dot · ||x_dec||)
+     // The α form (estimate = α · ⟨q, x_dec⟩ with α = ||o||·o_dot/||x_dec||)
+     // is the least-squares fit of o ≈ α·x_dec; it preserves ranking but
+     // under-scales by 1/o_dot² and breaks absolute error.
+     let estimate = candidate_norm * sum_q_dequant / (candidate_o_dot * candidate_x_norm);
+ 
+-    let o_dot_sq = candidate_o_dot * candidate_o_dot;
++    let o_dot_sq = candidate_o_dot / /* ~ changed by cargo-mutants ~ */ candidate_o_dot;
+     let epsilon_sq = ((1.0 - o_dot_sq).max(0.0)) / (dimensions as f32 * o_dot_sq);
+     let bound = RABITQ_BOUND_CONFIDENCE * query_norm * candidate_norm * epsilon_sq.sqrt();
+ 
+     DistanceEstimate { estimate, bound }
+ }
+ 
+ fn sign_words_from_byte_slice(bytes: &[u8], dim: usize) -> Vec<u64> {
+     let mut words = vec![0_u64; dim.div_ceil(64)];

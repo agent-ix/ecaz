@@ -1,0 +1,21 @@
+--- hardening/careful/src/../../../src/quant/rabitq.rs
++++ replace RaBitQQuantizer::dimensions -> usize with 0
+@@ -363,17 +363,17 @@
+     pub fn with_seeded_srht_bits(dimensions: usize, seed: u64, bits: u8) -> Result<Self, String> {
+         #[cfg(test)]
+         note_seeded_srht_construction_for_test(dimensions);
+         let rotation: Arc<dyn Rotation> = Arc::new(SrhtRotation::with_seed(dimensions, seed));
+         Self::with_bits(rotation, bits)
+     }
+ 
+     pub fn dimensions(&self) -> usize {
+-        self.dimensions
++        0 /* ~ changed by cargo-mutants ~ */
+     }
+ 
+     pub fn bits_per_dim(&self) -> u8 {
+         self.bits_per_dim
+     }
+ 
+     /// Number of bytes in the packed-levels portion of a code.
+     /// At `bits = 1` this is `⌈D/8⌉`; generalizes as `⌈D·bits/8⌉`.

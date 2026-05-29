@@ -1,0 +1,21 @@
+--- hardening/careful/src/../../../src/quant/rabitq.rs
++++ replace + with * in <impl crate::quant::Quantizer for RaBitQQuantizer>::encode_code
+@@ -437,17 +437,17 @@
+         let o_dot = if denom > 0.0 {
+             inner_o_xdec / denom
+         } else {
+             0.0
+         };
+ 
+         let s = packed_bytes;
+         out[s..s + RABITQ_NORM_LEN].copy_from_slice(&norm.to_le_bytes());
+-        out[s + RABITQ_NORM_LEN..s + RABITQ_NORM_LEN + RABITQ_UNIT_DOT_LEN]
++        out[s + RABITQ_NORM_LEN..s * /* ~ changed by cargo-mutants ~ */ RABITQ_NORM_LEN + RABITQ_UNIT_DOT_LEN]
+             .copy_from_slice(&o_dot.to_le_bytes());
+         out[s + RABITQ_NORM_LEN + RABITQ_UNIT_DOT_LEN..s + RABITQ_SCALAR_LEN]
+             .copy_from_slice(&x_dec_norm.to_le_bytes());
+ 
+         out.into_boxed_slice()
+     }
+ 
+     fn prepare_scorer(

@@ -1,0 +1,23 @@
+--- hardening/careful/src/../../../src/quant/rabitq.rs
++++ replace RaBitQQuantizer::rotated -> Vec<f32> with vec![-1.0]
+@@ -386,19 +386,17 @@
+     /// Retained for slice-1 / slice-2 call-site compatibility —
+     /// returns [`Self::packed_bytes`] since the canonical
+     /// `bits = 1` shape has one sign bit per dim.
+     pub fn sign_bytes(&self) -> usize {
+         self.packed_bytes()
+     }
+ 
+     fn rotated(&self, v: &[f32]) -> Vec<f32> {
+-        let out = self.rotation.apply(v);
+-        debug_assert_eq!(out.len(), self.dimensions);
+-        out
++        vec![-1.0] /* ~ changed by cargo-mutants ~ */
+     }
+ }
+ 
+ impl crate::quant::Quantizer for RaBitQQuantizer {
+     /// RaBitQ encode. Rotate the input, quantize each rotated
+     /// coordinate to a signed `bits_per_dim`-bit level, pack the
+     /// levels LSB-first, then append three f32 scalars: `||o||`,
+     /// `o_dot = ⟨o_unit, x_dec/||x_dec||⟩`, and `||x_dec||`.
