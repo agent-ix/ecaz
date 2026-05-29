@@ -1,6 +1,6 @@
 # Task 30 Phase 13e: SPIRE AWS Production Gap Closure
 
-Status: local functionality gates passed; AWS correctness core passed on Graviton; representative AWS latency/recall and suite-gated pooling A/B complete; fault rerun/operations evidence remains before final product-scale claim
+Status: local functionality gates passed; AWS correctness core passed on Graviton; representative AWS latency/recall, suite-gated pooling A/B, and operations fault-restore evidence complete; final product-scale claim pending outside review acceptance
 Owner: coder1 / SPIRE AWS production track
 Priority: P0 before any AWS product-scale claim
 
@@ -195,3 +195,17 @@ Acceptance:
   connect p95 `19 ms -> 0 ms`, production total p95 `59 ms -> 49 ms`, and
   recall delta `0`. After the run, all `us-west-2` EC2 instances were stopped
   and a packet-local no-pending/running/stopping check was captured.
+- Packet `1066` completes the operations fault-restore rerun against the same
+  preserved packet 1062 Graviton cluster without provisioning, reinstalling,
+  reloading data, or rebuilding topology. A first attempt is preserved in the
+  packet and failed on a harness-only representative query-vector assumption;
+  commit `6f11d0c8a` fixed the reusable fault harness to select the first
+  available query row with `ORDER BY id LIMIT 1`. The successful rerun shows
+  degraded mode returning remote heap candidates from the two available
+  remotes with `status=degraded_ready`, `returned_candidate_count=10`, and
+  `degraded_skipped_dispatch_count=1`; strict mode fails closed when node 2 is
+  stopped; both restore paths restart PostgreSQL and reach SQL readiness after
+  one attempt; final post-restore smoke returns to strict 3-remote
+  `EcSpireDistributedScan` / `remote_heap_candidates` with zero timeout,
+  cancel, or degraded-skip counters. All `us-west-2` instances were then
+  stopped and verified with no pending/running/stopping instance rows.

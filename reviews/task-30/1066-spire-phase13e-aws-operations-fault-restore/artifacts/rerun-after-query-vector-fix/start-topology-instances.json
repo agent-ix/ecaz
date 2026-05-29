@@ -1,0 +1,48 @@
+{
+    "StartingInstances": [
+        {
+            "InstanceId": "i-07a6a4778337f20df",
+            "CurrentState": {
+                "Code": 0,
+                "Name": "pending"
+            },
+            "PreviousState": {
+                "Code": 80,
+                "Name": "stopped"
+            }
+        },
+        {
+            "InstanceId": "i-0b0e5ae9daea017d3",
+            "CurrentState": {
+                "Code": 0,
+                "Name": "pending"
+            },
+            "PreviousState": {
+                "Code": 80,
+                "Name": "stopped"
+            }
+        },
+        {
+            "InstanceId": "i-0a051a40c355ef8bc",
+            "CurrentState": {
+                "Code": 0,
+                "Name": "pending"
+            },
+            "PreviousState": {
+                "Code": 80,
+                "Name": "stopped"
+            }
+        },
+        {
+            "InstanceId": "i-0bb09286bba26190f",
+            "CurrentState": {
+                "Code": 0,
+                "Name": "pending"
+            },
+            "PreviousState": {
+                "Code": 80,
+                "Name": "stopped"
+            }
+        }
+    ]
+}
