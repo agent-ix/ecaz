@@ -167,3 +167,8 @@ required-features = ["dhat-heap"]
 name = "dhat_score"
 path = "benches/dhat/score.rs"
 required-features = ["dhat-heap"]
+
+[[bin]]
+name = "dhat_vamana_build"
+path = "benches/dhat/vamana_build.rs"
+required-features = ["bench", "dhat-heap"]
