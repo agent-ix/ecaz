@@ -321,7 +321,7 @@ jobs:
           target/debug/ecaz dev spire-multicluster fault-pg18 \
             --case "${{ matrix.case }}" \
             --artifact-dir "target/spire-stage-e-ci/${{ matrix.case }}" \
-            --run-id "ci-${{ matrix.case }}"
+            --run-id "ci-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.case }}"
 
       - name: Upload Stage E subset artifacts
         if: always() && steps.changes.outputs.run == 'true'
