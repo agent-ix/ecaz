@@ -3,6 +3,7 @@
 - task: `plan/tasks/60-ec-diskann-rabitq-storage-format.md`
 - branch: `task/60-diskann-rabitq`
 - suite config: `benchmarks/task60-diskann-rabitq-format/suite.json`
+- m5 laptop suite config: `benchmarks/task60-diskann-rabitq-format/suite-m5.json`
 - artifact directory: `benchmarks/task60-diskann-rabitq-format/artifacts/`
 
 ## Purpose
@@ -23,6 +24,10 @@ The 1M rows prepare the same DBpedia-derived anchor fixture used by prior
 DiskANN final measurements, but stage it under
 `/var/lib/pgsql/18/datasets/staged-task60-diskann-rabitq/` so `ecaz bench
 suite audit` can verify the full fetch -> prepare -> load dependency chain.
+
+The m5-local suite reuses the local `data/task31_m5_dbpedia_fetch/data`
+fixture tree and writes its outputs under
+`benchmarks/task60-diskann-rabitq-format/artifacts/m5-laptop/`.
 
 ## Acceptance Checks
 
@@ -47,6 +52,18 @@ ecaz \
   --manifest-output benchmarks/task60-diskann-rabitq-format/artifacts/suite-manifest.json
 ```
 
+Dry-run validation for the m5-local suite:
+
+```sh
+ecaz \
+  --log-file benchmarks/task60-diskann-rabitq-format/artifacts/m5-laptop/suite-dry-run.log \
+  bench suite run \
+  --config benchmarks/task60-diskann-rabitq-format/suite-m5.json \
+  --dry-run \
+  --manifest-output benchmarks/task60-diskann-rabitq-format/artifacts/m5-laptop/suite-manifest.json \
+  --results-output benchmarks/task60-diskann-rabitq-format/artifacts/m5-laptop/results.jsonl
+```
+
 Full run on the benchmark host:
 
 ```sh
@@ -65,6 +82,16 @@ ecaz \
   bench suite report \
   --manifest benchmarks/task60-diskann-rabitq-format/artifacts/suite-manifest.json \
   --results-output benchmarks/task60-diskann-rabitq-format/artifacts/results-report.jsonl
+```
+
+Report extraction after the m5 full run:
+
+```sh
+ecaz \
+  --log-file benchmarks/task60-diskann-rabitq-format/artifacts/m5-laptop/suite-report.log \
+  bench suite report \
+  --manifest benchmarks/task60-diskann-rabitq-format/artifacts/m5-laptop/suite-manifest.json \
+  --results-output benchmarks/task60-diskann-rabitq-format/artifacts/m5-laptop/results-report.jsonl
 ```
 
 Final packet evidence should include:

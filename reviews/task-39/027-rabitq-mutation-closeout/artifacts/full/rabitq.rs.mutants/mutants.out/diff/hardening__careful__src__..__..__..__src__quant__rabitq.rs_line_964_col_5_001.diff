@@ -1,0 +1,25 @@
+--- hardening/careful/src/../../../src/quant/rabitq.rs
++++ replace derive_persisted_sidecar_words -> Vec<u64> with vec![0]
+@@ -956,21 +956,17 @@
+ }
+ 
+ /// Derive the sidecar sign words for a single vector from its
+ /// already-PQ-packed code. Returns an empty vector when RaBitQ is
+ /// not supported for the quantizer's lane. This is the ADR-031
+ /// optimization path that reuses the PQ code rather than re-rotating
+ /// the raw vector.
+ pub fn derive_persisted_sidecar_words(quantizer: &ProdQuantizer, code: &[u8]) -> Vec<u64> {
+-    if quantizer.binary_sign_no_qjl_4bit_supported() {
+-        quantizer.binary_sign_words_from_packed_no_qjl_4bit(code)
+-    } else {
+-        Vec::new()
+-    }
++    vec![0] /* ~ changed by cargo-mutants ~ */
+ }
+ 
+ // ---------------------------------------------------------------------------
+ // Internal helpers used only by the Quantizer trait impl above.
+ // ---------------------------------------------------------------------------
+ 
+ fn l2_norm(rotated: &[f32]) -> f32 {
+     rotated.iter().map(|x| x * x).sum::<f32>().sqrt()

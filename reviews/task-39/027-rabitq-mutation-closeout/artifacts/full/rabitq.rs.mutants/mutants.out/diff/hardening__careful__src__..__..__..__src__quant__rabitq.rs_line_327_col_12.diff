@@ -1,0 +1,21 @@
+--- hardening/careful/src/../../../src/quant/rabitq.rs
++++ delete ! in RaBitQQuantizer::with_bits
+@@ -319,17 +319,17 @@
+ 
+     /// Construct at a specific `bits_per_dim`. Valid values live
+     /// in [`RABITQ_SUPPORTED_BITS`]; returns `Err` otherwise. At
+     /// `bits = 1` the encoding is bit-identical to the paper's
+     /// binary RaBitQ; at `bits ≥ 2` each coordinate gets a signed
+     /// q-bit scalar-quantized level with clipping at
+     /// ±[`RABITQ_QUANT_CLIP`]·σ (σ = 1/√D on the unit sphere).
+     pub fn with_bits(rotation: Arc<dyn Rotation>, bits: u8) -> Result<Self, String> {
+-        if !RABITQ_SUPPORTED_BITS.contains(&bits) {
++        if  /* ~ changed by cargo-mutants ~ */RABITQ_SUPPORTED_BITS.contains(&bits) {
+             return Err(format!(
+                 "RaBitQ bits_per_dim must be one of {:?}, got {}",
+                 RABITQ_SUPPORTED_BITS, bits,
+             ));
+         }
+         let dimensions = rotation.dimensions();
+         assert!(dimensions > 0, "RaBitQ dimensions must be positive");
+         Ok(Self {

@@ -1,0 +1,85 @@
+--- hardening/careful/src/../../../src/quant/rabitq.rs
++++ replace estimate_ip_impl -> DistanceEstimate with Default::default()
+@@ -1094,81 +1094,17 @@
+ /// ```
+ fn estimate_ip_impl(
+     query_rotated: &[f32],
+     query_norm: f32,
+     dimensions: usize,
+     bits_per_dim: u8,
+     code: &[u8],
+ ) -> DistanceEstimate {
+-    debug_assert_eq!(query_rotated.len(), dimensions);
+-    let bits = bits_per_dim as usize;
+-    let packed_bytes = (dimensions * bits).div_ceil(8);
+-    assert!(
+-        code.len() >= packed_bytes + RABITQ_SCALAR_LEN,
+-        "RaBitQ code too short: got {}, expected at least {}",
+-        code.len(),
+-        packed_bytes + RABITQ_SCALAR_LEN,
+-    );
+-    let s = packed_bytes;
+-    let candidate_norm = f32::from_le_bytes(
+-        code[s..s + RABITQ_NORM_LEN]
+-            .try_into()
+-            .expect("norm slice is always 4 bytes"),
+-    );
+-    let candidate_o_dot = f32::from_le_bytes(
+-        code[s + RABITQ_NORM_LEN..s + RABITQ_NORM_LEN + RABITQ_UNIT_DOT_LEN]
+-            .try_into()
+-            .expect("o_dot slice is always 4 bytes"),
+-    );
+-    let candidate_x_norm = f32::from_le_bytes(
+-        code[s + RABITQ_NORM_LEN + RABITQ_UNIT_DOT_LEN..s + RABITQ_SCALAR_LEN]
+-            .try_into()
+-            .expect("x_norm slice is always 4 bytes"),
+-    );
+-
+-    let sqrt_d = (dimensions as f32).sqrt();
+-
+-    // Σ_i q_i · dequant(level_i) in the rotated basis.
+-    let mut sum_q_dequant = 0.0_f32;
+-    for (i, &query_i) in query_rotated.iter().enumerate().take(dimensions) {
+-        let level = read_level(code, i, bits);
+-        let dequant = dequant_level(level, bits, sqrt_d);
+-        sum_q_dequant += query_i * dequant;
+-    }
+-
+-    // Guard degenerate cases.
+-    const O_DOT_FLOOR: f32 = 1e-6;
+-    if candidate_o_dot.abs() < O_DOT_FLOOR
+-        || !candidate_o_dot.is_finite()
+-        || candidate_x_norm <= 0.0
+-        || !candidate_x_norm.is_finite()
+-    {
+-        return DistanceEstimate {
+-            estimate: 0.0,
+-            bound: f32::INFINITY,
+-        };
+-    }
+-
+-    // Paper's asymmetric estimator. Derivation:
+-    //   ⟨q_unit, o_unit⟩ ≈ ⟨q_unit, x̄⟩ / o_dot
+-    //     where x̄ = x_dec / ||x_dec||
+-    //   ⟨q, o⟩ = ||q|| · ||o|| · ⟨q_unit, o_unit⟩
+-    //         ≈ ||o|| · ⟨q, x̄⟩ / o_dot
+-    //         = ||o|| · ⟨q, x_dec⟩ / (o_dot · ||x_dec||)
+-    // The α form (estimate = α · ⟨q, x_dec⟩ with α = ||o||·o_dot/||x_dec||)
+-    // is the least-squares fit of o ≈ α·x_dec; it preserves ranking but
+-    // under-scales by 1/o_dot² and breaks absolute error.
+-    let estimate = candidate_norm * sum_q_dequant / (candidate_o_dot * candidate_x_norm);
+-
+-    let o_dot_sq = candidate_o_dot * candidate_o_dot;
+-    let epsilon_sq = ((1.0 - o_dot_sq).max(0.0)) / (dimensions as f32 * o_dot_sq);
+-    let bound = RABITQ_BOUND_CONFIDENCE * query_norm * candidate_norm * epsilon_sq.sqrt();
+-
+-    DistanceEstimate { estimate, bound }
++    Default::default() /* ~ changed by cargo-mutants ~ */
+ }
+ 
+ fn sign_words_from_byte_slice(bytes: &[u8], dim: usize) -> Vec<u64> {
+     let mut words = vec![0_u64; dim.div_ceil(64)];
+     for index in 0..dim {
+         let byte = bytes[index / 8];
+         if (byte >> (index % 8)) & 1 == 1 {
+             words[index / 64] |= 1_u64 << (index % 64);

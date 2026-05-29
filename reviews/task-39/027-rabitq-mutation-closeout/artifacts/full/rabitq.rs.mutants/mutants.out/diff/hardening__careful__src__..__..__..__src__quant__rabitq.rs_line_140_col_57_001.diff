@@ -1,0 +1,21 @@
+--- hardening/careful/src/../../../src/quant/rabitq.rs
++++ replace + with * in code_len_for
+@@ -132,17 +132,17 @@
+ 
+ pub fn code_len_for(dimensions: usize, bits_per_dim: u8) -> Result<usize, String> {
+     if !RABITQ_SUPPORTED_BITS.contains(&bits_per_dim) {
+         return Err(format!(
+             "RaBitQ bits_per_dim must be one of {:?}, got {}",
+             RABITQ_SUPPORTED_BITS, bits_per_dim,
+         ));
+     }
+-    Ok((dimensions * bits_per_dim as usize).div_ceil(8) + RABITQ_SCALAR_LEN)
++    Ok((dimensions * bits_per_dim as usize).div_ceil(8) * /* ~ changed by cargo-mutants ~ */ RABITQ_SCALAR_LEN)
+ }
+ 
+ /// Confidence coefficient on the ε-concentration bound returned in
+ /// `DistanceEstimate.bound`. `2.5` ≈ 99% one-sided confidence under
+ /// the paper's Gaussian-tail concentration argument. Stage 3 can
+ /// tune this via a follow-up constructor; picking one value here
+ /// keeps the trait surface scalar.
+ pub const RABITQ_BOUND_CONFIDENCE: f32 = 2.5;

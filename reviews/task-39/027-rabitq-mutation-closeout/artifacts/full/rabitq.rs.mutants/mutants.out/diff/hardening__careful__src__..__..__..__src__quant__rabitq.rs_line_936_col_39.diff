@@ -1,0 +1,21 @@
+--- hardening/careful/src/../../../src/quant/rabitq.rs
++++ replace >= with < in binary_sign_lookup_4bit
+@@ -928,17 +928,17 @@
+ pub(crate) fn binary_sign_lookup_4bit(codebook: &[f32]) -> [u8; 16] {
+     assert_eq!(
+         codebook.len(),
+         16,
+         "binary sign lookup requires a 16-entry 4-bit codebook"
+     );
+     let mut signs = [0_u8; 16];
+     for (index, value) in codebook.iter().copied().enumerate() {
+-        signs[index] = u8::from(value >= 0.0);
++        signs[index] = u8::from(value < /* ~ changed by cargo-mutants ~ */ 0.0);
+     }
+     signs
+ }
+ 
+ // ---------------------------------------------------------------------------
+ // Persisted-sidecar helpers — moved from `src/am/common/training.rs`
+ // in slice 2. AM callers now reach into this module directly.
+ // ---------------------------------------------------------------------------

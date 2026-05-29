@@ -1,0 +1,21 @@
+--- hardening/careful/src/../../../src/quant/rabitq.rs
++++ replace PreparedEstimator::dimensions -> usize with 1
+@@ -796,17 +796,17 @@
+     query_rotated: Vec<f32>,
+     query_norm: f32,
+     dimensions: usize,
+     bits_per_dim: u8,
+ }
+ 
+ impl PreparedEstimator {
+     pub fn dimensions(&self) -> usize {
+-        self.dimensions
++        1 /* ~ changed by cargo-mutants ~ */
+     }
+     pub fn query_norm(&self) -> f32 {
+         self.query_norm
+     }
+     pub fn bits_per_dim(&self) -> u8 {
+         self.bits_per_dim
+     }
+     pub fn estimate_ip(&self, code: &[u8]) -> DistanceEstimate {

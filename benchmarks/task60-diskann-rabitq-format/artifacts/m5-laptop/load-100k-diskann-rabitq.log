@@ -1,0 +1,22 @@
+[loader] inspecting data/task60_m5_dbpedia_staged/ec_real_100k_corpus.tsv
+[loader] inspecting data/task60_m5_dbpedia_staged/ec_real_100k_queries.tsv
+[loader] corpus: 100000 rows, sha256=07275cfd5a7a4b415ddf5eacc086de98294ac978532df46ffae30f9202323a95  queries: 1000 rows, sha256=a7cbec6fc44f6c148234538f61339d00d2f10646febc8f667dcbe75d9cf41782
+[loader] warning: manifest verification failed for data/task60_m5_dbpedia_staged/ec_real_100k_manifest.json: prefix="ec_real_100k" (expected "task60_real_100k_diskann_rabitq")
+[loader] copied corpus table task60_real_100k_diskann_rabitq_corpus in 15.50s
+[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...
+[loader] encoded corpus table task60_real_100k_diskann_rabitq_corpus in 3.13s
+[loader] copied queries table task60_real_100k_diskann_rabitq_queries in 161.41ms
+[loader] building task60_real_100k_diskann_rabitq_rabitq_idx using ec_diskann (reloptions=[storage_format=rabitq]) ...
+[loader] built task60_real_100k_diskann_rabitq_rabitq_idx in 220.37s
+┌─────────┬────────────────────────────────────────────────────────────────────┐
+│ field   ┆ value                                                              │
+╞═════════╪════════════════════════════════════════════════════════════════════╡
+│ profile ┆ ec_diskann                                                         │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ task60_real_100k_diskann_rabitq_corpus (100000 rows)               │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ task60_real_100k_diskann_rabitq_queries (1000 rows)                │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ task60_real_100k_diskann_rabitq_rabitq_idx [storage_format=rabitq] │
+└─────────┴────────────────────────────────────────────────────────────────────┘
+[loader] completed prefix task60_real_100k_diskann_rabitq in 245.33s

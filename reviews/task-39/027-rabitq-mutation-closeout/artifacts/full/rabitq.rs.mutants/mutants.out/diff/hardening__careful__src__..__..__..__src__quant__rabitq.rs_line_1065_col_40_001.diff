@@ -1,0 +1,21 @@
+--- hardening/careful/src/../../../src/quant/rabitq.rs
++++ replace * with / in read_level
+@@ -1057,17 +1057,17 @@
+     }
+ }
+ 
+ /// Inverse of [`write_level`].
+ fn read_level(code: &[u8], i: usize, bits: usize) -> u32 {
+     match bits {
+         1 => ((code[i / 8] >> (i % 8)) & 1) as u32,
+         2 => ((code[i / 4] >> ((i % 4) * 2)) & 0x03) as u32,
+-        4 => ((code[i / 2] >> ((i % 2) * 4)) & 0x0F) as u32,
++        4 => ((code[i / 2] >> ((i % 2) / /* ~ changed by cargo-mutants ~ */ 4)) & 0x0F) as u32,
+         8 => code[i] as u32,
+         _ => unreachable!("unsupported bits_per_dim: {}", bits),
+     }
+ }
+ 
+ /// Paper-faithful RaBitQ inner-product estimator with an
+ /// ε-concentration error bound.
+ ///

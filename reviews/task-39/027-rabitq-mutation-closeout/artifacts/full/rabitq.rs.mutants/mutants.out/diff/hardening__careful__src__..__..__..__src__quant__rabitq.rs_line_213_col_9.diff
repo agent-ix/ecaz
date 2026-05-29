@@ -1,0 +1,29 @@
+--- hardening/careful/src/../../../src/quant/rabitq.rs
++++ replace SrhtRotation::with_seed -> Self with Default::default()
+@@ -205,25 +205,17 @@
+ 
+ impl SrhtRotation {
+     /// Construct an SRHT rotation with an explicit seed. The seed
+     /// deterministically generates the sign vector via
+     /// [`rotation::sign_vector`]; quality of the rotation does not
+     /// depend on which specific seed is used, only on its
+     /// independence from the input data.
+     pub fn with_seed(dimensions: usize, seed: u64) -> Self {
+-        assert!(dimensions > 0, "SRHT dimensions must be positive");
+-        let transform_dim = rotation::effective_transform_dim(dimensions);
+-        let signs = Arc::new(rotation::sign_vector(transform_dim, seed));
+-        Self {
+-            dimensions,
+-            signs,
+-            prod: None,
+-            seed: Some(seed),
+-        }
++        Default::default() /* ~ changed by cargo-mutants ~ */
+     }
+ 
+     /// Construct an SRHT rotation backed by a `ProdQuantizer`'s
+     /// sign vector. Used when the ADR-031 PQ-derived sidecar path
+     /// needs the rotation and the PQ codebook to agree. The signs
+     /// are cloned out so the rotation is self-sufficient if the
+     /// quantizer is later freed — but the [`prod`](Self::prod)
+     /// accessor retains the quantizer reference for callers that

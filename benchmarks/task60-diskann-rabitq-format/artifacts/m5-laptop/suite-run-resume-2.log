@@ -1,0 +1,28 @@
+[suite:task60-diskann-rabitq-format-m5] wrote benchmarks/task60-diskann-rabitq-format/artifacts/m5-laptop/suite-manifest.json
+[suite:task60-diskann-rabitq-format-m5] prepare-ec-real-100k already succeeded in resume manifest
+[suite:task60-diskann-rabitq-format-m5] prepare-ec-real-1m-anchor already succeeded in resume manifest
+[suite:task60-diskann-rabitq-format-m5] precheck-host already succeeded in resume manifest
+[suite:task60-diskann-rabitq-format-m5] load-100k-diskann-pq-fastscan already succeeded in resume manifest
+[suite:task60-diskann-rabitq-format-m5] load-100k-diskann-rabitq already succeeded in resume manifest
+[suite:task60-diskann-rabitq-format-m5] recall-100k-diskann-pq-fastscan already succeeded in resume manifest
+[suite:task60-diskann-rabitq-format-m5] recall-100k-diskann-rabitq already succeeded in resume manifest
+[suite:task60-diskann-rabitq-format-m5] latency-100k-diskann-pq-fastscan already succeeded in resume manifest
+[suite:task60-diskann-rabitq-format-m5] latency-100k-diskann-rabitq already succeeded in resume manifest
+[suite:task60-diskann-rabitq-format-m5] storage-100k-diskann-pq-fastscan already succeeded in resume manifest
+[suite:task60-diskann-rabitq-format-m5] storage-100k-diskann-rabitq already succeeded in resume manifest
+[suite:task60-diskann-rabitq-format-m5] explain-100k-diskann-pq-fastscan-l800 already succeeded in resume manifest
+[suite:task60-diskann-rabitq-format-m5] explain-100k-diskann-rabitq-l800 already succeeded in resume manifest
+[suite:task60-diskann-rabitq-format-m5] load-1m-diskann-pq-fastscan -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 --log-file benchmarks/task60-diskann-rabitq-format/artifacts/m5-laptop/load-1m-diskann-pq-fastscan.log corpus load --prefix task60_real_1m_diskann_pq --profile ec_diskann --corpus-file data/task60_m5_dbpedia_staged/ec_real_ann_benchmarks_anchor_corpus.tsv --queries-file data/task60_m5_dbpedia_staged/ec_real_ann_benchmarks_anchor_queries.tsv --manifest-file data/task60_m5_dbpedia_staged/ec_real_ann_benchmarks_anchor_manifest.json --allow-manifest-mismatch --bits 4 --seed 42 --storage-format pq_fastscan
+[suite:task60-diskann-rabitq-format-m5] wrote benchmarks/task60-diskann-rabitq-format/artifacts/m5-laptop/suite-manifest.json
+[suite:task60-diskann-rabitq-format-m5] wrote benchmarks/task60-diskann-rabitq-format/artifacts/m5-laptop/suite-manifest.json
+[suite:task60-diskann-rabitq-format-m5] load-1m-diskann-rabitq -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 --log-file benchmarks/task60-diskann-rabitq-format/artifacts/m5-laptop/load-1m-diskann-rabitq.log corpus load --prefix task60_real_1m_diskann_rabitq --profile ec_diskann --corpus-file data/task60_m5_dbpedia_staged/ec_real_ann_benchmarks_anchor_corpus.tsv --queries-file data/task60_m5_dbpedia_staged/ec_real_ann_benchmarks_anchor_queries.tsv --manifest-file data/task60_m5_dbpedia_staged/ec_real_ann_benchmarks_anchor_manifest.json --allow-manifest-mismatch --bits 4 --seed 42 --storage-format rabitq
+[suite:task60-diskann-rabitq-format-m5] wrote benchmarks/task60-diskann-rabitq-format/artifacts/m5-laptop/suite-manifest.json
+[suite:task60-diskann-rabitq-format-m5] wrote benchmarks/task60-diskann-rabitq-format/artifacts/m5-laptop/suite-manifest.json
+
+   0: [91msuite step "load-1m-diskann-rabitq" failed with exit code 1; rerun with --continue-on-error to keep going[0m
+
+Location:
+   [35mcrates/ecaz-cli/src/commands/bench/suite.rs[0m:[35m713[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.

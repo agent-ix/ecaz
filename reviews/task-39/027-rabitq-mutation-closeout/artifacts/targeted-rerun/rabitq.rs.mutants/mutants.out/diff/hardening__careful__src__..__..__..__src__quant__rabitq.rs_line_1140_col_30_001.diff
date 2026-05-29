@@ -1,0 +1,21 @@
+--- hardening/careful/src/../../../src/quant/rabitq.rs
++++ replace < with > in estimate_ip_impl
+@@ -1132,17 +1132,17 @@
+     for (i, &query_i) in query_rotated.iter().enumerate().take(dimensions) {
+         let level = read_level(code, i, bits);
+         let dequant = dequant_level(level, bits, sqrt_d);
+         sum_q_dequant += query_i * dequant;
+     }
+ 
+     // Guard degenerate cases.
+     const O_DOT_FLOOR: f32 = 1e-6;
+-    if candidate_o_dot.abs() < O_DOT_FLOOR
++    if candidate_o_dot.abs() > /* ~ changed by cargo-mutants ~ */ O_DOT_FLOOR
+         || !candidate_o_dot.is_finite()
+         || candidate_x_norm <= 0.0
+         || !candidate_x_norm.is_finite()
+     {
+         return DistanceEstimate {
+             estimate: 0.0,
+             bound: f32::INFINITY,
+         };

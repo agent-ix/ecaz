@@ -1,0 +1,21 @@
+--- hardening/careful/src/../../../src/quant/rabitq.rs
++++ replace -= with /= in RaBitQQuantizer::encode_code_centered
+@@ -578,17 +578,17 @@
+         let mut sum_center_sign = 0.0_f32;
+         for (i, &r_i) in residual_rotated.iter().enumerate() {
+             let level = if r_i >= 0.0 { 1_u32 } else { 0_u32 };
+             write_level(&mut out, i, 1, level);
+             sum_abs += r_i.abs();
+             if level == 1 {
+                 sum_center_sign += center.rotated[i];
+             } else {
+-                sum_center_sign -= center.rotated[i];
++                sum_center_sign /= /* ~ changed by cargo-mutants ~ */ center.rotated[i];
+             }
+         }
+ 
+         let inv_denom = if residual_mag > 0.0 {
+             1.0 / (residual_mag * sqrt_d)
+         } else {
+             0.0
+         };

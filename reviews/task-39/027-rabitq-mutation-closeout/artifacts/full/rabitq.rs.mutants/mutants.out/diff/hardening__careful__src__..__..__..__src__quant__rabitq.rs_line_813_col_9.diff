@@ -1,0 +1,27 @@
+--- hardening/careful/src/../../../src/quant/rabitq.rs
++++ replace PreparedEstimator::estimate_ip -> DistanceEstimate with Default::default()
+@@ -805,23 +805,17 @@
+     }
+     pub fn query_norm(&self) -> f32 {
+         self.query_norm
+     }
+     pub fn bits_per_dim(&self) -> u8 {
+         self.bits_per_dim
+     }
+     pub fn estimate_ip(&self, code: &[u8]) -> DistanceEstimate {
+-        estimate_ip_impl(
+-            &self.query_rotated,
+-            self.query_norm,
+-            self.dimensions,
+-            self.bits_per_dim,
+-            code,
+-        )
++        Default::default() /* ~ changed by cargo-mutants ~ */
+     }
+ }
+ 
+ /// Prepared scorer for the `QueryScorer` trait. Holds the rotated
+ /// query so `score` can compute the asymmetric RaBitQ estimator. The
+ /// bound-carrying form lives at [`RaBitQQuantizer::estimate_ip`].
+ pub struct RaBitQScorer {
+     query_rotated: Vec<f32>,

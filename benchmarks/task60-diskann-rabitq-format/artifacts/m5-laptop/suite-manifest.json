@@ -1,0 +1,631 @@
+{
+  "suite": "task60-diskann-rabitq-format-m5",
+  "schema_version": 1,
+  "config": "benchmarks/task60-diskann-rabitq-format/suite-m5.json",
+  "config_sha256": "a56eac81c0f090030fe62f6ff8be4fd10cb95e1e7c4ef0094783bd30fad03b08",
+  "dry_run": false,
+  "generated_at_unix_ms": 1780027173654,
+  "connection": {
+    "database": "tqvector_bench",
+    "host": "/Users/peter/.pgrx",
+    "port": 28818,
+    "user": null,
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "prepare-ec-real-100k",
+      "kind": "corpus-prepare",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "setup",
+        "prepare",
+        "ec_real_100k",
+        "m5",
+        "task60"
+      ],
+      "expected_artifacts": [
+        "data/task60_m5_dbpedia_staged/ec_real_100k_corpus.tsv",
+        "data/task60_m5_dbpedia_staged/ec_real_100k_queries.tsv",
+        "data/task60_m5_dbpedia_staged/ec_real_100k_manifest.json"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "prepare-ec-real-1m-anchor",
+      "kind": "corpus-prepare",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "setup",
+        "prepare",
+        "ec_real_1m",
+        "m5",
+        "task60"
+      ],
+      "expected_artifacts": [
+        "data/task60_m5_dbpedia_staged/ec_real_ann_benchmarks_anchor_corpus.tsv",
+        "data/task60_m5_dbpedia_staged/ec_real_ann_benchmarks_anchor_queries.tsv",
+        "data/task60_m5_dbpedia_staged/ec_real_ann_benchmarks_anchor_manifest.json"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "precheck-host",
+      "kind": "raw",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "setup",
+        "precheck",
+        "m5",
+        "task60"
+      ],
+      "expected_artifacts": [
+        "benchmarks/task60-diskann-rabitq-format/artifacts/m5-laptop/precheck-host.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-100k-diskann-pq-fastscan",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "load",
+        "ec_real_100k",
+        "diskann",
+        "pq_fastscan",
+        "m5",
+        "task60"
+      ],
+      "expected_artifacts": [
+        "benchmarks/task60-diskann-rabitq-format/artifacts/m5-laptop/load-100k-diskann-pq-fastscan.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-100k-diskann-rabitq",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "load",
+        "ec_real_100k",
+        "diskann",
+        "rabitq",
+        "m5",
+        "task60"
+      ],
+      "expected_artifacts": [
+        "benchmarks/task60-diskann-rabitq-format/artifacts/m5-laptop/load-100k-diskann-rabitq.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "recall-100k-diskann-pq-fastscan",
+      "kind": "recall",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "recall",
+        "ec_real_100k",
+        "diskann",
+        "pq_fastscan",
+        "m5",
+        "task60"
+      ],
+      "expected_artifacts": [
+        "benchmarks/task60-diskann-rabitq-format/artifacts/m5-laptop/recall-100k-diskann-pq-fastscan.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "recall-100k-diskann-rabitq",
+      "kind": "recall",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "recall",
+        "ec_real_100k",
+        "diskann",
+        "rabitq",
+        "m5",
+        "task60"
+      ],
+      "expected_artifacts": [
+        "benchmarks/task60-diskann-rabitq-format/artifacts/m5-laptop/recall-100k-diskann-rabitq.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "latency-100k-diskann-pq-fastscan",
+      "kind": "latency",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "latency",
+        "ec_real_100k",
+        "diskann",
+        "pq_fastscan",
+        "post_recall_warm",
+        "m5",
+        "task60"
+      ],
+      "expected_artifacts": [
+        "benchmarks/task60-diskann-rabitq-format/artifacts/m5-laptop/latency-100k-diskann-pq-fastscan.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "latency-100k-diskann-rabitq",
+      "kind": "latency",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "latency",
+        "ec_real_100k",
+        "diskann",
+        "rabitq",
+        "post_recall_warm",
+        "m5",
+        "task60"
+      ],
+      "expected_artifacts": [
+        "benchmarks/task60-diskann-rabitq-format/artifacts/m5-laptop/latency-100k-diskann-rabitq.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-100k-diskann-pq-fastscan",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "storage",
+        "ec_real_100k",
+        "diskann",
+        "pq_fastscan",
+        "m5",
+        "task60"
+      ],
+      "expected_artifacts": [
+        "benchmarks/task60-diskann-rabitq-format/artifacts/m5-laptop/storage-100k-diskann-pq-fastscan.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "storage-100k-diskann-rabitq",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "storage",
+        "ec_real_100k",
+        "diskann",
+        "rabitq",
+        "m5",
+        "task60"
+      ],
+      "expected_artifacts": [
+        "benchmarks/task60-diskann-rabitq-format/artifacts/m5-laptop/storage-100k-diskann-rabitq.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "explain-100k-diskann-pq-fastscan-l800",
+      "kind": "explain",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "explain",
+        "ec_real_100k",
+        "diskann",
+        "pq_fastscan",
+        "m5",
+        "task60"
+      ],
+      "expected_artifacts": [
+        "benchmarks/task60-diskann-rabitq-format/artifacts/m5-laptop/explain-100k-diskann-pq-fastscan-l800.sql",
+        "benchmarks/task60-diskann-rabitq-format/artifacts/m5-laptop/explain-100k-diskann-pq-fastscan-l800.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "explain-100k-diskann-rabitq-l800",
+      "kind": "explain",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "explain",
+        "ec_real_100k",
+        "diskann",
+        "rabitq",
+        "m5",
+        "task60"
+      ],
+      "expected_artifacts": [
+        "benchmarks/task60-diskann-rabitq-format/artifacts/m5-laptop/explain-100k-diskann-rabitq-l800.sql",
+        "benchmarks/task60-diskann-rabitq-format/artifacts/m5-laptop/explain-100k-diskann-rabitq-l800.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-1m-diskann-pq-fastscan",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "load",
+        "ec_real_1m",
+        "diskann",
+        "pq_fastscan",
+        "m5",
+        "task60"
+      ],
+      "expected_artifacts": [
+        "benchmarks/task60-diskann-rabitq-format/artifacts/m5-laptop/load-1m-diskann-pq-fastscan.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-1m-diskann-rabitq",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "load",
+        "ec_real_1m",
+        "diskann",
+        "rabitq",
+        "m5",
+        "task60"
+      ],
+      "expected_artifacts": [
+        "benchmarks/task60-diskann-rabitq-format/artifacts/m5-laptop/load-1m-diskann-rabitq.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "recall-1m-diskann-pq-fastscan",
+      "kind": "recall",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "recall",
+        "ec_real_1m",
+        "diskann",
+        "pq_fastscan",
+        "m5",
+        "task60"
+      ],
+      "expected_artifacts": [
+        "benchmarks/task60-diskann-rabitq-format/artifacts/m5-laptop/recall-1m-diskann-pq-fastscan.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "recall-1m-diskann-rabitq",
+      "kind": "recall",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--host",
+        "/Users/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "recall",
+        "--prefix",
+        "task60_real_1m_diskann_rabitq",
+        "--profile",
+        "ec_diskann",
+        "--k",
+        "10",
+        "--sweep",
+        "64,128,200,400,800",
+        "--queries-limit",
+        "200",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--truth-cache-file",
+        "benchmarks/task60-diskann-rabitq-format/artifacts/m5-laptop/truth-1m-k10.json",
+        "--log-output",
+        "benchmarks/task60-diskann-rabitq-format/artifacts/m5-laptop/recall-1m-diskann-rabitq.log"
+      ],
+      "selected": true,
+      "tags": [
+        "recall",
+        "ec_real_1m",
+        "diskann",
+        "rabitq",
+        "m5",
+        "task60"
+      ],
+      "expected_artifacts": [
+        "benchmarks/task60-diskann-rabitq-format/artifacts/m5-laptop/recall-1m-diskann-rabitq.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1780027173655,
+      "finished_at_unix_ms": 1780027249703,
+      "duration_ms": 76047,
+      "exit_code": 0
+    },
+    {
+      "name": "latency-1m-diskann-pq-fastscan",
+      "kind": "latency",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--host",
+        "/Users/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "latency",
+        "--prefix",
+        "task60_real_1m_diskann_pq",
+        "--profile",
+        "ec_diskann",
+        "--k",
+        "10",
+        "--concurrency",
+        "1",
+        "--iterations",
+        "200",
+        "--sweep",
+        "64,128,200,400,800",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--sample-backend-memory",
+        "--cache-state",
+        "post_recall_warm",
+        "--memory-sample-interval-ms",
+        "25",
+        "--log-output",
+        "benchmarks/task60-diskann-rabitq-format/artifacts/m5-laptop/latency-1m-diskann-pq-fastscan.log"
+      ],
+      "selected": true,
+      "tags": [
+        "latency",
+        "ec_real_1m",
+        "diskann",
+        "pq_fastscan",
+        "post_recall_warm",
+        "m5",
+        "task60"
+      ],
+      "expected_artifacts": [
+        "benchmarks/task60-diskann-rabitq-format/artifacts/m5-laptop/latency-1m-diskann-pq-fastscan.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1780027249703,
+      "finished_at_unix_ms": 1780027280610,
+      "duration_ms": 30906,
+      "exit_code": 0
+    },
+    {
+      "name": "latency-1m-diskann-rabitq",
+      "kind": "latency",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--host",
+        "/Users/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "latency",
+        "--prefix",
+        "task60_real_1m_diskann_rabitq",
+        "--profile",
+        "ec_diskann",
+        "--k",
+        "10",
+        "--concurrency",
+        "1",
+        "--iterations",
+        "200",
+        "--sweep",
+        "64,128,200,400,800",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--sample-backend-memory",
+        "--cache-state",
+        "post_recall_warm",
+        "--memory-sample-interval-ms",
+        "25",
+        "--log-output",
+        "benchmarks/task60-diskann-rabitq-format/artifacts/m5-laptop/latency-1m-diskann-rabitq.log"
+      ],
+      "selected": true,
+      "tags": [
+        "latency",
+        "ec_real_1m",
+        "diskann",
+        "rabitq",
+        "post_recall_warm",
+        "m5",
+        "task60"
+      ],
+      "expected_artifacts": [
+        "benchmarks/task60-diskann-rabitq-format/artifacts/m5-laptop/latency-1m-diskann-rabitq.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1780027280610,
+      "finished_at_unix_ms": 1780027354278,
+      "duration_ms": 73667,
+      "exit_code": 0
+    },
+    {
+      "name": "storage-1m-diskann-pq-fastscan",
+      "kind": "storage",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--host",
+        "/Users/peter/.pgrx",
+        "--port",
+        "28818",
+        "--log-file",
+        "benchmarks/task60-diskann-rabitq-format/artifacts/m5-laptop/storage-1m-diskann-pq-fastscan.log",
+        "bench",
+        "storage",
+        "--prefix",
+        "task60_real_1m_diskann_pq"
+      ],
+      "selected": true,
+      "tags": [
+        "storage",
+        "ec_real_1m",
+        "diskann",
+        "pq_fastscan",
+        "m5",
+        "task60"
+      ],
+      "expected_artifacts": [
+        "benchmarks/task60-diskann-rabitq-format/artifacts/m5-laptop/storage-1m-diskann-pq-fastscan.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1780027354278,
+      "finished_at_unix_ms": 1780027354336,
+      "duration_ms": 57,
+      "exit_code": 0
+    },
+    {
+      "name": "storage-1m-diskann-rabitq",
+      "kind": "storage",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--host",
+        "/Users/peter/.pgrx",
+        "--port",
+        "28818",
+        "--log-file",
+        "benchmarks/task60-diskann-rabitq-format/artifacts/m5-laptop/storage-1m-diskann-rabitq.log",
+        "bench",
+        "storage",
+        "--prefix",
+        "task60_real_1m_diskann_rabitq"
+      ],
+      "selected": true,
+      "tags": [
+        "storage",
+        "ec_real_1m",
+        "diskann",
+        "rabitq",
+        "m5",
+        "task60"
+      ],
+      "expected_artifacts": [
+        "benchmarks/task60-diskann-rabitq-format/artifacts/m5-laptop/storage-1m-diskann-rabitq.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1780027354336,
+      "finished_at_unix_ms": 1780027354391,
+      "duration_ms": 55,
+      "exit_code": 0
+    },
+    {
+      "name": "explain-1m-diskann-pq-fastscan-l800",
+      "kind": "explain",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--host",
+        "/Users/peter/.pgrx",
+        "--port",
+        "28818",
+        "dev",
+        "sql",
+        "--pg",
+        "18",
+        "--db",
+        "tqvector_bench",
+        "--socket-dir",
+        "/Users/peter/.pgrx",
+        "--port",
+        "28818",
+        "--raw",
+        "--file",
+        "benchmarks/task60-diskann-rabitq-format/artifacts/m5-laptop/explain-1m-diskann-pq-fastscan-l800.sql",
+        "--log-output",
+        "benchmarks/task60-diskann-rabitq-format/artifacts/m5-laptop/explain-1m-diskann-pq-fastscan-l800.log"
+      ],
+      "selected": true,
+      "tags": [
+        "explain",
+        "ec_real_1m",
+        "diskann",
+        "pq_fastscan",
+        "m5",
+        "task60"
+      ],
+      "expected_artifacts": [
+        "benchmarks/task60-diskann-rabitq-format/artifacts/m5-laptop/explain-1m-diskann-pq-fastscan-l800.sql",
+        "benchmarks/task60-diskann-rabitq-format/artifacts/m5-laptop/explain-1m-diskann-pq-fastscan-l800.log"
+      ],
+      "status": "failed",
+      "started_at_unix_ms": 1780027354391,
+      "finished_at_unix_ms": 1780027354407,
+      "duration_ms": 15,
+      "exit_code": 1
+    },
+    {
+      "name": "explain-1m-diskann-rabitq-l800",
+      "kind": "explain",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--host",
+        "/Users/peter/.pgrx",
+        "--port",
+        "28818",
+        "dev",
+        "sql",
+        "--pg",
+        "18",
+        "--db",
+        "tqvector_bench",
+        "--socket-dir",
+        "/Users/peter/.pgrx",
+        "--port",
+        "28818",
+        "--raw",
+        "--file",
+        "benchmarks/task60-diskann-rabitq-format/artifacts/m5-laptop/explain-1m-diskann-rabitq-l800.sql",
+        "--log-output",
+        "benchmarks/task60-diskann-rabitq-format/artifacts/m5-laptop/explain-1m-diskann-rabitq-l800.log"
+      ],
+      "selected": true,
+      "tags": [
+        "explain",
+        "ec_real_1m",
+        "diskann",
+        "rabitq",
+        "m5",
+        "task60"
+      ],
+      "expected_artifacts": [
+        "benchmarks/task60-diskann-rabitq-format/artifacts/m5-laptop/explain-1m-diskann-rabitq-l800.sql",
+        "benchmarks/task60-diskann-rabitq-format/artifacts/m5-laptop/explain-1m-diskann-rabitq-l800.log"
+      ],
+      "status": "failed",
+      "started_at_unix_ms": 1780027354407,
+      "finished_at_unix_ms": 1780027354421,
+      "duration_ms": 13,
+      "exit_code": 1
+    }
+  ]
+}

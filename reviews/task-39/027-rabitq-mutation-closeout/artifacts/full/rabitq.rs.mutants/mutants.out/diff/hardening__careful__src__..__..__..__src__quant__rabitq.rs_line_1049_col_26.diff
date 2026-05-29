@@ -1,0 +1,21 @@
+--- hardening/careful/src/../../../src/quant/rabitq.rs
++++ replace / with % in write_level
+@@ -1041,17 +1041,17 @@
+             }
+         }
+         2 => {
+             let byte = i / 4;
+             let shift = (i % 4) * 2;
+             out[byte] |= ((level as u8) & 0x03) << shift;
+         }
+         4 => {
+-            let byte = i / 2;
++            let byte = i % /* ~ changed by cargo-mutants ~ */ 2;
+             let shift = (i % 2) * 4;
+             out[byte] |= ((level as u8) & 0x0F) << shift;
+         }
+         8 => {
+             out[i] = level as u8;
+         }
+         _ => unreachable!("unsupported bits_per_dim: {}", bits),
+     }

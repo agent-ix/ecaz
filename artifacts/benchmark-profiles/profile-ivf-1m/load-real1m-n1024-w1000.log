@@ -1,0 +1,55 @@
+[loader] loaded corpus chunk corpus/corpus-00000.tsv
+[loader] loaded corpus chunk corpus/corpus-00001.tsv
+[loader] loaded corpus chunk corpus/corpus-00002.tsv
+[loader] loaded corpus chunk corpus/corpus-00003.tsv
+[loader] loaded corpus chunk corpus/corpus-00004.tsv
+[loader] loaded corpus chunk corpus/corpus-00005.tsv
+[loader] loaded corpus chunk corpus/corpus-00006.tsv
+[loader] loaded corpus chunk corpus/corpus-00007.tsv
+[loader] loaded corpus chunk corpus/corpus-00008.tsv
+[loader] loaded corpus chunk corpus/corpus-00009.tsv
+[loader] loaded corpus chunk corpus/corpus-00010.tsv
+[loader] loaded corpus chunk corpus/corpus-00011.tsv
+[loader] loaded corpus chunk corpus/corpus-00012.tsv
+[loader] loaded corpus chunk corpus/corpus-00013.tsv
+[loader] loaded corpus chunk corpus/corpus-00014.tsv
+[loader] loaded corpus chunk corpus/corpus-00015.tsv
+[loader] loaded corpus chunk corpus/corpus-00016.tsv
+[loader] loaded corpus chunk corpus/corpus-00017.tsv
+[loader] loaded corpus chunk corpus/corpus-00018.tsv
+[loader] loaded corpus chunk corpus/corpus-00019.tsv
+[loader] loaded corpus chunk corpus/corpus-00020.tsv
+[loader] loaded corpus chunk corpus/corpus-00021.tsv
+[loader] loaded corpus chunk corpus/corpus-00022.tsv
+[loader] loaded corpus chunk corpus/corpus-00023.tsv
+[loader] loaded corpus chunk corpus/corpus-00024.tsv
+[loader] loaded corpus chunk corpus/corpus-00025.tsv
+[loader] loaded corpus chunk corpus/corpus-00026.tsv
+[loader] loaded corpus chunk corpus/corpus-00027.tsv
+[loader] loaded corpus chunk corpus/corpus-00028.tsv
+[loader] loaded corpus chunk corpus/corpus-00029.tsv
+[loader] loaded corpus chunk corpus/corpus-00030.tsv
+[loader] loaded corpus chunk corpus/corpus-00031.tsv
+[loader] loaded corpus chunk corpus/corpus-00032.tsv
+[loader] loaded corpus chunk corpus/corpus-00033.tsv
+[loader] loaded corpus chunk corpus/corpus-00034.tsv
+[loader] loaded corpus chunk corpus/corpus-00035.tsv
+[loader] loaded corpus chunk corpus/corpus-00036.tsv
+[loader] loaded corpus chunk corpus/corpus-00037.tsv
+[loader] loaded corpus chunk corpus/corpus-00038.tsv
+[loader] loaded corpus chunk corpus/corpus-00039.tsv
+[loader] loaded queries chunk queries/queries-00000.tsv
+[loader] building ec_hnsw_real_ann_benchmarks_anchor_idx using ec_ivf (reloptions=[storage_format=pq_fastscan, pq_group_size=8, nlists=1024, nprobe=64, rerank=heap_f32, rerank_width=1000]) ...
+[loader] built ec_hnsw_real_ann_benchmarks_anchor_idx in 724.44s
+┌─────────┬──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ field   ┆ value                                                                                                                                            │
+╞═════════╪══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════╡
+│ profile ┆ ec_ivf                                                                                                                                           │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ ec_hnsw_real_ann_benchmarks_anchor_corpus (990000 rows)                                                                                          │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ ec_hnsw_real_ann_benchmarks_anchor_queries (10000 rows)                                                                                          │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ ec_hnsw_real_ann_benchmarks_anchor_idx [storage_format=pq_fastscan, pq_group_size=8, nlists=1024, nprobe=64, rerank=heap_f32, rerank_width=1000] │
+└─────────┴──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+[loader] completed prefix ec_hnsw_real_ann_benchmarks_anchor in 2438.74s

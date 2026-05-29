@@ -1,0 +1,21 @@
+--- hardening/careful/src/../../../src/quant/rabitq.rs
++++ replace + with - in estimate_ip_impl
+@@ -1115,17 +1115,17 @@
+             .expect("norm slice is always 4 bytes"),
+     );
+     let candidate_o_dot = f32::from_le_bytes(
+         code[s + RABITQ_NORM_LEN..s + RABITQ_NORM_LEN + RABITQ_UNIT_DOT_LEN]
+             .try_into()
+             .expect("o_dot slice is always 4 bytes"),
+     );
+     let candidate_x_norm = f32::from_le_bytes(
+-        code[s + RABITQ_NORM_LEN + RABITQ_UNIT_DOT_LEN..s + RABITQ_SCALAR_LEN]
++        code[s + RABITQ_NORM_LEN + RABITQ_UNIT_DOT_LEN..s - /* ~ changed by cargo-mutants ~ */ RABITQ_SCALAR_LEN]
+             .try_into()
+             .expect("x_norm slice is always 4 bytes"),
+     );
+ 
+     let sqrt_d = (dimensions as f32).sqrt();
+ 
+     // Σ_i q_i · dequant(level_i) in the rotated basis.
+     let mut sum_q_dequant = 0.0_f32;
