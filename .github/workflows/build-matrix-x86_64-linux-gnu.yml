@@ -24,7 +24,7 @@ jobs:
       fail-fast: false
       matrix:
         pg: [pg17, pg18]
-        toolchain: [stable]
+        toolchain: [1.95.0]
     env:
       PGRX_HOME: /tmp/tqvector_pgrx_home
     steps:
@@ -32,6 +32,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.95.0
         with:
           toolchain: ${{ matrix.toolchain }}
+          components: clippy
       - uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.pg }}-${{ matrix.toolchain }}
