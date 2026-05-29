@@ -21,6 +21,7 @@ jobs:
     env:
       PGRX_HOME: /tmp/tqvector_pgrx_home
       PGRX_PG_CONFIG_PATH: /usr/lib/postgresql/18/bin/pg_config
+      RUSTFLAGS: "-C target-cpu=x86-64 -C link-arg=-Wl,--unresolved-symbols=ignore-all"
     steps:
       - uses: actions/checkout@v4
 
@@ -76,14 +77,17 @@ jobs:
     env:
       PGRX_HOME: /tmp/tqvector_pgrx_home
       PGRX_PG_CONFIG_PATH: /usr/lib/postgresql/18/bin/pg_config
+      RUSTFLAGS: ${{ matrix.rustflags }}
     strategy:
       fail-fast: false
       matrix:
         include:
           - arch: avx2
             runner: ubuntu-24.04
+            rustflags: "-C target-cpu=x86-64 -C link-arg=-Wl,--unresolved-symbols=ignore-all"
           - arch: neon
             runner: ubuntu-24.04-arm
+            rustflags: "-C target-cpu=generic -C link-arg=-Wl,--unresolved-symbols=ignore-all"
     steps:
       - uses: actions/checkout@v4
 
@@ -146,6 +150,7 @@ jobs:
     runs-on: ubuntu-24.04
     env:
       PGRX_HOME: /tmp/tqvector_pgrx_home
+      RUSTFLAGS: "-C target-cpu=x86-64 -C link-arg=-Wl,--unresolved-symbols=ignore-all"
     steps:
       - uses: actions/checkout@v4
 
@@ -183,6 +188,7 @@ jobs:
       PGHOST: /tmp/tqvector_pgrx_home
       PGPORT: "28818"
       PGDATABASE: postgres
+      RUSTFLAGS: "-C target-cpu=x86-64 -C link-arg=-Wl,--unresolved-symbols=ignore-all"
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
@@ -250,6 +256,7 @@ jobs:
     if: github.event_name == 'pull_request'
     env:
       PGRX_HOME: /tmp/tqvector_pgrx_home
+      RUSTFLAGS: "-C target-cpu=x86-64 -C link-arg=-Wl,--unresolved-symbols=ignore-all"
     strategy:
       fail-fast: false
       matrix:
@@ -326,6 +333,7 @@ jobs:
     if: github.event_name == 'workflow_dispatch'
     env:
       PGRX_HOME: /tmp/tqvector_pgrx_home
+      RUSTFLAGS: "-C target-cpu=x86-64 -C link-arg=-Wl,--unresolved-symbols=ignore-all"
     steps:
       - uses: actions/checkout@v4
 
@@ -358,6 +366,8 @@ jobs:
   licenses:
     name: License Audit
     runs-on: ubuntu-24.04
+    env:
+      RUSTFLAGS: "-C target-cpu=x86-64"
     steps:
       - uses: actions/checkout@v4
 
@@ -379,6 +389,7 @@ jobs:
     env:
       PGRX_HOME: /tmp/tqvector_pgrx_home
       PGRX_PG_CONFIG_PATH: /usr/lib/postgresql/18/bin/pg_config
+      RUSTFLAGS: "-C target-cpu=x86-64 -C link-arg=-Wl,--unresolved-symbols=ignore-all"
     steps:
       - uses: actions/checkout@v4
         with:
