@@ -13,6 +13,7 @@
   - `109d4cc75d44a78b4b1d8e42cd2e63348ed5c87e` - fix portable `StringInfo` byte pointer casts
   - `609cf836670833480430cb0cf02016a180c0a846` - narrow the `StringInfo` no-cast target split to Linux-style aarch64
   - `c65a3508fa66eacb7d99de365ef4986374b9fed9` - repair the careful coverage harness after current source-shape drift
+  - `7a9f08b956b02f0b5c433ee2e80ffac9171ad480` - allow PG18 CI extension installs against apt-owned PostgreSQL directories
 - Packet: `reviews/task-30/1000-spire-merge-ci-hotfix`
 
 ## Summary
@@ -33,6 +34,7 @@ This hotfix stabilizes the post-merge CI failures from PR #6 without changing SP
 - Records the current clippy baseline explicitly and applies mechanical `cargo fmt` output.
 - Keeps `pq_getmsgbytes` byte reads portable across PG18 CI targets: Linux-style aarch64 keeps the native `u8` pointer while x86 and macOS cast PostgreSQL's `c_char` pointer to `u8`.
 - Restores the `hardening/careful` coverage crate against current storage, SPIRE, DiskANN, and IVF helper shapes so the Test Quality Coverage job can compile the same coverage harness again.
+- Fixes the PG18 Stage E CI setup by making apt-owned PG18 extension install directories writable by the runner before fixture scripts call `cargo pgrx install`; this addresses a setup permission failure, not SPIRE runtime behavior.
 
 ## Validation
 
@@ -55,5 +57,7 @@ This hotfix stabilizes the post-merge CI failures from PR #6 without changing SP
 - `artifacts/cargo-test-careful-hardening-lib.log` - `cargo test --manifest-path hardening/careful/Cargo.toml --lib` passed with `573 passed`.
 - `artifacts/cargo-check-pg18-careful-harness.log` - `cargo check --no-default-features --features pg18` passed after the careful harness repair.
 - `artifacts/make-coverage-missing-llvm-cov.log` - `make coverage` was attempted locally but could not run because this environment lacks `cargo-llvm-cov`; CI installs that tool before running coverage.
+- `artifacts/ci-spire-stage-e-remote-timeout-install-permission-failure.log` - CI failure log showing the Stage E `remote_statement_timeout` job built successfully then failed copying `ecaz.control` to `/usr/share/postgresql/18/extension`.
+- `artifacts/ci-pg18-install-dir-ownership-diff-check.log` - PG18 CI extension-install directory ownership fix has no whitespace errors.
 
 Note: a local `cargo +1.95.0 clippy --all-targets --no-default-features --features pg18,bench -- -D warnings` validation was attempted after clearing a stale PG17 cargo process, but it ran too long without diagnostics and was stopped. The authoritative validation for this follow-up is the PR CI rerun on the same pinned toolchain.

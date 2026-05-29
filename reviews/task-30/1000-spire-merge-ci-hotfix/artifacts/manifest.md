@@ -1,9 +1,9 @@
 # Manifest: SPIRE Merge CI Hotfix
 
-- head SHA: `c65a3508fa66eacb7d99de365ef4986374b9fed9`
+- head SHA: `7a9f08b956b02f0b5c433ee2e80ffac9171ad480`
 - task bucket: `reviews/task-30`
 - packet path: `reviews/task-30/1000-spire-merge-ci-hotfix`
-- timestamp: `2026-05-29T19:42:25Z`
+- timestamp: `2026-05-29T19:52:33Z`
 - lane: post-merge CI stabilization
 - fixture/storage/rerank mode: not applicable
 - isolated one-index-per-table or shared-table surface: not applicable
@@ -31,3 +31,5 @@
 | `cargo-test-careful-hardening-lib.log` | `cargo test --manifest-path hardening/careful/Cargo.toml --lib` | `test result: ok. 573 passed; 0 failed` |
 | `cargo-check-pg18-careful-harness.log` | `cargo check --no-default-features --features pg18` | `Finished dev profile` |
 | `make-coverage-missing-llvm-cov.log` | `make coverage` | local run stopped before coverage because `cargo-llvm-cov` is not installed in this environment |
+| `ci-spire-stage-e-remote-timeout-install-permission-failure.log` | `gh api /repos/agent-ix/ecaz/actions/jobs/78574630864/logs` | Stage E `remote_statement_timeout` built successfully, then failed copying `ecaz.control` to `/usr/share/postgresql/18/extension` with permission denied |
+| `ci-pg18-install-dir-ownership-diff-check.log` | `git diff --check` | no whitespace errors in the PG18 CI extension-install directory ownership fix |
