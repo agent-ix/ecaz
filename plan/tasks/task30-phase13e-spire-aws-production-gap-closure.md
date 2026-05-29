@@ -63,7 +63,9 @@ Acceptance:
 
 Acceptance:
 
-- [ ] If the gate is not met, packet records "pooling not justified" with profile rows.
+- [x] If the gate is not met, packet records "pooling not justified" with profile rows.
+  Not applicable: the gate was met by AWS profile evidence, so the pooling
+  implementation and payoff evidence path below applies.
 - [x] If the gate is met, pooled reads reduce connect/TLS count and improve latency without stale-identity reuse.
   Local PG18 gates and packet `998-spire-phase13e-pooling-evidence-local`
   prove pooled reuse reduces follow-up socket opens and that a failed pooled
@@ -80,7 +82,11 @@ Acceptance:
 
 ## Review And Evidence Rules
 
-- [ ] Each implementation slice gets a code commit and a task-local review packet under `reviews/task-30/`.
+- [x] Each implementation slice gets a code commit and a task-local review packet under `reviews/task-30/`.
+  Phase 13e implementation, local validation, AWS correctness, representative
+  performance/pooling, operations, and final closeout evidence are split across
+  task-local packets `957` through `1067` and pushed on
+  `diskann-aws-optimization`.
 - [x] Test and benchmark logs live under packet-local `artifacts/`.
 - [x] AWS proof cannot begin until 13e.1 and 13e.2 pass locally.
 - [x] AWS proof uses the established Graviton/aarch64 lane from Phase 13a/13b
