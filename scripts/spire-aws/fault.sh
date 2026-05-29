@@ -206,11 +206,11 @@ query_vector_literal() {
   local raw literal
   raw="$("$ECAZ_BIN" dev sql \
     --host "$COORD_HOST" --port "$COORD_PORT" --user ecaz_coord --database postgres \
-    --sql "SELECT 'ARRAY[' || array_to_string(source, ',') || ']::real[]' FROM ${PREFIX}_queries WHERE id = 0" \
+    --sql "SELECT 'ARRAY[' || array_to_string(source, ',') || ']::real[]' FROM ${PREFIX}_queries ORDER BY id LIMIT 1" \
     --log-output "$ARTIFACT_DIR/fault-${DRILL}-query-vector.log")"
   literal="$(printf '%s\n' "$raw" | tr -d '\r' | sed -n '/^ARRAY\[/p' | head -n 1)"
   if [[ -z "$literal" ]]; then
-    echo "failed to render finite query vector literal for ${PREFIX}_queries id=0" | tee -a "$LOG" >&2
+    echo "failed to render finite query vector literal from ${PREFIX}_queries" | tee -a "$LOG" >&2
     return 1
   fi
   QUERY_VECTOR_LITERAL="$literal"
