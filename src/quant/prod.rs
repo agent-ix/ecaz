@@ -2424,8 +2424,7 @@ mod tests {
                         .push(shared);
 
                     let private_seed = PRIVATE_SEED_BASE ^ (worker_id as u64);
-                    let private =
-                        ProdQuantizer::cached(SHARED_KEY.0, SHARED_KEY.1, private_seed);
+                    let private = ProdQuantizer::cached(SHARED_KEY.0, SHARED_KEY.1, private_seed);
                     private_results
                         .lock()
                         .expect("private collector mutex")

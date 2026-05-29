@@ -20,7 +20,10 @@ use color_eyre::eyre::{eyre, Context, Result};
 use ecaz_sqlgen::Generator;
 
 #[derive(Parser, Debug)]
-#[command(version, about = "ECAZ-grammar SQL generator (Task 46 sqlsmith-ecaz lane)")]
+#[command(
+    version,
+    about = "ECAZ-grammar SQL generator (Task 46 sqlsmith-ecaz lane)"
+)]
 struct Cli {
     #[command(subcommand)]
     command: Command,
@@ -97,7 +100,11 @@ fn run_generate(args: GenerateArgs) -> Result<()> {
         Some(p) => Box::new(File::create(&p).wrap_err_with(|| format!("create {}", p.display()))?),
         None => Box::new(io::stdout().lock()),
     };
-    writeln!(out, "-- ecaz-sqlgen seed={} count={}", args.seed, args.count)?;
+    writeln!(
+        out,
+        "-- ecaz-sqlgen seed={} count={}",
+        args.seed, args.count
+    )?;
     for _ in 0..args.count {
         for stmt in g.one_statement(&args.table, &args.column) {
             writeln!(out, "{stmt}")?;

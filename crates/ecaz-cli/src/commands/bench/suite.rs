@@ -3894,6 +3894,7 @@ mod tests {
                 "/var/run/postgresql".into(),
             ],
             selected: true,
+            pgoptions: None,
             tags: vec!["recall".into(), "rabitq".into(), "task60".into()],
             expected_artifacts: vec!["recall.log".into()],
             status: Some(StepStatus::Succeeded),

@@ -1157,8 +1157,12 @@ pub(super) fn concurrent_dsm_graph_parts(
     // produces typed region pointers within the DSM allocation.
     unsafe {
         EcHnswConcurrentDsmGraphParts {
-            header: base.add(layout.header_offset).cast::<EcHnswConcurrentDsmGraphHeader>(),
-            nodes: base.add(layout.nodes_offset).cast::<EcHnswConcurrentDsmNode>(),
+            header: base
+                .add(layout.header_offset)
+                .cast::<EcHnswConcurrentDsmGraphHeader>(),
+            nodes: base
+                .add(layout.nodes_offset)
+                .cast::<EcHnswConcurrentDsmNode>(),
             neighbor_slots: base.add(layout.neighbor_slots_offset).cast::<u32>(),
             codes: base.add(layout.codes_offset),
             sources: base.add(layout.sources_offset).cast::<f32>(),

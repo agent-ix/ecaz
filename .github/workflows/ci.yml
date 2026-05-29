@@ -25,7 +25,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@1.95.0
 
       - name: Cache cargo artifacts
         uses: Swatinem/rust-cache@v2
@@ -86,7 +86,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@1.95.0
 
       - name: Cache cargo artifacts
         uses: Swatinem/rust-cache@v2
@@ -118,7 +118,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@1.95.0
         with:
           targets: s390x-unknown-linux-gnu
 
@@ -148,7 +148,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@1.95.0
 
       - name: Cache cargo artifacts
         uses: Swatinem/rust-cache@v2
@@ -162,7 +162,7 @@ jobs:
           echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt noble-pgdg main" | \
             sudo tee /etc/apt/sources.list.d/pgdg.list
           sudo apt-get update
-          sudo apt-get install -y postgresql-server-dev-18 postgresql-server-dev-17 clang llvm pkg-config libssl-dev
+          sudo apt-get install -y postgresql-18 postgresql-17 postgresql-server-dev-18 postgresql-server-dev-17 clang llvm pkg-config libssl-dev
 
       - name: Install cargo-pgrx
         run: cargo install cargo-pgrx --version 0.17.0 --locked
@@ -186,7 +186,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@1.95.0
 
       - name: Cache cargo artifacts
         uses: Swatinem/rust-cache@v2
@@ -200,7 +200,7 @@ jobs:
           echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt noble-pgdg main" | \
             sudo tee /etc/apt/sources.list.d/pgdg.list
           sudo apt-get update
-          sudo apt-get install -y postgresql-server-dev-18 postgresql-server-dev-17 clang llvm pkg-config libssl-dev
+          sudo apt-get install -y postgresql-18 postgresql-17 postgresql-server-dev-18 postgresql-server-dev-17 clang llvm pkg-config libssl-dev
 
       - name: Install cargo-pgrx
         run: cargo install cargo-pgrx --version 0.17.0 --locked
@@ -264,8 +264,7 @@ jobs:
       - name: Detect SPIRE surface changes
         id: changes
         run: |
-          git fetch origin "${{ github.base_ref }}" --depth=1
-          git diff --name-only "origin/${{ github.base_ref }}...HEAD" > /tmp/changed-files
+          git diff --name-only "${{ github.event.pull_request.base.sha }}" HEAD > /tmp/changed-files
           if grep -Eq '^(src/am/ec_spire/|sql/|scripts/run_spire_multicluster_.*\.sh)' /tmp/changed-files; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
@@ -274,7 +273,7 @@ jobs:
 
       - name: Install Rust toolchain
         if: steps.changes.outputs.run == 'true'
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@1.95.0
 
       - name: Cache cargo artifacts
         if: steps.changes.outputs.run == 'true'
@@ -290,7 +289,7 @@ jobs:
           echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt noble-pgdg main" | \
             sudo tee /etc/apt/sources.list.d/pgdg.list
           sudo apt-get update
-          sudo apt-get install -y postgresql-server-dev-18 postgresql-server-dev-17 clang llvm pkg-config libssl-dev
+          sudo apt-get install -y postgresql-18 postgresql-17 postgresql-server-dev-18 postgresql-server-dev-17 clang llvm pkg-config libssl-dev
 
       - name: Install cargo-pgrx
         if: steps.changes.outputs.run == 'true'
@@ -328,7 +327,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@1.95.0
 
       - name: Cache cargo artifacts
         uses: Swatinem/rust-cache@v2
@@ -342,7 +341,7 @@ jobs:
           echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt noble-pgdg main" | \
             sudo tee /etc/apt/sources.list.d/pgdg.list
           sudo apt-get update
-          sudo apt-get install -y postgresql-server-dev-18 postgresql-server-dev-17 clang llvm pkg-config libssl-dev
+          sudo apt-get install -y postgresql-18 postgresql-17 postgresql-server-dev-18 postgresql-server-dev-17 clang llvm pkg-config libssl-dev
 
       - name: Install cargo-pgrx
         run: cargo install cargo-pgrx --version 0.17.0 --locked
@@ -360,7 +359,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@1.95.0
 
       - name: Cache cargo artifacts
         uses: Swatinem/rust-cache@v2
@@ -383,7 +382,7 @@ jobs:
           fetch-depth: 0
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@1.95.0
         with:
           components: llvm-tools-preview
 
@@ -414,8 +413,7 @@ jobs:
       - name: Changed files
         if: github.event_name == 'pull_request'
         run: |
-          git fetch origin "${{ github.base_ref }}" --depth=1
-          git diff --name-only "origin/${{ github.base_ref }}...HEAD" > target/quality/changed-files.txt
+          git diff --name-only "${{ github.event.pull_request.base.sha }}" HEAD > target/quality/changed-files.txt
 
       - name: Coverage delta gate
         run: |
@@ -441,7 +439,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@1.95.0
 
       - name: Cache cargo artifacts
         uses: Swatinem/rust-cache@v2
@@ -494,7 +492,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@1.95.0
 
       - name: Cache cargo artifacts
         uses: Swatinem/rust-cache@v2
