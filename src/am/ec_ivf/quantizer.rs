@@ -346,9 +346,9 @@ impl IvfQuantizer {
     ) -> Result<bool, String> {
         match (self.profile, prepared_query) {
             (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::RaBitQ(prepared_query))
-                if self.rabitq_bits == 1 =>
+                if self.rabitq_bits == 1 || self.rabitq_bits == 8 =>
             {
-                prepared_query.estimate_ip_bits1_batch(payloads, payload_len, out_scores)?;
+                prepared_query.estimate_ip_batch(payloads, payload_len, out_scores)?;
                 Ok(true)
             }
             (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::RaBitQ(_))
