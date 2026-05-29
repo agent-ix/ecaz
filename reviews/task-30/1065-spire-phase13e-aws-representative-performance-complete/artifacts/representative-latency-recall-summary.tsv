@@ -1,0 +1,26 @@
+source	step	kind	nprobe	queries_or_count	latency_p50	latency_p95	latency_p99	recall_at_k
+latency	13a3a-latency-k10-c1	latency	8	1000	85.7 ms	93.3 ms	99.1 ms	
+latency	13a3a-latency-k10-c1	latency	16	1000	88.9 ms	97.9 ms	106.9 ms	
+latency	13a3a-latency-k10-c1	latency	24	1000	91.3 ms	99.7 ms	106.5 ms	
+latency	13a3a-latency-k10-c1	latency	32	1000	93.2 ms	103.7 ms	112.4 ms	
+latency	13a3a-latency-k10-c4	latency	8	1000	92.0 ms	108.1 ms	119.6 ms	
+latency	13a3a-latency-k10-c4	latency	16	1000	95.2 ms	109.5 ms	133.1 ms	
+latency	13a3a-latency-k10-c4	latency	24	1000	98.9 ms	115.3 ms	135.2 ms	
+latency	13a3a-latency-k10-c4	latency	32	1000	100.1 ms	117.8 ms	134.7 ms	
+latency	13a3a-latency-k10-c8	latency	8	1000	128.7 ms	151.5 ms	172.9 ms	
+latency	13a3a-latency-k10-c8	latency	16	1000	130.1 ms	156.1 ms	179.9 ms	
+latency	13a3a-latency-k10-c8	latency	24	1000	130.5 ms	150.9 ms	171.0 ms	
+latency	13a3a-latency-k10-c8	latency	32	1000	130.8 ms	154.2 ms	183.8 ms	
+latency	13a3f-pk-c32	latency	32	5000	477.1 ms	896.7 ms	983.8 ms	
+recall	13a3a-recall-k10	recall	8	1000				0.7868
+recall	13a3a-recall-k10	recall	16	1000				0.8626
+recall	13a3a-recall-k10	recall	24	1000				0.8962
+recall	13a3a-recall-k10	recall	32	1000				0.9187
+recall	13a3a-recall-k10	recall	64	1000				0.9573
+recall	13a3a-recall-k100	recall	8	1000				0.6861
+recall	13a3a-recall-k100	recall	16	1000				0.7897
+recall	13a3a-recall-k100	recall	24	1000				0.8360
+recall	13a3a-recall-k100	recall	32	1000				0.8684
+recall	13a3a-recall-k100	recall	64	1000				0.9334
+spire-pipeline	13e3-production-read-profile-k10	spire-pipeline	64	1000	99.298 ms	107.870 ms	117.529 ms	0.9573
+spire-pipeline	13e3-production-read-profile-k100	spire-pipeline	64	1000	103.760 ms	112.564 ms	118.312 ms	0.9334

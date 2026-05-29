@@ -1,6 +1,6 @@
 # Task 30 Phase 13e: SPIRE AWS Production Gap Closure
 
-Status: local functionality gates passed; AWS correctness core passed on Graviton; q=20 AWS pooling payoff captured; next AWS proof is the full representative latency/recall plus suite-gated pooling A/B before fault rerun
+Status: local functionality gates passed; AWS correctness core passed on Graviton; representative AWS latency/recall and suite-gated pooling A/B complete; fault rerun/operations evidence remains before final product-scale claim
 Owner: coder1 / SPIRE AWS production track
 Priority: P0 before any AWS product-scale claim
 
@@ -52,7 +52,7 @@ Acceptance:
 
 - [x] Local slow/fast remote fixture proves fast remote is not serialized behind slow remote.
 - [x] AWS correctness tier captures selected PIDs, dispatch count, connect/TLS time, candidate time, heap time, payload bytes, merge time, timeout/cancel counts.
-- [ ] Representative tier captures p50/p95/p99 latency and recall.
+- [x] Representative tier captures p50/p95/p99 latency and recall.
 
 ## 13e.4 Evidence-Gated Connection Pooling
 
@@ -64,7 +64,7 @@ Acceptance:
 Acceptance:
 
 - [ ] If the gate is not met, packet records "pooling not justified" with profile rows.
-- [ ] If the gate is met, pooled reads reduce connect/TLS count and improve latency without stale-identity reuse.
+- [x] If the gate is met, pooled reads reduce connect/TLS count and improve latency without stale-identity reuse.
   Local PG18 gates and packet `998-spire-phase13e-pooling-evidence-local`
   prove pooled reuse reduces follow-up socket opens and that a failed pooled
   remote connection is dropped before post-restart reuse. Reviewer feedback on
@@ -72,15 +72,18 @@ Acceptance:
   packet `1063` confirms on the preserved Graviton cluster that disabling the
   pool opens one socket per dispatch with `connect_p50` around `19-20 ms`,
   while the default pool opens zero sockets and reduces q=20 production-read
-  `total_p50` by `9-11 ms`. Full suite-gated AWS representative latency proof
-  remains pending.
+  `total_p50` by `9-11 ms`. Packet `1065` completes the suite-gated q=1000
+  representative pooling A/B: socket opens drop from `3000` to `0`,
+  connect p95 drops from `19 ms` to `0 ms`, production total p95 improves from
+  `59 ms` to `49 ms`, coordinator latency p95 improves from `120.175 ms` to
+  `107.893 ms`, and recall delta remains `0`.
 
 ## Review And Evidence Rules
 
 - [ ] Each implementation slice gets a code commit and a task-local review packet under `reviews/task-30/`.
-- [ ] Test and benchmark logs live under packet-local `artifacts/`.
+- [x] Test and benchmark logs live under packet-local `artifacts/`.
 - [x] AWS proof cannot begin until 13e.1 and 13e.2 pass locally.
-- [ ] AWS proof uses the established Graviton/aarch64 lane from Phase 13a/13b
+- [x] AWS proof uses the established Graviton/aarch64 lane from Phase 13a/13b
   and the checked-in SPIRE runbook/module. New hardware shapes, regions, or
   setup procedures require an explicit task/runbook amendment before any
   provisioning run.
@@ -177,3 +180,18 @@ Acceptance:
   stopped Graviton instances and complete `bench-representative-priority`,
   `bench-representative-pooling`, `summarize-representative-performance`, and
   `verify-representative-performance-summary`.
+- Packet `1065` completes that restart against the preserved packet 1062
+  Graviton cluster without provisioning, reinstalling, reloading data, or
+  rebuilding topology. The representative suite captured p50/p95/p99 latency
+  for nprobe `8,16,24,32`, recall for nprobe `8,16,24,32,64`, q=1000
+  production read profiles for k=10 and k=100 at nprobe `64`, and q=1000
+  pooled-vs-unpooled A/B evidence at nprobe `64`. The verifier accepted
+  `latency:8 16 24 32 recall:8 16 24 32 64 production:64 pooling:64`.
+  Representative k=10 recall reaches `0.9573` at nprobe `64`; production
+  k=10 reports coordinator p50/p95/p99 `99.298/107.870/117.529 ms`,
+  `remote_heap_candidates`, `dispatch_sum=3000`, `socket_open_sum=0`,
+  `total_p50=46 ms`, `total_p95=49 ms`, and zero timeout/cancel/degraded
+  skips. The pooling suite shows disabled-vs-enabled socket opens `3000 -> 0`,
+  connect p95 `19 ms -> 0 ms`, production total p95 `59 ms -> 49 ms`, and
+  recall delta `0`. After the run, all `us-west-2` EC2 instances were stopped
+  and a packet-local no-pending/running/stopping check was captured.
