@@ -1543,11 +1543,14 @@ fn sum_query_dequant_bits1_byte_lut_scalar(
 }
 
 /// bfdot accumulator using inline asm. Equivalent to the nightly
-/// `vbfdotq_f32(acc, a, b)` intrinsic. Operands:
-///   - `acc`: f32x4 accumulator
-///   - `a`, `b`: each carries 8 bf16 lanes packed as u16x8
-/// Result: `acc[i] += a[2i]*b[2i] + a[2i+1]*b[2i+1]` for i ∈ 0..4
-///         (all multiplies happen in bf16, accumulation in f32).
+/// `vbfdotq_f32(acc, a, b)` intrinsic.
+///
+/// Operands:
+/// - `acc`: f32x4 accumulator
+/// - `a`, `b`: each carries 8 bf16 lanes packed as u16x8
+///
+/// Result: `acc[i] += a[2i]*b[2i] + a[2i+1]*b[2i+1]` for i in 0..4.
+/// All multiplies happen in bf16, accumulation in f32.
 #[cfg(target_arch = "aarch64")]
 #[target_feature(enable = "neon,bf16")]
 unsafe fn bfdot_asm(
@@ -1686,16 +1689,16 @@ unsafe fn sum_query_dequant_neon_bf16_bits4(
     sum
 }
 
-/// bits=1 NEON sign-popcount kernel. 1-bit codes are 4× smaller than
-/// 4-bit codes per vector (192 vs 768 bytes at dim=1536), so this
-/// kernel is bandwidth-bound on memory in addition to being compute-
-/// efficient. The dequant LUT has only 2 entries: `lut[0] = -1/√D`,
-/// `lut[1] = +1/√D`. Each code byte unpacks to 8 lanes of dequant
-/// values.
-///
-/// Loop layout: 32 dims per iteration = 4 code bytes, dispatched to
-/// 4 independent `vfmaq_f32` chains. Same 4-way unroll pattern as
-/// the bits=4 kernel to fill Neoverse-V2's 4 SIMD pipes.
+// bits=1 NEON sign-popcount kernel. 1-bit codes are 4x smaller than
+// 4-bit codes per vector (192 vs 768 bytes at dim=1536), so this
+// kernel is bandwidth-bound on memory in addition to being compute-
+// efficient. The dequant LUT has only 2 entries: `lut[0] = -1/sqrt(D)`,
+// `lut[1] = +1/sqrt(D)`. Each code byte unpacks to 8 lanes of dequant
+// values.
+//
+// Loop layout: 32 dims per iteration = 4 code bytes, dispatched to
+// 4 independent `vfmaq_f32` chains. Same 4-way unroll pattern as
+// the bits=4 kernel to fill Neoverse-V2's 4 SIMD pipes.
 // build_bits1_byte_lut_boxed (defined above) is the per-query
 // builder; the prior per-candidate version was a perf bug and is
 // removed.
@@ -3298,8 +3301,6 @@ mod tests {
             let query: Vec<f32> = (0..dim)
                 .map(|i| ((i as f32) - dim as f32 / 2.0) * 0.13)
                 .collect();
-            let sqrt_d = (dim as f32).sqrt();
-
             let lut = build_dequant_lut(dim, bits, RABITQ_DEFAULT_QUANT_CLIP);
             let scalar = sum_query_dequant_scalar(&query, dim, bits, &lut, &code);
             // SAFETY: aarch64 cfg + always-present NEON on the supported
