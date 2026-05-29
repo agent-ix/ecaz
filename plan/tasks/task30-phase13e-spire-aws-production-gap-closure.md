@@ -1,6 +1,6 @@
 # Task 30 Phase 13e: SPIRE AWS Production Gap Closure
 
-Status: local functionality gates passed; AWS correctness core passed on Graviton; next AWS proof is representative latency/recall plus pooling A/B before fault rerun
+Status: local functionality gates passed; AWS correctness core passed on Graviton; q=20 AWS pooling payoff captured; next AWS proof is the full representative latency/recall plus suite-gated pooling A/B before fault rerun
 Owner: coder1 / SPIRE AWS production track
 Priority: P0 before any AWS product-scale claim
 
@@ -69,7 +69,11 @@ Acceptance:
   prove pooled reuse reduces follow-up socket opens and that a failed pooled
   remote connection is dropped before post-restart reuse. Reviewer feedback on
   packet `998` confirms the local pooling mechanism evidence is complete; AWS
-  representative latency proof remains pending.
+  packet `1063` confirms on the preserved Graviton cluster that disabling the
+  pool opens one socket per dispatch with `connect_p50` around `19-20 ms`,
+  while the default pool opens zero sockets and reduces q=20 production-read
+  `total_p50` by `9-11 ms`. Full suite-gated AWS representative latency proof
+  remains pending.
 
 ## Review And Evidence Rules
 
@@ -157,3 +161,19 @@ Acceptance:
 - Packet `1035` adds a direct-Make start marker between representative
   preflight and provisioning, so an interrupted `pass-representative-performance`
   run reserves its packet before EC2 resources can be created.
+- Packet `1063` captures a targeted q=20 pooled-vs-unpooled
+  production-read-profile comparison on the preserved packet 1062 Graviton
+  cluster: `socket_open_sum` drops from `53/60/60/60` to `0/0/0/0`,
+  `connect_p50` drops from `19-20 ms` to `0 ms`, and `total_p50` improves by
+  `9-11 ms` across nprobe `8,16,24,32` with identical recall rows. This
+  answers the immediate pooling-payoff question but does not replace the full
+  q=1000 representative suite acceptance evidence.
+- Packet `1064` preserves an interrupted start of the full representative
+  suite. Smoke checks still proved `EcSpireDistributedScan` and
+  `remote_heap_candidates`, but the operator requested nightly shutdown while
+  the suite was entering `13a3a-recall-k10`; all selected suite steps remained
+  pending. All `us-west-2` EC2 instances were stopped and no SSM tunnel or
+  benchmark process remained. The next AWS work is to deliberately restart the
+  stopped Graviton instances and complete `bench-representative-priority`,
+  `bench-representative-pooling`, `summarize-representative-performance`, and
+  `verify-representative-performance-summary`.
