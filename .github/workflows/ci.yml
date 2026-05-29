@@ -51,8 +51,8 @@ jobs:
       - name: Lint
         run: cargo clippy --all-targets --no-default-features --features pg18,bench -- -D warnings
 
-      - name: Unit tests
-        run: cargo test
+      - name: Host-side unit tests
+        run: cargo test -p ecaz-cloud -p ecaz-fault-injection -p ecaz-sqlgen
 
       - name: On-disk fixtures
         run: cargo test --features bench --test on_disk_fixtures

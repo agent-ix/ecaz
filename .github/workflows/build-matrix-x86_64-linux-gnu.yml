@@ -1,8 +1,8 @@
 name: Build Matrix — x86_64-unknown-linux-gnu
 
 # Task 48 §Exit Criteria #1: per-PR lane for the production primary
-# triple. Runs cargo check + clippy + cargo test on the production pg18
-# target.
+# triple. Runs cargo check + clippy + test compilation on the production
+# pg18 target. Backend execution runs in the PG18 pgrx lane.
 #
 # Status: blocking (per docs/build-matrix.md cadence policy).
 
@@ -60,5 +60,5 @@ jobs:
       - name: cargo clippy
         run: cargo clippy --all-targets --no-default-features --features ${{ matrix.pg }} -- -D warnings
 
-      - name: cargo test
-        run: cargo test --no-default-features --features ${{ matrix.pg }}
+      - name: cargo test compile
+        run: cargo test --no-run --no-default-features --features ${{ matrix.pg }}
