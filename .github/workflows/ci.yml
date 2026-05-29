@@ -164,13 +164,13 @@ jobs:
           echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt noble-pgdg main" | \
             sudo tee /etc/apt/sources.list.d/pgdg.list
           sudo apt-get update
-          sudo apt-get install -y postgresql-18 postgresql-17 postgresql-server-dev-18 postgresql-server-dev-17 clang llvm pkg-config libssl-dev
+          sudo apt-get install -y postgresql-18 postgresql-server-dev-18 clang llvm pkg-config libssl-dev
 
       - name: Install cargo-pgrx
         run: cargo install cargo-pgrx --version 0.17.0 --locked
 
-      - name: Initialize pgrx for pg18 and pg17
-        run: cargo pgrx init --pg18 /usr/lib/postgresql/18/bin/pg_config --pg17 /usr/lib/postgresql/17/bin/pg_config
+      - name: Initialize pgrx for pg18
+        run: cargo pgrx init --pg18 /usr/lib/postgresql/18/bin/pg_config
 
       - name: pg18 tests
         run: cargo pgrx test pg18
@@ -202,13 +202,13 @@ jobs:
           echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt noble-pgdg main" | \
             sudo tee /etc/apt/sources.list.d/pgdg.list
           sudo apt-get update
-          sudo apt-get install -y postgresql-18 postgresql-17 postgresql-server-dev-18 postgresql-server-dev-17 clang llvm pkg-config libssl-dev
+          sudo apt-get install -y postgresql-18 postgresql-server-dev-18 clang llvm pkg-config libssl-dev
 
       - name: Install cargo-pgrx
         run: cargo install cargo-pgrx --version 0.17.0 --locked
 
-      - name: Initialize pgrx for pg18 and pg17
-        run: cargo pgrx init --pg18 /usr/lib/postgresql/18/bin/pg_config --pg17 /usr/lib/postgresql/17/bin/pg_config
+      - name: Initialize pgrx for pg18
+        run: cargo pgrx init --pg18 /usr/lib/postgresql/18/bin/pg_config
 
       - name: Build CLI and install extension
         run: |
@@ -291,15 +291,15 @@ jobs:
           echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt noble-pgdg main" | \
             sudo tee /etc/apt/sources.list.d/pgdg.list
           sudo apt-get update
-          sudo apt-get install -y postgresql-18 postgresql-17 postgresql-server-dev-18 postgresql-server-dev-17 clang llvm pkg-config libssl-dev
+          sudo apt-get install -y postgresql-18 postgresql-server-dev-18 clang llvm pkg-config libssl-dev
 
       - name: Install cargo-pgrx
         if: steps.changes.outputs.run == 'true'
         run: cargo install cargo-pgrx --version 0.17.0 --locked
 
-      - name: Initialize pgrx for pg18 and pg17
+      - name: Initialize pgrx for pg18
         if: steps.changes.outputs.run == 'true'
-        run: cargo pgrx init --pg18 /usr/lib/postgresql/18/bin/pg_config --pg17 /usr/lib/postgresql/17/bin/pg_config
+        run: cargo pgrx init --pg18 /usr/lib/postgresql/18/bin/pg_config
 
       - name: Build ecaz CLI
         if: steps.changes.outputs.run == 'true'
@@ -323,6 +323,7 @@ jobs:
   pgrx-pg17:
     name: pgrx pg17
     runs-on: ubuntu-24.04
+    if: github.event_name == 'workflow_dispatch'
     env:
       PGRX_HOME: /tmp/tqvector_pgrx_home
     steps:
