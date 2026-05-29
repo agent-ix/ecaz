@@ -1,9 +1,9 @@
 # Manifest: SPIRE Merge CI Hotfix
 
-- head SHA: `cb4b71fe03ab151fe40cbfd0ef27afefaa198a1c`
+- head SHA: `a20b893b06f839a056912323fd5be71aa1e279e7`
 - task bucket: `reviews/task-30`
 - packet path: `reviews/task-30/1000-spire-merge-ci-hotfix`
-- timestamp: `2026-05-29T21:26:33Z`
+- timestamp: `2026-05-29T21:35:46Z`
 - lane: post-merge CI stabilization
 - fixture/storage/rerank mode: not applicable
 - isolated one-index-per-table or shared-table surface: not applicable
@@ -50,3 +50,6 @@
 | `cargo-fmt-check-pgrx-pg18-preload-ci-final.log` | `cargo fmt --all -- --check` | exited 0 after the PG18 preload CI workflow fix |
 | `cargo-check-ecaz-cli-pgrx-pg18-preload-ci-final.log` | `cargo check -p ecaz-cli` | `Finished dev profile`; only pre-existing `LoadedDistributedPlacementConfig::path` warning remains |
 | `cargo-test-ecaz-cli-dev-support-pgrx-paths.log` | `cargo test -p ecaz-cli commands::dev::support::tests` | `test result: ok. 4 passed; 0 failed` |
+| `git-diff-check-after-task66-merge-warning-fix.log` | `git diff --check` | no whitespace errors after resolving the task 66 merge conflict |
+| `cargo-fmt-check-after-task66-merge-warning-fix.log` | `cargo fmt --all -- --check` | exited 0 after resolving the task 66 merge conflict |
+| `cargo-test-no-run-pg18-after-task66-merge-warning-fix.log` | `cargo test --no-run --no-default-features --features pg18` | `Finished test profile` after resolving task 66 and fixing the target-dependent unused-argument warning |

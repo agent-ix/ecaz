@@ -18,6 +18,7 @@
   - `7854ff96cf37b410ca417a01fbfe976f6fc05b9c` - make Stage E CI run directories unique per GitHub run attempt
   - `e25cfac638c23a9bd63801a28565cbc1c4865a53` - fix IVF v1 fixture expectation after IVF metadata format version bump
   - `cb4b71fe03ab151fe40cbfd0ef27afefaa198a1c` - validate PG18 CI through an installed-extension preload smoke instead of raw host extension test execution
+  - `a20b893b06f839a056912323fd5be71aa1e279e7` - merge current `origin/main` task 66 updates and resolve the RabitQ test conflict
 - Packet: `reviews/task-30/1000-spire-merge-ci-hotfix`
 
 ## Summary
@@ -44,6 +45,7 @@ This hotfix stabilizes the post-merge CI failures from PR #6 without changing SP
 - Fixes the IVF v1 on-disk fixture assertion to check the fixture's stored format version `1` and the legacy decoded `quant_bits = 4`, rather than comparing a v1 fixture to the moving current writer format constant.
 - Replaces the standalone `pgrx pg18` CI job's `cargo pgrx test pg18` invocation, which still raw-executes the extension test binary outside PostgreSQL, with `cargo pgrx install --test` plus the existing PG18 preload smoke that creates the extension, builds an index, executes a query, and verifies shared pgstat from another backend.
 - Teaches the dev-test install resolver to use `pg_config --sharedir` and `--pkglibdir`, so the preload smoke works against both pgrx-managed trees and apt/system PG18 installs.
+- Merges current `origin/main` task 66 RabitQ updates into this branch; the only content conflict was a blank-line conflict in `src/quant/rabitq.rs`, plus a target-dependent unused-argument warning fixed by marking the dispatch context intentionally `_ctx` on non-aarch64 targets.
 
 ## Validation
 
@@ -85,5 +87,8 @@ This hotfix stabilizes the post-merge CI failures from PR #6 without changing SP
 - `artifacts/cargo-fmt-check-pgrx-pg18-preload-ci-final.log` - `cargo fmt --all -- --check` passed after the preload CI workflow fix.
 - `artifacts/cargo-check-ecaz-cli-pgrx-pg18-preload-ci-final.log` - `cargo check -p ecaz-cli` passed; it reported only the pre-existing `LoadedDistributedPlacementConfig::path` dead-code warning.
 - `artifacts/cargo-test-ecaz-cli-dev-support-pgrx-paths.log` - focused `cargo test -p ecaz-cli commands::dev::support::tests` passed with `4 passed`.
+- `artifacts/git-diff-check-after-task66-merge-warning-fix.log` - task 66 merge resolution has no whitespace errors.
+- `artifacts/cargo-fmt-check-after-task66-merge-warning-fix.log` - `cargo fmt --all -- --check` passed after merging task 66 and fixing the target-dependent warning.
+- `artifacts/cargo-test-no-run-pg18-after-task66-merge-warning-fix.log` - `cargo test --no-run --no-default-features --features pg18` passed after merging task 66, with no RabitQ unused-argument warning.
 
 Note: a local `cargo +1.95.0 clippy --all-targets --no-default-features --features pg18,bench -- -D warnings` validation was attempted after clearing a stale PG17 cargo process, but it ran too long without diagnostics and was stopped. The authoritative validation for this follow-up is the PR CI rerun on the same pinned toolchain.
