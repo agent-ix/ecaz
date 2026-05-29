@@ -644,12 +644,12 @@
                 })
                 .collect::<Vec<_>>()
         });
-        custom_scan_rows.sort_unstable_by(|left, right| left.0.cmp(&right.0));
+        custom_scan_rows.sort_unstable_by_key(|row| row.0);
         let mut expected_payload_rows = all_pid_payloads
             .into_iter()
             .map(|(_, id, title)| (id, title))
             .collect::<Vec<_>>();
-        expected_payload_rows.sort_unstable_by(|left, right| left.0.cmp(&right.0));
+        expected_payload_rows.sort_unstable_by_key(|row| row.0);
 
         assert_eq!(custom_scan_rows, expected_payload_rows);
     }

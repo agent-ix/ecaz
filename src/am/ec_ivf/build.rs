@@ -567,9 +567,8 @@ pub(super) unsafe fn flush_build_plan(index_relation: pg_sys::Relation, plan: &I
     debug_assert!(plan.data_page_count() > 0);
     debug_assert_eq!(plan.total_live_tuples(), plan.posting_count() as u64);
 
-    let handle = NonNull::new(index_relation).unwrap_or_else(|| {
-        pgrx::error!("ec_ivf flush_build_plan received a null index relation")
-    });
+    let handle = NonNull::new(index_relation)
+        .unwrap_or_else(|| pgrx::error!("ec_ivf flush_build_plan received a null index relation"));
     write_data_pages(handle, &plan.data_pages);
     // SAFETY: same live relation; metadata belongs to the staged plan just
     // flushed to disk.

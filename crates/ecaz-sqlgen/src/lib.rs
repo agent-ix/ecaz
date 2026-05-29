@@ -146,13 +146,9 @@ impl Generator {
         let dim = self.pick_usize(DIM_LADDER);
         let q = self.random_vector(dim);
         vec![
-            format!(
-                "CREATE INDEX IF NOT EXISTS {index_name} ON {table} USING {am} ({column});"
-            ),
+            format!("CREATE INDEX IF NOT EXISTS {index_name} ON {table} USING {am} ({column});"),
             format!("REINDEX INDEX CONCURRENTLY {index_name};"),
-            format!(
-                "SELECT id FROM {table} ORDER BY {column} {op} '{q}'::vector LIMIT 5;"
-            ),
+            format!("SELECT id FROM {table} ORDER BY {column} {op} '{q}'::vector LIMIT 5;"),
         ]
     }
 

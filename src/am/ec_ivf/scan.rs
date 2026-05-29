@@ -36,7 +36,6 @@ use super::quantizer::{self, IvfPqFastScanModel, IvfPreparedQuery, IvfQuantizer}
 // impl with `#[derive(Debug)]`.
 #[derive(Default)]
 struct EcIvfScanOpaque {
-
     rescan_called: bool,
     query_dimensions: u16,
     query_values: *mut f32,
@@ -988,7 +987,6 @@ unsafe fn configure_heap_rerank_state(
             .expect("heap rerank source attnum should fit in i16"),
     }));
 }
-
 
 fn resolve_effective_nprobe(metadata: &super::page::MetadataPage) -> u32 {
     super::options::resolve_scan_nprobe(metadata.nlists, metadata.nprobe).effective_nprobe
@@ -2152,9 +2150,7 @@ unsafe fn debug_prepared_query_sq_len(opaque: &EcIvfScanOpaque) -> usize {
 /// # Safety
 /// Callers hold the index relation open for this metadata read.
 #[cfg(any(test, feature = "pg_test"))]
-unsafe fn debug_read_metadata_page(
-    index_relation: pg_sys::Relation,
-) -> super::page::MetadataPage {
+unsafe fn debug_read_metadata_page(index_relation: pg_sys::Relation) -> super::page::MetadataPage {
     super::page::read_metadata_page(index_relation)
 }
 

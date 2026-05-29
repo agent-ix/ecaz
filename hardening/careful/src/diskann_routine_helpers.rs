@@ -41,6 +41,7 @@ mod scaffold {
             pub tid: ItemPointer,
             pub primary_heaptid: ItemPointer,
             pub distance: f32,
+            pub has_overflow_heaptids: bool,
         }
     }
 
@@ -249,11 +250,13 @@ mod scaffold {
                     tid: tid(1, 1),
                     primary_heaptid: tid(100, 1),
                     distance: 0.1,
+                    has_overflow_heaptids: false,
                 },
                 scan::ScanResult {
                     tid: tid(1, 2),
                     primary_heaptid: tid(100, 2),
                     distance: 0.2,
+                    has_overflow_heaptids: false,
                 },
             ];
             // Test shim's bound_heap_tids_for_owner returns just the

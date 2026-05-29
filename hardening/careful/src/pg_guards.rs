@@ -6,6 +6,7 @@ pub mod pg_sys {
     pub type Buffer = i32;
     pub type BlockNumber = u32;
     pub type LOCKMODE = i32;
+    pub type OffsetNumber = u16;
     pub type Oid = u32;
     pub type Page = *mut u8;
     pub type Snapshot = *mut SnapshotData;
@@ -64,6 +65,15 @@ pub mod pg_sys {
     pub struct SPITupleTable;
     pub struct TupleDescData;
     pub struct TupleTableSlotOps;
+    pub struct varlena;
+
+    pub struct StdRdOptionsAutovacuum {
+        pub enabled: bool,
+    }
+
+    pub struct StdRdOptions {
+        pub autovacuum: StdRdOptionsAutovacuum,
+    }
 
     pub struct RelationData {
         pub rd_att: *mut TupleDescData,
@@ -304,6 +314,10 @@ pub mod pg_sys {
     }
 
     pub unsafe fn GetTransactionSnapshot() -> Snapshot {
+        Box::into_raw(Box::new(SnapshotData))
+    }
+
+    pub unsafe fn GetActiveSnapshot() -> Snapshot {
         Box::into_raw(Box::new(SnapshotData))
     }
 
@@ -1018,11 +1032,11 @@ mod tests {
         let relation = HeapRelationGuard::try_access_share(22).unwrap();
 
         {
-            let slot = TupleTableSlotGuard::create(relation.as_ptr()).unwrap();
+            let slot = TupleTableSlotGuard::create_for_heap_guard(&relation).unwrap();
             assert!(!slot.as_ptr().is_null());
         }
         {
-            let slot = TupleTableSlotGuard::single_for_heap(relation.as_ptr()).unwrap();
+            let slot = unsafe { TupleTableSlotGuard::single_for_heap(relation.as_ptr()) }.unwrap();
             assert!(!slot.as_ptr().is_null());
         }
 
@@ -1061,11 +1075,11 @@ mod tests {
         let snapshot = ActiveSnapshotGuard::latest().unwrap();
 
         {
-            let scan = IndexScanGuard::begin(&heap, &index, &snapshot, 0, 1).unwrap();
+            let scan = unsafe { IndexScanGuard::begin(&heap, &index, &snapshot, 0, 1) }.unwrap();
             assert!(!scan.as_ptr().is_null());
         }
         {
-            let scan = HeapScanGuard::begin(heap.as_ptr(), &snapshot, 0).unwrap();
+            let scan = unsafe { HeapScanGuard::begin(heap.as_ptr(), &snapshot, 0) }.unwrap();
             assert!(!scan.as_ptr().is_null());
         }
 

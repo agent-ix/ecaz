@@ -341,9 +341,11 @@ pub mod storage {
 
         #[test]
         fn relation_object_store_inserts_reject_epoch_zero() {
-            // for_store_relation_id is safe — it just stores the pointer/id.
-            let store =
-                SpireRelationObjectStore::for_store_relation_id(std::ptr::null_mut(), 0, 12345);
+            // SAFETY: this negative-path test never dereferences the null
+            // relation because epoch validation fails before storage access.
+            let store = unsafe {
+                SpireRelationObjectStore::for_store_relation_id(std::ptr::null_mut(), 0, 12345)
+            };
 
             let routing = SpireRoutingPartitionObject::root(11, 3, 2, routing_children()).unwrap();
             assert!(store.insert_routing_object(0, &routing).is_err());
@@ -427,11 +429,15 @@ pub mod storage {
 
         fn make_store(rel: &mut pg_sys::RelationData) -> SpireRelationObjectStore {
             let store_relid = rel.rd_id;
-            let store = SpireRelationObjectStore::for_store_relation_id(
-                rel,
-                ROUND_TRIP_LOCAL_STORE_ID,
-                store_relid,
-            );
+            // SAFETY: relation points at the test's live backing-page
+            // emulator relation for the full store lifetime.
+            let store = unsafe {
+                SpireRelationObjectStore::for_store_relation_id(
+                    rel,
+                    ROUND_TRIP_LOCAL_STORE_ID,
+                    store_relid,
+                )
+            };
             // SAFETY: relation is alive for the test; metadata block 0 must
             // exist before any object tuple insert.
             unsafe { page::initialize_aux_store_metadata_page(rel) };
@@ -1391,12 +1397,10 @@ mod page_tests {
 
     #[test]
     fn append_object_tuple_rejects_uninitialized_relation() {
-        // Force RelationGetNumberOfBlocksInFork to report zero blocks so the
-        // append helper bails out before requesting any page.
-        pg_sys::set_relation_block_count(0);
-        // SAFETY: shadow RelationGetNumberOfBlocksInFork returns 0; the
-        // helper returns Err before touching the relation pointer.
-        let err = unsafe { page::append_object_tuple(null_relation(), &[1, 2, 3]) }
+        let mut rel = synth_relation(35000);
+        // SAFETY: the relation is non-null but has no registered page
+        // blocks, so the helper returns Err before requesting a page.
+        let err = unsafe { page::append_object_tuple(&mut rel, &[1, 2, 3]) }
             .expect_err("uninitialized relation must be rejected");
         assert!(
             err.contains("root/control block must be initialized"),
@@ -1406,8 +1410,9 @@ mod page_tests {
 
     #[test]
     fn delete_object_tuples_no_compact_is_noop_for_empty_input() {
+        let mut rel = synth_relation(35006);
         // SAFETY: the helper iterates the empty slice and returns Ok early.
-        let (count, bytes) = unsafe { page::delete_object_tuples_no_compact(null_relation(), &[]) }
+        let (count, bytes) = unsafe { page::delete_object_tuples_no_compact(&mut rel, &[]) }
             .expect("empty delete should succeed");
         assert_eq!(count, 0);
         assert_eq!(bytes, 0);
@@ -1419,9 +1424,10 @@ mod page_tests {
             block_number: METADATA_BLOCK_NUMBER,
             offset_number: 1,
         }];
+        let mut rel = synth_relation(35007);
         // SAFETY: returns Err while validating the TID list, before opening
         // any buffer.
-        let err = unsafe { page::delete_object_tuples_no_compact(null_relation(), &tids) }
+        let err = unsafe { page::delete_object_tuples_no_compact(&mut rel, &tids) }
             .expect_err("metadata block tid must be rejected");
         assert!(
             err.contains("cannot remove metadata block"),

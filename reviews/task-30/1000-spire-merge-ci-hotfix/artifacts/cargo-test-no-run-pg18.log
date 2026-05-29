@@ -1,0 +1,33 @@
+Script started on 2026-05-29 10:19:57-07:00 [<not executed on terminal>]
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz)
+warning: function `fwht_in_place_scalar_reference` is never used
+  --> src/quant/hadamard.rs:50:8
+   |
+50 | pub fn fwht_in_place_scalar_reference(values: &mut [f32]) {
+   |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `fwht_in_place_avx2_for_test` is never used
+  --> src/quant/hadamard.rs:55:8
+   |
+55 | pub fn fwht_in_place_avx2_for_test(values: &mut [f32]) -> bool {
+   |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: `ecaz` (lib test) generated 2 warnings
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3m 15s
+  Executable unittests src/lib.rs (target/debug/deps/ecaz-4d470a37761eaf70)
+  Executable unittests src/bin/approx_score_study.rs (target/debug/deps/approx_score_study-be22cd482e8726e7)
+  Executable unittests src/bin/pgrx_embed.rs (target/debug/deps/pgrx_embed_ecaz-eebbd8cd7a7874c8)
+  Executable unittests src/bin/simd_bench.rs (target/debug/deps/simd_bench-67980f61b259ca29)
+  Executable tests/kani_item_pointer.rs (target/debug/deps/kani_item_pointer-4be93bfd84e6803a)
+  Executable tests/on_disk_fixtures.rs (target/debug/deps/on_disk_fixtures-5c1f4f831144b54a)
+  Executable tests/proptest_page.rs (target/debug/deps/proptest_page-dd099cb8d32bc5ce)
+  Executable tests/proptest_quant.rs (target/debug/deps/proptest_quant-a9033ff9522aa92d)
+  Executable tests/recall_integration.rs (target/debug/deps/recall_integration-b9e69f4ab6f581d4)
+  Executable tests/simd_diff.rs (target/debug/deps/simd_diff-ca27f043a106e1bc)
+  Executable tests/size_of_assertions.rs (target/debug/deps/size_of_assertions-741fdb84b671bb30)
+  Executable tests/upgrade_matrix.rs (target/debug/deps/upgrade_matrix-04365c6689c30f03)
+  Executable tests/wal_policy.rs (target/debug/deps/wal_policy-56abb32e8c3bcfde)
+
+Script done on 2026-05-29 10:23:03-07:00 [COMMAND_EXIT_CODE="0"]

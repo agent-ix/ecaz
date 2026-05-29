@@ -192,6 +192,8 @@ fn resolve_install(
             .and_then(std::path::Path::parent)
             .map(PathBuf::from)
             .context("resolving install root from --pg-config")?;
+        let sharedir = pg_config_value(&pg_config, "--sharedir")?;
+        let pkglibdir = pg_config_value(&pg_config, "--pkglibdir")?;
         let version_label = root
             .parent()
             .and_then(std::path::Path::parent)
@@ -201,7 +203,8 @@ fn resolve_install(
         return Ok(PgrxInstall {
             version_label,
             bin_dir: root.join("bin"),
-            root,
+            sharedir,
+            pkglibdir,
             pg_config,
         });
     }

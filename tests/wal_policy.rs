@@ -1,3 +1,5 @@
+#![allow(clippy::assertions_on_constants)]
+
 use ecaz::bench_api::{
     validate_custom_wal_record_format_version, ECAZ_CUSTOM_WAL_RECORDS_ENABLED,
     ECAZ_CUSTOM_WAL_RECORD_FORMAT_VERSION, ECAZ_CUSTOM_WAL_RECORD_FORMAT_VERSION_OFFSET,

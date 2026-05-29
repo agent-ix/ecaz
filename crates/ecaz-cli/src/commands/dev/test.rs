@@ -106,7 +106,8 @@ async fn run_pg18_preload_pgstat(args: Pg18PreloadPgstatArgs) -> Result<()> {
             .arg(&log_file)
             .arg("-o")
             .arg(format!(
-                "-p {candidate} -c listen_addresses=127.0.0.1 -c shared_preload_libraries=ecaz"
+                "-p {candidate} -c listen_addresses=127.0.0.1 -c unix_socket_directories={} -c shared_preload_libraries=ecaz",
+                cluster_root.display()
             ))
             .arg("-w")
             .arg("start")
@@ -228,12 +229,14 @@ LIMIT 1
 }
 
 fn assert_preload_install_ready(install: &super::support::PgrxInstall) -> Result<()> {
-    let control_file = install.root.join("share/postgresql/extension/ecaz.control");
-    let library_file = install.root.join("lib/postgresql/ecaz.so");
+    let control_file = install.sharedir.join("extension/ecaz.control");
+    let library_file = install.pkglibdir.join("ecaz.so");
     if !control_file.is_file() || !library_file.is_file() {
         bail!(
-            "ecaz is not installed in the local PG18 pgrx tree at {}; run `cargo pgrx test pg18` or `cargo pgrx install --features 'pg18 pg_test' --no-default-features` first",
-            install.root.display()
+            "ecaz is not installed for PG18 via {}; missing {} or {}; run `cargo pgrx install --features 'pg18 pg_test' --no-default-features` first",
+            install.pg_config.display(),
+            control_file.display(),
+            library_file.display()
         );
     }
     Ok(())

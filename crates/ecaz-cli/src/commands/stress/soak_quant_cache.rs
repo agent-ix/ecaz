@@ -221,7 +221,9 @@ pub fn run(args: SoakQuantCacheArgs) -> Result<()> {
         // is split across the iteration; a minimum of 250ms keeps
         // per-iteration overhead noise low.
         let remaining = deadline.saturating_duration_since(iter_start);
-        let iter_budget = remaining.min(Duration::from_millis(500)).max(Duration::from_millis(50));
+        let iter_budget = remaining
+            .min(Duration::from_millis(500))
+            .max(Duration::from_millis(50));
         let iter_deadline = iter_start + iter_budget;
 
         thread::scope(|scope| {
@@ -249,8 +251,7 @@ pub fn run(args: SoakQuantCacheArgs) -> Result<()> {
                             // two before the modulo keeps a unit-stride walk across
                             // every `shared_keys` slot regardless of parity.
                             let key_index = ((local_ops as u32) / 2) % shared_keys;
-                            let shared_seed = SHARED_SEED_BASE
-                                .wrapping_add(u64::from(key_index));
+                            let shared_seed = SHARED_SEED_BASE.wrapping_add(u64::from(key_index));
                             let arc = ProdQuantizer::cached(dim, bits, shared_seed);
                             let strong = Arc::strong_count(&arc) as u64;
                             max_strong_count.fetch_max(strong, Ordering::Relaxed);
@@ -332,8 +333,7 @@ pub fn run(args: SoakQuantCacheArgs) -> Result<()> {
         iterations,
     };
 
-    let json = serde_json::to_string_pretty(&summary)
-        .wrap_err("serialize soak summary as JSON")?;
+    let json = serde_json::to_string_pretty(&summary).wrap_err("serialize soak summary as JSON")?;
     crate::ecaz_println!("{json}");
 
     if let Some(path) = args.log_output {

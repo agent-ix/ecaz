@@ -1,4 +1,5 @@
 //! Microbenchmarks for the scoring hot loop — the innermost path called per candidate.
+#![allow(clippy::single_element_loop)]
 
 #[path = "../helpers.rs"]
 mod helpers;

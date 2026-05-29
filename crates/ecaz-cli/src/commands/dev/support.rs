@@ -11,9 +11,10 @@ pub(crate) const PG18_PRELOAD_DEFAULT_PORT: u16 = 28818;
 #[derive(Debug, Clone)]
 pub(crate) struct PgrxInstall {
     pub(crate) version_label: String,
-    pub(crate) root: PathBuf,
     pub(crate) bin_dir: PathBuf,
     pub(crate) pg_config: PathBuf,
+    pub(crate) sharedir: PathBuf,
+    pub(crate) pkglibdir: PathBuf,
 }
 
 pub(crate) fn repo_root() -> Result<PathBuf> {
@@ -82,10 +83,13 @@ pub(crate) fn find_pgrx_install(major: u16, pgrx_home: &Path) -> Result<PgrxInst
     candidates.sort_by(|a, b| compare_version_labels(&a.0, &b.0));
     if let Some((version_label, root, pg_config)) = candidates.pop() {
         let bin_dir = root.join("bin");
+        let sharedir = pg_config_path(&pg_config, "--sharedir")?;
+        let pkglibdir = pg_config_path(&pg_config, "--pkglibdir")?;
         return Ok(PgrxInstall {
             version_label,
-            root,
             bin_dir,
+            sharedir,
+            pkglibdir,
             pg_config,
         });
     }
@@ -127,12 +131,38 @@ fn find_pgrx_config_install(major: u16, pgrx_home: &Path) -> Result<Option<PgrxI
         .map(PathBuf::from)
         .ok_or_else(|| eyre!("could not infer install root from {}", pg_config.display()))?;
     let bin_dir = root.join("bin");
+    let sharedir = pg_config_path(&pg_config, "--sharedir")?;
+    let pkglibdir = pg_config_path(&pg_config, "--pkglibdir")?;
     Ok(Some(PgrxInstall {
         version_label: key,
-        root,
         bin_dir,
+        sharedir,
+        pkglibdir,
         pg_config,
     }))
+}
+
+fn pg_config_path(pg_config: &Path, flag: &str) -> Result<PathBuf> {
+    let output = std::process::Command::new(pg_config)
+        .arg(flag)
+        .output()
+        .wrap_err_with(|| format!("running {} {}", pg_config.display(), flag))?;
+    if !output.status.success() {
+        bail!(
+            "{} {} failed with status {}: {}",
+            pg_config.display(),
+            flag,
+            output.status,
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+    let value = String::from_utf8(output.stdout)
+        .wrap_err_with(|| format!("{} {} emitted non-UTF8 output", pg_config.display(), flag))?;
+    let value = value.trim();
+    if value.is_empty() {
+        bail!("{} {} returned an empty path", pg_config.display(), flag);
+    }
+    Ok(PathBuf::from(value))
 }
 
 fn read_pgrx_config_pg_config(config: &str, key: &str) -> Option<String> {

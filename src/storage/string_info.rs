@@ -69,7 +69,12 @@ impl<'msg> StringInfoReader<'msg> {
         // the requested byte range for exactly `len` bytes; copy before
         // returning so no borrowed message-buffer lifetime escapes.
         unsafe {
-            let ptr = pg_sys::pq_getmsgbytes(self.msg, len as i32) as *const u8;
+            #[cfg(all(target_arch = "aarch64", not(target_os = "macos")))]
+            let ptr = pg_sys::pq_getmsgbytes(self.msg, len as i32);
+
+            #[cfg(not(all(target_arch = "aarch64", not(target_os = "macos"))))]
+            let ptr = pg_sys::pq_getmsgbytes(self.msg, len as i32).cast::<u8>();
+
             Ok(std::slice::from_raw_parts(ptr, len).to_vec())
         }
     }

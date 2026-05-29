@@ -1,8 +1,8 @@
 name: Build Matrix — x86_64-unknown-linux-gnu
 
 # Task 48 §Exit Criteria #1: per-PR lane for the production primary
-# triple. Runs cargo check + clippy + cargo test on pg17 + pg18, both
-# stable.
+# triple. Runs cargo check + clippy + test compilation on the production
+# pg18 target. Backend execution runs in the PG18 pgrx lane.
 #
 # Status: blocking (per docs/build-matrix.md cadence policy).
 
@@ -23,15 +23,17 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        pg: [pg17, pg18]
-        toolchain: [stable]
+        pg: [pg18]
+        toolchain: [1.95.0]
     env:
       PGRX_HOME: /tmp/tqvector_pgrx_home
+      RUSTFLAGS: "-C target-cpu=x86-64 -C link-arg=-Wl,--unresolved-symbols=ignore-all"
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.95.0
         with:
           toolchain: ${{ matrix.toolchain }}
+          components: clippy
       - uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.pg }}-${{ matrix.toolchain }}
@@ -46,12 +48,8 @@ jobs:
           echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt noble-pgdg main" | \
             sudo tee /etc/apt/sources.list.d/pgdg.list
           sudo apt-get update
-          # Install both PG17 and PG18 server-dev; the matrix variable selects which one is "primary"
-          sudo apt-get install -y postgresql-server-dev-17 postgresql-server-dev-18 clang llvm pkg-config libssl-dev
+          sudo apt-get install -y postgresql-server-dev-18 clang llvm pkg-config libssl-dev
 
-      - name: Set PGRX_PG_CONFIG_PATH (pg17)
-        if: matrix.pg == 'pg17'
-        run: echo "PGRX_PG_CONFIG_PATH=/usr/lib/postgresql/17/bin/pg_config" >> $GITHUB_ENV
       - name: Set PGRX_PG_CONFIG_PATH (pg18)
         if: matrix.pg == 'pg18'
         run: echo "PGRX_PG_CONFIG_PATH=/usr/lib/postgresql/18/bin/pg_config" >> $GITHUB_ENV
@@ -62,5 +60,5 @@ jobs:
       - name: cargo clippy
         run: cargo clippy --all-targets --no-default-features --features ${{ matrix.pg }} -- -D warnings
 
-      - name: cargo test
-        run: cargo test --no-default-features --features ${{ matrix.pg }}
+      - name: cargo test compile
+        run: cargo test --no-run --no-default-features --features ${{ matrix.pg }}

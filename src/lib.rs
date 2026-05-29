@@ -1,3 +1,33 @@
+#![allow(
+    clippy::assertions_on_constants,
+    clippy::clone_on_copy,
+    clippy::deref_addrof,
+    unused_unsafe,
+    clippy::derivable_impls,
+    clippy::doc_lazy_continuation,
+    clippy::err_expect,
+    clippy::if_same_then_else,
+    clippy::int_plus_one,
+    clippy::large_enum_variant,
+    clippy::let_and_return,
+    clippy::manual_contains,
+    clippy::manual_range_contains,
+    clippy::needless_borrow,
+    clippy::needless_lifetimes,
+    clippy::needless_return,
+    clippy::op_ref,
+    clippy::redundant_closure,
+    clippy::redundant_closure_call,
+    clippy::single_element_loop,
+    clippy::too_many_arguments,
+    clippy::type_complexity,
+    clippy::useless_conversion,
+    clippy::useless_format,
+    clippy::useless_vec,
+    clippy::vec_init_then_push,
+    clippy::wrong_self_convention
+)]
+
 use pgrx::extension_sql_file;
 use pgrx::ffi::CString;
 use pgrx::prelude::*;

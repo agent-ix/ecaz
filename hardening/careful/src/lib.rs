@@ -73,6 +73,42 @@ pub mod storage {
     pub use crate::careful_pg_guards::relation_guard;
     pub use crate::careful_pg_guards::wal;
     pub use crate::careful_storage_page as page;
+
+    pub mod relation {
+        use std::ptr::NonNull;
+
+        use crate::pg_sys;
+
+        pub(crate) type RelationHandle = NonNull<pg_sys::RelationData>;
+
+        pub(crate) fn main_fork_block_count_handle(
+            relation: RelationHandle,
+        ) -> pg_sys::BlockNumber {
+            // SAFETY: careful tests pass live pg_sys-shim relation handles.
+            unsafe {
+                pg_sys::RelationGetNumberOfBlocksInFork(
+                    relation.as_ptr(),
+                    pg_sys::ForkNumber::MAIN_FORKNUM,
+                )
+            }
+        }
+
+        pub(crate) fn relation_oid_handle(relation: RelationHandle) -> pg_sys::Oid {
+            // SAFETY: careful tests allocate RelationData in the local pg_sys
+            // shim and keep the handle live for the checked operation.
+            unsafe { (*relation.as_ptr()).rd_id }
+        }
+
+        pub(crate) fn relation_options_handle(_relation: RelationHandle) -> *mut pg_sys::varlena {
+            std::ptr::null_mut()
+        }
+
+        pub(crate) fn index_heap_relation_oid_handle(
+            index_relation: RelationHandle,
+        ) -> pg_sys::Oid {
+            relation_oid_handle(index_relation)
+        }
+    }
 }
 
 pub mod am {
@@ -97,6 +133,30 @@ pub mod am {
         pub use crate::careful_diskann_tuple as tuple;
         pub use crate::careful_diskann_vacuum as vacuum;
         pub use crate::careful_diskann_vamana as vamana;
+
+        pub(crate) mod quantizer {
+            use crate::am::ec_diskann::page::{
+                VamanaMetadataPage, VAMANA_SEARCH_CODEC_GROUPED_PQ, VAMANA_SEARCH_CODEC_RABITQ,
+            };
+
+            pub(crate) const DISKANN_RABITQ_BITS: u8 = 1;
+            const RABITQ_SCALAR_LEN: usize = 12;
+
+            pub(crate) fn metadata_search_code_len(
+                metadata: &VamanaMetadataPage,
+            ) -> Result<usize, String> {
+                match metadata.search_codec_kind {
+                    VAMANA_SEARCH_CODEC_GROUPED_PQ => {
+                        Ok(usize::from(metadata.search_subvector_count).div_ceil(2))
+                    }
+                    VAMANA_SEARCH_CODEC_RABITQ => Ok((usize::from(metadata.dimensions)
+                        * usize::from(metadata.search_subvector_dim))
+                    .div_ceil(8)
+                        + RABITQ_SCALAR_LEN),
+                    other => Err(format!("ec_diskann unsupported search codec kind {other}")),
+                }
+            }
+        }
     }
 
     pub mod ec_hnsw {
@@ -110,6 +170,24 @@ pub mod am {
 
     pub mod ec_spire {
         pub use crate::careful_spire::{assign, meta, page, storage};
+    }
+
+    pub mod stream {
+        use crate::pg_sys;
+
+        pub(crate) fn prefetch_relation_blocks(
+            relation: pg_sys::Relation,
+            block_numbers: Vec<pg_sys::BlockNumber>,
+            _context: &str,
+        ) {
+            for block_number in block_numbers {
+                // SAFETY: careful coverage uses the pg_sys shim and only
+                // asserts the helper dispatch path, not PostgreSQL IO.
+                unsafe {
+                    pg_sys::PrefetchBuffer(relation, pg_sys::ForkNumber::MAIN_FORKNUM, block_number)
+                };
+            }
+        }
     }
 }
 

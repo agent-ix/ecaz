@@ -229,18 +229,20 @@ async fn run_max_locks(conn: &ConnectionOptions) -> (Outcome, String) {
     let result = client.simple_query(&script).await;
     let alive = cluster_alive(conn).await;
     match (result, alive) {
-        (Err(e), true) if format!("{e}").to_lowercase().contains("out of shared memory")
-            || format!("{e}").to_lowercase().contains("max_locks_per_transaction") =>
+        (Err(e), true)
+            if format!("{e}")
+                .to_lowercase()
+                .contains("out of shared memory")
+                || format!("{e}")
+                    .to_lowercase()
+                    .contains("max_locks_per_transaction") =>
         {
             (
                 Outcome::Pass,
                 format!("clean ERROR after exceeding configured max_locks={max_locks}"),
             )
         }
-        (Err(e), true) => (
-            Outcome::Pass,
-            format!("ERROR (treated as clean): {e}"),
-        ),
+        (Err(e), true) => (Outcome::Pass, format!("ERROR (treated as clean): {e}")),
         (Ok(_), _) => (
             Outcome::WorkloadDidNotTrigger,
             format!("issued {n} temp-table locks without exceeding max_locks={max_locks}"),
@@ -297,9 +299,7 @@ async fn run_max_connections(conn: &ConnectionOptions) -> (Outcome, String) {
     }
     (
         Outcome::Pass,
-        format!(
-            "{errors} surplus connections cleanly rejected; cluster healthy post-burst"
-        ),
+        format!("{errors} surplus connections cleanly rejected; cluster healthy post-burst"),
     )
 }
 
@@ -322,7 +322,10 @@ async fn run_work_mem_min(conn: &ConnectionOptions) -> (Outcome, String) {
     let result = client.simple_query(script).await;
     let alive = cluster_alive(conn).await;
     match (result, alive) {
-        (Ok(_), true) => (Outcome::Pass, "query completed within minimum work_mem (spill ok)".to_string()),
+        (Ok(_), true) => (
+            Outcome::Pass,
+            "query completed within minimum work_mem (spill ok)".to_string(),
+        ),
         (Err(e), true) => (
             Outcome::Pass,
             format!("clean ERROR under minimum work_mem: {e}"),
@@ -354,10 +357,9 @@ async fn run_temp_file_limit(conn: &ConnectionOptions) -> (Outcome, String) {
     let result = client.simple_query(script).await;
     let alive = cluster_alive(conn).await;
     match (result, alive) {
-        (Err(e), true) if format!("{e}").to_lowercase().contains("temp file") => (
-            Outcome::Pass,
-            format!("clean temp_file_limit ERROR: {e}"),
-        ),
+        (Err(e), true) if format!("{e}").to_lowercase().contains("temp file") => {
+            (Outcome::Pass, format!("clean temp_file_limit ERROR: {e}"))
+        }
         (Err(e), true) => (
             Outcome::Pass,
             format!("workload ERROR (treated as clean): {e}"),
