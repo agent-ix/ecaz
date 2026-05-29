@@ -1,6 +1,6 @@
 # Task 30 Phase 13e: SPIRE AWS Production Gap Closure
 
-Status: local functionality gates passed; AWS correctness core passed on Graviton; representative AWS latency/recall, suite-gated pooling A/B, and operations fault-restore evidence complete; final product-scale claim pending outside review acceptance
+Status: local functionality gates passed; AWS correctness core passed on Graviton; representative AWS latency/recall, suite-gated pooling A/B, and operations fault-restore evidence complete; final closeout review requested
 Owner: coder1 / SPIRE AWS production track
 Priority: P0 before any AWS product-scale claim
 
@@ -209,3 +209,8 @@ Acceptance:
   `EcSpireDistributedScan` / `remote_heap_candidates` with zero timeout,
   cancel, or degraded-skip counters. All `us-west-2` instances were then
   stopped and verified with no pending/running/stopping instance rows.
+- Packet `1067` is the final closeout review request. It does not introduce a
+  new AWS run; it maps the task-file requirements to the accepted-or-submitted
+  evidence packets for correctness, performance/pooling, operations, and AWS
+  cost-safety verification. The final product-scale claim remains pending
+  outside reviewer acceptance of that closeout request.
