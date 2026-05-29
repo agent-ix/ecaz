@@ -2020,6 +2020,113 @@ unsafe fn sum_query_dequant_neon_bits1(
     sum
 }
 
+/// # Safety
+///
+/// Caller must confirm NEON availability before calling. `byte_lut` must be a
+/// bits=1 dequant byte table and both code slices must contain at least
+/// `ceil(dimensions / 8)` packed code bytes.
+#[cfg(target_arch = "aarch64")]
+#[target_feature(enable = "neon")]
+unsafe fn sum_query_dequant_neon_bits1_pair(
+    query_rotated: &[f32],
+    dimensions: usize,
+    byte_lut: &[[f32; 8]; 256],
+    lut: &[f32; 256],
+    code0: &[u8],
+    code1: &[u8],
+) -> (f32, f32) {
+    use std::arch::aarch64::{vaddq_f32, vdupq_n_f32, vfmaq_f32, vld1q_f32, vst1q_f32};
+
+    let mut a0 = vdupq_n_f32(0.0);
+    let mut a1 = vdupq_n_f32(0.0);
+    let mut a2 = vdupq_n_f32(0.0);
+    let mut a3 = vdupq_n_f32(0.0);
+    let mut b0 = vdupq_n_f32(0.0);
+    let mut b1 = vdupq_n_f32(0.0);
+    let mut b2 = vdupq_n_f32(0.0);
+    let mut b3 = vdupq_n_f32(0.0);
+
+    let mut dim_index = 0_usize;
+    while dim_index + 32 <= dimensions {
+        let byte_base = dim_index / 8;
+        if byte_base + 64 < dimensions.div_ceil(8) {
+            prefetch_read_l1(code0.as_ptr().add(byte_base + 64));
+            prefetch_read_l1(code1.as_ptr().add(byte_base + 64));
+        }
+
+        let q0 = vld1q_f32(query_rotated.as_ptr().add(dim_index));
+        let q1 = vld1q_f32(query_rotated.as_ptr().add(dim_index + 4));
+        let q2 = vld1q_f32(query_rotated.as_ptr().add(dim_index + 8));
+        let q3 = vld1q_f32(query_rotated.as_ptr().add(dim_index + 12));
+        let q4 = vld1q_f32(query_rotated.as_ptr().add(dim_index + 16));
+        let q5 = vld1q_f32(query_rotated.as_ptr().add(dim_index + 20));
+        let q6 = vld1q_f32(query_rotated.as_ptr().add(dim_index + 24));
+        let q7 = vld1q_f32(query_rotated.as_ptr().add(dim_index + 28));
+
+        let c0b0 = *code0.get_unchecked(byte_base) as usize;
+        let c0b1 = *code0.get_unchecked(byte_base + 1) as usize;
+        let c0b2 = *code0.get_unchecked(byte_base + 2) as usize;
+        let c0b3 = *code0.get_unchecked(byte_base + 3) as usize;
+        let c1b0 = *code1.get_unchecked(byte_base) as usize;
+        let c1b1 = *code1.get_unchecked(byte_base + 1) as usize;
+        let c1b2 = *code1.get_unchecked(byte_base + 2) as usize;
+        let c1b3 = *code1.get_unchecked(byte_base + 3) as usize;
+
+        let r00 = byte_lut.as_ptr().add(c0b0).cast::<f32>();
+        let r01 = byte_lut.as_ptr().add(c0b1).cast::<f32>();
+        let r02 = byte_lut.as_ptr().add(c0b2).cast::<f32>();
+        let r03 = byte_lut.as_ptr().add(c0b3).cast::<f32>();
+        let r10 = byte_lut.as_ptr().add(c1b0).cast::<f32>();
+        let r11 = byte_lut.as_ptr().add(c1b1).cast::<f32>();
+        let r12 = byte_lut.as_ptr().add(c1b2).cast::<f32>();
+        let r13 = byte_lut.as_ptr().add(c1b3).cast::<f32>();
+
+        a0 = vfmaq_f32(a0, q0, vld1q_f32(r00));
+        a1 = vfmaq_f32(a1, q1, vld1q_f32(r00.add(4)));
+        a2 = vfmaq_f32(a2, q2, vld1q_f32(r01));
+        a3 = vfmaq_f32(a3, q3, vld1q_f32(r01.add(4)));
+        a0 = vfmaq_f32(a0, q4, vld1q_f32(r02));
+        a1 = vfmaq_f32(a1, q5, vld1q_f32(r02.add(4)));
+        a2 = vfmaq_f32(a2, q6, vld1q_f32(r03));
+        a3 = vfmaq_f32(a3, q7, vld1q_f32(r03.add(4)));
+
+        b0 = vfmaq_f32(b0, q0, vld1q_f32(r10));
+        b1 = vfmaq_f32(b1, q1, vld1q_f32(r10.add(4)));
+        b2 = vfmaq_f32(b2, q2, vld1q_f32(r11));
+        b3 = vfmaq_f32(b3, q3, vld1q_f32(r11.add(4)));
+        b0 = vfmaq_f32(b0, q4, vld1q_f32(r12));
+        b1 = vfmaq_f32(b1, q5, vld1q_f32(r12.add(4)));
+        b2 = vfmaq_f32(b2, q6, vld1q_f32(r13));
+        b3 = vfmaq_f32(b3, q7, vld1q_f32(r13.add(4)));
+
+        dim_index += 32;
+    }
+
+    let mut lanes = [0.0_f32; 4];
+    vst1q_f32(
+        lanes.as_mut_ptr(),
+        vaddq_f32(vaddq_f32(a0, a1), vaddq_f32(a2, a3)),
+    );
+    let mut sum0 = lanes[0] + lanes[1] + lanes[2] + lanes[3];
+    vst1q_f32(
+        lanes.as_mut_ptr(),
+        vaddq_f32(vaddq_f32(b0, b1), vaddq_f32(b2, b3)),
+    );
+    let mut sum1 = lanes[0] + lanes[1] + lanes[2] + lanes[3];
+
+    let neg = lut[0];
+    let pos = lut[1];
+    while dim_index < dimensions {
+        let bit0 = (code0[dim_index / 8] >> (dim_index % 8)) & 1;
+        let bit1 = (code1[dim_index / 8] >> (dim_index % 8)) & 1;
+        sum0 += query_rotated[dim_index] * if bit0 == 1 { pos } else { neg };
+        sum1 += query_rotated[dim_index] * if bit1 == 1 { pos } else { neg };
+        dim_index += 1;
+    }
+
+    (sum0, sum1)
+}
+
 #[cfg(target_arch = "aarch64")]
 #[target_feature(enable = "neon")]
 unsafe fn sum_query_dequant_neon_bits4(
@@ -2209,6 +2316,97 @@ unsafe fn sum_query_dequant_neon_bits8(
     sum
 }
 
+/// # Safety
+///
+/// Caller must confirm NEON availability before calling. `query_scale` and
+/// `query_offset` must each contain at least `dimensions` elements, and both
+/// code slices must contain at least `dimensions` bits=8 code bytes.
+#[cfg(target_arch = "aarch64")]
+#[target_feature(enable = "neon")]
+unsafe fn sum_query_dequant_neon_bits8_pair(
+    query_scale: &[f32],
+    query_offset: &[f32],
+    dimensions: usize,
+    code0: &[u8],
+    code1: &[u8],
+) -> (f32, f32) {
+    use std::arch::aarch64::{
+        vaddq_f32, vcvtq_f32_u32, vdupq_n_f32, vfmaq_f32, vld1q_f32, vld1q_u8, vmovl_u16, vmovl_u8,
+        vst1q_f32,
+    };
+
+    let mut a0 = vdupq_n_f32(0.0);
+    let mut a1 = vdupq_n_f32(0.0);
+    let mut a2 = vdupq_n_f32(0.0);
+    let mut a3 = vdupq_n_f32(0.0);
+    let mut b0 = vdupq_n_f32(0.0);
+    let mut b1 = vdupq_n_f32(0.0);
+    let mut b2 = vdupq_n_f32(0.0);
+    let mut b3 = vdupq_n_f32(0.0);
+
+    let mut dim_index = 0_usize;
+    while dim_index + 16 <= dimensions {
+        if dim_index + 64 < dimensions {
+            prefetch_read_l1(code0.as_ptr().add(dim_index + 64));
+            prefetch_read_l1(code1.as_ptr().add(dim_index + 64));
+        }
+
+        let s0 = vld1q_f32(query_scale.as_ptr().add(dim_index));
+        let s1 = vld1q_f32(query_scale.as_ptr().add(dim_index + 4));
+        let s2 = vld1q_f32(query_scale.as_ptr().add(dim_index + 8));
+        let s3 = vld1q_f32(query_scale.as_ptr().add(dim_index + 12));
+        let o0 = vld1q_f32(query_offset.as_ptr().add(dim_index));
+        let o1 = vld1q_f32(query_offset.as_ptr().add(dim_index + 4));
+        let o2 = vld1q_f32(query_offset.as_ptr().add(dim_index + 8));
+        let o3 = vld1q_f32(query_offset.as_ptr().add(dim_index + 12));
+
+        let packed0 = vld1q_u8(code0.as_ptr().add(dim_index));
+        let lo0 = vmovl_u8(std::arch::aarch64::vget_low_u8(packed0));
+        let hi0 = vmovl_u8(std::arch::aarch64::vget_high_u8(packed0));
+        let c00 = vcvtq_f32_u32(vmovl_u16(std::arch::aarch64::vget_low_u16(lo0)));
+        let c01 = vcvtq_f32_u32(vmovl_u16(std::arch::aarch64::vget_high_u16(lo0)));
+        let c02 = vcvtq_f32_u32(vmovl_u16(std::arch::aarch64::vget_low_u16(hi0)));
+        let c03 = vcvtq_f32_u32(vmovl_u16(std::arch::aarch64::vget_high_u16(hi0)));
+        a0 = vaddq_f32(a0, vfmaq_f32(o0, c00, s0));
+        a1 = vaddq_f32(a1, vfmaq_f32(o1, c01, s1));
+        a2 = vaddq_f32(a2, vfmaq_f32(o2, c02, s2));
+        a3 = vaddq_f32(a3, vfmaq_f32(o3, c03, s3));
+
+        let packed1 = vld1q_u8(code1.as_ptr().add(dim_index));
+        let lo1 = vmovl_u8(std::arch::aarch64::vget_low_u8(packed1));
+        let hi1 = vmovl_u8(std::arch::aarch64::vget_high_u8(packed1));
+        let c10 = vcvtq_f32_u32(vmovl_u16(std::arch::aarch64::vget_low_u16(lo1)));
+        let c11 = vcvtq_f32_u32(vmovl_u16(std::arch::aarch64::vget_high_u16(lo1)));
+        let c12 = vcvtq_f32_u32(vmovl_u16(std::arch::aarch64::vget_low_u16(hi1)));
+        let c13 = vcvtq_f32_u32(vmovl_u16(std::arch::aarch64::vget_high_u16(hi1)));
+        b0 = vaddq_f32(b0, vfmaq_f32(o0, c10, s0));
+        b1 = vaddq_f32(b1, vfmaq_f32(o1, c11, s1));
+        b2 = vaddq_f32(b2, vfmaq_f32(o2, c12, s2));
+        b3 = vaddq_f32(b3, vfmaq_f32(o3, c13, s3));
+
+        dim_index += 16;
+    }
+
+    let mut lanes = [0.0_f32; 4];
+    vst1q_f32(
+        lanes.as_mut_ptr(),
+        vaddq_f32(vaddq_f32(a0, a1), vaddq_f32(a2, a3)),
+    );
+    let mut sum0 = lanes[0] + lanes[1] + lanes[2] + lanes[3];
+    vst1q_f32(
+        lanes.as_mut_ptr(),
+        vaddq_f32(vaddq_f32(b0, b1), vaddq_f32(b2, b3)),
+    );
+    let mut sum1 = lanes[0] + lanes[1] + lanes[2] + lanes[3];
+
+    while dim_index < dimensions {
+        sum0 += code0[dim_index] as f32 * query_scale[dim_index] + query_offset[dim_index];
+        sum1 += code1[dim_index] as f32 * query_scale[dim_index] + query_offset[dim_index];
+        dim_index += 1;
+    }
+    (sum0, sum1)
+}
+
 #[cfg(target_arch = "aarch64")]
 #[inline]
 fn prefetch_read_l1(ptr: *const u8) {
@@ -2235,7 +2433,26 @@ unsafe fn estimate_ip_batch_neon_bits1(
     code_len: usize,
     out_scores: &mut [f32],
 ) {
-    for (out, code) in out_scores.iter_mut().zip(codes.chunks_exact(code_len)) {
+    let mut code_chunks = codes.chunks_exact(code_len);
+    let mut out_chunks = out_scores.chunks_exact_mut(2);
+    for out_pair in &mut out_chunks {
+        let code0 = code_chunks.next().expect("batch slab has code for score 0");
+        let code1 = code_chunks.next().expect("batch slab has code for score 1");
+        let (sum0, sum1) = unsafe {
+            sum_query_dequant_neon_bits1_pair(
+                query_rotated,
+                dimensions,
+                byte_lut,
+                lut,
+                code0,
+                code1,
+            )
+        };
+        out_pair[0] = finish_scalar_only_estimate(dimensions, 1, sum0, code0);
+        out_pair[1] = finish_scalar_only_estimate(dimensions, 1, sum1, code1);
+    }
+    if let Some(out) = out_chunks.into_remainder().first_mut() {
+        let code = code_chunks.next().expect("batch slab has tail code");
         let sum =
             unsafe { sum_query_dequant_neon_bits1(query_rotated, dimensions, byte_lut, lut, code) };
         *out = finish_scalar_only_estimate(dimensions, 1, sum, code);
@@ -2256,7 +2473,19 @@ unsafe fn estimate_ip_batch_neon_bits8(
     code_len: usize,
     out_scores: &mut [f32],
 ) {
-    for (out, code) in out_scores.iter_mut().zip(codes.chunks_exact(code_len)) {
+    let mut code_chunks = codes.chunks_exact(code_len);
+    let mut out_chunks = out_scores.chunks_exact_mut(2);
+    for out_pair in &mut out_chunks {
+        let code0 = code_chunks.next().expect("batch slab has code for score 0");
+        let code1 = code_chunks.next().expect("batch slab has code for score 1");
+        let (sum0, sum1) = unsafe {
+            sum_query_dequant_neon_bits8_pair(query_scale, query_offset, dimensions, code0, code1)
+        };
+        out_pair[0] = finish_scalar_only_estimate(dimensions, 8, sum0, code0);
+        out_pair[1] = finish_scalar_only_estimate(dimensions, 8, sum1, code1);
+    }
+    if let Some(out) = out_chunks.into_remainder().first_mut() {
+        let code = code_chunks.next().expect("batch slab has tail code");
         let sum =
             unsafe { sum_query_dequant_neon_bits8(query_scale, query_offset, dimensions, code) };
         *out = finish_scalar_only_estimate(dimensions, 8, sum, code);
