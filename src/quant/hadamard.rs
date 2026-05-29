@@ -47,16 +47,19 @@ pub(crate) fn fwht_in_place_scalar(values: &mut [f32]) {
 }
 
 #[cfg(any(test, feature = "bench"))]
+#[allow(dead_code)]
 pub fn fwht_in_place_scalar_reference(values: &mut [f32]) {
     fwht_in_place_scalar(values);
 }
 
 #[cfg(all(any(test, feature = "bench"), target_arch = "x86_64"))]
+#[allow(dead_code)]
 pub fn fwht_in_place_avx2_for_test(values: &mut [f32]) -> bool {
     try_fwht_in_place_avx2(values)
 }
 
 #[cfg(all(any(test, feature = "bench"), target_arch = "aarch64"))]
+#[allow(dead_code)]
 pub fn fwht_in_place_neon_for_test(values: &mut [f32]) -> bool {
     try_fwht_in_place_neon(values)
 }
