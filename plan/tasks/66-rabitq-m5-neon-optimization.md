@@ -1,6 +1,6 @@
 # Task 66: RaBitQ M5 NEON Optimization (+ Intel dispatch seam)
 
-Status: **proposed** 2026-05-28.
+Status: **complete** 2026-05-29.
 
 Owner: coder (to be assigned). One coder, one branch.
 
@@ -261,6 +261,28 @@ this task is not done.
    `rabitq8c3`, `rabitq8c4`, and the bits=1 batched path.
 4. Dispatch shape from Slice A is ready for Task 67 to consume.
 5. No regression in DiskANN, HNSW, or IVF scan tests.
+
+## Completion evidence
+
+- Packet 001: `reviews/task-66/001-m5-neon-rabitq/`
+  - Dispatch seam, NEON bits=8 arithmetic-dequant kernel, bits=8 query
+    precompute, initial batched API, prefetch, bf16 M5 measurement, Intel
+    readiness slot, and Criterion measurements.
+- Packet 002: `reviews/task-66/002-prefetch-unsafe-cleanup/`
+  - Prefetch helper safety cleanup and focused validation.
+- Packet 003: `reviews/task-66/003-m5-sidecar-recall/`
+  - M5 IVF sidecar recall delta across `rabitq8`, `rabitq8ls`, `rabitq8c3`,
+    and `rabitq8c4`; NEON vs scalar delta is `+0.0000` recall@10 for every
+    variant.
+- Packet 004: `reviews/task-66/004-pairwise-batch-kernels/`
+  - Pairwise cross-candidate bits=1 and bits=8 batch kernels, focused tests,
+    and Criterion batch throughput measurement.
+
+Reviewer approvals:
+
+- `reviews/task-66/002-prefetch-unsafe-cleanup/feedback/2026-05-29-01-reviewer.md`
+- `reviews/task-66/003-m5-sidecar-recall/feedback/2026-05-29-01-reviewer.md`
+- `reviews/task-66/004-pairwise-batch-kernels/feedback/2026-05-29-01-reviewer.md`
 
 ## Estimated size
 

@@ -5,7 +5,7 @@
 mod helpers;
 
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
-use ecaz::bench_api::ProdQuantizer;
+use ecaz::bench_api::{ProdQuantizer, Quantizer, RaBitQQuantizer};
 
 fn bench_score_ip_encoded(c: &mut Criterion) {
     let mut group = c.benchmark_group("quant/score_ip_encoded");
@@ -272,6 +272,61 @@ fn bench_score_throughput(c: &mut Criterion) {
     group.finish();
 }
 
+fn bench_rabitq_score(c: &mut Criterion) {
+    let mut group = c.benchmark_group("quant/rabitq_score");
+    let dim = 1536;
+    let prod = ProdQuantizer::cached(dim, 4, 42);
+    for &(bits, clip, label) in &[
+        (1_u8, 2.0_f32, "bits1"),
+        (4, 2.0, "bits4"),
+        (8, 2.0, "bits8"),
+        (8, 3.0, "bits8c3"),
+        (8, 4.0, "bits8c4"),
+    ] {
+        let quantizer =
+            RaBitQQuantizer::with_srht_bits_clip(dim, prod.clone(), bits, clip).unwrap();
+        let prepared = quantizer.prepare_estimator(&helpers::random_unit_vector(dim, 1));
+        let codes: Vec<Vec<u8>> = (0..1000)
+            .map(|i| {
+                <RaBitQQuantizer as Quantizer>::encode_code(
+                    &quantizer,
+                    &helpers::random_unit_vector(dim, i + 900),
+                )
+                .into_vec()
+            })
+            .collect();
+
+        group.throughput(Throughput::Elements(1));
+        group.bench_function(BenchmarkId::new(label, dim), |b| {
+            let mut idx = 0usize;
+            b.iter(|| {
+                let code = &codes[idx % codes.len()];
+                idx += 1;
+                prepared.estimate_ip_scalar_only(code)
+            });
+        });
+
+        if bits == 1 || bits == 8 {
+            let code_len = <RaBitQQuantizer as Quantizer>::code_len(&quantizer);
+            let slab = codes
+                .iter()
+                .flat_map(|code| code.iter().copied())
+                .collect::<Vec<_>>();
+            let mut out = Vec::new();
+            group.throughput(Throughput::Elements(codes.len() as u64));
+            group.bench_function(BenchmarkId::new(format!("{label}_batch1000"), dim), |b| {
+                b.iter(|| {
+                    prepared
+                        .estimate_ip_batch(&slab, code_len, &mut out)
+                        .unwrap();
+                    out.iter().copied().sum::<f32>()
+                });
+            });
+        }
+    }
+    group.finish();
+}
+
 criterion_group!(
     benches,
     bench_score_ip_encoded,
@@ -282,6 +337,7 @@ criterion_group!(
     bench_score_ip_from_parts_tiled_lut_no_qjl_4bit,
     bench_score_ip_from_parts_int8_approx_no_qjl_4bit,
     bench_decode_approximate,
-    bench_score_throughput
+    bench_score_throughput,
+    bench_rabitq_score
 );
 criterion_main!(benches);
