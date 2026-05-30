@@ -1302,12 +1302,16 @@ unsafe fn materialize_probe_candidates(
     // selected list ids come from validated centroid scores.
     let probe_plan =
         unsafe { build_selected_probe_plan(index_relation, metadata, selected_lists)? };
-    let best_by_heap_tid = candidate_dedup_map(opaque, probe_plan.candidate_bound);
-    let mut running_top = quantizer
+    let pre_rerank_limit = pre_rerank_candidate_limit(index_options);
+    let running_top_limit = quantizer
         .uses_score_bound_pruning()
-        .then(|| pre_rerank_candidate_limit(index_options))
-        .flatten()
-        .map(CandidateTopK::new);
+        .then_some(pre_rerank_limit)
+        .flatten();
+    let best_by_heap_tid = candidate_dedup_map(
+        opaque,
+        candidate_dedup_initial_capacity(probe_plan.candidate_bound, running_top_limit),
+    );
+    let mut running_top = running_top_limit.map(CandidateTopK::new);
     let mut remaining_live_tids_by_list = probe_plan.remaining_live_tids_by_list.clone();
     let posting_pages = probe_plan.posting_page_count()?;
     let approximate_started = Instant::now();
@@ -1585,6 +1589,16 @@ where
         ranked.sort_by(candidate_cmp);
         ranked
     }
+}
+
+fn candidate_dedup_initial_capacity(
+    candidate_bound: usize,
+    running_top_limit: Option<usize>,
+) -> usize {
+    let Some(limit) = running_top_limit else {
+        return candidate_bound;
+    };
+    candidate_bound.min(limit.saturating_mul(HEAPTID_INLINE_CAPACITY))
 }
 
 fn consume_live_tid_budget(
@@ -2591,11 +2605,11 @@ mod tests {
     use super::super::options::{EcIvfOptions, RerankMode, StorageFormat as IvfStorageFormat};
     use super::super::page::{IvfPostingTuple, IvfPostingTupleRef};
     use super::{
-        build_probe_block_sequence, candidate_heap_blocks, candidate_heap_tid_cmp,
-        choose_adaptive_nprobe, consume_live_tid_budget, inner_product, inner_product_scalar,
-        pre_rerank_candidate_limit, select_probe_lists, select_probe_lists_with_adaptive,
-        CandidateTopK, EcIvfCentroidScore, EcIvfScoredCandidate, IvfPostingScratchSoa,
-        ProbeBlockRange,
+        build_probe_block_sequence, candidate_dedup_initial_capacity, candidate_heap_blocks,
+        candidate_heap_tid_cmp, choose_adaptive_nprobe, consume_live_tid_budget, inner_product,
+        inner_product_scalar, pre_rerank_candidate_limit, select_probe_lists,
+        select_probe_lists_with_adaptive, CandidateTopK, EcIvfCentroidScore, EcIvfScoredCandidate,
+        IvfPostingScratchSoa, ProbeBlockRange, HEAPTID_INLINE_CAPACITY,
     };
     use crate::storage::page::ItemPointer;
 
@@ -2774,6 +2788,16 @@ mod tests {
         assert!(top_k.would_reject_score(3.0));
         assert!(!top_k.would_reject_score(2.0));
         assert!(!top_k.would_reject_score(1.5));
+    }
+
+    #[test]
+    fn candidate_dedup_initial_capacity_caps_when_running_top_prunes() {
+        assert_eq!(
+            candidate_dedup_initial_capacity(10_000, Some(100)),
+            100 * HEAPTID_INLINE_CAPACITY
+        );
+        assert_eq!(candidate_dedup_initial_capacity(512, Some(100)), 512);
+        assert_eq!(candidate_dedup_initial_capacity(10_000, None), 10_000);
     }
 
     #[test]
