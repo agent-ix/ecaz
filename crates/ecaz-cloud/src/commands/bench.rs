@@ -32,6 +32,11 @@ pub struct BenchArgs {
     /// Skip the S3 upload step. Useful for offline iteration.
     #[arg(long)]
     pub skip_upload: bool,
+
+    /// Set ECAZ_SIMD in the remote PostgreSQL systemd environment and restart
+    /// PostgreSQL before running the suite.
+    #[arg(long)]
+    pub simd_mode: Option<String>,
 }
 
 impl BenchArgs {
@@ -97,6 +102,7 @@ impl BenchArgs {
             config_s3_uri.as_deref(),
             &out.region,
             self.skip_upload,
+            self.simd_mode.as_deref(),
         )
         .await?;
         tracing::info!(
@@ -171,6 +177,7 @@ async fn remote_suite_script(
     config_s3_uri: Option<&str>,
     region: &str,
     skip_upload: bool,
+    simd_mode: Option<&str>,
 ) -> Result<String> {
     let config_text = tokio::fs::read_to_string(config)
         .await
@@ -213,6 +220,17 @@ async fn remote_suite_script(
             config_text
         )
     };
+    let simd_setup = if let Some(mode) = simd_mode {
+        format!(
+            "sudo systemctl set-environment ECAZ_SIMD={mode}\n\
+             sudo systemctl restart postgresql\n\
+             sudo systemctl show postgresql -p Environment\n\
+             sudo -u postgres psql -Atqc 'SHOW shared_preload_libraries;'",
+            mode = shell_escape(mode),
+        )
+    } else {
+        ":".to_string()
+    };
 
     Ok(format!(
         r#"#!/usr/bin/env bash
@@ -222,12 +240,14 @@ mkdir -p "$(dirname {config_path})" {artifacts}
 trap 'status=$?; set +e; {upload}; exit $status' EXIT
 {write_config}
 chown -R postgres:postgres "$(dirname {config_path})" {artifacts}
+{simd_setup}
 sudo -u postgres bash -lc {run_cmd}
 "#,
         root = shell_escape(remote_root),
         config_path = shell_escape(&remote_config),
         artifacts = shell_escape(&remote_artifacts),
         write_config = write_config,
+        simd_setup = simd_setup,
         run_cmd = shell_escape(&run_cmd),
     ))
 }
