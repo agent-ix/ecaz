@@ -1,0 +1,68 @@
+{
+  "name": "task67-intel-10k-scalar",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-67/017-intel-measurement-final/artifacts/scalar",
+  "defaults": {
+    "pg": 18,
+    "socket_dir": "/var/run/postgresql",
+    "profile": "ec_ivf",
+    "bits": 4,
+    "seed": 42,
+    "queries_limit": 200,
+    "iterations": 200,
+    "force_index": true
+  },
+  "steps": [
+    {
+      "kind": "load",
+      "name": "load-10k-rabitq1-scalar",
+      "tags": ["aws", "load", "scalar", "ec_real_10k", "ivf", "rabitq", "bits1"],
+      "prefix": "task67_intel_10k_rabitq1_scalar",
+      "profile": "ec_ivf",
+      "bits": 4,
+      "storage_format": "rabitq",
+      "corpus_file": "target/real-corpus/staged-task50/ec_real_10k_corpus.tsv",
+      "queries_file": "target/real-corpus/staged-task50/ec_real_10k_queries.tsv",
+      "manifest_file": "target/real-corpus/staged-task50/ec_real_10k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "nlists=64",
+        "nprobe=64",
+        "training_sample_rows=5000",
+        "quant_bits=1",
+        "rerank=heap_f32",
+        "rerank_width=100"
+      ],
+      "log_file": "reviews/task-67/017-intel-measurement-final/artifacts/scalar/load-10k-rabitq1-scalar.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-10k-rabitq1-scalar",
+      "tags": ["aws", "recall", "scalar", "ec_real_10k", "ivf", "rabitq", "bits1"],
+      "prefix": "task67_intel_10k_rabitq1_scalar",
+      "profile": "ec_ivf",
+      "bits": 4,
+      "k": 10,
+      "sweep": [16, 32, 64],
+      "rerank_width": 100,
+      "force_index": true,
+      "truth_cache_file": "reviews/task-67/017-intel-measurement-final/artifacts/scalar/truth-ec-real-10k-q200-k10.json",
+      "log_output": "reviews/task-67/017-intel-measurement-final/artifacts/scalar/recall-10k-rabitq1-scalar.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-10k-rabitq1-scalar",
+      "tags": ["aws", "latency", "scalar", "ec_real_10k", "ivf", "rabitq", "bits1"],
+      "prefix": "task67_intel_10k_rabitq1_scalar",
+      "profile": "ec_ivf",
+      "bits": 4,
+      "k": 10,
+      "sweep": [16, 32, 64],
+      "rerank_width": 100,
+      "force_index": true,
+      "iterations": 200,
+      "concurrency": 1,
+      "log_output": "reviews/task-67/017-intel-measurement-final/artifacts/scalar/latency-10k-rabitq1-scalar.log"
+    }
+  ]
+}
