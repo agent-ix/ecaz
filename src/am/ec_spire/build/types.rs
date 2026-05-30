@@ -1,4 +1,8 @@
 
+fn elapsed_ms(duration: Duration) -> u128 {
+    duration.as_millis()
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum SpireIndexedVectorKind {
     Ecvector,
@@ -39,6 +43,73 @@ struct SpireBuildState {
     scanned_tuples: usize,
     tuples: Vec<SpireBuildTuple>,
     dimensions: Option<u16>,
+}
+
+#[derive(Debug, Default)]
+struct SpireBuildTiming {
+    setup_ms: u128,
+    heap_scan_ms: u128,
+    sample_collect_ms: u128,
+    kmeans_ms: u128,
+    kmeans_calls: usize,
+    assignment_ms: u128,
+    recursive_kmeans_ms: u128,
+    recursive_kmeans_calls: usize,
+    recursive_kmeans_max_level: u16,
+    recursive_assignment_ms: u128,
+    draft_ms: u128,
+    top_graph_ms: u128,
+    object_store_ms: u128,
+    publish_ms: u128,
+}
+
+impl SpireBuildTiming {
+    fn add_setup(&mut self, duration: Duration) {
+        self.setup_ms += elapsed_ms(duration);
+    }
+
+    fn add_heap_scan(&mut self, duration: Duration) {
+        self.heap_scan_ms += elapsed_ms(duration);
+    }
+
+    fn add_sample_collect(&mut self, duration: Duration) {
+        self.sample_collect_ms += elapsed_ms(duration);
+    }
+
+    fn add_kmeans(&mut self, duration: Duration) {
+        self.kmeans_ms += elapsed_ms(duration);
+        self.kmeans_calls += 1;
+    }
+
+    fn add_assignment(&mut self, duration: Duration) {
+        self.assignment_ms += elapsed_ms(duration);
+    }
+
+    fn add_recursive_kmeans(&mut self, level: u16, duration: Duration) {
+        self.recursive_kmeans_ms += elapsed_ms(duration);
+        self.recursive_kmeans_calls += 1;
+        self.recursive_kmeans_max_level = self.recursive_kmeans_max_level.max(level);
+    }
+
+    fn add_recursive_assignment(&mut self, duration: Duration) {
+        self.recursive_assignment_ms += elapsed_ms(duration);
+    }
+
+    fn add_draft(&mut self, duration: Duration) {
+        self.draft_ms += elapsed_ms(duration);
+    }
+
+    fn add_top_graph(&mut self, duration: Duration) {
+        self.top_graph_ms += elapsed_ms(duration);
+    }
+
+    fn add_object_store(&mut self, duration: Duration) {
+        self.object_store_ms += elapsed_ms(duration);
+    }
+
+    fn add_publish(&mut self, duration: Duration) {
+        self.publish_ms += elapsed_ms(duration);
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]

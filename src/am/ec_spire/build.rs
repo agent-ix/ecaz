@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::ffi::c_void;
 use std::mem::size_of;
 use std::ptr;
+use std::time::{Duration, Instant};
 
 use pgrx::{pg_sys, PgBox};
 

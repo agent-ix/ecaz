@@ -195,6 +195,9 @@ pub(super) unsafe extern "C-unwind" fn ec_spire_ambuild(
     index_info: *mut pg_sys::IndexInfo,
 ) -> *mut pg_sys::IndexBuildResult {
     pg_am_callback!({
+        let total_started = Instant::now();
+        let mut timing = SpireBuildTiming::default();
+        let setup_started = Instant::now();
         let options = options::relation_options(index_relation);
         let local_store_tablespace_plan =
             options::resolve_local_store_tablespace_plan(index_relation, &options)
@@ -226,6 +229,8 @@ pub(super) unsafe extern "C-unwind" fn ec_spire_ambuild(
         let tuple_layout =
             resolve_indexed_tuple_layout(heap_relation, index_info, &options, "ambuild");
         let mut state = SpireBuildState::new(options, tuple_layout);
+        timing.add_setup(setup_started.elapsed());
+        let heap_scan_started = Instant::now();
         let heap_tuples = pg_sys::table_index_build_scan(
             heap_relation,
             index_relation,
@@ -236,6 +241,7 @@ pub(super) unsafe extern "C-unwind" fn ec_spire_ambuild(
             (&mut state as *mut SpireBuildState).cast(),
             ptr::null_mut(),
         );
+        timing.add_heap_scan(heap_scan_started.elapsed());
         let index_tuples = if state.scanned_tuples == 0 {
             0.0
         } else if let Some(recursive_fanout) = recursive_fanout {
@@ -244,6 +250,7 @@ pub(super) unsafe extern "C-unwind" fn ec_spire_ambuild(
                 &state,
                 recursive_fanout,
                 local_store_config,
+                &mut timing,
             )
             .unwrap_or_else(|e| pgrx::error!("ec_spire recursive populated ambuild failed: {e}"))
                 as f64
@@ -252,10 +259,20 @@ pub(super) unsafe extern "C-unwind" fn ec_spire_ambuild(
                 index_relation,
                 &state,
                 local_store_config,
+                &mut timing,
             )
             .unwrap_or_else(|e| pgrx::error!("ec_spire populated ambuild failed: {e}"))
                 as f64
         };
+        log_spire_ambuild_timing(
+            index_relation,
+            heap_tuples,
+            state.scanned_tuples,
+            index_tuples,
+            recursive_fanout,
+            &timing,
+            total_started.elapsed(),
+        );
 
         crate::fault::maybe_fail_palloc("ec_spire ambuild result");
         let mut result = PgBox::<pg_sys::IndexBuildResult>::alloc0();
@@ -263,6 +280,45 @@ pub(super) unsafe extern "C-unwind" fn ec_spire_ambuild(
         result.index_tuples = index_tuples;
         result.into_pg()
     })
+}
+
+fn log_spire_ambuild_timing(
+    index_relation: pg_sys::Relation,
+    heap_tuples: f64,
+    scanned_tuples: usize,
+    index_tuples: f64,
+    recursive_fanout: Option<u32>,
+    timing: &SpireBuildTiming,
+    total_elapsed: Duration,
+) {
+    let index_name = crate::storage::relation::relation_name_handle(
+        std::ptr::NonNull::new(index_relation)
+            .unwrap_or_else(|| pgrx::error!("ec_spire build needs a valid index relation")),
+    );
+    pgrx::notice!(
+        "ec_spire_ambuild_timing index={} phase=complete heap_tuples={} scanned_tuples={} index_tuples={} recursive_fanout={} setup_ms={} heap_scan_ms={} sample_collect_ms={} kmeans_ms={} kmeans_calls={} assignment_ms={} recursive_kmeans_ms={} recursive_kmeans_calls={} recursive_kmeans_max_level={} recursive_assignment_ms={} draft_ms={} top_graph_ms={} pq4_training_ms={} object_store_ms={} publish_ms={} total_ms={}",
+        index_name,
+        heap_tuples,
+        scanned_tuples,
+        index_tuples,
+        recursive_fanout.unwrap_or(0),
+        timing.setup_ms,
+        timing.heap_scan_ms,
+        timing.sample_collect_ms,
+        timing.kmeans_ms,
+        timing.kmeans_calls,
+        timing.assignment_ms,
+        timing.recursive_kmeans_ms,
+        timing.recursive_kmeans_calls,
+        timing.recursive_kmeans_max_level,
+        timing.recursive_assignment_ms,
+        timing.draft_ms,
+        timing.top_graph_ms,
+        0,
+        timing.object_store_ms,
+        timing.publish_ms,
+        elapsed_ms(total_elapsed)
+    );
 }
 
 pub(super) unsafe extern "C-unwind" fn ec_spire_ambuildempty(_index_relation: pg_sys::Relation) {

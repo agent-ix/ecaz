@@ -11,6 +11,15 @@ pub(super) fn build_recursive_routing_hierarchy_draft(
     input: SpireRecursiveRoutingBuildInput,
     pid_allocator: &mut SpirePidAllocator,
 ) -> Result<SpireRecursiveRoutingBuildDraft, String> {
+    let mut timing = SpireBuildTiming::default();
+    build_recursive_routing_hierarchy_draft_with_timing(input, pid_allocator, &mut timing)
+}
+
+fn build_recursive_routing_hierarchy_draft_with_timing(
+    input: SpireRecursiveRoutingBuildInput,
+    pid_allocator: &mut SpirePidAllocator,
+    timing: &mut SpireBuildTiming,
+) -> Result<SpireRecursiveRoutingBuildDraft, String> {
     input.validate()?;
     let target_fanout = usize::try_from(input.target_fanout)
         .map_err(|_| "ec_spire recursive routing fanout exceeds usize".to_owned())?;
@@ -27,6 +36,7 @@ pub(super) fn build_recursive_routing_hierarchy_draft(
             .iter()
             .map(|child| child.centroid.as_slice())
             .collect::<Vec<_>>();
+        let kmeans_started = Instant::now();
         let model = common_training::train_spherical_kmeans(
             "ec_spire recursive routing",
             &source_vectors,
@@ -35,15 +45,18 @@ pub(super) fn build_recursive_routing_hierarchy_draft(
             input.seed.wrapping_add(u64::from(parent_level)),
             SPIRE_DEFAULT_KMEANS_ITERATIONS,
         )?;
+        timing.add_recursive_kmeans(parent_level, kmeans_started.elapsed());
         let child_centroids = current_children
             .iter()
             .map(|child| child.centroid.as_slice())
             .collect::<Vec<_>>();
+        let assignment_started = Instant::now();
         let centroid_indexes = common_training::assign_vectors_to_centroids(
             "ec_spire recursive routing",
             &child_centroids,
             &model,
         )?;
+        timing.add_recursive_assignment(assignment_started.elapsed());
         let mut grouped_children = vec![Vec::new(); model.centroid_count()];
         for (child, centroid_index) in current_children.into_iter().zip(centroid_indexes) {
             grouped_children[centroid_index].push(child);
@@ -132,6 +145,21 @@ pub(super) fn build_recursive_epoch_input_from_centroid_plan(
     pid_allocator: &mut SpirePidAllocator,
     local_vec_id_allocator: &mut SpireLocalVecIdAllocator,
 ) -> Result<SpireRecursiveBuildCoordinatorDraft, String> {
+    let mut timing = SpireBuildTiming::default();
+    build_recursive_epoch_input_from_centroid_plan_with_timing(
+        input,
+        pid_allocator,
+        local_vec_id_allocator,
+        &mut timing,
+    )
+}
+
+fn build_recursive_epoch_input_from_centroid_plan_with_timing(
+    input: SpireRecursiveBuildCoordinatorInput,
+    pid_allocator: &mut SpirePidAllocator,
+    local_vec_id_allocator: &mut SpireLocalVecIdAllocator,
+    timing: &mut SpireBuildTiming,
+) -> Result<SpireRecursiveBuildCoordinatorDraft, String> {
     input.centroid_plan.validate()?;
     let centroid_count = input.centroid_plan.centroid_count();
     if input.assignments.len() != input.centroid_plan.assignment_indexes.len() {
@@ -162,7 +190,7 @@ pub(super) fn build_recursive_epoch_input_from_centroid_plan(
     for _ in 0..centroid_count {
         leaf_pids.push(pid_cursor.allocate()?);
     }
-    let routing_draft = build_recursive_routing_hierarchy_draft(
+    let routing_draft = build_recursive_routing_hierarchy_draft_with_timing(
         SpireRecursiveRoutingBuildInput {
             object_version: input.object_version,
             dimensions: input.centroid_plan.dimensions,
@@ -183,6 +211,7 @@ pub(super) fn build_recursive_epoch_input_from_centroid_plan(
                 .collect(),
         },
         &mut pid_cursor,
+        timing,
     )?;
     let leaf_parent_pids = assert_recursive_draft_invariants(&routing_draft)?.leaf_parent_pids;
     let route_map = SpireSingleLevelRouteMap::from_centroid_plan(&input.centroid_plan, &leaf_pids)?;

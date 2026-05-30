@@ -217,6 +217,7 @@ unsafe fn publish_relation_partitioned_single_level_build(
     index_relation: pg_sys::Relation,
     state: &SpireBuildState,
     local_store_config: SpireLocalStoreConfig,
+    timing: &mut SpireBuildTiming,
 ) -> Result<usize, String> {
     if state.scanned_tuples == 0 {
         return Ok(0);
@@ -233,7 +234,7 @@ unsafe fn publish_relation_partitioned_single_level_build(
     };
     epoch_manifest.validate()?;
 
-    let centroid_plan = state.train_centroid_plan()?;
+    let centroid_plan = state.train_centroid_plan_with_timing(timing)?;
     let assignments = state.assignment_inputs();
     let centroid_count = centroid_plan.centroid_count();
     if assignments.len() != centroid_plan.assignment_indexes.len() {
@@ -244,6 +245,7 @@ unsafe fn publish_relation_partitioned_single_level_build(
         ));
     }
 
+    let draft_started = Instant::now();
     let mut pid_allocator = SpirePidAllocator::default();
     let mut local_vec_id_allocator = SpireLocalVecIdAllocator::default();
     let root_pid = pid_allocator.allocate()?;
@@ -286,7 +288,9 @@ unsafe fn publish_relation_partitioned_single_level_build(
             })?;
         leaf_assignments_by_centroid[centroid_index].push(placement.row);
     }
+    timing.add_draft(draft_started.elapsed());
 
+    let object_store_started = Instant::now();
     let mut store = SpireRelationObjectStoreSet::for_index_relation_and_config(
         index_relation,
         local_store_config.clone(),
@@ -318,7 +322,9 @@ unsafe fn publish_relation_partitioned_single_level_build(
         &placement_directory,
         &placement_evidence,
     )?;
+    timing.add_object_store(object_store_started.elapsed());
 
+    let publish_started = Instant::now();
     let input = SpirePublishCoordinatorInput {
         epoch_manifest: &epoch_manifest,
         object_manifest: &object_manifest,
@@ -335,6 +341,7 @@ unsafe fn publish_relation_partitioned_single_level_build(
     // SAFETY: initial publish owns initialization of the live index relation's
     // root/control page after all manifest locators are written.
     page::initialize_root_control_page(index_relation, root_control);
+    timing.add_publish(publish_started.elapsed());
     Ok(state.scanned_tuples)
 }
 
@@ -372,16 +379,18 @@ unsafe fn publish_relation_recursive_routing_build(
     state: &SpireBuildState,
     target_fanout: u32,
     local_store_config: SpireLocalStoreConfig,
+    timing: &mut SpireBuildTiming,
 ) -> Result<usize, String> {
     if state.scanned_tuples == 0 {
         return Ok(0);
     }
 
     let (published_at_micros, retain_until_micros) = current_epoch_publish_times()?;
-    let centroid_plan = state.train_centroid_plan()?;
+    let centroid_plan = state.train_centroid_plan_with_timing(timing)?;
     let mut pid_allocator = SpirePidAllocator::default();
     let mut local_vec_id_allocator = SpireLocalVecIdAllocator::default();
-    let coordinator = build_recursive_epoch_input_from_centroid_plan(
+    let draft_started = Instant::now();
+    let coordinator = build_recursive_epoch_input_from_centroid_plan_with_timing(
         SpireRecursiveBuildCoordinatorInput {
             epoch: SPIRE_INITIAL_EPOCH,
             object_version: SPIRE_INITIAL_OBJECT_VERSION,
@@ -399,7 +408,9 @@ unsafe fn publish_relation_recursive_routing_build(
         },
         &mut pid_allocator,
         &mut local_vec_id_allocator,
+        timing,
     )?;
+    timing.add_draft(draft_started.elapsed());
     let mut store = SpireRelationObjectStoreSet::for_index_relation_and_config(
         index_relation,
         local_store_config.clone(),
@@ -414,8 +425,10 @@ unsafe fn publish_relation_recursive_routing_build(
     } else {
         coordinator.next_pid
     };
+    let object_store_started = Instant::now();
     let draft = if top_graph_plan.enabled {
-        build_recursive_top_graph_epoch_from_leaf_inputs_with_store(
+        let top_graph_started = Instant::now();
+        let draft = build_recursive_top_graph_epoch_from_leaf_inputs_with_store(
             coordinator.epoch_input,
             SpireTopGraphBuildParams {
                 graph_degree: top_graph_plan.graph_degree,
@@ -424,13 +437,16 @@ unsafe fn publish_relation_recursive_routing_build(
                 seed: state.options.seed as u64,
             },
             &mut store,
-        )?
+        )?;
+        timing.add_top_graph(top_graph_started.elapsed());
+        draft
     } else {
         build_recursive_routing_epoch_from_leaf_inputs_with_store(
             coordinator.epoch_input,
             &mut store,
         )?
     };
+    timing.add_object_store(object_store_started.elapsed());
     if draft.next_pid != expected_next_pid {
         return Err(format!(
             "ec_spire recursive relation build next_pid {} does not match expected next_pid {}",
@@ -439,6 +455,7 @@ unsafe fn publish_relation_recursive_routing_build(
     }
     // SAFETY: draft, local-store config, and sequence state were built from the
     // same live relation build state and are ready for relation-backed publish.
+    let publish_started = Instant::now();
     unsafe {
         publish_relation_recursive_routing_epoch_draft(
             index_relation,
@@ -447,6 +464,7 @@ unsafe fn publish_relation_recursive_routing_build(
             local_store_config,
         )?
     };
+    timing.add_publish(publish_started.elapsed());
     Ok(state.scanned_tuples)
 }
 

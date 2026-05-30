@@ -135,13 +135,24 @@ impl SpireBuildState {
     }
 
     fn train_centroid_plan(&self) -> Result<SpireSingleLevelCentroidPlan, String> {
+        let mut timing = SpireBuildTiming::default();
+        self.train_centroid_plan_with_timing(&mut timing)
+    }
+
+    fn train_centroid_plan_with_timing(
+        &self,
+        timing: &mut SpireBuildTiming,
+    ) -> Result<SpireSingleLevelCentroidPlan, String> {
         let dimensions = self
             .dimensions
             .ok_or_else(|| "ec_spire centroid training requires at least one tuple".to_owned())?;
         let requested_nlists = u32::try_from(self.options.nlists)
             .map_err(|_| "ec_spire nlists reloption must be non-negative".to_owned())?;
         let nlists = common_training::resolve_auto_nlists(requested_nlists, self.tuples.len());
+        let sample_started = Instant::now();
         let sample_vectors = self.training_sample_vectors();
+        timing.add_sample_collect(sample_started.elapsed());
+        let kmeans_started = Instant::now();
         let model = common_training::train_spherical_kmeans(
             "ec_spire",
             &sample_vectors,
@@ -150,13 +161,16 @@ impl SpireBuildState {
             self.options.seed as u64,
             SPIRE_DEFAULT_KMEANS_ITERATIONS,
         )?;
+        timing.add_kmeans(kmeans_started.elapsed());
         let source_refs = self
             .tuples
             .iter()
             .map(|tuple| tuple.source_vector.as_slice())
             .collect::<Vec<_>>();
+        let assignment_started = Instant::now();
         let centroid_indexes =
             common_training::assign_vectors_to_centroids("ec_spire", &source_refs, &model)?;
+        timing.add_assignment(assignment_started.elapsed());
         let mut assignment_indexes = Vec::with_capacity(self.tuples.len());
         for centroid_index in centroid_indexes {
             assignment_indexes.push(
