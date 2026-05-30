@@ -36,6 +36,7 @@
 //! asks recall@10 within 1pp of exact at this storage).
 
 #![allow(dead_code)]
+#![allow(clippy::incompatible_msrv)]
 
 #[cfg(test)]
 use std::cell::Cell;
