@@ -291,6 +291,43 @@ fn build_recursive_leaf_rows_by_pid(
         .iter()
         .map(|entry| (entry.pid, Vec::new()))
         .collect::<HashMap<_, _>>();
+    if boundary_replica_count == 0 {
+        let boundary_inputs = assignments
+            .into_iter()
+            .zip(assignment_indexes.iter())
+            .map(|(assignment, assignment_index)| {
+                let primary_pid = route_map
+                    .get(*assignment_index)
+                    .ok_or_else(|| {
+                        format!(
+                            "ec_spire recursive build assignment index {} has no leaf route",
+                            assignment_index
+                        )
+                    })?
+                    .pid;
+                Ok(SpireBoundaryLeafAssignmentIdentityInput {
+                    primary_pid,
+                    replica_pids: Vec::new(),
+                    assignment,
+                })
+            })
+            .collect::<Result<Vec<_>, String>>()?;
+        for placement in build_boundary_leaf_assignment_placements_with_identity(
+            local_vec_id_cursor,
+            boundary_inputs,
+        )? {
+            let rows = rows_by_leaf_pid.get_mut(&placement.pid).ok_or_else(|| {
+                format!(
+                    "ec_spire recursive primary assignment resolved unknown leaf pid {}",
+                    placement.pid
+                )
+            })?;
+            rows.push(placement.row);
+        }
+        drop(source_vectors);
+        return Ok(rows_by_leaf_pid);
+    }
+
     let boundary_inputs = assignments
         .into_iter()
         .zip(source_vectors.into_iter())
