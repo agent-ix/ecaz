@@ -661,10 +661,12 @@ fn centroid_slice_mut(
 
 #[cfg(test)]
 mod tests {
+    use std::time::Instant;
+
     use super::{
         assign_vectors_to_centroids, derive_grouped_pq4_code, train_grouped_pq4_model,
         train_grouped_pq4_model_scalar, train_spherical_kmeans, train_spherical_kmeans_scalar,
-        SphericalKMeansModel, SrhtForwardTransform,
+        GroupedPq4Model, SphericalKMeansModel, SrhtForwardTransform,
     };
     use crate::quant::grouped_pq::GROUPED_PQ_CENTROIDS;
 
@@ -680,6 +682,39 @@ mod tests {
                     .collect::<Vec<_>>()
             })
             .collect()
+    }
+
+    fn fnv1a_u64(mut hash: u64, value: u64) -> u64 {
+        for byte in value.to_le_bytes() {
+            hash ^= u64::from(byte);
+            hash = hash.wrapping_mul(0x0000_0100_0000_01B3);
+        }
+        hash
+    }
+
+    fn digest_f32_slices<'a>(slices: impl IntoIterator<Item = &'a [f32]>) -> String {
+        let mut hash = 0xCBF2_9CE4_8422_2325;
+        for slice in slices {
+            hash = fnv1a_u64(hash, slice.len() as u64);
+            for value in slice {
+                hash = fnv1a_u64(hash, u64::from(value.to_bits()));
+            }
+        }
+        format!("{hash:016x}")
+    }
+
+    fn digest_spherical_model(model: &SphericalKMeansModel) -> String {
+        digest_f32_slices(model.centroids.iter().map(Vec::as_slice))
+    }
+
+    fn digest_grouped_pq_model(model: &GroupedPq4Model) -> String {
+        digest_f32_slices(
+            model
+                .codebooks
+                .iter()
+                .map(Vec::as_slice)
+                .chain(std::iter::once(model.signs.as_slice())),
+        )
     }
 
     #[test]
@@ -782,5 +817,66 @@ mod tests {
 
         let error = assign_vectors_to_centroids("test", &sources, &model).unwrap_err();
         assert!(error.contains("got 1, expected 2"));
+    }
+
+    #[test]
+    #[ignore = "Task 69 release-mode measurement harness"]
+    fn task69_training_parallelism_measurement() {
+        let rayon_threads = rayon::current_num_threads();
+        let rayon_env = std::env::var("RAYON_NUM_THREADS").unwrap_or_else(|_| "unset".to_owned());
+        println!("task69_measurement_start rayon_threads={rayon_threads} rayon_env={rayon_env}");
+
+        let dimensions = 1536;
+        let vectors = seeded_vectors(10_000, dimensions, 69);
+        let refs = vectors.iter().map(Vec::as_slice).collect::<Vec<_>>();
+        let kmeans_shapes = [
+            ("spire_10k_nlists32", 32_usize, 8_usize),
+            ("spire_100k_sample10k_nlists128", 128_usize, 8_usize),
+        ];
+
+        for (shape, nlists, iterations) in kmeans_shapes {
+            let scalar_started = Instant::now();
+            let scalar =
+                train_spherical_kmeans_scalar("task69", &refs, dimensions, nlists, 42, iterations)
+                    .unwrap();
+            let scalar_ms = scalar_started.elapsed().as_secs_f64() * 1000.0;
+            let scalar_digest = digest_spherical_model(&scalar);
+
+            let parallel_started = Instant::now();
+            let parallel =
+                train_spherical_kmeans("task69", &refs, dimensions, nlists, 42, iterations)
+                    .unwrap();
+            let parallel_ms = parallel_started.elapsed().as_secs_f64() * 1000.0;
+            let parallel_digest = digest_spherical_model(&parallel);
+
+            assert_eq!(parallel, scalar, "kmeans shape={shape}");
+            println!(
+                "task69_measurement kind=kmeans shape={shape} rows=10000 dimensions={dimensions} nlists={nlists} iterations={iterations} scalar_ms={scalar_ms:.3} parallel_ms={parallel_ms:.3} speedup={:.3} digest={scalar_digest} parallel_digest={parallel_digest} rayon_threads={rayon_threads} rayon_env={rayon_env}",
+                scalar_ms / parallel_ms
+            );
+        }
+
+        let group_size = 16;
+        let train_size = refs.len();
+        let pq_iters = 3;
+        let scalar_started = Instant::now();
+        let scalar =
+            train_grouped_pq4_model_scalar(&refs, dimensions, 42, group_size, train_size, pq_iters)
+                .unwrap();
+        let scalar_ms = scalar_started.elapsed().as_secs_f64() * 1000.0;
+        let scalar_digest = digest_grouped_pq_model(&scalar);
+
+        let parallel_started = Instant::now();
+        let parallel =
+            train_grouped_pq4_model(&refs, dimensions, 42, group_size, train_size, pq_iters)
+                .unwrap();
+        let parallel_ms = parallel_started.elapsed().as_secs_f64() * 1000.0;
+        let parallel_digest = digest_grouped_pq_model(&parallel);
+
+        assert_eq!(parallel, scalar, "grouped pq4 task69 measurement");
+        println!(
+            "task69_measurement kind=grouped_pq4 shape=ivf_pq_fastscan_10k rows=10000 dimensions={dimensions} group_size={group_size} train_size={train_size} iterations={pq_iters} scalar_ms={scalar_ms:.3} parallel_ms={parallel_ms:.3} speedup={:.3} digest={scalar_digest} parallel_digest={parallel_digest} rayon_threads={rayon_threads} rayon_env={rayon_env}",
+            scalar_ms / parallel_ms
+        );
     }
 }
