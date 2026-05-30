@@ -426,8 +426,6 @@ impl RaBitQQuantizer {
         let dequant_lut =
             build_dequant_lut(self.dimensions, self.bits_per_dim as usize, self.quant_clip);
         let bits1_byte_lut = build_bits1_byte_lut_boxed(&dequant_lut, self.bits_per_dim);
-        let bits1_query_byte_sums =
-            build_bits1_query_byte_sums_boxed(&rotated, self.dimensions, self.bits_per_dim);
         let (bits8_query_scale, bits8_query_offset) =
             build_bits8_query_precompute(&rotated, self.bits_per_dim, self.quant_clip);
         let (query_bf16, dequant_lut_bf16) = prepare_bf16_state(&rotated, &dequant_lut);
@@ -438,7 +436,6 @@ impl RaBitQQuantizer {
             bits_per_dim: self.bits_per_dim,
             dequant_lut,
             bits1_byte_lut,
-            bits1_query_byte_sums,
             bits8_query_scale,
             bits8_query_offset,
             query_bf16,
@@ -528,8 +525,6 @@ impl RaBitQQuantizer {
         let dequant_lut =
             build_dequant_lut(self.dimensions, self.bits_per_dim as usize, self.quant_clip);
         let bits1_byte_lut = build_bits1_byte_lut_boxed(&dequant_lut, self.bits_per_dim);
-        let bits1_query_byte_sums =
-            build_bits1_query_byte_sums_boxed(&rotated, self.dimensions, self.bits_per_dim);
         let (bits8_query_scale, bits8_query_offset) =
             build_bits8_query_precompute(&rotated, self.bits_per_dim, self.quant_clip);
         let (query_bf16, dequant_lut_bf16) = prepare_bf16_state(&rotated, &dequant_lut);
@@ -540,7 +535,6 @@ impl RaBitQQuantizer {
             bits_per_dim: self.bits_per_dim,
             dequant_lut,
             bits1_byte_lut,
-            bits1_query_byte_sums,
             bits8_query_scale,
             bits8_query_offset,
             query_bf16,
@@ -867,11 +861,6 @@ pub struct PreparedEstimator {
     /// kernel reads `byte_lut[code_byte]` with two `vld1q_f32`s and
     /// FMAs against query lanes — no per-byte scalar unpack.
     bits1_byte_lut: Option<Box<[[f32; 8]; 256]>>,
-    /// Query-specific bits=1 byte contribution table. Each packed byte
-    /// position has 256 pre-summed `q_i * {-1,+1}` contributions, reducing
-    /// a 1536-dim bits=1 candidate from 1536 lane multiplies to 192
-    /// byte-indexed additions in SIMD-selected paths.
-    bits1_query_byte_sums: Option<Box<[[f32; 256]]>>,
     /// bits=8 arithmetic-dequant precompute: `query[i] * scale`.
     /// Present only when `bits_per_dim == 8`.
     bits8_query_scale: Vec<f32>,
@@ -908,7 +897,6 @@ impl PreparedEstimator {
             self.bits_per_dim,
             &self.dequant_lut,
             self.bits1_byte_lut.as_deref(),
-            self.bits1_query_byte_sums.as_deref(),
             self.bits8_query_scale.as_slice(),
             self.bits8_query_offset.as_slice(),
             code,
@@ -929,7 +917,6 @@ impl PreparedEstimator {
             self.bits_per_dim,
             &self.dequant_lut,
             self.bits1_byte_lut.as_deref(),
-            self.bits1_query_byte_sums.as_deref(),
             self.bits8_query_scale.as_slice(),
             self.bits8_query_offset.as_slice(),
             code,
@@ -953,7 +940,6 @@ impl PreparedEstimator {
             self.bits_per_dim,
             &self.dequant_lut,
             self.bits1_byte_lut.as_deref(),
-            self.bits1_query_byte_sums.as_deref(),
             self.bits8_query_scale.as_slice(),
             self.bits8_query_offset.as_slice(),
             code,
@@ -1039,7 +1025,6 @@ impl PreparedEstimator {
                 bits: self.bits_per_dim as usize,
                 lut: &self.dequant_lut,
                 bits1_byte_lut: self.bits1_byte_lut.as_deref(),
-                bits1_query_byte_sums: self.bits1_query_byte_sums.as_deref(),
                 bits8_query_scale: self.bits8_query_scale.as_slice(),
                 bits8_query_offset: self.bits8_query_offset.as_slice(),
             },
@@ -1116,7 +1101,6 @@ impl PreparedEstimator {
             bits,
             &self.dequant_lut,
             self.bits1_byte_lut.as_deref(),
-            self.bits1_query_byte_sums.as_deref(),
             self.bits8_query_scale.as_slice(),
             self.bits8_query_offset.as_slice(),
             code,
@@ -1168,7 +1152,6 @@ pub struct RaBitQScorer {
     bits_per_dim: u8,
     dequant_lut: [f32; 256],
     bits1_byte_lut: Option<Box<[[f32; 8]; 256]>>,
-    bits1_query_byte_sums: Option<Box<[[f32; 256]]>>,
     bits8_query_scale: Vec<f32>,
     bits8_query_offset: Vec<f32>,
     query_bf16: Vec<u16>,
@@ -1185,7 +1168,6 @@ impl crate::quant::QueryScorer for RaBitQScorer {
             self.bits_per_dim,
             &self.dequant_lut,
             self.bits1_byte_lut.as_deref(),
-            self.bits1_query_byte_sums.as_deref(),
             self.bits8_query_scale.as_slice(),
             self.bits8_query_offset.as_slice(),
             code,
@@ -1473,52 +1455,6 @@ fn build_bits1_byte_lut_boxed(lut: &[f32; 256], bits_per_dim: u8) -> Option<Box<
     Some(out)
 }
 
-/// Build a query-specific bits=1 byte contribution table for x86 selected
-/// paths. For a packed byte at offset `j`, row `b` stores
-/// `Σ_lane query[j*8 + lane] * {-1,+1}(bit_b_lane)`.
-///
-/// The scalar backend intentionally does not use this table, preserving the
-/// old scalar baseline for Task 67 scalar-vs-SIMD measurements.
-fn build_bits1_query_byte_sums_boxed(
-    query_rotated: &[f32],
-    dimensions: usize,
-    bits_per_dim: u8,
-) -> Option<Box<[[f32; 256]]>> {
-    #[cfg(target_arch = "x86_64")]
-    {
-        if bits_per_dim != 1 {
-            return None;
-        }
-        let packed_bytes = dimensions.div_ceil(8);
-        let mut out = vec![[0.0_f32; 256]; packed_bytes].into_boxed_slice();
-        for (byte_index, row) in out.iter_mut().enumerate() {
-            let base = byte_index * 8;
-            for (byte, slot) in row.iter_mut().enumerate() {
-                let mut sum = 0.0_f32;
-                for lane in 0..8 {
-                    let dim_index = base + lane;
-                    if dim_index >= dimensions {
-                        break;
-                    }
-                    let sign = if ((byte >> lane) & 1) == 1 {
-                        1.0_f32
-                    } else {
-                        -1.0_f32
-                    };
-                    sum += query_rotated[dim_index] * sign;
-                }
-                *slot = sum;
-            }
-        }
-        Some(out)
-    }
-    #[cfg(not(target_arch = "x86_64"))]
-    {
-        let _ = (query_rotated, dimensions, bits_per_dim);
-        None
-    }
-}
-
 fn bits8_dequant_linear_params(dimensions: usize, quant_clip: f32) -> (f32, f32) {
     let sqrt_d = (dimensions as f32).sqrt();
     let levels = 256.0_f32;
@@ -1584,7 +1520,6 @@ fn sum_query_dequant(
         bits,
         lut,
         None,
-        None,
         &[],
         &[],
         code,
@@ -1605,7 +1540,6 @@ fn sum_query_dequant_with_bf16(
     bits: usize,
     lut: &[f32; 256],
     bits1_byte_lut: Option<&[[f32; 8]; 256]>,
-    bits1_query_byte_sums: Option<&[[f32; 256]]>,
     bits8_query_scale: &[f32],
     bits8_query_offset: &[f32],
     code: &[u8],
@@ -1619,7 +1553,6 @@ fn sum_query_dequant_with_bf16(
             bits,
             lut,
             bits1_byte_lut,
-            bits1_query_byte_sums,
             bits8_query_scale,
             bits8_query_offset,
         },
@@ -1636,7 +1569,6 @@ struct QueryDequantContext<'a> {
     bits: usize,
     lut: &'a [f32; 256],
     bits1_byte_lut: Option<&'a [[f32; 8]; 256]>,
-    bits1_query_byte_sums: Option<&'a [[f32; 256]]>,
     bits8_query_scale: &'a [f32],
     bits8_query_offset: &'a [f32],
 }
@@ -1736,13 +1668,6 @@ fn sum_query_dequant_dispatch(ctx: QueryDequantContext<'_>, code: &[u8]) -> f32 
         }
         #[cfg(target_arch = "x86_64")]
         QueryDequantKernel::Avx512Bits1 => {
-            if let Some(query_byte_sums) = ctx.bits1_query_byte_sums {
-                return sum_query_dequant_bits1_query_byte_sums(
-                    ctx.dimensions,
-                    query_byte_sums,
-                    code,
-                );
-            }
             let byte_lut = ctx
                 .bits1_byte_lut
                 .expect("bits=1 AVX-512 dispatch requires byte LUT");
@@ -1760,13 +1685,6 @@ fn sum_query_dequant_dispatch(ctx: QueryDequantContext<'_>, code: &[u8]) -> f32 
         }
         #[cfg(target_arch = "x86_64")]
         QueryDequantKernel::Avx2Bits1 => {
-            if let Some(query_byte_sums) = ctx.bits1_query_byte_sums {
-                return sum_query_dequant_bits1_query_byte_sums(
-                    ctx.dimensions,
-                    query_byte_sums,
-                    code,
-                );
-            }
             let byte_lut = ctx
                 .bits1_byte_lut
                 .expect("bits=1 AVX2 dispatch requires byte LUT");
@@ -1868,9 +1786,7 @@ fn select_x86_query_dequant_slot(
     features: X86SimdFeatures,
 ) -> QueryDequantKernel {
     match ctx.bits {
-        1 if features.has_avx512_bits1()
-            && (ctx.bits1_query_byte_sums.is_some() || ctx.bits1_byte_lut.is_some()) =>
-        {
+        1 if features.has_avx512_bits1() && ctx.bits1_byte_lut.is_some() => {
             QueryDequantKernel::Avx512Bits1
         }
         4 => {
@@ -1898,10 +1814,7 @@ fn select_x86_query_dequant_slot(
         {
             QueryDequantKernel::Avx512Bits8
         }
-        1 if features.avx2
-            && features.fma
-            && (ctx.bits1_query_byte_sums.is_some() || ctx.bits1_byte_lut.is_some()) =>
-        {
+        1 if features.avx2 && features.fma && ctx.bits1_byte_lut.is_some() => {
             QueryDequantKernel::Avx2Bits1
         }
         8 if features.avx2
@@ -2041,23 +1954,6 @@ fn sum_query_dequant_bits1_byte_lut_scalar(
         dim_index += 1;
     }
 
-    sum
-}
-
-#[inline]
-fn sum_query_dequant_bits1_query_byte_sums(
-    dimensions: usize,
-    query_byte_sums: &[[f32; 256]],
-    code: &[u8],
-) -> f32 {
-    let packed_bytes = dimensions.div_ceil(8);
-    debug_assert!(query_byte_sums.len() >= packed_bytes);
-    debug_assert!(code.len() >= packed_bytes);
-
-    let mut sum = 0.0_f32;
-    for byte_index in 0..packed_bytes {
-        sum += query_byte_sums[byte_index][code[byte_index] as usize];
-    }
     sum
 }
 
@@ -2819,68 +2715,38 @@ unsafe fn sum_query_dequant_avx512_bf16_bits4(
 unsafe fn sum_query_dequant_avx512_bits1(
     query_rotated: &[f32],
     dimensions: usize,
-    byte_lut: &[[f32; 8]; 256],
+    _byte_lut: &[[f32; 8]; 256],
     lut: &[f32; 256],
     code: &[u8],
 ) -> f32 {
     use std::arch::x86_64::{
-        _mm512_fmadd_ps, _mm512_loadu_ps, _mm512_setzero_ps, _mm512_storeu_ps,
+        __mmask16, _mm512_fmadd_ps, _mm512_loadu_ps, _mm512_mask_blend_ps, _mm512_set1_ps,
+        _mm512_setzero_ps, _mm512_storeu_ps,
     };
 
+    let neg_v = _mm512_set1_ps(lut[0]);
+    let pos_v = _mm512_set1_ps(lut[1]);
     let mut acc0 = _mm512_setzero_ps();
     let mut acc1 = _mm512_setzero_ps();
     let mut dim_index = 0_usize;
     while dim_index + 32 <= dimensions {
         let byte_base = dim_index / 8;
-        let b0 = *code.get_unchecked(byte_base) as usize;
-        let b1 = *code.get_unchecked(byte_base + 1) as usize;
-        let b2 = *code.get_unchecked(byte_base + 2) as usize;
-        let b3 = *code.get_unchecked(byte_base + 3) as usize;
-
-        let dq0 = [
-            byte_lut[b0][0],
-            byte_lut[b0][1],
-            byte_lut[b0][2],
-            byte_lut[b0][3],
-            byte_lut[b0][4],
-            byte_lut[b0][5],
-            byte_lut[b0][6],
-            byte_lut[b0][7],
-            byte_lut[b1][0],
-            byte_lut[b1][1],
-            byte_lut[b1][2],
-            byte_lut[b1][3],
-            byte_lut[b1][4],
-            byte_lut[b1][5],
-            byte_lut[b1][6],
-            byte_lut[b1][7],
-        ];
-        let dq1 = [
-            byte_lut[b2][0],
-            byte_lut[b2][1],
-            byte_lut[b2][2],
-            byte_lut[b2][3],
-            byte_lut[b2][4],
-            byte_lut[b2][5],
-            byte_lut[b2][6],
-            byte_lut[b2][7],
-            byte_lut[b3][0],
-            byte_lut[b3][1],
-            byte_lut[b3][2],
-            byte_lut[b3][3],
-            byte_lut[b3][4],
-            byte_lut[b3][5],
-            byte_lut[b3][6],
-            byte_lut[b3][7],
-        ];
-        let (q0, q1, d0, d1) = unsafe {
+        let mask0 = u16::from_le_bytes([
+            *code.get_unchecked(byte_base),
+            *code.get_unchecked(byte_base + 1),
+        ]) as __mmask16;
+        let mask1 = u16::from_le_bytes([
+            *code.get_unchecked(byte_base + 2),
+            *code.get_unchecked(byte_base + 3),
+        ]) as __mmask16;
+        let (q0, q1) = unsafe {
             (
                 _mm512_loadu_ps(query_rotated.as_ptr().add(dim_index)),
                 _mm512_loadu_ps(query_rotated.as_ptr().add(dim_index + 16)),
-                _mm512_loadu_ps(dq0.as_ptr()),
-                _mm512_loadu_ps(dq1.as_ptr()),
             )
         };
+        let d0 = _mm512_mask_blend_ps(mask0, neg_v, pos_v);
+        let d1 = _mm512_mask_blend_ps(mask1, neg_v, pos_v);
         acc0 = _mm512_fmadd_ps(q0, d0, acc0);
         acc1 = _mm512_fmadd_ps(q1, d1, acc1);
         dim_index += 32;
@@ -2979,15 +2845,18 @@ unsafe fn sum_query_dequant_avx2_bits1(
 unsafe fn sum_query_dequant_avx512_bits1_pair(
     query_rotated: &[f32],
     dimensions: usize,
-    byte_lut: &[[f32; 8]; 256],
+    _byte_lut: &[[f32; 8]; 256],
     lut: &[f32; 256],
     code0: &[u8],
     code1: &[u8],
 ) -> (f32, f32) {
     use std::arch::x86_64::{
-        _mm512_fmadd_ps, _mm512_loadu_ps, _mm512_setzero_ps, _mm512_storeu_ps,
+        __mmask16, _mm512_fmadd_ps, _mm512_loadu_ps, _mm512_mask_blend_ps, _mm512_set1_ps,
+        _mm512_setzero_ps, _mm512_storeu_ps,
     };
 
+    let neg_v = _mm512_set1_ps(lut[0]);
+    let pos_v = _mm512_set1_ps(lut[1]);
     let mut a0 = _mm512_setzero_ps();
     let mut a1 = _mm512_setzero_ps();
     let mut b0 = _mm512_setzero_ps();
@@ -2995,97 +2864,32 @@ unsafe fn sum_query_dequant_avx512_bits1_pair(
     let mut dim_index = 0_usize;
     while dim_index + 32 <= dimensions {
         let byte_base = dim_index / 8;
-        let c0b0 = *code0.get_unchecked(byte_base) as usize;
-        let c0b1 = *code0.get_unchecked(byte_base + 1) as usize;
-        let c0b2 = *code0.get_unchecked(byte_base + 2) as usize;
-        let c0b3 = *code0.get_unchecked(byte_base + 3) as usize;
-        let c1b0 = *code1.get_unchecked(byte_base) as usize;
-        let c1b1 = *code1.get_unchecked(byte_base + 1) as usize;
-        let c1b2 = *code1.get_unchecked(byte_base + 2) as usize;
-        let c1b3 = *code1.get_unchecked(byte_base + 3) as usize;
-
-        let c0dq0 = [
-            byte_lut[c0b0][0],
-            byte_lut[c0b0][1],
-            byte_lut[c0b0][2],
-            byte_lut[c0b0][3],
-            byte_lut[c0b0][4],
-            byte_lut[c0b0][5],
-            byte_lut[c0b0][6],
-            byte_lut[c0b0][7],
-            byte_lut[c0b1][0],
-            byte_lut[c0b1][1],
-            byte_lut[c0b1][2],
-            byte_lut[c0b1][3],
-            byte_lut[c0b1][4],
-            byte_lut[c0b1][5],
-            byte_lut[c0b1][6],
-            byte_lut[c0b1][7],
-        ];
-        let c0dq1 = [
-            byte_lut[c0b2][0],
-            byte_lut[c0b2][1],
-            byte_lut[c0b2][2],
-            byte_lut[c0b2][3],
-            byte_lut[c0b2][4],
-            byte_lut[c0b2][5],
-            byte_lut[c0b2][6],
-            byte_lut[c0b2][7],
-            byte_lut[c0b3][0],
-            byte_lut[c0b3][1],
-            byte_lut[c0b3][2],
-            byte_lut[c0b3][3],
-            byte_lut[c0b3][4],
-            byte_lut[c0b3][5],
-            byte_lut[c0b3][6],
-            byte_lut[c0b3][7],
-        ];
-        let c1dq0 = [
-            byte_lut[c1b0][0],
-            byte_lut[c1b0][1],
-            byte_lut[c1b0][2],
-            byte_lut[c1b0][3],
-            byte_lut[c1b0][4],
-            byte_lut[c1b0][5],
-            byte_lut[c1b0][6],
-            byte_lut[c1b0][7],
-            byte_lut[c1b1][0],
-            byte_lut[c1b1][1],
-            byte_lut[c1b1][2],
-            byte_lut[c1b1][3],
-            byte_lut[c1b1][4],
-            byte_lut[c1b1][5],
-            byte_lut[c1b1][6],
-            byte_lut[c1b1][7],
-        ];
-        let c1dq1 = [
-            byte_lut[c1b2][0],
-            byte_lut[c1b2][1],
-            byte_lut[c1b2][2],
-            byte_lut[c1b2][3],
-            byte_lut[c1b2][4],
-            byte_lut[c1b2][5],
-            byte_lut[c1b2][6],
-            byte_lut[c1b2][7],
-            byte_lut[c1b3][0],
-            byte_lut[c1b3][1],
-            byte_lut[c1b3][2],
-            byte_lut[c1b3][3],
-            byte_lut[c1b3][4],
-            byte_lut[c1b3][5],
-            byte_lut[c1b3][6],
-            byte_lut[c1b3][7],
-        ];
-        let (q0, q1, a_d0, a_d1, b_d0, b_d1) = unsafe {
+        let a_mask0 = u16::from_le_bytes([
+            *code0.get_unchecked(byte_base),
+            *code0.get_unchecked(byte_base + 1),
+        ]) as __mmask16;
+        let a_mask1 = u16::from_le_bytes([
+            *code0.get_unchecked(byte_base + 2),
+            *code0.get_unchecked(byte_base + 3),
+        ]) as __mmask16;
+        let b_mask0 = u16::from_le_bytes([
+            *code1.get_unchecked(byte_base),
+            *code1.get_unchecked(byte_base + 1),
+        ]) as __mmask16;
+        let b_mask1 = u16::from_le_bytes([
+            *code1.get_unchecked(byte_base + 2),
+            *code1.get_unchecked(byte_base + 3),
+        ]) as __mmask16;
+        let (q0, q1) = unsafe {
             (
                 _mm512_loadu_ps(query_rotated.as_ptr().add(dim_index)),
                 _mm512_loadu_ps(query_rotated.as_ptr().add(dim_index + 16)),
-                _mm512_loadu_ps(c0dq0.as_ptr()),
-                _mm512_loadu_ps(c0dq1.as_ptr()),
-                _mm512_loadu_ps(c1dq0.as_ptr()),
-                _mm512_loadu_ps(c1dq1.as_ptr()),
             )
         };
+        let a_d0 = _mm512_mask_blend_ps(a_mask0, neg_v, pos_v);
+        let a_d1 = _mm512_mask_blend_ps(a_mask1, neg_v, pos_v);
+        let b_d0 = _mm512_mask_blend_ps(b_mask0, neg_v, pos_v);
+        let b_d1 = _mm512_mask_blend_ps(b_mask1, neg_v, pos_v);
         a0 = _mm512_fmadd_ps(q0, a_d0, a0);
         a1 = _mm512_fmadd_ps(q1, a_d1, a1);
         b0 = _mm512_fmadd_ps(q0, b_d0, b0);
@@ -4125,7 +3929,6 @@ fn estimate_ip_impl(
     bits_per_dim: u8,
     dequant_lut: &[f32; 256],
     bits1_byte_lut: Option<&[[f32; 8]; 256]>,
-    bits1_query_byte_sums: Option<&[[f32; 256]]>,
     bits8_query_scale: &[f32],
     bits8_query_offset: &[f32],
     code: &[u8],
@@ -4164,7 +3967,6 @@ fn estimate_ip_impl(
         bits,
         dequant_lut,
         bits1_byte_lut,
-        bits1_query_byte_sums,
         bits8_query_scale,
         bits8_query_offset,
         code,
@@ -4211,16 +4013,6 @@ fn estimate_ip_batch_impl(
     match select_query_dequant_kernel(ctx) {
         #[cfg(target_arch = "x86_64")]
         QueryDequantKernel::Avx512Bits1 => {
-            if let Some(query_byte_sums) = ctx.bits1_query_byte_sums {
-                estimate_ip_batch_bits1_query_byte_sums(
-                    ctx.dimensions,
-                    query_byte_sums,
-                    codes,
-                    code_len,
-                    out_scores,
-                );
-                return;
-            }
             let byte_lut = ctx
                 .bits1_byte_lut
                 .expect("bits=1 AVX-512 batch dispatch requires byte LUT");
@@ -4240,16 +4032,6 @@ fn estimate_ip_batch_impl(
         }
         #[cfg(target_arch = "x86_64")]
         QueryDequantKernel::Avx2Bits1 => {
-            if let Some(query_byte_sums) = ctx.bits1_query_byte_sums {
-                estimate_ip_batch_bits1_query_byte_sums(
-                    ctx.dimensions,
-                    query_byte_sums,
-                    codes,
-                    code_len,
-                    out_scores,
-                );
-                return;
-            }
             let byte_lut = ctx
                 .bits1_byte_lut
                 .expect("bits=1 AVX2 batch dispatch requires byte LUT");
@@ -4374,23 +4156,6 @@ fn estimate_ip_batch_scalar(
     }
 }
 
-fn estimate_ip_batch_bits1_query_byte_sums(
-    dimensions: usize,
-    query_byte_sums: &[[f32; 256]],
-    codes: &[u8],
-    code_len: usize,
-    out_scores: &mut [f32],
-) {
-    for (out, code) in out_scores.iter_mut().zip(codes.chunks_exact(code_len)) {
-        *out = finish_scalar_only_estimate(
-            dimensions,
-            1,
-            sum_query_dequant_bits1_query_byte_sums(dimensions, query_byte_sums, code),
-            code,
-        );
-    }
-}
-
 #[inline]
 fn estimate_ip_scalar_only_from_sum_context(ctx: QueryDequantContext<'_>, code: &[u8]) -> f32 {
     let packed_bytes = (ctx.dimensions * ctx.bits).div_ceil(8);
@@ -4452,7 +4217,6 @@ fn estimate_ip_scalar_only_impl(
     bits_per_dim: u8,
     dequant_lut: &[f32; 256],
     bits1_byte_lut: Option<&[[f32; 8]; 256]>,
-    bits1_query_byte_sums: Option<&[[f32; 256]]>,
     bits8_query_scale: &[f32],
     bits8_query_offset: &[f32],
     code: &[u8],
@@ -4491,7 +4255,6 @@ fn estimate_ip_scalar_only_impl(
         bits,
         dequant_lut,
         bits1_byte_lut,
-        bits1_query_byte_sums,
         bits8_query_scale,
         bits8_query_offset,
         code,
@@ -4517,7 +4280,6 @@ fn estimate_ip_least_squares_scalar_only_impl(
     bits_per_dim: u8,
     dequant_lut: &[f32; 256],
     bits1_byte_lut: Option<&[[f32; 8]; 256]>,
-    bits1_query_byte_sums: Option<&[[f32; 256]]>,
     bits8_query_scale: &[f32],
     bits8_query_offset: &[f32],
     code: &[u8],
@@ -4556,7 +4318,6 @@ fn estimate_ip_least_squares_scalar_only_impl(
         bits,
         dequant_lut,
         bits1_byte_lut,
-        bits1_query_byte_sums,
         bits8_query_scale,
         bits8_query_offset,
         code,
@@ -6193,31 +5954,6 @@ mod tests {
     }
 
     #[test]
-    fn bits1_query_byte_sums_match_per_bit_decode() {
-        for &dim in &[1_usize, 7, 8, 9, 15, 16, 31, 32, 65, 1536] {
-            let bits = 1_usize;
-            let packed_bytes = (dim * bits).div_ceil(8);
-            let mut code = vec![0_u8; packed_bytes + RABITQ_SCALAR_LEN];
-            for i in 0..dim {
-                let level = ((i * 19 + 5) as u32) & 1;
-                write_level(&mut code, i, bits, level);
-            }
-            let query: Vec<f32> = (0..dim).map(|i| ((i as f32) * 0.023).cos()).collect();
-            let lut = build_dequant_lut(dim, bits, RABITQ_DEFAULT_QUANT_CLIP);
-            let query_byte_sums =
-                build_bits1_query_byte_sums_boxed(&query, dim, 1).expect("bits=1 builds sums");
-
-            let per_bit = sum_query_dequant_scalar(&query, dim, bits, &lut, &code);
-            let byte_sum = sum_query_dequant_bits1_query_byte_sums(dim, &query_byte_sums, &code);
-            let tol = 1e-5_f32 * per_bit.abs().max(1.0);
-            assert!(
-                (per_bit - byte_sum).abs() <= tol,
-                "bits=1 dim={dim}: per_bit={per_bit} byte_sum={byte_sum}"
-            );
-        }
-    }
-
-    #[test]
     fn prepared_queries_only_keep_bits1_byte_lut_for_bits1() {
         let query = vec![0.25_f32; 16];
         let bits1 = identity_quantizer(16, 1).prepare_estimator(&query);
@@ -6225,9 +5961,7 @@ mod tests {
         let bits8 = identity_quantizer(16, 8).prepare_estimator(&query);
 
         assert!(bits1.bits1_byte_lut.is_some());
-        assert!(bits1.bits1_query_byte_sums.is_some());
         assert!(bits4.bits1_byte_lut.is_none());
-        assert!(bits4.bits1_query_byte_sums.is_none());
         assert!(bits4.bits8_query_scale.is_empty());
         assert_eq!(bits8.bits8_query_scale.len(), 16);
         assert_eq!(bits8.bits8_query_offset.len(), 16);
@@ -6251,7 +5985,6 @@ mod tests {
             bits: 1,
             lut: &lut,
             bits1_byte_lut: Some(&bits1_byte_lut),
-            bits1_query_byte_sums: None,
             bits8_query_scale: &[],
             bits8_query_offset: &[],
         };
