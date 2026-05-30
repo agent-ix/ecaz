@@ -1,0 +1,193 @@
+{
+  "name": "task67-intel-rabitq-simd-gate",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-67/010-intel-measurement-suite/artifacts",
+  "defaults": {
+    "pg": 18,
+    "socket_dir": "/home/peter/.pgrx",
+    "profile": "ec_ivf",
+    "bits": 4,
+    "seed": 42,
+    "queries_limit": 200,
+    "iterations": 500,
+    "force_index": true
+  },
+  "steps": [
+    {
+      "kind": "raw",
+      "name": "restart-pg18-scalar",
+      "tags": ["setup", "scalar", "pg18"],
+      "args": [
+        "dev",
+        "scratch",
+        "--log-file",
+        "reviews/task-67/010-intel-measurement-suite/artifacts/restart-pg18-scalar.log",
+        "restart",
+        "--pg",
+        "18",
+        "--env",
+        "ECAZ_SIMD=scalar"
+      ],
+      "expected_artifacts": [
+        "reviews/task-67/010-intel-measurement-suite/artifacts/restart-pg18-scalar.log"
+      ]
+    },
+    {
+      "kind": "load",
+      "name": "load-100k-rabitq1-scalar",
+      "tags": ["load", "scalar", "ec_real_100k", "ivf", "rabitq", "bits1"],
+      "prefix": "task67_intel_100k_rabitq1_scalar",
+      "profile": "ec_ivf",
+      "bits": 4,
+      "storage_format": "rabitq",
+      "corpus_file": "target/real-corpus/staged-task50/ec_real_100k_corpus.tsv",
+      "queries_file": "target/real-corpus/staged-task50/ec_real_100k_queries.tsv",
+      "manifest_file": "target/real-corpus/staged-task50/ec_real_100k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "nlists=128",
+        "nprobe=128",
+        "training_sample_rows=10000",
+        "quant_bits=1",
+        "rerank=heap_f32",
+        "rerank_width=100"
+      ],
+      "log_file": "reviews/task-67/010-intel-measurement-suite/artifacts/load-100k-rabitq1-scalar.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-100k-rabitq1-scalar",
+      "tags": ["recall", "scalar", "ec_real_100k", "ivf", "rabitq", "bits1"],
+      "prefix": "task67_intel_100k_rabitq1_scalar",
+      "profile": "ec_ivf",
+      "bits": 4,
+      "k": 10,
+      "sweep": [32, 64, 96, 128],
+      "rerank_width": 100,
+      "force_index": true,
+      "truth_cache_file": "reviews/task-67/010-intel-measurement-suite/artifacts/truth-ec-real-100k-q200-k10.json",
+      "log_output": "reviews/task-67/010-intel-measurement-suite/artifacts/recall-100k-rabitq1-scalar.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-100k-rabitq1-scalar",
+      "tags": ["latency", "scalar", "ec_real_100k", "ivf", "rabitq", "bits1"],
+      "prefix": "task67_intel_100k_rabitq1_scalar",
+      "profile": "ec_ivf",
+      "bits": 4,
+      "k": 10,
+      "sweep": [32, 64, 96, 128],
+      "rerank_width": 100,
+      "force_index": true,
+      "iterations": 500,
+      "concurrency": 1,
+      "log_output": "reviews/task-67/010-intel-measurement-suite/artifacts/latency-100k-rabitq1-scalar.log"
+    },
+    {
+      "kind": "sidecar-rerank",
+      "name": "sidecar-100k-rabitq8-variants-scalar",
+      "tags": ["sidecar", "scalar", "ec_real_100k", "ivf", "rabitq8", "variants"],
+      "prefix": "task67_intel_100k_rabitq1_scalar",
+      "profile": "ec_ivf",
+      "k": 10,
+      "candidate_k": 100,
+      "concurrency": 1,
+      "sweep": [128],
+      "queries_limit": 200,
+      "warmup_queries": 50,
+      "variants": ["rabitq8", "rabitq8ls", "rabitq8c3", "rabitq8c4"],
+      "read_modes": ["tid-sorted"],
+      "rebuild_sidecar_table": true,
+      "force_index": true,
+      "log_output": "reviews/task-67/010-intel-measurement-suite/artifacts/sidecar-100k-rabitq8-variants-scalar.log"
+    },
+    {
+      "kind": "raw",
+      "name": "restart-pg18-auto-simd",
+      "tags": ["setup", "auto-simd", "pg18"],
+      "args": [
+        "dev",
+        "scratch",
+        "--log-file",
+        "reviews/task-67/010-intel-measurement-suite/artifacts/restart-pg18-auto-simd.log",
+        "restart",
+        "--pg",
+        "18",
+        "--env",
+        "ECAZ_SIMD=auto"
+      ],
+      "expected_artifacts": [
+        "reviews/task-67/010-intel-measurement-suite/artifacts/restart-pg18-auto-simd.log"
+      ]
+    },
+    {
+      "kind": "load",
+      "name": "load-100k-rabitq1-auto-simd",
+      "tags": ["load", "auto-simd", "ec_real_100k", "ivf", "rabitq", "bits1"],
+      "prefix": "task67_intel_100k_rabitq1_auto",
+      "profile": "ec_ivf",
+      "bits": 4,
+      "storage_format": "rabitq",
+      "corpus_file": "target/real-corpus/staged-task50/ec_real_100k_corpus.tsv",
+      "queries_file": "target/real-corpus/staged-task50/ec_real_100k_queries.tsv",
+      "manifest_file": "target/real-corpus/staged-task50/ec_real_100k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "nlists=128",
+        "nprobe=128",
+        "training_sample_rows=10000",
+        "quant_bits=1",
+        "rerank=heap_f32",
+        "rerank_width=100"
+      ],
+      "log_file": "reviews/task-67/010-intel-measurement-suite/artifacts/load-100k-rabitq1-auto-simd.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-100k-rabitq1-auto-simd",
+      "tags": ["recall", "auto-simd", "ec_real_100k", "ivf", "rabitq", "bits1"],
+      "prefix": "task67_intel_100k_rabitq1_auto",
+      "profile": "ec_ivf",
+      "bits": 4,
+      "k": 10,
+      "sweep": [32, 64, 96, 128],
+      "rerank_width": 100,
+      "force_index": true,
+      "truth_cache_file": "reviews/task-67/010-intel-measurement-suite/artifacts/truth-ec-real-100k-q200-k10.json",
+      "log_output": "reviews/task-67/010-intel-measurement-suite/artifacts/recall-100k-rabitq1-auto-simd.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-100k-rabitq1-auto-simd",
+      "tags": ["latency", "auto-simd", "ec_real_100k", "ivf", "rabitq", "bits1"],
+      "prefix": "task67_intel_100k_rabitq1_auto",
+      "profile": "ec_ivf",
+      "bits": 4,
+      "k": 10,
+      "sweep": [32, 64, 96, 128],
+      "rerank_width": 100,
+      "force_index": true,
+      "iterations": 500,
+      "concurrency": 1,
+      "log_output": "reviews/task-67/010-intel-measurement-suite/artifacts/latency-100k-rabitq1-auto-simd.log"
+    },
+    {
+      "kind": "sidecar-rerank",
+      "name": "sidecar-100k-rabitq8-variants-auto-simd",
+      "tags": ["sidecar", "auto-simd", "ec_real_100k", "ivf", "rabitq8", "variants"],
+      "prefix": "task67_intel_100k_rabitq1_auto",
+      "profile": "ec_ivf",
+      "k": 10,
+      "candidate_k": 100,
+      "concurrency": 1,
+      "sweep": [128],
+      "queries_limit": 200,
+      "warmup_queries": 50,
+      "variants": ["rabitq8", "rabitq8ls", "rabitq8c3", "rabitq8c4"],
+      "read_modes": ["tid-sorted"],
+      "rebuild_sidecar_table": true,
+      "force_index": true,
+      "log_output": "reviews/task-67/010-intel-measurement-suite/artifacts/sidecar-100k-rabitq8-variants-auto-simd.log"
+    }
+  ]
+}
