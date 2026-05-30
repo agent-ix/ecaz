@@ -7,6 +7,12 @@ use std::sync::OnceLock;
 pub(crate) enum SimdBackend {
     Scalar,
     #[cfg(target_arch = "x86_64")]
+    Avx512 {
+        vpopcntdq: bool,
+        bw: bool,
+        bf16: bool,
+    },
+    #[cfg(target_arch = "x86_64")]
     Avx2Fma,
     #[cfg(target_arch = "aarch64")]
     Neon,
@@ -24,10 +30,18 @@ fn detect_backend() -> SimdBackend {
 
     #[cfg(target_arch = "x86_64")]
     {
-        if has_avx2_fma(
+        let x86 = detect_x86_features(
             std::arch::is_x86_feature_detected!("avx2"),
             std::arch::is_x86_feature_detected!("fma"),
-        ) {
+            std::arch::is_x86_feature_detected!("avx512f"),
+            std::arch::is_x86_feature_detected!("avx512vpopcntdq"),
+            std::arch::is_x86_feature_detected!("avx512bw"),
+            std::arch::is_x86_feature_detected!("avx512bf16"),
+        );
+        if let Some(backend) = x86.avx512_backend() {
+            return backend;
+        }
+        if has_avx2_fma(x86.avx2, x86.fma) {
             return SimdBackend::Avx2Fma;
         }
     }
@@ -47,11 +61,79 @@ fn has_avx2_fma(avx2: bool, fma: bool) -> bool {
     avx2 && fma
 }
 
+#[cfg(any(target_arch = "x86_64", test))]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct X86SimdFeatures {
+    pub(crate) avx2: bool,
+    pub(crate) fma: bool,
+    pub(crate) avx512f: bool,
+    pub(crate) avx512vpopcntdq: bool,
+    pub(crate) avx512bw: bool,
+    pub(crate) avx512bf16: bool,
+}
+
+#[cfg(any(target_arch = "x86_64", test))]
+pub(crate) fn detect_x86_features(
+    avx2: bool,
+    fma: bool,
+    avx512f: bool,
+    avx512vpopcntdq: bool,
+    avx512bw: bool,
+    avx512bf16: bool,
+) -> X86SimdFeatures {
+    X86SimdFeatures {
+        avx2,
+        fma,
+        avx512f,
+        avx512vpopcntdq,
+        avx512bw,
+        avx512bf16,
+    }
+}
+
+#[cfg(any(target_arch = "x86_64", test))]
+impl X86SimdFeatures {
+    pub(crate) fn has_avx512_bits1(&self) -> bool {
+        self.avx512f && self.avx512vpopcntdq
+    }
+
+    pub(crate) fn has_avx512_bits4(&self) -> bool {
+        self.avx512f && self.avx512bw
+    }
+
+    pub(crate) fn has_avx512_bits8(&self) -> bool {
+        self.avx512f
+    }
+
+    pub(crate) fn has_avx512_bf16(&self) -> bool {
+        self.avx512f && self.avx512bf16
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    fn avx512_backend(self) -> Option<SimdBackend> {
+        if self.has_avx512_bits1() || self.has_avx512_bits4() || self.has_avx512_bits8() {
+            Some(SimdBackend::Avx512 {
+                vpopcntdq: self.avx512vpopcntdq,
+                bw: self.avx512bw,
+                bf16: self.has_avx512_bf16(),
+            })
+        } else {
+            None
+        }
+    }
+}
+
 fn forced_backend_from_env() -> Option<SimdBackend> {
     let requested = env::var("ECAZ_SIMD").ok()?;
     match requested.trim().to_ascii_lowercase().as_str() {
         "" | "auto" => None,
         "scalar" => Some(SimdBackend::Scalar),
+        #[cfg(target_arch = "x86_64")]
+        "avx512" | "avx512f" => Some(SimdBackend::Avx512 {
+            vpopcntdq: true,
+            bw: true,
+            bf16: false,
+        }),
         #[cfg(target_arch = "x86_64")]
         "avx2" | "avx2_fma" | "avx2+fma" => Some(SimdBackend::Avx2Fma),
         #[cfg(target_arch = "aarch64")]
@@ -63,6 +145,36 @@ fn forced_backend_from_env() -> Option<SimdBackend> {
 pub(crate) fn backend_name() -> &'static str {
     match backend() {
         SimdBackend::Scalar => "scalar",
+        #[cfg(target_arch = "x86_64")]
+        SimdBackend::Avx512 {
+            bf16: true,
+            vpopcntdq: true,
+            bw: true,
+        } => "avx512f+vpopcntdq+bw+bf16",
+        #[cfg(target_arch = "x86_64")]
+        SimdBackend::Avx512 {
+            vpopcntdq: true,
+            bw: true,
+            bf16: false,
+        } => "avx512f+vpopcntdq+bw",
+        #[cfg(target_arch = "x86_64")]
+        SimdBackend::Avx512 {
+            vpopcntdq: true,
+            bw: false,
+            bf16: _,
+        } => "avx512f+vpopcntdq",
+        #[cfg(target_arch = "x86_64")]
+        SimdBackend::Avx512 {
+            vpopcntdq: false,
+            bw: true,
+            bf16: _,
+        } => "avx512f+bw",
+        #[cfg(target_arch = "x86_64")]
+        SimdBackend::Avx512 {
+            vpopcntdq: false,
+            bw: false,
+            bf16: _,
+        } => "avx512f",
         #[cfg(target_arch = "x86_64")]
         SimdBackend::Avx2Fma => "avx2+fma",
         #[cfg(target_arch = "aarch64")]
@@ -115,6 +227,18 @@ mod tests {
             assert_eq!(forced_backend_from_env(), Some(SimdBackend::Avx2Fma));
         });
 
+        #[cfg(target_arch = "x86_64")]
+        with_simd_env(Some("avx512"), || {
+            assert_eq!(
+                forced_backend_from_env(),
+                Some(SimdBackend::Avx512 {
+                    vpopcntdq: true,
+                    bw: true,
+                    bf16: false,
+                })
+            );
+        });
+
         #[cfg(target_arch = "aarch64")]
         with_simd_env(Some("neon"), || {
             assert_eq!(forced_backend_from_env(), Some(SimdBackend::Neon));
@@ -145,9 +269,37 @@ mod tests {
     }
 
     #[test]
+    fn x86_feature_slots_model_task67_kernel_requirements() {
+        let all = detect_x86_features(true, true, true, true, true, true);
+        assert!(all.has_avx512_bits1());
+        assert!(all.has_avx512_bits4());
+        assert!(all.has_avx512_bits8());
+        assert!(all.has_avx512_bf16());
+
+        let no_vpopcnt = detect_x86_features(true, true, true, false, true, true);
+        assert!(!no_vpopcnt.has_avx512_bits1());
+        assert!(no_vpopcnt.has_avx512_bits4());
+        assert!(no_vpopcnt.has_avx512_bits8());
+
+        let no_bw = detect_x86_features(true, true, true, true, false, false);
+        assert!(no_bw.has_avx512_bits1());
+        assert!(!no_bw.has_avx512_bits4());
+        assert!(no_bw.has_avx512_bits8());
+        assert!(!no_bw.has_avx512_bf16());
+
+        let avx2_only = detect_x86_features(true, true, false, true, true, true);
+        assert!(!avx2_only.has_avx512_bits1());
+        assert!(!avx2_only.has_avx512_bits4());
+        assert!(!avx2_only.has_avx512_bits8());
+        assert!(!avx2_only.has_avx512_bf16());
+    }
+
+    #[test]
     fn backend_name_matches_detected_backend() {
         match backend() {
             SimdBackend::Scalar => assert_eq!(backend_name(), "scalar"),
+            #[cfg(target_arch = "x86_64")]
+            SimdBackend::Avx512 { .. } => assert!(backend_name().starts_with("avx512f")),
             #[cfg(target_arch = "x86_64")]
             SimdBackend::Avx2Fma => assert_eq!(backend_name(), "avx2+fma"),
             #[cfg(target_arch = "aarch64")]

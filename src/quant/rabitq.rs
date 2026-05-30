@@ -46,6 +46,8 @@ use std::{
 
 use crate::quant::prod::ProdQuantizer;
 use crate::quant::rotation;
+#[cfg(target_arch = "x86_64")]
+use crate::quant::simd::X86SimdFeatures;
 use crate::quant::simd::{backend, SimdBackend};
 
 /// Bytes per vector holding the rotated L2 norm `||o||`.
@@ -1623,12 +1625,35 @@ fn sum_query_dequant_dispatch(ctx: QueryDequantContext<'_>, code: &[u8]) -> f32 
             // checked the bf16 query mirror length.
             unsafe { sum_query_dequant_neon_bf16_bits4(q_bf16, ctx.dimensions, lut_bf16, code) }
         }
+        #[cfg(target_arch = "x86_64")]
+        QueryDequantKernel::Avx512Bits1
+        | QueryDequantKernel::Avx512Bits4
+        | QueryDequantKernel::Avx512Bits8
+        | QueryDequantKernel::Avx2Bits1
+        | QueryDequantKernel::Avx2Bits4
+        | QueryDequantKernel::Avx2Bits8 => sum_query_dequant_scalar_fallback(ctx, code),
+        #[cfg(all(target_arch = "x86_64", feature = "rabitq-bf16"))]
+        QueryDequantKernel::Avx512Bf16Bits4 => sum_query_dequant_scalar_fallback(ctx, code),
     }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum QueryDequantKernel {
     Scalar,
+    #[cfg(target_arch = "x86_64")]
+    Avx512Bits1,
+    #[cfg(target_arch = "x86_64")]
+    Avx512Bits4,
+    #[cfg(target_arch = "x86_64")]
+    Avx512Bits8,
+    #[cfg(all(target_arch = "x86_64", feature = "rabitq-bf16"))]
+    Avx512Bf16Bits4,
+    #[cfg(target_arch = "x86_64")]
+    Avx2Bits1,
+    #[cfg(target_arch = "x86_64")]
+    Avx2Bits4,
+    #[cfg(target_arch = "x86_64")]
+    Avx2Bits8,
     #[cfg(target_arch = "aarch64")]
     NeonBits1,
     #[cfg(target_arch = "aarch64")]
@@ -1644,13 +1669,105 @@ fn select_query_dequant_kernel(_ctx: QueryDequantContext<'_>) -> QueryDequantKer
     match backend() {
         SimdBackend::Scalar => QueryDequantKernel::Scalar,
         #[cfg(target_arch = "x86_64")]
-        SimdBackend::Avx2Fma => {
-            // Task 67 adds AVX2/AVX-512 slots here; until then x86 keeps the
-            // scalar reference behavior through the same dispatch seam.
-            QueryDequantKernel::Scalar
-        }
+        SimdBackend::Avx512 {
+            vpopcntdq,
+            bw,
+            bf16,
+        } => select_x86_query_dequant_kernel(
+            _ctx,
+            X86SimdFeatures {
+                avx2: true,
+                fma: true,
+                avx512f: true,
+                avx512vpopcntdq: vpopcntdq,
+                avx512bw: bw,
+                avx512bf16: bf16,
+            },
+        ),
+        #[cfg(target_arch = "x86_64")]
+        SimdBackend::Avx2Fma => select_x86_query_dequant_kernel(
+            _ctx,
+            X86SimdFeatures {
+                avx2: true,
+                fma: true,
+                avx512f: false,
+                avx512vpopcntdq: false,
+                avx512bw: false,
+                avx512bf16: false,
+            },
+        ),
         #[cfg(target_arch = "aarch64")]
         SimdBackend::Neon => select_neon_query_dequant_kernel(_ctx),
+    }
+}
+
+#[cfg(target_arch = "x86_64")]
+#[inline]
+fn select_x86_query_dequant_slot(
+    ctx: QueryDequantContext<'_>,
+    features: X86SimdFeatures,
+) -> QueryDequantKernel {
+    match ctx.bits {
+        1 if features.has_avx512_bits1() && ctx.bits1_byte_lut.is_some() => {
+            QueryDequantKernel::Avx512Bits1
+        }
+        4 => {
+            #[cfg(feature = "rabitq-bf16")]
+            {
+                if features.has_avx512_bf16()
+                    && ctx.query_bf16.is_some()
+                    && ctx.dequant_lut_bf16.is_some()
+                {
+                    return QueryDequantKernel::Avx512Bf16Bits4;
+                }
+            }
+            if features.has_avx512_bits4() {
+                QueryDequantKernel::Avx512Bits4
+            } else if features.avx2 && features.fma {
+                QueryDequantKernel::Avx2Bits4
+            } else {
+                QueryDequantKernel::Scalar
+            }
+        }
+        8 if features.has_avx512_bits8()
+            && ctx.bits8_query_scale.len() == ctx.dimensions
+            && ctx.bits8_query_offset.len() == ctx.dimensions =>
+        {
+            QueryDequantKernel::Avx512Bits8
+        }
+        1 if features.avx2 && features.fma && ctx.bits1_byte_lut.is_some() => {
+            QueryDequantKernel::Avx2Bits1
+        }
+        8 if features.avx2
+            && features.fma
+            && ctx.bits8_query_scale.len() == ctx.dimensions
+            && ctx.bits8_query_offset.len() == ctx.dimensions =>
+        {
+            QueryDequantKernel::Avx2Bits8
+        }
+        _ => QueryDequantKernel::Scalar,
+    }
+}
+
+#[cfg(target_arch = "x86_64")]
+#[inline]
+fn select_x86_query_dequant_kernel(
+    ctx: QueryDequantContext<'_>,
+    features: X86SimdFeatures,
+) -> QueryDequantKernel {
+    match select_x86_query_dequant_slot(ctx, features) {
+        // Task 67 Slice A reserves the per-kernel slots. Slices B-H replace
+        // these scalar fallbacks one slot at a time by adding the corresponding
+        // target_feature kernel bodies and dispatch arms.
+        QueryDequantKernel::Avx512Bits1
+        | QueryDequantKernel::Avx512Bits4
+        | QueryDequantKernel::Avx512Bits8
+        | QueryDequantKernel::Avx2Bits1
+        | QueryDequantKernel::Avx2Bits4
+        | QueryDequantKernel::Avx2Bits8 => QueryDequantKernel::Scalar,
+        #[cfg(feature = "rabitq-bf16")]
+        QueryDequantKernel::Avx512Bf16Bits4 => QueryDequantKernel::Scalar,
+        other => other,
     }
 }
 
@@ -4054,6 +4171,88 @@ mod tests {
         assert!(bits4.bits8_query_scale.is_empty());
         assert_eq!(bits8.bits8_query_scale.len(), 16);
         assert_eq!(bits8.bits8_query_offset.len(), 16);
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    #[test]
+    fn x86_query_dequant_slots_cover_task67_kernels() {
+        let dim = 16_usize;
+        let query = vec![0.25_f32; dim];
+        let lut = build_dequant_lut(dim, 1, RABITQ_DEFAULT_QUANT_CLIP);
+        let bits1_byte_lut = build_bits1_byte_lut_boxed(&lut, 1).expect("bits=1 builds byte LUT");
+        let bits8_scale = vec![0.01_f32; dim];
+        let bits8_offset = vec![-0.25_f32; dim];
+
+        let mut ctx = QueryDequantContext {
+            query_rotated: &query,
+            query_bf16: None,
+            dequant_lut_bf16: None,
+            dimensions: dim,
+            bits: 1,
+            lut: &lut,
+            bits1_byte_lut: Some(&bits1_byte_lut),
+            bits8_query_scale: &[],
+            bits8_query_offset: &[],
+        };
+        let avx512_all = X86SimdFeatures {
+            avx2: true,
+            fma: true,
+            avx512f: true,
+            avx512vpopcntdq: true,
+            avx512bw: true,
+            avx512bf16: false,
+        };
+        assert_eq!(
+            select_x86_query_dequant_slot(ctx, avx512_all),
+            QueryDequantKernel::Avx512Bits1
+        );
+
+        ctx.bits = 4;
+        ctx.bits1_byte_lut = None;
+        assert_eq!(
+            select_x86_query_dequant_slot(ctx, avx512_all),
+            QueryDequantKernel::Avx512Bits4
+        );
+
+        ctx.bits = 8;
+        ctx.bits8_query_scale = &bits8_scale;
+        ctx.bits8_query_offset = &bits8_offset;
+        assert_eq!(
+            select_x86_query_dequant_slot(ctx, avx512_all),
+            QueryDequantKernel::Avx512Bits8
+        );
+
+        let avx2_only = X86SimdFeatures {
+            avx2: true,
+            fma: true,
+            avx512f: false,
+            avx512vpopcntdq: false,
+            avx512bw: false,
+            avx512bf16: false,
+        };
+        ctx.bits = 1;
+        ctx.bits1_byte_lut = Some(&bits1_byte_lut);
+        ctx.bits8_query_scale = &[];
+        ctx.bits8_query_offset = &[];
+        assert_eq!(
+            select_x86_query_dequant_slot(ctx, avx2_only),
+            QueryDequantKernel::Avx2Bits1
+        );
+
+        ctx.bits = 4;
+        ctx.bits1_byte_lut = None;
+        assert_eq!(
+            select_x86_query_dequant_slot(ctx, avx2_only),
+            QueryDequantKernel::Avx2Bits4
+        );
+
+        ctx.bits = 8;
+        ctx.bits8_query_scale = &bits8_scale;
+        ctx.bits8_query_offset = &bits8_offset;
+        assert_eq!(
+            select_x86_query_dequant_slot(ctx, avx2_only),
+            QueryDequantKernel::Avx2Bits8
+        );
     }
 
     #[cfg(target_arch = "aarch64")]

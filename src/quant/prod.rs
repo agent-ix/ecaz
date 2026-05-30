@@ -509,7 +509,7 @@ impl ProdQuantizer {
 
         match backend() {
             #[cfg(target_arch = "x86_64")]
-            SimdBackend::Avx2Fma => self
+            SimdBackend::Avx512 { .. } | SimdBackend::Avx2Fma => self
                 .score_ip_from_split_parts_avx2_checked(prepared, gamma, mse_packed, qjl_packed)
                 .unwrap_or_else(|| {
                     self.score_ip_from_split_parts_scalar(prepared, gamma, mse_packed, qjl_packed)
@@ -778,7 +778,7 @@ impl ProdQuantizer {
         if mse_bits(self.original_dim, self.bits) == 3 {
             match backend() {
                 #[cfg(target_arch = "x86_64")]
-                SimdBackend::Avx2Fma => self
+                SimdBackend::Avx512 { .. } | SimdBackend::Avx2Fma => self
                     .score_ip_mse_codes_avx2_checked(mse_a, mse_b)
                     .unwrap_or_else(|| self.score_ip_mse_codes_scalar(mse_a, mse_b)),
                 #[cfg(target_arch = "aarch64")]

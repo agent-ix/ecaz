@@ -14,7 +14,7 @@ pub fn fwht_in_place(values: &mut [f32]) {
 
     match backend() {
         #[cfg(target_arch = "x86_64")]
-        SimdBackend::Avx2Fma => {
+        SimdBackend::Avx512 { .. } | SimdBackend::Avx2Fma => {
             if !try_fwht_in_place_avx2(values) {
                 fwht_in_place_scalar(values);
             }
