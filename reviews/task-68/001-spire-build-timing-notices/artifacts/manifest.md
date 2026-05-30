@@ -27,3 +27,12 @@
   - `src/am/ec_spire/build/training.rs:172` relation build `assign_vectors_to_centroids`
   - `src/am/ec_spire/build/recursive.rs:40` recursive routing `train_spherical_kmeans`
   - `src/am/ec_spire/build/recursive.rs:54` recursive routing `assign_vectors_to_centroids`
+
+### `install-current-extension.log`
+
+- command: `/Users/peter/.cargo/bin/ecaz dev install ecaz-pg-test --pg 18 --log-file reviews/task-68/001-spire-build-timing-notices/artifacts/install-current-extension.log`
+- result: passed
+- key lines:
+  - `[install] backend artifact assertion passed`
+  - `[install] installed_backend=/opt/homebrew/lib/postgresql@18/ecaz.dylib`
+  - `[install] sha256=aa2a9243c73f054295c4cbbac714036319108bc2da88c1b7d1c7e4bdeb3a4e47`
