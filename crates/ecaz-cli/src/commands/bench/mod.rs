@@ -15,6 +15,7 @@ mod cross_am;
 mod graph;
 pub mod latency;
 mod overhead;
+mod rabitq_kernel;
 pub mod recall;
 mod sidecar_rerank;
 mod spire_pipeline;
@@ -26,6 +27,7 @@ pub use cross_am::CrossAmArgs;
 pub use graph::GraphArgs;
 pub use latency::LatencyArgs;
 pub use overhead::OverheadArgs;
+pub use rabitq_kernel::RabitqKernelArgs;
 pub use recall::RecallArgs;
 pub use sidecar_rerank::SidecarRerankArgs;
 #[allow(unused_imports)]
@@ -231,6 +233,8 @@ pub enum BenchCommand {
     Overhead(OverheadArgs),
     /// IVF/RaBitQ sidecar upper-bound rerank measurement.
     SidecarRerank(SidecarRerankArgs),
+    /// RaBitQ prepared-estimator kernel microbenchmarks.
+    RabitqKernel(RabitqKernelArgs),
     /// SPIRE routing, local pipeline, and optional remote fanout counters.
     SpirePipeline(SpirePipelineArgs),
     /// Expand a configured benchmark suite into packet-style ecaz commands.
@@ -248,6 +252,7 @@ impl BenchCommand {
             BenchCommand::DiskannBuildProbe(a) => build_probe::run(conn, a).await,
             BenchCommand::Overhead(a) => overhead::run(conn, a).await,
             BenchCommand::SidecarRerank(a) => sidecar_rerank::run(conn, a).await,
+            BenchCommand::RabitqKernel(a) => rabitq_kernel::run(a).await,
             BenchCommand::SpirePipeline(a) => spire_pipeline::run(conn, a).await,
             BenchCommand::Suite(a) => suite::run(conn, a).await,
         }
