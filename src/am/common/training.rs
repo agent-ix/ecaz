@@ -11,13 +11,6 @@ use crate::quant::{
 
 const DEFAULT_AUTO_NLISTS_MAX: usize = 4096;
 
-struct KMeansAssignmentPartial {
-    sample_index: usize,
-    centroid_index: usize,
-    sum: Vec<f32>,
-    changed: bool,
-}
-
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct SphericalKMeansModel {
     pub(crate) dimensions: usize,
@@ -205,15 +198,24 @@ fn train_spherical_kmeans_parallel(
         sums.iter_mut().for_each(|sum| sum.fill(0.0));
         counts.fill(0);
 
-        let partials = assign_kmeans_chunks(
-            error_label,
-            &samples,
-            &centroids,
-            &assignments,
-            nlists,
-            dimensions,
-        )?;
-        let changed = reduce_kmeans_partials(&partials, &mut assignments, &mut sums, &mut counts);
+        let next_assignments = samples
+            .par_iter()
+            .map(|sample| nearest_centroid(error_label, sample, &centroids))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let mut changed = false;
+        for (sample_index, (sample, &centroid_index)) in
+            samples.iter().zip(next_assignments.iter()).enumerate()
+        {
+            if assignments[sample_index] != centroid_index {
+                assignments[sample_index] = centroid_index;
+                changed = true;
+            }
+            counts[centroid_index] += 1;
+            for (dst, value) in sums[centroid_index].iter_mut().zip(sample.iter()) {
+                *dst += *value;
+            }
+        }
 
         for centroid_index in 0..nlists {
             if counts[centroid_index] == 0 {
@@ -236,53 +238,6 @@ fn train_spherical_kmeans_parallel(
         dimensions,
         centroids,
     })
-}
-
-fn assign_kmeans_chunks(
-    error_label: &str,
-    samples: &[Vec<f32>],
-    centroids: &[Vec<f32>],
-    previous_assignments: &[usize],
-    nlists: usize,
-    dimensions: usize,
-) -> Result<Vec<KMeansAssignmentPartial>, String> {
-    samples
-        .par_iter()
-        .zip(previous_assignments.par_iter())
-        .enumerate()
-        .map(|(sample_index, (sample, previous_assignment))| {
-            let centroid_index = nearest_centroid(error_label, sample, centroids)?;
-            debug_assert_eq!(sample.len(), dimensions);
-            debug_assert!(centroid_index < nlists);
-            Ok(KMeansAssignmentPartial {
-                sample_index,
-                centroid_index,
-                sum: sample.clone(),
-                changed: *previous_assignment != centroid_index,
-            })
-        })
-        .collect::<Result<Vec<_>, _>>()
-}
-
-fn reduce_kmeans_partials(
-    partials: &[KMeansAssignmentPartial],
-    assignments: &mut [usize],
-    sums: &mut [Vec<f32>],
-    counts: &mut [usize],
-) -> bool {
-    let mut changed = false;
-    for partial in partials {
-        changed |= partial.changed;
-        assignments[partial.sample_index] = partial.centroid_index;
-        counts[partial.centroid_index] += 1;
-        for (dst, value) in sums[partial.centroid_index]
-            .iter_mut()
-            .zip(partial.sum.iter())
-        {
-            *dst += *value;
-        }
-    }
-    changed
 }
 
 pub(crate) fn assign_vector_to_centroid(
