@@ -3,7 +3,7 @@
 - head SHA: `c24426eff12817824afb36409715970445f40053`
 - task bucket: `reviews/task-67/036-scale-benchmark-100k-1m/`
 - timestamp: `2026-05-30T16:25:52Z`
-- lane: Task 67 scale follow-up AWS benchmark evidence
+- lane: Task 67 scale follow-up AWS benchmark evidence, partially superseded
 - fixture / storage format / rerank mode:
   - 100k RaBitQ8 IVF sidecar: `ec_real_100k`, `ec_ivf`, `storage_format=rabitq`, `rerank=off`, variants `rabitq8`, `rabitq8ls`, `rabitq8c3`, `rabitq8c4`
   - 1m HNSW context: `ec_real_ann_benchmarks_anchor`, `ec_hnsw`, `m=16`, `ef_construction=128`
@@ -22,7 +22,14 @@
 - `artifacts/task67-hnsw-1m-min-suite.json`
 - `artifacts/task67-diskann-1m-min-suite.json`
 
-## Completed 100k Runs
+## Superseded 100k Runs
+
+The 100k scalar-vs-auto runs in this packet are retained for provenance only.
+They are not Task 67 closeout evidence because reviewer feedback identified
+that `ecaz cloud bench --simd-mode` did not propagate `ECAZ_SIMD` into the
+remote CLI process that runs `bench sidecar-rerank`. Packet 037 fixes that
+runner issue, and packet 038 supplies the corrected 100k AWS Intel
+scalar-vs-auto comparison.
 
 ### Scalar
 
@@ -50,7 +57,7 @@
   - `artifacts/100k-auto/sidecar-100k-rabitq8-headline-auto.log`
 - key load lines: 100000 corpus rows, 1000 query rows; copy corpus 25.86s, encode corpus 41.12s, build index 4.44s, total 77.94s; sidecar size 147.63 MiB.
 
-### Comparison
+### Superseded Comparison
 
 `artifacts/100k-comparison.tsv` summarizes scalar-vs-auto from `results.jsonl`.
 
