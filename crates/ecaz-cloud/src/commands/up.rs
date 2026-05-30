@@ -6,7 +6,7 @@ use crate::{aws, profiles::Profile, state, terraform::Terraform};
 
 #[derive(Args, Debug)]
 pub struct UpArgs {
-    /// Profile name (10k, dev, 1m, 10m, 100m).
+    /// Profile name (10k, 10k-medium, 10k-intel, dev, 1m, 10m, 100m, 1b).
     #[arg(long)]
     pub profile: Profile,
 

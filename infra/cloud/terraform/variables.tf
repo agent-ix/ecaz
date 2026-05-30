@@ -1,5 +1,5 @@
 variable "profile" {
-  description = "Profile name (10k, dev, 1m, 10m, 100m). Must match the tfvars file basename."
+  description = "Profile name (10k, 10k-medium, 10k-intel, dev, 1m, 10m, 100m, 1b). Must match the tfvars file basename."
   type        = string
 }
 
@@ -28,7 +28,7 @@ variable "subnet_cidr" {
 }
 
 variable "db_instance_type" {
-  description = "Graviton EC2 instance type for the database host."
+  description = "EC2 instance type for the database host."
   type        = string
 }
 
@@ -50,7 +50,7 @@ variable "db_volume_throughput" {
 }
 
 variable "loader_instance_type" {
-  description = "Graviton EC2 instance type for the corpus loader."
+  description = "EC2 instance type for the corpus loader."
   type        = string
   default     = "c7g.2xlarge"
 }

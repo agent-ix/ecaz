@@ -3,7 +3,8 @@
 Provisions a single-AZ ecaz benchmark environment on AWS:
 
 - VPC with one private subnet and S3 + SSM VPC endpoints (no NAT gateway).
-- Graviton EC2 hosts: one DB (`m7g`/`r7g`), one loader (`c7g`).
+- EC2 hosts: one DB (`m7g`/`m8g`/`r7g`, or Intel `m7i` for the
+  x86 validation lane), one loader (`c7g`/`c8g`, or Intel `c7i`).
 - gp3 EBS volume sized per profile, attached to the DB host as `/dev/sdf`.
 - S3 bucket for parquet shards (lifecycle: 30 day expiry by default) and
   bench artifacts (retained indefinitely under a separate prefix).
@@ -16,11 +17,14 @@ supported for review and debugging.
 
 | Profile | DB instance | EBS gp3 |
 |---|---|---|
-| `10k`  | `m7g.large`    | 20 GB  |
-| `dev`  | `m7g.large`    | 50 GB  |
-| `1m`   | `m7g.xlarge`   | 100 GB |
-| `10m`  | `m7g.4xlarge`  | 500 GB |
-| `100m` | `r7g.4xlarge`  | 2 TB   |
+| `10k`        | `m7g.large`    | 20 GB  |
+| `10k-medium` | `m8g.2xlarge`  | 100 GB |
+| `10k-intel`  | `m7i.2xlarge`  | 100 GB |
+| `dev`        | `m7g.large`    | 50 GB  |
+| `1m`         | `m7g.xlarge`   | 100 GB |
+| `10m`        | `m7g.4xlarge`  | 500 GB |
+| `100m`       | `r7g.4xlarge`  | 2 TB   |
+| `1b`         | `r7g.8xlarge`  | 1 TB   |
 
 ## Direct usage
 
