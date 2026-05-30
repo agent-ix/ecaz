@@ -1666,8 +1666,38 @@ fn sum_query_dequant_dispatch(ctx: QueryDequantContext<'_>, code: &[u8]) -> f32 
             }
         }
         #[cfg(target_arch = "x86_64")]
-        QueryDequantKernel::Avx512Bits1 | QueryDequantKernel::Avx2Bits1 => {
-            sum_query_dequant_scalar_fallback(ctx, code)
+        QueryDequantKernel::Avx512Bits1 => {
+            let byte_lut = ctx
+                .bits1_byte_lut
+                .expect("bits=1 AVX-512 dispatch requires byte LUT");
+            // SAFETY: kernel selection confirmed AVX-512F+VPOPCNTDQ at
+            // runtime and `byte_lut` is present for the bits=1 prepared query.
+            unsafe {
+                sum_query_dequant_avx512_bits1(
+                    ctx.query_rotated,
+                    ctx.dimensions,
+                    byte_lut,
+                    ctx.lut,
+                    code,
+                )
+            }
+        }
+        #[cfg(target_arch = "x86_64")]
+        QueryDequantKernel::Avx2Bits1 => {
+            let byte_lut = ctx
+                .bits1_byte_lut
+                .expect("bits=1 AVX2 dispatch requires byte LUT");
+            // SAFETY: kernel selection confirmed AVX2+FMA at runtime and
+            // `byte_lut` is present for the bits=1 prepared query.
+            unsafe {
+                sum_query_dequant_avx2_bits1(
+                    ctx.query_rotated,
+                    ctx.dimensions,
+                    byte_lut,
+                    ctx.lut,
+                    code,
+                )
+            }
         }
         #[cfg(all(target_arch = "x86_64", feature = "rabitq-bf16"))]
         QueryDequantKernel::Avx512Bf16Bits4 => sum_query_dequant_scalar_fallback(ctx, code),
@@ -1796,13 +1826,12 @@ fn select_x86_query_dequant_kernel(
         // Task 67 Slice A reserves the per-kernel slots. Slices B-H replace
         // these scalar fallbacks one slot at a time by adding the corresponding
         // target_feature kernel bodies and dispatch arms.
-        slot @ (QueryDequantKernel::Avx512Bits4
+        slot @ (QueryDequantKernel::Avx512Bits1
+        | QueryDequantKernel::Avx512Bits4
         | QueryDequantKernel::Avx512Bits8
+        | QueryDequantKernel::Avx2Bits1
         | QueryDequantKernel::Avx2Bits4
         | QueryDequantKernel::Avx2Bits8) => slot,
-        QueryDequantKernel::Avx512Bits1 | QueryDequantKernel::Avx2Bits1 => {
-            QueryDequantKernel::Scalar
-        }
         #[cfg(feature = "rabitq-bf16")]
         QueryDequantKernel::Avx512Bf16Bits4 => QueryDequantKernel::Scalar,
         other => other,
@@ -2563,6 +2592,166 @@ unsafe fn sum_query_dequant_neon_bits8_pair(
         dim_index += 1;
     }
     (sum0, sum1)
+}
+
+/// # Safety
+///
+/// Caller must confirm AVX-512F and AVX-512VPOPCNTDQ availability before
+/// calling. `byte_lut` must be a bits=1 dequant byte table and `code` must
+/// contain at least `ceil(dimensions / 8)` packed code bytes.
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx512f,avx512vpopcntdq")]
+unsafe fn sum_query_dequant_avx512_bits1(
+    query_rotated: &[f32],
+    dimensions: usize,
+    byte_lut: &[[f32; 8]; 256],
+    lut: &[f32; 256],
+    code: &[u8],
+) -> f32 {
+    use std::arch::x86_64::{
+        _mm512_fmadd_ps, _mm512_loadu_ps, _mm512_setzero_ps, _mm512_storeu_ps,
+    };
+
+    let mut acc0 = _mm512_setzero_ps();
+    let mut acc1 = _mm512_setzero_ps();
+    let mut dim_index = 0_usize;
+    while dim_index + 32 <= dimensions {
+        let byte_base = dim_index / 8;
+        let b0 = *code.get_unchecked(byte_base) as usize;
+        let b1 = *code.get_unchecked(byte_base + 1) as usize;
+        let b2 = *code.get_unchecked(byte_base + 2) as usize;
+        let b3 = *code.get_unchecked(byte_base + 3) as usize;
+
+        let dq0 = [
+            byte_lut[b0][0],
+            byte_lut[b0][1],
+            byte_lut[b0][2],
+            byte_lut[b0][3],
+            byte_lut[b0][4],
+            byte_lut[b0][5],
+            byte_lut[b0][6],
+            byte_lut[b0][7],
+            byte_lut[b1][0],
+            byte_lut[b1][1],
+            byte_lut[b1][2],
+            byte_lut[b1][3],
+            byte_lut[b1][4],
+            byte_lut[b1][5],
+            byte_lut[b1][6],
+            byte_lut[b1][7],
+        ];
+        let dq1 = [
+            byte_lut[b2][0],
+            byte_lut[b2][1],
+            byte_lut[b2][2],
+            byte_lut[b2][3],
+            byte_lut[b2][4],
+            byte_lut[b2][5],
+            byte_lut[b2][6],
+            byte_lut[b2][7],
+            byte_lut[b3][0],
+            byte_lut[b3][1],
+            byte_lut[b3][2],
+            byte_lut[b3][3],
+            byte_lut[b3][4],
+            byte_lut[b3][5],
+            byte_lut[b3][6],
+            byte_lut[b3][7],
+        ];
+        let (q0, q1, d0, d1) = unsafe {
+            (
+                _mm512_loadu_ps(query_rotated.as_ptr().add(dim_index)),
+                _mm512_loadu_ps(query_rotated.as_ptr().add(dim_index + 16)),
+                _mm512_loadu_ps(dq0.as_ptr()),
+                _mm512_loadu_ps(dq1.as_ptr()),
+            )
+        };
+        acc0 = _mm512_fmadd_ps(q0, d0, acc0);
+        acc1 = _mm512_fmadd_ps(q1, d1, acc1);
+        dim_index += 32;
+    }
+
+    let mut lanes = [0.0_f32; 16];
+    // SAFETY: `lanes` has exactly sixteen contiguous `f32` slots.
+    unsafe { _mm512_storeu_ps(lanes.as_mut_ptr(), acc0) };
+    let mut sum = lanes.iter().sum::<f32>();
+    // SAFETY: `lanes` has exactly sixteen contiguous `f32` slots.
+    unsafe { _mm512_storeu_ps(lanes.as_mut_ptr(), acc1) };
+    sum += lanes.iter().sum::<f32>();
+
+    let neg = lut[0];
+    let pos = lut[1];
+    while dim_index < dimensions {
+        let bit = (code[dim_index / 8] >> (dim_index % 8)) & 1;
+        sum += query_rotated[dim_index] * if bit == 1 { pos } else { neg };
+        dim_index += 1;
+    }
+    sum
+}
+
+/// # Safety
+///
+/// Caller must confirm AVX2 and FMA availability before calling. `byte_lut`
+/// must be a bits=1 dequant byte table and `code` must contain at least
+/// `ceil(dimensions / 8)` packed code bytes.
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2,fma")]
+unsafe fn sum_query_dequant_avx2_bits1(
+    query_rotated: &[f32],
+    dimensions: usize,
+    byte_lut: &[[f32; 8]; 256],
+    lut: &[f32; 256],
+    code: &[u8],
+) -> f32 {
+    use std::arch::x86_64::{
+        _mm256_add_ps, _mm256_fmadd_ps, _mm256_loadu_ps, _mm256_setzero_ps, _mm256_storeu_ps,
+    };
+
+    let mut acc0 = _mm256_setzero_ps();
+    let mut acc1 = _mm256_setzero_ps();
+    let mut acc2 = _mm256_setzero_ps();
+    let mut acc3 = _mm256_setzero_ps();
+    let mut dim_index = 0_usize;
+    while dim_index + 32 <= dimensions {
+        let byte_base = dim_index / 8;
+        let b0 = *code.get_unchecked(byte_base) as usize;
+        let b1 = *code.get_unchecked(byte_base + 1) as usize;
+        let b2 = *code.get_unchecked(byte_base + 2) as usize;
+        let b3 = *code.get_unchecked(byte_base + 3) as usize;
+
+        let (q0, q1, q2, q3, d0, d1, d2, d3) = unsafe {
+            (
+                _mm256_loadu_ps(query_rotated.as_ptr().add(dim_index)),
+                _mm256_loadu_ps(query_rotated.as_ptr().add(dim_index + 8)),
+                _mm256_loadu_ps(query_rotated.as_ptr().add(dim_index + 16)),
+                _mm256_loadu_ps(query_rotated.as_ptr().add(dim_index + 24)),
+                _mm256_loadu_ps(byte_lut.as_ptr().add(b0).cast::<f32>()),
+                _mm256_loadu_ps(byte_lut.as_ptr().add(b1).cast::<f32>()),
+                _mm256_loadu_ps(byte_lut.as_ptr().add(b2).cast::<f32>()),
+                _mm256_loadu_ps(byte_lut.as_ptr().add(b3).cast::<f32>()),
+            )
+        };
+        acc0 = _mm256_fmadd_ps(q0, d0, acc0);
+        acc1 = _mm256_fmadd_ps(q1, d1, acc1);
+        acc2 = _mm256_fmadd_ps(q2, d2, acc2);
+        acc3 = _mm256_fmadd_ps(q3, d3, acc3);
+        dim_index += 32;
+    }
+
+    let mut lanes = [0.0_f32; 8];
+    let folded = _mm256_add_ps(_mm256_add_ps(acc0, acc1), _mm256_add_ps(acc2, acc3));
+    // SAFETY: `lanes` has exactly eight contiguous `f32` slots.
+    unsafe { _mm256_storeu_ps(lanes.as_mut_ptr(), folded) };
+    let mut sum = lanes.iter().sum::<f32>();
+
+    let neg = lut[0];
+    let pos = lut[1];
+    while dim_index < dimensions {
+        let bit = (code[dim_index / 8] >> (dim_index % 8)) & 1;
+        sum += query_rotated[dim_index] * if bit == 1 { pos } else { neg };
+        dim_index += 1;
+    }
+    sum
 }
 
 /// # Safety
@@ -5109,6 +5298,52 @@ mod tests {
             select_x86_query_dequant_slot(ctx, avx2_only),
             QueryDequantKernel::Avx2Bits8
         );
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    #[test]
+    fn x86_sum_query_dequant_bits1_matches_scalar_when_available() {
+        for &dim in &[1_usize, 7, 8, 15, 16, 31, 32, 33, 64, 95, 96, 1536] {
+            let bits = 1_usize;
+            let packed_bytes = dim.div_ceil(8);
+            let mut code = vec![0_u8; packed_bytes + RABITQ_SCALAR_LEN];
+            for i in 0..dim {
+                let level = ((i * 17 + 5) as u32) & 1;
+                write_level(&mut code, i, bits, level);
+            }
+            let query: Vec<f32> = (0..dim)
+                .map(|i| ((i as f32) - dim as f32 / 3.0) * 0.03125)
+                .collect();
+            let lut = build_dequant_lut(dim, bits, RABITQ_DEFAULT_QUANT_CLIP);
+            let byte_lut = build_bits1_byte_lut_boxed(&lut, 1).expect("bits=1 builds byte LUT");
+            let scalar = sum_query_dequant_scalar(&query, dim, bits, &lut, &code);
+
+            if std::arch::is_x86_feature_detected!("avx512f")
+                && std::arch::is_x86_feature_detected!("avx512vpopcntdq")
+            {
+                // SAFETY: runtime feature checks above match the kernel target features.
+                let avx512 =
+                    unsafe { sum_query_dequant_avx512_bits1(&query, dim, &byte_lut, &lut, &code) };
+                let tol = 1e-4_f32 * scalar.abs().max(1.0);
+                assert!(
+                    (scalar - avx512).abs() <= tol,
+                    "AVX-512 bits=1 dim={dim}: scalar={scalar} avx512={avx512}"
+                );
+            }
+
+            if std::arch::is_x86_feature_detected!("avx2")
+                && std::arch::is_x86_feature_detected!("fma")
+            {
+                // SAFETY: runtime feature checks above match the kernel target features.
+                let avx2 =
+                    unsafe { sum_query_dequant_avx2_bits1(&query, dim, &byte_lut, &lut, &code) };
+                let tol = 1e-4_f32 * scalar.abs().max(1.0);
+                assert!(
+                    (scalar - avx2).abs() <= tol,
+                    "AVX2 bits=1 dim={dim}: scalar={scalar} avx2={avx2}"
+                );
+            }
+        }
     }
 
     #[cfg(target_arch = "x86_64")]
