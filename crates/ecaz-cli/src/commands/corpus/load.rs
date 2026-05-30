@@ -377,6 +377,7 @@ pub async fn run(conn: &ConnectionOptions, args: LoadArgs) -> Result<()> {
         let queries_table = format!("{}_queries", args.prefix);
         let corpus_loaded = ensure_chunked_corpus_table(
             &mut client,
+            &args.prefix,
             &corpus_table,
             &chunked_manifest,
             args.bits,
@@ -388,8 +389,13 @@ pub async fn run(conn: &ConnectionOptions, args: LoadArgs) -> Result<()> {
             None
         } else {
             Some(
-                ensure_chunked_queries_table(&mut client, &queries_table, &chunked_manifest)
-                    .await?,
+                ensure_chunked_queries_table(
+                    &mut client,
+                    &args.prefix,
+                    &queries_table,
+                    &chunked_manifest,
+                )
+                .await?,
             )
         };
         for job in &index_jobs {
@@ -1363,6 +1369,7 @@ fn dedup_preserve_order(values: Vec<i32>) -> Vec<i32> {
 
 async fn ensure_chunked_corpus_table(
     client: &mut Client,
+    prefix: &str,
     table: &str,
     input: &LoadedChunkedManifest,
     bits: i32,
@@ -1373,7 +1380,7 @@ async fn ensure_chunked_corpus_table(
     ensure_chunked_target_table(client, table, true, profile).await?;
     load_chunk_set(
         client,
-        &input.manifest.prefix,
+        prefix,
         table,
         LoadKind::Corpus,
         &input.manifest.corpus,
@@ -1385,6 +1392,7 @@ async fn ensure_chunked_corpus_table(
 
 async fn ensure_chunked_queries_table(
     client: &mut Client,
+    prefix: &str,
     table: &str,
     input: &LoadedChunkedManifest,
 ) -> Result<usize> {
@@ -1392,7 +1400,7 @@ async fn ensure_chunked_queries_table(
     ensure_chunked_target_table(client, table, false, &profiles::EC_HNSW).await?;
     load_chunk_set(
         client,
-        &input.manifest.prefix,
+        prefix,
         table,
         LoadKind::Queries,
         &input.manifest.queries,
