@@ -576,8 +576,7 @@ fn load_chunked_manifest_if_requested(
     if chunked.prefix != prefix {
         let msg = format!(
             "manifest prefix {:?} does not match --prefix {:?}",
-            chunked.prefix,
-            prefix
+            chunked.prefix, prefix
         );
         if allow_mismatch {
             crate::ecaz_eprintln!("[loader] warning: {msg}");
@@ -588,8 +587,7 @@ fn load_chunked_manifest_if_requested(
     if chunked.dimension != dim {
         let msg = format!(
             "manifest dimension {} does not match --dim {}",
-            chunked.dimension,
-            dim
+            chunked.dimension, dim
         );
         if allow_mismatch {
             crate::ecaz_eprintln!("[loader] warning: {msg}");

@@ -56,6 +56,7 @@ than inventing an empty result.
 | Lane | Corpus / fixture | Packet |
 | --- | --- | --- |
 | Local reference row used in DiskANN comparison | real10K, isolated PG18 sweep | `reviews/task-29d/003-11109-task29d-final-readiness/` |
+| M5 reference-refresh scaffold | real50K, PG18 worker-count sweep plan | `reviews/task-33/001-30212-task33-hnsw-m5-reference-refresh/` |
 
 ## Notes
 
