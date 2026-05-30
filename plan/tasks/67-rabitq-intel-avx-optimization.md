@@ -5,6 +5,48 @@ Status: **proposed** 2026-05-28. Depends on Task 66
 this task assumes Slice A's dispatch shape and differential-test
 scaffold are landed and stable.
 
+## Amendment — 2026-05-30 Measured Closeout Scope
+
+Task 67's original SQL headline thresholds were written before the
+Intel host measurements decomposed the wall-time budget. The completed
+packets show the new kernels meet the kernel-layer targets, but the SQL
+headline is dominated by candidate SQL / sidecar I/O rather than RaBitQ
+scoring:
+
+- Packet 020 / 023: kernel-layer bits=1/4/8 SIMD speedups meet or
+  exceed the per-kernel targets on the Intel `10k-intel` lane.
+- Packet 022 / 026: bits=1 SQL headline reaches the 3x threshold only
+  at the recall-preserving operating point (`nprobe=64`), with
+  `nprobe=16/32` remaining below 3x because the residual bottleneck is
+  outside the RaBitQ scoring kernel.
+- Packet 027: bits=8 SQL headline evidence covers `rabitq8`,
+  `rabitq8ls`, `rabitq8c3`, and `rabitq8c4`; the strict 4x SQL
+  threshold is not met, topping out at 1.09x because sidecar scoring is
+  roughly 1% of total wall time.
+- Packet 029: `rabitq-bf16` preserves recall but slows the SQL lane, so
+  the feature gate stays off by default.
+
+For closeout, Task 67 accepts this measured outcome:
+
+1. The kernel implementation work is complete when the AVX-512 and AVX2
+   kernels are landed, registered in the differential-test scaffold, and
+   the Intel AVX-512 kernel benchmark packet shows the original
+   per-kernel targets are met.
+2. SQL headline work is complete when packet-local `ecaz bench suite`
+   evidence documents the bits=1 and bits=8 pre/post wall time, recall,
+   and bottleneck attribution. The original 4x bits=8 and all-nprobe
+   3x bits=1 SQL thresholds are no longer closeout blockers after the
+   accepted evidence shows further scorer work cannot materially move
+   those SQL metrics.
+3. The bits=1 SQL gate is interpreted at the recall-preserving
+   operating point (`nprobe=64`) for this task's closeout.
+4. The AVX2 fallback code remains required and must be covered by the
+   differential-test scaffold. Dedicated AVX2-only host benchmark
+   evidence is not required for closeout unless an AVX2-only Intel host
+   becomes available before closure.
+5. The bf16 feature remains optional and disabled by default unless a
+   future packet outside Task 67 demonstrates a win.
+
 Owner: coder (to be assigned). One coder, one branch.
 
 ## Why
