@@ -4437,6 +4437,216 @@ fn sign_words_from_byte_slice(bytes: &[u8], dim: usize) -> Vec<u64> {
 }
 
 #[cfg(test)]
+pub(crate) mod bench_api {
+    use super::*;
+
+    pub(crate) type SumQueryDequantForTest =
+        for<'a> unsafe fn(&SumQueryDequantFixtureForTest<'a>) -> Option<f32>;
+
+    #[derive(Clone, Copy)]
+    pub(crate) struct SumQueryDequantFixtureForTest<'a> {
+        pub(crate) query_rotated: &'a [f32],
+        pub(crate) query_bf16: Option<&'a [u16]>,
+        pub(crate) dequant_lut_bf16: Option<&'a [u16; 256]>,
+        pub(crate) dimensions: usize,
+        pub(crate) bits: usize,
+        pub(crate) lut: &'a [f32; 256],
+        pub(crate) bits1_byte_lut: Option<&'a [[f32; 8]; 256]>,
+        pub(crate) bits8_query_scale: &'a [f32],
+        pub(crate) bits8_query_offset: &'a [f32],
+        pub(crate) code: &'a [u8],
+    }
+
+    pub(crate) struct SumQueryDequantKernelForTest {
+        pub(crate) name: &'static str,
+        pub(crate) bits: usize,
+        pub(crate) required_features: &'static [&'static str],
+        pub(crate) invoke: SumQueryDequantForTest,
+    }
+
+    pub(crate) fn sum_query_dequant_kernels_for_test() -> &'static [SumQueryDequantKernelForTest] {
+        &SUM_QUERY_DEQUANT_KERNELS_FOR_TEST
+    }
+
+    static SUM_QUERY_DEQUANT_KERNELS_FOR_TEST: &[SumQueryDequantKernelForTest] = &[
+        SumQueryDequantKernelForTest {
+            name: "scalar_bits1",
+            bits: 1,
+            required_features: &[],
+            invoke: scalar_sum_query_dequant_for_test,
+        },
+        SumQueryDequantKernelForTest {
+            name: "scalar_bits4",
+            bits: 4,
+            required_features: &[],
+            invoke: scalar_sum_query_dequant_for_test,
+        },
+        SumQueryDequantKernelForTest {
+            name: "scalar_bits8",
+            bits: 8,
+            required_features: &[],
+            invoke: scalar_sum_query_dequant_for_test,
+        },
+        #[cfg(target_arch = "x86_64")]
+        SumQueryDequantKernelForTest {
+            name: "avx512_bits1",
+            bits: 1,
+            required_features: &["avx512f"],
+            invoke: sum_query_dequant_avx512_bits1_for_test,
+        },
+        #[cfg(target_arch = "x86_64")]
+        SumQueryDequantKernelForTest {
+            name: "avx2_bits1",
+            bits: 1,
+            required_features: &["avx2", "fma"],
+            invoke: sum_query_dequant_avx2_bits1_for_test,
+        },
+        #[cfg(target_arch = "x86_64")]
+        SumQueryDequantKernelForTest {
+            name: "avx512_bits4",
+            bits: 4,
+            required_features: &["avx512f", "avx512bw"],
+            invoke: sum_query_dequant_avx512_bits4_for_test,
+        },
+        #[cfg(target_arch = "x86_64")]
+        SumQueryDequantKernelForTest {
+            name: "avx2_bits4",
+            bits: 4,
+            required_features: &["avx2", "fma"],
+            invoke: sum_query_dequant_avx2_bits4_for_test,
+        },
+        #[cfg(target_arch = "x86_64")]
+        SumQueryDequantKernelForTest {
+            name: "avx512_bits8",
+            bits: 8,
+            required_features: &["avx512f"],
+            invoke: sum_query_dequant_avx512_bits8_for_test,
+        },
+        #[cfg(target_arch = "x86_64")]
+        SumQueryDequantKernelForTest {
+            name: "avx2_bits8",
+            bits: 8,
+            required_features: &["avx2", "fma"],
+            invoke: sum_query_dequant_avx2_bits8_for_test,
+        },
+        #[cfg(all(target_arch = "x86_64", feature = "rabitq-bf16"))]
+        SumQueryDequantKernelForTest {
+            name: "avx512_bf16_bits4",
+            bits: 4,
+            required_features: &["avx512f", "avx512bf16"],
+            invoke: sum_query_dequant_avx512_bf16_bits4_for_test,
+        },
+    ];
+
+    unsafe fn scalar_sum_query_dequant_for_test(
+        fixture: &SumQueryDequantFixtureForTest<'_>,
+    ) -> Option<f32> {
+        Some(sum_query_dequant_scalar(
+            fixture.query_rotated,
+            fixture.dimensions,
+            fixture.bits,
+            fixture.lut,
+            fixture.code,
+        ))
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    #[target_feature(enable = "avx512f")]
+    unsafe fn sum_query_dequant_avx512_bits1_for_test(
+        fixture: &SumQueryDequantFixtureForTest<'_>,
+    ) -> Option<f32> {
+        let byte_lut = fixture.bits1_byte_lut?;
+        Some(sum_query_dequant_avx512_bits1(
+            fixture.query_rotated,
+            fixture.dimensions,
+            byte_lut,
+            fixture.lut,
+            fixture.code,
+        ))
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    #[target_feature(enable = "avx2,fma")]
+    unsafe fn sum_query_dequant_avx2_bits1_for_test(
+        fixture: &SumQueryDequantFixtureForTest<'_>,
+    ) -> Option<f32> {
+        let byte_lut = fixture.bits1_byte_lut?;
+        Some(sum_query_dequant_avx2_bits1(
+            fixture.query_rotated,
+            fixture.dimensions,
+            byte_lut,
+            fixture.lut,
+            fixture.code,
+        ))
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    #[target_feature(enable = "avx512f,avx512bw")]
+    unsafe fn sum_query_dequant_avx512_bits4_for_test(
+        fixture: &SumQueryDequantFixtureForTest<'_>,
+    ) -> Option<f32> {
+        Some(sum_query_dequant_avx512_bits4(
+            fixture.query_rotated,
+            fixture.dimensions,
+            fixture.lut,
+            fixture.code,
+        ))
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    #[target_feature(enable = "avx2,fma")]
+    unsafe fn sum_query_dequant_avx2_bits4_for_test(
+        fixture: &SumQueryDequantFixtureForTest<'_>,
+    ) -> Option<f32> {
+        Some(sum_query_dequant_avx2_bits4(
+            fixture.query_rotated,
+            fixture.dimensions,
+            fixture.lut,
+            fixture.code,
+        ))
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    #[target_feature(enable = "avx512f")]
+    unsafe fn sum_query_dequant_avx512_bits8_for_test(
+        fixture: &SumQueryDequantFixtureForTest<'_>,
+    ) -> Option<f32> {
+        Some(sum_query_dequant_avx512_bits8(
+            fixture.bits8_query_scale,
+            fixture.bits8_query_offset,
+            fixture.dimensions,
+            fixture.code,
+        ))
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    #[target_feature(enable = "avx2,fma")]
+    unsafe fn sum_query_dequant_avx2_bits8_for_test(
+        fixture: &SumQueryDequantFixtureForTest<'_>,
+    ) -> Option<f32> {
+        Some(sum_query_dequant_avx2_bits8(
+            fixture.bits8_query_scale,
+            fixture.bits8_query_offset,
+            fixture.dimensions,
+            fixture.code,
+        ))
+    }
+
+    #[cfg(all(target_arch = "x86_64", feature = "rabitq-bf16"))]
+    #[target_feature(enable = "avx512f,avx512bf16")]
+    unsafe fn sum_query_dequant_avx512_bf16_bits4_for_test(
+        fixture: &SumQueryDequantFixtureForTest<'_>,
+    ) -> Option<f32> {
+        Some(sum_query_dequant_avx512_bf16_bits4(
+            fixture.query_bf16?,
+            fixture.dimensions,
+            fixture.dequant_lut_bf16?,
+            fixture.code,
+        ))
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -4470,6 +4680,104 @@ mod tests {
     fn write_tail_f32(code: &mut [u8], packed_bytes: usize, offset: usize, value: f32) {
         code[packed_bytes + offset..packed_bytes + offset + 4]
             .copy_from_slice(&value.to_le_bytes());
+    }
+
+    fn task67_kernel_features_available(features: &[&str]) -> bool {
+        features.iter().all(|feature| match *feature {
+            "" => true,
+            #[cfg(target_arch = "x86_64")]
+            "avx2" => std::arch::is_x86_feature_detected!("avx2"),
+            #[cfg(target_arch = "x86_64")]
+            "fma" => std::arch::is_x86_feature_detected!("fma"),
+            #[cfg(target_arch = "x86_64")]
+            "avx512f" => std::arch::is_x86_feature_detected!("avx512f"),
+            #[cfg(target_arch = "x86_64")]
+            "avx512bw" => std::arch::is_x86_feature_detected!("avx512bw"),
+            #[cfg(target_arch = "x86_64")]
+            "avx512bf16" => std::arch::is_x86_feature_detected!("avx512bf16"),
+            _ => false,
+        })
+    }
+
+    #[test]
+    fn task67_sum_query_dequant_for_test_scaffold_registers_expected_kernels() {
+        let kernels = bench_api::sum_query_dequant_kernels_for_test();
+        let names = kernels.iter().map(|kernel| kernel.name).collect::<Vec<_>>();
+
+        assert!(names.contains(&"scalar_bits1"));
+        assert!(names.contains(&"scalar_bits4"));
+        assert!(names.contains(&"scalar_bits8"));
+
+        #[cfg(target_arch = "x86_64")]
+        {
+            assert!(names.contains(&"avx512_bits1"));
+            assert!(names.contains(&"avx2_bits1"));
+            assert!(names.contains(&"avx512_bits4"));
+            assert!(names.contains(&"avx2_bits4"));
+            assert!(names.contains(&"avx512_bits8"));
+            assert!(names.contains(&"avx2_bits8"));
+        }
+
+        #[cfg(all(target_arch = "x86_64", feature = "rabitq-bf16"))]
+        assert!(names.contains(&"avx512_bf16_bits4"));
+    }
+
+    #[test]
+    fn task67_sum_query_dequant_for_test_scaffold_matches_scalar_when_available() {
+        for &bits in &[1_usize, 4, 8] {
+            for &dim in &[33_usize, 96] {
+                let packed_bytes = (dim * bits).div_ceil(8);
+                let mut code = vec![0_u8; packed_bytes + RABITQ_SCALAR_LEN];
+                for i in 0..dim {
+                    let level = ((i * 17 + bits * 5) as u32) & ((1_u32 << bits) - 1);
+                    write_level(&mut code, i, bits, level);
+                }
+                let query: Vec<f32> = (0..dim)
+                    .map(|i| ((i as f32) - dim as f32 / 3.0) * 0.03125)
+                    .collect();
+                let lut = build_dequant_lut(dim, bits, RABITQ_DEFAULT_QUANT_CLIP);
+                let bits1_byte_lut = build_bits1_byte_lut_boxed(&lut, bits as u8);
+                let (bits8_query_scale, bits8_query_offset) = if bits == 8 {
+                    build_bits8_query_precompute(&query, bits as u8, RABITQ_DEFAULT_QUANT_CLIP)
+                } else {
+                    (Vec::new(), Vec::new())
+                };
+                let scalar = sum_query_dequant_scalar(&query, dim, bits, &lut, &code);
+                let fixture = bench_api::SumQueryDequantFixtureForTest {
+                    query_rotated: &query,
+                    query_bf16: None,
+                    dequant_lut_bf16: None,
+                    dimensions: dim,
+                    bits,
+                    lut: &lut,
+                    bits1_byte_lut: bits1_byte_lut.as_deref(),
+                    bits8_query_scale: &bits8_query_scale,
+                    bits8_query_offset: &bits8_query_offset,
+                    code: &code,
+                };
+
+                for kernel in bench_api::sum_query_dequant_kernels_for_test()
+                    .iter()
+                    .filter(|kernel| kernel.bits == bits)
+                {
+                    if !task67_kernel_features_available(kernel.required_features) {
+                        continue;
+                    }
+                    // SAFETY: the feature check above covers the kernel's
+                    // declared target features; fixture buffers are sized for
+                    // `dim` and the selected bit width.
+                    let Some(actual) = (unsafe { (kernel.invoke)(&fixture) }) else {
+                        continue;
+                    };
+                    let tol = 1e-4_f32 * scalar.abs().max(1.0);
+                    assert!(
+                        (scalar - actual).abs() <= tol,
+                        "kernel={} bits={bits} dim={dim}: scalar={scalar} actual={actual}",
+                        kernel.name
+                    );
+                }
+            }
+        }
     }
 
     #[test]
