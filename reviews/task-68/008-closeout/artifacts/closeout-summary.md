@@ -30,6 +30,10 @@ The closeout suite repeated the Phase 1 split on both fixture sizes using
 The second same-seed determinism builds came in at 10k `308 ms` and 100k
 `2950 ms`; all structural hashes matched the first build.
 
+The structural-hash equality is the determinism gate. The wall-time variance
+between first and second builds is cache/JIT/host noise and does not affect the
+determinism claim.
+
 ## Exit Criteria Check
 
 - Phase 1 characterization: satisfied by reviewer approval in packet 003.
@@ -40,7 +44,11 @@ The second same-seed determinism builds came in at 10k `308 ms` and 100k
 - Final measurement: satisfied by `suite-manifest.json`,
   `build-and-compare-10k.log`, and `build-and-compare-100k.log`.
 - Recall floor: 10k `recall@10=0.9995`; 100k `recall@10=0.8525` at valid
-  `nprobe=16` on 200 queries.
+  `nprobe=16` on 200 queries. No pre-Task-68 same-config SPIRE 100k
+  comparator is on file, so this packet records the post-Task-68 baseline; the
+  preservation gate is satisfied by the code-review argument that Task 68 did
+  not change scoring semantics, plus same-seed structural equality for leaf
+  assignments and packet 006's byte-equivalent top-graph cache test.
 - Determinism: hierarchy, root routing, routing centroids, leaf summary, and
   leaf assignments all hash-equal across same-seed duplicate builds for 10k and
   100k.

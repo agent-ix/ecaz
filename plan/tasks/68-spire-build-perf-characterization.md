@@ -1,6 +1,7 @@
 # Task 68: SPIRE Build Performance — Characterization + Targeted Slices
 
-Status: proposed
+Status: complete (2026-05-30). Closeout packet:
+`reviews/task-68/008-closeout/`.
 Owner: coder (to be assigned). One coder, one branch.
 Priority: 1 (highest leverage for SPIRE build wall time)
 
