@@ -59,6 +59,7 @@
 - `artifacts/preflight/remote-restore-ec-real-10k-invocation.log`: restored the `ec_real_10k` corpus files after `cargo clean` removed `target/real-corpus`.
 - `artifacts/preflight/cloud-pause-after-bf16-on-success.log`: AWS stop request after successful measurement.
 - `artifacts/preflight/cloud-status-after-bf16-on-success.log`: post-pause status; state was `stopping`, cost reported `$0.00/hr running`.
+- `artifacts/preflight/cloud-status-final-after-packet.log`: final status after packet commit; state was `paused`, cost reported `$0.00/hr running`.
 
 ## Comparison
 
