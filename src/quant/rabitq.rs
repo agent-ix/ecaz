@@ -2720,13 +2720,12 @@ unsafe fn sum_query_dequant_avx512_bits1(
     code: &[u8],
 ) -> f32 {
     use std::arch::x86_64::{
-        __mmask16, _mm512_add_ps, _mm512_loadu_ps, _mm512_mask_blend_ps, _mm512_set1_ps,
-        _mm512_setzero_ps, _mm512_storeu_ps, _mm512_xor_ps,
+        __mmask16, _mm512_fmadd_ps, _mm512_loadu_ps, _mm512_mask_blend_ps, _mm512_set1_ps,
+        _mm512_setzero_ps, _mm512_storeu_ps,
     };
 
-    debug_assert_eq!(lut[0], -lut[1]);
-    let neg_zero_v = _mm512_set1_ps(-0.0);
-    let pos_zero_v = _mm512_setzero_ps();
+    let neg_v = _mm512_set1_ps(lut[0]);
+    let pos_v = _mm512_set1_ps(lut[1]);
     let mut acc0 = _mm512_setzero_ps();
     let mut acc1 = _mm512_setzero_ps();
     let mut dim_index = 0_usize;
@@ -2746,10 +2745,10 @@ unsafe fn sum_query_dequant_avx512_bits1(
                 _mm512_loadu_ps(query_rotated.as_ptr().add(dim_index + 16)),
             )
         };
-        let sign0 = _mm512_mask_blend_ps(mask0, neg_zero_v, pos_zero_v);
-        let sign1 = _mm512_mask_blend_ps(mask1, neg_zero_v, pos_zero_v);
-        acc0 = _mm512_add_ps(_mm512_xor_ps(q0, sign0), acc0);
-        acc1 = _mm512_add_ps(_mm512_xor_ps(q1, sign1), acc1);
+        let d0 = _mm512_mask_blend_ps(mask0, neg_v, pos_v);
+        let d1 = _mm512_mask_blend_ps(mask1, neg_v, pos_v);
+        acc0 = _mm512_fmadd_ps(q0, d0, acc0);
+        acc1 = _mm512_fmadd_ps(q1, d1, acc1);
         dim_index += 32;
     }
 
@@ -2852,13 +2851,12 @@ unsafe fn sum_query_dequant_avx512_bits1_pair(
     code1: &[u8],
 ) -> (f32, f32) {
     use std::arch::x86_64::{
-        __mmask16, _mm512_add_ps, _mm512_loadu_ps, _mm512_mask_blend_ps, _mm512_set1_ps,
-        _mm512_setzero_ps, _mm512_storeu_ps, _mm512_xor_ps,
+        __mmask16, _mm512_fmadd_ps, _mm512_loadu_ps, _mm512_mask_blend_ps, _mm512_set1_ps,
+        _mm512_setzero_ps, _mm512_storeu_ps,
     };
 
-    debug_assert_eq!(lut[0], -lut[1]);
-    let neg_zero_v = _mm512_set1_ps(-0.0);
-    let pos_zero_v = _mm512_setzero_ps();
+    let neg_v = _mm512_set1_ps(lut[0]);
+    let pos_v = _mm512_set1_ps(lut[1]);
     let mut a0 = _mm512_setzero_ps();
     let mut a1 = _mm512_setzero_ps();
     let mut b0 = _mm512_setzero_ps();
@@ -2888,14 +2886,14 @@ unsafe fn sum_query_dequant_avx512_bits1_pair(
                 _mm512_loadu_ps(query_rotated.as_ptr().add(dim_index + 16)),
             )
         };
-        let a_sign0 = _mm512_mask_blend_ps(a_mask0, neg_zero_v, pos_zero_v);
-        let a_sign1 = _mm512_mask_blend_ps(a_mask1, neg_zero_v, pos_zero_v);
-        let b_sign0 = _mm512_mask_blend_ps(b_mask0, neg_zero_v, pos_zero_v);
-        let b_sign1 = _mm512_mask_blend_ps(b_mask1, neg_zero_v, pos_zero_v);
-        a0 = _mm512_add_ps(_mm512_xor_ps(q0, a_sign0), a0);
-        a1 = _mm512_add_ps(_mm512_xor_ps(q1, a_sign1), a1);
-        b0 = _mm512_add_ps(_mm512_xor_ps(q0, b_sign0), b0);
-        b1 = _mm512_add_ps(_mm512_xor_ps(q1, b_sign1), b1);
+        let a_d0 = _mm512_mask_blend_ps(a_mask0, neg_v, pos_v);
+        let a_d1 = _mm512_mask_blend_ps(a_mask1, neg_v, pos_v);
+        let b_d0 = _mm512_mask_blend_ps(b_mask0, neg_v, pos_v);
+        let b_d1 = _mm512_mask_blend_ps(b_mask1, neg_v, pos_v);
+        a0 = _mm512_fmadd_ps(q0, a_d0, a0);
+        a1 = _mm512_fmadd_ps(q1, a_d1, a1);
+        b0 = _mm512_fmadd_ps(q0, b_d0, b0);
+        b1 = _mm512_fmadd_ps(q1, b_d1, b1);
         dim_index += 32;
     }
 
