@@ -1,0 +1,23 @@
+[loader] warning: profile "ec_ivf" does not list quant_bits as known reloption; passing through verbatim. Known reloptions: nlists, nprobe, rerank_width, training_sample_rows, seed, pq_group_size, storage_format, quantizer, rerank
+[loader] inspecting /var/lib/pgsql/18/datasets/staged-task67-scale/ec_real_100k_corpus.tsv
+[loader] inspecting /var/lib/pgsql/18/datasets/staged-task67-scale/ec_real_100k_queries.tsv
+[loader] corpus: 100000 rows, sha256=07275cfd5a7a4b415ddf5eacc086de98294ac978532df46ffae30f9202323a95  queries: 1000 rows, sha256=a7cbec6fc44f6c148234538f61339d00d2f10646febc8f667dcbe75d9cf41782
+[loader] warning: manifest verification failed for /var/lib/pgsql/18/datasets/staged-task67-scale/ec_real_100k_manifest.json: prefix="ec_real_100k" (expected "task67_r8head_100k_auto")
+[loader] copied corpus table task67_r8head_100k_auto_corpus in 25.86s
+[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...
+[loader] encoded corpus table task67_r8head_100k_auto_corpus in 41.12s
+[loader] copied queries table task67_r8head_100k_auto_queries in 340.76ms
+[loader] building task67_r8head_100k_auto_idx using ec_ivf (reloptions=[storage_format=rabitq, nlists=128, nprobe=96, training_sample_rows=5000, quant_bits=1, rerank=off]) ...
+[loader] built task67_r8head_100k_auto_idx in 4.44s
+┌─────────┬─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ field   ┆ value                                                                                                                           │
+╞═════════╪═════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════╡
+│ profile ┆ ec_ivf                                                                                                                          │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ task67_r8head_100k_auto_corpus (100000 rows)                                                                                    │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ task67_r8head_100k_auto_queries (1000 rows)                                                                                     │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ task67_r8head_100k_auto_idx [storage_format=rabitq, nlists=128, nprobe=96, training_sample_rows=5000, quant_bits=1, rerank=off] │
+└─────────┴─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+[loader] completed prefix task67_r8head_100k_auto in 77.94s

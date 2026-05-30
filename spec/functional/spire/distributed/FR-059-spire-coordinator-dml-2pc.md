@@ -51,7 +51,7 @@ sequenceDiagram
     App->>Coord: INSERT logical row
     Coord->>Coord: classify centroid and source identity
     Coord->>Intent: record prepare_requested
-    Coord->>Remote: INSERT row; PREPARE TRANSACTION gid
+    Coord->>Remote: INSERT row, PREPARE TRANSACTION gid
     Remote-->>Coord: prepare acknowledged
     Coord->>Intent: mark prepare_acked
     Coord->>Place: stage placement row
