@@ -1,0 +1,8 @@
+
+   0: [91mprofile 1m costs ~$11/day; pass --confirm-cost 11 to proceed[0m
+
+Location:
+   [35mcrates/ecaz-cloud/src/commands/up.rs[0m:[35m43[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.
