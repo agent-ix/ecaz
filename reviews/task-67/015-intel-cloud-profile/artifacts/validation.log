@@ -58,6 +58,26 @@ git diff --check
 
 Result: passed.
 
+## ecaz-cli build
+
+Command:
+
+```sh
+cargo build -p ecaz-cli
+```
+
+Result: passed.
+
+Key output:
+
+```text
+warning: field `path` is never read
+   --> crates/ecaz-cli/src/commands/corpus/load.rs:165:5
+
+warning: `ecaz-cli` (bin "ecaz") generated 1 warning
+Finished `dev` profile [unoptimized + debuginfo] target(s) in 1m 20s
+```
+
 ## AWS instance metadata
 
 Command:
@@ -124,4 +144,35 @@ registry.terraform.io/hashicorp/random: failed to instantiate provider
 "registry.terraform.io/hashicorp/random" to obtain schema: Unrecognized
 remote plugin message:
 Failed to read any lines from plugin's stdout
+```
+
+## ecaz cloud dry-run plan
+
+Command:
+
+```sh
+target/debug/ecaz cloud up \
+  --profile 10k-intel \
+  --git-ref 4b14e27465310f4fd0c11b38513877796aa72f5d \
+  --dry-run
+```
+
+Result: passed. No resources were created.
+
+Key output:
+
+```text
+Terraform has been successfully initialized!
+
+aws_instance.db will be created
+instance_type = "m7i.2xlarge"
+
+aws_instance.loader will be created
+instance_type = "c7i.large"
+
+Plan: 26 to add, 0 to change, 0 to destroy.
+
+Changes to Outputs:
+  + profile            = "10k-intel"
+  + region             = "us-west-2"
 ```

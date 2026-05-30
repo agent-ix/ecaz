@@ -33,11 +33,15 @@ See `artifacts/manifest.md` and `artifacts/validation.log`.
 - `cargo fmt` passed with the existing stable-rustfmt warnings.
 - `terraform fmt` passed for the changed Terraform files.
 - `cargo test -p ecaz-cloud profiles -- --nocapture` passed: 2 tests.
+- `cargo build -p ecaz-cli` passed with one pre-existing dead-code warning.
 - `git diff --check` passed.
 - `aws ec2 describe-instance-types ...` confirmed the selected instance
   metadata in `us-west-2`.
 - `terraform -chdir=infra/cloud/terraform validate` was attempted but failed
   before evaluating this change because local provider plugins failed to start.
+- `target/debug/ecaz cloud up --profile 10k-intel --git-ref 4b14e27465310f4fd0c11b38513877796aa72f5d --dry-run`
+  passed after Terraform init and generated a no-apply plan with
+  `m7i.2xlarge` DB and `c7i.large` loader resources.
 
 ## Remaining Task 67 Work
 
