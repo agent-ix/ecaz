@@ -2715,38 +2715,68 @@ unsafe fn sum_query_dequant_avx512_bf16_bits4(
 unsafe fn sum_query_dequant_avx512_bits1(
     query_rotated: &[f32],
     dimensions: usize,
-    _byte_lut: &[[f32; 8]; 256],
+    byte_lut: &[[f32; 8]; 256],
     lut: &[f32; 256],
     code: &[u8],
 ) -> f32 {
     use std::arch::x86_64::{
-        __mmask16, _mm512_fmadd_ps, _mm512_loadu_ps, _mm512_mask_blend_ps, _mm512_set1_ps,
-        _mm512_setzero_ps, _mm512_storeu_ps,
+        _mm512_fmadd_ps, _mm512_loadu_ps, _mm512_setzero_ps, _mm512_storeu_ps,
     };
 
-    let neg_v = _mm512_set1_ps(lut[0]);
-    let pos_v = _mm512_set1_ps(lut[1]);
     let mut acc0 = _mm512_setzero_ps();
     let mut acc1 = _mm512_setzero_ps();
     let mut dim_index = 0_usize;
     while dim_index + 32 <= dimensions {
         let byte_base = dim_index / 8;
-        let mask0 = u16::from_le_bytes([
-            *code.get_unchecked(byte_base),
-            *code.get_unchecked(byte_base + 1),
-        ]) as __mmask16;
-        let mask1 = u16::from_le_bytes([
-            *code.get_unchecked(byte_base + 2),
-            *code.get_unchecked(byte_base + 3),
-        ]) as __mmask16;
-        let (q0, q1) = unsafe {
+        let b0 = *code.get_unchecked(byte_base) as usize;
+        let b1 = *code.get_unchecked(byte_base + 1) as usize;
+        let b2 = *code.get_unchecked(byte_base + 2) as usize;
+        let b3 = *code.get_unchecked(byte_base + 3) as usize;
+
+        let dq0 = [
+            byte_lut[b0][0],
+            byte_lut[b0][1],
+            byte_lut[b0][2],
+            byte_lut[b0][3],
+            byte_lut[b0][4],
+            byte_lut[b0][5],
+            byte_lut[b0][6],
+            byte_lut[b0][7],
+            byte_lut[b1][0],
+            byte_lut[b1][1],
+            byte_lut[b1][2],
+            byte_lut[b1][3],
+            byte_lut[b1][4],
+            byte_lut[b1][5],
+            byte_lut[b1][6],
+            byte_lut[b1][7],
+        ];
+        let dq1 = [
+            byte_lut[b2][0],
+            byte_lut[b2][1],
+            byte_lut[b2][2],
+            byte_lut[b2][3],
+            byte_lut[b2][4],
+            byte_lut[b2][5],
+            byte_lut[b2][6],
+            byte_lut[b2][7],
+            byte_lut[b3][0],
+            byte_lut[b3][1],
+            byte_lut[b3][2],
+            byte_lut[b3][3],
+            byte_lut[b3][4],
+            byte_lut[b3][5],
+            byte_lut[b3][6],
+            byte_lut[b3][7],
+        ];
+        let (q0, q1, d0, d1) = unsafe {
             (
                 _mm512_loadu_ps(query_rotated.as_ptr().add(dim_index)),
                 _mm512_loadu_ps(query_rotated.as_ptr().add(dim_index + 16)),
+                _mm512_loadu_ps(dq0.as_ptr()),
+                _mm512_loadu_ps(dq1.as_ptr()),
             )
         };
-        let d0 = _mm512_mask_blend_ps(mask0, neg_v, pos_v);
-        let d1 = _mm512_mask_blend_ps(mask1, neg_v, pos_v);
         acc0 = _mm512_fmadd_ps(q0, d0, acc0);
         acc1 = _mm512_fmadd_ps(q1, d1, acc1);
         dim_index += 32;
@@ -2845,18 +2875,15 @@ unsafe fn sum_query_dequant_avx2_bits1(
 unsafe fn sum_query_dequant_avx512_bits1_pair(
     query_rotated: &[f32],
     dimensions: usize,
-    _byte_lut: &[[f32; 8]; 256],
+    byte_lut: &[[f32; 8]; 256],
     lut: &[f32; 256],
     code0: &[u8],
     code1: &[u8],
 ) -> (f32, f32) {
     use std::arch::x86_64::{
-        __mmask16, _mm512_fmadd_ps, _mm512_loadu_ps, _mm512_mask_blend_ps, _mm512_set1_ps,
-        _mm512_setzero_ps, _mm512_storeu_ps,
+        _mm512_fmadd_ps, _mm512_loadu_ps, _mm512_setzero_ps, _mm512_storeu_ps,
     };
 
-    let neg_v = _mm512_set1_ps(lut[0]);
-    let pos_v = _mm512_set1_ps(lut[1]);
     let mut a0 = _mm512_setzero_ps();
     let mut a1 = _mm512_setzero_ps();
     let mut b0 = _mm512_setzero_ps();
@@ -2864,32 +2891,97 @@ unsafe fn sum_query_dequant_avx512_bits1_pair(
     let mut dim_index = 0_usize;
     while dim_index + 32 <= dimensions {
         let byte_base = dim_index / 8;
-        let a_mask0 = u16::from_le_bytes([
-            *code0.get_unchecked(byte_base),
-            *code0.get_unchecked(byte_base + 1),
-        ]) as __mmask16;
-        let a_mask1 = u16::from_le_bytes([
-            *code0.get_unchecked(byte_base + 2),
-            *code0.get_unchecked(byte_base + 3),
-        ]) as __mmask16;
-        let b_mask0 = u16::from_le_bytes([
-            *code1.get_unchecked(byte_base),
-            *code1.get_unchecked(byte_base + 1),
-        ]) as __mmask16;
-        let b_mask1 = u16::from_le_bytes([
-            *code1.get_unchecked(byte_base + 2),
-            *code1.get_unchecked(byte_base + 3),
-        ]) as __mmask16;
-        let (q0, q1) = unsafe {
+        let c0b0 = *code0.get_unchecked(byte_base) as usize;
+        let c0b1 = *code0.get_unchecked(byte_base + 1) as usize;
+        let c0b2 = *code0.get_unchecked(byte_base + 2) as usize;
+        let c0b3 = *code0.get_unchecked(byte_base + 3) as usize;
+        let c1b0 = *code1.get_unchecked(byte_base) as usize;
+        let c1b1 = *code1.get_unchecked(byte_base + 1) as usize;
+        let c1b2 = *code1.get_unchecked(byte_base + 2) as usize;
+        let c1b3 = *code1.get_unchecked(byte_base + 3) as usize;
+
+        let c0dq0 = [
+            byte_lut[c0b0][0],
+            byte_lut[c0b0][1],
+            byte_lut[c0b0][2],
+            byte_lut[c0b0][3],
+            byte_lut[c0b0][4],
+            byte_lut[c0b0][5],
+            byte_lut[c0b0][6],
+            byte_lut[c0b0][7],
+            byte_lut[c0b1][0],
+            byte_lut[c0b1][1],
+            byte_lut[c0b1][2],
+            byte_lut[c0b1][3],
+            byte_lut[c0b1][4],
+            byte_lut[c0b1][5],
+            byte_lut[c0b1][6],
+            byte_lut[c0b1][7],
+        ];
+        let c0dq1 = [
+            byte_lut[c0b2][0],
+            byte_lut[c0b2][1],
+            byte_lut[c0b2][2],
+            byte_lut[c0b2][3],
+            byte_lut[c0b2][4],
+            byte_lut[c0b2][5],
+            byte_lut[c0b2][6],
+            byte_lut[c0b2][7],
+            byte_lut[c0b3][0],
+            byte_lut[c0b3][1],
+            byte_lut[c0b3][2],
+            byte_lut[c0b3][3],
+            byte_lut[c0b3][4],
+            byte_lut[c0b3][5],
+            byte_lut[c0b3][6],
+            byte_lut[c0b3][7],
+        ];
+        let c1dq0 = [
+            byte_lut[c1b0][0],
+            byte_lut[c1b0][1],
+            byte_lut[c1b0][2],
+            byte_lut[c1b0][3],
+            byte_lut[c1b0][4],
+            byte_lut[c1b0][5],
+            byte_lut[c1b0][6],
+            byte_lut[c1b0][7],
+            byte_lut[c1b1][0],
+            byte_lut[c1b1][1],
+            byte_lut[c1b1][2],
+            byte_lut[c1b1][3],
+            byte_lut[c1b1][4],
+            byte_lut[c1b1][5],
+            byte_lut[c1b1][6],
+            byte_lut[c1b1][7],
+        ];
+        let c1dq1 = [
+            byte_lut[c1b2][0],
+            byte_lut[c1b2][1],
+            byte_lut[c1b2][2],
+            byte_lut[c1b2][3],
+            byte_lut[c1b2][4],
+            byte_lut[c1b2][5],
+            byte_lut[c1b2][6],
+            byte_lut[c1b2][7],
+            byte_lut[c1b3][0],
+            byte_lut[c1b3][1],
+            byte_lut[c1b3][2],
+            byte_lut[c1b3][3],
+            byte_lut[c1b3][4],
+            byte_lut[c1b3][5],
+            byte_lut[c1b3][6],
+            byte_lut[c1b3][7],
+        ];
+        let (q0, q1, a_d0, a_d1, b_d0, b_d1) = unsafe {
             (
                 _mm512_loadu_ps(query_rotated.as_ptr().add(dim_index)),
                 _mm512_loadu_ps(query_rotated.as_ptr().add(dim_index + 16)),
+                _mm512_loadu_ps(c0dq0.as_ptr()),
+                _mm512_loadu_ps(c0dq1.as_ptr()),
+                _mm512_loadu_ps(c1dq0.as_ptr()),
+                _mm512_loadu_ps(c1dq1.as_ptr()),
             )
         };
-        let a_d0 = _mm512_mask_blend_ps(a_mask0, neg_v, pos_v);
-        let a_d1 = _mm512_mask_blend_ps(a_mask1, neg_v, pos_v);
-        let b_d0 = _mm512_mask_blend_ps(b_mask0, neg_v, pos_v);
-        let b_d1 = _mm512_mask_blend_ps(b_mask1, neg_v, pos_v);
         a0 = _mm512_fmadd_ps(q0, a_d0, a0);
         a1 = _mm512_fmadd_ps(q1, a_d1, a1);
         b0 = _mm512_fmadd_ps(q0, b_d0, b0);
