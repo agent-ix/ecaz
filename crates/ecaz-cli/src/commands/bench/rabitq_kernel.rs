@@ -77,9 +77,10 @@ pub async fn run(args: RabitqKernelArgs) -> Result<()> {
             })
             .collect::<Vec<_>>();
 
-        bench_single(&mut output, variant, &prepared, &codes, iterations)?;
+        bench_single_dispatch(&mut output, variant, &prepared, &codes, iterations)?;
+        bench_single_scalar(&mut output, variant, &prepared, &codes, iterations)?;
 
-        if matches!(variant.bits, 1 | 8) {
+        if matches!(variant.bits, 1 | 4 | 8) {
             let code_len = <RaBitQQuantizer as Quantizer>::code_len(&quantizer);
             let slab = codes
                 .iter()
@@ -113,7 +114,42 @@ impl Variant {
     }
 }
 
-fn bench_single(
+fn bench_single_dispatch(
+    output: &mut Output,
+    variant: Variant,
+    prepared: &ecaz::bench_api::PreparedEstimator,
+    codes: &[Vec<u8>],
+    iterations: usize,
+) -> Result<()> {
+    let warmup = iterations.clamp(1, 64);
+    let mut checksum = 0.0_f32;
+    for i in 0..warmup {
+        checksum += prepared
+            .estimate_ip(black_box(&codes[i % codes.len()]))
+            .estimate;
+    }
+    black_box(checksum);
+
+    checksum = 0.0;
+    let mut idx = 0_usize;
+    let elapsed = time_loop(iterations, || {
+        let code = &codes[idx % codes.len()];
+        idx += 1;
+        let score = prepared.estimate_ip(black_box(code)).estimate;
+        checksum += black_box(score);
+    });
+    print_row(
+        output,
+        variant,
+        "single-dispatch",
+        iterations,
+        iterations,
+        elapsed,
+        checksum,
+    )
+}
+
+fn bench_single_scalar(
     output: &mut Output,
     variant: Variant,
     prepared: &ecaz::bench_api::PreparedEstimator,
@@ -136,7 +172,13 @@ fn bench_single(
         checksum += black_box(score);
     });
     print_row(
-        output, variant, "single", iterations, iterations, elapsed, checksum,
+        output,
+        variant,
+        "single-scalar",
+        iterations,
+        iterations,
+        elapsed,
+        checksum,
     )
 }
 
