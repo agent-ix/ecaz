@@ -4538,6 +4538,11 @@ pub(crate) mod bench_api {
         },
     ];
 
+    /// # Safety
+    ///
+    /// The fixture must describe a valid scalar RaBitQ sum-query-dequant input:
+    /// `query_rotated` must contain at least `dimensions` elements and `code`
+    /// must contain the packed code plus scalar trailer required by `bits`.
     unsafe fn scalar_sum_query_dequant_for_test(
         fixture: &SumQueryDequantFixtureForTest<'_>,
     ) -> Option<f32> {
@@ -4552,97 +4557,161 @@ pub(crate) mod bench_api {
 
     #[cfg(target_arch = "x86_64")]
     #[target_feature(enable = "avx512f")]
+    /// # Safety
+    ///
+    /// Caller must ensure AVX-512F is available. The fixture must include a
+    /// bits=1 byte LUT, at least `dimensions` query values, and a code buffer
+    /// sized for the bits=1 packed payload plus scalar trailer.
     unsafe fn sum_query_dequant_avx512_bits1_for_test(
         fixture: &SumQueryDequantFixtureForTest<'_>,
     ) -> Option<f32> {
         let byte_lut = fixture.bits1_byte_lut?;
-        Some(sum_query_dequant_avx512_bits1(
-            fixture.query_rotated,
-            fixture.dimensions,
-            byte_lut,
-            fixture.lut,
-            fixture.code,
-        ))
+        // SAFETY: the wrapper has the same target feature and fixture
+        // preconditions as the wrapped kernel.
+        Some(unsafe {
+            sum_query_dequant_avx512_bits1(
+                fixture.query_rotated,
+                fixture.dimensions,
+                byte_lut,
+                fixture.lut,
+                fixture.code,
+            )
+        })
     }
 
     #[cfg(target_arch = "x86_64")]
     #[target_feature(enable = "avx2,fma")]
+    /// # Safety
+    ///
+    /// Caller must ensure AVX2+FMA are available. The fixture must include a
+    /// bits=1 byte LUT, at least `dimensions` query values, and a code buffer
+    /// sized for the bits=1 packed payload plus scalar trailer.
     unsafe fn sum_query_dequant_avx2_bits1_for_test(
         fixture: &SumQueryDequantFixtureForTest<'_>,
     ) -> Option<f32> {
         let byte_lut = fixture.bits1_byte_lut?;
-        Some(sum_query_dequant_avx2_bits1(
-            fixture.query_rotated,
-            fixture.dimensions,
-            byte_lut,
-            fixture.lut,
-            fixture.code,
-        ))
+        // SAFETY: the wrapper has the same target features and fixture
+        // preconditions as the wrapped kernel.
+        Some(unsafe {
+            sum_query_dequant_avx2_bits1(
+                fixture.query_rotated,
+                fixture.dimensions,
+                byte_lut,
+                fixture.lut,
+                fixture.code,
+            )
+        })
     }
 
     #[cfg(target_arch = "x86_64")]
     #[target_feature(enable = "avx512f,avx512bw")]
+    /// # Safety
+    ///
+    /// Caller must ensure AVX-512F+BW are available. The fixture must contain
+    /// at least `dimensions` query values and a code buffer sized for the
+    /// bits=4 packed payload plus scalar trailer.
     unsafe fn sum_query_dequant_avx512_bits4_for_test(
         fixture: &SumQueryDequantFixtureForTest<'_>,
     ) -> Option<f32> {
-        Some(sum_query_dequant_avx512_bits4(
-            fixture.query_rotated,
-            fixture.dimensions,
-            fixture.lut,
-            fixture.code,
-        ))
+        // SAFETY: the wrapper has the same target features and fixture
+        // preconditions as the wrapped kernel.
+        Some(unsafe {
+            sum_query_dequant_avx512_bits4(
+                fixture.query_rotated,
+                fixture.dimensions,
+                fixture.lut,
+                fixture.code,
+            )
+        })
     }
 
     #[cfg(target_arch = "x86_64")]
     #[target_feature(enable = "avx2,fma")]
+    /// # Safety
+    ///
+    /// Caller must ensure AVX2+FMA are available. The fixture must contain at
+    /// least `dimensions` query values and a code buffer sized for the bits=4
+    /// packed payload plus scalar trailer.
     unsafe fn sum_query_dequant_avx2_bits4_for_test(
         fixture: &SumQueryDequantFixtureForTest<'_>,
     ) -> Option<f32> {
-        Some(sum_query_dequant_avx2_bits4(
-            fixture.query_rotated,
-            fixture.dimensions,
-            fixture.lut,
-            fixture.code,
-        ))
+        // SAFETY: the wrapper has the same target features and fixture
+        // preconditions as the wrapped kernel.
+        Some(unsafe {
+            sum_query_dequant_avx2_bits4(
+                fixture.query_rotated,
+                fixture.dimensions,
+                fixture.lut,
+                fixture.code,
+            )
+        })
     }
 
     #[cfg(target_arch = "x86_64")]
     #[target_feature(enable = "avx512f")]
+    /// # Safety
+    ///
+    /// Caller must ensure AVX-512F is available. The fixture must contain
+    /// bits=8 query scale/offset arrays with at least `dimensions` elements
+    /// and a code buffer sized for the bits=8 payload plus scalar trailer.
     unsafe fn sum_query_dequant_avx512_bits8_for_test(
         fixture: &SumQueryDequantFixtureForTest<'_>,
     ) -> Option<f32> {
-        Some(sum_query_dequant_avx512_bits8(
-            fixture.bits8_query_scale,
-            fixture.bits8_query_offset,
-            fixture.dimensions,
-            fixture.code,
-        ))
+        // SAFETY: the wrapper has the same target feature and fixture
+        // preconditions as the wrapped kernel.
+        Some(unsafe {
+            sum_query_dequant_avx512_bits8(
+                fixture.bits8_query_scale,
+                fixture.bits8_query_offset,
+                fixture.dimensions,
+                fixture.code,
+            )
+        })
     }
 
     #[cfg(target_arch = "x86_64")]
     #[target_feature(enable = "avx2,fma")]
+    /// # Safety
+    ///
+    /// Caller must ensure AVX2+FMA are available. The fixture must contain
+    /// bits=8 query scale/offset arrays with at least `dimensions` elements
+    /// and a code buffer sized for the bits=8 payload plus scalar trailer.
     unsafe fn sum_query_dequant_avx2_bits8_for_test(
         fixture: &SumQueryDequantFixtureForTest<'_>,
     ) -> Option<f32> {
-        Some(sum_query_dequant_avx2_bits8(
-            fixture.bits8_query_scale,
-            fixture.bits8_query_offset,
-            fixture.dimensions,
-            fixture.code,
-        ))
+        // SAFETY: the wrapper has the same target features and fixture
+        // preconditions as the wrapped kernel.
+        Some(unsafe {
+            sum_query_dequant_avx2_bits8(
+                fixture.bits8_query_scale,
+                fixture.bits8_query_offset,
+                fixture.dimensions,
+                fixture.code,
+            )
+        })
     }
 
     #[cfg(all(target_arch = "x86_64", feature = "rabitq-bf16"))]
     #[target_feature(enable = "avx512f,avx512bf16")]
+    /// # Safety
+    ///
+    /// Caller must ensure AVX-512F+BF16 are available. The fixture must contain
+    /// bf16 query and dequant LUT mirrors, at least `dimensions` query lanes,
+    /// and a bits=4 code buffer sized for the packed payload plus scalar
+    /// trailer.
     unsafe fn sum_query_dequant_avx512_bf16_bits4_for_test(
         fixture: &SumQueryDequantFixtureForTest<'_>,
     ) -> Option<f32> {
-        Some(sum_query_dequant_avx512_bf16_bits4(
-            fixture.query_bf16?,
-            fixture.dimensions,
-            fixture.dequant_lut_bf16?,
-            fixture.code,
-        ))
+        // SAFETY: the wrapper has the same target features and fixture
+        // preconditions as the wrapped kernel.
+        Some(unsafe {
+            sum_query_dequant_avx512_bf16_bits4(
+                fixture.query_bf16?,
+                fixture.dimensions,
+                fixture.dequant_lut_bf16?,
+                fixture.code,
+            )
+        })
     }
 }
 
