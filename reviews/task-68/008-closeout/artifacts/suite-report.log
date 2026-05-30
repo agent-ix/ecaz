@@ -1,0 +1,15 @@
+# Suite Report: task68-spire-build-closeout
+
+- config: `reviews/task-68/008-closeout/artifacts/suite.json`
+- config_sha256: `9477cbc0f103395082f0f0a417b65b582eac69534511ac860b5cd92aa9862a0e`
+- dry_run: `false`
+- steps: completed 5, failed 0, skipped 0, dry-run 0, missing artifacts 0, stale 0
+
+| Step | Kind | Status | Duration ms | Artifacts |
+| --- | --- | --- | ---: | --- |
+| precheck-host-and-tables | raw | Succeeded | 36 | `reviews/task-68/008-closeout/artifacts/precheck-host-and-tables.log` |
+| build-and-compare-10k | raw | Succeeded | 876 | `reviews/task-68/008-closeout/artifacts/build-and-compare-10k.log` |
+| build-and-compare-100k | raw | Succeeded | 8338 | `reviews/task-68/008-closeout/artifacts/build-and-compare-100k.log` |
+| recall-10k-closeout | raw | Succeeded | 4590 | `reviews/task-68/008-closeout/artifacts/truth-10k-q200-k10.json`<br>`reviews/task-68/008-closeout/artifacts/recall-10k-closeout.log` |
+| recall-100k-closeout | raw | Succeeded | 113831 | `reviews/task-68/008-closeout/artifacts/truth-100k-q200-k10.json`<br>`reviews/task-68/008-closeout/artifacts/recall-100k-closeout.log` |
+wrote reviews/task-68/008-closeout/artifacts/results-report.jsonl
