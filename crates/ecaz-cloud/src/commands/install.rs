@@ -44,6 +44,13 @@ pub struct InstallArgs {
     /// existing remote CLI is already suitable for the follow-up command.
     #[arg(long)]
     pub skip_cli_build: bool,
+
+    /// Run `cargo clean` in the remote checkout before building.
+    ///
+    /// Use this when a retained build cache has filled the benchmark host's
+    /// disk and an extension rebuild needs temporary space.
+    #[arg(long)]
+    pub clean_cargo_target: bool,
 }
 
 impl InstallArgs {
@@ -64,6 +71,7 @@ impl InstallArgs {
             &self.extension_features,
             self.skip_extension_recreate,
             self.skip_cli_build,
+            self.clean_cargo_target,
         );
         tracing::info!(profile = %self.profile, instance = %out.db_instance_id, "ssm: ecaz install");
         let stdout =
@@ -84,6 +92,7 @@ fn build_script_with_options(
     extension_features: &[String],
     skip_extension_recreate: bool,
     skip_cli_build: bool,
+    clean_cargo_target: bool,
 ) -> String {
     // Mirror the cloud-init build path so the same install command works
     // before and after the host's first boot. Shell-escaping is intentionally
@@ -117,6 +126,11 @@ sudo -u postgres psql -c "SELECT extname, extversion FROM pg_extension WHERE ext
         "sudo install -Dm755 /var/lib/pgsql/build/ecaz/target/release/ecaz /usr/local/bin/ecaz\n"
             .to_owned()
     };
+    let clean_target = if clean_cargo_target {
+        "  cargo clean\n".to_owned()
+    } else {
+        String::new()
+    };
     format!(
         r#"#!/usr/bin/env bash
 set -euxo pipefail
@@ -140,6 +154,7 @@ sudo -u postgres bash -lc '
   else
     git reset --hard {r}
   fi
+{clean_target}
   cargo pgrx install --sudo --release --pg-config /usr/bin/pg_config{extension_features_arg}
 {cli_build}
 '
@@ -166,6 +181,7 @@ mod tests {
             &[],
             true,
             false,
+            false,
         );
 
         assert!(
@@ -186,6 +202,7 @@ mod tests {
             &[String::from("rabitq-bf16")],
             true,
             false,
+            false,
         );
 
         assert!(script.contains(
@@ -201,6 +218,7 @@ mod tests {
             &[String::from("rabitq-bf16")],
             true,
             true,
+            false,
         );
 
         assert!(script.contains(
@@ -214,5 +232,23 @@ mod tests {
         assert!(
             script.contains("SELECT extname, extversion FROM pg_extension WHERE extname = 'ecaz';")
         );
+    }
+
+    #[test]
+    fn install_script_can_clean_cargo_target_before_build() {
+        let script = build_script_with_options(
+            "https://github.com/agent-ix/ecaz.git",
+            "main",
+            &[],
+            true,
+            false,
+            true,
+        );
+
+        let clean_pos = script.find("cargo clean").expect("cargo clean present");
+        let build_pos = script
+            .find("cargo pgrx install --sudo --release --pg-config /usr/bin/pg_config")
+            .expect("pgrx install present");
+        assert!(clean_pos < build_pos);
     }
 }
