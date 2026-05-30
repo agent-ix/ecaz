@@ -1,0 +1,25 @@
+Task 67 local runtime validation attempt
+Timestamp: 2026-05-30T02:22:05Z
+Head: 903ee4d0212a5517584b5d0c90a7b1b11f37e663
+
+Command:
+  cargo test -p ecaz task67_sum_query_dequant_for_test_scaffold_matches_scalar_when_available -- --nocapture
+
+Result:
+  FAIL before test body execution
+
+Output:
+  Finished `test` profile [unoptimized + debuginfo] target(s) in 0.17s
+  Running unittests src/lib.rs (target/debug/deps/ecaz-f2df5642911991b3)
+  /home/peter/dev/ecaz/target/debug/deps/ecaz-f2df5642911991b3: symbol lookup error: /home/peter/dev/ecaz/target/debug/deps/ecaz-f2df5642911991b3: undefined symbol: pg_re_throw
+  error: test failed, to rerun pass `-p ecaz --lib`
+
+  Caused by:
+    process didn't exit successfully: `/home/peter/dev/ecaz/target/debug/deps/ecaz-f2df5642911991b3 task67_sum_query_dequant_for_test_scaffold_matches_scalar_when_available --nocapture` (exit status: 127)
+
+Interpretation:
+  The focused Task 67 scaffold runtime test could not start locally. The dynamic
+  loader failed before Rust test bodies ran because the PostgreSQL-linked test
+  binary has an unresolved `pg_re_throw` symbol in this environment. This is
+  consistent with prior Task 67 runtime attempts failing before test bodies on
+  unresolved PostgreSQL symbols.
