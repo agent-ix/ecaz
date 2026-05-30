@@ -1,0 +1,24 @@
+uname -a
+Darwin Peters-MBP 25.4.0 Darwin Kernel Version 25.4.0: Thu Mar 19 19:33:50 PDT 2026; root:xnu-12377.101.15~1/RELEASE_ARM64_T6050 arm64
+
+sw_vers
+ProductName:		macOS
+ProductVersion:		26.4.1
+BuildVersion:		25E253
+
+hostinfo
+Mach kernel version:
+	 Darwin Kernel Version 25.4.0: Thu Mar 19 19:33:50 PDT 2026; root:xnu-12377.101.15~1/RELEASE_ARM64_T6050
+Kernel configured for up to 18 processors.
+18 processors are physically available.
+18 processors are logically available.
+Processor type: arm64e (ARM64E)
+Processors active: 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17
+Primary memory available: 64.00 gigabytes
+Default processor set: 673 tasks, 3949 threads, 18 processors
+Load average: 1.51, Mach factor: 16.48
+
+sysctl note
+The sandboxed sysctl probes for hw.model, hw.memsize, hw.ncpu,
+hw.physicalcpu, and hw.logicalcpu returned:
+sysctl: sysctl fmt -1 1024 1: Operation not permitted
