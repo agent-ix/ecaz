@@ -23,12 +23,25 @@ pub struct RabitqKernelArgs {
     #[arg(long, default_value = "1000")]
     pub iterations: usize,
 
+    /// Force the SIMD backend for this benchmark process, for example scalar,
+    /// auto, avx2, or avx512.
+    #[arg(long)]
+    pub simd_mode: Option<String>,
+
     /// Write the same text output to a packet-local artifact.
     #[arg(long)]
     pub log_output: Option<PathBuf>,
 }
 
 pub async fn run(args: RabitqKernelArgs) -> Result<()> {
+    if let Some(mode) = args.simd_mode.as_deref() {
+        if mode == "auto" {
+            std::env::remove_var("ECAZ_SIMD");
+        } else {
+            std::env::set_var("ECAZ_SIMD", mode);
+        }
+    }
+
     let mut output = Output::new(args.log_output.as_deref())?;
     let dim = args.dim;
     let candidates = args.candidates.max(1);
