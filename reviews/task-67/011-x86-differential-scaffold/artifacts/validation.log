@@ -1,0 +1,45 @@
+Task 67 packet 011 validation
+Timestamp: 2026-05-30T02:15:23Z
+Head: a22677eb8a0822196e1af921e819ec0c289560de
+
+Command:
+  cargo fmt
+
+Result:
+  PASS
+
+Notes:
+  rustfmt completed. It emitted the repository's existing stable-rustfmt
+  warnings about nightly-only options being ignored.
+
+Command:
+  cargo test -p ecaz task67_sum_query_dequant_for_test_scaffold_registers_expected_kernels --no-run
+
+Result:
+  PASS
+
+Key output:
+  Finished `test` profile [unoptimized + debuginfo] target(s) in 3m 06s
+
+Command:
+  cargo test -p ecaz task67_sum_query_dequant_for_test_scaffold_matches_scalar_when_available --no-run
+
+Result:
+  PASS
+
+Key output:
+  Finished `test` profile [unoptimized + debuginfo] target(s) in 3m 06s
+
+Command:
+  git diff --check
+
+Result:
+  PASS
+
+Runtime note:
+  The new scaffold differential test is compiled but not executed in this
+  packet. Prior Task 67 local runtime attempts hit the current environment's
+  PostgreSQL extension link issue around unresolved LockBuffer symbols, so this
+  packet keeps validation to compile-only Rust test coverage. This host also
+  lacks AVX-512 CPU features, so AVX-512 runtime acceptance remains pending on
+  suitable Intel hardware.
