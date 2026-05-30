@@ -946,7 +946,8 @@ impl PreparedEstimator {
         )
     }
 
-    /// Batch IVF-fast estimates for contiguous bits=1 or bits=8 RaBitQ codes.
+    /// Batch IVF-fast estimates for contiguous bits=1, bits=4, or bits=8
+    /// RaBitQ codes.
     ///
     /// This is the production entrypoint for scratch-SoA callers that already
     /// hold a dense payload slab. It performs target dispatch once per slab,
@@ -958,9 +959,9 @@ impl PreparedEstimator {
         code_len: usize,
         out_scores: &mut Vec<f32>,
     ) -> Result<(), String> {
-        if self.bits_per_dim != 1 && self.bits_per_dim != 8 {
+        if !matches!(self.bits_per_dim, 1 | 4 | 8) {
             return Err(format!(
-                "RaBitQ batch scorer requires bits=1 or bits=8, got {}",
+                "RaBitQ batch scorer requires bits=1, bits=4, or bits=8, got {}",
                 self.bits_per_dim
             ));
         }
