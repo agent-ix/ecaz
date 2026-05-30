@@ -568,15 +568,13 @@ fn load_chunked_manifest_if_requested(
     if chunked.prefix != prefix {
         return Err(eyre!(
             "manifest prefix {:?} does not match --prefix {:?}",
-            chunked.prefix,
-            prefix
+            chunked.prefix, prefix
         ));
     }
     if chunked.dimension != dim {
         return Err(eyre!(
             "manifest dimension {} does not match --dim {}",
-            chunked.dimension,
-            dim
+            chunked.dimension, dim
         ));
     }
     Ok(Some(LoadedChunkedManifest {
