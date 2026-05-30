@@ -23,7 +23,9 @@ Packet 017 no-scratch scalar baseline:
 | 32 | 1.0000 | 3.70 ms |
 | 64 | 1.0000 | 6.57 ms |
 
-Packet 021 scratch-SoA auto lane:
+Packet 021 scratch-SoA auto lane. These speedups are the combined
+scratch-SoA plus auto-SIMD improvement over packet 017's no-scratch scalar
+baseline, not a SoA-only delta:
 
 | nprobe | recall@10 | mean latency | speedup vs packet 017 scalar |
 | --- | ---: | ---: | ---: |
