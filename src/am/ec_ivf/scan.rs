@@ -284,6 +284,11 @@ impl CandidateTopK {
         self.retained.peek().map(|entry| entry.candidate.score)
     }
 
+    fn would_reject_score(&self, score: f32) -> bool {
+        self.worst_score_if_full()
+            .is_some_and(|worst_score| score > worst_score)
+    }
+
     fn into_sorted_candidates(self) -> Vec<EcIvfScoredCandidate> {
         let mut candidates = self
             .retained
@@ -1519,6 +1524,12 @@ fn record_scored_posting_candidates<I>(
         .explain_counters
         .record_heap_tids_scored(heap_tid_count);
     record_distance_calcs(opaque, 1);
+    if running_top
+        .as_ref()
+        .is_some_and(|top_k| top_k.would_reject_score(score))
+    {
+        return;
+    }
     for heap_tid in heap_tids {
         opaque.explain_counters.record_candidate_scored();
         let candidate = EcIvfScoredCandidate { heap_tid, score };
@@ -2746,6 +2757,20 @@ mod tests {
 
         top_k.push(candidate(1, 3, 2.0));
         assert_eq!(top_k.worst_score_if_full(), Some(2.0));
+    }
+
+    #[test]
+    fn candidate_top_k_rejects_only_scores_worse_than_full_worst() {
+        let mut top_k = CandidateTopK::new(2);
+
+        assert!(!top_k.would_reject_score(9.0));
+
+        top_k.push(candidate(1, 1, 1.0));
+        top_k.push(candidate(1, 2, 2.0));
+
+        assert!(top_k.would_reject_score(3.0));
+        assert!(!top_k.would_reject_score(2.0));
+        assert!(!top_k.would_reject_score(1.5));
     }
 
     #[test]
