@@ -37,6 +37,13 @@ pub struct InstallArgs {
     /// CLI, and restarts PostgreSQL.
     #[arg(long)]
     pub skip_extension_recreate: bool,
+
+    /// Skip rebuilding and reinstalling `/usr/local/bin/ecaz`.
+    ///
+    /// Use this when only extension build features are being changed and the
+    /// existing remote CLI is already suitable for the follow-up command.
+    #[arg(long)]
+    pub skip_cli_build: bool,
 }
 
 impl InstallArgs {
@@ -56,6 +63,7 @@ impl InstallArgs {
             &self.git_ref,
             &self.extension_features,
             self.skip_extension_recreate,
+            self.skip_cli_build,
         );
         tracing::info!(profile = %self.profile, instance = %out.db_instance_id, "ssm: ecaz install");
         let stdout =
@@ -75,6 +83,7 @@ fn build_script_with_options(
     git_ref: &str,
     extension_features: &[String],
     skip_extension_recreate: bool,
+    skip_cli_build: bool,
 ) -> String {
     // Mirror the cloud-init build path so the same install command works
     // before and after the host's first boot. Shell-escaping is intentionally
@@ -95,6 +104,17 @@ fn build_script_with_options(
         r#"sudo -u postgres psql -c 'DROP EXTENSION IF EXISTS ecaz;'
 sudo -u postgres psql -c 'CREATE EXTENSION ecaz;'
 sudo -u postgres psql -c "SELECT extname, extversion FROM pg_extension WHERE extname = 'ecaz';""#
+            .to_owned()
+    };
+    let cli_build = if skip_cli_build {
+        String::new()
+    } else {
+        "  cargo build --release -p ecaz-cli\n".to_owned()
+    };
+    let cli_install = if skip_cli_build {
+        String::new()
+    } else {
+        "sudo install -Dm755 /var/lib/pgsql/build/ecaz/target/release/ecaz /usr/local/bin/ecaz\n"
             .to_owned()
     };
     format!(
@@ -121,10 +141,9 @@ sudo -u postgres bash -lc '
     git reset --hard {r}
   fi
   cargo pgrx install --sudo --release --pg-config /usr/bin/pg_config{extension_features_arg}
-  cargo build --release -p ecaz-cli
+{cli_build}
 '
-sudo install -Dm755 /var/lib/pgsql/build/ecaz/target/release/ecaz /usr/local/bin/ecaz
-sudo systemctl restart postgresql
+{cli_install}sudo systemctl restart postgresql
 {extension_sql}
 "#
     )
@@ -141,13 +160,22 @@ mod tests {
 
     #[test]
     fn install_script_omits_feature_flag_by_default() {
-        let script =
-            build_script_with_options("https://github.com/agent-ix/ecaz.git", "main", &[], true);
+        let script = build_script_with_options(
+            "https://github.com/agent-ix/ecaz.git",
+            "main",
+            &[],
+            true,
+            false,
+        );
 
         assert!(
             script.contains("cargo pgrx install --sudo --release --pg-config /usr/bin/pg_config\n")
         );
         assert!(!script.contains("--features"));
+        assert!(script.contains("cargo build --release -p ecaz-cli"));
+        assert!(script.contains(
+            "sudo install -Dm755 /var/lib/pgsql/build/ecaz/target/release/ecaz /usr/local/bin/ecaz"
+        ));
     }
 
     #[test]
@@ -157,10 +185,34 @@ mod tests {
             "main",
             &[String::from("rabitq-bf16")],
             true,
+            false,
         );
 
         assert!(script.contains(
             "cargo pgrx install --sudo --release --pg-config /usr/bin/pg_config --features 'rabitq-bf16'"
         ));
+    }
+
+    #[test]
+    fn install_script_can_skip_cli_build() {
+        let script = build_script_with_options(
+            "https://github.com/agent-ix/ecaz.git",
+            "main",
+            &[String::from("rabitq-bf16")],
+            true,
+            true,
+        );
+
+        assert!(script.contains(
+            "cargo pgrx install --sudo --release --pg-config /usr/bin/pg_config --features 'rabitq-bf16'"
+        ));
+        assert!(!script.contains("cargo build --release -p ecaz-cli"));
+        assert!(!script.contains(
+            "sudo install -Dm755 /var/lib/pgsql/build/ecaz/target/release/ecaz /usr/local/bin/ecaz"
+        ));
+        assert!(script.contains("sudo systemctl restart postgresql"));
+        assert!(
+            script.contains("SELECT extname, extversion FROM pg_extension WHERE extname = 'ecaz';")
+        );
     }
 }
