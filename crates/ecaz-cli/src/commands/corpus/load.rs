@@ -336,6 +336,7 @@ pub async fn run(conn: &ConnectionOptions, args: LoadArgs) -> Result<()> {
         args.chunked,
         &args.prefix,
         args.dim,
+        args.allow_manifest_mismatch,
     )?;
     if args.chunked && chunked_manifest.is_none() {
         return Err(eyre!(
@@ -553,6 +554,7 @@ fn load_chunked_manifest_if_requested(
     force_chunked: bool,
     prefix: &str,
     dim: usize,
+    allow_mismatch: bool,
 ) -> Result<Option<LoadedChunkedManifest>> {
     let Some(path) = path else {
         return Ok(None);
@@ -566,18 +568,28 @@ fn load_chunked_manifest_if_requested(
     }
     let chunked = manifest::parse_chunked_manifest(&parsed)?;
     if chunked.prefix != prefix {
-        return Err(eyre!(
+        let msg = format!(
             "manifest prefix {:?} does not match --prefix {:?}",
             chunked.prefix,
             prefix
-        ));
+        );
+        if allow_mismatch {
+            crate::ecaz_eprintln!("[loader] warning: {msg}");
+        } else {
+            return Err(eyre!(msg));
+        }
     }
     if chunked.dimension != dim {
-        return Err(eyre!(
+        let msg = format!(
             "manifest dimension {} does not match --dim {}",
             chunked.dimension,
             dim
-        ));
+        );
+        if allow_mismatch {
+            crate::ecaz_eprintln!("[loader] warning: {msg}");
+        } else {
+            return Err(eyre!(msg));
+        }
     }
     Ok(Some(LoadedChunkedManifest {
         manifest: chunked,
@@ -2841,10 +2853,56 @@ mod tests {
             .to_string(),
         )
         .unwrap();
-        let loaded = load_chunked_manifest_if_requested(Some(&manifest_path), false, "x", 4)
+        let loaded = load_chunked_manifest_if_requested(Some(&manifest_path), false, "x", 4, false)
             .unwrap()
             .unwrap();
         assert_eq!(loaded.base_dir, td.path());
         assert_eq!(loaded.manifest.corpus.chunks.len(), 2);
+    }
+
+    #[test]
+    fn load_chunked_manifest_can_warn_past_prefix_mismatch() {
+        let td = TempDir::new().unwrap();
+        let manifest_path = td.path().join("x_manifest.json");
+        std::fs::write(
+            &manifest_path,
+            serde_json::json!({
+                "manifest_version": 1,
+                "artifact_layout": "chunked",
+                "prefix": "prepared_prefix",
+                "source_dataset": "dbpedia",
+                "source_parquet": "/tmp/dbpedia",
+                "source_parquet_basename": "dbpedia",
+                "source_parquet_shard_basenames": ["part-0.parquet"],
+                "id_column": "_id",
+                "vector_column": "embedding",
+                "dimension": 4,
+                "chunk_rows": 2,
+                "selection_rule": {},
+                "corpus": chunked_section("corpus"),
+                "queries": chunked_section("queries"),
+                "generated_at_utc": "2026-04-26T00:00:00Z",
+                "generated_by": "ecaz corpus prepare"
+            })
+            .to_string(),
+        )
+        .unwrap();
+        let loaded =
+            load_chunked_manifest_if_requested(Some(&manifest_path), true, "load_prefix", 4, true)
+                .unwrap()
+                .unwrap();
+        assert_eq!(loaded.manifest.prefix, "prepared_prefix");
+
+        let err = match load_chunked_manifest_if_requested(
+            Some(&manifest_path),
+            true,
+            "load_prefix",
+            4,
+            false,
+        ) {
+            Ok(_) => panic!("expected prefix mismatch to fail"),
+            Err(err) => err.to_string(),
+        };
+        assert!(err.contains("manifest prefix"), "err: {err}");
     }
 }
