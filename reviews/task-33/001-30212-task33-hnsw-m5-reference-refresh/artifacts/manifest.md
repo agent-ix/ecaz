@@ -1,6 +1,6 @@
 # Artifact Manifest: Task 33 HNSW M5 Reference Refresh Scaffold
 
-- head SHA: `586a4d8bf2c8e74df4e1c67699a9cd93c1cc3d08`
+- head SHA: `29eee45a39f723df6b4b9ee80e8833aa206142e9`
 - task bucket: `reviews/task-33`
 - packet path: `reviews/task-33/001-30212-task33-hnsw-m5-reference-refresh`
 - lane: HNSW M5 real50K worker-sweep scaffold
