@@ -1,0 +1,25 @@
+Script started on 2026-05-30 08:27:09-07:00 [<not executed on terminal>]
+{
+    "CommandId": "02ec644c-3be7-404f-9c39-bd2fe75195c0",
+    "InstanceId": "i-02811174cc6ded75c",
+    "Comment": "",
+    "DocumentName": "AWS-RunShellScript",
+    "DocumentVersion": "$DEFAULT",
+    "PluginName": "aws:runShellScript",
+    "ResponseCode": 1,
+    "ExecutionStartDateTime": "2026-05-30T15:26:53.030Z",
+    "ExecutionElapsedTime": "PT2.486S",
+    "ExecutionEndDateTime": "2026-05-30T15:26:55.030Z",
+    "Status": "Failed",
+    "StatusDetails": "Failed",
+    "StandardOutputContent": "Environment=PG_OOM_ADJUST_FILE=/proc/self/oom_score_adj PG_OOM_ADJUST_VALUE=0 PGDATA=/var/lib/pgsql/18/data ECAZ_SIMD=auto\necaz\n[suite:task67-bf16-on] load-10k-rabitq4-bf16-on -> --database postgres --host /var/run/postgresql --user postgres --log-file reviews/task-67/029-bf16-decision/artifacts/bf16-on/load-10k-rabitq4-bf16-on.log corpus load --prefix task67_bf16on_10k_rabitq4 --profile ec_ivf --corpus-file target/real-corpus/staged-task50/ec_real_10k_corpus.tsv --queries-file target/real-corpus/staged-task50/ec_real_10k_queries.tsv --manifest-file target/real-corpus/staged-task50/ec_real_10k_manifest.json --allow-manifest-mismatch --bits 4 --seed 42 --storage-format rabitq --reloption nlists=64 --reloption nprobe=64 --reloption training_sample_rows=5000 --reloption quant_bits=4 --reloption rerank=heap_f32 --reloption rerank_width=100\n",
+    "StandardOutputUrl": "",
+    "StandardErrorContent": "+ cd /var/lib/pgsql/build/ecaz\n++ dirname reviews/task-67/029-bf16-decision/artifacts/task67-bf16-on-suite.json\n+ mkdir -p reviews/task-67/029-bf16-decision/artifacts reviews/task-67/029-bf16-decision/artifacts/bf16-on\n+ trap 'status=$?; set +e; aws s3 sync reviews/task-67/029-bf16-decision/artifacts/bf16-on s3://ecaz-cloud-10k-intel-f85c5b34/bench-artifacts/task67-bf16-on/20260530T152652Z/ --region us-west-2 --only-show-errors || true; exit $status' EXIT\n+ cat\n++ dirname reviews/task-67/029-bf16-decision/artifacts/task67-bf16-on-suite.json\n+ chown -R postgres:postgres reviews/task-67/029-bf16-decision/artifacts reviews/task-67/029-bf16-decision/artifacts/bf16-on\n+ sudo systemctl set-environment ECAZ_SIMD=auto\n+ sudo systemctl restart postgresql\n+ sudo systemctl show postgresql -p Environment\n+ sudo -u postgres psql -Atqc 'SHOW shared_preload_libraries;'\n+ sudo -u postgres bash -lc 'cd '\\''/var/lib/pgsql/build/ecaz'\\''; export PATH=/usr/local/bin:$HOME/.cargo/bin:$PATH; '\\''/usr/local/bin/ecaz'\\'' --database '\\''postgres'\\'' --host /var/run/postgresql --user postgres --log-file '\\''reviews/task-67/029-bf16-decision/artifacts/bf16-on/suite-run.log'\\'' bench suite run --config '\\''reviews/task-67/029-bf16-decision/artifacts/task67-bf16-on-suite.json'\\'' --manifest-output '\\''reviews/task-67/029-bf16-decision/artifacts/bf16-on/suite-manifest.json'\\'' --results-output '\\''reviews/task-67/029-bf16-decision/artifacts/bf16-on/results.jsonl'\\'''\n[suite:task67-bf16-on] wrote reviews/task-67/029-bf16-decision/artifacts/bf16-on/suite-manifest.json\n[suite:task67-bf16-on] wrote reviews/task-67/029-bf16-decision/artifacts/bf16-on/suite-manifest.json\n[loader] warning: profile \"ec_ivf\" does not list quant_bits as known reloption; passing through verbatim. Known reloptions: nlists, nprobe, rerank_width, training_sample_rows, seed, pq_group_size, storage_format, quantizer, rerank\n\n   0: \u001b[91mreading manifest target/real-corpus/staged-task50/ec_real_10k_manifest.json\u001b[0m\n   1: \u001b[91mNo such file or directory (os error 2)\u001b[0m\n\nLocation:\n   \u001b[35mcrates/ecaz-cli/src/commands/corpus/load.rs\u001b[0m:\u001b[35m561\u001b[0m\n\nBacktrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.\nRun with RUST_BACKTRACE=full to include source snippets.\n[suite:task67-bf16-on] wrote reviews/task-67/029-bf16-decision/artifacts/bf16-on/suite-manifest.json\n\n   0: \u001b[91msuite step \"load-10k-rabitq4-bf16-on\" failed with exit code 1; rerun with --continue-on-error to keep going\u001b[0m\n\nLocation:\n   \u001b[35mcrates/ecaz-cli/src/commands/bench/suite.rs\u001b[0m:\u001b[35m793\u001b[0m\n\nBacktrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.\nRun with RUST_BACKTRACE=full to include source snippets.\n+ status=1\n+ set +e\n+ aws s3 sync reviews/task-67/029-bf16-decision/artifacts/bf16-on s3://ecaz-cloud-10k-intel-f85c5b34/bench-artifacts/task67-bf16-on/20260530T152652Z/ --region us-west-2 --only-show-errors\n+ exit 1\nfailed to run commands: exit status 1",
+    "StandardErrorUrl": "",
+    "CloudWatchOutputConfig": {
+        "CloudWatchLogGroupName": "",
+        "CloudWatchOutputEnabled": false
+    }
+}
+
+Script done on 2026-05-30 08:27:10-07:00 [COMMAND_EXIT_CODE="0"]
