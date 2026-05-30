@@ -1,0 +1,57 @@
+{
+  "suite": "task67-rabitq-kernel-auto",
+  "schema_version": 1,
+  "config": "reviews/task-67/020-rabitq-kernel-bench/artifacts/task67-rabitq-kernel-auto-suite.json",
+  "config_sha256": "ffcc226a9a0e2b9941cf554022b5ff33a6f62f7c5ac7dedc81c640c98428286e",
+  "dry_run": false,
+  "generated_at_unix_ms": 1780121304692,
+  "connection": {
+    "database": "postgres",
+    "host": "/var/run/postgresql",
+    "port": null,
+    "user": "postgres",
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "rabitq-kernel-auto",
+      "kind": "raw",
+      "command": [
+        "--database",
+        "postgres",
+        "--host",
+        "/var/run/postgresql",
+        "--user",
+        "postgres",
+        "bench",
+        "rabitq-kernel",
+        "--dim",
+        "1536",
+        "--candidates",
+        "1000",
+        "--iterations",
+        "1000",
+        "--simd-mode",
+        "auto",
+        "--log-output",
+        "reviews/task-67/020-rabitq-kernel-bench/artifacts/auto/rabitq-kernel-auto.log"
+      ],
+      "selected": true,
+      "tags": [
+        "aws",
+        "intel",
+        "kernel",
+        "auto",
+        "rabitq"
+      ],
+      "expected_artifacts": [
+        "reviews/task-67/020-rabitq-kernel-bench/artifacts/auto/rabitq-kernel-auto.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1780121304693,
+      "finished_at_unix_ms": 1780121305511,
+      "duration_ms": 817,
+      "exit_code": 0
+    }
+  ]
+}
