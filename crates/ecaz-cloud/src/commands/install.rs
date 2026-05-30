@@ -126,7 +126,7 @@ sudo -u postgres psql -c "SELECT extname, extversion FROM pg_extension WHERE ext
         "sudo install -Dm755 /var/lib/pgsql/build/ecaz/target/release/ecaz /usr/local/bin/ecaz\n"
             .to_owned()
     };
-    let clean_target = if clean_cargo_target {
+    let pre_git_clean_target = if clean_cargo_target {
         "  cargo clean\n".to_owned()
     } else {
         String::new()
@@ -145,6 +145,7 @@ sudo -u postgres bash -lc '
     git clone {url} /var/lib/pgsql/build/ecaz
   fi
   cd /var/lib/pgsql/build/ecaz
+{pre_git_clean_target}
   git reset --hard
   git clean -fd
   git fetch --all --tags
@@ -154,7 +155,6 @@ sudo -u postgres bash -lc '
   else
     git reset --hard {r}
   fi
-{clean_target}
   cargo pgrx install --sudo --release --pg-config /usr/bin/pg_config{extension_features_arg}
 {cli_build}
 '
@@ -246,9 +246,11 @@ mod tests {
         );
 
         let clean_pos = script.find("cargo clean").expect("cargo clean present");
+        let reset_pos = script.find("git reset --hard").expect("git reset present");
         let build_pos = script
             .find("cargo pgrx install --sudo --release --pg-config /usr/bin/pg_config")
             .expect("pgrx install present");
+        assert!(clean_pos < reset_pos);
         assert!(clean_pos < build_pos);
     }
 }

@@ -1,0 +1,56 @@
+Script started on 2026-05-30 08:37:17-07:00 [<not executed on terminal>]
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.15s
+     Running unittests src/lib.rs (target/debug/deps/ecaz-fb7bef55f0a59f60)
+
+running 46 tests
+test quant::rabitq::tests::bit_level_packers_round_trip_all_supported_widths ... [32mok[m
+test quant::rabitq::tests::bits1_byte_lut_matches_per_bit_decode ... [32mok[m
+test quant::rabitq::tests::bits1_batch_estimator_rejects_wrong_width_and_stride ... [32mok[m
+test quant::rabitq::tests::bits1_batch_estimator_matches_scalar_order ... [32mok[m
+test quant::rabitq::tests::bits4_batch_estimator_matches_scalar_order ... [32mok[m
+test quant::rabitq::tests::bits8_precompute_matches_lut_decode ... [32mok[m
+test quant::rabitq::tests::centered_api_rejects_qbit_bits ... [32mok[m
+test quant::rabitq::tests::bits8_batch_estimator_matches_scalar_order ... [32mok[m
+test quant::rabitq::tests::centered_context_and_scorer_cover_raw_and_degenerate_paths ... [32mok[m
+test quant::rabitq::tests::centered_encode_pins_asymmetric_center_tail_and_zero_residual ... [32mok[m
+test quant::rabitq::tests::bits1_byte_lut_scalar_sum_matches_per_bit_decode ... [32mok[m
+test quant::rabitq::tests::centered_estimator_is_exact_on_sign_aligned_residual ... [32mok[m
+test quant::rabitq::tests::centered_scorer_floor_boundaries_cover_below_equal_and_above ... [32mok[m
+test quant::rabitq::tests::centered_scorer_matches_manual_unit_residual_ip ... [32mok[m
+test quant::rabitq::tests::centered_scorer_pins_nontrivial_bound_formula ... [32mok[m
+test quant::rabitq::tests::centered_estimator_bound_dominates_error_on_random_vectors ... [32mok[m
+test quant::rabitq::tests::custom_rotation_plugs_into_seam ... [32mok[m
+test quant::rabitq::tests::encode_code_pins_qbit_payload_and_scalars ... [32mok[m
+test quant::rabitq::tests::encode_code_pins_zero_vector_tail_and_levels ... [32mok[m
+test quant::rabitq::tests::estimate_ip_guards_and_bound_are_pinned ... [32mok[m
+test quant::rabitq::tests::estimate_ip_o_dot_floor_covers_below_equal_and_above ... [32mok[m
+test quant::rabitq::tests::estimator_recovers_self_ip_on_sign_aligned_vector ... [32mok[m
+test quant::rabitq::tests::hamming_similarity_identity_equals_dim ... [32mok[m
+test quant::rabitq::tests::least_squares_estimator_uses_o_dot_as_shrinkage ... [32mok[m
+test quant::rabitq::tests::estimator_bound_dominates_error_on_random_vectors ... [32mok[m
+test quant::rabitq::tests::prepared_queries_only_keep_bits1_byte_lut_for_bits1 ... [32mok[m
+test quant::rabitq::tests::qbit_quantize_and_dequantize_pin_level_midpoints ... [32mok[m
+test quant::rabitq::tests::qbit_quantize_pins_non_roundtrip_scale_term ... [32mok[m
+test quant::rabitq::tests::qbit_rejects_unsupported_bits ... [32mok[m
+test quant::rabitq::tests::quantizer_and_prepared_estimator_accessors_are_stable ... [32mok[m
+test quant::rabitq::tests::query_scorer_matches_estimator_for_nontrivial_pair ... [32mok[m
+test quant::rabitq::tests::sign_sidecar_helpers_pack_exact_words ... [32mok[m
+test quant::rabitq::tests::qbit_encoder_reduces_error_vs_binary ... [32mok[m
+test quant::rabitq::tests::sign_words_from_rotated_matches_manual_pack ... [32mok[m
+test quant::rabitq::tests::qbit_code_len_scales_with_bits ... [32mok[m
+test quant::rabitq::tests::task67_sum_query_dequant_for_test_scaffold_registers_expected_kernels ... [32mok[m
+test quant::rabitq::tests::x86_query_dequant_slots_cover_task67_kernels ... [32mok[m
+test quant::rabitq::tests::task67_sum_query_dequant_for_test_scaffold_matches_scalar_when_available ... [32mok[m
+test quant::rabitq::tests::x86_sum_query_dequant_bits4_matches_scalar_when_available ... [32mok[m
+test quant::rabitq::tests::x86_sum_query_dequant_bits1_pair_matches_scalar_when_available ... [32mok[m
+test quant::rabitq::tests::x86_sum_query_dequant_bits8_matches_scalar_when_available ... [32mok[m
+test quant::rabitq::tests::x86_sum_query_dequant_bits1_matches_scalar_when_available ... [32mok[m
+test quant::rabitq::tests::code_len_matches_dimension ... [32mok[m
+test quant::rabitq::tests::encode_then_score_same_vector_is_nonnegative ... [32mok[m
+test quant::rabitq::tests::srht_seeded_rotation_is_deterministic_and_independent_of_prod ... [32mok[m
+test quant::rabitq::tests::persisted_sidecar_helpers_preserve_supported_and_unsupported_lanes ... [32mok[m
+
+test result: [32mok[m. 46 passed; 0 failed; 0 ignored; 0 measured; 1894 filtered out; finished in 0.17s
+
+
+Script done on 2026-05-30 08:37:18-07:00 [COMMAND_EXIT_CODE="0"]
