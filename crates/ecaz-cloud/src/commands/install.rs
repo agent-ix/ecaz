@@ -82,6 +82,8 @@ sudo -u postgres psql -c "SELECT extname, extversion FROM pg_extension WHERE ext
     format!(
         r#"#!/usr/bin/env bash
 set -euxo pipefail
+sudo mkdir -p /var/lib/pgsql/build
+sudo chown -R postgres:postgres /var/lib/pgsql/build
 sudo -u postgres bash -lc '
   set -eux
   export PATH=$HOME/.cargo/bin:$PATH
