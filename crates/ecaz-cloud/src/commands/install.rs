@@ -23,6 +23,13 @@ pub struct InstallArgs {
     #[arg(long, default_value = "1800")]
     pub timeout: u64,
 
+    /// Extra Cargo features for the extension install, repeatable.
+    ///
+    /// Defaults still include the package default `pg18`; this only appends
+    /// opt-in features such as `rabitq-bf16`.
+    #[arg(long = "extension-feature")]
+    pub extension_features: Vec<String>,
+
     /// Skip `DROP EXTENSION` / `CREATE EXTENSION` after installing files.
     ///
     /// Use this when retaining benchmark tables that depend on extension-owned
@@ -44,8 +51,12 @@ impl InstallArgs {
         }
         let out = tf.outputs().await?;
 
-        let script =
-            build_script_with_options(&self.git_url, &self.git_ref, self.skip_extension_recreate);
+        let script = build_script_with_options(
+            &self.git_url,
+            &self.git_ref,
+            &self.extension_features,
+            self.skip_extension_recreate,
+        );
         tracing::info!(profile = %self.profile, instance = %out.db_instance_id, "ssm: ecaz install");
         let stdout =
             ssm::run_shell(&out.region, &out.db_instance_id, &script, self.timeout).await?;
@@ -62,6 +73,7 @@ impl InstallArgs {
 fn build_script_with_options(
     git_url: &str,
     git_ref: &str,
+    extension_features: &[String],
     skip_extension_recreate: bool,
 ) -> String {
     // Mirror the cloud-init build path so the same install command works
@@ -70,6 +82,12 @@ fn build_script_with_options(
     let url = shell_escape(git_url);
     let r = shell_escape(git_ref);
     let origin_ref = shell_escape(&format!("origin/{git_ref}"));
+    let extension_features_arg = if extension_features.is_empty() {
+        String::new()
+    } else {
+        let features = shell_escape(&extension_features.join(" "));
+        format!(" --features {features}")
+    };
     let extension_sql = if skip_extension_recreate {
         "sudo -u postgres psql -c \"SELECT extname, extversion FROM pg_extension WHERE extname = 'ecaz';\""
             .to_owned()
@@ -102,7 +120,7 @@ sudo -u postgres bash -lc '
   else
     git reset --hard {r}
   fi
-  cargo pgrx install --sudo --release --pg-config /usr/bin/pg_config
+  cargo pgrx install --sudo --release --pg-config /usr/bin/pg_config{extension_features_arg}
   cargo build --release -p ecaz-cli
 '
 sudo install -Dm755 /var/lib/pgsql/build/ecaz/target/release/ecaz /usr/local/bin/ecaz
@@ -115,4 +133,34 @@ sudo systemctl restart postgresql
 fn shell_escape(s: &str) -> String {
     // Single-quote and escape any single quotes inside.
     format!("'{}'", s.replace('\'', "'\\''"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn install_script_omits_feature_flag_by_default() {
+        let script =
+            build_script_with_options("https://github.com/agent-ix/ecaz.git", "main", &[], true);
+
+        assert!(
+            script.contains("cargo pgrx install --sudo --release --pg-config /usr/bin/pg_config\n")
+        );
+        assert!(!script.contains("--features"));
+    }
+
+    #[test]
+    fn install_script_adds_extension_features() {
+        let script = build_script_with_options(
+            "https://github.com/agent-ix/ecaz.git",
+            "main",
+            &[String::from("rabitq-bf16")],
+            true,
+        );
+
+        assert!(script.contains(
+            "cargo pgrx install --sudo --release --pg-config /usr/bin/pg_config --features 'rabitq-bf16'"
+        ));
+    }
 }
