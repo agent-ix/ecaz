@@ -195,9 +195,13 @@ async fn remote_suite_script(
             shell_escape(region)
         )
     };
+    let simd_export = simd_mode
+        .map(|mode| format!("export ECAZ_SIMD={}; ", shell_escape(mode)))
+        .unwrap_or_default();
     let run_cmd = format!(
-        "cd {root}; export PATH=/usr/local/bin:$HOME/.cargo/bin:$PATH; {ecaz_bin} --database {db} --host /var/run/postgresql --user postgres --log-file {log} bench suite run --config {config} --manifest-output {manifest} --results-output {results}",
+        "cd {root}; export PATH=/usr/local/bin:$HOME/.cargo/bin:$PATH; {simd_export}{ecaz_bin} --database {db} --host /var/run/postgresql --user postgres --log-file {log} bench suite run --config {config} --manifest-output {manifest} --results-output {results}",
         root = shell_escape(remote_root),
+        simd_export = simd_export,
         ecaz_bin = shell_escape(ecaz_bin),
         db = shell_escape(database),
         log = shell_escape(&format!("{remote_artifacts}/suite-run.log")),
@@ -266,4 +270,51 @@ fn relative_to_repo(repo_root: &std::path::Path, path: &std::path::Path) -> Resu
 
 fn shell_escape(s: &str) -> String {
     format!("'{}'", s.replace('\'', "'\\''"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[tokio::test]
+    async fn remote_suite_script_exports_simd_for_cli_and_postgres() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock before unix epoch")
+            .as_nanos();
+        let repo_root = std::env::temp_dir().join(format!("ecaz-cloud-bench-test-{unique}"));
+        let config = repo_root.join("reviews/task-67/packet/artifacts/suite.json");
+        fs::create_dir_all(config.parent().expect("config parent")).expect("create config parent");
+        fs::write(&config, r#"{"name":"test","schema_version":1,"steps":[]}"#)
+            .expect("write config");
+        let artifacts = repo_root.join("reviews/task-67/packet/artifacts/scalar");
+
+        let script = remote_suite_script(
+            &repo_root,
+            &config,
+            &artifacts,
+            "postgres",
+            "/usr/local/bin/ecaz",
+            "s3://bucket/suite/run/",
+            None,
+            "us-west-2",
+            false,
+            Some("scalar"),
+        )
+        .await
+        .expect("build remote script");
+
+        assert!(script.contains("sudo systemctl set-environment ECAZ_SIMD='scalar'"));
+        assert!(script.contains("sudo systemctl restart postgresql"));
+        assert!(
+            script.contains(
+                "export PATH=/usr/local/bin:$HOME/.cargo/bin:$PATH; export ECAZ_SIMD='\\''scalar'\\''; '\\''/usr/local/bin/ecaz'\\''"
+            ),
+            "{script}"
+        );
+
+        fs::remove_dir_all(repo_root).expect("remove temp repo root");
+    }
 }
