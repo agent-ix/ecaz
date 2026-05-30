@@ -17,10 +17,13 @@ pub(super) fn train_single_level_centroid_plan(
         seed,
         SPIRE_DEFAULT_KMEANS_ITERATIONS,
     )?;
+    let assignments = common_training::assign_vectors_to_centroids(
+        "ec_spire",
+        &source_refs,
+        &model,
+    )?;
     let mut assignment_indexes = Vec::with_capacity(source_vectors.len());
-    for source in source_vectors {
-        let assignment_index =
-            common_training::assign_vector_to_centroid("ec_spire", source, &model)?;
+    for assignment_index in assignments {
         assignment_indexes.push(
             u32::try_from(assignment_index)
                 .map_err(|_| "ec_spire centroid assignment index exceeds u32".to_owned())?,
@@ -147,13 +150,15 @@ impl SpireBuildState {
             self.options.seed as u64,
             SPIRE_DEFAULT_KMEANS_ITERATIONS,
         )?;
+        let source_refs = self
+            .tuples
+            .iter()
+            .map(|tuple| tuple.source_vector.as_slice())
+            .collect::<Vec<_>>();
+        let centroid_indexes =
+            common_training::assign_vectors_to_centroids("ec_spire", &source_refs, &model)?;
         let mut assignment_indexes = Vec::with_capacity(self.tuples.len());
-        for tuple in &self.tuples {
-            let centroid_index = common_training::assign_vector_to_centroid(
-                "ec_spire",
-                &tuple.source_vector,
-                &model,
-            )?;
+        for centroid_index in centroid_indexes {
             assignment_indexes.push(
                 u32::try_from(centroid_index)
                     .map_err(|_| "ec_spire centroid assignment index exceeds u32".to_owned())?,

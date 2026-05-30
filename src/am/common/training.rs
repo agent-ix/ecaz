@@ -1,6 +1,7 @@
 use rand::Rng;
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
+use rayon::prelude::*;
 
 use crate::quant::{
     grouped_pq::{encode_grouped_pq, nearest_centroid_l2},
@@ -76,6 +77,25 @@ pub(crate) fn train_spherical_kmeans(
     seed: u64,
     max_iterations: usize,
 ) -> Result<SphericalKMeansModel, String> {
+    train_spherical_kmeans_parallel(
+        error_label,
+        source_vectors,
+        dimensions,
+        nlists,
+        seed,
+        max_iterations,
+    )
+}
+
+#[cfg(test)]
+fn train_spherical_kmeans_scalar(
+    error_label: &str,
+    source_vectors: &[&[f32]],
+    dimensions: usize,
+    nlists: usize,
+    seed: u64,
+    max_iterations: usize,
+) -> Result<SphericalKMeansModel, String> {
     if dimensions == 0 {
         return Err(format!(
             "{error_label} spherical k-means requires dimensions > 0"
@@ -141,6 +161,85 @@ pub(crate) fn train_spherical_kmeans(
     })
 }
 
+fn train_spherical_kmeans_parallel(
+    error_label: &str,
+    source_vectors: &[&[f32]],
+    dimensions: usize,
+    nlists: usize,
+    seed: u64,
+    max_iterations: usize,
+) -> Result<SphericalKMeansModel, String> {
+    if dimensions == 0 {
+        return Err(format!(
+            "{error_label} spherical k-means requires dimensions > 0"
+        ));
+    }
+    if source_vectors.is_empty() {
+        return Err(format!(
+            "{error_label} spherical k-means requires at least one source vector"
+        ));
+    }
+    if nlists == 0 {
+        return Err(format!(
+            "{error_label} spherical k-means requires at least one list"
+        ));
+    }
+
+    let samples = source_vectors
+        .par_iter()
+        .map(|source| normalize_vector(error_label, source, dimensions))
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut centroids = initial_centroids(&samples, nlists, seed);
+    let mut assignments = vec![usize::MAX; samples.len()];
+    let mut sums = vec![vec![0.0_f32; dimensions]; nlists];
+    let mut counts = vec![0_usize; nlists];
+
+    for iteration in 0..max_iterations {
+        sums.iter_mut().for_each(|sum| sum.fill(0.0));
+        counts.fill(0);
+
+        let next_assignments = samples
+            .par_iter()
+            .map(|sample| nearest_centroid(error_label, sample, &centroids))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let mut changed = false;
+        for (sample_index, (sample, &centroid_index)) in
+            samples.iter().zip(next_assignments.iter()).enumerate()
+        {
+            if assignments[sample_index] != centroid_index {
+                assignments[sample_index] = centroid_index;
+                changed = true;
+            }
+            counts[centroid_index] += 1;
+            for (dst, value) in sums[centroid_index].iter_mut().zip(sample.iter()) {
+                *dst += *value;
+            }
+        }
+
+        for centroid_index in 0..nlists {
+            if counts[centroid_index] == 0 {
+                let fallback_index =
+                    fallback_sample_index(seed, iteration, centroid_index, samples.len());
+                centroids[centroid_index].copy_from_slice(&samples[fallback_index]);
+                continue;
+            }
+
+            let normalized = normalize_vector(error_label, &sums[centroid_index], dimensions)?;
+            centroids[centroid_index].copy_from_slice(&normalized);
+        }
+
+        if !changed {
+            break;
+        }
+    }
+
+    Ok(SphericalKMeansModel {
+        dimensions,
+        centroids,
+    })
+}
+
 pub(crate) fn assign_vector_to_centroid(
     error_label: &str,
     source: &[f32],
@@ -148,6 +247,18 @@ pub(crate) fn assign_vector_to_centroid(
 ) -> Result<usize, String> {
     validate_assignable_vector(error_label, source, model.dimensions)?;
     nearest_centroid(error_label, source, &model.centroids)
+}
+
+pub(crate) fn assign_vectors_to_centroids(
+    error_label: &str,
+    sources: &[&[f32]],
+    model: &SphericalKMeansModel,
+) -> Result<Vec<usize>, String> {
+    let assignments = sources
+        .par_iter()
+        .map(|source| assign_vector_to_centroid(error_label, source, model))
+        .collect::<Vec<_>>();
+    assignments.into_iter().collect()
 }
 
 fn initial_centroids(samples: &[Vec<f32>], centroid_count: usize, seed: u64) -> Vec<Vec<f32>> {
@@ -283,6 +394,25 @@ pub fn train_grouped_pq4_model(
     train_size: usize,
     kmeans_iters: usize,
 ) -> Result<GroupedPq4Model, String> {
+    train_grouped_pq4_model_parallel(
+        source_vectors,
+        dimensions,
+        seed,
+        group_size,
+        train_size,
+        kmeans_iters,
+    )
+}
+
+#[cfg(test)]
+fn train_grouped_pq4_model_scalar(
+    source_vectors: &[&[f32]],
+    dimensions: usize,
+    seed: u64,
+    group_size: usize,
+    train_size: usize,
+    kmeans_iters: usize,
+) -> Result<GroupedPq4Model, String> {
     if source_vectors.is_empty() {
         return Err("grouped codebook training requires at least one source vector".to_owned());
     }
@@ -322,6 +452,64 @@ pub fn train_grouped_pq4_model(
             seed ^ (group_index as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15),
         )?);
     }
+
+    Ok(GroupedPq4Model {
+        codebooks,
+        group_count,
+        group_size,
+        transform_dim: transform.transform_dim,
+        signs: transform.signs,
+    })
+}
+
+fn train_grouped_pq4_model_parallel(
+    source_vectors: &[&[f32]],
+    dimensions: usize,
+    seed: u64,
+    group_size: usize,
+    train_size: usize,
+    kmeans_iters: usize,
+) -> Result<GroupedPq4Model, String> {
+    if source_vectors.is_empty() {
+        return Err("grouped codebook training requires at least one source vector".to_owned());
+    }
+
+    let transform = SrhtForwardTransform::for_dimensions(dimensions, seed);
+    if transform.transform_dim % group_size != 0 {
+        return Err(format!(
+            "transform dim {} is not divisible by group_size {group_size}",
+            transform.transform_dim
+        ));
+    }
+
+    let transformed = source_vectors
+        .par_iter()
+        .map(|vector| transform.apply(vector))
+        .collect::<Vec<_>>();
+    let group_count = transform.transform_dim / group_size;
+    let sample_count = train_size.min(transformed.len());
+    let sample_indices = sample_indices(
+        transformed.len(),
+        sample_count,
+        seed ^ 0xA5A5_5A5A_DEAD_BEEF,
+    );
+    let codebooks = (0..group_count)
+        .into_par_iter()
+        .map(|group_index| {
+            let mut samples = Vec::with_capacity(sample_count * group_size);
+            for &sample_index in &sample_indices {
+                let start = group_index * group_size;
+                let end = start + group_size;
+                samples.extend_from_slice(&transformed[sample_index][start..end]);
+            }
+            train_group_codebook(
+                &samples,
+                group_size,
+                kmeans_iters,
+                seed ^ (group_index as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15),
+            )
+        })
+        .collect::<Result<Vec<_>, _>>()?;
 
     Ok(GroupedPq4Model {
         codebooks,
@@ -473,8 +661,26 @@ fn centroid_slice_mut(
 
 #[cfg(test)]
 mod tests {
-    use super::{derive_grouped_pq4_code, train_grouped_pq4_model, SrhtForwardTransform};
+    use super::{
+        assign_vectors_to_centroids, derive_grouped_pq4_code, train_grouped_pq4_model,
+        train_grouped_pq4_model_scalar, train_spherical_kmeans, train_spherical_kmeans_scalar,
+        SphericalKMeansModel, SrhtForwardTransform,
+    };
     use crate::quant::grouped_pq::GROUPED_PQ_CENTROIDS;
+
+    fn seeded_vectors(count: usize, dimensions: usize, seed: u64) -> Vec<Vec<f32>> {
+        (0..count)
+            .map(|row| {
+                (0..dimensions)
+                    .map(|dim| {
+                        let phase =
+                            (seed as f32 * 0.013) + (row as f32 * 0.17) + (dim as f32 * 0.071);
+                        phase.sin() + (phase * 0.37).cos() + 0.125
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .collect()
+    }
 
     #[test]
     fn srht_forward_transform_pads_to_effective_dimension() {
@@ -511,5 +717,70 @@ mod tests {
         let source_refs: [&[f32]; 0] = [];
         let error = train_grouped_pq4_model(&source_refs, 16, 42, 4, 16, 3).unwrap_err();
         assert!(error.contains("source vector"));
+    }
+
+    #[test]
+    fn spherical_kmeans_parallel_matches_scalar_byte_for_byte() {
+        let shapes = [(17, 3, 2, 4), (31, 5, 4, 6), (40, 8, 7, 5), (24, 13, 9, 7)];
+
+        for seed in 0..4 {
+            for (rows, dimensions, nlists, iterations) in shapes {
+                let vectors = seeded_vectors(rows, dimensions, seed);
+                let refs = vectors.iter().map(Vec::as_slice).collect::<Vec<_>>();
+                let scalar = train_spherical_kmeans_scalar(
+                    "test", &refs, dimensions, nlists, seed, iterations,
+                )
+                .unwrap();
+                let parallel =
+                    train_spherical_kmeans("test", &refs, dimensions, nlists, seed, iterations)
+                        .unwrap();
+                assert_eq!(parallel, scalar, "seed={seed} dimensions={dimensions}");
+            }
+        }
+    }
+
+    #[test]
+    fn grouped_pq4_parallel_matches_scalar_byte_for_byte() {
+        let shapes = [
+            (32, 16, 4, 32, 4),
+            (48, 24, 8, 40, 5),
+            (64, 32, 8, 48, 3),
+            (24, 12, 4, 24, 6),
+        ];
+
+        for seed in 11..13 {
+            for (rows, dimensions, group_size, train_size, iterations) in shapes {
+                let vectors = seeded_vectors(rows, dimensions, seed);
+                let refs = vectors.iter().map(Vec::as_slice).collect::<Vec<_>>();
+                let scalar = train_grouped_pq4_model_scalar(
+                    &refs, dimensions, seed, group_size, train_size, iterations,
+                )
+                .unwrap();
+                let parallel = train_grouped_pq4_model(
+                    &refs, dimensions, seed, group_size, train_size, iterations,
+                )
+                .unwrap();
+                assert_eq!(parallel, scalar, "seed={seed} dimensions={dimensions}");
+            }
+        }
+    }
+
+    #[test]
+    fn batch_assignment_returns_lowest_error_index() {
+        let model = SphericalKMeansModel {
+            dimensions: 2,
+            centroids: vec![vec![1.0, 0.0], vec![0.0, 1.0]],
+        };
+        let valid = [1.0_f32, 0.0];
+        let too_short = [1.0_f32];
+        let non_finite = [1.0_f32, f32::NAN];
+        let sources = [
+            valid.as_slice(),
+            too_short.as_slice(),
+            non_finite.as_slice(),
+        ];
+
+        let error = assign_vectors_to_centroids("test", &sources, &model).unwrap_err();
+        assert!(error.contains("got 1, expected 2"));
     }
 }

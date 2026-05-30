@@ -35,13 +35,17 @@ pub(super) fn build_recursive_routing_hierarchy_draft(
             input.seed.wrapping_add(u64::from(parent_level)),
             SPIRE_DEFAULT_KMEANS_ITERATIONS,
         )?;
+        let child_centroids = current_children
+            .iter()
+            .map(|child| child.centroid.as_slice())
+            .collect::<Vec<_>>();
+        let centroid_indexes = common_training::assign_vectors_to_centroids(
+            "ec_spire recursive routing",
+            &child_centroids,
+            &model,
+        )?;
         let mut grouped_children = vec![Vec::new(); model.centroid_count()];
-        for child in current_children {
-            let centroid_index = common_training::assign_vector_to_centroid(
-                "ec_spire recursive routing",
-                &child.centroid,
-                &model,
-            )?;
+        for (child, centroid_index) in current_children.into_iter().zip(centroid_indexes) {
             grouped_children[centroid_index].push(child);
         }
 
