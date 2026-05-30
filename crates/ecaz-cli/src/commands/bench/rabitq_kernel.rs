@@ -201,9 +201,8 @@ fn bench_single_least_squares(
     let warmup = iterations.clamp(1, 64);
     let mut checksum = 0.0_f32;
     for i in 0..warmup {
-        checksum += prepared.estimate_ip_least_squares_scalar_only(black_box(
-            &codes[i % codes.len()],
-        ));
+        checksum +=
+            prepared.estimate_ip_least_squares_scalar_only(black_box(&codes[i % codes.len()]));
     }
     black_box(checksum);
 
