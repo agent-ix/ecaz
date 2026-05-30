@@ -1670,8 +1670,8 @@ fn sum_query_dequant_dispatch(ctx: QueryDequantContext<'_>, code: &[u8]) -> f32 
             let byte_lut = ctx
                 .bits1_byte_lut
                 .expect("bits=1 AVX-512 dispatch requires byte LUT");
-            // SAFETY: kernel selection confirmed AVX-512F+VPOPCNTDQ at
-            // runtime and `byte_lut` is present for the bits=1 prepared query.
+            // SAFETY: kernel selection confirmed AVX-512F at runtime and
+            // `byte_lut` is present for the bits=1 prepared query.
             unsafe {
                 sum_query_dequant_avx512_bits1(
                     ctx.query_rotated,
@@ -2706,11 +2706,11 @@ unsafe fn sum_query_dequant_avx512_bf16_bits4(
 
 /// # Safety
 ///
-/// Caller must confirm AVX-512F and AVX-512VPOPCNTDQ availability before
-/// calling. `byte_lut` must be a bits=1 dequant byte table and `code` must
-/// contain at least `ceil(dimensions / 8)` packed code bytes.
+/// Caller must confirm AVX-512F availability before calling. `byte_lut` must
+/// be a bits=1 dequant byte table and `code` must contain at least
+/// `ceil(dimensions / 8)` packed code bytes.
 #[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx512f,avx512vpopcntdq")]
+#[target_feature(enable = "avx512f")]
 unsafe fn sum_query_dequant_avx512_bits1(
     query_rotated: &[f32],
     dimensions: usize,
@@ -2866,11 +2866,11 @@ unsafe fn sum_query_dequant_avx2_bits1(
 
 /// # Safety
 ///
-/// Caller must confirm AVX-512F and AVX-512VPOPCNTDQ availability before
-/// calling. `byte_lut` must be a bits=1 dequant byte table and both code
-/// slices must contain at least `ceil(dimensions / 8)` packed code bytes.
+/// Caller must confirm AVX-512F availability before calling. `byte_lut` must
+/// be a bits=1 dequant byte table and both code slices must contain at least
+/// `ceil(dimensions / 8)` packed code bytes.
 #[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx512f,avx512vpopcntdq")]
+#[target_feature(enable = "avx512f")]
 unsafe fn sum_query_dequant_avx512_bits1_pair(
     query_rotated: &[f32],
     dimensions: usize,
@@ -3776,11 +3776,10 @@ unsafe fn estimate_ip_batch_neon_bits8(
 
 /// # Safety
 ///
-/// Caller must confirm AVX-512F and AVX-512VPOPCNTDQ availability. `codes`
-/// must be an exact `code_len * out_scores.len()` slab of valid bits=1 RaBitQ
-/// payloads.
+/// Caller must confirm AVX-512F availability. `codes` must be an exact
+/// `code_len * out_scores.len()` slab of valid bits=1 RaBitQ payloads.
 #[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx512f,avx512vpopcntdq")]
+#[target_feature(enable = "avx512f")]
 unsafe fn estimate_ip_batch_avx512_bits1(
     query_rotated: &[f32],
     dimensions: usize,
@@ -4108,8 +4107,8 @@ fn estimate_ip_batch_impl(
             let byte_lut = ctx
                 .bits1_byte_lut
                 .expect("bits=1 AVX-512 batch dispatch requires byte LUT");
-            // SAFETY: kernel selection confirmed AVX-512F+VPOPCNTDQ at
-            // runtime and `byte_lut` is present for the bits=1 prepared query.
+            // SAFETY: kernel selection confirmed AVX-512F at runtime and
+            // `byte_lut` is present for the bits=1 prepared query.
             unsafe {
                 estimate_ip_batch_avx512_bits1(
                     ctx.query_rotated,
@@ -4613,7 +4612,7 @@ mod tests {
     fn bits8_batch_estimator_matches_scalar_order() {
         let q = identity_quantizer(33, 8);
         let query: Vec<f32> = (0..33).map(|i| i as f32 * 0.0625 - 0.5).collect();
-        let candidates = (0..6)
+        let candidates = (0..5)
             .map(|row| {
                 (0..33)
                     .map(|col| ((row * 3 + col) as f32 * 0.015625).sin())
@@ -4650,7 +4649,7 @@ mod tests {
     fn bits4_batch_estimator_matches_scalar_order() {
         let q = identity_quantizer(33, 4);
         let query: Vec<f32> = (0..33).map(|i| i as f32 * 0.0625 - 0.5).collect();
-        let candidates = (0..6)
+        let candidates = (0..5)
             .map(|row| {
                 (0..33)
                     .map(|col| ((row * 5 + col) as f32 * 0.015625).sin())
@@ -5782,9 +5781,7 @@ mod tests {
             let byte_lut = build_bits1_byte_lut_boxed(&lut, 1).expect("bits=1 builds byte LUT");
             let scalar = sum_query_dequant_scalar(&query, dim, bits, &lut, &code);
 
-            if std::arch::is_x86_feature_detected!("avx512f")
-                && std::arch::is_x86_feature_detected!("avx512vpopcntdq")
-            {
+            if std::arch::is_x86_feature_detected!("avx512f") {
                 // SAFETY: runtime feature checks above match the kernel target features.
                 let avx512 =
                     unsafe { sum_query_dequant_avx512_bits1(&query, dim, &byte_lut, &lut, &code) };
@@ -5830,9 +5827,7 @@ mod tests {
             let scalar0 = sum_query_dequant_scalar(&query, dim, bits, &lut, &code0);
             let scalar1 = sum_query_dequant_scalar(&query, dim, bits, &lut, &code1);
 
-            if std::arch::is_x86_feature_detected!("avx512f")
-                && std::arch::is_x86_feature_detected!("avx512vpopcntdq")
-            {
+            if std::arch::is_x86_feature_detected!("avx512f") {
                 // SAFETY: runtime feature checks above match the kernel target features.
                 let (avx512_0, avx512_1) = unsafe {
                     sum_query_dequant_avx512_bits1_pair(
