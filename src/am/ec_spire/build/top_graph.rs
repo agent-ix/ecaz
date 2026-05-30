@@ -44,6 +44,8 @@ pub(super) struct SpireTopGraphBuildDraft {
     pub(super) stats: crate::am::VamanaBuildStats,
 }
 
+const SPIRE_TOP_GRAPH_DISTANCE_MATRIX_MAX_BYTES: usize = 64 * 1024 * 1024;
+
 pub(super) fn build_spire_top_graph_draft_from_routing_object(
     routing_object: &SpireRoutingPartitionObject,
     params: SpireTopGraphBuildParams,
@@ -118,14 +120,8 @@ pub(super) fn build_spire_top_graph_draft(
         .map_err(|_| "ec_spire top graph degree exceeds usize".to_owned())?;
     let build_list_size = usize::try_from(input.build_list_size)
         .map_err(|_| "ec_spire top graph build list size exceeds usize".to_owned())?;
-    let distance_offset = max_centroid_norm_sq(&input.nodes);
-    let dist = |a: u32, b: u32| -> f32 {
-        let a = &input.nodes[a as usize].centroid;
-        let b = &input.nodes[b as usize].centroid;
-        // Vamana receives an IP-derived pseudo-distance: order-preserving for
-        // centroid closeness, but not a metric distance.
-        (distance_offset - inner_product(a, b)).max(0.0)
-    };
+    let distances = SpireTopGraphDistances::new(&input.nodes);
+    let dist = |a: u32, b: u32| -> f32 { distances.distance(a, b) };
     let entry_node = crate::am::approximate_medoid(
         node_count,
         build_list_size,
@@ -231,4 +227,76 @@ fn max_centroid_norm_sq(nodes: &[SpireTopGraphNodeInput]) -> f32 {
         .iter()
         .map(|node| inner_product(&node.centroid, &node.centroid))
         .fold(0.0, f32::max)
+}
+
+enum SpireTopGraphDistances<'a> {
+    Matrix {
+        node_count: usize,
+        distances: Vec<f32>,
+    },
+    Direct {
+        nodes: &'a [SpireTopGraphNodeInput],
+        distance_offset: f32,
+    },
+}
+
+impl<'a> SpireTopGraphDistances<'a> {
+    fn new(nodes: &'a [SpireTopGraphNodeInput]) -> Self {
+        let node_count = nodes.len();
+        let Some(distance_count) = node_count.checked_mul(node_count) else {
+            return Self::direct(nodes);
+        };
+        let Some(distance_bytes) = distance_count.checked_mul(std::mem::size_of::<f32>()) else {
+            return Self::direct(nodes);
+        };
+        if distance_bytes > SPIRE_TOP_GRAPH_DISTANCE_MATRIX_MAX_BYTES {
+            return Self::direct(nodes);
+        }
+
+        let distance_offset = max_centroid_norm_sq(nodes);
+        let mut distances = vec![0.0; distance_count];
+        for a in 0..node_count {
+            for b in 0..node_count {
+                distances[a * node_count + b] =
+                    spire_top_graph_direct_distance(nodes, distance_offset, a, b);
+            }
+        }
+        Self::Matrix {
+            node_count,
+            distances,
+        }
+    }
+
+    fn direct(nodes: &'a [SpireTopGraphNodeInput]) -> Self {
+        Self::Direct {
+            nodes,
+            distance_offset: max_centroid_norm_sq(nodes),
+        }
+    }
+
+    fn distance(&self, a: u32, b: u32) -> f32 {
+        match self {
+            Self::Matrix {
+                node_count,
+                distances,
+            } => distances[a as usize * *node_count + b as usize],
+            Self::Direct {
+                nodes,
+                distance_offset,
+            } => spire_top_graph_direct_distance(nodes, *distance_offset, a as usize, b as usize),
+        }
+    }
+}
+
+fn spire_top_graph_direct_distance(
+    nodes: &[SpireTopGraphNodeInput],
+    distance_offset: f32,
+    a: usize,
+    b: usize,
+) -> f32 {
+    let a = &nodes[a].centroid;
+    let b = &nodes[b].centroid;
+    // Vamana receives an IP-derived pseudo-distance: order-preserving for
+    // centroid closeness, but not a metric distance.
+    (distance_offset - inner_product(a, b)).max(0.0)
 }

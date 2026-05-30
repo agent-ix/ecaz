@@ -386,9 +386,14 @@ impl BuildState {
                 .unwrap_or(ItemPointer::INVALID);
         }
 
+        let source_refs = self
+            .heap_tuples
+            .iter()
+            .map(|tuple| tuple.source_vector.as_slice())
+            .collect::<Vec<_>>();
+        let list_ids = training::assign_vectors_to_centroids(&source_refs, model)?;
         let mut tuple_indices_by_list = vec![Vec::new(); nlists];
-        for (tuple_index, tuple) in self.heap_tuples.iter().enumerate() {
-            let list_id = training::assign_vector_to_centroid(&tuple.source_vector, model)?;
+        for (tuple_index, list_id) in list_ids.into_iter().enumerate() {
             tuple_indices_by_list[list_id].push(tuple_index);
         }
 

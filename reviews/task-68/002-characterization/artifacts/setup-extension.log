@@ -1,0 +1,14 @@
+CREATE EXTENSION
+ extname | extversion 
+---------+------------
+ ecaz    | 0.1.1
+(1 row)
+
+   amname   
+------------
+ ec_diskann
+ ec_hnsw
+ ec_ivf
+ ec_spire
+(4 rows)
+

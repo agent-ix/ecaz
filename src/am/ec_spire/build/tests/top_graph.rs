@@ -58,6 +58,27 @@
     }
 
     #[test]
+    fn top_graph_distance_matrix_matches_direct_distance() {
+        let nodes = vec![
+            top_graph_node(11, 0, vec![1.0, 0.0, 0.25]),
+            top_graph_node(12, 1, vec![0.8, 0.2, -0.5]),
+            top_graph_node(13, 2, vec![-1.0, 0.0, 0.75]),
+            top_graph_node(14, 3, vec![-0.8, 0.2, -0.25]),
+        ];
+        let distance_offset = super::max_centroid_norm_sq(&nodes);
+        let distances = super::SpireTopGraphDistances::new(&nodes);
+
+        for a in 0..nodes.len() {
+            for b in 0..nodes.len() {
+                assert_eq!(
+                    distances.distance(a as u32, b as u32),
+                    super::spire_top_graph_direct_distance(&nodes, distance_offset, a, b)
+                );
+            }
+        }
+    }
+
+    #[test]
     fn top_graph_builds_from_root_routing_object() {
         let root = SpireRoutingPartitionObject::root(
             50,

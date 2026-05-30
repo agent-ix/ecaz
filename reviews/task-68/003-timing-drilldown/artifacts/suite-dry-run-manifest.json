@@ -1,0 +1,91 @@
+{
+  "suite": "task68-spire-timing-drilldown",
+  "schema_version": 1,
+  "config": "reviews/task-68/003-timing-drilldown/artifacts/suite.json",
+  "config_sha256": "dbaa816c25e14dc447cf0b6fe8aca93e92bbf1887cca22b1f3b0c4237195b757",
+  "dry_run": true,
+  "generated_at_unix_ms": 1780115697994,
+  "connection": {
+    "database": "task68_spire_char",
+    "host": "/Users/peter/.pgrx",
+    "port": 28818,
+    "user": null,
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "precheck-host-and-table",
+      "kind": "raw",
+      "command": [
+        "--database",
+        "task68_spire_char",
+        "--host",
+        "/Users/peter/.pgrx",
+        "--port",
+        "28818",
+        "dev",
+        "sql",
+        "--pg",
+        "18",
+        "--db",
+        "task68_spire_char",
+        "--socket-dir",
+        "/Users/peter/.pgrx",
+        "--raw",
+        "--sql",
+        "SELECT now() AS captured_at, version() AS postgres_version, current_setting('shared_buffers') AS shared_buffers, current_setting('maintenance_work_mem') AS maintenance_work_mem; SELECT count(*) AS corpus_rows FROM task68_spire_100k_load_corpus; SELECT extname, extversion FROM pg_extension WHERE extname = 'ecaz'; SELECT amname FROM pg_am WHERE amname = 'ec_spire';",
+        "--log-output",
+        "reviews/task-68/003-timing-drilldown/artifacts/precheck-host-and-table.log"
+      ],
+      "selected": true,
+      "tags": [
+        "setup",
+        "precheck",
+        "task68",
+        "spire"
+      ],
+      "expected_artifacts": [
+        "reviews/task-68/003-timing-drilldown/artifacts/precheck-host-and-table.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "create-100k-spire-drilldown-index",
+      "kind": "raw",
+      "command": [
+        "--database",
+        "task68_spire_char",
+        "--host",
+        "/Users/peter/.pgrx",
+        "--port",
+        "28818",
+        "dev",
+        "sql",
+        "--pg",
+        "18",
+        "--db",
+        "task68_spire_char",
+        "--socket-dir",
+        "/Users/peter/.pgrx",
+        "--raw",
+        "--sql",
+        "SET client_min_messages TO notice; DROP INDEX IF EXISTS task68_spire_100k_profile_idx; DROP INDEX IF EXISTS task68_spire_100k_drilldown_idx; CREATE INDEX task68_spire_100k_drilldown_idx ON task68_spire_100k_load_corpus USING ec_spire (embedding ecvector_spire_ip_ops) WITH (nlists = 128, recursive_fanout = 8, nprobe = 24, rerank_width = 25, storage_format = 'turboquant', boundary_replica_count = 0, top_graph_enabled = 1, top_graph_degree = 32, top_graph_build_list_size = 100, top_graph_search_list_size = 16);",
+        "--log-output",
+        "reviews/task-68/003-timing-drilldown/artifacts/create-100k-spire-drilldown-index.log"
+      ],
+      "selected": true,
+      "tags": [
+        "create-index",
+        "ec_real_100k",
+        "spire",
+        "turboquant",
+        "task68",
+        "drilldown"
+      ],
+      "expected_artifacts": [
+        "reviews/task-68/003-timing-drilldown/artifacts/create-100k-spire-drilldown-index.log"
+      ],
+      "status": "dry-run"
+    }
+  ]
+}

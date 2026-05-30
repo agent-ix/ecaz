@@ -44,6 +44,13 @@ pub(super) fn assign_vector_to_centroid(
     common_training::assign_vector_to_centroid("ec_ivf", source, model)
 }
 
+pub(super) fn assign_vectors_to_centroids(
+    sources: &[&[f32]],
+    model: &SphericalKMeansModel,
+) -> Result<Vec<usize>, String> {
+    common_training::assign_vectors_to_centroids("ec_ivf", sources, model)
+}
+
 #[cfg(test)]
 mod tests {
     use super::{

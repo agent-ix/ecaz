@@ -1,0 +1,142 @@
+{
+  "suite": "task68-spire-zero-replica-fast-path-measurement",
+  "schema_version": 1,
+  "config": "reviews/task-68/005-zero-replica-fast-path-measurement/artifacts/suite.json",
+  "config_sha256": "e104c8e97e2560483d04343051f399d9cc87c7dac7d7311a14a71c6b5f6bff58",
+  "dry_run": false,
+  "generated_at_unix_ms": 1780116655630,
+  "connection": {
+    "database": "task68_spire_char",
+    "host": "/Users/peter/.pgrx",
+    "port": 28818,
+    "user": null,
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "precheck-host-and-tables",
+      "kind": "raw",
+      "command": [
+        "--database",
+        "task68_spire_char",
+        "--host",
+        "/Users/peter/.pgrx",
+        "--port",
+        "28818",
+        "dev",
+        "sql",
+        "--pg",
+        "18",
+        "--db",
+        "task68_spire_char",
+        "--socket-dir",
+        "/Users/peter/.pgrx",
+        "--raw",
+        "--sql",
+        "SELECT now() AS captured_at, version() AS postgres_version, current_setting('shared_buffers') AS shared_buffers, current_setting('maintenance_work_mem') AS maintenance_work_mem; SELECT count(*) AS corpus_10k_rows FROM task68_spire_10k_load_corpus; SELECT count(*) AS corpus_100k_rows FROM task68_spire_100k_load_corpus; SELECT extname, extversion FROM pg_extension WHERE extname = 'ecaz'; SELECT amname FROM pg_am WHERE amname = 'ec_spire';",
+        "--log-output",
+        "reviews/task-68/005-zero-replica-fast-path-measurement/artifacts/precheck-host-and-tables.log"
+      ],
+      "selected": true,
+      "tags": [
+        "setup",
+        "precheck",
+        "task68",
+        "spire",
+        "zero-replica-fast-path"
+      ],
+      "expected_artifacts": [
+        "reviews/task-68/005-zero-replica-fast-path-measurement/artifacts/precheck-host-and-tables.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1780116655630,
+      "finished_at_unix_ms": 1780116655998,
+      "duration_ms": 368,
+      "exit_code": 0
+    },
+    {
+      "name": "create-10k-spire-fastpath-index",
+      "kind": "raw",
+      "command": [
+        "--database",
+        "task68_spire_char",
+        "--host",
+        "/Users/peter/.pgrx",
+        "--port",
+        "28818",
+        "dev",
+        "sql",
+        "--pg",
+        "18",
+        "--db",
+        "task68_spire_char",
+        "--socket-dir",
+        "/Users/peter/.pgrx",
+        "--raw",
+        "--sql",
+        "SET client_min_messages TO notice; DROP INDEX IF EXISTS task68_spire_10k_load_turboquant_idx; DROP INDEX IF EXISTS task68_spire_10k_profile_idx; DROP INDEX IF EXISTS task68_spire_10k_drilldown_idx; DROP INDEX IF EXISTS task68_spire_10k_fastpath_idx; CREATE INDEX task68_spire_10k_fastpath_idx ON task68_spire_10k_load_corpus USING ec_spire (embedding ecvector_spire_ip_ops) WITH (nlists = 32, recursive_fanout = 8, nprobe = 24, rerank_width = 25, storage_format = 'turboquant', boundary_replica_count = 0, top_graph_enabled = 1, top_graph_degree = 32, top_graph_build_list_size = 100, top_graph_search_list_size = 16);",
+        "--log-output",
+        "reviews/task-68/005-zero-replica-fast-path-measurement/artifacts/create-10k-spire-fastpath-index.log"
+      ],
+      "selected": true,
+      "tags": [
+        "create-index",
+        "ec_real_10k",
+        "spire",
+        "turboquant",
+        "task68",
+        "zero-replica-fast-path"
+      ],
+      "expected_artifacts": [
+        "reviews/task-68/005-zero-replica-fast-path-measurement/artifacts/create-10k-spire-fastpath-index.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1780116655998,
+      "finished_at_unix_ms": 1780116656407,
+      "duration_ms": 408,
+      "exit_code": 0
+    },
+    {
+      "name": "create-100k-spire-fastpath-index",
+      "kind": "raw",
+      "command": [
+        "--database",
+        "task68_spire_char",
+        "--host",
+        "/Users/peter/.pgrx",
+        "--port",
+        "28818",
+        "dev",
+        "sql",
+        "--pg",
+        "18",
+        "--db",
+        "task68_spire_char",
+        "--socket-dir",
+        "/Users/peter/.pgrx",
+        "--raw",
+        "--sql",
+        "SET client_min_messages TO notice; DROP INDEX IF EXISTS task68_spire_100k_load_turboquant_idx; DROP INDEX IF EXISTS task68_spire_100k_profile_idx; DROP INDEX IF EXISTS task68_spire_100k_drilldown_idx; DROP INDEX IF EXISTS task68_spire_100k_fastpath_idx; CREATE INDEX task68_spire_100k_fastpath_idx ON task68_spire_100k_load_corpus USING ec_spire (embedding ecvector_spire_ip_ops) WITH (nlists = 128, recursive_fanout = 8, nprobe = 24, rerank_width = 25, storage_format = 'turboquant', boundary_replica_count = 0, top_graph_enabled = 1, top_graph_degree = 32, top_graph_build_list_size = 100, top_graph_search_list_size = 16);",
+        "--log-output",
+        "reviews/task-68/005-zero-replica-fast-path-measurement/artifacts/create-100k-spire-fastpath-index.log"
+      ],
+      "selected": true,
+      "tags": [
+        "create-index",
+        "ec_real_100k",
+        "spire",
+        "turboquant",
+        "task68",
+        "zero-replica-fast-path"
+      ],
+      "expected_artifacts": [
+        "reviews/task-68/005-zero-replica-fast-path-measurement/artifacts/create-100k-spire-fastpath-index.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1780116656407,
+      "finished_at_unix_ms": 1780116659801,
+      "duration_ms": 3393,
+      "exit_code": 0
+    }
+  ]
+}

@@ -1,0 +1,83 @@
+{
+  "name": "task68-spire-top-graph-cache-measurement",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-68/007-top-graph-cache-measurement/artifacts",
+  "defaults": {
+    "bits": 4,
+    "seed": 42,
+    "socket_dir": "/Users/peter/.pgrx",
+    "pg": 18,
+    "profile": "ec_spire"
+  },
+  "steps": [
+    {
+      "kind": "raw",
+      "name": "precheck-host-and-tables",
+      "tags": ["setup", "precheck", "task68", "spire", "top-graph-cache"],
+      "args": [
+        "dev",
+        "sql",
+        "--pg",
+        "18",
+        "--db",
+        "task68_spire_char",
+        "--socket-dir",
+        "/Users/peter/.pgrx",
+        "--raw",
+        "--sql",
+        "SELECT now() AS captured_at, version() AS postgres_version, current_setting('shared_buffers') AS shared_buffers, current_setting('maintenance_work_mem') AS maintenance_work_mem; SELECT count(*) AS corpus_10k_rows FROM task68_spire_10k_load_corpus; SELECT count(*) AS corpus_100k_rows FROM task68_spire_100k_load_corpus; SELECT extname, extversion FROM pg_extension WHERE extname = 'ecaz'; SELECT amname FROM pg_am WHERE amname = 'ec_spire';",
+        "--log-output",
+        "reviews/task-68/007-top-graph-cache-measurement/artifacts/precheck-host-and-tables.log"
+      ],
+      "expected_artifacts": [
+        "reviews/task-68/007-top-graph-cache-measurement/artifacts/precheck-host-and-tables.log"
+      ]
+    },
+    {
+      "kind": "raw",
+      "name": "create-10k-spire-topgraph-cache-index",
+      "tags": ["create-index", "ec_real_10k", "spire", "turboquant", "task68", "top-graph-cache"],
+      "args": [
+        "dev",
+        "sql",
+        "--pg",
+        "18",
+        "--db",
+        "task68_spire_char",
+        "--socket-dir",
+        "/Users/peter/.pgrx",
+        "--raw",
+        "--sql",
+        "SET client_min_messages TO notice; DROP INDEX IF EXISTS task68_spire_10k_load_turboquant_idx; DROP INDEX IF EXISTS task68_spire_10k_profile_idx; DROP INDEX IF EXISTS task68_spire_10k_drilldown_idx; DROP INDEX IF EXISTS task68_spire_10k_fastpath_idx; DROP INDEX IF EXISTS task68_spire_10k_topgraph_cache_idx; CREATE INDEX task68_spire_10k_topgraph_cache_idx ON task68_spire_10k_load_corpus USING ec_spire (embedding ecvector_spire_ip_ops) WITH (nlists = 32, recursive_fanout = 8, nprobe = 24, rerank_width = 25, storage_format = 'turboquant', boundary_replica_count = 0, top_graph_enabled = 1, top_graph_degree = 32, top_graph_build_list_size = 100, top_graph_search_list_size = 16);",
+        "--log-output",
+        "reviews/task-68/007-top-graph-cache-measurement/artifacts/create-10k-spire-topgraph-cache-index.log"
+      ],
+      "expected_artifacts": [
+        "reviews/task-68/007-top-graph-cache-measurement/artifacts/create-10k-spire-topgraph-cache-index.log"
+      ]
+    },
+    {
+      "kind": "raw",
+      "name": "create-100k-spire-topgraph-cache-index",
+      "tags": ["create-index", "ec_real_100k", "spire", "turboquant", "task68", "top-graph-cache"],
+      "args": [
+        "dev",
+        "sql",
+        "--pg",
+        "18",
+        "--db",
+        "task68_spire_char",
+        "--socket-dir",
+        "/Users/peter/.pgrx",
+        "--raw",
+        "--sql",
+        "SET client_min_messages TO notice; DROP INDEX IF EXISTS task68_spire_100k_load_turboquant_idx; DROP INDEX IF EXISTS task68_spire_100k_profile_idx; DROP INDEX IF EXISTS task68_spire_100k_drilldown_idx; DROP INDEX IF EXISTS task68_spire_100k_fastpath_idx; DROP INDEX IF EXISTS task68_spire_100k_topgraph_cache_idx; CREATE INDEX task68_spire_100k_topgraph_cache_idx ON task68_spire_100k_load_corpus USING ec_spire (embedding ecvector_spire_ip_ops) WITH (nlists = 128, recursive_fanout = 8, nprobe = 24, rerank_width = 25, storage_format = 'turboquant', boundary_replica_count = 0, top_graph_enabled = 1, top_graph_degree = 32, top_graph_build_list_size = 100, top_graph_search_list_size = 16);",
+        "--log-output",
+        "reviews/task-68/007-top-graph-cache-measurement/artifacts/create-100k-spire-topgraph-cache-index.log"
+      ],
+      "expected_artifacts": [
+        "reviews/task-68/007-top-graph-cache-measurement/artifacts/create-100k-spire-topgraph-cache-index.log"
+      ]
+    }
+  ]
+}
