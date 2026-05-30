@@ -256,6 +256,10 @@ Committed reusable suites live under [crates/ecaz-cli/suites](/Users/peter/dev/t
 - `profile-ivf-50k.json`: mid-scale IVF lane.
 - `profile-ivf-100k.json`: standard 64 GiB box IVF lane.
 - `profile-ivf-1m.json`: opt-in scale IVF lane with suite-driven fetch + prepare + chunked load.
+- `current/m5-local.json`: promoted current Apple Silicon M5 local lane.
+- `current/intel-local.json`: promoted current local Intel desktop lane.
+- `current/aws-intel.json`: promoted current AWS Intel lane.
+- `current/aws-graviton.json`: promoted current AWS Graviton lane.
 
 For a single repeatable entrypoint, use [scripts/run_benchmark_profile.sh](/Users/peter/dev/tqvector/scripts/run_benchmark_profile.sh):
 
@@ -365,6 +369,27 @@ SHA256, redacted connection target, selected steps, expanded commands, expected
 artifacts, status, timestamps, duration, and exit code. By default execution
 stops on the first failed selected step; add `--continue-on-error` when a sweep
 should keep going after failures.
+
+Use `--artifact-dir <path>` to run a reusable suite against a task-local review
+packet or a promoted current lane without editing the checked-in config. When a
+suite has `artifact_dir`, omitted routine log paths for load, recall, latency,
+storage, compare, sidecar, spire-pipeline, cross-am, and explain steps are
+filled from that directory. Raw steps may use `${artifact_dir}` in `args` and
+`expected_artifacts`.
+
+Current benchmark lanes live under `benchmarks/current/<lane>/` and use the
+configs under `crates/ecaz-cli/suites/current/`:
+
+```sh
+ecaz bench suite audit --config crates/ecaz-cli/suites/current/m5-local.json
+
+ecaz --database tqvector_bench --host /Users/peter/.pgrx --port 28818 \
+  bench suite run \
+  --config crates/ecaz-cli/suites/current/m5-local.json \
+  --artifact-dir benchmarks/current/m5-local/artifacts \
+  --manifest-output benchmarks/current/m5-local/suite-manifest.json \
+  --results-output benchmarks/current/m5-local/results.jsonl
+```
 
 During optimization, use `--only` to target a narrow slice while preserving the
 same config, or `--only-tag` to target categories of steps:

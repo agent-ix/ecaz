@@ -1,0 +1,76 @@
+{
+  "name": "current-aws-graviton",
+  "schema_version": 1,
+  "artifact_dir": "benchmarks/current/aws-graviton/artifacts",
+  "defaults": {
+    "pg": 18,
+    "socket_dir": "/var/run/postgresql",
+    "bits": 4,
+    "seed": 42,
+    "queries_limit": 200,
+    "iterations": 200,
+    "force_index": true,
+    "sample_backend_memory": true,
+    "memory_sample_interval_ms": 25
+  },
+  "steps": [
+    {
+      "kind": "raw",
+      "name": "precheck-host",
+      "tags": ["setup", "precheck", "current", "aws-graviton"],
+      "args": [
+        "dev",
+        "sql",
+        "--pg",
+        "18",
+        "--db",
+        "postgres",
+        "--socket-dir",
+        "/var/run/postgresql",
+        "--raw",
+        "--sql",
+        "SELECT now() AS captured_at, version() AS postgres_version, current_setting('shared_buffers') AS shared_buffers, current_setting('work_mem') AS work_mem, current_setting('maintenance_work_mem') AS maintenance_work_mem, current_setting('effective_cache_size') AS effective_cache_size; SELECT left(pg_read_file('/proc/cpuinfo', 0, 20000), 20000) AS cpuinfo_prefix; SELECT left(pg_read_file('/proc/meminfo', 0, 12000), 12000) AS meminfo_prefix;",
+        "--log-output",
+        "${artifact_dir}/precheck-host.log"
+      ],
+      "expected_artifacts": ["${artifact_dir}/precheck-host.log"]
+    },
+    {
+      "kind": "load",
+      "name": "load-100k-diskann-default",
+      "tags": ["load", "current", "aws-graviton", "ec_real_100k", "diskann"],
+      "prefix": "current_aws_graviton_real100k_diskann",
+      "profile": "ec_diskann",
+      "corpus_file": "/var/lib/pgsql/18/datasets/staged-current/ec_real_100k_corpus.tsv",
+      "queries_file": "/var/lib/pgsql/18/datasets/staged-current/ec_real_100k_queries.tsv",
+      "manifest_file": "/var/lib/pgsql/18/datasets/staged-current/ec_real_100k_manifest.json",
+      "allow_manifest_mismatch": true
+    },
+    {
+      "kind": "recall",
+      "name": "recall-100k-diskann-list-sweep",
+      "tags": ["recall", "current", "aws-graviton", "ec_real_100k", "diskann"],
+      "prefix": "current_aws_graviton_real100k_diskann",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [64, 128, 200, 400, 800]
+    },
+    {
+      "kind": "latency",
+      "name": "latency-100k-diskann-list-sweep",
+      "tags": ["latency", "current", "aws-graviton", "ec_real_100k", "diskann"],
+      "prefix": "current_aws_graviton_real100k_diskann",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [64, 128, 200, 400, 800],
+      "concurrency": 1,
+      "cache_state": "post_recall_warm"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-100k-diskann-default",
+      "tags": ["storage", "current", "aws-graviton", "ec_real_100k", "diskann"],
+      "prefix": "current_aws_graviton_real100k_diskann"
+    }
+  ]
+}

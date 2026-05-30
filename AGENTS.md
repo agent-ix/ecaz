@@ -107,6 +107,13 @@ packet by path when one exists. See
 `spec/non-functional/NFR-007-benchmark-provenance.md` for the normative
 storage rule.
 
+Promoted current benchmark state lives under `benchmarks/current/<lane>/`.
+Those lanes are intentionally mutable indexes for the accepted current result
+on each host class (`m5-local`, `intel-local`, `aws-intel`, `aws-graviton`).
+Do not use a current lane as the only evidence source: its `manifest.md` must
+cite the immutable source packet, head SHA, standard suite config, and raw
+artifacts used for promotion.
+
 ### Benchmark Runner: `ecaz bench suite` Only
 
 **All benchmark matrices, sweeps, and multi-step measurement runs MUST be
@@ -118,6 +125,9 @@ into the owning packet.** Do not write new bash sweepers, per-packet
 - The canonical runner lives in `crates/ecaz-cli/src/commands/bench/suite.rs`
   and supports dry-run, resume, audit, status, report, thresholds, and a
   structured `suite-manifest.json` + `results.jsonl`.
+- Reusable standard configs live under `crates/ecaz-cli/suites/`, with current
+  lane configs under `crates/ecaz-cli/suites/current/`. Prefer running those
+  configs with `--artifact-dir` instead of copying task-local suite JSON.
 - If `ecaz bench suite` is missing a step type, profile, or option you
   need, extend the suite runner in `ecaz-cli` instead of forking the
   workflow into a script. Land that extension as its own commit before

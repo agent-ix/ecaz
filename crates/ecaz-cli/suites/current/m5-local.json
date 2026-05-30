@@ -1,0 +1,125 @@
+{
+  "name": "current-m5-local",
+  "schema_version": 1,
+  "artifact_dir": "benchmarks/current/m5-local/artifacts",
+  "defaults": {
+    "pg": 18,
+    "socket_dir": "/Users/peter/.pgrx",
+    "bits": 4,
+    "seed": 42,
+    "queries_limit": 200,
+    "iterations": 200,
+    "force_index": true,
+    "sample_backend_memory": true,
+    "memory_sample_interval_ms": 25
+  },
+  "steps": [
+    {
+      "kind": "raw",
+      "name": "precheck-host",
+      "tags": ["setup", "precheck", "current", "m5-local"],
+      "args": [
+        "dev",
+        "sql",
+        "--pg",
+        "18",
+        "--db",
+        "postgres",
+        "--socket-dir",
+        "/Users/peter/.pgrx",
+        "--raw",
+        "--sql",
+        "SELECT now() AS captured_at, version() AS postgres_version, current_setting('shared_buffers') AS shared_buffers, current_setting('work_mem') AS work_mem, current_setting('maintenance_work_mem') AS maintenance_work_mem, current_setting('effective_cache_size') AS effective_cache_size;",
+        "--log-output",
+        "${artifact_dir}/precheck-host.log"
+      ],
+      "expected_artifacts": ["${artifact_dir}/precheck-host.log"]
+    },
+    {
+      "kind": "load",
+      "name": "load-100k-hnsw-m16",
+      "tags": ["load", "current", "m5-local", "ec_real_100k", "hnsw"],
+      "prefix": "current_m5_real100k_hnsw",
+      "profile": "ec_hnsw",
+      "corpus_file": "data/task31_m5_dbpedia_staged/ec_real_100k_corpus.tsv",
+      "queries_file": "data/task31_m5_dbpedia_staged/ec_real_100k_queries.tsv",
+      "manifest_file": "data/task31_m5_dbpedia_staged/ec_real_100k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "m": [16],
+      "ef_construction": 128
+    },
+    {
+      "kind": "recall",
+      "name": "recall-100k-hnsw-ef-sweep",
+      "tags": ["recall", "current", "m5-local", "ec_real_100k", "hnsw"],
+      "prefix": "current_m5_real100k_hnsw",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [40, 80, 120, 200, 400]
+    },
+    {
+      "kind": "latency",
+      "name": "latency-100k-hnsw-ef-sweep",
+      "tags": ["latency", "current", "m5-local", "ec_real_100k", "hnsw"],
+      "prefix": "current_m5_real100k_hnsw",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [40, 80, 120, 200, 400],
+      "concurrency": 1,
+      "cache_state": "post_recall_warm"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-100k-hnsw-m16",
+      "tags": ["storage", "current", "m5-local", "ec_real_100k", "hnsw"],
+      "prefix": "current_m5_real100k_hnsw"
+    },
+    {
+      "kind": "load",
+      "name": "load-100k-ivf-pq-fastscan",
+      "tags": ["load", "current", "m5-local", "ec_real_100k", "ivf", "pq_fastscan"],
+      "prefix": "current_m5_real100k_ivf_pq",
+      "profile": "ec_ivf",
+      "corpus_file": "data/task31_m5_dbpedia_staged/ec_real_100k_corpus.tsv",
+      "queries_file": "data/task31_m5_dbpedia_staged/ec_real_100k_queries.tsv",
+      "manifest_file": "data/task31_m5_dbpedia_staged/ec_real_100k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "storage_format=pq_fastscan",
+        "pq_group_size=8",
+        "nlists=128",
+        "nprobe=96",
+        "rerank=heap_f32",
+        "rerank_width=500"
+      ]
+    },
+    {
+      "kind": "recall",
+      "name": "recall-100k-ivf-nprobe-sweep",
+      "tags": ["recall", "current", "m5-local", "ec_real_100k", "ivf", "pq_fastscan"],
+      "prefix": "current_m5_real100k_ivf_pq",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [48, 64, 80, 96, 128],
+      "rerank_width": 500
+    },
+    {
+      "kind": "latency",
+      "name": "latency-100k-ivf-nprobe-sweep",
+      "tags": ["latency", "current", "m5-local", "ec_real_100k", "ivf", "pq_fastscan"],
+      "prefix": "current_m5_real100k_ivf_pq",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [48, 64, 80, 96, 128],
+      "rerank_width": 500,
+      "concurrency": 1,
+      "cache_state": "post_recall_warm"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-100k-ivf-pq-fastscan",
+      "tags": ["storage", "current", "m5-local", "ec_real_100k", "ivf", "pq_fastscan"],
+      "prefix": "current_m5_real100k_ivf_pq"
+    }
+  ]
+}

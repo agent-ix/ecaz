@@ -11,6 +11,12 @@ New benchmark rows should follow the
 defines the common fields for comparing access methods, quantizers, storage
 formats, trained formats, and option sets.
 
+The promoted mutable current benchmark state lives under
+`benchmarks/current/`. Use that directory for the latest accepted M5 local,
+Intel local, AWS Intel, and AWS Graviton comparison points, and use this page
+for selected narrative tables. Each current lane must cite its immutable source
+packet before its rows are treated as current evidence.
+
 Legacy tables in this document are local summary rows unless they explicitly
 carry the full reporting-standard fields or cite a packet row that does. They
 are not standards-complete candidate comparisons: missing per-row fields such as

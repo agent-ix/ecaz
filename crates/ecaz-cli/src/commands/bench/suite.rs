@@ -85,6 +85,11 @@ struct RunArgs {
     #[arg(long)]
     results_output: Option<PathBuf>,
 
+    /// Override the suite config artifact directory for generated logs,
+    /// manifests, and results.
+    #[arg(long)]
+    artifact_dir: Option<PathBuf>,
+
     /// Write the suite manifest to this path. Defaults to
     /// `<artifact_dir>/suite-manifest.json` when the config has `artifact_dir`.
     #[arg(long)]
@@ -125,6 +130,7 @@ struct SuiteRunOptions {
     only_tag: Vec<String>,
     resume_from: Option<PathBuf>,
     results_output: Option<PathBuf>,
+    artifact_dir: Option<PathBuf>,
     manifest_output: Option<PathBuf>,
 }
 
@@ -322,7 +328,8 @@ struct CrossAmStep {
     inputs: Vec<String>,
     #[serde(default)]
     k: Option<usize>,
-    log_output: PathBuf,
+    #[serde(default)]
+    log_output: Option<PathBuf>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -473,8 +480,10 @@ struct ExplainStep {
     socket_dir: Option<PathBuf>,
     #[serde(default)]
     port: Option<u16>,
-    sql_file: PathBuf,
-    log_output: PathBuf,
+    #[serde(default)]
+    sql_file: Option<PathBuf>,
+    #[serde(default)]
+    log_output: Option<PathBuf>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -695,6 +704,7 @@ pub async fn run(conn: &ConnectionOptions, args: SuiteArgs) -> Result<()> {
                     only_tag: Vec::new(),
                     resume_from: None,
                     results_output: None,
+                    artifact_dir: None,
                     manifest_output: args.manifest_output,
                 },
             )
@@ -713,6 +723,7 @@ impl From<RunArgs> for SuiteRunOptions {
             only_tag: args.only_tag,
             resume_from: args.resume_from,
             results_output: args.results_output,
+            artifact_dir: args.artifact_dir,
             manifest_output: args.manifest_output,
         }
     }
@@ -720,7 +731,11 @@ impl From<RunArgs> for SuiteRunOptions {
 
 async fn run_suite(conn: &ConnectionOptions, args: SuiteRunOptions) -> Result<()> {
     let (raw, mut config) = load_config(&args.config).await?;
+    if let Some(artifact_dir) = &args.artifact_dir {
+        config.artifact_dir = Some(artifact_dir.clone());
+    }
     apply_default_artifact_logs(&mut config);
+    apply_artifact_dir_templates(&mut config);
     validate_config(&config)?;
 
     let mut manifest = build_manifest(conn, &args, &raw, &config)?;
@@ -995,22 +1010,44 @@ fn apply_default_artifact_logs(config: &mut SuiteConfig) {
         return;
     };
     for step in &mut config.steps {
+        let log_path =
+            |name: &str| artifact_dir.join(format!("{}.log", artifact_safe_step_name(name)));
         match step {
+            SuiteStep::Load(step) if step.log_file.is_none() => {
+                step.log_file = Some(log_path(&step.name));
+            }
             SuiteStep::Recall(step) if step.log_output.is_none() => {
-                step.log_output =
-                    Some(artifact_dir.join(format!("{}.log", artifact_safe_step_name(&step.name))));
+                step.log_output = Some(log_path(&step.name));
+            }
+            SuiteStep::CrossAm(step) if step.log_output.is_none() => {
+                step.log_output = Some(log_path(&step.name));
             }
             SuiteStep::Latency(step) if step.log_output.is_none() => {
-                step.log_output =
-                    Some(artifact_dir.join(format!("{}.log", artifact_safe_step_name(&step.name))));
+                step.log_output = Some(log_path(&step.name));
             }
             SuiteStep::SpirePipeline(step) if step.log_output.is_none() => {
-                step.log_output =
-                    Some(artifact_dir.join(format!("{}.log", artifact_safe_step_name(&step.name))));
+                step.log_output = Some(log_path(&step.name));
+            }
+            SuiteStep::Storage(step) if step.log_file.is_none() => {
+                step.log_file = Some(log_path(&step.name));
+            }
+            SuiteStep::Explain(step) => {
+                let safe_name = artifact_safe_step_name(&step.name);
+                if step.sql_file.is_none() {
+                    step.sql_file = Some(artifact_dir.join(format!("{safe_name}.sql")));
+                }
+                if step.log_output.is_none() {
+                    step.log_output = Some(artifact_dir.join(format!("{safe_name}.log")));
+                }
             }
             SuiteStep::SidecarRerank(step) if step.log_output.is_none() => {
-                step.log_output =
-                    Some(artifact_dir.join(format!("{}.log", artifact_safe_step_name(&step.name))));
+                step.log_output = Some(log_path(&step.name));
+            }
+            SuiteStep::ComparePgvector(step) if step.log_file.is_none() => {
+                step.log_file = Some(log_path(&step.name));
+            }
+            SuiteStep::CompareVectorscale(step) if step.log_file.is_none() => {
+                step.log_file = Some(log_path(&step.name));
             }
             _ => {}
         }
@@ -1027,6 +1064,25 @@ fn artifact_safe_step_name(name: &str) -> String {
             }
         })
         .collect()
+}
+
+fn apply_artifact_dir_templates(config: &mut SuiteConfig) {
+    let Some(artifact_dir) = config.artifact_dir.as_ref() else {
+        return;
+    };
+    let artifact_dir = artifact_dir.display().to_string();
+    for step in &mut config.steps {
+        if let SuiteStep::Raw(step) = step {
+            for arg in &mut step.args {
+                *arg = arg.replace("${artifact_dir}", &artifact_dir);
+            }
+            for artifact in &mut step.expected_artifacts {
+                if let Some(raw) = artifact.to_str() {
+                    *artifact = PathBuf::from(raw.replace("${artifact_dir}", &artifact_dir));
+                }
+            }
+        }
+    }
 }
 
 async fn load_manifest(path: &Path) -> Result<SuiteManifest> {
@@ -2022,6 +2078,12 @@ impl SuiteStep {
                 if step.k == Some(0) {
                     bail!("cross-am step {:?} must set k >= 1", step.name)
                 }
+                if step.log_output.is_none() {
+                    bail!(
+                        "cross-am step {:?} must set log_output or suite artifact_dir",
+                        step.name
+                    )
+                }
                 Ok(())
             }
             SuiteStep::Latency(step) => {
@@ -2073,6 +2135,12 @@ impl SuiteStep {
             }
             SuiteStep::Explain(step) => {
                 validate_profile_name("explain profile", step.profile.as_deref())?;
+                if step.sql_file.is_none() || step.log_output.is_none() {
+                    bail!(
+                        "explain step {:?} must set sql_file/log_output or suite artifact_dir",
+                        step.name
+                    )
+                }
                 let profile = profiles::resolve(step.profile.as_deref().unwrap_or("ec_ivf"))
                     .unwrap_or(&profiles::EC_IVF);
                 super::validate_ivf_scratch_soa_batch_decode(
@@ -2175,11 +2243,16 @@ impl SuiteStep {
                 .chain(step.predictions_output.iter())
                 .cloned()
                 .collect(),
-            SuiteStep::CrossAm(step) => vec![step.log_output.clone()],
+            SuiteStep::CrossAm(step) => step.log_output.iter().cloned().collect(),
             SuiteStep::Latency(step) => step.log_output.iter().cloned().collect(),
             SuiteStep::SpirePipeline(step) => step.log_output.iter().cloned().collect(),
             SuiteStep::Storage(step) => step.log_file.iter().cloned().collect(),
-            SuiteStep::Explain(step) => vec![step.sql_file.clone(), step.log_output.clone()],
+            SuiteStep::Explain(step) => step
+                .sql_file
+                .iter()
+                .chain(step.log_output.iter())
+                .cloned()
+                .collect(),
             SuiteStep::SidecarRerank(step) => step.log_output.iter().cloned().collect(),
             SuiteStep::ComparePgvector(step) => step.log_file.iter().cloned().collect(),
             SuiteStep::CompareVectorscale(step) => step.log_file.iter().cloned().collect(),
@@ -2237,7 +2310,7 @@ impl SuiteStep {
                 }
                 paths
             }
-            SuiteStep::Explain(step) => vec![step.sql_file.clone()],
+            SuiteStep::Explain(step) => step.sql_file.iter().cloned().collect(),
             SuiteStep::Recall(step) => step
                 .log_output
                 .iter()
@@ -2264,14 +2337,18 @@ fn validate_profile_name(label: &str, profile_name: Option<&str>) -> Result<()> 
 
 async fn prepare_step(step: &SuiteStep, defaults: &SuiteDefaults) -> Result<()> {
     if let SuiteStep::Explain(step) = step {
-        if let Some(parent) = step.sql_file.parent() {
+        let sql_file = step
+            .sql_file
+            .as_ref()
+            .context("explain step missing sql_file after defaults")?;
+        if let Some(parent) = sql_file.parent() {
             tokio::fs::create_dir_all(parent)
                 .await
                 .wrap_err_with(|| format!("creating {}", parent.display()))?;
         }
-        tokio::fs::write(&step.sql_file, explain_sql(step, defaults))
+        tokio::fs::write(sql_file, explain_sql(step, defaults))
             .await
-            .wrap_err_with(|| format!("writing {}", step.sql_file.display()))?;
+            .wrap_err_with(|| format!("writing {}", sql_file.display()))?;
     }
     Ok(())
 }
@@ -2460,7 +2537,9 @@ fn expand_cross_am(step: &CrossAmStep) -> Vec<String> {
     if let Some(k) = step.k {
         push_arg(&mut args, "--k", &k.to_string());
     }
-    push_arg_path(&mut args, "--log-output", &step.log_output);
+    if let Some(log_output) = &step.log_output {
+        push_arg_path(&mut args, "--log-output", log_output);
+    }
     args
 }
 
@@ -2701,8 +2780,12 @@ fn expand_explain(
         push_arg(&mut args, "--port", &port.to_string());
     }
     args.push("--raw".into());
-    push_arg_path(&mut args, "--file", &step.sql_file);
-    push_arg_path(&mut args, "--log-output", &step.log_output);
+    if let Some(sql_file) = &step.sql_file {
+        push_arg_path(&mut args, "--file", sql_file);
+    }
+    if let Some(log_output) = &step.log_output {
+        push_arg_path(&mut args, "--log-output", log_output);
+    }
     args
 }
 
@@ -3235,6 +3318,8 @@ mod tests {
             "old-manifest.json",
             "--results-output",
             "results.jsonl",
+            "--artifact-dir",
+            "artifacts/current",
         ])
         .expect("suite parses");
         match cli.args.command {
@@ -3245,9 +3330,43 @@ mod tests {
                 assert_eq!(args.only_tag, vec!["recall"]);
                 assert_eq!(args.resume_from, Some(PathBuf::from("old-manifest.json")));
                 assert_eq!(args.results_output, Some(PathBuf::from("results.jsonl")));
+                assert_eq!(args.artifact_dir, Some(PathBuf::from("artifacts/current")));
             }
             _ => panic!("expected run command"),
         }
+    }
+
+    #[test]
+    fn artifact_dir_templates_rewrite_raw_step_paths() {
+        let mut config = SuiteConfig {
+            name: "current".into(),
+            schema_version: 1,
+            artifact_dir: Some("artifacts/current".into()),
+            defaults: SuiteDefaults::default(),
+            thresholds: Vec::new(),
+            steps: vec![SuiteStep::Raw(RawStep {
+                name: "precheck".into(),
+                tags: Vec::new(),
+                args: vec![
+                    "dev".into(),
+                    "sql".into(),
+                    "--log-output".into(),
+                    "${artifact_dir}/precheck.log".into(),
+                ],
+                expected_artifacts: vec!["${artifact_dir}/precheck.log".into()],
+            })],
+        };
+
+        apply_artifact_dir_templates(&mut config);
+
+        let SuiteStep::Raw(step) = &config.steps[0] else {
+            panic!("expected raw step");
+        };
+        assert_eq!(step.args[3], "artifacts/current/precheck.log");
+        assert_eq!(
+            step.expected_artifacts,
+            vec![PathBuf::from("artifacts/current/precheck.log")]
+        );
     }
 
     #[test]
@@ -3394,7 +3513,7 @@ mod tests {
                 "diskann=target/diskann-predictions.json".into(),
             ],
             k: Some(10),
-            log_output: "target/cross-am.log".into(),
+            log_output: Some("target/cross-am.log".into()),
         };
 
         let args = expand_cross_am(&step);
@@ -3826,6 +3945,7 @@ mod tests {
             only_tag: vec!["sweep".into()],
             resume_from: None,
             results_output: None,
+            artifact_dir: None,
             manifest_output: None,
         };
         assert!(step_selected(&step, &args));
@@ -4195,8 +4315,8 @@ mod tests {
             db: None,
             socket_dir: None,
             port: None,
-            sql_file: "explain.sql".into(),
-            log_output: "explain.log".into(),
+            sql_file: Some("explain.sql".into()),
+            log_output: Some("explain.log".into()),
         };
         let args = expand_explain(&step, &defaults, &conn());
         assert!(args.windows(2).any(|w| w == ["--db", "postgres"]));
@@ -4222,8 +4342,8 @@ mod tests {
             db: None,
             socket_dir: None,
             port: None,
-            sql_file: "explain.sql".into(),
-            log_output: "explain.log".into(),
+            sql_file: Some("explain.sql".into()),
+            log_output: Some("explain.log".into()),
         };
         let sql = explain_sql(&step, &SuiteDefaults::default());
         assert!(sql.contains("SET ec_ivf.nprobe = 96;"));
@@ -4251,8 +4371,8 @@ mod tests {
             db: None,
             socket_dir: None,
             port: None,
-            sql_file: "explain.sql".into(),
-            log_output: "explain.log".into(),
+            sql_file: Some("explain.sql".into()),
+            log_output: Some("explain.log".into()),
         };
         let sql = explain_sql(&step, &SuiteDefaults::default());
 
@@ -4280,8 +4400,8 @@ mod tests {
             db: None,
             socket_dir: None,
             port: None,
-            sql_file: "explain.sql".into(),
-            log_output: "explain.log".into(),
+            sql_file: Some("explain.sql".into()),
+            log_output: Some("explain.log".into()),
         };
         let sql = explain_sql(&step, &SuiteDefaults::default());
 
@@ -4313,8 +4433,8 @@ mod tests {
             db: None,
             socket_dir: None,
             port: None,
-            sql_file: "explain.sql".into(),
-            log_output: "explain.log".into(),
+            sql_file: Some("explain.sql".into()),
+            log_output: Some("explain.log".into()),
         };
         let sql = explain_sql(&step, &SuiteDefaults::default());
 

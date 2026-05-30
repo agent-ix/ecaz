@@ -97,3 +97,16 @@ When adding a benchmark packet:
 3. Update [Benchmark Index](benchmark-index.md) with the packet lane.
 4. Update [Benchmarks](benchmarks.md) only for selected current rows.
 5. Label gaps as gaps instead of inventing empty results.
+
+## Current Benchmark Lanes
+
+Accepted current comparison points live under `benchmarks/current/<lane>/`.
+The standard lanes are `m5-local`, `intel-local`, `aws-intel`, and
+`aws-graviton`. These directories are mutable summaries of the latest promoted
+state; they do not replace immutable benchmark or review packets.
+
+Current lane manifests must cite the source packet, head SHA, standard suite
+config, suite manifest, result rows, raw logs, host metadata, cache policy, and
+claim class. Reusable current-lane suites live under
+`crates/ecaz-cli/suites/current/` and should be run with `--artifact-dir` when
+the same config is used for a task-local packet.

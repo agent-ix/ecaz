@@ -11,6 +11,15 @@ Only link measured or intentionally scaffolded benchmark packets here. If a
 benchmark lane does not yet have a packet, leave it out of this index rather
 than inventing an empty result.
 
+## Current Lanes
+
+| Lane | Host class | Current manifest | Standard suite |
+| --- | --- | --- | --- |
+| M5 local | Apple Silicon M5 local host | `benchmarks/current/m5-local/manifest.md` | `crates/ecaz-cli/suites/current/m5-local.json` |
+| Intel local | Local Intel desktop/workstation | `benchmarks/current/intel-local/manifest.md` | `crates/ecaz-cli/suites/current/intel-local.json` |
+| AWS Intel | AWS x86_64 benchmark host | `benchmarks/current/aws-intel/manifest.md` | `crates/ecaz-cli/suites/current/aws-intel.json` |
+| AWS Graviton | AWS arm64 benchmark host | `benchmarks/current/aws-graviton/manifest.md` | `crates/ecaz-cli/suites/current/aws-graviton.json` |
+
 ## DiskANN
 
 | Lane | Corpus / fixture | Packet |
