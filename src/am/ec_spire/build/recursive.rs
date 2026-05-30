@@ -24,10 +24,13 @@ fn build_recursive_routing_hierarchy_draft_with_timing(
     let target_fanout = usize::try_from(input.target_fanout)
         .map_err(|_| "ec_spire recursive routing fanout exceeds usize".to_owned())?;
     let mut pid_cursor = *pid_allocator;
+    let initial_child_count = input.children.len();
     let mut current_children = input.children;
     let mut pending_nodes = Vec::new();
+    let mut routing_iterations = 0_usize;
 
     while current_children.len() > target_fanout {
+        routing_iterations += 1;
         let child_level = current_children[0].child_level;
         let parent_level = child_level
             .checked_add(1)
@@ -86,6 +89,11 @@ fn build_recursive_routing_hierarchy_draft_with_timing(
         }
         current_children = next_children;
     }
+    timing.record_recursive_routing_children(
+        initial_child_count,
+        current_children.len(),
+        routing_iterations,
+    );
 
     let root_level = current_children[0]
         .child_level
@@ -186,10 +194,13 @@ fn build_recursive_epoch_input_from_centroid_plan_with_timing(
     }
     let mut pid_cursor = *pid_allocator;
     let mut local_vec_id_cursor = *local_vec_id_allocator;
+    let pid_alloc_started = Instant::now();
     let mut leaf_pids = Vec::with_capacity(centroid_count);
     for _ in 0..centroid_count {
         leaf_pids.push(pid_cursor.allocate()?);
     }
+    timing.add_draft_pid_alloc(pid_alloc_started.elapsed());
+    let recursive_routing_started = Instant::now();
     let routing_draft = build_recursive_routing_hierarchy_draft_with_timing(
         SpireRecursiveRoutingBuildInput {
             object_version: input.object_version,
@@ -213,8 +224,14 @@ fn build_recursive_epoch_input_from_centroid_plan_with_timing(
         &mut pid_cursor,
         timing,
     )?;
+    timing.add_draft_recursive_routing(recursive_routing_started.elapsed());
+    let validation_started = Instant::now();
     let leaf_parent_pids = assert_recursive_draft_invariants(&routing_draft)?.leaf_parent_pids;
+    timing.add_draft_validation(validation_started.elapsed());
+    let route_map_started = Instant::now();
     let route_map = SpireSingleLevelRouteMap::from_centroid_plan(&input.centroid_plan, &leaf_pids)?;
+    timing.add_draft_route_map(route_map_started.elapsed());
+    let leaf_rows_started = Instant::now();
     let rows_by_leaf_pid = build_recursive_leaf_rows_by_pid(
         input.assignments,
         input.source_vectors,
@@ -223,6 +240,8 @@ fn build_recursive_epoch_input_from_centroid_plan_with_timing(
         input.boundary_replica_count,
         &mut local_vec_id_cursor,
     )?;
+    timing.add_draft_leaf_rows(leaf_rows_started.elapsed());
+    let leaf_inputs_started = Instant::now();
     let mut leaf_inputs = Vec::with_capacity(centroid_count);
     for pid in leaf_pids.iter().copied() {
         let parent_pid = *leaf_parent_pids.get(&pid).ok_or_else(|| {
@@ -239,6 +258,7 @@ fn build_recursive_epoch_input_from_centroid_plan_with_timing(
             rows,
         });
     }
+    timing.add_draft_leaf_inputs(leaf_inputs_started.elapsed());
 
     let draft = SpireRecursiveBuildCoordinatorDraft {
         epoch_input: SpireRecursiveRoutingEpochObjectInput {

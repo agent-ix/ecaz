@@ -288,7 +288,7 @@ unsafe fn publish_relation_partitioned_single_level_build(
             })?;
         leaf_assignments_by_centroid[centroid_index].push(placement.row);
     }
-    timing.add_draft(draft_started.elapsed());
+    timing.add_draft_total(draft_started.elapsed());
 
     let object_store_started = Instant::now();
     let mut store = SpireRelationObjectStoreSet::for_index_relation_and_config(
@@ -322,7 +322,7 @@ unsafe fn publish_relation_partitioned_single_level_build(
         &placement_directory,
         &placement_evidence,
     )?;
-    timing.add_object_store(object_store_started.elapsed());
+    timing.add_object_store_total(object_store_started.elapsed());
 
     let publish_started = Instant::now();
     let input = SpirePublishCoordinatorInput {
@@ -390,6 +390,10 @@ unsafe fn publish_relation_recursive_routing_build(
     let mut pid_allocator = SpirePidAllocator::default();
     let mut local_vec_id_allocator = SpireLocalVecIdAllocator::default();
     let draft_started = Instant::now();
+    let input_clone_started = Instant::now();
+    let assignments = state.assignment_identity_inputs();
+    let source_vectors = state.source_vectors();
+    timing.add_draft_input_clone(input_clone_started.elapsed());
     let coordinator = build_recursive_epoch_input_from_centroid_plan_with_timing(
         SpireRecursiveBuildCoordinatorInput {
             epoch: SPIRE_INITIAL_EPOCH,
@@ -402,15 +406,15 @@ unsafe fn publish_relation_recursive_routing_build(
             boundary_replica_count: u32::try_from(state.options.boundary_replica_count).map_err(
                 |_| "ec_spire boundary_replica_count reloption must be non-negative".to_owned(),
             )?,
-            assignments: state.assignment_identity_inputs(),
-            source_vectors: state.source_vectors(),
+            assignments,
+            source_vectors,
             centroid_plan,
         },
         &mut pid_allocator,
         &mut local_vec_id_allocator,
         timing,
     )?;
-    timing.add_draft(draft_started.elapsed());
+    timing.add_draft_total(draft_started.elapsed());
     let mut store = SpireRelationObjectStoreSet::for_index_relation_and_config(
         index_relation,
         local_store_config.clone(),
@@ -446,7 +450,7 @@ unsafe fn publish_relation_recursive_routing_build(
             &mut store,
         )?
     };
-    timing.add_object_store(object_store_started.elapsed());
+    timing.add_object_store_total(object_store_started.elapsed());
     if draft.next_pid != expected_next_pid {
         return Err(format!(
             "ec_spire recursive relation build next_pid {} does not match expected next_pid {}",

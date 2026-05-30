@@ -296,7 +296,7 @@ fn log_spire_ambuild_timing(
             .unwrap_or_else(|| pgrx::error!("ec_spire build needs a valid index relation")),
     );
     pgrx::notice!(
-        "ec_spire_ambuild_timing index={} phase=complete heap_tuples={} scanned_tuples={} index_tuples={} recursive_fanout={} setup_ms={} heap_scan_ms={} sample_collect_ms={} kmeans_ms={} kmeans_calls={} assignment_ms={} recursive_kmeans_ms={} recursive_kmeans_calls={} recursive_kmeans_max_level={} recursive_assignment_ms={} draft_ms={} top_graph_ms={} pq4_training_ms={} object_store_ms={} publish_ms={} total_ms={}",
+        "ec_spire_ambuild_timing index={} phase=complete heap_tuples={} scanned_tuples={} index_tuples={} recursive_fanout={} setup_ms={} heap_scan_ms={} sample_collect_ms={} kmeans_ms={} kmeans_calls={} assignment_ms={} recursive_kmeans_ms={} recursive_kmeans_calls={} recursive_kmeans_max_level={} recursive_assignment_ms={} recursive_routing_initial_children={} recursive_routing_final_children={} recursive_routing_iterations={} draft_ms={} draft_total_ms={} draft_input_clone_ms={} draft_pid_alloc_ms={} draft_recursive_routing_ms={} draft_route_map_ms={} draft_leaf_rows_ms={} draft_leaf_inputs_ms={} draft_validation_ms={} top_graph_ms={} pq4_training_ms={} object_store_ms={} object_store_total_ms={} publish_ms={} total_ms={}",
         index_name,
         heap_tuples,
         scanned_tuples,
@@ -312,10 +312,22 @@ fn log_spire_ambuild_timing(
         timing.recursive_kmeans_calls,
         timing.recursive_kmeans_max_level,
         timing.recursive_assignment_ms,
+        timing.recursive_routing_initial_children,
+        timing.recursive_routing_final_children,
+        timing.recursive_routing_iterations,
         timing.draft_ms,
+        timing.draft_total_ms,
+        timing.draft_input_clone_ms,
+        timing.draft_pid_alloc_ms,
+        timing.draft_recursive_routing_ms,
+        timing.draft_route_map_ms,
+        timing.draft_leaf_rows_ms,
+        timing.draft_leaf_inputs_ms,
+        timing.draft_validation_ms,
         timing.top_graph_ms,
         0,
         timing.object_store_ms,
+        timing.object_store_total_ms,
         timing.publish_ms,
         elapsed_ms(total_elapsed)
     );
