@@ -266,21 +266,22 @@ resource "aws_s3_bucket_lifecycle_configuration" "this" {
 }
 
 # ---------------------------------------------------------------------------
-# AMIs — Amazon Linux 2023 on aarch64 (Graviton). Both DB and loader.
+# AMIs — Amazon Linux 2023. Both DB and loader use the architecture selected
+# by the profile tfvars.
 # ---------------------------------------------------------------------------
 
-data "aws_ami" "al2023_arm64" {
+data "aws_ami" "al2023" {
   most_recent = true
   owners      = ["amazon"]
 
   filter {
     name   = "name"
-    values = ["al2023-ami-2023.*-arm64"]
+    values = ["al2023-ami-2023.*-${var.instance_architecture}"]
   }
 
   filter {
     name   = "architecture"
-    values = ["arm64"]
+    values = [var.instance_architecture]
   }
 }
 
@@ -315,7 +316,7 @@ locals {
 }
 
 resource "aws_instance" "db" {
-  ami                         = data.aws_ami.al2023_arm64.id
+  ami                         = data.aws_ami.al2023.id
   instance_type               = var.db_instance_type
   subnet_id                   = aws_subnet.private.id
   vpc_security_group_ids      = [aws_security_group.db.id]
@@ -350,7 +351,7 @@ resource "aws_volume_attachment" "db_data" {
 # ---------------------------------------------------------------------------
 
 resource "aws_instance" "loader" {
-  ami                         = data.aws_ami.al2023_arm64.id
+  ami                         = data.aws_ami.al2023.id
   instance_type               = var.loader_instance_type
   subnet_id                   = aws_subnet.private.id
   vpc_security_group_ids      = [aws_security_group.loader.id]

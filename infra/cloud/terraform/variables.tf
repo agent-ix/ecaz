@@ -55,6 +55,17 @@ variable "loader_instance_type" {
   default     = "c7g.2xlarge"
 }
 
+variable "instance_architecture" {
+  description = "AMI architecture for DB and loader hosts (arm64 for Graviton, x86_64 for Intel lanes)."
+  type        = string
+  default     = "arm64"
+
+  validation {
+    condition     = contains(["arm64", "x86_64"], var.instance_architecture)
+    error_message = "instance_architecture must be arm64 or x86_64."
+  }
+}
+
 variable "ecaz_git_ref" {
   description = "Git ref of ecaz to install on the DB host (sha, branch, or tag)."
   type        = string

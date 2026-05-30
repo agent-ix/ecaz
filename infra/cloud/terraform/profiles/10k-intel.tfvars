@@ -1,12 +1,13 @@
-profile              = "10k-intel"
-db_instance_type     = "m7i.2xlarge"
-db_volume_gb         = 100
-loader_instance_type = "c7i.large"
-ecaz_git_ref         = "main"
-region               = "us-west-2"
-az                   = "us-west-2a"
-enable_eice_ssh      = true
-ssh_key_name         = "ecaz-bench"
+profile               = "10k-intel"
+db_instance_type      = "m7i.2xlarge"
+db_volume_gb          = 100
+loader_instance_type  = "c7i.large"
+instance_architecture = "x86_64"
+ecaz_git_ref          = "main"
+region                = "us-west-2"
+az                    = "us-west-2a"
+enable_eice_ssh       = true
+ssh_key_name          = "ecaz-bench"
 
 # Intel x86_64 lane for Task 67 RaBitQ AVX-512 / AVX2 validation.
 # m7i.2xlarge: 8 vCPU / 32 GB on Intel Sapphire Rapids, matching the
