@@ -347,7 +347,6 @@ struct IvfPostingScratchSoa {
     heap_tids: Vec<ItemPointer>,
     payloads: Vec<u8>,
     scores: Vec<f32>,
-    score_order: Vec<usize>,
 }
 
 impl IvfPostingScratchSoa {
@@ -360,7 +359,6 @@ impl IvfPostingScratchSoa {
             heap_tids: Vec::with_capacity(IVF_POSTING_SCRATCH_SOA_BATCH_HEAPTIDS),
             payloads: Vec::with_capacity(payload_len * IVF_POSTING_SCRATCH_SOA_BATCH_POSTINGS),
             scores: Vec::with_capacity(IVF_POSTING_SCRATCH_SOA_BATCH_POSTINGS),
-            score_order: Vec::with_capacity(IVF_POSTING_SCRATCH_SOA_BATCH_POSTINGS),
         }
     }
 
@@ -379,7 +377,6 @@ impl IvfPostingScratchSoa {
         self.heap_tids.clear();
         self.payloads.clear();
         self.scores.clear();
-        self.score_order.clear();
     }
 
     fn is_empty(&self) -> bool {
@@ -416,16 +413,6 @@ impl IvfPostingScratchSoa {
         let start = self.heap_tid_offsets[index];
         let end = start + self.heap_tid_counts[index];
         &self.heap_tids[start..end]
-    }
-
-    fn sort_indices_by_score(&mut self) {
-        self.score_order.clear();
-        self.score_order.extend(0..self.scores.len());
-        self.score_order.sort_unstable_by(|left, right| {
-            self.scores[*right]
-                .total_cmp(&self.scores[*left])
-                .then_with(|| left.cmp(right))
-        });
     }
 }
 
@@ -1480,9 +1467,7 @@ fn process_scratch_soa_postings(
                 scratch.len()
             ));
         }
-        scratch.sort_indices_by_score();
-        for order_index in 0..scratch.score_order.len() {
-            let index = scratch.score_order[order_index];
+        for index in 0..scratch.len() {
             record_scored_posting_candidates(
                 opaque,
                 best_by_heap_tid,
@@ -1539,6 +1524,9 @@ fn record_scored_posting_candidates<I>(
         .explain_counters
         .record_heap_tids_scored(heap_tid_count);
     record_distance_calcs(opaque, 1);
+    // `running_top` is only a pruning hint. The authoritative candidate pool
+    // is `best_by_heap_tid`, so skip only scores that are strictly worse than
+    // the full frontier and still let equal-score ties reach the dedup map.
     if running_top
         .as_ref()
         .is_some_and(|top_k| top_k.would_reject_score(score))
@@ -2729,16 +2717,6 @@ mod tests {
 
         assert_eq!(scratch.payload_len, 9);
         assert!(scratch.payloads.capacity() >= 9 * super::IVF_POSTING_SCRATCH_SOA_BATCH_POSTINGS);
-    }
-
-    #[test]
-    fn posting_scratch_soa_sorts_score_indices_best_first_stably() {
-        let mut scratch = IvfPostingScratchSoa::new(3);
-        scratch.scores.extend_from_slice(&[0.25, 0.75, 0.75, -0.5]);
-
-        scratch.sort_indices_by_score();
-
-        assert_eq!(scratch.score_order, vec![1, 2, 0, 3]);
     }
 
     #[test]
