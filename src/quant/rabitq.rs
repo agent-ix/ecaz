@@ -2652,6 +2652,135 @@ unsafe fn sum_query_dequant_avx2_bits8(
     sum
 }
 
+/// # Safety
+///
+/// Caller must confirm AVX-512F availability before calling. `query_scale`
+/// and `query_offset` must each contain at least `dimensions` elements, and
+/// both code slices must contain at least `dimensions` bits=8 code bytes.
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx512f")]
+unsafe fn sum_query_dequant_avx512_bits8_pair(
+    query_scale: &[f32],
+    query_offset: &[f32],
+    dimensions: usize,
+    code0: &[u8],
+    code1: &[u8],
+) -> (f32, f32) {
+    use std::arch::x86_64::{
+        _mm512_add_ps, _mm512_cvtepi32_ps, _mm512_cvtepu8_epi32, _mm512_fmadd_ps, _mm512_loadu_ps,
+        _mm512_setzero_ps, _mm512_storeu_ps, _mm_loadu_si128,
+    };
+
+    let mut acc0 = _mm512_setzero_ps();
+    let mut acc1 = _mm512_setzero_ps();
+    let mut dim_index = 0_usize;
+    while dim_index + 16 <= dimensions {
+        // SAFETY: The loop condition proves all 16 code bytes and f32 lanes
+        // are in-bounds for both codes. Loads are explicitly unaligned.
+        let (bytes0, bytes1, scale, offset) = unsafe {
+            (
+                _mm_loadu_si128(code0.as_ptr().add(dim_index).cast()),
+                _mm_loadu_si128(code1.as_ptr().add(dim_index).cast()),
+                _mm512_loadu_ps(query_scale.as_ptr().add(dim_index)),
+                _mm512_loadu_ps(query_offset.as_ptr().add(dim_index)),
+            )
+        };
+        let code0_f32 = _mm512_cvtepi32_ps(_mm512_cvtepu8_epi32(bytes0));
+        let code1_f32 = _mm512_cvtepi32_ps(_mm512_cvtepu8_epi32(bytes1));
+        acc0 = _mm512_add_ps(acc0, _mm512_fmadd_ps(code0_f32, scale, offset));
+        acc1 = _mm512_add_ps(acc1, _mm512_fmadd_ps(code1_f32, scale, offset));
+        dim_index += 16;
+    }
+
+    let mut lanes = [0.0_f32; 16];
+    // SAFETY: `lanes` has exactly sixteen contiguous `f32` slots.
+    unsafe { _mm512_storeu_ps(lanes.as_mut_ptr(), acc0) };
+    let mut sum0 = lanes.iter().sum::<f32>();
+    // SAFETY: `lanes` has exactly sixteen contiguous `f32` slots.
+    unsafe { _mm512_storeu_ps(lanes.as_mut_ptr(), acc1) };
+    let mut sum1 = lanes.iter().sum::<f32>();
+
+    while dim_index < dimensions {
+        let scale = query_scale[dim_index];
+        let offset = query_offset[dim_index];
+        sum0 += code0[dim_index] as f32 * scale + offset;
+        sum1 += code1[dim_index] as f32 * scale + offset;
+        dim_index += 1;
+    }
+    (sum0, sum1)
+}
+
+/// # Safety
+///
+/// Caller must confirm AVX2 and FMA availability before calling.
+/// `query_scale` and `query_offset` must each contain at least `dimensions`
+/// elements, and both code slices must contain at least `dimensions` bits=8
+/// code bytes.
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2,fma")]
+unsafe fn sum_query_dequant_avx2_bits8_pair(
+    query_scale: &[f32],
+    query_offset: &[f32],
+    dimensions: usize,
+    code0: &[u8],
+    code1: &[u8],
+) -> (f32, f32) {
+    use std::arch::x86_64::{
+        _mm256_add_ps, _mm256_cvtepi32_ps, _mm256_cvtepu8_epi32, _mm256_fmadd_ps, _mm256_loadu_ps,
+        _mm256_setzero_ps, _mm256_storeu_ps, _mm_loadu_si128, _mm_srli_si128,
+    };
+
+    let mut a0 = _mm256_setzero_ps();
+    let mut a1 = _mm256_setzero_ps();
+    let mut b0 = _mm256_setzero_ps();
+    let mut b1 = _mm256_setzero_ps();
+    let mut dim_index = 0_usize;
+    while dim_index + 16 <= dimensions {
+        let (s0, s1, o0, o1) = unsafe {
+            (
+                _mm256_loadu_ps(query_scale.as_ptr().add(dim_index)),
+                _mm256_loadu_ps(query_scale.as_ptr().add(dim_index + 8)),
+                _mm256_loadu_ps(query_offset.as_ptr().add(dim_index)),
+                _mm256_loadu_ps(query_offset.as_ptr().add(dim_index + 8)),
+            )
+        };
+
+        // SAFETY: The loop condition proves all 16 code bytes are in-bounds
+        // for both codes. Loads are explicitly unaligned.
+        let bytes0 = unsafe { _mm_loadu_si128(code0.as_ptr().add(dim_index).cast()) };
+        let a_lo = _mm256_cvtepi32_ps(_mm256_cvtepu8_epi32(bytes0));
+        let a_hi = _mm256_cvtepi32_ps(_mm256_cvtepu8_epi32(_mm_srli_si128(bytes0, 8)));
+        a0 = _mm256_add_ps(a0, _mm256_fmadd_ps(a_lo, s0, o0));
+        a1 = _mm256_add_ps(a1, _mm256_fmadd_ps(a_hi, s1, o1));
+
+        // SAFETY: same bounds proof as `bytes0`.
+        let bytes1 = unsafe { _mm_loadu_si128(code1.as_ptr().add(dim_index).cast()) };
+        let b_lo = _mm256_cvtepi32_ps(_mm256_cvtepu8_epi32(bytes1));
+        let b_hi = _mm256_cvtepi32_ps(_mm256_cvtepu8_epi32(_mm_srli_si128(bytes1, 8)));
+        b0 = _mm256_add_ps(b0, _mm256_fmadd_ps(b_lo, s0, o0));
+        b1 = _mm256_add_ps(b1, _mm256_fmadd_ps(b_hi, s1, o1));
+
+        dim_index += 16;
+    }
+
+    let mut lanes = [0.0_f32; 8];
+    // SAFETY: `lanes` has exactly eight contiguous `f32` slots.
+    unsafe { _mm256_storeu_ps(lanes.as_mut_ptr(), _mm256_add_ps(a0, a1)) };
+    let mut sum0 = lanes.iter().sum::<f32>();
+    // SAFETY: `lanes` has exactly eight contiguous `f32` slots.
+    unsafe { _mm256_storeu_ps(lanes.as_mut_ptr(), _mm256_add_ps(b0, b1)) };
+    let mut sum1 = lanes.iter().sum::<f32>();
+
+    while dim_index < dimensions {
+        let scale = query_scale[dim_index];
+        let offset = query_offset[dim_index];
+        sum0 += code0[dim_index] as f32 * scale + offset;
+        sum1 += code1[dim_index] as f32 * scale + offset;
+        dim_index += 1;
+    }
+    (sum0, sum1)
+}
+
 #[cfg(target_arch = "aarch64")]
 #[inline]
 fn prefetch_read_l1(ptr: *const u8) {
@@ -2733,6 +2862,72 @@ unsafe fn estimate_ip_batch_neon_bits8(
         let code = code_chunks.next().expect("batch slab has tail code");
         let sum =
             unsafe { sum_query_dequant_neon_bits8(query_scale, query_offset, dimensions, code) };
+        *out = finish_scalar_only_estimate(dimensions, 8, sum, code);
+    }
+}
+
+/// # Safety
+///
+/// Caller must confirm AVX-512F availability. `codes` must be an exact
+/// `code_len * out_scores.len()` slab of valid bits=8 RaBitQ payloads.
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx512f")]
+unsafe fn estimate_ip_batch_avx512_bits8(
+    query_scale: &[f32],
+    query_offset: &[f32],
+    dimensions: usize,
+    codes: &[u8],
+    code_len: usize,
+    out_scores: &mut [f32],
+) {
+    let mut code_chunks = codes.chunks_exact(code_len);
+    let mut out_chunks = out_scores.chunks_exact_mut(2);
+    for out_pair in &mut out_chunks {
+        let code0 = code_chunks.next().expect("batch slab has code for score 0");
+        let code1 = code_chunks.next().expect("batch slab has code for score 1");
+        let (sum0, sum1) = unsafe {
+            sum_query_dequant_avx512_bits8_pair(query_scale, query_offset, dimensions, code0, code1)
+        };
+        out_pair[0] = finish_scalar_only_estimate(dimensions, 8, sum0, code0);
+        out_pair[1] = finish_scalar_only_estimate(dimensions, 8, sum1, code1);
+    }
+    if let Some(out) = out_chunks.into_remainder().first_mut() {
+        let code = code_chunks.next().expect("batch slab has tail code");
+        let sum =
+            unsafe { sum_query_dequant_avx512_bits8(query_scale, query_offset, dimensions, code) };
+        *out = finish_scalar_only_estimate(dimensions, 8, sum, code);
+    }
+}
+
+/// # Safety
+///
+/// Caller must confirm AVX2 and FMA availability. `codes` must be an exact
+/// `code_len * out_scores.len()` slab of valid bits=8 RaBitQ payloads.
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2,fma")]
+unsafe fn estimate_ip_batch_avx2_bits8(
+    query_scale: &[f32],
+    query_offset: &[f32],
+    dimensions: usize,
+    codes: &[u8],
+    code_len: usize,
+    out_scores: &mut [f32],
+) {
+    let mut code_chunks = codes.chunks_exact(code_len);
+    let mut out_chunks = out_scores.chunks_exact_mut(2);
+    for out_pair in &mut out_chunks {
+        let code0 = code_chunks.next().expect("batch slab has code for score 0");
+        let code1 = code_chunks.next().expect("batch slab has code for score 1");
+        let (sum0, sum1) = unsafe {
+            sum_query_dequant_avx2_bits8_pair(query_scale, query_offset, dimensions, code0, code1)
+        };
+        out_pair[0] = finish_scalar_only_estimate(dimensions, 8, sum0, code0);
+        out_pair[1] = finish_scalar_only_estimate(dimensions, 8, sum1, code1);
+    }
+    if let Some(out) = out_chunks.into_remainder().first_mut() {
+        let code = code_chunks.next().expect("batch slab has tail code");
+        let sum =
+            unsafe { sum_query_dequant_avx2_bits8(query_scale, query_offset, dimensions, code) };
         *out = finish_scalar_only_estimate(dimensions, 8, sum, code);
     }
 }
@@ -2852,6 +3047,36 @@ fn estimate_ip_batch_impl(
 ) {
     debug_assert_eq!(codes.len(), code_len * out_scores.len());
     match select_query_dequant_kernel(ctx) {
+        #[cfg(target_arch = "x86_64")]
+        QueryDequantKernel::Avx512Bits8 => {
+            // SAFETY: kernel selection confirmed AVX-512F at runtime and
+            // checked the bits=8 precompute lengths.
+            unsafe {
+                estimate_ip_batch_avx512_bits8(
+                    ctx.bits8_query_scale,
+                    ctx.bits8_query_offset,
+                    ctx.dimensions,
+                    codes,
+                    code_len,
+                    out_scores,
+                );
+            }
+        }
+        #[cfg(target_arch = "x86_64")]
+        QueryDequantKernel::Avx2Bits8 => {
+            // SAFETY: kernel selection confirmed AVX2+FMA at runtime and
+            // checked the bits=8 precompute lengths.
+            unsafe {
+                estimate_ip_batch_avx2_bits8(
+                    ctx.bits8_query_scale,
+                    ctx.bits8_query_offset,
+                    ctx.dimensions,
+                    codes,
+                    code_len,
+                    out_scores,
+                );
+            }
+        }
         #[cfg(target_arch = "aarch64")]
         QueryDequantKernel::NeonBits1 => {
             let byte_lut = ctx
