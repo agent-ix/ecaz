@@ -1,6 +1,7 @@
 # Task 69: Common Training Parallelism (k-means + PQ4 codec)
 
-Status: proposed
+Status: complete (2026-05-30). Closeout packet:
+`reviews/task-69/004-closeout/`.
 Owner: coder (to be assigned). One coder, one branch.
 Priority: 1 (paired with Task 68; Task 68 slice 1 consumes this)
 
