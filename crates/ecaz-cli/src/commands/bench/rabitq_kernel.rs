@@ -79,6 +79,15 @@ pub async fn run(args: RabitqKernelArgs) -> Result<()> {
 
         bench_single_dispatch(&mut output, variant, &prepared, &codes, iterations)?;
         bench_single_scalar(&mut output, variant, &prepared, &codes, iterations)?;
+        if variant.name == "bits8" {
+            bench_single_least_squares(
+                &mut output,
+                Variant::new("bits8ls", variant.bits, variant.clip),
+                &prepared,
+                &codes,
+                iterations,
+            )?;
+        }
 
         if matches!(variant.bits, 1 | 4 | 8) {
             let code_len = <RaBitQQuantizer as Quantizer>::code_len(&quantizer);
@@ -175,6 +184,41 @@ fn bench_single_scalar(
         output,
         variant,
         "single-scalar",
+        iterations,
+        iterations,
+        elapsed,
+        checksum,
+    )
+}
+
+fn bench_single_least_squares(
+    output: &mut Output,
+    variant: Variant,
+    prepared: &ecaz::bench_api::PreparedEstimator,
+    codes: &[Vec<u8>],
+    iterations: usize,
+) -> Result<()> {
+    let warmup = iterations.clamp(1, 64);
+    let mut checksum = 0.0_f32;
+    for i in 0..warmup {
+        checksum += prepared.estimate_ip_least_squares_scalar_only(black_box(
+            &codes[i % codes.len()],
+        ));
+    }
+    black_box(checksum);
+
+    checksum = 0.0;
+    let mut idx = 0_usize;
+    let elapsed = time_loop(iterations, || {
+        let code = &codes[idx % codes.len()];
+        idx += 1;
+        let score = prepared.estimate_ip_least_squares_scalar_only(black_box(code));
+        checksum += black_box(score);
+    });
+    print_row(
+        output,
+        variant,
+        "single-least-squares",
         iterations,
         iterations,
         elapsed,
