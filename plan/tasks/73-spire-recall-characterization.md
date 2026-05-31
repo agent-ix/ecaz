@@ -1,6 +1,6 @@
 # Task 73: SPIRE Recall Characterization + Routing-Quality Slices
 
-Status: pending reviewer approval (closeout `reviews/task-73/002-closeout/`, audit `reviews/task-73/003-completion-audit/`)
+Status: complete (2026-05-31, closeout `reviews/task-73/002-closeout/`, reviewer acceptance `reviews/task-73/003-completion-audit/feedback/2026-05-31-01-reviewer.md`, follow-up acknowledgements `reviews/task-73/004-reviewer-followup/`)
 Owner: coder (to be assigned). One coder, one branch.
 Priority: 1 (publishable competitive concern; recall gap vs other AMs is the load-bearing finding)
 
