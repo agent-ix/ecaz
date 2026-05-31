@@ -1,7 +1,7 @@
 CREATE EXTENSION
           captured_at          |                                                      postgres_version                                                       | shared_buffers | work_mem | maintenance_work_mem 
 -------------------------------+-----------------------------------------------------------------------------------------------------------------------------+----------------+----------+----------------------
- 2026-05-30 15:47:39.428361-07 | PostgreSQL 18.3 (Homebrew) on aarch64-apple-darwin25.2.0, compiled by Apple clang version 17.0.0 (clang-1700.6.3.2), 64-bit | 128MB          | 4MB      | 64MB
+ 2026-05-30 16:02:33.101935-07 | PostgreSQL 18.3 (Homebrew) on aarch64-apple-darwin25.2.0, compiled by Apple clang version 17.0.0 (clang-1700.6.3.2), 64-bit | 128MB          | 4MB      | 64MB
 (1 row)
 
  extname | extversion 
@@ -15,3 +15,4 @@ CREATE EXTENSION
  ec_spire
 (2 rows)
 
+NOTICE:  extension "ecaz" already exists, skipping

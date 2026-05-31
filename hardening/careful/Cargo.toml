@@ -17,3 +17,4 @@ pg_test = []
 hashbrown = "0.15"
 rand = "0.8"
 rand_chacha = "0.3"
+rayon = "1"

@@ -2,9 +2,9 @@
   "suite": "task73-spire-m5-quality-gate",
   "schema_version": 1,
   "config": "reviews/task-73/001-spire-m5-quality-gate/artifacts/suite.json",
-  "config_sha256": "cf06b0aa3c4c567555180be8cfbed7b5f02997d0af1e6f7f93f690eded9d33af",
+  "config_sha256": "d4fa31686908047ab3ee7cc738f98b32e298ceae94781531584d928bf2a5ab57",
   "dry_run": false,
-  "generated_at_unix_ms": 1780181259406,
+  "generated_at_unix_ms": 1780182153080,
   "connection": {
     "database": "task73_spire_gate",
     "host": "/Users/peter/.pgrx",
@@ -49,9 +49,9 @@
         "reviews/task-73/001-spire-m5-quality-gate/artifacts/precheck-host-and-inputs.log"
       ],
       "status": "succeeded",
-      "started_at_unix_ms": 1780181259407,
-      "finished_at_unix_ms": 1780181259857,
-      "duration_ms": 449,
+      "started_at_unix_ms": 1780182153081,
+      "finished_at_unix_ms": 1780182153104,
+      "duration_ms": 21,
       "exit_code": 0
     },
     {
@@ -118,9 +118,9 @@
         "reviews/task-73/001-spire-m5-quality-gate/artifacts/load-10k-spire-default.log"
       ],
       "status": "succeeded",
-      "started_at_unix_ms": 1780181259858,
-      "finished_at_unix_ms": 1780181277708,
-      "duration_ms": 17849,
+      "started_at_unix_ms": 1780182153105,
+      "finished_at_unix_ms": 1780182162853,
+      "duration_ms": 9747,
       "exit_code": 0
     },
     {
@@ -174,9 +174,9 @@
         "reviews/task-73/001-spire-m5-quality-gate/artifacts/pipeline-10k-reproduce-default.log"
       ],
       "status": "succeeded",
-      "started_at_unix_ms": 1780181277709,
-      "finished_at_unix_ms": 1780181289897,
-      "duration_ms": 12187,
+      "started_at_unix_ms": 1780182162853,
+      "finished_at_unix_ms": 1780182174957,
+      "duration_ms": 12102,
       "exit_code": 0
     },
     {
@@ -242,8 +242,11 @@
       "expected_artifacts": [
         "reviews/task-73/001-spire-m5-quality-gate/artifacts/load-100k-spire-default.log"
       ],
-      "status": "pending",
-      "started_at_unix_ms": 1780181289897
+      "status": "succeeded",
+      "started_at_unix_ms": 1780182174957,
+      "finished_at_unix_ms": 1780182330038,
+      "duration_ms": 96877,
+      "exit_code": 0
     },
     {
       "name": "pipeline-100k-tg16-b0",
@@ -264,7 +267,7 @@
         "--queries-limit",
         "200",
         "--sweep",
-        "8,16,32,64,96,128,256",
+        "8,16",
         "--rerank-width",
         "25",
         "--include-local-store-overlap",
@@ -297,7 +300,11 @@
       "expected_artifacts": [
         "reviews/task-73/001-spire-m5-quality-gate/artifacts/pipeline-100k-tg16-b0.log"
       ],
-      "status": "pending"
+      "status": "succeeded",
+      "started_at_unix_ms": 1780182330038,
+      "finished_at_unix_ms": 1780182429494,
+      "duration_ms": 99455,
+      "exit_code": 0
     },
     {
       "name": "rebuild-100k-tg32-b0",
@@ -335,7 +342,11 @@
       "expected_artifacts": [
         "reviews/task-73/001-spire-m5-quality-gate/artifacts/rebuild-100k-tg32-b0.log"
       ],
-      "status": "pending"
+      "status": "succeeded",
+      "started_at_unix_ms": 1780182429495,
+      "finished_at_unix_ms": 1780182432125,
+      "duration_ms": 2629,
+      "exit_code": 0
     },
     {
       "name": "pipeline-100k-tg32-b0",
@@ -356,7 +367,7 @@
         "--queries-limit",
         "200",
         "--sweep",
-        "8,16,32,64,96,128,256",
+        "8,16,32",
         "--rerank-width",
         "25",
         "--include-local-store-overlap",
@@ -387,7 +398,11 @@
       "expected_artifacts": [
         "reviews/task-73/001-spire-m5-quality-gate/artifacts/pipeline-100k-tg32-b0.log"
       ],
-      "status": "pending"
+      "status": "succeeded",
+      "started_at_unix_ms": 1780182432126,
+      "finished_at_unix_ms": 1780182603577,
+      "duration_ms": 118602,
+      "exit_code": 0
     },
     {
       "name": "rebuild-100k-tg64-b0",
@@ -425,7 +440,11 @@
       "expected_artifacts": [
         "reviews/task-73/001-spire-m5-quality-gate/artifacts/rebuild-100k-tg64-b0.log"
       ],
-      "status": "pending"
+      "status": "succeeded",
+      "started_at_unix_ms": 1780182603578,
+      "finished_at_unix_ms": 1780182606269,
+      "duration_ms": 2691,
+      "exit_code": 0
     },
     {
       "name": "pipeline-100k-tg64-b0",
@@ -446,7 +465,7 @@
         "--queries-limit",
         "200",
         "--sweep",
-        "8,16,32,64,96,128,256",
+        "8,16,32,64",
         "--rerank-width",
         "25",
         "--include-local-store-overlap",
@@ -477,7 +496,11 @@
       "expected_artifacts": [
         "reviews/task-73/001-spire-m5-quality-gate/artifacts/pipeline-100k-tg64-b0.log"
       ],
-      "status": "pending"
+      "status": "succeeded",
+      "started_at_unix_ms": 1780182606270,
+      "finished_at_unix_ms": 1780182753336,
+      "duration_ms": 147066,
+      "exit_code": 0
     },
     {
       "name": "rebuild-100k-tg128-b0",
@@ -515,7 +538,11 @@
       "expected_artifacts": [
         "reviews/task-73/001-spire-m5-quality-gate/artifacts/rebuild-100k-tg128-b0.log"
       ],
-      "status": "pending"
+      "status": "succeeded",
+      "started_at_unix_ms": 1780182753336,
+      "finished_at_unix_ms": 1780182756038,
+      "duration_ms": 2700,
+      "exit_code": 0
     },
     {
       "name": "pipeline-100k-tg128-b0",
@@ -536,7 +563,7 @@
         "--queries-limit",
         "200",
         "--sweep",
-        "8,16,32,64,96,128,256",
+        "8,16,32,64,96,128",
         "--rerank-width",
         "25",
         "--include-local-store-overlap",
@@ -567,7 +594,11 @@
       "expected_artifacts": [
         "reviews/task-73/001-spire-m5-quality-gate/artifacts/pipeline-100k-tg128-b0.log"
       ],
-      "status": "pending"
+      "status": "succeeded",
+      "started_at_unix_ms": 1780182756038,
+      "finished_at_unix_ms": 1780182980360,
+      "duration_ms": 224322,
+      "exit_code": 0
     },
     {
       "name": "rebuild-100k-tg128-b1",
@@ -605,7 +636,11 @@
       "expected_artifacts": [
         "reviews/task-73/001-spire-m5-quality-gate/artifacts/rebuild-100k-tg128-b1.log"
       ],
-      "status": "pending"
+      "status": "succeeded",
+      "started_at_unix_ms": 1780182980361,
+      "finished_at_unix_ms": 1780183002441,
+      "duration_ms": 22079,
+      "exit_code": 0
     },
     {
       "name": "pipeline-100k-tg128-b1",
@@ -626,7 +661,7 @@
         "--queries-limit",
         "200",
         "--sweep",
-        "8,16,32,64,96,128,256",
+        "8,16,32,64,96,128",
         "--rerank-width",
         "25",
         "--include-local-store-overlap",
@@ -657,7 +692,11 @@
       "expected_artifacts": [
         "reviews/task-73/001-spire-m5-quality-gate/artifacts/pipeline-100k-tg128-b1.log"
       ],
-      "status": "pending"
+      "status": "succeeded",
+      "started_at_unix_ms": 1780183002441,
+      "finished_at_unix_ms": 1780183387440,
+      "duration_ms": 385000,
+      "exit_code": 0
     },
     {
       "name": "rebuild-100k-tg128-b2",
@@ -696,7 +735,11 @@
       "expected_artifacts": [
         "reviews/task-73/001-spire-m5-quality-gate/artifacts/rebuild-100k-tg128-b2.log"
       ],
-      "status": "pending"
+      "status": "succeeded",
+      "started_at_unix_ms": 1780183387441,
+      "finished_at_unix_ms": 1780183410162,
+      "duration_ms": 22719,
+      "exit_code": 0
     },
     {
       "name": "pipeline-100k-tg128-b2",
@@ -717,7 +760,7 @@
         "--queries-limit",
         "200",
         "--sweep",
-        "8,16,32,64,96,128,256",
+        "8,16,32,64,96,128",
         "--rerank-width",
         "25",
         "--include-local-store-overlap",
@@ -750,7 +793,11 @@
       "expected_artifacts": [
         "reviews/task-73/001-spire-m5-quality-gate/artifacts/pipeline-100k-tg128-b2.log"
       ],
-      "status": "pending"
+      "status": "succeeded",
+      "started_at_unix_ms": 1780183410162,
+      "finished_at_unix_ms": 1780183938364,
+      "duration_ms": 528148,
+      "exit_code": 0
     },
     {
       "name": "load-100k-ivf-control",
@@ -806,7 +853,11 @@
       "expected_artifacts": [
         "reviews/task-73/001-spire-m5-quality-gate/artifacts/load-100k-ivf-control.log"
       ],
-      "status": "pending"
+      "status": "succeeded",
+      "started_at_unix_ms": 1780183938364,
+      "finished_at_unix_ms": 1780184102464,
+      "duration_ms": 164097,
+      "exit_code": 0
     },
     {
       "name": "recall-100k-ivf-control",
@@ -856,7 +907,11 @@
       "expected_artifacts": [
         "reviews/task-73/001-spire-m5-quality-gate/artifacts/recall-100k-ivf-control.log"
       ],
-      "status": "pending"
+      "status": "succeeded",
+      "started_at_unix_ms": 1780184102464,
+      "finished_at_unix_ms": 1780184221547,
+      "duration_ms": 119080,
+      "exit_code": 0
     },
     {
       "name": "latency-100k-ivf-control",
@@ -908,7 +963,11 @@
       "expected_artifacts": [
         "reviews/task-73/001-spire-m5-quality-gate/artifacts/latency-100k-ivf-control.log"
       ],
-      "status": "pending"
+      "status": "succeeded",
+      "started_at_unix_ms": 1780184221548,
+      "finished_at_unix_ms": 1780184231197,
+      "duration_ms": 9649,
+      "exit_code": 0
     }
   ]
 }
