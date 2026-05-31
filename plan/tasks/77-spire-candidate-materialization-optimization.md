@@ -30,12 +30,14 @@ Task 77 landed the SQL-visible attribution hook and the Intel-local Phase 1
 measurement packet. The high-recall 100k funnel shows approximate quantized
 candidate scoring accounts for roughly `82-83%` of the measured local
 candidate-path time, while row materialization plus heap append is only about
-`5-6%`. That leaves no bounded SPIRE-local candidate materialization slice with
+`5-6%`. Object reads are material at the same points, but reducing that cost
+belongs with shared storage-format/object-layout work rather than a bounded
+SPIRE-local candidate-materialization slice. That leaves no Task 77 slice with
 a defensible path to the task's `>=10%` p50 win gate.
 
 The task therefore closes by the allowed no-slice branch. Follow-up Task 78
-owns the scoring-kernel/storage-format work needed to reduce the dominant cost
-without changing SPIRE recursion semantics or defaults.
+owns the scoring-kernel and storage-format/object-read work needed to reduce
+the dominant costs without changing SPIRE recursion semantics or defaults.
 
 ## Non-Goals
 

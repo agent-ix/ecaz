@@ -36,6 +36,14 @@ dominant measured cost instead:
 - tg96/nprobe96: `82.1%`,
 - tg128/nprobe128: `83.2%`.
 
+Object reads are also non-trivial at the high-recall points, including
+`17.934 ms` p50 at tg96/nprobe96. Task 77 does not land an object-read slice
+because reducing that cost requires shared storage-format/object-layout work,
+not a bounded SPIRE-local candidate-materialization change. That work is part
+of the Task 78 scoring-kernel/storage-format lane, where it can be evaluated
+against the same matched-recall evidence instead of being hidden inside the
+Task 77 materialization closeout.
+
 Task 78 is added as the follow-up scoring-kernel/storage-format lane.
 
 ## Validation

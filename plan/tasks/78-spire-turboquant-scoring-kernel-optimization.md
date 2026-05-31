@@ -18,15 +18,20 @@ materialization or heap maintenance:
   `83.2%` of measured candidate-path time.
 
 The row-materialization and heap-retention slices Task 77 was created to test
-are below the `10%` p50 improvement floor. The next useful work is therefore a
-scoring-kernel or storage-format change that makes each candidate cheaper
-without changing selected leaves, recursion semantics, recall floors, or
-defaults.
+are below the `10%` p50 improvement floor. Object reads are also measurable
+(`17.934 ms` p50 at tg96/nprobe96), but reducing that cost belongs with
+storage-format/object-layout work rather than a SPIRE-local materialization
+slice. The next useful work is therefore a scoring-kernel or storage-format
+change that makes each candidate cheaper without changing selected leaves,
+recursion semantics, recall floors, or defaults.
 
 ## Scope
 
 - Profile the SPIRE `storage_format = 'turboquant'` candidate scorer at the
   same 100k high-recall points Task 77 measured.
+- Account for object-read cost at those points and decide whether any
+  storage-format/object-layout slice is task-sized, or whether it belongs in a
+  broader format redesign.
 - Compare exact TurboQuant scoring against existing approximate/no-QJL/LUT
   candidate kernels where available.
 - Decide whether to:
