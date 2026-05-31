@@ -458,13 +458,9 @@ where
     };
 
     let mut next_heap: BinaryHeap<Reverse<FrontierEntry>> = BinaryHeap::with_capacity(list_size);
+    scratch.in_frontier.insert(entry.tid);
     let push_started = Instant::now();
-    push_frontier_entry(
-        &mut next_heap,
-        scratch,
-        entry,
-        neighbors_from_tuple(entry_tuple),
-    );
+    push_frontier_entry(&mut next_heap, entry, neighbors_from_tuple(entry_tuple));
     if let Some(profile) = frontier_profile.as_deref_mut() {
         add_profile_elapsed(&mut profile.candidate_heap_us, push_started);
         profile.candidate_heap_ops += 1;
@@ -526,7 +522,7 @@ where
                 add_profile_elapsed(&mut profile.neighbor_iter_us, neighbor_started);
             }
             let visited_started = Instant::now();
-            if scratch.in_frontier.contains(&nbr) {
+            if !scratch.in_frontier.insert(nbr) {
                 if let Some(profile) = frontier_profile.as_deref_mut() {
                     add_profile_elapsed(&mut profile.visited_set_us, visited_started);
                     profile.visited_set_ops += 1;
@@ -547,12 +543,7 @@ where
                 has_overflow_heaptids: nbr_tuple.has_overflow_heaptids,
             };
             let heap_started = Instant::now();
-            push_frontier_entry(
-                &mut next_heap,
-                scratch,
-                candidate,
-                neighbors_from_tuple(nbr_tuple),
-            );
+            push_frontier_entry(&mut next_heap, candidate, neighbors_from_tuple(nbr_tuple));
             if let Some(profile) = frontier_profile.as_deref_mut() {
                 add_profile_elapsed(&mut profile.candidate_heap_us, heap_started);
                 profile.candidate_heap_ops += 1;
@@ -571,11 +562,9 @@ fn neighbors_from_tuple(tuple: VamanaNodeTuple) -> (Vec<ItemPointer>, usize) {
 
 fn push_frontier_entry(
     next_heap: &mut BinaryHeap<Reverse<FrontierEntry>>,
-    scratch: &mut VisitedState,
     candidate: ScanCandidate,
     neighbors: (Vec<ItemPointer>, usize),
 ) {
-    scratch.in_frontier.insert(candidate.tid);
     let (neighbors, neighbor_count) = neighbors;
     next_heap.push(Reverse(FrontierEntry {
         candidate,
