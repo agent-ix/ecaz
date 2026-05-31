@@ -1,6 +1,6 @@
 # Task 75: SPIRE Latency — Routing Candidate Envelope
 
-Status: complete (2026-05-31, closeout `reviews/task-75/003-closeout/`)
+Status: pending reviewer acceptance (2026-05-31, reissued closeout `reviews/task-75/006-closeout-after-diagnostic-fix/`)
 Owner: coder (to be assigned). One coder, one branch.
 Priority: 1 (closes the load-bearing SPIRE/IVF latency gap from Tasks 73/74)
 
@@ -16,7 +16,7 @@ Tasks 73 and 74 jointly established the SPIRE latency problem:
   identifiable SPIRE-specific orchestration. Task 74 correctly
   shelved scan-orchestration optimization slices on that basis.
 
-The load-bearing observation Task 74 *did not* act on lives in the
+The load-bearing observation Task 74 *did not* act on originally lived in the
 Task 73 packet `pipeline-100k-tg128-b0.log`: at
 `top_graph_search_list_size=128`, the SPIRE candidate envelope is
 **identical at nprobe 64, 96, and 128** —
@@ -26,6 +26,14 @@ three. At matched recall on this fixture, SPIRE scores roughly
 ~780 vectors), a `~37x` scored-candidate ratio. That explains the
 latency gap: SPIRE is doing more scoring work, not slower scoring
 work.
+
+2026-05-31 correction: reviewer feedback found that the original
+diagnostic path did not use top-graph routing. The fixed rerun in
+`benchmarks/task75-intel-local-routing-envelope-diagnostic-fix-rerun/`
+supersedes the `2.78 M` diagnostic count above. The corrected
+high-recall tg96/tg128 candidate envelope is `15,506,227` candidates
+over 200 queries, and the diagnostic candidate sums now match the
+suite runner counters exactly.
 
 This task answers one question: **can routing deliver matched
 recall with a materially smaller candidate envelope?** Either

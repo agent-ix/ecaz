@@ -1,0 +1,2 @@
+DROP DATABASE
+NOTICE:  database "task75_spire_gate_fix" does not exist, skipping

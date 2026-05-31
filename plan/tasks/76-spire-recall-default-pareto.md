@@ -1,6 +1,6 @@
 # Task 76: SPIRE Recall — Default Pareto Point
 
-Status: complete (2026-05-31, closeout `reviews/task-76/002-closeout/`)
+Status: complete (2026-05-31, closeout `reviews/task-76/002-closeout/`, preset note `reviews/task-76/003-closeout-preset-note/`)
 Owner: coder (to be assigned). One coder, one branch.
 Priority: 2 (recall-side complement to Task 75; gated on Task 75 Phase 1)
 
