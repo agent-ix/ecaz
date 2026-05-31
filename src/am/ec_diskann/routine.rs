@@ -3,7 +3,7 @@ use std::sync::{
     atomic::{AtomicUsize, Ordering},
     Mutex, OnceLock,
 };
-use std::{cell::RefCell, collections::HashSet, ffi::c_void, ptr};
+use std::{cell::RefCell, collections::HashSet, ffi::c_void, ptr, time::Instant};
 
 use pgrx::{pg_guard, pg_sys, FromDatum, PgBox, PgMemoryContexts};
 
@@ -523,6 +523,7 @@ unsafe extern "C-unwind" fn ec_diskann_amrescan(
     norderbys: std::ffi::c_int,
 ) {
     pg_am_callback!({
+        let total_started = Instant::now();
         if scan.is_null() {
             pgrx::error!("ec_diskann amrescan received a null scan descriptor");
         }
@@ -616,6 +617,7 @@ unsafe extern "C-unwind" fn ec_diskann_amrescan(
                 pgrx::error!("ec_diskann scan source-column resolution failed: {e}")
             });
         let sql_result_cap = sql_scan_result_cap(opaque.top_k, opaque.rerank_budget);
+        let profile_notice = options::scan_profile_notice_enabled();
         let scan_params = ScanParams {
             entry_point: ItemPointer::INVALID,
             list_size: opaque.list_size,
@@ -628,6 +630,7 @@ unsafe extern "C-unwind" fn ec_diskann_amrescan(
             .unwrap_or_else(|| pgrx::error!("ec_diskann scan heap slot setup failed"));
         let index_handle = std::ptr::NonNull::new((*scan).indexRelation)
             .unwrap_or_else(|| pgrx::error!("ec_diskann scan received null index relation"));
+        let mut profile = ScanProfile::default();
         let (node_results, rerank_error) = if let Some(chain) = opaque.chain.as_ref() {
             let reader = PersistedGraphReader::new(
                 chain,
@@ -635,27 +638,48 @@ unsafe extern "C-unwind" fn ec_diskann_amrescan(
                 opaque.binary_word_count(),
                 opaque.search_code_len(),
             );
+            let entry_resolution_started = Instant::now();
             let entry_point = scan::resolve_entry_point(&reader, opaque.metadata.entry_point)
                 .unwrap_or_else(|e| {
                     pgrx::error!("ec_diskann scan entry-point resolution failed: {e}")
                 });
+            if profile_notice {
+                add_profile_elapsed(&mut profile.entry_resolution_us, entry_resolution_started);
+            }
             let Some(entry_point) = entry_point else {
                 opaque.rescan_called = true;
                 return;
             };
             let mut params = scan_params;
             params.entry_point = entry_point;
-            execute_diskann_scan(
-                &reader,
-                &mut opaque.visited,
-                params,
-                &prefilter,
-                heap_relation,
-                snapshot,
-                slot.as_ptr(),
-                source_attnum,
-                &raw_query,
-            )
+            if profile_notice {
+                profile.setup_us =
+                    elapsed_micros_u64(total_started).saturating_sub(profile.entry_resolution_us);
+                execute_diskann_scan_profiled(
+                    &reader,
+                    &mut opaque.visited,
+                    params,
+                    &prefilter,
+                    heap_relation,
+                    snapshot,
+                    slot.as_ptr(),
+                    source_attnum,
+                    &raw_query,
+                    &mut profile,
+                )
+            } else {
+                execute_diskann_scan(
+                    &reader,
+                    &mut opaque.visited,
+                    params,
+                    &prefilter,
+                    heap_relation,
+                    snapshot,
+                    slot.as_ptr(),
+                    source_attnum,
+                    &raw_query,
+                )
+            }
         } else {
             let reader = RelationGraphReader::new(
                 index_handle,
@@ -663,27 +687,48 @@ unsafe extern "C-unwind" fn ec_diskann_amrescan(
                 opaque.binary_word_count(),
                 opaque.search_code_len(),
             );
+            let entry_resolution_started = Instant::now();
             let entry_point = scan::resolve_entry_point(&reader, opaque.metadata.entry_point)
                 .unwrap_or_else(|e| {
                     pgrx::error!("ec_diskann scan entry-point resolution failed: {e}")
                 });
+            if profile_notice {
+                add_profile_elapsed(&mut profile.entry_resolution_us, entry_resolution_started);
+            }
             let Some(entry_point) = entry_point else {
                 opaque.rescan_called = true;
                 return;
             };
             let mut params = scan_params;
             params.entry_point = entry_point;
-            execute_diskann_scan(
-                &reader,
-                &mut opaque.visited,
-                params,
-                &prefilter,
-                heap_relation,
-                snapshot,
-                slot.as_ptr(),
-                source_attnum,
-                &raw_query,
-            )
+            if profile_notice {
+                profile.setup_us =
+                    elapsed_micros_u64(total_started).saturating_sub(profile.entry_resolution_us);
+                execute_diskann_scan_profiled(
+                    &reader,
+                    &mut opaque.visited,
+                    params,
+                    &prefilter,
+                    heap_relation,
+                    snapshot,
+                    slot.as_ptr(),
+                    source_attnum,
+                    &raw_query,
+                    &mut profile,
+                )
+            } else {
+                execute_diskann_scan(
+                    &reader,
+                    &mut opaque.visited,
+                    params,
+                    &prefilter,
+                    heap_relation,
+                    snapshot,
+                    slot.as_ptr(),
+                    source_attnum,
+                    &raw_query,
+                )
+            }
         };
         prefilter.load_into_scan_opaque(opaque);
 
@@ -692,6 +737,7 @@ unsafe extern "C-unwind" fn ec_diskann_amrescan(
         }
         let node_results =
             node_results.unwrap_or_else(|e| pgrx::error!("ec_diskann scan execution failed: {e}"));
+        let expansion_started = Instant::now();
         opaque.result_buf = if let Some(chain) = opaque.chain.as_ref() {
             expand_scan_results_with_bound_heap_tids(chain, &node_results, sql_result_cap)
         } else {
@@ -703,6 +749,12 @@ unsafe extern "C-unwind" fn ec_diskann_amrescan(
             )
         }
         .unwrap_or_else(|e| pgrx::error!("ec_diskann duplicate expansion failed: {e}"));
+        if profile_notice {
+            add_profile_elapsed(&mut profile.result_expand_us, expansion_started);
+            profile.total_us = elapsed_micros_u64(total_started);
+            profile.result_count = opaque.result_buf.len();
+            emit_scan_profile_notice(&profile, scan_params, opaque.metadata.payload_flags);
+        }
         opaque.result_cursor = 0;
         opaque.rescan_called = true;
     })
@@ -794,6 +846,156 @@ where
         },
     );
     (results, rerank_error.into_inner())
+}
+
+#[derive(Debug, Default)]
+struct ScanProfile {
+    setup_us: u64,
+    entry_resolution_us: u64,
+    graph_read_decode_us: u64,
+    prefilter_score_us: u64,
+    frontier_us: u64,
+    heap_prefetch_us: u64,
+    exact_rerank_us: u64,
+    result_expand_us: u64,
+    total_us: u64,
+    graph_read_count: usize,
+    prefilter_count: usize,
+    rerank_count: usize,
+    result_count: usize,
+}
+
+struct ProfiledGraphReader<'a, R: GraphReader + ?Sized> {
+    inner: &'a R,
+    profile: &'a RefCell<ScanProfile>,
+}
+
+impl<R> GraphReader for ProfiledGraphReader<'_, R>
+where
+    R: GraphReader + ?Sized,
+{
+    fn read_node(&self, tid: ItemPointer) -> Result<VamanaNodeTuple, String> {
+        let started = Instant::now();
+        let result = self.inner.read_node(tid);
+        let mut profile = self.profile.borrow_mut();
+        add_profile_elapsed(&mut profile.graph_read_decode_us, started);
+        profile.graph_read_count += 1;
+        result
+    }
+
+    fn first_live_tid(&self) -> Result<Option<ItemPointer>, String> {
+        let started = Instant::now();
+        let result = self.inner.first_live_tid();
+        add_profile_elapsed(&mut self.profile.borrow_mut().graph_read_decode_us, started);
+        result
+    }
+}
+
+fn execute_diskann_scan_profiled<R>(
+    reader: &R,
+    visited: &mut VisitedState,
+    scan_params: ScanParams,
+    prefilter: &DiskannPreparedPrefilter,
+    heap_relation: pg_sys::Relation,
+    snapshot: pg_sys::Snapshot,
+    slot: *mut pg_sys::TupleTableSlot,
+    source_attnum: i32,
+    raw_query: &[f32],
+    profile: &mut ScanProfile,
+) -> (Result<Vec<scan::ScanResult>, String>, Option<String>)
+where
+    R: GraphReader + ?Sized,
+{
+    let profile_cell = RefCell::new(std::mem::take(profile));
+    let profiled_reader = ProfiledGraphReader {
+        inner: reader,
+        profile: &profile_cell,
+    };
+    let rerank_error = RefCell::new(None::<String>);
+    let frontier_started = Instant::now();
+    let results = scan::vamana_scan_with(
+        &profiled_reader,
+        visited,
+        scan_params,
+        |tuple| {
+            let started = Instant::now();
+            let score = prefilter.score(tuple);
+            let mut profile = profile_cell.borrow_mut();
+            add_profile_elapsed(&mut profile.prefilter_score_us, started);
+            profile.prefilter_count += 1;
+            score
+        },
+        |heap_tids: &[ItemPointer]| {
+            let started = Instant::now();
+            prefetch_heap_rerank_blocks(heap_relation, heap_tids);
+            add_profile_elapsed(&mut profile_cell.borrow_mut().heap_prefetch_us, started);
+        },
+        |heap_tid| {
+            let started = Instant::now();
+            let result = exact_heap_rerank_distance(
+                heap_relation,
+                snapshot,
+                slot,
+                source_attnum,
+                raw_query,
+                heap_tid,
+            );
+            let mut profile = profile_cell.borrow_mut();
+            add_profile_elapsed(&mut profile.exact_rerank_us, started);
+            profile.rerank_count += 1;
+            match result {
+                Ok(distance) => distance,
+                Err(error) => {
+                    if rerank_error.borrow().is_none() {
+                        *rerank_error.borrow_mut() = Some(error);
+                    }
+                    f32::INFINITY
+                }
+            }
+        },
+    );
+    {
+        let mut captured = profile_cell.borrow_mut();
+        captured.frontier_us = elapsed_micros_u64(frontier_started)
+            .saturating_sub(captured.graph_read_decode_us)
+            .saturating_sub(captured.prefilter_score_us)
+            .saturating_sub(captured.heap_prefetch_us)
+            .saturating_sub(captured.exact_rerank_us);
+    }
+    *profile = profile_cell.into_inner();
+    (results, rerank_error.into_inner())
+}
+
+fn elapsed_micros_u64(started: Instant) -> u64 {
+    u64::try_from(started.elapsed().as_micros()).unwrap_or(u64::MAX)
+}
+
+fn add_profile_elapsed(target: &mut u64, started: Instant) {
+    *target = target.saturating_add(elapsed_micros_u64(started));
+}
+
+fn emit_scan_profile_notice(profile: &ScanProfile, scan_params: ScanParams, payload_flags: u8) {
+    let has_binary_sidecar = payload_flags & PAYLOAD_FLAG_BINARY_SIDECAR != 0;
+    pgrx::notice!(
+        "ec_diskann_scan_profile list_size={} rerank_budget={} top_k={} binary_sidecar={} setup_us={} entry_resolution_us={} graph_read_decode_us={} prefilter_score_us={} frontier_us={} heap_prefetch_us={} exact_rerank_us={} result_expand_us={} total_us={} graph_read_count={} prefilter_count={} rerank_count={} result_count={}",
+        scan_params.list_size,
+        scan_params.rerank_budget,
+        scan_params.top_k,
+        has_binary_sidecar,
+        profile.setup_us,
+        profile.entry_resolution_us,
+        profile.graph_read_decode_us,
+        profile.prefilter_score_us,
+        profile.frontier_us,
+        profile.heap_prefetch_us,
+        profile.exact_rerank_us,
+        profile.result_expand_us,
+        profile.total_us,
+        profile.graph_read_count,
+        profile.prefilter_count,
+        profile.rerank_count,
+        profile.result_count,
+    );
 }
 
 fn expand_scan_results_with_bound_heap_tids_relation(

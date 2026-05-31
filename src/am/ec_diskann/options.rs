@@ -20,6 +20,7 @@ static ECDISKANN_LIST_SIZE_GUC: GucSetting<i32> =
     GucSetting::<i32>::new(ECDISKANN_SESSION_LIST_SIZE_UNSET);
 static ECDISKANN_PREFILTER_KIND_GUC: GucSetting<PrefilterKind> =
     GucSetting::<PrefilterKind>::new(PrefilterKind::Auto);
+static ECDISKANN_SCAN_PROFILE_NOTICE_GUC: GucSetting<bool> = GucSetting::<bool>::new(false);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PostgresGucEnum)]
 pub(super) enum PrefilterKind {
@@ -132,6 +133,14 @@ pub(super) fn register_gucs() {
         GucContext::Userset,
         GucFlags::default(),
     );
+    GucRegistry::define_bool_guc(
+        c"ec_diskann.scan_profile_notice",
+        c"Emit per-query ec_diskann scan phase timing as NOTICE.",
+        c"Developer measurement switch for Task 70. When enabled, ec_diskann amrescan emits one NOTICE with scan setup, graph read/decode, prefilter scoring, frontier maintenance, heap prefetch, exact rerank, result expansion, and total timing.",
+        &ECDISKANN_SCAN_PROFILE_NOTICE_GUC,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
 }
 
 pub(super) fn current_session_list_size() -> i32 {
@@ -140,6 +149,10 @@ pub(super) fn current_session_list_size() -> i32 {
 
 pub(super) fn current_prefilter_kind() -> PrefilterKind {
     ECDISKANN_PREFILTER_KIND_GUC.get()
+}
+
+pub(super) fn scan_profile_notice_enabled() -> bool {
+    ECDISKANN_SCAN_PROFILE_NOTICE_GUC.get()
 }
 
 pub(super) fn resolve_scan_tuning(options: &TqDiskannOptions) -> ScanTuning {
@@ -318,9 +331,9 @@ pub(super) fn storage_format_name(fmt: StorageFormat) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::{
-        current_prefilter_kind, resolve_scan_tuning_values, ListSizeSource, PrefilterKind,
-        ScanTuning, StorageFormat, TqDiskannOptions, ECDISKANN_DEFAULT_RERANK_BUDGET,
-        ECDISKANN_DEFAULT_SCAN_LIST_SIZE, ECDISKANN_DEFAULT_TOP_K,
+        current_prefilter_kind, resolve_scan_tuning_values, scan_profile_notice_enabled,
+        ListSizeSource, PrefilterKind, ScanTuning, StorageFormat, TqDiskannOptions,
+        ECDISKANN_DEFAULT_RERANK_BUDGET, ECDISKANN_DEFAULT_SCAN_LIST_SIZE, ECDISKANN_DEFAULT_TOP_K,
         ECDISKANN_SESSION_LIST_SIZE_UNSET,
     };
 
@@ -404,5 +417,10 @@ mod tests {
     #[test]
     fn prefilter_kind_guc_defaults_to_auto() {
         assert_eq!(current_prefilter_kind(), PrefilterKind::Auto);
+    }
+
+    #[test]
+    fn scan_profile_notice_guc_defaults_to_off() {
+        assert!(!scan_profile_notice_enabled());
     }
 }
