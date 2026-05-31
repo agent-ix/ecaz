@@ -88,6 +88,7 @@ pub struct ScanCandidate {
 struct FrontierEntry {
     candidate: ScanCandidate,
     neighbors: Vec<ItemPointer>,
+    neighbor_count: usize,
 }
 
 impl PartialEq for FrontierEntry {
@@ -354,7 +355,7 @@ where
         &mut next_heap,
         scratch,
         entry,
-        neighbors_from_tuple(&entry_tuple),
+        neighbors_from_tuple(entry_tuple),
     );
 
     let mut visited_best: Vec<ScanCandidate> = Vec::with_capacity(list_size);
@@ -371,9 +372,13 @@ where
         let picked_entry =
             pop_next_active(&mut next_heap).expect("peek_next_active returned a candidate");
         let picked = picked_entry.candidate;
-        insert_visited_sorted(&mut visited_best, picked);
+        insert_visited_sorted(&mut visited_best, picked, list_size);
 
-        for nbr in picked_entry.neighbors {
+        for nbr in picked_entry
+            .neighbors
+            .into_iter()
+            .take(picked_entry.neighbor_count)
+        {
             if nbr == ItemPointer::INVALID {
                 continue;
             }
@@ -393,7 +398,7 @@ where
                 &mut next_heap,
                 scratch,
                 candidate,
-                neighbors_from_tuple(&nbr_tuple),
+                neighbors_from_tuple(nbr_tuple),
             );
         }
     }
@@ -402,25 +407,23 @@ where
     Ok(visited_best)
 }
 
-fn neighbors_from_tuple(tuple: &VamanaNodeTuple) -> Vec<ItemPointer> {
-    tuple
-        .neighbors
-        .iter()
-        .copied()
-        .take(tuple.neighbor_count as usize)
-        .collect()
+fn neighbors_from_tuple(tuple: VamanaNodeTuple) -> (Vec<ItemPointer>, usize) {
+    let neighbor_count = usize::from(tuple.neighbor_count).min(tuple.neighbors.len());
+    (tuple.neighbors, neighbor_count)
 }
 
 fn push_frontier_entry(
     next_heap: &mut BinaryHeap<Reverse<FrontierEntry>>,
     scratch: &mut VisitedState,
     candidate: ScanCandidate,
-    neighbors: Vec<ItemPointer>,
+    neighbors: (Vec<ItemPointer>, usize),
 ) {
     scratch.in_frontier.insert(candidate.tid);
+    let (neighbors, neighbor_count) = neighbors;
     next_heap.push(Reverse(FrontierEntry {
         candidate,
         neighbors,
+        neighbor_count,
     }));
 }
 
@@ -432,9 +435,14 @@ fn pop_next_active(next_heap: &mut BinaryHeap<Reverse<FrontierEntry>>) -> Option
     next_heap.pop().map(|Reverse(entry)| entry)
 }
 
-fn insert_visited_sorted(visited_best: &mut Vec<ScanCandidate>, candidate: ScanCandidate) {
+fn insert_visited_sorted(
+    visited_best: &mut Vec<ScanCandidate>,
+    candidate: ScanCandidate,
+    list_size: usize,
+) {
     let idx = visited_best.partition_point(|existing| *existing < candidate);
     visited_best.insert(idx, candidate);
+    visited_best.truncate(list_size);
 }
 
 #[cfg(test)]
