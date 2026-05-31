@@ -1,0 +1,22 @@
+{
+    "CommandId": "25f5a47f-d6dc-43cf-bb15-2d4e6693da14",
+    "InstanceId": "i-0056e46b981edbb17",
+    "Comment": "task74-flamegraph-task-clock",
+    "DocumentName": "AWS-RunShellScript",
+    "DocumentVersion": "$DEFAULT",
+    "PluginName": "aws:runShellScript",
+    "ResponseCode": 1,
+    "ExecutionStartDateTime": "2026-05-31T15:40:22.930Z",
+    "ExecutionElapsedTime": "PT0.468S",
+    "ExecutionEndDateTime": "2026-05-31T15:40:22.930Z",
+    "Status": "Failed",
+    "StatusDetails": "Failed",
+    "StandardOutputContent": "",
+    "StandardOutputUrl": "",
+    "StandardErrorContent": "++ cd /var/lib/pgsql/build/ecaz\n++ /root/.cargo/bin/flamegraph --root --cmd 'record -F 99 -e task-clock -a -g --call-graph dwarf' --ignore-status --output reviews/task-74/004-aws-flamegraph-profile/artifacts/smoke-spire-flamegraph.svg -- /usr/local/bin/ecaz bench latency --database postgres --host /var/run/postgresql --port 5432 --user postgres --prefix task7374_aws_spire_highrecall_tg128_b0 --profile ec_spire --k 10 --sweep 96 --iterations 10 --concurrency 1 --force-index --log-output reviews/task-74/004-aws-flamegraph-profile/artifacts/smoke-spire-latency.log\nError:\ntask-clock: PMU Hardware doesn't support sampling/overflow-interrupts. Try 'perf stat'\nError: unable to run 'perf script': (exit status: 255) zero-sized data (perf.data), nothing to do!\n\nfailed to run commands: exit status 1",
+    "StandardErrorUrl": "",
+    "CloudWatchOutputConfig": {
+        "CloudWatchLogGroupName": "",
+        "CloudWatchOutputEnabled": false
+    }
+}
