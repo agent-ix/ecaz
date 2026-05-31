@@ -1,6 +1,6 @@
 # Task 77: SPIRE Candidate Materialization Optimization
 
-Status: active (2026-05-31, Phase 1 attribution hook `reviews/task-77/001-phase1-attribution/`)
+Status: complete (2026-05-31, no-slice closeout `reviews/task-77/002-phase1-no-slice-closeout/`)
 Owner: coder (to be assigned). One coder, one branch.
 Priority: 1 (direct follow-up to Tasks 75/76)
 
@@ -23,6 +23,19 @@ high-recall 100k point:
 The next useful SPIRE optimization work is therefore not "raise the default"
 or "tweak routing until recall drops." It is to reduce the cost of producing,
 scoring, retaining, and materializing candidates at the same recall floor.
+
+## Outcome
+
+Task 77 landed the SQL-visible attribution hook and the Intel-local Phase 1
+measurement packet. The high-recall 100k funnel shows approximate quantized
+candidate scoring accounts for roughly `82-83%` of the measured local
+candidate-path time, while row materialization plus heap append is only about
+`5-6%`. That leaves no bounded SPIRE-local candidate materialization slice with
+a defensible path to the task's `>=10%` p50 win gate.
+
+The task therefore closes by the allowed no-slice branch. Follow-up Task 78
+owns the scoring-kernel/storage-format work needed to reduce the dominant cost
+without changing SPIRE recursion semantics or defaults.
 
 ## Non-Goals
 
