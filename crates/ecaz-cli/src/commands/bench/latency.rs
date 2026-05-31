@@ -85,6 +85,9 @@ pub struct LatencyArgs {
     /// Operator-supplied cache-state label recorded with each latency row.
     #[arg(long, default_value = "unspecified")]
     pub cache_state: String,
+    /// Extra session GUCs to set on every worker connection, as name=value.
+    #[arg(long = "session-guc")]
+    pub session_gucs: Vec<String>,
     /// Milliseconds between backend RSS/HWM samples when --sample-backend-memory is set.
     #[arg(long, default_value_t = 25)]
     pub memory_sample_interval_ms: u64,
@@ -136,6 +139,7 @@ pub async fn run(conn: &ConnectionOptions, args: LatencyArgs) -> Result<()> {
     };
     super::validate_adaptive_nprobe_options(profile, adaptive_nprobe_options)?;
     super::validate_ivf_scratch_soa_batch_decode(profile, args.ivf_scratch_soa_batch_decode)?;
+    let session_gucs = parse_session_gucs(&args.session_gucs)?;
 
     let corpus_table = format!("{}_corpus", args.prefix);
     let queries_table = format!("{}_queries", args.prefix);
@@ -199,6 +203,7 @@ pub async fn run(conn: &ConnectionOptions, args: LatencyArgs) -> Result<()> {
             profile.encode_scan_query,
             args.force_index,
             args.rerank_width,
+            session_gucs.clone(),
             adaptive_nprobe_options,
             args.ivf_scratch_soa_batch_decode,
             args.bits,
@@ -260,6 +265,7 @@ async fn run_sweep_point(
     encode_scan_query: bool,
     force_index: bool,
     rerank_width: Option<i32>,
+    session_gucs: Vec<(String, String)>,
     adaptive_nprobe_options: super::AdaptiveNprobeBenchOptions,
     ivf_scratch_soa_batch_decode: bool,
     bits: i32,
@@ -290,6 +296,7 @@ async fn run_sweep_point(
         let conn = conn.clone();
         let guc = guc.to_owned();
         let rerank_width_guc = rerank_width_guc.map(str::to_owned);
+        let session_gucs = session_gucs.clone();
         let sql = sql.to_owned();
         let queries = Arc::clone(&queries);
         let counter = Arc::clone(&counter);
@@ -308,6 +315,7 @@ async fn run_sweep_point(
                 force_index,
                 rerank_width,
                 rerank_width_guc,
+                session_gucs,
                 adaptive_nprobe_options,
                 ivf_scratch_soa_batch_decode,
                 bits,
@@ -349,6 +357,7 @@ async fn worker(
     force_index: bool,
     rerank_width: Option<i32>,
     rerank_width_guc: Option<String>,
+    session_gucs: Vec<(String, String)>,
     adaptive_nprobe_options: super::AdaptiveNprobeBenchOptions,
     ivf_scratch_soa_batch_decode: bool,
     bits: i32,
@@ -370,6 +379,12 @@ async fn worker(
                 .batch_execute(&format!("SET {rerank_width_guc} = {rerank_width}"))
                 .await?;
         }
+    }
+    for (name, value) in &session_gucs {
+        client
+            .batch_execute(&format!("SET {name} = {value}"))
+            .await
+            .wrap_err_with(|| format!("SET {name} = {value}"))?;
     }
     super::apply_adaptive_nprobe_options(&client, profile, adaptive_nprobe_options).await?;
     super::apply_ivf_scratch_soa_batch_decode(&client, profile, ivf_scratch_soa_batch_decode)
@@ -426,6 +441,34 @@ async fn worker(
     query_result?;
     let memory = *memory.lock().await;
     Ok(LatencyWorkerResult { durations, memory })
+}
+
+fn parse_session_gucs(raw: &[String]) -> Result<Vec<(String, String)>> {
+    raw.iter()
+        .map(|entry| {
+            let (name, value) = entry
+                .split_once('=')
+                .ok_or_else(|| eyre!("--session-guc must use name=value syntax, got {entry:?}"))?;
+            validate_guc_name(name)
+                .wrap_err_with(|| format!("invalid --session-guc name {name:?}"))?;
+            if value.trim().is_empty() {
+                return Err(eyre!("--session-guc value must not be empty for {name:?}"));
+            }
+            Ok((name.to_owned(), value.to_owned()))
+        })
+        .collect()
+}
+
+fn validate_guc_name(name: &str) -> Result<()> {
+    let mut parts = name.split('.');
+    let Some(first) = parts.next() else {
+        return Err(eyre!("GUC name must not be empty"));
+    };
+    profiles::validate_ident(first)?;
+    for part in parts {
+        profiles::validate_ident(part)?;
+    }
+    Ok(())
 }
 
 fn validate_rerank_width_arg(
@@ -763,5 +806,22 @@ mod tests {
     #[test]
     fn parse_status_kb_reads_proc_status_value() {
         assert_eq!(parse_status_kb("   12345 kB").unwrap(), 12345);
+    }
+
+    #[test]
+    fn parse_session_gucs_accepts_qualified_names() {
+        let parsed = parse_session_gucs(&["ec_diskann.scan_profile_notice=on".to_owned()])
+            .expect("valid guc");
+        assert_eq!(
+            parsed,
+            vec![("ec_diskann.scan_profile_notice".to_owned(), "on".to_owned())]
+        );
+    }
+
+    #[test]
+    fn parse_session_gucs_rejects_malformed_entries() {
+        assert!(parse_session_gucs(&["ec_diskann.scan_profile_notice".to_owned()]).is_err());
+        assert!(parse_session_gucs(&["ec_diskann.scan_profile_notice=".to_owned()]).is_err());
+        assert!(parse_session_gucs(&["ec_diskann.scan-profile=on".to_owned()]).is_err());
     }
 }

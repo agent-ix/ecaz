@@ -370,6 +370,8 @@ struct LatencyStep {
     #[serde(default)]
     cache_state: Option<String>,
     #[serde(default)]
+    session_gucs: Vec<String>,
+    #[serde(default)]
     memory_sample_interval_ms: Option<u64>,
     #[serde(default)]
     log_output: Option<PathBuf>,
@@ -2605,6 +2607,9 @@ fn expand_latency(step: &LatencyStep, defaults: &SuiteDefaults) -> Vec<String> {
     if let Some(cache_state) = &step.cache_state {
         push_arg(&mut args, "--cache-state", cache_state);
     }
+    for guc in &step.session_gucs {
+        push_arg(&mut args, "--session-guc", guc);
+    }
     push_arg(
         &mut args,
         "--memory-sample-interval-ms",
@@ -3661,6 +3666,7 @@ mod tests {
             force_index: None,
             sample_backend_memory: None,
             cache_state: Some("post_recall_warm".into()),
+            session_gucs: vec!["ec_diskann.scan_profile_notice=on".into()],
             memory_sample_interval_ms: None,
             log_output: Some("latency.log".into()),
         };
@@ -3668,6 +3674,9 @@ mod tests {
         assert!(args
             .windows(2)
             .any(|w| w == ["--cache-state", "post_recall_warm"]));
+        assert!(args
+            .windows(2)
+            .any(|w| w == ["--session-guc", "ec_diskann.scan_profile_notice=on"]));
     }
 
     #[test]
