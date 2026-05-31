@@ -1,6 +1,6 @@
 # Task 70: DiskANN Scan Kernel / Per-List Scoring Optimization
 
-Status: proposed
+Status: complete on main (2026-05-31, closeout `reviews/task-70/012-final-measurement-docs/`)
 Owner: coder (to be assigned). One coder, one branch.
 Priority: 1 (load-bearing for closing the cross-engine query-latency gap)
 
