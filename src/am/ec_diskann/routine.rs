@@ -855,12 +855,20 @@ struct ScanProfile {
     graph_read_decode_us: u64,
     prefilter_score_us: u64,
     frontier_us: u64,
+    frontier_candidate_heap_us: u64,
+    frontier_visited_set_us: u64,
+    frontier_neighbor_iter_us: u64,
+    frontier_retained_insert_us: u64,
     heap_prefetch_us: u64,
     exact_rerank_us: u64,
     result_expand_us: u64,
     total_us: u64,
     graph_read_count: usize,
     prefilter_count: usize,
+    frontier_candidate_heap_ops: usize,
+    frontier_visited_set_ops: usize,
+    frontier_neighbor_slots: usize,
+    frontier_retained_inserts: usize,
     rerank_count: usize,
     result_count: usize,
 }
@@ -913,7 +921,8 @@ where
     };
     let rerank_error = RefCell::new(None::<String>);
     let frontier_started = Instant::now();
-    let results = scan::vamana_scan_with(
+    let mut frontier_profile = scan::FrontierProfile::default();
+    let results = scan::vamana_scan_with_frontier_profile(
         &profiled_reader,
         visited,
         scan_params,
@@ -953,9 +962,18 @@ where
                 }
             }
         },
+        &mut frontier_profile,
     );
     {
         let mut captured = profile_cell.borrow_mut();
+        captured.frontier_candidate_heap_us = frontier_profile.candidate_heap_us;
+        captured.frontier_visited_set_us = frontier_profile.visited_set_us;
+        captured.frontier_neighbor_iter_us = frontier_profile.neighbor_iter_us;
+        captured.frontier_retained_insert_us = frontier_profile.retained_insert_us;
+        captured.frontier_candidate_heap_ops = frontier_profile.candidate_heap_ops;
+        captured.frontier_visited_set_ops = frontier_profile.visited_set_ops;
+        captured.frontier_neighbor_slots = frontier_profile.neighbor_slots;
+        captured.frontier_retained_inserts = frontier_profile.retained_inserts;
         captured.frontier_us = elapsed_micros_u64(frontier_started)
             .saturating_sub(captured.graph_read_decode_us)
             .saturating_sub(captured.prefilter_score_us)
@@ -977,7 +995,7 @@ fn add_profile_elapsed(target: &mut u64, started: Instant) {
 fn emit_scan_profile_notice(profile: &ScanProfile, scan_params: ScanParams, payload_flags: u8) {
     let has_binary_sidecar = payload_flags & PAYLOAD_FLAG_BINARY_SIDECAR != 0;
     pgrx::notice!(
-        "ec_diskann_scan_profile list_size={} rerank_budget={} top_k={} binary_sidecar={} setup_us={} entry_resolution_us={} graph_read_decode_us={} prefilter_score_us={} frontier_us={} heap_prefetch_us={} exact_rerank_us={} result_expand_us={} total_us={} graph_read_count={} prefilter_count={} rerank_count={} result_count={}",
+        "ec_diskann_scan_profile list_size={} rerank_budget={} top_k={} binary_sidecar={} setup_us={} entry_resolution_us={} graph_read_decode_us={} prefilter_score_us={} frontier_us={} frontier_candidate_heap_us={} frontier_visited_set_us={} frontier_neighbor_iter_us={} frontier_retained_insert_us={} heap_prefetch_us={} exact_rerank_us={} result_expand_us={} total_us={} graph_read_count={} prefilter_count={} frontier_candidate_heap_ops={} frontier_visited_set_ops={} frontier_neighbor_slots={} frontier_retained_inserts={} rerank_count={} result_count={}",
         scan_params.list_size,
         scan_params.rerank_budget,
         scan_params.top_k,
@@ -987,12 +1005,20 @@ fn emit_scan_profile_notice(profile: &ScanProfile, scan_params: ScanParams, payl
         profile.graph_read_decode_us,
         profile.prefilter_score_us,
         profile.frontier_us,
+        profile.frontier_candidate_heap_us,
+        profile.frontier_visited_set_us,
+        profile.frontier_neighbor_iter_us,
+        profile.frontier_retained_insert_us,
         profile.heap_prefetch_us,
         profile.exact_rerank_us,
         profile.result_expand_us,
         profile.total_us,
         profile.graph_read_count,
         profile.prefilter_count,
+        profile.frontier_candidate_heap_ops,
+        profile.frontier_visited_set_ops,
+        profile.frontier_neighbor_slots,
+        profile.frontier_retained_inserts,
         profile.rerank_count,
         profile.result_count,
     );

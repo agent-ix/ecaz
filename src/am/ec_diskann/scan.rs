@@ -37,6 +37,7 @@ use crate::am::ec_diskann::{
 use crate::storage::page::ItemPointer;
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
+use std::time::Instant;
 
 /// Scan-time tuning parameters. Every value must be > 0.
 #[derive(Debug, Clone, Copy)]
@@ -62,6 +63,18 @@ pub struct ScanResult {
     pub primary_heaptid: ItemPointer,
     pub distance: f32,
     pub has_overflow_heaptids: bool,
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct FrontierProfile {
+    pub candidate_heap_us: u64,
+    pub visited_set_us: u64,
+    pub neighbor_iter_us: u64,
+    pub retained_insert_us: u64,
+    pub candidate_heap_ops: usize,
+    pub visited_set_ops: usize,
+    pub neighbor_slots: usize,
+    pub retained_inserts: usize,
 }
 
 /// Candidate carried through the greedy loop. Caches the tuple's
@@ -210,6 +223,50 @@ where
     Pf: FnOnce(&[ItemPointer]),
     Re: Fn(ItemPointer) -> f32,
 {
+    vamana_scan_with_profile(reader, scratch, params, prefilter, prefetch, rerank, None)
+}
+
+pub fn vamana_scan_with_frontier_profile<R, Pre, Pf, Re>(
+    reader: &R,
+    scratch: &mut VisitedState,
+    params: ScanParams,
+    prefilter: Pre,
+    prefetch: Pf,
+    rerank: Re,
+    frontier_profile: &mut FrontierProfile,
+) -> Result<Vec<ScanResult>, String>
+where
+    R: GraphReader + ?Sized,
+    Pre: Fn(&VamanaNodeTuple) -> f32,
+    Pf: FnOnce(&[ItemPointer]),
+    Re: Fn(ItemPointer) -> f32,
+{
+    vamana_scan_with_profile(
+        reader,
+        scratch,
+        params,
+        prefilter,
+        prefetch,
+        rerank,
+        Some(frontier_profile),
+    )
+}
+
+fn vamana_scan_with_profile<R, Pre, Pf, Re>(
+    reader: &R,
+    scratch: &mut VisitedState,
+    params: ScanParams,
+    prefilter: Pre,
+    prefetch: Pf,
+    rerank: Re,
+    mut frontier_profile: Option<&mut FrontierProfile>,
+) -> Result<Vec<ScanResult>, String>
+where
+    R: GraphReader + ?Sized,
+    Pre: Fn(&VamanaNodeTuple) -> f32,
+    Pf: FnOnce(&[ItemPointer]),
+    Re: Fn(ItemPointer) -> f32,
+{
     if params.entry_point == ItemPointer::INVALID {
         return Err("entry_point must not be INVALID".into());
     }
@@ -236,13 +293,24 @@ where
     }
 
     // Stage 1 — greedy descent under the cheap prefilter.
-    let frontier = greedy_descent_with(
-        reader,
-        scratch,
-        params.entry_point,
-        params.list_size,
-        &prefilter,
-    )?;
+    let frontier = if let Some(profile) = frontier_profile.as_deref_mut() {
+        greedy_descent_with_frontier_profile(
+            reader,
+            scratch,
+            params.entry_point,
+            params.list_size,
+            &prefilter,
+            profile,
+        )?
+    } else {
+        greedy_descent_with(
+            reader,
+            scratch,
+            params.entry_point,
+            params.list_size,
+            &prefilter,
+        )?
+    };
 
     // Stage 2 — exact rerank of the top `rerank_budget` emittable
     // candidates. Tombstoned tuples (`deleted = true`) and
@@ -339,6 +407,43 @@ where
     R: GraphReader + ?Sized,
     Pre: Fn(&VamanaNodeTuple) -> f32,
 {
+    greedy_descent_with_profile(reader, scratch, entry_point, list_size, prefilter, None)
+}
+
+pub fn greedy_descent_with_frontier_profile<R, Pre>(
+    reader: &R,
+    scratch: &mut VisitedState,
+    entry_point: ItemPointer,
+    list_size: usize,
+    prefilter: &Pre,
+    frontier_profile: &mut FrontierProfile,
+) -> Result<Vec<ScanCandidate>, String>
+where
+    R: GraphReader + ?Sized,
+    Pre: Fn(&VamanaNodeTuple) -> f32,
+{
+    greedy_descent_with_profile(
+        reader,
+        scratch,
+        entry_point,
+        list_size,
+        prefilter,
+        Some(frontier_profile),
+    )
+}
+
+fn greedy_descent_with_profile<R, Pre>(
+    reader: &R,
+    scratch: &mut VisitedState,
+    entry_point: ItemPointer,
+    list_size: usize,
+    prefilter: &Pre,
+    mut frontier_profile: Option<&mut FrontierProfile>,
+) -> Result<Vec<ScanCandidate>, String>
+where
+    R: GraphReader + ?Sized,
+    Pre: Fn(&VamanaNodeTuple) -> f32,
+{
     scratch.clear();
     scratch.reserve(list_size.saturating_mul(2));
 
@@ -353,29 +458,53 @@ where
     };
 
     let mut next_heap: BinaryHeap<Reverse<FrontierEntry>> = BinaryHeap::with_capacity(list_size);
+    let push_started = Instant::now();
     push_frontier_entry(
         &mut next_heap,
         scratch,
         entry,
         neighbors_from_tuple(entry_tuple),
     );
+    if let Some(profile) = frontier_profile.as_deref_mut() {
+        add_profile_elapsed(&mut profile.candidate_heap_us, push_started);
+        profile.candidate_heap_ops += 1;
+    }
 
     let mut visited_best: Vec<ScanCandidate> = Vec::with_capacity(list_size);
     loop {
         maybe_check_for_interrupts();
 
+        let heap_started = Instant::now();
         let Some(next) = peek_next_active(&next_heap) else {
+            if let Some(profile) = frontier_profile.as_deref_mut() {
+                add_profile_elapsed(&mut profile.candidate_heap_us, heap_started);
+                profile.candidate_heap_ops += 1;
+            }
             break;
         };
+        if let Some(profile) = frontier_profile.as_deref_mut() {
+            add_profile_elapsed(&mut profile.candidate_heap_us, heap_started);
+            profile.candidate_heap_ops += 1;
+        }
         if visited_best.len() >= list_size && next >= visited_best[list_size - 1] {
             break;
         }
 
+        let heap_started = Instant::now();
         let picked_entry =
             pop_next_active(&mut next_heap).expect("peek_next_active returned a candidate");
+        if let Some(profile) = frontier_profile.as_deref_mut() {
+            add_profile_elapsed(&mut profile.candidate_heap_us, heap_started);
+            profile.candidate_heap_ops += 1;
+        }
         let picked = picked_entry.candidate;
         if picked.emittable {
+            let retained_started = Instant::now();
             insert_visited_sorted(&mut visited_best, picked, list_size);
+            if let Some(profile) = frontier_profile.as_deref_mut() {
+                add_profile_elapsed(&mut profile.retained_insert_us, retained_started);
+                profile.retained_inserts += 1;
+            }
         }
 
         for nbr in picked_entry
@@ -383,11 +512,30 @@ where
             .into_iter()
             .take(picked_entry.neighbor_count)
         {
+            let neighbor_started = Instant::now();
+            if let Some(profile) = frontier_profile.as_deref_mut() {
+                profile.neighbor_slots += 1;
+            }
             if nbr == ItemPointer::INVALID {
+                if let Some(profile) = frontier_profile.as_deref_mut() {
+                    add_profile_elapsed(&mut profile.neighbor_iter_us, neighbor_started);
+                }
                 continue;
             }
+            if let Some(profile) = frontier_profile.as_deref_mut() {
+                add_profile_elapsed(&mut profile.neighbor_iter_us, neighbor_started);
+            }
+            let visited_started = Instant::now();
             if scratch.in_frontier.contains(&nbr) {
+                if let Some(profile) = frontier_profile.as_deref_mut() {
+                    add_profile_elapsed(&mut profile.visited_set_us, visited_started);
+                    profile.visited_set_ops += 1;
+                }
                 continue;
+            }
+            if let Some(profile) = frontier_profile.as_deref_mut() {
+                add_profile_elapsed(&mut profile.visited_set_us, visited_started);
+                profile.visited_set_ops += 1;
             }
             let nbr_tuple = reader.read_node(nbr)?;
             let score = prefilter(&nbr_tuple);
@@ -398,12 +546,17 @@ where
                 emittable: nbr_tuple.is_live(),
                 has_overflow_heaptids: nbr_tuple.has_overflow_heaptids,
             };
+            let heap_started = Instant::now();
             push_frontier_entry(
                 &mut next_heap,
                 scratch,
                 candidate,
                 neighbors_from_tuple(nbr_tuple),
             );
+            if let Some(profile) = frontier_profile.as_deref_mut() {
+                add_profile_elapsed(&mut profile.candidate_heap_us, heap_started);
+                profile.candidate_heap_ops += 1;
+            }
         }
     }
 
@@ -447,6 +600,14 @@ fn insert_visited_sorted(
     let idx = visited_best.partition_point(|existing| *existing < candidate);
     visited_best.insert(idx, candidate);
     visited_best.truncate(list_size);
+}
+
+fn elapsed_micros_u64(started: Instant) -> u64 {
+    u64::try_from(started.elapsed().as_micros()).unwrap_or(u64::MAX)
+}
+
+fn add_profile_elapsed(target: &mut u64, started: Instant) {
+    *target = target.saturating_add(elapsed_micros_u64(started));
 }
 
 #[cfg(test)]
