@@ -1,6 +1,6 @@
 # Task 74: SPIRE Leaf-Scan Overhead Audit
 
-Status: proposed
+Status: complete (2026-05-31, closeout `reviews/task-74/002-closeout/`)
 Owner: coder (to be assigned). One coder, one branch.
 Priority: 2 (latency-side complement to Task 73's recall work)
 
