@@ -1,6 +1,6 @@
 # Task 75: SPIRE Latency — Routing Candidate Envelope
 
-Status: proposed
+Status: complete (2026-05-31, closeout `reviews/task-75/003-closeout/`)
 Owner: coder (to be assigned). One coder, one branch.
 Priority: 1 (closes the load-bearing SPIRE/IVF latency gap from Tasks 73/74)
 
