@@ -36,8 +36,9 @@ SPIRE-local candidate-materialization slice. That leaves no Task 77 slice with
 a defensible path to the task's `>=10%` p50 win gate.
 
 The task therefore closes by the allowed no-slice branch. Follow-up Task 78
-owns the scoring-kernel and storage-format/object-read work needed to reduce
-the dominant costs without changing SPIRE recursion semantics or defaults.
+owns RaBitQ-first SPIRE latency optimization, starting with reducing how many
+candidates are scored, with TurboQuant retained as a comparison lane rather
+than the primary target.
 
 ## Non-Goals
 
@@ -148,5 +149,5 @@ AWS confirmation must:
 - Stop a slice if it changes recursion semantics or route ownership rules.
 - Stop a slice if it improves p50 by trading away the Task 73/75 recall floor.
 - Stop local exploration if Phase 1 shows the remaining gap belongs primarily
-  to shared quantized scoring kernels or a storage-format redesign; file that
-  task instead of forcing it into SPIRE routing code.
+  to candidate-selection policy or a storage-format-specific scorer; file that
+  task instead of forcing it into SPIRE materialization code.

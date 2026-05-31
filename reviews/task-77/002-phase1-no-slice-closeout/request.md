@@ -38,13 +38,16 @@ dominant measured cost instead:
 
 Object reads are also non-trivial at the high-recall points, including
 `17.934 ms` p50 at tg96/nprobe96. Task 77 does not land an object-read slice
-because reducing that cost requires shared storage-format/object-layout work,
-not a bounded SPIRE-local candidate-materialization change. That work is part
-of the Task 78 scoring-kernel/storage-format lane, where it can be evaluated
-against the same matched-recall evidence instead of being hidden inside the
-Task 77 materialization closeout.
+because reducing that cost requires reducing the candidate surface and/or
+format-specific object access, not a bounded SPIRE-local candidate
+materialization change. That work is part of the Task 78 RaBitQ-first candidate
+reduction lane, where it can be evaluated as part of SPIRE latency
+optimization against the same matched-recall evidence instead of being hidden
+inside the Task 77 materialization closeout.
 
-Task 78 is added as the follow-up scoring-kernel/storage-format lane.
+Task 78 is added as the follow-up RaBitQ-first SPIRE latency optimization lane.
+It should start from candidate-count reduction; TurboQuant should remain in the
+evidence matrix only as a comparison point.
 
 ## Validation
 
