@@ -302,8 +302,10 @@ where
 }
 
 /// Greedy best-first descent under a cheap prefilter score. Returns
-/// the frontier sorted ascending by prefilter score (smallest = best),
-/// truncated to `list_size`.
+/// the emittable frontier sorted ascending by prefilter score
+/// (smallest = best), truncated to `list_size`. Non-emittable
+/// tombstoned/stripped nodes are still expanded for graph
+/// connectivity, but they do not consume retained result slots.
 ///
 /// Exposed separately from [`vamana_scan`] so Phase 6B can drive the
 /// descent + rerank in different transactions (useful if rerank wants
@@ -372,7 +374,9 @@ where
         let picked_entry =
             pop_next_active(&mut next_heap).expect("peek_next_active returned a candidate");
         let picked = picked_entry.candidate;
-        insert_visited_sorted(&mut visited_best, picked, list_size);
+        if picked.emittable {
+            insert_visited_sorted(&mut visited_best, picked, list_size);
+        }
 
         for nbr in picked_entry
             .neighbors
@@ -1250,5 +1254,74 @@ mod tests {
         // Only node 0 survives the filter.
         assert_eq!(res.len(), 1);
         assert_eq!(res[0].primary_heaptid.block_number, 1000);
+    }
+
+    // SC-018: tombstoned candidates with excellent prefilter scores
+    // must not consume the bounded retained frontier. The scan still
+    // expands them for connectivity, but it must keep searching until
+    // it has the requested live/emittable budget or the frontier is
+    // exhausted.
+    #[test]
+    fn sc_018_tombstoned_top_scores_do_not_starve_emittable_frontier() {
+        let n = 9;
+        let max_degree = 8;
+        let mut g = VamanaGraph::empty(n, max_degree);
+        for node in 1..n {
+            g.neighbors[0].push(node as u32);
+            g.neighbors[node].push(0);
+        }
+        let payloads = synth_payloads(n, 0, 0);
+        let mut persisted =
+            persist_vamana_graph(&g, 0, DEFAULT_PAGE_SIZE, &payloads, max_degree as u16, 0, 0)
+                .expect("persist");
+
+        for dead_node in 1..=4 {
+            let tid = persisted.node_to_tid[dead_node];
+            let page = persisted
+                .chain
+                .get_page_mut(tid.block_number)
+                .expect("page");
+            let bytes = page.raw_tuple(tid).expect("raw").to_vec();
+            let mut tuple =
+                VamanaNodeTuple::decode(&bytes, max_degree as u16, 0, 0).expect("decode");
+            crate::am::ec_diskann::vacuum::mark_deleted(&mut tuple);
+            let patched = tuple.encode(max_degree as u16, 0, 0).expect("encode");
+            page.update_raw_tuple(tid, patched).expect("patch");
+        }
+
+        let reader = PersistedGraphReader::new(&persisted.chain, max_degree as u16, 0, 0);
+        let prefilter = |t: &VamanaNodeTuple| {
+            let node = (t.primary_heaptid.block_number - 1000) as usize;
+            match node {
+                // Dead nodes rank best and would fill a naive bounded
+                // top-L retained set.
+                1..=4 => node as f32,
+                // Live nodes rank next and must still be available
+                // for rerank/result emission.
+                5..=8 => node as f32,
+                // Entry point should not remain in the final top-L
+                // once enough live non-entry nodes are discovered.
+                0 => 100.0,
+                _ => unreachable!("unexpected node {node}"),
+            }
+        };
+        let rerank = |hip: ItemPointer| (hip.block_number - 1000) as f32;
+        let params = ScanParams {
+            entry_point: persisted.entry_point_tid,
+            list_size: 4,
+            rerank_budget: 4,
+            top_k: 4,
+        };
+
+        let res = vamana_scan(&reader, params, prefilter, rerank).expect("scan");
+        let emitted_nodes: Vec<u32> = res
+            .iter()
+            .map(|r| r.primary_heaptid.block_number - 1000)
+            .collect();
+        assert_eq!(
+            emitted_nodes,
+            vec![5, 6, 7, 8],
+            "dead top-scored candidates must not starve live rerank candidates",
+        );
     }
 }
