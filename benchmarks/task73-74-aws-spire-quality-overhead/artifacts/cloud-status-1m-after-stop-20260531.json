@@ -1,0 +1,13 @@
+{
+  "profile": "1m",
+  "state": "unknown",
+  "db_instance_id": null,
+  "db_instance_state": null,
+  "db_private_ip": null,
+  "s3_bucket": null,
+  "last_snapshot_id": null,
+  "paused_at": "2026-05-31T03:19:16.970363141Z",
+  "estimated_hourly_usd": 0.0,
+  "retained_monthly_usd": 8.0,
+  "recommendation": null
+}

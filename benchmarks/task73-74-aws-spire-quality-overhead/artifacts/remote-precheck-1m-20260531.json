@@ -1,0 +1,22 @@
+{
+    "CommandId": "a6699152-04c9-4773-a919-cb0e95e02912",
+    "InstanceId": "i-0056e46b981edbb17",
+    "Comment": "",
+    "DocumentName": "AWS-RunShellScript",
+    "DocumentVersion": "$DEFAULT",
+    "PluginName": "aws:runShellScript",
+    "ResponseCode": 0,
+    "ExecutionStartDateTime": "2026-05-31T14:38:03.818Z",
+    "ExecutionElapsedTime": "PT0.593S",
+    "ExecutionEndDateTime": "2026-05-31T14:38:03.818Z",
+    "Status": "Success",
+    "StatusDetails": "Success",
+    "StandardOutputContent": "-rwxr-xr-x. 2 postgres postgres 20549136 May 30 19:41 ./target/release/ecaz\n-rwxr-xr-x. 1 root     root     20549136 May 30 19:41 /usr/local/bin/ecaz\n● postgresql.service - PostgreSQL database server\n     Loaded: loaded (/usr/lib/systemd/system/postgresql.service; enabled; preset: disabled)\n    Drop-In: /etc/systemd/system/postgresql.service.d\n             └─pgdata.conf\n     Active: active (running) since Sun 2026-05-31 14:37:36 UTC; 27s ago\n    Process: 2236 ExecStartPre=/usr/libexec/postgresql-check-db-dir postgresql (code=exited, status=0/SUCCESS)\n   Main PID: 2242 (postgres)\n      Tasks: 10 (limit: 37698)\n     Memory: 38.3M\n        CPU: 37ms\n     CGroup: /system.slice/postgresql.service\n             ├─2242 /usr/bin/postgres -D /var/lib/pgsql/18/data\n             ├─2279 \"postgres: logger \"\n             ├─2281 \"postgres: io worker 0\"\n             ├─2282 \"postgres: io worker 1\"\n             ├─2283 \"postgres: io worker 2\"\n             ├─2284 \"postgres: checkpointer \"\n             ├─2285 \"postgres: background writer \"\n             ├─2288 \"postgres: walwriter \"\n             ├─2289 \"postgres: autovacuum launcher \"\n             └─2290 \"postgres: logical replication launcher \"\n\nMay 31 14:37:36 ip-10-42-1-192.us-west-2.compute.internal systemd[1]: Starting postgresql.service - PostgreSQL database server...\nMay 31 14:37:36 ip-10-42-1-192.us-west-2.compute.internal postgres[2242]: 2026-05-31 14:37:36.682 UTC [2242] LOG:  registered custom cumulative statistics \"ecaz\" with ID 25\nMay 31 14:37:36 ip-10-42-1-192.us-west-2.compute.internal postgres[2242]: 2026-05-31 14:37:36.696 UTC [2242] LOG:  redirecting log output to logging collector process\nMay 31 14:37:36 ip-10-42-1-192.us-west-2.compute.internal postgres[2242]: 2026-05-31 14:37:36.696 UTC [2242] HINT:  Future log output will appear in directory \"log\".\nMay 31 14:37:36 ip-10-42-1-192.us-west-2.compute.internal systemd[1]: Started postgresql.service - PostgreSQL database server.\nPostgreSQL 18.3 on aarch64-amazon-linux-gnu, compiled by gcc (GCC) 11.5.0 20240719 (Red Hat 11.5.0-5), 64-bit\n",
+    "StandardOutputUrl": "",
+    "StandardErrorContent": "++ cd /var/lib/pgsql/build/ecaz\n++ git rev-parse HEAD\nfatal: detected dubious ownership in repository at '/var/lib/pgsql/build/ecaz'\nTo add an exception for this directory, call:\n\n\tgit config --global --add safe.directory /var/lib/pgsql/build/ecaz\n++ true\n++ ls -l /usr/local/bin/ecaz ./target/debug/ecaz ./target/release/ecaz\nls: cannot access './target/debug/ecaz': No such file or directory\n++ true\n++ sudo systemctl status postgresql --no-pager\n++ sudo -u postgres psql -h /var/run/postgresql -d postgres -Atqc 'select version();'\n++ ls -lh /var/lib/pgsql/18/datasets/staged-current/ec_real_100k_corpus.tsv /var/lib/pgsql/18/datasets/staged-current/ec_real_100k_queries.tsv /var/lib/pgsql/18/datasets/staged-current/ec_real_100k_manifest.json\nls: cannot access '/var/lib/pgsql/18/datasets/staged-current/ec_real_100k_corpus.tsv': No such file or directory\nls: cannot access '/var/lib/pgsql/18/datasets/staged-current/ec_real_100k_queries.tsv': No such file or directory\nls: cannot access '/var/lib/pgsql/18/datasets/staged-current/ec_real_100k_manifest.json': No such file or directory\n++ true\n",
+    "StandardErrorUrl": "",
+    "CloudWatchOutputConfig": {
+        "CloudWatchLogGroupName": "",
+        "CloudWatchOutputEnabled": false
+    }
+}
