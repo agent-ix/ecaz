@@ -1,6 +1,6 @@
 # Task 74: SPIRE Leaf-Scan Overhead Audit
 
-Status: pending profiler evidence and reviewer approval (closeout `reviews/task-74/002-closeout/`, audit `reviews/task-74/003-completion-audit/`, AWS profiler attempt `reviews/task-74/004-aws-profiler-attempt/`)
+Status: pending reviewer approval after Intel profiler baseline (closeout `reviews/task-74/002-closeout/`, audit `reviews/task-74/003-completion-audit/`, AWS profiler attempt `reviews/task-74/004-aws-profiler-attempt/`, Intel profiler baseline `reviews/task-74/005-intel-profiler-baseline/`)
 Owner: coder (to be assigned). One coder, one branch.
 Priority: 2 (latency-side complement to Task 73's recall work)
 
