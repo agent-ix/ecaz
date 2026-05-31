@@ -1,13 +1,13 @@
 # Task 30: SPIRE on a Partition-Object IVF Foundation
 
-Status: in progress at **Phase 13e** (2026-05-31) — `ec_spire` is shipping on
-`main` and is being tuned by downstream tasks (Task 68 build-perf
-characterization closed; Task 72 parallel build, Task 73 recall
-characterization, Task 74 leaf-scan overhead audit all underway). Phases 0
-through 13d closed under packets in `reviews/task-30/`; Phase 13e
-(AWS correctness watchdog + remote tunnel readiness + pooling evidence) is the
-active surface — latest packets at ordinals 995–999 under
-`reviews/task-30/`. Phase 0 storage design checkpoint recorded in
+Status: **complete on `main`** (status fixup 2026-05-31). Phase 13e accepted by
+outside reviewer on 2026-05-29 in
+`reviews/task-30/1067-spire-phase13e-final-closeout/feedback/2026-05-29-001-reviewer.md`
+(ACCEPT — verified AWS pooling payoff at q=1000, representative latency/recall,
+and operations/fault restore). Closeout commit on main: `224980b07 "Close SPIRE
+Phase 13e evidence"`. All product-scale claims (correctness, performance,
+operations) accepted. Downstream tuning continues under Tasks 68 (closed),
+72 (proposed), 73, 74. Phase 0 storage design checkpoint recorded in
 `plan/design/spire-phase0-partition-object-storage.md`; Phase 1 now has
 SPIRE-owned partition-object codecs, placement/epoch metadata, in-memory
 single-level route maps, root routing objects, and per-centroid leaf-object
