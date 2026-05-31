@@ -7,8 +7,8 @@ Reviewer: please review this completion audit for Task 73.
 Task 73 has the required local and AWS measurement evidence, but the strict
 completion audit cannot prove the task complete yet because the task's Phase 1
 exit text requires reviewer-approved findings. There are currently no feedback
-files under `reviews/task-73/` or `reviews/task-74/`, and no GitHub PR exists
-for `task-73-spire-perf`.
+files under `reviews/task-73/` or `reviews/task-74/`. Draft PR #9 now exists
+for `task-73-spire-perf` to give reviewers an external review surface.
 
 This packet corrects the task status from `complete` to `pending reviewer
 approval` until an outside reviewer records approval or actionable feedback.
@@ -31,6 +31,8 @@ approval` until an outside reviewer records approval or actionable feedback.
   `reviews/task-73/003-completion-audit/artifacts/feedback-scan.log`
 - GitHub PR scan:
   `reviews/task-73/003-completion-audit/artifacts/gh-pr-list.json`
+
+Current PR: `https://github.com/agent-ix/ecaz/pull/9`
 
 ## Requested Review Decision
 

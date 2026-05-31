@@ -9,7 +9,8 @@ AWS evidence prove material SPIRE-vs-IVF overhead at matched recall, but the
 task explicitly requires a profile via `samply` or `cargo flamegraph`, and the
 current Task 74 packets state that no external profiler was run. The task also
 requires reviewer-approved findings, and there are no feedback files under the
-Task 74 bucket.
+Task 74 bucket. Draft PR #9 now exists for `task-73-spire-perf` to give
+reviewers an external review surface.
 
 This packet corrects the task status from `complete` to `pending profiler
 evidence and reviewer approval`.
@@ -37,6 +38,8 @@ evidence and reviewer approval`.
   `reviews/task-74/003-completion-audit/artifacts/gh-pr-list.json`
 - Profiler evidence scan:
   `reviews/task-74/003-completion-audit/artifacts/profiler-evidence-scan.log`
+
+Current PR: `https://github.com/agent-ix/ecaz/pull/9`
 
 ## Required Next Evidence
 
