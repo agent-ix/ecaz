@@ -11,10 +11,14 @@ usage() {
 usage: scripts/task67-aws-ssm.sh <command> [args...]
 
 commands:
+  cancel-command <command-id> <output-json>
+  describe-instance <output-json>
   get-invocation <command-id> <output-json>
+  list-commands <output-json>
   pg-diagnose <send-json> <invocation-json>
   pg-restart <send-json> <invocation-json>
   pg-sql <sql> <send-json> <invocation-json>
+  repo-head <send-json> <invocation-json>
 
 environment:
   AWS_REGION                 default: us-west-2
@@ -95,9 +99,32 @@ fi
 shift
 
 case "$cmd" in
+  cancel-command)
+    [[ $# -eq 2 ]] || { usage; exit 2; }
+    aws ssm cancel-command \
+      --region "$REGION" \
+      --command-id "$1" \
+      --instance-ids "$INSTANCE_ID" \
+      --output json > "$2"
+    ;;
+  describe-instance)
+    [[ $# -eq 1 ]] || { usage; exit 2; }
+    aws ssm describe-instance-information \
+      --region "$REGION" \
+      --filters "Key=InstanceIds,Values=$INSTANCE_ID" \
+      --output json > "$1"
+    ;;
   get-invocation)
     [[ $# -eq 2 ]] || { usage; exit 2; }
     get_invocation "$1" "$2"
+    ;;
+  list-commands)
+    [[ $# -eq 1 ]] || { usage; exit 2; }
+    aws ssm list-command-invocations \
+      --region "$REGION" \
+      --instance-id "$INSTANCE_ID" \
+      --details \
+      --output json > "$1"
     ;;
   pg-diagnose)
     [[ $# -eq 2 ]] || { usage; exit 2; }
@@ -127,6 +154,14 @@ case "$cmd" in
       "set -eux" \
       "sudo -u postgres psql -h /var/run/postgresql -d postgres -c $(printf '%q' "$sql")"
     wait_and_get_invocation "$send_json" "$invocation_json"
+    ;;
+  repo-head)
+    [[ $# -eq 2 ]] || { usage; exit 2; }
+    send_shell_command "$1" \
+      "set -eux" \
+      "sudo -u postgres bash -lc 'cd /var/lib/pgsql/build/ecaz && git rev-parse HEAD && git log --oneline -1'" \
+      "/usr/local/bin/ecaz --version || true"
+    wait_and_get_invocation "$1" "$2"
     ;;
   *)
     usage
