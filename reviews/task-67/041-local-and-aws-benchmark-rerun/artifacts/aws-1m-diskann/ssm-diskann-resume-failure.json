@@ -1,0 +1,22 @@
+{
+    "CommandId": "1e572ba1-5b1d-4e07-a1bf-75fe5f22533e",
+    "InstanceId": "i-0056e46b981edbb17",
+    "Comment": "",
+    "DocumentName": "AWS-RunShellScript",
+    "DocumentVersion": "$DEFAULT",
+    "PluginName": "aws:runShellScript",
+    "ResponseCode": 1,
+    "ExecutionStartDateTime": "2026-05-30T19:03:49.602Z",
+    "ExecutionElapsedTime": "PT1.114S",
+    "ExecutionEndDateTime": "2026-05-30T19:03:50.602Z",
+    "Status": "Failed",
+    "StatusDetails": "Failed",
+    "StandardOutputContent": "[suite:task67-diskann-1m-min-rerun-resume] load-diskann-real1m-default -> --database postgres --host /var/run/postgresql --user postgres --log-file reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/aws-1m-diskann/load-diskann-real1m-default.log corpus load --prefix task67_1m_diskann_default_rerun --profile ec_diskann --manifest-file /var/lib/pgsql/18/datasets/staged-task67-1m/ec_real_ann_benchmarks_anchor_manifest.json --allow-manifest-mismatch --chunked --bits 4 --seed 42\n",
+    "StandardOutputUrl": "",
+    "StandardErrorContent": "+ cd /var/lib/pgsql/build/ecaz\n++ dirname reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/task67-diskann-1m-min-rerun-resume-suite.json\n+ mkdir -p reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/aws-1m-diskann\n+ trap 'status=$?; set +e; aws s3 sync reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/aws-1m-diskann s3://ecaz-cloud-1m-b62eb804/bench-artifacts/task67-diskann-1m-min-rerun-resume/20260530T190348Z/ --region us-west-2 --only-show-errors || true; exit $status' EXIT\n+ cat\n++ dirname reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/task67-diskann-1m-min-rerun-resume-suite.json\n+ chown -R postgres:postgres reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/aws-1m-diskann\n+ :\n+ sudo -u postgres bash -lc 'cd '\\''/var/lib/pgsql/build/ecaz'\\''; export PATH=/usr/local/bin:$HOME/.cargo/bin:$PATH; '\\''/usr/local/bin/ecaz'\\'' --database '\\''postgres'\\'' --host /var/run/postgresql --user postgres --log-file '\\''reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/aws-1m-diskann/suite-run.log'\\'' bench suite run --config '\\''reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/task67-diskann-1m-min-rerun-resume-suite.json'\\'' --manifest-output '\\''reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/aws-1m-diskann/suite-manifest.json'\\'' --results-output '\\''reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/aws-1m-diskann/results.jsonl'\\'''\n[suite:task67-diskann-1m-min-rerun-resume] wrote reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/aws-1m-diskann/suite-manifest.json\n[suite:task67-diskann-1m-min-rerun-resume] wrote reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/aws-1m-diskann/suite-manifest.json\n[loader] warning: manifest prefix \"ec_real_ann_benchmarks_anchor\" does not match --prefix \"task67_1m_diskann_default_rerun\"\n\n   0: \u001b[91mconnecting to Postgres database \"postgres\"\u001b[0m\n   1: \u001b[91merror connecting to server\u001b[0m\n   2: \u001b[91mNo such file or directory (os error 2)\u001b[0m\n\nLocation:\n   \u001b[35mcrates/ecaz-cli/src/psql.rs\u001b[0m:\u001b[35m101\u001b[0m\n\nBacktrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.\nRun with RUST_BACKTRACE=full to include source snippets.\n[suite:task67-diskann-1m-min-rerun-resume] wrote reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/aws-1m-diskann/suite-manifest.json\n\n   0: \u001b[91msuite step \"load-diskann-real1m-default\" failed with exit code 1; rerun with --continue-on-error to keep going\u001b[0m\n\nLocation:\n   \u001b[35mcrates/ecaz-cli/src/commands/bench/suite.rs\u001b[0m:\u001b[35m793\u001b[0m\n\nBacktrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.\nRun with RUST_BACKTRACE=full to include source snippets.\n+ status=1\n+ set +e\n+ aws s3 sync reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/aws-1m-diskann s3://ecaz-cloud-1m-b62eb804/bench-artifacts/task67-diskann-1m-min-rerun-resume/20260530T190348Z/ --region us-west-2 --only-show-errors\n+ exit 1\nfailed to run commands: exit status 1",
+    "StandardErrorUrl": "",
+    "CloudWatchOutputConfig": {
+        "CloudWatchLogGroupName": "",
+        "CloudWatchOutputEnabled": false
+    }
+}

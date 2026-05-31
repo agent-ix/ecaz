@@ -1,0 +1,22 @@
+{
+    "CommandId": "96f2f0e1-26f0-4552-be98-fb8ebf219db3",
+    "InstanceId": "i-0056e46b981edbb17",
+    "Comment": "",
+    "DocumentName": "AWS-RunShellScript",
+    "DocumentVersion": "$DEFAULT",
+    "PluginName": "aws:runShellScript",
+    "ResponseCode": 0,
+    "ExecutionStartDateTime": "2026-05-30T23:30:59.836Z",
+    "ExecutionElapsedTime": "PT0.357S",
+    "ExecutionEndDateTime": "2026-05-30T23:30:59.836Z",
+    "Status": "Success",
+    "StatusDetails": "Success",
+    "StandardOutputContent": "DROP INDEX\nDROP TABLE\nDROP TABLE\nDELETE 41\n",
+    "StandardOutputUrl": "",
+    "StandardErrorContent": "++ sudo -u postgres psql -h /var/run/postgresql -d postgres -c 'DROP INDEX IF EXISTS task67_1m_diskann_default_rerun2_idx; DROP TABLE IF EXISTS task67_1m_diskann_default_rerun2_corpus CASCADE; DROP TABLE IF EXISTS task67_1m_diskann_default_rerun2_queries CASCADE; DELETE FROM ecaz_corpus_load_state WHERE prefix = '\\''task67_1m_diskann_default_rerun2'\\'';'\n",
+    "StandardErrorUrl": "",
+    "CloudWatchOutputConfig": {
+        "CloudWatchLogGroupName": "",
+        "CloudWatchOutputEnabled": false
+    }
+}

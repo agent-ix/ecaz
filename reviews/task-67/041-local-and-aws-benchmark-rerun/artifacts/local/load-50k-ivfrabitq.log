@@ -1,0 +1,22 @@
+[loader] inspecting target/real-corpus/staged-task67-local/ec_real_50k_corpus.tsv
+[loader] inspecting target/real-corpus/staged-task67-local/ec_real_50k_queries.tsv
+[loader] corpus: 50000 rows, sha256=56023baaa7bc42f758272e8617603d538808e6290a8a70a3a84e057571240133  queries: 1000 rows, sha256=95ac7992578aa80bb193657f10fbcbf1ea3867e559739244bf5a467f7a5a9fa3
+[loader] warning: manifest verification failed for target/real-corpus/staged-task67-local/ec_real_50k_manifest.json: prefix="ec_real_50k" (expected "task67_local_fullq_50k_ivfrabitq")
+[loader] copied corpus table task67_local_fullq_50k_ivfrabitq_corpus in 45.33s
+[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...
+[loader] encoded corpus table task67_local_fullq_50k_ivfrabitq_corpus in 33.36s
+[loader] copied queries table task67_local_fullq_50k_ivfrabitq_queries in 963.96ms
+[loader] building task67_local_fullq_50k_ivfrabitq_rabitq_idx using ec_ivf (reloptions=[storage_format=rabitq]) ...
+[loader] built task67_local_fullq_50k_ivfrabitq_rabitq_idx in 638.78s
+┌─────────┬─────────────────────────────────────────────────────────────────────┐
+│ field   ┆ value                                                               │
+╞═════════╪═════════════════════════════════════════════════════════════════════╡
+│ profile ┆ ec_ivf                                                              │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ task67_local_fullq_50k_ivfrabitq_corpus (50000 rows)                │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ task67_local_fullq_50k_ivfrabitq_queries (1000 rows)                │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ task67_local_fullq_50k_ivfrabitq_rabitq_idx [storage_format=rabitq] │
+└─────────┴─────────────────────────────────────────────────────────────────────┘
+[loader] completed prefix task67_local_fullq_50k_ivfrabitq in 792.95s

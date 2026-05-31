@@ -1,0 +1,243 @@
+{
+  "suite": "current-intel-local",
+  "schema_version": 1,
+  "config": "crates/ecaz-cli/suites/current/intel-local.json",
+  "config_sha256": "9ec2d6e339fbf133d52bc293dd3c3b7e63488d0e1787e978549073bf159853b9",
+  "dry_run": false,
+  "generated_at_unix_ms": 1780167101698,
+  "connection": {
+    "database": "postgres",
+    "host": "/home/peter/.pgrx",
+    "port": 28818,
+    "user": null,
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "precheck-host",
+      "kind": "raw",
+      "command": [
+        "--database",
+        "postgres",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "dev",
+        "sql",
+        "--pg",
+        "18",
+        "--db",
+        "postgres",
+        "--socket-dir",
+        "/home/peter/.pgrx",
+        "--raw",
+        "--sql",
+        "SELECT now() AS captured_at, version() AS postgres_version, current_setting('shared_buffers') AS shared_buffers, current_setting('work_mem') AS work_mem, current_setting('maintenance_work_mem') AS maintenance_work_mem, current_setting('effective_cache_size') AS effective_cache_size;",
+        "--log-output",
+        "reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/current-intel-local/precheck-host.log"
+      ],
+      "selected": true,
+      "tags": [
+        "setup",
+        "precheck",
+        "current",
+        "intel-local"
+      ],
+      "expected_artifacts": [
+        "reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/current-intel-local/precheck-host.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1780167101699,
+      "finished_at_unix_ms": 1780167101721,
+      "duration_ms": 21,
+      "exit_code": 0
+    },
+    {
+      "name": "load-100k-hnsw-m16",
+      "kind": "load",
+      "command": [
+        "--database",
+        "postgres",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "--log-file",
+        "reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/current-intel-local/load-100k-hnsw-m16.log",
+        "corpus",
+        "load",
+        "--prefix",
+        "current_intel_real100k_hnsw",
+        "--profile",
+        "ec_hnsw",
+        "--corpus-file",
+        "target/real-corpus/staged-task50/ec_real_100k_corpus.tsv",
+        "--queries-file",
+        "target/real-corpus/staged-task50/ec_real_100k_queries.tsv",
+        "--manifest-file",
+        "target/real-corpus/staged-task50/ec_real_100k_manifest.json",
+        "--allow-manifest-mismatch",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--m",
+        "16",
+        "--ef-construction",
+        "128"
+      ],
+      "selected": true,
+      "tags": [
+        "load",
+        "current",
+        "intel-local",
+        "ec_real_100k",
+        "hnsw"
+      ],
+      "expected_artifacts": [
+        "reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/current-intel-local/load-100k-hnsw-m16.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1780167101721,
+      "finished_at_unix_ms": 1780169676651,
+      "duration_ms": 2577492,
+      "exit_code": 0
+    },
+    {
+      "name": "recall-100k-hnsw-ef-sweep",
+      "kind": "recall",
+      "command": [
+        "--database",
+        "postgres",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "recall",
+        "--prefix",
+        "current_intel_real100k_hnsw",
+        "--profile",
+        "ec_hnsw",
+        "--k",
+        "10",
+        "--sweep",
+        "40,80,120,200,400",
+        "--queries-limit",
+        "200",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--log-output",
+        "reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/current-intel-local/recall-100k-hnsw-ef-sweep.log"
+      ],
+      "selected": true,
+      "tags": [
+        "recall",
+        "current",
+        "intel-local",
+        "ec_real_100k",
+        "hnsw"
+      ],
+      "expected_artifacts": [
+        "reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/current-intel-local/recall-100k-hnsw-ef-sweep.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1780169676665,
+      "finished_at_unix_ms": 1780169945392,
+      "duration_ms": 269051,
+      "exit_code": 0
+    },
+    {
+      "name": "latency-100k-hnsw-ef-sweep",
+      "kind": "latency",
+      "command": [
+        "--database",
+        "postgres",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "latency",
+        "--prefix",
+        "current_intel_real100k_hnsw",
+        "--profile",
+        "ec_hnsw",
+        "--k",
+        "10",
+        "--concurrency",
+        "1",
+        "--iterations",
+        "200",
+        "--sweep",
+        "40,80,120,200,400",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--sample-backend-memory",
+        "--cache-state",
+        "post_recall_warm",
+        "--memory-sample-interval-ms",
+        "25",
+        "--log-output",
+        "reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/current-intel-local/latency-100k-hnsw-ef-sweep.log"
+      ],
+      "selected": true,
+      "tags": [
+        "latency",
+        "current",
+        "intel-local",
+        "ec_real_100k",
+        "hnsw"
+      ],
+      "expected_artifacts": [
+        "reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/current-intel-local/latency-100k-hnsw-ef-sweep.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1780169945394,
+      "finished_at_unix_ms": 1780169987770,
+      "duration_ms": 42414,
+      "exit_code": 0
+    },
+    {
+      "name": "storage-100k-hnsw-m16",
+      "kind": "storage",
+      "command": [
+        "--database",
+        "postgres",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "--log-file",
+        "reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/current-intel-local/storage-100k-hnsw-m16.log",
+        "bench",
+        "storage",
+        "--prefix",
+        "current_intel_real100k_hnsw"
+      ],
+      "selected": true,
+      "tags": [
+        "storage",
+        "current",
+        "intel-local",
+        "ec_real_100k",
+        "hnsw"
+      ],
+      "expected_artifacts": [
+        "reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/current-intel-local/storage-100k-hnsw-m16.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1780169987771,
+      "finished_at_unix_ms": 1780169987821,
+      "duration_ms": 46,
+      "exit_code": 0
+    }
+  ]
+}

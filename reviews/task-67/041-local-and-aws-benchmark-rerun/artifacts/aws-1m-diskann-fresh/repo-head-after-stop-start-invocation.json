@@ -1,0 +1,22 @@
+{
+    "CommandId": "93d35d3f-a4c6-43f4-82f4-5ef484e06485",
+    "InstanceId": "i-0056e46b981edbb17",
+    "Comment": "",
+    "DocumentName": "AWS-RunShellScript",
+    "DocumentVersion": "$DEFAULT",
+    "PluginName": "aws:runShellScript",
+    "ResponseCode": 128,
+    "ExecutionStartDateTime": "2026-05-30T23:29:44.708Z",
+    "ExecutionElapsedTime": "PT0.03S",
+    "ExecutionEndDateTime": "2026-05-30T23:29:44.708Z",
+    "Status": "Failed",
+    "StatusDetails": "Failed",
+    "StandardOutputContent": "",
+    "StandardOutputUrl": "",
+    "StandardErrorContent": "++ cd /var/lib/pgsql/build/ecaz\n++ git rev-parse HEAD\nfatal: detected dubious ownership in repository at '/var/lib/pgsql/build/ecaz'\nTo add an exception for this directory, call:\n\n\tgit config --global --add safe.directory /var/lib/pgsql/build/ecaz\nfailed to run commands: exit status 128",
+    "StandardErrorUrl": "",
+    "CloudWatchOutputConfig": {
+        "CloudWatchLogGroupName": "",
+        "CloudWatchOutputEnabled": false
+    }
+}

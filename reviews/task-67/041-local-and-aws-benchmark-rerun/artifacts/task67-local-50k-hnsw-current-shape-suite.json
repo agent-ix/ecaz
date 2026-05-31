@@ -1,0 +1,78 @@
+{
+  "name": "task67-local-50k-hnsw-current-shape",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-67/041-local-and-aws-benchmark-rerun/artifacts/local/current-shape-50k",
+  "defaults": {
+    "pg": 18,
+    "socket_dir": "/home/peter/.pgrx",
+    "bits": 4,
+    "seed": 42,
+    "queries_limit": 200,
+    "iterations": 200,
+    "force_index": true,
+    "sample_backend_memory": true,
+    "memory_sample_interval_ms": 25
+  },
+  "steps": [
+    {
+      "kind": "raw",
+      "name": "precheck-host",
+      "tags": ["setup", "precheck", "task67", "intel-local", "ec_real_50k"],
+      "args": [
+        "dev",
+        "sql",
+        "--pg",
+        "18",
+        "--db",
+        "postgres",
+        "--socket-dir",
+        "/home/peter/.pgrx",
+        "--raw",
+        "--sql",
+        "SELECT now() AS captured_at, version() AS postgres_version, current_setting('shared_buffers') AS shared_buffers, current_setting('work_mem') AS work_mem, current_setting('maintenance_work_mem') AS maintenance_work_mem, current_setting('effective_cache_size') AS effective_cache_size;",
+        "--log-output",
+        "${artifact_dir}/precheck-host.log"
+      ],
+      "expected_artifacts": ["${artifact_dir}/precheck-host.log"]
+    },
+    {
+      "kind": "load",
+      "name": "load-50k-hnsw-m16",
+      "tags": ["load", "task67", "intel-local", "ec_real_50k", "hnsw"],
+      "prefix": "task67_current_shape_real50k_hnsw",
+      "profile": "ec_hnsw",
+      "corpus_file": "target/real-corpus/staged-task67-local/ec_real_50k_corpus.tsv",
+      "queries_file": "target/real-corpus/staged-task67-local/ec_real_50k_queries.tsv",
+      "manifest_file": "target/real-corpus/staged-task67-local/ec_real_50k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "m": [16],
+      "ef_construction": 128
+    },
+    {
+      "kind": "recall",
+      "name": "recall-50k-hnsw-ef-sweep",
+      "tags": ["recall", "task67", "intel-local", "ec_real_50k", "hnsw"],
+      "prefix": "task67_current_shape_real50k_hnsw",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [40, 80, 120, 200, 400]
+    },
+    {
+      "kind": "latency",
+      "name": "latency-50k-hnsw-ef-sweep",
+      "tags": ["latency", "task67", "intel-local", "ec_real_50k", "hnsw"],
+      "prefix": "task67_current_shape_real50k_hnsw",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [40, 80, 120, 200, 400],
+      "concurrency": 1,
+      "cache_state": "post_recall_warm"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-50k-hnsw-m16",
+      "tags": ["storage", "task67", "intel-local", "ec_real_50k", "hnsw"],
+      "prefix": "task67_current_shape_real50k_hnsw"
+    }
+  ]
+}
