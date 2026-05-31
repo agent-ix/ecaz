@@ -288,11 +288,22 @@ pub(super) fn collect_single_level_scan_placement_diagnostics(
     query: &SpireScanQuery,
     options: EcSpireOptions,
 ) -> Result<SpireScanPlacementDiagnostics, String> {
+    let top_graph_plan = options.top_graph_plan()?;
     let snapshot = SpireValidatedEpochSnapshot::from_snapshot(*snapshot)?;
     let hierarchy = load_snapshot_routing_hierarchy(&snapshot, object_store)?;
     let leaf_count =
         count_recursive_routing_leaf_pids(&hierarchy.root_object, &hierarchy.internal_objects_by_pid)?;
     let scan_plan = resolve_single_level_scan_plan(leaf_count, options)?;
+    if top_graph_plan.enabled {
+        return collect_validated_top_graph_scan_placement_diagnostics(
+            &snapshot,
+            object_store,
+            query,
+            &hierarchy,
+            scan_plan,
+            top_graph_plan,
+        );
+    }
     collect_validated_single_level_scan_placement_diagnostics(
         &snapshot,
         object_store,
@@ -338,6 +349,7 @@ fn collect_validated_single_level_scan_placement_diagnostics(
         return Ok(SpireScanPlacementDiagnostics {
             scan_plan,
             stores: Vec::new(),
+            leaves: Vec::new(),
         });
     }
 
@@ -354,10 +366,65 @@ fn collect_validated_single_level_scan_placement_diagnostics(
         scan_plan.candidate_limit,
         &mut observer,
     )?;
+    let (stores, leaves) = observer.into_diagnostics();
 
     Ok(SpireScanPlacementDiagnostics {
         scan_plan,
-        stores: observer.into_stores(),
+        stores,
+        leaves,
+    })
+}
+
+fn collect_validated_top_graph_scan_placement_diagnostics(
+    snapshot: &SpireValidatedEpochSnapshot<'_>,
+    object_store: &impl SpireObjectReader,
+    query: &SpireScanQuery,
+    hierarchy: &SpireLoadedRoutingHierarchy,
+    scan_plan: SpireSingleLevelScanPlan,
+    top_graph_plan: SpireTopGraphOptionPlan,
+) -> Result<SpireScanPlacementDiagnostics, String> {
+    if scan_plan.nprobe == 0 {
+        return Ok(SpireScanPlacementDiagnostics {
+            scan_plan,
+            stores: Vec::new(),
+            leaves: Vec::new(),
+        });
+    }
+
+    let (_top_graph_pid, top_graph) = load_snapshot_top_graph_object(snapshot, object_store)?
+        .ok_or_else(|| "ec_spire scan placement diagnostics has no available top graph object".to_owned())?;
+    let scorer = SpirePreparedAssignmentScorer::prepare(
+        scan_plan.payload_format,
+        query.values().len(),
+        query.values(),
+    )?;
+    let leaf_routes = route_top_graph_object_to_leaf_routes(
+        &hierarchy.root_object,
+        &hierarchy.internal_objects_by_pid,
+        &top_graph,
+        query.values(),
+        top_graph_plan.search_list_size.unwrap_or(scan_plan.nprobe),
+        scan_plan.nprobe,
+        &scan_plan.recursive_nprobe_policy,
+        scan_plan.recursive_route_budget,
+    )?;
+
+    let mut observer = SpireScanPlacementDiagnosticsObserver::new();
+    let _candidates = collect_validated_quantized_leaf_route_candidates(
+        snapshot,
+        object_store,
+        leaf_routes,
+        &scorer,
+        scan_plan.dedupe_mode,
+        scan_plan.candidate_limit,
+        &mut observer,
+    )?;
+    let (stores, leaves) = observer.into_diagnostics();
+
+    Ok(SpireScanPlacementDiagnostics {
+        scan_plan,
+        stores,
+        leaves,
     })
 }
 

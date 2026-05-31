@@ -7824,6 +7824,76 @@ fn ec_spire_index_scan_placement_snapshot(
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_spire_index_scan_leaf_candidate_snapshot(
+    index_oid: pg_sys::Oid,
+    query: Vec<f32>,
+) -> TableIterator<
+    'static,
+    (
+        name!(active_epoch, i64),
+        name!(effective_nprobe, i64),
+        name!(effective_nprobe_source, String),
+        name!(effective_rerank_width, i64),
+        name!(effective_rerank_width_source, String),
+        name!(pid, i64),
+        name!(node_id, i64),
+        name!(local_store_id, i64),
+        name!(object_version, i64),
+        name!(object_bytes, i64),
+        name!(route_count, i64),
+        name!(scanned_count, i64),
+        name!(candidate_row_count, i64),
+        name!(primary_candidate_row_count, i64),
+        name!(boundary_replica_candidate_row_count, i64),
+        name!(deduped_candidate_row_count, i64),
+        name!(truncated_candidate_row_count, i64),
+        name!(candidate_winner_count, i64),
+    ),
+> {
+    let rows = {
+        let index_relation = open_valid_ec_spire_index_guard(
+            index_oid,
+            "ec_spire_index_scan_leaf_candidate_snapshot",
+        );
+        with_spire_live_index_relation!(
+            index_relation,
+            am::spire_index_scan_leaf_candidate_snapshot,
+            query
+        )
+    };
+
+    TableIterator::new(rows.into_iter().map(|row| {
+        (
+            i64::try_from(row.active_epoch).expect("active epoch should fit in i64"),
+            i64::from(row.effective_nprobe),
+            row.effective_nprobe_source.to_owned(),
+            i64::try_from(row.effective_rerank_width)
+                .expect("effective rerank width should fit in i64"),
+            row.effective_rerank_width_source.to_owned(),
+            i64::try_from(row.pid).expect("PID should fit in i64"),
+            i64::from(row.node_id),
+            i64::from(row.local_store_id),
+            i64::try_from(row.object_version).expect("object version should fit in i64"),
+            i64::try_from(row.object_bytes).expect("object bytes should fit in i64"),
+            i64::try_from(row.route_count).expect("route count should fit in i64"),
+            i64::try_from(row.scanned_count).expect("scanned count should fit in i64"),
+            i64::try_from(row.candidate_row_count).expect("candidate row count should fit in i64"),
+            i64::try_from(row.primary_candidate_row_count)
+                .expect("primary candidate row count should fit in i64"),
+            i64::try_from(row.boundary_replica_candidate_row_count)
+                .expect("boundary replica candidate row count should fit in i64"),
+            i64::try_from(row.deduped_candidate_row_count)
+                .expect("deduped candidate row count should fit in i64"),
+            i64::try_from(row.truncated_candidate_row_count)
+                .expect("truncated candidate row count should fit in i64"),
+            i64::try_from(row.candidate_winner_count)
+                .expect("candidate winner count should fit in i64"),
+        )
+    }))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_spire_index_selected_pid_placement_snapshot(
     index_oid: pg_sys::Oid,
     selected_pids: Vec<i64>,

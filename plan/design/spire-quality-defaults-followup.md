@@ -24,3 +24,21 @@ A future defaults task should start from:
 
 No default should change until that task has same-host recall, latency, and
 profiler evidence for the proposed policy.
+
+## Task 76 Update
+
+Task 76 ran the local Intel `ecaz bench suite` Pareto packet at 10k and 100k:
+`benchmarks/task76-intel-local-spire-pareto/`.
+
+The result amends this follow-up decision without changing SPIRE defaults:
+
+- 10k has cheap high-recall SPIRE points, but 100k remains the governing case.
+- At 100k, SPIRE tg96/nprobe96 reached recall@10 `0.9975` with p50
+  `146.693 ms` and p95 `175.128 ms`, while IVF nprobe96 reached recall@10
+  `0.9980` with p50 `37.7 ms` and p95 `46.5 ms`.
+- The canonical local 1M TSV fixture was unavailable, so Task 76 does not
+  promote a 1M-informed default or quality preset.
+
+If this policy is reopened, it should start from Task 75's candidate-funnel
+evidence plus Task 76's Pareto packet and should prioritize reducing SPIRE's
+candidate/materialization cost before raising default recall aggression.
