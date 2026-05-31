@@ -69,6 +69,19 @@ The suite carries forward the M5-selected Task 73/74 points:
    `aws sts get-caller-identity` failed with `NoCredentials`. Artifact:
    `artifacts/aws-sts-get-caller-identity.log`.
 
+5. Repeated credential check on second resume:
+
+   ```console
+   aws configure list-profiles
+   aws sts get-caller-identity
+   ```
+
+   Result on 2026-05-31T00:52:08Z at head
+   `93295cb20ffbfa2bcc9bc6afa9a653177fa45ad7`: `aws configure
+   list-profiles` returned no profiles, and `aws sts get-caller-identity`
+   failed with `NoCredentials`. Artifact:
+   `artifacts/aws-sts-get-caller-identity-20260531T005208Z.log`.
+
 ## Resume Instructions
 
 After AWS credentials are configured, rerun:
