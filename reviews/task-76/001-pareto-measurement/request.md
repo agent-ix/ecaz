@@ -37,6 +37,7 @@ The local 1M TSV fixture was unavailable, so this packet explicitly does not pro
 - Raw results: `benchmarks/task76-intel-local-spire-pareto/artifacts/results.jsonl`
 - Full run log: `benchmarks/task76-intel-local-spire-pareto/artifacts/suite-run.log`
 - Clippy log: `reviews/task-76/001-pareto-measurement/artifacts/clippy-pg18.log`
+- AWS status after local work: `reviews/task-76/001-pareto-measurement/artifacts/aws-status-1m-after-local-work.log`, `reviews/task-76/001-pareto-measurement/artifacts/aws-status-10k-medium-after-local-work.log`
 
 ## Validation
 
@@ -46,4 +47,6 @@ target/debug/ecaz bench suite run --dry-run --config benchmarks/task76-intel-loc
 target/debug/ecaz bench suite run --config benchmarks/task76-intel-local-spire-pareto/suite.json --database task76_spire_pareto --host /home/peter/.pgrx --port 28818 --manifest-output benchmarks/task76-intel-local-spire-pareto/artifacts/suite-manifest.json --log-file benchmarks/task76-intel-local-spire-pareto/artifacts/suite-run.log
 target/debug/ecaz bench suite report --manifest benchmarks/task76-intel-local-spire-pareto/artifacts/suite-manifest.json --results-output benchmarks/task76-intel-local-spire-pareto/artifacts/normalized-results.jsonl --log-file benchmarks/task76-intel-local-spire-pareto/artifacts/suite-report.md
 cargo clippy --all-targets --no-default-features --features pg18 -- -D warnings
+script -q -c "target/debug/ecaz cloud status --profile 1m" reviews/task-76/001-pareto-measurement/artifacts/aws-status-1m-after-local-work.log
+script -q -c "target/debug/ecaz cloud status --profile 10k-medium" reviews/task-76/001-pareto-measurement/artifacts/aws-status-10k-medium-after-local-work.log
 ```
