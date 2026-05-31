@@ -1170,6 +1170,68 @@ mod tests {
         );
     }
 
+    // SC-011b: profile-aware scan path preserves results and records
+    // frontier operation counters. Wall-time subfields may quantize
+    // to zero on small fixtures, so this smoke asserts counters.
+    #[test]
+    fn sc_011b_scan_with_frontier_profile_records_counters() {
+        let n = 12;
+        let g = chain_graph(n, 4);
+        let payloads = synth_payloads(n, 0, 0);
+        let persisted =
+            persist_vamana_graph(&g, 0, DEFAULT_PAGE_SIZE, &payloads, 4, 0, 0).expect("persist");
+        let reader = PersistedGraphReader::new(&persisted.chain, 4, 0, 0);
+
+        let prefilter = |t: &VamanaNodeTuple| (t.primary_heaptid.block_number - 1000) as f32;
+        let rerank = |hip: ItemPointer| (hip.block_number - 1000) as f32;
+        let params = ScanParams {
+            entry_point: persisted.entry_point_tid,
+            list_size: 6,
+            rerank_budget: 4,
+            top_k: 3,
+        };
+
+        let expected = vamana_scan(&reader, params, prefilter, rerank).expect("fresh");
+
+        use crate::am::ec_diskann::reader::VisitedState;
+        let mut scratch = VisitedState::new();
+        let mut profile = FrontierProfile::default();
+        let mut prefetched = Vec::new();
+        let got = vamana_scan_with_frontier_profile(
+            &reader,
+            &mut scratch,
+            params,
+            prefilter,
+            |tids: &[ItemPointer]| prefetched.extend_from_slice(tids),
+            rerank,
+            &mut profile,
+        )
+        .expect("profiled");
+
+        assert_eq!(got, expected, "profile path must preserve results");
+        assert_eq!(
+            prefetched.len(),
+            params.rerank_budget,
+            "profile path must still call prefetch with rerank budget"
+        );
+        assert!(
+            profile.candidate_heap_ops > 0,
+            "candidate heap counter must be recorded"
+        );
+        assert!(
+            profile.visited_set_ops > 0,
+            "visited-set counter must be recorded"
+        );
+        assert!(
+            profile.neighbor_slots > 0,
+            "neighbor-slot counter must be recorded"
+        );
+        assert!(
+            profile.retained_inserts >= params.rerank_budget,
+            "retained inserts should cover the rerank budget"
+        );
+    }
+
     /// What to apply to each marked node in a persisted chain fixture.
     #[derive(Clone, Copy)]
     enum DeathKind {
