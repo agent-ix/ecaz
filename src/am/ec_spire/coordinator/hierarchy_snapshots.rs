@@ -1724,6 +1724,57 @@ pub(crate) fn index_scan_placement_snapshot(
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
+pub(crate) fn index_scan_leaf_candidate_snapshot(
+    index: SpireLiveIndexRelation,
+    query_values: Vec<f32>,
+) -> Vec<SpireIndexScanLeafCandidateSnapshotRow> {
+    let result = (|| -> Result<Vec<SpireIndexScanLeafCandidateSnapshotRow>, String> {
+        let query = scan::SpireScanQuery::new(query_values)?;
+        let Some(anchor) = index.active_epoch_anchor(index.root_control())? else {
+            return Ok(Vec::new());
+        };
+
+        let snapshot = anchor.snapshot()?;
+        let object_store = index.object_store_set(
+            &anchor.placement_directory,
+            pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+        )?;
+        let diagnostics = scan::collect_single_level_scan_placement_diagnostics(
+            &snapshot,
+            &object_store,
+            &query,
+            index.relation_options(),
+        )?;
+        let rows = diagnostics
+            .leaves
+            .into_iter()
+            .map(|leaf| SpireIndexScanLeafCandidateSnapshotRow {
+                active_epoch: leaf.epoch,
+                effective_nprobe: diagnostics.scan_plan.nprobe,
+                effective_nprobe_source: diagnostics.scan_plan.nprobe_source,
+                effective_rerank_width: diagnostics.scan_plan.rerank_width as u64,
+                effective_rerank_width_source: diagnostics.scan_plan.rerank_width_source,
+                pid: leaf.pid,
+                node_id: leaf.node_id,
+                local_store_id: leaf.local_store_id,
+                object_version: leaf.object_version,
+                object_bytes: u64::from(leaf.object_bytes),
+                route_count: leaf.route_count as u64,
+                scanned_count: leaf.scanned_count as u64,
+                candidate_row_count: leaf.candidate_row_count as u64,
+                primary_candidate_row_count: leaf.primary_candidate_row_count as u64,
+                boundary_replica_candidate_row_count: leaf.boundary_replica_candidate_row_count
+                    as u64,
+                deduped_candidate_row_count: leaf.deduped_candidate_row_count as u64,
+                truncated_candidate_row_count: leaf.truncated_candidate_row_count as u64,
+                candidate_winner_count: leaf.candidate_winner_count as u64,
+            })
+            .collect();
+        Ok(rows)
+    })();
+    result.unwrap_or_else(|e| pgrx::error!("{e}"))
+}
+
 pub(crate) fn index_selected_pid_placement_snapshot(
     index: SpireLiveIndexRelation,
     selected_pids: Vec<u64>,

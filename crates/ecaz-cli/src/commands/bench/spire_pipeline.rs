@@ -10,6 +10,7 @@ use color_eyre::eyre::{eyre, Context, Result};
 use comfy_table::{presets::UTF8_FULL, Cell, Table};
 use indicatif::{ProgressBar, ProgressStyle};
 use ndarray::Array2;
+use serde::Serialize;
 use std::collections::BTreeMap;
 use std::fmt;
 use std::path::PathBuf;
@@ -133,6 +134,9 @@ pub struct SpirePipelineArgs {
     /// Write the pipeline report to this path in addition to stdout.
     #[arg(long)]
     pub log_output: Option<PathBuf>,
+    /// Write per-query candidate funnel rows as JSONL.
+    #[arg(long)]
+    pub funnel_output: Option<PathBuf>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
@@ -269,6 +273,7 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
     let mut query_metrics = BTreeMap::<i32, QueryMetricAggregate>::new();
     let mut production_read_profile = BTreeMap::<i32, ProductionReadProfileAggregate>::new();
     let mut cost_tuning = BTreeMap::<i32, CostTuningRow>::new();
+    let mut funnel_rows = Vec::<FunnelRecord>::new();
     let mut remote_epoch = args.remote_requested_epoch;
 
     for nprobe in &sweep_values {
@@ -297,7 +302,10 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
         bar.set_message(spire_pipeline_progress_label(*nprobe, &args));
         bar.enable_steady_tick(Duration::from_millis(250));
 
-        for query in &queries {
+        for (query_index, query) in queries.iter().enumerate() {
+            let mut funnel_local_rows = Vec::new();
+            let mut funnel_leaf_rows = Vec::new();
+            let mut returned_to_k_count = None;
             if !args.production_read_only {
                 let routing_rows = query_routing_rows(&client, &index, &query.source).await?;
                 for row in routing_rows {
@@ -316,6 +324,11 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
                         .iter()
                         .find(|row| row.active_epoch > 0)
                         .map(|row| row.active_epoch);
+                }
+                if args.funnel_output.is_some() {
+                    funnel_local_rows = local_rows.clone();
+                    funnel_leaf_rows =
+                        query_leaf_candidate_rows(&client, &index, &query.source).await?;
                 }
                 for row in local_rows {
                     local
@@ -393,6 +406,7 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
             if let Some(stmt) = &query_metric_stmt {
                 let measured =
                     execute_query_metric(&client, stmt, &query.source, args.query_metric_k).await?;
+                returned_to_k_count = Some(measured.predicted_ids.len());
                 query_metrics
                     .entry(*nprobe)
                     .or_default()
@@ -406,10 +420,24 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
                     args.query_metric_k,
                 )
                 .await?;
+                if returned_to_k_count.is_none() {
+                    returned_to_k_count =
+                        usize::try_from(row.i64_metric("returned_candidate_count")).ok();
+                }
                 production_read_profile
                     .entry(*nprobe)
                     .or_default()
                     .record(row);
+            }
+            if args.funnel_output.is_some() && !args.production_read_only {
+                funnel_rows.push(FunnelRecord::from_query(
+                    *nprobe,
+                    query_index + 1,
+                    query.id,
+                    &funnel_local_rows,
+                    &funnel_leaf_rows,
+                    returned_to_k_count,
+                )?);
             }
             bar.inc(1);
         }
@@ -462,6 +490,9 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
             .await
             .wrap_err_with(|| format!("writing {}", path.display()))?;
     }
+    if let Some(path) = args.funnel_output {
+        write_funnel_jsonl(&path, &funnel_rows).await?;
+    }
     Ok(())
 }
 
@@ -499,6 +530,11 @@ fn validate_args(args: &SpirePipelineArgs) -> Result<()> {
     {
         return Err(eyre!(
             "--production-read-only requires --include-query-metrics, --include-recall, or --include-production-read-profile"
+        ));
+    }
+    if args.production_read_only && args.funnel_output.is_some() {
+        return Err(eyre!(
+            "--funnel-output requires SQL-visible local pipeline diagnostics; remove --production-read-only"
         ));
     }
     for column in &args.query_metric_projection_columns {
@@ -868,6 +904,18 @@ async fn query_local_store_overlap_rows(
     Ok(rows.into_iter().map(LocalStoreOverlapRow::from).collect())
 }
 
+async fn query_leaf_candidate_rows(
+    client: &Client,
+    index: &str,
+    query: &[f32],
+) -> Result<Vec<LeafCandidateRow>> {
+    let rows = client
+        .query(leaf_candidate_snapshot_sql(), &[&index, &query])
+        .await
+        .wrap_err("querying ec_spire_index_scan_leaf_candidate_snapshot")?;
+    Ok(rows.into_iter().map(LeafCandidateRow::from).collect())
+}
+
 async fn query_remote_pipeline_rows(
     client: &Client,
     index: &str,
@@ -986,6 +1034,15 @@ fn local_store_overlap_sql() -> &'static str {
             read_batch_count, delta_decode_count
      FROM ec_spire_index_scan_local_store_read_overlap_harness($1::text::regclass::oid, $2::real[])
      ORDER BY node_id, local_store_id"
+}
+
+fn leaf_candidate_snapshot_sql() -> &'static str {
+    "SELECT pid, node_id, local_store_id, route_count, scanned_count,
+            candidate_row_count, primary_candidate_row_count,
+            boundary_replica_candidate_row_count, deduped_candidate_row_count,
+            truncated_candidate_row_count, candidate_winner_count
+     FROM ec_spire_index_scan_leaf_candidate_snapshot($1::text::regclass::oid, $2::real[])
+     ORDER BY pid"
 }
 
 fn remote_pipeline_steps_sql() -> &'static str {
@@ -1112,7 +1169,7 @@ impl From<Row> for RoutingRow {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct LocalPipelineRow {
     step_ordinal: i64,
     step_name: String,
@@ -1145,6 +1202,168 @@ impl From<Row> for LocalPipelineRow {
             next_blocker: row.get(11),
         }
     }
+}
+
+#[derive(Debug, Clone)]
+struct LeafCandidateRow {
+    #[allow(dead_code)]
+    pid: i64,
+    #[allow(dead_code)]
+    node_id: i64,
+    #[allow(dead_code)]
+    local_store_id: i64,
+    route_count: i64,
+    scanned_count: i64,
+    candidate_row_count: i64,
+    primary_candidate_row_count: i64,
+    boundary_replica_candidate_row_count: i64,
+    deduped_candidate_row_count: i64,
+    truncated_candidate_row_count: i64,
+    candidate_winner_count: i64,
+}
+
+impl From<Row> for LeafCandidateRow {
+    fn from(row: Row) -> Self {
+        Self {
+            pid: row.get(0),
+            node_id: row.get(1),
+            local_store_id: row.get(2),
+            route_count: row.get(3),
+            scanned_count: row.get(4),
+            candidate_row_count: row.get(5),
+            primary_candidate_row_count: row.get(6),
+            boundary_replica_candidate_row_count: row.get(7),
+            deduped_candidate_row_count: row.get(8),
+            truncated_candidate_row_count: row.get(9),
+            candidate_winner_count: row.get(10),
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct FunnelRecord {
+    kind: &'static str,
+    nprobe: i32,
+    query_ordinal: usize,
+    query_id: i64,
+    leaf_route_count: i64,
+    scanned_leaf_count: i64,
+    candidate_count: i64,
+    leaf_candidate_count: i64,
+    primary_candidate_count: i64,
+    boundary_replica_candidate_count: i64,
+    retained_after_rerank_count: i64,
+    returned_to_k_count: Option<usize>,
+    deduped_candidate_count: i64,
+    truncated_candidate_count: i64,
+    candidate_winner_count: i64,
+    leaf_candidate_mean: f64,
+    leaf_candidate_p95: i64,
+    leaf_candidate_max: i64,
+}
+
+impl FunnelRecord {
+    fn from_query(
+        nprobe: i32,
+        query_ordinal: usize,
+        query_id: i64,
+        local_rows: &[LocalPipelineRow],
+        leaf_rows: &[LeafCandidateRow],
+        returned_to_k_count: Option<usize>,
+    ) -> Result<Self> {
+        let candidate_count = local_step_value(local_rows, "candidates", |row| row.candidate_count)
+            .unwrap_or_else(|| leaf_rows.iter().map(|row| row.candidate_row_count).sum());
+        let retained_after_rerank_count =
+            local_step_value(local_rows, "heap_rerank", |row| row.heap_rerank_row_count)
+                .unwrap_or(0);
+        let leaf_route_count = leaf_rows.iter().map(|row| row.route_count).sum();
+        let scanned_leaf_count = leaf_rows.iter().map(|row| row.scanned_count).sum();
+        let leaf_candidate_count = leaf_rows.iter().map(|row| row.candidate_row_count).sum();
+        let primary_candidate_count = leaf_rows
+            .iter()
+            .map(|row| row.primary_candidate_row_count)
+            .sum();
+        let boundary_replica_candidate_count = leaf_rows
+            .iter()
+            .map(|row| row.boundary_replica_candidate_row_count)
+            .sum();
+        let deduped_candidate_count = leaf_rows
+            .iter()
+            .map(|row| row.deduped_candidate_row_count)
+            .sum();
+        let truncated_candidate_count = leaf_rows
+            .iter()
+            .map(|row| row.truncated_candidate_row_count)
+            .sum();
+        let candidate_winner_count = leaf_rows.iter().map(|row| row.candidate_winner_count).sum();
+        let mut per_leaf_candidates = leaf_rows
+            .iter()
+            .map(|row| row.candidate_row_count)
+            .collect::<Vec<_>>();
+        let leaf_candidate_mean = if per_leaf_candidates.is_empty() {
+            0.0
+        } else {
+            per_leaf_candidates.iter().sum::<i64>() as f64 / per_leaf_candidates.len() as f64
+        };
+        let leaf_candidate_p95 = percentile_nearest_rank(&mut per_leaf_candidates, 95);
+        let leaf_candidate_max = per_leaf_candidates.into_iter().max().unwrap_or(0);
+
+        Ok(Self {
+            kind: "spire_candidate_funnel",
+            nprobe,
+            query_ordinal,
+            query_id,
+            leaf_route_count,
+            scanned_leaf_count,
+            candidate_count,
+            leaf_candidate_count,
+            primary_candidate_count,
+            boundary_replica_candidate_count,
+            retained_after_rerank_count,
+            returned_to_k_count,
+            deduped_candidate_count,
+            truncated_candidate_count,
+            candidate_winner_count,
+            leaf_candidate_mean,
+            leaf_candidate_p95,
+            leaf_candidate_max,
+        })
+    }
+}
+
+fn local_step_value<F>(rows: &[LocalPipelineRow], step_name: &str, value: F) -> Option<i64>
+where
+    F: Fn(&LocalPipelineRow) -> i64,
+{
+    rows.iter()
+        .find(|row| row.step_name == step_name)
+        .map(value)
+}
+
+fn percentile_nearest_rank(values: &mut [i64], percentile: usize) -> i64 {
+    if values.is_empty() {
+        return 0;
+    }
+    values.sort_unstable();
+    let numerator = percentile.saturating_mul(values.len()).saturating_add(99);
+    let rank = numerator / 100;
+    values[rank.saturating_sub(1).min(values.len() - 1)]
+}
+
+async fn write_funnel_jsonl(path: &PathBuf, rows: &[FunnelRecord]) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        tokio::fs::create_dir_all(parent)
+            .await
+            .wrap_err_with(|| format!("creating {}", parent.display()))?;
+    }
+    let mut output = String::new();
+    for row in rows {
+        output.push_str(&serde_json::to_string(row).wrap_err("serializing funnel row")?);
+        output.push('\n');
+    }
+    tokio::fs::write(path, output)
+        .await
+        .wrap_err_with(|| format!("writing {}", path.display()))
 }
 
 #[derive(Debug)]
@@ -2133,6 +2352,7 @@ mod tests {
             top_k: 10,
             consistency_mode: "epoch".to_owned(),
             log_output: None,
+            funnel_output: None,
         }
     }
 

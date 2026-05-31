@@ -442,6 +442,8 @@ struct SpirePipelineStep {
     query_metric_projection_columns: Vec<String>,
     #[serde(default)]
     log_output: Option<PathBuf>,
+    #[serde(default)]
+    funnel_output: Option<PathBuf>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -2245,7 +2247,12 @@ impl SuiteStep {
                 .collect(),
             SuiteStep::CrossAm(step) => step.log_output.iter().cloned().collect(),
             SuiteStep::Latency(step) => step.log_output.iter().cloned().collect(),
-            SuiteStep::SpirePipeline(step) => step.log_output.iter().cloned().collect(),
+            SuiteStep::SpirePipeline(step) => step
+                .log_output
+                .iter()
+                .chain(step.funnel_output.iter())
+                .cloned()
+                .collect(),
             SuiteStep::Storage(step) => step.log_file.iter().cloned().collect(),
             SuiteStep::Explain(step) => step
                 .sql_file
@@ -2741,6 +2748,7 @@ fn expand_spire_pipeline(step: &SpirePipelineStep, defaults: &SuiteDefaults) -> 
         );
     }
     push_opt_path(&mut args, "--log-output", step.log_output.as_deref());
+    push_opt_path(&mut args, "--funnel-output", step.funnel_output.as_deref());
     args
 }
 
@@ -3711,6 +3719,7 @@ mod tests {
             query_metric_k: Some(10),
             query_metric_projection_columns: vec!["title".into()],
             log_output: Some("spire-profile.log".into()),
+            funnel_output: None,
         };
 
         let args = expand_spire_pipeline(&step, &defaults);
@@ -3783,6 +3792,7 @@ mod tests {
                 query_metric_k: Some(10),
                 query_metric_projection_columns: Vec::new(),
                 log_output: None,
+                funnel_output: None,
             })],
         };
 

@@ -1797,6 +1797,28 @@ pub(crate) struct SpireIndexScanPlacementSnapshotRow {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SpireIndexScanLeafCandidateSnapshotRow {
+    pub(crate) active_epoch: u64,
+    pub(crate) effective_nprobe: u32,
+    pub(crate) effective_nprobe_source: &'static str,
+    pub(crate) effective_rerank_width: u64,
+    pub(crate) effective_rerank_width_source: &'static str,
+    pub(crate) pid: u64,
+    pub(crate) node_id: u32,
+    pub(crate) local_store_id: u32,
+    pub(crate) object_version: u64,
+    pub(crate) object_bytes: u64,
+    pub(crate) route_count: u64,
+    pub(crate) scanned_count: u64,
+    pub(crate) candidate_row_count: u64,
+    pub(crate) primary_candidate_row_count: u64,
+    pub(crate) boundary_replica_candidate_row_count: u64,
+    pub(crate) deduped_candidate_row_count: u64,
+    pub(crate) truncated_candidate_row_count: u64,
+    pub(crate) candidate_winner_count: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SpireIndexSelectedPidPlacementSnapshotRow {
     pub(crate) active_epoch: u64,
     pub(crate) selection_ordinal: u64,

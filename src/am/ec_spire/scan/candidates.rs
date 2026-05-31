@@ -338,6 +338,7 @@ fn collect_validated_single_level_scan_placement_diagnostics(
         return Ok(SpireScanPlacementDiagnostics {
             scan_plan,
             stores: Vec::new(),
+            leaves: Vec::new(),
         });
     }
 
@@ -354,10 +355,12 @@ fn collect_validated_single_level_scan_placement_diagnostics(
         scan_plan.candidate_limit,
         &mut observer,
     )?;
+    let (stores, leaves) = observer.into_diagnostics();
 
     Ok(SpireScanPlacementDiagnostics {
         scan_plan,
-        stores: observer.into_stores(),
+        stores,
+        leaves,
     })
 }
 
