@@ -36,6 +36,7 @@ The local 1M TSV fixture was unavailable, so this packet explicitly does not pro
 - Normalized results: `benchmarks/task76-intel-local-spire-pareto/artifacts/normalized-results.jsonl`
 - Raw results: `benchmarks/task76-intel-local-spire-pareto/artifacts/results.jsonl`
 - Full run log: `benchmarks/task76-intel-local-spire-pareto/artifacts/suite-run.log`
+- Clippy log: `reviews/task-76/001-pareto-measurement/artifacts/clippy-pg18.log`
 
 ## Validation
 
@@ -44,4 +45,5 @@ target/debug/ecaz bench suite audit --config benchmarks/task76-intel-local-spire
 target/debug/ecaz bench suite run --dry-run --config benchmarks/task76-intel-local-spire-pareto/suite.json --database task76_spire_pareto --host /home/peter/.pgrx --port 28818 --manifest-output benchmarks/task76-intel-local-spire-pareto/artifacts/suite-dry-run-manifest.json --log-file benchmarks/task76-intel-local-spire-pareto/artifacts/suite-dry-run.log
 target/debug/ecaz bench suite run --config benchmarks/task76-intel-local-spire-pareto/suite.json --database task76_spire_pareto --host /home/peter/.pgrx --port 28818 --manifest-output benchmarks/task76-intel-local-spire-pareto/artifacts/suite-manifest.json --log-file benchmarks/task76-intel-local-spire-pareto/artifacts/suite-run.log
 target/debug/ecaz bench suite report --manifest benchmarks/task76-intel-local-spire-pareto/artifacts/suite-manifest.json --results-output benchmarks/task76-intel-local-spire-pareto/artifacts/normalized-results.jsonl --log-file benchmarks/task76-intel-local-spire-pareto/artifacts/suite-report.md
+cargo clippy --all-targets --no-default-features --features pg18 -- -D warnings
 ```
