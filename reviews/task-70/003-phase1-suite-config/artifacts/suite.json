@@ -18,9 +18,9 @@
       "name": "load-diskann-real10k",
       "tags": ["load", "diskann", "real10k", "phase1"],
       "prefix": "task70_phase1_real10k_diskann",
-      "corpus_file": "data/task31_m5_dbpedia_staged/ec_real_10k_corpus.tsv",
-      "queries_file": "data/task31_m5_dbpedia_staged/ec_real_10k_queries.tsv",
-      "manifest_file": "data/task31_m5_dbpedia_staged/ec_real_10k_manifest.json",
+      "corpus_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_corpus.tsv",
+      "queries_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_queries.tsv",
+      "manifest_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_manifest.json",
       "allow_manifest_mismatch": true,
       "profile": "ec_diskann",
       "reloptions": [
@@ -53,6 +53,48 @@
       "sweep": [64, 200],
       "session_gucs": ["ec_diskann.scan_profile_notice=on"],
       "log_output": "reviews/task-70/003-phase1-suite-config/artifacts/latency-diskann-real10k-l64-l200-profiled.log"
+    },
+    {
+      "kind": "raw",
+      "name": "profile-notices-diskann-real10k-l64",
+      "tags": ["profile", "diskann", "real10k", "phase1", "l64", "scan-profile"],
+      "args": [
+        "dev",
+        "sql",
+        "--pg",
+        "18",
+        "--db",
+        "tqvector_bench",
+        "--raw",
+        "--file",
+        "reviews/task-70/003-phase1-suite-config/artifacts/profile-notices-diskann-real10k-l64.sql",
+        "--log-output",
+        "reviews/task-70/003-phase1-suite-config/artifacts/profile-notices-diskann-real10k-l64.log"
+      ],
+      "expected_artifacts": [
+        "reviews/task-70/003-phase1-suite-config/artifacts/profile-notices-diskann-real10k-l64.log"
+      ]
+    },
+    {
+      "kind": "raw",
+      "name": "profile-notices-diskann-real10k-l200",
+      "tags": ["profile", "diskann", "real10k", "phase1", "l200", "scan-profile"],
+      "args": [
+        "dev",
+        "sql",
+        "--pg",
+        "18",
+        "--db",
+        "tqvector_bench",
+        "--raw",
+        "--file",
+        "reviews/task-70/003-phase1-suite-config/artifacts/profile-notices-diskann-real10k-l200.sql",
+        "--log-output",
+        "reviews/task-70/003-phase1-suite-config/artifacts/profile-notices-diskann-real10k-l200.log"
+      ],
+      "expected_artifacts": [
+        "reviews/task-70/003-phase1-suite-config/artifacts/profile-notices-diskann-real10k-l200.log"
+      ]
     },
     {
       "kind": "explain",

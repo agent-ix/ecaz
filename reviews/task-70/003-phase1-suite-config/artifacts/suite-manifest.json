@@ -3,8 +3,8 @@
   "schema_version": 1,
   "config": "reviews/task-70/003-phase1-suite-config/artifacts/suite.json",
   "config_sha256": "6b248c585d1a88c01acea9d21d99e9b5a8b3165dd9cff9be2b1be7c3eb3e6f16",
-  "dry_run": true,
-  "generated_at_unix_ms": 1780252561020,
+  "dry_run": false,
+  "generated_at_unix_ms": 1780252580267,
   "connection": {
     "database": "tqvector_bench",
     "host": "/Users/peter/.pgrx",
@@ -63,7 +63,11 @@
       "expected_artifacts": [
         "reviews/task-70/003-phase1-suite-config/artifacts/load-diskann-real10k.log"
       ],
-      "status": "dry-run"
+      "status": "succeeded",
+      "started_at_unix_ms": 1780252580268,
+      "finished_at_unix_ms": 1780252590076,
+      "duration_ms": 9807,
+      "exit_code": 0
     },
     {
       "name": "recall-diskann-real10k-l64-l200",
@@ -107,7 +111,11 @@
       "expected_artifacts": [
         "reviews/task-70/003-phase1-suite-config/artifacts/recall-diskann-real10k-l64-l200.log"
       ],
-      "status": "dry-run"
+      "status": "succeeded",
+      "started_at_unix_ms": 1780252590076,
+      "finished_at_unix_ms": 1780252591084,
+      "duration_ms": 1006,
+      "exit_code": 0
     },
     {
       "name": "latency-diskann-real10k-l64-l200-profiled",
@@ -157,7 +165,11 @@
       "expected_artifacts": [
         "reviews/task-70/003-phase1-suite-config/artifacts/latency-diskann-real10k-l64-l200-profiled.log"
       ],
-      "status": "dry-run"
+      "status": "succeeded",
+      "started_at_unix_ms": 1780252591084,
+      "finished_at_unix_ms": 1780252591975,
+      "duration_ms": 890,
+      "exit_code": 0
     },
     {
       "name": "profile-notices-diskann-real10k-l64",
@@ -193,7 +205,11 @@
       "expected_artifacts": [
         "reviews/task-70/003-phase1-suite-config/artifacts/profile-notices-diskann-real10k-l64.log"
       ],
-      "status": "dry-run"
+      "status": "succeeded",
+      "started_at_unix_ms": 1780252591975,
+      "finished_at_unix_ms": 1780252592083,
+      "duration_ms": 107,
+      "exit_code": 0
     },
     {
       "name": "profile-notices-diskann-real10k-l200",
@@ -229,7 +245,11 @@
       "expected_artifacts": [
         "reviews/task-70/003-phase1-suite-config/artifacts/profile-notices-diskann-real10k-l200.log"
       ],
-      "status": "dry-run"
+      "status": "succeeded",
+      "started_at_unix_ms": 1780252592084,
+      "finished_at_unix_ms": 1780252592252,
+      "duration_ms": 167,
+      "exit_code": 0
     },
     {
       "name": "explain-diskann-real10k-l64",
@@ -269,7 +289,11 @@
         "reviews/task-70/003-phase1-suite-config/artifacts/explain-diskann-real10k-l64.sql",
         "reviews/task-70/003-phase1-suite-config/artifacts/explain-diskann-real10k-l64.log"
       ],
-      "status": "dry-run"
+      "status": "succeeded",
+      "started_at_unix_ms": 1780252592252,
+      "finished_at_unix_ms": 1780252592273,
+      "duration_ms": 20,
+      "exit_code": 0
     },
     {
       "name": "explain-diskann-real10k-l200",
@@ -309,7 +333,11 @@
         "reviews/task-70/003-phase1-suite-config/artifacts/explain-diskann-real10k-l200.sql",
         "reviews/task-70/003-phase1-suite-config/artifacts/explain-diskann-real10k-l200.log"
       ],
-      "status": "dry-run"
+      "status": "succeeded",
+      "started_at_unix_ms": 1780252592273,
+      "finished_at_unix_ms": 1780252592293,
+      "duration_ms": 19,
+      "exit_code": 0
     },
     {
       "name": "compare-vectorscale-real10k-l64-l200",
@@ -354,7 +382,11 @@
       "expected_artifacts": [
         "reviews/task-70/003-phase1-suite-config/artifacts/compare-vectorscale-real10k-l64-l200.log"
       ],
-      "status": "dry-run"
+      "status": "succeeded",
+      "started_at_unix_ms": 1780252592293,
+      "finished_at_unix_ms": 1780252603009,
+      "duration_ms": 10715,
+      "exit_code": 0
     }
   ]
 }
