@@ -358,21 +358,25 @@ where
         neighbors_from_tuple(entry_tuple),
     );
 
-    let mut visited_best: Vec<ScanCandidate> = Vec::with_capacity(list_size);
+    let mut retained_best: BinaryHeap<ScanCandidate> = BinaryHeap::with_capacity(list_size);
     loop {
         maybe_check_for_interrupts();
 
         let Some(next) = peek_next_active(&next_heap) else {
             break;
         };
-        if visited_best.len() >= list_size && next >= visited_best[list_size - 1] {
+        if retained_best.len() >= list_size
+            && retained_best
+                .peek()
+                .is_some_and(|worst_retained| next >= *worst_retained)
+        {
             break;
         }
 
         let picked_entry =
             pop_next_active(&mut next_heap).expect("peek_next_active returned a candidate");
         let picked = picked_entry.candidate;
-        insert_visited_sorted(&mut visited_best, picked, list_size);
+        push_retained_candidate(&mut retained_best, picked, list_size);
 
         for nbr in picked_entry
             .neighbors
@@ -403,7 +407,8 @@ where
         }
     }
 
-    visited_best.truncate(list_size);
+    let mut visited_best = retained_best.into_vec();
+    visited_best.sort();
     Ok(visited_best)
 }
 
@@ -435,14 +440,23 @@ fn pop_next_active(next_heap: &mut BinaryHeap<Reverse<FrontierEntry>>) -> Option
     next_heap.pop().map(|Reverse(entry)| entry)
 }
 
-fn insert_visited_sorted(
-    visited_best: &mut Vec<ScanCandidate>,
+fn push_retained_candidate(
+    retained_best: &mut BinaryHeap<ScanCandidate>,
     candidate: ScanCandidate,
     list_size: usize,
 ) {
-    let idx = visited_best.partition_point(|existing| *existing < candidate);
-    visited_best.insert(idx, candidate);
-    visited_best.truncate(list_size);
+    if retained_best.len() < list_size {
+        retained_best.push(candidate);
+        return;
+    }
+
+    if retained_best
+        .peek()
+        .is_some_and(|worst_retained| candidate < *worst_retained)
+    {
+        retained_best.pop();
+        retained_best.push(candidate);
+    }
 }
 
 #[cfg(test)]
