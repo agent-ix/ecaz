@@ -293,7 +293,7 @@ where
     }
 
     // Stage 1 — greedy descent under the cheap prefilter.
-    let frontier = if let Some(profile) = frontier_profile.as_deref_mut() {
+    let frontier = if let Some(profile) = frontier_profile.as_mut() {
         greedy_descent_with_frontier_profile(
             reader,
             scratch,
@@ -461,7 +461,7 @@ where
     scratch.in_frontier.insert(entry.tid);
     let push_started = Instant::now();
     push_frontier_entry(&mut next_heap, entry, neighbors_from_tuple(entry_tuple));
-    if let Some(profile) = frontier_profile.as_deref_mut() {
+    if let Some(profile) = frontier_profile.as_mut() {
         add_profile_elapsed(&mut profile.candidate_heap_us, push_started);
         profile.candidate_heap_ops += 1;
     }
@@ -472,13 +472,13 @@ where
 
         let heap_started = Instant::now();
         let Some(next) = peek_next_active(&next_heap) else {
-            if let Some(profile) = frontier_profile.as_deref_mut() {
+            if let Some(profile) = frontier_profile.as_mut() {
                 add_profile_elapsed(&mut profile.candidate_heap_us, heap_started);
                 profile.candidate_heap_ops += 1;
             }
             break;
         };
-        if let Some(profile) = frontier_profile.as_deref_mut() {
+        if let Some(profile) = frontier_profile.as_mut() {
             add_profile_elapsed(&mut profile.candidate_heap_us, heap_started);
             profile.candidate_heap_ops += 1;
         }
@@ -489,7 +489,7 @@ where
         let heap_started = Instant::now();
         let picked_entry =
             pop_next_active(&mut next_heap).expect("peek_next_active returned a candidate");
-        if let Some(profile) = frontier_profile.as_deref_mut() {
+        if let Some(profile) = frontier_profile.as_mut() {
             add_profile_elapsed(&mut profile.candidate_heap_us, heap_started);
             profile.candidate_heap_ops += 1;
         }
@@ -497,7 +497,7 @@ where
         if picked.emittable {
             let retained_started = Instant::now();
             insert_visited_sorted(&mut visited_best, picked, list_size);
-            if let Some(profile) = frontier_profile.as_deref_mut() {
+            if let Some(profile) = frontier_profile.as_mut() {
                 add_profile_elapsed(&mut profile.retained_insert_us, retained_started);
                 profile.retained_inserts += 1;
             }
@@ -509,27 +509,27 @@ where
             .take(picked_entry.neighbor_count)
         {
             let neighbor_started = Instant::now();
-            if let Some(profile) = frontier_profile.as_deref_mut() {
+            if let Some(profile) = frontier_profile.as_mut() {
                 profile.neighbor_slots += 1;
             }
             if nbr == ItemPointer::INVALID {
-                if let Some(profile) = frontier_profile.as_deref_mut() {
+                if let Some(profile) = frontier_profile.as_mut() {
                     add_profile_elapsed(&mut profile.neighbor_iter_us, neighbor_started);
                 }
                 continue;
             }
-            if let Some(profile) = frontier_profile.as_deref_mut() {
+            if let Some(profile) = frontier_profile.as_mut() {
                 add_profile_elapsed(&mut profile.neighbor_iter_us, neighbor_started);
             }
             let visited_started = Instant::now();
             if !scratch.in_frontier.insert(nbr) {
-                if let Some(profile) = frontier_profile.as_deref_mut() {
+                if let Some(profile) = frontier_profile.as_mut() {
                     add_profile_elapsed(&mut profile.visited_set_us, visited_started);
                     profile.visited_set_ops += 1;
                 }
                 continue;
             }
-            if let Some(profile) = frontier_profile.as_deref_mut() {
+            if let Some(profile) = frontier_profile.as_mut() {
                 add_profile_elapsed(&mut profile.visited_set_us, visited_started);
                 profile.visited_set_ops += 1;
             }
@@ -544,7 +544,7 @@ where
             };
             let heap_started = Instant::now();
             push_frontier_entry(&mut next_heap, candidate, neighbors_from_tuple(nbr_tuple));
-            if let Some(profile) = frontier_profile.as_deref_mut() {
+            if let Some(profile) = frontier_profile.as_mut() {
                 add_profile_elapsed(&mut profile.candidate_heap_us, heap_started);
                 profile.candidate_heap_ops += 1;
             }
