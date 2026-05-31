@@ -58,6 +58,17 @@ The suite carries forward the M5-selected Task 73/74 points:
    aws: [ERROR]: An error occurred (NoCredentials): Unable to locate credentials.
    ```
 
+4. Fresh credential check on resume:
+
+   ```console
+   aws configure list-profiles
+   aws sts get-caller-identity
+   ```
+
+   Result on 2026-05-31: `aws configure list-profiles` returned no profiles, and
+   `aws sts get-caller-identity` failed with `NoCredentials`. Artifact:
+   `artifacts/aws-sts-get-caller-identity.log`.
+
 ## Resume Instructions
 
 After AWS credentials are configured, rerun:
