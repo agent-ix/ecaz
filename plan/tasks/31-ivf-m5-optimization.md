@@ -1,6 +1,9 @@
 # Task 31: IVF M5 Optimization
 
-Status: proposed
+Status: complete on `main` (status fixup 2026-05-31) — closed by
+`reviews/task-31/040-task31-closeout/` with outside reviewer approval.
+Balanced and quality recommendations selected from packet `038`
+(`pq_fastscan`, `pq_group_size=8`, `nlists=128`, `nprobe=96`).
 Owner: coder1 / runtime-index track
 Priority: 1
 

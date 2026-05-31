@@ -1,6 +1,9 @@
 # Task 32: DiskANN M5 Optimization
 
-Status: proposed, baseline round reviewed
+Status: complete on `main` (status fixup 2026-05-31) — closed by
+`reviews/task-32/003-task32-closeout/` with outside reviewer approval.
+Final M5 DiskANN cross-engine surface captured in packet `001`; docs/metadata
+follow-ups closed in packet `002`.
 Owner: coder1 / runtime-index track
 Priority: 2
 

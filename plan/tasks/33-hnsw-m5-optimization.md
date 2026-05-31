@@ -1,6 +1,9 @@
 # Task 33: HNSW M5 Optimization
 
-Status: proposed
+Status: complete on `main` (status fixup 2026-05-31) — closed by
+`reviews/task-33/005-task33-closeout/` with outside reviewer approval.
+real50K + real100K reference refreshes landed (packets `002`/`003`);
+ADR-073 offline-builder proposal recorded in packet `004`.
 Owner: coder1 / runtime-index track
 Priority: 3
 
