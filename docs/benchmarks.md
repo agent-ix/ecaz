@@ -154,13 +154,15 @@ packet-local number exists yet.
 
 #### DiskANN M5
 
-The final post-M5 real10K refresh keeps `ec_diskann` near exact recall, but the
-matched low-list result is not a latency win against the external
-`pgvectorscale` baseline on this local M5 fixture: at `list_size=64`,
-`ec_diskann` is `2.14 ms` mean / `2.67 ms` p99 while `pgvectorscale` is
-`0.60 ms` mean / `0.88 ms` p99 at effectively the same recall. `pgvectorscale`
-also builds faster on the same surface (`1.48 s` vs `9.84 s`). Treat this as
-local engineering evidence, not a product-class cloud claim.
+The Task 70 real10K scan-kernel refresh closes most of the earlier low-L
+latency gap while keeping `ec_diskann` near exact recall. On this local M5
+fixture, `list_size=64` now measures `0.64 ms` mean / `0.91 ms` p99 versus
+`pgvectorscale` at `0.60 ms` mean / `0.89 ms` p99, a residual `0.04 ms` mean
+gap. At `list_size=200`, `ec_diskann` is faster than the matched
+`pgvectorscale` setting (`0.88 ms` mean / `1.13 ms` p99 versus `1.14 ms` mean /
+`1.47 ms` p99). `pgvectorscale` still builds faster on the same surface
+(`1.54 s` versus `6.86 s`). Treat this as local engineering evidence, not a
+product-class cloud claim.
 
 | Family | Benchmark lane | Fixture / configuration | Result | Source |
 | --- | --- | --- | --- | --- |
@@ -171,6 +173,7 @@ local engineering evidence, not a product-class cloud claim.
 | `ec_diskann` | heap-block prefetch A/B | real10K_w800, post-heap-order, `rerank_budget=800`, `L=800`, warm cache | pass-avg p50 pre/trial `14.8/15.0 ms`; p95 `15.45/15.6 ms`; p99 `16.8/16.85 ms`; recall@10 `1.0000` | `reviews/task-29/019-30206-task29-diskann-m5-rerank-prefetch/` |
 | `ec_diskann` | cold-cache prefetch A/B | real100K, `rerank_budget=800`, `L=800`, heap `12.6x shared_buffers`, first-pass cold start | p50 pre/prefetch `506.2/406.8 ms`; p95 `633.2/426.8 ms`; p99 `676.9/434.3 ms`; recall@10 `0.9978` | `reviews/task-29/022-30209-task29-diskann-m5-cold-cache-100k/` |
 | `ec_diskann` | full post-M5 cross-engine sweep | real10K, warm cache, final M5 code state, Task 29d search-list sweep `64/128/200/400/800` | `L=64`: recall@10 `0.9965`, mean `2.14 ms`, p99 `2.67 ms`, build `9.84 s`, size `4,939,776 B`; matched `pgvectorscale L=64`: recall@10 `0.9960`, mean `0.60 ms`, p99 `0.88 ms`, build `1.48 s`, size `5,136,384 B` | `reviews/task-32/001-30210-task32-m5-diskann-final-cross-engine-refresh/` |
+| `ec_diskann` | Task 70 scan-kernel closeout | real10K, warm cache, `graph_degree=32`, `build_list_size=100`, `alpha=1.2`, `rerank_budget=64`, `L=64/200` | `L=64`: recall@10 `0.9965`, mean `0.64 ms`, p99 `0.91 ms`; matched `pgvectorscale L=64`: recall@10 `0.9960`, mean `0.60 ms`, p99 `0.89 ms`; `L=200`: recall@10 `0.9975`, mean `0.88 ms`, p99 `1.13 ms`; matched `pgvectorscale L=200`: recall@10 `1.0000`, mean `1.14 ms`, p99 `1.47 ms`; build `6.86 s`, size `4,939,776 B` | `reviews/task-70/012-final-measurement-docs/` |
 | `ec_diskann` | async-overlap prefetch trial | cold-cache rerank lane | -- | -- |
 | `ec_diskann` | same-page-run grouping trial | cold-cache rerank lane | -- | -- |
 
