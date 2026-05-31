@@ -607,10 +607,15 @@ fn append_quantized_leaf_candidates_for_pid(
             route.parent_pid,
         ));
     }
-    observer.scanned_leaf(snapshot.epoch_manifest().epoch, &route.placement);
+    let epoch = snapshot.epoch_manifest().epoch;
+    observer.scanned_leaf(epoch, &route.placement);
+    let read_started = observer.wants_candidate_timing().then(Instant::now);
 
     match object_store.read_leaf_object_v2(placement) {
         Ok(leaf_object) => {
+            if let Some(started) = read_started {
+                observer.leaf_object_read_time(epoch, placement, elapsed_nanos_since(started));
+            }
             for columns in leaf_object.column_segments()? {
                 let columns = columns?;
                 append_quantized_v2_column_candidates(
@@ -634,6 +639,9 @@ fn append_quantized_leaf_candidates_for_pid(
                     "ec_spire quantized scan could not read leaf pid {leaf_pid} as V2 or V1: V2 error: {v2_error}; V1 error: {v1_error}"
                 )
             })?;
+            if let Some(started) = read_started {
+                observer.leaf_object_read_time(epoch, placement, elapsed_nanos_since(started));
+            }
             append_quantized_v1_leaf_candidates(
                 snapshot,
                 leaf_object,
@@ -672,12 +680,16 @@ fn append_quantized_v2_column_candidates(
     }
 
     let mut scores = vec![0.0; columns.row_count()];
+    let score_started = observer.wants_candidate_timing().then(Instant::now);
     scorer.score_batch_ip(
         columns.payload_stride,
         columns.payloads,
         columns.gammas,
         &mut scores,
     )?;
+    if let Some(started) = score_started {
+        observer.candidate_score_time(epoch, placement, elapsed_nanos_since(started));
+    }
 
     for (row_offset, ip) in scores.into_iter().enumerate() {
         if !is_visible_scored_assignment_flags(columns.flags[row_offset]) {
@@ -689,8 +701,12 @@ fn append_quantized_v2_column_candidates(
             );
         }
 
+        let materialize_started = observer.wants_candidate_timing().then(Instant::now);
         let row = columns.row(row_offset)?;
         let vec_id = row.vec_id()?;
+        if let Some(started) = materialize_started {
+            observer.candidate_materialize_time(epoch, placement, elapsed_nanos_since(started));
+        }
         if deleted_vec_ids.contains(&vec_id) {
             continue;
         }
@@ -705,7 +721,12 @@ fn append_quantized_v2_column_candidates(
             heap_tid: row.heap_tid,
             score: -ip,
         };
-        observe_candidate_append_outcome(snapshot, observer, accumulator.append(candidate))?;
+        let append_started = observer.wants_candidate_timing().then(Instant::now);
+        let outcome = accumulator.append(candidate);
+        if let Some(started) = append_started {
+            observer.candidate_heap_append_time(epoch, placement, elapsed_nanos_since(started));
+        }
+        observe_candidate_append_outcome(snapshot, observer, outcome)?;
     }
     Ok(())
 }
@@ -731,7 +752,15 @@ fn append_quantized_delta_candidates_for_loaded_routes(
             if deleted_vec_ids.contains(&assignment.vec_id) {
                 continue;
             }
+            let score_started = observer.wants_candidate_timing().then(Instant::now);
             let ip = scorer.score_assignment_ip(assignment)?;
+            if let Some(started) = score_started {
+                observer.candidate_score_time(
+                    snapshot.epoch_manifest().epoch,
+                    placement,
+                    elapsed_nanos_since(started),
+                );
+            }
             if !ip.is_finite() {
                 return Err(
                     "ec_spire routed delta candidate scorer returned a non-finite score".to_owned(),
@@ -752,7 +781,16 @@ fn append_quantized_delta_candidates_for_loaded_routes(
                 heap_tid: assignment.heap_tid,
                 score: -ip,
             };
-            observe_candidate_append_outcome(snapshot, observer, accumulator.append(candidate))?;
+            let append_started = observer.wants_candidate_timing().then(Instant::now);
+            let outcome = accumulator.append(candidate);
+            if let Some(started) = append_started {
+                observer.candidate_heap_append_time(
+                    snapshot.epoch_manifest().epoch,
+                    placement,
+                    elapsed_nanos_since(started),
+                );
+            }
+            observe_candidate_append_outcome(snapshot, observer, outcome)?;
         }
     }
     Ok(())
@@ -835,12 +873,20 @@ fn append_quantized_v1_leaf_candidates(
         if deleted_vec_ids.contains(&assignment.vec_id) {
             continue;
         }
+        let score_started = observer.wants_candidate_timing().then(Instant::now);
         let ip = scorer.score_assignment_ip(&assignment)?;
+        if let Some(started) = score_started {
+            observer.candidate_score_time(epoch, placement, elapsed_nanos_since(started));
+        }
         if !ip.is_finite() {
             return Err("ec_spire routed candidate scorer returned a non-finite score".to_owned());
         }
+        let materialize_started = observer.wants_candidate_timing().then(Instant::now);
         let row_index = u32::try_from(row_index)
             .map_err(|_| "ec_spire scan row index exceeds u32".to_owned())?;
+        if let Some(started) = materialize_started {
+            observer.candidate_materialize_time(epoch, placement, elapsed_nanos_since(started));
+        }
         observer.visible_leaf_candidate(epoch, placement, assignment.flags);
         let candidate = SpireScoredScanCandidate {
             epoch,
@@ -852,9 +898,18 @@ fn append_quantized_v1_leaf_candidates(
             heap_tid: assignment.heap_tid,
             score: -ip,
         };
-        observe_candidate_append_outcome(snapshot, observer, accumulator.append(candidate))?;
+        let append_started = observer.wants_candidate_timing().then(Instant::now);
+        let outcome = accumulator.append(candidate);
+        if let Some(started) = append_started {
+            observer.candidate_heap_append_time(epoch, placement, elapsed_nanos_since(started));
+        }
+        observe_candidate_append_outcome(snapshot, observer, outcome)?;
     }
     Ok(())
+}
+
+fn elapsed_nanos_since(started: Instant) -> u64 {
+    u64::try_from(started.elapsed().as_nanos()).unwrap_or(u64::MAX)
 }
 
 fn rank_routed_leaf_rows_by_ip<F>(

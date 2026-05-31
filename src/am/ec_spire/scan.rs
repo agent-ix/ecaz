@@ -2,6 +2,7 @@ use std::cmp::Ordering;
 use std::collections::{BTreeMap, BinaryHeap, HashMap, HashSet};
 use std::mem::size_of;
 use std::ptr;
+use std::time::Instant;
 
 use super::build::{
     rank_centroid_routes_by_ip, SpireCentroidRouteInput, SpireRankedCentroidRoute,

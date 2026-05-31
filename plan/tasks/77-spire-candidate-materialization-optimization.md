@@ -1,6 +1,6 @@
 # Task 77: SPIRE Candidate Materialization Optimization
 
-Status: proposed
+Status: active (2026-05-31, Phase 1 attribution hook `reviews/task-77/001-phase1-attribution/`)
 Owner: coder (to be assigned). One coder, one branch.
 Priority: 1 (direct follow-up to Tasks 75/76)
 
@@ -13,8 +13,8 @@ high-recall 100k point:
   paying a large latency cost versus IVF.
 - Task 74's Intel profiler showed visible SPIRE self-time is dominated by
   quantized scoring, not by a small routing-orchestration hotspot.
-- Task 75's candidate funnel showed the high-recall SPIRE point scans
-  `2,784,952` leaf candidates over 200 queries while only `5,000` rows survive
+- Task 75's corrected diagnostic rerun showed the high-recall SPIRE point scans
+  `15,506,227` leaf candidates over 200 queries while only `5,000` rows survive
   to heap rerank and `2,000` are returned.
 - Task 76 showed no safe default change: 100k SPIRE high-recall latency remains
   much slower than IVF at comparable recall, and the local 1M fixture was not

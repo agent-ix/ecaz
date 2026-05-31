@@ -7848,6 +7848,10 @@ fn ec_spire_index_scan_leaf_candidate_snapshot(
         name!(deduped_candidate_row_count, i64),
         name!(truncated_candidate_row_count, i64),
         name!(candidate_winner_count, i64),
+        name!(leaf_object_read_nanos, i64),
+        name!(candidate_score_nanos, i64),
+        name!(candidate_materialize_nanos, i64),
+        name!(candidate_heap_append_nanos, i64),
     ),
 > {
     let rows = {
@@ -7888,6 +7892,14 @@ fn ec_spire_index_scan_leaf_candidate_snapshot(
                 .expect("truncated candidate row count should fit in i64"),
             i64::try_from(row.candidate_winner_count)
                 .expect("candidate winner count should fit in i64"),
+            i64::try_from(row.leaf_object_read_nanos)
+                .expect("leaf object read nanoseconds should fit in i64"),
+            i64::try_from(row.candidate_score_nanos)
+                .expect("candidate score nanoseconds should fit in i64"),
+            i64::try_from(row.candidate_materialize_nanos)
+                .expect("candidate materialize nanoseconds should fit in i64"),
+            i64::try_from(row.candidate_heap_append_nanos)
+                .expect("candidate heap append nanoseconds should fit in i64"),
         )
     }))
 }

@@ -205,6 +205,10 @@ pub(super) struct SpireStoreScanDiagnostics {
     pub(super) boundary_replica_candidate_winner_count: usize,
     pub(super) delete_delta_row_count: usize,
     pub(super) dropped_unselected_delta_route_count: usize,
+    pub(super) leaf_object_read_nanos: u64,
+    pub(super) candidate_score_nanos: u64,
+    pub(super) candidate_materialize_nanos: u64,
+    pub(super) candidate_heap_append_nanos: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -223,6 +227,10 @@ pub(super) struct SpireLeafScanDiagnostics {
     pub(super) deduped_candidate_row_count: usize,
     pub(super) truncated_candidate_row_count: usize,
     pub(super) candidate_winner_count: usize,
+    pub(super) leaf_object_read_nanos: u64,
+    pub(super) candidate_score_nanos: u64,
+    pub(super) candidate_materialize_nanos: u64,
+    pub(super) candidate_heap_append_nanos: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -233,6 +241,10 @@ pub(super) struct SpireScanPlacementDiagnostics {
 }
 
 trait SpireRoutedScanObserver {
+    fn wants_candidate_timing(&self) -> bool {
+        false
+    }
+
     fn routed_leaf(&mut self, _epoch: u64, _placement: &SpirePlacementEntry) {}
 
     fn routed_delta(&mut self, _epoch: u64, _placement: &SpirePlacementEntry) {}
@@ -286,6 +298,38 @@ trait SpireRoutedScanObserver {
         _epoch: u64,
         _placement: &SpirePlacementEntry,
         _assignment_flags: u16,
+    ) {
+    }
+
+    fn leaf_object_read_time(
+        &mut self,
+        _epoch: u64,
+        _placement: &SpirePlacementEntry,
+        _nanos: u64,
+    ) {
+    }
+
+    fn candidate_score_time(
+        &mut self,
+        _epoch: u64,
+        _placement: &SpirePlacementEntry,
+        _nanos: u64,
+    ) {
+    }
+
+    fn candidate_materialize_time(
+        &mut self,
+        _epoch: u64,
+        _placement: &SpirePlacementEntry,
+        _nanos: u64,
+    ) {
+    }
+
+    fn candidate_heap_append_time(
+        &mut self,
+        _epoch: u64,
+        _placement: &SpirePlacementEntry,
+        _nanos: u64,
     ) {
     }
 }
@@ -365,6 +409,10 @@ impl SpireScanPlacementDiagnosticsObserver {
                 boundary_replica_candidate_winner_count: 0,
                 delete_delta_row_count: 0,
                 dropped_unselected_delta_route_count: 0,
+                leaf_object_read_nanos: 0,
+                candidate_score_nanos: 0,
+                candidate_materialize_nanos: 0,
+                candidate_heap_append_nanos: 0,
             })
     }
 
@@ -390,6 +438,10 @@ impl SpireScanPlacementDiagnosticsObserver {
                 deduped_candidate_row_count: 0,
                 truncated_candidate_row_count: 0,
                 candidate_winner_count: 0,
+                leaf_object_read_nanos: 0,
+                candidate_score_nanos: 0,
+                candidate_materialize_nanos: 0,
+                candidate_heap_append_nanos: 0,
             })
     }
 
@@ -402,6 +454,10 @@ impl SpireScanPlacementDiagnosticsObserver {
 }
 
 impl SpireRoutedScanObserver for SpireScanPlacementDiagnosticsObserver {
+    fn wants_candidate_timing(&self) -> bool {
+        true
+    }
+
     fn routed_leaf(&mut self, epoch: u64, placement: &SpirePlacementEntry) {
         let entry = self.entry(epoch, placement);
         entry.route_count += 1;
@@ -539,6 +595,44 @@ impl SpireRoutedScanObserver for SpireScanPlacementDiagnosticsObserver {
         );
         if let Some(leaf) = self.leaf_entry_if_routed(placement) {
             leaf.candidate_winner_count += 1;
+        }
+    }
+
+    fn leaf_object_read_time(&mut self, epoch: u64, placement: &SpirePlacementEntry, nanos: u64) {
+        self.entry(epoch, placement).leaf_object_read_nanos += nanos;
+        if let Some(leaf) = self.leaf_entry_if_routed(placement) {
+            leaf.leaf_object_read_nanos += nanos;
+        }
+    }
+
+    fn candidate_score_time(&mut self, epoch: u64, placement: &SpirePlacementEntry, nanos: u64) {
+        self.entry(epoch, placement).candidate_score_nanos += nanos;
+        if let Some(leaf) = self.leaf_entry_if_routed(placement) {
+            leaf.candidate_score_nanos += nanos;
+        }
+    }
+
+    fn candidate_materialize_time(
+        &mut self,
+        epoch: u64,
+        placement: &SpirePlacementEntry,
+        nanos: u64,
+    ) {
+        self.entry(epoch, placement).candidate_materialize_nanos += nanos;
+        if let Some(leaf) = self.leaf_entry_if_routed(placement) {
+            leaf.candidate_materialize_nanos += nanos;
+        }
+    }
+
+    fn candidate_heap_append_time(
+        &mut self,
+        epoch: u64,
+        placement: &SpirePlacementEntry,
+        nanos: u64,
+    ) {
+        self.entry(epoch, placement).candidate_heap_append_nanos += nanos;
+        if let Some(leaf) = self.leaf_entry_if_routed(placement) {
+            leaf.candidate_heap_append_nanos += nanos;
         }
     }
 }

@@ -1768,6 +1768,10 @@ pub(crate) fn index_scan_leaf_candidate_snapshot(
                 deduped_candidate_row_count: leaf.deduped_candidate_row_count as u64,
                 truncated_candidate_row_count: leaf.truncated_candidate_row_count as u64,
                 candidate_winner_count: leaf.candidate_winner_count as u64,
+                leaf_object_read_nanos: leaf.leaf_object_read_nanos,
+                candidate_score_nanos: leaf.candidate_score_nanos,
+                candidate_materialize_nanos: leaf.candidate_materialize_nanos,
+                candidate_heap_append_nanos: leaf.candidate_heap_append_nanos,
             })
             .collect();
         Ok(rows)

@@ -1040,7 +1040,9 @@ fn leaf_candidate_snapshot_sql() -> &'static str {
     "SELECT pid, node_id, local_store_id, route_count, scanned_count,
             candidate_row_count, primary_candidate_row_count,
             boundary_replica_candidate_row_count, deduped_candidate_row_count,
-            truncated_candidate_row_count, candidate_winner_count
+            truncated_candidate_row_count, candidate_winner_count,
+            leaf_object_read_nanos, candidate_score_nanos,
+            candidate_materialize_nanos, candidate_heap_append_nanos
      FROM ec_spire_index_scan_leaf_candidate_snapshot($1::text::regclass::oid, $2::real[])
      ORDER BY pid"
 }
@@ -1220,6 +1222,10 @@ struct LeafCandidateRow {
     deduped_candidate_row_count: i64,
     truncated_candidate_row_count: i64,
     candidate_winner_count: i64,
+    leaf_object_read_nanos: i64,
+    candidate_score_nanos: i64,
+    candidate_materialize_nanos: i64,
+    candidate_heap_append_nanos: i64,
 }
 
 impl From<Row> for LeafCandidateRow {
@@ -1236,6 +1242,10 @@ impl From<Row> for LeafCandidateRow {
             deduped_candidate_row_count: row.get(8),
             truncated_candidate_row_count: row.get(9),
             candidate_winner_count: row.get(10),
+            leaf_object_read_nanos: row.get(11),
+            candidate_score_nanos: row.get(12),
+            candidate_materialize_nanos: row.get(13),
+            candidate_heap_append_nanos: row.get(14),
         }
     }
 }
@@ -1260,6 +1270,10 @@ struct FunnelRecord {
     leaf_candidate_mean: f64,
     leaf_candidate_p95: i64,
     leaf_candidate_max: i64,
+    leaf_object_read_nanos: i64,
+    candidate_score_nanos: i64,
+    candidate_materialize_nanos: i64,
+    candidate_heap_append_nanos: i64,
 }
 
 impl FunnelRecord {
@@ -1296,6 +1310,16 @@ impl FunnelRecord {
             .map(|row| row.truncated_candidate_row_count)
             .sum();
         let candidate_winner_count = leaf_rows.iter().map(|row| row.candidate_winner_count).sum();
+        let leaf_object_read_nanos = leaf_rows.iter().map(|row| row.leaf_object_read_nanos).sum();
+        let candidate_score_nanos = leaf_rows.iter().map(|row| row.candidate_score_nanos).sum();
+        let candidate_materialize_nanos = leaf_rows
+            .iter()
+            .map(|row| row.candidate_materialize_nanos)
+            .sum();
+        let candidate_heap_append_nanos = leaf_rows
+            .iter()
+            .map(|row| row.candidate_heap_append_nanos)
+            .sum();
         let mut per_leaf_candidates = leaf_rows
             .iter()
             .map(|row| row.candidate_row_count)
@@ -1327,6 +1351,10 @@ impl FunnelRecord {
             leaf_candidate_mean,
             leaf_candidate_p95,
             leaf_candidate_max,
+            leaf_object_read_nanos,
+            candidate_score_nanos,
+            candidate_materialize_nanos,
+            candidate_heap_append_nanos,
         })
     }
 }

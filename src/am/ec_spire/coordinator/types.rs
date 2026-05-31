@@ -1816,6 +1816,10 @@ pub(crate) struct SpireIndexScanLeafCandidateSnapshotRow {
     pub(crate) deduped_candidate_row_count: u64,
     pub(crate) truncated_candidate_row_count: u64,
     pub(crate) candidate_winner_count: u64,
+    pub(crate) leaf_object_read_nanos: u64,
+    pub(crate) candidate_score_nanos: u64,
+    pub(crate) candidate_materialize_nanos: u64,
+    pub(crate) candidate_heap_append_nanos: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
