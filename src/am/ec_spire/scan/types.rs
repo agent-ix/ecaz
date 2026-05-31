@@ -208,9 +208,28 @@ pub(super) struct SpireStoreScanDiagnostics {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct SpireLeafScanDiagnostics {
+    pub(super) epoch: u64,
+    pub(super) pid: u64,
+    pub(super) node_id: u32,
+    pub(super) local_store_id: u32,
+    pub(super) object_version: u64,
+    pub(super) object_bytes: u32,
+    pub(super) route_count: usize,
+    pub(super) scanned_count: usize,
+    pub(super) candidate_row_count: usize,
+    pub(super) primary_candidate_row_count: usize,
+    pub(super) boundary_replica_candidate_row_count: usize,
+    pub(super) deduped_candidate_row_count: usize,
+    pub(super) truncated_candidate_row_count: usize,
+    pub(super) candidate_winner_count: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct SpireScanPlacementDiagnostics {
     pub(super) scan_plan: SpireSingleLevelScanPlan,
     pub(super) stores: Vec<SpireStoreScanDiagnostics>,
+    pub(super) leaves: Vec<SpireLeafScanDiagnostics>,
 }
 
 trait SpireRoutedScanObserver {
@@ -277,15 +296,25 @@ impl SpireRoutedScanObserver for SpireNoopRoutedScanObserver {}
 
 struct SpireScanPlacementDiagnosticsObserver {
     by_store: BTreeMap<(u32, u32), SpireStoreScanDiagnostics>,
+    by_leaf: BTreeMap<u64, SpireLeafScanDiagnostics>,
 }
 
 impl SpireScanPlacementDiagnosticsObserver {
     fn new() -> Self {
         Self {
             by_store: BTreeMap::new(),
+            by_leaf: BTreeMap::new(),
         }
     }
 
+    fn into_diagnostics(self) -> (Vec<SpireStoreScanDiagnostics>, Vec<SpireLeafScanDiagnostics>) {
+        (
+            self.by_store.into_values().collect(),
+            self.by_leaf.into_values().collect(),
+        )
+    }
+
+    #[cfg(test)]
     fn into_stores(self) -> Vec<SpireStoreScanDiagnostics> {
         self.by_store.into_values().collect()
     }
@@ -338,6 +367,38 @@ impl SpireScanPlacementDiagnosticsObserver {
                 dropped_unselected_delta_route_count: 0,
             })
     }
+
+    fn leaf_entry(
+        &mut self,
+        epoch: u64,
+        placement: &SpirePlacementEntry,
+    ) -> &mut SpireLeafScanDiagnostics {
+        self.by_leaf
+            .entry(placement.pid)
+            .or_insert_with(|| SpireLeafScanDiagnostics {
+                epoch,
+                pid: placement.pid,
+                node_id: placement.node_id,
+                local_store_id: placement.local_store_id,
+                object_version: placement.object_version,
+                object_bytes: placement.object_bytes,
+                route_count: 0,
+                scanned_count: 0,
+                candidate_row_count: 0,
+                primary_candidate_row_count: 0,
+                boundary_replica_candidate_row_count: 0,
+                deduped_candidate_row_count: 0,
+                truncated_candidate_row_count: 0,
+                candidate_winner_count: 0,
+            })
+    }
+
+    fn leaf_entry_if_routed(
+        &mut self,
+        placement: &SpirePlacementEntry,
+    ) -> Option<&mut SpireLeafScanDiagnostics> {
+        self.by_leaf.get_mut(&placement.pid)
+    }
 }
 
 impl SpireRoutedScanObserver for SpireScanPlacementDiagnosticsObserver {
@@ -345,6 +406,7 @@ impl SpireRoutedScanObserver for SpireScanPlacementDiagnosticsObserver {
         let entry = self.entry(epoch, placement);
         entry.route_count += 1;
         entry.leaf_route_count += 1;
+        self.leaf_entry(epoch, placement).route_count += 1;
     }
 
     fn routed_delta(&mut self, epoch: u64, placement: &SpirePlacementEntry) {
@@ -368,6 +430,7 @@ impl SpireRoutedScanObserver for SpireScanPlacementDiagnosticsObserver {
         let entry = self.entry(epoch, placement);
         entry.scanned_pid_count += 1;
         entry.leaf_pid_count += 1;
+        self.leaf_entry(epoch, placement).scanned_count += 1;
     }
 
     fn scanned_delta(&mut self, epoch: u64, placement: &SpirePlacementEntry) {
@@ -400,6 +463,13 @@ impl SpireRoutedScanObserver for SpireScanPlacementDiagnosticsObserver {
             &mut entry.primary_candidate_row_count,
             &mut entry.boundary_replica_candidate_row_count,
         );
+        let leaf = self.leaf_entry(epoch, placement);
+        leaf.candidate_row_count += 1;
+        count_candidate_role(
+            assignment_flags,
+            &mut leaf.primary_candidate_row_count,
+            &mut leaf.boundary_replica_candidate_row_count,
+        );
     }
 
     fn visible_delta_candidate(
@@ -431,6 +501,9 @@ impl SpireRoutedScanObserver for SpireScanPlacementDiagnosticsObserver {
             &mut entry.deduped_primary_candidate_row_count,
             &mut entry.deduped_boundary_replica_candidate_row_count,
         );
+        if let Some(leaf) = self.leaf_entry_if_routed(placement) {
+            leaf.deduped_candidate_row_count += 1;
+        }
     }
 
     fn truncated_candidate(
@@ -446,6 +519,9 @@ impl SpireRoutedScanObserver for SpireScanPlacementDiagnosticsObserver {
             &mut entry.truncated_primary_candidate_row_count,
             &mut entry.truncated_boundary_replica_candidate_row_count,
         );
+        if let Some(leaf) = self.leaf_entry_if_routed(placement) {
+            leaf.truncated_candidate_row_count += 1;
+        }
     }
 
     fn candidate_winner(
@@ -461,6 +537,9 @@ impl SpireRoutedScanObserver for SpireScanPlacementDiagnosticsObserver {
             &mut entry.primary_candidate_winner_count,
             &mut entry.boundary_replica_candidate_winner_count,
         );
+        if let Some(leaf) = self.leaf_entry_if_routed(placement) {
+            leaf.candidate_winner_count += 1;
+        }
     }
 }
 
