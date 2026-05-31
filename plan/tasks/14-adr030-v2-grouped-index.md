@@ -1,6 +1,10 @@
 # Task 14: ADR-030 V2 Grouped Search-Code Index
 
-Status: in progress on `adr030-v2-grouped-index`
+Status: shelved (2026-05-31) — superseded by Task 15 (PqFastScan first-class)
+and Task 16 (TurboQuant iteration), both landed on `main`. The
+`adr030-v2-grouped-index` branch on origin is retained for history but is not
+on the merge path. No `reviews/task-14/` packets exist; relevant evidence lives
+under `reviews/task-16/` (the ADR-031/ADR-032 runtime packets cited below).
 
 Progress notes:
 - Packet `280` ruled out "reinterpret the current scalar 4-bit code stream as grouped FastScan"

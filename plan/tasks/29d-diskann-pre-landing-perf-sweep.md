@@ -1,8 +1,8 @@
 # Task 29d: DiskANN Pre-Landing Performance Sweep
 
-Status: landed on `main` as part of Task 29
+Status: complete on `main` as part of Task 29 (status fixup 2026-05-31).
+Closeout packet: `reviews/task-29d/003-11109-task29d-final-readiness/`.
 Owner: coder1 / runtime-index track
-Backstory: `reviews/task-05/079-111-remove-dead-scan-candidate-boundary05-task29-release-latency-refresh/feedback.md`
 
 ## Outcome
 

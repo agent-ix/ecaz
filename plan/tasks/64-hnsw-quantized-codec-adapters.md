@@ -1,6 +1,10 @@
 # Task 64: HNSW Quantized Codec Adapters
 
-Status: **complete on `task/60-diskann-rabitq`**
+Status: **complete on `main`** (status fixup 2026-05-31) — the
+`task/60-diskann-rabitq` origin branch has zero commits ahead of `main`, so
+the codec-adapter work is fully on `main`. Closeout packets:
+`reviews/task-64/004-hnsw-codec-adapter-closeout/` and
+`reviews/task-64/005-hnsw-codec-adapter-review-feedback-response/`.
 
 Companion task to Task 63. Extract a narrow HNSW-local quantized codec adapter
 surface so HNSW RaBitQ can integrate cleanly without a broad HNSW refactor or a

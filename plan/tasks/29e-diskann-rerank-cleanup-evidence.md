@@ -1,7 +1,9 @@
 # Task 29e: DiskANN Rerank Cleanup Evidence
 
-Status: **recorded on `main`** — follow-up cleanup/evidence only, not a current
-landing blocker.
+Status: **complete on `main`** (status fixup 2026-05-31) — the rerank cleanup
+slice landed; the packet records this as a code-shape cleanup, not a material
+latency win. Closeout packet:
+`reviews/task-29e/001-11110-task29e-rerank-borrowed-simd/`.
 Owner: coder1 / runtime-index track
 
 ## Goal

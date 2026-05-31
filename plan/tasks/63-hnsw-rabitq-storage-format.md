@@ -1,6 +1,9 @@
 # Task 63: HNSW RaBitQ Storage Format
 
-Status: **implementation landed; publishable benchmark decision pending**
+Status: **complete on `main`** (status fixup 2026-05-31) — RaBitQ is a
+first-class HNSW storage format. Implementation landed across packets 001–015;
+M5 suite + audit handoff captured in packets 019–022. Closeout packet:
+`reviews/task-63/023-hnsw-rabitq-review-feedback-response/`.
 
 Add a first-class RaBitQ storage format to `ec_hnsw`, or produce an
 evidence-backed design decision explaining why HNSW should stay limited to

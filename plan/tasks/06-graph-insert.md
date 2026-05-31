@@ -1,6 +1,9 @@
 # Task 06: Graph-Aware Insert
 
-Status: in progress
+Status: complete on `main` — graph-aware insert is the live insert path
+for HNSW (A1–A5 slices all landed). Subsequent AM insert paths (IVF, DiskANN,
+SPIRE) are owned by their respective access-method tasks. Last packet:
+`reviews/task-06/005-229-a5-insert-level-allocation-promotion/`.
 
 Progress notes:
 - Live insert shape validation, metadata initialization, duplicate coalescing, and tail-page

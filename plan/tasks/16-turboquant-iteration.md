@@ -1,9 +1,13 @@
 # Task 16: TurboQuant Iteration with PqFastScan Learnings
 
-Status: ready to land — the canonical `ecvector` row-model / `tqvector`
-sibling-artifact refactor is landed and measured enough to merge. Remaining
-build-sensitive storage-policy and lever-tuning work is deferred until after
-ADR-042 native HNSW build.
+Status: complete on `main` (2026-05-31). TurboQuant is the active storage
+format for SPIRE leaves (used by Tasks 68/72/73) and is a first-class peer to
+PqFastScan across `ec_hnsw` / `ec_ivf` / `ec_spire`. The `ecvector` row-model
+and `tqvector` sibling-artifact refactor landed; PqFastScan-derived
+architectural wins (cache-friendly LUT, batched scoring, codec layout) were
+ported. Storage-policy and lever-tuning follow-ons live under their per-AM
+tuning tasks (Task 31 IVF, Task 32 DiskANN, Task 33 HNSW, Task 73 SPIRE
+recall). Last packet: `reviews/task-16/140-289-c1-adr031-on-off-ab/`.
 
 Follow-on to ADR-032.
 
