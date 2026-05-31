@@ -1,0 +1,47 @@
+warning: ecaz@0.1.1: In file included from csrc/pg18_pgstat_shim.c:10:
+warning: ecaz@0.1.1: In file included from /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:19:
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/lib/ilist.h:537:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:   537 | dlist_next_node(dlist_head *head, dlist_node *node)
+warning: ecaz@0.1.1:       |                             ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/lib/ilist.h:547:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:   547 | dlist_prev_node(dlist_head *head, dlist_node *node)
+warning: ecaz@0.1.1:       |                             ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/lib/ilist.h:1054:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:  1054 | slist_next_node(slist_head *head, slist_node *node)
+warning: ecaz@0.1.1:       |                             ^
+warning: ecaz@0.1.1: In file included from csrc/pg18_pgstat_shim.c:10:
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:875:58: warning: unused parameter 'size' [-Wunused-parameter]
+warning: ecaz@0.1.1:   875 | pgstat_cmp_hash_key(const void *a, const void *b, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                          ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:875:70: warning: unused parameter 'arg' [-Wunused-parameter]
+warning: ecaz@0.1.1:   875 | pgstat_cmp_hash_key(const void *a, const void *b, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                                      ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:882:56: warning: unused parameter 'arg' [-Wunused-parameter]
+warning: ecaz@0.1.1:   882 | pgstat_hash_hash_key(const void *d, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                        ^
+warning: ecaz@0.1.1: 6 warnings generated.
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.12s
+     Running unittests src/lib.rs (target/debug/deps/ecaz-2a353c79cfeacc22)
+
+running 18 tests
+test am::ec_diskann::scan::tests::sc_005_invalid_entry_errors ... ok
+test am::ec_diskann::scan::tests::sc_003_rerank_budget_caps_rerank_calls ... ok
+test am::ec_diskann::scan::tests::sc_001_end_to_end_top1_on_chain ... ok
+test am::ec_diskann::scan::tests::sc_004_top_k_truncates ... ok
+test am::ec_diskann::scan::tests::sc_003b_rerank_visits_in_full_heap_tid_order ... ok
+test am::ec_diskann::scan::tests::sc_006_parameter_validation ... ok
+test am::ec_diskann::scan::tests::sc_008_result_carries_primary_heaptid ... ok
+test am::ec_diskann::scan::tests::sc_009_results_sorted_by_distance ... ok
+test am::ec_diskann::scan::tests::sc_012_resolve_entry_point_prefers_live_medoid ... ok
+test am::ec_diskann::scan::tests::sc_013_resolve_entry_point_falls_back_on_dead_medoid ... ok
+test am::ec_diskann::scan::tests::sc_014_resolve_entry_point_none_when_all_dead ... ok
+test am::ec_diskann::scan::tests::sc_011_scan_with_scratch_reuse_matches_fresh ... ok
+test am::ec_diskann::scan::tests::sc_015_resolve_entry_point_rejects_stripped_without_tombstone ... ok
+test am::ec_diskann::scan::tests::sc_016_scan_drops_stripped_candidates ... ok
+test am::ec_diskann::scan::tests::sc_002_rerank_can_reorder_prefilter ... ok
+test am::ec_diskann::scan::tests::sc_017_scan_returns_empty_when_all_stripped ... ok
+test am::ec_diskann::scan::tests::sc_010_greedy_descent_exposed ... ok
+test am::ec_diskann::scan::tests::sc_007_end_to_end_matches_brute_force ... ok
+
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 1915 filtered out; finished in 0.00s
+
