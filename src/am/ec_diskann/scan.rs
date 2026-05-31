@@ -35,7 +35,7 @@ use crate::am::ec_diskann::{
     tuple::VamanaNodeTuple,
 };
 use crate::storage::page::ItemPointer;
-use std::cmp::Reverse;
+use std::cmp::{Ordering, Reverse};
 use std::collections::BinaryHeap;
 
 /// Scan-time tuning parameters. Every value must be > 0.
@@ -63,6 +63,9 @@ pub struct ScanResult {
     pub distance: f32,
     pub has_overflow_heaptids: bool,
 }
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct RerankedEntry(ScanResult);
 
 /// Candidate carried through the greedy loop. Caches the tuple's
 /// `primary_heaptid` so the rerank stage (or a Phase 6B caller) does
@@ -125,6 +128,18 @@ impl Ord for ScanCandidate {
 }
 impl PartialOrd for ScanCandidate {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Eq for RerankedEntry {}
+impl Ord for RerankedEntry {
+    fn cmp(&self, other: &Self) -> Ordering {
+        cmp_scan_results(&self.0, &other.0)
+    }
+}
+impl PartialOrd for RerankedEntry {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
@@ -277,28 +292,55 @@ where
     // `3ef44426`.
     let prefetch_tids: Vec<ItemPointer> = to_rerank.iter().map(|c| c.primary_heaptid).collect();
     prefetch(&prefetch_tids);
-    let mut reranked: Vec<ScanResult> = to_rerank
-        .into_iter()
-        .map(|c| {
-            let exact = rerank(c.primary_heaptid);
+    let mut reranked: BinaryHeap<RerankedEntry> = BinaryHeap::with_capacity(params.top_k);
+    for c in to_rerank {
+        let exact = rerank(c.primary_heaptid);
+        push_reranked_result(
+            &mut reranked,
             ScanResult {
                 tid: c.tid,
                 primary_heaptid: c.primary_heaptid,
                 distance: exact,
                 has_overflow_heaptids: c.has_overflow_heaptids,
-            }
-        })
-        .collect();
+            },
+            params.top_k,
+        );
+    }
 
-    reranked.sort_by(|a, b| {
-        a.distance
-            .partial_cmp(&b.distance)
-            .unwrap_or(std::cmp::Ordering::Greater)
-            .then_with(|| a.tid.block_number.cmp(&b.tid.block_number))
-            .then_with(|| a.tid.offset_number.cmp(&b.tid.offset_number))
-    });
-    reranked.truncate(params.top_k);
+    let mut reranked: Vec<ScanResult> = reranked
+        .into_vec()
+        .into_iter()
+        .map(|entry| entry.0)
+        .collect();
+    reranked.sort_by(cmp_scan_results);
     Ok(reranked)
+}
+
+fn cmp_scan_results(a: &ScanResult, b: &ScanResult) -> Ordering {
+    a.distance
+        .partial_cmp(&b.distance)
+        .unwrap_or(Ordering::Greater)
+        .then_with(|| a.tid.block_number.cmp(&b.tid.block_number))
+        .then_with(|| a.tid.offset_number.cmp(&b.tid.offset_number))
+}
+
+fn push_reranked_result(
+    reranked: &mut BinaryHeap<RerankedEntry>,
+    result: ScanResult,
+    top_k: usize,
+) {
+    if reranked.len() < top_k {
+        reranked.push(RerankedEntry(result));
+        return;
+    }
+
+    if reranked
+        .peek()
+        .is_some_and(|worst_retained| cmp_scan_results(&result, &worst_retained.0).is_lt())
+    {
+        reranked.pop();
+        reranked.push(RerankedEntry(result));
+    }
 }
 
 /// Greedy best-first descent under a cheap prefilter score. Returns
