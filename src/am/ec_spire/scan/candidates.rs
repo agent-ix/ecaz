@@ -67,6 +67,7 @@ where
         query_vector,
         &scan_plan.recursive_nprobe_policy,
         scan_plan.recursive_route_budget,
+        scan_plan.max_routed_candidate_rows,
         scan_plan.payload_format,
         scan_plan.dedupe_mode,
         scan_plan.candidate_limit,
@@ -204,6 +205,7 @@ where
         scan_plan.nprobe,
         &scan_plan.recursive_nprobe_policy,
         scan_plan.recursive_route_budget,
+        scan_plan.max_routed_candidate_rows,
     )?;
     let mut candidates = rank_routed_leaf_rows_by_ip(
         routed_rows,
@@ -361,6 +363,7 @@ fn collect_validated_single_level_scan_placement_diagnostics(
         hierarchy,
         &scan_plan.recursive_nprobe_policy,
         scan_plan.recursive_route_budget,
+        scan_plan.max_routed_candidate_rows,
         scan_plan.payload_format,
         scan_plan.dedupe_mode,
         scan_plan.candidate_limit,
@@ -407,6 +410,12 @@ fn collect_validated_top_graph_scan_placement_diagnostics(
         scan_plan.nprobe,
         &scan_plan.recursive_nprobe_policy,
         scan_plan.recursive_route_budget,
+    )?;
+    let leaf_routes = apply_leaf_route_candidate_row_budget(
+        snapshot,
+        object_store,
+        leaf_routes,
+        scan_plan.max_routed_candidate_rows,
     )?;
 
     let mut observer = SpireScanPlacementDiagnosticsObserver::new();

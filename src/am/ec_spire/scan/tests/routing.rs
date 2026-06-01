@@ -1012,6 +1012,7 @@
             1,
             &SpireRecursiveNprobePolicy::conservative(1).unwrap(),
             SpireRecursiveRouteBudget::unbounded(),
+            None,
         )
         .unwrap();
 

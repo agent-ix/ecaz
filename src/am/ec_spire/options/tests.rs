@@ -3,8 +3,9 @@ mod tests {
     use super::{
         normalize_local_store_tablespaces_reloption, parse_nprobe_per_level_reloption,
         plan_local_store_tablespaces_with_resolver, resolve_recursive_route_budget,
-        resolve_scan_max_candidate_rows_values, resolve_scan_nprobe_values,
-        resolve_scan_rerank_width_values, resolve_single_level_scan_plan_values,
+        resolve_scan_max_candidate_rows_values, resolve_scan_max_routed_candidate_rows_value,
+        resolve_scan_nprobe_values, resolve_scan_rerank_width_values,
+        resolve_single_level_scan_plan_values,
         resolve_single_level_scan_plan_values_with_candidate_budget,
         validate_boundary_replica_count_value, validate_local_store_count_value,
         validate_max_candidate_rows_value, validate_recursive_fanout_value, EcSpireOptions,
@@ -198,6 +199,22 @@ mod tests {
         assert_eq!(session.session_max_candidate_rows, Some(7));
         assert_eq!(session.effective_max_candidate_rows, 7);
         assert_eq!(session.source, "session");
+    }
+
+    #[test]
+    fn scan_max_routed_candidate_rows_resolution_disables_zero_and_uses_positive_session_cap() {
+        assert_eq!(
+            resolve_scan_max_routed_candidate_rows_value(0).unwrap(),
+            None
+        );
+        assert_eq!(
+            resolve_scan_max_routed_candidate_rows_value(26_000).unwrap(),
+            Some(26_000)
+        );
+        assert!(resolve_scan_max_routed_candidate_rows_value(
+            EC_SPIRE_MAX_MAX_CANDIDATE_ROWS + 1
+        )
+        .is_err());
     }
 
     #[test]

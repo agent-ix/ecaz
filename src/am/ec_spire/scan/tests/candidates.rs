@@ -1048,6 +1048,7 @@
             nprobe_source: "relation",
             recursive_nprobe_policy: SpireRecursiveNprobePolicy::conservative(2).unwrap(),
             recursive_route_budget: SpireRecursiveRouteBudget::unbounded(),
+            max_routed_candidate_rows: None,
             payload_format: SpireAssignmentPayloadFormat::TurboQuant,
             rerank_width: 2,
             rerank_width_source: "relation",
@@ -1075,6 +1076,99 @@
         assert_eq!(candidates[0].score, -10.0);
         assert_eq!(candidates[1].vec_id.local_sequence(), Some(1));
         assert_eq!(candidates[1].score, -1.0);
+    }
+
+    #[test]
+    fn collect_single_level_scan_plan_placement_diagnostics_caps_routed_candidate_rows() {
+        let mut pid_allocator = SpirePidAllocator::default();
+        let mut local_vec_id_allocator = SpireLocalVecIdAllocator::default();
+        let mut object_store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
+        let payload_format = SpireAssignmentPayloadFormat::TurboQuant;
+        let draft = build_partitioned_single_level_leaf_epoch_draft(
+            SpirePartitionedSingleLevelBuildInput {
+                epoch: 7,
+                object_version: 1,
+                published_at_micros: 1000,
+                retain_until_micros: 2000,
+                consistency_mode: SpireConsistencyMode::Strict,
+                root_placement_tid: tid(60, 3),
+                placement_tids: vec![tid(60, 1), tid(60, 2), tid(60, 4)],
+                assignments: vec![
+                    quantized_assignment_input(10, 1, payload_format, &[1.0, 0.0]),
+                    quantized_assignment_input(10, 2, payload_format, &[1.0, 0.0]),
+                    quantized_assignment_input(10, 3, payload_format, &[1.0, 0.0]),
+                    quantized_assignment_input(10, 4, payload_format, &[0.5, 0.0]),
+                    quantized_assignment_input(10, 5, payload_format, &[-1.0, 0.0]),
+                ],
+                centroid_plan: SpireSingleLevelCentroidPlan {
+                    dimensions: 2,
+                    centroids: vec![vec![1.0, 0.0], vec![0.5, 0.0], vec![-1.0, 0.0]],
+                    assignment_indexes: vec![0, 0, 0, 1, 2],
+                },
+            },
+            &mut pid_allocator,
+            &mut local_vec_id_allocator,
+            &mut object_store,
+        )
+        .unwrap();
+        let snapshot = SpirePublishedEpochSnapshot::new(
+            &draft.epoch_manifest,
+            &draft.object_manifest,
+            &draft.placement_directory,
+        )
+        .unwrap();
+        let query = SpireScanQuery::new(vec![1.0, 0.0]).unwrap();
+        let scan_plan = SpireSingleLevelScanPlan {
+            leaf_count: 3,
+            nprobe: 3,
+            nprobe_source: "relation",
+            recursive_nprobe_policy: SpireRecursiveNprobePolicy::conservative(3).unwrap(),
+            recursive_route_budget: SpireRecursiveRouteBudget::unbounded(),
+            max_routed_candidate_rows: Some(3),
+            payload_format,
+            rerank_width: 10,
+            rerank_width_source: "relation",
+            candidate_limit: Some(10),
+            dedupe_mode: SpireCandidateDedupeMode::NoReplicaDedupeDisabled,
+        };
+
+        let budgeted = collect_single_level_scan_plan_placement_diagnostics(
+            &snapshot,
+            &object_store,
+            &query,
+            scan_plan,
+        )
+        .unwrap();
+        assert_eq!(budgeted.leaves.len(), 1);
+        assert_eq!(
+            budgeted
+                .stores
+                .iter()
+                .map(|store| store.candidate_row_count)
+                .sum::<usize>(),
+            3
+        );
+
+        let unbudgeted_plan = SpireSingleLevelScanPlan {
+            max_routed_candidate_rows: None,
+            ..scan_plan
+        };
+        let unbudgeted = collect_single_level_scan_plan_placement_diagnostics(
+            &snapshot,
+            &object_store,
+            &query,
+            unbudgeted_plan,
+        )
+        .unwrap();
+        assert_eq!(unbudgeted.leaves.len(), 3);
+        assert_eq!(
+            unbudgeted
+                .stores
+                .iter()
+                .map(|store| store.candidate_row_count)
+                .sum::<usize>(),
+            5
+        );
     }
 
     #[test]
@@ -1349,6 +1443,7 @@
             nprobe_source: "none",
             recursive_nprobe_policy: SpireRecursiveNprobePolicy::conservative(0).unwrap(),
             recursive_route_budget: SpireRecursiveRouteBudget::unbounded(),
+            max_routed_candidate_rows: None,
             payload_format: SpireAssignmentPayloadFormat::TurboQuant,
             rerank_width: 0,
             rerank_width_source: "relation",

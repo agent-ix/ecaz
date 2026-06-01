@@ -48,6 +48,9 @@ pub struct SpirePipelineArgs {
     /// Use -1 for the index reloption and 0 for the automatic ceiling.
     #[arg(long)]
     pub max_candidate_rows: Option<i32>,
+    /// Session cap for routed leaf assignment rows. Use 0 to disable.
+    #[arg(long)]
+    pub max_routed_candidate_rows: Option<i32>,
     /// Enable deterministic adaptive nprobe while collecting counters.
     #[arg(long)]
     pub adaptive_nprobe: bool,
@@ -282,6 +285,7 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
             *nprobe,
             args.rerank_width,
             args.max_candidate_rows,
+            args.max_routed_candidate_rows,
             args.remote_tuple_transport,
             adaptive_nprobe_options,
             cost_tuning_options,
@@ -456,6 +460,7 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
         sweep_values: &sweep_values,
         rerank_width: args.rerank_width,
         max_candidate_rows: args.max_candidate_rows,
+        max_routed_candidate_rows: args.max_routed_candidate_rows,
         remote_tuple_transport: args.remote_tuple_transport,
         endpoint_identity: &endpoint_identity,
         adaptive_nprobe_options,
@@ -564,6 +569,14 @@ fn validate_args(args: &SpirePipelineArgs) -> Result<()> {
         if !(-1..=EC_SPIRE_MAX_CANDIDATE_ROWS).contains(&max_candidate_rows) {
             return Err(eyre!(
                 "--max-candidate-rows must be between -1 and {}",
+                EC_SPIRE_MAX_CANDIDATE_ROWS
+            ));
+        }
+    }
+    if let Some(max_routed_candidate_rows) = args.max_routed_candidate_rows {
+        if !(0..=EC_SPIRE_MAX_CANDIDATE_ROWS).contains(&max_routed_candidate_rows) {
+            return Err(eyre!(
+                "--max-routed-candidate-rows must be between 0 and {}",
                 EC_SPIRE_MAX_CANDIDATE_ROWS
             ));
         }
@@ -767,6 +780,7 @@ async fn apply_session_options(
     nprobe: i32,
     rerank_width: Option<i32>,
     max_candidate_rows: Option<i32>,
+    max_routed_candidate_rows: Option<i32>,
     remote_tuple_transport: Option<SpireRemoteTupleTransportMode>,
     adaptive_nprobe_options: super::AdaptiveNprobeBenchOptions,
     cost_tuning_options: SpireCostTuningOptions,
@@ -788,6 +802,16 @@ async fn apply_session_options(
             ))
             .await
             .wrap_err_with(|| format!("SET ec_spire.max_candidate_rows = {max_candidate_rows}"))?;
+    }
+    if let Some(max_routed_candidate_rows) = max_routed_candidate_rows {
+        client
+            .batch_execute(&format!(
+                "SET ec_spire.max_routed_candidate_rows = {max_routed_candidate_rows}"
+            ))
+            .await
+            .wrap_err_with(|| {
+                format!("SET ec_spire.max_routed_candidate_rows = {max_routed_candidate_rows}")
+            })?;
     }
     if let Some(remote_tuple_transport) = remote_tuple_transport {
         client
@@ -1890,6 +1914,7 @@ struct ReportInput<'a> {
     sweep_values: &'a [i32],
     rerank_width: Option<i32>,
     max_candidate_rows: Option<i32>,
+    max_routed_candidate_rows: Option<i32>,
     remote_tuple_transport: Option<SpireRemoteTupleTransportMode>,
     endpoint_identity: &'a EndpointIdentityRow,
     adaptive_nprobe_options: super::AdaptiveNprobeBenchOptions,
@@ -1953,13 +1978,14 @@ fn render_header(input: &ReportInput<'_>) -> String {
         "off".to_owned()
     };
     format!(
-        "SPIRE pipeline benchmark\nprefix: {prefix}\nindex: {index}\nqueries: {queries}\nsweep: {sweep:?}\nrerank_width: {rerank_width}\nmax_candidate_rows: {max_candidate_rows}\nremote_tuple_transport: {remote_tuple_transport}\nadaptive_nprobe: {adaptive}\ncost_snapshot: {cost_snapshot}\nremote: {remote}\nremote_selected_pids: {remote_selected_pids:?}\nremote_requested_epoch: {remote_epoch}\nlocal_store_overlap: {local_store_overlap}\nquery_metrics: {query_metrics}\nquery_metric_k: {query_metric_k}\nquery_metric_projection_columns: {query_metric_projection_columns}\nquery_recall: {query_recall}\nproduction_read_profile: {production_read_profile}\nproduction_read_only: {production_read_only}",
+        "SPIRE pipeline benchmark\nprefix: {prefix}\nindex: {index}\nqueries: {queries}\nsweep: {sweep:?}\nrerank_width: {rerank_width}\nmax_candidate_rows: {max_candidate_rows}\nmax_routed_candidate_rows: {max_routed_candidate_rows}\nremote_tuple_transport: {remote_tuple_transport}\nadaptive_nprobe: {adaptive}\ncost_snapshot: {cost_snapshot}\nremote: {remote}\nremote_selected_pids: {remote_selected_pids:?}\nremote_requested_epoch: {remote_epoch}\nlocal_store_overlap: {local_store_overlap}\nquery_metrics: {query_metrics}\nquery_metric_k: {query_metric_k}\nquery_metric_projection_columns: {query_metric_projection_columns}\nquery_recall: {query_recall}\nproduction_read_profile: {production_read_profile}\nproduction_read_only: {production_read_only}",
         prefix = input.prefix,
         index = input.index,
         queries = input.queries,
         sweep = input.sweep_values,
         rerank_width = option_label(input.rerank_width),
         max_candidate_rows = option_label(input.max_candidate_rows),
+        max_routed_candidate_rows = option_label(input.max_routed_candidate_rows),
         remote_tuple_transport = option_label(input.remote_tuple_transport),
         cost_snapshot = input.cost_snapshot_enabled,
         remote = input.remote_enabled,
@@ -2355,6 +2381,7 @@ mod tests {
             sweep: vec![],
             rerank_width: None,
             max_candidate_rows: None,
+            max_routed_candidate_rows: None,
             remote_tuple_transport: None,
             include_cost_snapshot: false,
             cost_routing_dimension_scale: None,
@@ -2540,6 +2567,7 @@ mod tests {
             sweep_values: &[8],
             rerank_width: None,
             max_candidate_rows: None,
+            max_routed_candidate_rows: None,
             remote_tuple_transport: Some(SpireRemoteTupleTransportMode::PgBinaryAttrV1),
             endpoint_identity: &ready_endpoint_identity(),
             adaptive_nprobe_options: super::super::AdaptiveNprobeBenchOptions {

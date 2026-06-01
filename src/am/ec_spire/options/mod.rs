@@ -32,6 +32,7 @@ use super::{
 const EC_SPIRE_SESSION_NPROBE_UNSET: i32 = -1;
 const EC_SPIRE_SESSION_RERANK_WIDTH_UNSET: i32 = -1;
 const EC_SPIRE_SESSION_MAX_CANDIDATE_ROWS_UNSET: i32 = -1;
+const EC_SPIRE_SESSION_MAX_ROUTED_CANDIDATE_ROWS_DISABLED: i32 = 0;
 const EC_SPIRE_MAX_NPROBE_PER_LEVEL_ENTRIES: usize = 32;
 const EC_SPIRE_DEFAULT_ADAPTIVE_NPROBE_SCORE_GAP_MICROS: i32 = 1000;
 const EC_SPIRE_MAX_ADAPTIVE_NPROBE_SCORE_GAP_MICROS: i32 = 1_000_000;
@@ -61,6 +62,8 @@ static EC_SPIRE_RERANK_WIDTH_GUC: GucSetting<i32> =
     GucSetting::<i32>::new(EC_SPIRE_SESSION_RERANK_WIDTH_UNSET);
 static EC_SPIRE_MAX_CANDIDATE_ROWS_GUC: GucSetting<i32> =
     GucSetting::<i32>::new(EC_SPIRE_SESSION_MAX_CANDIDATE_ROWS_UNSET);
+static EC_SPIRE_MAX_ROUTED_CANDIDATE_ROWS_GUC: GucSetting<i32> =
+    GucSetting::<i32>::new(EC_SPIRE_SESSION_MAX_ROUTED_CANDIDATE_ROWS_DISABLED);
 static EC_SPIRE_ADAPTIVE_NPROBE_GUC: GucSetting<bool> = GucSetting::<bool>::new(false);
 static EC_SPIRE_ADAPTIVE_NPROBE_SCORE_GAP_MICROS_GUC: GucSetting<i32> =
     GucSetting::<i32>::new(EC_SPIRE_DEFAULT_ADAPTIVE_NPROBE_SCORE_GAP_MICROS);
@@ -706,6 +709,7 @@ pub(super) struct SpireSingleLevelScanPlan {
     pub(super) nprobe_source: &'static str,
     pub(super) recursive_nprobe_policy: SpireRecursiveNprobePolicy,
     pub(super) recursive_route_budget: SpireRecursiveRouteBudget,
+    pub(super) max_routed_candidate_rows: Option<usize>,
     pub(super) payload_format: SpireAssignmentPayloadFormat,
     pub(super) rerank_width: usize,
     pub(super) rerank_width_source: &'static str,
@@ -740,6 +744,16 @@ pub(super) fn register_gucs() {
         c"Overrides ec_spire index max_candidate_rows reloption when set to 0 or higher; 0 uses the hard automatic ceiling; -1 uses the relation value.",
         &EC_SPIRE_MAX_CANDIDATE_ROWS_GUC,
         EC_SPIRE_SESSION_MAX_CANDIDATE_ROWS_UNSET,
+        EC_SPIRE_MAX_MAX_CANDIDATE_ROWS,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
+    GucRegistry::define_int_guc(
+        c"ec_spire.max_routed_candidate_rows",
+        c"Session cap for ec_spire routed leaf assignment rows.",
+        c"Caps the estimated base assignment rows selected by leaf routing before leaf payloads are read; 0 disables this cap.",
+        &EC_SPIRE_MAX_ROUTED_CANDIDATE_ROWS_GUC,
+        EC_SPIRE_SESSION_MAX_ROUTED_CANDIDATE_ROWS_DISABLED,
         EC_SPIRE_MAX_MAX_CANDIDATE_ROWS,
         GucContext::Userset,
         GucFlags::default(),
@@ -975,6 +989,14 @@ pub(super) fn current_session_max_candidate_rows() -> i32 {
     }
 }
 
+pub(super) fn current_session_max_routed_candidate_rows() -> i32 {
+    if cfg!(test) {
+        EC_SPIRE_SESSION_MAX_ROUTED_CANDIDATE_ROWS_DISABLED
+    } else {
+        EC_SPIRE_MAX_ROUTED_CANDIDATE_ROWS_GUC.get()
+    }
+}
+
 pub(super) fn current_session_adaptive_nprobe() -> bool {
     if cfg!(test) {
         false
@@ -1176,6 +1198,7 @@ pub(super) fn resolve_single_level_scan_plan(
         current_session_nprobe(),
         current_session_rerank_width(),
         current_session_max_candidate_rows(),
+        current_session_max_routed_candidate_rows(),
         current_session_adaptive_nprobe(),
         current_session_adaptive_nprobe_score_gap_micros(),
     )
@@ -1209,6 +1232,7 @@ pub(super) fn resolve_single_level_scan_plan_values_with_candidate_budget(
         session_nprobe_value,
         session_rerank_width_value,
         session_max_candidate_rows_value,
+        EC_SPIRE_SESSION_MAX_ROUTED_CANDIDATE_ROWS_DISABLED,
         false,
         EC_SPIRE_DEFAULT_ADAPTIVE_NPROBE_SCORE_GAP_MICROS,
     )
@@ -1220,6 +1244,7 @@ fn resolve_single_level_scan_plan_values_with_candidate_budget_and_adaptive(
     session_nprobe_value: i32,
     session_rerank_width_value: i32,
     session_max_candidate_rows_value: i32,
+    session_max_routed_candidate_rows_value: i32,
     adaptive_nprobe: bool,
     adaptive_score_gap_micros: i32,
 ) -> Result<SpireSingleLevelScanPlan, String> {
@@ -1254,6 +1279,8 @@ fn resolve_single_level_scan_plan_values_with_candidate_budget_and_adaptive(
     } else {
         Some(max_candidate_rows_usize)
     };
+    let max_routed_candidate_rows =
+        resolve_scan_max_routed_candidate_rows_value(session_max_routed_candidate_rows_value)?;
 
     Ok(SpireSingleLevelScanPlan {
         leaf_count,
@@ -1261,6 +1288,7 @@ fn resolve_single_level_scan_plan_values_with_candidate_budget_and_adaptive(
         nprobe_source: nprobe.source,
         recursive_nprobe_policy,
         recursive_route_budget,
+        max_routed_candidate_rows,
         payload_format: options.assignment_payload_format(),
         rerank_width: rerank_width_usize,
         rerank_width_source: rerank_width.source,
@@ -1271,6 +1299,20 @@ fn resolve_single_level_scan_plan_values_with_candidate_budget_and_adaptive(
             SpireCandidateDedupeMode::NoReplicaDedupeDisabled
         },
     })
+}
+
+fn resolve_scan_max_routed_candidate_rows_value(value: i32) -> Result<Option<usize>, String> {
+    if value <= 0 {
+        return Ok(None);
+    }
+    if value > EC_SPIRE_MAX_MAX_CANDIDATE_ROWS {
+        return Err(format!(
+            "ec_spire.max_routed_candidate_rows must be between 0 and {EC_SPIRE_MAX_MAX_CANDIDATE_ROWS}, got {value}"
+        ));
+    }
+    usize::try_from(value)
+        .map(Some)
+        .map_err(|_| "ec_spire.max_routed_candidate_rows exceeds usize".to_owned())
 }
 
 pub(super) fn resolve_recursive_route_budget(

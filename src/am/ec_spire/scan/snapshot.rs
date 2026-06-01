@@ -103,6 +103,7 @@ pub(super) fn collect_snapshot_top_graph_routed_probe_leaf_rows(
     top_route_count: u32,
     nprobe_policy: &SpireRecursiveNprobePolicy,
     route_budget: SpireRecursiveRouteBudget,
+    max_routed_candidate_rows: Option<usize>,
 ) -> Result<Vec<SpireRoutedLeafScanRows>, String> {
     let snapshot = SpireValidatedEpochSnapshot::from_snapshot(*snapshot)?;
     let hierarchy = load_snapshot_routing_hierarchy(&snapshot, object_store)?;
@@ -117,6 +118,12 @@ pub(super) fn collect_snapshot_top_graph_routed_probe_leaf_rows(
         top_route_count,
         nprobe_policy,
         route_budget,
+    )?;
+    let leaf_routes = apply_leaf_route_candidate_row_budget(
+        &snapshot,
+        object_store,
+        leaf_routes,
+        max_routed_candidate_rows,
     )?;
     let epoch = snapshot.epoch_manifest().epoch;
 
@@ -235,6 +242,7 @@ pub(super) fn collect_quantized_routed_probe_candidates(
         query_vector,
         &nprobe_policy,
         SpireRecursiveRouteBudget::unbounded(),
+        None,
         payload_format,
         dedupe_mode,
         limit,
@@ -247,6 +255,7 @@ fn collect_quantized_routed_probe_candidates_with_policy(
     query_vector: &[f32],
     nprobe_policy: &SpireRecursiveNprobePolicy,
     route_budget: SpireRecursiveRouteBudget,
+    max_routed_candidate_rows: Option<usize>,
     payload_format: SpireAssignmentPayloadFormat,
     dedupe_mode: SpireCandidateDedupeMode,
     limit: Option<usize>,
@@ -261,6 +270,7 @@ fn collect_quantized_routed_probe_candidates_with_policy(
         &hierarchy,
         nprobe_policy,
         route_budget,
+        max_routed_candidate_rows,
         payload_format,
         dedupe_mode,
         limit,
@@ -275,6 +285,7 @@ fn collect_validated_recursive_quantized_routed_probe_candidates(
     hierarchy: &SpireLoadedRoutingHierarchy,
     nprobe_policy: &SpireRecursiveNprobePolicy,
     route_budget: SpireRecursiveRouteBudget,
+    max_routed_candidate_rows: Option<usize>,
     payload_format: SpireAssignmentPayloadFormat,
     dedupe_mode: SpireCandidateDedupeMode,
     limit: Option<usize>,
@@ -289,6 +300,12 @@ fn collect_validated_recursive_quantized_routed_probe_candidates(
         nprobe_policy,
         route_budget,
     )?;
+    let leaf_routes = apply_leaf_route_candidate_row_budget(
+        snapshot,
+        object_store,
+        leaf_routes,
+        max_routed_candidate_rows,
+    )?;
     collect_validated_quantized_leaf_route_candidates(
         snapshot,
         object_store,
@@ -298,6 +315,49 @@ fn collect_validated_recursive_quantized_routed_probe_candidates(
         limit,
         observer,
     )
+}
+
+fn apply_leaf_route_candidate_row_budget(
+    snapshot: &SpireValidatedEpochSnapshot<'_>,
+    object_store: &impl SpireObjectReader,
+    leaf_routes: Vec<SpireRecursiveLeafRoute>,
+    max_routed_candidate_rows: Option<usize>,
+) -> Result<Vec<SpireRecursiveLeafRoute>, String> {
+    let Some(max_rows) = max_routed_candidate_rows.filter(|max_rows| *max_rows > 0) else {
+        return Ok(leaf_routes);
+    };
+    if leaf_routes.len() <= 1 {
+        return Ok(leaf_routes);
+    }
+
+    let mut selected = Vec::new();
+    let mut selected_rows = 0usize;
+    for route in leaf_routes {
+        let assignment_count = leaf_route_assignment_count(snapshot, object_store, route)?;
+        selected.push(route);
+        selected_rows = selected_rows.saturating_add(assignment_count);
+        if selected_rows >= max_rows {
+            break;
+        }
+    }
+    Ok(selected)
+}
+
+fn leaf_route_assignment_count(
+    snapshot: &SpireValidatedEpochSnapshot<'_>,
+    object_store: &impl SpireObjectReader,
+    route: SpireRecursiveLeafRoute,
+) -> Result<usize, String> {
+    let lookup = snapshot.require_lookup(route.leaf_pid, "scan routed row budget")?;
+    let header = object_store.read_object_header(lookup.placement)?;
+    if header.kind != SpirePartitionObjectKind::Leaf {
+        return Err(format!(
+            "ec_spire routed row budget selected PID {} is not a leaf object",
+            route.leaf_pid
+        ));
+    }
+    usize::try_from(header.assignment_count)
+        .map_err(|_| "ec_spire leaf assignment count exceeds usize".to_owned())
 }
 
 fn collect_validated_quantized_routed_probe_candidates(

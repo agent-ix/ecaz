@@ -395,6 +395,8 @@ struct SpirePipelineStep {
     #[serde(default)]
     max_candidate_rows: Option<i32>,
     #[serde(default)]
+    max_routed_candidate_rows: Option<i32>,
+    #[serde(default)]
     adaptive_nprobe: Option<bool>,
     #[serde(default)]
     adaptive_nprobe_score_gap_micros: Option<i32>,
@@ -2654,6 +2656,13 @@ fn expand_spire_pipeline(step: &SpirePipelineStep, defaults: &SuiteDefaults) -> 
             &max_candidate_rows.to_string(),
         );
     }
+    if let Some(max_routed_candidate_rows) = step.max_routed_candidate_rows {
+        push_arg(
+            &mut args,
+            "--max-routed-candidate-rows",
+            &max_routed_candidate_rows.to_string(),
+        );
+    }
     if step.adaptive_nprobe.unwrap_or(false) {
         args.push("--adaptive-nprobe".into());
     }
@@ -3703,6 +3712,7 @@ mod tests {
             sweep: vec![3, 6],
             rerank_width: Some(0),
             max_candidate_rows: Some(1000),
+            max_routed_candidate_rows: Some(26_000),
             adaptive_nprobe: Some(true),
             adaptive_nprobe_score_gap_micros: Some(500),
             include_remote: Some(true),
@@ -3737,6 +3747,9 @@ mod tests {
         assert!(args.windows(2).any(|w| w == ["--index", "aws_spire_idx"]));
         assert!(args.windows(2).any(|w| w == ["--queries-limit", "5"]));
         assert!(args.windows(2).any(|w| w == ["--sweep", "3,6"]));
+        assert!(args
+            .windows(2)
+            .any(|w| w == ["--max-routed-candidate-rows", "26000"]));
         assert!(args.contains(&"--include-remote".into()));
         assert!(args.contains(&"--require-remote-placements".into()));
         assert!(args.contains(&"--include-production-read-profile".into()));
@@ -3776,6 +3789,7 @@ mod tests {
                 sweep: vec![8, 16],
                 rerank_width: None,
                 max_candidate_rows: None,
+                max_routed_candidate_rows: None,
                 adaptive_nprobe: None,
                 adaptive_nprobe_score_gap_micros: None,
                 include_remote: Some(true),
