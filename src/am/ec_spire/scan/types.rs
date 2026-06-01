@@ -64,12 +64,20 @@ struct SpireLoadedRoutingHierarchy {
     root_pid: u64,
     root_object: SpireRoutingPartitionObject,
     internal_objects_by_pid: HashMap<u64, SpireRoutingPartitionObject>,
+    leaf_assignment_counts_by_pid: HashMap<u64, usize>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct SpireRecursiveLeafRoute {
     leaf_pid: u64,
     parent_pid: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SpireLeafRouteSelection {
+    routes: Vec<SpireRecursiveLeafRoute>,
+    stopped_by_row_budget: bool,
+    stopped_by_max_leaf_routes: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]

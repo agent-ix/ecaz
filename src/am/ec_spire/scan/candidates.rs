@@ -401,7 +401,10 @@ fn collect_validated_top_graph_scan_placement_diagnostics(
         query.values().len(),
         query.values(),
     )?;
-    let leaf_routes = route_top_graph_object_to_leaf_routes(
+    let leaf_assignment_counts = &hierarchy.leaf_assignment_counts_by_pid;
+    let mut leaf_row_count =
+        |route| leaf_route_assignment_count_from_loaded_hierarchy(leaf_assignment_counts, route);
+    let leaf_routes = route_top_graph_object_to_leaf_routes_with_row_budget(
         &hierarchy.root_object,
         &hierarchy.internal_objects_by_pid,
         &top_graph,
@@ -410,13 +413,10 @@ fn collect_validated_top_graph_scan_placement_diagnostics(
         scan_plan.nprobe,
         &scan_plan.recursive_nprobe_policy,
         scan_plan.recursive_route_budget,
-    )?;
-    let leaf_routes = apply_leaf_route_candidate_row_budget(
-        snapshot,
-        object_store,
-        leaf_routes,
         scan_plan.max_routed_candidate_rows,
-    )?;
+        &mut leaf_row_count,
+    )?
+    .routes;
 
     let mut observer = SpireScanPlacementDiagnosticsObserver::new();
     let _candidates = collect_validated_quantized_leaf_route_candidates(

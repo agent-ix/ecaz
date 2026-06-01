@@ -109,7 +109,10 @@ pub(super) fn collect_snapshot_top_graph_routed_probe_leaf_rows(
     let hierarchy = load_snapshot_routing_hierarchy(&snapshot, object_store)?;
     let (_top_graph_pid, top_graph) = load_snapshot_top_graph_object(&snapshot, object_store)?
         .ok_or_else(|| "ec_spire scan snapshot has no available top graph object".to_owned())?;
-    let leaf_routes = route_top_graph_object_to_leaf_routes(
+    let leaf_assignment_counts = &hierarchy.leaf_assignment_counts_by_pid;
+    let mut leaf_row_count =
+        |route| leaf_route_assignment_count_from_loaded_hierarchy(leaf_assignment_counts, route);
+    let leaf_routes = route_top_graph_object_to_leaf_routes_with_row_budget(
         &hierarchy.root_object,
         &hierarchy.internal_objects_by_pid,
         &top_graph,
@@ -118,13 +121,10 @@ pub(super) fn collect_snapshot_top_graph_routed_probe_leaf_rows(
         top_route_count,
         nprobe_policy,
         route_budget,
-    )?;
-    let leaf_routes = apply_leaf_route_candidate_row_budget(
-        &snapshot,
-        object_store,
-        leaf_routes,
         max_routed_candidate_rows,
-    )?;
+        &mut leaf_row_count,
+    )?
+    .routes;
     let epoch = snapshot.epoch_manifest().epoch;
 
     let mut routed = Vec::with_capacity(leaf_routes.len());
@@ -186,6 +186,10 @@ pub(super) fn collect_scan_routing_diagnostics(
     let levels = if top_graph_plan.enabled {
         let (_top_graph_pid, top_graph) = load_snapshot_top_graph_object(&snapshot, object_store)?
             .ok_or_else(|| "ec_spire scan snapshot has no available top graph object".to_owned())?;
+        let leaf_assignment_counts = &hierarchy.leaf_assignment_counts_by_pid;
+        let mut leaf_row_count = |route| {
+            leaf_route_assignment_count_from_loaded_hierarchy(leaf_assignment_counts, route)
+        };
         collect_top_graph_routing_level_diagnostics(
             &hierarchy.root_object,
             &hierarchy.internal_objects_by_pid,
@@ -195,14 +199,22 @@ pub(super) fn collect_scan_routing_diagnostics(
             scan_plan.nprobe,
             &scan_plan.recursive_nprobe_policy,
             scan_plan.recursive_route_budget,
+            scan_plan.max_routed_candidate_rows,
+            &mut leaf_row_count,
         )?
     } else {
-        collect_recursive_routing_level_diagnostics_with_budget(
+        let leaf_assignment_counts = &hierarchy.leaf_assignment_counts_by_pid;
+        let mut leaf_row_count = |route| {
+            leaf_route_assignment_count_from_loaded_hierarchy(leaf_assignment_counts, route)
+        };
+        collect_recursive_routing_level_diagnostics_with_row_budget(
             &hierarchy.root_object,
             &hierarchy.internal_objects_by_pid,
             query.values(),
             &scan_plan.recursive_nprobe_policy,
             scan_plan.recursive_route_budget,
+            scan_plan.max_routed_candidate_rows,
+            &mut leaf_row_count,
         )?
     };
 
@@ -293,19 +305,19 @@ fn collect_validated_recursive_quantized_routed_probe_candidates(
 ) -> Result<Vec<SpireScoredScanCandidate>, String> {
     let scorer =
         SpirePreparedAssignmentScorer::prepare(payload_format, query_vector.len(), query_vector)?;
-    let leaf_routes = route_recursive_routing_objects_to_leaf_routes_with_budget(
+    let leaf_assignment_counts = &hierarchy.leaf_assignment_counts_by_pid;
+    let mut leaf_row_count =
+        |route| leaf_route_assignment_count_from_loaded_hierarchy(leaf_assignment_counts, route);
+    let leaf_routes = route_recursive_routing_objects_to_leaf_routes_with_row_budget(
         &hierarchy.root_object,
         &hierarchy.internal_objects_by_pid,
         query_vector,
         nprobe_policy,
         route_budget,
-    )?;
-    let leaf_routes = apply_leaf_route_candidate_row_budget(
-        snapshot,
-        object_store,
-        leaf_routes,
         max_routed_candidate_rows,
-    )?;
+        &mut leaf_row_count,
+    )?
+    .routes;
     collect_validated_quantized_leaf_route_candidates(
         snapshot,
         object_store,
@@ -317,47 +329,19 @@ fn collect_validated_recursive_quantized_routed_probe_candidates(
     )
 }
 
-fn apply_leaf_route_candidate_row_budget(
-    snapshot: &SpireValidatedEpochSnapshot<'_>,
-    object_store: &impl SpireObjectReader,
-    leaf_routes: Vec<SpireRecursiveLeafRoute>,
-    max_routed_candidate_rows: Option<usize>,
-) -> Result<Vec<SpireRecursiveLeafRoute>, String> {
-    let Some(max_rows) = max_routed_candidate_rows.filter(|max_rows| *max_rows > 0) else {
-        return Ok(leaf_routes);
-    };
-    if leaf_routes.len() <= 1 {
-        return Ok(leaf_routes);
-    }
-
-    let mut selected = Vec::new();
-    let mut selected_rows = 0usize;
-    for route in leaf_routes {
-        let assignment_count = leaf_route_assignment_count(snapshot, object_store, route)?;
-        selected.push(route);
-        selected_rows = selected_rows.saturating_add(assignment_count);
-        if selected_rows >= max_rows {
-            break;
-        }
-    }
-    Ok(selected)
-}
-
-fn leaf_route_assignment_count(
-    snapshot: &SpireValidatedEpochSnapshot<'_>,
-    object_store: &impl SpireObjectReader,
+fn leaf_route_assignment_count_from_loaded_hierarchy(
+    leaf_assignment_counts_by_pid: &HashMap<u64, usize>,
     route: SpireRecursiveLeafRoute,
 ) -> Result<usize, String> {
-    let lookup = snapshot.require_lookup(route.leaf_pid, "scan routed row budget")?;
-    let header = object_store.read_object_header(lookup.placement)?;
-    if header.kind != SpirePartitionObjectKind::Leaf {
-        return Err(format!(
-            "ec_spire routed row budget selected PID {} is not a leaf object",
-            route.leaf_pid
-        ));
-    }
-    usize::try_from(header.assignment_count)
-        .map_err(|_| "ec_spire leaf assignment count exceeds usize".to_owned())
+    leaf_assignment_counts_by_pid
+        .get(&route.leaf_pid)
+        .copied()
+        .ok_or_else(|| {
+            format!(
+                "ec_spire routed row budget selected PID {} is not a visible leaf object",
+                route.leaf_pid
+            )
+        })
 }
 
 fn collect_validated_quantized_routed_probe_candidates(
