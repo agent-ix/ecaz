@@ -1,6 +1,6 @@
 # Task 78: SPIRE Latency Optimization
 
-Status: proposed (2026-05-31, split from Task 77 no-slice closeout)
+Status: closed - P0 slice shelved with evidence (2026-05-31)
 Owner: coder (to be assigned). One coder, one branch.
 Priority: 1 (required before revisiting SPIRE high-recall defaults)
 
@@ -88,3 +88,34 @@ guard, but it is not the primary implementation target.
   default, remains opt-in, or needs a separate default-policy task.
 - No SPIRE recursion semantic change.
 - Closeout packet records the decision and updates this task status.
+
+## Closeout
+
+Closed by `reviews/task-78/002-rabitq-suite-evidence/`.
+
+The first RaBitQ-first P0 slice, bounded candidate cutoff from
+`reviews/task-78/001-rabitq-candidate-cutoff/`, is shelved as a latency
+optimization. Packet `002` measured parent RaBitQ baseline, current RaBitQ,
+and current TurboQuant at the Task 77 100k high-recall points using
+`ecaz bench suite`.
+
+The current RaBitQ slice did not reduce the candidate surface or clear the
+`>=10%` matched-recall p50 gate:
+
+- nprobe64: `41.597 ms` baseline -> `41.757 ms` current at recall@10 `0.9825`.
+- nprobe96: `60.881 ms` baseline -> `60.256 ms` current at recall@10 `0.9975`.
+- nprobe128: `73.774 ms` baseline -> `74.951 ms` current at recall@10 `1.0000`.
+
+The RaBitQ candidate funnel still scores `10,420,357`, `15,506,227`, and
+`20,000,000` candidates across the 200 query rows while retaining `5,000`
+and returning `2,000`. Scoring remains roughly `87-88%` of measured
+candidate-path CPU time under RaBitQ, so the latency problem is still
+candidate volume, not materialization or heap append.
+
+RaBitQ remains the validated primary/default direction relative to TurboQuant:
+current RaBitQ p50 is `41.757`, `60.256`, and `74.951 ms` at nprobe64/96/128,
+versus TurboQuant `89.144`, `129.835`, and `167.193 ms` at identical recall.
+This task does not flip a product default; a narrower default-policy task
+should do that after a real candidate-selection win lands.
+
+No SPIRE recursion semantic change was made.

@@ -1,0 +1,127 @@
+{
+  "name": "task78-rabitq-baseline-parent",
+  "schema_version": 1,
+  "artifact_dir": "/home/peter/dev/ecaz/reviews/task-78/002-rabitq-suite-evidence/artifacts/baseline",
+  "defaults": {
+    "bits": 4,
+    "seed": 42,
+    "socket_dir": "/home/peter/.pgrx",
+    "pg": 18,
+    "profile": "ec_spire",
+    "queries_limit": 200,
+    "iterations": 200,
+    "force_index": true,
+    "sample_backend_memory": true,
+    "memory_sample_interval_ms": 25
+  },
+  "steps": [
+    {
+      "kind": "raw",
+      "name": "drop-task78-baseline-database",
+      "tags": ["setup", "task78", "baseline", "intel-local"],
+      "args": ["dev", "sql", "--pg", "18", "--db", "postgres", "--socket-dir", "/home/peter/.pgrx", "--raw", "--sql", "DROP DATABASE IF EXISTS task78_spire_rabitq_baseline;", "--log-output", "/home/peter/dev/ecaz/reviews/task-78/002-rabitq-suite-evidence/artifacts/baseline/drop-database.log"],
+      "expected_artifacts": ["/home/peter/dev/ecaz/reviews/task-78/002-rabitq-suite-evidence/artifacts/baseline/drop-database.log"]
+    },
+    {
+      "kind": "raw",
+      "name": "create-task78-baseline-database",
+      "tags": ["setup", "task78", "baseline", "intel-local"],
+      "args": ["dev", "sql", "--pg", "18", "--db", "postgres", "--socket-dir", "/home/peter/.pgrx", "--raw", "--sql", "CREATE DATABASE task78_spire_rabitq_baseline;", "--log-output", "/home/peter/dev/ecaz/reviews/task-78/002-rabitq-suite-evidence/artifacts/baseline/create-database.log"],
+      "expected_artifacts": ["/home/peter/dev/ecaz/reviews/task-78/002-rabitq-suite-evidence/artifacts/baseline/create-database.log"]
+    },
+    {
+      "kind": "raw",
+      "name": "precheck-baseline-host-and-extension",
+      "tags": ["setup", "precheck", "task78", "baseline", "intel-local"],
+      "args": ["dev", "sql", "--pg", "18", "--db", "task78_spire_rabitq_baseline", "--socket-dir", "/home/peter/.pgrx", "--raw", "--sql", "CREATE EXTENSION IF NOT EXISTS ecaz; SELECT now() AS captured_at, version() AS postgres_version; SELECT extname, extversion FROM pg_extension WHERE extname = 'ecaz'; SELECT amname FROM pg_am WHERE amname = 'ec_spire';", "--log-output", "/home/peter/dev/ecaz/reviews/task-78/002-rabitq-suite-evidence/artifacts/baseline/precheck-host-and-extension.log"],
+      "expected_artifacts": ["/home/peter/dev/ecaz/reviews/task-78/002-rabitq-suite-evidence/artifacts/baseline/precheck-host-and-extension.log"]
+    },
+    {
+      "kind": "load",
+      "name": "load-100k-rabitq-tg64-b0",
+      "tags": ["load", "task78", "baseline", "ec_real_100k", "spire", "rabitq", "tg64", "b0"],
+      "prefix": "task78_rabitq_baseline_100k",
+      "profile": "ec_spire",
+      "corpus_file": "/home/peter/dev/ecaz/target/real-corpus/staged-task50/ec_real_100k_corpus.tsv",
+      "queries_file": "/home/peter/dev/ecaz/target/real-corpus/staged-task50/ec_real_100k_queries.tsv",
+      "manifest_file": "/home/peter/dev/ecaz/target/real-corpus/staged-task50/ec_real_100k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": ["nlists=128", "recursive_fanout=8", "nprobe=24", "rerank_width=25", "storage_format=rabitq", "boundary_replica_count=0", "top_graph_enabled=1", "top_graph_degree=32", "top_graph_build_list_size=100", "top_graph_search_list_size=64"],
+      "log_file": "/home/peter/dev/ecaz/reviews/task-78/002-rabitq-suite-evidence/artifacts/baseline/load-100k-rabitq-tg64-b0.log"
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-100k-rabitq-tg64-b0",
+      "tags": ["pipeline", "funnel", "task78", "baseline", "ec_real_100k", "spire", "rabitq", "tg64", "b0"],
+      "prefix": "task78_rabitq_baseline_100k",
+      "index": "task78_rabitq_baseline_100k_idx",
+      "queries_limit": 200,
+      "sweep": [64],
+      "rerank_width": 25,
+      "include_local_store_overlap": true,
+      "include_cost_snapshot": true,
+      "include_query_metrics": true,
+      "include_recall": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "/home/peter/dev/ecaz/target/real-corpus/staged-task50/ec_real_100k_corpus.tsv",
+      "query_metric_k": 10,
+      "query_metric_projection_columns": ["id"],
+      "log_output": "/home/peter/dev/ecaz/reviews/task-78/002-rabitq-suite-evidence/artifacts/baseline/pipeline-100k-rabitq-tg64-b0.log",
+      "funnel_output": "/home/peter/dev/ecaz/reviews/task-78/002-rabitq-suite-evidence/artifacts/baseline/funnel-100k-rabitq-tg64-b0.jsonl"
+    },
+    {
+      "kind": "raw",
+      "name": "rebuild-100k-rabitq-tg96-b0",
+      "tags": ["create-index", "task78", "baseline", "ec_real_100k", "spire", "rabitq", "tg96", "b0"],
+      "args": ["dev", "sql", "--pg", "18", "--db", "task78_spire_rabitq_baseline", "--socket-dir", "/home/peter/.pgrx", "--raw", "--sql", "SET client_min_messages TO notice; DROP INDEX IF EXISTS task78_rabitq_baseline_100k_idx; CREATE INDEX task78_rabitq_baseline_100k_idx ON task78_rabitq_baseline_100k_corpus USING ec_spire (embedding ecvector_spire_ip_ops) WITH (nlists = 128, recursive_fanout = 8, nprobe = 24, rerank_width = 25, storage_format = 'rabitq', boundary_replica_count = 0, top_graph_enabled = 1, top_graph_degree = 32, top_graph_build_list_size = 100, top_graph_search_list_size = 96);", "--log-output", "/home/peter/dev/ecaz/reviews/task-78/002-rabitq-suite-evidence/artifacts/baseline/rebuild-100k-rabitq-tg96-b0.log"],
+      "expected_artifacts": ["/home/peter/dev/ecaz/reviews/task-78/002-rabitq-suite-evidence/artifacts/baseline/rebuild-100k-rabitq-tg96-b0.log"]
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-100k-rabitq-tg96-b0",
+      "tags": ["pipeline", "funnel", "task78", "baseline", "ec_real_100k", "spire", "rabitq", "tg96", "b0", "matched-recall"],
+      "prefix": "task78_rabitq_baseline_100k",
+      "index": "task78_rabitq_baseline_100k_idx",
+      "queries_limit": 200,
+      "sweep": [96],
+      "rerank_width": 25,
+      "include_local_store_overlap": true,
+      "include_cost_snapshot": true,
+      "include_query_metrics": true,
+      "include_recall": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "/home/peter/dev/ecaz/target/real-corpus/staged-task50/ec_real_100k_corpus.tsv",
+      "query_metric_k": 10,
+      "query_metric_projection_columns": ["id"],
+      "log_output": "/home/peter/dev/ecaz/reviews/task-78/002-rabitq-suite-evidence/artifacts/baseline/pipeline-100k-rabitq-tg96-b0.log",
+      "funnel_output": "/home/peter/dev/ecaz/reviews/task-78/002-rabitq-suite-evidence/artifacts/baseline/funnel-100k-rabitq-tg96-b0.jsonl"
+    },
+    {
+      "kind": "raw",
+      "name": "rebuild-100k-rabitq-tg128-b0",
+      "tags": ["create-index", "task78", "baseline", "ec_real_100k", "spire", "rabitq", "tg128", "b0"],
+      "args": ["dev", "sql", "--pg", "18", "--db", "task78_spire_rabitq_baseline", "--socket-dir", "/home/peter/.pgrx", "--raw", "--sql", "SET client_min_messages TO notice; DROP INDEX IF EXISTS task78_rabitq_baseline_100k_idx; CREATE INDEX task78_rabitq_baseline_100k_idx ON task78_rabitq_baseline_100k_corpus USING ec_spire (embedding ecvector_spire_ip_ops) WITH (nlists = 128, recursive_fanout = 8, nprobe = 24, rerank_width = 25, storage_format = 'rabitq', boundary_replica_count = 0, top_graph_enabled = 1, top_graph_degree = 32, top_graph_build_list_size = 100, top_graph_search_list_size = 128);", "--log-output", "/home/peter/dev/ecaz/reviews/task-78/002-rabitq-suite-evidence/artifacts/baseline/rebuild-100k-rabitq-tg128-b0.log"],
+      "expected_artifacts": ["/home/peter/dev/ecaz/reviews/task-78/002-rabitq-suite-evidence/artifacts/baseline/rebuild-100k-rabitq-tg128-b0.log"]
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-100k-rabitq-tg128-b0",
+      "tags": ["pipeline", "funnel", "task78", "baseline", "ec_real_100k", "spire", "rabitq", "tg128", "b0"],
+      "prefix": "task78_rabitq_baseline_100k",
+      "index": "task78_rabitq_baseline_100k_idx",
+      "queries_limit": 200,
+      "sweep": [128],
+      "rerank_width": 25,
+      "include_local_store_overlap": true,
+      "include_cost_snapshot": true,
+      "include_query_metrics": true,
+      "include_recall": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "/home/peter/dev/ecaz/target/real-corpus/staged-task50/ec_real_100k_corpus.tsv",
+      "query_metric_k": 10,
+      "query_metric_projection_columns": ["id"],
+      "log_output": "/home/peter/dev/ecaz/reviews/task-78/002-rabitq-suite-evidence/artifacts/baseline/pipeline-100k-rabitq-tg128-b0.log",
+      "funnel_output": "/home/peter/dev/ecaz/reviews/task-78/002-rabitq-suite-evidence/artifacts/baseline/funnel-100k-rabitq-tg128-b0.jsonl"
+    }
+  ]
+}

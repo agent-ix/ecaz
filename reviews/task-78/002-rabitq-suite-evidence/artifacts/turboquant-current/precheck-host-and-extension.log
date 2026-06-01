@@ -1,0 +1,16 @@
+CREATE EXTENSION
+          captured_at          |                                            postgres_version                                             
+-------------------------------+---------------------------------------------------------------------------------------------------------
+ 2026-05-31 18:23:27.208745-07 | PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+(1 row)
+
+ extname | extversion 
+---------+------------
+ ecaz    | 0.1.1
+(1 row)
+
+  amname  
+----------
+ ec_spire
+(1 row)
+

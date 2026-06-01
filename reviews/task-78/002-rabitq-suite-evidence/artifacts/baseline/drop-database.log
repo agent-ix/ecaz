@@ -1,0 +1,2 @@
+DROP DATABASE
+NOTICE:  database "task78_spire_rabitq_baseline" does not exist, skipping
