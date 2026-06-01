@@ -1,0 +1,5 @@
+SET
+ ec_spire.max_leaf_candidate_rows
+----------------------------------
+ 160
+(1 row)

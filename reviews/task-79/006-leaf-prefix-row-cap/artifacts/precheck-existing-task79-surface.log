@@ -1,0 +1,23 @@
+CREATE EXTENSION
+SET
+ ec_spire.max_leaf_candidate_rows
+----------------------------------
+ 160
+(1 row)
+
+ corpus_rows
+-------------
+      100000
+(1 row)
+
+ query_rows
+------------
+       1000
+(1 row)
+
+ extname | extversion
+---------+------------
+ ecaz    | 0.1.1
+(1 row)
+
+NOTICE:  extension "ecaz" already exists, skipping
