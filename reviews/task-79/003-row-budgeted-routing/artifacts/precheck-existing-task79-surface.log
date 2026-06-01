@@ -1,0 +1,17 @@
+CREATE EXTENSION
+ corpus_rows 
+-------------
+      100000
+(1 row)
+
+ query_rows 
+------------
+       1000
+(1 row)
+
+ extname | extversion 
+---------+------------
+ ecaz    | 0.1.1
+(1 row)
+
+NOTICE:  extension "ecaz" already exists, skipping
