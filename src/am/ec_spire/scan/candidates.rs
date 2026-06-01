@@ -679,6 +679,21 @@ fn append_quantized_v2_column_candidates(
         ));
     }
 
+    if scorer.payload_format() == SpireAssignmentPayloadFormat::RaBitQ && accumulator.is_bounded() {
+        return append_quantized_v2_column_candidates_with_rabitq_cutoff(
+            snapshot,
+            columns,
+            epoch,
+            pid,
+            object_version,
+            scorer,
+            deleted_vec_ids,
+            accumulator,
+            placement,
+            observer,
+        );
+    }
+
     let mut scores = vec![0.0; columns.row_count()];
     let score_started = observer.wants_candidate_timing().then(Instant::now);
     scorer.score_batch_ip(
@@ -711,6 +726,99 @@ fn append_quantized_v2_column_candidates(
             continue;
         }
         observer.visible_leaf_candidate(epoch, placement, row.flags);
+        let candidate = SpireScoredScanCandidate {
+            epoch,
+            pid,
+            object_version,
+            row_index: row.row_index,
+            assignment_flags: row.flags,
+            vec_id,
+            heap_tid: row.heap_tid,
+            score: -ip,
+        };
+        let append_started = observer.wants_candidate_timing().then(Instant::now);
+        let outcome = accumulator.append(candidate);
+        if let Some(started) = append_started {
+            observer.candidate_heap_append_time(epoch, placement, elapsed_nanos_since(started));
+        }
+        observe_candidate_append_outcome(snapshot, observer, outcome)?;
+    }
+    Ok(())
+}
+
+fn append_quantized_v2_column_candidates_with_rabitq_cutoff(
+    snapshot: &SpireValidatedEpochSnapshot<'_>,
+    columns: SpireLeafObjectColumns<'_>,
+    epoch: u64,
+    pid: u64,
+    object_version: u64,
+    scorer: &SpirePreparedAssignmentScorer,
+    deleted_vec_ids: &HashSet<SpireVecId>,
+    accumulator: &mut SpireScoredCandidateAccumulator,
+    placement: &SpirePlacementEntry,
+    observer: &mut impl SpireRoutedScanObserver,
+) -> Result<(), String> {
+    let column_format = SpireAssignmentPayloadFormat::from_tag(columns.payload_format)?;
+    for row_offset in 0..columns.row_count() {
+        if !is_visible_scored_assignment_flags(columns.flags[row_offset]) {
+            continue;
+        }
+
+        let materialize_started = observer.wants_candidate_timing().then(Instant::now);
+        let row = columns.row(row_offset)?;
+        let vec_id = row.vec_id()?;
+        if let Some(started) = materialize_started {
+            observer.candidate_materialize_time(epoch, placement, elapsed_nanos_since(started));
+        }
+        if deleted_vec_ids.contains(&vec_id) {
+            continue;
+        }
+        observer.visible_leaf_candidate(epoch, placement, row.flags);
+
+        let score_started = observer.wants_candidate_timing().then(Instant::now);
+        let ip = match accumulator.min_ip_to_keep() {
+            Some(min_ip_to_keep) => {
+                match scorer.try_score_payload_ip(
+                    column_format,
+                    row.gamma,
+                    row.encoded_payload,
+                    min_ip_to_keep,
+                )? {
+                    Some(ip) => ip,
+                    None => {
+                        if let Some(started) = score_started {
+                            observer.candidate_score_time(
+                                epoch,
+                                placement,
+                                elapsed_nanos_since(started),
+                            );
+                        }
+                        let pruned = SpireScoredScanCandidate {
+                            epoch,
+                            pid,
+                            object_version,
+                            row_index: row.row_index,
+                            assignment_flags: row.flags,
+                            vec_id,
+                            heap_tid: row.heap_tid,
+                            score: -min_ip_to_keep,
+                        };
+                        observe_truncated_candidate(snapshot, observer, &pruned)?;
+                        continue;
+                    }
+                }
+            }
+            None => scorer.score_payload_ip(column_format, row.gamma, row.encoded_payload)?,
+        };
+        if let Some(started) = score_started {
+            observer.candidate_score_time(epoch, placement, elapsed_nanos_since(started));
+        }
+        if !ip.is_finite() {
+            return Err(
+                "ec_spire routed candidate scorer returned a non-finite score".to_owned(),
+            );
+        }
+
         let candidate = SpireScoredScanCandidate {
             epoch,
             pid,
@@ -1092,6 +1200,34 @@ impl SpireScoredCandidateAccumulator {
             }
             (SpireCandidateDedupeMode::VecIdDedupeEnabled, Some(limit)) => {
                 self.append_bounded_deduped(candidate, limit)
+            }
+        }
+    }
+
+    fn is_bounded(&self) -> bool {
+        self.limit.is_some()
+    }
+
+    fn min_ip_to_keep(&mut self) -> Option<f32> {
+        let limit = self.limit?;
+        if limit == 0 {
+            return Some(f32::INFINITY);
+        }
+        match self.dedupe_mode {
+            SpireCandidateDedupeMode::NoReplicaDedupeDisabled => {
+                if self.heap.len() < limit {
+                    None
+                } else {
+                    self.heap.peek().map(|entry| -entry.candidate.score)
+                }
+            }
+            SpireCandidateDedupeMode::VecIdDedupeEnabled => {
+                if self.candidates_by_vec_id.len() < limit {
+                    None
+                } else {
+                    self.peek_live_worst_deduped()
+                        .map(|candidate| -candidate.score)
+                }
             }
         }
     }
