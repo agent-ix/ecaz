@@ -72,6 +72,68 @@
     }
 
     #[test]
+    fn leaf_block_summaries_cover_rabitq_row_blocks() {
+        fn rabitq_primary_row(
+            vec_seq: u64,
+            block_number: u32,
+            offset_number: u16,
+            source_vector: &[f32],
+        ) -> SpireLeafAssignmentRow {
+            let assignment = quantizer::encode_assignment_input(
+                SpireAssignmentPayloadFormat::RaBitQ,
+                tid(block_number, offset_number),
+                source_vector,
+            )
+            .unwrap();
+            SpireLeafAssignmentRow {
+                flags: SPIRE_ASSIGNMENT_FLAG_PRIMARY,
+                vec_id: SpireVecId::local(vec_seq),
+                heap_tid: assignment.heap_tid,
+                payload_format: assignment.payload_format,
+                gamma: assignment.gamma,
+                encoded_payload: assignment.encoded_payload,
+            }
+        }
+
+        let source_vectors = vec![vec![1.0, 0.0], vec![0.5, 0.0], vec![-1.0, 0.0]];
+        let rows = source_vectors
+            .iter()
+            .enumerate()
+            .map(|(index, source_vector)| {
+                rabitq_primary_row(
+                    u64::try_from(index + 1).unwrap(),
+                    10,
+                    u16::try_from(index + 1).unwrap(),
+                    source_vector,
+                )
+            })
+            .collect::<Vec<_>>();
+
+        let summaries =
+            super::build_leaf_block_summaries(&rows, &source_vectors, 2).unwrap();
+
+        assert_eq!(summaries.len(), 2);
+        assert_eq!(summaries[0].row_base, 0);
+        assert_eq!(summaries[0].row_count, 2);
+        assert_eq!(summaries[1].row_base, 2);
+        assert_eq!(summaries[1].row_count, 1);
+        assert_eq!(
+            summaries
+                .iter()
+                .map(|summary| summary.payload_format)
+                .collect::<Vec<_>>(),
+            vec![
+                SpireAssignmentPayloadFormat::RaBitQ.tag(),
+                SpireAssignmentPayloadFormat::RaBitQ.tag()
+            ]
+        );
+        assert!(summaries.iter().all(|summary| summary.gamma == 0.0));
+        assert!(summaries
+            .iter()
+            .all(|summary| !summary.encoded_payload.is_empty()));
+    }
+
+    #[test]
     fn recursive_routing_build_materializes_internal_level() {
         let mut pid_allocator = SpirePidAllocator::default();
 
@@ -324,12 +386,16 @@
                         object_version: 3,
                         parent_pid: root_pid,
                         rows: vec![primary_row(1, 10, 1)],
+                        summaries: Vec::new(),
+                        summary_block_rows: 0,
                     },
                     SpireRecursiveLeafObjectInput {
                         pid: 12,
                         object_version: 3,
                         parent_pid: root_pid,
                         rows: vec![primary_row(2, 10, 2)],
+                        summaries: Vec::new(),
+                        summary_block_rows: 0,
                     },
                 ],
             },
@@ -486,12 +552,16 @@
                         object_version: 3,
                         parent_pid: root_pid,
                         rows: vec![primary_row(1, 10, 1)],
+                        summaries: Vec::new(),
+                        summary_block_rows: 0,
                     },
                     SpireRecursiveLeafObjectInput {
                         pid: 12,
                         object_version: 3,
                         parent_pid: root_pid,
                         rows: vec![primary_row(2, 10, 2)],
+                        summaries: Vec::new(),
+                        summary_block_rows: 0,
                     },
                 ],
             },
@@ -551,12 +621,16 @@
                         object_version: 3,
                         parent_pid: root_pid + 99,
                         rows: Vec::new(),
+                        summaries: Vec::new(),
+                        summary_block_rows: 0,
                     },
                     SpireRecursiveLeafObjectInput {
                         pid: 12,
                         object_version: 3,
                         parent_pid: root_pid,
                         rows: Vec::new(),
+                        summaries: Vec::new(),
+                        summary_block_rows: 0,
                     },
                 ],
             },

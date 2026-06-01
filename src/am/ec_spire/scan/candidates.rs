@@ -197,21 +197,35 @@ where
         query_vector.len(),
         query_vector,
     )?;
-    let routed_rows = collect_snapshot_top_graph_routed_probe_leaf_rows(
-        snapshot,
-        object_store,
+    let snapshot = SpireValidatedEpochSnapshot::from_snapshot(*snapshot)?;
+    let hierarchy = load_snapshot_routing_hierarchy(&snapshot, object_store)?;
+    let (_top_graph_pid, top_graph) = load_snapshot_top_graph_object(&snapshot, object_store)?
+        .ok_or_else(|| "ec_spire scan snapshot has no available top graph object".to_owned())?;
+    let leaf_assignment_counts = &hierarchy.leaf_assignment_counts_by_pid;
+    let mut leaf_row_count =
+        |route| leaf_route_assignment_count_from_loaded_hierarchy(leaf_assignment_counts, route);
+    let leaf_routes = route_top_graph_object_to_leaf_routes_with_row_budget(
+        &hierarchy.root_object,
+        &hierarchy.internal_objects_by_pid,
+        &top_graph,
         query_vector,
         top_graph_plan.search_list_size.unwrap_or(scan_plan.nprobe),
         scan_plan.nprobe,
         &scan_plan.recursive_nprobe_policy,
         scan_plan.recursive_route_budget,
         scan_plan.max_routed_candidate_rows,
-    )?;
-    let mut candidates = rank_routed_leaf_rows_by_ip(
-        routed_rows,
-        |row| scorer.score_assignment_ip(row),
+        &mut leaf_row_count,
+    )?
+    .routes;
+    let mut observer = SpireNoopRoutedScanObserver;
+    let mut candidates = collect_validated_quantized_leaf_route_candidates(
+        &snapshot,
+        object_store,
+        leaf_routes,
+        &scorer,
         scan_plan.dedupe_mode,
         scan_plan.candidate_limit,
+        &mut observer,
     )?;
     rerank_scored_candidates_by_ip_with_prefetch(
         &mut candidates,
@@ -588,6 +602,98 @@ pub(super) fn collect_validated_snapshot_visible_primary_rows(
     Ok(visible_rows)
 }
 
+fn select_leaf_block_row_ranges(
+    summaries: &[SpireLeafBlockSummary],
+    max_blocks_per_leaf: i32,
+    scorer: &SpirePreparedAssignmentScorer,
+    epoch: u64,
+    placement: &SpirePlacementEntry,
+    observer: &mut impl SpireRoutedScanObserver,
+) -> Result<Option<Vec<SpireLeafBlockRowRange>>, String> {
+    if max_blocks_per_leaf <= 0 || summaries.is_empty() {
+        return Ok(None);
+    }
+    if scorer.payload_format() != SpireAssignmentPayloadFormat::RaBitQ {
+        return Ok(None);
+    }
+    let max_blocks = usize::try_from(max_blocks_per_leaf)
+        .map_err(|_| "ec_spire.leaf_block_pruning_max_blocks_per_leaf exceeds usize".to_owned())?;
+    if max_blocks >= summaries.len() {
+        return Ok(None);
+    }
+
+    let score_started = observer.wants_candidate_timing().then(Instant::now);
+    let mut scored_ranges = Vec::with_capacity(summaries.len());
+    for summary in summaries {
+        let summary_format = SpireAssignmentPayloadFormat::from_tag(summary.payload_format)?;
+        if summary_format != scorer.payload_format() {
+            return Err(format!(
+                "ec_spire leaf V3 summary payload format {:?} does not match prepared scorer {:?}",
+                summary_format,
+                scorer.payload_format()
+            ));
+        }
+        let row_end = summary
+            .row_base
+            .checked_add(summary.row_count)
+            .ok_or_else(|| "ec_spire leaf V3 summary row range overflow".to_owned())?;
+        let ip = scorer.score_payload_ip(
+            summary_format,
+            summary.gamma,
+            &summary.encoded_payload,
+        )?;
+        if !ip.is_finite() {
+            return Err(
+                "ec_spire leaf V3 summary scorer returned a non-finite score".to_owned(),
+            );
+        }
+        scored_ranges.push((
+            ip,
+            SpireLeafBlockRowRange {
+                row_base: summary.row_base,
+                row_end,
+            },
+        ));
+    }
+    if let Some(started) = score_started {
+        observer.candidate_score_time(epoch, placement, elapsed_nanos_since(started));
+    }
+
+    scored_ranges.sort_by(|left, right| {
+        right
+            .0
+            .partial_cmp(&left.0)
+            .unwrap_or(Ordering::Equal)
+            .then_with(|| left.1.row_base.cmp(&right.1.row_base))
+    });
+    scored_ranges.truncate(max_blocks);
+    let mut ranges = scored_ranges
+        .into_iter()
+        .map(|(_score, range)| range)
+        .collect::<Vec<_>>();
+    ranges.sort_by_key(|range| range.row_base);
+    Ok(Some(ranges))
+}
+
+fn leaf_column_row_is_selected(
+    columns: &SpireLeafObjectColumns<'_>,
+    row_offset: usize,
+    selected_row_ranges: Option<&[SpireLeafBlockRowRange]>,
+) -> Result<bool, String> {
+    let Some(selected_row_ranges) = selected_row_ranges else {
+        return Ok(true);
+    };
+    let row_offset = u32::try_from(row_offset)
+        .map_err(|_| "ec_spire leaf V2 column row offset exceeds u32".to_owned())?;
+    let row_index = columns
+        .row_base
+        .checked_add(row_offset)
+        .ok_or_else(|| "ec_spire leaf V2 column row index overflow".to_owned())?;
+    Ok(selected_row_ranges
+        .iter()
+        .any(|range| row_index >= range.row_base && row_index < range.row_end))
+}
+
 fn append_quantized_leaf_candidates_for_pid(
     snapshot: &SpireValidatedEpochSnapshot<'_>,
     object_store: &impl SpireObjectReader,
@@ -625,6 +731,14 @@ fn append_quantized_leaf_candidates_for_pid(
             if let Some(started) = read_started {
                 observer.leaf_object_read_time(epoch, placement, elapsed_nanos_since(started));
             }
+            let selected_row_ranges = select_leaf_block_row_ranges(
+                &leaf_object.summaries,
+                current_session_leaf_block_pruning_max_blocks_per_leaf(),
+                scorer,
+                epoch,
+                placement,
+                observer,
+            )?;
             for columns in leaf_object.column_segments()? {
                 let columns = columns?;
                 append_quantized_v2_column_candidates(
@@ -637,6 +751,7 @@ fn append_quantized_leaf_candidates_for_pid(
                     deleted_vec_ids,
                     accumulator,
                     &route.placement,
+                    selected_row_ranges.as_deref(),
                     observer,
                 )?;
             }
@@ -677,6 +792,7 @@ fn append_quantized_v2_column_candidates(
     deleted_vec_ids: &HashSet<SpireVecId>,
     accumulator: &mut SpireScoredCandidateAccumulator,
     placement: &SpirePlacementEntry,
+    selected_row_ranges: Option<&[SpireLeafBlockRowRange]>,
     observer: &mut impl SpireRoutedScanObserver,
 ) -> Result<(), String> {
     let column_format = SpireAssignmentPayloadFormat::from_tag(columns.payload_format)?;
@@ -688,7 +804,10 @@ fn append_quantized_v2_column_candidates(
         ));
     }
 
-    if scorer.payload_format() == SpireAssignmentPayloadFormat::RaBitQ && accumulator.is_bounded() {
+    if selected_row_ranges.is_some()
+        || (scorer.payload_format() == SpireAssignmentPayloadFormat::RaBitQ
+            && accumulator.is_bounded())
+    {
         return append_quantized_v2_column_candidates_with_rabitq_cutoff(
             snapshot,
             columns,
@@ -699,6 +818,7 @@ fn append_quantized_v2_column_candidates(
             deleted_vec_ids,
             accumulator,
             placement,
+            selected_row_ranges,
             observer,
         );
     }
@@ -765,10 +885,14 @@ fn append_quantized_v2_column_candidates_with_rabitq_cutoff(
     deleted_vec_ids: &HashSet<SpireVecId>,
     accumulator: &mut SpireScoredCandidateAccumulator,
     placement: &SpirePlacementEntry,
+    selected_row_ranges: Option<&[SpireLeafBlockRowRange]>,
     observer: &mut impl SpireRoutedScanObserver,
 ) -> Result<(), String> {
     let column_format = SpireAssignmentPayloadFormat::from_tag(columns.payload_format)?;
     for row_offset in 0..columns.row_count() {
+        if !leaf_column_row_is_selected(&columns, row_offset, selected_row_ranges)? {
+            continue;
+        }
         if !is_visible_scored_assignment_flags(columns.flags[row_offset]) {
             continue;
         }

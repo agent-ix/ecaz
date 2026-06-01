@@ -134,6 +134,12 @@ struct SpireLeafObjectReadRoute {
     object_version: u64,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct SpireLeafBlockRowRange {
+    row_base: u32,
+    row_end: u32,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct SpireStoreObjectReadGroup {
     node_id: u32,

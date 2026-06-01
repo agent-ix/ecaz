@@ -33,6 +33,10 @@ const EC_SPIRE_SESSION_NPROBE_UNSET: i32 = -1;
 const EC_SPIRE_SESSION_RERANK_WIDTH_UNSET: i32 = -1;
 const EC_SPIRE_SESSION_MAX_CANDIDATE_ROWS_UNSET: i32 = -1;
 const EC_SPIRE_SESSION_MAX_ROUTED_CANDIDATE_ROWS_DISABLED: i32 = 0;
+const EC_SPIRE_SESSION_LEAF_BLOCK_ROWS_DISABLED: i32 = 0;
+const EC_SPIRE_SESSION_LEAF_BLOCK_PRUNING_DISABLED: i32 = 0;
+const EC_SPIRE_MAX_LEAF_BLOCK_ROWS: i32 = 4096;
+const EC_SPIRE_MAX_LEAF_BLOCK_PRUNING_BLOCKS_PER_LEAF: i32 = 4096;
 const EC_SPIRE_MAX_NPROBE_PER_LEVEL_ENTRIES: usize = 32;
 const EC_SPIRE_DEFAULT_ADAPTIVE_NPROBE_SCORE_GAP_MICROS: i32 = 1000;
 const EC_SPIRE_MAX_ADAPTIVE_NPROBE_SCORE_GAP_MICROS: i32 = 1_000_000;
@@ -64,6 +68,10 @@ static EC_SPIRE_MAX_CANDIDATE_ROWS_GUC: GucSetting<i32> =
     GucSetting::<i32>::new(EC_SPIRE_SESSION_MAX_CANDIDATE_ROWS_UNSET);
 static EC_SPIRE_MAX_ROUTED_CANDIDATE_ROWS_GUC: GucSetting<i32> =
     GucSetting::<i32>::new(EC_SPIRE_SESSION_MAX_ROUTED_CANDIDATE_ROWS_DISABLED);
+static EC_SPIRE_LEAF_BLOCK_ROWS_GUC: GucSetting<i32> =
+    GucSetting::<i32>::new(EC_SPIRE_SESSION_LEAF_BLOCK_ROWS_DISABLED);
+static EC_SPIRE_LEAF_BLOCK_PRUNING_MAX_BLOCKS_PER_LEAF_GUC: GucSetting<i32> =
+    GucSetting::<i32>::new(EC_SPIRE_SESSION_LEAF_BLOCK_PRUNING_DISABLED);
 static EC_SPIRE_ADAPTIVE_NPROBE_GUC: GucSetting<bool> = GucSetting::<bool>::new(false);
 static EC_SPIRE_ADAPTIVE_NPROBE_SCORE_GAP_MICROS_GUC: GucSetting<i32> =
     GucSetting::<i32>::new(EC_SPIRE_DEFAULT_ADAPTIVE_NPROBE_SCORE_GAP_MICROS);
@@ -758,6 +766,26 @@ pub(super) fn register_gucs() {
         GucContext::Userset,
         GucFlags::default(),
     );
+    GucRegistry::define_int_guc(
+        c"ec_spire.leaf_block_rows",
+        c"Build-time SPIRE leaf summary block row count.",
+        c"Controls optional leaf V3 block-summary materialization for new index builds; 0 disables summaries. Task 79 evidence uses this to sweep leaf-local block sizes.",
+        &EC_SPIRE_LEAF_BLOCK_ROWS_GUC,
+        EC_SPIRE_SESSION_LEAF_BLOCK_ROWS_DISABLED,
+        EC_SPIRE_MAX_LEAF_BLOCK_ROWS,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
+    GucRegistry::define_int_guc(
+        c"ec_spire.leaf_block_pruning_max_blocks_per_leaf",
+        c"Session cap for SPIRE leaf block-summary pruning.",
+        c"Maximum scored summary blocks retained per routed leaf before row scoring; 0 disables leaf-local block pruning and scans full leaves.",
+        &EC_SPIRE_LEAF_BLOCK_PRUNING_MAX_BLOCKS_PER_LEAF_GUC,
+        EC_SPIRE_SESSION_LEAF_BLOCK_PRUNING_DISABLED,
+        EC_SPIRE_MAX_LEAF_BLOCK_PRUNING_BLOCKS_PER_LEAF,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
     GucRegistry::define_bool_guc(
         c"ec_spire.adaptive_nprobe",
         c"Enable deterministic adaptive ec_spire nprobe routing.",
@@ -994,6 +1022,22 @@ pub(super) fn current_session_max_routed_candidate_rows() -> i32 {
         EC_SPIRE_SESSION_MAX_ROUTED_CANDIDATE_ROWS_DISABLED
     } else {
         EC_SPIRE_MAX_ROUTED_CANDIDATE_ROWS_GUC.get()
+    }
+}
+
+pub(super) fn current_session_leaf_block_rows() -> i32 {
+    if cfg!(test) {
+        EC_SPIRE_SESSION_LEAF_BLOCK_ROWS_DISABLED
+    } else {
+        EC_SPIRE_LEAF_BLOCK_ROWS_GUC.get()
+    }
+}
+
+pub(super) fn current_session_leaf_block_pruning_max_blocks_per_leaf() -> i32 {
+    if cfg!(test) {
+        EC_SPIRE_SESSION_LEAF_BLOCK_PRUNING_DISABLED
+    } else {
+        EC_SPIRE_LEAF_BLOCK_PRUNING_MAX_BLOCKS_PER_LEAF_GUC.get()
     }
 }
 

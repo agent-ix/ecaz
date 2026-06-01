@@ -23,11 +23,12 @@ mod tests {
         route_recursive_routing_objects_to_leaf_routes_with_policy, route_root_object_to_leaf_pids,
         route_routing_object_to_child_pids, route_routing_object_to_child_routes_with_policy,
         route_top_graph_object_to_child_pids, route_top_graph_object_to_leaf_routes,
-        route_top_graph_to_child_pids, SpireDeltaObjectRoute, SpireLeafObjectReadRoute,
-        SpireLeafScanRow, SpireNoopRoutedScanObserver, SpireRecursiveLeafRoute,
-        SpireRoutedLeafScanRows, SpireScanCandidateCursor, SpireScanOpaque, SpireScanOutput,
-        SpireScanOutputCursor, SpireScanPlacementDiagnosticsObserver, SpireScanQuery,
-        SpireScoredScanCandidate, SpireStoreObjectReadGroup,
+        route_top_graph_to_child_pids, select_leaf_block_row_ranges, SpireDeltaObjectRoute,
+        SpireLeafBlockRowRange, SpireLeafObjectReadRoute, SpireLeafScanRow,
+        SpireNoopRoutedScanObserver, SpireRecursiveLeafRoute, SpireRoutedLeafScanRows,
+        SpireScanCandidateCursor, SpireScanOpaque, SpireScanOutput, SpireScanOutputCursor,
+        SpireScanPlacementDiagnosticsObserver, SpireScanQuery, SpireScoredScanCandidate,
+        SpireStoreObjectReadGroup,
     };
     use crate::am::ec_spire::{
         SpireRemoteProductionScanAmDeliverySummaryRow,
@@ -64,11 +65,12 @@ mod tests {
         SpireSourceIdentityProvider, SpireStorageFormat,
     };
     use crate::am::ec_spire::quantizer::{
-        encode_assignment_input, SpireAssignmentPayloadFormat, SpirePreparedAssignmentScorer,
+        encode_assignment_input, encode_assignment_payload, SpireAssignmentPayloadFormat,
+        SpirePreparedAssignmentScorer,
     };
     use crate::am::ec_spire::storage::{
-        SpireDeltaPartitionObject, SpireLeafAssignmentRow, SpireLeafPartitionObject,
-        SpireLocalObjectStore, SpireLocalObjectStoreSet, SpireObjectReader,
+        SpireDeltaPartitionObject, SpireLeafAssignmentRow, SpireLeafBlockSummary,
+        SpireLeafPartitionObject, SpireLocalObjectStore, SpireLocalObjectStoreSet, SpireObjectReader,
         SpirePartitionObjectHeader, SpirePartitionObjectKind, SpireRoutingChildEntry,
         SpireRoutingPartitionObject, SpireVecId,
         SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA, SPIRE_ASSIGNMENT_FLAG_DELTA_DELETE,

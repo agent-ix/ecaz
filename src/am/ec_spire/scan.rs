@@ -14,7 +14,8 @@ use super::meta::{
     SpireRootControlState, SpireValidatedEpochSnapshot,
 };
 use super::options::{
-    relation_options, resolve_single_level_scan_plan, EcSpireOptions, SpireCandidateDedupeMode,
+    current_session_leaf_block_pruning_max_blocks_per_leaf, relation_options,
+    resolve_single_level_scan_plan, EcSpireOptions, SpireCandidateDedupeMode,
     SpireRecursiveNprobePolicy, SpireRecursiveRouteBudget, SpireSingleLevelScanPlan,
     SpireTopGraphOptionPlan,
 };
@@ -22,8 +23,8 @@ use super::page;
 use super::quantizer::{SpireAssignmentPayloadFormat, SpirePreparedAssignmentScorer};
 use super::storage::{
     is_delete_delta_assignment, is_visible_primary_assignment, is_visible_scored_assignment,
-    is_visible_scored_assignment_flags, SpireLeafAssignmentRow, SpireLeafObjectColumns,
-    SpireLeafPartitionObject, SpireObjectReader, SpirePartitionObjectKind,
+    is_visible_scored_assignment_flags, SpireLeafAssignmentRow, SpireLeafBlockSummary,
+    SpireLeafObjectColumns, SpireLeafPartitionObject, SpireObjectReader, SpirePartitionObjectKind,
     SpireRoutingPartitionObject, SpireTopGraphPartitionObject, SpireVecId,
     SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA,
 };
