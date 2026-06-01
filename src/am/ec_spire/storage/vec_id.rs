@@ -24,6 +24,7 @@ const SPIRE_ASSIGNMENT_KNOWN_FLAGS: u16 = SPIRE_ASSIGNMENT_FLAG_PRIMARY
 pub const SPIRE_PARTITION_OBJECT_MAGIC: u32 = 0x4f50_5345; // "ESPO" as little-endian bytes.
 pub const SPIRE_PARTITION_OBJECT_FORMAT_VERSION_V1: u16 = 1;
 pub const SPIRE_PARTITION_OBJECT_FORMAT_VERSION_V2: u16 = 2;
+pub const SPIRE_PARTITION_OBJECT_FORMAT_VERSION_V3: u16 = 3;
 pub const SPIRE_PARTITION_OBJECT_HEADER_BYTES: usize = 54;
 pub const SPIRE_PARTITION_OBJECT_MAGIC_OFFSET: usize = 0;
 pub const SPIRE_PARTITION_OBJECT_FORMAT_VERSION_OFFSET: usize = 4;
@@ -68,6 +69,7 @@ pub const fn spire_assignment_row_payload_offset(vec_id_len: usize) -> usize {
 const PARTITION_OBJECT_MAGIC: u32 = SPIRE_PARTITION_OBJECT_MAGIC;
 const PARTITION_OBJECT_FORMAT_VERSION_V1: u16 = SPIRE_PARTITION_OBJECT_FORMAT_VERSION_V1;
 const PARTITION_OBJECT_FORMAT_VERSION_V2: u16 = SPIRE_PARTITION_OBJECT_FORMAT_VERSION_V2;
+const PARTITION_OBJECT_FORMAT_VERSION_V3: u16 = SPIRE_PARTITION_OBJECT_FORMAT_VERSION_V3;
 const PARTITION_OBJECT_HEADER_BYTES: usize = SPIRE_PARTITION_OBJECT_HEADER_BYTES;
 const ASSIGNMENT_ROW_FIXED_PREFIX_BYTES: usize = SPIRE_ASSIGNMENT_ROW_FIXED_PREFIX_BYTES;
 const ASSIGNMENT_ROW_FIXED_TAIL_BYTES: usize = SPIRE_ASSIGNMENT_ROW_FIXED_TAIL_BYTES;
@@ -82,6 +84,7 @@ pub const SPIRE_LEAF_V2_META_FLAG: u32 = 0x0000_0001;
 pub const SPIRE_LEAF_V2_SEGMENT_FLAG: u32 = 0x0000_0002;
 pub const SPIRE_PARTITION_OBJECT_V2_CHAIN_META_FLAG: u32 = 0x0000_0004;
 pub const SPIRE_PARTITION_OBJECT_V2_CHAIN_SEGMENT_FLAG: u32 = 0x0000_0008;
+pub const SPIRE_LEAF_V3_SUMMARY_SEGMENT_FLAG: u32 = 0x0000_0010;
 pub const SPIRE_LEAF_V2_LOCAL_VEC_ID_STRIDE: usize = 16;
 pub const SPIRE_LEAF_V2_META_BODY_BYTES: usize =
     1 + 1 + 2 + 4 + 2 + 2 + 4 + ITEM_POINTER_BYTES + 8;
@@ -95,6 +98,13 @@ pub const SPIRE_LEAF_V2_META_RESERVED2_OFFSET: usize = 10;
 pub const SPIRE_LEAF_V2_META_SEGMENT_COUNT_OFFSET: usize = 12;
 pub const SPIRE_LEAF_V2_META_FIRST_SEGMENT_LOCATOR_OFFSET: usize = 16;
 pub const SPIRE_LEAF_V2_META_OBJECT_BYTES_TOTAL_OFFSET: usize = 22;
+pub const SPIRE_LEAF_V3_META_BODY_BYTES: usize =
+    SPIRE_LEAF_V2_META_BODY_BYTES + 4 + 4 + ITEM_POINTER_BYTES + 8;
+const _: () = assert!(SPIRE_LEAF_V3_META_BODY_BYTES == 52);
+pub const SPIRE_LEAF_V3_META_SUMMARY_BLOCK_ROWS_OFFSET: usize = 30;
+pub const SPIRE_LEAF_V3_META_SUMMARY_COUNT_OFFSET: usize = 34;
+pub const SPIRE_LEAF_V3_META_FIRST_SUMMARY_SEGMENT_LOCATOR_OFFSET: usize = 38;
+pub const SPIRE_LEAF_V3_META_SUMMARY_BYTES_TOTAL_OFFSET: usize = 44;
 pub const SPIRE_LEAF_V2_SEGMENT_PREFIX_BYTES: usize = 4 + 4 + 4 + ITEM_POINTER_BYTES;
 pub const SPIRE_LEAF_V2_SEGMENT_NO_OFFSET: usize = 0;
 pub const SPIRE_LEAF_V2_SEGMENT_ROW_BASE_OFFSET: usize = 4;
@@ -128,6 +138,33 @@ pub const fn spire_leaf_v2_segment_payloads_offset(
     spire_leaf_v2_segment_gammas_offset(row_count, vec_id_stride) + row_count * size_of::<f32>()
 }
 
+pub const SPIRE_LEAF_V3_SUMMARY_SEGMENT_PREFIX_BYTES: usize =
+    4 + 4 + 4 + ITEM_POINTER_BYTES;
+const _: () = assert!(SPIRE_LEAF_V3_SUMMARY_SEGMENT_PREFIX_BYTES == 18);
+pub const SPIRE_LEAF_V3_SUMMARY_SEGMENT_NO_OFFSET: usize = 0;
+pub const SPIRE_LEAF_V3_SUMMARY_SEGMENT_SUMMARY_BASE_OFFSET: usize = 4;
+pub const SPIRE_LEAF_V3_SUMMARY_SEGMENT_SUMMARY_COUNT_OFFSET: usize = 8;
+pub const SPIRE_LEAF_V3_SUMMARY_SEGMENT_NEXT_LOCATOR_OFFSET: usize = 12;
+
+pub const fn spire_leaf_v3_summary_segment_row_bases_offset(summary_count: usize) -> usize {
+    let _ = summary_count;
+    SPIRE_LEAF_V3_SUMMARY_SEGMENT_PREFIX_BYTES
+}
+
+pub const fn spire_leaf_v3_summary_segment_row_counts_offset(summary_count: usize) -> usize {
+    spire_leaf_v3_summary_segment_row_bases_offset(summary_count)
+        + summary_count * size_of::<u32>()
+}
+
+pub const fn spire_leaf_v3_summary_segment_gammas_offset(summary_count: usize) -> usize {
+    spire_leaf_v3_summary_segment_row_counts_offset(summary_count)
+        + summary_count * size_of::<u32>()
+}
+
+pub const fn spire_leaf_v3_summary_segment_payloads_offset(summary_count: usize) -> usize {
+    spire_leaf_v3_summary_segment_gammas_offset(summary_count) + summary_count * size_of::<f32>()
+}
+
 pub const SPIRE_PARTITION_OBJECT_V2_CHAIN_META_BODY_BYTES: usize =
     2 + 2 + 4 + ITEM_POINTER_BYTES + 8;
 const _: () = assert!(SPIRE_PARTITION_OBJECT_V2_CHAIN_META_BODY_BYTES == 22);
@@ -148,9 +185,13 @@ const LEAF_V2_META_FLAG: u32 = SPIRE_LEAF_V2_META_FLAG;
 const LEAF_V2_SEGMENT_FLAG: u32 = SPIRE_LEAF_V2_SEGMENT_FLAG;
 const PARTITION_OBJECT_V2_CHAIN_META_FLAG: u32 = SPIRE_PARTITION_OBJECT_V2_CHAIN_META_FLAG;
 const PARTITION_OBJECT_V2_CHAIN_SEGMENT_FLAG: u32 = SPIRE_PARTITION_OBJECT_V2_CHAIN_SEGMENT_FLAG;
+const LEAF_V3_SUMMARY_SEGMENT_FLAG: u32 = SPIRE_LEAF_V3_SUMMARY_SEGMENT_FLAG;
 const LEAF_V2_LOCAL_VEC_ID_STRIDE: usize = SPIRE_LEAF_V2_LOCAL_VEC_ID_STRIDE;
 const LEAF_V2_META_BODY_BYTES: usize = SPIRE_LEAF_V2_META_BODY_BYTES;
+const LEAF_V3_META_BODY_BYTES: usize = SPIRE_LEAF_V3_META_BODY_BYTES;
 const LEAF_V2_SEGMENT_PREFIX_BYTES: usize = SPIRE_LEAF_V2_SEGMENT_PREFIX_BYTES;
+const LEAF_V3_SUMMARY_SEGMENT_PREFIX_BYTES: usize =
+    SPIRE_LEAF_V3_SUMMARY_SEGMENT_PREFIX_BYTES;
 const PARTITION_OBJECT_V2_CHAIN_META_BODY_BYTES: usize =
     SPIRE_PARTITION_OBJECT_V2_CHAIN_META_BODY_BYTES;
 const PARTITION_OBJECT_V2_CHAIN_SEGMENT_PREFIX_BYTES: usize =
@@ -257,6 +298,15 @@ impl<'a> SpireLeafObjectColumns<'a> {
                 .ok_or_else(|| "ec_spire leaf V2 column payload slice out of bounds".to_owned())?,
         })
     }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(super) struct SpireLeafBlockSummary {
+    pub(super) row_base: u32,
+    pub(super) row_count: u32,
+    pub(super) payload_format: u8,
+    pub(super) gamma: f32,
+    pub(super) encoded_payload: Vec<u8>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

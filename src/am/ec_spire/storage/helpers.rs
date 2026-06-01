@@ -243,7 +243,9 @@ fn leaf_v2_assignment_vec_id_layout(
     }
 }
 
-fn leaf_v2_column_layout(assignments: &[SpireLeafAssignmentRow]) -> Result<SpireLeafV2ColumnLayout, String> {
+fn leaf_v2_column_layout(
+    assignments: &[SpireLeafAssignmentRow],
+) -> Result<SpireLeafV2ColumnLayout, String> {
     let Some(first) = assignments.first() else {
         return Ok(SpireLeafV2ColumnLayout {
             payload_format: SPIRE_PAYLOAD_FORMAT_NONE,
@@ -333,6 +335,41 @@ fn leaf_v2_max_segment_rows(
         ));
     }
     Ok(rows)
+}
+
+fn leaf_v3_max_summary_segment_summaries(
+    page_size: usize,
+    payload_stride: usize,
+) -> Result<usize, String> {
+    let summary_bytes = size_of::<u32>()
+        .checked_add(size_of::<u32>())
+        .and_then(|len| len.checked_add(size_of::<f32>()))
+        .and_then(|len| len.checked_add(payload_stride))
+        .ok_or_else(|| "ec_spire leaf V3 summary byte length overflow".to_owned())?;
+    let fixed_bytes = PARTITION_OBJECT_HEADER_BYTES
+        .checked_add(LEAF_V3_SUMMARY_SEGMENT_PREFIX_BYTES)
+        .ok_or_else(|| "ec_spire leaf V3 summary segment fixed byte length overflow".to_owned())?;
+    let usable_bytes = usable_page_bytes(page_size);
+    if fixed_bytes >= usable_bytes {
+        return Err(format!(
+            "ec_spire leaf V3 summary segment fixed bytes {fixed_bytes} exceed page usable bytes {usable_bytes}"
+        ));
+    }
+    let mut summaries = (usable_bytes - fixed_bytes) / summary_bytes;
+    while summaries > 0
+        && !element_or_neighbor_tuple_fits(
+            fixed_bytes + summary_bytes.saturating_mul(summaries),
+            page_size,
+        )
+    {
+        summaries -= 1;
+    }
+    if summaries == 0 {
+        return Err(format!(
+            "ec_spire leaf V3 summary bytes {summary_bytes} do not fit page size {page_size}"
+        ));
+    }
+    Ok(summaries)
 }
 
 fn validate_assignment_flags(flags: u16) -> Result<(), String> {

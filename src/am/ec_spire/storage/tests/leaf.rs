@@ -133,6 +133,80 @@ fn leaf_partition_object_v2_store_preserves_empty_leaf_without_segments() {
     assert_eq!(decoded.column_segments().unwrap().count(), 0);
 }
 
+fn leaf_v3_rabitq_assignment(local_vec_seq: u64, payload_len: usize) -> SpireLeafAssignmentRow {
+    let mut row = leaf_v2_assignment(local_vec_seq, payload_len);
+    row.payload_format = SPIRE_PAYLOAD_FORMAT_RABITQ;
+    row
+}
+
+fn leaf_v3_rabitq_summary(
+    row_base: u32,
+    row_count: u32,
+    payload_len: usize,
+    byte: u8,
+) -> SpireLeafBlockSummary {
+    SpireLeafBlockSummary {
+        row_base,
+        row_count,
+        payload_format: SPIRE_PAYLOAD_FORMAT_RABITQ,
+        gamma: f32::from(byte) / 10.0,
+        encoded_payload: vec![byte; payload_len],
+    }
+}
+
+#[test]
+fn leaf_partition_object_v3_store_round_trips_block_summaries() {
+    let mut store = SpireLocalObjectStore::new(99, 512).unwrap();
+    let assignments = (1..=6)
+        .map(|local_vec_seq| leaf_v3_rabitq_assignment(local_vec_seq, 64))
+        .collect::<Vec<_>>();
+    let summaries = vec![
+        leaf_v3_rabitq_summary(0, 3, 64, 9),
+        leaf_v3_rabitq_summary(3, 3, 64, 10),
+    ];
+
+    let placement = store
+        .insert_leaf_object_v3_from_rows_and_summaries(7, 17, 3, 5, &assignments, &summaries, 3)
+        .unwrap();
+    let decoded = store.read_leaf_object_v2(&placement).unwrap();
+    let header = store.read_object_header(&placement).unwrap();
+
+    assert_eq!(header.kind, SpirePartitionObjectKind::Leaf);
+    assert_eq!(header.pid, 17);
+    assert_eq!(header.object_version, 3);
+    assert_eq!(header.assignment_count, assignments.len() as u32);
+    assert_eq!(decoded.meta.summary_block_rows, 3);
+    assert_eq!(decoded.meta.summary_count, 2);
+    assert_ne!(
+        decoded.meta.first_summary_segment_locator,
+        ItemPointer::INVALID
+    );
+    assert!(decoded.meta.summary_bytes_total > 0);
+    assert_eq!(decoded.block_summaries().unwrap(), summaries.as_slice());
+    assert_eq!(decoded.assignment_rows().unwrap(), assignments);
+}
+
+#[test]
+fn leaf_partition_object_v3_store_rejects_summary_coverage_gap() {
+    let mut store = SpireLocalObjectStore::new(99, 512).unwrap();
+    let assignments = (1..=6)
+        .map(|local_vec_seq| leaf_v3_rabitq_assignment(local_vec_seq, 64))
+        .collect::<Vec<_>>();
+    let summaries = vec![
+        leaf_v3_rabitq_summary(0, 2, 64, 9),
+        leaf_v3_rabitq_summary(3, 3, 64, 10),
+    ];
+
+    let err = store
+        .insert_leaf_object_v3_from_rows_and_summaries(7, 17, 3, 5, &assignments, &summaries, 3)
+        .expect_err("summary coverage gap must be rejected");
+
+    assert!(
+        err.contains("summary row_base mismatch") || err.contains("summary row coverage"),
+        "unexpected error: {err}"
+    );
+}
+
 #[test]
 fn miri_leaf_v2_meta_rejects_invalid_validate_inputs() {
     // Baseline: a known-valid arg list for SpireLeafPartitionObjectV2Meta::new.
@@ -676,6 +750,10 @@ fn leaf_v2_test_meta(segment_count: u32, assignment_count: u32) -> SpireLeafPart
             offset_number: 1,
         },
         object_bytes_total: 200,
+        summary_block_rows: 0,
+        summary_count: 0,
+        first_summary_segment_locator: ItemPointer::INVALID,
+        summary_bytes_total: 0,
     }
 }
 
@@ -740,6 +818,7 @@ fn miri_leaf_v2_validate_rejects_segment_count_mismatch() {
             &[leaf_v2_assignment(1, 4)],
             ItemPointer::INVALID,
         )],
+        summaries: Vec::new(),
     };
     let err = object
         .column_segments()
@@ -764,6 +843,7 @@ fn miri_leaf_v2_validate_rejects_segment_number_mismatch() {
             &[leaf_v2_assignment(1, 4)],
             ItemPointer::INVALID,
         )],
+        summaries: Vec::new(),
     };
     let err = object
         .column_segments()
@@ -789,6 +869,7 @@ fn miri_leaf_v2_validate_rejects_row_base_mismatch() {
             &[leaf_v2_assignment(1, 4)],
             ItemPointer::INVALID,
         )],
+        summaries: Vec::new(),
     };
     let err = object
         .column_segments()
@@ -816,6 +897,7 @@ fn miri_leaf_v2_validate_rejects_final_segment_with_non_invalid_locator() {
             &[leaf_v2_assignment(1, 4)],
             dangling_locator,
         )],
+        summaries: Vec::new(),
     };
     let err = object
         .column_segments()
@@ -848,6 +930,7 @@ fn miri_leaf_v2_validate_rejects_non_final_segment_missing_locator() {
                 ItemPointer::INVALID,
             ),
         ],
+        summaries: Vec::new(),
     };
     let err = object
         .column_segments()
@@ -873,6 +956,7 @@ fn miri_leaf_v2_validate_rejects_meta_assignment_count_mismatch() {
             &[leaf_v2_assignment(1, 4), leaf_v2_assignment(2, 4)],
             ItemPointer::INVALID,
         )],
+        summaries: Vec::new(),
     };
     let err = object
         .column_segments()
@@ -900,6 +984,7 @@ fn miri_leaf_v2_assignment_rows_round_trips_segments_back_to_rows() {
             &rows_input,
             ItemPointer::INVALID,
         )],
+        summaries: Vec::new(),
     };
     let decoded_rows = object.assignment_rows().unwrap();
     assert_eq!(decoded_rows.len(), 2);
@@ -1031,6 +1116,7 @@ fn miri_leaf_v2_segment_validate_rejects_pid_mismatch_only() {
     let object = super::SpireLeafPartitionObjectV2 {
         meta,
         segments: vec![segment],
+        summaries: Vec::new(),
     };
     let err = object
         .column_segments()
@@ -1055,6 +1141,7 @@ fn miri_leaf_v2_segment_validate_rejects_object_version_mismatch_only() {
     let object = super::SpireLeafPartitionObjectV2 {
         meta,
         segments: vec![segment],
+        summaries: Vec::new(),
     };
     let err = object
         .column_segments()
@@ -1090,6 +1177,7 @@ fn miri_leaf_v2_segment_validate_rejects_row_with_delta_insert_flag() {
     let object = super::SpireLeafPartitionObjectV2 {
         meta,
         segments: vec![segment],
+        summaries: Vec::new(),
     };
     let err = object
         .column_segments()

@@ -30,6 +30,7 @@ impl SpirePartitionObjectHeader {
         }
         if format_version != PARTITION_OBJECT_FORMAT_VERSION_V1
             && format_version != PARTITION_OBJECT_FORMAT_VERSION_V2
+            && format_version != PARTITION_OBJECT_FORMAT_VERSION_V3
         {
             return Err(format!(
                 "ec_spire unsupported partition object format version: {format_version}"
@@ -83,6 +84,7 @@ impl SpirePartitionObjectHeader {
             u16::from_le_bytes(input[4..6].try_into().expect("format version bytes"));
         if format_version != PARTITION_OBJECT_FORMAT_VERSION_V1
             && format_version != PARTITION_OBJECT_FORMAT_VERSION_V2
+            && format_version != PARTITION_OBJECT_FORMAT_VERSION_V3
         {
             return Err(format!(
                 "ec_spire unsupported partition object format version: {format_version}"

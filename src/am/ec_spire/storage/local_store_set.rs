@@ -55,6 +55,28 @@ impl SpireLocalObjectStoreSet {
             .insert_leaf_object_v2_from_rows(epoch, pid, object_version, parent_pid, assignments)
     }
 
+    pub(super) fn insert_leaf_object_v3_from_rows_and_summaries(
+        &mut self,
+        epoch: u64,
+        pid: u64,
+        object_version: u64,
+        parent_pid: u64,
+        assignments: &[SpireLeafAssignmentRow],
+        summaries: &[SpireLeafBlockSummary],
+        summary_block_rows: u32,
+    ) -> Result<SpirePlacementEntry, String> {
+        self.store_mut_for_pid(pid)?
+            .insert_leaf_object_v3_from_rows_and_summaries(
+                epoch,
+                pid,
+                object_version,
+                parent_pid,
+                assignments,
+                summaries,
+                summary_block_rows,
+            )
+    }
+
     pub(super) fn insert_delta_object(
         &mut self,
         epoch: u64,

@@ -362,6 +362,7 @@ fn miri_validate_leaf_v2_header_rejects_non_leaf_kind() {
     let object = super::SpireLeafPartitionObjectV2 {
         meta,
         segments: vec![segment],
+        summaries: Vec::new(),
     };
     let err = object
         .column_segments()
