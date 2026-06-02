@@ -1,0 +1,8 @@
+
+   0: [91mssm command cc9215a2-8b87-4f8f-8e86-3d45f98e8b8d on i-0e9723f7b707504c3 ended in Failed (rc=1): + cd /var/lib/pgsql/build/ecaz / ++ dirname reviews/task-79/045-aws-rabitq-deferred-decode/suite.json / + mkdir -p reviews/task-79/045-aws-rabitq-deferred-decode reviews/task-79/045-aws-rabitq-deferred-decode/artifacts / + trap 'status=$?; set +e; aws s3 sync reviews/task-79/045-aws-rabitq-deferred-decode/artifacts s3://ecaz-cloud-1m-b62eb804/bench-artifacts/task79-aws-rabitq-deferred-decode/20260602T231919Z/ --region us-west-2 --only-show-errors || true; exit $status' EXIT / + '[' '!' -f reviews/task-79/045-aws-rabitq-deferred-decode/suite.json ']'[0m
+
+Location:
+   [35mcrates/ecaz-cloud/src/ssm.rs[0m:[35m111[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.

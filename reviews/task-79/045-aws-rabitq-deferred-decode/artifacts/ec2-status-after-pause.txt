@@ -1,0 +1,6 @@
+DescribeInstances after `ecaz cloud pause --profile 1m`:
+
+| InstanceId | Name | PrivateIp | State |
+| --- | --- | --- | --- |
+| i-0e9723f7b707504c3 | ecaz-cloud-1m-db | 10.42.1.17 | stopped |
+| i-0d9fb0eac2df5567b | ecaz-cloud-1m-loader | 10.42.1.142 | stopped |
