@@ -226,6 +226,38 @@
     }
 
     #[test]
+    fn leaf_block_summary_radius_weight_controls_rabitq_bound() {
+        let (_gamma, encoded_payload) =
+            encode_assignment_payload(SpireAssignmentPayloadFormat::RaBitQ, &[0.5, 0.0]).unwrap();
+        let summary = SpireLeafBlockSummary {
+            row_base: 0,
+            row_count: 2,
+            payload_format: SpireAssignmentPayloadFormat::RaBitQ.tag(),
+            gamma: 2.0,
+            encoded_payload,
+        };
+        let scorer = SpirePreparedAssignmentScorer::prepare(
+            SpireAssignmentPayloadFormat::RaBitQ,
+            2,
+            &[1.0, 0.0],
+        )
+        .unwrap();
+
+        let mean_only =
+            score_leaf_block_summary_ip_with_radius_weight(&summary, &scorer, 0.0).unwrap();
+        let half_radius =
+            score_leaf_block_summary_ip_with_radius_weight(&summary, &scorer, 0.5).unwrap();
+        let full_radius =
+            score_leaf_block_summary_ip_with_radius_weight(&summary, &scorer, 1.0).unwrap();
+
+        assert!(mean_only < half_radius);
+        assert!(half_radius < full_radius);
+        assert!((half_radius - mean_only - (full_radius - mean_only) * 0.5).abs() < 1.0e-5);
+        assert!(score_leaf_block_summary_ip_with_radius_weight(&summary, &scorer, -0.1).is_err());
+        assert!(score_leaf_block_summary_ip_with_radius_weight(&summary, &scorer, 1.1).is_err());
+    }
+
+    #[test]
     fn select_global_leaf_block_row_ranges_spends_budget_across_leaves() {
         fn rabitq_summary(row_base: u32, source_vector: &[f32]) -> SpireLeafBlockSummary {
             let (gamma, encoded_payload) =

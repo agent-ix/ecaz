@@ -827,6 +827,24 @@ fn score_leaf_block_summary_ip(
     summary: &SpireLeafBlockSummary,
     scorer: &SpirePreparedAssignmentScorer,
 ) -> Result<f32, String> {
+    score_leaf_block_summary_ip_with_radius_weight(
+        summary,
+        scorer,
+        current_session_leaf_block_pruning_summary_radius_weight(),
+    )
+}
+
+fn score_leaf_block_summary_ip_with_radius_weight(
+    summary: &SpireLeafBlockSummary,
+    scorer: &SpirePreparedAssignmentScorer,
+    radius_weight: f64,
+) -> Result<f32, String> {
+    if !radius_weight.is_finite() || !(0.0..=1.0).contains(&radius_weight) {
+        return Err(
+            "ec_spire.leaf_block_pruning_summary_radius_weight must be finite in [0, 1]"
+                .to_owned(),
+        );
+    }
     let summary_format = SpireAssignmentPayloadFormat::from_tag(summary.payload_format)?;
     if summary_format != scorer.payload_format() {
         return Err(format!(
@@ -840,7 +858,7 @@ fn score_leaf_block_summary_ip(
     }
     let mean_ip = scorer.score_payload_ip(summary_format, 0.0, &summary.encoded_payload)?;
     let ip = if summary_format == SpireAssignmentPayloadFormat::RaBitQ {
-        mean_ip + scorer.query_l2_norm() * summary.gamma
+        mean_ip + scorer.query_l2_norm() * summary.gamma * radius_weight as f32
     } else {
         mean_ip
     };

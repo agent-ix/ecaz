@@ -41,6 +41,7 @@ const EC_SPIRE_MAX_LEAF_BLOCK_PRUNING_GLOBAL_BLOCKS: i32 = 262_144;
 const EC_SPIRE_MAX_LEAF_BLOCK_PRUNING_GLOBAL_PROBE_BLOCKS: i32 = 262_144;
 const EC_SPIRE_MAX_LEAF_BLOCK_PRUNING_SAMPLE_ROWS_PER_BLOCK: i32 = 64;
 const EC_SPIRE_DEFAULT_LEAF_BLOCK_PRUNING_SAMPLE_SUMMARY_PRIOR_WEIGHT: f64 = 0.8;
+const EC_SPIRE_DEFAULT_LEAF_BLOCK_PRUNING_SUMMARY_RADIUS_WEIGHT: f64 = 1.0;
 const EC_SPIRE_MAX_NPROBE_PER_LEVEL_ENTRIES: usize = 32;
 const EC_SPIRE_DEFAULT_ADAPTIVE_NPROBE_SCORE_GAP_MICROS: i32 = 1000;
 const EC_SPIRE_MAX_ADAPTIVE_NPROBE_SCORE_GAP_MICROS: i32 = 1_000_000;
@@ -84,6 +85,8 @@ static EC_SPIRE_LEAF_BLOCK_PRUNING_SAMPLE_ROWS_PER_BLOCK_GUC: GucSetting<i32> =
     GucSetting::<i32>::new(EC_SPIRE_SESSION_LEAF_BLOCK_PRUNING_DISABLED);
 static EC_SPIRE_LEAF_BLOCK_PRUNING_SAMPLE_SUMMARY_PRIOR_WEIGHT_GUC: GucSetting<f64> =
     GucSetting::<f64>::new(EC_SPIRE_DEFAULT_LEAF_BLOCK_PRUNING_SAMPLE_SUMMARY_PRIOR_WEIGHT);
+static EC_SPIRE_LEAF_BLOCK_PRUNING_SUMMARY_RADIUS_WEIGHT_GUC: GucSetting<f64> =
+    GucSetting::<f64>::new(EC_SPIRE_DEFAULT_LEAF_BLOCK_PRUNING_SUMMARY_RADIUS_WEIGHT);
 static EC_SPIRE_ADAPTIVE_NPROBE_GUC: GucSetting<bool> = GucSetting::<bool>::new(false);
 static EC_SPIRE_ADAPTIVE_NPROBE_SCORE_GAP_MICROS_GUC: GucSetting<i32> =
     GucSetting::<i32>::new(EC_SPIRE_DEFAULT_ADAPTIVE_NPROBE_SCORE_GAP_MICROS);
@@ -838,6 +841,16 @@ pub(super) fn register_gucs() {
         GucContext::Userset,
         GucFlags::default(),
     );
+    GucRegistry::define_float_guc(
+        c"ec_spire.leaf_block_pruning_summary_radius_weight",
+        c"RaBitQ radius weight for SPIRE leaf block-summary pruning.",
+        c"Scales the RaBitQ summary radius term used when ranking leaf blocks; 0.0 ranks by encoded summary payload only and 1.0 uses the full Cauchy-Schwarz upper bound.",
+        &EC_SPIRE_LEAF_BLOCK_PRUNING_SUMMARY_RADIUS_WEIGHT_GUC,
+        0.0,
+        1.0,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
     GucRegistry::define_bool_guc(
         c"ec_spire.adaptive_nprobe",
         c"Enable deterministic adaptive ec_spire nprobe routing.",
@@ -1122,6 +1135,14 @@ pub(super) fn current_session_leaf_block_pruning_sample_summary_prior_weight() -
         EC_SPIRE_DEFAULT_LEAF_BLOCK_PRUNING_SAMPLE_SUMMARY_PRIOR_WEIGHT
     } else {
         EC_SPIRE_LEAF_BLOCK_PRUNING_SAMPLE_SUMMARY_PRIOR_WEIGHT_GUC.get()
+    }
+}
+
+pub(super) fn current_session_leaf_block_pruning_summary_radius_weight() -> f64 {
+    if cfg!(test) {
+        EC_SPIRE_DEFAULT_LEAF_BLOCK_PRUNING_SUMMARY_RADIUS_WEIGHT
+    } else {
+        EC_SPIRE_LEAF_BLOCK_PRUNING_SUMMARY_RADIUS_WEIGHT_GUC.get()
     }
 }
 

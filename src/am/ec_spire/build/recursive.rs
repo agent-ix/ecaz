@@ -254,16 +254,24 @@ fn build_recursive_epoch_input_from_centroid_plan_with_timing(
         let parent_pid = *leaf_parent_pids.get(&pid).ok_or_else(|| {
             format!("ec_spire recursive build missing routing parent for leaf pid {pid}")
         })?;
-        let materialization_rows = rows_by_leaf_pid
+        let mut materialization_rows = rows_by_leaf_pid
             .get(&pid)
             .cloned()
             .ok_or_else(|| format!("ec_spire recursive build missing leaf rows for pid {pid}"))?;
         let summaries = match summary_block_rows {
-            Some(block_rows) => build_leaf_block_summaries(
-                &materialization_rows.rows,
-                &materialization_rows.source_vectors,
-                block_rows,
-            )?,
+            Some(block_rows) => {
+                materialization_rows = layout_leaf_rows_for_block_summaries(
+                    materialization_rows,
+                    block_rows,
+                    input.seed,
+                    pid,
+                )?;
+                build_leaf_block_summaries(
+                    &materialization_rows.rows,
+                    &materialization_rows.source_vectors,
+                    block_rows,
+                )?
+            }
             None => Vec::new(),
         };
         leaf_inputs.push(SpireRecursiveLeafObjectInput {
@@ -425,6 +433,142 @@ fn current_leaf_summary_block_rows() -> Result<Option<u32>, String> {
     u32::try_from(block_rows)
         .map(Some)
         .map_err(|_| "ec_spire.leaf_block_rows exceeds u32".to_owned())
+}
+
+#[derive(Debug)]
+struct SpireLeafBlockLayoutRow {
+    original_index: usize,
+    centroid_index: usize,
+    centroid_ip: f32,
+    row: SpireLeafAssignmentRow,
+    source_vector: Vec<f32>,
+}
+
+fn layout_leaf_rows_for_block_summaries(
+    materialization_rows: SpireRecursiveLeafMaterializationRows,
+    block_rows: u32,
+    seed: u64,
+    leaf_pid: u64,
+) -> Result<SpireRecursiveLeafMaterializationRows, String> {
+    if block_rows == 0 {
+        return Err("ec_spire leaf block layout block_rows 0 is invalid".to_owned());
+    }
+    if materialization_rows.rows.len() != materialization_rows.source_vectors.len() {
+        return Err(format!(
+            "ec_spire leaf block layout row count {} does not match source vector count {}",
+            materialization_rows.rows.len(),
+            materialization_rows.source_vectors.len()
+        ));
+    }
+    if materialization_rows.rows.is_empty() {
+        return Ok(materialization_rows);
+    }
+
+    let block_rows_usize = usize::try_from(block_rows)
+        .map_err(|_| "ec_spire leaf block layout block_rows exceeds usize".to_owned())?;
+    if materialization_rows.rows.len() <= block_rows_usize {
+        return Ok(materialization_rows);
+    }
+
+    let dimensions = materialization_rows.source_vectors[0].len();
+    if dimensions == 0 {
+        return Err("ec_spire leaf block layout source vector dimensions must be > 0".to_owned());
+    }
+    for (row_index, source_vector) in materialization_rows.source_vectors.iter().enumerate() {
+        if source_vector.len() != dimensions {
+            return Err(format!(
+                "ec_spire leaf block layout source vector {row_index} dimensions {} do not match expected {dimensions}",
+                source_vector.len()
+            ));
+        }
+        if source_vector.iter().any(|value| !value.is_finite()) {
+            return Err(format!(
+                "ec_spire leaf block layout source vector {row_index} contains a non-finite value"
+            ));
+        }
+    }
+
+    let block_count = materialization_rows.rows.len().div_ceil(block_rows_usize);
+    if block_count <= 1 {
+        return Ok(materialization_rows);
+    }
+
+    let source_refs = materialization_rows
+        .source_vectors
+        .iter()
+        .map(Vec::as_slice)
+        .collect::<Vec<_>>();
+    let model = common_training::train_spherical_kmeans(
+        "ec_spire leaf block layout",
+        &source_refs,
+        dimensions,
+        block_count,
+        seed.wrapping_add(leaf_pid),
+        SPIRE_DEFAULT_KMEANS_ITERATIONS,
+    )?;
+    let centroid_indexes = common_training::assign_vectors_to_centroids(
+        "ec_spire leaf block layout",
+        &source_refs,
+        &model,
+    )?;
+
+    let mut layout_rows = materialization_rows
+        .rows
+        .into_iter()
+        .zip(materialization_rows.source_vectors)
+        .zip(centroid_indexes)
+        .enumerate()
+        .map(|(original_index, ((row, source_vector), centroid_index))| {
+            let centroid = model
+                .centroids
+                .get(centroid_index)
+                .ok_or_else(|| {
+                    "ec_spire leaf block layout centroid assignment out of range".to_owned()
+                })?;
+            let centroid_ip = leaf_block_layout_inner_product(&source_vector, centroid)?;
+            Ok(SpireLeafBlockLayoutRow {
+                original_index,
+                centroid_index,
+                centroid_ip,
+                row,
+                source_vector,
+            })
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+
+    layout_rows.sort_by(|left, right| {
+        left.centroid_index
+            .cmp(&right.centroid_index)
+            .then_with(|| {
+                right
+                    .centroid_ip
+                    .partial_cmp(&left.centroid_ip)
+                    .unwrap_or(Ordering::Equal)
+            })
+            .then_with(|| left.original_index.cmp(&right.original_index))
+    });
+
+    let mut rows = Vec::with_capacity(layout_rows.len());
+    let mut source_vectors = Vec::with_capacity(layout_rows.len());
+    for layout_row in layout_rows {
+        rows.push(layout_row.row);
+        source_vectors.push(layout_row.source_vector);
+    }
+    Ok(SpireRecursiveLeafMaterializationRows {
+        rows,
+        source_vectors,
+    })
+}
+
+fn leaf_block_layout_inner_product(left: &[f32], right: &[f32]) -> Result<f32, String> {
+    if left.len() != right.len() {
+        return Err(format!(
+            "ec_spire leaf block layout vector dimensions mismatch: got {}, expected {}",
+            left.len(),
+            right.len()
+        ));
+    }
+    Ok(left.iter().zip(right.iter()).map(|(left, right)| left * right).sum())
 }
 
 fn build_leaf_block_summaries(

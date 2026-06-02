@@ -135,6 +135,84 @@
     }
 
     #[test]
+    fn leaf_block_layout_groups_rows_before_summary_chunks() {
+        fn rabitq_primary_row(
+            vec_seq: u64,
+            block_number: u32,
+            offset_number: u16,
+            source_vector: &[f32],
+        ) -> SpireLeafAssignmentRow {
+            let assignment = quantizer::encode_assignment_input(
+                SpireAssignmentPayloadFormat::RaBitQ,
+                tid(block_number, offset_number),
+                source_vector,
+            )
+            .unwrap();
+            SpireLeafAssignmentRow {
+                flags: SPIRE_ASSIGNMENT_FLAG_PRIMARY,
+                vec_id: SpireVecId::local(vec_seq),
+                heap_tid: assignment.heap_tid,
+                payload_format: assignment.payload_format,
+                gamma: assignment.gamma,
+                encoded_payload: assignment.encoded_payload,
+            }
+        }
+
+        let source_vectors = vec![
+            vec![1.0, 0.0],
+            vec![-1.0, 0.0],
+            vec![0.9, 0.1],
+            vec![-0.9, 0.1],
+        ];
+        let rows = source_vectors
+            .iter()
+            .enumerate()
+            .map(|(index, source_vector)| {
+                rabitq_primary_row(
+                    u64::try_from(index + 1).unwrap(),
+                    10,
+                    u16::try_from(index + 1).unwrap(),
+                    source_vector,
+                )
+            })
+            .collect::<Vec<_>>();
+
+        let materialization_rows = super::layout_leaf_rows_for_block_summaries(
+            super::SpireRecursiveLeafMaterializationRows {
+                rows,
+                source_vectors,
+            },
+            2,
+            42,
+            11,
+        )
+        .unwrap();
+
+        assert_eq!(materialization_rows.rows.len(), 4);
+        assert_eq!(materialization_rows.source_vectors.len(), 4);
+        for chunk in materialization_rows.source_vectors.chunks_exact(2) {
+            let first_positive = chunk[0][0].is_sign_positive();
+            assert!(chunk
+                .iter()
+                .all(|source_vector| source_vector[0].is_sign_positive() == first_positive));
+        }
+        for (row, source_vector) in materialization_rows
+            .rows
+            .iter()
+            .zip(materialization_rows.source_vectors.iter())
+        {
+            let vec_seq = row.vec_id.local_sequence().unwrap();
+            let original_index = usize::try_from(vec_seq - 1).unwrap();
+            let expected_sign_positive = match original_index {
+                0 | 2 => true,
+                1 | 3 => false,
+                other => panic!("unexpected vec_id index {other}"),
+            };
+            assert_eq!(source_vector[0].is_sign_positive(), expected_sign_positive);
+        }
+    }
+
+    #[test]
     fn recursive_routing_build_materializes_internal_level() {
         let mut pid_allocator = SpirePidAllocator::default();
 
