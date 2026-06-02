@@ -195,6 +195,31 @@ impl SpirePreparedAssignmentScorer {
         }
     }
 
+    pub(super) fn score_zero_gamma_payload_chunks_max_prevalidated(
+        &self,
+        payload_stride: usize,
+        encoded_payload: &[u8],
+    ) -> f32 {
+        debug_assert!(payload_stride > 0);
+        debug_assert!(!encoded_payload.is_empty());
+        debug_assert_eq!(encoded_payload.len() % payload_stride, 0);
+
+        match self {
+            Self::TurboQuant {
+                quantizer,
+                prepared,
+                ..
+            } => encoded_payload
+                .chunks_exact(payload_stride)
+                .map(|payload| quantizer.score_ip_from_parts(prepared, 0.0, payload))
+                .fold(f32::NEG_INFINITY, f32::max),
+            Self::RaBitQ { prepared, .. } => encoded_payload
+                .chunks_exact(payload_stride)
+                .map(|payload| prepared.estimate_ip_scalar_only(payload))
+                .fold(f32::NEG_INFINITY, f32::max),
+        }
+    }
+
     pub(super) fn try_score_payload_ip(
         &self,
         payload_format: SpireAssignmentPayloadFormat,

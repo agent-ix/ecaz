@@ -978,6 +978,10 @@ fn select_leaf_block_row_ranges(
         return Ok(None);
     }
 
+    let score_context = SpireLeafBlockSummaryScoreContext::new(
+        scorer,
+        current_session_leaf_block_pruning_summary_radius_weight(),
+    )?;
     let score_started = observer.wants_candidate_timing().then(Instant::now);
     let mut scored_ranges = Vec::with_capacity(summaries.len());
     for summary in summaries {
@@ -985,7 +989,7 @@ fn select_leaf_block_row_ranges(
             .row_base
             .checked_add(summary.row_count)
             .ok_or_else(|| "ec_spire leaf V3 summary row range overflow".to_owned())?;
-        let ip = score_leaf_block_summary_ip(summary, scorer)?;
+        let ip = score_leaf_block_summary_ip_with_context(summary, scorer, score_context)?;
         scored_ranges.push((
             ip,
             SpireLeafBlockRowRange {
@@ -1134,6 +1138,40 @@ struct SpireScoredLeafBlockRange {
     range: SpireLeafBlockRowRange,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct SpireLeafBlockSummaryScoreContext {
+    payload_format: SpireAssignmentPayloadFormat,
+    payload_format_tag: u8,
+    payload_stride: usize,
+    radius_bonus_scale: f32,
+}
+
+impl SpireLeafBlockSummaryScoreContext {
+    fn new(
+        scorer: &SpirePreparedAssignmentScorer,
+        radius_weight: f64,
+    ) -> Result<Self, String> {
+        if !radius_weight.is_finite() || !(0.0..=1.0).contains(&radius_weight) {
+            return Err(
+                "ec_spire.leaf_block_pruning_summary_radius_weight must be finite in [0, 1]"
+                    .to_owned(),
+            );
+        }
+        let payload_format = scorer.payload_format();
+        let radius_bonus_scale = if payload_format == SpireAssignmentPayloadFormat::RaBitQ {
+            scorer.query_l2_norm() * radius_weight as f32
+        } else {
+            0.0
+        };
+        Ok(Self {
+            payload_format,
+            payload_format_tag: payload_format.tag(),
+            payload_stride: scorer.payload_stride()?,
+            radius_bonus_scale,
+        })
+    }
+}
+
 fn score_global_leaf_block_ranges<'a, I>(
     leaves: I,
     scorer: &SpirePreparedAssignmentScorer,
@@ -1151,6 +1189,10 @@ where
             .map(|(_leaf_pid, _placement, summaries)| summaries.len())
             .sum(),
     );
+    let score_context = SpireLeafBlockSummaryScoreContext::new(
+        scorer,
+        current_session_leaf_block_pruning_summary_radius_weight(),
+    )?;
     for (leaf_pid, placement, summaries) in leaves {
         if !summaries.is_empty() {
             leaves_with_summaries.push(leaf_pid);
@@ -1161,7 +1203,7 @@ where
                 .row_base
                 .checked_add(summary.row_count)
                 .ok_or_else(|| "ec_spire leaf V3 summary row range overflow".to_owned())?;
-            let ip = score_leaf_block_summary_ip(summary, scorer)?;
+            let ip = score_leaf_block_summary_ip_with_context(summary, scorer, score_context)?;
             scored_ranges.push(SpireScoredLeafBlockRange {
                 ip,
                 leaf_pid,
@@ -1195,37 +1237,41 @@ fn score_leaf_block_summary_ip_with_radius_weight(
     scorer: &SpirePreparedAssignmentScorer,
     radius_weight: f64,
 ) -> Result<f32, String> {
-    if !radius_weight.is_finite() || !(0.0..=1.0).contains(&radius_weight) {
-        return Err(
-            "ec_spire.leaf_block_pruning_summary_radius_weight must be finite in [0, 1]"
-                .to_owned(),
-        );
-    }
-    let summary_format = SpireAssignmentPayloadFormat::from_tag(summary.payload_format)?;
-    if summary_format != scorer.payload_format() {
+    let score_context = SpireLeafBlockSummaryScoreContext::new(scorer, radius_weight)?;
+    score_leaf_block_summary_ip_with_context(summary, scorer, score_context)
+}
+
+fn score_leaf_block_summary_ip_with_context(
+    summary: &SpireLeafBlockSummary,
+    scorer: &SpirePreparedAssignmentScorer,
+    score_context: SpireLeafBlockSummaryScoreContext,
+) -> Result<f32, String> {
+    if summary.payload_format != score_context.payload_format_tag {
+        let summary_format = SpireAssignmentPayloadFormat::from_tag(summary.payload_format)?;
         return Err(format!(
             "ec_spire leaf V3 summary payload format {:?} does not match prepared scorer {:?}",
-            summary_format,
-            scorer.payload_format()
+            summary_format, score_context.payload_format
         ));
     }
-    if summary_format == SpireAssignmentPayloadFormat::RaBitQ && summary.gamma < 0.0 {
+    if score_context.payload_format == SpireAssignmentPayloadFormat::RaBitQ && summary.gamma < 0.0
+    {
         return Err("ec_spire leaf V3 RaBitQ summary radius must be non-negative".to_owned());
     }
-    let payload_stride = scorer.payload_stride()?;
-    if summary.encoded_payload.is_empty() || summary.encoded_payload.len() % payload_stride != 0 {
+    if summary.encoded_payload.is_empty()
+        || summary.encoded_payload.len() % score_context.payload_stride != 0
+    {
         return Err(format!(
             "ec_spire leaf V3 summary payload length {} is not a positive multiple of scorer stride {payload_stride}",
-            summary.encoded_payload.len()
+            summary.encoded_payload.len(),
+            payload_stride = score_context.payload_stride
         ));
     }
-    let mut representative_ip = f32::NEG_INFINITY;
-    for payload in summary.encoded_payload.chunks_exact(payload_stride) {
-        representative_ip =
-            representative_ip.max(scorer.score_payload_ip(summary_format, 0.0, payload)?);
-    }
-    let ip = if summary_format == SpireAssignmentPayloadFormat::RaBitQ {
-        representative_ip + scorer.query_l2_norm() * summary.gamma * radius_weight as f32
+    let representative_ip = scorer.score_zero_gamma_payload_chunks_max_prevalidated(
+        score_context.payload_stride,
+        &summary.encoded_payload,
+    );
+    let ip = if score_context.payload_format == SpireAssignmentPayloadFormat::RaBitQ {
+        representative_ip + score_context.radius_bonus_scale * summary.gamma
     } else {
         representative_ip
     };
