@@ -514,17 +514,14 @@ fn collect_validated_quantized_leaf_route_candidates_with_global_block_pruning(
         }
     }
 
-    if let Some(selected_by_leaf) = select_global_leaf_block_row_ranges(
-        loaded_leaf_routes.iter().map(|loaded_route| {
-            (
-                loaded_route.route.leaf_pid,
-                &loaded_route.route.placement,
-                loaded_route.leaf_object.summaries.as_slice(),
-            )
-        }),
+    if let Some(selected_by_leaf) = select_sampled_global_leaf_block_row_ranges(
+        snapshot,
+        &loaded_leaf_routes,
         current_session_leaf_block_pruning_max_global_blocks(),
+        current_session_leaf_block_pruning_global_probe_blocks(),
+        current_session_leaf_block_pruning_sample_rows_per_block(),
         scorer,
-        snapshot.epoch_manifest().epoch,
+        &mut accumulator,
         observer,
     )? {
         for loaded_route in &mut loaded_leaf_routes {

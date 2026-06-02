@@ -38,6 +38,8 @@ const EC_SPIRE_SESSION_LEAF_BLOCK_PRUNING_DISABLED: i32 = 0;
 const EC_SPIRE_MAX_LEAF_BLOCK_ROWS: i32 = 4096;
 const EC_SPIRE_MAX_LEAF_BLOCK_PRUNING_BLOCKS_PER_LEAF: i32 = 4096;
 const EC_SPIRE_MAX_LEAF_BLOCK_PRUNING_GLOBAL_BLOCKS: i32 = 262_144;
+const EC_SPIRE_MAX_LEAF_BLOCK_PRUNING_GLOBAL_PROBE_BLOCKS: i32 = 262_144;
+const EC_SPIRE_MAX_LEAF_BLOCK_PRUNING_SAMPLE_ROWS_PER_BLOCK: i32 = 64;
 const EC_SPIRE_MAX_NPROBE_PER_LEVEL_ENTRIES: usize = 32;
 const EC_SPIRE_DEFAULT_ADAPTIVE_NPROBE_SCORE_GAP_MICROS: i32 = 1000;
 const EC_SPIRE_MAX_ADAPTIVE_NPROBE_SCORE_GAP_MICROS: i32 = 1_000_000;
@@ -74,6 +76,10 @@ static EC_SPIRE_LEAF_BLOCK_ROWS_GUC: GucSetting<i32> =
 static EC_SPIRE_LEAF_BLOCK_PRUNING_MAX_BLOCKS_PER_LEAF_GUC: GucSetting<i32> =
     GucSetting::<i32>::new(EC_SPIRE_SESSION_LEAF_BLOCK_PRUNING_DISABLED);
 static EC_SPIRE_LEAF_BLOCK_PRUNING_MAX_GLOBAL_BLOCKS_GUC: GucSetting<i32> =
+    GucSetting::<i32>::new(EC_SPIRE_SESSION_LEAF_BLOCK_PRUNING_DISABLED);
+static EC_SPIRE_LEAF_BLOCK_PRUNING_GLOBAL_PROBE_BLOCKS_GUC: GucSetting<i32> =
+    GucSetting::<i32>::new(EC_SPIRE_SESSION_LEAF_BLOCK_PRUNING_DISABLED);
+static EC_SPIRE_LEAF_BLOCK_PRUNING_SAMPLE_ROWS_PER_BLOCK_GUC: GucSetting<i32> =
     GucSetting::<i32>::new(EC_SPIRE_SESSION_LEAF_BLOCK_PRUNING_DISABLED);
 static EC_SPIRE_ADAPTIVE_NPROBE_GUC: GucSetting<bool> = GucSetting::<bool>::new(false);
 static EC_SPIRE_ADAPTIVE_NPROBE_SCORE_GAP_MICROS_GUC: GucSetting<i32> =
@@ -799,6 +805,26 @@ pub(super) fn register_gucs() {
         GucContext::Userset,
         GucFlags::default(),
     );
+    GucRegistry::define_int_guc(
+        c"ec_spire.leaf_block_pruning_global_probe_blocks",
+        c"Session first-pass block count for sampled SPIRE global leaf block pruning.",
+        c"When greater than ec_spire.leaf_block_pruning_max_global_blocks and sample rows are enabled, retains this many summary-ranked blocks for row sampling before the final global block cap is applied; 0 disables sampled global probing.",
+        &EC_SPIRE_LEAF_BLOCK_PRUNING_GLOBAL_PROBE_BLOCKS_GUC,
+        EC_SPIRE_SESSION_LEAF_BLOCK_PRUNING_DISABLED,
+        EC_SPIRE_MAX_LEAF_BLOCK_PRUNING_GLOBAL_PROBE_BLOCKS,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
+    GucRegistry::define_int_guc(
+        c"ec_spire.leaf_block_pruning_sample_rows_per_block",
+        c"Session row sample count for sampled SPIRE global leaf block pruning.",
+        c"Number of deterministic rows scored from each first-pass block before final global block selection; sampled rows enter normal candidate accounting. 0 disables sampled global probing.",
+        &EC_SPIRE_LEAF_BLOCK_PRUNING_SAMPLE_ROWS_PER_BLOCK_GUC,
+        EC_SPIRE_SESSION_LEAF_BLOCK_PRUNING_DISABLED,
+        EC_SPIRE_MAX_LEAF_BLOCK_PRUNING_SAMPLE_ROWS_PER_BLOCK,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
     GucRegistry::define_bool_guc(
         c"ec_spire.adaptive_nprobe",
         c"Enable deterministic adaptive ec_spire nprobe routing.",
@@ -1059,6 +1085,22 @@ pub(super) fn current_session_leaf_block_pruning_max_global_blocks() -> i32 {
         EC_SPIRE_SESSION_LEAF_BLOCK_PRUNING_DISABLED
     } else {
         EC_SPIRE_LEAF_BLOCK_PRUNING_MAX_GLOBAL_BLOCKS_GUC.get()
+    }
+}
+
+pub(super) fn current_session_leaf_block_pruning_global_probe_blocks() -> i32 {
+    if cfg!(test) {
+        EC_SPIRE_SESSION_LEAF_BLOCK_PRUNING_DISABLED
+    } else {
+        EC_SPIRE_LEAF_BLOCK_PRUNING_GLOBAL_PROBE_BLOCKS_GUC.get()
+    }
+}
+
+pub(super) fn current_session_leaf_block_pruning_sample_rows_per_block() -> i32 {
+    if cfg!(test) {
+        EC_SPIRE_SESSION_LEAF_BLOCK_PRUNING_DISABLED
+    } else {
+        EC_SPIRE_LEAF_BLOCK_PRUNING_SAMPLE_ROWS_PER_BLOCK_GUC.get()
     }
 }
 

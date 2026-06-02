@@ -301,6 +301,146 @@
     }
 
     #[test]
+    fn sampled_global_leaf_block_row_ranges_reranks_probe_blocks() {
+        fn rabitq_summary(row_base: u32, source_vector: &[f32]) -> SpireLeafBlockSummary {
+            let (gamma, encoded_payload) =
+                encode_assignment_payload(SpireAssignmentPayloadFormat::RaBitQ, source_vector)
+                    .unwrap();
+            assert_eq!(gamma, 0.0);
+            SpireLeafBlockSummary {
+                row_base,
+                row_count: 2,
+                payload_format: SpireAssignmentPayloadFormat::RaBitQ.tag(),
+                gamma: 0.0,
+                encoded_payload,
+            }
+        }
+
+        fn rabitq_row(
+            block_number: u32,
+            offset_number: u16,
+            vec_seq: u64,
+            source_vector: &[f32],
+        ) -> SpireLeafAssignmentRow {
+            let input = quantized_assignment_input(
+                block_number,
+                offset_number,
+                SpireAssignmentPayloadFormat::RaBitQ,
+                source_vector,
+            );
+            SpireLeafAssignmentRow {
+                flags: SPIRE_ASSIGNMENT_FLAG_PRIMARY,
+                vec_id: SpireVecId::local(vec_seq),
+                heap_tid: input.heap_tid,
+                payload_format: input.payload_format,
+                gamma: input.gamma,
+                encoded_payload: input.encoded_payload,
+            }
+        }
+
+        let query = [1.0, 0.0];
+        let scorer =
+            SpirePreparedAssignmentScorer::prepare(SpireAssignmentPayloadFormat::RaBitQ, 2, &query)
+                .unwrap();
+        let leaf_pid = SPIRE_FIRST_PID + 1;
+        let parent_pid = SPIRE_FIRST_PID;
+        let summaries = vec![
+            rabitq_summary(0, &[1.0, 0.0]),
+            rabitq_summary(2, &[0.1, 0.0]),
+        ];
+        let mut object_store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
+        let rows = vec![
+            rabitq_row(10, 1, 1, &[-1.0, 0.0]),
+            rabitq_row(10, 2, 2, &[-1.0, 0.0]),
+            rabitq_row(10, 3, 3, &[-1.0, 0.0]),
+            rabitq_row(10, 4, 4, &[1.0, 0.0]),
+        ];
+        let placement = object_store
+            .insert_leaf_object_v3_from_rows_and_summaries(
+                7, leaf_pid, 1, parent_pid, &rows, &summaries, 2,
+            )
+            .unwrap();
+        let mut noop = SpireNoopRoutedScanObserver;
+        let summary_only = select_global_leaf_block_row_ranges(
+            [(leaf_pid, &placement, summaries.as_slice())],
+            1,
+            &scorer,
+            7,
+            &mut noop,
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(
+            summary_only.get(&leaf_pid),
+            Some(&vec![SpireLeafBlockRowRange {
+                row_base: 0,
+                row_end: 2,
+            }])
+        );
+
+        let epoch_manifest = SpireEpochManifest {
+            epoch: 7,
+            state: SpireEpochState::Published,
+            consistency_mode: SpireConsistencyMode::Strict,
+            published_at_micros: 1000,
+            retain_until_micros: 2000,
+            active_query_count: 0,
+        };
+        let object_manifest =
+            SpireObjectManifest::from_entries(7, vec![manifest_entry_for(&placement)]).unwrap();
+        let placement_directory =
+            SpirePlacementDirectory::from_entries(7, vec![placement]).unwrap();
+        let snapshot =
+            snapshot_for_placement(&epoch_manifest, &object_manifest, &placement_directory);
+        let snapshot = SpireValidatedEpochSnapshot::from_snapshot(snapshot).unwrap();
+        let loaded_routes = vec![SpireLoadedQuantizedLeafRoute {
+            route: SpireLeafObjectReadRoute {
+                leaf_pid,
+                parent_pid,
+                placement,
+                object_version: 1,
+            },
+            leaf_object: object_store.read_leaf_object_v2(&placement).unwrap(),
+            selected_row_ranges: None,
+            loaded_delta_routes: Vec::new(),
+            deleted_vec_ids: HashSet::new(),
+        }];
+        let mut accumulator = SpireScoredCandidateAccumulator::new(
+            SpireCandidateDedupeMode::NoReplicaDedupeDisabled,
+            None,
+        );
+        let mut observer = SpireScanPlacementDiagnosticsObserver::new();
+
+        let sampled = select_sampled_global_leaf_block_row_ranges(
+            &snapshot,
+            &loaded_routes,
+            1,
+            2,
+            1,
+            &scorer,
+            &mut accumulator,
+            &mut observer,
+        )
+        .unwrap()
+        .unwrap();
+
+        assert_eq!(
+            sampled.get(&leaf_pid),
+            Some(&vec![SpireLeafBlockRowRange {
+                row_base: 2,
+                row_end: 4,
+            }])
+        );
+        let sampled_candidates = accumulator.into_ranked();
+        assert!(sampled_candidates
+            .iter()
+            .any(|candidate| candidate.row_index == 3 && candidate.vec_id.local_sequence() == Some(4)));
+        let stores = observer.into_stores();
+        assert_eq!(stores.len(), 1);
+        assert_eq!(stores[0].candidate_row_count, 2);
+    }
+
+    #[test]
     fn collect_quantized_routed_probe_candidates_reads_hash_routed_two_store_build() {
         let payload_format = SpireAssignmentPayloadFormat::TurboQuant;
         let store_config = SpireLocalStoreConfig::from_stores(

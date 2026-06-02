@@ -14,8 +14,10 @@ use super::meta::{
     SpireRootControlState, SpireValidatedEpochSnapshot,
 };
 use super::options::{
+    current_session_leaf_block_pruning_global_probe_blocks,
     current_session_leaf_block_pruning_max_blocks_per_leaf,
-    current_session_leaf_block_pruning_max_global_blocks, relation_options,
+    current_session_leaf_block_pruning_max_global_blocks,
+    current_session_leaf_block_pruning_sample_rows_per_block, relation_options,
     resolve_single_level_scan_plan, EcSpireOptions, SpireCandidateDedupeMode,
     SpireRecursiveNprobePolicy, SpireRecursiveRouteBudget, SpireSingleLevelScanPlan,
     SpireTopGraphOptionPlan,

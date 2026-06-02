@@ -689,29 +689,123 @@ where
         return Ok(None);
     }
 
-    let leaves = leaves.into_iter().collect::<Vec<_>>();
-    let summary_count = leaves
-        .iter()
-        .map(|(_leaf_pid, _placement, summaries)| summaries.len())
-        .sum::<usize>();
-    if summary_count == 0 {
+    let (leaves_with_summaries, scored_ranges) =
+        score_global_leaf_block_ranges(leaves, scorer, epoch, observer)?;
+    if scored_ranges.is_empty() {
         return Ok(None);
     }
 
     let max_blocks = usize::try_from(max_global_blocks)
         .map_err(|_| "ec_spire.leaf_block_pruning_max_global_blocks exceeds usize".to_owned())?;
-    if max_blocks >= summary_count {
+    if max_blocks >= scored_ranges.len() {
         return Ok(None);
     }
 
-    let mut selected_by_leaf = leaves
-        .iter()
-        .filter(|(_leaf_pid, _placement, summaries)| !summaries.is_empty())
-        .map(|(leaf_pid, _placement, _summaries)| (*leaf_pid, Vec::new()))
-        .collect::<HashMap<_, _>>();
-    let mut scored_ranges = Vec::with_capacity(summary_count);
+    Ok(Some(select_scored_global_leaf_block_row_ranges(
+        leaves_with_summaries,
+        scored_ranges,
+        max_blocks,
+    )))
+}
 
+fn select_sampled_global_leaf_block_row_ranges(
+    snapshot: &SpireValidatedEpochSnapshot<'_>,
+    loaded_leaf_routes: &[SpireLoadedQuantizedLeafRoute],
+    max_global_blocks: i32,
+    global_probe_blocks: i32,
+    sample_rows_per_block: i32,
+    scorer: &SpirePreparedAssignmentScorer,
+    accumulator: &mut SpireScoredCandidateAccumulator,
+    observer: &mut impl SpireRoutedScanObserver,
+) -> Result<Option<HashMap<u64, Vec<SpireLeafBlockRowRange>>>, String> {
+    if max_global_blocks <= 0 || scorer.payload_format() != SpireAssignmentPayloadFormat::RaBitQ {
+        return Ok(None);
+    }
+
+    let epoch = snapshot.epoch_manifest().epoch;
+    let (leaves_with_summaries, mut scored_ranges) = score_global_leaf_block_ranges(
+        loaded_leaf_routes.iter().map(|loaded_route| {
+            (
+                loaded_route.route.leaf_pid,
+                &loaded_route.route.placement,
+                loaded_route.leaf_object.summaries.as_slice(),
+            )
+        }),
+        scorer,
+        epoch,
+        observer,
+    )?;
+    if scored_ranges.is_empty() {
+        return Ok(None);
+    }
+
+    let max_blocks = usize::try_from(max_global_blocks)
+        .map_err(|_| "ec_spire.leaf_block_pruning_max_global_blocks exceeds usize".to_owned())?;
+    if max_blocks >= scored_ranges.len() {
+        return Ok(None);
+    }
+
+    let probe_blocks = usize::try_from(global_probe_blocks).map_err(|_| {
+        "ec_spire.leaf_block_pruning_global_probe_blocks exceeds usize".to_owned()
+    })?;
+    let sample_rows = usize::try_from(sample_rows_per_block).map_err(|_| {
+        "ec_spire.leaf_block_pruning_sample_rows_per_block exceeds usize".to_owned()
+    })?;
+    if probe_blocks <= max_blocks || sample_rows == 0 {
+        return Ok(Some(select_scored_global_leaf_block_row_ranges(
+            leaves_with_summaries,
+            scored_ranges,
+            max_blocks,
+        )));
+    }
+
+    sort_scored_leaf_block_ranges(&mut scored_ranges);
+    scored_ranges.truncate(probe_blocks.min(scored_ranges.len()));
+    let sampled_ranges = sample_global_leaf_block_probe_candidates(
+        snapshot,
+        loaded_leaf_routes,
+        &scored_ranges,
+        sample_rows,
+        scorer,
+        accumulator,
+        observer,
+    )?;
+
+    Ok(Some(select_scored_global_leaf_block_row_ranges(
+        leaves_with_summaries,
+        sampled_ranges,
+        max_blocks,
+    )))
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct SpireScoredLeafBlockRange {
+    ip: f32,
+    leaf_pid: u64,
+    range: SpireLeafBlockRowRange,
+}
+
+fn score_global_leaf_block_ranges<'a, I>(
+    leaves: I,
+    scorer: &SpirePreparedAssignmentScorer,
+    epoch: u64,
+    observer: &mut impl SpireRoutedScanObserver,
+) -> Result<(Vec<u64>, Vec<SpireScoredLeafBlockRange>), String>
+where
+    I: IntoIterator<Item = (u64, &'a SpirePlacementEntry, &'a [SpireLeafBlockSummary])>,
+{
+    let leaves = leaves.into_iter().collect::<Vec<_>>();
+    let mut leaves_with_summaries = Vec::new();
+    let mut scored_ranges = Vec::with_capacity(
+        leaves
+            .iter()
+            .map(|(_leaf_pid, _placement, summaries)| summaries.len())
+            .sum(),
+    );
     for (leaf_pid, placement, summaries) in leaves {
+        if !summaries.is_empty() {
+            leaves_with_summaries.push(leaf_pid);
+        }
         let score_started = observer.wants_candidate_timing().then(Instant::now);
         for summary in summaries {
             let summary_format = SpireAssignmentPayloadFormat::from_tag(summary.payload_format)?;
@@ -732,37 +826,239 @@ where
                     "ec_spire leaf V3 summary scorer returned a non-finite score".to_owned(),
                 );
             }
-            scored_ranges.push((
+            scored_ranges.push(SpireScoredLeafBlockRange {
                 ip,
                 leaf_pid,
-                SpireLeafBlockRowRange {
+                range: SpireLeafBlockRowRange {
                     row_base: summary.row_base,
                     row_end,
                 },
-            ));
+            });
         }
         if let Some(started) = score_started {
             observer.candidate_score_time(epoch, placement, elapsed_nanos_since(started));
         }
     }
 
-    scored_ranges.sort_by(|left, right| {
-        right
-            .0
-            .partial_cmp(&left.0)
-            .unwrap_or(Ordering::Equal)
-            .then_with(|| left.1.cmp(&right.1))
-            .then_with(|| left.2.row_base.cmp(&right.2.row_base))
-    });
+    Ok((leaves_with_summaries, scored_ranges))
+}
+
+fn select_scored_global_leaf_block_row_ranges(
+    leaves_with_summaries: Vec<u64>,
+    mut scored_ranges: Vec<SpireScoredLeafBlockRange>,
+    max_blocks: usize,
+) -> HashMap<u64, Vec<SpireLeafBlockRowRange>> {
+    let mut selected_by_leaf = leaves_with_summaries
+        .into_iter()
+        .map(|leaf_pid| (leaf_pid, Vec::new()))
+        .collect::<HashMap<_, _>>();
+
+    sort_scored_leaf_block_ranges(&mut scored_ranges);
     scored_ranges.truncate(max_blocks);
-    for (_score, leaf_pid, range) in scored_ranges {
-        selected_by_leaf.entry(leaf_pid).or_default().push(range);
+    for block in scored_ranges {
+        selected_by_leaf
+            .entry(block.leaf_pid)
+            .or_default()
+            .push(block.range);
     }
     for ranges in selected_by_leaf.values_mut() {
         ranges.sort_by_key(|range| range.row_base);
     }
 
-    Ok(Some(selected_by_leaf))
+    selected_by_leaf
+}
+
+fn sort_scored_leaf_block_ranges(scored_ranges: &mut [SpireScoredLeafBlockRange]) {
+    scored_ranges.sort_by(|left, right| {
+        right
+            .ip
+            .partial_cmp(&left.ip)
+            .unwrap_or(Ordering::Equal)
+            .then_with(|| left.leaf_pid.cmp(&right.leaf_pid))
+            .then_with(|| left.range.row_base.cmp(&right.range.row_base))
+    });
+}
+
+#[derive(Debug, Clone)]
+struct SpireLeafBlockSamplePlan {
+    block: SpireScoredLeafBlockRange,
+    sample_row_indices: Vec<u32>,
+    best_sample_ip: Option<f32>,
+}
+
+fn sample_global_leaf_block_probe_candidates(
+    snapshot: &SpireValidatedEpochSnapshot<'_>,
+    loaded_leaf_routes: &[SpireLoadedQuantizedLeafRoute],
+    probe_blocks: &[SpireScoredLeafBlockRange],
+    sample_rows_per_block: usize,
+    scorer: &SpirePreparedAssignmentScorer,
+    accumulator: &mut SpireScoredCandidateAccumulator,
+    observer: &mut impl SpireRoutedScanObserver,
+) -> Result<Vec<SpireScoredLeafBlockRange>, String> {
+    let mut probe_blocks_by_leaf = HashMap::<u64, Vec<SpireScoredLeafBlockRange>>::new();
+    for block in probe_blocks {
+        probe_blocks_by_leaf
+            .entry(block.leaf_pid)
+            .or_default()
+            .push(block.clone());
+    }
+
+    let mut sampled_blocks = Vec::with_capacity(probe_blocks.len());
+    for loaded_route in loaded_leaf_routes {
+        let Some(blocks) = probe_blocks_by_leaf.remove(&loaded_route.route.leaf_pid) else {
+            continue;
+        };
+        sampled_blocks.extend(sample_leaf_block_probe_candidates(
+            snapshot,
+            loaded_route,
+            blocks,
+            sample_rows_per_block,
+            scorer,
+            accumulator,
+            observer,
+        )?);
+    }
+    for blocks in probe_blocks_by_leaf.into_values() {
+        sampled_blocks.extend(blocks);
+    }
+    Ok(sampled_blocks)
+}
+
+fn sample_leaf_block_probe_candidates(
+    snapshot: &SpireValidatedEpochSnapshot<'_>,
+    loaded_route: &SpireLoadedQuantizedLeafRoute,
+    blocks: Vec<SpireScoredLeafBlockRange>,
+    sample_rows_per_block: usize,
+    scorer: &SpirePreparedAssignmentScorer,
+    accumulator: &mut SpireScoredCandidateAccumulator,
+    observer: &mut impl SpireRoutedScanObserver,
+) -> Result<Vec<SpireScoredLeafBlockRange>, String> {
+    let mut plans = blocks
+        .into_iter()
+        .map(|block| {
+            Ok(SpireLeafBlockSamplePlan {
+                sample_row_indices: sample_leaf_block_row_indices(block.range, sample_rows_per_block)?,
+                block,
+                best_sample_ip: None,
+            })
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    let epoch = snapshot.epoch_manifest().epoch;
+    let route = loaded_route.route;
+    let placement = &route.placement;
+
+    for columns in loaded_route.leaf_object.column_segments()? {
+        let columns = columns?;
+        let column_format = SpireAssignmentPayloadFormat::from_tag(columns.payload_format)?;
+        if column_format != scorer.payload_format() {
+            return Err(format!(
+                "ec_spire leaf V2 payload format {:?} does not match prepared scorer {:?}",
+                column_format,
+                scorer.payload_format()
+            ));
+        }
+        let column_row_count = u32::try_from(columns.row_count())
+            .map_err(|_| "ec_spire leaf V2 column row count exceeds u32".to_owned())?;
+        let column_row_end = columns
+            .row_base
+            .checked_add(column_row_count)
+            .ok_or_else(|| "ec_spire leaf V2 column row range overflow".to_owned())?;
+        for plan in &mut plans {
+            for &row_index in &plan.sample_row_indices {
+                if row_index < columns.row_base || row_index >= column_row_end {
+                    continue;
+                }
+                let row_offset = usize::try_from(row_index - columns.row_base)
+                    .map_err(|_| "ec_spire leaf V2 sampled row offset exceeds usize".to_owned())?;
+                if !is_visible_scored_assignment_flags(columns.flags[row_offset]) {
+                    continue;
+                }
+
+                let materialize_started = observer.wants_candidate_timing().then(Instant::now);
+                let row = columns.row(row_offset)?;
+                let vec_id = row.vec_id()?;
+                if let Some(started) = materialize_started {
+                    observer.candidate_materialize_time(epoch, placement, elapsed_nanos_since(started));
+                }
+                if loaded_route.deleted_vec_ids.contains(&vec_id) {
+                    continue;
+                }
+
+                let score_started = observer.wants_candidate_timing().then(Instant::now);
+                let ip = scorer.score_payload_ip(column_format, row.gamma, row.encoded_payload)?;
+                if let Some(started) = score_started {
+                    observer.candidate_score_time(epoch, placement, elapsed_nanos_since(started));
+                }
+                if !ip.is_finite() {
+                    return Err(
+                        "ec_spire sampled leaf block scorer returned a non-finite score"
+                            .to_owned(),
+                    );
+                }
+                plan.best_sample_ip = Some(plan.best_sample_ip.map_or(ip, |best| best.max(ip)));
+                observer.visible_leaf_candidate(epoch, placement, row.flags);
+                let candidate = SpireScoredScanCandidate {
+                    epoch,
+                    pid: route.leaf_pid,
+                    object_version: route.object_version,
+                    row_index: row.row_index,
+                    assignment_flags: row.flags,
+                    vec_id,
+                    heap_tid: row.heap_tid,
+                    score: -ip,
+                };
+                let append_started = observer.wants_candidate_timing().then(Instant::now);
+                let outcome = accumulator.append(candidate);
+                if let Some(started) = append_started {
+                    observer.candidate_heap_append_time(epoch, placement, elapsed_nanos_since(started));
+                }
+                observe_candidate_append_outcome(snapshot, observer, outcome)?;
+            }
+        }
+    }
+
+    Ok(plans
+        .into_iter()
+        .map(|plan| SpireScoredLeafBlockRange {
+            ip: plan.best_sample_ip.unwrap_or(plan.block.ip),
+            leaf_pid: plan.block.leaf_pid,
+            range: plan.block.range,
+        })
+        .collect())
+}
+
+fn sample_leaf_block_row_indices(
+    range: SpireLeafBlockRowRange,
+    max_sample_rows: usize,
+) -> Result<Vec<u32>, String> {
+    if max_sample_rows == 0 {
+        return Ok(Vec::new());
+    }
+    let row_count = range
+        .row_end
+        .checked_sub(range.row_base)
+        .ok_or_else(|| "ec_spire leaf block sample range is invalid".to_owned())?;
+    if row_count == 0 {
+        return Ok(Vec::new());
+    }
+    let row_count = usize::try_from(row_count)
+        .map_err(|_| "ec_spire leaf block sample row count exceeds usize".to_owned())?;
+    let sample_count = max_sample_rows.min(row_count);
+    let mut indices = Vec::with_capacity(sample_count);
+    for sample_index in 0..sample_count {
+        let offset = ((sample_index * 2 + 1) * row_count) / (sample_count * 2);
+        let offset = offset.min(row_count - 1);
+        let offset = u32::try_from(offset)
+            .map_err(|_| "ec_spire leaf block sample row offset exceeds u32".to_owned())?;
+        indices.push(
+            range
+                .row_base
+                .checked_add(offset)
+                .ok_or_else(|| "ec_spire leaf block sample row index overflow".to_owned())?,
+        );
+    }
+    indices.dedup();
+    Ok(indices)
 }
 
 fn leaf_column_row_is_selected(

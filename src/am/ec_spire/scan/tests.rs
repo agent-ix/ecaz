@@ -24,12 +24,13 @@ mod tests {
         route_routing_object_to_child_pids, route_routing_object_to_child_routes_with_policy,
         route_top_graph_object_to_child_pids, route_top_graph_object_to_leaf_routes,
         route_top_graph_to_child_pids, select_global_leaf_block_row_ranges,
-        select_leaf_block_row_ranges, SpireDeltaObjectRoute, SpireLeafBlockRowRange,
-        SpireLeafObjectReadRoute, SpireLeafScanRow, SpireNoopRoutedScanObserver,
+        select_leaf_block_row_ranges, select_sampled_global_leaf_block_row_ranges,
+        SpireDeltaObjectRoute, SpireLeafBlockRowRange, SpireLeafObjectReadRoute,
+        SpireLeafScanRow, SpireLoadedQuantizedLeafRoute, SpireNoopRoutedScanObserver,
         SpireRecursiveLeafRoute, SpireRoutedLeafScanRows, SpireScanCandidateCursor,
         SpireScanOpaque, SpireScanOutput, SpireScanOutputCursor,
-        SpireScanPlacementDiagnosticsObserver, SpireScanQuery, SpireScoredScanCandidate,
-        SpireStoreObjectReadGroup,
+        SpireScanPlacementDiagnosticsObserver, SpireScanQuery, SpireScoredCandidateAccumulator,
+        SpireScoredScanCandidate, SpireStoreObjectReadGroup,
     };
     use crate::am::ec_spire::{
         SpireRemoteProductionScanAmDeliverySummaryRow,
