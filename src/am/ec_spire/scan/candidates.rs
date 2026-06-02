@@ -625,28 +625,11 @@ fn select_leaf_block_row_ranges(
     let score_started = observer.wants_candidate_timing().then(Instant::now);
     let mut scored_ranges = Vec::with_capacity(summaries.len());
     for summary in summaries {
-        let summary_format = SpireAssignmentPayloadFormat::from_tag(summary.payload_format)?;
-        if summary_format != scorer.payload_format() {
-            return Err(format!(
-                "ec_spire leaf V3 summary payload format {:?} does not match prepared scorer {:?}",
-                summary_format,
-                scorer.payload_format()
-            ));
-        }
         let row_end = summary
             .row_base
             .checked_add(summary.row_count)
             .ok_or_else(|| "ec_spire leaf V3 summary row range overflow".to_owned())?;
-        if summary.gamma < 0.0 {
-            return Err("ec_spire leaf V3 RaBitQ summary radius must be non-negative".to_owned());
-        }
-        let mean_ip = scorer.score_payload_ip(summary_format, 0.0, &summary.encoded_payload)?;
-        let ip = mean_ip + scorer.query_l2_norm() * summary.gamma;
-        if !ip.is_finite() {
-            return Err(
-                "ec_spire leaf V3 summary scorer returned a non-finite score".to_owned(),
-            );
-        }
+        let ip = score_leaf_block_summary_ip(summary, scorer)?;
         scored_ranges.push((
             ip,
             SpireLeafBlockRowRange {
@@ -818,24 +801,11 @@ where
         }
         let score_started = observer.wants_candidate_timing().then(Instant::now);
         for summary in summaries {
-            let summary_format = SpireAssignmentPayloadFormat::from_tag(summary.payload_format)?;
-            if summary_format != scorer.payload_format() {
-                return Err(format!(
-                    "ec_spire leaf V3 summary payload format {:?} does not match prepared scorer {:?}",
-                    summary_format,
-                    scorer.payload_format()
-                ));
-            }
             let row_end = summary
                 .row_base
                 .checked_add(summary.row_count)
                 .ok_or_else(|| "ec_spire leaf V3 summary row range overflow".to_owned())?;
-            let ip = scorer.score_payload_ip(summary_format, 0.0, &summary.encoded_payload)?;
-            if !ip.is_finite() {
-                return Err(
-                    "ec_spire leaf V3 summary scorer returned a non-finite score".to_owned(),
-                );
-            }
+            let ip = score_leaf_block_summary_ip(summary, scorer)?;
             scored_ranges.push(SpireScoredLeafBlockRange {
                 ip,
                 leaf_pid,
@@ -851,6 +821,33 @@ where
     }
 
     Ok((leaves_with_summaries, scored_ranges))
+}
+
+fn score_leaf_block_summary_ip(
+    summary: &SpireLeafBlockSummary,
+    scorer: &SpirePreparedAssignmentScorer,
+) -> Result<f32, String> {
+    let summary_format = SpireAssignmentPayloadFormat::from_tag(summary.payload_format)?;
+    if summary_format != scorer.payload_format() {
+        return Err(format!(
+            "ec_spire leaf V3 summary payload format {:?} does not match prepared scorer {:?}",
+            summary_format,
+            scorer.payload_format()
+        ));
+    }
+    if summary_format == SpireAssignmentPayloadFormat::RaBitQ && summary.gamma < 0.0 {
+        return Err("ec_spire leaf V3 RaBitQ summary radius must be non-negative".to_owned());
+    }
+    let mean_ip = scorer.score_payload_ip(summary_format, 0.0, &summary.encoded_payload)?;
+    let ip = if summary_format == SpireAssignmentPayloadFormat::RaBitQ {
+        mean_ip + scorer.query_l2_norm() * summary.gamma
+    } else {
+        mean_ip
+    };
+    if !ip.is_finite() {
+        return Err("ec_spire leaf V3 summary scorer returned a non-finite score".to_owned());
+    }
+    Ok(ip)
 }
 
 fn select_scored_global_leaf_block_row_ranges(

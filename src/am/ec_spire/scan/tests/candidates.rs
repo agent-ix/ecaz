@@ -301,6 +301,70 @@
     }
 
     #[test]
+    fn select_global_leaf_block_row_ranges_uses_rabitq_summary_radius() {
+        fn rabitq_summary(
+            row_base: u32,
+            source_vector: &[f32],
+            radius: f32,
+        ) -> SpireLeafBlockSummary {
+            let (gamma, encoded_payload) =
+                encode_assignment_payload(SpireAssignmentPayloadFormat::RaBitQ, source_vector)
+                    .unwrap();
+            assert_eq!(gamma, 0.0);
+            SpireLeafBlockSummary {
+                row_base,
+                row_count: 2,
+                payload_format: SpireAssignmentPayloadFormat::RaBitQ.tag(),
+                gamma: radius,
+                encoded_payload,
+            }
+        }
+
+        fn placement(pid: u64) -> SpirePlacementEntry {
+            SpirePlacementEntry {
+                epoch: 7,
+                pid,
+                node_id: 1,
+                local_store_id: 0,
+                store_relid: 12345,
+                object_version: 1,
+                object_tid: tid(60, u16::try_from(pid).unwrap()),
+                object_bytes: 1024,
+                state: SpirePlacementState::Available,
+            }
+        }
+
+        let query = [1.0, 0.0];
+        let scorer =
+            SpirePreparedAssignmentScorer::prepare(SpireAssignmentPayloadFormat::RaBitQ, 2, &query)
+                .unwrap();
+        let summaries = vec![
+            rabitq_summary(0, &[1.0, 0.0], 0.0),
+            rabitq_summary(2, &[0.0, 0.0], 2.0),
+        ];
+        let placement = placement(11);
+        let mut observer = SpireNoopRoutedScanObserver;
+
+        let ranges_by_leaf = select_global_leaf_block_row_ranges(
+            [(11, &placement, summaries.as_slice())],
+            1,
+            &scorer,
+            7,
+            &mut observer,
+        )
+        .unwrap()
+        .unwrap();
+
+        assert_eq!(
+            ranges_by_leaf.get(&11),
+            Some(&vec![SpireLeafBlockRowRange {
+                row_base: 2,
+                row_end: 4,
+            }])
+        );
+    }
+
+    #[test]
     fn leaf_block_sample_score_preserves_summary_floor() {
         assert_eq!(
             blend_leaf_block_summary_sample_score(1.0, Some(-1.0), 0.8),
