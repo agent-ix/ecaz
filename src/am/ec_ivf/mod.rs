@@ -2,6 +2,7 @@
 
 mod admin;
 mod build;
+mod build_parallel;
 mod cost;
 mod insert;
 mod options;
@@ -63,6 +64,9 @@ pub(super) const P_NEW: pgrx::pg_sys::BlockNumber = u32::MAX;
 pub(crate) fn register_gucs() {
     options::register_gucs();
 }
+
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) use self::build::debug_last_build_timing;
 
 fn not_implemented(callback: &str) -> ! {
     pgrx::error!("ec_ivf {callback} is not implemented yet")

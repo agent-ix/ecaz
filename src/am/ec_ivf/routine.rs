@@ -26,7 +26,7 @@ fn build_ec_ivf_routine() -> IndexAmRoutineBox {
     amroutine.amclusterable = false;
     amroutine.ampredlocks = false;
     amroutine.amcanparallel = false;
-    amroutine.amcanbuildparallel = false;
+    amroutine.amcanbuildparallel = true;
     amroutine.amcaninclude = false;
     amroutine.amusemaintenanceworkmem = true;
     amroutine.amsummarizing = false;
