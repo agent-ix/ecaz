@@ -493,12 +493,30 @@ fn build_leaf_block_summaries(
         for value in &mut mean {
             *value *= inv;
         }
+        let mut summary_gamma = 0.0_f32;
+        if payload_format == SpireAssignmentPayloadFormat::RaBitQ {
+            for source_vector in block_vectors {
+                let residual_l2 = source_vector
+                    .iter()
+                    .zip(mean.iter())
+                    .map(|(value, mean_value)| {
+                        let residual = value - mean_value;
+                        residual * residual
+                    })
+                    .sum::<f32>()
+                    .sqrt();
+                summary_gamma = summary_gamma.max(residual_l2);
+            }
+        }
         let (gamma, encoded_payload) = quantizer::encode_assignment_payload(payload_format, &mean)?;
+        if payload_format != SpireAssignmentPayloadFormat::RaBitQ {
+            summary_gamma = gamma;
+        }
         summaries.push(SpireLeafBlockSummary {
             row_base,
             row_count,
             payload_format: payload_format.tag(),
-            gamma,
+            gamma: summary_gamma,
             encoded_payload,
         });
     }

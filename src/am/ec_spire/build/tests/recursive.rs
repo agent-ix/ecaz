@@ -127,7 +127,8 @@
                 SpireAssignmentPayloadFormat::RaBitQ.tag()
             ]
         );
-        assert!(summaries.iter().all(|summary| summary.gamma == 0.0));
+        assert!((summaries[0].gamma - 0.25).abs() < 1.0e-6);
+        assert_eq!(summaries[1].gamma, 0.0);
         assert!(summaries
             .iter()
             .all(|summary| !summary.encoded_payload.is_empty()));

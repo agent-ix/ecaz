@@ -637,11 +637,11 @@ fn select_leaf_block_row_ranges(
             .row_base
             .checked_add(summary.row_count)
             .ok_or_else(|| "ec_spire leaf V3 summary row range overflow".to_owned())?;
-        let ip = scorer.score_payload_ip(
-            summary_format,
-            summary.gamma,
-            &summary.encoded_payload,
-        )?;
+        if summary.gamma < 0.0 {
+            return Err("ec_spire leaf V3 RaBitQ summary radius must be non-negative".to_owned());
+        }
+        let mean_ip = scorer.score_payload_ip(summary_format, 0.0, &summary.encoded_payload)?;
+        let ip = mean_ip + scorer.query_l2_norm() * summary.gamma;
         if !ip.is_finite() {
             return Err(
                 "ec_spire leaf V3 summary scorer returned a non-finite score".to_owned(),

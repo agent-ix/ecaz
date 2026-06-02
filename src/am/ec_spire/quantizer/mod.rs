@@ -41,11 +41,13 @@ impl SpireAssignmentPayloadFormat {
 pub(super) enum SpirePreparedAssignmentScorer {
     TurboQuant {
         dimensions: usize,
+        query_l2_norm: f32,
         quantizer: Arc<ProdQuantizer>,
         prepared: PreparedQuery,
     },
     RaBitQ {
         dimensions: usize,
+        query_l2_norm: f32,
         prepared: PreparedEstimator,
     },
 }
@@ -57,6 +59,11 @@ impl SpirePreparedAssignmentScorer {
         query_vector: &[f32],
     ) -> Result<Self, String> {
         validate_vector_shape("query", dimensions, query_vector)?;
+        let query_l2_norm = query_vector
+            .iter()
+            .map(|value| value * value)
+            .sum::<f32>()
+            .sqrt();
         match payload_format {
             SpireAssignmentPayloadFormat::TurboQuant => {
                 let quantizer = ProdQuantizer::cached(
@@ -67,6 +74,7 @@ impl SpirePreparedAssignmentScorer {
                 let prepared = quantizer.prepare_ip_query(query_vector);
                 Ok(Self::TurboQuant {
                     dimensions,
+                    query_l2_norm,
                     quantizer,
                     prepared,
                 })
@@ -80,6 +88,7 @@ impl SpirePreparedAssignmentScorer {
                 let prepared = quantizer.prepare_estimator(query_vector);
                 Ok(Self::RaBitQ {
                     dimensions,
+                    query_l2_norm,
                     prepared,
                 })
             }
@@ -99,6 +108,14 @@ impl SpirePreparedAssignmentScorer {
     pub(super) fn dimensions(&self) -> usize {
         match self {
             Self::TurboQuant { dimensions, .. } | Self::RaBitQ { dimensions, .. } => *dimensions,
+        }
+    }
+
+    pub(super) fn query_l2_norm(&self) -> f32 {
+        match self {
+            Self::TurboQuant { query_l2_norm, .. } | Self::RaBitQ { query_l2_norm, .. } => {
+                *query_l2_norm
+            }
         }
     }
 
@@ -155,6 +172,7 @@ impl SpirePreparedAssignmentScorer {
                 dimensions,
                 quantizer,
                 prepared,
+                ..
             } => {
                 validate_payload_len(*dimensions, payload_format, encoded_payload)?;
                 Ok(quantizer.score_ip_from_parts(prepared, gamma, encoded_payload))
