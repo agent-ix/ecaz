@@ -49,6 +49,7 @@ turboquant_global1152	turboquant	1152	15506227	141.561	153.951	0.9975	comparison
 
 - `cargo test leaf_partition_object_v2_selected_segment_reader_filters_by_row_range --no-default-features --features pg18`: passed.
 - `cargo test global_leaf_block_row_ranges --no-default-features --features pg18`: passed, 4 tests.
+- `cargo clippy --all-targets --no-default-features --features pg18 -- -D warnings`: passed.
 - `cargo fmt --check`: passed with existing stable-rustfmt warnings.
 - Local PG18 install/restart completed; installed backend SHA256 `c7bae4e16804615d8e853b7308d782c5a38741711e62fbcf1a68e73edc645ee8`.
 - `ecaz bench suite audit/status/report` completed for RaBitQ and TurboQuant packet-local suites.

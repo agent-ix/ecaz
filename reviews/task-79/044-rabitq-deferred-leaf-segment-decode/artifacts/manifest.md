@@ -3,6 +3,7 @@
 - head SHA at packet creation: `5aaa88cdfd904a3e0ee91dbfa40e918494d0f8b7`
 - source checkpoint under review: `129a00fab` (`Defer SPIRE leaf segment decoding after block pruning`)
 - later branch-only feedback commit: `5aaa88cdf` (`Reviewer feedback: Task 79/043 route-prior global cap`)
+- packet commit before PG18 clippy addendum: `f6295a34f` (`Add Task 79 deferred leaf segment decode packet`)
 - branch: `task-79-spire-candidate-surface-reduction`
 - task bucket: `reviews/task-79/044-rabitq-deferred-leaf-segment-decode/`
 - timestamp: `2026-06-02T07:42:12-07:00`
@@ -32,6 +33,8 @@
   `script -q -c "cargo test leaf_partition_object_v2_selected_segment_reader_filters_by_row_range --no-default-features --features pg18" reviews/task-79/044-rabitq-deferred-leaf-segment-decode/artifacts/cargo-test-selected-segment-reader.log`
 - scan selector tests:
   `script -q -c "cargo test global_leaf_block_row_ranges --no-default-features --features pg18" reviews/task-79/044-rabitq-deferred-leaf-segment-decode/artifacts/cargo-test-global-block-row-ranges.log`
+- clippy:
+  `script -q -c "cargo clippy --all-targets --no-default-features --features pg18 -- -D warnings" reviews/task-79/044-rabitq-deferred-leaf-segment-decode/artifacts/cargo-clippy-pg18.log`
 - formatting:
   `cargo fmt --check`
 - PG18 install:
@@ -53,6 +56,7 @@
 - `suite-turboquant-comparison.json`: checked-in SuiteConfig for isolated TurboQuant comparison.
 - `artifacts/cargo-test-selected-segment-reader.log`: focused storage test log. Key line: `1 passed; 0 failed`.
 - `artifacts/cargo-test-global-block-row-ranges.log`: focused scan selector test log. Key line: `4 passed; 0 failed`.
+- `artifacts/cargo-clippy-pg18.log`: PG18 clippy log. Key line: `Finished dev profile`.
 - `artifacts/install-deferred-segments-ecaz-pg18.log`: local PG18 install log. Key line: `sha256=c7bae4e16804615d8e853b7308d782c5a38741711e62fbcf1a68e73edc645ee8`.
 - `artifacts/pg18-restart-deferred-segments.log`: local PG18 restart log.
 - `artifacts/precheck-existing-task79-k3-index.log`: RaBitQ corpus/query/index precheck. Key lines: `corpus_rows=100000`, `query_rows=1000`, `task79_surface_100k_idx`.
