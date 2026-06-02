@@ -12,6 +12,7 @@ pub(super) struct SpireLeafPartitionObjectV2Meta {
     pub(super) summary_count: u32,
     pub(super) first_summary_segment_locator: ItemPointer,
     pub(super) summary_bytes_total: u64,
+    pub(super) summary_representative_count: u16,
 }
 
 impl SpireLeafPartitionObjectV2Meta {
@@ -52,6 +53,7 @@ impl SpireLeafPartitionObjectV2Meta {
             summary_count: 0,
             first_summary_segment_locator: ItemPointer::INVALID,
             summary_bytes_total: 0,
+            summary_representative_count: 0,
         };
         meta.validate()?;
         Ok(meta)
@@ -76,6 +78,47 @@ impl SpireLeafPartitionObjectV2Meta {
         summary_bytes_total: u64,
         published_epoch_backref: u64,
     ) -> Result<Self, String> {
+        Self::new_v3_with_summary_representatives(
+            pid,
+            object_version,
+            parent_pid,
+            assignment_count,
+            payload_format,
+            payload_stride,
+            vec_id_kind,
+            vec_id_stride,
+            segment_count,
+            first_segment_locator,
+            object_bytes_total,
+            summary_block_rows,
+            summary_count,
+            first_summary_segment_locator,
+            summary_bytes_total,
+            published_epoch_backref,
+            1,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn new_v3_with_summary_representatives(
+        pid: u64,
+        object_version: u64,
+        parent_pid: u64,
+        assignment_count: u32,
+        payload_format: u8,
+        payload_stride: u32,
+        vec_id_kind: SpireVecIdKind,
+        vec_id_stride: u16,
+        segment_count: u32,
+        first_segment_locator: ItemPointer,
+        object_bytes_total: u64,
+        summary_block_rows: u32,
+        summary_count: u32,
+        first_summary_segment_locator: ItemPointer,
+        summary_bytes_total: u64,
+        published_epoch_backref: u64,
+        summary_representative_count: u16,
+    ) -> Result<Self, String> {
         let meta = Self {
             header: SpirePartitionObjectHeader {
                 kind: SpirePartitionObjectKind::Leaf,
@@ -99,6 +142,7 @@ impl SpireLeafPartitionObjectV2Meta {
             summary_count,
             first_summary_segment_locator,
             summary_bytes_total,
+            summary_representative_count,
         };
         meta.validate()?;
         Ok(meta)
@@ -108,16 +152,39 @@ impl SpireLeafPartitionObjectV2Meta {
         self.summary_count > 0
     }
 
-    fn encode(&self) -> Result<Vec<u8>, String> {
-        self.validate()?;
-        let format_version = if self.has_block_summaries() {
+    pub(super) fn summary_payload_stride(&self) -> Result<usize, String> {
+        let payload_stride = usize::try_from(self.payload_stride)
+            .map_err(|_| "ec_spire leaf V3 payload stride exceeds usize".to_owned())?;
+        payload_stride
+            .checked_mul(usize::from(self.summary_representative_count.max(1)))
+            .ok_or_else(|| "ec_spire leaf V4 summary payload stride overflow".to_owned())
+    }
+
+    pub(super) fn encoded_meta_body_bytes(&self) -> usize {
+        if self.has_block_summaries() && self.summary_representative_count > 1 {
+            LEAF_V4_META_BODY_BYTES
+        } else if self.has_block_summaries() {
+            LEAF_V3_META_BODY_BYTES
+        } else {
+            LEAF_V2_META_BODY_BYTES
+        }
+    }
+
+    fn summary_format_version(&self) -> u16 {
+        if self.has_block_summaries() && self.summary_representative_count > 1 {
+            PARTITION_OBJECT_FORMAT_VERSION_V4
+        } else if self.has_block_summaries() {
             PARTITION_OBJECT_FORMAT_VERSION_V3
         } else {
             PARTITION_OBJECT_FORMAT_VERSION_V2
-        };
+        }
+    }
+
+    fn encode(&self) -> Result<Vec<u8>, String> {
+        self.validate()?;
         let mut out = self
             .header
-            .encode_after_validation(format_version);
+            .encode_after_validation(self.summary_format_version());
         out.push(self.payload_format);
         out.push(self.vec_id_kind as u8);
         out.extend_from_slice(&0_u16.to_le_bytes());
@@ -132,9 +199,13 @@ impl SpireLeafPartitionObjectV2Meta {
             out.extend_from_slice(&self.summary_count.to_le_bytes());
             self.first_summary_segment_locator.encode_into(&mut out);
             out.extend_from_slice(&self.summary_bytes_total.to_le_bytes());
+            if self.summary_representative_count > 1 {
+                out.extend_from_slice(&self.summary_representative_count.to_le_bytes());
+                out.extend_from_slice(&0_u16.to_le_bytes());
+            }
             debug_assert_eq!(
                 out.len(),
-                PARTITION_OBJECT_HEADER_BYTES + LEAF_V3_META_BODY_BYTES
+                PARTITION_OBJECT_HEADER_BYTES + self.encoded_meta_body_bytes()
             );
         } else {
             debug_assert_eq!(
@@ -151,9 +222,10 @@ impl SpireLeafPartitionObjectV2Meta {
         let expected_tail_len = match format_version {
             PARTITION_OBJECT_FORMAT_VERSION_V2 => LEAF_V2_META_BODY_BYTES,
             PARTITION_OBJECT_FORMAT_VERSION_V3 => LEAF_V3_META_BODY_BYTES,
+            PARTITION_OBJECT_FORMAT_VERSION_V4 => LEAF_V4_META_BODY_BYTES,
             other => {
                 return Err(format!(
-                    "ec_spire leaf V2/V3 meta format version must be 2 or 3, got {other}"
+                    "ec_spire leaf V2/V3/V4 meta format version must be 2, 3, or 4, got {other}"
                 ));
             }
         };
@@ -181,7 +253,9 @@ impl SpireLeafPartitionObjectV2Meta {
             summary_count,
             first_summary_segment_locator,
             summary_bytes_total,
-        ) = if format_version == PARTITION_OBJECT_FORMAT_VERSION_V3 {
+        ) = if format_version == PARTITION_OBJECT_FORMAT_VERSION_V3
+            || format_version == PARTITION_OBJECT_FORMAT_VERSION_V4
+        {
             (
                 u32::from_le_bytes(tail[30..34].try_into().expect("summary block rows")),
                 u32::from_le_bytes(tail[34..38].try_into().expect("summary count")),
@@ -190,6 +264,22 @@ impl SpireLeafPartitionObjectV2Meta {
             )
         } else {
             (0, 0, ItemPointer::INVALID, 0)
+        };
+        let summary_representative_count = if format_version == PARTITION_OBJECT_FORMAT_VERSION_V4
+        {
+            let representative_count =
+                u16::from_le_bytes(tail[52..54].try_into().expect("summary reps"));
+            let reserved = u16::from_le_bytes(tail[54..56].try_into().expect("V4 reserved"));
+            if reserved != 0 {
+                return Err(format!(
+                    "ec_spire leaf V4 meta reserved bytes must be zero, got {reserved}"
+                ));
+            }
+            representative_count
+        } else if summary_count > 0 {
+            1
+        } else {
+            0
         };
         let meta = Self {
             header,
@@ -206,6 +296,7 @@ impl SpireLeafPartitionObjectV2Meta {
             summary_count,
             first_summary_segment_locator,
             summary_bytes_total,
+            summary_representative_count,
         };
         meta.validate()?;
         Ok(meta)
@@ -226,6 +317,12 @@ impl SpireLeafPartitionObjectV2Meta {
             if self.summary_block_rows != 0 {
                 return Err(
                     "ec_spire leaf V3 meta without summaries must use summary_block_rows 0"
+                        .to_owned(),
+                );
+            }
+            if self.summary_representative_count != 0 {
+                return Err(
+                    "ec_spire leaf V4 meta without summaries must use representative count 0"
                         .to_owned(),
                 );
             }
@@ -259,6 +356,17 @@ impl SpireLeafPartitionObjectV2Meta {
             }
             if self.summary_bytes_total == 0 {
                 return Err("ec_spire leaf V3 summary_bytes_total 0 is invalid".to_owned());
+            }
+            if self.summary_representative_count == 0 {
+                return Err(
+                    "ec_spire leaf V4 summaries require representative count > 0".to_owned(),
+                );
+            }
+            if self.summary_representative_count > 8 {
+                return Err(format!(
+                    "ec_spire leaf V4 summary representative count {} exceeds 8",
+                    self.summary_representative_count
+                ));
             }
         }
         match self.vec_id_kind {
@@ -610,6 +718,7 @@ pub(super) struct SpireLeafPartitionObjectV3SummarySegment {
     pub(super) segment_no: u32,
     pub(super) summary_base: u32,
     pub(super) next_segment_locator: ItemPointer,
+    pub(super) representative_count: u16,
     pub(super) row_bases: Vec<u32>,
     pub(super) row_counts: Vec<u32>,
     pub(super) gammas: Vec<f32>,
@@ -629,8 +738,8 @@ impl SpireLeafPartitionObjectV3SummarySegment {
         let mut row_bases = Vec::with_capacity(summaries.len());
         let mut row_counts = Vec::with_capacity(summaries.len());
         let mut gammas = Vec::with_capacity(summaries.len());
-        let mut payloads =
-            Vec::with_capacity(usize::try_from(meta.payload_stride).unwrap_or(0) * summaries.len());
+        let summary_payload_stride = meta.summary_payload_stride()?;
+        let mut payloads = Vec::with_capacity(summary_payload_stride * summaries.len());
         for summary in summaries {
             validate_leaf_block_summary(meta, summary)?;
             row_bases.push(summary.row_base);
@@ -654,6 +763,7 @@ impl SpireLeafPartitionObjectV3SummarySegment {
             segment_no,
             summary_base,
             next_segment_locator,
+            representative_count: meta.summary_representative_count,
             row_bases,
             row_counts,
             gammas,
@@ -670,8 +780,7 @@ impl SpireLeafPartitionObjectV3SummarySegment {
         self.validate_against_meta(meta)?;
         let summary_count = usize::try_from(self.header.assignment_count)
             .map_err(|_| "ec_spire leaf V3 summary segment count exceeds usize".to_owned())?;
-        let payload_stride = usize::try_from(meta.payload_stride)
-            .map_err(|_| "ec_spire leaf V3 summary payload stride exceeds usize".to_owned())?;
+        let payload_stride = meta.summary_payload_stride()?;
         let mut summaries = Vec::with_capacity(summary_count);
         for summary_offset in 0..summary_count {
             let payload_start = summary_offset
@@ -693,13 +802,20 @@ impl SpireLeafPartitionObjectV3SummarySegment {
 
     fn encode(&self, meta: &SpireLeafPartitionObjectV2Meta) -> Result<Vec<u8>, String> {
         self.validate_against_meta(meta)?;
-        let mut out = self
-            .header
-            .encode_after_validation(PARTITION_OBJECT_FORMAT_VERSION_V3);
+        let format_version = if self.representative_count > 1 {
+            PARTITION_OBJECT_FORMAT_VERSION_V4
+        } else {
+            PARTITION_OBJECT_FORMAT_VERSION_V3
+        };
+        let mut out = self.header.encode_after_validation(format_version);
         out.extend_from_slice(&self.segment_no.to_le_bytes());
         out.extend_from_slice(&self.summary_base.to_le_bytes());
         out.extend_from_slice(&self.header.assignment_count.to_le_bytes());
         self.next_segment_locator.encode_into(&mut out);
+        if self.representative_count > 1 {
+            out.extend_from_slice(&self.representative_count.to_le_bytes());
+            out.extend_from_slice(&0_u16.to_le_bytes());
+        }
         for row_base in &self.row_bases {
             out.extend_from_slice(&row_base.to_le_bytes());
         }
@@ -716,16 +832,25 @@ impl SpireLeafPartitionObjectV3SummarySegment {
     fn decode(input: &[u8], meta: &SpireLeafPartitionObjectV2Meta) -> Result<Self, String> {
         let (header, format_version, tail) =
             SpirePartitionObjectHeader::decode_prefix_with_format_version(input)?;
-        if format_version != PARTITION_OBJECT_FORMAT_VERSION_V3 {
+        if format_version != PARTITION_OBJECT_FORMAT_VERSION_V3
+            && format_version != PARTITION_OBJECT_FORMAT_VERSION_V4
+        {
             return Err(format!(
-                "ec_spire leaf V3 summary segment format version must be 3, got {format_version}"
+                "ec_spire leaf V3/V4 summary segment format version must be 3 or 4, got {format_version}"
             ));
         }
-        if tail.len() < LEAF_V3_SUMMARY_SEGMENT_PREFIX_BYTES {
+        let prefix_bytes = if format_version == PARTITION_OBJECT_FORMAT_VERSION_V4 {
+            LEAF_V3_SUMMARY_SEGMENT_PREFIX_BYTES
+                .checked_add(LEAF_V4_SUMMARY_SEGMENT_REPRESENTATIVE_PREFIX_BYTES)
+                .ok_or_else(|| "ec_spire leaf V4 summary segment prefix overflow".to_owned())?
+        } else {
+            LEAF_V3_SUMMARY_SEGMENT_PREFIX_BYTES
+        };
+        if tail.len() < prefix_bytes {
             return Err(format!(
                 "ec_spire leaf V3 summary segment too short: got {}, expected at least {}",
                 tail.len(),
-                LEAF_V3_SUMMARY_SEGMENT_PREFIX_BYTES
+                prefix_bytes
             ));
         }
         let segment_no = u32::from_le_bytes(tail[0..4].try_into().expect("segment no"));
@@ -738,6 +863,19 @@ impl SpireLeafPartitionObjectV3SummarySegment {
                 header.assignment_count
             ));
         }
+        let representative_count = if format_version == PARTITION_OBJECT_FORMAT_VERSION_V4 {
+            let representative_count =
+                u16::from_le_bytes(tail[18..20].try_into().expect("representative count"));
+            let reserved = u16::from_le_bytes(tail[20..22].try_into().expect("V4 reserved"));
+            if reserved != 0 {
+                return Err(format!(
+                    "ec_spire leaf V4 summary segment reserved bytes must be zero, got {reserved}"
+                ));
+            }
+            representative_count
+        } else {
+            1
+        };
 
         let summary_count_usize = usize::try_from(summary_count)
             .map_err(|_| "ec_spire leaf V3 summary count exceeds usize".to_owned())?;
@@ -751,12 +889,9 @@ impl SpireLeafPartitionObjectV3SummarySegment {
             .checked_mul(size_of::<f32>())
             .ok_or_else(|| "ec_spire leaf V3 gamma byte length overflow".to_owned())?;
         let payload_bytes = summary_count_usize
-            .checked_mul(
-                usize::try_from(meta.payload_stride)
-                    .map_err(|_| "ec_spire leaf V3 payload stride exceeds usize".to_owned())?,
-            )
+            .checked_mul(meta.summary_payload_stride()?)
             .ok_or_else(|| "ec_spire leaf V3 payload byte length overflow".to_owned())?;
-        let expected_tail_len = LEAF_V3_SUMMARY_SEGMENT_PREFIX_BYTES
+        let expected_tail_len = prefix_bytes
             .checked_add(row_bases_bytes)
             .and_then(|len| len.checked_add(row_counts_bytes))
             .and_then(|len| len.checked_add(gamma_bytes))
@@ -769,7 +904,7 @@ impl SpireLeafPartitionObjectV3SummarySegment {
             ));
         }
 
-        let mut cursor = LEAF_V3_SUMMARY_SEGMENT_PREFIX_BYTES;
+        let mut cursor = prefix_bytes;
         let mut row_bases = Vec::with_capacity(summary_count_usize);
         for chunk in tail[cursor..cursor + row_bases_bytes].chunks_exact(size_of::<u32>()) {
             row_bases.push(u32::from_le_bytes(chunk.try_into().expect("row_base bytes")));
@@ -796,6 +931,7 @@ impl SpireLeafPartitionObjectV3SummarySegment {
             segment_no,
             summary_base,
             next_segment_locator,
+            representative_count,
             row_bases,
             row_counts,
             gammas,
@@ -814,6 +950,12 @@ impl SpireLeafPartitionObjectV3SummarySegment {
             return Err("ec_spire leaf V3 summary segment header does not match meta".to_owned());
         }
         validate_leaf_v2_locator(self.next_segment_locator, "next summary segment")?;
+        if self.representative_count != meta.summary_representative_count {
+            return Err(format!(
+                "ec_spire leaf V4 summary representative count mismatch: segment {}, meta {}",
+                self.representative_count, meta.summary_representative_count
+            ));
+        }
         let summary_count = usize::try_from(self.header.assignment_count)
             .map_err(|_| "ec_spire leaf V3 summary segment count exceeds usize".to_owned())?;
         if summary_count == 0 {
@@ -841,10 +983,7 @@ impl SpireLeafPartitionObjectV3SummarySegment {
             return Err("ec_spire leaf V3 summary gamma must be finite".to_owned());
         }
         let expected_payload_bytes = summary_count
-            .checked_mul(
-                usize::try_from(meta.payload_stride)
-                    .map_err(|_| "ec_spire leaf V3 payload stride exceeds usize".to_owned())?,
-            )
+            .checked_mul(meta.summary_payload_stride()?)
             .ok_or_else(|| "ec_spire leaf V3 summary payload length overflow".to_owned())?;
         if self.payloads.len() != expected_payload_bytes {
             return Err(format!(
@@ -897,14 +1036,55 @@ fn validate_leaf_block_summary(
     if !summary.gamma.is_finite() {
         return Err("ec_spire leaf V3 summary gamma must be finite".to_owned());
     }
-    if summary.encoded_payload.len() != meta.payload_stride as usize {
+    let summary_payload_stride = meta.summary_payload_stride()?;
+    if summary.encoded_payload.len() != summary_payload_stride {
         return Err(format!(
             "ec_spire leaf V3 summary payload stride mismatch: got {}, expected {}",
             summary.encoded_payload.len(),
-            meta.payload_stride
+            summary_payload_stride
         ));
     }
     Ok(())
+}
+
+pub(super) fn leaf_block_summary_representative_count(
+    summaries: &[SpireLeafBlockSummary],
+    payload_stride: usize,
+) -> Result<u16, String> {
+    if summaries.is_empty() {
+        return Ok(0);
+    }
+    if payload_stride == 0 {
+        return Err("ec_spire leaf V4 summary representative payload stride 0".to_owned());
+    }
+    let mut representative_count = None;
+    for summary in summaries {
+        if summary.encoded_payload.is_empty() || summary.encoded_payload.len() % payload_stride != 0
+        {
+            return Err(format!(
+                "ec_spire leaf V4 summary payload length {} is not a positive multiple of stride {payload_stride}",
+                summary.encoded_payload.len()
+            ));
+        }
+        let count = summary.encoded_payload.len() / payload_stride;
+        if count > 8 {
+            return Err(format!(
+                "ec_spire leaf V4 summary representative count {count} exceeds 8"
+            ));
+        }
+        match representative_count {
+            Some(expected) if expected != count => {
+                return Err(format!(
+                    "ec_spire leaf V4 summary representative count mismatch: got {count}, expected {expected}"
+                ));
+            }
+            Some(_) => {}
+            None => representative_count = Some(count),
+        }
+    }
+    let count = representative_count.unwrap_or(0);
+    u16::try_from(count)
+        .map_err(|_| "ec_spire leaf V4 summary representative count exceeds u16".to_owned())
 }
 
 fn validate_leaf_block_summary_coverage(

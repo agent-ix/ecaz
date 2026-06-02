@@ -571,6 +571,99 @@ fn leaf_block_layout_inner_product(left: &[f32], right: &[f32]) -> Result<f32, S
     Ok(left.iter().zip(right.iter()).map(|(left, right)| left * right).sum())
 }
 
+fn leaf_block_mean(block_vectors: &[Vec<f32>], dimensions: usize) -> Vec<f32> {
+    let mut mean = vec![0.0_f32; dimensions];
+    for source_vector in block_vectors {
+        for (accum, value) in mean.iter_mut().zip(source_vector.iter()) {
+            *accum += *value;
+        }
+    }
+    let inv = 1.0_f32 / block_vectors.len() as f32;
+    for value in &mut mean {
+        *value *= inv;
+    }
+    mean
+}
+
+fn leaf_block_l2_squared(left: &[f32], right: &[f32]) -> f32 {
+    left.iter()
+        .zip(right.iter())
+        .map(|(left, right)| {
+            let residual = left - right;
+            residual * residual
+        })
+        .sum()
+}
+
+fn leaf_block_farthest_vector<'a>(
+    block_vectors: &'a [Vec<f32>],
+    center: &[f32],
+) -> &'a [f32] {
+    block_vectors
+        .iter()
+        .max_by(|left, right| {
+            leaf_block_l2_squared(left, center)
+                .partial_cmp(&leaf_block_l2_squared(right, center))
+                .unwrap_or(Ordering::Equal)
+        })
+        .expect("leaf block representative needs at least one vector")
+        .as_slice()
+}
+
+fn rabitq_leaf_block_representatives(
+    block_vectors: &[Vec<f32>],
+    dimensions: usize,
+) -> Vec<Vec<f32>> {
+    if block_vectors.len() == 1 {
+        let representative = block_vectors[0].clone();
+        return vec![representative.clone(), representative];
+    }
+
+    let mean = leaf_block_mean(block_vectors, dimensions);
+    let first = leaf_block_farthest_vector(block_vectors, &mean);
+    let second = leaf_block_farthest_vector(block_vectors, first);
+    if leaf_block_l2_squared(first, second) == 0.0 {
+        return vec![mean.clone(), mean];
+    }
+
+    let mut accumulators = vec![vec![0.0_f32; dimensions], vec![0.0_f32; dimensions]];
+    let mut counts = [0_usize; 2];
+    for source_vector in block_vectors {
+        let first_dist = leaf_block_l2_squared(source_vector, first);
+        let second_dist = leaf_block_l2_squared(source_vector, second);
+        let bucket = usize::from(second_dist < first_dist);
+        counts[bucket] += 1;
+        for (accum, value) in accumulators[bucket].iter_mut().zip(source_vector.iter()) {
+            *accum += *value;
+        }
+    }
+
+    if counts[0] == 0 || counts[1] == 0 {
+        return vec![mean, first.to_vec()];
+    }
+
+    for (representative, count) in accumulators.iter_mut().zip(counts) {
+        let inv = 1.0_f32 / count as f32;
+        for value in representative {
+            *value *= inv;
+        }
+    }
+    accumulators
+}
+
+fn rabitq_leaf_block_covering_radius(block_vectors: &[Vec<f32>], representatives: &[Vec<f32>]) -> f32 {
+    let mut radius = 0.0_f32;
+    for source_vector in block_vectors {
+        let nearest_l2 = representatives
+            .iter()
+            .map(|representative| leaf_block_l2_squared(source_vector, representative))
+            .fold(f32::INFINITY, f32::min)
+            .sqrt();
+        radius = radius.max(nearest_l2);
+    }
+    radius
+}
+
 fn build_leaf_block_summaries(
     rows: &[SpireLeafAssignmentRow],
     source_vectors: &[Vec<f32>],
@@ -627,42 +720,34 @@ fn build_leaf_block_summaries(
             .map_err(|_| "ec_spire leaf summary row_base exceeds u32".to_owned())?;
         let row_count = u32::try_from(block_vectors.len())
             .map_err(|_| "ec_spire leaf summary row_count exceeds u32".to_owned())?;
-        let mut mean = vec![0.0_f32; dimensions];
-        for source_vector in block_vectors {
-            for (accum, value) in mean.iter_mut().zip(source_vector.iter()) {
-                *accum += *value;
-            }
-        }
-        let inv = 1.0_f32 / block_vectors.len() as f32;
-        for value in &mut mean {
-            *value *= inv;
-        }
-        let mut summary_gamma = 0.0_f32;
         if payload_format == SpireAssignmentPayloadFormat::RaBitQ {
-            for source_vector in block_vectors {
-                let residual_l2 = source_vector
-                    .iter()
-                    .zip(mean.iter())
-                    .map(|(value, mean_value)| {
-                        let residual = value - mean_value;
-                        residual * residual
-                    })
-                    .sum::<f32>()
-                    .sqrt();
-                summary_gamma = summary_gamma.max(residual_l2);
+            let representatives = rabitq_leaf_block_representatives(block_vectors, dimensions);
+            let summary_gamma = rabitq_leaf_block_covering_radius(block_vectors, &representatives);
+            let mut encoded_payload = Vec::new();
+            for representative in representatives {
+                let (_gamma, representative_payload) =
+                    quantizer::encode_assignment_payload(payload_format, &representative)?;
+                encoded_payload.extend_from_slice(&representative_payload);
             }
+            summaries.push(SpireLeafBlockSummary {
+                row_base,
+                row_count,
+                payload_format: payload_format.tag(),
+                gamma: summary_gamma,
+                encoded_payload,
+            });
+        } else {
+            let mean = leaf_block_mean(block_vectors, dimensions);
+            let (gamma, encoded_payload) =
+                quantizer::encode_assignment_payload(payload_format, &mean)?;
+            summaries.push(SpireLeafBlockSummary {
+                row_base,
+                row_count,
+                payload_format: payload_format.tag(),
+                gamma,
+                encoded_payload,
+            });
         }
-        let (gamma, encoded_payload) = quantizer::encode_assignment_payload(payload_format, &mean)?;
-        if payload_format != SpireAssignmentPayloadFormat::RaBitQ {
-            summary_gamma = gamma;
-        }
-        summaries.push(SpireLeafBlockSummary {
-            row_base,
-            row_count,
-            payload_format: payload_format.tag(),
-            gamma: summary_gamma,
-            encoded_payload,
-        });
     }
     Ok(summaries)
 }

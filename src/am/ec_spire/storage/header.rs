@@ -31,6 +31,7 @@ impl SpirePartitionObjectHeader {
         if format_version != PARTITION_OBJECT_FORMAT_VERSION_V1
             && format_version != PARTITION_OBJECT_FORMAT_VERSION_V2
             && format_version != PARTITION_OBJECT_FORMAT_VERSION_V3
+            && format_version != PARTITION_OBJECT_FORMAT_VERSION_V4
         {
             return Err(format!(
                 "ec_spire unsupported partition object format version: {format_version}"
@@ -85,6 +86,7 @@ impl SpirePartitionObjectHeader {
         if format_version != PARTITION_OBJECT_FORMAT_VERSION_V1
             && format_version != PARTITION_OBJECT_FORMAT_VERSION_V2
             && format_version != PARTITION_OBJECT_FORMAT_VERSION_V3
+            && format_version != PARTITION_OBJECT_FORMAT_VERSION_V4
         {
             return Err(format!(
                 "ec_spire unsupported partition object format version: {format_version}"

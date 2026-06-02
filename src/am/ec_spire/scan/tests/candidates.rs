@@ -258,6 +258,43 @@
     }
 
     #[test]
+    fn leaf_block_summary_scores_best_representative_payload() {
+        let (_gamma, weak_payload) =
+            encode_assignment_payload(SpireAssignmentPayloadFormat::RaBitQ, &[0.0, 1.0]).unwrap();
+        let (_gamma, strong_payload) =
+            encode_assignment_payload(SpireAssignmentPayloadFormat::RaBitQ, &[1.0, 0.0]).unwrap();
+        let mut multi_payload = weak_payload.clone();
+        multi_payload.extend_from_slice(&strong_payload);
+        let multi_summary = SpireLeafBlockSummary {
+            row_base: 0,
+            row_count: 2,
+            payload_format: SpireAssignmentPayloadFormat::RaBitQ.tag(),
+            gamma: 0.0,
+            encoded_payload: multi_payload,
+        };
+        let weak_summary = SpireLeafBlockSummary {
+            row_base: 0,
+            row_count: 2,
+            payload_format: SpireAssignmentPayloadFormat::RaBitQ.tag(),
+            gamma: 0.0,
+            encoded_payload: weak_payload,
+        };
+        let scorer = SpirePreparedAssignmentScorer::prepare(
+            SpireAssignmentPayloadFormat::RaBitQ,
+            2,
+            &[1.0, 0.0],
+        )
+        .unwrap();
+
+        let multi_ip =
+            score_leaf_block_summary_ip_with_radius_weight(&multi_summary, &scorer, 0.0).unwrap();
+        let weak_ip =
+            score_leaf_block_summary_ip_with_radius_weight(&weak_summary, &scorer, 0.0).unwrap();
+
+        assert!(multi_ip > weak_ip);
+    }
+
+    #[test]
     fn select_global_leaf_block_row_ranges_spends_budget_across_leaves() {
         fn rabitq_summary(row_base: u32, source_vector: &[f32]) -> SpireLeafBlockSummary {
             let (gamma, encoded_payload) =

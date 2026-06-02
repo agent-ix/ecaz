@@ -340,14 +340,25 @@ fn leaf_v2_max_segment_rows(
 fn leaf_v3_max_summary_segment_summaries(
     page_size: usize,
     payload_stride: usize,
+    representative_count: usize,
 ) -> Result<usize, String> {
+    let summary_payload_stride = payload_stride
+        .checked_mul(representative_count.max(1))
+        .ok_or_else(|| "ec_spire leaf V4 summary payload stride overflow".to_owned())?;
     let summary_bytes = size_of::<u32>()
         .checked_add(size_of::<u32>())
         .and_then(|len| len.checked_add(size_of::<f32>()))
-        .and_then(|len| len.checked_add(payload_stride))
+        .and_then(|len| len.checked_add(summary_payload_stride))
         .ok_or_else(|| "ec_spire leaf V3 summary byte length overflow".to_owned())?;
     let fixed_bytes = PARTITION_OBJECT_HEADER_BYTES
         .checked_add(LEAF_V3_SUMMARY_SEGMENT_PREFIX_BYTES)
+        .and_then(|len| {
+            if representative_count > 1 {
+                len.checked_add(LEAF_V4_SUMMARY_SEGMENT_REPRESENTATIVE_PREFIX_BYTES)
+            } else {
+                Some(len)
+            }
+        })
         .ok_or_else(|| "ec_spire leaf V3 summary segment fixed byte length overflow".to_owned())?;
     let usable_bytes = usable_page_bytes(page_size);
     if fixed_bytes >= usable_bytes {

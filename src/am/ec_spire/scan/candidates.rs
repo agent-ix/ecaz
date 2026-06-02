@@ -1212,11 +1212,22 @@ fn score_leaf_block_summary_ip_with_radius_weight(
     if summary_format == SpireAssignmentPayloadFormat::RaBitQ && summary.gamma < 0.0 {
         return Err("ec_spire leaf V3 RaBitQ summary radius must be non-negative".to_owned());
     }
-    let mean_ip = scorer.score_payload_ip(summary_format, 0.0, &summary.encoded_payload)?;
+    let payload_stride = scorer.payload_stride()?;
+    if summary.encoded_payload.is_empty() || summary.encoded_payload.len() % payload_stride != 0 {
+        return Err(format!(
+            "ec_spire leaf V3 summary payload length {} is not a positive multiple of scorer stride {payload_stride}",
+            summary.encoded_payload.len()
+        ));
+    }
+    let mut representative_ip = f32::NEG_INFINITY;
+    for payload in summary.encoded_payload.chunks_exact(payload_stride) {
+        representative_ip =
+            representative_ip.max(scorer.score_payload_ip(summary_format, 0.0, payload)?);
+    }
     let ip = if summary_format == SpireAssignmentPayloadFormat::RaBitQ {
-        mean_ip + scorer.query_l2_norm() * summary.gamma * radius_weight as f32
+        representative_ip + scorer.query_l2_norm() * summary.gamma * radius_weight as f32
     } else {
-        mean_ip
+        representative_ip
     };
     if !ip.is_finite() {
         return Err("ec_spire leaf V3 summary scorer returned a non-finite score".to_owned());

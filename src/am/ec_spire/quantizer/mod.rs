@@ -119,6 +119,10 @@ impl SpirePreparedAssignmentScorer {
         }
     }
 
+    pub(super) fn payload_stride(&self) -> Result<usize, String> {
+        expected_payload_len(self.dimensions(), self.payload_format())
+    }
+
     pub(super) fn score_assignment_ip(
         &self,
         assignment: &SpireLeafAssignmentRow,

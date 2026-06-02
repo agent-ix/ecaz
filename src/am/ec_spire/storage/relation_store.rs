@@ -273,13 +273,18 @@ impl SpireRelationObjectStore {
         let summary_count = u32::try_from(summaries.len())
             .map_err(|_| "ec_spire leaf V3 summary count exceeds u32".to_owned())?;
         let layout = leaf_v2_column_layout(assignments)?;
+        let summary_representative_count =
+            leaf_block_summary_representative_count(summaries, layout.payload_stride)?;
         let max_segment_rows = leaf_v2_max_segment_rows(
             pg_sys::BLCKSZ as usize,
             layout.payload_stride,
             layout.vec_id_stride,
         )?;
-        let max_summary_segment_summaries =
-            leaf_v3_max_summary_segment_summaries(pg_sys::BLCKSZ as usize, layout.payload_stride)?;
+        let max_summary_segment_summaries = leaf_v3_max_summary_segment_summaries(
+            pg_sys::BLCKSZ as usize,
+            layout.payload_stride,
+            usize::from(summary_representative_count),
+        )?;
         let segment_count = if assignments.is_empty() {
             0
         } else {
@@ -309,7 +314,7 @@ impl SpireRelationObjectStore {
             block_number: 1,
             offset_number: 1,
         };
-        let provisional_meta = SpireLeafPartitionObjectV2Meta::new_v3(
+        let provisional_meta = SpireLeafPartitionObjectV2Meta::new_v3_with_summary_representatives(
             pid,
             object_version,
             parent_pid,
@@ -328,6 +333,7 @@ impl SpireRelationObjectStore {
             provisional_first_summary_segment,
             1,
             epoch,
+            summary_representative_count,
         )?;
 
         let mut next_segment_locator = ItemPointer::INVALID;
@@ -390,7 +396,7 @@ impl SpireRelationObjectStore {
             next_segment_locator
         };
         let meta_bytes_len = PARTITION_OBJECT_HEADER_BYTES
-            .checked_add(LEAF_V3_META_BODY_BYTES)
+            .checked_add(provisional_meta.encoded_meta_body_bytes())
             .ok_or_else(|| "ec_spire leaf V3 meta byte length overflow".to_owned())?;
         let object_bytes_total = segment_bytes_total
             .checked_add(summary_bytes_total)
@@ -398,7 +404,7 @@ impl SpireRelationObjectStore {
             .ok_or_else(|| "ec_spire leaf V3 object byte length overflow".to_owned())?;
         let object_bytes = u32::try_from(object_bytes_total)
             .map_err(|_| "ec_spire leaf V3 object length exceeds u32".to_owned())?;
-        let meta = SpireLeafPartitionObjectV2Meta::new_v3(
+        let meta = SpireLeafPartitionObjectV2Meta::new_v3_with_summary_representatives(
             pid,
             object_version,
             parent_pid,
@@ -417,6 +423,7 @@ impl SpireRelationObjectStore {
             next_summary_segment_locator,
             summary_bytes_total,
             epoch,
+            summary_representative_count,
         )?;
         validate_leaf_block_summary_coverage(&meta, summaries)?;
         let encoded_meta = meta.encode()?;
@@ -658,7 +665,9 @@ impl SpireRelationObjectStore {
                         ));
                     }
                 }
-                PARTITION_OBJECT_FORMAT_VERSION_V2 | PARTITION_OBJECT_FORMAT_VERSION_V3 => {
+                PARTITION_OBJECT_FORMAT_VERSION_V2
+                | PARTITION_OBJECT_FORMAT_VERSION_V3
+                | PARTITION_OBJECT_FORMAT_VERSION_V4 => {
                     if header.kind == SpirePartitionObjectKind::Leaf
                         && header.flags & LEAF_V2_META_FLAG != 0
                     {

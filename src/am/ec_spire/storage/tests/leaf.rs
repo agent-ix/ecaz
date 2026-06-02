@@ -187,6 +187,38 @@ fn leaf_partition_object_v3_store_round_trips_block_summaries() {
 }
 
 #[test]
+fn leaf_partition_object_v4_store_round_trips_multi_representative_block_summaries() {
+    let mut store = SpireLocalObjectStore::new(99, 512).unwrap();
+    let assignments = (1..=6)
+        .map(|local_vec_seq| leaf_v3_rabitq_assignment(local_vec_seq, 64))
+        .collect::<Vec<_>>();
+    let summaries = vec![
+        leaf_v3_rabitq_summary(0, 3, 128, 9),
+        leaf_v3_rabitq_summary(3, 3, 128, 10),
+    ];
+
+    let placement = store
+        .insert_leaf_object_v3_from_rows_and_summaries(7, 17, 3, 5, &assignments, &summaries, 3)
+        .unwrap();
+    let decoded = store.read_leaf_object_v2(&placement).unwrap();
+    let header = store.read_object_header(&placement).unwrap();
+
+    assert_eq!(header.kind, SpirePartitionObjectKind::Leaf);
+    assert_eq!(header.pid, 17);
+    assert_eq!(header.object_version, 3);
+    assert_eq!(decoded.meta.summary_block_rows, 3);
+    assert_eq!(decoded.meta.summary_count, 2);
+    assert_eq!(decoded.meta.summary_representative_count, 2);
+    assert_ne!(
+        decoded.meta.first_summary_segment_locator,
+        ItemPointer::INVALID
+    );
+    assert!(decoded.meta.summary_bytes_total > 0);
+    assert_eq!(decoded.block_summaries().unwrap(), summaries.as_slice());
+    assert_eq!(decoded.assignment_rows().unwrap(), assignments);
+}
+
+#[test]
 fn leaf_partition_object_v3_store_rejects_summary_coverage_gap() {
     let mut store = SpireLocalObjectStore::new(99, 512).unwrap();
     let assignments = (1..=6)
@@ -754,6 +786,7 @@ fn leaf_v2_test_meta(segment_count: u32, assignment_count: u32) -> SpireLeafPart
         summary_count: 0,
         first_summary_segment_locator: ItemPointer::INVALID,
         summary_bytes_total: 0,
+        summary_representative_count: 0,
     }
 }
 

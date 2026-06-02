@@ -127,7 +127,10 @@
                 SpireAssignmentPayloadFormat::RaBitQ.tag()
             ]
         );
-        assert!((summaries[0].gamma - 0.25).abs() < 1.0e-6);
+        let rabitq_payload_stride = rows[0].encoded_payload.len();
+        assert_eq!(summaries[0].encoded_payload.len(), rabitq_payload_stride * 2);
+        assert_eq!(summaries[1].encoded_payload.len(), rabitq_payload_stride * 2);
+        assert_eq!(summaries[0].gamma, 0.0);
         assert_eq!(summaries[1].gamma, 0.0);
         assert!(summaries
             .iter()
