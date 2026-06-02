@@ -1,0 +1,8 @@
+step	global_blocks	radius_weight	candidates	latency_p50_ms	latency_p95_ms	recall_at_10	returned_sum	gate
+pipeline-100k-rabitq-n128-f8-b0-tg96-block32-multirep-global0-rw0	0	0	15506227	64.024	77.868	0.9975	2000	fail
+pipeline-100k-rabitq-n128-f8-b0-tg96-block32-multirep-global512-rw0	512	0	3210821	42.584	48.468	0.9735	2000	fail
+pipeline-100k-rabitq-n128-f8-b0-tg96-block32-multirep-global512-rw025	512	0.25	3240177	42.714	49.605	0.9795	2000	fail
+pipeline-100k-rabitq-n128-f8-b0-tg96-block32-multirep-global640-rw0	640	0	4015761	45.782	52.330	0.9840	2000	fail
+pipeline-100k-rabitq-n128-f8-b0-tg96-block32-multirep-global640-rw025	640	0.25	4050758	44.852	52.726	0.9870	2000	fail
+pipeline-100k-rabitq-n128-f8-b0-tg96-block32-multirep-global768-rw0	768	0	4820038	46.882	54.576	0.9865	2000	fail
+pipeline-100k-rabitq-n128-f8-b0-tg96-block32-multirep-global768-rw025	768	0.25	4860415	48.670	55.112	0.9905	2000	fail
