@@ -117,6 +117,54 @@ fn leaf_partition_object_v2_store_segments_large_leaf() {
 }
 
 #[test]
+fn leaf_partition_object_v2_selected_segment_reader_filters_by_row_range() {
+    let mut store = SpireLocalObjectStore::new(99, 512).unwrap();
+    let assignments = (1..=13)
+        .map(|local_vec_seq| leaf_v2_assignment(local_vec_seq, 64))
+        .collect::<Vec<_>>();
+
+    let placement = store
+        .insert_leaf_object_v2_from_rows(7, 17, 3, 5, &assignments)
+        .unwrap();
+    let full = store.read_leaf_object_v2(&placement).unwrap();
+    assert!(full.segments.len() > 1);
+
+    let summary_only = store.read_leaf_object_v2_summaries(&placement).unwrap();
+    assert_eq!(summary_only.meta, full.meta);
+    assert!(summary_only.summaries.is_empty());
+
+    let second_segment = &full.segments[1];
+    let second_columns = second_segment.columns(&full.meta).unwrap();
+    let second_row_base = second_columns.row_base;
+    let selected = store
+        .read_leaf_object_v2_segments_for_row_ranges(
+            &placement,
+            &summary_only.meta,
+            Some(&[(second_row_base, second_row_base + 1)]),
+        )
+        .unwrap();
+    assert_eq!(selected, vec![second_segment.clone()]);
+
+    let selected_columns = selected[0].columns(&summary_only.meta).unwrap();
+    let first_selected_row = selected_columns.row(0).unwrap();
+    assert_eq!(first_selected_row.row_index, second_row_base);
+    assert_eq!(
+        first_selected_row.local_vec_seq().unwrap(),
+        u64::from(second_row_base) + 1
+    );
+
+    let empty = store
+        .read_leaf_object_v2_segments_for_row_ranges(&placement, &summary_only.meta, Some(&[]))
+        .unwrap();
+    assert!(empty.is_empty());
+
+    let all = store
+        .read_leaf_object_v2_segments_for_row_ranges(&placement, &summary_only.meta, None)
+        .unwrap();
+    assert_eq!(all, full.segments);
+}
+
+#[test]
 fn leaf_partition_object_v2_store_preserves_empty_leaf_without_segments() {
     let mut store = SpireLocalObjectStore::new(99, 512).unwrap();
 

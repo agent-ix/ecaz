@@ -30,6 +30,37 @@ pub(super) trait SpireObjectReader {
         placement: &SpirePlacementEntry,
     ) -> Result<SpireLeafPartitionObjectV2, String>;
 
+    fn read_leaf_object_v2_summaries(
+        &self,
+        placement: &SpirePlacementEntry,
+    ) -> Result<SpireLeafPartitionObjectV2Summaries, String> {
+        let object = self.read_leaf_object_v2(placement)?;
+        SpireLeafPartitionObjectV2Summaries::new(object.meta, object.summaries)
+    }
+
+    fn read_leaf_object_v2_segments_for_row_ranges(
+        &self,
+        placement: &SpirePlacementEntry,
+        meta: &SpireLeafPartitionObjectV2Meta,
+        selected_row_ranges: Option<&[(u32, u32)]>,
+    ) -> Result<Vec<SpireLeafPartitionObjectV2Segment>, String> {
+        let object = self.read_leaf_object_v2(placement)?;
+        if object.meta != *meta {
+            return Err("ec_spire leaf V2 selected segment read meta mismatch".to_owned());
+        }
+        let mut selected = Vec::new();
+        for segment in object.segments {
+            let row_end = segment
+                .row_base
+                .checked_add(segment.header.assignment_count)
+                .ok_or_else(|| "ec_spire leaf V2 segment row range overflow".to_owned())?;
+            if selected_leaf_row_ranges_intersect(segment.row_base, row_end, selected_row_ranges)? {
+                selected.push(segment);
+            }
+        }
+        Ok(selected)
+    }
+
     fn read_delta_object(
         &self,
         placement: &SpirePlacementEntry,

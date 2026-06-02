@@ -712,6 +712,129 @@ impl SpireLeafPartitionObjectV2Segment {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct SpireLeafPartitionObjectV2SegmentReadHeader {
+    segment_no: u32,
+    row_base: u32,
+    row_count: u32,
+    next_segment_locator: ItemPointer,
+}
+
+impl SpireLeafPartitionObjectV2SegmentReadHeader {
+    fn decode(input: &[u8], meta: &SpireLeafPartitionObjectV2Meta) -> Result<Self, String> {
+        let (header, format_version, tail) =
+            SpirePartitionObjectHeader::decode_prefix_with_format_version(input)?;
+        if format_version != PARTITION_OBJECT_FORMAT_VERSION_V2 {
+            return Err(format!(
+                "ec_spire leaf V2 segment format version must be 2, got {format_version}"
+            ));
+        }
+        if tail.len() < LEAF_V2_SEGMENT_PREFIX_BYTES {
+            return Err(format!(
+                "ec_spire leaf V2 segment too short: got {}, expected at least {}",
+                tail.len(),
+                LEAF_V2_SEGMENT_PREFIX_BYTES
+            ));
+        }
+        validate_leaf_v2_header(&header, LEAF_V2_SEGMENT_FLAG)?;
+        if header.pid != meta.header.pid
+            || header.object_version != meta.header.object_version
+            || header.parent_pid != meta.header.parent_pid
+        {
+            return Err("ec_spire leaf V2 segment header does not match meta".to_owned());
+        }
+
+        let segment_no = u32::from_le_bytes(tail[0..4].try_into().expect("segment no"));
+        let row_base = u32::from_le_bytes(tail[4..8].try_into().expect("row base"));
+        let row_count = u32::from_le_bytes(tail[8..12].try_into().expect("row count"));
+        let next_segment_locator = ItemPointer::decode(&tail[12..18])?;
+        validate_leaf_v2_locator(next_segment_locator, "next segment")?;
+        if header.assignment_count != row_count {
+            return Err(format!(
+                "ec_spire leaf V2 segment row count mismatch: header {}, body {row_count}",
+                header.assignment_count
+            ));
+        }
+        if row_count == 0 {
+            return Err("ec_spire leaf V2 segment row count 0 is invalid".to_owned());
+        }
+        let row_end = row_base
+            .checked_add(row_count)
+            .ok_or_else(|| "ec_spire leaf V2 segment row range overflow".to_owned())?;
+        if row_end > meta.header.assignment_count {
+            return Err(format!(
+                "ec_spire leaf V2 segment row range {row_base}..{row_end} exceeds assignment_count {}",
+                meta.header.assignment_count
+            ));
+        }
+
+        Ok(Self {
+            segment_no,
+            row_base,
+            row_count,
+            next_segment_locator,
+        })
+    }
+
+    fn row_end(&self) -> Result<u32, String> {
+        self.row_base
+            .checked_add(self.row_count)
+            .ok_or_else(|| "ec_spire leaf V2 segment row range overflow".to_owned())
+    }
+}
+
+fn selected_leaf_row_ranges_intersect(
+    row_base: u32,
+    row_end: u32,
+    selected_row_ranges: Option<&[(u32, u32)]>,
+) -> Result<bool, String> {
+    let Some(selected_row_ranges) = selected_row_ranges else {
+        return Ok(true);
+    };
+    for &(selected_base, selected_end) in selected_row_ranges {
+        if selected_end < selected_base {
+            return Err("ec_spire selected leaf V2 row range is invalid".to_owned());
+        }
+        if selected_base < row_end && selected_end > row_base {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+fn validate_leaf_v2_meta_against_placement(
+    meta: &SpireLeafPartitionObjectV2Meta,
+    placement: &SpirePlacementEntry,
+) -> Result<(), String> {
+    if meta.header.pid != placement.pid {
+        return Err(format!(
+            "ec_spire placement pid {} does not match leaf V2 pid {}",
+            placement.pid, meta.header.pid
+        ));
+    }
+    if meta.header.object_version != placement.object_version {
+        return Err(format!(
+            "ec_spire placement object_version {} does not match leaf V2 version {}",
+            placement.object_version, meta.header.object_version
+        ));
+    }
+    if meta.header.published_epoch_backref == 0
+        || meta.header.published_epoch_backref > placement.epoch
+    {
+        return Err(format!(
+            "ec_spire leaf V2 published epoch backref {} is not valid for placement epoch {}",
+            meta.header.published_epoch_backref, placement.epoch
+        ));
+    }
+    if u64::from(placement.object_bytes) != meta.object_bytes_total {
+        return Err(format!(
+            "ec_spire placement object_bytes {} does not match leaf V2 total {}",
+            placement.object_bytes, meta.object_bytes_total
+        ));
+    }
+    Ok(())
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub(super) struct SpireLeafPartitionObjectV3SummarySegment {
     pub(super) header: SpirePartitionObjectHeader,

@@ -111,3 +111,31 @@ impl SpireLeafPartitionObjectV2 {
         Ok(rows)
     }
 }
+
+#[derive(Debug, Clone, PartialEq)]
+pub(super) struct SpireLeafPartitionObjectV2Summaries {
+    pub(super) meta: SpireLeafPartitionObjectV2Meta,
+    pub(super) summaries: Vec<SpireLeafBlockSummary>,
+}
+
+impl SpireLeafPartitionObjectV2Summaries {
+    fn new(
+        meta: SpireLeafPartitionObjectV2Meta,
+        summaries: Vec<SpireLeafBlockSummary>,
+    ) -> Result<Self, String> {
+        let object = Self { meta, summaries };
+        object.validate()?;
+        Ok(object)
+    }
+
+    fn validate(&self) -> Result<(), String> {
+        if self.meta.summary_count == 0 {
+            if !self.summaries.is_empty() {
+                return Err("ec_spire leaf V3 summaries present without meta summary_count".to_owned());
+            }
+        } else {
+            validate_leaf_block_summary_coverage(&self.meta, &self.summaries)?;
+        }
+        Ok(())
+    }
+}

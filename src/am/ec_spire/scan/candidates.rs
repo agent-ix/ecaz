@@ -1623,6 +1623,116 @@ fn read_quantized_v2_leaf_object_for_route(
     Ok(Some(leaf_object))
 }
 
+fn read_quantized_v2_leaf_summaries_for_route(
+    snapshot: &SpireValidatedEpochSnapshot<'_>,
+    object_store: &impl SpireObjectReader,
+    route: SpireLeafObjectReadRoute,
+    observer: &mut impl SpireRoutedScanObserver,
+) -> Result<Option<SpireLeafPartitionObjectV2Summaries>, String> {
+    let leaf_pid = route.leaf_pid;
+    let placement = &route.placement;
+    if should_skip_placement(snapshot.epoch_manifest().consistency_mode, placement.state)? {
+        return Ok(None);
+    }
+
+    let epoch = snapshot.epoch_manifest().epoch;
+    observer.scanned_leaf(epoch, &route.placement);
+    let read_started = observer.wants_candidate_timing().then(Instant::now);
+    let leaf_summaries = object_store
+        .read_leaf_object_v2_summaries(placement)
+        .map_err(|error| {
+            format!(
+                "ec_spire global leaf block pruning requires routed leaf pid {leaf_pid} summaries to be readable as V2/V3/V4: {error}"
+            )
+        })?;
+    if let Some(started) = read_started {
+        observer.leaf_object_read_time(epoch, placement, elapsed_nanos_since(started));
+    }
+    if leaf_summaries.meta.header.parent_pid != route.parent_pid {
+        return Err(format!(
+            "ec_spire quantized routed scan leaf pid {leaf_pid} parent {} does not match expected parent pid {}",
+            leaf_summaries.meta.header.parent_pid,
+            route.parent_pid,
+        ));
+    }
+
+    Ok(Some(leaf_summaries))
+}
+
+fn append_quantized_v2_leaf_summary_route_candidates(
+    snapshot: &SpireValidatedEpochSnapshot<'_>,
+    object_store: &impl SpireObjectReader,
+    leaf_summaries: &SpireLeafPartitionObjectV2Summaries,
+    route: SpireLeafObjectReadRoute,
+    scorer: &SpirePreparedAssignmentScorer,
+    deleted_vec_ids: &HashSet<SpireVecId>,
+    accumulator: &mut SpireScoredCandidateAccumulator,
+    selected_row_ranges: Option<&[SpireLeafBlockRowRange]>,
+    observer: &mut impl SpireRoutedScanObserver,
+) -> Result<(), String> {
+    let storage_row_ranges = selected_row_ranges
+        .map(|ranges| {
+            ranges
+                .iter()
+                .map(|range| (range.row_base, range.row_end))
+                .collect::<Vec<_>>()
+        });
+    let read_started = observer.wants_candidate_timing().then(Instant::now);
+    let segments = object_store.read_leaf_object_v2_segments_for_row_ranges(
+        &route.placement,
+        &leaf_summaries.meta,
+        storage_row_ranges.as_deref(),
+    )?;
+    if let Some(started) = read_started {
+        observer.leaf_object_read_time(
+            snapshot.epoch_manifest().epoch,
+            &route.placement,
+            elapsed_nanos_since(started),
+        );
+    }
+    append_quantized_v2_leaf_segments_candidates(
+        snapshot,
+        &leaf_summaries.meta,
+        &segments,
+        route,
+        scorer,
+        deleted_vec_ids,
+        accumulator,
+        selected_row_ranges,
+        observer,
+    )
+}
+
+fn append_quantized_v2_leaf_segments_candidates(
+    snapshot: &SpireValidatedEpochSnapshot<'_>,
+    meta: &SpireLeafPartitionObjectV2Meta,
+    segments: &[SpireLeafPartitionObjectV2Segment],
+    route: SpireLeafObjectReadRoute,
+    scorer: &SpirePreparedAssignmentScorer,
+    deleted_vec_ids: &HashSet<SpireVecId>,
+    accumulator: &mut SpireScoredCandidateAccumulator,
+    selected_row_ranges: Option<&[SpireLeafBlockRowRange]>,
+    observer: &mut impl SpireRoutedScanObserver,
+) -> Result<(), String> {
+    for segment in segments {
+        let columns = segment.columns(meta)?;
+        append_quantized_v2_column_candidates(
+            snapshot,
+            columns,
+            snapshot.epoch_manifest().epoch,
+            route.leaf_pid,
+            route.object_version,
+            scorer,
+            deleted_vec_ids,
+            accumulator,
+            &route.placement,
+            selected_row_ranges,
+            observer,
+        )?;
+    }
+    Ok(())
+}
+
 fn append_quantized_v2_leaf_candidates(
     snapshot: &SpireValidatedEpochSnapshot<'_>,
     leaf_object: &SpireLeafPartitionObjectV2,
