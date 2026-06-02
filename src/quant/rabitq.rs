@@ -969,6 +969,52 @@ impl PreparedEstimator {
         self.estimate_ip_batch_checked(codes, code_len, out_scores)
     }
 
+    /// Return the maximum IVF-fast estimate for a prevalidated contiguous
+    /// bits=1, bits=4, or bits=8 RaBitQ payload slab.
+    ///
+    /// This keeps small summary slabs on the stack while still using the
+    /// production batch kernels, so callers that only need a max score avoid
+    /// allocating or retaining a per-call `Vec<f32>`.
+    #[inline]
+    pub fn estimate_ip_batch_max_prevalidated(&self, codes: &[u8], code_len: usize) -> f32 {
+        debug_assert!(matches!(self.bits_per_dim, 1 | 4 | 8));
+        debug_assert_eq!(
+            code_len,
+            code_len_for(self.dimensions, self.bits_per_dim)
+                .expect("RaBitQ code length should be valid for prepared dimensions")
+        );
+        debug_assert!(code_len > 0);
+        debug_assert!(!codes.is_empty());
+        debug_assert_eq!(codes.len() % code_len, 0);
+
+        const STACK_SCORE_COUNT: usize = 8;
+
+        let ctx = QueryDequantContext {
+            query_rotated: &self.query_rotated,
+            query_bf16: Some(&self.query_bf16),
+            dequant_lut_bf16: Some(&self.dequant_lut_bf16),
+            dimensions: self.dimensions,
+            bits: self.bits_per_dim as usize,
+            lut: &self.dequant_lut,
+            bits1_byte_lut: self.bits1_byte_lut.as_deref(),
+            bits8_query_scale: self.bits8_query_scale.as_slice(),
+            bits8_query_offset: self.bits8_query_offset.as_slice(),
+        };
+        let mut scratch = [0.0_f32; STACK_SCORE_COUNT];
+        let mut max_score = f32::NEG_INFINITY;
+        let batch_bytes = code_len * STACK_SCORE_COUNT;
+
+        for batch in codes.chunks(batch_bytes) {
+            let batch_count = batch.len() / code_len;
+            estimate_ip_batch_impl(ctx, batch, code_len, &mut scratch[..batch_count]);
+            for &score in &scratch[..batch_count] {
+                max_score = max_score.max(score);
+            }
+        }
+
+        max_score
+    }
+
     /// Compatibility wrapper for existing bits=1 IVF scratch callers.
     pub fn estimate_ip_bits1_batch(
         &self,
@@ -5059,6 +5105,38 @@ mod tests {
                 batch_scores[index]
             );
         }
+    }
+
+    #[test]
+    fn batch_max_prevalidated_matches_scalar_max() {
+        let q = identity_quantizer(33, 4);
+        let query: Vec<f32> = (0..33).map(|i| i as f32 * 0.0625 - 0.5).collect();
+        let candidates = (0..5)
+            .map(|row| {
+                (0..33)
+                    .map(|col| ((row * 5 + col) as f32 * 0.015625).sin())
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+        let codes = candidates
+            .iter()
+            .flat_map(|candidate| {
+                <RaBitQQuantizer as crate::quant::Quantizer>::encode_code(&q, candidate).into_vec()
+            })
+            .collect::<Vec<_>>();
+        let prepared = q.prepare_estimator(&query);
+        let code_len = <RaBitQQuantizer as crate::quant::Quantizer>::code_len(&q);
+        let scalar_max = codes
+            .chunks_exact(code_len)
+            .map(|code| prepared.estimate_ip_scalar_only(code))
+            .fold(f32::NEG_INFINITY, f32::max);
+
+        let batch_max = prepared.estimate_ip_batch_max_prevalidated(&codes, code_len);
+
+        assert!(
+            (batch_max - scalar_max).abs() < 1e-5,
+            "batch_max={batch_max} scalar_max={scalar_max}"
+        );
     }
 
     #[test]

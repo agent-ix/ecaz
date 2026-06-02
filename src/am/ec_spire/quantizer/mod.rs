@@ -213,10 +213,16 @@ impl SpirePreparedAssignmentScorer {
                 .chunks_exact(payload_stride)
                 .map(|payload| quantizer.score_ip_from_parts(prepared, 0.0, payload))
                 .fold(f32::NEG_INFINITY, f32::max),
-            Self::RaBitQ { prepared, .. } => encoded_payload
-                .chunks_exact(payload_stride)
-                .map(|payload| prepared.estimate_ip_scalar_only(payload))
-                .fold(f32::NEG_INFINITY, f32::max),
+            Self::RaBitQ { prepared, .. } => {
+                if matches!(prepared.bits_per_dim(), 1 | 4 | 8) {
+                    prepared.estimate_ip_batch_max_prevalidated(encoded_payload, payload_stride)
+                } else {
+                    encoded_payload
+                        .chunks_exact(payload_stride)
+                        .map(|payload| prepared.estimate_ip_scalar_only(payload))
+                        .fold(f32::NEG_INFINITY, f32::max)
+                }
+            }
         }
     }
 
