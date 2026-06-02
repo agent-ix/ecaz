@@ -1,0 +1,58 @@
+{
+  "name": "task79-leaf-block-rank-diagnostic",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-79/026-leaf-block-rank-diagnostic/artifacts",
+  "defaults": {
+    "bits": 4,
+    "seed": 42,
+    "socket_dir": "/home/peter/.pgrx",
+    "pg": 18,
+    "profile": "ec_spire",
+    "queries_limit": 200,
+    "iterations": 200,
+    "force_index": true
+  },
+  "steps": [
+    {
+      "kind": "raw",
+      "name": "register-leaf-block-rank-function",
+      "tags": ["setup", "task79", "local-only", "pg18"],
+      "args": [
+        "dev",
+        "sql",
+        "--pg",
+        "18",
+        "--db",
+        "task79_spire_candidate_surface",
+        "--socket-dir",
+        "/home/peter/.pgrx",
+        "--raw",
+        "--file",
+        "reviews/task-79/026-leaf-block-rank-diagnostic/artifacts/register-leaf-block-rank-function.sql",
+        "--log-output",
+        "reviews/task-79/026-leaf-block-rank-diagnostic/artifacts/register-leaf-block-rank-function-suite.log"
+      ],
+      "expected_artifacts": [
+        "reviews/task-79/026-leaf-block-rank-diagnostic/artifacts/register-leaf-block-rank-function-suite.log"
+      ]
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-leaf-block-rank-100k-rabitq-global384-rw0",
+      "tags": ["pipeline", "diagnostic", "task79", "intel-local", "ec_real_100k", "spire", "rabitq", "n128", "f8", "b0", "tg96", "block64", "clustered", "global384", "radius-weight0"],
+      "pgoptions": "-c ec_spire.leaf_block_pruning_max_blocks_per_leaf=0 -c ec_spire.leaf_block_pruning_max_global_blocks=384 -c ec_spire.leaf_block_pruning_global_probe_blocks=0 -c ec_spire.leaf_block_pruning_sample_rows_per_block=0 -c ec_spire.leaf_block_pruning_sample_summary_prior_weight=0.8 -c ec_spire.leaf_block_pruning_summary_radius_weight=0.0",
+      "prefix": "task79_surface_100k",
+      "index": "task79_surface_100k_idx",
+      "queries_limit": 200,
+      "sweep": [96],
+      "rerank_width": 25,
+      "include_query_metrics": true,
+      "include_recall": true,
+      "truth_corpus_file": "target/real-corpus/staged-task50/ec_real_100k_corpus.tsv",
+      "query_metric_k": 10,
+      "query_metric_projection_columns": ["id"],
+      "leaf_block_rank_output": "reviews/task-79/026-leaf-block-rank-diagnostic/artifacts/leaf-block-rank-100k-rabitq-global384-rw0.jsonl",
+      "log_output": "reviews/task-79/026-leaf-block-rank-diagnostic/artifacts/pipeline-leaf-block-rank-100k-rabitq-global384-rw0.log"
+    }
+  ]
+}
