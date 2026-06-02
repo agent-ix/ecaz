@@ -675,6 +675,96 @@ fn select_leaf_block_row_ranges(
     Ok(Some(ranges))
 }
 
+fn select_global_leaf_block_row_ranges<'a, I>(
+    leaves: I,
+    max_global_blocks: i32,
+    scorer: &SpirePreparedAssignmentScorer,
+    epoch: u64,
+    observer: &mut impl SpireRoutedScanObserver,
+) -> Result<Option<HashMap<u64, Vec<SpireLeafBlockRowRange>>>, String>
+where
+    I: IntoIterator<Item = (u64, &'a SpirePlacementEntry, &'a [SpireLeafBlockSummary])>,
+{
+    if max_global_blocks <= 0 || scorer.payload_format() != SpireAssignmentPayloadFormat::RaBitQ {
+        return Ok(None);
+    }
+
+    let leaves = leaves.into_iter().collect::<Vec<_>>();
+    let summary_count = leaves
+        .iter()
+        .map(|(_leaf_pid, _placement, summaries)| summaries.len())
+        .sum::<usize>();
+    if summary_count == 0 {
+        return Ok(None);
+    }
+
+    let max_blocks = usize::try_from(max_global_blocks)
+        .map_err(|_| "ec_spire.leaf_block_pruning_max_global_blocks exceeds usize".to_owned())?;
+    if max_blocks >= summary_count {
+        return Ok(None);
+    }
+
+    let mut selected_by_leaf = leaves
+        .iter()
+        .filter(|(_leaf_pid, _placement, summaries)| !summaries.is_empty())
+        .map(|(leaf_pid, _placement, _summaries)| (*leaf_pid, Vec::new()))
+        .collect::<HashMap<_, _>>();
+    let mut scored_ranges = Vec::with_capacity(summary_count);
+
+    for (leaf_pid, placement, summaries) in leaves {
+        let score_started = observer.wants_candidate_timing().then(Instant::now);
+        for summary in summaries {
+            let summary_format = SpireAssignmentPayloadFormat::from_tag(summary.payload_format)?;
+            if summary_format != scorer.payload_format() {
+                return Err(format!(
+                    "ec_spire leaf V3 summary payload format {:?} does not match prepared scorer {:?}",
+                    summary_format,
+                    scorer.payload_format()
+                ));
+            }
+            let row_end = summary
+                .row_base
+                .checked_add(summary.row_count)
+                .ok_or_else(|| "ec_spire leaf V3 summary row range overflow".to_owned())?;
+            let ip = scorer.score_payload_ip(summary_format, 0.0, &summary.encoded_payload)?;
+            if !ip.is_finite() {
+                return Err(
+                    "ec_spire leaf V3 summary scorer returned a non-finite score".to_owned(),
+                );
+            }
+            scored_ranges.push((
+                ip,
+                leaf_pid,
+                SpireLeafBlockRowRange {
+                    row_base: summary.row_base,
+                    row_end,
+                },
+            ));
+        }
+        if let Some(started) = score_started {
+            observer.candidate_score_time(epoch, placement, elapsed_nanos_since(started));
+        }
+    }
+
+    scored_ranges.sort_by(|left, right| {
+        right
+            .0
+            .partial_cmp(&left.0)
+            .unwrap_or(Ordering::Equal)
+            .then_with(|| left.1.cmp(&right.1))
+            .then_with(|| left.2.row_base.cmp(&right.2.row_base))
+    });
+    scored_ranges.truncate(max_blocks);
+    for (_score, leaf_pid, range) in scored_ranges {
+        selected_by_leaf.entry(leaf_pid).or_default().push(range);
+    }
+    for ranges in selected_by_leaf.values_mut() {
+        ranges.sort_by_key(|range| range.row_base);
+    }
+
+    Ok(Some(selected_by_leaf))
+}
+
 fn leaf_column_row_is_selected(
     columns: &SpireLeafObjectColumns<'_>,
     row_offset: usize,
@@ -692,6 +782,76 @@ fn leaf_column_row_is_selected(
     Ok(selected_row_ranges
         .iter()
         .any(|range| row_index >= range.row_base && row_index < range.row_end))
+}
+
+fn read_quantized_v2_leaf_object_for_route(
+    snapshot: &SpireValidatedEpochSnapshot<'_>,
+    object_store: &impl SpireObjectReader,
+    route: SpireLeafObjectReadRoute,
+    observer: &mut impl SpireRoutedScanObserver,
+) -> Result<Option<SpireLeafPartitionObjectV2>, String> {
+    let leaf_pid = route.leaf_pid;
+    let placement = &route.placement;
+    if should_skip_placement(snapshot.epoch_manifest().consistency_mode, placement.state)? {
+        return Ok(None);
+    }
+
+    let header = object_store.read_object_header(placement)?;
+    if header.kind != SpirePartitionObjectKind::Leaf {
+        return Err(format!(
+            "ec_spire quantized routed scan pid {leaf_pid} is not a leaf object"
+        ));
+    }
+    if header.parent_pid != route.parent_pid {
+        return Err(format!(
+            "ec_spire quantized routed scan leaf pid {leaf_pid} parent {} does not match expected parent pid {}",
+            header.parent_pid,
+            route.parent_pid,
+        ));
+    }
+
+    let epoch = snapshot.epoch_manifest().epoch;
+    observer.scanned_leaf(epoch, &route.placement);
+    let read_started = observer.wants_candidate_timing().then(Instant::now);
+    let leaf_object = object_store.read_leaf_object_v2(placement).map_err(|error| {
+        format!(
+            "ec_spire global leaf block pruning requires routed leaf pid {leaf_pid} to be readable as V2: {error}"
+        )
+    })?;
+    if let Some(started) = read_started {
+        observer.leaf_object_read_time(epoch, placement, elapsed_nanos_since(started));
+    }
+
+    Ok(Some(leaf_object))
+}
+
+fn append_quantized_v2_leaf_candidates(
+    snapshot: &SpireValidatedEpochSnapshot<'_>,
+    leaf_object: &SpireLeafPartitionObjectV2,
+    route: SpireLeafObjectReadRoute,
+    scorer: &SpirePreparedAssignmentScorer,
+    deleted_vec_ids: &HashSet<SpireVecId>,
+    accumulator: &mut SpireScoredCandidateAccumulator,
+    selected_row_ranges: Option<&[SpireLeafBlockRowRange]>,
+    observer: &mut impl SpireRoutedScanObserver,
+) -> Result<(), String> {
+    for columns in leaf_object.column_segments()? {
+        let columns = columns?;
+        append_quantized_v2_column_candidates(
+            snapshot,
+            columns,
+            snapshot.epoch_manifest().epoch,
+            route.leaf_pid,
+            route.object_version,
+            scorer,
+            deleted_vec_ids,
+            accumulator,
+            &route.placement,
+            selected_row_ranges,
+            observer,
+        )?;
+    }
+    Ok(())
 }
 
 fn append_quantized_leaf_candidates_for_pid(
@@ -739,23 +899,16 @@ fn append_quantized_leaf_candidates_for_pid(
                 placement,
                 observer,
             )?;
-            for columns in leaf_object.column_segments()? {
-                let columns = columns?;
-                append_quantized_v2_column_candidates(
-                    snapshot,
-                    columns,
-                    snapshot.epoch_manifest().epoch,
-                    leaf_pid,
-                    route.object_version,
-                    scorer,
-                    deleted_vec_ids,
-                    accumulator,
-                    &route.placement,
-                    selected_row_ranges.as_deref(),
-                    observer,
-                )?;
-            }
-            Ok(())
+            append_quantized_v2_leaf_candidates(
+                snapshot,
+                &leaf_object,
+                route,
+                scorer,
+                deleted_vec_ids,
+                accumulator,
+                selected_row_ranges.as_deref(),
+                observer,
+            )
         }
         Err(v2_error) => {
             let leaf_object = object_store.read_leaf_object(placement).map_err(|v1_error| {

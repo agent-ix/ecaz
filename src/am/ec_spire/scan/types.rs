@@ -126,6 +126,15 @@ struct SpireLoadedDeltaObjectRoute {
     rows: Vec<SpireDeltaScanRow>,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+struct SpireLoadedQuantizedLeafRoute {
+    route: SpireLeafObjectReadRoute,
+    leaf_object: SpireLeafPartitionObjectV2,
+    selected_row_ranges: Option<Vec<SpireLeafBlockRowRange>>,
+    loaded_delta_routes: Vec<SpireLoadedDeltaObjectRoute>,
+    deleted_vec_ids: HashSet<SpireVecId>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct SpireLeafObjectReadRoute {
     leaf_pid: u64,

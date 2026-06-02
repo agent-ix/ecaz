@@ -14,7 +14,8 @@ use super::meta::{
     SpireRootControlState, SpireValidatedEpochSnapshot,
 };
 use super::options::{
-    current_session_leaf_block_pruning_max_blocks_per_leaf, relation_options,
+    current_session_leaf_block_pruning_max_blocks_per_leaf,
+    current_session_leaf_block_pruning_max_global_blocks, relation_options,
     resolve_single_level_scan_plan, EcSpireOptions, SpireCandidateDedupeMode,
     SpireRecursiveNprobePolicy, SpireRecursiveRouteBudget, SpireSingleLevelScanPlan,
     SpireTopGraphOptionPlan,
@@ -24,9 +25,9 @@ use super::quantizer::{SpireAssignmentPayloadFormat, SpirePreparedAssignmentScor
 use super::storage::{
     is_delete_delta_assignment, is_visible_primary_assignment, is_visible_scored_assignment,
     is_visible_scored_assignment_flags, SpireLeafAssignmentRow, SpireLeafBlockSummary,
-    SpireLeafObjectColumns, SpireLeafPartitionObject, SpireObjectReader, SpirePartitionObjectKind,
-    SpireRoutingPartitionObject, SpireTopGraphPartitionObject, SpireVecId,
-    SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA,
+    SpireLeafObjectColumns, SpireLeafPartitionObject, SpireLeafPartitionObjectV2,
+    SpireObjectReader, SpirePartitionObjectKind, SpireRoutingPartitionObject,
+    SpireTopGraphPartitionObject, SpireVecId, SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA,
 };
 use crate::am::common::{callback::pg_am_callback, detoast::DetoastedVarlena};
 use crate::am::ec_hnsw::source;

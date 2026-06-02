@@ -226,6 +226,81 @@
     }
 
     #[test]
+    fn select_global_leaf_block_row_ranges_spends_budget_across_leaves() {
+        fn rabitq_summary(row_base: u32, source_vector: &[f32]) -> SpireLeafBlockSummary {
+            let (gamma, encoded_payload) =
+                encode_assignment_payload(SpireAssignmentPayloadFormat::RaBitQ, source_vector)
+                    .unwrap();
+            assert_eq!(gamma, 0.0);
+            SpireLeafBlockSummary {
+                row_base,
+                row_count: 2,
+                payload_format: SpireAssignmentPayloadFormat::RaBitQ.tag(),
+                gamma: 0.0,
+                encoded_payload,
+            }
+        }
+
+        fn placement(pid: u64) -> SpirePlacementEntry {
+            SpirePlacementEntry {
+                epoch: 7,
+                pid,
+                node_id: 1,
+                local_store_id: 0,
+                store_relid: 12345,
+                object_version: 1,
+                object_tid: tid(60, u16::try_from(pid).unwrap()),
+                object_bytes: 1024,
+                state: SpirePlacementState::Available,
+            }
+        }
+
+        let query = [1.0, 0.0];
+        let scorer =
+            SpirePreparedAssignmentScorer::prepare(SpireAssignmentPayloadFormat::RaBitQ, 2, &query)
+                .unwrap();
+        let strong_leaf = vec![
+            rabitq_summary(0, &[1.0, 0.0]),
+            rabitq_summary(2, &[0.9, 0.0]),
+        ];
+        let weak_leaf = vec![
+            rabitq_summary(0, &[0.1, 0.0]),
+            rabitq_summary(2, &[-1.0, 0.0]),
+        ];
+        let strong_placement = placement(11);
+        let weak_placement = placement(12);
+        let mut observer = SpireNoopRoutedScanObserver;
+
+        let ranges_by_leaf = select_global_leaf_block_row_ranges(
+            [
+                (11, &strong_placement, strong_leaf.as_slice()),
+                (12, &weak_placement, weak_leaf.as_slice()),
+            ],
+            2,
+            &scorer,
+            7,
+            &mut observer,
+        )
+        .unwrap()
+        .unwrap();
+
+        assert_eq!(
+            ranges_by_leaf.get(&11),
+            Some(&vec![
+                SpireLeafBlockRowRange {
+                    row_base: 0,
+                    row_end: 2,
+                },
+                SpireLeafBlockRowRange {
+                    row_base: 2,
+                    row_end: 4,
+                },
+            ])
+        );
+        assert!(matches!(ranges_by_leaf.get(&12), Some(ranges) if ranges.is_empty()));
+    }
+
+    #[test]
     fn collect_quantized_routed_probe_candidates_reads_hash_routed_two_store_build() {
         let payload_format = SpireAssignmentPayloadFormat::TurboQuant;
         let store_config = SpireLocalStoreConfig::from_stores(

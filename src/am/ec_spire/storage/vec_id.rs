@@ -305,6 +305,7 @@ pub(super) struct SpireLeafBlockSummary {
     pub(super) row_base: u32,
     pub(super) row_count: u32,
     pub(super) payload_format: u8,
+    // RaBitQ summaries store max-L2-residual radius here; row payloads still require gamma == 0.
     pub(super) gamma: f32,
     pub(super) encoded_payload: Vec<u8>,
 }

@@ -37,6 +37,7 @@ const EC_SPIRE_SESSION_LEAF_BLOCK_ROWS_DISABLED: i32 = 0;
 const EC_SPIRE_SESSION_LEAF_BLOCK_PRUNING_DISABLED: i32 = 0;
 const EC_SPIRE_MAX_LEAF_BLOCK_ROWS: i32 = 4096;
 const EC_SPIRE_MAX_LEAF_BLOCK_PRUNING_BLOCKS_PER_LEAF: i32 = 4096;
+const EC_SPIRE_MAX_LEAF_BLOCK_PRUNING_GLOBAL_BLOCKS: i32 = 262_144;
 const EC_SPIRE_MAX_NPROBE_PER_LEVEL_ENTRIES: usize = 32;
 const EC_SPIRE_DEFAULT_ADAPTIVE_NPROBE_SCORE_GAP_MICROS: i32 = 1000;
 const EC_SPIRE_MAX_ADAPTIVE_NPROBE_SCORE_GAP_MICROS: i32 = 1_000_000;
@@ -71,6 +72,8 @@ static EC_SPIRE_MAX_ROUTED_CANDIDATE_ROWS_GUC: GucSetting<i32> =
 static EC_SPIRE_LEAF_BLOCK_ROWS_GUC: GucSetting<i32> =
     GucSetting::<i32>::new(EC_SPIRE_SESSION_LEAF_BLOCK_ROWS_DISABLED);
 static EC_SPIRE_LEAF_BLOCK_PRUNING_MAX_BLOCKS_PER_LEAF_GUC: GucSetting<i32> =
+    GucSetting::<i32>::new(EC_SPIRE_SESSION_LEAF_BLOCK_PRUNING_DISABLED);
+static EC_SPIRE_LEAF_BLOCK_PRUNING_MAX_GLOBAL_BLOCKS_GUC: GucSetting<i32> =
     GucSetting::<i32>::new(EC_SPIRE_SESSION_LEAF_BLOCK_PRUNING_DISABLED);
 static EC_SPIRE_ADAPTIVE_NPROBE_GUC: GucSetting<bool> = GucSetting::<bool>::new(false);
 static EC_SPIRE_ADAPTIVE_NPROBE_SCORE_GAP_MICROS_GUC: GucSetting<i32> =
@@ -786,6 +789,16 @@ pub(super) fn register_gucs() {
         GucContext::Userset,
         GucFlags::default(),
     );
+    GucRegistry::define_int_guc(
+        c"ec_spire.leaf_block_pruning_max_global_blocks",
+        c"Session cap for SPIRE global leaf block-summary pruning.",
+        c"Maximum scored summary blocks retained across all routed leaves before row scoring; 0 disables global block pruning and uses leaf-local pruning settings.",
+        &EC_SPIRE_LEAF_BLOCK_PRUNING_MAX_GLOBAL_BLOCKS_GUC,
+        EC_SPIRE_SESSION_LEAF_BLOCK_PRUNING_DISABLED,
+        EC_SPIRE_MAX_LEAF_BLOCK_PRUNING_GLOBAL_BLOCKS,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
     GucRegistry::define_bool_guc(
         c"ec_spire.adaptive_nprobe",
         c"Enable deterministic adaptive ec_spire nprobe routing.",
@@ -1038,6 +1051,14 @@ pub(super) fn current_session_leaf_block_pruning_max_blocks_per_leaf() -> i32 {
         EC_SPIRE_SESSION_LEAF_BLOCK_PRUNING_DISABLED
     } else {
         EC_SPIRE_LEAF_BLOCK_PRUNING_MAX_BLOCKS_PER_LEAF_GUC.get()
+    }
+}
+
+pub(super) fn current_session_leaf_block_pruning_max_global_blocks() -> i32 {
+    if cfg!(test) {
+        EC_SPIRE_SESSION_LEAF_BLOCK_PRUNING_DISABLED
+    } else {
+        EC_SPIRE_LEAF_BLOCK_PRUNING_MAX_GLOBAL_BLOCKS_GUC.get()
     }
 }
 
