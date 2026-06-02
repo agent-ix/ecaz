@@ -363,6 +363,7 @@ fn collect_validated_quantized_routed_probe_candidates(
         .map(|leaf_pid| SpireRecursiveLeafRoute {
             leaf_pid,
             parent_pid: root_pid,
+            route_score: 0.0,
         })
         .collect();
     collect_validated_quantized_leaf_route_candidates(
@@ -633,6 +634,7 @@ fn group_leaf_and_delta_reads_by_local_store(
         let read_route = SpireLeafObjectReadRoute {
             leaf_pid: route.leaf_pid,
             parent_pid: route.parent_pid,
+            route_score: route.route_score,
             placement: *placement,
             object_version: lookup.manifest_entry.object_version,
         };

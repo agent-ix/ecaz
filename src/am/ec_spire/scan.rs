@@ -17,6 +17,7 @@ use super::options::{
     current_session_leaf_block_pruning_global_probe_blocks,
     current_session_leaf_block_pruning_max_blocks_per_leaf,
     current_session_leaf_block_pruning_max_global_blocks,
+    current_session_leaf_block_pruning_route_prior_weight,
     current_session_leaf_block_pruning_sample_rows_per_block,
     current_session_leaf_block_pruning_sample_summary_prior_weight,
     current_session_leaf_block_pruning_summary_radius_weight, relation_options,

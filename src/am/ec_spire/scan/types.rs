@@ -67,13 +67,14 @@ struct SpireLoadedRoutingHierarchy {
     leaf_assignment_counts_by_pid: HashMap<u64, usize>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 struct SpireRecursiveLeafRoute {
     leaf_pid: u64,
     parent_pid: u64,
+    route_score: f32,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 struct SpireLeafRouteSelection {
     routes: Vec<SpireRecursiveLeafRoute>,
     stopped_by_row_budget: bool,
@@ -135,10 +136,11 @@ struct SpireLoadedQuantizedLeafRoute {
     deleted_vec_ids: HashSet<SpireVecId>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 struct SpireLeafObjectReadRoute {
     leaf_pid: u64,
     parent_pid: u64,
+    route_score: f32,
     placement: SpirePlacementEntry,
     object_version: u64,
 }
@@ -149,7 +151,7 @@ struct SpireLeafBlockRowRange {
     row_end: u32,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 struct SpireStoreObjectReadGroup {
     node_id: u32,
     local_store_id: u32,

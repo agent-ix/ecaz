@@ -147,6 +147,7 @@ fn selected_leaf_routes_from_snapshot(
         routes.push(SpireRecursiveLeafRoute {
             leaf_pid,
             parent_pid: header.parent_pid,
+            route_score: 0.0,
         });
     }
 
@@ -598,6 +599,7 @@ fn collect_validated_leaf_block_rank_snapshot(
         loaded_leaf_routes.iter().map(|loaded_route| {
             (
                 loaded_route.route.leaf_pid,
+                loaded_route.route.route_score,
                 &loaded_route.route.placement,
                 loaded_route.leaf_object.summaries.as_slice(),
             )
@@ -1026,7 +1028,7 @@ fn select_global_leaf_block_row_ranges<'a, I>(
     observer: &mut impl SpireRoutedScanObserver,
 ) -> Result<Option<HashMap<u64, Vec<SpireLeafBlockRowRange>>>, String>
 where
-    I: IntoIterator<Item = (u64, &'a SpirePlacementEntry, &'a [SpireLeafBlockSummary])>,
+    I: IntoIterator<Item = (u64, f32, &'a SpirePlacementEntry, &'a [SpireLeafBlockSummary])>,
 {
     if max_global_blocks <= 0 || scorer.payload_format() != SpireAssignmentPayloadFormat::RaBitQ {
         return Ok(None);
@@ -1071,6 +1073,7 @@ fn select_sampled_global_leaf_block_row_ranges(
         loaded_leaf_routes.iter().map(|loaded_route| {
             (
                 loaded_route.route.leaf_pid,
+                loaded_route.route.route_score,
                 &loaded_route.route.placement,
                 loaded_route.leaf_object.summaries.as_slice(),
             )
@@ -1179,21 +1182,46 @@ fn score_global_leaf_block_ranges<'a, I>(
     observer: &mut impl SpireRoutedScanObserver,
 ) -> Result<(Vec<u64>, Vec<SpireScoredLeafBlockRange>), String>
 where
-    I: IntoIterator<Item = (u64, &'a SpirePlacementEntry, &'a [SpireLeafBlockSummary])>,
+    I: IntoIterator<Item = (u64, f32, &'a SpirePlacementEntry, &'a [SpireLeafBlockSummary])>,
 {
+    score_global_leaf_block_ranges_with_route_prior_weight(
+        leaves,
+        scorer,
+        epoch,
+        observer,
+        current_session_leaf_block_pruning_route_prior_weight(),
+    )
+}
+
+fn score_global_leaf_block_ranges_with_route_prior_weight<'a, I>(
+    leaves: I,
+    scorer: &SpirePreparedAssignmentScorer,
+    epoch: u64,
+    observer: &mut impl SpireRoutedScanObserver,
+    route_prior_weight: f64,
+) -> Result<(Vec<u64>, Vec<SpireScoredLeafBlockRange>), String>
+where
+    I: IntoIterator<Item = (u64, f32, &'a SpirePlacementEntry, &'a [SpireLeafBlockSummary])>,
+{
+    if !route_prior_weight.is_finite() || !(0.0..=1.0).contains(&route_prior_weight) {
+        return Err(
+            "ec_spire.leaf_block_pruning_route_prior_weight must be finite in [0, 1]".to_owned(),
+        );
+    }
+    let route_prior_weight = route_prior_weight as f32;
     let leaves = leaves.into_iter().collect::<Vec<_>>();
     let mut leaves_with_summaries = Vec::new();
     let mut scored_ranges = Vec::with_capacity(
         leaves
             .iter()
-            .map(|(_leaf_pid, _placement, summaries)| summaries.len())
+            .map(|(_leaf_pid, _route_score, _placement, summaries)| summaries.len())
             .sum(),
     );
     let score_context = SpireLeafBlockSummaryScoreContext::new(
         scorer,
         current_session_leaf_block_pruning_summary_radius_weight(),
     )?;
-    for (leaf_pid, placement, summaries) in leaves {
+    for (leaf_pid, route_score, placement, summaries) in leaves {
         if !summaries.is_empty() {
             leaves_with_summaries.push(leaf_pid);
         }
@@ -1204,6 +1232,20 @@ where
                 .checked_add(summary.row_count)
                 .ok_or_else(|| "ec_spire leaf V3 summary row range overflow".to_owned())?;
             let ip = score_leaf_block_summary_ip_with_context(summary, scorer, score_context)?;
+            let ip = if route_prior_weight > 0.0 {
+                if !route_score.is_finite() {
+                    return Err(
+                        "ec_spire routed leaf score prior must be finite when route prior is enabled"
+                            .to_owned(),
+                    );
+                }
+                ip + route_prior_weight * route_score
+            } else {
+                ip
+            };
+            if !ip.is_finite() {
+                return Err("ec_spire leaf V3 global block score is non-finite".to_owned());
+            }
             scored_ranges.push(SpireScoredLeafBlockRange {
                 ip,
                 leaf_pid,

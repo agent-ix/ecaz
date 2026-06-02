@@ -483,6 +483,7 @@ where
             ordered_leaf_routes.push(SpireRecursiveLeafRoute {
                 leaf_pid: route.child_pid,
                 parent_pid: root_object.header.pid,
+                route_score: -route.distance,
             });
         }
         return select_leaf_routes_with_row_budget(
@@ -936,6 +937,7 @@ where
         let leaf_routes = routes.into_iter().map(|route| SpireRecursiveLeafRoute {
             leaf_pid: route.child_pid,
             parent_pid: root_object.header.pid,
+            route_score: route.score,
         });
         return select_leaf_routes_with_row_budget(
             leaf_routes,
@@ -1043,6 +1045,7 @@ where
             .map(|route| SpireRecursiveLeafRoute {
                 leaf_pid: route.child_pid,
                 parent_pid: root_object.header.pid,
+                route_score: -route.distance,
             });
         let selection = select_leaf_routes_with_row_budget(
             leaf_routes,
@@ -1173,6 +1176,7 @@ where
                 SpireRecursiveLeafRoute {
                     leaf_pid: route.child_pid,
                     parent_pid: route.parent_pid,
+                    route_score: route.total_score(),
                 }
             });
             let selection = select_leaf_routes_with_row_budget(
@@ -1367,6 +1371,7 @@ where
                 SpireRecursiveLeafRoute {
                     leaf_pid: route.child_pid,
                     parent_pid: route.parent_pid,
+                    route_score: route.total_score(),
                 }
             });
             let selection = select_leaf_routes_with_row_budget(

@@ -342,8 +342,8 @@
 
         let ranges_by_leaf = select_global_leaf_block_row_ranges(
             [
-                (11, &strong_placement, strong_leaf.as_slice()),
-                (12, &weak_placement, weak_leaf.as_slice()),
+                (11, 0.0, &strong_placement, strong_leaf.as_slice()),
+                (12, 0.0, &weak_placement, weak_leaf.as_slice()),
             ],
             2,
             &scorer,
@@ -367,6 +367,63 @@
             ])
         );
         assert!(matches!(ranges_by_leaf.get(&12), Some(ranges) if ranges.is_empty()));
+    }
+
+    #[test]
+    fn score_global_leaf_block_row_ranges_can_apply_route_prior() {
+        fn rabitq_summary(row_base: u32, source_vector: &[f32]) -> SpireLeafBlockSummary {
+            let (gamma, encoded_payload) =
+                encode_assignment_payload(SpireAssignmentPayloadFormat::RaBitQ, source_vector)
+                    .unwrap();
+            assert_eq!(gamma, 0.0);
+            SpireLeafBlockSummary {
+                row_base,
+                row_count: 2,
+                payload_format: SpireAssignmentPayloadFormat::RaBitQ.tag(),
+                gamma: 0.0,
+                encoded_payload,
+            }
+        }
+
+        fn placement(pid: u64) -> SpirePlacementEntry {
+            SpirePlacementEntry {
+                epoch: 7,
+                pid,
+                node_id: 1,
+                local_store_id: 0,
+                store_relid: 12345,
+                object_version: 1,
+                object_tid: tid(60, u16::try_from(pid).unwrap()),
+                object_bytes: 1024,
+                state: SpirePlacementState::Available,
+            }
+        }
+
+        let query = [1.0, 0.0];
+        let scorer =
+            SpirePreparedAssignmentScorer::prepare(SpireAssignmentPayloadFormat::RaBitQ, 2, &query)
+                .unwrap();
+        let strong_leaf = vec![rabitq_summary(0, &[1.0, 0.0])];
+        let weak_leaf = vec![rabitq_summary(0, &[0.0, 1.0])];
+        let strong_placement = placement(11);
+        let weak_placement = placement(12);
+        let mut observer = SpireNoopRoutedScanObserver;
+
+        let (_leaves_with_summaries, mut scored_ranges) =
+            score_global_leaf_block_ranges_with_route_prior_weight(
+                [
+                    (11, 0.0, &strong_placement, strong_leaf.as_slice()),
+                    (12, 3.0, &weak_placement, weak_leaf.as_slice()),
+                ],
+                &scorer,
+                7,
+                &mut observer,
+                0.5,
+            )
+            .unwrap();
+        sort_scored_leaf_block_ranges(&mut scored_ranges);
+
+        assert_eq!(scored_ranges[0].leaf_pid, 12);
     }
 
     #[test]
@@ -415,7 +472,7 @@
         let mut observer = SpireNoopRoutedScanObserver;
 
         let ranges_by_leaf = select_global_leaf_block_row_ranges(
-            [(11, &placement, summaries.as_slice())],
+            [(11, 0.0, &placement, summaries.as_slice())],
             1,
             &scorer,
             7,
@@ -509,7 +566,7 @@
             .unwrap();
         let mut noop = SpireNoopRoutedScanObserver;
         let summary_only = select_global_leaf_block_row_ranges(
-            [(leaf_pid, &placement, summaries.as_slice())],
+            [(leaf_pid, 0.0, &placement, summaries.as_slice())],
             1,
             &scorer,
             7,
@@ -544,6 +601,7 @@
             route: SpireLeafObjectReadRoute {
                 leaf_pid,
                 parent_pid,
+                route_score: 0.0,
                 placement,
                 object_version: 1,
             },
@@ -846,14 +904,17 @@
                 SpireRecursiveLeafRoute {
                     leaf_pid: SPIRE_FIRST_PID + 3,
                     parent_pid: SPIRE_FIRST_PID,
+                    route_score: 0.0,
                 },
                 SpireRecursiveLeafRoute {
                     leaf_pid: SPIRE_FIRST_PID + 1,
                     parent_pid: SPIRE_FIRST_PID,
+                    route_score: 0.0,
                 },
                 SpireRecursiveLeafRoute {
                     leaf_pid: SPIRE_FIRST_PID + 2,
                     parent_pid: SPIRE_FIRST_PID,
+                    route_score: 0.0,
                 },
             ],
             Vec::new(),
@@ -952,6 +1013,7 @@
             vec![SpireRecursiveLeafRoute {
                 leaf_pid: selected_leaf_pid,
                 parent_pid: SPIRE_FIRST_PID,
+                route_score: 0.0,
             }],
             vec![
                 SpireDeltaObjectRoute {
@@ -1236,6 +1298,7 @@
             vec![SpireRecursiveLeafRoute {
                 leaf_pid,
                 parent_pid: SPIRE_FIRST_PID,
+                route_score: 0.0,
             }],
             vec![SpireDeltaObjectRoute {
                 delta_pid,
@@ -1333,6 +1396,7 @@
                 leaf_routes: vec![SpireLeafObjectReadRoute {
                     leaf_pid,
                     parent_pid: SPIRE_FIRST_PID,
+                    route_score: 0.0,
                     placement: SpirePlacementEntry::local_store_available_by_id(
                         7,
                         leaf_pid,
