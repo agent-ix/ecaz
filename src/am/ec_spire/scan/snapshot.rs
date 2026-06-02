@@ -520,6 +520,7 @@ fn collect_validated_quantized_leaf_route_candidates_with_global_block_pruning(
         current_session_leaf_block_pruning_max_global_blocks(),
         current_session_leaf_block_pruning_global_probe_blocks(),
         current_session_leaf_block_pruning_sample_rows_per_block(),
+        current_session_leaf_block_pruning_sample_summary_prior_weight(),
         scorer,
         &mut accumulator,
         observer,

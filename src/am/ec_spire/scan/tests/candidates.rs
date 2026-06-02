@@ -301,7 +301,21 @@
     }
 
     #[test]
-    fn sampled_global_leaf_block_row_ranges_reranks_probe_blocks() {
+    fn leaf_block_sample_score_preserves_summary_floor() {
+        assert_eq!(
+            blend_leaf_block_summary_sample_score(1.0, Some(-1.0), 0.8),
+            1.0
+        );
+        assert_eq!(
+            blend_leaf_block_summary_sample_score(0.1, None, 0.8),
+            0.1
+        );
+        let boosted = blend_leaf_block_summary_sample_score(0.1, Some(1.0), 0.8);
+        assert!((boosted - 0.28).abs() < 0.000001);
+    }
+
+    #[test]
+    fn sampled_global_leaf_block_row_ranges_adjusts_summary_prior() {
         fn rabitq_summary(row_base: u32, source_vector: &[f32]) -> SpireLeafBlockSummary {
             let (gamma, encoded_payload) =
                 encode_assignment_payload(SpireAssignmentPayloadFormat::RaBitQ, source_vector)
@@ -345,7 +359,7 @@
         let leaf_pid = SPIRE_FIRST_PID + 1;
         let parent_pid = SPIRE_FIRST_PID;
         let summaries = vec![
-            rabitq_summary(0, &[1.0, 0.0]),
+            rabitq_summary(0, &[0.2, 0.0]),
             rabitq_summary(2, &[0.1, 0.0]),
         ];
         let mut object_store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
@@ -417,6 +431,7 @@
             1,
             2,
             1,
+            0.8,
             &scorer,
             &mut accumulator,
             &mut observer,

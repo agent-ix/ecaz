@@ -714,6 +714,7 @@ fn select_sampled_global_leaf_block_row_ranges(
     max_global_blocks: i32,
     global_probe_blocks: i32,
     sample_rows_per_block: i32,
+    sample_summary_prior_weight: f64,
     scorer: &SpirePreparedAssignmentScorer,
     accumulator: &mut SpireScoredCandidateAccumulator,
     observer: &mut impl SpireRoutedScanObserver,
@@ -758,6 +759,14 @@ fn select_sampled_global_leaf_block_row_ranges(
             max_blocks,
         )));
     }
+    if !sample_summary_prior_weight.is_finite()
+        || !(0.0..=1.0).contains(&sample_summary_prior_weight)
+    {
+        return Err(
+            "ec_spire.leaf_block_pruning_sample_summary_prior_weight must be finite in [0, 1]"
+                .to_owned(),
+        );
+    }
 
     sort_scored_leaf_block_ranges(&mut scored_ranges);
     scored_ranges.truncate(probe_blocks.min(scored_ranges.len()));
@@ -766,6 +775,7 @@ fn select_sampled_global_leaf_block_row_ranges(
         loaded_leaf_routes,
         &scored_ranges,
         sample_rows,
+        sample_summary_prior_weight,
         scorer,
         accumulator,
         observer,
@@ -891,6 +901,7 @@ fn sample_global_leaf_block_probe_candidates(
     loaded_leaf_routes: &[SpireLoadedQuantizedLeafRoute],
     probe_blocks: &[SpireScoredLeafBlockRange],
     sample_rows_per_block: usize,
+    sample_summary_prior_weight: f64,
     scorer: &SpirePreparedAssignmentScorer,
     accumulator: &mut SpireScoredCandidateAccumulator,
     observer: &mut impl SpireRoutedScanObserver,
@@ -913,6 +924,7 @@ fn sample_global_leaf_block_probe_candidates(
             loaded_route,
             blocks,
             sample_rows_per_block,
+            sample_summary_prior_weight,
             scorer,
             accumulator,
             observer,
@@ -929,6 +941,7 @@ fn sample_leaf_block_probe_candidates(
     loaded_route: &SpireLoadedQuantizedLeafRoute,
     blocks: Vec<SpireScoredLeafBlockRange>,
     sample_rows_per_block: usize,
+    sample_summary_prior_weight: f64,
     scorer: &SpirePreparedAssignmentScorer,
     accumulator: &mut SpireScoredCandidateAccumulator,
     observer: &mut impl SpireRoutedScanObserver,
@@ -1020,11 +1033,30 @@ fn sample_leaf_block_probe_candidates(
     Ok(plans
         .into_iter()
         .map(|plan| SpireScoredLeafBlockRange {
-            ip: plan.best_sample_ip.unwrap_or(plan.block.ip),
+            ip: blend_leaf_block_summary_sample_score(
+                plan.block.ip,
+                plan.best_sample_ip,
+                sample_summary_prior_weight,
+            ),
             leaf_pid: plan.block.leaf_pid,
             range: plan.block.range,
         })
         .collect())
+}
+
+fn blend_leaf_block_summary_sample_score(
+    summary_ip: f32,
+    best_sample_ip: Option<f32>,
+    sample_summary_prior_weight: f64,
+) -> f32 {
+    let Some(sample_ip) = best_sample_ip else {
+        return summary_ip;
+    };
+    if sample_ip <= summary_ip {
+        return summary_ip;
+    }
+    let sample_weight = (1.0 - sample_summary_prior_weight) as f32;
+    summary_ip + (sample_ip - summary_ip) * sample_weight
 }
 
 fn sample_leaf_block_row_indices(
