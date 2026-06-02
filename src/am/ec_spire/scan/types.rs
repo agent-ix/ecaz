@@ -263,6 +263,33 @@ pub(super) struct SpireScanPlacementDiagnostics {
     pub(super) leaves: Vec<SpireLeafScanDiagnostics>,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub(super) struct SpireLeafBlockRankSnapshotRow {
+    pub(super) active_epoch: u64,
+    pub(super) effective_nprobe: u32,
+    pub(super) effective_nprobe_source: &'static str,
+    pub(super) effective_rerank_width: u64,
+    pub(super) effective_rerank_width_source: &'static str,
+    pub(super) target_ordinal: u64,
+    pub(super) target_local_sequence: u64,
+    pub(super) status: &'static str,
+    pub(super) max_global_blocks: u64,
+    pub(super) radius_weight: f64,
+    pub(super) scored_block_count: u64,
+    pub(super) block_rank: Option<u64>,
+    pub(super) selected_by_global_cap: Option<bool>,
+    pub(super) pid: Option<u64>,
+    pub(super) node_id: Option<u32>,
+    pub(super) local_store_id: Option<u32>,
+    pub(super) object_version: Option<u64>,
+    pub(super) row_index: Option<u32>,
+    pub(super) row_base: Option<u32>,
+    pub(super) row_end: Option<u32>,
+    pub(super) row_count: Option<u32>,
+    pub(super) block_ip: Option<f32>,
+    pub(super) assignment_flags: Option<u16>,
+}
+
 trait SpireRoutedScanObserver {
     fn wants_candidate_timing(&self) -> bool {
         false

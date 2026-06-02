@@ -437,6 +437,10 @@ struct SpirePipelineStep {
     #[serde(default)]
     truth_corpus_file: Option<PathBuf>,
     #[serde(default)]
+    leaf_block_rank_output: Option<PathBuf>,
+    #[serde(default)]
+    leaf_block_rank_local_sequence_offset: Option<i64>,
+    #[serde(default)]
     include_production_read_profile: Option<bool>,
     #[serde(default)]
     production_read_only: Option<bool>,
@@ -2745,6 +2749,18 @@ fn expand_spire_pipeline(step: &SpirePipelineStep, defaults: &SuiteDefaults) -> 
         "--truth-corpus-file",
         step.truth_corpus_file.as_deref(),
     );
+    push_opt_path(
+        &mut args,
+        "--leaf-block-rank-output",
+        step.leaf_block_rank_output.as_deref(),
+    );
+    if let Some(offset) = step.leaf_block_rank_local_sequence_offset {
+        push_arg(
+            &mut args,
+            "--leaf-block-rank-local-sequence-offset",
+            &offset.to_string(),
+        );
+    }
     if step.include_production_read_profile.unwrap_or(false) {
         args.push("--include-production-read-profile".into());
     }

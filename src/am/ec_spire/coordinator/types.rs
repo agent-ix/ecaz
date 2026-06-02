@@ -1822,6 +1822,33 @@ pub(crate) struct SpireIndexScanLeafCandidateSnapshotRow {
     pub(crate) candidate_heap_append_nanos: u64,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct SpireIndexScanLeafBlockRankSnapshotRow {
+    pub(crate) active_epoch: u64,
+    pub(crate) effective_nprobe: u32,
+    pub(crate) effective_nprobe_source: &'static str,
+    pub(crate) effective_rerank_width: u64,
+    pub(crate) effective_rerank_width_source: &'static str,
+    pub(crate) target_ordinal: u64,
+    pub(crate) target_local_sequence: u64,
+    pub(crate) status: &'static str,
+    pub(crate) max_global_blocks: u64,
+    pub(crate) radius_weight: f64,
+    pub(crate) scored_block_count: u64,
+    pub(crate) block_rank: Option<u64>,
+    pub(crate) selected_by_global_cap: Option<bool>,
+    pub(crate) pid: Option<u64>,
+    pub(crate) node_id: Option<u32>,
+    pub(crate) local_store_id: Option<u32>,
+    pub(crate) object_version: Option<u64>,
+    pub(crate) row_index: Option<u32>,
+    pub(crate) row_base: Option<u32>,
+    pub(crate) row_end: Option<u32>,
+    pub(crate) row_count: Option<u32>,
+    pub(crate) block_ip: Option<f32>,
+    pub(crate) assignment_flags: Option<u16>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SpireIndexSelectedPidPlacementSnapshotRow {
     pub(crate) active_epoch: u64,

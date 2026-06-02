@@ -118,6 +118,15 @@ pub struct SpirePipelineArgs {
     /// when the same staged corpus file is already available to the operator.
     #[arg(long)]
     pub truth_corpus_file: Option<PathBuf>,
+    /// Write per-exact-neighbor SPIRE leaf-block rank rows as JSONL.
+    ///
+    /// Requires `--include-recall`. For local corpora without SPIRE
+    /// source_identity, use the default local sequence mapping `id + 1`.
+    #[arg(long)]
+    pub leaf_block_rank_output: Option<PathBuf>,
+    /// Offset added to exact-truth ids to form SPIRE local vec_id sequences.
+    #[arg(long, default_value_t = 1)]
+    pub leaf_block_rank_local_sequence_offset: i64,
     /// Also call ec_spire_remote_search_production_read_profile for each sampled
     /// query and report production read-path transport counters.
     #[arg(long)]
@@ -277,6 +286,7 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
     let mut production_read_profile = BTreeMap::<i32, ProductionReadProfileAggregate>::new();
     let mut cost_tuning = BTreeMap::<i32, CostTuningRow>::new();
     let mut funnel_rows = Vec::<FunnelRecord>::new();
+    let mut leaf_block_rank_rows = Vec::<LeafBlockRankRecord>::new();
     let mut remote_epoch = args.remote_requested_epoch;
 
     for nprobe in &sweep_values {
@@ -416,6 +426,58 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
                     .or_default()
                     .record(measured.duration, measured.predicted_ids);
             }
+            if args.leaf_block_rank_output.is_some() {
+                let truth_ids = query_truth
+                    .as_ref()
+                    .expect("--leaf-block-rank-output is validated to require recall truth");
+                let query_truth_ids = truth_ids.get(query_index).ok_or_else(|| {
+                    eyre!(
+                        "exact-truth ids missing for query ordinal {}",
+                        query_index + 1
+                    )
+                })?;
+                let target_local_sequences = query_truth_ids
+                    .iter()
+                    .map(|truth_id| {
+                        truth_id
+                            .checked_add(args.leaf_block_rank_local_sequence_offset)
+                            .ok_or_else(|| {
+                                eyre!(
+                                    "leaf block rank local sequence overflow for truth id {truth_id}"
+                                )
+                            })
+                    })
+                    .collect::<Result<Vec<_>>>()?;
+                let rank_rows = query_leaf_block_rank_rows(
+                    &client,
+                    &index,
+                    &query.source,
+                    &target_local_sequences,
+                )
+                .await?;
+                for row in rank_rows {
+                    let truth_index = usize::try_from(row.target_ordinal).map_err(|_| {
+                        eyre!(
+                            "leaf block rank target ordinal {} exceeds usize",
+                            row.target_ordinal
+                        )
+                    })?;
+                    let truth_id = *query_truth_ids.get(truth_index).ok_or_else(|| {
+                        eyre!(
+                            "leaf block rank target ordinal {} exceeds truth id count {}",
+                            row.target_ordinal,
+                            query_truth_ids.len()
+                        )
+                    })?;
+                    leaf_block_rank_rows.push(LeafBlockRankRecord::from_row(
+                        *nprobe,
+                        query_index + 1,
+                        query.id,
+                        truth_id,
+                        row,
+                    ));
+                }
+            }
             if args.include_production_read_profile {
                 let row = query_production_read_profile_row(
                     &client,
@@ -498,6 +560,9 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
     if let Some(path) = args.funnel_output {
         write_funnel_jsonl(&path, &funnel_rows).await?;
     }
+    if let Some(path) = args.leaf_block_rank_output {
+        write_leaf_block_rank_jsonl(&path, &leaf_block_rank_rows).await?;
+    }
     Ok(())
 }
 
@@ -540,6 +605,16 @@ fn validate_args(args: &SpirePipelineArgs) -> Result<()> {
     if args.production_read_only && args.funnel_output.is_some() {
         return Err(eyre!(
             "--funnel-output requires SQL-visible local pipeline diagnostics; remove --production-read-only"
+        ));
+    }
+    if args.leaf_block_rank_output.is_some() && !args.include_recall {
+        return Err(eyre!(
+            "--leaf-block-rank-output requires --include-recall so exact truth ids are available"
+        ));
+    }
+    if args.leaf_block_rank_output.is_some() && args.leaf_block_rank_local_sequence_offset < 0 {
+        return Err(eyre!(
+            "--leaf-block-rank-local-sequence-offset must be >= 0"
         ));
     }
     for column in &args.query_metric_projection_columns {
@@ -940,6 +1015,23 @@ async fn query_leaf_candidate_rows(
     Ok(rows.into_iter().map(LeafCandidateRow::from).collect())
 }
 
+async fn query_leaf_block_rank_rows(
+    client: &Client,
+    index: &str,
+    query: &[f32],
+    target_local_sequences: &[i64],
+) -> Result<Vec<LeafBlockRankRow>> {
+    let target_local_sequences = target_local_sequences.to_vec();
+    let rows = client
+        .query(
+            leaf_block_rank_snapshot_sql(),
+            &[&index, &query, &target_local_sequences],
+        )
+        .await
+        .wrap_err("querying ec_spire_index_scan_leaf_block_rank_snapshot")?;
+    Ok(rows.into_iter().map(LeafBlockRankRow::from).collect())
+}
+
 async fn query_remote_pipeline_rows(
     client: &Client,
     index: &str,
@@ -1069,6 +1161,16 @@ fn leaf_candidate_snapshot_sql() -> &'static str {
             candidate_materialize_nanos, candidate_heap_append_nanos
      FROM ec_spire_index_scan_leaf_candidate_snapshot($1::text::regclass::oid, $2::real[])
      ORDER BY pid"
+}
+
+fn leaf_block_rank_snapshot_sql() -> &'static str {
+    "SELECT target_ordinal, target_local_sequence, status, max_global_blocks,
+            radius_weight, scored_block_count, block_rank, selected_by_global_cap,
+            pid, node_id, local_store_id, object_version, row_index, row_base,
+            row_end, row_count, block_ip, assignment_flags
+     FROM ec_spire_index_scan_leaf_block_rank_snapshot(
+            $1::text::regclass::oid, $2::real[], $3::bigint[])
+     ORDER BY target_ordinal, block_rank NULLS LAST, pid NULLS LAST, row_index NULLS LAST"
 }
 
 fn remote_pipeline_steps_sql() -> &'static str {
@@ -1274,6 +1376,116 @@ impl From<Row> for LeafCandidateRow {
     }
 }
 
+#[derive(Debug, Clone)]
+struct LeafBlockRankRow {
+    target_ordinal: i64,
+    target_local_sequence: i64,
+    status: String,
+    max_global_blocks: i64,
+    radius_weight: f64,
+    scored_block_count: i64,
+    block_rank: Option<i64>,
+    selected_by_global_cap: Option<bool>,
+    pid: Option<i64>,
+    node_id: Option<i64>,
+    local_store_id: Option<i64>,
+    object_version: Option<i64>,
+    row_index: Option<i64>,
+    row_base: Option<i64>,
+    row_end: Option<i64>,
+    row_count: Option<i64>,
+    block_ip: Option<f32>,
+    assignment_flags: Option<i64>,
+}
+
+impl From<Row> for LeafBlockRankRow {
+    fn from(row: Row) -> Self {
+        Self {
+            target_ordinal: row.get(0),
+            target_local_sequence: row.get(1),
+            status: row.get(2),
+            max_global_blocks: row.get(3),
+            radius_weight: row.get(4),
+            scored_block_count: row.get(5),
+            block_rank: row.get(6),
+            selected_by_global_cap: row.get(7),
+            pid: row.get(8),
+            node_id: row.get(9),
+            local_store_id: row.get(10),
+            object_version: row.get(11),
+            row_index: row.get(12),
+            row_base: row.get(13),
+            row_end: row.get(14),
+            row_count: row.get(15),
+            block_ip: row.get(16),
+            assignment_flags: row.get(17),
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct LeafBlockRankRecord {
+    kind: &'static str,
+    nprobe: i32,
+    query_ordinal: usize,
+    query_id: i64,
+    truth_rank: i64,
+    truth_id: i64,
+    target_local_sequence: i64,
+    status: String,
+    max_global_blocks: i64,
+    radius_weight: f64,
+    scored_block_count: i64,
+    block_rank: Option<i64>,
+    selected_by_global_cap: Option<bool>,
+    pid: Option<i64>,
+    node_id: Option<i64>,
+    local_store_id: Option<i64>,
+    object_version: Option<i64>,
+    row_index: Option<i64>,
+    row_base: Option<i64>,
+    row_end: Option<i64>,
+    row_count: Option<i64>,
+    block_ip: Option<f32>,
+    assignment_flags: Option<i64>,
+}
+
+impl LeafBlockRankRecord {
+    fn from_row(
+        nprobe: i32,
+        query_ordinal: usize,
+        query_id: i64,
+        truth_id: i64,
+        row: LeafBlockRankRow,
+    ) -> Self {
+        Self {
+            kind: "spire_leaf_block_rank",
+            nprobe,
+            query_ordinal,
+            query_id,
+            truth_rank: row.target_ordinal + 1,
+            truth_id,
+            target_local_sequence: row.target_local_sequence,
+            status: row.status,
+            max_global_blocks: row.max_global_blocks,
+            radius_weight: row.radius_weight,
+            scored_block_count: row.scored_block_count,
+            block_rank: row.block_rank,
+            selected_by_global_cap: row.selected_by_global_cap,
+            pid: row.pid,
+            node_id: row.node_id,
+            local_store_id: row.local_store_id,
+            object_version: row.object_version,
+            row_index: row.row_index,
+            row_base: row.row_base,
+            row_end: row.row_end,
+            row_count: row.row_count,
+            block_ip: row.block_ip,
+            assignment_flags: row.assignment_flags,
+        }
+    }
+}
+
 #[derive(Debug, Serialize)]
 struct FunnelRecord {
     kind: &'static str,
@@ -1411,6 +1623,22 @@ async fn write_funnel_jsonl(path: &PathBuf, rows: &[FunnelRecord]) -> Result<()>
     let mut output = String::new();
     for row in rows {
         output.push_str(&serde_json::to_string(row).wrap_err("serializing funnel row")?);
+        output.push('\n');
+    }
+    tokio::fs::write(path, output)
+        .await
+        .wrap_err_with(|| format!("writing {}", path.display()))
+}
+
+async fn write_leaf_block_rank_jsonl(path: &PathBuf, rows: &[LeafBlockRankRecord]) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        tokio::fs::create_dir_all(parent)
+            .await
+            .wrap_err_with(|| format!("creating {}", parent.display()))?;
+    }
+    let mut output = String::new();
+    for row in rows {
+        output.push_str(&serde_json::to_string(row).wrap_err("serializing leaf block rank row")?);
         output.push('\n');
     }
     tokio::fs::write(path, output)

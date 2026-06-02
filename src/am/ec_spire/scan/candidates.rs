@@ -451,6 +451,362 @@ fn collect_validated_top_graph_scan_placement_diagnostics(
     })
 }
 
+pub(super) fn collect_scan_leaf_block_rank_snapshot(
+    snapshot: &SpirePublishedEpochSnapshot<'_>,
+    object_store: &impl SpireObjectReader,
+    query: &SpireScanQuery,
+    options: EcSpireOptions,
+    target_local_sequences: &[u64],
+) -> Result<Vec<SpireLeafBlockRankSnapshotRow>, String> {
+    let top_graph_plan = options.top_graph_plan()?;
+    let snapshot = SpireValidatedEpochSnapshot::from_snapshot(*snapshot)?;
+    let hierarchy = load_snapshot_routing_hierarchy(&snapshot, object_store)?;
+    let leaf_count =
+        count_recursive_routing_leaf_pids(&hierarchy.root_object, &hierarchy.internal_objects_by_pid)?;
+    let scan_plan = resolve_single_level_scan_plan(leaf_count, options)?;
+    collect_validated_leaf_block_rank_snapshot(
+        &snapshot,
+        object_store,
+        query,
+        &hierarchy,
+        scan_plan,
+        top_graph_plan,
+        target_local_sequences,
+    )
+}
+
+fn collect_validated_leaf_block_rank_snapshot(
+    snapshot: &SpireValidatedEpochSnapshot<'_>,
+    object_store: &impl SpireObjectReader,
+    query: &SpireScanQuery,
+    hierarchy: &SpireLoadedRoutingHierarchy,
+    scan_plan: SpireSingleLevelScanPlan,
+    top_graph_plan: SpireTopGraphOptionPlan,
+    target_local_sequences: &[u64],
+) -> Result<Vec<SpireLeafBlockRankSnapshotRow>, String> {
+    let max_global_blocks = current_session_leaf_block_pruning_max_global_blocks();
+    let max_global_blocks = if max_global_blocks <= 0 {
+        0
+    } else {
+        u64::try_from(max_global_blocks)
+            .map_err(|_| "ec_spire.leaf_block_pruning_max_global_blocks exceeds u64".to_owned())?
+    };
+    let radius_weight = current_session_leaf_block_pruning_summary_radius_weight();
+    if target_local_sequences.is_empty() {
+        return Ok(Vec::new());
+    }
+    if scan_plan.nprobe == 0 {
+        return Ok(missing_leaf_block_rank_rows(
+            snapshot,
+            scan_plan,
+            target_local_sequences,
+            "nprobe_zero",
+            max_global_blocks,
+            radius_weight,
+            0,
+            &HashSet::new(),
+        ));
+    }
+
+    let scorer = SpirePreparedAssignmentScorer::prepare(
+        scan_plan.payload_format,
+        query.values().len(),
+        query.values(),
+    )?;
+    let leaf_assignment_counts = &hierarchy.leaf_assignment_counts_by_pid;
+    let mut leaf_row_count =
+        |route| leaf_route_assignment_count_from_loaded_hierarchy(leaf_assignment_counts, route);
+    let leaf_routes = if top_graph_plan.enabled {
+        let (_top_graph_pid, top_graph) = load_snapshot_top_graph_object(snapshot, object_store)?
+            .ok_or_else(|| {
+                "ec_spire scan leaf block rank snapshot has no available top graph object"
+                    .to_owned()
+            })?;
+        route_top_graph_object_to_leaf_routes_with_row_budget(
+            &hierarchy.root_object,
+            &hierarchy.internal_objects_by_pid,
+            &top_graph,
+            query.values(),
+            top_graph_plan.search_list_size.unwrap_or(scan_plan.nprobe),
+            scan_plan.nprobe,
+            &scan_plan.recursive_nprobe_policy,
+            scan_plan.recursive_route_budget,
+            scan_plan.max_routed_candidate_rows,
+            &mut leaf_row_count,
+        )?
+        .routes
+    } else {
+        route_recursive_routing_objects_to_leaf_routes_with_row_budget(
+            &hierarchy.root_object,
+            &hierarchy.internal_objects_by_pid,
+            query.values(),
+            &scan_plan.recursive_nprobe_policy,
+            scan_plan.recursive_route_budget,
+            scan_plan.max_routed_candidate_rows,
+            &mut leaf_row_count,
+        )?
+        .routes
+    };
+
+    let mut observer = SpireNoopRoutedScanObserver;
+    let delta_routes = collect_snapshot_delta_object_routes(snapshot, object_store)?;
+    let mut delta_routes_by_parent = HashMap::<u64, Vec<SpireDeltaObjectRoute>>::new();
+    let route_groups =
+        group_leaf_and_delta_reads_by_local_store(snapshot, leaf_routes, delta_routes, &mut observer)?;
+    prefetch_store_object_read_groups(
+        object_store,
+        snapshot.epoch_manifest().epoch,
+        &route_groups,
+        &mut observer,
+    )?;
+    for route_group in &route_groups {
+        for route in &route_group.delta_routes {
+            delta_routes_by_parent
+                .entry(route.parent_leaf_pid)
+                .or_default()
+                .push(*route);
+        }
+    }
+
+    let mut loaded_leaf_routes = Vec::new();
+    for route_group in route_groups {
+        for route in route_group.leaf_routes {
+            let leaf_delta_routes = delta_routes_by_parent
+                .get(&route.leaf_pid)
+                .map(Vec::as_slice)
+                .unwrap_or(&[]);
+            let loaded_delta_routes =
+                load_delta_rows_for_routes(snapshot, object_store, leaf_delta_routes, &mut observer)?;
+            let deleted_vec_ids =
+                collect_delta_delete_vec_ids_for_loaded_routes(&loaded_delta_routes);
+            let Some(leaf_object) =
+                read_quantized_v2_leaf_object_for_route(snapshot, object_store, route, &mut observer)?
+            else {
+                continue;
+            };
+            loaded_leaf_routes.push(SpireLoadedQuantizedLeafRoute {
+                route,
+                leaf_object,
+                selected_row_ranges: None,
+                loaded_delta_routes,
+                deleted_vec_ids,
+            });
+        }
+    }
+
+    let (_leaves_with_summaries, mut scored_ranges) = score_global_leaf_block_ranges(
+        loaded_leaf_routes.iter().map(|loaded_route| {
+            (
+                loaded_route.route.leaf_pid,
+                &loaded_route.route.placement,
+                loaded_route.leaf_object.summaries.as_slice(),
+            )
+        }),
+        &scorer,
+        snapshot.epoch_manifest().epoch,
+        &mut observer,
+    )?;
+    sort_scored_leaf_block_ranges(&mut scored_ranges);
+    let scored_block_count = u64::try_from(scored_ranges.len())
+        .map_err(|_| "ec_spire scored leaf block count exceeds u64".to_owned())?;
+    let loaded_route_indexes = loaded_leaf_routes
+        .iter()
+        .enumerate()
+        .map(|(index, loaded_route)| (loaded_route.route.leaf_pid, index))
+        .collect::<HashMap<_, _>>();
+    let mut target_ordinals_by_sequence = HashMap::<u64, Vec<u64>>::new();
+    for (target_ordinal, target_local_sequence) in target_local_sequences.iter().enumerate() {
+        let target_ordinal = u64::try_from(target_ordinal)
+            .map_err(|_| "ec_spire target ordinal exceeds u64".to_owned())?;
+        target_ordinals_by_sequence
+            .entry(*target_local_sequence)
+            .or_default()
+            .push(target_ordinal);
+    }
+
+    let mut found_target_ordinals = HashSet::<u64>::new();
+    let mut rows = Vec::new();
+    for (rank_index, block) in scored_ranges.iter().enumerate() {
+        let block_rank = u64::try_from(rank_index)
+            .map_err(|_| "ec_spire leaf block rank exceeds u64".to_owned())?
+            .checked_add(1)
+            .ok_or_else(|| "ec_spire leaf block rank overflow".to_owned())?;
+        let Some(loaded_route_index) = loaded_route_indexes.get(&block.leaf_pid) else {
+            continue;
+        };
+        append_leaf_block_rank_target_hits(
+            &mut rows,
+            &mut found_target_ordinals,
+            &target_ordinals_by_sequence,
+            &loaded_leaf_routes[*loaded_route_index],
+            block,
+            block_rank,
+            max_global_blocks,
+            radius_weight,
+            scored_block_count,
+            scan_plan,
+            snapshot.epoch_manifest().epoch,
+        )?;
+    }
+
+    rows.extend(missing_leaf_block_rank_rows(
+        snapshot,
+        scan_plan,
+        target_local_sequences,
+        "not_found_in_routed_leaves",
+        max_global_blocks,
+        radius_weight,
+        scored_block_count,
+        &found_target_ordinals,
+    ));
+    rows.sort_by(|left, right| {
+        left.target_ordinal
+            .cmp(&right.target_ordinal)
+            .then_with(|| {
+                left.block_rank
+                    .unwrap_or(u64::MAX)
+                    .cmp(&right.block_rank.unwrap_or(u64::MAX))
+            })
+            .then_with(|| left.pid.unwrap_or(u64::MAX).cmp(&right.pid.unwrap_or(u64::MAX)))
+            .then_with(|| {
+                left.row_index
+                    .unwrap_or(u32::MAX)
+                    .cmp(&right.row_index.unwrap_or(u32::MAX))
+            })
+    });
+    Ok(rows)
+}
+
+fn append_leaf_block_rank_target_hits(
+    rows: &mut Vec<SpireLeafBlockRankSnapshotRow>,
+    found_target_ordinals: &mut HashSet<u64>,
+    target_ordinals_by_sequence: &HashMap<u64, Vec<u64>>,
+    loaded_route: &SpireLoadedQuantizedLeafRoute,
+    block: &SpireScoredLeafBlockRange,
+    block_rank: u64,
+    max_global_blocks: u64,
+    radius_weight: f64,
+    scored_block_count: u64,
+    scan_plan: SpireSingleLevelScanPlan,
+    epoch: u64,
+) -> Result<(), String> {
+    let row_count = block
+        .range
+        .row_end
+        .checked_sub(block.range.row_base)
+        .ok_or_else(|| "ec_spire leaf block rank range is invalid".to_owned())?;
+    let selected_by_global_cap = max_global_blocks == 0 || block_rank <= max_global_blocks;
+    for columns in loaded_route.leaf_object.column_segments()? {
+        let columns = columns?;
+        let column_row_count = u32::try_from(columns.row_count())
+            .map_err(|_| "ec_spire leaf V2 column row count exceeds u32".to_owned())?;
+        let column_row_end = columns
+            .row_base
+            .checked_add(column_row_count)
+            .ok_or_else(|| "ec_spire leaf V2 column row range overflow".to_owned())?;
+        let row_base = block.range.row_base.max(columns.row_base);
+        let row_end = block.range.row_end.min(column_row_end);
+        if row_base >= row_end {
+            continue;
+        }
+        for row_index in row_base..row_end {
+            let row_offset = usize::try_from(row_index - columns.row_base)
+                .map_err(|_| "ec_spire leaf V2 target row offset exceeds usize".to_owned())?;
+            if !is_visible_scored_assignment_flags(columns.flags[row_offset]) {
+                continue;
+            }
+            let row = columns.row(row_offset)?;
+            let vec_id = row.vec_id()?;
+            if loaded_route.deleted_vec_ids.contains(&vec_id) {
+                continue;
+            }
+            let Some(local_sequence) = vec_id.local_sequence() else {
+                continue;
+            };
+            let Some(target_ordinals) = target_ordinals_by_sequence.get(&local_sequence) else {
+                continue;
+            };
+            for target_ordinal in target_ordinals {
+                found_target_ordinals.insert(*target_ordinal);
+                rows.push(SpireLeafBlockRankSnapshotRow {
+                    active_epoch: epoch,
+                    effective_nprobe: scan_plan.nprobe,
+                    effective_nprobe_source: scan_plan.nprobe_source,
+                    effective_rerank_width: u64::try_from(scan_plan.rerank_width)
+                        .map_err(|_| "ec_spire rerank width exceeds u64".to_owned())?,
+                    effective_rerank_width_source: scan_plan.rerank_width_source,
+                    target_ordinal: *target_ordinal,
+                    target_local_sequence: local_sequence,
+                    status: "block_ranked",
+                    max_global_blocks,
+                    radius_weight,
+                    scored_block_count,
+                    block_rank: Some(block_rank),
+                    selected_by_global_cap: Some(selected_by_global_cap),
+                    pid: Some(loaded_route.route.leaf_pid),
+                    node_id: Some(loaded_route.route.placement.node_id),
+                    local_store_id: Some(loaded_route.route.placement.local_store_id),
+                    object_version: Some(loaded_route.route.object_version),
+                    row_index: Some(row.row_index),
+                    row_base: Some(block.range.row_base),
+                    row_end: Some(block.range.row_end),
+                    row_count: Some(row_count),
+                    block_ip: Some(block.ip),
+                    assignment_flags: Some(row.flags),
+                });
+            }
+        }
+    }
+    Ok(())
+}
+
+fn missing_leaf_block_rank_rows(
+    snapshot: &SpireValidatedEpochSnapshot<'_>,
+    scan_plan: SpireSingleLevelScanPlan,
+    target_local_sequences: &[u64],
+    status: &'static str,
+    max_global_blocks: u64,
+    radius_weight: f64,
+    scored_block_count: u64,
+    found_target_ordinals: &HashSet<u64>,
+) -> Vec<SpireLeafBlockRankSnapshotRow> {
+    target_local_sequences
+        .iter()
+        .enumerate()
+        .filter_map(|(target_ordinal, target_local_sequence)| {
+            let target_ordinal = u64::try_from(target_ordinal).ok()?;
+            if found_target_ordinals.contains(&target_ordinal) {
+                return None;
+            }
+            Some(SpireLeafBlockRankSnapshotRow {
+                active_epoch: snapshot.epoch_manifest().epoch,
+                effective_nprobe: scan_plan.nprobe,
+                effective_nprobe_source: scan_plan.nprobe_source,
+                effective_rerank_width: u64::try_from(scan_plan.rerank_width).ok()?,
+                effective_rerank_width_source: scan_plan.rerank_width_source,
+                target_ordinal,
+                target_local_sequence: *target_local_sequence,
+                status,
+                max_global_blocks,
+                radius_weight,
+                scored_block_count,
+                block_rank: None,
+                selected_by_global_cap: None,
+                pid: None,
+                node_id: None,
+                local_store_id: None,
+                object_version: None,
+                row_index: None,
+                row_base: None,
+                row_end: None,
+                row_count: None,
+                block_ip: None,
+                assignment_flags: None,
+            })
+        })
+        .collect()
+}
+
 pub(super) fn rerank_scored_candidates_by_ip<F>(
     candidates: &mut Vec<SpireScoredScanCandidate>,
     rerank_width: usize,
