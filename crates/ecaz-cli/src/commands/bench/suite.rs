@@ -249,6 +249,8 @@ struct LoadStep {
     name: String,
     #[serde(default)]
     tags: Vec<String>,
+    #[serde(default)]
+    pgoptions: Option<String>,
     prefix: String,
     #[serde(default)]
     corpus_file: Option<PathBuf>,
@@ -1995,6 +1997,7 @@ impl SuiteStep {
 
     fn pgoptions(&self) -> Option<&str> {
         match self {
+            SuiteStep::Load(step) => step.pgoptions.as_deref(),
             SuiteStep::Latency(step) => step.pgoptions.as_deref(),
             SuiteStep::SpirePipeline(step) => step.pgoptions.as_deref(),
             _ => None,
@@ -3651,6 +3654,7 @@ mod tests {
         let step = LoadStep {
             name: "load".into(),
             tags: vec!["load".into()],
+            pgoptions: None,
             prefix: "surface".into(),
             corpus_file: None,
             queries_file: None,
@@ -3675,6 +3679,32 @@ mod tests {
             .any(|w| w == ["--manifest-file", "stage/anchor_manifest.json"]));
         assert!(!args.iter().any(|arg| arg == "--corpus-file"));
         assert!(!args.iter().any(|arg| arg == "--queries-file"));
+    }
+
+    #[test]
+    fn load_step_exposes_pgoptions_for_manifest_and_spawn() {
+        let step = SuiteStep::Load(LoadStep {
+            name: "load".into(),
+            tags: vec!["load".into()],
+            pgoptions: Some("-c ec_spire.leaf_block_rows=16".into()),
+            prefix: "surface".into(),
+            corpus_file: None,
+            queries_file: None,
+            manifest_file: Some("stage/anchor_manifest.json".into()),
+            allow_manifest_mismatch: false,
+            chunked: true,
+            dim: None,
+            profile: Some("ec_spire".into()),
+            bits: None,
+            seed: None,
+            m: Vec::new(),
+            ef_construction: None,
+            storage_format: Some("rabitq".into()),
+            reloptions: Vec::new(),
+            log_file: Some("load.log".into()),
+        });
+
+        assert_eq!(step.pgoptions(), Some("-c ec_spire.leaf_block_rows=16"));
     }
 
     #[test]
@@ -3749,6 +3779,8 @@ mod tests {
             include_query_metrics: Some(true),
             include_recall: Some(true),
             truth_corpus_file: Some("truth-corpus.tsv".into()),
+            leaf_block_rank_output: None,
+            leaf_block_rank_local_sequence_offset: None,
             include_production_read_profile: Some(true),
             production_read_only: Some(true),
             query_metric_k: Some(10),
@@ -3826,6 +3858,8 @@ mod tests {
                 include_query_metrics: Some(true),
                 include_recall: Some(true),
                 truth_corpus_file: None,
+                leaf_block_rank_output: None,
+                leaf_block_rank_local_sequence_offset: None,
                 include_production_read_profile: Some(true),
                 production_read_only: Some(true),
                 query_metric_k: Some(10),

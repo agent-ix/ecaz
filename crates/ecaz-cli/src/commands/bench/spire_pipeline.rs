@@ -2621,6 +2621,8 @@ mod tests {
             include_query_metrics: false,
             include_recall: false,
             truth_corpus_file: None,
+            leaf_block_rank_output: None,
+            leaf_block_rank_local_sequence_offset: 0,
             include_production_read_profile: false,
             production_read_only: false,
             query_metric_k: 10,
