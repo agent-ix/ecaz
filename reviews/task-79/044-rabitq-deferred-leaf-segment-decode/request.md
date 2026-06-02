@@ -16,11 +16,16 @@ The change is narrow:
 
 This is a real Task 79 pass for the local RaBitQ lane.
 
+Winning route classification: deferred subleaf/storage-format design. The route
+and leaf selection still use the Task 79 k=3 RaBitQ block-summary global cap;
+the new win is that assignment segments are decoded only after the winning
+summary row ranges are selected.
+
 Best row:
 
-| storage | global blocks | candidates | p50 ms | p95 ms | recall@10 | returned |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| rabitq | 1152 | 3,673,383 | 35.293 | 40.600 | 0.9940 | 2000 |
+| storage | global blocks | candidates | retained | returned | p50 ms | p95 ms | recall@10 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| rabitq | 1152 | 3,673,383 | 5,000 | 2,000 | 35.293 | 40.600 | 0.9940 |
 
 Against the Task 78 RaBitQ nprobe96 baseline (`15,506,227` candidates, p50 `60.256 ms`, recall `0.9975`), this cuts candidates by `76.3%`, clears the strong `<=4.0M` candidate target, clears the `<=45 ms` latency target, and stays above the `0.9925` recall floor.
 

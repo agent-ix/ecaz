@@ -20,6 +20,10 @@
 - rerank mode: heap rerank width 25, recall@10 enabled against `target/real-corpus/staged-task50/ec_real_100k_corpus.tsv`
 - routing: `nprobe=96`, adaptive nprobe off
 - selector: full k3 summary scoring, per-leaf cap disabled, global block caps varied, radius weight 0.25, route prior 0.0
+- winning route classification: deferred subleaf/storage-format design. The
+  winning route still uses k=3 RaBitQ block-summary global selection; the new
+  source change avoids decoding non-selected assignment segments after that
+  summary pass.
 
 ## Code Change
 
@@ -66,7 +70,7 @@
 - `artifacts/suite-manifest.json`: completed RaBitQ low-cap run, 5 steps.
 - `artifacts/suite-manifest-high-caps.json`: completed RaBitQ high-cap selected-step run, 3 completed / 5 skipped by selector.
 - `artifacts/suite-manifest-turboquant-isolated.json`: completed isolated TurboQuant comparison run, 2 steps.
-- `artifacts/results.jsonl`, `artifacts/results-high-caps.jsonl`, `artifacts/results-turboquant-isolated.jsonl`: normalized suite result streams.
+- `artifacts/results.jsonl`, `artifacts/results-high-caps.jsonl`, `artifacts/results-turboquant-isolated.jsonl`: normalized suite result streams. For `pipeline-100k-rabitq-k3-deferred-global1152-rw025`, candidate and heap-rerank rows record `ready_sum=5000`; the endpoint result row records `returned_sum=2000`.
 - `artifacts/suite-status-*.log`: suite status outputs.
 - `artifacts/suite-report-*.log` and `artifacts/report-results-*.jsonl`: suite reports.
 - `artifacts/pipeline-100k-rabitq-k3-deferred-*.log`: per-row RaBitQ pipeline logs.
@@ -98,7 +102,7 @@ turboquant_global1152	turboquant	1152	15506227	141.561	153.951	163.995	0.9975	20
 
 Interpretation:
 
-- Best RaBitQ row is `global1152`: `3,673,383` candidates, p50 `35.293 ms`, recall@10 `0.9940`, returned `2000`.
+- Best RaBitQ row is `global1152`: `3,673,383` candidates, retained `5,000`, returned `2,000`, p50 `35.293 ms`, recall@10 `0.9940`.
 - Versus Task 78 RaBitQ nprobe96, the best row cuts candidates by `76.3%` and p50 by `41.4%` while staying above the `0.9925` recall floor.
 - Versus packet 043's block16/global1216 reference, the same candidate/recall row improves p50 from `56.145 ms` to `35.812 ms`.
 - Lower caps are now very fast but still fail recall; `global1024` misses the recall floor by only `0.0005`.
