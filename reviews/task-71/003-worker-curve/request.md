@@ -34,6 +34,9 @@ Packet-local artifacts are under
   - Explicit load/recall/storage paths render under
     `reviews/task-71/003-worker-curve/artifacts/`, not literal
     `${artifact_dir}`.
+- `cargo run -p ecaz-cli -- dev sql --pg 18 --db tqvector_bench --socket-dir /Users/peter/.pgrx ...`
+  - Preflight confirmed `tqvector_bench` has extension `ecaz 0.1.1`
+    and access method `ec_ivf`.
 
 ## Review Focus
 

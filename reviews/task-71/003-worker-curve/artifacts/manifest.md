@@ -43,3 +43,12 @@
   - `load-real100k-w8` record has `pgoptions: -c max_parallel_maintenance_workers=8`
   - expected artifacts for load/recall/storage resolve under
     `reviews/task-71/003-worker-curve/artifacts/`
+
+### `preflight-db-extension.log`
+
+- Command:
+  `cargo run -p ecaz-cli -- dev sql --pg 18 --db tqvector_bench --socket-dir /Users/peter/.pgrx --sql "SELECT current_database(), extversion FROM pg_extension WHERE extname = 'ecaz'; SELECT amname FROM pg_am WHERE amname = 'ec_ivf';" --log-output reviews/task-71/003-worker-curve/artifacts/preflight-db-extension.log`
+- Result: passed
+- Key lines:
+  - `tqvector_bench  0.1.1`
+  - `ec_ivf`
