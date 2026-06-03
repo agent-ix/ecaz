@@ -21,6 +21,17 @@ The slice:
 - Adds pg_test-only timing/count introspection for validating that the parallel
   worker path ran and preserved tuple counts.
 
+Follow-up commits under review:
+
+- `271ca6f3e Tighten parallel build IndexInfo safety surface`
+  - adds `# Safety` docs to IVF parallel-build unsafe surfaces
+  - replaces raw safe `IndexInfoView::as_mut` access with typed
+    `set_concurrent` operations in IVF and HNSW
+- `c5b8b8c06 Validate IVF parallel build shared counters`
+  - consumes the IVF shared `nparticipantsdone`, `scanned_heap_tuples`, and
+    `encoded_index_tuples` counters as leader-side invariants after workers
+    finish and before the parallel build result is returned
+
 This does not yet claim the full Task 71 measurement/closeout work. The next
 slice still needs benchmark-suite evidence across worker counts and a final
 task audit.
@@ -39,6 +50,9 @@ Packet-local artifacts are under
   - Escalated rerun passed:
     `test tests::pg_test_ec_ivf_parallel_build_workers_and_counts ... ok`
     and `test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1939 filtered out`
+- `cargo check --no-default-features --features pg18`
+  - non-escalated rerun after shared-counter consumption passed:
+    `Finished dev profile [unoptimized + debuginfo] target(s) in 21.65s`
 
 ## Review Focus
 
@@ -49,3 +63,6 @@ Packet-local artifacts are under
   training/flush path.
 - Whether the pg_test-only timing/count hook is scoped tightly enough for this
   validation need.
+- Whether the leader-side shared-counter checks cover the intended
+  participant/tuple-count invariant without over-constraining valid PostgreSQL
+  table-scan behavior.

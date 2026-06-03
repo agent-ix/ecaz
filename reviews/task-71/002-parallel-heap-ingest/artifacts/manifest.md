@@ -1,6 +1,6 @@
 # Task 71 / Packet 002 Artifact Manifest
 
-- Head SHA: `012ece576`
+- Head SHA: `c5b8b8c06`
 - Task bucket: `reviews/task-71/`
 - Packet path: `reviews/task-71/002-parallel-heap-ingest/`
 - Slice: IVF parallel heap ingestion
@@ -50,3 +50,12 @@
   - `Installing extension`
   - `test tests::pg_test_ec_ivf_parallel_build_workers_and_counts ... ok`
   - `test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1939 filtered out; finished in 32.57s`
+
+### `cargo-check-pg18-shared-counter-validation.log`
+
+- Command:
+  `cargo check --no-default-features --features pg18`
+- Result: passed, non-escalated
+- Key lines:
+  - `Checking ecaz v0.1.1 (/Users/peter/dev/tqvector)`
+  - `Finished dev profile [unoptimized + debuginfo] target(s) in 21.65s`
