@@ -43,6 +43,9 @@ Follow-up commits under review:
     posting-block ownership summaries, and representative scan output IDs
   - asserts the parallel side launched at least one worker before comparing
     structural surfaces
+- `434ee3c27 Assert IVF parallel tuple buffer capture is live`
+  - adds the explicit `parallel_worker_tuple_buffer_capacity > 0` assertion
+    requested by reviewer feedback
 
 This does not yet claim the full Task 71 measurement/closeout work. The next
 slice still needs benchmark-suite evidence across worker counts and a final
@@ -87,6 +90,12 @@ Packet-local artifacts are under
 - `cargo clippy --all-targets --no-default-features --features pg18 -- -D warnings`
   - non-escalated Task 71 clippy gate passed:
     `Finished dev profile [unoptimized + debuginfo] target(s) in 3m 10s`
+- `cargo pgrx test pg18 test_ec_ivf_parallel_build`
+  - escalated runtime pg_test rerun passed both required tests:
+    `test tests::pg_test_ec_ivf_parallel_build_workers_and_counts ... ok`
+    and
+    `test tests::pg_test_ec_ivf_parallel_build_matches_serial_structure ... ok`
+  - `test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 1939 filtered out`
 
 ## Review Focus
 

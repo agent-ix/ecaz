@@ -1,6 +1,6 @@
 # Task 71 / Packet 002 Artifact Manifest
 
-- Head SHA: `1c5360baa`
+- Head SHA: `434ee3c27`
 - Task bucket: `reviews/task-71/`
 - Packet path: `reviews/task-71/002-parallel-heap-ingest/`
 - Slice: IVF parallel heap ingestion
@@ -125,3 +125,16 @@
 - Key lines:
   - `Checking ecaz v0.1.1 (/Users/peter/dev/tqvector)`
   - `Finished dev profile [unoptimized + debuginfo] target(s) in 3m 10s`
+
+### `cargo-pgrx-test-pg18-ivf-parallel-build-required-rerun.log`
+
+- Command:
+  `cargo pgrx test pg18 test_ec_ivf_parallel_build`
+- Result: passed, escalated
+- Key lines:
+  - `running 2 tests`
+  - `test tests::pg_test_ec_ivf_parallel_build_workers_and_counts ... ok`
+  - `test tests::pg_test_ec_ivf_parallel_build_matches_serial_structure ... ok`
+  - `test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 1939 filtered out; finished in 73.73s`
+  - Final command exit status: 0 after filtered binary/integration targets
+    reported zero matching tests.

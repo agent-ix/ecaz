@@ -1,0 +1,19 @@
+Command:
+cargo pgrx test pg18 test_ec_ivf_parallel_build
+
+Result:
+passed, escalated
+
+Key output:
+running 2 tests
+test tests::pg_test_ec_ivf_parallel_build_workers_and_counts ... ok
+test tests::pg_test_ec_ivf_parallel_build_matches_serial_structure ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 1939 filtered out; finished in 73.73s
+
+Final command exit status:
+0
+
+Note:
+After the two matching pg_tests passed, Cargo walked filtered binary and
+integration test targets with zero matching tests before exiting successfully.
