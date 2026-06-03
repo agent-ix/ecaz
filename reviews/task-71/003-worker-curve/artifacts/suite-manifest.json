@@ -2,9 +2,9 @@
   "suite": "task71-ivf-parallel-build-worker-curve",
   "schema_version": 1,
   "config": "reviews/task-71/003-worker-curve/suite.json",
-  "config_sha256": "90ae0fdccd1f3c06207d21866ccdeb7a5764d52015bcc3de967d476e961bae0b",
+  "config_sha256": "8e6e1bd642d27c7e04a1af714417e3f640e7a8f7bb27c80eb16463927eb2c795",
   "dry_run": false,
-  "generated_at_unix_ms": 1780452406572,
+  "generated_at_unix_ms": 1780452931830,
   "connection": {
     "database": "tqvector_bench",
     "host": "/Users/peter/.pgrx",
@@ -45,9 +45,9 @@
         "reviews/task-71/003-worker-curve/artifacts/parallel-workers-before.log"
       ],
       "status": "succeeded",
-      "started_at_unix_ms": 1780452406574,
-      "finished_at_unix_ms": 1780452406599,
-      "duration_ms": 23,
+      "started_at_unix_ms": 1780452931832,
+      "finished_at_unix_ms": 1780452931859,
+      "duration_ms": 24,
       "exit_code": 0
     },
     {
@@ -79,6 +79,8 @@
         "4",
         "--seed",
         "42",
+        "--table-reloption",
+        "parallel_workers=1",
         "--reloption",
         "storage_format=pq_fastscan",
         "--reloption",
@@ -90,9 +92,7 @@
         "--reloption",
         "rerank=heap_f32",
         "--reloption",
-        "rerank_width=750",
-        "--reloption",
-        "parallel_workers=1"
+        "rerank_width=750"
       ],
       "selected": true,
       "pgoptions": "-c max_parallel_maintenance_workers=1",
@@ -104,11 +104,11 @@
       "expected_artifacts": [
         "reviews/task-71/003-worker-curve/artifacts/load-real10k-w1.log"
       ],
-      "status": "failed",
-      "started_at_unix_ms": 1780452406600,
-      "finished_at_unix_ms": 1780452425677,
-      "duration_ms": 19086,
-      "exit_code": 1
+      "status": "succeeded",
+      "started_at_unix_ms": 1780452931860,
+      "finished_at_unix_ms": 1780452955275,
+      "duration_ms": 23414,
+      "exit_code": 0
     },
     {
       "name": "recall-real10k-w1",
@@ -153,7 +153,11 @@
       "expected_artifacts": [
         "reviews/task-71/003-worker-curve/artifacts/recall-real10k-w1.log"
       ],
-      "status": "pending"
+      "status": "succeeded",
+      "started_at_unix_ms": 1780452955276,
+      "finished_at_unix_ms": 1780452966424,
+      "duration_ms": 11146,
+      "exit_code": 0
     },
     {
       "name": "storage-real10k-w1",
@@ -181,7 +185,11 @@
       "expected_artifacts": [
         "reviews/task-71/003-worker-curve/artifacts/storage-real10k-w1.log"
       ],
-      "status": "pending"
+      "status": "succeeded",
+      "started_at_unix_ms": 1780452966426,
+      "finished_at_unix_ms": 1780452966440,
+      "duration_ms": 13,
+      "exit_code": 0
     },
     {
       "name": "load-real10k-w2",
@@ -212,6 +220,8 @@
         "4",
         "--seed",
         "42",
+        "--table-reloption",
+        "parallel_workers=2",
         "--reloption",
         "storage_format=pq_fastscan",
         "--reloption",
@@ -223,9 +233,7 @@
         "--reloption",
         "rerank=heap_f32",
         "--reloption",
-        "rerank_width=750",
-        "--reloption",
-        "parallel_workers=2"
+        "rerank_width=750"
       ],
       "selected": true,
       "pgoptions": "-c max_parallel_maintenance_workers=2",
@@ -237,7 +245,11 @@
       "expected_artifacts": [
         "reviews/task-71/003-worker-curve/artifacts/load-real10k-w2.log"
       ],
-      "status": "pending"
+      "status": "succeeded",
+      "started_at_unix_ms": 1780452966441,
+      "finished_at_unix_ms": 1780452998781,
+      "duration_ms": 32338,
+      "exit_code": 0
     },
     {
       "name": "recall-real10k-w2",
@@ -282,7 +294,11 @@
       "expected_artifacts": [
         "reviews/task-71/003-worker-curve/artifacts/recall-real10k-w2.log"
       ],
-      "status": "pending"
+      "status": "succeeded",
+      "started_at_unix_ms": 1780452998782,
+      "finished_at_unix_ms": 1780453002579,
+      "duration_ms": 3796,
+      "exit_code": 0
     },
     {
       "name": "storage-real10k-w2",
@@ -310,7 +326,11 @@
       "expected_artifacts": [
         "reviews/task-71/003-worker-curve/artifacts/storage-real10k-w2.log"
       ],
-      "status": "pending"
+      "status": "succeeded",
+      "started_at_unix_ms": 1780453002580,
+      "finished_at_unix_ms": 1780453002594,
+      "duration_ms": 12,
+      "exit_code": 0
     },
     {
       "name": "load-real10k-w4",
@@ -341,6 +361,8 @@
         "4",
         "--seed",
         "42",
+        "--table-reloption",
+        "parallel_workers=4",
         "--reloption",
         "storage_format=pq_fastscan",
         "--reloption",
@@ -352,9 +374,7 @@
         "--reloption",
         "rerank=heap_f32",
         "--reloption",
-        "rerank_width=750",
-        "--reloption",
-        "parallel_workers=4"
+        "rerank_width=750"
       ],
       "selected": true,
       "pgoptions": "-c max_parallel_maintenance_workers=4",
@@ -366,7 +386,11 @@
       "expected_artifacts": [
         "reviews/task-71/003-worker-curve/artifacts/load-real10k-w4.log"
       ],
-      "status": "pending"
+      "status": "succeeded",
+      "started_at_unix_ms": 1780453002595,
+      "finished_at_unix_ms": 1780453972375,
+      "duration_ms": 35827,
+      "exit_code": 0
     },
     {
       "name": "recall-real10k-w4",
@@ -411,7 +435,11 @@
       "expected_artifacts": [
         "reviews/task-71/003-worker-curve/artifacts/recall-real10k-w4.log"
       ],
-      "status": "pending"
+      "status": "succeeded",
+      "started_at_unix_ms": 1780453972376,
+      "finished_at_unix_ms": 1780453975992,
+      "duration_ms": 3614,
+      "exit_code": 0
     },
     {
       "name": "storage-real10k-w4",
@@ -439,7 +467,11 @@
       "expected_artifacts": [
         "reviews/task-71/003-worker-curve/artifacts/storage-real10k-w4.log"
       ],
-      "status": "pending"
+      "status": "succeeded",
+      "started_at_unix_ms": 1780453975993,
+      "finished_at_unix_ms": 1780453976006,
+      "duration_ms": 11,
+      "exit_code": 0
     },
     {
       "name": "load-real10k-w8",
@@ -470,6 +502,8 @@
         "4",
         "--seed",
         "42",
+        "--table-reloption",
+        "parallel_workers=8",
         "--reloption",
         "storage_format=pq_fastscan",
         "--reloption",
@@ -481,9 +515,7 @@
         "--reloption",
         "rerank=heap_f32",
         "--reloption",
-        "rerank_width=750",
-        "--reloption",
-        "parallel_workers=8"
+        "rerank_width=750"
       ],
       "selected": true,
       "pgoptions": "-c max_parallel_maintenance_workers=8",
@@ -495,7 +527,11 @@
       "expected_artifacts": [
         "reviews/task-71/003-worker-curve/artifacts/load-real10k-w8.log"
       ],
-      "status": "pending"
+      "status": "succeeded",
+      "started_at_unix_ms": 1780453976007,
+      "finished_at_unix_ms": 1780454944752,
+      "duration_ms": 31886,
+      "exit_code": 0
     },
     {
       "name": "recall-real10k-w8",
@@ -540,7 +576,11 @@
       "expected_artifacts": [
         "reviews/task-71/003-worker-curve/artifacts/recall-real10k-w8.log"
       ],
-      "status": "pending"
+      "status": "succeeded",
+      "started_at_unix_ms": 1780454944753,
+      "finished_at_unix_ms": 1780454948455,
+      "duration_ms": 3700,
+      "exit_code": 0
     },
     {
       "name": "storage-real10k-w8",
@@ -568,7 +608,11 @@
       "expected_artifacts": [
         "reviews/task-71/003-worker-curve/artifacts/storage-real10k-w8.log"
       ],
-      "status": "pending"
+      "status": "succeeded",
+      "started_at_unix_ms": 1780454948456,
+      "finished_at_unix_ms": 1780454948471,
+      "duration_ms": 14,
+      "exit_code": 0
     },
     {
       "name": "load-real25k-w1",
@@ -599,6 +643,8 @@
         "4",
         "--seed",
         "42",
+        "--table-reloption",
+        "parallel_workers=1",
         "--reloption",
         "storage_format=pq_fastscan",
         "--reloption",
@@ -610,9 +656,7 @@
         "--reloption",
         "rerank=heap_f32",
         "--reloption",
-        "rerank_width=750",
-        "--reloption",
-        "parallel_workers=1"
+        "rerank_width=750"
       ],
       "selected": true,
       "pgoptions": "-c max_parallel_maintenance_workers=1",
@@ -624,7 +668,11 @@
       "expected_artifacts": [
         "reviews/task-71/003-worker-curve/artifacts/load-real25k-w1.log"
       ],
-      "status": "pending"
+      "status": "succeeded",
+      "started_at_unix_ms": 1780454948472,
+      "finished_at_unix_ms": 1780455958772,
+      "duration_ms": 68636,
+      "exit_code": 0
     },
     {
       "name": "recall-real25k-w1",
@@ -669,7 +717,11 @@
       "expected_artifacts": [
         "reviews/task-71/003-worker-curve/artifacts/recall-real25k-w1.log"
       ],
-      "status": "pending"
+      "status": "succeeded",
+      "started_at_unix_ms": 1780455958773,
+      "finished_at_unix_ms": 1780455983382,
+      "duration_ms": 24592,
+      "exit_code": 0
     },
     {
       "name": "storage-real25k-w1",
@@ -697,7 +749,11 @@
       "expected_artifacts": [
         "reviews/task-71/003-worker-curve/artifacts/storage-real25k-w1.log"
       ],
-      "status": "pending"
+      "status": "succeeded",
+      "started_at_unix_ms": 1780455983384,
+      "finished_at_unix_ms": 1780455983397,
+      "duration_ms": 12,
+      "exit_code": 0
     },
     {
       "name": "load-real25k-w2",
@@ -728,6 +784,8 @@
         "4",
         "--seed",
         "42",
+        "--table-reloption",
+        "parallel_workers=2",
         "--reloption",
         "storage_format=pq_fastscan",
         "--reloption",
@@ -739,9 +797,7 @@
         "--reloption",
         "rerank=heap_f32",
         "--reloption",
-        "rerank_width=750",
-        "--reloption",
-        "parallel_workers=2"
+        "rerank_width=750"
       ],
       "selected": true,
       "pgoptions": "-c max_parallel_maintenance_workers=2",
@@ -753,7 +809,11 @@
       "expected_artifacts": [
         "reviews/task-71/003-worker-curve/artifacts/load-real25k-w2.log"
       ],
-      "status": "pending"
+      "status": "succeeded",
+      "started_at_unix_ms": 1780455983398,
+      "finished_at_unix_ms": 1780457929616,
+      "duration_ms": 67533,
+      "exit_code": 0
     },
     {
       "name": "recall-real25k-w2",
@@ -798,7 +858,11 @@
       "expected_artifacts": [
         "reviews/task-71/003-worker-curve/artifacts/recall-real25k-w2.log"
       ],
-      "status": "pending"
+      "status": "succeeded",
+      "started_at_unix_ms": 1780457929617,
+      "finished_at_unix_ms": 1780457935680,
+      "duration_ms": 6066,
+      "exit_code": 0
     },
     {
       "name": "storage-real25k-w2",
@@ -826,7 +890,11 @@
       "expected_artifacts": [
         "reviews/task-71/003-worker-curve/artifacts/storage-real25k-w2.log"
       ],
-      "status": "pending"
+      "status": "succeeded",
+      "started_at_unix_ms": 1780457935681,
+      "finished_at_unix_ms": 1780457935696,
+      "duration_ms": 13,
+      "exit_code": 0
     },
     {
       "name": "load-real25k-w4",
@@ -857,6 +925,8 @@
         "4",
         "--seed",
         "42",
+        "--table-reloption",
+        "parallel_workers=4",
         "--reloption",
         "storage_format=pq_fastscan",
         "--reloption",
@@ -868,9 +938,7 @@
         "--reloption",
         "rerank=heap_f32",
         "--reloption",
-        "rerank_width=750",
-        "--reloption",
-        "parallel_workers=4"
+        "rerank_width=750"
       ],
       "selected": true,
       "pgoptions": "-c max_parallel_maintenance_workers=4",
@@ -882,7 +950,11 @@
       "expected_artifacts": [
         "reviews/task-71/003-worker-curve/artifacts/load-real25k-w4.log"
       ],
-      "status": "pending"
+      "status": "succeeded",
+      "started_at_unix_ms": 1780457935697,
+      "finished_at_unix_ms": 1780458002768,
+      "duration_ms": 67078,
+      "exit_code": 0
     },
     {
       "name": "recall-real25k-w4",
@@ -927,7 +999,11 @@
       "expected_artifacts": [
         "reviews/task-71/003-worker-curve/artifacts/recall-real25k-w4.log"
       ],
-      "status": "pending"
+      "status": "succeeded",
+      "started_at_unix_ms": 1780458002769,
+      "finished_at_unix_ms": 1780458008671,
+      "duration_ms": 5900,
+      "exit_code": 0
     },
     {
       "name": "storage-real25k-w4",
@@ -955,7 +1031,11 @@
       "expected_artifacts": [
         "reviews/task-71/003-worker-curve/artifacts/storage-real25k-w4.log"
       ],
-      "status": "pending"
+      "status": "succeeded",
+      "started_at_unix_ms": 1780458008672,
+      "finished_at_unix_ms": 1780458008685,
+      "duration_ms": 12,
+      "exit_code": 0
     },
     {
       "name": "load-real25k-w8",
@@ -986,6 +1066,8 @@
         "4",
         "--seed",
         "42",
+        "--table-reloption",
+        "parallel_workers=8",
         "--reloption",
         "storage_format=pq_fastscan",
         "--reloption",
@@ -997,9 +1079,7 @@
         "--reloption",
         "rerank=heap_f32",
         "--reloption",
-        "rerank_width=750",
-        "--reloption",
-        "parallel_workers=8"
+        "rerank_width=750"
       ],
       "selected": true,
       "pgoptions": "-c max_parallel_maintenance_workers=8",
@@ -1011,7 +1091,11 @@
       "expected_artifacts": [
         "reviews/task-71/003-worker-curve/artifacts/load-real25k-w8.log"
       ],
-      "status": "pending"
+      "status": "succeeded",
+      "started_at_unix_ms": 1780458008687,
+      "finished_at_unix_ms": 1780458077324,
+      "duration_ms": 68635,
+      "exit_code": 0
     },
     {
       "name": "recall-real25k-w8",
@@ -1056,7 +1140,11 @@
       "expected_artifacts": [
         "reviews/task-71/003-worker-curve/artifacts/recall-real25k-w8.log"
       ],
-      "status": "pending"
+      "status": "succeeded",
+      "started_at_unix_ms": 1780458077326,
+      "finished_at_unix_ms": 1780458083441,
+      "duration_ms": 6114,
+      "exit_code": 0
     },
     {
       "name": "storage-real25k-w8",
@@ -1084,7 +1172,11 @@
       "expected_artifacts": [
         "reviews/task-71/003-worker-curve/artifacts/storage-real25k-w8.log"
       ],
-      "status": "pending"
+      "status": "succeeded",
+      "started_at_unix_ms": 1780458083442,
+      "finished_at_unix_ms": 1780458083457,
+      "duration_ms": 13,
+      "exit_code": 0
     },
     {
       "name": "load-real50k-w1",
@@ -1115,6 +1207,8 @@
         "4",
         "--seed",
         "42",
+        "--table-reloption",
+        "parallel_workers=1",
         "--reloption",
         "storage_format=pq_fastscan",
         "--reloption",
@@ -1126,9 +1220,7 @@
         "--reloption",
         "rerank=heap_f32",
         "--reloption",
-        "rerank_width=750",
-        "--reloption",
-        "parallel_workers=1"
+        "rerank_width=750"
       ],
       "selected": true,
       "pgoptions": "-c max_parallel_maintenance_workers=1",
@@ -1140,7 +1232,11 @@
       "expected_artifacts": [
         "reviews/task-71/003-worker-curve/artifacts/load-real50k-w1.log"
       ],
-      "status": "pending"
+      "status": "succeeded",
+      "started_at_unix_ms": 1780458083458,
+      "finished_at_unix_ms": 1780458220053,
+      "duration_ms": 136593,
+      "exit_code": 0
     },
     {
       "name": "recall-real50k-w1",
@@ -1185,7 +1281,11 @@
       "expected_artifacts": [
         "reviews/task-71/003-worker-curve/artifacts/recall-real50k-w1.log"
       ],
-      "status": "pending"
+      "status": "succeeded",
+      "started_at_unix_ms": 1780458220054,
+      "finished_at_unix_ms": 1780458268447,
+      "duration_ms": 48391,
+      "exit_code": 0
     },
     {
       "name": "storage-real50k-w1",
@@ -1213,7 +1313,11 @@
       "expected_artifacts": [
         "reviews/task-71/003-worker-curve/artifacts/storage-real50k-w1.log"
       ],
-      "status": "pending"
+      "status": "succeeded",
+      "started_at_unix_ms": 1780458268448,
+      "finished_at_unix_ms": 1780458268464,
+      "duration_ms": 14,
+      "exit_code": 0
     },
     {
       "name": "load-real50k-w2",
@@ -1244,6 +1348,8 @@
         "4",
         "--seed",
         "42",
+        "--table-reloption",
+        "parallel_workers=2",
         "--reloption",
         "storage_format=pq_fastscan",
         "--reloption",
@@ -1255,9 +1361,7 @@
         "--reloption",
         "rerank=heap_f32",
         "--reloption",
-        "rerank_width=750",
-        "--reloption",
-        "parallel_workers=2"
+        "rerank_width=750"
       ],
       "selected": true,
       "pgoptions": "-c max_parallel_maintenance_workers=2",
@@ -1269,7 +1373,11 @@
       "expected_artifacts": [
         "reviews/task-71/003-worker-curve/artifacts/load-real50k-w2.log"
       ],
-      "status": "pending"
+      "status": "succeeded",
+      "started_at_unix_ms": 1780458268465,
+      "finished_at_unix_ms": 1780458400047,
+      "duration_ms": 131580,
+      "exit_code": 0
     },
     {
       "name": "recall-real50k-w2",
@@ -1314,7 +1422,11 @@
       "expected_artifacts": [
         "reviews/task-71/003-worker-curve/artifacts/recall-real50k-w2.log"
       ],
-      "status": "pending"
+      "status": "succeeded",
+      "started_at_unix_ms": 1780458400048,
+      "finished_at_unix_ms": 1780458409160,
+      "duration_ms": 9110,
+      "exit_code": 0
     },
     {
       "name": "storage-real50k-w2",
@@ -1342,7 +1454,11 @@
       "expected_artifacts": [
         "reviews/task-71/003-worker-curve/artifacts/storage-real50k-w2.log"
       ],
-      "status": "pending"
+      "status": "succeeded",
+      "started_at_unix_ms": 1780458409162,
+      "finished_at_unix_ms": 1780458409176,
+      "duration_ms": 13,
+      "exit_code": 0
     },
     {
       "name": "load-real50k-w4",
@@ -1373,6 +1489,8 @@
         "4",
         "--seed",
         "42",
+        "--table-reloption",
+        "parallel_workers=4",
         "--reloption",
         "storage_format=pq_fastscan",
         "--reloption",
@@ -1384,9 +1502,7 @@
         "--reloption",
         "rerank=heap_f32",
         "--reloption",
-        "rerank_width=750",
-        "--reloption",
-        "parallel_workers=4"
+        "rerank_width=750"
       ],
       "selected": true,
       "pgoptions": "-c max_parallel_maintenance_workers=4",
@@ -1398,7 +1514,11 @@
       "expected_artifacts": [
         "reviews/task-71/003-worker-curve/artifacts/load-real50k-w4.log"
       ],
-      "status": "pending"
+      "status": "succeeded",
+      "started_at_unix_ms": 1780458409178,
+      "finished_at_unix_ms": 1780458540240,
+      "duration_ms": 131061,
+      "exit_code": 0
     },
     {
       "name": "recall-real50k-w4",
@@ -1443,7 +1563,11 @@
       "expected_artifacts": [
         "reviews/task-71/003-worker-curve/artifacts/recall-real50k-w4.log"
       ],
-      "status": "pending"
+      "status": "succeeded",
+      "started_at_unix_ms": 1780458540241,
+      "finished_at_unix_ms": 1780458549396,
+      "duration_ms": 9153,
+      "exit_code": 0
     },
     {
       "name": "storage-real50k-w4",
@@ -1471,7 +1595,11 @@
       "expected_artifacts": [
         "reviews/task-71/003-worker-curve/artifacts/storage-real50k-w4.log"
       ],
-      "status": "pending"
+      "status": "succeeded",
+      "started_at_unix_ms": 1780458549397,
+      "finished_at_unix_ms": 1780458549412,
+      "duration_ms": 13,
+      "exit_code": 0
     },
     {
       "name": "load-real50k-w8",
@@ -1502,6 +1630,8 @@
         "4",
         "--seed",
         "42",
+        "--table-reloption",
+        "parallel_workers=8",
         "--reloption",
         "storage_format=pq_fastscan",
         "--reloption",
@@ -1513,9 +1643,7 @@
         "--reloption",
         "rerank=heap_f32",
         "--reloption",
-        "rerank_width=750",
-        "--reloption",
-        "parallel_workers=8"
+        "rerank_width=750"
       ],
       "selected": true,
       "pgoptions": "-c max_parallel_maintenance_workers=8",
@@ -1527,7 +1655,11 @@
       "expected_artifacts": [
         "reviews/task-71/003-worker-curve/artifacts/load-real50k-w8.log"
       ],
-      "status": "pending"
+      "status": "succeeded",
+      "started_at_unix_ms": 1780458549413,
+      "finished_at_unix_ms": 1780458680849,
+      "duration_ms": 131434,
+      "exit_code": 0
     },
     {
       "name": "recall-real50k-w8",
@@ -1572,7 +1704,11 @@
       "expected_artifacts": [
         "reviews/task-71/003-worker-curve/artifacts/recall-real50k-w8.log"
       ],
-      "status": "pending"
+      "status": "succeeded",
+      "started_at_unix_ms": 1780458680850,
+      "finished_at_unix_ms": 1780458690034,
+      "duration_ms": 9183,
+      "exit_code": 0
     },
     {
       "name": "storage-real50k-w8",
@@ -1600,7 +1736,11 @@
       "expected_artifacts": [
         "reviews/task-71/003-worker-curve/artifacts/storage-real50k-w8.log"
       ],
-      "status": "pending"
+      "status": "succeeded",
+      "started_at_unix_ms": 1780458690036,
+      "finished_at_unix_ms": 1780458690050,
+      "duration_ms": 13,
+      "exit_code": 0
     },
     {
       "name": "load-real100k-w1",
@@ -1631,6 +1771,8 @@
         "4",
         "--seed",
         "42",
+        "--table-reloption",
+        "parallel_workers=1",
         "--reloption",
         "storage_format=pq_fastscan",
         "--reloption",
@@ -1642,9 +1784,7 @@
         "--reloption",
         "rerank=heap_f32",
         "--reloption",
-        "rerank_width=500",
-        "--reloption",
-        "parallel_workers=1"
+        "rerank_width=500"
       ],
       "selected": true,
       "pgoptions": "-c max_parallel_maintenance_workers=1",
@@ -1656,7 +1796,11 @@
       "expected_artifacts": [
         "reviews/task-71/003-worker-curve/artifacts/load-real100k-w1.log"
       ],
-      "status": "pending"
+      "status": "succeeded",
+      "started_at_unix_ms": 1780458690052,
+      "finished_at_unix_ms": 1780459902026,
+      "duration_ms": 271262,
+      "exit_code": 0
     },
     {
       "name": "recall-real100k-w1",
@@ -1701,7 +1845,11 @@
       "expected_artifacts": [
         "reviews/task-71/003-worker-curve/artifacts/recall-real100k-w1.log"
       ],
-      "status": "pending"
+      "status": "succeeded",
+      "started_at_unix_ms": 1780459902027,
+      "finished_at_unix_ms": 1780459986918,
+      "duration_ms": 84885,
+      "exit_code": 0
     },
     {
       "name": "storage-real100k-w1",
@@ -1729,7 +1877,11 @@
       "expected_artifacts": [
         "reviews/task-71/003-worker-curve/artifacts/storage-real100k-w1.log"
       ],
-      "status": "pending"
+      "status": "succeeded",
+      "started_at_unix_ms": 1780459986919,
+      "finished_at_unix_ms": 1780459986935,
+      "duration_ms": 14,
+      "exit_code": 0
     },
     {
       "name": "load-real100k-w2",
@@ -1760,6 +1912,8 @@
         "4",
         "--seed",
         "42",
+        "--table-reloption",
+        "parallel_workers=2",
         "--reloption",
         "storage_format=pq_fastscan",
         "--reloption",
@@ -1771,9 +1925,7 @@
         "--reloption",
         "rerank=heap_f32",
         "--reloption",
-        "rerank_width=500",
-        "--reloption",
-        "parallel_workers=2"
+        "rerank_width=500"
       ],
       "selected": true,
       "pgoptions": "-c max_parallel_maintenance_workers=2",
@@ -1785,7 +1937,11 @@
       "expected_artifacts": [
         "reviews/task-71/003-worker-curve/artifacts/load-real100k-w2.log"
       ],
-      "status": "pending"
+      "status": "succeeded",
+      "started_at_unix_ms": 1780459986936,
+      "finished_at_unix_ms": 1780461202166,
+      "duration_ms": 294460,
+      "exit_code": 0
     },
     {
       "name": "recall-real100k-w2",
@@ -1830,7 +1986,11 @@
       "expected_artifacts": [
         "reviews/task-71/003-worker-curve/artifacts/recall-real100k-w2.log"
       ],
-      "status": "pending"
+      "status": "succeeded",
+      "started_at_unix_ms": 1780461202168,
+      "finished_at_unix_ms": 1780461211579,
+      "duration_ms": 9411,
+      "exit_code": 0
     },
     {
       "name": "storage-real100k-w2",
@@ -1858,7 +2018,11 @@
       "expected_artifacts": [
         "reviews/task-71/003-worker-curve/artifacts/storage-real100k-w2.log"
       ],
-      "status": "pending"
+      "status": "succeeded",
+      "started_at_unix_ms": 1780461211581,
+      "finished_at_unix_ms": 1780461211596,
+      "duration_ms": 14,
+      "exit_code": 0
     },
     {
       "name": "load-real100k-w4",
@@ -1889,6 +2053,8 @@
         "4",
         "--seed",
         "42",
+        "--table-reloption",
+        "parallel_workers=4",
         "--reloption",
         "storage_format=pq_fastscan",
         "--reloption",
@@ -1900,9 +2066,7 @@
         "--reloption",
         "rerank=heap_f32",
         "--reloption",
-        "rerank_width=500",
-        "--reloption",
-        "parallel_workers=4"
+        "rerank_width=500"
       ],
       "selected": true,
       "pgoptions": "-c max_parallel_maintenance_workers=4",
@@ -1914,7 +2078,11 @@
       "expected_artifacts": [
         "reviews/task-71/003-worker-curve/artifacts/load-real100k-w4.log"
       ],
-      "status": "pending"
+      "status": "succeeded",
+      "started_at_unix_ms": 1780461211598,
+      "finished_at_unix_ms": 1780462541581,
+      "duration_ms": 277143,
+      "exit_code": 0
     },
     {
       "name": "recall-real100k-w4",
@@ -1959,7 +2127,11 @@
       "expected_artifacts": [
         "reviews/task-71/003-worker-curve/artifacts/recall-real100k-w4.log"
       ],
-      "status": "pending"
+      "status": "succeeded",
+      "started_at_unix_ms": 1780462541582,
+      "finished_at_unix_ms": 1780462551042,
+      "duration_ms": 9458,
+      "exit_code": 0
     },
     {
       "name": "storage-real100k-w4",
@@ -1987,7 +2159,11 @@
       "expected_artifacts": [
         "reviews/task-71/003-worker-curve/artifacts/storage-real100k-w4.log"
       ],
-      "status": "pending"
+      "status": "succeeded",
+      "started_at_unix_ms": 1780462551044,
+      "finished_at_unix_ms": 1780462551060,
+      "duration_ms": 14,
+      "exit_code": 0
     },
     {
       "name": "load-real100k-w8",
@@ -2018,6 +2194,8 @@
         "4",
         "--seed",
         "42",
+        "--table-reloption",
+        "parallel_workers=8",
         "--reloption",
         "storage_format=pq_fastscan",
         "--reloption",
@@ -2029,9 +2207,7 @@
         "--reloption",
         "rerank=heap_f32",
         "--reloption",
-        "rerank_width=500",
-        "--reloption",
-        "parallel_workers=8"
+        "rerank_width=500"
       ],
       "selected": true,
       "pgoptions": "-c max_parallel_maintenance_workers=8",
@@ -2043,7 +2219,11 @@
       "expected_artifacts": [
         "reviews/task-71/003-worker-curve/artifacts/load-real100k-w8.log"
       ],
-      "status": "pending"
+      "status": "succeeded",
+      "started_at_unix_ms": 1780462551061,
+      "finished_at_unix_ms": 1780463727863,
+      "duration_ms": 277966,
+      "exit_code": 0
     },
     {
       "name": "recall-real100k-w8",
@@ -2088,7 +2268,11 @@
       "expected_artifacts": [
         "reviews/task-71/003-worker-curve/artifacts/recall-real100k-w8.log"
       ],
-      "status": "pending"
+      "status": "succeeded",
+      "started_at_unix_ms": 1780463727865,
+      "finished_at_unix_ms": 1780463737393,
+      "duration_ms": 9526,
+      "exit_code": 0
     },
     {
       "name": "storage-real100k-w8",
@@ -2116,7 +2300,11 @@
       "expected_artifacts": [
         "reviews/task-71/003-worker-curve/artifacts/storage-real100k-w8.log"
       ],
-      "status": "pending"
+      "status": "succeeded",
+      "started_at_unix_ms": 1780463737395,
+      "finished_at_unix_ms": 1780463737412,
+      "duration_ms": 15,
+      "exit_code": 0
     },
     {
       "name": "parallel-workers-after",
@@ -2149,7 +2337,11 @@
       "expected_artifacts": [
         "reviews/task-71/003-worker-curve/artifacts/parallel-workers-after.log"
       ],
-      "status": "pending"
+      "status": "succeeded",
+      "started_at_unix_ms": 1780463737413,
+      "finished_at_unix_ms": 1780463737444,
+      "duration_ms": 29,
+      "exit_code": 0
     }
   ]
 }

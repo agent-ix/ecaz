@@ -1,13 +1,14 @@
 # Task 71 / Packet 003 Artifact Manifest
 
-- Head SHA: `dcd45b2d8`
+- Head SHA: `20d4db545`
 - Task bucket: `reviews/task-71/`
 - Packet path: `reviews/task-71/003-worker-curve/`
-- Slice: Worker-curve suite setup
+- Slice: Worker-curve suite setup plus callback-wiring validation
 - Storage format: `pq_fastscan`
 - Rerank mode: `heap_f32`
-- Surface: dry-run suite config for isolated prefixes per dataset/worker count
-- Timestamp: 2026-06-02 America/Los_Angeles
+- Surface: dry-run suite config for isolated prefixes per dataset/worker count;
+  pre-fix hosted suite run; post-fix focused pg_test validation
+- Timestamp: 2026-06-03 America/Los_Angeles
 
 ## Artifacts
 
@@ -94,8 +95,61 @@
 
 - Command:
   `cargo run -p ecaz-cli -- --host /Users/peter/.pgrx --port 28818 bench suite run --config reviews/task-71/003-worker-curve/suite.json --manifest-output reviews/task-71/003-worker-curve/artifacts/suite-manifest.json --results-output reviews/task-71/003-worker-curve/artifacts/results.jsonl > reviews/task-71/003-worker-curve/artifacts/suite-run-escalated-hosted.log 2>&1`
-- Result: failed with the previous suite shape before `table_reloptions`
+- Result: completed for the pre-callback-fix implementation; invalid as final
+  Phase 3 evidence because worker counter stayed at zero
 - Key lines:
-  - `building task71_real10k_w1_idx using ec_ivf`
-  - `ERROR: unrecognized parameter "parallel_workers"`
-  - `suite step "load-real10k-w1" failed with exit code 1`
+  - `load-real10k-w1 -> PGOPTIONS="-c max_parallel_maintenance_workers=1" ... --table-reloption parallel_workers=1`
+  - `load-real100k-w8 -> PGOPTIONS="-c max_parallel_maintenance_workers=8" ... --table-reloption parallel_workers=8`
+  - `parallel-workers-after -> ... pg_stat_get_db_parallel_workers_launched(oid) ...`
+  - `tqvector_bench	0`
+  - `wrote reviews/task-71/003-worker-curve/artifacts/results.jsonl`
+
+### `parallel-workers-before.log` / `parallel-workers-after.log`
+
+- Command:
+  raw suite steps around the hosted suite run querying
+  `pg_stat_get_db_parallel_workers_launched(oid)`
+- Result: completed; showed no PG parallel workers launched during the pre-fix
+  hosted suite run
+- Key lines:
+  - Before: `tqvector_bench	0`
+  - After: `tqvector_bench	0`
+
+### `parallel-settings-after-zero-workers.log`
+
+- Command:
+  `cargo run -p ecaz-cli -- --host /Users/peter/.pgrx --port 28818 dev sql --pg 18 --db tqvector_bench --sql "SHOW max_parallel_workers; SHOW max_parallel_maintenance_workers; SHOW max_worker_processes;" --log-output reviews/task-71/003-worker-curve/artifacts/parallel-settings-after-zero-workers.log`
+- Result: passed
+- Key lines:
+  - `max_parallel_workers = 8`
+  - `max_parallel_maintenance_workers = 2`
+  - `max_worker_processes = 8`
+
+### `cargo-pgrx-test-pg18-ivf-parallel-build-after-routine-callbacks.log`
+
+- Command:
+  `cargo pgrx test pg18 test_ec_ivf_parallel_build_workers_and_counts > reviews/task-71/003-worker-curve/artifacts/cargo-pgrx-test-pg18-ivf-parallel-build-after-routine-callbacks.log 2>&1`
+- Result: failed during pgrx test setup, before the test body ran
+- Key lines:
+  - `failed writing ... ecaz.control ... Operation not permitted`
+  - `Could not initialize test framework`
+
+### `cargo-pgrx-test-pg18-ivf-parallel-build-after-routine-callbacks-escalated.log`
+
+- Command:
+  `cargo pgrx test pg18 test_ec_ivf_parallel_build_workers_and_counts > reviews/task-71/003-worker-curve/artifacts/cargo-pgrx-test-pg18-ivf-parallel-build-after-routine-callbacks-escalated.log 2>&1`
+- Result: passed after the IVF routine callback fix
+- Key lines:
+  - `test tests::pg_test_ec_ivf_parallel_build_workers_and_counts ... ok`
+  - `test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1939 filtered out; finished in 34.38s`
+
+## Current Suite Config
+
+- `suite.json` now sets both PostgreSQL build-worker caps on each load step:
+  `-c max_parallel_maintenance_workers=N -c max_parallel_workers=N`.
+- `suite.json` still uses `--table-reloption parallel_workers=N` for the heap
+  table storage option.
+- The next full suite run must regenerate `suite-dry-run.log`,
+  `suite-dry-run-manifest.json`, `suite-manifest.json`, and `results.jsonl`
+  after this config change before packet 003 can be used as final Phase 3
+  evidence.

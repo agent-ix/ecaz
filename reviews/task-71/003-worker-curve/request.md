@@ -23,6 +23,18 @@ The slice:
 - Includes raw before/after worker-counter steps using
   `pg_stat_get_db_parallel_workers_launched`.
 
+Follow-up after reviewer feedback:
+
+- Adds `20d4db545 Wire IVF parallel build scan callbacks`, which wires
+  `ec_ivf` to the common `amestimateparallelscan`, `aminitparallelscan`,
+  and `amparallelrescan` callbacks while keeping `amcanparallel = false`.
+  This fixes the zero-worker symptom found in the pre-fix suite run.
+- Tightens `test_ec_ivf_parallel_build_workers_and_counts` to set both
+  `max_parallel_maintenance_workers` and `max_parallel_workers`, matching
+  the HNSW parallel-build test setup.
+- Updates `suite.json` so every load step sets both
+  `max_parallel_maintenance_workers=N` and `max_parallel_workers=N`.
+
 This packet prepares the required measurement run; it does not yet claim the
 full Phase 3 benchmark results.
 
@@ -45,6 +57,25 @@ Packet-local artifacts are under
 - `cargo run -p ecaz-cli -- dev sql --pg 18 --db tqvector_bench --socket-dir /Users/peter/.pgrx ...`
   - Preflight confirmed `tqvector_bench` has extension `ecaz 0.1.1`
     and access method `ec_ivf`.
+- `cargo pgrx test pg18 test_ec_ivf_parallel_build_workers_and_counts`
+  - Non-escalated run failed during pgrx extension install with
+    `Operation not permitted` writing into the PostgreSQL extension
+    directory; the test body did not run.
+  - Escalated run passed:
+    `test tests::pg_test_ec_ivf_parallel_build_workers_and_counts ... ok`.
+  - Because the test asserts `requested_workers == 2` and
+    `workers_launched >= 1`, this validates that the callback wiring can
+    launch IVF parallel-build workers in the PG18 pg_test environment.
+
+The pre-fix hosted full-suite run completed, but it is not Phase 3 evidence
+for the fixed implementation:
+
+- `parallel-workers-before.log` and `parallel-workers-after.log` both report
+  `tqvector_bench  0`.
+- The run therefore measured serial/fallback behavior despite requested
+  worker counts.
+- The post-fix suite still needs to be re-run before Task 71 can claim the
+  build-time curve exit criterion.
 
 Failed full-suite attempts are retained as packet-local artifacts because they
 explain the runner fixes:
@@ -67,3 +98,5 @@ explain the runner fixes:
 - Whether the suite matrix matches Task 71 Phase 3: worker counts 1/2/4/8,
   real10k/25k/50k/100k, fixed recall@10 point, storage checks, and worker
   counter evidence.
+- Whether the post-callback suite rerun should add per-build worker-counter
+  sampling rather than relying on before/after bracket sampling.
