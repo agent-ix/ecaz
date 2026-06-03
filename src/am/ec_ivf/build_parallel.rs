@@ -100,6 +100,13 @@ struct EcIvfParallelBuildSharedHeader {
     encoded_index_tuples: f64,
 }
 
+#[derive(Debug, Copy, Clone)]
+struct EcIvfParallelBuildSharedCounts {
+    participants_done: i32,
+    scanned_heap_tuples: f64,
+    encoded_index_tuples: f64,
+}
+
 impl EcIvfParallelBuildSharedHeader {
     fn new(
         plan: EcIvfParallelBuildPlan,
@@ -128,6 +135,14 @@ impl EcIvfParallelBuildSharedHeader {
         self.nparticipantsdone += 1;
         self.scanned_heap_tuples += heap_tuples;
         self.encoded_index_tuples += index_tuples;
+    }
+
+    fn counts(&self) -> EcIvfParallelBuildSharedCounts {
+        EcIvfParallelBuildSharedCounts {
+            participants_done: self.nparticipantsdone,
+            scanned_heap_tuples: self.scanned_heap_tuples,
+            encoded_index_tuples: self.encoded_index_tuples,
+        }
     }
 
     fn validate(&self) {
@@ -169,7 +184,7 @@ pub(super) unsafe fn try_parallel_build(
     let mut worker_tuples = Vec::new();
     // SAFETY: `leader` owns the live worker queues until `finish`.
     unsafe { leader.drain_worker_messages(&mut worker_tuples) };
-    leader.finish();
+    let shared_counts = leader.finish();
     let drain_us = elapsed_us(drain_start);
 
     let sort_push_start = Instant::now();
@@ -177,6 +192,7 @@ pub(super) unsafe fn try_parallel_build(
     for tuple in worker_tuples {
         state.push(tuple);
     }
+    validate_parallel_build_counts(plan, shared_counts, state.scanned_tuples);
     let sort_push_us = elapsed_us(sort_push_start);
 
     Some(EcIvfParallelBuildResult {
@@ -189,6 +205,7 @@ pub(super) unsafe fn try_parallel_build(
 
 struct EcIvfParallelBuildLeader {
     pcxt: *mut pg_sys::ParallelContext,
+    shared: *mut EcIvfParallelBuildSharedHeader,
     snapshot_guard: Option<RegisteredSnapshotGuard>,
     queue_handles: Vec<*mut pg_sys::shm_mq_handle>,
     walusage: *mut pg_sys::WalUsage,
@@ -265,7 +282,7 @@ impl EcIvfParallelBuildLeader {
         }
 
         // SAFETY: `pcxt` is live and fully estimated; DSM allocations are sized.
-        unsafe {
+        let shared = unsafe {
             pg_sys::InitializeParallelDSM(pcxt);
             if (*pcxt).seg.is_null() {
                 pg_sys::DestroyParallelContext(pcxt);
@@ -291,7 +308,8 @@ impl EcIvfParallelBuildLeader {
                 snapshot,
             );
             pg_sys::shm_toc_insert((*pcxt).toc, PARALLEL_KEY_EC_IVF_BUILD_SHARED, shared.cast());
-        }
+            shared
+        };
 
         // SAFETY: Queue chunks were estimated and inserted before launch.
         unsafe {
@@ -340,6 +358,7 @@ impl EcIvfParallelBuildLeader {
 
         let mut leader = Self {
             pcxt,
+            shared,
             snapshot_guard,
             queue_handles: Vec::with_capacity(workers_launched.max(0) as usize),
             walusage,
@@ -424,9 +443,9 @@ impl EcIvfParallelBuildLeader {
         }
     }
 
-    fn finish(mut self) {
+    fn finish(mut self) -> EcIvfParallelBuildSharedCounts {
         // SAFETY: `pcxt` and accounting arrays are live until destroyed below.
-        unsafe {
+        let shared_counts = unsafe {
             pg_sys::WaitForParallelWorkersToFinish(self.pcxt);
             let launched = (*self.pcxt).nworkers_launched.max(0) as usize;
             for worker_index in 0..launched {
@@ -435,7 +454,8 @@ impl EcIvfParallelBuildLeader {
                     self.walusage.add(worker_index),
                 );
             }
-        }
+            (*self.shared).counts()
+        };
 
         drop(self.snapshot_guard.take());
 
@@ -444,6 +464,40 @@ impl EcIvfParallelBuildLeader {
             pg_sys::DestroyParallelContext(self.pcxt);
             pg_sys::ExitParallelMode();
         }
+        shared_counts
+    }
+}
+
+fn validate_parallel_build_counts(
+    plan: EcIvfParallelBuildPlan,
+    shared_counts: EcIvfParallelBuildSharedCounts,
+    scanned_tuples: usize,
+) {
+    let workers_launched = debug_last_parallel_build_workers_launched();
+    if shared_counts.participants_done != workers_launched {
+        pgrx::error!(
+            "ec_ivf parallel build launched {workers_launched} workers but recorded {} finished participants",
+            shared_counts.participants_done
+        );
+    }
+    if workers_launched > plan.requested_workers {
+        pgrx::error!(
+            "ec_ivf parallel build launched {workers_launched} workers but only requested {}",
+            plan.requested_workers
+        );
+    }
+    let scanned = scanned_tuples as f64;
+    if shared_counts.scanned_heap_tuples != scanned {
+        pgrx::error!(
+            "ec_ivf parallel build workers scanned {} heap tuples but leader observed {scanned}",
+            shared_counts.scanned_heap_tuples
+        );
+    }
+    if shared_counts.encoded_index_tuples != scanned {
+        pgrx::error!(
+            "ec_ivf parallel build workers encoded {} index tuples but leader observed {scanned}",
+            shared_counts.encoded_index_tuples
+        );
     }
 }
 
