@@ -15,6 +15,47 @@
             .join(", ")
     }
 
+    fn ec_ivf_page_ownership_signature(index_name: &str) -> String {
+        Spi::get_one::<String>(&format!(
+            "SELECT COALESCE(
+                string_agg(
+                    block_number || ':' ||
+                    line_pointer_count || ':' ||
+                    unused_line_pointers || ':' ||
+                    non_posting_tuples || ':' ||
+                    posting_tuples || ':' ||
+                    live_posting_tuples || ':' ||
+                    deleted_posting_tuples || ':' ||
+                    heap_tid_refs || ':' ||
+                    distinct_lists || ':' ||
+                    COALESCE(min_list_id::text, '') || ':' ||
+                    COALESCE(max_list_id::text, '') || ':' ||
+                    list_ids,
+                    ';' ORDER BY block_number
+                ),
+                ''
+             )
+             FROM ec_ivf_index_page_ownership('{index_name}'::regclass)"
+        ))
+        .expect("page ownership signature query should succeed")
+        .expect("page ownership signature should not be NULL")
+    }
+
+    fn ec_ivf_build_metadata_signature(
+        index_oid: pg_sys::Oid,
+    ) -> (u16, u32, u16, u64, bool, bool) {
+        ec_ivf_debug!(am::debug_ec_ivf_build_metadata(index_oid))
+    }
+
+    fn ec_ivf_directory_signatures(
+        index_oid: pg_sys::Oid,
+        nlists: u32,
+    ) -> Vec<(u32, u32, u64, u64, u64)> {
+        (0..nlists)
+            .map(|list_id| ec_ivf_debug!(am::debug_ec_ivf_directory_entry(index_oid, list_id)))
+            .collect()
+    }
+
     #[pg_extern]
     #[allow(clippy::type_complexity)]
     fn ec_ivf_debug_last_build_timing() -> TableIterator<
@@ -274,6 +315,125 @@
         assert_eq!(directory_live, 128);
         assert_eq!(directory_dead, 0);
         assert_eq!(inserted_since_build, 0);
+        Spi::run("RESET max_parallel_workers").expect("reset should succeed");
+        Spi::run("RESET max_parallel_maintenance_workers").expect("reset should succeed");
+    }
+
+    #[pg_test]
+    fn test_ec_ivf_parallel_build_matches_serial_structure() {
+        Spi::run("SET max_parallel_maintenance_workers = 0")
+            .expect("serial maintenance worker setting should be accepted");
+        Spi::run("SET max_parallel_workers = 0")
+            .expect("serial worker setting should be accepted");
+        Spi::run(
+            "CREATE TABLE ec_ivf_serial_equiv (
+                id bigint primary key,
+                embedding ecvector
+             )",
+        )
+        .expect("serial table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_ivf_serial_equiv
+             SELECT id,
+                    ARRAY[
+                        (id % 17)::real,
+                        ((id * 3) % 19)::real,
+                        ((id * 5 + 1) % 23)::real,
+                        ((id * 7 + 2) % 29)::real
+                    ]::ecvector
+             FROM generate_series(1, 128) AS id",
+        )
+        .expect("serial seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_ivf_serial_equiv_idx ON ec_ivf_serial_equiv USING ec_ivf \
+             (embedding ecvector_ip_ops) \
+             WITH (nlists = 8, nprobe = 4, training_sample_rows = 64, seed = 710)",
+        )
+        .expect("serial index creation should succeed");
+
+        Spi::run("SET max_parallel_maintenance_workers = 4")
+            .expect("parallel maintenance worker setting should be accepted");
+        Spi::run("SET max_parallel_workers = 4")
+            .expect("parallel worker setting should be accepted");
+        Spi::run(
+            "CREATE TABLE ec_ivf_parallel_equiv (
+                id bigint primary key,
+                embedding ecvector
+             ) WITH (parallel_workers = 4)",
+        )
+        .expect("parallel table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_ivf_parallel_equiv
+             SELECT id,
+                    ARRAY[
+                        (id % 17)::real,
+                        ((id * 3) % 19)::real,
+                        ((id * 5 + 1) % 23)::real,
+                        ((id * 7 + 2) % 29)::real
+                    ]::ecvector
+             FROM generate_series(1, 128) AS id",
+        )
+        .expect("parallel seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_ivf_parallel_equiv_idx ON ec_ivf_parallel_equiv USING ec_ivf \
+             (embedding ecvector_ip_ops) \
+             WITH (nlists = 8, nprobe = 4, training_sample_rows = 64, seed = 710)",
+        )
+        .expect("parallel index creation should succeed");
+
+        let parallel_workers_launched = Spi::connect(|client| {
+            let mut rows = client
+                .select(
+                    "SELECT workers_launched
+                     FROM tests.ec_ivf_debug_last_build_timing()",
+                    None,
+                    &[],
+                )
+                .expect("timing query should succeed");
+            rows.next()
+                .expect("timing query should return one row")
+                .get::<i64>(1)
+                .expect("workers_launched should decode")
+                .expect("workers_launched should not be NULL")
+        });
+        assert!(
+            parallel_workers_launched >= 1,
+            "parallel equivalence build should launch workers, launched {parallel_workers_launched}"
+        );
+
+        let serial_oid = ec_ivf_index_oid("ec_ivf_serial_equiv_idx");
+        let parallel_oid = ec_ivf_index_oid("ec_ivf_parallel_equiv_idx");
+        let serial_metadata = ec_ivf_build_metadata_signature(serial_oid);
+        let parallel_metadata = ec_ivf_build_metadata_signature(parallel_oid);
+        assert_eq!(serial_metadata, parallel_metadata);
+
+        let nlists = serial_metadata.1;
+        assert_eq!(
+            ec_ivf_directory_signatures(serial_oid, nlists),
+            ec_ivf_directory_signatures(parallel_oid, nlists)
+        );
+        assert_eq!(
+            ec_ivf_index_blocks("ec_ivf_serial_equiv_idx"),
+            ec_ivf_index_blocks("ec_ivf_parallel_equiv_idx")
+        );
+        assert_eq!(
+            ec_ivf_page_ownership_signature("ec_ivf_serial_equiv_idx"),
+            ec_ivf_page_ownership_signature("ec_ivf_parallel_equiv_idx")
+        );
+
+        let serial_ctid_to_id = ctid_id_map("ec_ivf_serial_equiv");
+        let parallel_ctid_to_id = ctid_id_map("ec_ivf_parallel_equiv");
+        for query in [
+            vec![1.0, 3.0, 6.0, 9.0],
+            vec![8.0, 5.0, 2.0, 13.0],
+            vec![16.0, 18.0, 22.0, 28.0],
+        ] {
+            assert_eq!(
+                ivf_debug_output_ids(serial_oid, query.clone(), &serial_ctid_to_id, 16),
+                ivf_debug_output_ids(parallel_oid, query, &parallel_ctid_to_id, 16)
+            );
+        }
+
         Spi::run("RESET max_parallel_workers").expect("reset should succeed");
         Spi::run("RESET max_parallel_maintenance_workers").expect("reset should succeed");
     }
