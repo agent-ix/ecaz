@@ -1,0 +1,702 @@
+{
+  "name": "task71-ivf-parallel-build-worker-curve",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-71/003-worker-curve/artifacts",
+  "defaults": {
+    "profile": "ec_ivf",
+    "bits": 4,
+    "seed": 42,
+    "queries_limit": 100,
+    "iterations": 100,
+    "force_index": true,
+    "sample_backend_memory": true,
+    "memory_sample_interval_ms": 25,
+    "pg": 18,
+    "socket_dir": "/Users/peter/.pgrx"
+  },
+  "steps": [
+    {
+      "kind": "raw",
+      "name": "parallel-workers-before",
+      "tags": ["worker-counter", "before"],
+      "args": [
+        "dev",
+        "sql",
+        "--pg",
+        "18",
+        "--db",
+        "postgres",
+        "--socket-dir",
+        "/Users/peter/.pgrx",
+        "--tuples-only",
+        "--sql",
+        "SELECT datname, pg_stat_get_db_parallel_workers_launched(oid) AS parallel_workers_launched FROM pg_database WHERE datname = current_database();",
+        "--log-output",
+        "${artifact_dir}/parallel-workers-before.log"
+      ],
+      "expected_artifacts": ["${artifact_dir}/parallel-workers-before.log"]
+    },
+
+    {
+      "kind": "load",
+      "name": "load-real10k-w1",
+      "tags": ["load", "real10k", "workers1"],
+      "pgoptions": "-c max_parallel_maintenance_workers=1",
+      "prefix": "task71_real10k_w1",
+      "corpus_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_corpus.tsv",
+      "queries_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_queries.tsv",
+      "manifest_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "storage_format=pq_fastscan",
+        "pq_group_size=8",
+        "nlists=64",
+        "nprobe=48",
+        "rerank=heap_f32",
+        "rerank_width=750",
+        "parallel_workers=1"
+      ],
+      "log_file": "${artifact_dir}/load-real10k-w1.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-real10k-w1",
+      "tags": ["recall", "real10k", "workers1"],
+      "prefix": "task71_real10k_w1",
+      "k": 10,
+      "sweep": [48],
+      "rerank_width": 750,
+      "truth_cache_file": "${artifact_dir}/truth-real10k-k10.json",
+      "log_output": "${artifact_dir}/recall-real10k-w1.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-real10k-w1",
+      "tags": ["storage", "real10k", "workers1"],
+      "prefix": "task71_real10k_w1",
+      "log_file": "${artifact_dir}/storage-real10k-w1.log"
+    },
+
+    {
+      "kind": "load",
+      "name": "load-real10k-w2",
+      "tags": ["load", "real10k", "workers2"],
+      "pgoptions": "-c max_parallel_maintenance_workers=2",
+      "prefix": "task71_real10k_w2",
+      "corpus_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_corpus.tsv",
+      "queries_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_queries.tsv",
+      "manifest_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "storage_format=pq_fastscan",
+        "pq_group_size=8",
+        "nlists=64",
+        "nprobe=48",
+        "rerank=heap_f32",
+        "rerank_width=750",
+        "parallel_workers=2"
+      ],
+      "log_file": "${artifact_dir}/load-real10k-w2.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-real10k-w2",
+      "tags": ["recall", "real10k", "workers2"],
+      "prefix": "task71_real10k_w2",
+      "k": 10,
+      "sweep": [48],
+      "rerank_width": 750,
+      "truth_cache_file": "${artifact_dir}/truth-real10k-k10.json",
+      "log_output": "${artifact_dir}/recall-real10k-w2.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-real10k-w2",
+      "tags": ["storage", "real10k", "workers2"],
+      "prefix": "task71_real10k_w2",
+      "log_file": "${artifact_dir}/storage-real10k-w2.log"
+    },
+
+    {
+      "kind": "load",
+      "name": "load-real10k-w4",
+      "tags": ["load", "real10k", "workers4"],
+      "pgoptions": "-c max_parallel_maintenance_workers=4",
+      "prefix": "task71_real10k_w4",
+      "corpus_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_corpus.tsv",
+      "queries_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_queries.tsv",
+      "manifest_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "storage_format=pq_fastscan",
+        "pq_group_size=8",
+        "nlists=64",
+        "nprobe=48",
+        "rerank=heap_f32",
+        "rerank_width=750",
+        "parallel_workers=4"
+      ],
+      "log_file": "${artifact_dir}/load-real10k-w4.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-real10k-w4",
+      "tags": ["recall", "real10k", "workers4"],
+      "prefix": "task71_real10k_w4",
+      "k": 10,
+      "sweep": [48],
+      "rerank_width": 750,
+      "truth_cache_file": "${artifact_dir}/truth-real10k-k10.json",
+      "log_output": "${artifact_dir}/recall-real10k-w4.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-real10k-w4",
+      "tags": ["storage", "real10k", "workers4"],
+      "prefix": "task71_real10k_w4",
+      "log_file": "${artifact_dir}/storage-real10k-w4.log"
+    },
+
+    {
+      "kind": "load",
+      "name": "load-real10k-w8",
+      "tags": ["load", "real10k", "workers8"],
+      "pgoptions": "-c max_parallel_maintenance_workers=8",
+      "prefix": "task71_real10k_w8",
+      "corpus_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_corpus.tsv",
+      "queries_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_queries.tsv",
+      "manifest_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "storage_format=pq_fastscan",
+        "pq_group_size=8",
+        "nlists=64",
+        "nprobe=48",
+        "rerank=heap_f32",
+        "rerank_width=750",
+        "parallel_workers=8"
+      ],
+      "log_file": "${artifact_dir}/load-real10k-w8.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-real10k-w8",
+      "tags": ["recall", "real10k", "workers8"],
+      "prefix": "task71_real10k_w8",
+      "k": 10,
+      "sweep": [48],
+      "rerank_width": 750,
+      "truth_cache_file": "${artifact_dir}/truth-real10k-k10.json",
+      "log_output": "${artifact_dir}/recall-real10k-w8.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-real10k-w8",
+      "tags": ["storage", "real10k", "workers8"],
+      "prefix": "task71_real10k_w8",
+      "log_file": "${artifact_dir}/storage-real10k-w8.log"
+    },
+
+    {
+      "kind": "load",
+      "name": "load-real25k-w1",
+      "tags": ["load", "real25k", "workers1"],
+      "pgoptions": "-c max_parallel_maintenance_workers=1",
+      "prefix": "task71_real25k_w1",
+      "corpus_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_25k_corpus.tsv",
+      "queries_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_25k_queries.tsv",
+      "manifest_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_25k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "storage_format=pq_fastscan",
+        "pq_group_size=8",
+        "nlists=64",
+        "nprobe=48",
+        "rerank=heap_f32",
+        "rerank_width=750",
+        "parallel_workers=1"
+      ],
+      "log_file": "${artifact_dir}/load-real25k-w1.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-real25k-w1",
+      "tags": ["recall", "real25k", "workers1"],
+      "prefix": "task71_real25k_w1",
+      "k": 10,
+      "sweep": [48],
+      "rerank_width": 750,
+      "truth_cache_file": "${artifact_dir}/truth-real25k-k10.json",
+      "log_output": "${artifact_dir}/recall-real25k-w1.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-real25k-w1",
+      "tags": ["storage", "real25k", "workers1"],
+      "prefix": "task71_real25k_w1",
+      "log_file": "${artifact_dir}/storage-real25k-w1.log"
+    },
+
+    {
+      "kind": "load",
+      "name": "load-real25k-w2",
+      "tags": ["load", "real25k", "workers2"],
+      "pgoptions": "-c max_parallel_maintenance_workers=2",
+      "prefix": "task71_real25k_w2",
+      "corpus_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_25k_corpus.tsv",
+      "queries_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_25k_queries.tsv",
+      "manifest_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_25k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "storage_format=pq_fastscan",
+        "pq_group_size=8",
+        "nlists=64",
+        "nprobe=48",
+        "rerank=heap_f32",
+        "rerank_width=750",
+        "parallel_workers=2"
+      ],
+      "log_file": "${artifact_dir}/load-real25k-w2.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-real25k-w2",
+      "tags": ["recall", "real25k", "workers2"],
+      "prefix": "task71_real25k_w2",
+      "k": 10,
+      "sweep": [48],
+      "rerank_width": 750,
+      "truth_cache_file": "${artifact_dir}/truth-real25k-k10.json",
+      "log_output": "${artifact_dir}/recall-real25k-w2.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-real25k-w2",
+      "tags": ["storage", "real25k", "workers2"],
+      "prefix": "task71_real25k_w2",
+      "log_file": "${artifact_dir}/storage-real25k-w2.log"
+    },
+
+    {
+      "kind": "load",
+      "name": "load-real25k-w4",
+      "tags": ["load", "real25k", "workers4"],
+      "pgoptions": "-c max_parallel_maintenance_workers=4",
+      "prefix": "task71_real25k_w4",
+      "corpus_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_25k_corpus.tsv",
+      "queries_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_25k_queries.tsv",
+      "manifest_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_25k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "storage_format=pq_fastscan",
+        "pq_group_size=8",
+        "nlists=64",
+        "nprobe=48",
+        "rerank=heap_f32",
+        "rerank_width=750",
+        "parallel_workers=4"
+      ],
+      "log_file": "${artifact_dir}/load-real25k-w4.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-real25k-w4",
+      "tags": ["recall", "real25k", "workers4"],
+      "prefix": "task71_real25k_w4",
+      "k": 10,
+      "sweep": [48],
+      "rerank_width": 750,
+      "truth_cache_file": "${artifact_dir}/truth-real25k-k10.json",
+      "log_output": "${artifact_dir}/recall-real25k-w4.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-real25k-w4",
+      "tags": ["storage", "real25k", "workers4"],
+      "prefix": "task71_real25k_w4",
+      "log_file": "${artifact_dir}/storage-real25k-w4.log"
+    },
+
+    {
+      "kind": "load",
+      "name": "load-real25k-w8",
+      "tags": ["load", "real25k", "workers8"],
+      "pgoptions": "-c max_parallel_maintenance_workers=8",
+      "prefix": "task71_real25k_w8",
+      "corpus_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_25k_corpus.tsv",
+      "queries_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_25k_queries.tsv",
+      "manifest_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_25k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "storage_format=pq_fastscan",
+        "pq_group_size=8",
+        "nlists=64",
+        "nprobe=48",
+        "rerank=heap_f32",
+        "rerank_width=750",
+        "parallel_workers=8"
+      ],
+      "log_file": "${artifact_dir}/load-real25k-w8.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-real25k-w8",
+      "tags": ["recall", "real25k", "workers8"],
+      "prefix": "task71_real25k_w8",
+      "k": 10,
+      "sweep": [48],
+      "rerank_width": 750,
+      "truth_cache_file": "${artifact_dir}/truth-real25k-k10.json",
+      "log_output": "${artifact_dir}/recall-real25k-w8.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-real25k-w8",
+      "tags": ["storage", "real25k", "workers8"],
+      "prefix": "task71_real25k_w8",
+      "log_file": "${artifact_dir}/storage-real25k-w8.log"
+    },
+
+    {
+      "kind": "load",
+      "name": "load-real50k-w1",
+      "tags": ["load", "real50k", "workers1"],
+      "pgoptions": "-c max_parallel_maintenance_workers=1",
+      "prefix": "task71_real50k_w1",
+      "corpus_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_50k_corpus.tsv",
+      "queries_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_50k_queries.tsv",
+      "manifest_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_50k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "storage_format=pq_fastscan",
+        "pq_group_size=8",
+        "nlists=64",
+        "nprobe=48",
+        "rerank=heap_f32",
+        "rerank_width=750",
+        "parallel_workers=1"
+      ],
+      "log_file": "${artifact_dir}/load-real50k-w1.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-real50k-w1",
+      "tags": ["recall", "real50k", "workers1"],
+      "prefix": "task71_real50k_w1",
+      "k": 10,
+      "sweep": [48],
+      "rerank_width": 750,
+      "truth_cache_file": "${artifact_dir}/truth-real50k-k10.json",
+      "log_output": "${artifact_dir}/recall-real50k-w1.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-real50k-w1",
+      "tags": ["storage", "real50k", "workers1"],
+      "prefix": "task71_real50k_w1",
+      "log_file": "${artifact_dir}/storage-real50k-w1.log"
+    },
+
+    {
+      "kind": "load",
+      "name": "load-real50k-w2",
+      "tags": ["load", "real50k", "workers2"],
+      "pgoptions": "-c max_parallel_maintenance_workers=2",
+      "prefix": "task71_real50k_w2",
+      "corpus_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_50k_corpus.tsv",
+      "queries_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_50k_queries.tsv",
+      "manifest_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_50k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "storage_format=pq_fastscan",
+        "pq_group_size=8",
+        "nlists=64",
+        "nprobe=48",
+        "rerank=heap_f32",
+        "rerank_width=750",
+        "parallel_workers=2"
+      ],
+      "log_file": "${artifact_dir}/load-real50k-w2.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-real50k-w2",
+      "tags": ["recall", "real50k", "workers2"],
+      "prefix": "task71_real50k_w2",
+      "k": 10,
+      "sweep": [48],
+      "rerank_width": 750,
+      "truth_cache_file": "${artifact_dir}/truth-real50k-k10.json",
+      "log_output": "${artifact_dir}/recall-real50k-w2.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-real50k-w2",
+      "tags": ["storage", "real50k", "workers2"],
+      "prefix": "task71_real50k_w2",
+      "log_file": "${artifact_dir}/storage-real50k-w2.log"
+    },
+
+    {
+      "kind": "load",
+      "name": "load-real50k-w4",
+      "tags": ["load", "real50k", "workers4"],
+      "pgoptions": "-c max_parallel_maintenance_workers=4",
+      "prefix": "task71_real50k_w4",
+      "corpus_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_50k_corpus.tsv",
+      "queries_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_50k_queries.tsv",
+      "manifest_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_50k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "storage_format=pq_fastscan",
+        "pq_group_size=8",
+        "nlists=64",
+        "nprobe=48",
+        "rerank=heap_f32",
+        "rerank_width=750",
+        "parallel_workers=4"
+      ],
+      "log_file": "${artifact_dir}/load-real50k-w4.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-real50k-w4",
+      "tags": ["recall", "real50k", "workers4"],
+      "prefix": "task71_real50k_w4",
+      "k": 10,
+      "sweep": [48],
+      "rerank_width": 750,
+      "truth_cache_file": "${artifact_dir}/truth-real50k-k10.json",
+      "log_output": "${artifact_dir}/recall-real50k-w4.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-real50k-w4",
+      "tags": ["storage", "real50k", "workers4"],
+      "prefix": "task71_real50k_w4",
+      "log_file": "${artifact_dir}/storage-real50k-w4.log"
+    },
+
+    {
+      "kind": "load",
+      "name": "load-real50k-w8",
+      "tags": ["load", "real50k", "workers8"],
+      "pgoptions": "-c max_parallel_maintenance_workers=8",
+      "prefix": "task71_real50k_w8",
+      "corpus_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_50k_corpus.tsv",
+      "queries_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_50k_queries.tsv",
+      "manifest_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_50k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "storage_format=pq_fastscan",
+        "pq_group_size=8",
+        "nlists=64",
+        "nprobe=48",
+        "rerank=heap_f32",
+        "rerank_width=750",
+        "parallel_workers=8"
+      ],
+      "log_file": "${artifact_dir}/load-real50k-w8.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-real50k-w8",
+      "tags": ["recall", "real50k", "workers8"],
+      "prefix": "task71_real50k_w8",
+      "k": 10,
+      "sweep": [48],
+      "rerank_width": 750,
+      "truth_cache_file": "${artifact_dir}/truth-real50k-k10.json",
+      "log_output": "${artifact_dir}/recall-real50k-w8.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-real50k-w8",
+      "tags": ["storage", "real50k", "workers8"],
+      "prefix": "task71_real50k_w8",
+      "log_file": "${artifact_dir}/storage-real50k-w8.log"
+    },
+
+    {
+      "kind": "load",
+      "name": "load-real100k-w1",
+      "tags": ["load", "real100k", "workers1"],
+      "pgoptions": "-c max_parallel_maintenance_workers=1",
+      "prefix": "task71_real100k_w1",
+      "corpus_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_100k_corpus.tsv",
+      "queries_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_100k_queries.tsv",
+      "manifest_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_100k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "storage_format=pq_fastscan",
+        "pq_group_size=8",
+        "nlists=128",
+        "nprobe=48",
+        "rerank=heap_f32",
+        "rerank_width=500",
+        "parallel_workers=1"
+      ],
+      "log_file": "${artifact_dir}/load-real100k-w1.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-real100k-w1",
+      "tags": ["recall", "real100k", "workers1"],
+      "prefix": "task71_real100k_w1",
+      "k": 10,
+      "sweep": [48],
+      "rerank_width": 500,
+      "truth_cache_file": "${artifact_dir}/truth-real100k-k10.json",
+      "log_output": "${artifact_dir}/recall-real100k-w1.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-real100k-w1",
+      "tags": ["storage", "real100k", "workers1"],
+      "prefix": "task71_real100k_w1",
+      "log_file": "${artifact_dir}/storage-real100k-w1.log"
+    },
+
+    {
+      "kind": "load",
+      "name": "load-real100k-w2",
+      "tags": ["load", "real100k", "workers2"],
+      "pgoptions": "-c max_parallel_maintenance_workers=2",
+      "prefix": "task71_real100k_w2",
+      "corpus_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_100k_corpus.tsv",
+      "queries_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_100k_queries.tsv",
+      "manifest_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_100k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "storage_format=pq_fastscan",
+        "pq_group_size=8",
+        "nlists=128",
+        "nprobe=48",
+        "rerank=heap_f32",
+        "rerank_width=500",
+        "parallel_workers=2"
+      ],
+      "log_file": "${artifact_dir}/load-real100k-w2.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-real100k-w2",
+      "tags": ["recall", "real100k", "workers2"],
+      "prefix": "task71_real100k_w2",
+      "k": 10,
+      "sweep": [48],
+      "rerank_width": 500,
+      "truth_cache_file": "${artifact_dir}/truth-real100k-k10.json",
+      "log_output": "${artifact_dir}/recall-real100k-w2.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-real100k-w2",
+      "tags": ["storage", "real100k", "workers2"],
+      "prefix": "task71_real100k_w2",
+      "log_file": "${artifact_dir}/storage-real100k-w2.log"
+    },
+
+    {
+      "kind": "load",
+      "name": "load-real100k-w4",
+      "tags": ["load", "real100k", "workers4"],
+      "pgoptions": "-c max_parallel_maintenance_workers=4",
+      "prefix": "task71_real100k_w4",
+      "corpus_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_100k_corpus.tsv",
+      "queries_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_100k_queries.tsv",
+      "manifest_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_100k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "storage_format=pq_fastscan",
+        "pq_group_size=8",
+        "nlists=128",
+        "nprobe=48",
+        "rerank=heap_f32",
+        "rerank_width=500",
+        "parallel_workers=4"
+      ],
+      "log_file": "${artifact_dir}/load-real100k-w4.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-real100k-w4",
+      "tags": ["recall", "real100k", "workers4"],
+      "prefix": "task71_real100k_w4",
+      "k": 10,
+      "sweep": [48],
+      "rerank_width": 500,
+      "truth_cache_file": "${artifact_dir}/truth-real100k-k10.json",
+      "log_output": "${artifact_dir}/recall-real100k-w4.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-real100k-w4",
+      "tags": ["storage", "real100k", "workers4"],
+      "prefix": "task71_real100k_w4",
+      "log_file": "${artifact_dir}/storage-real100k-w4.log"
+    },
+
+    {
+      "kind": "load",
+      "name": "load-real100k-w8",
+      "tags": ["load", "real100k", "workers8"],
+      "pgoptions": "-c max_parallel_maintenance_workers=8",
+      "prefix": "task71_real100k_w8",
+      "corpus_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_100k_corpus.tsv",
+      "queries_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_100k_queries.tsv",
+      "manifest_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_100k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "storage_format=pq_fastscan",
+        "pq_group_size=8",
+        "nlists=128",
+        "nprobe=48",
+        "rerank=heap_f32",
+        "rerank_width=500",
+        "parallel_workers=8"
+      ],
+      "log_file": "${artifact_dir}/load-real100k-w8.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-real100k-w8",
+      "tags": ["recall", "real100k", "workers8"],
+      "prefix": "task71_real100k_w8",
+      "k": 10,
+      "sweep": [48],
+      "rerank_width": 500,
+      "truth_cache_file": "${artifact_dir}/truth-real100k-k10.json",
+      "log_output": "${artifact_dir}/recall-real100k-w8.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-real100k-w8",
+      "tags": ["storage", "real100k", "workers8"],
+      "prefix": "task71_real100k_w8",
+      "log_file": "${artifact_dir}/storage-real100k-w8.log"
+    },
+
+    {
+      "kind": "raw",
+      "name": "parallel-workers-after",
+      "tags": ["worker-counter", "after"],
+      "args": [
+        "dev",
+        "sql",
+        "--pg",
+        "18",
+        "--db",
+        "postgres",
+        "--socket-dir",
+        "/Users/peter/.pgrx",
+        "--tuples-only",
+        "--sql",
+        "SELECT datname, pg_stat_get_db_parallel_workers_launched(oid) AS parallel_workers_launched FROM pg_database WHERE datname = current_database();",
+        "--log-output",
+        "${artifact_dir}/parallel-workers-after.log"
+      ],
+      "expected_artifacts": ["${artifact_dir}/parallel-workers-after.log"]
+    }
+  ]
+}
