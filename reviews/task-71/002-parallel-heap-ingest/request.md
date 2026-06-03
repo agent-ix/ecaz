@@ -53,6 +53,11 @@ Packet-local artifacts are under
 - `cargo check --no-default-features --features pg18`
   - non-escalated rerun after shared-counter consumption passed:
     `Finished dev profile [unoptimized + debuginfo] target(s) in 21.65s`
+- `cargo test --no-default-features --features pg18 am::ec_ivf::build_parallel`
+  - non-escalated rerun after shared-counter consumption passed:
+    `test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 1936 filtered out`
+  - Note: this invocation omitted `--lib`, so Cargo also walked filtered
+    binary/integration test targets with zero matching tests before exiting 0.
 
 ## Review Focus
 
