@@ -1,6 +1,6 @@
 # Task 71 / Packet 002 Artifact Manifest
 
-- Head SHA: `9e12cfbcd`
+- Head SHA: `1c5360baa`
 - Task bucket: `reviews/task-71/`
 - Packet path: `reviews/task-71/002-parallel-heap-ingest/`
 - Slice: IVF parallel heap ingestion
@@ -105,3 +105,14 @@
 - Key lines:
   - `Compiling ecaz v0.1.1 (/Users/peter/dev/tqvector)`
   - `Finished dev profile [unoptimized + debuginfo] target(s) in 37.00s`
+
+### `cargo-check-pg18-pg-test-serial-parallel-equivalence.log`
+
+- Command:
+  `cargo check --no-default-features --features "pg18 pg_test"`
+- Result: passed, non-escalated
+- Key lines:
+  - `Finished dev profile [unoptimized + debuginfo] target(s) in 0.09s`
+- Note:
+  pgrx runtime execution was not rerun in this slice to avoid the known
+  non-escalated PostgreSQL extension-install permission failure path.

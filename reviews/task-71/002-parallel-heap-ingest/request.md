@@ -37,6 +37,12 @@ Follow-up commits under review:
   - exposes those values through `tests.ec_ivf_debug_last_build_timing()` and
     asserts the capacity covers observed heap tuples in the existing
     parallel-build pg_test
+- `1c5360baa Add IVF serial parallel build equivalence test`
+  - adds a fixed-seed `parallel_workers=0` vs `parallel_workers=4` pg_test
+    comparing relation size, build metadata, per-list directory entries,
+    posting-block ownership summaries, and representative scan output IDs
+  - asserts the parallel side launched at least one worker before comparing
+    structural surfaces
 
 This does not yet claim the full Task 71 measurement/closeout work. The next
 slice still needs benchmark-suite evidence across worker counts and a final
@@ -73,6 +79,11 @@ Packet-local artifacts are under
 - `cargo check --no-default-features --features "pg18 pg_test"`
   - non-escalated pg_test-surface compile passed:
     `Finished dev profile [unoptimized + debuginfo] target(s) in 37.00s`
+- `cargo check --no-default-features --features "pg18 pg_test"`
+  - non-escalated compile after serial/parallel equivalence pg_test passed:
+    `Finished dev profile [unoptimized + debuginfo] target(s) in 0.09s`
+  - The pgrx runtime test was not rerun in this slice to avoid the known
+    non-escalated extension-install permission failure path.
 
 ## Review Focus
 
@@ -88,3 +99,5 @@ Packet-local artifacts are under
   table-scan behavior.
 - Whether the tuple-buffer capacity metric is a useful enough HWM proxy for
   the 2x heap-row memory peak risk until full suite memory sampling is rerun.
+- Whether the serial-vs-parallel equivalence pg_test compares the right
+  structural surfaces without relying on brittle raw page header bytes.
