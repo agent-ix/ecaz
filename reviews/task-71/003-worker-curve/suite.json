@@ -41,6 +41,7 @@
       "name": "load-real10k-w1",
       "tags": ["load", "real10k", "workers1"],
       "pgoptions": "-c max_parallel_maintenance_workers=1",
+      "table_reloptions": ["parallel_workers=1"],
       "prefix": "task71_real10k_w1",
       "corpus_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_corpus.tsv",
       "queries_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_queries.tsv",
@@ -52,8 +53,7 @@
         "nlists=64",
         "nprobe=48",
         "rerank=heap_f32",
-        "rerank_width=750",
-        "parallel_workers=1"
+        "rerank_width=750"
       ],
       "log_file": "${artifact_dir}/load-real10k-w1.log"
     },
@@ -81,6 +81,7 @@
       "name": "load-real10k-w2",
       "tags": ["load", "real10k", "workers2"],
       "pgoptions": "-c max_parallel_maintenance_workers=2",
+      "table_reloptions": ["parallel_workers=2"],
       "prefix": "task71_real10k_w2",
       "corpus_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_corpus.tsv",
       "queries_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_queries.tsv",
@@ -92,8 +93,7 @@
         "nlists=64",
         "nprobe=48",
         "rerank=heap_f32",
-        "rerank_width=750",
-        "parallel_workers=2"
+        "rerank_width=750"
       ],
       "log_file": "${artifact_dir}/load-real10k-w2.log"
     },
@@ -121,6 +121,7 @@
       "name": "load-real10k-w4",
       "tags": ["load", "real10k", "workers4"],
       "pgoptions": "-c max_parallel_maintenance_workers=4",
+      "table_reloptions": ["parallel_workers=4"],
       "prefix": "task71_real10k_w4",
       "corpus_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_corpus.tsv",
       "queries_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_queries.tsv",
@@ -132,8 +133,7 @@
         "nlists=64",
         "nprobe=48",
         "rerank=heap_f32",
-        "rerank_width=750",
-        "parallel_workers=4"
+        "rerank_width=750"
       ],
       "log_file": "${artifact_dir}/load-real10k-w4.log"
     },
@@ -161,6 +161,7 @@
       "name": "load-real10k-w8",
       "tags": ["load", "real10k", "workers8"],
       "pgoptions": "-c max_parallel_maintenance_workers=8",
+      "table_reloptions": ["parallel_workers=8"],
       "prefix": "task71_real10k_w8",
       "corpus_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_corpus.tsv",
       "queries_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_queries.tsv",
@@ -172,8 +173,7 @@
         "nlists=64",
         "nprobe=48",
         "rerank=heap_f32",
-        "rerank_width=750",
-        "parallel_workers=8"
+        "rerank_width=750"
       ],
       "log_file": "${artifact_dir}/load-real10k-w8.log"
     },
@@ -201,6 +201,7 @@
       "name": "load-real25k-w1",
       "tags": ["load", "real25k", "workers1"],
       "pgoptions": "-c max_parallel_maintenance_workers=1",
+      "table_reloptions": ["parallel_workers=1"],
       "prefix": "task71_real25k_w1",
       "corpus_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_25k_corpus.tsv",
       "queries_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_25k_queries.tsv",
@@ -212,8 +213,7 @@
         "nlists=64",
         "nprobe=48",
         "rerank=heap_f32",
-        "rerank_width=750",
-        "parallel_workers=1"
+        "rerank_width=750"
       ],
       "log_file": "${artifact_dir}/load-real25k-w1.log"
     },
@@ -241,6 +241,7 @@
       "name": "load-real25k-w2",
       "tags": ["load", "real25k", "workers2"],
       "pgoptions": "-c max_parallel_maintenance_workers=2",
+      "table_reloptions": ["parallel_workers=2"],
       "prefix": "task71_real25k_w2",
       "corpus_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_25k_corpus.tsv",
       "queries_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_25k_queries.tsv",
@@ -252,8 +253,7 @@
         "nlists=64",
         "nprobe=48",
         "rerank=heap_f32",
-        "rerank_width=750",
-        "parallel_workers=2"
+        "rerank_width=750"
       ],
       "log_file": "${artifact_dir}/load-real25k-w2.log"
     },
@@ -281,6 +281,7 @@
       "name": "load-real25k-w4",
       "tags": ["load", "real25k", "workers4"],
       "pgoptions": "-c max_parallel_maintenance_workers=4",
+      "table_reloptions": ["parallel_workers=4"],
       "prefix": "task71_real25k_w4",
       "corpus_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_25k_corpus.tsv",
       "queries_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_25k_queries.tsv",
@@ -292,8 +293,7 @@
         "nlists=64",
         "nprobe=48",
         "rerank=heap_f32",
-        "rerank_width=750",
-        "parallel_workers=4"
+        "rerank_width=750"
       ],
       "log_file": "${artifact_dir}/load-real25k-w4.log"
     },
@@ -321,6 +321,7 @@
       "name": "load-real25k-w8",
       "tags": ["load", "real25k", "workers8"],
       "pgoptions": "-c max_parallel_maintenance_workers=8",
+      "table_reloptions": ["parallel_workers=8"],
       "prefix": "task71_real25k_w8",
       "corpus_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_25k_corpus.tsv",
       "queries_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_25k_queries.tsv",
@@ -332,8 +333,7 @@
         "nlists=64",
         "nprobe=48",
         "rerank=heap_f32",
-        "rerank_width=750",
-        "parallel_workers=8"
+        "rerank_width=750"
       ],
       "log_file": "${artifact_dir}/load-real25k-w8.log"
     },
@@ -361,6 +361,7 @@
       "name": "load-real50k-w1",
       "tags": ["load", "real50k", "workers1"],
       "pgoptions": "-c max_parallel_maintenance_workers=1",
+      "table_reloptions": ["parallel_workers=1"],
       "prefix": "task71_real50k_w1",
       "corpus_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_50k_corpus.tsv",
       "queries_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_50k_queries.tsv",
@@ -372,8 +373,7 @@
         "nlists=64",
         "nprobe=48",
         "rerank=heap_f32",
-        "rerank_width=750",
-        "parallel_workers=1"
+        "rerank_width=750"
       ],
       "log_file": "${artifact_dir}/load-real50k-w1.log"
     },
@@ -401,6 +401,7 @@
       "name": "load-real50k-w2",
       "tags": ["load", "real50k", "workers2"],
       "pgoptions": "-c max_parallel_maintenance_workers=2",
+      "table_reloptions": ["parallel_workers=2"],
       "prefix": "task71_real50k_w2",
       "corpus_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_50k_corpus.tsv",
       "queries_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_50k_queries.tsv",
@@ -412,8 +413,7 @@
         "nlists=64",
         "nprobe=48",
         "rerank=heap_f32",
-        "rerank_width=750",
-        "parallel_workers=2"
+        "rerank_width=750"
       ],
       "log_file": "${artifact_dir}/load-real50k-w2.log"
     },
@@ -441,6 +441,7 @@
       "name": "load-real50k-w4",
       "tags": ["load", "real50k", "workers4"],
       "pgoptions": "-c max_parallel_maintenance_workers=4",
+      "table_reloptions": ["parallel_workers=4"],
       "prefix": "task71_real50k_w4",
       "corpus_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_50k_corpus.tsv",
       "queries_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_50k_queries.tsv",
@@ -452,8 +453,7 @@
         "nlists=64",
         "nprobe=48",
         "rerank=heap_f32",
-        "rerank_width=750",
-        "parallel_workers=4"
+        "rerank_width=750"
       ],
       "log_file": "${artifact_dir}/load-real50k-w4.log"
     },
@@ -481,6 +481,7 @@
       "name": "load-real50k-w8",
       "tags": ["load", "real50k", "workers8"],
       "pgoptions": "-c max_parallel_maintenance_workers=8",
+      "table_reloptions": ["parallel_workers=8"],
       "prefix": "task71_real50k_w8",
       "corpus_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_50k_corpus.tsv",
       "queries_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_50k_queries.tsv",
@@ -492,8 +493,7 @@
         "nlists=64",
         "nprobe=48",
         "rerank=heap_f32",
-        "rerank_width=750",
-        "parallel_workers=8"
+        "rerank_width=750"
       ],
       "log_file": "${artifact_dir}/load-real50k-w8.log"
     },
@@ -521,6 +521,7 @@
       "name": "load-real100k-w1",
       "tags": ["load", "real100k", "workers1"],
       "pgoptions": "-c max_parallel_maintenance_workers=1",
+      "table_reloptions": ["parallel_workers=1"],
       "prefix": "task71_real100k_w1",
       "corpus_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_100k_corpus.tsv",
       "queries_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_100k_queries.tsv",
@@ -532,8 +533,7 @@
         "nlists=128",
         "nprobe=48",
         "rerank=heap_f32",
-        "rerank_width=500",
-        "parallel_workers=1"
+        "rerank_width=500"
       ],
       "log_file": "${artifact_dir}/load-real100k-w1.log"
     },
@@ -561,6 +561,7 @@
       "name": "load-real100k-w2",
       "tags": ["load", "real100k", "workers2"],
       "pgoptions": "-c max_parallel_maintenance_workers=2",
+      "table_reloptions": ["parallel_workers=2"],
       "prefix": "task71_real100k_w2",
       "corpus_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_100k_corpus.tsv",
       "queries_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_100k_queries.tsv",
@@ -572,8 +573,7 @@
         "nlists=128",
         "nprobe=48",
         "rerank=heap_f32",
-        "rerank_width=500",
-        "parallel_workers=2"
+        "rerank_width=500"
       ],
       "log_file": "${artifact_dir}/load-real100k-w2.log"
     },
@@ -601,6 +601,7 @@
       "name": "load-real100k-w4",
       "tags": ["load", "real100k", "workers4"],
       "pgoptions": "-c max_parallel_maintenance_workers=4",
+      "table_reloptions": ["parallel_workers=4"],
       "prefix": "task71_real100k_w4",
       "corpus_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_100k_corpus.tsv",
       "queries_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_100k_queries.tsv",
@@ -612,8 +613,7 @@
         "nlists=128",
         "nprobe=48",
         "rerank=heap_f32",
-        "rerank_width=500",
-        "parallel_workers=4"
+        "rerank_width=500"
       ],
       "log_file": "${artifact_dir}/load-real100k-w4.log"
     },
@@ -641,6 +641,7 @@
       "name": "load-real100k-w8",
       "tags": ["load", "real100k", "workers8"],
       "pgoptions": "-c max_parallel_maintenance_workers=8",
+      "table_reloptions": ["parallel_workers=8"],
       "prefix": "task71_real100k_w8",
       "corpus_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_100k_corpus.tsv",
       "queries_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_100k_queries.tsv",
@@ -652,8 +653,7 @@
         "nlists=128",
         "nprobe=48",
         "rerank=heap_f32",
-        "rerank_width=500",
-        "parallel_workers=8"
+        "rerank_width=500"
       ],
       "log_file": "${artifact_dir}/load-real100k-w8.log"
     },
