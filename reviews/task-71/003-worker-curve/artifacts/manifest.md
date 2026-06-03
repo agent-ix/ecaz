@@ -1,6 +1,6 @@
 # Task 71 / Packet 003 Artifact Manifest
 
-- Head SHA: `20d4db545`
+- Head SHA: `f19382afa`
 - Task bucket: `reviews/task-71/`
 - Packet path: `reviews/task-71/003-worker-curve/`
 - Slice: Worker-curve suite setup plus callback-wiring validation
@@ -68,8 +68,8 @@
 - Result: passed
 - Key lines:
   - `wrote reviews/task-71/003-worker-curve/artifacts/suite-dry-run-manifest.json`
-  - `load-real10k-w1 -> PGOPTIONS="-c max_parallel_maintenance_workers=1" ... --table-reloption parallel_workers=1`
-  - `load-real100k-w8 -> PGOPTIONS="-c max_parallel_maintenance_workers=8" ... --table-reloption parallel_workers=8`
+  - `load-real10k-w1 -> PGOPTIONS="-c max_parallel_maintenance_workers=1 -c max_parallel_workers=1" ... --table-reloption parallel_workers=1`
+  - `load-real100k-w8 -> PGOPTIONS="-c max_parallel_maintenance_workers=8 -c max_parallel_workers=8" ... --table-reloption parallel_workers=8`
   - `recall-real100k-w8 -> ... --log-output reviews/task-71/003-worker-curve/artifacts/recall-real100k-w8.log`
   - `storage-real100k-w8 -> ... --log-file reviews/task-71/003-worker-curve/artifacts/storage-real100k-w8.log`
 
@@ -175,6 +175,14 @@
   `parallel_workers_after`, and `parallel_workers_delta` into each load
   `suite-manifest.json` record, plus `metric=parallel_workers` rows into
   `results.jsonl`.
+- The Task 31 baseline recall@10 points cited by `request.md` are:
+  real10k `1.0000`, real25k `0.9990`, real50k `1.0000`, and directly
+  comparable real100k n128/w500 `0.9820`. The adjacent Task 31 real100k
+  n64/w750 fixed-scale point is `0.9940`.
+- `allow_manifest_mismatch: true` is used only because the reused Task 31
+  staged manifests carry `ec_hnsw_real_*` prefixes while the suite loads into
+  isolated `task71_real*_w*` prefixes. The source corpus/query files remain
+  the staged Task 31 TSVs under `data/task31_m5_dbpedia_staged/`.
 - The next full suite run must regenerate `suite-dry-run.log`,
   `suite-dry-run-manifest.json`, `suite-manifest.json`, and `results.jsonl`
   after this config change before packet 003 can be used as final Phase 3

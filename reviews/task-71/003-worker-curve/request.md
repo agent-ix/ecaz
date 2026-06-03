@@ -54,7 +54,8 @@ Packet-local artifacts are under
   - `test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 399 filtered out`
 - `cargo run -p ecaz-cli -- bench suite run --config reviews/task-71/003-worker-curve/suite.json --dry-run --manifest-output reviews/task-71/003-worker-curve/artifacts/suite-dry-run-manifest.json`
   - Dry run wrote the manifest and rendered all steps.
-  - Load steps include `PGOPTIONS="-c max_parallel_maintenance_workers=N"`.
+  - Load steps include
+    `PGOPTIONS="-c max_parallel_maintenance_workers=N -c max_parallel_workers=N"`.
   - Load steps include `--table-reloption parallel_workers=N`.
   - Explicit load/recall/storage paths render under
     `reviews/task-71/003-worker-curve/artifacts/`, not literal
@@ -98,6 +99,31 @@ explain the runner fixes:
 - `suite-run-escalated-hosted.log`: the prior suite shape passed
   `parallel_workers` as an IVF index reloption; PostgreSQL rejected it with
   `ERROR: unrecognized parameter "parallel_workers"`.
+
+## Task 31 Baselines and Manifest Prefixes
+
+The suite reuses the staged Task 31 DBPedia M5 corpus/query files and keeps the
+same fixed recall points for each scale:
+
+| scale | Task 31 packet | reloptions | recall@10 |
+|---|---|---|---:|
+| real10k | `reviews/task-31/005-30169-task31-m5-pqg8-10k-load-baseline/` | `nlists=64,nprobe=48,rerank_width=750` | `1.0000` |
+| real25k | `reviews/task-31/006-30170-task31-m5-pqg8-25k-load-baseline/` | `nlists=64,nprobe=48,rerank_width=750` | `0.9990` |
+| real50k | `reviews/task-31/007-30171-task31-m5-pqg8-50k-load-baseline/` | `nlists=64,nprobe=48,rerank_width=750` | `1.0000` |
+| real100k | `reviews/task-31/009-30173-task31-m5-pqg8-100k-n128-w500-baseline/` | `nlists=128,nprobe=48,rerank_width=500` | `0.9820` |
+
+The adjacent Task 31 100k fixed-scale packet
+`reviews/task-31/008-30172-task31-m5-pqg8-100k-load-baseline/` records
+`nlists=64,nprobe=48,rerank_width=750` at recall@10 `0.9940`; packet 009 is
+the directly comparable 100k setting used by this Task 71 matrix.
+
+`allow_manifest_mismatch: true` is intentional for these load steps. The input
+paths still point at the Task 31 staged corpus/query TSVs and manifests under
+`data/task31_m5_dbpedia_staged/`, but the suite uses isolated Task 71 table
+prefixes such as `task71_real25k_w4`. The manifest verifier therefore warns
+only because the manifest prefix is `ec_hnsw_real_*` while the destination
+table prefix is Task 71-specific. The load logs retain the warning and the
+inspected source paths; no corpus/query content substitution is being used.
 
 ## Review Focus
 
