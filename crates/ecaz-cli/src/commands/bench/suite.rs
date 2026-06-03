@@ -249,6 +249,8 @@ struct LoadStep {
     name: String,
     #[serde(default)]
     tags: Vec<String>,
+    #[serde(default)]
+    pgoptions: Option<String>,
     prefix: String,
     #[serde(default)]
     corpus_file: Option<PathBuf>,
@@ -1076,16 +1078,64 @@ fn apply_artifact_dir_templates(config: &mut SuiteConfig) {
     };
     let artifact_dir = artifact_dir.display().to_string();
     for step in &mut config.steps {
-        if let SuiteStep::Raw(step) = step {
-            for arg in &mut step.args {
-                *arg = arg.replace("${artifact_dir}", &artifact_dir);
+        match step {
+            SuiteStep::Load(step) => {
+                rewrite_artifact_dir_path(&mut step.log_file, &artifact_dir);
             }
-            for artifact in &mut step.expected_artifacts {
-                if let Some(raw) = artifact.to_str() {
-                    *artifact = PathBuf::from(raw.replace("${artifact_dir}", &artifact_dir));
+            SuiteStep::Recall(step) => {
+                rewrite_artifact_dir_path(&mut step.truth_cache_file, &artifact_dir);
+                rewrite_artifact_dir_path(&mut step.truth_cache_dir, &artifact_dir);
+                rewrite_artifact_dir_path(&mut step.truth_corpus_file, &artifact_dir);
+                rewrite_artifact_dir_path(&mut step.log_output, &artifact_dir);
+                rewrite_artifact_dir_path(&mut step.predictions_output, &artifact_dir);
+            }
+            SuiteStep::CrossAm(step) => {
+                rewrite_artifact_dir_path(&mut step.log_output, &artifact_dir);
+            }
+            SuiteStep::Latency(step) => {
+                rewrite_artifact_dir_path(&mut step.log_output, &artifact_dir);
+            }
+            SuiteStep::SpirePipeline(step) => {
+                rewrite_artifact_dir_path(&mut step.log_output, &artifact_dir);
+            }
+            SuiteStep::Storage(step) => {
+                rewrite_artifact_dir_path(&mut step.log_file, &artifact_dir);
+            }
+            SuiteStep::Explain(step) => {
+                rewrite_artifact_dir_path(&mut step.sql_file, &artifact_dir);
+                rewrite_artifact_dir_path(&mut step.log_output, &artifact_dir);
+            }
+            SuiteStep::SidecarRerank(step) => {
+                rewrite_artifact_dir_path(&mut step.log_output, &artifact_dir);
+            }
+            SuiteStep::ComparePgvector(step) => {
+                rewrite_artifact_dir_path(&mut step.log_file, &artifact_dir);
+            }
+            SuiteStep::CompareVectorscale(step) => {
+                rewrite_artifact_dir_path(&mut step.log_file, &artifact_dir);
+            }
+            SuiteStep::Raw(step) => {
+                for arg in &mut step.args {
+                    *arg = arg.replace("${artifact_dir}", &artifact_dir);
+                }
+                for artifact in &mut step.expected_artifacts {
+                    rewrite_artifact_dir_pathbuf(artifact, &artifact_dir);
                 }
             }
+            SuiteStep::CorpusFetch(_) | SuiteStep::CorpusPrepare(_) => {}
         }
+    }
+}
+
+fn rewrite_artifact_dir_path(path: &mut Option<PathBuf>, artifact_dir: &str) {
+    if let Some(path) = path {
+        rewrite_artifact_dir_pathbuf(path, artifact_dir);
+    }
+}
+
+fn rewrite_artifact_dir_pathbuf(path: &mut PathBuf, artifact_dir: &str) {
+    if let Some(raw) = path.to_str() {
+        *path = PathBuf::from(raw.replace("${artifact_dir}", artifact_dir));
     }
 }
 
@@ -1989,6 +2039,7 @@ impl SuiteStep {
 
     fn pgoptions(&self) -> Option<&str> {
         match self {
+            SuiteStep::Load(step) => step.pgoptions.as_deref(),
             SuiteStep::Latency(step) => step.pgoptions.as_deref(),
             SuiteStep::SpirePipeline(step) => step.pgoptions.as_deref(),
             _ => None,
@@ -3383,6 +3434,47 @@ mod tests {
     }
 
     #[test]
+    fn artifact_dir_templates_rewrite_load_step_paths() {
+        let mut config = SuiteConfig {
+            name: "current".into(),
+            schema_version: 1,
+            artifact_dir: Some("artifacts/current".into()),
+            defaults: SuiteDefaults::default(),
+            thresholds: Vec::new(),
+            steps: vec![SuiteStep::Load(LoadStep {
+                name: "load".into(),
+                tags: Vec::new(),
+                pgoptions: None,
+                prefix: "surface".into(),
+                corpus_file: None,
+                queries_file: None,
+                manifest_file: None,
+                allow_manifest_mismatch: false,
+                chunked: false,
+                dim: None,
+                profile: Some("ec_ivf".into()),
+                bits: None,
+                seed: None,
+                m: Vec::new(),
+                ef_construction: None,
+                storage_format: None,
+                reloptions: Vec::new(),
+                log_file: Some("${artifact_dir}/load.log".into()),
+            })],
+        };
+
+        apply_artifact_dir_templates(&mut config);
+
+        let SuiteStep::Load(step) = &config.steps[0] else {
+            panic!("expected load step");
+        };
+        assert_eq!(
+            step.log_file,
+            Some(PathBuf::from("artifacts/current/load.log"))
+        );
+    }
+
+    #[test]
     fn parses_legacy_dry_run_alias() {
         let cli = SuiteOnly::try_parse_from([
             "suite",
@@ -3626,6 +3718,7 @@ mod tests {
         let step = LoadStep {
             name: "load".into(),
             tags: vec!["load".into()],
+            pgoptions: None,
             prefix: "surface".into(),
             corpus_file: None,
             queries_file: None,
@@ -3650,6 +3743,60 @@ mod tests {
             .any(|w| w == ["--manifest-file", "stage/anchor_manifest.json"]));
         assert!(!args.iter().any(|arg| arg == "--corpus-file"));
         assert!(!args.iter().any(|arg| arg == "--queries-file"));
+    }
+
+    #[test]
+    fn load_step_pgoptions_flow_into_manifest_record() {
+        let config = SuiteConfig {
+            name: "pgoptions-load".into(),
+            schema_version: 1,
+            artifact_dir: None,
+            defaults: SuiteDefaults::default(),
+            thresholds: Vec::new(),
+            steps: vec![SuiteStep::Load(LoadStep {
+                name: "load".into(),
+                tags: vec!["load".into()],
+                pgoptions: Some("-c max_parallel_maintenance_workers=4".into()),
+                prefix: "surface".into(),
+                corpus_file: None,
+                queries_file: None,
+                manifest_file: None,
+                allow_manifest_mismatch: false,
+                chunked: false,
+                dim: None,
+                profile: Some("ec_ivf".into()),
+                bits: None,
+                seed: None,
+                m: Vec::new(),
+                ef_construction: None,
+                storage_format: None,
+                reloptions: vec!["parallel_workers=4".into()],
+                log_file: Some("load.log".into()),
+            })],
+        };
+        let args = SuiteRunOptions {
+            config: "suite.json".into(),
+            dry_run: true,
+            continue_on_error: false,
+            only: Vec::new(),
+            only_tag: Vec::new(),
+            resume_from: None,
+            results_output: None,
+            artifact_dir: None,
+            manifest_output: None,
+        };
+
+        let manifest =
+            build_manifest(&conn(), &args, "{}", &config).expect("manifest should build");
+
+        assert_eq!(
+            manifest.steps[0].pgoptions.as_deref(),
+            Some("-c max_parallel_maintenance_workers=4")
+        );
+        assert!(manifest.steps[0]
+            .command
+            .windows(2)
+            .any(|w| w == ["--reloption", "parallel_workers=4"]));
     }
 
     #[test]
