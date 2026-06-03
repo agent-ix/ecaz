@@ -2,9 +2,9 @@
   "suite": "task71-ivf-parallel-build-worker-curve",
   "schema_version": 1,
   "config": "reviews/task-71/003-worker-curve/suite.json",
-  "config_sha256": "8e6e1bd642d27c7e04a1af714417e3f640e7a8f7bb27c80eb16463927eb2c795",
+  "config_sha256": "421ae8710b8634362ffa789ce077a063c8266a298ec704521cec8256e6d24e48",
   "dry_run": true,
-  "generated_at_unix_ms": 1780452764408,
+  "generated_at_unix_ms": 1780502250134,
   "connection": {
     "database": "tqvector_bench",
     "host": "/Users/peter/.pgrx",
@@ -91,7 +91,7 @@
         "rerank_width=750"
       ],
       "selected": true,
-      "pgoptions": "-c max_parallel_maintenance_workers=1",
+      "pgoptions": "-c max_parallel_maintenance_workers=1 -c max_parallel_workers=1",
       "tags": [
         "load",
         "real10k",
@@ -220,7 +220,7 @@
         "rerank_width=750"
       ],
       "selected": true,
-      "pgoptions": "-c max_parallel_maintenance_workers=2",
+      "pgoptions": "-c max_parallel_maintenance_workers=2 -c max_parallel_workers=2",
       "tags": [
         "load",
         "real10k",
@@ -349,7 +349,7 @@
         "rerank_width=750"
       ],
       "selected": true,
-      "pgoptions": "-c max_parallel_maintenance_workers=4",
+      "pgoptions": "-c max_parallel_maintenance_workers=4 -c max_parallel_workers=4",
       "tags": [
         "load",
         "real10k",
@@ -478,7 +478,7 @@
         "rerank_width=750"
       ],
       "selected": true,
-      "pgoptions": "-c max_parallel_maintenance_workers=8",
+      "pgoptions": "-c max_parallel_maintenance_workers=8 -c max_parallel_workers=8",
       "tags": [
         "load",
         "real10k",
@@ -607,7 +607,7 @@
         "rerank_width=750"
       ],
       "selected": true,
-      "pgoptions": "-c max_parallel_maintenance_workers=1",
+      "pgoptions": "-c max_parallel_maintenance_workers=1 -c max_parallel_workers=1",
       "tags": [
         "load",
         "real25k",
@@ -736,7 +736,7 @@
         "rerank_width=750"
       ],
       "selected": true,
-      "pgoptions": "-c max_parallel_maintenance_workers=2",
+      "pgoptions": "-c max_parallel_maintenance_workers=2 -c max_parallel_workers=2",
       "tags": [
         "load",
         "real25k",
@@ -865,7 +865,7 @@
         "rerank_width=750"
       ],
       "selected": true,
-      "pgoptions": "-c max_parallel_maintenance_workers=4",
+      "pgoptions": "-c max_parallel_maintenance_workers=4 -c max_parallel_workers=4",
       "tags": [
         "load",
         "real25k",
@@ -994,7 +994,7 @@
         "rerank_width=750"
       ],
       "selected": true,
-      "pgoptions": "-c max_parallel_maintenance_workers=8",
+      "pgoptions": "-c max_parallel_maintenance_workers=8 -c max_parallel_workers=8",
       "tags": [
         "load",
         "real25k",
@@ -1123,7 +1123,7 @@
         "rerank_width=750"
       ],
       "selected": true,
-      "pgoptions": "-c max_parallel_maintenance_workers=1",
+      "pgoptions": "-c max_parallel_maintenance_workers=1 -c max_parallel_workers=1",
       "tags": [
         "load",
         "real50k",
@@ -1252,7 +1252,7 @@
         "rerank_width=750"
       ],
       "selected": true,
-      "pgoptions": "-c max_parallel_maintenance_workers=2",
+      "pgoptions": "-c max_parallel_maintenance_workers=2 -c max_parallel_workers=2",
       "tags": [
         "load",
         "real50k",
@@ -1381,7 +1381,7 @@
         "rerank_width=750"
       ],
       "selected": true,
-      "pgoptions": "-c max_parallel_maintenance_workers=4",
+      "pgoptions": "-c max_parallel_maintenance_workers=4 -c max_parallel_workers=4",
       "tags": [
         "load",
         "real50k",
@@ -1510,7 +1510,7 @@
         "rerank_width=750"
       ],
       "selected": true,
-      "pgoptions": "-c max_parallel_maintenance_workers=8",
+      "pgoptions": "-c max_parallel_maintenance_workers=8 -c max_parallel_workers=8",
       "tags": [
         "load",
         "real50k",
@@ -1639,7 +1639,7 @@
         "rerank_width=500"
       ],
       "selected": true,
-      "pgoptions": "-c max_parallel_maintenance_workers=1",
+      "pgoptions": "-c max_parallel_maintenance_workers=1 -c max_parallel_workers=1",
       "tags": [
         "load",
         "real100k",
@@ -1768,7 +1768,7 @@
         "rerank_width=500"
       ],
       "selected": true,
-      "pgoptions": "-c max_parallel_maintenance_workers=2",
+      "pgoptions": "-c max_parallel_maintenance_workers=2 -c max_parallel_workers=2",
       "tags": [
         "load",
         "real100k",
@@ -1897,7 +1897,7 @@
         "rerank_width=500"
       ],
       "selected": true,
-      "pgoptions": "-c max_parallel_maintenance_workers=4",
+      "pgoptions": "-c max_parallel_maintenance_workers=4 -c max_parallel_workers=4",
       "tags": [
         "load",
         "real100k",
@@ -2026,7 +2026,7 @@
         "rerank_width=500"
       ],
       "selected": true,
-      "pgoptions": "-c max_parallel_maintenance_workers=8",
+      "pgoptions": "-c max_parallel_maintenance_workers=8 -c max_parallel_workers=8",
       "tags": [
         "load",
         "real100k",

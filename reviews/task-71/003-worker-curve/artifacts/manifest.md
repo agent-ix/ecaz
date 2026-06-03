@@ -7,7 +7,8 @@
 - Storage format: `pq_fastscan`
 - Rerank mode: `heap_f32`
 - Surface: dry-run suite config for isolated prefixes per dataset/worker count;
-  pre-fix hosted suite run; post-fix focused pg_test validation
+  pre-fix hosted suite run; post-fix focused pg_test validation; suite runner
+  per-load worker-counter support
 - Timestamp: 2026-06-03 America/Los_Angeles
 
 ## Artifacts
@@ -30,6 +31,26 @@
 - Key lines:
   - `test commands::bench::suite::tests::load_step_pgoptions_flow_into_manifest_record ... ok`
   - `test result: ok. 36 passed; 0 failed; 0 ignored; 0 measured; 364 filtered out; finished in 0.00s`
+
+### Focused suite tests after `capture_parallel_workers`
+
+- Command:
+  `cargo test -p ecaz-cli commands::bench::suite::tests:: > reviews/task-71/003-worker-curve/artifacts/cargo-test-ecaz-cli-suite-capture-parallel-workers.log 2>&1`
+- Result: passed
+- Artifact: `cargo-test-ecaz-cli-suite-capture-parallel-workers.log`
+- Key lines:
+  - `test commands::bench::suite::tests::parses_parallel_worker_counter_output ... ok`
+  - `test commands::bench::suite::tests::parallel_worker_counter_emits_result_row ... ok`
+  - `test result: ok. 38 passed; 0 failed; 0 ignored; 0 measured; 364 filtered out`
+
+### PG18 compile check after `capture_parallel_workers`
+
+- Command:
+  `cargo check --no-default-features --features pg18 > reviews/task-71/003-worker-curve/artifacts/cargo-check-pg18-capture-parallel-workers.log 2>&1`
+- Result: passed
+- Artifact: `cargo-check-pg18-capture-parallel-workers.log`
+- Key lines:
+  - `Finished dev profile`
 
 ### `cargo-test-ecaz-cli-load-table-reloptions.log`
 
@@ -149,6 +170,11 @@
   `-c max_parallel_maintenance_workers=N -c max_parallel_workers=N`.
 - `suite.json` still uses `--table-reloption parallel_workers=N` for the heap
   table storage option.
+- `suite.json` now sets `capture_parallel_workers: true` on every load step.
+  The post-fix run should write `parallel_workers_before`,
+  `parallel_workers_after`, and `parallel_workers_delta` into each load
+  `suite-manifest.json` record, plus `metric=parallel_workers` rows into
+  `results.jsonl`.
 - The next full suite run must regenerate `suite-dry-run.log`,
   `suite-dry-run-manifest.json`, `suite-manifest.json`, and `results.jsonl`
   after this config change before packet 003 can be used as final Phase 3

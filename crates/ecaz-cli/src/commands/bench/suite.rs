@@ -251,6 +251,8 @@ struct LoadStep {
     tags: Vec<String>,
     #[serde(default)]
     pgoptions: Option<String>,
+    #[serde(default)]
+    capture_parallel_workers: bool,
     prefix: String,
     #[serde(default)]
     corpus_file: Option<PathBuf>,
@@ -656,6 +658,12 @@ struct StepRecord {
     duration_ms: Option<u128>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     exit_code: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    parallel_workers_before: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    parallel_workers_after: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    parallel_workers_delta: Option<i64>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -791,6 +799,16 @@ async fn run_suite(conn: &ConnectionOptions, args: SuiteRunOptions) -> Result<()
         manifest.steps[idx].started_at_unix_ms = Some(now_ms());
         write_manifest_if_requested(&args, &config, &manifest).await?;
 
+        let capture_parallel_workers = matches!(
+            &config.steps[idx],
+            SuiteStep::Load(step) if step.capture_parallel_workers
+        );
+        if capture_parallel_workers {
+            manifest.steps[idx].parallel_workers_before =
+                Some(query_parallel_workers_launched(&exe, conn, &config.defaults).await?);
+            write_manifest_if_requested(&args, &config, &manifest).await?;
+        }
+
         let started = Instant::now();
         let pgoptions = manifest.steps[idx].pgoptions.clone();
         let status = spawn_step(&exe, &command, conn, pgoptions.as_deref())
@@ -810,6 +828,13 @@ async fn run_suite(conn: &ConnectionOptions, args: SuiteRunOptions) -> Result<()
         } else {
             StepStatus::Failed
         });
+        if capture_parallel_workers {
+            let after = query_parallel_workers_launched(&exe, conn, &config.defaults).await?;
+            manifest.steps[idx].parallel_workers_after = Some(after);
+            manifest.steps[idx].parallel_workers_delta = manifest.steps[idx]
+                .parallel_workers_before
+                .map(|before| after.saturating_sub(before));
+        }
         write_manifest_if_requested(&args, &config, &manifest).await?;
 
         if !status.success() && !args.continue_on_error {
@@ -1204,6 +1229,9 @@ fn build_manifest(
             finished_at_unix_ms: None,
             duration_ms: None,
             exit_code: None,
+            parallel_workers_before: None,
+            parallel_workers_after: None,
+            parallel_workers_delta: None,
         });
     }
     Ok(manifest)
@@ -1311,6 +1339,9 @@ async fn extract_result_rows(manifest: &SuiteManifest) -> Result<Vec<ResultRow>>
         if !matches!(step.status, Some(StepStatus::Succeeded)) {
             continue;
         }
+        if let Some(row) = parallel_worker_result_row(manifest, step) {
+            rows.push(row);
+        }
         for artifact in &step.expected_artifacts {
             let path = Path::new(artifact);
             let Ok(raw) = tokio::fs::read_to_string(path).await else {
@@ -1320,6 +1351,28 @@ async fn extract_result_rows(manifest: &SuiteManifest) -> Result<Vec<ResultRow>>
         }
     }
     Ok(rows)
+}
+
+fn parallel_worker_result_row(manifest: &SuiteManifest, step: &StepRecord) -> Option<ResultRow> {
+    let before = step.parallel_workers_before?;
+    let after = step.parallel_workers_after?;
+    let delta = step.parallel_workers_delta?;
+    Some(ResultRow {
+        suite: manifest.suite.clone(),
+        step: step.name.clone(),
+        kind: step.kind.clone(),
+        metric: "parallel_workers".into(),
+        artifact: "suite-manifest".into(),
+        values: add_result_context(
+            manifest,
+            step,
+            BTreeMap::from([
+                ("before".into(), before.to_string()),
+                ("after".into(), after.to_string()),
+                ("delta".into(), delta.to_string()),
+            ]),
+        ),
+    })
 }
 
 fn parse_result_rows(
@@ -2435,6 +2488,59 @@ async fn spawn_step(
         .wrap_err_with(|| format!("spawning {}", exe.display()))
 }
 
+async fn query_parallel_workers_launched(
+    exe: &Path,
+    conn: &ConnectionOptions,
+    defaults: &SuiteDefaults,
+) -> Result<i64> {
+    let pg = defaults
+        .pg
+        .context("load step capture_parallel_workers requires defaults.pg")?;
+    let sql =
+        "SELECT pg_stat_get_db_parallel_workers_launched(oid) FROM pg_database WHERE datname = current_database();";
+    let args = child_command_args(
+        conn,
+        vec![
+            "dev".into(),
+            "sql".into(),
+            "--pg".into(),
+            pg.to_string(),
+            "--sql".into(),
+            sql.into(),
+        ],
+    );
+    let mut command = Command::new(exe);
+    command.args(&args);
+    if let Some(password) = &conn.password {
+        command.env("PGPASSWORD", password);
+    }
+    let output = command.output().await.wrap_err_with(|| {
+        format!(
+            "spawning parallel worker counter query: {}",
+            shell_join(&args)
+        )
+    })?;
+    if !output.status.success() {
+        bail!(
+            "parallel worker counter query failed with {}",
+            format_exit_status(output.status)
+        );
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    parse_parallel_worker_counter(&stdout).with_context(|| {
+        format!(
+            "parsing parallel worker counter query output: {:?}",
+            stdout.trim()
+        )
+    })
+}
+
+fn parse_parallel_worker_counter(raw: &str) -> Option<i64> {
+    raw.split_whitespace()
+        .filter_map(|token| token.parse::<i64>().ok())
+        .next()
+}
+
 fn child_command_args(conn: &ConnectionOptions, mut step_args: Vec<String>) -> Vec<String> {
     let mut args = Vec::new();
     push_arg(&mut args, "--database", &conn.database);
@@ -3450,6 +3556,7 @@ mod tests {
                 name: "load".into(),
                 tags: Vec::new(),
                 pgoptions: None,
+                capture_parallel_workers: false,
                 prefix: "surface".into(),
                 corpus_file: None,
                 queries_file: None,
@@ -3725,6 +3832,7 @@ mod tests {
             name: "load".into(),
             tags: vec!["load".into()],
             pgoptions: None,
+            capture_parallel_workers: false,
             prefix: "surface".into(),
             corpus_file: None,
             queries_file: None,
@@ -3764,6 +3872,7 @@ mod tests {
                 name: "load".into(),
                 tags: vec!["load".into()],
                 pgoptions: Some("-c max_parallel_maintenance_workers=4".into()),
+                capture_parallel_workers: true,
                 prefix: "surface".into(),
                 corpus_file: None,
                 queries_file: None,
@@ -3813,6 +3922,79 @@ mod tests {
             .command
             .windows(2)
             .any(|w| w == ["--table-reloption", "parallel_workers=4"]));
+        assert!(matches!(
+            &config.steps[0],
+            SuiteStep::Load(step) if step.capture_parallel_workers
+        ));
+    }
+
+    #[test]
+    fn parses_parallel_worker_counter_output() {
+        assert_eq!(
+            parse_parallel_worker_counter("tqvector_bench\t17\n"),
+            Some(17)
+        );
+        assert_eq!(parse_parallel_worker_counter("17\n"), Some(17));
+        assert_eq!(parse_parallel_worker_counter("no rows"), None);
+    }
+
+    #[test]
+    fn parallel_worker_counter_emits_result_row() {
+        let manifest = SuiteManifest {
+            suite: "suite".into(),
+            schema_version: 1,
+            config: "suite.json".into(),
+            config_sha256: "abc".into(),
+            dry_run: false,
+            generated_at_unix_ms: 0,
+            connection: ManifestConnection {
+                database: "tqvector_bench".into(),
+                host: Some("/tmp/pg".into()),
+                port: Some(28818),
+                user: None,
+                password_configured: false,
+            },
+            steps: vec![StepRecord {
+                name: "load-real10k-w4".into(),
+                kind: "load".into(),
+                command: vec![
+                    "--database".into(),
+                    "tqvector_bench".into(),
+                    "corpus".into(),
+                    "load".into(),
+                    "--prefix".into(),
+                    "task71_real10k_w4".into(),
+                ],
+                selected: true,
+                pgoptions: Some(
+                    "-c max_parallel_maintenance_workers=4 -c max_parallel_workers=4".into(),
+                ),
+                tags: vec!["real10k".into(), "workers4".into()],
+                expected_artifacts: Vec::new(),
+                status: Some(StepStatus::Succeeded),
+                started_at_unix_ms: Some(1),
+                finished_at_unix_ms: Some(2),
+                duration_ms: Some(1),
+                exit_code: Some(0),
+                parallel_workers_before: Some(10),
+                parallel_workers_after: Some(14),
+                parallel_workers_delta: Some(4),
+            }],
+            threshold_results: Vec::new(),
+        };
+
+        let row = parallel_worker_result_row(&manifest, &manifest.steps[0])
+            .expect("counter row should be emitted");
+
+        assert_eq!(row.metric, "parallel_workers");
+        assert_eq!(row.artifact, "suite-manifest");
+        assert_eq!(row.values.get("before").map(String::as_str), Some("10"));
+        assert_eq!(row.values.get("after").map(String::as_str), Some("14"));
+        assert_eq!(row.values.get("delta").map(String::as_str), Some("4"));
+        assert_eq!(
+            row.values.get("prefix").map(String::as_str),
+            Some("task71_real10k_w4")
+        );
     }
 
     #[test]
@@ -4204,6 +4386,9 @@ mod tests {
             finished_at_unix_ms: None,
             duration_ms: None,
             exit_code: None,
+            parallel_workers_before: None,
+            parallel_workers_after: None,
+            parallel_workers_delta: None,
         };
         let rows = parse_result_rows(
             &manifest,

@@ -34,6 +34,11 @@ Follow-up after reviewer feedback:
   the HNSW parallel-build test setup.
 - Updates `suite.json` so every load step sets both
   `max_parallel_maintenance_workers=N` and `max_parallel_workers=N`.
+- Extends `ecaz bench suite` load steps with
+  `capture_parallel_workers: true`, which samples
+  `pg_stat_get_db_parallel_workers_launched` immediately before and after a
+  load step, stores before/after/delta in `suite-manifest.json`, and emits a
+  `parallel_workers` row in `results.jsonl`.
 
 This packet prepares the required measurement run; it does not yet claim the
 full Phase 3 benchmark results.
@@ -66,6 +71,12 @@ Packet-local artifacts are under
   - Because the test asserts `requested_workers == 2` and
     `workers_launched >= 1`, this validates that the callback wiring can
     launch IVF parallel-build workers in the PG18 pg_test environment.
+- `cargo test -p ecaz-cli commands::bench::suite::tests::`
+  - `test result: ok. 38 passed; 0 failed; 0 ignored; 0 measured; 364 filtered out`
+  - Covers `capture_parallel_workers` config parsing, worker-counter output
+    parsing, and `parallel_workers` result-row emission.
+- `cargo check --no-default-features --features pg18`
+  - passed.
 
 The pre-fix hosted full-suite run completed, but it is not Phase 3 evidence
 for the fixed implementation:
@@ -98,5 +109,5 @@ explain the runner fixes:
 - Whether the suite matrix matches Task 71 Phase 3: worker counts 1/2/4/8,
   real10k/25k/50k/100k, fixed recall@10 point, storage checks, and worker
   counter evidence.
-- Whether the post-callback suite rerun should add per-build worker-counter
-  sampling rather than relying on before/after bracket sampling.
+- Whether the post-callback suite rerun's `parallel_workers` result rows are
+  sufficient per-build worker-counter evidence.
