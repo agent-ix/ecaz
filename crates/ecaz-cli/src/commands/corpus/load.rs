@@ -92,6 +92,11 @@ pub struct LoadArgs {
     #[arg(long = "reloption", value_parser = crate::reloptions::parse_cli)]
     pub reloptions: Vec<(String, String)>,
 
+    /// Corpus-table reloption passthrough. Repeatable.
+    /// Example: `--table-reloption parallel_workers=4`.
+    #[arg(long = "table-reloption", value_parser = crate::reloptions::parse_cli)]
+    pub table_reloptions: Vec<(String, String)>,
+
     /// Optional manifest file path (auto-discovered when corpus/queries files
     /// follow the `<basename>_{corpus,queries}.tsv` convention).
     #[arg(long)]
@@ -383,6 +388,7 @@ pub async fn run(conn: &ConnectionOptions, args: LoadArgs) -> Result<()> {
             args.bits,
             args.seed,
             profile,
+            &args.table_reloptions,
         )
         .await?;
         let queries_loaded = if args.corpus_only {
@@ -513,6 +519,7 @@ pub async fn run(conn: &ConnectionOptions, args: LoadArgs) -> Result<()> {
         args.seed,
         profile,
         corpus_stats.rows,
+        &args.table_reloptions,
     )
     .await?;
     let queries_loaded =
@@ -1373,9 +1380,10 @@ async fn ensure_chunked_corpus_table(
     bits: i32,
     seed: i64,
     profile: &IndexProfile,
+    table_reloptions: &[(String, String)],
 ) -> Result<usize> {
     ensure_chunked_state_table(client).await?;
-    ensure_chunked_target_table(client, table, true, profile).await?;
+    ensure_chunked_target_table(client, table, true, profile, table_reloptions).await?;
     load_chunk_set(
         client,
         prefix,
@@ -1395,7 +1403,7 @@ async fn ensure_chunked_queries_table(
     input: &LoadedChunkedManifest,
 ) -> Result<usize> {
     ensure_chunked_state_table(client).await?;
-    ensure_chunked_target_table(client, table, false, &profiles::EC_HNSW).await?;
+    ensure_chunked_target_table(client, table, false, &profiles::EC_HNSW, &[]).await?;
     load_chunk_set(
         client,
         prefix,
@@ -1431,17 +1439,20 @@ async fn ensure_chunked_target_table(
     table: &str,
     is_corpus: bool,
     profile: &IndexProfile,
+    table_reloptions: &[(String, String)],
 ) -> Result<()> {
     if psql::relation_exists(client, table, 'r').await? {
+        apply_table_reloptions(client, table, table_reloptions).await?;
         return Ok(());
     }
+    let with_clause = reloptions::format_with_clause(table_reloptions);
     let ddl = if is_corpus {
         format!(
             "CREATE TABLE {table} (
                 id        bigint PRIMARY KEY,
                 source    real[] NOT NULL,
                 embedding {embedding} NOT NULL
-            )",
+            ){with_clause}",
             embedding = profile.embedding_type
         )
     } else {
@@ -1708,8 +1719,10 @@ async fn ensure_corpus_table(
     seed: i64,
     profile: &IndexProfile,
     expected_rows: usize,
+    table_reloptions: &[(String, String)],
 ) -> Result<usize> {
     if psql::relation_exists(client, table, 'r').await? {
+        apply_table_reloptions(client, table, table_reloptions).await?;
         let existing = psql::row_count(client, table).await? as usize;
         if existing > 0 {
             crate::ecaz_eprintln!("[loader] {table} already has {existing} rows; skipping reload");
@@ -1720,13 +1733,14 @@ async fn ensure_corpus_table(
             .batch_execute(&format!("DROP TABLE IF EXISTS {table} CASCADE"))
             .await?;
     }
+    let with_clause = reloptions::format_with_clause(table_reloptions);
     client
         .batch_execute(&format!(
             "CREATE TABLE {table} (
                 id        bigint PRIMARY KEY,
                 source    real[] NOT NULL,
                 embedding {embedding} NOT NULL
-            )",
+            ){with_clause}",
             embedding = profile.embedding_type
         ))
         .await
@@ -1771,6 +1785,29 @@ async fn ensure_corpus_table(
         encode_started.elapsed()
     );
     psql::row_count(client, table).await.map(|n| n as usize)
+}
+
+async fn apply_table_reloptions(
+    client: &Client,
+    table: &str,
+    table_reloptions: &[(String, String)],
+) -> Result<()> {
+    if table_reloptions.is_empty() {
+        return Ok(());
+    }
+    let set_clause = table_reloption_set_clause(table_reloptions);
+    client
+        .batch_execute(&format!("ALTER TABLE {table} SET {set_clause}"))
+        .await
+        .wrap_err_with(|| format!("applying table reloptions to {table}"))?;
+    Ok(())
+}
+
+fn table_reloption_set_clause(table_reloptions: &[(String, String)]) -> String {
+    reloptions::format_with_clause(table_reloptions)
+        .strip_prefix(" WITH ")
+        .expect("non-empty reloption WITH clause should use expected prefix")
+        .to_owned()
 }
 
 async fn copy_corpus_rows_to_stage(
@@ -2082,6 +2119,14 @@ mod tests {
             first_id: Some(0),
             last_id: Some(rows.saturating_sub(1) as i64),
         }
+    }
+
+    #[test]
+    fn table_reloption_set_clause_strips_create_table_prefix() {
+        assert_eq!(
+            table_reloption_set_clause(&[opt("parallel_workers", "4")]),
+            "(parallel_workers = 4)"
+        );
     }
 
     #[test]

@@ -277,6 +277,8 @@ struct LoadStep {
     #[serde(default)]
     storage_format: Option<String>,
     #[serde(default)]
+    table_reloptions: Vec<String>,
+    #[serde(default)]
     reloptions: Vec<String>,
     #[serde(default)]
     log_file: Option<PathBuf>,
@@ -2482,6 +2484,9 @@ fn expand_load(step: &LoadStep, defaults: &SuiteDefaults) -> Vec<String> {
     if let Some(storage_format) = step.storage_format.as_deref() {
         push_arg(&mut args, "--storage-format", storage_format);
     }
+    for reloption in &step.table_reloptions {
+        push_arg(&mut args, "--table-reloption", reloption);
+    }
     for reloption in &step.reloptions {
         push_arg(&mut args, "--reloption", reloption);
     }
@@ -3458,6 +3463,7 @@ mod tests {
                 m: Vec::new(),
                 ef_construction: None,
                 storage_format: None,
+                table_reloptions: Vec::new(),
                 reloptions: Vec::new(),
                 log_file: Some("${artifact_dir}/load.log".into()),
             })],
@@ -3732,6 +3738,7 @@ mod tests {
             m: Vec::new(),
             ef_construction: None,
             storage_format: Some("rabitq".into()),
+            table_reloptions: Vec::new(),
             reloptions: vec!["nlists=1024".into()],
             log_file: Some("load.log".into()),
         };
@@ -3770,7 +3777,8 @@ mod tests {
                 m: Vec::new(),
                 ef_construction: None,
                 storage_format: None,
-                reloptions: vec!["parallel_workers=4".into()],
+                table_reloptions: vec!["parallel_workers=4".into()],
+                reloptions: vec!["nlists=128".into()],
                 log_file: Some("load.log".into()),
             })],
         };
@@ -3796,7 +3804,15 @@ mod tests {
         assert!(manifest.steps[0]
             .command
             .windows(2)
+            .any(|w| w == ["--reloption", "nlists=128"]));
+        assert!(!manifest.steps[0]
+            .command
+            .windows(2)
             .any(|w| w == ["--reloption", "parallel_workers=4"]));
+        assert!(manifest.steps[0]
+            .command
+            .windows(2)
+            .any(|w| w == ["--table-reloption", "parallel_workers=4"]));
     }
 
     #[test]
