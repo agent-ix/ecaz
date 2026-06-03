@@ -28,6 +28,8 @@
             name!(parallel_begin_us, i64),
             name!(parallel_drain_us, i64),
             name!(parallel_sort_push_us, i64),
+            name!(parallel_worker_tuple_buffer_capacity, i64),
+            name!(parallel_worker_tuple_buffer_struct_bytes, i64),
         ),
     > {
         let timing = am::ivf_debug_last_build_timing();
@@ -40,6 +42,8 @@
             timing.parallel_begin_us as i64,
             timing.parallel_drain_us as i64,
             timing.parallel_sort_push_us as i64,
+            timing.parallel_worker_tuple_buffer_capacity as i64,
+            timing.parallel_worker_tuple_buffer_struct_bytes as i64,
         ))
     }
 
@@ -187,7 +191,8 @@
                 .select(
                     "SELECT requested_workers, workers_launched, heap_tuples, index_tuples,
                             heap_ingest_us, parallel_begin_us, parallel_drain_us,
-                            parallel_sort_push_us
+                            parallel_sort_push_us, parallel_worker_tuple_buffer_capacity,
+                            parallel_worker_tuple_buffer_struct_bytes
                      FROM tests.ec_ivf_debug_last_build_timing()",
                     None,
                     &[],
@@ -219,6 +224,12 @@
                 row.get::<i64>(8)
                     .expect("parallel_sort_push_us should decode")
                     .unwrap(),
+                row.get::<i64>(9)
+                    .expect("parallel_worker_tuple_buffer_capacity should decode")
+                    .unwrap(),
+                row.get::<i64>(10)
+                    .expect("parallel_worker_tuple_buffer_struct_bytes should decode")
+                    .unwrap(),
             )
         });
         assert_eq!(build_timing.0, 2);
@@ -241,6 +252,14 @@
         assert!(
             build_timing.7 > 0,
             "parallel sort/push timing should be recorded"
+        );
+        assert!(
+            build_timing.8 >= build_timing.2,
+            "worker tuple buffer capacity should cover observed heap tuples"
+        );
+        assert_eq!(
+            build_timing.9,
+            build_timing.8 * am::ivf_build_tuple_struct_size_for_test() as i64
         );
 
         let index_oid = ec_ivf_index_oid("ec_ivf_parallel_build_idx");

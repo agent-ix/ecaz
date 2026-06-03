@@ -46,6 +46,8 @@ static LAST_BUILD_HEAP_INGEST_US: AtomicU64 = AtomicU64::new(0);
 static LAST_BUILD_PARALLEL_BEGIN_US: AtomicU64 = AtomicU64::new(0);
 static LAST_BUILD_PARALLEL_DRAIN_US: AtomicU64 = AtomicU64::new(0);
 static LAST_BUILD_PARALLEL_SORT_PUSH_US: AtomicU64 = AtomicU64::new(0);
+static LAST_BUILD_PARALLEL_WORKER_TUPLE_BUFFER_CAPACITY: AtomicU64 = AtomicU64::new(0);
+static LAST_BUILD_PARALLEL_WORKER_TUPLE_BUFFER_STRUCT_BYTES: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(crate) struct BuildTimingSnapshot {
@@ -57,6 +59,8 @@ pub(crate) struct BuildTimingSnapshot {
     pub(crate) parallel_begin_us: u64,
     pub(crate) parallel_drain_us: u64,
     pub(crate) parallel_sort_push_us: u64,
+    pub(crate) parallel_worker_tuple_buffer_capacity: u64,
+    pub(crate) parallel_worker_tuple_buffer_struct_bytes: u64,
 }
 
 pub(super) struct BuildState {
@@ -175,6 +179,8 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_ambuild(
         let mut parallel_begin_us = 0_u64;
         let mut parallel_drain_us = 0_u64;
         let mut parallel_sort_push_us = 0_u64;
+        let mut parallel_worker_tuple_buffer_capacity = 0_u64;
+        let mut parallel_worker_tuple_buffer_struct_bytes = 0_u64;
         let heap_ingest_start = Instant::now();
         let heap_tuples = if !parallel_plan.uses_serial_build_path() {
             build_parallel::try_parallel_build(
@@ -188,6 +194,8 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_ambuild(
                 parallel_begin_us = result.begin_us;
                 parallel_drain_us = result.drain_us;
                 parallel_sort_push_us = result.sort_push_us;
+                parallel_worker_tuple_buffer_capacity = result.worker_tuple_buffer_capacity;
+                parallel_worker_tuple_buffer_struct_bytes = result.worker_tuple_buffer_struct_bytes;
                 result.heap_tuples
             })
             .unwrap_or_else(|| {
@@ -226,6 +234,8 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_ambuild(
             parallel_begin_us,
             parallel_drain_us,
             parallel_sort_push_us,
+            parallel_worker_tuple_buffer_capacity,
+            parallel_worker_tuple_buffer_struct_bytes,
         });
 
         crate::fault::maybe_fail_palloc("ec_ivf ambuild result");
@@ -246,6 +256,10 @@ pub(crate) fn debug_last_build_timing() -> BuildTimingSnapshot {
         parallel_begin_us: LAST_BUILD_PARALLEL_BEGIN_US.load(AtomicOrdering::Acquire),
         parallel_drain_us: LAST_BUILD_PARALLEL_DRAIN_US.load(AtomicOrdering::Acquire),
         parallel_sort_push_us: LAST_BUILD_PARALLEL_SORT_PUSH_US.load(AtomicOrdering::Acquire),
+        parallel_worker_tuple_buffer_capacity: LAST_BUILD_PARALLEL_WORKER_TUPLE_BUFFER_CAPACITY
+            .load(AtomicOrdering::Acquire),
+        parallel_worker_tuple_buffer_struct_bytes:
+            LAST_BUILD_PARALLEL_WORKER_TUPLE_BUFFER_STRUCT_BYTES.load(AtomicOrdering::Acquire),
     }
 }
 
@@ -259,6 +273,8 @@ fn reset_debug_last_build_timing() {
         parallel_begin_us: 0,
         parallel_drain_us: 0,
         parallel_sort_push_us: 0,
+        parallel_worker_tuple_buffer_capacity: 0,
+        parallel_worker_tuple_buffer_struct_bytes: 0,
     });
 }
 
@@ -271,6 +287,19 @@ fn record_debug_last_build_timing(snapshot: BuildTimingSnapshot) {
     LAST_BUILD_PARALLEL_BEGIN_US.store(snapshot.parallel_begin_us, AtomicOrdering::Release);
     LAST_BUILD_PARALLEL_DRAIN_US.store(snapshot.parallel_drain_us, AtomicOrdering::Release);
     LAST_BUILD_PARALLEL_SORT_PUSH_US.store(snapshot.parallel_sort_push_us, AtomicOrdering::Release);
+    LAST_BUILD_PARALLEL_WORKER_TUPLE_BUFFER_CAPACITY.store(
+        snapshot.parallel_worker_tuple_buffer_capacity,
+        AtomicOrdering::Release,
+    );
+    LAST_BUILD_PARALLEL_WORKER_TUPLE_BUFFER_STRUCT_BYTES.store(
+        snapshot.parallel_worker_tuple_buffer_struct_bytes,
+        AtomicOrdering::Release,
+    );
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) fn build_tuple_struct_size_for_test() -> usize {
+    std::mem::size_of::<BuildTuple>()
 }
 
 fn elapsed_us(start: Instant) -> u64 {

@@ -160,6 +160,8 @@ pub(super) struct EcIvfParallelBuildResult {
     pub(super) begin_us: u64,
     pub(super) drain_us: u64,
     pub(super) sort_push_us: u64,
+    pub(super) worker_tuple_buffer_capacity: u64,
+    pub(super) worker_tuple_buffer_struct_bytes: u64,
 }
 
 pub(super) unsafe fn try_parallel_build(
@@ -185,6 +187,12 @@ pub(super) unsafe fn try_parallel_build(
     // SAFETY: `leader` owns the live worker queues until `finish`.
     unsafe { leader.drain_worker_messages(&mut worker_tuples) };
     let shared_counts = leader.finish();
+    let worker_tuple_buffer_capacity = usize_to_u64(worker_tuples.capacity());
+    let worker_tuple_buffer_struct_bytes = usize_to_u64(
+        worker_tuples
+            .capacity()
+            .saturating_mul(size_of::<BuildTuple>()),
+    );
     let drain_us = elapsed_us(drain_start);
 
     let sort_push_start = Instant::now();
@@ -200,6 +208,8 @@ pub(super) unsafe fn try_parallel_build(
         begin_us,
         drain_us,
         sort_push_us,
+        worker_tuple_buffer_capacity,
+        worker_tuple_buffer_struct_bytes,
     })
 }
 
@@ -906,6 +916,10 @@ fn checked_mul_size(lhs: pg_sys::Size, rhs: pg_sys::Size, context: &str) -> pg_s
 
 fn elapsed_us(start: Instant) -> u64 {
     u64::try_from(start.elapsed().as_micros()).unwrap_or(u64::MAX)
+}
+
+fn usize_to_u64(value: usize) -> u64 {
+    u64::try_from(value).unwrap_or(u64::MAX)
 }
 
 fn build_index_info_inner(
