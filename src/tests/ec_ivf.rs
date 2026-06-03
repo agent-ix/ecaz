@@ -153,6 +153,8 @@
     fn test_ec_ivf_parallel_build_workers_and_counts() {
         Spi::run("SET max_parallel_maintenance_workers = 2")
             .expect("parallel maintenance worker setting should be accepted");
+        Spi::run("SET max_parallel_workers = 4")
+            .expect("parallel worker setting should be accepted");
         Spi::run(
             "CREATE TABLE ec_ivf_parallel_build (
                 id bigint primary key,
@@ -253,6 +255,8 @@
         assert_eq!(directory_live, 128);
         assert_eq!(directory_dead, 0);
         assert_eq!(inserted_since_build, 0);
+        Spi::run("RESET max_parallel_workers").expect("reset should succeed");
+        Spi::run("RESET max_parallel_maintenance_workers").expect("reset should succeed");
     }
 
     #[pg_test]

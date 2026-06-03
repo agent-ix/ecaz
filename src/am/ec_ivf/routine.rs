@@ -1,6 +1,7 @@
 use pgrx::{pg_guard, pg_sys};
 
 use super::{build, cost, insert, options, scan, vacuum};
+use crate::am::common::parallel;
 use crate::am::common::routine::{alloc_index_am_routine, IndexAmRoutineBox};
 
 fn build_ec_ivf_routine() -> IndexAmRoutineBox {
@@ -57,6 +58,9 @@ fn build_ec_ivf_routine() -> IndexAmRoutineBox {
     amroutine.amendscan = Some(scan::ec_ivf_amendscan);
     amroutine.ammarkpos = None;
     amroutine.amrestrpos = None;
+    amroutine.amestimateparallelscan = Some(parallel::ec_amestimateparallelscan);
+    amroutine.aminitparallelscan = Some(parallel::ec_aminitparallelscan);
+    amroutine.amparallelrescan = Some(parallel::ec_amparallelrescan);
     #[cfg(feature = "pg18")]
     {
         amroutine.amtranslatestrategy = Some(cost::ec_ivf_amtranslatestrategy);
