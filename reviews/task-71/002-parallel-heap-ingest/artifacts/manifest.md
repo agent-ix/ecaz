@@ -116,3 +116,12 @@
 - Note:
   pgrx runtime execution was not rerun in this slice to avoid the known
   non-escalated PostgreSQL extension-install permission failure path.
+
+### `cargo-clippy-pg18-all-targets.log`
+
+- Command:
+  `cargo clippy --all-targets --no-default-features --features pg18 -- -D warnings`
+- Result: passed, non-escalated
+- Key lines:
+  - `Checking ecaz v0.1.1 (/Users/peter/dev/tqvector)`
+  - `Finished dev profile [unoptimized + debuginfo] target(s) in 3m 10s`

@@ -84,6 +84,9 @@ Packet-local artifacts are under
     `Finished dev profile [unoptimized + debuginfo] target(s) in 0.09s`
   - The pgrx runtime test was not rerun in this slice to avoid the known
     non-escalated extension-install permission failure path.
+- `cargo clippy --all-targets --no-default-features --features pg18 -- -D warnings`
+  - non-escalated Task 71 clippy gate passed:
+    `Finished dev profile [unoptimized + debuginfo] target(s) in 3m 10s`
 
 ## Review Focus
 

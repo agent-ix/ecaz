@@ -1,0 +1,9 @@
+Command:
+cargo clippy --all-targets --no-default-features --features pg18 -- -D warnings
+
+Result:
+passed, non-escalated
+
+Key output:
+Checking ecaz v0.1.1 (/Users/peter/dev/tqvector)
+Finished dev profile [unoptimized + debuginfo] target(s) in 3m 10s
