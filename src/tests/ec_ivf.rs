@@ -298,6 +298,10 @@
             build_timing.8 >= build_timing.2,
             "worker tuple buffer capacity should cover observed heap tuples"
         );
+        assert!(
+            build_timing.8 > 0,
+            "worker tuple buffer capacity should prove capture is live"
+        );
         assert_eq!(
             build_timing.9,
             build_timing.8 * am::ivf_build_tuple_struct_size_for_test() as i64
