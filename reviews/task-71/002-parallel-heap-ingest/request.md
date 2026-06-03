@@ -31,6 +31,12 @@ Follow-up commits under review:
   - consumes the IVF shared `nparticipantsdone`, `scanned_heap_tuples`, and
     `encoded_index_tuples` counters as leader-side invariants after workers
     finish and before the parallel build result is returned
+- `9e12cfbcd Capture IVF parallel tuple buffer capacity`
+  - captures the leader's drained `worker_tuples` Vec capacity and an
+    approximate struct-byte footprint in `BuildTimingSnapshot`
+  - exposes those values through `tests.ec_ivf_debug_last_build_timing()` and
+    asserts the capacity covers observed heap tuples in the existing
+    parallel-build pg_test
 
 This does not yet claim the full Task 71 measurement/closeout work. The next
 slice still needs benchmark-suite evidence across worker counts and a final
@@ -58,6 +64,15 @@ Packet-local artifacts are under
     `test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 1936 filtered out`
   - Note: this invocation omitted `--lib`, so Cargo also walked filtered
     binary/integration test targets with zero matching tests before exiting 0.
+- `cargo check --no-default-features --features pg18`
+  - non-escalated rerun after tuple-buffer capacity capture passed:
+    `Finished dev profile [unoptimized + debuginfo] target(s) in 21.08s`
+- `cargo test --lib --no-default-features --features pg18 am::ec_ivf::build_parallel`
+  - non-escalated focused library test rerun passed:
+    `test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 1936 filtered out`
+- `cargo check --no-default-features --features "pg18 pg_test"`
+  - non-escalated pg_test-surface compile passed:
+    `Finished dev profile [unoptimized + debuginfo] target(s) in 37.00s`
 
 ## Review Focus
 
@@ -71,3 +86,5 @@ Packet-local artifacts are under
 - Whether the leader-side shared-counter checks cover the intended
   participant/tuple-count invariant without over-constraining valid PostgreSQL
   table-scan behavior.
+- Whether the tuple-buffer capacity metric is a useful enough HWM proxy for
+  the 2x heap-row memory peak risk until full suite memory sampling is rerun.
