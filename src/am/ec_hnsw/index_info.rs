@@ -67,10 +67,12 @@ impl<'scope> IndexInfoView<'scope> {
         self.ptr.as_ptr()
     }
 
-    pub(super) fn as_mut(&mut self) -> &mut pg_sys::IndexInfo {
+    pub(super) fn set_concurrent(&mut self, is_concurrent: bool) {
         // SAFETY: `&mut self` enforces exclusive access; `ptr` is non-null by
-        // construction; the borrow is bounded by the surrounding PG memory
+        // construction; the mutation is bounded by the surrounding PG memory
         // context that owns the `IndexInfo` allocation.
-        unsafe { self.ptr.as_mut() }
+        unsafe {
+            self.ptr.as_mut().ii_Concurrent = is_concurrent;
+        }
     }
 }

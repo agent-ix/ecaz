@@ -482,6 +482,11 @@ unsafe extern "C-unwind" fn ec_ivf_parallel_build_callback(
 
 #[pgrx::pg_guard]
 #[no_mangle]
+/// # Safety
+///
+/// PostgreSQL invokes this dynamic background-worker entrypoint with a live DSM
+/// segment and TOC created by the leader's `ParallelContext`. Both pointers
+/// must remain valid for the duration of the worker callback.
 pub unsafe extern "C-unwind" fn ec_ivf_parallel_build_main(
     seg: *mut pg_sys::dsm_segment,
     toc: *mut pg_sys::shm_toc,
@@ -491,6 +496,11 @@ pub unsafe extern "C-unwind" fn ec_ivf_parallel_build_main(
     })
 }
 
+/// # Safety
+///
+/// `seg` and `toc` must refer to the live DSM and TOC populated by
+/// `EcIvfParallelBuildLeader::begin`. The expected shared-state keys and
+/// per-worker queue key for `ParallelWorkerNumber` must be present.
 unsafe fn parallel_build_worker_main(seg: *mut pg_sys::dsm_segment, toc: *mut pg_sys::shm_toc) {
     let shared: *mut EcIvfParallelBuildSharedHeader =
         shm_toc_lookup_required(toc, PARALLEL_KEY_EC_IVF_BUILD_SHARED);
@@ -543,7 +553,7 @@ unsafe fn parallel_build_worker_main(seg: *mut pg_sys::dsm_segment, toc: *mut pg
             .unwrap_or_else(|| pgrx::error!("ec_ivf parallel build worker opened null index")),
     );
     let mut index_info = IndexInfoView::build_borrowed(index_relation, "parallel build worker");
-    index_info.as_mut().ii_Concurrent = is_concurrent;
+    index_info.set_concurrent(is_concurrent);
     let indexed_vector_kind = build::resolve_indexed_vector_kind(
         heap_relation,
         index_info.as_ptr(),
@@ -784,6 +794,10 @@ fn parallel_table_scan_from_shared(
     }
 }
 
+/// # Safety
+///
+/// `estimator` must be a live `shm_toc_estimator` owned by a
+/// `ParallelContext` before DSM initialization.
 unsafe fn estimate_chunk(estimator: *mut pg_sys::shm_toc_estimator, size: pg_sys::Size) {
     // SAFETY: Caller passes a live estimator before DSM initialization.
     unsafe {
@@ -795,6 +809,10 @@ unsafe fn estimate_chunk(estimator: *mut pg_sys::shm_toc_estimator, size: pg_sys
     }
 }
 
+/// # Safety
+///
+/// `estimator` must be a live `shm_toc_estimator` owned by a
+/// `ParallelContext` before DSM initialization.
 unsafe fn estimate_keys(estimator: *mut pg_sys::shm_toc_estimator, keys: pg_sys::Size) {
     // SAFETY: Caller passes a live estimator before DSM initialization.
     unsafe {
@@ -865,9 +883,11 @@ impl<'scope> IndexInfoView<'scope> {
         self.ptr.as_ptr()
     }
 
-    fn as_mut(&mut self) -> &mut pg_sys::IndexInfo {
+    fn set_concurrent(&mut self, is_concurrent: bool) {
         // SAFETY: `&mut self` enforces exclusive access for this bounded view.
-        unsafe { self.ptr.as_mut() }
+        unsafe {
+            self.ptr.as_mut().ii_Concurrent = is_concurrent;
+        }
     }
 }
 
