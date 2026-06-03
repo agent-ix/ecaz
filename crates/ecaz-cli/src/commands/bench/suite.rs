@@ -249,6 +249,8 @@ struct LoadStep {
     name: String,
     #[serde(default)]
     tags: Vec<String>,
+    #[serde(default)]
+    pgoptions: Option<String>,
     prefix: String,
     #[serde(default)]
     corpus_file: Option<PathBuf>,
@@ -395,6 +397,8 @@ struct SpirePipelineStep {
     #[serde(default)]
     max_candidate_rows: Option<i32>,
     #[serde(default)]
+    max_routed_candidate_rows: Option<i32>,
+    #[serde(default)]
     adaptive_nprobe: Option<bool>,
     #[serde(default)]
     adaptive_nprobe_score_gap_micros: Option<i32>,
@@ -434,6 +438,10 @@ struct SpirePipelineStep {
     include_recall: Option<bool>,
     #[serde(default)]
     truth_corpus_file: Option<PathBuf>,
+    #[serde(default)]
+    leaf_block_rank_output: Option<PathBuf>,
+    #[serde(default)]
+    leaf_block_rank_local_sequence_offset: Option<i64>,
     #[serde(default)]
     include_production_read_profile: Option<bool>,
     #[serde(default)]
@@ -1989,6 +1997,7 @@ impl SuiteStep {
 
     fn pgoptions(&self) -> Option<&str> {
         match self {
+            SuiteStep::Load(step) => step.pgoptions.as_deref(),
             SuiteStep::Latency(step) => step.pgoptions.as_deref(),
             SuiteStep::SpirePipeline(step) => step.pgoptions.as_deref(),
             _ => None,
@@ -2654,6 +2663,13 @@ fn expand_spire_pipeline(step: &SpirePipelineStep, defaults: &SuiteDefaults) -> 
             &max_candidate_rows.to_string(),
         );
     }
+    if let Some(max_routed_candidate_rows) = step.max_routed_candidate_rows {
+        push_arg(
+            &mut args,
+            "--max-routed-candidate-rows",
+            &max_routed_candidate_rows.to_string(),
+        );
+    }
     if step.adaptive_nprobe.unwrap_or(false) {
         args.push("--adaptive-nprobe".into());
     }
@@ -2736,6 +2752,18 @@ fn expand_spire_pipeline(step: &SpirePipelineStep, defaults: &SuiteDefaults) -> 
         "--truth-corpus-file",
         step.truth_corpus_file.as_deref(),
     );
+    push_opt_path(
+        &mut args,
+        "--leaf-block-rank-output",
+        step.leaf_block_rank_output.as_deref(),
+    );
+    if let Some(offset) = step.leaf_block_rank_local_sequence_offset {
+        push_arg(
+            &mut args,
+            "--leaf-block-rank-local-sequence-offset",
+            &offset.to_string(),
+        );
+    }
     if step.include_production_read_profile.unwrap_or(false) {
         args.push("--include-production-read-profile".into());
     }
@@ -3626,6 +3654,7 @@ mod tests {
         let step = LoadStep {
             name: "load".into(),
             tags: vec!["load".into()],
+            pgoptions: None,
             prefix: "surface".into(),
             corpus_file: None,
             queries_file: None,
@@ -3650,6 +3679,32 @@ mod tests {
             .any(|w| w == ["--manifest-file", "stage/anchor_manifest.json"]));
         assert!(!args.iter().any(|arg| arg == "--corpus-file"));
         assert!(!args.iter().any(|arg| arg == "--queries-file"));
+    }
+
+    #[test]
+    fn load_step_exposes_pgoptions_for_manifest_and_spawn() {
+        let step = SuiteStep::Load(LoadStep {
+            name: "load".into(),
+            tags: vec!["load".into()],
+            pgoptions: Some("-c ec_spire.leaf_block_rows=16".into()),
+            prefix: "surface".into(),
+            corpus_file: None,
+            queries_file: None,
+            manifest_file: Some("stage/anchor_manifest.json".into()),
+            allow_manifest_mismatch: false,
+            chunked: true,
+            dim: None,
+            profile: Some("ec_spire".into()),
+            bits: None,
+            seed: None,
+            m: Vec::new(),
+            ef_construction: None,
+            storage_format: Some("rabitq".into()),
+            reloptions: Vec::new(),
+            log_file: Some("load.log".into()),
+        });
+
+        assert_eq!(step.pgoptions(), Some("-c ec_spire.leaf_block_rows=16"));
     }
 
     #[test]
@@ -3703,6 +3758,7 @@ mod tests {
             sweep: vec![3, 6],
             rerank_width: Some(0),
             max_candidate_rows: Some(1000),
+            max_routed_candidate_rows: Some(26_000),
             adaptive_nprobe: Some(true),
             adaptive_nprobe_score_gap_micros: Some(500),
             include_remote: Some(true),
@@ -3723,6 +3779,8 @@ mod tests {
             include_query_metrics: Some(true),
             include_recall: Some(true),
             truth_corpus_file: Some("truth-corpus.tsv".into()),
+            leaf_block_rank_output: None,
+            leaf_block_rank_local_sequence_offset: None,
             include_production_read_profile: Some(true),
             production_read_only: Some(true),
             query_metric_k: Some(10),
@@ -3737,6 +3795,9 @@ mod tests {
         assert!(args.windows(2).any(|w| w == ["--index", "aws_spire_idx"]));
         assert!(args.windows(2).any(|w| w == ["--queries-limit", "5"]));
         assert!(args.windows(2).any(|w| w == ["--sweep", "3,6"]));
+        assert!(args
+            .windows(2)
+            .any(|w| w == ["--max-routed-candidate-rows", "26000"]));
         assert!(args.contains(&"--include-remote".into()));
         assert!(args.contains(&"--require-remote-placements".into()));
         assert!(args.contains(&"--include-production-read-profile".into()));
@@ -3776,6 +3837,7 @@ mod tests {
                 sweep: vec![8, 16],
                 rerank_width: None,
                 max_candidate_rows: None,
+                max_routed_candidate_rows: None,
                 adaptive_nprobe: None,
                 adaptive_nprobe_score_gap_micros: None,
                 include_remote: Some(true),
@@ -3796,6 +3858,8 @@ mod tests {
                 include_query_metrics: Some(true),
                 include_recall: Some(true),
                 truth_corpus_file: None,
+                leaf_block_rank_output: None,
+                leaf_block_rank_local_sequence_offset: None,
                 include_production_read_profile: Some(true),
                 production_read_only: Some(true),
                 query_metric_k: Some(10),

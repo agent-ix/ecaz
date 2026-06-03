@@ -41,12 +41,13 @@ impl SpireAssignmentPayloadFormat {
 pub(super) enum SpirePreparedAssignmentScorer {
     TurboQuant {
         dimensions: usize,
+        query_l2_norm: f32,
         quantizer: Arc<ProdQuantizer>,
         prepared: PreparedQuery,
     },
     RaBitQ {
         dimensions: usize,
-        quantizer: Arc<RaBitQQuantizer>,
+        query_l2_norm: f32,
         prepared: PreparedEstimator,
     },
 }
@@ -58,6 +59,11 @@ impl SpirePreparedAssignmentScorer {
         query_vector: &[f32],
     ) -> Result<Self, String> {
         validate_vector_shape("query", dimensions, query_vector)?;
+        let query_l2_norm = query_vector
+            .iter()
+            .map(|value| value * value)
+            .sum::<f32>()
+            .sqrt();
         match payload_format {
             SpireAssignmentPayloadFormat::TurboQuant => {
                 let quantizer = ProdQuantizer::cached(
@@ -68,6 +74,7 @@ impl SpirePreparedAssignmentScorer {
                 let prepared = quantizer.prepare_ip_query(query_vector);
                 Ok(Self::TurboQuant {
                     dimensions,
+                    query_l2_norm,
                     quantizer,
                     prepared,
                 })
@@ -81,7 +88,7 @@ impl SpirePreparedAssignmentScorer {
                 let prepared = quantizer.prepare_estimator(query_vector);
                 Ok(Self::RaBitQ {
                     dimensions,
-                    quantizer,
+                    query_l2_norm,
                     prepared,
                 })
             }
@@ -104,6 +111,18 @@ impl SpirePreparedAssignmentScorer {
         }
     }
 
+    pub(super) fn query_l2_norm(&self) -> f32 {
+        match self {
+            Self::TurboQuant { query_l2_norm, .. } | Self::RaBitQ { query_l2_norm, .. } => {
+                *query_l2_norm
+            }
+        }
+    }
+
+    pub(super) fn payload_stride(&self) -> Result<usize, String> {
+        expected_payload_len(self.dimensions(), self.payload_format())
+    }
+
     pub(super) fn score_assignment_ip(
         &self,
         assignment: &SpireLeafAssignmentRow,
@@ -117,31 +136,117 @@ impl SpirePreparedAssignmentScorer {
             ));
         }
 
+        self.score_payload_ip(
+            assignment_format,
+            assignment.gamma,
+            &assignment.encoded_payload,
+        )
+    }
+
+    pub(super) fn try_score_assignment_ip(
+        &self,
+        assignment: &SpireLeafAssignmentRow,
+        min_ip_to_keep: f32,
+    ) -> Result<Option<f32>, String> {
+        let assignment_format = SpireAssignmentPayloadFormat::from_tag(assignment.payload_format)?;
+        if assignment_format != self.payload_format() {
+            return Err(format!(
+                "ec_spire assignment payload format {:?} does not match prepared scorer {:?}",
+                assignment_format,
+                self.payload_format()
+            ));
+        }
+
+        self.try_score_payload_ip(
+            assignment_format,
+            assignment.gamma,
+            &assignment.encoded_payload,
+            min_ip_to_keep,
+        )
+    }
+
+    pub(super) fn score_payload_ip(
+        &self,
+        payload_format: SpireAssignmentPayloadFormat,
+        gamma: f32,
+        encoded_payload: &[u8],
+    ) -> Result<f32, String> {
         match self {
             Self::TurboQuant {
                 dimensions,
                 quantizer,
                 prepared,
+                ..
             } => {
-                validate_payload_len(*dimensions, assignment_format, &assignment.encoded_payload)?;
-                Ok(quantizer.score_ip_from_parts(
-                    prepared,
-                    assignment.gamma,
-                    &assignment.encoded_payload,
-                ))
+                validate_payload_len(*dimensions, payload_format, encoded_payload)?;
+                Ok(quantizer.score_ip_from_parts(prepared, gamma, encoded_payload))
             }
             Self::RaBitQ {
                 dimensions,
-                quantizer,
                 prepared,
+                ..
             } => {
-                validate_payload_len(*dimensions, assignment_format, &assignment.encoded_payload)?;
-                if assignment.gamma != 0.0 {
+                validate_payload_len(*dimensions, payload_format, encoded_payload)?;
+                if gamma != 0.0 {
                     return Err("ec_spire RaBitQ assignment gamma must be 0".to_owned());
                 }
-                Ok(quantizer
-                    .estimate_ip(prepared, &assignment.encoded_payload)
-                    .estimate)
+                Ok(prepared.estimate_ip_scalar_only(encoded_payload))
+            }
+        }
+    }
+
+    pub(super) fn score_zero_gamma_payload_chunks_max_prevalidated(
+        &self,
+        payload_stride: usize,
+        encoded_payload: &[u8],
+    ) -> f32 {
+        debug_assert!(payload_stride > 0);
+        debug_assert!(!encoded_payload.is_empty());
+        debug_assert_eq!(encoded_payload.len() % payload_stride, 0);
+
+        match self {
+            Self::TurboQuant {
+                quantizer,
+                prepared,
+                ..
+            } => encoded_payload
+                .chunks_exact(payload_stride)
+                .map(|payload| quantizer.score_ip_from_parts(prepared, 0.0, payload))
+                .fold(f32::NEG_INFINITY, f32::max),
+            Self::RaBitQ { prepared, .. } => {
+                if matches!(prepared.bits_per_dim(), 1 | 4 | 8) {
+                    prepared.estimate_ip_batch_max_prevalidated(encoded_payload, payload_stride)
+                } else {
+                    encoded_payload
+                        .chunks_exact(payload_stride)
+                        .map(|payload| prepared.estimate_ip_scalar_only(payload))
+                        .fold(f32::NEG_INFINITY, f32::max)
+                }
+            }
+        }
+    }
+
+    pub(super) fn try_score_payload_ip(
+        &self,
+        payload_format: SpireAssignmentPayloadFormat,
+        gamma: f32,
+        encoded_payload: &[u8],
+        min_ip_to_keep: f32,
+    ) -> Result<Option<f32>, String> {
+        match self {
+            Self::TurboQuant { .. } => self
+                .score_payload_ip(payload_format, gamma, encoded_payload)
+                .map(Some),
+            Self::RaBitQ {
+                dimensions,
+                prepared,
+                ..
+            } => {
+                validate_payload_len(*dimensions, payload_format, encoded_payload)?;
+                if gamma != 0.0 {
+                    return Err("ec_spire RaBitQ assignment gamma must be 0".to_owned());
+                }
+                Ok(prepared.try_estimate_ip_scalar(encoded_payload, min_ip_to_keep))
             }
         }
     }
@@ -187,11 +292,7 @@ impl SpirePreparedAssignmentScorer {
                     *out_score = quantizer.score_ip_from_parts(prepared, *gamma, payload);
                 }
             }
-            Self::RaBitQ {
-                quantizer,
-                prepared,
-                ..
-            } => {
+            Self::RaBitQ { prepared, .. } => {
                 for ((payload, gamma), out_score) in payloads
                     .chunks_exact(payload_stride)
                     .zip(gammas.iter())
@@ -200,7 +301,7 @@ impl SpirePreparedAssignmentScorer {
                     if *gamma != 0.0 {
                         return Err("ec_spire RaBitQ assignment gamma must be 0".to_owned());
                     }
-                    *out_score = quantizer.estimate_ip(prepared, payload).estimate;
+                    *out_score = prepared.estimate_ip_scalar_only(payload);
                 }
             }
         }

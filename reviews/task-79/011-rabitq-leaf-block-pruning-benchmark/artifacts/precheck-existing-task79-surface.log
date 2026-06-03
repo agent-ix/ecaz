@@ -1,0 +1,18 @@
+CREATE EXTENSION
+ corpus_rows 
+-------------
+      100000
+(1 row)
+
+ query_rows 
+------------
+       1000
+(1 row)
+
+                      name                       | setting | context 
+-------------------------------------------------+---------+---------
+ ec_spire.leaf_block_pruning_max_blocks_per_leaf | 0       | user
+ ec_spire.leaf_block_rows                        | 0       | user
+(2 rows)
+
+NOTICE:  extension "ecaz" already exists, skipping

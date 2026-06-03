@@ -1,0 +1,11 @@
+row	storage	global_blocks	candidates	latency_p50_ms	latency_p95_ms	latency_p99_ms	recall_at_10	returned_sum	gate
+task78_baseline	rabitq	0	15506227	60.256	NA	NA	0.9975	2000	baseline
+packet043_block16_reference	rabitq	1216	3877368	56.145	65.566	NA	0.9940	NA	reference_before_deferred_decode
+deferred_global704	rabitq	704	2245070	29.221	33.111	41.779	0.9845	2000	fail_recall
+deferred_global720	rabitq	720	2296079	29.427	33.589	39.505	0.9845	2000	fail_recall
+deferred_global736	rabitq	736	2347078	29.506	32.939	40.749	0.9850	2000	fail_recall
+deferred_global768	rabitq	768	2449116	29.962	35.176	37.495	0.9865	2000	fail_recall
+deferred_global1024	rabitq	1024	3265373	33.023	39.633	43.467	0.9920	2000	fail_recall_by_0.0005
+deferred_global1152	rabitq	1152	3673383	35.293	40.600	47.990	0.9940	2000	pass_best
+deferred_global1216	rabitq	1216	3877368	35.812	41.836	44.193	0.9940	2000	pass_reference_cap
+turboquant_global1152	turboquant	1152	15506227	141.561	153.951	163.995	0.9975	2000	comparison_not_candidate_reduced

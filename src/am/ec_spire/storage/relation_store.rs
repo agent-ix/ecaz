@@ -245,6 +245,202 @@ impl SpireRelationObjectStore {
         Ok(placement)
     }
 
+    pub(super) fn insert_leaf_object_v3_from_rows_and_summaries(
+        &self,
+        epoch: u64,
+        pid: u64,
+        object_version: u64,
+        parent_pid: u64,
+        assignments: &[SpireLeafAssignmentRow],
+        summaries: &[SpireLeafBlockSummary],
+        summary_block_rows: u32,
+    ) -> Result<SpirePlacementEntry, String> {
+        if summaries.is_empty() {
+            return self.insert_leaf_object_v2_from_rows(
+                epoch,
+                pid,
+                object_version,
+                parent_pid,
+                assignments,
+            );
+        }
+        if epoch == 0 {
+            return Err("ec_spire relation object store epoch 0 is invalid".to_owned());
+        }
+        validate_leaf_assignments(assignments)?;
+        let assignment_count = u32::try_from(assignments.len())
+            .map_err(|_| "ec_spire leaf V3 assignment count exceeds u32".to_owned())?;
+        let summary_count = u32::try_from(summaries.len())
+            .map_err(|_| "ec_spire leaf V3 summary count exceeds u32".to_owned())?;
+        let layout = leaf_v2_column_layout(assignments)?;
+        let summary_representative_count =
+            leaf_block_summary_representative_count(summaries, layout.payload_stride)?;
+        let max_segment_rows = leaf_v2_max_segment_rows(
+            pg_sys::BLCKSZ as usize,
+            layout.payload_stride,
+            layout.vec_id_stride,
+        )?;
+        let max_summary_segment_summaries = leaf_v3_max_summary_segment_summaries(
+            pg_sys::BLCKSZ as usize,
+            layout.payload_stride,
+            usize::from(summary_representative_count),
+        )?;
+        let segment_count = if assignments.is_empty() {
+            0
+        } else {
+            let count = assignments
+                .len()
+                .checked_add(max_segment_rows - 1)
+                .and_then(|value| value.checked_div(max_segment_rows))
+                .ok_or_else(|| "ec_spire leaf V3 segment count overflow".to_owned())?;
+            u32::try_from(count)
+                .map_err(|_| "ec_spire leaf V3 segment count exceeds u32".to_owned())?
+        };
+        let summary_segment_count = summaries
+            .len()
+            .checked_add(max_summary_segment_summaries - 1)
+            .and_then(|value| value.checked_div(max_summary_segment_summaries))
+            .ok_or_else(|| "ec_spire leaf V3 summary segment count overflow".to_owned())?;
+
+        let provisional_first_segment = if assignments.is_empty() {
+            ItemPointer::INVALID
+        } else {
+            ItemPointer {
+                block_number: 1,
+                offset_number: 1,
+            }
+        };
+        let provisional_first_summary_segment = ItemPointer {
+            block_number: 1,
+            offset_number: 1,
+        };
+        let provisional_meta = SpireLeafPartitionObjectV2Meta::new_v3_with_summary_representatives(
+            pid,
+            object_version,
+            parent_pid,
+            assignment_count,
+            layout.payload_format,
+            u32::try_from(layout.payload_stride)
+                .map_err(|_| "ec_spire leaf V3 payload stride exceeds u32".to_owned())?,
+            layout.vec_id_kind,
+            u16::try_from(layout.vec_id_stride)
+                .map_err(|_| "ec_spire leaf V3 vec_id stride exceeds u16".to_owned())?,
+            segment_count,
+            provisional_first_segment,
+            1,
+            summary_block_rows,
+            summary_count,
+            provisional_first_summary_segment,
+            1,
+            epoch,
+            summary_representative_count,
+        )?;
+
+        let mut next_segment_locator = ItemPointer::INVALID;
+        let mut segment_bytes_total = 0_u64;
+        for segment_index in (0..usize::try_from(segment_count).unwrap_or(0)).rev() {
+            let row_base = segment_index
+                .checked_mul(max_segment_rows)
+                .ok_or_else(|| "ec_spire leaf V3 row_base overflow".to_owned())?;
+            let rows_end = assignments.len().min(row_base + max_segment_rows);
+            let segment = SpireLeafPartitionObjectV2Segment::new(
+                &provisional_meta,
+                u32::try_from(segment_index)
+                    .map_err(|_| "ec_spire leaf V3 segment index exceeds u32".to_owned())?,
+                u32::try_from(row_base)
+                    .map_err(|_| "ec_spire leaf V3 row_base exceeds u32".to_owned())?,
+                next_segment_locator,
+                &assignments[row_base..rows_end],
+            )?;
+            let encoded_segment = segment.encode(&provisional_meta)?;
+            segment_bytes_total =
+                segment_bytes_total
+                    .checked_add(u64::try_from(encoded_segment.len()).map_err(|_| {
+                        "ec_spire leaf V3 segment byte length exceeds u64".to_owned()
+                    })?)
+                    .ok_or_else(|| "ec_spire leaf V3 object byte length overflow".to_owned())?;
+            next_segment_locator = self.append_object_tuple(&encoded_segment)?;
+        }
+
+        let mut next_summary_segment_locator = ItemPointer::INVALID;
+        let mut summary_bytes_total = 0_u64;
+        for segment_index in (0..summary_segment_count).rev() {
+            let summary_base = segment_index
+                .checked_mul(max_summary_segment_summaries)
+                .ok_or_else(|| "ec_spire leaf V3 summary_base overflow".to_owned())?;
+            let summaries_end = summaries
+                .len()
+                .min(summary_base + max_summary_segment_summaries);
+            let segment = SpireLeafPartitionObjectV3SummarySegment::new(
+                &provisional_meta,
+                u32::try_from(segment_index)
+                    .map_err(|_| "ec_spire leaf V3 summary segment index exceeds u32".to_owned())?,
+                u32::try_from(summary_base)
+                    .map_err(|_| "ec_spire leaf V3 summary_base exceeds u32".to_owned())?,
+                next_summary_segment_locator,
+                &summaries[summary_base..summaries_end],
+            )?;
+            let encoded_segment = segment.encode(&provisional_meta)?;
+            summary_bytes_total =
+                summary_bytes_total
+                    .checked_add(u64::try_from(encoded_segment.len()).map_err(|_| {
+                        "ec_spire leaf V3 summary segment byte length exceeds u64".to_owned()
+                    })?)
+                    .ok_or_else(|| "ec_spire leaf V3 summary byte length overflow".to_owned())?;
+            next_summary_segment_locator = self.append_object_tuple(&encoded_segment)?;
+        }
+
+        let first_segment_locator = if assignments.is_empty() {
+            ItemPointer::INVALID
+        } else {
+            next_segment_locator
+        };
+        let meta_bytes_len = PARTITION_OBJECT_HEADER_BYTES
+            .checked_add(provisional_meta.encoded_meta_body_bytes())
+            .ok_or_else(|| "ec_spire leaf V3 meta byte length overflow".to_owned())?;
+        let object_bytes_total = segment_bytes_total
+            .checked_add(summary_bytes_total)
+            .and_then(|value| value.checked_add(u64::try_from(meta_bytes_len).ok()?))
+            .ok_or_else(|| "ec_spire leaf V3 object byte length overflow".to_owned())?;
+        let object_bytes = u32::try_from(object_bytes_total)
+            .map_err(|_| "ec_spire leaf V3 object length exceeds u32".to_owned())?;
+        let meta = SpireLeafPartitionObjectV2Meta::new_v3_with_summary_representatives(
+            pid,
+            object_version,
+            parent_pid,
+            assignment_count,
+            layout.payload_format,
+            u32::try_from(layout.payload_stride)
+                .map_err(|_| "ec_spire leaf V3 payload stride exceeds u32".to_owned())?,
+            layout.vec_id_kind,
+            u16::try_from(layout.vec_id_stride)
+                .map_err(|_| "ec_spire leaf V3 vec_id stride exceeds u16".to_owned())?,
+            segment_count,
+            first_segment_locator,
+            object_bytes_total,
+            summary_block_rows,
+            summary_count,
+            next_summary_segment_locator,
+            summary_bytes_total,
+            epoch,
+            summary_representative_count,
+        )?;
+        validate_leaf_block_summary_coverage(&meta, summaries)?;
+        let encoded_meta = meta.encode()?;
+        let meta_tid = self.append_object_tuple(&encoded_meta)?;
+        let placement = SpirePlacementEntry::local_store_available_by_id(
+            epoch,
+            pid,
+            self.local_store_id,
+            self.store_relid,
+            object_version,
+            meta_tid,
+            object_bytes,
+        );
+        placement.encode()?;
+        Ok(placement)
+    }
+
     pub(super) fn insert_delta_object(
         &self,
         epoch: u64,
@@ -381,6 +577,7 @@ impl SpireRelationObjectStore {
             ));
         }
 
+        let summaries = self.read_leaf_v3_summary_segments(&meta)?;
         let segment_count = usize::try_from(meta.segment_count)
             .map_err(|_| "ec_spire leaf V2 segment count exceeds usize".to_owned())?;
         let mut segments = Vec::with_capacity(segment_count);
@@ -398,7 +595,131 @@ impl SpireRelationObjectStore {
         if next_locator != ItemPointer::INVALID {
             return Err("ec_spire leaf V2 segment chain has trailing locator".to_owned());
         }
-        SpireLeafPartitionObjectV2::new(meta, segments)
+        SpireLeafPartitionObjectV2::new(meta, segments, summaries)
+    }
+
+    pub(super) fn read_leaf_object_v2_summaries(
+        &self,
+        placement: &SpirePlacementEntry,
+    ) -> Result<SpireLeafPartitionObjectV2Summaries, String> {
+        self.validate_local_available_placement(placement)?;
+        let meta = self.with_object_tuple(placement.object_tid, |raw| {
+            SpireLeafPartitionObjectV2Meta::decode(raw)
+        })?;
+        validate_leaf_v2_meta_against_placement(&meta, placement)?;
+        let summaries = self.read_leaf_v3_summary_segments(&meta)?;
+        SpireLeafPartitionObjectV2Summaries::new(meta, summaries)
+    }
+
+    pub(super) fn read_leaf_object_v2_segments_for_row_ranges(
+        &self,
+        placement: &SpirePlacementEntry,
+        meta: &SpireLeafPartitionObjectV2Meta,
+        selected_row_ranges: Option<&[(u32, u32)]>,
+    ) -> Result<Vec<SpireLeafPartitionObjectV2Segment>, String> {
+        self.validate_local_available_placement(placement)?;
+        validate_leaf_v2_meta_against_placement(meta, placement)?;
+        let segment_count = usize::try_from(meta.segment_count)
+            .map_err(|_| "ec_spire leaf V2 segment count exceeds usize".to_owned())?;
+        let mut segments = Vec::new();
+        let mut next_locator = meta.first_segment_locator;
+        let mut expected_row_base = 0_u32;
+        for expected_segment_no in 0..segment_count {
+            if next_locator == ItemPointer::INVALID {
+                return Err("ec_spire leaf V2 segment chain ended early".to_owned());
+            }
+            let (segment_header, maybe_segment) = self.with_object_tuple(next_locator, |raw| {
+                let segment_header =
+                    SpireLeafPartitionObjectV2SegmentReadHeader::decode(raw, meta)?;
+                let row_end = segment_header.row_end()?;
+                let maybe_segment = if selected_leaf_row_ranges_intersect(
+                    segment_header.row_base,
+                    row_end,
+                    selected_row_ranges,
+                )? {
+                    Some(SpireLeafPartitionObjectV2Segment::decode(raw, meta)?)
+                } else {
+                    None
+                };
+                Ok((segment_header, maybe_segment))
+            })?;
+            let expected_segment_no = u32::try_from(expected_segment_no)
+                .map_err(|_| "ec_spire leaf V2 segment index exceeds u32".to_owned())?;
+            if segment_header.segment_no != expected_segment_no {
+                return Err(format!(
+                    "ec_spire leaf V2 segment number mismatch: got {}, expected {expected_segment_no}",
+                    segment_header.segment_no
+                ));
+            }
+            if segment_header.row_base != expected_row_base {
+                return Err(format!(
+                    "ec_spire leaf V2 segment row_base mismatch: got {}, expected {expected_row_base}",
+                    segment_header.row_base
+                ));
+            }
+            expected_row_base = segment_header.row_end()?;
+            next_locator = segment_header.next_segment_locator;
+            if let Some(segment) = maybe_segment {
+                segments.push(segment);
+            }
+        }
+        if next_locator != ItemPointer::INVALID {
+            return Err("ec_spire leaf V2 segment chain has trailing locator".to_owned());
+        }
+        if expected_row_base != meta.header.assignment_count {
+            return Err(format!(
+                "ec_spire leaf V2 assignment count mismatch: meta {}, segments {expected_row_base}",
+                meta.header.assignment_count
+            ));
+        }
+        Ok(segments)
+    }
+
+    fn read_leaf_v3_summary_segments(
+        &self,
+        meta: &SpireLeafPartitionObjectV2Meta,
+    ) -> Result<Vec<SpireLeafBlockSummary>, String> {
+        if !meta.has_block_summaries() {
+            return Ok(Vec::new());
+        }
+        let expected_summary_count = usize::try_from(meta.summary_count)
+            .map_err(|_| "ec_spire leaf V3 summary count exceeds usize".to_owned())?;
+        let mut summaries = Vec::with_capacity(expected_summary_count);
+        let mut next_locator = meta.first_summary_segment_locator;
+        let mut expected_segment_no = 0_u32;
+        let mut expected_summary_base = 0_u32;
+        while next_locator != ItemPointer::INVALID {
+            let segment = self.with_object_tuple(next_locator, |raw| {
+                SpireLeafPartitionObjectV3SummarySegment::decode(raw, meta)
+            })?;
+            if segment.segment_no != expected_segment_no {
+                return Err(format!(
+                    "ec_spire leaf V3 summary segment number mismatch: got {}, expected {expected_segment_no}",
+                    segment.segment_no
+                ));
+            }
+            if segment.summary_base != expected_summary_base {
+                return Err(format!(
+                    "ec_spire leaf V3 summary_base mismatch: got {}, expected {expected_summary_base}",
+                    segment.summary_base
+                ));
+            }
+            next_locator = segment.next_segment_locator;
+            expected_segment_no = expected_segment_no
+                .checked_add(1)
+                .ok_or_else(|| "ec_spire leaf V3 summary segment count overflow".to_owned())?;
+            expected_summary_base = expected_summary_base
+                .checked_add(segment.header.assignment_count)
+                .ok_or_else(|| "ec_spire leaf V3 summary count overflow".to_owned())?;
+            summaries.extend(segment.summaries(meta)?);
+            if summaries.len() > expected_summary_count {
+                return Err(format!(
+                    "ec_spire leaf V3 summary chain exceeds meta summary_count {}",
+                    meta.summary_count
+                ));
+            }
+        }
+        Ok(summaries)
     }
 
     pub(super) fn read_object_header(
@@ -421,7 +742,9 @@ impl SpireRelationObjectStore {
                         ));
                     }
                 }
-                PARTITION_OBJECT_FORMAT_VERSION_V2 => {
+                PARTITION_OBJECT_FORMAT_VERSION_V2
+                | PARTITION_OBJECT_FORMAT_VERSION_V3
+                | PARTITION_OBJECT_FORMAT_VERSION_V4 => {
                     if header.kind == SpirePartitionObjectKind::Leaf
                         && header.flags & LEAF_V2_META_FLAG != 0
                     {
@@ -550,6 +873,49 @@ impl SpireRelationObjectStore {
         }
         if next_locator != ItemPointer::INVALID {
             return Err("ec_spire leaf V2 segment chain has trailing locator".to_owned());
+        }
+
+        if meta.has_block_summaries() {
+            let mut summaries_seen = 0_u32;
+            let mut next_locator = meta.first_summary_segment_locator;
+            let mut expected_segment_no = 0_u32;
+            while summaries_seen < meta.summary_count {
+                if next_locator == ItemPointer::INVALID {
+                    return Err("ec_spire leaf V3 summary segment chain ended early".to_owned());
+                }
+                locators.push(next_locator);
+                let segment = self.with_object_tuple(next_locator, |raw| {
+                    SpireLeafPartitionObjectV3SummarySegment::decode(raw, &meta)
+                })?;
+                if segment.segment_no != expected_segment_no {
+                    return Err(format!(
+                        "ec_spire leaf V3 summary segment number mismatch: got {}, expected {expected_segment_no}",
+                        segment.segment_no
+                    ));
+                }
+                if segment.summary_base != summaries_seen {
+                    return Err(format!(
+                        "ec_spire leaf V3 summary_base mismatch: got {}, expected {summaries_seen}",
+                        segment.summary_base
+                    ));
+                }
+                summaries_seen = summaries_seen
+                    .checked_add(segment.header.assignment_count)
+                    .ok_or_else(|| "ec_spire leaf V3 summary count overflow".to_owned())?;
+                if summaries_seen > meta.summary_count {
+                    return Err(format!(
+                        "ec_spire leaf V3 summary chain exceeds meta summary_count {}",
+                        meta.summary_count
+                    ));
+                }
+                expected_segment_no = expected_segment_no
+                    .checked_add(1)
+                    .ok_or_else(|| "ec_spire leaf V3 summary segment count overflow".to_owned())?;
+                next_locator = segment.next_segment_locator;
+            }
+            if next_locator != ItemPointer::INVALID {
+                return Err("ec_spire leaf V3 summary segment chain has trailing locator".to_owned());
+            }
         }
 
         Ok(locators)
@@ -1187,6 +1553,27 @@ impl SpireObjectReader for SpireRelationObjectStore {
         SpireRelationObjectStore::read_leaf_object_v2(self, placement)
     }
 
+    fn read_leaf_object_v2_summaries(
+        &self,
+        placement: &SpirePlacementEntry,
+    ) -> Result<SpireLeafPartitionObjectV2Summaries, String> {
+        SpireRelationObjectStore::read_leaf_object_v2_summaries(self, placement)
+    }
+
+    fn read_leaf_object_v2_segments_for_row_ranges(
+        &self,
+        placement: &SpirePlacementEntry,
+        meta: &SpireLeafPartitionObjectV2Meta,
+        selected_row_ranges: Option<&[(u32, u32)]>,
+    ) -> Result<Vec<SpireLeafPartitionObjectV2Segment>, String> {
+        SpireRelationObjectStore::read_leaf_object_v2_segments_for_row_ranges(
+            self,
+            placement,
+            meta,
+            selected_row_ranges,
+        )
+    }
+
     fn read_delta_object(
         &self,
         placement: &SpirePlacementEntry,
@@ -1421,6 +1808,28 @@ impl SpireRelationObjectStoreSet {
             .insert_leaf_object_v2_from_rows(epoch, pid, object_version, parent_pid, assignments)
     }
 
+    pub(super) fn insert_leaf_object_v3_from_rows_and_summaries(
+        &mut self,
+        epoch: u64,
+        pid: u64,
+        object_version: u64,
+        parent_pid: u64,
+        assignments: &[SpireLeafAssignmentRow],
+        summaries: &[SpireLeafBlockSummary],
+        summary_block_rows: u32,
+    ) -> Result<SpirePlacementEntry, String> {
+        self.store_mut_for_pid(pid)?
+            .insert_leaf_object_v3_from_rows_and_summaries(
+                epoch,
+                pid,
+                object_version,
+                parent_pid,
+                assignments,
+                summaries,
+                summary_block_rows,
+            )
+    }
+
     pub(super) fn insert_delta_object(
         &mut self,
         epoch: u64,
@@ -1609,6 +2018,28 @@ impl SpireObjectReader for SpireRelationObjectStoreSet {
     ) -> Result<SpireLeafPartitionObjectV2, String> {
         self.store_for_placement(placement)?
             .read_leaf_object_v2(placement)
+    }
+
+    fn read_leaf_object_v2_summaries(
+        &self,
+        placement: &SpirePlacementEntry,
+    ) -> Result<SpireLeafPartitionObjectV2Summaries, String> {
+        self.store_for_placement(placement)?
+            .read_leaf_object_v2_summaries(placement)
+    }
+
+    fn read_leaf_object_v2_segments_for_row_ranges(
+        &self,
+        placement: &SpirePlacementEntry,
+        meta: &SpireLeafPartitionObjectV2Meta,
+        selected_row_ranges: Option<&[(u32, u32)]>,
+    ) -> Result<Vec<SpireLeafPartitionObjectV2Segment>, String> {
+        self.store_for_placement(placement)?
+            .read_leaf_object_v2_segments_for_row_ranges(
+                placement,
+                meta,
+                selected_row_ranges,
+            )
     }
 
     fn read_delta_object(

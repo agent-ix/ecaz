@@ -1,0 +1,453 @@
+2026-06-01 18:59:31.469 PDT [3254763] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-06-01 18:59:31.470 PDT [3254763] LOG:  listening on IPv4 address "0.0.0.0", port 28818
+2026-06-01 18:59:31.470 PDT [3254763] LOG:  listening on IPv6 address "::", port 28818
+2026-06-01 18:59:31.474 PDT [3254763] LOG:  listening on Unix socket "/home/peter/.pgrx/.s.PGSQL.28818"
+2026-06-01 18:59:31.498 PDT [3254769] LOG:  database system was shut down at 2026-06-01 18:59:31 PDT
+2026-06-01 18:59:31.511 PDT [3254763] LOG:  database system is ready to accept connections
+2026-06-01 18:59:46.549 PDT [3254944] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 18:59:46.549 PDT [3254944] CONTEXT:  while vacuuming index "task51_local_10k_ivf_rabitq1_n128_w50_rabitq_idx" of relation "public.task51_local_10k_ivf_rabitq1_n128_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_10k_ivf_rabitq1_n128_w50_corpus"
+2026-06-01 18:59:46.556 PDT [3254944] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 18:59:46.556 PDT [3254944] CONTEXT:  while vacuuming index "task51_local_10k_ivf_rabitq1_n32_w50_rabitq_idx" of relation "public.task51_local_10k_ivf_rabitq1_n32_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_10k_ivf_rabitq1_n32_w50_corpus"
+2026-06-01 18:59:46.561 PDT [3254944] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 18:59:46.561 PDT [3254944] CONTEXT:  while vacuuming index "task51_local_10k_ivf_rabitq1_n64_w50_rabitq_idx" of relation "public.task51_local_10k_ivf_rabitq1_n64_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_10k_ivf_rabitq1_n64_w50_corpus"
+2026-06-01 18:59:46.580 PDT [3254944] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 18:59:46.580 PDT [3254944] CONTEXT:  while vacuuming index "task51_local_50k_ivf_rabitq1_n64_w50_rabitq_idx" of relation "public.task51_local_50k_ivf_rabitq1_n64_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_50k_ivf_rabitq1_n64_w50_corpus"
+2026-06-01 18:59:46.933 PDT [3254944] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 18:59:46.933 PDT [3254944] CONTEXT:  while vacuuming index "task51_local_990k_ivf_rabitq1_n1024_w50_rabitq_idx" of relation "public.task51_local_990k_ivf_rabitq1_n1024_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_990k_ivf_rabitq1_n1024_w50_corpus"
+2026-06-01 18:59:46.952 PDT [3254944] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 18:59:46.952 PDT [3254944] CONTEXT:  while vacuuming index "task51_local_50k_ivf_rabitq1_n128_w50_rabitq_idx" of relation "public.task51_local_50k_ivf_rabitq1_n128_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_50k_ivf_rabitq1_n128_w50_corpus"
+2026-06-01 18:59:46.989 PDT [3254944] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 18:59:46.989 PDT [3254944] CONTEXT:  while vacuuming index "task51_local_100k_ivf_rabitq1_n64_w50_rabitq_idx" of relation "public.task51_local_100k_ivf_rabitq1_n64_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_100k_ivf_rabitq1_n64_w50_corpus"
+2026-06-01 18:59:47.029 PDT [3254944] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 18:59:47.029 PDT [3254944] CONTEXT:  while vacuuming index "task51_local_100k_ivf_rabitq1_n128_w50_rabitq_idx" of relation "public.task51_local_100k_ivf_rabitq1_n128_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_100k_ivf_rabitq1_n128_w50_corpus"
+2026-06-01 18:59:47.051 PDT [3254944] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 18:59:47.051 PDT [3254944] CONTEXT:  while vacuuming index "task51_local_50k_ivf_rabitq1_n128_sidecar_off_rabitq_idx" of relation "public.task51_local_50k_ivf_rabitq1_n128_sidecar_off_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_50k_ivf_rabitq1_n128_sidecar_off_corpus"
+2026-06-01 19:00:46.528 PDT [3255201] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:00:46.528 PDT [3255201] CONTEXT:  while vacuuming index "task51_local_10k_ivf_rabitq1_n128_w50_rabitq_idx" of relation "public.task51_local_10k_ivf_rabitq1_n128_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_10k_ivf_rabitq1_n128_w50_corpus"
+2026-06-01 19:00:46.533 PDT [3255201] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:00:46.533 PDT [3255201] CONTEXT:  while vacuuming index "task51_local_10k_ivf_rabitq1_n32_w50_rabitq_idx" of relation "public.task51_local_10k_ivf_rabitq1_n32_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_10k_ivf_rabitq1_n32_w50_corpus"
+2026-06-01 19:00:46.538 PDT [3255201] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:00:46.538 PDT [3255201] CONTEXT:  while vacuuming index "task51_local_10k_ivf_rabitq1_n64_w50_rabitq_idx" of relation "public.task51_local_10k_ivf_rabitq1_n64_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_10k_ivf_rabitq1_n64_w50_corpus"
+2026-06-01 19:00:46.555 PDT [3255201] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:00:46.555 PDT [3255201] CONTEXT:  while vacuuming index "task51_local_50k_ivf_rabitq1_n64_w50_rabitq_idx" of relation "public.task51_local_50k_ivf_rabitq1_n64_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_50k_ivf_rabitq1_n64_w50_corpus"
+2026-06-01 19:00:46.906 PDT [3255201] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:00:46.906 PDT [3255201] CONTEXT:  while vacuuming index "task51_local_990k_ivf_rabitq1_n1024_w50_rabitq_idx" of relation "public.task51_local_990k_ivf_rabitq1_n1024_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_990k_ivf_rabitq1_n1024_w50_corpus"
+2026-06-01 19:00:46.924 PDT [3255201] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:00:46.924 PDT [3255201] CONTEXT:  while vacuuming index "task51_local_50k_ivf_rabitq1_n128_w50_rabitq_idx" of relation "public.task51_local_50k_ivf_rabitq1_n128_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_50k_ivf_rabitq1_n128_w50_corpus"
+2026-06-01 19:00:46.958 PDT [3255201] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:00:46.958 PDT [3255201] CONTEXT:  while vacuuming index "task51_local_100k_ivf_rabitq1_n64_w50_rabitq_idx" of relation "public.task51_local_100k_ivf_rabitq1_n64_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_100k_ivf_rabitq1_n64_w50_corpus"
+2026-06-01 19:00:46.992 PDT [3255201] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:00:46.992 PDT [3255201] CONTEXT:  while vacuuming index "task51_local_100k_ivf_rabitq1_n128_w50_rabitq_idx" of relation "public.task51_local_100k_ivf_rabitq1_n128_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_100k_ivf_rabitq1_n128_w50_corpus"
+2026-06-01 19:00:47.010 PDT [3255201] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:00:47.010 PDT [3255201] CONTEXT:  while vacuuming index "task51_local_50k_ivf_rabitq1_n128_sidecar_off_rabitq_idx" of relation "public.task51_local_50k_ivf_rabitq1_n128_sidecar_off_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_50k_ivf_rabitq1_n128_sidecar_off_corpus"
+2026-06-01 19:01:46.527 PDT [3255335] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:01:46.527 PDT [3255335] CONTEXT:  while vacuuming index "task51_local_10k_ivf_rabitq1_n128_w50_rabitq_idx" of relation "public.task51_local_10k_ivf_rabitq1_n128_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_10k_ivf_rabitq1_n128_w50_corpus"
+2026-06-01 19:01:46.531 PDT [3255335] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:01:46.531 PDT [3255335] CONTEXT:  while vacuuming index "task51_local_10k_ivf_rabitq1_n32_w50_rabitq_idx" of relation "public.task51_local_10k_ivf_rabitq1_n32_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_10k_ivf_rabitq1_n32_w50_corpus"
+2026-06-01 19:01:46.535 PDT [3255335] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:01:46.535 PDT [3255335] CONTEXT:  while vacuuming index "task51_local_10k_ivf_rabitq1_n64_w50_rabitq_idx" of relation "public.task51_local_10k_ivf_rabitq1_n64_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_10k_ivf_rabitq1_n64_w50_corpus"
+2026-06-01 19:01:46.552 PDT [3255335] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:01:46.552 PDT [3255335] CONTEXT:  while vacuuming index "task51_local_50k_ivf_rabitq1_n64_w50_rabitq_idx" of relation "public.task51_local_50k_ivf_rabitq1_n64_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_50k_ivf_rabitq1_n64_w50_corpus"
+2026-06-01 19:01:46.903 PDT [3255335] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:01:46.903 PDT [3255335] CONTEXT:  while vacuuming index "task51_local_990k_ivf_rabitq1_n1024_w50_rabitq_idx" of relation "public.task51_local_990k_ivf_rabitq1_n1024_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_990k_ivf_rabitq1_n1024_w50_corpus"
+2026-06-01 19:01:46.921 PDT [3255335] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:01:46.921 PDT [3255335] CONTEXT:  while vacuuming index "task51_local_50k_ivf_rabitq1_n128_w50_rabitq_idx" of relation "public.task51_local_50k_ivf_rabitq1_n128_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_50k_ivf_rabitq1_n128_w50_corpus"
+2026-06-01 19:01:46.956 PDT [3255335] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:01:46.956 PDT [3255335] CONTEXT:  while vacuuming index "task51_local_100k_ivf_rabitq1_n64_w50_rabitq_idx" of relation "public.task51_local_100k_ivf_rabitq1_n64_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_100k_ivf_rabitq1_n64_w50_corpus"
+2026-06-01 19:01:46.991 PDT [3255335] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:01:46.991 PDT [3255335] CONTEXT:  while vacuuming index "task51_local_100k_ivf_rabitq1_n128_w50_rabitq_idx" of relation "public.task51_local_100k_ivf_rabitq1_n128_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_100k_ivf_rabitq1_n128_w50_corpus"
+2026-06-01 19:01:47.005 PDT [3255335] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:01:47.005 PDT [3255335] CONTEXT:  while vacuuming index "task51_local_50k_ivf_rabitq1_n128_sidecar_off_rabitq_idx" of relation "public.task51_local_50k_ivf_rabitq1_n128_sidecar_off_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_50k_ivf_rabitq1_n128_sidecar_off_corpus"
+2026-06-01 19:02:38.586 PDT [3255090] LOG:  could not send data to client: Broken pipe
+2026-06-01 19:02:38.586 PDT [3255090] FATAL:  connection to client lost
+2026-06-01 19:02:46.532 PDT [3255545] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:02:46.532 PDT [3255545] CONTEXT:  while vacuuming index "task51_local_10k_ivf_rabitq1_n128_w50_rabitq_idx" of relation "public.task51_local_10k_ivf_rabitq1_n128_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_10k_ivf_rabitq1_n128_w50_corpus"
+2026-06-01 19:02:46.537 PDT [3255545] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:02:46.537 PDT [3255545] CONTEXT:  while vacuuming index "task51_local_10k_ivf_rabitq1_n32_w50_rabitq_idx" of relation "public.task51_local_10k_ivf_rabitq1_n32_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_10k_ivf_rabitq1_n32_w50_corpus"
+2026-06-01 19:02:46.542 PDT [3255545] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:02:46.542 PDT [3255545] CONTEXT:  while vacuuming index "task51_local_10k_ivf_rabitq1_n64_w50_rabitq_idx" of relation "public.task51_local_10k_ivf_rabitq1_n64_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_10k_ivf_rabitq1_n64_w50_corpus"
+2026-06-01 19:02:46.558 PDT [3255545] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:02:46.558 PDT [3255545] CONTEXT:  while vacuuming index "task51_local_50k_ivf_rabitq1_n64_w50_rabitq_idx" of relation "public.task51_local_50k_ivf_rabitq1_n64_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_50k_ivf_rabitq1_n64_w50_corpus"
+2026-06-01 19:02:46.912 PDT [3255545] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:02:46.912 PDT [3255545] CONTEXT:  while vacuuming index "task51_local_990k_ivf_rabitq1_n1024_w50_rabitq_idx" of relation "public.task51_local_990k_ivf_rabitq1_n1024_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_990k_ivf_rabitq1_n1024_w50_corpus"
+2026-06-01 19:02:46.929 PDT [3255545] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:02:46.929 PDT [3255545] CONTEXT:  while vacuuming index "task51_local_50k_ivf_rabitq1_n128_w50_rabitq_idx" of relation "public.task51_local_50k_ivf_rabitq1_n128_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_50k_ivf_rabitq1_n128_w50_corpus"
+2026-06-01 19:02:46.963 PDT [3255545] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:02:46.963 PDT [3255545] CONTEXT:  while vacuuming index "task51_local_100k_ivf_rabitq1_n64_w50_rabitq_idx" of relation "public.task51_local_100k_ivf_rabitq1_n64_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_100k_ivf_rabitq1_n64_w50_corpus"
+2026-06-01 19:02:46.998 PDT [3255545] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:02:46.998 PDT [3255545] CONTEXT:  while vacuuming index "task51_local_100k_ivf_rabitq1_n128_w50_rabitq_idx" of relation "public.task51_local_100k_ivf_rabitq1_n128_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_100k_ivf_rabitq1_n128_w50_corpus"
+2026-06-01 19:02:47.012 PDT [3255545] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:02:47.012 PDT [3255545] CONTEXT:  while vacuuming index "task51_local_50k_ivf_rabitq1_n128_sidecar_off_rabitq_idx" of relation "public.task51_local_50k_ivf_rabitq1_n128_sidecar_off_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_50k_ivf_rabitq1_n128_sidecar_off_corpus"
+2026-06-01 19:03:46.632 PDT [3255730] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:03:46.632 PDT [3255730] CONTEXT:  while vacuuming index "task51_local_10k_ivf_rabitq1_n128_w50_rabitq_idx" of relation "public.task51_local_10k_ivf_rabitq1_n128_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_10k_ivf_rabitq1_n128_w50_corpus"
+2026-06-01 19:03:46.637 PDT [3255730] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:03:46.637 PDT [3255730] CONTEXT:  while vacuuming index "task51_local_10k_ivf_rabitq1_n32_w50_rabitq_idx" of relation "public.task51_local_10k_ivf_rabitq1_n32_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_10k_ivf_rabitq1_n32_w50_corpus"
+2026-06-01 19:03:46.642 PDT [3255730] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:03:46.642 PDT [3255730] CONTEXT:  while vacuuming index "task51_local_10k_ivf_rabitq1_n64_w50_rabitq_idx" of relation "public.task51_local_10k_ivf_rabitq1_n64_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_10k_ivf_rabitq1_n64_w50_corpus"
+2026-06-01 19:03:46.659 PDT [3255730] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:03:46.659 PDT [3255730] CONTEXT:  while vacuuming index "task51_local_50k_ivf_rabitq1_n64_w50_rabitq_idx" of relation "public.task51_local_50k_ivf_rabitq1_n64_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_50k_ivf_rabitq1_n64_w50_corpus"
+2026-06-01 19:03:47.015 PDT [3255730] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:03:47.015 PDT [3255730] CONTEXT:  while vacuuming index "task51_local_990k_ivf_rabitq1_n1024_w50_rabitq_idx" of relation "public.task51_local_990k_ivf_rabitq1_n1024_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_990k_ivf_rabitq1_n1024_w50_corpus"
+2026-06-01 19:03:47.032 PDT [3255730] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:03:47.032 PDT [3255730] CONTEXT:  while vacuuming index "task51_local_50k_ivf_rabitq1_n128_w50_rabitq_idx" of relation "public.task51_local_50k_ivf_rabitq1_n128_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_50k_ivf_rabitq1_n128_w50_corpus"
+2026-06-01 19:03:47.067 PDT [3255730] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:03:47.067 PDT [3255730] CONTEXT:  while vacuuming index "task51_local_100k_ivf_rabitq1_n64_w50_rabitq_idx" of relation "public.task51_local_100k_ivf_rabitq1_n64_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_100k_ivf_rabitq1_n64_w50_corpus"
+2026-06-01 19:03:47.103 PDT [3255730] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:03:47.103 PDT [3255730] CONTEXT:  while vacuuming index "task51_local_100k_ivf_rabitq1_n128_w50_rabitq_idx" of relation "public.task51_local_100k_ivf_rabitq1_n128_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_100k_ivf_rabitq1_n128_w50_corpus"
+2026-06-01 19:03:47.113 PDT [3255730] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:03:47.113 PDT [3255730] CONTEXT:  while vacuuming index "task51_local_50k_ivf_rabitq1_n128_sidecar_off_rabitq_idx" of relation "public.task51_local_50k_ivf_rabitq1_n128_sidecar_off_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_50k_ivf_rabitq1_n128_sidecar_off_corpus"
+2026-06-01 19:04:31.613 PDT [3254767] LOG:  checkpoint starting: time
+2026-06-01 19:04:37.471 PDT [3255543] LOG:  could not send data to client: Broken pipe
+2026-06-01 19:04:37.471 PDT [3255543] FATAL:  connection to client lost
+2026-06-01 19:04:46.633 PDT [3255949] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:04:46.633 PDT [3255949] CONTEXT:  while vacuuming index "task51_local_10k_ivf_rabitq1_n128_w50_rabitq_idx" of relation "public.task51_local_10k_ivf_rabitq1_n128_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_10k_ivf_rabitq1_n128_w50_corpus"
+2026-06-01 19:04:46.638 PDT [3255949] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:04:46.638 PDT [3255949] CONTEXT:  while vacuuming index "task51_local_10k_ivf_rabitq1_n32_w50_rabitq_idx" of relation "public.task51_local_10k_ivf_rabitq1_n32_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_10k_ivf_rabitq1_n32_w50_corpus"
+2026-06-01 19:04:46.642 PDT [3255949] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:04:46.642 PDT [3255949] CONTEXT:  while vacuuming index "task51_local_10k_ivf_rabitq1_n64_w50_rabitq_idx" of relation "public.task51_local_10k_ivf_rabitq1_n64_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_10k_ivf_rabitq1_n64_w50_corpus"
+2026-06-01 19:04:46.659 PDT [3255949] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:04:46.659 PDT [3255949] CONTEXT:  while vacuuming index "task51_local_50k_ivf_rabitq1_n64_w50_rabitq_idx" of relation "public.task51_local_50k_ivf_rabitq1_n64_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_50k_ivf_rabitq1_n64_w50_corpus"
+2026-06-01 19:04:47.015 PDT [3255949] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:04:47.015 PDT [3255949] CONTEXT:  while vacuuming index "task51_local_990k_ivf_rabitq1_n1024_w50_rabitq_idx" of relation "public.task51_local_990k_ivf_rabitq1_n1024_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_990k_ivf_rabitq1_n1024_w50_corpus"
+2026-06-01 19:04:47.032 PDT [3255949] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:04:47.032 PDT [3255949] CONTEXT:  while vacuuming index "task51_local_50k_ivf_rabitq1_n128_w50_rabitq_idx" of relation "public.task51_local_50k_ivf_rabitq1_n128_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_50k_ivf_rabitq1_n128_w50_corpus"
+2026-06-01 19:04:47.067 PDT [3255949] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:04:47.067 PDT [3255949] CONTEXT:  while vacuuming index "task51_local_100k_ivf_rabitq1_n64_w50_rabitq_idx" of relation "public.task51_local_100k_ivf_rabitq1_n64_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_100k_ivf_rabitq1_n64_w50_corpus"
+2026-06-01 19:04:47.102 PDT [3255949] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:04:47.102 PDT [3255949] CONTEXT:  while vacuuming index "task51_local_100k_ivf_rabitq1_n128_w50_rabitq_idx" of relation "public.task51_local_100k_ivf_rabitq1_n128_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_100k_ivf_rabitq1_n128_w50_corpus"
+2026-06-01 19:04:47.119 PDT [3255949] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:04:47.119 PDT [3255949] CONTEXT:  while vacuuming index "task51_local_50k_ivf_rabitq1_n128_sidecar_off_rabitq_idx" of relation "public.task51_local_50k_ivf_rabitq1_n128_sidecar_off_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_50k_ivf_rabitq1_n128_sidecar_off_corpus"
+2026-06-01 19:05:46.637 PDT [3256137] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:05:46.637 PDT [3256137] CONTEXT:  while vacuuming index "task51_local_10k_ivf_rabitq1_n128_w50_rabitq_idx" of relation "public.task51_local_10k_ivf_rabitq1_n128_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_10k_ivf_rabitq1_n128_w50_corpus"
+2026-06-01 19:05:46.641 PDT [3256137] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:05:46.641 PDT [3256137] CONTEXT:  while vacuuming index "task51_local_10k_ivf_rabitq1_n32_w50_rabitq_idx" of relation "public.task51_local_10k_ivf_rabitq1_n32_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_10k_ivf_rabitq1_n32_w50_corpus"
+2026-06-01 19:05:46.646 PDT [3256137] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:05:46.646 PDT [3256137] CONTEXT:  while vacuuming index "task51_local_10k_ivf_rabitq1_n64_w50_rabitq_idx" of relation "public.task51_local_10k_ivf_rabitq1_n64_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_10k_ivf_rabitq1_n64_w50_corpus"
+2026-06-01 19:05:46.663 PDT [3256137] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:05:46.663 PDT [3256137] CONTEXT:  while vacuuming index "task51_local_50k_ivf_rabitq1_n64_w50_rabitq_idx" of relation "public.task51_local_50k_ivf_rabitq1_n64_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_50k_ivf_rabitq1_n64_w50_corpus"
+2026-06-01 19:05:47.013 PDT [3256137] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:05:47.013 PDT [3256137] CONTEXT:  while vacuuming index "task51_local_990k_ivf_rabitq1_n1024_w50_rabitq_idx" of relation "public.task51_local_990k_ivf_rabitq1_n1024_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_990k_ivf_rabitq1_n1024_w50_corpus"
+2026-06-01 19:05:47.030 PDT [3256137] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:05:47.030 PDT [3256137] CONTEXT:  while vacuuming index "task51_local_50k_ivf_rabitq1_n128_w50_rabitq_idx" of relation "public.task51_local_50k_ivf_rabitq1_n128_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_50k_ivf_rabitq1_n128_w50_corpus"
+2026-06-01 19:05:47.065 PDT [3256137] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:05:47.065 PDT [3256137] CONTEXT:  while vacuuming index "task51_local_100k_ivf_rabitq1_n64_w50_rabitq_idx" of relation "public.task51_local_100k_ivf_rabitq1_n64_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_100k_ivf_rabitq1_n64_w50_corpus"
+2026-06-01 19:05:47.099 PDT [3256137] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:05:47.099 PDT [3256137] CONTEXT:  while vacuuming index "task51_local_100k_ivf_rabitq1_n128_w50_rabitq_idx" of relation "public.task51_local_100k_ivf_rabitq1_n128_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_100k_ivf_rabitq1_n128_w50_corpus"
+2026-06-01 19:05:47.112 PDT [3256137] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:05:47.112 PDT [3256137] CONTEXT:  while vacuuming index "task51_local_50k_ivf_rabitq1_n128_sidecar_off_rabitq_idx" of relation "public.task51_local_50k_ivf_rabitq1_n128_sidecar_off_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_50k_ivf_rabitq1_n128_sidecar_off_corpus"
+2026-06-01 19:06:39.285 PDT [3255933] LOG:  could not send data to client: Broken pipe
+2026-06-01 19:06:39.285 PDT [3255933] FATAL:  connection to client lost
+2026-06-01 19:06:46.638 PDT [3256388] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:06:46.638 PDT [3256388] CONTEXT:  while vacuuming index "task51_local_10k_ivf_rabitq1_n128_w50_rabitq_idx" of relation "public.task51_local_10k_ivf_rabitq1_n128_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_10k_ivf_rabitq1_n128_w50_corpus"
+2026-06-01 19:06:46.643 PDT [3256388] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:06:46.643 PDT [3256388] CONTEXT:  while vacuuming index "task51_local_10k_ivf_rabitq1_n32_w50_rabitq_idx" of relation "public.task51_local_10k_ivf_rabitq1_n32_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_10k_ivf_rabitq1_n32_w50_corpus"
+2026-06-01 19:06:46.647 PDT [3256388] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:06:46.647 PDT [3256388] CONTEXT:  while vacuuming index "task51_local_10k_ivf_rabitq1_n64_w50_rabitq_idx" of relation "public.task51_local_10k_ivf_rabitq1_n64_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_10k_ivf_rabitq1_n64_w50_corpus"
+2026-06-01 19:06:46.664 PDT [3256388] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:06:46.664 PDT [3256388] CONTEXT:  while vacuuming index "task51_local_50k_ivf_rabitq1_n64_w50_rabitq_idx" of relation "public.task51_local_50k_ivf_rabitq1_n64_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_50k_ivf_rabitq1_n64_w50_corpus"
+2026-06-01 19:06:47.014 PDT [3256388] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:06:47.014 PDT [3256388] CONTEXT:  while vacuuming index "task51_local_990k_ivf_rabitq1_n1024_w50_rabitq_idx" of relation "public.task51_local_990k_ivf_rabitq1_n1024_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_990k_ivf_rabitq1_n1024_w50_corpus"
+2026-06-01 19:06:47.031 PDT [3256388] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:06:47.031 PDT [3256388] CONTEXT:  while vacuuming index "task51_local_50k_ivf_rabitq1_n128_w50_rabitq_idx" of relation "public.task51_local_50k_ivf_rabitq1_n128_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_50k_ivf_rabitq1_n128_w50_corpus"
+2026-06-01 19:06:47.066 PDT [3256388] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:06:47.066 PDT [3256388] CONTEXT:  while vacuuming index "task51_local_100k_ivf_rabitq1_n64_w50_rabitq_idx" of relation "public.task51_local_100k_ivf_rabitq1_n64_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_100k_ivf_rabitq1_n64_w50_corpus"
+2026-06-01 19:06:47.100 PDT [3256388] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:06:47.100 PDT [3256388] CONTEXT:  while vacuuming index "task51_local_100k_ivf_rabitq1_n128_w50_rabitq_idx" of relation "public.task51_local_100k_ivf_rabitq1_n128_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_100k_ivf_rabitq1_n128_w50_corpus"
+2026-06-01 19:06:47.114 PDT [3256388] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:06:47.114 PDT [3256388] CONTEXT:  while vacuuming index "task51_local_50k_ivf_rabitq1_n128_sidecar_off_rabitq_idx" of relation "public.task51_local_50k_ivf_rabitq1_n128_sidecar_off_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_50k_ivf_rabitq1_n128_sidecar_off_corpus"
+2026-06-01 19:07:46.643 PDT [3256568] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:07:46.643 PDT [3256568] CONTEXT:  while vacuuming index "task51_local_10k_ivf_rabitq1_n128_w50_rabitq_idx" of relation "public.task51_local_10k_ivf_rabitq1_n128_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_10k_ivf_rabitq1_n128_w50_corpus"
+2026-06-01 19:07:46.648 PDT [3256568] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:07:46.648 PDT [3256568] CONTEXT:  while vacuuming index "task51_local_10k_ivf_rabitq1_n32_w50_rabitq_idx" of relation "public.task51_local_10k_ivf_rabitq1_n32_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_10k_ivf_rabitq1_n32_w50_corpus"
+2026-06-01 19:07:46.653 PDT [3256568] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:07:46.653 PDT [3256568] CONTEXT:  while vacuuming index "task51_local_10k_ivf_rabitq1_n64_w50_rabitq_idx" of relation "public.task51_local_10k_ivf_rabitq1_n64_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_10k_ivf_rabitq1_n64_w50_corpus"
+2026-06-01 19:07:46.670 PDT [3256568] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:07:46.670 PDT [3256568] CONTEXT:  while vacuuming index "task51_local_50k_ivf_rabitq1_n64_w50_rabitq_idx" of relation "public.task51_local_50k_ivf_rabitq1_n64_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_50k_ivf_rabitq1_n64_w50_corpus"
+2026-06-01 19:07:47.021 PDT [3256568] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:07:47.021 PDT [3256568] CONTEXT:  while vacuuming index "task51_local_990k_ivf_rabitq1_n1024_w50_rabitq_idx" of relation "public.task51_local_990k_ivf_rabitq1_n1024_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_990k_ivf_rabitq1_n1024_w50_corpus"
+2026-06-01 19:07:47.039 PDT [3256568] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:07:47.039 PDT [3256568] CONTEXT:  while vacuuming index "task51_local_50k_ivf_rabitq1_n128_w50_rabitq_idx" of relation "public.task51_local_50k_ivf_rabitq1_n128_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_50k_ivf_rabitq1_n128_w50_corpus"
+2026-06-01 19:07:47.073 PDT [3256568] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:07:47.073 PDT [3256568] CONTEXT:  while vacuuming index "task51_local_100k_ivf_rabitq1_n64_w50_rabitq_idx" of relation "public.task51_local_100k_ivf_rabitq1_n64_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_100k_ivf_rabitq1_n64_w50_corpus"
+2026-06-01 19:07:47.107 PDT [3256568] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:07:47.107 PDT [3256568] CONTEXT:  while vacuuming index "task51_local_100k_ivf_rabitq1_n128_w50_rabitq_idx" of relation "public.task51_local_100k_ivf_rabitq1_n128_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_100k_ivf_rabitq1_n128_w50_corpus"
+2026-06-01 19:07:47.118 PDT [3256568] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:07:47.118 PDT [3256568] CONTEXT:  while vacuuming index "task51_local_50k_ivf_rabitq1_n128_sidecar_off_rabitq_idx" of relation "public.task51_local_50k_ivf_rabitq1_n128_sidecar_off_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_50k_ivf_rabitq1_n128_sidecar_off_corpus"
+2026-06-01 19:08:45.778 PDT [3256377] LOG:  could not send data to client: Broken pipe
+2026-06-01 19:08:45.778 PDT [3256377] FATAL:  connection to client lost
+2026-06-01 19:08:46.744 PDT [3256827] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:08:46.744 PDT [3256827] CONTEXT:  while vacuuming index "task51_local_10k_ivf_rabitq1_n128_w50_rabitq_idx" of relation "public.task51_local_10k_ivf_rabitq1_n128_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_10k_ivf_rabitq1_n128_w50_corpus"
+2026-06-01 19:08:46.749 PDT [3256827] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:08:46.749 PDT [3256827] CONTEXT:  while vacuuming index "task51_local_10k_ivf_rabitq1_n32_w50_rabitq_idx" of relation "public.task51_local_10k_ivf_rabitq1_n32_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_10k_ivf_rabitq1_n32_w50_corpus"
+2026-06-01 19:08:46.754 PDT [3256827] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:08:46.754 PDT [3256827] CONTEXT:  while vacuuming index "task51_local_10k_ivf_rabitq1_n64_w50_rabitq_idx" of relation "public.task51_local_10k_ivf_rabitq1_n64_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_10k_ivf_rabitq1_n64_w50_corpus"
+2026-06-01 19:08:46.771 PDT [3256827] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:08:46.771 PDT [3256827] CONTEXT:  while vacuuming index "task51_local_50k_ivf_rabitq1_n64_w50_rabitq_idx" of relation "public.task51_local_50k_ivf_rabitq1_n64_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_50k_ivf_rabitq1_n64_w50_corpus"
+2026-06-01 19:08:47.122 PDT [3256827] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:08:47.122 PDT [3256827] CONTEXT:  while vacuuming index "task51_local_990k_ivf_rabitq1_n1024_w50_rabitq_idx" of relation "public.task51_local_990k_ivf_rabitq1_n1024_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_990k_ivf_rabitq1_n1024_w50_corpus"
+2026-06-01 19:08:47.139 PDT [3256827] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:08:47.139 PDT [3256827] CONTEXT:  while vacuuming index "task51_local_50k_ivf_rabitq1_n128_w50_rabitq_idx" of relation "public.task51_local_50k_ivf_rabitq1_n128_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_50k_ivf_rabitq1_n128_w50_corpus"
+2026-06-01 19:08:47.173 PDT [3256827] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:08:47.173 PDT [3256827] CONTEXT:  while vacuuming index "task51_local_100k_ivf_rabitq1_n64_w50_rabitq_idx" of relation "public.task51_local_100k_ivf_rabitq1_n64_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_100k_ivf_rabitq1_n64_w50_corpus"
+2026-06-01 19:08:47.204 PDT [3256827] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:08:47.204 PDT [3256827] CONTEXT:  while vacuuming index "task51_local_100k_ivf_rabitq1_n128_w50_rabitq_idx" of relation "public.task51_local_100k_ivf_rabitq1_n128_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_100k_ivf_rabitq1_n128_w50_corpus"
+2026-06-01 19:08:47.214 PDT [3256827] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:08:47.214 PDT [3256827] CONTEXT:  while vacuuming index "task51_local_50k_ivf_rabitq1_n128_sidecar_off_rabitq_idx" of relation "public.task51_local_50k_ivf_rabitq1_n128_sidecar_off_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_50k_ivf_rabitq1_n128_sidecar_off_corpus"
+2026-06-01 19:09:01.097 PDT [3254767] LOG:  checkpoint complete: wrote 10562 buffers (64.5%), wrote 4 SLRU buffers; 0 WAL file(s) added, 0 removed, 6 recycled; write=269.453 s, sync=0.010 s, total=269.484 s; sync files=17, longest=0.003 s, average=0.001 s; distance=85879 kB, estimate=85879 kB; lsn=50/C718C7A0, redo lsn=50/C7177538
+2026-06-01 19:09:46.745 PDT [3257003] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:09:46.745 PDT [3257003] CONTEXT:  while vacuuming index "task51_local_10k_ivf_rabitq1_n128_w50_rabitq_idx" of relation "public.task51_local_10k_ivf_rabitq1_n128_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_10k_ivf_rabitq1_n128_w50_corpus"
+2026-06-01 19:09:46.750 PDT [3257003] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:09:46.750 PDT [3257003] CONTEXT:  while vacuuming index "task51_local_10k_ivf_rabitq1_n32_w50_rabitq_idx" of relation "public.task51_local_10k_ivf_rabitq1_n32_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_10k_ivf_rabitq1_n32_w50_corpus"
+2026-06-01 19:09:46.754 PDT [3257003] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:09:46.754 PDT [3257003] CONTEXT:  while vacuuming index "task51_local_10k_ivf_rabitq1_n64_w50_rabitq_idx" of relation "public.task51_local_10k_ivf_rabitq1_n64_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_10k_ivf_rabitq1_n64_w50_corpus"
+2026-06-01 19:09:46.771 PDT [3257003] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:09:46.771 PDT [3257003] CONTEXT:  while vacuuming index "task51_local_50k_ivf_rabitq1_n64_w50_rabitq_idx" of relation "public.task51_local_50k_ivf_rabitq1_n64_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_50k_ivf_rabitq1_n64_w50_corpus"
+2026-06-01 19:09:47.120 PDT [3257003] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:09:47.120 PDT [3257003] CONTEXT:  while vacuuming index "task51_local_990k_ivf_rabitq1_n1024_w50_rabitq_idx" of relation "public.task51_local_990k_ivf_rabitq1_n1024_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_990k_ivf_rabitq1_n1024_w50_corpus"
+2026-06-01 19:09:47.137 PDT [3257003] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:09:47.137 PDT [3257003] CONTEXT:  while vacuuming index "task51_local_50k_ivf_rabitq1_n128_w50_rabitq_idx" of relation "public.task51_local_50k_ivf_rabitq1_n128_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_50k_ivf_rabitq1_n128_w50_corpus"
+2026-06-01 19:09:47.172 PDT [3257003] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:09:47.172 PDT [3257003] CONTEXT:  while vacuuming index "task51_local_100k_ivf_rabitq1_n64_w50_rabitq_idx" of relation "public.task51_local_100k_ivf_rabitq1_n64_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_100k_ivf_rabitq1_n64_w50_corpus"
+2026-06-01 19:09:47.201 PDT [3257003] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:09:47.201 PDT [3257003] CONTEXT:  while vacuuming index "task51_local_100k_ivf_rabitq1_n128_w50_rabitq_idx" of relation "public.task51_local_100k_ivf_rabitq1_n128_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_100k_ivf_rabitq1_n128_w50_corpus"
+2026-06-01 19:09:47.211 PDT [3257003] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:09:47.211 PDT [3257003] CONTEXT:  while vacuuming index "task51_local_50k_ivf_rabitq1_n128_sidecar_off_rabitq_idx" of relation "public.task51_local_50k_ivf_rabitq1_n128_sidecar_off_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_50k_ivf_rabitq1_n128_sidecar_off_corpus"
+2026-06-01 19:10:46.747 PDT [3257220] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:10:46.747 PDT [3257220] CONTEXT:  while vacuuming index "task51_local_10k_ivf_rabitq1_n128_w50_rabitq_idx" of relation "public.task51_local_10k_ivf_rabitq1_n128_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_10k_ivf_rabitq1_n128_w50_corpus"
+2026-06-01 19:10:46.752 PDT [3257220] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:10:46.752 PDT [3257220] CONTEXT:  while vacuuming index "task51_local_10k_ivf_rabitq1_n32_w50_rabitq_idx" of relation "public.task51_local_10k_ivf_rabitq1_n32_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_10k_ivf_rabitq1_n32_w50_corpus"
+2026-06-01 19:10:46.757 PDT [3257220] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:10:46.757 PDT [3257220] CONTEXT:  while vacuuming index "task51_local_10k_ivf_rabitq1_n64_w50_rabitq_idx" of relation "public.task51_local_10k_ivf_rabitq1_n64_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_10k_ivf_rabitq1_n64_w50_corpus"
+2026-06-01 19:10:46.774 PDT [3257220] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:10:46.774 PDT [3257220] CONTEXT:  while vacuuming index "task51_local_50k_ivf_rabitq1_n64_w50_rabitq_idx" of relation "public.task51_local_50k_ivf_rabitq1_n64_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_50k_ivf_rabitq1_n64_w50_corpus"
+2026-06-01 19:10:47.131 PDT [3257220] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:10:47.131 PDT [3257220] CONTEXT:  while vacuuming index "task51_local_990k_ivf_rabitq1_n1024_w50_rabitq_idx" of relation "public.task51_local_990k_ivf_rabitq1_n1024_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_990k_ivf_rabitq1_n1024_w50_corpus"
+2026-06-01 19:10:47.149 PDT [3257220] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:10:47.149 PDT [3257220] CONTEXT:  while vacuuming index "task51_local_50k_ivf_rabitq1_n128_w50_rabitq_idx" of relation "public.task51_local_50k_ivf_rabitq1_n128_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_50k_ivf_rabitq1_n128_w50_corpus"
+2026-06-01 19:10:47.184 PDT [3257220] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:10:47.184 PDT [3257220] CONTEXT:  while vacuuming index "task51_local_100k_ivf_rabitq1_n64_w50_rabitq_idx" of relation "public.task51_local_100k_ivf_rabitq1_n64_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_100k_ivf_rabitq1_n64_w50_corpus"
+2026-06-01 19:10:47.215 PDT [3257220] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:10:47.215 PDT [3257220] CONTEXT:  while vacuuming index "task51_local_100k_ivf_rabitq1_n128_w50_rabitq_idx" of relation "public.task51_local_100k_ivf_rabitq1_n128_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_100k_ivf_rabitq1_n128_w50_corpus"
+2026-06-01 19:10:47.226 PDT [3257220] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:10:47.226 PDT [3257220] CONTEXT:  while vacuuming index "task51_local_50k_ivf_rabitq1_n128_sidecar_off_rabitq_idx" of relation "public.task51_local_50k_ivf_rabitq1_n128_sidecar_off_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_50k_ivf_rabitq1_n128_sidecar_off_corpus"
+2026-06-01 19:11:00.895 PDT [3256826] LOG:  could not receive data from client: Connection reset by peer
+2026-06-01 19:11:46.748 PDT [3257362] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:11:46.748 PDT [3257362] CONTEXT:  while vacuuming index "task51_local_10k_ivf_rabitq1_n128_w50_rabitq_idx" of relation "public.task51_local_10k_ivf_rabitq1_n128_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_10k_ivf_rabitq1_n128_w50_corpus"
+2026-06-01 19:11:46.753 PDT [3257362] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:11:46.753 PDT [3257362] CONTEXT:  while vacuuming index "task51_local_10k_ivf_rabitq1_n32_w50_rabitq_idx" of relation "public.task51_local_10k_ivf_rabitq1_n32_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_10k_ivf_rabitq1_n32_w50_corpus"
+2026-06-01 19:11:46.757 PDT [3257362] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:11:46.757 PDT [3257362] CONTEXT:  while vacuuming index "task51_local_10k_ivf_rabitq1_n64_w50_rabitq_idx" of relation "public.task51_local_10k_ivf_rabitq1_n64_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_10k_ivf_rabitq1_n64_w50_corpus"
+2026-06-01 19:11:46.774 PDT [3257362] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:11:46.774 PDT [3257362] CONTEXT:  while vacuuming index "task51_local_50k_ivf_rabitq1_n64_w50_rabitq_idx" of relation "public.task51_local_50k_ivf_rabitq1_n64_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_50k_ivf_rabitq1_n64_w50_corpus"
+2026-06-01 19:11:47.124 PDT [3257362] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:11:47.124 PDT [3257362] CONTEXT:  while vacuuming index "task51_local_990k_ivf_rabitq1_n1024_w50_rabitq_idx" of relation "public.task51_local_990k_ivf_rabitq1_n1024_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_990k_ivf_rabitq1_n1024_w50_corpus"
+2026-06-01 19:11:47.141 PDT [3257362] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:11:47.141 PDT [3257362] CONTEXT:  while vacuuming index "task51_local_50k_ivf_rabitq1_n128_w50_rabitq_idx" of relation "public.task51_local_50k_ivf_rabitq1_n128_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_50k_ivf_rabitq1_n128_w50_corpus"
+2026-06-01 19:11:47.176 PDT [3257362] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:11:47.176 PDT [3257362] CONTEXT:  while vacuuming index "task51_local_100k_ivf_rabitq1_n64_w50_rabitq_idx" of relation "public.task51_local_100k_ivf_rabitq1_n64_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_100k_ivf_rabitq1_n64_w50_corpus"
+2026-06-01 19:11:47.204 PDT [3257362] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:11:47.204 PDT [3257362] CONTEXT:  while vacuuming index "task51_local_100k_ivf_rabitq1_n128_w50_rabitq_idx" of relation "public.task51_local_100k_ivf_rabitq1_n128_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_100k_ivf_rabitq1_n128_w50_corpus"
+2026-06-01 19:11:47.217 PDT [3257362] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:11:47.217 PDT [3257362] CONTEXT:  while vacuuming index "task51_local_50k_ivf_rabitq1_n128_sidecar_off_rabitq_idx" of relation "public.task51_local_50k_ivf_rabitq1_n128_sidecar_off_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_50k_ivf_rabitq1_n128_sidecar_off_corpus"
+2026-06-01 19:12:46.750 PDT [3257544] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:12:46.750 PDT [3257544] CONTEXT:  while vacuuming index "task51_local_10k_ivf_rabitq1_n128_w50_rabitq_idx" of relation "public.task51_local_10k_ivf_rabitq1_n128_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_10k_ivf_rabitq1_n128_w50_corpus"
+2026-06-01 19:12:46.755 PDT [3257544] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:12:46.755 PDT [3257544] CONTEXT:  while vacuuming index "task51_local_10k_ivf_rabitq1_n32_w50_rabitq_idx" of relation "public.task51_local_10k_ivf_rabitq1_n32_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_10k_ivf_rabitq1_n32_w50_corpus"
+2026-06-01 19:12:46.759 PDT [3257544] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:12:46.759 PDT [3257544] CONTEXT:  while vacuuming index "task51_local_10k_ivf_rabitq1_n64_w50_rabitq_idx" of relation "public.task51_local_10k_ivf_rabitq1_n64_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_10k_ivf_rabitq1_n64_w50_corpus"
+2026-06-01 19:12:46.776 PDT [3257544] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:12:46.776 PDT [3257544] CONTEXT:  while vacuuming index "task51_local_50k_ivf_rabitq1_n64_w50_rabitq_idx" of relation "public.task51_local_50k_ivf_rabitq1_n64_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_50k_ivf_rabitq1_n64_w50_corpus"
+2026-06-01 19:12:47.129 PDT [3257544] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:12:47.129 PDT [3257544] CONTEXT:  while vacuuming index "task51_local_990k_ivf_rabitq1_n1024_w50_rabitq_idx" of relation "public.task51_local_990k_ivf_rabitq1_n1024_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_990k_ivf_rabitq1_n1024_w50_corpus"
+2026-06-01 19:12:47.146 PDT [3257544] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:12:47.146 PDT [3257544] CONTEXT:  while vacuuming index "task51_local_50k_ivf_rabitq1_n128_w50_rabitq_idx" of relation "public.task51_local_50k_ivf_rabitq1_n128_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_50k_ivf_rabitq1_n128_w50_corpus"
+2026-06-01 19:12:47.181 PDT [3257544] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:12:47.181 PDT [3257544] CONTEXT:  while vacuuming index "task51_local_100k_ivf_rabitq1_n64_w50_rabitq_idx" of relation "public.task51_local_100k_ivf_rabitq1_n64_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_100k_ivf_rabitq1_n64_w50_corpus"
+2026-06-01 19:12:47.213 PDT [3257544] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:12:47.213 PDT [3257544] CONTEXT:  while vacuuming index "task51_local_100k_ivf_rabitq1_n128_w50_rabitq_idx" of relation "public.task51_local_100k_ivf_rabitq1_n128_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_100k_ivf_rabitq1_n128_w50_corpus"
+2026-06-01 19:12:47.227 PDT [3257544] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:12:47.227 PDT [3257544] CONTEXT:  while vacuuming index "task51_local_50k_ivf_rabitq1_n128_sidecar_off_rabitq_idx" of relation "public.task51_local_50k_ivf_rabitq1_n128_sidecar_off_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_50k_ivf_rabitq1_n128_sidecar_off_corpus"
+2026-06-01 19:13:18.189 PDT [3257280] LOG:  could not send data to client: Broken pipe
+2026-06-01 19:13:18.189 PDT [3257280] FATAL:  connection to client lost
+2026-06-01 19:13:46.754 PDT [3257835] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:13:46.754 PDT [3257835] CONTEXT:  while vacuuming index "task51_local_10k_ivf_rabitq1_n128_w50_rabitq_idx" of relation "public.task51_local_10k_ivf_rabitq1_n128_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_10k_ivf_rabitq1_n128_w50_corpus"
+2026-06-01 19:13:46.759 PDT [3257835] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:13:46.759 PDT [3257835] CONTEXT:  while vacuuming index "task51_local_10k_ivf_rabitq1_n32_w50_rabitq_idx" of relation "public.task51_local_10k_ivf_rabitq1_n32_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_10k_ivf_rabitq1_n32_w50_corpus"
+2026-06-01 19:13:46.764 PDT [3257835] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:13:46.764 PDT [3257835] CONTEXT:  while vacuuming index "task51_local_10k_ivf_rabitq1_n64_w50_rabitq_idx" of relation "public.task51_local_10k_ivf_rabitq1_n64_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_10k_ivf_rabitq1_n64_w50_corpus"
+2026-06-01 19:13:46.781 PDT [3257835] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:13:46.781 PDT [3257835] CONTEXT:  while vacuuming index "task51_local_50k_ivf_rabitq1_n64_w50_rabitq_idx" of relation "public.task51_local_50k_ivf_rabitq1_n64_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_50k_ivf_rabitq1_n64_w50_corpus"
+2026-06-01 19:13:47.133 PDT [3257835] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:13:47.133 PDT [3257835] CONTEXT:  while vacuuming index "task51_local_990k_ivf_rabitq1_n1024_w50_rabitq_idx" of relation "public.task51_local_990k_ivf_rabitq1_n1024_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_990k_ivf_rabitq1_n1024_w50_corpus"
+2026-06-01 19:13:47.150 PDT [3257835] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:13:47.150 PDT [3257835] CONTEXT:  while vacuuming index "task51_local_50k_ivf_rabitq1_n128_w50_rabitq_idx" of relation "public.task51_local_50k_ivf_rabitq1_n128_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_50k_ivf_rabitq1_n128_w50_corpus"
+2026-06-01 19:13:47.184 PDT [3257835] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:13:47.184 PDT [3257835] CONTEXT:  while vacuuming index "task51_local_100k_ivf_rabitq1_n64_w50_rabitq_idx" of relation "public.task51_local_100k_ivf_rabitq1_n64_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_100k_ivf_rabitq1_n64_w50_corpus"
+2026-06-01 19:13:47.216 PDT [3257835] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:13:47.216 PDT [3257835] CONTEXT:  while vacuuming index "task51_local_100k_ivf_rabitq1_n128_w50_rabitq_idx" of relation "public.task51_local_100k_ivf_rabitq1_n128_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_100k_ivf_rabitq1_n128_w50_corpus"
+2026-06-01 19:13:47.229 PDT [3257835] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:13:47.229 PDT [3257835] CONTEXT:  while vacuuming index "task51_local_50k_ivf_rabitq1_n128_sidecar_off_rabitq_idx" of relation "public.task51_local_50k_ivf_rabitq1_n128_sidecar_off_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_50k_ivf_rabitq1_n128_sidecar_off_corpus"
+2026-06-01 19:14:31.558 PDT [3254767] LOG:  checkpoint starting: time
+2026-06-01 19:14:31.586 PDT [3254767] LOG:  checkpoint complete: wrote 0 buffers (0.0%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.005 s, sync=0.001 s, total=0.029 s; sync files=1, longest=0.001 s, average=0.001 s; distance=163 kB, estimate=77307 kB; lsn=50/C71A04C0, redo lsn=50/C71A0468
+2026-06-01 19:14:46.760 PDT [3258141] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:14:46.760 PDT [3258141] CONTEXT:  while vacuuming index "task51_local_10k_ivf_rabitq1_n128_w50_rabitq_idx" of relation "public.task51_local_10k_ivf_rabitq1_n128_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_10k_ivf_rabitq1_n128_w50_corpus"
+2026-06-01 19:14:46.765 PDT [3258141] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:14:46.765 PDT [3258141] CONTEXT:  while vacuuming index "task51_local_10k_ivf_rabitq1_n32_w50_rabitq_idx" of relation "public.task51_local_10k_ivf_rabitq1_n32_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_10k_ivf_rabitq1_n32_w50_corpus"
+2026-06-01 19:14:46.770 PDT [3258141] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:14:46.770 PDT [3258141] CONTEXT:  while vacuuming index "task51_local_10k_ivf_rabitq1_n64_w50_rabitq_idx" of relation "public.task51_local_10k_ivf_rabitq1_n64_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_10k_ivf_rabitq1_n64_w50_corpus"
+2026-06-01 19:14:46.787 PDT [3258141] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:14:46.787 PDT [3258141] CONTEXT:  while vacuuming index "task51_local_50k_ivf_rabitq1_n64_w50_rabitq_idx" of relation "public.task51_local_50k_ivf_rabitq1_n64_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_50k_ivf_rabitq1_n64_w50_corpus"
+2026-06-01 19:14:47.139 PDT [3258141] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:14:47.139 PDT [3258141] CONTEXT:  while vacuuming index "task51_local_990k_ivf_rabitq1_n1024_w50_rabitq_idx" of relation "public.task51_local_990k_ivf_rabitq1_n1024_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_990k_ivf_rabitq1_n1024_w50_corpus"
+2026-06-01 19:14:47.156 PDT [3258141] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:14:47.156 PDT [3258141] CONTEXT:  while vacuuming index "task51_local_50k_ivf_rabitq1_n128_w50_rabitq_idx" of relation "public.task51_local_50k_ivf_rabitq1_n128_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_50k_ivf_rabitq1_n128_w50_corpus"
+2026-06-01 19:14:47.191 PDT [3258141] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:14:47.191 PDT [3258141] CONTEXT:  while vacuuming index "task51_local_100k_ivf_rabitq1_n64_w50_rabitq_idx" of relation "public.task51_local_100k_ivf_rabitq1_n64_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_100k_ivf_rabitq1_n64_w50_corpus"
+2026-06-01 19:14:47.222 PDT [3258141] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:14:47.222 PDT [3258141] CONTEXT:  while vacuuming index "task51_local_100k_ivf_rabitq1_n128_w50_rabitq_idx" of relation "public.task51_local_100k_ivf_rabitq1_n128_w50_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_100k_ivf_rabitq1_n128_w50_corpus"
+2026-06-01 19:14:47.232 PDT [3258141] ERROR:  ec_ivf posting tuple length mismatch: got 281, expected 857
+2026-06-01 19:14:47.232 PDT [3258141] CONTEXT:  while vacuuming index "task51_local_50k_ivf_rabitq1_n128_sidecar_off_rabitq_idx" of relation "public.task51_local_50k_ivf_rabitq1_n128_sidecar_off_corpus"
+	automatic vacuum of table "tqvector_bench.public.task51_local_50k_ivf_rabitq1_n128_sidecar_off_corpus"

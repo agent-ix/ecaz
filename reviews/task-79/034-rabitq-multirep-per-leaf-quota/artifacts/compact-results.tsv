@@ -1,0 +1,5 @@
+row	per_leaf_blocks	global_blocks	radius_weight	candidates	latency_p50_ms	latency_p95_ms	recall_at_10	returned_sum	gate
+multirep	5	0	0.25	3014842	36.654	42.298	0.8390	2000	fail
+multirep	6	0	0.25	3610773	37.284	43.540	0.8720	2000	fail
+multirep	7	0	0.25	4196212	38.813	44.785	0.8930	2000	fail
+multirep	8	0	0.25	4772824	40.898	47.476	0.9130	2000	fail

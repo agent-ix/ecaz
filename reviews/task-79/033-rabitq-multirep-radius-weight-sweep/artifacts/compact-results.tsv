@@ -1,0 +1,8 @@
+row	final_blocks	radius_weight	candidates	latency_p50_ms	latency_p95_ms	recall_at_10	returned_sum	gate
+multirep	640	0.00	4015761	45.697	54.352	0.9840	2000	fail
+multirep	640	0.10	4035744	45.529	52.734	0.9850	2000	fail
+multirep	640	0.20	4046743	44.858	50.847	0.9865	2000	fail
+multirep	640	0.25	4050758	44.696	53.143	0.9870	2000	fail
+multirep	640	0.30	4054052	45.145	53.398	0.9865	2000	fail
+multirep	640	0.40	4059747	44.786	51.076	0.9840	2000	fail
+multirep	640	0.50	4063715	44.973	53.222	0.9810	2000	fail

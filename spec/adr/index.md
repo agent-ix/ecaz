@@ -63,6 +63,7 @@ This index is the canonical navigation surface for Ecaz architecture decisions. 
 | Unified quantizer interface | `ADR-071-unified-quantizer-interface.md` | PROPOSED | Aspirational shared quantizer contract across HNSW, DiskANN, and IVF; defer extraction until repeated AM integrations expose stable shape. |
 | Index-local quantized codec adapters | `ADR-072-index-local-quantized-codec-adapters.md` | PROPOSED | Companion to ADR-071. Shared quantizer math stays separate from AM-owned codec adapters for DiskANN, HNSW, and IVF storage/traversal binding. |
 | HNSW staged offline bulk build | `ADR-073-hnsw-staged-offline-bulk-build.md` | PROPOSED | Task 33 M5 refresh stops worker-threshold tuning and selects a staged/offline HNSW bulk-build design lane while keeping ADR-048 as the fallback. |
+| SPIRE leaf-local block pruning | `ADR-074-spire-leaf-local-block-pruning.md` | PROPOSED | Task 79 Phase 4 direction: query-aware subleaf block summaries reachable before row segment reads, with a SPIRE leaf format bump and full-leaf fallback. |
 
 ## Superseded Historical Decisions
 

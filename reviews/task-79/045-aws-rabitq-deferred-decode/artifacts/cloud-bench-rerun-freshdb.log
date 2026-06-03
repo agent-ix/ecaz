@@ -1,0 +1,13 @@
+successful cloud bench summary:
+
+target/debug/ecaz cloud bench --profile 1m --suite task79-aws-rabitq-deferred-decode --database task79_aws --config reviews/task-79/045-aws-rabitq-deferred-decode/suite.json --ecaz-bin /usr/local/bin/ecaz --log-file reviews/task-79/045-aws-rabitq-deferred-decode/artifacts/cloud-bench-rerun-freshdb.log
+
+- remote database: task79_aws
+- remote binary: /usr/local/bin/ecaz
+- S3 source: s3://ecaz-cloud-1m-b62eb804/bench-artifacts/task79-aws-rabitq-deferred-decode/20260602T232303Z/
+- synced local suite log: reviews/task-79/045-aws-rabitq-deferred-decode/artifacts/suite-run.log
+- synced local manifest: reviews/task-79/045-aws-rabitq-deferred-decode/artifacts/suite-manifest.json
+- synced local results: reviews/task-79/045-aws-rabitq-deferred-decode/artifacts/results.jsonl
+
+The command's `--log-file` path did not receive mirrored stdout during this
+run; benchmark output is captured in the suite artifacts above.

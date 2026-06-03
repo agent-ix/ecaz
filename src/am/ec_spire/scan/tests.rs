@@ -1,8 +1,8 @@
 #[cfg(test)]
 mod tests {
     use super::{
+        blend_leaf_block_summary_sample_score, collect_delta_delete_vec_ids_for_loaded_routes,
         collect_quantized_routed_probe_candidates, collect_ranked_routed_probe_candidates,
-        collect_delta_delete_vec_ids_for_loaded_routes,
         collect_reranked_quantized_routed_probe_candidates, collect_scan_routing_diagnostics,
         collect_scan_plan_selected_leaf_pids,
         collect_single_level_scan_plan_placement_diagnostics,
@@ -10,6 +10,7 @@ mod tests {
         collect_snapshot_leaf_rows, collect_snapshot_routed_leaf_rows,
         collect_snapshot_routed_probe_leaf_rows, collect_snapshot_top_graph_routed_probe_leaf_rows,
         collect_snapshot_visible_primary_rows, collect_top_graph_scan_plan_reranked_candidates,
+        collect_recursive_routing_level_diagnostics_with_row_budget,
         count_snapshot_recursive_leaf_pids, count_snapshot_single_level_leaf_pids,
         ensure_local_heap_placement_directory_is_deliverable,
         group_leaf_and_delta_reads_by_local_store, heap_rerank_prefetch_block_numbers,
@@ -22,10 +23,15 @@ mod tests {
         route_recursive_routing_objects_to_leaf_routes_with_policy, route_root_object_to_leaf_pids,
         route_routing_object_to_child_pids, route_routing_object_to_child_routes_with_policy,
         route_top_graph_object_to_child_pids, route_top_graph_object_to_leaf_routes,
-        route_top_graph_to_child_pids, SpireDeltaObjectRoute, SpireLeafObjectReadRoute,
-        SpireLeafScanRow, SpireNoopRoutedScanObserver, SpireRecursiveLeafRoute,
-        SpireRoutedLeafScanRows, SpireScanCandidateCursor, SpireScanOpaque, SpireScanOutput,
-        SpireScanOutputCursor, SpireScanPlacementDiagnosticsObserver, SpireScanQuery,
+        route_top_graph_to_child_pids, score_leaf_block_summary_ip_with_radius_weight,
+        score_global_leaf_block_ranges_with_route_prior_weight,
+        select_global_leaf_block_row_ranges, select_leaf_block_row_ranges,
+        select_sampled_global_leaf_block_row_ranges, sort_scored_leaf_block_ranges,
+        SpireDeltaObjectRoute, SpireLeafBlockRowRange, SpireLeafObjectReadRoute,
+        SpireLeafScanRow, SpireLoadedQuantizedLeafRoute, SpireNoopRoutedScanObserver,
+        SpireRecursiveLeafRoute, SpireRoutedLeafScanRows, SpireScanCandidateCursor,
+        SpireScanOpaque, SpireScanOutput, SpireScanOutputCursor,
+        SpireScanPlacementDiagnosticsObserver, SpireScanQuery, SpireScoredCandidateAccumulator,
         SpireScoredScanCandidate, SpireStoreObjectReadGroup,
     };
     use crate::am::ec_spire::{
@@ -63,11 +69,12 @@ mod tests {
         SpireSourceIdentityProvider, SpireStorageFormat,
     };
     use crate::am::ec_spire::quantizer::{
-        encode_assignment_input, SpireAssignmentPayloadFormat, SpirePreparedAssignmentScorer,
+        encode_assignment_input, encode_assignment_payload, SpireAssignmentPayloadFormat,
+        SpirePreparedAssignmentScorer,
     };
     use crate::am::ec_spire::storage::{
-        SpireDeltaPartitionObject, SpireLeafAssignmentRow, SpireLeafPartitionObject,
-        SpireLocalObjectStore, SpireLocalObjectStoreSet, SpireObjectReader,
+        SpireDeltaPartitionObject, SpireLeafAssignmentRow, SpireLeafBlockSummary,
+        SpireLeafPartitionObject, SpireLocalObjectStore, SpireLocalObjectStoreSet, SpireObjectReader,
         SpirePartitionObjectHeader, SpirePartitionObjectKind, SpireRoutingChildEntry,
         SpireRoutingPartitionObject, SpireVecId,
         SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA, SPIRE_ASSIGNMENT_FLAG_DELTA_DELETE,

@@ -32,6 +32,17 @@ use super::{
 const EC_SPIRE_SESSION_NPROBE_UNSET: i32 = -1;
 const EC_SPIRE_SESSION_RERANK_WIDTH_UNSET: i32 = -1;
 const EC_SPIRE_SESSION_MAX_CANDIDATE_ROWS_UNSET: i32 = -1;
+const EC_SPIRE_SESSION_MAX_ROUTED_CANDIDATE_ROWS_DISABLED: i32 = 0;
+const EC_SPIRE_SESSION_LEAF_BLOCK_ROWS_DISABLED: i32 = 0;
+const EC_SPIRE_SESSION_LEAF_BLOCK_PRUNING_DISABLED: i32 = 0;
+const EC_SPIRE_MAX_LEAF_BLOCK_ROWS: i32 = 4096;
+const EC_SPIRE_MAX_LEAF_BLOCK_PRUNING_BLOCKS_PER_LEAF: i32 = 4096;
+const EC_SPIRE_MAX_LEAF_BLOCK_PRUNING_GLOBAL_BLOCKS: i32 = 262_144;
+const EC_SPIRE_MAX_LEAF_BLOCK_PRUNING_GLOBAL_PROBE_BLOCKS: i32 = 262_144;
+const EC_SPIRE_MAX_LEAF_BLOCK_PRUNING_SAMPLE_ROWS_PER_BLOCK: i32 = 64;
+const EC_SPIRE_DEFAULT_LEAF_BLOCK_PRUNING_SAMPLE_SUMMARY_PRIOR_WEIGHT: f64 = 0.8;
+const EC_SPIRE_DEFAULT_LEAF_BLOCK_PRUNING_SUMMARY_RADIUS_WEIGHT: f64 = 1.0;
+const EC_SPIRE_DEFAULT_LEAF_BLOCK_PRUNING_ROUTE_PRIOR_WEIGHT: f64 = 0.0;
 const EC_SPIRE_MAX_NPROBE_PER_LEVEL_ENTRIES: usize = 32;
 const EC_SPIRE_DEFAULT_ADAPTIVE_NPROBE_SCORE_GAP_MICROS: i32 = 1000;
 const EC_SPIRE_MAX_ADAPTIVE_NPROBE_SCORE_GAP_MICROS: i32 = 1_000_000;
@@ -61,6 +72,24 @@ static EC_SPIRE_RERANK_WIDTH_GUC: GucSetting<i32> =
     GucSetting::<i32>::new(EC_SPIRE_SESSION_RERANK_WIDTH_UNSET);
 static EC_SPIRE_MAX_CANDIDATE_ROWS_GUC: GucSetting<i32> =
     GucSetting::<i32>::new(EC_SPIRE_SESSION_MAX_CANDIDATE_ROWS_UNSET);
+static EC_SPIRE_MAX_ROUTED_CANDIDATE_ROWS_GUC: GucSetting<i32> =
+    GucSetting::<i32>::new(EC_SPIRE_SESSION_MAX_ROUTED_CANDIDATE_ROWS_DISABLED);
+static EC_SPIRE_LEAF_BLOCK_ROWS_GUC: GucSetting<i32> =
+    GucSetting::<i32>::new(EC_SPIRE_SESSION_LEAF_BLOCK_ROWS_DISABLED);
+static EC_SPIRE_LEAF_BLOCK_PRUNING_MAX_BLOCKS_PER_LEAF_GUC: GucSetting<i32> =
+    GucSetting::<i32>::new(EC_SPIRE_SESSION_LEAF_BLOCK_PRUNING_DISABLED);
+static EC_SPIRE_LEAF_BLOCK_PRUNING_MAX_GLOBAL_BLOCKS_GUC: GucSetting<i32> =
+    GucSetting::<i32>::new(EC_SPIRE_SESSION_LEAF_BLOCK_PRUNING_DISABLED);
+static EC_SPIRE_LEAF_BLOCK_PRUNING_GLOBAL_PROBE_BLOCKS_GUC: GucSetting<i32> =
+    GucSetting::<i32>::new(EC_SPIRE_SESSION_LEAF_BLOCK_PRUNING_DISABLED);
+static EC_SPIRE_LEAF_BLOCK_PRUNING_SAMPLE_ROWS_PER_BLOCK_GUC: GucSetting<i32> =
+    GucSetting::<i32>::new(EC_SPIRE_SESSION_LEAF_BLOCK_PRUNING_DISABLED);
+static EC_SPIRE_LEAF_BLOCK_PRUNING_SAMPLE_SUMMARY_PRIOR_WEIGHT_GUC: GucSetting<f64> =
+    GucSetting::<f64>::new(EC_SPIRE_DEFAULT_LEAF_BLOCK_PRUNING_SAMPLE_SUMMARY_PRIOR_WEIGHT);
+static EC_SPIRE_LEAF_BLOCK_PRUNING_SUMMARY_RADIUS_WEIGHT_GUC: GucSetting<f64> =
+    GucSetting::<f64>::new(EC_SPIRE_DEFAULT_LEAF_BLOCK_PRUNING_SUMMARY_RADIUS_WEIGHT);
+static EC_SPIRE_LEAF_BLOCK_PRUNING_ROUTE_PRIOR_WEIGHT_GUC: GucSetting<f64> =
+    GucSetting::<f64>::new(EC_SPIRE_DEFAULT_LEAF_BLOCK_PRUNING_ROUTE_PRIOR_WEIGHT);
 static EC_SPIRE_ADAPTIVE_NPROBE_GUC: GucSetting<bool> = GucSetting::<bool>::new(false);
 static EC_SPIRE_ADAPTIVE_NPROBE_SCORE_GAP_MICROS_GUC: GucSetting<i32> =
     GucSetting::<i32>::new(EC_SPIRE_DEFAULT_ADAPTIVE_NPROBE_SCORE_GAP_MICROS);
@@ -706,6 +735,7 @@ pub(super) struct SpireSingleLevelScanPlan {
     pub(super) nprobe_source: &'static str,
     pub(super) recursive_nprobe_policy: SpireRecursiveNprobePolicy,
     pub(super) recursive_route_budget: SpireRecursiveRouteBudget,
+    pub(super) max_routed_candidate_rows: Option<usize>,
     pub(super) payload_format: SpireAssignmentPayloadFormat,
     pub(super) rerank_width: usize,
     pub(super) rerank_width_source: &'static str,
@@ -741,6 +771,96 @@ pub(super) fn register_gucs() {
         &EC_SPIRE_MAX_CANDIDATE_ROWS_GUC,
         EC_SPIRE_SESSION_MAX_CANDIDATE_ROWS_UNSET,
         EC_SPIRE_MAX_MAX_CANDIDATE_ROWS,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
+    GucRegistry::define_int_guc(
+        c"ec_spire.max_routed_candidate_rows",
+        c"Session cap for ec_spire routed leaf assignment rows.",
+        c"Caps the estimated base assignment rows selected by leaf routing before leaf payloads are read; 0 disables this cap.",
+        &EC_SPIRE_MAX_ROUTED_CANDIDATE_ROWS_GUC,
+        EC_SPIRE_SESSION_MAX_ROUTED_CANDIDATE_ROWS_DISABLED,
+        EC_SPIRE_MAX_MAX_CANDIDATE_ROWS,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
+    GucRegistry::define_int_guc(
+        c"ec_spire.leaf_block_rows",
+        c"Build-time SPIRE leaf summary block row count.",
+        c"Controls optional leaf V3 block-summary materialization for new index builds; 0 disables summaries. Task 79 evidence uses this to sweep leaf-local block sizes.",
+        &EC_SPIRE_LEAF_BLOCK_ROWS_GUC,
+        EC_SPIRE_SESSION_LEAF_BLOCK_ROWS_DISABLED,
+        EC_SPIRE_MAX_LEAF_BLOCK_ROWS,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
+    GucRegistry::define_int_guc(
+        c"ec_spire.leaf_block_pruning_max_blocks_per_leaf",
+        c"Session cap for SPIRE leaf block-summary pruning.",
+        c"Maximum scored summary blocks retained per routed leaf before row scoring; 0 disables leaf-local block pruning and scans full leaves.",
+        &EC_SPIRE_LEAF_BLOCK_PRUNING_MAX_BLOCKS_PER_LEAF_GUC,
+        EC_SPIRE_SESSION_LEAF_BLOCK_PRUNING_DISABLED,
+        EC_SPIRE_MAX_LEAF_BLOCK_PRUNING_BLOCKS_PER_LEAF,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
+    GucRegistry::define_int_guc(
+        c"ec_spire.leaf_block_pruning_max_global_blocks",
+        c"Session cap for SPIRE global leaf block-summary pruning.",
+        c"Maximum scored summary blocks retained across all routed leaves before row scoring; 0 disables global block pruning and uses leaf-local pruning settings.",
+        &EC_SPIRE_LEAF_BLOCK_PRUNING_MAX_GLOBAL_BLOCKS_GUC,
+        EC_SPIRE_SESSION_LEAF_BLOCK_PRUNING_DISABLED,
+        EC_SPIRE_MAX_LEAF_BLOCK_PRUNING_GLOBAL_BLOCKS,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
+    GucRegistry::define_int_guc(
+        c"ec_spire.leaf_block_pruning_global_probe_blocks",
+        c"Session first-pass block count for sampled SPIRE global leaf block pruning.",
+        c"When greater than ec_spire.leaf_block_pruning_max_global_blocks and sample rows are enabled, retains this many summary-ranked blocks for row sampling before the final global block cap is applied; 0 disables sampled global probing.",
+        &EC_SPIRE_LEAF_BLOCK_PRUNING_GLOBAL_PROBE_BLOCKS_GUC,
+        EC_SPIRE_SESSION_LEAF_BLOCK_PRUNING_DISABLED,
+        EC_SPIRE_MAX_LEAF_BLOCK_PRUNING_GLOBAL_PROBE_BLOCKS,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
+    GucRegistry::define_int_guc(
+        c"ec_spire.leaf_block_pruning_sample_rows_per_block",
+        c"Session row sample count for sampled SPIRE global leaf block pruning.",
+        c"Number of deterministic rows scored from each first-pass block before final global block selection; sampled rows enter normal candidate accounting. 0 disables sampled global probing.",
+        &EC_SPIRE_LEAF_BLOCK_PRUNING_SAMPLE_ROWS_PER_BLOCK_GUC,
+        EC_SPIRE_SESSION_LEAF_BLOCK_PRUNING_DISABLED,
+        EC_SPIRE_MAX_LEAF_BLOCK_PRUNING_SAMPLE_ROWS_PER_BLOCK,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
+    GucRegistry::define_float_guc(
+        c"ec_spire.leaf_block_pruning_sample_summary_prior_weight",
+        c"Summary prior weight for sampled SPIRE global leaf block pruning.",
+        c"Blends summary score with strong sampled-row evidence during final global block selection; 1.0 keeps summary-only order, lower values let sampled rows raise block score. Samples never lower summary score.",
+        &EC_SPIRE_LEAF_BLOCK_PRUNING_SAMPLE_SUMMARY_PRIOR_WEIGHT_GUC,
+        0.0,
+        1.0,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
+    GucRegistry::define_float_guc(
+        c"ec_spire.leaf_block_pruning_summary_radius_weight",
+        c"RaBitQ radius weight for SPIRE leaf block-summary pruning.",
+        c"Scales the RaBitQ summary radius term used when ranking leaf blocks; 0.0 ranks by encoded summary payload only and 1.0 uses the full Cauchy-Schwarz upper bound.",
+        &EC_SPIRE_LEAF_BLOCK_PRUNING_SUMMARY_RADIUS_WEIGHT_GUC,
+        0.0,
+        1.0,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
+    GucRegistry::define_float_guc(
+        c"ec_spire.leaf_block_pruning_route_prior_weight",
+        c"Routing score prior weight for SPIRE global leaf block pruning.",
+        c"Adds this multiple of the routed leaf score to each leaf block summary score during global block selection; 0.0 preserves summary-only ordering.",
+        &EC_SPIRE_LEAF_BLOCK_PRUNING_ROUTE_PRIOR_WEIGHT_GUC,
+        0.0,
+        1.0,
         GucContext::Userset,
         GucFlags::default(),
     );
@@ -975,6 +1095,78 @@ pub(super) fn current_session_max_candidate_rows() -> i32 {
     }
 }
 
+pub(super) fn current_session_max_routed_candidate_rows() -> i32 {
+    if cfg!(test) {
+        EC_SPIRE_SESSION_MAX_ROUTED_CANDIDATE_ROWS_DISABLED
+    } else {
+        EC_SPIRE_MAX_ROUTED_CANDIDATE_ROWS_GUC.get()
+    }
+}
+
+pub(super) fn current_session_leaf_block_rows() -> i32 {
+    if cfg!(test) {
+        EC_SPIRE_SESSION_LEAF_BLOCK_ROWS_DISABLED
+    } else {
+        EC_SPIRE_LEAF_BLOCK_ROWS_GUC.get()
+    }
+}
+
+pub(super) fn current_session_leaf_block_pruning_max_blocks_per_leaf() -> i32 {
+    if cfg!(test) {
+        EC_SPIRE_SESSION_LEAF_BLOCK_PRUNING_DISABLED
+    } else {
+        EC_SPIRE_LEAF_BLOCK_PRUNING_MAX_BLOCKS_PER_LEAF_GUC.get()
+    }
+}
+
+pub(super) fn current_session_leaf_block_pruning_max_global_blocks() -> i32 {
+    if cfg!(test) {
+        EC_SPIRE_SESSION_LEAF_BLOCK_PRUNING_DISABLED
+    } else {
+        EC_SPIRE_LEAF_BLOCK_PRUNING_MAX_GLOBAL_BLOCKS_GUC.get()
+    }
+}
+
+pub(super) fn current_session_leaf_block_pruning_global_probe_blocks() -> i32 {
+    if cfg!(test) {
+        EC_SPIRE_SESSION_LEAF_BLOCK_PRUNING_DISABLED
+    } else {
+        EC_SPIRE_LEAF_BLOCK_PRUNING_GLOBAL_PROBE_BLOCKS_GUC.get()
+    }
+}
+
+pub(super) fn current_session_leaf_block_pruning_sample_rows_per_block() -> i32 {
+    if cfg!(test) {
+        EC_SPIRE_SESSION_LEAF_BLOCK_PRUNING_DISABLED
+    } else {
+        EC_SPIRE_LEAF_BLOCK_PRUNING_SAMPLE_ROWS_PER_BLOCK_GUC.get()
+    }
+}
+
+pub(super) fn current_session_leaf_block_pruning_sample_summary_prior_weight() -> f64 {
+    if cfg!(test) {
+        EC_SPIRE_DEFAULT_LEAF_BLOCK_PRUNING_SAMPLE_SUMMARY_PRIOR_WEIGHT
+    } else {
+        EC_SPIRE_LEAF_BLOCK_PRUNING_SAMPLE_SUMMARY_PRIOR_WEIGHT_GUC.get()
+    }
+}
+
+pub(super) fn current_session_leaf_block_pruning_summary_radius_weight() -> f64 {
+    if cfg!(test) {
+        EC_SPIRE_DEFAULT_LEAF_BLOCK_PRUNING_SUMMARY_RADIUS_WEIGHT
+    } else {
+        EC_SPIRE_LEAF_BLOCK_PRUNING_SUMMARY_RADIUS_WEIGHT_GUC.get()
+    }
+}
+
+pub(super) fn current_session_leaf_block_pruning_route_prior_weight() -> f64 {
+    if cfg!(test) {
+        EC_SPIRE_DEFAULT_LEAF_BLOCK_PRUNING_ROUTE_PRIOR_WEIGHT
+    } else {
+        EC_SPIRE_LEAF_BLOCK_PRUNING_ROUTE_PRIOR_WEIGHT_GUC.get()
+    }
+}
+
 pub(super) fn current_session_adaptive_nprobe() -> bool {
     if cfg!(test) {
         false
@@ -1176,6 +1368,7 @@ pub(super) fn resolve_single_level_scan_plan(
         current_session_nprobe(),
         current_session_rerank_width(),
         current_session_max_candidate_rows(),
+        current_session_max_routed_candidate_rows(),
         current_session_adaptive_nprobe(),
         current_session_adaptive_nprobe_score_gap_micros(),
     )
@@ -1209,6 +1402,7 @@ pub(super) fn resolve_single_level_scan_plan_values_with_candidate_budget(
         session_nprobe_value,
         session_rerank_width_value,
         session_max_candidate_rows_value,
+        EC_SPIRE_SESSION_MAX_ROUTED_CANDIDATE_ROWS_DISABLED,
         false,
         EC_SPIRE_DEFAULT_ADAPTIVE_NPROBE_SCORE_GAP_MICROS,
     )
@@ -1220,6 +1414,7 @@ fn resolve_single_level_scan_plan_values_with_candidate_budget_and_adaptive(
     session_nprobe_value: i32,
     session_rerank_width_value: i32,
     session_max_candidate_rows_value: i32,
+    session_max_routed_candidate_rows_value: i32,
     adaptive_nprobe: bool,
     adaptive_score_gap_micros: i32,
 ) -> Result<SpireSingleLevelScanPlan, String> {
@@ -1254,6 +1449,8 @@ fn resolve_single_level_scan_plan_values_with_candidate_budget_and_adaptive(
     } else {
         Some(max_candidate_rows_usize)
     };
+    let max_routed_candidate_rows =
+        resolve_scan_max_routed_candidate_rows_value(session_max_routed_candidate_rows_value)?;
 
     Ok(SpireSingleLevelScanPlan {
         leaf_count,
@@ -1261,6 +1458,7 @@ fn resolve_single_level_scan_plan_values_with_candidate_budget_and_adaptive(
         nprobe_source: nprobe.source,
         recursive_nprobe_policy,
         recursive_route_budget,
+        max_routed_candidate_rows,
         payload_format: options.assignment_payload_format(),
         rerank_width: rerank_width_usize,
         rerank_width_source: rerank_width.source,
@@ -1271,6 +1469,20 @@ fn resolve_single_level_scan_plan_values_with_candidate_budget_and_adaptive(
             SpireCandidateDedupeMode::NoReplicaDedupeDisabled
         },
     })
+}
+
+fn resolve_scan_max_routed_candidate_rows_value(value: i32) -> Result<Option<usize>, String> {
+    if value <= 0 {
+        return Ok(None);
+    }
+    if value > EC_SPIRE_MAX_MAX_CANDIDATE_ROWS {
+        return Err(format!(
+            "ec_spire.max_routed_candidate_rows must be between 0 and {EC_SPIRE_MAX_MAX_CANDIDATE_ROWS}, got {value}"
+        ));
+    }
+    usize::try_from(value)
+        .map(Some)
+        .map_err(|_| "ec_spire.max_routed_candidate_rows exceeds usize".to_owned())
 }
 
 pub(super) fn resolve_recursive_route_budget(

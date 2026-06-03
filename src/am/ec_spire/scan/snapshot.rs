@@ -103,12 +103,16 @@ pub(super) fn collect_snapshot_top_graph_routed_probe_leaf_rows(
     top_route_count: u32,
     nprobe_policy: &SpireRecursiveNprobePolicy,
     route_budget: SpireRecursiveRouteBudget,
+    max_routed_candidate_rows: Option<usize>,
 ) -> Result<Vec<SpireRoutedLeafScanRows>, String> {
     let snapshot = SpireValidatedEpochSnapshot::from_snapshot(*snapshot)?;
     let hierarchy = load_snapshot_routing_hierarchy(&snapshot, object_store)?;
     let (_top_graph_pid, top_graph) = load_snapshot_top_graph_object(&snapshot, object_store)?
         .ok_or_else(|| "ec_spire scan snapshot has no available top graph object".to_owned())?;
-    let leaf_routes = route_top_graph_object_to_leaf_routes(
+    let leaf_assignment_counts = &hierarchy.leaf_assignment_counts_by_pid;
+    let mut leaf_row_count =
+        |route| leaf_route_assignment_count_from_loaded_hierarchy(leaf_assignment_counts, route);
+    let leaf_routes = route_top_graph_object_to_leaf_routes_with_row_budget(
         &hierarchy.root_object,
         &hierarchy.internal_objects_by_pid,
         &top_graph,
@@ -117,7 +121,10 @@ pub(super) fn collect_snapshot_top_graph_routed_probe_leaf_rows(
         top_route_count,
         nprobe_policy,
         route_budget,
-    )?;
+        max_routed_candidate_rows,
+        &mut leaf_row_count,
+    )?
+    .routes;
     let epoch = snapshot.epoch_manifest().epoch;
 
     let mut routed = Vec::with_capacity(leaf_routes.len());
@@ -179,6 +186,10 @@ pub(super) fn collect_scan_routing_diagnostics(
     let levels = if top_graph_plan.enabled {
         let (_top_graph_pid, top_graph) = load_snapshot_top_graph_object(&snapshot, object_store)?
             .ok_or_else(|| "ec_spire scan snapshot has no available top graph object".to_owned())?;
+        let leaf_assignment_counts = &hierarchy.leaf_assignment_counts_by_pid;
+        let mut leaf_row_count = |route| {
+            leaf_route_assignment_count_from_loaded_hierarchy(leaf_assignment_counts, route)
+        };
         collect_top_graph_routing_level_diagnostics(
             &hierarchy.root_object,
             &hierarchy.internal_objects_by_pid,
@@ -188,14 +199,22 @@ pub(super) fn collect_scan_routing_diagnostics(
             scan_plan.nprobe,
             &scan_plan.recursive_nprobe_policy,
             scan_plan.recursive_route_budget,
+            scan_plan.max_routed_candidate_rows,
+            &mut leaf_row_count,
         )?
     } else {
-        collect_recursive_routing_level_diagnostics_with_budget(
+        let leaf_assignment_counts = &hierarchy.leaf_assignment_counts_by_pid;
+        let mut leaf_row_count = |route| {
+            leaf_route_assignment_count_from_loaded_hierarchy(leaf_assignment_counts, route)
+        };
+        collect_recursive_routing_level_diagnostics_with_row_budget(
             &hierarchy.root_object,
             &hierarchy.internal_objects_by_pid,
             query.values(),
             &scan_plan.recursive_nprobe_policy,
             scan_plan.recursive_route_budget,
+            scan_plan.max_routed_candidate_rows,
+            &mut leaf_row_count,
         )?
     };
 
@@ -235,6 +254,7 @@ pub(super) fn collect_quantized_routed_probe_candidates(
         query_vector,
         &nprobe_policy,
         SpireRecursiveRouteBudget::unbounded(),
+        None,
         payload_format,
         dedupe_mode,
         limit,
@@ -247,6 +267,7 @@ fn collect_quantized_routed_probe_candidates_with_policy(
     query_vector: &[f32],
     nprobe_policy: &SpireRecursiveNprobePolicy,
     route_budget: SpireRecursiveRouteBudget,
+    max_routed_candidate_rows: Option<usize>,
     payload_format: SpireAssignmentPayloadFormat,
     dedupe_mode: SpireCandidateDedupeMode,
     limit: Option<usize>,
@@ -261,6 +282,7 @@ fn collect_quantized_routed_probe_candidates_with_policy(
         &hierarchy,
         nprobe_policy,
         route_budget,
+        max_routed_candidate_rows,
         payload_format,
         dedupe_mode,
         limit,
@@ -275,6 +297,7 @@ fn collect_validated_recursive_quantized_routed_probe_candidates(
     hierarchy: &SpireLoadedRoutingHierarchy,
     nprobe_policy: &SpireRecursiveNprobePolicy,
     route_budget: SpireRecursiveRouteBudget,
+    max_routed_candidate_rows: Option<usize>,
     payload_format: SpireAssignmentPayloadFormat,
     dedupe_mode: SpireCandidateDedupeMode,
     limit: Option<usize>,
@@ -282,13 +305,19 @@ fn collect_validated_recursive_quantized_routed_probe_candidates(
 ) -> Result<Vec<SpireScoredScanCandidate>, String> {
     let scorer =
         SpirePreparedAssignmentScorer::prepare(payload_format, query_vector.len(), query_vector)?;
-    let leaf_routes = route_recursive_routing_objects_to_leaf_routes_with_budget(
+    let leaf_assignment_counts = &hierarchy.leaf_assignment_counts_by_pid;
+    let mut leaf_row_count =
+        |route| leaf_route_assignment_count_from_loaded_hierarchy(leaf_assignment_counts, route);
+    let leaf_routes = route_recursive_routing_objects_to_leaf_routes_with_row_budget(
         &hierarchy.root_object,
         &hierarchy.internal_objects_by_pid,
         query_vector,
         nprobe_policy,
         route_budget,
-    )?;
+        max_routed_candidate_rows,
+        &mut leaf_row_count,
+    )?
+    .routes;
     collect_validated_quantized_leaf_route_candidates(
         snapshot,
         object_store,
@@ -298,6 +327,21 @@ fn collect_validated_recursive_quantized_routed_probe_candidates(
         limit,
         observer,
     )
+}
+
+fn leaf_route_assignment_count_from_loaded_hierarchy(
+    leaf_assignment_counts_by_pid: &HashMap<u64, usize>,
+    route: SpireRecursiveLeafRoute,
+) -> Result<usize, String> {
+    leaf_assignment_counts_by_pid
+        .get(&route.leaf_pid)
+        .copied()
+        .ok_or_else(|| {
+            format!(
+                "ec_spire routed row budget selected PID {} is not a visible leaf object",
+                route.leaf_pid
+            )
+        })
 }
 
 fn collect_validated_quantized_routed_probe_candidates(
@@ -319,6 +363,7 @@ fn collect_validated_quantized_routed_probe_candidates(
         .map(|leaf_pid| SpireRecursiveLeafRoute {
             leaf_pid,
             parent_pid: root_pid,
+            route_score: 0.0,
         })
         .collect();
     collect_validated_quantized_leaf_route_candidates(
@@ -364,6 +409,20 @@ fn collect_validated_quantized_leaf_route_candidates(
                 .push(*route);
         }
     }
+    if current_session_leaf_block_pruning_max_global_blocks() > 0
+        && scorer.payload_format() == SpireAssignmentPayloadFormat::RaBitQ
+    {
+        return collect_validated_quantized_leaf_route_candidates_with_global_block_pruning(
+            snapshot,
+            object_store,
+            route_groups,
+            delta_routes_by_parent,
+            scorer,
+            dedupe_mode,
+            limit,
+            observer,
+        );
+    }
 
     for route_group in route_groups {
         for route in route_group.leaf_routes {
@@ -398,6 +457,218 @@ fn collect_validated_quantized_leaf_route_candidates(
                 observer,
             )?;
         }
+    }
+
+    let ranked = accumulator.into_ranked();
+    observe_candidate_winners(snapshot, observer, &ranked)?;
+    Ok(ranked)
+}
+
+fn collect_validated_quantized_leaf_route_candidates_with_global_block_pruning(
+    snapshot: &SpireValidatedEpochSnapshot<'_>,
+    object_store: &impl SpireObjectReader,
+    route_groups: Vec<SpireStoreObjectReadGroup>,
+    delta_routes_by_parent: HashMap<u64, Vec<SpireDeltaObjectRoute>>,
+    scorer: &SpirePreparedAssignmentScorer,
+    dedupe_mode: SpireCandidateDedupeMode,
+    limit: Option<usize>,
+    observer: &mut impl SpireRoutedScanObserver,
+) -> Result<Vec<SpireScoredScanCandidate>, String> {
+    let max_global_blocks = current_session_leaf_block_pruning_max_global_blocks();
+    let sampled_global_probe_blocks = current_session_leaf_block_pruning_global_probe_blocks();
+    let sampled_rows_per_block = current_session_leaf_block_pruning_sample_rows_per_block();
+    if sampled_global_probe_blocks > max_global_blocks && sampled_rows_per_block > 0 {
+        return collect_validated_quantized_leaf_route_candidates_with_sampled_global_block_pruning(
+            snapshot,
+            object_store,
+            route_groups,
+            delta_routes_by_parent,
+            scorer,
+            dedupe_mode,
+            limit,
+            observer,
+        );
+    }
+
+    let mut accumulator = SpireScoredCandidateAccumulator::new(dedupe_mode, limit);
+    let mut loaded_leaf_routes = Vec::new();
+
+    for route_group in route_groups {
+        for route in route_group.leaf_routes {
+            let leaf_pid = route.leaf_pid;
+            let leaf_delta_routes = delta_routes_by_parent
+                .get(&leaf_pid)
+                .map(Vec::as_slice)
+                .unwrap_or(&[]);
+            let loaded_delta_routes =
+                load_delta_rows_for_routes(snapshot, object_store, leaf_delta_routes, observer)?;
+            let deleted_vec_ids =
+                collect_delta_delete_vec_ids_for_loaded_routes(&loaded_delta_routes);
+            let Some(leaf_summaries) =
+                read_quantized_v2_leaf_summaries_for_route(snapshot, object_store, route, observer)?
+            else {
+                append_quantized_delta_candidates_for_loaded_routes(
+                    snapshot,
+                    &loaded_delta_routes,
+                    scorer,
+                    &deleted_vec_ids,
+                    &mut accumulator,
+                    observer,
+                )?;
+                continue;
+            };
+            loaded_leaf_routes.push(SpireLoadedQuantizedLeafSummaryRoute {
+                route,
+                leaf_summaries,
+                selected_row_ranges: None,
+                loaded_delta_routes,
+                deleted_vec_ids,
+            });
+        }
+    }
+
+    if let Some(selected_by_leaf) = select_global_leaf_block_row_ranges(
+        loaded_leaf_routes.iter().map(|loaded_route| {
+            (
+                loaded_route.route.leaf_pid,
+                loaded_route.route.route_score,
+                &loaded_route.route.placement,
+                loaded_route.leaf_summaries.summaries.as_slice(),
+            )
+        }),
+        max_global_blocks,
+        scorer,
+        snapshot.epoch_manifest().epoch,
+        observer,
+    )? {
+        for loaded_route in &mut loaded_leaf_routes {
+            loaded_route.selected_row_ranges = selected_by_leaf
+                .get(&loaded_route.route.leaf_pid)
+                .cloned();
+        }
+    }
+
+    for loaded_route in loaded_leaf_routes {
+        let should_read_leaf_segments = match loaded_route.selected_row_ranges.as_ref() {
+            Some(ranges) => !ranges.is_empty(),
+            None => true,
+        };
+        if should_read_leaf_segments {
+            append_quantized_v2_leaf_summary_route_candidates(
+                snapshot,
+                object_store,
+                &loaded_route.leaf_summaries,
+                loaded_route.route,
+                scorer,
+                &loaded_route.deleted_vec_ids,
+                &mut accumulator,
+                loaded_route.selected_row_ranges.as_deref(),
+                observer,
+            )?;
+        }
+        append_quantized_delta_candidates_for_loaded_routes(
+            snapshot,
+            &loaded_route.loaded_delta_routes,
+            scorer,
+            &loaded_route.deleted_vec_ids,
+            &mut accumulator,
+            observer,
+        )?;
+    }
+
+    let ranked = accumulator.into_ranked();
+    observe_candidate_winners(snapshot, observer, &ranked)?;
+    Ok(ranked)
+}
+
+fn collect_validated_quantized_leaf_route_candidates_with_sampled_global_block_pruning(
+    snapshot: &SpireValidatedEpochSnapshot<'_>,
+    object_store: &impl SpireObjectReader,
+    route_groups: Vec<SpireStoreObjectReadGroup>,
+    delta_routes_by_parent: HashMap<u64, Vec<SpireDeltaObjectRoute>>,
+    scorer: &SpirePreparedAssignmentScorer,
+    dedupe_mode: SpireCandidateDedupeMode,
+    limit: Option<usize>,
+    observer: &mut impl SpireRoutedScanObserver,
+) -> Result<Vec<SpireScoredScanCandidate>, String> {
+    let mut accumulator = SpireScoredCandidateAccumulator::new(dedupe_mode, limit);
+    let mut loaded_leaf_routes = Vec::new();
+
+    for route_group in route_groups {
+        for route in route_group.leaf_routes {
+            let leaf_pid = route.leaf_pid;
+            let leaf_delta_routes = delta_routes_by_parent
+                .get(&leaf_pid)
+                .map(Vec::as_slice)
+                .unwrap_or(&[]);
+            let loaded_delta_routes = load_delta_rows_for_routes(
+                snapshot,
+                object_store,
+                leaf_delta_routes,
+                observer,
+            )?;
+            let deleted_vec_ids =
+                collect_delta_delete_vec_ids_for_loaded_routes(&loaded_delta_routes);
+            let Some(leaf_object) =
+                read_quantized_v2_leaf_object_for_route(snapshot, object_store, route, observer)?
+            else {
+                append_quantized_delta_candidates_for_loaded_routes(
+                    snapshot,
+                    &loaded_delta_routes,
+                    scorer,
+                    &deleted_vec_ids,
+                    &mut accumulator,
+                    observer,
+                )?;
+                continue;
+            };
+            loaded_leaf_routes.push(SpireLoadedQuantizedLeafRoute {
+                route,
+                leaf_object,
+                selected_row_ranges: None,
+                loaded_delta_routes,
+                deleted_vec_ids,
+            });
+        }
+    }
+
+    if let Some(selected_by_leaf) = select_sampled_global_leaf_block_row_ranges(
+        snapshot,
+        &loaded_leaf_routes,
+        current_session_leaf_block_pruning_max_global_blocks(),
+        current_session_leaf_block_pruning_global_probe_blocks(),
+        current_session_leaf_block_pruning_sample_rows_per_block(),
+        current_session_leaf_block_pruning_sample_summary_prior_weight(),
+        scorer,
+        &mut accumulator,
+        observer,
+    )? {
+        for loaded_route in &mut loaded_leaf_routes {
+            loaded_route.selected_row_ranges = selected_by_leaf
+                .get(&loaded_route.route.leaf_pid)
+                .cloned();
+        }
+    }
+
+    for loaded_route in loaded_leaf_routes {
+        append_quantized_v2_leaf_candidates(
+            snapshot,
+            &loaded_route.leaf_object,
+            loaded_route.route,
+            scorer,
+            &loaded_route.deleted_vec_ids,
+            &mut accumulator,
+            loaded_route.selected_row_ranges.as_deref(),
+            observer,
+        )?;
+        append_quantized_delta_candidates_for_loaded_routes(
+            snapshot,
+            &loaded_route.loaded_delta_routes,
+            scorer,
+            &loaded_route.deleted_vec_ids,
+            &mut accumulator,
+            observer,
+        )?;
     }
 
     let ranked = accumulator.into_ranked();
@@ -480,6 +751,7 @@ fn group_leaf_and_delta_reads_by_local_store(
         let read_route = SpireLeafObjectReadRoute {
             leaf_pid: route.leaf_pid,
             parent_pid: route.parent_pid,
+            route_score: route.route_score,
             placement: *placement,
             object_version: lookup.manifest_entry.object_version,
         };

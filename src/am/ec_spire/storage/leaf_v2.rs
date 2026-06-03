@@ -2,14 +2,20 @@
 pub(super) struct SpireLeafPartitionObjectV2 {
     pub(super) meta: SpireLeafPartitionObjectV2Meta,
     pub(super) segments: Vec<SpireLeafPartitionObjectV2Segment>,
+    pub(super) summaries: Vec<SpireLeafBlockSummary>,
 }
 
 impl SpireLeafPartitionObjectV2 {
     fn new(
         meta: SpireLeafPartitionObjectV2Meta,
         segments: Vec<SpireLeafPartitionObjectV2Segment>,
+        summaries: Vec<SpireLeafBlockSummary>,
     ) -> Result<Self, String> {
-        let object = Self { meta, segments };
+        let object = Self {
+            meta,
+            segments,
+            summaries,
+        };
         object.validate()?;
         Ok(object)
     }
@@ -59,7 +65,19 @@ impl SpireLeafPartitionObjectV2 {
                 self.meta.header.assignment_count
             ));
         }
+        if self.meta.summary_count == 0 {
+            if !self.summaries.is_empty() {
+                return Err("ec_spire leaf V3 summaries present without meta summary_count".to_owned());
+            }
+        } else {
+            validate_leaf_block_summary_coverage(&self.meta, &self.summaries)?;
+        }
         Ok(())
+    }
+
+    pub(super) fn block_summaries(&self) -> Result<&[SpireLeafBlockSummary], String> {
+        self.validate()?;
+        Ok(&self.summaries)
     }
 
     pub(super) fn column_segments(
@@ -91,5 +109,33 @@ impl SpireLeafPartitionObjectV2 {
             }
         }
         Ok(rows)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(super) struct SpireLeafPartitionObjectV2Summaries {
+    pub(super) meta: SpireLeafPartitionObjectV2Meta,
+    pub(super) summaries: Vec<SpireLeafBlockSummary>,
+}
+
+impl SpireLeafPartitionObjectV2Summaries {
+    fn new(
+        meta: SpireLeafPartitionObjectV2Meta,
+        summaries: Vec<SpireLeafBlockSummary>,
+    ) -> Result<Self, String> {
+        let object = Self { meta, summaries };
+        object.validate()?;
+        Ok(object)
+    }
+
+    fn validate(&self) -> Result<(), String> {
+        if self.meta.summary_count == 0 {
+            if !self.summaries.is_empty() {
+                return Err("ec_spire leaf V3 summaries present without meta summary_count".to_owned());
+            }
+        } else {
+            validate_leaf_block_summary_coverage(&self.meta, &self.summaries)?;
+        }
+        Ok(())
     }
 }

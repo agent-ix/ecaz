@@ -7,6 +7,12 @@ struct SpirePendingRecursiveRoutingNode {
     children: Vec<SpireRecursiveRoutingChildInput>,
 }
 
+#[derive(Debug, Clone, Default, PartialEq)]
+struct SpireRecursiveLeafMaterializationRows {
+    rows: Vec<SpireLeafAssignmentRow>,
+    source_vectors: Vec<Vec<f32>>,
+}
+
 pub(super) fn build_recursive_routing_hierarchy_draft(
     input: SpireRecursiveRoutingBuildInput,
     pid_allocator: &mut SpirePidAllocator,
@@ -242,20 +248,39 @@ fn build_recursive_epoch_input_from_centroid_plan_with_timing(
     )?;
     timing.add_draft_leaf_rows(leaf_rows_started.elapsed());
     let leaf_inputs_started = Instant::now();
+    let summary_block_rows = current_leaf_summary_block_rows()?;
     let mut leaf_inputs = Vec::with_capacity(centroid_count);
     for pid in leaf_pids.iter().copied() {
         let parent_pid = *leaf_parent_pids.get(&pid).ok_or_else(|| {
             format!("ec_spire recursive build missing routing parent for leaf pid {pid}")
         })?;
-        let rows = rows_by_leaf_pid
+        let mut materialization_rows = rows_by_leaf_pid
             .get(&pid)
             .cloned()
             .ok_or_else(|| format!("ec_spire recursive build missing leaf rows for pid {pid}"))?;
+        let summaries = match summary_block_rows {
+            Some(block_rows) => {
+                materialization_rows = layout_leaf_rows_for_block_summaries(
+                    materialization_rows,
+                    block_rows,
+                    input.seed,
+                    pid,
+                )?;
+                build_leaf_block_summaries(
+                    &materialization_rows.rows,
+                    &materialization_rows.source_vectors,
+                    block_rows,
+                )?
+            }
+            None => Vec::new(),
+        };
         leaf_inputs.push(SpireRecursiveLeafObjectInput {
             pid,
             object_version: input.object_version,
             parent_pid,
-            rows,
+            rows: materialization_rows.rows,
+            summaries,
+            summary_block_rows: summary_block_rows.unwrap_or(0),
         });
     }
     timing.add_draft_leaf_inputs(leaf_inputs_started.elapsed());
@@ -285,17 +310,19 @@ fn build_recursive_leaf_rows_by_pid(
     route_map: &SpireSingleLevelRouteMap,
     boundary_replica_count: u32,
     local_vec_id_cursor: &mut SpireLocalVecIdAllocator,
-) -> Result<HashMap<u64, Vec<SpireLeafAssignmentRow>>, String> {
+) -> Result<HashMap<u64, SpireRecursiveLeafMaterializationRows>, String> {
     let mut rows_by_leaf_pid = route_map
         .entries
         .iter()
-        .map(|entry| (entry.pid, Vec::new()))
+        .map(|entry| (entry.pid, SpireRecursiveLeafMaterializationRows::default()))
         .collect::<HashMap<_, _>>();
     if boundary_replica_count == 0 {
+        let mut source_vectors_by_placement = Vec::with_capacity(source_vectors.len());
         let boundary_inputs = assignments
             .into_iter()
+            .zip(source_vectors.into_iter())
             .zip(assignment_indexes.iter())
-            .map(|(assignment, assignment_index)| {
+            .map(|((assignment, source_vector), assignment_index)| {
                 let primary_pid = route_map
                     .get(*assignment_index)
                     .ok_or_else(|| {
@@ -305,6 +332,7 @@ fn build_recursive_leaf_rows_by_pid(
                         )
                     })?
                     .pid;
+                source_vectors_by_placement.push(source_vector);
                 Ok(SpireBoundaryLeafAssignmentIdentityInput {
                     primary_pid,
                     replica_pids: Vec::new(),
@@ -312,22 +340,31 @@ fn build_recursive_leaf_rows_by_pid(
                 })
             })
             .collect::<Result<Vec<_>, String>>()?;
-        for placement in build_boundary_leaf_assignment_placements_with_identity(
+        let placements = build_boundary_leaf_assignment_placements_with_identity(
             local_vec_id_cursor,
             boundary_inputs,
-        )? {
+        )?;
+        if placements.len() != source_vectors_by_placement.len() {
+            return Err(format!(
+                "ec_spire recursive primary assignment placement count {} does not match source vector count {}",
+                placements.len(),
+                source_vectors_by_placement.len()
+            ));
+        }
+        for (placement, source_vector) in placements.into_iter().zip(source_vectors_by_placement) {
             let rows = rows_by_leaf_pid.get_mut(&placement.pid).ok_or_else(|| {
                 format!(
                     "ec_spire recursive primary assignment resolved unknown leaf pid {}",
                     placement.pid
                 )
             })?;
-            rows.push(placement.row);
+            rows.rows.push(placement.row);
+            rows.source_vectors.push(source_vector);
         }
-        drop(source_vectors);
         return Ok(rows_by_leaf_pid);
     }
 
+    let mut source_vectors_by_placement = Vec::new();
     let boundary_inputs = assignments
         .into_iter()
         .zip(source_vectors.into_iter())
@@ -346,11 +383,17 @@ fn build_recursive_leaf_rows_by_pid(
                 &source_vector,
                 boundary_replica_count.saturating_add(1),
             )?;
-            let replica_pids = std::iter::once(boundary_plan.primary_pid)
+            let replica_pids: Vec<u64> = std::iter::once(boundary_plan.primary_pid)
                 .chain(boundary_plan.replica_pids.into_iter())
                 .filter(|pid| *pid != primary_pid)
                 .take(usize::try_from(boundary_replica_count).unwrap_or(usize::MAX))
                 .collect();
+            let placement_count = 1_usize
+                .checked_add(replica_pids.len())
+                .ok_or_else(|| "ec_spire recursive boundary placement count overflow".to_owned())?;
+            for _ in 0..placement_count {
+                source_vectors_by_placement.push(source_vector.clone());
+            }
             Ok(SpireBoundaryLeafAssignmentIdentityInput {
                 primary_pid,
                 replica_pids,
@@ -358,19 +401,355 @@ fn build_recursive_leaf_rows_by_pid(
             })
         })
         .collect::<Result<Vec<_>, String>>()?;
-    for placement in build_boundary_leaf_assignment_placements_with_identity(
+    let placements = build_boundary_leaf_assignment_placements_with_identity(
         local_vec_id_cursor,
         boundary_inputs,
-    )? {
+    )?;
+    if placements.len() != source_vectors_by_placement.len() {
+        return Err(format!(
+            "ec_spire recursive boundary assignment placement count {} does not match source vector count {}",
+            placements.len(),
+            source_vectors_by_placement.len()
+        ));
+    }
+    for (placement, source_vector) in placements.into_iter().zip(source_vectors_by_placement) {
         let rows = rows_by_leaf_pid.get_mut(&placement.pid).ok_or_else(|| {
             format!(
                 "ec_spire recursive boundary assignment resolved unknown leaf pid {}",
                 placement.pid
             )
         })?;
-        rows.push(placement.row);
+        rows.rows.push(placement.row);
+        rows.source_vectors.push(source_vector);
     }
     Ok(rows_by_leaf_pid)
+}
+
+fn current_leaf_summary_block_rows() -> Result<Option<u32>, String> {
+    let block_rows = options::current_session_leaf_block_rows();
+    if block_rows <= 0 {
+        return Ok(None);
+    }
+    u32::try_from(block_rows)
+        .map(Some)
+        .map_err(|_| "ec_spire.leaf_block_rows exceeds u32".to_owned())
+}
+
+#[derive(Debug)]
+struct SpireLeafBlockLayoutRow {
+    original_index: usize,
+    centroid_index: usize,
+    centroid_ip: f32,
+    row: SpireLeafAssignmentRow,
+    source_vector: Vec<f32>,
+}
+
+fn layout_leaf_rows_for_block_summaries(
+    materialization_rows: SpireRecursiveLeafMaterializationRows,
+    block_rows: u32,
+    seed: u64,
+    leaf_pid: u64,
+) -> Result<SpireRecursiveLeafMaterializationRows, String> {
+    if block_rows == 0 {
+        return Err("ec_spire leaf block layout block_rows 0 is invalid".to_owned());
+    }
+    if materialization_rows.rows.len() != materialization_rows.source_vectors.len() {
+        return Err(format!(
+            "ec_spire leaf block layout row count {} does not match source vector count {}",
+            materialization_rows.rows.len(),
+            materialization_rows.source_vectors.len()
+        ));
+    }
+    if materialization_rows.rows.is_empty() {
+        return Ok(materialization_rows);
+    }
+
+    let block_rows_usize = usize::try_from(block_rows)
+        .map_err(|_| "ec_spire leaf block layout block_rows exceeds usize".to_owned())?;
+    if materialization_rows.rows.len() <= block_rows_usize {
+        return Ok(materialization_rows);
+    }
+
+    let dimensions = materialization_rows.source_vectors[0].len();
+    if dimensions == 0 {
+        return Err("ec_spire leaf block layout source vector dimensions must be > 0".to_owned());
+    }
+    for (row_index, source_vector) in materialization_rows.source_vectors.iter().enumerate() {
+        if source_vector.len() != dimensions {
+            return Err(format!(
+                "ec_spire leaf block layout source vector {row_index} dimensions {} do not match expected {dimensions}",
+                source_vector.len()
+            ));
+        }
+        if source_vector.iter().any(|value| !value.is_finite()) {
+            return Err(format!(
+                "ec_spire leaf block layout source vector {row_index} contains a non-finite value"
+            ));
+        }
+    }
+
+    let block_count = materialization_rows.rows.len().div_ceil(block_rows_usize);
+    if block_count <= 1 {
+        return Ok(materialization_rows);
+    }
+
+    let source_refs = materialization_rows
+        .source_vectors
+        .iter()
+        .map(Vec::as_slice)
+        .collect::<Vec<_>>();
+    let model = common_training::train_spherical_kmeans(
+        "ec_spire leaf block layout",
+        &source_refs,
+        dimensions,
+        block_count,
+        seed.wrapping_add(leaf_pid),
+        SPIRE_DEFAULT_KMEANS_ITERATIONS,
+    )?;
+    let centroid_indexes = common_training::assign_vectors_to_centroids(
+        "ec_spire leaf block layout",
+        &source_refs,
+        &model,
+    )?;
+
+    let mut layout_rows = materialization_rows
+        .rows
+        .into_iter()
+        .zip(materialization_rows.source_vectors)
+        .zip(centroid_indexes)
+        .enumerate()
+        .map(|(original_index, ((row, source_vector), centroid_index))| {
+            let centroid = model
+                .centroids
+                .get(centroid_index)
+                .ok_or_else(|| {
+                    "ec_spire leaf block layout centroid assignment out of range".to_owned()
+                })?;
+            let centroid_ip = leaf_block_layout_inner_product(&source_vector, centroid)?;
+            Ok(SpireLeafBlockLayoutRow {
+                original_index,
+                centroid_index,
+                centroid_ip,
+                row,
+                source_vector,
+            })
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+
+    layout_rows.sort_by(|left, right| {
+        left.centroid_index
+            .cmp(&right.centroid_index)
+            .then_with(|| {
+                right
+                    .centroid_ip
+                    .partial_cmp(&left.centroid_ip)
+                    .unwrap_or(Ordering::Equal)
+            })
+            .then_with(|| left.original_index.cmp(&right.original_index))
+    });
+
+    let mut rows = Vec::with_capacity(layout_rows.len());
+    let mut source_vectors = Vec::with_capacity(layout_rows.len());
+    for layout_row in layout_rows {
+        rows.push(layout_row.row);
+        source_vectors.push(layout_row.source_vector);
+    }
+    Ok(SpireRecursiveLeafMaterializationRows {
+        rows,
+        source_vectors,
+    })
+}
+
+fn leaf_block_layout_inner_product(left: &[f32], right: &[f32]) -> Result<f32, String> {
+    if left.len() != right.len() {
+        return Err(format!(
+            "ec_spire leaf block layout vector dimensions mismatch: got {}, expected {}",
+            left.len(),
+            right.len()
+        ));
+    }
+    Ok(left.iter().zip(right.iter()).map(|(left, right)| left * right).sum())
+}
+
+fn leaf_block_mean(block_vectors: &[Vec<f32>], dimensions: usize) -> Vec<f32> {
+    let mut mean = vec![0.0_f32; dimensions];
+    for source_vector in block_vectors {
+        for (accum, value) in mean.iter_mut().zip(source_vector.iter()) {
+            *accum += *value;
+        }
+    }
+    let inv = 1.0_f32 / block_vectors.len() as f32;
+    for value in &mut mean {
+        *value *= inv;
+    }
+    mean
+}
+
+fn leaf_block_l2_squared(left: &[f32], right: &[f32]) -> f32 {
+    left.iter()
+        .zip(right.iter())
+        .map(|(left, right)| {
+            let residual = left - right;
+            residual * residual
+        })
+        .sum()
+}
+
+fn leaf_block_farthest_vector<'a>(
+    block_vectors: &'a [Vec<f32>],
+    center: &[f32],
+) -> &'a [f32] {
+    block_vectors
+        .iter()
+        .max_by(|left, right| {
+            leaf_block_l2_squared(left, center)
+                .partial_cmp(&leaf_block_l2_squared(right, center))
+                .unwrap_or(Ordering::Equal)
+        })
+        .expect("leaf block representative needs at least one vector")
+        .as_slice()
+}
+
+fn rabitq_leaf_block_representatives(
+    block_vectors: &[Vec<f32>],
+    dimensions: usize,
+) -> Vec<Vec<f32>> {
+    if block_vectors.len() == 1 {
+        let representative = block_vectors[0].clone();
+        return vec![representative.clone(), representative];
+    }
+
+    let mean = leaf_block_mean(block_vectors, dimensions);
+    let first = leaf_block_farthest_vector(block_vectors, &mean);
+    let second = leaf_block_farthest_vector(block_vectors, first);
+    if leaf_block_l2_squared(first, second) == 0.0 {
+        return vec![mean.clone(), mean];
+    }
+
+    let mut accumulators = vec![vec![0.0_f32; dimensions], vec![0.0_f32; dimensions]];
+    let mut counts = [0_usize; 2];
+    for source_vector in block_vectors {
+        let first_dist = leaf_block_l2_squared(source_vector, first);
+        let second_dist = leaf_block_l2_squared(source_vector, second);
+        let bucket = usize::from(second_dist < first_dist);
+        counts[bucket] += 1;
+        for (accum, value) in accumulators[bucket].iter_mut().zip(source_vector.iter()) {
+            *accum += *value;
+        }
+    }
+
+    if counts[0] == 0 || counts[1] == 0 {
+        return vec![mean, first.to_vec()];
+    }
+
+    for (representative, count) in accumulators.iter_mut().zip(counts) {
+        let inv = 1.0_f32 / count as f32;
+        for value in representative {
+            *value *= inv;
+        }
+    }
+    accumulators
+}
+
+fn rabitq_leaf_block_covering_radius(block_vectors: &[Vec<f32>], representatives: &[Vec<f32>]) -> f32 {
+    let mut radius = 0.0_f32;
+    for source_vector in block_vectors {
+        let nearest_l2 = representatives
+            .iter()
+            .map(|representative| leaf_block_l2_squared(source_vector, representative))
+            .fold(f32::INFINITY, f32::min)
+            .sqrt();
+        radius = radius.max(nearest_l2);
+    }
+    radius
+}
+
+fn build_leaf_block_summaries(
+    rows: &[SpireLeafAssignmentRow],
+    source_vectors: &[Vec<f32>],
+    block_rows: u32,
+) -> Result<Vec<SpireLeafBlockSummary>, String> {
+    if block_rows == 0 {
+        return Err("ec_spire leaf summary block_rows 0 is invalid".to_owned());
+    }
+    if rows.len() != source_vectors.len() {
+        return Err(format!(
+            "ec_spire leaf summary source vector count {} does not match row count {}",
+            source_vectors.len(),
+            rows.len()
+        ));
+    }
+    if rows.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let payload_format = SpireAssignmentPayloadFormat::from_tag(rows[0].payload_format)?;
+    let dimensions = source_vectors[0].len();
+    if dimensions == 0 {
+        return Err("ec_spire leaf summary source vector dimensions must be > 0".to_owned());
+    }
+    for (row_index, (row, source_vector)) in rows.iter().zip(source_vectors.iter()).enumerate() {
+        let row_payload_format = SpireAssignmentPayloadFormat::from_tag(row.payload_format)?;
+        if row_payload_format != payload_format {
+            return Err(format!(
+                "ec_spire leaf summary row {row_index} payload format {:?} does not match first row {:?}",
+                row_payload_format, payload_format
+            ));
+        }
+        if source_vector.len() != dimensions {
+            return Err(format!(
+                "ec_spire leaf summary source vector {row_index} dimensions {} do not match expected {dimensions}",
+                source_vector.len()
+            ));
+        }
+        if source_vector.iter().any(|value| !value.is_finite()) {
+            return Err(format!(
+                "ec_spire leaf summary source vector {row_index} contains a non-finite value"
+            ));
+        }
+    }
+
+    let block_rows_usize = usize::try_from(block_rows)
+        .map_err(|_| "ec_spire leaf summary block_rows exceeds usize".to_owned())?;
+    let mut summaries = Vec::with_capacity(rows.len().div_ceil(block_rows_usize));
+    for (block_index, block_vectors) in source_vectors.chunks(block_rows_usize).enumerate() {
+        let row_base_usize = block_index
+            .checked_mul(block_rows_usize)
+            .ok_or_else(|| "ec_spire leaf summary row_base overflow".to_owned())?;
+        let row_base = u32::try_from(row_base_usize)
+            .map_err(|_| "ec_spire leaf summary row_base exceeds u32".to_owned())?;
+        let row_count = u32::try_from(block_vectors.len())
+            .map_err(|_| "ec_spire leaf summary row_count exceeds u32".to_owned())?;
+        if payload_format == SpireAssignmentPayloadFormat::RaBitQ {
+            let representatives = rabitq_leaf_block_representatives(block_vectors, dimensions);
+            let summary_gamma = rabitq_leaf_block_covering_radius(block_vectors, &representatives);
+            let mut encoded_payload = Vec::new();
+            for representative in representatives {
+                let (_gamma, representative_payload) =
+                    quantizer::encode_assignment_payload(payload_format, &representative)?;
+                encoded_payload.extend_from_slice(&representative_payload);
+            }
+            summaries.push(SpireLeafBlockSummary {
+                row_base,
+                row_count,
+                payload_format: payload_format.tag(),
+                gamma: summary_gamma,
+                encoded_payload,
+            });
+        } else {
+            let mean = leaf_block_mean(block_vectors, dimensions);
+            let (gamma, encoded_payload) =
+                quantizer::encode_assignment_payload(payload_format, &mean)?;
+            summaries.push(SpireLeafBlockSummary {
+                row_base,
+                row_count,
+                payload_format: payload_format.tag(),
+                gamma,
+                encoded_payload,
+            });
+        }
+    }
+    Ok(summaries)
 }
 
 impl SpireRecursiveRoutingBuildInput {
@@ -673,12 +1052,10 @@ fn build_recursive_routing_epoch_from_leaf_inputs_with_store(
                 leaf_input.pid, leaf_input.parent_pid, expected_parent_pid
             ));
         }
-        leaf_placements.push(object_store.write_leaf_object_v2_from_rows(
+        leaf_placements.push(write_recursive_leaf_object_from_input(
+            object_store,
             input.epoch,
-            leaf_input.pid,
-            leaf_input.object_version,
-            leaf_input.parent_pid,
-            &leaf_input.rows,
+            &leaf_input,
         )?);
     }
     let expected_leaf_pids = expected_leaf_parents
@@ -740,12 +1117,10 @@ fn build_recursive_top_graph_epoch_from_leaf_inputs_with_store(
                 leaf_input.pid, leaf_input.parent_pid, expected_parent_pid
             ));
         }
-        leaf_placements.push(object_store.write_leaf_object_v2_from_rows(
+        leaf_placements.push(write_recursive_leaf_object_from_input(
+            object_store,
             input.epoch,
-            leaf_input.pid,
-            leaf_input.object_version,
-            leaf_input.parent_pid,
-            &leaf_input.rows,
+            &leaf_input,
         )?);
     }
     let expected_leaf_pids = expected_leaf_parents
@@ -779,6 +1154,31 @@ fn build_recursive_top_graph_epoch_from_leaf_inputs_with_store(
             top_graph_params,
         },
         object_store,
+    )
+}
+
+fn write_recursive_leaf_object_from_input(
+    object_store: &mut impl SpireBuildObjectStore,
+    epoch: u64,
+    leaf_input: &SpireRecursiveLeafObjectInput,
+) -> Result<SpirePlacementEntry, String> {
+    if leaf_input.summaries.is_empty() {
+        return object_store.write_leaf_object_v2_from_rows(
+            epoch,
+            leaf_input.pid,
+            leaf_input.object_version,
+            leaf_input.parent_pid,
+            &leaf_input.rows,
+        );
+    }
+    object_store.write_leaf_object_v3_from_rows_and_summaries(
+        epoch,
+        leaf_input.pid,
+        leaf_input.object_version,
+        leaf_input.parent_pid,
+        &leaf_input.rows,
+        &leaf_input.summaries,
+        leaf_input.summary_block_rows,
     )
 }
 
