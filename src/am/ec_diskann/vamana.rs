@@ -64,6 +64,82 @@ impl VamanaGraphView for VamanaGraph {
     }
 }
 
+/// Serial build-side neighbor cache.
+///
+/// Task 65b's parallel build work needs one narrow place to replace direct
+/// adjacency-list reads and writes with a shared/coordinated neighbor store.
+/// This first slice keeps the storage in ordinary `Vec<Vec<u32>>` form so the
+/// single-threaded build remains deterministic and behavior-equivalent, while all
+/// build-loop graph mutation now flows through this type.
+#[derive(Debug, Clone)]
+struct BuilderNeighborCache {
+    neighbors: Vec<Vec<u32>>,
+    max_degree: usize,
+}
+
+impl BuilderNeighborCache {
+    fn empty(node_count: usize, max_degree: usize) -> Self {
+        Self {
+            neighbors: vec![Vec::new(); node_count],
+            max_degree,
+        }
+    }
+
+    fn out_degree(&self, node: u32) -> usize {
+        self.neighbors[node as usize].len()
+    }
+
+    fn contains_neighbor(&self, node: u32, neighbor: u32) -> bool {
+        self.neighbors[node as usize].contains(&neighbor)
+    }
+
+    fn push_neighbor(&mut self, node: u32, neighbor: u32) {
+        debug_assert!(
+            self.neighbors[node as usize].len() < self.max_degree,
+            "push_neighbor called for full Vamana adjacency list"
+        );
+        self.neighbors[node as usize].push(neighbor);
+    }
+
+    fn set_neighbors(&mut self, node: u32, neighbors: &[u32]) {
+        debug_assert!(
+            neighbors.len() <= self.max_degree,
+            "Vamana adjacency list exceeds max_degree"
+        );
+        self.neighbors[node as usize].clear();
+        self.neighbors[node as usize].extend_from_slice(neighbors);
+    }
+
+    fn replace_neighbors(&mut self, node: u32, neighbors: Vec<u32>) {
+        debug_assert!(
+            neighbors.len() <= self.max_degree,
+            "Vamana adjacency list exceeds max_degree"
+        );
+        self.neighbors[node as usize] = neighbors;
+    }
+
+    fn iter_adjacency(&self) -> impl Iterator<Item = &[u32]> {
+        self.neighbors.iter().map(Vec::as_slice)
+    }
+
+    fn into_graph(self) -> VamanaGraph {
+        VamanaGraph {
+            neighbors: self.neighbors,
+            max_degree: self.max_degree,
+        }
+    }
+}
+
+impl VamanaGraphView for BuilderNeighborCache {
+    fn node_count(&self) -> usize {
+        self.neighbors.len()
+    }
+
+    fn neighbors(&self, node: u32) -> &[u32] {
+        &self.neighbors[node as usize]
+    }
+}
+
 /// Aggregate summary for build-time counters captured by
 /// [`build_vamana_graph_with_stats`].
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
@@ -695,7 +771,7 @@ where
         pass1_extra_candidates.is_empty() || pass1_extra_candidates.len() == node_count,
         "pass1 extra candidates must be empty or have one entry per node"
     );
-    let mut graph = VamanaGraph::empty(node_count, max_degree);
+    let mut neighbor_cache = BuilderNeighborCache::empty(node_count, max_degree);
 
     let mut rng = ChaCha8Rng::seed_from_u64(seed);
     let mut permutation: Vec<u32> = (0..node_count as u32).collect();
@@ -726,18 +802,21 @@ where
         // the fresh visited set so later passes refine, rather
         // than replace, prior graph structure.
         let greedy_started = Instant::now();
-        let visited =
-            greedy_search_visited_with_scratch(&graph, medoid, list_size, &mut scratch, |n| {
-                dist(n, i)
-            });
+        let visited = greedy_search_visited_with_scratch(
+            &neighbor_cache,
+            medoid,
+            list_size,
+            &mut scratch,
+            |n| dist(n, i),
+        );
         greedy_search_ms += greedy_started.elapsed().as_millis();
         let visited_count = visited.len();
-        let existing_neighbor_count = graph.neighbors[i as usize].len();
+        let existing_neighbor_count = neighbor_cache.out_degree(i);
         let candidate_pool_started = Instant::now();
         let mut candidates = candidate_pool_for_prune(
             i,
             visited,
-            graph.neighbors[i as usize].iter().copied(),
+            neighbor_cache.neighbors(i).iter().copied(),
             node_count,
             &mut scratch,
             |node, pivot| dist(node, pivot),
@@ -759,20 +838,20 @@ where
         let pruned = robust_prune(i, candidates, alpha_final, max_degree, dist);
         robust_prune_ms += robust_prune_started.elapsed().as_millis();
         let selected_count = pruned.len();
-        graph.neighbors[i as usize].clone_from(&pruned);
+        neighbor_cache.set_neighbors(i, &pruned);
 
         let backlink_started = Instant::now();
         for j in pruned {
-            let neighbors_j = &mut graph.neighbors[j as usize];
-            if neighbors_j.contains(&i) {
+            if neighbor_cache.contains_neighbor(j, i) {
                 continue;
             }
-            if neighbors_j.len() < max_degree {
-                neighbors_j.push(i);
+            if neighbor_cache.out_degree(j) < max_degree {
+                neighbor_cache.push_neighbor(j, i);
                 backlinks_added += 1;
             } else {
                 // Re-prune j's neighborhood including i.
-                let mut combined: Vec<Candidate> = neighbors_j
+                let mut combined: Vec<Candidate> = neighbor_cache
+                    .neighbors(j)
                     .iter()
                     .copied()
                     .chain(std::iter::once(i))
@@ -783,7 +862,7 @@ where
                     .collect();
                 combined.sort();
                 let repruned = robust_prune(j, combined, alpha_final, max_degree, dist);
-                graph.neighbors[j as usize] = repruned;
+                neighbor_cache.replace_neighbors(j, repruned);
                 reprunes += 1;
             }
         }
@@ -817,9 +896,12 @@ where
         reprunes,
     });
 
-    let final_out_degrees: Vec<usize> = graph.neighbors.iter().map(Vec::len).collect();
-    let mut final_in_degrees = vec![0usize; graph.node_count()];
-    for neighbors in &graph.neighbors {
+    let final_out_degrees: Vec<usize> = neighbor_cache
+        .iter_adjacency()
+        .map(|neighbors| neighbors.len())
+        .collect();
+    let mut final_in_degrees = vec![0usize; neighbor_cache.node_count()];
+    for neighbors in neighbor_cache.iter_adjacency() {
         for &neighbor in neighbors {
             if let Some(count) = final_in_degrees.get_mut(neighbor as usize) {
                 *count += 1;
@@ -837,6 +919,7 @@ where
         final_out_degree: MetricSummary::from_values(&final_out_degrees),
         final_in_degree: MetricSummary::from_values(&final_in_degrees),
     };
+    let graph = neighbor_cache.into_graph();
 
     (graph, stats)
 }
@@ -961,6 +1044,27 @@ mod tests {
         );
         let nodes: Vec<u32> = pool.iter().map(|c| c.node).collect();
         assert_eq!(nodes, vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn builder_neighbor_cache_preserves_adjacency_operations() {
+        let mut cache = BuilderNeighborCache::empty(4, 3);
+        cache.push_neighbor(0, 1);
+        cache.push_neighbor(0, 2);
+        assert_eq!(cache.neighbors(0), &[1, 2]);
+        assert_eq!(cache.out_degree(0), 2);
+        assert!(cache.contains_neighbor(0, 1));
+
+        cache.set_neighbors(1, &[0, 2]);
+        assert_eq!(cache.neighbors(1), &[0, 2]);
+
+        cache.replace_neighbors(1, vec![3]);
+        assert_eq!(cache.neighbors(1), &[3]);
+
+        let graph = cache.into_graph();
+        assert_eq!(graph.max_degree, 3);
+        assert_eq!(graph.neighbors[0], vec![1, 2]);
+        assert_eq!(graph.neighbors[1], vec![3]);
     }
 
     #[test]
