@@ -105,7 +105,7 @@
         let (summary_nlists, empty_lists, directory_live, directory_dead, inserted_since_build) =
             ec_ivf_debug!(am::debug_ec_ivf_directory_summary(index_oid));
 
-        assert_eq!(format_version, 1);
+        assert_eq!(format_version, 2);
         assert_eq!(nlists, 16);
         assert_eq!(nprobe, 4);
         assert_eq!(training_sample_rows, 128);

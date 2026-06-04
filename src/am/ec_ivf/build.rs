@@ -675,6 +675,7 @@ impl BuildState {
         Ok(Some(IvfPqFastScanModel {
             group_count: model.group_count,
             group_size: model.group_size,
+            signs: model.signs,
             flat_codebooks: model.codebooks.into_iter().flatten().collect(),
         }))
     }

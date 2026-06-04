@@ -35,6 +35,7 @@ pub(super) enum IvfPreparedQuery {
 pub(super) struct IvfPqFastScanModel {
     pub(super) group_count: usize,
     pub(super) group_size: usize,
+    pub(super) signs: Vec<f32>,
     pub(super) flat_codebooks: Vec<f32>,
 }
 
@@ -151,12 +152,7 @@ impl IvfQuantizer {
         self.validate_pq_model(model)?;
         let dimensions = u16::try_from(source.len())
             .map_err(|_| format!("embedding dimension {} exceeds maximum 65535", source.len()))?;
-        let prod = ProdQuantizer::cached(
-            self.dimensions,
-            crate::DEFAULT_QUANT_BITS,
-            crate::DEFAULT_QUANT_SEED,
-        );
-        let rotated = rotation::srht_padded(source, &prod.signs);
+        let rotated = rotation::srht_padded(source, &model.signs);
         let codebook_iter = model
             .flat_codebooks
             .chunks_exact(model.group_size * GROUPED_PQ_CENTROIDS);
@@ -505,6 +501,7 @@ pub(super) unsafe fn load_pq_fastscan_model(
     Ok(IvfPqFastScanModel {
         group_count,
         group_size,
+        signs: rotation::sign_vector(transform_dim, metadata.seed),
         flat_codebooks,
     })
 }
@@ -836,6 +833,7 @@ mod tests {
         let model = IvfPqFastScanModel {
             group_count: trained.group_count,
             group_size: trained.group_size,
+            signs: trained.signs,
             flat_codebooks: trained.codebooks.into_iter().flatten().collect(),
         };
         let dispatch = IvfQuantizer::resolve(StorageFormat::PqFastScan, dimensions).unwrap();

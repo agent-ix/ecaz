@@ -20,6 +20,8 @@ pub enum TestCommand {
     Pg18PreloadPgstat(Pg18PreloadPgstatArgs),
     /// Run the Task 71 one-cell IVF parallel-build probe against a local test DB.
     IvfParallelBuildProbe(IvfParallelBuildProbeArgs),
+    /// Drop Task 71 IVF parallel-build matrix/probe tables from a local test DB.
+    IvfParallelBuildClean(IvfParallelBuildCleanArgs),
 }
 
 impl TestCommand {
@@ -29,6 +31,9 @@ impl TestCommand {
             TestCommand::Pg18PreloadPgstat(args) => run_pg18_preload_pgstat(args).await,
             TestCommand::IvfParallelBuildProbe(args) => {
                 run_ivf_parallel_build_probe(conn, args).await
+            }
+            TestCommand::IvfParallelBuildClean(args) => {
+                run_ivf_parallel_build_clean(conn, args).await
             }
         }
     }
@@ -73,6 +78,17 @@ pub struct IvfParallelBuildProbeArgs {
     /// Packet-local artifact directory for the loader log.
     #[arg(long, default_value = "reviews/task-71/003-worker-curve/artifacts")]
     artifact_dir: PathBuf,
+}
+
+#[derive(Args, Debug)]
+pub struct IvfParallelBuildCleanArgs {
+    /// Also drop the one-cell probe prefix for the selected worker count.
+    #[arg(long)]
+    include_probe: bool,
+
+    /// Probe worker count used when --include-probe is set.
+    #[arg(long, default_value_t = 2)]
+    probe_workers: i32,
 }
 
 async fn run_pgrx(args: PgrxTestArgs) -> Result<()> {
@@ -189,6 +205,40 @@ async fn run_ivf_parallel_build_probe(
         log_file.display()
     );
     run_status(command).await
+}
+
+async fn run_ivf_parallel_build_clean(
+    conn: &psql::ConnectionOptions,
+    args: IvfParallelBuildCleanArgs,
+) -> Result<()> {
+    if args.probe_workers < 0 {
+        bail!("--probe-workers must be non-negative");
+    }
+    let mut prefixes = Vec::new();
+    for scale in ["10k", "25k", "50k", "100k"] {
+        for workers in [1, 2, 4, 8] {
+            prefixes.push(format!("task71_real{scale}_w{workers}"));
+        }
+    }
+    if args.include_probe {
+        prefixes.push(format!("task71_probe_w{}", args.probe_workers));
+    }
+    for prefix in &prefixes {
+        profiles::validate_ident(prefix).wrap_err_with(|| format!("invalid prefix {prefix:?}"))?;
+    }
+
+    let drops = prefixes
+        .iter()
+        .flat_map(|prefix| [format!("{prefix}_corpus"), format!("{prefix}_queries")])
+        .collect::<Vec<_>>()
+        .join(", ");
+    let client = psql::connect(conn).await?;
+    client
+        .batch_execute(&format!("DROP TABLE IF EXISTS {drops} CASCADE;"))
+        .await
+        .wrap_err("dropping Task 71 IVF parallel-build tables")?;
+    crate::ecaz_println!("[ivf-clean] dropped {} prefixes", prefixes.len());
+    Ok(())
 }
 
 async fn ensure_ivf_build_timing_function(conn: &psql::ConnectionOptions) -> Result<()> {
