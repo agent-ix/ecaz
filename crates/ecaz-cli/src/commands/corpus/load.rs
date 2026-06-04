@@ -2071,7 +2071,8 @@ async fn log_ec_ivf_build_timing(client: &Client) -> Result<()> {
     let row = match client
         .query_opt(
             "SELECT requested_workers, workers_launched, heap_tuples, index_tuples,
-                    heap_ingest_us, parallel_begin_us, parallel_drain_us,
+                    heap_ingest_us, train_model_us, stage_build_plan_us,
+                    flush_build_plan_us, parallel_begin_us, parallel_drain_us,
                     parallel_sort_push_us, parallel_worker_tuple_buffer_capacity,
                     parallel_worker_tuple_buffer_struct_bytes
              FROM ec_ivf_last_build_timing()",
@@ -2090,7 +2091,7 @@ async fn log_ec_ivf_build_timing(client: &Client) -> Result<()> {
         return Ok(());
     };
     crate::ecaz_eprintln!(
-        "[loader] ec_ivf build timing: requested_workers={} workers_launched={} heap_tuples={} index_tuples={} heap_ingest_us={} parallel_begin_us={} parallel_drain_us={} parallel_sort_push_us={} parallel_worker_tuple_buffer_capacity={} parallel_worker_tuple_buffer_struct_bytes={}",
+        "[loader] ec_ivf build timing: requested_workers={} workers_launched={} heap_tuples={} index_tuples={} heap_ingest_us={} train_model_us={} stage_build_plan_us={} flush_build_plan_us={} parallel_begin_us={} parallel_drain_us={} parallel_sort_push_us={} parallel_worker_tuple_buffer_capacity={} parallel_worker_tuple_buffer_struct_bytes={}",
         row.get::<_, i64>(0),
         row.get::<_, i64>(1),
         row.get::<_, i64>(2),
@@ -2101,6 +2102,9 @@ async fn log_ec_ivf_build_timing(client: &Client) -> Result<()> {
         row.get::<_, i64>(7),
         row.get::<_, i64>(8),
         row.get::<_, i64>(9),
+        row.get::<_, i64>(10),
+        row.get::<_, i64>(11),
+        row.get::<_, i64>(12),
     );
     Ok(())
 }

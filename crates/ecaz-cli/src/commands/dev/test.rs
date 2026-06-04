@@ -245,13 +245,17 @@ async fn ensure_ivf_build_timing_function(conn: &psql::ConnectionOptions) -> Res
     let client = psql::connect(conn).await?;
     client
         .batch_execute(
-            "CREATE OR REPLACE FUNCTION ec_ivf_last_build_timing()
+            "DROP FUNCTION IF EXISTS ec_ivf_last_build_timing();
+             CREATE FUNCTION ec_ivf_last_build_timing()
              RETURNS TABLE (
                  requested_workers bigint,
                  workers_launched bigint,
                  heap_tuples bigint,
                  index_tuples bigint,
                  heap_ingest_us bigint,
+                 train_model_us bigint,
+                 stage_build_plan_us bigint,
+                 flush_build_plan_us bigint,
                  parallel_begin_us bigint,
                  parallel_drain_us bigint,
                  parallel_sort_push_us bigint,

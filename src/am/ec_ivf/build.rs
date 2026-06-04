@@ -4,8 +4,6 @@ use std::ptr::NonNull;
 use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 use std::time::Instant;
 
-use pgrx::{pg_sys, PgBox, PgTupleDesc};
-
 use super::quantizer::{self, IvfPqFastScanModel, IvfQuantizer};
 use super::{build_parallel, options, page, training, P_NEW};
 use crate::am::common::{
@@ -18,6 +16,7 @@ use crate::storage::{
     relation::RelationHandle,
     wal,
 };
+use pgrx::{pg_sys, PgBox, PgTupleDesc};
 
 const DEFAULT_AUTO_TRAINING_SAMPLE_ROWS: usize = 10_000;
 const DEFAULT_KMEANS_ITERATIONS: usize = 8;
@@ -43,6 +42,9 @@ static LAST_BUILD_WORKERS_LAUNCHED: AtomicU64 = AtomicU64::new(0);
 static LAST_BUILD_HEAP_TUPLES: AtomicU64 = AtomicU64::new(0);
 static LAST_BUILD_INDEX_TUPLES: AtomicU64 = AtomicU64::new(0);
 static LAST_BUILD_HEAP_INGEST_US: AtomicU64 = AtomicU64::new(0);
+static LAST_BUILD_TRAIN_MODEL_US: AtomicU64 = AtomicU64::new(0);
+static LAST_BUILD_STAGE_BUILD_PLAN_US: AtomicU64 = AtomicU64::new(0);
+static LAST_BUILD_FLUSH_BUILD_PLAN_US: AtomicU64 = AtomicU64::new(0);
 static LAST_BUILD_PARALLEL_BEGIN_US: AtomicU64 = AtomicU64::new(0);
 static LAST_BUILD_PARALLEL_DRAIN_US: AtomicU64 = AtomicU64::new(0);
 static LAST_BUILD_PARALLEL_SORT_PUSH_US: AtomicU64 = AtomicU64::new(0);
@@ -56,6 +58,9 @@ pub(crate) struct BuildTimingSnapshot {
     pub(crate) heap_tuples: u64,
     pub(crate) index_tuples: u64,
     pub(crate) heap_ingest_us: u64,
+    pub(crate) train_model_us: u64,
+    pub(crate) stage_build_plan_us: u64,
+    pub(crate) flush_build_plan_us: u64,
     pub(crate) parallel_begin_us: u64,
     pub(crate) parallel_drain_us: u64,
     pub(crate) parallel_sort_push_us: u64,
@@ -205,16 +210,25 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_ambuild(
             table_index_build_scan(heap_relation, index_relation, index_info, &mut state)
         };
         let heap_ingest_us = elapsed_us(heap_ingest_start);
+        let mut train_model_us = 0_u64;
+        let mut stage_build_plan_us = 0_u64;
+        let mut flush_build_plan_us = 0_u64;
         let index_tuples = if state.scanned_tuples == 0 {
             0.0
         } else {
+            let train_start = Instant::now();
             let model = state
                 .train_model()
                 .unwrap_or_else(|e| pgrx::error!("ec_ivf centroid training failed: {e}"));
+            train_model_us = elapsed_us(train_start);
+            let stage_start = Instant::now();
             let plan = state
                 .stage_build_plan(&model)
                 .unwrap_or_else(|e| pgrx::error!("ec_ivf populated index staging failed: {e}"));
+            stage_build_plan_us = elapsed_us(stage_start);
+            let flush_start = Instant::now();
             flush_build_plan(index_relation, &plan);
+            flush_build_plan_us = elapsed_us(flush_start);
             plan.posting_count() as f64
         };
         if heap_tuples != state.scanned_tuples as f64 {
@@ -231,6 +245,9 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_ambuild(
             heap_tuples: heap_tuples.max(0.0) as u64,
             index_tuples: index_tuples.max(0.0) as u64,
             heap_ingest_us,
+            train_model_us,
+            stage_build_plan_us,
+            flush_build_plan_us,
             parallel_begin_us,
             parallel_drain_us,
             parallel_sort_push_us,
@@ -253,6 +270,9 @@ pub(crate) fn debug_last_build_timing() -> BuildTimingSnapshot {
         heap_tuples: LAST_BUILD_HEAP_TUPLES.load(AtomicOrdering::Acquire),
         index_tuples: LAST_BUILD_INDEX_TUPLES.load(AtomicOrdering::Acquire),
         heap_ingest_us: LAST_BUILD_HEAP_INGEST_US.load(AtomicOrdering::Acquire),
+        train_model_us: LAST_BUILD_TRAIN_MODEL_US.load(AtomicOrdering::Acquire),
+        stage_build_plan_us: LAST_BUILD_STAGE_BUILD_PLAN_US.load(AtomicOrdering::Acquire),
+        flush_build_plan_us: LAST_BUILD_FLUSH_BUILD_PLAN_US.load(AtomicOrdering::Acquire),
         parallel_begin_us: LAST_BUILD_PARALLEL_BEGIN_US.load(AtomicOrdering::Acquire),
         parallel_drain_us: LAST_BUILD_PARALLEL_DRAIN_US.load(AtomicOrdering::Acquire),
         parallel_sort_push_us: LAST_BUILD_PARALLEL_SORT_PUSH_US.load(AtomicOrdering::Acquire),
@@ -270,6 +290,9 @@ fn reset_debug_last_build_timing() {
         heap_tuples: 0,
         index_tuples: 0,
         heap_ingest_us: 0,
+        train_model_us: 0,
+        stage_build_plan_us: 0,
+        flush_build_plan_us: 0,
         parallel_begin_us: 0,
         parallel_drain_us: 0,
         parallel_sort_push_us: 0,
@@ -284,6 +307,9 @@ fn record_debug_last_build_timing(snapshot: BuildTimingSnapshot) {
     LAST_BUILD_HEAP_TUPLES.store(snapshot.heap_tuples, AtomicOrdering::Release);
     LAST_BUILD_INDEX_TUPLES.store(snapshot.index_tuples, AtomicOrdering::Release);
     LAST_BUILD_HEAP_INGEST_US.store(snapshot.heap_ingest_us, AtomicOrdering::Release);
+    LAST_BUILD_TRAIN_MODEL_US.store(snapshot.train_model_us, AtomicOrdering::Release);
+    LAST_BUILD_STAGE_BUILD_PLAN_US.store(snapshot.stage_build_plan_us, AtomicOrdering::Release);
+    LAST_BUILD_FLUSH_BUILD_PLAN_US.store(snapshot.flush_build_plan_us, AtomicOrdering::Release);
     LAST_BUILD_PARALLEL_BEGIN_US.store(snapshot.parallel_begin_us, AtomicOrdering::Release);
     LAST_BUILD_PARALLEL_DRAIN_US.store(snapshot.parallel_drain_us, AtomicOrdering::Release);
     LAST_BUILD_PARALLEL_SORT_PUSH_US.store(snapshot.parallel_sort_push_us, AtomicOrdering::Release);
@@ -537,6 +563,16 @@ impl BuildState {
         for (tuple_index, list_id) in list_ids.into_iter().enumerate() {
             tuple_indices_by_list[list_id].push(tuple_index);
         }
+        let pq_posting_quantizer = if pq_model.is_some() {
+            Some(IvfQuantizer::resolve_with_pq_group_size_and_bits(
+                self.options.storage_format,
+                usize::from(dimensions),
+                self.options.requested_pq_group_size(),
+                Some(self.options.effective_quant_bits()),
+            )?)
+        } else {
+            None
+        };
 
         let mut posting_tids_by_list = vec![Vec::new(); nlists];
         let mut directory_tail_blocks_by_list = vec![None; nlists];
@@ -549,13 +585,8 @@ impl BuildState {
                 let tuple = &self.heap_tuples[*tuple_index];
                 let (gamma, payload) = match &pq_model {
                     Some(pq_model) => {
-                        let quantizer = IvfQuantizer::resolve_with_pq_group_size_and_bits(
-                            self.options.storage_format,
-                            usize::from(tuple.dimensions),
-                            self.options.requested_pq_group_size(),
-                            Some(self.options.effective_quant_bits()),
-                        )?;
-                        let (_, gamma, payload) = quantizer
+                        let (_, gamma, payload) = pq_posting_quantizer
+                            .expect("pq posting quantizer should exist for pq model")
                             .encode_source_with_pq_model(&tuple.source_vector, pq_model)?;
                         (gamma, payload)
                     }

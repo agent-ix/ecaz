@@ -18209,6 +18209,9 @@ fn ec_ivf_last_build_timing() -> TableIterator<
         name!(heap_tuples, i64),
         name!(index_tuples, i64),
         name!(heap_ingest_us, i64),
+        name!(train_model_us, i64),
+        name!(stage_build_plan_us, i64),
+        name!(flush_build_plan_us, i64),
         name!(parallel_begin_us, i64),
         name!(parallel_drain_us, i64),
         name!(parallel_sort_push_us, i64),
@@ -18223,6 +18226,11 @@ fn ec_ivf_last_build_timing() -> TableIterator<
         i64::try_from(timing.heap_tuples).expect("heap tuple count should fit in i64"),
         i64::try_from(timing.index_tuples).expect("index tuple count should fit in i64"),
         i64::try_from(timing.heap_ingest_us).expect("heap ingest timing should fit in i64"),
+        i64::try_from(timing.train_model_us).expect("train model timing should fit in i64"),
+        i64::try_from(timing.stage_build_plan_us)
+            .expect("stage build plan timing should fit in i64"),
+        i64::try_from(timing.flush_build_plan_us)
+            .expect("flush build plan timing should fit in i64"),
         i64::try_from(timing.parallel_begin_us).expect("parallel begin timing should fit in i64"),
         i64::try_from(timing.parallel_drain_us).expect("parallel drain timing should fit in i64"),
         i64::try_from(timing.parallel_sort_push_us)
