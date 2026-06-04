@@ -29,6 +29,10 @@ Follow-up after reviewer feedback:
   `ec_ivf` to the common `amestimateparallelscan`, `aminitparallelscan`,
   and `amparallelrescan` callbacks while keeping `amcanparallel = false`.
   This fixes the zero-worker symptom found in the pre-fix suite run.
+- Adds `99f7a2edc Add IVF parallel build probe command`, which moves the
+  real10k IVF parallel-build setup/probe behind the reusable
+  `ecaz dev test ivf-parallel-build-probe` surface and emits the last build's
+  IVF timing row through `ecaz corpus load` / `ecaz bench suite`.
 - Tightens `test_ec_ivf_parallel_build_workers_and_counts` to set both
   `max_parallel_maintenance_workers` and `max_parallel_workers`, matching
   the HNSW parallel-build test setup.
@@ -78,6 +82,15 @@ Packet-local artifacts are under
     parsing, and `parallel_workers` result-row emission.
 - `cargo check --no-default-features --features pg18`
   - passed.
+- `./target/debug/ecaz dev test ivf-parallel-build-probe --host /Users/peter/.pgrx --port 28818 --drop-first`
+  - passed without approval escalation through the CLI-owned DB test setup.
+  - Artifact:
+    `artifacts/probe-load-real10k-w2-after-loader-timing.log`.
+  - Key line:
+    `requested_workers=2 workers_launched=2 heap_tuples=10000 index_tuples=10000`.
+  - This verifies the installed PG18 IVF build path is launching parallel
+    build workers after the stale-dylib root cause was corrected; it is not
+    parallel scan evidence.
 
 The pre-fix hosted full-suite run completed, but it is not Phase 3 evidence
 for the fixed implementation:
@@ -88,6 +101,11 @@ for the fixed implementation:
   worker counts.
 - The post-fix suite still needs to be re-run before Task 71 can claim the
   build-time curve exit criterion.
+- The one-cell post-install probe shows that workers do launch under the
+  current installed dylib, so the next matrix run should use the fresh dylib
+  and the `ec_ivf_build_timing` rows rather than the old database-level
+  `pg_stat_get_db_parallel_workers_launched` counter as the per-build worker
+  evidence.
 
 Failed full-suite attempts are retained as packet-local artifacts because they
 explain the runner fixes:

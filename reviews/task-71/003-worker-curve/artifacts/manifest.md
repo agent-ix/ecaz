@@ -1,9 +1,10 @@
 # Task 71 / Packet 003 Artifact Manifest
 
-- Head SHA: `f19382afa`
+- Head SHA: `99f7a2edc`
 - Task bucket: `reviews/task-71/`
 - Packet path: `reviews/task-71/003-worker-curve/`
-- Slice: Worker-curve suite setup plus callback-wiring validation
+- Slice: Worker-curve suite setup plus callback-wiring validation and
+  CLI-owned one-cell IVF parallel-build probe
 - Storage format: `pq_fastscan`
 - Rerank mode: `heap_f32`
 - Surface: dry-run suite config for isolated prefixes per dataset/worker count;
@@ -51,6 +52,34 @@
 - Artifact: `cargo-check-pg18-capture-parallel-workers.log`
 - Key lines:
   - `Finished dev profile`
+
+### CLI-owned one-cell IVF parallel-build probe
+
+- Install artifact: `install-current-ecaz-pg18-after-loader-timing.log`
+- Install key lines:
+  - `installed_backend=/opt/homebrew/lib/postgresql@18/ecaz.dylib`
+  - `sha256=ee85182df636a8ef9819f633a9d076d571663c8b07b79990ecb2e939c8ca941b`
+- Command:
+  `./target/debug/ecaz dev test ivf-parallel-build-probe --host /Users/peter/.pgrx --port 28818 --drop-first`
+- Result: passed without approval escalation
+- Artifact: `probe-load-real10k-w2-after-loader-timing.log`
+- Lane / fixture / storage / rerank:
+  - lane: local PG18 one-cell probe
+  - fixture: Task 31 staged real10k corpus/query TSVs loaded into isolated
+    `task71_probe_w2` tables
+  - storage format: `pq_fastscan`
+  - rerank mode: `heap_f32`
+- Surface: isolated one-index-per-table probe, not shared-table
+- Key lines:
+  - `built task71_probe_w2_idx in 433.37ms`
+  - `requested_workers=2 workers_launched=2 heap_tuples=10000 index_tuples=10000`
+  - `parallel_worker_tuple_buffer_capacity=16384`
+- Notes:
+  - This probe runs through `ecaz dev test`, which owns the DB setup/test
+    surface and avoids the previous long inline shell/SQL command.
+  - The result verifies IVF parallel build worker launch under the current
+    installed PG18 dylib; it is not parallel scan evidence and is not a full
+    worker-curve replacement.
 
 ### `cargo-test-ecaz-cli-load-table-reloptions.log`
 
