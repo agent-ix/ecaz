@@ -1,0 +1,20 @@
+2026-06-04T16:22:11Z build+query suite attempted to build aws_spire_1m_rabitq_tg256_idx
+and then run q500 recall/latency in the same suite.
+
+SSM command id: 1570300d-a58d-489f-8f00-8f8f6e3d0f6f
+
+The build completed successfully:
+  CREATE INDEX
+  aws_spire_1m_rabitq_tg256_idx | ec_spire | 775 MB
+  top_graph_search_list_size=256
+  ec_spire_ambuild_timing total_ms=649926 heap_scan_ms=600539 top_graph_ms=16371
+
+The following query step failed because both the old tg96 SPIRE index and the
+new tg256 SPIRE index existed on the same heap relation:
+  ERROR: ec_spire_distributed: relation context could not be loaded
+  HINT: See ADR-069 for the v1 SPIRE distributed DML shape.
+
+Follow-up:
+  suite-query-tg256-recall-cache-500.json drops aws_spire_1m_rabitq_global1152_idx
+  before running query metrics, leaving aws_spire_1m_rabitq_tg256_idx as the
+  only active SPIRE index on the corpus heap.
