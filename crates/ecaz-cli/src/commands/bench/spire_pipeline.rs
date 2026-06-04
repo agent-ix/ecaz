@@ -118,6 +118,12 @@ pub struct SpirePipelineArgs {
     /// when the same staged corpus file is already available to the operator.
     #[arg(long)]
     pub truth_corpus_file: Option<PathBuf>,
+    /// Optional exact top-k ground-truth cache file produced by `bench recall`.
+    ///
+    /// When present, the cache is validated against the sampled query set and
+    /// k, then reused instead of fetching/scoring the full corpus.
+    #[arg(long)]
+    pub truth_cache_file: Option<PathBuf>,
     /// Write per-exact-neighbor SPIRE leaf-block rank rows as JSONL.
     ///
     /// Requires `--include-recall`. For local corpora without SPIRE
@@ -228,30 +234,47 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
         return Err(eyre!("queries table {queries_table:?} is empty"));
     }
     let query_truth = if args.include_recall {
-        let (corpus_ids, corpus) = if let Some(path) = args.truth_corpus_file.as_deref() {
-            super::recall::load_sources_tsv_file(path)
-                .wrap_err_with(|| format!("loading exact-truth corpus from {}", path.display()))?
+        if let Some(path) = args.truth_cache_file.as_deref() {
+            let query_ids: Vec<i64> = queries.iter().map(|query| query.id).collect();
+            let query_matrix = query_matrix(&queries)?;
+            let truth =
+                super::recall::load_truth_cache_file_if_valid(
+                    path,
+                    &query_ids,
+                    &query_matrix,
+                    args.query_metric_k,
+                )
+                .await?
+                .ok_or_else(|| eyre!("truth cache file {} does not exist", path.display()))?;
+            Some(truth.ids)
         } else {
-            super::recall::fetch_sources_public(&client, &corpus_table, None)
-                .await
-                .wrap_err_with(|| format!("fetching exact-truth corpus from {corpus_table}"))?
-        };
-        let query_matrix = query_matrix(&queries)?;
-        if corpus.nrows() == 0 {
-            return Err(eyre!("exact-truth corpus is empty"));
+            let (corpus_ids, corpus) = if let Some(path) = args.truth_corpus_file.as_deref() {
+                super::recall::load_sources_tsv_file(path).wrap_err_with(|| {
+                    format!("loading exact-truth corpus from {}", path.display())
+                })?
+            } else {
+                super::recall::fetch_sources_public(&client, &corpus_table, None)
+                    .await
+                    .wrap_err_with(|| format!("fetching exact-truth corpus from {corpus_table}"))?
+            };
+            let query_matrix = query_matrix(&queries)?;
+            if corpus.nrows() == 0 {
+                return Err(eyre!("exact-truth corpus is empty"));
+            }
+            if corpus.ncols() != query_matrix.ncols() {
+                return Err(eyre!(
+                    "exact-truth corpus dim {} does not match query dim {}",
+                    corpus.ncols(),
+                    query_matrix.ncols()
+                ));
+            }
+            let truth =
+                super::recall::brute_force_top_k(&corpus, &query_matrix, args.query_metric_k);
+            Some(super::recall::map_indices_to_ids(
+                &truth.indices,
+                &corpus_ids,
+            ))
         }
-        if corpus.ncols() != query_matrix.ncols() {
-            return Err(eyre!(
-                "exact-truth corpus dim {} does not match query dim {}",
-                corpus.ncols(),
-                query_matrix.ncols()
-            ));
-        }
-        let truth = super::recall::brute_force_top_k(&corpus, &query_matrix, args.query_metric_k);
-        Some(super::recall::map_indices_to_ids(
-            &truth.indices,
-            &corpus_ids,
-        ))
     } else {
         None
     };
@@ -610,6 +633,11 @@ fn validate_args(args: &SpirePipelineArgs) -> Result<()> {
     if args.leaf_block_rank_output.is_some() && !args.include_recall {
         return Err(eyre!(
             "--leaf-block-rank-output requires --include-recall so exact truth ids are available"
+        ));
+    }
+    if args.truth_cache_file.is_some() && !args.include_recall {
+        return Err(eyre!(
+            "--truth-cache-file requires --include-recall so cached truth ids are consumed"
         ));
     }
     if args.leaf_block_rank_output.is_some() && args.leaf_block_rank_local_sequence_offset < 0 {
@@ -2621,6 +2649,7 @@ mod tests {
             include_query_metrics: false,
             include_recall: false,
             truth_corpus_file: None,
+            truth_cache_file: None,
             leaf_block_rank_output: None,
             leaf_block_rank_local_sequence_offset: 0,
             include_production_read_profile: false,

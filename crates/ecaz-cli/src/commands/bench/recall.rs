@@ -413,7 +413,7 @@ fn validate_corpus_and_queries(
     Ok(())
 }
 
-async fn load_truth_cache_file_if_valid(
+pub async fn load_truth_cache_file_if_valid(
     path: &Path,
     query_ids: &[i64],
     queries: &Array2<f32>,

@@ -1,0 +1,101 @@
+{
+  "suite": "aws-spire-1m-rabitq-global1152-recall-cache-500",
+  "schema_version": 1,
+  "config": "benchmarks/aws-spire-1m/001-run/suite-recall-cache-500.json",
+  "config_sha256": "43c3c3a096ac9408c6ffb519f9e29ae8260869aab69250cb54bd948edfefe902",
+  "dry_run": true,
+  "generated_at_unix_ms": 1780584694054,
+  "connection": {
+    "database": "tqvector_bench",
+    "host": null,
+    "port": null,
+    "user": null,
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "precheck-existing-spire-1m-index-and-truth-cache",
+      "kind": "raw",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "dev",
+        "sql",
+        "--pg",
+        "18",
+        "--db",
+        "postgres",
+        "--socket-dir",
+        "/var/run/postgresql",
+        "--raw",
+        "--sql",
+        "CREATE EXTENSION IF NOT EXISTS ecaz; SELECT now() AS captured_at, current_database() AS database_name, version() AS postgres_version; SELECT count(*) AS corpus_rows FROM task67_1m_hnsw_m7g2xlarge_corpus; SELECT count(*) AS query_rows FROM task67_1m_hnsw_m7g2xlarge_queries; SELECT i.relname AS index_name, am.amname, pg_size_pretty(pg_relation_size(i.oid)) AS index_size FROM pg_index x JOIN pg_class i ON i.oid = x.indexrelid JOIN pg_class t ON t.oid = x.indrelid JOIN pg_am am ON am.oid = i.relam WHERE t.relname = 'task67_1m_hnsw_m7g2xlarge_corpus' ORDER BY i.relname;",
+        "--log-output",
+        "benchmarks/aws-spire-1m/001-run/artifacts/recall-cache-500/precheck-existing-spire-1m-index.log"
+      ],
+      "selected": true,
+      "tags": [
+        "setup",
+        "precheck",
+        "aws",
+        "1m",
+        "spire",
+        "rabitq",
+        "global1152",
+        "recall",
+        "truth-cache",
+        "q500"
+      ],
+      "expected_artifacts": [
+        "benchmarks/aws-spire-1m/001-run/artifacts/recall-cache-500/precheck-existing-spire-1m-index.log"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "recall-spire-1m-rabitq-global1152-cache-500",
+      "kind": "recall",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "bench",
+        "recall",
+        "--prefix",
+        "task67_1m_hnsw_m7g2xlarge",
+        "--profile",
+        "ec_spire",
+        "--k",
+        "10",
+        "--sweep",
+        "96",
+        "--rerank-width",
+        "25",
+        "--queries-limit",
+        "500",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--truth-cache-file",
+        "benchmarks/task51-aws-ivf-rabitq-final-gate/artifacts/truth-aws-real-1m-q500-k10.json",
+        "--log-output",
+        "benchmarks/aws-spire-1m/001-run/artifacts/recall-cache-500/recall-spire-1m-rabitq-global1152-cache-500.log"
+      ],
+      "selected": true,
+      "tags": [
+        "recall",
+        "aws",
+        "1m",
+        "spire",
+        "rabitq",
+        "global1152",
+        "truth-cache",
+        "q500"
+      ],
+      "expected_artifacts": [
+        "benchmarks/aws-spire-1m/001-run/artifacts/recall-cache-500/recall-spire-1m-rabitq-global1152-cache-500.log"
+      ],
+      "status": "dry-run"
+    }
+  ]
+}
