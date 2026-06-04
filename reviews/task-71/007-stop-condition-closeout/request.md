@@ -113,6 +113,53 @@ No DB setup or runtime pg_test was rerun for this documentation closeout. The
 latest runtime PG18 evidence remains packet 006, which used the CLI-owned
 `ecaz dev install` and `ecaz dev test ivf-parallel-build-probe` surfaces.
 
+## Pre-Merge Follow-Up
+
+Reviewer seq 02 converted three surface follow-ups into pre-merge blockers.
+This follow-up resolves them:
+
+- Suite runner `capture_parallel_workers` no longer brackets load steps with
+  `pg_stat_get_db_parallel_workers_launched`, because that database-cumulative
+  snapshot stayed stale in the Task 71 matrix and produced misleading
+  `parallel_workers_delta=0` rows.
+- The runner now parses the load step's own
+  `[loader] ec_ivf build timing: ... workers_launched=N` line from expected
+  load artifacts after a successful opted-in load step.
+- For manifest compatibility, `parallel_workers_before` is recorded as `0`,
+  while `parallel_workers_after` and `parallel_workers_delta` both record the
+  parsed per-build `workers_launched` count.
+- `IndexInfoGuard` and `IndexInfoView` moved to
+  `src/am/common/index_info.rs`; IVF and HNSW now import the same typed wrapper
+  instead of carrying duplicate local versions.
+- The two stale untracked packet-003 probe artifacts from the stale-dylib
+  triage path were removed because they were redundant with later committed
+  evidence and did not contain the authoritative loader timing row.
+
+Validation for this follow-up:
+
+- `cargo test -p ecaz-cli commands::bench::suite::tests::`
+  - passed: `40 passed; 0 failed`
+- `cargo check --no-default-features --features pg18`
+  - passed: `Finished dev profile [unoptimized + debuginfo] target(s) in 23.70s`
+- `cargo build -p ecaz-cli`
+  - passed, producing the `./target/debug/ecaz` binary used for the one-cell
+    suite validation.
+- One-cell suite validation:
+  `./target/debug/ecaz --host /Users/peter/.pgrx --port 28818 --log-file reviews/task-71/007-stop-condition-closeout/artifacts/suite-one-cell.log bench suite run --config reviews/task-71/003-worker-curve/suite.json --only load-real10k-w2 --artifact-dir reviews/task-71/007-stop-condition-closeout/artifacts/one-cell-suite`
+  - passed.
+  - Loader timing line:
+    `requested_workers=2 workers_launched=2`
+  - Generated `suite-manifest.json` now records
+    `parallel_workers_before=0`, `parallel_workers_after=2`,
+    `parallel_workers_delta=2`.
+  - Generated `results.jsonl` has a `parallel_workers` row with
+    `before=0`, `after=2`, `delta=2`, matching the loader timing line.
+- `cargo pgrx test pg18 test_ec_ivf_parallel_build`
+  - passed without approval escalation.
+  - Target pg_tests passed:
+    `test_ec_ivf_parallel_build_workers_and_counts` and
+    `test_ec_ivf_parallel_build_matches_serial_structure`.
+
 ## Review Focus
 
 - Whether invoking the Task 71 Stop Condition is the right closeout for the
