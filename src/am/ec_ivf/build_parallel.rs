@@ -1,5 +1,4 @@
 use std::ffi::c_void;
-use std::marker::PhantomData;
 use std::mem::size_of;
 use std::ptr::{self, NonNull};
 use std::slice;
@@ -10,6 +9,7 @@ use pgrx::pg_sys;
 
 use super::build::{self, BuildTuple};
 use crate::am::common::callback::{pg_am_callback, pg_callback};
+use crate::am::common::index_info::IndexInfoView;
 use crate::storage::relation_guard::{HeapRelationGuard, IndexRelationGuard};
 use crate::storage::snapshot_guard::RegisteredSnapshotGuard;
 
@@ -920,43 +920,6 @@ fn elapsed_us(start: Instant) -> u64 {
 
 fn usize_to_u64(value: usize) -> u64 {
     u64::try_from(value).unwrap_or(u64::MAX)
-}
-
-fn build_index_info_inner(
-    index_relation: pg_sys::Relation,
-    label: &str,
-) -> NonNull<pg_sys::IndexInfo> {
-    let index_relation = NonNull::new(index_relation)
-        .unwrap_or_else(|| pgrx::error!("ec_ivf {label} needs a valid index relation"));
-    // SAFETY: Index relation is live and PG owns allocation in current context.
-    let ptr = unsafe { pg_sys::BuildIndexInfo(index_relation.as_ptr()) };
-    NonNull::new(ptr)
-        .unwrap_or_else(|| pgrx::error!("ec_ivf {label} could not build index metadata"))
-}
-
-struct IndexInfoView<'scope> {
-    ptr: NonNull<pg_sys::IndexInfo>,
-    _scope: PhantomData<&'scope mut pg_sys::IndexInfo>,
-}
-
-impl<'scope> IndexInfoView<'scope> {
-    fn build_borrowed(index_relation: pg_sys::Relation, label: &str) -> Self {
-        Self {
-            ptr: build_index_info_inner(index_relation, label),
-            _scope: PhantomData,
-        }
-    }
-
-    fn as_ptr(&self) -> *mut pg_sys::IndexInfo {
-        self.ptr.as_ptr()
-    }
-
-    fn set_concurrent(&mut self, is_concurrent: bool) {
-        // SAFETY: `&mut self` enforces exclusive access for this bounded view.
-        unsafe {
-            self.ptr.as_mut().ii_Concurrent = is_concurrent;
-        }
-    }
 }
 
 #[cfg(test)]

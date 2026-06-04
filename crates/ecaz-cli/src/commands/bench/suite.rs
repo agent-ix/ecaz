@@ -809,12 +809,6 @@ async fn run_suite(conn: &ConnectionOptions, args: SuiteRunOptions) -> Result<()
             &config.steps[idx],
             SuiteStep::Load(step) if step.capture_parallel_workers
         );
-        if capture_parallel_workers {
-            manifest.steps[idx].parallel_workers_before =
-                Some(query_parallel_workers_launched(&exe, conn, &config.defaults).await?);
-            write_manifest_if_requested(&args, &config, &manifest).await?;
-        }
-
         let started = Instant::now();
         let pgoptions = manifest.steps[idx].pgoptions.clone();
         let status = spawn_step(&exe, &command, conn, pgoptions.as_deref())
@@ -834,12 +828,12 @@ async fn run_suite(conn: &ConnectionOptions, args: SuiteRunOptions) -> Result<()
         } else {
             StepStatus::Failed
         });
-        if capture_parallel_workers {
-            let after = query_parallel_workers_launched(&exe, conn, &config.defaults).await?;
-            manifest.steps[idx].parallel_workers_after = Some(after);
-            manifest.steps[idx].parallel_workers_delta = manifest.steps[idx]
-                .parallel_workers_before
-                .map(|before| after.saturating_sub(before));
+        if capture_parallel_workers && status.success() {
+            let workers_launched =
+                capture_parallel_workers_from_load_artifacts(&manifest.steps[idx]).await?;
+            manifest.steps[idx].parallel_workers_before = Some(0);
+            manifest.steps[idx].parallel_workers_after = Some(workers_launched);
+            manifest.steps[idx].parallel_workers_delta = Some(workers_launched);
         }
         write_manifest_if_requested(&args, &config, &manifest).await?;
 
@@ -1378,6 +1372,31 @@ fn parallel_worker_result_row(manifest: &SuiteManifest, step: &StepRecord) -> Op
                 ("delta".into(), delta.to_string()),
             ]),
         ),
+    })
+}
+
+async fn capture_parallel_workers_from_load_artifacts(step: &StepRecord) -> Result<i64> {
+    for artifact in &step.expected_artifacts {
+        let path = Path::new(artifact);
+        let Ok(raw) = tokio::fs::read_to_string(path).await else {
+            continue;
+        };
+        if let Some(workers_launched) = parse_parallel_workers_from_load_artifact(&raw) {
+            return Ok(workers_launched);
+        }
+    }
+    bail!(
+        "load step {:?} requested capture_parallel_workers but no ec_ivf build timing row with workers_launched was found in expected artifacts",
+        step.name
+    )
+}
+
+fn parse_parallel_workers_from_load_artifact(raw: &str) -> Option<i64> {
+    raw.lines().find_map(|line| {
+        parse_ec_ivf_build_timing_line(line)?
+            .get("workers_launched")?
+            .parse::<i64>()
+            .ok()
     })
 }
 
@@ -2511,59 +2530,6 @@ async fn spawn_step(
         .status()
         .await
         .wrap_err_with(|| format!("spawning {}", exe.display()))
-}
-
-async fn query_parallel_workers_launched(
-    exe: &Path,
-    conn: &ConnectionOptions,
-    defaults: &SuiteDefaults,
-) -> Result<i64> {
-    let pg = defaults
-        .pg
-        .context("load step capture_parallel_workers requires defaults.pg")?;
-    let sql =
-        "SELECT pg_stat_get_db_parallel_workers_launched(oid) FROM pg_database WHERE datname = current_database();";
-    let args = child_command_args(
-        conn,
-        vec![
-            "dev".into(),
-            "sql".into(),
-            "--pg".into(),
-            pg.to_string(),
-            "--sql".into(),
-            sql.into(),
-        ],
-    );
-    let mut command = Command::new(exe);
-    command.args(&args);
-    if let Some(password) = &conn.password {
-        command.env("PGPASSWORD", password);
-    }
-    let output = command.output().await.wrap_err_with(|| {
-        format!(
-            "spawning parallel worker counter query: {}",
-            shell_join(&args)
-        )
-    })?;
-    if !output.status.success() {
-        bail!(
-            "parallel worker counter query failed with {}",
-            format_exit_status(output.status)
-        );
-    }
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    parse_parallel_worker_counter(&stdout).with_context(|| {
-        format!(
-            "parsing parallel worker counter query output: {:?}",
-            stdout.trim()
-        )
-    })
-}
-
-fn parse_parallel_worker_counter(raw: &str) -> Option<i64> {
-    raw.split_whitespace()
-        .filter_map(|token| token.parse::<i64>().ok())
-        .next()
 }
 
 fn child_command_args(conn: &ConnectionOptions, mut step_args: Vec<String>) -> Vec<String> {
@@ -3973,13 +3939,14 @@ mod tests {
     }
 
     #[test]
-    fn parses_parallel_worker_counter_output() {
+    fn parses_parallel_workers_from_loader_timing_artifact() {
+        let raw = "[loader] copied corpus table task71_real10k_w4 in 0.123s\n\
+                   [loader] ec_ivf build timing: requested_workers=4 workers_launched=4 heap_tuples=10000 index_tuples=10000\n";
+        assert_eq!(parse_parallel_workers_from_load_artifact(raw), Some(4));
         assert_eq!(
-            parse_parallel_worker_counter("tqvector_bench\t17\n"),
-            Some(17)
+            parse_parallel_workers_from_load_artifact("[loader] copied corpus table x in 0.123s\n"),
+            None
         );
-        assert_eq!(parse_parallel_worker_counter("17\n"), Some(17));
-        assert_eq!(parse_parallel_worker_counter("no rows"), None);
     }
 
     #[test]

@@ -17,6 +17,7 @@ use super::concurrent_dsm_state::{
 };
 use super::{build, graph, insert, options, page, search, shared, source};
 use crate::am::common::callback::{pg_am_callback, pg_callback};
+use crate::am::common::index_info::IndexInfoView;
 use crate::storage::lock_guard::LwLockGuard;
 use crate::storage::relation_guard::{HeapRelationGuard, IndexRelationGuard};
 use crate::storage::snapshot_guard::RegisteredSnapshotGuard;
@@ -2943,8 +2944,7 @@ unsafe fn parallel_build_worker_main(seg: *mut pg_sys::dsm_segment, toc: *mut pg
         encoded_tuples: 0,
     };
 
-    let mut index_info =
-        super::index_info::IndexInfoView::build_borrowed(index_relation, "parallel build worker");
+    let mut index_info = IndexInfoView::build_borrowed(index_relation, "parallel build worker");
     index_info.set_concurrent(is_concurrent);
     // SAFETY: `shared` contains the table_parallelscan_initialize state and
     // `heap_relation` is open in this worker; all relation, IndexInfo,

@@ -2,7 +2,7 @@ use pgrx::pg_sys;
 
 use crate::am::common::{
     datum::{AttnumLookup, FlatFloat4Kind, FlatFloat4Source},
-    heap_slot,
+    heap_slot, index_info,
 };
 
 use super::page;
@@ -376,7 +376,7 @@ pub(crate) fn resolve_indexed_ecvector_attribute(
     index_relation: pg_sys::Relation,
     label: &str,
 ) -> SourceAttribute {
-    let index_info = super::index_info::IndexInfoGuard::build(index_relation, label);
+    let index_info = index_info::IndexInfoGuard::build(index_relation, label);
     // SAFETY: `index_info` was checked non-null and belongs to this index.
     let attribute = resolve_indexed_ecvector_attribute_from_index_info(
         heap_relation,
@@ -418,7 +418,7 @@ pub(crate) fn resolve_indexed_vector_attribute(
     index_relation: pg_sys::Relation,
     label: &str,
 ) -> IndexedVectorAttribute {
-    let index_info = super::index_info::IndexInfoGuard::build(index_relation, label);
+    let index_info = index_info::IndexInfoGuard::build(index_relation, label);
     // SAFETY: `index_info` was checked non-null and belongs to this index.
     let attribute =
         resolve_indexed_vector_attribute_from_index_info(heap_relation, index_info.as_ptr(), label);

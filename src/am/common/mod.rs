@@ -5,6 +5,7 @@ pub(crate) mod detoast;
 pub(crate) mod dsm;
 pub(crate) mod explain;
 pub(crate) mod heap_slot;
+pub(crate) mod index_info;
 pub(crate) mod parallel;
 pub(crate) mod parallel_context;
 pub(crate) mod parallel_slot;
