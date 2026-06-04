@@ -649,15 +649,13 @@ impl BuildState {
                     }
                     None => (tuple.gamma, tuple.payload.clone()),
                 };
-                let posting = page::IvfPostingTuple {
-                    list_id: list_id_u32(list_id)?,
-                    deleted: false,
-                    heaptids: vec![tuple.heap_tid],
+                posting_tids_by_list[list_id].push(data_pages.insert_ivf_single_heaptid_posting(
+                    list_id_u32(list_id)?,
+                    tuple.heap_tid,
                     gamma,
-                    rerank_tid: ItemPointer::INVALID,
-                    payload,
-                };
-                posting_tids_by_list[list_id].push(data_pages.insert_ivf_posting(&posting)?);
+                    ItemPointer::INVALID,
+                    &payload,
+                )?);
             }
             if !tuple_indices.is_empty() {
                 let head = posting_tids_by_list[list_id]

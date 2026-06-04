@@ -1092,6 +1092,33 @@ impl IvfPostingTuple {
     pub(super) const fn encoded_len(payload_len: usize) -> usize {
         POSTING_FIXED_BYTES + payload_len
     }
+
+    pub(super) fn encode_single_heaptid(
+        list_id: u32,
+        deleted: bool,
+        heaptid: ItemPointer,
+        gamma: f32,
+        rerank_tid: ItemPointer,
+        payload: &[u8],
+    ) -> Result<Vec<u8>, String> {
+        if !gamma.is_finite() {
+            return Err("ec_ivf posting tuple gamma must be finite".into());
+        }
+
+        let mut out = Vec::with_capacity(Self::encoded_len(payload.len()));
+        out.push(IVF_POSTING_TAG);
+        out.extend_from_slice(&list_id.to_le_bytes());
+        out.push(if deleted { POSTING_FLAG_DELETED } else { 0 });
+        out.push(1);
+        heaptid.encode_into(&mut out);
+        for _ in 1..HEAPTID_INLINE_CAPACITY {
+            ItemPointer::INVALID.encode_into(&mut out);
+        }
+        out.extend_from_slice(&gamma.to_le_bytes());
+        rerank_tid.encode_into(&mut out);
+        out.extend_from_slice(payload);
+        Ok(out)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1230,6 +1257,19 @@ impl DataPage {
         self.insert_raw_tuple(tuple.encode()?)
     }
 
+    pub(super) fn insert_ivf_single_heaptid_posting(
+        &mut self,
+        list_id: u32,
+        heaptid: ItemPointer,
+        gamma: f32,
+        rerank_tid: ItemPointer,
+        payload: &[u8],
+    ) -> Result<ItemPointer, String> {
+        self.insert_raw_tuple(IvfPostingTuple::encode_single_heaptid(
+            list_id, false, heaptid, gamma, rerank_tid, payload,
+        )?)
+    }
+
     pub(super) fn insert_ivf_pq_codebook(
         &mut self,
         tuple: &IvfPqCodebookTuple,
@@ -1295,6 +1335,19 @@ impl DataPageChain {
         tuple: &IvfPostingTuple,
     ) -> Result<ItemPointer, String> {
         self.insert_raw_tuple(tuple.encode()?)
+    }
+
+    pub(super) fn insert_ivf_single_heaptid_posting(
+        &mut self,
+        list_id: u32,
+        heaptid: ItemPointer,
+        gamma: f32,
+        rerank_tid: ItemPointer,
+        payload: &[u8],
+    ) -> Result<ItemPointer, String> {
+        self.insert_raw_tuple(IvfPostingTuple::encode_single_heaptid(
+            list_id, false, heaptid, gamma, rerank_tid, payload,
+        )?)
     }
 
     pub(super) fn insert_ivf_pq_codebook(
@@ -2651,6 +2704,31 @@ mod tests {
         assert_eq!(borrowed.heaptid_count(), tuple.heaptids.len());
         assert_eq!(borrowed.collect_heaptids(), tuple.heaptids);
         assert_eq!(borrowed.payload, tuple.payload.as_slice());
+    }
+
+    #[test]
+    fn single_heaptid_posting_encoder_matches_generic_encoder() {
+        let tuple = IvfPostingTuple {
+            list_id: 2,
+            deleted: false,
+            heaptids: vec![tid(1, 1)],
+            gamma: 0.75,
+            rerank_tid: ItemPointer::INVALID,
+            payload: vec![1, 2, 3, 4, 5],
+        };
+
+        let generic = tuple.encode().unwrap();
+        let single = IvfPostingTuple::encode_single_heaptid(
+            tuple.list_id,
+            tuple.deleted,
+            tuple.heaptids[0],
+            tuple.gamma,
+            tuple.rerank_tid,
+            &tuple.payload,
+        )
+        .unwrap();
+
+        assert_eq!(single, generic);
     }
 
     #[test]
