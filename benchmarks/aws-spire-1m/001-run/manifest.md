@@ -60,8 +60,14 @@ target/debug/ecaz cloud pause --profile 1m --database postgres \
   additional rows were emitted because the synced suite manifest retained
   `${artifact_dir}` placeholders for two step-local expected artifacts.
 - `artifacts/minimal/suite-report.md`: markdown suite report.
+- `artifacts/pipeline-recall-cache-500/`: successful q500 cache-backed SPIRE
+  pipeline recall run at `nprobe=96`.
+- `artifacts/pipeline-recall-cache-sweep-500/`: failed q500 cache-backed sweep
+  attempts; `ssm-error-summary.log` records the top-graph search-list guard.
 - `artifacts/cloud-pause-after-minimal.log`: pause request for DB and loader instances.
 - `artifacts/cloud-status-final-stopped.log`: final cloud status, `state: paused`, `$0.00/hr running`.
+- `artifacts/cloud-status-final-after-recall-sweep-500-fail.log`: final cloud
+  status after the failed sweep attempts, `state: paused`, `$0.00/hr running`.
 
 Note: the suite report records two missing expected artifacts because the step-local
 `log_output` / `log_file` values with `${artifact_dir}` were not expanded before
@@ -169,3 +175,13 @@ cost:     ~$0.00/hr running, ~$8.00/mo retained storage
   primary-key equality predicate. The follow-up
   `suite-spire-pipeline-recall-cache-500.json` used the SPIRE pipeline cache
   path and completed successfully with recall@10 `0.9832`.
+- On 2026-06-04, `suite-spire-pipeline-recall-cache-sweep-500.json` attempted
+  a cache-backed q500 SPIRE sweep over `nprobe=64,96,128,256`, then
+  `nprobe=96,128,256`. Both runs failed before producing normalized
+  `results.jsonl` rows because this existing 1M SPIRE index cannot scan those
+  requested widths without a rebuilt top-graph search-list setting:
+  `ERROR: ec_spire top graph search list size must be at least route count`.
+  The failed rerun artifacts are preserved under
+  `artifacts/pipeline-recall-cache-sweep-500/`; the completed recall number for
+  the current built index is therefore the successful q500 `nprobe=96` row
+  above.
