@@ -1,6 +1,6 @@
 # Task 80 AWS 1M Block16 Pruning
 
-Status: in progress
+Status: partial AWS run complete
 
 ## Purpose
 
@@ -44,4 +44,38 @@ The accepted AWS row should compare against:
 
 ## Results
 
-Pending AWS run.
+The AWS run produced a valid 1M `leaf_block_rows=16` / tg256 index and one full
+post-repair q500 recall/latency row. The retained AWS extension catalog was
+missing `ec_spire_index_scan_leaf_candidate_snapshot(oid, real[])`; this packet
+records the catalog-only repair used to register that pgrx function before the
+post-repair retry.
+
+Index build:
+
+- `aws_spire_1m_rabitq_t80_block16_tg256_idx`
+- size `872 MB` / storage snapshot `872.1 MiB`
+- rows `990,000`
+- build time `1,704,036 ms`
+
+Completed row, global block cap `1152`, q500:
+
+| nprobe | recall@10 | p50 | p95 | candidates | heap rerank |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 96 | 0.9832 | 301.121 ms | 377.482 ms | 9,213,846 | 12,500 |
+| 128 | 0.9832 | 320.201 ms | 422.479 ms | 9,213,838 | 12,500 |
+| 256 | 0.9832 | 319.523 ms | 417.068 ms | 9,213,838 | 12,500 |
+
+The full matrix did not complete in this run. The post-repair SSM invocation hit
+the one-hour execution timeout while the `2048` global cap pipeline was still
+running, so `4096` and `8192` were not reached. AWS profile `1m` was paused
+after syncing the completed artifacts.
+
+Primary evidence:
+
+- `artifacts/manifest.md`
+- `artifacts/aws-1m-block16-pruning-query-after-repair/pipeline-spire-1m-rabitq-block16-global1152.log`
+- `artifacts/aws-1m-block16-pruning-query-after-repair/funnel-spire-1m-rabitq-block16-global1152.jsonl`
+- `artifacts/aws-1m-block16-pruning-query-after-repair/storage-spire-1m-rabitq-block16-tg256.log`
+- `artifacts/ssm-register-candidate-snapshot.json`
+- `artifacts/ssm-query-after-repair-timeout.json`
+- `artifacts/cloud-status-after-task80-pause.log`
