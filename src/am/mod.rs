@@ -43,7 +43,6 @@ pub(crate) use self::ec_hnsw::{
 };
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) use self::ec_ivf::build_tuple_struct_size_for_test as ivf_build_tuple_struct_size_for_test;
-#[cfg(any(test, feature = "pg_test"))]
 pub(crate) use self::ec_ivf::debug_last_build_timing as ivf_debug_last_build_timing;
 pub(crate) use self::ec_ivf::{
     index_admin_snapshot as ivf_index_admin_snapshot,

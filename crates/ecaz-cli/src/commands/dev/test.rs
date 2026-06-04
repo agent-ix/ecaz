@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use std::process::Stdio;
 use tokio::process::Command;
 
-use crate::psql;
+use crate::{profiles, psql};
 
 use super::support::{
     find_pgrx_install, repo_root, resolve_pgrx_home, run_status, DEFAULT_PG_MAJOR,
@@ -18,13 +18,18 @@ pub enum TestCommand {
     Pgrx(PgrxTestArgs),
     /// Start a repo-local PG18 cluster with preload enabled and validate shared pgstat visibility.
     Pg18PreloadPgstat(Pg18PreloadPgstatArgs),
+    /// Run the Task 71 one-cell IVF parallel-build probe against a local test DB.
+    IvfParallelBuildProbe(IvfParallelBuildProbeArgs),
 }
 
 impl TestCommand {
-    pub async fn run(self, _database: &str) -> Result<()> {
+    pub async fn run(self, conn: &psql::ConnectionOptions) -> Result<()> {
         match self {
             TestCommand::Pgrx(args) => run_pgrx(args).await,
             TestCommand::Pg18PreloadPgstat(args) => run_pg18_preload_pgstat(args).await,
+            TestCommand::IvfParallelBuildProbe(args) => {
+                run_ivf_parallel_build_probe(conn, args).await
+            }
         }
     }
 }
@@ -51,6 +56,25 @@ pub struct Pg18PreloadPgstatArgs {
     pgrx_home: Option<PathBuf>,
 }
 
+#[derive(Args, Debug)]
+pub struct IvfParallelBuildProbeArgs {
+    /// Drop the probe corpus/query tables before loading.
+    #[arg(long)]
+    drop_first: bool,
+
+    /// Fixture prefix used for probe tables and index. Defaults to task71_probe_w<workers>.
+    #[arg(long)]
+    prefix: Option<String>,
+
+    /// Requested parallel workers for both table reloption and session GUCs.
+    #[arg(long, default_value_t = 2)]
+    workers: i32,
+
+    /// Packet-local artifact directory for the loader log.
+    #[arg(long, default_value = "reviews/task-71/003-worker-curve/artifacts")]
+    artifact_dir: PathBuf,
+}
+
 async fn run_pgrx(args: PgrxTestArgs) -> Result<()> {
     let repo_root = repo_root()?;
     let mut command = Command::new("cargo");
@@ -64,6 +88,134 @@ async fn run_pgrx(args: PgrxTestArgs) -> Result<()> {
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit());
     run_status(command).await
+}
+
+async fn run_ivf_parallel_build_probe(
+    conn: &psql::ConnectionOptions,
+    args: IvfParallelBuildProbeArgs,
+) -> Result<()> {
+    if args.workers < 0 {
+        bail!("--workers must be non-negative");
+    }
+    let prefix = args
+        .prefix
+        .unwrap_or_else(|| format!("task71_probe_w{}", args.workers));
+    profiles::validate_ident(&prefix).wrap_err_with(|| format!("invalid --prefix {prefix:?}"))?;
+    fs::create_dir_all(&args.artifact_dir)
+        .wrap_err_with(|| format!("creating {}", args.artifact_dir.display()))?;
+
+    ensure_ivf_build_timing_function(conn).await?;
+
+    if args.drop_first {
+        let client = psql::connect(conn).await?;
+        client
+            .batch_execute(&format!(
+                "DROP TABLE IF EXISTS {prefix}_corpus, {prefix}_queries CASCADE;",
+                prefix = prefix
+            ))
+            .await
+            .wrap_err("dropping IVF parallel-build probe tables")?;
+        crate::ecaz_println!("[ivf-probe] dropped prefix {}", prefix);
+    }
+
+    let exe = std::env::current_exe().wrap_err("resolving current ecaz binary")?;
+    let log_file = args.artifact_dir.join(format!(
+        "probe-load-real10k-w{}-after-loader-timing.log",
+        args.workers
+    ));
+    let pgoptions = format!(
+        "-c max_parallel_maintenance_workers={} -c max_parallel_workers={}",
+        args.workers, args.workers
+    );
+    let mut command = Command::new(exe);
+    command
+        .env("PGOPTIONS", pgoptions)
+        .arg("--database")
+        .arg(&conn.database);
+    if let Some(host) = &conn.host {
+        command.arg("--host").arg(host);
+    }
+    if let Some(port) = conn.port {
+        command.arg("--port").arg(port.to_string());
+    }
+    if let Some(user) = &conn.user {
+        command.arg("--user").arg(user);
+    }
+    if let Some(password) = &conn.password {
+        command.env("PGPASSWORD", password);
+    }
+    command
+        .arg("--log-file")
+        .arg(&log_file)
+        .arg("corpus")
+        .arg("load")
+        .arg("--prefix")
+        .arg(&prefix)
+        .arg("--profile")
+        .arg("ec_ivf")
+        .arg("--corpus-file")
+        .arg("data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_corpus.tsv")
+        .arg("--queries-file")
+        .arg("data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_queries.tsv")
+        .arg("--manifest-file")
+        .arg("data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_manifest.json")
+        .arg("--allow-manifest-mismatch")
+        .arg("--bits")
+        .arg("4")
+        .arg("--seed")
+        .arg("42")
+        .arg("--table-reloption")
+        .arg(format!("parallel_workers={}", args.workers))
+        .arg("--reloption")
+        .arg("storage_format=pq_fastscan")
+        .arg("--reloption")
+        .arg("pq_group_size=8")
+        .arg("--reloption")
+        .arg("nlists=64")
+        .arg("--reloption")
+        .arg("nprobe=48")
+        .arg("--reloption")
+        .arg("rerank=heap_f32")
+        .arg("--reloption")
+        .arg("rerank_width=750")
+        .stdin(Stdio::inherit())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit());
+
+    crate::ecaz_println!(
+        "[ivf-probe] running prefix={} workers={} log={}",
+        prefix,
+        args.workers,
+        log_file.display()
+    );
+    run_status(command).await
+}
+
+async fn ensure_ivf_build_timing_function(conn: &psql::ConnectionOptions) -> Result<()> {
+    let client = psql::connect(conn).await?;
+    client
+        .batch_execute(
+            "CREATE OR REPLACE FUNCTION ec_ivf_last_build_timing()
+             RETURNS TABLE (
+                 requested_workers bigint,
+                 workers_launched bigint,
+                 heap_tuples bigint,
+                 index_tuples bigint,
+                 heap_ingest_us bigint,
+                 parallel_begin_us bigint,
+                 parallel_drain_us bigint,
+                 parallel_sort_push_us bigint,
+                 parallel_worker_tuple_buffer_capacity bigint,
+                 parallel_worker_tuple_buffer_struct_bytes bigint
+             )
+             STRICT
+             LANGUAGE c
+             AS '$libdir/ecaz', 'ec_ivf_last_build_timing_wrapper';",
+        )
+        .await
+        .wrap_err("creating ec_ivf_last_build_timing() probe helper")?;
+    crate::ecaz_println!("[ivf-probe] ensured ec_ivf_last_build_timing()");
+    Ok(())
 }
 
 async fn run_pg18_preload_pgstat(args: Pg18PreloadPgstatArgs) -> Result<()> {

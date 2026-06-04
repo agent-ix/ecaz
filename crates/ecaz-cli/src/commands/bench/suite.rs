@@ -1668,11 +1668,30 @@ fn parse_load_rows(raw: &str) -> Vec<(String, BTreeMap<String, String>)> {
                 "load_timing".into(),
                 timed_values("build_index", &name, seconds),
             ));
+        } else if let Some(values) = parse_ec_ivf_build_timing_line(line) {
+            rows.push(("ec_ivf_build_timing".into(), values));
         } else if let Some((name, seconds)) = parse_timed_loader_line(line, "completed prefix ") {
             rows.push(("load_timing".into(), timed_values("total", &name, seconds)));
         }
     }
     rows
+}
+
+fn parse_ec_ivf_build_timing_line(line: &str) -> Option<BTreeMap<String, String>> {
+    let rest = line
+        .trim_start()
+        .strip_prefix("[loader] ec_ivf build timing: ")?;
+    let mut values = BTreeMap::new();
+    for part in rest.split_whitespace() {
+        let (key, value) = part.split_once('=')?;
+        value.parse::<i64>().ok()?;
+        values.insert(key.to_owned(), value.to_owned());
+    }
+    if values.is_empty() {
+        None
+    } else {
+        Some(values)
+    }
 }
 
 fn parse_compare_timed_line(line: &str, prefix: &str) -> Option<(String, String)> {
@@ -4484,6 +4503,26 @@ mod tests {
         assert_eq!(
             rows[1].1.get("seconds").map(String::as_str),
             Some("0.183480")
+        );
+    }
+
+    #[test]
+    fn parses_ec_ivf_build_timing_rows() {
+        let rows = parse_load_rows(
+            "[loader] ec_ivf build timing: requested_workers=2 workers_launched=2 heap_tuples=10000 index_tuples=10000 heap_ingest_us=100 parallel_begin_us=200 parallel_drain_us=300 parallel_sort_push_us=400 parallel_worker_tuple_buffer_capacity=16384 parallel_worker_tuple_buffer_struct_bytes=1572864\n",
+        );
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].0, "ec_ivf_build_timing");
+        assert_eq!(
+            rows[0].1.get("workers_launched").map(String::as_str),
+            Some("2")
+        );
+        assert_eq!(
+            rows[0]
+                .1
+                .get("parallel_worker_tuple_buffer_capacity")
+                .map(String::as_str),
+            Some("16384")
         );
     }
 

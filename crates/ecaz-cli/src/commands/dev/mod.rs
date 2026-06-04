@@ -64,7 +64,7 @@ impl DevCommand {
             DevCommand::SpireMulticluster { command } => command.run(&conn.database).await,
             DevCommand::Sql(args) => sql::run(conn, args).await,
             DevCommand::PgUpgradeSmoke(args) => pg_upgrade::run(args).await,
-            DevCommand::Test { command } => command.run(&conn.database).await,
+            DevCommand::Test { command } => command.run(conn).await,
             DevCommand::ResourceTest(args) => resource_test::run(conn, args).await,
         }
     }

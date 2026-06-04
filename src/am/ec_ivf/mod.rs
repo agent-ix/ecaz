@@ -67,7 +67,6 @@ pub(crate) fn register_gucs() {
 
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) use self::build::build_tuple_struct_size_for_test;
-#[cfg(any(test, feature = "pg_test"))]
 pub(crate) use self::build::debug_last_build_timing;
 
 fn not_implemented(callback: &str) -> ! {

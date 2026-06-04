@@ -18096,6 +18096,41 @@ fn ec_ivf_index_page_ownership(
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_ivf_last_build_timing() -> TableIterator<
+    'static,
+    (
+        name!(requested_workers, i64),
+        name!(workers_launched, i64),
+        name!(heap_tuples, i64),
+        name!(index_tuples, i64),
+        name!(heap_ingest_us, i64),
+        name!(parallel_begin_us, i64),
+        name!(parallel_drain_us, i64),
+        name!(parallel_sort_push_us, i64),
+        name!(parallel_worker_tuple_buffer_capacity, i64),
+        name!(parallel_worker_tuple_buffer_struct_bytes, i64),
+    ),
+> {
+    let timing = am::ivf_debug_last_build_timing();
+    TableIterator::once((
+        i64::try_from(timing.requested_workers).expect("requested workers should fit in i64"),
+        i64::try_from(timing.workers_launched).expect("workers launched should fit in i64"),
+        i64::try_from(timing.heap_tuples).expect("heap tuple count should fit in i64"),
+        i64::try_from(timing.index_tuples).expect("index tuple count should fit in i64"),
+        i64::try_from(timing.heap_ingest_us).expect("heap ingest timing should fit in i64"),
+        i64::try_from(timing.parallel_begin_us).expect("parallel begin timing should fit in i64"),
+        i64::try_from(timing.parallel_drain_us).expect("parallel drain timing should fit in i64"),
+        i64::try_from(timing.parallel_sort_push_us)
+            .expect("parallel sort/push timing should fit in i64"),
+        i64::try_from(timing.parallel_worker_tuple_buffer_capacity)
+            .expect("worker tuple buffer capacity should fit in i64"),
+        i64::try_from(timing.parallel_worker_tuple_buffer_struct_bytes)
+            .expect("worker tuple buffer bytes should fit in i64"),
+    ))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_spire_index_cost_snapshot(
     index_oid: pg_sys::Oid,
 ) -> TableIterator<
