@@ -44,6 +44,11 @@ static LAST_BUILD_INDEX_TUPLES: AtomicU64 = AtomicU64::new(0);
 static LAST_BUILD_HEAP_INGEST_US: AtomicU64 = AtomicU64::new(0);
 static LAST_BUILD_TRAIN_MODEL_US: AtomicU64 = AtomicU64::new(0);
 static LAST_BUILD_STAGE_BUILD_PLAN_US: AtomicU64 = AtomicU64::new(0);
+static LAST_BUILD_STAGE_PQ_TRAIN_US: AtomicU64 = AtomicU64::new(0);
+static LAST_BUILD_STAGE_CENTROIDS_US: AtomicU64 = AtomicU64::new(0);
+static LAST_BUILD_STAGE_ASSIGN_US: AtomicU64 = AtomicU64::new(0);
+static LAST_BUILD_STAGE_POSTINGS_US: AtomicU64 = AtomicU64::new(0);
+static LAST_BUILD_STAGE_DIRECTORY_US: AtomicU64 = AtomicU64::new(0);
 static LAST_BUILD_FLUSH_BUILD_PLAN_US: AtomicU64 = AtomicU64::new(0);
 static LAST_BUILD_PARALLEL_BEGIN_US: AtomicU64 = AtomicU64::new(0);
 static LAST_BUILD_PARALLEL_DRAIN_US: AtomicU64 = AtomicU64::new(0);
@@ -60,6 +65,11 @@ pub(crate) struct BuildTimingSnapshot {
     pub(crate) heap_ingest_us: u64,
     pub(crate) train_model_us: u64,
     pub(crate) stage_build_plan_us: u64,
+    pub(crate) stage_pq_train_us: u64,
+    pub(crate) stage_centroids_us: u64,
+    pub(crate) stage_assign_us: u64,
+    pub(crate) stage_postings_us: u64,
+    pub(crate) stage_directory_us: u64,
     pub(crate) flush_build_plan_us: u64,
     pub(crate) parallel_begin_us: u64,
     pub(crate) parallel_drain_us: u64,
@@ -84,6 +94,15 @@ pub(super) struct IvfBuildPlan {
     directory_tids: Vec<ItemPointer>,
     posting_tids_by_list: Vec<Vec<ItemPointer>>,
     directory_entries: Vec<page::IvfListDirectoryTuple>,
+}
+
+#[derive(Debug, Default, Copy, Clone, PartialEq, Eq)]
+struct StageBuildTiming {
+    pq_train_us: u64,
+    centroids_us: u64,
+    assign_us: u64,
+    postings_us: u64,
+    directory_us: u64,
 }
 
 impl IvfBuildPlan {
@@ -212,6 +231,7 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_ambuild(
         let heap_ingest_us = elapsed_us(heap_ingest_start);
         let mut train_model_us = 0_u64;
         let mut stage_build_plan_us = 0_u64;
+        let mut stage_timing = StageBuildTiming::default();
         let mut flush_build_plan_us = 0_u64;
         let index_tuples = if state.scanned_tuples == 0 {
             0.0
@@ -222,9 +242,10 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_ambuild(
                 .unwrap_or_else(|e| pgrx::error!("ec_ivf centroid training failed: {e}"));
             train_model_us = elapsed_us(train_start);
             let stage_start = Instant::now();
-            let plan = state
-                .stage_build_plan(&model)
+            let (plan, measured_stage_timing) = state
+                .stage_build_plan_with_timing(&model)
                 .unwrap_or_else(|e| pgrx::error!("ec_ivf populated index staging failed: {e}"));
+            stage_timing = measured_stage_timing;
             stage_build_plan_us = elapsed_us(stage_start);
             let flush_start = Instant::now();
             flush_build_plan(index_relation, &plan);
@@ -247,6 +268,11 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_ambuild(
             heap_ingest_us,
             train_model_us,
             stage_build_plan_us,
+            stage_pq_train_us: stage_timing.pq_train_us,
+            stage_centroids_us: stage_timing.centroids_us,
+            stage_assign_us: stage_timing.assign_us,
+            stage_postings_us: stage_timing.postings_us,
+            stage_directory_us: stage_timing.directory_us,
             flush_build_plan_us,
             parallel_begin_us,
             parallel_drain_us,
@@ -272,6 +298,11 @@ pub(crate) fn debug_last_build_timing() -> BuildTimingSnapshot {
         heap_ingest_us: LAST_BUILD_HEAP_INGEST_US.load(AtomicOrdering::Acquire),
         train_model_us: LAST_BUILD_TRAIN_MODEL_US.load(AtomicOrdering::Acquire),
         stage_build_plan_us: LAST_BUILD_STAGE_BUILD_PLAN_US.load(AtomicOrdering::Acquire),
+        stage_pq_train_us: LAST_BUILD_STAGE_PQ_TRAIN_US.load(AtomicOrdering::Acquire),
+        stage_centroids_us: LAST_BUILD_STAGE_CENTROIDS_US.load(AtomicOrdering::Acquire),
+        stage_assign_us: LAST_BUILD_STAGE_ASSIGN_US.load(AtomicOrdering::Acquire),
+        stage_postings_us: LAST_BUILD_STAGE_POSTINGS_US.load(AtomicOrdering::Acquire),
+        stage_directory_us: LAST_BUILD_STAGE_DIRECTORY_US.load(AtomicOrdering::Acquire),
         flush_build_plan_us: LAST_BUILD_FLUSH_BUILD_PLAN_US.load(AtomicOrdering::Acquire),
         parallel_begin_us: LAST_BUILD_PARALLEL_BEGIN_US.load(AtomicOrdering::Acquire),
         parallel_drain_us: LAST_BUILD_PARALLEL_DRAIN_US.load(AtomicOrdering::Acquire),
@@ -292,6 +323,11 @@ fn reset_debug_last_build_timing() {
         heap_ingest_us: 0,
         train_model_us: 0,
         stage_build_plan_us: 0,
+        stage_pq_train_us: 0,
+        stage_centroids_us: 0,
+        stage_assign_us: 0,
+        stage_postings_us: 0,
+        stage_directory_us: 0,
         flush_build_plan_us: 0,
         parallel_begin_us: 0,
         parallel_drain_us: 0,
@@ -309,6 +345,11 @@ fn record_debug_last_build_timing(snapshot: BuildTimingSnapshot) {
     LAST_BUILD_HEAP_INGEST_US.store(snapshot.heap_ingest_us, AtomicOrdering::Release);
     LAST_BUILD_TRAIN_MODEL_US.store(snapshot.train_model_us, AtomicOrdering::Release);
     LAST_BUILD_STAGE_BUILD_PLAN_US.store(snapshot.stage_build_plan_us, AtomicOrdering::Release);
+    LAST_BUILD_STAGE_PQ_TRAIN_US.store(snapshot.stage_pq_train_us, AtomicOrdering::Release);
+    LAST_BUILD_STAGE_CENTROIDS_US.store(snapshot.stage_centroids_us, AtomicOrdering::Release);
+    LAST_BUILD_STAGE_ASSIGN_US.store(snapshot.stage_assign_us, AtomicOrdering::Release);
+    LAST_BUILD_STAGE_POSTINGS_US.store(snapshot.stage_postings_us, AtomicOrdering::Release);
+    LAST_BUILD_STAGE_DIRECTORY_US.store(snapshot.stage_directory_us, AtomicOrdering::Release);
     LAST_BUILD_FLUSH_BUILD_PLAN_US.store(snapshot.flush_build_plan_us, AtomicOrdering::Release);
     LAST_BUILD_PARALLEL_BEGIN_US.store(snapshot.parallel_begin_us, AtomicOrdering::Release);
     LAST_BUILD_PARALLEL_DRAIN_US.store(snapshot.parallel_drain_us, AtomicOrdering::Release);
@@ -475,6 +516,15 @@ impl BuildState {
         &self,
         model: &training::SphericalKMeansModel,
     ) -> Result<IvfBuildPlan, String> {
+        self.stage_build_plan_with_timing(model)
+            .map(|(plan, _timing)| plan)
+    }
+
+    fn stage_build_plan_with_timing(
+        &self,
+        model: &training::SphericalKMeansModel,
+    ) -> Result<(IvfBuildPlan, StageBuildTiming), String> {
+        let mut timing = StageBuildTiming::default();
         let dimensions = self
             .dimensions
             .ok_or_else(|| "bulk assignment requires at least one tuple".to_owned())?;
@@ -496,7 +546,9 @@ impl BuildState {
         if !page::list_directory_tuple_fits(self.page_size) {
             return Err("list directory tuple does not fit on a page".into());
         }
+        let pq_train_start = Instant::now();
         let pq_model = self.train_pq_fastscan_model(dimensions)?;
+        timing.pq_train_us = elapsed_us(pq_train_start);
         let pq_centroid_count = pq_model
             .as_ref()
             .map(|model| model.group_size * crate::quant::grouped_pq::GROUPED_PQ_CENTROIDS)
@@ -510,6 +562,7 @@ impl BuildState {
         let nlists = model.centroid_count();
         let mut data_pages = DataPageChain::new(self.page_size);
         let mut centroid_tids = Vec::with_capacity(nlists);
+        let centroids_start = Instant::now();
         for (list_id, centroid) in model.centroids.iter().enumerate() {
             let centroid = page::IvfCentroidTuple {
                 list_id: list_id_u32(list_id)?,
@@ -552,17 +605,20 @@ impl BuildState {
                 .copied()
                 .unwrap_or(ItemPointer::INVALID);
         }
+        timing.centroids_us = elapsed_us(centroids_start);
 
         let source_refs = self
             .heap_tuples
             .iter()
             .map(|tuple| tuple.source_vector.as_slice())
             .collect::<Vec<_>>();
+        let assign_start = Instant::now();
         let list_ids = training::assign_vectors_to_centroids(&source_refs, model)?;
         let mut tuple_indices_by_list = vec![Vec::new(); nlists];
         for (tuple_index, list_id) in list_ids.into_iter().enumerate() {
             tuple_indices_by_list[list_id].push(tuple_index);
         }
+        timing.assign_us = elapsed_us(assign_start);
         let pq_posting_quantizer = if pq_model.is_some() {
             Some(IvfQuantizer::resolve_with_pq_group_size_and_bits(
                 self.options.storage_format,
@@ -577,6 +633,7 @@ impl BuildState {
         let mut posting_tids_by_list = vec![Vec::new(); nlists];
         let mut directory_tail_blocks_by_list = vec![None; nlists];
         data_pages.start_new_page_if_current_has_tuples();
+        let postings_start = Instant::now();
         for (list_id, tuple_indices) in tuple_indices_by_list.iter().enumerate() {
             if !tuple_indices.is_empty() {
                 data_pages.start_new_page_if_current_has_tuples();
@@ -631,10 +688,12 @@ impl BuildState {
                 }
             }
         }
+        timing.postings_us = elapsed_us(postings_start);
 
         let mut directory_entries = Vec::with_capacity(nlists);
         let mut directory_tids = Vec::with_capacity(nlists);
         data_pages.start_new_page_if_current_has_tuples();
+        let directory_start = Instant::now();
         for (list_id, posting_tids) in posting_tids_by_list.iter().enumerate() {
             let mut directory = page::IvfListDirectoryTuple::empty(list_id_u32(list_id)?);
             if let (Some(head), Some(tail)) = (posting_tids.first(), posting_tids.last()) {
@@ -651,6 +710,7 @@ impl BuildState {
             directory_tids.push(data_pages.insert_ivf_list_directory(directory)?);
             directory_entries.push(directory);
         }
+        timing.directory_us = elapsed_us(directory_start);
 
         let mut metadata = page::MetadataPage::empty(self.options);
         metadata.dimensions = dimensions;
@@ -673,14 +733,17 @@ impl BuildState {
         metadata.total_live_tuples = u64::try_from(self.heap_tuples.len())
             .map_err(|_| "heap tuple count exceeds u64".to_owned())?;
 
-        Ok(IvfBuildPlan {
-            data_pages,
-            metadata,
-            centroid_tids,
-            directory_tids,
-            posting_tids_by_list,
-            directory_entries,
-        })
+        Ok((
+            IvfBuildPlan {
+                data_pages,
+                metadata,
+                centroid_tids,
+                directory_tids,
+                posting_tids_by_list,
+                directory_entries,
+            },
+            timing,
+        ))
     }
 
     fn train_pq_fastscan_model(

@@ -18211,6 +18211,11 @@ fn ec_ivf_last_build_timing() -> TableIterator<
         name!(heap_ingest_us, i64),
         name!(train_model_us, i64),
         name!(stage_build_plan_us, i64),
+        name!(stage_pq_train_us, i64),
+        name!(stage_centroids_us, i64),
+        name!(stage_assign_us, i64),
+        name!(stage_postings_us, i64),
+        name!(stage_directory_us, i64),
         name!(flush_build_plan_us, i64),
         name!(parallel_begin_us, i64),
         name!(parallel_drain_us, i64),
@@ -18229,6 +18234,11 @@ fn ec_ivf_last_build_timing() -> TableIterator<
         i64::try_from(timing.train_model_us).expect("train model timing should fit in i64"),
         i64::try_from(timing.stage_build_plan_us)
             .expect("stage build plan timing should fit in i64"),
+        i64::try_from(timing.stage_pq_train_us).expect("stage pq train timing should fit in i64"),
+        i64::try_from(timing.stage_centroids_us).expect("stage centroids timing should fit in i64"),
+        i64::try_from(timing.stage_assign_us).expect("stage assign timing should fit in i64"),
+        i64::try_from(timing.stage_postings_us).expect("stage postings timing should fit in i64"),
+        i64::try_from(timing.stage_directory_us).expect("stage directory timing should fit in i64"),
         i64::try_from(timing.flush_build_plan_us)
             .expect("flush build plan timing should fit in i64"),
         i64::try_from(timing.parallel_begin_us).expect("parallel begin timing should fit in i64"),

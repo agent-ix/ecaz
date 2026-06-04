@@ -68,6 +68,11 @@
             name!(heap_ingest_us, i64),
             name!(train_model_us, i64),
             name!(stage_build_plan_us, i64),
+            name!(stage_pq_train_us, i64),
+            name!(stage_centroids_us, i64),
+            name!(stage_assign_us, i64),
+            name!(stage_postings_us, i64),
+            name!(stage_directory_us, i64),
             name!(flush_build_plan_us, i64),
             name!(parallel_begin_us, i64),
             name!(parallel_drain_us, i64),
@@ -85,6 +90,11 @@
             timing.heap_ingest_us as i64,
             timing.train_model_us as i64,
             timing.stage_build_plan_us as i64,
+            timing.stage_pq_train_us as i64,
+            timing.stage_centroids_us as i64,
+            timing.stage_assign_us as i64,
+            timing.stage_postings_us as i64,
+            timing.stage_directory_us as i64,
             timing.flush_build_plan_us as i64,
             timing.parallel_begin_us as i64,
             timing.parallel_drain_us as i64,
@@ -238,7 +248,9 @@
                 .select(
                     "SELECT requested_workers, workers_launched, heap_tuples, index_tuples,
                             heap_ingest_us, train_model_us, stage_build_plan_us,
-                            flush_build_plan_us, parallel_begin_us, parallel_drain_us,
+                            stage_pq_train_us, stage_centroids_us, stage_assign_us,
+                            stage_postings_us, stage_directory_us, flush_build_plan_us,
+                            parallel_begin_us, parallel_drain_us,
                             parallel_sort_push_us, parallel_worker_tuple_buffer_capacity,
                             parallel_worker_tuple_buffer_struct_bytes
                      FROM tests.ec_ivf_debug_last_build_timing()",
@@ -270,21 +282,36 @@
                     .expect("stage_build_plan_us should decode")
                     .unwrap(),
                 row.get::<i64>(8)
-                    .expect("flush_build_plan_us should decode")
+                    .expect("stage_pq_train_us should decode")
                     .unwrap(),
                 row.get::<i64>(9)
-                    .expect("parallel_begin_us should decode")
+                    .expect("stage_centroids_us should decode")
                     .unwrap(),
                 row.get::<i64>(10)
-                    .expect("parallel_drain_us should decode")
+                    .expect("stage_assign_us should decode")
                     .unwrap(),
                 row.get::<i64>(11)
-                    .expect("parallel_sort_push_us should decode")
+                    .expect("stage_postings_us should decode")
                     .unwrap(),
                 row.get::<i64>(12)
-                    .expect("parallel_worker_tuple_buffer_capacity should decode")
+                    .expect("stage_directory_us should decode")
                     .unwrap(),
                 row.get::<i64>(13)
+                    .expect("flush_build_plan_us should decode")
+                    .unwrap(),
+                row.get::<i64>(14)
+                    .expect("parallel_begin_us should decode")
+                    .unwrap(),
+                row.get::<i64>(15)
+                    .expect("parallel_drain_us should decode")
+                    .unwrap(),
+                row.get::<i64>(16)
+                    .expect("parallel_sort_push_us should decode")
+                    .unwrap(),
+                row.get::<i64>(17)
+                    .expect("parallel_worker_tuple_buffer_capacity should decode")
+                    .unwrap(),
+                row.get::<i64>(18)
                     .expect("parallel_worker_tuple_buffer_struct_bytes should decode")
                     .unwrap(),
             )
@@ -307,32 +334,48 @@
             "stage build plan timing should be recorded"
         );
         assert!(
-            build_timing.7 > 0,
-            "flush build plan timing should be recorded"
-        );
-        assert!(
             build_timing.8 > 0,
-            "parallel begin timing should be recorded"
+            "stage centroid timing should be recorded"
         );
         assert!(
             build_timing.9 > 0,
-            "parallel drain timing should be recorded"
+            "stage assign timing should be recorded"
         );
         assert!(
             build_timing.10 > 0,
-            "parallel sort/push timing should be recorded"
-        );
-        assert!(
-            build_timing.11 >= build_timing.2,
-            "worker tuple buffer capacity should cover observed heap tuples"
+            "stage posting timing should be recorded"
         );
         assert!(
             build_timing.11 > 0,
+            "stage directory timing should be recorded"
+        );
+        assert!(
+            build_timing.12 > 0,
+            "flush build plan timing should be recorded"
+        );
+        assert!(
+            build_timing.13 > 0,
+            "parallel begin timing should be recorded"
+        );
+        assert!(
+            build_timing.14 > 0,
+            "parallel drain timing should be recorded"
+        );
+        assert!(
+            build_timing.15 > 0,
+            "parallel sort/push timing should be recorded"
+        );
+        assert!(
+            build_timing.16 >= build_timing.2,
+            "worker tuple buffer capacity should cover observed heap tuples"
+        );
+        assert!(
+            build_timing.16 > 0,
             "worker tuple buffer capacity should prove capture is live"
         );
         assert_eq!(
-            build_timing.12,
-            build_timing.11 * am::ivf_build_tuple_struct_size_for_test() as i64
+            build_timing.17,
+            build_timing.16 * am::ivf_build_tuple_struct_size_for_test() as i64
         );
 
         let index_oid = ec_ivf_index_oid("ec_ivf_parallel_build_idx");
