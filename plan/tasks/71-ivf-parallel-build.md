@@ -1,6 +1,6 @@
 # Task 71: IVF Parallel Build (`amcanbuildparallel = true`)
 
-Status: proposed
+Status: complete - stopped at M5 Option A stop condition (2026-06-03; closeout `reviews/task-71/007-stop-condition-closeout/`)
 Owner: coder (to be assigned). One coder, one branch.
 Priority: 2 (high-value but smaller cross-engine impact than Task 70)
 

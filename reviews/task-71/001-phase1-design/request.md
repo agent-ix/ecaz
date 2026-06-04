@@ -68,6 +68,58 @@ No tests were run for this design-only packet.
 
 Code validation belongs to Phase 2. The first implementation packet should run at least a focused PG18 build smoke that proves workers launch and the generated IVF index scans correctly, plus a focused Rust unit test for message serialization once the coordinator module exists.
 
+## Measured Phase 3 Addendum
+
+Phase 3 evidence in `reviews/task-71/003-worker-curve/` confirms Option A is
+correct but bounded on the local M5 lane. The heap-ingest phase scales, but the
+full build does not reach the Task 71 multi-x criterion because leader-owned
+training and staging dominate the remaining wall time.
+
+The final worker matrix recorded these w1 full-build times and w1 heap-ingest
+shares:
+
+| scale | w1 full build | w1 heap ingest | heap share | ideal ceiling if only heap ingest is parallel |
+|---|---:|---:|---:|---:|
+| real10k | `0.464140s` | `84194us` | ~18.1% | ~1.22x |
+| real25k | `0.721680s` | `203122us` | ~28.1% | ~1.39x |
+| real50k | `1.160000s` | `397605us` | ~34.3% | ~1.52x |
+| real100k | `2.630000s` | `877228us` | ~33.4% | ~1.50x |
+
+Using the measured w8 heap-ingest speedups, the expected full-build speedups
+are ~1.12x, ~1.20x, ~1.26x, and ~1.31x for real10k/25k/50k/100k. The observed
+best full-build speedups were ~1.13x, ~1.18x, ~1.26x, and ~1.30x. That match
+means the Amdahl bound is now measured rather than speculative: Option A is
+launching workers and reducing heap-ingest time, but it cannot produce a
+multi-x full-build win on this host without moving additional train/stage work
+behind a broader Option B/C-style boundary.
+
+Determinism also held in the measured lane. The Phase 2 implementation sorts
+worker tuples by `(block_number, offset_number)` before reusing the existing
+leader build path, and the Phase 3 matrix produced byte-identical ec_ivf index
+sizes across worker counts:
+
+- real10k: `2726298` bytes for w1/w2/w4/w8
+- real25k: `5557453` bytes for w1/w2/w4/w8
+- real50k: `10171187` bytes for w1/w2/w4/w8
+- real100k: `20342374` bytes for w1/w2/w4/w8
+
+Recall matched the Task 31 comparator baselines at every worker count:
+real10k `1.0000`, real25k `0.9990`, real50k `1.0000`, and real100k `0.9820`.
+Those Task 31 baselines are the same fixed recall points cited in packet 003.
+`allow_manifest_mismatch: true` is limited to reusing the staged Task 31
+corpus/query TSVs under Task 71-specific isolated table prefixes; the warning
+is about the destination prefix, not about substituting different corpus
+content.
+
+Packet 004 split the leader timing phases, packet 005 split the staging
+subphases, and packet 006 removed the common build-time one-TID posting
+allocation. Packet 006 improved the one-cell w8 real10k `stage_postings_us`
+from `92930` to `62898`, but the remaining `train_model_us=263644` still keeps
+the full build far from multi-x. This confirms the packet 001 rejection of
+Option B/C as a first slice was a reasonable engineering choice, while the
+final closeout should invoke the Task 71 Stop Condition for further local
+Option A work.
+
 ## Review Questions
 
 1. Is Option A the right first implementation shape for IVF, given Task 69's deterministic rayon training and assignment helpers?
