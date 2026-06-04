@@ -70,6 +70,26 @@ source of truth for the pipeline and storage metrics below.
 
 ## Key Results
 
+Cache-backed SPIRE pipeline recall:
+
+```text
+suite: aws-spire-1m-rabitq-global1152-pipeline-recall-cache-500
+truth cache: benchmarks/task51-aws-ivf-rabitq-final-gate/artifacts/truth-aws-real-1m-q500-k10.json
+queries: 500
+nprobe: 96
+rerank_width: 25
+recall@10: 0.9832
+latency_min: 176.652 ms
+latency_p50: 268.824 ms
+latency_p95: 331.460 ms
+latency_p99: 345.762 ms
+latency_max: 354.453 ms
+candidate stage candidate_sum: 9213846
+candidate stage ready_sum: 12500
+heap_rerank heap_rerank_sum: 12500
+pipeline duration: 328991 ms
+```
+
 Precheck:
 
 ```text
@@ -143,3 +163,9 @@ cost:     ~$0.00/hr running, ~$8.00/mo retained storage
   truth generation over the full 990k corpus before the suite can emit results;
   full 200-query recall should use a precomputed truth cache/export path rather
   than the naive `spire-pipeline --include-recall` path.
+- On 2026-06-04, `suite-recall-cache-500.json` proved the existing AWS 1M
+  truth cache matches the SPIRE query set, but regular `bench recall` failed
+  during NDCG source fetch because SPIRE distributed DML requires a bigint
+  primary-key equality predicate. The follow-up
+  `suite-spire-pipeline-recall-cache-500.json` used the SPIRE pipeline cache
+  path and completed successfully with recall@10 `0.9832`.
