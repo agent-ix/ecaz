@@ -63,6 +63,7 @@
             nprobe_source: "relation",
             recursive_nprobe_policy: SpireRecursiveNprobePolicy::conservative(1).unwrap(),
             recursive_route_budget: SpireRecursiveRouteBudget::unbounded(),
+            max_routed_candidate_rows: None,
             payload_format: SpireAssignmentPayloadFormat::TurboQuant,
             rerank_width: 10,
             rerank_width_source: "relation",
@@ -194,6 +195,7 @@
             nprobe_source: "relation",
             recursive_nprobe_policy: SpireRecursiveNprobePolicy::conservative(2).unwrap(),
             recursive_route_budget: SpireRecursiveRouteBudget::unbounded(),
+            max_routed_candidate_rows: None,
             payload_format: SpireAssignmentPayloadFormat::TurboQuant,
             rerank_width: 10,
             rerank_width_source: "relation",
@@ -302,6 +304,7 @@
             nprobe_source: "relation",
             recursive_nprobe_policy: SpireRecursiveNprobePolicy::conservative(2).unwrap(),
             recursive_route_budget: SpireRecursiveRouteBudget::unbounded(),
+            max_routed_candidate_rows: None,
             payload_format: SpireAssignmentPayloadFormat::TurboQuant,
             rerank_width: 10,
             rerank_width_source: "relation",
@@ -420,6 +423,7 @@
             nprobe_source: "relation",
             recursive_nprobe_policy: SpireRecursiveNprobePolicy::conservative(2).unwrap(),
             recursive_route_budget: SpireRecursiveRouteBudget::unbounded(),
+            max_routed_candidate_rows: None,
             payload_format: SpireAssignmentPayloadFormat::TurboQuant,
             rerank_width: 10,
             rerank_width_source: "relation",
@@ -629,6 +633,99 @@
         assert_eq!(
             production_leaf_pids,
             vec![SPIRE_FIRST_PID + 11, SPIRE_FIRST_PID + 21]
+        );
+    }
+
+    #[test]
+    fn collect_recursive_routing_level_diagnostics_reports_row_budget_truncation() {
+        let root = SpireRoutingPartitionObject::root_at_level(
+            SPIRE_FIRST_PID,
+            1,
+            2,
+            2,
+            vec![
+                routing_child(0, SPIRE_FIRST_PID + 10, vec![1.0, 0.0]),
+                routing_child(1, SPIRE_FIRST_PID + 20, vec![0.9, 0.0]),
+            ],
+        )
+        .unwrap();
+        let internal_a = SpireRoutingPartitionObject::internal(
+            SPIRE_FIRST_PID + 10,
+            1,
+            1,
+            SPIRE_FIRST_PID,
+            2,
+            vec![
+                routing_child(0, SPIRE_FIRST_PID + 11, vec![0.5, 0.0]),
+                routing_child(1, SPIRE_FIRST_PID + 12, vec![1.5, 0.0]),
+            ],
+        )
+        .unwrap();
+        let internal_b = SpireRoutingPartitionObject::internal(
+            SPIRE_FIRST_PID + 20,
+            1,
+            1,
+            SPIRE_FIRST_PID,
+            2,
+            vec![
+                routing_child(0, SPIRE_FIRST_PID + 21, vec![0.4, 0.0]),
+                routing_child(1, SPIRE_FIRST_PID + 22, vec![1.4, 0.0]),
+            ],
+        )
+        .unwrap();
+        let routing_objects_by_pid = HashMap::from([
+            (internal_a.header.pid, internal_a),
+            (internal_b.header.pid, internal_b),
+        ]);
+        let nprobe_policy = SpireRecursiveNprobePolicy::from_level_values(4, vec![2]).unwrap();
+        let route_budget = SpireRecursiveRouteBudget {
+            beam_width: 2,
+            max_leaf_routes: 4,
+            max_routing_expansions: 10,
+        };
+        let leaf_assignment_counts = HashMap::from([
+            (SPIRE_FIRST_PID + 11, 2usize),
+            (SPIRE_FIRST_PID + 12, 2usize),
+            (SPIRE_FIRST_PID + 21, 2usize),
+            (SPIRE_FIRST_PID + 22, 2usize),
+        ]);
+        let mut counted_leaf_pids = Vec::new();
+        let mut leaf_row_count = |route: SpireRecursiveLeafRoute| {
+            counted_leaf_pids.push(route.leaf_pid);
+            leaf_assignment_counts
+                .get(&route.leaf_pid)
+                .copied()
+                .ok_or_else(|| format!("missing leaf {}", route.leaf_pid))
+        };
+
+        let diagnostics = collect_recursive_routing_level_diagnostics_with_row_budget(
+            &root,
+            &routing_objects_by_pid,
+            &[1.0, 0.0],
+            &nprobe_policy,
+            route_budget,
+            Some(3),
+            &mut leaf_row_count,
+        )
+        .unwrap();
+
+        assert_eq!(
+            diagnostics
+                .iter()
+                .map(|level| {
+                    (
+                        level.level,
+                        level.selected_child_count,
+                        level.deduped_route_count,
+                        level.truncation_reason,
+                    )
+                })
+                .collect::<Vec<_>>(),
+            vec![(2, 2, 2, "none"), (1, 4, 2, "row_budget")]
+        );
+        assert_eq!(
+            counted_leaf_pids,
+            vec![SPIRE_FIRST_PID + 12, SPIRE_FIRST_PID + 22]
         );
     }
 

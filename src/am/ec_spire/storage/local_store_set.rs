@@ -55,6 +55,28 @@ impl SpireLocalObjectStoreSet {
             .insert_leaf_object_v2_from_rows(epoch, pid, object_version, parent_pid, assignments)
     }
 
+    pub(super) fn insert_leaf_object_v3_from_rows_and_summaries(
+        &mut self,
+        epoch: u64,
+        pid: u64,
+        object_version: u64,
+        parent_pid: u64,
+        assignments: &[SpireLeafAssignmentRow],
+        summaries: &[SpireLeafBlockSummary],
+        summary_block_rows: u32,
+    ) -> Result<SpirePlacementEntry, String> {
+        self.store_mut_for_pid(pid)?
+            .insert_leaf_object_v3_from_rows_and_summaries(
+                epoch,
+                pid,
+                object_version,
+                parent_pid,
+                assignments,
+                summaries,
+                summary_block_rows,
+            )
+    }
+
     pub(super) fn insert_delta_object(
         &mut self,
         epoch: u64,
@@ -145,6 +167,28 @@ impl SpireObjectReader for SpireLocalObjectStoreSet {
             .read_leaf_object_v2(placement)
     }
 
+    fn read_leaf_object_v2_summaries(
+        &self,
+        placement: &SpirePlacementEntry,
+    ) -> Result<SpireLeafPartitionObjectV2Summaries, String> {
+        self.store_for_placement(placement)?
+            .read_leaf_object_v2_summaries(placement)
+    }
+
+    fn read_leaf_object_v2_segments_for_row_ranges(
+        &self,
+        placement: &SpirePlacementEntry,
+        meta: &SpireLeafPartitionObjectV2Meta,
+        selected_row_ranges: Option<&[(u32, u32)]>,
+    ) -> Result<Vec<SpireLeafPartitionObjectV2Segment>, String> {
+        self.store_for_placement(placement)?
+            .read_leaf_object_v2_segments_for_row_ranges(
+                placement,
+                meta,
+                selected_row_ranges,
+            )
+    }
+
     fn read_delta_object(
         &self,
         placement: &SpirePlacementEntry,
@@ -189,6 +233,27 @@ impl SpireObjectReader for SpireLocalObjectStore {
         placement: &SpirePlacementEntry,
     ) -> Result<SpireLeafPartitionObjectV2, String> {
         SpireLocalObjectStore::read_leaf_object_v2(self, placement)
+    }
+
+    fn read_leaf_object_v2_summaries(
+        &self,
+        placement: &SpirePlacementEntry,
+    ) -> Result<SpireLeafPartitionObjectV2Summaries, String> {
+        SpireLocalObjectStore::read_leaf_object_v2_summaries(self, placement)
+    }
+
+    fn read_leaf_object_v2_segments_for_row_ranges(
+        &self,
+        placement: &SpirePlacementEntry,
+        meta: &SpireLeafPartitionObjectV2Meta,
+        selected_row_ranges: Option<&[(u32, u32)]>,
+    ) -> Result<Vec<SpireLeafPartitionObjectV2Segment>, String> {
+        SpireLocalObjectStore::read_leaf_object_v2_segments_for_row_ranges(
+            self,
+            placement,
+            meta,
+            selected_row_ranges,
+        )
     }
 
     fn read_delta_object(

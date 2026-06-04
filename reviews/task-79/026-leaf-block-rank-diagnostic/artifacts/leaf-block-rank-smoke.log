@@ -1,0 +1,11 @@
+SET
+SET
+SET
+SET
+ target_ordinal | target_local_sequence |    status    | scored_block_count | block_rank | selected_by_global_cap | pid | row_base | row_end | row_index 
+----------------+-----------------------+--------------+--------------------+------------+------------------------+-----+----------+---------+-----------
+              0 |                     1 | block_ranked |               1243 |        934 | f                      |  79 |      384 |     448 |       414
+              1 |                     2 | block_ranked |               1243 |        842 | f                      | 105 |      960 |    1024 |       981
+              2 |                     3 | block_ranked |               1243 |        834 | f                      |  79 |      512 |     576 |       567
+(3 rows)
+

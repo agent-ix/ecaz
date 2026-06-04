@@ -300,6 +300,8 @@ pub(super) struct SpireRecursiveLeafObjectInput {
     pub(super) object_version: u64,
     pub(super) parent_pid: u64,
     pub(super) rows: Vec<SpireLeafAssignmentRow>,
+    pub(super) summaries: Vec<SpireLeafBlockSummary>,
+    pub(super) summary_block_rows: u32,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -361,6 +363,17 @@ pub(super) trait SpireBuildObjectStore: SpireObjectReader {
         object_version: u64,
         parent_pid: u64,
         rows: &[SpireLeafAssignmentRow],
+    ) -> Result<SpirePlacementEntry, String>;
+
+    fn write_leaf_object_v3_from_rows_and_summaries(
+        &mut self,
+        epoch: u64,
+        pid: u64,
+        object_version: u64,
+        parent_pid: u64,
+        rows: &[SpireLeafAssignmentRow],
+        summaries: &[SpireLeafBlockSummary],
+        summary_block_rows: u32,
     ) -> Result<SpirePlacementEntry, String>;
 
     fn write_top_graph_object(

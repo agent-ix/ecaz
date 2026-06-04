@@ -103,6 +103,550 @@
     }
 
     #[test]
+    fn select_leaf_block_row_ranges_keeps_best_rabitq_blocks() {
+        fn rabitq_summary(
+            row_base: u32,
+            row_count: u32,
+            source_vector: &[f32],
+            radius: f32,
+        ) -> SpireLeafBlockSummary {
+            let (gamma, encoded_payload) =
+                encode_assignment_payload(SpireAssignmentPayloadFormat::RaBitQ, source_vector)
+                    .unwrap();
+            assert_eq!(gamma, 0.0);
+            SpireLeafBlockSummary {
+                row_base,
+                row_count,
+                payload_format: SpireAssignmentPayloadFormat::RaBitQ.tag(),
+                gamma: radius,
+                encoded_payload,
+            }
+        }
+
+        let query = [1.0, 0.0];
+        let scorer =
+            SpirePreparedAssignmentScorer::prepare(SpireAssignmentPayloadFormat::RaBitQ, 2, &query)
+                .unwrap();
+        let summaries = vec![
+            rabitq_summary(0, 2, &[-1.0, 0.0], 0.0),
+            rabitq_summary(2, 2, &[1.0, 0.0], 0.0),
+            rabitq_summary(4, 2, &[0.5, 0.0], 0.0),
+        ];
+        let placement = SpirePlacementEntry {
+            epoch: 7,
+            pid: 11,
+            node_id: 1,
+            local_store_id: 0,
+            store_relid: 12345,
+            object_version: 1,
+            object_tid: tid(60, 1),
+            object_bytes: 1024,
+            state: SpirePlacementState::Available,
+        };
+        let mut observer = SpireNoopRoutedScanObserver;
+
+        let ranges =
+            select_leaf_block_row_ranges(&summaries, 2, &scorer, 7, &placement, &mut observer)
+                .unwrap()
+                .unwrap();
+
+        assert_eq!(
+            ranges,
+            vec![
+                SpireLeafBlockRowRange {
+                    row_base: 2,
+                    row_end: 4,
+                },
+                SpireLeafBlockRowRange {
+                    row_base: 4,
+                    row_end: 6,
+                },
+            ]
+        );
+        assert!(
+            select_leaf_block_row_ranges(&summaries, 3, &scorer, 7, &placement, &mut observer)
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn select_leaf_block_row_ranges_uses_rabitq_summary_radius() {
+        fn rabitq_summary(
+            row_base: u32,
+            row_count: u32,
+            source_vector: &[f32],
+            radius: f32,
+        ) -> SpireLeafBlockSummary {
+            let (_gamma, encoded_payload) =
+                encode_assignment_payload(SpireAssignmentPayloadFormat::RaBitQ, source_vector)
+                    .unwrap();
+            SpireLeafBlockSummary {
+                row_base,
+                row_count,
+                payload_format: SpireAssignmentPayloadFormat::RaBitQ.tag(),
+                gamma: radius,
+                encoded_payload,
+            }
+        }
+
+        let query = [1.0, 0.0];
+        let scorer =
+            SpirePreparedAssignmentScorer::prepare(SpireAssignmentPayloadFormat::RaBitQ, 2, &query)
+                .unwrap();
+        let summaries = vec![
+            rabitq_summary(0, 2, &[0.5, 0.0], 0.0),
+            rabitq_summary(2, 2, &[0.0, 0.0], 1.0),
+        ];
+        let placement = SpirePlacementEntry {
+            epoch: 7,
+            pid: 11,
+            node_id: 1,
+            local_store_id: 0,
+            store_relid: 12345,
+            object_version: 1,
+            object_tid: tid(60, 1),
+            object_bytes: 1024,
+            state: SpirePlacementState::Available,
+        };
+        let mut observer = SpireNoopRoutedScanObserver;
+
+        let ranges =
+            select_leaf_block_row_ranges(&summaries, 1, &scorer, 7, &placement, &mut observer)
+                .unwrap()
+                .unwrap();
+
+        assert_eq!(
+            ranges,
+            vec![SpireLeafBlockRowRange {
+                row_base: 2,
+                row_end: 4,
+            }]
+        );
+    }
+
+    #[test]
+    fn leaf_block_summary_radius_weight_controls_rabitq_bound() {
+        let (_gamma, encoded_payload) =
+            encode_assignment_payload(SpireAssignmentPayloadFormat::RaBitQ, &[0.5, 0.0]).unwrap();
+        let summary = SpireLeafBlockSummary {
+            row_base: 0,
+            row_count: 2,
+            payload_format: SpireAssignmentPayloadFormat::RaBitQ.tag(),
+            gamma: 2.0,
+            encoded_payload,
+        };
+        let scorer = SpirePreparedAssignmentScorer::prepare(
+            SpireAssignmentPayloadFormat::RaBitQ,
+            2,
+            &[1.0, 0.0],
+        )
+        .unwrap();
+
+        let mean_only =
+            score_leaf_block_summary_ip_with_radius_weight(&summary, &scorer, 0.0).unwrap();
+        let half_radius =
+            score_leaf_block_summary_ip_with_radius_weight(&summary, &scorer, 0.5).unwrap();
+        let full_radius =
+            score_leaf_block_summary_ip_with_radius_weight(&summary, &scorer, 1.0).unwrap();
+
+        assert!(mean_only < half_radius);
+        assert!(half_radius < full_radius);
+        assert!((half_radius - mean_only - (full_radius - mean_only) * 0.5).abs() < 1.0e-5);
+        assert!(score_leaf_block_summary_ip_with_radius_weight(&summary, &scorer, -0.1).is_err());
+        assert!(score_leaf_block_summary_ip_with_radius_weight(&summary, &scorer, 1.1).is_err());
+    }
+
+    #[test]
+    fn leaf_block_summary_scores_best_representative_payload() {
+        let (_gamma, weak_payload) =
+            encode_assignment_payload(SpireAssignmentPayloadFormat::RaBitQ, &[0.0, 1.0]).unwrap();
+        let (_gamma, strong_payload) =
+            encode_assignment_payload(SpireAssignmentPayloadFormat::RaBitQ, &[1.0, 0.0]).unwrap();
+        let mut multi_payload = weak_payload.clone();
+        multi_payload.extend_from_slice(&strong_payload);
+        let multi_summary = SpireLeafBlockSummary {
+            row_base: 0,
+            row_count: 2,
+            payload_format: SpireAssignmentPayloadFormat::RaBitQ.tag(),
+            gamma: 0.0,
+            encoded_payload: multi_payload,
+        };
+        let weak_summary = SpireLeafBlockSummary {
+            row_base: 0,
+            row_count: 2,
+            payload_format: SpireAssignmentPayloadFormat::RaBitQ.tag(),
+            gamma: 0.0,
+            encoded_payload: weak_payload,
+        };
+        let scorer = SpirePreparedAssignmentScorer::prepare(
+            SpireAssignmentPayloadFormat::RaBitQ,
+            2,
+            &[1.0, 0.0],
+        )
+        .unwrap();
+
+        let multi_ip =
+            score_leaf_block_summary_ip_with_radius_weight(&multi_summary, &scorer, 0.0).unwrap();
+        let weak_ip =
+            score_leaf_block_summary_ip_with_radius_weight(&weak_summary, &scorer, 0.0).unwrap();
+
+        assert!(multi_ip > weak_ip);
+    }
+
+    #[test]
+    fn select_global_leaf_block_row_ranges_spends_budget_across_leaves() {
+        fn rabitq_summary(row_base: u32, source_vector: &[f32]) -> SpireLeafBlockSummary {
+            let (gamma, encoded_payload) =
+                encode_assignment_payload(SpireAssignmentPayloadFormat::RaBitQ, source_vector)
+                    .unwrap();
+            assert_eq!(gamma, 0.0);
+            SpireLeafBlockSummary {
+                row_base,
+                row_count: 2,
+                payload_format: SpireAssignmentPayloadFormat::RaBitQ.tag(),
+                gamma: 0.0,
+                encoded_payload,
+            }
+        }
+
+        fn placement(pid: u64) -> SpirePlacementEntry {
+            SpirePlacementEntry {
+                epoch: 7,
+                pid,
+                node_id: 1,
+                local_store_id: 0,
+                store_relid: 12345,
+                object_version: 1,
+                object_tid: tid(60, u16::try_from(pid).unwrap()),
+                object_bytes: 1024,
+                state: SpirePlacementState::Available,
+            }
+        }
+
+        let query = [1.0, 0.0];
+        let scorer =
+            SpirePreparedAssignmentScorer::prepare(SpireAssignmentPayloadFormat::RaBitQ, 2, &query)
+                .unwrap();
+        let strong_leaf = vec![
+            rabitq_summary(0, &[1.0, 0.0]),
+            rabitq_summary(2, &[0.9, 0.0]),
+        ];
+        let weak_leaf = vec![
+            rabitq_summary(0, &[0.1, 0.0]),
+            rabitq_summary(2, &[-1.0, 0.0]),
+        ];
+        let strong_placement = placement(11);
+        let weak_placement = placement(12);
+        let mut observer = SpireNoopRoutedScanObserver;
+
+        let ranges_by_leaf = select_global_leaf_block_row_ranges(
+            [
+                (11, 0.0, &strong_placement, strong_leaf.as_slice()),
+                (12, 0.0, &weak_placement, weak_leaf.as_slice()),
+            ],
+            2,
+            &scorer,
+            7,
+            &mut observer,
+        )
+        .unwrap()
+        .unwrap();
+
+        assert_eq!(
+            ranges_by_leaf.get(&11),
+            Some(&vec![
+                SpireLeafBlockRowRange {
+                    row_base: 0,
+                    row_end: 2,
+                },
+                SpireLeafBlockRowRange {
+                    row_base: 2,
+                    row_end: 4,
+                },
+            ])
+        );
+        assert!(matches!(ranges_by_leaf.get(&12), Some(ranges) if ranges.is_empty()));
+    }
+
+    #[test]
+    fn score_global_leaf_block_row_ranges_can_apply_route_prior() {
+        fn rabitq_summary(row_base: u32, source_vector: &[f32]) -> SpireLeafBlockSummary {
+            let (gamma, encoded_payload) =
+                encode_assignment_payload(SpireAssignmentPayloadFormat::RaBitQ, source_vector)
+                    .unwrap();
+            assert_eq!(gamma, 0.0);
+            SpireLeafBlockSummary {
+                row_base,
+                row_count: 2,
+                payload_format: SpireAssignmentPayloadFormat::RaBitQ.tag(),
+                gamma: 0.0,
+                encoded_payload,
+            }
+        }
+
+        fn placement(pid: u64) -> SpirePlacementEntry {
+            SpirePlacementEntry {
+                epoch: 7,
+                pid,
+                node_id: 1,
+                local_store_id: 0,
+                store_relid: 12345,
+                object_version: 1,
+                object_tid: tid(60, u16::try_from(pid).unwrap()),
+                object_bytes: 1024,
+                state: SpirePlacementState::Available,
+            }
+        }
+
+        let query = [1.0, 0.0];
+        let scorer =
+            SpirePreparedAssignmentScorer::prepare(SpireAssignmentPayloadFormat::RaBitQ, 2, &query)
+                .unwrap();
+        let strong_leaf = vec![rabitq_summary(0, &[1.0, 0.0])];
+        let weak_leaf = vec![rabitq_summary(0, &[0.0, 1.0])];
+        let strong_placement = placement(11);
+        let weak_placement = placement(12);
+        let mut observer = SpireNoopRoutedScanObserver;
+
+        let (_leaves_with_summaries, mut scored_ranges) =
+            score_global_leaf_block_ranges_with_route_prior_weight(
+                [
+                    (11, 0.0, &strong_placement, strong_leaf.as_slice()),
+                    (12, 3.0, &weak_placement, weak_leaf.as_slice()),
+                ],
+                &scorer,
+                7,
+                &mut observer,
+                0.5,
+            )
+            .unwrap();
+        sort_scored_leaf_block_ranges(&mut scored_ranges);
+
+        assert_eq!(scored_ranges[0].leaf_pid, 12);
+    }
+
+    #[test]
+    fn select_global_leaf_block_row_ranges_uses_rabitq_summary_radius() {
+        fn rabitq_summary(
+            row_base: u32,
+            source_vector: &[f32],
+            radius: f32,
+        ) -> SpireLeafBlockSummary {
+            let (gamma, encoded_payload) =
+                encode_assignment_payload(SpireAssignmentPayloadFormat::RaBitQ, source_vector)
+                    .unwrap();
+            assert_eq!(gamma, 0.0);
+            SpireLeafBlockSummary {
+                row_base,
+                row_count: 2,
+                payload_format: SpireAssignmentPayloadFormat::RaBitQ.tag(),
+                gamma: radius,
+                encoded_payload,
+            }
+        }
+
+        fn placement(pid: u64) -> SpirePlacementEntry {
+            SpirePlacementEntry {
+                epoch: 7,
+                pid,
+                node_id: 1,
+                local_store_id: 0,
+                store_relid: 12345,
+                object_version: 1,
+                object_tid: tid(60, u16::try_from(pid).unwrap()),
+                object_bytes: 1024,
+                state: SpirePlacementState::Available,
+            }
+        }
+
+        let query = [1.0, 0.0];
+        let scorer =
+            SpirePreparedAssignmentScorer::prepare(SpireAssignmentPayloadFormat::RaBitQ, 2, &query)
+                .unwrap();
+        let summaries = vec![
+            rabitq_summary(0, &[1.0, 0.0], 0.0),
+            rabitq_summary(2, &[0.0, 0.0], 2.0),
+        ];
+        let placement = placement(11);
+        let mut observer = SpireNoopRoutedScanObserver;
+
+        let ranges_by_leaf = select_global_leaf_block_row_ranges(
+            [(11, 0.0, &placement, summaries.as_slice())],
+            1,
+            &scorer,
+            7,
+            &mut observer,
+        )
+        .unwrap()
+        .unwrap();
+
+        assert_eq!(
+            ranges_by_leaf.get(&11),
+            Some(&vec![SpireLeafBlockRowRange {
+                row_base: 2,
+                row_end: 4,
+            }])
+        );
+    }
+
+    #[test]
+    fn leaf_block_sample_score_preserves_summary_floor() {
+        assert_eq!(
+            blend_leaf_block_summary_sample_score(1.0, Some(-1.0), 0.8),
+            1.0
+        );
+        assert_eq!(
+            blend_leaf_block_summary_sample_score(0.1, None, 0.8),
+            0.1
+        );
+        let boosted = blend_leaf_block_summary_sample_score(0.1, Some(1.0), 0.8);
+        assert!((boosted - 0.28).abs() < 0.000001);
+    }
+
+    #[test]
+    fn sampled_global_leaf_block_row_ranges_adjusts_summary_prior() {
+        fn rabitq_summary(row_base: u32, source_vector: &[f32]) -> SpireLeafBlockSummary {
+            let (gamma, encoded_payload) =
+                encode_assignment_payload(SpireAssignmentPayloadFormat::RaBitQ, source_vector)
+                    .unwrap();
+            assert_eq!(gamma, 0.0);
+            SpireLeafBlockSummary {
+                row_base,
+                row_count: 2,
+                payload_format: SpireAssignmentPayloadFormat::RaBitQ.tag(),
+                gamma: 0.0,
+                encoded_payload,
+            }
+        }
+
+        fn rabitq_row(
+            block_number: u32,
+            offset_number: u16,
+            vec_seq: u64,
+            source_vector: &[f32],
+        ) -> SpireLeafAssignmentRow {
+            let input = quantized_assignment_input(
+                block_number,
+                offset_number,
+                SpireAssignmentPayloadFormat::RaBitQ,
+                source_vector,
+            );
+            SpireLeafAssignmentRow {
+                flags: SPIRE_ASSIGNMENT_FLAG_PRIMARY,
+                vec_id: SpireVecId::local(vec_seq),
+                heap_tid: input.heap_tid,
+                payload_format: input.payload_format,
+                gamma: input.gamma,
+                encoded_payload: input.encoded_payload,
+            }
+        }
+
+        let query = [1.0, 0.0];
+        let scorer =
+            SpirePreparedAssignmentScorer::prepare(SpireAssignmentPayloadFormat::RaBitQ, 2, &query)
+                .unwrap();
+        let leaf_pid = SPIRE_FIRST_PID + 1;
+        let parent_pid = SPIRE_FIRST_PID;
+        let summaries = vec![
+            rabitq_summary(0, &[0.2, 0.0]),
+            rabitq_summary(2, &[0.1, 0.0]),
+        ];
+        let mut object_store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
+        let rows = vec![
+            rabitq_row(10, 1, 1, &[-1.0, 0.0]),
+            rabitq_row(10, 2, 2, &[-1.0, 0.0]),
+            rabitq_row(10, 3, 3, &[-1.0, 0.0]),
+            rabitq_row(10, 4, 4, &[1.0, 0.0]),
+        ];
+        let placement = object_store
+            .insert_leaf_object_v3_from_rows_and_summaries(
+                7, leaf_pid, 1, parent_pid, &rows, &summaries, 2,
+            )
+            .unwrap();
+        let mut noop = SpireNoopRoutedScanObserver;
+        let summary_only = select_global_leaf_block_row_ranges(
+            [(leaf_pid, 0.0, &placement, summaries.as_slice())],
+            1,
+            &scorer,
+            7,
+            &mut noop,
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(
+            summary_only.get(&leaf_pid),
+            Some(&vec![SpireLeafBlockRowRange {
+                row_base: 0,
+                row_end: 2,
+            }])
+        );
+
+        let epoch_manifest = SpireEpochManifest {
+            epoch: 7,
+            state: SpireEpochState::Published,
+            consistency_mode: SpireConsistencyMode::Strict,
+            published_at_micros: 1000,
+            retain_until_micros: 2000,
+            active_query_count: 0,
+        };
+        let object_manifest =
+            SpireObjectManifest::from_entries(7, vec![manifest_entry_for(&placement)]).unwrap();
+        let placement_directory =
+            SpirePlacementDirectory::from_entries(7, vec![placement]).unwrap();
+        let snapshot =
+            snapshot_for_placement(&epoch_manifest, &object_manifest, &placement_directory);
+        let snapshot = SpireValidatedEpochSnapshot::from_snapshot(snapshot).unwrap();
+        let loaded_routes = vec![SpireLoadedQuantizedLeafRoute {
+            route: SpireLeafObjectReadRoute {
+                leaf_pid,
+                parent_pid,
+                route_score: 0.0,
+                placement,
+                object_version: 1,
+            },
+            leaf_object: object_store.read_leaf_object_v2(&placement).unwrap(),
+            selected_row_ranges: None,
+            loaded_delta_routes: Vec::new(),
+            deleted_vec_ids: HashSet::new(),
+        }];
+        let mut accumulator = SpireScoredCandidateAccumulator::new(
+            SpireCandidateDedupeMode::NoReplicaDedupeDisabled,
+            None,
+        );
+        let mut observer = SpireScanPlacementDiagnosticsObserver::new();
+
+        let sampled = select_sampled_global_leaf_block_row_ranges(
+            &snapshot,
+            &loaded_routes,
+            1,
+            2,
+            1,
+            0.8,
+            &scorer,
+            &mut accumulator,
+            &mut observer,
+        )
+        .unwrap()
+        .unwrap();
+
+        assert_eq!(
+            sampled.get(&leaf_pid),
+            Some(&vec![SpireLeafBlockRowRange {
+                row_base: 2,
+                row_end: 4,
+            }])
+        );
+        let sampled_candidates = accumulator.into_ranked();
+        assert!(sampled_candidates
+            .iter()
+            .any(|candidate| candidate.row_index == 3 && candidate.vec_id.local_sequence() == Some(4)));
+        let stores = observer.into_stores();
+        assert_eq!(stores.len(), 1);
+        assert_eq!(stores[0].candidate_row_count, 2);
+    }
+
+    #[test]
     fn collect_quantized_routed_probe_candidates_reads_hash_routed_two_store_build() {
         let payload_format = SpireAssignmentPayloadFormat::TurboQuant;
         let store_config = SpireLocalStoreConfig::from_stores(
@@ -360,14 +904,17 @@
                 SpireRecursiveLeafRoute {
                     leaf_pid: SPIRE_FIRST_PID + 3,
                     parent_pid: SPIRE_FIRST_PID,
+                    route_score: 0.0,
                 },
                 SpireRecursiveLeafRoute {
                     leaf_pid: SPIRE_FIRST_PID + 1,
                     parent_pid: SPIRE_FIRST_PID,
+                    route_score: 0.0,
                 },
                 SpireRecursiveLeafRoute {
                     leaf_pid: SPIRE_FIRST_PID + 2,
                     parent_pid: SPIRE_FIRST_PID,
+                    route_score: 0.0,
                 },
             ],
             Vec::new(),
@@ -466,6 +1013,7 @@
             vec![SpireRecursiveLeafRoute {
                 leaf_pid: selected_leaf_pid,
                 parent_pid: SPIRE_FIRST_PID,
+                route_score: 0.0,
             }],
             vec![
                 SpireDeltaObjectRoute {
@@ -750,6 +1298,7 @@
             vec![SpireRecursiveLeafRoute {
                 leaf_pid,
                 parent_pid: SPIRE_FIRST_PID,
+                route_score: 0.0,
             }],
             vec![SpireDeltaObjectRoute {
                 delta_pid,
@@ -847,6 +1396,7 @@
                 leaf_routes: vec![SpireLeafObjectReadRoute {
                     leaf_pid,
                     parent_pid: SPIRE_FIRST_PID,
+                    route_score: 0.0,
                     placement: SpirePlacementEntry::local_store_available_by_id(
                         7,
                         leaf_pid,
@@ -1048,6 +1598,7 @@
             nprobe_source: "relation",
             recursive_nprobe_policy: SpireRecursiveNprobePolicy::conservative(2).unwrap(),
             recursive_route_budget: SpireRecursiveRouteBudget::unbounded(),
+            max_routed_candidate_rows: None,
             payload_format: SpireAssignmentPayloadFormat::TurboQuant,
             rerank_width: 2,
             rerank_width_source: "relation",
@@ -1075,6 +1626,99 @@
         assert_eq!(candidates[0].score, -10.0);
         assert_eq!(candidates[1].vec_id.local_sequence(), Some(1));
         assert_eq!(candidates[1].score, -1.0);
+    }
+
+    #[test]
+    fn collect_single_level_scan_plan_placement_diagnostics_caps_routed_candidate_rows() {
+        let mut pid_allocator = SpirePidAllocator::default();
+        let mut local_vec_id_allocator = SpireLocalVecIdAllocator::default();
+        let mut object_store = SpireLocalObjectStore::with_default_page_size(12345).unwrap();
+        let payload_format = SpireAssignmentPayloadFormat::TurboQuant;
+        let draft = build_partitioned_single_level_leaf_epoch_draft(
+            SpirePartitionedSingleLevelBuildInput {
+                epoch: 7,
+                object_version: 1,
+                published_at_micros: 1000,
+                retain_until_micros: 2000,
+                consistency_mode: SpireConsistencyMode::Strict,
+                root_placement_tid: tid(60, 3),
+                placement_tids: vec![tid(60, 1), tid(60, 2), tid(60, 4)],
+                assignments: vec![
+                    quantized_assignment_input(10, 1, payload_format, &[1.0, 0.0]),
+                    quantized_assignment_input(10, 2, payload_format, &[1.0, 0.0]),
+                    quantized_assignment_input(10, 3, payload_format, &[1.0, 0.0]),
+                    quantized_assignment_input(10, 4, payload_format, &[0.5, 0.0]),
+                    quantized_assignment_input(10, 5, payload_format, &[-1.0, 0.0]),
+                ],
+                centroid_plan: SpireSingleLevelCentroidPlan {
+                    dimensions: 2,
+                    centroids: vec![vec![1.0, 0.0], vec![0.5, 0.0], vec![-1.0, 0.0]],
+                    assignment_indexes: vec![0, 0, 0, 1, 2],
+                },
+            },
+            &mut pid_allocator,
+            &mut local_vec_id_allocator,
+            &mut object_store,
+        )
+        .unwrap();
+        let snapshot = SpirePublishedEpochSnapshot::new(
+            &draft.epoch_manifest,
+            &draft.object_manifest,
+            &draft.placement_directory,
+        )
+        .unwrap();
+        let query = SpireScanQuery::new(vec![1.0, 0.0]).unwrap();
+        let scan_plan = SpireSingleLevelScanPlan {
+            leaf_count: 3,
+            nprobe: 3,
+            nprobe_source: "relation",
+            recursive_nprobe_policy: SpireRecursiveNprobePolicy::conservative(3).unwrap(),
+            recursive_route_budget: SpireRecursiveRouteBudget::unbounded(),
+            max_routed_candidate_rows: Some(3),
+            payload_format,
+            rerank_width: 10,
+            rerank_width_source: "relation",
+            candidate_limit: Some(10),
+            dedupe_mode: SpireCandidateDedupeMode::NoReplicaDedupeDisabled,
+        };
+
+        let budgeted = collect_single_level_scan_plan_placement_diagnostics(
+            &snapshot,
+            &object_store,
+            &query,
+            scan_plan,
+        )
+        .unwrap();
+        assert_eq!(budgeted.leaves.len(), 1);
+        assert_eq!(
+            budgeted
+                .stores
+                .iter()
+                .map(|store| store.candidate_row_count)
+                .sum::<usize>(),
+            3
+        );
+
+        let unbudgeted_plan = SpireSingleLevelScanPlan {
+            max_routed_candidate_rows: None,
+            ..scan_plan
+        };
+        let unbudgeted = collect_single_level_scan_plan_placement_diagnostics(
+            &snapshot,
+            &object_store,
+            &query,
+            unbudgeted_plan,
+        )
+        .unwrap();
+        assert_eq!(unbudgeted.leaves.len(), 3);
+        assert_eq!(
+            unbudgeted
+                .stores
+                .iter()
+                .map(|store| store.candidate_row_count)
+                .sum::<usize>(),
+            5
+        );
     }
 
     #[test]
@@ -1349,6 +1993,7 @@
             nprobe_source: "none",
             recursive_nprobe_policy: SpireRecursiveNprobePolicy::conservative(0).unwrap(),
             recursive_route_budget: SpireRecursiveRouteBudget::unbounded(),
+            max_routed_candidate_rows: None,
             payload_format: SpireAssignmentPayloadFormat::TurboQuant,
             rerank_width: 0,
             rerank_width_source: "relation",

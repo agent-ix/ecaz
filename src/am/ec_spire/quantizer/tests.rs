@@ -87,13 +87,43 @@ mod tests {
         )
         .unwrap();
         let prepared = quantizer.prepare_estimator(&query);
-        let expected = quantizer.estimate_ip(&prepared, &payload).estimate;
+        let expected = prepared.estimate_ip_scalar_only(&payload);
 
         let observed = scorer.score_assignment_ip(&assignment).unwrap();
 
         assert_eq!(assignment.payload_format, SPIRE_PAYLOAD_FORMAT_RABITQ);
         assert_eq!(gamma, 0.0);
         assert!((observed - expected).abs() <= f32::EPSILON);
+    }
+
+    #[test]
+    fn rabitq_assignment_scorer_can_prune_below_cutoff() {
+        let source = vec![0.25, -0.5, 0.75, 1.0];
+        let query = vec![1.0, 0.5, -0.25, 0.125];
+        let (gamma, payload) =
+            encode_assignment_payload(SpireAssignmentPayloadFormat::RaBitQ, &source).unwrap();
+        let assignment =
+            assignment_row(SpireAssignmentPayloadFormat::RaBitQ, gamma, payload.clone());
+        let scorer = SpirePreparedAssignmentScorer::prepare(
+            SpireAssignmentPayloadFormat::RaBitQ,
+            source.len(),
+            &query,
+        )
+        .unwrap();
+        let full_score = scorer.score_assignment_ip(&assignment).unwrap();
+
+        assert_eq!(
+            scorer
+                .try_score_assignment_ip(&assignment, f32::NEG_INFINITY)
+                .unwrap(),
+            Some(full_score)
+        );
+        assert_eq!(
+            scorer
+                .try_score_assignment_ip(&assignment, f32::MAX)
+                .unwrap(),
+            None
+        );
     }
 
     #[test]

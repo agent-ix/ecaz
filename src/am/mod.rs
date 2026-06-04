@@ -149,6 +149,7 @@ pub(crate) use self::ec_spire::{
     index_relation_storage_snapshot as spire_index_relation_storage_snapshot,
     index_root_routing_snapshot as spire_index_root_routing_snapshot,
     index_routing_centroid_snapshot as spire_index_routing_centroid_snapshot,
+    index_scan_leaf_block_rank_snapshot as spire_index_scan_leaf_block_rank_snapshot,
     index_scan_leaf_candidate_snapshot as spire_index_scan_leaf_candidate_snapshot,
     index_scan_placement_snapshot as spire_index_scan_placement_snapshot,
     index_scan_routing_snapshot as spire_index_scan_routing_snapshot,

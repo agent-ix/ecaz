@@ -1,0 +1,8 @@
+
+   0: [91mresume step "precheck-existing-task79-surface" command differs from current expanded command[0m
+
+Location:
+   [35mcrates/ecaz-cli/src/commands/bench/suite.rs[0m:[35m1193[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.

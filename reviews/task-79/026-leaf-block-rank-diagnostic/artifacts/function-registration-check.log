@@ -1,0 +1,6 @@
+CREATE EXTENSION
+ oid 
+-----
+(0 rows)
+
+NOTICE:  extension "ecaz" already exists, skipping

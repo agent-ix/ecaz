@@ -1,6 +1,6 @@
 # Task 77: SPIRE Candidate Materialization Optimization
 
-Status: proposed
+Status: complete (2026-05-31, no-slice closeout `reviews/task-77/002-phase1-no-slice-closeout/`)
 Owner: coder (to be assigned). One coder, one branch.
 Priority: 1 (direct follow-up to Tasks 75/76)
 
@@ -13,8 +13,8 @@ high-recall 100k point:
   paying a large latency cost versus IVF.
 - Task 74's Intel profiler showed visible SPIRE self-time is dominated by
   quantized scoring, not by a small routing-orchestration hotspot.
-- Task 75's candidate funnel showed the high-recall SPIRE point scans
-  `2,784,952` leaf candidates over 200 queries while only `5,000` rows survive
+- Task 75's corrected diagnostic rerun showed the high-recall SPIRE point scans
+  `15,506,227` leaf candidates over 200 queries while only `5,000` rows survive
   to heap rerank and `2,000` are returned.
 - Task 76 showed no safe default change: 100k SPIRE high-recall latency remains
   much slower than IVF at comparable recall, and the local 1M fixture was not
@@ -23,6 +23,22 @@ high-recall 100k point:
 The next useful SPIRE optimization work is therefore not "raise the default"
 or "tweak routing until recall drops." It is to reduce the cost of producing,
 scoring, retaining, and materializing candidates at the same recall floor.
+
+## Outcome
+
+Task 77 landed the SQL-visible attribution hook and the Intel-local Phase 1
+measurement packet. The high-recall 100k funnel shows approximate quantized
+candidate scoring accounts for roughly `82-83%` of the measured local
+candidate-path time, while row materialization plus heap append is only about
+`5-6%`. Object reads are material at the same points, but reducing that cost
+belongs with shared storage-format/object-layout work rather than a bounded
+SPIRE-local candidate-materialization slice. That leaves no Task 77 slice with
+a defensible path to the task's `>=10%` p50 win gate.
+
+The task therefore closes by the allowed no-slice branch. Follow-up Task 78
+owns RaBitQ-first SPIRE latency optimization, starting with reducing how many
+candidates are scored, with TurboQuant retained as a comparison lane rather
+than the primary target.
 
 ## Non-Goals
 
@@ -133,5 +149,5 @@ AWS confirmation must:
 - Stop a slice if it changes recursion semantics or route ownership rules.
 - Stop a slice if it improves p50 by trading away the Task 73/75 recall floor.
 - Stop local exploration if Phase 1 shows the remaining gap belongs primarily
-  to shared quantized scoring kernels or a storage-format redesign; file that
-  task instead of forcing it into SPIRE routing code.
+  to candidate-selection policy or a storage-format-specific scorer; file that
+  task instead of forcing it into SPIRE materialization code.

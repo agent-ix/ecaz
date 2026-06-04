@@ -1,0 +1,87 @@
+{
+  "generated_at": "2026-05-31T18:35:00-07:00",
+  "source": "ecaz bench suite report-results.jsonl",
+  "rows": [
+    {
+      "lane": "baseline",
+      "storage_format": "rabitq",
+      "nprobe": 64,
+      "recall_at_10": 0.9825,
+      "latency_p50_ms": 41.597,
+      "latency_p95_ms": 45.084,
+      "latency_p99_ms": 50.998
+    },
+    {
+      "lane": "baseline",
+      "storage_format": "rabitq",
+      "nprobe": 96,
+      "recall_at_10": 0.9975,
+      "latency_p50_ms": 60.881,
+      "latency_p95_ms": 70.157,
+      "latency_p99_ms": 74.16
+    },
+    {
+      "lane": "baseline",
+      "storage_format": "rabitq",
+      "nprobe": 128,
+      "recall_at_10": 1,
+      "latency_p50_ms": 73.774,
+      "latency_p95_ms": 82.751,
+      "latency_p99_ms": 91.681
+    },
+    {
+      "lane": "current",
+      "storage_format": "rabitq",
+      "nprobe": 64,
+      "recall_at_10": 0.9825,
+      "latency_p50_ms": 41.757,
+      "latency_p95_ms": 52.954,
+      "latency_p99_ms": 62.954
+    },
+    {
+      "lane": "current",
+      "storage_format": "rabitq",
+      "nprobe": 96,
+      "recall_at_10": 0.9975,
+      "latency_p50_ms": 60.256,
+      "latency_p95_ms": 73.437,
+      "latency_p99_ms": 95.535
+    },
+    {
+      "lane": "current",
+      "storage_format": "rabitq",
+      "nprobe": 128,
+      "recall_at_10": 1,
+      "latency_p50_ms": 74.951,
+      "latency_p95_ms": 88.697,
+      "latency_p99_ms": 101.919
+    },
+    {
+      "lane": "turboquant-current",
+      "storage_format": "turboquant",
+      "nprobe": 64,
+      "recall_at_10": 0.9825,
+      "latency_p50_ms": 89.144,
+      "latency_p95_ms": 96.88,
+      "latency_p99_ms": 102.124
+    },
+    {
+      "lane": "turboquant-current",
+      "storage_format": "turboquant",
+      "nprobe": 96,
+      "recall_at_10": 0.9975,
+      "latency_p50_ms": 129.835,
+      "latency_p95_ms": 140.492,
+      "latency_p99_ms": 150.275
+    },
+    {
+      "lane": "turboquant-current",
+      "storage_format": "turboquant",
+      "nprobe": 128,
+      "recall_at_10": 1,
+      "latency_p50_ms": 167.193,
+      "latency_p95_ms": 176.838,
+      "latency_p99_ms": 188.629
+    }
+  ]
+}

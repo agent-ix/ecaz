@@ -1,0 +1,13 @@
+Script started on 2026-06-01 10:59:16-07:00 [<not executed on terminal>]
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz)
+   Compiling ecaz-cli v0.1.0 (/home/peter/dev/ecaz/crates/ecaz-cli)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 36.59s
+     Running unittests src/main.rs (target/debug/deps/ecaz-27bbce43e3160435)
+
+running 1 test
+test commands::bench::suite::tests::expands_spire_pipeline_with_production_profile ... [32mok[m
+
+test result: [32mok[m. 1 passed; 0 failed; 0 ignored; 0 measured; 396 filtered out; finished in 0.00s
+
+
+Script done on 2026-06-01 10:59:52-07:00 [COMMAND_EXIT_CODE="0"]

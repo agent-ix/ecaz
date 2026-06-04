@@ -1,0 +1,14 @@
+step	global_cap	radius_weight	candidate_sum	latency_p50	latency_p95	recall_at_10	gate
+pipeline-100k-rabitq-n128-f8-b0-tg96-block64-global0-rw0	0	0	15506227	63.515 ms	74.369 ms	0.9975	FAIL
+pipeline-100k-rabitq-n128-f8-b0-tg96-block64-global384-rw0	384	0	4764181	44.606 ms	52.119 ms	0.9690	FAIL
+pipeline-100k-rabitq-n128-f8-b0-tg96-block64-global384-rw025	384	0.25	4798986	44.745 ms	53.519 ms	0.9760	FAIL
+pipeline-100k-rabitq-n128-f8-b0-tg96-block64-global384-rw05	384	0.5	4814533	44.590 ms	52.203 ms	0.9725	FAIL
+pipeline-100k-rabitq-n128-f8-b0-tg96-block64-global384-rw1	384	1.0	4831078	45.493 ms	51.858 ms	0.9205	FAIL
+pipeline-100k-rabitq-n128-f8-b0-tg96-block64-global400-rw0	400	0	4962846	45.598 ms	57.094 ms	0.9710	FAIL
+pipeline-100k-rabitq-n128-f8-b0-tg96-block64-global400-rw025	400	0.25	4998286	44.943 ms	55.282 ms	0.9810	FAIL
+pipeline-100k-rabitq-n128-f8-b0-tg96-block64-global400-rw05	400	0.5	5014237	46.148 ms	53.226 ms	0.9755	FAIL
+pipeline-100k-rabitq-n128-f8-b0-tg96-block64-global416-rw0	416	0	5160801	45.491 ms	51.783 ms	0.9720	FAIL
+pipeline-100k-rabitq-n128-f8-b0-tg96-block64-global416-rw025	416	0.25	5197973	45.796 ms	57.740 ms	0.9835	FAIL
+pipeline-100k-rabitq-n128-f8-b0-tg96-block64-global512-rw0	512	0	6351155	49.316 ms	56.465 ms	0.9825	FAIL
+pipeline-100k-rabitq-n128-f8-b0-tg96-block64-global512-rw025	512	0.25	6392555	48.363 ms	55.089 ms	0.9870	FAIL
+pipeline-100k-rabitq-n128-f8-b0-tg96-block64-global768-rw0	768	0	9525502	56.486 ms	68.121 ms	0.9930	FAIL

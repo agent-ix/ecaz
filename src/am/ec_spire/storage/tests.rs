@@ -12,7 +12,7 @@ mod tests {
         is_visible_scored_assignment, local_store_config_from_relation_plan,
         plan_local_store_relations, relation_object_prefetch_groups,
         spire_local_store_relation_name, SpireDeltaPartitionObject, SpireLeafAssignmentRow,
-        SpireLeafPartitionObject, SpireLeafPartitionObjectV2Meta,
+        SpireLeafBlockSummary, SpireLeafPartitionObject, SpireLeafPartitionObjectV2Meta,
         SpireLeafPartitionObjectV2Segment, SpireLocalObjectStore, SpireLocalObjectStoreSet,
         SpireObjectReader, SpirePartitionObjectHeader, SpirePartitionObjectKind,
         SpireRoutingChildEntry, SpireRoutingPartitionObject, SpireTopGraphNodeRecord,
@@ -24,8 +24,8 @@ mod tests {
         SPIRE_GLOBAL_VEC_ID_DISCRIMINATOR, SPIRE_LOCAL_VEC_ID_DISCRIMINATOR,
         SPIRE_ASSIGNMENT_ROW_FIXED_PREFIX_BYTES, SPIRE_ASSIGNMENT_ROW_FIXED_TAIL_BYTES,
         SPIRE_PARTITION_OBJECT_HEADER_BYTES, SPIRE_PAYLOAD_FORMAT_NONE,
-        SPIRE_PAYLOAD_FORMAT_PQ_FASTSCAN, SPIRE_PAYLOAD_FORMAT_TURBOQUANT,
-        SPIRE_VEC_ID_MAX_BYTES,
+        SPIRE_PAYLOAD_FORMAT_PQ_FASTSCAN, SPIRE_PAYLOAD_FORMAT_RABITQ,
+        SPIRE_PAYLOAD_FORMAT_TURBOQUANT, SPIRE_VEC_ID_MAX_BYTES,
     };
     use crate::storage::page::{ItemPointer, ITEM_POINTER_BYTES};
 

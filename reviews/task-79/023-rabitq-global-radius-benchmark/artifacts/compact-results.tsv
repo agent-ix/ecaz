@@ -1,0 +1,6 @@
+label	candidate_sum	latency_p50	recall_at_10	returned_sum
+global0-rerank25	15506227	62.200 ms	0.9975	2000
+global384-rerank25	4798334	43.686 ms	0.9310	2000
+global400-rerank25	4997529	44.131 ms	0.9355	2000
+global416-rerank25	5197484	46.195 ms	0.9385	2000
+global512-rerank25	6394228	47.938 ms	0.9565	2000

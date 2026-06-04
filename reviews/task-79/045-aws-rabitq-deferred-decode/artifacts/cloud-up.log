@@ -1,0 +1,11 @@
+cloud up summary:
+
+- profile: 1m
+- action: resumed/replaced retained stack for AWS Task 79 benchmark
+- db instance after launch: i-0e9723f7b707504c3, private IP 10.42.1.17
+- loader instance after launch: i-0d9fb0eac2df5567b, private IP 10.42.1.142
+- retained bucket: ecaz-cloud-1m-b62eb804
+- retained data volume was reused
+
+The command's `--log-file` path did not receive mirrored stdout during this
+run; this summary records the observed launch state used by the suite.
