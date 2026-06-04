@@ -1,15 +1,17 @@
 # Task 71 / Packet 003 Artifact Manifest
 
-- Head SHA: `99f7a2edc`
+- Head SHA: `faa22c2c3`
 - Task bucket: `reviews/task-71/`
 - Packet path: `reviews/task-71/003-worker-curve/`
-- Slice: Worker-curve suite setup plus callback-wiring validation and
-  CLI-owned one-cell IVF parallel-build probe
+- Slice: Worker-curve suite setup plus callback-wiring validation,
+  CLI-owned IVF parallel-build DB setup/probe, and fresh post-fix worker
+  curve
 - Storage format: `pq_fastscan`
 - Rerank mode: `heap_f32`
 - Surface: dry-run suite config for isolated prefixes per dataset/worker count;
   pre-fix hosted suite run; post-fix focused pg_test validation; suite runner
-  per-load worker-counter support
+  per-load worker-counter support; fresh post-fix suite run on isolated
+  one-index-per-table prefixes
 - Timestamp: 2026-06-03 America/Los_Angeles
 
 ## Artifacts
@@ -80,6 +82,70 @@
   - The result verifies IVF parallel build worker launch under the current
     installed PG18 dylib; it is not parallel scan evidence and is not a full
     worker-curve replacement.
+
+### CLI-owned Task 71 matrix cleanup
+
+- Command:
+  `./target/debug/ecaz --host /Users/peter/.pgrx --port 28818 --log-file reviews/task-71/003-worker-curve/artifacts/task71-clean-before-final-suite.log dev test ivf-parallel-build-clean --include-probe`
+- Result: passed without approval escalation
+- Artifact: `task71-clean-before-final-suite.log`
+- Surface: drops isolated Task 71 matrix/probe table prefixes before the fresh
+  suite run
+- Key lines:
+  - `[ivf-clean] dropped 17 prefixes`
+
+### Fresh post-fix worker-curve suite
+
+- Command:
+  `./target/debug/ecaz --host /Users/peter/.pgrx --port 28818 --log-file reviews/task-71/003-worker-curve/artifacts/suite-run-final.log bench suite run --config reviews/task-71/003-worker-curve/suite.json`
+- Result: passed without approval escalation
+- Artifacts:
+  - `suite-run-final.log`
+  - `suite-manifest.json`
+  - `results.jsonl`
+  - `load-real{10k,25k,50k,100k}-w{1,2,4,8}.log`
+  - `recall-real{10k,25k,50k,100k}-w{1,2,4,8}.log`
+  - `storage-real{10k,25k,50k,100k}-w{1,2,4,8}.log`
+- Lane / fixture / storage / rerank:
+  - lane: local PG18 M5 worker curve
+  - fixture: Task 31 staged DBPedia real10k/25k/50k/100k corpus/query TSVs
+  - storage format: `pq_fastscan`
+  - rerank mode: `heap_f32`
+- Surface: isolated one-index-per-table prefixes per scale/worker cell
+- Key worker launch lines from `results.jsonl` / load-log
+  `ec_ivf_build_timing` rows:
+  - real10k: `1/1`, `2/2`, `4/4`, `8/7` requested/launched
+  - real25k: `1/1`, `2/2`, `4/4`, `8/7` requested/launched
+  - real50k: `1/1`, `2/2`, `4/4`, `8/7` requested/launched
+  - real100k: `1/1`, `2/2`, `4/4`, `8/7` requested/launched
+- Full build-index seconds:
+  - real10k: w1 `0.464140`, w2 `0.436080`, w4 `0.414400`, w8 `0.411170`
+  - real25k: w1 `0.721680`, w2 `0.652020`, w4 `0.621400`, w8 `0.612060`
+  - real50k: w1 `1.160000`, w2 `1.020000`, w4 `0.937100`, w8 `0.922410`
+  - real100k: w1 `2.630000`, w2 `2.220000`, w4 `2.070000`, w8 `2.030000`
+- Best full-build speedups over w1:
+  - real10k: ~1.13x at w8
+  - real25k: ~1.18x at w8
+  - real50k: ~1.26x at w8
+  - real100k: ~1.30x at w8
+- Heap-ingest timing does scale inside the parallel build path. For real100k,
+  `heap_ingest_us` is w1 `877228`, w2 `497257`, w4 `322029`, w8 `274479`.
+- Recall@10:
+  - real10k: `1.0000` for all workers
+  - real25k: `0.9990` for all workers
+  - real50k: `1.0000` for all workers
+  - real100k: `0.9820` for all workers
+- ec_ivf index size invariance:
+  - real10k: `2726298` bytes for all workers
+  - real25k: `5557453` bytes for all workers
+  - real50k: `10171187` bytes for all workers
+  - real100k: `20342374` bytes for all workers
+- Interpretation:
+  - The suite validates parallel-build worker launch and recall/storage
+    invariance.
+  - The current implementation still does not satisfy Task 71's multi-x full
+    build-time exit criterion; leader-side train/stage/flush work dominates
+    after the parallel heap-ingest portion.
 
 ### `cargo-test-ecaz-cli-load-table-reloptions.log`
 
@@ -212,7 +278,6 @@
   staged manifests carry `ec_hnsw_real_*` prefixes while the suite loads into
   isolated `task71_real*_w*` prefixes. The source corpus/query files remain
   the staged Task 31 TSVs under `data/task31_m5_dbpedia_staged/`.
-- The next full suite run must regenerate `suite-dry-run.log`,
-  `suite-dry-run-manifest.json`, `suite-manifest.json`, and `results.jsonl`
-  after this config change before packet 003 can be used as final Phase 3
-  evidence.
+- The fresh full suite regenerated `suite-manifest.json` and `results.jsonl`
+  after the callback/config fixes. The dry-run artifacts remain the rendered
+  config evidence for the suite shape.

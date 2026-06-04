@@ -43,9 +43,14 @@ Follow-up after reviewer feedback:
   `pg_stat_get_db_parallel_workers_launched` immediately before and after a
   load step, stores before/after/delta in `suite-manifest.json`, and emits a
   `parallel_workers` row in `results.jsonl`.
+- Adds `faa22c2c3 Tighten IVF build test workflow`, which moves Task 71 matrix
+  cleanup into `ecaz dev test ivf-parallel-build-clean` and makes the
+  pq_fastscan build model carry its SRHT signs instead of reacquiring them
+  from the quantizer cache during posting encoding.
 
-This packet prepares the required measurement run; it does not yet claim the
-full Phase 3 benchmark results.
+This packet now records the fresh post-fix worker-curve run. It shows IVF
+parallel build workers are launching and heap ingest scales, but full
+`CREATE INDEX` wall time is still not a multi-x win.
 
 ## Validation
 
@@ -91,6 +96,38 @@ Packet-local artifacts are under
   - This verifies the installed PG18 IVF build path is launching parallel
     build workers after the stale-dylib root cause was corrected; it is not
     parallel scan evidence.
+- `./target/debug/ecaz --host /Users/peter/.pgrx --port 28818 --log-file reviews/task-71/003-worker-curve/artifacts/task71-clean-before-final-suite.log dev test ivf-parallel-build-clean --include-probe`
+  - passed without approval escalation through the CLI-owned DB setup surface.
+  - Artifact:
+    `artifacts/task71-clean-before-final-suite.log`.
+  - Key line:
+    `[ivf-clean] dropped 17 prefixes`.
+- `./target/debug/ecaz --host /Users/peter/.pgrx --port 28818 --log-file reviews/task-71/003-worker-curve/artifacts/suite-run-final.log bench suite run --config reviews/task-71/003-worker-curve/suite.json`
+  - passed without approval escalation.
+  - Artifacts:
+    `artifacts/suite-run-final.log`, `artifacts/suite-manifest.json`,
+    `artifacts/results.jsonl`, plus per-cell load/recall/storage logs.
+  - Worker launch rows from `ec_ivf_build_timing`:
+    real10k/25k/50k/100k all recorded `1/1`, `2/2`, `4/4`, and `8/7`
+    requested/launched workers for worker counts 1/2/4/8.
+  - Full build-index seconds:
+    - real10k: `0.464140`, `0.436080`, `0.414400`, `0.411170`
+    - real25k: `0.721680`, `0.652020`, `0.621400`, `0.612060`
+    - real50k: `1.160000`, `1.020000`, `0.937100`, `0.922410`
+    - real100k: `2.630000`, `2.220000`, `2.070000`, `2.030000`
+  - Best full-build speedup over w1 is therefore about 1.13x, 1.18x,
+    1.26x, and 1.30x respectively; this does not meet Task 71's multi-x
+    exit criterion.
+  - Heap ingest does scale inside the parallel build path. For real100k,
+    `heap_ingest_us` moves from `877228` at w1 to `274479` at w8
+    (~3.19x), while leader-side train/stage/flush work keeps full
+    `CREATE INDEX` from scaling comparably.
+  - Recall@10 matches the Task 31 baselines in every worker cell:
+    real10k `1.0000`, real25k `0.9990`, real50k `1.0000`, real100k
+    `0.9820`.
+  - ec_ivf index `size_bytes` are invariant across workers:
+    real10k `2726298`, real25k `5557453`, real50k `10171187`,
+    real100k `20342374`.
 
 The pre-fix hosted full-suite run completed, but it is not Phase 3 evidence
 for the fixed implementation:
@@ -99,13 +136,10 @@ for the fixed implementation:
   `tqvector_bench  0`.
 - The run therefore measured serial/fallback behavior despite requested
   worker counts.
-- The post-fix suite still needs to be re-run before Task 71 can claim the
-  build-time curve exit criterion.
-- The one-cell post-install probe shows that workers do launch under the
-  current installed dylib, so the next matrix run should use the fresh dylib
-  and the `ec_ivf_build_timing` rows rather than the old database-level
-  `pg_stat_get_db_parallel_workers_launched` counter as the per-build worker
-  evidence.
+- The post-fix suite has now been rerun. The old database-level
+  `pg_stat_get_db_parallel_workers_launched` counter still reports zero in
+  this environment, so the accepted per-build worker evidence is the
+  `ec_ivf_build_timing` row emitted from each load log.
 
 Failed full-suite attempts are retained as packet-local artifacts because they
 explain the runner fixes:

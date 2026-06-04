@@ -2,9 +2,9 @@
   "suite": "task71-ivf-parallel-build-worker-curve",
   "schema_version": 1,
   "config": "reviews/task-71/003-worker-curve/suite.json",
-  "config_sha256": "8e6e1bd642d27c7e04a1af714417e3f640e7a8f7bb27c80eb16463927eb2c795",
+  "config_sha256": "421ae8710b8634362ffa789ce077a063c8266a298ec704521cec8256e6d24e48",
   "dry_run": false,
-  "generated_at_unix_ms": 1780452931830,
+  "generated_at_unix_ms": 1780532383658,
   "connection": {
     "database": "tqvector_bench",
     "host": "/Users/peter/.pgrx",
@@ -45,9 +45,9 @@
         "reviews/task-71/003-worker-curve/artifacts/parallel-workers-before.log"
       ],
       "status": "succeeded",
-      "started_at_unix_ms": 1780452931832,
-      "finished_at_unix_ms": 1780452931859,
-      "duration_ms": 24,
+      "started_at_unix_ms": 1780532383660,
+      "finished_at_unix_ms": 1780532383703,
+      "duration_ms": 40,
       "exit_code": 0
     },
     {
@@ -95,7 +95,7 @@
         "rerank_width=750"
       ],
       "selected": true,
-      "pgoptions": "-c max_parallel_maintenance_workers=1",
+      "pgoptions": "-c max_parallel_maintenance_workers=1 -c max_parallel_workers=1",
       "tags": [
         "load",
         "real10k",
@@ -105,10 +105,13 @@
         "reviews/task-71/003-worker-curve/artifacts/load-real10k-w1.log"
       ],
       "status": "succeeded",
-      "started_at_unix_ms": 1780452931860,
-      "finished_at_unix_ms": 1780452955275,
-      "duration_ms": 23414,
-      "exit_code": 0
+      "started_at_unix_ms": 1780532383704,
+      "finished_at_unix_ms": 1780532401957,
+      "duration_ms": 18231,
+      "exit_code": 0,
+      "parallel_workers_before": 0,
+      "parallel_workers_after": 0,
+      "parallel_workers_delta": 0
     },
     {
       "name": "recall-real10k-w1",
@@ -154,9 +157,9 @@
         "reviews/task-71/003-worker-curve/artifacts/recall-real10k-w1.log"
       ],
       "status": "succeeded",
-      "started_at_unix_ms": 1780452955276,
-      "finished_at_unix_ms": 1780452966424,
-      "duration_ms": 11146,
+      "started_at_unix_ms": 1780532401976,
+      "finished_at_unix_ms": 1780532402489,
+      "duration_ms": 511,
       "exit_code": 0
     },
     {
@@ -186,9 +189,9 @@
         "reviews/task-71/003-worker-curve/artifacts/storage-real10k-w1.log"
       ],
       "status": "succeeded",
-      "started_at_unix_ms": 1780452966426,
-      "finished_at_unix_ms": 1780452966440,
-      "duration_ms": 13,
+      "started_at_unix_ms": 1780532402490,
+      "finished_at_unix_ms": 1780532402503,
+      "duration_ms": 11,
       "exit_code": 0
     },
     {
@@ -236,7 +239,7 @@
         "rerank_width=750"
       ],
       "selected": true,
-      "pgoptions": "-c max_parallel_maintenance_workers=2",
+      "pgoptions": "-c max_parallel_maintenance_workers=2 -c max_parallel_workers=2",
       "tags": [
         "load",
         "real10k",
@@ -246,10 +249,13 @@
         "reviews/task-71/003-worker-curve/artifacts/load-real10k-w2.log"
       ],
       "status": "succeeded",
-      "started_at_unix_ms": 1780452966441,
-      "finished_at_unix_ms": 1780452998781,
-      "duration_ms": 32338,
-      "exit_code": 0
+      "started_at_unix_ms": 1780532402504,
+      "finished_at_unix_ms": 1780532420748,
+      "duration_ms": 18224,
+      "exit_code": 0,
+      "parallel_workers_before": 0,
+      "parallel_workers_after": 0,
+      "parallel_workers_delta": 0
     },
     {
       "name": "recall-real10k-w2",
@@ -295,9 +301,9 @@
         "reviews/task-71/003-worker-curve/artifacts/recall-real10k-w2.log"
       ],
       "status": "succeeded",
-      "started_at_unix_ms": 1780452998782,
-      "finished_at_unix_ms": 1780453002579,
-      "duration_ms": 3796,
+      "started_at_unix_ms": 1780532420768,
+      "finished_at_unix_ms": 1780532421284,
+      "duration_ms": 514,
       "exit_code": 0
     },
     {
@@ -327,9 +333,9 @@
         "reviews/task-71/003-worker-curve/artifacts/storage-real10k-w2.log"
       ],
       "status": "succeeded",
-      "started_at_unix_ms": 1780453002580,
-      "finished_at_unix_ms": 1780453002594,
-      "duration_ms": 12,
+      "started_at_unix_ms": 1780532421285,
+      "finished_at_unix_ms": 1780532421298,
+      "duration_ms": 11,
       "exit_code": 0
     },
     {
@@ -377,7 +383,7 @@
         "rerank_width=750"
       ],
       "selected": true,
-      "pgoptions": "-c max_parallel_maintenance_workers=4",
+      "pgoptions": "-c max_parallel_maintenance_workers=4 -c max_parallel_workers=4",
       "tags": [
         "load",
         "real10k",
@@ -387,10 +393,13 @@
         "reviews/task-71/003-worker-curve/artifacts/load-real10k-w4.log"
       ],
       "status": "succeeded",
-      "started_at_unix_ms": 1780453002595,
-      "finished_at_unix_ms": 1780453972375,
-      "duration_ms": 35827,
-      "exit_code": 0
+      "started_at_unix_ms": 1780532421299,
+      "finished_at_unix_ms": 1780532439451,
+      "duration_ms": 18133,
+      "exit_code": 0,
+      "parallel_workers_before": 0,
+      "parallel_workers_after": 0,
+      "parallel_workers_delta": 0
     },
     {
       "name": "recall-real10k-w4",
@@ -436,9 +445,9 @@
         "reviews/task-71/003-worker-curve/artifacts/recall-real10k-w4.log"
       ],
       "status": "succeeded",
-      "started_at_unix_ms": 1780453972376,
-      "finished_at_unix_ms": 1780453975992,
-      "duration_ms": 3614,
+      "started_at_unix_ms": 1780532439470,
+      "finished_at_unix_ms": 1780532439981,
+      "duration_ms": 509,
       "exit_code": 0
     },
     {
@@ -468,8 +477,8 @@
         "reviews/task-71/003-worker-curve/artifacts/storage-real10k-w4.log"
       ],
       "status": "succeeded",
-      "started_at_unix_ms": 1780453975993,
-      "finished_at_unix_ms": 1780453976006,
+      "started_at_unix_ms": 1780532439983,
+      "finished_at_unix_ms": 1780532439996,
       "duration_ms": 11,
       "exit_code": 0
     },
@@ -518,7 +527,7 @@
         "rerank_width=750"
       ],
       "selected": true,
-      "pgoptions": "-c max_parallel_maintenance_workers=8",
+      "pgoptions": "-c max_parallel_maintenance_workers=8 -c max_parallel_workers=8",
       "tags": [
         "load",
         "real10k",
@@ -528,10 +537,13 @@
         "reviews/task-71/003-worker-curve/artifacts/load-real10k-w8.log"
       ],
       "status": "succeeded",
-      "started_at_unix_ms": 1780453976007,
-      "finished_at_unix_ms": 1780454944752,
-      "duration_ms": 31886,
-      "exit_code": 0
+      "started_at_unix_ms": 1780532439997,
+      "finished_at_unix_ms": 1780532458291,
+      "duration_ms": 18275,
+      "exit_code": 0,
+      "parallel_workers_before": 0,
+      "parallel_workers_after": 0,
+      "parallel_workers_delta": 0
     },
     {
       "name": "recall-real10k-w8",
@@ -577,9 +589,9 @@
         "reviews/task-71/003-worker-curve/artifacts/recall-real10k-w8.log"
       ],
       "status": "succeeded",
-      "started_at_unix_ms": 1780454944753,
-      "finished_at_unix_ms": 1780454948455,
-      "duration_ms": 3700,
+      "started_at_unix_ms": 1780532458310,
+      "finished_at_unix_ms": 1780532458833,
+      "duration_ms": 520,
       "exit_code": 0
     },
     {
@@ -609,9 +621,9 @@
         "reviews/task-71/003-worker-curve/artifacts/storage-real10k-w8.log"
       ],
       "status": "succeeded",
-      "started_at_unix_ms": 1780454948456,
-      "finished_at_unix_ms": 1780454948471,
-      "duration_ms": 14,
+      "started_at_unix_ms": 1780532458834,
+      "finished_at_unix_ms": 1780532458846,
+      "duration_ms": 11,
       "exit_code": 0
     },
     {
@@ -659,7 +671,7 @@
         "rerank_width=750"
       ],
       "selected": true,
-      "pgoptions": "-c max_parallel_maintenance_workers=1",
+      "pgoptions": "-c max_parallel_maintenance_workers=1 -c max_parallel_workers=1",
       "tags": [
         "load",
         "real25k",
@@ -669,10 +681,13 @@
         "reviews/task-71/003-worker-curve/artifacts/load-real25k-w1.log"
       ],
       "status": "succeeded",
-      "started_at_unix_ms": 1780454948472,
-      "finished_at_unix_ms": 1780455958772,
-      "duration_ms": 68636,
-      "exit_code": 0
+      "started_at_unix_ms": 1780532458848,
+      "finished_at_unix_ms": 1780532501206,
+      "duration_ms": 42339,
+      "exit_code": 0,
+      "parallel_workers_before": 0,
+      "parallel_workers_after": 0,
+      "parallel_workers_delta": 0
     },
     {
       "name": "recall-real25k-w1",
@@ -718,9 +733,9 @@
         "reviews/task-71/003-worker-curve/artifacts/recall-real25k-w1.log"
       ],
       "status": "succeeded",
-      "started_at_unix_ms": 1780455958773,
-      "finished_at_unix_ms": 1780455983382,
-      "duration_ms": 24592,
+      "started_at_unix_ms": 1780532501226,
+      "finished_at_unix_ms": 1780532501861,
+      "duration_ms": 633,
       "exit_code": 0
     },
     {
@@ -750,9 +765,9 @@
         "reviews/task-71/003-worker-curve/artifacts/storage-real25k-w1.log"
       ],
       "status": "succeeded",
-      "started_at_unix_ms": 1780455983384,
-      "finished_at_unix_ms": 1780455983397,
-      "duration_ms": 12,
+      "started_at_unix_ms": 1780532501862,
+      "finished_at_unix_ms": 1780532501875,
+      "duration_ms": 11,
       "exit_code": 0
     },
     {
@@ -800,7 +815,7 @@
         "rerank_width=750"
       ],
       "selected": true,
-      "pgoptions": "-c max_parallel_maintenance_workers=2",
+      "pgoptions": "-c max_parallel_maintenance_workers=2 -c max_parallel_workers=2",
       "tags": [
         "load",
         "real25k",
@@ -810,10 +825,13 @@
         "reviews/task-71/003-worker-curve/artifacts/load-real25k-w2.log"
       ],
       "status": "succeeded",
-      "started_at_unix_ms": 1780455983398,
-      "finished_at_unix_ms": 1780457929616,
-      "duration_ms": 67533,
-      "exit_code": 0
+      "started_at_unix_ms": 1780532501876,
+      "finished_at_unix_ms": 1780532543483,
+      "duration_ms": 41587,
+      "exit_code": 0,
+      "parallel_workers_before": 0,
+      "parallel_workers_after": 0,
+      "parallel_workers_delta": 0
     },
     {
       "name": "recall-real25k-w2",
@@ -859,9 +877,9 @@
         "reviews/task-71/003-worker-curve/artifacts/recall-real25k-w2.log"
       ],
       "status": "succeeded",
-      "started_at_unix_ms": 1780457929617,
-      "finished_at_unix_ms": 1780457935680,
-      "duration_ms": 6066,
+      "started_at_unix_ms": 1780532543503,
+      "finished_at_unix_ms": 1780532544149,
+      "duration_ms": 644,
       "exit_code": 0
     },
     {
@@ -891,9 +909,9 @@
         "reviews/task-71/003-worker-curve/artifacts/storage-real25k-w2.log"
       ],
       "status": "succeeded",
-      "started_at_unix_ms": 1780457935681,
-      "finished_at_unix_ms": 1780457935696,
-      "duration_ms": 13,
+      "started_at_unix_ms": 1780532544150,
+      "finished_at_unix_ms": 1780532544162,
+      "duration_ms": 11,
       "exit_code": 0
     },
     {
@@ -941,7 +959,7 @@
         "rerank_width=750"
       ],
       "selected": true,
-      "pgoptions": "-c max_parallel_maintenance_workers=4",
+      "pgoptions": "-c max_parallel_maintenance_workers=4 -c max_parallel_workers=4",
       "tags": [
         "load",
         "real25k",
@@ -951,10 +969,13 @@
         "reviews/task-71/003-worker-curve/artifacts/load-real25k-w4.log"
       ],
       "status": "succeeded",
-      "started_at_unix_ms": 1780457935697,
-      "finished_at_unix_ms": 1780458002768,
-      "duration_ms": 67078,
-      "exit_code": 0
+      "started_at_unix_ms": 1780532544164,
+      "finished_at_unix_ms": 1780532585694,
+      "duration_ms": 41511,
+      "exit_code": 0,
+      "parallel_workers_before": 0,
+      "parallel_workers_after": 0,
+      "parallel_workers_delta": 0
     },
     {
       "name": "recall-real25k-w4",
@@ -1000,9 +1021,9 @@
         "reviews/task-71/003-worker-curve/artifacts/recall-real25k-w4.log"
       ],
       "status": "succeeded",
-      "started_at_unix_ms": 1780458002769,
-      "finished_at_unix_ms": 1780458008671,
-      "duration_ms": 5900,
+      "started_at_unix_ms": 1780532585714,
+      "finished_at_unix_ms": 1780532586346,
+      "duration_ms": 631,
       "exit_code": 0
     },
     {
@@ -1032,9 +1053,9 @@
         "reviews/task-71/003-worker-curve/artifacts/storage-real25k-w4.log"
       ],
       "status": "succeeded",
-      "started_at_unix_ms": 1780458008672,
-      "finished_at_unix_ms": 1780458008685,
-      "duration_ms": 12,
+      "started_at_unix_ms": 1780532586347,
+      "finished_at_unix_ms": 1780532586360,
+      "duration_ms": 11,
       "exit_code": 0
     },
     {
@@ -1082,7 +1103,7 @@
         "rerank_width=750"
       ],
       "selected": true,
-      "pgoptions": "-c max_parallel_maintenance_workers=8",
+      "pgoptions": "-c max_parallel_maintenance_workers=8 -c max_parallel_workers=8",
       "tags": [
         "load",
         "real25k",
@@ -1092,10 +1113,13 @@
         "reviews/task-71/003-worker-curve/artifacts/load-real25k-w8.log"
       ],
       "status": "succeeded",
-      "started_at_unix_ms": 1780458008687,
-      "finished_at_unix_ms": 1780458077324,
-      "duration_ms": 68635,
-      "exit_code": 0
+      "started_at_unix_ms": 1780532586361,
+      "finished_at_unix_ms": 1780532628322,
+      "duration_ms": 41941,
+      "exit_code": 0,
+      "parallel_workers_before": 0,
+      "parallel_workers_after": 0,
+      "parallel_workers_delta": 0
     },
     {
       "name": "recall-real25k-w8",
@@ -1141,9 +1165,9 @@
         "reviews/task-71/003-worker-curve/artifacts/recall-real25k-w8.log"
       ],
       "status": "succeeded",
-      "started_at_unix_ms": 1780458077326,
-      "finished_at_unix_ms": 1780458083441,
-      "duration_ms": 6114,
+      "started_at_unix_ms": 1780532628341,
+      "finished_at_unix_ms": 1780532628974,
+      "duration_ms": 631,
       "exit_code": 0
     },
     {
@@ -1173,9 +1197,9 @@
         "reviews/task-71/003-worker-curve/artifacts/storage-real25k-w8.log"
       ],
       "status": "succeeded",
-      "started_at_unix_ms": 1780458083442,
-      "finished_at_unix_ms": 1780458083457,
-      "duration_ms": 13,
+      "started_at_unix_ms": 1780532628976,
+      "finished_at_unix_ms": 1780532628988,
+      "duration_ms": 11,
       "exit_code": 0
     },
     {
@@ -1223,7 +1247,7 @@
         "rerank_width=750"
       ],
       "selected": true,
-      "pgoptions": "-c max_parallel_maintenance_workers=1",
+      "pgoptions": "-c max_parallel_maintenance_workers=1 -c max_parallel_workers=1",
       "tags": [
         "load",
         "real50k",
@@ -1233,10 +1257,13 @@
         "reviews/task-71/003-worker-curve/artifacts/load-real50k-w1.log"
       ],
       "status": "succeeded",
-      "started_at_unix_ms": 1780458083458,
-      "finished_at_unix_ms": 1780458220053,
-      "duration_ms": 136593,
-      "exit_code": 0
+      "started_at_unix_ms": 1780532628990,
+      "finished_at_unix_ms": 1780532712343,
+      "duration_ms": 83334,
+      "exit_code": 0,
+      "parallel_workers_before": 0,
+      "parallel_workers_after": 0,
+      "parallel_workers_delta": 0
     },
     {
       "name": "recall-real50k-w1",
@@ -1282,9 +1309,9 @@
         "reviews/task-71/003-worker-curve/artifacts/recall-real50k-w1.log"
       ],
       "status": "succeeded",
-      "started_at_unix_ms": 1780458220054,
-      "finished_at_unix_ms": 1780458268447,
-      "duration_ms": 48391,
+      "started_at_unix_ms": 1780532712363,
+      "finished_at_unix_ms": 1780532713205,
+      "duration_ms": 840,
       "exit_code": 0
     },
     {
@@ -1314,9 +1341,9 @@
         "reviews/task-71/003-worker-curve/artifacts/storage-real50k-w1.log"
       ],
       "status": "succeeded",
-      "started_at_unix_ms": 1780458268448,
-      "finished_at_unix_ms": 1780458268464,
-      "duration_ms": 14,
+      "started_at_unix_ms": 1780532713206,
+      "finished_at_unix_ms": 1780532713220,
+      "duration_ms": 12,
       "exit_code": 0
     },
     {
@@ -1364,7 +1391,7 @@
         "rerank_width=750"
       ],
       "selected": true,
-      "pgoptions": "-c max_parallel_maintenance_workers=2",
+      "pgoptions": "-c max_parallel_maintenance_workers=2 -c max_parallel_workers=2",
       "tags": [
         "load",
         "real50k",
@@ -1374,10 +1401,13 @@
         "reviews/task-71/003-worker-curve/artifacts/load-real50k-w2.log"
       ],
       "status": "succeeded",
-      "started_at_unix_ms": 1780458268465,
-      "finished_at_unix_ms": 1780458400047,
-      "duration_ms": 131580,
-      "exit_code": 0
+      "started_at_unix_ms": 1780532713222,
+      "finished_at_unix_ms": 1780532795146,
+      "duration_ms": 81905,
+      "exit_code": 0,
+      "parallel_workers_before": 0,
+      "parallel_workers_after": 0,
+      "parallel_workers_delta": 0
     },
     {
       "name": "recall-real50k-w2",
@@ -1423,9 +1453,9 @@
         "reviews/task-71/003-worker-curve/artifacts/recall-real50k-w2.log"
       ],
       "status": "succeeded",
-      "started_at_unix_ms": 1780458400048,
-      "finished_at_unix_ms": 1780458409160,
-      "duration_ms": 9110,
+      "started_at_unix_ms": 1780532795166,
+      "finished_at_unix_ms": 1780532796016,
+      "duration_ms": 848,
       "exit_code": 0
     },
     {
@@ -1455,9 +1485,9 @@
         "reviews/task-71/003-worker-curve/artifacts/storage-real50k-w2.log"
       ],
       "status": "succeeded",
-      "started_at_unix_ms": 1780458409162,
-      "finished_at_unix_ms": 1780458409176,
-      "duration_ms": 13,
+      "started_at_unix_ms": 1780532796017,
+      "finished_at_unix_ms": 1780532796031,
+      "duration_ms": 12,
       "exit_code": 0
     },
     {
@@ -1505,7 +1535,7 @@
         "rerank_width=750"
       ],
       "selected": true,
-      "pgoptions": "-c max_parallel_maintenance_workers=4",
+      "pgoptions": "-c max_parallel_maintenance_workers=4 -c max_parallel_workers=4",
       "tags": [
         "load",
         "real50k",
@@ -1515,10 +1545,13 @@
         "reviews/task-71/003-worker-curve/artifacts/load-real50k-w4.log"
       ],
       "status": "succeeded",
-      "started_at_unix_ms": 1780458409178,
-      "finished_at_unix_ms": 1780458540240,
-      "duration_ms": 131061,
-      "exit_code": 0
+      "started_at_unix_ms": 1780532796032,
+      "finished_at_unix_ms": 1780532879366,
+      "duration_ms": 83314,
+      "exit_code": 0,
+      "parallel_workers_before": 0,
+      "parallel_workers_after": 0,
+      "parallel_workers_delta": 0
     },
     {
       "name": "recall-real50k-w4",
@@ -1564,9 +1597,9 @@
         "reviews/task-71/003-worker-curve/artifacts/recall-real50k-w4.log"
       ],
       "status": "succeeded",
-      "started_at_unix_ms": 1780458540241,
-      "finished_at_unix_ms": 1780458549396,
-      "duration_ms": 9153,
+      "started_at_unix_ms": 1780532879386,
+      "finished_at_unix_ms": 1780532880233,
+      "duration_ms": 845,
       "exit_code": 0
     },
     {
@@ -1596,8 +1629,8 @@
         "reviews/task-71/003-worker-curve/artifacts/storage-real50k-w4.log"
       ],
       "status": "succeeded",
-      "started_at_unix_ms": 1780458549397,
-      "finished_at_unix_ms": 1780458549412,
+      "started_at_unix_ms": 1780532880234,
+      "finished_at_unix_ms": 1780532880248,
       "duration_ms": 13,
       "exit_code": 0
     },
@@ -1646,7 +1679,7 @@
         "rerank_width=750"
       ],
       "selected": true,
-      "pgoptions": "-c max_parallel_maintenance_workers=8",
+      "pgoptions": "-c max_parallel_maintenance_workers=8 -c max_parallel_workers=8",
       "tags": [
         "load",
         "real50k",
@@ -1656,10 +1689,13 @@
         "reviews/task-71/003-worker-curve/artifacts/load-real50k-w8.log"
       ],
       "status": "succeeded",
-      "started_at_unix_ms": 1780458549413,
-      "finished_at_unix_ms": 1780458680849,
-      "duration_ms": 131434,
-      "exit_code": 0
+      "started_at_unix_ms": 1780532880249,
+      "finished_at_unix_ms": 1780532963214,
+      "duration_ms": 82944,
+      "exit_code": 0,
+      "parallel_workers_before": 0,
+      "parallel_workers_after": 0,
+      "parallel_workers_delta": 0
     },
     {
       "name": "recall-real50k-w8",
@@ -1705,9 +1741,9 @@
         "reviews/task-71/003-worker-curve/artifacts/recall-real50k-w8.log"
       ],
       "status": "succeeded",
-      "started_at_unix_ms": 1780458680850,
-      "finished_at_unix_ms": 1780458690034,
-      "duration_ms": 9183,
+      "started_at_unix_ms": 1780532963234,
+      "finished_at_unix_ms": 1780532964076,
+      "duration_ms": 840,
       "exit_code": 0
     },
     {
@@ -1737,9 +1773,9 @@
         "reviews/task-71/003-worker-curve/artifacts/storage-real50k-w8.log"
       ],
       "status": "succeeded",
-      "started_at_unix_ms": 1780458690036,
-      "finished_at_unix_ms": 1780458690050,
-      "duration_ms": 13,
+      "started_at_unix_ms": 1780532964077,
+      "finished_at_unix_ms": 1780532964091,
+      "duration_ms": 12,
       "exit_code": 0
     },
     {
@@ -1787,7 +1823,7 @@
         "rerank_width=500"
       ],
       "selected": true,
-      "pgoptions": "-c max_parallel_maintenance_workers=1",
+      "pgoptions": "-c max_parallel_maintenance_workers=1 -c max_parallel_workers=1",
       "tags": [
         "load",
         "real100k",
@@ -1797,10 +1833,13 @@
         "reviews/task-71/003-worker-curve/artifacts/load-real100k-w1.log"
       ],
       "status": "succeeded",
-      "started_at_unix_ms": 1780458690052,
-      "finished_at_unix_ms": 1780459902026,
-      "duration_ms": 271262,
-      "exit_code": 0
+      "started_at_unix_ms": 1780532964092,
+      "finished_at_unix_ms": 1780533129327,
+      "duration_ms": 165214,
+      "exit_code": 0,
+      "parallel_workers_before": 0,
+      "parallel_workers_after": 0,
+      "parallel_workers_delta": 0
     },
     {
       "name": "recall-real100k-w1",
@@ -1846,9 +1885,9 @@
         "reviews/task-71/003-worker-curve/artifacts/recall-real100k-w1.log"
       ],
       "status": "succeeded",
-      "started_at_unix_ms": 1780459902027,
-      "finished_at_unix_ms": 1780459986918,
-      "duration_ms": 84885,
+      "started_at_unix_ms": 1780533129348,
+      "finished_at_unix_ms": 1780533130215,
+      "duration_ms": 865,
       "exit_code": 0
     },
     {
@@ -1878,8 +1917,8 @@
         "reviews/task-71/003-worker-curve/artifacts/storage-real100k-w1.log"
       ],
       "status": "succeeded",
-      "started_at_unix_ms": 1780459986919,
-      "finished_at_unix_ms": 1780459986935,
+      "started_at_unix_ms": 1780533130216,
+      "finished_at_unix_ms": 1780533130231,
       "duration_ms": 14,
       "exit_code": 0
     },
@@ -1928,7 +1967,7 @@
         "rerank_width=500"
       ],
       "selected": true,
-      "pgoptions": "-c max_parallel_maintenance_workers=2",
+      "pgoptions": "-c max_parallel_maintenance_workers=2 -c max_parallel_workers=2",
       "tags": [
         "load",
         "real100k",
@@ -1938,10 +1977,13 @@
         "reviews/task-71/003-worker-curve/artifacts/load-real100k-w2.log"
       ],
       "status": "succeeded",
-      "started_at_unix_ms": 1780459986936,
-      "finished_at_unix_ms": 1780461202166,
-      "duration_ms": 294460,
-      "exit_code": 0
+      "started_at_unix_ms": 1780533130233,
+      "finished_at_unix_ms": 1780535596587,
+      "duration_ms": 164634,
+      "exit_code": 0,
+      "parallel_workers_before": 0,
+      "parallel_workers_after": 0,
+      "parallel_workers_delta": 0
     },
     {
       "name": "recall-real100k-w2",
@@ -1987,9 +2029,9 @@
         "reviews/task-71/003-worker-curve/artifacts/recall-real100k-w2.log"
       ],
       "status": "succeeded",
-      "started_at_unix_ms": 1780461202168,
-      "finished_at_unix_ms": 1780461211579,
-      "duration_ms": 9411,
+      "started_at_unix_ms": 1780535596610,
+      "finished_at_unix_ms": 1780535597456,
+      "duration_ms": 845,
       "exit_code": 0
     },
     {
@@ -2019,9 +2061,9 @@
         "reviews/task-71/003-worker-curve/artifacts/storage-real100k-w2.log"
       ],
       "status": "succeeded",
-      "started_at_unix_ms": 1780461211581,
-      "finished_at_unix_ms": 1780461211596,
-      "duration_ms": 14,
+      "started_at_unix_ms": 1780535597458,
+      "finished_at_unix_ms": 1780535597473,
+      "duration_ms": 13,
       "exit_code": 0
     },
     {
@@ -2069,7 +2111,7 @@
         "rerank_width=500"
       ],
       "selected": true,
-      "pgoptions": "-c max_parallel_maintenance_workers=4",
+      "pgoptions": "-c max_parallel_maintenance_workers=4 -c max_parallel_workers=4",
       "tags": [
         "load",
         "real100k",
@@ -2079,10 +2121,13 @@
         "reviews/task-71/003-worker-curve/artifacts/load-real100k-w4.log"
       ],
       "status": "succeeded",
-      "started_at_unix_ms": 1780461211598,
-      "finished_at_unix_ms": 1780462541581,
-      "duration_ms": 277143,
-      "exit_code": 0
+      "started_at_unix_ms": 1780535597474,
+      "finished_at_unix_ms": 1780536776776,
+      "duration_ms": 162465,
+      "exit_code": 0,
+      "parallel_workers_before": 0,
+      "parallel_workers_after": 0,
+      "parallel_workers_delta": 0
     },
     {
       "name": "recall-real100k-w4",
@@ -2128,9 +2173,9 @@
         "reviews/task-71/003-worker-curve/artifacts/recall-real100k-w4.log"
       ],
       "status": "succeeded",
-      "started_at_unix_ms": 1780462541582,
-      "finished_at_unix_ms": 1780462551042,
-      "duration_ms": 9458,
+      "started_at_unix_ms": 1780536776797,
+      "finished_at_unix_ms": 1780536777625,
+      "duration_ms": 826,
       "exit_code": 0
     },
     {
@@ -2160,9 +2205,9 @@
         "reviews/task-71/003-worker-curve/artifacts/storage-real100k-w4.log"
       ],
       "status": "succeeded",
-      "started_at_unix_ms": 1780462551044,
-      "finished_at_unix_ms": 1780462551060,
-      "duration_ms": 14,
+      "started_at_unix_ms": 1780536777626,
+      "finished_at_unix_ms": 1780536777641,
+      "duration_ms": 13,
       "exit_code": 0
     },
     {
@@ -2210,7 +2255,7 @@
         "rerank_width=500"
       ],
       "selected": true,
-      "pgoptions": "-c max_parallel_maintenance_workers=8",
+      "pgoptions": "-c max_parallel_maintenance_workers=8 -c max_parallel_workers=8",
       "tags": [
         "load",
         "real100k",
@@ -2220,10 +2265,13 @@
         "reviews/task-71/003-worker-curve/artifacts/load-real100k-w8.log"
       ],
       "status": "succeeded",
-      "started_at_unix_ms": 1780462551061,
-      "finished_at_unix_ms": 1780463727863,
-      "duration_ms": 277966,
-      "exit_code": 0
+      "started_at_unix_ms": 1780536777643,
+      "finished_at_unix_ms": 1780536941073,
+      "duration_ms": 163411,
+      "exit_code": 0,
+      "parallel_workers_before": 0,
+      "parallel_workers_after": 0,
+      "parallel_workers_delta": 0
     },
     {
       "name": "recall-real100k-w8",
@@ -2269,9 +2317,9 @@
         "reviews/task-71/003-worker-curve/artifacts/recall-real100k-w8.log"
       ],
       "status": "succeeded",
-      "started_at_unix_ms": 1780463727865,
-      "finished_at_unix_ms": 1780463737393,
-      "duration_ms": 9526,
+      "started_at_unix_ms": 1780536941093,
+      "finished_at_unix_ms": 1780536941942,
+      "duration_ms": 847,
       "exit_code": 0
     },
     {
@@ -2301,9 +2349,9 @@
         "reviews/task-71/003-worker-curve/artifacts/storage-real100k-w8.log"
       ],
       "status": "succeeded",
-      "started_at_unix_ms": 1780463737395,
-      "finished_at_unix_ms": 1780463737412,
-      "duration_ms": 15,
+      "started_at_unix_ms": 1780536941944,
+      "finished_at_unix_ms": 1780536941959,
+      "duration_ms": 13,
       "exit_code": 0
     },
     {
@@ -2338,9 +2386,9 @@
         "reviews/task-71/003-worker-curve/artifacts/parallel-workers-after.log"
       ],
       "status": "succeeded",
-      "started_at_unix_ms": 1780463737413,
-      "finished_at_unix_ms": 1780463737444,
-      "duration_ms": 29,
+      "started_at_unix_ms": 1780536941960,
+      "finished_at_unix_ms": 1780536941978,
+      "duration_ms": 16,
       "exit_code": 0
     }
   ]
