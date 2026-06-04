@@ -1,0 +1,5 @@
+profile:  1m
+state:    paused
+db:       10.42.1.131 (i-06ace3e95ab942623)
+bucket:   ecaz-cloud-1m-b62eb804
+cost:     ~$0.00/hr running, ~$8.00/mo retained storage

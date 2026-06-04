@@ -1,0 +1,8 @@
+
+   0: [91mssm command 91aaadd0-58a0-491e-9db9-20be07417825 on i-0d1923e6ad0b941f6 ended in Cancelled (rc=-1): [0m
+
+Location:
+   [35mcrates/ecaz-cloud/src/ssm.rs[0m:[35m111[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.

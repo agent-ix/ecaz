@@ -1,0 +1,8 @@
+
+   0: [91mssm command c33269b4-7e3b-4b4d-8a33-b2cf7dc8e8e1 on i-06ace3e95ab942623 ended in Failed (rc=1): + cd /var/lib/pgsql/build/ecaz / ++ dirname benchmarks/aws-spire-1m/001-run/suite-no-recall.json / + mkdir -p benchmarks/aws-spire-1m/001-run benchmarks/aws-spire-1m/001-run/artifacts/no-recall / + trap 'status=$?; set +e; aws s3 sync benchmarks/aws-spire-1m/001-run/artifacts/no-recall s3://ecaz-cloud-1m-b62eb804/bench-artifacts/aws-spire-1m-rabitq-global1152-no-recall/20260603T191907Z/ --region us-west-2 --only-show-errors || true; exit $status' EXIT / + cat[0m
+
+Location:
+   [35mcrates/ecaz-cloud/src/ssm.rs[0m:[35m111[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.

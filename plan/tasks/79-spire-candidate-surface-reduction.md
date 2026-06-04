@@ -1,6 +1,6 @@
 # Task 79: SPIRE Candidate Surface Reduction
 
-Status: active (2026-06-01)
+Status: complete (2026-06-04)
 Owner: coder (to be assigned). One coder, one branch.
 Priority: 0 (direct successor to Tasks 75-78)
 
