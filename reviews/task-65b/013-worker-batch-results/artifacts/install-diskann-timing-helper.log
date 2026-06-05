@@ -1,0 +1,7 @@
+CREATE FUNCTION
+ALTER EXTENSION
+ count 
+-------
+     1
+(1 row)
+
