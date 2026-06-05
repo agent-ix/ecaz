@@ -1,6 +1,6 @@
 # Task 80 AWS 1M Block16 Pruning
 
-Status: partial AWS run complete
+Status: closeout - AWS 1M follow-up measured, Task 80 path shelved
 
 ## Purpose
 
@@ -44,8 +44,8 @@ The accepted AWS row should compare against:
 
 ## Results
 
-The AWS run produced a valid 1M `leaf_block_rows=16` / tg256 index and one full
-post-repair q500 recall/latency row. The retained AWS extension catalog was
+The AWS run produced a valid 1M `leaf_block_rows=16` / tg256 index and two full
+post-repair q500 recall/latency rows. The retained AWS extension catalog was
 missing `ec_spire_index_scan_leaf_candidate_snapshot(oid, real[])`; this packet
 records the catalog-only repair used to register that pgrx function before the
 post-repair retry.
@@ -57,18 +57,34 @@ Index build:
 - rows `990,000`
 - build time `1,704,036 ms`
 
-Completed row, global block cap `1152`, q500:
+Completed rows, q500:
 
-| nprobe | recall@10 | p50 | p95 | candidates | heap rerank |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| 96 | 0.9832 | 301.121 ms | 377.482 ms | 9,213,846 | 12,500 |
-| 128 | 0.9832 | 320.201 ms | 422.479 ms | 9,213,838 | 12,500 |
-| 256 | 0.9832 | 319.523 ms | 417.068 ms | 9,213,838 | 12,500 |
+| global cap | nprobe | recall@10 | p50 | p95 | candidates | heap rerank |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1152 | 96 | 0.9832 | 301.121 ms | 377.482 ms | 9,213,846 | 12,500 |
+| 1152 | 128 | 0.9832 | 320.201 ms | 422.479 ms | 9,213,838 | 12,500 |
+| 1152 | 256 | 0.9832 | 319.523 ms | 417.068 ms | 9,213,838 | 12,500 |
+| 2048 | 96 | 0.9914 | 308.087 ms | 357.431 ms | 16,379,614 | 12,500 |
+| 2048 | 128 | 0.9918 | 334.571 ms | 413.553 ms | 16,379,623 | 12,500 |
+| 2048 | 256 | 0.9918 | 334.867 ms | 413.172 ms | 16,379,623 | 12,500 |
 
-The full matrix did not complete in this run. The post-repair SSM invocation hit
-the one-hour execution timeout while the `2048` global cap pipeline was still
-running, so `4096` and `8192` were not reached. AWS profile `1m` was paused
-after syncing the completed artifacts.
+Decision:
+
+- `global1152` matches the old tg96 recall row (`0.9832`) but is slower than
+  the old p50 (`301.121 ms` vs `268.824 ms` at nprobe 96).
+- `global2048` materially improves recall (`0.9914` to `0.9918`) but does so by
+  raising the q500 scored-candidate surface to about `16.38M` and p50 to
+  `308.087-334.867 ms`.
+- `4096` and `8192` were not run after the successful `2048` continuation. They
+  can only spend more block budget on this same mechanism, while Task 80 needs a
+  candidate/latency win, not a larger recall-spend control.
+
+Task 80 is therefore closed as a measured failed latency path. The local 100k
+row was credible, but AWS 1M shows this block-cap tuning does not preserve the
+candidate-surface win at scale. The next owner is
+`plan/tasks/81-spire-leaf-block-summary-format.md`, which should implement the
+deeper ADR-074-style persisted leaf block-summary format instead of further
+global-cap sweeps.
 
 Primary evidence:
 
@@ -76,6 +92,10 @@ Primary evidence:
 - `artifacts/aws-1m-block16-pruning-query-after-repair/pipeline-spire-1m-rabitq-block16-global1152.log`
 - `artifacts/aws-1m-block16-pruning-query-after-repair/funnel-spire-1m-rabitq-block16-global1152.jsonl`
 - `artifacts/aws-1m-block16-pruning-query-after-repair/storage-spire-1m-rabitq-block16-tg256.log`
+- `artifacts/aws-1m-block16-pruning-continuation/pipeline-spire-1m-rabitq-block16-global2048.log`
+- `artifacts/aws-1m-block16-pruning-continuation/funnel-spire-1m-rabitq-block16-global2048.jsonl`
+- `artifacts/aws-1m-block16-pruning-continuation/results-global2048.jsonl`
+- `artifacts/ssm-continuation-global2048-success.json`
 - `artifacts/ssm-register-candidate-snapshot.json`
 - `artifacts/ssm-query-after-repair-timeout.json`
-- `artifacts/cloud-status-after-task80-pause.log`
+- `artifacts/ec2-status-after-task80-continuation-pause.log`
