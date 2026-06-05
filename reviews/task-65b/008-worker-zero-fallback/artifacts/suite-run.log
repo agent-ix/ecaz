@@ -1,0 +1,283 @@
+[suite:task65b-worker-zero-fallback] wrote reviews/task-65b/008-worker-zero-fallback/artifacts/suite-manifest.json
+[suite:task65b-worker-zero-fallback] precheck-host -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 dev sql --pg 18 --db tqvector_bench --socket-dir /Users/peter/.pgrx --raw --sql "SELECT now() AS captured_at, version() AS postgres_version, current_setting('shared_buffers') AS shared_buffers, current_setting('maintenance_work_mem') AS maintenance_work_mem, current_setting('max_parallel_workers') AS max_parallel_workers, current_setting('max_parallel_maintenance_workers') AS max_parallel_maintenance_workers; SELECT extversion FROM pg_extension WHERE extname = 'ecaz';" --log-output reviews/task-65b/008-worker-zero-fallback/artifacts/precheck-host.log
+[suite:task65b-worker-zero-fallback] wrote reviews/task-65b/008-worker-zero-fallback/artifacts/suite-manifest.json
+          captured_at          |                                                      postgres_version                                                       | shared_buffers | maintenance_work_mem | max_parallel_workers | max_parallel_maintenance_workers 
+-------------------------------+-----------------------------------------------------------------------------------------------------------------------------+----------------+----------------------+----------------------+----------------------------------
+ 2026-06-04 19:46:41.178086-07 | PostgreSQL 18.3 (Homebrew) on aarch64-apple-darwin25.2.0, compiled by Apple clang version 17.0.0 (clang-1700.6.3.2), 64-bit | 128MB          | 64MB                 | 8                    | 2
+(1 row)
+
+ extversion 
+------------
+ 0.1.1
+(1 row)
+
+[suite:task65b-worker-zero-fallback] wrote reviews/task-65b/008-worker-zero-fallback/artifacts/suite-manifest.json
+[suite:task65b-worker-zero-fallback] load-real10k-w0 -> PGOPTIONS="-c max_parallel_maintenance_workers=0 -c max_parallel_workers=0" --database tqvector_bench --host /Users/peter/.pgrx --port 28818 --log-file reviews/task-65b/008-worker-zero-fallback/artifacts/load-real10k-w0.log corpus load --prefix task65b_w0_real10k_r32_l100 --profile ec_diskann --corpus-file data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_corpus.tsv --queries-file data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_queries.tsv --manifest-file data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_manifest.json --allow-manifest-mismatch --bits 4 --seed 42 --storage-format pq_fastscan --table-reloption parallel_workers=0 --reloption graph_degree=32 --reloption build_list_size=100 --reloption alpha=1.2
+[suite:task65b-worker-zero-fallback] wrote reviews/task-65b/008-worker-zero-fallback/artifacts/suite-manifest.json
+[loader] inspecting data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_corpus.tsv
+[loader] inspecting data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_queries.tsv
+[loader] corpus: 10000 rows, sha256=c67c5810b66d982d705974e48d4775479adfbd92a988f694091266e049a35e75  queries: 200 rows, sha256=a2c191bb742017d849e73f6e6866e8e0f0bac1579ba212f7fc76b8eb09904ae8
+[loader] warning: manifest verification failed for data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_manifest.json: prefix="ec_hnsw_real_10k" (expected "task65b_w0_real10k_r32_l100")
+[loader] task65b_w0_real10k_r32_l100_corpus already has 10000 rows; skipping reload
+[loader] task65b_w0_real10k_r32_l100_queries already has 200 rows; skipping reload
+[loader] task65b_w0_real10k_r32_l100_pq_fastscan_idx already exists with reloptions=[graph_degree=32, build_list_size=100, alpha=1.2, storage_format=pq_fastscan]; skipping rebuild
+┌─────────┬───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ field   ┆ value                                                                                                                     │
+╞═════════╪═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════╡
+│ profile ┆ ec_diskann                                                                                                                │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ task65b_w0_real10k_r32_l100_corpus (10000 rows)                                                                           │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ task65b_w0_real10k_r32_l100_queries (200 rows)                                                                            │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ task65b_w0_real10k_r32_l100_pq_fastscan_idx [graph_degree=32, build_list_size=100, alpha=1.2, storage_format=pq_fastscan] │
+└─────────┴───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+[loader] completed prefix task65b_w0_real10k_r32_l100 in 9.78s
+[suite:task65b-worker-zero-fallback] wrote reviews/task-65b/008-worker-zero-fallback/artifacts/suite-manifest.json
+[suite:task65b-worker-zero-fallback] graph-real10k-w0 -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 bench diskann-graph --prefix task65b_w0_real10k_r32_l100 --log-output reviews/task-65b/008-worker-zero-fallback/artifacts/graph-real10k-w0.log
+[suite:task65b-worker-zero-fallback] wrote reviews/task-65b/008-worker-zero-fallback/artifacts/suite-manifest.json
+DiskANN graph diagnostics for prefix=task65b_w0_real10k_r32_l100 corpus=task65b_w0_real10k_r32_l100_corpus index=task65b_w0_real10k_r32_l100_pq_fastscan_idx
+┌────────────────────────┬──────────┐
+│ field                  ┆ value    │
+╞════════════════════════╪══════════╡
+│ block_count            ┆ 603      │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+│ dimensions             ┆ 1536     │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+│ graph_degree_r         ┆ 32       │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+│ build_list_size_l      ┆ 100      │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+│ alpha                  ┆ 1.200000 │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+│ inserted_since_rebuild ┆ 0        │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+│ needs_medoid_refresh   ┆ false    │
+└────────────────────────┴──────────┘
+┌─────────────────────────────┬──────────┐
+│ field                       ┆ value    │
+╞═════════════════════════════╪══════════╡
+│ node_count                  ┆ 10000    │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+│ live_node_count             ┆ 10000    │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+│ non_live_node_count         ┆ 0        │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+│ entry_point_live            ┆ true     │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+│ reachable_live_node_count   ┆ 10000    │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+│ unreachable_live_node_count ┆ 0        │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+│ reachable_live_fraction     ┆ 1.000000 │
+└─────────────────────────────┴──────────┘
+┌─────────────────────────────────┬────────┐
+│ field                           ┆ value  │
+╞═════════════════════════════════╪════════╡
+│ neighbor_ref_count              ┆ 257058 │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+│ live_neighbor_ref_count         ┆ 257058 │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+│ dead_neighbor_ref_count         ┆ 0      │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+│ invalid_neighbor_ref_count      ┆ 0      │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+│ self_neighbor_ref_count         ┆ 0      │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+│ duplicate_neighbor_ref_count    ┆ 0      │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+│ unresolvable_neighbor_ref_count ┆ 0      │
+└─────────────────────────────────┴────────┘
+┌───────────┬──────┬─────┬───────────┬─────┬─────┬─────┬──────┐
+│ direction ┆ zero ┆ min ┆ avg       ┆ p50 ┆ p95 ┆ p99 ┆ max  │
+╞═══════════╪══════╪═════╪═══════════╪═════╪═════╪═════╪══════╡
+│ out       ┆ 0    ┆ 3   ┆ 25.705800 ┆ 27  ┆ 32  ┆ 32  ┆ 32   │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌┤
+│ in        ┆ 0    ┆ 2   ┆ 25.705800 ┆ 22  ┆ 52  ┆ 79  ┆ 2882 │
+└───────────┴──────┴─────┴───────────┴─────┴─────┴─────┴──────┘
+[suite:task65b-worker-zero-fallback] wrote reviews/task-65b/008-worker-zero-fallback/artifacts/suite-manifest.json
+[suite:task65b-worker-zero-fallback] recall-real10k-w0 -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 bench recall --prefix task65b_w0_real10k_r32_l100 --profile ec_diskann --k 10 --sweep "64,128,200" --queries-limit 200 --bits 4 --seed 42 --force-index --truth-cache-file reviews/task-65b/008-worker-zero-fallback/artifacts/truth-real10k-k10.json --log-output reviews/task-65b/008-worker-zero-fallback/artifacts/recall-real10k-w0.log
+[suite:task65b-worker-zero-fallback] wrote reviews/task-65b/008-worker-zero-fallback/artifacts/suite-manifest.json
+[recall] fetching queries from task65b_w0_real10k_r32_l100_queries ...
+[recall] fetching corpus from task65b_w0_real10k_r32_l100_corpus ...
+[recall] computing ground truth: 200 queries vs 10000 corpus rows (dim=1536) ...
+[recall] ground truth in 5.54s
+[recall] wrote ground truth cache reviews/task-65b/008-worker-zero-fallback/artifacts/truth-real10k-k10.json
+┌───────────┬─────────┬───────────────┬──────────┬─────────────────┬──────────────────┬────────────┬────────────┬────────────┬──────────────┬────────┬─────────────┐
+│ list_size ┆ queries ┆ recall_trials ┆ recall@k ┆ recall_ci95_low ┆ recall_ci95_high ┆ recall_p10 ┆ recall_p50 ┆ recall_p90 ┆ recall_worst ┆ ndcg@k ┆ mean q-time │
+╞═══════════╪═════════╪═══════════════╪══════════╪═════════════════╪══════════════════╪════════════╪════════════╪════════════╪══════════════╪════════╪═════════════╡
+│ 64        ┆ 200     ┆ 2000          ┆ 0.9965   ┆ 0.9928          ┆ 0.9983           ┆ 1.0000     ┆ 1.0000     ┆ 1.0000     ┆ 0.7000       ┆ 0.9999 ┆ 0.61 ms     │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 128       ┆ 200     ┆ 2000          ┆ 0.9970   ┆ 0.9935          ┆ 0.9986           ┆ 1.0000     ┆ 1.0000     ┆ 1.0000     ┆ 0.7000       ┆ 0.9999 ┆ 0.68 ms     │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 200       ┆ 200     ┆ 2000          ┆ 0.9975   ┆ 0.9942          ┆ 0.9989           ┆ 1.0000     ┆ 1.0000     ┆ 1.0000     ┆ 0.7000       ┆ 0.9999 ┆ 0.78 ms     │
+└───────────┴─────────┴───────────────┴──────────┴─────────────────┴──────────────────┴────────────┴────────────┴────────────┴──────────────┴────────┴─────────────┘
+[suite:task65b-worker-zero-fallback] wrote reviews/task-65b/008-worker-zero-fallback/artifacts/suite-manifest.json
+[suite:task65b-worker-zero-fallback] storage-real10k-w0 -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 --log-file reviews/task-65b/008-worker-zero-fallback/artifacts/storage-real10k-w0.log bench storage --prefix task65b_w0_real10k_r32_l100
+[suite:task65b-worker-zero-fallback] wrote reviews/task-65b/008-worker-zero-fallback/artifacts/suite-manifest.json
+┌───────────────────────────────┬────────────────────────────────────┐
+│ field                         ┆ value                              │
+╞═══════════════════════════════╪════════════════════════════════════╡
+│ prefix                        ┆ task65b_w0_real10k_r32_l100        │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus                        ┆ task65b_w0_real10k_r32_l100_corpus │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ rows                          ┆ 10000                              │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ heap                          ┆ 752.0 KiB                          │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ table (heap + toast + fsm/vm) ┆ 158.8 MiB                          │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes                       ┆ 4.9 MiB                            │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ total                         ┆ 163.8 MiB                          │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ per row (total)               ┆ 17171.3 B                          │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ per row (heap only)           ┆ 77.0 B                             │
+└───────────────────────────────┴────────────────────────────────────┘
+┌─────────────────────────────────────────────┬───────────────┬────────────┬────────────────────────────────────────────────────────────────────────────┬───────────┬─────────┐
+│ index                                       ┆ access method ┆ profile    ┆ reloptions                                                                 ┆ size      ┆ per row │
+╞═════════════════════════════════════════════╪═══════════════╪════════════╪════════════════════════════════════════════════════════════════════════════╪═══════════╪═════════╡
+│ task65b_w0_real10k_r32_l100_pq_fastscan_idx ┆ ec_diskann    ┆ ec_diskann ┆ {graph_degree=32,build_list_size=100,alpha=1.2,storage_format=pq_fastscan} ┆ 4.7 MiB   ┆ 494.0 B │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ task65b_w0_real10k_r32_l100_corpus_pkey     ┆ btree         ┆ <unknown>  ┆ {}                                                                         ┆ 240.0 KiB ┆ 24.6 B  │
+└─────────────────────────────────────────────┴───────────────┴────────────┴────────────────────────────────────────────────────────────────────────────┴───────────┴─────────┘
+[suite:task65b-worker-zero-fallback] wrote reviews/task-65b/008-worker-zero-fallback/artifacts/suite-manifest.json
+[suite:task65b-worker-zero-fallback] load-real100k-w0 -> PGOPTIONS="-c max_parallel_maintenance_workers=0 -c max_parallel_workers=0" --database tqvector_bench --host /Users/peter/.pgrx --port 28818 --log-file reviews/task-65b/008-worker-zero-fallback/artifacts/load-real100k-w0.log corpus load --prefix task65b_w0_real100k_r32_l100 --profile ec_diskann --corpus-file data/task60_m5_dbpedia_staged/ec_real_100k_corpus.tsv --queries-file data/task60_m5_dbpedia_staged/ec_real_100k_queries.tsv --manifest-file data/task60_m5_dbpedia_staged/ec_real_100k_manifest.json --allow-manifest-mismatch --bits 4 --seed 42 --storage-format pq_fastscan --table-reloption parallel_workers=0 --reloption graph_degree=32 --reloption build_list_size=100 --reloption alpha=1.2
+[suite:task65b-worker-zero-fallback] wrote reviews/task-65b/008-worker-zero-fallback/artifacts/suite-manifest.json
+[loader] inspecting data/task60_m5_dbpedia_staged/ec_real_100k_corpus.tsv
+[loader] inspecting data/task60_m5_dbpedia_staged/ec_real_100k_queries.tsv
+[loader] corpus: 100000 rows, sha256=07275cfd5a7a4b415ddf5eacc086de98294ac978532df46ffae30f9202323a95  queries: 1000 rows, sha256=a7cbec6fc44f6c148234538f61339d00d2f10646febc8f667dcbe75d9cf41782
+[loader] warning: manifest verification failed for data/task60_m5_dbpedia_staged/ec_real_100k_manifest.json: prefix="ec_real_100k" (expected "task65b_w0_real100k_r32_l100")
+[loader] copied corpus table task65b_w0_real100k_r32_l100_corpus in 56.30s
+[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...
+[loader] encoded corpus table task65b_w0_real100k_r32_l100_corpus in 14.98s
+[loader] copied queries table task65b_w0_real100k_r32_l100_queries in 573.99ms
+[loader] building task65b_w0_real100k_r32_l100_pq_fastscan_idx using ec_diskann (reloptions=[graph_degree=32, build_list_size=100, alpha=1.2, storage_format=pq_fastscan]) ...
+[loader] built task65b_w0_real100k_r32_l100_pq_fastscan_idx in 243.15s
+┌─────────┬────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ field   ┆ value                                                                                                                      │
+╞═════════╪════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════╡
+│ profile ┆ ec_diskann                                                                                                                 │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ task65b_w0_real100k_r32_l100_corpus (100000 rows)                                                                          │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ task65b_w0_real100k_r32_l100_queries (1000 rows)                                                                           │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ task65b_w0_real100k_r32_l100_pq_fastscan_idx [graph_degree=32, build_list_size=100, alpha=1.2, storage_format=pq_fastscan] │
+└─────────┴────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+[loader] completed prefix task65b_w0_real100k_r32_l100 in 411.92s
+[suite:task65b-worker-zero-fallback] wrote reviews/task-65b/008-worker-zero-fallback/artifacts/suite-manifest.json
+[suite:task65b-worker-zero-fallback] graph-real100k-w0 -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 bench diskann-graph --prefix task65b_w0_real100k_r32_l100 --log-output reviews/task-65b/008-worker-zero-fallback/artifacts/graph-real100k-w0.log
+[suite:task65b-worker-zero-fallback] wrote reviews/task-65b/008-worker-zero-fallback/artifacts/suite-manifest.json
+DiskANN graph diagnostics for prefix=task65b_w0_real100k_r32_l100 corpus=task65b_w0_real100k_r32_l100_corpus index=task65b_w0_real100k_r32_l100_pq_fastscan_idx
+┌────────────────────────┬──────────┐
+│ field                  ┆ value    │
+╞════════════════════════╪══════════╡
+│ block_count            ┆ 5897     │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+│ dimensions             ┆ 1536     │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+│ graph_degree_r         ┆ 32       │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+│ build_list_size_l      ┆ 100      │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+│ alpha                  ┆ 1.200000 │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+│ inserted_since_rebuild ┆ 0        │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+│ needs_medoid_refresh   ┆ false    │
+└────────────────────────┴──────────┘
+┌─────────────────────────────┬──────────┐
+│ field                       ┆ value    │
+╞═════════════════════════════╪══════════╡
+│ node_count                  ┆ 100000   │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+│ live_node_count             ┆ 100000   │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+│ non_live_node_count         ┆ 0        │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+│ entry_point_live            ┆ true     │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+│ reachable_live_node_count   ┆ 99989    │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+│ unreachable_live_node_count ┆ 11       │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+│ reachable_live_fraction     ┆ 0.999890 │
+└─────────────────────────────┴──────────┘
+┌─────────────────────────────────┬─────────┐
+│ field                           ┆ value   │
+╞═════════════════════════════════╪═════════╡
+│ neighbor_ref_count              ┆ 3101446 │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ live_neighbor_ref_count         ┆ 3101446 │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ dead_neighbor_ref_count         ┆ 0       │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ invalid_neighbor_ref_count      ┆ 0       │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ self_neighbor_ref_count         ┆ 0       │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ duplicate_neighbor_ref_count    ┆ 0       │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ unresolvable_neighbor_ref_count ┆ 0       │
+└─────────────────────────────────┴─────────┘
+┌───────────┬──────┬─────┬───────────┬─────┬─────┬─────┬──────┐
+│ direction ┆ zero ┆ min ┆ avg       ┆ p50 ┆ p95 ┆ p99 ┆ max  │
+╞═══════════╪══════╪═════╪═══════════╪═════╪═════╪═════╪══════╡
+│ out       ┆ 0    ┆ 4   ┆ 31.014460 ┆ 32  ┆ 32  ┆ 32  ┆ 32   │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌┤
+│ in        ┆ 11   ┆ 0   ┆ 31.014460 ┆ 27  ┆ 66  ┆ 93  ┆ 2929 │
+└───────────┴──────┴─────┴───────────┴─────┴─────┴─────┴──────┘
+[suite:task65b-worker-zero-fallback] wrote reviews/task-65b/008-worker-zero-fallback/artifacts/suite-manifest.json
+[suite:task65b-worker-zero-fallback] recall-real100k-w0 -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 bench recall --prefix task65b_w0_real100k_r32_l100 --profile ec_diskann --k 10 --sweep "64,128,200" --queries-limit 200 --bits 4 --seed 42 --force-index --truth-cache-file reviews/task-65b/008-worker-zero-fallback/artifacts/truth-real100k-k10.json --log-output reviews/task-65b/008-worker-zero-fallback/artifacts/recall-real100k-w0.log
+[suite:task65b-worker-zero-fallback] wrote reviews/task-65b/008-worker-zero-fallback/artifacts/suite-manifest.json
+[recall] fetching queries from task65b_w0_real100k_r32_l100_queries ...
+[recall] fetching corpus from task65b_w0_real100k_r32_l100_corpus ...
+[recall] computing ground truth: 200 queries vs 100000 corpus rows (dim=1536) ...
+[recall] ground truth in 55.38s
+[recall] wrote ground truth cache reviews/task-65b/008-worker-zero-fallback/artifacts/truth-real100k-k10.json
+┌───────────┬─────────┬───────────────┬──────────┬─────────────────┬──────────────────┬────────────┬────────────┬────────────┬──────────────┬────────┬─────────────┐
+│ list_size ┆ queries ┆ recall_trials ┆ recall@k ┆ recall_ci95_low ┆ recall_ci95_high ┆ recall_p10 ┆ recall_p50 ┆ recall_p90 ┆ recall_worst ┆ ndcg@k ┆ mean q-time │
+╞═══════════╪═════════╪═══════════════╪══════════╪═════════════════╪══════════════════╪════════════╪════════════╪════════════╪══════════════╪════════╪═════════════╡
+│ 64        ┆ 200     ┆ 2000          ┆ 0.9190   ┆ 0.9062          ┆ 0.9302           ┆ 0.8000     ┆ 1.0000     ┆ 1.0000     ┆ 0.1000       ┆ 0.9934 ┆ 0.96 ms     │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 128       ┆ 200     ┆ 2000          ┆ 0.9640   ┆ 0.9549          ┆ 0.9713           ┆ 0.9000     ┆ 1.0000     ┆ 1.0000     ┆ 0.4000       ┆ 0.9970 ┆ 1.11 ms     │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 200       ┆ 200     ┆ 2000          ┆ 0.9755   ┆ 0.9678          ┆ 0.9814           ┆ 0.9000     ┆ 1.0000     ┆ 1.0000     ┆ 0.4000       ┆ 0.9980 ┆ 1.40 ms     │
+└───────────┴─────────┴───────────────┴──────────┴─────────────────┴──────────────────┴────────────┴────────────┴────────────┴──────────────┴────────┴─────────────┘
+[suite:task65b-worker-zero-fallback] wrote reviews/task-65b/008-worker-zero-fallback/artifacts/suite-manifest.json
+[suite:task65b-worker-zero-fallback] storage-real100k-w0 -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 --log-file reviews/task-65b/008-worker-zero-fallback/artifacts/storage-real100k-w0.log bench storage --prefix task65b_w0_real100k_r32_l100
+[suite:task65b-worker-zero-fallback] wrote reviews/task-65b/008-worker-zero-fallback/artifacts/suite-manifest.json
+┌───────────────────────────────┬─────────────────────────────────────┐
+│ field                         ┆ value                               │
+╞═══════════════════════════════╪═════════════════════════════════════╡
+│ prefix                        ┆ task65b_w0_real100k_r32_l100        │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus                        ┆ task65b_w0_real100k_r32_l100_corpus │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ rows                          ┆ 100000                              │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ heap                          ┆ 7.3 MiB                             │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ table (heap + toast + fsm/vm) ┆ 1.6 GiB                             │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes                       ┆ 48.2 MiB                            │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ total                         ┆ 1.6 GiB                             │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ per row (total)               ┆ 17152.3 B                           │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ per row (heap only)           ┆ 76.6 B                              │
+└───────────────────────────────┴─────────────────────────────────────┘
+┌──────────────────────────────────────────────┬───────────────┬────────────┬────────────────────────────────────────────────────────────────────────────┬──────────┬─────────┐
+│ index                                        ┆ access method ┆ profile    ┆ reloptions                                                                 ┆ size     ┆ per row │
+╞══════════════════════════════════════════════╪═══════════════╪════════════╪════════════════════════════════════════════════════════════════════════════╪══════════╪═════════╡
+│ task65b_w0_real100k_r32_l100_pq_fastscan_idx ┆ ec_diskann    ┆ ec_diskann ┆ {graph_degree=32,build_list_size=100,alpha=1.2,storage_format=pq_fastscan} ┆ 46.1 MiB ┆ 483.1 B │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ task65b_w0_real100k_r32_l100_corpus_pkey     ┆ btree         ┆ <unknown>  ┆ {}                                                                         ┆ 2.2 MiB  ┆ 22.6 B  │
+└──────────────────────────────────────────────┴───────────────┴────────────┴────────────────────────────────────────────────────────────────────────────┴──────────┴─────────┘
+[suite:task65b-worker-zero-fallback] wrote reviews/task-65b/008-worker-zero-fallback/artifacts/suite-manifest.json
+[suite:task65b-worker-zero-fallback] wrote reviews/task-65b/008-worker-zero-fallback/artifacts/results.jsonl
+[suite:task65b-worker-zero-fallback] wrote reviews/task-65b/008-worker-zero-fallback/artifacts/suite-manifest.json
