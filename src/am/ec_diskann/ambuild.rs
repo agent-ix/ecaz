@@ -472,7 +472,7 @@ fn log_ambuild_timing(
         );
     }
     pgrx::notice!(
-        "ec_diskann_ambuild_timing index={} phase=complete heap_tuples={} scanned_tuples={} unique_tuples={} data_pages={} heap_scan_ms={} source_ref_ms={} training_ms={} sidecar_setup_ms={} payload_derivation_ms={} build_persist_ms={} core_medoid_ms={} core_graph_ms={} core_persist_ms={} parallel_requested_workers={} parallel_effective_workers={} parallel_batch_size={} parallel_flush_rate={} parallel_rayon_scaffold={} overflow_ms={} codebook_ms={} write_pages_ms={} metadata_ms={} flush_total_ms={} total_ms={}",
+        "ec_diskann_ambuild_timing index={} phase=complete heap_tuples={} scanned_tuples={} unique_tuples={} data_pages={} heap_scan_ms={} source_ref_ms={} training_ms={} sidecar_setup_ms={} payload_derivation_ms={} build_persist_ms={} core_medoid_ms={} core_graph_ms={} core_persist_ms={} parallel_requested_workers={} parallel_effective_workers={} parallel_batch_size={} parallel_flush_rate={} parallel_rayon_scaffold={} parallel_epochs={} parallel_proposal_ms={} parallel_reducer_ms={} parallel_same_epoch_candidate_reads={} parallel_total_candidate_reads={} overflow_ms={} codebook_ms={} write_pages_ms={} metadata_ms={} flush_total_ms={} total_ms={}",
         index_name,
         heap_tuples,
         scanned_tuples,
@@ -492,6 +492,11 @@ fn log_ambuild_timing(
         flush.parallel_stats.batch_size,
         flush.parallel_stats.flush_rate,
         flush.parallel_stats.rayon_scaffold_enabled,
+        flush.parallel_stats.epochs,
+        flush.parallel_stats.proposal_ms,
+        flush.parallel_stats.reducer_ms,
+        flush.parallel_stats.same_epoch_candidate_reads,
+        flush.parallel_stats.total_candidate_reads,
         flush.overflow_ms,
         flush.codebook_ms,
         flush.write_pages_ms,

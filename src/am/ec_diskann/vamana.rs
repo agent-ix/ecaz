@@ -19,6 +19,7 @@
 
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
+use rayon::prelude::*;
 use std::{cmp::Reverse, collections::BinaryHeap, time::Instant};
 
 /// In-memory adjacency list. `neighbors[i]` is the out-edge set of node `i`.
@@ -214,6 +215,26 @@ pub struct VamanaBuildStats {
     pub passes: Vec<VamanaBuildPassStats>,
     pub final_out_degree: MetricSummary,
     pub final_in_degree: MetricSummary,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct VamanaParallelBuildStats {
+    pub epochs: usize,
+    pub batch_size: usize,
+    pub proposal_ms: u128,
+    pub reducer_ms: u128,
+    pub same_epoch_candidate_reads: usize,
+    pub total_candidate_reads: usize,
+}
+
+impl VamanaParallelBuildStats {
+    pub fn stale_read_fraction(self) -> f64 {
+        if self.total_candidate_reads == 0 {
+            0.0
+        } else {
+            self.same_epoch_candidate_reads as f64 / self.total_candidate_reads as f64
+        }
+    }
 }
 
 /// Result of [`greedy_search`]: the final frontier (top-`L` candidates by
@@ -922,6 +943,261 @@ where
     let graph = neighbor_cache.into_graph();
 
     (graph, stats)
+}
+
+pub fn build_vamana_graph_with_parallel_epochs<D>(
+    node_count: usize,
+    medoid: u32,
+    max_degree: usize,
+    list_size: usize,
+    alpha_final: f32,
+    seed: u64,
+    batch_size: usize,
+    dist: D,
+) -> (VamanaGraph, VamanaBuildStats, VamanaParallelBuildStats)
+where
+    D: Fn(u32, u32) -> f32 + Copy + Send + Sync,
+{
+    assert!(batch_size > 0, "parallel Vamana batch size must be > 0");
+    let mut neighbor_cache = BuilderNeighborCache::empty(node_count, max_degree);
+
+    let mut rng = ChaCha8Rng::seed_from_u64(seed);
+    let mut permutation: Vec<u32> = (0..node_count as u32).collect();
+    let mut passes = Vec::with_capacity(1);
+
+    let pass_started = Instant::now();
+    for i in (1..permutation.len()).rev() {
+        let j = rng.gen_range(0..=i);
+        permutation.swap(i, j);
+    }
+
+    let mut pivot_ordinals = vec![usize::MAX; node_count];
+    for (ordinal, &node) in permutation.iter().enumerate() {
+        pivot_ordinals[node as usize] = ordinal;
+    }
+
+    let mut visited_counts = Vec::with_capacity(permutation.len());
+    let mut existing_neighbor_counts = Vec::with_capacity(permutation.len());
+    let mut candidate_pool_counts = Vec::with_capacity(permutation.len());
+    let mut selected_neighbor_counts = Vec::with_capacity(permutation.len());
+    let mut backlinks_added = 0usize;
+    let mut reprunes = 0usize;
+    let mut greedy_search_ms = 0u128;
+    let mut candidate_pool_ms = 0u128;
+    let mut robust_prune_ms = 0u128;
+    let mut backlink_ms = 0u128;
+    let mut parallel_stats = VamanaParallelBuildStats {
+        batch_size,
+        ..VamanaParallelBuildStats::default()
+    };
+
+    for (epoch_idx, epoch) in permutation.chunks(batch_size).enumerate() {
+        let epoch_start = epoch_idx * batch_size;
+        let snapshot = neighbor_cache.clone();
+        let proposal_started = Instant::now();
+        let mut proposals: Vec<VamanaPivotProposal> = epoch
+            .par_iter()
+            .enumerate()
+            .map(|(epoch_offset, &pivot)| {
+                propose_vamana_pivot(
+                    pivot,
+                    epoch_idx,
+                    epoch_start + epoch_offset,
+                    epoch_start,
+                    &pivot_ordinals,
+                    &snapshot,
+                    medoid,
+                    node_count,
+                    max_degree,
+                    list_size,
+                    alpha_final,
+                    dist,
+                )
+            })
+            .collect();
+        parallel_stats.proposal_ms += proposal_started.elapsed().as_millis();
+        proposals.sort_by_key(|proposal| proposal.ordinal);
+
+        let reducer_started = Instant::now();
+        for proposal in proposals {
+            debug_assert_eq!(proposal.epoch, parallel_stats.epochs);
+            greedy_search_ms += proposal.greedy_search_ms;
+            candidate_pool_ms += proposal.candidate_pool_ms;
+            robust_prune_ms += proposal.robust_prune_ms;
+            parallel_stats.same_epoch_candidate_reads += proposal.same_epoch_candidate_reads;
+            parallel_stats.total_candidate_reads += proposal.total_candidate_reads;
+            visited_counts.push(proposal.visited_count);
+            existing_neighbor_counts.push(proposal.existing_neighbor_count);
+            candidate_pool_counts.push(proposal.candidate_count);
+            selected_neighbor_counts.push(proposal.pruned.len());
+
+            neighbor_cache.set_neighbors(proposal.pivot, &proposal.pruned);
+
+            let backlink_started = Instant::now();
+            for j in proposal.pruned {
+                if neighbor_cache.contains_neighbor(j, proposal.pivot) {
+                    continue;
+                }
+                if neighbor_cache.out_degree(j) < max_degree {
+                    neighbor_cache.push_neighbor(j, proposal.pivot);
+                    backlinks_added += 1;
+                } else {
+                    let mut combined: Vec<Candidate> = neighbor_cache
+                        .neighbors(j)
+                        .iter()
+                        .copied()
+                        .chain(std::iter::once(proposal.pivot))
+                        .map(|n| Candidate {
+                            node: n,
+                            distance: dist(j, n),
+                        })
+                        .collect();
+                    combined.sort();
+                    let repruned = robust_prune(j, combined, alpha_final, max_degree, dist);
+                    neighbor_cache.replace_neighbors(j, repruned);
+                    reprunes += 1;
+                }
+            }
+            backlink_ms += backlink_started.elapsed().as_millis();
+        }
+        parallel_stats.reducer_ms += reducer_started.elapsed().as_millis();
+        parallel_stats.epochs += 1;
+    }
+
+    passes.push(VamanaBuildPassStats {
+        alpha: alpha_final,
+        pivot_count: permutation.len(),
+        elapsed_ms: pass_started.elapsed().as_millis(),
+        greedy_search_ms,
+        candidate_pool_ms,
+        robust_prune_ms,
+        backlink_ms,
+        greedy_distance_calls: 0,
+        candidate_pool_distance_calls: 0,
+        robust_prune_distance_calls: 0,
+        backlink_distance_calls: 0,
+        visited: MetricSummary::from_values(&visited_counts),
+        existing_neighbors: MetricSummary::from_values(&existing_neighbor_counts),
+        candidate_pool: MetricSummary::from_values(&candidate_pool_counts),
+        selected_neighbors: MetricSummary::from_values(&selected_neighbor_counts),
+        backlinks_added,
+        reprunes,
+    });
+
+    let final_out_degrees: Vec<usize> = neighbor_cache
+        .iter_adjacency()
+        .map(|neighbors| neighbors.len())
+        .collect();
+    let mut final_in_degrees = vec![0usize; neighbor_cache.node_count()];
+    for neighbors in neighbor_cache.iter_adjacency() {
+        for &neighbor in neighbors {
+            if let Some(count) = final_in_degrees.get_mut(neighbor as usize) {
+                *count += 1;
+            }
+        }
+    }
+    let stats = VamanaBuildStats {
+        node_count,
+        medoid,
+        max_degree,
+        list_size,
+        alpha_final,
+        seed,
+        passes,
+        final_out_degree: MetricSummary::from_values(&final_out_degrees),
+        final_in_degree: MetricSummary::from_values(&final_in_degrees),
+    };
+    let graph = neighbor_cache.into_graph();
+
+    (graph, stats, parallel_stats)
+}
+
+#[derive(Debug)]
+struct VamanaPivotProposal {
+    epoch: usize,
+    ordinal: usize,
+    pivot: u32,
+    pruned: Vec<u32>,
+    visited_count: usize,
+    existing_neighbor_count: usize,
+    candidate_count: usize,
+    greedy_search_ms: u128,
+    candidate_pool_ms: u128,
+    robust_prune_ms: u128,
+    same_epoch_candidate_reads: usize,
+    total_candidate_reads: usize,
+}
+
+#[allow(clippy::too_many_arguments)]
+fn propose_vamana_pivot<D>(
+    pivot: u32,
+    epoch: usize,
+    ordinal: usize,
+    epoch_start: usize,
+    pivot_ordinals: &[usize],
+    snapshot: &BuilderNeighborCache,
+    medoid: u32,
+    node_count: usize,
+    max_degree: usize,
+    list_size: usize,
+    alpha_final: f32,
+    dist: D,
+) -> VamanaPivotProposal
+where
+    D: Fn(u32, u32) -> f32 + Copy,
+{
+    let mut scratch = SearchScratch::new(node_count, list_size);
+    let greedy_started = Instant::now();
+    let visited =
+        greedy_search_visited_with_scratch(snapshot, medoid, list_size, &mut scratch, |n| {
+            dist(n, pivot)
+        });
+    let greedy_search_ms = greedy_started.elapsed().as_millis();
+    let visited_count = visited.len();
+    let existing_neighbor_count = snapshot.out_degree(pivot);
+
+    let candidate_pool_started = Instant::now();
+    let existing_neighbors: Vec<u32> = snapshot.neighbors(pivot).to_vec();
+    let total_candidate_reads = visited_count + existing_neighbors.len();
+    let same_epoch_candidate_reads = visited
+        .iter()
+        .chain(existing_neighbors.iter())
+        .filter(|&&node| {
+            let Some(&node_ordinal) = pivot_ordinals.get(node as usize) else {
+                return false;
+            };
+            (epoch_start..ordinal).contains(&node_ordinal)
+        })
+        .count();
+    let candidates = candidate_pool_for_prune(
+        pivot,
+        visited,
+        existing_neighbors,
+        node_count,
+        &mut scratch,
+        |node, pivot| dist(node, pivot),
+    );
+    let candidate_pool_ms = candidate_pool_started.elapsed().as_millis();
+    let candidate_count = candidates.len();
+
+    let robust_prune_started = Instant::now();
+    let pruned = robust_prune(pivot, candidates, alpha_final, max_degree, dist);
+    let robust_prune_ms = robust_prune_started.elapsed().as_millis();
+
+    VamanaPivotProposal {
+        epoch,
+        ordinal,
+        pivot,
+        pruned,
+        visited_count,
+        existing_neighbor_count,
+        candidate_count,
+        greedy_search_ms,
+        candidate_pool_ms,
+        robust_prune_ms,
+        same_epoch_candidate_reads,
+        total_candidate_reads,
+    }
 }
 
 /// BFS from `start`, returning the set of reachable node ids.

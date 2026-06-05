@@ -32,7 +32,8 @@ use crate::am::ec_diskann::page::{
 use crate::am::ec_diskann::persist::{persist_vamana_graph, NodePayload, PersistedGraph};
 use crate::am::ec_diskann::quantizer;
 use crate::am::ec_diskann::vamana::{
-    approximate_medoid, build_vamana_graph_with_stats, VamanaBuildStats,
+    approximate_medoid, build_vamana_graph_with_parallel_epochs, build_vamana_graph_with_stats,
+    VamanaBuildStats,
 };
 use crate::storage::page::ItemPointer;
 use rayon::ThreadPoolBuilder;
@@ -110,6 +111,11 @@ pub struct BuildParallelStats {
     pub batch_size: u32,
     pub flush_rate: u32,
     pub rayon_scaffold_enabled: bool,
+    pub epochs: usize,
+    pub proposal_ms: u128,
+    pub reducer_ms: u128,
+    pub same_epoch_candidate_reads: usize,
+    pub total_candidate_reads: usize,
 }
 
 impl BuildParams {
@@ -330,6 +336,11 @@ where
                 batch_size: parallel.batch_size,
                 flush_rate: parallel.flush_rate,
                 rayon_scaffold_enabled: false,
+                epochs: 0,
+                proposal_ms: 0,
+                reducer_ms: 0,
+                same_epoch_candidate_reads: 0,
+                total_candidate_reads: 0,
             },
         ));
     }
@@ -339,14 +350,15 @@ where
         .thread_name(|idx| format!("ec_diskann_build_{idx}"))
         .build()
         .map_err(|err| format!("ec_diskann parallel graph build setup failed: {err}"))?;
-    let (graph, stats) = pool.install(|| {
-        build_vamana_graph_with_stats(
+    let (graph, stats, vamana_parallel_stats) = pool.install(|| {
+        build_vamana_graph_with_parallel_epochs(
             n,
             medoid,
             graph_degree_r,
             build_list_size_l,
             alpha,
             seed,
+            parallel.batch_size as usize,
             build_dist,
         )
     });
@@ -359,6 +371,11 @@ where
             batch_size: parallel.batch_size,
             flush_rate: parallel.flush_rate,
             rayon_scaffold_enabled: true,
+            epochs: vamana_parallel_stats.epochs,
+            proposal_ms: vamana_parallel_stats.proposal_ms,
+            reducer_ms: vamana_parallel_stats.reducer_ms,
+            same_epoch_candidate_reads: vamana_parallel_stats.same_epoch_candidate_reads,
+            total_candidate_reads: vamana_parallel_stats.total_candidate_reads,
         },
     ))
 }
@@ -389,22 +406,10 @@ fn validate_parallel_config(parallel: BuildParallelConfig) -> Result<(), String>
     if parallel.batch_size == 0 {
         return Err("parallel_build_batch_size must be > 0".into());
     }
-    if parallel.batch_size != 1 {
-        return Err(format!(
-            "ec_diskann parallel graph build currently supports parallel_build_batch_size = 1; got {}",
-            parallel.batch_size
-        ));
-    }
     if parallel.flush_rate != 0 {
         return Err(format!(
             "ec_diskann parallel graph build currently requires parallel_build_flush_rate = 0; got {}",
             parallel.flush_rate
-        ));
-    }
-    if parallel.requested_workers > 1 {
-        return Err(format!(
-            "ec_diskann parallel graph build currently supports PostgreSQL ii_ParallelWorkers = 0 or 1; got {}",
-            parallel.requested_workers
         ));
     }
     Ok(())
@@ -779,45 +784,46 @@ mod tests {
     }
 
     #[test]
-    fn task65b_multi_worker_config_is_rejected_until_proposal_fanout_lands() {
-        let params = default_params(64);
-        let payloads = synth_payloads(2, params.binary_word_count(), params.search_code_len());
-        let err = build_and_persist_vamana_with_parallel_config(
-            params,
-            &payloads,
-            BuildParallelConfig {
-                requested_workers: 2,
-                batch_size: 1,
-                flush_rate: 0,
-            },
-            |_, _| 0.0,
-        )
-        .expect_err("multi-worker scaffolding should not be accepted yet");
+    fn task65b_multi_worker_epoch_build_is_deterministic_for_fixed_config() {
+        let n = 64;
+        let vectors = synth_vectors(n);
+        let dist = |a: u32, b: u32| -> f32 {
+            let av = vectors[a as usize];
+            let bv = vectors[b as usize];
+            let dx = av[0] - bv[0];
+            let dy = av[1] - bv[1];
+            dx * dx + dy * dy
+        };
 
-        assert!(err.contains("ii_ParallelWorkers = 0 or 1"), "got: {err}");
+        let params = default_params(64);
+        let payloads = synth_payloads(n, params.binary_word_count(), params.search_code_len());
+        let config = BuildParallelConfig {
+            requested_workers: 4,
+            batch_size: 4,
+            flush_rate: 0,
+        };
+        let a = build_and_persist_vamana_with_parallel_config(params, &payloads, config, dist)
+            .expect("first multi-worker build");
+        let b = build_and_persist_vamana_with_parallel_config(params, &payloads, config, dist)
+            .expect("second multi-worker build");
+
+        assert_eq!(a.parallel_stats.requested_workers, 4);
+        assert_eq!(a.parallel_stats.effective_workers, 4);
+        assert_eq!(a.parallel_stats.batch_size, 4);
+        assert!(a.parallel_stats.rayon_scaffold_enabled);
+        assert!(a.parallel_stats.epochs > 0);
+        assert!(a.parallel_stats.total_candidate_reads > 0);
+        assert_eq!(a.metadata.entry_point, b.metadata.entry_point);
+        assert_eq!(a.persisted.node_to_tid, b.persisted.node_to_tid);
+        assert_eq!(a.persisted.persistence_order, b.persisted.persistence_order);
+        assert_eq!(a.build_stats.medoid, b.build_stats.medoid);
+        assert_eq!(a.build_stats.final_in_degree, b.build_stats.final_in_degree);
     }
 
     #[test]
-    fn task65b_unsupported_batch_and_flush_settings_are_rejected() {
+    fn task65b_nonzero_flush_setting_is_rejected_until_flush_lands() {
         let params = default_params(64);
         let payloads = synth_payloads(2, params.binary_word_count(), params.search_code_len());
-
-        let batch_err = build_and_persist_vamana_with_parallel_config(
-            params,
-            &payloads,
-            BuildParallelConfig {
-                requested_workers: 1,
-                batch_size: 2,
-                flush_rate: 0,
-            },
-            |_, _| 0.0,
-        )
-        .expect_err("unsupported batch size should fail");
-        assert!(
-            batch_err.contains("parallel_build_batch_size = 1"),
-            "got: {batch_err}"
-        );
-
         let flush_err = build_and_persist_vamana_with_parallel_config(
             params,
             &payloads,
@@ -829,10 +835,31 @@ mod tests {
             |_, _| 0.0,
         )
         .expect_err("unsupported flush rate should fail");
+
         assert!(
             flush_err.contains("parallel_build_flush_rate = 0"),
             "got: {flush_err}"
         );
+    }
+
+    #[test]
+    fn task65b_batch_size_controls_epoch_count() {
+        let params = default_params(64);
+        let payloads = synth_payloads(8, params.binary_word_count(), params.search_code_len());
+
+        let out = build_and_persist_vamana_with_parallel_config(
+            params,
+            &payloads,
+            BuildParallelConfig {
+                requested_workers: 2,
+                batch_size: 4,
+                flush_rate: 0,
+            },
+            |_, _| 0.0,
+        )
+        .expect("batch-size build");
+        assert_eq!(out.parallel_stats.epochs, 2);
+        assert_eq!(out.parallel_stats.batch_size, 4);
     }
 
     // BO-008: round-trip — every persisted tuple decodes with the
