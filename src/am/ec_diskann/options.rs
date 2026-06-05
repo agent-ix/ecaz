@@ -8,16 +8,13 @@ use crate::am::common::callback::pg_am_callback;
 use super::{
     ECDISKANN_DEFAULT_ALPHA, ECDISKANN_DEFAULT_BUILD_LIST_SIZE, ECDISKANN_DEFAULT_GRAPH_DEGREE,
     ECDISKANN_DEFAULT_PARALLEL_BUILD_BATCH_SIZE, ECDISKANN_DEFAULT_PARALLEL_BUILD_FLUSH_RATE,
-    ECDISKANN_DEFAULT_PARALLEL_BUILD_WORKERS, ECDISKANN_DEFAULT_RERANK_BUDGET,
-    ECDISKANN_DEFAULT_SCAN_LIST_SIZE, ECDISKANN_DEFAULT_TOP_K, ECDISKANN_MAX_ALPHA,
-    ECDISKANN_MAX_BUILD_LIST_SIZE, ECDISKANN_MAX_GRAPH_DEGREE,
+    ECDISKANN_DEFAULT_RERANK_BUDGET, ECDISKANN_DEFAULT_SCAN_LIST_SIZE, ECDISKANN_DEFAULT_TOP_K,
+    ECDISKANN_MAX_ALPHA, ECDISKANN_MAX_BUILD_LIST_SIZE, ECDISKANN_MAX_GRAPH_DEGREE,
     ECDISKANN_MAX_PARALLEL_BUILD_BATCH_SIZE, ECDISKANN_MAX_PARALLEL_BUILD_FLUSH_RATE,
-    ECDISKANN_MAX_PARALLEL_BUILD_WORKERS, ECDISKANN_MAX_RERANK_BUDGET,
-    ECDISKANN_MAX_SCAN_LIST_SIZE, ECDISKANN_MAX_TOP_K, ECDISKANN_MIN_ALPHA,
-    ECDISKANN_MIN_BUILD_LIST_SIZE, ECDISKANN_MIN_GRAPH_DEGREE,
+    ECDISKANN_MAX_RERANK_BUDGET, ECDISKANN_MAX_SCAN_LIST_SIZE, ECDISKANN_MAX_TOP_K,
+    ECDISKANN_MIN_ALPHA, ECDISKANN_MIN_BUILD_LIST_SIZE, ECDISKANN_MIN_GRAPH_DEGREE,
     ECDISKANN_MIN_PARALLEL_BUILD_BATCH_SIZE, ECDISKANN_MIN_PARALLEL_BUILD_FLUSH_RATE,
-    ECDISKANN_MIN_PARALLEL_BUILD_WORKERS, ECDISKANN_MIN_RERANK_BUDGET,
-    ECDISKANN_MIN_SCAN_LIST_SIZE, ECDISKANN_MIN_TOP_K,
+    ECDISKANN_MIN_RERANK_BUDGET, ECDISKANN_MIN_SCAN_LIST_SIZE, ECDISKANN_MIN_TOP_K,
 };
 
 const ECDISKANN_SESSION_LIST_SIZE_UNSET: i32 = -1;
@@ -47,7 +44,6 @@ struct TqDiskannReloptions {
     list_size: i32,
     rerank_budget: i32,
     top_k: i32,
-    parallel_build_workers: i32,
     parallel_build_batch_size: i32,
     parallel_build_flush_rate: i32,
     // Postgres real reloptions are stored as C doubles; alpha is downcast to
@@ -93,7 +89,6 @@ pub(super) struct TqDiskannOptions {
     pub(super) list_size: i32,
     pub(super) rerank_budget: i32,
     pub(super) top_k: i32,
-    pub(super) parallel_build_workers: i32,
     pub(super) parallel_build_batch_size: i32,
     pub(super) parallel_build_flush_rate: i32,
     pub(super) alpha: f32,
@@ -107,7 +102,6 @@ impl TqDiskannOptions {
         list_size: ECDISKANN_DEFAULT_SCAN_LIST_SIZE,
         rerank_budget: ECDISKANN_DEFAULT_RERANK_BUDGET,
         top_k: ECDISKANN_DEFAULT_TOP_K,
-        parallel_build_workers: ECDISKANN_DEFAULT_PARALLEL_BUILD_WORKERS,
         parallel_build_batch_size: ECDISKANN_DEFAULT_PARALLEL_BUILD_BATCH_SIZE,
         parallel_build_flush_rate: ECDISKANN_DEFAULT_PARALLEL_BUILD_FLUSH_RATE,
         alpha: ECDISKANN_DEFAULT_ALPHA,
@@ -257,17 +251,6 @@ pub(super) unsafe extern "C-unwind" fn ec_diskann_amoptions(
         );
         pg_sys::add_local_int_reloption(
             &mut relopts,
-            b"parallel_build_workers\0".as_ptr().cast(),
-            b"Experimental Task 65b DiskANN graph-build worker count; 0 uses the serial fallback.\0"
-                .as_ptr()
-                .cast(),
-            ECDISKANN_DEFAULT_PARALLEL_BUILD_WORKERS,
-            ECDISKANN_MIN_PARALLEL_BUILD_WORKERS,
-            ECDISKANN_MAX_PARALLEL_BUILD_WORKERS,
-            offset_of!(TqDiskannReloptions, parallel_build_workers) as i32,
-        );
-        pg_sys::add_local_int_reloption(
-            &mut relopts,
             b"parallel_build_batch_size\0".as_ptr().cast(),
             b"Experimental Task 65b Vamana pivot epoch size for parallel graph build.\0"
                 .as_ptr()
@@ -355,7 +338,6 @@ impl TqDiskannReloptionsView {
             list_size: reloptions.list_size,
             rerank_budget: reloptions.rerank_budget,
             top_k: reloptions.top_k,
-            parallel_build_workers: reloptions.parallel_build_workers,
             parallel_build_batch_size: reloptions.parallel_build_batch_size,
             parallel_build_flush_rate: reloptions.parallel_build_flush_rate,
             alpha: reloptions.alpha as f32,
@@ -385,8 +367,7 @@ mod tests {
         current_prefilter_kind, resolve_scan_tuning_values, scan_profile_notice_enabled,
         ListSizeSource, PrefilterKind, ScanTuning, StorageFormat, TqDiskannOptions,
         ECDISKANN_DEFAULT_PARALLEL_BUILD_BATCH_SIZE, ECDISKANN_DEFAULT_PARALLEL_BUILD_FLUSH_RATE,
-        ECDISKANN_DEFAULT_PARALLEL_BUILD_WORKERS, ECDISKANN_DEFAULT_RERANK_BUDGET,
-        ECDISKANN_DEFAULT_SCAN_LIST_SIZE, ECDISKANN_DEFAULT_TOP_K,
+        ECDISKANN_DEFAULT_RERANK_BUDGET, ECDISKANN_DEFAULT_SCAN_LIST_SIZE, ECDISKANN_DEFAULT_TOP_K,
         ECDISKANN_SESSION_LIST_SIZE_UNSET,
     };
 
@@ -396,10 +377,6 @@ mod tests {
         assert_eq!(defaults.list_size, ECDISKANN_DEFAULT_SCAN_LIST_SIZE);
         assert_eq!(defaults.rerank_budget, ECDISKANN_DEFAULT_RERANK_BUDGET);
         assert_eq!(defaults.top_k, ECDISKANN_DEFAULT_TOP_K);
-        assert_eq!(
-            defaults.parallel_build_workers,
-            ECDISKANN_DEFAULT_PARALLEL_BUILD_WORKERS
-        );
         assert_eq!(
             defaults.parallel_build_batch_size,
             ECDISKANN_DEFAULT_PARALLEL_BUILD_BATCH_SIZE

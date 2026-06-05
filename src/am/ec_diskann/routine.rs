@@ -10,6 +10,7 @@ use pgrx::{pg_guard, pg_sys, FromDatum, PgBox, PgMemoryContexts};
 use crate::{
     am::common::{
         callback::pg_am_callback,
+        parallel,
         routine::{alloc_index_am_routine, IndexAmRoutineBox},
         vacuum::{
             add_index_bulk_delete_tuples_removed, alloc_index_bulk_delete_result,
@@ -180,7 +181,7 @@ fn build_ec_diskann_routine() -> IndexAmRoutineBox {
     amroutine.amclusterable = false;
     amroutine.ampredlocks = false;
     amroutine.amcanparallel = false;
-    amroutine.amcanbuildparallel = false;
+    amroutine.amcanbuildparallel = true;
     amroutine.amcaninclude = false;
     amroutine.amusemaintenanceworkmem = true;
     amroutine.amsummarizing = false;
@@ -207,9 +208,9 @@ fn build_ec_diskann_routine() -> IndexAmRoutineBox {
     amroutine.amendscan = Some(ec_diskann_amendscan);
     amroutine.ammarkpos = None;
     amroutine.amrestrpos = None;
-    amroutine.amestimateparallelscan = None;
-    amroutine.aminitparallelscan = None;
-    amroutine.amparallelrescan = None;
+    amroutine.amestimateparallelscan = Some(parallel::ec_amestimateparallelscan);
+    amroutine.aminitparallelscan = Some(parallel::ec_aminitparallelscan);
+    amroutine.amparallelrescan = Some(parallel::ec_amparallelrescan);
 
     amroutine
 }

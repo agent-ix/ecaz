@@ -389,9 +389,21 @@ fn validate_parallel_config(parallel: BuildParallelConfig) -> Result<(), String>
     if parallel.batch_size == 0 {
         return Err("parallel_build_batch_size must be > 0".into());
     }
+    if parallel.batch_size != 1 {
+        return Err(format!(
+            "ec_diskann parallel graph build currently supports parallel_build_batch_size = 1; got {}",
+            parallel.batch_size
+        ));
+    }
+    if parallel.flush_rate != 0 {
+        return Err(format!(
+            "ec_diskann parallel graph build currently requires parallel_build_flush_rate = 0; got {}",
+            parallel.flush_rate
+        ));
+    }
     if parallel.requested_workers > 1 {
         return Err(format!(
-            "ec_diskann parallel graph build currently supports parallel_build_workers = 0 or 1; got {}",
+            "ec_diskann parallel graph build currently supports PostgreSQL ii_ParallelWorkers = 0 or 1; got {}",
             parallel.requested_workers
         ));
     }
@@ -736,9 +748,44 @@ mod tests {
         )
         .expect_err("multi-worker scaffolding should not be accepted yet");
 
+        assert!(err.contains("ii_ParallelWorkers = 0 or 1"), "got: {err}");
+    }
+
+    #[test]
+    fn task65b_unsupported_batch_and_flush_settings_are_rejected() {
+        let params = default_params(64);
+        let payloads = synth_payloads(2, params.binary_word_count(), params.search_code_len());
+
+        let batch_err = build_and_persist_vamana_with_parallel_config(
+            params,
+            &payloads,
+            BuildParallelConfig {
+                requested_workers: 1,
+                batch_size: 2,
+                flush_rate: 0,
+            },
+            |_, _| 0.0,
+        )
+        .expect_err("unsupported batch size should fail");
         assert!(
-            err.contains("parallel_build_workers = 0 or 1"),
-            "got: {err}"
+            batch_err.contains("parallel_build_batch_size = 1"),
+            "got: {batch_err}"
+        );
+
+        let flush_err = build_and_persist_vamana_with_parallel_config(
+            params,
+            &payloads,
+            BuildParallelConfig {
+                requested_workers: 1,
+                batch_size: 1,
+                flush_rate: 1,
+            },
+            |_, _| 0.0,
+        )
+        .expect_err("unsupported flush rate should fail");
+        assert!(
+            flush_err.contains("parallel_build_flush_rate = 0"),
+            "got: {flush_err}"
         );
     }
 

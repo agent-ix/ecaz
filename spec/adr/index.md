@@ -64,6 +64,7 @@ This index is the canonical navigation surface for Ecaz architecture decisions. 
 | Index-local quantized codec adapters | `ADR-072-index-local-quantized-codec-adapters.md` | PROPOSED | Companion to ADR-071. Shared quantizer math stays separate from AM-owned codec adapters for DiskANN, HNSW, and IVF storage/traversal binding. |
 | HNSW staged offline bulk build | `ADR-073-hnsw-staged-offline-bulk-build.md` | PROPOSED | Task 33 M5 refresh stops worker-threshold tuning and selects a staged/offline HNSW bulk-build design lane while keeping ADR-048 as the fallback. |
 | SPIRE leaf-local block pruning | `ADR-074-spire-leaf-local-block-pruning.md` | PROPOSED | Task 79 Phase 4 direction: query-aware subleaf block summaries reachable before row segment reads, with a SPIRE leaf format bump and full-leaf fallback. |
+| DiskANN graph build worker stepping stone | `ADR-075-diskann-graph-build-worker-stepping-stone.md` | PROPOSED | Task 65b uses rayon only as a deterministic graph-core stepping stone while PostgreSQL remains the worker-count authority. |
 
 ## Superseded Historical Decisions
 

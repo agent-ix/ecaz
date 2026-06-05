@@ -28,7 +28,10 @@ use std::time::{Duration, Instant};
 use pgrx::{pg_sys, PgBox};
 use rayon::prelude::*;
 
-use crate::am::common::{callback::pg_am_callback, detoast::DetoastedVarlena};
+use crate::am::common::{
+    callback::pg_am_callback, detoast::DetoastedVarlena,
+    parallel_context::index_info_parallel_workers,
+};
 use crate::storage::buffer_guard::LockedBufferGuard;
 use crate::storage::page::{DataPageChain, ItemPointer, METADATA_BLOCK_NUMBER};
 use crate::storage::relation::RelationHandle;
@@ -181,8 +184,12 @@ pub(super) unsafe extern "C-unwind" fn ec_diskann_ambuild(
             );
             0.0
         } else {
-            let flush_timing = flush_build_state(index_relation, &state)
-                .unwrap_or_else(|e| pgrx::error!("ec_diskann ambuild failed: {e}"));
+            let flush_timing = flush_build_state(
+                index_relation,
+                &state,
+                index_info_parallel_workers(index_info),
+            )
+            .unwrap_or_else(|e| pgrx::error!("ec_diskann ambuild failed: {e}"));
             log_ambuild_timing(
                 &index_name,
                 heap_tuples,
@@ -261,6 +268,7 @@ pub(super) fn default_group_size(dimensions: u16) -> usize {
 unsafe fn flush_build_state(
     index_relation: pg_sys::Relation,
     state: &BuildState,
+    requested_workers: i32,
 ) -> Result<BuildFlushTiming, String> {
     let total_started = Instant::now();
     let mut timing = BuildFlushTiming::default();
@@ -329,8 +337,8 @@ unsafe fn flush_build_state(
         has_binary_sidecar: codec.has_binary_sidecar(),
     };
     let parallel_config = BuildParallelConfig {
-        requested_workers: u16::try_from(state.options.parallel_build_workers)
-            .map_err(|_| "parallel_build_workers does not fit in u16".to_owned())?,
+        requested_workers: u16::try_from(requested_workers)
+            .map_err(|_| "PostgreSQL ii_ParallelWorkers does not fit in u16".to_owned())?,
         batch_size: u32::try_from(state.options.parallel_build_batch_size)
             .map_err(|_| "parallel_build_batch_size does not fit in u32".to_owned())?,
         flush_rate: u32::try_from(state.options.parallel_build_flush_rate)
