@@ -4164,10 +4164,9 @@ mod tests {
         assert!(args
             .windows(2)
             .any(|w| w == ["--truth-cache-file", "truth-cache.json"]));
-        assert!(args.windows(2).any(|w| w == [
-            "--miss-attribution-output",
-            "miss-attribution.jsonl"
-        ]));
+        assert!(args
+            .windows(2)
+            .any(|w| w == ["--miss-attribution-output", "miss-attribution.jsonl"]));
         assert!(args
             .windows(2)
             .any(|w| w == ["--log-output", "spire-profile.log"]));
