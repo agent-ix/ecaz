@@ -72,14 +72,17 @@ static LAST_BUILD_CORE_GRAPH_MS: AtomicU64 = AtomicU64::new(0);
 static LAST_BUILD_CORE_PERSIST_MS: AtomicU64 = AtomicU64::new(0);
 static LAST_BUILD_PARALLEL_REQUESTED_WORKERS: AtomicU64 = AtomicU64::new(0);
 static LAST_BUILD_PARALLEL_EFFECTIVE_WORKERS: AtomicU64 = AtomicU64::new(0);
+static LAST_BUILD_PARALLEL_REQUESTED_BATCH_SIZE: AtomicU64 = AtomicU64::new(0);
 static LAST_BUILD_PARALLEL_BATCH_SIZE: AtomicU64 = AtomicU64::new(0);
 static LAST_BUILD_PARALLEL_FLUSH_RATE: AtomicU64 = AtomicU64::new(0);
 static LAST_BUILD_PARALLEL_RAYON_SCAFFOLD: AtomicU64 = AtomicU64::new(0);
+static LAST_BUILD_PARALLEL_ALPHA_GROWTH_DISABLED: AtomicU64 = AtomicU64::new(0);
 static LAST_BUILD_PARALLEL_EPOCHS: AtomicU64 = AtomicU64::new(0);
 static LAST_BUILD_PARALLEL_PROPOSAL_MS: AtomicU64 = AtomicU64::new(0);
 static LAST_BUILD_PARALLEL_REDUCER_MS: AtomicU64 = AtomicU64::new(0);
 static LAST_BUILD_PARALLEL_SAME_EPOCH_CANDIDATE_READS: AtomicU64 = AtomicU64::new(0);
 static LAST_BUILD_PARALLEL_TOTAL_CANDIDATE_READS: AtomicU64 = AtomicU64::new(0);
+static LAST_BUILD_PARALLEL_STALE_READ_PPM: AtomicU64 = AtomicU64::new(0);
 static LAST_BUILD_OVERFLOW_MS: AtomicU64 = AtomicU64::new(0);
 static LAST_BUILD_CODEBOOK_MS: AtomicU64 = AtomicU64::new(0);
 static LAST_BUILD_WRITE_PAGES_MS: AtomicU64 = AtomicU64::new(0);
@@ -104,14 +107,17 @@ pub(crate) struct BuildTimingSnapshot {
     pub(crate) core_persist_ms: u64,
     pub(crate) parallel_requested_workers: u64,
     pub(crate) parallel_effective_workers: u64,
+    pub(crate) parallel_requested_batch_size: u64,
     pub(crate) parallel_batch_size: u64,
     pub(crate) parallel_flush_rate: u64,
     pub(crate) parallel_rayon_scaffold: u64,
+    pub(crate) parallel_alpha_growth_disabled: u64,
     pub(crate) parallel_epochs: u64,
     pub(crate) parallel_proposal_ms: u64,
     pub(crate) parallel_reducer_ms: u64,
     pub(crate) parallel_same_epoch_candidate_reads: u64,
     pub(crate) parallel_total_candidate_reads: u64,
+    pub(crate) parallel_stale_read_ppm: u64,
     pub(crate) overflow_ms: u64,
     pub(crate) codebook_ms: u64,
     pub(crate) write_pages_ms: u64,
@@ -145,9 +151,11 @@ impl BuildTimingSnapshot {
             core_persist_ms: u128_to_u64(flush.core_persist_ms),
             parallel_requested_workers: u64::from(flush.parallel_stats.requested_workers),
             parallel_effective_workers: u64::from(flush.parallel_stats.effective_workers),
+            parallel_requested_batch_size: u64::from(flush.parallel_stats.requested_batch_size),
             parallel_batch_size: u64::from(flush.parallel_stats.batch_size),
             parallel_flush_rate: u64::from(flush.parallel_stats.flush_rate),
-            parallel_rayon_scaffold: u64::from(flush.parallel_stats.rayon_scaffold_enabled),
+            parallel_rayon_scaffold: bool_to_u64(flush.parallel_stats.rayon_scaffold_enabled),
+            parallel_alpha_growth_disabled: bool_to_u64(flush.parallel_stats.alpha_growth_disabled),
             parallel_epochs: usize_to_u64(flush.parallel_stats.epochs),
             parallel_proposal_ms: u128_to_u64(flush.parallel_stats.proposal_ms),
             parallel_reducer_ms: u128_to_u64(flush.parallel_stats.reducer_ms),
@@ -155,6 +163,10 @@ impl BuildTimingSnapshot {
                 flush.parallel_stats.same_epoch_candidate_reads,
             ),
             parallel_total_candidate_reads: usize_to_u64(
+                flush.parallel_stats.total_candidate_reads,
+            ),
+            parallel_stale_read_ppm: stale_read_ppm(
+                flush.parallel_stats.same_epoch_candidate_reads,
                 flush.parallel_stats.total_candidate_reads,
             ),
             overflow_ms: u128_to_u64(flush.overflow_ms),
@@ -473,6 +485,14 @@ unsafe fn flush_build_state(
         flush_rate: u32::try_from(state.options.parallel_build_flush_rate)
             .map_err(|_| "parallel_build_flush_rate does not fit in u32".to_owned())?,
     };
+    if parallel_config.requested_workers > 0 {
+        pgrx::notice!(
+            "ec_diskann_parallel_build_policy index={} requested_workers={} requested_batch_size={} small_build_batch_cap=64 small_build_node_cap=10000 alpha_growth_disabled_when_effective_batch_gt_1=true stale_read_metric=same_epoch_candidate_proxy",
+            relation_name(index_relation),
+            parallel_config.requested_workers,
+            parallel_config.batch_size
+        );
+    }
 
     let build_persist_started = Instant::now();
     let build_out = build_and_persist_vamana_with_parallel_config(
@@ -546,6 +566,24 @@ fn elapsed_ms(duration: Duration) -> u128 {
     duration.as_millis()
 }
 
+fn bool_to_u64(value: bool) -> u64 {
+    if value {
+        1
+    } else {
+        0
+    }
+}
+
+fn stale_read_ppm(same_epoch_candidate_reads: usize, total_candidate_reads: usize) -> u64 {
+    if total_candidate_reads == 0 {
+        0
+    } else {
+        let ppm =
+            (same_epoch_candidate_reads as u128 * 1_000_000u128) / total_candidate_reads as u128;
+        u128_to_u64(ppm)
+    }
+}
+
 pub(crate) fn debug_last_build_timing() -> BuildTimingSnapshot {
     BuildTimingSnapshot {
         heap_tuples: LAST_BUILD_HEAP_TUPLES.load(AtomicOrdering::Acquire),
@@ -565,9 +603,13 @@ pub(crate) fn debug_last_build_timing() -> BuildTimingSnapshot {
             .load(AtomicOrdering::Acquire),
         parallel_effective_workers: LAST_BUILD_PARALLEL_EFFECTIVE_WORKERS
             .load(AtomicOrdering::Acquire),
+        parallel_requested_batch_size: LAST_BUILD_PARALLEL_REQUESTED_BATCH_SIZE
+            .load(AtomicOrdering::Acquire),
         parallel_batch_size: LAST_BUILD_PARALLEL_BATCH_SIZE.load(AtomicOrdering::Acquire),
         parallel_flush_rate: LAST_BUILD_PARALLEL_FLUSH_RATE.load(AtomicOrdering::Acquire),
         parallel_rayon_scaffold: LAST_BUILD_PARALLEL_RAYON_SCAFFOLD.load(AtomicOrdering::Acquire),
+        parallel_alpha_growth_disabled: LAST_BUILD_PARALLEL_ALPHA_GROWTH_DISABLED
+            .load(AtomicOrdering::Acquire),
         parallel_epochs: LAST_BUILD_PARALLEL_EPOCHS.load(AtomicOrdering::Acquire),
         parallel_proposal_ms: LAST_BUILD_PARALLEL_PROPOSAL_MS.load(AtomicOrdering::Acquire),
         parallel_reducer_ms: LAST_BUILD_PARALLEL_REDUCER_MS.load(AtomicOrdering::Acquire),
@@ -575,6 +617,7 @@ pub(crate) fn debug_last_build_timing() -> BuildTimingSnapshot {
             .load(AtomicOrdering::Acquire),
         parallel_total_candidate_reads: LAST_BUILD_PARALLEL_TOTAL_CANDIDATE_READS
             .load(AtomicOrdering::Acquire),
+        parallel_stale_read_ppm: LAST_BUILD_PARALLEL_STALE_READ_PPM.load(AtomicOrdering::Acquire),
         overflow_ms: LAST_BUILD_OVERFLOW_MS.load(AtomicOrdering::Acquire),
         codebook_ms: LAST_BUILD_CODEBOOK_MS.load(AtomicOrdering::Acquire),
         write_pages_ms: LAST_BUILD_WRITE_PAGES_MS.load(AtomicOrdering::Acquire),
@@ -606,10 +649,18 @@ fn record_debug_last_build_timing(snapshot: BuildTimingSnapshot) {
         .store(snapshot.parallel_requested_workers, AtomicOrdering::Release);
     LAST_BUILD_PARALLEL_EFFECTIVE_WORKERS
         .store(snapshot.parallel_effective_workers, AtomicOrdering::Release);
+    LAST_BUILD_PARALLEL_REQUESTED_BATCH_SIZE.store(
+        snapshot.parallel_requested_batch_size,
+        AtomicOrdering::Release,
+    );
     LAST_BUILD_PARALLEL_BATCH_SIZE.store(snapshot.parallel_batch_size, AtomicOrdering::Release);
     LAST_BUILD_PARALLEL_FLUSH_RATE.store(snapshot.parallel_flush_rate, AtomicOrdering::Release);
     LAST_BUILD_PARALLEL_RAYON_SCAFFOLD
         .store(snapshot.parallel_rayon_scaffold, AtomicOrdering::Release);
+    LAST_BUILD_PARALLEL_ALPHA_GROWTH_DISABLED.store(
+        snapshot.parallel_alpha_growth_disabled,
+        AtomicOrdering::Release,
+    );
     LAST_BUILD_PARALLEL_EPOCHS.store(snapshot.parallel_epochs, AtomicOrdering::Release);
     LAST_BUILD_PARALLEL_PROPOSAL_MS.store(snapshot.parallel_proposal_ms, AtomicOrdering::Release);
     LAST_BUILD_PARALLEL_REDUCER_MS.store(snapshot.parallel_reducer_ms, AtomicOrdering::Release);
@@ -621,6 +672,8 @@ fn record_debug_last_build_timing(snapshot: BuildTimingSnapshot) {
         snapshot.parallel_total_candidate_reads,
         AtomicOrdering::Release,
     );
+    LAST_BUILD_PARALLEL_STALE_READ_PPM
+        .store(snapshot.parallel_stale_read_ppm, AtomicOrdering::Release);
     LAST_BUILD_OVERFLOW_MS.store(snapshot.overflow_ms, AtomicOrdering::Release);
     LAST_BUILD_CODEBOOK_MS.store(snapshot.codebook_ms, AtomicOrdering::Release);
     LAST_BUILD_WRITE_PAGES_MS.store(snapshot.write_pages_ms, AtomicOrdering::Release);
@@ -700,7 +753,7 @@ fn log_ambuild_timing(
         );
     }
     pgrx::notice!(
-        "ec_diskann_ambuild_timing index={} phase=complete heap_tuples={} scanned_tuples={} unique_tuples={} data_pages={} heap_scan_ms={} source_ref_ms={} training_ms={} sidecar_setup_ms={} payload_derivation_ms={} build_persist_ms={} core_medoid_ms={} core_graph_ms={} core_persist_ms={} parallel_requested_workers={} parallel_effective_workers={} parallel_batch_size={} parallel_flush_rate={} parallel_rayon_scaffold={} parallel_epochs={} parallel_proposal_ms={} parallel_reducer_ms={} parallel_same_epoch_candidate_reads={} parallel_total_candidate_reads={} overflow_ms={} codebook_ms={} write_pages_ms={} metadata_ms={} flush_total_ms={} total_ms={}",
+        "ec_diskann_ambuild_timing index={} phase=complete heap_tuples={} scanned_tuples={} unique_tuples={} data_pages={} heap_scan_ms={} source_ref_ms={} training_ms={} sidecar_setup_ms={} payload_derivation_ms={} build_persist_ms={} core_medoid_ms={} core_graph_ms={} core_persist_ms={} parallel_requested_workers={} parallel_effective_workers={} parallel_requested_batch_size={} parallel_batch_size={} parallel_flush_rate={} parallel_rayon_scaffold={} parallel_alpha_growth_disabled={} parallel_epochs={} parallel_proposal_ms={} parallel_reducer_ms={} parallel_same_epoch_candidate_reads={} parallel_total_candidate_reads={} parallel_stale_read_ppm={} overflow_ms={} codebook_ms={} write_pages_ms={} metadata_ms={} flush_total_ms={} total_ms={}",
         index_name,
         heap_tuples,
         scanned_tuples,
@@ -717,14 +770,20 @@ fn log_ambuild_timing(
         flush.core_persist_ms,
         flush.parallel_stats.requested_workers,
         flush.parallel_stats.effective_workers,
+        flush.parallel_stats.requested_batch_size,
         flush.parallel_stats.batch_size,
         flush.parallel_stats.flush_rate,
         flush.parallel_stats.rayon_scaffold_enabled,
+        flush.parallel_stats.alpha_growth_disabled,
         flush.parallel_stats.epochs,
         flush.parallel_stats.proposal_ms,
         flush.parallel_stats.reducer_ms,
         flush.parallel_stats.same_epoch_candidate_reads,
         flush.parallel_stats.total_candidate_reads,
+        stale_read_ppm(
+            flush.parallel_stats.same_epoch_candidate_reads,
+            flush.parallel_stats.total_candidate_reads
+        ),
         flush.overflow_ms,
         flush.codebook_ms,
         flush.write_pages_ms,

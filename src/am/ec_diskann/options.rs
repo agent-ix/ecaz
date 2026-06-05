@@ -252,7 +252,7 @@ pub(super) unsafe extern "C-unwind" fn ec_diskann_amoptions(
         pg_sys::add_local_int_reloption(
             &mut relopts,
             b"parallel_build_batch_size\0".as_ptr().cast(),
-            b"Experimental Task 65b Vamana pivot epoch size for parallel graph build.\0"
+            b"Experimental Task 65b Vamana pivot epoch size for parallel graph build. Small builds may cap the effective batch to the validated recall ceiling; ambuild NOTICE logs requested/effective values.\0"
                 .as_ptr()
                 .cast(),
             ECDISKANN_DEFAULT_PARALLEL_BUILD_BATCH_SIZE,

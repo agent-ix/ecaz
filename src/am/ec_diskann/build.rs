@@ -108,15 +108,20 @@ impl BuildParallelConfig {
 pub struct BuildParallelStats {
     pub requested_workers: u16,
     pub effective_workers: u16,
+    pub requested_batch_size: u32,
     pub batch_size: u32,
     pub flush_rate: u32,
     pub rayon_scaffold_enabled: bool,
+    pub alpha_growth_disabled: bool,
     pub epochs: usize,
     pub proposal_ms: u128,
     pub reducer_ms: u128,
     pub same_epoch_candidate_reads: usize,
     pub total_candidate_reads: usize,
 }
+
+const TASK65B_SMALL_BUILD_NODE_CAP: usize = 10_000;
+const TASK65B_SMALL_BUILD_MAX_BATCH_SIZE: u32 = 64;
 
 impl BuildParams {
     /// `W = dimensions.div_ceil(64)` when the binary sidecar is on, 0
@@ -333,9 +338,11 @@ where
             BuildParallelStats {
                 requested_workers: 0,
                 effective_workers: 0,
+                requested_batch_size: parallel.batch_size,
                 batch_size: parallel.batch_size,
                 flush_rate: parallel.flush_rate,
                 rayon_scaffold_enabled: false,
+                alpha_growth_disabled: false,
                 epochs: 0,
                 proposal_ms: 0,
                 reducer_ms: 0,
@@ -345,6 +352,8 @@ where
         ));
     }
 
+    let effective_batch_size = effective_parallel_batch_size(n, parallel.batch_size);
+    let alpha_growth_disabled = effective_batch_size > 1;
     let pool = ThreadPoolBuilder::new()
         .num_threads(parallel.requested_workers as usize)
         .thread_name(|idx| format!("ec_diskann_build_{idx}"))
@@ -359,7 +368,7 @@ where
             build_list_size_l,
             alpha,
             seed,
-            parallel.batch_size as usize,
+            effective_batch_size as usize,
             build_dist,
         );
         (graph, stats, parallel_stats, effective_workers)
@@ -370,9 +379,11 @@ where
         BuildParallelStats {
             requested_workers: parallel.requested_workers,
             effective_workers,
-            batch_size: parallel.batch_size,
+            requested_batch_size: parallel.batch_size,
+            batch_size: effective_batch_size,
             flush_rate: parallel.flush_rate,
             rayon_scaffold_enabled: true,
+            alpha_growth_disabled,
             epochs: vamana_parallel_stats.epochs,
             proposal_ms: vamana_parallel_stats.proposal_ms,
             reducer_ms: vamana_parallel_stats.reducer_ms,
@@ -380,6 +391,14 @@ where
             total_candidate_reads: vamana_parallel_stats.total_candidate_reads,
         },
     ))
+}
+
+fn effective_parallel_batch_size(n: usize, requested_batch_size: u32) -> u32 {
+    if n <= TASK65B_SMALL_BUILD_NODE_CAP {
+        requested_batch_size.min(TASK65B_SMALL_BUILD_MAX_BATCH_SIZE)
+    } else {
+        requested_batch_size
+    }
 }
 
 fn validate_build_inputs(params: BuildParams, n: usize) -> Result<(), String> {
@@ -861,7 +880,33 @@ mod tests {
         )
         .expect("batch-size build");
         assert_eq!(out.parallel_stats.epochs, 2);
+        assert_eq!(out.parallel_stats.requested_batch_size, 4);
         assert_eq!(out.parallel_stats.batch_size, 4);
+    }
+
+    #[test]
+    fn task65b_small_build_caps_effective_batch_size() {
+        let params = default_params(64);
+        let payloads = synth_payloads(128, params.binary_word_count(), params.search_code_len());
+
+        let out = build_and_persist_vamana_with_parallel_config(
+            params,
+            &payloads,
+            BuildParallelConfig {
+                requested_workers: 4,
+                batch_size: 96,
+                flush_rate: 0,
+            },
+            |a, b| {
+                let delta = a.abs_diff(b) as f32;
+                delta * delta
+            },
+        )
+        .expect("small build should cap oversized batch");
+
+        assert_eq!(out.parallel_stats.requested_batch_size, 96);
+        assert_eq!(out.parallel_stats.batch_size, 64);
+        assert!(out.parallel_stats.alpha_growth_disabled);
     }
 
     // BO-008: round-trip — every persisted tuple decodes with the
