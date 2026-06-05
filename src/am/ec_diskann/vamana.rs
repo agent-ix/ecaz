@@ -1018,6 +1018,8 @@ where
         batch_size,
         ..VamanaParallelBuildStats::default()
     };
+    let mut incoming_backlinks: Vec<Vec<u32>> = vec![Vec::new(); node_count];
+    let mut touched_backlink_targets: Vec<u32> = Vec::new();
 
     for (epoch_idx, epoch) in permutation.chunks(batch_size).enumerate() {
         let epoch_start = epoch_idx * batch_size;
@@ -1059,17 +1061,37 @@ where
             candidate_pool_counts.push(proposal.candidate_count);
             selected_neighbor_counts.push(proposal.pruned.len());
 
-            let commit_stats = commit_vamana_pivot_proposal(
+            neighbor_cache.set_neighbors(proposal.pivot, &proposal.pruned);
+            for target in proposal.pruned {
+                let target_idx = target as usize;
+                debug_assert!(
+                    target_idx < incoming_backlinks.len(),
+                    "proposal target outside graph"
+                );
+                if incoming_backlinks[target_idx].is_empty() {
+                    touched_backlink_targets.push(target);
+                }
+                incoming_backlinks[target_idx].push(proposal.pivot);
+            }
+        }
+
+        let backlink_started = Instant::now();
+        for &target in &touched_backlink_targets {
+            let target_idx = target as usize;
+            let commit_stats = commit_vamana_backlink_batch(
                 &mut neighbor_cache,
-                proposal,
+                target,
+                &incoming_backlinks[target_idx],
                 max_degree,
                 alpha_final,
                 dist,
             );
             backlinks_added += commit_stats.backlinks_added;
             reprunes += commit_stats.reprunes;
-            backlink_ms += commit_stats.backlink_ms;
+            incoming_backlinks[target_idx].clear();
         }
+        touched_backlink_targets.clear();
+        backlink_ms += backlink_started.elapsed().as_millis();
         parallel_stats.reducer_ms += reducer_started.elapsed().as_millis();
         parallel_stats.epochs += 1;
     }
@@ -1184,6 +1206,58 @@ where
         }
     }
     stats.backlink_ms = backlink_started.elapsed().as_millis();
+    stats
+}
+
+fn commit_vamana_backlink_batch<D>(
+    neighbor_cache: &mut BuilderNeighborCache,
+    target: u32,
+    proposed_sources: &[u32],
+    max_degree: usize,
+    alpha_final: f32,
+    dist: D,
+) -> VamanaProposalCommitStats
+where
+    D: Fn(u32, u32) -> f32 + Copy,
+{
+    let mut stats = VamanaProposalCommitStats::default();
+    if proposed_sources.is_empty() {
+        return stats;
+    }
+
+    let existing = neighbor_cache.neighbors(target);
+    let mut additions = Vec::with_capacity(proposed_sources.len());
+    for &source in proposed_sources {
+        if existing.contains(&source) || additions.contains(&source) {
+            continue;
+        }
+        additions.push(source);
+    }
+    if additions.is_empty() {
+        return stats;
+    }
+
+    if existing.len() + additions.len() <= max_degree {
+        for source in additions {
+            neighbor_cache.push_neighbor(target, source);
+            stats.backlinks_added += 1;
+        }
+        return stats;
+    }
+
+    let mut combined: Vec<Candidate> = existing
+        .iter()
+        .copied()
+        .chain(additions)
+        .map(|node| Candidate {
+            node,
+            distance: dist(target, node),
+        })
+        .collect();
+    combined.sort();
+    let repruned = robust_prune(target, combined, alpha_final, max_degree, dist);
+    neighbor_cache.replace_neighbors(target, repruned);
+    stats.reprunes += 1;
     stats
 }
 
@@ -1512,6 +1586,34 @@ mod tests {
         assert_eq!(
             ordered_cache.into_graph().neighbors,
             reduced_cache.into_graph().neighbors
+        );
+    }
+
+    #[test]
+    fn task65b_batched_backlinks_reprune_each_touched_target_once() {
+        let dist = |a: u32, b: u32| (a as i32 - b as i32).unsigned_abs() as f32;
+        let mut append_cache = BuilderNeighborCache::empty(6, 3);
+        append_cache.set_neighbors(0, &[1]);
+        let append_stats =
+            commit_vamana_backlink_batch(&mut append_cache, 0, &[2, 3], 3, 1.2, dist);
+        assert_eq!(append_stats.backlinks_added, 2);
+        assert_eq!(append_stats.reprunes, 0);
+        assert_eq!(append_cache.neighbors(0), &[1, 2, 3]);
+
+        let mut reprune_cache = BuilderNeighborCache::empty(6, 2);
+        reprune_cache.set_neighbors(0, &[1, 2]);
+        let reprune_stats =
+            commit_vamana_backlink_batch(&mut reprune_cache, 0, &[3, 4, 5], 2, 1.2, dist);
+        assert_eq!(reprune_stats.backlinks_added, 0);
+        assert_eq!(
+            reprune_stats.reprunes, 1,
+            "overflow backlinks for one target should collapse into one re-prune"
+        );
+        let neighbors = reprune_cache.neighbors(0);
+        assert!(neighbors.len() <= 2);
+        assert!(
+            neighbors.windows(2).all(|pair| pair[0] != pair[1]),
+            "batched re-prune must not introduce duplicate neighbors"
         );
     }
 
