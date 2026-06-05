@@ -352,6 +352,10 @@ pub(crate) fn register_gucs() {
     ec_spire::register_gucs();
 }
 
+pub(crate) fn diskann_debug_last_build_timing() -> ec_diskann::BuildTimingSnapshot {
+    ec_diskann::debug_last_build_timing()
+}
+
 pub(crate) fn register_custom_scan() {
     ec_spire::register_custom_scan();
 }

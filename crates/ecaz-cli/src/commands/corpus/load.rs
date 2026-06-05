@@ -2063,6 +2063,8 @@ async fn ensure_index(
     );
     if profile.access_method == "ec_ivf" {
         log_ec_ivf_build_timing(client).await?;
+    } else if profile.access_method == "ec_diskann" {
+        log_ec_diskann_build_timing(client, &job.name).await?;
     }
     Ok(())
 }
@@ -2112,6 +2114,71 @@ async fn log_ec_ivf_build_timing(client: &Client) -> Result<()> {
         row.get::<_, i64>(15),
         row.get::<_, i64>(16),
         row.get::<_, i64>(17),
+    );
+    Ok(())
+}
+
+async fn log_ec_diskann_build_timing(client: &Client, index_name: &str) -> Result<()> {
+    let row = match client
+        .query_opt(
+            "SELECT heap_tuples, scanned_tuples, unique_tuples, data_pages,
+                    heap_scan_ms, source_ref_ms, training_ms, sidecar_setup_ms,
+                    payload_derivation_ms, build_persist_ms,
+                    core_medoid_ms, core_graph_ms, core_persist_ms,
+                    parallel_requested_workers, parallel_effective_workers,
+                    parallel_batch_size, parallel_flush_rate, parallel_rayon_scaffold,
+                    parallel_epochs, parallel_proposal_ms, parallel_reducer_ms,
+                    parallel_same_epoch_candidate_reads,
+                    parallel_total_candidate_reads,
+                    overflow_ms, codebook_ms, write_pages_ms, metadata_ms,
+                    flush_total_ms, total_ms
+             FROM ec_diskann_last_build_timing()",
+            &[],
+        )
+        .await
+    {
+        Ok(row) => row,
+        Err(err) => {
+            crate::ecaz_eprintln!("[loader] warning: ec_diskann build timing unavailable: {err}");
+            return Ok(());
+        }
+    };
+    let Some(row) = row else {
+        crate::ecaz_eprintln!("[loader] warning: ec_diskann build timing returned no rows");
+        return Ok(());
+    };
+    crate::ecaz_eprintln!(
+        "[loader] ec_diskann_ambuild_timing index={} phase=complete heap_tuples={} scanned_tuples={} unique_tuples={} data_pages={} heap_scan_ms={} source_ref_ms={} training_ms={} sidecar_setup_ms={} payload_derivation_ms={} build_persist_ms={} core_medoid_ms={} core_graph_ms={} core_persist_ms={} parallel_requested_workers={} parallel_effective_workers={} parallel_batch_size={} parallel_flush_rate={} parallel_rayon_scaffold={} parallel_epochs={} parallel_proposal_ms={} parallel_reducer_ms={} parallel_same_epoch_candidate_reads={} parallel_total_candidate_reads={} overflow_ms={} codebook_ms={} write_pages_ms={} metadata_ms={} flush_total_ms={} total_ms={}",
+        index_name,
+        row.get::<_, i64>(0),
+        row.get::<_, i64>(1),
+        row.get::<_, i64>(2),
+        row.get::<_, i64>(3),
+        row.get::<_, i64>(4),
+        row.get::<_, i64>(5),
+        row.get::<_, i64>(6),
+        row.get::<_, i64>(7),
+        row.get::<_, i64>(8),
+        row.get::<_, i64>(9),
+        row.get::<_, i64>(10),
+        row.get::<_, i64>(11),
+        row.get::<_, i64>(12),
+        row.get::<_, i64>(13),
+        row.get::<_, i64>(14),
+        row.get::<_, i64>(15),
+        row.get::<_, i64>(16),
+        row.get::<_, i64>(17),
+        row.get::<_, i64>(18),
+        row.get::<_, i64>(19),
+        row.get::<_, i64>(20),
+        row.get::<_, i64>(21),
+        row.get::<_, i64>(22),
+        row.get::<_, i64>(23),
+        row.get::<_, i64>(24),
+        row.get::<_, i64>(25),
+        row.get::<_, i64>(26),
+        row.get::<_, i64>(27),
+        row.get::<_, i64>(28),
     );
     Ok(())
 }

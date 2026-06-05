@@ -6,6 +6,7 @@
 //! indexes.
 
 mod ambuild;
+pub(crate) use self::ambuild::{debug_last_build_timing, BuildTimingSnapshot};
 pub mod build;
 mod cost;
 pub(crate) use self::cost::index_cost_snapshot;

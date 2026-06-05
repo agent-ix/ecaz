@@ -23,6 +23,7 @@
 
 use std::ffi::c_void;
 use std::ptr::{self, NonNull};
+use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 use std::time::{Duration, Instant};
 
 use pgrx::{pg_sys, PgBox};
@@ -55,6 +56,116 @@ const PQ_FASTSCAN_TARGET_GROUP_SIZE: usize = 16;
 const PQ_FASTSCAN_DEFAULT_MAX_TRAIN_SIZE: usize = 1024;
 const PQ_FASTSCAN_DEFAULT_KMEANS_ITERS: usize = 8;
 const P_NEW: pg_sys::BlockNumber = u32::MAX;
+
+static LAST_BUILD_HEAP_TUPLES: AtomicU64 = AtomicU64::new(0);
+static LAST_BUILD_SCANNED_TUPLES: AtomicU64 = AtomicU64::new(0);
+static LAST_BUILD_UNIQUE_TUPLES: AtomicU64 = AtomicU64::new(0);
+static LAST_BUILD_DATA_PAGES: AtomicU64 = AtomicU64::new(0);
+static LAST_BUILD_HEAP_SCAN_MS: AtomicU64 = AtomicU64::new(0);
+static LAST_BUILD_SOURCE_REF_MS: AtomicU64 = AtomicU64::new(0);
+static LAST_BUILD_TRAINING_MS: AtomicU64 = AtomicU64::new(0);
+static LAST_BUILD_SIDECAR_SETUP_MS: AtomicU64 = AtomicU64::new(0);
+static LAST_BUILD_PAYLOAD_DERIVATION_MS: AtomicU64 = AtomicU64::new(0);
+static LAST_BUILD_BUILD_PERSIST_MS: AtomicU64 = AtomicU64::new(0);
+static LAST_BUILD_CORE_MEDOID_MS: AtomicU64 = AtomicU64::new(0);
+static LAST_BUILD_CORE_GRAPH_MS: AtomicU64 = AtomicU64::new(0);
+static LAST_BUILD_CORE_PERSIST_MS: AtomicU64 = AtomicU64::new(0);
+static LAST_BUILD_PARALLEL_REQUESTED_WORKERS: AtomicU64 = AtomicU64::new(0);
+static LAST_BUILD_PARALLEL_EFFECTIVE_WORKERS: AtomicU64 = AtomicU64::new(0);
+static LAST_BUILD_PARALLEL_BATCH_SIZE: AtomicU64 = AtomicU64::new(0);
+static LAST_BUILD_PARALLEL_FLUSH_RATE: AtomicU64 = AtomicU64::new(0);
+static LAST_BUILD_PARALLEL_RAYON_SCAFFOLD: AtomicU64 = AtomicU64::new(0);
+static LAST_BUILD_PARALLEL_EPOCHS: AtomicU64 = AtomicU64::new(0);
+static LAST_BUILD_PARALLEL_PROPOSAL_MS: AtomicU64 = AtomicU64::new(0);
+static LAST_BUILD_PARALLEL_REDUCER_MS: AtomicU64 = AtomicU64::new(0);
+static LAST_BUILD_PARALLEL_SAME_EPOCH_CANDIDATE_READS: AtomicU64 = AtomicU64::new(0);
+static LAST_BUILD_PARALLEL_TOTAL_CANDIDATE_READS: AtomicU64 = AtomicU64::new(0);
+static LAST_BUILD_OVERFLOW_MS: AtomicU64 = AtomicU64::new(0);
+static LAST_BUILD_CODEBOOK_MS: AtomicU64 = AtomicU64::new(0);
+static LAST_BUILD_WRITE_PAGES_MS: AtomicU64 = AtomicU64::new(0);
+static LAST_BUILD_METADATA_MS: AtomicU64 = AtomicU64::new(0);
+static LAST_BUILD_FLUSH_TOTAL_MS: AtomicU64 = AtomicU64::new(0);
+static LAST_BUILD_TOTAL_MS: AtomicU64 = AtomicU64::new(0);
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct BuildTimingSnapshot {
+    pub(crate) heap_tuples: u64,
+    pub(crate) scanned_tuples: u64,
+    pub(crate) unique_tuples: u64,
+    pub(crate) data_pages: u64,
+    pub(crate) heap_scan_ms: u64,
+    pub(crate) source_ref_ms: u64,
+    pub(crate) training_ms: u64,
+    pub(crate) sidecar_setup_ms: u64,
+    pub(crate) payload_derivation_ms: u64,
+    pub(crate) build_persist_ms: u64,
+    pub(crate) core_medoid_ms: u64,
+    pub(crate) core_graph_ms: u64,
+    pub(crate) core_persist_ms: u64,
+    pub(crate) parallel_requested_workers: u64,
+    pub(crate) parallel_effective_workers: u64,
+    pub(crate) parallel_batch_size: u64,
+    pub(crate) parallel_flush_rate: u64,
+    pub(crate) parallel_rayon_scaffold: u64,
+    pub(crate) parallel_epochs: u64,
+    pub(crate) parallel_proposal_ms: u64,
+    pub(crate) parallel_reducer_ms: u64,
+    pub(crate) parallel_same_epoch_candidate_reads: u64,
+    pub(crate) parallel_total_candidate_reads: u64,
+    pub(crate) overflow_ms: u64,
+    pub(crate) codebook_ms: u64,
+    pub(crate) write_pages_ms: u64,
+    pub(crate) metadata_ms: u64,
+    pub(crate) flush_total_ms: u64,
+    pub(crate) total_ms: u64,
+}
+
+impl BuildTimingSnapshot {
+    fn from_complete_build(
+        heap_tuples: f64,
+        scanned_tuples: usize,
+        unique_tuples: usize,
+        heap_scan_elapsed: Duration,
+        flush: &BuildFlushTiming,
+        total_elapsed: Duration,
+    ) -> Self {
+        Self {
+            heap_tuples: nonnegative_f64_to_u64(heap_tuples),
+            scanned_tuples: usize_to_u64(scanned_tuples),
+            unique_tuples: usize_to_u64(unique_tuples),
+            data_pages: usize_to_u64(flush.data_pages),
+            heap_scan_ms: u128_to_u64(elapsed_ms(heap_scan_elapsed)),
+            source_ref_ms: u128_to_u64(flush.source_ref_ms),
+            training_ms: u128_to_u64(flush.training_ms),
+            sidecar_setup_ms: u128_to_u64(flush.sidecar_setup_ms),
+            payload_derivation_ms: u128_to_u64(flush.payload_derivation_ms),
+            build_persist_ms: u128_to_u64(flush.build_persist_ms),
+            core_medoid_ms: u128_to_u64(flush.core_medoid_ms),
+            core_graph_ms: u128_to_u64(flush.core_graph_ms),
+            core_persist_ms: u128_to_u64(flush.core_persist_ms),
+            parallel_requested_workers: u64::from(flush.parallel_stats.requested_workers),
+            parallel_effective_workers: u64::from(flush.parallel_stats.effective_workers),
+            parallel_batch_size: u64::from(flush.parallel_stats.batch_size),
+            parallel_flush_rate: u64::from(flush.parallel_stats.flush_rate),
+            parallel_rayon_scaffold: u64::from(flush.parallel_stats.rayon_scaffold_enabled),
+            parallel_epochs: usize_to_u64(flush.parallel_stats.epochs),
+            parallel_proposal_ms: u128_to_u64(flush.parallel_stats.proposal_ms),
+            parallel_reducer_ms: u128_to_u64(flush.parallel_stats.reducer_ms),
+            parallel_same_epoch_candidate_reads: usize_to_u64(
+                flush.parallel_stats.same_epoch_candidate_reads,
+            ),
+            parallel_total_candidate_reads: usize_to_u64(
+                flush.parallel_stats.total_candidate_reads,
+            ),
+            overflow_ms: u128_to_u64(flush.overflow_ms),
+            codebook_ms: u128_to_u64(flush.codebook_ms),
+            write_pages_ms: u128_to_u64(flush.write_pages_ms),
+            metadata_ms: u128_to_u64(flush.metadata_ms),
+            flush_total_ms: u128_to_u64(flush.total_ms),
+            total_ms: u128_to_u64(elapsed_ms(total_elapsed)),
+        }
+    }
+}
 
 #[derive(Debug)]
 struct RawHeapTuple {
@@ -157,6 +268,7 @@ pub(super) unsafe extern "C-unwind" fn ec_diskann_ambuild(
         let mut state = BuildState::new(index_relation);
         let index_name = relation_name(index_relation);
         validate_single_ecvector_attribute(heap_relation, index_info);
+        reset_debug_last_build_timing();
 
         initialize_metadata_page(index_relation, empty_metadata(&state));
 
@@ -175,12 +287,20 @@ pub(super) unsafe extern "C-unwind" fn ec_diskann_ambuild(
         let heap_scan_elapsed = heap_scan_started.elapsed();
 
         let index_tuples = if state.heap_tuples.is_empty() {
+            let total_elapsed = total_started.elapsed();
+            record_debug_last_build_timing(BuildTimingSnapshot {
+                heap_tuples: nonnegative_f64_to_u64(heap_tuples),
+                scanned_tuples: usize_to_u64(state.scanned_tuples),
+                heap_scan_ms: u128_to_u64(elapsed_ms(heap_scan_elapsed)),
+                total_ms: u128_to_u64(elapsed_ms(total_elapsed)),
+                ..BuildTimingSnapshot::default()
+            });
             log_ambuild_empty_timing(
                 &index_name,
                 heap_tuples,
                 state.scanned_tuples,
                 heap_scan_elapsed,
-                total_started.elapsed(),
+                total_elapsed,
             );
             0.0
         } else {
@@ -190,6 +310,15 @@ pub(super) unsafe extern "C-unwind" fn ec_diskann_ambuild(
                 index_info_parallel_workers(index_info),
             )
             .unwrap_or_else(|e| pgrx::error!("ec_diskann ambuild failed: {e}"));
+            let total_elapsed = total_started.elapsed();
+            record_debug_last_build_timing(BuildTimingSnapshot::from_complete_build(
+                heap_tuples,
+                state.scanned_tuples,
+                state.heap_tuples.len(),
+                heap_scan_elapsed,
+                &flush_timing,
+                total_elapsed,
+            ));
             log_ambuild_timing(
                 &index_name,
                 heap_tuples,
@@ -197,7 +326,7 @@ pub(super) unsafe extern "C-unwind" fn ec_diskann_ambuild(
                 state.heap_tuples.len(),
                 heap_scan_elapsed,
                 &flush_timing,
-                total_started.elapsed(),
+                total_elapsed,
             );
             state.heap_tuples.len() as f64
         };
@@ -415,6 +544,105 @@ unsafe fn flush_build_state(
 
 fn elapsed_ms(duration: Duration) -> u128 {
     duration.as_millis()
+}
+
+pub(crate) fn debug_last_build_timing() -> BuildTimingSnapshot {
+    BuildTimingSnapshot {
+        heap_tuples: LAST_BUILD_HEAP_TUPLES.load(AtomicOrdering::Acquire),
+        scanned_tuples: LAST_BUILD_SCANNED_TUPLES.load(AtomicOrdering::Acquire),
+        unique_tuples: LAST_BUILD_UNIQUE_TUPLES.load(AtomicOrdering::Acquire),
+        data_pages: LAST_BUILD_DATA_PAGES.load(AtomicOrdering::Acquire),
+        heap_scan_ms: LAST_BUILD_HEAP_SCAN_MS.load(AtomicOrdering::Acquire),
+        source_ref_ms: LAST_BUILD_SOURCE_REF_MS.load(AtomicOrdering::Acquire),
+        training_ms: LAST_BUILD_TRAINING_MS.load(AtomicOrdering::Acquire),
+        sidecar_setup_ms: LAST_BUILD_SIDECAR_SETUP_MS.load(AtomicOrdering::Acquire),
+        payload_derivation_ms: LAST_BUILD_PAYLOAD_DERIVATION_MS.load(AtomicOrdering::Acquire),
+        build_persist_ms: LAST_BUILD_BUILD_PERSIST_MS.load(AtomicOrdering::Acquire),
+        core_medoid_ms: LAST_BUILD_CORE_MEDOID_MS.load(AtomicOrdering::Acquire),
+        core_graph_ms: LAST_BUILD_CORE_GRAPH_MS.load(AtomicOrdering::Acquire),
+        core_persist_ms: LAST_BUILD_CORE_PERSIST_MS.load(AtomicOrdering::Acquire),
+        parallel_requested_workers: LAST_BUILD_PARALLEL_REQUESTED_WORKERS
+            .load(AtomicOrdering::Acquire),
+        parallel_effective_workers: LAST_BUILD_PARALLEL_EFFECTIVE_WORKERS
+            .load(AtomicOrdering::Acquire),
+        parallel_batch_size: LAST_BUILD_PARALLEL_BATCH_SIZE.load(AtomicOrdering::Acquire),
+        parallel_flush_rate: LAST_BUILD_PARALLEL_FLUSH_RATE.load(AtomicOrdering::Acquire),
+        parallel_rayon_scaffold: LAST_BUILD_PARALLEL_RAYON_SCAFFOLD.load(AtomicOrdering::Acquire),
+        parallel_epochs: LAST_BUILD_PARALLEL_EPOCHS.load(AtomicOrdering::Acquire),
+        parallel_proposal_ms: LAST_BUILD_PARALLEL_PROPOSAL_MS.load(AtomicOrdering::Acquire),
+        parallel_reducer_ms: LAST_BUILD_PARALLEL_REDUCER_MS.load(AtomicOrdering::Acquire),
+        parallel_same_epoch_candidate_reads: LAST_BUILD_PARALLEL_SAME_EPOCH_CANDIDATE_READS
+            .load(AtomicOrdering::Acquire),
+        parallel_total_candidate_reads: LAST_BUILD_PARALLEL_TOTAL_CANDIDATE_READS
+            .load(AtomicOrdering::Acquire),
+        overflow_ms: LAST_BUILD_OVERFLOW_MS.load(AtomicOrdering::Acquire),
+        codebook_ms: LAST_BUILD_CODEBOOK_MS.load(AtomicOrdering::Acquire),
+        write_pages_ms: LAST_BUILD_WRITE_PAGES_MS.load(AtomicOrdering::Acquire),
+        metadata_ms: LAST_BUILD_METADATA_MS.load(AtomicOrdering::Acquire),
+        flush_total_ms: LAST_BUILD_FLUSH_TOTAL_MS.load(AtomicOrdering::Acquire),
+        total_ms: LAST_BUILD_TOTAL_MS.load(AtomicOrdering::Acquire),
+    }
+}
+
+fn reset_debug_last_build_timing() {
+    record_debug_last_build_timing(BuildTimingSnapshot::default());
+}
+
+fn record_debug_last_build_timing(snapshot: BuildTimingSnapshot) {
+    LAST_BUILD_HEAP_TUPLES.store(snapshot.heap_tuples, AtomicOrdering::Release);
+    LAST_BUILD_SCANNED_TUPLES.store(snapshot.scanned_tuples, AtomicOrdering::Release);
+    LAST_BUILD_UNIQUE_TUPLES.store(snapshot.unique_tuples, AtomicOrdering::Release);
+    LAST_BUILD_DATA_PAGES.store(snapshot.data_pages, AtomicOrdering::Release);
+    LAST_BUILD_HEAP_SCAN_MS.store(snapshot.heap_scan_ms, AtomicOrdering::Release);
+    LAST_BUILD_SOURCE_REF_MS.store(snapshot.source_ref_ms, AtomicOrdering::Release);
+    LAST_BUILD_TRAINING_MS.store(snapshot.training_ms, AtomicOrdering::Release);
+    LAST_BUILD_SIDECAR_SETUP_MS.store(snapshot.sidecar_setup_ms, AtomicOrdering::Release);
+    LAST_BUILD_PAYLOAD_DERIVATION_MS.store(snapshot.payload_derivation_ms, AtomicOrdering::Release);
+    LAST_BUILD_BUILD_PERSIST_MS.store(snapshot.build_persist_ms, AtomicOrdering::Release);
+    LAST_BUILD_CORE_MEDOID_MS.store(snapshot.core_medoid_ms, AtomicOrdering::Release);
+    LAST_BUILD_CORE_GRAPH_MS.store(snapshot.core_graph_ms, AtomicOrdering::Release);
+    LAST_BUILD_CORE_PERSIST_MS.store(snapshot.core_persist_ms, AtomicOrdering::Release);
+    LAST_BUILD_PARALLEL_REQUESTED_WORKERS
+        .store(snapshot.parallel_requested_workers, AtomicOrdering::Release);
+    LAST_BUILD_PARALLEL_EFFECTIVE_WORKERS
+        .store(snapshot.parallel_effective_workers, AtomicOrdering::Release);
+    LAST_BUILD_PARALLEL_BATCH_SIZE.store(snapshot.parallel_batch_size, AtomicOrdering::Release);
+    LAST_BUILD_PARALLEL_FLUSH_RATE.store(snapshot.parallel_flush_rate, AtomicOrdering::Release);
+    LAST_BUILD_PARALLEL_RAYON_SCAFFOLD
+        .store(snapshot.parallel_rayon_scaffold, AtomicOrdering::Release);
+    LAST_BUILD_PARALLEL_EPOCHS.store(snapshot.parallel_epochs, AtomicOrdering::Release);
+    LAST_BUILD_PARALLEL_PROPOSAL_MS.store(snapshot.parallel_proposal_ms, AtomicOrdering::Release);
+    LAST_BUILD_PARALLEL_REDUCER_MS.store(snapshot.parallel_reducer_ms, AtomicOrdering::Release);
+    LAST_BUILD_PARALLEL_SAME_EPOCH_CANDIDATE_READS.store(
+        snapshot.parallel_same_epoch_candidate_reads,
+        AtomicOrdering::Release,
+    );
+    LAST_BUILD_PARALLEL_TOTAL_CANDIDATE_READS.store(
+        snapshot.parallel_total_candidate_reads,
+        AtomicOrdering::Release,
+    );
+    LAST_BUILD_OVERFLOW_MS.store(snapshot.overflow_ms, AtomicOrdering::Release);
+    LAST_BUILD_CODEBOOK_MS.store(snapshot.codebook_ms, AtomicOrdering::Release);
+    LAST_BUILD_WRITE_PAGES_MS.store(snapshot.write_pages_ms, AtomicOrdering::Release);
+    LAST_BUILD_METADATA_MS.store(snapshot.metadata_ms, AtomicOrdering::Release);
+    LAST_BUILD_FLUSH_TOTAL_MS.store(snapshot.flush_total_ms, AtomicOrdering::Release);
+    LAST_BUILD_TOTAL_MS.store(snapshot.total_ms, AtomicOrdering::Release);
+}
+
+fn u128_to_u64(value: u128) -> u64 {
+    u64::try_from(value).unwrap_or(u64::MAX)
+}
+
+fn usize_to_u64(value: usize) -> u64 {
+    u64::try_from(value).unwrap_or(u64::MAX)
+}
+
+fn nonnegative_f64_to_u64(value: f64) -> u64 {
+    if value.is_finite() && value > 0.0 {
+        value as u64
+    } else {
+        0
+    }
 }
 
 fn relation_name(relation: pg_sys::Relation) -> String {

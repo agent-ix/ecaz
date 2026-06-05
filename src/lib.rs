@@ -18263,6 +18263,77 @@ fn ec_ivf_last_build_timing() -> TableIterator<
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn ec_diskann_last_build_timing() -> TableIterator<
+    'static,
+    (
+        name!(heap_tuples, i64),
+        name!(scanned_tuples, i64),
+        name!(unique_tuples, i64),
+        name!(data_pages, i64),
+        name!(heap_scan_ms, i64),
+        name!(source_ref_ms, i64),
+        name!(training_ms, i64),
+        name!(sidecar_setup_ms, i64),
+        name!(payload_derivation_ms, i64),
+        name!(build_persist_ms, i64),
+        name!(core_medoid_ms, i64),
+        name!(core_graph_ms, i64),
+        name!(core_persist_ms, i64),
+        name!(parallel_requested_workers, i64),
+        name!(parallel_effective_workers, i64),
+        name!(parallel_batch_size, i64),
+        name!(parallel_flush_rate, i64),
+        name!(parallel_rayon_scaffold, i64),
+        name!(parallel_epochs, i64),
+        name!(parallel_proposal_ms, i64),
+        name!(parallel_reducer_ms, i64),
+        name!(parallel_same_epoch_candidate_reads, i64),
+        name!(parallel_total_candidate_reads, i64),
+        name!(overflow_ms, i64),
+        name!(codebook_ms, i64),
+        name!(write_pages_ms, i64),
+        name!(metadata_ms, i64),
+        name!(flush_total_ms, i64),
+        name!(total_ms, i64),
+    ),
+> {
+    let timing = am::diskann_debug_last_build_timing();
+    let to_i64 = |value: u64| i64::try_from(value).unwrap_or(i64::MAX);
+    TableIterator::once((
+        to_i64(timing.heap_tuples),
+        to_i64(timing.scanned_tuples),
+        to_i64(timing.unique_tuples),
+        to_i64(timing.data_pages),
+        to_i64(timing.heap_scan_ms),
+        to_i64(timing.source_ref_ms),
+        to_i64(timing.training_ms),
+        to_i64(timing.sidecar_setup_ms),
+        to_i64(timing.payload_derivation_ms),
+        to_i64(timing.build_persist_ms),
+        to_i64(timing.core_medoid_ms),
+        to_i64(timing.core_graph_ms),
+        to_i64(timing.core_persist_ms),
+        to_i64(timing.parallel_requested_workers),
+        to_i64(timing.parallel_effective_workers),
+        to_i64(timing.parallel_batch_size),
+        to_i64(timing.parallel_flush_rate),
+        to_i64(timing.parallel_rayon_scaffold),
+        to_i64(timing.parallel_epochs),
+        to_i64(timing.parallel_proposal_ms),
+        to_i64(timing.parallel_reducer_ms),
+        to_i64(timing.parallel_same_epoch_candidate_reads),
+        to_i64(timing.parallel_total_candidate_reads),
+        to_i64(timing.overflow_ms),
+        to_i64(timing.codebook_ms),
+        to_i64(timing.write_pages_ms),
+        to_i64(timing.metadata_ms),
+        to_i64(timing.flush_total_ms),
+        to_i64(timing.total_ms),
+    ))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn ec_spire_index_cost_snapshot(
     index_oid: pg_sys::Oid,
 ) -> TableIterator<
