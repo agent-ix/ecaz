@@ -1,0 +1,12 @@
+[install] repo=/Users/peter/dev/tqvector
+[install] pgrx_home=/Users/peter/.pgrx
+[install] pg_config=/opt/homebrew/opt/postgresql@18/bin/pg_config
+[32m[1m    Building[0m[39m extension with features [36mpg18 pg_test[39m
+[32m[1m     Running[0m[39m command [36m"/opt/homebrew/bin/cargo" "build" "--lib" "--release" "--features" "pg18 pg_test" "--no-default-features" "--message-format=json-render-diagnostics"[39m
+[32m[1m  Installing[0m[39m extension
+[32m[1m     Copying[0m[39m control file to [36m/opt/homebrew/share/postgresql@18/extension/ecaz.control[39m
+[32m[1m     Copying[0m[39m shared library to [36m/opt/homebrew/lib/postgresql@18/ecaz.dylib[39m
+[32m[1m    Finished[0m[39m installing ecaz
+[install] backend artifact assertion passed
+[install] installed_backend=/opt/homebrew/lib/postgresql@18/ecaz.dylib
+[install] sha256=9485d955affbc6d595b4f70bb66c699a2d7b4a2c12b41089fa910a7784509611

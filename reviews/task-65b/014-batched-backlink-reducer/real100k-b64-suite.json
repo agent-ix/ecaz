@@ -1,0 +1,44 @@
+{
+  "name": "task65b-diskann-real100k-b64-probe",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-65b/014-batched-backlink-reducer/artifacts",
+  "defaults": {
+    "pg": 18,
+    "socket_dir": "/Users/peter/.pgrx",
+    "profile": "ec_diskann",
+    "bits": 4,
+    "seed": 42,
+    "queries_limit": 200,
+    "iterations": 200,
+    "force_index": true,
+    "sample_backend_memory": true,
+    "memory_sample_interval_ms": 25
+  },
+  "steps": [
+    {
+      "kind": "load",
+      "name": "load-real100k-w8-b64",
+      "tags": ["load", "diskann", "real100k", "workers8", "batch64", "pq_fastscan", "r32", "l100"],
+      "pgoptions": "-c max_parallel_maintenance_workers=8 -c max_parallel_workers=8",
+      "capture_parallel_workers": true,
+      "table_reloptions": ["parallel_workers=8"],
+      "prefix": "task65b_batchprobe_real100k_w8_b64",
+      "storage_format": "pq_fastscan",
+      "corpus_file": "data/task60_m5_dbpedia_staged/ec_real_100k_corpus.tsv",
+      "queries_file": "data/task60_m5_dbpedia_staged/ec_real_100k_queries.tsv",
+      "manifest_file": "data/task60_m5_dbpedia_staged/ec_real_100k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": ["graph_degree=32", "build_list_size=100", "alpha=1.2", "parallel_build_batch_size=64"]
+    },
+    {
+      "kind": "recall",
+      "name": "recall-real100k-w8-b64",
+      "tags": ["recall", "diskann", "real100k", "workers8", "batch64"],
+      "prefix": "task65b_batchprobe_real100k_w8_b64",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [64, 128, 200],
+      "truth_cache_file": "${artifact_dir}/truth-real100k-b64-k10.json"
+    }
+  ]
+}
