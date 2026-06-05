@@ -1,7 +1,9 @@
 # Task 65b Locking Design Artifact Manifest
 
 - packet type: design-only review request
-- code commit under review: `37052b81693d3b5693d95fcaa0f29f7ffc748063`
+- code/design commits under review:
+  - `37052b81693d3b5693d95fcaa0f29f7ffc748063` (serial neighbor cache)
+  - pending Slice C response commit (ADR-075 + request update)
 - packet commit: pending at artifact creation
 - task bucket: `reviews/task-65b/003-locking-design/`
 - timestamp: `2026-06-04T20:48:33Z`
@@ -55,10 +57,23 @@ The chosen first implementation path is deterministic epoch/batch proposal with
 ordered leader commit:
 
 - rayon graph-core worker fanout for the stepping-stone implementation
+- PostgreSQL `IndexInfo::ii_ParallelWorkers` remains the worker-count source
 - immutable epoch snapshot for proposal reads
 - leader-owned `BuilderNeighborCache` commit in fixed pivot order
 - sharded `RwLock`/LWLock stripes reserved for a future live shared-cache path
   if ordered commit blocks the Task 65b performance target
+
+## Feedback Response
+
+`reviews/task-65b/003-locking-design/feedback/2026-06-04-01-reviewer.md`
+requested:
+
+- named concurrency-test surface
+- reducer Amdahl floor
+- Gate #6 disposition for the rayon stepping stone
+
+The packet request was updated to cover those points, and ADR-075 records the
+coordinator boundary.
 
 ## Validation
 
