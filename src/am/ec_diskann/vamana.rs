@@ -1161,7 +1161,7 @@ where
     (graph, stats, parallel_stats)
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct VamanaPivotProposal {
     epoch: usize,
     ordinal: usize,
@@ -1592,6 +1592,19 @@ mod tests {
         }
     }
 
+    fn task65b_commit_ordered_proposals(
+        mut proposals: Vec<VamanaPivotProposal>,
+        max_degree: usize,
+        dist: impl Fn(u32, u32) -> f32 + Copy,
+    ) -> Vec<Vec<u32>> {
+        proposals.sort_by_key(|proposal| proposal.ordinal);
+        let mut cache = BuilderNeighborCache::empty(4, max_degree);
+        for proposal in proposals {
+            commit_vamana_pivot_proposal(&mut cache, proposal, max_degree, 1.2, dist);
+        }
+        cache.into_graph().neighbors
+    }
+
     #[test]
     fn task65b_epoch_proposals_read_epoch_snapshot_not_live_reducer_state() {
         let mut live = BuilderNeighborCache::empty(4, 3);
@@ -1659,6 +1672,103 @@ mod tests {
         assert_eq!(
             ordered_cache.into_graph().neighbors,
             reduced_cache.into_graph().neighbors
+        );
+    }
+
+    #[test]
+    fn task65b_reducer_is_invariant_across_all_three_proposal_arrival_orders() {
+        let dist = |a: u32, b: u32| (a as i32 - b as i32).unsigned_abs() as f32;
+        let proposals = [
+            task65b_model_proposal(0, 0, 0, vec![2]),
+            task65b_model_proposal(0, 1, 1, vec![2]),
+            task65b_model_proposal(0, 2, 3, vec![2]),
+        ];
+        let expected = task65b_commit_ordered_proposals(proposals.to_vec(), 3, dist);
+
+        for order in [
+            [0usize, 1usize, 2usize],
+            [0usize, 2usize, 1usize],
+            [1usize, 0usize, 2usize],
+            [1usize, 2usize, 0usize],
+            [2usize, 0usize, 1usize],
+            [2usize, 1usize, 0usize],
+        ] {
+            let scheduled = order
+                .into_iter()
+                .map(|idx| proposals[idx].clone())
+                .collect::<Vec<_>>();
+            assert_eq!(
+                task65b_commit_ordered_proposals(scheduled, 3, dist),
+                expected,
+                "arrival order {order:?} should reduce to the same graph"
+            );
+        }
+    }
+
+    #[test]
+    fn task65b_epoch_boundary_controls_snapshot_visibility() {
+        let dist = |a: u32, b: u32| (a as i32 - b as i32).unsigned_abs() as f32;
+        let pivot_ordinals = [0usize, 1usize, 2usize, 3usize];
+        let mut live = BuilderNeighborCache::empty(4, 3);
+
+        let epoch0_snapshot = live.snapshot();
+        let epoch0_proposal = propose_vamana_pivot(
+            1,
+            0,
+            1,
+            0,
+            &pivot_ordinals,
+            &epoch0_snapshot,
+            0,
+            4,
+            3,
+            4,
+            1.2,
+            true,
+            dist,
+        );
+        commit_vamana_pivot_proposal(&mut live, epoch0_proposal, 3, 1.2, dist);
+        assert!(!live.neighbors(1).is_empty());
+
+        let stale_epoch0_proposal = propose_vamana_pivot(
+            1,
+            0,
+            1,
+            0,
+            &pivot_ordinals,
+            &epoch0_snapshot,
+            0,
+            4,
+            3,
+            4,
+            1.2,
+            true,
+            dist,
+        );
+        assert_eq!(
+            stale_epoch0_proposal.existing_neighbor_count, 0,
+            "same-epoch proposals must keep reading the pre-reducer snapshot"
+        );
+
+        let epoch1_snapshot = live.snapshot();
+        let epoch1_proposal = propose_vamana_pivot(
+            1,
+            1,
+            1,
+            1,
+            &pivot_ordinals,
+            &epoch1_snapshot,
+            0,
+            4,
+            3,
+            4,
+            1.2,
+            true,
+            dist,
+        );
+        assert!(
+            epoch1_proposal.existing_neighbor_count > 0,
+            "next-epoch proposals should observe prior epoch reducer commits"
         );
     }
 
