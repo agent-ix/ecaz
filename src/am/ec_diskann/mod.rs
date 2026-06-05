@@ -53,6 +53,18 @@ pub(super) const ECDISKANN_DEFAULT_ALPHA: f32 = 1.2;
 pub(super) const ECDISKANN_MIN_ALPHA: f32 = 1.0;
 pub(super) const ECDISKANN_MAX_ALPHA: f32 = 2.0;
 
+pub(super) const ECDISKANN_DEFAULT_PARALLEL_BUILD_WORKERS: i32 = 0;
+pub(super) const ECDISKANN_MIN_PARALLEL_BUILD_WORKERS: i32 = 0;
+pub(super) const ECDISKANN_MAX_PARALLEL_BUILD_WORKERS: i32 = 64;
+
+pub(super) const ECDISKANN_DEFAULT_PARALLEL_BUILD_BATCH_SIZE: i32 = 1;
+pub(super) const ECDISKANN_MIN_PARALLEL_BUILD_BATCH_SIZE: i32 = 1;
+pub(super) const ECDISKANN_MAX_PARALLEL_BUILD_BATCH_SIZE: i32 = 100_000;
+
+pub(super) const ECDISKANN_DEFAULT_PARALLEL_BUILD_FLUSH_RATE: i32 = 0;
+pub(super) const ECDISKANN_MIN_PARALLEL_BUILD_FLUSH_RATE: i32 = 0;
+pub(super) const ECDISKANN_MAX_PARALLEL_BUILD_FLUSH_RATE: i32 = 1_000_000;
+
 pub(super) const ECDISKANN_PLANNER_SCAN_ENABLED: bool = true;
 // V0 exact graph distances use `1 - ip`, which only preserves the `<#>`
 // ordering when the source vectors are unit-normalized.

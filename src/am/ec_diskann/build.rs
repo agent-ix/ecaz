@@ -35,6 +35,7 @@ use crate::am::ec_diskann::vamana::{
     approximate_medoid, build_vamana_graph_with_stats, VamanaBuildStats,
 };
 use crate::storage::page::ItemPointer;
+use rayon::ThreadPoolBuilder;
 use std::time::Instant;
 
 /// Capped sample size for the medoid approximation. Mirrors the
@@ -71,6 +72,44 @@ pub struct BuildParams {
     pub page_size: usize,
     /// True iff the index keeps a per-node binary sidecar (W>0).
     pub has_binary_sidecar: bool,
+}
+
+/// Experimental Task 65b graph-build worker controls.
+///
+/// `requested_workers = 0` preserves the Task 65/Slice B serial graph build.
+/// Slice D supports `requested_workers = 1` as a rayon scaffolding boundary that
+/// must remain byte-equivalent to serial output; true multi-worker proposal
+/// fanout lands in a later slice.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BuildParallelConfig {
+    pub requested_workers: u16,
+    pub batch_size: u32,
+    pub flush_rate: u32,
+}
+
+impl BuildParallelConfig {
+    pub const SERIAL: Self = Self {
+        requested_workers: 0,
+        batch_size: 1,
+        flush_rate: 0,
+    };
+
+    pub fn worker_one(batch_size: u32, flush_rate: u32) -> Self {
+        Self {
+            requested_workers: 1,
+            batch_size,
+            flush_rate,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct BuildParallelStats {
+    pub requested_workers: u16,
+    pub effective_workers: u16,
+    pub batch_size: u32,
+    pub flush_rate: u32,
+    pub rayon_scaffold_enabled: bool,
 }
 
 impl BuildParams {
@@ -140,6 +179,7 @@ pub struct BuildOutput {
     pub persisted: PersistedGraph,
     pub build_stats: VamanaBuildStats,
     pub core_timing: BuildCoreTiming,
+    pub parallel_stats: BuildParallelStats,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -166,7 +206,164 @@ pub fn build_and_persist_vamana<D>(
 where
     D: Fn(u32, u32) -> f32 + Copy,
 {
+    build_and_persist_vamana_serial(params, payloads, build_dist)
+}
+
+pub fn build_and_persist_vamana_with_parallel_config<D>(
+    params: BuildParams,
+    payloads: &[NodePayload],
+    parallel: BuildParallelConfig,
+    build_dist: D,
+) -> Result<BuildOutput, String>
+where
+    D: Fn(u32, u32) -> f32 + Copy + Send + Sync,
+{
     let n = payloads.len();
+    validate_build_inputs(params, n)?;
+    validate_parallel_config(parallel)?;
+
+    let medoid_started = Instant::now();
+    let medoid = approximate_medoid(n, MEDOID_SAMPLE_CAP, params.seed, build_dist);
+    let medoid_ms = medoid_started.elapsed().as_millis();
+
+    let graph_started = Instant::now();
+    let (graph, build_stats, parallel_stats) = build_vamana_graph_with_parallel_config(
+        n,
+        medoid,
+        params.graph_degree_r as usize,
+        params.build_list_size_l as usize,
+        params.alpha,
+        params.seed,
+        parallel,
+        build_dist,
+    )?;
+    let graph_ms = graph_started.elapsed().as_millis();
+
+    persist_build_output(
+        params,
+        payloads,
+        medoid,
+        graph,
+        build_stats,
+        medoid_ms,
+        graph_ms,
+        parallel_stats,
+    )
+}
+
+fn build_and_persist_vamana_serial<D>(
+    params: BuildParams,
+    payloads: &[NodePayload],
+    build_dist: D,
+) -> Result<BuildOutput, String>
+where
+    D: Fn(u32, u32) -> f32 + Copy,
+{
+    let n = payloads.len();
+    validate_build_inputs(params, n)?;
+
+    let medoid_started = Instant::now();
+    let medoid = approximate_medoid(n, MEDOID_SAMPLE_CAP, params.seed, build_dist);
+    let medoid_ms = medoid_started.elapsed().as_millis();
+
+    let graph_started = Instant::now();
+    let (graph, build_stats) = build_vamana_graph_with_stats(
+        n,
+        medoid,
+        params.graph_degree_r as usize,
+        params.build_list_size_l as usize,
+        params.alpha,
+        params.seed,
+        build_dist,
+    );
+    let graph_ms = graph_started.elapsed().as_millis();
+
+    persist_build_output(
+        params,
+        payloads,
+        medoid,
+        graph,
+        build_stats,
+        medoid_ms,
+        graph_ms,
+        BuildParallelStats::default(),
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn build_vamana_graph_with_parallel_config<D>(
+    n: usize,
+    medoid: u32,
+    graph_degree_r: usize,
+    build_list_size_l: usize,
+    alpha: f32,
+    seed: u64,
+    parallel: BuildParallelConfig,
+    build_dist: D,
+) -> Result<
+    (
+        crate::am::ec_diskann::vamana::VamanaGraph,
+        VamanaBuildStats,
+        BuildParallelStats,
+    ),
+    String,
+>
+where
+    D: Fn(u32, u32) -> f32 + Copy + Send + Sync,
+{
+    if parallel.requested_workers == 0 {
+        let (graph, stats) = build_vamana_graph_with_stats(
+            n,
+            medoid,
+            graph_degree_r,
+            build_list_size_l,
+            alpha,
+            seed,
+            build_dist,
+        );
+        return Ok((
+            graph,
+            stats,
+            BuildParallelStats {
+                requested_workers: 0,
+                effective_workers: 0,
+                batch_size: parallel.batch_size,
+                flush_rate: parallel.flush_rate,
+                rayon_scaffold_enabled: false,
+            },
+        ));
+    }
+
+    let pool = ThreadPoolBuilder::new()
+        .num_threads(parallel.requested_workers as usize)
+        .thread_name(|idx| format!("ec_diskann_build_{idx}"))
+        .build()
+        .map_err(|err| format!("ec_diskann parallel graph build setup failed: {err}"))?;
+    let (graph, stats) = pool.install(|| {
+        build_vamana_graph_with_stats(
+            n,
+            medoid,
+            graph_degree_r,
+            build_list_size_l,
+            alpha,
+            seed,
+            build_dist,
+        )
+    });
+    Ok((
+        graph,
+        stats,
+        BuildParallelStats {
+            requested_workers: parallel.requested_workers,
+            effective_workers: parallel.requested_workers,
+            batch_size: parallel.batch_size,
+            flush_rate: parallel.flush_rate,
+            rayon_scaffold_enabled: true,
+        },
+    ))
+}
+
+fn validate_build_inputs(params: BuildParams, n: usize) -> Result<(), String> {
     if n == 0 {
         return Err("cannot build an empty Vamana index".into());
     }
@@ -185,23 +382,32 @@ where
     if params.dimensions == 0 {
         return Err("dimensions must be > 0".into());
     }
+    Ok(())
+}
 
-    let medoid_started = Instant::now();
-    let medoid = approximate_medoid(n, MEDOID_SAMPLE_CAP, params.seed, build_dist);
-    let medoid_ms = medoid_started.elapsed().as_millis();
+fn validate_parallel_config(parallel: BuildParallelConfig) -> Result<(), String> {
+    if parallel.batch_size == 0 {
+        return Err("parallel_build_batch_size must be > 0".into());
+    }
+    if parallel.requested_workers > 1 {
+        return Err(format!(
+            "ec_diskann parallel graph build currently supports parallel_build_workers = 0 or 1; got {}",
+            parallel.requested_workers
+        ));
+    }
+    Ok(())
+}
 
-    let graph_started = Instant::now();
-    let (graph, build_stats) = build_vamana_graph_with_stats(
-        n,
-        medoid,
-        params.graph_degree_r as usize,
-        params.build_list_size_l as usize,
-        params.alpha,
-        params.seed,
-        build_dist,
-    );
-    let graph_ms = graph_started.elapsed().as_millis();
-
+fn persist_build_output(
+    params: BuildParams,
+    payloads: &[NodePayload],
+    medoid: u32,
+    graph: crate::am::ec_diskann::vamana::VamanaGraph,
+    build_stats: VamanaBuildStats,
+    medoid_ms: u128,
+    graph_ms: u128,
+    parallel_stats: BuildParallelStats,
+) -> Result<BuildOutput, String> {
     let w = params.binary_word_count();
     let c = params.search_code_len();
 
@@ -232,9 +438,6 @@ where
         payload_flags: params.payload_flags(),
         search_subvector_count: params.search_subvector_count,
         search_subvector_dim: params.search_subvector_dim,
-        // Codebook chain head is owned by Phase 5C-3 (codebook
-        // persistence). Build orchestrator leaves it INVALID; the
-        // pgrx caller patches it after writing the codebook chain.
         grouped_codebook_head: ItemPointer::INVALID,
     };
 
@@ -247,6 +450,7 @@ where
             graph_ms,
             persist_ms,
         },
+        parallel_stats,
     })
 }
 
@@ -470,6 +674,72 @@ mod tests {
         assert_eq!(a.metadata.entry_point, b.metadata.entry_point);
         assert_eq!(a.persisted.node_to_tid, b.persisted.node_to_tid);
         assert_eq!(a.persisted.persistence_order, b.persisted.persistence_order);
+    }
+
+    #[test]
+    fn task65b_worker_one_scaffold_matches_serial_output() {
+        let n = 48;
+        let vectors = synth_vectors(n);
+        let dist = |a: u32, b: u32| -> f32 {
+            let av = vectors[a as usize];
+            let bv = vectors[b as usize];
+            let dx = av[0] - bv[0];
+            let dy = av[1] - bv[1];
+            dx * dx + dy * dy
+        };
+
+        let params = default_params(64);
+        let payloads = synth_payloads(n, params.binary_word_count(), params.search_code_len());
+
+        let serial = build_and_persist_vamana(params, &payloads, dist).expect("serial build");
+        let worker_one = build_and_persist_vamana_with_parallel_config(
+            params,
+            &payloads,
+            BuildParallelConfig::worker_one(1, 0),
+            dist,
+        )
+        .expect("worker=1 build");
+
+        assert_eq!(worker_one.parallel_stats.requested_workers, 1);
+        assert_eq!(worker_one.parallel_stats.effective_workers, 1);
+        assert_eq!(worker_one.parallel_stats.batch_size, 1);
+        assert!(worker_one.parallel_stats.rayon_scaffold_enabled);
+        assert_eq!(serial.metadata.entry_point, worker_one.metadata.entry_point);
+        assert_eq!(
+            serial.persisted.node_to_tid,
+            worker_one.persisted.node_to_tid
+        );
+        assert_eq!(
+            serial.persisted.persistence_order,
+            worker_one.persisted.persistence_order
+        );
+        assert_eq!(serial.build_stats.medoid, worker_one.build_stats.medoid);
+        assert_eq!(
+            serial.build_stats.final_in_degree,
+            worker_one.build_stats.final_in_degree
+        );
+    }
+
+    #[test]
+    fn task65b_multi_worker_config_is_rejected_until_proposal_fanout_lands() {
+        let params = default_params(64);
+        let payloads = synth_payloads(2, params.binary_word_count(), params.search_code_len());
+        let err = build_and_persist_vamana_with_parallel_config(
+            params,
+            &payloads,
+            BuildParallelConfig {
+                requested_workers: 2,
+                batch_size: 1,
+                flush_rate: 0,
+            },
+            |_, _| 0.0,
+        )
+        .expect_err("multi-worker scaffolding should not be accepted yet");
+
+        assert!(
+            err.contains("parallel_build_workers = 0 or 1"),
+            "got: {err}"
+        );
     }
 
     // BO-008: round-trip — every persisted tuple decodes with the

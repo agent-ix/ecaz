@@ -35,7 +35,10 @@ use crate::storage::relation::RelationHandle;
 use crate::storage::wal;
 use crate::DEFAULT_QUANT_SEED;
 
-use super::build::{build_and_persist_vamana, BuildOutput, BuildParams};
+use super::build::{
+    build_and_persist_vamana_with_parallel_config, BuildOutput, BuildParallelConfig,
+    BuildParallelStats, BuildParams,
+};
 use super::options::{self, TqDiskannOptions};
 use super::page::VamanaMetadataPage;
 use super::persist::{stage_grouped_codebook_chain, NodePayload};
@@ -81,6 +84,7 @@ struct BuildFlushTiming {
     core_medoid_ms: u128,
     core_graph_ms: u128,
     core_persist_ms: u128,
+    parallel_stats: BuildParallelStats,
     build_passes: Vec<BuildPassTimingSummary>,
 }
 
@@ -324,11 +328,22 @@ unsafe fn flush_build_state(
         page_size: state.page_size,
         has_binary_sidecar: codec.has_binary_sidecar(),
     };
+    let parallel_config = BuildParallelConfig {
+        requested_workers: u16::try_from(state.options.parallel_build_workers)
+            .map_err(|_| "parallel_build_workers does not fit in u16".to_owned())?,
+        batch_size: u32::try_from(state.options.parallel_build_batch_size)
+            .map_err(|_| "parallel_build_batch_size does not fit in u32".to_owned())?,
+        flush_rate: u32::try_from(state.options.parallel_build_flush_rate)
+            .map_err(|_| "parallel_build_flush_rate does not fit in u32".to_owned())?,
+    };
 
     let build_persist_started = Instant::now();
-    let build_out = build_and_persist_vamana(params, &payloads, |a, b| {
-        source_inner_product_distance(source_refs[a as usize], source_refs[b as usize])
-    })?;
+    let build_out = build_and_persist_vamana_with_parallel_config(
+        params,
+        &payloads,
+        parallel_config,
+        |a, b| source_inner_product_distance(source_refs[a as usize], source_refs[b as usize]),
+    )?;
     timing.build_persist_ms = elapsed_ms(build_persist_started.elapsed());
 
     let BuildOutput {
@@ -336,10 +351,12 @@ unsafe fn flush_build_state(
         persisted,
         build_stats,
         core_timing,
+        parallel_stats,
     } = build_out;
     timing.core_medoid_ms = core_timing.medoid_ms;
     timing.core_graph_ms = core_timing.graph_ms;
     timing.core_persist_ms = core_timing.persist_ms;
+    timing.parallel_stats = parallel_stats;
     timing.build_passes = build_stats
         .passes
         .iter()
@@ -447,7 +464,7 @@ fn log_ambuild_timing(
         );
     }
     pgrx::notice!(
-        "ec_diskann_ambuild_timing index={} phase=complete heap_tuples={} scanned_tuples={} unique_tuples={} data_pages={} heap_scan_ms={} source_ref_ms={} training_ms={} sidecar_setup_ms={} payload_derivation_ms={} build_persist_ms={} core_medoid_ms={} core_graph_ms={} core_persist_ms={} overflow_ms={} codebook_ms={} write_pages_ms={} metadata_ms={} flush_total_ms={} total_ms={}",
+        "ec_diskann_ambuild_timing index={} phase=complete heap_tuples={} scanned_tuples={} unique_tuples={} data_pages={} heap_scan_ms={} source_ref_ms={} training_ms={} sidecar_setup_ms={} payload_derivation_ms={} build_persist_ms={} core_medoid_ms={} core_graph_ms={} core_persist_ms={} parallel_requested_workers={} parallel_effective_workers={} parallel_batch_size={} parallel_flush_rate={} parallel_rayon_scaffold={} overflow_ms={} codebook_ms={} write_pages_ms={} metadata_ms={} flush_total_ms={} total_ms={}",
         index_name,
         heap_tuples,
         scanned_tuples,
@@ -462,6 +479,11 @@ fn log_ambuild_timing(
         flush.core_medoid_ms,
         flush.core_graph_ms,
         flush.core_persist_ms,
+        flush.parallel_stats.requested_workers,
+        flush.parallel_stats.effective_workers,
+        flush.parallel_stats.batch_size,
+        flush.parallel_stats.flush_rate,
+        flush.parallel_stats.rayon_scaffold_enabled,
         flush.overflow_ms,
         flush.codebook_ms,
         flush.write_pages_ms,
