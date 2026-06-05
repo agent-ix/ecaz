@@ -1,0 +1,24 @@
+[loader] warning: profile "ec_diskann" does not list parallel_build_batch_size as known reloption; passing through verbatim. Known reloptions: graph_degree, build_list_size, list_size, rerank_budget, top_k, alpha, storage_format
+[loader] inspecting data/task65b_synth10k_stream_closeout/synth10k_corpus.tsv
+[loader] inspecting data/task65b_synth10k_stream_closeout/synth10k_queries.tsv
+[loader] corpus: 10000 rows, sha256=ccd9a13cdf99eded145fe92ba65d135a57495b55513444caf35c54d5bdcc6f2f  queries: 200 rows, sha256=155086601cd7b0487dab8cd6d4418faf0d2bfd4e0a8b7410d3adbdd31bd81b71
+[loader] no sibling manifest at data/task65b_synth10k_stream_closeout/synth10k_manifest.json; continuing without verification
+[loader] copied corpus table t65b_syn_stream_w8_b1_l200_corpus in 4.60s
+[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...
+[loader] encoded corpus table t65b_syn_stream_w8_b1_l200_corpus in 1.78s
+[loader] copied queries table t65b_syn_stream_w8_b1_l200_queries in 98.77ms
+[loader] building t65b_syn_stream_w8_b1_l200_pq_fastscan_idx using ec_diskann (reloptions=[graph_degree=32, build_list_size=200, alpha=1.2, parallel_build_batch_size=1, storage_format=pq_fastscan]) ...
+[loader] built t65b_syn_stream_w8_b1_l200_pq_fastscan_idx in 16.96s
+[loader] ec_diskann_ambuild_timing index=t65b_syn_stream_w8_b1_l200_pq_fastscan_idx phase=complete heap_tuples=10000 scanned_tuples=10000 unique_tuples=10000 data_pages=589 heap_scan_ms=33 source_ref_ms=0 training_ms=8 sidecar_setup_ms=0 payload_derivation_ms=13 build_persist_ms=16895 core_medoid_ms=92 core_graph_ms=16799 core_persist_ms=3 parallel_requested_workers=8 parallel_effective_workers=8 parallel_batch_size=1 parallel_flush_rate=0 parallel_rayon_scaffold=1 parallel_epochs=10000 parallel_proposal_ms=6963 parallel_reducer_ms=0 parallel_same_epoch_candidate_reads=0 parallel_total_candidate_reads=2001944 overflow_ms=0 codebook_ms=0 write_pages_ms=8 metadata_ms=0 flush_total_ms=16926 total_ms=16961
+┌─────────┬───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ field   ┆ value                                                                                                                                                 │
+╞═════════╪═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════╡
+│ profile ┆ ec_diskann                                                                                                                                            │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ t65b_syn_stream_w8_b1_l200_corpus (10000 rows)                                                                                                        │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ t65b_syn_stream_w8_b1_l200_queries (200 rows)                                                                                                         │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ t65b_syn_stream_w8_b1_l200_pq_fastscan_idx [graph_degree=32, build_list_size=200, alpha=1.2, parallel_build_batch_size=1, storage_format=pq_fastscan] │
+└─────────┴───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+[loader] completed prefix t65b_syn_stream_w8_b1_l200 in 30.46s
