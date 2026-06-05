@@ -1031,34 +1031,16 @@ where
             candidate_pool_counts.push(proposal.candidate_count);
             selected_neighbor_counts.push(proposal.pruned.len());
 
-            neighbor_cache.set_neighbors(proposal.pivot, &proposal.pruned);
-
-            let backlink_started = Instant::now();
-            for j in proposal.pruned {
-                if neighbor_cache.contains_neighbor(j, proposal.pivot) {
-                    continue;
-                }
-                if neighbor_cache.out_degree(j) < max_degree {
-                    neighbor_cache.push_neighbor(j, proposal.pivot);
-                    backlinks_added += 1;
-                } else {
-                    let mut combined: Vec<Candidate> = neighbor_cache
-                        .neighbors(j)
-                        .iter()
-                        .copied()
-                        .chain(std::iter::once(proposal.pivot))
-                        .map(|n| Candidate {
-                            node: n,
-                            distance: dist(j, n),
-                        })
-                        .collect();
-                    combined.sort();
-                    let repruned = robust_prune(j, combined, alpha_final, max_degree, dist);
-                    neighbor_cache.replace_neighbors(j, repruned);
-                    reprunes += 1;
-                }
-            }
-            backlink_ms += backlink_started.elapsed().as_millis();
+            let commit_stats = commit_vamana_pivot_proposal(
+                &mut neighbor_cache,
+                proposal,
+                max_degree,
+                alpha_final,
+                dist,
+            );
+            backlinks_added += commit_stats.backlinks_added;
+            reprunes += commit_stats.reprunes;
+            backlink_ms += commit_stats.backlink_ms;
         }
         parallel_stats.reducer_ms += reducer_started.elapsed().as_millis();
         parallel_stats.epochs += 1;
@@ -1126,6 +1108,55 @@ struct VamanaPivotProposal {
     robust_prune_ms: u128,
     same_epoch_candidate_reads: usize,
     total_candidate_reads: usize,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+struct VamanaProposalCommitStats {
+    backlinks_added: usize,
+    reprunes: usize,
+    backlink_ms: u128,
+}
+
+fn commit_vamana_pivot_proposal<D>(
+    neighbor_cache: &mut BuilderNeighborCache,
+    proposal: VamanaPivotProposal,
+    max_degree: usize,
+    alpha_final: f32,
+    dist: D,
+) -> VamanaProposalCommitStats
+where
+    D: Fn(u32, u32) -> f32 + Copy,
+{
+    let mut stats = VamanaProposalCommitStats::default();
+    neighbor_cache.set_neighbors(proposal.pivot, &proposal.pruned);
+
+    let backlink_started = Instant::now();
+    for j in proposal.pruned {
+        if neighbor_cache.contains_neighbor(j, proposal.pivot) {
+            continue;
+        }
+        if neighbor_cache.out_degree(j) < max_degree {
+            neighbor_cache.push_neighbor(j, proposal.pivot);
+            stats.backlinks_added += 1;
+        } else {
+            let mut combined: Vec<Candidate> = neighbor_cache
+                .neighbors(j)
+                .iter()
+                .copied()
+                .chain(std::iter::once(proposal.pivot))
+                .map(|n| Candidate {
+                    node: n,
+                    distance: dist(j, n),
+                })
+                .collect();
+            combined.sort();
+            let repruned = robust_prune(j, combined, alpha_final, max_degree, dist);
+            neighbor_cache.replace_neighbors(j, repruned);
+            stats.reprunes += 1;
+        }
+    }
+    stats.backlink_ms = backlink_started.elapsed().as_millis();
+    stats
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1341,6 +1372,118 @@ mod tests {
         assert_eq!(graph.max_degree, 3);
         assert_eq!(graph.neighbors[0], vec![1, 2]);
         assert_eq!(graph.neighbors[1], vec![3]);
+    }
+
+    fn task65b_model_proposal(
+        epoch: usize,
+        ordinal: usize,
+        pivot: u32,
+        pruned: Vec<u32>,
+    ) -> VamanaPivotProposal {
+        VamanaPivotProposal {
+            epoch,
+            ordinal,
+            pivot,
+            visited_count: 0,
+            existing_neighbor_count: 0,
+            candidate_count: pruned.len(),
+            greedy_search_ms: 0,
+            candidate_pool_ms: 0,
+            robust_prune_ms: 0,
+            same_epoch_candidate_reads: 0,
+            total_candidate_reads: 0,
+            pruned,
+        }
+    }
+
+    #[test]
+    fn task65b_epoch_proposals_read_epoch_snapshot_not_live_reducer_state() {
+        let mut live = BuilderNeighborCache::empty(4, 3);
+        live.set_neighbors(0, &[2]);
+        let snapshot = live.clone();
+
+        let committed = task65b_model_proposal(0, 0, 1, vec![3]);
+        commit_vamana_pivot_proposal(&mut live, committed, 3, 1.2, |a, b| {
+            (a as i32 - b as i32).unsigned_abs() as f32
+        });
+
+        assert_eq!(live.neighbors(1), &[3]);
+        assert!(
+            snapshot.neighbors(1).is_empty(),
+            "epoch snapshot must not observe reducer commits from the same epoch"
+        );
+
+        let pivot_ordinals = [0, 1, 2, 3];
+        let proposal = propose_vamana_pivot(
+            1,
+            0,
+            1,
+            0,
+            &pivot_ordinals,
+            &snapshot,
+            0,
+            4,
+            3,
+            4,
+            1.2,
+            |a, b| (a as i32 - b as i32).unsigned_abs() as f32,
+        );
+        assert_eq!(proposal.existing_neighbor_count, 0);
+        assert_eq!(
+            proposal.same_epoch_candidate_reads, 1,
+            "the medoid has an earlier ordinal in this epoch and should be counted as a stale-read candidate"
+        );
+    }
+
+    #[test]
+    fn task65b_ordered_reducer_ignores_proposal_completion_order() {
+        let dist = |a: u32, b: u32| (a as i32 - b as i32).unsigned_abs() as f32;
+        let ordered = vec![
+            task65b_model_proposal(0, 0, 0, vec![2]),
+            task65b_model_proposal(0, 1, 1, vec![2]),
+            task65b_model_proposal(0, 2, 3, vec![2]),
+        ];
+        let mut completed_out_of_order = vec![
+            task65b_model_proposal(0, 2, 3, vec![2]),
+            task65b_model_proposal(0, 1, 1, vec![2]),
+            task65b_model_proposal(0, 0, 0, vec![2]),
+        ];
+        completed_out_of_order.sort_by_key(|proposal| proposal.ordinal);
+
+        let mut ordered_cache = BuilderNeighborCache::empty(4, 3);
+        for proposal in ordered {
+            commit_vamana_pivot_proposal(&mut ordered_cache, proposal, 3, 1.2, dist);
+        }
+        let mut reduced_cache = BuilderNeighborCache::empty(4, 3);
+        for proposal in completed_out_of_order {
+            commit_vamana_pivot_proposal(&mut reduced_cache, proposal, 3, 1.2, dist);
+        }
+
+        assert_eq!(
+            ordered_cache.into_graph().neighbors,
+            reduced_cache.into_graph().neighbors
+        );
+    }
+
+    #[test]
+    fn task65b_parallel_epoch_batch_one_matches_serial_graph_exactly() {
+        let points = synth_2d(48, 13);
+        let dist = l2(&points);
+        let medoid = approximate_medoid(points.len(), points.len(), 7, dist);
+        let (serial, serial_stats) =
+            build_vamana_graph_with_stats(points.len(), medoid, 6, 12, 1.2, 11, dist);
+        let (parallel, parallel_stats, epoch_stats) =
+            build_vamana_graph_with_parallel_epochs(points.len(), medoid, 6, 12, 1.2, 11, 1, dist);
+
+        assert_eq!(serial.neighbors, parallel.neighbors);
+        assert_eq!(
+            serial_stats.final_out_degree,
+            parallel_stats.final_out_degree
+        );
+        assert_eq!(serial_stats.final_in_degree, parallel_stats.final_in_degree);
+        assert_eq!(epoch_stats.epochs, points.len());
+        assert_eq!(epoch_stats.batch_size, 1);
+        assert_eq!(epoch_stats.same_epoch_candidate_reads, 0);
     }
 
     #[test]
