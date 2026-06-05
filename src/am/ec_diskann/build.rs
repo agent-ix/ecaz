@@ -733,6 +733,52 @@ mod tests {
     }
 
     #[test]
+    fn task65b_worker_zero_config_matches_plain_serial_output() {
+        let n = 48;
+        let vectors = synth_vectors(n);
+        let dist = |a: u32, b: u32| -> f32 {
+            let av = vectors[a as usize];
+            let bv = vectors[b as usize];
+            let dx = av[0] - bv[0];
+            let dy = av[1] - bv[1];
+            dx * dx + dy * dy
+        };
+
+        let params = default_params(64);
+        let payloads = synth_payloads(n, params.binary_word_count(), params.search_code_len());
+
+        let serial = build_and_persist_vamana(params, &payloads, dist).expect("serial build");
+        let worker_zero = build_and_persist_vamana_with_parallel_config(
+            params,
+            &payloads,
+            BuildParallelConfig::SERIAL,
+            dist,
+        )
+        .expect("worker=0 build");
+
+        assert_eq!(worker_zero.parallel_stats.requested_workers, 0);
+        assert_eq!(worker_zero.parallel_stats.effective_workers, 0);
+        assert!(!worker_zero.parallel_stats.rayon_scaffold_enabled);
+        assert_eq!(
+            serial.metadata.entry_point,
+            worker_zero.metadata.entry_point
+        );
+        assert_eq!(
+            serial.persisted.node_to_tid,
+            worker_zero.persisted.node_to_tid
+        );
+        assert_eq!(
+            serial.persisted.persistence_order,
+            worker_zero.persisted.persistence_order
+        );
+        assert_eq!(serial.build_stats.medoid, worker_zero.build_stats.medoid);
+        assert_eq!(
+            serial.build_stats.final_in_degree,
+            worker_zero.build_stats.final_in_degree
+        );
+    }
+
+    #[test]
     fn task65b_multi_worker_config_is_rejected_until_proposal_fanout_lands() {
         let params = default_params(64);
         let payloads = synth_payloads(2, params.binary_word_count(), params.search_code_len());
