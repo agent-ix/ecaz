@@ -1,6 +1,6 @@
 # Task 82: SPIRE 1M Recall Attribution
 
-Status: active (2026-06-05)
+Status: complete (2026-06-05)
 Owner: coder (to be assigned). One coder, one branch.
 Priority: 0 (Task 81 / AWS 1M follow-up)
 
@@ -76,3 +76,24 @@ existing SPIRE pipeline diagnostics instead.
   recommendation: routing breadth, block scoring/pruning, candidate cap policy,
   or default/preset deferral.
 - AWS `1m` is paused at closeout.
+
+## Closeout
+
+Closed by `reviews/task-82/001-aws-1m-recall-attribution/`.
+
+The bounded AWS 1M/q500 attribution run preserved the Task 79/81 retained shape
+(`nprobe=96`, `rerank_width=25`, global block budget `1152`) and reproduced
+`recall@10=0.9832` with `candidate_sum=9,213,846`. Across the `5,000` q500
+truth rows, `4,916` were hits and `84` were misses:
+
+- `routing_miss`: `3`
+- `selected_leaf_block_pruning_or_candidate_cap`: `81`
+- `assignment_missing`: `0`
+- `candidate_or_rerank_cap`: `0`
+
+The dominant miss stage is therefore not top-graph routing breadth. The next
+SPIRE recall-recovery slice should target selected-leaf block containment and
+block scoring/pruning recovery, ideally starting with a target-only
+selected-block containment diagnostic so the remaining `81` misses can be split
+between exact block-pruning loss and candidate-budget truncation without the
+slow full block-rank helper. The AWS `1m` profile was paused at closeout.
