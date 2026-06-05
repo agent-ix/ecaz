@@ -1145,6 +1145,15 @@ fn ec_diskann_index_graph_summary(
             "max_in_degree".to_owned(),
             summary.max_in_degree.to_string(),
         ),
+        (
+            "live_node_tid_digest".to_owned(),
+            summary.live_node_tid_digest,
+        ),
+        ("adjacency_digest".to_owned(), summary.adjacency_digest),
+        (
+            "first_256_node_digest".to_owned(),
+            summary.first_256_node_digest,
+        ),
     ];
     TableIterator::new(rows)
 }

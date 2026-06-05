@@ -8,6 +8,7 @@ use std::collections::{HashMap, HashSet};
 use std::ptr::NonNull;
 
 use pgrx::pg_sys;
+use sha2::{Digest, Sha256};
 
 use crate::storage::page::ItemPointer;
 
@@ -53,6 +54,9 @@ pub(crate) struct DiskannGraphSummary {
     pub p95_in_degree: usize,
     pub p99_in_degree: usize,
     pub max_in_degree: usize,
+    pub live_node_tid_digest: String,
+    pub adjacency_digest: String,
+    pub first_256_node_digest: String,
 }
 
 pub(crate) unsafe fn graph_summary(
@@ -72,9 +76,13 @@ pub(crate) unsafe fn graph_summary(
     let mut node_tids = Vec::new();
     let mut live_tids = HashSet::new();
     let mut live_nodes = Vec::new();
+    let mut first_256_node_digest = Sha256::new();
     for item in reader.iter_node_tids() {
         let tid = item?;
         let tuple = reader.read_node(tid)?;
+        if node_tids.len() < 256 {
+            update_tuple_digest(&mut first_256_node_digest, tid, &tuple);
+        }
         node_tids.push(tid);
         if tuple.is_live() {
             live_tids.insert(tid);
@@ -92,8 +100,13 @@ pub(crate) unsafe fn graph_summary(
     let mut self_neighbor_ref_count = 0;
     let mut duplicate_neighbor_ref_count = 0;
     let mut unresolvable_neighbor_ref_count = 0;
+    let mut live_node_tid_digest = Sha256::new();
+    let mut adjacency_digest = Sha256::new();
 
     for (tid, tuple) in &live_nodes {
+        update_tid_digest(&mut live_node_tid_digest, *tid);
+        update_tuple_digest(&mut adjacency_digest, *tid, tuple);
+
         let count = usize::from(tuple.neighbor_count).min(tuple.neighbors.len());
         out_degrees.push(count);
         neighbor_ref_count += count;
@@ -182,7 +195,31 @@ pub(crate) unsafe fn graph_summary(
         p95_in_degree: percentile_nearest(&in_degree_values, 0.95),
         p99_in_degree: percentile_nearest(&in_degree_values, 0.99),
         max_in_degree: max_value(&in_degree_values),
+        live_node_tid_digest: hex::encode(live_node_tid_digest.finalize()),
+        adjacency_digest: hex::encode(adjacency_digest.finalize()),
+        first_256_node_digest: hex::encode(first_256_node_digest.finalize()),
     })
+}
+
+fn update_tid_digest(hasher: &mut Sha256, tid: ItemPointer) {
+    hasher.update(tid.block_number.to_le_bytes());
+    hasher.update(tid.offset_number.to_le_bytes());
+}
+
+fn update_tuple_digest(
+    hasher: &mut Sha256,
+    tid: ItemPointer,
+    tuple: &super::tuple::VamanaNodeTuple,
+) {
+    update_tid_digest(hasher, tid);
+    hasher.update([u8::from(tuple.deleted)]);
+    hasher.update([u8::from(tuple.has_overflow_heaptids)]);
+    update_tid_digest(hasher, tuple.primary_heaptid);
+    update_tid_digest(hasher, tuple.rerank_tid);
+    hasher.update(tuple.neighbor_count.to_le_bytes());
+    for neighbor in &tuple.neighbors {
+        update_tid_digest(hasher, *neighbor);
+    }
 }
 
 fn reachable_live_tids(

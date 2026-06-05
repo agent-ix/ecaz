@@ -175,6 +175,12 @@ fn render_summary(
     add_rows(&mut edges, summary, EDGE_KEYS);
     writeln!(out, "{edges}").expect("writing to String should not fail");
 
+    let mut digests = Table::new();
+    digests.load_preset(UTF8_FULL);
+    digests.set_header(vec!["field", "value"]);
+    add_rows(&mut digests, summary, DIGEST_KEYS);
+    writeln!(out, "{digests}").expect("writing to String should not fail");
+
     let mut degrees = Table::new();
     degrees.load_preset(UTF8_FULL);
     degrees.set_header(vec![
@@ -241,6 +247,12 @@ const EDGE_KEYS: &[&str] = &[
     "unresolvable_neighbor_ref_count",
 ];
 
+const DIGEST_KEYS: &[&str] = &[
+    "live_node_tid_digest",
+    "adjacency_digest",
+    "first_256_node_digest",
+];
+
 fn add_rows(table: &mut Table, summary: &SummaryRows, keys: &[&str]) {
     for key in keys {
         table.add_row(vec![Cell::new(*key), Cell::new(value(summary, key))]);
@@ -296,11 +308,15 @@ mod tests {
             ("p95_in_degree".to_owned(), "64".to_owned()),
             ("p99_in_degree".to_owned(), "80".to_owned()),
             ("max_in_degree".to_owned(), "96".to_owned()),
+            ("live_node_tid_digest".to_owned(), "a".repeat(64)),
+            ("adjacency_digest".to_owned(), "b".repeat(64)),
+            ("first_256_node_digest".to_owned(), "c".repeat(64)),
         ];
         let rendered = render_summary("p", "p_corpus", "p_idx", &summary);
         assert!(rendered.contains("reachable_live_fraction"));
         assert!(rendered.contains("0.990000"));
         assert!(rendered.contains("neighbor_ref_count"));
+        assert!(rendered.contains("adjacency_digest"));
         assert!(rendered.contains("direction"));
     }
 }
