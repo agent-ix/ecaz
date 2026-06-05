@@ -1,0 +1,8 @@
+
+   0: [91mssm command 91aeea5b-d36c-4fae-b0a6-5b27d95ecd85 on i-06ace3e95ab942623 ended in Failed (rc=1): + cd /var/lib/pgsql/build/ecaz / ++ dirname benchmarks/aws-spire-1m-task81-head-rerun/001-run/suite-q500-nprobe96-128.json / + mkdir -p benchmarks/aws-spire-1m-task81-head-rerun/001-run benchmarks/aws-spire-1m-task81-head-rerun/001-run/artifacts/task81-head-q500-nprobe96-128 / + trap 'status=$?; set +e; aws s3 sync benchmarks/aws-spire-1m-task81-head-rerun/001-run/artifacts/task81-head-q500-nprobe96-128 s3://ecaz-cloud-1m-b62eb804/bench-artifacts/aws-spire-1m-task81-head-q500-nprobe96-128/20260605T152342Z/ --region us-west-2 --only-show-errors || true; exit $status' EXIT / + cat[0m
+
+Location:
+   [35mcrates/ecaz-cloud/src/ssm.rs[0m:[35m111[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.
