@@ -1386,17 +1386,23 @@ async fn capture_parallel_workers_from_load_artifacts(step: &StepRecord) -> Resu
         }
     }
     bail!(
-        "load step {:?} requested capture_parallel_workers but no ec_ivf build timing row with workers_launched was found in expected artifacts",
+        "load step {:?} requested capture_parallel_workers but no supported build timing row with worker count was found in expected artifacts",
         step.name
     )
 }
 
 fn parse_parallel_workers_from_load_artifact(raw: &str) -> Option<i64> {
     raw.lines().find_map(|line| {
-        parse_ec_ivf_build_timing_line(line)?
-            .get("workers_launched")?
-            .parse::<i64>()
-            .ok()
+        if let Some(values) = parse_ec_ivf_build_timing_line(line) {
+            return values.get("workers_launched")?.parse::<i64>().ok();
+        }
+        if let Some(values) = parse_ec_diskann_build_timing_line(line) {
+            return values
+                .get("parallel_effective_workers")?
+                .parse::<i64>()
+                .ok();
+        }
+        None
     })
 }
 
@@ -1695,6 +1701,8 @@ fn parse_load_rows(raw: &str) -> Vec<(String, BTreeMap<String, String>)> {
             ));
         } else if let Some(values) = parse_ec_ivf_build_timing_line(line) {
             rows.push(("ec_ivf_build_timing".into(), values));
+        } else if let Some(values) = parse_ec_diskann_build_timing_line(line) {
+            rows.push(("ec_diskann_build_timing".into(), values));
         } else if let Some((name, seconds)) = parse_timed_loader_line(line, "completed prefix ") {
             rows.push(("load_timing".into(), timed_values("total", &name, seconds)));
         }
@@ -1706,10 +1714,24 @@ fn parse_ec_ivf_build_timing_line(line: &str) -> Option<BTreeMap<String, String>
     let rest = line
         .trim_start()
         .strip_prefix("[loader] ec_ivf build timing: ")?;
+    parse_integer_key_values(rest)
+}
+
+fn parse_ec_diskann_build_timing_line(line: &str) -> Option<BTreeMap<String, String>> {
+    let rest = line
+        .trim_start()
+        .strip_prefix("[loader] ")?
+        .strip_prefix("ec_diskann_ambuild_timing ")?;
+    parse_integer_key_values(rest)
+}
+
+fn parse_integer_key_values(rest: &str) -> Option<BTreeMap<String, String>> {
     let mut values = BTreeMap::new();
     for part in rest.split_whitespace() {
         let (key, value) = part.split_once('=')?;
-        value.parse::<i64>().ok()?;
+        if value.parse::<i64>().is_err() {
+            continue;
+        }
         values.insert(key.to_owned(), value.to_owned());
     }
     if values.is_empty() {
@@ -3943,6 +3965,11 @@ mod tests {
         let raw = "[loader] copied corpus table task71_real10k_w4 in 0.123s\n\
                    [loader] ec_ivf build timing: requested_workers=4 workers_launched=4 heap_tuples=10000 index_tuples=10000\n";
         assert_eq!(parse_parallel_workers_from_load_artifact(raw), Some(4));
+        let diskann_raw = "[loader] ec_diskann_ambuild_timing index=task65b_w4_idx phase=complete heap_tuples=10000 scanned_tuples=10000 unique_tuples=10000 data_pages=610 heap_scan_ms=2 source_ref_ms=0 training_ms=1 sidecar_setup_ms=0 payload_derivation_ms=10 build_persist_ms=1234 core_medoid_ms=5 core_graph_ms=1100 core_persist_ms=20 parallel_requested_workers=4 parallel_effective_workers=4 parallel_batch_size=16 parallel_flush_rate=0 parallel_rayon_scaffold=true parallel_epochs=625 parallel_proposal_ms=900 parallel_reducer_ms=200 parallel_same_epoch_candidate_reads=12 parallel_total_candidate_reads=5000 overflow_ms=0 codebook_ms=0 write_pages_ms=4 metadata_ms=1 flush_total_ms=5 total_ms=1400\n";
+        assert_eq!(
+            parse_parallel_workers_from_load_artifact(diskann_raw),
+            Some(4)
+        );
         assert_eq!(
             parse_parallel_workers_from_load_artifact("[loader] copied corpus table x in 0.123s\n"),
             None
@@ -4552,6 +4579,35 @@ mod tests {
                 .get("parallel_worker_tuple_buffer_capacity")
                 .map(String::as_str),
             Some("16384")
+        );
+    }
+
+    #[test]
+    fn parses_ec_diskann_build_timing_rows() {
+        let rows = parse_load_rows(
+            "[loader] ec_diskann_ambuild_timing index=task65b_w4_idx phase=complete heap_tuples=10000 scanned_tuples=10000 unique_tuples=10000 data_pages=610 heap_scan_ms=2 source_ref_ms=0 training_ms=1 sidecar_setup_ms=0 payload_derivation_ms=10 build_persist_ms=1234 core_medoid_ms=5 core_graph_ms=1100 core_persist_ms=20 parallel_requested_workers=4 parallel_effective_workers=4 parallel_batch_size=16 parallel_flush_rate=0 parallel_rayon_scaffold=true parallel_epochs=625 parallel_proposal_ms=900 parallel_reducer_ms=200 parallel_same_epoch_candidate_reads=12 parallel_total_candidate_reads=5000 overflow_ms=0 codebook_ms=0 write_pages_ms=4 metadata_ms=1 flush_total_ms=5 total_ms=1400\n",
+        );
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].0, "ec_diskann_build_timing");
+        assert_eq!(
+            rows[0]
+                .1
+                .get("parallel_effective_workers")
+                .map(String::as_str),
+            Some("4")
+        );
+        assert_eq!(
+            rows[0].1.get("parallel_batch_size").map(String::as_str),
+            Some("16")
+        );
+        assert_eq!(
+            rows[0].1.get("parallel_reducer_ms").map(String::as_str),
+            Some("200")
+        );
+        assert_eq!(
+            rows[0].1.get("parallel_rayon_scaffold"),
+            None,
+            "boolean timing fields are intentionally ignored by numeric result parsing"
         );
     }
 
