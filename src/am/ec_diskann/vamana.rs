@@ -1082,20 +1082,30 @@ where
         }
 
         let backlink_started = Instant::now();
+        let backlink_plans: Vec<VamanaBacklinkBatchPlan> = touched_backlink_targets
+            .par_iter()
+            .map(|&target| {
+                let target_idx = target as usize;
+                plan_vamana_backlink_batch(
+                    target,
+                    neighbor_cache.neighbors(target),
+                    &incoming_backlinks[target_idx],
+                    max_degree,
+                    alpha_final,
+                    grow_alpha,
+                    dist,
+                )
+            })
+            .collect();
+        for plan in backlink_plans {
+            backlinks_added += plan.stats.backlinks_added;
+            reprunes += plan.stats.reprunes;
+            if let Some(neighbors) = plan.neighbors {
+                neighbor_cache.replace_neighbors(plan.target, neighbors);
+            }
+        }
         for &target in &touched_backlink_targets {
-            let target_idx = target as usize;
-            let commit_stats = commit_vamana_backlink_batch(
-                &mut neighbor_cache,
-                target,
-                &incoming_backlinks[target_idx],
-                max_degree,
-                alpha_final,
-                grow_alpha,
-                dist,
-            );
-            backlinks_added += commit_stats.backlinks_added;
-            reprunes += commit_stats.reprunes;
-            incoming_backlinks[target_idx].clear();
+            incoming_backlinks[target as usize].clear();
         }
         touched_backlink_targets.clear();
         backlink_ms += backlink_started.elapsed().as_millis();
@@ -1174,6 +1184,12 @@ struct VamanaProposalCommitStats {
     backlink_ms: u128,
 }
 
+struct VamanaBacklinkBatchPlan {
+    target: u32,
+    neighbors: Option<Vec<u32>>,
+    stats: VamanaProposalCommitStats,
+}
+
 fn commit_vamana_pivot_proposal<D>(
     neighbor_cache: &mut BuilderNeighborCache,
     proposal: VamanaPivotProposal,
@@ -1227,12 +1243,42 @@ fn commit_vamana_backlink_batch<D>(
 where
     D: Fn(u32, u32) -> f32 + Copy,
 {
+    let plan = plan_vamana_backlink_batch(
+        target,
+        neighbor_cache.neighbors(target),
+        proposed_sources,
+        max_degree,
+        alpha_final,
+        grow_alpha,
+        dist,
+    );
+    if let Some(neighbors) = plan.neighbors {
+        neighbor_cache.replace_neighbors(plan.target, neighbors);
+    }
+    plan.stats
+}
+
+fn plan_vamana_backlink_batch<D>(
+    target: u32,
+    existing: &[u32],
+    proposed_sources: &[u32],
+    max_degree: usize,
+    alpha_final: f32,
+    grow_alpha: bool,
+    dist: D,
+) -> VamanaBacklinkBatchPlan
+where
+    D: Fn(u32, u32) -> f32 + Copy,
+{
     let mut stats = VamanaProposalCommitStats::default();
     if proposed_sources.is_empty() {
-        return stats;
+        return VamanaBacklinkBatchPlan {
+            target,
+            neighbors: None,
+            stats,
+        };
     }
 
-    let existing = neighbor_cache.neighbors(target);
     let mut additions = Vec::with_capacity(proposed_sources.len());
     for &source in proposed_sources {
         if existing.contains(&source) || additions.contains(&source) {
@@ -1241,7 +1287,11 @@ where
         additions.push(source);
     }
     if additions.is_empty() {
-        return stats;
+        return VamanaBacklinkBatchPlan {
+            target,
+            neighbors: None,
+            stats,
+        };
     }
 
     if existing.len() + additions.len() <= max_degree {
@@ -1249,8 +1299,11 @@ where
         updated.extend_from_slice(existing);
         stats.backlinks_added += additions.len();
         updated.extend(additions);
-        neighbor_cache.replace_neighbors(target, updated);
-        return stats;
+        return VamanaBacklinkBatchPlan {
+            target,
+            neighbors: Some(updated),
+            stats,
+        };
     }
 
     let combined: Vec<Candidate> = existing
@@ -1267,9 +1320,12 @@ where
     } else {
         robust_prune_final_alpha(target, combined, alpha_final, max_degree, dist)
     };
-    neighbor_cache.replace_neighbors(target, repruned);
     stats.reprunes += 1;
-    stats
+    VamanaBacklinkBatchPlan {
+        target,
+        neighbors: Some(repruned),
+        stats,
+    }
 }
 
 #[allow(clippy::too_many_arguments)]

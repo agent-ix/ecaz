@@ -350,8 +350,9 @@ where
         .thread_name(|idx| format!("ec_diskann_build_{idx}"))
         .build()
         .map_err(|err| format!("ec_diskann parallel graph build setup failed: {err}"))?;
-    let (graph, stats, vamana_parallel_stats) = pool.install(|| {
-        build_vamana_graph_with_parallel_epochs(
+    let (graph, stats, vamana_parallel_stats, effective_workers) = pool.install(|| {
+        let effective_workers = rayon::current_num_threads().min(u16::MAX as usize) as u16;
+        let (graph, stats, parallel_stats) = build_vamana_graph_with_parallel_epochs(
             n,
             medoid,
             graph_degree_r,
@@ -360,14 +361,15 @@ where
             seed,
             parallel.batch_size as usize,
             build_dist,
-        )
+        );
+        (graph, stats, parallel_stats, effective_workers)
     });
     Ok((
         graph,
         stats,
         BuildParallelStats {
             requested_workers: parallel.requested_workers,
-            effective_workers: parallel.requested_workers,
+            effective_workers,
             batch_size: parallel.batch_size,
             flush_rate: parallel.flush_rate,
             rayon_scaffold_enabled: true,
