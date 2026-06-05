@@ -596,6 +596,42 @@ mod tests {
         assert_ne!(flags_ns & PAYLOAD_FLAG_GROUPED_SEARCH_CODE, 0);
     }
 
+    fn decoded_node_adjacency(out: &BuildOutput) -> Vec<Vec<u32>> {
+        let r = out.metadata.graph_degree_r;
+        let w = if out.metadata.payload_flags & PAYLOAD_FLAG_BINARY_SIDECAR != 0 {
+            (out.metadata.dimensions as usize).div_ceil(64)
+        } else {
+            0
+        };
+        let c = (out.metadata.search_subvector_count as usize).div_ceil(2);
+
+        out.persisted
+            .node_to_tid
+            .iter()
+            .map(|tid| {
+                let page = out
+                    .persisted
+                    .chain
+                    .get_page(tid.block_number)
+                    .expect("page");
+                let raw = page.raw_tuple(*tid).expect("tuple");
+                let tuple = VamanaNodeTuple::decode(raw, r, w, c).expect("decode");
+                tuple
+                    .neighbors
+                    .into_iter()
+                    .take(tuple.neighbor_count as usize)
+                    .map(|neighbor_tid| {
+                        out.persisted
+                            .node_to_tid
+                            .iter()
+                            .position(|candidate_tid| *candidate_tid == neighbor_tid)
+                            .expect("neighbor TID maps to node") as u32
+                    })
+                    .collect()
+            })
+            .collect()
+    }
+
     // BO-004: derivation rules — W=dimensions/64 when sidecar on,
     // 0 when off; C=M.div_ceil(2).
     #[test]
@@ -751,6 +787,10 @@ mod tests {
             serial.persisted.persistence_order,
             worker_one.persisted.persistence_order
         );
+        assert_eq!(
+            decoded_node_adjacency(&serial),
+            decoded_node_adjacency(&worker_one)
+        );
         assert_eq!(serial.build_stats.medoid, worker_one.build_stats.medoid);
         assert_eq!(
             serial.build_stats.final_in_degree,
@@ -796,6 +836,10 @@ mod tests {
         assert_eq!(
             serial.persisted.persistence_order,
             worker_zero.persisted.persistence_order
+        );
+        assert_eq!(
+            decoded_node_adjacency(&serial),
+            decoded_node_adjacency(&worker_zero)
         );
         assert_eq!(serial.build_stats.medoid, worker_zero.build_stats.medoid);
         assert_eq!(
