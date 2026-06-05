@@ -1,6 +1,6 @@
 # Task 81: SPIRE Leaf Block Summary Format
 
-Status: active (2026-06-04)
+Status: complete (2026-06-05)
 Owner: coder (to be assigned). One coder, one branch.
 Priority: 0 (Task 80 closeout follow-up)
 
@@ -61,3 +61,31 @@ The implementation should:
   local candidate reduction at matched recall.
 - AWS 1M packet captured only after the local gate clears.
 - Closeout updates this task status and cites the accepted packet.
+
+## Closeout
+
+Task 81 is closed on the corrected acceptance bar clarified during closeout:
+beat Task 79's optimized candidate surface on latency while preserving the same
+recall and candidate count. The old full-leaf `15.5M` row is retained only as a
+mechanism comparator, not as the success baseline.
+
+Accepted evidence:
+
+- Format/version decision: `spec/adr/ADR-074-spire-leaf-local-block-pruning.md`
+  and packet `reviews/task-81/001-block-summary-diagnostics/`.
+- Local corrected comparison:
+  `reviews/task-81/004-local-nprobe-block-summary-gate/` shows the Task 81
+  tg256/nprobe96 row at `3,672,619` candidates, p50 `32.212 ms`, recall@10
+  `0.9945`, beating Task 79's accepted local `global1152` row
+  (`3,673,383` candidates, p50 `35.293 ms`, recall@10 `0.9940`).
+- AWS corrected comparison:
+  `reviews/task-81/007-aws-100k-task79-comparison/` reruns Task 79's retained
+  AWS 100k/q200 surface under the Task 81 branch and records `3,672,619`
+  candidates, p50 `32.023 ms`, p95 `32.940 ms`, p99 `33.315 ms`, recall@10
+  `0.9945`, beating Task 79's accepted AWS row (`35.199 ms` p50, `36.203 ms`
+  p95, `36.591 ms` p99) at unchanged recall and candidates.
+
+The earlier retained q500 1M attempts in packets 003 and 005 remain negative
+scale evidence: they did not improve recall over `0.9832` at the old q500
+candidate shape. Packet 006 records why the attempted q50 rank attribution path
+was abandoned before this task pivoted to the Task 79 acceptance comparison.
