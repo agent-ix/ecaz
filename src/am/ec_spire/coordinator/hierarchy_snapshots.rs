@@ -1841,6 +1841,61 @@ pub(crate) fn index_scan_leaf_block_rank_snapshot(
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
+pub(crate) fn index_scan_leaf_target_block_rank_snapshot(
+    index: SpireLiveIndexRelation,
+    query_values: Vec<f32>,
+    target_local_sequences: Vec<u64>,
+) -> Vec<SpireIndexScanLeafBlockRankSnapshotRow> {
+    let result = (|| -> Result<Vec<SpireIndexScanLeafBlockRankSnapshotRow>, String> {
+        let query = scan::SpireScanQuery::new(query_values)?;
+        let Some(anchor) = index.active_epoch_anchor(index.root_control())? else {
+            return Ok(Vec::new());
+        };
+
+        let snapshot = anchor.snapshot()?;
+        let object_store = index.object_store_set(
+            &anchor.placement_directory,
+            pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+        )?;
+        let rows = scan::collect_scan_leaf_target_block_rank_snapshot(
+            &snapshot,
+            &object_store,
+            &query,
+            index.relation_options(),
+            &target_local_sequences,
+        )?
+        .into_iter()
+        .map(|row| SpireIndexScanLeafBlockRankSnapshotRow {
+            active_epoch: row.active_epoch,
+            effective_nprobe: row.effective_nprobe,
+            effective_nprobe_source: row.effective_nprobe_source,
+            effective_rerank_width: row.effective_rerank_width,
+            effective_rerank_width_source: row.effective_rerank_width_source,
+            target_ordinal: row.target_ordinal,
+            target_local_sequence: row.target_local_sequence,
+            status: row.status,
+            max_global_blocks: row.max_global_blocks,
+            radius_weight: row.radius_weight,
+            scored_block_count: row.scored_block_count,
+            block_rank: row.block_rank,
+            selected_by_global_cap: row.selected_by_global_cap,
+            pid: row.pid,
+            node_id: row.node_id,
+            local_store_id: row.local_store_id,
+            object_version: row.object_version,
+            row_index: row.row_index,
+            row_base: row.row_base,
+            row_end: row.row_end,
+            row_count: row.row_count,
+            block_ip: row.block_ip,
+            assignment_flags: row.assignment_flags,
+        })
+        .collect();
+        Ok(rows)
+    })();
+    result.unwrap_or_else(|e| pgrx::error!("{e}"))
+}
+
 pub(crate) fn index_selected_pid_placement_snapshot(
     index: SpireLiveIndexRelation,
     selected_pids: Vec<u64>,

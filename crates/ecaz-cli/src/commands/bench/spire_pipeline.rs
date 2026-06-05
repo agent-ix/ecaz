@@ -130,6 +130,12 @@ pub struct SpirePipelineArgs {
     /// source_identity, use the default local sequence mapping `id + 1`.
     #[arg(long)]
     pub leaf_block_rank_output: Option<PathBuf>,
+    /// Write per-exact-neighbor target-containing leaf-block rank rows as JSONL.
+    ///
+    /// Unlike `--leaf-block-rank-output`, this locates each truth row in routed
+    /// leaves first and emits only the containing block rank.
+    #[arg(long)]
+    pub target_block_rank_output: Option<PathBuf>,
     /// Write per-exact-neighbor recall miss attribution rows as JSONL.
     ///
     /// Requires `--include-recall` and query metrics. The output joins exact
@@ -315,6 +321,7 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
     let mut cost_tuning = BTreeMap::<i32, CostTuningRow>::new();
     let mut funnel_rows = Vec::<FunnelRecord>::new();
     let mut leaf_block_rank_rows = Vec::<LeafBlockRankRecord>::new();
+    let mut target_block_rank_rows = Vec::<LeafBlockRankRecord>::new();
     let mut miss_attribution_rows = Vec::<MissAttributionRecord>::new();
     let mut remote_epoch = args.remote_requested_epoch;
 
@@ -602,6 +609,59 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
                     target_assignments_by_ordinal,
                 )?);
             }
+            if args.target_block_rank_output.is_some() {
+                let truth_ids = query_truth
+                    .as_ref()
+                    .expect("target block rank output is validated to require recall truth");
+                let query_truth_ids = truth_ids.get(query_index).ok_or_else(|| {
+                    eyre!(
+                        "exact-truth ids missing for query ordinal {}",
+                        query_index + 1
+                    )
+                })?;
+                let target_local_sequences = query_truth_ids
+                    .iter()
+                    .map(|truth_id| {
+                        truth_id
+                            .checked_add(args.leaf_block_rank_local_sequence_offset)
+                            .ok_or_else(|| {
+                                eyre!(
+                                    "target block rank local sequence overflow for truth id {truth_id}"
+                                )
+                            })
+                    })
+                    .collect::<Result<Vec<_>>>()?;
+                let rank_rows = query_leaf_target_block_rank_rows(
+                    &client,
+                    &index,
+                    &query.source,
+                    &target_local_sequences,
+                )
+                .await?;
+                for row in rank_rows {
+                    let truth_index = usize::try_from(row.target_ordinal).map_err(|_| {
+                        eyre!(
+                            "target block rank target ordinal {} exceeds usize",
+                            row.target_ordinal
+                        )
+                    })?;
+                    let truth_id = *query_truth_ids.get(truth_index).ok_or_else(|| {
+                        eyre!(
+                            "target block rank target ordinal {} exceeds truth id count {}",
+                            row.target_ordinal,
+                            query_truth_ids.len()
+                        )
+                    })?;
+                    target_block_rank_rows.push(LeafBlockRankRecord::from_row_with_kind(
+                        "spire_leaf_target_block_rank",
+                        *nprobe,
+                        query_index + 1,
+                        query.id,
+                        truth_id,
+                        row,
+                    ));
+                }
+            }
             if args.include_production_read_profile {
                 let row = query_production_read_profile_row(
                     &client,
@@ -687,6 +747,9 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
     if let Some(path) = args.leaf_block_rank_output {
         write_leaf_block_rank_jsonl(&path, &leaf_block_rank_rows).await?;
     }
+    if let Some(path) = args.target_block_rank_output {
+        write_leaf_block_rank_jsonl(&path, &target_block_rank_rows).await?;
+    }
     if let Some(path) = args.miss_attribution_output {
         write_miss_attribution_jsonl(&path, &miss_attribution_rows).await?;
     }
@@ -739,6 +802,11 @@ fn validate_args(args: &SpirePipelineArgs) -> Result<()> {
             "--leaf-block-rank-output requires --include-recall so exact truth ids are available"
         ));
     }
+    if args.target_block_rank_output.is_some() && !args.include_recall {
+        return Err(eyre!(
+            "--target-block-rank-output requires --include-recall so exact truth ids are available"
+        ));
+    }
     if args.miss_attribution_output.is_some() && !args.include_recall {
         return Err(eyre!(
             "--miss-attribution-output requires --include-recall so exact truth ids are available"
@@ -754,7 +822,9 @@ fn validate_args(args: &SpirePipelineArgs) -> Result<()> {
             "--truth-cache-file requires --include-recall so cached truth ids are consumed"
         ));
     }
-    if (args.leaf_block_rank_output.is_some() || args.miss_attribution_output.is_some())
+    if (args.leaf_block_rank_output.is_some()
+        || args.target_block_rank_output.is_some()
+        || args.miss_attribution_output.is_some())
         && args.leaf_block_rank_local_sequence_offset < 0
     {
         return Err(eyre!(
@@ -1195,6 +1265,23 @@ async fn query_leaf_block_rank_rows(
     Ok(rows.into_iter().map(LeafBlockRankRow::from).collect())
 }
 
+async fn query_leaf_target_block_rank_rows(
+    client: &Client,
+    index: &str,
+    query: &[f32],
+    target_local_sequences: &[i64],
+) -> Result<Vec<LeafBlockRankRow>> {
+    let target_local_sequences = target_local_sequences.to_vec();
+    let rows = client
+        .query(
+            leaf_target_block_rank_snapshot_sql(),
+            &[&index, &query, &target_local_sequences],
+        )
+        .await
+        .wrap_err("querying ec_spire_index_scan_leaf_target_block_rank_snapshot")?;
+    Ok(rows.into_iter().map(LeafBlockRankRow::from).collect())
+}
+
 async fn query_remote_pipeline_rows(
     client: &Client,
     index: &str,
@@ -1341,6 +1428,16 @@ fn leaf_block_rank_snapshot_sql() -> &'static str {
             pid, node_id, local_store_id, object_version, row_index, row_base,
             row_end, row_count, block_ip, assignment_flags
      FROM ec_spire_index_scan_leaf_block_rank_snapshot(
+            $1::text::regclass::oid, $2::real[], $3::bigint[])
+     ORDER BY target_ordinal, block_rank NULLS LAST, pid NULLS LAST, row_index NULLS LAST"
+}
+
+fn leaf_target_block_rank_snapshot_sql() -> &'static str {
+    "SELECT target_ordinal, target_local_sequence, status, max_global_blocks,
+            radius_weight, scored_block_count, block_rank, selected_by_global_cap,
+            pid, node_id, local_store_id, object_version, row_index, row_base,
+            row_end, row_count, block_ip, assignment_flags
+     FROM ec_spire_index_scan_leaf_target_block_rank_snapshot(
             $1::text::regclass::oid, $2::real[], $3::bigint[])
      ORDER BY target_ordinal, block_rank NULLS LAST, pid NULLS LAST, row_index NULLS LAST"
 }
@@ -1667,8 +1764,26 @@ impl LeafBlockRankRecord {
         truth_id: i64,
         row: LeafBlockRankRow,
     ) -> Self {
+        Self::from_row_with_kind(
+            "spire_leaf_block_rank",
+            nprobe,
+            query_ordinal,
+            query_id,
+            truth_id,
+            row,
+        )
+    }
+
+    fn from_row_with_kind(
+        kind: &'static str,
+        nprobe: i32,
+        query_ordinal: usize,
+        query_id: i64,
+        truth_id: i64,
+        row: LeafBlockRankRow,
+    ) -> Self {
         Self {
-            kind: "spire_leaf_block_rank",
+            kind,
             nprobe,
             query_ordinal,
             query_id,
@@ -3099,6 +3214,7 @@ mod tests {
             truth_corpus_file: None,
             truth_cache_file: None,
             leaf_block_rank_output: None,
+            target_block_rank_output: None,
             miss_attribution_output: None,
             leaf_block_rank_local_sequence_offset: 0,
             include_production_read_profile: false,
