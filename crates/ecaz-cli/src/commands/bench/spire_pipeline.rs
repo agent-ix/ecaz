@@ -1701,7 +1701,7 @@ struct LeafBlockRankRow {
     row_end: Option<i64>,
     row_count: Option<i64>,
     block_ip: Option<f32>,
-    assignment_flags: Option<i32>,
+    assignment_flags: Option<i64>,
 }
 
 impl From<Row> for LeafBlockRankRow {
@@ -1753,7 +1753,7 @@ struct LeafBlockRankRecord {
     row_end: Option<i64>,
     row_count: Option<i64>,
     block_ip: Option<f32>,
-    assignment_flags: Option<i32>,
+    assignment_flags: Option<i64>,
 }
 
 impl LeafBlockRankRecord {
