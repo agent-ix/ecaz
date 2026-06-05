@@ -11,7 +11,7 @@ use comfy_table::{presets::UTF8_FULL, Cell, Table};
 use indicatif::{ProgressBar, ProgressStyle};
 use ndarray::Array2;
 use serde::Serialize;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
@@ -130,6 +130,12 @@ pub struct SpirePipelineArgs {
     /// source_identity, use the default local sequence mapping `id + 1`.
     #[arg(long)]
     pub leaf_block_rank_output: Option<PathBuf>,
+    /// Write per-exact-neighbor recall miss attribution rows as JSONL.
+    ///
+    /// Requires `--include-recall` and query metrics. The output joins exact
+    /// truth ids, returned ids, and SPIRE leaf-block rank diagnostics.
+    #[arg(long)]
+    pub miss_attribution_output: Option<PathBuf>,
     /// Offset added to exact-truth ids to form SPIRE local vec_id sequences.
     #[arg(long, default_value_t = 1)]
     pub leaf_block_rank_local_sequence_offset: i64,
@@ -310,6 +316,7 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
     let mut cost_tuning = BTreeMap::<i32, CostTuningRow>::new();
     let mut funnel_rows = Vec::<FunnelRecord>::new();
     let mut leaf_block_rank_rows = Vec::<LeafBlockRankRecord>::new();
+    let mut miss_attribution_rows = Vec::<MissAttributionRecord>::new();
     let mut remote_epoch = args.remote_requested_epoch;
 
     for nprobe in &sweep_values {
@@ -343,6 +350,7 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
             let mut funnel_local_rows = Vec::new();
             let mut funnel_leaf_rows = Vec::new();
             let mut returned_to_k_count = None;
+            let mut predicted_ids_for_query = None;
             if !args.production_read_only {
                 let routing_rows = query_routing_rows(&client, &index, &query.source).await?;
                 for row in routing_rows {
@@ -444,15 +452,16 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
                 let measured =
                     execute_query_metric(&client, stmt, &query.source, args.query_metric_k).await?;
                 returned_to_k_count = Some(measured.predicted_ids.len());
+                predicted_ids_for_query = Some(measured.predicted_ids.clone());
                 query_metrics
                     .entry(*nprobe)
                     .or_default()
                     .record(measured.duration, measured.predicted_ids);
             }
-            if args.leaf_block_rank_output.is_some() {
+            if args.leaf_block_rank_output.is_some() || args.miss_attribution_output.is_some() {
                 let truth_ids = query_truth
                     .as_ref()
-                    .expect("--leaf-block-rank-output is validated to require recall truth");
+                    .expect("rank/miss attribution output is validated to require recall truth");
                 let query_truth_ids = truth_ids.get(query_index).ok_or_else(|| {
                     eyre!(
                         "exact-truth ids missing for query ordinal {}",
@@ -478,27 +487,46 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
                     &target_local_sequences,
                 )
                 .await?;
-                for row in rank_rows {
-                    let truth_index = usize::try_from(row.target_ordinal).map_err(|_| {
+                if args.miss_attribution_output.is_some() {
+                    let predicted_ids = predicted_ids_for_query.as_ref().ok_or_else(|| {
                         eyre!(
-                            "leaf block rank target ordinal {} exceeds usize",
-                            row.target_ordinal
+                            "--miss-attribution-output requires query metrics for query ordinal {}",
+                            query_index + 1
                         )
                     })?;
-                    let truth_id = *query_truth_ids.get(truth_index).ok_or_else(|| {
-                        eyre!(
-                            "leaf block rank target ordinal {} exceeds truth id count {}",
-                            row.target_ordinal,
-                            query_truth_ids.len()
-                        )
-                    })?;
-                    leaf_block_rank_rows.push(LeafBlockRankRecord::from_row(
+                    miss_attribution_rows.extend(MissAttributionRecord::from_query(
                         *nprobe,
                         query_index + 1,
                         query.id,
-                        truth_id,
-                        row,
-                    ));
+                        query_truth_ids,
+                        &target_local_sequences,
+                        predicted_ids,
+                        &rank_rows,
+                    )?);
+                }
+                if args.leaf_block_rank_output.is_some() {
+                    for row in rank_rows {
+                        let truth_index = usize::try_from(row.target_ordinal).map_err(|_| {
+                            eyre!(
+                                "leaf block rank target ordinal {} exceeds usize",
+                                row.target_ordinal
+                            )
+                        })?;
+                        let truth_id = *query_truth_ids.get(truth_index).ok_or_else(|| {
+                            eyre!(
+                                "leaf block rank target ordinal {} exceeds truth id count {}",
+                                row.target_ordinal,
+                                query_truth_ids.len()
+                            )
+                        })?;
+                        leaf_block_rank_rows.push(LeafBlockRankRecord::from_row(
+                            *nprobe,
+                            query_index + 1,
+                            query.id,
+                            truth_id,
+                            row,
+                        ));
+                    }
                 }
             }
             if args.include_production_read_profile {
@@ -586,6 +614,9 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
     if let Some(path) = args.leaf_block_rank_output {
         write_leaf_block_rank_jsonl(&path, &leaf_block_rank_rows).await?;
     }
+    if let Some(path) = args.miss_attribution_output {
+        write_miss_attribution_jsonl(&path, &miss_attribution_rows).await?;
+    }
     Ok(())
 }
 
@@ -635,12 +666,24 @@ fn validate_args(args: &SpirePipelineArgs) -> Result<()> {
             "--leaf-block-rank-output requires --include-recall so exact truth ids are available"
         ));
     }
+    if args.miss_attribution_output.is_some() && !args.include_recall {
+        return Err(eyre!(
+            "--miss-attribution-output requires --include-recall so exact truth ids are available"
+        ));
+    }
+    if args.miss_attribution_output.is_some() && !args.include_query_metrics {
+        return Err(eyre!(
+            "--miss-attribution-output requires --include-query-metrics so returned ids are available"
+        ));
+    }
     if args.truth_cache_file.is_some() && !args.include_recall {
         return Err(eyre!(
             "--truth-cache-file requires --include-recall so cached truth ids are consumed"
         ));
     }
-    if args.leaf_block_rank_output.is_some() && args.leaf_block_rank_local_sequence_offset < 0 {
+    if (args.leaf_block_rank_output.is_some() || args.miss_attribution_output.is_some())
+        && args.leaf_block_rank_local_sequence_offset < 0
+    {
         return Err(eyre!(
             "--leaf-block-rank-local-sequence-offset must be >= 0"
         ));
@@ -1515,6 +1558,111 @@ impl LeafBlockRankRecord {
 }
 
 #[derive(Debug, Serialize)]
+struct MissAttributionRecord {
+    kind: &'static str,
+    nprobe: i32,
+    query_ordinal: usize,
+    query_id: i64,
+    truth_rank: usize,
+    truth_id: i64,
+    target_local_sequence: i64,
+    hit: bool,
+    miss_stage: &'static str,
+    block_status: String,
+    block_rank: Option<i64>,
+    selected_by_global_cap: Option<bool>,
+    scored_block_count: i64,
+    max_global_blocks: i64,
+    pid: Option<i64>,
+    node_id: Option<i64>,
+    local_store_id: Option<i64>,
+    row_index: Option<i64>,
+    returned_rank: Option<usize>,
+    returned_count: usize,
+}
+
+impl MissAttributionRecord {
+    fn from_query(
+        nprobe: i32,
+        query_ordinal: usize,
+        query_id: i64,
+        truth_ids: &[i64],
+        target_local_sequences: &[i64],
+        predicted_ids: &[i64],
+        rank_rows: &[LeafBlockRankRow],
+    ) -> Result<Vec<Self>> {
+        let predicted_id_set = predicted_ids.iter().copied().collect::<HashSet<_>>();
+        let returned_rank_by_id = predicted_ids
+            .iter()
+            .enumerate()
+            .map(|(rank_index, predicted_id)| (*predicted_id, rank_index + 1))
+            .collect::<HashMap<_, _>>();
+        let rank_row_by_ordinal = rank_rows
+            .iter()
+            .map(|row| (row.target_ordinal, row))
+            .collect::<HashMap<_, _>>();
+        let mut rows = Vec::with_capacity(truth_ids.len());
+        for (truth_index, truth_id) in truth_ids.iter().enumerate() {
+            let target_local_sequence = *target_local_sequences.get(truth_index).ok_or_else(|| {
+                eyre!(
+                    "target local sequence missing for truth ordinal {}",
+                    truth_index + 1
+                )
+            })?;
+            let target_ordinal = i64::try_from(truth_index)
+                .map_err(|_| eyre!("truth ordinal {} exceeds i64", truth_index + 1))?;
+            let rank_row = rank_row_by_ordinal.get(&target_ordinal).copied();
+            let hit = predicted_id_set.contains(truth_id);
+            let miss_stage = if hit {
+                "hit"
+            } else {
+                classify_miss_stage(rank_row)
+            };
+            rows.push(Self {
+                kind: "spire_recall_miss_attribution",
+                nprobe,
+                query_ordinal,
+                query_id,
+                truth_rank: truth_index + 1,
+                truth_id: *truth_id,
+                target_local_sequence,
+                hit,
+                miss_stage,
+                block_status: rank_row
+                    .map(|row| row.status.clone())
+                    .unwrap_or_else(|| "missing_rank_row".to_owned()),
+                block_rank: rank_row.and_then(|row| row.block_rank),
+                selected_by_global_cap: rank_row.and_then(|row| row.selected_by_global_cap),
+                scored_block_count: rank_row.map(|row| row.scored_block_count).unwrap_or(0),
+                max_global_blocks: rank_row.map(|row| row.max_global_blocks).unwrap_or(0),
+                pid: rank_row.and_then(|row| row.pid),
+                node_id: rank_row.and_then(|row| row.node_id),
+                local_store_id: rank_row.and_then(|row| row.local_store_id),
+                row_index: rank_row.and_then(|row| row.row_index),
+                returned_rank: returned_rank_by_id.get(truth_id).copied(),
+                returned_count: predicted_ids.len(),
+            });
+        }
+        Ok(rows)
+    }
+}
+
+fn classify_miss_stage(rank_row: Option<&LeafBlockRankRow>) -> &'static str {
+    let Some(row) = rank_row else {
+        return "attribution_missing";
+    };
+    match row.status.as_str() {
+        "not_found_in_routed_leaves" | "nprobe_zero" => "routing_miss",
+        "block_ranked" => match row.selected_by_global_cap {
+            Some(false) => "block_pruned_global_cap",
+            Some(true) => "candidate_or_rerank_cap",
+            None => "candidate_or_rerank_cap",
+        },
+        _ => "attribution_unknown",
+    }
+}
+
+#[derive(Debug, Serialize)]
 struct FunnelRecord {
     kind: &'static str,
     nprobe: i32,
@@ -1667,6 +1815,25 @@ async fn write_leaf_block_rank_jsonl(path: &PathBuf, rows: &[LeafBlockRankRecord
     let mut output = String::new();
     for row in rows {
         output.push_str(&serde_json::to_string(row).wrap_err("serializing leaf block rank row")?);
+        output.push('\n');
+    }
+    tokio::fs::write(path, output)
+        .await
+        .wrap_err_with(|| format!("writing {}", path.display()))
+}
+
+async fn write_miss_attribution_jsonl(
+    path: &PathBuf,
+    rows: &[MissAttributionRecord],
+) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        tokio::fs::create_dir_all(parent)
+            .await
+            .wrap_err_with(|| format!("creating {}", parent.display()))?;
+    }
+    let mut output = String::new();
+    for row in rows {
+        output.push_str(&serde_json::to_string(row).wrap_err("serializing miss attribution row")?);
         output.push('\n');
     }
     tokio::fs::write(path, output)
@@ -2651,6 +2818,7 @@ mod tests {
             truth_corpus_file: None,
             truth_cache_file: None,
             leaf_block_rank_output: None,
+            miss_attribution_output: None,
             leaf_block_rank_local_sequence_offset: 0,
             include_production_read_profile: false,
             production_read_only: false,
@@ -2667,6 +2835,33 @@ mod tests {
             consistency_mode: "epoch".to_owned(),
             log_output: None,
             funnel_output: None,
+        }
+    }
+
+    fn ranked_row(
+        target_ordinal: i64,
+        status: &str,
+        selected_by_global_cap: Option<bool>,
+    ) -> LeafBlockRankRow {
+        LeafBlockRankRow {
+            target_ordinal,
+            target_local_sequence: 100 + target_ordinal,
+            status: status.to_owned(),
+            max_global_blocks: 1152,
+            radius_weight: 0.25,
+            scored_block_count: 2048,
+            block_rank: Some(target_ordinal + 1),
+            selected_by_global_cap,
+            pid: Some(10 + target_ordinal),
+            node_id: Some(1),
+            local_store_id: Some(1),
+            object_version: Some(1),
+            row_index: Some(target_ordinal),
+            row_base: Some(0),
+            row_end: Some(16),
+            row_count: Some(16),
+            block_ip: Some(0.1),
+            assignment_flags: Some(0),
         }
     }
 
@@ -2729,6 +2924,30 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("--cost-index-page-scale"));
+    }
+
+    #[test]
+    fn miss_attribution_classifies_hit_routing_block_and_cap_misses() {
+        let rows = MissAttributionRecord::from_query(
+            96,
+            1,
+            990000,
+            &[1, 2, 3, 4],
+            &[101, 102, 103, 104],
+            &[1],
+            &[
+                ranked_row(0, "block_ranked", Some(true)),
+                ranked_row(1, "not_found_in_routed_leaves", None),
+                ranked_row(2, "block_ranked", Some(false)),
+                ranked_row(3, "block_ranked", Some(true)),
+            ],
+        )
+        .expect("attribution rows");
+
+        assert_eq!(rows[0].miss_stage, "hit");
+        assert_eq!(rows[1].miss_stage, "routing_miss");
+        assert_eq!(rows[2].miss_stage, "block_pruned_global_cap");
+        assert_eq!(rows[3].miss_stage, "candidate_or_rerank_cap");
     }
 
     #[test]

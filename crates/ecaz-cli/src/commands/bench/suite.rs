@@ -447,6 +447,8 @@ struct SpirePipelineStep {
     #[serde(default)]
     leaf_block_rank_output: Option<PathBuf>,
     #[serde(default)]
+    miss_attribution_output: Option<PathBuf>,
+    #[serde(default)]
     leaf_block_rank_local_sequence_offset: Option<i64>,
     #[serde(default)]
     include_production_read_profile: Option<bool>,
@@ -2405,6 +2407,8 @@ impl SuiteStep {
                 .log_output
                 .iter()
                 .chain(step.funnel_output.iter())
+                .chain(step.leaf_block_rank_output.iter())
+                .chain(step.miss_attribution_output.iter())
                 .cloned()
                 .collect(),
             SuiteStep::Storage(step) => step.log_file.iter().cloned().collect(),
@@ -2907,6 +2911,11 @@ fn expand_spire_pipeline(step: &SpirePipelineStep, defaults: &SuiteDefaults) -> 
         &mut args,
         "--leaf-block-rank-output",
         step.leaf_block_rank_output.as_deref(),
+    );
+    push_opt_path(
+        &mut args,
+        "--miss-attribution-output",
+        step.miss_attribution_output.as_deref(),
     );
     if let Some(offset) = step.leaf_block_rank_local_sequence_offset {
         push_arg(
@@ -4117,6 +4126,7 @@ mod tests {
             truth_corpus_file: Some("truth-corpus.tsv".into()),
             truth_cache_file: Some("truth-cache.json".into()),
             leaf_block_rank_output: None,
+            miss_attribution_output: Some("miss-attribution.jsonl".into()),
             leaf_block_rank_local_sequence_offset: None,
             include_production_read_profile: Some(true),
             production_read_only: Some(true),
@@ -4154,6 +4164,10 @@ mod tests {
         assert!(args
             .windows(2)
             .any(|w| w == ["--truth-cache-file", "truth-cache.json"]));
+        assert!(args.windows(2).any(|w| w == [
+            "--miss-attribution-output",
+            "miss-attribution.jsonl"
+        ]));
         assert!(args
             .windows(2)
             .any(|w| w == ["--log-output", "spire-profile.log"]));
@@ -4200,6 +4214,7 @@ mod tests {
                 truth_corpus_file: None,
                 truth_cache_file: None,
                 leaf_block_rank_output: None,
+                miss_attribution_output: None,
                 leaf_block_rank_local_sequence_offset: None,
                 include_production_read_profile: Some(true),
                 production_read_only: Some(true),
