@@ -1,9 +1,9 @@
 ---
 id: ADR-074
 title: "SPIRE Leaf-Local Block Pruning"
-status: PROPOSED
+status: ACCEPTED
 impact: Affects Task 79, SPIRE leaf V2/V3 storage, RaBitQ scan latency, and NFR-016 on-disk format evolution.
-date: 2026-06-01
+date: 2026-06-04
 ---
 # ADR-074: SPIRE Leaf-Local Block Pruning
 
@@ -56,17 +56,22 @@ before selecting rows.
 
 ## Storage Contract
 
-The first implementation should use a reject-unknown format bump consistent
-with ADR-070 Option A:
+The implementation uses a reject-unknown format bump consistent with ADR-070
+Option A:
 
-- add a SPIRE leaf V3 format version for leaves that carry block summaries;
-- keep V2 decoding unchanged as the fallback path;
-- encode summary metadata with explicit little-endian fields and exact length
+- SPIRE leaf V2 remains the row-payload-only fallback format;
+- SPIRE leaf V3 is the single-representative block-summary leaf format;
+- SPIRE leaf V4 is the multi-representative block-summary leaf format used by
+  RaBitQ summaries that need more than one representative payload per block;
+- summary metadata is encoded with explicit little-endian fields and exact length
   checks;
-- store the summary payload in a chain reachable from the leaf meta object;
-- record block count, rows per block, payload format, payload stride, and the
-  first summary-chain locator in the V3 meta object;
-- reject malformed summary chains before row-segment pruning is enabled.
+- summary payloads are stored in a chain reachable from the leaf meta object,
+  separate from row payload segments;
+- the summarized leaf meta records block count, rows per block, payload format,
+  payload stride, summary representative count, summary bytes, and the first
+  summary-chain locator;
+- malformed summary metadata or summary chains are rejected before row-segment
+  pruning is enabled.
 
 The scan path must not require reading all row segments to choose blocks. If an
 early prototype stores summaries inside row segments, it may be used only as a
@@ -144,4 +149,3 @@ corpus / 200-query RaBitQ lane:
 - summary object bytes, row object bytes, summary-score time, row-score time,
   selected block counts, and skipped row-block counts;
 - a TurboQuant comparison only after a RaBitQ row is close enough to defend.
-

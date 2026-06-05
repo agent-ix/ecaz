@@ -969,14 +969,19 @@ fn select_leaf_block_row_ranges(
     observer: &mut impl SpireRoutedScanObserver,
 ) -> Result<Option<Vec<SpireLeafBlockRowRange>>, String> {
     if max_blocks_per_leaf <= 0 || summaries.is_empty() {
+        if !summaries.is_empty() {
+            observer.leaf_block_selection(epoch, placement, summaries.len(), summaries.len());
+        }
         return Ok(None);
     }
     if scorer.payload_format() != SpireAssignmentPayloadFormat::RaBitQ {
+        observer.leaf_block_selection(epoch, placement, summaries.len(), summaries.len());
         return Ok(None);
     }
     let max_blocks = usize::try_from(max_blocks_per_leaf)
         .map_err(|_| "ec_spire.leaf_block_pruning_max_blocks_per_leaf exceeds usize".to_owned())?;
     if max_blocks >= summaries.len() {
+        observer.leaf_block_selection(epoch, placement, summaries.len(), summaries.len());
         return Ok(None);
     }
 
@@ -1001,7 +1006,7 @@ fn select_leaf_block_row_ranges(
         ));
     }
     if let Some(started) = score_started {
-        observer.candidate_score_time(epoch, placement, elapsed_nanos_since(started));
+        observer.leaf_summary_score_time(epoch, placement, elapsed_nanos_since(started));
     }
 
     scored_ranges.sort_by(|left, right| {
@@ -1017,6 +1022,7 @@ fn select_leaf_block_row_ranges(
         .map(|(_score, range)| range)
         .collect::<Vec<_>>();
     ranges.sort_by_key(|range| range.row_base);
+    observer.leaf_block_selection(epoch, placement, summaries.len(), ranges.len());
     Ok(Some(ranges))
 }
 
@@ -1256,7 +1262,7 @@ where
             });
         }
         if let Some(started) = score_started {
-            observer.candidate_score_time(epoch, placement, elapsed_nanos_since(started));
+            observer.leaf_summary_score_time(epoch, placement, elapsed_nanos_since(started));
         }
     }
 
@@ -1470,7 +1476,7 @@ fn sample_leaf_block_probe_candidates(
                 let score_started = observer.wants_candidate_timing().then(Instant::now);
                 let ip = scorer.score_payload_ip(column_format, row.gamma, row.encoded_payload)?;
                 if let Some(started) = score_started {
-                    observer.candidate_score_time(epoch, placement, elapsed_nanos_since(started));
+                    observer.leaf_row_score_time(epoch, placement, elapsed_nanos_since(started));
                 }
                 if !ip.is_finite() {
                     return Err(
@@ -1619,6 +1625,12 @@ fn read_quantized_v2_leaf_object_for_route(
     if let Some(started) = read_started {
         observer.leaf_object_read_time(epoch, placement, elapsed_nanos_since(started));
     }
+    observer.leaf_block_storage(
+        epoch,
+        placement,
+        leaf_object.meta.summary_bytes_total,
+        leaf_object.meta.row_segment_bytes_total()?,
+    );
 
     Ok(Some(leaf_object))
 }
@@ -1648,6 +1660,12 @@ fn read_quantized_v2_leaf_summaries_for_route(
     if let Some(started) = read_started {
         observer.leaf_object_read_time(epoch, placement, elapsed_nanos_since(started));
     }
+    observer.leaf_block_storage(
+        epoch,
+        placement,
+        leaf_summaries.meta.summary_bytes_total,
+        leaf_summaries.meta.row_segment_bytes_total()?,
+    );
     if leaf_summaries.meta.header.parent_pid != route.parent_pid {
         return Err(format!(
             "ec_spire quantized routed scan leaf pid {leaf_pid} parent {} does not match expected parent pid {}",
@@ -1799,6 +1817,12 @@ fn append_quantized_leaf_candidates_for_pid(
             if let Some(started) = read_started {
                 observer.leaf_object_read_time(epoch, placement, elapsed_nanos_since(started));
             }
+            observer.leaf_block_storage(
+                epoch,
+                placement,
+                leaf_object.meta.summary_bytes_total,
+                leaf_object.meta.row_segment_bytes_total()?,
+            );
             let selected_row_ranges = select_leaf_block_row_ranges(
                 &leaf_object.summaries,
                 current_session_leaf_block_pruning_max_blocks_per_leaf(),
@@ -1893,7 +1917,7 @@ fn append_quantized_v2_column_candidates(
         &mut scores,
     )?;
     if let Some(started) = score_started {
-        observer.candidate_score_time(epoch, placement, elapsed_nanos_since(started));
+        observer.leaf_row_score_time(epoch, placement, elapsed_nanos_since(started));
     }
 
     for (row_offset, ip) in scores.into_iter().enumerate() {
@@ -1981,7 +2005,7 @@ fn append_quantized_v2_column_candidates_with_rabitq_cutoff(
                     Some(ip) => ip,
                     None => {
                         if let Some(started) = score_started {
-                            observer.candidate_score_time(
+                            observer.leaf_row_score_time(
                                 epoch,
                                 placement,
                                 elapsed_nanos_since(started),
@@ -2005,7 +2029,7 @@ fn append_quantized_v2_column_candidates_with_rabitq_cutoff(
             None => scorer.score_payload_ip(column_format, row.gamma, row.encoded_payload)?,
         };
         if let Some(started) = score_started {
-            observer.candidate_score_time(epoch, placement, elapsed_nanos_since(started));
+            observer.leaf_row_score_time(epoch, placement, elapsed_nanos_since(started));
         }
         if !ip.is_finite() {
             return Err(
@@ -2178,7 +2202,7 @@ fn append_quantized_v1_leaf_candidates(
         let score_started = observer.wants_candidate_timing().then(Instant::now);
         let ip = scorer.score_assignment_ip(&assignment)?;
         if let Some(started) = score_started {
-            observer.candidate_score_time(epoch, placement, elapsed_nanos_since(started));
+            observer.leaf_row_score_time(epoch, placement, elapsed_nanos_since(started));
         }
         if !ip.is_finite() {
             return Err("ec_spire routed candidate scorer returned a non-finite score".to_owned());

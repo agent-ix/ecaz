@@ -7843,12 +7843,19 @@ fn ec_spire_index_scan_leaf_candidate_snapshot(
         name!(route_count, i64),
         name!(scanned_count, i64),
         name!(candidate_row_count, i64),
+        name!(leaf_block_available_count, i64),
+        name!(leaf_block_selected_count, i64),
+        name!(leaf_block_skipped_count, i64),
+        name!(leaf_summary_object_bytes, i64),
+        name!(leaf_row_object_bytes, i64),
         name!(primary_candidate_row_count, i64),
         name!(boundary_replica_candidate_row_count, i64),
         name!(deduped_candidate_row_count, i64),
         name!(truncated_candidate_row_count, i64),
         name!(candidate_winner_count, i64),
         name!(leaf_object_read_nanos, i64),
+        name!(leaf_summary_score_nanos, i64),
+        name!(leaf_row_score_nanos, i64),
         name!(candidate_score_nanos, i64),
         name!(candidate_materialize_nanos, i64),
         name!(candidate_heap_append_nanos, i64),
@@ -7882,6 +7889,16 @@ fn ec_spire_index_scan_leaf_candidate_snapshot(
             i64::try_from(row.route_count).expect("route count should fit in i64"),
             i64::try_from(row.scanned_count).expect("scanned count should fit in i64"),
             i64::try_from(row.candidate_row_count).expect("candidate row count should fit in i64"),
+            i64::try_from(row.leaf_block_available_count)
+                .expect("leaf block available count should fit in i64"),
+            i64::try_from(row.leaf_block_selected_count)
+                .expect("leaf block selected count should fit in i64"),
+            i64::try_from(row.leaf_block_skipped_count)
+                .expect("leaf block skipped count should fit in i64"),
+            i64::try_from(row.leaf_summary_object_bytes)
+                .expect("leaf summary object bytes should fit in i64"),
+            i64::try_from(row.leaf_row_object_bytes)
+                .expect("leaf row object bytes should fit in i64"),
             i64::try_from(row.primary_candidate_row_count)
                 .expect("primary candidate row count should fit in i64"),
             i64::try_from(row.boundary_replica_candidate_row_count)
@@ -7894,6 +7911,10 @@ fn ec_spire_index_scan_leaf_candidate_snapshot(
                 .expect("candidate winner count should fit in i64"),
             i64::try_from(row.leaf_object_read_nanos)
                 .expect("leaf object read nanoseconds should fit in i64"),
+            i64::try_from(row.leaf_summary_score_nanos)
+                .expect("leaf summary score nanoseconds should fit in i64"),
+            i64::try_from(row.leaf_row_score_nanos)
+                .expect("leaf row score nanoseconds should fit in i64"),
             i64::try_from(row.candidate_score_nanos)
                 .expect("candidate score nanoseconds should fit in i64"),
             i64::try_from(row.candidate_materialize_nanos)

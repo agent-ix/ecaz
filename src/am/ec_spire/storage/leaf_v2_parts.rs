@@ -170,6 +170,16 @@ impl SpireLeafPartitionObjectV2Meta {
         }
     }
 
+    pub(super) fn row_segment_bytes_total(&self) -> Result<u64, String> {
+        let meta_bytes = PARTITION_OBJECT_HEADER_BYTES
+            .checked_add(self.encoded_meta_body_bytes())
+            .ok_or_else(|| "ec_spire leaf V3 meta byte length overflow".to_owned())?;
+        self.object_bytes_total
+            .checked_sub(self.summary_bytes_total)
+            .and_then(|value| value.checked_sub(u64::try_from(meta_bytes).ok()?))
+            .ok_or_else(|| "ec_spire leaf V3 row segment byte length underflow".to_owned())
+    }
+
     fn summary_format_version(&self) -> u16 {
         if self.has_block_summaries() && self.summary_representative_count > 1 {
             PARTITION_OBJECT_FORMAT_VERSION_V4
