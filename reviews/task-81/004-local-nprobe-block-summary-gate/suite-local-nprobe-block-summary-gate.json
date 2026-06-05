@@ -1,0 +1,84 @@
+{
+  "name": "task81-local-nprobe-block-summary-gate",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-81/004-local-nprobe-block-summary-gate/artifacts",
+  "defaults": {
+    "bits": 4,
+    "seed": 42,
+    "socket_dir": "/home/peter/.pgrx",
+    "pg": 18,
+    "profile": "ec_spire",
+    "queries_limit": 200,
+    "iterations": 200,
+    "force_index": true
+  },
+  "steps": [
+    {
+      "kind": "raw",
+      "name": "prepare-task81-local-nprobe-tg256-surface",
+      "tags": ["setup", "task81", "local-only", "pg18", "rabitq", "block-summary", "nprobe-sweep", "tg256"],
+      "args": [
+        "dev",
+        "sql",
+        "--pg",
+        "18",
+        "--db",
+        "task79_spire_candidate_surface",
+        "--socket-dir",
+        "/home/peter/.pgrx",
+        "--raw",
+        "--sql",
+        "CREATE EXTENSION IF NOT EXISTS ecaz; SET client_min_messages TO notice; DROP INDEX IF EXISTS task81_nprobe_100k_idx; DROP TABLE IF EXISTS task81_nprobe_100k_corpus; DROP TABLE IF EXISTS task81_nprobe_100k_queries; CREATE TABLE task81_nprobe_100k_corpus AS TABLE task79_surface_100k_corpus; CREATE TABLE task81_nprobe_100k_queries AS TABLE task79_surface_100k_queries; ANALYZE task81_nprobe_100k_corpus; ANALYZE task81_nprobe_100k_queries; SET ec_spire.leaf_block_rows = 16; CREATE INDEX task81_nprobe_100k_idx ON task81_nprobe_100k_corpus USING ec_spire (embedding ecvector_spire_ip_ops) WITH (nlists = 128, recursive_fanout = 8, nprobe = 24, rerank_width = 25, storage_format = 'rabitq', boundary_replica_count = 0, top_graph_enabled = 1, top_graph_degree = 32, top_graph_build_list_size = 100, top_graph_search_list_size = 256); RESET ec_spire.leaf_block_rows; SELECT i.relname AS index_name, am.amname, pg_size_pretty(pg_relation_size(i.oid)) AS index_size, i.reloptions FROM pg_index x JOIN pg_class i ON i.oid = x.indexrelid JOIN pg_class t ON t.oid = x.indrelid JOIN pg_am am ON am.oid = i.relam WHERE t.relname = 'task81_nprobe_100k_corpus' ORDER BY i.relname;",
+        "--log-output",
+        "reviews/task-81/004-local-nprobe-block-summary-gate/artifacts/prepare-task81-local-nprobe-tg256-surface.log"
+      ],
+      "expected_artifacts": [
+        "reviews/task-81/004-local-nprobe-block-summary-gate/artifacts/prepare-task81-local-nprobe-tg256-surface.log"
+      ]
+    },
+    {
+      "kind": "raw",
+      "name": "precheck-task81-local-nprobe-surface",
+      "tags": ["setup", "task81", "local-only", "pg18", "rabitq", "block-summary", "nprobe-sweep"],
+      "args": [
+        "dev",
+        "sql",
+        "--pg",
+        "18",
+        "--db",
+        "task79_spire_candidate_surface",
+        "--socket-dir",
+        "/home/peter/.pgrx",
+        "--raw",
+        "--sql",
+        "CREATE EXTENSION IF NOT EXISTS ecaz; SELECT now() AS captured_at, version() AS postgres_version; SELECT count(*) AS corpus_rows FROM task81_nprobe_100k_corpus; SELECT count(*) AS query_rows FROM task81_nprobe_100k_queries; SELECT c.relname, c.relpages, c.reltuples::bigint AS reltuples, c.reloptions FROM pg_class c WHERE c.relname = 'task81_nprobe_100k_idx'; SELECT name, setting, context FROM pg_settings WHERE name IN ('ec_spire.leaf_block_rows', 'ec_spire.leaf_block_pruning_max_blocks_per_leaf', 'ec_spire.leaf_block_pruning_max_global_blocks', 'ec_spire.leaf_block_pruning_global_probe_blocks', 'ec_spire.leaf_block_pruning_sample_rows_per_block', 'ec_spire.leaf_block_pruning_sample_summary_prior_weight', 'ec_spire.leaf_block_pruning_summary_radius_weight', 'ec_spire.leaf_block_pruning_route_prior_weight', 'ec_spire.nprobe', 'ec_spire.rerank_width') ORDER BY name;",
+        "--log-output",
+        "reviews/task-81/004-local-nprobe-block-summary-gate/artifacts/precheck-task81-local-nprobe-surface.log"
+      ],
+      "expected_artifacts": [
+        "reviews/task-81/004-local-nprobe-block-summary-gate/artifacts/precheck-task81-local-nprobe-surface.log"
+      ]
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-100k-rabitq-block-summary-global1152-nprobe-sweep",
+      "tags": ["pipeline", "task81", "intel-local", "ec_real_100k", "spire", "rabitq", "block-summary", "global1152", "nprobe-sweep"],
+      "pgoptions": "-c ec_spire.leaf_block_pruning_max_blocks_per_leaf=0 -c ec_spire.leaf_block_pruning_max_global_blocks=1152 -c ec_spire.leaf_block_pruning_global_probe_blocks=0 -c ec_spire.leaf_block_pruning_sample_rows_per_block=0 -c ec_spire.leaf_block_pruning_sample_summary_prior_weight=0.8 -c ec_spire.leaf_block_pruning_summary_radius_weight=0.25 -c ec_spire.leaf_block_pruning_route_prior_weight=0.0",
+      "prefix": "task81_nprobe_100k",
+      "index": "task81_nprobe_100k_idx",
+      "queries_limit": 200,
+      "sweep": [96, 128, 160, 192],
+      "rerank_width": 25,
+      "include_local_store_overlap": true,
+      "include_cost_snapshot": true,
+      "include_query_metrics": true,
+      "include_recall": true,
+      "truth_corpus_file": "target/real-corpus/staged-task50/ec_real_100k_corpus.tsv",
+      "include_production_read_profile": true,
+      "query_metric_k": 10,
+      "query_metric_projection_columns": ["id"],
+      "log_output": "reviews/task-81/004-local-nprobe-block-summary-gate/artifacts/pipeline-100k-rabitq-block-summary-global1152-nprobe-sweep.log",
+      "funnel_output": "reviews/task-81/004-local-nprobe-block-summary-gate/artifacts/funnel-100k-rabitq-block-summary-global1152-nprobe-sweep.jsonl"
+    }
+  ]
+}
