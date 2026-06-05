@@ -598,6 +598,24 @@ where
     }
 }
 
+fn robust_prune_final_alpha<D>(
+    pivot: u32,
+    mut candidates: Vec<Candidate>,
+    alpha: f32,
+    max_degree: usize,
+    dist: D,
+) -> Vec<u32>
+where
+    D: Fn(u32, u32) -> f32,
+{
+    candidates.retain(|c| c.node != pivot);
+    if candidates.is_empty() {
+        return Vec::new();
+    }
+    candidates.sort();
+    robust_prune_at_alpha(&candidates, alpha, max_degree, &dist)
+}
+
 fn robust_prune_at_alpha<D>(
     candidates: &[Candidate],
     alpha: f32,
@@ -883,7 +901,7 @@ where
                 backlinks_added += 1;
             } else {
                 // Re-prune j's neighborhood including i.
-                let mut combined: Vec<Candidate> = neighbor_cache
+                let combined: Vec<Candidate> = neighbor_cache
                     .neighbors(j)
                     .iter()
                     .copied()
@@ -893,7 +911,6 @@ where
                         distance: dist(j, n),
                     })
                     .collect();
-                combined.sort();
                 let repruned = robust_prune(j, combined, alpha_final, max_degree, dist);
                 neighbor_cache.replace_neighbors(j, repruned);
                 reprunes += 1;
@@ -1002,6 +1019,10 @@ where
         batch_size,
         ..VamanaParallelBuildStats::default()
     };
+    // Batch size 1 is the serial-equivalence scaffold. True parallel batches
+    // use the final-alpha prune directly to avoid repeating reducer distance
+    // work for an intermediate alpha that is not required for fallback parity.
+    let grow_alpha = batch_size == 1;
     let mut incoming_backlinks: Vec<Vec<u32>> = vec![Vec::new(); node_count];
     let mut touched_backlink_targets: Vec<u32> = Vec::new();
 
@@ -1025,6 +1046,7 @@ where
                     max_degree,
                     list_size,
                     alpha_final,
+                    grow_alpha,
                     dist,
                 )
             })
@@ -1045,8 +1067,7 @@ where
             candidate_pool_counts.push(proposal.candidate_count);
             selected_neighbor_counts.push(proposal.pruned.len());
 
-            neighbor_cache.set_neighbors(proposal.pivot, &proposal.pruned);
-            for target in proposal.pruned {
+            for &target in &proposal.pruned {
                 let target_idx = target as usize;
                 debug_assert!(
                     target_idx < incoming_backlinks.len(),
@@ -1057,6 +1078,7 @@ where
                 }
                 incoming_backlinks[target_idx].push(proposal.pivot);
             }
+            neighbor_cache.replace_neighbors(proposal.pivot, proposal.pruned);
         }
 
         let backlink_started = Instant::now();
@@ -1068,6 +1090,7 @@ where
                 &incoming_backlinks[target_idx],
                 max_degree,
                 alpha_final,
+                grow_alpha,
                 dist,
             );
             backlinks_added += commit_stats.backlinks_added;
@@ -1173,7 +1196,7 @@ where
             neighbor_cache.push_neighbor(j, proposal.pivot);
             stats.backlinks_added += 1;
         } else {
-            let mut combined: Vec<Candidate> = neighbor_cache
+            let combined: Vec<Candidate> = neighbor_cache
                 .neighbors(j)
                 .iter()
                 .copied()
@@ -1183,7 +1206,6 @@ where
                     distance: dist(j, n),
                 })
                 .collect();
-            combined.sort();
             let repruned = robust_prune(j, combined, alpha_final, max_degree, dist);
             neighbor_cache.replace_neighbors(j, repruned);
             stats.reprunes += 1;
@@ -1199,6 +1221,7 @@ fn commit_vamana_backlink_batch<D>(
     proposed_sources: &[u32],
     max_degree: usize,
     alpha_final: f32,
+    grow_alpha: bool,
     dist: D,
 ) -> VamanaProposalCommitStats
 where
@@ -1222,14 +1245,15 @@ where
     }
 
     if existing.len() + additions.len() <= max_degree {
-        for source in additions {
-            neighbor_cache.push_neighbor(target, source);
-            stats.backlinks_added += 1;
-        }
+        let mut updated = Vec::with_capacity(existing.len() + additions.len());
+        updated.extend_from_slice(existing);
+        stats.backlinks_added += additions.len();
+        updated.extend(additions);
+        neighbor_cache.replace_neighbors(target, updated);
         return stats;
     }
 
-    let mut combined: Vec<Candidate> = existing
+    let combined: Vec<Candidate> = existing
         .iter()
         .copied()
         .chain(additions)
@@ -1238,8 +1262,11 @@ where
             distance: dist(target, node),
         })
         .collect();
-    combined.sort();
-    let repruned = robust_prune(target, combined, alpha_final, max_degree, dist);
+    let repruned = if grow_alpha {
+        robust_prune(target, combined, alpha_final, max_degree, dist)
+    } else {
+        robust_prune_final_alpha(target, combined, alpha_final, max_degree, dist)
+    };
     neighbor_cache.replace_neighbors(target, repruned);
     stats.reprunes += 1;
     stats
@@ -1258,6 +1285,7 @@ fn propose_vamana_pivot<D>(
     max_degree: usize,
     list_size: usize,
     alpha_final: f32,
+    grow_alpha: bool,
     dist: D,
 ) -> VamanaPivotProposal
 where
@@ -1298,7 +1326,11 @@ where
     let candidate_count = candidates.len();
 
     let robust_prune_started = Instant::now();
-    let pruned = robust_prune(pivot, candidates, alpha_final, max_degree, dist);
+    let pruned = if grow_alpha {
+        robust_prune(pivot, candidates, alpha_final, max_degree, dist)
+    } else {
+        robust_prune_final_alpha(pivot, candidates, alpha_final, max_degree, dist)
+    };
     let robust_prune_ms = robust_prune_started.elapsed().as_millis();
 
     VamanaPivotProposal {
@@ -1534,6 +1566,7 @@ mod tests {
             3,
             4,
             1.2,
+            true,
             |a, b| (a as i32 - b as i32).unsigned_abs() as f32,
         );
         assert_eq!(proposal.existing_neighbor_count, 0);
@@ -1579,7 +1612,7 @@ mod tests {
         let mut append_cache = BuilderNeighborCache::empty(6, 3);
         append_cache.set_neighbors(0, &[1]);
         let append_stats =
-            commit_vamana_backlink_batch(&mut append_cache, 0, &[2, 3], 3, 1.2, dist);
+            commit_vamana_backlink_batch(&mut append_cache, 0, &[2, 3], 3, 1.2, true, dist);
         assert_eq!(append_stats.backlinks_added, 2);
         assert_eq!(append_stats.reprunes, 0);
         assert_eq!(append_cache.neighbors(0), &[1, 2, 3]);
@@ -1587,7 +1620,7 @@ mod tests {
         let mut reprune_cache = BuilderNeighborCache::empty(6, 2);
         reprune_cache.set_neighbors(0, &[1, 2]);
         let reprune_stats =
-            commit_vamana_backlink_batch(&mut reprune_cache, 0, &[3, 4, 5], 2, 1.2, dist);
+            commit_vamana_backlink_batch(&mut reprune_cache, 0, &[3, 4, 5], 2, 1.2, true, dist);
         assert_eq!(reprune_stats.backlinks_added, 0);
         assert_eq!(
             reprune_stats.reprunes, 1,
