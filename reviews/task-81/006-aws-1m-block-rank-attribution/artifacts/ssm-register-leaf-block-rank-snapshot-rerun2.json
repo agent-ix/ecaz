@@ -1,0 +1,25 @@
+Script started on 2026-06-04 21:25:21-07:00 [<not executed on terminal>]
+{
+    "CommandId": "b98f3c37-a561-4d97-bee3-48f9d68d9290",
+    "InstanceId": "i-06ace3e95ab942623",
+    "Comment": "",
+    "DocumentName": "AWS-RunShellScript",
+    "DocumentVersion": "$DEFAULT",
+    "PluginName": "aws:runShellScript",
+    "ResponseCode": 1,
+    "ExecutionStartDateTime": "2026-06-05T04:25:15.984Z",
+    "ExecutionElapsedTime": "PT0.194S",
+    "ExecutionEndDateTime": "2026-06-05T04:25:15.984Z",
+    "Status": "Failed",
+    "StatusDetails": "Failed",
+    "StandardOutputContent": "CREATE EXTENSION\nDROP FUNCTION\n",
+    "StandardOutputUrl": "",
+    "StandardErrorContent": "NOTICE:  extension \"ecaz\" already exists, skipping\nNOTICE:  function ec_spire_index_scan_leaf_block_rank_snapshot(oid,pg_catalog.float4[],pg_catalog.int8[]) does not exist, skipping\nERROR:  could not access file \"/ecaz\": No such file or directory\nfailed to run commands: exit status 1",
+    "StandardErrorUrl": "",
+    "CloudWatchOutputConfig": {
+        "CloudWatchLogGroupName": "",
+        "CloudWatchOutputEnabled": false
+    }
+}
+
+Script done on 2026-06-04 21:25:22-07:00 [COMMAND_EXIT_CODE="0"]

@@ -1,0 +1,25 @@
+Script started on 2026-06-04 21:24:21-07:00 [<not executed on terminal>]
+{
+    "CommandId": "1d2a1830-c536-4f3c-9346-abf18f3c578c",
+    "InstanceId": "i-06ace3e95ab942623",
+    "Comment": "",
+    "DocumentName": "AWS-RunShellScript",
+    "DocumentVersion": "$DEFAULT",
+    "PluginName": "aws:runShellScript",
+    "ResponseCode": 2,
+    "ExecutionStartDateTime": "2026-06-05T04:24:15.987Z",
+    "ExecutionElapsedTime": "PT0.073S",
+    "ExecutionEndDateTime": "2026-06-05T04:24:15.987Z",
+    "Status": "Failed",
+    "StatusDetails": "Failed",
+    "StandardOutputContent": "",
+    "StandardOutputUrl": "",
+    "StandardErrorContent": "psql: error: connection to server on socket \"/var/run/postgresql/.s.PGSQL.5432\" failed: Connection refused\n\tIs the server running locally and accepting connections on that socket?\nfailed to run commands: exit status 2",
+    "StandardErrorUrl": "",
+    "CloudWatchOutputConfig": {
+        "CloudWatchLogGroupName": "",
+        "CloudWatchOutputEnabled": false
+    }
+}
+
+Script done on 2026-06-04 21:24:22-07:00 [COMMAND_EXIT_CODE="0"]
