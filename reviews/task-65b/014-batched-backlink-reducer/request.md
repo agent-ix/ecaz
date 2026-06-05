@@ -5,7 +5,10 @@ the deterministic reducer dominating both real10k and real100k builds.
 
 ## Code Change
 
-New code commit: `f3809bf18` (`Tune DiskANN parallel reducer pruning`).
+Code commits:
+
+- `f3809bf18` (`Tune DiskANN parallel reducer pruning`)
+- `7034ac5fc` (`Parallelize DiskANN backlink reduction`)
 
 The slice:
 
@@ -18,6 +21,10 @@ The slice:
 - keeps growing-alpha pruning for `batch_size=1` serial-equivalence scaffolding,
   while true parallel batches prune directly at the configured final alpha to
   avoid a repeated intermediate-alpha distance pass.
+- parallelizes backlink target planning/reprune computation and then applies the
+  planned adjacency replacements in deterministic target order;
+- reports `parallel_effective_workers` from the active Rayon pool instead of
+  echoing the requested reloption.
 
 Worker-count `0` fallback remains on the serial Task 65 path. Worker-count `1`
 serial-equivalence tests remain green.
@@ -38,9 +45,10 @@ The real10k gate now has a passing candidate:
 
 | fixture | workers | batch | build total | reducer | recall@10 L200 | gate |
 |---|---:|---:|---:|---:|---:|---|
-| real10k | 8 | 64 | `2.873s` | `2.041s` | `0.9950` | passes time and recall |
+| real10k | 8 | 64 | `1.080s` | `0.256s` | `0.9950` | passes time and recall |
 | real10k | 8 | 96 | `2.737s` | `1.928s` | `0.9920` | fails recall by `0.0005` |
-| real100k | 8 | 64 | `139.356s` | `122.176s` | `0.9750` | fails time |
+| real100k | 8 | 64 | `36.490s` | `19.115s` | not rerun after `7034ac5fc` | fails time |
+| real100k | 8 | 768 | `29.771s` | `14.475s` | `0.9700` | passes time; recall is exactly 0.5pp below the b64 supporting row |
 
 The Task 65 real10k L200 baseline is `0.9975`, so the 0.5pp floor is
 `0.9925`. The b64 row is the current real10k default candidate.
@@ -51,9 +59,16 @@ This is progress, not final task closure.
 
 - real10k `<=3s`: now satisfied by `w8/b64`.
 - real10k recall within 0.5pp: now satisfied by `w8/b64`.
-- real100k `<=30s`: not satisfied; latest `w8/b64` is `139.356s`.
-- real100k recall: held at `0.9750` for `w8/b64`.
-- reducer remains the bottleneck at real100k scale (`122.176s` of `139.356s`).
+- real100k `<=30s`: now satisfied by `w8/b768` at `29.771s`.
+- real100k recall: `w8/b768` reaches `0.9700` at L200. The prior `w8/b64`
+  supporting recall row was `0.9750`; `w8/b64` recall was not rerun after the
+  backlink-planner-only code change.
+- reducer remains the largest real100k graph-build component, but the parallel
+  backlink planner reduced the `w8/b768` reducer section to `14.475s` of
+  `29.771s`.
+- reviewer 014 is still `APPROVE-WITH-FLAGS`, not closeout: the next slice
+  should either enforce/document the batch-size recall surface in the AM or
+  explicitly choose the stop-condition path.
 
 ## Review Ask
 
