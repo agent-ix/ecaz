@@ -20,7 +20,7 @@
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use rayon::prelude::*;
-use std::{cmp::Reverse, collections::BinaryHeap, time::Instant};
+use std::{cmp::Reverse, collections::BinaryHeap, sync::Arc, time::Instant};
 
 /// In-memory adjacency list. `neighbors[i]` is the out-edge set of node `i`.
 ///
@@ -74,14 +74,15 @@ impl VamanaGraphView for VamanaGraph {
 /// build-loop graph mutation now flows through this type.
 #[derive(Debug, Clone)]
 struct BuilderNeighborCache {
-    neighbors: Vec<Vec<u32>>,
+    neighbors: Vec<Arc<[u32]>>,
     max_degree: usize,
 }
 
 impl BuilderNeighborCache {
     fn empty(node_count: usize, max_degree: usize) -> Self {
+        let empty: Arc<[u32]> = Arc::from(Vec::<u32>::new().into_boxed_slice());
         Self {
-            neighbors: vec![Vec::new(); node_count],
+            neighbors: vec![empty; node_count],
             max_degree,
         }
     }
@@ -95,11 +96,14 @@ impl BuilderNeighborCache {
     }
 
     fn push_neighbor(&mut self, node: u32, neighbor: u32) {
+        let node_idx = node as usize;
         debug_assert!(
-            self.neighbors[node as usize].len() < self.max_degree,
+            self.neighbors[node_idx].len() < self.max_degree,
             "push_neighbor called for full Vamana adjacency list"
         );
-        self.neighbors[node as usize].push(neighbor);
+        let mut updated = self.neighbors[node_idx].to_vec();
+        updated.push(neighbor);
+        self.neighbors[node_idx] = Arc::from(updated.into_boxed_slice());
     }
 
     fn set_neighbors(&mut self, node: u32, neighbors: &[u32]) {
@@ -107,8 +111,7 @@ impl BuilderNeighborCache {
             neighbors.len() <= self.max_degree,
             "Vamana adjacency list exceeds max_degree"
         );
-        self.neighbors[node as usize].clear();
-        self.neighbors[node as usize].extend_from_slice(neighbors);
+        self.neighbors[node as usize] = Arc::from(neighbors.to_vec().into_boxed_slice());
     }
 
     fn replace_neighbors(&mut self, node: u32, neighbors: Vec<u32>) {
@@ -116,22 +119,47 @@ impl BuilderNeighborCache {
             neighbors.len() <= self.max_degree,
             "Vamana adjacency list exceeds max_degree"
         );
-        self.neighbors[node as usize] = neighbors;
+        self.neighbors[node as usize] = Arc::from(neighbors.into_boxed_slice());
     }
 
     fn iter_adjacency(&self) -> impl Iterator<Item = &[u32]> {
-        self.neighbors.iter().map(Vec::as_slice)
+        self.neighbors.iter().map(Arc::as_ref)
+    }
+
+    fn snapshot(&self) -> BuilderNeighborSnapshot {
+        BuilderNeighborSnapshot {
+            neighbors: Arc::from(self.neighbors.clone().into_boxed_slice()),
+        }
     }
 
     fn into_graph(self) -> VamanaGraph {
         VamanaGraph {
-            neighbors: self.neighbors,
+            neighbors: self
+                .neighbors
+                .into_iter()
+                .map(|neighbors| neighbors.to_vec())
+                .collect(),
             max_degree: self.max_degree,
         }
     }
 }
 
 impl VamanaGraphView for BuilderNeighborCache {
+    fn node_count(&self) -> usize {
+        self.neighbors.len()
+    }
+
+    fn neighbors(&self, node: u32) -> &[u32] {
+        &self.neighbors[node as usize]
+    }
+}
+
+#[derive(Debug, Clone)]
+struct BuilderNeighborSnapshot {
+    neighbors: Arc<[Arc<[u32]>]>,
+}
+
+impl VamanaGraphView for BuilderNeighborSnapshot {
     fn node_count(&self) -> usize {
         self.neighbors.len()
     }
@@ -993,7 +1021,7 @@ where
 
     for (epoch_idx, epoch) in permutation.chunks(batch_size).enumerate() {
         let epoch_start = epoch_idx * batch_size;
-        let snapshot = neighbor_cache.clone();
+        let snapshot = neighbor_cache.snapshot();
         let proposal_started = Instant::now();
         let mut proposals: Vec<VamanaPivotProposal> = epoch
             .par_iter()
@@ -1166,7 +1194,7 @@ fn propose_vamana_pivot<D>(
     ordinal: usize,
     epoch_start: usize,
     pivot_ordinals: &[usize],
-    snapshot: &BuilderNeighborCache,
+    snapshot: &impl VamanaGraphView,
     medoid: u32,
     node_count: usize,
     max_degree: usize,
@@ -1185,7 +1213,7 @@ where
         });
     let greedy_search_ms = greedy_started.elapsed().as_millis();
     let visited_count = visited.len();
-    let existing_neighbor_count = snapshot.out_degree(pivot);
+    let existing_neighbor_count = snapshot.neighbors(pivot).len();
 
     let candidate_pool_started = Instant::now();
     let existing_neighbors: Vec<u32> = snapshot.neighbors(pivot).to_vec();
@@ -1372,6 +1400,28 @@ mod tests {
         assert_eq!(graph.max_degree, 3);
         assert_eq!(graph.neighbors[0], vec![1, 2]);
         assert_eq!(graph.neighbors[1], vec![3]);
+    }
+
+    #[test]
+    fn task65b_snapshot_rows_do_not_observe_later_reducer_writes() {
+        let mut cache = BuilderNeighborCache::empty(4, 3);
+        cache.set_neighbors(0, &[1, 2]);
+        let snapshot = cache.snapshot();
+
+        cache.push_neighbor(0, 3);
+        cache.set_neighbors(1, &[0]);
+
+        assert_eq!(
+            snapshot.neighbors(0),
+            &[1, 2],
+            "epoch snapshot must retain the row shape seen by proposal workers"
+        );
+        assert!(
+            snapshot.neighbors(1).is_empty(),
+            "new reducer writes must replace live rows without mutating snapshots"
+        );
+        assert_eq!(cache.neighbors(0), &[1, 2, 3]);
+        assert_eq!(cache.neighbors(1), &[0]);
     }
 
     fn task65b_model_proposal(
