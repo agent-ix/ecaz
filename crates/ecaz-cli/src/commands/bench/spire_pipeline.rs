@@ -243,15 +243,14 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
         if let Some(path) = args.truth_cache_file.as_deref() {
             let query_ids: Vec<i64> = queries.iter().map(|query| query.id).collect();
             let query_matrix = query_matrix(&queries)?;
-            let truth =
-                super::recall::load_truth_cache_file_if_valid(
-                    path,
-                    &query_ids,
-                    &query_matrix,
-                    args.query_metric_k,
-                )
-                .await?
-                .ok_or_else(|| eyre!("truth cache file {} does not exist", path.display()))?;
+            let truth = super::recall::load_truth_cache_file_if_valid(
+                path,
+                &query_ids,
+                &query_matrix,
+                args.query_metric_k,
+            )
+            .await?
+            .ok_or_else(|| eyre!("truth cache file {} does not exist", path.display()))?;
             Some(truth.ids)
         } else {
             let (corpus_ids, corpus) = if let Some(path) = args.truth_corpus_file.as_deref() {
@@ -345,6 +344,44 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
         );
         bar.set_message(spire_pipeline_progress_label(*nprobe, &args));
         bar.enable_steady_tick(Duration::from_millis(250));
+
+        let target_assignments_by_ordinal =
+            if args.miss_attribution_output.is_some() && args.leaf_block_rank_output.is_none() {
+                let truth_ids = query_truth
+                    .as_ref()
+                    .expect("miss attribution output is validated to require recall truth");
+                let flattened_target_local_sequences = truth_ids
+                    .iter()
+                    .flat_map(|ids| ids.iter())
+                    .map(|truth_id| {
+                        truth_id
+                            .checked_add(args.leaf_block_rank_local_sequence_offset)
+                            .ok_or_else(|| {
+                                eyre!(
+                                "target assignment local sequence overflow for truth id {truth_id}"
+                            )
+                            })
+                    })
+                    .collect::<Result<Vec<_>>>()?;
+                Some(
+                    query_leaf_target_assignment_rows(
+                        &client,
+                        &index,
+                        &flattened_target_local_sequences,
+                    )
+                    .await?
+                    .into_iter()
+                    .fold(
+                        HashMap::<i64, Vec<LeafTargetAssignmentRow>>::new(),
+                        |mut acc, row| {
+                            acc.entry(row.target_ordinal).or_default().push(row);
+                            acc
+                        },
+                    ),
+                )
+            } else {
+                None
+            };
 
         for (query_index, query) in queries.iter().enumerate() {
             let mut funnel_local_rows = Vec::new();
@@ -458,7 +495,7 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
                     .or_default()
                     .record(measured.duration, measured.predicted_ids);
             }
-            if args.leaf_block_rank_output.is_some() || args.miss_attribution_output.is_some() {
+            if args.leaf_block_rank_output.is_some() {
                 let truth_ids = query_truth
                     .as_ref()
                     .expect("rank/miss attribution output is validated to require recall truth");
@@ -504,30 +541,66 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
                         &rank_rows,
                     )?);
                 }
-                if args.leaf_block_rank_output.is_some() {
-                    for row in rank_rows {
-                        let truth_index = usize::try_from(row.target_ordinal).map_err(|_| {
-                            eyre!(
-                                "leaf block rank target ordinal {} exceeds usize",
-                                row.target_ordinal
-                            )
-                        })?;
-                        let truth_id = *query_truth_ids.get(truth_index).ok_or_else(|| {
-                            eyre!(
-                                "leaf block rank target ordinal {} exceeds truth id count {}",
-                                row.target_ordinal,
-                                query_truth_ids.len()
-                            )
-                        })?;
-                        leaf_block_rank_rows.push(LeafBlockRankRecord::from_row(
-                            *nprobe,
-                            query_index + 1,
-                            query.id,
-                            truth_id,
-                            row,
-                        ));
-                    }
+                for row in rank_rows {
+                    let truth_index = usize::try_from(row.target_ordinal).map_err(|_| {
+                        eyre!(
+                            "leaf block rank target ordinal {} exceeds usize",
+                            row.target_ordinal
+                        )
+                    })?;
+                    let truth_id = *query_truth_ids.get(truth_index).ok_or_else(|| {
+                        eyre!(
+                            "leaf block rank target ordinal {} exceeds truth id count {}",
+                            row.target_ordinal,
+                            query_truth_ids.len()
+                        )
+                    })?;
+                    leaf_block_rank_rows.push(LeafBlockRankRecord::from_row(
+                        *nprobe,
+                        query_index + 1,
+                        query.id,
+                        truth_id,
+                        row,
+                    ));
                 }
+            } else if args.miss_attribution_output.is_some() {
+                let truth_ids = query_truth
+                    .as_ref()
+                    .expect("miss attribution output is validated to require recall truth");
+                let query_truth_ids = truth_ids.get(query_index).ok_or_else(|| {
+                    eyre!(
+                        "exact-truth ids missing for query ordinal {}",
+                        query_index + 1
+                    )
+                })?;
+                let predicted_ids = predicted_ids_for_query.as_ref().ok_or_else(|| {
+                    eyre!(
+                        "--miss-attribution-output requires query metrics for query ordinal {}",
+                        query_index + 1
+                    )
+                })?;
+                let has_miss = query_truth_ids
+                    .iter()
+                    .any(|truth_id| !predicted_ids.contains(truth_id));
+                let leaf_candidate_rows = if has_miss {
+                    query_leaf_candidate_rows(&client, &index, &query.source).await?
+                } else {
+                    Vec::new()
+                };
+                let target_assignments_by_ordinal =
+                    target_assignments_by_ordinal.as_ref().ok_or_else(|| {
+                        eyre!("target assignment snapshot missing for miss attribution")
+                    })?;
+                miss_attribution_rows.extend(MissAttributionRecord::from_target_assignments(
+                    *nprobe,
+                    query_index + 1,
+                    query.id,
+                    query_truth_ids,
+                    args.leaf_block_rank_local_sequence_offset,
+                    predicted_ids,
+                    &leaf_candidate_rows,
+                    target_assignments_by_ordinal,
+                )?);
             }
             if args.include_production_read_profile {
                 let row = query_production_read_profile_row(
@@ -1086,6 +1159,25 @@ async fn query_leaf_candidate_rows(
     Ok(rows.into_iter().map(LeafCandidateRow::from).collect())
 }
 
+async fn query_leaf_target_assignment_rows(
+    client: &Client,
+    index: &str,
+    target_local_sequences: &[i64],
+) -> Result<Vec<LeafTargetAssignmentRow>> {
+    let target_local_sequences = target_local_sequences.to_vec();
+    let rows = client
+        .query(
+            leaf_target_assignment_snapshot_sql(),
+            &[&index, &target_local_sequences],
+        )
+        .await
+        .wrap_err("querying ec_spire_index_leaf_target_assignment_snapshot")?;
+    Ok(rows
+        .into_iter()
+        .map(LeafTargetAssignmentRow::from)
+        .collect())
+}
+
 async fn query_leaf_block_rank_rows(
     client: &Client,
     index: &str,
@@ -1225,13 +1317,22 @@ fn local_store_overlap_sql() -> &'static str {
 
 fn leaf_candidate_snapshot_sql() -> &'static str {
     "SELECT pid, node_id, local_store_id, route_count, scanned_count,
-            candidate_row_count, primary_candidate_row_count,
+            candidate_row_count, leaf_block_available_count, leaf_block_selected_count,
+            leaf_block_skipped_count, primary_candidate_row_count,
             boundary_replica_candidate_row_count, deduped_candidate_row_count,
             truncated_candidate_row_count, candidate_winner_count,
             leaf_object_read_nanos, candidate_score_nanos,
             candidate_materialize_nanos, candidate_heap_append_nanos
      FROM ec_spire_index_scan_leaf_candidate_snapshot($1::text::regclass::oid, $2::real[])
      ORDER BY pid"
+}
+
+fn leaf_target_assignment_snapshot_sql() -> &'static str {
+    "SELECT target_ordinal, target_local_sequence, status, leaf_pid, parent_pid,
+            object_version, row_index, assignment_flags
+     FROM ec_spire_index_leaf_target_assignment_snapshot(
+            $1::text::regclass::oid, $2::bigint[])
+     ORDER BY target_ordinal, leaf_pid NULLS LAST, row_index NULLS LAST"
 }
 
 fn leaf_block_rank_snapshot_sql() -> &'static str {
@@ -1414,6 +1515,9 @@ struct LeafCandidateRow {
     route_count: i64,
     scanned_count: i64,
     candidate_row_count: i64,
+    leaf_block_available_count: i64,
+    leaf_block_selected_count: i64,
+    leaf_block_skipped_count: i64,
     primary_candidate_row_count: i64,
     boundary_replica_candidate_row_count: i64,
     deduped_candidate_row_count: i64,
@@ -1434,15 +1538,49 @@ impl From<Row> for LeafCandidateRow {
             route_count: row.get(3),
             scanned_count: row.get(4),
             candidate_row_count: row.get(5),
-            primary_candidate_row_count: row.get(6),
-            boundary_replica_candidate_row_count: row.get(7),
-            deduped_candidate_row_count: row.get(8),
-            truncated_candidate_row_count: row.get(9),
-            candidate_winner_count: row.get(10),
-            leaf_object_read_nanos: row.get(11),
-            candidate_score_nanos: row.get(12),
-            candidate_materialize_nanos: row.get(13),
-            candidate_heap_append_nanos: row.get(14),
+            leaf_block_available_count: row.get(6),
+            leaf_block_selected_count: row.get(7),
+            leaf_block_skipped_count: row.get(8),
+            primary_candidate_row_count: row.get(9),
+            boundary_replica_candidate_row_count: row.get(10),
+            deduped_candidate_row_count: row.get(11),
+            truncated_candidate_row_count: row.get(12),
+            candidate_winner_count: row.get(13),
+            leaf_object_read_nanos: row.get(14),
+            candidate_score_nanos: row.get(15),
+            candidate_materialize_nanos: row.get(16),
+            candidate_heap_append_nanos: row.get(17),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct LeafTargetAssignmentRow {
+    target_ordinal: i64,
+    #[allow(dead_code)]
+    target_local_sequence: i64,
+    status: String,
+    leaf_pid: Option<i64>,
+    #[allow(dead_code)]
+    parent_pid: Option<i64>,
+    #[allow(dead_code)]
+    object_version: Option<i64>,
+    row_index: Option<i64>,
+    #[allow(dead_code)]
+    assignment_flags: Option<i32>,
+}
+
+impl From<Row> for LeafTargetAssignmentRow {
+    fn from(row: Row) -> Self {
+        Self {
+            target_ordinal: row.get(0),
+            target_local_sequence: row.get(1),
+            status: row.get(2),
+            leaf_pid: row.get(3),
+            parent_pid: row.get(4),
+            object_version: row.get(5),
+            row_index: row.get(6),
+            assignment_flags: row.get(7),
         }
     }
 }
@@ -1577,6 +1715,14 @@ struct MissAttributionRecord {
     node_id: Option<i64>,
     local_store_id: Option<i64>,
     row_index: Option<i64>,
+    assignment_status: Option<String>,
+    assignment_leaf_count: usize,
+    selected_assignment_leaf_count: usize,
+    leaf_candidate_row_count: Option<i64>,
+    leaf_block_available_count: Option<i64>,
+    leaf_block_selected_count: Option<i64>,
+    leaf_block_skipped_count: Option<i64>,
+    truncated_candidate_row_count: Option<i64>,
     returned_rank: Option<usize>,
     returned_count: usize,
 }
@@ -1603,12 +1749,13 @@ impl MissAttributionRecord {
             .collect::<HashMap<_, _>>();
         let mut rows = Vec::with_capacity(truth_ids.len());
         for (truth_index, truth_id) in truth_ids.iter().enumerate() {
-            let target_local_sequence = *target_local_sequences.get(truth_index).ok_or_else(|| {
-                eyre!(
-                    "target local sequence missing for truth ordinal {}",
-                    truth_index + 1
-                )
-            })?;
+            let target_local_sequence =
+                *target_local_sequences.get(truth_index).ok_or_else(|| {
+                    eyre!(
+                        "target local sequence missing for truth ordinal {}",
+                        truth_index + 1
+                    )
+                })?;
             let target_ordinal = i64::try_from(truth_index)
                 .map_err(|_| eyre!("truth ordinal {} exceeds i64", truth_index + 1))?;
             let rank_row = rank_row_by_ordinal.get(&target_ordinal).copied();
@@ -1639,6 +1786,140 @@ impl MissAttributionRecord {
                 node_id: rank_row.and_then(|row| row.node_id),
                 local_store_id: rank_row.and_then(|row| row.local_store_id),
                 row_index: rank_row.and_then(|row| row.row_index),
+                assignment_status: rank_row.map(|row| row.status.clone()),
+                assignment_leaf_count: usize::from(rank_row.is_some()),
+                selected_assignment_leaf_count: usize::from(
+                    rank_row.is_some_and(|row| row.pid.is_some()),
+                ),
+                leaf_candidate_row_count: None,
+                leaf_block_available_count: None,
+                leaf_block_selected_count: None,
+                leaf_block_skipped_count: None,
+                truncated_candidate_row_count: None,
+                returned_rank: returned_rank_by_id.get(truth_id).copied(),
+                returned_count: predicted_ids.len(),
+            });
+        }
+        Ok(rows)
+    }
+
+    fn from_target_assignments(
+        nprobe: i32,
+        query_ordinal: usize,
+        query_id: i64,
+        truth_ids: &[i64],
+        local_sequence_offset: i64,
+        predicted_ids: &[i64],
+        leaf_candidate_rows: &[LeafCandidateRow],
+        target_assignments_by_ordinal: &HashMap<i64, Vec<LeafTargetAssignmentRow>>,
+    ) -> Result<Vec<Self>> {
+        let predicted_id_set = predicted_ids.iter().copied().collect::<HashSet<_>>();
+        let returned_rank_by_id = predicted_ids
+            .iter()
+            .enumerate()
+            .map(|(rank_index, predicted_id)| (*predicted_id, rank_index + 1))
+            .collect::<HashMap<_, _>>();
+        let candidate_by_pid = leaf_candidate_rows
+            .iter()
+            .map(|row| (row.pid, row))
+            .collect::<HashMap<_, _>>();
+        let truth_count = i64::try_from(truth_ids.len())
+            .map_err(|_| eyre!("truth id count {} exceeds i64", truth_ids.len()))?;
+        let query_base_ordinal = i64::try_from(query_ordinal - 1)
+            .map_err(|_| eyre!("query ordinal {query_ordinal} exceeds i64"))?
+            .checked_mul(truth_count)
+            .ok_or_else(|| eyre!("query target ordinal overflow"))?;
+
+        let mut rows = Vec::with_capacity(truth_ids.len());
+        for (truth_index, truth_id) in truth_ids.iter().enumerate() {
+            let target_ordinal = query_base_ordinal
+                .checked_add(
+                    i64::try_from(truth_index)
+                        .map_err(|_| eyre!("truth ordinal {} exceeds i64", truth_index + 1))?,
+                )
+                .ok_or_else(|| eyre!("target ordinal overflow"))?;
+            let target_local_sequence =
+                truth_id.checked_add(local_sequence_offset).ok_or_else(|| {
+                    eyre!("target assignment local sequence overflow for truth id {truth_id}")
+                })?;
+            let assignments = target_assignments_by_ordinal
+                .get(&target_ordinal)
+                .map(Vec::as_slice)
+                .unwrap_or(&[]);
+            let selected_assignment_rows = assignments
+                .iter()
+                .filter_map(|assignment| {
+                    assignment
+                        .leaf_pid
+                        .and_then(|pid| candidate_by_pid.get(&pid).copied())
+                })
+                .collect::<Vec<_>>();
+            let selected_leaf = selected_assignment_rows.first().copied();
+            let hit = predicted_id_set.contains(truth_id);
+            let miss_stage = if hit {
+                "hit"
+            } else if assignments.is_empty()
+                || assignments
+                    .iter()
+                    .all(|assignment| assignment.leaf_pid.is_none())
+            {
+                "assignment_missing"
+            } else if selected_assignment_rows.is_empty() {
+                "routing_miss"
+            } else if selected_assignment_rows
+                .iter()
+                .any(|row| row.leaf_block_skipped_count > 0)
+            {
+                "selected_leaf_block_pruning_or_candidate_cap"
+            } else {
+                "candidate_or_rerank_cap"
+            };
+            let selected_assignment = assignments
+                .iter()
+                .find(|assignment| {
+                    assignment
+                        .leaf_pid
+                        .is_some_and(|pid| candidate_by_pid.contains_key(&pid))
+                })
+                .or_else(|| assignments.first());
+
+            rows.push(Self {
+                kind: "spire_recall_miss_attribution",
+                nprobe,
+                query_ordinal,
+                query_id,
+                truth_rank: truth_index + 1,
+                truth_id: *truth_id,
+                target_local_sequence,
+                hit,
+                miss_stage,
+                block_status: if selected_leaf.is_some() {
+                    "selected_leaf_candidate_snapshot".to_owned()
+                } else {
+                    selected_assignment
+                        .map(|assignment| assignment.status.clone())
+                        .unwrap_or_else(|| "missing_assignment_row".to_owned())
+                },
+                block_rank: None,
+                selected_by_global_cap: None,
+                scored_block_count: 0,
+                max_global_blocks: 0,
+                pid: selected_assignment.and_then(|assignment| assignment.leaf_pid),
+                node_id: selected_leaf.map(|row| row.node_id),
+                local_store_id: selected_leaf.map(|row| row.local_store_id),
+                row_index: selected_assignment.and_then(|assignment| assignment.row_index),
+                assignment_status: selected_assignment.map(|assignment| assignment.status.clone()),
+                assignment_leaf_count: assignments
+                    .iter()
+                    .filter(|assignment| assignment.leaf_pid.is_some())
+                    .count(),
+                selected_assignment_leaf_count: selected_assignment_rows.len(),
+                leaf_candidate_row_count: selected_leaf.map(|row| row.candidate_row_count),
+                leaf_block_available_count: selected_leaf.map(|row| row.leaf_block_available_count),
+                leaf_block_selected_count: selected_leaf.map(|row| row.leaf_block_selected_count),
+                leaf_block_skipped_count: selected_leaf.map(|row| row.leaf_block_skipped_count),
+                truncated_candidate_row_count: selected_leaf
+                    .map(|row| row.truncated_candidate_row_count),
                 returned_rank: returned_rank_by_id.get(truth_id).copied(),
                 returned_count: predicted_ids.len(),
             });

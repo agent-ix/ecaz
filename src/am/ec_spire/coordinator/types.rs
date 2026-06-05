@@ -1856,6 +1856,19 @@ pub(crate) struct SpireIndexScanLeafBlockRankSnapshotRow {
     pub(crate) assignment_flags: Option<u16>,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct SpireIndexLeafTargetAssignmentSnapshotRow {
+    pub(crate) active_epoch: u64,
+    pub(crate) target_ordinal: u64,
+    pub(crate) target_local_sequence: u64,
+    pub(crate) status: &'static str,
+    pub(crate) leaf_pid: Option<u64>,
+    pub(crate) parent_pid: Option<u64>,
+    pub(crate) object_version: Option<u64>,
+    pub(crate) row_index: Option<u32>,
+    pub(crate) assignment_flags: Option<u16>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SpireIndexSelectedPidPlacementSnapshotRow {
     pub(crate) active_epoch: u64,
