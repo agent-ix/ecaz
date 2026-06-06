@@ -23,6 +23,18 @@ Interpretation:
 
 ## Validation Artifacts
 
+### `install-after-default.log`
+
+Command:
+
+`./target/debug/ecaz --log-file reviews/task-65b/020-strict-closeout-tuning/artifacts/install-after-default.log dev install ecaz-pg-test --pg 18`
+
+Result:
+
+- passed
+- installed backend: `/opt/homebrew/lib/postgresql@18/ecaz.dylib`
+- installed backend SHA256: `b206d0568414b689d5546103fa19d07ec533023f4b6c69b2e88a0af95452d097`
+
 ### `cargo-fmt-check.log`
 
 Command:

@@ -52,6 +52,7 @@ Packet-local validation artifacts:
 - `artifacts/cargo-fmt-check.log`: passed; only existing stable-rustfmt warnings for unstable import grouping options.
 - `artifacts/cargo-test-options-default.log`: passed, default reloption test.
 - `artifacts/cargo-test-build-task65b.log`: passed, 6 Task65b build tests.
+- `artifacts/install-after-default.log`: passed, installed the current PG18 extension after the default change.
 
 Measurement artifacts:
 
