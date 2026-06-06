@@ -24,6 +24,10 @@ leaf and the summary-score threshold at the global block cap.
   `20/20`.
 - `ecaz bench suite audit`: passed for the Task 84 AWS 1M/q500 enriched
   baseline suite.
+- AWS 1M/q500 enriched baseline completed and reproduced the retained Task 83
+  surface: `recall@10=0.9832`, `candidate_sum=9,213,846`, p50 `282.869 ms`,
+  p95 `354.557 ms`, p99 `368.232 ms`.
+- AWS `1m` was paused after the run; final status shows `state: paused`.
 
 ## Baseline Suite
 
@@ -46,8 +50,35 @@ The suite includes a raw setup step that re-registers
 return columns for AWS instances whose SQL wrapper still has the older Task 83
 shape.
 
+## AWS Result
+
+The enriched baseline preserved the Task 83 attribution:
+
+- `4916` hits.
+- `3` `routing_miss`.
+- `81` `selected_leaf_block_pruning_or_candidate_cap`.
+- Target context status: `4916` selected by cap, `81` ranked outside cap, `3`
+  not found in routed leaves.
+
+For the `81` selected-leaf misses, the packet includes
+`artifacts/selected-leaf-miss-enriched-context.tsv`. Key distributions:
+
+- Rank deltas beyond `global1152`: `7` within `+128`, `23` in `+129..+512`,
+  `28` in `+513..+2048`, `23` farther than `+2048`.
+- Score margin to cap (`block_ip - cap_block_ip`): min `-0.07606012`, p50
+  `-0.017314821`, p90 `-0.0036982894`, max `-0.00009295344`.
+- Exclusive margin buckets: `3` within `0.001` below cap, `8` in
+  `0.001..0.005`, `15` in `0.005..0.01`, `55` worse than `-0.01`.
+  Cumulatively, `11` are within `0.005` and `26` are within `0.01`.
+- Route rank buckets: `28` in top 8 routes, `24` in routes 9-24, `19` in
+  routes 25-48, `10` after route 48.
+
+This points the next Task 84 slice toward block-score calibration inside
+already-good routed leaves. A pure near-cap rescue window would only cover a
+small part of the `81` misses unless it grows wide enough to look like the
+rejected blanket-cap sweep.
+
 ## Requested Review
 
 Please review the diagnostic extension for correctness and whether these fields
-are sufficient for the first Task 84 baseline packet before we spend AWS time on
-the q500 enriched context run.
+are sufficient for the next Task 84 block-scoring recovery slice.
