@@ -1426,7 +1426,8 @@ fn leaf_block_rank_snapshot_sql() -> &'static str {
     "SELECT target_ordinal, target_local_sequence, status, max_global_blocks,
             radius_weight, scored_block_count, block_rank, selected_by_global_cap,
             pid, node_id, local_store_id, object_version, row_index, row_base,
-            row_end, row_count, block_ip, assignment_flags
+            row_end, row_count, block_ip, cap_block_ip, block_ip_margin_to_cap,
+            route_rank, route_score, assignment_flags
      FROM ec_spire_index_scan_leaf_block_rank_snapshot(
             $1::text::regclass::oid, $2::real[], $3::bigint[])
      ORDER BY target_ordinal, block_rank NULLS LAST, pid NULLS LAST, row_index NULLS LAST"
@@ -1436,7 +1437,8 @@ fn leaf_target_block_rank_snapshot_sql() -> &'static str {
     "SELECT target_ordinal, target_local_sequence, status, max_global_blocks,
             radius_weight, scored_block_count, block_rank, selected_by_global_cap,
             pid, node_id, local_store_id, object_version, row_index, row_base,
-            row_end, row_count, block_ip, assignment_flags
+            row_end, row_count, block_ip, cap_block_ip, block_ip_margin_to_cap,
+            route_rank, route_score, assignment_flags
      FROM ec_spire_index_scan_leaf_target_block_rank_snapshot(
             $1::text::regclass::oid, $2::real[], $3::bigint[])
      ORDER BY target_ordinal, block_rank NULLS LAST, pid NULLS LAST, row_index NULLS LAST"
@@ -1701,6 +1703,10 @@ struct LeafBlockRankRow {
     row_end: Option<i64>,
     row_count: Option<i64>,
     block_ip: Option<f32>,
+    cap_block_ip: Option<f32>,
+    block_ip_margin_to_cap: Option<f32>,
+    route_rank: Option<i64>,
+    route_score: Option<f32>,
     assignment_flags: Option<i64>,
 }
 
@@ -1724,7 +1730,11 @@ impl From<Row> for LeafBlockRankRow {
             row_end: row.get(14),
             row_count: row.get(15),
             block_ip: row.get(16),
-            assignment_flags: row.get(17),
+            cap_block_ip: row.get(17),
+            block_ip_margin_to_cap: row.get(18),
+            route_rank: row.get(19),
+            route_score: row.get(20),
+            assignment_flags: row.get(21),
         }
     }
 }
@@ -1753,6 +1763,10 @@ struct LeafBlockRankRecord {
     row_end: Option<i64>,
     row_count: Option<i64>,
     block_ip: Option<f32>,
+    cap_block_ip: Option<f32>,
+    block_ip_margin_to_cap: Option<f32>,
+    route_rank: Option<i64>,
+    route_score: Option<f32>,
     assignment_flags: Option<i64>,
 }
 
@@ -1805,6 +1819,10 @@ impl LeafBlockRankRecord {
             row_end: row.row_end,
             row_count: row.row_count,
             block_ip: row.block_ip,
+            cap_block_ip: row.cap_block_ip,
+            block_ip_margin_to_cap: row.block_ip_margin_to_cap,
+            route_rank: row.route_rank,
+            route_score: row.route_score,
             assignment_flags: row.assignment_flags,
         }
     }
@@ -3258,6 +3276,10 @@ mod tests {
             row_end: Some(16),
             row_count: Some(16),
             block_ip: Some(0.1),
+            cap_block_ip: Some(0.0),
+            block_ip_margin_to_cap: Some(0.1),
+            route_rank: Some(target_ordinal + 1),
+            route_score: Some(0.2),
             assignment_flags: Some(0),
         }
     }

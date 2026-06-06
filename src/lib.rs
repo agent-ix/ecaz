@@ -7956,6 +7956,10 @@ fn ec_spire_index_scan_leaf_block_rank_snapshot(
         name!(row_end, Option<i64>),
         name!(row_count, Option<i64>),
         name!(block_ip, Option<f32>),
+        name!(cap_block_ip, Option<f32>),
+        name!(block_ip_margin_to_cap, Option<f32>),
+        name!(route_rank, Option<i64>),
+        name!(route_score, Option<f32>),
         name!(assignment_flags, Option<i64>),
     ),
 > {
@@ -8013,6 +8017,11 @@ fn ec_spire_index_scan_leaf_block_rank_snapshot(
             row.row_end.map(i64::from),
             row.row_count.map(i64::from),
             row.block_ip,
+            row.cap_block_ip,
+            row.block_ip_margin_to_cap,
+            row.route_rank
+                .map(|rank| i64::try_from(rank).expect("route rank should fit in i64")),
+            row.route_score,
             row.assignment_flags.map(i64::from),
         )
     }))
@@ -8049,6 +8058,10 @@ fn ec_spire_index_scan_leaf_target_block_rank_snapshot(
         name!(row_end, Option<i64>),
         name!(row_count, Option<i64>),
         name!(block_ip, Option<f32>),
+        name!(cap_block_ip, Option<f32>),
+        name!(block_ip_margin_to_cap, Option<f32>),
+        name!(route_rank, Option<i64>),
+        name!(route_score, Option<f32>),
         name!(assignment_flags, Option<i64>),
     ),
 > {
@@ -8106,6 +8119,11 @@ fn ec_spire_index_scan_leaf_target_block_rank_snapshot(
             row.row_end.map(i64::from),
             row.row_count.map(i64::from),
             row.block_ip,
+            row.cap_block_ip,
+            row.block_ip_margin_to_cap,
+            row.route_rank
+                .map(|rank| i64::try_from(rank).expect("route rank should fit in i64")),
+            row.route_score,
             row.assignment_flags.map(i64::from),
         )
     }))

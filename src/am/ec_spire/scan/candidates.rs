@@ -529,6 +529,7 @@ fn collect_validated_leaf_block_rank_snapshot(
             max_global_blocks,
             radius_weight,
             0,
+            None,
             &HashSet::new(),
         ));
     }
@@ -572,6 +573,17 @@ fn collect_validated_leaf_block_rank_snapshot(
         )?
         .routes
     };
+    let route_context_by_pid = leaf_routes
+        .iter()
+        .enumerate()
+        .map(|(index, route)| {
+            let rank = u64::try_from(index)
+                .map_err(|_| "ec_spire route rank exceeds u64".to_owned())?
+                .checked_add(1)
+                .ok_or_else(|| "ec_spire route rank overflow".to_owned())?;
+            Ok((route.leaf_pid, (rank, route.route_score)))
+        })
+        .collect::<Result<HashMap<_, _>, String>>()?;
 
     let mut observer = SpireNoopRoutedScanObserver;
     let delta_routes = collect_snapshot_delta_object_routes(snapshot, object_store)?;
@@ -635,6 +647,7 @@ fn collect_validated_leaf_block_rank_snapshot(
     sort_scored_leaf_block_ranges(&mut scored_ranges);
     let scored_block_count = u64::try_from(scored_ranges.len())
         .map_err(|_| "ec_spire scored leaf block count exceeds u64".to_owned())?;
+    let cap_block_ip = cap_block_ip(&scored_ranges, max_global_blocks)?;
     let loaded_route_indexes = loaded_leaf_routes
         .iter()
         .enumerate()
@@ -670,6 +683,8 @@ fn collect_validated_leaf_block_rank_snapshot(
             max_global_blocks,
             radius_weight,
             scored_block_count,
+            cap_block_ip,
+            &route_context_by_pid,
             scan_plan,
             snapshot.epoch_manifest().epoch,
         )?;
@@ -683,6 +698,7 @@ fn collect_validated_leaf_block_rank_snapshot(
         max_global_blocks,
         radius_weight,
         scored_block_count,
+        cap_block_ip,
         &found_target_ordinals,
     ));
     rows.sort_by(|left, right| {
@@ -732,6 +748,7 @@ fn collect_validated_leaf_target_block_rank_snapshot(
             max_global_blocks,
             radius_weight,
             0,
+            None,
             &HashSet::new(),
         ));
     }
@@ -775,6 +792,17 @@ fn collect_validated_leaf_target_block_rank_snapshot(
         )?
         .routes
     };
+    let route_context_by_pid = leaf_routes
+        .iter()
+        .enumerate()
+        .map(|(index, route)| {
+            let rank = u64::try_from(index)
+                .map_err(|_| "ec_spire route rank exceeds u64".to_owned())?
+                .checked_add(1)
+                .ok_or_else(|| "ec_spire route rank overflow".to_owned())?;
+            Ok((route.leaf_pid, (rank, route.route_score)))
+        })
+        .collect::<Result<HashMap<_, _>, String>>()?;
 
     let mut observer = SpireNoopRoutedScanObserver;
     let delta_routes = collect_snapshot_delta_object_routes(snapshot, object_store)?;
@@ -838,6 +866,7 @@ fn collect_validated_leaf_target_block_rank_snapshot(
     sort_scored_leaf_block_ranges(&mut scored_ranges);
     let scored_block_count = u64::try_from(scored_ranges.len())
         .map_err(|_| "ec_spire scored leaf block count exceeds u64".to_owned())?;
+    let cap_block_ip = cap_block_ip(&scored_ranges, max_global_blocks)?;
     let loaded_route_indexes = loaded_leaf_routes
         .iter()
         .enumerate()
@@ -868,6 +897,7 @@ fn collect_validated_leaf_target_block_rank_snapshot(
             .checked_add(1)
             .ok_or_else(|| "ec_spire leaf block rank overflow".to_owned())?;
         let loaded_route = &loaded_leaf_routes[*loaded_route_index];
+        let route_context = route_context_by_pid.get(&loaded_route.route.leaf_pid).copied();
         let row_count = block
             .range
             .row_end
@@ -904,6 +934,10 @@ fn collect_validated_leaf_target_block_rank_snapshot(
                 row_end: Some(block.range.row_end),
                 row_count: Some(row_count),
                 block_ip: Some(block.ip),
+                cap_block_ip,
+                block_ip_margin_to_cap: cap_block_ip.map(|cap_ip| block.ip - cap_ip),
+                route_rank: route_context.map(|(rank, _score)| rank),
+                route_score: route_context.map(|(_rank, score)| score),
                 assignment_flags: Some(hit.assignment_flags),
             });
         }
@@ -917,6 +951,7 @@ fn collect_validated_leaf_target_block_rank_snapshot(
         max_global_blocks,
         radius_weight,
         scored_block_count,
+        cap_block_ip,
         &found_target_ordinals,
     ));
     rows.sort_by(|left, right| {
@@ -994,6 +1029,8 @@ fn append_leaf_block_rank_target_hits(
     max_global_blocks: u64,
     radius_weight: f64,
     scored_block_count: u64,
+    cap_block_ip: Option<f32>,
+    route_context_by_pid: &HashMap<u64, (u64, f32)>,
     scan_plan: SpireSingleLevelScanPlan,
     epoch: u64,
 ) -> Result<(), String> {
@@ -1003,6 +1040,7 @@ fn append_leaf_block_rank_target_hits(
         .checked_sub(block.range.row_base)
         .ok_or_else(|| "ec_spire leaf block rank range is invalid".to_owned())?;
     let selected_by_global_cap = max_global_blocks == 0 || block_rank <= max_global_blocks;
+    let route_context = route_context_by_pid.get(&loaded_route.route.leaf_pid).copied();
     for columns in loaded_route.leaf_object.column_segments()? {
         let columns = columns?;
         let column_row_count = u32::try_from(columns.row_count())
@@ -1059,6 +1097,10 @@ fn append_leaf_block_rank_target_hits(
                     row_end: Some(block.range.row_end),
                     row_count: Some(row_count),
                     block_ip: Some(block.ip),
+                    cap_block_ip,
+                    block_ip_margin_to_cap: cap_block_ip.map(|cap_ip| block.ip - cap_ip),
+                    route_rank: route_context.map(|(rank, _score)| rank),
+                    route_score: route_context.map(|(_rank, score)| score),
                     assignment_flags: Some(row.flags),
                 });
             }
@@ -1075,6 +1117,7 @@ fn missing_leaf_block_rank_rows(
     max_global_blocks: u64,
     radius_weight: f64,
     scored_block_count: u64,
+    cap_block_ip: Option<f32>,
     found_target_ordinals: &HashSet<u64>,
 ) -> Vec<SpireLeafBlockRankSnapshotRow> {
     target_local_sequences
@@ -1108,10 +1151,26 @@ fn missing_leaf_block_rank_rows(
                 row_end: None,
                 row_count: None,
                 block_ip: None,
+                cap_block_ip,
+                block_ip_margin_to_cap: None,
+                route_rank: None,
+                route_score: None,
                 assignment_flags: None,
             })
         })
         .collect()
+}
+
+fn cap_block_ip(
+    scored_ranges: &[SpireScoredLeafBlockRange],
+    max_global_blocks: u64,
+) -> Result<Option<f32>, String> {
+    if max_global_blocks == 0 {
+        return Ok(None);
+    }
+    let cap_index = usize::try_from(max_global_blocks - 1)
+        .map_err(|_| "ec_spire max global blocks exceeds usize".to_owned())?;
+    Ok(scored_ranges.get(cap_index).map(|block| block.ip))
 }
 
 pub(super) fn rerank_scored_candidates_by_ip<F>(

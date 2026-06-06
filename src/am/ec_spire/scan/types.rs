@@ -312,6 +312,10 @@ pub(super) struct SpireLeafBlockRankSnapshotRow {
     pub(super) row_end: Option<u32>,
     pub(super) row_count: Option<u32>,
     pub(super) block_ip: Option<f32>,
+    pub(super) cap_block_ip: Option<f32>,
+    pub(super) block_ip_margin_to_cap: Option<f32>,
+    pub(super) route_rank: Option<u64>,
+    pub(super) route_score: Option<f32>,
     pub(super) assignment_flags: Option<u16>,
 }
 

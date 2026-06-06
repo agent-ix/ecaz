@@ -1853,6 +1853,10 @@ pub(crate) struct SpireIndexScanLeafBlockRankSnapshotRow {
     pub(crate) row_end: Option<u32>,
     pub(crate) row_count: Option<u32>,
     pub(crate) block_ip: Option<f32>,
+    pub(crate) cap_block_ip: Option<f32>,
+    pub(crate) block_ip_margin_to_cap: Option<f32>,
+    pub(crate) route_rank: Option<u64>,
+    pub(crate) route_score: Option<f32>,
     pub(crate) assignment_flags: Option<u16>,
 }
 

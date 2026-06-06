@@ -1833,6 +1833,10 @@ pub(crate) fn index_scan_leaf_block_rank_snapshot(
             row_end: row.row_end,
             row_count: row.row_count,
             block_ip: row.block_ip,
+            cap_block_ip: row.cap_block_ip,
+            block_ip_margin_to_cap: row.block_ip_margin_to_cap,
+            route_rank: row.route_rank,
+            route_score: row.route_score,
             assignment_flags: row.assignment_flags,
         })
         .collect();
@@ -1888,6 +1892,10 @@ pub(crate) fn index_scan_leaf_target_block_rank_snapshot(
             row_end: row.row_end,
             row_count: row.row_count,
             block_ip: row.block_ip,
+            cap_block_ip: row.cap_block_ip,
+            block_ip_margin_to_cap: row.block_ip_margin_to_cap,
+            route_rank: row.route_rank,
+            route_score: row.route_score,
             assignment_flags: row.assignment_flags,
         })
         .collect();
