@@ -1,6 +1,6 @@
 # Task 84: SPIRE 1M Recall Recovery Without Candidate Inflation
 
-Status: active (2026-06-06)
+Status: complete (2026-06-06)
 Owner: coder (to be assigned). One coder, one branch.
 Priority: 0 (large SPIRE continuation after Tasks 79-83)
 
@@ -133,3 +133,29 @@ suite configs and packet-local artifacts.
 - If no policy lands, the closeout must include the strongest rejected options,
   their recall/candidate/latency results, and the next concrete recommendation.
 - AWS `1m` is paused at closeout.
+
+## Closeout
+
+Closed in `reviews/task-84/006-closeout-no-bounded-recovery/` with no accepted
+candidate-selection recovery policy.
+
+Task 84 established and tested the strongest bounded recovery directions at the
+retained AWS 1M/q500 surface:
+
+- retained baseline: `recall@10=0.9832`, `candidate_sum=9,213,846`;
+- route-prior calibration: zero selected-leaf miss recovery at weights
+  `0.02`, `0.05`, `0.10`, and `0.20`;
+- k=3 summary representatives: `global1152` stayed at
+  `recall@10=0.9832`, `candidate_sum=9,213,742`, with unchanged miss split;
+- idealized near-cap rescue: margin `<=0.005` can recover at most `11` truth
+  rows, while wider rank-window rescue becomes an oracle-shaped version of the
+  rejected blanket-cap sweep.
+
+The only code retained is the multi-index KNN front-door prerequisite fix,
+which lets non-PK SPIRE KNN reads pass through the ADR-069 DML front-door on
+tables with multiple SPIRE indexes while preserving fail-closed behavior for
+PK/DML candidates.
+
+No Task 84 recovery policy lands. The next concrete recommendation is Task 85:
+treat SPIRE as a product-scale Pareto program instead of continuing
+single-knob recall rescue slices.

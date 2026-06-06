@@ -1,0 +1,6 @@
+extra_blocks	queries_covered	truth_rows_covered	est_candidate_add
+128	6	6	12288
+256	11	12	45056
+512	20	24	163840
+1024	31	35	507904
+2048	40	47	1310720
