@@ -1,6 +1,6 @@
 # Task 83: SPIRE Selected-Block Containment Recovery
 
-Status: active (2026-06-05)
+Status: complete (2026-06-06)
 Owner: coder (to be assigned). One coder, one branch.
 Priority: 0 (Task 82 follow-up)
 
@@ -67,3 +67,26 @@ Task 79/81 optimized candidate surface as the comparison baseline.
 - If no narrow recovery policy is justified, close with the measured rank
   distribution and the next concrete recommendation.
 - AWS `1m` is paused at closeout.
+
+## Closeout
+
+Closed in `reviews/task-83/001-target-block-rank-diagnostic/` and
+`reviews/task-83/002-global-cap-recovery-sweep/`.
+
+The target-only containment diagnostic attributed the Task 82 retained
+AWS 1M/q500 gap precisely: all `81` selected-leaf misses had target blocks
+ranked outside the retained global cap `1152`; `3` missed truth rows were pure
+routing misses. The selected-leaf miss deltas beyond cap were `7` within
+`+128`, `30` within `+512`, `58` within `+2048`, and `23` farther than `+2048`.
+
+The recovery sweep showed higher caps recover recall but grow candidates:
+
+- `global1152`: `recall@10=0.9832`, `candidate_sum=9,213,846`.
+- `global1280`: `recall@10=0.9846`, `candidate_sum=10,237,554`.
+- `global1536`: `recall@10=0.9876`, `candidate_sum=12,284,852`.
+- `global1664`: `recall@10=0.9892`, `candidate_sum=13,308,518`.
+
+No blanket global-cap recovery policy lands. The next concrete work should
+improve selected-block scoring or add selective near-cap rescue while preserving
+the Task 79/81 retained candidate surface. AWS `1m` was paused at closeout with
+packet-local final status evidence.
