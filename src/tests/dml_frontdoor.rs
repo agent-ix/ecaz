@@ -607,6 +607,51 @@
     }
 
     #[pg_test]
+    fn test_ec_spire_multi_index_knn_select_passes_through() {
+        Spi::run(
+            "CREATE TABLE ec_spire_dml_multi_index_knn_sql \
+             (id bigint primary key, embedding ecvector)",
+        )
+        .expect("DML multi-index KNN table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_spire_dml_multi_index_knn_sql (id, embedding) VALUES \
+             (1, '[1,0,0]'::ecvector), \
+             (2, '[0,1,0]'::ecvector), \
+             (3, '[0,0,1]'::ecvector)",
+        )
+        .expect("DML multi-index KNN inserts should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_dml_multi_index_knn_a_idx \
+             ON ec_spire_dml_multi_index_knn_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops)",
+        )
+        .expect("DML multi-index KNN first ec_spire index creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_spire_dml_multi_index_knn_b_idx \
+             ON ec_spire_dml_multi_index_knn_sql USING ec_spire \
+             (embedding ecvector_spire_ip_ops)",
+        )
+        .expect("DML multi-index KNN second ec_spire index creation should succeed");
+
+        let selected = Spi::get_one::<i64>(
+            "SELECT id \
+               FROM ec_spire_dml_multi_index_knn_sql \
+              ORDER BY embedding <#> '[1,0,0]'::ecvector \
+              LIMIT 1",
+        )
+        .expect("multi-index KNN SELECT should pass through DML frontdoor")
+        .expect("multi-index KNN SELECT should return a row");
+        let action = Spi::get_one::<String>(
+            "SELECT last_hook_action FROM ec_spire_dml_frontdoor_hook_status()",
+        )
+        .expect("DML frontdoor hook action after KNN SELECT should succeed")
+        .expect("DML frontdoor hook action after KNN SELECT should exist");
+
+        assert_eq!(selected, 1);
+        assert_eq!(action, "pass_through_not_spire_frontdoor");
+    }
+
+    #[pg_test]
     fn test_ec_spire_dml_plan_tree_replace_scaffold() {
         Spi::run(
             "CREATE TABLE ec_spire_dml_plan_replace_sql \
