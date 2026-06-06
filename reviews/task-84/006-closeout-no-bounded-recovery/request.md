@@ -75,6 +75,7 @@ Rank-window rescue is not a bounded product policy:
 
 | extra blocks | oracle queries covered | truth rows covered | minimum added candidates |
 | ---: | ---: | ---: | ---: |
+| 64 | 4 | 4 | 4,096 |
 | 128 | 6 | 6 | 12,288 |
 | 256 | 11 | 12 | 45,056 |
 | 512 | 20 | 24 | 163,840 |
@@ -86,6 +87,11 @@ real ambiguity/score-margin trigger would also add blocks for non-missing
 queries, so the actual candidate cost would be higher. The narrow predicates do
 not recover enough recall; the wide predicates become another form of the
 rejected blanket-cap sweep.
+
+This directly answers packet `005` reviewer feedback suggesting a small
+selective rescue such as `+64` blocks: the oracle `+64` rank window can recover
+only `4` truth rows, for ideal recall `0.9840`, before accounting for any
+false-positive rescue triggers on non-missing queries.
 
 ## Decision
 

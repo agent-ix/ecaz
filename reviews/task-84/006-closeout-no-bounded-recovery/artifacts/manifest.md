@@ -65,6 +65,8 @@ Rank-window rescue is not product-safe as a bounded policy:
 
 - `+128` blocks can recover at most `7` selected-leaf truth rows, matching the
   Task 83 `global1280` recall `0.9846` only under an oracle trigger.
+- The packet `005` reviewer-suggested small rescue scale of `+64` blocks can
+  recover at most `4` selected-leaf truth rows, ideal recall `0.9840`.
 - `+512` blocks can recover at most `30` truth rows and reach `0.9892`, which
   matches Task 83 `global1664` recall only under an oracle trigger.
 - The per-query oracle `+2048` window still covers only `47` of the `81`
