@@ -443,6 +443,8 @@ struct SpirePipelineStep {
     #[serde(default)]
     truth_corpus_file: Option<PathBuf>,
     #[serde(default)]
+    truth_cache_file: Option<PathBuf>,
+    #[serde(default)]
     leaf_block_rank_output: Option<PathBuf>,
     #[serde(default)]
     leaf_block_rank_local_sequence_offset: Option<i64>,
@@ -2920,6 +2922,11 @@ fn expand_spire_pipeline(step: &SpirePipelineStep, defaults: &SuiteDefaults) -> 
     );
     push_opt_path(
         &mut args,
+        "--truth-cache-file",
+        step.truth_cache_file.as_deref(),
+    );
+    push_opt_path(
+        &mut args,
         "--leaf-block-rank-output",
         step.leaf_block_rank_output.as_deref(),
     );
@@ -4135,6 +4142,7 @@ mod tests {
             include_query_metrics: Some(true),
             include_recall: Some(true),
             truth_corpus_file: Some("truth-corpus.tsv".into()),
+            truth_cache_file: Some("truth-cache.json".into()),
             leaf_block_rank_output: None,
             leaf_block_rank_local_sequence_offset: None,
             include_production_read_profile: Some(true),
@@ -4170,6 +4178,9 @@ mod tests {
         assert!(args
             .windows(2)
             .any(|w| w == ["--truth-corpus-file", "truth-corpus.tsv"]));
+        assert!(args
+            .windows(2)
+            .any(|w| w == ["--truth-cache-file", "truth-cache.json"]));
         assert!(args
             .windows(2)
             .any(|w| w == ["--log-output", "spire-profile.log"]));
@@ -4214,6 +4225,7 @@ mod tests {
                 include_query_metrics: Some(true),
                 include_recall: Some(true),
                 truth_corpus_file: None,
+                truth_cache_file: None,
                 leaf_block_rank_output: None,
                 leaf_block_rank_local_sequence_offset: None,
                 include_production_read_profile: Some(true),

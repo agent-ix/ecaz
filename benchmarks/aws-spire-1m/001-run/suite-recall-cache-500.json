@@ -1,0 +1,50 @@
+{
+  "name": "aws-spire-1m-rabitq-global1152-recall-cache-500",
+  "schema_version": 1,
+  "artifact_dir": "benchmarks/aws-spire-1m/001-run/artifacts/recall-cache-500",
+  "defaults": {
+    "pg": 18,
+    "socket_dir": "/var/run/postgresql",
+    "profile": "ec_spire",
+    "queries_limit": 500,
+    "iterations": 500,
+    "force_index": true
+  },
+  "steps": [
+    {
+      "kind": "raw",
+      "name": "precheck-existing-spire-1m-index-and-truth-cache",
+      "tags": ["setup", "precheck", "aws", "1m", "spire", "rabitq", "global1152", "recall", "truth-cache", "q500"],
+      "args": [
+        "dev",
+        "sql",
+        "--pg",
+        "18",
+        "--db",
+        "postgres",
+        "--socket-dir",
+        "/var/run/postgresql",
+        "--raw",
+        "--sql",
+        "CREATE EXTENSION IF NOT EXISTS ecaz; SELECT now() AS captured_at, current_database() AS database_name, version() AS postgres_version; SELECT count(*) AS corpus_rows FROM task67_1m_hnsw_m7g2xlarge_corpus; SELECT count(*) AS query_rows FROM task67_1m_hnsw_m7g2xlarge_queries; SELECT i.relname AS index_name, am.amname, pg_size_pretty(pg_relation_size(i.oid)) AS index_size FROM pg_index x JOIN pg_class i ON i.oid = x.indexrelid JOIN pg_class t ON t.oid = x.indrelid JOIN pg_am am ON am.oid = i.relam WHERE t.relname = 'task67_1m_hnsw_m7g2xlarge_corpus' ORDER BY i.relname;",
+        "--log-output",
+        "benchmarks/aws-spire-1m/001-run/artifacts/recall-cache-500/precheck-existing-spire-1m-index.log"
+      ],
+      "expected_artifacts": ["benchmarks/aws-spire-1m/001-run/artifacts/recall-cache-500/precheck-existing-spire-1m-index.log"]
+    },
+    {
+      "kind": "recall",
+      "name": "recall-spire-1m-rabitq-global1152-cache-500",
+      "tags": ["recall", "aws", "1m", "spire", "rabitq", "global1152", "truth-cache", "q500"],
+      "prefix": "task67_1m_hnsw_m7g2xlarge",
+      "profile": "ec_spire",
+      "k": 10,
+      "queries_limit": 500,
+      "sweep": [96],
+      "rerank_width": 25,
+      "force_index": true,
+      "truth_cache_file": "benchmarks/task51-aws-ivf-rabitq-final-gate/artifacts/truth-aws-real-1m-q500-k10.json",
+      "log_output": "benchmarks/aws-spire-1m/001-run/artifacts/recall-cache-500/recall-spire-1m-rabitq-global1152-cache-500.log"
+    }
+  ]
+}

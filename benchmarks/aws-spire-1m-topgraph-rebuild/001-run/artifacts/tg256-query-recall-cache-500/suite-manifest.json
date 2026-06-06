@@ -1,0 +1,116 @@
+{
+  "suite": "aws-spire-1m-rabitq-tg256-query-recall-cache-500",
+  "schema_version": 1,
+  "config": "benchmarks/aws-spire-1m-topgraph-rebuild/001-run/suite-query-tg256-recall-cache-500.json",
+  "config_sha256": "b4fe57d789303cd1fe29cbe38b418bd247f6b81e5026d33e4b62ec72f87aa648",
+  "dry_run": false,
+  "generated_at_unix_ms": 1780590921076,
+  "connection": {
+    "database": "postgres",
+    "host": "/var/run/postgresql",
+    "port": null,
+    "user": "postgres",
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "activate-spire-1m-rabitq-tg256-index",
+      "kind": "raw",
+      "command": [
+        "--database",
+        "postgres",
+        "--host",
+        "/var/run/postgresql",
+        "--user",
+        "postgres",
+        "dev",
+        "sql",
+        "--pg",
+        "18",
+        "--db",
+        "postgres",
+        "--socket-dir",
+        "/var/run/postgresql",
+        "--raw",
+        "--sql",
+        "CREATE EXTENSION IF NOT EXISTS ecaz; DROP INDEX IF EXISTS aws_spire_1m_rabitq_global1152_idx; SELECT now() AS captured_at, i.relname AS index_name, am.amname, pg_size_pretty(pg_relation_size(i.oid)) AS index_size, i.reloptions FROM pg_index x JOIN pg_class i ON i.oid = x.indexrelid JOIN pg_class t ON t.oid = x.indrelid JOIN pg_am am ON am.oid = i.relam WHERE t.relname = 'task67_1m_hnsw_m7g2xlarge_corpus' ORDER BY i.relname;",
+        "--log-output",
+        "benchmarks/aws-spire-1m-topgraph-rebuild/001-run/artifacts/tg256-query-recall-cache-500/activate-spire-1m-rabitq-tg256-index.log"
+      ],
+      "selected": true,
+      "tags": [
+        "setup",
+        "activate",
+        "aws",
+        "1m",
+        "spire",
+        "rabitq",
+        "tg256"
+      ],
+      "expected_artifacts": [
+        "benchmarks/aws-spire-1m-topgraph-rebuild/001-run/artifacts/tg256-query-recall-cache-500/activate-spire-1m-rabitq-tg256-index.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1780590921078,
+      "finished_at_unix_ms": 1780590921288,
+      "duration_ms": 208,
+      "exit_code": 0
+    },
+    {
+      "name": "pipeline-spire-1m-rabitq-tg256-query-recall-cache-500",
+      "kind": "spire-pipeline",
+      "command": [
+        "--database",
+        "postgres",
+        "--host",
+        "/var/run/postgresql",
+        "--user",
+        "postgres",
+        "bench",
+        "spire-pipeline",
+        "--prefix",
+        "task67_1m_hnsw_m7g2xlarge",
+        "--index",
+        "aws_spire_1m_rabitq_tg256_idx",
+        "--queries-limit",
+        "500",
+        "--sweep",
+        "64,96,128,256",
+        "--rerank-width",
+        "25",
+        "--include-cost-snapshot",
+        "--include-query-metrics",
+        "--include-recall",
+        "--truth-cache-file",
+        "benchmarks/task51-aws-ivf-rabitq-final-gate/artifacts/truth-aws-real-1m-q500-k10.json",
+        "--query-metric-k",
+        "10",
+        "--query-metric-projection-columns",
+        "id",
+        "--log-output",
+        "benchmarks/aws-spire-1m-topgraph-rebuild/001-run/artifacts/tg256-query-recall-cache-500/pipeline-spire-1m-rabitq-tg256-query-recall-cache-500.log"
+      ],
+      "selected": true,
+      "pgoptions": "-c ec_spire.leaf_block_pruning_max_blocks_per_leaf=0 -c ec_spire.leaf_block_pruning_max_global_blocks=1152 -c ec_spire.leaf_block_pruning_global_probe_blocks=0 -c ec_spire.leaf_block_pruning_sample_rows_per_block=0 -c ec_spire.leaf_block_pruning_sample_summary_prior_weight=0.8 -c ec_spire.leaf_block_pruning_summary_radius_weight=0.25 -c ec_spire.leaf_block_pruning_route_prior_weight=0.0",
+      "tags": [
+        "pipeline",
+        "recall",
+        "aws",
+        "1m",
+        "spire",
+        "rabitq",
+        "tg256",
+        "truth-cache",
+        "q500"
+      ],
+      "expected_artifacts": [
+        "benchmarks/aws-spire-1m-topgraph-rebuild/001-run/artifacts/tg256-query-recall-cache-500/pipeline-spire-1m-rabitq-tg256-query-recall-cache-500.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1780590921288,
+      "finished_at_unix_ms": 1780594846440,
+      "duration_ms": 3925151,
+      "exit_code": 0
+    }
+  ]
+}
