@@ -2543,7 +2543,7 @@ async fn spawn_step(
     std::io::stdout()
         .write_all(&output.stdout)
         .wrap_err("replaying step stdout")?;
-    std::io::stderr()
+    std::io::stdout()
         .write_all(&output.stderr)
         .wrap_err("replaying step stderr")?;
     Ok(output.status)
