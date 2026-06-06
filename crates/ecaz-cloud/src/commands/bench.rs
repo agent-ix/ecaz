@@ -71,7 +71,9 @@ impl BenchArgs {
             .await
             .with_context(|| format!("stat suite config {}", config.display()))?
             .len();
-        let config_s3_uri = if self.skip_upload || config_size <= 7_000 {
+        // Keep ordinary packet-local suites inline. Some profiles can upload
+        // artifacts but cannot read the uploaded config back via instance S3.
+        let config_s3_uri = if self.skip_upload || config_size <= 20_000 {
             None
         } else {
             let uri = format!("{dest}suite-config.json");
