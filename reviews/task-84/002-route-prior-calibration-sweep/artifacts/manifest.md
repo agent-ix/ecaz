@@ -34,6 +34,8 @@ top 48, while only `26/81` were within `0.01` of the score cap.
 - Status logs:
   - `cloud-status-after-route-prior.log`: captured while EC2 was `stopping`.
   - `cloud-status-final-paused-route-prior.log`: final status `state: paused`.
+  - `cloud-status-final-paused-route-prior-transcript.log`: terminal transcript
+    confirming final status `state: paused`.
 
 ## Synced AWS Artifacts
 
