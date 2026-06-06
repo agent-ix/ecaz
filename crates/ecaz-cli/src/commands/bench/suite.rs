@@ -9,6 +9,7 @@ use color_eyre::eyre::{bail, Context, ContextCompat, Result};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::ExitStatus;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
@@ -2535,10 +2536,17 @@ async fn spawn_step(
     if let Some(pgoptions) = pgoptions {
         command.env("PGOPTIONS", pgoptions);
     }
-    command
-        .status()
+    let output = command
+        .output()
         .await
-        .wrap_err_with(|| format!("spawning {}", exe.display()))
+        .wrap_err_with(|| format!("spawning {}", exe.display()))?;
+    std::io::stdout()
+        .write_all(&output.stdout)
+        .wrap_err("replaying step stdout")?;
+    std::io::stderr()
+        .write_all(&output.stderr)
+        .wrap_err("replaying step stderr")?;
+    Ok(output.status)
 }
 
 fn child_command_args(conn: &ConnectionOptions, mut step_args: Vec<String>) -> Vec<String> {
