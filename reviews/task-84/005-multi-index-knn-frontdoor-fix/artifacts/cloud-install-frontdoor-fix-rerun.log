@@ -1,0 +1,11 @@
+Script started on 2026-06-06 12:23:12-07:00 [<not executed on terminal>]
+
+   0: [91mssm command 1356d471-0a15-457e-83d2-45299c5ecd13 on i-06ace3e95ab942623 ended in Failed (rc=1): + sudo mkdir -p /var/lib/pgsql/build / + sudo chown -R postgres:postgres /var/lib/pgsql/build / + sudo -u postgres bash -lc ' /   set -eux /   export PATH=$HOME/.cargo/bin:$PATH[0m
+
+Location:
+   [35mcrates/ecaz-cloud/src/ssm.rs[0m:[35m111[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.
+
+Script done on 2026-06-06 12:36:58-07:00 [COMMAND_EXIT_CODE="1"]
