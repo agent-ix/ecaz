@@ -211,11 +211,11 @@ async fn remote_suite_script(
     );
     let write_config = if let Some(uri) = config_s3_uri {
         format!(
-            "if [ ! -f {} ]; then aws s3 cp {} {} --region {} --only-show-errors; fi",
-            shell_escape(&remote_config),
+            "aws s3 cp {} {} --region {} --only-show-errors\ntest -s {}",
             shell_escape(uri),
             shell_escape(&remote_config),
-            shell_escape(region)
+            shell_escape(region),
+            shell_escape(&remote_config),
         )
     } else {
         format!(
@@ -312,6 +312,52 @@ mod tests {
             script.contains(
                 "export PATH=/usr/local/bin:$HOME/.cargo/bin:$PATH; export ECAZ_SIMD='\\''scalar'\\''; '\\''/usr/local/bin/ecaz'\\''"
             ),
+            "{script}"
+        );
+
+        fs::remove_dir_all(repo_root).expect("remove temp repo root");
+    }
+
+    #[tokio::test]
+    async fn remote_suite_script_downloads_uploaded_config_unconditionally() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock before unix epoch")
+            .as_nanos();
+        let repo_root = std::env::temp_dir().join(format!("ecaz-cloud-bench-test-{unique}"));
+        let config = repo_root.join("reviews/task-84/packet/suite.json");
+        fs::create_dir_all(config.parent().expect("config parent")).expect("create config parent");
+        fs::write(&config, r#"{"name":"test","schema_version":1,"steps":[]}"#)
+            .expect("write config");
+        let artifacts = repo_root.join("reviews/task-84/packet/artifacts/run");
+
+        let script = remote_suite_script(
+            &repo_root,
+            &config,
+            &artifacts,
+            "postgres",
+            "/usr/local/bin/ecaz",
+            "s3://bucket/suite/run/",
+            Some("s3://bucket/suite/run/suite-config.json"),
+            "us-west-2",
+            false,
+            None,
+        )
+        .await
+        .expect("build remote script");
+
+        assert!(
+            script.contains(
+                "aws s3 cp 's3://bucket/suite/run/suite-config.json' 'reviews/task-84/packet/suite.json' --region 'us-west-2' --only-show-errors"
+            ),
+            "{script}"
+        );
+        assert!(
+            script.contains("test -s 'reviews/task-84/packet/suite.json'"),
+            "{script}"
+        );
+        assert!(
+            !script.contains("if [ ! -f 'reviews/task-84/packet/suite.json' ]"),
             "{script}"
         );
 
