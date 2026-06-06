@@ -237,15 +237,14 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
         if let Some(path) = args.truth_cache_file.as_deref() {
             let query_ids: Vec<i64> = queries.iter().map(|query| query.id).collect();
             let query_matrix = query_matrix(&queries)?;
-            let truth =
-                super::recall::load_truth_cache_file_if_valid(
-                    path,
-                    &query_ids,
-                    &query_matrix,
-                    args.query_metric_k,
-                )
-                .await?
-                .ok_or_else(|| eyre!("truth cache file {} does not exist", path.display()))?;
+            let truth = super::recall::load_truth_cache_file_if_valid(
+                path,
+                &query_ids,
+                &query_matrix,
+                args.query_metric_k,
+            )
+            .await?
+            .ok_or_else(|| eyre!("truth cache file {} does not exist", path.display()))?;
             Some(truth.ids)
         } else {
             let (corpus_ids, corpus) = if let Some(path) = args.truth_corpus_file.as_deref() {
