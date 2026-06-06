@@ -2,7 +2,7 @@
 
 ## Summary
 
-This packet prepares the first AWS 1M/q500 measurement of the configurable
+This packet records the first AWS 1M/q500 attempt for the configurable
 multi-representative summary build path from packet 003.
 
 The suite builds a separate SPIRE index instead of replacing the retained k=2
@@ -15,7 +15,7 @@ surface:
 - index reloptions otherwise match the retained Task 80/81 block16 tg256
   surface.
 
-The q500 comparison rows are:
+The planned q500 comparison rows were:
 
 - `global1024`: lower candidate budget probe.
 - `global1152`: direct retained-budget comparison.
@@ -31,18 +31,42 @@ The key row is `global1152`. It must beat `0.9832` while staying at or below
 the retained `candidate_sum=9,213,846`, or any candidate increase must be
 materially better than the Task 83 blanket-cap controls.
 
+## Outcome
+
+The k=3 index build succeeded, but the q500 recall comparison could not be
+measured from the retained index after subsequent installs/restarts:
+
+- Build succeeded for
+  `aws_spire_1m_rabitq_t84_k3_block16_tg256_idx`.
+- Index size: `936 MB`.
+- Build timing: `total_ms=1713717` (~28.6 min), with
+  `draft_ms=1061544`, `heap_scan_ms=601404`, and `top_graph_ms=22674`.
+- Query-only reruns failed on the first `global1024` pipeline before producing
+  recall/candidate rows.
+- Root diagnostic from SSM:
+  `ERROR: ec_spire_distributed: relation context could not be loaded`
+  with the ADR-069 hint.
+
+This is not evidence that k=3 failed recall. It shows the retained k=3 index
+was not queryable by the SPIRE pipeline after the follow-up install/restart
+sequence because required distributed relation context was unavailable.
+
 ## Validation
 
 - `ecaz bench suite audit`: passed for
   `suite-aws-1m-k3-summary-build-q500.json` with `7` steps.
-- AWS execution pending.
+- `ecaz bench suite audit`: passed for
+  `suite-aws-1m-k3-summary-query-only-q500.json` with `4` steps.
+- AWS build execution reached the k=3 index build and completed it.
+- AWS query-only diagnostic execution reproduced the relation-context failure.
+- AWS final status was captured as `paused`.
 
 ## Requested Review
 
-Please review the suite shape before AWS execution, especially:
+Please review the outcome and next-step choice:
 
-- whether the build uses the new k=3 GUC without overwriting retained k=2
-  evidence;
-- whether the three cap rows are sufficient for the first AWS k=3 readout;
-- whether target-block/miss-attribution outputs are enough to compare selected
-  leaf recovery against packets 001 and 002.
+- whether the relation-context loss after install/restart should be handled as
+  a Task 84 prerequisite before rebuilding k=3;
+- whether the accepted next run should rebuild and query in one uninterrupted
+  suite using the latest CLI;
+- whether the suite runner child-output change is acceptable durable tooling.
