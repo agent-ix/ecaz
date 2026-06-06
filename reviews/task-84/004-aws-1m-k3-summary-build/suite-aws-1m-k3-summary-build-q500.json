@@ -1,0 +1,163 @@
+{
+  "name": "task84-aws-1m-k3-summary-build-q500",
+  "schema_version": 1,
+  "cloud_upload_padding": "force-s3-config-upload-to-avoid-ssm-heredoc-write-path-000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+  "cloud_upload_padding_2": "force-s3-config-upload-extra-padding-111111111111111111111111111111111111111111111111111111111111111111111111111111",
+  "cloud_upload_padding_3": "force-s3-config-upload-extra-padding-222222222222222222222222222222222222222222222222222222222222222222222222222222",
+  "cloud_upload_padding_4": "force-s3-config-upload-extra-padding-333333333333333333333333333333333333333333333333333333333333333333333333333333",
+  "cloud_upload_padding_5": "force-s3-config-upload-extra-padding-444444444444444444444444444444444444444444444444444444444444444444444444444444",
+  "cloud_upload_padding_6": "force-s3-config-upload-extra-padding-555555555555555555555555555555555555555555555555555555555555555555555555555555",
+  "cloud_upload_padding_7": "force-s3-config-upload-extra-padding-666666666666666666666666666666666666666666666666666666666666666666666666666666",
+  "cloud_upload_padding_8": "force-s3-config-upload-extra-padding-777777777777777777777777777777777777777777777777777777777777777777777777777777",
+  "cloud_upload_padding_9": "force-s3-config-upload-extra-padding-888888888888888888888888888888888888888888888888888888888888888888888888888888",
+  "artifact_dir": "reviews/task-84/004-aws-1m-k3-summary-build/artifacts/aws-1m-k3-summary-build-q500",
+  "defaults": {
+    "pg": 18,
+    "socket_dir": "/var/run/postgresql",
+    "profile": "ec_spire",
+    "queries_limit": 500,
+    "iterations": 500,
+    "force_index": true
+  },
+  "steps": [
+    {
+      "kind": "raw",
+      "name": "precheck-k3-summary-build-surface",
+      "tags": ["precheck", "task84", "aws", "1m", "spire", "rabitq", "k3", "block16"],
+      "args": [
+        "dev",
+        "sql",
+        "--pg",
+        "18",
+        "--db",
+        "postgres",
+        "--socket-dir",
+        "/var/run/postgresql",
+        "--raw",
+        "--sql",
+        "CREATE EXTENSION IF NOT EXISTS ecaz; SELECT now() AS captured_at, current_database() AS database_name, version() AS postgres_version; SELECT count(*) AS corpus_rows FROM task67_1m_hnsw_m7g2xlarge_corpus; SELECT count(*) AS query_rows FROM task67_1m_hnsw_m7g2xlarge_queries; SELECT name, setting, context FROM pg_settings WHERE name IN ('ec_spire.leaf_block_rows', 'ec_spire.leaf_block_summary_representatives', 'ec_spire.leaf_block_pruning_max_blocks_per_leaf', 'ec_spire.leaf_block_pruning_max_global_blocks', 'ec_spire.leaf_block_pruning_global_probe_blocks', 'ec_spire.leaf_block_pruning_sample_rows_per_block', 'ec_spire.leaf_block_pruning_sample_summary_prior_weight', 'ec_spire.leaf_block_pruning_summary_radius_weight', 'ec_spire.leaf_block_pruning_route_prior_weight', 'ec_spire.rerank_width') ORDER BY name; SELECT i.relname AS index_name, am.amname, pg_size_pretty(pg_relation_size(i.oid)) AS index_size, i.reloptions FROM pg_index x JOIN pg_class i ON i.oid = x.indexrelid JOIN pg_class t ON t.oid = x.indrelid JOIN pg_am am ON am.oid = i.relam WHERE t.relname = 'task67_1m_hnsw_m7g2xlarge_corpus' ORDER BY i.relname;",
+        "--log-output",
+        "reviews/task-84/004-aws-1m-k3-summary-build/artifacts/aws-1m-k3-summary-build-q500/precheck-k3-summary-build-surface.log"
+      ],
+      "expected_artifacts": [
+        "reviews/task-84/004-aws-1m-k3-summary-build/artifacts/aws-1m-k3-summary-build-q500/precheck-k3-summary-build-surface.log"
+      ]
+    },
+    {
+      "kind": "raw",
+      "name": "register-enriched-target-block-context",
+      "tags": ["setup", "repair", "task84", "aws", "1m", "target-block-context"],
+      "args": [
+        "dev",
+        "sql",
+        "--pg",
+        "18",
+        "--db",
+        "postgres",
+        "--socket-dir",
+        "/var/run/postgresql",
+        "--raw",
+        "--sql",
+        "CREATE EXTENSION IF NOT EXISTS ecaz; DROP FUNCTION IF EXISTS ec_spire_index_scan_leaf_target_block_rank_snapshot(oid, real[], bigint[]); CREATE FUNCTION ec_spire_index_scan_leaf_target_block_rank_snapshot(index_oid oid, query real[], target_local_sequences bigint[]) RETURNS TABLE (active_epoch bigint, effective_nprobe bigint, effective_nprobe_source text, effective_rerank_width bigint, effective_rerank_width_source text, target_ordinal bigint, target_local_sequence bigint, status text, max_global_blocks bigint, radius_weight double precision, scored_block_count bigint, block_rank bigint, selected_by_global_cap boolean, pid bigint, node_id bigint, local_store_id bigint, object_version bigint, row_index bigint, row_base bigint, row_end bigint, row_count bigint, block_ip real, cap_block_ip real, block_ip_margin_to_cap real, route_rank bigint, route_score real, assignment_flags bigint) STRICT STABLE LANGUAGE c AS '$libdir/ecaz', 'ec_spire_index_scan_leaf_target_block_rank_snapshot_wrapper'; SELECT proname, oidvectortypes(proargtypes) AS args FROM pg_proc WHERE proname = 'ec_spire_index_scan_leaf_target_block_rank_snapshot';",
+        "--log-output",
+        "reviews/task-84/004-aws-1m-k3-summary-build/artifacts/aws-1m-k3-summary-build-q500/register-enriched-target-block-context.log"
+      ],
+      "expected_artifacts": [
+        "reviews/task-84/004-aws-1m-k3-summary-build/artifacts/aws-1m-k3-summary-build-q500/register-enriched-target-block-context.log"
+      ]
+    },
+    {
+      "kind": "raw",
+      "name": "build-spire-1m-rabitq-k3-block16-tg256",
+      "tags": ["build", "task84", "aws", "1m", "spire", "rabitq", "k3", "block16", "tg256"],
+      "args": [
+        "dev",
+        "sql",
+        "--pg",
+        "18",
+        "--db",
+        "postgres",
+        "--socket-dir",
+        "/var/run/postgresql",
+        "--raw",
+        "--env",
+        "PGOPTIONS=-c ec_spire.leaf_block_rows=16 -c ec_spire.leaf_block_summary_representatives=3",
+        "--sql",
+        "CREATE EXTENSION IF NOT EXISTS ecaz; SET client_min_messages TO notice; SET maintenance_work_mem = '4GB'; DROP INDEX IF EXISTS aws_spire_1m_rabitq_t84_k3_block16_tg256_idx; CREATE INDEX aws_spire_1m_rabitq_t84_k3_block16_tg256_idx ON task67_1m_hnsw_m7g2xlarge_corpus USING ec_spire (embedding ecvector_spire_ip_ops) WITH (nlists = 128, recursive_fanout = 8, nprobe = 24, rerank_width = 25, storage_format = 'rabitq', boundary_replica_count = 0, top_graph_enabled = 1, top_graph_degree = 32, top_graph_build_list_size = 100, top_graph_search_list_size = 256); SELECT now() AS captured_at, i.relname AS index_name, am.amname, pg_size_pretty(pg_relation_size(i.oid)) AS index_size, i.reloptions FROM pg_index x JOIN pg_class i ON i.oid = x.indexrelid JOIN pg_class t ON t.oid = x.indrelid JOIN pg_am am ON am.oid = i.relam WHERE t.relname = 'task67_1m_hnsw_m7g2xlarge_corpus' AND i.relname = 'aws_spire_1m_rabitq_t84_k3_block16_tg256_idx';",
+        "--log-output",
+        "reviews/task-84/004-aws-1m-k3-summary-build/artifacts/aws-1m-k3-summary-build-q500/build-spire-1m-rabitq-k3-block16-tg256.log"
+      ],
+      "expected_artifacts": [
+        "reviews/task-84/004-aws-1m-k3-summary-build/artifacts/aws-1m-k3-summary-build-q500/build-spire-1m-rabitq-k3-block16-tg256.log"
+      ]
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-spire-1m-rabitq-k3-block16-global1024-q500",
+      "tags": ["pipeline", "recall", "task84", "aws", "1m", "spire", "rabitq", "k3", "block16", "global1024", "q500"],
+      "pgoptions": "-c ec_spire.leaf_block_pruning_max_blocks_per_leaf=0 -c ec_spire.leaf_block_pruning_max_global_blocks=1024 -c ec_spire.leaf_block_pruning_global_probe_blocks=0 -c ec_spire.leaf_block_pruning_sample_rows_per_block=0 -c ec_spire.leaf_block_pruning_sample_summary_prior_weight=0.8 -c ec_spire.leaf_block_pruning_summary_radius_weight=0.25 -c ec_spire.leaf_block_pruning_route_prior_weight=0.0",
+      "prefix": "task67_1m_hnsw_m7g2xlarge",
+      "index": "aws_spire_1m_rabitq_t84_k3_block16_tg256_idx",
+      "queries_limit": 500,
+      "sweep": [96],
+      "rerank_width": 25,
+      "include_query_metrics": true,
+      "include_recall": true,
+      "truth_cache_file": "benchmarks/task51-aws-ivf-rabitq-final-gate/artifacts/truth-aws-real-1m-q500-k10.json",
+      "leaf_block_rank_local_sequence_offset": 1,
+      "query_metric_k": 10,
+      "query_metric_projection_columns": ["id"],
+      "log_output": "reviews/task-84/004-aws-1m-k3-summary-build/artifacts/aws-1m-k3-summary-build-q500/pipeline-spire-1m-rabitq-k3-block16-global1024-q500.log",
+      "miss_attribution_output": "reviews/task-84/004-aws-1m-k3-summary-build/artifacts/aws-1m-k3-summary-build-q500/miss-attribution-spire-1m-k3-block16-global1024-q500.jsonl",
+      "target_block_rank_output": "reviews/task-84/004-aws-1m-k3-summary-build/artifacts/aws-1m-k3-summary-build-q500/target-block-context-spire-1m-k3-block16-global1024-q500.jsonl"
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-spire-1m-rabitq-k3-block16-global1152-q500",
+      "tags": ["pipeline", "recall", "target-block-context", "task84", "aws", "1m", "spire", "rabitq", "k3", "block16", "global1152", "q500"],
+      "pgoptions": "-c ec_spire.leaf_block_pruning_max_blocks_per_leaf=0 -c ec_spire.leaf_block_pruning_max_global_blocks=1152 -c ec_spire.leaf_block_pruning_global_probe_blocks=0 -c ec_spire.leaf_block_pruning_sample_rows_per_block=0 -c ec_spire.leaf_block_pruning_sample_summary_prior_weight=0.8 -c ec_spire.leaf_block_pruning_summary_radius_weight=0.25 -c ec_spire.leaf_block_pruning_route_prior_weight=0.0",
+      "prefix": "task67_1m_hnsw_m7g2xlarge",
+      "index": "aws_spire_1m_rabitq_t84_k3_block16_tg256_idx",
+      "queries_limit": 500,
+      "sweep": [96],
+      "rerank_width": 25,
+      "include_query_metrics": true,
+      "include_recall": true,
+      "truth_cache_file": "benchmarks/task51-aws-ivf-rabitq-final-gate/artifacts/truth-aws-real-1m-q500-k10.json",
+      "leaf_block_rank_local_sequence_offset": 1,
+      "query_metric_k": 10,
+      "query_metric_projection_columns": ["id"],
+      "log_output": "reviews/task-84/004-aws-1m-k3-summary-build/artifacts/aws-1m-k3-summary-build-q500/pipeline-spire-1m-rabitq-k3-block16-global1152-q500.log",
+      "miss_attribution_output": "reviews/task-84/004-aws-1m-k3-summary-build/artifacts/aws-1m-k3-summary-build-q500/miss-attribution-spire-1m-k3-block16-global1152-q500.jsonl",
+      "target_block_rank_output": "reviews/task-84/004-aws-1m-k3-summary-build/artifacts/aws-1m-k3-summary-build-q500/target-block-context-spire-1m-k3-block16-global1152-q500.jsonl"
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-spire-1m-rabitq-k3-block16-global1280-q500",
+      "tags": ["pipeline", "recall", "target-block-context", "task84", "aws", "1m", "spire", "rabitq", "k3", "block16", "global1280", "q500"],
+      "pgoptions": "-c ec_spire.leaf_block_pruning_max_blocks_per_leaf=0 -c ec_spire.leaf_block_pruning_max_global_blocks=1280 -c ec_spire.leaf_block_pruning_global_probe_blocks=0 -c ec_spire.leaf_block_pruning_sample_rows_per_block=0 -c ec_spire.leaf_block_pruning_sample_summary_prior_weight=0.8 -c ec_spire.leaf_block_pruning_summary_radius_weight=0.25 -c ec_spire.leaf_block_pruning_route_prior_weight=0.0",
+      "prefix": "task67_1m_hnsw_m7g2xlarge",
+      "index": "aws_spire_1m_rabitq_t84_k3_block16_tg256_idx",
+      "queries_limit": 500,
+      "sweep": [96],
+      "rerank_width": 25,
+      "include_query_metrics": true,
+      "include_recall": true,
+      "truth_cache_file": "benchmarks/task51-aws-ivf-rabitq-final-gate/artifacts/truth-aws-real-1m-q500-k10.json",
+      "leaf_block_rank_local_sequence_offset": 1,
+      "query_metric_k": 10,
+      "query_metric_projection_columns": ["id"],
+      "log_output": "reviews/task-84/004-aws-1m-k3-summary-build/artifacts/aws-1m-k3-summary-build-q500/pipeline-spire-1m-rabitq-k3-block16-global1280-q500.log",
+      "miss_attribution_output": "reviews/task-84/004-aws-1m-k3-summary-build/artifacts/aws-1m-k3-summary-build-q500/miss-attribution-spire-1m-k3-block16-global1280-q500.jsonl",
+      "target_block_rank_output": "reviews/task-84/004-aws-1m-k3-summary-build/artifacts/aws-1m-k3-summary-build-q500/target-block-context-spire-1m-k3-block16-global1280-q500.jsonl"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-spire-1m-rabitq-k3-block16-tg256",
+      "tags": ["storage", "task84", "aws", "1m", "spire", "rabitq", "k3", "block16", "tg256"],
+      "prefix": "task67_1m_hnsw_m7g2xlarge",
+      "index": "aws_spire_1m_rabitq_t84_k3_block16_tg256_idx",
+      "log_file": "reviews/task-84/004-aws-1m-k3-summary-build/artifacts/aws-1m-k3-summary-build-q500/storage-spire-1m-rabitq-k3-block16-tg256.log"
+    }
+  ]
+}
