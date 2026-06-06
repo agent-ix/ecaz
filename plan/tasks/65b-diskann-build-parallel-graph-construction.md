@@ -1,6 +1,7 @@
 # Task 65b: DiskANN Build — Parallel Vamana Graph Construction
 
-Status: **proposed** 2026-05-28. Direct follow-up to Task 65
+Status: **complete** 2026-06-06 (rayon stepping-stone per ADR-075;
+closeout `reviews/task-65b/021-closeout-audit/`). Direct follow-up to Task 65
 (`plan/tasks/65-diskann-build-perf-vamana-core.md`) and the
 performance assessment in
 `plan/design/diskann-build-performance.md` (P0 issue #6 option 2/3).
