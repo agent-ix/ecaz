@@ -1,0 +1,285 @@
+^Dwarning: ecaz@0.1.1: In file included from csrc/pg18_pgstat_shim.c:10:
+warning: ecaz@0.1.1: In file included from /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:19:
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/lib/ilist.h:537:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:   537 | dlist_next_node(dlist_head *head, dlist_node *node)
+warning: ecaz@0.1.1:       |                             ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/lib/ilist.h:547:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:   547 | dlist_prev_node(dlist_head *head, dlist_node *node)
+warning: ecaz@0.1.1:       |                             ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/lib/ilist.h:1054:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:  1054 | slist_next_node(slist_head *head, slist_node *node)
+warning: ecaz@0.1.1:       |                             ^
+warning: ecaz@0.1.1: In file included from csrc/pg18_pgstat_shim.c:10:
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:875:58: warning: unused parameter 'size' [-Wunused-parameter]
+warning: ecaz@0.1.1:   875 | pgstat_cmp_hash_key(const void *a, const void *b, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                          ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:875:70: warning: unused parameter 'arg' [-Wunused-parameter]
+warning: ecaz@0.1.1:   875 | pgstat_cmp_hash_key(const void *a, const void *b, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                                      ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:882:56: warning: unused parameter 'arg' [-Wunused-parameter]
+warning: ecaz@0.1.1:   882 | pgstat_hash_hash_key(const void *d, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                        ^
+warning: ecaz@0.1.1: 6 warnings generated.
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.16s
+     Running unittests src/lib.rs (target/debug/deps/ecaz-51c904bee82c3480)
+
+running 199 tests
+test am::ec_diskann::ambuild::tests::source_inner_product_dispatch_matches_scalar ... [32mok(B[m
+test am::ec_diskann::ambuild::tests::source_inner_product_distance_keeps_positive_ip_pairs_distinct ... [32mok(B[m
+test am::ec_diskann::ambuild::tests::source_inner_product_neon_matches_scalar_at_loop_boundaries ... [32mok(B[m
+test am::ec_diskann::build::tests::bo_001_empty_payloads_errors ... [32mok(B[m
+test am::ec_diskann::build::tests::bo_002_zero_r_errors ... [32mok(B[m
+test am::ec_diskann::build::tests::bo_003_alpha_below_one_errors ... [32mok(B[m
+test am::ec_diskann::build::tests::bo_003b_payload_flags_clears_cold_rerank_in_v0 ... [32mok(B[m
+test am::ec_diskann::build::tests::bo_004_w_c_derivation ... [32mok(B[m
+test am::ec_diskann::build::tests::bo_005_end_to_end_metadata_and_persisted ... [32mok(B[m
+test am::ec_diskann::build::tests::bo_006_payload_shape_mismatch_errors ... [32mok(B[m
+test am::ec_diskann::build::tests::bo_007_deterministic_for_fixed_seed ... [32mok(B[m
+test am::ec_diskann::build::tests::bo_008_persisted_tuples_decode_with_metadata_constants ... [32mok(B[m
+test am::ec_diskann::build::tests::rabitq_build_params_use_direct_search_code_without_sidecar_flags ... [32mok(B[m
+test am::ec_diskann::build::tests::task65b_batch_size_controls_epoch_count ... [32mok(B[m
+test am::ec_diskann::build::tests::task65b_multi_worker_epoch_build_is_deterministic_for_fixed_config ... [32mok(B[m
+test am::ec_diskann::build::tests::task65b_nonzero_flush_setting_is_rejected_until_flush_lands ... [32mok(B[m
+test am::ec_diskann::build::tests::task65b_small_build_caps_effective_batch_size ... [32mok(B[m
+test am::ec_diskann::build::tests::task65b_worker_one_scaffold_matches_serial_output ... [32mok(B[m
+test am::ec_diskann::build::tests::task65b_worker_zero_config_matches_plain_serial_output ... [32mok(B[m
+test am::ec_diskann::diagnostics::tests::degree_summary_helpers_handle_empty_input ... [32mok(B[m
+test am::ec_diskann::diagnostics::tests::percentile_nearest_uses_sorted_values ... [32mok(B[m
+test am::ec_diskann::insert::tests::in_001_payload_matches_training_model_with_binary_sidecar ... [32mok(B[m
+test am::ec_diskann::insert::tests::in_002_payload_omits_binary_words_without_sidecar_flag ... [32mok(B[m
+test am::ec_diskann::insert::tests::in_003_missing_codebook_head_errors ... [32mok(B[m
+test am::ec_diskann::insert::tests::in_004_dimension_mismatch_errors ... [32mok(B[m
+test am::ec_diskann::insert::tests::in_005_transform_and_codec_are_validated ... [32mok(B[m
+test am::ec_diskann::insert::tests::in_005b_stage_overflow_heap_tids_in_chain_roundtrips_multiple_chunks ... [32mok(B[m
+test am::ec_diskann::insert::tests::in_006_duplicate_lookup_finds_first_live_match ... [32mok(B[m
+test am::ec_diskann::insert::tests::in_007_duplicate_lookup_skips_deleted_and_stripped_tuples ... [32mok(B[m
+test am::ec_diskann::insert::tests::in_008_forward_neighbor_selection_prunes_on_exact_vectors ... [32mok(B[m
+test am::ec_diskann::insert::tests::in_009_forward_neighbor_selection_rejects_dimension_mismatch ... [32mok(B[m
+test am::ec_diskann::insert::tests::in_010_duplicate_lookup_finds_match_after_codebook_tail ... [32mok(B[m
+test am::ec_diskann::insert::tests::in_011_insert_backlink_if_free_uses_first_open_slot ... [32mok(B[m
+test am::ec_diskann::insert::tests::in_012_insert_backlink_if_free_rejects_duplicate_and_full_tuples ... [32mok(B[m
+test am::ec_diskann::insert::tests::in_013_plan_backlink_mutation_rewrites_full_slice_for_kept_candidate ... [32mok(B[m
+test am::ec_diskann::insert::tests::in_014_apply_backlink_mutation_requests_retry_for_stale_full_slice ... [32mok(B[m
+test am::ec_diskann::insert::tests::in_015_apply_backlink_mutation_rewrites_full_slice_after_replan ... [32mok(B[m
+test am::ec_diskann::insert::tests::source_inner_product_distance_keeps_positive_ip_pairs_distinct ... [32mok(B[m
+test am::ec_diskann::options::tests::diskann_default_options_include_scan_runtime_defaults ... [32mok(B[m
+test am::ec_diskann::options::tests::diskann_storage_format_parse_accepts_rabitq ... [32mok(B[m
+test am::ec_diskann::options::tests::prefilter_kind_guc_defaults_to_auto ... [32mok(B[m
+test am::ec_diskann::options::tests::resolve_scan_tuning_keeps_default_relation_when_both_are_default ... [32mok(B[m
+test am::ec_diskann::options::tests::resolve_scan_tuning_uses_explicit_default_session_override ... [32mok(B[m
+test am::ec_diskann::options::tests::resolve_scan_tuning_uses_relation_value_when_session_is_default ... [32mok(B[m
+test am::ec_diskann::options::tests::resolve_scan_tuning_uses_session_value_when_non_default ... [32mok(B[m
+test am::ec_diskann::options::tests::scan_profile_notice_guc_defaults_to_off ... [32mok(B[m
+test am::ec_diskann::page::tests::decode_preserves_existing_grouped_pq_metadata ... [32mok(B[m
+test am::ec_diskann::page::tests::la_001_fresh_metadata_roundtrip ... [32mok(B[m
+test am::ec_diskann::page::tests::la_002_format_version_tag_is_three ... [32mok(B[m
+test am::ec_diskann::page::tests::la_003_encoded_length_matches_constant ... [32mok(B[m
+test am::ec_diskann::page::tests::la_004_foreign_format_tag_rejected ... [32mok(B[m
+test am::ec_diskann::page::tests::la_005_alpha_f32_bit_exact ... [32mok(B[m
+test am::ec_diskann::page::tests::la_005b_empty_clears_cold_rerank_flag ... [32mok(B[m
+test am::ec_diskann::page::tests::la_006_needs_medoid_refresh_flag_roundtrips ... [32mok(B[m
+test am::ec_diskann::page::tests::metadata_roundtrip_preserves_rabitq_codec_fields ... [32mok(B[m
+test am::ec_diskann::page::tests::miri_vamana_metadata_roundtrip_with_codebook_head ... [32mok(B[m
+test am::ec_diskann::persist::tests::cb_001_empty_model_errors ... [32mok(B[m
+test am::ec_diskann::persist::tests::cb_002_centroid_count_mismatch_errors ... [32mok(B[m
+test am::ec_diskann::persist::tests::cb_003_single_group_terminates_chain ... [32mok(B[m
+test am::ec_diskann::persist::tests::cb_004_multi_group_chain_links_all_shards ... [32mok(B[m
+test am::ec_diskann::persist::tests::pe_001_empty_graph_errors ... [32mok(B[m
+test am::ec_diskann::persist::tests::pe_002_payload_count_mismatch_errors ... [32mok(B[m
+test am::ec_diskann::persist::tests::pe_003_medoid_out_of_range_errors ... [32mok(B[m
+test am::ec_diskann::persist::tests::pe_004_payload_body_size_mismatch_errors ... [32mok(B[m
+test am::ec_diskann::persist::tests::pe_005_max_degree_exceeds_r_errors ... [32mok(B[m
+test am::ec_diskann::persist::tests::pe_006_single_node_persists ... [32mok(B[m
+test am::ec_diskann::persist::tests::pe_007_connected_chain_round_trip ... [32mok(B[m
+test am::ec_diskann::persist::tests::pe_008_disconnected_graph_persists_unreached ... [32mok(B[m
+test am::ec_diskann::persist::tests::pe_009_multi_page_chain ... [32mok(B[m
+test am::ec_diskann::persist::tests::pe_010_placeholder_patched_lengths_align ... [32mok(B[m
+test am::ec_diskann::persist::tests::pe_011_end_to_end_with_built_graph ... [32mok(B[m
+test am::ec_diskann::quantizer::tests::rabitq_insert_payload_has_no_sidecar ... [32mok(B[m
+test am::ec_diskann::quantizer::tests::rabitq_metadata_len_uses_one_bit_payload ... [32mok(B[m
+test am::ec_diskann::quantizer::tests::rabitq_prefilter_rejects_binary_sidecar_override ... [32mok(B[m
+test am::ec_diskann::reader::tests::rd_001_read_node_round_trip ... [32mok(B[m
+test am::ec_diskann::reader::tests::rd_002_read_node_unknown_block_errors ... [32mok(B[m
+test am::ec_diskann::reader::tests::rd_003_neighbors_drops_invalid_tail ... [32mok(B[m
+test am::ec_diskann::reader::tests::rd_004_reader_bfs_reaches_all ... [32mok(B[m
+test am::ec_diskann::reader::tests::rd_005_adjacency_matches_in_memory ... [32mok(B[m
+test am::ec_diskann::reader::tests::rd_006_greedy_matches_in_memory_oracle ... [32mok(B[m
+test am::ec_diskann::reader::tests::rd_007_greedy_descends_gradient ... [32mok(B[m
+test am::ec_diskann::reader::tests::rd_008_greedy_rejects_bad_args ... [32mok(B[m
+test am::ec_diskann::reader::tests::rd_009_frontier_is_sorted ... [32mok(B[m
+test am::ec_diskann::reader::tests::rd_010_bridge_from_build_output ... [32mok(B[m
+test am::ec_diskann::reader::tests::rd_011_visited_state_reuse_matches_fresh ... [32mok(B[m
+test am::ec_diskann::reader::tests::rd_012_visited_state_clear_and_reserve ... [32mok(B[m
+test am::ec_diskann::reader::tests::rd_013_iter_tids_walks_every_slot_in_order ... [32mok(B[m
+test am::ec_diskann::reader::tests::rd_014_iter_live_tids_skips_tombstoned ... [32mok(B[m
+test am::ec_diskann::reader::tests::rd_015_first_live_tid_skips_leading_tombstones ... [32mok(B[m
+test am::ec_diskann::reader::tests::rd_016_first_live_tid_none_when_all_dead ... [32mok(B[m
+test am::ec_diskann::reader::tests::rd_017_iter_live_tids_skips_stripped_without_tombstone ... [32mok(B[m
+test am::ec_diskann::reader::tests::rd_018_first_live_tid_skips_stripped_without_tombstone ... [32mok(B[m
+test am::ec_diskann::reader::tests::rd_019_overflow_only_tuple_is_live ... [32mok(B[m
+test am::ec_diskann::reader::tests::rd_020_iter_live_tids_skips_grouped_codebook_tuples ... [32mok(B[m
+test am::ec_diskann::reader::tests::rd_021_first_live_tid_skips_grouped_codebook_gap ... [32mok(B[m
+test am::ec_diskann::routine::tests::pg_test_ec_diskann_build_keeps_duplicate_vectors_as_distinct_nodes ... [32m[1m       Using[0m[39m [37m[1mPgConfig("pg18")[0m[39m and `pg_config` from [36m/opt/homebrew/opt/postgresql@18/bin/pg_config[39m
+[32m[1m    Building[0m[39m extension with features [36mpg_test pg18[39m
+[32m[1m     Running[0m[39m command [36m"/opt/homebrew/bin/cargo" "build" "--lib" "--features" "pg_test pg18" "--no-default-features" "--message-format=json-render-diagnostics"[39m
+warning: ecaz@0.1.1: In file included from csrc/pg18_pgstat_shim.c:10:
+warning: ecaz@0.1.1: In file included from /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:19:
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/lib/ilist.h:537:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:   537 | dlist_next_node(dlist_head *head, dlist_node *node)
+warning: ecaz@0.1.1:       |                             ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/lib/ilist.h:547:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:   547 | dlist_prev_node(dlist_head *head, dlist_node *node)
+warning: ecaz@0.1.1:       |                             ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/lib/ilist.h:1054:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:  1054 | slist_next_node(slist_head *head, slist_node *node)
+warning: ecaz@0.1.1:       |                             ^
+warning: ecaz@0.1.1: In file included from csrc/pg18_pgstat_shim.c:10:
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:875:58: warning: unused parameter 'size' [-Wunused-parameter]
+warning: ecaz@0.1.1:   875 | pgstat_cmp_hash_key(const void *a, const void *b, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                          ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:875:70: warning: unused parameter 'arg' [-Wunused-parameter]
+warning: ecaz@0.1.1:   875 | pgstat_cmp_hash_key(const void *a, const void *b, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                                      ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:882:56: warning: unused parameter 'arg' [-Wunused-parameter]
+warning: ecaz@0.1.1:   882 | pgstat_hash_hash_key(const void *d, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                        ^
+warning: ecaz@0.1.1: 6 warnings generated.
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.09s
+[32m[1m  Installing[0m[39m extension
+[32m[1m     Copying[0m[39m control file to [36m/opt/homebrew/share/postgresql@18/extension/ecaz.control[39m
+[32m[1m     Copying[0m[39m shared library to [36m/opt/homebrew/lib/postgresql@18/ecaz.dylib[39m
+[32m[1m  Discovered[0m[39m [36m[1m905[0m[39m SQL entities: [36m[1m2[0m[39m schemas ([36m[1m1[0m[39m unique), [36m[1m902[0m[39m functions, [36m[1m0[0m[39m types, [36m[1m0[0m[39m enums, [36m[1m1[0m[39m sqls, [36m[1m0[0m[39m ords, [36m[1m0[0m[39m hashes, [36m[1m0[0m[39m aggregates, [36m[1m0[0m[39m triggers
+[32m[1m  Rebuilding[0m[39m [36mpgrx_embed[39m, in debug mode, for SQL generation with features [36mpg_test pg18[39m
+warning: ecaz@0.1.1: In file included from csrc/pg18_pgstat_shim.c:10:
+warning: ecaz@0.1.1: In file included from /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:19:
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/lib/ilist.h:537:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:   537 | dlist_next_node(dlist_head *head, dlist_node *node)
+warning: ecaz@0.1.1:       |                             ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/lib/ilist.h:547:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:   547 | dlist_prev_node(dlist_head *head, dlist_node *node)
+warning: ecaz@0.1.1:       |                             ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/lib/ilist.h:1054:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:  1054 | slist_next_node(slist_head *head, slist_node *node)
+warning: ecaz@0.1.1:       |                             ^
+warning: ecaz@0.1.1: In file included from csrc/pg18_pgstat_shim.c:10:
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:875:58: warning: unused parameter 'size' [-Wunused-parameter]
+warning: ecaz@0.1.1:   875 | pgstat_cmp_hash_key(const void *a, const void *b, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                          ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:875:70: warning: unused parameter 'arg' [-Wunused-parameter]
+warning: ecaz@0.1.1:   875 | pgstat_cmp_hash_key(const void *a, const void *b, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                                      ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:882:56: warning: unused parameter 'arg' [-Wunused-parameter]
+warning: ecaz@0.1.1:   882 | pgstat_hash_hash_key(const void *d, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                        ^
+warning: ecaz@0.1.1: 6 warnings generated.
+   Compiling ecaz v0.1.1 (/Users/peter/dev/tqvector)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 33.54s
+[32m[1m     Writing[0m[39m SQL entities to /opt/homebrew/share/postgresql@18/extension/ecaz--0.1.1.sql
+[32m[1m    Finished[0m[39m installing ecaz
+[32mok(B[m
+test am::ec_diskann::routine::tests::pg_test_ec_diskann_duplicate_after_append_binds_existing_node ... [32mok(B[m
+test am::ec_diskann::routine::tests::pg_test_ec_diskann_duplicate_bind_grows_second_overflow_tuple ... [32mok(B[m
+test am::ec_diskann::routine::tests::pg_test_ec_diskann_duplicate_insert_binds_first_overflow_tuple ... [32mok(B[m
+test am::ec_diskann::routine::tests::pg_test_ec_diskann_empty_index_bootstrap_insert_executes ... [32mok(B[m
+test am::ec_diskann::routine::tests::pg_test_ec_diskann_empty_index_remains_planner_gated ... [32mok(B[m
+test am::ec_diskann::routine::tests::pg_test_ec_diskann_full_backlink_rewrite_keeps_insert_reachable ... [32mok(B[m
+test am::ec_diskann::routine::tests::pg_test_ec_diskann_planner_chooses_index_scan_for_large_table ... [32mok(B[m
+test am::ec_diskann::routine::tests::pg_test_ec_diskann_planner_prefers_seqscan_for_small_tables ... [32mok(B[m
+test am::ec_diskann::routine::tests::pg_test_ec_diskann_prefilter_kind_override_switches_prefilter ... [32mok(B[m
+test am::ec_diskann::routine::tests::pg_test_ec_diskann_relation_reader_parity ... [32mok(B[m
+test am::ec_diskann::routine::tests::pg_test_ec_diskann_session_list_size_override_changes_scan_width ... [32mok(B[m
+test am::ec_diskann::routine::tests::pg_test_ec_diskann_sql_limit_can_exceed_reloption_top_k ... [32mok(B[m
+test am::ec_diskann::routine::tests::pg_test_ec_diskann_sql_ordered_index_scan_executes ... [32mok(B[m
+test am::ec_diskann::routine::tests::pg_test_ec_diskann_storage_formats_build_and_scan_sql_surface ... [32mok(B[m
+test am::ec_diskann::routine::tests::pg_test_ec_diskann_unique_insert_is_scan_reachable ... [32mok(B[m
+test am::ec_diskann::routine::tests::pg_test_ec_diskann_vacuum_noop_stats_on_empty_index ... [32mok(B[m
+test am::ec_diskann::routine::tests::pg_test_ec_diskann_vacuum_promotes_duplicate_overflow_primary ... [32mok(B[m
+test am::ec_diskann::routine::tests::pg_test_ec_diskann_vacuum_refills_broken_neighbor_slot ... [32mok(B[m
+test am::ec_diskann::routine::tests::pg_test_ec_diskann_vacuum_replans_on_stale_repair_tuple ... [32mok(B[m
+test am::ec_diskann::routine::tests::pg_test_ec_diskann_vacuum_sets_medoid_refresh_flag ... [32mok(B[m
+test am::ec_diskann::routine::tests::pg_test_ec_diskann_vacuum_unlinks_and_tombstones_dead_node ... [32mok(B[m
+test am::ec_diskann::routine::tests::sql_scan_result_cap_defaults_to_rerank_budget ... [32mok(B[m
+test am::ec_diskann::routine::tests::vacuum_repair_scan_budget_caps_at_graph_degree ... [32mok(B[m
+test am::ec_diskann::scan::tests::sc_001_end_to_end_top1_on_chain ... [32mok(B[m
+test am::ec_diskann::scan::tests::sc_002_rerank_can_reorder_prefilter ... [32mok(B[m
+test am::ec_diskann::scan::tests::sc_003_rerank_budget_caps_rerank_calls ... [32mok(B[m
+test am::ec_diskann::scan::tests::sc_003b_rerank_visits_in_full_heap_tid_order ... [32mok(B[m
+test am::ec_diskann::scan::tests::sc_004_top_k_truncates ... [32mok(B[m
+test am::ec_diskann::scan::tests::sc_005_invalid_entry_errors ... [32mok(B[m
+test am::ec_diskann::scan::tests::sc_006_parameter_validation ... [32mok(B[m
+test am::ec_diskann::scan::tests::sc_007_end_to_end_matches_brute_force ... [32mok(B[m
+test am::ec_diskann::scan::tests::sc_008_result_carries_primary_heaptid ... [32mok(B[m
+test am::ec_diskann::scan::tests::sc_009_results_sorted_by_distance ... [32mok(B[m
+test am::ec_diskann::scan::tests::sc_010_greedy_descent_exposed ... [32mok(B[m
+test am::ec_diskann::scan::tests::sc_011_scan_with_scratch_reuse_matches_fresh ... [32mok(B[m
+test am::ec_diskann::scan::tests::sc_011b_scan_with_frontier_profile_records_counters ... [32mok(B[m
+test am::ec_diskann::scan::tests::sc_012_resolve_entry_point_prefers_live_medoid ... [32mok(B[m
+test am::ec_diskann::scan::tests::sc_013_resolve_entry_point_falls_back_on_dead_medoid ... [32mok(B[m
+test am::ec_diskann::scan::tests::sc_014_resolve_entry_point_none_when_all_dead ... [32mok(B[m
+test am::ec_diskann::scan::tests::sc_015_resolve_entry_point_rejects_stripped_without_tombstone ... [32mok(B[m
+test am::ec_diskann::scan::tests::sc_016_scan_drops_stripped_candidates ... [32mok(B[m
+test am::ec_diskann::scan::tests::sc_017_scan_returns_empty_when_all_stripped ... [32mok(B[m
+test am::ec_diskann::scan::tests::sc_018_tombstoned_top_scores_do_not_starve_emittable_frontier ... [32mok(B[m
+test am::ec_diskann::scan_query::tests::cr_001_multi_group_roundtrip_preserves_order ... [32mok(B[m
+test am::ec_diskann::scan_query::tests::cr_002_single_group_roundtrip ... [32mok(B[m
+test am::ec_diskann::scan_query::tests::cr_003_invalid_head_rejected ... [32mok(B[m
+test am::ec_diskann::scan_query::tests::cr_004_declared_group_count_too_high_errors ... [32mok(B[m
+test am::ec_diskann::scan_query::tests::cr_005_declared_group_count_too_low_errors ... [32mok(B[m
+test am::ec_diskann::scan_query::tests::cr_006_centroid_count_mismatch_errors ... [32mok(B[m
+test am::ec_diskann::scan_query::tests::cr_009_pack_query_sign_bits_matches_manual_word_layout ... [32mok(B[m
+test am::ec_diskann::scan_query::tests::cr_010_hamming_xor_popcount_scores_word_pairs ... [32mok(B[m
+test am::ec_diskann::scan_query::tests::cr_010_srht_encode_is_deterministic_and_sized ... [32mok(B[m
+test am::ec_diskann::scan_query::tests::cr_011_end_to_end_lut_matches_in_memory ... [32mok(B[m
+test am::ec_diskann::scan_query::tests::cr_012_zero_group_size_rejected ... [32mok(B[m
+test am::ec_diskann::tests::validate_source_vector_unit_norm_accepts_unit_vectors ... [32mok(B[m
+test am::ec_diskann::tests::validate_source_vector_unit_norm_rejects_non_unit_vectors ... [32mok(B[m
+test am::ec_diskann::tests::validate_source_vector_unit_norm_sample_reports_sample_stats ... [32mok(B[m
+test am::ec_diskann::tuple::tests::la_010_empty_node_roundtrip ... [32mok(B[m
+test am::ec_diskann::tuple::tests::la_012_encoded_len_matches_computation ... [32mok(B[m
+test am::ec_diskann::tuple::tests::la_013_foreign_tag_rejected ... [32mok(B[m
+test am::ec_diskann::tuple::tests::la_014_validate_neighbor_capacity ... [32mok(B[m
+test am::ec_diskann::tuple::tests::la_015_validate_neighbor_count_bounded_by_r ... [32mok(B[m
+test am::ec_diskann::tuple::tests::la_016_empty_slots_are_invalid_pointer ... [32mok(B[m
+test am::ec_diskann::tuple::tests::la_017_deleted_flag_roundtrips ... [32mok(B[m
+test am::ec_diskann::tuple::tests::la_018_overflow_heaptids_flag_independent ... [32mok(B[m
+test am::ec_diskann::tuple::tests::la_019_fixed_length_invariant ... [32mok(B[m
+test am::ec_diskann::tuple::tests::la_020_header_size_locked ... [32mok(B[m
+test am::ec_diskann::tuple::tests::la_021_decode_rejects_wrong_length ... [32mok(B[m
+test am::ec_diskann::tuple::tests::la_022_validate_body_sizes_against_metadata ... [32mok(B[m
+test am::ec_diskann::tuple::tests::la_031_codebook_placeholder_patched_same_length ... [32mok(B[m
+test am::ec_diskann::tuple::tests::la_032_codebook_foreign_tag_rejected ... [32mok(B[m
+test am::ec_diskann::tuple::tests::la_033_codebook_wrong_length_rejected ... [32mok(B[m
+test am::ec_diskann::tuple::tests::miri_la_011_filled_node_roundtrip ... [32mok(B[m
+test am::ec_diskann::tuple::tests::miri_la_030_codebook_tuple_roundtrip ... [32mok(B[m
+test am::ec_diskann::vacuum::tests::miri_vc_001_mark_deleted_is_idempotent ... [32mok(B[m
+test am::ec_diskann::vacuum::tests::miri_vc_002_mark_deleted_preserves_payload ... [32mok(B[m
+test am::ec_diskann::vacuum::tests::miri_vc_003_strip_dead_primary_heaptid_predicate ... [32mok(B[m
+test am::ec_diskann::vacuum::tests::miri_vc_004_strip_skips_already_invalid ... [32mok(B[m
+test am::ec_diskann::vacuum::tests::miri_vc_005_is_fully_dead_semantics ... [32mok(B[m
+test am::ec_diskann::vacuum::tests::miri_vc_006_repair_neighbors_compacts_and_pads ... [32mok(B[m
+test am::ec_diskann::vacuum::tests::miri_vc_009_repair_preserves_encoded_length ... [32mok(B[m
+test am::ec_diskann::vacuum::tests::miri_vc_010_full_deletion_state_machine ... [32mok(B[m
+test am::ec_diskann::vacuum::tests::vc_007_repair_with_empty_dead_set_noop ... [32mok(B[m
+test am::ec_diskann::vacuum::tests::vc_008_repair_is_stable ... [32mok(B[m
+test am::ec_diskann::vamana::tests::append_candidates_for_prune_deduplicates_extra_nodes ... [32mok(B[m
+test am::ec_diskann::vamana::tests::approximate_medoid_within_10pct_of_exact ... [32mok(B[m
+test am::ec_diskann::vamana::tests::build_recall_at_10_meets_baseline ... [32mok(B[m
+test am::ec_diskann::vamana::tests::build_small_graph_is_connected ... [32mok(B[m
+test am::ec_diskann::vamana::tests::build_stats_include_pass1_extra_candidates ... [32mok(B[m
+test am::ec_diskann::vamana::tests::builder_neighbor_cache_preserves_adjacency_operations ... [32mok(B[m
+test am::ec_diskann::vamana::tests::candidate_pool_includes_existing_out_neighbors ... [32mok(B[m
+test am::ec_diskann::vamana::tests::miri_build_small_graph_is_connected ... [32mok(B[m
+test am::ec_diskann::vamana::tests::miri_build_stats_include_pass1_extra_candidates ... [32mok(B[m
+test am::ec_diskann::vamana::tests::miri_greedy_search_finds_nearest ... [32mok(B[m
+test am::ec_diskann::vamana::tests::miri_robust_prune_excludes_alpha_dominated ... [32mok(B[m
+test am::ec_diskann::vamana::tests::robust_prune_respects_max_degree ... [32mok(B[m
+test am::ec_diskann::vamana::tests::task65b_batched_backlinks_reprune_each_touched_target_once ... [32mok(B[m
+test am::ec_diskann::vamana::tests::task65b_epoch_boundary_controls_snapshot_visibility ... [32mok(B[m
+test am::ec_diskann::vamana::tests::task65b_epoch_proposals_read_epoch_snapshot_not_live_reducer_state ... [32mok(B[m
+test am::ec_diskann::vamana::tests::task65b_ordered_reducer_ignores_proposal_completion_order ... [32mok(B[m
+test am::ec_diskann::vamana::tests::task65b_parallel_epoch_batch_one_matches_serial_graph_exactly ... [32mok(B[m
+test am::ec_diskann::vamana::tests::task65b_reducer_is_invariant_across_all_three_proposal_arrival_orders ... [32mok(B[m
+test am::ec_diskann::vamana::tests::task65b_snapshot_rows_do_not_observe_later_reducer_writes ... [32mok(B[m
+
+test result: [32mok(B[m. 199 passed; 0 failed; 0 ignored; 0 measured; 1777 filtered out; finished in 51.00s
+
