@@ -188,6 +188,9 @@ impl SpirePreparedAssignmentScorer {
             } => {
                 validate_payload_len(*dimensions, payload_format, encoded_payload)?;
                 if let Some(prepared_lut) = no_qjl_4bit_lut {
+                    // The no-QJL 4-bit lane has no residual sign payload, so gamma is not
+                    // part of the exact score. Keep the generic scorer as the fallback for
+                    // modes that still carry a QJL residual term.
                     Ok(
                         quantizer
                             .score_ip_from_parts_lut_no_qjl_4bit(prepared_lut, encoded_payload),
@@ -229,6 +232,7 @@ impl SpirePreparedAssignmentScorer {
                 .chunks_exact(payload_stride)
                 .map(|payload| {
                     if let Some(prepared_lut) = no_qjl_4bit_lut {
+                        // The no-QJL 4-bit lane ignores gamma by construction.
                         quantizer.score_ip_from_parts_lut_no_qjl_4bit(prepared_lut, payload)
                     } else {
                         quantizer.score_ip_from_parts(prepared, 0.0, payload)
@@ -313,6 +317,7 @@ impl SpirePreparedAssignmentScorer {
                     .zip(out_scores.iter_mut())
                 {
                     *out_score = if let Some(prepared_lut) = no_qjl_4bit_lut {
+                        // The no-QJL 4-bit lane ignores gamma by construction.
                         quantizer.score_ip_from_parts_lut_no_qjl_4bit(prepared_lut, payload)
                     } else {
                         quantizer.score_ip_from_parts(prepared, *gamma, payload)

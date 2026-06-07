@@ -94,8 +94,10 @@ mod tests {
                 .unwrap();
         let quantizer =
             ProdQuantizer::cached(dim, crate::DEFAULT_QUANT_BITS, crate::DEFAULT_QUANT_SEED);
+        let prepared_generic = quantizer.prepare_ip_query(&query);
         let prepared_lut = quantizer.prepare_ip_query_lut_no_qjl_4bit(&query);
-        let expected =
+        let expected_generic = quantizer.score_ip_from_parts(&prepared_generic, gamma_a, &payload_a);
+        let expected_lut =
             quantizer.score_ip_from_parts_lut_no_qjl_4bit(&prepared_lut, &payload_a);
 
         let observed = scorer.score_assignment_ip(&assignment).unwrap();
@@ -108,7 +110,9 @@ mod tests {
                 panic!("TurboQuant prepare should return TurboQuant scorer")
             }
         }
-        assert!((observed - expected).abs() < 1e-6);
+        assert!(gamma_a > 0.0);
+        assert!((expected_lut - expected_generic).abs() < 1e-6);
+        assert!((observed - expected_generic).abs() < 1e-6);
 
         let payload_stride = payload_a.len();
         assert_eq!(payload_stride, payload_b.len());
