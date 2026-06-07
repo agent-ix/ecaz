@@ -1,0 +1,2 @@
+coverage ok: quant/prod.rs actual=92.36 baseline=93.02
+coverage regression: am/ec_ivf/page.rs actual=93.09 baseline=95.86 allowed_drop=2.00

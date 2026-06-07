@@ -1,0 +1,2 @@
+coverage ok: quant/prod.rs actual=92.36 baseline=93.02
+coverage ok: am/ec_ivf/page.rs actual=96.69 baseline=95.86
