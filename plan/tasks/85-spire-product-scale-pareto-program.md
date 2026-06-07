@@ -173,7 +173,9 @@ Current ledger:
   `222.140/275.753/288.894 ms` to `228.595/284.140/295.823 ms`
   p50/p95/p99. Further rerank locality work requires a different mechanism
   than this internal local fetch ordering, such as explicit heap prefetch
-  support, and must pass its own stop/accept/reject packet before closeout;
+  support, and must pass its own stop/accept/reject packet before closeout.
+  Packet 028 removes the rejected TID-ordered fetch implementation from the
+  branch;
 - candidate-surface redesign with recall preservation: `open`; rejected
   geometry/cap/k-summary variants are closed, but any new policy must target
   selected-leaf misses and beat the accepted same-recall latency bar. It
@@ -550,3 +552,7 @@ should stop.
   compared with packet 025 repeat `222.140/275.753/288.894 ms`. AWS `1m`
   final status is packet-local and paused. The TID-ordered local heap fetch
   implementation is rejected and must be removed before product closeout.
+- `reviews/task-85/028-revert-local-heap-fetch-order/`: cleanup checkpoint.
+  Commit `7302c8369` reverts packet 026's rejected code commit
+  `4f92108ed`, restoring the packet 023/025 local heap fetch path after
+  packet 027 proved the TID-ordered variant worsened retained-recall latency.
