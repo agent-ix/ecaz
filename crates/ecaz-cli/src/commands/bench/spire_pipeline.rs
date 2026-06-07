@@ -1222,11 +1222,31 @@ async fn query_leaf_candidate_rows(
     index: &str,
     query: &[f32],
 ) -> Result<Vec<LeafCandidateRow>> {
-    let rows = client
+    match client
         .query(leaf_candidate_snapshot_sql(), &[&index, &query])
         .await
-        .wrap_err("querying ec_spire_index_scan_leaf_candidate_snapshot")?;
-    Ok(rows.into_iter().map(LeafCandidateRow::from).collect())
+    {
+        Ok(rows) => Ok(rows.into_iter().map(LeafCandidateRow::from).collect()),
+        Err(err) if is_missing_leaf_row_segment_snapshot_column(&err) => {
+            let rows = client
+                .query(legacy_leaf_candidate_snapshot_sql(), &[&index, &query])
+                .await
+                .wrap_err(
+                    "querying legacy ec_spire_index_scan_leaf_candidate_snapshot without row segment metrics",
+                )?;
+            Ok(rows
+                .into_iter()
+                .map(LeafCandidateRow::from_legacy)
+                .collect())
+        }
+        Err(err) => Err(err).wrap_err("querying ec_spire_index_scan_leaf_candidate_snapshot"),
+    }
+}
+
+fn is_missing_leaf_row_segment_snapshot_column(err: &tokio_postgres::Error) -> bool {
+    let message = err.to_string();
+    message.contains("leaf_row_segment_read_count")
+        || message.contains("leaf_row_segment_read_bytes")
 }
 
 async fn query_leaf_target_assignment_rows(
@@ -1407,6 +1427,20 @@ fn leaf_candidate_snapshot_sql() -> &'static str {
             candidate_row_count, leaf_block_available_count, leaf_block_selected_count,
             leaf_block_skipped_count, leaf_summary_object_bytes, leaf_row_object_bytes,
             leaf_row_segment_read_count, leaf_row_segment_read_bytes,
+            primary_candidate_row_count,
+            boundary_replica_candidate_row_count, deduped_candidate_row_count,
+            truncated_candidate_row_count, candidate_winner_count,
+            leaf_object_read_nanos, leaf_summary_score_nanos, leaf_row_score_nanos,
+            candidate_score_nanos,
+            candidate_materialize_nanos, candidate_heap_append_nanos
+     FROM ec_spire_index_scan_leaf_candidate_snapshot($1::text::regclass::oid, $2::real[])
+     ORDER BY pid"
+}
+
+fn legacy_leaf_candidate_snapshot_sql() -> &'static str {
+    "SELECT pid, node_id, local_store_id, object_bytes, route_count, scanned_count,
+            candidate_row_count, leaf_block_available_count, leaf_block_selected_count,
+            leaf_block_skipped_count, leaf_summary_object_bytes, leaf_row_object_bytes,
             primary_candidate_row_count,
             boundary_replica_candidate_row_count, deduped_candidate_row_count,
             truncated_candidate_row_count, candidate_winner_count,
@@ -1666,6 +1700,38 @@ impl From<Row> for LeafCandidateRow {
             candidate_score_nanos: row.get(22),
             candidate_materialize_nanos: row.get(23),
             candidate_heap_append_nanos: row.get(24),
+        }
+    }
+}
+
+impl LeafCandidateRow {
+    fn from_legacy(row: Row) -> Self {
+        Self {
+            pid: row.get(0),
+            node_id: row.get(1),
+            local_store_id: row.get(2),
+            object_bytes: row.get(3),
+            route_count: row.get(4),
+            scanned_count: row.get(5),
+            candidate_row_count: row.get(6),
+            leaf_block_available_count: row.get(7),
+            leaf_block_selected_count: row.get(8),
+            leaf_block_skipped_count: row.get(9),
+            leaf_summary_object_bytes: row.get(10),
+            leaf_row_object_bytes: row.get(11),
+            leaf_row_segment_read_count: 0,
+            leaf_row_segment_read_bytes: 0,
+            primary_candidate_row_count: row.get(12),
+            boundary_replica_candidate_row_count: row.get(13),
+            deduped_candidate_row_count: row.get(14),
+            truncated_candidate_row_count: row.get(15),
+            candidate_winner_count: row.get(16),
+            leaf_object_read_nanos: row.get(17),
+            leaf_summary_score_nanos: row.get(18),
+            leaf_row_score_nanos: row.get(19),
+            candidate_score_nanos: row.get(20),
+            candidate_materialize_nanos: row.get(21),
+            candidate_heap_append_nanos: row.get(22),
         }
     }
 }
@@ -3548,6 +3614,10 @@ mod tests {
         assert!(leaf_candidate_snapshot_sql().contains("leaf_row_segment_read_count"));
         assert!(leaf_candidate_snapshot_sql().contains("leaf_row_segment_read_bytes"));
         assert!(leaf_candidate_snapshot_sql().contains("leaf_summary_score_nanos"));
+        assert!(legacy_leaf_candidate_snapshot_sql().contains("leaf_summary_object_bytes"));
+        assert!(legacy_leaf_candidate_snapshot_sql().contains("leaf_row_object_bytes"));
+        assert!(!legacy_leaf_candidate_snapshot_sql().contains("leaf_row_segment_read_count"));
+        assert!(!legacy_leaf_candidate_snapshot_sql().contains("leaf_row_segment_read_bytes"));
         assert!(local_store_overlap_sql()
             .contains("ec_spire_index_scan_local_store_read_overlap_harness"));
         assert!(remote_pipeline_steps_sql().contains("ec_spire_remote_pipeline_steps"));
