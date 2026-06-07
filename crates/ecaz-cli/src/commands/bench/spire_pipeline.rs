@@ -1244,7 +1244,15 @@ async fn query_leaf_candidate_rows(
 }
 
 fn is_missing_leaf_row_segment_snapshot_column(err: &tokio_postgres::Error) -> bool {
-    let message = err.to_string();
+    let db_message = err.as_db_error().map(|db_error| db_error.message());
+    let display_message;
+    let message = match db_message {
+        Some(message) => message,
+        None => {
+            display_message = err.to_string();
+            display_message.as_str()
+        }
+    };
     message.contains("leaf_row_segment_read_count")
         || message.contains("leaf_row_segment_read_bytes")
 }
