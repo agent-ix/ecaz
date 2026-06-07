@@ -1,50 +1,65 @@
-# Task 85 Review Request: AWS 1M Block8 Geometry Slice
+# Task 85 Review Request: AWS 1M Block8 Geometry Result
 
 ## Summary
 
-This packet prepares the next Task85 latency mechanism suite: build and measure
-a separate `leaf_block_rows=8` SPIRE index at AWS 1M/q500. Packet 003 showed
-the retained miss distribution is too broad for another small cap/recovery
-sweep, so this slice tests whether smaller leaf blocks reduce candidate density
-enough to beat the Task85 warm latency floor while retaining recall.
+This packet tests the Task85 candidate-density hypothesis at AWS 1M/q500 by
+building a separate `leaf_block_rows=8` SPIRE index and measuring matched-recall
+latency against the retained Task79/Task85 block16 warm floor.
 
-## Suite
+Verdict: reject block8 as a Task85 latency improvement. It reaches the retained
+recall point with about half the candidates, but latency is worse at p50 and
+p95. Candidate reduction alone did not move the product-scale latency target.
 
-`reviews/task-85/004-aws-1m-block8-geometry/suite-aws-1m-block8-geometry-q500.json`
+## Baseline
 
-The suite will:
-
-- precheck the retained block16 and candidate block8 index state;
-- build `aws_spire_1m_rabitq_t85_block8_tg256_idx` with
-  `ec_spire.leaf_block_rows=8`;
-- run q500 `nprobe=96`, `rerank_width=25` rows at global caps `1152`, `1536`,
-  `2048`, and `2304`;
-- repeat `global2048` as a warm candidate-density row;
-- capture storage after build.
-
-The retained Task85 warm floor remains:
+Retained Task85 warm floor from packet 001:
 
 | Recall@10 | p50 | p95 | p99 | Candidate Sum |
 | ---: | ---: | ---: | ---: | ---: |
 | 0.9832 | 246.397 ms | 304.476 ms | 321.342 ms | 9,213,846 |
 
-## Acceptance Bar
+## Block8 Results
 
-This packet can only claim a product-scale latency improvement if an AWS q500
-block8 row has:
+`reviews/task-85/004-aws-1m-block8-geometry/artifacts/aws-1m-block8-geometry-q500/suite-report.md`
 
-- `recall@10 >= 0.9832`;
-- p50/p95/p99 better than the retained warm row, with enough margin to be
-  credible against AWS run variance;
-- `candidate_sum < 9,213,846`;
-- storage/build impact reported.
+| Row | Recall@10 | p50 | p95 | p99 | Candidate Sum | Verdict |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| block8 global1152 first | 0.9832 | 283.839 ms | 357.274 ms | 2729.302 ms | 4,607,442 | same recall, fewer candidates, slower |
+| block8 global1536 | 0.9876 | 283.900 ms | 340.606 ms | 350.005 ms | 6,143,277 | higher recall, slower |
+| block8 global2048 | 0.9914 | 308.561 ms | 355.499 ms | 361.867 ms | 8,191,063 | higher recall, slower |
+| block8 global2304 | 0.9926 | 320.404 ms | 362.190 ms | 371.869 ms | 9,214,933 | higher recall, slower and no candidate win |
+| block8 global2048 repeat | 0.9914 | 307.925 ms | 355.430 ms | 362.980 ms | 8,191,063 | warm repeat still slower |
+
+The matched-recall comparison is the important row: block8/global1152 preserved
+`recall@10=0.9832` and reduced candidates from `9,213,846` to `4,607,442`, but
+latency regressed from `246.397/304.476/321.342 ms` to
+`283.839/357.274/2729.302 ms` at p50/p95/p99.
+
+## Operator Notes
+
+The first AWS run failed during block8 index build because the 100 GiB data
+volume was full:
+
+`reviews/task-85/004-aws-1m-block8-geometry/artifacts/aws-1m-block8-geometry-q500-nospace-failed/build-spire-1m-rabitq-block8-tg256.log`
+
+The instance was paused after the failed attempt, resumed for inspection, paused
+again, then the data EBS volume was expanded from 100 GiB to 150 GiB and XFS was
+grown. The suite was rerun successfully after that expansion.
+
+Final AWS state after the successful run:
+
+`reviews/task-85/004-aws-1m-block8-geometry/artifacts/cloud-status-final-paused-after-block8-success.log`
 
 ## Validation
 
 - `ecaz bench suite audit`: passed for 8 steps.
-- AWS run: pending.
+- Failed first AWS run artifacts preserved under
+  `artifacts/aws-1m-block8-geometry-q500-nospace-failed/`.
+- Successful AWS suite: completed 8, failed 0, skipped 0.
+- AWS profile `1m`: paused after the run.
 
 ## Requested Review
 
-Please review whether this suite is the right block-geometry test for Task85
-before using AWS time.
+Please review the block8 rejection as Task85 latency evidence. The key question
+is whether this is enough to rule out smaller block geometry as a product-scale
+latency path and redirect Task85 toward the next mechanism.

@@ -1,0 +1,7 @@
+Command:
+target/debug/ecaz cloud resume --profile 1m --database postgres
+
+Captured output:
+profile=1m database=postgres instance=i-06ace3e95ab942623 state=running
+db_private_ip=10.42.1.131
+ssm=ready
