@@ -109,13 +109,13 @@ unsafe fn reencode_tuple_for_storage(
         options::StorageFormat::PqFastScan => {
             // SAFETY: caller passes the live IVF index relation and metadata
             // read from it; the model chain is validated by the loader.
-            let model = unsafe { quantizer::load_pq_fastscan_model(index_relation, metadata) }?;
+            let model = quantizer::load_pq_fastscan_model(index_relation, metadata)?;
             ivf_quantizer.encode_source_with_pq_model(&tuple.source_vector, &model)?
         }
         options::StorageFormat::TurboQuantTqPlus => {
             // SAFETY: caller passes the live IVF index relation and metadata
             // read from it; the calibration chain is validated by the loader.
-            let model = unsafe { quantizer::load_tqplus_model(index_relation, metadata) }?;
+            let model = quantizer::load_tqplus_model(index_relation, metadata)?;
             ivf_quantizer.encode_source_with_tqplus_model(&tuple.source_vector, &model)?
         }
         options::StorageFormat::Auto
