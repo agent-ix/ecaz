@@ -147,6 +147,18 @@ fn decode_remote_search_local_heap_locator(
     })
 }
 
+fn local_heap_prefetch_blocks_from_decoded_candidates(
+    decoded_candidates: &[(crate::storage::page::ItemPointer, SpireRemoteSearchCandidateRow)],
+) -> Vec<pg_sys::BlockNumber> {
+    let mut block_numbers = decoded_candidates
+        .iter()
+        .map(|(heap_tid, _candidate)| heap_tid.block_number)
+        .collect::<Vec<_>>();
+    block_numbers.sort_unstable();
+    block_numbers.dedup();
+    block_numbers
+}
+
 fn remote_search_exact_heap_score(query: &[f32], source_vector: &[f32]) -> Result<f32, String> {
     if query.len() != source_vector.len() {
         return Err(format!(
@@ -214,9 +226,21 @@ fn remote_search_heap_candidate_rows_from_compact_candidates(
     };
 
     let result = (|| -> Result<Vec<SpireRemoteSearchLocalHeapCandidateRow>, String> {
-        let mut rows = Vec::with_capacity(candidates.len());
-        for candidate in candidates {
-            let heap_tid = decode_remote_search_local_heap_locator(&candidate, context)?;
+        let decoded_candidates = candidates
+            .into_iter()
+            .map(|candidate| {
+                let heap_tid = decode_remote_search_local_heap_locator(&candidate, context)?;
+                Ok((heap_tid, candidate))
+            })
+            .collect::<Result<Vec<_>, String>>()?;
+        crate::am::stream::prefetch_relation_blocks(
+            heap_relation.as_ptr(),
+            local_heap_prefetch_blocks_from_decoded_candidates(&decoded_candidates),
+            "ec_spire local heap resolution prefetch",
+        );
+
+        let mut rows = Vec::with_capacity(decoded_candidates.len());
+        for (heap_tid, candidate) in decoded_candidates {
             let source_vector = scan::load_indexed_source_vector_from_heap_row(
                 &mut heap_reader,
                 indexed_attribute,
