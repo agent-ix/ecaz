@@ -1,0 +1,7 @@
+CREATE EXTENSION
+ leaf_row_segment_read_count | leaf_row_segment_read_bytes | primary_candidate_row_count | leaf_object_read_nanos 
+-----------------------------+-----------------------------+-----------------------------+------------------------
+                           0 |                           0 |                        8493 |              554758566
+(1 row)
+
+NOTICE:  extension "ecaz" already exists, skipping

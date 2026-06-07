@@ -127,9 +127,11 @@ Ledger states:
 
 Current ledger:
 
-- object-read and physical layout: `instrumenting`; packets 009-011 show
-  retained latency is read dominated and add actual selected row-segment byte
-  counters needed before a V5/block-aligned layout decision;
+- object-read and physical layout: `implementing`; packets 009-011 show
+  retained latency is read dominated, packets 017-019 expose and validate
+  actual selected row-segment counters on AWS, and packet 019 shows the next
+  lever is selected row-segment read-call/layout locality rather than the
+  legacy full row-object byte span;
 - summary scoring CPU: `open`; packet 010 shows score CPU is secondary to
   object reads, but still material enough to require profiling and a stop or
   implementation checkpoint;
@@ -138,9 +140,10 @@ Current ledger:
 - candidate-surface redesign with recall preservation: `open`; rejected
   geometry/cap/k-summary variants are closed, but any new policy must target
   selected-leaf misses and beat the retained same-recall latency bar;
-- benchmark harness and evidence extensions: `instrumenting`; packets 009-011
-  extend funnel evidence, and further suite metrics are required if row-segment
-  or tuple-locality bottlenecks cannot be judged from current output;
+- benchmark harness and evidence extensions: `instrumenting`; packets 009-019
+  extend funnel evidence through `ecaz bench suite`, including appended
+  row-segment AWS q500 counters; further suite metrics are still required for
+  tuple-locality and any implementation-specific physical-layout measurement;
 - comparator and product policy gate: `open`; cannot close until the
   implementation/rejection ledger above has packet-local exits.
 
