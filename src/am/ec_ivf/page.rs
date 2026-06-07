@@ -73,6 +73,7 @@ pub const EC_IVF_METADATA_TRAINING_VERSION_OFFSET: usize = 20;
 pub const EC_IVF_METADATA_SEED_OFFSET: usize = 24;
 pub const EC_IVF_METADATA_STORAGE_FORMAT_OFFSET: usize = 32;
 pub const EC_IVF_METADATA_RERANK_OFFSET: usize = 33;
+pub const EC_IVF_METADATA_QUANT_BITS_OFFSET: usize = 34;
 pub const EC_IVF_METADATA_CENTROID_HEAD_OFFSET: usize = 36;
 pub const EC_IVF_METADATA_DIRECTORY_HEAD_OFFSET: usize = 42;
 pub const EC_IVF_METADATA_TOTAL_LIVE_TUPLES_OFFSET: usize = 48;
@@ -2628,6 +2629,48 @@ mod tests {
     }
 
     #[test]
+    fn metadata_decode_rejects_invalid_header_and_quant_bits() {
+        let metadata = MetadataPage::empty(EcIvfOptions {
+            nlists: 4,
+            nprobe: 2,
+            rerank_width: 0,
+            training_sample_rows: 32,
+            seed: 9,
+            pq_group_size: 0,
+            posting_slack_percent: 0,
+            quant_bits: 4,
+            storage_format: StorageFormat::TurboQuantTqPlus,
+            rerank: RerankMode::Off,
+        });
+
+        let mut invalid_magic = metadata.encode();
+        invalid_magic[0..4].copy_from_slice(&0xdead_beefu32.to_le_bytes());
+        assert!(MetadataPage::decode(&invalid_magic)
+            .unwrap_err()
+            .contains("invalid ec_ivf metadata magic"));
+
+        let mut invalid_version = metadata.encode();
+        invalid_version[EC_IVF_METADATA_FORMAT_VERSION_OFFSET..][..2]
+            .copy_from_slice(&(INDEX_FORMAT_VERSION + 1).to_le_bytes());
+        assert!(MetadataPage::decode(&invalid_version)
+            .unwrap_err()
+            .contains("unsupported ec_ivf metadata format version"));
+
+        let mut legacy_quant_bits = metadata.encode();
+        legacy_quant_bits[EC_IVF_METADATA_QUANT_BITS_OFFSET] = 0;
+        assert_eq!(
+            MetadataPage::decode(&legacy_quant_bits).unwrap().quant_bits,
+            4
+        );
+
+        let mut invalid_quant_bits = metadata.encode();
+        invalid_quant_bits[EC_IVF_METADATA_QUANT_BITS_OFFSET] = 3;
+        assert!(MetadataPage::decode(&invalid_quant_bits)
+            .unwrap_err()
+            .contains("invalid ec_ivf quant_bits stored in metadata"));
+    }
+
+    #[test]
     fn block_ref_roundtrip() {
         let original = block(99);
         let mut encoded = Vec::new();
@@ -2669,6 +2712,34 @@ mod tests {
     }
 
     #[test]
+    fn centroid_tuple_rejects_invalid_tag_dimensions_and_values() {
+        let tuple = IvfCentroidTuple {
+            list_id: 0,
+            centroid: vec![1.0, 0.0],
+        };
+        let mut encoded = tuple.encode().unwrap();
+
+        encoded[0] = 0xff;
+        assert!(IvfCentroidTupleRef::decode(&encoded, 2)
+            .unwrap_err()
+            .contains("invalid ec_ivf centroid tuple tag"));
+
+        encoded = tuple.encode().unwrap();
+        encoded[5..7].copy_from_slice(&3u16.to_le_bytes());
+        assert!(IvfCentroidTupleRef::decode(&encoded, 2)
+            .unwrap_err()
+            .contains("ec_ivf centroid dimensions mismatch"));
+
+        assert!(IvfCentroidTuple {
+            list_id: 1,
+            centroid: vec![f32::NAN],
+        }
+        .encode()
+        .unwrap_err()
+        .contains("ec_ivf centroid contains a non-finite value"));
+    }
+
+    #[test]
     fn list_directory_tuple_roundtrip() {
         let tuple = IvfListDirectoryTuple {
             list_id: 9,
@@ -2687,6 +2758,21 @@ mod tests {
             IvfListDirectoryTuple::empty(10).head_block,
             BlockRef::INVALID
         );
+    }
+
+    #[test]
+    fn list_directory_tuple_rejects_invalid_length_and_tag() {
+        let tuple = IvfListDirectoryTuple::empty(9);
+        let mut encoded = tuple.encode();
+
+        assert!(IvfListDirectoryTuple::decode(&encoded[..encoded.len() - 1])
+            .unwrap_err()
+            .contains("ec_ivf list directory tuple length mismatch"));
+
+        encoded[0] = 0xff;
+        assert!(IvfListDirectoryTuple::decode(&encoded)
+            .unwrap_err()
+            .contains("invalid ec_ivf list directory tuple tag"));
     }
 
     #[test]
@@ -2736,6 +2822,39 @@ mod tests {
     }
 
     #[test]
+    fn posting_tuple_encoders_cover_deleted_and_reject_non_finite_gamma() {
+        let deleted = IvfPostingTuple {
+            list_id: 2,
+            deleted: true,
+            heaptids: vec![tid(1, 1)],
+            gamma: 0.75,
+            rerank_tid: ItemPointer::INVALID,
+            payload: vec![1, 2, 3],
+        };
+        let encoded = deleted.encode().unwrap();
+        let borrowed = IvfPostingTupleRef::decode(&encoded, deleted.payload.len()).unwrap();
+        assert!(borrowed.deleted);
+
+        let mut invalid_gamma = deleted.clone();
+        invalid_gamma.gamma = f32::INFINITY;
+        assert!(invalid_gamma
+            .encode()
+            .unwrap_err()
+            .contains("ec_ivf posting tuple gamma must be finite"));
+
+        assert!(IvfPostingTuple::encode_single_heaptid(
+            1,
+            false,
+            tid(1, 1),
+            f32::NAN,
+            ItemPointer::INVALID,
+            &[0],
+        )
+        .unwrap_err()
+        .contains("ec_ivf posting tuple gamma must be finite"));
+    }
+
+    #[test]
     fn posting_tuple_rejects_heaptid_overflow() {
         let tuple = IvfPostingTuple {
             list_id: 0,
@@ -2769,6 +2888,36 @@ mod tests {
         assert_eq!(borrowed.group_index, 2);
         assert_eq!(borrowed.next_tid, tuple.next_tid);
         assert_eq!(borrowed.collect_centroids(), tuple.centroids);
+    }
+
+    #[test]
+    fn pq_codebook_tuple_rejects_invalid_length_tag_and_values() {
+        let tuple = IvfPqCodebookTuple {
+            group_index: 2,
+            next_tid: tid(9, 3),
+            centroids: vec![0.0, 0.25],
+        };
+        let mut encoded = tuple.encode().unwrap();
+
+        assert!(
+            IvfPqCodebookTupleRef::decode(&encoded[..encoded.len() - 1], 2)
+                .unwrap_err()
+                .contains("ec_ivf pq codebook tuple length mismatch")
+        );
+
+        encoded[0] = 0xff;
+        assert!(IvfPqCodebookTupleRef::decode(&encoded, 2)
+            .unwrap_err()
+            .contains("invalid ec_ivf pq codebook tuple tag"));
+
+        assert!(IvfPqCodebookTuple {
+            group_index: 0,
+            next_tid: ItemPointer::INVALID,
+            centroids: vec![f32::INFINITY],
+        }
+        .encode()
+        .unwrap_err()
+        .contains("ec_ivf pq codebook contains a non-finite value"));
     }
 
     #[test]
