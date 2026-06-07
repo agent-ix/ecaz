@@ -402,3 +402,11 @@ should stop.
   object-read locator work as insufficient for the Task 85 product Pareto
   gate and makes summary scoring CPU the next required same-recall latency
   workstream.
+- `reviews/task-85/022-summary-scoring-single-payload-fast-path/`: local
+  summary-scoring CPU implementation checkpoint. Commit `f90c8202e` adds an
+  exact-preserving fast path for single-representative zero-gamma summary
+  payloads, bypassing the batch-max machinery used for multi-representative
+  summaries. Local focused validation passed (`cargo fmt --check` and
+  `CARGO_DISABLE_GIT_DISCOVERY=1 cargo test -p ecaz --lib --locked --offline
+  assignment_scorer -- --nocapture`). This checkpoint still requires AWS
+  1M/q500 measurement before summary scoring CPU can be accepted or rejected.
