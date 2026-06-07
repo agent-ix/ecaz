@@ -4,6 +4,14 @@
 
 This report compares TurboVec's TurboQuant implementation only against our TurboQuant implementation. It intentionally excludes RaBitQ, grouped PQ, PQ-FastScan, and FAISS except where needed to explain code paths.
 
+## Evidence Status After Packet 008
+
+Packet `reviews/task-86/008-spire-real-spread` is the production-facing benchmark evidence for the no-format-change SPIRE LUT option. It compares pre-LUT SPIRE TurboQuant against the current SPIRE TurboQuant LUT scorer on the normal real10k/real50k/real100k spread using `ecaz bench suite`, `storage_format=turboquant`, `ec_spire`, 200 queries, 1000 latency iterations, and identical nprobe sweeps.
+
+Measured result: recall and storage were unchanged, and SQL latency improved by roughly 2.4% to 4.5% on mean latency across the nine sweep points. Pipeline query p50 improved by roughly 3.8% to 5.7%.
+
+The TQ+ calibration and renorm sections below remain source/prototype findings, not accepted production improvements. They need the same real-corpus recall/latency/storage treatment before any implementation should be considered complete.
+
 ## Source Finding
 
 TurboVec is a flat scan over compressed vector codes, with an optional ID map. It is not an HNSW, DiskANN, IVF, or SPIRE-style graph/partition index. Its interesting TQ-specific idea is not a different graph layout; it is a per-index calibrated coordinate space:
@@ -25,6 +33,21 @@ For 1536 dimensions and 4-bit no-QJL TQ:
 
 ## Probe Results
 
+### SPIRE LUT Scoring
+
+Packet: `reviews/task-86/008-spire-real-spread`
+
+This is the only production-backed performance improvement from Task 86 so far. SPIRE assignment scoring now prepares and uses the existing no-QJL 4-bit TQ LUT scorer when eligible. The benchmark used SPIRE with TurboQuant storage on real10k/50k/100k:
+
+```text
+SQL mean latency, pre-LUT -> LUT:
+real10k:  nprobe 8  3.44 -> 3.30 ms, 24 8.02 -> 7.69 ms, 32 10.2 -> 9.74 ms
+real50k:  nprobe 16 12.3 -> 12.0 ms, 48 33.9 -> 32.9 ms, 64 48.0 -> 46.1 ms
+real100k: nprobe 32 25.3 -> 24.5 ms, 96 74.1 -> 71.7 ms, 128 95.3 -> 92.3 ms
+```
+
+Storage stayed identical: 8.2 MiB / 857.7 B per row at 10k, 39.8 MiB / 834.1 B per row at 50k, and 79.5 MiB / 833.9 B per row at 100k. Recall was identical at every sweep point.
+
 ### TQ+ Calibration
 
 Packet: `reviews/task-86/002-tqplus-prototype`
@@ -35,7 +58,7 @@ Focused deterministic 1536-dimensional anisotropic probe:
 baseline_mae=0.02642813 tqplus_mae=0.00344425 baseline_rmse=0.03058423 tqplus_rmse=0.00453193 mae_delta_pct=-86.97 rmse_delta_pct=-85.18
 ```
 
-Interpretation: TQ+ calibration is a real quality candidate. It keeps packed code scanning and materially reduces error in the synthetic probe.
+Interpretation: TQ+ calibration is a quality candidate, not a benchmark-backed production improvement yet. It keeps packed code scanning and materially reduces error in the synthetic probe, but still needs real-corpus recall/latency/storage evidence.
 
 ### Renorm Isolation
 
@@ -56,12 +79,6 @@ direct_ns_per_score=9356.24 dim_lut_ns_per_score=4448.95 byte_lut_ns_per_score=5
 ```
 
 Interpretation: byte-pair LUTs are not the first kernel to productionize. They are correct and faster than direct codebook multiply, but slower than our existing dim-LUT scorer while using substantially more query memory.
-
-### SPIRE LUT Scoring
-
-Packet: `reviews/task-86/005-spire-tq-lut`
-
-SPIRE assignment scoring now prepares and uses the existing no-QJL 4-bit TQ LUT scorer when eligible. This aligns SPIRE with IVF's existing behavior and HNSW's optional `full_lut`/`tiled_lut` modes, with no storage-format change.
 
 ## SIMD/Kernels
 
@@ -88,8 +105,8 @@ Best next kernel work is not byte LUT. Better candidates are:
 
 ## Recommended Next Tasks
 
-1. Benchmark the SPIRE LUT change with `ecaz bench suite`.
-   This validates the production-facing no-format-change improvement before introducing TQ+ metadata.
+1. Promote or rerun the packet 008 SPIRE TurboQuant benchmark as the current local lane.
+   The measured improvement is modest but real, recall-neutral, and storage-neutral. A second host-class run should decide whether it is lane-promotable.
 
 2. Prototype calibration-only TQ+ as an explicit quantizer profile.
    Persist index-level shift/scale, keep per-vector packed bytes unchanged, and compare recall/latency/storage against our current TQ in one index first.

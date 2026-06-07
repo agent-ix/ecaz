@@ -1,0 +1,12 @@
+[suite:task86-spire-turboquant-lutoff-real-spread] wrote reviews/task-86/008-spire-real-spread/artifacts/lutoff/suite-manifest.json
+[suite:task86-spire-turboquant-lutoff-real-spread] precheck-pg18-extension -> --database task86_spire_lutoff --host /Users/peter/.pgrx --port 28818 dev sql --pg 18 --db task86_spire_lutoff --socket-dir /Users/peter/.pgrx --raw --sql "CREATE EXTENSION IF NOT EXISTS ecaz; SELECT now() AS captured_at, version() AS postgres_version, current_setting('server_version_num') AS server_version_num; SELECT extname, extversion FROM pg_extension WHERE extname = 'ecaz'; SELECT amname FROM pg_am WHERE amname IN ('ec_spire', 'ec_ivf', 'ec_hnsw') ORDER BY amname;" --log-output reviews/task-86/008-spire-real-spread/artifacts/lutoff/precheck-pg18-extension.log
+[suite:task86-spire-turboquant-lutoff-real-spread] wrote reviews/task-86/008-spire-real-spread/artifacts/lutoff/suite-manifest.json
+[suite:task86-spire-turboquant-lutoff-real-spread] wrote reviews/task-86/008-spire-real-spread/artifacts/lutoff/suite-manifest.json
+
+   0: [91msuite step "precheck-pg18-extension" failed with exit code 1; rerun with --continue-on-error to keep going[0m
+
+Location:
+   [35mcrates/ecaz-cli/src/commands/bench/suite.rs[0m:[35m841[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.

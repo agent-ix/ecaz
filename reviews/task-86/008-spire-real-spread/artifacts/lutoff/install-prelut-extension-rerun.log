@@ -1,0 +1,6 @@
+[install] repo=/Users/peter/dev/tqvector/.task-worktrees/task86-prelut
+[install] pgrx_home=/Users/peter/.pgrx
+[install] pg_config=/opt/homebrew/opt/postgresql@18/bin/pg_config
+[install] backend artifact assertion passed
+[install] installed_backend=/opt/homebrew/lib/postgresql@18/ecaz.dylib
+[install] sha256=de57f9b8c741152d1022cdd88eb16ce2db3cee9bd1ecc1f57e534d290181e628
