@@ -1,6 +1,6 @@
 # Task 85: SPIRE Product-Scale Pareto Program
 
-Status: in progress - reopened for comprehensive same-recall latency plan (2026-06-07; correction after premature closeout `reviews/task-85/007-product-scale-closeout/`)
+Status: complete - closed as research/opt-in at 1M (2026-06-07; final closeout `reviews/task-85/034-product-scale-closeout/`)
 Owner: coder (to be assigned). One coder, one branch.
 Priority: 0 (large SPIRE continuation after Task 84)
 
@@ -186,20 +186,30 @@ Current ledger:
   mechanisms identified by the packet 025 scatter signal: TID fetch ordering
   and explicit local heap block prefetch. Packet 031 removes the rejected
   prefetch implementation from the branch;
-- candidate-surface redesign with recall preservation: `open`; rejected
-  geometry/cap/k-summary variants are closed, but any new policy must target
-  selected-leaf misses and beat the accepted same-recall latency bar. It
-  remains Task 85 scope, not future work, until a packet accepts/rejects/stops
-  it;
-- benchmark harness and evidence extensions: `instrumenting`; packets 009-021
+- candidate-surface redesign with recall preservation: `rejected`; packet 032
+  closes this workstream with a stop condition from packet-local Task 83,
+  Task 84, and Task 85 evidence. Blanket caps recover recall only by growing
+  candidates; block8, block32, and per-leaf cap changes do not beat the
+  same-recall latency/candidate bar; route-prior, k=3 summaries, and selective
+  near-cap rescue do not move enough selected-leaf misses without becoming
+  another cap-growth policy. A future learned/calibrated candidate policy would
+  require a new model/data contract and is not an unclosed Task 85 lever;
+- benchmark harness and evidence extensions: `closed-sufficient`; packets 009-021
   extend funnel evidence through `ecaz bench suite`, including appended
   row-segment AWS q500 counters and a local build-validation workaround for
   artifact-heavy checkouts. Packet 023 records the combined accepted profile;
   packet 024 adds rerank-prefix heap-block locality fields required to judge
-  tuple/rerank locality. Further suite metrics are still required for any
-  implementation-specific physical-layout measurement;
-- comparator and product policy gate: `open`; cannot close until the
-  implementation/rejection ledger above has packet-local exits.
+  tuple/rerank locality. Packet 032 confirms no further candidate-surface
+  metrics are needed for the current same-recall latency workstream, and
+  packet 033 closes the product comparator gate;
+- comparator and product policy gate: `closed-research-opt-in`; packet 033
+  keeps SPIRE out of the 1M product default path. Packet 023 is a real SPIRE
+  same-recall improvement, but IVF/RaBitQ at `nprobe=256` reports higher recall
+  (`0.9936` vs `0.9876`), much lower latency (`66.2/72.5/75.7 ms` vs
+  `222.692/275.769/286.980 ms` p50/p95/p99), and a smaller index
+  (`298.0 MiB` vs `872.1 MiB`). HNSW 1M remains unavailable in current
+  evidence: Task 61 deferred AWS 1M for capacity and the local 1M HNSW packet
+  stopped before recall/latency/storage rows.
 
 #### 4.1 Object-Read And Physical Layout
 
@@ -453,10 +463,20 @@ their AWS 1M/q500 recall/candidate/latency rows, and the final AWS pause status.
 
 ## Closeout
 
-Packet `reviews/task-85/007-product-scale-closeout/` was a premature closeout:
+Packet `reviews/task-85/034-product-scale-closeout/` is the final closeout.
+Task 85 lands as a research/opt-in SPIRE improvement, not a product default
+change. Packet 023 accepts the V5 selected row-segment locator plus
+single-payload summary fast path as the strongest SPIRE point:
+`recall@10=0.9876`, `candidate_sum=9,213,846`, `heap_rerank_sum=12,500`, and
+`222.692/275.769/286.980 ms` p50/p95/p99. This beats the retained packet 019
+SPIRE repeat at unchanged recall/candidates/rerank width, but packet 033
+rejects a product-default change because IVF/RaBitQ already offers same-or-better
+1M recall with much lower latency and smaller index size.
+
+Historical note: packet `reviews/task-85/007-product-scale-closeout/` was a premature closeout:
 it correctly rejected the measured Task 85 options under the same-recall
 latency bar, but incorrectly treated the next research direction as out of
-scope. This task is reopened so those directions are part of the Task 85
+scope. This task was reopened so those directions were part of the Task 85
 program rather than a vague follow-up.
 
 The retained Task 79/81 block16/global1152 point remains the baseline to beat.
@@ -465,10 +485,11 @@ profiles because each option either lost recall, worsened latency, or required
 candidate inflation that was not justified by the small same-recall latency
 movement.
 
-The continuing work is the comprehensive optimization program above: the
-accepted physical-layout plus summary-scoring product candidate, rerank
-locality, candidate-set-preserving scoring, benchmark harness extensions, and a
-final product/default policy gate.
+The comprehensive optimization program above is now closed: object-read/layout
+and summary scoring have accepted evidence; rerank locality and
+candidate-surface redesign have rejection/stop-condition evidence; benchmark
+harness extensions are sufficient for those decisions; and the final
+comparator gate closes SPIRE as research/opt-in for 1M.
 
 The phrase "future research direction" is no longer acceptable as a Task 85
 escape hatch. If the direction is the best known path to retained-recall
@@ -600,3 +621,22 @@ should stop.
   Commit `ce8b5fe1e` reverts packet 029's rejected code commit `94fef559c`,
   restoring the packet 023/025 local heap resolution path after packet 030
   proved explicit local heap block prefetch worsened retained-recall latency.
+- `reviews/task-85/032-candidate-surface-stop-condition/`: stop-condition
+  checkpoint for candidate-surface redesign. The packet inherits Task 83,
+  Task 84, and Task 85 candidate-surface evidence and closes the workstream as
+  rejected for the current same-recall latency task: every concrete cap,
+  geometry, k-summary, route-prior, and near-cap rescue direction either loses
+  recall, grows candidates, fails to move selected-leaf misses, or requires a
+  new learned/calibrated policy contract outside the current product evidence.
+- `reviews/task-85/033-comparator-product-policy-gate/`: final comparator and
+  product policy gate. Packet 023 remains the strongest SPIRE point, but
+  IVF/RaBitQ `nprobe=256` reports higher 1M recall (`0.9936`) with far lower
+  p50/p95/p99 (`66.2/72.5/75.7 ms`) and a smaller index (`298.0 MiB`) than
+  SPIRE packet 023 (`0.9876`, `222.692/275.769/286.980 ms`, `872.1 MiB`).
+  HNSW 1M is explicitly unavailable in current evidence: AWS Task 61 deferred
+  1M for capacity and the local 1M packet has no completed
+  recall/latency/storage rows. SPIRE remains research/opt-in at 1M.
+- `reviews/task-85/034-product-scale-closeout/`: final Task 85 closeout. The
+  task closes with a same-recall SPIRE improvement but no default/profile
+  change. Current product defaults remain unchanged and no ADR is required
+  because no external behavior or default contract changes.
