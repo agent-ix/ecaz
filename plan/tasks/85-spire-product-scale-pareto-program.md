@@ -156,12 +156,16 @@ Current ledger:
   023 proves it on AWS 1M/q500: repeat candidate-score p50 falls to
   `56.327 ms`, summary-score p50 falls to `46.270 ms`, and end-to-end latency
   beats packet 019 at the same recall/candidate surface;
-- candidate-set-preserving rerank locality: `instrumenting`; tuple/rerank
-  locality has not yet been measured at the accepted AWS 1M/q500 point. Packet
-  024 adds rerank-prefix heap-block locality metrics to the SPIRE diagnostic
-  surface and `ecaz bench spire-pipeline --funnel-output`. It remains Task 85
-  scope, not future work, until an AWS 1M/q500 packet uses those metrics to
-  accept, reject, or stop candidate-set-preserving rerank locality work;
+- candidate-set-preserving rerank locality: `implementing`; packet 024 adds
+  rerank-prefix heap-block locality metrics to the SPIRE diagnostic surface
+  and `ecaz bench spire-pipeline --funnel-output`. Packet 025 measures those
+  metrics on AWS 1M/q500 at the accepted packet 023 surface and preserves
+  `recall@10=0.9876`, `candidate_sum=9,213,846`, and
+  `heap_rerank_sum=12,500`. The warm rerank prefix has material heap-block
+  scatter: `25` rerank rows/query, unique heap blocks p50/p95/max
+  `22/25/25`, and heap-block transitions p50/p95/max `24/24/24`. The next
+  checkpoint must implement or explicitly stop a candidate-set-preserving TID
+  grouping, block-local rerank batch, or prefetch schedule;
 - candidate-surface redesign with recall preservation: `open`; rejected
   geometry/cap/k-summary variants are closed, but any new policy must target
   selected-leaf misses and beat the accepted same-recall latency bar. It
@@ -276,6 +280,19 @@ Instrumentation checkpoint:
   AWS 1M/q500 same-recall measurement on the packet 023 accepted surface to
   decide whether candidate-set-preserving TID grouping, block-local rerank
   batches, or prefetch scheduling is a justified implementation lever.
+
+Measurement checkpoint:
+
+- packet 025 runs that AWS 1M/q500 measurement on the packet 023 accepted V5
+  locator plus summary fast path surface. The repeat run preserves
+  `recall@10=0.9876`, `candidate_sum=9,213,846`, and
+  `heap_rerank_sum=12,500`, with warm latency `222.140/275.753/288.894 ms`
+  p50/p95/p99. The rerank prefix is highly scattered: across `500` queries
+  and `12,500` rerank rows, unique heap blocks are p50/p95/max `22/25/25` and
+  adjacent heap-block transitions are p50/p95/max `24/24/24`. This does not
+  accept a latency win by itself, but it justifies implementing the
+  candidate-set-preserving locality lever next instead of deferring it as
+  future research.
 
 #### 4.4 Candidate-Surface Redesign Only With Recall Preservation
 
@@ -481,3 +498,15 @@ should stop.
   funnel_record_carries_task85_read_and_score_breakdown -- --nocapture`). The
   next packet must run AWS 1M/q500 on the packet 023 accepted surface and use
   these metrics to accept, reject, or stop rerank locality implementation work.
+- `reviews/task-85/025-aws-rerank-locality-measurement/`: AWS 1M/q500
+  measurement checkpoint for candidate-set-preserving rerank locality. The
+  suite first registers the new diagnostic SQL function without dropping the
+  retained extension/index surface, then measures the packet 023 accepted V5
+  locator plus summary fast path profile. The repeat run preserves
+  `recall@10=0.9876`, `candidate_sum=9,213,846`, and
+  `heap_rerank_sum=12,500`, with warm latency `222.140/275.753/288.894 ms`
+  p50/p95/p99. Rerank locality summary shows `12,500` rerank-prefix rows,
+  unique heap blocks p50/p95/max `22/25/25`, transitions p50/p95/max
+  `24/24/24`, span p50/p95 `8,366/8,993`, and max jump p50/p95
+  `7,533/8,766`. AWS `1m` final status is packet-local and paused. This
+  moves the rerank locality workstream to implementation.
