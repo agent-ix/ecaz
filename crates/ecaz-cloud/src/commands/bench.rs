@@ -5,6 +5,8 @@ use tokio::process::Command;
 
 use crate::{aws, profiles::Profile, ssm, terraform::Terraform};
 
+const MAX_INLINE_SUITE_CONFIG_BYTES: u64 = 6_000;
+
 #[derive(Args, Debug)]
 pub struct BenchArgs {
     #[arg(long)]
@@ -71,9 +73,11 @@ impl BenchArgs {
             .await
             .with_context(|| format!("stat suite config {}", config.display()))?
             .len();
-        // Keep ordinary packet-local suites inline. Some profiles can upload
-        // artifacts but cannot read the uploaded config back via instance S3.
-        let config_s3_uri = if self.skip_upload || config_size <= 20_000 {
+        // Keep only small packet-local suites inline. The full SSM shell script
+        // includes setup and heredoc framing, so configs well below AWS's raw
+        // parameter limit can still truncate and leave the remote `cat` waiting.
+        // Larger suites use the same S3 path as benchmark artifacts.
+        let config_s3_uri = if !should_upload_config(self.skip_upload, config_size) {
             None
         } else {
             let uri = format!("{dest}suite-config.json");
@@ -142,6 +146,10 @@ impl BenchArgs {
         );
         Ok(())
     }
+}
+
+fn should_upload_config(skip_upload: bool, config_size: u64) -> bool {
+    !skip_upload && config_size > MAX_INLINE_SUITE_CONFIG_BYTES
 }
 
 async fn suite_artifacts_dir(
@@ -364,5 +372,18 @@ mod tests {
         );
 
         fs::remove_dir_all(repo_root).expect("remove temp repo root");
+    }
+
+    #[test]
+    fn uploads_suite_configs_before_inline_ssm_limit() {
+        assert!(!should_upload_config(false, MAX_INLINE_SUITE_CONFIG_BYTES));
+        assert!(should_upload_config(
+            false,
+            MAX_INLINE_SUITE_CONFIG_BYTES + 1
+        ));
+        assert!(!should_upload_config(
+            true,
+            MAX_INLINE_SUITE_CONFIG_BYTES + 1
+        ));
     }
 }

@@ -1,7 +1,8 @@
-Finished `test` profile [unoptimized + debuginfo] target(s) in 3.21s
+Finished `test` profile [unoptimized + debuginfo] target(s) in 2.27s
 Running unittests src/lib.rs (target/debug/deps/ecaz_cloud-d53e2689c9997d64)
 
-running 10 tests
+running 11 tests
+test commands::bench::tests::uploads_suite_configs_before_inline_ssm_limit ... ok
 test commands::cleanup::tests::accepts_task_staging_path ... ok
 test commands::cleanup::tests::rejects_non_task_path ... ok
 test commands::install::tests::install_script_adds_extension_features ... ok
@@ -13,7 +14,7 @@ test profiles::tests::parses_named_profiles ... ok
 test commands::bench::tests::remote_suite_script_downloads_uploaded_config_unconditionally ... ok
 test commands::bench::tests::remote_suite_script_exports_simd_for_cli_and_postgres ... ok
 
-test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
 Doc-tests ecaz_cloud
 

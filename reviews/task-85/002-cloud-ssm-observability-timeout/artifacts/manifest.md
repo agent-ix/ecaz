@@ -10,6 +10,11 @@
 and the local AWS CLI invocations for both `send-command` and
 `get-command-invocation` are bounded by a 60-second timeout.
 
+`cloud bench` also uploads suite configs larger than 6KB to S3 instead of
+embedding them in the SSM shell heredoc. The Task 85 baseline suite is 9.3KB,
+and the diagnosed retry showed the remote shell blocked at the inline `cat`
+step.
+
 ## Validation
 
 - `cargo-fmt-check-ecaz-cloud.log`
@@ -17,4 +22,4 @@ and the local AWS CLI invocations for both `send-command` and
   - Result: passed.
 - `cargo-test-ecaz-cloud.log`
   - Command: `cargo test -p ecaz-cloud`
-  - Result: passed, 10 tests.
+  - Result: passed, 11 tests.
