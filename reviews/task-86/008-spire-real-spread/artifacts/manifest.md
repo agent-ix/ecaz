@@ -55,6 +55,10 @@
   - real10k: `3.549 -> 3.406 ms`, `8.089 -> 7.675 ms`, `10.283 -> 9.711 ms`
   - real50k: `12.660 -> 11.938 ms`, `33.779 -> 32.299 ms`, `48.192 -> 46.042 ms`
   - real100k: `25.646 -> 24.670 ms`, `74.584 -> 72.274 ms`, `95.084 -> 92.184 ms`
+- SQL p95/p99 and pipeline p95/p99 are reported in
+  `artifacts/benchmark-delta.md` and sourced from
+  `artifacts/lutoff/results-report.jsonl` and
+  `artifacts/luton/results-report.jsonl`.
 - SPIRE index storage unchanged:
   - real10k: `8.2 MiB`, `857.7 B/row`
   - real50k: `39.8 MiB`, `834.1 B/row`

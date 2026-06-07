@@ -23,7 +23,7 @@ Both suites use `ecaz bench suite`, `ec_spire`, `storage_format=turboquant`, and
 
 ## Main Result
 
-Recall and storage are unchanged. SQL mean latency improves at every sweep point, ranging from about 2.4% to 4.5%. Pipeline query p50 improves by about 3.8% to 5.7%.
+Recall and storage are unchanged. SQL mean latency improves at every sweep point, ranging from about 2.4% to 4.5%. SQL p50/p95/p99 and pipeline p50/p95/p99 also improve at every sweep point; the tail table is in `artifacts/benchmark-delta.md`.
 
 This validates the SPIRE no-QJL 4-bit TurboQuant dim-LUT scoring change as a real, no-format-change improvement. It does not validate TurboVec-style calibrated TQ+ yet; that remains a separate follow-up requiring its own real-corpus suite.
 
