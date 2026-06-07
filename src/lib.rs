@@ -7848,8 +7848,6 @@ fn ec_spire_index_scan_leaf_candidate_snapshot(
         name!(leaf_block_skipped_count, i64),
         name!(leaf_summary_object_bytes, i64),
         name!(leaf_row_object_bytes, i64),
-        name!(leaf_row_segment_read_count, i64),
-        name!(leaf_row_segment_read_bytes, i64),
         name!(primary_candidate_row_count, i64),
         name!(boundary_replica_candidate_row_count, i64),
         name!(deduped_candidate_row_count, i64),
@@ -7861,6 +7859,8 @@ fn ec_spire_index_scan_leaf_candidate_snapshot(
         name!(candidate_score_nanos, i64),
         name!(candidate_materialize_nanos, i64),
         name!(candidate_heap_append_nanos, i64),
+        name!(leaf_row_segment_read_count, i64),
+        name!(leaf_row_segment_read_bytes, i64),
     ),
 > {
     let rows = {
@@ -7901,10 +7901,6 @@ fn ec_spire_index_scan_leaf_candidate_snapshot(
                 .expect("leaf summary object bytes should fit in i64"),
             i64::try_from(row.leaf_row_object_bytes)
                 .expect("leaf row object bytes should fit in i64"),
-            i64::try_from(row.leaf_row_segment_read_count)
-                .expect("leaf row segment read count should fit in i64"),
-            i64::try_from(row.leaf_row_segment_read_bytes)
-                .expect("leaf row segment read bytes should fit in i64"),
             i64::try_from(row.primary_candidate_row_count)
                 .expect("primary candidate row count should fit in i64"),
             i64::try_from(row.boundary_replica_candidate_row_count)
@@ -7927,6 +7923,10 @@ fn ec_spire_index_scan_leaf_candidate_snapshot(
                 .expect("candidate materialize nanoseconds should fit in i64"),
             i64::try_from(row.candidate_heap_append_nanos)
                 .expect("candidate heap append nanoseconds should fit in i64"),
+            i64::try_from(row.leaf_row_segment_read_count)
+                .expect("leaf row segment read count should fit in i64"),
+            i64::try_from(row.leaf_row_segment_read_bytes)
+                .expect("leaf row segment read bytes should fit in i64"),
         )
     }))
 }
