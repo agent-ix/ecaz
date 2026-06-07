@@ -51,7 +51,10 @@ listed.
   - resume succeeded;
   - branch install did not return a verifiable completion or fresh visible SSM
     invocation during polling;
-  - AWS was paused before running the benchmark suite.
+  - AWS was paused before running the benchmark suite;
+  - a second resume plus no-reinstall `cloud bench` attempt showed the same
+    opaque local wait before any fresh visible SSM invocation;
+  - AWS was paused again and final status was captured as `paused`.
 
 No baseline benchmark result is claimed in this packet yet.
 

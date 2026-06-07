@@ -1,0 +1,6 @@
+target/debug/ecaz cloud bench --profile 1m --database postgres --config reviews/task-85/001-handoff-product-baseline-suite/suite-aws-1m-product-baseline-q500.json --suite task85-aws-1m-product-baseline-q500 --ecaz-bin /usr/local/bin/ecaz --log-file reviews/task-85/001-handoff-product-baseline-suite/artifacts/cloud-bench-product-baseline.log
+
+Outcome: local command did not emit stdout/stderr or return after extended polling.
+Recent SSM invocation checks on db instance i-06ace3e95ab942623 did not show a fresh
+current benchmark invocation. AWS was paused rather than continuing from an opaque
+state. No Task 85 baseline benchmark result is claimed from this attempt.

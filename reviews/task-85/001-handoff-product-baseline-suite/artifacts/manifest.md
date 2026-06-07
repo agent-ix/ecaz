@@ -63,3 +63,28 @@ It also includes Task 83 blanket-cap controls at `global1280` and
 No AWS benchmark result is claimed yet. The next Task 85 checkpoint should run
 the audited suite after a verifiable branch install, or skip install only with a
 documented reason that the remote binary already matches this branch.
+
+## No-Reinstall Bench Attempt
+
+Because Task 85 had no executable code changes beyond packet files, a second
+attempt skipped install and tried to run the audited suite against the existing
+remote `/usr/local/bin/ecaz`:
+
+- `cloud-resume-for-baseline-suite.log`
+  - Command: `target/debug/ecaz cloud resume --profile 1m --database postgres --log-file reviews/task-85/001-handoff-product-baseline-suite/artifacts/cloud-resume-for-baseline-suite.log`
+  - Result: resume completed; database `10.42.1.131` ready.
+- `cloud-bench-product-baseline.log`
+  - Command: `target/debug/ecaz cloud bench --profile 1m --database postgres --config reviews/task-85/001-handoff-product-baseline-suite/suite-aws-1m-product-baseline-q500.json --suite task85-aws-1m-product-baseline-q500 --ecaz-bin /usr/local/bin/ecaz --log-file reviews/task-85/001-handoff-product-baseline-suite/artifacts/cloud-bench-product-baseline.log`
+  - Result: no verifiable completion from the local command during polling; no
+    fresh current SSM invocation was visible in the db-instance history.
+- `cloud-pause-after-bench-stall.log`
+  - Command: `target/debug/ecaz cloud pause --profile 1m --database postgres --log-file reviews/task-85/001-handoff-product-baseline-suite/artifacts/cloud-pause-after-bench-stall.log`
+  - Result: pause requested for db and loader instances.
+- `cloud-status-after-bench-stall-pause.log`
+  - Result: first post-pause status observed `stopping`.
+- `cloud-status-final-paused-after-bench-stall.log`
+  - Command: `target/debug/ecaz cloud status --profile 1m --database postgres --log-file reviews/task-85/001-handoff-product-baseline-suite/artifacts/cloud-status-final-paused-after-bench-stall.log`
+  - Result: profile `1m` paused.
+
+This confirms Task 85 needs a cloud-wrapper observability/timeout checkpoint
+before spending more AWS time on the product baseline.
