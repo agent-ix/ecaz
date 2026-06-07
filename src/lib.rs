@@ -101,7 +101,8 @@ pub mod bench_api {
     };
     #[cfg(any(test, feature = "bench"))]
     pub use crate::quant::prod::{
-        PreparedTqPlusNoQjl4BitQuery, TqPlusCalibration, TqPlusNoQjl4BitEncoded,
+        PreparedByteLutNoQjl4BitQuery, PreparedTqPlusNoQjl4BitQuery, TqPlusCalibration,
+        TqPlusNoQjl4BitEncoded,
     };
 
     // Hadamard

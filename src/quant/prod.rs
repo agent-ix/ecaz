@@ -46,6 +46,12 @@ pub struct PreparedTiledLutNoQjl4BitQuery {
 
 #[cfg(any(test, feature = "bench"))]
 #[derive(Debug, Clone, PartialEq)]
+pub struct PreparedByteLutNoQjl4BitQuery {
+    pub lut: Vec<f32>,
+}
+
+#[cfg(any(test, feature = "bench"))]
+#[derive(Debug, Clone, PartialEq)]
 pub struct TqPlusCalibration {
     pub shift: Vec<f32>,
     pub scale: Vec<f32>,
@@ -373,6 +379,17 @@ impl ProdQuantizer {
     }
 
     #[cfg(any(test, feature = "bench"))]
+    pub fn prepare_ip_query_byte_lut_no_qjl_4bit_for_test(
+        &self,
+        query: &[f32],
+    ) -> PreparedByteLutNoQjl4BitQuery {
+        let prepared = self.prepare_ip_query_lut_no_qjl_4bit(query);
+        PreparedByteLutNoQjl4BitQuery {
+            lut: build_byte_pair_lut_no_qjl_4bit(&prepared.lut, self.original_dim),
+        }
+    }
+
+    #[cfg(any(test, feature = "bench"))]
     pub fn fit_tqplus_calibration_for_test(&self, vectors: &[Vec<f32>]) -> TqPlusCalibration {
         assert!(
             !vectors.is_empty(),
@@ -525,6 +542,19 @@ impl ProdQuantizer {
     }
 
     #[cfg(any(test, feature = "bench"))]
+    pub fn prepare_ip_query_tqplus_byte_lut_no_qjl_4bit_for_test(
+        &self,
+        query: &[f32],
+        calibration: &TqPlusCalibration,
+    ) -> PreparedTqPlusNoQjl4BitQuery {
+        let prepared = self.prepare_ip_query_tqplus_no_qjl_4bit_for_test(query, calibration);
+        PreparedTqPlusNoQjl4BitQuery {
+            lut: build_byte_pair_lut_no_qjl_4bit(&prepared.lut, self.original_dim),
+            bias: prepared.bias,
+        }
+    }
+
+    #[cfg(any(test, feature = "bench"))]
     pub fn score_tqplus_no_qjl_4bit_from_prepared_for_test(
         &self,
         prepared: &PreparedTqPlusNoQjl4BitQuery,
@@ -557,6 +587,19 @@ impl ProdQuantizer {
         }
 
         score + prepared.bias
+    }
+
+    #[cfg(any(test, feature = "bench"))]
+    pub fn score_tqplus_no_qjl_4bit_from_byte_lut_for_test(
+        &self,
+        prepared: &PreparedTqPlusNoQjl4BitQuery,
+        encoded: &TqPlusNoQjl4BitEncoded,
+    ) -> f32 {
+        assert!(
+            self.bits == 4 && !qjl_enabled(self.original_dim, self.bits),
+            "TQ+ byte LUT scoring requires the no-QJL 4-bit lane"
+        );
+        self.score_byte_lut_no_qjl_4bit(&prepared.lut, &encoded.mse_packed) + prepared.bias
     }
 
     pub fn binary_sign_no_qjl_4bit_supported(&self) -> bool {
@@ -694,6 +737,21 @@ impl ProdQuantizer {
             prepared.tile_size,
             mse_packed,
         )
+    }
+
+    #[cfg(any(test, feature = "bench"))]
+    pub fn score_ip_from_parts_byte_lut_no_qjl_4bit_for_test(
+        &self,
+        prepared: &PreparedByteLutNoQjl4BitQuery,
+        code_bytes: &[u8],
+    ) -> f32 {
+        assert!(
+            self.bits == 4 && !qjl_enabled(self.original_dim, self.bits),
+            "byte LUT scoring requires the no-QJL 4-bit lane"
+        );
+        let (mse_packed, qjl_packed) = self.split_code_bytes(code_bytes);
+        debug_assert!(qjl_packed.is_empty());
+        self.score_byte_lut_no_qjl_4bit(&prepared.lut, mse_packed)
     }
 
     fn score_ip_from_split_parts(
@@ -861,6 +919,19 @@ impl ProdQuantizer {
             tile_start = tile_end;
         }
 
+        sum
+    }
+
+    #[cfg(any(test, feature = "bench"))]
+    fn score_byte_lut_no_qjl_4bit(&self, lut: &[f32], mse_packed: &[u8]) -> f32 {
+        debug_assert_eq!(self.bits, 4);
+        debug_assert!(!qjl_enabled(self.original_dim, self.bits));
+        debug_assert_eq!(lut.len(), mse_code_len(self.original_dim, self.bits) * 256);
+
+        let mut sum = 0.0_f32;
+        for (byte_index, &packed) in mse_packed.iter().enumerate() {
+            sum += lut[byte_index * 256 + packed as usize];
+        }
         sum
     }
 
@@ -1731,6 +1802,35 @@ fn build_prepared_query_lut(rotated: &[f32], codebook: &[f32], num_centroids: us
     lut
 }
 
+#[cfg(any(test, feature = "bench"))]
+fn build_byte_pair_lut_no_qjl_4bit(dim_lut: &[f32], dim: usize) -> Vec<f32> {
+    debug_assert_eq!(dim_lut.len(), dim * 16);
+    let byte_len = mse_code_len(dim, 4);
+    let mut byte_lut = vec![0.0_f32; byte_len * 256];
+
+    for byte_index in 0..byte_len {
+        let low_dim = byte_index * 2;
+        let high_dim = low_dim + 1;
+        for packed in 0..=255usize {
+            let low_nibble = packed & 0x0F;
+            let high_nibble = packed >> 4;
+            let low = if low_dim < dim {
+                dim_lut[low_dim * 16 + low_nibble]
+            } else {
+                0.0
+            };
+            let high = if high_dim < dim {
+                dim_lut[high_dim * 16 + high_nibble]
+            } else {
+                0.0
+            };
+            byte_lut[byte_index * 256 + packed] = low + high;
+        }
+    }
+
+    byte_lut
+}
+
 fn quantize_i8(values: &[f32]) -> (Vec<i8>, f32) {
     let max_abs = values
         .iter()
@@ -2060,6 +2160,8 @@ mod tests {
     use rand::Rng;
     use rand::SeedableRng;
     use rand_chacha::ChaCha8Rng;
+    use std::hint::black_box;
+    use std::time::Instant;
 
     fn random_unit_vector(dim: usize, seed: u64) -> Vec<f32> {
         let mut rng = ChaCha8Rng::seed_from_u64(seed);
@@ -2509,6 +2611,97 @@ mod tests {
                 "explicit LUT scorer should match direct scorer: direct={direct} lut={lut}"
             );
         }
+    }
+
+    #[test]
+    fn byte_lut_no_qjl_4bit_probe_reports_kernel_delta() {
+        let dim = 1536;
+        let quantizer = ProdQuantizer::new(dim, 4, 42);
+        let query = random_unit_vector(dim, 51);
+        let prepared_exact = quantizer.prepare_ip_query(&query);
+        let prepared_lut = quantizer.prepare_ip_query_lut_no_qjl_4bit(&query);
+        let prepared_byte_lut = quantizer.prepare_ip_query_byte_lut_no_qjl_4bit_for_test(&query);
+        let encoded = (0..512)
+            .map(|seed| quantizer.encode(&random_unit_vector(dim, 50_000 + seed)))
+            .collect::<Vec<_>>();
+
+        assert_eq!(prepared_byte_lut.lut.len(), mse_code_len(dim, 4) * 256);
+        for candidate in encoded.iter().take(16) {
+            let direct = quantizer.score_ip_from_parts(
+                &prepared_exact,
+                candidate.gamma,
+                &candidate.mse_packed,
+            );
+            let dim_lut =
+                quantizer.score_ip_from_parts_lut_no_qjl_4bit(&prepared_lut, &candidate.mse_packed);
+            let byte_lut = quantizer.score_ip_from_parts_byte_lut_no_qjl_4bit_for_test(
+                &prepared_byte_lut,
+                &candidate.mse_packed,
+            );
+            assert!(
+                (direct - dim_lut).abs() < 1e-6,
+                "dim LUT scorer should match direct scorer: direct={direct} dim_lut={dim_lut}"
+            );
+            assert!(
+                (direct - byte_lut).abs() < 1e-6,
+                "byte LUT scorer should match direct scorer: direct={direct} byte_lut={byte_lut}"
+            );
+        }
+
+        let repeats = 32usize;
+        let score_count = repeats * encoded.len();
+
+        let start = Instant::now();
+        let mut direct_sum = 0.0_f32;
+        for _ in 0..repeats {
+            for candidate in &encoded {
+                direct_sum += black_box(quantizer.score_ip_from_parts(
+                    &prepared_exact,
+                    candidate.gamma,
+                    &candidate.mse_packed,
+                ));
+            }
+        }
+        let direct_elapsed = start.elapsed();
+
+        let start = Instant::now();
+        let mut dim_lut_sum = 0.0_f32;
+        for _ in 0..repeats {
+            for candidate in &encoded {
+                dim_lut_sum += black_box(
+                    quantizer
+                        .score_ip_from_parts_lut_no_qjl_4bit(&prepared_lut, &candidate.mse_packed),
+                );
+            }
+        }
+        let dim_lut_elapsed = start.elapsed();
+
+        let start = Instant::now();
+        let mut byte_lut_sum = 0.0_f32;
+        for _ in 0..repeats {
+            for candidate in &encoded {
+                byte_lut_sum +=
+                    black_box(quantizer.score_ip_from_parts_byte_lut_no_qjl_4bit_for_test(
+                        &prepared_byte_lut,
+                        &candidate.mse_packed,
+                    ));
+            }
+        }
+        let byte_lut_elapsed = start.elapsed();
+
+        let direct_ns = direct_elapsed.as_nanos() as f64 / score_count as f64;
+        let dim_lut_ns = dim_lut_elapsed.as_nanos() as f64 / score_count as f64;
+        let byte_lut_ns = byte_lut_elapsed.as_nanos() as f64 / score_count as f64;
+        eprintln!(
+            "task86_byte_lut_probe dim={dim} candidates={} repeats={repeats} scores={score_count} \
+             direct_ns_per_score={direct_ns:.2} dim_lut_ns_per_score={dim_lut_ns:.2} \
+             byte_lut_ns_per_score={byte_lut_ns:.2} byte_lut_speedup_vs_direct={:.3} \
+             byte_lut_speedup_vs_dim_lut={:.3} checksum={:.6}",
+            encoded.len(),
+            direct_ns / byte_lut_ns,
+            dim_lut_ns / byte_lut_ns,
+            direct_sum + dim_lut_sum + byte_lut_sum,
+        );
     }
 
     #[test]
