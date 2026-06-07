@@ -1,0 +1,2 @@
+bench: synced artifacts from s3://ecaz-cloud-1m-b62eb804/bench-artifacts/task84-aws-1m-latency-retention-k2-k3-q500/20260607T000200Z/
+bench: profile=1m suite=task84-aws-1m-latency-retention-k2-k3-q500 run=20260607T000200Z log=/home/peter/dev/ecaz/reviews/task-84/007-latency-retention-aws-k2-k3-control/artifacts/aws-1m-latency-retention-k2-k3-q500/suite-run.log

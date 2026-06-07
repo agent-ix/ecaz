@@ -159,3 +159,21 @@ PK/DML candidates.
 No Task 84 recovery policy lands. The next concrete recommendation is Task 85:
 treat SPIRE as a product-scale Pareto program instead of continuing
 single-knob recall rescue slices.
+
+### Latency-Retention Reinterpretation
+
+Packet `reviews/task-84/007-latency-retention-aws-k2-k3-control/` re-evaluated
+the late Task 84 rows against the user goal of reducing latency while retaining
+the current AWS 1M/q500 recall point.
+
+The paired AWS run showed all tested rows preserved `recall@10=0.9832`, the
+`9.21M` candidate surface, and miss split `4916/3/81`, but neither k3 summaries
+nor route-prior `0.10` materially beat a same-run warmed k2 repeat:
+
+- k3: p50 `257.047 ms`, p95 `319.000 ms`, p99 `336.771 ms`;
+- route-prior `0.10`: p50 `254.764 ms`, p95 `317.188 ms`, p99 `332.755 ms`;
+- k2 repeat: p50 `255.571 ms`, p95 `314.469 ms`, p99 `331.985 ms`.
+
+The corrected lesson is that AWS 1M SPIRE latency claims need standardized
+warmup and paired-order controls before accepting small deltas. k3 and route
+prior remain unpromoted as latency policies from this evidence.
