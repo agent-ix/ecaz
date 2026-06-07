@@ -1,6 +1,6 @@
 # Task 85: SPIRE Product-Scale Pareto Program
 
-Status: closed - no product-scale SPIRE Pareto point justified yet (2026-06-07; closeout `reviews/task-85/007-product-scale-closeout/`)
+Status: in progress - reopened for comprehensive same-recall latency plan (2026-06-07; correction after premature closeout `reviews/task-85/007-product-scale-closeout/`)
 Owner: coder (to be assigned). One coder, one branch.
 Priority: 0 (large SPIRE continuation after Task 84)
 
@@ -82,7 +82,143 @@ the first-class lever, but the task may also include:
 Do not accept a latency win that is just lower recall, lower rerank width, or a
 renamed blanket cap.
 
-### 4. Default and Operator Policy
+### 4. Comprehensive Optimization Program
+
+Task 85 is not complete after identifying the first failed candidate option.
+The negative evidence from Tasks 80-84 and Task 85 packets 001-007 must be
+converted into a larger implementation plan and then worked as part of this
+task unless a packet-local stop condition proves the whole program is no longer
+worth pursuing.
+
+The remaining optimization program is:
+
+#### 4.1 Object-Read And Physical Layout
+
+Goal: reduce the object-read component of the retained block16/global1152
+surface without changing the selected candidate set or recall semantics.
+
+Evidence to preserve:
+
+- retained Task 79/81 bar: recall@10 `0.9832`,
+  `candidate_sum=9,213,846`;
+- packet 006 warm block16 repeat: object read p50 `183.712 ms`, score p50
+  `56.872 ms`;
+- packet 006 block32/global1152: object read p50 `167.198 ms`, score p50
+  `44.204 ms`, but only by doubling candidates to `18,413,851`.
+
+Required work:
+
+- design a SPIRE V5 or equivalent layout that supports partial segment reads
+  for selected blocks;
+- evaluate a hot/cold split where routing summaries, block summaries, and
+  candidate payload needed for pruning are separated from full rerank payload;
+- add row/block locators if the current object layout forces reads of
+  unrelated block payload;
+- measure read bytes, read calls, block payload touched, and per-query object
+  read latency in packet-local AWS 1M/q500 suites.
+
+Acceptance bar:
+
+- recall@10 >= retained Task 79/81 recall;
+- no increase in `heap_rerank_sum`;
+- `candidate_sum` no higher than retained unless paired with a separately
+  justified recall gain;
+- material p50/p95 improvement versus retained block16/global1152 on the same
+  AWS profile and q500 suite.
+
+#### 4.2 Summary Scoring CPU
+
+Goal: reduce summary-scoring CPU for the retained selected-block policy rather
+than lowering latency by selecting fewer or different blocks that lose recall.
+
+Required work:
+
+- profile block-summary scoring on the retained block16 surface;
+- optimize the RaBitQ summary score path, decode path, and memory layout;
+- evaluate SIMD/cache-friendly summary batches only when they preserve score
+  ordering or have packet-local recall proof;
+- report score p50/p95, total summary candidates, and recall deltas.
+
+Acceptance bar:
+
+- same retained candidate set or packet-local proof that any score-ordering
+  change preserves recall;
+- score CPU improvement visible in AWS 1M/q500 funnel output;
+- end-to-end p50/p95 improvement without lower recall.
+
+#### 4.3 Candidate-Set-Preserving Rerank Locality
+
+Goal: improve heap/rerank locality and tuple access after candidate selection,
+without lowering rerank width or hiding work in cache warmup.
+
+Required work:
+
+- measure heap rerank access locality and tuple fetch/read amplification for
+  the retained point;
+- evaluate candidate ordering, TID grouping, block-local rerank batches, or
+  prefetch scheduling that preserves the exact candidate set;
+- keep cold/warm results separated in all reports.
+
+Acceptance bar:
+
+- `heap_rerank_sum` unchanged unless recall improves;
+- recall@10 >= retained Task 79/81 recall;
+- latency improvement reported with the same warm/cold policy as the retained
+  baseline.
+
+#### 4.4 Candidate-Surface Redesign Only With Recall Preservation
+
+Goal: continue candidate reduction only where it is not a disguised recall
+tradeoff.
+
+Rejected paths should not be rerun as standalone slices:
+
+- blanket caps that recover recall only by growing candidates;
+- k-summary variants that do not beat the retained point;
+- per-leaf caps that change the selected candidate surface and collapse recall;
+- block geometry changes that require candidate inflation for same recall.
+
+Allowed work:
+
+- new scoring or rescue policies that target the known selected-leaf miss set
+  while preserving or improving retained recall;
+- learned or calibrated block policies only if they beat retained recall and
+  latency at AWS 1M/q500;
+- diagnostics that explain exactly which misses move and what candidate cost
+  pays for them.
+
+#### 4.5 Benchmark Harness And Evidence Extensions
+
+Goal: make the benchmark evidence strong enough that a product/default decision
+is reviewable.
+
+Required work:
+
+- extend `ecaz bench suite` rather than adding shell sweepers when new
+  metrics are needed;
+- add funnel metrics for object read bytes/calls, summary score CPU, tuple
+  fetch locality, and cache state where missing;
+- keep every benchmark packet-local under `reviews/task-85/` and promote
+  current lanes only from immutable accepted benchmark packets;
+- always compare against retained Task 79/81 and same-suite controls, not
+  pre-Task-79 candidate counts.
+
+#### 4.6 Comparator And Product Policy Gate
+
+Goal: decide whether SPIRE is product-ready only after the implementation
+workstreams above have been tried or rejected with evidence.
+
+Required work:
+
+- keep ec IVF/RaBitQ, ec DiskANN, and available HNSW/external comparator rows
+  in the closeout table;
+- explicitly state where SPIRE is slower/faster, larger/smaller, or has a
+  recall advantage;
+- update defaults or profiles only with ADR-backed rationale;
+- close SPIRE as research/opt-in only after the comprehensive workstreams have
+  packet-local results or a documented stop condition.
+
+### 5. Default and Operator Policy
 
 Decide whether SPIRE has a product-ready 1M profile:
 
@@ -94,7 +230,7 @@ Decide whether SPIRE has a product-ready 1M profile:
 Any default/profile change needs durable documentation and, if it changes
 behavioral contracts, an ADR.
 
-### 5. Benchmark and Review Discipline
+### 6. Benchmark and Review Discipline
 
 All benchmark matrices must run through `ecaz bench suite`. If a needed
 measurement is missing from the suite runner, extend the runner first and land
@@ -132,16 +268,19 @@ their AWS 1M/q500 recall/candidate/latency rows, and the final AWS pause status.
 
 ## Closeout
 
-Task 85 closed under the third exit criterion in
-`reviews/task-85/007-product-scale-closeout/`: no product-scale SPIRE Pareto
-point is justified yet.
+Packet `reviews/task-85/007-product-scale-closeout/` was a premature closeout:
+it correctly rejected the measured Task 85 options under the same-recall
+latency bar, but incorrectly treated the next research direction as out of
+scope. This task is reopened so those directions are part of the Task 85
+program rather than a vague follow-up.
 
 The retained Task 79/81 block16/global1152 point remains the baseline to beat.
 Task 85 rejected block8, per-leaf caps, and block32 geometry as product
 profiles because each option either lost recall, worsened latency, or required
 candidate inflation that was not justified by the small same-recall latency
-movement. No defaults, profiles, ADRs, or current benchmark lanes changed.
+movement.
 
-The next concrete research direction is SPIRE physical-layout/read-path work
-that reduces object-read and summary-scoring cost while preserving the retained
-candidate set and recall semantics.
+The remaining work is the comprehensive optimization program above: physical
+layout/read-path changes, summary-scoring CPU reductions, rerank locality,
+candidate-set-preserving scoring, benchmark harness extensions, and a final
+product/default policy gate.
