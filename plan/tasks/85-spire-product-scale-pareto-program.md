@@ -156,7 +156,7 @@ Current ledger:
   023 proves it on AWS 1M/q500: repeat candidate-score p50 falls to
   `56.327 ms`, summary-score p50 falls to `46.270 ms`, and end-to-end latency
   beats packet 019 at the same recall/candidate surface;
-- candidate-set-preserving rerank locality: `rejected-tid-fetch-order`; packet 024 adds
+- candidate-set-preserving rerank locality: `implementing-prefetch`; packet 024 adds
   rerank-prefix heap-block locality metrics to the SPIRE diagnostic surface
   and `ecaz bench spire-pipeline --funnel-output`. Packet 025 measures those
   metrics on AWS 1M/q500 at the accepted packet 023 surface and preserves
@@ -175,7 +175,10 @@ Current ledger:
   than this internal local fetch ordering, such as explicit heap prefetch
   support, and must pass its own stop/accept/reject packet before closeout.
   Packet 028 removes the rejected TID-ordered fetch implementation from the
-  branch;
+  branch. Packet 029 implements that different mechanism: predecode the local
+  heap locators in original candidate order, prefetch the deduped heap blocks,
+  then preserve the original exact-scoring order. It requires AWS 1M/q500
+  acceptance before this workstream can move to accepted or rejected;
 - candidate-surface redesign with recall preservation: `open`; rejected
   geometry/cap/k-summary variants are closed, but any new policy must target
   selected-leaf misses and beat the accepted same-recall latency bar. It
@@ -317,6 +320,12 @@ Measurement checkpoint:
   worsens from `26.236/27.353 ms` to `27.294/28.383 ms`. This closes the
   local TID fetch-order implementation as rejected evidence, not future
   research.
+- packet 029 implements the next rerank-locality sublever without reordering
+  candidates: decoded local heap locators stay in original compact-candidate
+  order, but their deduped heap blocks are sent to the existing
+  `prefetch_relation_blocks` helper before source-vector fetch and exact
+  scoring. This must be accepted or rejected by AWS 1M/q500 before the
+  workstream can close.
 
 #### 4.4 Candidate-Surface Redesign Only With Recall Preservation
 
@@ -556,3 +565,12 @@ should stop.
   Commit `7302c8369` reverts packet 026's rejected code commit
   `4f92108ed`, restoring the packet 023/025 local heap fetch path after
   packet 027 proved the TID-ordered variant worsened retained-recall latency.
+- `reviews/task-85/029-local-heap-prefetch/`: local implementation checkpoint
+  for the next rerank-locality sublever. Commit `94fef559c` predecodes local
+  heap locators in original candidate order, prefetches the deduped heap
+  blocks with the existing `am::stream` helper, and preserves exact-scoring
+  order. Local validation passed (`cargo fmt --check` and
+  `CARGO_DISABLE_GIT_DISCOVERY=1 cargo test -p ecaz --lib --locked --offline
+  local_heap_prefetch_blocks_dedupes_without_reordering_candidates --
+  --nocapture`). The next checkpoint must run AWS 1M/q500 acceptance against
+  packet 023/025/027 controls.
