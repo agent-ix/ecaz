@@ -91,7 +91,7 @@ pub mod storage {
             is_visible_primary_assignment_ref, is_visible_scored_assignment,
             local_store_config_from_relation_plan, plan_local_store_relations,
             spire_local_store_relation_name, SpireDeltaPartitionObject, SpireLeafAssignmentRow,
-            SpireLeafPartitionObject, SpireLeafPartitionObjectV2Meta,
+            SpireLeafBlockSummary, SpireLeafPartitionObject, SpireLeafPartitionObjectV2Meta,
             SpireLeafPartitionObjectV2Segment, SpireLocalObjectStore, SpireLocalObjectStoreSet,
             SpireLocalStoreState, SpireObjectReader, SpirePartitionObjectHeader,
             SpirePartitionObjectKind, SpireRelationObjectStore, SpireRoutingChildEntry,
@@ -103,8 +103,8 @@ pub mod storage {
             SPIRE_ASSIGNMENT_ROW_FIXED_PREFIX_BYTES, SPIRE_ASSIGNMENT_ROW_FIXED_TAIL_BYTES,
             SPIRE_GLOBAL_VEC_ID_DISCRIMINATOR, SPIRE_LOCAL_VEC_ID_DISCRIMINATOR,
             SPIRE_PARTITION_OBJECT_HEADER_BYTES, SPIRE_PAYLOAD_FORMAT_NONE,
-            SPIRE_PAYLOAD_FORMAT_PQ_FASTSCAN, SPIRE_PAYLOAD_FORMAT_TURBOQUANT,
-            SPIRE_VEC_ID_MAX_BYTES,
+            SPIRE_PAYLOAD_FORMAT_PQ_FASTSCAN, SPIRE_PAYLOAD_FORMAT_RABITQ,
+            SPIRE_PAYLOAD_FORMAT_TURBOQUANT, SPIRE_VEC_ID_MAX_BYTES,
         };
         use crate::careful_pg_guards::pg_sys;
         use crate::storage::page::{ItemPointer, ITEM_POINTER_BYTES};

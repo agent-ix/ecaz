@@ -129,6 +129,7 @@ pub enum StorageFormat {
     TurboQuant = 1,
     PqFastScan = 2,
     RaBitQ = 3,
+    TurboQuantTqPlus = 4,
 }
 
 #[cfg(not(any(feature = "pg17", feature = "pg18")))]
