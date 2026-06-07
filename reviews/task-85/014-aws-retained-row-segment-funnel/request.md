@@ -17,6 +17,11 @@ extension SQL return signature.
   `ERROR: column "leaf_row_segment_read_count" does not exist`.
 - AWS 1M was paused afterward and final EC2 status shows both instances
   `stopped`.
+- A rerun after fallback commit `0fd494def` also failed with the same
+  missing-column error because the first guard did not inspect the structured
+  Postgres DB error message.
+- AWS 1M was paused again after the rerun and final EC2 status shows both
+  instances `stopped`.
 
 ## Interpretation
 

@@ -32,6 +32,23 @@ isolated_one_index_per_table: shared retained AWS table/index
 - `artifacts/aws-ec2-status-final-after-fail.log`
   - command: `aws ec2 describe-instances ...`
   - result: DB and loader were both `stopped`.
+- `artifacts/cloud-resume-before-row-segment-funnel-rerun.log`
+  - command: `target/debug/ecaz cloud resume --profile 1m --database postgres --log-file reviews/task-85/014-aws-retained-row-segment-funnel/artifacts/cloud-resume-before-row-segment-funnel-rerun.log`
+  - result: AWS 1M resumed for fallback validation rerun.
+- `artifacts/cloud-install-row-segment-funnel-rerun.log`
+  - command: `target/debug/ecaz cloud install --profile 1m --database postgres --git-ref task-85-spire-product-scale-pareto --skip-extension-recreate --timeout 3600 --log-file reviews/task-85/014-aws-retained-row-segment-funnel/artifacts/cloud-install-row-segment-funnel-rerun.log`
+  - result: install succeeded after fallback commit `0fd494def`.
+- `artifacts/cloud-bench-row-segment-funnel-rerun.log`
+  - command: `target/debug/ecaz cloud bench --profile 1m --database postgres --config reviews/task-85/014-aws-retained-row-segment-funnel/suite-aws-1m-retained-row-segment-funnel-q500.json --suite task85-aws-1m-retained-row-segment-funnel-q500 --ecaz-bin /usr/local/bin/ecaz --log-file reviews/task-85/014-aws-retained-row-segment-funnel/artifacts/cloud-bench-row-segment-funnel-rerun.log`
+  - result: failed with the same missing-column error; the first fallback guard
+    matched only `err.to_string()`, not the structured Postgres DB error
+    message.
+- `artifacts/cloud-pause-after-row-segment-funnel-rerun-fail.log`
+  - command: `target/debug/ecaz cloud pause --profile 1m --database postgres --log-file reviews/task-85/014-aws-retained-row-segment-funnel/artifacts/cloud-pause-after-row-segment-funnel-rerun-fail.log`
+  - result: pause requested after failed rerun.
+- `artifacts/aws-ec2-status-final-after-rerun-fail.log`
+  - command: `aws ec2 describe-instances ...`
+  - result: DB and loader were both `stopped`.
 
 # Key Result Lines
 
@@ -40,6 +57,8 @@ isolated_one_index_per_table: shared retained AWS table/index
 - Precheck succeeded and showed the retained DB still returned the legacy
   `ec_spire_index_scan_leaf_candidate_snapshot` column list.
 - Bench failure: `ERROR: column "leaf_row_segment_read_count" does not exist`.
+- Fallback rerun failure after `0fd494def`: same missing-column error because
+  the guard did not inspect `err.as_db_error().message()`.
 - Final AWS state: `ecaz-cloud-1m-loader stopped`, `ecaz-cloud-1m-db stopped`.
 
 # Interpretation
