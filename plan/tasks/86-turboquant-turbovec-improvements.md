@@ -1,6 +1,6 @@
 # Task 86: TurboVec-Derived TurboQuant Improvements
 
-Status: complete (2026-06-07; closeout approval in `reviews/task-86/010-closeout-audit/feedback/2026-06-07-01-reviewer.md`)
+Status: active (2026-06-07; reopened to measure TQ+ on real corpora)
 Owner: coder (to be assigned). One coder, one branch.
 Priority: 1 (TurboQuant scan/storage improvement lane across AMs)
 
