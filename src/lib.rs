@@ -99,6 +99,10 @@ pub mod bench_api {
         unpack_mse_indices, unpack_qjl_signs, EncodedTq, Int8ApproxNoQjl4BitQuery,
         PreparedLutNoQjl4BitQuery, PreparedQuery, PreparedTiledLutNoQjl4BitQuery, ProdQuantizer,
     };
+    #[cfg(any(test, feature = "bench"))]
+    pub use crate::quant::prod::{
+        PreparedTqPlusNoQjl4BitQuery, TqPlusCalibration, TqPlusNoQjl4BitEncoded,
+    };
 
     // Hadamard
     #[cfg(all(feature = "bench", target_arch = "x86_64"))]

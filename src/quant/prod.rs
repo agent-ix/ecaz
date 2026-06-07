@@ -44,6 +44,27 @@ pub struct PreparedTiledLutNoQjl4BitQuery {
     pub tile_size: usize,
 }
 
+#[cfg(any(test, feature = "bench"))]
+#[derive(Debug, Clone, PartialEq)]
+pub struct TqPlusCalibration {
+    pub shift: Vec<f32>,
+    pub scale: Vec<f32>,
+}
+
+#[cfg(any(test, feature = "bench"))]
+#[derive(Debug, Clone, PartialEq)]
+pub struct TqPlusNoQjl4BitEncoded {
+    pub mse_packed: Vec<u8>,
+    pub renorm: f32,
+}
+
+#[cfg(any(test, feature = "bench"))]
+#[derive(Debug, Clone, PartialEq)]
+pub struct PreparedTqPlusNoQjl4BitQuery {
+    pub lut: Vec<f32>,
+    pub bias: f32,
+}
+
 pub use crate::quant::rabitq::BinarySignNoQjl4BitQuery;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -349,6 +370,183 @@ impl ProdQuantizer {
             lut: prepared.lut,
             tile_size,
         }
+    }
+
+    #[cfg(any(test, feature = "bench"))]
+    pub fn fit_tqplus_calibration_for_test(&self, vectors: &[Vec<f32>]) -> TqPlusCalibration {
+        assert!(
+            !vectors.is_empty(),
+            "TQ+ calibration requires at least one vector"
+        );
+        assert!(
+            self.bits == 4 && !qjl_enabled(self.original_dim, self.bits),
+            "TQ+ prototype currently targets the no-QJL 4-bit lane"
+        );
+
+        let mut per_coord = vec![Vec::with_capacity(vectors.len()); self.original_dim];
+        for vector in vectors {
+            assert_eq!(
+                vector.len(),
+                self.original_dim,
+                "calibration vector length mismatch"
+            );
+            let unit = normalized_for_tqplus(vector);
+            let rotated = rotation::srht_padded(&unit, &self.signs);
+            for (coord, &value) in per_coord
+                .iter_mut()
+                .zip(rotated[..self.original_dim].iter())
+            {
+                coord.push(value);
+            }
+        }
+
+        let (target_lo, target_hi) = canonical_beta_quantiles_for_tqplus(self.original_dim);
+        let mut shift = vec![0.0_f32; self.original_dim];
+        let mut scale = vec![1.0_f32; self.original_dim];
+
+        for (dim_index, values) in per_coord.iter_mut().enumerate() {
+            values.sort_by(|left, right| {
+                left.partial_cmp(right)
+                    .expect("rotated calibration values must be finite")
+            });
+            let lo = percentile_sorted_for_tqplus(values, 0.05);
+            let hi = percentile_sorted_for_tqplus(values, 0.95);
+            let span = hi - lo;
+            if span.abs() <= 1e-8 {
+                continue;
+            }
+            let coord_scale = (target_hi - target_lo) / span;
+            if !coord_scale.is_finite() || coord_scale.abs() <= 1e-8 {
+                continue;
+            }
+            scale[dim_index] = coord_scale;
+            shift[dim_index] = target_lo / coord_scale - lo;
+        }
+
+        TqPlusCalibration { shift, scale }
+    }
+
+    #[cfg(any(test, feature = "bench"))]
+    pub fn encode_tqplus_no_qjl_4bit_for_test(
+        &self,
+        vector: &[f32],
+        calibration: &TqPlusCalibration,
+    ) -> TqPlusNoQjl4BitEncoded {
+        assert_eq!(
+            vector.len(),
+            self.original_dim,
+            "vector length mismatch: got {}, expected {}",
+            vector.len(),
+            self.original_dim
+        );
+        assert!(
+            self.bits == 4 && !qjl_enabled(self.original_dim, self.bits),
+            "TQ+ prototype currently targets the no-QJL 4-bit lane"
+        );
+        assert_eq!(calibration.shift.len(), self.original_dim);
+        assert_eq!(calibration.scale.len(), self.original_dim);
+
+        let norm = vector.iter().map(|value| value * value).sum::<f32>().sqrt();
+        let unit = if norm > f32::EPSILON {
+            vector.iter().map(|value| *value / norm).collect::<Vec<_>>()
+        } else {
+            vec![0.0_f32; self.original_dim]
+        };
+        let rotated = rotation::srht_padded(&unit, &self.signs);
+        let mut indices = Vec::with_capacity(self.original_dim);
+        let mut reconstructed_inner = 0.0_f32;
+
+        for dim_index in 0..self.original_dim {
+            let calibrated =
+                (rotated[dim_index] + calibration.shift[dim_index]) * calibration.scale[dim_index];
+            let centroid_index = mse::nearest_centroid_index(&self.codebook, calibrated);
+            let centroid = self.codebook[centroid_index as usize];
+            let reconstructed_orig =
+                centroid / calibration.scale[dim_index] - calibration.shift[dim_index];
+            reconstructed_inner += rotated[dim_index] * reconstructed_orig;
+            indices.push(centroid_index);
+        }
+
+        let renorm = if reconstructed_inner.abs() > 1e-8 {
+            norm / reconstructed_inner
+        } else {
+            0.0
+        };
+
+        TqPlusNoQjl4BitEncoded {
+            mse_packed: pack_mse_indices(&indices, 4),
+            renorm,
+        }
+    }
+
+    #[cfg(any(test, feature = "bench"))]
+    pub fn score_tqplus_no_qjl_4bit_for_test(
+        &self,
+        query: &[f32],
+        calibration: &TqPlusCalibration,
+        encoded: &TqPlusNoQjl4BitEncoded,
+    ) -> f32 {
+        let prepared = self.prepare_ip_query_tqplus_no_qjl_4bit_for_test(query, calibration);
+        self.score_tqplus_no_qjl_4bit_from_prepared_for_test(&prepared, encoded)
+    }
+
+    #[cfg(any(test, feature = "bench"))]
+    pub fn prepare_ip_query_tqplus_no_qjl_4bit_for_test(
+        &self,
+        query: &[f32],
+        calibration: &TqPlusCalibration,
+    ) -> PreparedTqPlusNoQjl4BitQuery {
+        assert_eq!(
+            query.len(),
+            self.original_dim,
+            "query length mismatch: got {}, expected {}",
+            query.len(),
+            self.original_dim
+        );
+        assert!(
+            self.bits == 4 && !qjl_enabled(self.original_dim, self.bits),
+            "TQ+ prototype currently targets the no-QJL 4-bit lane"
+        );
+        assert_eq!(calibration.shift.len(), self.original_dim);
+        assert_eq!(calibration.scale.len(), self.original_dim);
+
+        let rotated = rotation::srht_padded(query, &self.signs);
+        let mut lut = Vec::with_capacity(self.original_dim * 16);
+        let mut bias = 0.0_f32;
+        for dim_index in 0..self.original_dim {
+            let q_calibrated = rotated[dim_index] / calibration.scale[dim_index];
+            for &centroid in &self.codebook {
+                lut.push(centroid * q_calibrated);
+            }
+            bias -= rotated[dim_index] * calibration.shift[dim_index];
+        }
+
+        PreparedTqPlusNoQjl4BitQuery { lut, bias }
+    }
+
+    #[cfg(any(test, feature = "bench"))]
+    pub fn score_tqplus_no_qjl_4bit_from_prepared_for_test(
+        &self,
+        prepared: &PreparedTqPlusNoQjl4BitQuery,
+        encoded: &TqPlusNoQjl4BitEncoded,
+    ) -> f32 {
+        assert!(
+            self.bits == 4 && !qjl_enabled(self.original_dim, self.bits),
+            "TQ+ prototype currently targets the no-QJL 4-bit lane"
+        );
+        assert_eq!(prepared.lut.len(), self.original_dim * 16);
+        assert_eq!(
+            encoded.mse_packed.len(),
+            mse_code_len(self.original_dim, self.bits)
+        );
+
+        let mut score = 0.0_f32;
+        for dim_index in 0..self.original_dim {
+            let centroid_index = mse_index_at(&encoded.mse_packed, dim_index, 4) as usize;
+            score += prepared.lut[dim_index * 16 + centroid_index];
+        }
+
+        (score + prepared.bias) * encoded.renorm
     }
 
     pub fn binary_sign_no_qjl_4bit_supported(&self) -> bool {
@@ -1560,6 +1758,41 @@ fn quantize_codebook_i8_16(codebook: &[f32]) -> ([i8; 16], f32) {
     (quantized, scale)
 }
 
+#[cfg(any(test, feature = "bench"))]
+fn normalized_for_tqplus(vector: &[f32]) -> Vec<f32> {
+    let norm = vector.iter().map(|value| value * value).sum::<f32>().sqrt();
+    if norm <= f32::EPSILON {
+        return vec![0.0_f32; vector.len()];
+    }
+    vector.iter().map(|value| *value / norm).collect()
+}
+
+#[cfg(any(test, feature = "bench"))]
+fn canonical_beta_quantiles_for_tqplus(dim: usize) -> (f32, f32) {
+    fn quantile(dim: usize, target: f64) -> f32 {
+        let points = 20_001usize;
+        let step = 2.0_f64 / (points as f64 - 1.0);
+        let mut cumulative = 0.0_f64;
+        for i in 0..points {
+            let x = -1.0 + i as f64 * step;
+            cumulative += crate::quant::codebook::beta_pdf(x, dim) * step;
+            if cumulative >= target {
+                return x as f32;
+            }
+        }
+        1.0
+    }
+
+    (quantile(dim, 0.05), quantile(dim, 0.95))
+}
+
+#[cfg(any(test, feature = "bench"))]
+fn percentile_sorted_for_tqplus(values: &[f32], p: f32) -> f32 {
+    debug_assert!(!values.is_empty());
+    let rank = ((values.len() - 1) as f32 * p).round() as usize;
+    values[rank.min(values.len() - 1)]
+}
+
 pub fn payload_len(dim: usize, bits: u8) -> usize {
     4 + mse_code_len(dim, bits) + qjl_code_len_for_bits(dim, bits)
 }
@@ -1830,11 +2063,36 @@ mod tests {
         values
     }
 
+    fn anisotropic_unit_vector(dim: usize, seed: u64) -> Vec<f32> {
+        let mut rng = ChaCha8Rng::seed_from_u64(seed);
+        let mut values = vec![0.0_f32; dim];
+        for (index, value) in values.iter_mut().enumerate() {
+            let base = rng.gen_range(-1.0_f32..1.0_f32);
+            let weighted = if index < dim / 32 {
+                12.0 * base + 4.0
+            } else if index < dim / 8 {
+                4.0 * base - 1.5
+            } else {
+                0.35 * base
+            };
+            *value = weighted;
+        }
+        let norm = values.iter().map(|v| v * v).sum::<f32>().sqrt();
+        for value in &mut values {
+            *value /= norm.max(f32::EPSILON);
+        }
+        values
+    }
+
     fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
         let dot = a.iter().zip(b).map(|(x, y)| x * y).sum::<f32>();
         let norm_a = a.iter().map(|v| v * v).sum::<f32>().sqrt();
         let norm_b = b.iter().map(|v| v * v).sum::<f32>().sqrt();
         dot / (norm_a * norm_b).max(f32::EPSILON)
+    }
+
+    fn inner_product(a: &[f32], b: &[f32]) -> f32 {
+        a.iter().zip(b).map(|(x, y)| x * y).sum()
     }
 
     #[test]
@@ -2105,6 +2363,96 @@ mod tests {
             scored[0].0, 0,
             "approx scorer should rank the identical vector first"
         );
+    }
+
+    #[test]
+    fn tqplus_no_qjl_4bit_probe_reports_score_error_delta() {
+        let dim = 1536;
+        let bits = 4;
+        let quantizer = ProdQuantizer::new(dim, bits, 42);
+        let train = (0..192)
+            .map(|seed| anisotropic_unit_vector(dim, 10_000 + seed))
+            .collect::<Vec<_>>();
+        let candidates = (0..96)
+            .map(|seed| anisotropic_unit_vector(dim, 20_000 + seed))
+            .collect::<Vec<_>>();
+        let queries = (0..16)
+            .map(|seed| anisotropic_unit_vector(dim, 30_000 + seed))
+            .collect::<Vec<_>>();
+
+        let calibration = quantizer.fit_tqplus_calibration_for_test(&train);
+        let prepared_baseline = queries
+            .iter()
+            .map(|query| quantizer.prepare_ip_query(query))
+            .collect::<Vec<_>>();
+        let prepared_tqplus = queries
+            .iter()
+            .map(|query| {
+                quantizer.prepare_ip_query_tqplus_no_qjl_4bit_for_test(query, &calibration)
+            })
+            .collect::<Vec<_>>();
+        let baseline_codes = candidates
+            .iter()
+            .map(|candidate| quantizer.encode(candidate))
+            .collect::<Vec<_>>();
+        let tqplus_codes = candidates
+            .iter()
+            .map(|candidate| quantizer.encode_tqplus_no_qjl_4bit_for_test(candidate, &calibration))
+            .collect::<Vec<_>>();
+
+        assert_eq!(baseline_codes[0].mse_packed.len(), dim * bits as usize / 8);
+        assert_eq!(tqplus_codes[0].mse_packed.len(), dim * bits as usize / 8);
+
+        let mut baseline_abs = 0.0_f64;
+        let mut tqplus_abs = 0.0_f64;
+        let mut baseline_sq = 0.0_f64;
+        let mut tqplus_sq = 0.0_f64;
+        let mut count = 0.0_f64;
+
+        for (query_index, query) in queries.iter().enumerate() {
+            let prepared = &prepared_baseline[query_index];
+            let tqplus_prepared = &prepared_tqplus[query_index];
+            for (candidate_index, candidate) in candidates.iter().enumerate() {
+                let exact = inner_product(query, candidate) as f64;
+                let baseline = quantizer.score_ip_from_parts(
+                    prepared,
+                    baseline_codes[candidate_index].gamma,
+                    &baseline_codes[candidate_index].mse_packed,
+                ) as f64;
+                let tqplus = quantizer.score_tqplus_no_qjl_4bit_from_prepared_for_test(
+                    tqplus_prepared,
+                    &tqplus_codes[candidate_index],
+                ) as f64;
+                let baseline_err = baseline - exact;
+                let tqplus_err = tqplus - exact;
+                baseline_abs += baseline_err.abs();
+                tqplus_abs += tqplus_err.abs();
+                baseline_sq += baseline_err * baseline_err;
+                tqplus_sq += tqplus_err * tqplus_err;
+                count += 1.0;
+            }
+        }
+
+        let baseline_mae = baseline_abs / count;
+        let tqplus_mae = tqplus_abs / count;
+        let baseline_rmse = (baseline_sq / count).sqrt();
+        let tqplus_rmse = (tqplus_sq / count).sqrt();
+        eprintln!(
+            "task86_tqplus_probe dim={dim} bits={bits} train={} queries={} candidates={} \
+             baseline_mae={baseline_mae:.8} tqplus_mae={tqplus_mae:.8} \
+             baseline_rmse={baseline_rmse:.8} tqplus_rmse={tqplus_rmse:.8} \
+             mae_delta_pct={:.2} rmse_delta_pct={:.2}",
+            train.len(),
+            queries.len(),
+            candidates.len(),
+            100.0 * (tqplus_mae / baseline_mae - 1.0),
+            100.0 * (tqplus_rmse / baseline_rmse - 1.0),
+        );
+
+        assert!(baseline_mae.is_finite());
+        assert!(tqplus_mae.is_finite());
+        assert!(baseline_rmse.is_finite());
+        assert!(tqplus_rmse.is_finite());
     }
 
     #[test]
