@@ -1,0 +1,42 @@
+warning: ecaz@0.1.1: In file included from csrc/pg18_pgstat_shim.c:10:
+warning: ecaz@0.1.1: In file included from /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:19:
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/lib/ilist.h:537:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:   537 | dlist_next_node(dlist_head *head, dlist_node *node)
+warning: ecaz@0.1.1:       |                             ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/lib/ilist.h:547:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:   547 | dlist_prev_node(dlist_head *head, dlist_node *node)
+warning: ecaz@0.1.1:       |                             ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/lib/ilist.h:1054:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:  1054 | slist_next_node(slist_head *head, slist_node *node)
+warning: ecaz@0.1.1:       |                             ^
+warning: ecaz@0.1.1: In file included from csrc/pg18_pgstat_shim.c:10:
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:875:58: warning: unused parameter 'size' [-Wunused-parameter]
+warning: ecaz@0.1.1:   875 | pgstat_cmp_hash_key(const void *a, const void *b, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                          ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:875:70: warning: unused parameter 'arg' [-Wunused-parameter]
+warning: ecaz@0.1.1:   875 | pgstat_cmp_hash_key(const void *a, const void *b, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                                      ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:882:56: warning: unused parameter 'arg' [-Wunused-parameter]
+warning: ecaz@0.1.1:   882 | pgstat_hash_hash_key(const void *d, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                        ^
+warning: ecaz@0.1.1: 6 warnings generated.
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.11s
+     Running unittests src/lib.rs (target/debug/deps/ecaz-51c904bee82c3480)
+
+running 14 tests
+test am::ec_ivf::quantizer::tests::grouped_pq_score_bound_prunes_when_suffix_cannot_reach_minimum ... ok
+test am::ec_ivf::quantizer::tests::non_bits1_batch_dispatch_declines_without_scoring ... ok
+test am::ec_ivf::quantizer::tests::pq_fastscan_accepts_metadata_group_size_override ... ok
+test am::ec_ivf::quantizer::tests::pq_fastscan_dispatch_scores_grouped_code_with_persisted_model ... ok
+test am::ec_ivf::quantizer::tests::pq_fastscan_rejects_group_size_that_does_not_divide_transform ... ok
+test am::ec_ivf::quantizer::tests::pq_fastscan_v1_format_resolves_to_grouped_profile ... ok
+test am::ec_ivf::quantizer::tests::rabitq_bits1_batch_dispatch_matches_scalar_scores ... ok
+test am::ec_ivf::quantizer::tests::rabitq_dispatch_does_not_rebuild_quantizer_while_scoring ... ok
+test am::ec_ivf::quantizer::tests::rabitq_dispatch_matches_direct_quantizer_score ... ok
+test am::ec_ivf::quantizer::tests::rabitq_v1_format_resolves_to_rabitq ... ok
+test am::ec_ivf::quantizer::tests::supported_v1_formats_resolve_to_turboquant ... ok
+test am::ec_ivf::quantizer::tests::turboquant_dispatch_matches_direct_prod_score ... ok
+test am::ec_ivf::quantizer::tests::turboquant_dispatch_uses_lut_for_no_qjl_4bit_lane ... ok
+test am::ec_ivf::quantizer::tests::turboquant_tqplus_dispatch_requires_model_and_matches_direct_score ... ok
+
+test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 1966 filtered out; finished in 0.12s

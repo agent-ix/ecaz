@@ -1,6 +1,6 @@
 # Task 86: TurboVec-Derived TurboQuant Improvements
 
-Status: active (2026-06-07; reopened to measure TQ+ on real corpora)
+Status: active (2026-06-07; TQ+ real-corpus IVF packet pending review)
 Owner: coder (to be assigned). One coder, one branch.
 Priority: 1 (TurboQuant scan/storage improvement lane across AMs)
 
@@ -185,3 +185,13 @@ landing.
 - No new unsafe blocks.
 - PG18-focused validation is recorded for any code slice that changes scan,
   storage, or SQL-visible behavior.
+
+## Current Measurement Update
+
+Packet `reviews/task-86/011-ivf-tqplus-real-spread/` promotes TQ+ from a
+synthetic-only probe to a real-corpus IVF measurement candidate. It compares
+`storage_format=turboquant_tqplus` against our own IVF TurboQuant baseline on
+real10k, real50k, and real100k with rerank disabled, and records recall,
+latency, and storage in packet-local suite artifacts. The task remains active
+pending review and any follow-up decision on production naming and cross-AM
+measurement.

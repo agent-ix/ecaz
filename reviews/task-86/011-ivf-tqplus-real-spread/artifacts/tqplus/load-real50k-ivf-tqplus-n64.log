@@ -1,0 +1,23 @@
+[loader] inspecting data/task31_m5_dbpedia_staged/ec_hnsw_real_50k_corpus.tsv
+[loader] inspecting data/task31_m5_dbpedia_staged/ec_hnsw_real_50k_queries.tsv
+[loader] corpus: 50000 rows, sha256=56023baaa7bc42f758272e8617603d538808e6290a8a70a3a84e057571240133  queries: 1000 rows, sha256=95ac7992578aa80bb193657f10fbcbf1ea3867e559739244bf5a467f7a5a9fa3
+[loader] warning: manifest verification failed for data/task31_m5_dbpedia_staged/ec_hnsw_real_50k_manifest.json: prefix="ec_hnsw_real_50k" (expected "task86_ivf_tqplus_real50k")
+[loader] copied corpus table task86_ivf_tqplus_real50k_corpus in 28.32s
+[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...
+[loader] encoded corpus table task86_ivf_tqplus_real50k_corpus in 8.94s
+[loader] copied queries table task86_ivf_tqplus_real50k_queries in 572.34ms
+[loader] building task86_ivf_tqplus_real50k_idx using ec_ivf (reloptions=[storage_format=turboquant_tqplus, nlists=64, nprobe=48, rerank=off, rerank_width=0]) ...
+[loader] built task86_ivf_tqplus_real50k_idx in 2.39s
+[loader] ec_ivf build timing: requested_workers=0 workers_launched=0 heap_tuples=50000 index_tuples=50000 heap_ingest_us=627104 train_model_us=261127 stage_build_plan_us=970566 stage_pq_train_us=257449 stage_centroids_us=146 stage_assign_us=145776 stage_postings_us=567125 stage_directory_us=6 flush_build_plan_us=511469 parallel_begin_us=0 parallel_drain_us=0 parallel_sort_push_us=0 parallel_worker_tuple_buffer_capacity=0 parallel_worker_tuple_buffer_struct_bytes=0
+┌─────────┬────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ field   ┆ value                                                                                                              │
+╞═════════╪════════════════════════════════════════════════════════════════════════════════════════════════════════════════════╡
+│ profile ┆ ec_ivf                                                                                                             │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ task86_ivf_tqplus_real50k_corpus (50000 rows)                                                                      │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ task86_ivf_tqplus_real50k_queries (1000 rows)                                                                      │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ task86_ivf_tqplus_real50k_idx [storage_format=turboquant_tqplus, nlists=64, nprobe=48, rerank=off, rerank_width=0] │
+└─────────┴────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+[loader] completed prefix task86_ivf_tqplus_real50k in 89.68s

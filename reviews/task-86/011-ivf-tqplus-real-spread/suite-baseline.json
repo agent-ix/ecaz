@@ -1,0 +1,169 @@
+{
+  "name": "task86-ivf-turboquant-baseline-real-spread",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-86/011-ivf-tqplus-real-spread/artifacts/baseline",
+  "defaults": {
+    "profile": "ec_ivf",
+    "bits": 4,
+    "seed": 42,
+    "queries_limit": 200,
+    "iterations": 1000,
+    "force_index": true,
+    "sample_backend_memory": true,
+    "memory_sample_interval_ms": 25,
+    "pg": 18,
+    "socket_dir": "/Users/peter/.pgrx"
+  },
+  "steps": [
+    {
+      "kind": "raw",
+      "name": "precheck-pg18-extension",
+      "tags": ["setup", "precheck", "ivf", "turboquant", "baseline"],
+      "args": [
+        "dev",
+        "sql",
+        "--pg",
+        "18",
+        "--db",
+        "tqvector_bench",
+        "--socket-dir",
+        "/Users/peter/.pgrx",
+        "--raw",
+        "--sql",
+        "CREATE EXTENSION IF NOT EXISTS ecaz; SELECT now() AS captured_at, version() AS postgres_version, current_setting('server_version_num') AS server_version_num; SELECT extname, extversion FROM pg_extension WHERE extname = 'ecaz'; SELECT amname FROM pg_am WHERE amname IN ('ec_ivf', 'ec_spire', 'ec_hnsw') ORDER BY amname;",
+        "--log-output",
+        "${artifact_dir}/precheck-pg18-extension.log"
+      ],
+      "expected_artifacts": ["${artifact_dir}/precheck-pg18-extension.log"]
+    },
+    {
+      "kind": "load",
+      "name": "load-real10k-ivf-turboquant-n32",
+      "tags": ["load", "real10k", "ivf", "turboquant", "baseline"],
+      "prefix": "task86_ivf_tq_base_real10k",
+      "profile": "ec_ivf",
+      "corpus_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_corpus.tsv",
+      "queries_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_queries.tsv",
+      "manifest_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": ["storage_format=turboquant", "nlists=32", "nprobe=24", "rerank=off", "rerank_width=0"],
+      "log_file": "${artifact_dir}/load-real10k-ivf-turboquant-n32.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-real10k-ivf-turboquant-n32",
+      "tags": ["storage", "real10k", "ivf", "turboquant", "baseline"],
+      "prefix": "task86_ivf_tq_base_real10k",
+      "log_file": "${artifact_dir}/storage-real10k-ivf-turboquant-n32.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-real10k-ivf-turboquant-n32",
+      "tags": ["recall", "real10k", "ivf", "turboquant", "baseline"],
+      "prefix": "task86_ivf_tq_base_real10k",
+      "k": 10,
+      "sweep": [8, 24, 32],
+      "rerank_width": 0,
+      "truth_cache_file": "reviews/task-86/011-ivf-tqplus-real-spread/artifacts/truth-real10k-k10.json",
+      "truth_corpus_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_corpus.tsv",
+      "log_output": "${artifact_dir}/recall-real10k-ivf-turboquant-n32.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-real10k-ivf-turboquant-n32",
+      "tags": ["latency", "real10k", "ivf", "turboquant", "baseline"],
+      "prefix": "task86_ivf_tq_base_real10k",
+      "k": 10,
+      "sweep": [8, 24, 32],
+      "rerank_width": 0,
+      "iterations": 1000,
+      "log_output": "${artifact_dir}/latency-real10k-ivf-turboquant-n32.log"
+    },
+    {
+      "kind": "load",
+      "name": "load-real50k-ivf-turboquant-n64",
+      "tags": ["load", "real50k", "ivf", "turboquant", "baseline"],
+      "prefix": "task86_ivf_tq_base_real50k",
+      "profile": "ec_ivf",
+      "corpus_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_50k_corpus.tsv",
+      "queries_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_50k_queries.tsv",
+      "manifest_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_50k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": ["storage_format=turboquant", "nlists=64", "nprobe=48", "rerank=off", "rerank_width=0"],
+      "log_file": "${artifact_dir}/load-real50k-ivf-turboquant-n64.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-real50k-ivf-turboquant-n64",
+      "tags": ["storage", "real50k", "ivf", "turboquant", "baseline"],
+      "prefix": "task86_ivf_tq_base_real50k",
+      "log_file": "${artifact_dir}/storage-real50k-ivf-turboquant-n64.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-real50k-ivf-turboquant-n64",
+      "tags": ["recall", "real50k", "ivf", "turboquant", "baseline"],
+      "prefix": "task86_ivf_tq_base_real50k",
+      "k": 10,
+      "sweep": [16, 48, 64],
+      "rerank_width": 0,
+      "truth_cache_file": "reviews/task-86/011-ivf-tqplus-real-spread/artifacts/truth-real50k-k10.json",
+      "truth_corpus_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_50k_corpus.tsv",
+      "log_output": "${artifact_dir}/recall-real50k-ivf-turboquant-n64.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-real50k-ivf-turboquant-n64",
+      "tags": ["latency", "real50k", "ivf", "turboquant", "baseline"],
+      "prefix": "task86_ivf_tq_base_real50k",
+      "k": 10,
+      "sweep": [16, 48, 64],
+      "rerank_width": 0,
+      "iterations": 1000,
+      "log_output": "${artifact_dir}/latency-real50k-ivf-turboquant-n64.log"
+    },
+    {
+      "kind": "load",
+      "name": "load-real100k-ivf-turboquant-n128",
+      "tags": ["load", "real100k", "ivf", "turboquant", "baseline"],
+      "prefix": "task86_ivf_tq_base_real100k",
+      "profile": "ec_ivf",
+      "corpus_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_100k_corpus.tsv",
+      "queries_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_100k_queries.tsv",
+      "manifest_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_100k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": ["storage_format=turboquant", "nlists=128", "nprobe=96", "rerank=off", "rerank_width=0"],
+      "log_file": "${artifact_dir}/load-real100k-ivf-turboquant-n128.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-real100k-ivf-turboquant-n128",
+      "tags": ["storage", "real100k", "ivf", "turboquant", "baseline"],
+      "prefix": "task86_ivf_tq_base_real100k",
+      "log_file": "${artifact_dir}/storage-real100k-ivf-turboquant-n128.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-real100k-ivf-turboquant-n128",
+      "tags": ["recall", "real100k", "ivf", "turboquant", "baseline"],
+      "prefix": "task86_ivf_tq_base_real100k",
+      "k": 10,
+      "sweep": [32, 96, 128],
+      "rerank_width": 0,
+      "truth_cache_file": "reviews/task-86/011-ivf-tqplus-real-spread/artifacts/truth-real100k-k10.json",
+      "truth_corpus_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_100k_corpus.tsv",
+      "log_output": "${artifact_dir}/recall-real100k-ivf-turboquant-n128.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-real100k-ivf-turboquant-n128",
+      "tags": ["latency", "real100k", "ivf", "turboquant", "baseline"],
+      "prefix": "task86_ivf_tq_base_real100k",
+      "k": 10,
+      "sweep": [32, 96, 128],
+      "rerank_width": 0,
+      "iterations": 1000,
+      "log_output": "${artifact_dir}/latency-real100k-ivf-turboquant-n128.log"
+    }
+  ]
+}
