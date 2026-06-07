@@ -52,13 +52,22 @@ pub struct PreparedByteLutNoQjl4BitQuery {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct TqPlusCalibration {
+    /// Per-rotated-coordinate additive shift applied before MSE codebook
+    /// assignment. Query preparation folds the inverse shift into the prepared
+    /// bias term, so database codes stay packed at scan time.
     pub shift: Vec<f32>,
+    /// Per-rotated-coordinate scale applied after `shift`. Scales must be
+    /// finite and non-zero; invalid dimensions fall back to scale 1.0 during
+    /// fitting.
     pub scale: Vec<f32>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct TqPlusNoQjl4BitEncoded {
     pub mse_packed: Vec<u8>,
+    /// Per-vector length correction. TQ+ encodes a normalized rotated vector,
+    /// then applies this scalar to restore the source vector's norm during
+    /// packed-code scoring.
     pub renorm: f32,
 }
 
@@ -386,7 +395,7 @@ impl ProdQuantizer {
         }
     }
 
-    pub fn fit_tqplus_calibration_for_test(&self, vectors: &[Vec<f32>]) -> TqPlusCalibration {
+    pub fn fit_tqplus_calibration(&self, vectors: &[Vec<f32>]) -> TqPlusCalibration {
         assert!(
             !vectors.is_empty(),
             "TQ+ calibration requires at least one vector"
@@ -439,7 +448,7 @@ impl ProdQuantizer {
         TqPlusCalibration { shift, scale }
     }
 
-    pub fn encode_tqplus_no_qjl_4bit_for_test(
+    pub fn encode_tqplus_no_qjl_4bit(
         &self,
         vector: &[f32],
         calibration: &TqPlusCalibration,
@@ -491,17 +500,17 @@ impl ProdQuantizer {
         }
     }
 
-    pub fn score_tqplus_no_qjl_4bit_for_test(
+    pub fn score_tqplus_no_qjl_4bit(
         &self,
         query: &[f32],
         calibration: &TqPlusCalibration,
         encoded: &TqPlusNoQjl4BitEncoded,
     ) -> f32 {
-        let prepared = self.prepare_ip_query_tqplus_no_qjl_4bit_for_test(query, calibration);
-        self.score_tqplus_no_qjl_4bit_from_prepared_for_test(&prepared, encoded)
+        let prepared = self.prepare_ip_query_tqplus_no_qjl_4bit(query, calibration);
+        self.score_tqplus_no_qjl_4bit_from_prepared(&prepared, encoded)
     }
 
-    pub fn prepare_ip_query_tqplus_no_qjl_4bit_for_test(
+    pub fn prepare_ip_query_tqplus_no_qjl_4bit(
         &self,
         query: &[f32],
         calibration: &TqPlusCalibration,
@@ -540,37 +549,32 @@ impl ProdQuantizer {
         query: &[f32],
         calibration: &TqPlusCalibration,
     ) -> PreparedTqPlusNoQjl4BitQuery {
-        let prepared = self.prepare_ip_query_tqplus_no_qjl_4bit_for_test(query, calibration);
+        let prepared = self.prepare_ip_query_tqplus_no_qjl_4bit(query, calibration);
         PreparedTqPlusNoQjl4BitQuery {
             lut: build_byte_pair_lut_no_qjl_4bit(&prepared.lut, self.original_dim),
             bias: prepared.bias,
         }
     }
 
-    pub fn score_tqplus_no_qjl_4bit_from_prepared_for_test(
+    pub fn score_tqplus_no_qjl_4bit_from_prepared(
         &self,
         prepared: &PreparedTqPlusNoQjl4BitQuery,
         encoded: &TqPlusNoQjl4BitEncoded,
     ) -> f32 {
-        self.score_tqplus_no_qjl_4bit_from_parts_for_test(
-            prepared,
-            encoded.renorm,
-            &encoded.mse_packed,
-        )
+        self.score_tqplus_no_qjl_4bit_from_parts(prepared, encoded.renorm, &encoded.mse_packed)
     }
 
-    pub fn score_tqplus_no_qjl_4bit_from_parts_for_test(
+    pub fn score_tqplus_no_qjl_4bit_from_parts(
         &self,
         prepared: &PreparedTqPlusNoQjl4BitQuery,
         renorm: f32,
         mse_packed: &[u8],
     ) -> f32 {
-        self.score_tqplus_no_qjl_4bit_from_prepared_unrenormalized_parts_for_test(
-            prepared, mse_packed,
-        ) * renorm
+        self.score_tqplus_no_qjl_4bit_from_prepared_unrenormalized_parts(prepared, mse_packed)
+            * renorm
     }
 
-    pub fn score_tqplus_no_qjl_4bit_from_prepared_unrenormalized_parts_for_test(
+    pub fn score_tqplus_no_qjl_4bit_from_prepared_unrenormalized_parts(
         &self,
         prepared: &PreparedTqPlusNoQjl4BitQuery,
         mse_packed: &[u8],
@@ -591,16 +595,16 @@ impl ProdQuantizer {
         score + prepared.bias
     }
 
-    pub fn score_tqplus_no_qjl_4bit_from_prepared_encoded_for_test(
+    pub fn score_tqplus_no_qjl_4bit_from_prepared_encoded(
         &self,
         prepared: &PreparedTqPlusNoQjl4BitQuery,
         encoded: &TqPlusNoQjl4BitEncoded,
     ) -> f32 {
-        self.score_tqplus_no_qjl_4bit_from_prepared_unrenormalized_for_test(prepared, encoded)
+        self.score_tqplus_no_qjl_4bit_from_prepared_unrenormalized(prepared, encoded)
             * encoded.renorm
     }
 
-    pub fn score_tqplus_no_qjl_4bit_from_prepared_unrenormalized_for_test(
+    pub fn score_tqplus_no_qjl_4bit_from_prepared_unrenormalized(
         &self,
         prepared: &PreparedTqPlusNoQjl4BitQuery,
         encoded: &TqPlusNoQjl4BitEncoded,
@@ -615,7 +619,7 @@ impl ProdQuantizer {
             mse_code_len(self.original_dim, self.bits)
         );
 
-        self.score_tqplus_no_qjl_4bit_from_prepared_unrenormalized_parts_for_test(
+        self.score_tqplus_no_qjl_4bit_from_prepared_unrenormalized_parts(
             prepared,
             &encoded.mse_packed,
         )
@@ -1909,6 +1913,17 @@ fn normalized_for_tqplus(vector: &[f32]) -> Vec<f32> {
 }
 
 fn canonical_beta_quantiles_for_tqplus(dim: usize) -> (f32, f32) {
+    static CACHE: OnceLock<Mutex<HashMap<usize, (f32, f32)>>> = OnceLock::new();
+    let cache = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+    if let Some(quantiles) = cache
+        .lock()
+        .expect("TQ+ quantile cache poisoned")
+        .get(&dim)
+        .copied()
+    {
+        return quantiles;
+    }
+
     fn quantile(dim: usize, target: f64) -> f32 {
         let points = 20_001usize;
         let step = 2.0_f64 / (points as f64 - 1.0);
@@ -1923,7 +1938,12 @@ fn canonical_beta_quantiles_for_tqplus(dim: usize) -> (f32, f32) {
         1.0
     }
 
-    (quantile(dim, 0.05), quantile(dim, 0.95))
+    let quantiles = (quantile(dim, 0.05), quantile(dim, 0.95));
+    cache
+        .lock()
+        .expect("TQ+ quantile cache poisoned")
+        .insert(dim, quantiles);
+    quantiles
 }
 
 fn percentile_sorted_for_tqplus(values: &[f32], p: f32) -> f32 {
@@ -2521,16 +2541,14 @@ mod tests {
             .map(|seed| anisotropic_unit_vector(dim, 30_000 + seed))
             .collect::<Vec<_>>();
 
-        let calibration = quantizer.fit_tqplus_calibration_for_test(&train);
+        let calibration = quantizer.fit_tqplus_calibration(&train);
         let prepared_baseline = queries
             .iter()
             .map(|query| quantizer.prepare_ip_query(query))
             .collect::<Vec<_>>();
         let prepared_tqplus = queries
             .iter()
-            .map(|query| {
-                quantizer.prepare_ip_query_tqplus_no_qjl_4bit_for_test(query, &calibration)
-            })
+            .map(|query| quantizer.prepare_ip_query_tqplus_no_qjl_4bit(query, &calibration))
             .collect::<Vec<_>>();
         let baseline_codes = candidates
             .iter()
@@ -2538,7 +2556,7 @@ mod tests {
             .collect::<Vec<_>>();
         let tqplus_codes = candidates
             .iter()
-            .map(|candidate| quantizer.encode_tqplus_no_qjl_4bit_for_test(candidate, &calibration))
+            .map(|candidate| quantizer.encode_tqplus_no_qjl_4bit(candidate, &calibration))
             .collect::<Vec<_>>();
 
         assert_eq!(baseline_codes[0].mse_packed.len(), dim * bits as usize / 8);
@@ -2566,11 +2584,11 @@ mod tests {
                     &baseline_codes[candidate_index].mse_packed,
                 ) as f64;
                 let tqplus_unrenorm = quantizer
-                    .score_tqplus_no_qjl_4bit_from_prepared_unrenormalized_for_test(
+                    .score_tqplus_no_qjl_4bit_from_prepared_unrenormalized(
                         tqplus_prepared,
                         &tqplus_codes[candidate_index],
                     ) as f64;
-                let tqplus = quantizer.score_tqplus_no_qjl_4bit_from_prepared_for_test(
+                let tqplus = quantizer.score_tqplus_no_qjl_4bit_from_prepared(
                     tqplus_prepared,
                     &tqplus_codes[candidate_index],
                 ) as f64;

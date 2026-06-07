@@ -52,6 +52,10 @@ cargo test -p ecaz --lib --no-default-features --features pg18 metadata_decode_a
 - `artifacts/cargo-check-pg18.log`: PG18 library compile validation.
 - `artifacts/cargo-test-ec-ivf-quantizer-single-thread.log`: IVF quantizer unit validation, including TQ+ dispatch.
 - `artifacts/cargo-test-ec-ivf-metadata-format.log`: metadata storage-format decode validation.
+- `artifacts/cargo-check-pg18-after-format-plan.log`: PG18 library compile validation after TQ+ production-naming, quantile-cache, and calibration-validation cleanup.
+- `artifacts/cargo-test-ec-ivf-quantizer-single-thread-after-format-plan.log`: IVF quantizer unit validation after cleanup.
+- `artifacts/cargo-test-ec-ivf-metadata-format-after-format-plan.log`: metadata storage-format decode validation after cleanup.
+- `artifacts/tqplus-format-plan.md`: task-local format plan for the new IVF `turboquant_tqplus` storage-format tag and calibration chain.
 
 ## Key Results
 
@@ -96,8 +100,21 @@ cargo test -p ecaz --lib --no-default-features --features pg18 metadata_decode_a
 - `cargo check -p ecaz --lib --no-default-features --features pg18`: passed.
 - `cargo test -p ecaz --lib --no-default-features --features pg18 am::ec_ivf::quantizer -- --test-threads=1`: 14 passed.
 - `cargo test -p ecaz --lib --no-default-features --features pg18 metadata_decode_accepts_known_format_codes_and_rejects_unknown_codes`: 1 passed.
+- After production-naming/format-plan cleanup:
+  - `cargo check -p ecaz --lib --no-default-features --features pg18`: passed.
+  - `cargo test -p ecaz --lib --no-default-features --features pg18 am::ec_ivf::quantizer -- --test-threads=1`: 14 passed.
+  - `cargo test -p ecaz --lib --no-default-features --features pg18 metadata_decode_accepts_known_format_codes_and_rejects_unknown_codes`: 1 passed.
 
 An earlier parallel quantizer-filter run failed the RaBitQ cache construction
 counter test because that test uses global cache instrumentation. The same
 filter passed when rerun single-threaded and is the validation result cited
 above.
+
+## Format Plan
+
+The implementation adds durable IVF storage-format tag `4` for
+`turboquant_tqplus`. The task-local format plan is recorded in
+`artifacts/tqplus-format-plan.md`. It documents the tag assignment, calibration
+chain layout, compatibility behavior, insert/scan/vacuum semantics, and the
+promotion requirements before this measurement profile becomes a broader
+production API.

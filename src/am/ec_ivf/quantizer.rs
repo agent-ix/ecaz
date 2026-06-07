@@ -199,7 +199,7 @@ impl IvfQuantizer {
             crate::DEFAULT_QUANT_BITS,
             crate::DEFAULT_QUANT_SEED,
         );
-        let encoded = quantizer.encode_tqplus_no_qjl_4bit_for_test(source, &model.calibration);
+        let encoded = quantizer.encode_tqplus_no_qjl_4bit(source, &model.calibration);
         Ok((dimensions, encoded.renorm, encoded.mse_packed))
     }
 
@@ -299,7 +299,7 @@ impl IvfQuantizer {
             crate::DEFAULT_QUANT_SEED,
         );
         Ok(IvfPreparedQuery::TurboQuantTqPlus(
-            quantizer.prepare_ip_query_tqplus_no_qjl_4bit_for_test(query, &model.calibration),
+            quantizer.prepare_ip_query_tqplus_no_qjl_4bit(query, &model.calibration),
         ))
     }
 
@@ -338,11 +338,7 @@ impl IvfQuantizer {
                     crate::DEFAULT_QUANT_BITS,
                     crate::DEFAULT_QUANT_SEED,
                 );
-                Ok(quantizer.score_tqplus_no_qjl_4bit_from_parts_for_test(
-                    prepared_query,
-                    gamma,
-                    payload,
-                ))
+                Ok(quantizer.score_tqplus_no_qjl_4bit_from_parts(prepared_query, gamma, payload))
             }
             (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::RaBitQ(prepared_query)) => {
                 let _ = gamma;
@@ -541,6 +537,22 @@ impl IvfQuantizer {
                         model.calibration.scale.len(),
                         self.dimensions
                     ));
+                }
+                if model
+                    .calibration
+                    .shift
+                    .iter()
+                    .any(|value| !value.is_finite())
+                    || model
+                        .calibration
+                        .scale
+                        .iter()
+                        .any(|value| !value.is_finite() || value.abs() <= 1e-8)
+                {
+                    return Err(
+                        "ec_ivf TQ+ calibration contains non-finite or zero scale values"
+                            .to_owned(),
+                    );
                 }
                 let quantizer = ProdQuantizer::cached(
                     self.dimensions,
@@ -868,7 +880,7 @@ mod tests {
             crate::DEFAULT_QUANT_SEED,
         );
         let train = vec![source.clone(), query.clone()];
-        let calibration = direct.fit_tqplus_calibration_for_test(&train);
+        let calibration = direct.fit_tqplus_calibration(&train);
         let model = IvfTqPlusModel {
             calibration: calibration.clone(),
         };
@@ -882,9 +894,8 @@ mod tests {
         let prepared = dispatch
             .prepare_ip_query_with_tqplus_model(&query, &model)
             .unwrap();
-        let direct_prepared =
-            direct.prepare_ip_query_tqplus_no_qjl_4bit_for_test(&query, &calibration);
-        let direct_encoded = direct.encode_tqplus_no_qjl_4bit_for_test(&source, &calibration);
+        let direct_prepared = direct.prepare_ip_query_tqplus_no_qjl_4bit(&query, &calibration);
+        let direct_encoded = direct.encode_tqplus_no_qjl_4bit(&source, &calibration);
 
         assert_eq!(prepared.lut_len(), dimensions * 16);
         assert_eq!(prepared.sq_len(), 0);
@@ -894,7 +905,7 @@ mod tests {
             dispatch
                 .score_ip_from_parts(&prepared, gamma, &payload)
                 .unwrap(),
-            direct.score_tqplus_no_qjl_4bit_from_parts_for_test(
+            direct.score_tqplus_no_qjl_4bit_from_parts(
                 &direct_prepared,
                 direct_encoded.renorm,
                 &direct_encoded.mse_packed,

@@ -843,7 +843,7 @@ impl BuildState {
             .map(<[f32]>::to_vec)
             .collect::<Vec<_>>();
         Ok(Some(IvfTqPlusModel {
-            calibration: quantizer.fit_tqplus_calibration_for_test(&sample_vectors),
+            calibration: quantizer.fit_tqplus_calibration(&sample_vectors),
         }))
     }
 }

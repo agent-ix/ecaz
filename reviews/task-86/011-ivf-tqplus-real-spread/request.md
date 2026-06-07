@@ -27,6 +27,9 @@ that:
 This is still scoped to IVF for measurement. It does not claim HNSW, DiskANN,
 or SPIRE support yet.
 
+Because this adds durable IVF storage-format tag `4`, the packet includes a
+task-local format plan at `artifacts/tqplus-format-plan.md`.
+
 ## Benchmark Shape
 
 Both suites use `ecaz bench suite`, PG18, `ec_ivf`, DBpedia real fixtures,
@@ -74,12 +77,14 @@ per-row storage.
 
 The result is strong enough to justify follow-up work in two directions:
 
-- promote naming/API out of the `*_for_test` TQ+ helper surface before treating
-  this as production-ready shared TurboQuant code;
+- decide whether to keep the reused IVF PQ codebook tuple chain or replace it
+  with a dedicated calibration tuple before broader production promotion;
 - port and measure TQ+ on the AMs the task cares about next, starting with
   SPIRE/TurboQuant and then HNSW/DISKANN if the codec adapter surface is clean.
 
 ## Validation
+
+Benchmark implementation commit `e0ae9fe7dbcfb335cdaa7f47072416e5287ce5a4`:
 
 - `cargo check -p ecaz --lib --no-default-features --features pg18`: passed
   (`artifacts/cargo-check-pg18.log`).
@@ -87,6 +92,16 @@ The result is strong enough to justify follow-up work in two directions:
   (`artifacts/cargo-test-ec-ivf-quantizer-single-thread.log`).
 - `cargo test -p ecaz --lib --no-default-features --features pg18 metadata_decode_accepts_known_format_codes_and_rejects_unknown_codes`: 1 passed
   (`artifacts/cargo-test-ec-ivf-metadata-format.log`).
+
+Current branch after production-naming, quantile-cache, calibration-validation,
+and format-plan cleanup:
+
+- `cargo check -p ecaz --lib --no-default-features --features pg18`: passed
+  (`artifacts/cargo-check-pg18-after-format-plan.log`).
+- `cargo test -p ecaz --lib --no-default-features --features pg18 am::ec_ivf::quantizer -- --test-threads=1`: 14 passed
+  (`artifacts/cargo-test-ec-ivf-quantizer-single-thread-after-format-plan.log`).
+- `cargo test -p ecaz --lib --no-default-features --features pg18 metadata_decode_accepts_known_format_codes_and_rejects_unknown_codes`: 1 passed
+  (`artifacts/cargo-test-ec-ivf-metadata-format-after-format-plan.log`).
 
 ## Review Notes
 
