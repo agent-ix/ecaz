@@ -156,9 +156,12 @@ Current ledger:
   023 proves it on AWS 1M/q500: repeat candidate-score p50 falls to
   `56.327 ms`, summary-score p50 falls to `46.270 ms`, and end-to-end latency
   beats packet 019 at the same recall/candidate surface;
-- candidate-set-preserving rerank locality: `open`; tuple/rerank locality has
-  not yet been measured at the accepted AWS 1M/q500 point. It remains Task 85
-  scope, not future work, until a packet accepts/rejects/stops it;
+- candidate-set-preserving rerank locality: `instrumenting`; tuple/rerank
+  locality has not yet been measured at the accepted AWS 1M/q500 point. Packet
+  024 adds rerank-prefix heap-block locality metrics to the SPIRE diagnostic
+  surface and `ecaz bench spire-pipeline --funnel-output`. It remains Task 85
+  scope, not future work, until an AWS 1M/q500 packet uses those metrics to
+  accept, reject, or stop candidate-set-preserving rerank locality work;
 - candidate-surface redesign with recall preservation: `open`; rejected
   geometry/cap/k-summary variants are closed, but any new policy must target
   selected-leaf misses and beat the accepted same-recall latency bar. It
@@ -168,7 +171,8 @@ Current ledger:
   extend funnel evidence through `ecaz bench suite`, including appended
   row-segment AWS q500 counters and a local build-validation workaround for
   artifact-heavy checkouts. Packet 023 records the combined accepted profile;
-  further suite metrics are still required for tuple-locality and any
+  packet 024 adds rerank-prefix heap-block locality fields required to judge
+  tuple/rerank locality. Further suite metrics are still required for any
   implementation-specific physical-layout measurement;
 - comparator and product policy gate: `open`; cannot close until the
   implementation/rejection ledger above has packet-local exits.
@@ -261,6 +265,17 @@ Acceptance bar:
 - recall@10 >= retained Task 79/81 recall;
 - latency improvement reported with the same warm/cold policy as the retained
   baseline.
+
+Instrumentation checkpoint:
+
+- packet 024 adds `ec_spire_index_scan_rerank_locality_snapshot(index_oid,
+  query)` and wires it into `ecaz bench spire-pipeline --funnel-output`. The
+  funnel output now records candidate count, rerank-prefix count, unique heap
+  blocks, heap-block transitions, span, jump sum, and max jump for the exact
+  rerank prefix in approximate score order. The next required checkpoint is an
+  AWS 1M/q500 same-recall measurement on the packet 023 accepted surface to
+  decide whether candidate-set-preserving TID grouping, block-local rerank
+  batches, or prefetch scheduling is a justified implementation lever.
 
 #### 4.4 Candidate-Surface Redesign Only With Recall Preservation
 
@@ -454,3 +469,15 @@ should stop.
   packet 019 retained repeat `227.388/284.166/297.164 ms` at unchanged recall,
   candidates, and heap rerank count. AWS `1m` final status is packet-local and
   paused.
+- `reviews/task-85/024-rerank-locality-funnel-metrics/`: benchmark harness
+  checkpoint for the required candidate-set-preserving rerank locality
+  workstream. Commit `a9a938771` adds
+  `ec_spire_index_scan_rerank_locality_snapshot` and adds rerank-prefix
+  heap-block locality fields to `ecaz bench spire-pipeline --funnel-output`.
+  Local validation passed (`cargo fmt --check`,
+  `CARGO_DISABLE_GIT_DISCOVERY=1 cargo test -p ecaz --lib --locked --offline
+  rerank_prefix_heap_locality_counts_prefix_block_scatter -- --nocapture`, and
+  `CARGO_DISABLE_GIT_DISCOVERY=1 cargo test -p ecaz-cli --locked --offline
+  funnel_record_carries_task85_read_and_score_breakdown -- --nocapture`). The
+  next packet must run AWS 1M/q500 on the packet 023 accepted surface and use
+  these metrics to accept, reject, or stop rerank locality implementation work.
