@@ -164,8 +164,10 @@ Current ledger:
   `heap_rerank_sum=12,500`. The warm rerank prefix has material heap-block
   scatter: `25` rerank rows/query, unique heap blocks p50/p95/max
   `22/25/25`, and heap-block transitions p50/p95/max `24/24/24`. The next
-  checkpoint must implement or explicitly stop a candidate-set-preserving TID
-  grouping, block-local rerank batch, or prefetch schedule;
+  checkpoint, packet 026, implements local heap-resolution fetch ordering by
+  `(heap_block, heap_offset)` before exact scoring while preserving the same
+  candidates and final merge semantics. It still needs AWS 1M/q500 acceptance
+  before the workstream can move to `accepted` or `rejected`;
 - candidate-surface redesign with recall preservation: `open`; rejected
   geometry/cap/k-summary variants are closed, but any new policy must target
   selected-leaf misses and beat the accepted same-recall latency bar. It
@@ -293,6 +295,11 @@ Measurement checkpoint:
   accept a latency win by itself, but it justifies implementing the
   candidate-set-preserving locality lever next instead of deferring it as
   future research.
+- packet 026 implements the first locality lever: local heap-resolution fetches
+  are ordered by decoded heap TID before loading source vectors and exact
+  scoring. The candidate list, exact scores, dedupe, and final top-k merge are
+  unchanged; only the heap fetch order changes. Local validation passed. The
+  next required checkpoint is AWS 1M/q500 acceptance against packet 023/025.
 
 #### 4.4 Candidate-Surface Redesign Only With Recall Preservation
 
@@ -510,3 +517,13 @@ should stop.
   `24/24/24`, span p50/p95 `8,366/8,993`, and max jump p50/p95
   `7,533/8,766`. AWS `1m` final status is packet-local and paused. This
   moves the rerank locality workstream to implementation.
+- `reviews/task-85/026-local-heap-rerank-fetch-order/`: local implementation
+  checkpoint for the packet 025 rerank-locality signal. Commit `4f92108ed`
+  orders local heap-resolution fetches by decoded `(heap_block, heap_offset)`
+  before exact scoring, while preserving the same compact candidate set,
+  exact score computation, dedupe, and final top-k merge. Local validation
+  passed (`cargo fmt --check` and
+  `CARGO_DISABLE_GIT_DISCOVERY=1 cargo test -p ecaz --lib --locked --offline
+  local_heap_fetch_order_sorts_candidates_by_heap_tid -- --nocapture`). The
+  next packet must measure AWS 1M/q500 recall/candidates/latency before this
+  lever can be accepted or rejected.
