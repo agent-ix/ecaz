@@ -22,6 +22,7 @@ Base audited: `origin/main` at
 | Explain transfer to our AMs | Packet 001 and packet 008 state kernel ideas can transfer, but flat-index end-to-end claims do not transfer automatically to HNSW, DiskANN, IVF, or SPIRE. Packet 008 measures the SPIRE-specific transfer. | Covered |
 | Use our TurboQuant baseline only | All Task 86 packets use TurboQuant-only comparisons except incidental source context. Packet 008 compares pre-LUT SPIRE TurboQuant vs post-LUT SPIRE TurboQuant. | Covered |
 | Use `ecaz bench suite` for benchmark matrices | Packet 008 uses `suite-lutoff.json` and `suite-luton.json`, both audited with `ecaz bench suite audit` and run with `ecaz bench suite run`. | Covered |
+| Record p50/p95/p99 latency | Packet 008 now summarizes SQL and pipeline p50/p95/p99 in `artifacts/benchmark-delta.md`, with raw JSONL rows in `artifacts/lutoff/results-report.jsonl` and `artifacts/luton/results-report.jsonl`. | Covered |
 | Benchmark real 10/50/100 spread | Packet 008 uses real10k, real50k, and real100k DBPedia corpora with low/medium/high probe settings for each corpus. | Covered |
 | Test SPIRE with TurboQuant | Packet 008 profile is `ec_spire`, storage format `turboquant`, bits `4`, seed `42`. | Covered |
 
@@ -67,6 +68,14 @@ Packet 008 key result:
   - real10k: `3.549 -> 3.406 ms`, `8.089 -> 7.675 ms`, `10.283 -> 9.711 ms`
   - real50k: `12.660 -> 11.938 ms`, `33.779 -> 32.299 ms`, `48.192 -> 46.042 ms`
   - real100k: `25.646 -> 24.670 ms`, `74.584 -> 72.274 ms`, `95.084 -> 92.184 ms`
+- SQL tail latency improves at every sweep point:
+  - real10k p95: `3.78 -> 3.57 ms`, `8.39 -> 8.09 ms`, `10.4 -> 9.96 ms`
+  - real50k p95: `13.7 -> 13.3 ms`, `36.3 -> 35.4 ms`, `48.5 -> 46.6 ms`
+  - real100k p95: `27.6 -> 26.7 ms`, `77.0 -> 74.4 ms`, `96.0 -> 93.0 ms`
+- Pipeline tail latency improves at every sweep point:
+  - real10k p99: `3.907 -> 3.732 ms`, `8.649 -> 8.206 ms`, `10.844 -> 9.997 ms`
+  - real50k p99: `14.169 -> 13.367 ms`, `37.368 -> 35.757 ms`, `50.154 -> 47.437 ms`
+  - real100k p99: `29.383 -> 28.483 ms`, `79.099 -> 76.258 ms`, `100.015 -> 93.718 ms`
 
 Packet 008 is the lifting evidence for packet 005 seq 02 and packet 007 seq 01:
 it uses real data, a baseline source install, current source install, and

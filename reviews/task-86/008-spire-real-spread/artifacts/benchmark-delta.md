@@ -31,6 +31,34 @@ Negative delta means faster.
 | real100k | 96 | 0.9980 -> 0.9980 | 74.1 -> 71.7 ms | -4.0% | 74.584 -> 72.274 ms | -4.0% |
 | real100k | 128 | 1.0000 -> 1.0000 | 95.3 -> 92.3 ms | -3.9% | 95.084 -> 92.184 ms | -5.2% |
 
+## SQL Latency Tails
+
+| Corpus | nprobe | SQL p50 baseline -> after | SQL p95 baseline -> after | SQL p99 baseline -> after |
+| --- | ---: | ---: | ---: | ---: |
+| real10k | 8 | 3.50 -> 3.37 ms | 3.78 -> 3.57 ms | 4.08 -> 3.64 ms |
+| real10k | 24 | 8.01 -> 7.66 ms | 8.39 -> 8.09 ms | 8.61 -> 8.52 ms |
+| real10k | 32 | 10.1 -> 9.71 ms | 10.4 -> 9.96 ms | 10.9 -> 10.3 ms |
+| real50k | 16 | 12.3 -> 11.9 ms | 13.7 -> 13.3 ms | 14.1 -> 13.7 ms |
+| real50k | 48 | 33.7 -> 32.7 ms | 36.3 -> 35.4 ms | 38.0 -> 36.7 ms |
+| real50k | 64 | 47.9 -> 46.0 ms | 48.5 -> 46.6 ms | 50.1 -> 48.3 ms |
+| real100k | 32 | 25.3 -> 24.5 ms | 27.6 -> 26.7 ms | 28.7 -> 27.8 ms |
+| real100k | 96 | 74.0 -> 71.8 ms | 77.0 -> 74.4 ms | 78.6 -> 75.7 ms |
+| real100k | 128 | 95.2 -> 92.2 ms | 96.0 -> 93.0 ms | 98.4 -> 94.7 ms |
+
+## Pipeline Latency Tails
+
+| Corpus | nprobe | Pipeline p50 baseline -> after | Pipeline p95 baseline -> after | Pipeline p99 baseline -> after |
+| --- | ---: | ---: | ---: | ---: |
+| real10k | 8 | 3.549 -> 3.406 ms | 3.767 -> 3.601 ms | 3.907 -> 3.732 ms |
+| real10k | 24 | 8.089 -> 7.675 ms | 8.440 -> 8.038 ms | 8.649 -> 8.206 ms |
+| real10k | 32 | 10.283 -> 9.711 ms | 10.717 -> 9.909 ms | 10.844 -> 9.997 ms |
+| real50k | 16 | 12.660 -> 11.938 ms | 13.933 -> 13.156 ms | 14.169 -> 13.367 ms |
+| real50k | 48 | 33.779 -> 32.299 ms | 36.289 -> 34.625 ms | 37.368 -> 35.757 ms |
+| real50k | 64 | 48.192 -> 46.042 ms | 48.659 -> 46.616 ms | 50.154 -> 47.437 ms |
+| real100k | 32 | 25.646 -> 24.670 ms | 28.270 -> 27.196 ms | 29.383 -> 28.483 ms |
+| real100k | 96 | 74.584 -> 72.274 ms | 77.602 -> 75.026 ms | 79.099 -> 76.258 ms |
+| real100k | 128 | 95.084 -> 92.184 ms | 96.026 -> 92.743 ms | 100.015 -> 93.718 ms |
+
 ## Recall Timing
 
 Recall-stage mean query time also improved while recall stayed identical.
