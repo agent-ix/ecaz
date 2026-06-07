@@ -7932,6 +7932,58 @@ fn ec_spire_index_scan_leaf_candidate_snapshot(
 }
 
 #[pg_extern(stable, strict)]
+fn ec_spire_index_scan_rerank_locality_snapshot(
+    index_oid: pg_sys::Oid,
+    query: Vec<f32>,
+) -> TableIterator<
+    'static,
+    (
+        name!(active_epoch, i64),
+        name!(effective_nprobe, i64),
+        name!(effective_nprobe_source, String),
+        name!(effective_rerank_width, i64),
+        name!(effective_rerank_width_source, String),
+        name!(candidate_count, i64),
+        name!(rerank_prefix_count, i64),
+        name!(unique_heap_block_count, i64),
+        name!(heap_block_transition_count, i64),
+        name!(heap_block_span, i64),
+        name!(heap_block_jump_sum, i64),
+        name!(heap_block_jump_max, i64),
+    ),
+> {
+    let row = {
+        let index_relation = open_valid_ec_spire_index_guard(
+            index_oid,
+            "ec_spire_index_scan_rerank_locality_snapshot",
+        );
+        with_spire_live_index_relation!(
+            index_relation,
+            am::spire_index_scan_rerank_locality_snapshot,
+            query
+        )
+    };
+
+    TableIterator::new(std::iter::once((
+        i64::try_from(row.active_epoch).expect("active epoch should fit in i64"),
+        i64::from(row.effective_nprobe),
+        row.effective_nprobe_source.to_owned(),
+        i64::try_from(row.effective_rerank_width)
+            .expect("effective rerank width should fit in i64"),
+        row.effective_rerank_width_source.to_owned(),
+        i64::try_from(row.candidate_count).expect("candidate count should fit in i64"),
+        i64::try_from(row.rerank_prefix_count).expect("rerank prefix count should fit in i64"),
+        i64::try_from(row.unique_heap_block_count)
+            .expect("unique heap block count should fit in i64"),
+        i64::try_from(row.heap_block_transition_count)
+            .expect("heap block transition count should fit in i64"),
+        i64::try_from(row.heap_block_span).expect("heap block span should fit in i64"),
+        i64::try_from(row.heap_block_jump_sum).expect("heap block jump sum should fit in i64"),
+        i64::try_from(row.heap_block_jump_max).expect("heap block jump max should fit in i64"),
+    )))
+}
+
+#[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
 fn ec_spire_index_scan_leaf_block_rank_snapshot(
     index_oid: pg_sys::Oid,

@@ -287,6 +287,22 @@ pub(super) struct SpireLeafScanDiagnostics {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SpireRerankLocalityDiagnostics {
+    pub(crate) active_epoch: u64,
+    pub(crate) effective_nprobe: u32,
+    pub(crate) effective_nprobe_source: &'static str,
+    pub(crate) effective_rerank_width: u64,
+    pub(crate) effective_rerank_width_source: &'static str,
+    pub(crate) candidate_count: u64,
+    pub(crate) rerank_prefix_count: u64,
+    pub(crate) unique_heap_block_count: u64,
+    pub(crate) heap_block_transition_count: u64,
+    pub(crate) heap_block_span: u64,
+    pub(crate) heap_block_jump_sum: u64,
+    pub(crate) heap_block_jump_max: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct SpireScanPlacementDiagnostics {
     pub(super) scan_plan: SpireSingleLevelScanPlan,
     pub(super) stores: Vec<SpireStoreScanDiagnostics>,

@@ -136,6 +136,40 @@
     }
 
     #[test]
+    fn rerank_prefix_heap_locality_counts_prefix_block_scatter() {
+        let candidates = vec![
+            scored_candidate(1, 30, 1, -5.0),
+            scored_candidate(2, 10, 2, -4.0),
+            scored_candidate(3, 30, 3, -3.0),
+            scored_candidate(4, 12, 4, -2.0),
+        ];
+        let scan_plan = SpireSingleLevelScanPlan {
+            leaf_count: 4,
+            nprobe: 4,
+            nprobe_source: "test",
+            recursive_nprobe_policy: SpireRecursiveNprobePolicy::conservative(4).unwrap(),
+            recursive_route_budget: SpireRecursiveRouteBudget::unbounded(),
+            max_routed_candidate_rows: None,
+            payload_format: SpireAssignmentPayloadFormat::TurboQuant,
+            rerank_width: 3,
+            rerank_width_source: "test",
+            candidate_limit: Some(4),
+            dedupe_mode: SpireCandidateDedupeMode::NoReplicaDedupeDisabled,
+        };
+
+        let locality = rerank_prefix_heap_locality(7, scan_plan, &candidates);
+
+        assert_eq!(locality.active_epoch, 7);
+        assert_eq!(locality.candidate_count, 4);
+        assert_eq!(locality.rerank_prefix_count, 3);
+        assert_eq!(locality.unique_heap_block_count, 2);
+        assert_eq!(locality.heap_block_transition_count, 2);
+        assert_eq!(locality.heap_block_span, 21);
+        assert_eq!(locality.heap_block_jump_sum, 40);
+        assert_eq!(locality.heap_block_jump_max, 20);
+    }
+
+    #[test]
     fn miri_scan_candidate_cursor_emits_ranked_candidates_once() {
         let mut cursor = SpireScanCandidateCursor::new(vec![
             scored_candidate(2, 10, 2, -10.0),

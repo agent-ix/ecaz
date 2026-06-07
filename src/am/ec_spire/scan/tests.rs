@@ -16,7 +16,7 @@ mod tests {
         group_leaf_and_delta_reads_by_local_store, heap_rerank_prefetch_block_numbers,
         load_delta_rows_for_routes, load_snapshot_routing_hierarchy, load_snapshot_top_graph_object,
         prefetch_store_object_read_groups, production_scan_result_stream_am_outputs,
-        rank_routed_leaf_rows_by_ip,
+        rank_routed_leaf_rows_by_ip, rerank_prefix_heap_locality,
         rerank_scored_candidates_by_ip, rerank_scored_candidates_by_ip_with_prefetch,
         route_recursive_routing_objects_to_leaf_pids,
         route_recursive_routing_objects_to_leaf_routes_with_budget,

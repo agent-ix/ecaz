@@ -154,6 +154,7 @@ pub(crate) use self::ec_spire::{
     index_scan_leaf_candidate_snapshot as spire_index_scan_leaf_candidate_snapshot,
     index_scan_leaf_target_block_rank_snapshot as spire_index_scan_leaf_target_block_rank_snapshot,
     index_scan_placement_snapshot as spire_index_scan_placement_snapshot,
+    index_scan_rerank_locality_snapshot as spire_index_scan_rerank_locality_snapshot,
     index_scan_routing_snapshot as spire_index_scan_routing_snapshot,
     index_scan_sanity_snapshot as spire_index_scan_sanity_snapshot,
     index_selected_pid_placement_snapshot as spire_index_selected_pid_placement_snapshot,

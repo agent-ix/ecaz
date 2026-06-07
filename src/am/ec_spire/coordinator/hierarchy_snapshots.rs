@@ -1788,6 +1788,44 @@ pub(crate) fn index_scan_leaf_candidate_snapshot(
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
+pub(crate) fn index_scan_rerank_locality_snapshot(
+    index: SpireLiveIndexRelation,
+    query_values: Vec<f32>,
+) -> scan::SpireRerankLocalityDiagnostics {
+    let result = (|| -> Result<scan::SpireRerankLocalityDiagnostics, String> {
+        let query = scan::SpireScanQuery::new(query_values)?;
+        let Some(anchor) = index.active_epoch_anchor(index.root_control())? else {
+            return Ok(scan::SpireRerankLocalityDiagnostics {
+                active_epoch: 0,
+                effective_nprobe: 0,
+                effective_nprobe_source: "empty",
+                effective_rerank_width: 0,
+                effective_rerank_width_source: "empty",
+                candidate_count: 0,
+                rerank_prefix_count: 0,
+                unique_heap_block_count: 0,
+                heap_block_transition_count: 0,
+                heap_block_span: 0,
+                heap_block_jump_sum: 0,
+                heap_block_jump_max: 0,
+            });
+        };
+
+        let snapshot = anchor.snapshot()?;
+        let object_store = index.object_store_set(
+            &anchor.placement_directory,
+            pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+        )?;
+        scan::collect_scan_rerank_locality_diagnostics(
+            &snapshot,
+            &object_store,
+            &query,
+            index.relation_options(),
+        )
+    })();
+    result.unwrap_or_else(|e| pgrx::error!("{e}"))
+}
+
 pub(crate) fn index_scan_leaf_block_rank_snapshot(
     index: SpireLiveIndexRelation,
     query_values: Vec<f32>,

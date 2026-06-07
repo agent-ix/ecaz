@@ -452,6 +452,157 @@ fn collect_validated_top_graph_scan_placement_diagnostics(
     })
 }
 
+pub(super) fn collect_scan_rerank_locality_diagnostics(
+    snapshot: &SpirePublishedEpochSnapshot<'_>,
+    object_store: &impl SpireObjectReader,
+    query: &SpireScanQuery,
+    options: EcSpireOptions,
+) -> Result<SpireRerankLocalityDiagnostics, String> {
+    let top_graph_plan = options.top_graph_plan()?;
+    let snapshot = SpireValidatedEpochSnapshot::from_snapshot(*snapshot)?;
+    let hierarchy = load_snapshot_routing_hierarchy(&snapshot, object_store)?;
+    let leaf_count =
+        count_recursive_routing_leaf_pids(&hierarchy.root_object, &hierarchy.internal_objects_by_pid)?;
+    let scan_plan = resolve_single_level_scan_plan(leaf_count, options)?;
+    let candidates = if top_graph_plan.enabled {
+        collect_validated_top_graph_scan_plan_approx_candidates(
+            &snapshot,
+            object_store,
+            query,
+            &hierarchy,
+            scan_plan,
+            top_graph_plan,
+        )?
+    } else if scan_plan.nprobe == 0 {
+        Vec::new()
+    } else {
+        let mut observer = SpireNoopRoutedScanObserver;
+        collect_validated_recursive_quantized_routed_probe_candidates(
+            &snapshot,
+            object_store,
+            query.values(),
+            &hierarchy,
+            &scan_plan.recursive_nprobe_policy,
+            scan_plan.recursive_route_budget,
+            scan_plan.max_routed_candidate_rows,
+            scan_plan.payload_format,
+            scan_plan.dedupe_mode,
+            scan_plan.candidate_limit,
+            &mut observer,
+        )?
+    };
+
+    Ok(rerank_prefix_heap_locality(
+        snapshot.epoch_manifest().epoch,
+        scan_plan,
+        &candidates,
+    ))
+}
+
+fn collect_validated_top_graph_scan_plan_approx_candidates(
+    snapshot: &SpireValidatedEpochSnapshot<'_>,
+    object_store: &impl SpireObjectReader,
+    query: &SpireScanQuery,
+    hierarchy: &SpireLoadedRoutingHierarchy,
+    scan_plan: SpireSingleLevelScanPlan,
+    top_graph_plan: SpireTopGraphOptionPlan,
+) -> Result<Vec<SpireScoredScanCandidate>, String> {
+    if scan_plan.nprobe == 0 {
+        return Ok(Vec::new());
+    }
+
+    let (_top_graph_pid, top_graph) = load_snapshot_top_graph_object(snapshot, object_store)?
+        .ok_or_else(|| "ec_spire rerank locality diagnostics has no available top graph object".to_owned())?;
+    let scorer = SpirePreparedAssignmentScorer::prepare(
+        scan_plan.payload_format,
+        query.values().len(),
+        query.values(),
+    )?;
+    let leaf_assignment_counts = &hierarchy.leaf_assignment_counts_by_pid;
+    let mut leaf_row_count =
+        |route| leaf_route_assignment_count_from_loaded_hierarchy(leaf_assignment_counts, route);
+    let leaf_routes = route_top_graph_object_to_leaf_routes_with_row_budget(
+        &hierarchy.root_object,
+        &hierarchy.internal_objects_by_pid,
+        &top_graph,
+        query.values(),
+        top_graph_plan.search_list_size.unwrap_or(scan_plan.nprobe),
+        scan_plan.nprobe,
+        &scan_plan.recursive_nprobe_policy,
+        scan_plan.recursive_route_budget,
+        scan_plan.max_routed_candidate_rows,
+        &mut leaf_row_count,
+    )?
+    .routes;
+
+    let mut observer = SpireNoopRoutedScanObserver;
+    collect_validated_quantized_leaf_route_candidates(
+        snapshot,
+        object_store,
+        leaf_routes,
+        &scorer,
+        scan_plan.dedupe_mode,
+        scan_plan.candidate_limit,
+        &mut observer,
+    )
+}
+
+fn rerank_prefix_heap_locality(
+    active_epoch: u64,
+    scan_plan: SpireSingleLevelScanPlan,
+    candidates: &[SpireScoredScanCandidate],
+) -> SpireRerankLocalityDiagnostics {
+    let rerank_len = if scan_plan.rerank_width == 0 {
+        candidates.len()
+    } else {
+        scan_plan.rerank_width.min(candidates.len())
+    };
+    let prefix = &candidates[..rerank_len];
+    let mut unique_blocks = HashSet::new();
+    let mut min_block = None::<u32>;
+    let mut max_block = None::<u32>;
+    let mut transition_count = 0_u64;
+    let mut jump_sum = 0_u64;
+    let mut jump_max = 0_u64;
+    let mut previous_block = None::<u32>;
+
+    for candidate in prefix {
+        let block = candidate.heap_tid.block_number;
+        unique_blocks.insert(block);
+        min_block = Some(min_block.map_or(block, |current| current.min(block)));
+        max_block = Some(max_block.map_or(block, |current| current.max(block)));
+        if let Some(previous) = previous_block {
+            if previous != block {
+                transition_count += 1;
+            }
+            let jump = u64::from(previous.abs_diff(block));
+            jump_sum = jump_sum.saturating_add(jump);
+            jump_max = jump_max.max(jump);
+        }
+        previous_block = Some(block);
+    }
+
+    let heap_block_span = match (min_block, max_block) {
+        (Some(min), Some(max)) => u64::from(max - min) + 1,
+        _ => 0,
+    };
+
+    SpireRerankLocalityDiagnostics {
+        active_epoch,
+        effective_nprobe: scan_plan.nprobe,
+        effective_nprobe_source: scan_plan.nprobe_source,
+        effective_rerank_width: scan_plan.rerank_width as u64,
+        effective_rerank_width_source: scan_plan.rerank_width_source,
+        candidate_count: candidates.len() as u64,
+        rerank_prefix_count: rerank_len as u64,
+        unique_heap_block_count: unique_blocks.len() as u64,
+        heap_block_transition_count: transition_count,
+        heap_block_span,
+        heap_block_jump_sum: jump_sum,
+        heap_block_jump_max: jump_max,
+    }
+}
+
 pub(super) fn collect_scan_leaf_block_rank_snapshot(
     snapshot: &SpirePublishedEpochSnapshot<'_>,
     object_store: &impl SpireObjectReader,

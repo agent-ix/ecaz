@@ -393,6 +393,7 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
         for (query_index, query) in queries.iter().enumerate() {
             let mut funnel_local_rows = Vec::new();
             let mut funnel_leaf_rows = Vec::new();
+            let mut funnel_rerank_locality = None;
             let mut returned_to_k_count = None;
             let mut predicted_ids_for_query = None;
             if !args.production_read_only {
@@ -418,6 +419,8 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
                     funnel_local_rows = local_rows.clone();
                     funnel_leaf_rows =
                         query_leaf_candidate_rows(&client, &index, &query.source).await?;
+                    funnel_rerank_locality =
+                        query_rerank_locality_row(&client, &index, &query.source).await?;
                 }
                 for row in local_rows {
                     local
@@ -686,6 +689,7 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
                     query.id,
                     &funnel_local_rows,
                     &funnel_leaf_rows,
+                    funnel_rerank_locality.as_ref(),
                     returned_to_k_count,
                 )?);
             }
@@ -1257,6 +1261,34 @@ fn is_missing_leaf_row_segment_snapshot_column(err: &tokio_postgres::Error) -> b
         || message.contains("leaf_row_segment_read_bytes")
 }
 
+async fn query_rerank_locality_row(
+    client: &Client,
+    index: &str,
+    query: &[f32],
+) -> Result<Option<RerankLocalityRow>> {
+    match client
+        .query_opt(rerank_locality_snapshot_sql(), &[&index, &query])
+        .await
+    {
+        Ok(row) => Ok(row.map(RerankLocalityRow::from)),
+        Err(err) if is_missing_rerank_locality_snapshot(&err) => Ok(None),
+        Err(err) => Err(err).wrap_err("querying ec_spire_index_scan_rerank_locality_snapshot"),
+    }
+}
+
+fn is_missing_rerank_locality_snapshot(err: &tokio_postgres::Error) -> bool {
+    let db_message = err.as_db_error().map(|db_error| db_error.message());
+    let display_message;
+    let message = match db_message {
+        Some(message) => message,
+        None => {
+            display_message = err.to_string();
+            display_message.as_str()
+        }
+    };
+    message.contains("ec_spire_index_scan_rerank_locality_snapshot")
+}
+
 async fn query_leaf_target_assignment_rows(
     client: &Client,
     index: &str,
@@ -1457,6 +1489,13 @@ fn legacy_leaf_candidate_snapshot_sql() -> &'static str {
             candidate_materialize_nanos, candidate_heap_append_nanos
      FROM ec_spire_index_scan_leaf_candidate_snapshot($1::text::regclass::oid, $2::real[])
      ORDER BY pid"
+}
+
+fn rerank_locality_snapshot_sql() -> &'static str {
+    "SELECT candidate_count, rerank_prefix_count, unique_heap_block_count,
+            heap_block_transition_count, heap_block_span, heap_block_jump_sum,
+            heap_block_jump_max
+     FROM ec_spire_index_scan_rerank_locality_snapshot($1::text::regclass::oid, $2::real[])"
 }
 
 fn leaf_target_assignment_snapshot_sql() -> &'static str {
@@ -1740,6 +1779,31 @@ impl LeafCandidateRow {
             candidate_score_nanos: row.get(20),
             candidate_materialize_nanos: row.get(21),
             candidate_heap_append_nanos: row.get(22),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct RerankLocalityRow {
+    candidate_count: i64,
+    rerank_prefix_count: i64,
+    unique_heap_block_count: i64,
+    heap_block_transition_count: i64,
+    heap_block_span: i64,
+    heap_block_jump_sum: i64,
+    heap_block_jump_max: i64,
+}
+
+impl From<Row> for RerankLocalityRow {
+    fn from(row: Row) -> Self {
+        Self {
+            candidate_count: row.get(0),
+            rerank_prefix_count: row.get(1),
+            unique_heap_block_count: row.get(2),
+            heap_block_transition_count: row.get(3),
+            heap_block_span: row.get(4),
+            heap_block_jump_sum: row.get(5),
+            heap_block_jump_max: row.get(6),
         }
     }
 }
@@ -2201,6 +2265,13 @@ struct FunnelRecord {
     candidate_score_nanos: i64,
     candidate_materialize_nanos: i64,
     candidate_heap_append_nanos: i64,
+    rerank_locality_candidate_count: i64,
+    rerank_prefix_count: i64,
+    rerank_unique_heap_block_count: i64,
+    rerank_heap_block_transition_count: i64,
+    rerank_heap_block_span: i64,
+    rerank_heap_block_jump_sum: i64,
+    rerank_heap_block_jump_max: i64,
 }
 
 impl FunnelRecord {
@@ -2210,6 +2281,7 @@ impl FunnelRecord {
         query_id: i64,
         local_rows: &[LocalPipelineRow],
         leaf_rows: &[LeafCandidateRow],
+        rerank_locality: Option<&RerankLocalityRow>,
         returned_to_k_count: Option<usize>,
     ) -> Result<Self> {
         let candidate_count = local_step_value(local_rows, "candidates", |row| row.candidate_count)
@@ -2289,6 +2361,15 @@ impl FunnelRecord {
         };
         let leaf_candidate_p95 = percentile_nearest_rank(&mut per_leaf_candidates, 95);
         let leaf_candidate_max = per_leaf_candidates.into_iter().max().unwrap_or(0);
+        let rerank_locality_candidate_count = rerank_locality.map_or(0, |row| row.candidate_count);
+        let rerank_prefix_count = rerank_locality.map_or(0, |row| row.rerank_prefix_count);
+        let rerank_unique_heap_block_count =
+            rerank_locality.map_or(0, |row| row.unique_heap_block_count);
+        let rerank_heap_block_transition_count =
+            rerank_locality.map_or(0, |row| row.heap_block_transition_count);
+        let rerank_heap_block_span = rerank_locality.map_or(0, |row| row.heap_block_span);
+        let rerank_heap_block_jump_sum = rerank_locality.map_or(0, |row| row.heap_block_jump_sum);
+        let rerank_heap_block_jump_max = rerank_locality.map_or(0, |row| row.heap_block_jump_max);
 
         Ok(Self {
             kind: "spire_candidate_funnel",
@@ -2323,6 +2404,13 @@ impl FunnelRecord {
             candidate_score_nanos,
             candidate_materialize_nanos,
             candidate_heap_append_nanos,
+            rerank_locality_candidate_count,
+            rerank_prefix_count,
+            rerank_unique_heap_block_count,
+            rerank_heap_block_transition_count,
+            rerank_heap_block_span,
+            rerank_heap_block_jump_sum,
+            rerank_heap_block_jump_max,
         })
     }
 }
@@ -3584,8 +3672,25 @@ mod tests {
             },
         ];
 
-        let record = FunnelRecord::from_query(96, 0, 42, &local_rows, &leaf_rows, Some(10))
-            .expect("funnel record");
+        let rerank_locality = RerankLocalityRow {
+            candidate_count: 300,
+            rerank_prefix_count: 25,
+            unique_heap_block_count: 20,
+            heap_block_transition_count: 24,
+            heap_block_span: 1024,
+            heap_block_jump_sum: 4096,
+            heap_block_jump_max: 512,
+        };
+        let record = FunnelRecord::from_query(
+            96,
+            0,
+            42,
+            &local_rows,
+            &leaf_rows,
+            Some(&rerank_locality),
+            Some(10),
+        )
+        .expect("funnel record");
 
         assert_eq!(record.candidate_count, 300);
         assert_eq!(record.leaf_object_bytes, 3000);
@@ -3600,6 +3705,10 @@ mod tests {
         assert_eq!(record.leaf_summary_score_nanos, 600);
         assert_eq!(record.leaf_row_score_nanos, 800);
         assert_eq!(record.candidate_score_nanos, 1400);
+        assert_eq!(record.rerank_prefix_count, 25);
+        assert_eq!(record.rerank_unique_heap_block_count, 20);
+        assert_eq!(record.rerank_heap_block_transition_count, 24);
+        assert_eq!(record.rerank_heap_block_jump_sum, 4096);
     }
 
     #[test]
@@ -3622,6 +3731,9 @@ mod tests {
         assert!(leaf_candidate_snapshot_sql().contains("leaf_row_segment_read_count"));
         assert!(leaf_candidate_snapshot_sql().contains("leaf_row_segment_read_bytes"));
         assert!(leaf_candidate_snapshot_sql().contains("leaf_summary_score_nanos"));
+        assert!(
+            rerank_locality_snapshot_sql().contains("ec_spire_index_scan_rerank_locality_snapshot")
+        );
         assert!(legacy_leaf_candidate_snapshot_sql().contains("leaf_summary_object_bytes"));
         assert!(legacy_leaf_candidate_snapshot_sql().contains("leaf_row_object_bytes"));
         assert!(!legacy_leaf_candidate_snapshot_sql().contains("leaf_row_segment_read_count"));
