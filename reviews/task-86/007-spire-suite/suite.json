@@ -1,0 +1,85 @@
+{
+  "name": "task86-spire-turboquant-synth256",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-86/007-spire-suite/artifacts",
+  "defaults": {
+    "bits": 4,
+    "seed": 42,
+    "socket_dir": "/Users/peter/.pgrx",
+    "pg": 18,
+    "profile": "ec_spire",
+    "queries_limit": 32,
+    "iterations": 32,
+    "force_index": true,
+    "sample_backend_memory": true,
+    "memory_sample_interval_ms": 25
+  },
+  "steps": [
+    {
+      "kind": "raw",
+      "name": "precheck-pg18-extension",
+      "tags": ["setup", "precheck", "spire", "turboquant", "synth256"],
+      "args": [
+        "dev",
+        "sql",
+        "--pg",
+        "18",
+        "--db",
+        "task86_spire_tq",
+        "--socket-dir",
+        "/Users/peter/.pgrx",
+        "--raw",
+        "--sql",
+        "CREATE EXTENSION IF NOT EXISTS ecaz; SELECT now() AS captured_at, version() AS postgres_version, current_setting('server_version_num') AS server_version_num; SELECT extname, extversion FROM pg_extension WHERE extname = 'ecaz'; SELECT amname FROM pg_am WHERE amname IN ('ec_spire', 'ec_ivf', 'ec_hnsw') ORDER BY amname;",
+        "--log-output",
+        "${artifact_dir}/precheck-pg18-extension.log"
+      ],
+      "expected_artifacts": ["${artifact_dir}/precheck-pg18-extension.log"]
+    },
+    {
+      "kind": "load",
+      "name": "load-synth256-spire-turboquant",
+      "tags": ["load", "spire", "turboquant", "synth256", "dim1536"],
+      "prefix": "task86_spire_synth256_tq",
+      "profile": "ec_spire",
+      "corpus_file": "reviews/task-86/007-spire-suite/artifacts/task86_spire_synth256_corpus.tsv",
+      "queries_file": "reviews/task-86/007-spire-suite/artifacts/task86_spire_synth256_queries.tsv",
+      "reloptions": [
+        "storage_format=turboquant",
+        "nlists=8",
+        "recursive_fanout=2",
+        "nprobe=4",
+        "rerank_width=10",
+        "top_graph_enabled=1",
+        "top_graph_degree=16",
+        "top_graph_build_list_size=32",
+        "top_graph_search_list_size=16"
+      ],
+      "log_file": "reviews/task-86/007-spire-suite/artifacts/load-synth256-spire-turboquant.log"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-synth256-spire-turboquant",
+      "tags": ["storage", "spire", "turboquant", "synth256", "dim1536"],
+      "prefix": "task86_spire_synth256_tq",
+      "log_file": "reviews/task-86/007-spire-suite/artifacts/storage-synth256-spire-turboquant.log"
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-synth256-spire-turboquant",
+      "tags": ["pipeline", "spire", "turboquant", "synth256", "dim1536"],
+      "prefix": "task86_spire_synth256_tq",
+      "index": "task86_spire_synth256_tq_idx",
+      "queries_limit": 32,
+      "sweep": [4, 8],
+      "rerank_width": 10,
+      "include_local_store_overlap": true,
+      "include_query_metrics": true,
+      "include_recall": true,
+      "include_production_read_profile": true,
+      "truth_corpus_file": "reviews/task-86/007-spire-suite/artifacts/task86_spire_synth256_corpus.tsv",
+      "query_metric_k": 10,
+      "query_metric_projection_columns": ["id"]
+    }
+  ]
+}

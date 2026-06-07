@@ -1,0 +1,180 @@
+{
+  "suite": "task86-spire-turboquant-synth256",
+  "schema_version": 1,
+  "config": "reviews/task-86/007-spire-suite/suite.json",
+  "config_sha256": "bbc1f5fe8323db26c433be6f41041d1527d04880fded46557e4b6febee40acdd",
+  "dry_run": false,
+  "generated_at_unix_ms": 1780815978722,
+  "connection": {
+    "database": "tqvector_bench",
+    "host": null,
+    "port": null,
+    "user": null,
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "precheck-pg18-extension",
+      "kind": "raw",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "dev",
+        "sql",
+        "--pg",
+        "18",
+        "--db",
+        "task86_spire_tq",
+        "--socket-dir",
+        "/Users/peter/.pgrx",
+        "--raw",
+        "--sql",
+        "CREATE EXTENSION IF NOT EXISTS ecaz; SELECT now() AS captured_at, version() AS postgres_version, current_setting('server_version_num') AS server_version_num; SELECT extname, extversion FROM pg_extension WHERE extname = 'ecaz'; SELECT amname FROM pg_am WHERE amname IN ('ec_spire', 'ec_ivf', 'ec_hnsw') ORDER BY amname;",
+        "--log-output",
+        "reviews/task-86/007-spire-suite/artifacts/precheck-pg18-extension.log"
+      ],
+      "selected": true,
+      "tags": [
+        "setup",
+        "precheck",
+        "spire",
+        "turboquant",
+        "synth256"
+      ],
+      "expected_artifacts": [
+        "reviews/task-86/007-spire-suite/artifacts/precheck-pg18-extension.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1780815978723,
+      "finished_at_unix_ms": 1780815979180,
+      "duration_ms": 456,
+      "exit_code": 0
+    },
+    {
+      "name": "load-synth256-spire-turboquant",
+      "kind": "load",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--log-file",
+        "reviews/task-86/007-spire-suite/artifacts/load-synth256-spire-turboquant.log",
+        "corpus",
+        "load",
+        "--prefix",
+        "task86_spire_synth256_tq",
+        "--profile",
+        "ec_spire",
+        "--corpus-file",
+        "reviews/task-86/007-spire-suite/artifacts/task86_spire_synth256_corpus.tsv",
+        "--queries-file",
+        "reviews/task-86/007-spire-suite/artifacts/task86_spire_synth256_queries.tsv",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--reloption",
+        "storage_format=turboquant",
+        "--reloption",
+        "nlists=8",
+        "--reloption",
+        "nprobe=4",
+        "--reloption",
+        "rerank_width=10",
+        "--reloption",
+        "top_graph_enabled=1",
+        "--reloption",
+        "top_graph_degree=16",
+        "--reloption",
+        "top_graph_build_list_size=32",
+        "--reloption",
+        "top_graph_search_list_size=16"
+      ],
+      "selected": true,
+      "tags": [
+        "load",
+        "spire",
+        "turboquant",
+        "synth256",
+        "dim1536"
+      ],
+      "expected_artifacts": [
+        "reviews/task-86/007-spire-suite/artifacts/load-synth256-spire-turboquant.log"
+      ],
+      "status": "failed",
+      "started_at_unix_ms": 1780815979181,
+      "finished_at_unix_ms": 1780815979404,
+      "duration_ms": 223,
+      "exit_code": 1
+    },
+    {
+      "name": "storage-synth256-spire-turboquant",
+      "kind": "storage",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--log-file",
+        "reviews/task-86/007-spire-suite/artifacts/storage-synth256-spire-turboquant.log",
+        "bench",
+        "storage",
+        "--prefix",
+        "task86_spire_synth256_tq"
+      ],
+      "selected": true,
+      "tags": [
+        "storage",
+        "spire",
+        "turboquant",
+        "synth256",
+        "dim1536"
+      ],
+      "expected_artifacts": [
+        "reviews/task-86/007-spire-suite/artifacts/storage-synth256-spire-turboquant.log"
+      ],
+      "status": "pending"
+    },
+    {
+      "name": "pipeline-synth256-spire-turboquant",
+      "kind": "spire-pipeline",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "bench",
+        "spire-pipeline",
+        "--prefix",
+        "task86_spire_synth256_tq",
+        "--index",
+        "task86_spire_synth256_tq_idx",
+        "--queries-limit",
+        "32",
+        "--sweep",
+        "4,8",
+        "--rerank-width",
+        "10",
+        "--include-local-store-overlap",
+        "--include-query-metrics",
+        "--include-recall",
+        "--truth-corpus-file",
+        "reviews/task-86/007-spire-suite/artifacts/task86_spire_synth256_corpus.tsv",
+        "--include-production-read-profile",
+        "--query-metric-k",
+        "10",
+        "--query-metric-projection-columns",
+        "id",
+        "--log-output",
+        "reviews/task-86/007-spire-suite/artifacts/pipeline-synth256-spire-turboquant.log"
+      ],
+      "selected": true,
+      "tags": [
+        "pipeline",
+        "spire",
+        "turboquant",
+        "synth256",
+        "dim1536"
+      ],
+      "expected_artifacts": [
+        "reviews/task-86/007-spire-suite/artifacts/pipeline-synth256-spire-turboquant.log"
+      ],
+      "status": "pending"
+    }
+  ]
+}
