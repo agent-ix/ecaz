@@ -65,16 +65,23 @@ per-AM end-to-end delta.
 ### In scope
 
 1. Shared `CandidateBatch` abstraction (`src/quant/` or
-   `src/am/common/`).
+   `src/am/common/`). **The abstraction itself must be
+   quantizer-agnostic** — the batch surface holds opaque
+   `(node_id, code_ptr, gamma?)` tuples; only the kernel
+   that consumes the batch is quantizer-specific.
 2. Per-AM scoring-site refactor in **all four AMs**:
    HNSW, DiskANN, IVF, SPIRE. **No AM may be skipped.**
-3. At minimum the existing dim-LUT kernel routed through
-   the new abstraction. Optionally one new 32-block u8
-   nibble LUT kernel; whether to land it in Task 87 vs a
-   follow-up depends on Phase 1 design call.
-4. Per-AM real-corpus measurement with baseline + change
+3. Route the **TurboQuant no-QJL 4-bit** scoring path
+   through the abstraction in each AM. This is the path
+   Task 86 validated end-to-end on SPIRE; it has the
+   broadest existing test coverage and the clearest kernel
+   shape.
+4. Optionally one new 32-block u8 nibble LUT kernel
+   (TurboVec-style); whether to land it in Task 87 vs a
+   follow-up depends on the Phase 1 design call.
+5. Per-AM real-corpus measurement with baseline + change
    cells (recall@10 + p50/p95/p99 latency + storage).
-5. Compose-with-streaming contract documented so Task 88's
+6. Compose-with-streaming contract documented so Task 88's
    resort-buffer can sit on top of the same abstraction.
 
 ### Out of scope
@@ -86,6 +93,39 @@ per-AM end-to-end delta.
   unless the Phase 1 design call lands the 32-block kernel
   and that requires new `target_feature` paths (in which
   case the safety bar applies fully).
+- **Block kernels for quantizer variants other than TQ
+  no-QJL 4-bit** (see "Quantizer scope" below).
+
+### Quantizer scope
+
+The `CandidateBatch` abstraction is quantizer-agnostic by
+design — adding a new quant type later must not require an
+abstraction redesign. But **kernel work in Task 87 is scoped
+to TurboQuant no-QJL 4-bit only.** Other quant types stay on
+their current inline scoring paths until follow-up tasks
+land their block kernels.
+
+Quant type roadmap (rough ROI ranking from Task 86 analysis;
+ordering of follow-ups is a separate prioritisation call):
+
+| Quant type | Task 87? | Notes |
+|---|---|---|
+| TurboQuant no-QJL 4-bit | **YES** | Task 87 in-scope; what Task 86 already validated on SPIRE |
+| TurboQuant no-QJL 2-bit | follow-up | Higher kernel-density potential than 4-bit |
+| TurboQuant QJL (any bits) | follow-up | Residual-sign path is more complex |
+| RaBitQ | follow-up | Already block-oriented in the literature |
+| Binary fingerprint | follow-up | Hamming-distance kernels vectorise trivially |
+| PQ | follow-up | Classic FAISS block-kernel territory |
+| f32 raw | **never** | Already SIMD-friendly per-vector; batching adds copy overhead with no kernel win |
+
+Phase 1 design must verify the abstraction can host all of
+the "follow-up" entries above without redesign — if the
+contract bakes in TurboQuant-only assumptions, the design is
+wrong and must be revised before Phase 2 starts. Specifically,
+the batch's per-candidate metadata must accommodate quant
+types with different per-vector side data (e.g. binary has
+none; QJL TQ carries gamma + residual signs; RaBitQ carries
+rotation metadata).
 
 ## Phase 1 — Design Packet
 
@@ -94,13 +134,20 @@ Land one design packet before any AM-level refactor:
 - Pick the `CandidateBatch` abstraction shape (struct fields,
   fill/flush contract, lifetime of the underlying code-ptr
   refs, batch-size policy).
+- **Verify the abstraction is quantizer-agnostic** by walking
+  each follow-up quant type from the Quantizer Scope table
+  (TQ 2-bit, TQ QJL, RaBitQ, binary, PQ) and confirming the
+  contract can host their per-candidate metadata shapes
+  without redesign. If a quant type forces a contract change,
+  fix it here, not in a future task.
 - Specify how each AM's existing scoring site maps to the
   abstraction (per-AM contract).
 - Cross-reference against pgvectorscale's `resort_buffer`
   pattern; document where they meet vs differ.
-- Decide whether to land the existing dim-LUT only, or to
-  also land a new 32-block u8 LUT kernel, based on the
-  expected per-AM scoring-share win.
+- Decide whether the TurboQuant no-QJL 4-bit dim-LUT kernel
+  alone is enough for Task 87, or whether a new 32-block u8
+  nibble LUT kernel also lands now, based on the expected
+  per-AM scoring-share win.
 - Document the streaming-ANN compose contract so Task 88
   doesn't force a redesign.
 - Pre-commit a measurement methodology: which real fixtures,
@@ -114,41 +161,55 @@ radius first, then increasing complexity):
 
 ### Phase 2: SPIRE integration
 
-- SPIRE scoring site uses `CandidateBatch`.
+- SPIRE's **TurboQuant no-QJL 4-bit** scoring site uses
+  `CandidateBatch`. Other SPIRE quant paths (e.g. QJL
+  variants) stay on inline scoring.
 - Real-corpus suite: real10k / 50k / 100k DBPedia spread,
   baseline-source-install vs change-source-install (Task 86
   packet 008 shape), recall@10 + p50/p95/p99 + storage.
-- **Per-AM validation gate**: SPIRE recall byte-equal at
-  every cell; SPIRE scoring-share latency ≥ 2× faster;
-  end-to-end latency improves at every cell.
+- **Per-AM validation gate**: SPIRE TQ no-QJL 4-bit recall
+  byte-equal at every cell; scoring-share latency ≥ 2×
+  faster on the batched path; end-to-end latency improves
+  at every cell; non-batched SPIRE quant paths show no
+  regression.
 
 ### Phase 3: IVF integration
 
-- IVF scoring site uses `CandidateBatch`.
+- IVF's **TurboQuant no-QJL 4-bit** scoring site uses
+  `CandidateBatch`. Other IVF quant paths stay on inline
+  scoring.
 - Same real-corpus suite shape.
-- **Per-AM validation gate**: IVF recall byte-equal at every
-  cell; IVF scoring-share latency ≥ 2× faster; end-to-end
-  latency improves at every cell.
+- **Per-AM validation gate**: IVF TQ no-QJL 4-bit recall
+  byte-equal at every cell; scoring-share latency ≥ 2×
+  faster on the batched path; end-to-end latency improves
+  at every cell; non-batched IVF quant paths show no
+  regression.
 
 ### Phase 4: DiskANN integration
 
-- DiskANN scoring site uses `CandidateBatch` (per-page
-  batches).
+- DiskANN's **TurboQuant no-QJL 4-bit** scoring site uses
+  `CandidateBatch` (per-page batches). Other DiskANN quant
+  paths (currently grouped-PQ / RaBitQ per Task 86 packet
+  006) stay on inline scoring.
 - Same real-corpus suite shape.
-- **Per-AM validation gate**: DiskANN recall byte-equal at
-  every cell; DiskANN scoring-share latency ≥ 2× faster;
+- **Per-AM validation gate**: DiskANN TQ no-QJL 4-bit
+  recall byte-equal at every cell; scoring-share latency
+  ≥ 2× faster on the batched path;
   end-to-end latency improves at every cell.
 
 ### Phase 5: HNSW integration
 
-- HNSW scoring site uses `CandidateBatch` (per-frontier
-  batches; batching within each greedy-search step).
+- HNSW's **TurboQuant no-QJL 4-bit** scoring site uses
+  `CandidateBatch` (per-frontier batches; batching within
+  each greedy-search step). Other HNSW quant paths (QJL
+  variants, RaBitQ if present) stay on inline scoring.
 - Same real-corpus suite shape.
-- **Per-AM validation gate**: HNSW recall byte-equal at
-  every cell; HNSW scoring-share latency improves
-  (the per-frontier batch may not hit 2× because batches
-  are smaller; document the achieved factor); end-to-end
-  latency improves at every cell.
+- **Per-AM validation gate**: HNSW TQ no-QJL 4-bit recall
+  byte-equal at every cell; scoring-share latency improves
+  on the batched path (the per-frontier batch may not hit
+  2× because batches are smaller — document the achieved
+  factor); end-to-end latency improves at every cell;
+  non-batched HNSW quant paths show no regression.
 
 ## Phase 6 — Closeout
 
