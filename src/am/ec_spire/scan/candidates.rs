@@ -2065,6 +2065,19 @@ fn append_quantized_v2_leaf_summary_route_candidates(
         &leaf_summaries.meta,
         storage_row_ranges.as_deref(),
     )?;
+    let segment_bytes = segments.iter().try_fold(0_u64, |total, segment| {
+        let bytes = u64::try_from(segment.encoded_len(&leaf_summaries.meta)?)
+            .map_err(|_| "ec_spire leaf V2 segment encoded length exceeds u64".to_owned())?;
+        total
+            .checked_add(bytes)
+            .ok_or_else(|| "ec_spire leaf V2 selected segment byte length overflow".to_owned())
+    })?;
+    observer.leaf_row_segments_read(
+        snapshot.epoch_manifest().epoch,
+        &route.placement,
+        segments.len(),
+        segment_bytes,
+    );
     if let Some(started) = read_started {
         observer.leaf_object_read_time(
             snapshot.epoch_manifest().epoch,

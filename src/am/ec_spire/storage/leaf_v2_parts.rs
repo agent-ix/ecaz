@@ -549,6 +549,18 @@ impl SpireLeafPartitionObjectV2Segment {
         Ok(out)
     }
 
+    pub(super) fn encoded_len(&self, meta: &SpireLeafPartitionObjectV2Meta) -> Result<usize, String> {
+        self.validate_against_meta(meta)?;
+        PARTITION_OBJECT_HEADER_BYTES
+            .checked_add(LEAF_V2_SEGMENT_PREFIX_BYTES)
+            .and_then(|len| len.checked_add(self.flags.len().checked_mul(size_of::<u16>())?))
+            .and_then(|len| len.checked_add(self.vec_ids.len()))
+            .and_then(|len| len.checked_add(self.heap_tids.len().checked_mul(ITEM_POINTER_BYTES)?))
+            .and_then(|len| len.checked_add(self.gammas.len().checked_mul(size_of::<f32>())?))
+            .and_then(|len| len.checked_add(self.payloads.len()))
+            .ok_or_else(|| "ec_spire leaf V2 segment encoded length overflow".to_owned())
+    }
+
     fn decode(input: &[u8], meta: &SpireLeafPartitionObjectV2Meta) -> Result<Self, String> {
         let (header, format_version, tail) =
             SpirePartitionObjectHeader::decode_prefix_with_format_version(input)?;

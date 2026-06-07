@@ -1406,6 +1406,7 @@ fn leaf_candidate_snapshot_sql() -> &'static str {
     "SELECT pid, node_id, local_store_id, object_bytes, route_count, scanned_count,
             candidate_row_count, leaf_block_available_count, leaf_block_selected_count,
             leaf_block_skipped_count, leaf_summary_object_bytes, leaf_row_object_bytes,
+            leaf_row_segment_read_count, leaf_row_segment_read_bytes,
             primary_candidate_row_count,
             boundary_replica_candidate_row_count, deduped_candidate_row_count,
             truncated_candidate_row_count, candidate_winner_count,
@@ -1622,6 +1623,8 @@ struct LeafCandidateRow {
     leaf_block_skipped_count: i64,
     leaf_summary_object_bytes: i64,
     leaf_row_object_bytes: i64,
+    leaf_row_segment_read_count: i64,
+    leaf_row_segment_read_bytes: i64,
     primary_candidate_row_count: i64,
     boundary_replica_candidate_row_count: i64,
     deduped_candidate_row_count: i64,
@@ -1650,17 +1653,19 @@ impl From<Row> for LeafCandidateRow {
             leaf_block_skipped_count: row.get(9),
             leaf_summary_object_bytes: row.get(10),
             leaf_row_object_bytes: row.get(11),
-            primary_candidate_row_count: row.get(12),
-            boundary_replica_candidate_row_count: row.get(13),
-            deduped_candidate_row_count: row.get(14),
-            truncated_candidate_row_count: row.get(15),
-            candidate_winner_count: row.get(16),
-            leaf_object_read_nanos: row.get(17),
-            leaf_summary_score_nanos: row.get(18),
-            leaf_row_score_nanos: row.get(19),
-            candidate_score_nanos: row.get(20),
-            candidate_materialize_nanos: row.get(21),
-            candidate_heap_append_nanos: row.get(22),
+            leaf_row_segment_read_count: row.get(12),
+            leaf_row_segment_read_bytes: row.get(13),
+            primary_candidate_row_count: row.get(14),
+            boundary_replica_candidate_row_count: row.get(15),
+            deduped_candidate_row_count: row.get(16),
+            truncated_candidate_row_count: row.get(17),
+            candidate_winner_count: row.get(18),
+            leaf_object_read_nanos: row.get(19),
+            leaf_summary_score_nanos: row.get(20),
+            leaf_row_score_nanos: row.get(21),
+            candidate_score_nanos: row.get(22),
+            candidate_materialize_nanos: row.get(23),
+            candidate_heap_append_nanos: row.get(24),
         }
     }
 }
@@ -2111,6 +2116,8 @@ struct FunnelRecord {
     leaf_object_bytes: i64,
     leaf_summary_object_bytes: i64,
     leaf_row_object_bytes: i64,
+    leaf_row_segment_read_count: i64,
+    leaf_row_segment_read_bytes: i64,
     leaf_block_available_count: i64,
     leaf_block_selected_count: i64,
     leaf_block_skipped_count: i64,
@@ -2162,6 +2169,14 @@ impl FunnelRecord {
             .map(|row| row.leaf_summary_object_bytes)
             .sum();
         let leaf_row_object_bytes = leaf_rows.iter().map(|row| row.leaf_row_object_bytes).sum();
+        let leaf_row_segment_read_count = leaf_rows
+            .iter()
+            .map(|row| row.leaf_row_segment_read_count)
+            .sum();
+        let leaf_row_segment_read_bytes = leaf_rows
+            .iter()
+            .map(|row| row.leaf_row_segment_read_bytes)
+            .sum();
         let leaf_block_available_count = leaf_rows
             .iter()
             .map(|row| row.leaf_block_available_count)
@@ -2223,6 +2238,8 @@ impl FunnelRecord {
             leaf_object_bytes,
             leaf_summary_object_bytes,
             leaf_row_object_bytes,
+            leaf_row_segment_read_count,
+            leaf_row_segment_read_bytes,
             leaf_block_available_count,
             leaf_block_selected_count,
             leaf_block_skipped_count,
@@ -3450,6 +3467,8 @@ mod tests {
                 leaf_block_skipped_count: 5,
                 leaf_summary_object_bytes: 128,
                 leaf_row_object_bytes: 512,
+                leaf_row_segment_read_count: 2,
+                leaf_row_segment_read_bytes: 192,
                 primary_candidate_row_count: 90,
                 boundary_replica_candidate_row_count: 10,
                 deduped_candidate_row_count: 1,
@@ -3475,6 +3494,8 @@ mod tests {
                 leaf_block_skipped_count: 12,
                 leaf_summary_object_bytes: 256,
                 leaf_row_object_bytes: 1024,
+                leaf_row_segment_read_count: 3,
+                leaf_row_segment_read_bytes: 256,
                 primary_candidate_row_count: 190,
                 boundary_replica_candidate_row_count: 10,
                 deduped_candidate_row_count: 2,
@@ -3496,6 +3517,8 @@ mod tests {
         assert_eq!(record.leaf_object_bytes, 3000);
         assert_eq!(record.leaf_summary_object_bytes, 384);
         assert_eq!(record.leaf_row_object_bytes, 1536);
+        assert_eq!(record.leaf_row_segment_read_count, 5);
+        assert_eq!(record.leaf_row_segment_read_bytes, 448);
         assert_eq!(record.leaf_block_available_count, 24);
         assert_eq!(record.leaf_block_selected_count, 7);
         assert_eq!(record.leaf_block_skipped_count, 17);
@@ -3521,6 +3544,9 @@ mod tests {
         assert!(routing_snapshot_sql().contains("$1::text::regclass::oid"));
         assert!(local_pipeline_snapshot_sql().contains("ec_spire_index_scan_pipeline_snapshot"));
         assert!(leaf_candidate_snapshot_sql().contains("leaf_summary_object_bytes"));
+        assert!(leaf_candidate_snapshot_sql().contains("leaf_row_object_bytes"));
+        assert!(leaf_candidate_snapshot_sql().contains("leaf_row_segment_read_count"));
+        assert!(leaf_candidate_snapshot_sql().contains("leaf_row_segment_read_bytes"));
         assert!(leaf_candidate_snapshot_sql().contains("leaf_summary_score_nanos"));
         assert!(local_store_overlap_sql()
             .contains("ec_spire_index_scan_local_store_read_overlap_harness"));

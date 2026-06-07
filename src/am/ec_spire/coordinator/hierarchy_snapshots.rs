@@ -1767,6 +1767,8 @@ pub(crate) fn index_scan_leaf_candidate_snapshot(
                 leaf_block_skipped_count: leaf.leaf_block_skipped_count as u64,
                 leaf_summary_object_bytes: leaf.leaf_summary_object_bytes,
                 leaf_row_object_bytes: leaf.leaf_row_object_bytes,
+                leaf_row_segment_read_count: leaf.leaf_row_segment_read_count as u64,
+                leaf_row_segment_read_bytes: leaf.leaf_row_segment_read_bytes,
                 primary_candidate_row_count: leaf.primary_candidate_row_count as u64,
                 boundary_replica_candidate_row_count: leaf.boundary_replica_candidate_row_count
                     as u64,

@@ -321,3 +321,13 @@ should stop.
   summary bytes; object-read p50 was `181.330 ms` versus summary-score p50
   `47.541 ms` and row-score p50 `10.121 ms`. This makes read-path/layout
   reduction the next required workstream before CPU-only micro-optimization.
+- `reviews/task-85/011-row-segment-read-amplification/`: benchmark harness
+  checkpoint. The leaf candidate snapshot and `ecaz bench spire-pipeline`
+  funnel output now distinguish total routed row-object storage bytes from
+  actual selected row-segment reads with `leaf_row_segment_read_count` and
+  `leaf_row_segment_read_bytes`. This is required before deciding whether a
+  block-aligned V5 layout or other physical read-path change can reduce the
+  retained block16/global1152 object-read component without changing recall.
+  `cargo fmt --check` passed; compile validation was attempted but Cargo
+  timed out before spawning `rustc` in the current environment, so the next
+  checkpoint must re-run focused compile/tests before AWS deployment.

@@ -1816,6 +1816,8 @@ pub(crate) struct SpireIndexScanLeafCandidateSnapshotRow {
     pub(crate) leaf_block_skipped_count: u64,
     pub(crate) leaf_summary_object_bytes: u64,
     pub(crate) leaf_row_object_bytes: u64,
+    pub(crate) leaf_row_segment_read_count: u64,
+    pub(crate) leaf_row_segment_read_bytes: u64,
     pub(crate) primary_candidate_row_count: u64,
     pub(crate) boundary_replica_candidate_row_count: u64,
     pub(crate) deduped_candidate_row_count: u64,

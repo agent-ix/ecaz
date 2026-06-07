@@ -231,6 +231,8 @@ pub(super) struct SpireStoreScanDiagnostics {
     pub(super) leaf_block_skipped_count: usize,
     pub(super) leaf_summary_object_bytes: u64,
     pub(super) leaf_row_object_bytes: u64,
+    pub(super) leaf_row_segment_read_count: usize,
+    pub(super) leaf_row_segment_read_bytes: u64,
     pub(super) primary_candidate_row_count: usize,
     pub(super) boundary_replica_candidate_row_count: usize,
     pub(super) deduped_candidate_row_count: usize,
@@ -268,6 +270,8 @@ pub(super) struct SpireLeafScanDiagnostics {
     pub(super) leaf_block_skipped_count: usize,
     pub(super) leaf_summary_object_bytes: u64,
     pub(super) leaf_row_object_bytes: u64,
+    pub(super) leaf_row_segment_read_count: usize,
+    pub(super) leaf_row_segment_read_bytes: u64,
     pub(super) primary_candidate_row_count: usize,
     pub(super) boundary_replica_candidate_row_count: usize,
     pub(super) deduped_candidate_row_count: usize,
@@ -418,6 +422,15 @@ trait SpireRoutedScanObserver {
     ) {
     }
 
+    fn leaf_row_segments_read(
+        &mut self,
+        _epoch: u64,
+        _placement: &SpirePlacementEntry,
+        _segment_count: usize,
+        _segment_bytes: u64,
+    ) {
+    }
+
     fn leaf_block_selection(
         &mut self,
         _epoch: u64,
@@ -511,6 +524,8 @@ impl SpireScanPlacementDiagnosticsObserver {
                 leaf_block_skipped_count: 0,
                 leaf_summary_object_bytes: 0,
                 leaf_row_object_bytes: 0,
+                leaf_row_segment_read_count: 0,
+                leaf_row_segment_read_bytes: 0,
                 primary_candidate_row_count: 0,
                 boundary_replica_candidate_row_count: 0,
                 deduped_candidate_row_count: 0,
@@ -555,6 +570,8 @@ impl SpireScanPlacementDiagnosticsObserver {
                 leaf_block_skipped_count: 0,
                 leaf_summary_object_bytes: 0,
                 leaf_row_object_bytes: 0,
+                leaf_row_segment_read_count: 0,
+                leaf_row_segment_read_bytes: 0,
                 primary_candidate_row_count: 0,
                 boundary_replica_candidate_row_count: 0,
                 deduped_candidate_row_count: 0,
@@ -774,6 +791,22 @@ impl SpireRoutedScanObserver for SpireScanPlacementDiagnosticsObserver {
         if let Some(leaf) = self.leaf_entry_if_routed(placement) {
             leaf.leaf_summary_object_bytes += summary_object_bytes;
             leaf.leaf_row_object_bytes += row_object_bytes;
+        }
+    }
+
+    fn leaf_row_segments_read(
+        &mut self,
+        epoch: u64,
+        placement: &SpirePlacementEntry,
+        segment_count: usize,
+        segment_bytes: u64,
+    ) {
+        let entry = self.entry(epoch, placement);
+        entry.leaf_row_segment_read_count += segment_count;
+        entry.leaf_row_segment_read_bytes += segment_bytes;
+        if let Some(leaf) = self.leaf_entry_if_routed(placement) {
+            leaf.leaf_row_segment_read_count += segment_count;
+            leaf.leaf_row_segment_read_bytes += segment_bytes;
         }
     }
 
