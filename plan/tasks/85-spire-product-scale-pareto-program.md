@@ -104,6 +104,14 @@ Task 85 cannot close by naming a future direction that has not passed through
 one of those exits. Closeout may name follow-up work only after the required
 workstreams below have been attempted or explicitly rejected with evidence.
 
+Execution rule: task packets must advance this ledger, not merely describe
+next ideas. After every implementation or measurement packet, update the
+affected ledger state and choose the next unclosed same-recall latency lever
+from this section. A request, closeout, ADR, or status report may not classify
+an identified retained-recall latency lever as "future research" unless the
+lever already has packet-local evidence for `accepted`, `rejected`, or a
+stop-condition exit.
+
 The remaining optimization program is:
 
 #### 4.0 Required Research Direction Ledger
@@ -127,22 +135,28 @@ Ledger states:
 
 Current ledger:
 
-- object-read and physical layout: `implementing`; packets 009-011 show
+- object-read and physical layout: `rejected`; packets 009-011 show
   retained latency is read dominated, packets 017-019 expose and validate
   actual selected row-segment counters on AWS, packet 019 shows the next
   lever is selected row-segment read-call/layout locality rather than the
   legacy full row-object byte span, and packet 020 implements the local V5
-  per-summary row-segment locator/read-path checkpoint that now needs a rebuilt
-  AWS 1M/q500 index to accept or reject the lever;
-- summary scoring CPU: `open`; packet 010 shows score CPU is secondary to
-  object reads, but still material enough to require profiling and a stop or
-  implementation checkpoint;
+  per-summary row-segment locator/read-path checkpoint. Packet 021 rebuilds
+  that index on AWS 1M/q500 and proves the direct-locator sublever cuts
+  object-read p50 from `196.359 ms` to `26.855 ms` at identical recall,
+  candidates, heap rerank count, and index size. It is still rejected as a
+  Task 85 product Pareto exit because the best retained packet 019 repeat is
+  faster end-to-end (`227.388/284.166 ms` p50/p95) than the V5 repeat
+  (`233.850/290.126 ms`);
+- summary scoring CPU: `implementing`; packet 021 shows that after selected
+  row-segment object reads fall to `26.855 ms` p50, candidate scoring remains
+  about `57.668 ms` p50, with summary scoring about `47.597 ms` p50. This is
+  now the next required same-recall latency lever;
 - candidate-set-preserving rerank locality: `open`; tuple/rerank locality has
   not yet been measured at the retained AWS 1M/q500 point;
 - candidate-surface redesign with recall preservation: `open`; rejected
   geometry/cap/k-summary variants are closed, but any new policy must target
   selected-leaf misses and beat the retained same-recall latency bar;
-- benchmark harness and evidence extensions: `instrumenting`; packets 009-020
+- benchmark harness and evidence extensions: `instrumenting`; packets 009-021
   extend funnel evidence through `ecaz bench suite`, including appended
   row-segment AWS q500 counters and a local build-validation workaround for
   artifact-heavy checkouts; further suite metrics are still required for
@@ -375,3 +389,16 @@ should stop.
   `cargo fmt --check` passed; compile validation was attempted but Cargo
   timed out before spawning `rustc` in the current environment, so the next
   checkpoint must re-run focused compile/tests before AWS deployment.
+- `reviews/task-85/021-aws-v5-selected-segment-locators/`: AWS 1M/q500 V5
+  selected row-segment locator measurement. The suite rebuilt
+  `aws_spire_1m_rabitq_t85_v5_block16_tg256_idx` in `1,701,828 ms` and
+  preserved the retained surface exactly: `recall@10=0.9876`,
+  `candidate_sum=9,213,846`, `heap_rerank_sum=12,500`,
+  `selected_blocks_sum=576,000`, and V5 index size `872.1 MiB`
+  (`923.7 B/row`). V5 repeat cut object-read p50/p95 from
+  `196.359/262.521 ms` to `26.855/27.891 ms`, but end-to-end
+  `233.850/290.126/302.307 ms` p50/p95/p99 did not beat the best retained
+  packet 019 repeat (`227.388/284.166/297.164 ms`). This closes direct
+  object-read locator work as insufficient for the Task 85 product Pareto
+  gate and makes summary scoring CPU the next required same-recall latency
+  workstream.
