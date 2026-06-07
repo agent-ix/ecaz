@@ -106,6 +106,44 @@ workstreams below have been attempted or explicitly rejected with evidence.
 
 The remaining optimization program is:
 
+#### 4.0 Required Research Direction Ledger
+
+Task 85 owns every plausible same-recall latency direction identified during
+the task. A direction may not be moved to "future work" until this ledger gives
+it a packet-local exit.
+
+Ledger states:
+
+- `open`: identified as a plausible retained-recall latency lever and not yet
+  measured or implemented;
+- `instrumenting`: benchmark or diagnostic work is being added so the lever can
+  be judged correctly;
+- `implementing`: code is being changed to test the lever;
+- `accepted`: AWS 1M/q500 evidence beats the retained Task 79/81 point at
+  matched or improved recall;
+- `rejected`: packet-local evidence proves the lever loses recall, worsens
+  latency, inflates candidates without a justified recall gain, is not the
+  current bottleneck, or is infeasible for product implementation.
+
+Current ledger:
+
+- object-read and physical layout: `instrumenting`; packets 009-011 show
+  retained latency is read dominated and add actual selected row-segment byte
+  counters needed before a V5/block-aligned layout decision;
+- summary scoring CPU: `open`; packet 010 shows score CPU is secondary to
+  object reads, but still material enough to require profiling and a stop or
+  implementation checkpoint;
+- candidate-set-preserving rerank locality: `open`; tuple/rerank locality has
+  not yet been measured at the retained AWS 1M/q500 point;
+- candidate-surface redesign with recall preservation: `open`; rejected
+  geometry/cap/k-summary variants are closed, but any new policy must target
+  selected-leaf misses and beat the retained same-recall latency bar;
+- benchmark harness and evidence extensions: `instrumenting`; packets 009-011
+  extend funnel evidence, and further suite metrics are required if row-segment
+  or tuple-locality bottlenecks cannot be judged from current output;
+- comparator and product policy gate: `open`; cannot close until the
+  implementation/rejection ledger above has packet-local exits.
+
 #### 4.1 Object-Read And Physical Layout
 
 Goal: reduce the object-read component of the retained block16/global1152
