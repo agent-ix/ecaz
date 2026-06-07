@@ -214,9 +214,9 @@ fn remote_search_heap_candidate_rows_from_compact_candidates(
     };
 
     let result = (|| -> Result<Vec<SpireRemoteSearchLocalHeapCandidateRow>, String> {
-        let mut rows = Vec::with_capacity(candidates.len());
-        for candidate in candidates {
-            let heap_tid = decode_remote_search_local_heap_locator(&candidate, context)?;
+        let fetch_order = order_remote_search_candidates_for_local_heap_fetch(candidates, context)?;
+        let mut rows = Vec::with_capacity(fetch_order.len());
+        for (heap_tid, candidate) in fetch_order {
             let source_vector = scan::load_indexed_source_vector_from_heap_row(
                 &mut heap_reader,
                 indexed_attribute,
@@ -256,6 +256,33 @@ fn remote_search_heap_candidate_rows_from_compact_candidates(
         Ok(rows)
     })();
     result
+}
+
+fn order_remote_search_candidates_for_local_heap_fetch(
+    candidates: Vec<SpireRemoteSearchCandidateRow>,
+    context: &str,
+) -> Result<Vec<(crate::storage::page::ItemPointer, SpireRemoteSearchCandidateRow)>, String> {
+    let mut ordered = candidates
+        .into_iter()
+        .enumerate()
+        .map(|(ordinal, candidate)| {
+            let heap_tid = decode_remote_search_local_heap_locator(&candidate, context)?;
+            Ok((heap_tid, ordinal, candidate))
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+
+    ordered.sort_by(|(left_tid, left_ordinal, _), (right_tid, right_ordinal, _)| {
+        left_tid
+            .block_number
+            .cmp(&right_tid.block_number)
+            .then_with(|| left_tid.offset_number.cmp(&right_tid.offset_number))
+            .then_with(|| left_ordinal.cmp(right_ordinal))
+    });
+
+    Ok(ordered
+        .into_iter()
+        .map(|(heap_tid, _, candidate)| (heap_tid, candidate))
+        .collect())
 }
 
 fn remote_search_coordinator_ready_status(skipped_placement_count: u64) -> &'static str {

@@ -112,6 +112,56 @@ mod tests {
     }
 
     #[test]
+    fn local_heap_fetch_order_sorts_candidates_by_heap_tid() {
+        let mut late = remote_candidate(
+            meta::SPIRE_LOCAL_NODE_ID,
+            10,
+            1,
+            remote_local_vec_id(1),
+            -0.3,
+            storage::SPIRE_ASSIGNMENT_FLAG_PRIMARY,
+        );
+        late.row_locator = remote_search_row_locator(tid(30, 2));
+        let mut first = remote_candidate(
+            meta::SPIRE_LOCAL_NODE_ID,
+            11,
+            2,
+            remote_local_vec_id(2),
+            -0.1,
+            storage::SPIRE_ASSIGNMENT_FLAG_PRIMARY,
+        );
+        first.row_locator = remote_search_row_locator(tid(10, 5));
+        let mut same_tid = remote_candidate(
+            meta::SPIRE_LOCAL_NODE_ID,
+            12,
+            3,
+            remote_local_vec_id(3),
+            -0.2,
+            storage::SPIRE_ASSIGNMENT_FLAG_PRIMARY,
+        );
+        same_tid.row_locator = remote_search_row_locator(tid(30, 2));
+
+        let ordered = order_remote_search_candidates_for_local_heap_fetch(
+            vec![late, first, same_tid],
+            "test local heap fetch order",
+        )
+        .expect("valid locators should order");
+
+        let observed = ordered
+            .into_iter()
+            .map(|(heap_tid, candidate)| {
+                (
+                    heap_tid.block_number,
+                    heap_tid.offset_number,
+                    candidate.row_index,
+                )
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(observed, vec![(10, 5, 2), (30, 2, 1), (30, 2, 3)]);
+    }
+
+    #[test]
     fn remote_heap_exact_score_uses_orderby_negative_inner_product() {
         let score = remote_search_exact_heap_score(&[1.0, 2.0], &[3.0, 4.0])
             .expect("finite equal-dimension vectors should score");
