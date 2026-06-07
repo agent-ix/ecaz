@@ -184,7 +184,8 @@ Current ledger:
   repeat `222.140/275.753/288.894 ms`. The Task 85 rerank-locality
   workstream has now tested and rejected the two concrete retained-recall
   mechanisms identified by the packet 025 scatter signal: TID fetch ordering
-  and explicit local heap block prefetch;
+  and explicit local heap block prefetch. Packet 031 removes the rejected
+  prefetch implementation from the branch;
 - candidate-surface redesign with recall preservation: `open`; rejected
   geometry/cap/k-summary variants are closed, but any new policy must target
   selected-leaf misses and beat the accepted same-recall latency bar. It
@@ -595,3 +596,7 @@ should stop.
   compared with packet 025 repeat `222.140/275.753/288.894 ms`. AWS `1m`
   final status is packet-local and paused. The local heap prefetch
   implementation is rejected and must be removed before product closeout.
+- `reviews/task-85/031-revert-local-heap-prefetch/`: cleanup checkpoint.
+  Commit `ce8b5fe1e` reverts packet 029's rejected code commit `94fef559c`,
+  restoring the packet 023/025 local heap resolution path after packet 030
+  proved explicit local heap block prefetch worsened retained-recall latency.
