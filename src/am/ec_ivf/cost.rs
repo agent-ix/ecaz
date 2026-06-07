@@ -365,6 +365,7 @@ fn centroid_page_estimate(metadata: &page::MetadataPage) -> f64 {
 fn scoring_mode_name(storage_format: options::StorageFormat) -> &'static str {
     match storage_format {
         options::StorageFormat::Auto | options::StorageFormat::TurboQuant => "turboquant_lut",
+        options::StorageFormat::TurboQuantTqPlus => "turboquant_tqplus_lut",
         options::StorageFormat::PqFastScan => "pq_fastscan_lut",
         options::StorageFormat::RaBitQ => "rabitq_binary",
     }
@@ -373,6 +374,7 @@ fn scoring_mode_name(storage_format: options::StorageFormat) -> &'static str {
 fn storage_scoring_multiplier(storage_format: options::StorageFormat) -> f64 {
     match storage_format {
         options::StorageFormat::Auto | options::StorageFormat::TurboQuant => 1.0,
+        options::StorageFormat::TurboQuantTqPlus => 1.0,
         options::StorageFormat::PqFastScan => 0.65,
         options::StorageFormat::RaBitQ => 0.45,
     }

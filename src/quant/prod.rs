@@ -50,21 +50,18 @@ pub struct PreparedByteLutNoQjl4BitQuery {
     pub lut: Vec<f32>,
 }
 
-#[cfg(any(test, feature = "bench"))]
 #[derive(Debug, Clone, PartialEq)]
 pub struct TqPlusCalibration {
     pub shift: Vec<f32>,
     pub scale: Vec<f32>,
 }
 
-#[cfg(any(test, feature = "bench"))]
 #[derive(Debug, Clone, PartialEq)]
 pub struct TqPlusNoQjl4BitEncoded {
     pub mse_packed: Vec<u8>,
     pub renorm: f32,
 }
 
-#[cfg(any(test, feature = "bench"))]
 #[derive(Debug, Clone, PartialEq)]
 pub struct PreparedTqPlusNoQjl4BitQuery {
     pub lut: Vec<f32>,
@@ -389,7 +386,6 @@ impl ProdQuantizer {
         }
     }
 
-    #[cfg(any(test, feature = "bench"))]
     pub fn fit_tqplus_calibration_for_test(&self, vectors: &[Vec<f32>]) -> TqPlusCalibration {
         assert!(
             !vectors.is_empty(),
@@ -443,7 +439,6 @@ impl ProdQuantizer {
         TqPlusCalibration { shift, scale }
     }
 
-    #[cfg(any(test, feature = "bench"))]
     pub fn encode_tqplus_no_qjl_4bit_for_test(
         &self,
         vector: &[f32],
@@ -496,7 +491,6 @@ impl ProdQuantizer {
         }
     }
 
-    #[cfg(any(test, feature = "bench"))]
     pub fn score_tqplus_no_qjl_4bit_for_test(
         &self,
         query: &[f32],
@@ -507,7 +501,6 @@ impl ProdQuantizer {
         self.score_tqplus_no_qjl_4bit_from_prepared_for_test(&prepared, encoded)
     }
 
-    #[cfg(any(test, feature = "bench"))]
     pub fn prepare_ip_query_tqplus_no_qjl_4bit_for_test(
         &self,
         query: &[f32],
@@ -554,8 +547,51 @@ impl ProdQuantizer {
         }
     }
 
-    #[cfg(any(test, feature = "bench"))]
     pub fn score_tqplus_no_qjl_4bit_from_prepared_for_test(
+        &self,
+        prepared: &PreparedTqPlusNoQjl4BitQuery,
+        encoded: &TqPlusNoQjl4BitEncoded,
+    ) -> f32 {
+        self.score_tqplus_no_qjl_4bit_from_parts_for_test(
+            prepared,
+            encoded.renorm,
+            &encoded.mse_packed,
+        )
+    }
+
+    pub fn score_tqplus_no_qjl_4bit_from_parts_for_test(
+        &self,
+        prepared: &PreparedTqPlusNoQjl4BitQuery,
+        renorm: f32,
+        mse_packed: &[u8],
+    ) -> f32 {
+        self.score_tqplus_no_qjl_4bit_from_prepared_unrenormalized_parts_for_test(
+            prepared, mse_packed,
+        ) * renorm
+    }
+
+    pub fn score_tqplus_no_qjl_4bit_from_prepared_unrenormalized_parts_for_test(
+        &self,
+        prepared: &PreparedTqPlusNoQjl4BitQuery,
+        mse_packed: &[u8],
+    ) -> f32 {
+        assert!(
+            self.bits == 4 && !qjl_enabled(self.original_dim, self.bits),
+            "TQ+ prototype currently targets the no-QJL 4-bit lane"
+        );
+        assert_eq!(prepared.lut.len(), self.original_dim * 16);
+        assert_eq!(mse_packed.len(), mse_code_len(self.original_dim, self.bits));
+
+        let mut score = 0.0_f32;
+        for dim_index in 0..self.original_dim {
+            let centroid_index = mse_index_at(mse_packed, dim_index, 4) as usize;
+            score += prepared.lut[dim_index * 16 + centroid_index];
+        }
+
+        score + prepared.bias
+    }
+
+    pub fn score_tqplus_no_qjl_4bit_from_prepared_encoded_for_test(
         &self,
         prepared: &PreparedTqPlusNoQjl4BitQuery,
         encoded: &TqPlusNoQjl4BitEncoded,
@@ -564,7 +600,6 @@ impl ProdQuantizer {
             * encoded.renorm
     }
 
-    #[cfg(any(test, feature = "bench"))]
     pub fn score_tqplus_no_qjl_4bit_from_prepared_unrenormalized_for_test(
         &self,
         prepared: &PreparedTqPlusNoQjl4BitQuery,
@@ -580,13 +615,10 @@ impl ProdQuantizer {
             mse_code_len(self.original_dim, self.bits)
         );
 
-        let mut score = 0.0_f32;
-        for dim_index in 0..self.original_dim {
-            let centroid_index = mse_index_at(&encoded.mse_packed, dim_index, 4) as usize;
-            score += prepared.lut[dim_index * 16 + centroid_index];
-        }
-
-        score + prepared.bias
+        self.score_tqplus_no_qjl_4bit_from_prepared_unrenormalized_parts_for_test(
+            prepared,
+            &encoded.mse_packed,
+        )
     }
 
     #[cfg(any(test, feature = "bench"))]
@@ -1868,7 +1900,6 @@ fn quantize_codebook_i8_16(codebook: &[f32]) -> ([i8; 16], f32) {
     (quantized, scale)
 }
 
-#[cfg(any(test, feature = "bench"))]
 fn normalized_for_tqplus(vector: &[f32]) -> Vec<f32> {
     let norm = vector.iter().map(|value| value * value).sum::<f32>().sqrt();
     if norm <= f32::EPSILON {
@@ -1877,7 +1908,6 @@ fn normalized_for_tqplus(vector: &[f32]) -> Vec<f32> {
     vector.iter().map(|value| *value / norm).collect()
 }
 
-#[cfg(any(test, feature = "bench"))]
 fn canonical_beta_quantiles_for_tqplus(dim: usize) -> (f32, f32) {
     fn quantile(dim: usize, target: f64) -> f32 {
         let points = 20_001usize;
@@ -1896,7 +1926,6 @@ fn canonical_beta_quantiles_for_tqplus(dim: usize) -> (f32, f32) {
     (quantile(dim, 0.05), quantile(dim, 0.95))
 }
 
-#[cfg(any(test, feature = "bench"))]
 fn percentile_sorted_for_tqplus(values: &[f32], p: f32) -> f32 {
     debug_assert!(!values.is_empty());
     let rank = ((values.len() - 1) as f32 * p).round() as usize;

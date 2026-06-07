@@ -3,7 +3,10 @@ use super::page;
 use crate::quant::grouped_pq::{
     build_grouped_pq_lut_f32, grouped_pq_score_f32, GROUPED_PQ_CENTROIDS,
 };
-use crate::quant::prod::{ExactScoreMode, PreparedLutNoQjl4BitQuery, PreparedQuery, ProdQuantizer};
+use crate::quant::prod::{
+    ExactScoreMode, PreparedLutNoQjl4BitQuery, PreparedQuery, PreparedTqPlusNoQjl4BitQuery,
+    ProdQuantizer, TqPlusCalibration,
+};
 use crate::quant::rabitq::{code_len_for, PreparedEstimator, RaBitQQuantizer};
 use crate::quant::rotation;
 use crate::quant::Quantizer;
@@ -13,6 +16,7 @@ use std::sync::Arc;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum IvfQuantizerProfile {
     TurboQuant,
+    TurboQuantTqPlus,
     PqFastScan {
         group_count: usize,
         group_size: usize,
@@ -23,6 +27,7 @@ pub(super) enum IvfQuantizerProfile {
 pub(super) enum IvfPreparedQuery {
     TurboQuant(PreparedQuery),
     TurboQuantNoQjl4BitLut(PreparedLutNoQjl4BitQuery),
+    TurboQuantTqPlus(PreparedTqPlusNoQjl4BitQuery),
     PqFastScan {
         lut: Vec<f32>,
         group_count: usize,
@@ -37,6 +42,11 @@ pub(super) struct IvfPqFastScanModel {
     pub(super) group_size: usize,
     pub(super) signs: Vec<f32>,
     pub(super) flat_codebooks: Vec<f32>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(super) struct IvfTqPlusModel {
+    pub(super) calibration: TqPlusCalibration,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -73,6 +83,7 @@ impl IvfQuantizer {
         storage_format.validate_v1_supported()?;
         let profile = match storage_format {
             StorageFormat::Auto | StorageFormat::TurboQuant => IvfQuantizerProfile::TurboQuant,
+            StorageFormat::TurboQuantTqPlus => IvfQuantizerProfile::TurboQuantTqPlus,
             StorageFormat::PqFastScan => {
                 let transform_dim = rotation::effective_transform_dim(dimensions);
                 let group_size = resolve_pq_fastscan_group_size(dimensions, pq_group_size)?;
@@ -124,6 +135,10 @@ impl IvfQuantizer {
                 payload.extend_from_slice(&encoded.qjl_packed);
                 Ok((dimensions, encoded.gamma, payload))
             }
+            IvfQuantizerProfile::TurboQuantTqPlus => Err(
+                "ec_ivf turboquant_tqplus encoding requires a persisted TQ+ calibration model"
+                    .to_owned(),
+            ),
             IvfQuantizerProfile::RaBitQ => {
                 let quantizer = self.rabitq_quantizer()?;
                 Ok((dimensions, 0.0, quantizer.encode_code(source).into_vec()))
@@ -161,6 +176,33 @@ impl IvfQuantizer {
         Ok((dimensions, 0.0, payload))
     }
 
+    pub(super) fn encode_source_with_tqplus_model(
+        self,
+        source: &[f32],
+        model: &IvfTqPlusModel,
+    ) -> Result<(u16, f32, Vec<u8>), String> {
+        if source.is_empty() {
+            return Err("embedding must not be empty".to_owned());
+        }
+        if source.len() != self.dimensions {
+            return Err(format!(
+                "embedding dimension mismatch: got {}, expected {}",
+                source.len(),
+                self.dimensions
+            ));
+        }
+        self.validate_tqplus_model(model)?;
+        let dimensions = u16::try_from(source.len())
+            .map_err(|_| format!("embedding dimension {} exceeds maximum 65535", source.len()))?;
+        let quantizer = ProdQuantizer::cached(
+            self.dimensions,
+            crate::DEFAULT_QUANT_BITS,
+            crate::DEFAULT_QUANT_SEED,
+        );
+        let encoded = quantizer.encode_tqplus_no_qjl_4bit_for_test(source, &model.calibration);
+        Ok((dimensions, encoded.renorm, encoded.mse_packed))
+    }
+
     pub(super) fn prepare_ip_query(self, query: &[f32]) -> Result<IvfPreparedQuery, String> {
         if query.len() != self.dimensions {
             return Err(format!(
@@ -191,6 +233,10 @@ impl IvfQuantizer {
                     quantizer.prepare_ip_query(query),
                 ))
             }
+            IvfQuantizerProfile::TurboQuantTqPlus => Err(
+                "ec_ivf turboquant_tqplus query prep requires a persisted TQ+ calibration model"
+                    .to_owned(),
+            ),
             IvfQuantizerProfile::RaBitQ => {
                 let quantizer = self.rabitq_quantizer()?;
                 Ok(IvfPreparedQuery::RaBitQ(quantizer.prepare_estimator(query)))
@@ -234,6 +280,29 @@ impl IvfQuantizer {
         })
     }
 
+    pub(super) fn prepare_ip_query_with_tqplus_model(
+        self,
+        query: &[f32],
+        model: &IvfTqPlusModel,
+    ) -> Result<IvfPreparedQuery, String> {
+        if query.len() != self.dimensions {
+            return Err(format!(
+                "query dimension mismatch: got {}, expected {}",
+                query.len(),
+                self.dimensions
+            ));
+        }
+        self.validate_tqplus_model(model)?;
+        let quantizer = ProdQuantizer::cached(
+            self.dimensions,
+            crate::DEFAULT_QUANT_BITS,
+            crate::DEFAULT_QUANT_SEED,
+        );
+        Ok(IvfPreparedQuery::TurboQuantTqPlus(
+            quantizer.prepare_ip_query_tqplus_no_qjl_4bit_for_test(query, &model.calibration),
+        ))
+    }
+
     pub(super) fn score_ip_from_parts(
         self,
         prepared_query: &IvfPreparedQuery,
@@ -260,6 +329,21 @@ impl IvfQuantizer {
                 );
                 Ok(quantizer.score_ip_from_parts_lut_no_qjl_4bit(prepared_query, payload))
             }
+            (
+                IvfQuantizerProfile::TurboQuantTqPlus,
+                IvfPreparedQuery::TurboQuantTqPlus(prepared_query),
+            ) => {
+                let quantizer = ProdQuantizer::cached(
+                    self.dimensions,
+                    crate::DEFAULT_QUANT_BITS,
+                    crate::DEFAULT_QUANT_SEED,
+                );
+                Ok(quantizer.score_tqplus_no_qjl_4bit_from_parts_for_test(
+                    prepared_query,
+                    gamma,
+                    payload,
+                ))
+            }
             (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::RaBitQ(prepared_query)) => {
                 let _ = gamma;
                 Ok(prepared_query.estimate_ip_scalar_only(payload))
@@ -279,15 +363,25 @@ impl IvfQuantizer {
                 Ok(grouped_pq_score_f32(lut, group_count, payload))
             }
             (IvfQuantizerProfile::TurboQuant, IvfPreparedQuery::RaBitQ(_))
+            | (IvfQuantizerProfile::TurboQuantTqPlus, IvfPreparedQuery::RaBitQ(_))
             | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::TurboQuant(_))
             | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::TurboQuantNoQjl4BitLut(_))
+            | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::TurboQuantTqPlus(_))
             | (IvfQuantizerProfile::TurboQuant, IvfPreparedQuery::PqFastScan { .. })
+            | (IvfQuantizerProfile::TurboQuant, IvfPreparedQuery::TurboQuantTqPlus(_))
+            | (IvfQuantizerProfile::TurboQuantTqPlus, IvfPreparedQuery::TurboQuant(_))
+            | (
+                IvfQuantizerProfile::TurboQuantTqPlus,
+                IvfPreparedQuery::TurboQuantNoQjl4BitLut(_),
+            )
+            | (IvfQuantizerProfile::TurboQuantTqPlus, IvfPreparedQuery::PqFastScan { .. })
             | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::PqFastScan { .. })
             | (IvfQuantizerProfile::PqFastScan { .. }, IvfPreparedQuery::TurboQuant(_))
             | (
                 IvfQuantizerProfile::PqFastScan { .. },
                 IvfPreparedQuery::TurboQuantNoQjl4BitLut(_),
             )
+            | (IvfQuantizerProfile::PqFastScan { .. }, IvfPreparedQuery::TurboQuantTqPlus(_))
             | (IvfQuantizerProfile::PqFastScan { .. }, IvfPreparedQuery::RaBitQ(_)) => {
                 Err("ec_ivf prepared query does not match quantizer profile".to_owned())
             }
@@ -350,19 +444,30 @@ impl IvfQuantizer {
             (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::RaBitQ(_))
             | (IvfQuantizerProfile::TurboQuant, IvfPreparedQuery::TurboQuant(_))
             | (IvfQuantizerProfile::TurboQuant, IvfPreparedQuery::TurboQuantNoQjl4BitLut(_))
+            | (IvfQuantizerProfile::TurboQuantTqPlus, IvfPreparedQuery::TurboQuantTqPlus(_))
             | (IvfQuantizerProfile::PqFastScan { .. }, IvfPreparedQuery::PqFastScan { .. }) => {
                 Ok(false)
             }
             (IvfQuantizerProfile::TurboQuant, IvfPreparedQuery::RaBitQ(_))
+            | (IvfQuantizerProfile::TurboQuantTqPlus, IvfPreparedQuery::RaBitQ(_))
             | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::TurboQuant(_))
             | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::TurboQuantNoQjl4BitLut(_))
+            | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::TurboQuantTqPlus(_))
             | (IvfQuantizerProfile::TurboQuant, IvfPreparedQuery::PqFastScan { .. })
+            | (IvfQuantizerProfile::TurboQuant, IvfPreparedQuery::TurboQuantTqPlus(_))
+            | (IvfQuantizerProfile::TurboQuantTqPlus, IvfPreparedQuery::TurboQuant(_))
+            | (
+                IvfQuantizerProfile::TurboQuantTqPlus,
+                IvfPreparedQuery::TurboQuantNoQjl4BitLut(_),
+            )
+            | (IvfQuantizerProfile::TurboQuantTqPlus, IvfPreparedQuery::PqFastScan { .. })
             | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::PqFastScan { .. })
             | (IvfQuantizerProfile::PqFastScan { .. }, IvfPreparedQuery::TurboQuant(_))
             | (
                 IvfQuantizerProfile::PqFastScan { .. },
                 IvfPreparedQuery::TurboQuantNoQjl4BitLut(_),
             )
+            | (IvfQuantizerProfile::PqFastScan { .. }, IvfPreparedQuery::TurboQuantTqPlus(_))
             | (IvfQuantizerProfile::PqFastScan { .. }, IvfPreparedQuery::RaBitQ(_)) => {
                 Err("ec_ivf prepared query does not match quantizer profile".to_owned())
             }
@@ -371,7 +476,7 @@ impl IvfQuantizer {
 
     pub(super) fn payload_len(self) -> usize {
         match self.profile {
-            IvfQuantizerProfile::TurboQuant => {
+            IvfQuantizerProfile::TurboQuant | IvfQuantizerProfile::TurboQuantTqPlus => {
                 crate::code_len(self.dimensions, crate::DEFAULT_QUANT_BITS)
             }
             IvfQuantizerProfile::PqFastScan { group_count, .. } => group_count.div_ceil(2),
@@ -421,6 +526,36 @@ impl IvfQuantizer {
                 Ok(())
             }
             _ => Err("ec_ivf pq_fastscan model used with non-pq quantizer".to_owned()),
+        }
+    }
+
+    fn validate_tqplus_model(self, model: &IvfTqPlusModel) -> Result<(), String> {
+        match self.profile {
+            IvfQuantizerProfile::TurboQuantTqPlus => {
+                if model.calibration.shift.len() != self.dimensions
+                    || model.calibration.scale.len() != self.dimensions
+                {
+                    return Err(format!(
+                        "ec_ivf TQ+ calibration shape mismatch: shift {}, scale {}, expected {}",
+                        model.calibration.shift.len(),
+                        model.calibration.scale.len(),
+                        self.dimensions
+                    ));
+                }
+                let quantizer = ProdQuantizer::cached(
+                    self.dimensions,
+                    crate::DEFAULT_QUANT_BITS,
+                    crate::DEFAULT_QUANT_SEED,
+                );
+                if !quantizer.binary_sign_no_qjl_4bit_supported() {
+                    return Err(
+                        "ec_ivf turboquant_tqplus currently requires the no-QJL 4-bit lane"
+                            .to_owned(),
+                    );
+                }
+                Ok(())
+            }
+            _ => Err("ec_ivf TQ+ model used with non-TQ+ quantizer".to_owned()),
         }
     }
 }
@@ -506,12 +641,53 @@ pub(super) unsafe fn load_pq_fastscan_model(
     })
 }
 
+pub(super) unsafe fn load_tqplus_model(
+    index_relation: pgrx::pg_sys::Relation,
+    metadata: &page::MetadataPage,
+) -> Result<IvfTqPlusModel, String> {
+    if metadata.storage_format != StorageFormat::TurboQuantTqPlus {
+        return Err("ec_ivf TQ+ model load requires a turboquant_tqplus index".to_owned());
+    }
+    if metadata.pq_codebook_head == ItemPointer::INVALID {
+        return Err("ec_ivf TQ+ metadata is missing a calibration head".to_owned());
+    }
+    let dimensions = usize::from(metadata.dimensions);
+    let shift_tuple =
+        page::read_ivf_pq_codebook(index_relation, metadata.pq_codebook_head, dimensions)?;
+    if shift_tuple.group_index != 0 {
+        return Err(format!(
+            "ec_ivf TQ+ shift tuple group index mismatch: got {}, expected 0",
+            shift_tuple.group_index
+        ));
+    }
+    if shift_tuple.next_tid == ItemPointer::INVALID {
+        return Err("ec_ivf TQ+ calibration chain is missing scale tuple".to_owned());
+    }
+    let scale_tuple = page::read_ivf_pq_codebook(index_relation, shift_tuple.next_tid, dimensions)?;
+    if scale_tuple.group_index != 1 {
+        return Err(format!(
+            "ec_ivf TQ+ scale tuple group index mismatch: got {}, expected 1",
+            scale_tuple.group_index
+        ));
+    }
+    if scale_tuple.next_tid != ItemPointer::INVALID {
+        return Err("ec_ivf TQ+ calibration chain has trailing tuples".to_owned());
+    }
+    Ok(IvfTqPlusModel {
+        calibration: TqPlusCalibration {
+            shift: shift_tuple.centroids,
+            scale: scale_tuple.centroids,
+        },
+    })
+}
+
 impl IvfPreparedQuery {
     #[cfg(any(test, feature = "pg_test"))]
     pub(super) fn lut_len(&self) -> usize {
         match self {
             Self::TurboQuant(prepared) => prepared.lut.len(),
             Self::TurboQuantNoQjl4BitLut(prepared) => prepared.lut.len(),
+            Self::TurboQuantTqPlus(prepared) => prepared.lut.len(),
             Self::PqFastScan { lut, .. } => lut.len(),
             Self::RaBitQ(_) => 0,
         }
@@ -522,6 +698,7 @@ impl IvfPreparedQuery {
         match self {
             Self::TurboQuant(prepared) => prepared.sq.len(),
             Self::TurboQuantNoQjl4BitLut(_) => 0,
+            Self::TurboQuantTqPlus(_) => 0,
             Self::PqFastScan { .. } => 0,
             Self::RaBitQ(_) => 0,
         }
@@ -676,6 +853,52 @@ mod tests {
                 .score_ip_from_parts(&prepared, gamma, &payload)
                 .unwrap(),
             direct.score_ip_from_parts_lut_no_qjl_4bit(&direct_prepared, &payload)
+        );
+    }
+
+    #[test]
+    fn turboquant_tqplus_dispatch_requires_model_and_matches_direct_score() {
+        let dimensions = 1536;
+        let source = unit_vector(dimensions);
+        let query = unit_vector(dimensions);
+        let dispatch = IvfQuantizer::resolve(StorageFormat::TurboQuantTqPlus, dimensions).unwrap();
+        let direct = ProdQuantizer::cached(
+            dimensions,
+            crate::DEFAULT_QUANT_BITS,
+            crate::DEFAULT_QUANT_SEED,
+        );
+        let train = vec![source.clone(), query.clone()];
+        let calibration = direct.fit_tqplus_calibration_for_test(&train);
+        let model = IvfTqPlusModel {
+            calibration: calibration.clone(),
+        };
+
+        assert!(dispatch.encode_source(&source).is_err());
+        assert!(dispatch.prepare_ip_query(&query).is_err());
+
+        let (_, gamma, payload) = dispatch
+            .encode_source_with_tqplus_model(&source, &model)
+            .unwrap();
+        let prepared = dispatch
+            .prepare_ip_query_with_tqplus_model(&query, &model)
+            .unwrap();
+        let direct_prepared =
+            direct.prepare_ip_query_tqplus_no_qjl_4bit_for_test(&query, &calibration);
+        let direct_encoded = direct.encode_tqplus_no_qjl_4bit_for_test(&source, &calibration);
+
+        assert_eq!(prepared.lut_len(), dimensions * 16);
+        assert_eq!(prepared.sq_len(), 0);
+        assert_eq!(payload, direct_encoded.mse_packed);
+        assert_eq!(gamma, direct_encoded.renorm);
+        assert_eq!(
+            dispatch
+                .score_ip_from_parts(&prepared, gamma, &payload)
+                .unwrap(),
+            direct.score_tqplus_no_qjl_4bit_from_parts_for_test(
+                &direct_prepared,
+                direct_encoded.renorm,
+                &direct_encoded.mse_packed,
+            )
         );
     }
 

@@ -2450,6 +2450,9 @@ fn decode_storage_format(value: u8) -> Result<StorageFormat, String> {
         value if value == StorageFormat::TurboQuant as u8 => Ok(StorageFormat::TurboQuant),
         value if value == StorageFormat::PqFastScan as u8 => Ok(StorageFormat::PqFastScan),
         value if value == StorageFormat::RaBitQ as u8 => Ok(StorageFormat::RaBitQ),
+        value if value == StorageFormat::TurboQuantTqPlus as u8 => {
+            Ok(StorageFormat::TurboQuantTqPlus)
+        }
         other => Err(format!("invalid ec_ivf storage format code: {other}")),
     }
 }
@@ -3001,6 +3004,7 @@ mod tests {
             StorageFormat::TurboQuant,
             StorageFormat::PqFastScan,
             StorageFormat::RaBitQ,
+            StorageFormat::TurboQuantTqPlus,
         ] {
             metadata.storage_format = storage_format;
             assert_eq!(

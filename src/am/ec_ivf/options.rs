@@ -56,6 +56,7 @@ pub enum StorageFormat {
     TurboQuant = 1,
     PqFastScan = 2,
     RaBitQ = 3,
+    TurboQuantTqPlus = 4,
 }
 
 impl StorageFormat {
@@ -65,8 +66,9 @@ impl StorageFormat {
             "turboquant" => Ok(Self::TurboQuant),
             "pq_fastscan" => Ok(Self::PqFastScan),
             "rabitq" => Ok(Self::RaBitQ),
+            "turboquant_tqplus" | "tqplus" => Ok(Self::TurboQuantTqPlus),
             other => Err(format!(
-                "invalid ec_ivf storage_format reloption: expected 'auto', 'turboquant', 'pq_fastscan', or 'rabitq', got '{other}'"
+                "invalid ec_ivf storage_format reloption: expected 'auto', 'turboquant', 'turboquant_tqplus', 'pq_fastscan', or 'rabitq', got '{other}'"
             )),
         }
     }
@@ -77,12 +79,17 @@ impl StorageFormat {
             Self::TurboQuant => "turboquant",
             Self::PqFastScan => "pq_fastscan",
             Self::RaBitQ => "rabitq",
+            Self::TurboQuantTqPlus => "turboquant_tqplus",
         }
     }
 
     pub(super) fn validate_v1_supported(self) -> Result<(), String> {
         match self {
-            Self::Auto | Self::TurboQuant | Self::PqFastScan | Self::RaBitQ => Ok(()),
+            Self::Auto
+            | Self::TurboQuant
+            | Self::PqFastScan
+            | Self::RaBitQ
+            | Self::TurboQuantTqPlus => Ok(()),
         }
     }
 }
@@ -444,7 +451,7 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_amoptions(
         pg_sys::add_local_string_reloption(
                 &mut relopts,
                 c"storage_format".as_ptr(),
-                c"IVF posting-list quantizer profile: 'turboquant', 'pq_fastscan', 'rabitq', or 'auto'."
+                c"IVF posting-list quantizer profile: 'turboquant', 'turboquant_tqplus', 'pq_fastscan', 'rabitq', or 'auto'."
                     .as_ptr(),
                 ptr::null(),
                 None,
@@ -454,7 +461,7 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_amoptions(
         pg_sys::add_local_string_reloption(
                 &mut relopts,
                 c"quantizer".as_ptr(),
-                c"Alias for storage_format: IVF posting-list quantizer profile 'turboquant', 'pq_fastscan', 'rabitq', or 'auto'."
+                c"Alias for storage_format: IVF posting-list quantizer profile 'turboquant', 'turboquant_tqplus', 'pq_fastscan', 'rabitq', or 'auto'."
                     .as_ptr(),
                 ptr::null(),
                 None,

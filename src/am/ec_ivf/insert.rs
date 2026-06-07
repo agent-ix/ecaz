@@ -99,20 +99,31 @@ unsafe fn reencode_tuple_for_storage(
     metadata: &page::MetadataPage,
     mut tuple: build::BuildTuple,
 ) -> Result<build::BuildTuple, String> {
-    if metadata.storage_format != options::StorageFormat::PqFastScan {
-        return Ok(tuple);
-    }
-    // SAFETY: caller passes the live IVF index relation and metadata read from
-    // it; the model chain is validated by the loader.
-    let model = unsafe { quantizer::load_pq_fastscan_model(index_relation, metadata) }?;
     let ivf_quantizer = quantizer::IvfQuantizer::resolve_with_pq_group_size_and_bits(
         metadata.storage_format,
         usize::from(metadata.dimensions),
         metadata_pq_group_size(metadata),
         Some(metadata.quant_bits),
     )?;
-    let (dimensions, gamma, payload) =
-        ivf_quantizer.encode_source_with_pq_model(&tuple.source_vector, &model)?;
+    let (dimensions, gamma, payload) = match metadata.storage_format {
+        options::StorageFormat::PqFastScan => {
+            // SAFETY: caller passes the live IVF index relation and metadata
+            // read from it; the model chain is validated by the loader.
+            let model = unsafe { quantizer::load_pq_fastscan_model(index_relation, metadata) }?;
+            ivf_quantizer.encode_source_with_pq_model(&tuple.source_vector, &model)?
+        }
+        options::StorageFormat::TurboQuantTqPlus => {
+            // SAFETY: caller passes the live IVF index relation and metadata
+            // read from it; the calibration chain is validated by the loader.
+            let model = unsafe { quantizer::load_tqplus_model(index_relation, metadata) }?;
+            ivf_quantizer.encode_source_with_tqplus_model(&tuple.source_vector, &model)?
+        }
+        options::StorageFormat::Auto
+        | options::StorageFormat::TurboQuant
+        | options::StorageFormat::RaBitQ => {
+            return Ok(tuple);
+        }
+    };
     tuple.dimensions = dimensions;
     tuple.gamma = gamma;
     tuple.payload = payload;

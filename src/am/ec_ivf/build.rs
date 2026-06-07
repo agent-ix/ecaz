@@ -4,7 +4,7 @@ use std::ptr::NonNull;
 use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 use std::time::Instant;
 
-use super::quantizer::{self, IvfPqFastScanModel, IvfQuantizer};
+use super::quantizer::{self, IvfPqFastScanModel, IvfQuantizer, IvfTqPlusModel};
 use super::{build_parallel, options, page, training, P_NEW};
 use crate::am::common::{
     callback::pg_am_callback, detoast::DetoastedVarlena, training as common_training,
@@ -548,6 +548,7 @@ impl BuildState {
         }
         let pq_train_start = Instant::now();
         let pq_model = self.train_pq_fastscan_model(dimensions)?;
+        let tqplus_model = self.train_tqplus_model(dimensions)?;
         timing.pq_train_us = elapsed_us(pq_train_start);
         let pq_centroid_count = pq_model
             .as_ref()
@@ -556,6 +557,14 @@ impl BuildState {
         if pq_model.is_some() && !page::pq_codebook_tuple_fits(pq_centroid_count, self.page_size) {
             return Err(format!(
                 "pq_fastscan codebook tuple for group centroid count {pq_centroid_count} does not fit on a page"
+            ));
+        }
+        if tqplus_model.is_some()
+            && !page::pq_codebook_tuple_fits(usize::from(dimensions), self.page_size)
+        {
+            return Err(format!(
+                "TQ+ calibration tuple for dim {} does not fit on a page",
+                dimensions
             ));
         }
 
@@ -605,6 +614,28 @@ impl BuildState {
                 .copied()
                 .unwrap_or(ItemPointer::INVALID);
         }
+        let mut tqplus_calibration_head = ItemPointer::INVALID;
+        if let Some(tqplus_model) = &tqplus_model {
+            let shift_tuple = page::IvfPqCodebookTuple {
+                group_index: 0,
+                next_tid: ItemPointer::INVALID,
+                centroids: tqplus_model.calibration.shift.clone(),
+            };
+            let scale_tuple = page::IvfPqCodebookTuple {
+                group_index: 1,
+                next_tid: ItemPointer::INVALID,
+                centroids: tqplus_model.calibration.scale.clone(),
+            };
+            let shift_tid = data_pages.insert_ivf_pq_codebook(&shift_tuple)?;
+            let scale_tid = data_pages.insert_ivf_pq_codebook(&scale_tuple)?;
+            let linked_shift_tuple = page::IvfPqCodebookTuple {
+                group_index: 0,
+                next_tid: scale_tid,
+                centroids: tqplus_model.calibration.shift.clone(),
+            };
+            data_pages.update_ivf_pq_codebook(shift_tid, &linked_shift_tuple)?;
+            tqplus_calibration_head = shift_tid;
+        }
         timing.centroids_us = elapsed_us(centroids_start);
 
         let source_refs = self
@@ -629,6 +660,16 @@ impl BuildState {
         } else {
             None
         };
+        let tqplus_posting_quantizer = if tqplus_model.is_some() {
+            Some(IvfQuantizer::resolve_with_pq_group_size_and_bits(
+                self.options.storage_format,
+                usize::from(dimensions),
+                self.options.requested_pq_group_size(),
+                Some(self.options.effective_quant_bits()),
+            )?)
+        } else {
+            None
+        };
 
         let mut posting_tids_by_list = vec![Vec::new(); nlists];
         let mut directory_tail_blocks_by_list = vec![None; nlists];
@@ -640,14 +681,20 @@ impl BuildState {
             }
             for tuple_index in tuple_indices {
                 let tuple = &self.heap_tuples[*tuple_index];
-                let (gamma, payload) = match &pq_model {
-                    Some(pq_model) => {
+                let (gamma, payload) = if let Some(pq_model) = &pq_model {
+                    {
                         let (_, gamma, payload) = pq_posting_quantizer
                             .expect("pq posting quantizer should exist for pq model")
                             .encode_source_with_pq_model(&tuple.source_vector, pq_model)?;
                         (gamma, payload)
                     }
-                    None => (tuple.gamma, tuple.payload.clone()),
+                } else if let Some(tqplus_model) = &tqplus_model {
+                    let (_, gamma, payload) = tqplus_posting_quantizer
+                        .expect("TQ+ posting quantizer should exist for TQ+ model")
+                        .encode_source_with_tqplus_model(&tuple.source_vector, tqplus_model)?;
+                    (gamma, payload)
+                } else {
+                    (tuple.gamma, tuple.payload.clone())
                 };
                 posting_tids_by_list[list_id].push(data_pages.insert_ivf_single_heaptid_posting(
                     list_id_u32(list_id)?,
@@ -728,6 +775,10 @@ impl BuildState {
             metadata.pq_group_size = u16::try_from(pq_model.group_size)
                 .map_err(|_| "pq_fastscan group size exceeds u16".to_owned())?;
         }
+        if tqplus_model.is_some() {
+            metadata.pq_codebook_head = tqplus_calibration_head;
+            metadata.pq_group_size = 0;
+        }
         metadata.total_live_tuples = u64::try_from(self.heap_tuples.len())
             .map_err(|_| "heap tuple count exceeds u64".to_owned())?;
 
@@ -769,6 +820,30 @@ impl BuildState {
             group_size: model.group_size,
             signs: model.signs,
             flat_codebooks: model.codebooks.into_iter().flatten().collect(),
+        }))
+    }
+
+    fn train_tqplus_model(&self, dimensions: u16) -> Result<Option<IvfTqPlusModel>, String> {
+        if self.options.storage_format != options::StorageFormat::TurboQuantTqPlus {
+            return Ok(None);
+        }
+        let quantizer = ProdQuantizer::cached(
+            usize::from(dimensions),
+            crate::DEFAULT_QUANT_BITS,
+            crate::DEFAULT_QUANT_SEED,
+        );
+        if !quantizer.binary_sign_no_qjl_4bit_supported() {
+            return Err(
+                "ec_ivf turboquant_tqplus currently requires the no-QJL 4-bit lane".to_owned(),
+            );
+        }
+        let sample_vectors = self
+            .training_sample_vectors()
+            .into_iter()
+            .map(<[f32]>::to_vec)
+            .collect::<Vec<_>>();
+        Ok(Some(IvfTqPlusModel {
+            calibration: quantizer.fit_tqplus_calibration_for_test(&sample_vectors),
         }))
     }
 }
@@ -921,8 +996,13 @@ fn build_ecvector_tuple(
             source_vector,
         };
     }
+    let encode_storage_format = if storage_format == options::StorageFormat::TurboQuantTqPlus {
+        options::StorageFormat::TurboQuant
+    } else {
+        storage_format
+    };
     let quantizer = IvfQuantizer::resolve_with_pq_group_size_and_bits(
-        storage_format,
+        encode_storage_format,
         source_vector.len(),
         None,
         Some(quant_bits),
