@@ -1,8 +1,10 @@
 # Manifest: Task 86 Packet 001
 
 - Head SHA: `71e16fcdced96714e7db1dd98f396cd68941180e`
+- Follow-up addendum SHA: `d6462c594210e60e15fd9bb6b46f1f82508ee82f`
 - Task bucket: `reviews/task-86/001-turbovec-tq-analysis/`
 - Timestamp: `2026-06-07T05:41:49Z`
+- Follow-up timestamp: `2026-06-07T19:25:00Z`
 - Lane: analysis only
 - Fixture: none
 - Storage format: TurboQuant only
@@ -21,6 +23,9 @@
 - `turbovec-tq-analysis.md`
   - Analysis report comparing TurboVec TurboQuant implementation choices to our
     TurboQuant implementation only.
+  - Follow-up addendum fixes stale `prod.rs` citation lines and adds the
+    reviewer-requested 768/1536/3072 byte table, renormalization derivation,
+    measurement methodology, and "not learnable from analysis alone" bounds.
 
 ## Key Result Lines
 
