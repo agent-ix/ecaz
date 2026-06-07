@@ -477,14 +477,14 @@ impl ProdQuantizer {
         let mut indices = Vec::with_capacity(self.original_dim);
         let mut reconstructed_inner = 0.0_f32;
 
-        for dim_index in 0..self.original_dim {
-            let calibrated =
-                (rotated[dim_index] + calibration.shift[dim_index]) * calibration.scale[dim_index];
+        for (dim_index, &rotated_value) in rotated.iter().enumerate().take(self.original_dim) {
+            let shift = calibration.shift[dim_index];
+            let scale = calibration.scale[dim_index];
+            let calibrated = (rotated_value + shift) * scale;
             let centroid_index = mse::nearest_centroid_index(&self.codebook, calibrated);
             let centroid = self.codebook[centroid_index as usize];
-            let reconstructed_orig =
-                centroid / calibration.scale[dim_index] - calibration.shift[dim_index];
-            reconstructed_inner += rotated[dim_index] * reconstructed_orig;
+            let reconstructed_orig = centroid / scale - shift;
+            reconstructed_inner += rotated_value * reconstructed_orig;
             indices.push(centroid_index);
         }
 
@@ -532,12 +532,12 @@ impl ProdQuantizer {
         let rotated = rotation::srht_padded(query, &self.signs);
         let mut lut = Vec::with_capacity(self.original_dim * 16);
         let mut bias = 0.0_f32;
-        for dim_index in 0..self.original_dim {
-            let q_calibrated = rotated[dim_index] / calibration.scale[dim_index];
+        for (dim_index, &rotated_value) in rotated.iter().enumerate().take(self.original_dim) {
+            let q_calibrated = rotated_value / calibration.scale[dim_index];
             for &centroid in &self.codebook {
                 lut.push(centroid * q_calibrated);
             }
-            bias -= rotated[dim_index] * calibration.shift[dim_index];
+            bias -= rotated_value * calibration.shift[dim_index];
         }
 
         PreparedTqPlusNoQjl4BitQuery { lut, bias }
