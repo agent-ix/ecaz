@@ -1,6 +1,6 @@
 # Task 86: TurboVec-Derived TurboQuant Improvements
 
-Status: active (2026-06-07)
+Status: coder-complete pending reviewer acceptance (2026-06-07)
 Owner: coder (to be assigned). One coder, one branch.
 Priority: 1 (TurboQuant scan/storage improvement lane across AMs)
 
