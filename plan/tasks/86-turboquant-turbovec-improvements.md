@@ -1,4 +1,4 @@
-# Task 81: TurboVec-Derived TurboQuant Improvements
+# Task 86: TurboVec-Derived TurboQuant Improvements
 
 Status: active (2026-06-07)
 Owner: coder (to be assigned). One coder, one branch.
@@ -57,7 +57,7 @@ before any code slice lands.
 
 ### Track A - TurboVec TurboQuant Report
 
-Create a packet under `reviews/task-81/001-turbovec-tq-analysis/` with a
+Create a packet under `reviews/task-86/001-turbovec-tq-analysis/` with a
 source-grounded report comparing TurboVec TurboQuant to our TurboQuant only.
 
 The report must cite local source paths and cover:
@@ -129,7 +129,7 @@ touching graph traversal.
 
 ## Required Evidence
 
-Every measurement packet must be packet-local under `reviews/task-81/` and use
+Every measurement packet must be packet-local under `reviews/task-86/` and use
 `ecaz bench suite` for benchmark matrices.
 
 The baseline packet must include:
@@ -175,7 +175,7 @@ landing.
 
 ## Exit Criteria
 
-- The TurboVec TurboQuant analysis report is committed under `reviews/task-81/`.
+- The TurboVec TurboQuant analysis report is committed under `reviews/task-86/`.
 - At least one candidate improvement is either prototyped and measured or
   explicitly shelved with source-grounded reasoning.
 - Any accepted code change has packet-backed TurboQuant baseline evidence.
