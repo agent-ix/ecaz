@@ -1,0 +1,6 @@
+target/debug/ecaz cloud install --profile 1m --database postgres --git-ref task-85-spire-product-scale-pareto --skip-extension-recreate --log-file reviews/task-85/001-handoff-product-baseline-suite/artifacts/cloud-install-baseline.log
+
+Outcome: local command did not emit stdout/stderr or return after extended polling.
+Recent SSM invocation checks on db instance i-06ace3e95ab942623 and loader/coordinator
+instance i-0c12c873e16b3619c did not show a fresh current install invocation. AWS was
+paused rather than running the benchmark from an unverified install state.

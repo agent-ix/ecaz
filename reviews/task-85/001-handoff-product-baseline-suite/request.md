@@ -46,6 +46,14 @@ listed.
 
 - `ecaz bench suite audit`: passed for the 6-step Task 85 AWS 1M/q500
   product-baseline suite.
+- AWS lifecycle attempt:
+  - profile `1m` was confirmed paused before the attempt;
+  - resume succeeded;
+  - branch install did not return a verifiable completion or fresh visible SSM
+    invocation during polling;
+  - AWS was paused before running the benchmark suite.
+
+No baseline benchmark result is claimed in this packet yet.
 
 ## Requested Review
 

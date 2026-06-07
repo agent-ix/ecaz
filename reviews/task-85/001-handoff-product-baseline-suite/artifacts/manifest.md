@@ -35,3 +35,31 @@ It also includes Task 83 blanket-cap controls at `global1280` and
 - `suite-audit.log`
   - Command: `target/debug/ecaz bench suite audit --config reviews/task-85/001-handoff-product-baseline-suite/suite-aws-1m-product-baseline-q500.json --log-file reviews/task-85/001-handoff-product-baseline-suite/artifacts/suite-audit.log`
   - Result: `[suite:task85-aws-1m-product-baseline-q500] audit passed: 6 steps`
+
+## AWS Lifecycle Attempt
+
+- `cloud-status-before-baseline.log`
+  - Command: `target/debug/ecaz cloud status --profile 1m --database postgres --log-file reviews/task-85/001-handoff-product-baseline-suite/artifacts/cloud-status-before-baseline.log`
+  - Result: profile `1m` paused.
+- `cloud-resume-baseline.log`
+  - Command: `target/debug/ecaz cloud resume --profile 1m --database postgres --log-file reviews/task-85/001-handoff-product-baseline-suite/artifacts/cloud-resume-baseline.log`
+  - Result: resume completed; database `10.42.1.131` ready.
+- `cloud-install-baseline.log`
+  - Command: `target/debug/ecaz cloud install --profile 1m --database postgres --git-ref task-85-spire-product-scale-pareto --skip-extension-recreate --log-file reviews/task-85/001-handoff-product-baseline-suite/artifacts/cloud-install-baseline.log`
+  - Result: no verifiable completion from the local command during polling; no
+    benchmark was run from this state.
+- `cloud-status-during-install.log`
+  - Result: profile `1m` was running during the stalled install wait.
+- `cloud-pause-after-install-stall.log`
+  - Command: `target/debug/ecaz cloud pause --profile 1m --database postgres --log-file reviews/task-85/001-handoff-product-baseline-suite/artifacts/cloud-pause-after-install-stall.log`
+  - Result: pause requested for db and loader instances.
+- `cloud-status-after-install-stall-pause.log`
+  - Command: `target/debug/ecaz cloud status --profile 1m --database postgres --log-file reviews/task-85/001-handoff-product-baseline-suite/artifacts/cloud-status-after-install-stall-pause.log`
+  - Result: profile `1m` paused.
+- `cloud-status-final-paused-after-stall.log`
+  - Command: `target/debug/ecaz cloud status --profile 1m --database postgres --log-file reviews/task-85/001-handoff-product-baseline-suite/artifacts/cloud-status-final-paused-after-stall.log`
+  - Result: profile `1m` paused.
+
+No AWS benchmark result is claimed yet. The next Task 85 checkpoint should run
+the audited suite after a verifiable branch install, or skip install only with a
+documented reason that the remote binary already matches this branch.
