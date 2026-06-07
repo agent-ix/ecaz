@@ -156,7 +156,7 @@ Current ledger:
   023 proves it on AWS 1M/q500: repeat candidate-score p50 falls to
   `56.327 ms`, summary-score p50 falls to `46.270 ms`, and end-to-end latency
   beats packet 019 at the same recall/candidate surface;
-- candidate-set-preserving rerank locality: `implementing-prefetch`; packet 024 adds
+- candidate-set-preserving rerank locality: `rejected`; packet 024 adds
   rerank-prefix heap-block locality metrics to the SPIRE diagnostic surface
   and `ecaz bench spire-pipeline --funnel-output`. Packet 025 measures those
   metrics on AWS 1M/q500 at the accepted packet 023 surface and preserves
@@ -177,8 +177,14 @@ Current ledger:
   Packet 028 removes the rejected TID-ordered fetch implementation from the
   branch. Packet 029 implements that different mechanism: predecode the local
   heap locators in original candidate order, prefetch the deduped heap blocks,
-  then preserve the original exact-scoring order. It requires AWS 1M/q500
-  acceptance before this workstream can move to accepted or rejected;
+  then preserve the original exact-scoring order. Packet 030 measures that
+  checkpoint on AWS 1M/q500 and rejects it: it preserves `recall@10=0.9876`,
+  `candidate_sum=9,213,846`, and `heap_rerank_sum=12,500`, but warm latency
+  regresses to `227.414/282.375/297.652 ms` p50/p95/p99 versus packet 025
+  repeat `222.140/275.753/288.894 ms`. The Task 85 rerank-locality
+  workstream has now tested and rejected the two concrete retained-recall
+  mechanisms identified by the packet 025 scatter signal: TID fetch ordering
+  and explicit local heap block prefetch;
 - candidate-surface redesign with recall preservation: `open`; rejected
   geometry/cap/k-summary variants are closed, but any new policy must target
   selected-leaf misses and beat the accepted same-recall latency bar. It
@@ -326,6 +332,13 @@ Measurement checkpoint:
   `prefetch_relation_blocks` helper before source-vector fetch and exact
   scoring. This must be accepted or rejected by AWS 1M/q500 before the
   workstream can close.
+- packet 030 runs that AWS 1M/q500 acceptance checkpoint and rejects local heap
+  block prefetch. The repeat run preserves `recall@10=0.9876`,
+  `candidate_sum=9,213,846`, and `heap_rerank_sum=12,500`, but warm latency
+  regresses to `227.414/282.375/297.652 ms` p50/p95/p99 versus packet 025
+  repeat `222.140/275.753/288.894 ms`. This closes the concrete
+  retained-recall rerank-locality implementation workstream as rejected
+  evidence.
 
 #### 4.4 Candidate-Surface Redesign Only With Recall Preservation
 
@@ -574,3 +587,11 @@ should stop.
   local_heap_prefetch_blocks_dedupes_without_reordering_candidates --
   --nocapture`). The next checkpoint must run AWS 1M/q500 acceptance against
   packet 023/025/027 controls.
+- `reviews/task-85/030-aws-local-heap-prefetch/`: AWS 1M/q500 acceptance
+  checkpoint for packet 029. The repeat run preserves the accepted surface:
+  `recall@10=0.9876`, `candidate_sum=9,213,846`, and
+  `heap_rerank_sum=12,500`. It fails the retained-recall latency bar:
+  repeat latency regresses to `227.414/282.375/297.652 ms` p50/p95/p99
+  compared with packet 025 repeat `222.140/275.753/288.894 ms`. AWS `1m`
+  final status is packet-local and paused. The local heap prefetch
+  implementation is rejected and must be removed before product closeout.
