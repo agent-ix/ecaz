@@ -42,7 +42,7 @@ pub(super) trait SpireObjectReader {
         &self,
         placement: &SpirePlacementEntry,
         meta: &SpireLeafPartitionObjectV2Meta,
-        selected_row_ranges: Option<&[(u32, u32)]>,
+        selected_row_ranges: Option<&[SpireLeafSelectedRowRange]>,
     ) -> Result<Vec<SpireLeafPartitionObjectV2Segment>, String> {
         let object = self.read_leaf_object_v2(placement)?;
         if object.meta != *meta {

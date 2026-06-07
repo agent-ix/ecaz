@@ -1366,6 +1366,7 @@ fn select_leaf_block_row_ranges(
             SpireLeafBlockRowRange {
                 row_base: summary.row_base,
                 row_end,
+                row_segment_locator: summary.row_segment_locator,
             },
         ));
     }
@@ -1622,6 +1623,7 @@ where
                 range: SpireLeafBlockRowRange {
                     row_base: summary.row_base,
                     row_end,
+                    row_segment_locator: summary.row_segment_locator,
                 },
             });
         }
@@ -2056,7 +2058,11 @@ fn append_quantized_v2_leaf_summary_route_candidates(
         .map(|ranges| {
             ranges
                 .iter()
-                .map(|range| (range.row_base, range.row_end))
+                .map(|range| SpireLeafSelectedRowRange {
+                    row_base: range.row_base,
+                    row_end: range.row_end,
+                    row_segment_locator: range.row_segment_locator,
+                })
                 .collect::<Vec<_>>()
         });
     let read_started = observer.wants_candidate_timing().then(Instant::now);

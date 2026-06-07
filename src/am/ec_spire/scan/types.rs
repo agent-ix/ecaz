@@ -158,6 +158,7 @@ struct SpireLeafObjectReadRoute {
 struct SpireLeafBlockRowRange {
     row_base: u32,
     row_end: u32,
+    row_segment_locator: ItemPointer,
 }
 
 #[derive(Debug, Clone, PartialEq)]

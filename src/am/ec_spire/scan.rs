@@ -32,9 +32,9 @@ use super::storage::{
     is_visible_scored_assignment_flags, SpireLeafAssignmentRow, SpireLeafBlockSummary,
     SpireLeafObjectColumns, SpireLeafPartitionObject, SpireLeafPartitionObjectV2,
     SpireLeafPartitionObjectV2Meta, SpireLeafPartitionObjectV2Segment,
-    SpireLeafPartitionObjectV2Summaries, SpireObjectReader, SpirePartitionObjectKind,
-    SpireRoutingPartitionObject, SpireTopGraphPartitionObject, SpireVecId,
-    SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA,
+    SpireLeafPartitionObjectV2Summaries, SpireLeafSelectedRowRange, SpireObjectReader,
+    SpirePartitionObjectKind, SpireRoutingPartitionObject, SpireTopGraphPartitionObject,
+    SpireVecId, SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA,
 };
 use crate::am::common::{callback::pg_am_callback, detoast::DetoastedVarlena};
 use crate::am::ec_hnsw::source;

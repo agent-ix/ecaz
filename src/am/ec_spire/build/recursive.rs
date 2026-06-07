@@ -831,6 +831,7 @@ fn build_leaf_block_summaries(
             summaries.push(SpireLeafBlockSummary {
                 row_base,
                 row_count,
+                row_segment_locator: ItemPointer::INVALID,
                 payload_format: payload_format.tag(),
                 gamma: summary_gamma,
                 encoded_payload,
@@ -842,6 +843,7 @@ fn build_leaf_block_summaries(
             summaries.push(SpireLeafBlockSummary {
                 row_base,
                 row_count,
+                row_segment_locator: ItemPointer::INVALID,
                 payload_format: payload_format.tag(),
                 gamma,
                 encoded_payload,
