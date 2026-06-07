@@ -135,7 +135,7 @@ Ledger states:
 
 Current ledger:
 
-- object-read and physical layout: `rejected`; packets 009-011 show
+- object-read and physical layout: `accepted-combined`; packets 009-011 show
   retained latency is read dominated, packets 017-019 expose and validate
   actual selected row-segment counters on AWS, packet 019 shows the next
   lever is selected row-segment read-call/layout locality rather than the
@@ -143,24 +143,33 @@ Current ledger:
   per-summary row-segment locator/read-path checkpoint. Packet 021 rebuilds
   that index on AWS 1M/q500 and proves the direct-locator sublever cuts
   object-read p50 from `196.359 ms` to `26.855 ms` at identical recall,
-  candidates, heap rerank count, and index size. It is still rejected as a
-  Task 85 product Pareto exit because the best retained packet 019 repeat is
-  faster end-to-end (`227.388/284.166 ms` p50/p95) than the V5 repeat
-  (`233.850/290.126 ms`);
-- summary scoring CPU: `implementing`; packet 021 shows that after selected
+  candidates, heap rerank count, and index size. Packet 021 alone did not beat
+  the best retained packet 019 repeat, but packet 023 proves the V5 locator is
+  part of an accepted combined product candidate with summary scoring CPU:
+  `222.692/275.769/286.980 ms` p50/p95/p99 at unchanged
+  `recall@10=0.9876`, `candidate_sum=9,213,846`, and
+  `heap_rerank_sum=12,500`;
+- summary scoring CPU: `accepted`; packet 021 shows that after selected
   row-segment object reads fall to `26.855 ms` p50, candidate scoring remains
-  about `57.668 ms` p50, with summary scoring about `47.597 ms` p50. This is
-  now the next required same-recall latency lever;
+  about `57.668 ms` p50, with summary scoring about `47.597 ms` p50. Packet
+  022 implements an exact single-payload summary score fast path, and packet
+  023 proves it on AWS 1M/q500: repeat candidate-score p50 falls to
+  `56.327 ms`, summary-score p50 falls to `46.270 ms`, and end-to-end latency
+  beats packet 019 at the same recall/candidate surface;
 - candidate-set-preserving rerank locality: `open`; tuple/rerank locality has
-  not yet been measured at the retained AWS 1M/q500 point;
+  not yet been measured at the accepted AWS 1M/q500 point. It remains Task 85
+  scope, not future work, until a packet accepts/rejects/stops it;
 - candidate-surface redesign with recall preservation: `open`; rejected
   geometry/cap/k-summary variants are closed, but any new policy must target
-  selected-leaf misses and beat the retained same-recall latency bar;
+  selected-leaf misses and beat the accepted same-recall latency bar. It
+  remains Task 85 scope, not future work, until a packet accepts/rejects/stops
+  it;
 - benchmark harness and evidence extensions: `instrumenting`; packets 009-021
   extend funnel evidence through `ecaz bench suite`, including appended
   row-segment AWS q500 counters and a local build-validation workaround for
-  artifact-heavy checkouts; further suite metrics are still required for
-  tuple-locality and any implementation-specific physical-layout measurement;
+  artifact-heavy checkouts. Packet 023 records the combined accepted profile;
+  further suite metrics are still required for tuple-locality and any
+  implementation-specific physical-layout measurement;
 - comparator and product policy gate: `open`; cannot close until the
   implementation/rejection ledger above has packet-local exits.
 
@@ -218,10 +227,25 @@ Acceptance bar:
 - score CPU improvement visible in AWS 1M/q500 funnel output;
 - end-to-end p50/p95 improvement without lower recall.
 
+Decision checkpoint:
+
+- packet 022/023 single-payload summary scoring is accepted. Packet 023 repeat
+  preserves `recall@10=0.9876`, `candidate_sum=9,213,846`, and
+  `heap_rerank_sum=12,500`; improves candidate-score p50/p95 from
+  `57.668/59.323 ms` to `56.327/58.003 ms`; improves summary-score p50/p95
+  from `47.597/49.224 ms` to `46.270/47.924 ms`; and improves end-to-end
+  latency versus packet 019 retained repeat from `227.388/284.166/297.164 ms`
+  to `222.692/275.769/286.980 ms` p50/p95/p99.
+
 #### 4.3 Candidate-Set-Preserving Rerank Locality
 
 Goal: improve heap/rerank locality and tuple access after candidate selection,
 without lowering rerank width or hiding work in cache warmup.
+
+This is an in-task required direction. It may not be moved to "future
+research" unless a Task 85 packet shows either that it cannot preserve the
+accepted candidate/recall surface, that it cannot beat packet 023 latency, or
+that the cost/risk is explicitly rejected by the product policy gate.
 
 Required work:
 
@@ -243,6 +267,11 @@ Acceptance bar:
 Goal: continue candidate reduction only where it is not a disguised recall
 tradeoff.
 
+This is an in-task required direction. The prior cap/geometry/k-summary
+failures do not close the category; they close those specific policies. Any new
+candidate-surface policy identified during Task 85 must be packet-local and
+must compare against packet 023's accepted same-recall latency point.
+
 Rejected paths should not be rerun as standalone slices:
 
 - blanket caps that recover recall only by growing candidates;
@@ -263,6 +292,10 @@ Allowed work:
 
 Goal: make the benchmark evidence strong enough that a product/default decision
 is reviewable.
+
+This is an in-task required direction. Missing harness metrics are not future
+research if they block review of a same-recall latency lever; `ecaz bench
+suite` must be extended and the measurement repeated in the owning packet.
 
 Required work:
 
@@ -353,10 +386,10 @@ profiles because each option either lost recall, worsened latency, or required
 candidate inflation that was not justified by the small same-recall latency
 movement.
 
-The remaining work is the comprehensive optimization program above: physical
-layout/read-path changes, summary-scoring CPU reductions, rerank locality,
-candidate-set-preserving scoring, benchmark harness extensions, and a final
-product/default policy gate.
+The continuing work is the comprehensive optimization program above: the
+accepted physical-layout plus summary-scoring product candidate, rerank
+locality, candidate-set-preserving scoring, benchmark harness extensions, and a
+final product/default policy gate.
 
 The phrase "future research direction" is no longer acceptable as a Task 85
 escape hatch. If the direction is the best known path to retained-recall
@@ -398,15 +431,26 @@ should stop.
   (`923.7 B/row`). V5 repeat cut object-read p50/p95 from
   `196.359/262.521 ms` to `26.855/27.891 ms`, but end-to-end
   `233.850/290.126/302.307 ms` p50/p95/p99 did not beat the best retained
-  packet 019 repeat (`227.388/284.166/297.164 ms`). This closes direct
-  object-read locator work as insufficient for the Task 85 product Pareto
-  gate and makes summary scoring CPU the next required same-recall latency
-  workstream.
+  packet 019 repeat (`227.388/284.166/297.164 ms`). Packet 021 closed direct
+  object-read locator work as individually insufficient, but packet 023 later
+  accepts it as part of the combined V5 locator plus summary-scoring product
+  candidate.
 - `reviews/task-85/022-summary-scoring-single-payload-fast-path/`: local
   summary-scoring CPU implementation checkpoint. Commit `f90c8202e` adds an
   exact-preserving fast path for single-representative zero-gamma summary
   payloads, bypassing the batch-max machinery used for multi-representative
   summaries. Local focused validation passed (`cargo fmt --check` and
   `CARGO_DISABLE_GIT_DISCOVERY=1 cargo test -p ecaz --lib --locked --offline
-  assignment_scorer -- --nocapture`). This checkpoint still requires AWS
-  1M/q500 measurement before summary scoring CPU can be accepted or rejected.
+  assignment_scorer -- --nocapture`). Packet 023 provides the required AWS
+  1M/q500 measurement.
+- `reviews/task-85/023-aws-summary-scoring-single-payload-fast-path/`: AWS
+  1M/q500 measurement of the packet 022 summary-scoring fast path on the V5
+  selected row-segment locator index. The repeat run preserves the retained
+  surface exactly: `recall@10=0.9876`, `candidate_sum=9,213,846`, and
+  `heap_rerank_sum=12,500`. It improves V5 repeat funnel score timings from
+  `57.668/59.323 ms` to `56.327/58.003 ms` candidate-score p50/p95 and from
+  `47.597/49.224 ms` to `46.270/47.924 ms` summary-score p50/p95. End-to-end
+  repeat latency is `222.692/275.769/286.980 ms` p50/p95/p99, beating the
+  packet 019 retained repeat `227.388/284.166/297.164 ms` at unchanged recall,
+  candidates, and heap rerank count. AWS `1m` final status is packet-local and
+  paused.
