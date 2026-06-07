@@ -156,7 +156,7 @@ Current ledger:
   023 proves it on AWS 1M/q500: repeat candidate-score p50 falls to
   `56.327 ms`, summary-score p50 falls to `46.270 ms`, and end-to-end latency
   beats packet 019 at the same recall/candidate surface;
-- candidate-set-preserving rerank locality: `implementing`; packet 024 adds
+- candidate-set-preserving rerank locality: `rejected-tid-fetch-order`; packet 024 adds
   rerank-prefix heap-block locality metrics to the SPIRE diagnostic surface
   and `ecaz bench spire-pipeline --funnel-output`. Packet 025 measures those
   metrics on AWS 1M/q500 at the accepted packet 023 surface and preserves
@@ -166,8 +166,14 @@ Current ledger:
   `22/25/25`, and heap-block transitions p50/p95/max `24/24/24`. The next
   checkpoint, packet 026, implements local heap-resolution fetch ordering by
   `(heap_block, heap_offset)` before exact scoring while preserving the same
-  candidates and final merge semantics. It still needs AWS 1M/q500 acceptance
-  before the workstream can move to `accepted` or `rejected`;
+  candidates and final merge semantics. Packet 027 measures that checkpoint on
+  AWS 1M/q500 and rejects the TID-ordered fetch sublever: it preserves
+  `recall@10=0.9876`, `candidate_sum=9,213,846`, and
+  `heap_rerank_sum=12,500`, but warm latency worsens from packet 025 repeat
+  `222.140/275.753/288.894 ms` to `228.595/284.140/295.823 ms`
+  p50/p95/p99. Further rerank locality work requires a different mechanism
+  than this internal local fetch ordering, such as explicit heap prefetch
+  support, and must pass its own stop/accept/reject packet before closeout;
 - candidate-surface redesign with recall preservation: `open`; rejected
   geometry/cap/k-summary variants are closed, but any new policy must target
   selected-leaf misses and beat the accepted same-recall latency bar. It
@@ -300,6 +306,15 @@ Measurement checkpoint:
   scoring. The candidate list, exact scores, dedupe, and final top-k merge are
   unchanged; only the heap fetch order changes. Local validation passed. The
   next required checkpoint is AWS 1M/q500 acceptance against packet 023/025.
+- packet 027 runs that AWS 1M/q500 acceptance checkpoint and rejects the
+  TID-ordered fetch sublever. The repeat run preserves `recall@10=0.9876`,
+  `candidate_sum=9,213,846`, and `heap_rerank_sum=12,500`, but warm latency
+  regresses from packet 025 repeat `222.140/275.753/288.894 ms` to
+  `228.595/284.140/295.823 ms` p50/p95/p99. Row-score p50/p95 also worsens
+  from `10.067/10.144 ms` to `10.448/10.546 ms`, and object-read p50/p95
+  worsens from `26.236/27.353 ms` to `27.294/28.383 ms`. This closes the
+  local TID fetch-order implementation as rejected evidence, not future
+  research.
 
 #### 4.4 Candidate-Surface Redesign Only With Recall Preservation
 
@@ -527,3 +542,11 @@ should stop.
   local_heap_fetch_order_sorts_candidates_by_heap_tid -- --nocapture`). The
   next packet must measure AWS 1M/q500 recall/candidates/latency before this
   lever can be accepted or rejected.
+- `reviews/task-85/027-aws-local-heap-fetch-order/`: AWS 1M/q500 acceptance
+  checkpoint for packet 026. The repeat run preserves the accepted surface
+  exactly: `recall@10=0.9876`, `candidate_sum=9,213,846`, and
+  `heap_rerank_sum=12,500`. It fails the retained-recall latency bar:
+  repeat latency regresses to `228.595/284.140/295.823 ms` p50/p95/p99
+  compared with packet 025 repeat `222.140/275.753/288.894 ms`. AWS `1m`
+  final status is packet-local and paused. The TID-ordered local heap fetch
+  implementation is rejected and must be removed before product closeout.
