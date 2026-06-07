@@ -530,6 +530,16 @@ impl ProdQuantizer {
         prepared: &PreparedTqPlusNoQjl4BitQuery,
         encoded: &TqPlusNoQjl4BitEncoded,
     ) -> f32 {
+        self.score_tqplus_no_qjl_4bit_from_prepared_unrenormalized_for_test(prepared, encoded)
+            * encoded.renorm
+    }
+
+    #[cfg(any(test, feature = "bench"))]
+    pub fn score_tqplus_no_qjl_4bit_from_prepared_unrenormalized_for_test(
+        &self,
+        prepared: &PreparedTqPlusNoQjl4BitQuery,
+        encoded: &TqPlusNoQjl4BitEncoded,
+    ) -> f32 {
         assert!(
             self.bits == 4 && !qjl_enabled(self.original_dim, self.bits),
             "TQ+ prototype currently targets the no-QJL 4-bit lane"
@@ -546,7 +556,7 @@ impl ProdQuantizer {
             score += prepared.lut[dim_index * 16 + centroid_index];
         }
 
-        (score + prepared.bias) * encoded.renorm
+        score + prepared.bias
     }
 
     pub fn binary_sign_no_qjl_4bit_supported(&self) -> bool {
@@ -2404,9 +2414,14 @@ mod tests {
         assert_eq!(tqplus_codes[0].mse_packed.len(), dim * bits as usize / 8);
 
         let mut baseline_abs = 0.0_f64;
+        let mut tqplus_unrenorm_abs = 0.0_f64;
         let mut tqplus_abs = 0.0_f64;
         let mut baseline_sq = 0.0_f64;
+        let mut tqplus_unrenorm_sq = 0.0_f64;
         let mut tqplus_sq = 0.0_f64;
+        let mut renorm_sum = 0.0_f64;
+        let mut renorm_min = f64::INFINITY;
+        let mut renorm_max = f64::NEG_INFINITY;
         let mut count = 0.0_f64;
 
         for (query_index, query) in queries.iter().enumerate() {
@@ -2419,29 +2434,46 @@ mod tests {
                     baseline_codes[candidate_index].gamma,
                     &baseline_codes[candidate_index].mse_packed,
                 ) as f64;
+                let tqplus_unrenorm = quantizer
+                    .score_tqplus_no_qjl_4bit_from_prepared_unrenormalized_for_test(
+                        tqplus_prepared,
+                        &tqplus_codes[candidate_index],
+                    ) as f64;
                 let tqplus = quantizer.score_tqplus_no_qjl_4bit_from_prepared_for_test(
                     tqplus_prepared,
                     &tqplus_codes[candidate_index],
                 ) as f64;
+                let renorm = tqplus_codes[candidate_index].renorm as f64;
                 let baseline_err = baseline - exact;
+                let tqplus_unrenorm_err = tqplus_unrenorm - exact;
                 let tqplus_err = tqplus - exact;
                 baseline_abs += baseline_err.abs();
+                tqplus_unrenorm_abs += tqplus_unrenorm_err.abs();
                 tqplus_abs += tqplus_err.abs();
                 baseline_sq += baseline_err * baseline_err;
+                tqplus_unrenorm_sq += tqplus_unrenorm_err * tqplus_unrenorm_err;
                 tqplus_sq += tqplus_err * tqplus_err;
+                renorm_sum += renorm;
+                renorm_min = renorm_min.min(renorm);
+                renorm_max = renorm_max.max(renorm);
                 count += 1.0;
             }
         }
 
         let baseline_mae = baseline_abs / count;
+        let tqplus_unrenorm_mae = tqplus_unrenorm_abs / count;
         let tqplus_mae = tqplus_abs / count;
         let baseline_rmse = (baseline_sq / count).sqrt();
+        let tqplus_unrenorm_rmse = (tqplus_unrenorm_sq / count).sqrt();
         let tqplus_rmse = (tqplus_sq / count).sqrt();
+        let renorm_mean = renorm_sum / count;
         eprintln!(
             "task86_tqplus_probe dim={dim} bits={bits} train={} queries={} candidates={} \
-             baseline_mae={baseline_mae:.8} tqplus_mae={tqplus_mae:.8} \
-             baseline_rmse={baseline_rmse:.8} tqplus_rmse={tqplus_rmse:.8} \
-             mae_delta_pct={:.2} rmse_delta_pct={:.2}",
+             baseline_mae={baseline_mae:.8} tqplus_unrenorm_mae={tqplus_unrenorm_mae:.8} \
+             tqplus_mae={tqplus_mae:.8} baseline_rmse={baseline_rmse:.8} \
+             tqplus_unrenorm_rmse={tqplus_unrenorm_rmse:.8} tqplus_rmse={tqplus_rmse:.8} \
+             mae_delta_pct={:.2} rmse_delta_pct={:.2} renorm_mean={renorm_mean:.8} \
+             renorm_min={renorm_min:.8} renorm_max={renorm_max:.8}",
             train.len(),
             queries.len(),
             candidates.len(),
@@ -2450,9 +2482,12 @@ mod tests {
         );
 
         assert!(baseline_mae.is_finite());
+        assert!(tqplus_unrenorm_mae.is_finite());
         assert!(tqplus_mae.is_finite());
         assert!(baseline_rmse.is_finite());
+        assert!(tqplus_unrenorm_rmse.is_finite());
         assert!(tqplus_rmse.is_finite());
+        assert!(renorm_mean.is_finite());
     }
 
     #[test]
