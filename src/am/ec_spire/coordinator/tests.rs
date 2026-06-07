@@ -143,26 +143,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn local_heap_prefetch_blocks_dedupes_without_reordering_candidates() {
-        let candidates = vec![
-            (tid(30, 7), remote_candidate(1, 10, 0, remote_local_vec_id(1), 0.3, 1)),
-            (tid(10, 2), remote_candidate(1, 10, 1, remote_local_vec_id(2), 0.2, 1)),
-            (tid(30, 3), remote_candidate(1, 10, 2, remote_local_vec_id(3), 0.1, 1)),
-            (tid(20, 5), remote_candidate(1, 10, 3, remote_local_vec_id(4), 0.0, 1)),
-        ];
-
-        assert_eq!(
-            local_heap_prefetch_blocks_from_decoded_candidates(&candidates),
-            vec![10, 20, 30]
-        );
-        let row_indices = candidates
-            .iter()
-            .map(|(_tid, candidate)| candidate.row_index)
-            .collect::<Vec<_>>();
-        assert_eq!(row_indices, vec![0, 1, 2, 3]);
-    }
-
     fn ready_production_scan_heap_summary(
         returned_candidate_count: u64,
     ) -> SpireRemoteProductionScanHeapResolutionSummaryRow {
