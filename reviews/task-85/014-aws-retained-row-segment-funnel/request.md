@@ -22,6 +22,12 @@ extension SQL return signature.
   Postgres DB error message.
 - AWS 1M was paused again after the rerun and final EC2 status shows both
   instances `stopped`.
+- A structured fallback rerun after `f17af966c` succeeded. Warm repeat:
+  `recall@10=0.9876`, `candidate_sum=9,213,846`,
+  `heap_rerank_sum=12,500`, `p50=225.805 ms`, `p95=285.171 ms`,
+  `p99=296.588 ms`.
+- AWS 1M was paused after the successful run and final EC2 status shows both
+  instances `stopped`.
 
 ## Interpretation
 
@@ -29,3 +35,11 @@ The failure is expected once observed: skipping extension recreation preserves
 the benchmark tables, but also preserves the old pgrx table-returning function
 signature. The next checkpoint should add a data-preserving compatibility path
 before rerunning AWS.
+
+The successful fallback row is valid for retained recall/latency/candidate
+comparison, but not for actual selected row-segment byte evidence. The
+row-segment columns were originally inserted in the middle of the table return
+type, so the retained legacy SQL signature can mislabel subsequent returned
+tuple positions after loading the new shared library. The next code checkpoint
+must make the new columns append-only before using legacy-signature funnel split
+fields for physical-layout decisions.
