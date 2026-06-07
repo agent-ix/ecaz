@@ -113,6 +113,7 @@ These pre-lane task files are retained only for historical context under
 79. `78-spire-latency-optimization.md` — **closed - P0 slice shelved with evidence** (2026-05-31, closeout `reviews/task-78/002-rabitq-suite-evidence/`): RaBitQ remains the primary/default storage-format direction versus TurboQuant, but the cutoff slice left the scored candidate surface unchanged (`10.4M` / `15.5M` / `20.0M` candidates over 200 queries), so this task does not count as a real latency win.
 80. `79-spire-candidate-surface-reduction.md` — **complete** (2026-06-04, merged on `main`): made scored-candidate reduction the first acceptance gate for SPIRE high-recall latency, landed the accepted candidate-surface reduction evidence, and closed with the AWS 1M top-graph recall ceiling showing that wider top-graph search recovers recall only by expanding the candidate surface.
 81. `80-spire-row-budget-subleaf-latency.md` — **active** (2026-06-04, ADR-075 successor to Task 79): own the next two SPIRE latency levers, row-budgeted routing first and ADR-074-style leaf-local subleaf/block pruning second, with AWS 1M follow-up only after a local matched-recall candidate-surface win.
+82. `81-turboquant-turbovec-improvements.md` — **active** (2026-06-07): source-grounded TurboVec TurboQuant investigation focused only on improvements to our TurboQuant, including query-space calibration, stored-byte accounting, SIMD/block scoring, and transferability across HNSW, DiskANN, IVF, and SPIRE.
 
 ## Coordination rules
 
