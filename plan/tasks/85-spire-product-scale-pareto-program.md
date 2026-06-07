@@ -90,6 +90,20 @@ converted into a larger implementation plan and then worked as part of this
 task unless a packet-local stop condition proves the whole program is no longer
 worth pursuing.
 
+Any direction that would otherwise be described as "future research" is task
+scope once it is identified as the next plausible same-recall latency lever.
+It must be tracked as a required workstream, not as a vague follow-up. Each
+workstream below must end in one of:
+
+- an implementation checkpoint with packet-local local/AWS evidence;
+- a measurement checkpoint proving it is not the current bottleneck; or
+- a stop-condition checkpoint explaining why the design is infeasible or not
+worth pursuing before implementation.
+
+Task 85 cannot close by naming a future direction that has not passed through
+one of those exits. Closeout may name follow-up work only after the required
+workstreams below have been attempted or explicitly rejected with evidence.
+
 The remaining optimization program is:
 
 #### 4.1 Object-Read And Physical Layout
@@ -261,7 +275,8 @@ One of:
 - SPIRE defaults or profiles are updated with ADR-backed rationale and current
   benchmark promotion;
 - the task closes with packet-local evidence that no product-scale Pareto point
-  is justified yet, plus the next concrete research direction.
+  is justified yet after the required workstreams have either produced results
+  or reached explicit stop conditions.
 
 In all cases, closeout must include the strongest accepted and rejected options,
 their AWS 1M/q500 recall/candidate/latency rows, and the final AWS pause status.
@@ -285,6 +300,11 @@ layout/read-path changes, summary-scoring CPU reductions, rerank locality,
 candidate-set-preserving scoring, benchmark harness extensions, and a final
 product/default policy gate.
 
+The phrase "future research direction" is no longer acceptable as a Task 85
+escape hatch. If the direction is the best known path to retained-recall
+latency improvement, it belongs in this task until a checkpoint proves it
+should stop.
+
 ## Checkpoints
 
 - `reviews/task-85/009-funnel-read-score-breakdown/`: benchmark harness
@@ -292,3 +312,12 @@ product/default policy gate.
   object/summary/row bytes, selected/skipped block counts, and split
   summary-vs-row score timings. This enables the next AWS 1M/q500 retained
   recall run to choose a real read-path or summary-scoring optimization.
+- `reviews/task-85/010-aws-retained-funnel-breakdown/`: AWS 1M/q500 retained
+  funnel measurement. The retained block16/global1152 repeat run produced
+  `recall@10=0.9876`, `candidate_sum=9,213,846`, `heap_rerank_sum=12,500`,
+  `p50=224.787 ms`, `p95=281.079 ms`, and `p99=292.543 ms`. Funnel metrics
+  show object reads dominate: per-query repeat p50 read bytes were
+  `684,831,192` total, including `610,463,408` row bytes and `74,357,224`
+  summary bytes; object-read p50 was `181.330 ms` versus summary-score p50
+  `47.541 ms` and row-score p50 `10.121 ms`. This makes read-path/layout
+  reduction the next required workstream before CPU-only micro-optimization.
