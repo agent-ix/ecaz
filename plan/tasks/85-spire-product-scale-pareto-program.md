@@ -284,3 +284,11 @@ The remaining work is the comprehensive optimization program above: physical
 layout/read-path changes, summary-scoring CPU reductions, rerank locality,
 candidate-set-preserving scoring, benchmark harness extensions, and a final
 product/default policy gate.
+
+## Checkpoints
+
+- `reviews/task-85/009-funnel-read-score-breakdown/`: benchmark harness
+  checkpoint. `ecaz bench spire-pipeline --funnel-output` now carries
+  object/summary/row bytes, selected/skipped block counts, and split
+  summary-vs-row score timings. This enables the next AWS 1M/q500 retained
+  recall run to choose a real read-path or summary-scoring optimization.

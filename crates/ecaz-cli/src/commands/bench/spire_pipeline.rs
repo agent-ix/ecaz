@@ -1403,12 +1403,14 @@ fn local_store_overlap_sql() -> &'static str {
 }
 
 fn leaf_candidate_snapshot_sql() -> &'static str {
-    "SELECT pid, node_id, local_store_id, route_count, scanned_count,
+    "SELECT pid, node_id, local_store_id, object_bytes, route_count, scanned_count,
             candidate_row_count, leaf_block_available_count, leaf_block_selected_count,
-            leaf_block_skipped_count, primary_candidate_row_count,
+            leaf_block_skipped_count, leaf_summary_object_bytes, leaf_row_object_bytes,
+            primary_candidate_row_count,
             boundary_replica_candidate_row_count, deduped_candidate_row_count,
             truncated_candidate_row_count, candidate_winner_count,
-            leaf_object_read_nanos, candidate_score_nanos,
+            leaf_object_read_nanos, leaf_summary_score_nanos, leaf_row_score_nanos,
+            candidate_score_nanos,
             candidate_materialize_nanos, candidate_heap_append_nanos
      FROM ec_spire_index_scan_leaf_candidate_snapshot($1::text::regclass::oid, $2::real[])
      ORDER BY pid"
@@ -1611,18 +1613,23 @@ struct LeafCandidateRow {
     node_id: i64,
     #[allow(dead_code)]
     local_store_id: i64,
+    object_bytes: i64,
     route_count: i64,
     scanned_count: i64,
     candidate_row_count: i64,
     leaf_block_available_count: i64,
     leaf_block_selected_count: i64,
     leaf_block_skipped_count: i64,
+    leaf_summary_object_bytes: i64,
+    leaf_row_object_bytes: i64,
     primary_candidate_row_count: i64,
     boundary_replica_candidate_row_count: i64,
     deduped_candidate_row_count: i64,
     truncated_candidate_row_count: i64,
     candidate_winner_count: i64,
     leaf_object_read_nanos: i64,
+    leaf_summary_score_nanos: i64,
+    leaf_row_score_nanos: i64,
     candidate_score_nanos: i64,
     candidate_materialize_nanos: i64,
     candidate_heap_append_nanos: i64,
@@ -1634,21 +1641,26 @@ impl From<Row> for LeafCandidateRow {
             pid: row.get(0),
             node_id: row.get(1),
             local_store_id: row.get(2),
-            route_count: row.get(3),
-            scanned_count: row.get(4),
-            candidate_row_count: row.get(5),
-            leaf_block_available_count: row.get(6),
-            leaf_block_selected_count: row.get(7),
-            leaf_block_skipped_count: row.get(8),
-            primary_candidate_row_count: row.get(9),
-            boundary_replica_candidate_row_count: row.get(10),
-            deduped_candidate_row_count: row.get(11),
-            truncated_candidate_row_count: row.get(12),
-            candidate_winner_count: row.get(13),
-            leaf_object_read_nanos: row.get(14),
-            candidate_score_nanos: row.get(15),
-            candidate_materialize_nanos: row.get(16),
-            candidate_heap_append_nanos: row.get(17),
+            object_bytes: row.get(3),
+            route_count: row.get(4),
+            scanned_count: row.get(5),
+            candidate_row_count: row.get(6),
+            leaf_block_available_count: row.get(7),
+            leaf_block_selected_count: row.get(8),
+            leaf_block_skipped_count: row.get(9),
+            leaf_summary_object_bytes: row.get(10),
+            leaf_row_object_bytes: row.get(11),
+            primary_candidate_row_count: row.get(12),
+            boundary_replica_candidate_row_count: row.get(13),
+            deduped_candidate_row_count: row.get(14),
+            truncated_candidate_row_count: row.get(15),
+            candidate_winner_count: row.get(16),
+            leaf_object_read_nanos: row.get(17),
+            leaf_summary_score_nanos: row.get(18),
+            leaf_row_score_nanos: row.get(19),
+            candidate_score_nanos: row.get(20),
+            candidate_materialize_nanos: row.get(21),
+            candidate_heap_append_nanos: row.get(22),
         }
     }
 }
@@ -2096,7 +2108,15 @@ struct FunnelRecord {
     leaf_candidate_mean: f64,
     leaf_candidate_p95: i64,
     leaf_candidate_max: i64,
+    leaf_object_bytes: i64,
+    leaf_summary_object_bytes: i64,
+    leaf_row_object_bytes: i64,
+    leaf_block_available_count: i64,
+    leaf_block_selected_count: i64,
+    leaf_block_skipped_count: i64,
     leaf_object_read_nanos: i64,
+    leaf_summary_score_nanos: i64,
+    leaf_row_score_nanos: i64,
     candidate_score_nanos: i64,
     candidate_materialize_nanos: i64,
     candidate_heap_append_nanos: i64,
@@ -2136,7 +2156,30 @@ impl FunnelRecord {
             .map(|row| row.truncated_candidate_row_count)
             .sum();
         let candidate_winner_count = leaf_rows.iter().map(|row| row.candidate_winner_count).sum();
+        let leaf_object_bytes = leaf_rows.iter().map(|row| row.object_bytes).sum();
+        let leaf_summary_object_bytes = leaf_rows
+            .iter()
+            .map(|row| row.leaf_summary_object_bytes)
+            .sum();
+        let leaf_row_object_bytes = leaf_rows.iter().map(|row| row.leaf_row_object_bytes).sum();
+        let leaf_block_available_count = leaf_rows
+            .iter()
+            .map(|row| row.leaf_block_available_count)
+            .sum();
+        let leaf_block_selected_count = leaf_rows
+            .iter()
+            .map(|row| row.leaf_block_selected_count)
+            .sum();
+        let leaf_block_skipped_count = leaf_rows
+            .iter()
+            .map(|row| row.leaf_block_skipped_count)
+            .sum();
         let leaf_object_read_nanos = leaf_rows.iter().map(|row| row.leaf_object_read_nanos).sum();
+        let leaf_summary_score_nanos = leaf_rows
+            .iter()
+            .map(|row| row.leaf_summary_score_nanos)
+            .sum();
+        let leaf_row_score_nanos = leaf_rows.iter().map(|row| row.leaf_row_score_nanos).sum();
         let candidate_score_nanos = leaf_rows.iter().map(|row| row.candidate_score_nanos).sum();
         let candidate_materialize_nanos = leaf_rows
             .iter()
@@ -2177,7 +2220,15 @@ impl FunnelRecord {
             leaf_candidate_mean,
             leaf_candidate_p95,
             leaf_candidate_max,
+            leaf_object_bytes,
+            leaf_summary_object_bytes,
+            leaf_row_object_bytes,
+            leaf_block_available_count,
+            leaf_block_selected_count,
+            leaf_block_skipped_count,
             leaf_object_read_nanos,
+            leaf_summary_score_nanos,
+            leaf_row_score_nanos,
             candidate_score_nanos,
             candidate_materialize_nanos,
             candidate_heap_append_nanos,
@@ -3370,6 +3421,91 @@ mod tests {
     }
 
     #[test]
+    fn funnel_record_carries_task85_read_and_score_breakdown() {
+        let local_rows = vec![LocalPipelineRow {
+            step_ordinal: 4,
+            step_name: "candidates".to_owned(),
+            active_epoch: 1,
+            status: "truncated".to_owned(),
+            item_count: 300,
+            ready_count: 25,
+            blocked_count: 275,
+            route_count: 2,
+            candidate_count: 300,
+            heap_rerank_row_count: 0,
+            remote_fanout_count: 0,
+            next_blocker: "candidate_budget".to_owned(),
+        }];
+        let leaf_rows = vec![
+            LeafCandidateRow {
+                pid: 10,
+                node_id: 1,
+                local_store_id: 1,
+                object_bytes: 1000,
+                route_count: 1,
+                scanned_count: 1,
+                candidate_row_count: 100,
+                leaf_block_available_count: 8,
+                leaf_block_selected_count: 3,
+                leaf_block_skipped_count: 5,
+                leaf_summary_object_bytes: 128,
+                leaf_row_object_bytes: 512,
+                primary_candidate_row_count: 90,
+                boundary_replica_candidate_row_count: 10,
+                deduped_candidate_row_count: 1,
+                truncated_candidate_row_count: 75,
+                candidate_winner_count: 25,
+                leaf_object_read_nanos: 1000,
+                leaf_summary_score_nanos: 200,
+                leaf_row_score_nanos: 300,
+                candidate_score_nanos: 500,
+                candidate_materialize_nanos: 50,
+                candidate_heap_append_nanos: 25,
+            },
+            LeafCandidateRow {
+                pid: 11,
+                node_id: 1,
+                local_store_id: 1,
+                object_bytes: 2000,
+                route_count: 1,
+                scanned_count: 1,
+                candidate_row_count: 200,
+                leaf_block_available_count: 16,
+                leaf_block_selected_count: 4,
+                leaf_block_skipped_count: 12,
+                leaf_summary_object_bytes: 256,
+                leaf_row_object_bytes: 1024,
+                primary_candidate_row_count: 190,
+                boundary_replica_candidate_row_count: 10,
+                deduped_candidate_row_count: 2,
+                truncated_candidate_row_count: 175,
+                candidate_winner_count: 25,
+                leaf_object_read_nanos: 3000,
+                leaf_summary_score_nanos: 400,
+                leaf_row_score_nanos: 500,
+                candidate_score_nanos: 900,
+                candidate_materialize_nanos: 75,
+                candidate_heap_append_nanos: 35,
+            },
+        ];
+
+        let record = FunnelRecord::from_query(96, 0, 42, &local_rows, &leaf_rows, Some(10))
+            .expect("funnel record");
+
+        assert_eq!(record.candidate_count, 300);
+        assert_eq!(record.leaf_object_bytes, 3000);
+        assert_eq!(record.leaf_summary_object_bytes, 384);
+        assert_eq!(record.leaf_row_object_bytes, 1536);
+        assert_eq!(record.leaf_block_available_count, 24);
+        assert_eq!(record.leaf_block_selected_count, 7);
+        assert_eq!(record.leaf_block_skipped_count, 17);
+        assert_eq!(record.leaf_object_read_nanos, 4000);
+        assert_eq!(record.leaf_summary_score_nanos, 600);
+        assert_eq!(record.leaf_row_score_nanos, 800);
+        assert_eq!(record.candidate_score_nanos, 1400);
+    }
+
+    #[test]
     fn spire_pipeline_rejects_out_of_range_sweep_values() {
         let mut args = default_args();
         args.sweep = vec![EC_SPIRE_MAX_NPROBE + 1];
@@ -3384,6 +3520,8 @@ mod tests {
         assert!(routing_snapshot_sql().contains("ec_spire_index_scan_routing_snapshot"));
         assert!(routing_snapshot_sql().contains("$1::text::regclass::oid"));
         assert!(local_pipeline_snapshot_sql().contains("ec_spire_index_scan_pipeline_snapshot"));
+        assert!(leaf_candidate_snapshot_sql().contains("leaf_summary_object_bytes"));
+        assert!(leaf_candidate_snapshot_sql().contains("leaf_summary_score_nanos"));
         assert!(local_store_overlap_sql()
             .contains("ec_spire_index_scan_local_store_read_overlap_harness"));
         assert!(remote_pipeline_steps_sql().contains("ec_spire_remote_pipeline_steps"));
