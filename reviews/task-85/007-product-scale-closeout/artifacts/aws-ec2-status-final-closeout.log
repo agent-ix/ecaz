@@ -1,0 +1,9 @@
+---------------------------------------
+|          DescribeInstances          |
++-------------+-----------------------+
+|  InstanceId |  i-06ace3e95ab942623  |
+|  Name       |  ecaz-cloud-1m-db     |
+|  PrivateIp  |  10.42.1.131          |
+|  PublicIp   |  None                 |
+|  State      |  stopped              |
++-------------+-----------------------+

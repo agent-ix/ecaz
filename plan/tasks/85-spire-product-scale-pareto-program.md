@@ -1,6 +1,6 @@
 # Task 85: SPIRE Product-Scale Pareto Program
 
-Status: proposed (2026-06-06)
+Status: closed - no product-scale SPIRE Pareto point justified yet (2026-06-07; closeout `reviews/task-85/007-product-scale-closeout/`)
 Owner: coder (to be assigned). One coder, one branch.
 Priority: 0 (large SPIRE continuation after Task 84)
 
@@ -129,3 +129,19 @@ One of:
 
 In all cases, closeout must include the strongest accepted and rejected options,
 their AWS 1M/q500 recall/candidate/latency rows, and the final AWS pause status.
+
+## Closeout
+
+Task 85 closed under the third exit criterion in
+`reviews/task-85/007-product-scale-closeout/`: no product-scale SPIRE Pareto
+point is justified yet.
+
+The retained Task 79/81 block16/global1152 point remains the baseline to beat.
+Task 85 rejected block8, per-leaf caps, and block32 geometry as product
+profiles because each option either lost recall, worsened latency, or required
+candidate inflation that was not justified by the small same-recall latency
+movement. No defaults, profiles, ADRs, or current benchmark lanes changed.
+
+The next concrete research direction is SPIRE physical-layout/read-path work
+that reduces object-read and summary-scoring cost while preserving the retained
+candidate set and recall semantics.
