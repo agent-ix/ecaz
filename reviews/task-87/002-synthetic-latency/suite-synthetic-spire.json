@@ -1,0 +1,131 @@
+{
+  "name": "task87-synthetic-spire-turboquant-batch-max",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-87/002-synthetic-latency/artifacts",
+  "defaults": {
+    "profile": "ec_spire",
+    "bits": 4,
+    "seed": 42,
+    "queries_limit": 50,
+    "iterations": 50,
+    "force_index": true,
+    "sample_backend_memory": true,
+    "memory_sample_interval_ms": 25,
+    "pg": 18,
+    "socket_dir": "/home/peter/.pgrx"
+  },
+  "steps": [
+    {
+      "kind": "raw",
+      "name": "precheck-pg18-extension",
+      "tags": ["setup", "precheck", "spire", "turboquant"],
+      "args": [
+        "dev",
+        "sql",
+        "--pg",
+        "18",
+        "--db",
+        "postgres",
+        "--socket-dir",
+        "/home/peter/.pgrx",
+        "--raw",
+        "--sql",
+        "CREATE EXTENSION IF NOT EXISTS ecaz; SELECT now() AS captured_at, version() AS postgres_version, current_setting('server_version_num') AS server_version_num; SELECT extname, extversion FROM pg_extension WHERE extname = 'ecaz'; SELECT amname FROM pg_am WHERE amname IN ('ec_spire', 'ec_ivf', 'ec_hnsw') ORDER BY amname;",
+        "--log-output",
+        "${artifact_dir}/precheck-pg18-extension.log"
+      ],
+      "expected_artifacts": ["${artifact_dir}/precheck-pg18-extension.log"]
+    },
+    {
+      "kind": "raw",
+      "name": "cleanup-existing-fixture",
+      "tags": ["setup", "cleanup", "spire", "turboquant"],
+      "args": [
+        "dev",
+        "sql",
+        "--pg",
+        "18",
+        "--db",
+        "postgres",
+        "--socket-dir",
+        "/home/peter/.pgrx",
+        "--raw",
+        "--sql",
+        "DROP TABLE IF EXISTS task87_synth2k_corpus CASCADE; DROP TABLE IF EXISTS task87_synth2k_queries CASCADE;",
+        "--log-output",
+        "${artifact_dir}/cleanup-existing-fixture.log"
+      ],
+      "expected_artifacts": ["${artifact_dir}/cleanup-existing-fixture.log"]
+    },
+    {
+      "kind": "raw",
+      "name": "generate-synth2k-corpus",
+      "tags": ["generate", "synthetic", "corpus"],
+      "args": [
+        "corpus",
+        "generate",
+        "--output",
+        "${artifact_dir}/task87_synth2k_corpus.tsv",
+        "--n",
+        "2000",
+        "--dim",
+        "1536",
+        "--seed",
+        "87",
+        "--kind",
+        "corpus"
+      ],
+      "expected_artifacts": ["${artifact_dir}/task87_synth2k_corpus.tsv"]
+    },
+    {
+      "kind": "raw",
+      "name": "generate-synth2k-queries",
+      "tags": ["generate", "synthetic", "queries"],
+      "args": [
+        "corpus",
+        "generate",
+        "--output",
+        "${artifact_dir}/task87_synth2k_queries.tsv",
+        "--n",
+        "50",
+        "--dim",
+        "1536",
+        "--seed",
+        "870087",
+        "--start-id",
+        "1000000",
+        "--kind",
+        "queries"
+      ],
+      "expected_artifacts": ["${artifact_dir}/task87_synth2k_queries.tsv"]
+    },
+    {
+      "kind": "load",
+      "name": "load-synth2k-spire-turboquant",
+      "tags": ["load", "synthetic", "spire", "turboquant"],
+      "prefix": "task87_synth2k",
+      "profile": "ec_spire",
+      "corpus_file": "reviews/task-87/002-synthetic-latency/artifacts/task87_synth2k_corpus.tsv",
+      "queries_file": "reviews/task-87/002-synthetic-latency/artifacts/task87_synth2k_queries.tsv",
+      "reloptions": [
+        "storage_format=turboquant",
+        "nlists=16",
+        "nprobe=8",
+        "rerank_width=25"
+      ],
+      "log_file": "${artifact_dir}/load-synth2k-spire-turboquant.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-synth2k-spire-turboquant",
+      "tags": ["latency", "synthetic", "spire", "turboquant"],
+      "prefix": "task87_synth2k",
+      "profile": "ec_spire",
+      "k": 10,
+      "sweep": [4, 8],
+      "rerank_width": 25,
+      "iterations": 50,
+      "log_output": "${artifact_dir}/latency-synth2k-spire-turboquant.log"
+    }
+  ]
+}

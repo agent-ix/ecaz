@@ -1,0 +1,10 @@
+[suite:task87-synthetic-spire-turboquant-batch-max] audit: step "load-synth2k-spire-turboquant" references missing input ${artifact_dir}/task87_synth2k_corpus.tsv
+[suite:task87-synthetic-spire-turboquant-batch-max] audit: step "load-synth2k-spire-turboquant" references missing input ${artifact_dir}/task87_synth2k_queries.tsv
+
+   0: [91msuite audit found 2 issue(s)[0m
+
+Location:
+   [35mcrates/ecaz-cli/src/commands/bench/suite.rs[0m:[35m913[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.

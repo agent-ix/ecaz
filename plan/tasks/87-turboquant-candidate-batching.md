@@ -1,6 +1,9 @@
 # Task 87: TurboQuant Candidate Batching
 
-Status: active
+Status: pending reviewer acceptance
+  - First code slice: `40c36f739` (`reviews/task-87/001-batch-max-scorer/`).
+  - PG18 synthetic latency slice:
+    `reviews/task-87/002-synthetic-latency/`.
 Owner: coder. One coder, one branch.
 Priority: 1 (TurboQuant scan latency follow-up)
 

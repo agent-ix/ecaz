@@ -1,0 +1,19 @@
+CREATE EXTENSION
+          captured_at          |                                            postgres_version                                             | server_version_num 
+-------------------------------+---------------------------------------------------------------------------------------------------------+--------------------
+ 2026-06-07 22:42:09.792967-07 | PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit | 180003
+(1 row)
+
+ extname | extversion 
+---------+------------
+ ecaz    | 0.1.1
+(1 row)
+
+  amname  
+----------
+ ec_hnsw
+ ec_ivf
+ ec_spire
+(3 rows)
+
+NOTICE:  extension "ecaz" already exists, skipping

@@ -1,0 +1,7 @@
+[suite:task87-synthetic-spire-turboquant-batch-max] completed=2 failed=0 skipped=4 dry_run=0 missing_artifacts=0 stale=0
+Skipped      precheck-pg18-extension              
+Skipped      cleanup-existing-fixture             
+Skipped      generate-synth2k-corpus              
+Skipped      generate-synth2k-queries             
+Succeeded    load-synth2k-spire-turboquant        --database postgres --host /home/peter/.pgrx --port 28818 --log-file reviews/task-87/002-synthetic-latency/artifacts/load-synth2k-spire-turboquant.log corpus load --prefix task87_synth2k --profile ec_spire --corpus-file reviews/task-87/002-synthetic-latency/artifacts/task87_synth2k_corpus.tsv --queries-file reviews/task-87/002-synthetic-latency/artifacts/task87_synth2k_queries.tsv --bits 4 --seed 42 --reloption storage_format=turboquant --reloption nlists=16 --reloption nprobe=8 --reloption rerank_width=25
+Succeeded    latency-synth2k-spire-turboquant     --database postgres --host /home/peter/.pgrx --port 28818 bench latency --prefix task87_synth2k --profile ec_spire --k 10 --concurrency 1 --iterations 50 --sweep "4,8" --rerank-width 25 --bits 4 --seed 42 --force-index --sample-backend-memory --memory-sample-interval-ms 25 --log-output reviews/task-87/002-synthetic-latency/artifacts/latency-synth2k-spire-turboquant.log

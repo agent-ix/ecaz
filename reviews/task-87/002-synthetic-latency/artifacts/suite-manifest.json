@@ -1,0 +1,183 @@
+{
+  "suite": "task87-synthetic-spire-turboquant-batch-max",
+  "schema_version": 1,
+  "config": "reviews/task-87/002-synthetic-latency/suite-synthetic-spire.json",
+  "config_sha256": "8d3accd4f9258536e820f0c409627b1ffb9afe46c8c0e2dc47e10e998c3f920e",
+  "dry_run": false,
+  "generated_at_unix_ms": 1780897348830,
+  "connection": {
+    "database": "postgres",
+    "host": "/home/peter/.pgrx",
+    "port": 28818,
+    "user": null,
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "precheck-pg18-extension",
+      "kind": "raw",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "setup",
+        "precheck",
+        "spire",
+        "turboquant"
+      ],
+      "expected_artifacts": [
+        "reviews/task-87/002-synthetic-latency/artifacts/precheck-pg18-extension.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "cleanup-existing-fixture",
+      "kind": "raw",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "setup",
+        "cleanup",
+        "spire",
+        "turboquant"
+      ],
+      "expected_artifacts": [
+        "reviews/task-87/002-synthetic-latency/artifacts/cleanup-existing-fixture.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "generate-synth2k-corpus",
+      "kind": "raw",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "generate",
+        "synthetic",
+        "corpus"
+      ],
+      "expected_artifacts": [
+        "reviews/task-87/002-synthetic-latency/artifacts/task87_synth2k_corpus.tsv"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "generate-synth2k-queries",
+      "kind": "raw",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "generate",
+        "synthetic",
+        "queries"
+      ],
+      "expected_artifacts": [
+        "reviews/task-87/002-synthetic-latency/artifacts/task87_synth2k_queries.tsv"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-synth2k-spire-turboquant",
+      "kind": "load",
+      "command": [
+        "--database",
+        "postgres",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "--log-file",
+        "reviews/task-87/002-synthetic-latency/artifacts/load-synth2k-spire-turboquant.log",
+        "corpus",
+        "load",
+        "--prefix",
+        "task87_synth2k",
+        "--profile",
+        "ec_spire",
+        "--corpus-file",
+        "reviews/task-87/002-synthetic-latency/artifacts/task87_synth2k_corpus.tsv",
+        "--queries-file",
+        "reviews/task-87/002-synthetic-latency/artifacts/task87_synth2k_queries.tsv",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--reloption",
+        "storage_format=turboquant",
+        "--reloption",
+        "nlists=16",
+        "--reloption",
+        "nprobe=8",
+        "--reloption",
+        "rerank_width=25"
+      ],
+      "selected": true,
+      "tags": [
+        "load",
+        "synthetic",
+        "spire",
+        "turboquant"
+      ],
+      "expected_artifacts": [
+        "reviews/task-87/002-synthetic-latency/artifacts/load-synth2k-spire-turboquant.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1780897348831,
+      "finished_at_unix_ms": 1780897357771,
+      "duration_ms": 8938,
+      "exit_code": 0
+    },
+    {
+      "name": "latency-synth2k-spire-turboquant",
+      "kind": "latency",
+      "command": [
+        "--database",
+        "postgres",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "latency",
+        "--prefix",
+        "task87_synth2k",
+        "--profile",
+        "ec_spire",
+        "--k",
+        "10",
+        "--concurrency",
+        "1",
+        "--iterations",
+        "50",
+        "--sweep",
+        "4,8",
+        "--rerank-width",
+        "25",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--sample-backend-memory",
+        "--memory-sample-interval-ms",
+        "25",
+        "--log-output",
+        "reviews/task-87/002-synthetic-latency/artifacts/latency-synth2k-spire-turboquant.log"
+      ],
+      "selected": true,
+      "tags": [
+        "latency",
+        "synthetic",
+        "spire",
+        "turboquant"
+      ],
+      "expected_artifacts": [
+        "reviews/task-87/002-synthetic-latency/artifacts/latency-synth2k-spire-turboquant.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1780897357771,
+      "finished_at_unix_ms": 1780897361263,
+      "duration_ms": 3491,
+      "exit_code": 0
+    }
+  ]
+}

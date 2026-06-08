@@ -1,0 +1,24 @@
+[suite:task87-synthetic-spire-turboquant-batch-max] wrote reviews/task-87/002-synthetic-latency/artifacts/suite-manifest.json
+[suite:task87-synthetic-spire-turboquant-batch-max] precheck-pg18-extension -> --database postgres --host /home/peter/.pgrx --port 28818 dev sql --pg 18 --db postgres --socket-dir /home/peter/.pgrx --raw --sql "CREATE EXTENSION IF NOT EXISTS ecaz; SELECT now() AS captured_at, version() AS postgres_version, current_setting('server_version_num') AS server_version_num; SELECT extname, extversion FROM pg_extension WHERE extname = 'ecaz'; SELECT amname FROM pg_am WHERE amname IN ('ec_spire', 'ec_ivf', 'ec_hnsw') ORDER BY amname;" --log-output reviews/task-87/002-synthetic-latency/artifacts/precheck-pg18-extension.log
+[suite:task87-synthetic-spire-turboquant-batch-max] wrote reviews/task-87/002-synthetic-latency/artifacts/suite-manifest.json
+[suite:task87-synthetic-spire-turboquant-batch-max] wrote reviews/task-87/002-synthetic-latency/artifacts/suite-manifest.json
+[suite:task87-synthetic-spire-turboquant-batch-max] cleanup-existing-fixture -> --database postgres --host /home/peter/.pgrx --port 28818 dev sql --pg 18 --db postgres --socket-dir /home/peter/.pgrx --raw --sql "DROP TABLE IF EXISTS task87_synth2k_corpus CASCADE; DROP TABLE IF EXISTS task87_synth2k_queries CASCADE;" --log-output reviews/task-87/002-synthetic-latency/artifacts/cleanup-existing-fixture.log
+[suite:task87-synthetic-spire-turboquant-batch-max] wrote reviews/task-87/002-synthetic-latency/artifacts/suite-manifest.json
+[suite:task87-synthetic-spire-turboquant-batch-max] wrote reviews/task-87/002-synthetic-latency/artifacts/suite-manifest.json
+[suite:task87-synthetic-spire-turboquant-batch-max] generate-synth2k-corpus -> --database postgres --host /home/peter/.pgrx --port 28818 corpus generate --output reviews/task-87/002-synthetic-latency/artifacts/task87_synth2k_corpus.tsv --n 2000 --dim 1536 --seed 87 --kind corpus
+[suite:task87-synthetic-spire-turboquant-batch-max] wrote reviews/task-87/002-synthetic-latency/artifacts/suite-manifest.json
+[suite:task87-synthetic-spire-turboquant-batch-max] wrote reviews/task-87/002-synthetic-latency/artifacts/suite-manifest.json
+[suite:task87-synthetic-spire-turboquant-batch-max] generate-synth2k-queries -> --database postgres --host /home/peter/.pgrx --port 28818 corpus generate --output reviews/task-87/002-synthetic-latency/artifacts/task87_synth2k_queries.tsv --n 50 --dim 1536 --seed 870087 --start-id 1000000 --kind queries
+[suite:task87-synthetic-spire-turboquant-batch-max] wrote reviews/task-87/002-synthetic-latency/artifacts/suite-manifest.json
+[suite:task87-synthetic-spire-turboquant-batch-max] wrote reviews/task-87/002-synthetic-latency/artifacts/suite-manifest.json
+[suite:task87-synthetic-spire-turboquant-batch-max] load-synth2k-spire-turboquant -> --database postgres --host /home/peter/.pgrx --port 28818 --log-file reviews/task-87/002-synthetic-latency/artifacts/load-synth2k-spire-turboquant.log corpus load --prefix task87_synth2k --profile ec_spire --corpus-file "${artifact_dir}/task87_synth2k_corpus.tsv" --queries-file "${artifact_dir}/task87_synth2k_queries.tsv" --bits 4 --seed 42 --reloption storage_format=turboquant --reloption nlists=16 --reloption nprobe=8 --reloption rerank_width=25
+[suite:task87-synthetic-spire-turboquant-batch-max] wrote reviews/task-87/002-synthetic-latency/artifacts/suite-manifest.json
+[suite:task87-synthetic-spire-turboquant-batch-max] wrote reviews/task-87/002-synthetic-latency/artifacts/suite-manifest.json
+
+   0: [91msuite step "load-synth2k-spire-turboquant" failed with exit code 1; rerun with --continue-on-error to keep going[0m
+
+Location:
+   [35mcrates/ecaz-cli/src/commands/bench/suite.rs[0m:[35m848[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.

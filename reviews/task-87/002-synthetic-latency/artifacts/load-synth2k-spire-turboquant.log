@@ -1,0 +1,22 @@
+[loader] inspecting reviews/task-87/002-synthetic-latency/artifacts/task87_synth2k_corpus.tsv
+[loader] inspecting reviews/task-87/002-synthetic-latency/artifacts/task87_synth2k_queries.tsv
+[loader] corpus: 2000 rows, sha256=82ce5809a55fc5e2167becd55bc42f97c78d1f0c1abd5148f4317331e346e2a0  queries: 50 rows, sha256=ae3adb391a30fd2a52bfcd8e6dc53b1bd8f918b697e09b4a82023a2b4a611d0c
+[loader] no sibling manifest at reviews/task-87/002-synthetic-latency/artifacts/task87_synth2k_manifest.json; continuing without verification
+[loader] copied corpus table task87_synth2k_corpus in 1.65s
+[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...
+[loader] encoded corpus table task87_synth2k_corpus in 1.38s
+[loader] copied queries table task87_synth2k_queries in 65.93ms
+[loader] building task87_synth2k_idx using ec_spire (reloptions=[storage_format=turboquant, nlists=16, nprobe=8, rerank_width=25]) ...
+[loader] built task87_synth2k_idx in 3.40s
+┌─────────┬──────────────────────────────────────────────────────────────────────────────────────┐
+│ field   ┆ value                                                                                │
+╞═════════╪══════════════════════════════════════════════════════════════════════════════════════╡
+│ profile ┆ ec_spire                                                                             │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ task87_synth2k_corpus (2000 rows)                                                    │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ task87_synth2k_queries (50 rows)                                                     │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ task87_synth2k_idx [storage_format=turboquant, nlists=16, nprobe=8, rerank_width=25] │
+└─────────┴──────────────────────────────────────────────────────────────────────────────────────┘
+[loader] completed prefix task87_synth2k in 8.93s
