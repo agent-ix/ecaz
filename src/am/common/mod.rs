@@ -1,4 +1,5 @@
 pub(crate) mod callback;
+pub(crate) mod candidate_batch;
 pub(crate) mod cost;
 pub(crate) mod datum;
 pub(crate) mod detoast;

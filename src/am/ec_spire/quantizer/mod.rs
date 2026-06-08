@@ -5,6 +5,9 @@ use super::storage::{
     SpireLeafAssignmentRow, SPIRE_PAYLOAD_FORMAT_PQ_FASTSCAN, SPIRE_PAYLOAD_FORMAT_RABITQ,
     SPIRE_PAYLOAD_FORMAT_TURBOQUANT,
 };
+use crate::am::common::candidate_batch::{
+    score_turboquant_no_qjl_4bit_batch, CandidateBatch, CandidateMeta, CandidatePayload,
+};
 use crate::quant::prod::{
     payload_len, ExactScoreMode, PreparedLutNoQjl4BitQuery, PreparedQuery, ProdQuantizer,
 };
@@ -328,17 +331,32 @@ impl SpirePreparedAssignmentScorer {
                 no_qjl_4bit_lut,
                 ..
             } => {
+                if let Some(prepared_lut) = no_qjl_4bit_lut {
+                    let mut batch = CandidateBatch::with_capacity(payload_count);
+                    for (candidate_index, (payload, gamma)) in payloads
+                        .chunks_exact(payload_stride)
+                        .zip(gammas.iter())
+                        .enumerate()
+                    {
+                        batch.push(
+                            candidate_index,
+                            CandidatePayload::new(payload, CandidateMeta::Gamma(*gamma)),
+                        )?;
+                    }
+                    return score_turboquant_no_qjl_4bit_batch(
+                        quantizer,
+                        prepared_lut,
+                        &batch,
+                        out_scores,
+                    );
+                }
+
                 for ((payload, gamma), out_score) in payloads
                     .chunks_exact(payload_stride)
                     .zip(gammas.iter())
                     .zip(out_scores.iter_mut())
                 {
-                    *out_score = if let Some(prepared_lut) = no_qjl_4bit_lut {
-                        // The no-QJL 4-bit lane ignores gamma by construction.
-                        quantizer.score_ip_from_parts_lut_no_qjl_4bit(prepared_lut, payload)
-                    } else {
-                        quantizer.score_ip_from_parts(prepared, *gamma, payload)
-                    };
+                    *out_score = quantizer.score_ip_from_parts(prepared, *gamma, payload);
                 }
             }
             Self::RaBitQ { prepared, .. } => {
