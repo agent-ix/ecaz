@@ -232,17 +232,20 @@ impl SpirePreparedAssignmentScorer {
                 prepared,
                 no_qjl_4bit_lut,
                 ..
-            } => encoded_payload
-                .chunks_exact(payload_stride)
-                .map(|payload| {
-                    if let Some(prepared_lut) = no_qjl_4bit_lut {
-                        // The no-QJL 4-bit lane ignores gamma by construction.
-                        quantizer.score_ip_from_parts_lut_no_qjl_4bit(prepared_lut, payload)
-                    } else {
-                        quantizer.score_ip_from_parts(prepared, 0.0, payload)
-                    }
-                })
-                .fold(f32::NEG_INFINITY, f32::max),
+            } => {
+                if let Some(prepared_lut) = no_qjl_4bit_lut {
+                    return quantizer.score_ip_batch_max_lut_no_qjl_4bit(
+                        prepared_lut,
+                        payload_stride,
+                        encoded_payload,
+                    );
+                }
+
+                encoded_payload
+                    .chunks_exact(payload_stride)
+                    .map(|payload| quantizer.score_ip_from_parts(prepared, 0.0, payload))
+                    .fold(f32::NEG_INFINITY, f32::max)
+            }
             Self::RaBitQ { prepared, .. } => {
                 if matches!(prepared.bits_per_dim(), 1 | 4 | 8) {
                     prepared.estimate_ip_batch_max_prevalidated(encoded_payload, payload_stride)

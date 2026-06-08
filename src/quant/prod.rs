@@ -470,6 +470,37 @@ impl ProdQuantizer {
         self.score_ip_from_split_parts_lut_no_qjl_4bit(&prepared.lut, mse_packed)
     }
 
+    pub fn score_ip_batch_max_lut_no_qjl_4bit(
+        &self,
+        prepared: &PreparedLutNoQjl4BitQuery,
+        payload_stride: usize,
+        encoded_payloads: &[u8],
+    ) -> f32 {
+        assert!(
+            self.bits == 4 && !qjl_enabled(self.original_dim, self.bits),
+            "explicit LUT batch scoring requires the no-QJL 4-bit lane"
+        );
+        assert!(payload_stride > 0, "payload stride must be positive");
+        assert!(
+            !encoded_payloads.is_empty(),
+            "batch scoring requires at least one payload"
+        );
+        assert_eq!(
+            encoded_payloads.len() % payload_stride,
+            0,
+            "batch payload bytes must be a multiple of payload stride"
+        );
+
+        encoded_payloads
+            .chunks_exact(payload_stride)
+            .map(|payload| {
+                let (mse_packed, qjl_packed) = self.split_code_bytes(payload);
+                debug_assert!(qjl_packed.is_empty());
+                self.score_ip_from_split_parts_lut_no_qjl_4bit(&prepared.lut, mse_packed)
+            })
+            .fold(f32::NEG_INFINITY, f32::max)
+    }
+
     pub fn score_ip_from_parts_tiled_lut_no_qjl_4bit(
         &self,
         prepared: &PreparedTiledLutNoQjl4BitQuery,

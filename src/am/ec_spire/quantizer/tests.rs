@@ -130,6 +130,12 @@ mod tests {
 
         assert!((batch_scores[0] - observed).abs() < 1e-6);
         assert_eq!(
+            quantizer.score_ip_batch_max_lut_no_qjl_4bit(&prepared_lut, payload_stride, &payloads),
+            expected_lut.max(
+                quantizer.score_ip_from_parts_lut_no_qjl_4bit(&prepared_lut, &payload_b)
+            )
+        );
+        assert_eq!(
             scorer.score_zero_gamma_payload_chunks_max_prevalidated(payload_stride, &payloads),
             batch_scores[0].max(batch_scores[1])
         );
