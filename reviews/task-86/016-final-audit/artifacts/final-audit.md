@@ -1,6 +1,6 @@
 # Task 86 Final Coder Audit
 
-Head SHA: `325ebfbe73df7eee0a2daac05762f81b49c5c945`
+Head SHA: `bf819567c3f00d6944a40d9cfa4bdd8f6cb1ae9f`
 
 Date: 2026-06-07
 
@@ -56,3 +56,7 @@ The current suite runner does not expose separate scorer-only and query-prep tim
 ## Remaining External Workflow
 
 The PR has no submitted reviews, no review comments, and no unresolved review threads at the time this packet was prepared. Packets 011, 012, 015, and 016 still need outside reviewer acceptance under the repository workflow before the task file should be marked complete rather than coder-complete.
+
+## Scope Cleanup
+
+Task 87/88 task-definition commits were inspired by the TurboVec research, but they are follow-up planning work rather than Task 86 deliverables. They were reverted from the Task 86 branch after this audit so PR scope remains Task 86 only.

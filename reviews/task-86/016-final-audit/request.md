@@ -6,6 +6,8 @@ This packet closes the last coder-side audit gap I found while re-checking Task 
 
 The branch had real benchmark evidence after packet 011, but the code diff still added two literal `unsafe { ... }` blocks in `src/am/ec_ivf/insert.rs`. The task says "No new unsafe blocks." Commit `d58ff8716670d721edc1b6ca90c9418ee9a23970` removes those added blocks without changing behavior; the calls remain inside the existing unsafe insertion helper.
 
+After a scope check, Task 87/88 task-definition commits were also reverted from this Task 86 branch. Those follow-up ideas remain recoverable from their commits, but they are not part of this Task 86 landing scope.
+
 ## Validation
 
 - `git diff --unified=0 origin/main...HEAD -- src hardening | rg -n '^\\+.*unsafe \\{'`

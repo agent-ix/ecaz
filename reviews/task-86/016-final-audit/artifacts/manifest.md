@@ -1,6 +1,6 @@
 # Task 86 Packet 016 Artifact Manifest
 
-- head SHA: `325ebfbe73df7eee0a2daac05762f81b49c5c945`
+- head SHA: `bf819567c3f00d6944a40d9cfa4bdd8f6cb1ae9f`
 - task bucket: `reviews/task-86/016-final-audit`
 - timestamp: `2026-06-07T23:53:27Z`
 - lane / fixture / storage format / rerank mode: final audit packet; no benchmark lane rerun; cites packet 008 SPIRE TurboQuant and packet 011 IVF TurboQuant/TQ+ benchmark lanes
@@ -23,3 +23,7 @@
 
 - `reviews/task-86/008-spire-real-spread/`: SPIRE TurboQuant LUT-off vs LUT-on, real10k/50k/100k, recall/latency/storage.
 - `reviews/task-86/011-ivf-tqplus-real-spread/`: IVF TurboQuant vs IVF `turboquant_tqplus`, real10k/50k/100k, recall/latency/storage.
+
+## Scope Cleanup
+
+- Task 87/88 task-definition commits were reverted from this Task 86 branch after audit because they are follow-up planning work, not Task 86 deliverables.
