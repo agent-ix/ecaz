@@ -1454,6 +1454,34 @@ fn process_scratch_soa_postings(
         return Ok(());
     }
 
+    if quantizer.score_turboquant_no_qjl_4bit_batch_from_payloads(
+        prepared_query,
+        &scratch.payloads,
+        scratch.payload_len,
+        &scratch.gammas,
+        &mut scratch.scores,
+    )? {
+        if scratch.scores.len() != scratch.len() {
+            return Err(format!(
+                "ec_ivf scratch SoA batch scorer produced {} scores for {} postings",
+                scratch.scores.len(),
+                scratch.len()
+            ));
+        }
+        for index in 0..scratch.len() {
+            record_scored_posting_candidates(
+                opaque,
+                best_by_heap_tid,
+                running_top,
+                scratch.heap_tids(index).iter().copied(),
+                scratch.heap_tid_counts[index],
+                -scratch.scores[index],
+            );
+        }
+        scratch.clear();
+        return Ok(());
+    }
+
     if quantizer.score_ip_bits1_batch_from_payloads(
         prepared_query,
         &scratch.payloads,
