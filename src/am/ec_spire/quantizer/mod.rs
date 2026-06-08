@@ -396,6 +396,76 @@ impl SpirePreparedAssignmentScorer {
         }
         Ok(())
     }
+
+    pub(super) fn score_candidate_batch_ip<Id>(
+        &self,
+        batch: &CandidateBatch<'_, Id>,
+        out_scores: &mut [f32],
+    ) -> Result<(), String> {
+        if batch.len() != out_scores.len() {
+            return Err(format!(
+                "ec_spire candidate batch scorer output count {} does not match candidate count {}",
+                out_scores.len(),
+                batch.len()
+            ));
+        }
+
+        match self {
+            Self::TurboQuant {
+                dimensions,
+                quantizer,
+                prepared,
+                no_qjl_4bit_lut,
+                ..
+            } => {
+                for payload in batch.payloads() {
+                    validate_payload_stride(
+                        *dimensions,
+                        self.payload_format(),
+                        payload.code.len(),
+                    )?;
+                }
+                if super::options::candidate_batch_scoring_enabled() {
+                    if let Some(prepared_lut) = no_qjl_4bit_lut {
+                        return score_turboquant_no_qjl_4bit_batch_for(
+                            CandidateBatchScoringSurface::Spire,
+                            quantizer,
+                            prepared_lut,
+                            batch,
+                            out_scores,
+                        );
+                    }
+                }
+
+                for (payload, out_score) in batch.payloads().iter().zip(out_scores.iter_mut()) {
+                    let gamma = match payload.meta {
+                        CandidateMeta::None
+                        | CandidateMeta::Binary
+                        | CandidateMeta::RaBitQ
+                        | CandidateMeta::GroupedPq { .. } => 0.0,
+                        CandidateMeta::Gamma(gamma) => gamma,
+                        CandidateMeta::GammaAndResidualSigns { gamma, .. } => gamma,
+                    };
+                    *out_score = quantizer.score_ip_from_parts(prepared, gamma, payload.code);
+                }
+            }
+            Self::RaBitQ { .. } => {
+                for (payload, out_score) in batch.payloads().iter().zip(out_scores.iter_mut()) {
+                    let gamma = match payload.meta {
+                        CandidateMeta::None
+                        | CandidateMeta::Binary
+                        | CandidateMeta::RaBitQ
+                        | CandidateMeta::GroupedPq { .. } => 0.0,
+                        CandidateMeta::Gamma(gamma) => gamma,
+                        CandidateMeta::GammaAndResidualSigns { gamma, .. } => gamma,
+                    };
+                    *out_score =
+                        self.score_payload_ip(self.payload_format(), gamma, payload.code)?;
+                }
+            }
+        }
+        Ok(())
+    }
 }
 
 impl QuantCodec for SpireAssignmentQuantCodec {

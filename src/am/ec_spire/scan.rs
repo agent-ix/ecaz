@@ -36,7 +36,11 @@ use super::storage::{
     SpirePartitionObjectKind, SpireRoutingPartitionObject, SpireTopGraphPartitionObject,
     SpireVecId, SPIRE_ASSIGNMENT_FLAG_BOUNDARY_REPLICA,
 };
-use crate::am::common::{callback::pg_am_callback, detoast::DetoastedVarlena};
+use crate::am::common::{
+    callback::pg_am_callback,
+    candidate_batch::{CandidateBatch, CandidateMeta, CandidatePayload},
+    detoast::DetoastedVarlena,
+};
 use crate::am::ec_hnsw::source;
 use crate::quant::prod::ProdQuantizer;
 use crate::storage::page::ItemPointer;
