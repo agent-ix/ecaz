@@ -22,7 +22,7 @@ Task 87 closes on this scoped claim:
 - The 32-candidate LUT kernel lives under `src/quant/` and has scalar differential coverage.
 - SPIRE and IVF TurboQuant no-QJL measured cells route through the common candidate-batch scorer and reach the LUT32 kernel.
 - Recall is preserved in all measured routed off/on cells.
-- End-to-end latency improves on the routed TurboQuant matrix except for one documented real10k SPIRE p99 flat outlier (`+0.4%`).
+- End-to-end latency improves on the routed TurboQuant matrix, including packet 024's real10k SPIRE p99 rerun.
 - HNSW Phase 7 LUT32 evidence is stopped for this task because the current real-corpus HNSW profiles are not TurboQuant FullLut surfaces and report zero Task 87 counters.
 - DiskANN remains out of Task 87 Phase 7 by the accepted Task 91 handoff.
 
@@ -32,6 +32,8 @@ Task 87 closes on this scoped claim:
   `reviews/task-87/021-spire-leaf-lut32-batching/`
 - Packet 022 real50k/real100k evidence:
   `reviews/task-87/022-phase7-50k-100k-counter-suite/`
+- Packet 024 real10k SPIRE p99 rerun:
+  `reviews/task-87/024-phase7-spire-real10k-p99-rerun/`
 - Superseding matrix:
   `artifacts/aggregate-matrix.md`
 - Methodology and HNSW stop condition:

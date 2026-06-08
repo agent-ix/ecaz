@@ -15,7 +15,8 @@ widths justify it.
 
 Completion note: packet 023 supersedes packet 015 as final closeout.
 It lands the Phase 7 matrix with packet 021 real10k evidence, packet
-022 real50k/real100k evidence, a scoring-share methodology reframe
+022 real50k/real100k evidence, packet 024 real10k SPIRE p99 rerun
+evidence, a scoring-share methodology reframe
 requested by packet 021 feedback, and an explicit HNSW Phase 7 stop
 condition for the current non-TurboQuant-FullLut real-corpus HNSW
 profiles.
