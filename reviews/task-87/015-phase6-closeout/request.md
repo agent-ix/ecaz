@@ -20,6 +20,9 @@ Current head for this packet:
     p50/p95/p99 latency, latency deltas, and storage.
 - `artifacts/manifest.md`
   - records the closeout artifact metadata and source evidence packets.
+- `artifacts/completion-audit.md`
+  - maps Task 87's closeout, acceptance, and validation-gate requirements to
+    current checked-in evidence.
 
 No code changed in this packet.
 
@@ -56,9 +59,15 @@ approved in `reviews/task-87/009-scope-walk-back-and-task-91-handoff/`.
 No new test or benchmark command was run for this packet. This is a
 documentation/status closeout over already checked-in Phase 6 suite evidence.
 
+The completion audit explicitly notes that packet 015 is still awaiting outside
+reviewer response, especially because the original universal scoring-share and
+every-cell latency gates are not claimed as fully met.
+
 ## Review Focus
 
 - Confirm the aggregate matrix satisfies packet 012's closeout request.
+- Confirm the completion audit maps Task 87's requirements to the right
+  authoritative evidence.
 - Confirm the gate call is honest about structural-slice carve-outs and
   measurement misses.
 - Confirm Task 87 can close with DiskANN represented by packet 005 Stop

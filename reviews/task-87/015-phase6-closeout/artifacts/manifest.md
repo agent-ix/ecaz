@@ -33,6 +33,19 @@ Timestamp: 2026-06-08
   - DiskANN remains represented by packet 005 Stop Condition and packet 009
     Task 91 handoff.
 
+### `completion-audit.md`
+
+- Lane: Task 87 closeout requirement audit.
+- Fixture: N/A; maps task-file requirements to checked-in evidence.
+- Command used: no command; documentation audit over current tree and
+  packet-local artifacts.
+- Key result lines:
+  - Implementation and closeout evidence are pushed.
+  - Packet 015 remains a closeout request awaiting outside reviewer response.
+  - Universal scoring-share and every-cell latency gates are not claimed as
+    fully met; the closeout relies on reviewer-approved structural carve-outs
+    and the Task 91 DiskANN handoff.
+
 ## Source Evidence
 
 - `reviews/task-87/012-phase6-suite-prep/artifacts/manifest.md`
@@ -48,4 +61,5 @@ Timestamp: 2026-06-08
     operational guard.
 
 No new tests or benchmarks were run for this closeout packet. It is an
-aggregation and status-update packet over already checked-in suite evidence.
+aggregation, completion-audit, and status-update packet over already checked-in
+suite evidence.
