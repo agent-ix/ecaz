@@ -1,0 +1,8 @@
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 56s
+     Running unittests src/lib.rs (target/debug/deps/ecaz-c2925dc8ee61e76b)
+
+running 1 test
+test am::ec_spire::quantizer::tests::turboquant_assignment_scorer_uses_no_qjl_4bit_lut_path ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1989 filtered out; finished in 0.04s
