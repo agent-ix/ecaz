@@ -1,0 +1,121 @@
+{
+  "suite": "task81-aws-100k-task79-retained-surface",
+  "schema_version": 1,
+  "config": "reviews/task-81/007-aws-100k-task79-comparison/suite-aws-100k-task79-retained-surface.json",
+  "config_sha256": "47e1c2ec7d5ae87e88ee6f38fc7b262f5607fd3fef8d295651bf0b9533861518",
+  "dry_run": false,
+  "generated_at_unix_ms": 1780635357977,
+  "connection": {
+    "database": "task79_aws",
+    "host": "/var/run/postgresql",
+    "port": null,
+    "user": "postgres",
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "precheck-retained-task79-surface",
+      "kind": "raw",
+      "command": [
+        "--database",
+        "task79_aws",
+        "--host",
+        "/var/run/postgresql",
+        "--user",
+        "postgres",
+        "dev",
+        "sql",
+        "--pg",
+        "18",
+        "--db",
+        "task79_aws",
+        "--socket-dir",
+        "/var/run/postgresql",
+        "--raw",
+        "--sql",
+        "CREATE EXTENSION IF NOT EXISTS ecaz; SELECT now() AS captured_at, current_database() AS database_name, version() AS postgres_version; SELECT count(*) AS corpus_rows FROM task79_aws_rabitq_k3_block16_tg96_b0_corpus; SELECT count(*) AS query_rows FROM task79_aws_rabitq_k3_block16_tg96_b0_queries; SELECT i.relname AS index_name, am.amname, pg_size_pretty(pg_relation_size(i.oid)) AS index_size, i.reloptions FROM pg_index x JOIN pg_class i ON i.oid = x.indexrelid JOIN pg_class t ON t.oid = x.indrelid JOIN pg_am am ON am.oid = i.relam WHERE t.relname = 'task79_aws_rabitq_k3_block16_tg96_b0_corpus' ORDER BY i.relname; SELECT name, setting, context FROM pg_settings WHERE name IN ('ec_spire.leaf_block_rows', 'ec_spire.leaf_block_pruning_max_blocks_per_leaf', 'ec_spire.leaf_block_pruning_max_global_blocks', 'ec_spire.leaf_block_pruning_global_probe_blocks', 'ec_spire.leaf_block_pruning_sample_rows_per_block', 'ec_spire.leaf_block_pruning_sample_summary_prior_weight', 'ec_spire.leaf_block_pruning_summary_radius_weight', 'ec_spire.leaf_block_pruning_route_prior_weight', 'ec_spire.max_routing_expansions', 'ec_spire.nprobe', 'ec_spire.rerank_width') ORDER BY name;",
+        "--log-output",
+        "reviews/task-81/007-aws-100k-task79-comparison/artifacts/task79-retained-surface/precheck-retained-task79-surface.log"
+      ],
+      "selected": true,
+      "tags": [
+        "setup",
+        "precheck",
+        "aws",
+        "graviton",
+        "task81",
+        "task79-comparison",
+        "retained-surface"
+      ],
+      "expected_artifacts": [
+        "reviews/task-81/007-aws-100k-task79-comparison/artifacts/task79-retained-surface/precheck-retained-task79-surface.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1780635357979,
+      "finished_at_unix_ms": 1780635358307,
+      "duration_ms": 326,
+      "exit_code": 0
+    },
+    {
+      "name": "pipeline-retained-task79-global1152",
+      "kind": "spire-pipeline",
+      "command": [
+        "--database",
+        "task79_aws",
+        "--host",
+        "/var/run/postgresql",
+        "--user",
+        "postgres",
+        "bench",
+        "spire-pipeline",
+        "--prefix",
+        "task79_aws_rabitq_k3_block16_tg96_b0",
+        "--index",
+        "task79_aws_rabitq_k3_block16_tg96_b0_idx",
+        "--queries-limit",
+        "200",
+        "--sweep",
+        "96",
+        "--rerank-width",
+        "25",
+        "--include-local-store-overlap",
+        "--include-cost-snapshot",
+        "--include-query-metrics",
+        "--include-recall",
+        "--truth-corpus-file",
+        "/var/lib/pgsql/18/datasets/staged-current/ec_real_100k_corpus.tsv",
+        "--include-production-read-profile",
+        "--query-metric-k",
+        "10",
+        "--query-metric-projection-columns",
+        "id",
+        "--log-output",
+        "reviews/task-81/007-aws-100k-task79-comparison/artifacts/task79-retained-surface/pipeline-retained-task79-global1152.log",
+        "--funnel-output",
+        "reviews/task-81/007-aws-100k-task79-comparison/artifacts/task79-retained-surface/funnel-retained-task79-global1152.jsonl"
+      ],
+      "selected": true,
+      "pgoptions": "-c ec_spire.leaf_block_pruning_max_blocks_per_leaf=0 -c ec_spire.leaf_block_pruning_max_global_blocks=1152 -c ec_spire.leaf_block_pruning_global_probe_blocks=0 -c ec_spire.leaf_block_pruning_sample_rows_per_block=0 -c ec_spire.leaf_block_pruning_sample_summary_prior_weight=0.8 -c ec_spire.leaf_block_pruning_summary_radius_weight=0.25 -c ec_spire.leaf_block_pruning_route_prior_weight=0.0",
+      "tags": [
+        "pipeline",
+        "latency",
+        "recall",
+        "aws",
+        "graviton",
+        "task81",
+        "task79-comparison",
+        "retained-surface",
+        "global1152"
+      ],
+      "expected_artifacts": [
+        "reviews/task-81/007-aws-100k-task79-comparison/artifacts/task79-retained-surface/pipeline-retained-task79-global1152.log",
+        "reviews/task-81/007-aws-100k-task79-comparison/artifacts/task79-retained-surface/funnel-retained-task79-global1152.jsonl"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1780635358307,
+      "finished_at_unix_ms": 1780635416279,
+      "duration_ms": 57970,
+      "exit_code": 0
+    }
+  ]
+}

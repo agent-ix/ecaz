@@ -1,0 +1,8 @@
+CREATE EXTENSION
+SET
+SET
+DROP INDEX
+NOTICE:  extension "ecaz" already exists, skipping
+NOTICE:  index "aws_spire_1m_rabitq_t85_block8_tg256_idx" does not exist, skipping
+ERROR:  could not extend file "base/5/13706659": No space left on device
+HINT:  Check free disk space.

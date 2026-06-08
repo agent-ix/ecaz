@@ -836,6 +836,12 @@ pub(crate) fn dml_frontdoor_replacement_decision_catalog_row(
     let relation = match dml_frontdoor_relation_context_catalog_row(target_relation_oid) {
         Ok(relation) => relation,
         Err(_err) => {
+            if !dml_frontdoor_relation_context_error_is_fail_closed_candidate(
+                query_view,
+                target_relation_oid,
+            ) {
+                return None;
+            }
             return Some(SpireDmlFrontdoorReplacementDecisionRow {
                 target_relation_oid,
                 index_oid: pg_sys::InvalidOid,
@@ -863,6 +869,47 @@ pub(crate) fn dml_frontdoor_replacement_decision_catalog_row(
         relation.index_oid,
         detail,
     ))
+}
+
+fn dml_frontdoor_relation_context_error_is_fail_closed_candidate(
+    query_view: DmlFrontdoorQueryView<'_>,
+    target_relation_oid: pg_sys::Oid,
+) -> bool {
+    let Some(operation) = query_view.operation() else {
+        return false;
+    };
+    match operation {
+        SpireDmlFrontdoorOperation::Update | SpireDmlFrontdoorOperation::Delete => true,
+        SpireDmlFrontdoorOperation::PkSelect => {
+            let Ok(Some(pk)) = dml_frontdoor_primary_key_column(target_relation_oid) else {
+                return true;
+            };
+            let Ok(column_names) = dml_frontdoor_relation_column_names(target_relation_oid) else {
+                return true;
+            };
+            let column_refs = column_names
+                .iter()
+                .map(|(attnum, name)| (*attnum, name.as_str()))
+                .collect::<Vec<_>>();
+            let context = SpireDmlFrontdoorQueryContext {
+                ec_spire_distributed_table: true,
+                pk_column: &pk.column_name,
+                column_names: &column_refs,
+                embedding_columns: &[],
+            };
+            classify_dml_frontdoor_query_view(query_view, context)
+                .map(|shape| dml_frontdoor_shape_is_fail_closed_candidate(&shape))
+                .unwrap_or(false)
+        }
+    }
+}
+
+fn dml_frontdoor_shape_is_fail_closed_candidate(shape: &SpireDmlFrontdoorShapeRow) -> bool {
+    shape.supported
+        || matches!(
+            shape.kind,
+            "unsupported_empty_projection" | "unsupported_pk_predicate"
+        )
 }
 
 pub(crate) fn dml_frontdoor_primitive_plan_expr_catalog_row(

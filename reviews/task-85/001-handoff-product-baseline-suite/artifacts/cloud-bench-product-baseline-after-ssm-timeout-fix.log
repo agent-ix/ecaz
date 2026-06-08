@@ -1,0 +1,8 @@
+
+   0: [91mssm command 76ef8d52-4caa-462b-9d97-3ee836a14557 on i-06ace3e95ab942623 ended in Cancelled (rc=137): + cd /var/lib/pgsql/build/ecaz / ++ dirname reviews/task-85/001-handoff-product-baseline-suite/suite-aws-1m-product-baseline-q500.json / + mkdir -p reviews/task-85/001-handoff-product-baseline-suite reviews/task-85/001-handoff-product-baseline-suite/artifacts/aws-1m-product-baseline-q500 / + trap 'status=$?; set +e; aws s3 sync reviews/task-85/001-handoff-product-baseline-suite/artifacts/aws-1m-product-baseline-q500 s3://ecaz-cloud-1m-b62eb804/bench-artifacts/task85-aws-1m-product-baseline-q500/20260607T053845Z/ --region us-west-2 --only-show-errors || true; exit $status' EXIT / + cat[0m
+
+Location:
+   [35mcrates/ecaz-cloud/src/ssm.rs[0m:[35m122[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.

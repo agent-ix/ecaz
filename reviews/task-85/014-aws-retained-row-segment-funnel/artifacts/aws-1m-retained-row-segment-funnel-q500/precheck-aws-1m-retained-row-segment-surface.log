@@ -1,0 +1,27 @@
+CREATE EXTENSION
+          captured_at          | database_name |                                               postgres_version                                                
+-------------------------------+---------------+---------------------------------------------------------------------------------------------------------------
+ 2026-06-07 17:11:45.504312+00 | postgres      | PostgreSQL 18.3 on aarch64-amazon-linux-gnu, compiled by gcc (GCC) 11.5.0 20240719 (Red Hat 11.5.0-5), 64-bit
+(1 row)
+
+ corpus_rows 
+-------------
+      990000
+(1 row)
+
+ query_rows 
+------------
+      10000
+(1 row)
+
+                index_name                 |  amname  | index_size |                                                                                                  reloptions                                                                                                   
+-------------------------------------------+----------+------------+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ aws_spire_1m_rabitq_t80_block16_tg256_idx | ec_spire | 872 MB     | {nlists=128,recursive_fanout=8,nprobe=24,rerank_width=25,storage_format=rabitq,boundary_replica_count=0,top_graph_enabled=1,top_graph_degree=32,top_graph_build_list_size=100,top_graph_search_list_size=256}
+(1 row)
+
+ active_epoch | effective_nprobe | effective_nprobe_source | effective_rerank_width | effective_rerank_width_source | pid | node_id | local_store_id | object_version | object_bytes | route_count | scanned_count | candidate_row_count | leaf_block_available_count | leaf_block_selected_count | leaf_block_skipped_count | leaf_summary_object_bytes | leaf_row_object_bytes | primary_candidate_row_count | boundary_replica_candidate_row_count | deduped_candidate_row_count | truncated_candidate_row_count | candidate_winner_count | leaf_object_read_nanos | leaf_summary_score_nanos | leaf_row_score_nanos | candidate_score_nanos | candidate_materialize_nanos | candidate_heap_append_nanos 
+--------------+------------------+-------------------------+------------------------+-------------------------------+-----+---------+----------------+----------------+--------------+-------------+---------------+---------------------+----------------------------+---------------------------+--------------------------+---------------------------+-----------------------+-----------------------------+--------------------------------------+-----------------------------+-------------------------------+------------------------+------------------------+--------------------------+----------------------+-----------------------+-----------------------------+-----------------------------
+            1 |               24 | relation                |                     25 | relation                      |   5 |       0 |              0 |              1 |      7766518 |           1 |             1 |                8493 |                        531 |                       531 |                        0 |                    842864 |               6923544 |                           0 |                                    0 |                        8493 |                             0 |                      0 |                   8493 |                        0 |            554500211 |                     0 |                     4734961 |                     4734961
+(1 row)
+
+NOTICE:  extension "ecaz" already exists, skipping

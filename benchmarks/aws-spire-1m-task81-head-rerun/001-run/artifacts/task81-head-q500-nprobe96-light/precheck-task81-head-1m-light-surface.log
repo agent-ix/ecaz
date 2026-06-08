@@ -1,0 +1,24 @@
+CREATE EXTENSION
+          captured_at          | database_name |                                               postgres_version                                                
+-------------------------------+---------------+---------------------------------------------------------------------------------------------------------------
+ 2026-06-05 15:41:59.281792+00 | postgres      | PostgreSQL 18.3 on aarch64-amazon-linux-gnu, compiled by gcc (GCC) 11.5.0 20240719 (Red Hat 11.5.0-5), 64-bit
+(1 row)
+
+ corpus_rows 
+-------------
+      990000
+(1 row)
+
+ query_rows 
+------------
+      10000
+(1 row)
+
+                index_name                 |  amname  | index_size |                                                                                                  reloptions                                                                                                   
+-------------------------------------------+----------+------------+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ aws_spire_1m_rabitq_t80_block16_tg256_idx | ec_spire | 872 MB     | {nlists=128,recursive_fanout=8,nprobe=24,rerank_width=25,storage_format=rabitq,boundary_replica_count=0,top_graph_enabled=1,top_graph_degree=32,top_graph_build_list_size=100,top_graph_search_list_size=256}
+ task67_1m_hnsw_m7g2xlarge_corpus_pkey     | btree    | 21 MB      | 
+ task67_1m_hnsw_m7g2xlarge_m16_idx         | ec_hnsw  | 1289 MB    | {m=16,ef_construction=128,build_source_column=source}
+(3 rows)
+
+NOTICE:  extension "ecaz" already exists, skipping

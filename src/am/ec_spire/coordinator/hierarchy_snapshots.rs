@@ -1762,6 +1762,13 @@ pub(crate) fn index_scan_leaf_candidate_snapshot(
                 route_count: leaf.route_count as u64,
                 scanned_count: leaf.scanned_count as u64,
                 candidate_row_count: leaf.candidate_row_count as u64,
+                leaf_block_available_count: leaf.leaf_block_available_count as u64,
+                leaf_block_selected_count: leaf.leaf_block_selected_count as u64,
+                leaf_block_skipped_count: leaf.leaf_block_skipped_count as u64,
+                leaf_summary_object_bytes: leaf.leaf_summary_object_bytes,
+                leaf_row_object_bytes: leaf.leaf_row_object_bytes,
+                leaf_row_segment_read_count: leaf.leaf_row_segment_read_count as u64,
+                leaf_row_segment_read_bytes: leaf.leaf_row_segment_read_bytes,
                 primary_candidate_row_count: leaf.primary_candidate_row_count as u64,
                 boundary_replica_candidate_row_count: leaf.boundary_replica_candidate_row_count
                     as u64,
@@ -1769,12 +1776,52 @@ pub(crate) fn index_scan_leaf_candidate_snapshot(
                 truncated_candidate_row_count: leaf.truncated_candidate_row_count as u64,
                 candidate_winner_count: leaf.candidate_winner_count as u64,
                 leaf_object_read_nanos: leaf.leaf_object_read_nanos,
+                leaf_summary_score_nanos: leaf.leaf_summary_score_nanos,
+                leaf_row_score_nanos: leaf.leaf_row_score_nanos,
                 candidate_score_nanos: leaf.candidate_score_nanos,
                 candidate_materialize_nanos: leaf.candidate_materialize_nanos,
                 candidate_heap_append_nanos: leaf.candidate_heap_append_nanos,
             })
             .collect();
         Ok(rows)
+    })();
+    result.unwrap_or_else(|e| pgrx::error!("{e}"))
+}
+
+pub(crate) fn index_scan_rerank_locality_snapshot(
+    index: SpireLiveIndexRelation,
+    query_values: Vec<f32>,
+) -> scan::SpireRerankLocalityDiagnostics {
+    let result = (|| -> Result<scan::SpireRerankLocalityDiagnostics, String> {
+        let query = scan::SpireScanQuery::new(query_values)?;
+        let Some(anchor) = index.active_epoch_anchor(index.root_control())? else {
+            return Ok(scan::SpireRerankLocalityDiagnostics {
+                active_epoch: 0,
+                effective_nprobe: 0,
+                effective_nprobe_source: "empty",
+                effective_rerank_width: 0,
+                effective_rerank_width_source: "empty",
+                candidate_count: 0,
+                rerank_prefix_count: 0,
+                unique_heap_block_count: 0,
+                heap_block_transition_count: 0,
+                heap_block_span: 0,
+                heap_block_jump_sum: 0,
+                heap_block_jump_max: 0,
+            });
+        };
+
+        let snapshot = anchor.snapshot()?;
+        let object_store = index.object_store_set(
+            &anchor.placement_directory,
+            pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+        )?;
+        scan::collect_scan_rerank_locality_diagnostics(
+            &snapshot,
+            &object_store,
+            &query,
+            index.relation_options(),
+        )
     })();
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
@@ -1826,6 +1873,69 @@ pub(crate) fn index_scan_leaf_block_rank_snapshot(
             row_end: row.row_end,
             row_count: row.row_count,
             block_ip: row.block_ip,
+            cap_block_ip: row.cap_block_ip,
+            block_ip_margin_to_cap: row.block_ip_margin_to_cap,
+            route_rank: row.route_rank,
+            route_score: row.route_score,
+            assignment_flags: row.assignment_flags,
+        })
+        .collect();
+        Ok(rows)
+    })();
+    result.unwrap_or_else(|e| pgrx::error!("{e}"))
+}
+
+pub(crate) fn index_scan_leaf_target_block_rank_snapshot(
+    index: SpireLiveIndexRelation,
+    query_values: Vec<f32>,
+    target_local_sequences: Vec<u64>,
+) -> Vec<SpireIndexScanLeafBlockRankSnapshotRow> {
+    let result = (|| -> Result<Vec<SpireIndexScanLeafBlockRankSnapshotRow>, String> {
+        let query = scan::SpireScanQuery::new(query_values)?;
+        let Some(anchor) = index.active_epoch_anchor(index.root_control())? else {
+            return Ok(Vec::new());
+        };
+
+        let snapshot = anchor.snapshot()?;
+        let object_store = index.object_store_set(
+            &anchor.placement_directory,
+            pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+        )?;
+        let rows = scan::collect_scan_leaf_target_block_rank_snapshot(
+            &snapshot,
+            &object_store,
+            &query,
+            index.relation_options(),
+            &target_local_sequences,
+        )?
+        .into_iter()
+        .map(|row| SpireIndexScanLeafBlockRankSnapshotRow {
+            active_epoch: row.active_epoch,
+            effective_nprobe: row.effective_nprobe,
+            effective_nprobe_source: row.effective_nprobe_source,
+            effective_rerank_width: row.effective_rerank_width,
+            effective_rerank_width_source: row.effective_rerank_width_source,
+            target_ordinal: row.target_ordinal,
+            target_local_sequence: row.target_local_sequence,
+            status: row.status,
+            max_global_blocks: row.max_global_blocks,
+            radius_weight: row.radius_weight,
+            scored_block_count: row.scored_block_count,
+            block_rank: row.block_rank,
+            selected_by_global_cap: row.selected_by_global_cap,
+            pid: row.pid,
+            node_id: row.node_id,
+            local_store_id: row.local_store_id,
+            object_version: row.object_version,
+            row_index: row.row_index,
+            row_base: row.row_base,
+            row_end: row.row_end,
+            row_count: row.row_count,
+            block_ip: row.block_ip,
+            cap_block_ip: row.cap_block_ip,
+            block_ip_margin_to_cap: row.block_ip_margin_to_cap,
+            route_rank: row.route_rank,
+            route_score: row.route_score,
             assignment_flags: row.assignment_flags,
         })
         .collect();

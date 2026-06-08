@@ -110,7 +110,7 @@
             .collect::<Vec<_>>();
 
         let summaries =
-            super::build_leaf_block_summaries(&rows, &source_vectors, 2).unwrap();
+            super::build_leaf_block_summaries(&rows, &source_vectors, 2, 2).unwrap();
 
         assert_eq!(summaries.len(), 2);
         assert_eq!(summaries[0].row_base, 0);
@@ -135,6 +135,61 @@
         assert!(summaries
             .iter()
             .all(|summary| !summary.encoded_payload.is_empty()));
+    }
+
+    #[test]
+    fn leaf_block_summaries_can_emit_three_rabitq_representatives() {
+        fn rabitq_primary_row(
+            vec_seq: u64,
+            block_number: u32,
+            offset_number: u16,
+            source_vector: &[f32],
+        ) -> SpireLeafAssignmentRow {
+            let assignment = quantizer::encode_assignment_input(
+                SpireAssignmentPayloadFormat::RaBitQ,
+                tid(block_number, offset_number),
+                source_vector,
+            )
+            .unwrap();
+            SpireLeafAssignmentRow {
+                flags: SPIRE_ASSIGNMENT_FLAG_PRIMARY,
+                vec_id: SpireVecId::local(vec_seq),
+                heap_tid: assignment.heap_tid,
+                payload_format: assignment.payload_format,
+                gamma: assignment.gamma,
+                encoded_payload: assignment.encoded_payload,
+            }
+        }
+
+        let source_vectors = vec![
+            vec![1.0, 0.0],
+            vec![0.0, 1.0],
+            vec![-1.0, 0.0],
+            vec![0.0, -1.0],
+        ];
+        let rows = source_vectors
+            .iter()
+            .enumerate()
+            .map(|(index, source_vector)| {
+                rabitq_primary_row(
+                    u64::try_from(index + 1).unwrap(),
+                    10,
+                    u16::try_from(index + 1).unwrap(),
+                    source_vector,
+                )
+            })
+            .collect::<Vec<_>>();
+
+        let summaries =
+            super::build_leaf_block_summaries(&rows, &source_vectors, 4, 3).unwrap();
+
+        assert_eq!(summaries.len(), 1);
+        assert_eq!(summaries[0].row_base, 0);
+        assert_eq!(summaries[0].row_count, 4);
+        let rabitq_payload_stride = rows[0].encoded_payload.len();
+        assert_eq!(summaries[0].encoded_payload.len(), rabitq_payload_stride * 3);
+        assert!(summaries[0].gamma.is_finite());
+        assert!(summaries[0].gamma >= 0.0);
     }
 
     #[test]

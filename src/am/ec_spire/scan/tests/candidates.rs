@@ -117,6 +117,7 @@
             SpireLeafBlockSummary {
                 row_base,
                 row_count,
+                row_segment_locator: ItemPointer::INVALID,
                 payload_format: SpireAssignmentPayloadFormat::RaBitQ.tag(),
                 gamma: radius,
                 encoded_payload,
@@ -156,10 +157,12 @@
                 SpireLeafBlockRowRange {
                     row_base: 2,
                     row_end: 4,
+                    row_segment_locator: ItemPointer::INVALID,
                 },
                 SpireLeafBlockRowRange {
                     row_base: 4,
                     row_end: 6,
+                    row_segment_locator: ItemPointer::INVALID,
                 },
             ]
         );
@@ -184,6 +187,7 @@
             SpireLeafBlockSummary {
                 row_base,
                 row_count,
+                row_segment_locator: ItemPointer::INVALID,
                 payload_format: SpireAssignmentPayloadFormat::RaBitQ.tag(),
                 gamma: radius,
                 encoded_payload,
@@ -221,6 +225,7 @@
             vec![SpireLeafBlockRowRange {
                 row_base: 2,
                 row_end: 4,
+                row_segment_locator: ItemPointer::INVALID,
             }]
         );
     }
@@ -232,6 +237,7 @@
         let summary = SpireLeafBlockSummary {
             row_base: 0,
             row_count: 2,
+            row_segment_locator: ItemPointer::INVALID,
             payload_format: SpireAssignmentPayloadFormat::RaBitQ.tag(),
             gamma: 2.0,
             encoded_payload,
@@ -268,6 +274,7 @@
         let multi_summary = SpireLeafBlockSummary {
             row_base: 0,
             row_count: 2,
+            row_segment_locator: ItemPointer::INVALID,
             payload_format: SpireAssignmentPayloadFormat::RaBitQ.tag(),
             gamma: 0.0,
             encoded_payload: multi_payload,
@@ -275,6 +282,7 @@
         let weak_summary = SpireLeafBlockSummary {
             row_base: 0,
             row_count: 2,
+            row_segment_locator: ItemPointer::INVALID,
             payload_format: SpireAssignmentPayloadFormat::RaBitQ.tag(),
             gamma: 0.0,
             encoded_payload: weak_payload,
@@ -304,6 +312,7 @@
             SpireLeafBlockSummary {
                 row_base,
                 row_count: 2,
+                row_segment_locator: ItemPointer::INVALID,
                 payload_format: SpireAssignmentPayloadFormat::RaBitQ.tag(),
                 gamma: 0.0,
                 encoded_payload,
@@ -359,10 +368,12 @@
                 SpireLeafBlockRowRange {
                     row_base: 0,
                     row_end: 2,
+                row_segment_locator: ItemPointer::INVALID,
                 },
                 SpireLeafBlockRowRange {
                     row_base: 2,
                     row_end: 4,
+                row_segment_locator: ItemPointer::INVALID,
                 },
             ])
         );
@@ -379,6 +390,7 @@
             SpireLeafBlockSummary {
                 row_base,
                 row_count: 2,
+                row_segment_locator: ItemPointer::INVALID,
                 payload_format: SpireAssignmentPayloadFormat::RaBitQ.tag(),
                 gamma: 0.0,
                 encoded_payload,
@@ -440,6 +452,7 @@
             SpireLeafBlockSummary {
                 row_base,
                 row_count: 2,
+                row_segment_locator: ItemPointer::INVALID,
                 payload_format: SpireAssignmentPayloadFormat::RaBitQ.tag(),
                 gamma: radius,
                 encoded_payload,
@@ -486,6 +499,7 @@
             Some(&vec![SpireLeafBlockRowRange {
                 row_base: 2,
                 row_end: 4,
+                row_segment_locator: ItemPointer::INVALID,
             }])
         );
     }
@@ -514,6 +528,7 @@
             SpireLeafBlockSummary {
                 row_base,
                 row_count: 2,
+                row_segment_locator: ItemPointer::INVALID,
                 payload_format: SpireAssignmentPayloadFormat::RaBitQ.tag(),
                 gamma: 0.0,
                 encoded_payload,
@@ -579,6 +594,7 @@
             Some(&vec![SpireLeafBlockRowRange {
                 row_base: 0,
                 row_end: 2,
+                row_segment_locator: ItemPointer::INVALID,
             }])
         );
 
@@ -597,6 +613,10 @@
         let snapshot =
             snapshot_for_placement(&epoch_manifest, &object_manifest, &placement_directory);
         let snapshot = SpireValidatedEpochSnapshot::from_snapshot(snapshot).unwrap();
+        let loaded_leaf_object = object_store.read_leaf_object_v2(&placement).unwrap();
+        let expected_sampled_locator = loaded_leaf_object.block_summaries().unwrap()[1]
+            .row_segment_locator;
+        assert_ne!(expected_sampled_locator, ItemPointer::INVALID);
         let loaded_routes = vec![SpireLoadedQuantizedLeafRoute {
             route: SpireLeafObjectReadRoute {
                 leaf_pid,
@@ -605,7 +625,7 @@
                 placement,
                 object_version: 1,
             },
-            leaf_object: object_store.read_leaf_object_v2(&placement).unwrap(),
+            leaf_object: loaded_leaf_object,
             selected_row_ranges: None,
             loaded_delta_routes: Vec::new(),
             deleted_vec_ids: HashSet::new(),
@@ -635,6 +655,7 @@
             Some(&vec![SpireLeafBlockRowRange {
                 row_base: 2,
                 row_end: 4,
+                row_segment_locator: expected_sampled_locator,
             }])
         );
         let sampled_candidates = accumulator.into_ranked();

@@ -1,0 +1,17 @@
+{
+  "InstanceIds": ["i-06ace3e95ab942623"],
+  "DocumentName": "AWS-RunShellScript",
+  "Comment": "task80 aws 1m block16 pruning query after repair",
+  "TimeoutSeconds": 14400,
+  "Parameters": {
+    "commands": [
+      "set -eux",
+      "cd /var/lib/pgsql/build/ecaz",
+      "sudo -u postgres git fetch origin task-80-row-budgeted-routing",
+      "sudo -u postgres git checkout --force -B task-80-row-budgeted-routing origin/task-80-row-budgeted-routing",
+      "sudo -u postgres mkdir -p reviews/task-80/001-aws-1m-block16-pruning/artifacts/aws-1m-block16-pruning",
+      "trap 'status=$?; set +e; aws s3 sync reviews/task-80/001-aws-1m-block16-pruning/artifacts/aws-1m-block16-pruning s3://ecaz-cloud-1m-b62eb804/bench-artifacts/task80-aws-1m-block16-pruning-query-after-repair/20260604T215430Z/ --region us-west-2 --only-show-errors || true; exit $status' EXIT",
+      "sudo -u postgres bash -lc 'cd /var/lib/pgsql/build/ecaz; export PATH=/usr/local/bin:$HOME/.cargo/bin:$PATH; /usr/local/bin/ecaz --database postgres --host /var/run/postgresql --user postgres --log-file reviews/task-80/001-aws-1m-block16-pruning/artifacts/aws-1m-block16-pruning/suite-query-after-repair.log bench suite run --config reviews/task-80/001-aws-1m-block16-pruning/suite-aws-1m-block16-pruning.json --only pipeline-spire-1m-rabitq-block16-global1152 --only pipeline-spire-1m-rabitq-block16-global2048 --only pipeline-spire-1m-rabitq-block16-global4096 --only pipeline-spire-1m-rabitq-block16-global8192 --only storage-spire-1m-rabitq-block16-tg256 --continue-on-error --manifest-output reviews/task-80/001-aws-1m-block16-pruning/artifacts/aws-1m-block16-pruning/suite-query-after-repair-manifest.json --results-output reviews/task-80/001-aws-1m-block16-pruning/artifacts/aws-1m-block16-pruning/results-query-after-repair.jsonl'"
+    ]
+  }
+}

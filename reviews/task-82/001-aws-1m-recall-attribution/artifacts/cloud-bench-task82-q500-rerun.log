@@ -1,0 +1,8 @@
+
+   0: [91mssm command 4cccba94-3c13-496c-b1d6-acb5250e5931 on i-06ace3e95ab942623 ended in Failed (rc=1): + cd /var/lib/pgsql/build/ecaz / ++ dirname reviews/task-82/001-aws-1m-recall-attribution/suite-aws-1m-miss-attribution-q500.json / + mkdir -p reviews/task-82/001-aws-1m-recall-attribution reviews/task-82/001-aws-1m-recall-attribution/artifacts/aws-1m-miss-attribution-q500 / + trap 'status=$?; set +e; aws s3 sync reviews/task-82/001-aws-1m-recall-attribution/artifacts/aws-1m-miss-attribution-q500 s3://ecaz-cloud-1m-b62eb804/bench-artifacts/task82-aws-1m-miss-attribution-q500/20260605T170024Z/ --region us-west-2 --only-show-errors || true; exit $status' EXIT / + cat[0m
+
+Location:
+   [35mcrates/ecaz-cloud/src/ssm.rs[0m:[35m111[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.

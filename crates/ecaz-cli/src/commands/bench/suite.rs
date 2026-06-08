@@ -9,6 +9,7 @@ use color_eyre::eyre::{bail, Context, ContextCompat, Result};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::ExitStatus;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
@@ -446,6 +447,10 @@ struct SpirePipelineStep {
     truth_cache_file: Option<PathBuf>,
     #[serde(default)]
     leaf_block_rank_output: Option<PathBuf>,
+    #[serde(default)]
+    target_block_rank_output: Option<PathBuf>,
+    #[serde(default)]
+    miss_attribution_output: Option<PathBuf>,
     #[serde(default)]
     leaf_block_rank_local_sequence_offset: Option<i64>,
     #[serde(default)]
@@ -2427,6 +2432,9 @@ impl SuiteStep {
                 .log_output
                 .iter()
                 .chain(step.funnel_output.iter())
+                .chain(step.leaf_block_rank_output.iter())
+                .chain(step.target_block_rank_output.iter())
+                .chain(step.miss_attribution_output.iter())
                 .cloned()
                 .collect(),
             SuiteStep::Storage(step) => step.log_file.iter().cloned().collect(),
@@ -2550,10 +2558,17 @@ async fn spawn_step(
     if let Some(pgoptions) = pgoptions {
         command.env("PGOPTIONS", pgoptions);
     }
-    command
-        .status()
+    let output = command
+        .output()
         .await
-        .wrap_err_with(|| format!("spawning {}", exe.display()))
+        .wrap_err_with(|| format!("spawning {}", exe.display()))?;
+    std::io::stdout()
+        .write_all(&output.stdout)
+        .wrap_err("replaying step stdout")?;
+    std::io::stdout()
+        .write_all(&output.stderr)
+        .wrap_err("replaying step stderr")?;
+    Ok(output.status)
 }
 
 fn child_command_args(conn: &ConnectionOptions, mut step_args: Vec<String>) -> Vec<String> {
@@ -2929,6 +2944,16 @@ fn expand_spire_pipeline(step: &SpirePipelineStep, defaults: &SuiteDefaults) -> 
         &mut args,
         "--leaf-block-rank-output",
         step.leaf_block_rank_output.as_deref(),
+    );
+    push_opt_path(
+        &mut args,
+        "--target-block-rank-output",
+        step.target_block_rank_output.as_deref(),
+    );
+    push_opt_path(
+        &mut args,
+        "--miss-attribution-output",
+        step.miss_attribution_output.as_deref(),
     );
     if let Some(offset) = step.leaf_block_rank_local_sequence_offset {
         push_arg(
@@ -4144,6 +4169,8 @@ mod tests {
             truth_corpus_file: Some("truth-corpus.tsv".into()),
             truth_cache_file: Some("truth-cache.json".into()),
             leaf_block_rank_output: None,
+            target_block_rank_output: Some("target-block-rank.jsonl".into()),
+            miss_attribution_output: Some("miss-attribution.jsonl".into()),
             leaf_block_rank_local_sequence_offset: None,
             include_production_read_profile: Some(true),
             production_read_only: Some(true),
@@ -4181,6 +4208,12 @@ mod tests {
         assert!(args
             .windows(2)
             .any(|w| w == ["--truth-cache-file", "truth-cache.json"]));
+        assert!(args
+            .windows(2)
+            .any(|w| w == ["--target-block-rank-output", "target-block-rank.jsonl"]));
+        assert!(args
+            .windows(2)
+            .any(|w| w == ["--miss-attribution-output", "miss-attribution.jsonl"]));
         assert!(args
             .windows(2)
             .any(|w| w == ["--log-output", "spire-profile.log"]));
@@ -4227,6 +4260,8 @@ mod tests {
                 truth_corpus_file: None,
                 truth_cache_file: None,
                 leaf_block_rank_output: None,
+                target_block_rank_output: None,
+                miss_attribution_output: None,
                 leaf_block_rank_local_sequence_offset: None,
                 include_production_read_profile: Some(true),
                 production_read_only: Some(true),

@@ -1,0 +1,8 @@
+
+   0: [91mssm command 6612fed2-10d4-457b-a0d4-e130b147223a on i-06ace3e95ab942623 ended in Failed (rc=1): + cd /var/lib/pgsql/build/ecaz / ++ dirname reviews/task-80/001-aws-1m-block16-pruning/suite-aws-1m-block16-pruning.json / + mkdir -p reviews/task-80/001-aws-1m-block16-pruning reviews/task-80/001-aws-1m-block16-pruning/artifacts/aws-1m-block16-pruning / + trap 'status=$?; set +e; aws s3 sync reviews/task-80/001-aws-1m-block16-pruning/artifacts/aws-1m-block16-pruning s3://ecaz-cloud-1m-b62eb804/bench-artifacts/task80-aws-1m-block16-pruning/20260604T211534Z/ --region us-west-2 --only-show-errors || true; exit $status' EXIT / + '[' '!' -f reviews/task-80/001-aws-1m-block16-pruning/suite-aws-1m-block16-pruning.json ']'[0m
+
+Location:
+   [35mcrates/ecaz-cloud/src/ssm.rs[0m:[35m111[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.

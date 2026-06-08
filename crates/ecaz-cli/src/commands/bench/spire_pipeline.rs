@@ -11,7 +11,7 @@ use comfy_table::{presets::UTF8_FULL, Cell, Table};
 use indicatif::{ProgressBar, ProgressStyle};
 use ndarray::Array2;
 use serde::Serialize;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
@@ -130,6 +130,18 @@ pub struct SpirePipelineArgs {
     /// source_identity, use the default local sequence mapping `id + 1`.
     #[arg(long)]
     pub leaf_block_rank_output: Option<PathBuf>,
+    /// Write per-exact-neighbor target-containing leaf-block rank rows as JSONL.
+    ///
+    /// Unlike `--leaf-block-rank-output`, this locates each truth row in routed
+    /// leaves first and emits only the containing block rank.
+    #[arg(long)]
+    pub target_block_rank_output: Option<PathBuf>,
+    /// Write per-exact-neighbor recall miss attribution rows as JSONL.
+    ///
+    /// Requires `--include-recall` and query metrics. The output joins exact
+    /// truth ids, returned ids, and SPIRE leaf-block rank diagnostics.
+    #[arg(long)]
+    pub miss_attribution_output: Option<PathBuf>,
     /// Offset added to exact-truth ids to form SPIRE local vec_id sequences.
     #[arg(long, default_value_t = 1)]
     pub leaf_block_rank_local_sequence_offset: i64,
@@ -309,6 +321,8 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
     let mut cost_tuning = BTreeMap::<i32, CostTuningRow>::new();
     let mut funnel_rows = Vec::<FunnelRecord>::new();
     let mut leaf_block_rank_rows = Vec::<LeafBlockRankRecord>::new();
+    let mut target_block_rank_rows = Vec::<LeafBlockRankRecord>::new();
+    let mut miss_attribution_rows = Vec::<MissAttributionRecord>::new();
     let mut remote_epoch = args.remote_requested_epoch;
 
     for nprobe in &sweep_values {
@@ -338,10 +352,50 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
         bar.set_message(spire_pipeline_progress_label(*nprobe, &args));
         bar.enable_steady_tick(Duration::from_millis(250));
 
+        let target_assignments_by_ordinal =
+            if args.miss_attribution_output.is_some() && args.leaf_block_rank_output.is_none() {
+                let truth_ids = query_truth
+                    .as_ref()
+                    .expect("miss attribution output is validated to require recall truth");
+                let flattened_target_local_sequences = truth_ids
+                    .iter()
+                    .flat_map(|ids| ids.iter())
+                    .map(|truth_id| {
+                        truth_id
+                            .checked_add(args.leaf_block_rank_local_sequence_offset)
+                            .ok_or_else(|| {
+                                eyre!(
+                                "target assignment local sequence overflow for truth id {truth_id}"
+                            )
+                            })
+                    })
+                    .collect::<Result<Vec<_>>>()?;
+                Some(
+                    query_leaf_target_assignment_rows(
+                        &client,
+                        &index,
+                        &flattened_target_local_sequences,
+                    )
+                    .await?
+                    .into_iter()
+                    .fold(
+                        HashMap::<i64, Vec<LeafTargetAssignmentRow>>::new(),
+                        |mut acc, row| {
+                            acc.entry(row.target_ordinal).or_default().push(row);
+                            acc
+                        },
+                    ),
+                )
+            } else {
+                None
+            };
+
         for (query_index, query) in queries.iter().enumerate() {
             let mut funnel_local_rows = Vec::new();
             let mut funnel_leaf_rows = Vec::new();
+            let mut funnel_rerank_locality = None;
             let mut returned_to_k_count = None;
+            let mut predicted_ids_for_query = None;
             if !args.production_read_only {
                 let routing_rows = query_routing_rows(&client, &index, &query.source).await?;
                 for row in routing_rows {
@@ -365,6 +419,8 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
                     funnel_local_rows = local_rows.clone();
                     funnel_leaf_rows =
                         query_leaf_candidate_rows(&client, &index, &query.source).await?;
+                    funnel_rerank_locality =
+                        query_rerank_locality_row(&client, &index, &query.source).await?;
                 }
                 for row in local_rows {
                     local
@@ -443,6 +499,7 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
                 let measured =
                     execute_query_metric(&client, stmt, &query.source, args.query_metric_k).await?;
                 returned_to_k_count = Some(measured.predicted_ids.len());
+                predicted_ids_for_query = Some(measured.predicted_ids.clone());
                 query_metrics
                     .entry(*nprobe)
                     .or_default()
@@ -451,7 +508,7 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
             if args.leaf_block_rank_output.is_some() {
                 let truth_ids = query_truth
                     .as_ref()
-                    .expect("--leaf-block-rank-output is validated to require recall truth");
+                    .expect("rank/miss attribution output is validated to require recall truth");
                 let query_truth_ids = truth_ids.get(query_index).ok_or_else(|| {
                     eyre!(
                         "exact-truth ids missing for query ordinal {}",
@@ -477,6 +534,23 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
                     &target_local_sequences,
                 )
                 .await?;
+                if args.miss_attribution_output.is_some() {
+                    let predicted_ids = predicted_ids_for_query.as_ref().ok_or_else(|| {
+                        eyre!(
+                            "--miss-attribution-output requires query metrics for query ordinal {}",
+                            query_index + 1
+                        )
+                    })?;
+                    miss_attribution_rows.extend(MissAttributionRecord::from_query(
+                        *nprobe,
+                        query_index + 1,
+                        query.id,
+                        query_truth_ids,
+                        &target_local_sequences,
+                        predicted_ids,
+                        &rank_rows,
+                    )?);
+                }
                 for row in rank_rows {
                     let truth_index = usize::try_from(row.target_ordinal).map_err(|_| {
                         eyre!(
@@ -492,6 +566,97 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
                         )
                     })?;
                     leaf_block_rank_rows.push(LeafBlockRankRecord::from_row(
+                        *nprobe,
+                        query_index + 1,
+                        query.id,
+                        truth_id,
+                        row,
+                    ));
+                }
+            } else if args.miss_attribution_output.is_some() {
+                let truth_ids = query_truth
+                    .as_ref()
+                    .expect("miss attribution output is validated to require recall truth");
+                let query_truth_ids = truth_ids.get(query_index).ok_or_else(|| {
+                    eyre!(
+                        "exact-truth ids missing for query ordinal {}",
+                        query_index + 1
+                    )
+                })?;
+                let predicted_ids = predicted_ids_for_query.as_ref().ok_or_else(|| {
+                    eyre!(
+                        "--miss-attribution-output requires query metrics for query ordinal {}",
+                        query_index + 1
+                    )
+                })?;
+                let has_miss = query_truth_ids
+                    .iter()
+                    .any(|truth_id| !predicted_ids.contains(truth_id));
+                let leaf_candidate_rows = if has_miss {
+                    query_leaf_candidate_rows(&client, &index, &query.source).await?
+                } else {
+                    Vec::new()
+                };
+                let target_assignments_by_ordinal =
+                    target_assignments_by_ordinal.as_ref().ok_or_else(|| {
+                        eyre!("target assignment snapshot missing for miss attribution")
+                    })?;
+                miss_attribution_rows.extend(MissAttributionRecord::from_target_assignments(
+                    *nprobe,
+                    query_index + 1,
+                    query.id,
+                    query_truth_ids,
+                    args.leaf_block_rank_local_sequence_offset,
+                    predicted_ids,
+                    &leaf_candidate_rows,
+                    target_assignments_by_ordinal,
+                )?);
+            }
+            if args.target_block_rank_output.is_some() {
+                let truth_ids = query_truth
+                    .as_ref()
+                    .expect("target block rank output is validated to require recall truth");
+                let query_truth_ids = truth_ids.get(query_index).ok_or_else(|| {
+                    eyre!(
+                        "exact-truth ids missing for query ordinal {}",
+                        query_index + 1
+                    )
+                })?;
+                let target_local_sequences = query_truth_ids
+                    .iter()
+                    .map(|truth_id| {
+                        truth_id
+                            .checked_add(args.leaf_block_rank_local_sequence_offset)
+                            .ok_or_else(|| {
+                                eyre!(
+                                    "target block rank local sequence overflow for truth id {truth_id}"
+                                )
+                            })
+                    })
+                    .collect::<Result<Vec<_>>>()?;
+                let rank_rows = query_leaf_target_block_rank_rows(
+                    &client,
+                    &index,
+                    &query.source,
+                    &target_local_sequences,
+                )
+                .await?;
+                for row in rank_rows {
+                    let truth_index = usize::try_from(row.target_ordinal).map_err(|_| {
+                        eyre!(
+                            "target block rank target ordinal {} exceeds usize",
+                            row.target_ordinal
+                        )
+                    })?;
+                    let truth_id = *query_truth_ids.get(truth_index).ok_or_else(|| {
+                        eyre!(
+                            "target block rank target ordinal {} exceeds truth id count {}",
+                            row.target_ordinal,
+                            query_truth_ids.len()
+                        )
+                    })?;
+                    target_block_rank_rows.push(LeafBlockRankRecord::from_row_with_kind(
+                        "spire_leaf_target_block_rank",
                         *nprobe,
                         query_index + 1,
                         query.id,
@@ -524,6 +689,7 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
                     query.id,
                     &funnel_local_rows,
                     &funnel_leaf_rows,
+                    funnel_rerank_locality.as_ref(),
                     returned_to_k_count,
                 )?);
             }
@@ -585,6 +751,12 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
     if let Some(path) = args.leaf_block_rank_output {
         write_leaf_block_rank_jsonl(&path, &leaf_block_rank_rows).await?;
     }
+    if let Some(path) = args.target_block_rank_output {
+        write_leaf_block_rank_jsonl(&path, &target_block_rank_rows).await?;
+    }
+    if let Some(path) = args.miss_attribution_output {
+        write_miss_attribution_jsonl(&path, &miss_attribution_rows).await?;
+    }
     Ok(())
 }
 
@@ -634,12 +806,31 @@ fn validate_args(args: &SpirePipelineArgs) -> Result<()> {
             "--leaf-block-rank-output requires --include-recall so exact truth ids are available"
         ));
     }
+    if args.target_block_rank_output.is_some() && !args.include_recall {
+        return Err(eyre!(
+            "--target-block-rank-output requires --include-recall so exact truth ids are available"
+        ));
+    }
+    if args.miss_attribution_output.is_some() && !args.include_recall {
+        return Err(eyre!(
+            "--miss-attribution-output requires --include-recall so exact truth ids are available"
+        ));
+    }
+    if args.miss_attribution_output.is_some() && !args.include_query_metrics {
+        return Err(eyre!(
+            "--miss-attribution-output requires --include-query-metrics so returned ids are available"
+        ));
+    }
     if args.truth_cache_file.is_some() && !args.include_recall {
         return Err(eyre!(
             "--truth-cache-file requires --include-recall so cached truth ids are consumed"
         ));
     }
-    if args.leaf_block_rank_output.is_some() && args.leaf_block_rank_local_sequence_offset < 0 {
+    if (args.leaf_block_rank_output.is_some()
+        || args.target_block_rank_output.is_some()
+        || args.miss_attribution_output.is_some())
+        && args.leaf_block_rank_local_sequence_offset < 0
+    {
         return Err(eyre!(
             "--leaf-block-rank-local-sequence-offset must be >= 0"
         ));
@@ -1035,11 +1226,86 @@ async fn query_leaf_candidate_rows(
     index: &str,
     query: &[f32],
 ) -> Result<Vec<LeafCandidateRow>> {
-    let rows = client
+    match client
         .query(leaf_candidate_snapshot_sql(), &[&index, &query])
         .await
-        .wrap_err("querying ec_spire_index_scan_leaf_candidate_snapshot")?;
-    Ok(rows.into_iter().map(LeafCandidateRow::from).collect())
+    {
+        Ok(rows) => Ok(rows.into_iter().map(LeafCandidateRow::from).collect()),
+        Err(err) if is_missing_leaf_row_segment_snapshot_column(&err) => {
+            let rows = client
+                .query(legacy_leaf_candidate_snapshot_sql(), &[&index, &query])
+                .await
+                .wrap_err(
+                    "querying legacy ec_spire_index_scan_leaf_candidate_snapshot without row segment metrics",
+                )?;
+            Ok(rows
+                .into_iter()
+                .map(LeafCandidateRow::from_legacy)
+                .collect())
+        }
+        Err(err) => Err(err).wrap_err("querying ec_spire_index_scan_leaf_candidate_snapshot"),
+    }
+}
+
+fn is_missing_leaf_row_segment_snapshot_column(err: &tokio_postgres::Error) -> bool {
+    let db_message = err.as_db_error().map(|db_error| db_error.message());
+    let display_message;
+    let message = match db_message {
+        Some(message) => message,
+        None => {
+            display_message = err.to_string();
+            display_message.as_str()
+        }
+    };
+    message.contains("leaf_row_segment_read_count")
+        || message.contains("leaf_row_segment_read_bytes")
+}
+
+async fn query_rerank_locality_row(
+    client: &Client,
+    index: &str,
+    query: &[f32],
+) -> Result<Option<RerankLocalityRow>> {
+    match client
+        .query_opt(rerank_locality_snapshot_sql(), &[&index, &query])
+        .await
+    {
+        Ok(row) => Ok(row.map(RerankLocalityRow::from)),
+        Err(err) if is_missing_rerank_locality_snapshot(&err) => Ok(None),
+        Err(err) => Err(err).wrap_err("querying ec_spire_index_scan_rerank_locality_snapshot"),
+    }
+}
+
+fn is_missing_rerank_locality_snapshot(err: &tokio_postgres::Error) -> bool {
+    let db_message = err.as_db_error().map(|db_error| db_error.message());
+    let display_message;
+    let message = match db_message {
+        Some(message) => message,
+        None => {
+            display_message = err.to_string();
+            display_message.as_str()
+        }
+    };
+    message.contains("ec_spire_index_scan_rerank_locality_snapshot")
+}
+
+async fn query_leaf_target_assignment_rows(
+    client: &Client,
+    index: &str,
+    target_local_sequences: &[i64],
+) -> Result<Vec<LeafTargetAssignmentRow>> {
+    let target_local_sequences = target_local_sequences.to_vec();
+    let rows = client
+        .query(
+            leaf_target_assignment_snapshot_sql(),
+            &[&index, &target_local_sequences],
+        )
+        .await
+        .wrap_err("querying ec_spire_index_leaf_target_assignment_snapshot")?;
+    Ok(rows
+        .into_iter()
+        .map(LeafTargetAssignmentRow::from)
+        .collect())
 }
 
 async fn query_leaf_block_rank_rows(
@@ -1056,6 +1322,23 @@ async fn query_leaf_block_rank_rows(
         )
         .await
         .wrap_err("querying ec_spire_index_scan_leaf_block_rank_snapshot")?;
+    Ok(rows.into_iter().map(LeafBlockRankRow::from).collect())
+}
+
+async fn query_leaf_target_block_rank_rows(
+    client: &Client,
+    index: &str,
+    query: &[f32],
+    target_local_sequences: &[i64],
+) -> Result<Vec<LeafBlockRankRow>> {
+    let target_local_sequences = target_local_sequences.to_vec();
+    let rows = client
+        .query(
+            leaf_target_block_rank_snapshot_sql(),
+            &[&index, &query, &target_local_sequences],
+        )
+        .await
+        .wrap_err("querying ec_spire_index_scan_leaf_target_block_rank_snapshot")?;
     Ok(rows.into_iter().map(LeafBlockRankRow::from).collect())
 }
 
@@ -1180,22 +1463,67 @@ fn local_store_overlap_sql() -> &'static str {
 }
 
 fn leaf_candidate_snapshot_sql() -> &'static str {
-    "SELECT pid, node_id, local_store_id, route_count, scanned_count,
-            candidate_row_count, primary_candidate_row_count,
+    "SELECT pid, node_id, local_store_id, object_bytes, route_count, scanned_count,
+            candidate_row_count, leaf_block_available_count, leaf_block_selected_count,
+            leaf_block_skipped_count, leaf_summary_object_bytes, leaf_row_object_bytes,
+            primary_candidate_row_count,
             boundary_replica_candidate_row_count, deduped_candidate_row_count,
             truncated_candidate_row_count, candidate_winner_count,
-            leaf_object_read_nanos, candidate_score_nanos,
+            leaf_object_read_nanos, leaf_summary_score_nanos, leaf_row_score_nanos,
+            candidate_score_nanos,
+            candidate_materialize_nanos, candidate_heap_append_nanos,
+            leaf_row_segment_read_count, leaf_row_segment_read_bytes
+     FROM ec_spire_index_scan_leaf_candidate_snapshot($1::text::regclass::oid, $2::real[])
+     ORDER BY pid"
+}
+
+fn legacy_leaf_candidate_snapshot_sql() -> &'static str {
+    "SELECT pid, node_id, local_store_id, object_bytes, route_count, scanned_count,
+            candidate_row_count, leaf_block_available_count, leaf_block_selected_count,
+            leaf_block_skipped_count, leaf_summary_object_bytes, leaf_row_object_bytes,
+            primary_candidate_row_count,
+            boundary_replica_candidate_row_count, deduped_candidate_row_count,
+            truncated_candidate_row_count, candidate_winner_count,
+            leaf_object_read_nanos, leaf_summary_score_nanos, leaf_row_score_nanos,
+            candidate_score_nanos,
             candidate_materialize_nanos, candidate_heap_append_nanos
      FROM ec_spire_index_scan_leaf_candidate_snapshot($1::text::regclass::oid, $2::real[])
      ORDER BY pid"
+}
+
+fn rerank_locality_snapshot_sql() -> &'static str {
+    "SELECT candidate_count, rerank_prefix_count, unique_heap_block_count,
+            heap_block_transition_count, heap_block_span, heap_block_jump_sum,
+            heap_block_jump_max
+     FROM ec_spire_index_scan_rerank_locality_snapshot($1::text::regclass::oid, $2::real[])"
+}
+
+fn leaf_target_assignment_snapshot_sql() -> &'static str {
+    "SELECT target_ordinal, target_local_sequence, status, leaf_pid, parent_pid,
+            object_version, row_index, assignment_flags
+     FROM ec_spire_index_leaf_target_assignment_snapshot(
+            $1::text::regclass::oid, $2::bigint[])
+     ORDER BY target_ordinal, leaf_pid NULLS LAST, row_index NULLS LAST"
 }
 
 fn leaf_block_rank_snapshot_sql() -> &'static str {
     "SELECT target_ordinal, target_local_sequence, status, max_global_blocks,
             radius_weight, scored_block_count, block_rank, selected_by_global_cap,
             pid, node_id, local_store_id, object_version, row_index, row_base,
-            row_end, row_count, block_ip, assignment_flags
+            row_end, row_count, block_ip, cap_block_ip, block_ip_margin_to_cap,
+            route_rank, route_score, assignment_flags
      FROM ec_spire_index_scan_leaf_block_rank_snapshot(
+            $1::text::regclass::oid, $2::real[], $3::bigint[])
+     ORDER BY target_ordinal, block_rank NULLS LAST, pid NULLS LAST, row_index NULLS LAST"
+}
+
+fn leaf_target_block_rank_snapshot_sql() -> &'static str {
+    "SELECT target_ordinal, target_local_sequence, status, max_global_blocks,
+            radius_weight, scored_block_count, block_rank, selected_by_global_cap,
+            pid, node_id, local_store_id, object_version, row_index, row_base,
+            row_end, row_count, block_ip, cap_block_ip, block_ip_margin_to_cap,
+            route_rank, route_score, assignment_flags
+     FROM ec_spire_index_scan_leaf_target_block_rank_snapshot(
             $1::text::regclass::oid, $2::real[], $3::bigint[])
      ORDER BY target_ordinal, block_rank NULLS LAST, pid NULLS LAST, row_index NULLS LAST"
 }
@@ -1367,15 +1695,25 @@ struct LeafCandidateRow {
     node_id: i64,
     #[allow(dead_code)]
     local_store_id: i64,
+    object_bytes: i64,
     route_count: i64,
     scanned_count: i64,
     candidate_row_count: i64,
+    leaf_block_available_count: i64,
+    leaf_block_selected_count: i64,
+    leaf_block_skipped_count: i64,
+    leaf_summary_object_bytes: i64,
+    leaf_row_object_bytes: i64,
+    leaf_row_segment_read_count: i64,
+    leaf_row_segment_read_bytes: i64,
     primary_candidate_row_count: i64,
     boundary_replica_candidate_row_count: i64,
     deduped_candidate_row_count: i64,
     truncated_candidate_row_count: i64,
     candidate_winner_count: i64,
     leaf_object_read_nanos: i64,
+    leaf_summary_score_nanos: i64,
+    leaf_row_score_nanos: i64,
     candidate_score_nanos: i64,
     candidate_materialize_nanos: i64,
     candidate_heap_append_nanos: i64,
@@ -1387,18 +1725,116 @@ impl From<Row> for LeafCandidateRow {
             pid: row.get(0),
             node_id: row.get(1),
             local_store_id: row.get(2),
-            route_count: row.get(3),
-            scanned_count: row.get(4),
-            candidate_row_count: row.get(5),
-            primary_candidate_row_count: row.get(6),
-            boundary_replica_candidate_row_count: row.get(7),
-            deduped_candidate_row_count: row.get(8),
-            truncated_candidate_row_count: row.get(9),
-            candidate_winner_count: row.get(10),
-            leaf_object_read_nanos: row.get(11),
-            candidate_score_nanos: row.get(12),
-            candidate_materialize_nanos: row.get(13),
-            candidate_heap_append_nanos: row.get(14),
+            object_bytes: row.get(3),
+            route_count: row.get(4),
+            scanned_count: row.get(5),
+            candidate_row_count: row.get(6),
+            leaf_block_available_count: row.get(7),
+            leaf_block_selected_count: row.get(8),
+            leaf_block_skipped_count: row.get(9),
+            leaf_summary_object_bytes: row.get(10),
+            leaf_row_object_bytes: row.get(11),
+            primary_candidate_row_count: row.get(12),
+            boundary_replica_candidate_row_count: row.get(13),
+            deduped_candidate_row_count: row.get(14),
+            truncated_candidate_row_count: row.get(15),
+            candidate_winner_count: row.get(16),
+            leaf_object_read_nanos: row.get(17),
+            leaf_summary_score_nanos: row.get(18),
+            leaf_row_score_nanos: row.get(19),
+            candidate_score_nanos: row.get(20),
+            candidate_materialize_nanos: row.get(21),
+            candidate_heap_append_nanos: row.get(22),
+            leaf_row_segment_read_count: row.get(23),
+            leaf_row_segment_read_bytes: row.get(24),
+        }
+    }
+}
+
+impl LeafCandidateRow {
+    fn from_legacy(row: Row) -> Self {
+        Self {
+            pid: row.get(0),
+            node_id: row.get(1),
+            local_store_id: row.get(2),
+            object_bytes: row.get(3),
+            route_count: row.get(4),
+            scanned_count: row.get(5),
+            candidate_row_count: row.get(6),
+            leaf_block_available_count: row.get(7),
+            leaf_block_selected_count: row.get(8),
+            leaf_block_skipped_count: row.get(9),
+            leaf_summary_object_bytes: row.get(10),
+            leaf_row_object_bytes: row.get(11),
+            leaf_row_segment_read_count: 0,
+            leaf_row_segment_read_bytes: 0,
+            primary_candidate_row_count: row.get(12),
+            boundary_replica_candidate_row_count: row.get(13),
+            deduped_candidate_row_count: row.get(14),
+            truncated_candidate_row_count: row.get(15),
+            candidate_winner_count: row.get(16),
+            leaf_object_read_nanos: row.get(17),
+            leaf_summary_score_nanos: row.get(18),
+            leaf_row_score_nanos: row.get(19),
+            candidate_score_nanos: row.get(20),
+            candidate_materialize_nanos: row.get(21),
+            candidate_heap_append_nanos: row.get(22),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct RerankLocalityRow {
+    candidate_count: i64,
+    rerank_prefix_count: i64,
+    unique_heap_block_count: i64,
+    heap_block_transition_count: i64,
+    heap_block_span: i64,
+    heap_block_jump_sum: i64,
+    heap_block_jump_max: i64,
+}
+
+impl From<Row> for RerankLocalityRow {
+    fn from(row: Row) -> Self {
+        Self {
+            candidate_count: row.get(0),
+            rerank_prefix_count: row.get(1),
+            unique_heap_block_count: row.get(2),
+            heap_block_transition_count: row.get(3),
+            heap_block_span: row.get(4),
+            heap_block_jump_sum: row.get(5),
+            heap_block_jump_max: row.get(6),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct LeafTargetAssignmentRow {
+    target_ordinal: i64,
+    #[allow(dead_code)]
+    target_local_sequence: i64,
+    status: String,
+    leaf_pid: Option<i64>,
+    #[allow(dead_code)]
+    parent_pid: Option<i64>,
+    #[allow(dead_code)]
+    object_version: Option<i64>,
+    row_index: Option<i64>,
+    #[allow(dead_code)]
+    assignment_flags: Option<i32>,
+}
+
+impl From<Row> for LeafTargetAssignmentRow {
+    fn from(row: Row) -> Self {
+        Self {
+            target_ordinal: row.get(0),
+            target_local_sequence: row.get(1),
+            status: row.get(2),
+            leaf_pid: row.get(3),
+            parent_pid: row.get(4),
+            object_version: row.get(5),
+            row_index: row.get(6),
+            assignment_flags: row.get(7),
         }
     }
 }
@@ -1422,6 +1858,10 @@ struct LeafBlockRankRow {
     row_end: Option<i64>,
     row_count: Option<i64>,
     block_ip: Option<f32>,
+    cap_block_ip: Option<f32>,
+    block_ip_margin_to_cap: Option<f32>,
+    route_rank: Option<i64>,
+    route_score: Option<f32>,
     assignment_flags: Option<i64>,
 }
 
@@ -1445,7 +1885,11 @@ impl From<Row> for LeafBlockRankRow {
             row_end: row.get(14),
             row_count: row.get(15),
             block_ip: row.get(16),
-            assignment_flags: row.get(17),
+            cap_block_ip: row.get(17),
+            block_ip_margin_to_cap: row.get(18),
+            route_rank: row.get(19),
+            route_score: row.get(20),
+            assignment_flags: row.get(21),
         }
     }
 }
@@ -1474,6 +1918,10 @@ struct LeafBlockRankRecord {
     row_end: Option<i64>,
     row_count: Option<i64>,
     block_ip: Option<f32>,
+    cap_block_ip: Option<f32>,
+    block_ip_margin_to_cap: Option<f32>,
+    route_rank: Option<i64>,
+    route_score: Option<f32>,
     assignment_flags: Option<i64>,
 }
 
@@ -1485,8 +1933,26 @@ impl LeafBlockRankRecord {
         truth_id: i64,
         row: LeafBlockRankRow,
     ) -> Self {
+        Self::from_row_with_kind(
+            "spire_leaf_block_rank",
+            nprobe,
+            query_ordinal,
+            query_id,
+            truth_id,
+            row,
+        )
+    }
+
+    fn from_row_with_kind(
+        kind: &'static str,
+        nprobe: i32,
+        query_ordinal: usize,
+        query_id: i64,
+        truth_id: i64,
+        row: LeafBlockRankRow,
+    ) -> Self {
         Self {
-            kind: "spire_leaf_block_rank",
+            kind,
             nprobe,
             query_ordinal,
             query_id,
@@ -1508,8 +1974,260 @@ impl LeafBlockRankRecord {
             row_end: row.row_end,
             row_count: row.row_count,
             block_ip: row.block_ip,
+            cap_block_ip: row.cap_block_ip,
+            block_ip_margin_to_cap: row.block_ip_margin_to_cap,
+            route_rank: row.route_rank,
+            route_score: row.route_score,
             assignment_flags: row.assignment_flags,
         }
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct MissAttributionRecord {
+    kind: &'static str,
+    nprobe: i32,
+    query_ordinal: usize,
+    query_id: i64,
+    truth_rank: usize,
+    truth_id: i64,
+    target_local_sequence: i64,
+    hit: bool,
+    miss_stage: &'static str,
+    block_status: String,
+    block_rank: Option<i64>,
+    selected_by_global_cap: Option<bool>,
+    scored_block_count: i64,
+    max_global_blocks: i64,
+    pid: Option<i64>,
+    node_id: Option<i64>,
+    local_store_id: Option<i64>,
+    row_index: Option<i64>,
+    assignment_status: Option<String>,
+    assignment_leaf_count: usize,
+    selected_assignment_leaf_count: usize,
+    leaf_candidate_row_count: Option<i64>,
+    leaf_block_available_count: Option<i64>,
+    leaf_block_selected_count: Option<i64>,
+    leaf_block_skipped_count: Option<i64>,
+    truncated_candidate_row_count: Option<i64>,
+    returned_rank: Option<usize>,
+    returned_count: usize,
+}
+
+impl MissAttributionRecord {
+    fn from_query(
+        nprobe: i32,
+        query_ordinal: usize,
+        query_id: i64,
+        truth_ids: &[i64],
+        target_local_sequences: &[i64],
+        predicted_ids: &[i64],
+        rank_rows: &[LeafBlockRankRow],
+    ) -> Result<Vec<Self>> {
+        let predicted_id_set = predicted_ids.iter().copied().collect::<HashSet<_>>();
+        let returned_rank_by_id = predicted_ids
+            .iter()
+            .enumerate()
+            .map(|(rank_index, predicted_id)| (*predicted_id, rank_index + 1))
+            .collect::<HashMap<_, _>>();
+        let rank_row_by_ordinal = rank_rows
+            .iter()
+            .map(|row| (row.target_ordinal, row))
+            .collect::<HashMap<_, _>>();
+        let mut rows = Vec::with_capacity(truth_ids.len());
+        for (truth_index, truth_id) in truth_ids.iter().enumerate() {
+            let target_local_sequence =
+                *target_local_sequences.get(truth_index).ok_or_else(|| {
+                    eyre!(
+                        "target local sequence missing for truth ordinal {}",
+                        truth_index + 1
+                    )
+                })?;
+            let target_ordinal = i64::try_from(truth_index)
+                .map_err(|_| eyre!("truth ordinal {} exceeds i64", truth_index + 1))?;
+            let rank_row = rank_row_by_ordinal.get(&target_ordinal).copied();
+            let hit = predicted_id_set.contains(truth_id);
+            let miss_stage = if hit {
+                "hit"
+            } else {
+                classify_miss_stage(rank_row)
+            };
+            rows.push(Self {
+                kind: "spire_recall_miss_attribution",
+                nprobe,
+                query_ordinal,
+                query_id,
+                truth_rank: truth_index + 1,
+                truth_id: *truth_id,
+                target_local_sequence,
+                hit,
+                miss_stage,
+                block_status: rank_row
+                    .map(|row| row.status.clone())
+                    .unwrap_or_else(|| "missing_rank_row".to_owned()),
+                block_rank: rank_row.and_then(|row| row.block_rank),
+                selected_by_global_cap: rank_row.and_then(|row| row.selected_by_global_cap),
+                scored_block_count: rank_row.map(|row| row.scored_block_count).unwrap_or(0),
+                max_global_blocks: rank_row.map(|row| row.max_global_blocks).unwrap_or(0),
+                pid: rank_row.and_then(|row| row.pid),
+                node_id: rank_row.and_then(|row| row.node_id),
+                local_store_id: rank_row.and_then(|row| row.local_store_id),
+                row_index: rank_row.and_then(|row| row.row_index),
+                assignment_status: rank_row.map(|row| row.status.clone()),
+                assignment_leaf_count: usize::from(rank_row.is_some()),
+                selected_assignment_leaf_count: usize::from(
+                    rank_row.is_some_and(|row| row.pid.is_some()),
+                ),
+                leaf_candidate_row_count: None,
+                leaf_block_available_count: None,
+                leaf_block_selected_count: None,
+                leaf_block_skipped_count: None,
+                truncated_candidate_row_count: None,
+                returned_rank: returned_rank_by_id.get(truth_id).copied(),
+                returned_count: predicted_ids.len(),
+            });
+        }
+        Ok(rows)
+    }
+
+    fn from_target_assignments(
+        nprobe: i32,
+        query_ordinal: usize,
+        query_id: i64,
+        truth_ids: &[i64],
+        local_sequence_offset: i64,
+        predicted_ids: &[i64],
+        leaf_candidate_rows: &[LeafCandidateRow],
+        target_assignments_by_ordinal: &HashMap<i64, Vec<LeafTargetAssignmentRow>>,
+    ) -> Result<Vec<Self>> {
+        let predicted_id_set = predicted_ids.iter().copied().collect::<HashSet<_>>();
+        let returned_rank_by_id = predicted_ids
+            .iter()
+            .enumerate()
+            .map(|(rank_index, predicted_id)| (*predicted_id, rank_index + 1))
+            .collect::<HashMap<_, _>>();
+        let candidate_by_pid = leaf_candidate_rows
+            .iter()
+            .map(|row| (row.pid, row))
+            .collect::<HashMap<_, _>>();
+        let truth_count = i64::try_from(truth_ids.len())
+            .map_err(|_| eyre!("truth id count {} exceeds i64", truth_ids.len()))?;
+        let query_base_ordinal = i64::try_from(query_ordinal - 1)
+            .map_err(|_| eyre!("query ordinal {query_ordinal} exceeds i64"))?
+            .checked_mul(truth_count)
+            .ok_or_else(|| eyre!("query target ordinal overflow"))?;
+
+        let mut rows = Vec::with_capacity(truth_ids.len());
+        for (truth_index, truth_id) in truth_ids.iter().enumerate() {
+            let target_ordinal = query_base_ordinal
+                .checked_add(
+                    i64::try_from(truth_index)
+                        .map_err(|_| eyre!("truth ordinal {} exceeds i64", truth_index + 1))?,
+                )
+                .ok_or_else(|| eyre!("target ordinal overflow"))?;
+            let target_local_sequence =
+                truth_id.checked_add(local_sequence_offset).ok_or_else(|| {
+                    eyre!("target assignment local sequence overflow for truth id {truth_id}")
+                })?;
+            let assignments = target_assignments_by_ordinal
+                .get(&target_ordinal)
+                .map(Vec::as_slice)
+                .unwrap_or(&[]);
+            let selected_assignment_rows = assignments
+                .iter()
+                .filter_map(|assignment| {
+                    assignment
+                        .leaf_pid
+                        .and_then(|pid| candidate_by_pid.get(&pid).copied())
+                })
+                .collect::<Vec<_>>();
+            let selected_leaf = selected_assignment_rows.first().copied();
+            let hit = predicted_id_set.contains(truth_id);
+            let miss_stage = if hit {
+                "hit"
+            } else if assignments.is_empty()
+                || assignments
+                    .iter()
+                    .all(|assignment| assignment.leaf_pid.is_none())
+            {
+                "assignment_missing"
+            } else if selected_assignment_rows.is_empty() {
+                "routing_miss"
+            } else if selected_assignment_rows
+                .iter()
+                .any(|row| row.leaf_block_skipped_count > 0)
+            {
+                "selected_leaf_block_pruning_or_candidate_cap"
+            } else {
+                "candidate_or_rerank_cap"
+            };
+            let selected_assignment = assignments
+                .iter()
+                .find(|assignment| {
+                    assignment
+                        .leaf_pid
+                        .is_some_and(|pid| candidate_by_pid.contains_key(&pid))
+                })
+                .or_else(|| assignments.first());
+
+            rows.push(Self {
+                kind: "spire_recall_miss_attribution",
+                nprobe,
+                query_ordinal,
+                query_id,
+                truth_rank: truth_index + 1,
+                truth_id: *truth_id,
+                target_local_sequence,
+                hit,
+                miss_stage,
+                block_status: if selected_leaf.is_some() {
+                    "selected_leaf_candidate_snapshot".to_owned()
+                } else {
+                    selected_assignment
+                        .map(|assignment| assignment.status.clone())
+                        .unwrap_or_else(|| "missing_assignment_row".to_owned())
+                },
+                block_rank: None,
+                selected_by_global_cap: None,
+                scored_block_count: 0,
+                max_global_blocks: 0,
+                pid: selected_assignment.and_then(|assignment| assignment.leaf_pid),
+                node_id: selected_leaf.map(|row| row.node_id),
+                local_store_id: selected_leaf.map(|row| row.local_store_id),
+                row_index: selected_assignment.and_then(|assignment| assignment.row_index),
+                assignment_status: selected_assignment.map(|assignment| assignment.status.clone()),
+                assignment_leaf_count: assignments
+                    .iter()
+                    .filter(|assignment| assignment.leaf_pid.is_some())
+                    .count(),
+                selected_assignment_leaf_count: selected_assignment_rows.len(),
+                leaf_candidate_row_count: selected_leaf.map(|row| row.candidate_row_count),
+                leaf_block_available_count: selected_leaf.map(|row| row.leaf_block_available_count),
+                leaf_block_selected_count: selected_leaf.map(|row| row.leaf_block_selected_count),
+                leaf_block_skipped_count: selected_leaf.map(|row| row.leaf_block_skipped_count),
+                truncated_candidate_row_count: selected_leaf
+                    .map(|row| row.truncated_candidate_row_count),
+                returned_rank: returned_rank_by_id.get(truth_id).copied(),
+                returned_count: predicted_ids.len(),
+            });
+        }
+        Ok(rows)
+    }
+}
+
+fn classify_miss_stage(rank_row: Option<&LeafBlockRankRow>) -> &'static str {
+    let Some(row) = rank_row else {
+        return "attribution_missing";
+    };
+    match row.status.as_str() {
+        "not_found_in_routed_leaves" | "nprobe_zero" => "routing_miss",
+        "block_ranked" => match row.selected_by_global_cap {
+            Some(false) => "block_pruned_global_cap",
+            Some(true) => "candidate_or_rerank_cap",
+            None => "candidate_or_rerank_cap",
+        },
+        _ => "attribution_unknown",
     }
 }
 
@@ -1533,10 +2251,27 @@ struct FunnelRecord {
     leaf_candidate_mean: f64,
     leaf_candidate_p95: i64,
     leaf_candidate_max: i64,
+    leaf_object_bytes: i64,
+    leaf_summary_object_bytes: i64,
+    leaf_row_object_bytes: i64,
+    leaf_row_segment_read_count: i64,
+    leaf_row_segment_read_bytes: i64,
+    leaf_block_available_count: i64,
+    leaf_block_selected_count: i64,
+    leaf_block_skipped_count: i64,
     leaf_object_read_nanos: i64,
+    leaf_summary_score_nanos: i64,
+    leaf_row_score_nanos: i64,
     candidate_score_nanos: i64,
     candidate_materialize_nanos: i64,
     candidate_heap_append_nanos: i64,
+    rerank_locality_candidate_count: i64,
+    rerank_prefix_count: i64,
+    rerank_unique_heap_block_count: i64,
+    rerank_heap_block_transition_count: i64,
+    rerank_heap_block_span: i64,
+    rerank_heap_block_jump_sum: i64,
+    rerank_heap_block_jump_max: i64,
 }
 
 impl FunnelRecord {
@@ -1546,6 +2281,7 @@ impl FunnelRecord {
         query_id: i64,
         local_rows: &[LocalPipelineRow],
         leaf_rows: &[LeafCandidateRow],
+        rerank_locality: Option<&RerankLocalityRow>,
         returned_to_k_count: Option<usize>,
     ) -> Result<Self> {
         let candidate_count = local_step_value(local_rows, "candidates", |row| row.candidate_count)
@@ -1573,7 +2309,38 @@ impl FunnelRecord {
             .map(|row| row.truncated_candidate_row_count)
             .sum();
         let candidate_winner_count = leaf_rows.iter().map(|row| row.candidate_winner_count).sum();
+        let leaf_object_bytes = leaf_rows.iter().map(|row| row.object_bytes).sum();
+        let leaf_summary_object_bytes = leaf_rows
+            .iter()
+            .map(|row| row.leaf_summary_object_bytes)
+            .sum();
+        let leaf_row_object_bytes = leaf_rows.iter().map(|row| row.leaf_row_object_bytes).sum();
+        let leaf_row_segment_read_count = leaf_rows
+            .iter()
+            .map(|row| row.leaf_row_segment_read_count)
+            .sum();
+        let leaf_row_segment_read_bytes = leaf_rows
+            .iter()
+            .map(|row| row.leaf_row_segment_read_bytes)
+            .sum();
+        let leaf_block_available_count = leaf_rows
+            .iter()
+            .map(|row| row.leaf_block_available_count)
+            .sum();
+        let leaf_block_selected_count = leaf_rows
+            .iter()
+            .map(|row| row.leaf_block_selected_count)
+            .sum();
+        let leaf_block_skipped_count = leaf_rows
+            .iter()
+            .map(|row| row.leaf_block_skipped_count)
+            .sum();
         let leaf_object_read_nanos = leaf_rows.iter().map(|row| row.leaf_object_read_nanos).sum();
+        let leaf_summary_score_nanos = leaf_rows
+            .iter()
+            .map(|row| row.leaf_summary_score_nanos)
+            .sum();
+        let leaf_row_score_nanos = leaf_rows.iter().map(|row| row.leaf_row_score_nanos).sum();
         let candidate_score_nanos = leaf_rows.iter().map(|row| row.candidate_score_nanos).sum();
         let candidate_materialize_nanos = leaf_rows
             .iter()
@@ -1594,6 +2361,15 @@ impl FunnelRecord {
         };
         let leaf_candidate_p95 = percentile_nearest_rank(&mut per_leaf_candidates, 95);
         let leaf_candidate_max = per_leaf_candidates.into_iter().max().unwrap_or(0);
+        let rerank_locality_candidate_count = rerank_locality.map_or(0, |row| row.candidate_count);
+        let rerank_prefix_count = rerank_locality.map_or(0, |row| row.rerank_prefix_count);
+        let rerank_unique_heap_block_count =
+            rerank_locality.map_or(0, |row| row.unique_heap_block_count);
+        let rerank_heap_block_transition_count =
+            rerank_locality.map_or(0, |row| row.heap_block_transition_count);
+        let rerank_heap_block_span = rerank_locality.map_or(0, |row| row.heap_block_span);
+        let rerank_heap_block_jump_sum = rerank_locality.map_or(0, |row| row.heap_block_jump_sum);
+        let rerank_heap_block_jump_max = rerank_locality.map_or(0, |row| row.heap_block_jump_max);
 
         Ok(Self {
             kind: "spire_candidate_funnel",
@@ -1614,10 +2390,27 @@ impl FunnelRecord {
             leaf_candidate_mean,
             leaf_candidate_p95,
             leaf_candidate_max,
+            leaf_object_bytes,
+            leaf_summary_object_bytes,
+            leaf_row_object_bytes,
+            leaf_row_segment_read_count,
+            leaf_row_segment_read_bytes,
+            leaf_block_available_count,
+            leaf_block_selected_count,
+            leaf_block_skipped_count,
             leaf_object_read_nanos,
+            leaf_summary_score_nanos,
+            leaf_row_score_nanos,
             candidate_score_nanos,
             candidate_materialize_nanos,
             candidate_heap_append_nanos,
+            rerank_locality_candidate_count,
+            rerank_prefix_count,
+            rerank_unique_heap_block_count,
+            rerank_heap_block_transition_count,
+            rerank_heap_block_span,
+            rerank_heap_block_jump_sum,
+            rerank_heap_block_jump_max,
         })
     }
 }
@@ -1666,6 +2459,25 @@ async fn write_leaf_block_rank_jsonl(path: &PathBuf, rows: &[LeafBlockRankRecord
     let mut output = String::new();
     for row in rows {
         output.push_str(&serde_json::to_string(row).wrap_err("serializing leaf block rank row")?);
+        output.push('\n');
+    }
+    tokio::fs::write(path, output)
+        .await
+        .wrap_err_with(|| format!("writing {}", path.display()))
+}
+
+async fn write_miss_attribution_jsonl(
+    path: &PathBuf,
+    rows: &[MissAttributionRecord],
+) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        tokio::fs::create_dir_all(parent)
+            .await
+            .wrap_err_with(|| format!("creating {}", parent.display()))?;
+    }
+    let mut output = String::new();
+    for row in rows {
+        output.push_str(&serde_json::to_string(row).wrap_err("serializing miss attribution row")?);
         output.push('\n');
     }
     tokio::fs::write(path, output)
@@ -2650,6 +3462,8 @@ mod tests {
             truth_corpus_file: None,
             truth_cache_file: None,
             leaf_block_rank_output: None,
+            target_block_rank_output: None,
+            miss_attribution_output: None,
             leaf_block_rank_local_sequence_offset: 0,
             include_production_read_profile: false,
             production_read_only: false,
@@ -2666,6 +3480,37 @@ mod tests {
             consistency_mode: "epoch".to_owned(),
             log_output: None,
             funnel_output: None,
+        }
+    }
+
+    fn ranked_row(
+        target_ordinal: i64,
+        status: &str,
+        selected_by_global_cap: Option<bool>,
+    ) -> LeafBlockRankRow {
+        LeafBlockRankRow {
+            target_ordinal,
+            target_local_sequence: 100 + target_ordinal,
+            status: status.to_owned(),
+            max_global_blocks: 1152,
+            radius_weight: 0.25,
+            scored_block_count: 2048,
+            block_rank: Some(target_ordinal + 1),
+            selected_by_global_cap,
+            pid: Some(10 + target_ordinal),
+            node_id: Some(1),
+            local_store_id: Some(1),
+            object_version: Some(1),
+            row_index: Some(target_ordinal),
+            row_base: Some(0),
+            row_end: Some(16),
+            row_count: Some(16),
+            block_ip: Some(0.1),
+            cap_block_ip: Some(0.0),
+            block_ip_margin_to_cap: Some(0.1),
+            route_rank: Some(target_ordinal + 1),
+            route_score: Some(0.2),
+            assignment_flags: Some(0),
         }
     }
 
@@ -2731,6 +3576,142 @@ mod tests {
     }
 
     #[test]
+    fn miss_attribution_classifies_hit_routing_block_and_cap_misses() {
+        let rows = MissAttributionRecord::from_query(
+            96,
+            1,
+            990000,
+            &[1, 2, 3, 4],
+            &[101, 102, 103, 104],
+            &[1],
+            &[
+                ranked_row(0, "block_ranked", Some(true)),
+                ranked_row(1, "not_found_in_routed_leaves", None),
+                ranked_row(2, "block_ranked", Some(false)),
+                ranked_row(3, "block_ranked", Some(true)),
+            ],
+        )
+        .expect("attribution rows");
+
+        assert_eq!(rows[0].miss_stage, "hit");
+        assert_eq!(rows[1].miss_stage, "routing_miss");
+        assert_eq!(rows[2].miss_stage, "block_pruned_global_cap");
+        assert_eq!(rows[3].miss_stage, "candidate_or_rerank_cap");
+    }
+
+    #[test]
+    fn funnel_record_carries_task85_read_and_score_breakdown() {
+        let local_rows = vec![LocalPipelineRow {
+            step_ordinal: 4,
+            step_name: "candidates".to_owned(),
+            active_epoch: 1,
+            status: "truncated".to_owned(),
+            item_count: 300,
+            ready_count: 25,
+            blocked_count: 275,
+            route_count: 2,
+            candidate_count: 300,
+            heap_rerank_row_count: 0,
+            remote_fanout_count: 0,
+            next_blocker: "candidate_budget".to_owned(),
+        }];
+        let leaf_rows = vec![
+            LeafCandidateRow {
+                pid: 10,
+                node_id: 1,
+                local_store_id: 1,
+                object_bytes: 1000,
+                route_count: 1,
+                scanned_count: 1,
+                candidate_row_count: 100,
+                leaf_block_available_count: 8,
+                leaf_block_selected_count: 3,
+                leaf_block_skipped_count: 5,
+                leaf_summary_object_bytes: 128,
+                leaf_row_object_bytes: 512,
+                leaf_row_segment_read_count: 2,
+                leaf_row_segment_read_bytes: 192,
+                primary_candidate_row_count: 90,
+                boundary_replica_candidate_row_count: 10,
+                deduped_candidate_row_count: 1,
+                truncated_candidate_row_count: 75,
+                candidate_winner_count: 25,
+                leaf_object_read_nanos: 1000,
+                leaf_summary_score_nanos: 200,
+                leaf_row_score_nanos: 300,
+                candidate_score_nanos: 500,
+                candidate_materialize_nanos: 50,
+                candidate_heap_append_nanos: 25,
+            },
+            LeafCandidateRow {
+                pid: 11,
+                node_id: 1,
+                local_store_id: 1,
+                object_bytes: 2000,
+                route_count: 1,
+                scanned_count: 1,
+                candidate_row_count: 200,
+                leaf_block_available_count: 16,
+                leaf_block_selected_count: 4,
+                leaf_block_skipped_count: 12,
+                leaf_summary_object_bytes: 256,
+                leaf_row_object_bytes: 1024,
+                leaf_row_segment_read_count: 3,
+                leaf_row_segment_read_bytes: 256,
+                primary_candidate_row_count: 190,
+                boundary_replica_candidate_row_count: 10,
+                deduped_candidate_row_count: 2,
+                truncated_candidate_row_count: 175,
+                candidate_winner_count: 25,
+                leaf_object_read_nanos: 3000,
+                leaf_summary_score_nanos: 400,
+                leaf_row_score_nanos: 500,
+                candidate_score_nanos: 900,
+                candidate_materialize_nanos: 75,
+                candidate_heap_append_nanos: 35,
+            },
+        ];
+
+        let rerank_locality = RerankLocalityRow {
+            candidate_count: 300,
+            rerank_prefix_count: 25,
+            unique_heap_block_count: 20,
+            heap_block_transition_count: 24,
+            heap_block_span: 1024,
+            heap_block_jump_sum: 4096,
+            heap_block_jump_max: 512,
+        };
+        let record = FunnelRecord::from_query(
+            96,
+            0,
+            42,
+            &local_rows,
+            &leaf_rows,
+            Some(&rerank_locality),
+            Some(10),
+        )
+        .expect("funnel record");
+
+        assert_eq!(record.candidate_count, 300);
+        assert_eq!(record.leaf_object_bytes, 3000);
+        assert_eq!(record.leaf_summary_object_bytes, 384);
+        assert_eq!(record.leaf_row_object_bytes, 1536);
+        assert_eq!(record.leaf_row_segment_read_count, 5);
+        assert_eq!(record.leaf_row_segment_read_bytes, 448);
+        assert_eq!(record.leaf_block_available_count, 24);
+        assert_eq!(record.leaf_block_selected_count, 7);
+        assert_eq!(record.leaf_block_skipped_count, 17);
+        assert_eq!(record.leaf_object_read_nanos, 4000);
+        assert_eq!(record.leaf_summary_score_nanos, 600);
+        assert_eq!(record.leaf_row_score_nanos, 800);
+        assert_eq!(record.candidate_score_nanos, 1400);
+        assert_eq!(record.rerank_prefix_count, 25);
+        assert_eq!(record.rerank_unique_heap_block_count, 20);
+        assert_eq!(record.rerank_heap_block_transition_count, 24);
+        assert_eq!(record.rerank_heap_block_jump_sum, 4096);
+    }
+
+    #[test]
     fn spire_pipeline_rejects_out_of_range_sweep_values() {
         let mut args = default_args();
         args.sweep = vec![EC_SPIRE_MAX_NPROBE + 1];
@@ -2745,6 +3726,18 @@ mod tests {
         assert!(routing_snapshot_sql().contains("ec_spire_index_scan_routing_snapshot"));
         assert!(routing_snapshot_sql().contains("$1::text::regclass::oid"));
         assert!(local_pipeline_snapshot_sql().contains("ec_spire_index_scan_pipeline_snapshot"));
+        assert!(leaf_candidate_snapshot_sql().contains("leaf_summary_object_bytes"));
+        assert!(leaf_candidate_snapshot_sql().contains("leaf_row_object_bytes"));
+        assert!(leaf_candidate_snapshot_sql().contains("leaf_row_segment_read_count"));
+        assert!(leaf_candidate_snapshot_sql().contains("leaf_row_segment_read_bytes"));
+        assert!(leaf_candidate_snapshot_sql().contains("leaf_summary_score_nanos"));
+        assert!(
+            rerank_locality_snapshot_sql().contains("ec_spire_index_scan_rerank_locality_snapshot")
+        );
+        assert!(legacy_leaf_candidate_snapshot_sql().contains("leaf_summary_object_bytes"));
+        assert!(legacy_leaf_candidate_snapshot_sql().contains("leaf_row_object_bytes"));
+        assert!(!legacy_leaf_candidate_snapshot_sql().contains("leaf_row_segment_read_count"));
+        assert!(!legacy_leaf_candidate_snapshot_sql().contains("leaf_row_segment_read_bytes"));
         assert!(local_store_overlap_sql()
             .contains("ec_spire_index_scan_local_store_read_overlap_harness"));
         assert!(remote_pipeline_steps_sql().contains("ec_spire_remote_pipeline_steps"));

@@ -2454,6 +2454,72 @@ pub(crate) fn index_leaf_base_assignment_snapshot(
     result.unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
+pub(crate) fn index_leaf_target_assignment_snapshot(
+    index: SpireLiveIndexRelation,
+    target_local_sequences: Vec<u64>,
+) -> Vec<SpireIndexLeafTargetAssignmentSnapshotRow> {
+    let result = (|| -> Result<Vec<SpireIndexLeafTargetAssignmentSnapshotRow>, String> {
+        let root_control = index.root_control();
+        let Some(anchor) = index.active_epoch_anchor(root_control)? else {
+            return Ok(Vec::new());
+        };
+        let snapshot = anchor.validated_snapshot()?;
+        let object_store = index.object_store()?;
+        let mut target_ordinals_by_sequence = HashMap::<u64, Vec<u64>>::new();
+        for (target_ordinal, target_local_sequence) in target_local_sequences.iter().enumerate() {
+            let target_ordinal = u64::try_from(target_ordinal)
+                .map_err(|_| "ec_spire target ordinal exceeds u64".to_owned())?;
+            target_ordinals_by_sequence
+                .entry(*target_local_sequence)
+                .or_default()
+                .push(target_ordinal);
+        }
+        let mut found_target_ordinals = HashSet::<u64>::new();
+        let mut rows = Vec::new();
+
+        for manifest_entry in &snapshot.object_manifest().entries {
+            collect_leaf_target_assignment_snapshot_rows_for_pid(
+                root_control.active_epoch,
+                &snapshot,
+                &object_store,
+                manifest_entry.pid,
+                &target_ordinals_by_sequence,
+                &mut found_target_ordinals,
+                &mut rows,
+            )?;
+        }
+
+        rows.extend(target_local_sequences.iter().enumerate().filter_map(
+            |(target_ordinal, target_local_sequence)| {
+                let target_ordinal = u64::try_from(target_ordinal).ok()?;
+                if found_target_ordinals.contains(&target_ordinal) {
+                    return None;
+                }
+                Some(SpireIndexLeafTargetAssignmentSnapshotRow {
+                    active_epoch: root_control.active_epoch,
+                    target_ordinal,
+                    target_local_sequence: *target_local_sequence,
+                    status: "not_found",
+                    leaf_pid: None,
+                    parent_pid: None,
+                    object_version: None,
+                    row_index: None,
+                    assignment_flags: None,
+                })
+            },
+        ));
+        rows.sort_by_key(|row| {
+            (
+                row.target_ordinal,
+                row.leaf_pid.unwrap_or(u64::MAX),
+                row.row_index.unwrap_or(u32::MAX),
+            )
+        });
+        Ok(rows)
+    })();
+    result.unwrap_or_else(|e| pgrx::error!("{e}"))
+}
+
 fn collect_leaf_base_assignment_snapshot_rows_for_pid(
     active_epoch: u64,
     snapshot: &meta::SpireValidatedEpochSnapshot<'_>,
@@ -2502,6 +2568,54 @@ fn collect_leaf_base_assignment_snapshot_rows_for_pid(
             gamma: assignment.gamma,
             encoded_payload: assignment.encoded_payload,
         });
+    }
+    Ok(())
+}
+
+fn collect_leaf_target_assignment_snapshot_rows_for_pid(
+    active_epoch: u64,
+    snapshot: &meta::SpireValidatedEpochSnapshot<'_>,
+    object_store: &impl storage::SpireObjectReader,
+    leaf_pid: u64,
+    target_ordinals_by_sequence: &HashMap<u64, Vec<u64>>,
+    found_target_ordinals: &mut HashSet<u64>,
+    rows: &mut Vec<SpireIndexLeafTargetAssignmentSnapshotRow>,
+) -> Result<(), String> {
+    let lookup = snapshot.require_lookup(leaf_pid, "leaf target assignment snapshot")?;
+    let placement = lookup.placement;
+    if placement.state != meta::SpirePlacementState::Available {
+        return Ok(());
+    }
+
+    let header = object_store.read_object_header(placement)?;
+    if header.kind != storage::SpirePartitionObjectKind::Leaf {
+        return Ok(());
+    }
+
+    let assignments = read_leaf_snapshot_base_assignments(object_store, placement)?;
+    for (row_index, assignment) in assignments.into_iter().enumerate() {
+        let Some(local_sequence) = assignment.vec_id.local_sequence() else {
+            continue;
+        };
+        let Some(target_ordinals) = target_ordinals_by_sequence.get(&local_sequence) else {
+            continue;
+        };
+        let row_index = u32::try_from(row_index)
+            .map_err(|_| "ec_spire leaf target assignment snapshot row index exceeds u32".to_owned())?;
+        for target_ordinal in target_ordinals {
+            found_target_ordinals.insert(*target_ordinal);
+            rows.push(SpireIndexLeafTargetAssignmentSnapshotRow {
+                active_epoch,
+                target_ordinal: *target_ordinal,
+                target_local_sequence: local_sequence,
+                status: "found",
+                leaf_pid: Some(leaf_pid),
+                parent_pid: Some(header.parent_pid),
+                object_version: Some(lookup.manifest_entry.object_version),
+                row_index: Some(row_index),
+                assignment_flags: Some(assignment.flags),
+            });
+        }
     }
     Ok(())
 }

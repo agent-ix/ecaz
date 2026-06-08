@@ -179,7 +179,7 @@ impl SpireObjectReader for SpireLocalObjectStoreSet {
         &self,
         placement: &SpirePlacementEntry,
         meta: &SpireLeafPartitionObjectV2Meta,
-        selected_row_ranges: Option<&[(u32, u32)]>,
+        selected_row_ranges: Option<&[SpireLeafSelectedRowRange]>,
     ) -> Result<Vec<SpireLeafPartitionObjectV2Segment>, String> {
         self.store_for_placement(placement)?
             .read_leaf_object_v2_segments_for_row_ranges(
@@ -246,7 +246,7 @@ impl SpireObjectReader for SpireLocalObjectStore {
         &self,
         placement: &SpirePlacementEntry,
         meta: &SpireLeafPartitionObjectV2Meta,
-        selected_row_ranges: Option<&[(u32, u32)]>,
+        selected_row_ranges: Option<&[SpireLeafSelectedRowRange]>,
     ) -> Result<Vec<SpireLeafPartitionObjectV2Segment>, String> {
         SpireLocalObjectStore::read_leaf_object_v2_segments_for_row_ranges(
             self,

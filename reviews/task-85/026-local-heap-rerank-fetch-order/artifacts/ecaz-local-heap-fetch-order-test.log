@@ -1,0 +1,11 @@
+Script started on 2026-06-07 14:40:56-07:00 [<not executed on terminal>]
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.22s
+     Running unittests src/lib.rs (target/debug/deps/ecaz-fb7bef55f0a59f60)
+
+running 1 test
+test am::ec_spire::tests::local_heap_fetch_order_sorts_candidates_by_heap_tid ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1975 filtered out; finished in 0.00s
+
+
+Script done on 2026-06-07 14:40:56-07:00 [COMMAND_EXIT_CODE="0"]

@@ -158,6 +158,7 @@ struct SpireLeafObjectReadRoute {
 struct SpireLeafBlockRowRange {
     row_base: u32,
     row_end: u32,
+    row_segment_locator: ItemPointer,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -226,6 +227,13 @@ pub(super) struct SpireStoreScanDiagnostics {
     pub(super) candidate_row_count: usize,
     pub(super) leaf_candidate_row_count: usize,
     pub(super) delta_candidate_row_count: usize,
+    pub(super) leaf_block_available_count: usize,
+    pub(super) leaf_block_selected_count: usize,
+    pub(super) leaf_block_skipped_count: usize,
+    pub(super) leaf_summary_object_bytes: u64,
+    pub(super) leaf_row_object_bytes: u64,
+    pub(super) leaf_row_segment_read_count: usize,
+    pub(super) leaf_row_segment_read_bytes: u64,
     pub(super) primary_candidate_row_count: usize,
     pub(super) boundary_replica_candidate_row_count: usize,
     pub(super) deduped_candidate_row_count: usize,
@@ -240,6 +248,8 @@ pub(super) struct SpireStoreScanDiagnostics {
     pub(super) delete_delta_row_count: usize,
     pub(super) dropped_unselected_delta_route_count: usize,
     pub(super) leaf_object_read_nanos: u64,
+    pub(super) leaf_summary_score_nanos: u64,
+    pub(super) leaf_row_score_nanos: u64,
     pub(super) candidate_score_nanos: u64,
     pub(super) candidate_materialize_nanos: u64,
     pub(super) candidate_heap_append_nanos: u64,
@@ -256,15 +266,40 @@ pub(super) struct SpireLeafScanDiagnostics {
     pub(super) route_count: usize,
     pub(super) scanned_count: usize,
     pub(super) candidate_row_count: usize,
+    pub(super) leaf_block_available_count: usize,
+    pub(super) leaf_block_selected_count: usize,
+    pub(super) leaf_block_skipped_count: usize,
+    pub(super) leaf_summary_object_bytes: u64,
+    pub(super) leaf_row_object_bytes: u64,
+    pub(super) leaf_row_segment_read_count: usize,
+    pub(super) leaf_row_segment_read_bytes: u64,
     pub(super) primary_candidate_row_count: usize,
     pub(super) boundary_replica_candidate_row_count: usize,
     pub(super) deduped_candidate_row_count: usize,
     pub(super) truncated_candidate_row_count: usize,
     pub(super) candidate_winner_count: usize,
     pub(super) leaf_object_read_nanos: u64,
+    pub(super) leaf_summary_score_nanos: u64,
+    pub(super) leaf_row_score_nanos: u64,
     pub(super) candidate_score_nanos: u64,
     pub(super) candidate_materialize_nanos: u64,
     pub(super) candidate_heap_append_nanos: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SpireRerankLocalityDiagnostics {
+    pub(crate) active_epoch: u64,
+    pub(crate) effective_nprobe: u32,
+    pub(crate) effective_nprobe_source: &'static str,
+    pub(crate) effective_rerank_width: u64,
+    pub(crate) effective_rerank_width_source: &'static str,
+    pub(crate) candidate_count: u64,
+    pub(crate) rerank_prefix_count: u64,
+    pub(crate) unique_heap_block_count: u64,
+    pub(crate) heap_block_transition_count: u64,
+    pub(crate) heap_block_span: u64,
+    pub(crate) heap_block_jump_sum: u64,
+    pub(crate) heap_block_jump_max: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -298,6 +333,10 @@ pub(super) struct SpireLeafBlockRankSnapshotRow {
     pub(super) row_end: Option<u32>,
     pub(super) row_count: Option<u32>,
     pub(super) block_ip: Option<f32>,
+    pub(super) cap_block_ip: Option<f32>,
+    pub(super) block_ip_margin_to_cap: Option<f32>,
+    pub(super) route_rank: Option<u64>,
+    pub(super) route_score: Option<f32>,
     pub(super) assignment_flags: Option<u16>,
 }
 
@@ -375,6 +414,46 @@ trait SpireRoutedScanObserver {
         _epoch: u64,
         _placement: &SpirePlacementEntry,
         _nanos: u64,
+    ) {
+    }
+
+    fn leaf_summary_score_time(
+        &mut self,
+        epoch: u64,
+        placement: &SpirePlacementEntry,
+        nanos: u64,
+    ) {
+        self.candidate_score_time(epoch, placement, nanos);
+    }
+
+    fn leaf_row_score_time(&mut self, epoch: u64, placement: &SpirePlacementEntry, nanos: u64) {
+        self.candidate_score_time(epoch, placement, nanos);
+    }
+
+    fn leaf_block_storage(
+        &mut self,
+        _epoch: u64,
+        _placement: &SpirePlacementEntry,
+        _summary_object_bytes: u64,
+        _row_object_bytes: u64,
+    ) {
+    }
+
+    fn leaf_row_segments_read(
+        &mut self,
+        _epoch: u64,
+        _placement: &SpirePlacementEntry,
+        _segment_count: usize,
+        _segment_bytes: u64,
+    ) {
+    }
+
+    fn leaf_block_selection(
+        &mut self,
+        _epoch: u64,
+        _placement: &SpirePlacementEntry,
+        _available_blocks: usize,
+        _selected_blocks: usize,
     ) {
     }
 
@@ -457,6 +536,13 @@ impl SpireScanPlacementDiagnosticsObserver {
                 candidate_row_count: 0,
                 leaf_candidate_row_count: 0,
                 delta_candidate_row_count: 0,
+                leaf_block_available_count: 0,
+                leaf_block_selected_count: 0,
+                leaf_block_skipped_count: 0,
+                leaf_summary_object_bytes: 0,
+                leaf_row_object_bytes: 0,
+                leaf_row_segment_read_count: 0,
+                leaf_row_segment_read_bytes: 0,
                 primary_candidate_row_count: 0,
                 boundary_replica_candidate_row_count: 0,
                 deduped_candidate_row_count: 0,
@@ -471,6 +557,8 @@ impl SpireScanPlacementDiagnosticsObserver {
                 delete_delta_row_count: 0,
                 dropped_unselected_delta_route_count: 0,
                 leaf_object_read_nanos: 0,
+                leaf_summary_score_nanos: 0,
+                leaf_row_score_nanos: 0,
                 candidate_score_nanos: 0,
                 candidate_materialize_nanos: 0,
                 candidate_heap_append_nanos: 0,
@@ -494,12 +582,21 @@ impl SpireScanPlacementDiagnosticsObserver {
                 route_count: 0,
                 scanned_count: 0,
                 candidate_row_count: 0,
+                leaf_block_available_count: 0,
+                leaf_block_selected_count: 0,
+                leaf_block_skipped_count: 0,
+                leaf_summary_object_bytes: 0,
+                leaf_row_object_bytes: 0,
+                leaf_row_segment_read_count: 0,
+                leaf_row_segment_read_bytes: 0,
                 primary_candidate_row_count: 0,
                 boundary_replica_candidate_row_count: 0,
                 deduped_candidate_row_count: 0,
                 truncated_candidate_row_count: 0,
                 candidate_winner_count: 0,
                 leaf_object_read_nanos: 0,
+                leaf_summary_score_nanos: 0,
+                leaf_row_score_nanos: 0,
                 candidate_score_nanos: 0,
                 candidate_materialize_nanos: 0,
                 candidate_heap_append_nanos: 0,
@@ -670,6 +767,83 @@ impl SpireRoutedScanObserver for SpireScanPlacementDiagnosticsObserver {
         self.entry(epoch, placement).candidate_score_nanos += nanos;
         if let Some(leaf) = self.leaf_entry_if_routed(placement) {
             leaf.candidate_score_nanos += nanos;
+        }
+    }
+
+    fn leaf_summary_score_time(
+        &mut self,
+        epoch: u64,
+        placement: &SpirePlacementEntry,
+        nanos: u64,
+    ) {
+        let entry = self.entry(epoch, placement);
+        entry.leaf_summary_score_nanos += nanos;
+        entry.candidate_score_nanos += nanos;
+        if let Some(leaf) = self.leaf_entry_if_routed(placement) {
+            leaf.leaf_summary_score_nanos += nanos;
+            leaf.candidate_score_nanos += nanos;
+        }
+    }
+
+    fn leaf_row_score_time(&mut self, epoch: u64, placement: &SpirePlacementEntry, nanos: u64) {
+        let entry = self.entry(epoch, placement);
+        entry.leaf_row_score_nanos += nanos;
+        entry.candidate_score_nanos += nanos;
+        if let Some(leaf) = self.leaf_entry_if_routed(placement) {
+            leaf.leaf_row_score_nanos += nanos;
+            leaf.candidate_score_nanos += nanos;
+        }
+    }
+
+    fn leaf_block_storage(
+        &mut self,
+        epoch: u64,
+        placement: &SpirePlacementEntry,
+        summary_object_bytes: u64,
+        row_object_bytes: u64,
+    ) {
+        let entry = self.entry(epoch, placement);
+        entry.leaf_summary_object_bytes += summary_object_bytes;
+        entry.leaf_row_object_bytes += row_object_bytes;
+        if let Some(leaf) = self.leaf_entry_if_routed(placement) {
+            leaf.leaf_summary_object_bytes += summary_object_bytes;
+            leaf.leaf_row_object_bytes += row_object_bytes;
+        }
+    }
+
+    fn leaf_row_segments_read(
+        &mut self,
+        epoch: u64,
+        placement: &SpirePlacementEntry,
+        segment_count: usize,
+        segment_bytes: u64,
+    ) {
+        let entry = self.entry(epoch, placement);
+        entry.leaf_row_segment_read_count += segment_count;
+        entry.leaf_row_segment_read_bytes += segment_bytes;
+        if let Some(leaf) = self.leaf_entry_if_routed(placement) {
+            leaf.leaf_row_segment_read_count += segment_count;
+            leaf.leaf_row_segment_read_bytes += segment_bytes;
+        }
+    }
+
+    fn leaf_block_selection(
+        &mut self,
+        epoch: u64,
+        placement: &SpirePlacementEntry,
+        available_blocks: usize,
+        selected_blocks: usize,
+    ) {
+        let selected_blocks = selected_blocks.min(available_blocks);
+        let skipped_blocks = available_blocks - selected_blocks;
+        let entry = self.entry(epoch, placement);
+        entry.leaf_block_available_count += available_blocks;
+        entry.leaf_block_selected_count += selected_blocks;
+        entry.leaf_block_skipped_count += skipped_blocks;
+        if let Some(leaf) = self.leaf_entry_if_routed(placement) {
+            leaf.leaf_block_available_count += available_blocks;
+            leaf.leaf_block_selected_count += selected_blocks;
+            leaf.leaf_block_skipped_count += skipped_blocks;
         }
     }
 

@@ -170,6 +170,16 @@ impl SpireLeafPartitionObjectV2Meta {
         }
     }
 
+    pub(super) fn row_segment_bytes_total(&self) -> Result<u64, String> {
+        let meta_bytes = PARTITION_OBJECT_HEADER_BYTES
+            .checked_add(self.encoded_meta_body_bytes())
+            .ok_or_else(|| "ec_spire leaf V3 meta byte length overflow".to_owned())?;
+        self.object_bytes_total
+            .checked_sub(self.summary_bytes_total)
+            .and_then(|value| value.checked_sub(u64::try_from(meta_bytes).ok()?))
+            .ok_or_else(|| "ec_spire leaf V3 row segment byte length underflow".to_owned())
+    }
+
     fn summary_format_version(&self) -> u16 {
         if self.has_block_summaries() && self.summary_representative_count > 1 {
             PARTITION_OBJECT_FORMAT_VERSION_V4
@@ -539,6 +549,18 @@ impl SpireLeafPartitionObjectV2Segment {
         Ok(out)
     }
 
+    pub(super) fn encoded_len(&self, meta: &SpireLeafPartitionObjectV2Meta) -> Result<usize, String> {
+        self.validate_against_meta(meta)?;
+        PARTITION_OBJECT_HEADER_BYTES
+            .checked_add(LEAF_V2_SEGMENT_PREFIX_BYTES)
+            .and_then(|len| len.checked_add(self.flags.len().checked_mul(size_of::<u16>())?))
+            .and_then(|len| len.checked_add(self.vec_ids.len()))
+            .and_then(|len| len.checked_add(self.heap_tids.len().checked_mul(ITEM_POINTER_BYTES)?))
+            .and_then(|len| len.checked_add(self.gammas.len().checked_mul(size_of::<f32>())?))
+            .and_then(|len| len.checked_add(self.payloads.len()))
+            .ok_or_else(|| "ec_spire leaf V2 segment encoded length overflow".to_owned())
+    }
+
     fn decode(input: &[u8], meta: &SpireLeafPartitionObjectV2Meta) -> Result<Self, String> {
         let (header, format_version, tail) =
             SpirePartitionObjectHeader::decode_prefix_with_format_version(input)?;
@@ -786,16 +808,16 @@ impl SpireLeafPartitionObjectV2SegmentReadHeader {
 fn selected_leaf_row_ranges_intersect(
     row_base: u32,
     row_end: u32,
-    selected_row_ranges: Option<&[(u32, u32)]>,
+    selected_row_ranges: Option<&[SpireLeafSelectedRowRange]>,
 ) -> Result<bool, String> {
     let Some(selected_row_ranges) = selected_row_ranges else {
         return Ok(true);
     };
-    for &(selected_base, selected_end) in selected_row_ranges {
-        if selected_end < selected_base {
+    for selected in selected_row_ranges {
+        if selected.row_end < selected.row_base {
             return Err("ec_spire selected leaf V2 row range is invalid".to_owned());
         }
-        if selected_base < row_end && selected_end > row_base {
+        if selected.row_base < row_end && selected.row_end > row_base {
             return Ok(true);
         }
     }
@@ -844,6 +866,7 @@ pub(super) struct SpireLeafPartitionObjectV3SummarySegment {
     pub(super) representative_count: u16,
     pub(super) row_bases: Vec<u32>,
     pub(super) row_counts: Vec<u32>,
+    pub(super) row_segment_locators: Vec<ItemPointer>,
     pub(super) gammas: Vec<f32>,
     pub(super) payloads: Vec<u8>,
 }
@@ -860,6 +883,7 @@ impl SpireLeafPartitionObjectV3SummarySegment {
             .map_err(|_| "ec_spire leaf V3 summary segment count exceeds u32".to_owned())?;
         let mut row_bases = Vec::with_capacity(summaries.len());
         let mut row_counts = Vec::with_capacity(summaries.len());
+        let mut row_segment_locators = Vec::with_capacity(summaries.len());
         let mut gammas = Vec::with_capacity(summaries.len());
         let summary_payload_stride = meta.summary_payload_stride()?;
         let mut payloads = Vec::with_capacity(summary_payload_stride * summaries.len());
@@ -867,6 +891,7 @@ impl SpireLeafPartitionObjectV3SummarySegment {
             validate_leaf_block_summary(meta, summary)?;
             row_bases.push(summary.row_base);
             row_counts.push(summary.row_count);
+            row_segment_locators.push(summary.row_segment_locator);
             gammas.push(summary.gamma);
             payloads.extend_from_slice(&summary.encoded_payload);
         }
@@ -889,6 +914,7 @@ impl SpireLeafPartitionObjectV3SummarySegment {
             representative_count: meta.summary_representative_count,
             row_bases,
             row_counts,
+            row_segment_locators,
             gammas,
             payloads,
         };
@@ -915,6 +941,7 @@ impl SpireLeafPartitionObjectV3SummarySegment {
             summaries.push(SpireLeafBlockSummary {
                 row_base: self.row_bases[summary_offset],
                 row_count: self.row_counts[summary_offset],
+                row_segment_locator: self.row_segment_locators[summary_offset],
                 payload_format: meta.payload_format,
                 gamma: self.gammas[summary_offset],
                 encoded_payload: self.payloads[payload_start..payload_end].to_vec(),
@@ -925,7 +952,13 @@ impl SpireLeafPartitionObjectV3SummarySegment {
 
     fn encode(&self, meta: &SpireLeafPartitionObjectV2Meta) -> Result<Vec<u8>, String> {
         self.validate_against_meta(meta)?;
-        let format_version = if self.representative_count > 1 {
+        let has_row_segment_locators = self
+            .row_segment_locators
+            .iter()
+            .any(|locator| *locator != ItemPointer::INVALID);
+        let format_version = if has_row_segment_locators {
+            PARTITION_OBJECT_FORMAT_VERSION_V5
+        } else if self.representative_count > 1 {
             PARTITION_OBJECT_FORMAT_VERSION_V4
         } else {
             PARTITION_OBJECT_FORMAT_VERSION_V3
@@ -935,7 +968,7 @@ impl SpireLeafPartitionObjectV3SummarySegment {
         out.extend_from_slice(&self.summary_base.to_le_bytes());
         out.extend_from_slice(&self.header.assignment_count.to_le_bytes());
         self.next_segment_locator.encode_into(&mut out);
-        if self.representative_count > 1 {
+        if self.representative_count > 1 || has_row_segment_locators {
             out.extend_from_slice(&self.representative_count.to_le_bytes());
             out.extend_from_slice(&0_u16.to_le_bytes());
         }
@@ -948,6 +981,11 @@ impl SpireLeafPartitionObjectV3SummarySegment {
         for gamma in &self.gammas {
             out.extend_from_slice(&gamma.to_le_bytes());
         }
+        if has_row_segment_locators {
+            for locator in &self.row_segment_locators {
+                locator.encode_into(&mut out);
+            }
+        }
         out.extend_from_slice(&self.payloads);
         Ok(out)
     }
@@ -957,12 +995,15 @@ impl SpireLeafPartitionObjectV3SummarySegment {
             SpirePartitionObjectHeader::decode_prefix_with_format_version(input)?;
         if format_version != PARTITION_OBJECT_FORMAT_VERSION_V3
             && format_version != PARTITION_OBJECT_FORMAT_VERSION_V4
+            && format_version != PARTITION_OBJECT_FORMAT_VERSION_V5
         {
             return Err(format!(
-                "ec_spire leaf V3/V4 summary segment format version must be 3 or 4, got {format_version}"
+                "ec_spire leaf V3/V4/V5 summary segment format version must be 3, 4, or 5, got {format_version}"
             ));
         }
-        let prefix_bytes = if format_version == PARTITION_OBJECT_FORMAT_VERSION_V4 {
+        let prefix_bytes = if format_version == PARTITION_OBJECT_FORMAT_VERSION_V4
+            || format_version == PARTITION_OBJECT_FORMAT_VERSION_V5
+        {
             LEAF_V3_SUMMARY_SEGMENT_PREFIX_BYTES
                 .checked_add(LEAF_V4_SUMMARY_SEGMENT_REPRESENTATIVE_PREFIX_BYTES)
                 .ok_or_else(|| "ec_spire leaf V4 summary segment prefix overflow".to_owned())?
@@ -986,7 +1027,9 @@ impl SpireLeafPartitionObjectV3SummarySegment {
                 header.assignment_count
             ));
         }
-        let representative_count = if format_version == PARTITION_OBJECT_FORMAT_VERSION_V4 {
+        let representative_count = if format_version == PARTITION_OBJECT_FORMAT_VERSION_V4
+            || format_version == PARTITION_OBJECT_FORMAT_VERSION_V5
+        {
             let representative_count =
                 u16::from_le_bytes(tail[18..20].try_into().expect("representative count"));
             let reserved = u16::from_le_bytes(tail[20..22].try_into().expect("V4 reserved"));
@@ -1011,6 +1054,15 @@ impl SpireLeafPartitionObjectV3SummarySegment {
         let gamma_bytes = summary_count_usize
             .checked_mul(size_of::<f32>())
             .ok_or_else(|| "ec_spire leaf V3 gamma byte length overflow".to_owned())?;
+        let locator_bytes = if format_version == PARTITION_OBJECT_FORMAT_VERSION_V5 {
+            summary_count_usize
+                .checked_mul(LEAF_V5_SUMMARY_SEGMENT_LOCATOR_BYTES_PER_SUMMARY)
+                .ok_or_else(|| {
+                    "ec_spire leaf V5 row segment locator byte length overflow".to_owned()
+                })?
+        } else {
+            0
+        };
         let payload_bytes = summary_count_usize
             .checked_mul(meta.summary_payload_stride()?)
             .ok_or_else(|| "ec_spire leaf V3 payload byte length overflow".to_owned())?;
@@ -1018,6 +1070,7 @@ impl SpireLeafPartitionObjectV3SummarySegment {
             .checked_add(row_bases_bytes)
             .and_then(|len| len.checked_add(row_counts_bytes))
             .and_then(|len| len.checked_add(gamma_bytes))
+            .and_then(|len| len.checked_add(locator_bytes))
             .and_then(|len| len.checked_add(payload_bytes))
             .ok_or_else(|| "ec_spire leaf V3 summary segment length overflow".to_owned())?;
         if tail.len() != expected_tail_len {
@@ -1047,6 +1100,16 @@ impl SpireLeafPartitionObjectV3SummarySegment {
             gammas.push(gamma);
         }
         cursor += gamma_bytes;
+        let row_segment_locators = if format_version == PARTITION_OBJECT_FORMAT_VERSION_V5 {
+            let locators = tail[cursor..cursor + locator_bytes]
+                .chunks_exact(ITEM_POINTER_BYTES)
+                .map(ItemPointer::decode)
+                .collect::<Result<Vec<_>, _>>()?;
+            cursor += locator_bytes;
+            locators
+        } else {
+            vec![ItemPointer::INVALID; summary_count_usize]
+        };
         let payloads = tail[cursor..cursor + payload_bytes].to_vec();
 
         let segment = Self {
@@ -1057,6 +1120,7 @@ impl SpireLeafPartitionObjectV3SummarySegment {
             representative_count,
             row_bases,
             row_counts,
+            row_segment_locators,
             gammas,
             payloads,
         };
@@ -1095,6 +1159,15 @@ impl SpireLeafPartitionObjectV3SummarySegment {
                 "ec_spire leaf V3 summary row_count length mismatch: got {}, expected {summary_count}",
                 self.row_counts.len()
             ));
+        }
+        if self.row_segment_locators.len() != summary_count {
+            return Err(format!(
+                "ec_spire leaf V5 summary row segment locator length mismatch: got {}, expected {summary_count}",
+                self.row_segment_locators.len()
+            ));
+        }
+        for locator in &self.row_segment_locators {
+            validate_leaf_v2_locator(*locator, "summary row segment")?;
         }
         if self.gammas.len() != summary_count {
             return Err(format!(
@@ -1137,6 +1210,7 @@ fn validate_leaf_block_summary(
     meta: &SpireLeafPartitionObjectV2Meta,
     summary: &SpireLeafBlockSummary,
 ) -> Result<(), String> {
+    validate_leaf_v2_locator(summary.row_segment_locator, "summary row segment")?;
     if summary.payload_format != meta.payload_format {
         return Err(format!(
             "ec_spire leaf V3 summary payload format mismatch: got {}, expected {}",
@@ -1168,6 +1242,39 @@ fn validate_leaf_block_summary(
         ));
     }
     Ok(())
+}
+
+fn attach_leaf_block_summary_row_segment_locators(
+    summaries: &[SpireLeafBlockSummary],
+    max_segment_rows: usize,
+    segment_locators_by_index: &[ItemPointer],
+) -> Result<Vec<SpireLeafBlockSummary>, String> {
+    if max_segment_rows == 0 {
+        return Err("ec_spire leaf V5 max segment rows 0 is invalid".to_owned());
+    }
+    let mut with_locators = Vec::with_capacity(summaries.len());
+    for summary in summaries {
+        let segment_index = usize::try_from(summary.row_base)
+            .map_err(|_| "ec_spire leaf V5 summary row_base exceeds usize".to_owned())?
+            .checked_div(max_segment_rows)
+            .ok_or_else(|| "ec_spire leaf V5 segment index calculation failed".to_owned())?;
+        let row_segment_locator = *segment_locators_by_index.get(segment_index).ok_or_else(|| {
+            format!(
+                "ec_spire leaf V5 summary row_base {} maps to missing segment index {}",
+                summary.row_base, segment_index
+            )
+        })?;
+        if row_segment_locator == ItemPointer::INVALID {
+            return Err(format!(
+                "ec_spire leaf V5 summary row_base {} maps to invalid segment locator",
+                summary.row_base
+            ));
+        }
+        let mut summary = summary.clone();
+        summary.row_segment_locator = row_segment_locator;
+        with_locators.push(summary);
+    }
+    Ok(with_locators)
 }
 
 pub(super) fn leaf_block_summary_representative_count(
