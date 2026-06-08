@@ -4,9 +4,9 @@
 - task bucket: `reviews/task-87/`
 - packet path: `reviews/task-87/012-phase6-suite-prep/`
 - timestamp: `2026-06-08T19:54:14Z`
-- scope: Phase 6 aggregate measurement suite preparation and dry-run evidence
-- lane / fixture / storage format / rerank mode: local PG18; real10k/real50k/real100k; TurboQuant 4-bit HNSW/IVF/SPIRE setup; IVF/SPIRE rerank width 25 where applicable
-- isolated one-index-per-table vs shared-table surfaces: suite setup creates isolated one-index-per-table surfaces under `task87_phase6_real{10,50,100}k_{hnsw,ivf,spire}`
+- scope: Phase 6 aggregate measurement suite preparation, dry-run evidence, and setup execution
+- lane / fixture / storage format / rerank mode: local PG18; real10k/real50k/real100k; TurboQuant 4-bit for 10k suite-owned HNSW/IVF/SPIRE, 50k SPIRE, 100k IVF/SPIRE; 50k IVF uses existing RaBitQ surface; IVF/SPIRE rerank width 25 where applicable
+- isolated one-index-per-table vs shared-table surfaces: suite-owned 10k HNSW/IVF/SPIRE and 50k SPIRE surfaces are isolated; 50k/100k HNSW/IVF and 100k SPIRE reuse existing one-AM real-corpus tables with a single AM index plus btree primary key
 
 ## Artifacts
 
@@ -25,8 +25,8 @@
 ### `prepare-isolated-surfaces.sql`
 
 - command: invoked by suite raw step `prepare-isolated-surfaces`.
-- result: not executed in this prep packet; dry-run expansion verified.
-- purpose: idempotently creates real10k/50k/100k HNSW, IVF, and SPIRE isolated benchmark surfaces.
+- result: executed by `setup-run.log`.
+- purpose: idempotently creates suite-owned real10k HNSW/IVF/SPIRE surfaces and the missing real50k SPIRE surface.
 
 ### `cargo-build-ecaz-cli.log`
 
@@ -92,3 +92,42 @@
 - command: emitted by the dry-run command above.
 - result: written
 - purpose: normalized suite manifest for reviewer inspection before the long run.
+
+### `setup-run.log`
+
+- command: `target/debug/ecaz bench suite run --config reviews/task-87/012-phase6-suite-prep/phase6-suite.json --database postgres --host /home/peter/.pgrx --port 28818 --only precheck-host --only prepare-isolated-surfaces --manifest-output reviews/task-87/012-phase6-suite-prep/artifacts/setup-run-manifest.json --results-output reviews/task-87/012-phase6-suite-prep/artifacts/setup-run-results.jsonl`
+- result: passed
+- key cited lines:
+  - `precheck-host -> --database postgres --host /home/peter/.pgrx --port 28818 dev sql`
+  - `prepare-isolated-surfaces -> --database postgres --host /home/peter/.pgrx --port 28818 dev sql`
+  - `wrote reviews/task-87/012-phase6-suite-prep/artifacts/setup-run-results.jsonl`
+
+### `run/precheck-host.log`
+
+- command: emitted by setup-run `precheck-host` step.
+- result: passed
+- key cited lines:
+  - `PostgreSQL 18.3 on x86_64-pc-linux-gnu`
+  - `shared_buffers | work_mem | maintenance_work_mem | effective_cache_size`
+
+### `run/prepare-isolated-surfaces.log`
+
+- command: emitted by setup-run `prepare-isolated-surfaces` step.
+- result: passed
+- key cited lines:
+  - `relation "task87_phase6_real10k_hnsw_m16_idx" already exists, skipping`
+  - `relation "task87_phase6_real10k_ivf_tq_idx" already exists, skipping`
+  - `relation "task87_phase6_real10k_spire_tq_idx" already exists, skipping`
+  - `ec_spire_ambuild_timing index=task87_phase6_real50k_spire_tq_idx phase=complete`
+  - `total_ms=306144`
+
+### `setup-run-manifest.json`
+
+- command: emitted by setup-run command above.
+- result: written
+- purpose: normalized manifest for the setup-only execution.
+
+### `setup-run-results.jsonl`
+
+- command: emitted by setup-run command above.
+- result: written empty file because setup/raw steps do not produce normalized benchmark rows.

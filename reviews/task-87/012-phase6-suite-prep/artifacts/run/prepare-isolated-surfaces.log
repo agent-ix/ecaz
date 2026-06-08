@@ -1,0 +1,30 @@
+CREATE TABLE AS
+CREATE TABLE AS
+CREATE INDEX
+CREATE TABLE AS
+CREATE TABLE AS
+CREATE INDEX
+CREATE TABLE AS
+CREATE TABLE AS
+CREATE INDEX
+SELECT 50000
+SELECT 1000
+CREATE INDEX
+ANALYZE
+ANALYZE
+ANALYZE
+ANALYZE
+ANALYZE
+ANALYZE
+ANALYZE
+ANALYZE
+psql:reviews/task-87/012-phase6-suite-prep/artifacts/prepare-isolated-surfaces.sql:4: NOTICE:  relation "task87_phase6_real10k_hnsw_corpus" already exists, skipping
+psql:reviews/task-87/012-phase6-suite-prep/artifacts/prepare-isolated-surfaces.sql:6: NOTICE:  relation "task87_phase6_real10k_hnsw_queries" already exists, skipping
+psql:reviews/task-87/012-phase6-suite-prep/artifacts/prepare-isolated-surfaces.sql:10: NOTICE:  relation "task87_phase6_real10k_hnsw_m16_idx" already exists, skipping
+psql:reviews/task-87/012-phase6-suite-prep/artifacts/prepare-isolated-surfaces.sql:13: NOTICE:  relation "task87_phase6_real10k_ivf_corpus" already exists, skipping
+psql:reviews/task-87/012-phase6-suite-prep/artifacts/prepare-isolated-surfaces.sql:15: NOTICE:  relation "task87_phase6_real10k_ivf_queries" already exists, skipping
+psql:reviews/task-87/012-phase6-suite-prep/artifacts/prepare-isolated-surfaces.sql:26: NOTICE:  relation "task87_phase6_real10k_ivf_tq_idx" already exists, skipping
+psql:reviews/task-87/012-phase6-suite-prep/artifacts/prepare-isolated-surfaces.sql:29: NOTICE:  relation "task87_phase6_real10k_spire_corpus" already exists, skipping
+psql:reviews/task-87/012-phase6-suite-prep/artifacts/prepare-isolated-surfaces.sql:31: NOTICE:  relation "task87_phase6_real10k_spire_queries" already exists, skipping
+psql:reviews/task-87/012-phase6-suite-prep/artifacts/prepare-isolated-surfaces.sql:41: NOTICE:  relation "task87_phase6_real10k_spire_tq_idx" already exists, skipping
+psql:reviews/task-87/012-phase6-suite-prep/artifacts/prepare-isolated-surfaces.sql:56: NOTICE:  ec_spire_ambuild_timing index=task87_phase6_real50k_spire_tq_idx phase=complete heap_tuples=50000 scanned_tuples=50000 index_tuples=50000 recursive_fanout=0 setup_ms=0 heap_scan_ms=36616 sample_collect_ms=4 kmeans_ms=26812 kmeans_calls=1 assignment_ms=16321 recursive_kmeans_ms=0 recursive_kmeans_calls=0 recursive_kmeans_max_level=0 recursive_assignment_ms=0 recursive_routing_initial_children=0 recursive_routing_final_children=0 recursive_routing_iterations=0 draft_ms=225477 draft_total_ms=225477 draft_input_clone_ms=0 draft_pid_alloc_ms=0 draft_recursive_routing_ms=0 draft_route_map_ms=0 draft_leaf_rows_ms=0 draft_leaf_inputs_ms=0 draft_validation_ms=0 top_graph_ms=0 pq4_training_ms=0 object_store_ms=862 object_store_total_ms=862 publish_ms=0 total_ms=306144
