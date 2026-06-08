@@ -1,6 +1,6 @@
 # Task 87 Packet 001 Artifact Manifest
 
-- head SHA: `d198913b7`
+- source-inspection head SHA: `6f1703dab`
 - task bucket: `reviews/task-87`
 - packet path: `reviews/task-87/001-phase1-design`
 - lane: Phase 1 design
@@ -18,6 +18,8 @@
 - `candidate-batch-design.md` — CandidateBatch design, quantizer walkthrough,
   per-AM mapping, pgvectorscale comparison, streaming contract, and measurement
   methodology.
+- `source-scoring-map.md` — exact current-source line references for SPIRE,
+  IVF, HNSW, DiskANN, and the pgvectorscale resort-buffer reference.
 
 ## Key Result Lines Cited By Request
 
@@ -29,3 +31,5 @@
   integration proves useful batch sizes.
 - DiskANN currently needs explicit reviewer attention because this checkout
   exposes grouped-PQ and RaBitQ search codecs, not a TurboQuant search codec.
+- Source inspection anchors that DiskANN finding at
+  `src/am/ec_diskann/quantizer.rs:29`, `:111`, `:152`, and `:169`.

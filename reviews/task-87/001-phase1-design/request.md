@@ -13,6 +13,7 @@ materialization ownership.
 ## Artifact
 
 - `artifacts/candidate-batch-design.md`
+- `artifacts/source-scoring-map.md`
 - `artifacts/manifest.md`
 
 ## Design Calls
@@ -50,3 +51,4 @@ behavioral change.
 - Confirm whether deferring the 32-vector kernel until after per-AM batch
   plumbing is acceptable.
 - Resolve the DiskANN TurboQuant scope question before Phase 4.
+- Confirm the source map points at the right integration sites for each AM.
