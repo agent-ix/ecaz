@@ -24,7 +24,7 @@ Phase 6 plumbing milestone and baseline.
 | --- | --- | --- |
 | `CandidateBatch` abstraction lives in a shared module. | `src/am/common/candidate_batch.rs`, packet 003 and later route packets. | Proven. |
 | All four AMs route batch-shaped quant scoring or have accepted Stop Condition. | SPIRE packets 003/021; IVF packets 004/011/021/022; HNSW packet 006 plus Phase 7 stop condition in this packet; DiskANN packets 005/009 and Task 91 handoff. | Proven for current Task 87 scope. |
-| Per-AM real-corpus suite evidence ships. | Phase 6 packets 012-015; Phase 7 packets 021-023 for SPIRE/IVF/HNSW probe. | Proven for measured AMs; DiskANN covered by accepted Stop Condition. |
+| Per-AM real-corpus suite evidence ships. | Phase 6 packets 012-015; Phase 7 packets 021-024 for SPIRE/IVF/HNSW probe, including packet 024's real10k SPIRE p99 rerun. | Proven for measured AMs; DiskANN covered by accepted Stop Condition. |
 | Existing pg_test surfaces pass for touched AMs. | Packet 021 focused tests: SPIRE quantizer `15 passed`, SPIRE scan `99 passed`, common candidate batch `4 passed`; earlier packets cover IVF/HNSW touched code. | Proven for touched Phase 7 code. |
 | Closeout packet cites per-AM evidence and aggregate matrix. | This request plus `artifacts/aggregate-matrix.md`. | Proven. |
 | Task status flips to complete referencing closeout packet. | `plan/tasks/87-candidate-batched-scoring-across-ams.md` now references `reviews/task-87/023-phase7-methodology-and-closeout/`. | Proven. |
@@ -36,14 +36,14 @@ Phase 6 plumbing milestone and baseline.
 | Kernel lives under `src/quant/`. | `src/quant/lut32.rs`; packet 016 reviewer approval. | Proven. |
 | Scalar differential coverage. | `lut32_matches_scalar_for_blocks_and_tail`; packet 016 reviewer notes byte-equality. | Proven. |
 | No new unsafe without safety docs. | Packet 016 reviewer notes the kernel is safe Rust and no new unsafe. | Proven. |
-| SPIRE reaches LUT32 for chunks >= 32. | Packet 021 counters: `4800/4800` LUT32 flushes and `1551640/1551640` candidates on real10k; packet 022 counters: `4800/4800` LUT32 flushes on real50k and real100k. | Proven for measured SPIRE TurboQuant cells. |
+| SPIRE reaches LUT32 for chunks >= 32. | Packet 024 counters: `4800/4800` LUT32 flushes and `1551640/1551640` candidates on real10k; packet 022 counters: `4800/4800` LUT32 flushes on real50k and real100k. | Proven for measured SPIRE TurboQuant cells. |
 | IVF reaches LUT32 for posting-list chunks >= 32. | Packet 021 real10k counters: `7800/8000` LUT32 flushes, `1996800/2000000` LUT32 candidates; packet 022 real100k counters: `78200/78200` LUT32 flushes, `20000000/20000000` candidates. | Proven for measured TurboQuant cells. |
 | Recall preserved. | Aggregate matrix recall off/on cells are equal for every measured routed row. | Proven. |
 | End-to-end latency improves at touched cells. | Matrix shows p50/p95/p99 improvements for all routed TurboQuant rows after packet 024 reruns the real10k SPIRE cell. | Proven for routed TurboQuant cells. |
 | Scoring-share gate directly measured. | On-path scorer counters are direct; off-path scalar scorer is not instrumented. `artifacts/methodology.md` reframes the gate per packet 021 feedback. | Proven for on-path scope; direct scalar-vs-LUT32 factor is not claimed. |
 | HNSW gated by measurement. | HNSW counters are zero on real10k/50k/100k; reloptions show current profiles are not TurboQuant FullLut surfaces. | Closed by explicit Phase 7 stop condition. |
 | DiskANN remains handed to Task 91. | Packets 005 and 009; task coordination section. | Proven. |
-| Suite-driven per FR-038. | Packet 021 and packet 022 checked-in suite configs and packet-local artifacts. | Proven. |
+| Suite-driven per FR-038. | Packets 021, 022, and 024 use checked-in suite configs and packet-local artifacts. | Proven. |
 
 ## Current Completion State
 
