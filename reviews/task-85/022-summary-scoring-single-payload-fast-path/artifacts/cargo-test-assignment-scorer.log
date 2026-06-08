@@ -1,0 +1,19 @@
+Script started on 2026-06-07 13:12:31-07:00 [<not executed on terminal>]
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.20s
+     Running unittests src/lib.rs (target/debug/deps/ecaz-fb7bef55f0a59f60)
+
+running 9 tests
+test am::ec_spire::quantizer::tests::assignment_scorer_rejects_unscoreable_and_deferred_formats ... ok
+test am::ec_spire::quantizer::tests::assignment_scorer_validates_query_and_source_shape ... ok
+test am::ec_spire::quantizer::tests::rabitq_assignment_scorer_matches_direct_quantizer_score ... ok
+test am::ec_spire::quantizer::tests::rabitq_assignment_scorer_can_prune_below_cutoff ... ok
+test am::ec_spire::quantizer::tests::assignment_scorer_rejects_mismatched_format_and_bad_lengths ... ok
+test am::ec_spire::quantizer::tests::assignment_scorer_batch_rejects_bad_shapes ... ok
+test am::ec_spire::quantizer::tests::assignment_scorer_batch_matches_scalar_scores ... ok
+test am::ec_spire::quantizer::tests::turboquant_assignment_scorer_matches_direct_quantizer_score ... ok
+test am::ec_spire::scan::tests::collect_quantized_routed_probe_candidates_matches_prepared_assignment_scorer ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 1965 filtered out; finished in 0.13s
+
+
+Script done on 2026-06-07 13:12:31-07:00 [COMMAND_EXIT_CODE="0"]

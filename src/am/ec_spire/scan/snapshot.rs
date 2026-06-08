@@ -527,7 +527,7 @@ fn collect_validated_quantized_leaf_route_candidates_with_global_block_pruning(
         }
     }
 
-    if let Some(selected_by_leaf) = select_global_leaf_block_row_ranges(
+    let selected_by_leaf = select_global_leaf_block_row_ranges(
         loaded_leaf_routes.iter().map(|loaded_route| {
             (
                 loaded_route.route.leaf_pid,
@@ -540,12 +540,28 @@ fn collect_validated_quantized_leaf_route_candidates_with_global_block_pruning(
         scorer,
         snapshot.epoch_manifest().epoch,
         observer,
-    )? {
+    )?;
+    if let Some(selected_by_leaf) = selected_by_leaf {
         for loaded_route in &mut loaded_leaf_routes {
             loaded_route.selected_row_ranges = selected_by_leaf
                 .get(&loaded_route.route.leaf_pid)
                 .cloned();
         }
+    }
+    for loaded_route in &loaded_leaf_routes {
+        if loaded_route.leaf_summaries.summaries.is_empty() {
+            continue;
+        }
+        let selected_blocks = loaded_route
+            .selected_row_ranges
+            .as_ref()
+            .map_or(loaded_route.leaf_summaries.summaries.len(), Vec::len);
+        observer.leaf_block_selection(
+            snapshot.epoch_manifest().epoch,
+            &loaded_route.route.placement,
+            loaded_route.leaf_summaries.summaries.len(),
+            selected_blocks,
+        );
     }
 
     for loaded_route in loaded_leaf_routes {
@@ -632,7 +648,7 @@ fn collect_validated_quantized_leaf_route_candidates_with_sampled_global_block_p
         }
     }
 
-    if let Some(selected_by_leaf) = select_sampled_global_leaf_block_row_ranges(
+    let selected_by_leaf = select_sampled_global_leaf_block_row_ranges(
         snapshot,
         &loaded_leaf_routes,
         current_session_leaf_block_pruning_max_global_blocks(),
@@ -642,12 +658,28 @@ fn collect_validated_quantized_leaf_route_candidates_with_sampled_global_block_p
         scorer,
         &mut accumulator,
         observer,
-    )? {
+    )?;
+    if let Some(selected_by_leaf) = selected_by_leaf {
         for loaded_route in &mut loaded_leaf_routes {
             loaded_route.selected_row_ranges = selected_by_leaf
                 .get(&loaded_route.route.leaf_pid)
                 .cloned();
         }
+    }
+    for loaded_route in &loaded_leaf_routes {
+        if loaded_route.leaf_object.summaries.is_empty() {
+            continue;
+        }
+        let selected_blocks = loaded_route
+            .selected_row_ranges
+            .as_ref()
+            .map_or(loaded_route.leaf_object.summaries.len(), Vec::len);
+        observer.leaf_block_selection(
+            snapshot.epoch_manifest().epoch,
+            &loaded_route.route.placement,
+            loaded_route.leaf_object.summaries.len(),
+            selected_blocks,
+        );
     }
 
     for loaded_route in loaded_leaf_routes {

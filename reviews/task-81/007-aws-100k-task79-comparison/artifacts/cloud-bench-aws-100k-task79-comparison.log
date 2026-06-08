@@ -1,0 +1,8 @@
+
+   0: [91mssm command 2d47887a-cf0b-4147-9034-744e26db0426 on i-06ace3e95ab942623 ended in Failed (rc=1): + cd /var/lib/pgsql/build/ecaz / ++ dirname reviews/task-81/007-aws-100k-task79-comparison/suite-aws-100k-task79-comparison.json / + mkdir -p reviews/task-81/007-aws-100k-task79-comparison reviews/task-81/007-aws-100k-task79-comparison/artifacts / + trap 'status=$?; set +e; aws s3 sync reviews/task-81/007-aws-100k-task79-comparison/artifacts s3://ecaz-cloud-1m-b62eb804/bench-artifacts/task81-aws-100k-task79-comparison/20260605T045151Z/ --region us-west-2 --only-show-errors || true; exit $status' EXIT / + cat[0m
+
+Location:
+   [35mcrates/ecaz-cloud/src/ssm.rs[0m:[35m111[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.

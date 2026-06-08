@@ -1,0 +1,121 @@
+{
+  "suite": "task81-local-nprobe-block-summary-gate",
+  "schema_version": 1,
+  "config": "reviews/task-81/004-local-nprobe-block-summary-gate/suite-local-nprobe-block-summary-gate.json",
+  "config_sha256": "1e56832b66d6d4050fcf2cb90c6fbd416b167f5b38c190875db8cc6f83cbc88d",
+  "dry_run": false,
+  "generated_at_unix_ms": 1780630584062,
+  "connection": {
+    "database": "task79_spire_candidate_surface",
+    "host": "/home/peter/.pgrx",
+    "port": 28818,
+    "user": null,
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "precheck-task81-local-nprobe-surface",
+      "kind": "raw",
+      "command": [
+        "--database",
+        "task79_spire_candidate_surface",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "dev",
+        "sql",
+        "--pg",
+        "18",
+        "--db",
+        "task79_spire_candidate_surface",
+        "--socket-dir",
+        "/home/peter/.pgrx",
+        "--raw",
+        "--sql",
+        "CREATE EXTENSION IF NOT EXISTS ecaz; SELECT now() AS captured_at, version() AS postgres_version; SELECT count(*) AS corpus_rows FROM task79_surface_100k_corpus; SELECT count(*) AS query_rows FROM task79_surface_100k_queries; SELECT c.relname, c.relpages, c.reltuples::bigint AS reltuples, c.reloptions FROM pg_class c WHERE c.relname = 'task79_surface_100k_idx'; SELECT name, setting, context FROM pg_settings WHERE name IN ('ec_spire.leaf_block_rows', 'ec_spire.leaf_block_pruning_max_blocks_per_leaf', 'ec_spire.leaf_block_pruning_max_global_blocks', 'ec_spire.leaf_block_pruning_global_probe_blocks', 'ec_spire.leaf_block_pruning_sample_rows_per_block', 'ec_spire.leaf_block_pruning_sample_summary_prior_weight', 'ec_spire.leaf_block_pruning_summary_radius_weight', 'ec_spire.leaf_block_pruning_route_prior_weight', 'ec_spire.nprobe', 'ec_spire.rerank_width') ORDER BY name;",
+        "--log-output",
+        "reviews/task-81/004-local-nprobe-block-summary-gate/artifacts/precheck-task81-local-nprobe-surface.log"
+      ],
+      "selected": true,
+      "tags": [
+        "setup",
+        "task81",
+        "local-only",
+        "pg18",
+        "rabitq",
+        "block-summary",
+        "nprobe-sweep"
+      ],
+      "expected_artifacts": [
+        "reviews/task-81/004-local-nprobe-block-summary-gate/artifacts/precheck-task81-local-nprobe-surface.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1780630584064,
+      "finished_at_unix_ms": 1780630584149,
+      "duration_ms": 84,
+      "exit_code": 0
+    },
+    {
+      "name": "pipeline-100k-rabitq-block-summary-global1152-nprobe-sweep",
+      "kind": "spire-pipeline",
+      "command": [
+        "--database",
+        "task79_spire_candidate_surface",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "spire-pipeline",
+        "--prefix",
+        "task79_surface_100k",
+        "--index",
+        "task79_surface_100k_idx",
+        "--queries-limit",
+        "200",
+        "--sweep",
+        "96,128,160,192",
+        "--rerank-width",
+        "25",
+        "--include-local-store-overlap",
+        "--include-cost-snapshot",
+        "--include-query-metrics",
+        "--include-recall",
+        "--truth-corpus-file",
+        "target/real-corpus/staged-task50/ec_real_100k_corpus.tsv",
+        "--include-production-read-profile",
+        "--query-metric-k",
+        "10",
+        "--query-metric-projection-columns",
+        "id",
+        "--log-output",
+        "reviews/task-81/004-local-nprobe-block-summary-gate/artifacts/pipeline-100k-rabitq-block-summary-global1152-nprobe-sweep.log",
+        "--funnel-output",
+        "reviews/task-81/004-local-nprobe-block-summary-gate/artifacts/funnel-100k-rabitq-block-summary-global1152-nprobe-sweep.jsonl"
+      ],
+      "selected": true,
+      "pgoptions": "-c ec_spire.leaf_block_pruning_max_blocks_per_leaf=0 -c ec_spire.leaf_block_pruning_max_global_blocks=1152 -c ec_spire.leaf_block_pruning_global_probe_blocks=0 -c ec_spire.leaf_block_pruning_sample_rows_per_block=0 -c ec_spire.leaf_block_pruning_sample_summary_prior_weight=0.8 -c ec_spire.leaf_block_pruning_summary_radius_weight=0.25 -c ec_spire.leaf_block_pruning_route_prior_weight=0.0",
+      "tags": [
+        "pipeline",
+        "task81",
+        "intel-local",
+        "ec_real_100k",
+        "spire",
+        "rabitq",
+        "block-summary",
+        "global1152",
+        "nprobe-sweep"
+      ],
+      "expected_artifacts": [
+        "reviews/task-81/004-local-nprobe-block-summary-gate/artifacts/pipeline-100k-rabitq-block-summary-global1152-nprobe-sweep.log",
+        "reviews/task-81/004-local-nprobe-block-summary-gate/artifacts/funnel-100k-rabitq-block-summary-global1152-nprobe-sweep.jsonl"
+      ],
+      "status": "failed",
+      "started_at_unix_ms": 1780630584150,
+      "finished_at_unix_ms": 1780630707003,
+      "duration_ms": 123115,
+      "exit_code": 1
+    }
+  ]
+}

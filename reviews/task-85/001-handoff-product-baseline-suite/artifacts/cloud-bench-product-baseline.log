@@ -1,0 +1,8 @@
+
+   0: [91mssm command 280a55df-c2a6-48eb-899e-52afff7ef232 on i-06ace3e95ab942623 ended in Failed (rc=143): + cd /var/lib/pgsql/build/ecaz / ++ dirname reviews/task-85/001-handoff-product-baseline-suite/suite-aws-1m-product-baseline-q500.json / + mkdir -p reviews/task-85/001-handoff-product-baseline-suite reviews/task-85/001-handoff-product-baseline-suite/artifacts/aws-1m-product-baseline-q500 / + trap 'status=$?; set +e; aws s3 sync reviews/task-85/001-handoff-product-baseline-suite/artifacts/aws-1m-product-baseline-q500 s3://ecaz-cloud-1m-b62eb804/bench-artifacts/task85-aws-1m-product-baseline-q500/20260607T052558Z/ --region us-west-2 --only-show-errors || true; exit $status' EXIT / + cat[0m
+
+Location:
+   [35mcrates/ecaz-cloud/src/ssm.rs[0m:[35m111[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.

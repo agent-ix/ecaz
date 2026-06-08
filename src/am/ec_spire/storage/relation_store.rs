@@ -338,6 +338,8 @@ impl SpireRelationObjectStore {
 
         let mut next_segment_locator = ItemPointer::INVALID;
         let mut segment_bytes_total = 0_u64;
+        let mut segment_locators_by_index =
+            vec![ItemPointer::INVALID; usize::try_from(segment_count).unwrap_or(0)];
         for segment_index in (0..usize::try_from(segment_count).unwrap_or(0)).rev() {
             let row_base = segment_index
                 .checked_mul(max_segment_rows)
@@ -360,8 +362,14 @@ impl SpireRelationObjectStore {
                     })?)
                     .ok_or_else(|| "ec_spire leaf V3 object byte length overflow".to_owned())?;
             next_segment_locator = self.append_object_tuple(&encoded_segment)?;
+            segment_locators_by_index[segment_index] = next_segment_locator;
         }
 
+        let summaries = attach_leaf_block_summary_row_segment_locators(
+            summaries,
+            max_segment_rows,
+            &segment_locators_by_index,
+        )?;
         let mut next_summary_segment_locator = ItemPointer::INVALID;
         let mut summary_bytes_total = 0_u64;
         for segment_index in (0..summary_segment_count).rev() {
@@ -425,7 +433,7 @@ impl SpireRelationObjectStore {
             epoch,
             summary_representative_count,
         )?;
-        validate_leaf_block_summary_coverage(&meta, summaries)?;
+        validate_leaf_block_summary_coverage(&meta, &summaries)?;
         let encoded_meta = meta.encode()?;
         let meta_tid = self.append_object_tuple(&encoded_meta)?;
         let placement = SpirePlacementEntry::local_store_available_by_id(
@@ -615,10 +623,59 @@ impl SpireRelationObjectStore {
         &self,
         placement: &SpirePlacementEntry,
         meta: &SpireLeafPartitionObjectV2Meta,
-        selected_row_ranges: Option<&[(u32, u32)]>,
+        selected_row_ranges: Option<&[SpireLeafSelectedRowRange]>,
     ) -> Result<Vec<SpireLeafPartitionObjectV2Segment>, String> {
         self.validate_local_available_placement(placement)?;
         validate_leaf_v2_meta_against_placement(meta, placement)?;
+        if let Some(selected_row_ranges) = selected_row_ranges {
+            if selected_row_ranges
+                .iter()
+                .all(|range| range.row_segment_locator != ItemPointer::INVALID)
+            {
+                let mut segments = Vec::new();
+                let mut seen_locators = HashSet::new();
+                for selected in selected_row_ranges {
+                    if selected.row_end < selected.row_base {
+                        return Err("ec_spire selected leaf V2 row range is invalid".to_owned());
+                    }
+                    let mut next_locator = selected.row_segment_locator;
+                    loop {
+                        if next_locator == ItemPointer::INVALID {
+                            return Err(
+                                "ec_spire leaf V5 selected segment chain ended early".to_owned()
+                            );
+                        }
+                        let (segment_header, maybe_segment) =
+                            self.with_object_tuple(next_locator, |raw| {
+                                let segment_header =
+                                    SpireLeafPartitionObjectV2SegmentReadHeader::decode(raw, meta)?;
+                                let row_end = segment_header.row_end()?;
+                                let maybe_segment = if selected_leaf_row_ranges_intersect(
+                                    segment_header.row_base,
+                                    row_end,
+                                    Some(std::slice::from_ref(selected)),
+                                )? {
+                                    Some(SpireLeafPartitionObjectV2Segment::decode(raw, meta)?)
+                                } else {
+                                    None
+                                };
+                                Ok((segment_header, maybe_segment))
+                            })?;
+                        if let Some(segment) = maybe_segment {
+                            if seen_locators.insert(next_locator) {
+                                segments.push(segment);
+                            }
+                        }
+                        if segment_header.row_end()? >= selected.row_end {
+                            break;
+                        }
+                        next_locator = segment_header.next_segment_locator;
+                    }
+                }
+                segments.sort_by_key(|segment| segment.segment_no);
+                return Ok(segments);
+            }
+        }
         let segment_count = usize::try_from(meta.segment_count)
             .map_err(|_| "ec_spire leaf V2 segment count exceeds usize".to_owned())?;
         let mut segments = Vec::new();
@@ -1564,7 +1621,7 @@ impl SpireObjectReader for SpireRelationObjectStore {
         &self,
         placement: &SpirePlacementEntry,
         meta: &SpireLeafPartitionObjectV2Meta,
-        selected_row_ranges: Option<&[(u32, u32)]>,
+        selected_row_ranges: Option<&[SpireLeafSelectedRowRange]>,
     ) -> Result<Vec<SpireLeafPartitionObjectV2Segment>, String> {
         SpireRelationObjectStore::read_leaf_object_v2_segments_for_row_ranges(
             self,
@@ -2032,7 +2089,7 @@ impl SpireObjectReader for SpireRelationObjectStoreSet {
         &self,
         placement: &SpirePlacementEntry,
         meta: &SpireLeafPartitionObjectV2Meta,
-        selected_row_ranges: Option<&[(u32, u32)]>,
+        selected_row_ranges: Option<&[SpireLeafSelectedRowRange]>,
     ) -> Result<Vec<SpireLeafPartitionObjectV2Segment>, String> {
         self.store_for_placement(placement)?
             .read_leaf_object_v2_segments_for_row_ranges(

@@ -136,11 +136,16 @@ fn leaf_partition_object_v2_selected_segment_reader_filters_by_row_range() {
     let second_segment = &full.segments[1];
     let second_columns = second_segment.columns(&full.meta).unwrap();
     let second_row_base = second_columns.row_base;
+    let selected_range = SpireLeafSelectedRowRange {
+        row_base: second_row_base,
+        row_end: second_row_base + 1,
+        row_segment_locator: ItemPointer::INVALID,
+    };
     let selected = store
         .read_leaf_object_v2_segments_for_row_ranges(
             &placement,
             &summary_only.meta,
-            Some(&[(second_row_base, second_row_base + 1)]),
+            Some(&[selected_range]),
         )
         .unwrap();
     assert_eq!(selected, vec![second_segment.clone()]);
@@ -196,10 +201,24 @@ fn leaf_v3_rabitq_summary(
     SpireLeafBlockSummary {
         row_base,
         row_count,
+        row_segment_locator: ItemPointer::INVALID,
         payload_format: SPIRE_PAYLOAD_FORMAT_RABITQ,
         gamma: f32::from(byte) / 10.0,
         encoded_payload: vec![byte; payload_len],
     }
+}
+
+fn summaries_without_row_segment_locators(
+    summaries: &[SpireLeafBlockSummary],
+) -> Vec<SpireLeafBlockSummary> {
+    summaries
+        .iter()
+        .cloned()
+        .map(|mut summary| {
+            summary.row_segment_locator = ItemPointer::INVALID;
+            summary
+        })
+        .collect()
 }
 
 #[test]
@@ -230,8 +249,59 @@ fn leaf_partition_object_v3_store_round_trips_block_summaries() {
         ItemPointer::INVALID
     );
     assert!(decoded.meta.summary_bytes_total > 0);
-    assert_eq!(decoded.block_summaries().unwrap(), summaries.as_slice());
+    let decoded_summaries = decoded.block_summaries().unwrap();
+    assert!(decoded_summaries
+        .iter()
+        .all(|summary| summary.row_segment_locator != ItemPointer::INVALID));
+    assert_eq!(
+        summaries_without_row_segment_locators(decoded_summaries),
+        summaries
+    );
     assert_eq!(decoded.assignment_rows().unwrap(), assignments);
+}
+
+#[test]
+fn leaf_partition_object_v5_selected_segment_reader_uses_summary_locator() {
+    let mut store = SpireLocalObjectStore::new(99, 512).unwrap();
+    let assignments = (1..=13)
+        .map(|local_vec_seq| leaf_v3_rabitq_assignment(local_vec_seq, 64))
+        .collect::<Vec<_>>();
+    let summaries = vec![
+        leaf_v3_rabitq_summary(0, 4, 64, 9),
+        leaf_v3_rabitq_summary(4, 4, 64, 10),
+        leaf_v3_rabitq_summary(8, 5, 64, 11),
+    ];
+
+    let placement = store
+        .insert_leaf_object_v3_from_rows_and_summaries(7, 17, 3, 5, &assignments, &summaries, 4)
+        .unwrap();
+    let summary_only = store.read_leaf_object_v2_summaries(&placement).unwrap();
+    let selected_summary = &summary_only.summaries[1];
+    assert_ne!(selected_summary.row_segment_locator, ItemPointer::INVALID);
+
+    let mut meta_without_chain_start = summary_only.meta.clone();
+    meta_without_chain_start.first_segment_locator = ItemPointer::INVALID;
+    let selected_range = SpireLeafSelectedRowRange {
+        row_base: selected_summary.row_base,
+        row_end: selected_summary.row_base + selected_summary.row_count,
+        row_segment_locator: selected_summary.row_segment_locator,
+    };
+    let selected = store
+        .read_leaf_object_v2_segments_for_row_ranges(
+            &placement,
+            &meta_without_chain_start,
+            Some(&[selected_range]),
+        )
+        .unwrap();
+
+    assert!(!selected.is_empty());
+    assert!(selected.iter().any(|segment| {
+        let row_end = segment
+            .row_base
+            .checked_add(segment.header.assignment_count)
+            .unwrap();
+        segment.row_base < selected_range.row_end && row_end > selected_range.row_base
+    }));
 }
 
 #[test]
@@ -262,7 +332,14 @@ fn leaf_partition_object_v4_store_round_trips_multi_representative_block_summari
         ItemPointer::INVALID
     );
     assert!(decoded.meta.summary_bytes_total > 0);
-    assert_eq!(decoded.block_summaries().unwrap(), summaries.as_slice());
+    let decoded_summaries = decoded.block_summaries().unwrap();
+    assert!(decoded_summaries
+        .iter()
+        .all(|summary| summary.row_segment_locator != ItemPointer::INVALID));
+    assert_eq!(
+        summaries_without_row_segment_locators(decoded_summaries),
+        summaries
+    );
     assert_eq!(decoded.assignment_rows().unwrap(), assignments);
 }
 

@@ -1,0 +1,19 @@
+{
+  "InstanceIds": ["i-06ace3e95ab942623"],
+  "DocumentName": "AWS-RunShellScript",
+  "Comment": "task80 aws 1m block16 continuation global4096",
+  "TimeoutSeconds": 14400,
+  "Parameters": {
+    "executionTimeout": ["14400"],
+    "commands": [
+      "set -eux",
+      "cd /var/lib/pgsql/build/ecaz",
+      "sudo -u postgres git fetch origin task-80-row-budgeted-routing",
+      "sudo -u postgres git checkout task-80-row-budgeted-routing",
+      "sudo -u postgres git merge --ff-only FETCH_HEAD",
+      "sudo -u postgres mkdir -p reviews/task-80/001-aws-1m-block16-pruning/artifacts/aws-1m-block16-pruning-continuation",
+      "trap 'status=$?; set +e; aws s3 sync reviews/task-80/001-aws-1m-block16-pruning/artifacts/aws-1m-block16-pruning-continuation s3://ecaz-cloud-1m-b62eb804/bench-artifacts/task80-aws-1m-block16-pruning-continuation-global4096/ --region us-west-2 --only-show-errors || true; exit $status' EXIT",
+      "sudo -u postgres bash -lc 'cd /var/lib/pgsql/build/ecaz; export PATH=/usr/local/bin:$HOME/.cargo/bin:$PATH; /usr/local/bin/ecaz --database postgres --host /var/run/postgresql --user postgres --log-file reviews/task-80/001-aws-1m-block16-pruning/artifacts/aws-1m-block16-pruning-continuation/suite-global4096.log bench suite run --config reviews/task-80/001-aws-1m-block16-pruning/suite-aws-1m-block16-pruning-continuation.json --only precheck-aws-1m-spire-continuation --only pipeline-spire-1m-rabitq-block16-global4096 --continue-on-error --manifest-output reviews/task-80/001-aws-1m-block16-pruning/artifacts/aws-1m-block16-pruning-continuation/suite-global4096-manifest.json --results-output reviews/task-80/001-aws-1m-block16-pruning/artifacts/aws-1m-block16-pruning-continuation/results-global4096.jsonl'"
+    ]
+  }
+}

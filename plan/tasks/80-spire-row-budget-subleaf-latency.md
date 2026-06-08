@@ -1,6 +1,6 @@
 # Task 80: SPIRE Row-Budgeted Routing and Subleaf Latency
 
-Status: active (2026-06-04)
+Status: closed - shelved with evidence (2026-06-04)
 Owner: coder (to be assigned). One coder, one branch.
 Priority: 0 (direct successor to Task 79 and the AWS 1M top-graph recall packet)
 
@@ -41,6 +41,33 @@ latency without simply lowering recall:
 
 The broader latency roadmap is recorded in
 `spec/adr/ADR-075-spire-latency-roadmap.md`.
+
+## Closeout
+
+Task 80 is closed as a measured failed latency path.
+
+Packet `reviews/task-80/001-aws-1m-block16-pruning/` contains the accepted
+local 100k evidence plus AWS 1M follow-up. The local row was credible:
+RaBitQ, `leaf_block_rows=16`, global block cap `1152`, nprobe `96`,
+recall@10 `0.9940`, p50 `35.293 ms`, and `3,673,383` scored candidates over
+200 queries. The AWS 1M retained-index follow-up did not preserve that
+candidate/latency shape:
+
+- global cap `1152` matched the old AWS tg96 recall row (`0.9832`) but was
+  slower: p50 `301.121 ms` vs old `268.824 ms`.
+- global cap `2048` improved recall to `0.9914-0.9918`, but raised the q500
+  scored-candidate surface to about `16.38M` and p50 to `308.087-334.867 ms`.
+- global caps `4096` and `8192` were not run after `2048`, because this path
+  was already spending more candidates and latency rather than reducing them.
+
+No code slice from Task 80 changed scan or storage behavior, so there are no new
+unsafe blocks and no PG18 code validation requirement beyond the packet-local
+`ecaz bench suite` AWS evidence.
+
+The deeper owner is `plan/tasks/81-spire-leaf-block-summary-format.md`: an
+ADR-074-style persisted leaf block-summary format/build task. Further route or
+global-cap sweeps should not be treated as the main SPIRE latency path without
+new evidence that they reduce, rather than increase, the candidate surface.
 
 ## Scope
 

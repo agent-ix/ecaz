@@ -8,6 +8,16 @@ name = "ecaz"
 version = "0.1.1"
 edition = "2021"
 license = "MIT"
+include = [
+    "Cargo.toml",
+    "README.md",
+    "LICENSE*",
+    "build.rs",
+    "benches/**",
+    "csrc/**",
+    "src/**",
+    "tests/**",
+]
 
 [lib]
 crate-type = ["cdylib", "lib"]

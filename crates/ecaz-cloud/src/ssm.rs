@@ -8,7 +8,9 @@
 use color_eyre::eyre::{eyre, Context, Result};
 use serde::Deserialize;
 use tokio::process::Command;
-use tokio::time::{sleep, Duration};
+use tokio::time::{sleep, timeout, Duration};
+
+const AWS_CLI_CALL_TIMEOUT: Duration = Duration::from_secs(60);
 
 /// Sends a shell script to one instance and polls until it terminates.
 /// Returns the captured stdout. The full per-instance result document
@@ -22,6 +24,7 @@ pub async fn run_shell(
     timeout_secs: u64,
 ) -> Result<String> {
     let command_id = send(region, instance_id, script, timeout_secs).await?;
+    eprintln!("ssm: instance={instance_id} command_id={command_id} timeout_secs={timeout_secs}");
     poll(region, instance_id, &command_id, timeout_secs).await
 }
 
@@ -35,26 +38,30 @@ async fn send(region: &str, instance_id: &str, script: &str, timeout_secs: u64) 
     })
     .to_string();
 
-    let output = Command::new("aws")
-        .args([
-            "ssm",
-            "send-command",
-            "--region",
-            region,
-            "--instance-ids",
-            instance_id,
-            "--document-name",
-            "AWS-RunShellScript",
-            "--parameters",
-            &payload,
-            "--query",
-            "Command.CommandId",
-            "--output",
-            "text",
-        ])
-        .output()
-        .await
-        .wrap_err("invoke aws ssm send-command")?;
+    let output = timeout(
+        AWS_CLI_CALL_TIMEOUT,
+        Command::new("aws")
+            .args([
+                "ssm",
+                "send-command",
+                "--region",
+                region,
+                "--instance-ids",
+                instance_id,
+                "--document-name",
+                "AWS-RunShellScript",
+                "--parameters",
+                &payload,
+                "--query",
+                "Command.CommandId",
+                "--output",
+                "text",
+            ])
+            .output(),
+    )
+    .await
+    .wrap_err("aws ssm send-command timed out locally")?
+    .wrap_err("invoke aws ssm send-command")?;
     if !output.status.success() {
         return Err(eyre!(
             "ssm send-command failed: {}",
@@ -85,22 +92,26 @@ async fn poll(
     let deadline = std::time::Instant::now() + Duration::from_secs(timeout_secs + 60);
     loop {
         // Some delay between send and the invocation being observable.
-        let output = Command::new("aws")
-            .args([
-                "ssm",
-                "get-command-invocation",
-                "--region",
-                region,
-                "--instance-id",
-                instance_id,
-                "--command-id",
-                command_id,
-                "--output",
-                "json",
-            ])
-            .output()
-            .await
-            .wrap_err("invoke aws ssm get-command-invocation")?;
+        let output = timeout(
+            AWS_CLI_CALL_TIMEOUT,
+            Command::new("aws")
+                .args([
+                    "ssm",
+                    "get-command-invocation",
+                    "--region",
+                    region,
+                    "--instance-id",
+                    instance_id,
+                    "--command-id",
+                    command_id,
+                    "--output",
+                    "json",
+                ])
+                .output(),
+        )
+        .await
+        .wrap_err("aws ssm get-command-invocation timed out locally")?
+        .wrap_err("invoke aws ssm get-command-invocation")?;
         if output.status.success() {
             let inv: Invocation =
                 serde_json::from_slice(&output.stdout).wrap_err("parse ssm invocation document")?;

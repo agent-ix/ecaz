@@ -240,6 +240,47 @@ mod tests {
     }
 
     #[test]
+    fn zero_gamma_payload_chunk_max_uses_exact_single_payload_score() {
+        let query = vec![1.0, 0.5, -0.25, 0.125];
+        let sources = [vec![0.25, -0.5, 0.75, 1.0], vec![-0.125, 0.25, 0.5, -1.0]];
+
+        for payload_format in [
+            SpireAssignmentPayloadFormat::TurboQuant,
+            SpireAssignmentPayloadFormat::RaBitQ,
+        ] {
+            let scorer =
+                SpirePreparedAssignmentScorer::prepare(payload_format, query.len(), &query)
+                    .unwrap();
+            let payloads = sources
+                .iter()
+                .map(|source| encode_assignment_payload(payload_format, source).unwrap().1)
+                .collect::<Vec<_>>();
+            let payload_stride = payloads[0].len();
+            assert!(payloads.iter().all(|payload| payload.len() == payload_stride));
+
+            let first_single =
+                scorer.score_zero_gamma_payload_prevalidated(payloads[0].as_slice());
+            let first_max = scorer.score_zero_gamma_payload_chunks_max_prevalidated(
+                payload_stride,
+                payloads[0].as_slice(),
+            );
+            assert_eq!(first_single, first_max);
+
+            let mut multi_payload = Vec::new();
+            for payload in &payloads {
+                multi_payload.extend_from_slice(payload);
+            }
+            let expected_multi = payloads
+                .iter()
+                .map(|payload| scorer.score_zero_gamma_payload_prevalidated(payload))
+                .fold(f32::NEG_INFINITY, f32::max);
+            let observed_multi = scorer
+                .score_zero_gamma_payload_chunks_max_prevalidated(payload_stride, &multi_payload);
+            assert_eq!(expected_multi, observed_multi);
+        }
+    }
+
+    #[test]
     fn assignment_scorer_rejects_mismatched_format_and_bad_lengths() {
         let source = vec![0.25, -0.5, 0.75, 1.0];
         let query = vec![1.0, 0.5, -0.25, 0.125];

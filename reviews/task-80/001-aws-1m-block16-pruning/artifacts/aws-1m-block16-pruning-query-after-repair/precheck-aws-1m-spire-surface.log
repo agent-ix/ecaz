@@ -1,0 +1,19 @@
+CREATE EXTENSION
+          captured_at          | database_name |                                               postgres_version                                                
+-------------------------------+---------------+---------------------------------------------------------------------------------------------------------------
+ 2026-06-04 21:18:21.279411+00 | postgres      | PostgreSQL 18.3 on aarch64-amazon-linux-gnu, compiled by gcc (GCC) 11.5.0 20240719 (Red Hat 11.5.0-5), 64-bit
+(1 row)
+
+ shared_buffers | work_mem | maintenance_work_mem | effective_cache_size 
+----------------+----------+----------------------+----------------------
+ 128MB          | 64MB     | 512MB                | 4GB
+(1 row)
+
+NOTICE:  extension "ecaz" already exists, skipping
+FATAL:  terminating connection due to administrator command
+LINE 1: ...e_cache_size; SELECT count(*) AS corpus_rows FROM task67_1m_...
+                                                             ^
+server closed the connection unexpectedly
+	This probably means the server terminated abnormally
+	before or while processing the request.
+connection to server was lost

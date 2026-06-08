@@ -1,0 +1,7 @@
+Command:
+target/debug/ecaz cloud bench --profile 1m --database postgres --config reviews/task-85/004-aws-1m-block8-geometry/suite-aws-1m-block8-geometry-q500.json --suite task85-aws-1m-block8-geometry-q500 --ecaz-bin /usr/local/bin/ecaz --log-file reviews/task-85/004-aws-1m-block8-geometry/artifacts/cloud-bench-block8-geometry-after-volume-expand.log
+
+Captured output:
+ssm: instance=i-06ace3e95ab942623 command_id=67923c8f-4346-4a28-ad38-121f915fd0bb timeout_secs=21600
+bench: synced artifacts from s3://ecaz-cloud-1m-b62eb804/bench-artifacts/task85-aws-1m-block8-geometry-q500/20260607T073042Z/
+bench: profile=1m suite=task85-aws-1m-block8-geometry-q500 run=20260607T073042Z

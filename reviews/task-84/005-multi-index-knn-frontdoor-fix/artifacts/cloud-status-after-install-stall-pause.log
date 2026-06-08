@@ -1,0 +1,8 @@
+Script started on 2026-06-06 12:21:53-07:00 [<not executed on terminal>]
+profile:  1m
+state:    stopping
+db:       10.42.1.131 (i-06ace3e95ab942623)
+bucket:   ecaz-cloud-1m-b62eb804
+cost:     ~$0.00/hr running, ~$8.00/mo retained storage
+
+Script done on 2026-06-06 12:21:56-07:00 [COMMAND_EXIT_CODE="0"]

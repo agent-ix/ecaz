@@ -249,6 +249,7 @@ fn build_recursive_epoch_input_from_centroid_plan_with_timing(
     timing.add_draft_leaf_rows(leaf_rows_started.elapsed());
     let leaf_inputs_started = Instant::now();
     let summary_block_rows = current_leaf_summary_block_rows()?;
+    let summary_representative_count = current_leaf_summary_representative_count()?;
     let mut leaf_inputs = Vec::with_capacity(centroid_count);
     for pid in leaf_pids.iter().copied() {
         let parent_pid = *leaf_parent_pids.get(&pid).ok_or_else(|| {
@@ -270,6 +271,7 @@ fn build_recursive_epoch_input_from_centroid_plan_with_timing(
                     &materialization_rows.rows,
                     &materialization_rows.source_vectors,
                     block_rows,
+                    summary_representative_count,
                 )?
             }
             None => Vec::new(),
@@ -433,6 +435,17 @@ fn current_leaf_summary_block_rows() -> Result<Option<u32>, String> {
     u32::try_from(block_rows)
         .map(Some)
         .map_err(|_| "ec_spire.leaf_block_rows exceeds u32".to_owned())
+}
+
+fn current_leaf_summary_representative_count() -> Result<usize, String> {
+    let representatives = options::current_session_leaf_block_summary_representatives();
+    if !(1..=8).contains(&representatives) {
+        return Err(
+            "ec_spire.leaf_block_summary_representatives must be in the range [1, 8]".to_owned(),
+        );
+    }
+    usize::try_from(representatives)
+        .map_err(|_| "ec_spire.leaf_block_summary_representatives exceeds usize".to_owned())
 }
 
 #[derive(Debug)]
@@ -610,7 +623,7 @@ fn leaf_block_farthest_vector<'a>(
         .as_slice()
 }
 
-fn rabitq_leaf_block_representatives(
+fn rabitq_leaf_block_two_representatives(
     block_vectors: &[Vec<f32>],
     dimensions: usize,
 ) -> Vec<Vec<f32>> {
@@ -651,6 +664,81 @@ fn rabitq_leaf_block_representatives(
     accumulators
 }
 
+fn rabitq_leaf_block_k_representatives(
+    block_vectors: &[Vec<f32>],
+    dimensions: usize,
+    representative_count: usize,
+) -> Vec<Vec<f32>> {
+    let mean = leaf_block_mean(block_vectors, dimensions);
+    if representative_count == 1 {
+        return vec![mean];
+    }
+    if representative_count == 2 {
+        return rabitq_leaf_block_two_representatives(block_vectors, dimensions);
+    }
+
+    let mut seeds = Vec::with_capacity(representative_count);
+    seeds.push(leaf_block_farthest_vector(block_vectors, &mean).to_vec());
+    while seeds.len() < representative_count {
+        let next = block_vectors
+            .iter()
+            .max_by(|left, right| {
+                let left_nearest = seeds
+                    .iter()
+                    .map(|seed| leaf_block_l2_squared(left, seed))
+                    .fold(f32::INFINITY, f32::min);
+                let right_nearest = seeds
+                    .iter()
+                    .map(|seed| leaf_block_l2_squared(right, seed))
+                    .fold(f32::INFINITY, f32::min);
+                left_nearest
+                    .partial_cmp(&right_nearest)
+                    .unwrap_or(Ordering::Equal)
+            })
+            .expect("leaf block representative needs at least one vector")
+            .clone();
+        if seeds
+            .iter()
+            .any(|seed| leaf_block_l2_squared(seed, &next) == 0.0)
+        {
+            seeds.push(mean.clone());
+        } else {
+            seeds.push(next);
+        }
+    }
+
+    let mut accumulators = vec![vec![0.0_f32; dimensions]; representative_count];
+    let mut counts = vec![0_usize; representative_count];
+    for source_vector in block_vectors {
+        let bucket = seeds
+            .iter()
+            .enumerate()
+            .min_by(|(_left_index, left), (_right_index, right)| {
+                leaf_block_l2_squared(source_vector, left)
+                    .partial_cmp(&leaf_block_l2_squared(source_vector, right))
+                    .unwrap_or(Ordering::Equal)
+            })
+            .map(|(index, _seed)| index)
+            .expect("representative seeds should be non-empty");
+        counts[bucket] += 1;
+        for (accum, value) in accumulators[bucket].iter_mut().zip(source_vector.iter()) {
+            *accum += *value;
+        }
+    }
+
+    for ((representative, count), seed) in accumulators.iter_mut().zip(counts).zip(seeds) {
+        if count == 0 {
+            *representative = seed;
+        } else {
+            let inv = 1.0_f32 / count as f32;
+            for value in representative {
+                *value *= inv;
+            }
+        }
+    }
+    accumulators
+}
+
 fn rabitq_leaf_block_covering_radius(block_vectors: &[Vec<f32>], representatives: &[Vec<f32>]) -> f32 {
     let mut radius = 0.0_f32;
     for source_vector in block_vectors {
@@ -668,9 +756,16 @@ fn build_leaf_block_summaries(
     rows: &[SpireLeafAssignmentRow],
     source_vectors: &[Vec<f32>],
     block_rows: u32,
+    rabitq_representative_count: usize,
 ) -> Result<Vec<SpireLeafBlockSummary>, String> {
     if block_rows == 0 {
         return Err("ec_spire leaf summary block_rows 0 is invalid".to_owned());
+    }
+    if !(1..=8).contains(&rabitq_representative_count) {
+        return Err(
+            "ec_spire leaf block summary representative count must be in the range [1, 8]"
+                .to_owned(),
+        );
     }
     if rows.len() != source_vectors.len() {
         return Err(format!(
@@ -721,7 +816,11 @@ fn build_leaf_block_summaries(
         let row_count = u32::try_from(block_vectors.len())
             .map_err(|_| "ec_spire leaf summary row_count exceeds u32".to_owned())?;
         if payload_format == SpireAssignmentPayloadFormat::RaBitQ {
-            let representatives = rabitq_leaf_block_representatives(block_vectors, dimensions);
+            let representatives = rabitq_leaf_block_k_representatives(
+                block_vectors,
+                dimensions,
+                rabitq_representative_count,
+            );
             let summary_gamma = rabitq_leaf_block_covering_radius(block_vectors, &representatives);
             let mut encoded_payload = Vec::new();
             for representative in representatives {
@@ -732,6 +831,7 @@ fn build_leaf_block_summaries(
             summaries.push(SpireLeafBlockSummary {
                 row_base,
                 row_count,
+                row_segment_locator: ItemPointer::INVALID,
                 payload_format: payload_format.tag(),
                 gamma: summary_gamma,
                 encoded_payload,
@@ -743,6 +843,7 @@ fn build_leaf_block_summaries(
             summaries.push(SpireLeafBlockSummary {
                 row_base,
                 row_count,
+                row_segment_locator: ItemPointer::INVALID,
                 payload_format: payload_format.tag(),
                 gamma,
                 encoded_payload,

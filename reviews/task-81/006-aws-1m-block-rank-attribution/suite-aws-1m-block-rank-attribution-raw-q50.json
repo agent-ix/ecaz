@@ -1,0 +1,35 @@
+{
+  "name": "task81-aws-1m-block-rank-attribution-raw-q50",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-81/006-aws-1m-block-rank-attribution/artifacts/aws-1m-block-rank-attribution-raw",
+  "defaults": {
+    "pg": 18,
+    "socket_dir": "/var/run/postgresql",
+    "profile": "ec_spire"
+  },
+  "steps": [
+    {
+      "kind": "raw",
+      "name": "rank-attribution-q50-from-q500-truth",
+      "tags": ["rank", "task81", "aws", "1m", "spire", "rabitq", "block-summary", "global1152", "q50"],
+      "args": [
+        "dev",
+        "sql",
+        "--pg",
+        "18",
+        "--db",
+        "postgres",
+        "--socket-dir",
+        "/var/run/postgresql",
+        "--raw",
+        "--sql",
+        "CREATE EXTENSION IF NOT EXISTS ecaz; DROP FUNCTION IF EXISTS ec_spire_index_scan_leaf_block_rank_snapshot(oid, real[], bigint[]); CREATE FUNCTION ec_spire_index_scan_leaf_block_rank_snapshot(index_oid oid, query real[], target_local_sequences bigint[]) RETURNS TABLE (active_epoch bigint, effective_nprobe bigint, effective_nprobe_source text, effective_rerank_width bigint, effective_rerank_width_source text, target_ordinal bigint, target_local_sequence bigint, status text, max_global_blocks bigint, radius_weight double precision, scored_block_count bigint, block_rank bigint, selected_by_global_cap boolean, pid bigint, node_id bigint, local_store_id bigint, object_version bigint, row_index bigint, row_base bigint, row_end bigint, row_count bigint, block_ip real, assignment_flags integer) STRICT STABLE LANGUAGE c AS '$libdir/ecaz', 'ec_spire_index_scan_leaf_block_rank_snapshot_wrapper'; SET ec_spire.nprobe = 96; SET ec_spire.rerank_width = 25; SET ec_spire.leaf_block_pruning_max_blocks_per_leaf = 0; SET ec_spire.leaf_block_pruning_max_global_blocks = 1152; SET ec_spire.leaf_block_pruning_global_probe_blocks = 0; SET ec_spire.leaf_block_pruning_sample_rows_per_block = 0; SET ec_spire.leaf_block_pruning_sample_summary_prior_weight = 0.8; SET ec_spire.leaf_block_pruning_summary_radius_weight = 0.25; SET ec_spire.leaf_block_pruning_route_prior_weight = 0.0; WITH cache AS (SELECT pg_read_file('benchmarks/task51-aws-ivf-rabitq-final-gate/artifacts/truth-aws-real-1m-q500-k10.json')::jsonb AS j), truth AS (SELECT (qidx - 1)::bigint AS query_ordinal, array_agg((idtxt::bigint + 1) ORDER BY tidx)::bigint[] AS target_local_sequences FROM cache CROSS JOIN LATERAL jsonb_array_elements(j #> '{truth,ids}') WITH ORDINALITY AS q(arr, qidx) CROSS JOIN LATERAL jsonb_array_elements_text(q.arr) WITH ORDINALITY AS t(idtxt, tidx) WHERE qidx <= 50 GROUP BY qidx), queries AS (SELECT (row_number() OVER (ORDER BY id) - 1)::bigint AS query_ordinal, id AS query_id, source FROM task67_1m_hnsw_m7g2xlarge_queries ORDER BY id LIMIT 50), ranked AS (SELECT q.query_ordinal, q.query_id, r.* FROM queries q JOIN truth t USING (query_ordinal) CROSS JOIN LATERAL ec_spire_index_scan_leaf_block_rank_snapshot('aws_spire_1m_rabitq_t80_block16_tg256_idx'::regclass, q.source, t.target_local_sequences) r) SELECT 'summary' AS section, status, selected_by_global_cap, count(*) AS rows, min(block_rank) AS min_block_rank, percentile_disc(0.5) WITHIN GROUP (ORDER BY block_rank) AS p50_block_rank, max(block_rank) AS max_block_rank FROM ranked GROUP BY status, selected_by_global_cap ORDER BY status, selected_by_global_cap; WITH cache AS (SELECT pg_read_file('benchmarks/task51-aws-ivf-rabitq-final-gate/artifacts/truth-aws-real-1m-q500-k10.json')::jsonb AS j), truth AS (SELECT (qidx - 1)::bigint AS query_ordinal, array_agg((idtxt::bigint + 1) ORDER BY tidx)::bigint[] AS target_local_sequences FROM cache CROSS JOIN LATERAL jsonb_array_elements(j #> '{truth,ids}') WITH ORDINALITY AS q(arr, qidx) CROSS JOIN LATERAL jsonb_array_elements_text(q.arr) WITH ORDINALITY AS t(idtxt, tidx) WHERE qidx <= 50 GROUP BY qidx), queries AS (SELECT (row_number() OVER (ORDER BY id) - 1)::bigint AS query_ordinal, id AS query_id, source FROM task67_1m_hnsw_m7g2xlarge_queries ORDER BY id LIMIT 50), ranked AS (SELECT q.query_ordinal, q.query_id, r.* FROM queries q JOIN truth t USING (query_ordinal) CROSS JOIN LATERAL ec_spire_index_scan_leaf_block_rank_snapshot('aws_spire_1m_rabitq_t80_block16_tg256_idx'::regclass, q.source, t.target_local_sequences) r) SELECT 'miss_detail' AS section, query_ordinal, query_id, target_ordinal, target_local_sequence, status, block_rank, selected_by_global_cap, scored_block_count, pid, row_index, row_base, row_end, block_ip FROM ranked WHERE status <> 'block_ranked' OR selected_by_global_cap IS DISTINCT FROM true ORDER BY query_ordinal, target_ordinal;",
+        "--log-output",
+        "reviews/task-81/006-aws-1m-block-rank-attribution/artifacts/aws-1m-block-rank-attribution-raw/rank-attribution-q50-from-q500-truth.log"
+      ],
+      "expected_artifacts": [
+        "reviews/task-81/006-aws-1m-block-rank-attribution/artifacts/aws-1m-block-rank-attribution-raw/rank-attribution-q50-from-q500-truth.log"
+      ]
+    }
+  ]
+}

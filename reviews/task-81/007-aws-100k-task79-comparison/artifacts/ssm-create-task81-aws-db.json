@@ -1,0 +1,22 @@
+{
+    "CommandId": "471754bf-cb00-4010-a497-80fc983c441f",
+    "InstanceId": "i-06ace3e95ab942623",
+    "Comment": "",
+    "DocumentName": "AWS-RunShellScript",
+    "DocumentVersion": "$DEFAULT",
+    "PluginName": "aws:runShellScript",
+    "ResponseCode": 0,
+    "ExecutionStartDateTime": "2026-06-05T04:52:31.768Z",
+    "ExecutionElapsedTime": "PT0.674S",
+    "ExecutionEndDateTime": "2026-06-05T04:52:31.768Z",
+    "Status": "Success",
+    "StatusDetails": "Success",
+    "StandardOutputContent": "CREATE EXTENSION\ntask81_aws\n",
+    "StandardOutputUrl": "",
+    "StandardErrorContent": "++ sudo -u postgres psql -d postgres -Atc 'SELECT 1 FROM pg_database WHERE datname = '\\''task81_aws'\\'''\n++ grep -q 1\n++ sudo -u postgres createdb task81_aws\n++ sudo -u postgres psql -d task81_aws -Atc 'CREATE EXTENSION IF NOT EXISTS ecaz; SELECT current_database();'\n",
+    "StandardErrorUrl": "",
+    "CloudWatchOutputConfig": {
+        "CloudWatchLogGroupName": "",
+        "CloudWatchOutputEnabled": false
+    }
+}

@@ -34,8 +34,10 @@ const EC_SPIRE_SESSION_RERANK_WIDTH_UNSET: i32 = -1;
 const EC_SPIRE_SESSION_MAX_CANDIDATE_ROWS_UNSET: i32 = -1;
 const EC_SPIRE_SESSION_MAX_ROUTED_CANDIDATE_ROWS_DISABLED: i32 = 0;
 const EC_SPIRE_SESSION_LEAF_BLOCK_ROWS_DISABLED: i32 = 0;
+const EC_SPIRE_DEFAULT_LEAF_BLOCK_SUMMARY_REPRESENTATIVES: i32 = 2;
 const EC_SPIRE_SESSION_LEAF_BLOCK_PRUNING_DISABLED: i32 = 0;
 const EC_SPIRE_MAX_LEAF_BLOCK_ROWS: i32 = 4096;
+const EC_SPIRE_MAX_LEAF_BLOCK_SUMMARY_REPRESENTATIVES: i32 = 8;
 const EC_SPIRE_MAX_LEAF_BLOCK_PRUNING_BLOCKS_PER_LEAF: i32 = 4096;
 const EC_SPIRE_MAX_LEAF_BLOCK_PRUNING_GLOBAL_BLOCKS: i32 = 262_144;
 const EC_SPIRE_MAX_LEAF_BLOCK_PRUNING_GLOBAL_PROBE_BLOCKS: i32 = 262_144;
@@ -76,6 +78,8 @@ static EC_SPIRE_MAX_ROUTED_CANDIDATE_ROWS_GUC: GucSetting<i32> =
     GucSetting::<i32>::new(EC_SPIRE_SESSION_MAX_ROUTED_CANDIDATE_ROWS_DISABLED);
 static EC_SPIRE_LEAF_BLOCK_ROWS_GUC: GucSetting<i32> =
     GucSetting::<i32>::new(EC_SPIRE_SESSION_LEAF_BLOCK_ROWS_DISABLED);
+static EC_SPIRE_LEAF_BLOCK_SUMMARY_REPRESENTATIVES_GUC: GucSetting<i32> =
+    GucSetting::<i32>::new(EC_SPIRE_DEFAULT_LEAF_BLOCK_SUMMARY_REPRESENTATIVES);
 static EC_SPIRE_LEAF_BLOCK_PRUNING_MAX_BLOCKS_PER_LEAF_GUC: GucSetting<i32> =
     GucSetting::<i32>::new(EC_SPIRE_SESSION_LEAF_BLOCK_PRUNING_DISABLED);
 static EC_SPIRE_LEAF_BLOCK_PRUNING_MAX_GLOBAL_BLOCKS_GUC: GucSetting<i32> =
@@ -795,6 +799,16 @@ pub(super) fn register_gucs() {
         GucFlags::default(),
     );
     GucRegistry::define_int_guc(
+        c"ec_spire.leaf_block_summary_representatives",
+        c"Build-time SPIRE RaBitQ summary representatives per leaf block.",
+        c"Controls how many encoded representatives are stored in each RaBitQ leaf block summary for new index builds. Existing indexes keep their persisted representative count.",
+        &EC_SPIRE_LEAF_BLOCK_SUMMARY_REPRESENTATIVES_GUC,
+        1,
+        EC_SPIRE_MAX_LEAF_BLOCK_SUMMARY_REPRESENTATIVES,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
+    GucRegistry::define_int_guc(
         c"ec_spire.leaf_block_pruning_max_blocks_per_leaf",
         c"Session cap for SPIRE leaf block-summary pruning.",
         c"Maximum scored summary blocks retained per routed leaf before row scoring; 0 disables leaf-local block pruning and scans full leaves.",
@@ -1108,6 +1122,14 @@ pub(super) fn current_session_leaf_block_rows() -> i32 {
         EC_SPIRE_SESSION_LEAF_BLOCK_ROWS_DISABLED
     } else {
         EC_SPIRE_LEAF_BLOCK_ROWS_GUC.get()
+    }
+}
+
+pub(super) fn current_session_leaf_block_summary_representatives() -> i32 {
+    if cfg!(test) {
+        EC_SPIRE_DEFAULT_LEAF_BLOCK_SUMMARY_REPRESENTATIVES
+    } else {
+        EC_SPIRE_LEAF_BLOCK_SUMMARY_REPRESENTATIVES_GUC.get()
     }
 }
 

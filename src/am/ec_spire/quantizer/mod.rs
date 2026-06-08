@@ -222,6 +222,10 @@ impl SpirePreparedAssignmentScorer {
         debug_assert!(!encoded_payload.is_empty());
         debug_assert_eq!(encoded_payload.len() % payload_stride, 0);
 
+        if encoded_payload.len() == payload_stride {
+            return self.score_zero_gamma_payload_prevalidated(encoded_payload);
+        }
+
         match self {
             Self::TurboQuant {
                 quantizer,
@@ -249,6 +253,19 @@ impl SpirePreparedAssignmentScorer {
                         .fold(f32::NEG_INFINITY, f32::max)
                 }
             }
+        }
+    }
+
+    pub(super) fn score_zero_gamma_payload_prevalidated(&self, encoded_payload: &[u8]) -> f32 {
+        debug_assert!(!encoded_payload.is_empty());
+
+        match self {
+            Self::TurboQuant {
+                quantizer,
+                prepared,
+                ..
+            } => quantizer.score_ip_from_parts(prepared, 0.0, encoded_payload),
+            Self::RaBitQ { prepared, .. } => prepared.estimate_ip_scalar_only(encoded_payload),
         }
     }
 

@@ -1,0 +1,8 @@
+Command:
+sudo xfs_growfs /var/lib/pgsql/18 && df -h /var/lib/pgsql/18
+
+Captured output:
+data blocks changed from 26214400 to 39321600
+
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/nvme1n1    150G  100G   51G  67% /var/lib/pgsql/18
