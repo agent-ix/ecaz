@@ -1,6 +1,6 @@
 # Task 87: Candidate-Batched Scoring Across Access Methods
 
-Status: proposed (2026-06-07)
+Status: complete (2026-06-08; see reviews/task-87/015-phase6-closeout/)
 Owner: coder (to be assigned). One coder, one branch.
 Priority: 2 (kernel-level optimization unlock; follows Task 86)
 
