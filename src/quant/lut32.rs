@@ -32,6 +32,7 @@ pub(crate) fn validate_mse_code_shape(
     Ok(())
 }
 
+#[cfg(test)]
 pub(crate) fn score_lut_no_qjl_4bit_batch(
     lut: &[f32],
     original_dim: usize,

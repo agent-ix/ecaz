@@ -230,6 +230,96 @@ pub(crate) async fn apply_session_gucs(
     Ok(())
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct Task87CandidateBatchCounterSnapshot {
+    pub(crate) surface: String,
+    pub(crate) flushes: i64,
+    pub(crate) candidates: i64,
+    pub(crate) elapsed_nanos: i64,
+    pub(crate) lut32_flushes: i64,
+    pub(crate) lut32_candidates: i64,
+}
+
+impl Task87CandidateBatchCounterSnapshot {
+    fn merge(&mut self, other: &Self) {
+        self.flushes += other.flushes;
+        self.candidates += other.candidates;
+        self.elapsed_nanos += other.elapsed_nanos;
+        self.lut32_flushes += other.lut32_flushes;
+        self.lut32_candidates += other.lut32_candidates;
+    }
+}
+
+pub(crate) async fn reset_task87_candidate_batch_counters(client: &Client) -> Result<()> {
+    client
+        .batch_execute("SELECT ec_task87_candidate_batch_scoring_reset()")
+        .await
+        .wrap_err("resetting Task 87 CandidateBatch scoring counters")?;
+    Ok(())
+}
+
+pub(crate) async fn snapshot_task87_candidate_batch_counters(
+    client: &Client,
+) -> Result<Vec<Task87CandidateBatchCounterSnapshot>> {
+    let rows = client
+        .query(
+            "SELECT surface, flushes, candidates, elapsed_nanos, lut32_flushes, lut32_candidates \
+             FROM ec_task87_candidate_batch_scoring_snapshot() \
+             ORDER BY surface",
+            &[],
+        )
+        .await
+        .wrap_err("snapshotting Task 87 CandidateBatch scoring counters")?;
+    Ok(rows
+        .into_iter()
+        .map(|row| Task87CandidateBatchCounterSnapshot {
+            surface: row.get(0),
+            flushes: row.get(1),
+            candidates: row.get(2),
+            elapsed_nanos: row.get(3),
+            lut32_flushes: row.get(4),
+            lut32_candidates: row.get(5),
+        })
+        .collect())
+}
+
+pub(crate) fn merge_task87_candidate_batch_counters(
+    snapshots: Vec<Vec<Task87CandidateBatchCounterSnapshot>>,
+) -> Vec<Task87CandidateBatchCounterSnapshot> {
+    let mut merged =
+        std::collections::BTreeMap::<String, Task87CandidateBatchCounterSnapshot>::new();
+    for snapshot_set in snapshots {
+        for snapshot in snapshot_set {
+            merged
+                .entry(snapshot.surface.clone())
+                .and_modify(|existing| existing.merge(&snapshot))
+                .or_insert(snapshot);
+        }
+    }
+    merged.into_values().collect()
+}
+
+pub(crate) fn format_task87_candidate_batch_counter_lines(
+    command: &str,
+    label: &str,
+    snapshots: &[Task87CandidateBatchCounterSnapshot],
+) -> String {
+    let mut lines = Vec::new();
+    for snapshot in snapshots {
+        lines.push(format!(
+            "[task87-counters] command={command} label={label} surface={} flushes={} candidates={} elapsed_nanos={} elapsed_ms={:.6} lut32_flushes={} lut32_candidates={}",
+            snapshot.surface,
+            snapshot.flushes,
+            snapshot.candidates,
+            snapshot.elapsed_nanos,
+            snapshot.elapsed_nanos as f64 / 1_000_000.0,
+            snapshot.lut32_flushes,
+            snapshot.lut32_candidates
+        ));
+    }
+    lines.join("\n")
+}
+
 fn validate_guc_name(name: &str) -> Result<()> {
     let mut parts = name.split('.');
     let Some(first) = parts.next() else {
