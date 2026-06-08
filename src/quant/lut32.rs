@@ -2,6 +2,36 @@
 
 pub(crate) const BLOCK_WIDTH: usize = 32;
 
+pub(crate) fn expected_mse_code_len(original_dim: usize) -> usize {
+    original_dim.div_ceil(2)
+}
+
+pub(crate) fn validate_lut_shape(lut: &[f32], original_dim: usize) -> Result<(), String> {
+    if lut.len() != original_dim * 16 {
+        return Err(format!(
+            "lut32 LUT length mismatch: got {}, expected {}",
+            lut.len(),
+            original_dim * 16
+        ));
+    }
+    Ok(())
+}
+
+pub(crate) fn validate_mse_code_shape(
+    index: usize,
+    original_dim: usize,
+    code: &[u8],
+) -> Result<(), String> {
+    let expected_mse_len = expected_mse_code_len(original_dim);
+    if code.len() < expected_mse_len {
+        return Err(format!(
+            "lut32 code {index} too short: got {}, expected at least {expected_mse_len}",
+            code.len()
+        ));
+    }
+    Ok(())
+}
+
 pub(crate) fn score_lut_no_qjl_4bit_batch(
     lut: &[f32],
     original_dim: usize,
@@ -15,21 +45,9 @@ pub(crate) fn score_lut_no_qjl_4bit_batch(
             mse_codes.len()
         ));
     }
-    if lut.len() != original_dim * 16 {
-        return Err(format!(
-            "lut32 LUT length mismatch: got {}, expected {}",
-            lut.len(),
-            original_dim * 16
-        ));
-    }
-    let expected_mse_len = original_dim.div_ceil(2);
+    validate_lut_shape(lut, original_dim)?;
     for (index, code) in mse_codes.iter().enumerate() {
-        if code.len() < expected_mse_len {
-            return Err(format!(
-                "lut32 code {index} too short: got {}, expected at least {expected_mse_len}",
-                code.len()
-            ));
-        }
+        validate_mse_code_shape(index, original_dim, code)?;
     }
 
     let mut block_start = 0usize;
@@ -51,6 +69,19 @@ pub(crate) fn score_lut_no_qjl_4bit_batch(
     }
 
     Ok(())
+}
+
+pub(crate) fn score_lut_no_qjl_4bit_block32(
+    lut: &[f32],
+    original_dim: usize,
+    codes: [&[u8]; BLOCK_WIDTH],
+    out_scores: &mut [f32],
+) {
+    score_block32(lut, original_dim, &codes, out_scores);
+}
+
+pub(crate) fn score_lut_no_qjl_4bit_scalar(lut: &[f32], original_dim: usize, code: &[u8]) -> f32 {
+    score_scalar(lut, original_dim, code)
 }
 
 fn score_block32(lut: &[f32], original_dim: usize, codes: &[&[u8]], out_scores: &mut [f32]) {

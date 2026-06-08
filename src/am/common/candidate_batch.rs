@@ -241,39 +241,81 @@ fn score_turboquant_no_qjl_4bit_batch_inner<Id>(
         ));
     }
 
-    for payload in batch.payloads() {
-        match payload.meta {
-            CandidateMeta::None | CandidateMeta::Gamma(_) => {}
-            CandidateMeta::GammaAndResidualSigns { .. }
-            | CandidateMeta::Binary
-            | CandidateMeta::RaBitQ
-            | CandidateMeta::GroupedPq { .. } => {
-                return Err(
-                    "TurboQuant no-QJL 4-bit batch received incompatible candidate metadata"
-                        .to_owned(),
-                );
-            }
-        }
-    }
-
     if batch.len() >= crate::quant::lut32::BLOCK_WIDTH {
-        let mse_codes: Vec<&[u8]> = batch
-            .payloads()
-            .iter()
-            .map(|payload| quantizer.mse_code_bytes_no_qjl_4bit(payload.code))
-            .collect();
-        return crate::quant::lut32::score_lut_no_qjl_4bit_batch(
-            &prepared.lut,
-            quantizer.original_dim,
-            &mse_codes,
-            out_scores,
-        );
+        return score_turboquant_no_qjl_4bit_batch_lut32(quantizer, prepared, batch, out_scores);
     }
 
     for (payload, out_score) in batch.payloads().iter().zip(out_scores.iter_mut()) {
+        validate_turboquant_no_qjl_4bit_meta(payload.meta)?;
         *out_score = quantizer.score_ip_from_parts_lut_no_qjl_4bit(prepared, payload.code);
     }
     Ok(())
+}
+
+fn score_turboquant_no_qjl_4bit_batch_lut32<Id>(
+    quantizer: &ProdQuantizer,
+    prepared: &PreparedLutNoQjl4BitQuery,
+    batch: &CandidateBatch<'_, Id>,
+    out_scores: &mut [f32],
+) -> Result<(), String> {
+    crate::quant::lut32::validate_lut_shape(&prepared.lut, quantizer.original_dim)?;
+
+    let mut block_start = 0usize;
+    while block_start + crate::quant::lut32::BLOCK_WIDTH <= batch.len() {
+        let payloads =
+            &batch.payloads()[block_start..block_start + crate::quant::lut32::BLOCK_WIDTH];
+        let mut mse_codes = [&[][..]; crate::quant::lut32::BLOCK_WIDTH];
+        for (lane, payload) in payloads.iter().enumerate() {
+            validate_turboquant_no_qjl_4bit_meta(payload.meta)?;
+            let mse_code = quantizer.mse_code_bytes_no_qjl_4bit(payload.code);
+            crate::quant::lut32::validate_mse_code_shape(
+                block_start + lane,
+                quantizer.original_dim,
+                mse_code,
+            )?;
+            mse_codes[lane] = mse_code;
+        }
+        crate::quant::lut32::score_lut_no_qjl_4bit_block32(
+            &prepared.lut,
+            quantizer.original_dim,
+            mse_codes,
+            &mut out_scores[block_start..block_start + crate::quant::lut32::BLOCK_WIDTH],
+        );
+        block_start += crate::quant::lut32::BLOCK_WIDTH;
+    }
+
+    for (candidate_index, (payload, out_score)) in batch.payloads()[block_start..]
+        .iter()
+        .zip(out_scores[block_start..].iter_mut())
+        .enumerate()
+    {
+        validate_turboquant_no_qjl_4bit_meta(payload.meta)?;
+        let mse_code = quantizer.mse_code_bytes_no_qjl_4bit(payload.code);
+        crate::quant::lut32::validate_mse_code_shape(
+            block_start + candidate_index,
+            quantizer.original_dim,
+            mse_code,
+        )?;
+        *out_score = crate::quant::lut32::score_lut_no_qjl_4bit_scalar(
+            &prepared.lut,
+            quantizer.original_dim,
+            mse_code,
+        );
+    }
+
+    Ok(())
+}
+
+fn validate_turboquant_no_qjl_4bit_meta(meta: CandidateMeta<'_>) -> Result<(), String> {
+    match meta {
+        CandidateMeta::None | CandidateMeta::Gamma(_) => Ok(()),
+        CandidateMeta::GammaAndResidualSigns { .. }
+        | CandidateMeta::Binary
+        | CandidateMeta::RaBitQ
+        | CandidateMeta::GroupedPq { .. } => {
+            Err("TurboQuant no-QJL 4-bit batch received incompatible candidate metadata".to_owned())
+        }
+    }
 }
 
 #[cfg(test)]
