@@ -1,6 +1,9 @@
 # Task 86: TurboVec-Derived TurboQuant Improvements
 
-Status: coder-complete pending reviewer acceptance (2026-06-07; TQ+ real-corpus IVF packet + closeout audit pending review)
+Status: complete 2026-06-07
+  - SPIRE TurboQuant LUT alignment shipped per `reviews/task-86/008-spire-real-spread/`.
+  - IVF TQ+ shipped as opt-in `StorageFormat` tag 4 per `reviews/task-86/011-ivf-tqplus-real-spread/`.
+  - Closeout accepted per `reviews/task-86/016-final-audit/`; final safety-doc fix recorded in `reviews/task-86/017-loader-safety-docs/`.
 Owner: coder (to be assigned). One coder, one branch.
 Priority: 1 (TurboQuant scan/storage improvement lane across AMs)
 
@@ -194,5 +197,7 @@ synthetic-only probe to a real-corpus IVF measurement candidate. It compares
 real10k, real50k, and real100k with rerank disabled, and records recall,
 latency, and storage in packet-local suite artifacts. Packet
 `reviews/task-86/012-closeout-after-tqplus/` records the updated completion
-audit. The task is coder-complete pending outside reviewer acceptance; broader
-TQ+ production promotion and cross-AM rollout remain follow-up decisions.
+audit. `reviews/task-86/016-final-audit/` records final closeout acceptance, and
+`reviews/task-86/017-loader-safety-docs/` resolves the final merge-blocking
+safety-documentation flag. Broader TQ+ production promotion and cross-AM rollout
+remain follow-up decisions.

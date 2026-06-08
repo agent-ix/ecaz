@@ -8,6 +8,8 @@ The branch had real benchmark evidence after packet 011, but the code diff still
 
 After a scope check, Task 87/88 task-definition commits were also reverted from this Task 86 branch. Those follow-up ideas remain recoverable from their commits, but they are not part of this Task 86 landing scope.
 
+Packet 011 reviewer feedback also flagged that TQ+ adds two `unsafe fn` helpers even after the literal added `unsafe { ... }` blocks were removed. I re-audited those helpers and recorded the conclusion in `artifacts/final-audit.md`: they mirror the existing IVF PQ-fastscan raw-relation loader pattern, and making them safe would only create new internal unsafe blocks around the same PostgreSQL page-read contract.
+
 ## Validation
 
 - `git diff --unified=0 origin/main...HEAD -- src hardening | rg -n '^\\+.*unsafe \\{'`
@@ -23,5 +25,6 @@ After a scope check, Task 87/88 task-definition commits were also reverted from 
 ## Review Focus
 
 - Confirm that packet 016 satisfies the "No new unsafe blocks" exit criterion.
+- Confirm that the packet 011 unsafe-function flag is now explicitly accounted for in the final audit.
 - Confirm that packet 011 plus packet 012 satisfy the TQ+ real-benchmark gap that made the earlier closeout incomplete.
 - Confirm that no cross-AM TQ+ production claim is being made beyond the measured IVF lane.

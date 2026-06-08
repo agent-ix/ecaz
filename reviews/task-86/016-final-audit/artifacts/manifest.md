@@ -27,3 +27,9 @@
 ## Scope Cleanup
 
 - Task 87/88 task-definition commits were reverted from this Task 86 branch after audit because they are follow-up planning work, not Task 86 deliverables.
+
+## Packet 011 Reviewer Flag Processing
+
+- The packet 011 reviewer flagged that the branch still adds TQ+ `unsafe fn` helpers even after commit `d58ff8716670d721edc1b6ca90c9418ee9a23970` removed literal added `unsafe { ... }` blocks.
+- `final-audit.md` now records the distinction: no added unsafe blocks remain; the added `unsafe fn` helpers inherit the existing IVF raw PostgreSQL relation/page-read contract used by the PQ-fastscan loader shape.
+- No code or benchmark rerun was needed for this clarification packet update.

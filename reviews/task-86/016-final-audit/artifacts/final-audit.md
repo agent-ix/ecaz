@@ -29,7 +29,7 @@ This audit does not self-close reviewer workflow. It records that the previously
 | Any accepted code change has packet-backed TurboQuant baseline evidence. | SPIRE LUT: packet 008. IVF TQ+: packet 011. | Satisfied. |
 | Any rejected idea explains blocker. | Packet 006 and packet 010 list latency, quality, bytes, AM transferability, or implementation complexity blockers for byte LUT, renorm, blocked slabs, dense rotation, fused top-k, and DiskANN adapter work. | Satisfied. |
 | No unrelated quantizer work included. | Measurements and reports stay TurboQuant/TQ+ scoped. Mentions of other storage formats in code are dispatch compatibility arms or error text, not comparison evidence. | Satisfied. |
-| No new unsafe blocks. | Commit `d58ff8716670d721edc1b6ca90c9418ee9a23970` removes the two added `unsafe { ... }` blocks from `src/am/ec_ivf/insert.rs`; `artifacts/no-added-unsafe-blocks.log` records no added unsafe blocks remain at this packet's head. | Satisfied. |
+| No new unsafe blocks. | Commit `d58ff8716670d721edc1b6ca90c9418ee9a23970` removes the two added `unsafe { ... }` blocks from `src/am/ec_ivf/insert.rs`; `artifacts/no-added-unsafe-blocks.log` records no added unsafe blocks remain at this packet's head. See "Unsafe Function Audit" below for the related reviewer flag on new `unsafe fn` helpers. | Satisfied. |
 | PG18-focused validation for code slices. | Packets 008, 011, 013, 014, 015; packet 016 adds `cargo check -p ecaz --lib --no-default-features --features pg18` after unsafe-block cleanup. | Satisfied. |
 | Format-changing slice has an ADR or task-local format-version plan. | Packet 011 `artifacts/tqplus-format-plan.md` documents tag `4`, calibration chain, compatibility, insert/scan/vacuum semantics, and promotion requirements. | Satisfied. |
 
@@ -52,6 +52,17 @@ Packet 011 measures IVF `storage_format=turboquant` vs `storage_format=turboquan
 - hot posting bytes stay the same, with only small index B/row metadata deltas.
 
 The current suite runner does not expose separate scorer-only and query-prep timing for these index runs. The task evidence therefore cites production scan-path latency and does not claim separate scorer/prep timing beyond what is available.
+
+## Unsafe Function Audit
+
+Packet 011 reviewer feedback flagged a literal-text edge case: Task 86 no longer adds literal `unsafe { ... }` blocks, but the TQ+ IVF path still adds two `unsafe fn` helpers:
+
+- `src/am/ec_ivf/quantizer.rs`: `load_tqplus_model`
+- `src/am/ec_ivf/scan.rs`: `tqplus_model_for_scan`
+
+Those helpers follow the pre-existing IVF raw PostgreSQL relation contract used by `load_pq_fastscan_model` and `pq_fastscan_model_for_scan`. The unsafety is the inherited AM/page-read precondition that callers pass a live IVF index relation plus matching metadata. The scan helper returns a borrow tied to `&mut EcIvfScanOpaque`, not to a raw pointer.
+
+I did not make these helpers safe because that would only move the same raw-relation page reads into new `unsafe { ... }` blocks inside the helpers, which would regress the task's explicit "No new unsafe blocks" exit criterion without reducing the underlying PostgreSQL contract. The remaining broader promotion requirements are the low-risk items already called out in packet 011 feedback and the format plan: dedicated calibration tuples and negative metadata corruption fixtures before carrying TQ+ to SPIRE/HNSW/DiskANN.
 
 ## Remaining External Workflow
 
