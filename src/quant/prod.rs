@@ -470,6 +470,16 @@ impl ProdQuantizer {
         self.score_ip_from_split_parts_lut_no_qjl_4bit(&prepared.lut, mse_packed)
     }
 
+    pub(crate) fn mse_code_bytes_no_qjl_4bit<'a>(&self, code_bytes: &'a [u8]) -> &'a [u8] {
+        assert!(
+            self.bits == 4 && !qjl_enabled(self.original_dim, self.bits),
+            "MSE payload extraction requires the no-QJL 4-bit lane"
+        );
+        let (mse_packed, qjl_packed) = self.split_code_bytes(code_bytes);
+        debug_assert!(qjl_packed.is_empty());
+        mse_packed
+    }
+
     pub fn score_ip_from_parts_tiled_lut_no_qjl_4bit(
         &self,
         prepared: &PreparedTiledLutNoQjl4BitQuery,
