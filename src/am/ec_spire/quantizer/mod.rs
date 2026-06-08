@@ -5,7 +5,9 @@ use super::storage::{
     SpireLeafAssignmentRow, SPIRE_PAYLOAD_FORMAT_PQ_FASTSCAN, SPIRE_PAYLOAD_FORMAT_RABITQ,
     SPIRE_PAYLOAD_FORMAT_TURBOQUANT,
 };
-use crate::quant::prod::{payload_len, PreparedQuery, ProdQuantizer};
+use crate::quant::prod::{
+    payload_len, ExactScoreMode, PreparedLutNoQjl4BitQuery, PreparedQuery, ProdQuantizer,
+};
 use crate::quant::rabitq::{code_len_for, PreparedEstimator, RaBitQQuantizer};
 use crate::quant::Quantizer;
 use crate::storage::page::ItemPointer;
@@ -44,6 +46,7 @@ pub(super) enum SpirePreparedAssignmentScorer {
         query_l2_norm: f32,
         quantizer: Arc<ProdQuantizer>,
         prepared: PreparedQuery,
+        no_qjl_4bit_lut: Option<PreparedLutNoQjl4BitQuery>,
     },
     RaBitQ {
         dimensions: usize,
@@ -72,11 +75,15 @@ impl SpirePreparedAssignmentScorer {
                     crate::DEFAULT_QUANT_SEED,
                 );
                 let prepared = quantizer.prepare_ip_query(query_vector);
+                let no_qjl_4bit_lut = (quantizer.exact_score_mode()
+                    == ExactScoreMode::MseNoQjl4Bit)
+                    .then(|| quantizer.prepare_ip_query_lut_no_qjl_4bit(query_vector));
                 Ok(Self::TurboQuant {
                     dimensions,
                     query_l2_norm,
                     quantizer,
                     prepared,
+                    no_qjl_4bit_lut,
                 })
             }
             SpireAssignmentPayloadFormat::RaBitQ => {
@@ -176,10 +183,21 @@ impl SpirePreparedAssignmentScorer {
                 dimensions,
                 quantizer,
                 prepared,
+                no_qjl_4bit_lut,
                 ..
             } => {
                 validate_payload_len(*dimensions, payload_format, encoded_payload)?;
-                Ok(quantizer.score_ip_from_parts(prepared, gamma, encoded_payload))
+                if let Some(prepared_lut) = no_qjl_4bit_lut {
+                    // The no-QJL 4-bit lane has no residual sign payload, so gamma is not
+                    // part of the exact score. Keep the generic scorer as the fallback for
+                    // modes that still carry a QJL residual term.
+                    Ok(
+                        quantizer
+                            .score_ip_from_parts_lut_no_qjl_4bit(prepared_lut, encoded_payload),
+                    )
+                } else {
+                    Ok(quantizer.score_ip_from_parts(prepared, gamma, encoded_payload))
+                }
             }
             Self::RaBitQ {
                 dimensions,
@@ -212,10 +230,18 @@ impl SpirePreparedAssignmentScorer {
             Self::TurboQuant {
                 quantizer,
                 prepared,
+                no_qjl_4bit_lut,
                 ..
             } => encoded_payload
                 .chunks_exact(payload_stride)
-                .map(|payload| quantizer.score_ip_from_parts(prepared, 0.0, payload))
+                .map(|payload| {
+                    if let Some(prepared_lut) = no_qjl_4bit_lut {
+                        // The no-QJL 4-bit lane ignores gamma by construction.
+                        quantizer.score_ip_from_parts_lut_no_qjl_4bit(prepared_lut, payload)
+                    } else {
+                        quantizer.score_ip_from_parts(prepared, 0.0, payload)
+                    }
+                })
                 .fold(f32::NEG_INFINITY, f32::max),
             Self::RaBitQ { prepared, .. } => {
                 if matches!(prepared.bits_per_dim(), 1 | 4 | 8) {
@@ -299,6 +325,7 @@ impl SpirePreparedAssignmentScorer {
             Self::TurboQuant {
                 quantizer,
                 prepared,
+                no_qjl_4bit_lut,
                 ..
             } => {
                 for ((payload, gamma), out_score) in payloads
@@ -306,7 +333,12 @@ impl SpirePreparedAssignmentScorer {
                     .zip(gammas.iter())
                     .zip(out_scores.iter_mut())
                 {
-                    *out_score = quantizer.score_ip_from_parts(prepared, *gamma, payload);
+                    *out_score = if let Some(prepared_lut) = no_qjl_4bit_lut {
+                        // The no-QJL 4-bit lane ignores gamma by construction.
+                        quantizer.score_ip_from_parts_lut_no_qjl_4bit(prepared_lut, payload)
+                    } else {
+                        quantizer.score_ip_from_parts(prepared, *gamma, payload)
+                    };
                 }
             }
             Self::RaBitQ { prepared, .. } => {

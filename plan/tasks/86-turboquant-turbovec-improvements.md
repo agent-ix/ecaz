@@ -1,6 +1,9 @@
 # Task 86: TurboVec-Derived TurboQuant Improvements
 
-Status: active (2026-06-07)
+Status: complete (slim) 2026-06-07
+  - SPIRE TurboQuant LUT alignment shipped per `reviews/task-86/008-spire-real-spread/`.
+  - TQ+ explicitly deferred to Task 89 per `plan/tasks/89-turboquant-tqplus-cross-am-validation.md`.
+  - Closeout per `reviews/task-86/010-slim-closeout/`.
 Owner: coder (to be assigned). One coder, one branch.
 Priority: 1 (TurboQuant scan/storage improvement lane across AMs)
 
@@ -185,3 +188,16 @@ landing.
 - No new unsafe blocks.
 - PG18-focused validation is recorded for any code slice that changes scan,
   storage, or SQL-visible behavior.
+
+## Slim Closeout
+
+Task 86 ships only the SPIRE TurboQuant LUT routing slice. The accepted code
+change is confined to `src/am/ec_spire/quantizer/` and routes SPIRE TurboQuant
+no-QJL 4-bit scoring through the existing dimension-LUT scorer used elsewhere.
+Packet `reviews/task-86/008-spire-real-spread/` records the real10k/50k/100k
+SPIRE baseline-vs-change suite: recall and storage unchanged, latency improved.
+
+TQ+ remains an investigated candidate, but it does not ship in Task 86. The
+IVF TQ+ measurement work is preserved in git history and deferred to Task 89
+for cross-AM, cross-corpus, and streaming-insert drift validation before any
+operator-visible format tag or reloption lands.

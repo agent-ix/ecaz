@@ -67,6 +67,75 @@ mod tests {
     }
 
     #[test]
+    fn turboquant_assignment_scorer_uses_no_qjl_4bit_lut_path() {
+        let dim = 1536;
+        let source_a = (0..dim)
+            .map(|index| ((index as f32) * 0.013).sin() * 0.5)
+            .collect::<Vec<_>>();
+        let source_b = (0..dim)
+            .map(|index| ((index as f32) * 0.017).cos() * 0.25)
+            .collect::<Vec<_>>();
+        let query = (0..dim)
+            .map(|index| ((index as f32) * 0.019).sin())
+            .collect::<Vec<_>>();
+        let (gamma_a, payload_a) =
+            encode_assignment_payload(SpireAssignmentPayloadFormat::TurboQuant, &source_a)
+                .unwrap();
+        let (gamma_b, payload_b) =
+            encode_assignment_payload(SpireAssignmentPayloadFormat::TurboQuant, &source_b)
+                .unwrap();
+        let assignment = assignment_row(
+            SpireAssignmentPayloadFormat::TurboQuant,
+            gamma_a,
+            payload_a.clone(),
+        );
+        let scorer =
+            SpirePreparedAssignmentScorer::prepare(SpireAssignmentPayloadFormat::TurboQuant, dim, &query)
+                .unwrap();
+        let quantizer =
+            ProdQuantizer::cached(dim, crate::DEFAULT_QUANT_BITS, crate::DEFAULT_QUANT_SEED);
+        let prepared_generic = quantizer.prepare_ip_query(&query);
+        let prepared_lut = quantizer.prepare_ip_query_lut_no_qjl_4bit(&query);
+        let expected_generic = quantizer.score_ip_from_parts(&prepared_generic, gamma_a, &payload_a);
+        let expected_lut =
+            quantizer.score_ip_from_parts_lut_no_qjl_4bit(&prepared_lut, &payload_a);
+
+        let observed = scorer.score_assignment_ip(&assignment).unwrap();
+
+        match &scorer {
+            SpirePreparedAssignmentScorer::TurboQuant { no_qjl_4bit_lut, .. } => {
+                assert!(no_qjl_4bit_lut.is_some());
+            }
+            SpirePreparedAssignmentScorer::RaBitQ { .. } => {
+                panic!("TurboQuant prepare should return TurboQuant scorer")
+            }
+        }
+        assert!(gamma_a > 0.0);
+        assert!((expected_lut - expected_generic).abs() < 1e-6);
+        assert!((observed - expected_generic).abs() < 1e-6);
+
+        let payload_stride = payload_a.len();
+        assert_eq!(payload_stride, payload_b.len());
+        let mut payloads = payload_a.clone();
+        payloads.extend_from_slice(&payload_b);
+        let mut batch_scores = [0.0_f32; 2];
+        scorer
+            .score_batch_ip(
+                payload_stride,
+                &payloads,
+                &[gamma_a, gamma_b],
+                &mut batch_scores,
+            )
+            .unwrap();
+
+        assert!((batch_scores[0] - observed).abs() < 1e-6);
+        assert_eq!(
+            scorer.score_zero_gamma_payload_chunks_max_prevalidated(payload_stride, &payloads),
+            batch_scores[0].max(batch_scores[1])
+        );
+    }
+
+    #[test]
     fn rabitq_assignment_scorer_matches_direct_quantizer_score() {
         let source = vec![0.25, -0.5, 0.75, 1.0];
         let query = vec![1.0, 0.5, -0.25, 0.125];
