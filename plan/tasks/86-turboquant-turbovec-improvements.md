@@ -1,6 +1,11 @@
 # Task 86: TurboVec-Derived TurboQuant Improvements
 
-Status: active (2026-06-07)
+Status: REOPENED-FOR-SLIM-DOWN 2026-06-07 (project-owner direction)
+  - Previously flipped to `complete` with TQ+ in scope; that flip is being walked back.
+  - Project-owner direction (chat 2026-06-07, recorded in `reviews/task-86/016-final-audit/feedback/2026-06-07-03-reviewer.md`): **slim Task 86 to SPIRE TurboQuant LUT routing only**; move TQ+ expanded validation to **Task 89** (`plan/tasks/89-turboquant-tqplus-cross-am-validation.md`).
+  - Reason: TQ+ shipped as a new on-disk format tag with operator-visible reloption naming, but validation surface is narrow (IVF only, DBPedia only, no-QJL 4-bit only). Format commitment shouldn't land until cross-AM + cross-corpus + drift validation per Task 89.
+  - Coder action required: revert TQ+ commits and post-TQ+ cleanup packets from this branch; land new slim closeout citing only SPIRE LUT routing; re-flip status to `complete (slim)` referencing the new closeout packet.
+  - Reverted TQ+ work is preserved in git history (commits `e0ae9fe7d`, `c7e85e8ac`, `16f1e6104`, etc.) — Task 89's cherry-pick starting point.
 Owner: coder (to be assigned). One coder, one branch.
 Priority: 1 (TurboQuant scan/storage improvement lane across AMs)
 
