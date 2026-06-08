@@ -2,8 +2,10 @@
 mod tests {
     use super::{
         encode_assignment_input, encode_assignment_payload, SpireAssignmentPayloadFormat,
-        SpirePreparedAssignmentScorer,
+        SpireAssignmentQuantCodec, SpirePreparedAssignmentScorer,
     };
+    use crate::am::common::candidate_batch::{CandidateBatch, CandidateMeta, CandidatePayload};
+    use crate::am::common::quant_codec::{QuantCodec, QuantCodecKind, QuantSearchCodecTag};
     use crate::am::ec_spire::storage::{
         SpireLeafAssignmentRow, SPIRE_ASSIGNMENT_FLAG_PRIMARY, SPIRE_PAYLOAD_FORMAT_NONE,
         SPIRE_PAYLOAD_FORMAT_RABITQ, SPIRE_PAYLOAD_FORMAT_TURBOQUANT,
@@ -237,6 +239,100 @@ mod tests {
                 assert!((batch_score - scalar_score).abs() <= f32::EPSILON);
             }
         }
+    }
+
+    #[test]
+    fn common_quant_codec_scores_turboquant_assignments() {
+        let query = vec![1.0, 0.5, -0.25, 0.125];
+        let source = vec![0.25, -0.5, 0.75, 1.0];
+        let codec =
+            SpireAssignmentQuantCodec::new(SpireAssignmentPayloadFormat::TurboQuant, query.len());
+        let encoded = QuantCodec::encode_source(&codec, &source).unwrap();
+        let prepared = QuantCodec::prepare_ip_query(&codec, &query).unwrap();
+        let mut batch = CandidateBatch::with_capacity(1);
+        batch
+            .push(
+                10_u32,
+                CandidatePayload::new(&encoded.code, CandidateMeta::Gamma(encoded.gamma)),
+            )
+            .unwrap();
+        let mut batch_scores = vec![0.0];
+
+        QuantCodec::score_ip_batch(&codec, &prepared, &batch, &mut batch_scores).unwrap();
+
+        assert_eq!(QuantCodec::codec_kind(&codec), QuantCodecKind::TurboQuant);
+        assert_eq!(
+            QuantCodec::search_codec_tag(&codec),
+            QuantSearchCodecTag::TurboQuant
+        );
+        assert_eq!(encoded.dimensions, query.len() as u16);
+        assert_eq!(encoded.code.len(), QuantCodec::payload_len(&codec));
+        assert_eq!(
+            batch_scores[0],
+            prepared
+                .score_payload_ip(
+                    SpireAssignmentPayloadFormat::TurboQuant,
+                    encoded.gamma,
+                    &encoded.code
+                )
+                .unwrap()
+        );
+    }
+
+    #[test]
+    fn common_quant_codec_scores_rabitq_assignments() {
+        let query = vec![1.0, 0.5, -0.25, 0.125];
+        let sources = [vec![0.25, -0.5, 0.75, 1.0], vec![-0.125, 0.25, 0.5, -1.0]];
+        let codec =
+            SpireAssignmentQuantCodec::new(SpireAssignmentPayloadFormat::RaBitQ, query.len());
+        let prepared = QuantCodec::prepare_ip_query(&codec, &query).unwrap();
+        let encoded = sources
+            .iter()
+            .map(|source| QuantCodec::encode_source(&codec, source).unwrap())
+            .collect::<Vec<_>>();
+        let mut batch = CandidateBatch::with_capacity(encoded.len());
+        for (index, encoded) in encoded.iter().enumerate() {
+            batch
+                .push(
+                    index,
+                    CandidatePayload::new(&encoded.code, CandidateMeta::RaBitQ),
+                )
+                .unwrap();
+        }
+        let mut batch_scores = vec![0.0; batch.len()];
+
+        QuantCodec::score_ip_batch(&codec, &prepared, &batch, &mut batch_scores).unwrap();
+
+        assert_eq!(QuantCodec::codec_kind(&codec), QuantCodecKind::RaBitQ);
+        assert_eq!(
+            QuantCodec::search_codec_tag(&codec),
+            QuantSearchCodecTag::RaBitQ {
+                bits: crate::DEFAULT_QUANT_BITS
+            }
+        );
+        for (index, encoded) in encoded.iter().enumerate() {
+            assert_eq!(encoded.gamma, 0.0);
+            let scalar = prepared
+                .score_payload_ip(SpireAssignmentPayloadFormat::RaBitQ, 0.0, &encoded.code)
+                .unwrap();
+            assert!(
+                (batch_scores[index] - scalar).abs() <= f32::EPSILON,
+                "index={index} batch={} scalar={scalar}",
+                batch_scores[index]
+            );
+        }
+    }
+
+    #[test]
+    fn common_quant_codec_rejects_spire_pq_fastscan_without_model() {
+        let query = vec![1.0, 0.5, -0.25, 0.125];
+        let source = vec![0.25, -0.5, 0.75, 1.0];
+        let codec =
+            SpireAssignmentQuantCodec::new(SpireAssignmentPayloadFormat::PqFastScan, query.len());
+
+        assert_eq!(QuantCodec::codec_kind(&codec), QuantCodecKind::GroupedPq);
+        assert!(QuantCodec::encode_source(&codec, &source).is_err());
+        assert!(QuantCodec::prepare_ip_query(&codec, &query).is_err());
     }
 
     #[test]
