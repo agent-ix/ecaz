@@ -76,6 +76,7 @@ static EC_SPIRE_MAX_CANDIDATE_ROWS_GUC: GucSetting<i32> =
     GucSetting::<i32>::new(EC_SPIRE_SESSION_MAX_CANDIDATE_ROWS_UNSET);
 static EC_SPIRE_MAX_ROUTED_CANDIDATE_ROWS_GUC: GucSetting<i32> =
     GucSetting::<i32>::new(EC_SPIRE_SESSION_MAX_ROUTED_CANDIDATE_ROWS_DISABLED);
+static EC_SPIRE_CANDIDATE_BATCH_SCORING_GUC: GucSetting<bool> = GucSetting::<bool>::new(true);
 static EC_SPIRE_LEAF_BLOCK_ROWS_GUC: GucSetting<i32> =
     GucSetting::<i32>::new(EC_SPIRE_SESSION_LEAF_BLOCK_ROWS_DISABLED);
 static EC_SPIRE_LEAF_BLOCK_SUMMARY_REPRESENTATIVES_GUC: GucSetting<i32> =
@@ -788,6 +789,14 @@ pub(super) fn register_gucs() {
         GucContext::Userset,
         GucFlags::default(),
     );
+    GucRegistry::define_bool_guc(
+        c"ec_spire.candidate_batch_scoring",
+        c"Enable Task 87 ec_spire CandidateBatch assignment scoring.",
+        c"Diagnostic Task 87 switch; enabled by default. Disable only to compare the structural CandidateBatch route against the pre-Task-87 scalar TurboQuant assignment scoring path.",
+        &EC_SPIRE_CANDIDATE_BATCH_SCORING_GUC,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
     GucRegistry::define_int_guc(
         c"ec_spire.leaf_block_rows",
         c"Build-time SPIRE leaf summary block row count.",
@@ -1091,6 +1100,16 @@ pub(super) fn current_session_nprobe() -> i32 {
     } else {
         EC_SPIRE_NPROBE_GUC.get()
     }
+}
+
+#[cfg(test)]
+pub(super) fn candidate_batch_scoring_enabled() -> bool {
+    true
+}
+
+#[cfg(not(test))]
+pub(super) fn candidate_batch_scoring_enabled() -> bool {
+    EC_SPIRE_CANDIDATE_BATCH_SCORING_GUC.get()
 }
 
 pub(super) fn current_session_rerank_width() -> i32 {

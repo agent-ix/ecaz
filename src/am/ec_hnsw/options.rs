@@ -22,6 +22,7 @@ static EC_HNSW_DISABLE_BINARY_PREFILTER_GUC: GucSetting<bool> = GucSetting::<boo
 static EC_HNSW_FORCE_BINARY_DERIVATION_GUC: GucSetting<bool> = GucSetting::<bool>::new(false);
 static EC_HNSW_ENABLE_PARALLEL_BUILD_CONCURRENT_DSM_GUC: GucSetting<bool> =
     GucSetting::<bool>::new(true);
+static EC_HNSW_CANDIDATE_BATCH_SCORING_GUC: GucSetting<bool> = GucSetting::<bool>::new(true);
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
@@ -105,6 +106,14 @@ pub(super) fn register_gucs() {
         GucContext::Userset,
         GucFlags::default(),
     );
+    GucRegistry::define_bool_guc(
+        c"ec_hnsw.candidate_batch_scoring",
+        c"Enable Task 87 ec_hnsw CandidateBatch exact scoring.",
+        c"Diagnostic Task 87 switch; enabled by default. Disable only to compare the structural CandidateBatch route against the pre-Task-87 scalar FullLut scoring path.",
+        &EC_HNSW_CANDIDATE_BATCH_SCORING_GUC,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
 }
 
 pub(super) fn current_session_ef_search() -> i32 {
@@ -133,6 +142,16 @@ pub(super) fn force_binary_derivation() -> bool {
 
 pub(super) fn enable_parallel_build_concurrent_dsm() -> bool {
     EC_HNSW_ENABLE_PARALLEL_BUILD_CONCURRENT_DSM_GUC.get()
+}
+
+#[cfg(test)]
+pub(super) fn candidate_batch_scoring_enabled() -> bool {
+    true
+}
+
+#[cfg(not(test))]
+pub(super) fn candidate_batch_scoring_enabled() -> bool {
+    EC_HNSW_CANDIDATE_BATCH_SCORING_GUC.get()
 }
 
 pub(crate) fn resolve_scan_tuning(options: &TqHnswOptions) -> ScanTuning {

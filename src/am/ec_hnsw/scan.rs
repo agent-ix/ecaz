@@ -3289,6 +3289,7 @@ where
                         LoadedElementState::ExactPayload(payload) => {
                             if opaque.turboquant_exact_score_mode
                                 == TurboQuantExactScoreMode::FullLut
+                                && super::options::candidate_batch_scoring_enabled()
                             {
                                 if let Some(score) = cached_scan_element_score(opaque, neighbor.tid)
                                 {

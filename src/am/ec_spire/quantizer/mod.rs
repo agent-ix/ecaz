@@ -349,24 +349,26 @@ impl SpirePreparedAssignmentScorer {
                 no_qjl_4bit_lut,
                 ..
             } => {
-                if let Some(prepared_lut) = no_qjl_4bit_lut {
-                    let mut batch = CandidateBatch::with_capacity(payload_count);
-                    for (candidate_index, (payload, gamma)) in payloads
-                        .chunks_exact(payload_stride)
-                        .zip(gammas.iter())
-                        .enumerate()
-                    {
-                        batch.push(
-                            candidate_index,
-                            CandidatePayload::new(payload, CandidateMeta::Gamma(*gamma)),
-                        )?;
+                if super::options::candidate_batch_scoring_enabled() {
+                    if let Some(prepared_lut) = no_qjl_4bit_lut {
+                        let mut batch = CandidateBatch::with_capacity(payload_count);
+                        for (candidate_index, (payload, gamma)) in payloads
+                            .chunks_exact(payload_stride)
+                            .zip(gammas.iter())
+                            .enumerate()
+                        {
+                            batch.push(
+                                candidate_index,
+                                CandidatePayload::new(payload, CandidateMeta::Gamma(*gamma)),
+                            )?;
+                        }
+                        return score_turboquant_no_qjl_4bit_batch(
+                            quantizer,
+                            prepared_lut,
+                            &batch,
+                            out_scores,
+                        );
                     }
-                    return score_turboquant_no_qjl_4bit_batch(
-                        quantizer,
-                        prepared_lut,
-                        &batch,
-                        out_scores,
-                    );
                 }
 
                 for ((payload, gamma), out_score) in payloads

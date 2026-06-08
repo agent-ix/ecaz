@@ -139,7 +139,7 @@ pub async fn run(conn: &ConnectionOptions, args: LatencyArgs) -> Result<()> {
     };
     super::validate_adaptive_nprobe_options(profile, adaptive_nprobe_options)?;
     super::validate_ivf_scratch_soa_batch_decode(profile, args.ivf_scratch_soa_batch_decode)?;
-    let session_gucs = parse_session_gucs(&args.session_gucs)?;
+    let session_gucs = super::parse_session_gucs(&args.session_gucs)?;
 
     let corpus_table = format!("{}_corpus", args.prefix);
     let queries_table = format!("{}_queries", args.prefix);
@@ -380,12 +380,7 @@ async fn worker(
                 .await?;
         }
     }
-    for (name, value) in &session_gucs {
-        client
-            .batch_execute(&format!("SET {name} = {value}"))
-            .await
-            .wrap_err_with(|| format!("SET {name} = {value}"))?;
-    }
+    super::apply_session_gucs(&client, &session_gucs).await?;
     super::apply_adaptive_nprobe_options(&client, profile, adaptive_nprobe_options).await?;
     super::apply_ivf_scratch_soa_batch_decode(&client, profile, ivf_scratch_soa_batch_decode)
         .await?;
@@ -441,34 +436,6 @@ async fn worker(
     query_result?;
     let memory = *memory.lock().await;
     Ok(LatencyWorkerResult { durations, memory })
-}
-
-fn parse_session_gucs(raw: &[String]) -> Result<Vec<(String, String)>> {
-    raw.iter()
-        .map(|entry| {
-            let (name, value) = entry
-                .split_once('=')
-                .ok_or_else(|| eyre!("--session-guc must use name=value syntax, got {entry:?}"))?;
-            validate_guc_name(name)
-                .wrap_err_with(|| format!("invalid --session-guc name {name:?}"))?;
-            if value.trim().is_empty() {
-                return Err(eyre!("--session-guc value must not be empty for {name:?}"));
-            }
-            Ok((name.to_owned(), value.to_owned()))
-        })
-        .collect()
-}
-
-fn validate_guc_name(name: &str) -> Result<()> {
-    let mut parts = name.split('.');
-    let Some(first) = parts.next() else {
-        return Err(eyre!("GUC name must not be empty"));
-    };
-    profiles::validate_ident(first)?;
-    for part in parts {
-        profiles::validate_ident(part)?;
-    }
-    Ok(())
 }
 
 fn validate_rerank_width_arg(
@@ -810,8 +777,9 @@ mod tests {
 
     #[test]
     fn parse_session_gucs_accepts_qualified_names() {
-        let parsed = parse_session_gucs(&["ec_diskann.scan_profile_notice=on".to_owned()])
-            .expect("valid guc");
+        let parsed =
+            super::super::parse_session_gucs(&["ec_diskann.scan_profile_notice=on".to_owned()])
+                .expect("valid guc");
         assert_eq!(
             parsed,
             vec![("ec_diskann.scan_profile_notice".to_owned(), "on".to_owned())]
@@ -820,8 +788,16 @@ mod tests {
 
     #[test]
     fn parse_session_gucs_rejects_malformed_entries() {
-        assert!(parse_session_gucs(&["ec_diskann.scan_profile_notice".to_owned()]).is_err());
-        assert!(parse_session_gucs(&["ec_diskann.scan_profile_notice=".to_owned()]).is_err());
-        assert!(parse_session_gucs(&["ec_diskann.scan-profile=on".to_owned()]).is_err());
+        assert!(
+            super::super::parse_session_gucs(&["ec_diskann.scan_profile_notice".to_owned()])
+                .is_err()
+        );
+        assert!(
+            super::super::parse_session_gucs(&["ec_diskann.scan_profile_notice=".to_owned()])
+                .is_err()
+        );
+        assert!(
+            super::super::parse_session_gucs(&["ec_diskann.scan-profile=on".to_owned()]).is_err()
+        );
     }
 }

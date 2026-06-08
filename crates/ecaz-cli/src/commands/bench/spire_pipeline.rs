@@ -161,6 +161,9 @@ pub struct SpirePipelineArgs {
     /// latency. `id` is always selected first for recall accounting.
     #[arg(long, value_delimiter = ',')]
     pub query_metric_projection_columns: Vec<String>,
+    /// Extra session GUCs to set while collecting SPIRE pipeline counters, as name=value.
+    #[arg(long = "session-guc")]
+    pub session_gucs: Vec<String>,
     /// Write the pipeline report to this path in addition to stdout.
     #[arg(long)]
     pub log_output: Option<PathBuf>,
@@ -223,6 +226,7 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
         rerank_multiplier: args.cost_rerank_multiplier,
     };
     super::validate_adaptive_nprobe_options(&EC_SPIRE, adaptive_nprobe_options)?;
+    let session_gucs = super::parse_session_gucs(&args.session_gucs)?;
     let query_metrics_enabled = args.include_query_metrics || args.include_recall;
 
     let client = psql::connect(conn).await?;
@@ -335,6 +339,7 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
             args.remote_tuple_transport,
             adaptive_nprobe_options,
             cost_tuning_options,
+            &session_gucs,
         )
         .await?;
 
@@ -1077,7 +1082,9 @@ async fn apply_session_options(
     remote_tuple_transport: Option<SpireRemoteTupleTransportMode>,
     adaptive_nprobe_options: super::AdaptiveNprobeBenchOptions,
     cost_tuning_options: SpireCostTuningOptions,
+    session_gucs: &[(String, String)],
 ) -> Result<()> {
+    super::apply_session_gucs(client, session_gucs).await?;
     client
         .batch_execute(&format!("SET ec_spire.nprobe = {nprobe}"))
         .await
@@ -3469,6 +3476,7 @@ mod tests {
             production_read_only: false,
             query_metric_k: 10,
             query_metric_projection_columns: vec![],
+            session_gucs: vec![],
             adaptive_nprobe: false,
             adaptive_nprobe_score_gap_micros: None,
             include_remote: false,

@@ -81,6 +81,9 @@ pub struct RecallArgs {
     /// Force benchmark queries onto the index path by disabling sequential scans.
     #[arg(long)]
     pub force_index: bool,
+    /// Extra session GUCs to set on the benchmark connection, as name=value.
+    #[arg(long = "session-guc")]
+    pub session_gucs: Vec<String>,
     /// Optional directory for exact top-k ground-truth cache files.
     #[arg(long)]
     pub truth_cache_dir: Option<PathBuf>,
@@ -151,11 +154,13 @@ pub async fn run(conn: &ConnectionOptions, args: RecallArgs) -> Result<()> {
     };
     super::validate_adaptive_nprobe_options(profile, adaptive_nprobe_options)?;
     super::validate_ivf_scratch_soa_batch_decode(profile, args.ivf_scratch_soa_batch_decode)?;
+    let session_gucs = super::parse_session_gucs(&args.session_gucs)?;
 
     let corpus_table = format!("{}_corpus", args.prefix);
     let queries_table = format!("{}_queries", args.prefix);
 
     let client = psql::connect(conn).await?;
+    super::apply_session_gucs(&client, &session_gucs).await?;
     if psql::index_count_with_am(&client, &corpus_table, profile.access_method).await? == 0 {
         return Err(eyre!(
             "{} on {:?}",

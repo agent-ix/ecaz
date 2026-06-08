@@ -201,6 +201,47 @@ pub(crate) fn append_ivf_scratch_soa_batch_decode_label(message: String, enabled
     }
 }
 
+pub(crate) fn parse_session_gucs(raw: &[String]) -> Result<Vec<(String, String)>> {
+    raw.iter()
+        .map(|entry| {
+            let (name, value) = entry
+                .split_once('=')
+                .ok_or_else(|| eyre!("--session-guc must use name=value syntax, got {entry:?}"))?;
+            validate_guc_name(name)
+                .wrap_err_with(|| format!("invalid --session-guc name {name:?}"))?;
+            if value.trim().is_empty() {
+                return Err(eyre!("--session-guc value must not be empty for {name:?}"));
+            }
+            Ok((name.to_owned(), value.to_owned()))
+        })
+        .collect()
+}
+
+pub(crate) async fn apply_session_gucs(
+    client: &Client,
+    session_gucs: &[(String, String)],
+) -> Result<()> {
+    for (name, value) in session_gucs {
+        client
+            .batch_execute(&format!("SET {name} = {value}"))
+            .await
+            .wrap_err_with(|| format!("SET {name} = {value}"))?;
+    }
+    Ok(())
+}
+
+fn validate_guc_name(name: &str) -> Result<()> {
+    let mut parts = name.split('.');
+    let Some(first) = parts.next() else {
+        return Err(eyre!("GUC name must not be empty"));
+    };
+    crate::profiles::validate_ident(first)?;
+    for part in parts {
+        crate::profiles::validate_ident(part)?;
+    }
+    Ok(())
+}
+
 fn adaptive_nprobe_gucs(profile: &IndexProfile) -> Option<(&'static str, &'static str)> {
     match profile.name {
         "ec_ivf" => Some((
