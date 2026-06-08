@@ -1,24 +1,22 @@
 # Task 90: DiskANN TurboQuant Search Codec Prerequisite
 
-Status: absorbed by Task 87 scope revision (2026-06-08)
+Status: superseded by Task 91 (2026-06-08)
 Owner: coder (to be assigned). One coder, one branch.
 Priority: 2 (Task 87 DiskANN prerequisite)
 
-2026-06-08 update: Task 87 reviewer addenda
-`reviews/task-87/001-phase1-design/feedback/2026-06-08-02-reviewer.md`
-and
-`reviews/task-87/001-phase1-design/feedback/2026-06-08-03-reviewer.md`
-broadened Task 87. DiskANN's missing TurboQuant codec is now an
-in-scope common quant codec-shape gap for Task 87, not a preferred
-Stop Condition that defers DiskANN out of Task 87. Keep this file as
-historical source-audit context unless Task 87 later spins out a
-reviewer-approved prerequisite-only codec surface.
+2026-06-08 update: Task 91
+`plan/tasks/91-cross-am-quantcodec-migration.md` supersedes this
+standalone prerequisite. DiskANN's missing TurboQuant codec is Task 91
+Phase 6 work, after the shared `QuantCodec` migration and per-AM parity
+gates have landed. Keep this file as historical source-audit context.
 
 ## Why
 
 The original version of this follow-up assumed Task 87 scoped
 candidate-batched kernel work to **TurboQuant no-QJL 4-bit** across all
-AMs and allowed a DiskANN Stop Condition. That assumption is now stale.
+AMs and allowed a DiskANN Stop Condition. The DiskANN Stop Condition is
+again valid Task 87 territory; the TurboQuant codec landing moved to
+Task 91.
 
 The current `ec_diskann` search-code surface still does not expose a
 TurboQuant search codec:
@@ -29,9 +27,10 @@ TurboQuant search codec:
 - There is no direct TurboQuant no-QJL 4-bit prefilter branch equivalent
   to the SPIRE, IVF, and HNSW TurboQuant scoring hooks.
 
-Task 87 now owns both the `CandidateBatch` data-flow abstraction and the
-common quant codec shape that should make adding TurboQuant to DiskANN a
-registration step rather than bespoke DiskANN-only plumbing.
+Task 91 now owns the common quant codec shape that should make adding
+TurboQuant to DiskANN a registration step rather than bespoke
+DiskANN-only plumbing. Task 87 owns only the CandidateBatch data-flow
+and batch-shaped scoring work on existing per-AM codec surfaces.
 
 ## Goal
 
@@ -39,10 +38,10 @@ Historical goal: decide and, if feasible, land an
 on-disk-format-neutral DiskANN TurboQuant no-QJL 4-bit search-code
 surface.
 
-Current coordination: Task 87 should either land this through the
-common quant codec shape or, if that surface is too large, create a
-narrow prerequisite slice for the common codec trait/enum itself. It
-should not use this file as evidence that DiskANN can be skipped.
+Current coordination: Task 91 should close this by reference once Phase
+6 lands DiskANN TurboQuant search-codec support. Task 87 should not use
+this file as evidence that DiskANN can be skipped entirely; Task 87's
+accepted DiskANN Stop Condition remains the proper handoff.
 
 ## Scope
 
@@ -59,12 +58,13 @@ should not use this file as evidence that DiskANN can be skipped.
      4-bit LUT path;
    - keep tuple layout and existing grouped-PQ/RaBitQ indexes
      backward-compatible.
-3. Document how Task 87 Phase 4 consumes the resulting surface through
-   the common quant codec shape.
+3. Document how Task 91 Phase 6 exposes the resulting surface and how
+   later Task 87-style batch kernels can consume it.
 
 ### Out of scope
 
-- Candidate batching itself. Task 87 owns `CandidateBatch` integration.
+- Candidate batching itself. Task 87 owns `CandidateBatch` integration
+  on existing per-AM codec surfaces.
 - TQ+ calibration. Task 89 owns TQ+ validation and format design.
 - New SIMD kernels.
 - Replacing grouped-PQ or RaBitQ DiskANN defaults.
@@ -81,13 +81,11 @@ If code lands:
    metadata discriminator is explicit and versioned.
 5. No new `unsafe` outside existing AM/quantizer boundaries.
 
-If code does not land inside Task 87, the acceptable escape hatch is a
-reviewer-approved prerequisite-only common codec surface, not a broad
-DiskANN deferral.
+Task 90 closes by reference when Task 91 Phase 6 lands and is reviewed.
 
 ## Coordination
 
-- No longer blocks Task 87 DiskANN integration by default; Task 87 owns
+- No longer blocks Task 87 DiskANN integration by default; Task 91 owns
   the DiskANN common-codec gap.
 - Must not be cited as a reason to skip DiskANN grouped-PQ/RaBitQ/
   binary-sidecar batch routing where those paths are batch-shaped.

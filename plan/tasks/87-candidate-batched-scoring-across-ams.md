@@ -69,28 +69,19 @@ per-AM end-to-end delta.
    quantizer-agnostic** — the batch surface holds opaque
    `(node_id, code_ptr, gamma?)` tuples; only the kernel
    that consumes the batch is quantizer-specific.
-2. Shared quant codec shape: a common build/query/single-score/
-   batch-score/search-code tag surface that lets TurboQuant,
-   RaBitQ, grouped-PQ/PQ, binary fingerprints, and future quantizers
-   register into AMs without each AM inventing a bespoke enum.
-3. Per-AM scoring-site refactor in **all four AMs**:
+2. Per-AM scoring-site refactor in **all four AMs**:
    HNSW, DiskANN, IVF, SPIRE. **No AM may be skipped.**
-4. Route every quant mode whose AM traversal exposes useful batch
+3. Route every quant mode whose AM traversal exposes useful batch
    boundaries through `CandidateBatch`. A non-routed cell must cite
    a structural or measured reason, such as f32 raw already using
    per-vector SIMD efficiently or a traversal shape whose batch-size
    lower bound and observed distribution are effectively one.
-5. Add or migrate quant codec registrations needed to make the
-   same quantizer available across AMs. DiskANN's missing
-   TurboQuant search codec is in scope unless a reviewer-approved
-   prerequisite slice proves that the common codec surface itself
-   must land first.
-6. Optionally one new 32-block u8 nibble LUT kernel
+4. Optionally one new 32-block u8 nibble LUT kernel
    (TurboVec-style); whether to land it in Task 87 vs a
    follow-up depends on the Phase 1 design call.
-7. Per-AM real-corpus measurement with baseline + change
+5. Per-AM real-corpus measurement with baseline + change
    cells (recall@10 + p50/p95/p99 latency + storage).
-8. Compose-with-streaming contract documented so Task 88's
+6. Compose-with-streaming contract documented so Task 88's
    resort-buffer can sit on top of the same abstraction.
 
 ### Out of scope
@@ -106,22 +97,27 @@ per-AM end-to-end delta.
   identifies a real batch benefit. Raw f32 remains the default
   example of a quant mode where batching may add copy overhead
   without improving the kernel.
+- Cross-AM `QuantCodec` migration, trait growth, and AM adapter
+  migration beyond already-landed historical beachhead code. Task 91
+  owns that work.
+- DiskANN TurboQuant search-codec landing. Task 90 is superseded by
+  Task 91 and closes when Task 91 Phase 6 ships.
 
 ### Quantizer scope
 
 The `CandidateBatch` abstraction is quantizer-agnostic by
 design — adding a new quant type later must not require an
-abstraction redesign. Task 87 is also responsible for the
-common quant codec shape that lets each quantizer plug into
-each AM through the same build/query/score/batch registration
-surface.
+abstraction redesign. Task 87 should keep the batch surface
+compatible with quantizers that carry different per-vector side
+data, but it does not own the cross-AM common codec migration.
+That migration is tracked in Task 91.
 
 Batch plumbing is architectural, not TurboQuant-only. Every
 quant mode whose scoring kernel or AM traversal benefits from
 batch processing should route through `CandidateBatch` in the
 owning AM slice. New SIMD block kernels can still be staged by
-quant mode, but the data-flow and codec registration surface
-belong to Task 87.
+quant mode, but Task 87's acceptance is about batch-shaped
+scoring on existing per-AM codec surfaces.
 
 Quant type roadmap (rough ROI ranking from Task 86 analysis;
 ordering of follow-ups is a separate prioritisation call):
@@ -129,21 +125,19 @@ ordering of follow-ups is a separate prioritisation call):
 | Quant type | Task 87? | Notes |
 |---|---|---|
 | TurboQuant no-QJL 4-bit | **YES** | Already validated on SPIRE; first structural route |
-| TurboQuant no-QJL 2-bit | **YES if batch-shaped** | Higher kernel-density potential than 4-bit; may reuse TQ codec shape |
-| TurboQuant QJL (any bits) | **YES if batch-shaped** | Requires gamma + residual-sign metadata |
-| RaBitQ | **YES if batch-shaped** | Prepared estimator carries most metadata today; batch route should still use the common surface |
+| TurboQuant no-QJL 2-bit | **YES if present and batch-shaped** | Higher kernel-density potential than 4-bit |
+| TurboQuant QJL (any bits) | **YES if present and batch-shaped** | Requires gamma + residual-sign metadata; Task 91 owns common trait shape |
+| RaBitQ | **YES if present and batch-shaped** | Prepared estimator carries most metadata today |
 | Binary fingerprint | **YES if batch-shaped** | Hamming/Jaccard kernels vectorise trivially |
-| PQ / grouped-PQ | **YES if batch-shaped** | Classic FAISS block-kernel territory; DiskANN and IVF grouped paths are in scope |
+| PQ / grouped-PQ | **YES if present and batch-shaped** | Classic FAISS block-kernel territory; DiskANN and IVF grouped paths are in scope where already exposed |
 | f32 raw | justify before routing | Already SIMD-friendly per-vector; batching may add copy overhead with no kernel win |
 
-Phase 1 design must verify the abstraction and common codec
-shape can host all entries above without redesign — if the
-contract bakes in TurboQuant-only assumptions, the design is
-wrong and must be revised before Phase 2 starts. Specifically,
-the batch's per-candidate metadata must accommodate quant
-types with different per-vector side data (e.g. binary has
-none; QJL TQ carries gamma + residual signs; RaBitQ carries
-rotation metadata).
+Phase 1 design must verify that `CandidateBatch` can host all
+entries above without redesign. If the batch contract bakes in
+TurboQuant-only assumptions, the design is wrong and must be
+revised before Phase 2 starts. Cross-AM codec registration,
+residual-sign metadata, grouped-PQ model-state unification, and
+dispatch-shape cleanup belong to Task 91.
 
 ## Phase 1 — Design Packet
 
@@ -158,13 +152,6 @@ Land one design packet before any AM-level refactor:
   contract can host their per-candidate metadata shapes
   without redesign. If a quant type forces a contract change,
   fix it here, not in a future task.
-- Specify the common quant codec shape: build-side encode,
-  prepared-query construction, single-candidate scoring,
-  batched scoring over `CandidateBatch`, per-candidate metadata,
-  and persisted search-code kind tags.
-- Name which current AM-specific codec/prepared-query enums collapse
-  into that common shape, and which remain AM-specific kernel-selection
-  details.
 - Add a per-(AM x quant mode) routing table. Every "no" cell needs a
   structural or measured reason and an expected batch-size distribution
   from the AM traversal pattern.
@@ -190,8 +177,9 @@ radius first, then increasing complexity):
 ### Phase 2: SPIRE integration
 
 - SPIRE quant assignment scoring routes batch-shaped TurboQuant and
-  RaBitQ paths through `CandidateBatch` via the common quant codec
-  shape. Non-routed cells require the Phase 1 table's justification.
+  RaBitQ paths through `CandidateBatch` using the existing SPIRE
+  scorer shape. Non-routed cells require the Phase 1 table's
+  justification.
 - Real-corpus suite: real10k / 50k / 100k DBPedia spread,
   baseline-source-install vs change-source-install (Task 86
   packet 008 shape), recall@10 + p50/p95/p99 + storage.
@@ -203,9 +191,9 @@ radius first, then increasing complexity):
 ### Phase 3: IVF integration
 
 - IVF posting-list scoring routes batch-shaped TurboQuant, RaBitQ,
-  and grouped-PQ/PqFastScan paths through `CandidateBatch` via the
-  common quant codec shape. Non-routed cells require the Phase 1
-  table's justification.
+  and grouped-PQ/PqFastScan paths through `CandidateBatch` where
+  those codecs are already exposed by IVF. Non-routed cells require
+  the Phase 1 table's justification.
 - Same real-corpus suite shape.
 - **Per-AM validation gate**: recall byte-equal at every cell for all
   routed IVF quant paths; structural slices must show no end-to-end
@@ -214,11 +202,12 @@ radius first, then increasing complexity):
 
 ### Phase 4: DiskANN integration
 
-- DiskANN prefilter scoring routes grouped-PQ, RaBitQ,
-  binary-sidecar, and TurboQuant search codecs through
-  `CandidateBatch` where the traversal exposes useful batch
-  boundaries. The missing TurboQuant codec is an in-scope common
-  codec-shape gap, not a reason to skip DiskANN.
+- DiskANN prefilter scoring routes grouped-PQ, RaBitQ, and
+  binary-sidecar paths through `CandidateBatch` where the traversal
+  exposes useful batch boundaries. The missing TurboQuant search codec
+  is handed off to Task 91 through Task 90; Task 87's DiskANN Phase 4
+  may close with the accepted Stop Condition packet instead of growing
+  a new codec surface here.
 - Same real-corpus suite shape.
 - **Per-AM validation gate**: recall byte-equal at every cell for all
   routed DiskANN quant paths; structural slices must show no
@@ -267,10 +256,10 @@ radius first, then increasing complexity):
 ## Acceptance criteria
 
 1. `CandidateBatch` abstraction lives in a shared module.
-2. **All four AMs (HNSW, DiskANN, IVF, SPIRE) route batch-shaped
-   quant scoring through it and the common quant codec shape.**
-   Not "the first two and we'll see." Not "three of four with the
-   fourth deferred."
+2. **All four AMs (HNSW, DiskANN, IVF, SPIRE) either route
+   batch-shaped quant scoring through it or have an accepted
+   AM-specific Stop Condition.** Not "the first two and we'll see."
+   Not "three of four with the fourth silently deferred."
 3. Per-AM real-corpus suite evidence ships in each slice's
    packet.
 4. All existing pg_test surfaces pass across all four AMs.
@@ -303,6 +292,10 @@ fix, not Task 87.
 - **Task 88** (streaming ANN) sits on top of this
   abstraction. Sequence Task 87 first; Task 88 reuses the
   `CandidateBatch` shape inside its resort_buffer.
+- **Task 91** owns cross-AM `QuantCodec` migration, trait growth,
+  HNSW/DiskANN/SPIRE adapter migrations, and DiskANN TurboQuant
+  search-codec completion. Task 87 must not expand again to absorb
+  those parity-gated migration slices.
 - **TurboQuant TQ+** (Task 86 packet 002 follow-up) is a
   separate effort but will benefit from this abstraction —
   the calibration prototype already produces `Prepared…Query`
