@@ -25,17 +25,17 @@ approved in `reviews/task-87/009-scope-walk-back-and-task-91-handoff/`.
 
 Latency delta is `(on - off) / off`; negative is faster.
 
-| Corpus | AM | Recall off | Recall on | p50 off | p50 on | p50 delta | p95 off | p95 on | p95 delta | p99 off | p99 on | p99 delta | Storage |
-| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
-| real10k | HNSW | 0.6550 | 0.6550 | 32.6 ms | 31.6 ms | -3.1% | 44.2 ms | 44.1 ms | -0.2% | 49.0 ms | 47.5 ms | -3.1% | total 171.8 MiB, indexes 13.0 MiB |
-| real10k | IVF | 1.0000 | 1.0000 | 119.6 ms | 117.4 ms | -1.8% | 135.9 ms | 128.7 ms | -5.3% | 149.4 ms | 138.5 ms | -7.3% | total 168.2 MiB, indexes 9.4 MiB |
-| real10k | SPIRE | 1.0000 | 1.0000 | 168.137 ms | 106.142 ms | -36.9% | 187.051 ms | 122.507 ms | -34.5% | 192.607 ms | 132.642 ms | -31.1% | total 167.0 MiB, indexes 8.2 MiB |
-| real50k | HNSW | 0.9180 | 0.9180 | 32.4 ms | 31.3 ms | -3.4% | 42.1 ms | 37.9 ms | -10.0% | 58.5 ms | 41.9 ms | -28.4% | total 860.0 MiB, indexes 66.2 MiB |
-| real50k | IVF | 0.9300 | 0.9300 | 264.0 ms | 264.3 ms | +0.1% | 289.7 ms | 292.9 ms | +1.1% | 311.6 ms | 308.5 ms | -1.0% | total 840.9 MiB, indexes 47.1 MiB |
-| real50k | SPIRE | 0.9690 | 0.9690 | 224.610 ms | 160.449 ms | -28.6% | 255.674 ms | 180.921 ms | -29.2% | 266.182 ms | 186.580 ms | -29.9% | total 834.3 MiB, indexes 40.5 MiB |
-| real100k | HNSW | 0.8980 | 0.8980 | 35.6 ms | 35.5 ms | -0.3% | 43.8 ms | 42.9 ms | -2.1% | 51.6 ms | 50.1 ms | -2.9% | total 1.7 GiB, indexes 132.4 MiB |
-| real100k | IVF | 1.0000 | 1.0000 | 1064.2 ms | 960.5 ms | -9.7% | 1114.9 ms | 1018.0 ms | -8.7% | 1131.1 ms | 1048.6 ms | -7.3% | total 1.6 GiB, indexes 89.5 MiB |
-| real100k | SPIRE | 0.9100 | 0.9100 | 414.768 ms | 273.031 ms | -34.2% | 471.651 ms | 298.031 ms | -36.8% | 495.905 ms | 308.541 ms | -37.8% | total 1.6 GiB, indexes 81.8 MiB |
+| Corpus | AM | Surface note | Recall off | Recall on | p50 off | p50 on | p50 delta | p95 off | p95 on | p95 delta | p99 off | p99 on | p99 delta | Storage |
+| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| real10k | HNSW | Task 87 route | 0.6550 | 0.6550 | 32.6 ms | 31.6 ms | -3.1% | 44.2 ms | 44.1 ms | -0.2% | 49.0 ms | 47.5 ms | -3.1% | total 171.8 MiB, indexes 13.0 MiB |
+| real10k | IVF | Task 87 TurboQuant route | 1.0000 | 1.0000 | 119.6 ms | 117.4 ms | -1.8% | 135.9 ms | 128.7 ms | -5.3% | 149.4 ms | 138.5 ms | -7.3% | total 168.2 MiB, indexes 9.4 MiB |
+| real10k | SPIRE | Task 87 route | 1.0000 | 1.0000 | 168.137 ms | 106.142 ms | -36.9% | 187.051 ms | 122.507 ms | -34.5% | 192.607 ms | 132.642 ms | -31.1% | total 167.0 MiB, indexes 8.2 MiB |
+| real50k | HNSW | Task 87 route | 0.9180 | 0.9180 | 32.4 ms | 31.3 ms | -3.4% | 42.1 ms | 37.9 ms | -10.0% | 58.5 ms | 41.9 ms | -28.4% | total 860.0 MiB, indexes 66.2 MiB |
+| real50k | IVF | RaBitQ surface; not Task 87 TurboQuant batch route | 0.9300 | 0.9300 | 264.0 ms | 264.3 ms | +0.1% | 289.7 ms | 292.9 ms | +1.1% | 311.6 ms | 308.5 ms | -1.0% | total 840.9 MiB, indexes 47.1 MiB |
+| real50k | SPIRE | Task 87 route | 0.9690 | 0.9690 | 224.610 ms | 160.449 ms | -28.6% | 255.674 ms | 180.921 ms | -29.2% | 266.182 ms | 186.580 ms | -29.9% | total 834.3 MiB, indexes 40.5 MiB |
+| real100k | HNSW | Task 87 route | 0.8980 | 0.8980 | 35.6 ms | 35.5 ms | -0.3% | 43.8 ms | 42.9 ms | -2.1% | 51.6 ms | 50.1 ms | -2.9% | total 1.7 GiB, indexes 132.4 MiB |
+| real100k | IVF | Task 87 TurboQuant route | 1.0000 | 1.0000 | 1064.2 ms | 960.5 ms | -9.7% | 1114.9 ms | 1018.0 ms | -8.7% | 1131.1 ms | 1048.6 ms | -7.3% | total 1.6 GiB, indexes 89.5 MiB |
+| real100k | SPIRE | Task 87 route | 0.9100 | 0.9100 | 414.768 ms | 273.031 ms | -34.2% | 471.651 ms | 298.031 ms | -36.8% | 495.905 ms | 308.541 ms | -37.8% | total 1.6 GiB, indexes 81.8 MiB |
 
 ## Recall And Storage
 
@@ -75,10 +75,12 @@ codec surfaces that remain in scope after the packet 009 Task 91 walk-back.
   structural-slice carve-out applies because SPIRE already had a chunked
   scorer and Task 87 did not land a new block kernel.
 - IVF: recall-preserving in all three corpus sizes. real10k and real100k
-  improve; real50k RaBitQ is flat/slightly worse at p50/p95 and slightly
-  faster at p99. Packet 001 blocker B4's structural-slice carve-out applies to
-  the batch route reachability work, and this cell remains documented as a
-  measurement miss rather than a claimed perf win.
+  exercise Task 87 TurboQuant surfaces and improve. The real50k cell is a
+  RaBitQ surface (`task67_local_50k_ivfrabitq`) and flips IVF's pre-existing
+  RaBitQ scratch SoA decoder, not Task 87's TurboQuant `CandidateBatch` route;
+  it is carried as a surface-format note rather than a Task 87 regression.
+  Packet 001 blocker B4's structural-slice carve-out applies to the batch
+  route reachability work.
 - HNSW: recall-preserving in all three corpus sizes. real50k improves
   materially in p95/p99, real10k is small positive, and real100k p50 is
   effectively flat. This is consistent with the Phase 5 HNSW design note that

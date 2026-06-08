@@ -2,10 +2,10 @@
 
 ## Summary
 
-This packet asks for review of Task 87 closeout. It aggregates the completed
-Phase 6 matrix evidence from packets 012, 013, and 014, applies the packet 009
-Task 91 scope walk-back, and flips the Task 87 status to complete by reference
-to this packet.
+This packet was the Task 87 Phase 6 plumbing closeout request. Reviewer
+feedback in `feedback/2026-06-08-02-reviewer.md` supersedes the initial
+approval and reopens Task 87 for Phase 7 32-block kernel work. Packet 015
+remains in tree as the CandidateBatch plumbing milestone and Phase 6 baseline.
 
 Current head for this packet:
 
@@ -14,10 +14,12 @@ Current head for this packet:
 ## What Changed
 
 - `plan/tasks/87-candidate-batched-scoring-across-ams.md`
-  - status changed to `complete (2026-06-08; see reviews/task-87/015-phase6-closeout/)`.
+  - originally changed status to `complete`; superseded by reviewer feedback
+    `2026-06-08-02-reviewer.md`, which reopens Task 87 for Phase 7.
 - `artifacts/aggregate-matrix.md`
   - adds the aggregate AM x corpus off/on matrix for recall@10,
-    p50/p95/p99 latency, latency deltas, and storage.
+    p50/p95/p99 latency, latency deltas, storage, and the IVF real50k
+    RaBitQ surface annotation requested by reviewer feedback.
 - `artifacts/manifest.md`
   - records the closeout artifact metadata and source evidence packets.
 - `artifacts/completion-audit.md`

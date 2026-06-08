@@ -41,7 +41,9 @@ Timestamp: 2026-06-08
   packet-local artifacts.
 - Key result lines:
   - Implementation and closeout evidence are pushed.
-  - Packet 015 remains a closeout request awaiting outside reviewer response.
+  - Packet 015 is superseded by reviewer feedback
+    `feedback/2026-06-08-02-reviewer.md` and remains the Phase 6 plumbing
+    milestone.
   - Universal scoring-share and every-cell latency gates are not claimed as
     fully met; the closeout relies on reviewer-approved structural carve-outs
     and the Task 91 DiskANN handoff.

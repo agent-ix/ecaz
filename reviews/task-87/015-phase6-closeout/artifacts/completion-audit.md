@@ -5,14 +5,15 @@ Head SHA: `b71376d81225a896b388010dcfb83e489613e98e`
 Packet path: `reviews/task-87/015-phase6-closeout/`
 
 This audit maps Task 87's explicit closeout and acceptance requirements to
-current checked-in evidence. It treats packet 015 as a closeout request awaiting
-outside reviewer response; it does not substitute for reviewer approval.
+current checked-in evidence as of the Phase 6 plumbing milestone. Reviewer
+feedback `feedback/2026-06-08-02-reviewer.md` supersedes packet 015 as final
+closeout and reopens Task 87 for Phase 7 32-block kernel work.
 
 ## Phase 6 Closeout Requirements
 
 | Requirement | Evidence | Audit result |
 | --- | --- | --- |
-| All four AM slices reviewer-approved | SPIRE packet 003 shipped with tests. IVF packet 004 shipped with tests. DiskANN packet 005 Stop Condition is reinstated and accepted by packet 009 reviewer feedback. HNSW packet 006 shipped with tests. Packet 009 reviewer feedback says original phasing resumes and lists packets 003/004/006 as already shipped, with DiskANN packet 005 standing. | Mostly proven by packet 009 feedback for scope and prior slice artifacts. Packet 015 itself still awaits reviewer response. |
+| All four AM slices reviewer-approved | SPIRE packet 003 shipped with tests. IVF packet 004 shipped with tests. DiskANN packet 005 Stop Condition is reinstated and accepted by packet 009 reviewer feedback. HNSW packet 006 shipped with tests. Packet 009 reviewer feedback says original phasing resumes and lists packets 003/004/006 as already shipped, with DiskANN packet 005 standing. | Mostly proven by packet 009 feedback for scope and prior slice artifacts. Packet 015 is no longer final closeout after reviewer feedback seq 02. |
 | Aggregate measurement comparison | `artifacts/aggregate-matrix.md` aggregates real10k, real50k, and real100k off/on results for SPIRE, IVF, and HNSW; DiskANN is represented by accepted Stop Condition. | Proven for the reviewer-approved post-walk-back matrix scope. |
 | Closeout packet citing per-AM evidence | `request.md`, `manifest.md`, and `aggregate-matrix.md` cite packets 012, 013, 014 for matrix evidence, packet 005 for DiskANN, and packet 009 for Task 91 handoff. | Proven. |
 | Status flip to complete referencing the closeout packet | `plan/tasks/87-candidate-batched-scoring-across-ams.md` status line references `reviews/task-87/015-phase6-closeout/`. | Proven in the working tree. |
@@ -42,9 +43,7 @@ outside reviewer response; it does not substitute for reviewer approval.
 
 ## Current Completion State
 
-The implementation and closeout evidence are pushed. Packet 015 is the current
-closeout request and contains the task status flip. The remaining governance
-step is outside reviewer response to packet 015, especially because the original
-universal scoring-share and every-cell latency gates are not universally met and
-the closeout intentionally relies on accepted structural carve-outs rather than
-claiming those gates as fully satisfied.
+The Phase 6 plumbing implementation and evidence are pushed. Packet 015 is now
+a baseline milestone, not final closeout. Task 87 remains open for Phase 7:
+32-block u8 nibble LUT kernel landing, scoring-share instrumentation, and a
+new packet 016 closeout.

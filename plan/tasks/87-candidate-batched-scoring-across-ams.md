@@ -1,8 +1,17 @@
 # Task 87: Candidate-Batched Scoring Across Access Methods
 
-Status: complete (2026-06-08; see reviews/task-87/015-phase6-closeout/)
+Status: reopened-for-32-block-kernel (2026-06-08); plumbing milestone in reviews/task-87/015-phase6-closeout/
 Owner: coder (to be assigned). One coder, one branch.
 Priority: 2 (kernel-level optimization unlock; follows Task 86)
+
+Status note: reviewer addenda
+`reviews/task-87/001-phase1-design/feedback/2026-06-08-04-reviewer.md`
+and
+`reviews/task-87/015-phase6-closeout/feedback/2026-06-08-02-reviewer.md`
+reverse the Phase 1 kernel-deferral call. Packet 015 remains the
+CandidateBatch plumbing milestone and Phase 6 baseline, but Task 87
+reopens to land the 32-block u8 nibble LUT kernel on AMs whose batch
+widths justify it.
 
 ## Why
 
@@ -233,6 +242,67 @@ radius first, then increasing complexity):
 - Aggregate measurement comparison (4-AM × 3-corpus matrix).
 - Closeout packet citing per-AM evidence.
 - Status flip to `complete` referencing the closeout packet.
+
+## Phase 7 — 32-block u8 nibble LUT kernel landing
+
+Land the 32-vector blocked u8 nibble LUT kernel inside the
+quantizer-family layer (`src/quant/`) and route SPIRE and IVF
+TurboQuant no-QJL 4-bit scoring through it via the existing
+`CandidateBatch` entry points (`score_turboquant_no_qjl_4bit_batch`).
+
+Scope:
+
+- Kernel lives under `src/quant/`, not inside an AM module.
+- SPIRE routes through it for column chunks >= 32.
+- IVF routes through it for posting-list chunks >= 32.
+- Scalar tail handling remains per AM for residual candidates < 32.
+- HNSW is deferred pending measurement: measure per-frontier batch
+  width distribution on the Phase 7 head; if >= 32 candidates is
+  achievable for a meaningful share of flushes, route HNSW too.
+  Otherwise document the measured distribution and leave HNSW on the
+  Phase 5 plumbing route.
+- DiskANN remains handed off to Task 91.
+
+Per-AM validation gate for cells the kernel touches, replacing the
+Phase 2/3/5 structural-slice carve-out:
+
+1. Recall byte-equal at every cell.
+2. SPIRE TurboQuant no-QJL 4-bit: >= 2x scoring-share latency on
+   the kernel path vs the Phase 6 plumbing baseline.
+3. IVF TurboQuant no-QJL 4-bit: >= 2x scoring-share latency on
+   the kernel path vs the Phase 6 plumbing baseline.
+4. End-to-end p50/p95/p99 latency improves at every cell on the
+   touched AMs.
+5. Existing pg_test surfaces pass.
+6. New unsafe, if any, lands with a `# Safety` doc and scalar
+   differential coverage per `feedback_dont_defer_safety_fixes`.
+
+Phase 7 also lands per-AM scoring-share counters so the kernel gate is
+directly measurable. At minimum, each touched AM records nanos spent
+inside the batch scorer entry point, candidates scored, and batch
+flushes.
+
+Stop conditions:
+
+- If measured kernel scoring-share win is < 2x on a touched AM,
+  document the measured factor and kernel call shape; do not back out
+  the kernel for cells where it preserves recall and shows any
+  measurable kernel-share win.
+- If HNSW measured per-frontier batch widths never reach 32, document
+  the distribution and skip HNSW routing for this task.
+
+Phase 7 closes via
+`reviews/task-87/016-phase7-32-block-kernel-closeout/`, containing:
+
+- kernel source diff and scalar differential test;
+- per-AM real-corpus suite evidence on the same surfaces as packet
+  015 for SPIRE and IVF, with HNSW gated on the batch-width
+  measurement above;
+- aggregate matrix superseding packet 015's `aggregate-matrix.md`
+  with scoring-share counters added;
+- updated completion audit;
+- final status flip from `reopened-for-32-block-kernel` to
+  `complete` referencing packet 016.
 
 ## Validation gate (per AM, every cell)
 
