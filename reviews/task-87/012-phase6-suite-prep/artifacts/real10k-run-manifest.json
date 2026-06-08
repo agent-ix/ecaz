@@ -2,9 +2,9 @@
   "suite": "task87-phase6-candidate-batch-matrix",
   "schema_version": 1,
   "config": "reviews/task-87/012-phase6-suite-prep/phase6-suite.json",
-  "config_sha256": "a926a9803e754b52c3a556dc16859fef2486e78fecc07e9a8e1db0a862ff12d5",
-  "dry_run": true,
-  "generated_at_unix_ms": 1780950669639,
+  "config_sha256": "6eab00e62da816696b9ff32f7c680cd691ce01f15f0fc4941c2662290f656a4e",
+  "dry_run": false,
+  "generated_at_unix_ms": 1780949966917,
   "connection": {
     "database": "postgres",
     "host": "/home/peter/.pgrx",
@@ -16,30 +16,8 @@
     {
       "name": "precheck-host",
       "kind": "raw",
-      "command": [
-        "--database",
-        "postgres",
-        "--host",
-        "/home/peter/.pgrx",
-        "--port",
-        "28818",
-        "dev",
-        "sql",
-        "--pg",
-        "18",
-        "--db",
-        "postgres",
-        "--socket-dir",
-        "/home/peter/.pgrx",
-        "--port",
-        "28818",
-        "--raw",
-        "--sql",
-        "SELECT now() AS captured_at, version() AS postgres_version, current_setting('shared_buffers') AS shared_buffers, current_setting('work_mem') AS work_mem, current_setting('maintenance_work_mem') AS maintenance_work_mem, current_setting('effective_cache_size') AS effective_cache_size;",
-        "--log-output",
-        "reviews/task-87/012-phase6-suite-prep/artifacts/run/precheck-host.log"
-      ],
-      "selected": true,
+      "command": [],
+      "selected": false,
       "tags": [
         "setup",
         "precheck",
@@ -49,35 +27,13 @@
       "expected_artifacts": [
         "reviews/task-87/012-phase6-suite-prep/artifacts/run/precheck-host.log"
       ],
-      "status": "dry-run"
+      "status": "skipped"
     },
     {
       "name": "prepare-isolated-surfaces",
       "kind": "raw",
-      "command": [
-        "--database",
-        "postgres",
-        "--host",
-        "/home/peter/.pgrx",
-        "--port",
-        "28818",
-        "dev",
-        "sql",
-        "--pg",
-        "18",
-        "--db",
-        "postgres",
-        "--socket-dir",
-        "/home/peter/.pgrx",
-        "--port",
-        "28818",
-        "--raw",
-        "--file",
-        "reviews/task-87/012-phase6-suite-prep/artifacts/prepare-isolated-surfaces.sql",
-        "--log-output",
-        "reviews/task-87/012-phase6-suite-prep/artifacts/run/prepare-isolated-surfaces.log"
-      ],
-      "selected": true,
+      "command": [],
+      "selected": false,
       "tags": [
         "setup",
         "task87",
@@ -87,7 +43,7 @@
       "expected_artifacts": [
         "reviews/task-87/012-phase6-suite-prep/artifacts/run/prepare-isolated-surfaces.log"
       ],
-      "status": "dry-run"
+      "status": "skipped"
     },
     {
       "name": "recall-real10k-hnsw-candidate-batch-off",
@@ -135,7 +91,11 @@
       "expected_artifacts": [
         "reviews/task-87/012-phase6-suite-prep/artifacts/run/recall-real10k-hnsw-candidate-batch-off.log"
       ],
-      "status": "dry-run"
+      "status": "succeeded",
+      "started_at_unix_ms": 1780949966919,
+      "finished_at_unix_ms": 1780949990558,
+      "duration_ms": 25365,
+      "exit_code": 0
     },
     {
       "name": "recall-real10k-hnsw-candidate-batch-on",
@@ -183,7 +143,11 @@
       "expected_artifacts": [
         "reviews/task-87/012-phase6-suite-prep/artifacts/run/recall-real10k-hnsw-candidate-batch-on.log"
       ],
-      "status": "dry-run"
+      "status": "succeeded",
+      "started_at_unix_ms": 1780949990559,
+      "finished_at_unix_ms": 1780949995372,
+      "duration_ms": 4811,
+      "exit_code": 0
     },
     {
       "name": "latency-real10k-hnsw-candidate-batch-off",
@@ -236,7 +200,11 @@
       "expected_artifacts": [
         "reviews/task-87/012-phase6-suite-prep/artifacts/run/latency-real10k-hnsw-candidate-batch-off.log"
       ],
-      "status": "dry-run"
+      "status": "succeeded",
+      "started_at_unix_ms": 1780949995374,
+      "finished_at_unix_ms": 1780950000654,
+      "duration_ms": 6993,
+      "exit_code": 0
     },
     {
       "name": "latency-real10k-hnsw-candidate-batch-on",
@@ -289,7 +257,11 @@
       "expected_artifacts": [
         "reviews/task-87/012-phase6-suite-prep/artifacts/run/latency-real10k-hnsw-candidate-batch-on.log"
       ],
-      "status": "dry-run"
+      "status": "succeeded",
+      "started_at_unix_ms": 1780950000655,
+      "finished_at_unix_ms": 1780950007563,
+      "duration_ms": 6905,
+      "exit_code": 0
     },
     {
       "name": "storage-real10k-hnsw",
@@ -319,7 +291,11 @@
       "expected_artifacts": [
         "reviews/task-87/012-phase6-suite-prep/artifacts/run/storage-real10k-hnsw.log"
       ],
-      "status": "dry-run"
+      "status": "succeeded",
+      "started_at_unix_ms": 1780950007564,
+      "finished_at_unix_ms": 1780950007597,
+      "duration_ms": 31,
+      "exit_code": 0
     },
     {
       "name": "recall-real10k-ivf-candidate-batch-off",
@@ -367,7 +343,11 @@
       "expected_artifacts": [
         "reviews/task-87/012-phase6-suite-prep/artifacts/run/recall-real10k-ivf-candidate-batch-off.log"
       ],
-      "status": "dry-run"
+      "status": "succeeded",
+      "started_at_unix_ms": 1780950007599,
+      "finished_at_unix_ms": 1780950020857,
+      "duration_ms": 13257,
+      "exit_code": 0
     },
     {
       "name": "recall-real10k-ivf-candidate-batch-on",
@@ -416,7 +396,11 @@
       "expected_artifacts": [
         "reviews/task-87/012-phase6-suite-prep/artifacts/run/recall-real10k-ivf-candidate-batch-on.log"
       ],
-      "status": "dry-run"
+      "status": "succeeded",
+      "started_at_unix_ms": 1780950020859,
+      "finished_at_unix_ms": 1780950032275,
+      "duration_ms": 13137,
+      "exit_code": 0
     },
     {
       "name": "latency-real10k-ivf-candidate-batch-off",
@@ -469,7 +453,11 @@
       "expected_artifacts": [
         "reviews/task-87/012-phase6-suite-prep/artifacts/run/latency-real10k-ivf-candidate-batch-off.log"
       ],
-      "status": "dry-run"
+      "status": "succeeded",
+      "started_at_unix_ms": 1780950032276,
+      "finished_at_unix_ms": 1780950055107,
+      "duration_ms": 24536,
+      "exit_code": 0
     },
     {
       "name": "latency-real10k-ivf-candidate-batch-on",
@@ -523,7 +511,11 @@
       "expected_artifacts": [
         "reviews/task-87/012-phase6-suite-prep/artifacts/run/latency-real10k-ivf-candidate-batch-on.log"
       ],
-      "status": "dry-run"
+      "status": "succeeded",
+      "started_at_unix_ms": 1780950055109,
+      "finished_at_unix_ms": 1780950079054,
+      "duration_ms": 23943,
+      "exit_code": 0
     },
     {
       "name": "storage-real10k-ivf",
@@ -553,7 +545,11 @@
       "expected_artifacts": [
         "reviews/task-87/012-phase6-suite-prep/artifacts/run/storage-real10k-ivf.log"
       ],
-      "status": "dry-run"
+      "status": "succeeded",
+      "started_at_unix_ms": 1780950079056,
+      "finished_at_unix_ms": 1780950079087,
+      "duration_ms": 30,
+      "exit_code": 0
     },
     {
       "name": "pipeline-real10k-spire-candidate-batch-off",
@@ -570,7 +566,7 @@
         "--prefix",
         "task87_phase6_real10k_spire",
         "--queries-limit",
-        "100",
+        "200",
         "--sweep",
         "24",
         "--rerank-width",
@@ -578,7 +574,7 @@
         "--include-query-metrics",
         "--include-recall",
         "--truth-cache-file",
-        "reviews/task-87/012-phase6-suite-prep/artifacts/run/truth-real10k-spire-k10.json",
+        "reviews/task-87/012-phase6-suite-prep/artifacts/run/truth-real10k-k10.json",
         "--query-metric-k",
         "10",
         "--session-guc",
@@ -600,7 +596,11 @@
       "expected_artifacts": [
         "reviews/task-87/012-phase6-suite-prep/artifacts/run/pipeline-real10k-spire-candidate-batch-off.log"
       ],
-      "status": "dry-run"
+      "status": "failed",
+      "started_at_unix_ms": 1780950079089,
+      "finished_at_unix_ms": 1780950079114,
+      "duration_ms": 24,
+      "exit_code": 1
     },
     {
       "name": "pipeline-real10k-spire-candidate-batch-on",
@@ -617,7 +617,7 @@
         "--prefix",
         "task87_phase6_real10k_spire",
         "--queries-limit",
-        "100",
+        "200",
         "--sweep",
         "24",
         "--rerank-width",
@@ -625,7 +625,7 @@
         "--include-query-metrics",
         "--include-recall",
         "--truth-cache-file",
-        "reviews/task-87/012-phase6-suite-prep/artifacts/run/truth-real10k-spire-k10.json",
+        "reviews/task-87/012-phase6-suite-prep/artifacts/run/truth-real10k-k10.json",
         "--query-metric-k",
         "10",
         "--session-guc",
@@ -647,7 +647,7 @@
       "expected_artifacts": [
         "reviews/task-87/012-phase6-suite-prep/artifacts/run/pipeline-real10k-spire-candidate-batch-on.log"
       ],
-      "status": "dry-run"
+      "status": "pending"
     },
     {
       "name": "storage-real10k-spire",
@@ -677,43 +677,13 @@
       "expected_artifacts": [
         "reviews/task-87/012-phase6-suite-prep/artifacts/run/storage-real10k-spire.log"
       ],
-      "status": "dry-run"
+      "status": "pending"
     },
     {
       "name": "recall-real50k-hnsw-candidate-batch-off",
       "kind": "recall",
-      "command": [
-        "--database",
-        "postgres",
-        "--host",
-        "/home/peter/.pgrx",
-        "--port",
-        "28818",
-        "bench",
-        "recall",
-        "--prefix",
-        "task67_current_shape_real50k_hnsw",
-        "--profile",
-        "ec_hnsw",
-        "--k",
-        "10",
-        "--sweep",
-        "128",
-        "--queries-limit",
-        "200",
-        "--bits",
-        "4",
-        "--seed",
-        "42",
-        "--force-index",
-        "--session-guc",
-        "ec_hnsw.candidate_batch_scoring=off",
-        "--truth-cache-file",
-        "reviews/task-87/012-phase6-suite-prep/artifacts/run/truth-real50k-k10.json",
-        "--log-output",
-        "reviews/task-87/012-phase6-suite-prep/artifacts/run/recall-real50k-hnsw-candidate-batch-off.log"
-      ],
-      "selected": true,
+      "command": [],
+      "selected": false,
       "tags": [
         "recall",
         "task87",
@@ -725,43 +695,13 @@
       "expected_artifacts": [
         "reviews/task-87/012-phase6-suite-prep/artifacts/run/recall-real50k-hnsw-candidate-batch-off.log"
       ],
-      "status": "dry-run"
+      "status": "skipped"
     },
     {
       "name": "recall-real50k-hnsw-candidate-batch-on",
       "kind": "recall",
-      "command": [
-        "--database",
-        "postgres",
-        "--host",
-        "/home/peter/.pgrx",
-        "--port",
-        "28818",
-        "bench",
-        "recall",
-        "--prefix",
-        "task67_current_shape_real50k_hnsw",
-        "--profile",
-        "ec_hnsw",
-        "--k",
-        "10",
-        "--sweep",
-        "128",
-        "--queries-limit",
-        "200",
-        "--bits",
-        "4",
-        "--seed",
-        "42",
-        "--force-index",
-        "--session-guc",
-        "ec_hnsw.candidate_batch_scoring=on",
-        "--truth-cache-file",
-        "reviews/task-87/012-phase6-suite-prep/artifacts/run/truth-real50k-k10.json",
-        "--log-output",
-        "reviews/task-87/012-phase6-suite-prep/artifacts/run/recall-real50k-hnsw-candidate-batch-on.log"
-      ],
-      "selected": true,
+      "command": [],
+      "selected": false,
       "tags": [
         "recall",
         "task87",
@@ -773,48 +713,13 @@
       "expected_artifacts": [
         "reviews/task-87/012-phase6-suite-prep/artifacts/run/recall-real50k-hnsw-candidate-batch-on.log"
       ],
-      "status": "dry-run"
+      "status": "skipped"
     },
     {
       "name": "latency-real50k-hnsw-candidate-batch-off",
       "kind": "latency",
-      "command": [
-        "--database",
-        "postgres",
-        "--host",
-        "/home/peter/.pgrx",
-        "--port",
-        "28818",
-        "bench",
-        "latency",
-        "--prefix",
-        "task67_current_shape_real50k_hnsw",
-        "--profile",
-        "ec_hnsw",
-        "--k",
-        "10",
-        "--concurrency",
-        "1",
-        "--iterations",
-        "200",
-        "--sweep",
-        "128",
-        "--bits",
-        "4",
-        "--seed",
-        "42",
-        "--force-index",
-        "--sample-backend-memory",
-        "--cache-state",
-        "post_recall_warm",
-        "--session-guc",
-        "ec_hnsw.candidate_batch_scoring=off",
-        "--memory-sample-interval-ms",
-        "25",
-        "--log-output",
-        "reviews/task-87/012-phase6-suite-prep/artifacts/run/latency-real50k-hnsw-candidate-batch-off.log"
-      ],
-      "selected": true,
+      "command": [],
+      "selected": false,
       "tags": [
         "latency",
         "task87",
@@ -826,48 +731,13 @@
       "expected_artifacts": [
         "reviews/task-87/012-phase6-suite-prep/artifacts/run/latency-real50k-hnsw-candidate-batch-off.log"
       ],
-      "status": "dry-run"
+      "status": "skipped"
     },
     {
       "name": "latency-real50k-hnsw-candidate-batch-on",
       "kind": "latency",
-      "command": [
-        "--database",
-        "postgres",
-        "--host",
-        "/home/peter/.pgrx",
-        "--port",
-        "28818",
-        "bench",
-        "latency",
-        "--prefix",
-        "task67_current_shape_real50k_hnsw",
-        "--profile",
-        "ec_hnsw",
-        "--k",
-        "10",
-        "--concurrency",
-        "1",
-        "--iterations",
-        "200",
-        "--sweep",
-        "128",
-        "--bits",
-        "4",
-        "--seed",
-        "42",
-        "--force-index",
-        "--sample-backend-memory",
-        "--cache-state",
-        "post_recall_warm",
-        "--session-guc",
-        "ec_hnsw.candidate_batch_scoring=on",
-        "--memory-sample-interval-ms",
-        "25",
-        "--log-output",
-        "reviews/task-87/012-phase6-suite-prep/artifacts/run/latency-real50k-hnsw-candidate-batch-on.log"
-      ],
-      "selected": true,
+      "command": [],
+      "selected": false,
       "tags": [
         "latency",
         "task87",
@@ -879,26 +749,13 @@
       "expected_artifacts": [
         "reviews/task-87/012-phase6-suite-prep/artifacts/run/latency-real50k-hnsw-candidate-batch-on.log"
       ],
-      "status": "dry-run"
+      "status": "skipped"
     },
     {
       "name": "storage-real50k-hnsw",
       "kind": "storage",
-      "command": [
-        "--database",
-        "postgres",
-        "--host",
-        "/home/peter/.pgrx",
-        "--port",
-        "28818",
-        "--log-file",
-        "reviews/task-87/012-phase6-suite-prep/artifacts/run/storage-real50k-hnsw.log",
-        "bench",
-        "storage",
-        "--prefix",
-        "task67_current_shape_real50k_hnsw"
-      ],
-      "selected": true,
+      "command": [],
+      "selected": false,
       "tags": [
         "storage",
         "task87",
@@ -909,43 +766,13 @@
       "expected_artifacts": [
         "reviews/task-87/012-phase6-suite-prep/artifacts/run/storage-real50k-hnsw.log"
       ],
-      "status": "dry-run"
+      "status": "skipped"
     },
     {
       "name": "recall-real50k-ivf-candidate-batch-off",
       "kind": "recall",
-      "command": [
-        "--database",
-        "postgres",
-        "--host",
-        "/home/peter/.pgrx",
-        "--port",
-        "28818",
-        "bench",
-        "recall",
-        "--prefix",
-        "task67_local_50k_ivfrabitq",
-        "--profile",
-        "ec_ivf",
-        "--k",
-        "10",
-        "--sweep",
-        "64",
-        "--rerank-width",
-        "25",
-        "--queries-limit",
-        "200",
-        "--bits",
-        "4",
-        "--seed",
-        "42",
-        "--force-index",
-        "--truth-cache-file",
-        "reviews/task-87/012-phase6-suite-prep/artifacts/run/truth-real50k-k10.json",
-        "--log-output",
-        "reviews/task-87/012-phase6-suite-prep/artifacts/run/recall-real50k-ivf-candidate-batch-off.log"
-      ],
-      "selected": true,
+      "command": [],
+      "selected": false,
       "tags": [
         "recall",
         "task87",
@@ -957,44 +784,13 @@
       "expected_artifacts": [
         "reviews/task-87/012-phase6-suite-prep/artifacts/run/recall-real50k-ivf-candidate-batch-off.log"
       ],
-      "status": "dry-run"
+      "status": "skipped"
     },
     {
       "name": "recall-real50k-ivf-candidate-batch-on",
       "kind": "recall",
-      "command": [
-        "--database",
-        "postgres",
-        "--host",
-        "/home/peter/.pgrx",
-        "--port",
-        "28818",
-        "bench",
-        "recall",
-        "--prefix",
-        "task67_local_50k_ivfrabitq",
-        "--profile",
-        "ec_ivf",
-        "--k",
-        "10",
-        "--sweep",
-        "64",
-        "--rerank-width",
-        "25",
-        "--ivf-scratch-soa-batch-decode",
-        "--queries-limit",
-        "200",
-        "--bits",
-        "4",
-        "--seed",
-        "42",
-        "--force-index",
-        "--truth-cache-file",
-        "reviews/task-87/012-phase6-suite-prep/artifacts/run/truth-real50k-k10.json",
-        "--log-output",
-        "reviews/task-87/012-phase6-suite-prep/artifacts/run/recall-real50k-ivf-candidate-batch-on.log"
-      ],
-      "selected": true,
+      "command": [],
+      "selected": false,
       "tags": [
         "recall",
         "task87",
@@ -1006,48 +802,13 @@
       "expected_artifacts": [
         "reviews/task-87/012-phase6-suite-prep/artifacts/run/recall-real50k-ivf-candidate-batch-on.log"
       ],
-      "status": "dry-run"
+      "status": "skipped"
     },
     {
       "name": "latency-real50k-ivf-candidate-batch-off",
       "kind": "latency",
-      "command": [
-        "--database",
-        "postgres",
-        "--host",
-        "/home/peter/.pgrx",
-        "--port",
-        "28818",
-        "bench",
-        "latency",
-        "--prefix",
-        "task67_local_50k_ivfrabitq",
-        "--profile",
-        "ec_ivf",
-        "--k",
-        "10",
-        "--concurrency",
-        "1",
-        "--iterations",
-        "200",
-        "--sweep",
-        "64",
-        "--rerank-width",
-        "25",
-        "--bits",
-        "4",
-        "--seed",
-        "42",
-        "--force-index",
-        "--sample-backend-memory",
-        "--cache-state",
-        "post_recall_warm",
-        "--memory-sample-interval-ms",
-        "25",
-        "--log-output",
-        "reviews/task-87/012-phase6-suite-prep/artifacts/run/latency-real50k-ivf-candidate-batch-off.log"
-      ],
-      "selected": true,
+      "command": [],
+      "selected": false,
       "tags": [
         "latency",
         "task87",
@@ -1059,49 +820,13 @@
       "expected_artifacts": [
         "reviews/task-87/012-phase6-suite-prep/artifacts/run/latency-real50k-ivf-candidate-batch-off.log"
       ],
-      "status": "dry-run"
+      "status": "skipped"
     },
     {
       "name": "latency-real50k-ivf-candidate-batch-on",
       "kind": "latency",
-      "command": [
-        "--database",
-        "postgres",
-        "--host",
-        "/home/peter/.pgrx",
-        "--port",
-        "28818",
-        "bench",
-        "latency",
-        "--prefix",
-        "task67_local_50k_ivfrabitq",
-        "--profile",
-        "ec_ivf",
-        "--k",
-        "10",
-        "--concurrency",
-        "1",
-        "--iterations",
-        "200",
-        "--sweep",
-        "64",
-        "--rerank-width",
-        "25",
-        "--ivf-scratch-soa-batch-decode",
-        "--bits",
-        "4",
-        "--seed",
-        "42",
-        "--force-index",
-        "--sample-backend-memory",
-        "--cache-state",
-        "post_recall_warm",
-        "--memory-sample-interval-ms",
-        "25",
-        "--log-output",
-        "reviews/task-87/012-phase6-suite-prep/artifacts/run/latency-real50k-ivf-candidate-batch-on.log"
-      ],
-      "selected": true,
+      "command": [],
+      "selected": false,
       "tags": [
         "latency",
         "task87",
@@ -1113,26 +838,13 @@
       "expected_artifacts": [
         "reviews/task-87/012-phase6-suite-prep/artifacts/run/latency-real50k-ivf-candidate-batch-on.log"
       ],
-      "status": "dry-run"
+      "status": "skipped"
     },
     {
       "name": "storage-real50k-ivf",
       "kind": "storage",
-      "command": [
-        "--database",
-        "postgres",
-        "--host",
-        "/home/peter/.pgrx",
-        "--port",
-        "28818",
-        "--log-file",
-        "reviews/task-87/012-phase6-suite-prep/artifacts/run/storage-real50k-ivf.log",
-        "bench",
-        "storage",
-        "--prefix",
-        "task67_local_50k_ivfrabitq"
-      ],
-      "selected": true,
+      "command": [],
+      "selected": false,
       "tags": [
         "storage",
         "task87",
@@ -1143,40 +855,13 @@
       "expected_artifacts": [
         "reviews/task-87/012-phase6-suite-prep/artifacts/run/storage-real50k-ivf.log"
       ],
-      "status": "dry-run"
+      "status": "skipped"
     },
     {
       "name": "pipeline-real50k-spire-candidate-batch-off",
       "kind": "spire-pipeline",
-      "command": [
-        "--database",
-        "postgres",
-        "--host",
-        "/home/peter/.pgrx",
-        "--port",
-        "28818",
-        "bench",
-        "spire-pipeline",
-        "--prefix",
-        "task87_phase6_real50k_spire",
-        "--queries-limit",
-        "100",
-        "--sweep",
-        "24",
-        "--rerank-width",
-        "25",
-        "--include-query-metrics",
-        "--include-recall",
-        "--truth-cache-file",
-        "reviews/task-87/012-phase6-suite-prep/artifacts/run/truth-real50k-spire-k10.json",
-        "--query-metric-k",
-        "10",
-        "--session-guc",
-        "ec_spire.candidate_batch_scoring=off",
-        "--log-output",
-        "reviews/task-87/012-phase6-suite-prep/artifacts/run/pipeline-real50k-spire-candidate-batch-off.log"
-      ],
-      "selected": true,
+      "command": [],
+      "selected": false,
       "tags": [
         "pipeline",
         "latency",
@@ -1190,40 +875,13 @@
       "expected_artifacts": [
         "reviews/task-87/012-phase6-suite-prep/artifacts/run/pipeline-real50k-spire-candidate-batch-off.log"
       ],
-      "status": "dry-run"
+      "status": "skipped"
     },
     {
       "name": "pipeline-real50k-spire-candidate-batch-on",
       "kind": "spire-pipeline",
-      "command": [
-        "--database",
-        "postgres",
-        "--host",
-        "/home/peter/.pgrx",
-        "--port",
-        "28818",
-        "bench",
-        "spire-pipeline",
-        "--prefix",
-        "task87_phase6_real50k_spire",
-        "--queries-limit",
-        "100",
-        "--sweep",
-        "24",
-        "--rerank-width",
-        "25",
-        "--include-query-metrics",
-        "--include-recall",
-        "--truth-cache-file",
-        "reviews/task-87/012-phase6-suite-prep/artifacts/run/truth-real50k-spire-k10.json",
-        "--query-metric-k",
-        "10",
-        "--session-guc",
-        "ec_spire.candidate_batch_scoring=on",
-        "--log-output",
-        "reviews/task-87/012-phase6-suite-prep/artifacts/run/pipeline-real50k-spire-candidate-batch-on.log"
-      ],
-      "selected": true,
+      "command": [],
+      "selected": false,
       "tags": [
         "pipeline",
         "latency",
@@ -1237,26 +895,13 @@
       "expected_artifacts": [
         "reviews/task-87/012-phase6-suite-prep/artifacts/run/pipeline-real50k-spire-candidate-batch-on.log"
       ],
-      "status": "dry-run"
+      "status": "skipped"
     },
     {
       "name": "storage-real50k-spire",
       "kind": "storage",
-      "command": [
-        "--database",
-        "postgres",
-        "--host",
-        "/home/peter/.pgrx",
-        "--port",
-        "28818",
-        "--log-file",
-        "reviews/task-87/012-phase6-suite-prep/artifacts/run/storage-real50k-spire.log",
-        "bench",
-        "storage",
-        "--prefix",
-        "task87_phase6_real50k_spire"
-      ],
-      "selected": true,
+      "command": [],
+      "selected": false,
       "tags": [
         "storage",
         "task87",
@@ -1267,43 +912,13 @@
       "expected_artifacts": [
         "reviews/task-87/012-phase6-suite-prep/artifacts/run/storage-real50k-spire.log"
       ],
-      "status": "dry-run"
+      "status": "skipped"
     },
     {
       "name": "recall-real100k-hnsw-candidate-batch-off",
       "kind": "recall",
-      "command": [
-        "--database",
-        "postgres",
-        "--host",
-        "/home/peter/.pgrx",
-        "--port",
-        "28818",
-        "bench",
-        "recall",
-        "--prefix",
-        "current_intel_real100k_hnsw",
-        "--profile",
-        "ec_hnsw",
-        "--k",
-        "10",
-        "--sweep",
-        "128",
-        "--queries-limit",
-        "200",
-        "--bits",
-        "4",
-        "--seed",
-        "42",
-        "--force-index",
-        "--session-guc",
-        "ec_hnsw.candidate_batch_scoring=off",
-        "--truth-cache-file",
-        "reviews/task-87/012-phase6-suite-prep/artifacts/run/truth-real100k-k10.json",
-        "--log-output",
-        "reviews/task-87/012-phase6-suite-prep/artifacts/run/recall-real100k-hnsw-candidate-batch-off.log"
-      ],
-      "selected": true,
+      "command": [],
+      "selected": false,
       "tags": [
         "recall",
         "task87",
@@ -1315,43 +930,13 @@
       "expected_artifacts": [
         "reviews/task-87/012-phase6-suite-prep/artifacts/run/recall-real100k-hnsw-candidate-batch-off.log"
       ],
-      "status": "dry-run"
+      "status": "skipped"
     },
     {
       "name": "recall-real100k-hnsw-candidate-batch-on",
       "kind": "recall",
-      "command": [
-        "--database",
-        "postgres",
-        "--host",
-        "/home/peter/.pgrx",
-        "--port",
-        "28818",
-        "bench",
-        "recall",
-        "--prefix",
-        "current_intel_real100k_hnsw",
-        "--profile",
-        "ec_hnsw",
-        "--k",
-        "10",
-        "--sweep",
-        "128",
-        "--queries-limit",
-        "200",
-        "--bits",
-        "4",
-        "--seed",
-        "42",
-        "--force-index",
-        "--session-guc",
-        "ec_hnsw.candidate_batch_scoring=on",
-        "--truth-cache-file",
-        "reviews/task-87/012-phase6-suite-prep/artifacts/run/truth-real100k-k10.json",
-        "--log-output",
-        "reviews/task-87/012-phase6-suite-prep/artifacts/run/recall-real100k-hnsw-candidate-batch-on.log"
-      ],
-      "selected": true,
+      "command": [],
+      "selected": false,
       "tags": [
         "recall",
         "task87",
@@ -1363,48 +948,13 @@
       "expected_artifacts": [
         "reviews/task-87/012-phase6-suite-prep/artifacts/run/recall-real100k-hnsw-candidate-batch-on.log"
       ],
-      "status": "dry-run"
+      "status": "skipped"
     },
     {
       "name": "latency-real100k-hnsw-candidate-batch-off",
       "kind": "latency",
-      "command": [
-        "--database",
-        "postgres",
-        "--host",
-        "/home/peter/.pgrx",
-        "--port",
-        "28818",
-        "bench",
-        "latency",
-        "--prefix",
-        "current_intel_real100k_hnsw",
-        "--profile",
-        "ec_hnsw",
-        "--k",
-        "10",
-        "--concurrency",
-        "1",
-        "--iterations",
-        "200",
-        "--sweep",
-        "128",
-        "--bits",
-        "4",
-        "--seed",
-        "42",
-        "--force-index",
-        "--sample-backend-memory",
-        "--cache-state",
-        "post_recall_warm",
-        "--session-guc",
-        "ec_hnsw.candidate_batch_scoring=off",
-        "--memory-sample-interval-ms",
-        "25",
-        "--log-output",
-        "reviews/task-87/012-phase6-suite-prep/artifacts/run/latency-real100k-hnsw-candidate-batch-off.log"
-      ],
-      "selected": true,
+      "command": [],
+      "selected": false,
       "tags": [
         "latency",
         "task87",
@@ -1416,48 +966,13 @@
       "expected_artifacts": [
         "reviews/task-87/012-phase6-suite-prep/artifacts/run/latency-real100k-hnsw-candidate-batch-off.log"
       ],
-      "status": "dry-run"
+      "status": "skipped"
     },
     {
       "name": "latency-real100k-hnsw-candidate-batch-on",
       "kind": "latency",
-      "command": [
-        "--database",
-        "postgres",
-        "--host",
-        "/home/peter/.pgrx",
-        "--port",
-        "28818",
-        "bench",
-        "latency",
-        "--prefix",
-        "current_intel_real100k_hnsw",
-        "--profile",
-        "ec_hnsw",
-        "--k",
-        "10",
-        "--concurrency",
-        "1",
-        "--iterations",
-        "200",
-        "--sweep",
-        "128",
-        "--bits",
-        "4",
-        "--seed",
-        "42",
-        "--force-index",
-        "--sample-backend-memory",
-        "--cache-state",
-        "post_recall_warm",
-        "--session-guc",
-        "ec_hnsw.candidate_batch_scoring=on",
-        "--memory-sample-interval-ms",
-        "25",
-        "--log-output",
-        "reviews/task-87/012-phase6-suite-prep/artifacts/run/latency-real100k-hnsw-candidate-batch-on.log"
-      ],
-      "selected": true,
+      "command": [],
+      "selected": false,
       "tags": [
         "latency",
         "task87",
@@ -1469,26 +984,13 @@
       "expected_artifacts": [
         "reviews/task-87/012-phase6-suite-prep/artifacts/run/latency-real100k-hnsw-candidate-batch-on.log"
       ],
-      "status": "dry-run"
+      "status": "skipped"
     },
     {
       "name": "storage-real100k-hnsw",
       "kind": "storage",
-      "command": [
-        "--database",
-        "postgres",
-        "--host",
-        "/home/peter/.pgrx",
-        "--port",
-        "28818",
-        "--log-file",
-        "reviews/task-87/012-phase6-suite-prep/artifacts/run/storage-real100k-hnsw.log",
-        "bench",
-        "storage",
-        "--prefix",
-        "current_intel_real100k_hnsw"
-      ],
-      "selected": true,
+      "command": [],
+      "selected": false,
       "tags": [
         "storage",
         "task87",
@@ -1499,43 +1001,13 @@
       "expected_artifacts": [
         "reviews/task-87/012-phase6-suite-prep/artifacts/run/storage-real100k-hnsw.log"
       ],
-      "status": "dry-run"
+      "status": "skipped"
     },
     {
       "name": "recall-real100k-ivf-candidate-batch-off",
       "kind": "recall",
-      "command": [
-        "--database",
-        "postgres",
-        "--host",
-        "/home/peter/.pgrx",
-        "--port",
-        "28818",
-        "bench",
-        "recall",
-        "--prefix",
-        "task28_ivf_tq100k_n64w25",
-        "--profile",
-        "ec_ivf",
-        "--k",
-        "10",
-        "--sweep",
-        "64",
-        "--rerank-width",
-        "25",
-        "--queries-limit",
-        "200",
-        "--bits",
-        "4",
-        "--seed",
-        "42",
-        "--force-index",
-        "--truth-cache-file",
-        "reviews/task-87/012-phase6-suite-prep/artifacts/run/truth-real100k-k10.json",
-        "--log-output",
-        "reviews/task-87/012-phase6-suite-prep/artifacts/run/recall-real100k-ivf-candidate-batch-off.log"
-      ],
-      "selected": true,
+      "command": [],
+      "selected": false,
       "tags": [
         "recall",
         "task87",
@@ -1547,44 +1019,13 @@
       "expected_artifacts": [
         "reviews/task-87/012-phase6-suite-prep/artifacts/run/recall-real100k-ivf-candidate-batch-off.log"
       ],
-      "status": "dry-run"
+      "status": "skipped"
     },
     {
       "name": "recall-real100k-ivf-candidate-batch-on",
       "kind": "recall",
-      "command": [
-        "--database",
-        "postgres",
-        "--host",
-        "/home/peter/.pgrx",
-        "--port",
-        "28818",
-        "bench",
-        "recall",
-        "--prefix",
-        "task28_ivf_tq100k_n64w25",
-        "--profile",
-        "ec_ivf",
-        "--k",
-        "10",
-        "--sweep",
-        "64",
-        "--rerank-width",
-        "25",
-        "--ivf-scratch-soa-batch-decode",
-        "--queries-limit",
-        "200",
-        "--bits",
-        "4",
-        "--seed",
-        "42",
-        "--force-index",
-        "--truth-cache-file",
-        "reviews/task-87/012-phase6-suite-prep/artifacts/run/truth-real100k-k10.json",
-        "--log-output",
-        "reviews/task-87/012-phase6-suite-prep/artifacts/run/recall-real100k-ivf-candidate-batch-on.log"
-      ],
-      "selected": true,
+      "command": [],
+      "selected": false,
       "tags": [
         "recall",
         "task87",
@@ -1596,48 +1037,13 @@
       "expected_artifacts": [
         "reviews/task-87/012-phase6-suite-prep/artifacts/run/recall-real100k-ivf-candidate-batch-on.log"
       ],
-      "status": "dry-run"
+      "status": "skipped"
     },
     {
       "name": "latency-real100k-ivf-candidate-batch-off",
       "kind": "latency",
-      "command": [
-        "--database",
-        "postgres",
-        "--host",
-        "/home/peter/.pgrx",
-        "--port",
-        "28818",
-        "bench",
-        "latency",
-        "--prefix",
-        "task28_ivf_tq100k_n64w25",
-        "--profile",
-        "ec_ivf",
-        "--k",
-        "10",
-        "--concurrency",
-        "1",
-        "--iterations",
-        "200",
-        "--sweep",
-        "64",
-        "--rerank-width",
-        "25",
-        "--bits",
-        "4",
-        "--seed",
-        "42",
-        "--force-index",
-        "--sample-backend-memory",
-        "--cache-state",
-        "post_recall_warm",
-        "--memory-sample-interval-ms",
-        "25",
-        "--log-output",
-        "reviews/task-87/012-phase6-suite-prep/artifacts/run/latency-real100k-ivf-candidate-batch-off.log"
-      ],
-      "selected": true,
+      "command": [],
+      "selected": false,
       "tags": [
         "latency",
         "task87",
@@ -1649,49 +1055,13 @@
       "expected_artifacts": [
         "reviews/task-87/012-phase6-suite-prep/artifacts/run/latency-real100k-ivf-candidate-batch-off.log"
       ],
-      "status": "dry-run"
+      "status": "skipped"
     },
     {
       "name": "latency-real100k-ivf-candidate-batch-on",
       "kind": "latency",
-      "command": [
-        "--database",
-        "postgres",
-        "--host",
-        "/home/peter/.pgrx",
-        "--port",
-        "28818",
-        "bench",
-        "latency",
-        "--prefix",
-        "task28_ivf_tq100k_n64w25",
-        "--profile",
-        "ec_ivf",
-        "--k",
-        "10",
-        "--concurrency",
-        "1",
-        "--iterations",
-        "200",
-        "--sweep",
-        "64",
-        "--rerank-width",
-        "25",
-        "--ivf-scratch-soa-batch-decode",
-        "--bits",
-        "4",
-        "--seed",
-        "42",
-        "--force-index",
-        "--sample-backend-memory",
-        "--cache-state",
-        "post_recall_warm",
-        "--memory-sample-interval-ms",
-        "25",
-        "--log-output",
-        "reviews/task-87/012-phase6-suite-prep/artifacts/run/latency-real100k-ivf-candidate-batch-on.log"
-      ],
-      "selected": true,
+      "command": [],
+      "selected": false,
       "tags": [
         "latency",
         "task87",
@@ -1703,26 +1073,13 @@
       "expected_artifacts": [
         "reviews/task-87/012-phase6-suite-prep/artifacts/run/latency-real100k-ivf-candidate-batch-on.log"
       ],
-      "status": "dry-run"
+      "status": "skipped"
     },
     {
       "name": "storage-real100k-ivf",
       "kind": "storage",
-      "command": [
-        "--database",
-        "postgres",
-        "--host",
-        "/home/peter/.pgrx",
-        "--port",
-        "28818",
-        "--log-file",
-        "reviews/task-87/012-phase6-suite-prep/artifacts/run/storage-real100k-ivf.log",
-        "bench",
-        "storage",
-        "--prefix",
-        "task28_ivf_tq100k_n64w25"
-      ],
-      "selected": true,
+      "command": [],
+      "selected": false,
       "tags": [
         "storage",
         "task87",
@@ -1733,40 +1090,13 @@
       "expected_artifacts": [
         "reviews/task-87/012-phase6-suite-prep/artifacts/run/storage-real100k-ivf.log"
       ],
-      "status": "dry-run"
+      "status": "skipped"
     },
     {
       "name": "pipeline-real100k-spire-candidate-batch-off",
       "kind": "spire-pipeline",
-      "command": [
-        "--database",
-        "postgres",
-        "--host",
-        "/home/peter/.pgrx",
-        "--port",
-        "28818",
-        "bench",
-        "spire-pipeline",
-        "--prefix",
-        "task74_intel_spire_highrecall_tg128_b0",
-        "--queries-limit",
-        "100",
-        "--sweep",
-        "24",
-        "--rerank-width",
-        "25",
-        "--include-query-metrics",
-        "--include-recall",
-        "--truth-cache-file",
-        "reviews/task-87/012-phase6-suite-prep/artifacts/run/truth-real100k-spire-k10.json",
-        "--query-metric-k",
-        "10",
-        "--session-guc",
-        "ec_spire.candidate_batch_scoring=off",
-        "--log-output",
-        "reviews/task-87/012-phase6-suite-prep/artifacts/run/pipeline-real100k-spire-candidate-batch-off.log"
-      ],
-      "selected": true,
+      "command": [],
+      "selected": false,
       "tags": [
         "pipeline",
         "latency",
@@ -1780,40 +1110,13 @@
       "expected_artifacts": [
         "reviews/task-87/012-phase6-suite-prep/artifacts/run/pipeline-real100k-spire-candidate-batch-off.log"
       ],
-      "status": "dry-run"
+      "status": "skipped"
     },
     {
       "name": "pipeline-real100k-spire-candidate-batch-on",
       "kind": "spire-pipeline",
-      "command": [
-        "--database",
-        "postgres",
-        "--host",
-        "/home/peter/.pgrx",
-        "--port",
-        "28818",
-        "bench",
-        "spire-pipeline",
-        "--prefix",
-        "task74_intel_spire_highrecall_tg128_b0",
-        "--queries-limit",
-        "100",
-        "--sweep",
-        "24",
-        "--rerank-width",
-        "25",
-        "--include-query-metrics",
-        "--include-recall",
-        "--truth-cache-file",
-        "reviews/task-87/012-phase6-suite-prep/artifacts/run/truth-real100k-spire-k10.json",
-        "--query-metric-k",
-        "10",
-        "--session-guc",
-        "ec_spire.candidate_batch_scoring=on",
-        "--log-output",
-        "reviews/task-87/012-phase6-suite-prep/artifacts/run/pipeline-real100k-spire-candidate-batch-on.log"
-      ],
-      "selected": true,
+      "command": [],
+      "selected": false,
       "tags": [
         "pipeline",
         "latency",
@@ -1827,26 +1130,13 @@
       "expected_artifacts": [
         "reviews/task-87/012-phase6-suite-prep/artifacts/run/pipeline-real100k-spire-candidate-batch-on.log"
       ],
-      "status": "dry-run"
+      "status": "skipped"
     },
     {
       "name": "storage-real100k-spire",
       "kind": "storage",
-      "command": [
-        "--database",
-        "postgres",
-        "--host",
-        "/home/peter/.pgrx",
-        "--port",
-        "28818",
-        "--log-file",
-        "reviews/task-87/012-phase6-suite-prep/artifacts/run/storage-real100k-spire.log",
-        "bench",
-        "storage",
-        "--prefix",
-        "task74_intel_spire_highrecall_tg128_b0"
-      ],
-      "selected": true,
+      "command": [],
+      "selected": false,
       "tags": [
         "storage",
         "task87",
@@ -1857,7 +1147,7 @@
       "expected_artifacts": [
         "reviews/task-87/012-phase6-suite-prep/artifacts/run/storage-real100k-spire.log"
       ],
-      "status": "dry-run"
+      "status": "skipped"
     }
   ]
 }

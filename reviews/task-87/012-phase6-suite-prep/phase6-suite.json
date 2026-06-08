@@ -177,8 +177,9 @@
       "rerank_width": 25,
       "include_query_metrics": true,
       "include_recall": true,
+      "queries_limit": 100,
       "query_metric_k": 10,
-      "truth_cache_file": "reviews/task-87/012-phase6-suite-prep/artifacts/run/truth-real10k-k10.json",
+      "truth_cache_file": "reviews/task-87/012-phase6-suite-prep/artifacts/run/truth-real10k-spire-k10.json",
       "session_gucs": ["ec_spire.candidate_batch_scoring=off"]
     },
     {
@@ -190,8 +191,9 @@
       "rerank_width": 25,
       "include_query_metrics": true,
       "include_recall": true,
+      "queries_limit": 100,
       "query_metric_k": 10,
-      "truth_cache_file": "reviews/task-87/012-phase6-suite-prep/artifacts/run/truth-real10k-k10.json",
+      "truth_cache_file": "reviews/task-87/012-phase6-suite-prep/artifacts/run/truth-real10k-spire-k10.json",
       "session_gucs": ["ec_spire.candidate_batch_scoring=on"]
     },
     {
@@ -317,8 +319,9 @@
       "rerank_width": 25,
       "include_query_metrics": true,
       "include_recall": true,
+      "queries_limit": 100,
       "query_metric_k": 10,
-      "truth_cache_file": "reviews/task-87/012-phase6-suite-prep/artifacts/run/truth-real50k-k10.json",
+      "truth_cache_file": "reviews/task-87/012-phase6-suite-prep/artifacts/run/truth-real50k-spire-k10.json",
       "session_gucs": ["ec_spire.candidate_batch_scoring=off"]
     },
     {
@@ -330,8 +333,9 @@
       "rerank_width": 25,
       "include_query_metrics": true,
       "include_recall": true,
+      "queries_limit": 100,
       "query_metric_k": 10,
-      "truth_cache_file": "reviews/task-87/012-phase6-suite-prep/artifacts/run/truth-real50k-k10.json",
+      "truth_cache_file": "reviews/task-87/012-phase6-suite-prep/artifacts/run/truth-real50k-spire-k10.json",
       "session_gucs": ["ec_spire.candidate_batch_scoring=on"]
     },
     {
@@ -457,8 +461,9 @@
       "rerank_width": 25,
       "include_query_metrics": true,
       "include_recall": true,
+      "queries_limit": 100,
       "query_metric_k": 10,
-      "truth_cache_file": "reviews/task-87/012-phase6-suite-prep/artifacts/run/truth-real100k-k10.json",
+      "truth_cache_file": "reviews/task-87/012-phase6-suite-prep/artifacts/run/truth-real100k-spire-k10.json",
       "session_gucs": ["ec_spire.candidate_batch_scoring=off"]
     },
     {
@@ -470,8 +475,9 @@
       "rerank_width": 25,
       "include_query_metrics": true,
       "include_recall": true,
+      "queries_limit": 100,
       "query_metric_k": 10,
-      "truth_cache_file": "reviews/task-87/012-phase6-suite-prep/artifacts/run/truth-real100k-k10.json",
+      "truth_cache_file": "reviews/task-87/012-phase6-suite-prep/artifacts/run/truth-real100k-spire-k10.json",
       "session_gucs": ["ec_spire.candidate_batch_scoring=on"]
     },
     {
