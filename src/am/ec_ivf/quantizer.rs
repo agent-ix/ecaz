@@ -599,6 +599,11 @@ pub(super) fn resolve_pq_fastscan_group_size(
     Ok(group_size)
 }
 
+/// # Safety
+///
+/// `index_relation` must be a live IVF index relation and `metadata` must have
+/// been read from that relation. The codebook chain is validated before model
+/// construction, but page access still relies on the caller's relation handle.
 pub(super) unsafe fn load_pq_fastscan_model(
     index_relation: pgrx::pg_sys::Relation,
     metadata: &page::MetadataPage,
@@ -653,6 +658,12 @@ pub(super) unsafe fn load_pq_fastscan_model(
     })
 }
 
+/// # Safety
+///
+/// `index_relation` must be a live IVF index relation and `metadata` must have
+/// been read from that relation. The calibration chain is validated before
+/// model construction, but page access still relies on the caller's relation
+/// handle.
 pub(super) unsafe fn load_tqplus_model(
     index_relation: pgrx::pg_sys::Relation,
     metadata: &page::MetadataPage,
