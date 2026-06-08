@@ -9,7 +9,8 @@ use pgrx::{pg_sys, FromDatum, PgBox};
 use crate::am::common::{
     callback::pg_am_callback,
     candidate_batch::{
-        score_turboquant_no_qjl_4bit_batch, CandidateBatch, CandidateMeta, CandidatePayload,
+        score_turboquant_no_qjl_4bit_batch_for, CandidateBatch, CandidateBatchScoringSurface,
+        CandidateMeta, CandidatePayload,
     },
     heap_slot::HeapSlotReader,
     scan_output::IndexScanOutput,
@@ -2447,8 +2448,14 @@ fn score_and_cache_turboquant_full_lut_payload_batch(
             .unwrap_or_else(|error| pgrx::error!("{error}"));
     }
     let mut inner_products = vec![0.0_f32; batch.len()];
-    score_turboquant_no_qjl_4bit_batch(quantizer, prepared, &batch, &mut inner_products)
-        .unwrap_or_else(|error| pgrx::error!("{error}"));
+    score_turboquant_no_qjl_4bit_batch_for(
+        CandidateBatchScoringSurface::Hnsw,
+        quantizer,
+        prepared,
+        &batch,
+        &mut inner_products,
+    )
+    .unwrap_or_else(|error| pgrx::error!("{error}"));
 
     #[cfg(any(test, feature = "pg_test"))]
     {

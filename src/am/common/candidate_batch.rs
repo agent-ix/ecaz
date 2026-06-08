@@ -1,4 +1,6 @@
 use crate::quant::prod::{PreparedLutNoQjl4BitQuery, ProdQuantizer};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Instant;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[allow(dead_code)]
@@ -74,7 +76,158 @@ impl<'a, Id, Meta> CandidateBatch<'a, Id, Meta> {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum CandidateBatchScoringSurface {
+    Spire,
+    Ivf,
+    Hnsw,
+    Unknown,
+}
+
+impl CandidateBatchScoringSurface {
+    pub(crate) fn label(self) -> &'static str {
+        match self {
+            Self::Spire => "spire",
+            Self::Ivf => "ivf",
+            Self::Hnsw => "hnsw",
+            Self::Unknown => "unknown",
+        }
+    }
+
+    fn counters(self) -> &'static SurfaceCounters {
+        match self {
+            Self::Spire => &SPIRE_COUNTERS,
+            Self::Ivf => &IVF_COUNTERS,
+            Self::Hnsw => &HNSW_COUNTERS,
+            Self::Unknown => &UNKNOWN_COUNTERS,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct CandidateBatchScoringSnapshot {
+    pub(crate) surface: &'static str,
+    pub(crate) flushes: u64,
+    pub(crate) candidates: u64,
+    pub(crate) elapsed_nanos: u64,
+    pub(crate) lut32_flushes: u64,
+    pub(crate) lut32_candidates: u64,
+}
+
+struct SurfaceCounters {
+    flushes: AtomicU64,
+    candidates: AtomicU64,
+    elapsed_nanos: AtomicU64,
+    lut32_flushes: AtomicU64,
+    lut32_candidates: AtomicU64,
+}
+
+impl SurfaceCounters {
+    const fn new() -> Self {
+        Self {
+            flushes: AtomicU64::new(0),
+            candidates: AtomicU64::new(0),
+            elapsed_nanos: AtomicU64::new(0),
+            lut32_flushes: AtomicU64::new(0),
+            lut32_candidates: AtomicU64::new(0),
+        }
+    }
+
+    fn reset(&self) {
+        self.flushes.store(0, Ordering::Relaxed);
+        self.candidates.store(0, Ordering::Relaxed);
+        self.elapsed_nanos.store(0, Ordering::Relaxed);
+        self.lut32_flushes.store(0, Ordering::Relaxed);
+        self.lut32_candidates.store(0, Ordering::Relaxed);
+    }
+
+    fn record(&self, candidate_count: usize, elapsed_nanos: u64, used_lut32: bool) {
+        let candidate_count =
+            u64::try_from(candidate_count).expect("candidate count should fit in u64");
+        self.flushes.fetch_add(1, Ordering::Relaxed);
+        self.candidates
+            .fetch_add(candidate_count, Ordering::Relaxed);
+        self.elapsed_nanos
+            .fetch_add(elapsed_nanos, Ordering::Relaxed);
+        if used_lut32 {
+            self.lut32_flushes.fetch_add(1, Ordering::Relaxed);
+            self.lut32_candidates
+                .fetch_add(candidate_count, Ordering::Relaxed);
+        }
+    }
+
+    fn snapshot(&self, surface: CandidateBatchScoringSurface) -> CandidateBatchScoringSnapshot {
+        CandidateBatchScoringSnapshot {
+            surface: surface.label(),
+            flushes: self.flushes.load(Ordering::Relaxed),
+            candidates: self.candidates.load(Ordering::Relaxed),
+            elapsed_nanos: self.elapsed_nanos.load(Ordering::Relaxed),
+            lut32_flushes: self.lut32_flushes.load(Ordering::Relaxed),
+            lut32_candidates: self.lut32_candidates.load(Ordering::Relaxed),
+        }
+    }
+}
+
+static SPIRE_COUNTERS: SurfaceCounters = SurfaceCounters::new();
+static IVF_COUNTERS: SurfaceCounters = SurfaceCounters::new();
+static HNSW_COUNTERS: SurfaceCounters = SurfaceCounters::new();
+static UNKNOWN_COUNTERS: SurfaceCounters = SurfaceCounters::new();
+
+pub(crate) fn reset_candidate_batch_scoring_counters() {
+    for counters in [
+        &SPIRE_COUNTERS,
+        &IVF_COUNTERS,
+        &HNSW_COUNTERS,
+        &UNKNOWN_COUNTERS,
+    ] {
+        counters.reset();
+    }
+}
+
+pub(crate) fn candidate_batch_scoring_snapshots() -> [CandidateBatchScoringSnapshot; 4] {
+    [
+        SPIRE_COUNTERS.snapshot(CandidateBatchScoringSurface::Spire),
+        IVF_COUNTERS.snapshot(CandidateBatchScoringSurface::Ivf),
+        HNSW_COUNTERS.snapshot(CandidateBatchScoringSurface::Hnsw),
+        UNKNOWN_COUNTERS.snapshot(CandidateBatchScoringSurface::Unknown),
+    ]
+}
+
 pub(crate) fn score_turboquant_no_qjl_4bit_batch<Id>(
+    quantizer: &ProdQuantizer,
+    prepared: &PreparedLutNoQjl4BitQuery,
+    batch: &CandidateBatch<'_, Id>,
+    out_scores: &mut [f32],
+) -> Result<(), String> {
+    score_turboquant_no_qjl_4bit_batch_for(
+        CandidateBatchScoringSurface::Unknown,
+        quantizer,
+        prepared,
+        batch,
+        out_scores,
+    )
+}
+
+pub(crate) fn score_turboquant_no_qjl_4bit_batch_for<Id>(
+    surface: CandidateBatchScoringSurface,
+    quantizer: &ProdQuantizer,
+    prepared: &PreparedLutNoQjl4BitQuery,
+    batch: &CandidateBatch<'_, Id>,
+    out_scores: &mut [f32],
+) -> Result<(), String> {
+    let started = Instant::now();
+    let used_lut32 = batch.len() >= crate::quant::lut32::BLOCK_WIDTH;
+    let result = score_turboquant_no_qjl_4bit_batch_inner(quantizer, prepared, batch, out_scores);
+    if result.is_ok() {
+        let elapsed_nanos = u64::try_from(started.elapsed().as_nanos()).unwrap_or(u64::MAX);
+        surface
+            .counters()
+            .record(batch.len(), elapsed_nanos, used_lut32);
+    }
+    result
+}
+
+fn score_turboquant_no_qjl_4bit_batch_inner<Id>(
     quantizer: &ProdQuantizer,
     prepared: &PreparedLutNoQjl4BitQuery,
     batch: &CandidateBatch<'_, Id>,
@@ -125,7 +278,7 @@ pub(crate) fn score_turboquant_no_qjl_4bit_batch<Id>(
 
 #[cfg(test)]
 mod tests {
-    use super::{CandidateBatch, CandidateMeta, CandidatePayload};
+    use super::{CandidateBatch, CandidateBatchScoringSurface, CandidateMeta, CandidatePayload};
 
     #[test]
     fn candidate_batch_preserves_ids_and_payloads() {
@@ -187,6 +340,60 @@ mod tests {
             let scalar = quantizer.score_ip_from_parts_lut_no_qjl_4bit(&prepared, payload);
             assert_eq!(score.to_bits(), scalar.to_bits());
         }
+    }
+
+    #[test]
+    fn turboquant_lut_batch_records_surface_counters() {
+        super::reset_candidate_batch_scoring_counters();
+        let quantizer = crate::quant::prod::ProdQuantizer::new(1536, 4, 42);
+        let query = random_unit_vector(1536, 131);
+        let prepared = quantizer.prepare_ip_query_lut_no_qjl_4bit(&query);
+        let encoded: Vec<_> = (0..39)
+            .map(|seed| {
+                quantizer
+                    .encode(&random_unit_vector(1536, seed + 200))
+                    .mse_packed
+            })
+            .collect();
+        let mut batch = CandidateBatch::with_capacity(encoded.len());
+        for (index, payload) in encoded.iter().enumerate() {
+            batch
+                .push(index, CandidatePayload::new(payload, CandidateMeta::None))
+                .unwrap();
+        }
+        let mut batch_scores = vec![0.0; batch.len()];
+
+        super::score_turboquant_no_qjl_4bit_batch_for(
+            CandidateBatchScoringSurface::Ivf,
+            &quantizer,
+            &prepared,
+            &batch,
+            &mut batch_scores,
+        )
+        .unwrap();
+
+        let snapshots = super::candidate_batch_scoring_snapshots();
+        let ivf = snapshots
+            .iter()
+            .find(|snapshot| snapshot.surface == "ivf")
+            .unwrap();
+        assert_eq!(ivf.flushes, 1);
+        assert_eq!(ivf.candidates, 39);
+        assert_eq!(ivf.lut32_flushes, 1);
+        assert_eq!(ivf.lut32_candidates, 39);
+        let spire = snapshots
+            .iter()
+            .find(|snapshot| snapshot.surface == "spire")
+            .unwrap();
+        assert_eq!(spire.flushes, 0);
+
+        super::reset_candidate_batch_scoring_counters();
+        let reset_ivf = super::candidate_batch_scoring_snapshots()
+            .into_iter()
+            .find(|snapshot| snapshot.surface == "ivf")
+            .unwrap();
+        assert_eq!(reset_ivf.flushes, 0);
+        assert_eq!(reset_ivf.candidates, 0);
     }
 
     fn random_unit_vector(dim: usize, seed: u64) -> Vec<f32> {

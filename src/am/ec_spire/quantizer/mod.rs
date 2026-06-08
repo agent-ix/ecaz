@@ -6,7 +6,8 @@ use super::storage::{
     SPIRE_PAYLOAD_FORMAT_TURBOQUANT,
 };
 use crate::am::common::candidate_batch::{
-    score_turboquant_no_qjl_4bit_batch, CandidateBatch, CandidateMeta, CandidatePayload,
+    score_turboquant_no_qjl_4bit_batch_for, CandidateBatch, CandidateBatchScoringSurface,
+    CandidateMeta, CandidatePayload,
 };
 use crate::am::common::quant_codec::{
     EncodedQuantPayload, QuantCodec, QuantCodecKind, QuantSearchCodecTag,
@@ -362,7 +363,8 @@ impl SpirePreparedAssignmentScorer {
                                 CandidatePayload::new(payload, CandidateMeta::Gamma(*gamma)),
                             )?;
                         }
-                        return score_turboquant_no_qjl_4bit_batch(
+                        return score_turboquant_no_qjl_4bit_batch_for(
+                            CandidateBatchScoringSurface::Spire,
                             quantizer,
                             prepared_lut,
                             &batch,

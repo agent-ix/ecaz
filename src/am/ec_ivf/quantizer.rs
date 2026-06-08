@@ -1,7 +1,8 @@
 use super::options::StorageFormat;
 use super::page;
 use crate::am::common::candidate_batch::{
-    score_turboquant_no_qjl_4bit_batch, CandidateBatch, CandidateMeta, CandidatePayload,
+    score_turboquant_no_qjl_4bit_batch_for, CandidateBatch, CandidateBatchScoringSurface,
+    CandidateMeta, CandidatePayload,
 };
 use crate::am::common::quant_codec::{
     EncodedQuantPayload, QuantCodec, QuantCodecKind, QuantSearchCodecTag,
@@ -421,7 +422,8 @@ impl IvfQuantizer {
                 }
                 out_scores.clear();
                 out_scores.resize(batch.len(), 0.0);
-                score_turboquant_no_qjl_4bit_batch(
+                score_turboquant_no_qjl_4bit_batch_for(
+                    CandidateBatchScoringSurface::Ivf,
                     quantizer.as_ref(),
                     prepared_query,
                     &batch,
@@ -582,7 +584,8 @@ impl QuantCodec for IvfQuantizer {
                     crate::DEFAULT_QUANT_BITS,
                     crate::DEFAULT_QUANT_SEED,
                 );
-                score_turboquant_no_qjl_4bit_batch(
+                score_turboquant_no_qjl_4bit_batch_for(
+                    CandidateBatchScoringSurface::Ivf,
                     quantizer.as_ref(),
                     prepared_query,
                     batch,
