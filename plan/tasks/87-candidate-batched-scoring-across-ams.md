@@ -1,6 +1,6 @@
 # Task 87: Candidate-Batched Scoring Across Access Methods
 
-Status: reopened-for-32-block-kernel (2026-06-08); plumbing milestone in reviews/task-87/015-phase6-closeout/
+Status: complete (2026-06-08; see reviews/task-87/023-phase7-methodology-and-closeout/)
 Owner: coder (to be assigned). One coder, one branch.
 Priority: 2 (kernel-level optimization unlock; follows Task 86)
 
@@ -12,6 +12,13 @@ reverse the Phase 1 kernel-deferral call. Packet 015 remains the
 CandidateBatch plumbing milestone and Phase 6 baseline, but Task 87
 reopens to land the 32-block u8 nibble LUT kernel on AMs whose batch
 widths justify it.
+
+Completion note: packet 023 supersedes packet 015 as final closeout.
+It lands the Phase 7 matrix with packet 021 real10k evidence, packet
+022 real50k/real100k evidence, a scoring-share methodology reframe
+requested by packet 021 feedback, and an explicit HNSW Phase 7 stop
+condition for the current non-TurboQuant-FullLut real-corpus HNSW
+profiles.
 
 ## Why
 
@@ -292,7 +299,7 @@ Stop conditions:
   the distribution and skip HNSW routing for this task.
 
 Phase 7 closes via
-`reviews/task-87/016-phase7-32-block-kernel-closeout/`, containing:
+`reviews/task-87/023-phase7-methodology-and-closeout/`, containing:
 
 - kernel source diff and scalar differential test;
 - per-AM real-corpus suite evidence on the same surfaces as packet
@@ -302,7 +309,7 @@ Phase 7 closes via
   with scoring-share counters added;
 - updated completion audit;
 - final status flip from `reopened-for-32-block-kernel` to
-  `complete` referencing packet 016.
+  `complete` referencing packet 023.
 
 ## Validation gate (per AM, every cell)
 
