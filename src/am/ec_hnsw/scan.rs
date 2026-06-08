@@ -7,7 +7,12 @@ use hashbrown::{HashMap, HashSet};
 use pgrx::{pg_sys, FromDatum, PgBox};
 
 use crate::am::common::{
-    callback::pg_am_callback, heap_slot::HeapSlotReader, scan_output::IndexScanOutput,
+    callback::pg_am_callback,
+    candidate_batch::{
+        score_turboquant_no_qjl_4bit_batch, CandidateBatch, CandidateMeta, CandidatePayload,
+    },
+    heap_slot::HeapSlotReader,
+    scan_output::IndexScanOutput,
 };
 use crate::quant::grouped_pq::{build_grouped_pq_lut_f32, grouped_pq_score_f32};
 use crate::quant::prod::{
@@ -416,6 +421,12 @@ impl CachedGraphElement {
 struct LoadedElementScoreInput {
     gamma: f32,
     code_bytes: Vec<u8>,
+}
+
+struct HnswExactPayloadBatchCandidate {
+    source_tid: page::ItemPointer,
+    element_tid: page::ItemPointer,
+    payload: LoadedElementScoreInput,
 }
 
 enum LoadedElementState {
@@ -2345,8 +2356,10 @@ fn live_loaded_state_from_exact_payload(
     binary_query_active: bool,
     exact_payload: Option<(f32, &[u8])>,
 ) -> LoadedElementState {
+    let defer_exact_score = binary_query_active
+        || opaque.turboquant_exact_score_mode == TurboQuantExactScoreMode::FullLut;
     match exact_payload {
-        Some((gamma, code_bytes)) if binary_query_active => {
+        Some((gamma, code_bytes)) if defer_exact_score => {
             LoadedElementState::ExactPayload(LoadedElementScoreInput {
                 gamma,
                 code_bytes: code_bytes.to_vec(),
@@ -2392,6 +2405,86 @@ fn score_and_cache_scan_element(
     record_candidate_score_elapsed(opaque, elapsed_us);
     score_cache_mut(opaque).insert(element_tid, score);
     score
+}
+
+fn score_and_cache_turboquant_full_lut_payload_batch(
+    opaque: &mut TqScanOpaque,
+    batch_candidates: Vec<HnswExactPayloadBatchCandidate>,
+) -> Vec<search::BeamCandidate<page::ItemPointer>> {
+    if batch_candidates.is_empty() {
+        return Vec::new();
+    }
+    if opaque.turboquant_exact_score_mode != TurboQuantExactScoreMode::FullLut {
+        pgrx::error!("ec_hnsw CandidateBatch exact scoring requires full_lut mode");
+    }
+    if opaque.cached_quantizer.is_null() || opaque.turboquant_lut_query.is_null() {
+        pgrx::error!("ec_hnsw CandidateBatch exact scoring requires prepared TurboQuant state");
+    }
+
+    for _ in 0..batch_candidates.len() {
+        record_score_cache_miss(opaque);
+        super::stats::record_distance_calc();
+        opaque.stats_delta.record_distance_calc();
+    }
+
+    #[cfg(any(test, feature = "pg_test"))]
+    let started = Instant::now();
+
+    let quantizer = cached_quantizer_ref(opaque)
+        .unwrap_or_else(|| pgrx::error!("ec_hnsw scan scoring requires a cached quantizer"));
+    let prepared = scan_box_ref(opaque.turboquant_lut_query, opaque)
+        .expect("TurboQuant LUT query should be live");
+    let mut batch = CandidateBatch::with_capacity(batch_candidates.len());
+    for (index, candidate) in batch_candidates.iter().enumerate() {
+        batch
+            .push(
+                index,
+                CandidatePayload {
+                    code: candidate.payload.code_bytes.as_slice(),
+                    meta: CandidateMeta::Gamma(candidate.payload.gamma),
+                },
+            )
+            .unwrap_or_else(|error| pgrx::error!("{error}"));
+    }
+    let mut inner_products = vec![0.0_f32; batch.len()];
+    score_turboquant_no_qjl_4bit_batch(quantizer, prepared, &batch, &mut inner_products)
+        .unwrap_or_else(|error| pgrx::error!("{error}"));
+
+    #[cfg(any(test, feature = "pg_test"))]
+    {
+        let elapsed_us =
+            u64::try_from(started.elapsed().as_micros()).expect("timing should fit in u64");
+        let per_candidate_elapsed_us = elapsed_us / batch_candidates.len() as u64;
+        for _ in 0..batch_candidates.len() {
+            record_candidate_score_elapsed(opaque, per_candidate_elapsed_us);
+        }
+    }
+
+    let mut scored = Vec::with_capacity(batch_candidates.len());
+    for (candidate, inner_product) in batch_candidates.into_iter().zip(inner_products) {
+        let score = -inner_product;
+        score_cache_mut(opaque).insert(candidate.element_tid, score);
+        scored.push(search::BeamCandidate::with_source(
+            candidate.element_tid,
+            score,
+            candidate.source_tid,
+        ));
+    }
+    scored
+}
+
+fn flush_turboquant_full_lut_payload_batch(
+    opaque: &mut TqScanOpaque,
+    batch_candidates: &mut Vec<HnswExactPayloadBatchCandidate>,
+    candidates: &mut Vec<search::BeamCandidate<page::ItemPointer>>,
+) {
+    if batch_candidates.is_empty() {
+        return;
+    }
+    candidates.extend(score_and_cache_turboquant_full_lut_payload_batch(
+        opaque,
+        std::mem::take(batch_candidates),
+    ));
 }
 
 fn build_cached_graph_element(
@@ -3179,6 +3272,7 @@ where
 
     if !binary_query_present {
         let mut grouped_candidates = exact_budget.map(|_| Vec::with_capacity(capacity));
+        let mut exact_payload_batch = Vec::with_capacity(capacity);
         for neighbor_tid in neighbor_tids.iter().copied() {
             if keep_neighbor_tid(neighbor_tid) {
                 let (neighbor, loaded_state) = cached_graph_element_with_prefetch(
@@ -3191,20 +3285,77 @@ where
                     continue;
                 }
                 match candidate_score_dispatch(scan_graph_storage, &neighbor, loaded_state) {
-                    CandidateScoreDispatch::Exact(loaded_state) => {
-                        let score = exact_score_cached_graph_element(
-                            index_relation,
-                            opaque,
-                            neighbor.tid,
-                            loaded_state,
-                        );
-                        candidates.push(search::BeamCandidate::with_source(
-                            neighbor.tid,
-                            score,
-                            source_tid,
-                        ));
-                    }
+                    CandidateScoreDispatch::Exact(loaded_state) => match loaded_state {
+                        LoadedElementState::ExactPayload(payload) => {
+                            if opaque.turboquant_exact_score_mode
+                                == TurboQuantExactScoreMode::FullLut
+                            {
+                                if let Some(score) = cached_scan_element_score(opaque, neighbor.tid)
+                                {
+                                    record_score_cache_hit(opaque);
+                                    flush_turboquant_full_lut_payload_batch(
+                                        opaque,
+                                        &mut exact_payload_batch,
+                                        &mut candidates,
+                                    );
+                                    candidates.push(search::BeamCandidate::with_source(
+                                        neighbor.tid,
+                                        score,
+                                        source_tid,
+                                    ));
+                                } else {
+                                    exact_payload_batch.push(HnswExactPayloadBatchCandidate {
+                                        source_tid,
+                                        element_tid: neighbor.tid,
+                                        payload,
+                                    });
+                                }
+                                continue;
+                            }
+
+                            flush_turboquant_full_lut_payload_batch(
+                                opaque,
+                                &mut exact_payload_batch,
+                                &mut candidates,
+                            );
+                            let score = exact_score_cached_graph_element(
+                                index_relation,
+                                opaque,
+                                neighbor.tid,
+                                LoadedElementState::ExactPayload(payload),
+                            );
+                            candidates.push(search::BeamCandidate::with_source(
+                                neighbor.tid,
+                                score,
+                                source_tid,
+                            ));
+                            continue;
+                        }
+                        other => {
+                            flush_turboquant_full_lut_payload_batch(
+                                opaque,
+                                &mut exact_payload_batch,
+                                &mut candidates,
+                            );
+                            let score = exact_score_cached_graph_element(
+                                index_relation,
+                                opaque,
+                                neighbor.tid,
+                                other,
+                            );
+                            candidates.push(search::BeamCandidate::with_source(
+                                neighbor.tid,
+                                score,
+                                source_tid,
+                            ));
+                        }
+                    },
                     CandidateScoreDispatch::Grouped(grouped) => {
+                        flush_turboquant_full_lut_payload_batch(
+                            opaque,
+                            &mut exact_payload_batch,
+                            &mut candidates,
+                        );
                         if let Some(grouped_candidates) = grouped_candidates.as_mut() {
                             let approx_score =
                                 score_grouped_candidate_context_approx(opaque, grouped);
@@ -3232,6 +3383,7 @@ where
             }
         }
 
+        flush_turboquant_full_lut_payload_batch(opaque, &mut exact_payload_batch, &mut candidates);
         if let Some(grouped_candidates) = grouped_candidates {
             candidates.extend(score_budgeted_grouped_traversal_candidates(
                 index_relation,
@@ -5567,6 +5719,15 @@ mod tests {
         }
     }
 
+    fn unit_vector(dimensions: usize) -> Vec<f32> {
+        let mut values = (0..dimensions)
+            .map(|index| (index as f32 + 1.0) / dimensions as f32)
+            .collect::<Vec<_>>();
+        let norm = values.iter().map(|value| value * value).sum::<f32>().sqrt();
+        values.iter_mut().for_each(|value| *value /= norm);
+        values
+    }
+
     #[test]
     fn unique_prefetch_blocks_keeps_first_block_order_and_skips_invalid_tids() {
         assert_eq!(
@@ -7211,6 +7372,82 @@ mod tests {
         assert!(score.is_finite());
         // SAFETY: `opaque_ptr` still points to the live test scan opaque.
         assert_eq!(unsafe { (*opaque_ptr).stats_delta.total_distance_calcs }, 1);
+
+        free_scan_prepared_query(&mut opaque);
+    }
+
+    #[test]
+    fn turboquant_full_lut_payload_batch_matches_scalar_and_caches_scores() {
+        let dimensions = 1536;
+        let query = unit_vector(dimensions);
+        let quantizer = Arc::new(ProdQuantizer::new(dimensions, 4, 42));
+        let prepared_lut = Box::new(quantizer.prepare_ip_query_lut_no_qjl_4bit(&query));
+        let sources = [
+            unit_vector(dimensions),
+            (0..dimensions)
+                .map(|index| ((index % 23) as f32 - 11.0) / dimensions as f32)
+                .collect::<Vec<_>>(),
+        ];
+        let encoded = sources
+            .iter()
+            .map(|source| quantizer.encode(source))
+            .collect::<Vec<_>>();
+        let expected = encoded
+            .iter()
+            .map(|encoded| {
+                -quantizer.score_ip_from_parts_lut_no_qjl_4bit(&prepared_lut, &encoded.mse_packed)
+            })
+            .collect::<Vec<_>>();
+        let cached_quantizer = Arc::into_raw(Arc::clone(&quantizer));
+        let turboquant_lut_query = Box::into_raw(prepared_lut);
+        let mut opaque = TqScanOpaque {
+            cached_quantizer,
+            turboquant_lut_query,
+            turboquant_exact_score_mode: TurboQuantExactScoreMode::FullLut,
+            ..TqScanOpaque::default()
+        };
+        let batch_candidates = encoded
+            .iter()
+            .enumerate()
+            .map(|(index, encoded)| HnswExactPayloadBatchCandidate {
+                source_tid: tid(1, 1),
+                element_tid: tid(20, u16::try_from(index + 1).unwrap()),
+                payload: LoadedElementScoreInput {
+                    gamma: encoded.gamma,
+                    code_bytes: encoded.mse_packed.clone(),
+                },
+            })
+            .collect::<Vec<_>>();
+
+        let scored =
+            score_and_cache_turboquant_full_lut_payload_batch(&mut opaque, batch_candidates);
+
+        assert_eq!(scored.len(), expected.len());
+        for (index, candidate) in scored.iter().enumerate() {
+            assert_eq!(candidate.node, tid(20, u16::try_from(index + 1).unwrap()));
+            assert!(
+                (candidate.score - expected[index]).abs() < 1e-6,
+                "index={index} batch={} scalar={}",
+                candidate.score,
+                expected[index]
+            );
+            assert_eq!(
+                cached_scan_element_score(&opaque, candidate.node),
+                Some(candidate.score)
+            );
+        }
+        assert_eq!(
+            opaque.stats_delta.total_distance_calcs,
+            expected.len() as u64
+        );
+        assert_eq!(
+            opaque.debug_profile.score_cache_misses,
+            expected.len() as u64
+        );
+        assert_eq!(
+            opaque.debug_profile.candidate_score_calls,
+            expected.len() as u64
+        );
 
         free_scan_prepared_query(&mut opaque);
     }
