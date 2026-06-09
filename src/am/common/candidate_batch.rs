@@ -86,17 +86,26 @@ impl<'a, Id, Meta> CandidateBatch<'a, Id, Meta> {
 pub(crate) enum CandidateBatchScoringSurface {
     Spire,
     Ivf,
+    Diskann,
     Hnsw,
     Unknown,
 }
 
 impl CandidateBatchScoringSurface {
     const TASK87_ALL: [Self; 4] = [Self::Spire, Self::Ivf, Self::Hnsw, Self::Unknown];
+    const BLOCK_KERNEL_ALL: [Self; 5] = [
+        Self::Spire,
+        Self::Ivf,
+        Self::Diskann,
+        Self::Hnsw,
+        Self::Unknown,
+    ];
 
     pub(crate) fn label(self) -> &'static str {
         match self {
             Self::Spire => "spire",
             Self::Ivf => "ivf",
+            Self::Diskann => "diskann",
             Self::Hnsw => "hnsw",
             Self::Unknown => "unknown",
         }
@@ -106,12 +115,17 @@ impl CandidateBatchScoringSurface {
         Self::TASK87_ALL
     }
 
+    fn block_kernel_all() -> [Self; 5] {
+        Self::BLOCK_KERNEL_ALL
+    }
+
     fn index(self) -> usize {
         match self {
             Self::Spire => 0,
             Self::Ivf => 1,
-            Self::Hnsw => 2,
-            Self::Unknown => 3,
+            Self::Diskann => 2,
+            Self::Hnsw => 3,
+            Self::Unknown => 4,
         }
     }
 }
@@ -251,11 +265,15 @@ impl BlockKernelCounters {
     }
 }
 
-const SURFACE_COUNT: usize = 4;
+const SURFACE_COUNT: usize = 5;
 const QUANT_COUNT: usize = 4;
 const ISA_COUNT: usize = 5;
 
 static BLOCK_KERNEL_COUNTERS: OnceLock<Vec<BlockKernelCounters>> = OnceLock::new();
+
+#[cfg(test)]
+pub(crate) static CANDIDATE_BATCH_COUNTER_TEST_LOCK: std::sync::Mutex<()> =
+    std::sync::Mutex::new(());
 
 fn block_kernel_counters_storage() -> &'static [BlockKernelCounters] {
     BLOCK_KERNEL_COUNTERS
@@ -289,7 +307,7 @@ pub(crate) fn candidate_batch_scoring_snapshots() -> [CandidateBatchScoringSnaps
 
 pub(crate) fn block_kernel_scoring_snapshots() -> Vec<BlockKernelScoringSnapshot> {
     let mut snapshots = Vec::new();
-    for surface in CandidateBatchScoringSurface::task87_all() {
+    for surface in CandidateBatchScoringSurface::block_kernel_all() {
         for quant_kind in QuantCodecKind::ALL {
             for isa in Isa::ALL {
                 let key = BlockKernelCounterKey {
@@ -697,9 +715,6 @@ mod tests {
     use crate::am::common::quant_codec::QuantCodecKind;
     use crate::quant::grouped_pq::{grouped_pq_score_f32, pack_grouped_pq_nibbles};
     use crate::quant::isa::Isa;
-    use std::sync::Mutex;
-
-    static COUNTER_TEST_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
     fn candidate_batch_preserves_ids_and_payloads() {
@@ -765,7 +780,7 @@ mod tests {
 
     #[test]
     fn turboquant_lut_batch_records_surface_counters() {
-        let _guard = COUNTER_TEST_LOCK.lock().unwrap();
+        let _guard = super::CANDIDATE_BATCH_COUNTER_TEST_LOCK.lock().unwrap();
         super::reset_candidate_batch_scoring_counters();
         let quantizer = crate::quant::prod::ProdQuantizer::new(1536, 4, 42);
         let query = random_unit_vector(1536, 131);
@@ -843,7 +858,7 @@ mod tests {
 
     #[test]
     fn grouped_pq_batch_records_block_and_scalar_tail_counters() {
-        let _guard = COUNTER_TEST_LOCK.lock().unwrap();
+        let _guard = super::CANDIDATE_BATCH_COUNTER_TEST_LOCK.lock().unwrap();
         super::reset_candidate_batch_scoring_counters();
         let group_count = 16;
         let lut = grouped_pq_lut(group_count);
@@ -913,7 +928,7 @@ mod tests {
 
     #[test]
     fn block_kernel_counter_api_records_scalar_tail_under_scalar_isa() {
-        let _guard = COUNTER_TEST_LOCK.lock().unwrap();
+        let _guard = super::CANDIDATE_BATCH_COUNTER_TEST_LOCK.lock().unwrap();
         super::reset_candidate_batch_scoring_counters();
         super::record_block_kernel_score(
             BlockKernelCounterKey {
