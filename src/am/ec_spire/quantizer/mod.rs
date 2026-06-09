@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::Instant;
 
 use super::assign::SpireLeafAssignmentInput;
 use super::storage::{
@@ -6,8 +7,8 @@ use super::storage::{
     SPIRE_PAYLOAD_FORMAT_TURBOQUANT,
 };
 use crate::am::common::candidate_batch::{
-    score_turboquant_no_qjl_4bit_batch_for, CandidateBatch, CandidateBatchScoringSurface,
-    CandidateMeta, CandidatePayload,
+    record_block_scalar_score_for, score_turboquant_no_qjl_4bit_batch_for, CandidateBatch,
+    CandidateBatchScoringSurface, CandidateMeta, CandidatePayload,
 };
 use crate::am::common::quant_codec::{
     EncodedQuantPayload, QuantCodec, QuantCodecKind, QuantSearchCodecTag,
@@ -377,12 +378,21 @@ impl SpirePreparedAssignmentScorer {
                     }
                 }
 
+                let scalar_started = Instant::now();
                 for ((payload, gamma), out_score) in payloads
                     .chunks_exact(payload_stride)
                     .zip(gammas.iter())
                     .zip(out_scores.iter_mut())
                 {
                     *out_score = quantizer.score_ip_from_parts(prepared, *gamma, payload);
+                }
+                if no_qjl_4bit_lut.is_some() {
+                    record_block_scalar_score_for(
+                        CandidateBatchScoringSurface::Spire,
+                        QuantCodecKind::TurboQuant,
+                        payload_count,
+                        u64::try_from(scalar_started.elapsed().as_nanos()).unwrap_or(u64::MAX),
+                    );
                 }
             }
             Self::RaBitQ { prepared, .. } => {
@@ -441,6 +451,7 @@ impl SpirePreparedAssignmentScorer {
                     }
                 }
 
+                let scalar_started = Instant::now();
                 for (payload, out_score) in batch.payloads().iter().zip(out_scores.iter_mut()) {
                     let gamma = match payload.meta {
                         CandidateMeta::None
@@ -451,6 +462,14 @@ impl SpirePreparedAssignmentScorer {
                         CandidateMeta::GammaAndResidualSigns { gamma, .. } => gamma,
                     };
                     *out_score = quantizer.score_ip_from_parts(prepared, gamma, payload.code);
+                }
+                if no_qjl_4bit_lut.is_some() {
+                    record_block_scalar_score_for(
+                        CandidateBatchScoringSurface::Spire,
+                        QuantCodecKind::TurboQuant,
+                        batch.len(),
+                        u64::try_from(scalar_started.elapsed().as_nanos()).unwrap_or(u64::MAX),
+                    );
                 }
             }
             Self::RaBitQ { .. } => {

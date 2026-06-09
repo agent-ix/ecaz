@@ -357,7 +357,7 @@ fn record_block_kernel_score(
     block_kernel_counters(key).record_kernel(candidate_count, elapsed_nanos);
 }
 
-fn record_block_scalar_score(
+pub(crate) fn record_block_scalar_score_for(
     surface: CandidateBatchScoringSurface,
     quant_kind: QuantCodecKind,
     candidate_count: usize,
@@ -406,7 +406,7 @@ pub(crate) fn score_turboquant_no_qjl_4bit_batch_for<Id>(
             isa: timing.kernel_isa.unwrap_or(Isa::Scalar),
         };
         record_block_kernel_score(key, timing.kernel_candidates, timing.kernel_elapsed_nanos);
-        record_block_scalar_score(
+        record_block_scalar_score_for(
             surface,
             QuantCodecKind::TurboQuant,
             timing.scalar_candidates,
@@ -543,6 +543,9 @@ mod tests {
     };
     use crate::am::common::quant_codec::QuantCodecKind;
     use crate::quant::isa::Isa;
+    use std::sync::Mutex;
+
+    static COUNTER_TEST_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
     fn candidate_batch_preserves_ids_and_payloads() {
@@ -608,6 +611,7 @@ mod tests {
 
     #[test]
     fn turboquant_lut_batch_records_surface_counters() {
+        let _guard = COUNTER_TEST_LOCK.lock().unwrap();
         super::reset_candidate_batch_scoring_counters();
         let quantizer = crate::quant::prod::ProdQuantizer::new(1536, 4, 42);
         let query = random_unit_vector(1536, 131);
@@ -685,6 +689,7 @@ mod tests {
 
     #[test]
     fn block_kernel_counter_api_records_scalar_tail_under_scalar_isa() {
+        let _guard = COUNTER_TEST_LOCK.lock().unwrap();
         super::reset_candidate_batch_scoring_counters();
         super::record_block_kernel_score(
             BlockKernelCounterKey {
@@ -695,7 +700,7 @@ mod tests {
             32,
             100,
         );
-        super::record_block_scalar_score(
+        super::record_block_scalar_score_for(
             CandidateBatchScoringSurface::Spire,
             QuantCodecKind::TurboQuant,
             7,
