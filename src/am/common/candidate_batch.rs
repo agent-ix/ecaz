@@ -489,6 +489,7 @@ fn score_grouped_pq_batch_inner<Id>(
         ));
     }
     crate::quant::grouped_pq_block::validate_lut_shape(lut, group_count)?;
+    validate_grouped_pq_batch_shapes(group_count, batch)?;
 
     if batch.len() >= crate::quant::grouped_pq_block::BLOCK_WIDTH {
         return score_grouped_pq_batch_block32(lut, group_count, batch, out_scores);
@@ -575,6 +576,21 @@ fn score_grouped_pq_batch_block32<Id>(
     }
 
     Ok(timing)
+}
+
+fn validate_grouped_pq_batch_shapes<Id>(
+    group_count: usize,
+    batch: &CandidateBatch<'_, Id>,
+) -> Result<(), String> {
+    for (candidate_index, payload) in batch.payloads().iter().enumerate() {
+        validate_grouped_pq_meta(payload.meta, group_count)?;
+        crate::quant::grouped_pq_block::validate_code_shape(
+            candidate_index,
+            group_count,
+            payload.code,
+        )?;
+    }
+    Ok(())
 }
 
 fn score_turboquant_no_qjl_4bit_batch_inner<Id>(
@@ -922,6 +938,49 @@ mod tests {
         assert!(grouped
             .iter()
             .any(|snapshot| snapshot.isa == "scalar" && snapshot.scalar_candidates == 7));
+
+        super::reset_candidate_batch_scoring_counters();
+    }
+
+    #[test]
+    fn grouped_pq_batch_shape_error_scores_nothing_and_records_no_counters() {
+        let _guard = super::CANDIDATE_BATCH_COUNTER_TEST_LOCK.lock().unwrap();
+        super::reset_candidate_batch_scoring_counters();
+        let group_count = 16;
+        let lut = grouped_pq_lut(group_count);
+        let mut codes: Vec<Vec<u8>> = (0..39)
+            .map(|seed| grouped_pq_code(group_count, seed as u8))
+            .collect();
+        codes[33].pop();
+        let mut batch = CandidateBatch::with_capacity(codes.len());
+        for (index, code) in codes.iter().enumerate() {
+            batch
+                .push(
+                    index,
+                    CandidatePayload::new(code, CandidateMeta::GroupedPq { group_count }),
+                )
+                .unwrap();
+        }
+        let sentinel = -12_345.25_f32;
+        let mut batch_scores = vec![sentinel; batch.len()];
+
+        let err = super::score_grouped_pq_batch_for(
+            CandidateBatchScoringSurface::Ivf,
+            &lut,
+            group_count,
+            &batch,
+            &mut batch_scores,
+        )
+        .unwrap_err();
+
+        assert!(err.contains("grouped_pq_block code 33 too short"));
+        assert!(batch_scores
+            .iter()
+            .all(|score| score.to_bits() == sentinel.to_bits()));
+        assert!(super::block_kernel_scoring_snapshots().is_empty());
+        assert!(super::candidate_batch_scoring_snapshots()
+            .iter()
+            .all(|snapshot| snapshot.flushes == 0 && snapshot.candidates == 0));
 
         super::reset_candidate_batch_scoring_counters();
     }
