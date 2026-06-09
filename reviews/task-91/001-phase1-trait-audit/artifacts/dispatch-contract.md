@@ -127,6 +127,11 @@ else:
 Task 91 Phase 2 may keep the current Task 87 LUT32 implementation as-is until
 Task 92 backfills the module layout, but any new batch path must use this rule.
 
+Scalar tails after one or more ISA kernel blocks are attributed to `isa=Scalar`
+in Task 92 counters. Do not record tails under the selected ISA row's
+`scalar_*` fields. This keeps Task 93-98 counter rows comparable across hosts
+and across dispatch outcomes.
+
 ## Error and Counter Ordering
 
 Implementation order inside `score_ip_batch`:
@@ -147,6 +152,8 @@ The IVF retouch packet should include:
 
 - focused unit tests for TurboQuant, no-QJL LUT32, RaBitQ, and grouped-PQ
   through `QuantCodec::score_ip_batch`;
+- one `f32::to_bits()` parity test per prepared-query shape:
+  `TurboQuant`, `TurboQuantNoQjl4BitLut`, `RaBitQ`, and `PqFastScan`;
 - one grouped-PQ test proving model-bound construction is required and works;
 - one mismatch test proving grouped-PQ without a model fails before scoring;
 - `git diff --check` artifact;

@@ -55,6 +55,38 @@ pub(super) struct IvfQuantizer {
     rabitq_bits: u8,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub(super) struct IvfQuantCodec<'a> {
+    quantizer: IvfQuantizer,
+    pq_model: Option<&'a IvfPqFastScanModel>,
+}
+
+impl<'a> IvfQuantCodec<'a> {
+    pub(super) fn new(quantizer: IvfQuantizer) -> Self {
+        Self {
+            quantizer,
+            pq_model: None,
+        }
+    }
+
+    pub(super) fn with_pq_model(
+        quantizer: IvfQuantizer,
+        pq_model: &'a IvfPqFastScanModel,
+    ) -> Result<Self, String> {
+        quantizer.validate_pq_model(pq_model)?;
+        Ok(Self {
+            quantizer,
+            pq_model: Some(pq_model),
+        })
+    }
+
+    fn pq_model(self) -> Result<&'a IvfPqFastScanModel, String> {
+        self.pq_model.ok_or_else(|| {
+            "ec_ivf pq_fastscan codec requires persisted grouped codebooks".to_owned()
+        })
+    }
+}
+
 impl IvfQuantizer {
     pub(super) fn resolve(
         storage_format: StorageFormat,
@@ -467,6 +499,17 @@ impl IvfQuantizer {
         self.rabitq_bits
     }
 
+    pub(super) fn quant_codec(self) -> IvfQuantCodec<'static> {
+        IvfQuantCodec::new(self)
+    }
+
+    pub(super) fn quant_codec_with_pq_model<'a>(
+        self,
+        model: &'a IvfPqFastScanModel,
+    ) -> Result<IvfQuantCodec<'a>, String> {
+        IvfQuantCodec::with_pq_model(self, model)
+    }
+
     pub(super) fn uses_score_bound_pruning(self) -> bool {
         matches!(
             self.profile,
@@ -512,7 +555,50 @@ impl QuantCodec for IvfQuantizer {
     type PreparedQuery = IvfPreparedQuery;
 
     fn codec_kind(&self) -> QuantCodecKind {
-        match self.profile {
+        self.quant_codec().codec_kind()
+    }
+
+    fn search_codec_tag(&self) -> QuantSearchCodecTag {
+        self.quant_codec().search_codec_tag()
+    }
+
+    fn payload_len(&self) -> usize {
+        self.quant_codec().payload_len()
+    }
+
+    fn encode_source(&self, source: &[f32]) -> Result<EncodedQuantPayload, String> {
+        self.quant_codec().encode_source(source)
+    }
+
+    fn prepare_ip_query(&self, query: &[f32]) -> Result<Self::PreparedQuery, String> {
+        self.quant_codec().prepare_ip_query(query)
+    }
+
+    fn score_ip_candidate(
+        &self,
+        prepared_query: &Self::PreparedQuery,
+        payload: CandidatePayload<'_>,
+    ) -> Result<f32, String> {
+        self.quant_codec()
+            .score_ip_candidate(prepared_query, payload)
+    }
+
+    fn score_ip_batch<Id>(
+        &self,
+        prepared_query: &Self::PreparedQuery,
+        batch: &CandidateBatch<'_, Id>,
+        out_scores: &mut [f32],
+    ) -> Result<(), String> {
+        self.quant_codec()
+            .score_ip_batch(prepared_query, batch, out_scores)
+    }
+}
+
+impl QuantCodec for IvfQuantCodec<'_> {
+    type PreparedQuery = IvfPreparedQuery;
+
+    fn codec_kind(&self) -> QuantCodecKind {
+        match self.quantizer.profile {
             IvfQuantizerProfile::TurboQuant => QuantCodecKind::TurboQuant,
             IvfQuantizerProfile::RaBitQ => QuantCodecKind::RaBitQ,
             IvfQuantizerProfile::PqFastScan { .. } => QuantCodecKind::GroupedPq,
@@ -520,10 +606,10 @@ impl QuantCodec for IvfQuantizer {
     }
 
     fn search_codec_tag(&self) -> QuantSearchCodecTag {
-        match self.profile {
+        match self.quantizer.profile {
             IvfQuantizerProfile::TurboQuant => QuantSearchCodecTag::TurboQuant,
             IvfQuantizerProfile::RaBitQ => QuantSearchCodecTag::RaBitQ {
-                bits: self.rabitq_bits,
+                bits: self.quantizer.rabitq_bits,
             },
             IvfQuantizerProfile::PqFastScan {
                 group_count,
@@ -536,11 +622,16 @@ impl QuantCodec for IvfQuantizer {
     }
 
     fn payload_len(&self) -> usize {
-        IvfQuantizer::payload_len(*self)
+        IvfQuantizer::payload_len(self.quantizer)
     }
 
     fn encode_source(&self, source: &[f32]) -> Result<EncodedQuantPayload, String> {
-        let (dimensions, gamma, code) = IvfQuantizer::encode_source(*self, source)?;
+        let (dimensions, gamma, code) = match self.quantizer.profile {
+            IvfQuantizerProfile::PqFastScan { .. } => self
+                .quantizer
+                .encode_source_with_pq_model(source, self.pq_model()?)?,
+            _ => IvfQuantizer::encode_source(self.quantizer, source)?,
+        };
         Ok(EncodedQuantPayload {
             dimensions,
             gamma,
@@ -549,7 +640,12 @@ impl QuantCodec for IvfQuantizer {
     }
 
     fn prepare_ip_query(&self, query: &[f32]) -> Result<Self::PreparedQuery, String> {
-        IvfQuantizer::prepare_ip_query(*self, query)
+        match self.quantizer.profile {
+            IvfQuantizerProfile::PqFastScan { .. } => self
+                .quantizer
+                .prepare_ip_query_with_pq_model(query, self.pq_model()?),
+            _ => IvfQuantizer::prepare_ip_query(self.quantizer, query),
+        }
     }
 
     fn score_ip_candidate(
@@ -557,6 +653,7 @@ impl QuantCodec for IvfQuantizer {
         prepared_query: &Self::PreparedQuery,
         payload: CandidatePayload<'_>,
     ) -> Result<f32, String> {
+        validate_candidate_meta(self.quantizer.profile, prepared_query, payload.meta)?;
         let gamma = match payload.meta {
             CandidateMeta::None
             | CandidateMeta::Binary
@@ -565,7 +662,7 @@ impl QuantCodec for IvfQuantizer {
             CandidateMeta::Gamma(gamma) => gamma,
             CandidateMeta::GammaAndResidualSigns { gamma, .. } => gamma,
         };
-        IvfQuantizer::score_ip_from_parts(*self, prepared_query, gamma, payload.code)
+        IvfQuantizer::score_ip_from_parts(self.quantizer, prepared_query, gamma, payload.code)
     }
 
     fn score_ip_batch<Id>(
@@ -574,13 +671,13 @@ impl QuantCodec for IvfQuantizer {
         batch: &CandidateBatch<'_, Id>,
         out_scores: &mut [f32],
     ) -> Result<(), String> {
-        match (self.profile, prepared_query) {
+        match (self.quantizer.profile, prepared_query) {
             (
                 IvfQuantizerProfile::TurboQuant,
                 IvfPreparedQuery::TurboQuantNoQjl4BitLut(prepared_query),
             ) => {
                 let quantizer = ProdQuantizer::cached(
-                    self.dimensions,
+                    self.quantizer.dimensions,
                     crate::DEFAULT_QUANT_BITS,
                     crate::DEFAULT_QUANT_SEED,
                 );
@@ -606,6 +703,34 @@ impl QuantCodec for IvfQuantizer {
                 Ok(())
             }
         }
+    }
+}
+
+fn validate_candidate_meta(
+    profile: IvfQuantizerProfile,
+    prepared_query: &IvfPreparedQuery,
+    meta: CandidateMeta<'_>,
+) -> Result<(), String> {
+    match (profile, prepared_query, meta) {
+        (
+            IvfQuantizerProfile::PqFastScan { group_count, .. },
+            IvfPreparedQuery::PqFastScan {
+                group_count: prepared_group_count,
+                ..
+            },
+            CandidateMeta::GroupedPq {
+                group_count: meta_group_count,
+            },
+        ) if group_count == *prepared_group_count && group_count == meta_group_count => Ok(()),
+        (
+            IvfQuantizerProfile::PqFastScan { .. },
+            IvfPreparedQuery::PqFastScan { .. },
+            CandidateMeta::GroupedPq { .. },
+        ) => Err("ec_ivf pq_fastscan candidate group count mismatch".to_owned()),
+        (IvfQuantizerProfile::PqFastScan { .. }, IvfPreparedQuery::PqFastScan { .. }, _) => {
+            Err("ec_ivf pq_fastscan candidate requires grouped-PQ metadata".to_owned())
+        }
+        _ => Ok(()),
     }
 }
 
@@ -756,6 +881,35 @@ mod tests {
         let norm = values.iter().map(|value| value * value).sum::<f32>().sqrt();
         values.iter_mut().for_each(|value| *value /= norm);
         values
+    }
+
+    fn pq_fastscan_test_model(dimensions: usize) -> IvfPqFastScanModel {
+        let training_rows = [
+            unit_vector(dimensions),
+            unit_vector(dimensions),
+            (0..dimensions)
+                .map(|index| if index % 2 == 0 { 0.25 } else { -0.25 })
+                .collect::<Vec<_>>(),
+            (0..dimensions)
+                .map(|index| if index % 2 == 0 { -0.25 } else { 0.25 })
+                .collect::<Vec<_>>(),
+        ];
+        let training_refs = training_rows.iter().map(Vec::as_slice).collect::<Vec<_>>();
+        let trained = crate::am::common::training::train_grouped_pq4_model(
+            &training_refs,
+            dimensions,
+            crate::DEFAULT_QUANT_SEED,
+            default_pq_fastscan_group_size(dimensions),
+            training_refs.len(),
+            3,
+        )
+        .unwrap();
+        IvfPqFastScanModel {
+            group_count: trained.group_count,
+            group_size: trained.group_size,
+            signs: trained.signs,
+            flat_codebooks: trained.codebooks.into_iter().flatten().collect(),
+        }
     }
 
     #[test]
@@ -951,6 +1105,88 @@ mod tests {
     }
 
     #[test]
+    fn common_quant_codec_turboquant_batch_is_bit_exact_with_scalar() {
+        let dimensions = 32;
+        let sources = [
+            unit_vector(dimensions),
+            (0..dimensions)
+                .map(|index| ((index % 7) as f32 - 3.0) / dimensions as f32)
+                .collect::<Vec<_>>(),
+        ];
+        let query = unit_vector(dimensions);
+        let codec = IvfQuantizer::resolve(StorageFormat::TurboQuant, dimensions).unwrap();
+        let prepared = QuantCodec::prepare_ip_query(&codec, &query).unwrap();
+        let encoded = sources
+            .iter()
+            .map(|source| QuantCodec::encode_source(&codec, source).unwrap())
+            .collect::<Vec<_>>();
+        let mut batch = CandidateBatch::with_capacity(encoded.len());
+        for (index, payload) in encoded.iter().enumerate() {
+            batch
+                .push(
+                    index,
+                    CandidatePayload::new(&payload.code, CandidateMeta::Gamma(payload.gamma)),
+                )
+                .unwrap();
+        }
+        let mut batch_scores = vec![0.0; batch.len()];
+
+        QuantCodec::score_ip_batch(&codec, &prepared, &batch, &mut batch_scores).unwrap();
+
+        for (index, payload) in encoded.iter().enumerate() {
+            let scalar = codec
+                .score_ip_from_parts(&prepared, payload.gamma, &payload.code)
+                .unwrap();
+            assert_eq!(
+                batch_scores[index].to_bits(),
+                scalar.to_bits(),
+                "index={index} batch={} scalar={scalar}",
+                batch_scores[index]
+            );
+        }
+    }
+
+    #[test]
+    fn common_quant_codec_turboquant_no_qjl_lut32_batch_is_bit_exact_with_scalar() {
+        let dimensions = 1536;
+        let query = unit_vector(dimensions);
+        let codec = IvfQuantizer::resolve(StorageFormat::TurboQuant, dimensions).unwrap();
+        let prepared = QuantCodec::prepare_ip_query(&codec, &query).unwrap();
+        let encoded = (0..crate::quant::lut32::BLOCK_WIDTH + 1)
+            .map(|index| {
+                let source = (0..dimensions)
+                    .map(|col| ((index + col) % 23) as f32 / dimensions as f32)
+                    .collect::<Vec<_>>();
+                QuantCodec::encode_source(&codec, &source).unwrap()
+            })
+            .collect::<Vec<_>>();
+        let mut batch = CandidateBatch::with_capacity(crate::quant::lut32::BLOCK_WIDTH + 1);
+        for (index, payload) in encoded.iter().enumerate() {
+            batch
+                .push(
+                    index,
+                    CandidatePayload::new(&payload.code, CandidateMeta::Gamma(payload.gamma)),
+                )
+                .unwrap();
+        }
+        let mut batch_scores = vec![0.0; batch.len()];
+
+        QuantCodec::score_ip_batch(&codec, &prepared, &batch, &mut batch_scores).unwrap();
+
+        for (index, payload) in encoded.iter().enumerate() {
+            let scalar = codec
+                .score_ip_from_parts(&prepared, payload.gamma, &payload.code)
+                .unwrap();
+            assert_eq!(
+                batch_scores[index].to_bits(),
+                scalar.to_bits(),
+                "index={index} batch={} scalar={scalar}",
+                batch_scores[index]
+            );
+        }
+    }
+
+    #[test]
     fn rabitq_dispatch_matches_direct_quantizer_score() {
         let dimensions = 32;
         let source = unit_vector(dimensions);
@@ -1021,6 +1257,52 @@ mod tests {
                 .unwrap();
             assert!(
                 (batch_scores[index] - scalar).abs() < 1e-6,
+                "index={index} batch={} scalar={scalar}",
+                batch_scores[index]
+            );
+        }
+    }
+
+    #[test]
+    fn common_quant_codec_rabitq_batch_is_bit_exact_with_scalar() {
+        let dimensions = 40;
+        let query = unit_vector(dimensions);
+        let codec = IvfQuantizer::resolve_with_pq_group_size_and_bits(
+            StorageFormat::RaBitQ,
+            dimensions,
+            None,
+            Some(4),
+        )
+        .unwrap();
+        let prepared = QuantCodec::prepare_ip_query(&codec, &query).unwrap();
+        let encoded = (0..3)
+            .map(|index| {
+                let source = (0..dimensions)
+                    .map(|col| (index as f32 - col as f32) * 0.03125)
+                    .collect::<Vec<_>>();
+                QuantCodec::encode_source(&codec, &source).unwrap()
+            })
+            .collect::<Vec<_>>();
+        let mut batch = CandidateBatch::with_capacity(3);
+        for (index, payload) in encoded.iter().enumerate() {
+            batch
+                .push(
+                    index,
+                    CandidatePayload::new(&payload.code, CandidateMeta::RaBitQ),
+                )
+                .unwrap();
+        }
+        let mut batch_scores = vec![0.0; batch.len()];
+
+        QuantCodec::score_ip_batch(&codec, &prepared, &batch, &mut batch_scores).unwrap();
+
+        for (index, payload) in encoded.iter().enumerate() {
+            let scalar = codec
+                .score_ip_from_parts(&prepared, payload.gamma, &payload.code)
+                .unwrap();
+            assert_eq!(
+                batch_scores[index].to_bits(),
+                scalar.to_bits(),
                 "index={index} batch={} scalar={scalar}",
                 batch_scores[index]
             );
@@ -1131,32 +1413,7 @@ mod tests {
         let dimensions = 16;
         let source = unit_vector(dimensions);
         let query = unit_vector(dimensions);
-        let training_rows = [
-            unit_vector(dimensions),
-            unit_vector(dimensions),
-            (0..dimensions)
-                .map(|index| if index % 2 == 0 { 0.25 } else { -0.25 })
-                .collect::<Vec<_>>(),
-            (0..dimensions)
-                .map(|index| if index % 2 == 0 { -0.25 } else { 0.25 })
-                .collect::<Vec<_>>(),
-        ];
-        let training_refs = training_rows.iter().map(Vec::as_slice).collect::<Vec<_>>();
-        let trained = crate::am::common::training::train_grouped_pq4_model(
-            &training_refs,
-            dimensions,
-            crate::DEFAULT_QUANT_SEED,
-            default_pq_fastscan_group_size(dimensions),
-            training_refs.len(),
-            3,
-        )
-        .unwrap();
-        let model = IvfPqFastScanModel {
-            group_count: trained.group_count,
-            group_size: trained.group_size,
-            signs: trained.signs,
-            flat_codebooks: trained.codebooks.into_iter().flatten().collect(),
-        };
+        let model = pq_fastscan_test_model(dimensions);
         let dispatch = IvfQuantizer::resolve(StorageFormat::PqFastScan, dimensions).unwrap();
         let (_, gamma, payload) = dispatch
             .encode_source_with_pq_model(&source, &model)
@@ -1195,43 +1452,17 @@ mod tests {
         let dimensions = 16;
         let source = unit_vector(dimensions);
         let query = unit_vector(dimensions);
-        let training_rows = [
-            unit_vector(dimensions),
-            unit_vector(dimensions),
-            (0..dimensions)
-                .map(|index| if index % 2 == 0 { 0.25 } else { -0.25 })
-                .collect::<Vec<_>>(),
-            (0..dimensions)
-                .map(|index| if index % 2 == 0 { -0.25 } else { 0.25 })
-                .collect::<Vec<_>>(),
-        ];
-        let training_refs = training_rows.iter().map(Vec::as_slice).collect::<Vec<_>>();
-        let trained = crate::am::common::training::train_grouped_pq4_model(
-            &training_refs,
-            dimensions,
-            crate::DEFAULT_QUANT_SEED,
-            default_pq_fastscan_group_size(dimensions),
-            training_refs.len(),
-            3,
-        )
-        .unwrap();
-        let model = IvfPqFastScanModel {
-            group_count: trained.group_count,
-            group_size: trained.group_size,
-            signs: trained.signs,
-            flat_codebooks: trained.codebooks.into_iter().flatten().collect(),
-        };
-        let codec = IvfQuantizer::resolve(StorageFormat::PqFastScan, dimensions).unwrap();
-        let (_, gamma, payload) = codec.encode_source_with_pq_model(&source, &model).unwrap();
-        let prepared = codec
-            .prepare_ip_query_with_pq_model(&query, &model)
-            .unwrap();
+        let model = pq_fastscan_test_model(dimensions);
+        let dispatch = IvfQuantizer::resolve(StorageFormat::PqFastScan, dimensions).unwrap();
+        let codec = dispatch.quant_codec_with_pq_model(&model).unwrap();
+        let encoded = QuantCodec::encode_source(&codec, &source).unwrap();
+        let prepared = QuantCodec::prepare_ip_query(&codec, &query).unwrap();
         let mut batch = CandidateBatch::with_capacity(1);
         batch
             .push(
                 0_u32,
                 CandidatePayload::new(
-                    &payload,
+                    &encoded.code,
                     CandidateMeta::GroupedPq {
                         group_count: model.group_count,
                     },
@@ -1242,7 +1473,7 @@ mod tests {
 
         QuantCodec::score_ip_batch(&codec, &prepared, &batch, &mut batch_scores).unwrap();
 
-        assert_eq!(gamma, 0.0);
+        assert_eq!(encoded.gamma, 0.0);
         assert_eq!(QuantCodec::codec_kind(&codec), QuantCodecKind::GroupedPq);
         assert_eq!(
             QuantCodec::search_codec_tag(&codec),
@@ -1253,10 +1484,104 @@ mod tests {
         );
         assert_eq!(
             batch_scores[0],
-            codec
-                .score_ip_from_parts(&prepared, gamma, &payload)
+            dispatch
+                .score_ip_from_parts(&prepared, encoded.gamma, &encoded.code)
                 .unwrap()
         );
+    }
+
+    #[test]
+    fn common_quant_codec_grouped_pq_requires_model_binding() {
+        let dimensions = 16;
+        let query = unit_vector(dimensions);
+        let dispatch = IvfQuantizer::resolve(StorageFormat::PqFastScan, dimensions).unwrap();
+        let model = pq_fastscan_test_model(dimensions);
+
+        let err = match QuantCodec::prepare_ip_query(&dispatch, &query) {
+            Ok(_) => panic!("unbound grouped-PQ codec should reject query preparation"),
+            Err(err) => err,
+        };
+        assert!(err.contains("persisted grouped codebooks"));
+
+        let codec = dispatch.quant_codec_with_pq_model(&model).unwrap();
+        QuantCodec::prepare_ip_query(&codec, &query).unwrap();
+    }
+
+    #[test]
+    fn common_quant_codec_grouped_pq_batch_is_bit_exact_with_scalar() {
+        let dimensions = 16;
+        let query = unit_vector(dimensions);
+        let model = pq_fastscan_test_model(dimensions);
+        let dispatch = IvfQuantizer::resolve(StorageFormat::PqFastScan, dimensions).unwrap();
+        let codec = dispatch.quant_codec_with_pq_model(&model).unwrap();
+        let prepared = QuantCodec::prepare_ip_query(&codec, &query).unwrap();
+        let encoded = (0..3)
+            .map(|index| {
+                let source = (0..dimensions)
+                    .map(|col| if (index + col) % 2 == 0 { 0.25 } else { -0.25 })
+                    .collect::<Vec<_>>();
+                QuantCodec::encode_source(&codec, &source).unwrap()
+            })
+            .collect::<Vec<_>>();
+        let mut batch = CandidateBatch::with_capacity(3);
+        for (index, payload) in encoded.iter().enumerate() {
+            batch
+                .push(
+                    index,
+                    CandidatePayload::new(
+                        &payload.code,
+                        CandidateMeta::GroupedPq {
+                            group_count: model.group_count,
+                        },
+                    ),
+                )
+                .unwrap();
+        }
+        let mut batch_scores = vec![0.0; batch.len()];
+
+        QuantCodec::score_ip_batch(&codec, &prepared, &batch, &mut batch_scores).unwrap();
+
+        for (index, payload) in encoded.iter().enumerate() {
+            let scalar = dispatch
+                .score_ip_from_parts(&prepared, payload.gamma, &payload.code)
+                .unwrap();
+            assert_eq!(
+                batch_scores[index].to_bits(),
+                scalar.to_bits(),
+                "index={index} batch={} scalar={scalar}",
+                batch_scores[index]
+            );
+        }
+    }
+
+    #[test]
+    fn common_quant_codec_grouped_pq_rejects_mismatched_candidate_meta() {
+        let dimensions = 16;
+        let source = unit_vector(dimensions);
+        let query = unit_vector(dimensions);
+        let model = pq_fastscan_test_model(dimensions);
+        let dispatch = IvfQuantizer::resolve(StorageFormat::PqFastScan, dimensions).unwrap();
+        let codec = dispatch.quant_codec_with_pq_model(&model).unwrap();
+        let encoded = QuantCodec::encode_source(&codec, &source).unwrap();
+        let prepared = QuantCodec::prepare_ip_query(&codec, &query).unwrap();
+        let mut batch = CandidateBatch::with_capacity(1);
+        batch
+            .push(
+                0_u32,
+                CandidatePayload::new(
+                    &encoded.code,
+                    CandidateMeta::GroupedPq {
+                        group_count: model.group_count + 1,
+                    },
+                ),
+            )
+            .unwrap();
+        let mut batch_scores = vec![0.0];
+
+        let err =
+            QuantCodec::score_ip_batch(&codec, &prepared, &batch, &mut batch_scores).unwrap_err();
+
+        assert!(err.contains("candidate group count mismatch"));
     }
 
     #[test]

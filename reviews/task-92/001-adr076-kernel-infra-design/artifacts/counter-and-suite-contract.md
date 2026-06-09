@@ -105,16 +105,11 @@ Path classification:
   disabled, width was below 32, a tail remained after whole blocks, or the host
   lacked a supported ISA.
 
-For a mixed batch with whole blocks plus scalar tail, increment both path
-families under the same `(surface, quant_kind, isa)` row. Use `isa=Scalar` for
-scalar-only rows. For scalar tails after an ISA kernel, either:
-
-- record the tail under `isa=Scalar`, preferred for exact attribution; or
-- record it under the selected ISA row's `scalar_*` fields if implementation
-  simplicity wins.
-
-The implementation packet must document which option it chooses before
-benchmark results cite the counters.
+For a mixed batch with whole blocks plus scalar tail, increment the whole-block
+work under the selected ISA row and increment the scalar tail under
+`isa=Scalar`. Do not record scalar tails under the selected ISA row's
+`scalar_*` fields. This is the binding convention for Tasks 93-98 and keeps the
+Task 99 cross-quant matrix comparable across hosts and dispatch outcomes.
 
 ## Off-Path Scalar Measurement
 
