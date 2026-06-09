@@ -4,7 +4,7 @@ use std::collections::BinaryHeap;
 use hashbrown::HashSet;
 use pgrx::pg_sys;
 
-use super::{codec, options, page, search};
+use super::{options, page, search, storage_binding};
 use crate::quant::grouped_pq::GROUPED_PQ_CENTROIDS;
 use crate::quant::rabitq;
 use crate::storage::buffer_guard::LockedBufferGuard;
@@ -43,20 +43,23 @@ impl GraphStorageDescriptor {
                 .expect("ec_hnsw graph index relation should be non-null"),
         )
         .storage_format;
-        if descriptor.codec().matches_storage_format(expected) {
+        if descriptor
+            .storage_binding()
+            .matches_storage_format(expected)
+        {
             return Ok(descriptor);
         }
 
         Err(format!(
             "ec_hnsw index reloption storage_format={} does not match on-disk metadata format={}; REINDEX after switching formats",
             expected.as_str(),
-            descriptor.codec().storage_format_name(),
+            descriptor.storage_binding().storage_format_name(),
         ))
     }
 
     pub(crate) fn from_metadata(metadata: &page::MetadataPage) -> Result<Self, String> {
-        match codec::HnswStorageCodec::from_metadata(metadata)? {
-            codec::HnswStorageCodec::TurboQuant => {
+        match storage_binding::HnswStorageBinding::from_metadata(metadata)? {
+            storage_binding::HnswStorageBinding::TurboQuant => {
                 if metadata.format_version == page::INDEX_FORMAT_V3_TURBO_HOT_COLD {
                     if metadata.dimensions == 0 {
                         return Ok(Self::TurboQuantHotCold(TurboQuantHotColdLayout {
@@ -111,7 +114,7 @@ impl GraphStorageDescriptor {
                     },
                 })
             }
-            codec::HnswStorageCodec::PqFastScan => {
+            storage_binding::HnswStorageBinding::PqFastScan => {
                 if metadata.dimensions == 0 {
                     return Ok(Self::PqFastScan(PqFastScanLayout {
                         binary_word_count: 0,
@@ -178,7 +181,7 @@ impl GraphStorageDescriptor {
                     rerank_code_len: crate::code_len(metadata.dimensions as usize, metadata.bits),
                 }))
             }
-            codec::HnswStorageCodec::RaBitQ => {
+            storage_binding::HnswStorageBinding::RaBitQ => {
                 if metadata.dimensions == 0 {
                     return Ok(Self::RaBitQ(PqFastScanLayout {
                         binary_word_count: 0,
@@ -235,13 +238,13 @@ impl GraphStorageDescriptor {
         }
     }
 
-    pub(crate) fn codec(self) -> codec::HnswStorageCodec {
+    pub(crate) fn storage_binding(self) -> storage_binding::HnswStorageBinding {
         match self {
             Self::TurboQuant { .. } | Self::TurboQuantHotCold(_) => {
-                codec::HnswStorageCodec::TurboQuant
+                storage_binding::HnswStorageBinding::TurboQuant
             }
-            Self::PqFastScan(_) => codec::HnswStorageCodec::PqFastScan,
-            Self::RaBitQ(_) => codec::HnswStorageCodec::RaBitQ,
+            Self::PqFastScan(_) => storage_binding::HnswStorageBinding::PqFastScan,
+            Self::RaBitQ(_) => storage_binding::HnswStorageBinding::RaBitQ,
         }
     }
 }
