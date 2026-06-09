@@ -4278,6 +4278,54 @@ mod tests {
     }
 
     #[test]
+    fn parses_task92_offpath_calibration_config() {
+        let raw = include_str!("../../../suites/task92-offpath-calibration.json");
+        let mut config: SuiteConfig = serde_json::from_str(raw).expect("suite parses");
+        apply_default_artifact_logs(&mut config);
+        apply_artifact_dir_templates(&mut config);
+        validate_config(&config).expect("suite validates");
+
+        let args = SuiteRunOptions {
+            config: "task92-offpath-calibration.json".into(),
+            dry_run: true,
+            continue_on_error: false,
+            only: Vec::new(),
+            only_tag: Vec::new(),
+            resume_from: None,
+            results_output: None,
+            artifact_dir: None,
+            manifest_output: None,
+        };
+        let manifest = build_manifest(&conn(), &args, raw, &config).expect("manifest should build");
+
+        assert_eq!(manifest.steps.len(), 2);
+        let kernel_on = &manifest.steps[0];
+        assert_eq!(kernel_on.name, "latency-spire-turboquant-lut32-kernel-on");
+        assert_eq!(kernel_on.quant.as_deref(), Some("turboquant"));
+        assert_eq!(kernel_on.isa.as_deref(), Some("scalar"));
+        assert_eq!(kernel_on.kernel_status, Some(KernelCellStatus::Valid));
+        assert!(matches!(kernel_on.status, Some(StepStatus::DryRun)));
+        assert!(kernel_on
+            .command
+            .windows(2)
+            .any(|w| w == ["--cache-state", "task92_offpath_kernel_on"]));
+
+        let kernel_off = &manifest.steps[1];
+        assert_eq!(kernel_off.name, "latency-spire-turboquant-lut32-kernel-off");
+        assert_eq!(kernel_off.quant.as_deref(), Some("turboquant"));
+        assert_eq!(kernel_off.isa.as_deref(), Some("scalar"));
+        assert_eq!(kernel_off.kernel_status, Some(KernelCellStatus::Valid));
+        assert!(matches!(kernel_off.status, Some(StepStatus::DryRun)));
+        assert!(kernel_off
+            .command
+            .windows(2)
+            .any(|w| { w == ["--session-guc", "ec_spire.candidate_batch_scoring=off",] }));
+        assert!(kernel_off
+            .command
+            .contains(&"--task87-candidate-batch-counters".to_owned()));
+    }
+
+    #[test]
     fn parses_parallel_workers_from_loader_timing_artifact() {
         let raw = "[loader] copied corpus table task71_real10k_w4 in 0.123s\n\
                    [loader] ec_ivf build timing: requested_workers=4 workers_launched=4 heap_tuples=10000 index_tuples=10000\n";
