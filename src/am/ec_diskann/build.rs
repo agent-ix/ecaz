@@ -713,6 +713,28 @@ mod tests {
         }
     }
 
+    #[test]
+    fn turboquant_build_params_use_direct_search_code_without_sidecar_flags() {
+        let params = BuildParams {
+            graph_degree_r: 8,
+            build_list_size_l: 16,
+            alpha: 1.2,
+            dimensions: 1536,
+            search_subvector_count: 0,
+            search_subvector_dim: 4,
+            search_codec_kind: crate::am::ec_diskann::page::VAMANA_SEARCH_CODEC_TURBOQUANT,
+            seed: 42,
+            page_size: 8192,
+            has_binary_sidecar: false,
+        };
+
+        assert_eq!(
+            params.search_code_len(),
+            crate::quant::prod::mse_code_len(1536, 4)
+        );
+        assert_eq!(params.payload_flags(), 0);
+    }
+
     // BO-006: payload-shape mismatch surfaces from persist (W/C
     // pre-validation in the persist layer fires).
     #[test]
