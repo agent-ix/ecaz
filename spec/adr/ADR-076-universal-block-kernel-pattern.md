@@ -107,14 +107,14 @@ Kernel modules use `is_x86_feature_detected!` and
 for that kernel, cache the selected function pointer on first use, and
 fall back to scalar when the host lacks the required features.
 
-The ARM production measurement target is AWS Graviton 4. Graviton 4 packets
-must target the `sve2` dispatch branch when that feature is available and
-must report the measured runtime vector length verbatim, for example
-`sve2-128` for the currently targeted host class. Do not infer vector length
-from the instance family: if a future host or run reports another measured
-width, use that measured label instead. If a kernel only requires base SVE,
-report `sve-<bits>` with the measured length; if vector length cannot be
-measured, report only `sve` or `sve2` and do not publish width-specific claims.
+The ARM production measurement target is AWS Graviton 4 (Neoverse V2, SVE2 at
+128-bit vector length). Graviton 4 packets must target the `sve2` dispatch
+branch when that feature is available and must report the measured runtime
+vector length verbatim, for example `sve2-128` for the currently targeted host
+class. Inference from host class alone is forbidden: packets must report the
+measured runtime vector length verbatim, for example `sve2-128` or `sve-256`.
+If vector length cannot be measured, report only `sve` or `sve2` and do not
+publish width-specific claims.
 
 ### Counter Attribution
 

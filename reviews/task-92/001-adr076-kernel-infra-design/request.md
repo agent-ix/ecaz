@@ -38,9 +38,10 @@ Design checkpoint under review:
   - `Sve`
   - `Sve2`
   - `Avx2`
-- ARM target: Graviton 4. SVE/SVE2 kernels must be vector-length agnostic.
-  Graviton 4 packets use the `Sve2` dispatch branch when available and report
-  the measured runtime vector length verbatim, for example `sve2-128`.
+- ARM target: AWS Graviton 4 (Neoverse V2, SVE2 at 128-bit vector length).
+  SVE/SVE2 kernels must be vector-length agnostic. Graviton 4 packets use the
+  `Sve2` dispatch branch when available and report the measured runtime vector
+  length verbatim, for example `sve2-128`.
 - Correctness:
   - scalar reference is strict `to_bits()` where the current scorer is
     deterministic;

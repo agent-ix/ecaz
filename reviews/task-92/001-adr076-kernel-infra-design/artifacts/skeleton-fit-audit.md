@@ -57,10 +57,10 @@ dispatch still falls back to scalar.
 ### SVE/SVE2
 
 SVE modules must distinguish `sve` and `sve2` runtime features and remain
-vector-length agnostic. The measurement target is AWS Graviton 4, whose packets
-use the SVE2 dispatch branch when available. A packet may report a width-specific
-label such as `sve2-128` only if it records that runtime vector length in its
-artifacts.
+vector-length agnostic. The measurement target is AWS Graviton 4 (Neoverse V2,
+SVE2 at 128-bit vector length), whose packets use the SVE2 dispatch branch when
+available. A packet may report a width-specific label such as `sve2-128` only if
+it records that runtime vector length in its artifacts.
 
 ### AVX2
 

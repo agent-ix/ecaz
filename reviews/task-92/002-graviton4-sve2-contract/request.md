@@ -21,8 +21,9 @@ Changes:
 
 - ADR-076 now distinguishes base `Sve` from `Sve2` in the proposed runtime ISA
   enum.
-- The ARM measurement contract now names AWS Graviton 4 as the production
-  target and says packets use the `sve2` dispatch branch when available.
+- The ARM measurement contract now names AWS Graviton 4 (Neoverse V2, SVE2 at
+  128-bit vector length) as the production target and says packets use the
+  `sve2` dispatch branch when available.
 - Width-specific evidence must report the measured runtime vector length
   verbatim; the concrete Graviton 4 example is `sve2-128`.
 - The existing Task 92 Phase 1 request and skeleton audit were retouched to
