@@ -1555,6 +1555,71 @@ mod tests {
     }
 
     #[test]
+    fn common_quant_codec_pq_fastscan_batch_is_bit_exact_with_direct_path() {
+        let dimensions = 16;
+        let query = unit_vector(dimensions);
+        let model = pq_fastscan_test_model(dimensions);
+        let dispatch = IvfQuantizer::resolve(StorageFormat::PqFastScan, dimensions).unwrap();
+        let codec = dispatch.quant_codec_with_pq_model(&model).unwrap();
+        let trait_prepared = QuantCodec::prepare_ip_query(&codec, &query).unwrap();
+        let direct_prepared = dispatch
+            .prepare_ip_query_with_pq_model(&query, &model)
+            .unwrap();
+        let sources = (0..3)
+            .map(|index| {
+                (0..dimensions)
+                    .map(|col| if (index + col) % 2 == 0 { 0.25 } else { -0.25 })
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+        let trait_encoded = sources
+            .iter()
+            .map(|source| QuantCodec::encode_source(&codec, source).unwrap())
+            .collect::<Vec<_>>();
+        let direct_encoded = sources
+            .iter()
+            .map(|source| {
+                dispatch
+                    .encode_source_with_pq_model(source, &model)
+                    .unwrap()
+            })
+            .collect::<Vec<_>>();
+        let mut batch = CandidateBatch::with_capacity(sources.len());
+        for (index, payload) in trait_encoded.iter().enumerate() {
+            batch
+                .push(
+                    index,
+                    CandidatePayload::new(
+                        &payload.code,
+                        CandidateMeta::GroupedPq {
+                            group_count: model.group_count,
+                        },
+                    ),
+                )
+                .unwrap();
+        }
+        let mut batch_scores = vec![0.0; batch.len()];
+
+        QuantCodec::score_ip_batch(&codec, &trait_prepared, &batch, &mut batch_scores).unwrap();
+
+        for (index, payload) in trait_encoded.iter().enumerate() {
+            let (direct_dimensions, direct_gamma, direct_code) = &direct_encoded[index];
+            assert_eq!(payload.dimensions, *direct_dimensions);
+            assert_eq!(payload.gamma.to_bits(), direct_gamma.to_bits());
+            assert_eq!(payload.code.as_slice(), direct_code.as_slice());
+            let direct_score = dispatch
+                .score_ip_from_parts(&direct_prepared, *direct_gamma, direct_code)
+                .unwrap();
+            assert_eq!(
+                batch_scores[index].to_bits(),
+                direct_score.to_bits(),
+                "index={index} batch={} direct={direct_score}",
+                batch_scores[index]
+            );
+        }
+    }
+
+    #[test]
     fn common_quant_codec_grouped_pq_rejects_mismatched_candidate_meta() {
         let dimensions = 16;
         let source = unit_vector(dimensions);
