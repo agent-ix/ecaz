@@ -1437,9 +1437,24 @@ unsafe fn materialize_probe_candidates(
 }
 
 fn use_scratch_soa_batch_decode(metadata: &super::page::MetadataPage) -> bool {
-    super::options::current_session_scratch_soa_batch_decode()
-        && metadata.storage_format == StorageFormat::RaBitQ
-        && (metadata.quant_bits == 1 || metadata.quant_bits == 8)
+    use_scratch_soa_batch_decode_for_format(
+        super::options::current_session_scratch_soa_batch_decode(),
+        metadata.storage_format,
+        metadata.quant_bits,
+    )
+}
+
+fn use_scratch_soa_batch_decode_for_format(
+    enabled: bool,
+    storage_format: StorageFormat,
+    quant_bits: u8,
+) -> bool {
+    enabled
+        && match storage_format {
+            StorageFormat::TurboQuant => quant_bits == 4,
+            StorageFormat::RaBitQ => quant_bits == 1 || quant_bits == 8,
+            StorageFormat::Auto | StorageFormat::PqFastScan => false,
+        }
 }
 
 fn process_scratch_soa_postings(
@@ -1451,6 +1466,34 @@ fn process_scratch_soa_postings(
     running_top: &mut Option<CandidateTopK>,
 ) -> Result<(), String> {
     if scratch.is_empty() {
+        return Ok(());
+    }
+
+    if quantizer.score_turboquant_no_qjl_4bit_batch_from_payloads(
+        prepared_query,
+        &scratch.payloads,
+        scratch.payload_len,
+        &scratch.gammas,
+        &mut scratch.scores,
+    )? {
+        if scratch.scores.len() != scratch.len() {
+            return Err(format!(
+                "ec_ivf scratch SoA batch scorer produced {} scores for {} postings",
+                scratch.scores.len(),
+                scratch.len()
+            ));
+        }
+        for index in 0..scratch.len() {
+            record_scored_posting_candidates(
+                opaque,
+                best_by_heap_tid,
+                running_top,
+                scratch.heap_tids(index).iter().copied(),
+                scratch.heap_tid_counts[index],
+                -scratch.scores[index],
+            );
+        }
+        scratch.clear();
         return Ok(());
     }
 
@@ -2594,8 +2637,8 @@ mod tests {
         build_probe_block_sequence, candidate_heap_blocks, candidate_heap_tid_cmp,
         choose_adaptive_nprobe, consume_live_tid_budget, inner_product, inner_product_scalar,
         pre_rerank_candidate_limit, select_probe_lists, select_probe_lists_with_adaptive,
-        CandidateTopK, EcIvfCentroidScore, EcIvfScoredCandidate, IvfPostingScratchSoa,
-        ProbeBlockRange,
+        use_scratch_soa_batch_decode_for_format, CandidateTopK, EcIvfCentroidScore,
+        EcIvfScoredCandidate, IvfPostingScratchSoa, ProbeBlockRange,
     };
     use crate::storage::page::ItemPointer;
 
@@ -2717,6 +2760,40 @@ mod tests {
 
         assert_eq!(scratch.payload_len, 9);
         assert!(scratch.payloads.capacity() >= 9 * super::IVF_POSTING_SCRATCH_SOA_BATCH_POSTINGS);
+    }
+
+    #[test]
+    fn scratch_soa_batch_decode_gate_admits_turboquant_no_qjl4_and_rabitq_lanes() {
+        assert!(use_scratch_soa_batch_decode_for_format(
+            true,
+            IvfStorageFormat::TurboQuant,
+            4
+        ));
+        assert!(!use_scratch_soa_batch_decode_for_format(
+            true,
+            IvfStorageFormat::TurboQuant,
+            2
+        ));
+        assert!(use_scratch_soa_batch_decode_for_format(
+            true,
+            IvfStorageFormat::RaBitQ,
+            1
+        ));
+        assert!(use_scratch_soa_batch_decode_for_format(
+            true,
+            IvfStorageFormat::RaBitQ,
+            8
+        ));
+        assert!(!use_scratch_soa_batch_decode_for_format(
+            true,
+            IvfStorageFormat::RaBitQ,
+            4
+        ));
+        assert!(!use_scratch_soa_batch_decode_for_format(
+            false,
+            IvfStorageFormat::TurboQuant,
+            4
+        ));
     }
 
     #[test]

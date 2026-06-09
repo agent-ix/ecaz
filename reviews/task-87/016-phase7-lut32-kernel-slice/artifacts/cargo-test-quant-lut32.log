@@ -1,0 +1,12 @@
+Script started on 2026-06-08 15:24:31-07:00 [<not executed on terminal>]
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.16s
+     Running unittests src/lib.rs (target/debug/deps/ecaz-52f8c7085962b346)
+
+running 2 tests
+test quant::lut32::tests::lut32_rejects_shape_mismatch ... [32mok[m
+test quant::lut32::tests::lut32_matches_scalar_for_blocks_and_tail ... [32mok[m
+
+test result: [32mok[m. 2 passed; 0 failed; 0 ignored; 0 measured; 2002 filtered out; finished in 0.00s
+
+
+Script done on 2026-06-08 15:24:32-07:00 [COMMAND_EXIT_CODE="0"]

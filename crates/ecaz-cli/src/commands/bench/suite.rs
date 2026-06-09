@@ -316,6 +316,8 @@ struct RecallStep {
     #[serde(default)]
     force_index: Option<bool>,
     #[serde(default)]
+    session_gucs: Vec<String>,
+    #[serde(default)]
     truth_cache_file: Option<PathBuf>,
     #[serde(default)]
     truth_cache_dir: Option<PathBuf>,
@@ -378,6 +380,8 @@ struct LatencyStep {
     cache_state: Option<String>,
     #[serde(default)]
     session_gucs: Vec<String>,
+    #[serde(default)]
+    task87_candidate_batch_counters: Option<bool>,
     #[serde(default)]
     memory_sample_interval_ms: Option<u64>,
     #[serde(default)]
@@ -461,6 +465,10 @@ struct SpirePipelineStep {
     query_metric_k: Option<usize>,
     #[serde(default)]
     query_metric_projection_columns: Vec<String>,
+    #[serde(default)]
+    session_gucs: Vec<String>,
+    #[serde(default)]
+    task87_candidate_batch_counters: Option<bool>,
     #[serde(default)]
     log_output: Option<PathBuf>,
     #[serde(default)]
@@ -2706,6 +2714,9 @@ fn expand_recall(step: &RecallStep, defaults: &SuiteDefaults) -> Vec<String> {
     if step.force_index.or(defaults.force_index).unwrap_or(false) {
         args.push("--force-index".into());
     }
+    for guc in &step.session_gucs {
+        push_arg(&mut args, "--session-guc", guc);
+    }
     push_opt_path(
         &mut args,
         "--truth-cache-file",
@@ -2808,6 +2819,9 @@ fn expand_latency(step: &LatencyStep, defaults: &SuiteDefaults) -> Vec<String> {
     }
     for guc in &step.session_gucs {
         push_arg(&mut args, "--session-guc", guc);
+    }
+    if step.task87_candidate_batch_counters.unwrap_or(false) {
+        args.push("--task87-candidate-batch-counters".into());
     }
     push_arg(
         &mut args,
@@ -2977,6 +2991,12 @@ fn expand_spire_pipeline(step: &SpirePipelineStep, defaults: &SuiteDefaults) -> 
             "--query-metric-projection-columns",
             &step.query_metric_projection_columns.join(","),
         );
+    }
+    for guc in &step.session_gucs {
+        push_arg(&mut args, "--session-guc", guc);
+    }
+    if step.task87_candidate_batch_counters.unwrap_or(false) {
+        args.push("--task87-candidate-batch-counters".into());
     }
     push_opt_path(&mut args, "--log-output", step.log_output.as_deref());
     push_opt_path(&mut args, "--funnel-output", step.funnel_output.as_deref());
@@ -3758,6 +3778,7 @@ mod tests {
             bits: None,
             seed: None,
             force_index: None,
+            session_gucs: vec!["ec_ivf.scratch_soa_batch_decode=on".into()],
             truth_cache_file: Some("truth.json".into()),
             truth_cache_dir: None,
             truth_corpus_file: Some("corpus.tsv".into()),
@@ -3770,6 +3791,9 @@ mod tests {
         assert!(args.contains(&"--force-index".into()));
         assert!(args.windows(2).any(|w| w == ["--sweep", "48,96"]));
         assert!(args.contains(&"--adaptive-nprobe".into()));
+        assert!(args
+            .windows(2)
+            .any(|w| w == ["--session-guc", "ec_ivf.scratch_soa_batch_decode=on"]));
         assert!(args
             .windows(2)
             .any(|w| w == ["--truth-corpus-file", "corpus.tsv"]));
@@ -4118,6 +4142,7 @@ mod tests {
             sample_backend_memory: None,
             cache_state: Some("post_recall_warm".into()),
             session_gucs: vec!["ec_diskann.scan_profile_notice=on".into()],
+            task87_candidate_batch_counters: Some(true),
             memory_sample_interval_ms: None,
             log_output: Some("latency.log".into()),
         };
@@ -4128,6 +4153,7 @@ mod tests {
         assert!(args
             .windows(2)
             .any(|w| w == ["--session-guc", "ec_diskann.scan_profile_notice=on"]));
+        assert!(args.contains(&"--task87-candidate-batch-counters".into()));
     }
 
     #[test]
@@ -4176,6 +4202,8 @@ mod tests {
             production_read_only: Some(true),
             query_metric_k: Some(10),
             query_metric_projection_columns: vec!["title".into()],
+            session_gucs: vec!["ec_spire.candidate_batch_scoring=off".into()],
+            task87_candidate_batch_counters: Some(true),
             log_output: Some("spire-profile.log".into()),
             funnel_output: None,
         };
@@ -4202,6 +4230,10 @@ mod tests {
         assert!(args
             .windows(2)
             .any(|w| w == ["--query-metric-projection-columns", "title"]));
+        assert!(args
+            .windows(2)
+            .any(|w| w == ["--session-guc", "ec_spire.candidate_batch_scoring=off"]));
+        assert!(args.contains(&"--task87-candidate-batch-counters".into()));
         assert!(args
             .windows(2)
             .any(|w| w == ["--truth-corpus-file", "truth-corpus.tsv"]));
@@ -4267,6 +4299,8 @@ mod tests {
                 production_read_only: Some(true),
                 query_metric_k: Some(10),
                 query_metric_projection_columns: Vec::new(),
+                session_gucs: Vec::new(),
+                task87_candidate_batch_counters: None,
                 log_output: None,
                 funnel_output: None,
             })],
@@ -4417,6 +4451,7 @@ mod tests {
             bits: None,
             seed: None,
             force_index: None,
+            session_gucs: Vec::new(),
             truth_cache_file: None,
             truth_cache_dir: None,
             truth_corpus_file: None,

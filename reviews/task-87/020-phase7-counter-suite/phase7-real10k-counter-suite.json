@@ -1,0 +1,148 @@
+{
+  "name": "task87-phase7-real10k-counter-suite",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-87/020-phase7-counter-suite/artifacts/run",
+  "defaults": {
+    "pg": 18,
+    "socket_dir": "/home/peter/.pgrx",
+    "bits": 4,
+    "seed": 42,
+    "queries_limit": 200,
+    "iterations": 200,
+    "force_index": true,
+    "sample_backend_memory": true,
+    "memory_sample_interval_ms": 25
+  },
+  "steps": [
+    {
+      "kind": "raw",
+      "name": "precheck-host",
+      "tags": ["setup", "precheck", "task87", "phase7", "real10k"],
+      "args": [
+        "dev",
+        "sql",
+        "--pg",
+        "18",
+        "--db",
+        "postgres",
+        "--socket-dir",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "--raw",
+        "--sql",
+        "SELECT now() AS captured_at, version() AS postgres_version, current_setting('shared_buffers') AS shared_buffers, current_setting('work_mem') AS work_mem, current_setting('maintenance_work_mem') AS maintenance_work_mem, current_setting('effective_cache_size') AS effective_cache_size;",
+        "--log-output",
+        "${artifact_dir}/precheck-host.log"
+      ],
+      "expected_artifacts": ["${artifact_dir}/precheck-host.log"]
+    },
+    {
+      "kind": "recall",
+      "name": "recall-real10k-ivf-candidate-batch-off",
+      "tags": ["recall", "task87", "phase7", "real10k", "ivf", "candidate-batch-off"],
+      "prefix": "task87_phase6_real10k_ivf",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [64],
+      "rerank_width": 25,
+      "ivf_scratch_soa_batch_decode": false,
+      "truth_cache_file": "reviews/task-87/012-phase6-suite-prep/artifacts/run/truth-real10k-k10.json"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-real10k-ivf-candidate-batch-on",
+      "tags": ["recall", "task87", "phase7", "real10k", "ivf", "candidate-batch-on"],
+      "prefix": "task87_phase6_real10k_ivf",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [64],
+      "rerank_width": 25,
+      "ivf_scratch_soa_batch_decode": true,
+      "truth_cache_file": "reviews/task-87/012-phase6-suite-prep/artifacts/run/truth-real10k-k10.json"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-real10k-ivf-candidate-batch-off",
+      "tags": ["latency", "task87", "phase7", "real10k", "ivf", "candidate-batch-off"],
+      "prefix": "task87_phase6_real10k_ivf",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [64],
+      "rerank_width": 25,
+      "ivf_scratch_soa_batch_decode": false,
+      "concurrency": 1,
+      "cache_state": "post_recall_warm",
+      "task87_candidate_batch_counters": true
+    },
+    {
+      "kind": "latency",
+      "name": "latency-real10k-ivf-candidate-batch-on",
+      "tags": ["latency", "task87", "phase7", "real10k", "ivf", "candidate-batch-on"],
+      "prefix": "task87_phase6_real10k_ivf",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [64],
+      "rerank_width": 25,
+      "ivf_scratch_soa_batch_decode": true,
+      "concurrency": 1,
+      "cache_state": "post_recall_warm",
+      "task87_candidate_batch_counters": true
+    },
+    {
+      "kind": "storage",
+      "name": "storage-real10k-ivf",
+      "tags": ["storage", "task87", "phase7", "real10k", "ivf"],
+      "prefix": "task87_phase6_real10k_ivf"
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-real10k-spire-candidate-batch-off",
+      "tags": ["pipeline", "latency", "recall", "task87", "phase7", "real10k", "spire", "candidate-batch-off"],
+      "prefix": "task87_phase6_real10k_spire",
+      "sweep": [24],
+      "rerank_width": 25,
+      "include_query_metrics": true,
+      "include_recall": true,
+      "queries_limit": 100,
+      "query_metric_k": 10,
+      "truth_cache_file": "reviews/task-87/012-phase6-suite-prep/artifacts/run/truth-real10k-spire-k10.json",
+      "session_gucs": ["ec_spire.candidate_batch_scoring=off"],
+      "task87_candidate_batch_counters": true
+    },
+    {
+      "kind": "spire-pipeline",
+      "name": "pipeline-real10k-spire-candidate-batch-on",
+      "tags": ["pipeline", "latency", "recall", "task87", "phase7", "real10k", "spire", "candidate-batch-on"],
+      "prefix": "task87_phase6_real10k_spire",
+      "sweep": [24],
+      "rerank_width": 25,
+      "include_query_metrics": true,
+      "include_recall": true,
+      "queries_limit": 100,
+      "query_metric_k": 10,
+      "truth_cache_file": "reviews/task-87/012-phase6-suite-prep/artifacts/run/truth-real10k-spire-k10.json",
+      "session_gucs": ["ec_spire.candidate_batch_scoring=on"],
+      "task87_candidate_batch_counters": true
+    },
+    {
+      "kind": "storage",
+      "name": "storage-real10k-spire",
+      "tags": ["storage", "task87", "phase7", "real10k", "spire"],
+      "prefix": "task87_phase6_real10k_spire"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-real10k-hnsw-candidate-batch-on",
+      "tags": ["latency", "task87", "phase7", "real10k", "hnsw", "candidate-batch-on", "batch-width"],
+      "prefix": "task87_phase6_real10k_hnsw",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [128],
+      "concurrency": 1,
+      "session_gucs": ["ec_hnsw.candidate_batch_scoring=on"],
+      "cache_state": "post_recall_warm",
+      "task87_candidate_batch_counters": true
+    }
+  ]
+}

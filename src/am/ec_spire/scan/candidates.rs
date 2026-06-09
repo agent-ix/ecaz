@@ -2266,23 +2266,23 @@ fn append_quantized_v2_leaf_segments_candidates(
     selected_row_ranges: Option<&[SpireLeafBlockRowRange]>,
     observer: &mut impl SpireRoutedScanObserver,
 ) -> Result<(), String> {
-    for segment in segments {
-        let columns = segment.columns(meta)?;
-        append_quantized_v2_column_candidates(
-            snapshot,
-            columns,
-            snapshot.epoch_manifest().epoch,
-            route.leaf_pid,
-            route.object_version,
-            scorer,
-            deleted_vec_ids,
-            accumulator,
-            &route.placement,
-            selected_row_ranges,
-            observer,
-        )?;
-    }
-    Ok(())
+    let columns = segments
+        .iter()
+        .map(|segment| segment.columns(meta))
+        .collect::<Result<Vec<_>, _>>()?;
+    append_quantized_v2_leaf_column_candidates(
+        snapshot,
+        &columns,
+        snapshot.epoch_manifest().epoch,
+        route.leaf_pid,
+        route.object_version,
+        scorer,
+        deleted_vec_ids,
+        accumulator,
+        &route.placement,
+        selected_row_ranges,
+        observer,
+    )
 }
 
 fn append_quantized_v2_leaf_candidates(
@@ -2295,22 +2295,205 @@ fn append_quantized_v2_leaf_candidates(
     selected_row_ranges: Option<&[SpireLeafBlockRowRange]>,
     observer: &mut impl SpireRoutedScanObserver,
 ) -> Result<(), String> {
-    for columns in leaf_object.column_segments()? {
-        let columns = columns?;
-        append_quantized_v2_column_candidates(
+    let columns = leaf_object
+        .column_segments()?
+        .collect::<Result<Vec<_>, _>>()?;
+    append_quantized_v2_leaf_column_candidates(
+        snapshot,
+        &columns,
+        snapshot.epoch_manifest().epoch,
+        route.leaf_pid,
+        route.object_version,
+        scorer,
+        deleted_vec_ids,
+        accumulator,
+        &route.placement,
+        selected_row_ranges,
+        observer,
+    )
+}
+
+#[derive(Debug, Clone, Copy)]
+struct SpirePendingColumnCandidate<'a> {
+    columns: SpireLeafObjectColumns<'a>,
+    row_offset: usize,
+}
+
+fn append_quantized_v2_leaf_column_candidates<'a>(
+    snapshot: &SpireValidatedEpochSnapshot<'_>,
+    column_segments: &[SpireLeafObjectColumns<'a>],
+    epoch: u64,
+    pid: u64,
+    object_version: u64,
+    scorer: &SpirePreparedAssignmentScorer,
+    deleted_vec_ids: &HashSet<SpireVecId>,
+    accumulator: &mut SpireScoredCandidateAccumulator,
+    placement: &SpirePlacementEntry,
+    selected_row_ranges: Option<&[SpireLeafBlockRowRange]>,
+    observer: &mut impl SpireRoutedScanObserver,
+) -> Result<(), String> {
+    if selected_row_ranges.is_some()
+        || (scorer.payload_format() == SpireAssignmentPayloadFormat::RaBitQ
+            && accumulator.is_bounded())
+    {
+        for &columns in column_segments {
+            append_quantized_v2_column_candidates(
+                snapshot,
+                columns,
+                epoch,
+                pid,
+                object_version,
+                scorer,
+                deleted_vec_ids,
+                accumulator,
+                placement,
+                selected_row_ranges,
+                observer,
+            )?;
+        }
+        return Ok(());
+    }
+
+    let total_rows = column_segments
+        .iter()
+        .map(SpireLeafObjectColumns::row_count)
+        .sum::<usize>();
+    if total_rows == 0 {
+        return Ok(());
+    }
+
+    let mut batch = CandidateBatch::with_capacity(total_rows);
+    let mut pending = Vec::with_capacity(total_rows);
+    let expected_format = scorer.payload_format();
+    for &columns in column_segments {
+        let column_format = SpireAssignmentPayloadFormat::from_tag(columns.payload_format)?;
+        if column_format != expected_format {
+            return Err(format!(
+                "ec_spire leaf V2 payload format {:?} does not match prepared scorer {:?}",
+                column_format, expected_format
+            ));
+        }
+        if columns.gammas.len() != columns.row_count() {
+            return Err(format!(
+                "ec_spire leaf V2 gamma count {} does not match row count {}",
+                columns.gammas.len(),
+                columns.row_count()
+            ));
+        }
+        let expected_payload_bytes = columns
+            .payload_stride
+            .checked_mul(columns.row_count())
+            .ok_or_else(|| "ec_spire leaf V2 payload byte count overflow".to_owned())?;
+        if columns.payloads.len() != expected_payload_bytes {
+            return Err(format!(
+                "ec_spire leaf V2 payload byte count {} does not match expected {expected_payload_bytes}",
+                columns.payloads.len()
+            ));
+        }
+
+        for (row_offset, (payload, gamma)) in columns
+            .payloads
+            .chunks_exact(columns.payload_stride)
+            .zip(columns.gammas.iter())
+            .enumerate()
+        {
+            if row_offset >= columns.row_count() {
+                return Err("ec_spire leaf V2 column payload row count exceeds flags".to_owned());
+            }
+            batch.push(
+                batch.len(),
+                CandidatePayload::new(payload, CandidateMeta::Gamma(*gamma)),
+            )?;
+            pending.push(SpirePendingColumnCandidate {
+                columns,
+                row_offset,
+            });
+        }
+        if pending.len() > total_rows {
+            return Err("ec_spire leaf V2 pending candidate count exceeds expected rows".to_owned());
+        }
+    }
+    if pending.len() != total_rows {
+        return Err(format!(
+            "ec_spire leaf V2 pending candidate count {} does not match expected rows {total_rows}",
+            pending.len()
+        ));
+    }
+
+    let mut scores = vec![0.0; total_rows];
+    let score_started = observer.wants_candidate_timing().then(Instant::now);
+    scorer.score_candidate_batch_ip(&batch, &mut scores)?;
+    if let Some(started) = score_started {
+        observer.leaf_row_score_time(epoch, placement, elapsed_nanos_since(started));
+    }
+
+    for (pending, ip) in pending.into_iter().zip(scores.into_iter()) {
+        let columns = pending.columns;
+        let row_offset = pending.row_offset;
+        append_quantized_v2_scored_column_candidate(
             snapshot,
             columns,
-            snapshot.epoch_manifest().epoch,
-            route.leaf_pid,
-            route.object_version,
-            scorer,
+            row_offset,
+            ip,
+            epoch,
+            pid,
+            object_version,
             deleted_vec_ids,
             accumulator,
-            &route.placement,
-            selected_row_ranges,
+            placement,
             observer,
         )?;
     }
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn append_quantized_v2_scored_column_candidate(
+    snapshot: &SpireValidatedEpochSnapshot<'_>,
+    columns: SpireLeafObjectColumns<'_>,
+    row_offset: usize,
+    ip: f32,
+    epoch: u64,
+    pid: u64,
+    object_version: u64,
+    deleted_vec_ids: &HashSet<SpireVecId>,
+    accumulator: &mut SpireScoredCandidateAccumulator,
+    placement: &SpirePlacementEntry,
+    observer: &mut impl SpireRoutedScanObserver,
+) -> Result<(), String> {
+    if !is_visible_scored_assignment_flags(columns.flags[row_offset]) {
+        return Ok(());
+    }
+    if !ip.is_finite() {
+        return Err("ec_spire routed candidate batch scorer returned a non-finite score".to_owned());
+    }
+
+    let materialize_started = observer.wants_candidate_timing().then(Instant::now);
+    let row = columns.row(row_offset)?;
+    let vec_id = row.vec_id()?;
+    if let Some(started) = materialize_started {
+        observer.candidate_materialize_time(epoch, placement, elapsed_nanos_since(started));
+    }
+    if deleted_vec_ids.contains(&vec_id) {
+        return Ok(());
+    }
+    observer.visible_leaf_candidate(epoch, placement, row.flags);
+    let candidate = SpireScoredScanCandidate {
+        epoch,
+        pid,
+        object_version,
+        row_index: row.row_index,
+        assignment_flags: row.flags,
+        vec_id,
+        heap_tid: row.heap_tid,
+        score: -ip,
+    };
+    let append_started = observer.wants_candidate_timing().then(Instant::now);
+    let outcome = accumulator.append(candidate);
+    if let Some(started) = append_started {
+        observer.candidate_heap_append_time(epoch, placement, elapsed_nanos_since(started));
+    }
+    observe_candidate_append_outcome(snapshot, observer, outcome)?;
     Ok(())
 }
 

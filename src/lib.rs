@@ -1158,6 +1158,41 @@ fn ec_diskann_index_graph_summary(
     TableIterator::new(rows)
 }
 
+#[pg_extern(volatile)]
+fn ec_task87_candidate_batch_scoring_reset() {
+    am::common::candidate_batch::reset_candidate_batch_scoring_counters();
+}
+
+#[pg_extern(stable)]
+#[allow(clippy::type_complexity)]
+fn ec_task87_candidate_batch_scoring_snapshot() -> TableIterator<
+    'static,
+    (
+        name!(surface, String),
+        name!(flushes, i64),
+        name!(candidates, i64),
+        name!(elapsed_nanos, i64),
+        name!(elapsed_ms, f64),
+        name!(lut32_flushes, i64),
+        name!(lut32_candidates, i64),
+    ),
+> {
+    let rows = am::common::candidate_batch::candidate_batch_scoring_snapshots()
+        .into_iter()
+        .map(|snapshot| {
+            (
+                snapshot.surface.to_owned(),
+                i64::try_from(snapshot.flushes).unwrap_or(i64::MAX),
+                i64::try_from(snapshot.candidates).unwrap_or(i64::MAX),
+                i64::try_from(snapshot.elapsed_nanos).unwrap_or(i64::MAX),
+                snapshot.elapsed_nanos as f64 / 1_000_000.0,
+                i64::try_from(snapshot.lut32_flushes).unwrap_or(i64::MAX),
+                i64::try_from(snapshot.lut32_candidates).unwrap_or(i64::MAX),
+            )
+        });
+    TableIterator::new(rows)
+}
+
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
 fn ec_diskann_index_cost_snapshot(

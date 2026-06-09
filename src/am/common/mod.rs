@@ -1,4 +1,5 @@
 pub(crate) mod callback;
+pub(crate) mod candidate_batch;
 pub(crate) mod cost;
 pub(crate) mod datum;
 pub(crate) mod detoast;
@@ -10,6 +11,7 @@ pub(crate) mod parallel;
 pub(crate) mod parallel_context;
 pub(crate) mod parallel_slot;
 pub(crate) mod pg_ptr;
+pub(crate) mod quant_codec;
 pub(crate) mod reloptions;
 pub(crate) mod routine;
 pub(crate) mod scan_output;

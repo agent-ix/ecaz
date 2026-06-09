@@ -88,6 +88,9 @@ pub struct LatencyArgs {
     /// Extra session GUCs to set on every worker connection, as name=value.
     #[arg(long = "session-guc")]
     pub session_gucs: Vec<String>,
+    /// Reset and snapshot Task 87 CandidateBatch scoring counters on each worker connection.
+    #[arg(long)]
+    pub task87_candidate_batch_counters: bool,
     /// Milliseconds between backend RSS/HWM samples when --sample-backend-memory is set.
     #[arg(long, default_value_t = 25)]
     pub memory_sample_interval_ms: u64,
@@ -139,7 +142,7 @@ pub async fn run(conn: &ConnectionOptions, args: LatencyArgs) -> Result<()> {
     };
     super::validate_adaptive_nprobe_options(profile, adaptive_nprobe_options)?;
     super::validate_ivf_scratch_soa_batch_decode(profile, args.ivf_scratch_soa_batch_decode)?;
-    let session_gucs = parse_session_gucs(&args.session_gucs)?;
+    let session_gucs = super::parse_session_gucs(&args.session_gucs)?;
 
     let corpus_table = format!("{}_corpus", args.prefix);
     let queries_table = format!("{}_queries", args.prefix);
@@ -188,13 +191,15 @@ pub async fn run(conn: &ConnectionOptions, args: LatencyArgs) -> Result<()> {
     table.set_header(header);
 
     let rerank_width_guc = rerank_width_guc(profile);
+    let mut task87_counter_lines = Vec::new();
     for value in &sweep_values {
+        let sweep_label = super::sweep_value_label(profile, *value);
         let sweep = run_sweep_point(
             conn,
             profile,
             guc,
             rerank_width_guc,
-            super::sweep_value_label(profile, *value),
+            sweep_label.clone(),
             *value,
             &sql,
             Arc::clone(&queries),
@@ -211,8 +216,16 @@ pub async fn run(conn: &ConnectionOptions, args: LatencyArgs) -> Result<()> {
             args.k,
             args.sample_backend_memory,
             args.memory_sample_interval_ms,
+            args.task87_candidate_batch_counters,
         )
         .await?;
+        if args.task87_candidate_batch_counters {
+            task87_counter_lines.push(super::format_task87_candidate_batch_counter_lines(
+                "latency",
+                &sweep_label,
+                &sweep.task87_candidate_batch_counters,
+            ));
+        }
         let stats = summarize(&sweep.durations);
         let mut row = vec![
             Cell::new(value),
@@ -235,7 +248,11 @@ pub async fn run(conn: &ConnectionOptions, args: LatencyArgs) -> Result<()> {
         }
         table.add_row(row);
     }
-    let output = table.to_string();
+    let mut output = table.to_string();
+    if !task87_counter_lines.is_empty() {
+        output.push('\n');
+        output.push_str(&task87_counter_lines.join("\n"));
+    }
     println!("{output}");
     if let Some(path) = args.log_output {
         if let Some(parent) = path.parent() {
@@ -273,6 +290,7 @@ async fn run_sweep_point(
     k: usize,
     sample_backend_memory: bool,
     memory_sample_interval_ms: u64,
+    task87_candidate_batch_counters: bool,
 ) -> Result<LatencySweepResult> {
     let bar = ProgressBar::new(iterations as u64);
     bar.set_style(
@@ -323,6 +341,7 @@ async fn run_sweep_point(
                 k,
                 sample_backend_memory,
                 memory_sample_interval_ms,
+                task87_candidate_batch_counters,
                 bar,
             )
             .await
@@ -331,15 +350,20 @@ async fn run_sweep_point(
 
     let mut merged: Vec<Duration> = Vec::with_capacity(iterations);
     let mut memory = MemorySample::default();
+    let mut task87_counter_sets = Vec::new();
     for h in handles {
         let result = h.await.map_err(|e| eyre!("worker panicked: {e}"))??;
         merged.extend(result.durations);
         memory.merge(result.memory);
+        task87_counter_sets.push(result.task87_candidate_batch_counters);
     }
     bar.finish_and_clear();
     Ok(LatencySweepResult {
         durations: merged,
         memory,
+        task87_candidate_batch_counters: super::merge_task87_candidate_batch_counters(
+            task87_counter_sets,
+        ),
     })
 }
 
@@ -365,6 +389,7 @@ async fn worker(
     k: usize,
     sample_backend_memory: bool,
     memory_sample_interval_ms: u64,
+    task87_candidate_batch_counters: bool,
     bar: Arc<ProgressBar>,
 ) -> Result<LatencyWorkerResult> {
     // Each worker needs its own connection so the session-local GUC sticks.
@@ -380,17 +405,15 @@ async fn worker(
                 .await?;
         }
     }
-    for (name, value) in &session_gucs {
-        client
-            .batch_execute(&format!("SET {name} = {value}"))
-            .await
-            .wrap_err_with(|| format!("SET {name} = {value}"))?;
-    }
+    super::apply_session_gucs(&client, &session_gucs).await?;
     super::apply_adaptive_nprobe_options(&client, profile, adaptive_nprobe_options).await?;
     super::apply_ivf_scratch_soa_batch_decode(&client, profile, ivf_scratch_soa_batch_decode)
         .await?;
     if force_index {
         client.batch_execute("SET enable_seqscan = off").await?;
+    }
+    if task87_candidate_batch_counters {
+        super::reset_task87_candidate_batch_counters(&client).await?;
     }
     let memory = Arc::new(Mutex::new(MemorySample::default()));
     let stop_memory_monitor = Arc::new(AtomicBool::new(false));
@@ -439,36 +462,17 @@ async fn worker(
             .map_err(|e| eyre!("latency memory monitor task failed: {e}"))??;
     }
     query_result?;
-    let memory = *memory.lock().await;
-    Ok(LatencyWorkerResult { durations, memory })
-}
-
-fn parse_session_gucs(raw: &[String]) -> Result<Vec<(String, String)>> {
-    raw.iter()
-        .map(|entry| {
-            let (name, value) = entry
-                .split_once('=')
-                .ok_or_else(|| eyre!("--session-guc must use name=value syntax, got {entry:?}"))?;
-            validate_guc_name(name)
-                .wrap_err_with(|| format!("invalid --session-guc name {name:?}"))?;
-            if value.trim().is_empty() {
-                return Err(eyre!("--session-guc value must not be empty for {name:?}"));
-            }
-            Ok((name.to_owned(), value.to_owned()))
-        })
-        .collect()
-}
-
-fn validate_guc_name(name: &str) -> Result<()> {
-    let mut parts = name.split('.');
-    let Some(first) = parts.next() else {
-        return Err(eyre!("GUC name must not be empty"));
+    let task87_candidate_batch_counters = if task87_candidate_batch_counters {
+        super::snapshot_task87_candidate_batch_counters(&client).await?
+    } else {
+        Vec::new()
     };
-    profiles::validate_ident(first)?;
-    for part in parts {
-        profiles::validate_ident(part)?;
-    }
-    Ok(())
+    let memory = *memory.lock().await;
+    Ok(LatencyWorkerResult {
+        durations,
+        memory,
+        task87_candidate_batch_counters,
+    })
 }
 
 fn validate_rerank_width_arg(
@@ -561,12 +565,14 @@ pub fn summarize(durations: &[Duration]) -> LatencyStats {
 struct LatencySweepResult {
     durations: Vec<Duration>,
     memory: MemorySample,
+    task87_candidate_batch_counters: Vec<super::Task87CandidateBatchCounterSnapshot>,
 }
 
 #[derive(Debug, Default)]
 struct LatencyWorkerResult {
     durations: Vec<Duration>,
     memory: MemorySample,
+    task87_candidate_batch_counters: Vec<super::Task87CandidateBatchCounterSnapshot>,
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -810,8 +816,9 @@ mod tests {
 
     #[test]
     fn parse_session_gucs_accepts_qualified_names() {
-        let parsed = parse_session_gucs(&["ec_diskann.scan_profile_notice=on".to_owned()])
-            .expect("valid guc");
+        let parsed =
+            super::super::parse_session_gucs(&["ec_diskann.scan_profile_notice=on".to_owned()])
+                .expect("valid guc");
         assert_eq!(
             parsed,
             vec![("ec_diskann.scan_profile_notice".to_owned(), "on".to_owned())]
@@ -820,8 +827,16 @@ mod tests {
 
     #[test]
     fn parse_session_gucs_rejects_malformed_entries() {
-        assert!(parse_session_gucs(&["ec_diskann.scan_profile_notice".to_owned()]).is_err());
-        assert!(parse_session_gucs(&["ec_diskann.scan_profile_notice=".to_owned()]).is_err());
-        assert!(parse_session_gucs(&["ec_diskann.scan-profile=on".to_owned()]).is_err());
+        assert!(
+            super::super::parse_session_gucs(&["ec_diskann.scan_profile_notice".to_owned()])
+                .is_err()
+        );
+        assert!(
+            super::super::parse_session_gucs(&["ec_diskann.scan_profile_notice=".to_owned()])
+                .is_err()
+        );
+        assert!(
+            super::super::parse_session_gucs(&["ec_diskann.scan-profile=on".to_owned()]).is_err()
+        );
     }
 }

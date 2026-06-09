@@ -161,6 +161,12 @@ pub struct SpirePipelineArgs {
     /// latency. `id` is always selected first for recall accounting.
     #[arg(long, value_delimiter = ',')]
     pub query_metric_projection_columns: Vec<String>,
+    /// Extra session GUCs to set while collecting SPIRE pipeline counters, as name=value.
+    #[arg(long = "session-guc")]
+    pub session_gucs: Vec<String>,
+    /// Reset and snapshot Task 87 CandidateBatch scoring counters for each sweep value.
+    #[arg(long)]
+    pub task87_candidate_batch_counters: bool,
     /// Write the pipeline report to this path in addition to stdout.
     #[arg(long)]
     pub log_output: Option<PathBuf>,
@@ -223,6 +229,7 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
         rerank_multiplier: args.cost_rerank_multiplier,
     };
     super::validate_adaptive_nprobe_options(&EC_SPIRE, adaptive_nprobe_options)?;
+    let session_gucs = super::parse_session_gucs(&args.session_gucs)?;
     let query_metrics_enabled = args.include_query_metrics || args.include_recall;
 
     let client = psql::connect(conn).await?;
@@ -324,6 +331,7 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
     let mut target_block_rank_rows = Vec::<LeafBlockRankRecord>::new();
     let mut miss_attribution_rows = Vec::<MissAttributionRecord>::new();
     let mut remote_epoch = args.remote_requested_epoch;
+    let mut task87_counter_lines = Vec::new();
 
     for nprobe in &sweep_values {
         apply_session_options(
@@ -335,8 +343,12 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
             args.remote_tuple_transport,
             adaptive_nprobe_options,
             cost_tuning_options,
+            &session_gucs,
         )
         .await?;
+        if args.task87_candidate_batch_counters {
+            super::reset_task87_candidate_batch_counters(&client).await?;
+        }
 
         if args.include_cost_snapshot {
             cost_tuning.insert(*nprobe, query_cost_tuning_row(&client, &index).await?);
@@ -696,6 +708,14 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
             bar.inc(1);
         }
         bar.finish_and_clear();
+        if args.task87_candidate_batch_counters {
+            let snapshots = super::snapshot_task87_candidate_batch_counters(&client).await?;
+            task87_counter_lines.push(super::format_task87_candidate_batch_counter_lines(
+                "spire-pipeline",
+                &format!("nprobe={nprobe}"),
+                &snapshots,
+            ));
+        }
     }
     if let Some(truth_ids) = query_truth.as_ref() {
         for aggregate in query_metrics.values_mut() {
@@ -703,7 +723,7 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
         }
     }
 
-    let output = render_report(ReportInput {
+    let mut output = render_report(ReportInput {
         prefix: &args.prefix,
         index: &index,
         queries: queries.len(),
@@ -734,6 +754,10 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
         query_metrics: &query_metrics,
         production_read_profile: &production_read_profile,
     });
+    if !task87_counter_lines.is_empty() {
+        output.push('\n');
+        output.push_str(&task87_counter_lines.join("\n"));
+    }
     println!("{output}");
     if let Some(path) = args.log_output {
         if let Some(parent) = path.parent() {
@@ -1077,7 +1101,9 @@ async fn apply_session_options(
     remote_tuple_transport: Option<SpireRemoteTupleTransportMode>,
     adaptive_nprobe_options: super::AdaptiveNprobeBenchOptions,
     cost_tuning_options: SpireCostTuningOptions,
+    session_gucs: &[(String, String)],
 ) -> Result<()> {
+    super::apply_session_gucs(client, session_gucs).await?;
     client
         .batch_execute(&format!("SET ec_spire.nprobe = {nprobe}"))
         .await
@@ -3469,6 +3495,8 @@ mod tests {
             production_read_only: false,
             query_metric_k: 10,
             query_metric_projection_columns: vec![],
+            session_gucs: vec![],
+            task87_candidate_batch_counters: false,
             adaptive_nprobe: false,
             adaptive_nprobe_score_gap_micros: None,
             include_remote: false,
