@@ -137,9 +137,11 @@ pub mod am {
         pub(crate) mod quantizer {
             use crate::am::ec_diskann::page::{
                 VamanaMetadataPage, VAMANA_SEARCH_CODEC_GROUPED_PQ, VAMANA_SEARCH_CODEC_RABITQ,
+                VAMANA_SEARCH_CODEC_TURBOQUANT,
             };
 
             pub(crate) const DISKANN_RABITQ_BITS: u8 = 1;
+            const DISKANN_TURBOQUANT_BITS: u8 = 4;
             const RABITQ_SCALAR_LEN: usize = 12;
 
             pub(crate) fn metadata_search_code_len(
@@ -153,6 +155,9 @@ pub mod am {
                         * usize::from(metadata.search_subvector_dim))
                     .div_ceil(8)
                         + RABITQ_SCALAR_LEN),
+                    VAMANA_SEARCH_CODEC_TURBOQUANT => Ok((usize::from(metadata.dimensions)
+                        * usize::from(DISKANN_TURBOQUANT_BITS))
+                    .div_ceil(8)),
                     other => Err(format!("ec_diskann unsupported search codec kind {other}")),
                 }
             }
