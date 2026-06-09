@@ -33,8 +33,8 @@ instantiate kernels against it without writing their own plumbing.
 | Recall policy | strict `to_bits()` equality on scalar reference; ULP tolerance ≤ 4 ULP or 1e-6 relative on SIMD variants; recall@k preservation at bench level is the binding gate |
 | Width-based gating | `batch.len() >= 32` routes to block kernel; smaller batches use scalar tail path |
 
-ADR-076 starts as proposed in this task and captures these as a
-normative architectural decision once accepted.
+ADR-076 was accepted in this task and captures these as a normative
+architectural decision.
 
 ## Scope
 
@@ -249,7 +249,7 @@ backfill, which must remain bit-equal vs the pre-backfill code
 - Task 91 (`QuantCodec` trait migration)
 - `spec/adr/ADR-071-unified-quantizer-interface.md`
 - `spec/adr/ADR-072-index-local-quantized-codec-adapters.md`
-- ADR-076 (universal block kernel pattern — proposed, authored by this task)
+- ADR-076 (universal block kernel pattern — accepted, authored by this task)
 - Task 86 packet 002 (TurboVec block-kernel transferability matrix)
 - pgvectorscale: `access_method/scan.rs` resort_buffer pattern
 
