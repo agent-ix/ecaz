@@ -403,7 +403,7 @@ pub(crate) fn score_turboquant_no_qjl_4bit_batch_for<Id>(
         let key = BlockKernelCounterKey {
             surface,
             quant_kind: QuantCodecKind::TurboQuant,
-            isa: Isa::Scalar,
+            isa: timing.kernel_isa.unwrap_or(Isa::Scalar),
         };
         record_block_kernel_score(key, timing.kernel_candidates, timing.kernel_elapsed_nanos);
         record_block_scalar_score(
@@ -418,6 +418,7 @@ pub(crate) fn score_turboquant_no_qjl_4bit_batch_for<Id>(
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 struct BatchScoringTiming {
+    kernel_isa: Option<Isa>,
     kernel_candidates: usize,
     kernel_elapsed_nanos: u64,
     scalar_candidates: usize,
@@ -480,12 +481,13 @@ fn score_turboquant_no_qjl_4bit_batch_lut32<Id>(
             )?;
             mse_codes[lane] = mse_code;
         }
-        crate::quant::lut32::score_lut_no_qjl_4bit_block32(
+        let isa = crate::quant::lut32::score_lut_no_qjl_4bit_block32(
             &prepared.lut,
             quantizer.original_dim,
             mse_codes,
             &mut out_scores[block_start..block_start + crate::quant::lut32::BLOCK_WIDTH],
         );
+        timing.kernel_isa = Some(isa);
         timing.kernel_candidates += crate::quant::lut32::BLOCK_WIDTH;
         timing.kernel_elapsed_nanos = timing
             .kernel_elapsed_nanos

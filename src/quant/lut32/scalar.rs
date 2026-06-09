@@ -1,11 +1,12 @@
 use super::BLOCK_WIDTH;
+use crate::quant::isa::Isa;
 
 pub(super) fn score_block32_scalar(
     lut: &[f32],
     original_dim: usize,
     codes: &[&[u8]; BLOCK_WIDTH],
     out_scores: &mut [f32],
-) {
+) -> Isa {
     debug_assert_eq!(out_scores.len(), BLOCK_WIDTH);
 
     let mut sums = [0.0_f32; BLOCK_WIDTH];
@@ -25,6 +26,7 @@ pub(super) fn score_block32_scalar(
         }
     }
     out_scores.copy_from_slice(&sums);
+    Isa::Scalar
 }
 
 pub(super) fn score_scalar_tail(lut: &[f32], original_dim: usize, code: &[u8]) -> f32 {

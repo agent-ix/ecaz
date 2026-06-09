@@ -1,4 +1,10 @@
 //! 32-candidate blocked LUT scoring for TurboQuant no-QJL 4-bit codes.
+//!
+//! Block scorers return the ISA actually implemented by the selected backend.
+//! Counter call sites must use that returned value for kernel rows; scalar
+//! tails are still reported separately under `Isa::Scalar`. Fallback backend
+//! stubs that delegate to the scalar implementation return `Isa::Scalar` until
+//! replaced by real ISA kernels.
 
 mod avx2;
 mod neon;
@@ -58,7 +64,7 @@ pub(crate) fn score_lut_no_qjl_4bit_batch(
 
     let mut block_start = 0usize;
     while block_start + BLOCK_WIDTH <= mse_codes.len() {
-        score_lut_no_qjl_4bit_block32(
+        let _ = score_lut_no_qjl_4bit_block32(
             lut,
             original_dim,
             mse_codes[block_start..block_start + BLOCK_WIDTH]
@@ -84,8 +90,9 @@ pub(crate) fn score_lut_no_qjl_4bit_block32(
     original_dim: usize,
     codes: [&[u8]; BLOCK_WIDTH],
     out_scores: &mut [f32],
-) {
-    match crate::quant::isa::current_isa() {
+) -> crate::quant::isa::Isa {
+    let isa = crate::quant::isa::current_isa();
+    match isa {
         crate::quant::isa::Isa::Avx2 => {
             avx2::score_block32_avx2(lut, original_dim, &codes, out_scores)
         }
@@ -176,7 +183,7 @@ mod tests {
         let code_refs: Vec<&[u8]> = codes.iter().map(Vec::as_slice).collect();
         let mut scores = vec![0.0; BLOCK_WIDTH];
 
-        score_lut_no_qjl_4bit_block32(
+        let isa = score_lut_no_qjl_4bit_block32(
             &lut,
             dim,
             code_refs
@@ -192,6 +199,7 @@ mod tests {
                 score_lut_no_qjl_4bit_scalar(&lut, dim, code).to_bits()
             );
         }
+        assert_eq!(isa, crate::quant::isa::Isa::Scalar);
     }
 
     #[test]
