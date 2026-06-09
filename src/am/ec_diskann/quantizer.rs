@@ -30,7 +30,7 @@ pub(super) struct DiskannEncodedPayload {
     pub(super) search_code: Vec<u8>,
 }
 
-pub(super) enum DiskannBuildCodec {
+pub(super) enum DiskannBuildBinding {
     PqFastScan {
         model: GroupedPq4Model,
         binary_quantizer: Option<Arc<ProdQuantizer>>,
@@ -40,7 +40,7 @@ pub(super) enum DiskannBuildCodec {
     },
 }
 
-impl DiskannBuildCodec {
+impl DiskannBuildBinding {
     pub(super) fn prepare(
         storage_format: StorageFormat,
         source_refs: &[&[f32]],

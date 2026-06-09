@@ -46,7 +46,7 @@ use super::build::{
 use super::options::{self, TqDiskannOptions};
 use super::page::VamanaMetadataPage;
 use super::persist::{stage_grouped_codebook_chain, NodePayload};
-use super::quantizer::DiskannBuildCodec;
+use super::quantizer::DiskannBuildBinding;
 use super::{
     warn_on_non_unit_source_vector_sample, ECDISKANN_UNIT_NORM_BUILD_SAMPLE_CAP,
     ECDISKANN_UNIT_NORM_DISTANCE_BIAS,
@@ -437,7 +437,7 @@ unsafe fn flush_build_state(
     timing.source_ref_ms = elapsed_ms(source_ref_started.elapsed());
 
     let codec_started = Instant::now();
-    let codec = DiskannBuildCodec::prepare(
+    let codec = DiskannBuildBinding::prepare(
         state.options.storage_format,
         &source_refs,
         dimensions as usize,
