@@ -10,6 +10,11 @@ standalone prerequisite. DiskANN's missing TurboQuant codec is Task 91
 Phase 6 work, after the shared `QuantCodec` migration and per-AM parity
 gates have landed. Keep this file as historical source-audit context.
 
+2026-06-09 closeout: Task 91 Phase 6 landed and was reviewed in
+`reviews/task-91/012-diskann-turboquant-search-codec/`, with aggregate
+closeout in `reviews/task-91/021-quantcodec-closeout/`. This task is
+closed by reference to Task 91.
+
 ## Why
 
 The original version of this follow-up assumed Task 87 scoped
@@ -38,8 +43,8 @@ Historical goal: decide and, if feasible, land an
 on-disk-format-neutral DiskANN TurboQuant no-QJL 4-bit search-code
 surface.
 
-Current coordination: Task 91 should close this by reference once Phase
-6 lands DiskANN TurboQuant search-codec support. Task 87 should not use
+Current coordination: Task 91 closed this by reference after Phase 6
+landed DiskANN TurboQuant search-codec support. Task 87 should not use
 this file as evidence that DiskANN can be skipped entirely; Task 87's
 accepted DiskANN Stop Condition remains the proper handoff.
 
@@ -81,7 +86,7 @@ If code lands:
    metadata discriminator is explicit and versioned.
 5. No new `unsafe` outside existing AM/quantizer boundaries.
 
-Task 90 closes by reference when Task 91 Phase 6 lands and is reviewed.
+Task 90 is closed by reference to Task 91 Phase 6.
 
 ## Coordination
 

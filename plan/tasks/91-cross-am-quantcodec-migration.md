@@ -1,6 +1,6 @@
 # Task 91: Cross-AM `QuantCodec` Trait Migration
 
-Status: proposed (2026-06-08)
+Status: complete (2026-06-09, closeout `reviews/task-91/021-quantcodec-closeout/`)
 Owner: coder (to be assigned). One coder, one branch.
 Priority: 2 (kernel/architecture unification follow-up to Task 87)
 
