@@ -2,6 +2,7 @@
 quant/codebook.rs	98.15	Task 39 baseline raised by reviews/task-39/004-quant-careful-coverage
 quant/grouped_pq.rs	94.72	Task 39 baseline raised by reviews/task-39/004-quant-careful-coverage
 quant/hadamard.rs	92.70	Task 39 baseline raised by reviews/task-39/004-quant-careful-coverage
+quant/lut32.rs	0.00	Task 87 LUT32 kernel baseline added by reviews/task-87/016-phase7-lut32-kernel-slice
 quant/mod.rs	100.00	Task 39 baseline raised by reviews/task-39/020-quant-family-coverage
 quant/mse.rs	100.00	Task 39 baseline raised by reviews/task-39/004-quant-careful-coverage
 quant/prod.rs	93.02	Task 39 baseline raised by reviews/task-39/004-quant-careful-coverage
