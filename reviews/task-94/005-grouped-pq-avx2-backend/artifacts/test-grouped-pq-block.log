@@ -1,0 +1,20 @@
+command: cargo test grouped_pq_block --lib
+timestamp: 2026-06-09T17:18:56Z
+head: 1ebe3652b6222364cfed76eb2591dae19e60b859
+
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 59.26s
+     Running unittests src/lib.rs (target/debug/deps/ecaz-c2925dc8ee61e76b)
+
+running 8 tests
+test quant::grouped_pq_block::tests::grouped_pq_batch_rejects_shape_mismatch ... ok
+test quant::grouped_pq_block::tests::grouped_pq_avx2_backend_matches_scalar_reference_bits_when_available ... ok
+test quant::grouped_pq_block::tests::grouped_pq_batch_with_block_and_tail_matches_scalar_reference_bits ... ok
+test quant::grouped_pq_block::tests::grouped_pq_neon_backend_matches_scalar_reference_bits_when_available ... ok
+test quant::grouped_pq_block::tests::grouped_pq_batch_under_block_width_matches_scalar_reference_bits ... ok
+test quant::grouped_pq_block::tests::grouped_pq_scalar_tail_matches_scalar_reference_bits ... ok
+test quant::grouped_pq_block::tests::grouped_pq_block32_matches_scalar_reference_bits_across_shapes ... ok
+test quant::grouped_pq_block::tests::grouped_pq_sve_backend_matches_scalar_reference_bits_when_available ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 2039 filtered out; finished in 0.00s
+

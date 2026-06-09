@@ -9,8 +9,8 @@ use pgrx::{pg_sys, FromDatum, PgBox};
 use crate::am::common::{
     callback::pg_am_callback,
     candidate_batch::{
-        score_turboquant_no_qjl_4bit_batch_for, CandidateBatch, CandidateBatchScoringSurface,
-        CandidateMeta, CandidatePayload,
+        score_grouped_pq_batch_for, score_turboquant_no_qjl_4bit_batch_for, CandidateBatch,
+        CandidateBatchScoringSurface, CandidateMeta, CandidatePayload,
     },
     heap_slot::HeapSlotReader,
     quant_codec::{EncodedQuantPayload, QuantCodec, QuantCodecKind, QuantSearchCodecTag},
@@ -3011,6 +3011,27 @@ impl QuantCodec for HnswGroupedPqScanCodec {
             prepared_query.group_count,
             payload.code,
         ))
+    }
+
+    fn score_ip_batch<Id>(
+        &self,
+        prepared_query: &Self::PreparedQuery,
+        batch: &CandidateBatch<'_, Id>,
+        out_scores: &mut [f32],
+    ) -> Result<(), String> {
+        if prepared_query.group_count != self.group_count
+            || prepared_query.group_size != self.group_size
+            || prepared_query.search_code_len != self.search_code_len
+        {
+            return Err("ec_hnsw grouped-PQ prepared query shape does not match codec".to_owned());
+        }
+        score_grouped_pq_batch_for(
+            CandidateBatchScoringSurface::Hnsw,
+            &prepared_query.lut_f32,
+            self.group_count,
+            batch,
+            out_scores,
+        )
     }
 }
 
@@ -7908,6 +7929,90 @@ mod tests {
             score_grouped_search_code_result(&prepared, search_code),
             -expected
         );
+    }
+
+    #[test]
+    fn hnsw_grouped_pq_scan_codec_batch_uses_block_kernel_counters() {
+        let _guard = crate::am::common::candidate_batch::CANDIDATE_BATCH_COUNTER_TEST_LOCK
+            .lock()
+            .unwrap();
+        crate::am::common::candidate_batch::reset_candidate_batch_scoring_counters();
+        let group_count = 16;
+        let prepared = PreparedGroupedScanQuery {
+            group_count,
+            group_size: 2,
+            search_code_len: group_count.div_ceil(2),
+            lut_f32: (0..group_count * crate::quant::grouped_pq::GROUPED_PQ_CENTROIDS)
+                .map(|index| ((index as i32 % 31) - 15) as f32 * 0.03125)
+                .collect(),
+        };
+        let codec = HnswGroupedPqScanCodec::new(
+            prepared.group_count,
+            prepared.group_size,
+            prepared.search_code_len,
+        );
+        let codes = (0..39)
+            .map(|seed| {
+                let indices = (0..group_count)
+                    .map(|group| {
+                        (seed as u8)
+                            .wrapping_add((group as u8).wrapping_mul(5))
+                            .wrapping_add((group as u8) >> 2)
+                            & 0x0F
+                    })
+                    .collect::<Vec<_>>();
+                crate::quant::grouped_pq::pack_grouped_pq_nibbles(&indices)
+            })
+            .collect::<Vec<_>>();
+        let mut batch = CandidateBatch::with_capacity(codes.len());
+        for (index, code) in codes.iter().enumerate() {
+            batch
+                .push(
+                    index,
+                    CandidatePayload::new(code, CandidateMeta::GroupedPq { group_count }),
+                )
+                .unwrap();
+        }
+        let mut scores = vec![0.0_f32; batch.len()];
+
+        QuantCodec::score_ip_batch(&codec, &prepared, &batch, &mut scores).unwrap();
+
+        for (code, score) in codes.iter().zip(scores.iter()) {
+            let expected = crate::quant::grouped_pq::grouped_pq_score_f32(
+                &prepared.lut_f32,
+                group_count,
+                code,
+            );
+            assert_eq!(score.to_bits(), expected.to_bits());
+        }
+        let snapshots = crate::am::common::candidate_batch::block_kernel_scoring_snapshots();
+        let grouped = snapshots
+            .iter()
+            .filter(|snapshot| snapshot.surface == "hnsw" && snapshot.quant_kind == "grouped_pq")
+            .collect::<Vec<_>>();
+        assert!(!grouped.is_empty());
+        assert_eq!(
+            grouped
+                .iter()
+                .map(|snapshot| snapshot.kernel_candidates)
+                .sum::<u64>(),
+            32
+        );
+        assert_eq!(
+            grouped
+                .iter()
+                .map(|snapshot| snapshot.scalar_candidates)
+                .sum::<u64>(),
+            7
+        );
+        assert_eq!(
+            grouped
+                .iter()
+                .map(|snapshot| snapshot.candidates)
+                .sum::<u64>(),
+            39
+        );
+        crate::am::common::candidate_batch::reset_candidate_batch_scoring_counters();
     }
 
     #[test]

@@ -1,0 +1,14 @@
+Script started on 2026-06-09 10:55:50-07:00 [<not executed on terminal>]
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.25s
+     Running unittests src/lib.rs (target/debug/deps/ecaz-c2925dc8ee61e76b)
+
+running 1 test
+test am::ec_diskann::scan::tests::greedy_descent_uses_batch_prefilter_for_neighbor_expansions ... [32mok[m
+
+test result: [32mok[m. 1 passed; 0 failed; 0 ignored; 0 measured; 2051 filtered out; finished in 0.00s
+
+
+Script done on 2026-06-09 10:55:50-07:00 [COMMAND_EXIT_CODE="0"]

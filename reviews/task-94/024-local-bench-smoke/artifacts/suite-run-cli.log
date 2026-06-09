@@ -1,0 +1,15 @@
+[suite:task94-local-ivf-pqfastscan-smoke] wrote reviews/task-94/024-local-bench-smoke/artifacts/suite-manifest.json
+[suite:task94-local-ivf-pqfastscan-smoke] recall-ivf-pqfastscan-batch-off -> --database postgres --host /home/peter/.pgrx --port 28818 bench recall --prefix task94_local_pqfs10k_roff --profile ec_ivf --k 10 --sweep "32,64" --queries-limit 40 --bits 4 --seed 42 --force-index --log-output reviews/task-94/024-local-bench-smoke/artifacts/suite-recall-ivf-pqfastscan-batch-off.log
+[suite:task94-local-ivf-pqfastscan-smoke] wrote reviews/task-94/024-local-bench-smoke/artifacts/suite-manifest.json
+[suite:task94-local-ivf-pqfastscan-smoke] wrote reviews/task-94/024-local-bench-smoke/artifacts/suite-manifest.json
+[suite:task94-local-ivf-pqfastscan-smoke] recall-ivf-pqfastscan-batch-on -> --database postgres --host /home/peter/.pgrx --port 28818 bench recall --prefix task94_local_pqfs10k_roff --profile ec_ivf --k 10 --sweep "32,64" --ivf-scratch-soa-batch-decode --queries-limit 40 --bits 4 --seed 42 --force-index --log-output reviews/task-94/024-local-bench-smoke/artifacts/suite-recall-ivf-pqfastscan-batch-on.log
+[suite:task94-local-ivf-pqfastscan-smoke] wrote reviews/task-94/024-local-bench-smoke/artifacts/suite-manifest.json
+[suite:task94-local-ivf-pqfastscan-smoke] wrote reviews/task-94/024-local-bench-smoke/artifacts/suite-manifest.json
+[suite:task94-local-ivf-pqfastscan-smoke] latency-ivf-pqfastscan-batch-off -> --database postgres --host /home/peter/.pgrx --port 28818 bench latency --prefix task94_local_pqfs10k_roff --profile ec_ivf --k 10 --concurrency 1 --iterations 120 --sweep "32,64" --bits 4 --seed 42 --force-index --cache-state task94_local_batch_off --task87-candidate-batch-counters --memory-sample-interval-ms 25 --log-output reviews/task-94/024-local-bench-smoke/artifacts/suite-latency-ivf-pqfastscan-batch-off.log
+[suite:task94-local-ivf-pqfastscan-smoke] wrote reviews/task-94/024-local-bench-smoke/artifacts/suite-manifest.json
+[suite:task94-local-ivf-pqfastscan-smoke] wrote reviews/task-94/024-local-bench-smoke/artifacts/suite-manifest.json
+[suite:task94-local-ivf-pqfastscan-smoke] latency-ivf-pqfastscan-batch-on -> --database postgres --host /home/peter/.pgrx --port 28818 bench latency --prefix task94_local_pqfs10k_roff --profile ec_ivf --k 10 --concurrency 1 --iterations 120 --sweep "32,64" --ivf-scratch-soa-batch-decode --bits 4 --seed 42 --force-index --cache-state task94_local_batch_on --task87-candidate-batch-counters --memory-sample-interval-ms 25 --log-output reviews/task-94/024-local-bench-smoke/artifacts/suite-latency-ivf-pqfastscan-batch-on.log
+[suite:task94-local-ivf-pqfastscan-smoke] wrote reviews/task-94/024-local-bench-smoke/artifacts/suite-manifest.json
+[suite:task94-local-ivf-pqfastscan-smoke] wrote reviews/task-94/024-local-bench-smoke/artifacts/suite-manifest.json
+[suite:task94-local-ivf-pqfastscan-smoke] wrote reviews/task-94/024-local-bench-smoke/artifacts/results.jsonl
+[suite:task94-local-ivf-pqfastscan-smoke] wrote reviews/task-94/024-local-bench-smoke/artifacts/suite-manifest.json
