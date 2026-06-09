@@ -103,6 +103,7 @@ pub(super) fn runtime_vector_lanes_for_test() -> Option<usize> {
     runtime_vector_lanes()
 }
 
+#[cfg(test)]
 fn runtime_vector_lanes() -> Option<usize> {
     #[cfg(target_arch = "aarch64")]
     {
