@@ -1452,8 +1452,9 @@ fn use_scratch_soa_batch_decode_for_format(
     enabled
         && match storage_format {
             StorageFormat::TurboQuant => quant_bits == 4,
+            StorageFormat::PqFastScan => true,
             StorageFormat::RaBitQ => quant_bits == 1 || quant_bits == 8,
-            StorageFormat::Auto | StorageFormat::PqFastScan => false,
+            StorageFormat::Auto => false,
         }
 }
 
@@ -1498,6 +1499,33 @@ fn process_scratch_soa_postings(
     }
 
     if quantizer.score_ip_bits1_batch_from_payloads(
+        prepared_query,
+        &scratch.payloads,
+        scratch.payload_len,
+        &mut scratch.scores,
+    )? {
+        if scratch.scores.len() != scratch.len() {
+            return Err(format!(
+                "ec_ivf scratch SoA batch scorer produced {} scores for {} postings",
+                scratch.scores.len(),
+                scratch.len()
+            ));
+        }
+        for index in 0..scratch.len() {
+            record_scored_posting_candidates(
+                opaque,
+                best_by_heap_tid,
+                running_top,
+                scratch.heap_tids(index).iter().copied(),
+                scratch.heap_tid_counts[index],
+                -scratch.scores[index],
+            );
+        }
+        scratch.clear();
+        return Ok(());
+    }
+
+    if quantizer.score_grouped_pq_batch_from_payloads(
         prepared_query,
         &scratch.payloads,
         scratch.payload_len,
@@ -2787,6 +2815,11 @@ mod tests {
         assert!(!use_scratch_soa_batch_decode_for_format(
             true,
             IvfStorageFormat::RaBitQ,
+            4
+        ));
+        assert!(use_scratch_soa_batch_decode_for_format(
+            true,
+            IvfStorageFormat::PqFastScan,
             4
         ));
         assert!(!use_scratch_soa_batch_decode_for_format(
