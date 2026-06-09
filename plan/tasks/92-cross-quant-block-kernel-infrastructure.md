@@ -61,12 +61,14 @@ normative architectural decision once accepted.
 4. **Runtime ISA detection helper.** A small `src/quant/isa.rs`
    module that detects available ISA features once at startup,
    caches the result, and exposes `current_isa()` returning an
-   `enum Isa { Scalar, Neon, Sve, Avx2 }` per-kernel. SVE is
-   vector-length agnostic: Graviton 4 measurements may be reported as
-   SVE-256 only when the measured runtime vector length is 256 bits.
-   Each
-   kernel module's `mod.rs` uses this to pick the function
-   pointer at first call.
+   `enum Isa { Scalar, Neon, Sve, Sve2, Avx2 }` per-kernel. The ARM
+   production measurement target is AWS Graviton 4 (Neoverse V2,
+   SVE2). Graviton 4 packets target the `Sve2` dispatch branch when
+   available and report the measured runtime vector length verbatim
+   when making width-specific claims, for example `sve2-128` for the
+   current target host class. Inference from host class alone is not
+   sufficient for width-specific claims. Each kernel module's `mod.rs`
+   uses this to pick the function pointer at first call.
 5. **Per-kernel module layout convention.** Each Phase III quant
    kernel lives under `src/quant/<kernel>/`:
    - `mod.rs`: public entry point (`score_<quant>_batch`), ISA
