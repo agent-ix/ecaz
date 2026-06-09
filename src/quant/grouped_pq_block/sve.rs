@@ -39,6 +39,10 @@ ecaz_grouped_pq_sve_cntw:
 #[cfg(target_arch = "aarch64")]
 extern "C" {
     fn ecaz_grouped_pq_sve_accumulate_f32(out: *mut f32, values: *const f32, count: usize);
+}
+
+#[cfg(all(test, target_arch = "aarch64"))]
+extern "C" {
     fn ecaz_grouped_pq_sve_cntw() -> usize;
 }
 
