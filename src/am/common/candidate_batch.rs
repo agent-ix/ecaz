@@ -3,7 +3,7 @@ use crate::quant::isa::Isa;
 use crate::quant::prod::{PreparedLutNoQjl4BitQuery, ProdQuantizer};
 use std::sync::{
     atomic::{AtomicU64, Ordering},
-    LazyLock,
+    OnceLock,
 };
 use std::time::Instant;
 
@@ -254,11 +254,17 @@ const SURFACE_COUNT: usize = 4;
 const QUANT_COUNT: usize = 4;
 const ISA_COUNT: usize = 5;
 
-static BLOCK_KERNEL_COUNTERS: LazyLock<Vec<BlockKernelCounters>> = LazyLock::new(|| {
-    (0..SURFACE_COUNT * QUANT_COUNT * ISA_COUNT)
-        .map(|_| BlockKernelCounters::new())
-        .collect()
-});
+static BLOCK_KERNEL_COUNTERS: OnceLock<Vec<BlockKernelCounters>> = OnceLock::new();
+
+fn block_kernel_counters_storage() -> &'static [BlockKernelCounters] {
+    BLOCK_KERNEL_COUNTERS
+        .get_or_init(|| {
+            (0..SURFACE_COUNT * QUANT_COUNT * ISA_COUNT)
+                .map(|_| BlockKernelCounters::new())
+                .collect()
+        })
+        .as_slice()
+}
 
 fn block_kernel_counter_index(key: BlockKernelCounterKey) -> usize {
     (key.surface.index() * QUANT_COUNT * ISA_COUNT)
@@ -267,11 +273,11 @@ fn block_kernel_counter_index(key: BlockKernelCounterKey) -> usize {
 }
 
 fn block_kernel_counters(key: BlockKernelCounterKey) -> &'static BlockKernelCounters {
-    &BLOCK_KERNEL_COUNTERS[block_kernel_counter_index(key)]
+    &block_kernel_counters_storage()[block_kernel_counter_index(key)]
 }
 
 pub(crate) fn reset_candidate_batch_scoring_counters() {
-    for counters in BLOCK_KERNEL_COUNTERS.iter() {
+    for counters in block_kernel_counters_storage() {
         counters.reset();
     }
 }

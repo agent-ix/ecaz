@@ -288,7 +288,7 @@ impl DiskannPreparedPrefilter {
 }
 
 fn u64_words_to_le_bytes(words: &[u64]) -> Vec<u8> {
-    let mut bytes = Vec::with_capacity(words.len() * std::mem::size_of::<u64>());
+    let mut bytes = Vec::with_capacity(std::mem::size_of_val(words));
     for word in words {
         bytes.extend_from_slice(&word.to_le_bytes());
     }
