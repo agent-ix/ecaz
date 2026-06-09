@@ -103,6 +103,34 @@
     }
 
     #[test]
+    fn selected_row_quant_codec_helper_matches_prepared_assignment_scorer() {
+        for payload_format in [
+            SpireAssignmentPayloadFormat::TurboQuant,
+            SpireAssignmentPayloadFormat::RaBitQ,
+        ] {
+            let query = [1.0, 0.0];
+            let source = [0.5, 0.5];
+            let scorer =
+                SpirePreparedAssignmentScorer::prepare(payload_format, query.len(), &query)
+                    .unwrap();
+            let (gamma, payload) = encode_assignment_payload(payload_format, &source).unwrap();
+
+            let observed = score_v2_column_candidate_ip_with_quant_codec(
+                &scorer,
+                payload_format,
+                gamma,
+                &payload,
+            )
+            .unwrap();
+            let expected = scorer
+                .score_payload_ip(payload_format, gamma, &payload)
+                .unwrap();
+
+            assert_eq!(observed.to_bits(), expected.to_bits());
+        }
+    }
+
+    #[test]
     fn select_leaf_block_row_ranges_keeps_best_rabitq_blocks() {
         fn rabitq_summary(
             row_base: u32,

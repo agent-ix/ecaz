@@ -2611,7 +2611,7 @@ fn append_quantized_v2_column_candidates(
         || (scorer.payload_format() == SpireAssignmentPayloadFormat::RaBitQ
             && accumulator.is_bounded())
     {
-        return append_quantized_v2_column_candidates_with_rabitq_cutoff(
+        return append_quantized_v2_filtered_column_candidates(
             snapshot,
             columns,
             epoch,
@@ -2678,7 +2678,45 @@ fn append_quantized_v2_column_candidates(
     Ok(())
 }
 
-fn append_quantized_v2_column_candidates_with_rabitq_cutoff(
+fn score_v2_column_candidate_ip_with_quant_codec(
+    scorer: &SpirePreparedAssignmentScorer,
+    column_format: SpireAssignmentPayloadFormat,
+    gamma: f32,
+    encoded_payload: &[u8],
+) -> Result<f32, String> {
+    if column_format != scorer.payload_format() {
+        return Err(format!(
+            "ec_spire leaf V2 payload format {:?} does not match prepared scorer {:?}",
+            column_format,
+            scorer.payload_format()
+        ));
+    }
+    let codec = scorer.quant_codec();
+    QuantCodec::score_ip_candidate(
+        &codec,
+        scorer,
+        CandidatePayload::new(encoded_payload, CandidateMeta::Gamma(gamma)),
+    )
+}
+
+fn try_score_v2_column_candidate_ip_with_rabitq_cutoff(
+    scorer: &SpirePreparedAssignmentScorer,
+    column_format: SpireAssignmentPayloadFormat,
+    gamma: f32,
+    encoded_payload: &[u8],
+    min_ip_to_keep: Option<f32>,
+) -> Result<Option<f32>, String> {
+    match min_ip_to_keep {
+        Some(min_ip_to_keep) => {
+            scorer.try_score_payload_ip(column_format, gamma, encoded_payload, min_ip_to_keep)
+        }
+        None => scorer
+            .score_payload_ip(column_format, gamma, encoded_payload)
+            .map(Some),
+    }
+}
+
+fn append_quantized_v2_filtered_column_candidates(
     snapshot: &SpireValidatedEpochSnapshot<'_>,
     columns: SpireLeafObjectColumns<'_>,
     epoch: u64,
@@ -2692,6 +2730,8 @@ fn append_quantized_v2_column_candidates_with_rabitq_cutoff(
     observer: &mut impl SpireRoutedScanObserver,
 ) -> Result<(), String> {
     let column_format = SpireAssignmentPayloadFormat::from_tag(columns.payload_format)?;
+    let use_rabitq_cutoff =
+        scorer.payload_format() == SpireAssignmentPayloadFormat::RaBitQ && accumulator.is_bounded();
     for row_offset in 0..columns.row_count() {
         if !leaf_column_row_is_selected(&columns, row_offset, selected_row_ranges)? {
             continue;
@@ -2712,39 +2752,47 @@ fn append_quantized_v2_column_candidates_with_rabitq_cutoff(
         observer.visible_leaf_candidate(epoch, placement, row.flags);
 
         let score_started = observer.wants_candidate_timing().then(Instant::now);
-        let ip = match accumulator.min_ip_to_keep() {
-            Some(min_ip_to_keep) => {
-                match scorer.try_score_payload_ip(
-                    column_format,
-                    row.gamma,
-                    row.encoded_payload,
-                    min_ip_to_keep,
-                )? {
-                    Some(ip) => ip,
-                    None => {
-                        if let Some(started) = score_started {
-                            observer.leaf_row_score_time(
-                                epoch,
-                                placement,
-                                elapsed_nanos_since(started),
-                            );
-                        }
-                        let pruned = SpireScoredScanCandidate {
+        let ip = if use_rabitq_cutoff {
+            match try_score_v2_column_candidate_ip_with_rabitq_cutoff(
+                scorer,
+                column_format,
+                row.gamma,
+                row.encoded_payload,
+                accumulator.min_ip_to_keep(),
+            )? {
+                Some(ip) => ip,
+                None => {
+                    let min_ip_to_keep = accumulator
+                        .min_ip_to_keep()
+                        .expect("bounded RaBitQ cutoff should have a min score");
+                    if let Some(started) = score_started {
+                        observer.leaf_row_score_time(
                             epoch,
-                            pid,
-                            object_version,
-                            row_index: row.row_index,
-                            assignment_flags: row.flags,
-                            vec_id,
-                            heap_tid: row.heap_tid,
-                            score: -min_ip_to_keep,
-                        };
-                        observe_truncated_candidate(snapshot, observer, &pruned)?;
-                        continue;
+                            placement,
+                            elapsed_nanos_since(started),
+                        );
                     }
+                    let pruned = SpireScoredScanCandidate {
+                        epoch,
+                        pid,
+                        object_version,
+                        row_index: row.row_index,
+                        assignment_flags: row.flags,
+                        vec_id,
+                        heap_tid: row.heap_tid,
+                        score: -min_ip_to_keep,
+                    };
+                    observe_truncated_candidate(snapshot, observer, &pruned)?;
+                    continue;
                 }
             }
-            None => scorer.score_payload_ip(column_format, row.gamma, row.encoded_payload)?,
+        } else {
+            score_v2_column_candidate_ip_with_quant_codec(
+                scorer,
+                column_format,
+                row.gamma,
+                row.encoded_payload,
+            )?
         };
         if let Some(started) = score_started {
             observer.leaf_row_score_time(epoch, placement, elapsed_nanos_since(started));
