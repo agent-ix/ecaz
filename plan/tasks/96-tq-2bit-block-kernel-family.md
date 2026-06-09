@@ -1,6 +1,6 @@
 # Task 96: TurboQuant no-QJL 2-bit Block Kernel Family
 
-Status: proposed (2026-06-08)
+Status: in review (2026-06-09; Phase 0 surface-inventory stop condition in `reviews/task-96/001-surface-inventory-stop-condition/` found no current TurboQuant no-QJL 2-bit AM consumer)
 Owner: coder (to be assigned). Phase III parallel.
 Priority: 2 (denser-than-4-bit kernel; depends on 2-bit storage adoption)
 
