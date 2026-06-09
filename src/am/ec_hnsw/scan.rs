@@ -13,6 +13,7 @@ use crate::am::common::{
         CandidateMeta, CandidatePayload,
     },
     heap_slot::HeapSlotReader,
+    quant_codec::{EncodedQuantPayload, QuantCodec, QuantCodecKind, QuantSearchCodecTag},
     scan_output::IndexScanOutput,
 };
 use crate::quant::grouped_pq::{build_grouped_pq_lut_f32, grouped_pq_score_f32};
@@ -2911,6 +2912,89 @@ fn score_rabitq_search_code_result(prepared_query: &RaBitQScorer, search_code: &
     -prepared_query.score(search_code)
 }
 
+struct HnswTurboQuantScanCodec<'a> {
+    quantizer: &'a ProdQuantizer,
+}
+
+enum HnswTurboQuantPreparedQuery<'a> {
+    Exact(&'a PreparedQuery),
+    FullLut(&'a PreparedLutNoQjl4BitQuery),
+    TiledLut(&'a PreparedTiledLutNoQjl4BitQuery),
+    Int8Approx(&'a Int8ApproxNoQjl4BitQuery),
+}
+
+impl<'a> HnswTurboQuantScanCodec<'a> {
+    fn new(quantizer: &'a ProdQuantizer) -> Self {
+        Self { quantizer }
+    }
+}
+
+impl<'a> QuantCodec for HnswTurboQuantScanCodec<'a> {
+    type PreparedQuery = HnswTurboQuantPreparedQuery<'a>;
+
+    fn codec_kind(&self) -> QuantCodecKind {
+        QuantCodecKind::TurboQuant
+    }
+
+    fn search_codec_tag(&self) -> QuantSearchCodecTag {
+        QuantSearchCodecTag::TurboQuant
+    }
+
+    fn payload_len(&self) -> usize {
+        crate::code_len(self.quantizer.original_dim, self.quantizer.bits)
+    }
+
+    fn encode_source(&self, source: &[f32]) -> Result<EncodedQuantPayload, String> {
+        let encoded = self.quantizer.encode(source);
+        let mut code = encoded.mse_packed;
+        code.extend_from_slice(&encoded.qjl_packed);
+        Ok(EncodedQuantPayload {
+            dimensions: u16::try_from(self.quantizer.original_dim)
+                .map_err(|_| "ec_hnsw TurboQuant dimension exceeds u16".to_owned())?,
+            gamma: encoded.gamma,
+            code,
+        })
+    }
+
+    fn prepare_ip_query(&self, query: &[f32]) -> Result<Self::PreparedQuery, String> {
+        Err(format!(
+            "ec_hnsw TurboQuant scan codec uses scan-owned prepared query state; query length {}",
+            query.len()
+        ))
+    }
+
+    fn score_ip_candidate(
+        &self,
+        prepared_query: &Self::PreparedQuery,
+        payload: CandidatePayload<'_>,
+    ) -> Result<f32, String> {
+        let gamma = match payload.meta {
+            CandidateMeta::None
+            | CandidateMeta::Binary
+            | CandidateMeta::RaBitQ
+            | CandidateMeta::GroupedPq { .. } => 0.0,
+            CandidateMeta::Gamma(gamma) => gamma,
+            CandidateMeta::GammaAndResidualSigns { gamma, .. } => gamma,
+        };
+        let score = match prepared_query {
+            HnswTurboQuantPreparedQuery::Exact(prepared) => {
+                self.quantizer
+                    .score_ip_from_parts(prepared, gamma, payload.code)
+            }
+            HnswTurboQuantPreparedQuery::FullLut(prepared) => self
+                .quantizer
+                .score_ip_from_parts_lut_no_qjl_4bit(prepared, payload.code),
+            HnswTurboQuantPreparedQuery::TiledLut(prepared) => self
+                .quantizer
+                .score_ip_from_parts_tiled_lut_no_qjl_4bit(prepared, payload.code),
+            HnswTurboQuantPreparedQuery::Int8Approx(prepared) => self
+                .quantizer
+                .score_ip_from_parts_int8_approx_no_qjl_4bit(prepared, payload.code),
+        };
+        Ok(score)
+    }
+}
+
 fn score_grouped_search_code_from_scan_state(opaque: &TqScanOpaque, search_code: &[u8]) -> f32 {
     if matches!(
         opaque.scan_graph_storage,
@@ -5154,8 +5238,16 @@ fn score_scan_element_result(opaque: &mut TqScanOpaque, gamma: f32, code_bytes: 
     opaque.stats_delta.record_distance_calc();
     let quantizer = cached_quantizer_ref(opaque)
         .unwrap_or_else(|| pgrx::error!("ec_hnsw scan scoring requires a cached quantizer"));
-    match opaque.turboquant_exact_score_mode {
-        TurboQuantExactScoreMode::Exact => {}
+    let codec = HnswTurboQuantScanCodec::new(quantizer);
+    let prepared = match opaque.turboquant_exact_score_mode {
+        TurboQuantExactScoreMode::Exact => {
+            if opaque.prepared_query.is_null() {
+                pgrx::error!("ec_hnsw scan scoring requires a prepared query");
+            }
+            let prepared_query = scan_box_ref(opaque.prepared_query, opaque)
+                .expect("prepared query should be live for scan scoring");
+            HnswTurboQuantPreparedQuery::Exact(prepared_query)
+        }
         TurboQuantExactScoreMode::FullLut => {
             if opaque.turboquant_lut_query.is_null() {
                 pgrx::error!(
@@ -5164,7 +5256,7 @@ fn score_scan_element_result(opaque: &mut TqScanOpaque, gamma: f32, code_bytes: 
             }
             let prepared = scan_box_ref(opaque.turboquant_lut_query, opaque)
                 .expect("TurboQuant LUT query should be live");
-            return -quantizer.score_ip_from_parts_lut_no_qjl_4bit(prepared, code_bytes);
+            HnswTurboQuantPreparedQuery::FullLut(prepared)
         }
         TurboQuantExactScoreMode::TiledLut => {
             if opaque.turboquant_tiled_lut_query.is_null() {
@@ -5174,7 +5266,7 @@ fn score_scan_element_result(opaque: &mut TqScanOpaque, gamma: f32, code_bytes: 
             }
             let prepared = scan_box_ref(opaque.turboquant_tiled_lut_query, opaque)
                 .expect("TurboQuant tiled LUT query should be live");
-            return -quantizer.score_ip_from_parts_tiled_lut_no_qjl_4bit(prepared, code_bytes);
+            HnswTurboQuantPreparedQuery::TiledLut(prepared)
         }
         TurboQuantExactScoreMode::Int8Approx => {
             if opaque.turboquant_int8_query.is_null() {
@@ -5184,15 +5276,15 @@ fn score_scan_element_result(opaque: &mut TqScanOpaque, gamma: f32, code_bytes: 
             }
             let prepared = scan_box_ref(opaque.turboquant_int8_query, opaque)
                 .expect("TurboQuant int8 query should be live");
-            return -quantizer.score_ip_from_parts_int8_approx_no_qjl_4bit(prepared, code_bytes);
+            HnswTurboQuantPreparedQuery::Int8Approx(prepared)
         }
-    }
-    if opaque.prepared_query.is_null() {
-        pgrx::error!("ec_hnsw scan scoring requires a prepared query");
-    }
-    let prepared_query = scan_box_ref(opaque.prepared_query, opaque)
-        .expect("prepared query should be live for scan scoring");
-    -quantizer.score_ip_from_parts(prepared_query, gamma, code_bytes)
+    };
+    -codec
+        .score_ip_candidate(
+            &prepared,
+            CandidatePayload::new(code_bytes, CandidateMeta::Gamma(gamma)),
+        )
+        .unwrap_or_else(|err| pgrx::error!("ec_hnsw scan scoring failed: {err}"))
 }
 
 fn set_scan_heap_tid(scan_output: &mut IndexScanOutput<'_>, heap_tid: page::ItemPointer) {
@@ -7382,6 +7474,90 @@ mod tests {
         assert_eq!(unsafe { (*opaque_ptr).stats_delta.total_distance_calcs }, 1);
 
         free_scan_prepared_query(&mut opaque);
+    }
+
+    #[test]
+    fn hnsw_turboquant_scan_codec_matches_direct_exact_modes() {
+        let dimensions = 1536;
+        let vector = unit_vector(dimensions);
+        let query = unit_vector(dimensions);
+        let quantizer = ProdQuantizer::new(dimensions, 4, 42);
+        let encoded = quantizer.encode(&vector);
+        let mut full_code = encoded.mse_packed.clone();
+        full_code.extend_from_slice(&encoded.qjl_packed);
+        let codec = HnswTurboQuantScanCodec::new(&quantizer);
+
+        assert_eq!(QuantCodec::codec_kind(&codec), QuantCodecKind::TurboQuant);
+        assert_eq!(
+            QuantCodec::search_codec_tag(&codec),
+            QuantSearchCodecTag::TurboQuant
+        );
+        assert_eq!(QuantCodec::payload_len(&codec), full_code.len());
+        assert_eq!(
+            QuantCodec::encode_source(&codec, &vector).unwrap().code,
+            full_code
+        );
+
+        let prepared = quantizer.prepare_ip_query(&query);
+        let exact = HnswTurboQuantPreparedQuery::Exact(&prepared);
+        let observed_exact = QuantCodec::score_ip_candidate(
+            &codec,
+            &exact,
+            CandidatePayload::new(&full_code, CandidateMeta::Gamma(encoded.gamma)),
+        )
+        .unwrap();
+        assert_eq!(
+            observed_exact.to_bits(),
+            quantizer
+                .score_ip_from_parts(&prepared, encoded.gamma, &full_code)
+                .to_bits()
+        );
+
+        let prepared_lut = quantizer.prepare_ip_query_lut_no_qjl_4bit(&query);
+        let full_lut = HnswTurboQuantPreparedQuery::FullLut(&prepared_lut);
+        let observed_lut = QuantCodec::score_ip_candidate(
+            &codec,
+            &full_lut,
+            CandidatePayload::new(&encoded.mse_packed, CandidateMeta::None),
+        )
+        .unwrap();
+        assert_eq!(
+            observed_lut.to_bits(),
+            quantizer
+                .score_ip_from_parts_lut_no_qjl_4bit(&prepared_lut, &encoded.mse_packed)
+                .to_bits()
+        );
+
+        let prepared_tiled = quantizer
+            .prepare_ip_query_tiled_lut_no_qjl_4bit(&query, TURBOQUANT_TILED_LUT_TILE_SIZE);
+        let tiled = HnswTurboQuantPreparedQuery::TiledLut(&prepared_tiled);
+        let observed_tiled = QuantCodec::score_ip_candidate(
+            &codec,
+            &tiled,
+            CandidatePayload::new(&encoded.mse_packed, CandidateMeta::None),
+        )
+        .unwrap();
+        assert_eq!(
+            observed_tiled.to_bits(),
+            quantizer
+                .score_ip_from_parts_tiled_lut_no_qjl_4bit(&prepared_tiled, &encoded.mse_packed)
+                .to_bits()
+        );
+
+        let prepared_int8 = quantizer.prepare_ip_query_int8_approx_no_qjl_4bit(&query);
+        let int8 = HnswTurboQuantPreparedQuery::Int8Approx(&prepared_int8);
+        let observed_int8 = QuantCodec::score_ip_candidate(
+            &codec,
+            &int8,
+            CandidatePayload::new(&encoded.mse_packed, CandidateMeta::None),
+        )
+        .unwrap();
+        assert_eq!(
+            observed_int8.to_bits(),
+            quantizer
+                .score_ip_from_parts_int8_approx_no_qjl_4bit(&prepared_int8, &encoded.mse_packed)
+                .to_bits()
+        );
     }
 
     #[test]
