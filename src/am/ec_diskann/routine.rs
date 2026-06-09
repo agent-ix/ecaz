@@ -379,7 +379,7 @@ unsafe extern "C-unwind" fn ec_diskann_aminsert(
                 rerank_budget: build_list_size,
                 top_k: build_list_size,
             },
-            |tuple| prefilter.score(tuple),
+            &prefilter,
             |_: &[ItemPointer]| {},
             |heap_tid| match exact_heap_rerank_distance(
                 heap_relation,
@@ -827,7 +827,7 @@ where
         reader,
         visited,
         scan_params,
-        |tuple| prefilter.score(tuple),
+        prefilter,
         |heap_tids: &[ItemPointer]| prefetch_heap_rerank_blocks(heap_relation, heap_tids),
         |heap_tid| match exact_heap_rerank_distance(
             heap_relation,
@@ -900,6 +900,30 @@ where
     }
 }
 
+struct ProfiledDiskannPrefilter<'a> {
+    inner: &'a DiskannPreparedPrefilter,
+    profile: &'a RefCell<ScanProfile>,
+}
+
+impl scan::VamanaPrefilter for ProfiledDiskannPrefilter<'_> {
+    fn score(&self, tuple: &VamanaNodeTuple) -> f32 {
+        let started = Instant::now();
+        let score = self.inner.score(tuple);
+        let mut profile = self.profile.borrow_mut();
+        add_profile_elapsed(&mut profile.prefilter_score_us, started);
+        profile.prefilter_count += 1;
+        score
+    }
+
+    fn score_batch(&self, tuples: &[VamanaNodeTuple], out_scores: &mut [f32]) {
+        let started = Instant::now();
+        scan::VamanaPrefilter::score_batch(&self.inner, tuples, out_scores);
+        let mut profile = self.profile.borrow_mut();
+        add_profile_elapsed(&mut profile.prefilter_score_us, started);
+        profile.prefilter_count += tuples.len();
+    }
+}
+
 fn execute_diskann_scan_profiled<R>(
     reader: &R,
     visited: &mut VisitedState,
@@ -923,18 +947,15 @@ where
     let rerank_error = RefCell::new(None::<String>);
     let frontier_started = Instant::now();
     let mut frontier_profile = scan::FrontierProfile::default();
+    let profiled_prefilter = ProfiledDiskannPrefilter {
+        inner: prefilter,
+        profile: &profile_cell,
+    };
     let results = scan::vamana_scan_with_frontier_profile(
         &profiled_reader,
         visited,
         scan_params,
-        |tuple| {
-            let started = Instant::now();
-            let score = prefilter.score(tuple);
-            let mut profile = profile_cell.borrow_mut();
-            add_profile_elapsed(&mut profile.prefilter_score_us, started);
-            profile.prefilter_count += 1;
-            score
-        },
+        profiled_prefilter,
         |heap_tids: &[ItemPointer]| {
             let started = Instant::now();
             prefetch_heap_rerank_blocks(heap_relation, heap_tids);
@@ -1716,7 +1737,7 @@ fn plan_vacuum_fill_candidates_for_target(
             visited,
             entry_point,
             repair_scan_budget,
-            &|tuple: &VamanaNodeTuple| prefilter.score(tuple),
+            &prefilter,
         )?
     };
 
