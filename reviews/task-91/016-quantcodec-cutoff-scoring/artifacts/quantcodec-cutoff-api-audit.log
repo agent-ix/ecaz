@@ -1,0 +1,18 @@
+Script started on 2026-06-09 00:11:29-07:00 [<not executed on terminal>]
+src/am/common/quant_codec.rs
+68:    fn try_score_ip_candidate(
+
+src/am/ec_spire/quantizer/mod.rs
+558:    fn try_score_ip_candidate(
+
+src/am/ec_ivf/quantizer.rs
+586:    fn try_score_ip_candidate(
+593:            .try_score_ip_candidate(prepared_query, payload, min_ip_to_keep)
+678:    fn try_score_ip_candidate(
+1609:        let kept = QuantCodec::try_score_ip_candidate(
+1621:        let pruned = QuantCodec::try_score_ip_candidate(
+
+src/am/ec_spire/scan/candidates.rs
+2771:    QuantCodec::try_score_ip_candidate(
+
+Script done on 2026-06-09 00:11:29-07:00 [COMMAND_EXIT_CODE="0"]

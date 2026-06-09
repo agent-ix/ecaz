@@ -11,7 +11,9 @@ use crate::quant::{
     grouped_pq::GROUPED_PQ_CENTROIDS, prod::ProdQuantizer, rabitq::RaBitQQuantizer, Quantizer,
 };
 
-use super::{build_parallel, codec, graph, insert, options, page, search, shared, source, P_NEW};
+use super::{
+    build_parallel, graph, insert, options, page, search, shared, source, storage_binding, P_NEW,
+};
 use crate::am::common::{
     callback::pg_am_callback,
     detoast::DetoastedVarlena,
@@ -358,7 +360,7 @@ impl BuildState {
         let ef_construction = u16::try_from(self.options.ef_construction)
             .expect("validated ef_construction should fit into u16");
 
-        codec::HnswStorageCodec::from_storage_format(self.options.storage_format)
+        storage_binding::HnswStorageBinding::from_storage_format(self.options.storage_format)
             .initial_metadata(m, ef_construction)
     }
 
@@ -372,13 +374,14 @@ impl BuildState {
                 self.dimensions = Some(tuple.dimensions);
                 self.bits = Some(tuple.bits);
                 self.seed = Some(tuple.seed);
-                let fits_on_page =
-                    codec::HnswStorageCodec::from_storage_format(self.options.storage_format)
-                        .build_tuple_fits_on_page(
-                            tuple.code.len(),
-                            binary_word_count,
-                            self.page_size,
-                        );
+                let fits_on_page = storage_binding::HnswStorageBinding::from_storage_format(
+                    self.options.storage_format,
+                )
+                .build_tuple_fits_on_page(
+                    tuple.code.len(),
+                    binary_word_count,
+                    self.page_size,
+                );
                 if !fits_on_page {
                     pgrx::error!(
                         "ec_hnsw tuple payload for dim {} bits {} does not fit on a page",
@@ -1671,10 +1674,10 @@ fn rabitq_flush_output(
             transform_kind: page::TransformKind::Srht,
             search_codec_kind: page::SearchCodecKind::RaBitQ,
             payload_flags: page::PAYLOAD_FLAG_COLD_RERANK_PAYLOAD,
-            search_bits: codec::HNSW_RABITQ_BITS,
+            search_bits: storage_binding::HNSW_RABITQ_BITS,
             rerank_codec_kind: page::RerankCodecKind::ScalarQuantized,
             search_subvector_count: 0,
-            search_subvector_dim: u16::from(codec::HNSW_RABITQ_BITS),
+            search_subvector_dim: u16::from(storage_binding::HNSW_RABITQ_BITS),
             grouped_codebook_head: page::ItemPointer::INVALID,
         },
     })
@@ -1693,7 +1696,7 @@ fn derive_rabitq_search_codes_from_sources(
     let quantizer = RaBitQQuantizer::cached_seeded_srht_bits(
         dimensions as usize,
         seed,
-        codec::HNSW_RABITQ_BITS,
+        storage_binding::HNSW_RABITQ_BITS,
     )?;
     state
         .heap_tuples
@@ -4156,10 +4159,13 @@ mod tests {
             output.metadata.search_codec_kind,
             page::SearchCodecKind::RaBitQ
         );
-        assert_eq!(output.metadata.search_bits, codec::HNSW_RABITQ_BITS);
+        assert_eq!(
+            output.metadata.search_bits,
+            storage_binding::HNSW_RABITQ_BITS
+        );
         assert_eq!(
             output.metadata.search_subvector_dim,
-            u16::from(codec::HNSW_RABITQ_BITS)
+            u16::from(storage_binding::HNSW_RABITQ_BITS)
         );
         assert_eq!(output.metadata.search_subvector_count, 0);
         assert_eq!(
@@ -4176,8 +4182,11 @@ mod tests {
             layout,
             graph::GraphStorageDescriptor::RaBitQ(graph::PqFastScanLayout {
                 binary_word_count: 0,
-                search_code_len: crate::quant::rabitq::code_len_for(16, codec::HNSW_RABITQ_BITS)
-                    .unwrap(),
+                search_code_len: crate::quant::rabitq::code_len_for(
+                    16,
+                    storage_binding::HNSW_RABITQ_BITS
+                )
+                .unwrap(),
                 rerank_code_len: crate::code_len(16, bits),
             })
         );

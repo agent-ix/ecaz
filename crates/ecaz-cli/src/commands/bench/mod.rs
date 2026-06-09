@@ -250,15 +250,112 @@ impl Task87CandidateBatchCounterSnapshot {
     }
 }
 
-pub(crate) async fn reset_task87_candidate_batch_counters(client: &Client) -> Result<()> {
-    client
-        .batch_execute("SELECT ec_task87_candidate_batch_scoring_reset()")
-        .await
-        .wrap_err("resetting Task 87 CandidateBatch scoring counters")?;
-    Ok(())
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct BlockKernelCounterSnapshot {
+    pub(crate) surface: String,
+    pub(crate) quant_kind: String,
+    pub(crate) isa: String,
+    pub(crate) flushes: i64,
+    pub(crate) candidates: i64,
+    pub(crate) elapsed_nanos: i64,
+    pub(crate) kernel_flushes: i64,
+    pub(crate) kernel_candidates: i64,
+    pub(crate) kernel_elapsed_nanos: i64,
+    pub(crate) scalar_flushes: i64,
+    pub(crate) scalar_candidates: i64,
+    pub(crate) scalar_elapsed_nanos: i64,
 }
 
+impl BlockKernelCounterSnapshot {
+    fn merge(&mut self, other: &Self) {
+        self.flushes += other.flushes;
+        self.candidates += other.candidates;
+        self.elapsed_nanos += other.elapsed_nanos;
+        self.kernel_flushes += other.kernel_flushes;
+        self.kernel_candidates += other.kernel_candidates;
+        self.kernel_elapsed_nanos += other.kernel_elapsed_nanos;
+        self.scalar_flushes += other.scalar_flushes;
+        self.scalar_candidates += other.scalar_candidates;
+        self.scalar_elapsed_nanos += other.scalar_elapsed_nanos;
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct BlockKernelCounterSnapshots {
+    pub(crate) block_kernel: Vec<BlockKernelCounterSnapshot>,
+    pub(crate) task87_compat: Vec<Task87CandidateBatchCounterSnapshot>,
+}
+
+#[allow(dead_code)]
+pub(crate) async fn reset_task87_candidate_batch_counters(client: &Client) -> Result<()> {
+    reset_block_kernel_counters(client).await
+}
+
+pub(crate) async fn reset_block_kernel_counters(client: &Client) -> Result<()> {
+    match client
+        .batch_execute("SELECT ec_block_kernel_scoring_reset()")
+        .await
+    {
+        Ok(()) => Ok(()),
+        Err(block_err) => client
+            .batch_execute("SELECT ec_task87_candidate_batch_scoring_reset()")
+            .await
+            .wrap_err_with(|| {
+                format!(
+                    "resetting block-kernel counters failed ({block_err}); fallback Task 87 reset also failed"
+                )
+            }),
+    }
+}
+
+#[allow(dead_code)]
 pub(crate) async fn snapshot_task87_candidate_batch_counters(
+    client: &Client,
+) -> Result<Vec<Task87CandidateBatchCounterSnapshot>> {
+    snapshot_task87_candidate_batch_counters_inner(client).await
+}
+
+pub(crate) async fn snapshot_block_kernel_counters(
+    client: &Client,
+) -> Result<BlockKernelCounterSnapshots> {
+    let task87_compat = snapshot_task87_candidate_batch_counters_inner(client).await?;
+    let block_kernel = match client
+        .query(
+            "SELECT surface, quant_kind, isa, flushes, candidates, elapsed_nanos, \
+                    kernel_flushes, kernel_candidates, kernel_elapsed_nanos, \
+                    scalar_flushes, scalar_candidates, scalar_elapsed_nanos \
+             FROM ec_block_kernel_scoring_snapshot() \
+             ORDER BY surface, quant_kind, isa",
+            &[],
+        )
+        .await
+    {
+        Ok(rows) => rows
+            .into_iter()
+            .map(|row| BlockKernelCounterSnapshot {
+                surface: row.get(0),
+                quant_kind: row.get(1),
+                isa: row.get(2),
+                flushes: row.get(3),
+                candidates: row.get(4),
+                elapsed_nanos: row.get(5),
+                kernel_flushes: row.get(6),
+                kernel_candidates: row.get(7),
+                kernel_elapsed_nanos: row.get(8),
+                scalar_flushes: row.get(9),
+                scalar_candidates: row.get(10),
+                scalar_elapsed_nanos: row.get(11),
+            })
+            .collect(),
+        Err(_) => Vec::new(),
+    };
+    Ok(BlockKernelCounterSnapshots {
+        block_kernel,
+        task87_compat,
+    })
+}
+
+async fn snapshot_task87_candidate_batch_counters_inner(
     client: &Client,
 ) -> Result<Vec<Task87CandidateBatchCounterSnapshot>> {
     let rows = client
@@ -283,6 +380,31 @@ pub(crate) async fn snapshot_task87_candidate_batch_counters(
         .collect())
 }
 
+pub(crate) fn merge_block_kernel_counters(
+    snapshots: Vec<BlockKernelCounterSnapshots>,
+) -> BlockKernelCounterSnapshots {
+    let mut block_merged =
+        std::collections::BTreeMap::<(String, String, String), BlockKernelCounterSnapshot>::new();
+    let mut task87_sets = Vec::with_capacity(snapshots.len());
+    for snapshot_set in snapshots {
+        task87_sets.push(snapshot_set.task87_compat);
+        for snapshot in snapshot_set.block_kernel {
+            block_merged
+                .entry((
+                    snapshot.surface.clone(),
+                    snapshot.quant_kind.clone(),
+                    snapshot.isa.clone(),
+                ))
+                .and_modify(|existing| existing.merge(&snapshot))
+                .or_insert(snapshot);
+        }
+    }
+    BlockKernelCounterSnapshots {
+        block_kernel: block_merged.into_values().collect(),
+        task87_compat: merge_task87_candidate_batch_counters(task87_sets),
+    }
+}
+
 pub(crate) fn merge_task87_candidate_batch_counters(
     snapshots: Vec<Vec<Task87CandidateBatchCounterSnapshot>>,
 ) -> Vec<Task87CandidateBatchCounterSnapshot> {
@@ -297,6 +419,40 @@ pub(crate) fn merge_task87_candidate_batch_counters(
         }
     }
     merged.into_values().collect()
+}
+
+pub(crate) fn format_block_kernel_counter_lines(
+    command: &str,
+    label: &str,
+    snapshots: &BlockKernelCounterSnapshots,
+) -> String {
+    let mut lines = Vec::new();
+    for snapshot in &snapshots.block_kernel {
+        lines.push(format!(
+            "[block-kernel-counters] command={command} label={label} surface={} quant={} isa={} flushes={} candidates={} elapsed_nanos={} elapsed_ms={:.6} kernel_flushes={} kernel_candidates={} kernel_elapsed_nanos={} kernel_elapsed_ms={:.6} scalar_flushes={} scalar_candidates={} scalar_elapsed_nanos={} scalar_elapsed_ms={:.6}",
+            snapshot.surface,
+            snapshot.quant_kind,
+            snapshot.isa,
+            snapshot.flushes,
+            snapshot.candidates,
+            snapshot.elapsed_nanos,
+            snapshot.elapsed_nanos as f64 / 1_000_000.0,
+            snapshot.kernel_flushes,
+            snapshot.kernel_candidates,
+            snapshot.kernel_elapsed_nanos,
+            snapshot.kernel_elapsed_nanos as f64 / 1_000_000.0,
+            snapshot.scalar_flushes,
+            snapshot.scalar_candidates,
+            snapshot.scalar_elapsed_nanos,
+            snapshot.scalar_elapsed_nanos as f64 / 1_000_000.0,
+        ));
+    }
+    let task87_lines =
+        format_task87_candidate_batch_counter_lines(command, label, &snapshots.task87_compat);
+    if !task87_lines.is_empty() {
+        lines.push(task87_lines);
+    }
+    lines.join("\n")
 }
 
 pub(crate) fn format_task87_candidate_batch_counter_lines(
@@ -487,5 +643,46 @@ mod tests {
         .unwrap_err()
         .to_string()
         .contains("--profile ec_ivf"));
+    }
+
+    #[test]
+    fn block_kernel_counter_lines_include_transition_formats() {
+        let snapshots = BlockKernelCounterSnapshots {
+            block_kernel: vec![BlockKernelCounterSnapshot {
+                surface: "ivf".to_owned(),
+                quant_kind: "turboquant".to_owned(),
+                isa: "scalar".to_owned(),
+                flushes: 1,
+                candidates: 39,
+                elapsed_nanos: 1_500_000,
+                kernel_flushes: 1,
+                kernel_candidates: 32,
+                kernel_elapsed_nanos: 1_100_000,
+                scalar_flushes: 1,
+                scalar_candidates: 7,
+                scalar_elapsed_nanos: 400_000,
+            }],
+            task87_compat: vec![Task87CandidateBatchCounterSnapshot {
+                surface: "ivf".to_owned(),
+                flushes: 1,
+                candidates: 39,
+                elapsed_nanos: 1_500_000,
+                lut32_flushes: 1,
+                lut32_candidates: 39,
+            }],
+        };
+
+        let lines = format_block_kernel_counter_lines("latency", "nprobe=8", &snapshots);
+
+        assert!(lines.contains(
+            "[block-kernel-counters] command=latency label=nprobe=8 surface=ivf quant=turboquant isa=scalar flushes=1 candidates=39"
+        ));
+        assert!(
+            lines.contains("kernel_flushes=1 kernel_candidates=32 kernel_elapsed_nanos=1100000")
+        );
+        assert!(lines.contains("scalar_flushes=1 scalar_candidates=7 scalar_elapsed_nanos=400000"));
+        assert!(lines.contains(
+            "[task87-counters] command=latency label=nprobe=8 surface=ivf flushes=1 candidates=39"
+        ));
     }
 }

@@ -8,6 +8,24 @@ pub(crate) enum QuantCodecKind {
     Binary,
 }
 
+impl QuantCodecKind {
+    pub(crate) const ALL: [Self; 4] = [
+        Self::TurboQuant,
+        Self::RaBitQ,
+        Self::GroupedPq,
+        Self::Binary,
+    ];
+
+    pub(crate) fn label(self) -> &'static str {
+        match self {
+            Self::TurboQuant => "turboquant",
+            Self::RaBitQ => "rabitq",
+            Self::GroupedPq => "grouped_pq",
+            Self::Binary => "binary",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum QuantSearchCodecTag {
     TurboQuant,
@@ -46,6 +64,16 @@ pub(crate) trait QuantCodec {
         prepared_query: &Self::PreparedQuery,
         payload: CandidatePayload<'_>,
     ) -> Result<f32, String>;
+
+    fn try_score_ip_candidate(
+        &self,
+        prepared_query: &Self::PreparedQuery,
+        payload: CandidatePayload<'_>,
+        min_ip_to_keep: Option<f32>,
+    ) -> Result<Option<f32>, String> {
+        let _ = min_ip_to_keep;
+        self.score_ip_candidate(prepared_query, payload).map(Some)
+    }
 
     fn score_ip_batch<Id>(
         &self,

@@ -58,6 +58,7 @@ struct TqDiskannReloptions {
 pub(super) enum StorageFormat {
     PqFastScan,
     RaBitQ,
+    TurboQuant,
 }
 
 impl StorageFormat {
@@ -67,6 +68,7 @@ impl StorageFormat {
         match self {
             Self::PqFastScan => "pq_fastscan",
             Self::RaBitQ => "rabitq",
+            Self::TurboQuant => "turboquant",
         }
     }
 
@@ -74,8 +76,9 @@ impl StorageFormat {
         match raw {
             "pq_fastscan" => Ok(Self::PqFastScan),
             "rabitq" => Ok(Self::RaBitQ),
+            "turboquant" => Ok(Self::TurboQuant),
             other => Err(format!(
-                "invalid ec_diskann storage_format reloption: expected 'pq_fastscan' or 'rabitq', got {:?}",
+                "invalid ec_diskann storage_format reloption: expected 'pq_fastscan', 'rabitq', or 'turboquant', got {:?}",
                 other
             )),
         }
@@ -285,7 +288,7 @@ pub(super) unsafe extern "C-unwind" fn ec_diskann_amoptions(
         pg_sys::add_local_string_reloption(
             &mut relopts,
             b"storage_format\0".as_ptr().cast(),
-            b"Index storage format: 'pq_fastscan' (default) or 'rabitq'.\0"
+            b"Index storage format: 'pq_fastscan' (default), 'rabitq', or 'turboquant'.\0"
                 .as_ptr()
                 .cast(),
             ptr::null(),
@@ -389,7 +392,7 @@ mod tests {
     }
 
     #[test]
-    fn diskann_storage_format_parse_accepts_rabitq() {
+    fn diskann_storage_format_parse_accepts_rabitq_and_turboquant() {
         assert_eq!(
             StorageFormat::parse_reloption("pq_fastscan").unwrap(),
             StorageFormat::PqFastScan
@@ -398,7 +401,10 @@ mod tests {
             StorageFormat::parse_reloption("rabitq").unwrap(),
             StorageFormat::RaBitQ
         );
-        assert!(StorageFormat::parse_reloption("turboquant").is_err());
+        assert_eq!(
+            StorageFormat::parse_reloption("turboquant").unwrap(),
+            StorageFormat::TurboQuant
+        );
     }
 
     #[test]

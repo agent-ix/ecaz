@@ -1,0 +1,22 @@
+[loader] inspecting reviews/task-92/014-offpath-calibration-run/artifacts/task92_offpath_spire_turboquant_corpus.tsv
+[loader] inspecting reviews/task-92/014-offpath-calibration-run/artifacts/task92_offpath_spire_turboquant_queries.tsv
+[loader] corpus: 4096 rows, sha256=2a15917d2f1469fac3660a896441f32b3881d4b711f4377171ff0098ba1273d5  queries: 64 rows, sha256=e6c5a265c98948a3db70ae59c5b1cedba09ffe85ad9d32113dd0e19682979e02
+[loader] no sibling manifest at reviews/task-92/014-offpath-calibration-run/artifacts/task92_offpath_spire_turboquant_manifest.json; continuing without verification
+[loader] copied corpus table task92_offpath_spire_turboquant_corpus in 3.35s
+[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...
+[loader] encoded corpus table task92_offpath_spire_turboquant_corpus in 2.72s
+[loader] copied queries table task92_offpath_spire_turboquant_queries in 84.13ms
+[loader] building task92_offpath_spire_turboquant_turboquant_idx using ec_spire (reloptions=[storage_format=turboquant]) ...
+[loader] built task92_offpath_spire_turboquant_turboquant_idx in 15.08s
+┌─────────┬────────────────────────────────────────────────────────────────────────────┐
+│ field   ┆ value                                                                      │
+╞═════════╪════════════════════════════════════════════════════════════════════════════╡
+│ profile ┆ ec_spire                                                                   │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ task92_offpath_spire_turboquant_corpus (4096 rows)                         │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ task92_offpath_spire_turboquant_queries (64 rows)                          │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ task92_offpath_spire_turboquant_turboquant_idx [storage_format=turboquant] │
+└─────────┴────────────────────────────────────────────────────────────────────────────┘
+[loader] completed prefix task92_offpath_spire_turboquant in 25.90s

@@ -103,6 +103,144 @@
     }
 
     #[test]
+    fn selected_row_quant_codec_helper_matches_prepared_assignment_scorer() {
+        for payload_format in [
+            SpireAssignmentPayloadFormat::TurboQuant,
+            SpireAssignmentPayloadFormat::RaBitQ,
+        ] {
+            let query = [1.0, 0.0];
+            let source = [0.5, 0.5];
+            let scorer =
+                SpirePreparedAssignmentScorer::prepare(payload_format, query.len(), &query)
+                    .unwrap();
+            let (gamma, payload) = encode_assignment_payload(payload_format, &source).unwrap();
+
+            let observed = score_v2_column_candidate_ip_with_quant_codec(
+                &scorer,
+                payload_format,
+                gamma,
+                &payload,
+            )
+            .unwrap();
+            let expected = scorer
+                .score_payload_ip(payload_format, gamma, &payload)
+                .unwrap();
+
+            assert_eq!(observed.to_bits(), expected.to_bits());
+        }
+    }
+
+    #[test]
+    fn rabitq_cutoff_helper_uses_quant_codec_before_cutoff_is_available() {
+        let payload_format = SpireAssignmentPayloadFormat::RaBitQ;
+        let query = [1.0, 0.0];
+        let source = [0.5, 0.5];
+        let scorer =
+            SpirePreparedAssignmentScorer::prepare(payload_format, query.len(), &query).unwrap();
+        let (gamma, payload) = encode_assignment_payload(payload_format, &source).unwrap();
+
+        let observed = try_score_v2_column_candidate_ip_with_rabitq_cutoff(
+            &scorer,
+            payload_format,
+            gamma,
+            &payload,
+            None,
+        )
+        .unwrap()
+        .expect("no cutoff yet should score the candidate");
+        let expected =
+            score_v2_column_candidate_ip_with_quant_codec(&scorer, payload_format, gamma, &payload)
+                .unwrap();
+
+        assert_eq!(observed.to_bits(), expected.to_bits());
+    }
+
+    #[test]
+    fn rabitq_cutoff_helper_routes_active_cutoff_through_quant_codec() {
+        let payload_format = SpireAssignmentPayloadFormat::RaBitQ;
+        let query = [1.0, 0.0];
+        let source = [0.5, 0.5];
+        let scorer =
+            SpirePreparedAssignmentScorer::prepare(payload_format, query.len(), &query).unwrap();
+        let (gamma, payload) = encode_assignment_payload(payload_format, &source).unwrap();
+
+        let scored = try_score_v2_column_candidate_ip_with_rabitq_cutoff(
+            &scorer,
+            payload_format,
+            gamma,
+            &payload,
+            Some(f32::NEG_INFINITY),
+        )
+        .unwrap()
+        .expect("low cutoff should keep the candidate");
+        let expected =
+            score_v2_column_candidate_ip_with_quant_codec(&scorer, payload_format, gamma, &payload)
+                .unwrap();
+        assert_eq!(scored.to_bits(), expected.to_bits());
+
+        let pruned = try_score_v2_column_candidate_ip_with_rabitq_cutoff(
+            &scorer,
+            payload_format,
+            gamma,
+            &payload,
+            Some(f32::MAX),
+        )
+        .unwrap();
+        assert_eq!(pruned, None);
+    }
+
+    #[test]
+    fn column_payload_quant_codec_batch_helper_matches_prepared_assignment_scorer() {
+        for payload_format in [
+            SpireAssignmentPayloadFormat::TurboQuant,
+            SpireAssignmentPayloadFormat::RaBitQ,
+        ] {
+            let query = [1.0, 0.0];
+            let sources = [[0.5, 0.5], [-0.25, 0.75]];
+            let scorer =
+                SpirePreparedAssignmentScorer::prepare(payload_format, query.len(), &query)
+                    .unwrap();
+            let encoded = sources
+                .iter()
+                .map(|source| encode_assignment_payload(payload_format, source).unwrap())
+                .collect::<Vec<_>>();
+            let payload_stride = encoded[0].1.len();
+            let gammas = encoded.iter().map(|(gamma, _)| *gamma).collect::<Vec<_>>();
+            let payloads = encoded
+                .iter()
+                .flat_map(|(_, payload)| payload.iter().copied())
+                .collect::<Vec<_>>();
+            let mut observed = vec![0.0; encoded.len()];
+
+            score_v2_column_payloads_ip_with_quant_codec(
+                &scorer,
+                payload_format,
+                payload_stride,
+                &payloads,
+                &gammas,
+                &mut observed,
+            )
+            .unwrap();
+
+            let mut expected = vec![0.0; encoded.len()];
+            scorer
+                .score_batch_ip(payload_stride, &payloads, &gammas, &mut expected)
+                .unwrap();
+
+            assert_eq!(
+                observed
+                    .iter()
+                    .map(|score| score.to_bits())
+                    .collect::<Vec<_>>(),
+                expected
+                    .iter()
+                    .map(|score| score.to_bits())
+                    .collect::<Vec<_>>()
+            );
+        }
+    }
+
+    #[test]
     fn select_leaf_block_row_ranges_keeps_best_rabitq_blocks() {
         fn rabitq_summary(
             row_base: u32,

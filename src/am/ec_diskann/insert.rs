@@ -33,7 +33,7 @@ use super::{
     options,
     page::{VamanaMetadataPage, VAMANA_METADATA_BYTES, VAMANA_TRANSFORM_KIND_SRHT},
     persist::{stage_grouped_codebook_chain, NodePayload},
-    quantizer::{self, DiskannBuildCodec},
+    quantizer::{self, DiskannBuildBinding},
     reader::PersistedGraphReader,
     scan_state,
     tuple::VamanaNodeTuple,
@@ -1198,7 +1198,7 @@ pub(super) fn bootstrap_empty_insert_output(
     let relopts = options::relation_options(index_relation.as_ptr());
     let group_size = ambuild::default_group_size(dimensions);
     let source_refs = vec![source_vector];
-    let codec = DiskannBuildCodec::prepare(
+    let codec = DiskannBuildBinding::prepare(
         relopts.storage_format,
         &source_refs,
         source_vector.len(),

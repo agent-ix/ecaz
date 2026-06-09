@@ -1,6 +1,6 @@
 # Task 92: Cross-Quant Block Kernel Infrastructure + ISA Gating
 
-Status: proposed (2026-06-08)
+Status: complete (2026-06-09, closeout `reviews/task-92/017-block-kernel-infra-closeout/`)
 Owner: coder (to be assigned). One coder, one branch.
 Priority: 1 (foundation for Tasks 93–99)
 
@@ -33,8 +33,8 @@ instantiate kernels against it without writing their own plumbing.
 | Recall policy | strict `to_bits()` equality on scalar reference; ULP tolerance ≤ 4 ULP or 1e-6 relative on SIMD variants; recall@k preservation at bench level is the binding gate |
 | Width-based gating | `batch.len() >= 32` routes to block kernel; smaller batches use scalar tail path |
 
-ADR-076 starts as proposed in this task and captures these as a
-normative architectural decision once accepted.
+ADR-076 was accepted in this task and captures these as a normative
+architectural decision.
 
 ## Scope
 
@@ -61,12 +61,14 @@ normative architectural decision once accepted.
 4. **Runtime ISA detection helper.** A small `src/quant/isa.rs`
    module that detects available ISA features once at startup,
    caches the result, and exposes `current_isa()` returning an
-   `enum Isa { Scalar, Neon, Sve, Avx2 }` per-kernel. SVE is
-   vector-length agnostic: Graviton 4 measurements may be reported as
-   SVE-256 only when the measured runtime vector length is 256 bits.
-   Each
-   kernel module's `mod.rs` uses this to pick the function
-   pointer at first call.
+   `enum Isa { Scalar, Neon, Sve, Sve2, Avx2 }` per-kernel. The ARM
+   production measurement target is AWS Graviton 4 (Neoverse V2,
+   SVE2). Graviton 4 packets target the `Sve2` dispatch branch when
+   available and report the measured runtime vector length verbatim
+   when making width-specific claims, for example `sve2-128` for the
+   current target host class. Inference from host class alone is not
+   sufficient for width-specific claims. Each kernel module's `mod.rs`
+   uses this to pick the function pointer at first call.
 5. **Per-kernel module layout convention.** Each Phase III quant
    kernel lives under `src/quant/<kernel>/`:
    - `mod.rs`: public entry point (`score_<quant>_batch`), ISA
@@ -110,6 +112,9 @@ normative architectural decision once accepted.
   Task 99 if measurement shows justification.
 - Apple silicon (M-series) variant. Local bench host is Intel
   desktop per project memory; Graviton 4 covers the SVE case.
+- AWS Graviton 4 benchmark runs for real quant kernels. Task 92 ships
+  shared infrastructure plus safe fallback stubs; Tasks 93-98 own the
+  Graviton 4 smoke/bench evidence when a real SVE2 backend is introduced.
 
 ## Acceptance criteria
 
@@ -126,7 +131,10 @@ normative architectural decision once accepted.
    against total scoring nanos; ≤1% drift is the target for large
    stable batches, with workload-specific tolerances documented for
    small-batch/HNSW cells where clock granularity and instrumentation
-   overhead dominate. Recorded in closeout artifacts.
+   overhead dominate. Task 92 closeout records the approved local SPIRE
+   TurboQuant LUT32 calibration from packet 014; Graviton 4 runtime
+   evidence is deferred to the first Task 93-98 packet that lands a real
+   SVE2 backend.
 4. ISA detection helper unit-tested: on each available host,
    `current_isa()` returns the highest available variant per
    kernel; falls back to scalar when none detected.
@@ -200,9 +208,16 @@ normative architectural decision once accepted.
 - ADR-076 status flip PROPOSED → ACCEPTED.
 - Closeout packet documenting:
   - all acceptance criteria met;
-  - off-path counter validation result vs Task 87 Phase 6 baseline;
+  - off-path counter validation result from the Task 92 local SPIRE
+    TurboQuant LUT32 calibration run;
   - LUT32 module-layout backfill behavioral parity;
   - bench suite cross-quant axis dry-run + sample run.
+  - deferred Graviton 4 disposition: Tasks 93-98 run the AWS smoke or
+    benchmark evidence when they introduce real SVE2 kernels. The first
+    such packet must report `Isa::Sve2`, measured runtime vector length,
+    and direct `(AM, quant, isa)` counter rows. Full AWS performance
+    benches belong to the kernel rollout tasks, not this infrastructure
+    closeout.
 - Status flip Task 92 → `complete`.
 
 ## Per-AM validation gate
@@ -247,7 +262,7 @@ backfill, which must remain bit-equal vs the pre-backfill code
 - Task 91 (`QuantCodec` trait migration)
 - `spec/adr/ADR-071-unified-quantizer-interface.md`
 - `spec/adr/ADR-072-index-local-quantized-codec-adapters.md`
-- ADR-076 (universal block kernel pattern — proposed, authored by this task)
+- ADR-076 (universal block kernel pattern — accepted, authored by this task)
 - Task 86 packet 002 (TurboVec block-kernel transferability matrix)
 - pgvectorscale: `access_method/scan.rs` resort_buffer pattern
 

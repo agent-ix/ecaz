@@ -1,7 +1,7 @@
 ---
 id: ADR-071
 title: "Unified Quantizer Interface Across Access Methods"
-status: PROPOSED
+status: ACCEPTED
 impact: Affects ADR-031, ADR-041, ADR-048, FR-013, FR-034, FR-035, FR-038, and future HNSW/DiskANN/IVF storage-format work.
 date: 2026-05-25
 ---
@@ -32,8 +32,28 @@ candidates, expose reloptions, and validate on-disk metadata.
 
 ## Decision
 
-Adopt a unified quantizer interface as the target architecture, but do not
-start a flag-day extraction as part of the DiskANN RaBitQ integration.
+Adopt `QuantCodec` (`src/am/common/quant_codec.rs`) as the accepted shared
+quantizer-family scoring interface across access methods.
+
+This accepts the Task 91 extraction for the quantizer-family layer only. Access
+methods still own storage binding, tuple/list/page layout, traversal rules,
+relation access, and on-disk compatibility. ADR-072 records that boundary.
+
+The common scoring contract is:
+
+- `encode_source` prepares family-owned payload code bytes;
+- `prepare_ip_query` builds the family-owned query scorer state;
+- `score_ip_candidate` scores one encoded candidate;
+- `try_score_ip_candidate` optionally applies a caller-provided inner-product
+  cutoff while preserving the same candidate scoring semantics;
+- `score_ip_batch` is the universal batch entry point used by AM scan loops
+  and by Task 92 block-kernel dispatch infrastructure;
+- `codec_kind`, `search_codec_tag`, and `payload_len` provide stable
+  quantizer-family identity for reporting and validation.
+
+The original no-flag-day guidance remains correct for storage adapters and
+on-disk layout. Task 91 deliberately extracted the stable quantizer-family
+contract through reviewed slices instead of rewriting every AM in one commit.
 
 The long-term interface should separate three concerns:
 
@@ -67,15 +87,36 @@ pub trait QuantizedPayloadCodec {
 }
 ```
 
-This is intentionally illustrative, not a committed API. The final API should
-come from the second and third AM integrations, after repeated call sites are
-clear.
+This sketch remains useful context for the separation of concerns, but the
+accepted Rust API is `QuantCodec`. Future metric-specific or non-IP scan paths
+should add explicit siblings instead of weakening the current IP scoring
+contract.
+
+## Task 91 Adoption Record
+
+Task 91 migrated the quantizer-family scoring layer onto `QuantCodec` across
+the active AM surfaces:
+
+- IVF uses `IvfQuantizer` / `IvfQuantCodec`, including model-bound grouped-PQ,
+  RaBitQ, TurboQuant, batch scoring, and cutoff scoring.
+- HNSW routes TurboQuant exact modes, grouped-PQ, and RaBitQ approximate scan
+  scoring through HNSW-local `QuantCodec` adapters.
+- DiskANN routes binary-sidecar, grouped-PQ, RaBitQ, and TurboQuant prefilter
+  scoring through DiskANN-local `QuantCodec` adapters.
+- SPIRE routes selected-row, sampled-row, routed-probe, column-batch, and
+  bounded RaBitQ cutoff scoring through `SpireAssignmentQuantCodec`.
+
+The accepted contract includes `try_score_ip_candidate`; it retired the final
+SPIRE bounded-cutoff exception and is part of the common surface available to
+future early-pruning work.
 
 ## Current Implementation Guidance
 
-Task 60 may use a DiskANN-local adapter that delegates to shared quantizer
-kernels, because that keeps the RaBitQ integration small and preserves DiskANN
-scan invariants:
+DiskANN, HNSW, IVF, and SPIRE may use AM-local adapters that implement
+`QuantCodec` or return a bound `QuantCodec` view. That keeps storage and
+traversal invariants local while preventing quantizer math and scoring
+semantics from forking. For DiskANN, this preserves the original Task 60
+invariants:
 
 - relation-graph reads stay on-demand;
 - RaBitQ metadata gets an explicit DiskANN discriminator;
@@ -89,7 +130,13 @@ selection, and score polarity normalization.
 
 ## Extraction Trigger
 
-Start the shared interface extraction only when at least two of these are true:
+The quantizer-family extraction trigger has fired and is satisfied by Task 91.
+Do not reopen the broad question for IP scan scoring without new contradictory
+evidence.
+
+Further extraction is still gated for storage-binding traits. Promote
+index-local codec adapters into a shared storage trait only when at least two
+of these are true:
 
 1. HNSW RaBitQ integration duplicates the DiskANN/IVF build or scan adapter
    shape.
@@ -100,22 +147,24 @@ Start the shared interface extraction only when at least two of these are true:
 4. Benchmark/reporting rows need a single quantizer identity object to avoid
    drift between AM-specific reloption labels and on-disk discriminators.
 
-At extraction time, the first PR should move only the stable common contract and
-one family implementation behind it. It should not rewrite all AMs in one
-commit. DiskANN and HNSW can adopt the shared interface before IVF if their
-graph payload surfaces converge first.
+At storage-adapter extraction time, the first PR should move only the stable
+common storage contract and one family implementation behind it. It should not
+rewrite all AMs in one commit.
 
 ## Consequences
 
-- **Short-term velocity stays high.** DiskANN RaBitQ can land with a narrow
-  adapter instead of a broad quantizer abstraction.
-- **The direction is explicit.** Future HNSW and IVF work should avoid inventing
-  unrelated quantizer APIs where the same concepts are appearing.
+- **Quantizer scoring is shared.** New IP scoring paths should enter through
+  `QuantCodec`, including batch and cutoff-capable scoring.
+- **Short-term storage velocity stays high.** AMs can keep narrow storage
+  bindings instead of forcing a broad storage abstraction.
+- **The direction is explicit.** Future HNSW, DiskANN, SPIRE, and IVF work
+  should avoid inventing unrelated quantizer scoring APIs where `QuantCodec`
+  already holds the common contract.
 - **On-disk compatibility remains AM-owned.** The shared quantizer interface
   does not own graph/page tuple formats; each AM still owns its format
   discriminator and upgrade rules.
-- **Extraction has a measurable trigger.** We wait for duplicated shape, not an
-  abstract desire for tidiness.
+- **Storage extraction still has a measurable trigger.** We wait for duplicated
+  storage-binding shape, not an abstract desire for tidiness.
 
 ## Alternatives Considered
 

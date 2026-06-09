@@ -280,6 +280,101 @@ mod tests {
     }
 
     #[test]
+    fn common_quant_codec_batch_delegates_to_prepared_scorer_batch() {
+        let query = vec![1.0, 0.5, -0.25, 0.125];
+        let sources = [vec![0.25, -0.5, 0.75, 1.0], vec![-0.125, 0.25, 0.5, -1.0]];
+        let codec =
+            SpireAssignmentQuantCodec::new(SpireAssignmentPayloadFormat::TurboQuant, query.len());
+        let prepared = QuantCodec::prepare_ip_query(&codec, &query).unwrap();
+        let encoded = sources
+            .iter()
+            .map(|source| QuantCodec::encode_source(&codec, source).unwrap())
+            .collect::<Vec<_>>();
+        let mut batch = CandidateBatch::with_capacity(encoded.len());
+        for (index, encoded) in encoded.iter().enumerate() {
+            batch
+                .push(
+                    index,
+                    CandidatePayload::new(&encoded.code, CandidateMeta::Gamma(encoded.gamma)),
+                )
+                .unwrap();
+        }
+        let mut trait_scores = vec![0.0; batch.len()];
+        let mut direct_scores = vec![0.0; batch.len()];
+
+        QuantCodec::score_ip_batch(&codec, &prepared, &batch, &mut trait_scores).unwrap();
+        prepared
+            .score_candidate_batch_ip(&batch, &mut direct_scores)
+            .unwrap();
+
+        assert_eq!(trait_scores.len(), direct_scores.len());
+        for (trait_score, direct_score) in trait_scores.iter().zip(direct_scores.iter()) {
+            assert_eq!(trait_score.to_bits(), direct_score.to_bits());
+        }
+    }
+
+    #[test]
+    fn common_quant_codec_batch_preserves_prepared_scorer_length_error() {
+        let query = vec![1.0, 0.5, -0.25, 0.125];
+        let source = vec![0.25, -0.5, 0.75, 1.0];
+        let codec =
+            SpireAssignmentQuantCodec::new(SpireAssignmentPayloadFormat::TurboQuant, query.len());
+        let encoded = QuantCodec::encode_source(&codec, &source).unwrap();
+        let prepared = QuantCodec::prepare_ip_query(&codec, &query).unwrap();
+        let mut batch = CandidateBatch::with_capacity(1);
+        batch
+            .push(
+                0_u32,
+                CandidatePayload::new(&encoded.code, CandidateMeta::Gamma(encoded.gamma)),
+            )
+            .unwrap();
+        let mut trait_scores = Vec::new();
+        let mut direct_scores = Vec::new();
+
+        let trait_err =
+            QuantCodec::score_ip_batch(&codec, &prepared, &batch, &mut trait_scores).unwrap_err();
+        let direct_err = prepared
+            .score_candidate_batch_ip(&batch, &mut direct_scores)
+            .unwrap_err();
+
+        assert_eq!(trait_err, direct_err);
+        assert_eq!(
+            trait_err,
+            "ec_spire candidate batch scorer output count 0 does not match candidate count 1"
+        );
+    }
+
+    #[test]
+    fn prepared_scorer_quant_codec_matches_implicit_supported_format_state() {
+        let query = vec![1.0, 0.5, -0.25, 0.125];
+        for (payload_format, expected_kind, expected_tag) in [
+            (
+                SpireAssignmentPayloadFormat::TurboQuant,
+                QuantCodecKind::TurboQuant,
+                QuantSearchCodecTag::TurboQuant,
+            ),
+            (
+                SpireAssignmentPayloadFormat::RaBitQ,
+                QuantCodecKind::RaBitQ,
+                QuantSearchCodecTag::RaBitQ {
+                    bits: crate::DEFAULT_QUANT_BITS,
+                },
+            ),
+        ] {
+            let scorer =
+                SpirePreparedAssignmentScorer::prepare(payload_format, query.len(), &query)
+                    .unwrap();
+            let codec = scorer.quant_codec();
+
+            assert_eq!(codec.payload_format, scorer.payload_format());
+            assert_eq!(codec.dimensions, scorer.dimensions());
+            assert_eq!(QuantCodec::codec_kind(&codec), expected_kind);
+            assert_eq!(QuantCodec::search_codec_tag(&codec), expected_tag);
+            assert_eq!(QuantCodec::payload_len(&codec), scorer.payload_stride().unwrap());
+        }
+    }
+
+    #[test]
     fn common_quant_codec_scores_rabitq_assignments() {
         let query = vec![1.0, 0.5, -0.25, 0.125];
         let sources = [vec![0.25, -0.5, 0.75, 1.0], vec![-0.125, 0.25, 0.5, -1.0]];

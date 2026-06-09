@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::Instant;
 
 use super::assign::SpireLeafAssignmentInput;
 use super::storage::{
@@ -6,8 +7,8 @@ use super::storage::{
     SPIRE_PAYLOAD_FORMAT_TURBOQUANT,
 };
 use crate::am::common::candidate_batch::{
-    score_turboquant_no_qjl_4bit_batch_for, CandidateBatch, CandidateBatchScoringSurface,
-    CandidateMeta, CandidatePayload,
+    record_block_scalar_score_for, score_turboquant_no_qjl_4bit_batch_for, CandidateBatch,
+    CandidateBatchScoringSurface, CandidateMeta, CandidatePayload,
 };
 use crate::am::common::quant_codec::{
     EncodedQuantPayload, QuantCodec, QuantCodecKind, QuantSearchCodecTag,
@@ -150,6 +151,10 @@ impl SpirePreparedAssignmentScorer {
 
     pub(super) fn payload_stride(&self) -> Result<usize, String> {
         expected_payload_len(self.dimensions(), self.payload_format())
+    }
+
+    pub(super) fn quant_codec(&self) -> SpireAssignmentQuantCodec {
+        SpireAssignmentQuantCodec::new(self.payload_format(), self.dimensions())
     }
 
     pub(super) fn score_assignment_ip(
@@ -373,12 +378,21 @@ impl SpirePreparedAssignmentScorer {
                     }
                 }
 
+                let scalar_started = Instant::now();
                 for ((payload, gamma), out_score) in payloads
                     .chunks_exact(payload_stride)
                     .zip(gammas.iter())
                     .zip(out_scores.iter_mut())
                 {
                     *out_score = quantizer.score_ip_from_parts(prepared, *gamma, payload);
+                }
+                if no_qjl_4bit_lut.is_some() {
+                    record_block_scalar_score_for(
+                        CandidateBatchScoringSurface::Spire,
+                        QuantCodecKind::TurboQuant,
+                        payload_count,
+                        u64::try_from(scalar_started.elapsed().as_nanos()).unwrap_or(u64::MAX),
+                    );
                 }
             }
             Self::RaBitQ { prepared, .. } => {
@@ -437,6 +451,7 @@ impl SpirePreparedAssignmentScorer {
                     }
                 }
 
+                let scalar_started = Instant::now();
                 for (payload, out_score) in batch.payloads().iter().zip(out_scores.iter_mut()) {
                     let gamma = match payload.meta {
                         CandidateMeta::None
@@ -447,6 +462,14 @@ impl SpirePreparedAssignmentScorer {
                         CandidateMeta::GammaAndResidualSigns { gamma, .. } => gamma,
                     };
                     *out_score = quantizer.score_ip_from_parts(prepared, gamma, payload.code);
+                }
+                if no_qjl_4bit_lut.is_some() {
+                    record_block_scalar_score_for(
+                        CandidateBatchScoringSurface::Spire,
+                        QuantCodecKind::TurboQuant,
+                        batch.len(),
+                        u64::try_from(scalar_started.elapsed().as_nanos()).unwrap_or(u64::MAX),
+                    );
                 }
             }
             Self::RaBitQ { .. } => {
@@ -532,23 +555,38 @@ impl QuantCodec for SpireAssignmentQuantCodec {
         prepared_query.score_payload_ip(self.payload_format, gamma, payload.code)
     }
 
+    fn try_score_ip_candidate(
+        &self,
+        prepared_query: &Self::PreparedQuery,
+        payload: CandidatePayload<'_>,
+        min_ip_to_keep: Option<f32>,
+    ) -> Result<Option<f32>, String> {
+        let gamma = match payload.meta {
+            CandidateMeta::None
+            | CandidateMeta::Binary
+            | CandidateMeta::RaBitQ
+            | CandidateMeta::GroupedPq { .. } => 0.0,
+            CandidateMeta::Gamma(gamma) => gamma,
+            CandidateMeta::GammaAndResidualSigns { gamma, .. } => gamma,
+        };
+        match min_ip_to_keep {
+            Some(min_ip_to_keep) => prepared_query.try_score_payload_ip(
+                self.payload_format,
+                gamma,
+                payload.code,
+                min_ip_to_keep,
+            ),
+            None => self.score_ip_candidate(prepared_query, payload).map(Some),
+        }
+    }
+
     fn score_ip_batch<Id>(
         &self,
         prepared_query: &Self::PreparedQuery,
         batch: &CandidateBatch<'_, Id>,
         out_scores: &mut [f32],
     ) -> Result<(), String> {
-        if batch.len() != out_scores.len() {
-            return Err(format!(
-                "quant codec batch output count {} does not match candidate count {}",
-                out_scores.len(),
-                batch.len()
-            ));
-        }
-        for (payload, out_score) in batch.payloads().iter().zip(out_scores.iter_mut()) {
-            *out_score = self.score_ip_candidate(prepared_query, *payload)?;
-        }
-        Ok(())
+        prepared_query.score_candidate_batch_ip(batch, out_scores)
     }
 }
 

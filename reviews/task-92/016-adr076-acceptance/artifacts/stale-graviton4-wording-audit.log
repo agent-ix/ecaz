@@ -1,0 +1,23 @@
+Script started on 2026-06-09 06:53:19-07:00 [<not executed on terminal>]
+reviews/task-92/015-graviton4-taskfile-alignment/request.md
+10:`enum Isa { Scalar, Neon, Sve, Avx2 }` and said Graviton 4 measurements may be
+27:- `rg -n "Graviton 4 measurements may be reported|Graviton 4.*SVE-256|Graviton 4.*sve-256|enum Isa \\{ Scalar, Neon, Sve, Avx2 \\}" plan/tasks spec/adr docs crates src reviews/task-92 --glob '!reviews/task-92/*/feedback/*.md'`
+
+reviews/task-92/015-graviton4-taskfile-alignment/artifacts/manifest.md
+21:rg -n "Graviton 4 measurements may be reported|Graviton 4.*SVE-256|Graviton 4.*sve-256|enum Isa \\{ Scalar, Neon, Sve, Avx2 \\}" plan/tasks spec/adr docs crates src reviews/task-92 --glob '!reviews/task-92/*/feedback/*.md'
+27:reviews/task-92/002-graviton4-sve2-contract/request.md:40:- Confirm the revised ADR wording no longer implies Graviton 4 is an SVE-256
+
+reviews/task-92/002-graviton4-sve2-contract/request.md
+25:  128-bit vector length) as the production target and says packets use the
+40:- Confirm the revised ADR wording no longer implies Graviton 4 is an SVE-256
+
+reviews/task-92/002-graviton4-sve2-contract/artifacts/manifest.md
+28:  names AWS Graviton 4 (Neoverse V2, SVE2 at 128-bit vector length), using
+
+reviews/task-92/001-adr076-kernel-infra-design/request.md
+41:- ARM target: AWS Graviton 4 (Neoverse V2, SVE2 at 128-bit vector length).
+
+reviews/task-92/001-adr076-kernel-infra-design/artifacts/skeleton-fit-audit.md
+61:SVE2 at 128-bit vector length), whose packets use the SVE2 dispatch branch when
+
+Script done on 2026-06-09 06:53:19-07:00 [COMMAND_EXIT_CODE="0"]

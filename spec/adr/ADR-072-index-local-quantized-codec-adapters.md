@@ -1,7 +1,7 @@
 ---
 id: ADR-072
 title: "Index-Local Quantized Codec Adapters"
-status: PROPOSED
+status: ACCEPTED
 impact: Extends ADR-071. Affects future HNSW RaBitQ work, DiskANN storage formats, IVF quantizer-profile maintenance, FR-034, FR-035, FR-038, and ADR-041/ADR-033 adapter boundaries.
 date: 2026-05-26
 ---
@@ -9,11 +9,13 @@ date: 2026-05-26
 
 ## Context
 
-ADR-071 sets the target direction for a unified quantizer interface across
-HNSW, DiskANN, and IVF. Task 60's DiskANN RaBitQ integration provides more
-evidence about where the shared boundary should sit.
+ADR-071 accepts `QuantCodec` as the shared quantizer-family scoring interface
+across HNSW, DiskANN, IVF, and SPIRE. Task 60's DiskANN RaBitQ integration and
+Task 91's cross-AM migration provide the evidence about where the shared
+boundary sits.
 
-The reusable part is the quantizer family:
+The reusable part is the quantizer family, now represented for IP scan scoring
+by `QuantCodec`:
 
 - deterministic parameters such as dimension, seed, and bit width;
 - optional training or model preparation;
@@ -41,15 +43,16 @@ entangled storage surface.
 
 ## Decision
 
-Adopt **index-local quantized codec adapters** as the near-term pattern.
+Adopt **index-local quantized storage bindings** as the accepted pattern for
+AM-owned persistence and traversal integration.
 
 The architecture has two layers:
 
 ```text
-shared quantizer family
-  owns quantization math and score semantics
+shared quantizer family (`QuantCodec`)
+  owns quantization math, prepared-query state, and score semantics
 
-index-local codec adapter
+index-local storage binding
   owns metadata, tuple/list layout, sidecars, traversal binding, and AM
   compatibility rules
 ```
@@ -59,7 +62,7 @@ tuples, IVF posting-list pages, PostgreSQL relation handles, WAL posture, or
 AM scan state. It may expose code bytes, code length, prepared scorer state,
 and family metadata.
 
-The index-local codec adapter must not fork quantizer math. It may own only
+The index-local storage binding must not fork quantizer math. It may own only
 AM binding logic:
 
 - reloption/profile mapping into the selected quantizer family;
@@ -71,29 +74,48 @@ AM binding logic:
 - score polarity normalization for that AM's traversal;
 - sidecar, codebook, rerank, or direct-code layout decisions.
 
-In concrete terms, the desired shape is:
+In concrete terms, the accepted shape is:
 
 ```text
-RaBitQQuantizer / PqFastScanQuantizer / TurboQuantQuantizer
+QuantCodec impls / bound QuantCodec adapter views
         |
         v
-DiskANN codec adapter / HNSW codec adapter / IVF codec adapter
+DiskANN storage binding / HNSW storage binding / IVF list binding / SPIRE assignment binding
         |
         v
 AM build, insert, scan, vacuum, metadata, and benchmark reporting
 ```
 
-The adapter may start as concrete enums and helper structs inside each AM. It
-does not need to be a trait until the repeated shape is proven by at least two
-AMs.
+The storage binding may remain concrete enums and helper structs inside each
+AM. It does not need to be a trait until the repeated storage shape is proven
+by at least two AMs.
+
+## Task 91 Adoption Record
+
+Task 91 made this boundary concrete:
+
+- `HnswStorageCodec` was renamed to `HnswStorageBinding`, leaving HNSW
+  metadata, tuple-fit, and format identity local while scan scoring moved into
+  HNSW-local `QuantCodec` adapters.
+- `DiskannBuildCodec` was renamed to `DiskannBuildBinding`, leaving build-time
+  storage/layout decisions local while prefilter scoring moved into
+  DiskANN-local `QuantCodec` adapters.
+- IVF kept its list-local quantizer/profile binding and exposed bound
+  `IvfQuantCodec` views where persisted grouped-PQ model state is required.
+- SPIRE kept assignment payload layout local and exposed
+  `SpireAssignmentQuantCodec` for candidate scoring, batch scoring, and bounded
+  cutoff scoring.
+
+This ADR therefore accepts the boundary: `QuantCodec` is shared; storage
+bindings stay AM-local.
 
 ## Current Guidance
 
 ### DiskANN
 
-DiskANN may continue with a local codec-shaped adapter. Task 60's
-`DiskannBuildCodec` and `DiskannPreparedPrefilter` are acceptable near-term
-forms because they keep the critical DiskANN invariants explicit:
+DiskANN may continue with local storage-binding structures. Task 91's
+`DiskannBuildBinding` and `DiskANN` prefilter adapters are acceptable forms
+because they keep the critical DiskANN invariants explicit:
 
 - RaBitQ has an explicit metadata discriminator;
 - `pq_fastscan` stays backward compatible;
@@ -102,8 +124,9 @@ forms because they keep the critical DiskANN invariants explicit:
 
 ### HNSW
 
-HNSW RaBitQ should not begin with a cross-AM abstraction. Instead, it should
-extract a narrow HNSW-local codec adapter while integrating RaBitQ.
+HNSW quantized storage should not move into a cross-AM storage abstraction.
+Instead, it should keep narrow HNSW-local storage bindings while exposing
+scoring through `QuantCodec`.
 
 That adapter should isolate the already-entangled HNSW concerns:
 
@@ -120,14 +143,14 @@ payload, storage, and scoring hooks.
 
 ### IVF
 
-IVF is already format-pluggable enough to support RaBitQ, but that does not
-mean it has a reusable codec abstraction. IVF should keep its list-local adapter
-surface and only adopt shared traits when the DiskANN/HNSW/IVF shapes converge.
+IVF is format-pluggable enough to support RaBitQ and grouped-PQ, but its
+posting-list layout remains local. IVF should keep its list-local binding
+surface while using bound `QuantCodec` views for shared scoring semantics.
 
 ## Extraction Trigger
 
-Promote index-local codec adapters into a shared trait only after the HNSW
-RaBitQ work proves the repeated shape.
+Promote index-local storage bindings into a shared trait only after repeated
+storage shape is proven. `QuantCodec` itself is already accepted by ADR-071.
 
 Good triggers:
 
@@ -146,16 +169,18 @@ AMs in one PR.
 
 ## Consequences
 
-- **Clearer near-term HNSW work.** HNSW can be disentangled enough to add
-  RaBitQ without freezing an unproven cross-AM API.
-- **DiskANN remains a useful prototype.** Its Task 60 codec-shaped structures
-  become evidence for the eventual shared shape, not a one-off workaround.
+- **Clearer near-term HNSW work.** HNSW can keep storage lifecycle and tuple
+  rules local while using the shared scoring contract.
+- **DiskANN remains a useful prototype.** Its Task 60/91 storage-binding
+  structures remain evidence for any eventual shared storage shape, not a
+  one-off workaround.
 - **IVF is not overfit to graph assumptions.** Posting-list concerns stay local
-  until there is a real common contract.
+  while scoring uses the real common `QuantCodec` contract.
 - **On-disk compatibility stays AM-owned.** The common quantizer layer does not
   decide tuple/page layout or migration behavior.
-- **Some duplication remains intentional.** Until HNSW and DiskANN prove a
-  repeated shape, local adapters are cheaper than premature generality.
+- **Some storage duplication remains intentional.** Until HNSW and DiskANN
+  prove a repeated storage shape, local bindings are cheaper than premature
+  generality.
 
 ## Alternatives Considered
 

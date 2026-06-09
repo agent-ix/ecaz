@@ -220,7 +220,7 @@ pub async fn run(conn: &ConnectionOptions, args: LatencyArgs) -> Result<()> {
         )
         .await?;
         if args.task87_candidate_batch_counters {
-            task87_counter_lines.push(super::format_task87_candidate_batch_counter_lines(
+            task87_counter_lines.push(super::format_block_kernel_counter_lines(
                 "latency",
                 &sweep_label,
                 &sweep.task87_candidate_batch_counters,
@@ -361,9 +361,7 @@ async fn run_sweep_point(
     Ok(LatencySweepResult {
         durations: merged,
         memory,
-        task87_candidate_batch_counters: super::merge_task87_candidate_batch_counters(
-            task87_counter_sets,
-        ),
+        task87_candidate_batch_counters: super::merge_block_kernel_counters(task87_counter_sets),
     })
 }
 
@@ -413,7 +411,7 @@ async fn worker(
         client.batch_execute("SET enable_seqscan = off").await?;
     }
     if task87_candidate_batch_counters {
-        super::reset_task87_candidate_batch_counters(&client).await?;
+        super::reset_block_kernel_counters(&client).await?;
     }
     let memory = Arc::new(Mutex::new(MemorySample::default()));
     let stop_memory_monitor = Arc::new(AtomicBool::new(false));
@@ -463,9 +461,9 @@ async fn worker(
     }
     query_result?;
     let task87_candidate_batch_counters = if task87_candidate_batch_counters {
-        super::snapshot_task87_candidate_batch_counters(&client).await?
+        super::snapshot_block_kernel_counters(&client).await?
     } else {
-        Vec::new()
+        super::BlockKernelCounterSnapshots::default()
     };
     let memory = *memory.lock().await;
     Ok(LatencyWorkerResult {
@@ -565,14 +563,14 @@ pub fn summarize(durations: &[Duration]) -> LatencyStats {
 struct LatencySweepResult {
     durations: Vec<Duration>,
     memory: MemorySample,
-    task87_candidate_batch_counters: Vec<super::Task87CandidateBatchCounterSnapshot>,
+    task87_candidate_batch_counters: super::BlockKernelCounterSnapshots,
 }
 
 #[derive(Debug, Default)]
 struct LatencyWorkerResult {
     durations: Vec<Duration>,
     memory: MemorySample,
-    task87_candidate_batch_counters: Vec<super::Task87CandidateBatchCounterSnapshot>,
+    task87_candidate_batch_counters: super::BlockKernelCounterSnapshots,
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]

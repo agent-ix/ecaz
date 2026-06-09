@@ -1,0 +1,55 @@
+Script started on 2026-06-09 06:53:19-07:00 [<not executed on terminal>]
+docs/block-kernel-development.md
+3:Task 92 and ADR-076 define one pattern for compressed-domain block scoring
+40:- `sve.rs`: aarch64 SVE/SVE2 backend or a safe scalar fallback.
+70:A real Graviton 4 SVE2 backend returns `Isa::Sve2`.
+127:SIMD variants may use ADR-076 tolerance:
+146:## Graviton 4 / SVE2 Evidence
+148:AWS Graviton 4 is the ARM production measurement target. Packets must treat it
+149:as Neoverse V2 with SVE2 available and must not use Graviton 3 assumptions.
+151:For Graviton 4 packets:
+153:- target the `Isa::Sve2` branch when runtime detection reports SVE2;
+154:- report the measured runtime vector length verbatim when making width-specific
+155:  claims, for example `sve2-128`;
+158:  SVE2 backend lands, with scalar tails still under `isa=scalar`.
+169:- the exact host and ISA evidence used for Graviton 4 claims.
+
+spec/adr/index.md
+68:| Universal block kernel pattern | `ADR-076-universal-block-kernel-pattern.md` | ACCEPTED | Task 92 standardizes block width, runtime ISA detection, `(AM, quant, ISA)` counters, off-path scalar accounting, and the per-kernel module layout for Tasks 93-99. |
+
+plan/tasks/92-cross-quant-block-kernel-infrastructure.md
+25:## Architectural decisions (to be locked by ADR-076)
+36:ADR-076 was accepted in this task and captures these as a normative
+43:1. **ADR-076: Universal Block Kernel Pattern.** Drafts and accepts
+65:   production measurement target is AWS Graviton 4 (Neoverse V2,
+66:   SVE2). Graviton 4 packets target the `Sve2` dispatch branch when
+67:   available and report the measured runtime vector length verbatim
+68:   when making width-specific claims, for example `sve2-128` for the
+114:  desktop per project memory; Graviton 4 covers the SVE case.
+118:1. ADR-076 accepted (PROPOSED → ACCEPTED in this task's closeout).
+153:### Phase 1 — ADR-076 + module layout convention (design only)
+155:- Draft ADR-076 with the architectural decisions table.
+202:- ADR-076 status flip PROPOSED → ACCEPTED.
+224:- If ADR-076 walkthrough discovers a quant that genuinely doesn't
+240:- **Required by Tasks 93–98.** All Phase III tasks need ADR-076,
+252:- ADR-076 (universal block kernel pattern — accepted, authored by this task)
+
+spec/adr/ADR-076-universal-block-kernel-pattern.md
+2:id: ADR-076
+4:status: ACCEPTED
+8:# ADR-076: Universal Block Kernel Pattern
+83:- `sve.rs`: SVE/SVE2 implementation behind `#[cfg(target_arch = "aarch64")]`.
+114:The ARM production measurement target is AWS Graviton 4 (Neoverse V2, SVE2).
+115:Graviton 4 packets must target the `sve2` dispatch branch when that feature is
+116:available and must report the measured runtime vector length verbatim when
+118:packets must report the measured runtime vector length verbatim, for example
+119:`sve2-128` or `sve-256`.
+161:- SVE/SVE2 kernels must be portable across vector lengths. Graviton 4 is the
+162:  target ARM server host and uses the SVE2 dispatch branch when available, but
+178:AWS Intel hosts, and AWS Graviton 4 hosts. Runtime detection keeps one
+188:### Fixed-Width SVE/SVE2 Kernels
+190:Rejected as the default. Graviton 4 is the measurement target, but the ARM
+191:contract is vector-length agnostic. A fixed-width SVE or SVE2 variant may be
+193:the measured ISA-width label, such as `sve2-128`.
+
+Script done on 2026-06-09 06:53:19-07:00 [COMMAND_EXIT_CODE="0"]

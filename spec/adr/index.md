@@ -60,11 +60,12 @@ This index is the canonical navigation surface for Ecaz architecture decisions. 
 | Parallel index scan | `ADR-040-parallel-index-scan.md` | SHELVED | Not current scaling frontier; reopen only by new accepted ADR. |
 | SPANN | `ADR-035-spann-billion-scale.md` | DROPPED | Dropped from active roadmap. |
 | On-disk forward-compat encoding convention | `ADR-070-on-disk-forward-compat-encoding-convention.md` | PROPOSED | Realises NFR-016. Selects per-payload posture: reject-unknown (default), flag-byte optional regions, or length-prefixed TLV extension block. Blesses existing HNSW/DiskANN `payload_flags` as Option B. |
-| Unified quantizer interface | `ADR-071-unified-quantizer-interface.md` | PROPOSED | Aspirational shared quantizer contract across HNSW, DiskANN, and IVF; defer extraction until repeated AM integrations expose stable shape. |
-| Index-local quantized codec adapters | `ADR-072-index-local-quantized-codec-adapters.md` | PROPOSED | Companion to ADR-071. Shared quantizer math stays separate from AM-owned codec adapters for DiskANN, HNSW, and IVF storage/traversal binding. |
+| Unified quantizer interface | `ADR-071-unified-quantizer-interface.md` | ACCEPTED | `QuantCodec` is the shared quantizer-family scoring contract across HNSW, DiskANN, IVF, and SPIRE; storage/traversal binding remains AM-owned. |
+| Index-local quantized codec adapters | `ADR-072-index-local-quantized-codec-adapters.md` | ACCEPTED | Companion to ADR-071. `QuantCodec` owns shared scoring; AM-local storage bindings own metadata, tuple/list layout, sidecars, and traversal binding. |
 | HNSW staged offline bulk build | `ADR-073-hnsw-staged-offline-bulk-build.md` | PROPOSED | Task 33 M5 refresh stops worker-threshold tuning and selects a staged/offline HNSW bulk-build design lane while keeping ADR-048 as the fallback. |
 | SPIRE leaf-local block pruning | `ADR-074-spire-leaf-local-block-pruning.md` | PROPOSED | Task 79 Phase 4 direction: query-aware subleaf block summaries reachable before row segment reads, with a SPIRE leaf format bump and full-leaf fallback. |
 | DiskANN graph build worker stepping stone | `ADR-075-diskann-graph-build-worker-stepping-stone.md` | PROPOSED | Task 65b uses rayon only as a deterministic graph-core stepping stone while PostgreSQL remains the worker-count authority. |
+| Universal block kernel pattern | `ADR-076-universal-block-kernel-pattern.md` | ACCEPTED | Task 92 standardizes block width, runtime ISA detection, `(AM, quant, ISA)` counters, off-path scalar accounting, and the per-kernel module layout for Tasks 93-99. |
 
 ## Superseded Historical Decisions
 

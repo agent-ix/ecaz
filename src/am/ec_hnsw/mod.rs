@@ -1,11 +1,11 @@
-//! ec_hnsw-specific access-method implementation and tuple codecs.
+//! ec_hnsw-specific access-method implementation and tuple storage bindings.
 
 mod build;
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) use build::debug_last_build_timing;
 mod build_parallel;
-mod codec;
 mod concurrent_dsm_state;
+mod storage_binding;
 pub(crate) use crate::am::common::{cost, explain, parallel, stats, stream};
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) use build_parallel::{

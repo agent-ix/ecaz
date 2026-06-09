@@ -2064,7 +2064,7 @@ mod tests {
     use super::{insert, scan, scan_state, GraphReader, PersistedGraphReader, ScanParams};
     use crate::am::ec_diskann::page::{
         VamanaMetadataPage, PAYLOAD_FLAG_BINARY_SIDECAR, PAYLOAD_FLAG_GROUPED_SEARCH_CODE,
-        VAMANA_SEARCH_CODEC_GROUPED_PQ, VAMANA_SEARCH_CODEC_RABITQ,
+        VAMANA_SEARCH_CODEC_GROUPED_PQ, VAMANA_SEARCH_CODEC_RABITQ, VAMANA_SEARCH_CODEC_TURBOQUANT,
     };
     use crate::storage::{
         page::{DataPageChain, ItemPointer},
@@ -2808,23 +2808,37 @@ mod tests {
         for (suffix, storage_format, expected_codec) in [
             ("pq_fastscan", "pq_fastscan", VAMANA_SEARCH_CODEC_GROUPED_PQ),
             ("rabitq", "rabitq", VAMANA_SEARCH_CODEC_RABITQ),
+            ("turboquant", "turboquant", VAMANA_SEARCH_CODEC_TURBOQUANT),
         ] {
             let table_name = format!("ec_diskann_format_{suffix}");
             let index_name = format!("ec_diskann_format_{suffix}_idx");
+            let (insert_values, query_expr) = if expected_codec == VAMANA_SEARCH_CODEC_TURBOQUANT {
+                (
+                    "(1, encode_to_ecvector(ARRAY(SELECT CASE WHEN i = 1 THEN 1.0::real ELSE 0.0::real END FROM generate_series(1, 1536) AS g(i)), 4, 42)),
+                     (2, encode_to_ecvector(ARRAY(SELECT CASE WHEN i = 2 THEN 1.0::real ELSE 0.0::real END FROM generate_series(1, 1536) AS g(i)), 4, 42)),
+                     (3, encode_to_ecvector(ARRAY(SELECT CASE WHEN i = 3 THEN 1.0::real ELSE 0.0::real END FROM generate_series(1, 1536) AS g(i)), 4, 42)),
+                     (4, encode_to_ecvector(ARRAY(SELECT CASE WHEN i = 4 THEN 1.0::real ELSE 0.0::real END FROM generate_series(1, 1536) AS g(i)), 4, 42)),
+                     (5, encode_to_ecvector(ARRAY(SELECT CASE WHEN i IN (1, 2) THEN 0.70710677::real ELSE 0.0::real END FROM generate_series(1, 1536) AS g(i)), 4, 42)),
+                     (6, encode_to_ecvector(ARRAY(SELECT CASE WHEN i IN (1, 3) THEN 0.70710677::real ELSE 0.0::real END FROM generate_series(1, 1536) AS g(i)), 4, 42))",
+                    "ARRAY(SELECT CASE WHEN i = 1 THEN 1.0::real ELSE 0.0::real END FROM generate_series(1, 1536) AS g(i))::real[]",
+                )
+            } else {
+                (
+                    "(1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.0, 0.0], 4, 42)),
+                     (2, encode_to_ecvector(ARRAY[0.0, 1.0, 0.0, 0.0], 4, 42)),
+                     (3, encode_to_ecvector(ARRAY[0.0, 0.0, 1.0, 0.0], 4, 42)),
+                     (4, encode_to_ecvector(ARRAY[0.0, 0.0, 0.0, 1.0], 4, 42)),
+                     (5, encode_to_ecvector(ARRAY[0.70710677, 0.70710677, 0.0, 0.0], 4, 42)),
+                     (6, encode_to_ecvector(ARRAY[0.70710677, 0.0, 0.70710677, 0.0], 4, 42))",
+                    "ARRAY[1.0, 0.0, 0.0, 0.0]::real[]",
+                )
+            };
             Spi::run(&format!(
                 "CREATE TABLE {table_name} (id bigint primary key, embedding ecvector)"
             ))
             .expect("table creation should succeed");
-            Spi::run(&format!(
-                "INSERT INTO {table_name} VALUES
-                 (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.0, 0.0], 4, 42)),
-                 (2, encode_to_ecvector(ARRAY[0.0, 1.0, 0.0, 0.0], 4, 42)),
-                 (3, encode_to_ecvector(ARRAY[0.0, 0.0, 1.0, 0.0], 4, 42)),
-                 (4, encode_to_ecvector(ARRAY[0.0, 0.0, 0.0, 1.0], 4, 42)),
-                 (5, encode_to_ecvector(ARRAY[0.70710677, 0.70710677, 0.0, 0.0], 4, 42)),
-                 (6, encode_to_ecvector(ARRAY[0.70710677, 0.0, 0.70710677, 0.0], 4, 42))"
-            ))
-            .expect("fixture rows should insert");
+            Spi::run(&format!("INSERT INTO {table_name} VALUES {insert_values}"))
+                .expect("fixture rows should insert");
             Spi::run(&format!(
                 "CREATE INDEX {index_name} ON {table_name} USING ec_diskann \
                  (embedding ecvector_diskann_ip_ops) \
@@ -2875,14 +2889,38 @@ mod tests {
                         "rabitq should not persist a grouped-PQ codebook chain",
                     );
                 }
+                VAMANA_SEARCH_CODEC_TURBOQUANT => {
+                    assert_eq!(
+                        metadata.payload_flags & PAYLOAD_FLAG_GROUPED_SEARCH_CODE,
+                        0,
+                        "turboquant should not advertise grouped-PQ search codes",
+                    );
+                    assert_eq!(
+                        metadata.payload_flags & PAYLOAD_FLAG_BINARY_SIDECAR,
+                        0,
+                        "turboquant stores its search code directly and should not advertise a binary sidecar",
+                    );
+                    assert_eq!(
+                        metadata.search_subvector_count, 0,
+                        "turboquant metadata should not expose grouped-PQ subvector count",
+                    );
+                    assert_eq!(
+                        metadata.search_subvector_dim, 4,
+                        "turboquant metadata stores the TurboQuant bit width in search_subvector_dim",
+                    );
+                    assert_eq!(
+                        metadata.grouped_codebook_head,
+                        ItemPointer::INVALID,
+                        "turboquant should not persist a grouped-PQ codebook chain",
+                    );
+                }
                 other => panic!("unexpected DiskANN search codec in test: {other}"),
             }
 
             Spi::run("SET LOCAL enable_seqscan = off").expect("SET LOCAL should succeed");
             Spi::run("SET LOCAL enable_bitmapscan = off").expect("SET LOCAL should succeed");
             Spi::run("SET LOCAL enable_sort = off").expect("SET LOCAL should succeed");
-            let plan =
-                explain_ordered_diskann_ids(&table_name, "ARRAY[1.0, 0.0, 0.0, 0.0]::real[]", 3);
+            let plan = explain_ordered_diskann_ids(&table_name, query_expr, 3);
             assert!(
                 plan.contains(&format!("Index Scan using {index_name}")),
                 "{storage_format} ordered scan should route through its ec_diskann index: {plan}",
@@ -2893,7 +2931,7 @@ mod tests {
                     .select(
                         &format!(
                             "SELECT id FROM {table_name} \
-                             ORDER BY embedding <#> ARRAY[1.0, 0.0, 0.0, 0.0]::real[] \
+                             ORDER BY embedding <#> {query_expr} \
                              LIMIT 3"
                         ),
                         None,
