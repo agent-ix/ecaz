@@ -35,6 +35,7 @@ use super::page;
 use super::search;
 use super::source;
 use super::stats::TqStatsCounters;
+use super::storage_binding;
 use super::stream::{GraphPrefetchState, LinearPrefetchState};
 
 const MAX_BOOTSTRAP_FRONTIER_CANDIDATES: usize = 3;
@@ -508,6 +509,7 @@ struct GroupedScoreContext<'a> {
 #[derive(Debug, Clone, PartialEq)]
 pub(super) struct PreparedGroupedScanQuery {
     group_count: usize,
+    group_size: usize,
     search_code_len: usize,
     lut_f32: Vec<f32>,
 }
@@ -2188,6 +2190,7 @@ fn build_prepared_grouped_scan_query(
 
     PreparedGroupedScanQuery {
         group_count: model.group_count,
+        group_size: model.group_size,
         search_code_len: model.group_count.div_ceil(2),
         lut_f32: build_grouped_pq_lut_f32(
             &prepared_query.rotated,
@@ -2900,16 +2903,175 @@ fn score_grouped_search_code_result(
     prepared_query: &PreparedGroupedScanQuery,
     search_code: &[u8],
 ) -> f32 {
-    // ADR-041 stage 0: grouped-PQ LUT scoring routes through the
-    // `QueryScorer` trait. The inherent debug_assert on search-code
-    // length lives in the trait impl on `PreparedGroupedScanQuery`.
-    use crate::quant::QueryScorer;
-    -prepared_query.score(search_code)
+    let codec = HnswGroupedPqScanCodec::new(
+        prepared_query.group_count,
+        prepared_query.group_size,
+        prepared_query.search_code_len,
+    );
+    -QuantCodec::score_ip_candidate(
+        &codec,
+        prepared_query,
+        CandidatePayload::new(
+            search_code,
+            CandidateMeta::GroupedPq {
+                group_count: prepared_query.group_count,
+            },
+        ),
+    )
+    .unwrap_or_else(|error| pgrx::error!("{error}"))
 }
 
 fn score_rabitq_search_code_result(prepared_query: &RaBitQScorer, search_code: &[u8]) -> f32 {
-    use crate::quant::QueryScorer;
-    -prepared_query.score(search_code)
+    let codec = HnswRaBitQScanCodec::new(search_code.len(), storage_binding::HNSW_RABITQ_BITS);
+    -QuantCodec::score_ip_candidate(
+        &codec,
+        prepared_query,
+        CandidatePayload::new(search_code, CandidateMeta::RaBitQ),
+    )
+    .unwrap_or_else(|error| pgrx::error!("{error}"))
+}
+
+struct HnswGroupedPqScanCodec {
+    group_count: usize,
+    group_size: usize,
+    search_code_len: usize,
+}
+
+impl HnswGroupedPqScanCodec {
+    fn new(group_count: usize, group_size: usize, search_code_len: usize) -> Self {
+        Self {
+            group_count,
+            group_size,
+            search_code_len,
+        }
+    }
+}
+
+impl QuantCodec for HnswGroupedPqScanCodec {
+    type PreparedQuery = PreparedGroupedScanQuery;
+
+    fn codec_kind(&self) -> QuantCodecKind {
+        QuantCodecKind::GroupedPq
+    }
+
+    fn search_codec_tag(&self) -> QuantSearchCodecTag {
+        QuantSearchCodecTag::GroupedPq {
+            group_count: self.group_count,
+            group_size: self.group_size,
+        }
+    }
+
+    fn payload_len(&self) -> usize {
+        self.search_code_len
+    }
+
+    fn encode_source(&self, source: &[f32]) -> Result<EncodedQuantPayload, String> {
+        Err(format!(
+            "ec_hnsw grouped-PQ scan codec uses persisted grouped search codes; source length {}",
+            source.len()
+        ))
+    }
+
+    fn prepare_ip_query(&self, query: &[f32]) -> Result<Self::PreparedQuery, String> {
+        Err(format!(
+            "ec_hnsw grouped-PQ scan codec uses scan-owned prepared query state; query length {}",
+            query.len()
+        ))
+    }
+
+    fn score_ip_candidate(
+        &self,
+        prepared_query: &Self::PreparedQuery,
+        payload: CandidatePayload<'_>,
+    ) -> Result<f32, String> {
+        if payload.code.len() != self.search_code_len {
+            return Err(format!(
+                "ec_hnsw grouped-PQ search code len {} does not match codec width {}",
+                payload.code.len(),
+                self.search_code_len
+            ));
+        }
+        if prepared_query.group_count != self.group_count
+            || prepared_query.group_size != self.group_size
+            || prepared_query.search_code_len != self.search_code_len
+        {
+            return Err("ec_hnsw grouped-PQ prepared query shape does not match codec".to_owned());
+        }
+        if let CandidateMeta::GroupedPq { group_count } = payload.meta {
+            if group_count != self.group_count {
+                return Err(format!(
+                    "ec_hnsw grouped-PQ candidate group count {} does not match codec group count {}",
+                    group_count,
+                    self.group_count
+                ));
+            }
+        }
+        Ok(grouped_pq_score_f32(
+            &prepared_query.lut_f32,
+            prepared_query.group_count,
+            payload.code,
+        ))
+    }
+}
+
+struct HnswRaBitQScanCodec {
+    search_code_len: usize,
+    bits: u8,
+}
+
+impl HnswRaBitQScanCodec {
+    fn new(search_code_len: usize, bits: u8) -> Self {
+        Self {
+            search_code_len,
+            bits,
+        }
+    }
+}
+
+impl QuantCodec for HnswRaBitQScanCodec {
+    type PreparedQuery = RaBitQScorer;
+
+    fn codec_kind(&self) -> QuantCodecKind {
+        QuantCodecKind::RaBitQ
+    }
+
+    fn search_codec_tag(&self) -> QuantSearchCodecTag {
+        QuantSearchCodecTag::RaBitQ { bits: self.bits }
+    }
+
+    fn payload_len(&self) -> usize {
+        self.search_code_len
+    }
+
+    fn encode_source(&self, source: &[f32]) -> Result<EncodedQuantPayload, String> {
+        Err(format!(
+            "ec_hnsw RaBitQ scan codec uses HNSW storage-binding encoding; source length {}",
+            source.len()
+        ))
+    }
+
+    fn prepare_ip_query(&self, query: &[f32]) -> Result<Self::PreparedQuery, String> {
+        Err(format!(
+            "ec_hnsw RaBitQ scan codec uses scan-owned prepared query state; query length {}",
+            query.len()
+        ))
+    }
+
+    fn score_ip_candidate(
+        &self,
+        prepared_query: &Self::PreparedQuery,
+        payload: CandidatePayload<'_>,
+    ) -> Result<f32, String> {
+        if payload.code.len() != self.search_code_len {
+            return Err(format!(
+                "ec_hnsw RaBitQ search code len {} does not match codec width {}",
+                payload.code.len(),
+                self.search_code_len
+            ));
+        }
+        use crate::quant::QueryScorer;
+        Ok(prepared_query.score(payload.code))
+    }
 }
 
 struct HnswTurboQuantScanCodec<'a> {
@@ -7660,6 +7822,7 @@ mod tests {
         let grouped = build_prepared_grouped_scan_query(&prepared, &model);
 
         assert_eq!(grouped.group_count, 2);
+        assert_eq!(grouped.group_size, 2);
         assert_eq!(grouped.search_code_len, 1);
         assert_eq!(grouped.lut_f32.len(), 32);
         assert_eq!(grouped.lut_f32[0], 1.0);
@@ -7674,6 +7837,7 @@ mod tests {
     fn score_grouped_search_code_result_negates_shared_grouped_pq_score() {
         let prepared = PreparedGroupedScanQuery {
             group_count: 3,
+            group_size: 2,
             search_code_len: 2,
             lut_f32: {
                 let mut lut = vec![0.0_f32; 3 * 16];
@@ -7694,6 +7858,100 @@ mod tests {
 
         assert_eq!(observed, expected);
         assert_eq!(observed, -3.25);
+    }
+
+    #[test]
+    fn hnsw_grouped_pq_scan_codec_matches_direct_search_code_score() {
+        let prepared = PreparedGroupedScanQuery {
+            group_count: 3,
+            group_size: 2,
+            search_code_len: 2,
+            lut_f32: {
+                let mut lut = vec![0.0_f32; 3 * 16];
+                lut[1] = 1.5;
+                lut[16 + 3] = -0.25;
+                lut[32 + 2] = 2.0;
+                lut
+            },
+        };
+        let codec = HnswGroupedPqScanCodec::new(
+            prepared.group_count,
+            prepared.group_size,
+            prepared.search_code_len,
+        );
+        let search_code = &[0x31, 0x02];
+
+        assert_eq!(QuantCodec::codec_kind(&codec), QuantCodecKind::GroupedPq);
+        assert_eq!(
+            QuantCodec::search_codec_tag(&codec),
+            QuantSearchCodecTag::GroupedPq {
+                group_count: 3,
+                group_size: 2,
+            }
+        );
+        assert_eq!(QuantCodec::payload_len(&codec), search_code.len());
+
+        let observed = QuantCodec::score_ip_candidate(
+            &codec,
+            &prepared,
+            CandidatePayload::new(search_code, CandidateMeta::GroupedPq { group_count: 3 }),
+        )
+        .unwrap();
+        let expected = crate::quant::grouped_pq::grouped_pq_score_f32(
+            &prepared.lut_f32,
+            prepared.group_count,
+            search_code,
+        );
+
+        assert_eq!(observed.to_bits(), expected.to_bits());
+        assert_eq!(
+            score_grouped_search_code_result(&prepared, search_code),
+            -expected
+        );
+    }
+
+    #[test]
+    fn hnsw_rabitq_scan_codec_matches_direct_search_code_score() {
+        use crate::quant::Quantizer;
+
+        let dimensions = 16;
+        let vector = unit_vector(dimensions);
+        let query = unit_vector(dimensions);
+        let quantizer = RaBitQQuantizer::cached_seeded_srht_bits(
+            dimensions,
+            42,
+            storage_binding::HNSW_RABITQ_BITS,
+        )
+        .unwrap();
+        let search_code = Quantizer::encode_code(quantizer.as_ref(), &vector).into_vec();
+        let prepared = quantizer.prepare_ip_query(&query);
+        let codec = HnswRaBitQScanCodec::new(search_code.len(), storage_binding::HNSW_RABITQ_BITS);
+
+        assert_eq!(QuantCodec::codec_kind(&codec), QuantCodecKind::RaBitQ);
+        assert_eq!(
+            QuantCodec::search_codec_tag(&codec),
+            QuantSearchCodecTag::RaBitQ {
+                bits: storage_binding::HNSW_RABITQ_BITS,
+            }
+        );
+        assert_eq!(QuantCodec::payload_len(&codec), search_code.len());
+
+        let observed = QuantCodec::score_ip_candidate(
+            &codec,
+            &prepared,
+            CandidatePayload::new(&search_code, CandidateMeta::RaBitQ),
+        )
+        .unwrap();
+        let expected = {
+            use crate::quant::QueryScorer;
+            prepared.score(&search_code)
+        };
+
+        assert_eq!(observed.to_bits(), expected.to_bits());
+        assert_eq!(
+            score_rabitq_search_code_result(&prepared, &search_code).to_bits(),
+            (-expected).to_bits()
+        );
     }
 
     #[test]
