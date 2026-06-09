@@ -1,10 +1,10 @@
 use super::{scalar, BLOCK_WIDTH};
 use crate::quant::isa::Isa;
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(target_arch = "aarch64", not(target_vendor = "apple")))]
 use std::arch::is_aarch64_feature_detected;
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(target_arch = "aarch64", not(target_vendor = "apple")))]
 core::arch::global_asm!(
     r#"
     .text
@@ -36,12 +36,12 @@ ecaz_grouped_pq_sve_cntw:
 "#
 );
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(target_arch = "aarch64", not(target_vendor = "apple")))]
 extern "C" {
     fn ecaz_grouped_pq_sve_accumulate_f32(out: *mut f32, values: *const f32, count: usize);
 }
 
-#[cfg(all(test, target_arch = "aarch64"))]
+#[cfg(all(test, target_arch = "aarch64", not(target_vendor = "apple")))]
 extern "C" {
     fn ecaz_grouped_pq_sve_cntw() -> usize;
 }
@@ -52,7 +52,7 @@ pub(super) fn score_block32_sve(
     codes: &[&[u8]; BLOCK_WIDTH],
     out_scores: &mut [f32],
 ) -> Isa {
-    #[cfg(target_arch = "aarch64")]
+    #[cfg(all(target_arch = "aarch64", not(target_vendor = "apple")))]
     {
         if is_aarch64_feature_detected!("sve2") {
             // SAFETY: runtime feature detection above guarantees SVE2/SVE
@@ -80,7 +80,7 @@ pub(super) fn score_block32_sve_for_test(
     codes: &[&[u8]; BLOCK_WIDTH],
     out_scores: &mut [f32],
 ) -> Option<Isa> {
-    #[cfg(target_arch = "aarch64")]
+    #[cfg(all(target_arch = "aarch64", not(target_vendor = "apple")))]
     {
         if is_aarch64_feature_detected!("sve2") {
             // SAFETY: runtime feature detection above guarantees SVE2/SVE support;
@@ -109,7 +109,7 @@ pub(super) fn runtime_vector_lanes_for_test() -> Option<usize> {
 
 #[cfg(test)]
 fn runtime_vector_lanes() -> Option<usize> {
-    #[cfg(target_arch = "aarch64")]
+    #[cfg(all(target_arch = "aarch64", not(target_vendor = "apple")))]
     {
         if is_aarch64_feature_detected!("sve") {
             // SAFETY: runtime feature detection above guarantees SVE support.
@@ -119,7 +119,7 @@ fn runtime_vector_lanes() -> Option<usize> {
     None
 }
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(target_arch = "aarch64", not(target_vendor = "apple")))]
 unsafe fn score_block32_sve_impl(
     lut: &[f32],
     group_count: usize,
