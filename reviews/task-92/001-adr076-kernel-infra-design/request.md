@@ -16,6 +16,8 @@ Design checkpoint under review:
   - `spec/adr/ADR-076-universal-block-kernel-pattern.md`
 - Added skeleton fit audit:
   - `artifacts/skeleton-fit-audit.md`
+- Added counter and suite contract:
+  - `artifacts/counter-and-suite-contract.md`
 - Added packet manifest:
   - `artifacts/manifest.md`
 

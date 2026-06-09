@@ -35,6 +35,19 @@
   - Task 91 Phase 2 grouped-PQ model binding is the only prerequisite before
     Task 92 implementation starts.
 
+### `counter-and-suite-contract.md`
+
+- command context:
+  - `rg -n "candidate_batch_scoring|CandidateBatchScoringSnapshot|lut32_flushes" src crates`
+  - `rg -n "bench suite|SuiteConfig|quant" crates/ecaz-cli/src/commands/bench crates/ecaz-cli/suites src`
+- result: Phase 2 counter contract and Phase 5 suite-axis contract added
+- key cited decisions:
+  - introduce `ec_block_kernel_scoring_*` SQL functions while keeping Task 87
+    compatibility wrappers;
+  - emit `[block-kernel-counters]` CLI lines with `(surface, quant, isa)`;
+  - require explicit suite cell statuses: `valid`, `missing_kernel`,
+    `structurally_absent`, and `invalid_config`.
+
 ## Validation
 
 No tests run. Task 92 Phase 1 is explicitly design-only and has no Rust code

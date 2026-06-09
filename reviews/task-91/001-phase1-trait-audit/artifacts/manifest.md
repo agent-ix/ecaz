@@ -25,6 +25,22 @@
   - grow model binding for grouped-PQ before migrating HNSW/DiskANN;
   - rename storage-binding adapters so "codec" refers to `QuantCodec`.
 
+### `dispatch-contract.md`
+
+- command context:
+  - `sed -n '180,630p' src/am/ec_ivf/quantizer.rs`
+  - `sed -n '1,620p' src/am/ec_spire/quantizer/mod.rs`
+  - `sed -n '1,520p' src/am/ec_diskann/quantizer.rs`
+  - `sed -n '5140,5205p' src/am/ec_hnsw/scan.rs`
+- result: Phase 2 implementation contract added
+- key cited decisions:
+  - grouped-PQ model bytes bind into the codec/prepared-query adapter before
+    query preparation;
+  - prepared-query enums stay concrete but delegate quant scoring through
+    `QuantCodec`;
+  - counters increment only after successful shape validation and scoring;
+  - IVF Phase 2 evidence must cover model-bound grouped-PQ construction.
+
 ## Validation
 
 No tests run. Task 91 Phase 1 is explicitly design-only and has no Rust code

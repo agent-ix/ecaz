@@ -6,6 +6,8 @@ This packet asks for review of the Task 91 Phase 1 design gate. It does not
 change Rust code.
 
 The audit is in `artifacts/trait-audit.md`.
+The concrete Phase 2 implementation contract is in
+`artifacts/dispatch-contract.md`.
 
 Design checkpoint under review:
 
