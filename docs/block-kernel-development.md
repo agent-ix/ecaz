@@ -157,6 +157,13 @@ For Graviton 4 packets:
 - include counter evidence showing kernel rows under `isa=sve2` once a real
   SVE2 backend lands, with scalar tails still under `isa=scalar`.
 
+Task 92's infrastructure closeout does not require AWS Graviton 4 benchmarks:
+it ships shared dispatch, counters, suite axes, docs, and safe fallback stubs.
+The first Task 93-98 packet that introduces a real SVE2 backend owns the
+Graviton 4 smoke evidence (`Isa::Sve2`, measured runtime vector length, direct
+counter rows). Full Graviton 4 performance benches belong to the kernel rollout
+task that makes the performance claim.
+
 ## Packet Evidence
 
 Kernel implementation packets should include packet-local artifacts for:

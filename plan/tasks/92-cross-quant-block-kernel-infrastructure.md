@@ -1,6 +1,6 @@
 # Task 92: Cross-Quant Block Kernel Infrastructure + ISA Gating
 
-Status: proposed (2026-06-08)
+Status: complete (2026-06-09, closeout `reviews/task-92/017-block-kernel-infra-closeout/`)
 Owner: coder (to be assigned). One coder, one branch.
 Priority: 1 (foundation for Tasks 93–99)
 
@@ -112,6 +112,9 @@ architectural decision.
   Task 99 if measurement shows justification.
 - Apple silicon (M-series) variant. Local bench host is Intel
   desktop per project memory; Graviton 4 covers the SVE case.
+- AWS Graviton 4 benchmark runs for real quant kernels. Task 92 ships
+  shared infrastructure plus safe fallback stubs; Tasks 93-98 own the
+  Graviton 4 smoke/bench evidence when a real SVE2 backend is introduced.
 
 ## Acceptance criteria
 
@@ -128,7 +131,10 @@ architectural decision.
    against total scoring nanos; ≤1% drift is the target for large
    stable batches, with workload-specific tolerances documented for
    small-batch/HNSW cells where clock granularity and instrumentation
-   overhead dominate. Recorded in closeout artifacts.
+   overhead dominate. Task 92 closeout records the approved local SPIRE
+   TurboQuant LUT32 calibration from packet 014; Graviton 4 runtime
+   evidence is deferred to the first Task 93-98 packet that lands a real
+   SVE2 backend.
 4. ISA detection helper unit-tested: on each available host,
    `current_isa()` returns the highest available variant per
    kernel; falls back to scalar when none detected.
@@ -202,9 +208,16 @@ architectural decision.
 - ADR-076 status flip PROPOSED → ACCEPTED.
 - Closeout packet documenting:
   - all acceptance criteria met;
-  - off-path counter validation result vs Task 87 Phase 6 baseline;
+  - off-path counter validation result from the Task 92 local SPIRE
+    TurboQuant LUT32 calibration run;
   - LUT32 module-layout backfill behavioral parity;
   - bench suite cross-quant axis dry-run + sample run.
+  - deferred Graviton 4 disposition: Tasks 93-98 run the AWS smoke or
+    benchmark evidence when they introduce real SVE2 kernels. The first
+    such packet must report `Isa::Sve2`, measured runtime vector length,
+    and direct `(AM, quant, isa)` counter rows. Full AWS performance
+    benches belong to the kernel rollout tasks, not this infrastructure
+    closeout.
 - Status flip Task 92 → `complete`.
 
 ## Per-AM validation gate
