@@ -34,9 +34,12 @@ highest-ROI cell in the Phase III matrix.
    following the FAISS PQ4-FastScan algorithm (per-group SIMD
    LUT lookup pattern, in scalar form as the bit-equal reference).
 2. **NEON variant** using NEON `tbl` (vector table lookup) for
-   16-entry LUT lookups across 32 lanes. Graviton 1–4.
-3. **SVE-256 variant** using SVE `tbl` for 32-lane LUT lookups
-   in one instruction. Graviton 3+.
+   16-entry LUT lookups across 32 lanes. Validate on Graviton 4
+   with the NEON path forced, plus any cheaper ARM sanity host if
+   available.
+3. **SVE variant** using vector-length-agnostic SVE `tbl` for LUT
+   lookups. Report as SVE-256 only when the measured runtime vector
+   length is 256 bits.
 4. **AVX2 variant** using `_mm256_shuffle_epi8` (the x86
    equivalent of NEON `tbl`). Intel.
 5. **`QuantCodec` registration** in IVF + DiskANN grouped-PQ
@@ -59,9 +62,10 @@ highest-ROI cell in the Phase III matrix.
 ## Acceptance criteria
 
 1. `src/quant/pq_fastscan32/` module live with scalar + NEON +
-   SVE-256 + AVX2 per Task 92 convention.
+   SVE + AVX2 per Task 92 convention.
 2. IVF + DiskANN grouped-PQ scoring routes through `QuantCodec::
-   score_batch` and dispatches to the kernel for batches ≥ 32.
+   <batch method selected by Task 91>` and dispatches to the kernel
+   for batches ≥ 32.
 3. Recall byte-equal at every cell.
 4. ≥ 2× scoring-share latency on each ISA per AM. Per-ISA stop
    condition < 1.5× → document and continue.
@@ -74,11 +78,15 @@ highest-ROI cell in the Phase III matrix.
 
 ## Phases
 
-### Phase A — Scalar block kernel + scalar-baseline measurement
+### Phase A — Scalar block kernel + layout audit + scalar-baseline measurement
 
 - Land `pq_fastscan32/scalar.rs` following the FAISS PQ4-FastScan
   algorithm shape. Per-group LUT lookup + group-wise accumulation
   across all 32 lanes.
+- Audit IVF and DiskANN grouped-PQ code packing, group ordering,
+  LUT signedness, and accumulation range before implementing SIMD.
+  SIMD kernels must match the audited layout rather than assuming
+  FAISS-compatible nibble packing.
 - Route IVF + DiskANN grouped-PQ scoring through `QuantCodec`.
 - Real10k baseline + kernel-on/off counters on both AMs.
 
@@ -86,14 +94,16 @@ highest-ROI cell in the Phase III matrix.
 
 - Land `pq_fastscan32/neon.rs` using `vqtbl1q_u8` for 16-entry
   LUT lookup across 16 lanes; 2 instructions per 32-lane block.
-- M5 ARM or Graviton 2 measurement.
+- Graviton 4 measurement with SVE disabled or the NEON dispatch path
+  forced. A cheaper ARM host may be used only as supplemental sanity
+  evidence.
 
-### Phase C — SVE-256 variant + Graviton 3 measurement
+### Phase C — SVE variant + Graviton 4 measurement
 
-- Land `pq_fastscan32/sve256.rs` using SVE `tbl` for 32-lane
-  single-instruction LUT lookup. This is where Graviton 3's
-  register width pays off most.
-- AWS Graviton 3 measurement; snapshot + destroy per memory.
+- Land `pq_fastscan32/sve.rs` using vector-length-agnostic SVE
+  `tbl`. This is where Graviton 4's vector width may pay off most;
+  record the measured vector length in artifacts.
+- AWS Graviton 4 measurement; snapshot + destroy per memory.
 
 ### Phase D — AVX2 variant + Intel desktop measurement
 

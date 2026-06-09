@@ -122,7 +122,16 @@ These pre-lane task files are retained only for historical context under
 88. `87-candidate-batched-scoring-across-ams.md` — **in progress** (2026-06-08): shared CandidateBatch design and per-AM structural batching plan for TurboQuant no-QJL 4-bit; Phase 1 design packets live under `reviews/task-87/`, with DiskANN TQ search-code enablement split to Task 90.
 89. `88-streaming-ann-result-iteration.md` — **proposed** (2026-06-07): HNSW + DiskANN streaming ANN result iteration with resort buffer and hybrid-search benchmarks; depends on Task 87's CandidateBatch abstraction.
 90. `89-turboquant-tqplus-cross-am-validation.md` — **proposed** (2026-06-07): validate TQ+ beyond the reverted Task 86 IVF/DBPedia result before any operator-visible format tag re-lands; requires format-design ADR, SPIRE/HNSW/DiskANN ports, second-corpus evidence, and streaming-insert drift measurement.
-91. `90-diskann-turboquant-search-codec.md` — **proposed** (2026-06-08): Task 87 DiskANN prerequisite to decide whether a narrow, on-disk-format-neutral TurboQuant no-QJL 4-bit DiskANN search codec can land, or to document a reviewer-accepted Stop Condition.
+91. `90-diskann-turboquant-search-codec.md` — **superseded by Task 91** (2026-06-08): the narrow DiskANN TurboQuant search-codec question moved into the cross-AM `QuantCodec` migration.
+92. `91-cross-am-quantcodec-migration.md` — **proposed** (2026-06-08): migrate every AM/quant scoring path onto the shared `QuantCodec` batch surface, absorb the DiskANN TurboQuant search-codec slice from Task 90, and update ADR-071/ADR-072.
+93. `92-cross-quant-block-kernel-infrastructure.md` — **proposed** (2026-06-08): author ADR-076 and land shared block-kernel infrastructure: ISA detection, `(AM, quant, isa)` counters, off-path scalar accounting, LUT32 layout backfill, and `ecaz bench suite` quant-axis support.
+94. `93-rabitq-block-kernel-family.md` — **proposed** (2026-06-08): ship RaBitQ block kernels across the AMs that already expose RaBitQ, with scalar/NEON/SVE/AVX2 variants and per-AM closeout evidence.
+95. `94-grouped-pq-block-kernel-family.md` — **proposed** (2026-06-08): ship grouped-PQ/PqFastScan block kernels for IVF and DiskANN after auditing code packing/layout compatibility.
+96. `95-hamming-binary-block-kernel-family.md` — **proposed** (2026-06-08): ship Hamming/binary fingerprint block kernels for DiskANN binary-sidecar surfaces, sharing popcount structure with RaBitQ where possible.
+97. `96-tq-2bit-block-kernel-family.md` — **proposed** (2026-06-08): inventory real TurboQuant no-QJL 2-bit consumers, then land or stop-condition the 2-bit LUT block-kernel family.
+98. `97-tq-qjl-block-kernel-family.md` — **proposed** (2026-06-08): ship gamma-aware TurboQuant QJL block kernels with `CandidateMeta` side data and explicit FMA/ULP validation.
+99. `98-hnsw-exact-mode-block-kernels.md` — **proposed** (2026-06-08): ship HNSW-specific `TiledLut` and `Int8Approx` exact-score block kernels once Task 91 provides a valid HNSW TurboQuant exact-mode benchmark surface.
+100. `99-cross-am-quant-isa-block-kernel-closeout.md` — **proposed** (2026-06-08): aggregate Tasks 87 and 93-98 into the project-level `(AM, quant, ISA)` completeness matrix and author ADR-077.
 
 ## Coordination rules
 

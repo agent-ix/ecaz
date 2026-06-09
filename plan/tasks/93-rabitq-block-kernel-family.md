@@ -35,12 +35,17 @@ popcount kernels are 4–8× over scalar.
    a parameterized kernel if the algebra is straightforward;
    otherwise scoped as follow-up.
 2. **NEON variant** at `src/quant/rabitq32/neon.rs` using NEON
-   `cnt` (vector popcount) + `veor` (xor). Graviton 1–4 baseline.
-3. **SVE-256 variant** at `src/quant/rabitq32/sve256.rs` using
-   SVE `cnt` + predicate masks for tail handling. Graviton 3+.
+   `cnt` (vector popcount) + `veor` (xor). Validate on Graviton 4
+   with the NEON path forced, plus any cheaper ARM sanity host if
+   available.
+3. **SVE variant** at `src/quant/rabitq32/sve.rs` using SVE
+   `cnt` + predicate masks for tail handling. Report as SVE-256
+   only when the measured runtime vector length is 256 bits.
 4. **AVX2 variant** at `src/quant/rabitq32/avx2.rs` using
-   AVX2 `_mm256_xor_si256` + `_mm256_sad_epu8` / VPOPCNT
-   fallback (depending on `target_feature` availability).
+   AVX2 `_mm256_xor_si256` plus an AVX2-compatible popcount
+   strategy such as nibble-LUT/`pshufb` + `_mm256_sad_epu8`.
+   VPOPCNTDQ is AVX-512-family only and belongs in a future
+   AVX-512 variant, not the AVX2 gate.
 5. **`QuantCodec` registration** of the kernel in each AM's RaBitQ
    impl. Width-based gating: `batch.len() >= 32` routes to the
    kernel; smaller batches use scalar fallback.
@@ -66,10 +71,11 @@ popcount kernels are 4–8× over scalar.
 
 ## Acceptance criteria
 
-1. `src/quant/rabitq32/` module live with scalar + NEON + SVE-256
+1. `src/quant/rabitq32/` module live with scalar + NEON + SVE
    + AVX2 variants per the Task 92 convention.
 2. Each AM's RaBitQ scoring path routes through `QuantCodec::
-   score_batch` and dispatches to the kernel for batches ≥ 32.
+   <batch method selected by Task 91>` and dispatches to the
+   kernel for batches ≥ 32.
 3. Recall byte-equal at every (AM × corpus) cell vs pre-kernel
    baseline.
 4. ≥ 2× scoring-share latency on the kernel path vs the scalar
@@ -92,22 +98,25 @@ popcount kernels are 4–8× over scalar.
 - Land `rabitq32/scalar.rs`. Bit-equal vs
   `score_ip_bits1_batch_from_payloads`.
 - Route IVF, DiskANN, HNSW RaBitQ scoring through
-  `QuantCodec::score_batch` + scalar kernel dispatch.
+  Task 91's selected `QuantCodec` batch method + scalar kernel
+  dispatch.
 - Real10k baseline measurement on each AM. Kernel-on vs
   kernel-off cells via Task 92 counters.
 
-### Phase B — NEON variant + Graviton 1/2 measurement
+### Phase B — NEON variant + Graviton 4 forced-NEON measurement
 
 - Land `rabitq32/neon.rs` using NEON popcount.
-- Same matrix on a Graviton-class ARM host (project local M5 ARM
-  or AWS Graviton 2 — coordinate with infra).
+- Same matrix on Graviton 4 with SVE disabled or the NEON dispatch
+  path forced. A cheaper ARM host may be used only as supplemental
+  sanity evidence.
 - ULP tolerance ≤ 4 ULP vs scalar reference. Recall byte-equal at
   bench level.
 
-### Phase C — SVE-256 variant + Graviton 3 measurement
+### Phase C — SVE variant + Graviton 4 measurement
 
-- Land `rabitq32/sve256.rs` using SVE `cnt` + predication.
-- AWS Graviton 3 measurement run. Per memory rules, snapshot +
+- Land `rabitq32/sve.rs` using vector-length-agnostic SVE `cnt`
+  + predication.
+- AWS Graviton 4 measurement run. Per memory rules, snapshot +
   destroy the bench host immediately after measurement.
 
 ### Phase D — AVX2 variant + Intel desktop measurement
@@ -174,6 +183,6 @@ For each (AM × corpus) cell, kernel-on vs kernel-off:
 ## Estimated size
 
 Medium. 4–6 weeks for one coder. Phases A–B can land within the
-first two weeks; SVE-256 (Phase C) is the slowest because cloud
+first two weeks; SVE (Phase C) is the slowest because cloud
 bench setup overhead applies; AVX2 + closeout in the final 1–2.
 Multi-bit RaBitQ may extend size if in scope.

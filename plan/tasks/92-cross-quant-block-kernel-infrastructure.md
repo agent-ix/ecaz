@@ -9,7 +9,7 @@ Priority: 1 (foundation for Tasks 93–99)
 Task 87 Phase 7 shipped one block kernel (`src/quant/lut32.rs` for
 TurboQuant no-QJL 4-bit). Tasks 93–98 will ship six more quant
 kernel families. Each kernel family ships scalar + ARM NEON + ARM
-SVE-256 + Intel AVX2 variants, registers per-quant + per-AM
+SVE + Intel AVX2 variants, registers per-quant + per-AM
 counters, and reports a per-(AM × quant × ISA) closeout cell.
 
 Without shared infrastructure, each per-quant task reinvents the
@@ -22,26 +22,28 @@ no canonical reference for adding new quants later.
 Task 92 lands the shared infrastructure once. Tasks 93–98 then
 instantiate kernels against it without writing their own plumbing.
 
-## Architectural decisions (locked by ADR-076)
+## Architectural decisions (to be locked by ADR-076)
 
 | Decision | Value |
 |---|---|
 | Block width | 32 candidates, universal |
-| Kernel dispatch | `QuantCodec::score_batch` (Task 91 trait) |
+| Kernel dispatch | Task 91's universal `QuantCodec` batch method (`score_ip_batch` today; `score_batch` only if Task 91 renames/generalizes it) |
 | ISA detection | runtime via `is_x86_feature_detected!` / `is_aarch64_feature_detected!` |
-| Per-kernel module layout | `src/quant/<kernel>/{mod.rs, scalar.rs, neon.rs, sve256.rs, avx2.rs}` |
+| Per-kernel module layout | `src/quant/<kernel>/{mod.rs, scalar.rs, neon.rs, sve.rs, avx2.rs}` |
 | Recall policy | strict `to_bits()` equality on scalar reference; ULP tolerance ≤ 4 ULP or 1e-6 relative on SIMD variants; recall@k preservation at bench level is the binding gate |
 | Width-based gating | `batch.len() >= 32` routes to block kernel; smaller batches use scalar tail path |
 
-ADR-076 captures these as a normative architectural decision.
+ADR-076 starts as proposed in this task and captures these as a
+normative architectural decision once accepted.
 
 ## Scope
 
 ### In scope
 
-1. **ADR-076: Universal Block Kernel Pattern.** Captures the
+1. **ADR-076: Universal Block Kernel Pattern.** Drafts and accepts
+   the
    decisions above plus the rationale. Sites: 32-block width vs
-   SVE-256 / NEON / AVX2 register widths, runtime ISA detection
+   SVE / NEON / AVX2 register widths, runtime ISA detection
    for fleet flexibility, ULP tolerance for SIMD freedom, off-path
    counter as the canonical kernel-vs-scalar measurement.
 2. **Per-(AM × quant) scoring-share counters.** Extends the Task 87
@@ -59,7 +61,10 @@ ADR-076 captures these as a normative architectural decision.
 4. **Runtime ISA detection helper.** A small `src/quant/isa.rs`
    module that detects available ISA features once at startup,
    caches the result, and exposes `current_isa()` returning an
-   `enum Isa { Scalar, Neon, Sve256, Avx2 }` per-kernel. Each
+   `enum Isa { Scalar, Neon, Sve, Avx2 }` per-kernel. SVE is
+   vector-length agnostic: Graviton 4 measurements may be reported as
+   SVE-256 only when the measured runtime vector length is 256 bits.
+   Each
    kernel module's `mod.rs` uses this to pick the function
    pointer at first call.
 5. **Per-kernel module layout convention.** Each Phase III quant
@@ -70,10 +75,10 @@ ADR-076 captures these as a normative architectural decision.
    - `scalar.rs`: scalar reference implementation (bit-exact).
    - `neon.rs`: NEON variant, `#[cfg(target_arch = "aarch64")]`,
      dispatched via runtime `is_aarch64_feature_detected!("neon")`.
-   - `sve256.rs`: SVE-256 variant, runtime detection +
-     `is_aarch64_feature_detected!("sve")`. May `unimplemented!`
-     today on hosts where SVE is missing; runtime detection skips
-     it.
+   - `sve.rs`: SVE variant, runtime detection +
+     `is_aarch64_feature_detected!("sve")`. The implementation must
+     be vector-length agnostic or explicitly gated on the measured
+     vector length; runtime detection skips it on hosts without SVE.
    - `avx2.rs`: AVX2 variant, runtime detection +
      `is_x86_feature_detected!("avx2")`.
    Each ISA module exposes a single `pub(super) fn
@@ -104,7 +109,7 @@ ADR-076 captures these as a normative architectural decision.
 - AVX-512 variant. Block-width-32 + AVX-512 is a follow-up after
   Task 99 if measurement shows justification.
 - Apple silicon (M-series) variant. Local bench host is Intel
-  desktop per project memory; Graviton 3 covers the SVE-256 case.
+  desktop per project memory; Graviton 4 covers the SVE case.
 
 ## Acceptance criteria
 
@@ -117,17 +122,20 @@ ADR-076 captures these as a normative architectural decision.
 3. **Off-path counter validated against Task 87 LUT32**: with
    `ec_*.candidate_batch_scoring=off`, the scalar counter accumulates
    nanos at the per-candidate scorer; with `=on`, the kernel
-   counter accumulates kernel nanos. Sum should equal total
-   scoring nanos within ≤1% instrumentation noise. Recorded in
-   closeout artifacts.
+   counter accumulates kernel nanos. Closeout records calibration
+   against total scoring nanos; ≤1% drift is the target for large
+   stable batches, with workload-specific tolerances documented for
+   small-batch/HNSW cells where clock granularity and instrumentation
+   overhead dominate. Recorded in closeout artifacts.
 4. ISA detection helper unit-tested: on each available host,
    `current_isa()` returns the highest available variant per
    kernel; falls back to scalar when none detected.
 5. Per-kernel module layout convention applied to Task 87
    `lut32.rs` as a backfilled reference impl: `lut32/scalar.rs`
-   (current code), `lut32/{neon,sve256,avx2}.rs` stubbed with
-   `unimplemented!` and runtime dispatch falling through to
-   scalar. This proves the conversion shape without claiming any
+   (current code), `lut32/{neon,sve,avx2}.rs` stubbed with safe
+   scalar fallbacks or compile-time-disabled modules, never reachable
+   `unimplemented!` paths in normal dispatch. This proves the
+   conversion shape without claiming any
    ISA win on the existing kernel; Tasks 93–98 then land real ISA
    variants for their respective kernels.
 6. Reference skeleton template documented; Phase 1 design walks
@@ -166,7 +174,7 @@ ADR-076 captures these as a normative architectural decision.
 - Land `src/quant/isa.rs` with runtime feature detection +
   cached `current_isa()` per kernel.
 - Backfill Task 87's `lut32.rs` into the new module layout
-  (`lut32/scalar.rs` + stubbed `lut32/{neon,sve256,avx2}.rs`).
+  (`lut32/scalar.rs` + stubbed `lut32/{neon,sve,avx2}.rs`).
   Validates the convention end-to-end on already-shipped code.
 - Proves runtime dispatch overhead is ≤1% of kernel time
   (measure on TQ-4-bit cells from Task 87).
@@ -219,8 +227,8 @@ backfill, which must remain bit-equal vs the pre-backfill code
 ## Coordination
 
 - **Depends on Task 91** reaching Phase 2 (trait audit + IVF
-  retouch). Task 92's `score_batch` dispatch shape uses the
-  grown trait.
+  retouch). Task 92's batch dispatch shape uses the grown trait
+  method name selected by Task 91.
 - **Off-path counter overlap with Task 87 closeout:** Task 87
   packet 021 reviewer feedback flagged off-path counter as a
   pre-closeout requirement. If Task 87 closeout coder lands the
@@ -237,9 +245,9 @@ backfill, which must remain bit-equal vs the pre-backfill code
 
 - Task 87 (`CandidateBatch` + `lut32` Phase 7 kernel)
 - Task 91 (`QuantCodec` trait migration)
-- ADR-071 (unified quantizer interface — proposed)
-- ADR-072 (index-local codec adapters)
-- ADR-076 (universal block kernel pattern — proposed, this task)
+- `spec/adr/ADR-071-unified-quantizer-interface.md`
+- `spec/adr/ADR-072-index-local-quantized-codec-adapters.md`
+- ADR-076 (universal block kernel pattern — proposed, authored by this task)
 - Task 86 packet 002 (TurboVec block-kernel transferability matrix)
 - pgvectorscale: `access_method/scan.rs` resort_buffer pattern
 

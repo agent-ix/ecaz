@@ -120,9 +120,12 @@ Design-only packet that:
 - specifies which existing per-AM enums collapse into the trait vs
   which remain (storage-binding) adapters;
 - specifies the dispatch decision (`dyn` vs enum) and rationale;
-- **specifies `QuantCodec::score_batch` as the universal block-kernel
-  dispatch entry point.** Tasks 93–98 each implement scalar + ISA-
-  gated kernel variants and register them through this method.
+- **specifies the universal block-kernel dispatch entry point.**
+  Current code enters through `QuantCodec::score_ip_batch`; Phase 1
+  either keeps that name as the universal method or renames/generalizes
+  it to `score_batch`, with the compatibility plan recorded before
+  Task 92 implementation starts. Tasks 93–98 each implement scalar +
+  ISA-gated kernel variants and register them through this method.
   Phase 1 must lock in: (a) the kernel-registration shape per quant,
   (b) how `CandidateBatch::len() >= 32` width-based gating composes
   with the trait method, and (c) the ULP-tolerance contract for SIMD
@@ -208,8 +211,8 @@ flip to `complete`.
 
 ## References
 
-- ADR-071 (unified quantizer interface)
-- ADR-072 (index-local quantized codec adapters)
+- `spec/adr/ADR-071-unified-quantizer-interface.md`
+- `spec/adr/ADR-072-index-local-quantized-codec-adapters.md`
 - Task 64 (HNSW quantized codec adapters — storage-binding layer)
 - Task 87 (`CandidateBatch` + per-AM batched scoring)
 - Task 87 packet 007 (Phase 1 common-codec scope revision) and packet

@@ -29,8 +29,12 @@ DiskANN binary-sidecar prefilter latency improvement.
 
 1. **Scalar block kernel** at `src/quant/hamming32/scalar.rs`.
 2. **NEON variant** using NEON `cnt` + `veor`.
-3. **SVE-256 variant** using SVE `cnt` + predication.
-4. **AVX2 variant** using `_mm256_xor_si256` + popcount.
+3. **SVE variant** using SVE `cnt` + predication. Report as
+   SVE-256 only when the measured runtime vector length is 256 bits.
+4. **AVX2 variant** using `_mm256_xor_si256` plus an
+   AVX2-compatible popcount strategy such as nibble-LUT/`pshufb` +
+   `_mm256_sad_epu8`. VPOPCNTDQ is reserved for a future AVX-512
+   variant.
 5. **`QuantCodec` registration** in DiskANN binary-sidecar
    prefilter + any other binary scoring sites.
 6. **Per-(AM × ISA) measurement** on DiskANN surfaces with
@@ -49,9 +53,9 @@ DiskANN binary-sidecar prefilter latency improvement.
 ## Acceptance criteria
 
 1. `src/quant/hamming32/` module live with scalar + NEON +
-   SVE-256 + AVX2.
+   SVE + AVX2.
 2. DiskANN binary-sidecar prefilter routes through
-   `QuantCodec::score_batch` for batches ≥ 32.
+   Task 91's selected `QuantCodec` batch method for batches ≥ 32.
 3. Recall byte-equal at every cell.
 4. ≥ 2× scoring-share per ISA.
 5. End-to-end no regression beyond noise.
@@ -62,7 +66,8 @@ DiskANN binary-sidecar prefilter latency improvement.
 ## Phases
 
 Same A/B/C/D/E shape as Task 93/94. Phase A scalar; B NEON +
-ARM; C SVE-256 + Graviton 3; D AVX2 + Intel; E closeout matrix.
+Graviton 4 forced-NEON; C SVE + Graviton 4; D AVX2 + Intel; E
+closeout matrix.
 
 ## Per-AM validation gate
 

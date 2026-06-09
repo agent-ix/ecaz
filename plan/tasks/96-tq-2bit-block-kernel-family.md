@@ -28,7 +28,9 @@ the LUT32 pattern from Task 87 with a smaller per-dim LUT.
    skeleton).
 2. **NEON variant** using `vqtbl1q_u8` for 4-entry LUT lookup
    across 32 lanes.
-3. **SVE-256 variant** using SVE `tbl` with 4-entry LUT.
+3. **SVE variant** using vector-length-agnostic SVE `tbl` with
+   4-entry LUT. Report as SVE-256 only when the measured runtime
+   vector length is 256 bits.
 4. **AVX2 variant** using `_mm256_shuffle_epi8` for 4-entry
    LUT lookup.
 5. **`QuantCodec` registration** on every AM that exposes
@@ -48,9 +50,9 @@ the LUT32 pattern from Task 87 with a smaller per-dim LUT.
 ## Acceptance criteria
 
 1. `src/quant/lut32_2bit/` (or equivalent) module live with
-   scalar + NEON + SVE-256 + AVX2.
+   scalar + NEON + SVE + AVX2.
 2. Each AM with 2-bit TurboQuant routes scoring through
-   `QuantCodec::score_batch` for batches ≥ 32.
+   Task 91's selected `QuantCodec` batch method for batches ≥ 32.
 3. Recall byte-equal at every cell.
 4. ≥ 2× scoring-share per ISA per AM.
 5. End-to-end no regression beyond noise.
@@ -60,7 +62,17 @@ the LUT32 pattern from Task 87 with a smaller per-dim LUT.
 
 ## Phases
 
-Same A/B/C/D/E shape as Task 93/94.
+### Phase 0 — Surface inventory
+
+- Audit current AMs for real 2-bit TurboQuant scoring consumers.
+- If no AM exposes such a surface, file the Stop Condition packet
+  immediately and do not implement speculative kernels.
+- If the Task 92 skeleton can parameterize by LUT entry count,
+  decide whether this is a thin instantiation of the Task 87/94 LUT
+  family rather than a standalone kernel family.
+
+Phases A/B/C/D/E then follow the Task 93/94 shape only for the
+surfaces found in Phase 0.
 
 ## Per-AM validation gate
 

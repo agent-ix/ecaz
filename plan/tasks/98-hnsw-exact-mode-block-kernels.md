@@ -6,8 +6,8 @@ Priority: 3 (HNSW-specific; per-frontier batches limit end-to-end win)
 
 ## Why
 
-HNSW's `TurboQuantExactScoreMode` enum
-(`src/am/ec_hnsw/scan.rs:5005`) dispatches the no-prefilter
+HNSW's `TurboQuantExactScoreMode` enum in
+`src/am/ec_hnsw/scan.rs` dispatches the no-prefilter
 scoring path across three branches:
 
 - `FullLut` — per-dimension 16-entry LUT lookup. Identical
@@ -35,18 +35,18 @@ frontier produces ≥ 32 candidates.
 ### In scope
 
 1. **`TiledLut` block kernel** at
-   `src/quant/tiled_lut32/scalar.rs` + NEON + AVX2. SVE-256
+   `src/quant/tiled_lut32/scalar.rs` + NEON + AVX2. SVE
    conditional on Phase A measurement showing meaningful
    frontier-batch ≥ 32 share.
 2. **`Int8Approx` block kernel** at
    `src/quant/int8_approx32/scalar.rs` + NEON + AVX2.
-   SVE-256 conditional.
+   SVE conditional.
 3. **`QuantCodec` registration** of both kernels in HNSW's
    TurboQuant exact-score dispatch.
 4. **Per-(corpus × ISA) measurement** on HNSW real10k / 50k /
    100k surfaces for both modes.
 5. **Per-frontier batch-width distribution measurement** on
-   Phase A (scalar). Determines whether SVE-256 + Graviton 3
+   Phase A (scalar). Determines whether SVE + Graviton 4
    measurement is worth running for Phase C.
 6. **Recall byte-equal** per ADR-076.
 7. **Closeout matrix** with explicit batch-width-distribution
@@ -63,11 +63,11 @@ frontier produces ≥ 32 candidates.
 ## Acceptance criteria
 
 1. `src/quant/tiled_lut32/` and `src/quant/int8_approx32/`
-   modules live with scalar + NEON + AVX2 + SVE-256 (if Phase
+   modules live with scalar + NEON + AVX2 + SVE (if Phase
    A justifies the cloud-bench cost).
 2. HNSW TurboQuant exact-score dispatch routes through
-   `QuantCodec::score_batch` for both `TiledLut` and
-   `Int8Approx` modes at batches ≥ 32.
+   Task 91's selected `QuantCodec` batch method for both
+   `TiledLut` and `Int8Approx` modes at batches ≥ 32.
 3. Recall byte-equal at every cell.
 4. **Documented per-frontier batch-width distribution** per
    corpus size: histogram of flush widths, fraction ≥ 32, mean
@@ -90,17 +90,19 @@ frontier produces ≥ 32 candidates.
   50k / 100k.
 - Decision point: if measured ≥ 32 flush share < 20% on all
   corpora, scope down Task 98 to scalar + one ISA (likely
-  AVX2 on Intel desktop) and skip Phase C SVE-256 cloud cost.
+  AVX2 on Intel desktop) and skip Phase C SVE cloud cost.
 
 ### Phase B — NEON variants + ARM measurement
 
 - Land NEON variants for both kernels.
-- M5 ARM or Graviton 2 measurement.
+- Graviton 4 measurement with SVE disabled or the NEON dispatch path
+  forced. A cheaper ARM host may be used only as supplemental sanity
+  evidence.
 
-### Phase C — SVE-256 variants + Graviton 3 measurement (conditional)
+### Phase C — SVE variants + Graviton 4 measurement (conditional)
 
 - Only if Phase A batch-width distribution justifies.
-- AWS Graviton 3 measurement; snapshot + destroy.
+- AWS Graviton 4 measurement; snapshot + destroy.
 
 ### Phase D — AVX2 variants + Intel desktop measurement
 
@@ -134,7 +136,7 @@ For each (mode × corpus) cell:
 
 - If batch-width distribution shows < 20% of flushes ≥ 32 on
   all corpora: scope down to scalar + AVX2 only. Don't pay for
-  SVE-256 + NEON cloud measurement.
+  SVE + NEON cloud measurement.
 - If `TiledLut` or `Int8Approx` algebra exceeds ADR-076 ULP
   tolerance under SIMD reorder: document and tighten to
   Option A on that mode only.
@@ -154,15 +156,19 @@ For each (mode × corpus) cell:
 
 - Task 87 packet 002 (HNSW `TiledLut` + `Int8Approx` original
   deferral)
-- Task 87 packets 020/022 (HNSW zero-counter problem — must
-  be resolved before Task 98 Phase A starts, or Phase A's
-  measurement won't fire)
+- Task 87 packets 020/022/023/024 (HNSW zero-counter context).
+  Task 98 must start from a valid HNSW TurboQuant exact-mode
+  benchmark surface after Task 91's HNSW `QuantCodec` migration;
+  if counters still do not fire on that surface, Phase A first
+  resolves instrumentation rather than treating Task 87's
+  FullLut-oriented closeout as sufficient evidence.
 - ADR-018 (HNSW quantized graph quality)
 - ADR-076 (universal block kernel pattern — Task 92)
 
 ## Estimated size
 
 Medium. 4–6 weeks for one coder, possibly less if Phase A
-scope-down skips Phase C. The HNSW zero-counter resolution
-from Task 87 closeout is a prerequisite; if that doesn't
-land cleanly, Task 98 inherits the investigation cost.
+scope-down skips Phase C. The HNSW prerequisite is a valid
+TurboQuant exact-mode benchmark and counter surface after Task
+91 migration; if that does not land cleanly, Task 98 inherits
+the instrumentation investigation cost.

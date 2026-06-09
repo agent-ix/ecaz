@@ -32,8 +32,9 @@ fallback. IVF generic TurboQuant branch.
    per-candidate gamma + residual sign side data.
 2. **NEON variant** using NEON `tbl` for LUT + scalar
    multiply-add for gamma correction.
-3. **SVE-256 variant** using SVE `tbl` + predicated FMA for
-   gamma + sign mask.
+3. **SVE variant** using vector-length-agnostic SVE `tbl` +
+   predicated FMA for gamma + sign mask. Report as SVE-256 only
+   when the measured runtime vector length is 256 bits.
 4. **AVX2 variant** using `_mm256_shuffle_epi8` + AVX2 FMA.
 5. **`QuantCodec` registration** on each AM's QJL/gamma-aware
    scoring path. Side data carried through `CandidateMeta::
@@ -54,15 +55,16 @@ fallback. IVF generic TurboQuant branch.
 
 ## Acceptance criteria
 
-1. `src/quant/qjl32/` module live with scalar + NEON + SVE-256
+1. `src/quant/qjl32/` module live with scalar + NEON + SVE
    + AVX2.
 2. Each AM with QJL/gamma-aware scoring routes through
-   `QuantCodec::score_batch` with `CandidateMeta::Gamma*`
-   side data.
+   Task 91's selected `QuantCodec` batch method with
+   `CandidateMeta::Gamma*` side data.
 3. Recall byte-equal at every cell.
-4. ≥ 2× scoring-share per ISA per AM (target — QJL's per-
-   candidate correction reduces the ceiling vs no-QJL; 1.8×
-   is acceptable if measured).
+4. ≥ 2× scoring-share per ISA per AM is the target. Because QJL's
+   per-candidate correction reduces the ceiling vs no-QJL, ≥1.8×
+   is acceptable without a Stop Condition; 1.5×–1.8× is documented
+   as partial; <1.5× triggers the per-ISA Stop Condition process.
 5. End-to-end no regression beyond noise.
 6. `pg_test` surfaces for QJL-using AMs pass.
 7. Safety docs on FMA-using paths.

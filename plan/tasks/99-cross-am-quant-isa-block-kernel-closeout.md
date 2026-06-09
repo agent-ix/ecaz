@@ -40,7 +40,8 @@ initiative was the completeness matrix; Task 99 produces it.
 3. **f32 raw exclusion documented** as the canonical "no kernel
    needed" cell across all AMs.
 4. **Per-ISA Graviton vs Intel comparison**: which quants gain
-   most from SVE-256; which from AVX2; which platform-neutral.
+   most from SVE on Graviton 4, with measured vector length
+   recorded; which from AVX2; which platform-neutral.
 5. **Scoring-share vs end-to-end decoupling map**: identifies
    surfaces where scoring-share saturates (kernel does its job)
    but end-to-end doesn't move because other stages dominate
@@ -55,8 +56,11 @@ initiative was the completeness matrix; Task 99 produces it.
      family per the Task 92 skeleton template;
    - the (AM × quant × ISA) matrix is the project-level
      coverage gate for kernel-completeness future work.
-7. **Status flips** on Tasks 93–98 to `complete` referencing
-   this task; status flip on Task 99 to `complete` last.
+7. **Status audit** on Tasks 93–98 confirming each per-family
+   task already closed itself with a packet-local matrix; append
+   cross-references where useful, but do not retroactively own
+   their completion flips. Status flip on Task 99 to `complete`
+   last.
 8. **Memory updates**: project-level memory file documenting
    the block-kernel pattern as the operating convention.
 
@@ -78,11 +82,12 @@ initiative was the completeness matrix; Task 99 produces it.
    baseline at every cell, citing the source closeout packets.
 3. Per-AM end-to-end deltas at every cell with attribution
    (kernel-bound vs other-stage-bound).
-4. Per-ISA comparison table: Graviton 3 (SVE-256) vs Intel
-   (AVX2) wins by quant.
+4. Per-ISA comparison table: Graviton 4 SVE (measured vector
+   length recorded) vs Intel AVX2 wins by quant.
 5. Structural exclusions documented with source evidence.
 6. ADR-077 PROPOSED → ACCEPTED.
-7. Status flips on Tasks 93–98 to `complete`.
+7. Status audit confirms Tasks 93–98 are complete, with source
+   closeout packets linked from the aggregate matrix.
 8. Project memory updated.
 
 ## Phases
@@ -105,10 +110,11 @@ initiative was the completeness matrix; Task 99 produces it.
   Map them to the AM-stage that dominates (graph traversal,
   pipeline routing, IO, etc.).
 
-### Phase 4 — ADR-077 + status flips + memory
+### Phase 4 — ADR-077 + status audit + memory
 
 - Draft ADR-077 capturing the closing decisions.
-- Flip Tasks 93–98 statuses.
+- Audit Tasks 93–98 statuses and append cross-references where
+  useful.
 - Update project memory.
 
 ### Phase 5 — Closeout
@@ -142,10 +148,11 @@ accurately represents what shipped.
 ## References
 
 - All of Tasks 87, 91, 92, 93–98.
-- ADR-071 (unified quantizer interface)
-- ADR-072 (index-local codec adapters)
+- `spec/adr/ADR-071-unified-quantizer-interface.md`
+- `spec/adr/ADR-072-index-local-quantized-codec-adapters.md`
 - ADR-076 (universal block kernel pattern — Task 92)
-- ADR-077 (block kernel completeness closing record — this task)
+- ADR-077 (block kernel completeness closing record — proposed,
+  authored by this task)
 
 ## Estimated size
 
