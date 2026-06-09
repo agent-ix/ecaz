@@ -1,0 +1,15 @@
+Script started on 2026-06-09 00:11:03-07:00 [<not executed on terminal>]
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on artifact directory
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.24s
+     Running unittests src/lib.rs (target/debug/deps/ecaz-52f8c7085962b346)
+
+running 1 test
+test am::ec_spire::scan::tests::rabitq_cutoff_helper_uses_quant_codec_before_cutoff_is_available ... [32mok[m
+
+test result: [32mok[m. 1 passed; 0 failed; 0 ignored; 0 measured; 2038 filtered out; finished in 0.00s
+
+
+Script done on 2026-06-09 00:11:03-07:00 [COMMAND_EXIT_CODE="0"]

@@ -1,0 +1,11 @@
+Script started on 2026-06-09 00:10:53-07:00 [<not executed on terminal>]
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.20s
+     Running unittests src/lib.rs (target/debug/deps/ecaz-52f8c7085962b346)
+
+running 1 test
+test am::ec_ivf::quantizer::tests::common_quant_codec_grouped_pq_cutoff_prunes_through_trait ... [32mok[m
+
+test result: [32mok[m. 1 passed; 0 failed; 0 ignored; 0 measured; 2038 filtered out; finished in 0.08s
+
+
+Script done on 2026-06-09 00:10:53-07:00 [COMMAND_EXIT_CODE="0"]

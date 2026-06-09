@@ -1,0 +1,35 @@
+Script started on 2026-06-09 00:11:10-07:00 [<not executed on terminal>]
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.15s
+     Running unittests src/lib.rs (target/debug/deps/ecaz-52f8c7085962b346)
+
+running 25 tests
+test am::ec_ivf::quantizer::tests::common_quant_codec_rabitq_batch_is_bit_exact_with_scalar ... [32mok[m
+test am::ec_ivf::quantizer::tests::common_quant_codec_scores_rabitq_batch ... [32mok[m
+test am::ec_ivf::quantizer::tests::grouped_pq_score_bound_prunes_when_suffix_cannot_reach_minimum ... [32mok[m
+test am::ec_ivf::quantizer::tests::non_bits1_batch_dispatch_declines_without_scoring ... [32mok[m
+test am::ec_ivf::quantizer::tests::pq_fastscan_accepts_metadata_group_size_override ... [32mok[m
+test am::ec_ivf::quantizer::tests::pq_fastscan_rejects_group_size_that_does_not_divide_transform ... [32mok[m
+test am::ec_ivf::quantizer::tests::rabitq_bits1_batch_dispatch_matches_scalar_scores ... [32mok[m
+test am::ec_ivf::quantizer::tests::rabitq_dispatch_does_not_rebuild_quantizer_while_scoring ... [32mok[m
+test am::ec_ivf::quantizer::tests::supported_v1_formats_resolve_to_turboquant ... [32mok[m
+test am::ec_ivf::quantizer::tests::pq_fastscan_v1_format_resolves_to_grouped_profile ... [32mok[m
+test am::ec_ivf::quantizer::tests::rabitq_dispatch_matches_direct_quantizer_score ... [32mok[m
+test am::ec_ivf::quantizer::tests::rabitq_v1_format_resolves_to_rabitq ... [32mok[m
+test am::ec_ivf::quantizer::tests::common_quant_codec_grouped_pq_batch_is_bit_exact_with_scalar ... [32mok[m
+test am::ec_ivf::quantizer::tests::common_quant_codec_scores_grouped_pq_batch_with_prepared_model ... [32mok[m
+test am::ec_ivf::quantizer::tests::pq_fastscan_dispatch_scores_grouped_code_with_persisted_model ... [32mok[m
+test am::ec_ivf::quantizer::tests::common_quant_codec_grouped_pq_cutoff_prunes_through_trait ... [32mok[m
+test am::ec_ivf::quantizer::tests::common_quant_codec_grouped_pq_requires_model_binding ... [32mok[m
+test am::ec_ivf::quantizer::tests::common_quant_codec_grouped_pq_rejects_mismatched_candidate_meta ... [32mok[m
+test am::ec_ivf::quantizer::tests::common_quant_codec_pq_fastscan_batch_is_bit_exact_with_direct_path ... [32mok[m
+test am::ec_ivf::quantizer::tests::turboquant_dispatch_matches_direct_prod_score ... [32mok[m
+test am::ec_ivf::quantizer::tests::common_quant_codec_turboquant_batch_is_bit_exact_with_scalar ... [32mok[m
+test am::ec_ivf::quantizer::tests::common_quant_codec_scores_turboquant_batch ... [32mok[m
+test am::ec_ivf::quantizer::tests::turboquant_dispatch_uses_lut_for_no_qjl_4bit_lane ... [32mok[m
+test am::ec_ivf::quantizer::tests::turboquant_no_qjl_4bit_batch_scores_match_scalar_scores ... [32mok[m
+test am::ec_ivf::quantizer::tests::common_quant_codec_turboquant_no_qjl_lut32_batch_is_bit_exact_with_scalar ... [32mok[m
+
+test result: [32mok[m. 25 passed; 0 failed; 0 ignored; 0 measured; 2014 filtered out; finished in 0.20s
+
+
+Script done on 2026-06-09 00:11:10-07:00 [COMMAND_EXIT_CODE="0"]
