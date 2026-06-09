@@ -1,6 +1,6 @@
 # Task 94: Grouped-PQ / PqFastScan Block Kernel Family (All AMs × All ISAs)
 
-Status: in review (2026-06-09; implementation, local validation, automatic CI cleanup, and local IVF PqFastScan suite-smoke evidence through `reviews/task-94/024-local-bench-smoke/`, final Graviton 4 / full benchmark closeout evidence pending approval)
+Status: in review (2026-06-09; implementation, local validation, automatic CI cleanup, local IVF PqFastScan suite-smoke evidence through `reviews/task-94/024-local-bench-smoke/`, and broader local IVF/DiskANN PqFastScan bench matrix evidence through `reviews/task-94/025-local-bench-matrix/`; final Graviton 4 / full benchmark closeout evidence pending approval)
 Owner: coder (to be assigned). Phase III parallel — multiple coders OK across Tasks 93–98.
 Priority: 2 (highest documented kernel-win ROI in Phase III)
 
