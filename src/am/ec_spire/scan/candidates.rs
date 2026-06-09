@@ -1991,7 +1991,12 @@ fn sample_leaf_block_probe_candidates(
                 }
 
                 let score_started = observer.wants_candidate_timing().then(Instant::now);
-                let ip = scorer.score_payload_ip(column_format, row.gamma, row.encoded_payload)?;
+                let ip = score_v2_column_candidate_ip_with_quant_codec(
+                    scorer,
+                    column_format,
+                    row.gamma,
+                    row.encoded_payload,
+                )?;
                 if let Some(started) = score_started {
                     observer.leaf_row_score_time(epoch, placement, elapsed_nanos_since(started));
                 }
@@ -2759,9 +2764,13 @@ fn try_score_v2_column_candidate_ip_with_rabitq_cutoff(
         Some(min_ip_to_keep) => {
             scorer.try_score_payload_ip(column_format, gamma, encoded_payload, min_ip_to_keep)
         }
-        None => scorer
-            .score_payload_ip(column_format, gamma, encoded_payload)
-            .map(Some),
+        None => score_v2_column_candidate_ip_with_quant_codec(
+            scorer,
+            column_format,
+            gamma,
+            encoded_payload,
+        )
+        .map(Some),
     }
 }
 
