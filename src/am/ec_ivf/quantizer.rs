@@ -583,6 +583,16 @@ impl QuantCodec for IvfQuantizer {
             .score_ip_candidate(prepared_query, payload)
     }
 
+    fn try_score_ip_candidate(
+        &self,
+        prepared_query: &Self::PreparedQuery,
+        payload: CandidatePayload<'_>,
+        min_ip_to_keep: Option<f32>,
+    ) -> Result<Option<f32>, String> {
+        self.quant_codec()
+            .try_score_ip_candidate(prepared_query, payload, min_ip_to_keep)
+    }
+
     fn score_ip_batch<Id>(
         &self,
         prepared_query: &Self::PreparedQuery,
@@ -663,6 +673,30 @@ impl QuantCodec for IvfQuantCodec<'_> {
             CandidateMeta::GammaAndResidualSigns { gamma, .. } => gamma,
         };
         IvfQuantizer::score_ip_from_parts(self.quantizer, prepared_query, gamma, payload.code)
+    }
+
+    fn try_score_ip_candidate(
+        &self,
+        prepared_query: &Self::PreparedQuery,
+        payload: CandidatePayload<'_>,
+        min_ip_to_keep: Option<f32>,
+    ) -> Result<Option<f32>, String> {
+        validate_candidate_meta(self.quantizer.profile, prepared_query, payload.meta)?;
+        let gamma = match payload.meta {
+            CandidateMeta::None
+            | CandidateMeta::Binary
+            | CandidateMeta::RaBitQ
+            | CandidateMeta::GroupedPq { .. } => 0.0,
+            CandidateMeta::Gamma(gamma) => gamma,
+            CandidateMeta::GammaAndResidualSigns { gamma, .. } => gamma,
+        };
+        IvfQuantizer::score_ip_from_parts_with_min_bound(
+            self.quantizer,
+            prepared_query,
+            gamma,
+            payload.code,
+            min_ip_to_keep,
+        )
     }
 
     fn score_ip_batch<Id>(
@@ -1552,6 +1586,53 @@ mod tests {
                 batch_scores[index]
             );
         }
+    }
+
+    #[test]
+    fn common_quant_codec_grouped_pq_cutoff_prunes_through_trait() {
+        let dimensions = 16;
+        let source = unit_vector(dimensions);
+        let query = unit_vector(dimensions);
+        let model = pq_fastscan_test_model(dimensions);
+        let dispatch = IvfQuantizer::resolve(StorageFormat::PqFastScan, dimensions).unwrap();
+        let codec = dispatch.quant_codec_with_pq_model(&model).unwrap();
+        let encoded = QuantCodec::encode_source(&codec, &source).unwrap();
+        let prepared = QuantCodec::prepare_ip_query(&codec, &query).unwrap();
+        let payload = CandidatePayload::new(
+            &encoded.code,
+            CandidateMeta::GroupedPq {
+                group_count: model.group_count,
+            },
+        );
+        let expected = QuantCodec::score_ip_candidate(&codec, &prepared, payload).unwrap();
+
+        let kept = QuantCodec::try_score_ip_candidate(
+            &codec,
+            &prepared,
+            CandidatePayload::new(
+                &encoded.code,
+                CandidateMeta::GroupedPq {
+                    group_count: model.group_count,
+                },
+            ),
+            Some(expected - 1.0),
+        )
+        .unwrap();
+        let pruned = QuantCodec::try_score_ip_candidate(
+            &codec,
+            &prepared,
+            CandidatePayload::new(
+                &encoded.code,
+                CandidateMeta::GroupedPq {
+                    group_count: model.group_count,
+                },
+            ),
+            Some(expected + 1.0),
+        )
+        .unwrap();
+
+        assert_eq!(kept, Some(expected));
+        assert_eq!(pruned, None);
     }
 
     #[test]

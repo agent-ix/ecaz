@@ -555,6 +555,31 @@ impl QuantCodec for SpireAssignmentQuantCodec {
         prepared_query.score_payload_ip(self.payload_format, gamma, payload.code)
     }
 
+    fn try_score_ip_candidate(
+        &self,
+        prepared_query: &Self::PreparedQuery,
+        payload: CandidatePayload<'_>,
+        min_ip_to_keep: Option<f32>,
+    ) -> Result<Option<f32>, String> {
+        let gamma = match payload.meta {
+            CandidateMeta::None
+            | CandidateMeta::Binary
+            | CandidateMeta::RaBitQ
+            | CandidateMeta::GroupedPq { .. } => 0.0,
+            CandidateMeta::Gamma(gamma) => gamma,
+            CandidateMeta::GammaAndResidualSigns { gamma, .. } => gamma,
+        };
+        match min_ip_to_keep {
+            Some(min_ip_to_keep) => prepared_query.try_score_payload_ip(
+                self.payload_format,
+                gamma,
+                payload.code,
+                min_ip_to_keep,
+            ),
+            None => self.score_ip_candidate(prepared_query, payload).map(Some),
+        }
+    }
+
     fn score_ip_batch<Id>(
         &self,
         prepared_query: &Self::PreparedQuery,

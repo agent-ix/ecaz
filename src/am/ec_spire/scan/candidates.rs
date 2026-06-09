@@ -2760,18 +2760,20 @@ fn try_score_v2_column_candidate_ip_with_rabitq_cutoff(
     encoded_payload: &[u8],
     min_ip_to_keep: Option<f32>,
 ) -> Result<Option<f32>, String> {
-    match min_ip_to_keep {
-        Some(min_ip_to_keep) => {
-            scorer.try_score_payload_ip(column_format, gamma, encoded_payload, min_ip_to_keep)
-        }
-        None => score_v2_column_candidate_ip_with_quant_codec(
-            scorer,
+    if column_format != scorer.payload_format() {
+        return Err(format!(
+            "ec_spire leaf V2 payload format {:?} does not match prepared scorer {:?}",
             column_format,
-            gamma,
-            encoded_payload,
-        )
-        .map(Some),
+            scorer.payload_format()
+        ));
     }
+    let codec = scorer.quant_codec();
+    QuantCodec::try_score_ip_candidate(
+        &codec,
+        scorer,
+        CandidatePayload::new(encoded_payload, CandidateMeta::Gamma(gamma)),
+        min_ip_to_keep,
+    )
 }
 
 fn append_quantized_v2_filtered_column_candidates(

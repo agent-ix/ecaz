@@ -156,6 +156,40 @@
     }
 
     #[test]
+    fn rabitq_cutoff_helper_routes_active_cutoff_through_quant_codec() {
+        let payload_format = SpireAssignmentPayloadFormat::RaBitQ;
+        let query = [1.0, 0.0];
+        let source = [0.5, 0.5];
+        let scorer =
+            SpirePreparedAssignmentScorer::prepare(payload_format, query.len(), &query).unwrap();
+        let (gamma, payload) = encode_assignment_payload(payload_format, &source).unwrap();
+
+        let scored = try_score_v2_column_candidate_ip_with_rabitq_cutoff(
+            &scorer,
+            payload_format,
+            gamma,
+            &payload,
+            Some(f32::NEG_INFINITY),
+        )
+        .unwrap()
+        .expect("low cutoff should keep the candidate");
+        let expected =
+            score_v2_column_candidate_ip_with_quant_codec(&scorer, payload_format, gamma, &payload)
+                .unwrap();
+        assert_eq!(scored.to_bits(), expected.to_bits());
+
+        let pruned = try_score_v2_column_candidate_ip_with_rabitq_cutoff(
+            &scorer,
+            payload_format,
+            gamma,
+            &payload,
+            Some(f32::MAX),
+        )
+        .unwrap();
+        assert_eq!(pruned, None);
+    }
+
+    #[test]
     fn column_payload_quant_codec_batch_helper_matches_prepared_assignment_scorer() {
         for payload_format in [
             SpireAssignmentPayloadFormat::TurboQuant,
