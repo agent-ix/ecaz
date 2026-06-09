@@ -152,6 +152,10 @@ impl SpirePreparedAssignmentScorer {
         expected_payload_len(self.dimensions(), self.payload_format())
     }
 
+    pub(super) fn quant_codec(&self) -> SpireAssignmentQuantCodec {
+        SpireAssignmentQuantCodec::new(self.payload_format(), self.dimensions())
+    }
+
     pub(super) fn score_assignment_ip(
         &self,
         assignment: &SpireLeafAssignmentRow,

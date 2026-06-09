@@ -40,6 +40,7 @@ use crate::am::common::{
     callback::pg_am_callback,
     candidate_batch::{CandidateBatch, CandidateMeta, CandidatePayload},
     detoast::DetoastedVarlena,
+    quant_codec::QuantCodec,
 };
 use crate::am::ec_hnsw::source;
 use crate::quant::prod::ProdQuantizer;

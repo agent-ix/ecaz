@@ -2422,7 +2422,8 @@ fn append_quantized_v2_leaf_column_candidates<'a>(
 
     let mut scores = vec![0.0; total_rows];
     let score_started = observer.wants_candidate_timing().then(Instant::now);
-    scorer.score_candidate_batch_ip(&batch, &mut scores)?;
+    let codec = scorer.quant_codec();
+    QuantCodec::score_ip_batch(&codec, scorer, &batch, &mut scores)?;
     if let Some(started) = score_started {
         observer.leaf_row_score_time(epoch, placement, elapsed_nanos_since(started));
     }
