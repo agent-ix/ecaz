@@ -1,0 +1,113 @@
+Script started on 2026-06-08 20:35:49-07:00 [<not executed on terminal>]
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on artifact directory
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.26s
+     Running unittests src/lib.rs (target/debug/deps/ecaz-52f8c7085962b346)
+
+running 99 tests
+test am::ec_spire::scan::tests::adaptive_nprobe_keeps_configured_width_when_boundary_gap_is_small ... [32mok[m
+test am::ec_spire::scan::tests::collect_recursive_routing_level_diagnostics_reports_row_budget_truncation ... [32mok[m
+test am::ec_spire::scan::tests::collect_ranked_routed_probe_candidates_scores_and_limits ... [32mok[m
+test am::ec_spire::scan::tests::collect_scan_plan_selected_leaf_pids_does_not_read_remote_leaf_payloads ... [32mok[m
+test am::ec_spire::scan::tests::collect_single_level_scan_plan_reranked_candidates_allows_empty_plan ... [32mok[m
+test am::ec_spire::scan::tests::collect_scan_routing_diagnostics_matches_production_on_three_level_hierarchy ... [32mok[m
+test am::ec_spire::scan::tests::collect_scan_routing_diagnostics_reports_recursive_levels_and_truncation ... [32mok[m
+test am::ec_spire::scan::tests::collect_snapshot_leaf_rows_skips_degraded_unavailable_or_skipped_placements ... [32mok[m
+test am::ec_spire::scan::tests::collect_snapshot_leaf_rows_returns_available_leaf_assignments ... [32mok[m
+test am::ec_spire::scan::tests::collect_snapshot_routed_leaf_rows_rejects_missing_root ... [32mok[m
+test am::ec_spire::scan::tests::collect_snapshot_routed_leaf_rows_skips_degraded_unavailable_leaf ... [32mok[m
+test am::ec_spire::scan::tests::collect_snapshot_routed_leaf_rows_routes_query_to_leaf_pid ... [32mok[m
+test am::ec_spire::scan::tests::collect_snapshot_routed_probe_leaf_rows_accepts_recursive_leaf_parent ... [32mok[m
+test am::ec_spire::scan::tests::collect_snapshot_routed_probe_leaf_rows_rejects_invalid_nprobe_and_query ... [32mok[m
+test am::ec_spire::scan::tests::collect_snapshot_routed_probe_leaf_rows_routes_top_nprobe_leaf_pids ... [32mok[m
+test am::ec_spire::scan::tests::collect_snapshot_visible_primary_rows_filters_non_output_assignments ... [32mok[m
+test am::ec_spire::scan::tests::collect_snapshot_rows_dispatches_leaf_and_delta_objects ... [32mok[m
+test am::ec_spire::scan::tests::collect_snapshot_visible_primary_rows_rejects_duplicate_primary_vec_ids ... [32mok[m
+test am::ec_spire::scan::tests::collect_snapshot_top_graph_routed_probe_leaf_rows_uses_loaded_graph ... [32mok[m
+test am::ec_spire::scan::tests::count_snapshot_recursive_leaf_pids_counts_leaf_level_children ... [32mok[m
+test am::ec_spire::scan::tests::count_snapshot_single_level_leaf_pids_uses_root_routing_children ... [32mok[m
+test am::ec_spire::scan::tests::group_leaf_and_delta_reads_by_local_store_groups_deltas_by_own_store ... [32mok[m
+test am::ec_spire::scan::tests::group_leaf_and_delta_reads_by_local_store_orders_stores_and_preserves_leaf_route_order ... [32mok[m
+test am::ec_spire::scan::tests::heap_rerank_prefetch_block_numbers_dedupes_and_sorts_blocks ... [32mok[m
+test am::ec_spire::scan::tests::leaf_block_sample_score_preserves_summary_floor ... [32mok[m
+test am::ec_spire::scan::tests::leaf_block_summary_radius_weight_controls_rabitq_bound ... [32mok[m
+test am::ec_spire::scan::tests::leaf_block_summary_scores_best_representative_payload ... [32mok[m
+test am::ec_spire::scan::tests::load_delta_rows_for_routes_reads_each_delta_object_once ... [32mok[m
+test am::ec_spire::scan::tests::load_snapshot_routing_hierarchy_loads_root_and_internal_objects ... [32mok[m
+test am::ec_spire::scan::tests::load_snapshot_routing_hierarchy_rejects_multiple_roots ... [32mok[m
+test am::ec_spire::scan::tests::local_heap_delivery_gate_accepts_local_placements ... [32mok[m
+test am::ec_spire::scan::tests::local_heap_delivery_gate_blocks_remote_placements ... [32mok[m
+test am::ec_spire::scan::tests::load_snapshot_top_graph_object_loads_available_graph_object ... [32mok[m
+test am::ec_spire::scan::tests::miri_adaptive_nprobe_reduces_routing_width_when_boundary_gap_is_large ... [32mok[m
+test am::ec_spire::scan::tests::miri_rank_routed_leaf_rows_by_ip_keeps_bounded_best_deduped_candidates ... [32mok[m
+test am::ec_spire::scan::tests::miri_rank_routed_leaf_rows_by_ip_keeps_primary_tie_break_under_bounded_dedupe ... [32mok[m
+test am::ec_spire::scan::tests::miri_rerank_scored_candidates_by_ip_rejects_non_finite_scores ... [32mok[m
+test am::ec_spire::scan::tests::miri_rerank_scored_candidates_by_ip_drops_invisible_candidates ... [32mok[m
+test am::ec_spire::scan::tests::miri_route_recursive_routing_objects_to_leaf_pids_rejects_missing_internal_child ... [32mok[m
+test am::ec_spire::scan::tests::miri_rerank_scored_candidates_by_ip_rescores_prefix_and_truncates ... [32mok[m
+test am::ec_spire::scan::tests::miri_route_recursive_routing_objects_to_leaf_pids_rejects_wrong_child_level ... [32mok[m
+test am::ec_spire::scan::tests::miri_route_recursive_routing_objects_to_leaf_pids_uses_conservative_upper_level_nprobe ... [32mok[m
+test am::ec_spire::scan::tests::miri_route_recursive_routing_objects_to_leaf_pids_descends_to_leaf_level ... [32mok[m
+test am::ec_spire::scan::tests::miri_route_root_object_to_leaf_pids_keeps_bounded_best_routes ... [32mok[m
+test am::ec_spire::scan::tests::miri_route_root_object_to_leaf_pids_still_rejects_internal_parent ... [32mok[m
+test am::ec_spire::scan::tests::miri_route_routing_object_to_child_pids_routes_internal_level ... [32mok[m
+test am::ec_spire::scan::tests::miri_route_top_graph_to_child_pids_rejects_root_mismatch ... [32mok[m
+test am::ec_spire::scan::tests::miri_route_top_graph_to_child_pids_uses_graph_frontier_with_deterministic_routes ... [32mok[m
+test am::ec_spire::scan::tests::miri_scan_candidate_cursor_emits_ranked_candidates_once ... [32mok[m
+test am::ec_spire::scan::tests::miri_scored_candidate_tie_break_prefers_newer_epoch_then_primary_role ... [32mok[m
+test am::ec_spire::scan::tests::prefetch_store_object_read_groups_prefetches_every_store_before_scoring ... [32mok[m
+test am::ec_spire::scan::tests::prefetch_store_object_read_groups_prefetches_leaf_and_delta_routes ... [32mok[m
+test am::ec_spire::scan::tests::production_scan_result_stream_am_outputs_accepts_local_heap_tid_rows ... [32mok[m
+test am::ec_spire::scan::tests::production_scan_result_stream_am_outputs_blocks_remote_origin_rows ... [32mok[m
+test am::ec_spire::scan::tests::rank_routed_leaf_rows_by_ip_can_skip_vec_id_dedupe ... [32mok[m
+test am::ec_spire::scan::tests::rank_routed_leaf_rows_by_ip_keeps_bounded_best_candidates ... [32mok[m
+test am::ec_spire::scan::tests::rank_routed_leaf_rows_by_ip_keeps_best_visible_vec_id_candidate ... [32mok[m
+test am::ec_spire::scan::tests::rank_routed_leaf_rows_by_ip_rejects_non_finite_scores ... [32mok[m
+test am::ec_spire::scan::tests::recursive_route_matches_flat_single_level_on_small_hierarchy ... [32mok[m
+test am::ec_spire::scan::tests::rerank_prefix_heap_locality_counts_prefix_block_scatter ... [32mok[m
+test am::ec_spire::scan::tests::rerank_scored_candidates_by_ip_zero_width_rescores_all ... [32mok[m
+test am::ec_spire::scan::tests::recursive_routed_leaf_rows_skip_degraded_unavailable_unselected_internal ... [32mok[m
+test am::ec_spire::scan::tests::rerank_scored_candidates_by_ip_prefetches_prefix_before_fetching ... [32mok[m
+test am::ec_spire::scan::tests::route_recursive_routing_objects_to_leaf_pids_uses_configured_upper_level_nprobe ... [32mok[m
+test am::ec_spire::scan::tests::route_recursive_routing_objects_to_leaf_routes_dedupes_global_leaf_budget ... [32mok[m
+test am::ec_spire::scan::tests::route_recursive_routing_objects_to_leaf_routes_with_budget_uses_global_leaf_budget ... [32mok[m
+test am::ec_spire::scan::tests::route_recursive_routing_objects_to_leaf_pids_descends_three_levels_conservatively ... [32mok[m
+test am::ec_spire::scan::tests::scan_candidate_cursor_next_output_returns_amgettuple_shape ... [32mok[m
+test am::ec_spire::scan::tests::scan_candidate_cursor_reset_replaces_candidate_set ... [32mok[m
+test am::ec_spire::scan::tests::route_top_graph_object_to_child_pids_uses_durable_graph_object ... [32mok[m
+test am::ec_spire::scan::tests::scan_opaque_refreshes_root_control_on_every_rescan_observation ... [32mok[m
+test am::ec_spire::scan::tests::scan_opaque_rescan_replaces_exhausted_output_cursor ... [32mok[m
+test am::ec_spire::scan::tests::sampled_global_leaf_block_row_ranges_adjusts_summary_prior ... [32mok[m
+test am::ec_spire::scan::tests::scan_opaque_reset_stores_query_plan_and_candidate_cursor ... [32mok[m
+test am::ec_spire::scan::tests::scan_output_cursor_emits_am_outputs_once ... [32mok[m
+test am::ec_spire::scan::tests::scan_query_accepts_nonzero_finite_vectors ... [32mok[m
+test am::ec_spire::scan::tests::scan_query_rejects_empty_zero_and_non_finite_vectors ... [32mok[m
+test am::ec_spire::scan::tests::score_global_leaf_block_row_ranges_can_apply_route_prior ... [32mok[m
+test am::ec_spire::scan::tests::select_global_leaf_block_row_ranges_spends_budget_across_leaves ... [32mok[m
+test am::ec_spire::scan::tests::select_global_leaf_block_row_ranges_uses_rabitq_summary_radius ... [32mok[m
+test am::ec_spire::scan::tests::select_leaf_block_row_ranges_keeps_best_rabitq_blocks ... [32mok[m
+test am::ec_spire::scan::tests::scan_opaque_clear_scan_work_drops_rescan_state ... [32mok[m
+test am::ec_spire::scan::tests::select_leaf_block_row_ranges_uses_rabitq_summary_radius ... [32mok[m
+test am::ec_spire::scan::tests::top_graph_object_routes_recursive_children_to_leaf_routes ... [32mok[m
+test am::ec_spire::scan::tests::collect_quantized_routed_probe_candidates_accepts_recursive_leaf_parent ... [32mok[m
+test am::ec_spire::scan::tests::collect_reranked_quantized_routed_probe_candidates_rescores_prefix ... [32mok[m
+test am::ec_spire::scan::tests::collect_scan_placement_diagnostics_reports_boundary_dedupe_and_winners ... [32mok[m
+test am::ec_spire::scan::tests::collect_scan_placement_diagnostics_counts_routed_store_rows ... [32mok[m
+test am::ec_spire::scan::tests::collect_quantized_routed_probe_candidates_matches_prepared_assignment_scorer ... [32mok[m
+test am::ec_spire::scan::tests::collect_quantized_routed_probe_candidates_reads_hash_routed_two_store_build ... [32mok[m
+test am::ec_spire::scan::tests::collect_scan_placement_diagnostics_skips_degraded_unavailable_leaf ... [32mok[m
+test am::ec_spire::scan::tests::collect_single_level_scan_plan_reranked_candidates_uses_plan_knobs ... [32mok[m
+test am::ec_spire::scan::tests::collect_scan_placement_diagnostics_reports_candidate_truncation ... [32mok[m
+test am::ec_spire::scan::tests::collect_quantized_routed_probe_candidates_rejects_deferred_and_bad_payloads ... [32mok[m
+test am::ec_spire::scan::tests::prepare_single_level_snapshot_scan_candidates_uses_top_graph_when_enabled ... [32mok[m
+test am::ec_spire::scan::tests::prepare_single_level_snapshot_scan_candidates_resolves_plan_and_candidates ... [32mok[m
+test am::ec_spire::scan::tests::collect_single_level_scan_plan_placement_diagnostics_caps_routed_candidate_rows ... [32mok[m
+test am::ec_spire::scan::tests::materialized_recursive_routing_epoch_scans_quantized_candidates ... [32mok[m
+test am::ec_spire::scan::tests::recursive_quantized_candidates_match_flat_single_level_on_small_hierarchy ... [32mok[m
+
+test result: [32mok[m. 99 passed; 0 failed; 0 ignored; 0 measured; 1913 filtered out; finished in 0.07s
+
+
+Script done on 2026-06-08 20:35:49-07:00 [COMMAND_EXIT_CODE="0"]
