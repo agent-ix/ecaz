@@ -1,4 +1,5 @@
 use super::quant_codec::QuantCodecKind;
+use crate::quant::grouped_pq::grouped_pq_score_f32;
 use crate::quant::isa::Isa;
 use crate::quant::prod::{PreparedLutNoQjl4BitQuery, ProdQuantizer};
 use std::sync::{
@@ -422,6 +423,31 @@ pub(crate) fn score_turboquant_no_qjl_4bit_batch_for<Id>(
     result.map(|_| ())
 }
 
+pub(crate) fn score_grouped_pq_batch_for<Id>(
+    surface: CandidateBatchScoringSurface,
+    lut: &[f32],
+    group_count: usize,
+    batch: &CandidateBatch<'_, Id>,
+    out_scores: &mut [f32],
+) -> Result<(), String> {
+    let result = score_grouped_pq_batch_inner(lut, group_count, batch, out_scores);
+    if let Ok(timing) = &result {
+        let key = BlockKernelCounterKey {
+            surface,
+            quant_kind: QuantCodecKind::GroupedPq,
+            isa: timing.kernel_isa.unwrap_or(Isa::Scalar),
+        };
+        record_block_kernel_score(key, timing.kernel_candidates, timing.kernel_elapsed_nanos);
+        record_block_scalar_score_for(
+            surface,
+            QuantCodecKind::GroupedPq,
+            timing.scalar_candidates,
+            timing.scalar_elapsed_nanos,
+        );
+    }
+    result.map(|_| ())
+}
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 struct BatchScoringTiming {
     kernel_isa: Option<Isa>,
@@ -429,6 +455,108 @@ struct BatchScoringTiming {
     kernel_elapsed_nanos: u64,
     scalar_candidates: usize,
     scalar_elapsed_nanos: u64,
+}
+
+fn score_grouped_pq_batch_inner<Id>(
+    lut: &[f32],
+    group_count: usize,
+    batch: &CandidateBatch<'_, Id>,
+    out_scores: &mut [f32],
+) -> Result<BatchScoringTiming, String> {
+    if batch.len() != out_scores.len() {
+        return Err(format!(
+            "candidate batch score output count {} does not match candidate count {}",
+            out_scores.len(),
+            batch.len()
+        ));
+    }
+    crate::quant::grouped_pq_block::validate_lut_shape(lut, group_count)?;
+
+    if batch.len() >= crate::quant::grouped_pq_block::BLOCK_WIDTH {
+        return score_grouped_pq_batch_block32(lut, group_count, batch, out_scores);
+    }
+
+    let scalar_started = Instant::now();
+    for (candidate_index, (payload, out_score)) in batch
+        .payloads()
+        .iter()
+        .zip(out_scores.iter_mut())
+        .enumerate()
+    {
+        validate_grouped_pq_meta(payload.meta, group_count)?;
+        crate::quant::grouped_pq_block::validate_code_shape(
+            candidate_index,
+            group_count,
+            payload.code,
+        )?;
+        *out_score = grouped_pq_score_f32(lut, group_count, payload.code);
+    }
+    Ok(BatchScoringTiming {
+        scalar_candidates: batch.len(),
+        scalar_elapsed_nanos: u64::try_from(scalar_started.elapsed().as_nanos())
+            .unwrap_or(u64::MAX),
+        ..BatchScoringTiming::default()
+    })
+}
+
+fn score_grouped_pq_batch_block32<Id>(
+    lut: &[f32],
+    group_count: usize,
+    batch: &CandidateBatch<'_, Id>,
+    out_scores: &mut [f32],
+) -> Result<BatchScoringTiming, String> {
+    let mut block_start = 0usize;
+    let mut timing = BatchScoringTiming::default();
+    while block_start + crate::quant::grouped_pq_block::BLOCK_WIDTH <= batch.len() {
+        let block_started = Instant::now();
+        let payloads = &batch.payloads()
+            [block_start..block_start + crate::quant::grouped_pq_block::BLOCK_WIDTH];
+        let mut codes = [&[][..]; crate::quant::grouped_pq_block::BLOCK_WIDTH];
+        for (lane, payload) in payloads.iter().enumerate() {
+            validate_grouped_pq_meta(payload.meta, group_count)?;
+            crate::quant::grouped_pq_block::validate_code_shape(
+                block_start + lane,
+                group_count,
+                payload.code,
+            )?;
+            codes[lane] = payload.code;
+        }
+        let isa = crate::quant::grouped_pq_block::score_grouped_pq_block32(
+            lut,
+            group_count,
+            codes,
+            &mut out_scores[block_start..block_start + crate::quant::grouped_pq_block::BLOCK_WIDTH],
+        );
+        timing.kernel_isa = Some(isa);
+        timing.kernel_candidates += crate::quant::grouped_pq_block::BLOCK_WIDTH;
+        timing.kernel_elapsed_nanos = timing
+            .kernel_elapsed_nanos
+            .saturating_add(u64::try_from(block_started.elapsed().as_nanos()).unwrap_or(u64::MAX));
+        block_start += crate::quant::grouped_pq_block::BLOCK_WIDTH;
+    }
+
+    let scalar_started = Instant::now();
+    for (candidate_index, (payload, out_score)) in batch.payloads()[block_start..]
+        .iter()
+        .zip(out_scores[block_start..].iter_mut())
+        .enumerate()
+    {
+        validate_grouped_pq_meta(payload.meta, group_count)?;
+        crate::quant::grouped_pq_block::validate_code_shape(
+            block_start + candidate_index,
+            group_count,
+            payload.code,
+        )?;
+        timing.scalar_candidates += 1;
+        *out_score =
+            crate::quant::grouped_pq_block::score_grouped_pq_scalar(lut, group_count, payload.code);
+    }
+    if timing.scalar_candidates > 0 {
+        timing.scalar_elapsed_nanos =
+            u64::try_from(scalar_started.elapsed().as_nanos()).unwrap_or(u64::MAX);
+    }
+
+    Ok(timing)
 }
 
 fn score_turboquant_no_qjl_4bit_batch_inner<Id>(
@@ -529,6 +657,25 @@ fn score_turboquant_no_qjl_4bit_batch_lut32<Id>(
     Ok(timing)
 }
 
+fn validate_grouped_pq_meta(
+    meta: CandidateMeta<'_>,
+    expected_group_count: usize,
+) -> Result<(), String> {
+    match meta {
+        CandidateMeta::GroupedPq { group_count } if group_count == expected_group_count => Ok(()),
+        CandidateMeta::GroupedPq { .. } => {
+            Err("grouped-PQ batch received candidate group count mismatch".to_owned())
+        }
+        CandidateMeta::None
+        | CandidateMeta::Gamma(_)
+        | CandidateMeta::GammaAndResidualSigns { .. }
+        | CandidateMeta::Binary
+        | CandidateMeta::RaBitQ => {
+            Err("grouped-PQ batch received incompatible candidate metadata".to_owned())
+        }
+    }
+}
+
 fn validate_turboquant_no_qjl_4bit_meta(meta: CandidateMeta<'_>) -> Result<(), String> {
     match meta {
         CandidateMeta::None | CandidateMeta::Gamma(_) => Ok(()),
@@ -548,6 +695,7 @@ mod tests {
         CandidatePayload,
     };
     use crate::am::common::quant_codec::QuantCodecKind;
+    use crate::quant::grouped_pq::{grouped_pq_score_f32, pack_grouped_pq_nibbles};
     use crate::quant::isa::Isa;
     use std::sync::Mutex;
 
@@ -694,6 +842,76 @@ mod tests {
     }
 
     #[test]
+    fn grouped_pq_batch_records_block_and_scalar_tail_counters() {
+        let _guard = COUNTER_TEST_LOCK.lock().unwrap();
+        super::reset_candidate_batch_scoring_counters();
+        let group_count = 16;
+        let lut = grouped_pq_lut(group_count);
+        let codes: Vec<Vec<u8>> = (0..39)
+            .map(|seed| grouped_pq_code(group_count, seed as u8))
+            .collect();
+        let mut batch = CandidateBatch::with_capacity(codes.len());
+        for (index, code) in codes.iter().enumerate() {
+            batch
+                .push(
+                    index,
+                    CandidatePayload::new(code, CandidateMeta::GroupedPq { group_count }),
+                )
+                .unwrap();
+        }
+        let mut batch_scores = vec![0.0; batch.len()];
+
+        super::score_grouped_pq_batch_for(
+            CandidateBatchScoringSurface::Ivf,
+            &lut,
+            group_count,
+            &batch,
+            &mut batch_scores,
+        )
+        .unwrap();
+
+        for (code, score) in codes.iter().zip(batch_scores.iter()) {
+            assert_eq!(
+                score.to_bits(),
+                grouped_pq_score_f32(&lut, group_count, code).to_bits()
+            );
+        }
+
+        let block_snapshots = super::block_kernel_scoring_snapshots();
+        let grouped: Vec<_> = block_snapshots
+            .iter()
+            .filter(|snapshot| snapshot.surface == "ivf" && snapshot.quant_kind == "grouped_pq")
+            .collect();
+        assert!(!grouped.is_empty());
+        assert_eq!(
+            grouped
+                .iter()
+                .map(|snapshot| snapshot.kernel_candidates)
+                .sum::<u64>(),
+            32
+        );
+        assert_eq!(
+            grouped
+                .iter()
+                .map(|snapshot| snapshot.scalar_candidates)
+                .sum::<u64>(),
+            7
+        );
+        assert_eq!(
+            grouped
+                .iter()
+                .map(|snapshot| snapshot.candidates)
+                .sum::<u64>(),
+            39
+        );
+        assert!(grouped
+            .iter()
+            .any(|snapshot| snapshot.isa == "scalar" && snapshot.scalar_candidates == 7));
+
+        super::reset_candidate_batch_scoring_counters();
+    }
+
+    #[test]
     fn block_kernel_counter_api_records_scalar_tail_under_scalar_isa() {
         let _guard = COUNTER_TEST_LOCK.lock().unwrap();
         super::reset_candidate_batch_scoring_counters();
@@ -766,5 +984,22 @@ mod tests {
             *value /= norm;
         }
         values
+    }
+
+    fn grouped_pq_lut(group_count: usize) -> Vec<f32> {
+        (0..group_count * crate::quant::grouped_pq::GROUPED_PQ_CENTROIDS)
+            .map(|index| ((index as i32 % 37) - 18) as f32 * 0.03125 + 0.000_17)
+            .collect()
+    }
+
+    fn grouped_pq_code(group_count: usize, seed: u8) -> Vec<u8> {
+        let indices: Vec<u8> = (0..group_count)
+            .map(|group| {
+                seed.wrapping_add((group as u8).wrapping_mul(5))
+                    .wrapping_add((group as u8) >> 1)
+                    & 0x0F
+            })
+            .collect();
+        pack_grouped_pq_nibbles(&indices)
     }
 }

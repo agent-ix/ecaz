@@ -1,8 +1,8 @@
 use super::options::StorageFormat;
 use super::page;
 use crate::am::common::candidate_batch::{
-    score_turboquant_no_qjl_4bit_batch_for, CandidateBatch, CandidateBatchScoringSurface,
-    CandidateMeta, CandidatePayload,
+    score_grouped_pq_batch_for, score_turboquant_no_qjl_4bit_batch_for, CandidateBatch,
+    CandidateBatchScoringSurface, CandidateMeta, CandidatePayload,
 };
 use crate::am::common::quant_codec::{
     EncodedQuantPayload, QuantCodec, QuantCodecKind, QuantSearchCodecTag,
@@ -719,6 +719,25 @@ impl QuantCodec for IvfQuantCodec<'_> {
                     CandidateBatchScoringSurface::Ivf,
                     quantizer.as_ref(),
                     prepared_query,
+                    batch,
+                    out_scores,
+                )
+            }
+            (
+                IvfQuantizerProfile::PqFastScan { group_count, .. },
+                IvfPreparedQuery::PqFastScan {
+                    lut,
+                    group_count: prepared_group_count,
+                    ..
+                },
+            ) => {
+                if group_count != *prepared_group_count {
+                    return Err("ec_ivf pq_fastscan prepared query group count mismatch".to_owned());
+                }
+                score_grouped_pq_batch_for(
+                    CandidateBatchScoringSurface::Ivf,
+                    lut,
+                    group_count,
                     batch,
                     out_scores,
                 )
@@ -1549,7 +1568,7 @@ mod tests {
         let dispatch = IvfQuantizer::resolve(StorageFormat::PqFastScan, dimensions).unwrap();
         let codec = dispatch.quant_codec_with_pq_model(&model).unwrap();
         let prepared = QuantCodec::prepare_ip_query(&codec, &query).unwrap();
-        let encoded = (0..3)
+        let encoded = (0..39)
             .map(|index| {
                 let source = (0..dimensions)
                     .map(|col| if (index + col) % 2 == 0 { 0.25 } else { -0.25 })
@@ -1557,7 +1576,7 @@ mod tests {
                 QuantCodec::encode_source(&codec, &source).unwrap()
             })
             .collect::<Vec<_>>();
-        let mut batch = CandidateBatch::with_capacity(3);
+        let mut batch = CandidateBatch::with_capacity(encoded.len());
         for (index, payload) in encoded.iter().enumerate() {
             batch
                 .push(
