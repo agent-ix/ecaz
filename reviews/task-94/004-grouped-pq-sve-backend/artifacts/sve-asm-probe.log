@@ -26,4 +26,3 @@ warning: function `ecaz_grouped_pq_sve_accumulate_f32` is never used
 warning: function `ecaz_grouped_pq_sve_cntw` is never used
 warning: 5 warnings emitted
 ```
-

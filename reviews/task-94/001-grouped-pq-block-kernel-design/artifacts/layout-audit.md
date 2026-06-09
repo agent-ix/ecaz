@@ -69,4 +69,3 @@ The task file names `src/quant/pq_fastscan32/`, while the lane prompt names
 it matches the coder-lane isolation rule and the `QuantCodecKind::GroupedPq`
 label. Public functions can still use `grouped_pq`/`pq_fastscan` terminology in
 doc comments where that clarifies the storage format.
-

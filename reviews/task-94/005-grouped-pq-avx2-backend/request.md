@@ -40,4 +40,3 @@ cargo test grouped_pq_block --lib
 Result: 8 passed, 0 failed. See `artifacts/test-grouped-pq-block.log`.
 
 No CI, AWS, or benchmark runs were performed.
-

@@ -59,4 +59,3 @@ No CI, AWS, or benchmark runs were performed.
 Runtime vector length was not measured in this packet because this was local
 validation only and not the approved Graviton-4 runtime lane. The future
 Graviton-4 evidence packet must report the helper's measured value verbatim.
-

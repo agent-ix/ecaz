@@ -21,4 +21,3 @@
 - `phase1-design.md`: kernel contract, scalar/SIMD pseudocode, AM registration plan, ULP and counter contract.
 - `layout-audit.md`: current grouped-PQ scorer, payload, metadata, and AM call-site audit.
 - `bench-suite-emitter-plan.md`: Task 94-owned plan for the `[block-kernel-counters]` latency-suite direct-row gap.
-

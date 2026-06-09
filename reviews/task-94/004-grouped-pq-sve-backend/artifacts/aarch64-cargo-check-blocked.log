@@ -18,4 +18,3 @@ error occurred in cc-rs: failed to find tool "aarch64-linux-gnu-gcc": No such fi
 
 No retry was attempted because installing cross-compilers or running AWS
 validation is outside the current local-only instruction.
-
