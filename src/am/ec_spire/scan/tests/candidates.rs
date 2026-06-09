@@ -131,6 +131,57 @@
     }
 
     #[test]
+    fn column_payload_quant_codec_batch_helper_matches_prepared_assignment_scorer() {
+        for payload_format in [
+            SpireAssignmentPayloadFormat::TurboQuant,
+            SpireAssignmentPayloadFormat::RaBitQ,
+        ] {
+            let query = [1.0, 0.0];
+            let sources = [[0.5, 0.5], [-0.25, 0.75]];
+            let scorer =
+                SpirePreparedAssignmentScorer::prepare(payload_format, query.len(), &query)
+                    .unwrap();
+            let encoded = sources
+                .iter()
+                .map(|source| encode_assignment_payload(payload_format, source).unwrap())
+                .collect::<Vec<_>>();
+            let payload_stride = encoded[0].1.len();
+            let gammas = encoded.iter().map(|(gamma, _)| *gamma).collect::<Vec<_>>();
+            let payloads = encoded
+                .iter()
+                .flat_map(|(_, payload)| payload.iter().copied())
+                .collect::<Vec<_>>();
+            let mut observed = vec![0.0; encoded.len()];
+
+            score_v2_column_payloads_ip_with_quant_codec(
+                &scorer,
+                payload_format,
+                payload_stride,
+                &payloads,
+                &gammas,
+                &mut observed,
+            )
+            .unwrap();
+
+            let mut expected = vec![0.0; encoded.len()];
+            scorer
+                .score_batch_ip(payload_stride, &payloads, &gammas, &mut expected)
+                .unwrap();
+
+            assert_eq!(
+                observed
+                    .iter()
+                    .map(|score| score.to_bits())
+                    .collect::<Vec<_>>(),
+                expected
+                    .iter()
+                    .map(|score| score.to_bits())
+                    .collect::<Vec<_>>()
+            );
+        }
+    }
+
+    #[test]
     fn select_leaf_block_row_ranges_keeps_best_rabitq_blocks() {
         fn rabitq_summary(
             row_base: u32,

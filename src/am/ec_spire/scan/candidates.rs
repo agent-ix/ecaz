@@ -2628,7 +2628,9 @@ fn append_quantized_v2_column_candidates(
 
     let mut scores = vec![0.0; columns.row_count()];
     let score_started = observer.wants_candidate_timing().then(Instant::now);
-    scorer.score_batch_ip(
+    score_v2_column_payloads_ip_with_quant_codec(
+        scorer,
+        column_format,
         columns.payload_stride,
         columns.payloads,
         columns.gammas,
@@ -2697,6 +2699,53 @@ fn score_v2_column_candidate_ip_with_quant_codec(
         scorer,
         CandidatePayload::new(encoded_payload, CandidateMeta::Gamma(gamma)),
     )
+}
+
+fn score_v2_column_payloads_ip_with_quant_codec(
+    scorer: &SpirePreparedAssignmentScorer,
+    column_format: SpireAssignmentPayloadFormat,
+    payload_stride: usize,
+    payloads: &[u8],
+    gammas: &[f32],
+    out_scores: &mut [f32],
+) -> Result<(), String> {
+    if column_format != scorer.payload_format() {
+        return Err(format!(
+            "ec_spire leaf V2 payload format {:?} does not match prepared scorer {:?}",
+            column_format,
+            scorer.payload_format()
+        ));
+    }
+    if gammas.len() != out_scores.len() {
+        return Err(format!(
+            "ec_spire leaf V2 gamma count {} does not match output count {}",
+            gammas.len(),
+            out_scores.len()
+        ));
+    }
+    let expected_payload_bytes = payload_stride
+        .checked_mul(out_scores.len())
+        .ok_or_else(|| "ec_spire leaf V2 payload byte count overflow".to_owned())?;
+    if payloads.len() != expected_payload_bytes {
+        return Err(format!(
+            "ec_spire leaf V2 payload byte count {} does not match expected {expected_payload_bytes}",
+            payloads.len()
+        ));
+    }
+
+    let mut batch = CandidateBatch::with_capacity(out_scores.len());
+    for (row_offset, (payload, gamma)) in payloads
+        .chunks_exact(payload_stride)
+        .zip(gammas.iter())
+        .enumerate()
+    {
+        batch.push(
+            row_offset,
+            CandidatePayload::new(payload, CandidateMeta::Gamma(*gamma)),
+        )?;
+    }
+    let codec = scorer.quant_codec();
+    QuantCodec::score_ip_batch(&codec, scorer, &batch, out_scores)
 }
 
 fn try_score_v2_column_candidate_ip_with_rabitq_cutoff(

@@ -24,7 +24,7 @@ mod tests {
         route_routing_object_to_child_pids, route_routing_object_to_child_routes_with_policy,
         route_top_graph_object_to_child_pids, route_top_graph_object_to_leaf_routes,
         route_top_graph_to_child_pids, score_leaf_block_summary_ip_with_radius_weight,
-        score_v2_column_candidate_ip_with_quant_codec,
+        score_v2_column_candidate_ip_with_quant_codec, score_v2_column_payloads_ip_with_quant_codec,
         score_global_leaf_block_ranges_with_route_prior_weight,
         select_global_leaf_block_row_ranges, select_leaf_block_row_ranges,
         select_sampled_global_leaf_block_row_ranges, sort_scored_leaf_block_ranges,
