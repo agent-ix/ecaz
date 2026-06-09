@@ -1,5 +1,10 @@
 //! 32-candidate blocked LUT scoring for TurboQuant no-QJL 4-bit codes.
 
+mod avx2;
+mod neon;
+mod scalar;
+mod sve;
+
 pub(crate) const BLOCK_WIDTH: usize = 32;
 
 pub(crate) fn expected_mse_code_len(original_dim: usize) -> usize {
@@ -53,10 +58,12 @@ pub(crate) fn score_lut_no_qjl_4bit_batch(
 
     let mut block_start = 0usize;
     while block_start + BLOCK_WIDTH <= mse_codes.len() {
-        score_block32(
+        score_lut_no_qjl_4bit_block32(
             lut,
             original_dim,
-            &mse_codes[block_start..block_start + BLOCK_WIDTH],
+            mse_codes[block_start..block_start + BLOCK_WIDTH]
+                .try_into()
+                .expect("slice length is exactly one block"),
             &mut out_scores[block_start..block_start + BLOCK_WIDTH],
         );
         block_start += BLOCK_WIDTH;
@@ -66,7 +73,7 @@ pub(crate) fn score_lut_no_qjl_4bit_batch(
         .iter()
         .zip(out_scores[block_start..].iter_mut())
     {
-        *out_score = score_scalar(lut, original_dim, code);
+        *out_score = score_lut_no_qjl_4bit_scalar(lut, original_dim, code);
     }
 
     Ok(())
@@ -78,64 +85,32 @@ pub(crate) fn score_lut_no_qjl_4bit_block32(
     codes: [&[u8]; BLOCK_WIDTH],
     out_scores: &mut [f32],
 ) {
-    score_block32(lut, original_dim, &codes, out_scores);
+    match crate::quant::isa::current_isa() {
+        crate::quant::isa::Isa::Avx2 => {
+            avx2::score_block32_avx2(lut, original_dim, &codes, out_scores)
+        }
+        crate::quant::isa::Isa::Sve2 | crate::quant::isa::Isa::Sve => {
+            sve::score_block32_sve(lut, original_dim, &codes, out_scores)
+        }
+        crate::quant::isa::Isa::Neon => {
+            neon::score_block32_neon(lut, original_dim, &codes, out_scores)
+        }
+        crate::quant::isa::Isa::Scalar => {
+            scalar::score_block32_scalar(lut, original_dim, &codes, out_scores)
+        }
+    }
 }
 
 pub(crate) fn score_lut_no_qjl_4bit_scalar(lut: &[f32], original_dim: usize, code: &[u8]) -> f32 {
-    score_scalar(lut, original_dim, code)
-}
-
-fn score_block32(lut: &[f32], original_dim: usize, codes: &[&[u8]], out_scores: &mut [f32]) {
-    debug_assert_eq!(codes.len(), BLOCK_WIDTH);
-    debug_assert_eq!(out_scores.len(), BLOCK_WIDTH);
-
-    let mut sums = [0.0_f32; BLOCK_WIDTH];
-    for dim_index in 0..original_dim {
-        let lut_offset = dim_index * 16;
-        let byte_index = dim_index / 2;
-        if dim_index & 1 == 0 {
-            for lane in 0..BLOCK_WIDTH {
-                let centroid = (codes[lane][byte_index] & 0x0F) as usize;
-                sums[lane] += lut[lut_offset + centroid];
-            }
-        } else {
-            for lane in 0..BLOCK_WIDTH {
-                let centroid = (codes[lane][byte_index] >> 4) as usize;
-                sums[lane] += lut[lut_offset + centroid];
-            }
-        }
-    }
-    out_scores.copy_from_slice(&sums);
-}
-
-fn score_scalar(lut: &[f32], original_dim: usize, code: &[u8]) -> f32 {
-    let mut sum = 0.0_f32;
-    let mut dim_index = 0usize;
-
-    for &packed in code {
-        if dim_index >= original_dim {
-            break;
-        }
-
-        let low_nibble = (packed & 0x0F) as usize;
-        sum += lut[dim_index * 16 + low_nibble];
-        dim_index += 1;
-
-        if dim_index >= original_dim {
-            break;
-        }
-
-        let high_nibble = (packed >> 4) as usize;
-        sum += lut[dim_index * 16 + high_nibble];
-        dim_index += 1;
-    }
-
-    sum
+    scalar::score_scalar_tail(lut, original_dim, code)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{score_lut_no_qjl_4bit_batch, score_scalar, BLOCK_WIDTH};
+    use super::{
+        score_lut_no_qjl_4bit_batch, score_lut_no_qjl_4bit_block32, score_lut_no_qjl_4bit_scalar,
+        BLOCK_WIDTH,
+    };
 
     fn lut(dim: usize) -> Vec<f32> {
         (0..dim * 16)
@@ -154,7 +129,27 @@ mod tests {
     }
 
     #[test]
-    fn lut32_matches_scalar_for_blocks_and_tail() {
+    fn lut32_batch_under_block_width_matches_scalar_tail_bits() {
+        let dim = 1536;
+        let lut = lut(dim);
+        let codes: Vec<Vec<u8>> = (0..BLOCK_WIDTH - 1)
+            .map(|seed| code(dim, seed as u8))
+            .collect();
+        let code_refs: Vec<&[u8]> = codes.iter().map(Vec::as_slice).collect();
+        let mut scores = vec![0.0; code_refs.len()];
+
+        score_lut_no_qjl_4bit_batch(&lut, dim, &code_refs, &mut scores).unwrap();
+
+        for (code, score) in code_refs.iter().zip(scores.iter()) {
+            assert_eq!(
+                score.to_bits(),
+                score_lut_no_qjl_4bit_scalar(&lut, dim, code).to_bits()
+            );
+        }
+    }
+
+    #[test]
+    fn lut32_batch_with_blocks_and_tail_matches_scalar_tail_bits() {
         let dim = 1536;
         let lut = lut(dim);
         let codes: Vec<Vec<u8>> = (0..BLOCK_WIDTH + 7)
@@ -166,7 +161,36 @@ mod tests {
         score_lut_no_qjl_4bit_batch(&lut, dim, &code_refs, &mut scores).unwrap();
 
         for (code, score) in code_refs.iter().zip(scores.iter()) {
-            assert_eq!(score.to_bits(), score_scalar(&lut, dim, code).to_bits());
+            assert_eq!(
+                score.to_bits(),
+                score_lut_no_qjl_4bit_scalar(&lut, dim, code).to_bits()
+            );
+        }
+    }
+
+    #[test]
+    fn lut32_block32_matches_scalar_tail_bits() {
+        let dim = 1536;
+        let lut = lut(dim);
+        let codes: Vec<Vec<u8>> = (0..BLOCK_WIDTH).map(|seed| code(dim, seed as u8)).collect();
+        let code_refs: Vec<&[u8]> = codes.iter().map(Vec::as_slice).collect();
+        let mut scores = vec![0.0; BLOCK_WIDTH];
+
+        score_lut_no_qjl_4bit_block32(
+            &lut,
+            dim,
+            code_refs
+                .as_slice()
+                .try_into()
+                .expect("test fixture is exactly one block"),
+            &mut scores,
+        );
+
+        for (code, score) in code_refs.iter().zip(scores.iter()) {
+            assert_eq!(
+                score.to_bits(),
+                score_lut_no_qjl_4bit_scalar(&lut, dim, code).to_bits()
+            );
         }
     }
 
