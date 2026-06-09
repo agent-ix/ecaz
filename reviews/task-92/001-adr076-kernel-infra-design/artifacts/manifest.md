@@ -22,8 +22,9 @@
   - universal block width is 32 candidates;
   - dispatch routes through `QuantCodec::score_ip_batch`;
   - module layout is `src/quant/<kernel>/{mod.rs,scalar.rs,neon.rs,sve.rs,avx2.rs}`;
-  - runtime ISA detection covers `Scalar`, `Neon`, `Sve`, and `Avx2`;
-  - SVE must be vector-length agnostic; Graviton 4 is the ARM target;
+  - runtime ISA detection covers `Scalar`, `Neon`, `Sve`, `Sve2`, and `Avx2`;
+  - SVE/SVE2 must be vector-length agnostic; Graviton 4 is the ARM target and
+    uses the `Sve2` dispatch branch when available;
   - scalar is bit-exact, SIMD gets ADR-076 ULP/relative tolerance.
 
 ### `skeleton-fit-audit.md`

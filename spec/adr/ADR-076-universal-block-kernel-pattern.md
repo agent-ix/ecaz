@@ -76,9 +76,10 @@ Module responsibilities:
 - `scalar.rs`: bit-exact scalar reference implementation plus
   `score_scalar_tail`.
 - `neon.rs`: NEON implementation behind `#[cfg(target_arch = "aarch64")]`.
-- `sve.rs`: SVE implementation behind `#[cfg(target_arch = "aarch64")]`.
-  The implementation must be vector-length agnostic or explicitly skip
-  itself unless the measured vector length is supported.
+- `sve.rs`: SVE/SVE2 implementation behind `#[cfg(target_arch = "aarch64")]`.
+  The implementation must distinguish `sve` and `sve2` runtime features,
+  stay vector-length agnostic, or explicitly skip itself unless the measured
+  vector length is supported.
 - `avx2.rs`: AVX2 implementation behind `#[cfg(any(target_arch = "x86",
   target_arch = "x86_64"))]`.
 
@@ -96,6 +97,7 @@ pub(crate) enum Isa {
     Scalar,
     Neon,
     Sve,
+    Sve2,
     Avx2,
 }
 ```
@@ -105,10 +107,14 @@ Kernel modules use `is_x86_feature_detected!` and
 for that kernel, cache the selected function pointer on first use, and
 fall back to scalar when the host lacks the required features.
 
-The ARM production measurement target is AWS Graviton 4. SVE results may
-be reported as SVE-256 only when the runtime vector length is measured as
-256 bits in the packet artifact. Otherwise report the actual vector length
-or simply `sve`.
+The ARM production measurement target is AWS Graviton 4. Graviton 4 packets
+must target the `sve2` dispatch branch when that feature is available and
+must report the measured runtime vector length verbatim, for example
+`sve2-128` for the currently targeted host class. Do not infer vector length
+from the instance family: if a future host or run reports another measured
+width, use that measured label instead. If a kernel only requires base SVE,
+report `sve-<bits>` with the measured length; if vector length cannot be
+measured, report only `sve` or `sve2` and do not publish width-specific claims.
 
 ### Counter Attribution
 
@@ -148,9 +154,10 @@ for accepting a SIMD variant.
   Task 92 closes.
 - Tasks 93-98 can implement quant-specific math without redefining
   counters, dispatch, width gating, or tolerance rules.
-- SVE kernels must be portable across vector lengths. Graviton 4 is the
-  target ARM server host, but the code must not assume a hard-coded SVE
-  lane count unless dispatch validates it.
+- SVE/SVE2 kernels must be portable across vector lengths. Graviton 4 is the
+  target ARM server host and uses the SVE2 dispatch branch when available, but
+  the code must not assume a hard-coded vector length unless dispatch validates
+  it and packet evidence reports the measured width.
 - AVX-512 and Apple silicon variants are explicit follow-ups, not part of
   the Task 92 kernel infrastructure.
 
@@ -174,11 +181,12 @@ product. A rename would add churn before non-IP quantized scoring exists.
 Task 91 may still revisit this if its trait audit finds a concrete
 multi-metric requirement.
 
-### SVE-256-Specific Kernels
+### Fixed-Width SVE/SVE2 Kernels
 
-Rejected as the default. Graviton 4 is the measurement target, but SVE's
-contract is vector-length agnostic. A fixed-width SVE variant may be added
-only when dispatch checks the runtime vector length and packets report it.
+Rejected as the default. Graviton 4 is the measurement target, but the ARM
+contract is vector-length agnostic. A fixed-width SVE or SVE2 variant may be
+added only when dispatch checks the runtime vector length and packets report
+the measured ISA-width label, such as `sve2-128`.
 
 ## Related Decisions
 

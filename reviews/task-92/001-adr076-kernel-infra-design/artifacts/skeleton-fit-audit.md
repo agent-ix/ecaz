@@ -54,11 +54,13 @@ NEON modules are compiled only for `aarch64` and selected only when the runtime
 feature detector confirms NEON. NEON is expected on supported aarch64 hosts, but
 dispatch still falls back to scalar.
 
-### SVE
+### SVE/SVE2
 
-SVE modules must be vector-length agnostic. The measurement target is AWS
-Graviton 4. A packet may report `sve-256` only if it records a runtime vector
-length of 256 bits in its artifacts.
+SVE modules must distinguish `sve` and `sve2` runtime features and remain
+vector-length agnostic. The measurement target is AWS Graviton 4, whose packets
+use the SVE2 dispatch branch when available. A packet may report a width-specific
+label such as `sve2-128` only if it records that runtime vector length in its
+artifacts.
 
 ### AVX2
 
