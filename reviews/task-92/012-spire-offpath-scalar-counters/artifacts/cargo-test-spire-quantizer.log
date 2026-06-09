@@ -1,0 +1,28 @@
+Script started on 2026-06-08 22:01:52-07:00 [<not executed on terminal>]
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.19s
+     Running unittests src/lib.rs (target/debug/deps/ecaz-52f8c7085962b346)
+
+running 18 tests
+test am::ec_spire::quantizer::tests::assignment_scorer_rejects_unscoreable_and_deferred_formats ... [32mok[m
+test am::ec_spire::quantizer::tests::assignment_scorer_validates_query_and_source_shape ... [32mok[m
+test am::ec_spire::quantizer::tests::common_quant_codec_rejects_spire_pq_fastscan_without_model ... [32mok[m
+test am::ec_spire::quantizer::tests::common_quant_codec_scores_rabitq_assignments ... [32mok[m
+test am::ec_spire::quantizer::tests::encode_assignment_input_rejects_invalid_locator ... [32mok[m
+test am::ec_spire::quantizer::tests::rabitq_assignment_scorer_can_prune_below_cutoff ... [32mok[m
+test am::ec_spire::quantizer::tests::rabitq_assignment_scorer_matches_direct_quantizer_score ... [32mok[m
+test am::ec_spire::quantizer::tests::assignment_scorer_rejects_mismatched_format_and_bad_lengths ... [32mok[m
+test am::ec_spire::quantizer::tests::assignment_scorer_batch_rejects_bad_shapes ... [32mok[m
+test am::ec_spire::quantizer::tests::assignment_scorer_batch_matches_scalar_scores ... [32mok[m
+test am::ec_spire::quantizer::tests::common_quant_codec_batch_delegates_to_prepared_scorer_batch ... [32mok[m
+test am::ec_spire::quantizer::tests::common_quant_codec_batch_preserves_prepared_scorer_length_error ... [32mok[m
+test am::ec_spire::quantizer::tests::common_quant_codec_scores_turboquant_assignments ... [32mok[m
+test am::ec_spire::quantizer::tests::encode_assignment_input_builds_leaf_assignment_input ... [32mok[m
+test am::ec_spire::quantizer::tests::prepared_scorer_quant_codec_matches_implicit_supported_format_state ... [32mok[m
+test am::ec_spire::quantizer::tests::turboquant_assignment_scorer_matches_direct_quantizer_score ... [32mok[m
+test am::ec_spire::quantizer::tests::zero_gamma_payload_chunk_max_uses_exact_single_payload_score ... [32mok[m
+test am::ec_spire::quantizer::tests::turboquant_assignment_scorer_uses_no_qjl_4bit_lut_path ... [32mok[m
+
+test result: [32mok[m. 18 passed; 0 failed; 0 ignored; 0 measured; 2004 filtered out; finished in 0.11s
+
+
+Script done on 2026-06-08 22:01:52-07:00 [COMMAND_EXIT_CODE="0"]
