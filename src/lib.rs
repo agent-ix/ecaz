@@ -1159,8 +1159,59 @@ fn ec_diskann_index_graph_summary(
 }
 
 #[pg_extern(volatile)]
-fn ec_task87_candidate_batch_scoring_reset() {
+fn ec_block_kernel_scoring_reset() {
     am::common::candidate_batch::reset_candidate_batch_scoring_counters();
+}
+
+#[pg_extern(stable)]
+#[allow(clippy::type_complexity)]
+fn ec_block_kernel_scoring_snapshot() -> TableIterator<
+    'static,
+    (
+        name!(surface, String),
+        name!(quant_kind, String),
+        name!(isa, String),
+        name!(flushes, i64),
+        name!(candidates, i64),
+        name!(elapsed_nanos, i64),
+        name!(elapsed_ms, f64),
+        name!(kernel_flushes, i64),
+        name!(kernel_candidates, i64),
+        name!(kernel_elapsed_nanos, i64),
+        name!(kernel_elapsed_ms, f64),
+        name!(scalar_flushes, i64),
+        name!(scalar_candidates, i64),
+        name!(scalar_elapsed_nanos, i64),
+        name!(scalar_elapsed_ms, f64),
+    ),
+> {
+    let rows = am::common::candidate_batch::block_kernel_scoring_snapshots()
+        .into_iter()
+        .map(|snapshot| {
+            (
+                snapshot.surface.to_owned(),
+                snapshot.quant_kind.to_owned(),
+                snapshot.isa.to_owned(),
+                i64::try_from(snapshot.flushes).unwrap_or(i64::MAX),
+                i64::try_from(snapshot.candidates).unwrap_or(i64::MAX),
+                i64::try_from(snapshot.elapsed_nanos).unwrap_or(i64::MAX),
+                snapshot.elapsed_nanos as f64 / 1_000_000.0,
+                i64::try_from(snapshot.kernel_flushes).unwrap_or(i64::MAX),
+                i64::try_from(snapshot.kernel_candidates).unwrap_or(i64::MAX),
+                i64::try_from(snapshot.kernel_elapsed_nanos).unwrap_or(i64::MAX),
+                snapshot.kernel_elapsed_nanos as f64 / 1_000_000.0,
+                i64::try_from(snapshot.scalar_flushes).unwrap_or(i64::MAX),
+                i64::try_from(snapshot.scalar_candidates).unwrap_or(i64::MAX),
+                i64::try_from(snapshot.scalar_elapsed_nanos).unwrap_or(i64::MAX),
+                snapshot.scalar_elapsed_nanos as f64 / 1_000_000.0,
+            )
+        });
+    TableIterator::new(rows)
+}
+
+#[pg_extern(volatile)]
+fn ec_task87_candidate_batch_scoring_reset() {
+    ec_block_kernel_scoring_reset();
 }
 
 #[pg_extern(stable)]

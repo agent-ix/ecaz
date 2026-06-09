@@ -48,6 +48,7 @@ pub(crate) enum Isa {
     Scalar,
     Neon,
     Sve,
+    Sve2,
     Avx2,
 }
 ```

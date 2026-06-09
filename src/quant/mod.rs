@@ -28,6 +28,7 @@
 pub mod codebook;
 pub mod grouped_pq;
 pub mod hadamard;
+pub(crate) mod isa;
 pub(crate) mod lut32;
 pub mod mse;
 pub mod prod;

@@ -1,5 +1,10 @@
+use super::quant_codec::QuantCodecKind;
+use crate::quant::isa::Isa;
 use crate::quant::prod::{PreparedLutNoQjl4BitQuery, ProdQuantizer};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{
+    atomic::{AtomicU64, Ordering},
+    LazyLock,
+};
 use std::time::Instant;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -85,6 +90,8 @@ pub(crate) enum CandidateBatchScoringSurface {
 }
 
 impl CandidateBatchScoringSurface {
+    const TASK87_ALL: [Self; 4] = [Self::Spire, Self::Ivf, Self::Hnsw, Self::Unknown];
+
     pub(crate) fn label(self) -> &'static str {
         match self {
             Self::Spire => "spire",
@@ -94,13 +101,36 @@ impl CandidateBatchScoringSurface {
         }
     }
 
-    fn counters(self) -> &'static SurfaceCounters {
+    fn task87_all() -> [Self; 4] {
+        Self::TASK87_ALL
+    }
+
+    fn index(self) -> usize {
         match self {
-            Self::Spire => &SPIRE_COUNTERS,
-            Self::Ivf => &IVF_COUNTERS,
-            Self::Hnsw => &HNSW_COUNTERS,
-            Self::Unknown => &UNKNOWN_COUNTERS,
+            Self::Spire => 0,
+            Self::Ivf => 1,
+            Self::Hnsw => 2,
+            Self::Unknown => 3,
         }
+    }
+}
+
+fn quant_index(quant_kind: QuantCodecKind) -> usize {
+    match quant_kind {
+        QuantCodecKind::TurboQuant => 0,
+        QuantCodecKind::RaBitQ => 1,
+        QuantCodecKind::GroupedPq => 2,
+        QuantCodecKind::Binary => 3,
+    }
+}
+
+fn isa_index(isa: Isa) -> usize {
+    match isa {
+        Isa::Scalar => 0,
+        Isa::Neon => 1,
+        Isa::Sve => 2,
+        Isa::Sve2 => 3,
+        Isa::Avx2 => 4,
     }
 }
 
@@ -114,22 +144,53 @@ pub(crate) struct CandidateBatchScoringSnapshot {
     pub(crate) lut32_candidates: u64,
 }
 
-struct SurfaceCounters {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct BlockKernelCounterKey {
+    pub(crate) surface: CandidateBatchScoringSurface,
+    pub(crate) quant_kind: QuantCodecKind,
+    pub(crate) isa: Isa,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct BlockKernelScoringSnapshot {
+    pub(crate) surface: &'static str,
+    pub(crate) quant_kind: &'static str,
+    pub(crate) isa: &'static str,
+    pub(crate) flushes: u64,
+    pub(crate) candidates: u64,
+    pub(crate) elapsed_nanos: u64,
+    pub(crate) kernel_flushes: u64,
+    pub(crate) kernel_candidates: u64,
+    pub(crate) kernel_elapsed_nanos: u64,
+    pub(crate) scalar_flushes: u64,
+    pub(crate) scalar_candidates: u64,
+    pub(crate) scalar_elapsed_nanos: u64,
+}
+
+struct BlockKernelCounters {
     flushes: AtomicU64,
     candidates: AtomicU64,
     elapsed_nanos: AtomicU64,
-    lut32_flushes: AtomicU64,
-    lut32_candidates: AtomicU64,
+    kernel_flushes: AtomicU64,
+    kernel_candidates: AtomicU64,
+    kernel_elapsed_nanos: AtomicU64,
+    scalar_flushes: AtomicU64,
+    scalar_candidates: AtomicU64,
+    scalar_elapsed_nanos: AtomicU64,
 }
 
-impl SurfaceCounters {
-    const fn new() -> Self {
+impl BlockKernelCounters {
+    fn new() -> Self {
         Self {
             flushes: AtomicU64::new(0),
             candidates: AtomicU64::new(0),
             elapsed_nanos: AtomicU64::new(0),
-            lut32_flushes: AtomicU64::new(0),
-            lut32_candidates: AtomicU64::new(0),
+            kernel_flushes: AtomicU64::new(0),
+            kernel_candidates: AtomicU64::new(0),
+            kernel_elapsed_nanos: AtomicU64::new(0),
+            scalar_flushes: AtomicU64::new(0),
+            scalar_candidates: AtomicU64::new(0),
+            scalar_elapsed_nanos: AtomicU64::new(0),
         }
     }
 
@@ -137,60 +198,171 @@ impl SurfaceCounters {
         self.flushes.store(0, Ordering::Relaxed);
         self.candidates.store(0, Ordering::Relaxed);
         self.elapsed_nanos.store(0, Ordering::Relaxed);
-        self.lut32_flushes.store(0, Ordering::Relaxed);
-        self.lut32_candidates.store(0, Ordering::Relaxed);
+        self.kernel_flushes.store(0, Ordering::Relaxed);
+        self.kernel_candidates.store(0, Ordering::Relaxed);
+        self.kernel_elapsed_nanos.store(0, Ordering::Relaxed);
+        self.scalar_flushes.store(0, Ordering::Relaxed);
+        self.scalar_candidates.store(0, Ordering::Relaxed);
+        self.scalar_elapsed_nanos.store(0, Ordering::Relaxed);
     }
 
-    fn record(&self, candidate_count: usize, elapsed_nanos: u64, used_lut32: bool) {
-        let candidate_count =
-            u64::try_from(candidate_count).expect("candidate count should fit in u64");
+    fn record(
+        &self,
+        candidate_count: u64,
+        elapsed_nanos: u64,
+        kernel_candidates: u64,
+        scalar_candidates: u64,
+    ) {
         self.flushes.fetch_add(1, Ordering::Relaxed);
         self.candidates
             .fetch_add(candidate_count, Ordering::Relaxed);
         self.elapsed_nanos
             .fetch_add(elapsed_nanos, Ordering::Relaxed);
-        if used_lut32 {
-            self.lut32_flushes.fetch_add(1, Ordering::Relaxed);
-            self.lut32_candidates
-                .fetch_add(candidate_count, Ordering::Relaxed);
+        if kernel_candidates > 0 {
+            self.kernel_flushes.fetch_add(1, Ordering::Relaxed);
+            self.kernel_candidates
+                .fetch_add(kernel_candidates, Ordering::Relaxed);
+            self.kernel_elapsed_nanos
+                .fetch_add(elapsed_nanos, Ordering::Relaxed);
+        }
+        if scalar_candidates > 0 {
+            self.scalar_flushes.fetch_add(1, Ordering::Relaxed);
+            self.scalar_candidates
+                .fetch_add(scalar_candidates, Ordering::Relaxed);
+            self.scalar_elapsed_nanos
+                .fetch_add(elapsed_nanos, Ordering::Relaxed);
         }
     }
 
-    fn snapshot(&self, surface: CandidateBatchScoringSurface) -> CandidateBatchScoringSnapshot {
-        CandidateBatchScoringSnapshot {
-            surface: surface.label(),
+    fn snapshot(&self, key: BlockKernelCounterKey) -> BlockKernelScoringSnapshot {
+        BlockKernelScoringSnapshot {
+            surface: key.surface.label(),
+            quant_kind: key.quant_kind.label(),
+            isa: key.isa.label(),
             flushes: self.flushes.load(Ordering::Relaxed),
             candidates: self.candidates.load(Ordering::Relaxed),
             elapsed_nanos: self.elapsed_nanos.load(Ordering::Relaxed),
-            lut32_flushes: self.lut32_flushes.load(Ordering::Relaxed),
-            lut32_candidates: self.lut32_candidates.load(Ordering::Relaxed),
+            kernel_flushes: self.kernel_flushes.load(Ordering::Relaxed),
+            kernel_candidates: self.kernel_candidates.load(Ordering::Relaxed),
+            kernel_elapsed_nanos: self.kernel_elapsed_nanos.load(Ordering::Relaxed),
+            scalar_flushes: self.scalar_flushes.load(Ordering::Relaxed),
+            scalar_candidates: self.scalar_candidates.load(Ordering::Relaxed),
+            scalar_elapsed_nanos: self.scalar_elapsed_nanos.load(Ordering::Relaxed),
         }
     }
 }
 
-static SPIRE_COUNTERS: SurfaceCounters = SurfaceCounters::new();
-static IVF_COUNTERS: SurfaceCounters = SurfaceCounters::new();
-static HNSW_COUNTERS: SurfaceCounters = SurfaceCounters::new();
-static UNKNOWN_COUNTERS: SurfaceCounters = SurfaceCounters::new();
+const SURFACE_COUNT: usize = 4;
+const QUANT_COUNT: usize = 4;
+const ISA_COUNT: usize = 5;
+
+static BLOCK_KERNEL_COUNTERS: LazyLock<Vec<BlockKernelCounters>> = LazyLock::new(|| {
+    (0..SURFACE_COUNT * QUANT_COUNT * ISA_COUNT)
+        .map(|_| BlockKernelCounters::new())
+        .collect()
+});
+
+fn block_kernel_counter_index(key: BlockKernelCounterKey) -> usize {
+    (key.surface.index() * QUANT_COUNT * ISA_COUNT)
+        + (quant_index(key.quant_kind) * ISA_COUNT)
+        + isa_index(key.isa)
+}
+
+fn block_kernel_counters(key: BlockKernelCounterKey) -> &'static BlockKernelCounters {
+    &BLOCK_KERNEL_COUNTERS[block_kernel_counter_index(key)]
+}
 
 pub(crate) fn reset_candidate_batch_scoring_counters() {
-    for counters in [
-        &SPIRE_COUNTERS,
-        &IVF_COUNTERS,
-        &HNSW_COUNTERS,
-        &UNKNOWN_COUNTERS,
-    ] {
+    for counters in BLOCK_KERNEL_COUNTERS.iter() {
         counters.reset();
     }
 }
 
 pub(crate) fn candidate_batch_scoring_snapshots() -> [CandidateBatchScoringSnapshot; 4] {
-    [
-        SPIRE_COUNTERS.snapshot(CandidateBatchScoringSurface::Spire),
-        IVF_COUNTERS.snapshot(CandidateBatchScoringSurface::Ivf),
-        HNSW_COUNTERS.snapshot(CandidateBatchScoringSurface::Hnsw),
-        UNKNOWN_COUNTERS.snapshot(CandidateBatchScoringSurface::Unknown),
-    ]
+    CandidateBatchScoringSurface::task87_all().map(candidate_batch_surface_snapshot)
+}
+
+pub(crate) fn block_kernel_scoring_snapshots() -> Vec<BlockKernelScoringSnapshot> {
+    let mut snapshots = Vec::new();
+    for surface in CandidateBatchScoringSurface::task87_all() {
+        for quant_kind in QuantCodecKind::ALL {
+            for isa in Isa::ALL {
+                let key = BlockKernelCounterKey {
+                    surface,
+                    quant_kind,
+                    isa,
+                };
+                let snapshot = block_kernel_counters(key).snapshot(key);
+                if snapshot.flushes > 0 {
+                    snapshots.push(snapshot);
+                }
+            }
+        }
+    }
+    snapshots
+}
+
+fn candidate_batch_surface_snapshot(
+    surface: CandidateBatchScoringSurface,
+) -> CandidateBatchScoringSnapshot {
+    let mut flushes = 0;
+    let mut candidates = 0;
+    let mut elapsed_nanos = 0;
+    let mut lut32_flushes = 0;
+    let mut lut32_candidates = 0;
+    for quant_kind in QuantCodecKind::ALL {
+        for isa in Isa::ALL {
+            let snapshot = block_kernel_counters(BlockKernelCounterKey {
+                surface,
+                quant_kind,
+                isa,
+            })
+            .snapshot(BlockKernelCounterKey {
+                surface,
+                quant_kind,
+                isa,
+            });
+            flushes += snapshot.flushes;
+            candidates += snapshot.candidates;
+            elapsed_nanos += snapshot.elapsed_nanos;
+            if quant_kind == QuantCodecKind::TurboQuant && snapshot.kernel_flushes > 0 {
+                lut32_flushes += snapshot.flushes;
+                lut32_candidates += snapshot.candidates;
+            }
+        }
+    }
+    CandidateBatchScoringSnapshot {
+        surface: surface.label(),
+        flushes,
+        candidates,
+        elapsed_nanos,
+        lut32_flushes,
+        lut32_candidates,
+    }
+}
+
+fn record_block_kernel_score(
+    key: BlockKernelCounterKey,
+    candidate_count: usize,
+    elapsed_nanos: u64,
+    kernel_candidates: usize,
+    scalar_candidates: usize,
+) {
+    if candidate_count == 0 {
+        return;
+    }
+    let candidate_count =
+        u64::try_from(candidate_count).expect("candidate count should fit in u64");
+    let kernel_candidates =
+        u64::try_from(kernel_candidates).expect("candidate count should fit in u64");
+    let scalar_candidates =
+        u64::try_from(scalar_candidates).expect("candidate count should fit in u64");
+    block_kernel_counters(key).record(
+        candidate_count,
+        elapsed_nanos,
+        kernel_candidates,
+        scalar_candidates,
+    );
 }
 
 pub(crate) fn score_turboquant_no_qjl_4bit_batch<Id>(
@@ -216,13 +388,24 @@ pub(crate) fn score_turboquant_no_qjl_4bit_batch_for<Id>(
     out_scores: &mut [f32],
 ) -> Result<(), String> {
     let started = Instant::now();
-    let used_lut32 = batch.len() >= crate::quant::lut32::BLOCK_WIDTH;
     let result = score_turboquant_no_qjl_4bit_batch_inner(quantizer, prepared, batch, out_scores);
     if result.is_ok() {
         let elapsed_nanos = u64::try_from(started.elapsed().as_nanos()).unwrap_or(u64::MAX);
-        surface
-            .counters()
-            .record(batch.len(), elapsed_nanos, used_lut32);
+        let block_width = crate::quant::lut32::BLOCK_WIDTH;
+        let kernel_candidates = (batch.len() / block_width) * block_width;
+        let scalar_candidates = batch.len() - kernel_candidates;
+        let key = BlockKernelCounterKey {
+            surface,
+            quant_kind: QuantCodecKind::TurboQuant,
+            isa: Isa::Scalar,
+        };
+        record_block_kernel_score(
+            key,
+            batch.len(),
+            elapsed_nanos,
+            kernel_candidates,
+            scalar_candidates,
+        );
     }
     result
 }
@@ -423,6 +606,24 @@ mod tests {
         assert_eq!(ivf.candidates, 39);
         assert_eq!(ivf.lut32_flushes, 1);
         assert_eq!(ivf.lut32_candidates, 39);
+        let block_snapshots = super::block_kernel_scoring_snapshots();
+        let block = block_snapshots
+            .iter()
+            .find(|snapshot| {
+                snapshot.surface == "ivf"
+                    && snapshot.quant_kind == "turboquant"
+                    && snapshot.isa == "scalar"
+            })
+            .unwrap();
+        assert_eq!(block.surface, "ivf");
+        assert_eq!(block.quant_kind, "turboquant");
+        assert_eq!(block.isa, "scalar");
+        assert_eq!(block.flushes, 1);
+        assert_eq!(block.candidates, 39);
+        assert_eq!(block.kernel_flushes, 1);
+        assert_eq!(block.kernel_candidates, 32);
+        assert_eq!(block.scalar_flushes, 1);
+        assert_eq!(block.scalar_candidates, 7);
         let spire = snapshots
             .iter()
             .find(|snapshot| snapshot.surface == "spire")
@@ -436,6 +637,7 @@ mod tests {
             .unwrap();
         assert_eq!(reset_ivf.flushes, 0);
         assert_eq!(reset_ivf.candidates, 0);
+        assert!(super::block_kernel_scoring_snapshots().is_empty());
     }
 
     fn random_unit_vector(dim: usize, seed: u64) -> Vec<f32> {
