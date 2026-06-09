@@ -143,9 +143,17 @@ rows only.
 
 ## Scalar Reference Pseudocode
 
-Phase 2 scalar must preserve `f32::to_bits()` against the pre-kernel scorer.
+Phase 2 scalar has two explicit comparison targets:
+
+1. strict `f32::to_bits()` parity against a forced-scalar reference that uses
+   the current `sum_query_dequant_bits1_byte_lut_scalar` operation order; and
+2. ADR-076 tolerance (`<= 4 ULP` or `1e-6` relative, whichever is larger)
+   against the production-dispatched pre-kernel scorers
+   (`estimate_ip_scalar_only` / `estimate_ip_bits1_batch`), because those
+   scorers select NEON/AVX2/FMA kernels on normal dev and bench hosts.
+
 The scalar block implementation intentionally reuses the same operation order
-as the current `sum_query_dequant_bits1_byte_lut_scalar` path:
+as the forced-scalar byte-LUT path:
 
 ```text
 for lane in 0..32:
@@ -166,12 +174,20 @@ for lane in 0..32:
 return Isa::Scalar
 ```
 
-This is not optimized, but it locks the contract. Phase 2 tests compare:
+This is not optimized, but it locks the deterministic scalar anchor. Phase 2
+tests compare:
 
-- `len < 32` scalar tail vs `PreparedEstimator::estimate_ip_scalar_only`;
-- `len == 32` scalar block vs `estimate_ip_bits1_batch`;
-- `len > 32` block plus tail vs `estimate_ip_bits1_batch`;
-- direct `f32::to_bits()` equality for every candidate.
+- `len < 32` scalar tail vs the forced-scalar reference with direct
+  `f32::to_bits()` equality;
+- `len == 32` scalar block vs the forced-scalar reference with direct
+  `f32::to_bits()` equality;
+- `len > 32` block plus tail vs the forced-scalar reference with direct
+  `f32::to_bits()` equality;
+- the same fixtures vs production-dispatched `estimate_ip_scalar_only` /
+  `estimate_ip_bits1_batch` under ADR-076 tolerance;
+- a one-shot host check that the existing production per-candidate and batch
+  references are either bit-equal on that host or are covered by the same
+  tolerance framing.
 
 ## SIMD Strategy
 
@@ -195,9 +211,11 @@ sum_q_dequant = sum_i query[i] * dequant(candidate_bit_i)
 
 The popcount-only integer count is useful for Hamming parity and for a
 RaBitQ diagnostic assertion, but the production RaBitQ score still needs the
-query-weighted positive-bit sum. Phase 2 should add an integer-exact helper for
-raw bit counts so Task 95 can share the structure later without changing the
-RaBitQ score contract.
+query-weighted positive-bit sum. The algebraic weighted-sum rewrite is an
+optimization candidate only; it is not the bit-exact scalar anchor because it
+changes floating-point operation order. Phase 2 should add an integer-exact
+helper for raw bit counts so Task 95 can share the structure later without
+changing the RaBitQ score contract.
 
 ### NEON
 
@@ -268,14 +286,14 @@ The registration phase should add RaBitQ overrides to the relevant
 | AM | Current hook | Registration plan |
 |---|---|---|
 | IVF | `IvfQuantCodec::score_ip_batch` | For `IvfQuantizerProfile::RaBitQ` + `IvfPreparedQuery::RaBitQ`, route `batch.len() >= 32` to `rabitq32`, tails to scalar. |
-| DiskANN | `DiskannRaBitQPrefilterCodec` | Add a `score_ip_batch` override using `CandidateBatchScoringSurface::Unknown` until DiskANN gets its own enum value; preserve prefilter score polarity outside the codec. |
+| DiskANN | `DiskannRaBitQPrefilterCodec` | Add `CandidateBatchScoringSurface::Diskann` in Phase 2, then add a `score_ip_batch` override using that surface; preserve prefilter score polarity outside the codec. |
 | HNSW | `HnswRaBitQScanCodec` | Add a `score_ip_batch` override using `CandidateBatchScoringSurface::Hnsw`; HNSW keeps any traversal polarity conversion outside the codec. |
 | SPIRE | `SpireAssignmentScorer::RaBitQ` | Replace the current scalar loop with the same `rabitq32` batch function under `CandidateBatchScoringSurface::Spire`. |
 
-Open design note: `CandidateBatchScoringSurface` currently lacks `Diskann`.
-Task 93 Phase 6 should either add `Diskann` to the counter surface or document
-why DiskANN remains `Unknown` for this task. The closeout matrix needs direct
-DiskANN evidence, so adding the enum value is likely cleaner.
+Reviewer decision after packet 001 feedback: `CandidateBatchScoringSurface`
+currently lacks `Diskann`, and Task 93 should add that variant in Phase 2 rather
+than route DiskANN through `Unknown`. This keeps the shared `unknown` counter
+namespace clean before measurement packets start citing Task 93 rows.
 
 ## Counter Contract
 
@@ -296,8 +314,13 @@ not only `[task87-counters]` compatibility output.
 
 Phase 2:
 
-- scalar `f32::to_bits()` parity against `score_ip_bits1_batch_from_payloads`
-  and `estimate_ip_scalar_only`;
+- scalar `f32::to_bits()` parity against the forced-scalar bits=1 RaBitQ
+  reference;
+- ADR-076 tolerance against production-dispatched
+  `score_ip_bits1_batch_from_payloads` and `estimate_ip_scalar_only`;
+- one-shot production per-candidate vs production batch reference comparison on
+  the target host;
+- add `CandidateBatchScoringSurface::Diskann` before DiskANN batch registration;
 - width gates for `<32`, `==32`, and `>32`;
 - shape mismatch rejects before counters increment.
 
