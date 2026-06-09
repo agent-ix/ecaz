@@ -144,7 +144,7 @@ unsafe fn score_block32_sve_impl(
     isa
 }
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(target_arch = "aarch64", not(target_vendor = "apple")))]
 #[inline]
 fn centroid_index(code: &[u8], byte_index: usize, group_index: usize) -> usize {
     let packed = code[byte_index];
