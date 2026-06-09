@@ -1,0 +1,147 @@
+Script started on 2026-06-09 06:56:38-07:00 [<not executed on terminal>]
+plan/tasks/92-cross-quant-block-kernel-infrastructure.md
+63:   caches the result, and exposes `current_isa()` returning an
+87:   score_block32_<isa>(...)`. The scalar module also exposes
+125:   `ec_block_kernel_scoring_*`). Counters tracked in bench
+139:   `current_isa()` returns the highest available variant per
+155:   `missing_kernel` marker proving the runner handles the gap).
+183:  cached `current_isa()` per kernel.
+201:- Add `missing_kernel` marker for cells where the kernel hasn't
+
+spec/adr/ADR-076-universal-block-kernel-pattern.md
+91:`score_block32_<isa>`. Compile-time-disabled modules must compile to safe
+
+docs/block-kernel-development.md
+58:    let selected = crate::quant::isa::current_isa();
+60:        Isa::Avx2 => avx2::score_block32_avx2(prepared, &codes, out_scores),
+61:        Isa::Sve2 | Isa::Sve => sve::score_block32_sve(prepared, &codes, out_scores),
+62:        Isa::Neon => neon::score_block32_neon(prepared, &codes, out_scores),
+63:        Isa::Scalar => scalar::score_block32_scalar(prepared, &codes, out_scores),
+111:BlockKernelCounterKey {
+118:Do not derive the counter ISA by calling `current_isa()` again at the AM call
+
+src/quant/isa.rs
+52:pub(crate) fn select_highest_isa(features: HostIsaFeatures) -> Isa {
+69:pub(crate) fn current_isa() -> Isa {
+70:    select_highest_isa(HostIsaFeatures::detect())
+105:    use super::{select_highest_isa, Aarch64Features, HostIsaFeatures, Isa, X86Features};
+108:    fn select_highest_isa_prefers_graviton4_sve2() {
+118:        assert_eq!(select_highest_isa(features), Isa::Sve2);
+122:    fn select_highest_isa_distinguishes_base_sve() {
+132:        assert_eq!(select_highest_isa(features), Isa::Sve);
+136:    fn select_highest_isa_falls_back_to_neon_or_scalar() {
+147:        assert_eq!(select_highest_isa(neon), Isa::Neon);
+148:        assert_eq!(select_highest_isa(scalar), Isa::Scalar);
+152:    fn select_highest_isa_prefers_x86_avx2_on_x86_features() {
+162:        assert_eq!(select_highest_isa(features), Isa::Avx2);
+
+crates/ecaz-cli/suites/task92-offpath-calibration.json
+2:  "name": "task92-offpath-calibration",
+27:        "kernel_status=valid"
+51:        "kernel_status=valid"
+
+crates/ecaz-cli/suites/task92-quant-axis-smoke.json
+26:        "kernel_status=valid"
+49:        "kernel_status=missing_kernel"
+
+crates/ecaz-cli/src/commands/bench/mod.rs
+296:        .batch_execute("SELECT ec_block_kernel_scoring_reset()")
+327:             FROM ec_block_kernel_scoring_snapshot() \
+424:pub(crate) fn format_block_kernel_counter_lines(
+675:        let lines = format_block_kernel_counter_lines("latency", "nprobe=8", &snapshots);
+
+crates/ecaz-cli/src/commands/bench/spire_pipeline.rs
+713:            task87_counter_lines.push(super::format_block_kernel_counter_lines(
+
+crates/ecaz-cli/src/commands/bench/suite.rs
+671:    kernel_status: Option<KernelCellStatus>,
+810:                    "[suite:{}] {} -> kernel_status={}",
+814:                        .kernel_status
+815:                        .map(kernel_status_label)
+1244:        let kernel_status = step_kernel_status(step.tags())?;
+1245:        let runnable = selected && kernel_cell_is_runnable(kernel_status);
+1258:            kernel_status,
+1431:    let status = step.kernel_status?;
+1444:            BTreeMap::from([("kernel_status".into(), kernel_status_label(status).into())]),
+1613:    let kernel_status = step.kernel_status.map(kernel_status_label);
+1614:    insert_if_absent(&mut values, "kernel_status", kernel_status);
+1649:fn step_kernel_status(tags: &[String]) -> Result<Option<KernelCellStatus>> {
+1650:    tag_value(tags, "kernel_status=")
+1651:        .map(|value| parse_kernel_status(&value))
+1660:fn parse_kernel_status(value: &str) -> Result<KernelCellStatus> {
+1663:        "missing_kernel" => Ok(KernelCellStatus::MissingKernel),
+1667:            "kernel_status tag must be one of valid, missing_kernel, structurally_absent, invalid_config; got {other:?}"
+1676:fn kernel_status_label(status: KernelCellStatus) -> &'static str {
+1679:        KernelCellStatus::MissingKernel => "missing_kernel",
+4125:    fn quant_axis_tags_flow_into_manifest_and_missing_kernel_marker() {
+4138:                        "kernel_status=valid".into(),
+4153:                        "kernel_status=missing_kernel".into(),
+4183:        assert_eq!(valid.kernel_status, Some(KernelCellStatus::Valid));
+4190:        assert_eq!(missing.kernel_status, Some(KernelCellStatus::MissingKernel));
+4198:            row.values.get("kernel_status").map(String::as_str),
+4199:            Some("missing_kernel")
+4206:    fn quant_axis_rejects_unknown_kernel_status_marker() {
+4215:                tags: vec!["kernel_status=not_real".into()],
+4235:            .contains("kernel_status tag"));
+4266:        assert_eq!(populated.kernel_status, Some(KernelCellStatus::Valid));
+4274:        assert_eq!(missing.kernel_status, Some(KernelCellStatus::MissingKernel));
+4282:        let raw = include_str!("../../../suites/task92-offpath-calibration.json");
+4289:            config: "task92-offpath-calibration.json".into(),
+4306:        assert_eq!(kernel_on.kernel_status, Some(KernelCellStatus::Valid));
+4317:        assert_eq!(kernel_off.kernel_status, Some(KernelCellStatus::Valid));
+4374:                kernel_status: None,
+4852:            kernel_status: None,
+
+src/quant/lut32/mod.rs
+94:    let isa = crate::quant::isa::current_isa();
+97:            avx2::score_block32_avx2(lut, original_dim, &codes, out_scores)
+100:            sve::score_block32_sve(lut, original_dim, &codes, out_scores)
+103:            neon::score_block32_neon(lut, original_dim, &codes, out_scores)
+106:            scalar::score_block32_scalar(lut, original_dim, &codes, out_scores)
+
+crates/ecaz-cli/src/commands/bench/latency.rs
+223:            task87_counter_lines.push(super::format_block_kernel_counter_lines(
+
+src/quant/lut32/scalar.rs
+4:pub(super) fn score_block32_scalar(
+
+src/quant/lut32/avx2.rs
+4:pub(super) fn score_block32_avx2(
+10:    scalar::score_block32_scalar(lut, original_dim, codes, out_scores)
+
+src/quant/lut32/sve.rs
+4:pub(super) fn score_block32_sve(
+10:    scalar::score_block32_scalar(lut, original_dim, codes, out_scores)
+
+src/quant/lut32/neon.rs
+4:pub(super) fn score_block32_neon(
+10:    scalar::score_block32_scalar(lut, original_dim, codes, out_scores)
+
+src/am/ec_spire/quantizer/mod.rs
+10:    record_block_scalar_score_for, score_turboquant_no_qjl_4bit_batch_for, CandidateBatch,
+390:                    record_block_scalar_score_for(
+467:                    record_block_scalar_score_for(
+
+src/am/common/candidate_batch.rs
+148:pub(crate) struct BlockKernelCounterKey {
+235:    fn snapshot(&self, key: BlockKernelCounterKey) -> BlockKernelScoringSnapshot {
+269:fn block_kernel_counter_index(key: BlockKernelCounterKey) -> usize {
+275:fn block_kernel_counters(key: BlockKernelCounterKey) -> &'static BlockKernelCounters {
+294:                let key = BlockKernelCounterKey {
+319:            let snapshot = block_kernel_counters(BlockKernelCounterKey {
+324:            .snapshot(BlockKernelCounterKey {
+354:    key: BlockKernelCounterKey,
+366:pub(crate) fn record_block_scalar_score_for(
+377:    let key = BlockKernelCounterKey {
+409:        let key = BlockKernelCounterKey {
+415:        record_block_scalar_score_for(
+547:        BlockKernelCounterKey, CandidateBatch, CandidateBatchScoringSurface, CandidateMeta,
+701:            BlockKernelCounterKey {
+709:        super::record_block_scalar_score_for(
+
+src/lib.rs
+1162:fn ec_block_kernel_scoring_reset() {
+1168:fn ec_block_kernel_scoring_snapshot() -> TableIterator<
+1214:    ec_block_kernel_scoring_reset();
+
+Script done on 2026-06-09 06:56:38-07:00 [COMMAND_EXIT_CODE="0"]
