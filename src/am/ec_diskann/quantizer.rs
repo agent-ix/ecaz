@@ -1,6 +1,10 @@
 use std::sync::Arc;
 
-use crate::am::common::training::{self, GroupedPq4Model};
+use crate::am::common::{
+    candidate_batch::{CandidateMeta, CandidatePayload},
+    quant_codec::{EncodedQuantPayload, QuantCodec, QuantCodecKind, QuantSearchCodecTag},
+    training::{self, GroupedPq4Model},
+};
 use crate::quant::{
     grouped_pq::{
         build_grouped_pq_lut_f32, encode_grouped_pq, grouped_pq_score_f32, GROUPED_PQ_CENTROIDS,
@@ -159,6 +163,7 @@ pub(super) enum DiskannPreparedPrefilter {
         flat_codebooks: Vec<f32>,
         query_lut: Vec<f32>,
         group_count: usize,
+        group_size: usize,
     },
     RaBitQ {
         prepared: PreparedEstimator,
@@ -169,14 +174,44 @@ impl DiskannPreparedPrefilter {
     pub(super) fn score(&self, tuple: &super::tuple::VamanaNodeTuple) -> f32 {
         match self {
             Self::BinarySidecar { query_words, .. } => {
-                super::scan_query::hamming_xor_popcount(query_words, &tuple.binary_words) as f32
+                let codec = DiskannBinarySidecarPrefilterCodec::new(query_words.len());
+                let code = u64_words_to_le_bytes(&tuple.binary_words);
+                QuantCodec::score_ip_candidate(
+                    &codec,
+                    query_words,
+                    CandidatePayload::new(&code, CandidateMeta::Binary),
+                )
+                .unwrap_or_else(|error| pgrx::error!("{error}"))
             }
             Self::GroupedPq {
                 query_lut,
                 group_count,
+                group_size,
                 ..
-            } => -grouped_pq_score_f32(query_lut, *group_count, &tuple.search_code),
-            Self::RaBitQ { prepared } => -prepared.estimate_ip_scalar_only(&tuple.search_code),
+            } => {
+                let codec = DiskannGroupedPqPrefilterCodec::new(*group_count, *group_size);
+                -QuantCodec::score_ip_candidate(
+                    &codec,
+                    query_lut,
+                    CandidatePayload::new(
+                        &tuple.search_code,
+                        CandidateMeta::GroupedPq {
+                            group_count: *group_count,
+                        },
+                    ),
+                )
+                .unwrap_or_else(|error| pgrx::error!("{error}"))
+            }
+            Self::RaBitQ { prepared } => {
+                let codec =
+                    DiskannRaBitQPrefilterCodec::new(tuple.search_code.len(), DISKANN_RABITQ_BITS);
+                -QuantCodec::score_ip_candidate(
+                    &codec,
+                    prepared,
+                    CandidatePayload::new(&tuple.search_code, CandidateMeta::RaBitQ),
+                )
+                .unwrap_or_else(|error| pgrx::error!("{error}"))
+            }
         }
     }
 
@@ -201,6 +236,224 @@ impl DiskannPreparedPrefilter {
             }
             Self::RaBitQ { .. } => {}
         }
+    }
+}
+
+fn u64_words_to_le_bytes(words: &[u64]) -> Vec<u8> {
+    let mut bytes = Vec::with_capacity(words.len() * std::mem::size_of::<u64>());
+    for word in words {
+        bytes.extend_from_slice(&word.to_le_bytes());
+    }
+    bytes
+}
+
+fn le_bytes_to_u64_words(bytes: &[u8]) -> Result<Vec<u64>, String> {
+    if bytes.len() % std::mem::size_of::<u64>() != 0 {
+        return Err(format!(
+            "ec_diskann binary sidecar payload byte length {} is not u64-aligned",
+            bytes.len()
+        ));
+    }
+    Ok(bytes
+        .chunks_exact(std::mem::size_of::<u64>())
+        .map(|chunk| u64::from_le_bytes(chunk.try_into().expect("chunk size is fixed at 8")))
+        .collect())
+}
+
+struct DiskannBinarySidecarPrefilterCodec {
+    word_count: usize,
+}
+
+impl DiskannBinarySidecarPrefilterCodec {
+    fn new(word_count: usize) -> Self {
+        Self { word_count }
+    }
+}
+
+impl QuantCodec for DiskannBinarySidecarPrefilterCodec {
+    type PreparedQuery = Vec<u64>;
+
+    fn codec_kind(&self) -> QuantCodecKind {
+        QuantCodecKind::Binary
+    }
+
+    fn search_codec_tag(&self) -> QuantSearchCodecTag {
+        QuantSearchCodecTag::Binary
+    }
+
+    fn payload_len(&self) -> usize {
+        self.word_count * std::mem::size_of::<u64>()
+    }
+
+    fn encode_source(&self, source: &[f32]) -> Result<EncodedQuantPayload, String> {
+        Err(format!(
+            "ec_diskann binary-sidecar prefilter codec uses persisted sidecar words; source length {}",
+            source.len()
+        ))
+    }
+
+    fn prepare_ip_query(&self, query: &[f32]) -> Result<Self::PreparedQuery, String> {
+        Err(format!(
+            "ec_diskann binary-sidecar prefilter codec uses scan-owned query words; query length {}",
+            query.len()
+        ))
+    }
+
+    fn score_ip_candidate(
+        &self,
+        prepared_query: &Self::PreparedQuery,
+        payload: CandidatePayload<'_>,
+    ) -> Result<f32, String> {
+        if prepared_query.len() != self.word_count {
+            return Err(format!(
+                "ec_diskann binary-sidecar prepared word count {} does not match codec word count {}",
+                prepared_query.len(),
+                self.word_count
+            ));
+        }
+        let candidate_words = le_bytes_to_u64_words(payload.code)?;
+        if candidate_words.len() != self.word_count {
+            return Err(format!(
+                "ec_diskann binary-sidecar candidate word count {} does not match codec word count {}",
+                candidate_words.len(),
+                self.word_count
+            ));
+        }
+        Ok(super::scan_query::hamming_xor_popcount(prepared_query, &candidate_words) as f32)
+    }
+}
+
+struct DiskannGroupedPqPrefilterCodec {
+    group_count: usize,
+    group_size: usize,
+}
+
+impl DiskannGroupedPqPrefilterCodec {
+    fn new(group_count: usize, group_size: usize) -> Self {
+        Self {
+            group_count,
+            group_size,
+        }
+    }
+}
+
+impl QuantCodec for DiskannGroupedPqPrefilterCodec {
+    type PreparedQuery = Vec<f32>;
+
+    fn codec_kind(&self) -> QuantCodecKind {
+        QuantCodecKind::GroupedPq
+    }
+
+    fn search_codec_tag(&self) -> QuantSearchCodecTag {
+        QuantSearchCodecTag::GroupedPq {
+            group_count: self.group_count,
+            group_size: self.group_size,
+        }
+    }
+
+    fn payload_len(&self) -> usize {
+        self.group_count.div_ceil(2)
+    }
+
+    fn encode_source(&self, source: &[f32]) -> Result<EncodedQuantPayload, String> {
+        Err(format!(
+            "ec_diskann grouped-PQ prefilter codec uses persisted grouped search codes; source length {}",
+            source.len()
+        ))
+    }
+
+    fn prepare_ip_query(&self, query: &[f32]) -> Result<Self::PreparedQuery, String> {
+        Err(format!(
+            "ec_diskann grouped-PQ prefilter codec uses scan-owned query LUTs; query length {}",
+            query.len()
+        ))
+    }
+
+    fn score_ip_candidate(
+        &self,
+        prepared_query: &Self::PreparedQuery,
+        payload: CandidatePayload<'_>,
+    ) -> Result<f32, String> {
+        if payload.code.len() != self.payload_len() {
+            return Err(format!(
+                "ec_diskann grouped-PQ search code len {} does not match codec width {}",
+                payload.code.len(),
+                self.payload_len()
+            ));
+        }
+        if let CandidateMeta::GroupedPq { group_count } = payload.meta {
+            if group_count != self.group_count {
+                return Err(format!(
+                    "ec_diskann grouped-PQ candidate group count {} does not match codec group count {}",
+                    group_count,
+                    self.group_count
+                ));
+            }
+        }
+        Ok(grouped_pq_score_f32(
+            prepared_query,
+            self.group_count,
+            payload.code,
+        ))
+    }
+}
+
+struct DiskannRaBitQPrefilterCodec {
+    search_code_len: usize,
+    bits: u8,
+}
+
+impl DiskannRaBitQPrefilterCodec {
+    fn new(search_code_len: usize, bits: u8) -> Self {
+        Self {
+            search_code_len,
+            bits,
+        }
+    }
+}
+
+impl QuantCodec for DiskannRaBitQPrefilterCodec {
+    type PreparedQuery = PreparedEstimator;
+
+    fn codec_kind(&self) -> QuantCodecKind {
+        QuantCodecKind::RaBitQ
+    }
+
+    fn search_codec_tag(&self) -> QuantSearchCodecTag {
+        QuantSearchCodecTag::RaBitQ { bits: self.bits }
+    }
+
+    fn payload_len(&self) -> usize {
+        self.search_code_len
+    }
+
+    fn encode_source(&self, source: &[f32]) -> Result<EncodedQuantPayload, String> {
+        Err(format!(
+            "ec_diskann RaBitQ prefilter codec uses DiskANN build/insert encoding; source length {}",
+            source.len()
+        ))
+    }
+
+    fn prepare_ip_query(&self, query: &[f32]) -> Result<Self::PreparedQuery, String> {
+        Err(format!(
+            "ec_diskann RaBitQ prefilter codec uses scan-owned prepared query state; query length {}",
+            query.len()
+        ))
+    }
+
+    fn score_ip_candidate(
+        &self,
+        prepared_query: &Self::PreparedQuery,
+        payload: CandidatePayload<'_>,
+    ) -> Result<f32, String> {
+        if payload.code.len() != self.search_code_len {
+            return Err(format!(
+                "ec_diskann RaBitQ search code len {} does not match codec width {}",
+                payload.code.len(),
+                self.search_code_len
+            ));
+        }
+        Ok(prepared_query.estimate_ip_scalar_only(payload.code))
     }
 }
 
@@ -420,6 +673,7 @@ fn prepare_grouped_or_sidecar_prefilter(
         flat_codebooks,
         query_lut,
         group_count,
+        group_size,
     })
 }
 
@@ -427,6 +681,20 @@ fn prepare_grouped_or_sidecar_prefilter(
 mod tests {
     use super::*;
     use crate::am::ec_diskann::page::VamanaMetadataPage;
+    use crate::am::ec_diskann::tuple::VamanaNodeTuple;
+
+    fn tuple_with_codes(binary_words: Vec<u64>, search_code: Vec<u8>) -> VamanaNodeTuple {
+        VamanaNodeTuple {
+            deleted: false,
+            has_overflow_heaptids: false,
+            primary_heaptid: ItemPointer::INVALID,
+            rerank_tid: ItemPointer::INVALID,
+            binary_words,
+            search_code,
+            neighbors: Vec::new(),
+            neighbor_count: 0,
+        }
+    }
 
     #[test]
     fn rabitq_metadata_len_uses_one_bit_payload() {
@@ -488,5 +756,112 @@ mod tests {
             err.contains("no binary sidecar"),
             "error should explain the forced sidecar mismatch: {err}"
         );
+    }
+
+    #[test]
+    fn diskann_binary_sidecar_prefilter_codec_matches_direct_hamming_score() {
+        let query_words = vec![0b1010_u64, 0b1111_0000_u64];
+        let tuple = tuple_with_codes(vec![0b0011_u64, 0b1010_0000_u64], Vec::new());
+        let prefilter = DiskannPreparedPrefilter::BinarySidecar {
+            rotated_query: Vec::new(),
+            query_words: query_words.clone(),
+        };
+        let codec = DiskannBinarySidecarPrefilterCodec::new(query_words.len());
+        let payload_bytes = u64_words_to_le_bytes(&tuple.binary_words);
+
+        assert_eq!(QuantCodec::codec_kind(&codec), QuantCodecKind::Binary);
+        assert_eq!(
+            QuantCodec::search_codec_tag(&codec),
+            QuantSearchCodecTag::Binary
+        );
+        assert_eq!(QuantCodec::payload_len(&codec), payload_bytes.len());
+
+        let observed = QuantCodec::score_ip_candidate(
+            &codec,
+            &query_words,
+            CandidatePayload::new(&payload_bytes, CandidateMeta::Binary),
+        )
+        .unwrap();
+        let expected =
+            super::super::scan_query::hamming_xor_popcount(&query_words, &tuple.binary_words)
+                as f32;
+
+        assert_eq!(observed, expected);
+        assert_eq!(prefilter.score(&tuple), expected);
+    }
+
+    #[test]
+    fn diskann_grouped_pq_prefilter_codec_matches_direct_search_code_score() {
+        let group_count = 3;
+        let group_size = 2;
+        let mut query_lut = vec![0.0_f32; group_count * GROUPED_PQ_CENTROIDS];
+        query_lut[1] = 1.25;
+        query_lut[GROUPED_PQ_CENTROIDS + 3] = -0.5;
+        query_lut[2 * GROUPED_PQ_CENTROIDS + 2] = 2.0;
+        let tuple = tuple_with_codes(Vec::new(), vec![0x31, 0x02]);
+        let prefilter = DiskannPreparedPrefilter::GroupedPq {
+            rotated_query: Vec::new(),
+            flat_codebooks: Vec::new(),
+            query_lut: query_lut.clone(),
+            group_count,
+            group_size,
+        };
+        let codec = DiskannGroupedPqPrefilterCodec::new(group_count, group_size);
+
+        assert_eq!(QuantCodec::codec_kind(&codec), QuantCodecKind::GroupedPq);
+        assert_eq!(
+            QuantCodec::search_codec_tag(&codec),
+            QuantSearchCodecTag::GroupedPq {
+                group_count,
+                group_size,
+            }
+        );
+        assert_eq!(QuantCodec::payload_len(&codec), tuple.search_code.len());
+
+        let observed = QuantCodec::score_ip_candidate(
+            &codec,
+            &query_lut,
+            CandidatePayload::new(&tuple.search_code, CandidateMeta::GroupedPq { group_count }),
+        )
+        .unwrap();
+        let expected = grouped_pq_score_f32(&query_lut, group_count, &tuple.search_code);
+
+        assert_eq!(observed.to_bits(), expected.to_bits());
+        assert_eq!(prefilter.score(&tuple).to_bits(), (-expected).to_bits());
+    }
+
+    #[test]
+    fn diskann_rabitq_prefilter_codec_matches_direct_search_code_score() {
+        let dimensions = 16;
+        let vector = vec![1.0_f32 / (dimensions as f32).sqrt(); dimensions];
+        let query = vector.clone();
+        let quantizer =
+            RaBitQQuantizer::cached_seeded_srht_bits(dimensions, 42, DISKANN_RABITQ_BITS).unwrap();
+        let search_code = quantizer.encode_code(&vector).into_vec();
+        let prepared = quantizer.prepare_estimator(&query);
+        let tuple = tuple_with_codes(Vec::new(), search_code.clone());
+        let prefilter = DiskannPreparedPrefilter::RaBitQ { prepared };
+        let codec = DiskannRaBitQPrefilterCodec::new(search_code.len(), DISKANN_RABITQ_BITS);
+
+        assert_eq!(QuantCodec::codec_kind(&codec), QuantCodecKind::RaBitQ);
+        assert_eq!(
+            QuantCodec::search_codec_tag(&codec),
+            QuantSearchCodecTag::RaBitQ {
+                bits: DISKANN_RABITQ_BITS,
+            }
+        );
+        assert_eq!(QuantCodec::payload_len(&codec), search_code.len());
+
+        let direct_prepared = quantizer.prepare_estimator(&query);
+        let observed = QuantCodec::score_ip_candidate(
+            &codec,
+            &direct_prepared,
+            CandidatePayload::new(&search_code, CandidateMeta::RaBitQ),
+        )
+        .unwrap();
+        let expected = direct_prepared.estimate_ip_scalar_only(&search_code);
+
+        assert_eq!(observed.to_bits(), expected.to_bits());
+        assert_eq!(prefilter.score(&tuple).to_bits(), (-expected).to_bits());
     }
 }
