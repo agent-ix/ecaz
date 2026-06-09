@@ -538,17 +538,7 @@ impl QuantCodec for SpireAssignmentQuantCodec {
         batch: &CandidateBatch<'_, Id>,
         out_scores: &mut [f32],
     ) -> Result<(), String> {
-        if batch.len() != out_scores.len() {
-            return Err(format!(
-                "quant codec batch output count {} does not match candidate count {}",
-                out_scores.len(),
-                batch.len()
-            ));
-        }
-        for (payload, out_score) in batch.payloads().iter().zip(out_scores.iter_mut()) {
-            *out_score = self.score_ip_candidate(prepared_query, *payload)?;
-        }
-        Ok(())
+        prepared_query.score_candidate_batch_ip(batch, out_scores)
     }
 }
 

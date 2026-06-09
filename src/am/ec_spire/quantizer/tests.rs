@@ -280,6 +280,40 @@ mod tests {
     }
 
     #[test]
+    fn common_quant_codec_batch_delegates_to_prepared_scorer_batch() {
+        let query = vec![1.0, 0.5, -0.25, 0.125];
+        let sources = [vec![0.25, -0.5, 0.75, 1.0], vec![-0.125, 0.25, 0.5, -1.0]];
+        let codec =
+            SpireAssignmentQuantCodec::new(SpireAssignmentPayloadFormat::TurboQuant, query.len());
+        let prepared = QuantCodec::prepare_ip_query(&codec, &query).unwrap();
+        let encoded = sources
+            .iter()
+            .map(|source| QuantCodec::encode_source(&codec, source).unwrap())
+            .collect::<Vec<_>>();
+        let mut batch = CandidateBatch::with_capacity(encoded.len());
+        for (index, encoded) in encoded.iter().enumerate() {
+            batch
+                .push(
+                    index,
+                    CandidatePayload::new(&encoded.code, CandidateMeta::Gamma(encoded.gamma)),
+                )
+                .unwrap();
+        }
+        let mut trait_scores = vec![0.0; batch.len()];
+        let mut direct_scores = vec![0.0; batch.len()];
+
+        QuantCodec::score_ip_batch(&codec, &prepared, &batch, &mut trait_scores).unwrap();
+        prepared
+            .score_candidate_batch_ip(&batch, &mut direct_scores)
+            .unwrap();
+
+        assert_eq!(trait_scores.len(), direct_scores.len());
+        for (trait_score, direct_score) in trait_scores.iter().zip(direct_scores.iter()) {
+            assert_eq!(trait_score.to_bits(), direct_score.to_bits());
+        }
+    }
+
+    #[test]
     fn common_quant_codec_scores_rabitq_assignments() {
         let query = vec![1.0, 0.5, -0.25, 0.125];
         let sources = [vec![0.25, -0.5, 0.75, 1.0], vec![-0.125, 0.25, 0.5, -1.0]];
