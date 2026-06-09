@@ -119,7 +119,15 @@ Design-only packet that:
   model state, and dispatch shape;
 - specifies which existing per-AM enums collapse into the trait vs
   which remain (storage-binding) adapters;
-- specifies the dispatch decision (`dyn` vs enum) and rationale.
+- specifies the dispatch decision (`dyn` vs enum) and rationale;
+- **specifies `QuantCodec::score_batch` as the universal block-kernel
+  dispatch entry point.** Tasks 93–98 each implement scalar + ISA-
+  gated kernel variants and register them through this method.
+  Phase 1 must lock in: (a) the kernel-registration shape per quant,
+  (b) how `CandidateBatch::len() >= 32` width-based gating composes
+  with the trait method, and (c) the ULP-tolerance contract for SIMD
+  variants (strict bit-equality on scalar reference, ULP tolerance
+  on SIMD variants per ADR-076).
 
 No code. Reviewer approves before Phase 2.
 
