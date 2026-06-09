@@ -1,0 +1,19 @@
+Script started on 2026-06-09 11:01:23-07:00 [<not executed on terminal>]
+plan/tasks/README.md
+129:95. `94-grouped-pq-block-kernel-family.md` — **in review** (2026-06-09): local grouped-PQ/PqFastScan block kernels and IVF/DiskANN/HNSW codec registrations are packeted through `reviews/task-94/009-diskann-grouped-pq-traversal-batching/`; final Graviton 4 / benchmark closeout evidence remains pending approval.
+
+plan/tasks/94-grouped-pq-block-kernel-family.md
+3:Status: in review (2026-06-09; local implementation through `reviews/task-94/009-diskann-grouped-pq-traversal-batching/`, final Graviton 4 / benchmark closeout evidence pending approval)
+34:`src/quant/grouped_pq_block/` as the module path, replacing the original
+35:`pq_fastscan32/` wording while retaining PqFastScan terminology for the
+38:1. **Scalar block kernel** at `src/quant/grouped_pq_block/scalar.rs`
+41:2. **NEON variant** under `src/quant/grouped_pq_block/neon.rs`.
+46:3. **SVE/SVE2 variant** under `src/quant/grouped_pq_block/sve.rs`.
+50:4. **AVX2 variant** under `src/quant/grouped_pq_block/avx2.rs`.
+72:1. `src/quant/grouped_pq_block/` module live with scalar + NEON +
+91:- Land `grouped_pq_block/scalar.rs` following the FAISS PQ4-FastScan
+103:- Land `grouped_pq_block/neon.rs` using the approved first-pass f32 LUT
+111:- Land `grouped_pq_block/sve.rs` using vector-length-agnostic SVE/SVE2
+118:- Land `grouped_pq_block/avx2.rs` using the approved first-pass f32 LUT
+
+Script done on 2026-06-09 11:01:23-07:00 [COMMAND_EXIT_CODE="0"]
