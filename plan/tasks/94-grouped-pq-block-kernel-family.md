@@ -1,6 +1,6 @@
 # Task 94: Grouped-PQ / PqFastScan Block Kernel Family (All AMs × All ISAs)
 
-Status: in review (2026-06-09; local implementation through `reviews/task-94/012-grouped-pq-shape-prevalidation/`, final Graviton 4 / benchmark closeout evidence pending approval)
+Status: in review (2026-06-09; local implementation through `reviews/task-94/015-sve-vector-lane-warning-cleanup/`, final Graviton 4 / benchmark closeout evidence pending approval)
 Owner: coder (to be assigned). Phase III parallel — multiple coders OK across Tasks 93–98.
 Priority: 2 (highest documented kernel-win ROI in Phase III)
 
