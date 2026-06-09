@@ -40,11 +40,19 @@ Artifacts are under `reviews/task-92/017-block-kernel-infra-closeout/artifacts/`
 - `infrastructure-symbol-audit.log`: confirms the current tree contains the
   key infrastructure symbols for ISA detection, LUT32 module layout, counters,
   CLI counter formatting, and suite `kernel_status` markers.
+- `local-cargo-test-select-highest-isa.log`: local focused Rust test for the
+  runtime ISA helper, including the Graviton 4/SVE2 selection case.
+- `local-cargo-test-candidate-batch.log`: local focused Rust test for
+  `CandidateBatch`, LUT32 scalar parity, counter recording, and scalar-tail
+  attribution.
+- `local-cargo-test-cli-task92.log`: local focused Rust test for Task 92 suite
+  config parsing.
+- `local-cargo-test-cli-block-kernel-counter-lines.log`: local focused Rust
+  test for dual `[block-kernel-counters]` and Task 87 compatibility line
+  formatting.
 - `git-diff-check.log`: `git diff --check` passed.
 
-No local tests were run for this closeout packet because the packet and paired
-commit are documentation/status aggregation only. Existing packet-local tests
-remain the evidence for the code slices.
+No GitHub CI, AWS smoke tests, or AWS benchmarks were run.
 
 ## Review Focus
 

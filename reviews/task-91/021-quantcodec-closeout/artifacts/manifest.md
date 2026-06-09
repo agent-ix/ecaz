@@ -53,3 +53,23 @@ git diff --check
 ```
 
 - key result: command exited 0 with no whitespace findings.
+
+### `local-cargo-test-quant-codec.log`
+
+- command:
+
+```bash
+cargo test -p ecaz --no-default-features --features pg18 quant_codec
+```
+
+- purpose: supplemental local-only closeout verification for the shared
+  `QuantCodec` adapter surface after Task 91 was marked complete.
+- key result: 22 tests passed, 0 failed. The filter covers IVF TurboQuant,
+  IVF grouped-PQ, IVF RaBitQ, SPIRE TurboQuant/RaBitQ/PqFastScan handling,
+  SPIRE selected-row and column batch helpers, cutoff routing through
+  `QuantCodec`, DiskANN TurboQuant metadata, and LUT32 batch bit-exact parity.
+
+## Supplemental Verification
+
+The supplemental local test log was captured after the original closeout packet
+was committed. No GitHub CI, AWS smoke tests, or AWS benchmarks were run.

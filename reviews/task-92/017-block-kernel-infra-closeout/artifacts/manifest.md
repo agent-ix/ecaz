@@ -35,6 +35,39 @@ Timestamp: `2026-06-09T06:56:27-07:00`
   counter keys/snapshot SQL, off-path scalar accounting, CLI counter formatting,
   and suite `kernel_status` markers.
 
+### `local-cargo-test-select-highest-isa.log`
+
+- Command:
+  `cargo test -p ecaz --no-default-features --features pg18 select_highest_isa`
+- Purpose: focused local verification for runtime ISA selection.
+- Key result: 4 tests passed, 0 failed, including
+  `select_highest_isa_prefers_graviton4_sve2`.
+
+### `local-cargo-test-candidate-batch.log`
+
+- Command:
+  `cargo test -p ecaz --no-default-features --features pg18 candidate_batch`
+- Purpose: focused local verification for the shared batch container, LUT32
+  batch scorer, and block-kernel counter attribution.
+- Key result: 12 tests passed, 0 failed, including LUT32 scalar parity,
+  surface counter recording, and scalar-tail attribution under `isa=scalar`.
+
+### `local-cargo-test-cli-task92.log`
+
+- Command: `cargo test -p ecaz-cli task92`
+- Purpose: focused local verification for Task 92 suite config parsing.
+- Key result: 2 tests passed, 0 failed:
+  `parses_task92_quant_axis_smoke_config` and
+  `parses_task92_offpath_calibration_config`.
+
+### `local-cargo-test-cli-block-kernel-counter-lines.log`
+
+- Command:
+  `cargo test -p ecaz-cli block_kernel_counter_lines_include_transition_formats`
+- Purpose: focused local verification for the CLI output contract that emits
+  direct `[block-kernel-counters]` rows and Task 87 compatibility rows.
+- Key result: 1 test passed, 0 failed.
+
 ### `git-diff-check.log`
 
 - Command: `git diff --check`
@@ -43,5 +76,5 @@ Timestamp: `2026-06-09T06:56:27-07:00`
 
 ## Notes
 
-No GitHub CI, AWS smoke tests, AWS benchmarks, or local code tests were run for
-this closeout packet.
+No GitHub CI, AWS smoke tests, or AWS benchmarks were run for this closeout
+packet.
