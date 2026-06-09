@@ -1,6 +1,6 @@
 # Task 94: Grouped-PQ / PqFastScan Block Kernel Family (All AMs × All ISAs)
 
-Status: proposed (2026-06-08)
+Status: in review (2026-06-09; local implementation through `reviews/task-94/009-diskann-grouped-pq-traversal-batching/`, final Graviton 4 / benchmark closeout evidence pending approval)
 Owner: coder (to be assigned). Phase III parallel — multiple coders OK across Tasks 93–98.
 Priority: 2 (highest documented kernel-win ROI in Phase III)
 
@@ -30,18 +30,26 @@ highest-ROI cell in the Phase III matrix.
 
 ### In scope
 
-1. **Scalar block kernel** at `src/quant/pq_fastscan32/scalar.rs`
+Implementation note: Phase 1 reviewer feedback approved
+`src/quant/grouped_pq_block/` as the module path, replacing the original
+`pq_fastscan32/` wording while retaining PqFastScan terminology for the
+storage format.
+
+1. **Scalar block kernel** at `src/quant/grouped_pq_block/scalar.rs`
    following the FAISS PQ4-FastScan algorithm (per-group SIMD
    LUT lookup pattern, in scalar form as the bit-equal reference).
-2. **NEON variant** using NEON `tbl` (vector table lookup) for
-   16-entry LUT lookups across 32 lanes. Validate on Graviton 4
-   with the NEON path forced, plus any cheaper ARM sanity host if
-   available.
-3. **SVE variant** using vector-length-agnostic SVE `tbl` for LUT
-   lookups. Report as SVE-256 only when the measured runtime vector
-   length is 256 bits.
-4. **AVX2 variant** using `_mm256_shuffle_epi8` (the x86
-   equivalent of NEON `tbl`). Intel.
+2. **NEON variant** under `src/quant/grouped_pq_block/neon.rs`.
+   The first landing uses the approved f32 LUT gather / vector accumulate
+   shape; packed-table repacks remain follow-up-only if measurements show
+   gather stalls dominate. Validate on Graviton 4 with the NEON path forced,
+   plus any cheaper ARM sanity host if available.
+3. **SVE/SVE2 variant** under `src/quant/grouped_pq_block/sve.rs`.
+   The first landing uses a vector-length-agnostic SVE accumulation helper
+   over f32 LUT gathers. Report a width-specific label such as `sve2-128`
+   only when measured at runtime.
+4. **AVX2 variant** under `src/quant/grouped_pq_block/avx2.rs`.
+   The first landing uses `_mm256_i32gather_ps` against the canonical f32 LUT
+   rows; byte/shuffle repacks are follow-up-only if justified by measurement.
 5. **`QuantCodec` registration** in IVF + DiskANN grouped-PQ
    impls. Width-based gating per ADR-076.
 6. **Per-(AM × quant × ISA) measurement** on real10k / 50k /
@@ -61,7 +69,7 @@ highest-ROI cell in the Phase III matrix.
 
 ## Acceptance criteria
 
-1. `src/quant/pq_fastscan32/` module live with scalar + NEON +
+1. `src/quant/grouped_pq_block/` module live with scalar + NEON +
    SVE + AVX2 per Task 92 convention.
 2. IVF + DiskANN grouped-PQ scoring routes through `QuantCodec::
    <batch method selected by Task 91>` and dispatches to the kernel
@@ -80,7 +88,7 @@ highest-ROI cell in the Phase III matrix.
 
 ### Phase A — Scalar block kernel + layout audit + scalar-baseline measurement
 
-- Land `pq_fastscan32/scalar.rs` following the FAISS PQ4-FastScan
+- Land `grouped_pq_block/scalar.rs` following the FAISS PQ4-FastScan
   algorithm shape. Per-group LUT lookup + group-wise accumulation
   across all 32 lanes.
 - Audit IVF and DiskANN grouped-PQ code packing, group ordering,
@@ -92,22 +100,23 @@ highest-ROI cell in the Phase III matrix.
 
 ### Phase B — NEON variant + Graviton ARM measurement
 
-- Land `pq_fastscan32/neon.rs` using `vqtbl1q_u8` for 16-entry
-  LUT lookup across 16 lanes; 2 instructions per 32-lane block.
+- Land `grouped_pq_block/neon.rs` using the approved first-pass f32 LUT
+  gather / vector accumulate shape.
 - Graviton 4 measurement with SVE disabled or the NEON dispatch path
   forced. A cheaper ARM host may be used only as supplemental sanity
   evidence.
 
 ### Phase C — SVE variant + Graviton 4 measurement
 
-- Land `pq_fastscan32/sve.rs` using vector-length-agnostic SVE
-  `tbl`. This is where Graviton 4's vector width may pay off most;
+- Land `grouped_pq_block/sve.rs` using vector-length-agnostic SVE/SVE2
+  accumulation. This is where Graviton 4's vector width may pay off most;
   record the measured vector length in artifacts.
 - AWS Graviton 4 measurement; snapshot + destroy per memory.
 
 ### Phase D — AVX2 variant + Intel desktop measurement
 
-- Land `pq_fastscan32/avx2.rs` using `_mm256_shuffle_epi8`.
+- Land `grouped_pq_block/avx2.rs` using the approved first-pass f32 LUT
+  gather path.
 - Intel desktop measurement.
 
 ### Phase E — Per-(AM × ISA) closeout matrix + status flip
