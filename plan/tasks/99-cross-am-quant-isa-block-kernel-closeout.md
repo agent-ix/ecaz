@@ -63,6 +63,30 @@ initiative was the completeness matrix; Task 99 produces it.
    last.
 8. **Memory updates**: project-level memory file documenting
    the block-kernel pattern as the operating convention.
+9. **Complete index × quant × mode profile + TQ-mode
+   reevaluation input (added 2026-06-09).** Beyond aggregating
+   the per-task closeouts, run one suite-driven profile of all
+   indexes × quants × modes on shared fixtures so the project
+   can reevaluate TQ mode policy (ADR-025 bit allocation, the
+   no-QJL 4+0 carve-out, whether 4+1 or a 2-bit surface earns
+   adoption) on post-kernel cost data. ADR-025 deliberately
+   stays PROPOSED until this profile exists; Task 96 stays
+   deferred until then. Design requirements for the profile:
+   - **Dimension coverage**: no-QJL exists only at dim 1536, so
+     a 1536-only profile cannot exercise QJL lanes. Include at
+     least one non-tiled dimension (synthetic fixture if needed)
+     or the TQ-mode comparison is vacuous.
+   - **Absent cells marked, not skipped**: use the Task 92
+     `kernel_status` markers (`structurally_absent`,
+     `missing_kernel`) so 2-bit and other unshipped cells report
+     honestly.
+   - **Batch-on/off as an axis** wherever a kernel path trades
+     away cutoff pruning (IVF PqFastScan suffix-max bound per
+     Task 94 packet 024 F1), so the profile captures the
+     kernel-vs-pruning interaction rather than averaging it.
+   The reevaluation decision itself (ADR-025 flip or revision,
+   any new storage surface) is follow-up scope informed by this
+   profile, not owned by Task 99.
 
 ### Out of scope
 
