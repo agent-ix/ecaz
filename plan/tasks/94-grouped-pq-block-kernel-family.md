@@ -64,6 +64,12 @@ storage format.
 - New grouped-PQ AM coverage (e.g., grouped-PQ on HNSW or SPIRE
   if not present). Cover only IVF + DiskANN where grouped-PQ
   already exists.
+- HNSW traversal-level grouped-PQ batching. HNSW has a grouped-PQ
+  `QuantCodec` batch override for codec-surface parity tests, but the
+  production greedy-search path scores one search code at a time through
+  `score_grouped_search_code_result`, so real scans are expected to remain
+  per-candidate scalar and not emit `surface=hnsw, quant=grouped_pq`
+  kernel rows until a follow-up adds a natural traversal batch boundary.
 - Codebook training optimization (Task 23 territory).
 - AVX-512 variant.
 
