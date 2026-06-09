@@ -354,7 +354,7 @@ impl super::scan::VamanaPrefilter for DiskannPreparedPrefilter {
 
 impl super::scan::VamanaPrefilter for &DiskannPreparedPrefilter {
     fn score(&self, tuple: &super::tuple::VamanaNodeTuple) -> f32 {
-        DiskannPreparedPrefilter::score(*self, tuple)
+        DiskannPreparedPrefilter::score(self, tuple)
     }
 
     fn score_batch(&self, tuples: &[super::tuple::VamanaNodeTuple], out_scores: &mut [f32]) {
