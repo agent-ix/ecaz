@@ -4236,6 +4236,48 @@ mod tests {
     }
 
     #[test]
+    fn parses_task92_quant_axis_smoke_config() {
+        let raw = include_str!("../../../suites/task92-quant-axis-smoke.json");
+        let mut config: SuiteConfig = serde_json::from_str(raw).expect("suite parses");
+        apply_default_artifact_logs(&mut config);
+        apply_artifact_dir_templates(&mut config);
+        validate_config(&config).expect("suite validates");
+
+        let args = SuiteRunOptions {
+            config: "task92-quant-axis-smoke.json".into(),
+            dry_run: true,
+            continue_on_error: false,
+            only: Vec::new(),
+            only_tag: Vec::new(),
+            resume_from: None,
+            results_output: None,
+            artifact_dir: None,
+            manifest_output: None,
+        };
+        let manifest = build_manifest(&conn(), &args, raw, &config).expect("manifest should build");
+
+        let populated = &manifest.steps[0];
+        assert_eq!(
+            populated.name,
+            "latency-spire-turboquant-lut32-scalar-populated"
+        );
+        assert_eq!(populated.quant.as_deref(), Some("turboquant"));
+        assert_eq!(populated.isa.as_deref(), Some("scalar"));
+        assert_eq!(populated.kernel_status, Some(KernelCellStatus::Valid));
+        assert!(matches!(populated.status, Some(StepStatus::DryRun)));
+        assert!(!populated.command.is_empty());
+
+        let missing = &manifest.steps[1];
+        assert_eq!(missing.name, "latency-spire-rabitq-sve2-missing");
+        assert_eq!(missing.quant.as_deref(), Some("rabitq"));
+        assert_eq!(missing.isa.as_deref(), Some("sve2"));
+        assert_eq!(missing.kernel_status, Some(KernelCellStatus::MissingKernel));
+        assert!(matches!(missing.status, Some(StepStatus::Skipped)));
+        assert!(missing.command.is_empty());
+        assert!(kernel_cell_result_row(&manifest, missing).is_some());
+    }
+
+    #[test]
     fn parses_parallel_workers_from_loader_timing_artifact() {
         let raw = "[loader] copied corpus table task71_real10k_w4 in 0.123s\n\
                    [loader] ec_ivf build timing: requested_workers=4 workers_launched=4 heap_tuples=10000 index_tuples=10000\n";
