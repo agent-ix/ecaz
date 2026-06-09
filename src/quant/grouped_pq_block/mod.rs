@@ -112,9 +112,20 @@ pub(crate) fn score_grouped_pq_scalar(lut: &[f32], group_count: usize, code: &[u
 }
 
 #[cfg(test)]
+pub(crate) fn score_grouped_pq_block32_neon_for_test(
+    lut: &[f32],
+    group_count: usize,
+    codes: [&[u8]; BLOCK_WIDTH],
+    out_scores: &mut [f32],
+) -> Option<crate::quant::isa::Isa> {
+    neon::score_block32_neon_for_test(lut, group_count, &codes, out_scores)
+}
+
+#[cfg(test)]
 mod tests {
     use super::{
-        score_grouped_pq_batch, score_grouped_pq_block32, score_grouped_pq_scalar, BLOCK_WIDTH,
+        score_grouped_pq_batch, score_grouped_pq_block32, score_grouped_pq_block32_neon_for_test,
+        score_grouped_pq_scalar, BLOCK_WIDTH,
     };
     use crate::quant::grouped_pq::{grouped_pq_score_f32, pack_grouped_pq_nibbles};
 
@@ -170,6 +181,37 @@ mod tests {
                 );
             }
             assert_eq!(isa, crate::quant::isa::Isa::Scalar);
+        }
+    }
+
+    #[test]
+    fn grouped_pq_neon_backend_matches_scalar_reference_bits_when_available() {
+        let group_count = 16;
+        let lut = lut(group_count);
+        let codes: Vec<Vec<u8>> = (0..BLOCK_WIDTH)
+            .map(|seed| code(group_count, seed as u8))
+            .collect();
+        let code_refs: Vec<&[u8]> = codes.iter().map(Vec::as_slice).collect();
+        let mut scores = vec![0.0; BLOCK_WIDTH];
+
+        let Some(isa) = score_grouped_pq_block32_neon_for_test(
+            &lut,
+            group_count,
+            code_refs
+                .as_slice()
+                .try_into()
+                .expect("test fixture is exactly one block"),
+            &mut scores,
+        ) else {
+            return;
+        };
+
+        assert_eq!(isa, crate::quant::isa::Isa::Neon);
+        for (code, score) in code_refs.iter().zip(scores.iter()) {
+            assert_eq!(
+                score.to_bits(),
+                grouped_pq_score_f32(&lut, group_count, code).to_bits()
+            );
         }
     }
 
