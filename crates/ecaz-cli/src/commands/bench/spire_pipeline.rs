@@ -347,7 +347,7 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
         )
         .await?;
         if args.task87_candidate_batch_counters {
-            super::reset_task87_candidate_batch_counters(&client).await?;
+            super::reset_block_kernel_counters(&client).await?;
         }
 
         if args.include_cost_snapshot {
@@ -709,8 +709,8 @@ pub async fn run(conn: &ConnectionOptions, args: SpirePipelineArgs) -> Result<()
         }
         bar.finish_and_clear();
         if args.task87_candidate_batch_counters {
-            let snapshots = super::snapshot_task87_candidate_batch_counters(&client).await?;
-            task87_counter_lines.push(super::format_task87_candidate_batch_counter_lines(
+            let snapshots = super::snapshot_block_kernel_counters(&client).await?;
+            task87_counter_lines.push(super::format_block_kernel_counter_lines(
                 "spire-pipeline",
                 &format!("nprobe={nprobe}"),
                 &snapshots,
