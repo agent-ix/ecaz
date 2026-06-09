@@ -664,6 +664,12 @@ struct StepRecord {
     command: Vec<String>,
     selected: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    quant: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    isa: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    kernel_status: Option<KernelCellStatus>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pgoptions: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     tags: Vec<String>,
@@ -685,6 +691,15 @@ struct StepRecord {
     parallel_workers_after: Option<i64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     parallel_workers_delta: Option<i64>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum KernelCellStatus {
+    Valid,
+    MissingKernel,
+    StructurallyAbsent,
+    InvalidConfig,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -783,12 +798,22 @@ async fn run_suite(conn: &ConnectionOptions, args: SuiteRunOptions) -> Result<()
 
     if args.dry_run {
         for record in &manifest.steps {
-            if record.selected {
+            if record.selected && !record.command.is_empty() {
                 crate::ecaz_println!(
                     "[suite:{}] {} -> {}",
                     config.name,
                     record.name,
                     shell_join_with_pgoptions(&record.command, record.pgoptions.as_deref())
+                );
+            } else if record.selected {
+                crate::ecaz_println!(
+                    "[suite:{}] {} -> kernel_status={}",
+                    config.name,
+                    record.name,
+                    record
+                        .kernel_status
+                        .map(kernel_status_label)
+                        .unwrap_or("skipped")
                 );
             }
         }
@@ -797,7 +822,9 @@ async fn run_suite(conn: &ConnectionOptions, args: SuiteRunOptions) -> Result<()
 
     let exe = std::env::current_exe().context("resolving current ecaz executable")?;
     for idx in 0..manifest.steps.len() {
-        if !manifest.steps[idx].selected {
+        if !manifest.steps[idx].selected
+            || matches!(manifest.steps[idx].status, Some(StepStatus::Skipped))
+        {
             continue;
         }
         if matches!(manifest.steps[idx].status, Some(StepStatus::Succeeded)) {
@@ -1214,7 +1241,9 @@ fn build_manifest(
 
     for step in &config.steps {
         let selected = step_selected(step, args);
-        let command = if selected {
+        let kernel_status = step_kernel_status(step.tags())?;
+        let runnable = selected && kernel_cell_is_runnable(kernel_status);
+        let command = if runnable {
             child_command_args(conn, step.expand(&config.defaults, conn)?)
         } else {
             Vec::new()
@@ -1224,6 +1253,9 @@ fn build_manifest(
             kind: step.kind().to_string(),
             command,
             selected,
+            quant: step_quant(step.tags()),
+            isa: step_isa(step.tags()),
+            kernel_status,
             pgoptions: step.pgoptions().map(ToOwned::to_owned),
             tags: step.tags().to_vec(),
             expected_artifacts: step
@@ -1232,7 +1264,9 @@ fn build_manifest(
                 .map(|path| path.display().to_string())
                 .collect(),
             status: Some(if selected {
-                if args.dry_run {
+                if !runnable {
+                    StepStatus::Skipped
+                } else if args.dry_run {
                     StepStatus::DryRun
                 } else {
                     StepStatus::Pending
@@ -1351,6 +1385,9 @@ struct ResultRow {
 async fn extract_result_rows(manifest: &SuiteManifest) -> Result<Vec<ResultRow>> {
     let mut rows = Vec::new();
     for step in &manifest.steps {
+        if let Some(row) = kernel_cell_result_row(manifest, step) {
+            rows.push(row);
+        }
         if !matches!(step.status, Some(StepStatus::Succeeded)) {
             continue;
         }
@@ -1386,6 +1423,25 @@ fn parallel_worker_result_row(manifest: &SuiteManifest, step: &StepRecord) -> Op
                 ("after".into(), after.to_string()),
                 ("delta".into(), delta.to_string()),
             ]),
+        ),
+    })
+}
+
+fn kernel_cell_result_row(manifest: &SuiteManifest, step: &StepRecord) -> Option<ResultRow> {
+    let status = step.kernel_status?;
+    if status == KernelCellStatus::Valid {
+        return None;
+    }
+    Some(ResultRow {
+        suite: manifest.suite.clone(),
+        step: step.name.clone(),
+        kind: step.kind.clone(),
+        metric: "kernel_cell".into(),
+        artifact: "suite-manifest".into(),
+        values: add_result_context(
+            manifest,
+            step,
+            BTreeMap::from([("kernel_status".into(), kernel_status_label(status).into())]),
         ),
     })
 }
@@ -1552,6 +1608,10 @@ fn add_result_context(
         "profile",
         command_flag_value(&step.command, "--profile").as_deref(),
     );
+    insert_if_absent(&mut values, "quant", step.quant.as_deref());
+    insert_if_absent(&mut values, "isa", step.isa.as_deref());
+    let kernel_status = step.kernel_status.map(kernel_status_label);
+    insert_if_absent(&mut values, "kernel_status", kernel_status);
     insert_if_absent(
         &mut values,
         "storage_format",
@@ -1574,6 +1634,51 @@ fn insert_if_absent(values: &mut BTreeMap<String, String>, key: &str, value: Opt
         values
             .entry(key.to_owned())
             .or_insert_with(|| value.to_owned());
+    }
+}
+
+fn step_quant(tags: &[String]) -> Option<String> {
+    tag_value(tags, "quant=")
+        .or_else(|| known_tag_value(tags, &["rabitq", "pq_fastscan", "turboquant"]))
+}
+
+fn step_isa(tags: &[String]) -> Option<String> {
+    tag_value(tags, "isa=")
+}
+
+fn step_kernel_status(tags: &[String]) -> Result<Option<KernelCellStatus>> {
+    tag_value(tags, "kernel_status=")
+        .map(|value| parse_kernel_status(&value))
+        .transpose()
+}
+
+fn tag_value(tags: &[String], prefix: &str) -> Option<String> {
+    tags.iter()
+        .find_map(|tag| tag.strip_prefix(prefix).map(ToOwned::to_owned))
+}
+
+fn parse_kernel_status(value: &str) -> Result<KernelCellStatus> {
+    match value {
+        "valid" => Ok(KernelCellStatus::Valid),
+        "missing_kernel" => Ok(KernelCellStatus::MissingKernel),
+        "structurally_absent" => Ok(KernelCellStatus::StructurallyAbsent),
+        "invalid_config" => Ok(KernelCellStatus::InvalidConfig),
+        other => bail!(
+            "kernel_status tag must be one of valid, missing_kernel, structurally_absent, invalid_config; got {other:?}"
+        ),
+    }
+}
+
+fn kernel_cell_is_runnable(status: Option<KernelCellStatus>) -> bool {
+    matches!(status, None | Some(KernelCellStatus::Valid))
+}
+
+fn kernel_status_label(status: KernelCellStatus) -> &'static str {
+    match status {
+        KernelCellStatus::Valid => "valid",
+        KernelCellStatus::MissingKernel => "missing_kernel",
+        KernelCellStatus::StructurallyAbsent => "structurally_absent",
+        KernelCellStatus::InvalidConfig => "invalid_config",
     }
 }
 
@@ -4017,6 +4122,120 @@ mod tests {
     }
 
     #[test]
+    fn quant_axis_tags_flow_into_manifest_and_missing_kernel_marker() {
+        let config = SuiteConfig {
+            name: "kernel-axis".into(),
+            schema_version: 1,
+            artifact_dir: None,
+            defaults: SuiteDefaults::default(),
+            thresholds: Vec::new(),
+            steps: vec![
+                SuiteStep::Raw(RawStep {
+                    name: "lut32-populated".into(),
+                    tags: vec![
+                        "quant=turboquant".into(),
+                        "isa=scalar".into(),
+                        "kernel_status=valid".into(),
+                    ],
+                    args: vec![
+                        "bench".into(),
+                        "latency".into(),
+                        "--prefix".into(),
+                        "p".into(),
+                    ],
+                    expected_artifacts: Vec::new(),
+                }),
+                SuiteStep::Raw(RawStep {
+                    name: "rabitq-sve2-missing".into(),
+                    tags: vec![
+                        "quant=rabitq".into(),
+                        "isa=sve2".into(),
+                        "kernel_status=missing_kernel".into(),
+                    ],
+                    args: vec![
+                        "bench".into(),
+                        "latency".into(),
+                        "--prefix".into(),
+                        "p".into(),
+                    ],
+                    expected_artifacts: Vec::new(),
+                }),
+            ],
+        };
+        let args = SuiteRunOptions {
+            config: "suite.json".into(),
+            dry_run: true,
+            continue_on_error: false,
+            only: Vec::new(),
+            only_tag: Vec::new(),
+            resume_from: None,
+            results_output: None,
+            artifact_dir: None,
+            manifest_output: None,
+        };
+
+        let manifest =
+            build_manifest(&conn(), &args, "{}", &config).expect("manifest should build");
+
+        let valid = &manifest.steps[0];
+        assert_eq!(valid.quant.as_deref(), Some("turboquant"));
+        assert_eq!(valid.isa.as_deref(), Some("scalar"));
+        assert_eq!(valid.kernel_status, Some(KernelCellStatus::Valid));
+        assert!(matches!(valid.status, Some(StepStatus::DryRun)));
+        assert!(!valid.command.is_empty());
+
+        let missing = &manifest.steps[1];
+        assert_eq!(missing.quant.as_deref(), Some("rabitq"));
+        assert_eq!(missing.isa.as_deref(), Some("sve2"));
+        assert_eq!(missing.kernel_status, Some(KernelCellStatus::MissingKernel));
+        assert!(matches!(missing.status, Some(StepStatus::Skipped)));
+        assert!(missing.command.is_empty());
+
+        let row = kernel_cell_result_row(&manifest, missing).expect("marker row");
+        assert_eq!(row.metric, "kernel_cell");
+        assert_eq!(row.artifact, "suite-manifest");
+        assert_eq!(
+            row.values.get("kernel_status").map(String::as_str),
+            Some("missing_kernel")
+        );
+        assert_eq!(row.values.get("quant").map(String::as_str), Some("rabitq"));
+        assert_eq!(row.values.get("isa").map(String::as_str), Some("sve2"));
+    }
+
+    #[test]
+    fn quant_axis_rejects_unknown_kernel_status_marker() {
+        let config = SuiteConfig {
+            name: "kernel-axis".into(),
+            schema_version: 1,
+            artifact_dir: None,
+            defaults: SuiteDefaults::default(),
+            thresholds: Vec::new(),
+            steps: vec![SuiteStep::Raw(RawStep {
+                name: "bad-status".into(),
+                tags: vec!["kernel_status=not_real".into()],
+                args: vec!["bench".into(), "latency".into()],
+                expected_artifacts: Vec::new(),
+            })],
+        };
+        let args = SuiteRunOptions {
+            config: "suite.json".into(),
+            dry_run: true,
+            continue_on_error: false,
+            only: Vec::new(),
+            only_tag: Vec::new(),
+            resume_from: None,
+            results_output: None,
+            artifact_dir: None,
+            manifest_output: None,
+        };
+
+        assert!(build_manifest(&conn(), &args, "{}", &config)
+            .unwrap_err()
+            .to_string()
+            .contains("kernel_status tag"));
+    }
+
+    #[test]
     fn parses_parallel_workers_from_loader_timing_artifact() {
         let raw = "[loader] copied corpus table task71_real10k_w4 in 0.123s\n\
                    [loader] ec_ivf build timing: requested_workers=4 workers_launched=4 heap_tuples=10000 index_tuples=10000\n";
@@ -4060,6 +4279,9 @@ mod tests {
                     "task71_real10k_w4".into(),
                 ],
                 selected: true,
+                quant: None,
+                isa: None,
+                kernel_status: None,
                 pgoptions: Some(
                     "-c max_parallel_maintenance_workers=4 -c max_parallel_workers=4".into(),
                 ),
@@ -4535,6 +4757,9 @@ mod tests {
                 "/var/run/postgresql".into(),
             ],
             selected: true,
+            quant: Some("rabitq".into()),
+            isa: None,
+            kernel_status: None,
             pgoptions: None,
             tags: vec!["recall".into(), "rabitq".into(), "task60".into()],
             expected_artifacts: vec!["recall.log".into()],
