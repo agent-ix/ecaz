@@ -1,0 +1,8 @@
+Script started on 2026-06-09 19:44:45-07:00 [<not executed on terminal>]
+aarch64-unknown-linux-gnu
+wasm32-unknown-unknown
+x86_64-unknown-linux-gnu
+aarch64-linux-gnu-gcc: missing
+clang: missing
+
+Script done on 2026-06-09 19:44:45-07:00 [COMMAND_EXIT_CODE="0"]
