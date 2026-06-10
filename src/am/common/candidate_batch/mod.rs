@@ -158,7 +158,8 @@ pub(crate) fn score_turboquant_tiled_lut_batch_for<Id>(
     let mut codes: Vec<&[u8]> = Vec::with_capacity(batch.len());
     for (index, payload) in batch.payloads().iter().enumerate() {
         validate_turboquant_no_qjl_4bit_meta(payload.meta)?;
-        let mse_packed = quantizer.mse_code_bytes_no_qjl_4bit(payload.code);
+        let mse_packed =
+            checked_mse_code_bytes_no_qjl_4bit("tiled_lut32", index, quantizer, payload.code)?;
         crate::quant::tiled_lut32::validate_code_shape(index, quantizer.original_dim, mse_packed)?;
         codes.push(mse_packed);
     }
@@ -228,7 +229,8 @@ pub(crate) fn score_turboquant_int8_approx_batch_for<Id>(
     let mut codes: Vec<&[u8]> = Vec::with_capacity(batch.len());
     for (index, payload) in batch.payloads().iter().enumerate() {
         validate_turboquant_no_qjl_4bit_meta(payload.meta)?;
-        let mse_packed = quantizer.mse_code_bytes_no_qjl_4bit(payload.code);
+        let mse_packed =
+            checked_mse_code_bytes_no_qjl_4bit("int8_approx32", index, quantizer, payload.code)?;
         crate::quant::int8_approx32::validate_code_shape(
             index,
             quantizer.original_dim,
@@ -532,6 +534,22 @@ fn validate_grouped_pq_batch_shapes<Id>(
     Ok(())
 }
 
+fn checked_mse_code_bytes_no_qjl_4bit<'a>(
+    family: &str,
+    candidate_index: usize,
+    quantizer: &ProdQuantizer,
+    code: &'a [u8],
+) -> Result<&'a [u8], String> {
+    let expected = crate::quant::prod::mse_code_len(quantizer.original_dim, quantizer.bits);
+    if code.len() != expected {
+        return Err(format!(
+            "{family} code {candidate_index} length {} does not match expected {expected}",
+            code.len()
+        ));
+    }
+    Ok(quantizer.mse_code_bytes_no_qjl_4bit(code))
+}
+
 fn score_turboquant_no_qjl_4bit_batch_inner<Id>(
     quantizer: &ProdQuantizer,
     prepared: &PreparedLutNoQjl4BitQuery,
@@ -549,7 +567,7 @@ fn score_turboquant_no_qjl_4bit_batch_inner<Id>(
     let mut mse_codes: Vec<&[u8]> = Vec::with_capacity(batch.len());
     for (index, payload) in batch.payloads().iter().enumerate() {
         validate_turboquant_no_qjl_4bit_meta(payload.meta)?;
-        let mse_code = quantizer.mse_code_bytes_no_qjl_4bit(payload.code);
+        let mse_code = checked_mse_code_bytes_no_qjl_4bit("lut32", index, quantizer, payload.code)?;
         crate::quant::lut32::validate_mse_code_shape(index, quantizer.original_dim, mse_code)?;
         mse_codes.push(mse_code);
     }
@@ -1104,6 +1122,91 @@ mod tests {
 
         assert!(err.contains("grouped_pq_block code 33 too short"));
         assert!(batch_scores
+            .iter()
+            .all(|score| score.to_bits() == sentinel.to_bits()));
+        assert!(super::block_kernel_scoring_snapshots().is_empty());
+        assert!(super::candidate_batch_scoring_snapshots()
+            .iter()
+            .all(|snapshot| snapshot.flushes == 0 && snapshot.candidates == 0));
+
+        super::reset_candidate_batch_scoring_counters();
+    }
+
+    #[test]
+    fn turboquant_no_qjl_exact_modes_shape_error_scores_nothing_and_record_no_counters() {
+        let _guard = super::CANDIDATE_BATCH_COUNTER_TEST_LOCK.lock().unwrap();
+        let quantizer = crate::quant::prod::ProdQuantizer::new(1536, 4, 42);
+        let query = random_unit_vector(1536, 251);
+        let prepared_lut = quantizer.prepare_ip_query_lut_no_qjl_4bit(&query);
+        let prepared_tiled = quantizer.prepare_ip_query_tiled_lut_no_qjl_4bit(&query, 512);
+        let prepared_int8 = quantizer.prepare_ip_query_int8_approx_no_qjl_4bit(&query);
+        let mut encoded: Vec<_> = (0..39)
+            .map(|seed| {
+                quantizer
+                    .encode(&random_unit_vector(1536, seed + 700))
+                    .mse_packed
+            })
+            .collect();
+        encoded[33].pop();
+        let mut batch = CandidateBatch::with_capacity(encoded.len());
+        for (index, payload) in encoded.iter().enumerate() {
+            batch
+                .push(index, CandidatePayload::new(payload, CandidateMeta::None))
+                .unwrap();
+        }
+
+        let sentinel = -9_876.5_f32;
+        let mut lut_scores = vec![sentinel; batch.len()];
+        super::reset_candidate_batch_scoring_counters();
+        let err = super::score_turboquant_no_qjl_4bit_batch_for(
+            CandidateBatchScoringSurface::Hnsw,
+            &quantizer,
+            &prepared_lut,
+            &batch,
+            &mut lut_scores,
+        )
+        .unwrap_err();
+        assert!(err.contains("lut32 code 33 length"));
+        assert!(lut_scores
+            .iter()
+            .all(|score| score.to_bits() == sentinel.to_bits()));
+        assert!(super::block_kernel_scoring_snapshots().is_empty());
+        assert!(super::candidate_batch_scoring_snapshots()
+            .iter()
+            .all(|snapshot| snapshot.flushes == 0 && snapshot.candidates == 0));
+
+        let mut tiled_scores = vec![sentinel; batch.len()];
+        super::reset_candidate_batch_scoring_counters();
+        let err = super::score_turboquant_tiled_lut_batch_for(
+            CandidateBatchScoringSurface::Hnsw,
+            &quantizer,
+            &prepared_tiled.lut,
+            prepared_tiled.tile_size,
+            &batch,
+            &mut tiled_scores,
+        )
+        .unwrap_err();
+        assert!(err.contains("tiled_lut32 code 33 length"));
+        assert!(tiled_scores
+            .iter()
+            .all(|score| score.to_bits() == sentinel.to_bits()));
+        assert!(super::block_kernel_scoring_snapshots().is_empty());
+        assert!(super::candidate_batch_scoring_snapshots()
+            .iter()
+            .all(|snapshot| snapshot.flushes == 0 && snapshot.candidates == 0));
+
+        let mut int8_scores = vec![sentinel; batch.len()];
+        super::reset_candidate_batch_scoring_counters();
+        let err = super::score_turboquant_int8_approx_batch_for(
+            CandidateBatchScoringSurface::Hnsw,
+            &quantizer,
+            &prepared_int8,
+            &batch,
+            &mut int8_scores,
+        )
+        .unwrap_err();
+        assert!(err.contains("int8_approx32 code 33 length"));
+        assert!(int8_scores
             .iter()
             .all(|score| score.to_bits() == sentinel.to_bits()));
         assert!(super::block_kernel_scoring_snapshots().is_empty());
