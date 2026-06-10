@@ -71,7 +71,7 @@ fn bench_score_ip_codes_lite(c: &mut Criterion) {
 
 fn bench_score_ip_from_parts(c: &mut Criterion) {
     let mut group = c.benchmark_group("quant/score_ip_from_parts");
-    for &(dim, bits) in &[(256, 4u8), (768, 4), (1536, 4), (3072, 4)] {
+    for &(dim, bits) in &[(256, 4u8), (768, 4), (1024, 4), (1536, 4), (3072, 4)] {
         let quantizer = ProdQuantizer::new(dim, bits, 42);
         let prepared = quantizer.prepare_ip_query(&helpers::random_unit_vector(dim, 1));
         let candidates: Vec<(f32, Vec<u8>)> = (0..1000)
