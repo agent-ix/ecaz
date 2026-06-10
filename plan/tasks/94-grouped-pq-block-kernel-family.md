@@ -1,6 +1,6 @@
 # Task 94: Grouped-PQ / PqFastScan Block Kernel Family (All AMs × All ISAs)
 
-Status: in review (2026-06-10; implementation, local validation, automatic CI cleanup, local IVF PqFastScan suite-smoke evidence through `reviews/task-94/024-local-bench-smoke/`, broader local IVF/DiskANN PqFastScan bench matrix evidence through `reviews/task-94/025-local-bench-matrix/`, closeout-scope pruning/GUC documentation through `reviews/task-94/026-closeout-doc-notes/`, and Graviton 4 closeout runbook through `reviews/task-94/027-graviton4-closeout-runbook/`; final Graviton 4 / full benchmark closeout evidence pending approval)
+Status: in review (2026-06-10; implementation, local validation, automatic CI cleanup, local IVF PqFastScan suite-smoke evidence through `reviews/task-94/024-local-bench-smoke/`, broader local IVF/DiskANN PqFastScan bench matrix evidence through `reviews/task-94/025-local-bench-matrix/`, closeout-scope pruning/GUC documentation through `reviews/task-94/026-closeout-doc-notes/`, Graviton 4 closeout runbook through `reviews/task-94/027-graviton4-closeout-runbook/`, status refresh through `reviews/task-94/028-status-through-packet-027/`, and post-main landing audit through `reviews/task-94/029-post-main-landing-audit/`; packet 027-029 review and final Graviton 4 / full benchmark closeout evidence remain pending approval)
 Owner: coder (to be assigned). Phase III parallel — multiple coders OK across Tasks 93–98.
 Priority: 2 (highest documented kernel-win ROI in Phase III)
 
