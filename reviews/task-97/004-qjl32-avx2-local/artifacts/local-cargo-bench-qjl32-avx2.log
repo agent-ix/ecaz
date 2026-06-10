@@ -1,0 +1,27 @@
+    Finished `bench` profile [optimized + debuginfo] target(s) in 0.16s
+     Running benches/criterion/quant_score.rs (target/release/deps/quant_score-aaf99c26a8049f61)
+Gnuplot not found, using plotters backend
+Benchmarking quant/qjl32_block32/scalar/d1024_b4
+Benchmarking quant/qjl32_block32/scalar/d1024_b4: Warming up for 1.0000 s
+Benchmarking quant/qjl32_block32/scalar/d1024_b4: Collecting 10 samples in estimated 2.0013 s (45k iterations)
+Benchmarking quant/qjl32_block32/scalar/d1024_b4: Analyzing
+quant/qjl32_block32/scalar/d1024_b4
+                        time:   [35.394 µs 36.629 µs 38.119 µs]
+                        thrpt:  [839.47 Kelem/s 873.63 Kelem/s 904.10 Kelem/s]
+                 change:
+                        time:   [-3.6615% +2.9897% +10.026%] (p = 0.40 > 0.05)
+                        thrpt:  [-9.1124% -2.9030% +3.8006%]
+                        No change in performance detected.
+Benchmarking quant/qjl32_block32/dispatch/d1024_b4
+Benchmarking quant/qjl32_block32/dispatch/d1024_b4: Warming up for 1.0000 s
+Benchmarking quant/qjl32_block32/dispatch/d1024_b4: Collecting 10 samples in estimated 2.0008 s (70k iterations)
+Benchmarking quant/qjl32_block32/dispatch/d1024_b4: Analyzing
+quant/qjl32_block32/dispatch/d1024_b4
+                        time:   [28.228 µs 28.355 µs 28.424 µs]
+                        thrpt:  [1.1258 Melem/s 1.1285 Melem/s 1.1336 Melem/s]
+                 change:
+                        time:   [-3.0975% -1.3392% +0.6008%] (p = 0.20 > 0.05)
+                        thrpt:  [-0.5973% +1.3573% +3.1965%]
+                        No change in performance detected.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
