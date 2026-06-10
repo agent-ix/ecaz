@@ -17,6 +17,12 @@ now do. The slice:
 - AVX2: FAISS PQ4-FastScan-style `_mm256_shuffle_epi8` with the
   16-entry LUT held in registers (the original task-file design).
 - NEON: `vqtbl1q_u8` sibling.
+- SVE2: `tbl`-based sibling — the current SVE kernel has the same
+  scalar-gather shape as the gather-bound AVX2 one. Since the
+  Graviton 4 pass deliberately runs after this slice so ARM evidence
+  reflects final kernel shape, the SVE2 repack must land in this
+  slice too, or be explicitly deferred in the slice's packet with the
+  G4 evidence annotated as measuring the gather-shape SVE2 kernel.
 - Parity: the scalar f32-LUT reference remains the strict bit-exact
   anchor (designed to survive this repack); the repacked kernels grade
   under the ADR-076 tolerance pair, or bit-exact if per-candidate
