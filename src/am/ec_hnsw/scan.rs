@@ -1374,6 +1374,22 @@ fn turboquant_scan_storage(graph_storage: graph::GraphStorageDescriptor) -> bool
 }
 
 fn resolve_turboquant_exact_score_mode() -> TurboQuantExactScoreMode {
+    // The session GUC replaces the former server environment variable; the
+    // env var is still honored as a fallback when the GUC is at its default
+    // so existing measurement workflows keep working.
+    match super::options::current_turboquant_exact_score_mode() {
+        super::options::TurboQuantExactScoreModeGuc::FullLut => {
+            return TurboQuantExactScoreMode::FullLut;
+        }
+        super::options::TurboQuantExactScoreModeGuc::TiledLut => {
+            return TurboQuantExactScoreMode::TiledLut;
+        }
+        super::options::TurboQuantExactScoreModeGuc::Int8Approx => {
+            return TurboQuantExactScoreMode::Int8Approx;
+        }
+        super::options::TurboQuantExactScoreModeGuc::Exact => {}
+    }
+
     let Some(raw_mode) = std::env::var_os(TURBOQUANT_EXACT_SCORE_MODE_ENV) else {
         return TurboQuantExactScoreMode::Exact;
     };
