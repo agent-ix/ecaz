@@ -272,6 +272,30 @@ impl ProdQuantizer {
         self.score_ip_from_split_parts_avx2_checked(prepared, gamma, mse_packed, qjl_packed)
     }
 
+    #[cfg(all(any(test, feature = "bench"), target_arch = "x86_64"))]
+    pub fn score_ip_from_parts_avx2_multi_accum_pre_b0efa19d9_for_test(
+        &self,
+        prepared: &PreparedQuery,
+        gamma: f32,
+        code_bytes: &[u8],
+    ) -> Option<f32> {
+        if !std::arch::is_x86_feature_detected!("avx2")
+            || !std::arch::is_x86_feature_detected!("fma")
+            || !qjl_enabled(self.original_dim, self.bits)
+            || mse_bits(self.original_dim, self.bits) != 3
+        {
+            return None;
+        }
+        let (mse_packed, qjl_packed) = self.split_code_bytes(code_bytes);
+        // SAFETY: runtime feature detection proves AVX2/FMA; guards restrict
+        // this diagnostic to the old QJL-active 3-bit MSE lane.
+        Some(unsafe {
+            self.score_ip_from_split_parts_avx2_multi_accum_pre_b0efa19d9(
+                prepared, gamma, mse_packed, qjl_packed,
+            )
+        })
+    }
+
     #[cfg(all(any(test, feature = "bench"), target_arch = "aarch64"))]
     pub fn score_ip_from_parts_neon_for_test(
         &self,
@@ -1158,6 +1182,184 @@ impl ProdQuantizer {
         mse_sum + gamma * prepared.qjl_scale * qjl_sum
     }
 
+    #[cfg(all(any(test, feature = "bench"), target_arch = "x86_64"))]
+    #[target_feature(enable = "avx2,fma")]
+    unsafe fn score_ip_from_split_parts_avx2_multi_accum_pre_b0efa19d9(
+        &self,
+        prepared: &PreparedQuery,
+        gamma: f32,
+        mse_packed: &[u8],
+        qjl_packed: &[u8],
+    ) -> f32 {
+        use std::arch::x86_64::{
+            _mm256_add_ps, _mm256_fmadd_ps, _mm256_loadu_ps, _mm256_mul_ps,
+            _mm256_permutevar8x32_ps, _mm256_set1_epi32, _mm256_setr_epi32, _mm256_setzero_ps,
+            _mm256_storeu_ps,
+        };
+
+        let bits_per_index = mse_bits(self.original_dim, self.bits);
+        let num_centroids = 1usize << bits_per_index;
+        let mut mse_sum = 0.0_f32;
+        let mut qjl_sum = 0.0_f32;
+        let mut dim_index = 0usize;
+        let mut mse_acc0 = _mm256_setzero_ps();
+        let mut mse_acc1 = _mm256_setzero_ps();
+        let mut mse_acc2 = _mm256_setzero_ps();
+        let mut mse_acc3 = _mm256_setzero_ps();
+        let mut qjl_acc0 = _mm256_setzero_ps();
+        let mut qjl_acc1 = _mm256_setzero_ps();
+        let mut qjl_acc2 = _mm256_setzero_ps();
+        let mut qjl_acc3 = _mm256_setzero_ps();
+
+        if bits_per_index == 3 {
+            debug_assert_eq!(self.codebook.len(), 8);
+            let codebook = _mm256_loadu_ps(self.codebook.as_ptr());
+            let shifts = _mm256_setr_epi32(0, 3, 6, 9, 12, 15, 18, 21);
+            let mask = _mm256_set1_epi32(0x7);
+
+            while dim_index + 32 <= self.original_dim {
+                let l0 = decode_eight_3bit_lanes_avx2(
+                    decode_eight_3bit_aligned_word(mse_packed, dim_index),
+                    shifts,
+                    mask,
+                );
+                let l1 = decode_eight_3bit_lanes_avx2(
+                    decode_eight_3bit_aligned_word(mse_packed, dim_index + 8),
+                    shifts,
+                    mask,
+                );
+                let l2 = decode_eight_3bit_lanes_avx2(
+                    decode_eight_3bit_aligned_word(mse_packed, dim_index + 16),
+                    shifts,
+                    mask,
+                );
+                let l3 = decode_eight_3bit_lanes_avx2(
+                    decode_eight_3bit_aligned_word(mse_packed, dim_index + 24),
+                    shifts,
+                    mask,
+                );
+
+                mse_acc0 = _mm256_fmadd_ps(
+                    _mm256_permutevar8x32_ps(codebook, l0),
+                    _mm256_loadu_ps(prepared.rotated.as_ptr().add(dim_index)),
+                    mse_acc0,
+                );
+                qjl_acc0 = _mm256_fmadd_ps(
+                    _mm256_loadu_ps(prepared.sq.as_ptr().add(dim_index)),
+                    _mm256_loadu_ps(qjl_sign_lanes(qjl_packed[dim_index / 8]).as_ptr()),
+                    qjl_acc0,
+                );
+                mse_acc1 = _mm256_fmadd_ps(
+                    _mm256_permutevar8x32_ps(codebook, l1),
+                    _mm256_loadu_ps(prepared.rotated.as_ptr().add(dim_index + 8)),
+                    mse_acc1,
+                );
+                qjl_acc1 = _mm256_fmadd_ps(
+                    _mm256_loadu_ps(prepared.sq.as_ptr().add(dim_index + 8)),
+                    _mm256_loadu_ps(qjl_sign_lanes(qjl_packed[(dim_index + 8) / 8]).as_ptr()),
+                    qjl_acc1,
+                );
+                mse_acc2 = _mm256_fmadd_ps(
+                    _mm256_permutevar8x32_ps(codebook, l2),
+                    _mm256_loadu_ps(prepared.rotated.as_ptr().add(dim_index + 16)),
+                    mse_acc2,
+                );
+                qjl_acc2 = _mm256_fmadd_ps(
+                    _mm256_loadu_ps(prepared.sq.as_ptr().add(dim_index + 16)),
+                    _mm256_loadu_ps(qjl_sign_lanes(qjl_packed[(dim_index + 16) / 8]).as_ptr()),
+                    qjl_acc2,
+                );
+                mse_acc3 = _mm256_fmadd_ps(
+                    _mm256_permutevar8x32_ps(codebook, l3),
+                    _mm256_loadu_ps(prepared.rotated.as_ptr().add(dim_index + 24)),
+                    mse_acc3,
+                );
+                qjl_acc3 = _mm256_fmadd_ps(
+                    _mm256_loadu_ps(prepared.sq.as_ptr().add(dim_index + 24)),
+                    _mm256_loadu_ps(qjl_sign_lanes(qjl_packed[(dim_index + 24) / 8]).as_ptr()),
+                    qjl_acc3,
+                );
+                dim_index += 32;
+            }
+
+            while dim_index + 8 <= self.original_dim {
+                let lanes = decode_eight_3bit_lanes_avx2(
+                    decode_eight_3bit_aligned_word(mse_packed, dim_index),
+                    shifts,
+                    mask,
+                );
+
+                mse_acc0 = _mm256_fmadd_ps(
+                    _mm256_permutevar8x32_ps(codebook, lanes),
+                    _mm256_loadu_ps(prepared.rotated.as_ptr().add(dim_index)),
+                    mse_acc0,
+                );
+                qjl_acc0 = _mm256_fmadd_ps(
+                    _mm256_loadu_ps(prepared.sq.as_ptr().add(dim_index)),
+                    _mm256_loadu_ps(qjl_sign_lanes(qjl_packed[dim_index / 8]).as_ptr()),
+                    qjl_acc0,
+                );
+                dim_index += 8;
+            }
+        } else {
+            while dim_index + 8 <= self.original_dim {
+                let mut mse_values = [0.0_f32; 8];
+                for (lane, mse_value) in mse_values.iter_mut().enumerate() {
+                    let absolute = dim_index + lane;
+                    let centroid_index =
+                        mse_index_at(mse_packed, absolute, bits_per_index) as usize;
+                    *mse_value = prepared.lut[absolute * num_centroids + centroid_index];
+                }
+
+                mse_acc0 = _mm256_add_ps(mse_acc0, _mm256_loadu_ps(mse_values.as_ptr()));
+                qjl_acc0 = _mm256_add_ps(
+                    qjl_acc0,
+                    _mm256_mul_ps(
+                        _mm256_loadu_ps(prepared.sq.as_ptr().add(dim_index)),
+                        _mm256_loadu_ps(qjl_sign_lanes(qjl_packed[dim_index / 8]).as_ptr()),
+                    ),
+                );
+                dim_index += 8;
+            }
+        }
+
+        let mut mse_lanes = [0.0_f32; 8];
+        let mut qjl_lanes = [0.0_f32; 8];
+        _mm256_storeu_ps(
+            mse_lanes.as_mut_ptr(),
+            _mm256_add_ps(
+                _mm256_add_ps(mse_acc0, mse_acc1),
+                _mm256_add_ps(mse_acc2, mse_acc3),
+            ),
+        );
+        _mm256_storeu_ps(
+            qjl_lanes.as_mut_ptr(),
+            _mm256_add_ps(
+                _mm256_add_ps(qjl_acc0, qjl_acc1),
+                _mm256_add_ps(qjl_acc2, qjl_acc3),
+            ),
+        );
+        mse_sum += mse_lanes.into_iter().sum::<f32>();
+        qjl_sum += qjl_lanes.into_iter().sum::<f32>();
+
+        while dim_index < self.original_dim {
+            let centroid_index = mse_index_at(mse_packed, dim_index, bits_per_index) as usize;
+            mse_sum += if bits_per_index == 3 {
+                self.codebook[centroid_index] * prepared.rotated[dim_index]
+            } else {
+                prepared.lut[dim_index * num_centroids + centroid_index]
+            };
+            qjl_sum += if qjl_sign_at(qjl_packed, dim_index) {
+                prepared.sq[dim_index]
+            } else {
+                -prepared.sq[dim_index]
+            };
+            dim_index += 1;
+        }
+
+        mse_sum + gamma * prepared.qjl_scale * qjl_sum
+    }
+
     #[cfg(target_arch = "aarch64")]
     fn score_ip_from_split_parts_neon_checked(
         &self,
@@ -1778,6 +1980,19 @@ mod tests {
         dot / (norm_a * norm_b).max(f32::EPSILON)
     }
 
+    #[cfg(target_arch = "x86_64")]
+    fn ulp_distance(lhs: f32, rhs: f32) -> u32 {
+        fn ordered(bits: u32) -> i32 {
+            let signed = bits as i32;
+            if signed < 0 {
+                i32::MIN - signed
+            } else {
+                signed
+            }
+        }
+        ordered(lhs.to_bits()).abs_diff(ordered(rhs.to_bits()))
+    }
+
     #[test]
     fn mse_pack_unpack_roundtrip_all_widths() {
         let mut rng = ChaCha8Rng::seed_from_u64(7);
@@ -2224,6 +2439,54 @@ mod tests {
         let mutated = quantizer.score_ip_from_parts(&prepared, candidate.gamma + 1.25, &code_bytes);
 
         assert_ne!(observed, mutated);
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    #[test]
+    fn qjl_pre_b0efa19d9_multi_accum_tolerance_diagnostic() {
+        if !std::arch::is_x86_feature_detected!("avx2")
+            || !std::arch::is_x86_feature_detected!("fma")
+        {
+            eprintln!("skipping old-path diagnostic: AVX2/FMA unavailable");
+            return;
+        }
+
+        let quantizer = ProdQuantizer::new(1024, 4, 42);
+        let prepared = quantizer.prepare_ip_query(&random_unit_vector(1024, 1));
+        let mut max_ulp = 0_u32;
+        let mut max_rel = 0.0_f32;
+        let mut violations = 0_usize;
+        let mut worst_seed = 0_u64;
+
+        for seed in 0..1000_u64 {
+            let encoded = quantizer.encode(&random_unit_vector(1024, seed + 300));
+            let mut code = encoded.mse_packed;
+            code.extend_from_slice(&encoded.qjl_packed);
+            let old = quantizer
+                .score_ip_from_parts_avx2_multi_accum_pre_b0efa19d9_for_test(
+                    &prepared,
+                    encoded.gamma,
+                    &code,
+                )
+                .expect("AVX2/FMA old-path diagnostic");
+            let scalar =
+                quantizer.score_ip_from_parts_scalar_reference(&prepared, encoded.gamma, &code);
+            let ulp = ulp_distance(old, scalar);
+            let rel = (old - scalar).abs() / scalar.abs().max(1.0e-12);
+
+            if ulp > max_ulp || (ulp == max_ulp && rel > max_rel) {
+                max_ulp = ulp;
+                max_rel = rel;
+                worst_seed = seed + 300;
+            }
+            if ulp > 4 && rel > 1.0e-6 {
+                violations += 1;
+            }
+        }
+
+        println!(
+            "qjl_pre_b0efa19d9_multi_accum_tolerance_diagnostic dim=1024 bits=4 candidates=1000 max_ulp={max_ulp} max_rel={max_rel:.9e} violations={violations} worst_seed={worst_seed}"
+        );
     }
 
     #[test]

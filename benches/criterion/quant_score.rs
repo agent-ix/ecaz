@@ -92,6 +92,33 @@ fn bench_score_ip_from_parts(c: &mut Criterion) {
                 quantizer.score_ip_from_parts(&prepared, *gamma, code_bytes)
             });
         });
+        #[cfg(target_arch = "x86_64")]
+        if dim == 1024 && bits == 4 {
+            if quantizer
+                .score_ip_from_parts_avx2_multi_accum_pre_b0efa19d9_for_test(
+                    &prepared,
+                    candidates[0].0,
+                    &candidates[0].1,
+                )
+                .is_some()
+            {
+                group.bench_function(
+                    BenchmarkId::new("pre_b0efa19d9_multi_accum", "d1024_b4"),
+                    |b| {
+                        let mut idx = 0usize;
+                        b.iter(|| {
+                            let (gamma, code_bytes) = &candidates[idx % 1000];
+                            idx += 1;
+                            quantizer
+                                .score_ip_from_parts_avx2_multi_accum_pre_b0efa19d9_for_test(
+                                    &prepared, *gamma, code_bytes,
+                                )
+                                .expect("AVX2/FMA old-path diagnostic should be available")
+                        });
+                    },
+                );
+            }
+        }
     }
     group.finish();
 }

@@ -866,6 +866,8 @@ fn validate_turboquant_no_qjl_4bit_meta(meta: CandidateMeta<'_>) -> Result<(), S
 fn validate_turboquant_qjl_meta(meta: CandidateMeta<'_>) -> Result<f32, String> {
     match meta {
         CandidateMeta::Gamma(gamma) => Ok(gamma),
+        // Current QJL storage keeps residual signs in payload bytes; this
+        // forward-compatible meta variant only supplies gamma for now.
         CandidateMeta::GammaAndResidualSigns { gamma, .. } => Ok(gamma),
         CandidateMeta::None
         | CandidateMeta::Binary
