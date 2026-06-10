@@ -1,0 +1,29 @@
+Script started on 2026-06-10 16:22:04-07:00 [<not executed on terminal>]
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.13s
+     Running unittests src/lib.rs (target/debug/deps/ecaz-52f8c7085962b346)
+
+running 19 tests
+test am::common::candidate_batch::tests::candidate_batch_preserves_ids_and_payloads ... [32mok(B[m
+test am::common::candidate_batch::tests::candidate_batch_rejects_capacity_overflow ... [32mok(B[m
+test am::common::candidate_batch::tests::block_kernel_counter_api_keeps_turboquant_exact_modes_distinct ... [32mok(B[m
+test am::common::candidate_batch::tests::grouped_pq_batch_records_block_and_scalar_tail_counters ... [32mok(B[m
+test am::common::candidate_batch::tests::rabitq_bits1_batch_records_block_and_tail_counters ... [32mok(B[m
+test am::ec_spire::tests::remote_candidate_batch_validation_accepts_expected_envelope ... [32mok(B[m
+test am::ec_spire::tests::remote_candidate_batch_merge_rejects_invalid_batch_before_merge ... [32mok(B[m
+test am::common::candidate_batch::tests::block_kernel_counter_api_records_scalar_tail_under_scalar_isa ... [32mok(B[m
+test am::ec_spire::production_executor_state_tests::production_executor_compact_merge_uses_ready_candidate_batches ... [32mok(B[m
+test am::common::candidate_batch::tests::rabitq_bits1_batch_below_width_uses_partial_dispatch ... [32mok(B[m
+test am::ec_spire::tests::remote_candidate_batch_validation_accepts_leaf_derived_delta_rows ... [32mok(B[m
+test am::ec_spire::tests::remote_candidate_batch_validation_rejects_receive_contract_drift ... [32mok(B[m
+test am::ec_spire::production_executor_state_tests::production_executor_local_cancel_clears_ready_candidate_batches ... [32mok(B[m
+test am::common::candidate_batch::tests::rabitq_bits1_batch_shape_mismatch_rejects_before_counters ... [32mok(B[m
+test am::common::candidate_batch::tests::grouped_pq_batch_shape_error_scores_nothing_and_records_no_counters ... [32mok(B[m
+test am::ec_spire::tests::remote_candidate_batch_merge_validates_batches_before_merge ... [32mok(B[m
+test am::common::candidate_batch::tests::turboquant_lut_batch_records_surface_counters ... [32mok(B[m
+test am::common::candidate_batch::tests::turboquant_lut_batch_matches_scalar_tail ... [32mok(B[m
+test am::common::candidate_batch::tests::turboquant_no_qjl_exact_modes_shape_error_scores_nothing_and_record_no_counters ... [32mok(B[m
+
+test result: [32mok(B[m. 19 passed; 0 failed; 0 ignored; 0 measured; 2067 filtered out; finished in 0.11s
+
+
+Script done on 2026-06-10 16:22:04-07:00 [COMMAND_EXIT_CODE="0"]

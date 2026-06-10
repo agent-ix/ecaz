@@ -1,0 +1,16 @@
+Script started on 2026-06-10 16:22:55-07:00 [<not executed on terminal>]
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.14s
+     Running unittests src/lib.rs (target/debug/deps/ecaz-52f8c7085962b346)
+
+running 6 tests
+test quant::lut32::tests::lut32_rejects_shape_mismatch ... [32mok(B[m
+test quant::lut32::tests::lut32_batch_under_block_width_matches_scalar_tail_bits ... [32mok(B[m
+test quant::lut32::tests::lut32_block32_matches_scalar_tail_bits ... [32mok(B[m
+test quant::lut32::tests::lut32_batch_with_blocks_and_tail_matches_scalar_tail_bits ... [32mok(B[m
+test am::ec_ivf::quantizer::tests::common_quant_codec_turboquant_no_qjl_lut32_batch_is_bit_exact_with_scalar ... [32mok(B[m
+test quant::tiled_lut32::tests::run_is_bit_equal_with_production_tiled_scorer ... [32mok(B[m
+
+test result: [32mok(B[m. 6 passed; 0 failed; 0 ignored; 0 measured; 2080 filtered out; finished in 0.06s
+
+
+Script done on 2026-06-10 16:22:55-07:00 [COMMAND_EXIT_CODE="0"]
