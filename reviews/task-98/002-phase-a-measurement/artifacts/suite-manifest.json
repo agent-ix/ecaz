@@ -4,7 +4,7 @@
   "config": "crates/ecaz-cli/suites/task98-phase-a-hnsw-exact-modes.json",
   "config_sha256": "88d8a0d746ceff1855306782105b6b7bd0e371c832700ed63eaa6bafa8f6e4f2",
   "dry_run": false,
-  "generated_at_unix_ms": 1781086243673,
+  "generated_at_unix_ms": 1781090013704,
   "connection": {
     "database": "task93_bench",
     "host": "/Users/peter/.pgrx",
@@ -64,9 +64,9 @@
         "reviews/task-98/002-phase-a-measurement/artifacts/load-hnsw-tq-real10k.log"
       ],
       "status": "succeeded",
-      "started_at_unix_ms": 1781086243674,
-      "finished_at_unix_ms": 1781086261507,
-      "duration_ms": 17832,
+      "started_at_unix_ms": 1781090013713,
+      "finished_at_unix_ms": 1781090063624,
+      "duration_ms": 49905,
       "exit_code": 0
     },
     {
@@ -123,9 +123,9 @@
         "reviews/task-98/002-phase-a-measurement/artifacts/recall-tiled_lut-real10k-kernel-on.log"
       ],
       "status": "succeeded",
-      "started_at_unix_ms": 1781086261510,
-      "finished_at_unix_ms": 1781086266538,
-      "duration_ms": 5026,
+      "started_at_unix_ms": 1781090063626,
+      "finished_at_unix_ms": 1781090069194,
+      "duration_ms": 5567,
       "exit_code": 0
     },
     {
@@ -187,9 +187,9 @@
         "reviews/task-98/002-phase-a-measurement/artifacts/latency-tiled_lut-real10k-kernel-on.log"
       ],
       "status": "succeeded",
-      "started_at_unix_ms": 1781086266540,
-      "finished_at_unix_ms": 1781086266754,
-      "duration_ms": 213,
+      "started_at_unix_ms": 1781090069195,
+      "finished_at_unix_ms": 1781090069408,
+      "duration_ms": 211,
       "exit_code": 0
     },
     {
@@ -248,9 +248,9 @@
         "reviews/task-98/002-phase-a-measurement/artifacts/recall-tiled_lut-real10k-kernel-off.log"
       ],
       "status": "succeeded",
-      "started_at_unix_ms": 1781086266756,
-      "finished_at_unix_ms": 1781086271775,
-      "duration_ms": 5017,
+      "started_at_unix_ms": 1781090069410,
+      "finished_at_unix_ms": 1781090081444,
+      "duration_ms": 12033,
       "exit_code": 0
     },
     {
@@ -314,9 +314,9 @@
         "reviews/task-98/002-phase-a-measurement/artifacts/latency-tiled_lut-real10k-kernel-off.log"
       ],
       "status": "succeeded",
-      "started_at_unix_ms": 1781086271777,
-      "finished_at_unix_ms": 1781086271986,
-      "duration_ms": 208,
+      "started_at_unix_ms": 1781090081447,
+      "finished_at_unix_ms": 1781090081794,
+      "duration_ms": 345,
       "exit_code": 0
     },
     {
@@ -373,9 +373,9 @@
         "reviews/task-98/002-phase-a-measurement/artifacts/recall-int8_approx-real10k-kernel-on.log"
       ],
       "status": "succeeded",
-      "started_at_unix_ms": 1781086271988,
-      "finished_at_unix_ms": 1781086276997,
-      "duration_ms": 5008,
+      "started_at_unix_ms": 1781090081797,
+      "finished_at_unix_ms": 1781090103370,
+      "duration_ms": 21571,
       "exit_code": 0
     },
     {
@@ -437,9 +437,9 @@
         "reviews/task-98/002-phase-a-measurement/artifacts/latency-int8_approx-real10k-kernel-on.log"
       ],
       "status": "succeeded",
-      "started_at_unix_ms": 1781086276999,
-      "finished_at_unix_ms": 1781086277210,
-      "duration_ms": 209,
+      "started_at_unix_ms": 1781090103372,
+      "finished_at_unix_ms": 1781090103620,
+      "duration_ms": 245,
       "exit_code": 0
     },
     {
@@ -498,9 +498,9 @@
         "reviews/task-98/002-phase-a-measurement/artifacts/recall-int8_approx-real10k-kernel-off.log"
       ],
       "status": "succeeded",
-      "started_at_unix_ms": 1781086277211,
-      "finished_at_unix_ms": 1781086282210,
-      "duration_ms": 4996,
+      "started_at_unix_ms": 1781090103622,
+      "finished_at_unix_ms": 1781090109623,
+      "duration_ms": 5998,
       "exit_code": 0
     },
     {
@@ -564,9 +564,9 @@
         "reviews/task-98/002-phase-a-measurement/artifacts/latency-int8_approx-real10k-kernel-off.log"
       ],
       "status": "succeeded",
-      "started_at_unix_ms": 1781086282211,
-      "finished_at_unix_ms": 1781086282403,
-      "duration_ms": 190,
+      "started_at_unix_ms": 1781090109624,
+      "finished_at_unix_ms": 1781090110910,
+      "duration_ms": 1285,
       "exit_code": 0
     },
     {
@@ -620,9 +620,9 @@
         "reviews/task-98/002-phase-a-measurement/artifacts/load-hnsw-tq-real50k.log"
       ],
       "status": "succeeded",
-      "started_at_unix_ms": 1781086282405,
-      "finished_at_unix_ms": 1781086386439,
-      "duration_ms": 104033,
+      "started_at_unix_ms": 1781090110911,
+      "finished_at_unix_ms": 1781090304131,
+      "duration_ms": 193219,
       "exit_code": 0
     },
     {
@@ -679,9 +679,9 @@
         "reviews/task-98/002-phase-a-measurement/artifacts/recall-tiled_lut-real50k-kernel-on.log"
       ],
       "status": "succeeded",
-      "started_at_unix_ms": 1781086386441,
-      "finished_at_unix_ms": 1781086413495,
-      "duration_ms": 27052,
+      "started_at_unix_ms": 1781090304134,
+      "finished_at_unix_ms": 1781090328329,
+      "duration_ms": 24193,
       "exit_code": 0
     },
     {
@@ -743,9 +743,9 @@
         "reviews/task-98/002-phase-a-measurement/artifacts/latency-tiled_lut-real50k-kernel-on.log"
       ],
       "status": "succeeded",
-      "started_at_unix_ms": 1781086413497,
-      "finished_at_unix_ms": 1781086413896,
-      "duration_ms": 398,
+      "started_at_unix_ms": 1781090328330,
+      "finished_at_unix_ms": 1781090328716,
+      "duration_ms": 384,
       "exit_code": 0
     },
     {
@@ -804,9 +804,9 @@
         "reviews/task-98/002-phase-a-measurement/artifacts/recall-tiled_lut-real50k-kernel-off.log"
       ],
       "status": "succeeded",
-      "started_at_unix_ms": 1781086413898,
-      "finished_at_unix_ms": 1781086441579,
-      "duration_ms": 27678,
+      "started_at_unix_ms": 1781090328718,
+      "finished_at_unix_ms": 1781090352984,
+      "duration_ms": 24265,
       "exit_code": 0
     },
     {
@@ -870,9 +870,9 @@
         "reviews/task-98/002-phase-a-measurement/artifacts/latency-tiled_lut-real50k-kernel-off.log"
       ],
       "status": "succeeded",
-      "started_at_unix_ms": 1781086441580,
-      "finished_at_unix_ms": 1781086441974,
-      "duration_ms": 392,
+      "started_at_unix_ms": 1781090352986,
+      "finished_at_unix_ms": 1781090353383,
+      "duration_ms": 396,
       "exit_code": 0
     },
     {
@@ -929,9 +929,9 @@
         "reviews/task-98/002-phase-a-measurement/artifacts/recall-int8_approx-real50k-kernel-on.log"
       ],
       "status": "succeeded",
-      "started_at_unix_ms": 1781086441976,
-      "finished_at_unix_ms": 1781086468330,
-      "duration_ms": 26352,
+      "started_at_unix_ms": 1781090353385,
+      "finished_at_unix_ms": 1781090409994,
+      "duration_ms": 56607,
       "exit_code": 0
     },
     {
@@ -993,9 +993,9 @@
         "reviews/task-98/002-phase-a-measurement/artifacts/latency-int8_approx-real50k-kernel-on.log"
       ],
       "status": "succeeded",
-      "started_at_unix_ms": 1781086468331,
-      "finished_at_unix_ms": 1781086468720,
-      "duration_ms": 387,
+      "started_at_unix_ms": 1781090410000,
+      "finished_at_unix_ms": 1781090411677,
+      "duration_ms": 1671,
       "exit_code": 0
     },
     {
@@ -1054,9 +1054,9 @@
         "reviews/task-98/002-phase-a-measurement/artifacts/recall-int8_approx-real50k-kernel-off.log"
       ],
       "status": "succeeded",
-      "started_at_unix_ms": 1781086468721,
-      "finished_at_unix_ms": 1781086495231,
-      "duration_ms": 26508,
+      "started_at_unix_ms": 1781090411684,
+      "finished_at_unix_ms": 1781090438811,
+      "duration_ms": 27121,
       "exit_code": 0
     },
     {
@@ -1120,9 +1120,9 @@
         "reviews/task-98/002-phase-a-measurement/artifacts/latency-int8_approx-real50k-kernel-off.log"
       ],
       "status": "succeeded",
-      "started_at_unix_ms": 1781086495233,
-      "finished_at_unix_ms": 1781086495618,
-      "duration_ms": 384,
+      "started_at_unix_ms": 1781090438812,
+      "finished_at_unix_ms": 1781090439204,
+      "duration_ms": 390,
       "exit_code": 0
     },
     {
@@ -1176,9 +1176,9 @@
         "reviews/task-98/002-phase-a-measurement/artifacts/load-hnsw-tq-real100k.log"
       ],
       "status": "succeeded",
-      "started_at_unix_ms": 1781086495620,
-      "finished_at_unix_ms": 1781086747133,
-      "duration_ms": 251512,
+      "started_at_unix_ms": 1781090439205,
+      "finished_at_unix_ms": 1781090730349,
+      "duration_ms": 291110,
       "exit_code": 0
     },
     {
@@ -1235,9 +1235,9 @@
         "reviews/task-98/002-phase-a-measurement/artifacts/recall-tiled_lut-real100k-kernel-on.log"
       ],
       "status": "succeeded",
-      "started_at_unix_ms": 1781086747135,
-      "finished_at_unix_ms": 1781086801005,
-      "duration_ms": 53868,
+      "started_at_unix_ms": 1781090730351,
+      "finished_at_unix_ms": 1781090778305,
+      "duration_ms": 47951,
       "exit_code": 0
     },
     {
@@ -1299,9 +1299,9 @@
         "reviews/task-98/002-phase-a-measurement/artifacts/latency-tiled_lut-real100k-kernel-on.log"
       ],
       "status": "succeeded",
-      "started_at_unix_ms": 1781086801007,
-      "finished_at_unix_ms": 1781086801423,
-      "duration_ms": 415,
+      "started_at_unix_ms": 1781090778307,
+      "finished_at_unix_ms": 1781090778715,
+      "duration_ms": 407,
       "exit_code": 0
     },
     {
@@ -1360,9 +1360,9 @@
         "reviews/task-98/002-phase-a-measurement/artifacts/recall-tiled_lut-real100k-kernel-off.log"
       ],
       "status": "succeeded",
-      "started_at_unix_ms": 1781086801425,
-      "finished_at_unix_ms": 1781086854113,
-      "duration_ms": 52686,
+      "started_at_unix_ms": 1781090778717,
+      "finished_at_unix_ms": 1781090827492,
+      "duration_ms": 48773,
       "exit_code": 0
     },
     {
@@ -1426,9 +1426,9 @@
         "reviews/task-98/002-phase-a-measurement/artifacts/latency-tiled_lut-real100k-kernel-off.log"
       ],
       "status": "succeeded",
-      "started_at_unix_ms": 1781086854114,
-      "finished_at_unix_ms": 1781086854532,
-      "duration_ms": 417,
+      "started_at_unix_ms": 1781090827494,
+      "finished_at_unix_ms": 1781090827886,
+      "duration_ms": 391,
       "exit_code": 0
     },
     {
@@ -1485,9 +1485,9 @@
         "reviews/task-98/002-phase-a-measurement/artifacts/recall-int8_approx-real100k-kernel-on.log"
       ],
       "status": "succeeded",
-      "started_at_unix_ms": 1781086854534,
-      "finished_at_unix_ms": 1781087849026,
-      "duration_ms": 49772,
+      "started_at_unix_ms": 1781090827888,
+      "finished_at_unix_ms": 1781090876302,
+      "duration_ms": 48412,
       "exit_code": 0
     },
     {
@@ -1549,9 +1549,9 @@
         "reviews/task-98/002-phase-a-measurement/artifacts/latency-int8_approx-real100k-kernel-on.log"
       ],
       "status": "succeeded",
-      "started_at_unix_ms": 1781087849027,
-      "finished_at_unix_ms": 1781087849423,
-      "duration_ms": 394,
+      "started_at_unix_ms": 1781090876303,
+      "finished_at_unix_ms": 1781090876689,
+      "duration_ms": 384,
       "exit_code": 0
     },
     {
@@ -1610,9 +1610,9 @@
         "reviews/task-98/002-phase-a-measurement/artifacts/recall-int8_approx-real100k-kernel-off.log"
       ],
       "status": "succeeded",
-      "started_at_unix_ms": 1781087849425,
-      "finished_at_unix_ms": 1781087896447,
-      "duration_ms": 47015,
+      "started_at_unix_ms": 1781090876691,
+      "finished_at_unix_ms": 1781090925385,
+      "duration_ms": 48692,
       "exit_code": 0
     },
     {
@@ -1676,9 +1676,9 @@
         "reviews/task-98/002-phase-a-measurement/artifacts/latency-int8_approx-real100k-kernel-off.log"
       ],
       "status": "succeeded",
-      "started_at_unix_ms": 1781087896448,
-      "finished_at_unix_ms": 1781087896831,
-      "duration_ms": 382,
+      "started_at_unix_ms": 1781090925386,
+      "finished_at_unix_ms": 1781090925775,
+      "duration_ms": 387,
       "exit_code": 0
     }
   ]

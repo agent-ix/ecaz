@@ -1,68 +1,68 @@
-# Manifest: Task 98 Packet 002 Phase A Measurement (instrumentation finding)
+# Manifest: Task 98 Packet 002 Phase A Measurement (complete)
 
-- Head SHA: `96c6e3476`
-- Task bucket: `reviews/task-98/`; packet path: `reviews/task-98/002-phase-a-measurement/`
-- Lane: local PG18 pgrx, Apple M5 Pro; database `task93_bench`
-- Extension install sha256:
-  `fb54dc17b41277e08747669b2371103523e81ee978aaa50915ebd662384af226`
-  (verified on disk before the run; `install-ecaz-pg18.log`)
+- Head SHA: `eb7183a65` (cold-read batching fix `a1122aac8` + CLI snapshot
+  warning; kernels/routing from `96c6e3476` lineage)
+- Task bucket: `reviews/task-98/`; packet: `002-phase-a-measurement/`
+- Lane: local PG18 pgrx, Apple M5 Pro; database `task93_bench` (dropped and
+  recreated immediately before the cited run — see finding 3)
+- Extension install sha256 `4fff2050…` (`install-ecaz-pg18.log`, final
+  entry; verified on disk)
 - Fixtures: dbpedia real10k/50k/100k, `ec_hnsw` `storage_format=turboquant`
-  (m=16, ef_construction=128); prefixes `task98_pa_hnsw_tq_real{10k,50k,100k}`
-- Suite config: `crates/ecaz-cli/suites/task98-phase-a-hnsw-exact-modes.json`
-- Cells: {tiled_lut, int8_approx} × {kernel-on, kernel-off} × 3 corpora,
-  via `ec_hnsw.turboquant_exact_score_mode` + `ec_hnsw.candidate_batch_scoring`,
-  with `ec_hnsw.disable_binary_prefilter=on` on every cell (see findings).
+  (m=16, ef_construction=128); suite config
+  `crates/ecaz-cli/suites/task98-phase-a-hnsw-exact-modes.json`
+- Cells: {tiled_lut, int8_approx} × {kernel-on, kernel-off} × 3 corpora;
+  `ec_hnsw.disable_binary_prefilter=on` on every cell (finding 1)
 
-## Findings
+## Findings (chronological; all packeted commits)
 
-1. **Binary-prefilter shadowing (run 1, discarded):** on default settings
-   HNSW TurboQuant scans run the binary prefilter branch, where exact-mode
-   scoring barely participates in traversal — the first run produced zero
-   exact-mode counter rows for that reason. The meaningful Phase A cell
-   isolates the modes with `disable_binary_prefilter=on`. This materially
-   contextualizes Task 98's end-to-end framing: TiledLut/Int8Approx carry
-   traversal scoring only when the binary sidecar lane is unavailable or
-   disabled.
-2. **Open instrumentation gap (run 2, cited):** with the prefilter
-   disabled and the GUCs verified in `suite-manifest.json`, the suite still
-   records **zero** `surface=hnsw` block-kernel rows in every cell — the
-   widened batch arm (`96c6e3476`) is not on the executed path. Prime
-   suspects for the next slice: (a) the `TurboQuantHotCold` storage
-   descriptor yields `LoadedElementState::None` at element load, sending
-   candidates to the per-candidate `exact_score_cached_graph_element` path
-   that bypasses payload batching; (b) score-at-load via
-   `live_loaded_state_from_exact_payload`'s non-deferred branch. This is
-   the same class of gap the task's references predicted ("if counters
-   still do not fire on that surface, Phase A first resolves
-   instrumentation") and that Task 87 packets 020/022-024 hit for FullLut.
-   Width-histogram data is therefore not yet citable for the scope-down
-   decision.
+1. **Binary-prefilter shadowing**: default HNSW TurboQuant scans take the
+   binary-prefilter branch where exact modes barely participate; Phase A
+   cells isolate the modes with the prefilter disabled.
+2. **Hot/cold payload root cause** (`a1122aac8`): V3 hot/cold TurboHot
+   tuples carry no inline exact payload, so every exact-mode batching arm
+   (Task 87's FullLut included) was dead code on modern indexes. Fixed by
+   cold-loading payloads at accumulation time into the mode-dispatched
+   batch flush.
+3. **Stale extension catalog masked the fix** (`eb7183a65`): the width-
+   column schema change does not propagate to existing databases; the CLI
+   silently returned zero block-kernel rows on the mismatch. The bench
+   database must be recreated after counter-schema changes; the CLI now
+   warns instead of swallowing the error.
 
-## What the run does establish
+## Width distribution (acceptance criterion 4) — decisive
 
-- Recall is identical between kernel-on and kernel-off in every cell (e.g.
-  real10k: tiled_lut 0.9672/0.9672, int8_approx 0.9656/0.9656) — expected,
-  since both cells executed the same per-candidate path.
-- The mode GUC works end-to-end (modes produce distinct recall values:
-  0.9672 vs 0.9656 vs the FullLut-family baselines), so the packet-001 GUC
-  slice is functioning.
-- Latency tables exist for all 24 cells as a per-candidate-path baseline
-  for the eventual kernel-on comparison.
+| mode | corpus | flushes | candidates | lt8 | 8-15 | 16-31 | **ge32** |
+|---|---|---|---|---|---|---|---|
+| tiled_lut | 10k | 6,629 | 16,689 | 6,218 | 317 | 91 | **3 (0.045%)** |
+| int8_approx | 10k | 6,656 | 16,733 | 6,244 | 317 | 92 | **3** |
+| tiled_lut | 50k | 11,954 | 30,329 | 11,330 | 498 | 123 | **3 (0.025%)** |
+| int8_approx | 50k | 11,971 | 30,352 | 11,345 | 500 | 123 | **3** |
+| tiled_lut | 100k | 12,353 | 36,573 | 11,358 | 747 | 238 | **10 (0.081%)** |
+| int8_approx | 100k | 12,372 | 36,611 | 11,375 | 747 | 240 | **10** |
+
+Mean batch width 2.5–3.0; ≥32 share ≤ 0.08% at every corpus — far below
+the task's 20% threshold. **Scope-down decision: skip the Phase C SVE
+cloud measurement.** SIMD value on this surface flows through the
+partial-width dispatch (Task 93 packet 004 convention), which the
+int8_approx cells demonstrate with full `isa=neon` coverage.
+
+## Recall byte-equality — PASS at all six cells
+
+tiled_lut 0.9672 / 0.9417 / 0.9906→0.8906; int8_approx 0.9656 / 0.9375 /
+0.8875 — identical kernel-on vs kernel-off at every (mode × corpus).
+
+## Counters and latency
+
+- int8_approx: full NEON coverage (e.g. 100k: 36,611 candidates,
+  isa=neon, ~300 ns/cand); kernel-on p50 faster at 100k (5.76 vs 6.92 ms),
+  parity at 10k (4.57 vs 4.40).
+- tiled_lut: scalar backend by design this phase (isa=scalar rows);
+  latency mixed within host noise (10k on dramatically faster 6.12 vs
+  15.3 ms; 100k 7.84 vs 6.63) — no consistent regression; the tiled SIMD
+  question follows the same partial-width form as int8 if pursued.
+- Kernel-off cells emit zero block-kernel rows (clean toggles).
 
 ## Artifacts
 
-Suite outputs, per-cell load/recall/latency logs, install log, shared
-truth caches.
-
-## Addendum: root cause confirmed (static)
-
-`graph.rs` `Tuple::exact_payload()` returns `None` for `TurboHot` tuples —
-the V3 hot/cold TurboQuant layout does not carry exact payloads inline, so
-`live_loaded_state_from_exact_payload` never produces
-`LoadedElementState::ExactPayload` on modern `storage_format=turboquant`
-indexes, and every exact-mode batching arm (Task 87's FullLut included) is
-dead on this surface; scoring happens per candidate inside the cold-read
-path (`exact_score_cached_graph_element`). This retroactively explains the
-Task 87 packet 020/022-024 zero-counter record. The fix slice batches at
-the cold-payload read: accumulate cold reads per frontier and score
-through the mode-dispatched wrappers.
+Suite outputs, 24 per-cell logs, install log (4 installs across the
+debugging arc, final one cited), shared truth caches.
