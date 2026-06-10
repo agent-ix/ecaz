@@ -3854,6 +3854,16 @@ where
     record_binary_prefilter_survivors(opaque, approx_candidates.len());
 
     let mut grouped_candidates = exact_budget.map(|_| Vec::with_capacity(approx_candidates.len()));
+    // RaBitQ survivors of the binary prefilter batch through the rabitq32
+    // block kernel; exact-layer, binary-traversal, and budgeted modes keep
+    // their existing per-candidate paths.
+    let rabitq_batch_eligible =
+        matches!(scan_graph_storage, graph::GraphStorageDescriptor::RaBitQ(_))
+            && super::options::candidate_batch_scoring_enabled()
+            && grouped_candidates.is_none()
+            && !grouped_exact_traversal_full_candidate_scoring_for_layer(opaque, layer)
+            && !grouped_binary_traversal_score_enabled(opaque);
+    let mut rabitq_payload_batch = Vec::new();
     for candidate in approx_candidates {
         match candidate_score_dispatch(
             scan_graph_storage,
@@ -3891,6 +3901,11 @@ where
                         element: candidate.element,
                         approx_score,
                     });
+                } else if rabitq_batch_eligible {
+                    rabitq_payload_batch.push(HnswRaBitQBatchCandidate {
+                        source_tid,
+                        element: candidate.element,
+                    });
                 } else {
                     let exact_full =
                         grouped_exact_traversal_full_candidate_scoring_for_layer(opaque, layer);
@@ -3908,6 +3923,7 @@ where
             }
         }
     }
+    flush_rabitq_search_code_batch(opaque, &mut rabitq_payload_batch, &mut candidates);
 
     if let Some(grouped_candidates) = grouped_candidates {
         candidates.extend(score_budgeted_grouped_traversal_candidates(
