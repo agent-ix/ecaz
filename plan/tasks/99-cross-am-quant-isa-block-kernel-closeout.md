@@ -162,6 +162,15 @@ accurately represents what shipped.
   cells; ADR-077 names them as the boundary of what the
   initiative delivered.
 
+
+## Absorbed deferrals from Tasks 95/98 closeouts (2026-06-10)
+
+- Task 95: the AVX2-vs-hardware-POPCNT question for hamming32 (Intel lane;
+  expected return bounded by the measured NEON 1.10-1.17x).
+- Task 98: AVX2 variants for tiled_lut32/int8_approx32 (Intel lane;
+  vpmaddubsw named for int8). Key profile fact: HNSW exact-mode payoff is
+  governed by partial-width behavior — >=32-wide flushes are <0.1% of the
+  distribution at 10k/50k/100k.
 ## Coordination
 
 - **Depends on Tasks 87, 91, 92, 93, 94, 95, 96, 97, 98** all

@@ -1,6 +1,10 @@
 # Task 95: Hamming / Binary Fingerprint Block Kernel Family
 
-Status: proposed (2026-06-08)
+Status: complete (2026-06-10, closeout `reviews/task-95/003-closeout-matrix/`,
+reviewer-approved with documented deferrals: Graviton SVE scoped out on
+measured grounds — hardware popcount bounds same-algebra SIMD at 1.10-1.17x;
+the AVX2-vs-POPCNT question is recorded into Task 99 as the Intel-lane
+empirical item)
 Owner: coder (to be assigned). Phase III parallel.
 Priority: 2 (small task, shares popcount structure with Task 93)
 

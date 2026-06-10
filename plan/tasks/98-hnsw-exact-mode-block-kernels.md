@@ -1,6 +1,11 @@
 # Task 98: HNSW TurboQuant Exact-Score Mode Block Kernels (TiledLut + Int8Approx)
 
-Status: proposed (2026-06-08)
+Status: complete (2026-06-10, closeout `reviews/task-98/003-closeout-matrix/`,
+reviewer-approved: Phase A width distribution decisive — HNSW exact-mode
+flushes reach width >=32 in <0.1% of cases, so the SVE conditional resolves
+to skip per the task's own rule; AVX2 variants recorded into Task 99 as the
+Intel-lane handoff. Key fact for Task 99: HNSW exact-mode payoff is governed
+by partial-width behavior, not 32-wide block frequency)
 Owner: coder (to be assigned). Phase III parallel.
 Priority: 3 (HNSW-specific; per-frontier batches limit end-to-end win)
 
