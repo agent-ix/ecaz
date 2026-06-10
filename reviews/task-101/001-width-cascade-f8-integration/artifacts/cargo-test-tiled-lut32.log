@@ -1,0 +1,15 @@
+Script started on 2026-06-10 13:03:32-07:00 [<not executed on terminal>]
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on artifact directory
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.47s
+     Running unittests src/lib.rs (target/debug/deps/ecaz-c2925dc8ee61e76b)
+
+running 1 test
+test quant::tiled_lut32::tests::run_is_bit_equal_with_production_tiled_scorer ... [32mok[m
+
+test result: [32mok[m. 1 passed; 0 failed; 0 ignored; 0 measured; 2084 filtered out; finished in 0.06s
+
+
+Script done on 2026-06-10 13:03:33-07:00 [COMMAND_EXIT_CODE="0"]
