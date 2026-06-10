@@ -490,6 +490,96 @@ pub(crate) fn score_rabitq_bits1_batch_for<Id>(
     result.map(|_| ())
 }
 
+/// Task 95: Hamming sidecar batch scoring over `u64` words. Distances are
+/// integer-exact across every ISA backend, so no tolerance framing applies;
+/// counter attribution follows the rabitq32 partial-width convention
+/// (`kernel_*` = SIMD-backend flushes, `scalar_*` = scalar-executed).
+pub(crate) fn score_hamming_words_batch_for(
+    surface: CandidateBatchScoringSurface,
+    query_words: &[u64],
+    candidates: &[&[u64]],
+    out_scores: &mut [f32],
+) -> Result<(), String> {
+    if candidates.len() != out_scores.len() {
+        return Err(format!(
+            "hamming32 score output count {} does not match candidate count {}",
+            out_scores.len(),
+            candidates.len()
+        ));
+    }
+    if query_words.is_empty() {
+        return Err("hamming32 query word count must be nonzero".to_owned());
+    }
+    for (index, candidate) in candidates.iter().enumerate() {
+        crate::quant::hamming32::validate_word_shape(index, query_words.len(), candidate)?;
+    }
+    if candidates.is_empty() {
+        return Ok(());
+    }
+
+    let mut timing = BatchScoringTiming::default();
+    let mut distances = vec![0u32; candidates.len()];
+    let mut block_start = 0usize;
+    while block_start + crate::quant::hamming32::BLOCK_WIDTH <= candidates.len() {
+        let block_started = Instant::now();
+        let block: &[&[u64]; crate::quant::hamming32::BLOCK_WIDTH] = candidates
+            [block_start..block_start + crate::quant::hamming32::BLOCK_WIDTH]
+            .try_into()
+            .expect("slice length is exactly one block");
+        let isa = crate::quant::hamming32::score_hamming_block32(
+            query_words,
+            block,
+            &mut distances[block_start..block_start + crate::quant::hamming32::BLOCK_WIDTH],
+        );
+        let elapsed = u64::try_from(block_started.elapsed().as_nanos()).unwrap_or(u64::MAX);
+        if isa == Isa::Scalar {
+            timing.scalar_candidates += crate::quant::hamming32::BLOCK_WIDTH;
+            timing.scalar_elapsed_nanos = timing.scalar_elapsed_nanos.saturating_add(elapsed);
+        } else {
+            timing.kernel_isa = Some(isa);
+            timing.kernel_candidates += crate::quant::hamming32::BLOCK_WIDTH;
+            timing.kernel_elapsed_nanos = timing.kernel_elapsed_nanos.saturating_add(elapsed);
+        }
+        block_start += crate::quant::hamming32::BLOCK_WIDTH;
+    }
+    if block_start < candidates.len() {
+        let partial_started = Instant::now();
+        let isa = crate::quant::hamming32::score_hamming_partial(
+            query_words,
+            &candidates[block_start..],
+            &mut distances[block_start..],
+        );
+        let elapsed = u64::try_from(partial_started.elapsed().as_nanos()).unwrap_or(u64::MAX);
+        let count = candidates.len() - block_start;
+        if isa == Isa::Scalar {
+            timing.scalar_candidates += count;
+            timing.scalar_elapsed_nanos = timing.scalar_elapsed_nanos.saturating_add(elapsed);
+        } else {
+            timing.kernel_isa = Some(isa);
+            timing.kernel_candidates += count;
+            timing.kernel_elapsed_nanos = timing.kernel_elapsed_nanos.saturating_add(elapsed);
+        }
+    }
+
+    for (out, distance) in out_scores.iter_mut().zip(distances.iter()) {
+        *out = *distance as f32;
+    }
+
+    let key = BlockKernelCounterKey {
+        surface,
+        quant_kind: QuantCodecKind::Binary,
+        isa: timing.kernel_isa.unwrap_or(Isa::Scalar),
+    };
+    record_block_kernel_score(key, timing.kernel_candidates, timing.kernel_elapsed_nanos);
+    record_block_scalar_score_for(
+        surface,
+        QuantCodecKind::Binary,
+        timing.scalar_candidates,
+        timing.scalar_elapsed_nanos,
+    );
+    Ok(())
+}
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 struct BatchScoringTiming {
     kernel_isa: Option<Isa>,

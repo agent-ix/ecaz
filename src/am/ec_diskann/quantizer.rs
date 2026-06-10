@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use crate::am::common::{
     candidate_batch::{
-        score_grouped_pq_batch_for, score_rabitq_bits1_batch_for, CandidateBatch,
-        CandidateBatchScoringSurface, CandidateMeta, CandidatePayload,
+        score_grouped_pq_batch_for, score_hamming_words_batch_for, score_rabitq_bits1_batch_for,
+        CandidateBatch, CandidateBatchScoringSurface, CandidateMeta, CandidatePayload,
     },
     quant_codec::{EncodedQuantPayload, QuantCodec, QuantCodecKind, QuantSearchCodecTag},
     training::{self, GroupedPq4Model},
@@ -303,6 +303,21 @@ fn score_diskann_prepared_prefilter_batch(
         );
     }
     match prefilter {
+        DiskannPreparedPrefilter::BinarySidecar { query_words, .. }
+            if super::options::candidate_batch_scoring_enabled() =>
+        {
+            let candidate_words: Vec<&[u64]> = tuples
+                .iter()
+                .map(|tuple| tuple.binary_words.as_slice())
+                .collect();
+            score_hamming_words_batch_for(
+                CandidateBatchScoringSurface::Diskann,
+                query_words,
+                &candidate_words,
+                out_scores,
+            )
+            .unwrap_or_else(|error| pgrx::error!("{error}"));
+        }
         DiskannPreparedPrefilter::RaBitQ { prepared }
             if super::options::candidate_batch_scoring_enabled() =>
         {
@@ -1411,6 +1426,43 @@ mod tests {
                 batch_scores[32 + index].to_bits(),
                 (-expected).to_bits(),
                 "tail index={index}"
+            );
+        }
+    }
+
+    #[test]
+    fn diskann_binary_sidecar_prefilter_batch_is_exactly_per_candidate() {
+        let word_count = 24;
+        let query_words: Vec<u64> = (0..word_count)
+            .map(|index| (index as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15) ^ 0x5DEE_CE66)
+            .collect();
+        let tuples: Vec<VamanaNodeTuple> = (0..35)
+            .map(|row| {
+                let words: Vec<u64> = (0..word_count)
+                    .map(|index| {
+                        ((row * 31 + index) as u64).wrapping_mul(0xA076_1D64_78BD_642F) ^ 0x1234
+                    })
+                    .collect();
+                tuple_with_codes(words, Vec::new())
+            })
+            .collect();
+        let prefilter = DiskannPreparedPrefilter::BinarySidecar {
+            rotated_query: Vec::new(),
+            query_words: query_words.clone(),
+        };
+        let mut batch_scores = vec![0.0; tuples.len()];
+
+        score_diskann_prepared_prefilter_batch(&prefilter, &tuples, &mut batch_scores);
+
+        // Hamming distances are integers: the batch path must match the
+        // per-candidate path exactly on every host, regardless of which ISA
+        // backend executed.
+        for (tuple, batch_score) in tuples.iter().zip(batch_scores.iter()) {
+            assert_eq!(*batch_score, prefilter.score(tuple));
+            assert_eq!(
+                *batch_score,
+                crate::quant::hamming32::hamming_distance_scalar(&query_words, &tuple.binary_words)
+                    as f32
             );
         }
     }
