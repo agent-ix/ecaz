@@ -40,6 +40,7 @@ pub mod rabitq;
 pub(crate) mod rabitq32;
 pub mod rotation;
 mod simd;
+pub(crate) mod tiled_lut32;
 pub mod traits;
 
 pub use traits::{Quantizer, QueryScorer};
