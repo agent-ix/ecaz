@@ -180,6 +180,10 @@ pub(crate) struct BlockKernelScoringSnapshot {
     pub(crate) scalar_flushes: u64,
     pub(crate) scalar_candidates: u64,
     pub(crate) scalar_elapsed_nanos: u64,
+    pub(crate) width_lt8_flushes: u64,
+    pub(crate) width_8_15_flushes: u64,
+    pub(crate) width_16_31_flushes: u64,
+    pub(crate) width_ge32_flushes: u64,
 }
 
 struct BlockKernelCounters {
@@ -192,6 +196,18 @@ struct BlockKernelCounters {
     scalar_flushes: AtomicU64,
     scalar_candidates: AtomicU64,
     scalar_elapsed_nanos: AtomicU64,
+    /// Per-flush batch-width histogram (Task 98 acceptance criterion 4):
+    /// buckets are 1-7, 8-15, 16-31, >=32 candidates per recorded flush.
+    width_buckets: [AtomicU64; 4],
+}
+
+fn width_bucket_index(candidate_count: u64) -> usize {
+    match candidate_count {
+        0..=7 => 0,
+        8..=15 => 1,
+        16..=31 => 2,
+        _ => 3,
+    }
 }
 
 impl BlockKernelCounters {
@@ -206,6 +222,12 @@ impl BlockKernelCounters {
             scalar_flushes: AtomicU64::new(0),
             scalar_candidates: AtomicU64::new(0),
             scalar_elapsed_nanos: AtomicU64::new(0),
+            width_buckets: [
+                AtomicU64::new(0),
+                AtomicU64::new(0),
+                AtomicU64::new(0),
+                AtomicU64::new(0),
+            ],
         }
     }
 
@@ -219,6 +241,9 @@ impl BlockKernelCounters {
         self.scalar_flushes.store(0, Ordering::Relaxed);
         self.scalar_candidates.store(0, Ordering::Relaxed);
         self.scalar_elapsed_nanos.store(0, Ordering::Relaxed);
+        for bucket in &self.width_buckets {
+            bucket.store(0, Ordering::Relaxed);
+        }
     }
 
     fn record_kernel(&self, candidate_count: u64, elapsed_nanos: u64) {
@@ -247,6 +272,10 @@ impl BlockKernelCounters {
             .fetch_add(elapsed_nanos, Ordering::Relaxed);
     }
 
+    fn record_width(&self, batch_width: u64) {
+        self.width_buckets[width_bucket_index(batch_width)].fetch_add(1, Ordering::Relaxed);
+    }
+
     fn snapshot(&self, key: BlockKernelCounterKey) -> BlockKernelScoringSnapshot {
         BlockKernelScoringSnapshot {
             surface: key.surface.label(),
@@ -261,6 +290,10 @@ impl BlockKernelCounters {
             scalar_flushes: self.scalar_flushes.load(Ordering::Relaxed),
             scalar_candidates: self.scalar_candidates.load(Ordering::Relaxed),
             scalar_elapsed_nanos: self.scalar_elapsed_nanos.load(Ordering::Relaxed),
+            width_lt8_flushes: self.width_buckets[0].load(Ordering::Relaxed),
+            width_8_15_flushes: self.width_buckets[1].load(Ordering::Relaxed),
+            width_16_31_flushes: self.width_buckets[2].load(Ordering::Relaxed),
+            width_ge32_flushes: self.width_buckets[3].load(Ordering::Relaxed),
         }
     }
 }
@@ -382,6 +415,25 @@ fn record_block_kernel_score(
     block_kernel_counters(key).record_kernel(candidate_count, elapsed_nanos);
 }
 
+/// Records one batch-width histogram sample for a wrapper-level flush.
+pub(crate) fn record_flush_width(
+    surface: CandidateBatchScoringSurface,
+    quant_kind: QuantCodecKind,
+    isa: Isa,
+    batch_width: usize,
+) {
+    if batch_width == 0 {
+        return;
+    }
+    let key = BlockKernelCounterKey {
+        surface,
+        quant_kind,
+        isa,
+    };
+    block_kernel_counters(key)
+        .record_width(u64::try_from(batch_width).expect("batch width should fit in u64"));
+}
+
 pub(crate) fn record_block_scalar_score_for(
     surface: CandidateBatchScoringSurface,
     quant_kind: QuantCodecKind,
@@ -425,10 +477,11 @@ pub(crate) fn score_turboquant_no_qjl_4bit_batch_for<Id>(
 ) -> Result<(), String> {
     let result = score_turboquant_no_qjl_4bit_batch_inner(quantizer, prepared, batch, out_scores);
     if let Ok(timing) = &result {
+        let isa = timing.kernel_isa.unwrap_or(Isa::Scalar);
         let key = BlockKernelCounterKey {
             surface,
             quant_kind: QuantCodecKind::TurboQuant,
-            isa: timing.kernel_isa.unwrap_or(Isa::Scalar),
+            isa,
         };
         record_block_kernel_score(key, timing.kernel_candidates, timing.kernel_elapsed_nanos);
         record_block_scalar_score_for(
@@ -437,6 +490,7 @@ pub(crate) fn score_turboquant_no_qjl_4bit_batch_for<Id>(
             timing.scalar_candidates,
             timing.scalar_elapsed_nanos,
         );
+        record_flush_width(surface, QuantCodecKind::TurboQuant, isa, batch.len());
     }
     result.map(|_| ())
 }
@@ -450,10 +504,11 @@ pub(crate) fn score_grouped_pq_batch_for<Id>(
 ) -> Result<(), String> {
     let result = score_grouped_pq_batch_inner(lut, group_count, batch, out_scores);
     if let Ok(timing) = &result {
+        let isa = timing.kernel_isa.unwrap_or(Isa::Scalar);
         let key = BlockKernelCounterKey {
             surface,
             quant_kind: QuantCodecKind::GroupedPq,
-            isa: timing.kernel_isa.unwrap_or(Isa::Scalar),
+            isa,
         };
         record_block_kernel_score(key, timing.kernel_candidates, timing.kernel_elapsed_nanos);
         record_block_scalar_score_for(
@@ -462,6 +517,7 @@ pub(crate) fn score_grouped_pq_batch_for<Id>(
             timing.scalar_candidates,
             timing.scalar_elapsed_nanos,
         );
+        record_flush_width(surface, QuantCodecKind::GroupedPq, isa, batch.len());
     }
     result.map(|_| ())
 }
@@ -474,10 +530,11 @@ pub(crate) fn score_rabitq_bits1_batch_for<Id>(
 ) -> Result<(), String> {
     let result = score_rabitq_bits1_batch_inner(prepared, batch, out_scores);
     if let Ok(timing) = &result {
+        let isa = timing.kernel_isa.unwrap_or(Isa::Scalar);
         let key = BlockKernelCounterKey {
             surface,
             quant_kind: QuantCodecKind::RaBitQ,
-            isa: timing.kernel_isa.unwrap_or(Isa::Scalar),
+            isa,
         };
         record_block_kernel_score(key, timing.kernel_candidates, timing.kernel_elapsed_nanos);
         record_block_scalar_score_for(
@@ -486,6 +543,7 @@ pub(crate) fn score_rabitq_bits1_batch_for<Id>(
             timing.scalar_candidates,
             timing.scalar_elapsed_nanos,
         );
+        record_flush_width(surface, QuantCodecKind::RaBitQ, isa, batch.len());
     }
     result.map(|_| ())
 }
@@ -576,6 +634,12 @@ pub(crate) fn score_hamming_words_batch_for(
         QuantCodecKind::Binary,
         timing.scalar_candidates,
         timing.scalar_elapsed_nanos,
+    );
+    record_flush_width(
+        surface,
+        QuantCodecKind::Binary,
+        timing.kernel_isa.unwrap_or(Isa::Scalar),
+        candidates.len(),
     );
     Ok(())
 }
@@ -1340,6 +1404,10 @@ mod tests {
             .unwrap();
         assert!(kernel_row.kernel_flushes >= 1);
         assert!(kernel_row.kernel_candidates >= 32);
+        // Width histogram: the wrapper records one width sample per batch
+        // (39 candidates here -> the >=32 bucket).
+        assert_eq!(kernel_row.width_ge32_flushes, 1);
+        assert_eq!(kernel_row.width_lt8_flushes, 0);
         if tail_isa == Isa::Scalar {
             let tail_row = block_snapshots
                 .iter()

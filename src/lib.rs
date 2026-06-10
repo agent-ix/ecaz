@@ -1206,6 +1206,10 @@ fn ec_block_kernel_scoring_snapshot() -> TableIterator<
         name!(scalar_candidates, i64),
         name!(scalar_elapsed_nanos, i64),
         name!(scalar_elapsed_ms, f64),
+        name!(width_lt8_flushes, i64),
+        name!(width_8_15_flushes, i64),
+        name!(width_16_31_flushes, i64),
+        name!(width_ge32_flushes, i64),
     ),
 > {
     let rows = am::common::candidate_batch::block_kernel_scoring_snapshots()
@@ -1227,6 +1231,10 @@ fn ec_block_kernel_scoring_snapshot() -> TableIterator<
                 i64::try_from(snapshot.scalar_candidates).unwrap_or(i64::MAX),
                 i64::try_from(snapshot.scalar_elapsed_nanos).unwrap_or(i64::MAX),
                 snapshot.scalar_elapsed_nanos as f64 / 1_000_000.0,
+                i64::try_from(snapshot.width_lt8_flushes).unwrap_or(i64::MAX),
+                i64::try_from(snapshot.width_8_15_flushes).unwrap_or(i64::MAX),
+                i64::try_from(snapshot.width_16_31_flushes).unwrap_or(i64::MAX),
+                i64::try_from(snapshot.width_ge32_flushes).unwrap_or(i64::MAX),
             )
         });
     TableIterator::new(rows)
