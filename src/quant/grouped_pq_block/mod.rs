@@ -107,6 +107,28 @@ pub(crate) fn score_grouped_pq_block32(
     }
 }
 
+pub(crate) fn score_grouped_pq_partial(
+    lut: &[f32],
+    group_count: usize,
+    codes: &[&[u8]],
+    out_scores: &mut [f32],
+) -> crate::quant::isa::Isa {
+    debug_assert_eq!(codes.len(), out_scores.len());
+    debug_assert!(codes.len() < BLOCK_WIDTH);
+    if codes.is_empty() {
+        return crate::quant::isa::Isa::Scalar;
+    }
+
+    let mut padded_codes = [codes[0]; BLOCK_WIDTH];
+    for (lane, code) in codes.iter().enumerate() {
+        padded_codes[lane] = *code;
+    }
+    let mut block_scores = [0.0_f32; BLOCK_WIDTH];
+    let isa = score_grouped_pq_block32(lut, group_count, padded_codes, &mut block_scores);
+    out_scores.copy_from_slice(&block_scores[..codes.len()]);
+    isa
+}
+
 pub(crate) fn score_grouped_pq_scalar(lut: &[f32], group_count: usize, code: &[u8]) -> f32 {
     scalar::score_scalar_tail(lut, group_count, code)
 }

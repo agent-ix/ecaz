@@ -108,6 +108,29 @@ pub(crate) fn score_lut_no_qjl_4bit_block32(
     }
 }
 
+pub(crate) fn score_lut_no_qjl_4bit_partial(
+    lut: &[f32],
+    original_dim: usize,
+    codes: &[&[u8]],
+    out_scores: &mut [f32],
+) -> crate::quant::isa::Isa {
+    debug_assert_eq!(codes.len(), out_scores.len());
+    debug_assert!(codes.len() < BLOCK_WIDTH);
+    if codes.is_empty() {
+        return crate::quant::isa::Isa::Scalar;
+    }
+
+    let mut padded_codes = [codes[0]; BLOCK_WIDTH];
+    for (lane, code) in codes.iter().enumerate() {
+        padded_codes[lane] = *code;
+    }
+    let mut block_scores = [0.0_f32; BLOCK_WIDTH];
+    let isa = score_lut_no_qjl_4bit_block32(lut, original_dim, padded_codes, &mut block_scores);
+    out_scores.copy_from_slice(&block_scores[..codes.len()]);
+    isa
+}
+
+#[allow(dead_code)]
 pub(crate) fn score_lut_no_qjl_4bit_scalar(lut: &[f32], original_dim: usize, code: &[u8]) -> f32 {
     scalar::score_scalar_tail(lut, original_dim, code)
 }

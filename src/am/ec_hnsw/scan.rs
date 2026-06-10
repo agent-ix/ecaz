@@ -8272,20 +8272,23 @@ mod tests {
             .filter(|snapshot| snapshot.surface == "hnsw" && snapshot.quant_kind == "grouped_pq")
             .collect::<Vec<_>>();
         assert!(!grouped.is_empty());
-        assert_eq!(
-            grouped
-                .iter()
-                .map(|snapshot| snapshot.kernel_candidates)
-                .sum::<u64>(),
-            32
-        );
-        assert_eq!(
-            grouped
-                .iter()
-                .map(|snapshot| snapshot.scalar_candidates)
-                .sum::<u64>(),
-            7
-        );
+        let kernel_candidates = grouped
+            .iter()
+            .map(|snapshot| snapshot.kernel_candidates)
+            .sum::<u64>();
+        let scalar_candidates = grouped
+            .iter()
+            .map(|snapshot| snapshot.scalar_candidates)
+            .sum::<u64>();
+        assert_eq!(kernel_candidates + scalar_candidates, 39);
+        assert!(kernel_candidates >= 32);
+        if grouped.iter().any(|snapshot| snapshot.isa != "scalar") {
+            assert_eq!(kernel_candidates, 39);
+            assert_eq!(scalar_candidates, 0);
+        } else {
+            assert_eq!(kernel_candidates, 32);
+            assert_eq!(scalar_candidates, 7);
+        }
         assert_eq!(
             grouped
                 .iter()
