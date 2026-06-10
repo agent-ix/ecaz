@@ -1,6 +1,6 @@
 # Task 97: TurboQuant QJL Block Kernel Family (Gamma + Residual Signs)
 
-Status: in review (2026-06-09; Phase 0 inventory approved, qjl32 attribution/design packet in `reviews/task-97/002-qjl32-counter-kind-and-design/`)
+Status: in review (2026-06-09; Phase 0 inventory approved, scalar qjl32 reference packet in `reviews/task-97/003-qjl32-scalar-reference/`)
 Owner: coder (to be assigned). Phase III parallel.
 Priority: 2 (QJL variant; per-candidate metadata complicates kernel)
 
