@@ -107,8 +107,9 @@ qjl_packed = &code[mse_len..mse_len + qjl_len]
 
 ## Scalar Pseudocode
 
-The scalar reference must match the existing pre-kernel scorer with
-`f32::to_bits()` equality:
+The scalar reference must match the forced-scalar pre-kernel scorer,
+`ProdQuantizer::score_ip_from_parts_scalar_reference`, with `f32::to_bits()`
+equality:
 
 ```text
 for candidate lane:
@@ -208,7 +209,9 @@ Minimum local tests before implementation proceeds past scalar:
   not increment `lut32_*` compatibility fields
 - `dim=1024,bits=4` reachability asserts `ExactScoreMode::MseLutQjl`
 - `len < 32`, `len == 32`, and `len > 32` scalar parity against
-  `score_ip_from_parts`
+  `score_ip_from_parts_scalar_reference`
+- production-dispatched `score_ip_from_parts` parity under ADR-076 tolerance
+  (`<= 4 ULP` or `1e-6` relative, whichever is larger)
 - shape mismatch rejects before counters increment
 - IVF/SPIRE/HNSW QuantCodec paths preserve candidate order and score parity
 

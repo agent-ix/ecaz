@@ -1,27 +1,29 @@
-    Finished `bench` profile [optimized + debuginfo] target(s) in 0.16s
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz)
+    Finished `bench` profile [optimized + debuginfo] target(s) in 4m 01s
      Running benches/criterion/quant_score.rs (target/release/deps/quant_score-aaf99c26a8049f61)
 Gnuplot not found, using plotters backend
 Benchmarking quant/qjl32_block32/scalar/d1024_b4
 Benchmarking quant/qjl32_block32/scalar/d1024_b4: Warming up for 1.0000 s
-Benchmarking quant/qjl32_block32/scalar/d1024_b4: Collecting 10 samples in estimated 2.0013 s (45k iterations)
+Benchmarking quant/qjl32_block32/scalar/d1024_b4: Collecting 10 samples in estimated 2.0001 s (57k iterations)
 Benchmarking quant/qjl32_block32/scalar/d1024_b4: Analyzing
 quant/qjl32_block32/scalar/d1024_b4
-                        time:   [35.394 µs 36.629 µs 38.119 µs]
-                        thrpt:  [839.47 Kelem/s 873.63 Kelem/s 904.10 Kelem/s]
+                        time:   [34.330 µs 35.000 µs 35.754 µs]
+                        thrpt:  [895.01 Kelem/s 914.27 Kelem/s 932.12 Kelem/s]
                  change:
-                        time:   [-3.6615% +2.9897% +10.026%] (p = 0.40 > 0.05)
-                        thrpt:  [-9.1124% -2.9030% +3.8006%]
+                        time:   [-11.072% -5.9100% -0.3113%] (p = 0.07 > 0.05)
+                        thrpt:  [+0.3123% +6.2812% +12.450%]
                         No change in performance detected.
+Found 2 outliers among 10 measurements (20.00%)
+  1 (10.00%) high mild
+  1 (10.00%) high severe
 Benchmarking quant/qjl32_block32/dispatch/d1024_b4
 Benchmarking quant/qjl32_block32/dispatch/d1024_b4: Warming up for 1.0000 s
-Benchmarking quant/qjl32_block32/dispatch/d1024_b4: Collecting 10 samples in estimated 2.0008 s (70k iterations)
+Benchmarking quant/qjl32_block32/dispatch/d1024_b4: Collecting 10 samples in estimated 2.0012 s (72k iterations)
 Benchmarking quant/qjl32_block32/dispatch/d1024_b4: Analyzing
 quant/qjl32_block32/dispatch/d1024_b4
-                        time:   [28.228 µs 28.355 µs 28.424 µs]
-                        thrpt:  [1.1258 Melem/s 1.1285 Melem/s 1.1336 Melem/s]
+                        time:   [28.089 µs 28.645 µs 29.658 µs]
+                        thrpt:  [1.0790 Melem/s 1.1171 Melem/s 1.1392 Melem/s]
                  change:
-                        time:   [-3.0975% -1.3392% +0.6008%] (p = 0.20 > 0.05)
-                        thrpt:  [-0.5973% +1.3573% +3.1965%]
+                        time:   [-0.3532% +1.8999% +4.3217%] (p = 0.17 > 0.05)
+                        thrpt:  [-4.1427% -1.8645% +0.3544%]
                         No change in performance detected.
-Found 1 outliers among 10 measurements (10.00%)
-  1 (10.00%) high mild
