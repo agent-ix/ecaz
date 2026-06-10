@@ -3779,6 +3779,52 @@ where
                             ));
                             continue;
                         }
+                        LoadedElementState::None
+                            if opaque.turboquant_exact_score_mode.batches_exact_scoring()
+                                && super::options::candidate_batch_scoring_enabled() =>
+                        {
+                            // V3 hot/cold TurboQuant tuples carry no inline
+                            // exact payload (graph.rs exact_payload() is None
+                            // for TurboHot), so batchable exact modes load the
+                            // cold payload here and join the batch flush; the
+                            // scoring batches even though the cold reads stay
+                            // per-candidate for now.
+                            if let Some(score) = cached_scan_element_score(opaque, neighbor.tid) {
+                                record_score_cache_hit(opaque);
+                                flush_turboquant_full_lut_payload_batch(
+                                    opaque,
+                                    &mut exact_payload_batch,
+                                    &mut candidates,
+                                );
+                                candidates.push(search::BeamCandidate::with_source(
+                                    neighbor.tid,
+                                    score,
+                                    source_tid,
+                                ));
+                            } else {
+                                let element = graph::load_exact_graph_element(
+                                    index_relation,
+                                    neighbor.tid,
+                                    opaque.scan_graph_storage,
+                                );
+                                if element.deleted || element.heaptids.is_empty() {
+                                    pgrx::error!(
+                                        "ec_hnsw cannot exact-score dead or heapless graph element {}:{}",
+                                        neighbor.tid.block_number,
+                                        neighbor.tid.offset_number
+                                    );
+                                }
+                                exact_payload_batch.push(HnswExactPayloadBatchCandidate {
+                                    source_tid,
+                                    element_tid: neighbor.tid,
+                                    payload: LoadedElementScoreInput {
+                                        gamma: element.gamma,
+                                        code_bytes: element.code,
+                                    },
+                                });
+                            }
+                            continue;
+                        }
                         other => {
                             flush_turboquant_full_lut_payload_batch(
                                 opaque,
