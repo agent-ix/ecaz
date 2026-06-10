@@ -34,6 +34,7 @@ pub mod mse;
 pub mod prod;
 pub mod qjl;
 pub mod rabitq;
+pub(crate) mod rabitq32;
 pub mod rotation;
 mod simd;
 pub mod traits;

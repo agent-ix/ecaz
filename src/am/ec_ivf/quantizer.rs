@@ -1,8 +1,8 @@
 use super::options::StorageFormat;
 use super::page;
 use crate::am::common::candidate_batch::{
-    score_turboquant_no_qjl_4bit_batch_for, CandidateBatch, CandidateBatchScoringSurface,
-    CandidateMeta, CandidatePayload,
+    score_rabitq_bits1_batch_for, score_turboquant_no_qjl_4bit_batch_for, CandidateBatch,
+    CandidateBatchScoringSurface, CandidateMeta, CandidatePayload,
 };
 use crate::am::common::quant_codec::{
     EncodedQuantPayload, QuantCodec, QuantCodecKind, QuantSearchCodecTag,
@@ -381,7 +381,33 @@ impl IvfQuantizer {
     ) -> Result<bool, String> {
         match (self.profile, prepared_query) {
             (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::RaBitQ(prepared_query))
-                if self.rabitq_bits == 1 || self.rabitq_bits == 8 =>
+                if self.rabitq_bits == 1 =>
+            {
+                if payload_len == 0 || payloads.len() % payload_len != 0 {
+                    return Err(format!(
+                        "ec_ivf RaBitQ bits=1 batch payload slab length {} is not divisible by code length {payload_len}",
+                        payloads.len()
+                    ));
+                }
+                let prepared = prepared_query.bits1_block_prepared(payload_len).ok_or_else(
+                    || "ec_ivf RaBitQ bits=1 prepared query missing block state".to_owned(),
+                )?;
+                let mut batch = CandidateBatch::with_capacity(payloads.len() / payload_len);
+                for (index, payload) in payloads.chunks_exact(payload_len).enumerate() {
+                    batch.push(index, CandidatePayload::new(payload, CandidateMeta::RaBitQ))?;
+                }
+                out_scores.clear();
+                out_scores.resize(batch.len(), 0.0);
+                score_rabitq_bits1_batch_for(
+                    CandidateBatchScoringSurface::Ivf,
+                    prepared,
+                    &batch,
+                    out_scores,
+                )?;
+                Ok(true)
+            }
+            (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::RaBitQ(prepared_query))
+                if self.rabitq_bits == 8 =>
             {
                 prepared_query.estimate_ip_batch(payloads, payload_len, out_scores)?;
                 Ok(true)
@@ -719,6 +745,21 @@ impl QuantCodec for IvfQuantCodec<'_> {
                     CandidateBatchScoringSurface::Ivf,
                     quantizer.as_ref(),
                     prepared_query,
+                    batch,
+                    out_scores,
+                )
+            }
+            (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::RaBitQ(prepared_query))
+                if self.quantizer.rabitq_bits == 1 =>
+            {
+                let prepared = prepared_query
+                    .bits1_block_prepared(self.quantizer.payload_len())
+                    .ok_or_else(|| {
+                        "ec_ivf RaBitQ bits=1 prepared query missing block state".to_owned()
+                    })?;
+                score_rabitq_bits1_batch_for(
+                    CandidateBatchScoringSurface::Ivf,
+                    prepared,
                     batch,
                     out_scores,
                 )
@@ -1409,6 +1450,58 @@ mod tests {
             assert!(
                 (batch_scores[index] - scalar).abs() < 1e-6,
                 "index={index} batch={} scalar={scalar}",
+                batch_scores[index]
+            );
+        }
+    }
+
+    #[test]
+    fn rabitq_bits1_batch_dispatch_routes_through_block_kernel() {
+        let dimensions = 40;
+        let query = unit_vector(dimensions);
+        let dispatch = IvfQuantizer::resolve_with_pq_group_size_and_bits(
+            StorageFormat::RaBitQ,
+            dimensions,
+            None,
+            Some(1),
+        )
+        .unwrap();
+        let prepared = dispatch.prepare_ip_query(&query).unwrap();
+        let payloads = (0..35)
+            .flat_map(|row| {
+                let source = (0..dimensions)
+                    .map(|col| ((row * 3 + col) as f32).sin())
+                    .collect::<Vec<_>>();
+                let (_, _, payload) = dispatch.encode_source(&source).unwrap();
+                payload
+            })
+            .collect::<Vec<_>>();
+        let mut batch_scores = Vec::new();
+
+        let used_batch = dispatch
+            .score_ip_bits1_batch_from_payloads(
+                &prepared,
+                &payloads,
+                dispatch.payload_len(),
+                &mut batch_scores,
+            )
+            .unwrap();
+
+        assert!(used_batch);
+        assert_eq!(batch_scores.len(), 35);
+        let IvfPreparedQuery::RaBitQ(estimator) = &prepared else {
+            panic!("RaBitQ profile should prepare a RaBitQ query");
+        };
+        let block_prepared = estimator
+            .bits1_block_prepared(dispatch.payload_len())
+            .expect("bits=1 block prepared should exist");
+        for (index, payload) in payloads.chunks_exact(dispatch.payload_len()).enumerate() {
+            let kernel_scalar =
+                crate::quant::rabitq32::score_rabitq_bits1_scalar(block_prepared, payload);
+            assert_eq!(
+                batch_scores[index].to_bits(),
+                kernel_scalar.to_bits(),
+                "index={index} batch={} kernel={kernel_scalar}",
                 batch_scores[index]
             );
         }

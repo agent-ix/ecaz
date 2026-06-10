@@ -83,34 +83,43 @@ impl<'a, Id, Meta> CandidateBatch<'a, Id, Meta> {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum CandidateBatchScoringSurface {
-    Spire,
     Ivf,
+    Diskann,
+    Spire,
     Hnsw,
     Unknown,
 }
 
 impl CandidateBatchScoringSurface {
-    const TASK87_ALL: [Self; 4] = [Self::Spire, Self::Ivf, Self::Hnsw, Self::Unknown];
+    const TASK87_ALL: [Self; 5] = [
+        Self::Ivf,
+        Self::Diskann,
+        Self::Spire,
+        Self::Hnsw,
+        Self::Unknown,
+    ];
 
     pub(crate) fn label(self) -> &'static str {
         match self {
-            Self::Spire => "spire",
             Self::Ivf => "ivf",
+            Self::Diskann => "diskann",
+            Self::Spire => "spire",
             Self::Hnsw => "hnsw",
             Self::Unknown => "unknown",
         }
     }
 
-    fn task87_all() -> [Self; 4] {
+    fn task87_all() -> [Self; 5] {
         Self::TASK87_ALL
     }
 
     fn index(self) -> usize {
         match self {
-            Self::Spire => 0,
-            Self::Ivf => 1,
-            Self::Hnsw => 2,
-            Self::Unknown => 3,
+            Self::Ivf => 0,
+            Self::Diskann => 1,
+            Self::Spire => 2,
+            Self::Hnsw => 3,
+            Self::Unknown => 4,
         }
     }
 }
@@ -250,7 +259,7 @@ impl BlockKernelCounters {
     }
 }
 
-const SURFACE_COUNT: usize = 4;
+const SURFACE_COUNT: usize = 5;
 const QUANT_COUNT: usize = 4;
 const ISA_COUNT: usize = 5;
 
@@ -283,7 +292,12 @@ pub(crate) fn reset_candidate_batch_scoring_counters() {
 }
 
 pub(crate) fn candidate_batch_scoring_snapshots() -> [CandidateBatchScoringSnapshot; 4] {
-    CandidateBatchScoringSurface::task87_all().map(candidate_batch_surface_snapshot)
+    [
+        candidate_batch_surface_snapshot(CandidateBatchScoringSurface::Spire),
+        candidate_batch_surface_snapshot(CandidateBatchScoringSurface::Ivf),
+        candidate_batch_surface_snapshot(CandidateBatchScoringSurface::Hnsw),
+        candidate_batch_surface_snapshot(CandidateBatchScoringSurface::Unknown),
+    ]
 }
 
 pub(crate) fn block_kernel_scoring_snapshots() -> Vec<BlockKernelScoringSnapshot> {
@@ -380,6 +394,122 @@ pub(crate) fn record_block_scalar_score_for(
         isa: Isa::Scalar,
     };
     block_kernel_counters(key).record_scalar(candidate_count, elapsed_nanos);
+}
+
+pub(crate) fn score_rabitq_bits1_batch_for<Id>(
+    surface: CandidateBatchScoringSurface,
+    prepared: crate::quant::rabitq32::PreparedBits1<'_>,
+    batch: &CandidateBatch<'_, Id>,
+    out_scores: &mut [f32],
+) -> Result<(), String> {
+    let result = score_rabitq_bits1_batch_inner(prepared, batch, out_scores);
+    if let Ok(timing) = &result {
+        let key = BlockKernelCounterKey {
+            surface,
+            quant_kind: QuantCodecKind::RaBitQ,
+            isa: timing.kernel_isa.unwrap_or(Isa::Scalar),
+        };
+        record_block_kernel_score(key, timing.kernel_candidates, timing.kernel_elapsed_nanos);
+        record_block_scalar_score_for(
+            surface,
+            QuantCodecKind::RaBitQ,
+            timing.scalar_candidates,
+            timing.scalar_elapsed_nanos,
+        );
+    }
+    result.map(|_| ())
+}
+
+fn score_rabitq_bits1_batch_inner<Id>(
+    prepared: crate::quant::rabitq32::PreparedBits1<'_>,
+    batch: &CandidateBatch<'_, Id>,
+    out_scores: &mut [f32],
+) -> Result<BatchScoringTiming, String> {
+    if batch.len() != out_scores.len() {
+        return Err(format!(
+            "rabitq32 score output count {} does not match candidate count {}",
+            out_scores.len(),
+            batch.len()
+        ));
+    }
+    prepared.validate()?;
+
+    for (index, payload) in batch.payloads().iter().enumerate() {
+        validate_rabitq_bits1_meta(payload.meta)?;
+        crate::quant::rabitq32::validate_code_shape(index, prepared, payload.code)?;
+    }
+
+    if batch.len() >= crate::quant::rabitq32::BLOCK_WIDTH {
+        return score_rabitq_bits1_batch_blocked(prepared, batch, out_scores);
+    }
+
+    let scalar_started = Instant::now();
+    for (payload, out_score) in batch.payloads().iter().zip(out_scores.iter_mut()) {
+        *out_score = crate::quant::rabitq32::score_rabitq_bits1_scalar(prepared, payload.code);
+    }
+    Ok(BatchScoringTiming {
+        scalar_candidates: batch.len(),
+        scalar_elapsed_nanos: u64::try_from(scalar_started.elapsed().as_nanos())
+            .unwrap_or(u64::MAX),
+        ..BatchScoringTiming::default()
+    })
+}
+
+fn score_rabitq_bits1_batch_blocked<Id>(
+    prepared: crate::quant::rabitq32::PreparedBits1<'_>,
+    batch: &CandidateBatch<'_, Id>,
+    out_scores: &mut [f32],
+) -> Result<BatchScoringTiming, String> {
+    let mut block_start = 0usize;
+    let mut timing = BatchScoringTiming::default();
+    while block_start + crate::quant::rabitq32::BLOCK_WIDTH <= batch.len() {
+        let block_started = Instant::now();
+        let payloads =
+            &batch.payloads()[block_start..block_start + crate::quant::rabitq32::BLOCK_WIDTH];
+        let mut codes = [&[][..]; crate::quant::rabitq32::BLOCK_WIDTH];
+        for (lane, payload) in payloads.iter().enumerate() {
+            codes[lane] = payload.code;
+        }
+        let isa = crate::quant::rabitq32::score_rabitq_bits1_block32(
+            prepared,
+            codes,
+            &mut out_scores[block_start..block_start + crate::quant::rabitq32::BLOCK_WIDTH],
+        );
+        timing.kernel_isa = Some(isa);
+        timing.kernel_candidates += crate::quant::rabitq32::BLOCK_WIDTH;
+        timing.kernel_elapsed_nanos = timing
+            .kernel_elapsed_nanos
+            .saturating_add(u64::try_from(block_started.elapsed().as_nanos()).unwrap_or(u64::MAX));
+        block_start += crate::quant::rabitq32::BLOCK_WIDTH;
+    }
+
+    let scalar_started = Instant::now();
+    for (payload, out_score) in batch.payloads()[block_start..]
+        .iter()
+        .zip(out_scores[block_start..].iter_mut())
+    {
+        timing.scalar_candidates += 1;
+        *out_score = crate::quant::rabitq32::score_rabitq_bits1_scalar(prepared, payload.code);
+    }
+    if timing.scalar_candidates > 0 {
+        timing.scalar_elapsed_nanos =
+            u64::try_from(scalar_started.elapsed().as_nanos()).unwrap_or(u64::MAX);
+    }
+
+    Ok(timing)
+}
+
+fn validate_rabitq_bits1_meta(meta: CandidateMeta<'_>) -> Result<(), String> {
+    match meta {
+        CandidateMeta::None | CandidateMeta::RaBitQ => Ok(()),
+        CandidateMeta::Gamma(0.0) => Ok(()),
+        CandidateMeta::Gamma(_)
+        | CandidateMeta::GammaAndResidualSigns { .. }
+        | CandidateMeta::Binary
+        | CandidateMeta::GroupedPq { .. } => {
+            Err("RaBitQ bits=1 batch received incompatible candidate metadata".to_owned())
+        }
+    }
 }
 
 pub(crate) fn score_turboquant_no_qjl_4bit_batch<Id>(
@@ -746,6 +876,194 @@ mod tests {
         assert_eq!(scalar.scalar_flushes, 1);
         assert_eq!(scalar.scalar_candidates, 7);
         assert_eq!(scalar.scalar_elapsed_nanos, 20);
+    }
+
+    #[test]
+    fn rabitq_bits1_batch_records_block_and_tail_counters() {
+        let _guard = COUNTER_TEST_LOCK.lock().unwrap();
+        super::reset_candidate_batch_scoring_counters();
+        let dimensions = 40;
+        let quantizer =
+            crate::quant::rabitq::RaBitQQuantizer::cached_seeded_srht_bits(dimensions, 42, 1)
+                .unwrap();
+        let query = random_unit_vector(dimensions, 331);
+        let prepared = quantizer.prepare_estimator(&query);
+        let block_prepared = prepared
+            .bits1_block_prepared(crate::quant::Quantizer::code_len(quantizer.as_ref()))
+            .unwrap();
+        let encoded: Vec<_> = (0..39)
+            .map(|seed| {
+                crate::quant::Quantizer::encode_code(
+                    quantizer.as_ref(),
+                    &random_unit_vector(dimensions, seed + 400),
+                )
+                .into_vec()
+            })
+            .collect();
+        let mut batch = CandidateBatch::with_capacity(encoded.len());
+        for (index, payload) in encoded.iter().enumerate() {
+            batch
+                .push(index, CandidatePayload::new(payload, CandidateMeta::RaBitQ))
+                .unwrap();
+        }
+        let mut batch_scores = vec![0.0; batch.len()];
+
+        super::score_rabitq_bits1_batch_for(
+            CandidateBatchScoringSurface::Diskann,
+            block_prepared,
+            &batch,
+            &mut batch_scores,
+        )
+        .unwrap();
+
+        for (payload, score) in encoded.iter().zip(batch_scores.iter()) {
+            let scalar = crate::quant::rabitq32::score_rabitq_bits1_scalar(block_prepared, payload);
+            assert_eq!(score.to_bits(), scalar.to_bits());
+        }
+        let block_snapshots = super::block_kernel_scoring_snapshots();
+        let block = block_snapshots
+            .iter()
+            .find(|snapshot| {
+                snapshot.surface == "diskann"
+                    && snapshot.quant_kind == "rabitq"
+                    && snapshot.isa == "scalar"
+            })
+            .unwrap();
+        assert_eq!(block.flushes, 2);
+        assert_eq!(block.candidates, 39);
+        assert_eq!(block.kernel_flushes, 1);
+        assert_eq!(block.kernel_candidates, 32);
+        assert_eq!(block.scalar_flushes, 1);
+        assert_eq!(block.scalar_candidates, 7);
+    }
+
+    #[test]
+    fn rabitq_bits1_batch_below_width_records_scalar_only() {
+        let _guard = COUNTER_TEST_LOCK.lock().unwrap();
+        super::reset_candidate_batch_scoring_counters();
+        let dimensions = 40;
+        let quantizer =
+            crate::quant::rabitq::RaBitQQuantizer::cached_seeded_srht_bits(dimensions, 42, 1)
+                .unwrap();
+        let query = random_unit_vector(dimensions, 733);
+        let prepared = quantizer.prepare_estimator(&query);
+        let block_prepared = prepared
+            .bits1_block_prepared(crate::quant::Quantizer::code_len(quantizer.as_ref()))
+            .unwrap();
+        let encoded: Vec<_> = (0..7)
+            .map(|seed| {
+                crate::quant::Quantizer::encode_code(
+                    quantizer.as_ref(),
+                    &random_unit_vector(dimensions, seed + 500),
+                )
+                .into_vec()
+            })
+            .collect();
+        let mut batch = CandidateBatch::with_capacity(encoded.len());
+        for (index, payload) in encoded.iter().enumerate() {
+            batch
+                .push(index, CandidatePayload::new(payload, CandidateMeta::RaBitQ))
+                .unwrap();
+        }
+        let mut batch_scores = vec![0.0; batch.len()];
+
+        super::score_rabitq_bits1_batch_for(
+            CandidateBatchScoringSurface::Ivf,
+            block_prepared,
+            &batch,
+            &mut batch_scores,
+        )
+        .unwrap();
+
+        for (payload, score) in encoded.iter().zip(batch_scores.iter()) {
+            let scalar = crate::quant::rabitq32::score_rabitq_bits1_scalar(block_prepared, payload);
+            assert_eq!(score.to_bits(), scalar.to_bits());
+        }
+        let block_snapshots = super::block_kernel_scoring_snapshots();
+        let block = block_snapshots
+            .iter()
+            .find(|snapshot| {
+                snapshot.surface == "ivf"
+                    && snapshot.quant_kind == "rabitq"
+                    && snapshot.isa == "scalar"
+            })
+            .unwrap();
+        assert_eq!(block.flushes, 1);
+        assert_eq!(block.candidates, 7);
+        assert_eq!(block.kernel_flushes, 0);
+        assert_eq!(block.kernel_candidates, 0);
+        assert_eq!(block.scalar_flushes, 1);
+        assert_eq!(block.scalar_candidates, 7);
+    }
+
+    #[test]
+    fn rabitq_bits1_batch_shape_mismatch_rejects_before_counters() {
+        let _guard = COUNTER_TEST_LOCK.lock().unwrap();
+        super::reset_candidate_batch_scoring_counters();
+        let dimensions = 40;
+        let quantizer =
+            crate::quant::rabitq::RaBitQQuantizer::cached_seeded_srht_bits(dimensions, 42, 1)
+                .unwrap();
+        let query = random_unit_vector(dimensions, 877);
+        let prepared = quantizer.prepare_estimator(&query);
+        let block_prepared = prepared
+            .bits1_block_prepared(crate::quant::Quantizer::code_len(quantizer.as_ref()))
+            .unwrap();
+        let encoded = crate::quant::Quantizer::encode_code(
+            quantizer.as_ref(),
+            &random_unit_vector(dimensions, 901),
+        )
+        .into_vec();
+
+        let truncated = &encoded[..encoded.len() - 1];
+        let mut batch = CandidateBatch::with_capacity(1);
+        batch
+            .push(
+                0_usize,
+                CandidatePayload::new(truncated, CandidateMeta::RaBitQ),
+            )
+            .unwrap();
+        let mut batch_scores = vec![0.0; 1];
+        assert!(super::score_rabitq_bits1_batch_for(
+            CandidateBatchScoringSurface::Ivf,
+            block_prepared,
+            &batch,
+            &mut batch_scores,
+        )
+        .is_err());
+
+        let mut meta_batch = CandidateBatch::with_capacity(1);
+        meta_batch
+            .push(
+                0_usize,
+                CandidatePayload::new(encoded.as_slice(), CandidateMeta::Binary),
+            )
+            .unwrap();
+        assert!(super::score_rabitq_bits1_batch_for(
+            CandidateBatchScoringSurface::Ivf,
+            block_prepared,
+            &meta_batch,
+            &mut batch_scores,
+        )
+        .is_err());
+
+        let mut count_batch = CandidateBatch::with_capacity(1);
+        count_batch
+            .push(
+                0_usize,
+                CandidatePayload::new(encoded.as_slice(), CandidateMeta::RaBitQ),
+            )
+            .unwrap();
+        let mut wrong_len_scores = vec![0.0; 2];
+        assert!(super::score_rabitq_bits1_batch_for(
+            CandidateBatchScoringSurface::Ivf,
+            block_prepared,
+            &count_batch,
+            &mut wrong_len_scores,
+        )
+        .is_err());
+
+        assert!(super::block_kernel_scoring_snapshots().is_empty());
     }
 
     fn random_unit_vector(dim: usize, seed: u64) -> Vec<f32> {

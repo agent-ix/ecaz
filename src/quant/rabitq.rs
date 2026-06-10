@@ -888,6 +888,23 @@ impl PreparedEstimator {
     pub fn bits_per_dim(&self) -> u8 {
         self.bits_per_dim
     }
+
+    pub(crate) fn bits1_block_prepared(
+        &self,
+        code_len: usize,
+    ) -> Option<crate::quant::rabitq32::PreparedBits1<'_>> {
+        if self.bits_per_dim != 1 {
+            return None;
+        }
+        let bits1_byte_lut = self.bits1_byte_lut.as_deref()?;
+        Some(crate::quant::rabitq32::PreparedBits1 {
+            dimensions: self.dimensions,
+            code_len,
+            query_rotated: &self.query_rotated,
+            bits1_byte_lut,
+        })
+    }
+
     pub fn estimate_ip(&self, code: &[u8]) -> DistanceEstimate {
         estimate_ip_impl(
             &self.query_rotated,
@@ -1219,6 +1236,24 @@ impl crate::quant::QueryScorer for RaBitQScorer {
             self.bits8_query_offset.as_slice(),
             code,
         )
+    }
+}
+
+impl RaBitQScorer {
+    pub(crate) fn bits1_block_prepared(
+        &self,
+        code_len: usize,
+    ) -> Option<crate::quant::rabitq32::PreparedBits1<'_>> {
+        if self.bits_per_dim != 1 {
+            return None;
+        }
+        let bits1_byte_lut = self.bits1_byte_lut.as_deref()?;
+        Some(crate::quant::rabitq32::PreparedBits1 {
+            dimensions: self.dimensions,
+            code_len,
+            query_rotated: &self.query_rotated,
+            bits1_byte_lut,
+        })
     }
 }
 

@@ -9,8 +9,8 @@ use pgrx::{pg_sys, FromDatum, PgBox};
 use crate::am::common::{
     callback::pg_am_callback,
     candidate_batch::{
-        score_turboquant_no_qjl_4bit_batch_for, CandidateBatch, CandidateBatchScoringSurface,
-        CandidateMeta, CandidatePayload,
+        score_rabitq_bits1_batch_for, score_turboquant_no_qjl_4bit_batch_for, CandidateBatch,
+        CandidateBatchScoringSurface, CandidateMeta, CandidatePayload,
     },
     heap_slot::HeapSlotReader,
     quant_codec::{EncodedQuantPayload, QuantCodec, QuantCodecKind, QuantSearchCodecTag},
@@ -3071,6 +3071,36 @@ impl QuantCodec for HnswRaBitQScanCodec {
         }
         use crate::quant::QueryScorer;
         Ok(prepared_query.score(payload.code))
+    }
+
+    fn score_ip_batch<Id>(
+        &self,
+        prepared_query: &Self::PreparedQuery,
+        batch: &CandidateBatch<'_, Id>,
+        out_scores: &mut [f32],
+    ) -> Result<(), String> {
+        if self.bits != 1 {
+            if batch.len() != out_scores.len() {
+                return Err(format!(
+                    "quant codec batch output count {} does not match candidate count {}",
+                    out_scores.len(),
+                    batch.len()
+                ));
+            }
+            for (payload, out_score) in batch.payloads().iter().zip(out_scores.iter_mut()) {
+                *out_score = self.score_ip_candidate(prepared_query, *payload)?;
+            }
+            return Ok(());
+        }
+        let prepared = prepared_query
+            .bits1_block_prepared(self.search_code_len)
+            .ok_or_else(|| "ec_hnsw RaBitQ bits=1 prepared query missing block state".to_owned())?;
+        score_rabitq_bits1_batch_for(
+            CandidateBatchScoringSurface::Hnsw,
+            prepared,
+            batch,
+            out_scores,
+        )
     }
 }
 
