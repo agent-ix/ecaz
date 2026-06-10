@@ -1,0 +1,507 @@
+{
+  "suite": "task97-local-qjl32-suite",
+  "schema_version": 1,
+  "config": "reviews/task-97/009-local-qjl32-suite/artifacts/task97-local-qjl32-suite.json",
+  "config_sha256": "c7de20321b38011af9da33f5d52d37d48984df4c004d1d4219b264d44d3ecd97",
+  "dry_run": false,
+  "generated_at_unix_ms": 1781067253713,
+  "connection": {
+    "database": "postgres",
+    "host": "/home/peter/.pgrx",
+    "port": 28818,
+    "user": null,
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "generate-qjl32-corpus",
+      "kind": "raw",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "task97",
+        "local",
+        "fixture",
+        "dim=1024",
+        "bits=4",
+        "seed=42"
+      ],
+      "expected_artifacts": [
+        "reviews/task-97/016-qjl32-avx2-transpose/artifacts/generate-qjl32-corpus.log",
+        "reviews/task-97/016-qjl32-avx2-transpose/artifacts/task97_qjl32_corpus.tsv"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "generate-qjl32-queries",
+      "kind": "raw",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "task97",
+        "local",
+        "fixture",
+        "dim=1024",
+        "bits=4",
+        "seed=43"
+      ],
+      "expected_artifacts": [
+        "reviews/task-97/016-qjl32-avx2-transpose/artifacts/generate-qjl32-queries.log",
+        "reviews/task-97/016-qjl32-avx2-transpose/artifacts/task97_qjl32_queries.tsv"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-ivf-turboquant-qjl32",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "quant": "turboquant_qjl",
+      "tags": [
+        "task97",
+        "local",
+        "ivf",
+        "turboquant_qjl",
+        "dim=1024",
+        "quant=turboquant_qjl"
+      ],
+      "expected_artifacts": [
+        "reviews/task-97/016-qjl32-avx2-transpose/artifacts/load-ivf-turboquant-qjl32.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-spire-turboquant-qjl32",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "quant": "turboquant_qjl",
+      "tags": [
+        "task97",
+        "local",
+        "spire",
+        "turboquant_qjl",
+        "dim=1024",
+        "quant=turboquant_qjl"
+      ],
+      "expected_artifacts": [
+        "reviews/task-97/016-qjl32-avx2-transpose/artifacts/load-spire-turboquant-qjl32.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "load-hnsw-turboquant-qjl32",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "quant": "turboquant_qjl",
+      "tags": [
+        "task97",
+        "local",
+        "hnsw",
+        "turboquant_qjl",
+        "dim=1024",
+        "quant=turboquant_qjl"
+      ],
+      "expected_artifacts": [
+        "reviews/task-97/016-qjl32-avx2-transpose/artifacts/load-hnsw-turboquant-qjl32.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "recall-ivf-turboquant-qjl32-batch-on",
+      "kind": "recall",
+      "command": [
+        "--database",
+        "postgres",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "recall",
+        "--prefix",
+        "task97_qjl32_ivf",
+        "--profile",
+        "ec_ivf",
+        "--k",
+        "10",
+        "--sweep",
+        "8,16",
+        "--ivf-scratch-soa-batch-decode",
+        "--queries-limit",
+        "32",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--log-output",
+        "reviews/task-97/016-qjl32-avx2-transpose/artifacts/recall-ivf-turboquant-qjl32-batch-on.log"
+      ],
+      "selected": true,
+      "quant": "turboquant_qjl",
+      "tags": [
+        "task97",
+        "local",
+        "ivf",
+        "turboquant_qjl",
+        "kernel_on",
+        "dim=1024",
+        "quant=turboquant_qjl"
+      ],
+      "expected_artifacts": [
+        "reviews/task-97/016-qjl32-avx2-transpose/artifacts/recall-ivf-turboquant-qjl32-batch-on.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1781067253714,
+      "finished_at_unix_ms": 1781067254549,
+      "duration_ms": 834,
+      "exit_code": 0
+    },
+    {
+      "name": "latency-ivf-turboquant-qjl32-batch-on",
+      "kind": "latency",
+      "command": [
+        "--database",
+        "postgres",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "latency",
+        "--prefix",
+        "task97_qjl32_ivf",
+        "--profile",
+        "ec_ivf",
+        "--k",
+        "10",
+        "--concurrency",
+        "1",
+        "--iterations",
+        "100",
+        "--sweep",
+        "8,16",
+        "--ivf-scratch-soa-batch-decode",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--cache-state",
+        "task97_qjl32_ivf_batch_on",
+        "--task87-candidate-batch-counters",
+        "--memory-sample-interval-ms",
+        "25",
+        "--log-output",
+        "reviews/task-97/016-qjl32-avx2-transpose/artifacts/latency-ivf-turboquant-qjl32-batch-on.log"
+      ],
+      "selected": true,
+      "quant": "turboquant_qjl",
+      "isa": "avx2",
+      "tags": [
+        "task97",
+        "local",
+        "ivf",
+        "turboquant_qjl",
+        "kernel_on",
+        "dim=1024",
+        "quant=turboquant_qjl",
+        "isa=avx2"
+      ],
+      "expected_artifacts": [
+        "reviews/task-97/016-qjl32-avx2-transpose/artifacts/latency-ivf-turboquant-qjl32-batch-on.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1781067254550,
+      "finished_at_unix_ms": 1781067254862,
+      "duration_ms": 300,
+      "exit_code": 0
+    },
+    {
+      "name": "latency-ivf-turboquant-qjl32-batch-off",
+      "kind": "latency",
+      "command": [],
+      "selected": false,
+      "quant": "turboquant_qjl",
+      "isa": "avx2",
+      "tags": [
+        "task97",
+        "local",
+        "ivf",
+        "turboquant_qjl",
+        "kernel_off",
+        "dim=1024",
+        "quant=turboquant_qjl",
+        "isa=avx2"
+      ],
+      "expected_artifacts": [
+        "reviews/task-97/016-qjl32-avx2-transpose/artifacts/latency-ivf-turboquant-qjl32-batch-off.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "recall-spire-turboquant-qjl32-batch-on",
+      "kind": "recall",
+      "command": [
+        "--database",
+        "postgres",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "recall",
+        "--prefix",
+        "task97_qjl32_spire",
+        "--profile",
+        "ec_spire",
+        "--k",
+        "10",
+        "--sweep",
+        "8,16",
+        "--queries-limit",
+        "32",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--log-output",
+        "reviews/task-97/016-qjl32-avx2-transpose/artifacts/recall-spire-turboquant-qjl32-batch-on.log"
+      ],
+      "selected": true,
+      "quant": "turboquant_qjl",
+      "tags": [
+        "task97",
+        "local",
+        "spire",
+        "turboquant_qjl",
+        "kernel_on",
+        "dim=1024",
+        "quant=turboquant_qjl"
+      ],
+      "expected_artifacts": [
+        "reviews/task-97/016-qjl32-avx2-transpose/artifacts/recall-spire-turboquant-qjl32-batch-on.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1781067254862,
+      "finished_at_unix_ms": 1781067256479,
+      "duration_ms": 1605,
+      "exit_code": 0
+    },
+    {
+      "name": "latency-spire-turboquant-qjl32-batch-on",
+      "kind": "latency",
+      "command": [
+        "--database",
+        "postgres",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "latency",
+        "--prefix",
+        "task97_qjl32_spire",
+        "--profile",
+        "ec_spire",
+        "--k",
+        "10",
+        "--concurrency",
+        "1",
+        "--iterations",
+        "100",
+        "--sweep",
+        "8,16",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--cache-state",
+        "task97_qjl32_spire_batch_on",
+        "--task87-candidate-batch-counters",
+        "--memory-sample-interval-ms",
+        "25",
+        "--log-output",
+        "reviews/task-97/016-qjl32-avx2-transpose/artifacts/latency-spire-turboquant-qjl32-batch-on.log"
+      ],
+      "selected": true,
+      "quant": "turboquant_qjl",
+      "isa": "avx2",
+      "tags": [
+        "task97",
+        "local",
+        "spire",
+        "turboquant_qjl",
+        "kernel_on",
+        "dim=1024",
+        "quant=turboquant_qjl",
+        "isa=avx2"
+      ],
+      "expected_artifacts": [
+        "reviews/task-97/016-qjl32-avx2-transpose/artifacts/latency-spire-turboquant-qjl32-batch-on.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1781067256480,
+      "finished_at_unix_ms": 1781067259149,
+      "duration_ms": 2665,
+      "exit_code": 0
+    },
+    {
+      "name": "latency-spire-turboquant-qjl32-batch-off",
+      "kind": "latency",
+      "command": [],
+      "selected": false,
+      "quant": "turboquant_qjl",
+      "isa": "avx2",
+      "tags": [
+        "task97",
+        "local",
+        "spire",
+        "turboquant_qjl",
+        "kernel_off",
+        "dim=1024",
+        "quant=turboquant_qjl",
+        "isa=avx2"
+      ],
+      "expected_artifacts": [
+        "reviews/task-97/016-qjl32-avx2-transpose/artifacts/latency-spire-turboquant-qjl32-batch-off.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "recall-hnsw-turboquant-qjl32-batch-on",
+      "kind": "recall",
+      "command": [
+        "--database",
+        "postgres",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "recall",
+        "--prefix",
+        "task97_qjl32_hnsw",
+        "--profile",
+        "ec_hnsw",
+        "--k",
+        "10",
+        "--sweep",
+        "32",
+        "--queries-limit",
+        "32",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--log-output",
+        "reviews/task-97/016-qjl32-avx2-transpose/artifacts/recall-hnsw-turboquant-qjl32-batch-on.log"
+      ],
+      "selected": true,
+      "quant": "turboquant_qjl",
+      "tags": [
+        "task97",
+        "local",
+        "hnsw",
+        "turboquant_qjl",
+        "kernel_on",
+        "dim=1024",
+        "quant=turboquant_qjl"
+      ],
+      "expected_artifacts": [
+        "reviews/task-97/016-qjl32-avx2-transpose/artifacts/recall-hnsw-turboquant-qjl32-batch-on.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1781067259150,
+      "finished_at_unix_ms": 1781067259980,
+      "duration_ms": 828,
+      "exit_code": 0
+    },
+    {
+      "name": "latency-hnsw-turboquant-qjl32-batch-on",
+      "kind": "latency",
+      "command": [
+        "--database",
+        "postgres",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "latency",
+        "--prefix",
+        "task97_qjl32_hnsw",
+        "--profile",
+        "ec_hnsw",
+        "--k",
+        "10",
+        "--concurrency",
+        "1",
+        "--iterations",
+        "100",
+        "--sweep",
+        "32",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--cache-state",
+        "task97_qjl32_hnsw_batch_on",
+        "--task87-candidate-batch-counters",
+        "--memory-sample-interval-ms",
+        "25",
+        "--log-output",
+        "reviews/task-97/016-qjl32-avx2-transpose/artifacts/latency-hnsw-turboquant-qjl32-batch-on.log"
+      ],
+      "selected": true,
+      "quant": "turboquant_qjl",
+      "isa": "avx2",
+      "tags": [
+        "task97",
+        "local",
+        "hnsw",
+        "turboquant_qjl",
+        "kernel_on",
+        "dim=1024",
+        "quant=turboquant_qjl",
+        "isa=avx2"
+      ],
+      "expected_artifacts": [
+        "reviews/task-97/016-qjl32-avx2-transpose/artifacts/latency-hnsw-turboquant-qjl32-batch-on.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1781067259981,
+      "finished_at_unix_ms": 1781067260232,
+      "duration_ms": 249,
+      "exit_code": 0
+    },
+    {
+      "name": "latency-hnsw-turboquant-qjl32-batch-off",
+      "kind": "latency",
+      "command": [],
+      "selected": false,
+      "quant": "turboquant_qjl",
+      "isa": "avx2",
+      "tags": [
+        "task97",
+        "local",
+        "hnsw",
+        "turboquant_qjl",
+        "kernel_off",
+        "dim=1024",
+        "quant=turboquant_qjl",
+        "isa=avx2"
+      ],
+      "expected_artifacts": [
+        "reviews/task-97/016-qjl32-avx2-transpose/artifacts/latency-hnsw-turboquant-qjl32-batch-off.log"
+      ],
+      "status": "skipped"
+    }
+  ]
+}

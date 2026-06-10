@@ -1,0 +1,17 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.16s
+     Running unittests src/lib.rs (target/debug/deps/ecaz-c2925dc8ee61e76b)
+
+running 10 tests
+test quant::qjl32::tests::qjl32_avx2_block32_matches_pre_slice_scorer_tolerance ... ok
+test quant::qjl32::tests::qjl32_block32_matches_pre_slice_scorer_bits ... ok
+test quant::qjl32::tests::qjl32_batch_with_blocks_and_tail_matches_pre_slice_scorer_bits ... ok
+test quant::qjl32::tests::qjl32_scalar_matches_pre_slice_scorer_bits ... ok
+test quant::qjl32::tests::qjl32_block32_matches_production_dispatch_tolerance ... ok
+test am::ec_hnsw::scan::tests::hnsw_turboquant_qjl_scan_codec_batch_uses_qjl32_path ... ok
+test quant::qjl32::tests::qjl32_scalar_reference_matches_production_dispatch_tolerance ... ok
+test quant::qjl32::tests::qjl32_sve_block32_matches_pre_slice_scorer_tolerance_when_available ... ok
+test quant::qjl32::tests::qjl32_rejects_no_qjl_1536_lane ... ok
+test am::ec_spire::quantizer::tests::turboquant_qjl_assignment_batch_uses_qjl32_path ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 2060 filtered out; finished in 0.06s
+

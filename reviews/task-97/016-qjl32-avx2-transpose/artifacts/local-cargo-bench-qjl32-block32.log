@@ -1,0 +1,29 @@
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz)
+    Finished `bench` profile [optimized + debuginfo] target(s) in 3m 56s
+     Running benches/criterion/quant_score.rs (target/release/deps/quant_score-aaf99c26a8049f61)
+Gnuplot not found, using plotters backend
+Benchmarking quant/qjl32_block32/scalar/d1024_b4
+Benchmarking quant/qjl32_block32/scalar/d1024_b4: Warming up for 1.0000 s
+Benchmarking quant/qjl32_block32/scalar/d1024_b4: Collecting 10 samples in estimated 2.0009 s (55k iterations)
+Benchmarking quant/qjl32_block32/scalar/d1024_b4: Analyzing
+quant/qjl32_block32/scalar/d1024_b4
+                        time:   [34.613 µs 35.383 µs 36.611 µs]
+                        thrpt:  [874.05 Kelem/s 904.39 Kelem/s 924.52 Kelem/s]
+                 change:
+                        time:   [-2.2790% +1.5298% +5.1229%] (p = 0.46 > 0.05)
+                        thrpt:  [-4.8732% -1.5067% +2.3322%]
+                        No change in performance detected.
+Benchmarking quant/qjl32_block32/dispatch/d1024_b4
+Benchmarking quant/qjl32_block32/dispatch/d1024_b4: Warming up for 1.0000 s
+Benchmarking quant/qjl32_block32/dispatch/d1024_b4: Collecting 10 samples in estimated 2.0001 s (245k iterations)
+Benchmarking quant/qjl32_block32/dispatch/d1024_b4: Analyzing
+quant/qjl32_block32/dispatch/d1024_b4
+                        time:   [7.9057 µs 8.0926 µs 8.3355 µs]
+                        thrpt:  [3.8390 Melem/s 3.9542 Melem/s 4.0477 Melem/s]
+                 change:
+                        time:   [-3.5602% +0.8740% +5.5907%] (p = 0.74 > 0.05)
+                        thrpt:  [-5.2947% -0.8664% +3.6917%]
+                        No change in performance detected.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+
