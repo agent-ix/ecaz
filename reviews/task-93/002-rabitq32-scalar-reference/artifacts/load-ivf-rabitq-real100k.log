@@ -1,0 +1,24 @@
+[loader] warning: profile "ec_ivf" does not list quant_bits as known reloption; passing through verbatim. Known reloptions: nlists, nprobe, rerank_width, training_sample_rows, seed, pq_group_size, storage_format, quantizer, rerank
+[loader] inspecting data/task60_m5_dbpedia_staged/ec_real_100k_corpus.tsv
+[loader] inspecting data/task60_m5_dbpedia_staged/ec_real_100k_queries.tsv
+[loader] corpus: 100000 rows, sha256=07275cfd5a7a4b415ddf5eacc086de98294ac978532df46ffae30f9202323a95  queries: 1000 rows, sha256=a7cbec6fc44f6c148234538f61339d00d2f10646febc8f667dcbe75d9cf41782
+[loader] warning: manifest verification failed for data/task60_m5_dbpedia_staged/ec_real_100k_manifest.json: prefix="ec_real_100k" (expected "task93_p2_ivf_rabitq_real100k")
+[loader] copied corpus table task93_p2_ivf_rabitq_real100k_corpus in 57.73s
+[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...
+[loader] encoded corpus table task93_p2_ivf_rabitq_real100k_corpus in 16.50s
+[loader] copied queries table task93_p2_ivf_rabitq_real100k_queries in 614.25ms
+[loader] building task93_p2_ivf_rabitq_real100k_rabitq_idx using ec_ivf (reloptions=[nlists=256, nprobe=32, training_sample_rows=20000, quant_bits=1, rerank=off, storage_format=rabitq]) ...
+[loader] built task93_p2_ivf_rabitq_real100k_rabitq_idx in 4.46s
+[loader] ec_ivf build timing: requested_workers=0 workers_launched=0 heap_tuples=100000 index_tuples=100000 heap_ingest_us=1347959 train_model_us=1870463 stage_build_plan_us=1146684 stage_pq_train_us=0 stage_centroids_us=351 stage_assign_us=1127916 stage_postings_us=17192 stage_directory_us=8 flush_build_plan_us=81370 parallel_begin_us=0 parallel_drain_us=0 parallel_sort_push_us=0 parallel_worker_tuple_buffer_capacity=0 parallel_worker_tuple_buffer_struct_bytes=0
+┌─────────┬───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ field   ┆ value                                                                                                                                         │
+╞═════════╪═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════╡
+│ profile ┆ ec_ivf                                                                                                                                        │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ task93_p2_ivf_rabitq_real100k_corpus (100000 rows)                                                                                            │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ task93_p2_ivf_rabitq_real100k_queries (1000 rows)                                                                                             │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ task93_p2_ivf_rabitq_real100k_rabitq_idx [nlists=256, nprobe=32, training_sample_rows=20000, quant_bits=1, rerank=off, storage_format=rabitq] │
+└─────────┴───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+[loader] completed prefix task93_p2_ivf_rabitq_real100k in 177.56s
