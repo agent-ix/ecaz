@@ -132,6 +132,7 @@ These pre-lane task files are retained only for historical context under
 98. `97-tq-qjl-block-kernel-family.md` — **proposed** (2026-06-08; scope decision 2026-06-09): ship gamma-aware TurboQuant QJL block kernels with `CandidateMeta` side data and explicit FMA/ULP validation, against currently-implemented QJL surfaces only; mandatory Phase 0 inventory of which (AM, dim, bits) cells reach gamma-aware scoring on standard fixtures.
 99. `98-hnsw-exact-mode-block-kernels.md` — **proposed** (2026-06-08): ship HNSW-specific `TiledLut` and `Int8Approx` exact-score block kernels once Task 91 provides a valid HNSW TurboQuant exact-mode benchmark surface.
 100. `99-cross-am-quant-isa-block-kernel-closeout.md` — **proposed** (2026-06-08; scope expanded 2026-06-09): aggregate Tasks 87 and 93-98 into the project-level `(AM, quant, ISA)` completeness matrix and author ADR-077; additionally run the complete index × quant × mode profile that feeds the deferred TQ-mode / ADR-025 reevaluation.
+101. `100-ec-ivf-plain-scan-planner-guard.md` — **proposed** (2026-06-10): planner guard for non-ORDER-BY statements over ec_ivf-indexed tables (`count(*)` currently errors with "requires exactly one ORDER BY query" when the planner picks the index); audit the other AMs for the same exposure. Surfaced by the Task 93 packet 003 bench run.
 
 ## Coordination rules
 
