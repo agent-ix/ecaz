@@ -8,10 +8,6 @@
 //! (when they land) follow the rabitq32 envelope contract. Blocking scores
 //! tile-outer/candidate-inner so a hot LUT tile is reused across the whole
 //! block before moving on.
-//!
-//! The HNSW routing slice consumes these entry points; the allow is
-//! removed when it lands.
-#![allow(dead_code)]
 
 mod scalar;
 
@@ -48,6 +44,7 @@ pub(crate) fn score_tiled_lut_run(
 }
 
 /// Forced-scalar single-candidate reference; the strict parity anchor.
+#[allow(dead_code)]
 pub(crate) fn score_tiled_lut_scalar(
     lut: &[f32],
     tile_size: usize,

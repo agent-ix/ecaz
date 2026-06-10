@@ -468,6 +468,158 @@ pub(crate) fn score_turboquant_no_qjl_4bit_batch<Id>(
     )
 }
 
+/// Task 98: HNSW TiledLut exact-mode batch scoring. The scalar tile walk
+/// is currently the only backend (SIMD gated on the Phase A width
+/// distribution), so the whole run records as scalar work plus one width
+/// sample.
+pub(crate) fn score_turboquant_tiled_lut_batch_for<Id>(
+    surface: CandidateBatchScoringSurface,
+    quantizer: &ProdQuantizer,
+    lut: &[f32],
+    tile_size: usize,
+    batch: &CandidateBatch<'_, Id>,
+    out_scores: &mut [f32],
+) -> Result<(), String> {
+    if batch.len() != out_scores.len() {
+        return Err(format!(
+            "tiled_lut32 score output count {} does not match candidate count {}",
+            out_scores.len(),
+            batch.len()
+        ));
+    }
+    if batch.payloads().is_empty() {
+        return Ok(());
+    }
+    let mut codes: Vec<&[u8]> = Vec::with_capacity(batch.len());
+    for (index, payload) in batch.payloads().iter().enumerate() {
+        validate_turboquant_no_qjl_4bit_meta(payload.meta)?;
+        let mse_packed = quantizer.mse_code_bytes_no_qjl_4bit(payload.code);
+        crate::quant::tiled_lut32::validate_code_shape(index, quantizer.original_dim, mse_packed)?;
+        codes.push(mse_packed);
+    }
+
+    let started = Instant::now();
+    let mut run_start = 0usize;
+    let mut isa = Isa::Scalar;
+    while run_start < codes.len() {
+        let run_end = (run_start + crate::quant::tiled_lut32::BLOCK_WIDTH).min(codes.len());
+        isa = crate::quant::tiled_lut32::score_tiled_lut_run(
+            lut,
+            tile_size,
+            quantizer.original_dim,
+            &codes[run_start..run_end],
+            &mut out_scores[run_start..run_end],
+        );
+        run_start = run_end;
+    }
+    let elapsed = u64::try_from(started.elapsed().as_nanos()).unwrap_or(u64::MAX);
+
+    if isa == Isa::Scalar {
+        record_block_scalar_score_for(surface, QuantCodecKind::TurboQuant, batch.len(), elapsed);
+    } else {
+        let key = BlockKernelCounterKey {
+            surface,
+            quant_kind: QuantCodecKind::TurboQuant,
+            isa,
+        };
+        record_block_kernel_score(key, batch.len(), elapsed);
+    }
+    record_flush_width(surface, QuantCodecKind::TurboQuant, isa, batch.len());
+    Ok(())
+}
+
+/// Task 98: HNSW Int8Approx exact-mode batch scoring (integer-exact across
+/// backends).
+pub(crate) fn score_turboquant_int8_approx_batch_for<Id>(
+    surface: CandidateBatchScoringSurface,
+    quantizer: &ProdQuantizer,
+    prepared: &crate::quant::prod::Int8ApproxNoQjl4BitQuery,
+    batch: &CandidateBatch<'_, Id>,
+    out_scores: &mut [f32],
+) -> Result<(), String> {
+    if batch.len() != out_scores.len() {
+        return Err(format!(
+            "int8_approx32 score output count {} does not match candidate count {}",
+            out_scores.len(),
+            batch.len()
+        ));
+    }
+    if batch.payloads().is_empty() {
+        return Ok(());
+    }
+    let mut codes: Vec<&[u8]> = Vec::with_capacity(batch.len());
+    for (index, payload) in batch.payloads().iter().enumerate() {
+        validate_turboquant_no_qjl_4bit_meta(payload.meta)?;
+        let mse_packed = quantizer.mse_code_bytes_no_qjl_4bit(payload.code);
+        crate::quant::int8_approx32::validate_code_shape(
+            index,
+            quantizer.original_dim,
+            mse_packed,
+        )?;
+        codes.push(mse_packed);
+    }
+
+    let mut timing = BatchScoringTiming::default();
+    let mut run_start = 0usize;
+    while run_start + crate::quant::int8_approx32::BLOCK_WIDTH <= codes.len() {
+        let run_end = run_start + crate::quant::int8_approx32::BLOCK_WIDTH;
+        let block_started = Instant::now();
+        let block: &[&[u8]; crate::quant::int8_approx32::BLOCK_WIDTH] =
+            codes[run_start..run_end].try_into().expect("exact block");
+        let isa = crate::quant::int8_approx32::score_int8_approx_block32(
+            prepared,
+            quantizer.original_dim,
+            block,
+            &mut out_scores[run_start..run_end],
+        );
+        let elapsed = u64::try_from(block_started.elapsed().as_nanos()).unwrap_or(u64::MAX);
+        if isa == Isa::Scalar {
+            timing.scalar_candidates += crate::quant::int8_approx32::BLOCK_WIDTH;
+            timing.scalar_elapsed_nanos = timing.scalar_elapsed_nanos.saturating_add(elapsed);
+        } else {
+            timing.kernel_isa = Some(isa);
+            timing.kernel_candidates += crate::quant::int8_approx32::BLOCK_WIDTH;
+            timing.kernel_elapsed_nanos = timing.kernel_elapsed_nanos.saturating_add(elapsed);
+        }
+        run_start = run_end;
+    }
+    if run_start < codes.len() {
+        let partial_started = Instant::now();
+        let isa = crate::quant::int8_approx32::score_int8_approx_partial(
+            prepared,
+            quantizer.original_dim,
+            &codes[run_start..],
+            &mut out_scores[run_start..],
+        );
+        let elapsed = u64::try_from(partial_started.elapsed().as_nanos()).unwrap_or(u64::MAX);
+        let count = codes.len() - run_start;
+        if isa == Isa::Scalar {
+            timing.scalar_candidates += count;
+            timing.scalar_elapsed_nanos = timing.scalar_elapsed_nanos.saturating_add(elapsed);
+        } else {
+            timing.kernel_isa = Some(isa);
+            timing.kernel_candidates += count;
+            timing.kernel_elapsed_nanos = timing.kernel_elapsed_nanos.saturating_add(elapsed);
+        }
+    }
+
+    let isa = timing.kernel_isa.unwrap_or(Isa::Scalar);
+    let key = BlockKernelCounterKey {
+        surface,
+        quant_kind: QuantCodecKind::TurboQuant,
+        isa,
+    };
+    record_block_kernel_score(key, timing.kernel_candidates, timing.kernel_elapsed_nanos);
+    record_block_scalar_score_for(
+        surface,
+        QuantCodecKind::TurboQuant,
+        timing.scalar_candidates,
+        timing.scalar_elapsed_nanos,
+    );
+    record_flush_width(surface, QuantCodecKind::TurboQuant, isa, batch.len());
+    Ok(())
+}
+
 pub(crate) fn score_turboquant_no_qjl_4bit_batch_for<Id>(
     surface: CandidateBatchScoringSurface,
     quantizer: &ProdQuantizer,

@@ -37,6 +37,7 @@ pub(super) fn score_run_scalar(
     Isa::Scalar
 }
 
+#[allow(dead_code)]
 pub(super) fn score_candidate(
     lut: &[f32],
     tile_size: usize,

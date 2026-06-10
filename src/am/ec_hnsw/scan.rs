@@ -10,7 +10,8 @@ use crate::am::common::{
     callback::pg_am_callback,
     candidate_batch::{
         score_grouped_pq_batch_for, score_rabitq_bits1_batch_for,
-        score_turboquant_no_qjl_4bit_batch_for, CandidateBatch, CandidateBatchScoringSurface,
+        score_turboquant_int8_approx_batch_for, score_turboquant_no_qjl_4bit_batch_for,
+        score_turboquant_tiled_lut_batch_for, CandidateBatch, CandidateBatchScoringSurface,
         CandidateMeta, CandidatePayload,
     },
     heap_slot::HeapSlotReader,
@@ -639,6 +640,12 @@ impl TurboQuantExactScoreMode {
 
     const fn uses_lut(self) -> bool {
         matches!(self, Self::FullLut | Self::TiledLut)
+    }
+
+    /// Modes whose exact scoring batches through the shared block-kernel
+    /// wrappers (Task 87 FullLut; Task 98 TiledLut + Int8Approx).
+    const fn batches_exact_scoring(self) -> bool {
+        matches!(self, Self::FullLut | Self::TiledLut | Self::Int8Approx)
     }
 }
 
@@ -2378,8 +2385,8 @@ fn live_loaded_state_from_exact_payload(
     binary_query_active: bool,
     exact_payload: Option<(f32, &[u8])>,
 ) -> LoadedElementState {
-    let defer_exact_score = binary_query_active
-        || opaque.turboquant_exact_score_mode == TurboQuantExactScoreMode::FullLut;
+    let defer_exact_score =
+        binary_query_active || opaque.turboquant_exact_score_mode.batches_exact_scoring();
     match exact_payload {
         Some((gamma, code_bytes)) if defer_exact_score => {
             LoadedElementState::ExactPayload(LoadedElementScoreInput {
@@ -2436,10 +2443,20 @@ fn score_and_cache_turboquant_full_lut_payload_batch(
     if batch_candidates.is_empty() {
         return Vec::new();
     }
-    if opaque.turboquant_exact_score_mode != TurboQuantExactScoreMode::FullLut {
-        pgrx::error!("ec_hnsw CandidateBatch exact scoring requires full_lut mode");
+    let exact_score_mode = opaque.turboquant_exact_score_mode;
+    if !exact_score_mode.batches_exact_scoring() {
+        pgrx::error!(
+            "ec_hnsw CandidateBatch exact scoring requires a batchable exact-score mode, got {}",
+            exact_score_mode.as_str()
+        );
     }
-    if opaque.cached_quantizer.is_null() || opaque.turboquant_lut_query.is_null() {
+    let prepared_state_live = match exact_score_mode {
+        TurboQuantExactScoreMode::FullLut => !opaque.turboquant_lut_query.is_null(),
+        TurboQuantExactScoreMode::TiledLut => !opaque.turboquant_tiled_lut_query.is_null(),
+        TurboQuantExactScoreMode::Int8Approx => !opaque.turboquant_int8_query.is_null(),
+        TurboQuantExactScoreMode::Exact => false,
+    };
+    if opaque.cached_quantizer.is_null() || !prepared_state_live {
         pgrx::error!("ec_hnsw CandidateBatch exact scoring requires prepared TurboQuant state");
     }
 
@@ -2454,8 +2471,6 @@ fn score_and_cache_turboquant_full_lut_payload_batch(
 
     let quantizer = cached_quantizer_ref(opaque)
         .unwrap_or_else(|| pgrx::error!("ec_hnsw scan scoring requires a cached quantizer"));
-    let prepared = scan_box_ref(opaque.turboquant_lut_query, opaque)
-        .expect("TurboQuant LUT query should be live");
     let mut batch = CandidateBatch::with_capacity(batch_candidates.len());
     for (index, candidate) in batch_candidates.iter().enumerate() {
         batch
@@ -2469,14 +2484,46 @@ fn score_and_cache_turboquant_full_lut_payload_batch(
             .unwrap_or_else(|error| pgrx::error!("{error}"));
     }
     let mut inner_products = vec![0.0_f32; batch.len()];
-    score_turboquant_no_qjl_4bit_batch_for(
-        CandidateBatchScoringSurface::Hnsw,
-        quantizer,
-        prepared,
-        &batch,
-        &mut inner_products,
-    )
-    .unwrap_or_else(|error| pgrx::error!("{error}"));
+    match exact_score_mode {
+        TurboQuantExactScoreMode::FullLut => {
+            let prepared = scan_box_ref(opaque.turboquant_lut_query, opaque)
+                .expect("TurboQuant LUT query should be live");
+            score_turboquant_no_qjl_4bit_batch_for(
+                CandidateBatchScoringSurface::Hnsw,
+                quantizer,
+                prepared,
+                &batch,
+                &mut inner_products,
+            )
+            .unwrap_or_else(|error| pgrx::error!("{error}"));
+        }
+        TurboQuantExactScoreMode::TiledLut => {
+            let prepared = scan_box_ref(opaque.turboquant_tiled_lut_query, opaque)
+                .expect("TurboQuant tiled LUT query should be live");
+            score_turboquant_tiled_lut_batch_for(
+                CandidateBatchScoringSurface::Hnsw,
+                quantizer,
+                &prepared.lut,
+                prepared.tile_size,
+                &batch,
+                &mut inner_products,
+            )
+            .unwrap_or_else(|error| pgrx::error!("{error}"));
+        }
+        TurboQuantExactScoreMode::Int8Approx => {
+            let prepared = scan_box_ref(opaque.turboquant_int8_query, opaque)
+                .expect("TurboQuant int8 query should be live");
+            score_turboquant_int8_approx_batch_for(
+                CandidateBatchScoringSurface::Hnsw,
+                quantizer,
+                prepared,
+                &batch,
+                &mut inner_products,
+            )
+            .unwrap_or_else(|error| pgrx::error!("{error}"));
+        }
+        TurboQuantExactScoreMode::Exact => unreachable!("gated above"),
+    }
 
     #[cfg(any(test, feature = "pg_test"))]
     {
@@ -3688,8 +3735,7 @@ where
                 match candidate_score_dispatch(scan_graph_storage, &neighbor, loaded_state) {
                     CandidateScoreDispatch::Exact(loaded_state) => match loaded_state {
                         LoadedElementState::ExactPayload(payload) => {
-                            if opaque.turboquant_exact_score_mode
-                                == TurboQuantExactScoreMode::FullLut
+                            if opaque.turboquant_exact_score_mode.batches_exact_scoring()
                                 && super::options::candidate_batch_scoring_enabled()
                             {
                                 if let Some(score) = cached_scan_element_score(opaque, neighbor.tid)
