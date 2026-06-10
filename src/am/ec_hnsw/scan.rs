@@ -642,6 +642,17 @@ impl TurboQuantExactScoreMode {
     }
 }
 
+fn turboquant_qjl_exact_payload_eligible(opaque: &TqScanOpaque) -> bool {
+    opaque.turboquant_exact_score_mode == TurboQuantExactScoreMode::Exact
+        && cached_quantizer_ref(opaque).is_some_and(ProdQuantizer::exact_score_uses_qjl)
+}
+
+fn turboquant_exact_payload_batch_enabled(opaque: &TqScanOpaque) -> bool {
+    super::options::candidate_batch_scoring_enabled()
+        && (opaque.turboquant_exact_score_mode == TurboQuantExactScoreMode::FullLut
+            || turboquant_qjl_exact_payload_eligible(opaque))
+}
+
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum GroupedRerankMode {
@@ -2363,7 +2374,8 @@ fn live_loaded_state_from_exact_payload(
     exact_payload: Option<(f32, &[u8])>,
 ) -> LoadedElementState {
     let defer_exact_score = binary_query_active
-        || opaque.turboquant_exact_score_mode == TurboQuantExactScoreMode::FullLut;
+        || opaque.turboquant_exact_score_mode == TurboQuantExactScoreMode::FullLut
+        || turboquant_qjl_exact_payload_eligible(opaque);
     match exact_payload {
         Some((gamma, code_bytes)) if defer_exact_score => {
             LoadedElementState::ExactPayload(LoadedElementScoreInput {
@@ -2413,18 +2425,44 @@ fn score_and_cache_scan_element(
     score
 }
 
-fn score_and_cache_turboquant_full_lut_payload_batch(
+fn turboquant_exact_payload_batch_prepared_query<'a>(
+    opaque: &'a TqScanOpaque,
+    quantizer: &ProdQuantizer,
+) -> HnswTurboQuantPreparedQuery<'a> {
+    match opaque.turboquant_exact_score_mode {
+        TurboQuantExactScoreMode::Exact if quantizer.exact_score_uses_qjl() => {
+            if opaque.prepared_query.is_null() {
+                pgrx::error!("ec_hnsw QJL CandidateBatch exact scoring requires a prepared query");
+            }
+            let prepared = scan_box_ref(opaque.prepared_query, opaque)
+                .expect("prepared query should be live for QJL CandidateBatch exact scoring");
+            HnswTurboQuantPreparedQuery::Exact(prepared)
+        }
+        TurboQuantExactScoreMode::FullLut => {
+            if opaque.turboquant_lut_query.is_null() {
+                pgrx::error!(
+                    "ec_hnsw full_lut CandidateBatch exact scoring requires a prepared LUT query"
+                );
+            }
+            let prepared = scan_box_ref(opaque.turboquant_lut_query, opaque)
+                .expect("TurboQuant LUT query should be live");
+            HnswTurboQuantPreparedQuery::FullLut(prepared)
+        }
+        _ => {
+            pgrx::error!("ec_hnsw CandidateBatch exact scoring requires QJL exact or full_lut mode")
+        }
+    }
+}
+
+fn score_and_cache_turboquant_exact_payload_batch(
     opaque: &mut TqScanOpaque,
     batch_candidates: Vec<HnswExactPayloadBatchCandidate>,
 ) -> Vec<search::BeamCandidate<page::ItemPointer>> {
     if batch_candidates.is_empty() {
         return Vec::new();
     }
-    if opaque.turboquant_exact_score_mode != TurboQuantExactScoreMode::FullLut {
-        pgrx::error!("ec_hnsw CandidateBatch exact scoring requires full_lut mode");
-    }
-    if opaque.cached_quantizer.is_null() || opaque.turboquant_lut_query.is_null() {
-        pgrx::error!("ec_hnsw CandidateBatch exact scoring requires prepared TurboQuant state");
+    if opaque.cached_quantizer.is_null() {
+        pgrx::error!("ec_hnsw CandidateBatch exact scoring requires a cached quantizer");
     }
 
     for _ in 0..batch_candidates.len() {
@@ -2438,8 +2476,8 @@ fn score_and_cache_turboquant_full_lut_payload_batch(
 
     let quantizer = cached_quantizer_ref(opaque)
         .unwrap_or_else(|| pgrx::error!("ec_hnsw scan scoring requires a cached quantizer"));
-    let prepared = scan_box_ref(opaque.turboquant_lut_query, opaque)
-        .expect("TurboQuant LUT query should be live");
+    let prepared = turboquant_exact_payload_batch_prepared_query(opaque, quantizer);
+    let codec = HnswTurboQuantScanCodec::new(quantizer);
     let mut batch = CandidateBatch::with_capacity(batch_candidates.len());
     for (index, candidate) in batch_candidates.iter().enumerate() {
         batch
@@ -2453,14 +2491,8 @@ fn score_and_cache_turboquant_full_lut_payload_batch(
             .unwrap_or_else(|error| pgrx::error!("{error}"));
     }
     let mut inner_products = vec![0.0_f32; batch.len()];
-    score_turboquant_no_qjl_4bit_batch_for(
-        CandidateBatchScoringSurface::Hnsw,
-        quantizer,
-        prepared,
-        &batch,
-        &mut inner_products,
-    )
-    .unwrap_or_else(|error| pgrx::error!("{error}"));
+    QuantCodec::score_ip_batch(&codec, &prepared, &batch, &mut inner_products)
+        .unwrap_or_else(|error| pgrx::error!("{error}"));
 
     #[cfg(any(test, feature = "pg_test"))]
     {
@@ -2485,7 +2517,7 @@ fn score_and_cache_turboquant_full_lut_payload_batch(
     scored
 }
 
-fn flush_turboquant_full_lut_payload_batch(
+fn flush_turboquant_exact_payload_batch(
     opaque: &mut TqScanOpaque,
     batch_candidates: &mut Vec<HnswExactPayloadBatchCandidate>,
     candidates: &mut Vec<search::BeamCandidate<page::ItemPointer>>,
@@ -2493,7 +2525,7 @@ fn flush_turboquant_full_lut_payload_batch(
     if batch_candidates.is_empty() {
         return;
     }
-    candidates.extend(score_and_cache_turboquant_full_lut_payload_batch(
+    candidates.extend(score_and_cache_turboquant_exact_payload_batch(
         opaque,
         std::mem::take(batch_candidates),
     ));
@@ -2639,6 +2671,26 @@ fn score_cached_graph_element_from_storage(
         );
     }
     score_and_cache_scan_element(opaque, element_tid, element.gamma, &element.code)
+}
+
+fn exact_payload_from_storage_for_batch(
+    index_relation: pg_sys::Relation,
+    opaque: &TqScanOpaque,
+    element_tid: page::ItemPointer,
+) -> LoadedElementScoreInput {
+    let element =
+        graph::load_exact_graph_element(index_relation, element_tid, opaque.scan_graph_storage);
+    if element.deleted || element.heaptids.is_empty() {
+        pgrx::error!(
+            "ec_hnsw cannot exact-score dead or heapless graph element {}:{}",
+            element_tid.block_number,
+            element_tid.offset_number
+        );
+    }
+    LoadedElementScoreInput {
+        gamma: element.gamma,
+        code_bytes: element.code,
+    }
 }
 
 fn exact_score_cached_graph_element(
@@ -3605,14 +3657,11 @@ where
                 match candidate_score_dispatch(scan_graph_storage, &neighbor, loaded_state) {
                     CandidateScoreDispatch::Exact(loaded_state) => match loaded_state {
                         LoadedElementState::ExactPayload(payload) => {
-                            if opaque.turboquant_exact_score_mode
-                                == TurboQuantExactScoreMode::FullLut
-                                && super::options::candidate_batch_scoring_enabled()
-                            {
+                            if turboquant_exact_payload_batch_enabled(opaque) {
                                 if let Some(score) = cached_scan_element_score(opaque, neighbor.tid)
                                 {
                                     record_score_cache_hit(opaque);
-                                    flush_turboquant_full_lut_payload_batch(
+                                    flush_turboquant_exact_payload_batch(
                                         opaque,
                                         &mut exact_payload_batch,
                                         &mut candidates,
@@ -3632,7 +3681,7 @@ where
                                 continue;
                             }
 
-                            flush_turboquant_full_lut_payload_batch(
+                            flush_turboquant_exact_payload_batch(
                                 opaque,
                                 &mut exact_payload_batch,
                                 &mut candidates,
@@ -3651,7 +3700,39 @@ where
                             continue;
                         }
                         other => {
-                            flush_turboquant_full_lut_payload_batch(
+                            if matches!(&other, LoadedElementState::None)
+                                && turboquant_exact_payload_batch_enabled(opaque)
+                                && turboquant_qjl_exact_payload_eligible(opaque)
+                            {
+                                if let Some(score) = cached_scan_element_score(opaque, neighbor.tid)
+                                {
+                                    record_score_cache_hit(opaque);
+                                    flush_turboquant_exact_payload_batch(
+                                        opaque,
+                                        &mut exact_payload_batch,
+                                        &mut candidates,
+                                    );
+                                    candidates.push(search::BeamCandidate::with_source(
+                                        neighbor.tid,
+                                        score,
+                                        source_tid,
+                                    ));
+                                } else {
+                                    let payload = exact_payload_from_storage_for_batch(
+                                        index_relation,
+                                        opaque,
+                                        neighbor.tid,
+                                    );
+                                    exact_payload_batch.push(HnswExactPayloadBatchCandidate {
+                                        source_tid,
+                                        element_tid: neighbor.tid,
+                                        payload,
+                                    });
+                                }
+                                continue;
+                            }
+
+                            flush_turboquant_exact_payload_batch(
                                 opaque,
                                 &mut exact_payload_batch,
                                 &mut candidates,
@@ -3670,7 +3751,7 @@ where
                         }
                     },
                     CandidateScoreDispatch::Grouped(grouped) => {
-                        flush_turboquant_full_lut_payload_batch(
+                        flush_turboquant_exact_payload_batch(
                             opaque,
                             &mut exact_payload_batch,
                             &mut candidates,
@@ -3702,7 +3783,7 @@ where
             }
         }
 
-        flush_turboquant_full_lut_payload_batch(opaque, &mut exact_payload_batch, &mut candidates);
+        flush_turboquant_exact_payload_batch(opaque, &mut exact_payload_batch, &mut candidates);
         if let Some(grouped_candidates) = grouped_candidates {
             candidates.extend(score_budgeted_grouped_traversal_candidates(
                 index_relation,
@@ -4986,21 +5067,37 @@ unsafe fn refill_candidate_frontier_from_source_into(
         // SAFETY: successor loading uses the live relation and scan storage
         // state while the callback scores candidates synchronously.
         |source_tid, max_successor_candidates| unsafe {
-            graph::load_layer0_refill_successors_with_storage(
-                index_relation,
-                (&*opaque_ptr).scan_graph_storage,
-                usize::from((&*opaque_ptr).scan_m),
-                source_tid,
-                max_successor_candidates,
-                |neighbor_tid| !visited_contains_element(&*opaque_ptr, neighbor_tid),
-                |neighbor| {
-                    Some(score_scan_element_result(
-                        &mut *opaque_ptr,
-                        neighbor.gamma,
-                        &neighbor.code,
-                    ))
-                },
-            )
+            if turboquant_exact_payload_batch_enabled(&*opaque_ptr)
+                && turboquant_qjl_exact_payload_eligible(&*opaque_ptr)
+            {
+                graph::load_layer0_refill_successors_with_storage_batched_scores(
+                    index_relation,
+                    (&*opaque_ptr).scan_graph_storage,
+                    usize::from((&*opaque_ptr).scan_m),
+                    source_tid,
+                    max_successor_candidates,
+                    |neighbor_tid| !visited_contains_element(&*opaque_ptr, neighbor_tid),
+                    |neighbors| {
+                        score_turboquant_qjl_graph_elements_batch(&mut *opaque_ptr, neighbors)
+                    },
+                )
+            } else {
+                graph::load_layer0_refill_successors_with_storage(
+                    index_relation,
+                    (&*opaque_ptr).scan_graph_storage,
+                    usize::from((&*opaque_ptr).scan_m),
+                    source_tid,
+                    max_successor_candidates,
+                    |neighbor_tid| !visited_contains_element(&*opaque_ptr, neighbor_tid),
+                    |neighbor| {
+                        Some(score_scan_element_result(
+                            &mut *opaque_ptr,
+                            neighbor.gamma,
+                            &neighbor.code,
+                        ))
+                    },
+                )
+            }
         },
         |node| {
             // SAFETY: callback execution is synchronous while `opaque_ptr`
@@ -5030,21 +5127,37 @@ unsafe fn top_up_bootstrap_frontier_from_visible_seeds_into(
             // SAFETY: seed expansion uses the live relation and scan storage
             // state while callbacks score candidates synchronously.
             let expansion_trace = unsafe {
-                graph::expand_layer0_visible_seeds_with_storage(
-                    index_relation,
-                    (&*opaque_ptr).scan_graph_storage,
-                    usize::from((&*opaque_ptr).scan_m),
-                    max_successor_candidates,
-                    seed_candidates.iter().copied(),
-                    |neighbor_tid| !visited_contains_element(&*opaque_ptr, neighbor_tid),
-                    |neighbor| {
-                        Some(score_scan_element_result(
-                            &mut *opaque_ptr,
-                            neighbor.gamma,
-                            &neighbor.code,
-                        ))
-                    },
-                )
+                if turboquant_exact_payload_batch_enabled(&*opaque_ptr)
+                    && turboquant_qjl_exact_payload_eligible(&*opaque_ptr)
+                {
+                    graph::expand_layer0_visible_seeds_with_storage_batched_scores(
+                        index_relation,
+                        (&*opaque_ptr).scan_graph_storage,
+                        usize::from((&*opaque_ptr).scan_m),
+                        max_successor_candidates,
+                        seed_candidates.iter().copied(),
+                        |neighbor_tid| !visited_contains_element(&*opaque_ptr, neighbor_tid),
+                        |neighbors| {
+                            score_turboquant_qjl_graph_elements_batch(&mut *opaque_ptr, neighbors)
+                        },
+                    )
+                } else {
+                    graph::expand_layer0_visible_seeds_with_storage(
+                        index_relation,
+                        (&*opaque_ptr).scan_graph_storage,
+                        usize::from((&*opaque_ptr).scan_m),
+                        max_successor_candidates,
+                        seed_candidates.iter().copied(),
+                        |neighbor_tid| !visited_contains_element(&*opaque_ptr, neighbor_tid),
+                        |neighbor| {
+                            Some(score_scan_element_result(
+                                &mut *opaque_ptr,
+                                neighbor.gamma,
+                                &neighbor.code,
+                            ))
+                        },
+                    )
+                }
             };
             (
                 expansion_trace.expanded_source_tids,
@@ -5512,6 +5625,48 @@ fn score_scan_element_result(opaque: &mut TqScanOpaque, gamma: f32, code_bytes: 
             CandidatePayload::new(code_bytes, CandidateMeta::Gamma(gamma)),
         )
         .unwrap_or_else(|err| pgrx::error!("ec_hnsw scan scoring failed: {err}"))
+}
+
+fn score_turboquant_qjl_graph_elements_batch(
+    opaque: &mut TqScanOpaque,
+    elements: &[graph::GraphElement],
+) -> Vec<Option<f32>> {
+    if elements.is_empty() {
+        return Vec::new();
+    }
+    if !turboquant_qjl_exact_payload_eligible(opaque) {
+        pgrx::error!("ec_hnsw QJL graph batching requires production QJL exact scoring");
+    }
+
+    let mut batch = CandidateBatch::with_capacity(elements.len());
+    for (index, element) in elements.iter().enumerate() {
+        super::stats::record_distance_calc();
+        opaque.stats_delta.record_distance_calc();
+        batch
+            .push(
+                index,
+                CandidatePayload::new(&element.code, CandidateMeta::Gamma(element.gamma)),
+            )
+            .unwrap_or_else(|error| pgrx::error!("{error}"));
+    }
+    let quantizer = cached_quantizer_ref(opaque)
+        .unwrap_or_else(|| pgrx::error!("ec_hnsw QJL graph batching requires a cached quantizer"));
+    if opaque.prepared_query.is_null() {
+        pgrx::error!("ec_hnsw QJL graph batching requires a prepared query");
+    }
+    let prepared = scan_box_ref(opaque.prepared_query, opaque)
+        .expect("prepared query should be live for QJL graph batching");
+    let prepared = HnswTurboQuantPreparedQuery::Exact(prepared);
+    let codec = HnswTurboQuantScanCodec::new(quantizer);
+
+    let mut inner_products = vec![0.0_f32; batch.len()];
+    QuantCodec::score_ip_batch(&codec, &prepared, &batch, &mut inner_products)
+        .unwrap_or_else(|error| pgrx::error!("{error}"));
+
+    inner_products
+        .into_iter()
+        .map(|inner_product| Some(-inner_product))
+        .collect()
 }
 
 fn set_scan_heap_tid(scan_output: &mut IndexScanOutput<'_>, heap_tid: page::ItemPointer) {
@@ -7869,7 +8024,103 @@ mod tests {
     }
 
     #[test]
-    fn turboquant_full_lut_payload_batch_matches_scalar_and_caches_scores() {
+    fn turboquant_exact_payload_batch_qjl_matches_scalar_caches_and_counts() {
+        let _guard = crate::am::common::candidate_batch::CANDIDATE_BATCH_COUNTER_TEST_LOCK
+            .lock()
+            .unwrap();
+        crate::am::common::candidate_batch::reset_candidate_batch_scoring_counters();
+
+        let dimensions = 1024;
+        let query = unit_vector(dimensions);
+        let quantizer = Arc::new(ProdQuantizer::new(dimensions, 4, 42));
+        assert!(quantizer.exact_score_uses_qjl());
+        let prepared = Box::new(quantizer.prepare_ip_query(&query));
+        let encoded = (0..39)
+            .map(|index| {
+                let source = (0..dimensions)
+                    .map(|col| ((index + col * 7) % 37) as f32 / dimensions as f32)
+                    .collect::<Vec<_>>();
+                quantizer.encode(&source)
+            })
+            .collect::<Vec<_>>();
+        let codes = encoded
+            .iter()
+            .map(|encoded| {
+                let mut code =
+                    Vec::with_capacity(encoded.mse_packed.len() + encoded.qjl_packed.len());
+                code.extend_from_slice(&encoded.mse_packed);
+                code.extend_from_slice(&encoded.qjl_packed);
+                code
+            })
+            .collect::<Vec<_>>();
+        let expected = encoded
+            .iter()
+            .zip(codes.iter())
+            .map(|(encoded, code)| -quantizer.score_ip_from_parts(&prepared, encoded.gamma, code))
+            .collect::<Vec<_>>();
+        let cached_quantizer = Arc::into_raw(Arc::clone(&quantizer));
+        let prepared_query = Box::into_raw(prepared);
+        let mut opaque = TqScanOpaque {
+            cached_quantizer,
+            prepared_query,
+            turboquant_exact_score_mode: TurboQuantExactScoreMode::Exact,
+            ..TqScanOpaque::default()
+        };
+        let batch_candidates = encoded
+            .iter()
+            .zip(codes.iter())
+            .enumerate()
+            .map(|(index, (encoded, code))| HnswExactPayloadBatchCandidate {
+                source_tid: tid(1, 1),
+                element_tid: tid(21, u16::try_from(index + 1).unwrap()),
+                payload: LoadedElementScoreInput {
+                    gamma: encoded.gamma,
+                    code_bytes: code.clone(),
+                },
+            })
+            .collect::<Vec<_>>();
+
+        let scored = score_and_cache_turboquant_exact_payload_batch(&mut opaque, batch_candidates);
+
+        assert_eq!(scored.len(), expected.len());
+        for (index, candidate) in scored.iter().enumerate() {
+            assert_eq!(candidate.node, tid(21, u16::try_from(index + 1).unwrap()));
+            let tolerance = 1e-6_f32.max(expected[index].abs() * 1e-6);
+            assert!(
+                (candidate.score - expected[index]).abs() <= tolerance,
+                "index={index} batch={} scalar={}",
+                candidate.score,
+                expected[index]
+            );
+            assert_eq!(
+                cached_scan_element_score(&opaque, candidate.node),
+                Some(candidate.score)
+            );
+        }
+        assert_eq!(
+            opaque.stats_delta.total_distance_calcs,
+            expected.len() as u64
+        );
+        assert_eq!(
+            opaque.debug_profile.score_cache_misses,
+            expected.len() as u64
+        );
+        let snapshots = crate::am::common::candidate_batch::block_kernel_scoring_snapshots();
+        let qjl = snapshots
+            .iter()
+            .filter(|snapshot| {
+                snapshot.surface == "hnsw" && snapshot.quant_kind == "turboquant_qjl"
+            })
+            .collect::<Vec<_>>();
+        assert!(qjl.iter().any(|snapshot| snapshot.kernel_candidates == 32));
+        assert!(qjl.iter().any(|snapshot| snapshot.scalar_candidates == 7));
+
+        crate::am::common::candidate_batch::reset_candidate_batch_scoring_counters();
+        free_scan_prepared_query(&mut opaque);
+    }
+
+    #[test]
+    fn turboquant_exact_payload_batch_full_lut_matches_scalar_and_caches_scores() {
         let dimensions = 1536;
         let query = unit_vector(dimensions);
         let quantizer = Arc::new(ProdQuantizer::new(dimensions, 4, 42));
@@ -7911,8 +8162,7 @@ mod tests {
             })
             .collect::<Vec<_>>();
 
-        let scored =
-            score_and_cache_turboquant_full_lut_payload_batch(&mut opaque, batch_candidates);
+        let scored = score_and_cache_turboquant_exact_payload_batch(&mut opaque, batch_candidates);
 
         assert_eq!(scored.len(), expected.len());
         for (index, candidate) in scored.iter().enumerate() {
