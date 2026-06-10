@@ -133,9 +133,10 @@ impl CandidateBatchScoringSurface {
 fn quant_index(quant_kind: QuantCodecKind) -> usize {
     match quant_kind {
         QuantCodecKind::TurboQuant => 0,
-        QuantCodecKind::RaBitQ => 1,
-        QuantCodecKind::GroupedPq => 2,
-        QuantCodecKind::Binary => 3,
+        QuantCodecKind::TurboQuantQjl => 1,
+        QuantCodecKind::RaBitQ => 2,
+        QuantCodecKind::GroupedPq => 3,
+        QuantCodecKind::Binary => 4,
     }
 }
 
@@ -266,7 +267,7 @@ impl BlockKernelCounters {
 }
 
 const SURFACE_COUNT: usize = 5;
-const QUANT_COUNT: usize = 4;
+const QUANT_COUNT: usize = 5;
 const ISA_COUNT: usize = 5;
 
 static BLOCK_KERNEL_COUNTERS: OnceLock<Vec<BlockKernelCounters>> = OnceLock::new();
@@ -1038,6 +1039,49 @@ mod tests {
         assert_eq!(scalar.scalar_flushes, 1);
         assert_eq!(scalar.scalar_candidates, 7);
         assert_eq!(scalar.scalar_elapsed_nanos, 20);
+    }
+
+    #[test]
+    fn turboquant_qjl_counter_kind_has_distinct_direct_rows_without_lut32_compat() {
+        let _guard = super::CANDIDATE_BATCH_COUNTER_TEST_LOCK.lock().unwrap();
+        super::reset_candidate_batch_scoring_counters();
+        super::record_block_kernel_score(
+            BlockKernelCounterKey {
+                surface: CandidateBatchScoringSurface::Ivf,
+                quant_kind: QuantCodecKind::TurboQuantQjl,
+                isa: Isa::Avx2,
+            },
+            32,
+            100,
+        );
+        super::record_block_scalar_score_for(
+            CandidateBatchScoringSurface::Ivf,
+            QuantCodecKind::TurboQuantQjl,
+            3,
+            20,
+        );
+
+        let block_snapshots = super::block_kernel_scoring_snapshots();
+        let qjl: Vec<_> = block_snapshots
+            .iter()
+            .filter(|snapshot| snapshot.surface == "ivf" && snapshot.quant_kind == "turboquant_qjl")
+            .collect();
+        assert_eq!(qjl.len(), 2);
+        assert!(qjl
+            .iter()
+            .any(|snapshot| snapshot.isa == "avx2" && snapshot.kernel_candidates == 32));
+        assert!(qjl
+            .iter()
+            .any(|snapshot| snapshot.isa == "scalar" && snapshot.scalar_candidates == 3));
+
+        let task87_ivf = super::candidate_batch_scoring_snapshots()
+            .into_iter()
+            .find(|snapshot| snapshot.surface == "ivf")
+            .unwrap();
+        assert_eq!(task87_ivf.lut32_flushes, 0);
+        assert_eq!(task87_ivf.lut32_candidates, 0);
+
+        super::reset_candidate_batch_scoring_counters();
     }
 
     fn random_unit_vector(dim: usize, seed: u64) -> Vec<f32> {
