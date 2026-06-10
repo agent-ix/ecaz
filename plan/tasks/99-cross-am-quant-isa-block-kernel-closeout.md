@@ -163,7 +163,12 @@ accurately represents what shipped.
   initiative delivered.
 
 
-## Absorbed deferrals from Tasks 95/98 closeouts (2026-06-10)
+## Absorbed deferrals from Tasks 93/95/98 closeouts (2026-06-10)
+
+- Task 93 (owner decision 2026-06-10): the Graviton 4 SVE lane — the one
+  surface with real 32-wide block coverage (IVF, ~99%) where SVE could add
+  value beyond NEON's 2.7-3.6x — and the Intel AVX2 compile/runtime/bench
+  validation of the landed rabitq32 AVX2 backend.
 
 - Task 95: the AVX2-vs-hardware-POPCNT question for hamming32 (Intel lane;
   expected return bounded by the measured NEON 1.10-1.17x).
