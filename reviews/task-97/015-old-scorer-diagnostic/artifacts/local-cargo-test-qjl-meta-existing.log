@@ -1,0 +1,9 @@
+    Blocking waiting for file lock on artifact directory
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 37.64s
+     Running unittests src/lib.rs (target/debug/deps/ecaz-c2925dc8ee61e76b)
+
+running 1 test
+test am::common::candidate_batch::tests::turboquant_qjl_batch_matches_pre_slice_scalar_reference_and_records_counters ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2069 filtered out; finished in 0.03s
+

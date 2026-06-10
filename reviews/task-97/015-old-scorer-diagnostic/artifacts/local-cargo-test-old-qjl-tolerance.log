@@ -1,0 +1,10 @@
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 38.41s
+     Running unittests src/lib.rs (target/debug/deps/ecaz-c2925dc8ee61e76b)
+
+running 1 test
+qjl_pre_b0efa19d9_multi_accum_tolerance_diagnostic dim=1024 bits=4 candidates=1000 max_ulp=5920 max_rel=4.106507404e-4 violations=285 worst_seed=924
+test quant::prod::tests::qjl_pre_b0efa19d9_multi_accum_tolerance_diagnostic ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2069 filtered out; finished in 0.50s
+
