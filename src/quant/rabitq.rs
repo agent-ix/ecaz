@@ -2898,7 +2898,7 @@ unsafe fn sum_query_dequant_avx512_bits1(
 /// `ceil(dimensions / 8)` packed code bytes.
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2,fma")]
-unsafe fn sum_query_dequant_avx2_bits1(
+pub(crate) unsafe fn sum_query_dequant_avx2_bits1(
     query_rotated: &[f32],
     dimensions: usize,
     byte_lut: &[[f32; 8]; 256],
@@ -3109,7 +3109,7 @@ unsafe fn sum_query_dequant_avx512_bits1_pair(
 /// least `ceil(dimensions / 8)` packed code bytes.
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2,fma")]
-unsafe fn sum_query_dequant_avx2_bits1_pair(
+pub(crate) unsafe fn sum_query_dequant_avx2_bits1_pair(
     query_rotated: &[f32],
     dimensions: usize,
     byte_lut: &[[f32; 8]; 256],

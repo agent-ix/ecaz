@@ -65,6 +65,9 @@ pub(crate) fn score_rabitq_bits1_block32(
     match isa {
         crate::quant::isa::Isa::Avx2 => avx2::score_block32_avx2(prepared, &codes, out_scores),
         crate::quant::isa::Isa::Sve2 | crate::quant::isa::Isa::Sve => {
+            // The SVE backend is a Phase C (Graviton) deliverable; until it
+            // lands, SVE hosts use the validated NEON backend (every SVE
+            // host implements NEON) instead of falling back to scalar.
             sve::score_block32_sve(prepared, &codes, out_scores)
         }
         crate::quant::isa::Isa::Neon => neon::score_block32_neon(prepared, &codes, out_scores),
@@ -89,12 +92,13 @@ pub(crate) fn score_rabitq_bits1_partial(
     let isa = crate::quant::isa::current_isa();
     match isa {
         crate::quant::isa::Isa::Neon => neon::score_partial_neon(prepared, codes, out_scores),
-        crate::quant::isa::Isa::Avx2
-        | crate::quant::isa::Isa::Sve2
-        | crate::quant::isa::Isa::Sve
-        | crate::quant::isa::Isa::Scalar => {
-            scalar::score_partial_scalar(prepared, codes, out_scores)
+        crate::quant::isa::Isa::Avx2 => avx2::score_partial_avx2(prepared, codes, out_scores),
+        crate::quant::isa::Isa::Sve2 | crate::quant::isa::Isa::Sve => {
+            // SVE hosts also have NEON; use the validated NEON partial path
+            // until a real SVE backend lands (Phase C, Graviton lane).
+            neon::score_partial_neon(prepared, codes, out_scores)
         }
+        crate::quant::isa::Isa::Scalar => scalar::score_partial_scalar(prepared, codes, out_scores),
     }
 }
 
@@ -256,15 +260,25 @@ mod tests {
         for (score, code) in scores.iter().zip(code_refs.iter()) {
             assert_close_simd(*score, forced_scalar_anchor(block_prepared, code));
         }
+        assert_eq!(isa, host_expected_simd_isa());
+    }
+
+    fn host_expected_simd_isa() -> crate::quant::isa::Isa {
         #[cfg(target_arch = "aarch64")]
-        let expected_isa = if std::arch::is_aarch64_feature_detected!("neon") {
-            crate::quant::isa::Isa::Neon
-        } else {
-            crate::quant::isa::Isa::Scalar
-        };
-        #[cfg(not(target_arch = "aarch64"))]
-        let expected_isa = crate::quant::isa::Isa::Scalar;
-        assert_eq!(isa, expected_isa);
+        {
+            if std::arch::is_aarch64_feature_detected!("neon") {
+                return crate::quant::isa::Isa::Neon;
+            }
+        }
+        #[cfg(target_arch = "x86_64")]
+        {
+            if std::arch::is_x86_feature_detected!("avx2")
+                && std::arch::is_x86_feature_detected!("fma")
+            {
+                return crate::quant::isa::Isa::Avx2;
+            }
+        }
+        crate::quant::isa::Isa::Scalar
     }
 
     #[test]
@@ -296,7 +310,7 @@ mod tests {
         prepared
             .estimate_ip_bits1_batch(&slab, quantizer.code_len(), &mut batch_scores)
             .unwrap();
-        if isa == crate::quant::isa::Isa::Neon {
+        if isa != crate::quant::isa::Isa::Scalar {
             for (score, production) in scores.iter().zip(batch_scores.iter()) {
                 assert_eq!(score.to_bits(), production.to_bits());
             }
@@ -310,10 +324,10 @@ mod tests {
         }
     }
 
-    #[cfg(target_arch = "aarch64")]
     #[test]
-    fn neon_block32_is_bit_equal_with_production_neon_batch() {
-        if !std::arch::is_aarch64_feature_detected!("neon") {
+    fn simd_block32_is_bit_equal_with_production_batch() {
+        let expected_isa = host_expected_simd_isa();
+        if expected_isa == crate::quant::isa::Isa::Scalar {
             return;
         }
         let (quantizer, prepared) = prepared(1536);
@@ -338,7 +352,7 @@ mod tests {
                 .expect("test fixture is exactly one block"),
             &mut kernel_scores,
         );
-        assert_eq!(isa, crate::quant::isa::Isa::Neon);
+        assert_eq!(isa, expected_isa);
 
         let slab = codes.iter().flatten().copied().collect::<Vec<_>>();
         let mut batch_scores = Vec::new();
@@ -346,9 +360,10 @@ mod tests {
             .estimate_ip_bits1_batch(&slab, quantizer.code_len(), &mut batch_scores)
             .unwrap();
 
-        // Both paths call `sum_query_dequant_neon_bits1_pair` with the same
-        // candidate pairing, so the scores are equal by construction. A
-        // mismatch means the kernel and production NEON paths diverged.
+        // The kernel and the production batch slab scorer call the same
+        // per-ISA pair primitive with the same candidate pairing, so scores
+        // are equal by construction on both NEON and AVX2 hosts. A mismatch
+        // means the kernel and production paths diverged.
         for (kernel, production) in kernel_scores.iter().zip(batch_scores.iter()) {
             assert_eq!(kernel.to_bits(), production.to_bits());
         }
