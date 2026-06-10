@@ -1,7 +1,7 @@
 use super::quant_codec::QuantCodecKind;
 use crate::quant::grouped_pq::grouped_pq_score_f32;
 use crate::quant::isa::Isa;
-use crate::quant::prod::{PreparedLutNoQjl4BitQuery, ProdQuantizer};
+use crate::quant::prod::{PreparedLutNoQjl4BitQuery, PreparedQuery, ProdQuantizer};
 use std::sync::{
     atomic::{AtomicU64, Ordering},
     OnceLock,
@@ -442,6 +442,31 @@ pub(crate) fn score_turboquant_no_qjl_4bit_batch_for<Id>(
     result.map(|_| ())
 }
 
+pub(crate) fn score_turboquant_qjl_batch_for<Id>(
+    surface: CandidateBatchScoringSurface,
+    quantizer: &ProdQuantizer,
+    prepared: &PreparedQuery,
+    batch: &CandidateBatch<'_, Id>,
+    out_scores: &mut [f32],
+) -> Result<(), String> {
+    let result = score_turboquant_qjl_batch_inner(quantizer, prepared, batch, out_scores);
+    if let Ok(timing) = &result {
+        let key = BlockKernelCounterKey {
+            surface,
+            quant_kind: QuantCodecKind::TurboQuantQjl,
+            isa: timing.kernel_isa.unwrap_or(Isa::Scalar),
+        };
+        record_block_kernel_score(key, timing.kernel_candidates, timing.kernel_elapsed_nanos);
+        record_block_scalar_score_for(
+            surface,
+            QuantCodecKind::TurboQuantQjl,
+            timing.scalar_candidates,
+            timing.scalar_elapsed_nanos,
+        );
+    }
+    result.map(|_| ())
+}
+
 pub(crate) fn score_grouped_pq_batch_for<Id>(
     surface: CandidateBatchScoringSurface,
     lut: &[f32],
@@ -692,6 +717,121 @@ fn score_turboquant_no_qjl_4bit_batch_lut32<Id>(
     Ok(timing)
 }
 
+fn score_turboquant_qjl_batch_inner<Id>(
+    quantizer: &ProdQuantizer,
+    prepared: &PreparedQuery,
+    batch: &CandidateBatch<'_, Id>,
+    out_scores: &mut [f32],
+) -> Result<BatchScoringTiming, String> {
+    if batch.len() != out_scores.len() {
+        return Err(format!(
+            "candidate batch score output count {} does not match candidate count {}",
+            out_scores.len(),
+            batch.len()
+        ));
+    }
+    crate::quant::qjl32::validate_qjl_shape(quantizer, prepared)?;
+    validate_turboquant_qjl_batch_shapes(quantizer.original_dim, batch)?;
+
+    if batch.len() >= crate::quant::qjl32::BLOCK_WIDTH {
+        return score_turboquant_qjl_batch_block32(quantizer, prepared, batch, out_scores);
+    }
+
+    let scalar_started = Instant::now();
+    for (payload, out_score) in batch.payloads().iter().zip(out_scores.iter_mut()) {
+        let gamma = validate_turboquant_qjl_meta(payload.meta)?;
+        *out_score = crate::quant::qjl32::score_turboquant_qjl_scalar(
+            quantizer,
+            prepared,
+            payload.code,
+            gamma,
+        );
+    }
+    Ok(BatchScoringTiming {
+        scalar_candidates: batch.len(),
+        scalar_elapsed_nanos: u64::try_from(scalar_started.elapsed().as_nanos())
+            .unwrap_or(u64::MAX),
+        ..BatchScoringTiming::default()
+    })
+}
+
+fn score_turboquant_qjl_batch_block32<Id>(
+    quantizer: &ProdQuantizer,
+    prepared: &PreparedQuery,
+    batch: &CandidateBatch<'_, Id>,
+    out_scores: &mut [f32],
+) -> Result<BatchScoringTiming, String> {
+    let mut block_start = 0usize;
+    let mut timing = BatchScoringTiming::default();
+    while block_start + crate::quant::qjl32::BLOCK_WIDTH <= batch.len() {
+        let block_started = Instant::now();
+        let payloads =
+            &batch.payloads()[block_start..block_start + crate::quant::qjl32::BLOCK_WIDTH];
+        let mut codes = [&[][..]; crate::quant::qjl32::BLOCK_WIDTH];
+        let mut gammas = [0.0_f32; crate::quant::qjl32::BLOCK_WIDTH];
+        for (lane, payload) in payloads.iter().enumerate() {
+            gammas[lane] = validate_turboquant_qjl_meta(payload.meta)?;
+            crate::quant::qjl32::validate_code_shape(
+                block_start + lane,
+                quantizer.original_dim,
+                payload.code,
+            )?;
+            codes[lane] = payload.code;
+        }
+        let isa = crate::quant::qjl32::score_turboquant_qjl_block32(
+            quantizer,
+            prepared,
+            codes,
+            gammas,
+            &mut out_scores[block_start..block_start + crate::quant::qjl32::BLOCK_WIDTH],
+        );
+        timing.kernel_isa = Some(isa);
+        timing.kernel_candidates += crate::quant::qjl32::BLOCK_WIDTH;
+        timing.kernel_elapsed_nanos = timing
+            .kernel_elapsed_nanos
+            .saturating_add(u64::try_from(block_started.elapsed().as_nanos()).unwrap_or(u64::MAX));
+        block_start += crate::quant::qjl32::BLOCK_WIDTH;
+    }
+
+    let scalar_started = Instant::now();
+    for (candidate_index, (payload, out_score)) in batch.payloads()[block_start..]
+        .iter()
+        .zip(out_scores[block_start..].iter_mut())
+        .enumerate()
+    {
+        let gamma = validate_turboquant_qjl_meta(payload.meta)?;
+        crate::quant::qjl32::validate_code_shape(
+            block_start + candidate_index,
+            quantizer.original_dim,
+            payload.code,
+        )?;
+        timing.scalar_candidates += 1;
+        *out_score = crate::quant::qjl32::score_turboquant_qjl_scalar(
+            quantizer,
+            prepared,
+            payload.code,
+            gamma,
+        );
+    }
+    if timing.scalar_candidates > 0 {
+        timing.scalar_elapsed_nanos =
+            u64::try_from(scalar_started.elapsed().as_nanos()).unwrap_or(u64::MAX);
+    }
+
+    Ok(timing)
+}
+
+fn validate_turboquant_qjl_batch_shapes<Id>(
+    original_dim: usize,
+    batch: &CandidateBatch<'_, Id>,
+) -> Result<(), String> {
+    for (candidate_index, payload) in batch.payloads().iter().enumerate() {
+        validate_turboquant_qjl_meta(payload.meta)?;
+        crate::quant::qjl32::validate_code_shape(candidate_index, original_dim, payload.code)?;
+    }
+    Ok(())
+}
+
 fn validate_grouped_pq_meta(
     meta: CandidateMeta<'_>,
     expected_group_count: usize,
@@ -719,6 +859,19 @@ fn validate_turboquant_no_qjl_4bit_meta(meta: CandidateMeta<'_>) -> Result<(), S
         | CandidateMeta::RaBitQ
         | CandidateMeta::GroupedPq { .. } => {
             Err("TurboQuant no-QJL 4-bit batch received incompatible candidate metadata".to_owned())
+        }
+    }
+}
+
+fn validate_turboquant_qjl_meta(meta: CandidateMeta<'_>) -> Result<f32, String> {
+    match meta {
+        CandidateMeta::Gamma(gamma) => Ok(gamma),
+        CandidateMeta::None
+        | CandidateMeta::GammaAndResidualSigns { .. }
+        | CandidateMeta::Binary
+        | CandidateMeta::RaBitQ
+        | CandidateMeta::GroupedPq { .. } => {
+            Err("TurboQuant QJL batch received incompatible candidate metadata".to_owned())
         }
     }
 }
@@ -1080,6 +1233,122 @@ mod tests {
             .unwrap();
         assert_eq!(task87_ivf.lut32_flushes, 0);
         assert_eq!(task87_ivf.lut32_candidates, 0);
+
+        super::reset_candidate_batch_scoring_counters();
+    }
+
+    #[test]
+    fn turboquant_qjl_batch_matches_pre_slice_scalar_reference_and_records_counters() {
+        let _guard = super::CANDIDATE_BATCH_COUNTER_TEST_LOCK.lock().unwrap();
+        super::reset_candidate_batch_scoring_counters();
+        let quantizer = crate::quant::prod::ProdQuantizer::new(1024, 4, 42);
+        let query = random_unit_vector(1024, 151);
+        let prepared = quantizer.prepare_ip_query(&query);
+        let encoded: Vec<_> = (0..39)
+            .map(|seed| quantizer.encode(&random_unit_vector(1024, seed + 500)))
+            .collect();
+        let codes: Vec<Vec<u8>> = encoded
+            .iter()
+            .map(|encoded| {
+                let mut code =
+                    Vec::with_capacity(encoded.mse_packed.len() + encoded.qjl_packed.len());
+                code.extend_from_slice(&encoded.mse_packed);
+                code.extend_from_slice(&encoded.qjl_packed);
+                code
+            })
+            .collect();
+        let mut batch = CandidateBatch::with_capacity(codes.len());
+        for (index, (code, encoded)) in codes.iter().zip(encoded.iter()).enumerate() {
+            batch
+                .push(
+                    index,
+                    CandidatePayload::new(code, CandidateMeta::Gamma(encoded.gamma)),
+                )
+                .unwrap();
+        }
+        let mut batch_scores = vec![0.0; batch.len()];
+
+        super::score_turboquant_qjl_batch_for(
+            CandidateBatchScoringSurface::Ivf,
+            &quantizer,
+            &prepared,
+            &batch,
+            &mut batch_scores,
+        )
+        .unwrap();
+
+        for ((code, encoded), score) in codes.iter().zip(encoded.iter()).zip(batch_scores.iter()) {
+            let pre_slice =
+                quantizer.score_ip_from_parts_scalar_reference(&prepared, encoded.gamma, code);
+            assert_eq!(score.to_bits(), pre_slice.to_bits());
+        }
+
+        let block_snapshots = super::block_kernel_scoring_snapshots();
+        let qjl: Vec<_> = block_snapshots
+            .iter()
+            .filter(|snapshot| snapshot.surface == "ivf" && snapshot.quant_kind == "turboquant_qjl")
+            .collect();
+        assert!(!qjl.is_empty());
+        assert_eq!(
+            qjl.iter()
+                .map(|snapshot| snapshot.kernel_candidates)
+                .sum::<u64>(),
+            32
+        );
+        assert_eq!(
+            qjl.iter()
+                .map(|snapshot| snapshot.scalar_candidates)
+                .sum::<u64>(),
+            7
+        );
+        assert_eq!(
+            qjl.iter().map(|snapshot| snapshot.candidates).sum::<u64>(),
+            39
+        );
+        let task87_ivf = super::candidate_batch_scoring_snapshots()
+            .into_iter()
+            .find(|snapshot| snapshot.surface == "ivf")
+            .unwrap();
+        assert_eq!(task87_ivf.lut32_flushes, 0);
+        assert_eq!(task87_ivf.lut32_candidates, 0);
+
+        super::reset_candidate_batch_scoring_counters();
+    }
+
+    #[test]
+    fn turboquant_qjl_batch_rejects_no_qjl_dimension_without_counters() {
+        let _guard = super::CANDIDATE_BATCH_COUNTER_TEST_LOCK.lock().unwrap();
+        super::reset_candidate_batch_scoring_counters();
+        let quantizer = crate::quant::prod::ProdQuantizer::new(1536, 4, 42);
+        let query = random_unit_vector(1536, 171);
+        let prepared = quantizer.prepare_ip_query(&query);
+        let encoded = quantizer.encode(&random_unit_vector(1536, 172));
+        let mut code = Vec::with_capacity(encoded.mse_packed.len() + encoded.qjl_packed.len());
+        code.extend_from_slice(&encoded.mse_packed);
+        code.extend_from_slice(&encoded.qjl_packed);
+        let mut batch = CandidateBatch::with_capacity(1);
+        batch
+            .push(
+                0usize,
+                CandidatePayload::new(&code, CandidateMeta::Gamma(encoded.gamma)),
+            )
+            .unwrap();
+        let mut scores = vec![0.0; 1];
+
+        let err = super::score_turboquant_qjl_batch_for(
+            CandidateBatchScoringSurface::Ivf,
+            &quantizer,
+            &prepared,
+            &batch,
+            &mut scores,
+        )
+        .unwrap_err();
+
+        assert!(err.contains("requires QJL-active TurboQuant 4-bit scoring"));
+        assert!(super::block_kernel_scoring_snapshots().is_empty());
+        assert!(super::candidate_batch_scoring_snapshots()
+            .iter()
+            .all(|snapshot| snapshot.flushes == 0 && snapshot.candidates == 0));
 
         super::reset_candidate_batch_scoring_counters();
     }
