@@ -4,6 +4,34 @@ Status: in review (2026-06-09; implementation, local validation, automatic CI cl
 Owner: coder (to be assigned). Phase III parallel — multiple coders OK across Tasks 93–98.
 Priority: 2 (highest documented kernel-win ROI in Phase III)
 
+## Reopened scope (2026-06-10): F8 shuffle-repack kernel slice
+
+Per operator decision, one more in-task implementation slice is
+required before the Graviton 4 / closeout pass. Measured per-candidate
+rates from this task's own packet 025 counters (AVX2 kernel ~98
+ns/cand vs scalar ~110 ns/cand on DiskANN cells) show the f32-gather
+first-landing kernel is gather-bound — the Phase 1 design deferred
+byte/shuffle LUT repacking "unless measurements require it", and they
+now do. The slice:
+
+- AVX2: FAISS PQ4-FastScan-style `_mm256_shuffle_epi8` with the
+  16-entry LUT held in registers (the original task-file design).
+- NEON: `vqtbl1q_u8` sibling.
+- Parity: the scalar f32-LUT reference remains the strict bit-exact
+  anchor (designed to survive this repack); the repacked kernels grade
+  under the ADR-076 tolerance pair, or bit-exact if per-candidate
+  accumulation order is preserved.
+- Evidence: re-run the packet 025 local matrix; IVF is the primary
+  beneficiary (full block coverage already); DiskANN gains require
+  Task 101's width-cascade dispatch in combination.
+- Source of record:
+  `reviews/task-99/000-pre-closeout-architecture-review/feedback/`
+  (finding F8).
+
+The Graviton 4 runbook (packet 027) executes after this slice and
+Task 101, so ARM evidence is collected once against the final kernel
+shape.
+
 ## Why
 
 Grouped-PQ (a.k.a. PqFastScan) is the **canonical block-kernel
