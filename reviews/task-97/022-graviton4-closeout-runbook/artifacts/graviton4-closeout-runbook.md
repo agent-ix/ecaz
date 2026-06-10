@@ -9,6 +9,8 @@ approves Graviton 4/AWS testing for Task 97.
 - branch: `task-97-tq-qjl-block-kernel`
 - prepared head at packet time: `56b8a781ade334164c19c7194d32d4d3ec61a8c7`
 - restore snapshot: `snap-0e9c7743263e61d70`
+- cloud profile: use the approved Graviton 4 profile for the run and record
+  the exact value in the execution packet manifest
 - production ARM target: Graviton 4 / Neoverse V2 / SVE2
 - qjl32 production fixture: `dim=1024,bits=4,seed=42`
 - existing suite config:
@@ -41,8 +43,14 @@ unchanged.
 Future approved command shape:
 
 ```sh
-ecaz cloud up --from-snapshot snap-0e9c7743263e61d70 --git-ref task-97-tq-qjl-block-kernel
-ecaz cloud install --git-ref task-97-tq-qjl-block-kernel
+ecaz cloud up \
+  --profile <approved-graviton4-profile> \
+  --from-snapshot snap-0e9c7743263e61d70 \
+  --git-ref task-97-tq-qjl-block-kernel
+
+ecaz cloud install \
+  --profile <approved-graviton4-profile> \
+  --git-ref task-97-tq-qjl-block-kernel
 ```
 
 Record the actual profile, instance id, region, host type, and installed
