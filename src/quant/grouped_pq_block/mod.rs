@@ -119,6 +119,13 @@ pub(crate) fn score_grouped_pq_partial(
         return crate::quant::isa::Isa::Scalar;
     }
 
+    if crate::quant::isa::current_isa() == crate::quant::isa::Isa::Scalar {
+        for (code, out_score) in codes.iter().zip(out_scores.iter_mut()) {
+            *out_score = scalar::score_scalar_tail(lut, group_count, code);
+        }
+        return crate::quant::isa::Isa::Scalar;
+    }
+
     let mut padded_codes = [codes[0]; BLOCK_WIDTH];
     for (lane, code) in codes.iter().enumerate() {
         padded_codes[lane] = *code;
@@ -129,6 +136,7 @@ pub(crate) fn score_grouped_pq_partial(
     isa
 }
 
+#[cfg(test)]
 pub(crate) fn score_grouped_pq_scalar(lut: &[f32], group_count: usize, code: &[u8]) -> f32 {
     scalar::score_scalar_tail(lut, group_count, code)
 }

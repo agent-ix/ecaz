@@ -463,62 +463,6 @@ fn score_grouped_pq_batch_inner<Id>(
     ))
 }
 
-#[allow(dead_code)]
-fn score_grouped_pq_tail_scalar(
-    lut: &[f32],
-    group_count: usize,
-    codes: &[&[u8]],
-    out_scores: &mut [f32],
-    timing: &mut BatchScoringTiming,
-) {
-    if codes.is_empty() {
-        return;
-    }
-    let scalar_started = Instant::now();
-    for (code, out_score) in codes.iter().zip(out_scores.iter_mut()) {
-        *out_score =
-            crate::quant::grouped_pq_block::score_grouped_pq_scalar(lut, group_count, code);
-    }
-    timing.scalar_candidates += codes.len();
-    timing.scalar_elapsed_nanos = timing
-        .scalar_elapsed_nanos
-        .saturating_add(u64::try_from(scalar_started.elapsed().as_nanos()).unwrap_or(u64::MAX));
-}
-
-#[allow(dead_code)]
-fn score_grouped_pq_batch_block32<Id>(
-    lut: &[f32],
-    group_count: usize,
-    batch: &CandidateBatch<'_, Id>,
-    out_scores: &mut [f32],
-) -> Result<BatchScoringTiming, String> {
-    let codes: Vec<&[u8]> = batch
-        .payloads()
-        .iter()
-        .map(|payload| payload.code)
-        .collect();
-    Ok(score_width_cascade(
-        &codes,
-        out_scores,
-        crate::quant::grouped_pq_block::BLOCK_WIDTH,
-        true,
-        |block_codes, block_scores| {
-            let codes: [&[u8]; crate::quant::grouped_pq_block::BLOCK_WIDTH] = block_codes
-                .try_into()
-                .expect("width-cascade block length is exact");
-            crate::quant::grouped_pq_block::score_grouped_pq_block32(
-                lut,
-                group_count,
-                codes,
-                block_scores,
-            )
-        },
-        |tail_codes, tail_scores, timing| {
-            score_grouped_pq_tail_scalar(lut, group_count, tail_codes, tail_scores, timing);
-        },
-    ))
-}
-
 fn validate_grouped_pq_batch_shapes<Id>(
     group_count: usize,
     batch: &CandidateBatch<'_, Id>,

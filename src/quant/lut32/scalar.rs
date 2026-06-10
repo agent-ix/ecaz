@@ -29,7 +29,6 @@ pub(super) fn score_block32_scalar(
     Isa::Scalar
 }
 
-#[allow(dead_code)]
 pub(super) fn score_scalar_tail(lut: &[f32], original_dim: usize, code: &[u8]) -> f32 {
     let mut sum = 0.0_f32;
     let mut dim_index = 0usize;
