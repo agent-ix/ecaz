@@ -2525,6 +2525,24 @@ fn flush_turboquant_exact_payload_batch(
     if batch_candidates.is_empty() {
         return;
     }
+    if turboquant_qjl_exact_payload_eligible(opaque)
+        && batch_candidates.len() < crate::quant::qjl32::OCTET_WIDTH
+    {
+        for candidate in std::mem::take(batch_candidates) {
+            let score = score_and_cache_scan_element(
+                opaque,
+                candidate.element_tid,
+                candidate.payload.gamma,
+                &candidate.payload.code_bytes,
+            );
+            candidates.push(search::BeamCandidate::with_source(
+                candidate.element_tid,
+                score,
+                candidate.source_tid,
+            ));
+        }
+        return;
+    }
     candidates.extend(score_and_cache_turboquant_exact_payload_batch(
         opaque,
         std::mem::take(batch_candidates),
@@ -8114,6 +8132,102 @@ mod tests {
             .collect::<Vec<_>>();
         assert!(qjl.iter().any(|snapshot| snapshot.kernel_candidates == 32));
         assert!(qjl.iter().any(|snapshot| snapshot.scalar_candidates == 7));
+
+        crate::am::common::candidate_batch::reset_candidate_batch_scoring_counters();
+        free_scan_prepared_query(&mut opaque);
+    }
+
+    #[test]
+    fn turboquant_exact_payload_flush_bypasses_qjl_batch_under_octet() {
+        let _guard = crate::am::common::candidate_batch::CANDIDATE_BATCH_COUNTER_TEST_LOCK
+            .lock()
+            .unwrap();
+        crate::am::common::candidate_batch::reset_candidate_batch_scoring_counters();
+
+        let dimensions = 1024;
+        let query = unit_vector(dimensions);
+        let quantizer = Arc::new(ProdQuantizer::new(dimensions, 4, 42));
+        assert!(quantizer.exact_score_uses_qjl());
+        let prepared = Box::new(quantizer.prepare_ip_query(&query));
+        let encoded = (0..(crate::quant::qjl32::OCTET_WIDTH - 1))
+            .map(|index| {
+                let source = (0..dimensions)
+                    .map(|col| ((index + col * 7) % 37) as f32 / dimensions as f32)
+                    .collect::<Vec<_>>();
+                quantizer.encode(&source)
+            })
+            .collect::<Vec<_>>();
+        let codes = encoded
+            .iter()
+            .map(|encoded| {
+                let mut code =
+                    Vec::with_capacity(encoded.mse_packed.len() + encoded.qjl_packed.len());
+                code.extend_from_slice(&encoded.mse_packed);
+                code.extend_from_slice(&encoded.qjl_packed);
+                code
+            })
+            .collect::<Vec<_>>();
+        let expected = encoded
+            .iter()
+            .zip(codes.iter())
+            .map(|(encoded, code)| -quantizer.score_ip_from_parts(&prepared, encoded.gamma, code))
+            .collect::<Vec<_>>();
+        let cached_quantizer = Arc::into_raw(Arc::clone(&quantizer));
+        let prepared_query = Box::into_raw(prepared);
+        let mut opaque = TqScanOpaque {
+            cached_quantizer,
+            prepared_query,
+            turboquant_exact_score_mode: TurboQuantExactScoreMode::Exact,
+            ..TqScanOpaque::default()
+        };
+        let mut batch_candidates = encoded
+            .iter()
+            .zip(codes.iter())
+            .enumerate()
+            .map(|(index, (encoded, code))| HnswExactPayloadBatchCandidate {
+                source_tid: tid(1, 1),
+                element_tid: tid(31, u16::try_from(index + 1).unwrap()),
+                payload: LoadedElementScoreInput {
+                    gamma: encoded.gamma,
+                    code_bytes: code.clone(),
+                },
+            })
+            .collect::<Vec<_>>();
+        let mut candidates = Vec::new();
+
+        flush_turboquant_exact_payload_batch(&mut opaque, &mut batch_candidates, &mut candidates);
+
+        assert!(batch_candidates.is_empty());
+        assert_eq!(candidates.len(), expected.len());
+        for (index, candidate) in candidates.iter().enumerate() {
+            assert_eq!(candidate.node, tid(31, u16::try_from(index + 1).unwrap()));
+            let tolerance = 1e-6_f32.max(expected[index].abs() * 1e-6);
+            assert!(
+                (candidate.score - expected[index]).abs() <= tolerance,
+                "index={index} batch={} scalar={}",
+                candidate.score,
+                expected[index]
+            );
+            assert_eq!(
+                cached_scan_element_score(&opaque, candidate.node),
+                Some(candidate.score)
+            );
+        }
+        assert_eq!(
+            opaque.stats_delta.total_distance_calcs,
+            expected.len() as u64
+        );
+        assert_eq!(
+            opaque.debug_profile.score_cache_misses,
+            expected.len() as u64
+        );
+        let snapshots = crate::am::common::candidate_batch::block_kernel_scoring_snapshots();
+        assert!(snapshots
+            .iter()
+            .filter(|snapshot| {
+                snapshot.surface == "hnsw" && snapshot.quant_kind == "turboquant_qjl"
+            })
+            .all(|snapshot| snapshot.candidates == 0));
 
         crate::am::common::candidate_batch::reset_candidate_batch_scoring_counters();
         free_scan_prepared_query(&mut opaque);
