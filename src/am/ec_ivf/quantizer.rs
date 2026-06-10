@@ -1595,14 +1595,34 @@ mod tests {
         let block_prepared = estimator
             .bits1_block_prepared(dispatch.payload_len())
             .expect("bits=1 block prepared should exist");
-        for (index, payload) in payloads.chunks_exact(dispatch.payload_len()).enumerate() {
+
+        // First 32 payloads route through the dispatched block kernel;
+        // reproduce that call directly so the expectation matches whichever
+        // ISA backend this host selects. The 3-payload tail is scalar.
+        let code_chunks: Vec<&[u8]> = payloads.chunks_exact(dispatch.payload_len()).collect();
+        let block_codes: [&[u8]; 32] = code_chunks[..32].to_vec().try_into().unwrap();
+        let mut expected_block_scores = vec![0.0; 32];
+        crate::quant::rabitq32::score_rabitq_bits1_block32(
+            block_prepared,
+            block_codes,
+            &mut expected_block_scores,
+        );
+        for (index, expected) in expected_block_scores.iter().enumerate() {
+            assert_eq!(
+                batch_scores[index].to_bits(),
+                expected.to_bits(),
+                "index={index} batch={} kernel={expected}",
+                batch_scores[index]
+            );
+        }
+        for (index, payload) in code_chunks[32..].iter().enumerate() {
             let kernel_scalar =
                 crate::quant::rabitq32::score_rabitq_bits1_scalar(block_prepared, payload);
             assert_eq!(
-                batch_scores[index].to_bits(),
+                batch_scores[32 + index].to_bits(),
                 kernel_scalar.to_bits(),
-                "index={index} batch={} kernel={kernel_scalar}",
-                batch_scores[index]
+                "tail index={index} batch={} kernel={kernel_scalar}",
+                batch_scores[32 + index]
             );
         }
     }

@@ -1194,12 +1194,41 @@ mod tests {
         )
         .unwrap();
 
-        for (payload, score) in encoded.iter().zip(batch_scores.iter()) {
+        // The first 32 candidates go through the dispatched block kernel;
+        // reproduce that call directly so the expectation matches whichever
+        // ISA backend this host selects. The 7-candidate tail is scalar.
+        let block_codes: [&[u8]; 32] = encoded[..32]
+            .iter()
+            .map(Vec::as_slice)
+            .collect::<Vec<_>>()
+            .try_into()
+            .unwrap();
+        let mut expected_block_scores = vec![0.0; 32];
+        let kernel_isa = crate::quant::rabitq32::score_rabitq_bits1_block32(
+            block_prepared,
+            block_codes,
+            &mut expected_block_scores,
+        );
+        for (score, expected) in batch_scores[..32].iter().zip(expected_block_scores.iter()) {
+            assert_eq!(score.to_bits(), expected.to_bits());
+        }
+        for (payload, score) in encoded[32..].iter().zip(batch_scores[32..].iter()) {
             let scalar = crate::quant::rabitq32::score_rabitq_bits1_scalar(block_prepared, payload);
             assert_eq!(score.to_bits(), scalar.to_bits());
         }
+
         let block_snapshots = super::block_kernel_scoring_snapshots();
-        let block = block_snapshots
+        let kernel_row = block_snapshots
+            .iter()
+            .find(|snapshot| {
+                snapshot.surface == "diskann"
+                    && snapshot.quant_kind == "rabitq"
+                    && snapshot.isa == kernel_isa.label()
+            })
+            .unwrap();
+        assert_eq!(kernel_row.kernel_flushes, 1);
+        assert_eq!(kernel_row.kernel_candidates, 32);
+        let tail_row = block_snapshots
             .iter()
             .find(|snapshot| {
                 snapshot.surface == "diskann"
@@ -1207,12 +1236,14 @@ mod tests {
                     && snapshot.isa == "scalar"
             })
             .unwrap();
-        assert_eq!(block.flushes, 2);
-        assert_eq!(block.candidates, 39);
-        assert_eq!(block.kernel_flushes, 1);
-        assert_eq!(block.kernel_candidates, 32);
-        assert_eq!(block.scalar_flushes, 1);
-        assert_eq!(block.scalar_candidates, 7);
+        assert_eq!(tail_row.scalar_flushes, 1);
+        assert_eq!(tail_row.scalar_candidates, 7);
+        let total_candidates: u64 = block_snapshots
+            .iter()
+            .filter(|snapshot| snapshot.surface == "diskann" && snapshot.quant_kind == "rabitq")
+            .map(|snapshot| snapshot.candidates)
+            .sum();
+        assert_eq!(total_candidates, 39);
         super::reset_candidate_batch_scoring_counters();
     }
 

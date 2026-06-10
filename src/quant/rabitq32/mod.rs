@@ -16,6 +16,7 @@ pub(crate) struct PreparedBits1<'a> {
     pub(crate) dimensions: usize,
     pub(crate) code_len: usize,
     pub(crate) query_rotated: &'a [f32],
+    pub(crate) dequant_lut: &'a [f32; 256],
     pub(crate) bits1_byte_lut: &'a [[f32; 8]; 256],
 }
 
@@ -116,12 +117,42 @@ mod tests {
         (quantizer, prepared)
     }
 
+    /// ADR-076 tolerance: pass when within 4 ULP or 1e-6 relative,
+    /// whichever is larger.
     fn assert_close(actual: f32, expected: f32) {
+        let ulp = ulp_distance(actual, expected);
         let abs = (actual - expected).abs();
         let rel = 1e-6_f32 * actual.abs().max(expected.abs()).max(1.0);
         assert!(
-            abs <= rel,
-            "actual={actual} expected={expected} abs={abs} rel={rel}"
+            ulp <= 4 || abs <= rel,
+            "actual={actual} expected={expected} ulp={ulp} abs={abs} rel={rel}"
+        );
+    }
+
+    fn ulp_distance(a: f32, b: f32) -> u32 {
+        if a == b {
+            return 0;
+        }
+        if a.is_sign_positive() != b.is_sign_positive() {
+            return u32::MAX;
+        }
+        a.to_bits().abs_diff(b.to_bits())
+    }
+
+    /// SIMD-vs-scalar-anchor envelope. FMA accumulator trees reorder the
+    /// summation, so the strict ADR-076 bound (4 ULP / 1e-6 relative) is not
+    /// achievable at high dimensions: measured 22 ULP (1.55e-6 relative) at
+    /// dim=1536 on NEON. This matches the existing production differential
+    /// precedent in `rabitq.rs` tests (`1e-5`); the binding correctness gate
+    /// for SIMD backends is recall byte-equality at bench level plus
+    /// bit-equality with the same-order production SIMD batch path.
+    fn assert_close_simd(actual: f32, expected: f32) {
+        let ulp = ulp_distance(actual, expected);
+        let abs = (actual - expected).abs();
+        let bound = 1e-5_f32 * actual.abs().max(expected.abs()).max(1.0);
+        assert!(
+            ulp <= 4 || abs <= bound,
+            "actual={actual} expected={expected} ulp={ulp} abs={abs} bound={bound}"
         );
     }
 
@@ -139,12 +170,44 @@ mod tests {
     }
 
     #[test]
-    fn block32_matches_forced_scalar_anchor_bits() {
+    fn scalar_block32_matches_forced_scalar_anchor_bits() {
         let (quantizer, prepared) = prepared(65);
         let codes: Vec<_> = (0..BLOCK_WIDTH)
             .map(|seed| {
                 quantizer
                     .encode_code(&vector(65, seed as u64 + 100))
+                    .into_vec()
+            })
+            .collect();
+        let code_refs: Vec<&[u8]> = codes.iter().map(Vec::as_slice).collect();
+        let block_prepared = prepared
+            .bits1_block_prepared(quantizer.code_len())
+            .expect("bits=1 block prepared should exist");
+        let mut scores = vec![0.0; BLOCK_WIDTH];
+
+        let isa = super::scalar::score_block32_scalar(
+            block_prepared,
+            code_refs
+                .as_slice()
+                .try_into()
+                .expect("test fixture is exactly one block"),
+            &mut scores,
+        );
+
+        for (score, code) in scores.iter().zip(code_refs.iter()) {
+            let anchor = forced_scalar_anchor(block_prepared, code);
+            assert_eq!(score.to_bits(), anchor.to_bits());
+        }
+        assert_eq!(isa, crate::quant::isa::Isa::Scalar);
+    }
+
+    #[test]
+    fn dispatched_block32_matches_anchor_within_tolerance() {
+        let (quantizer, prepared) = prepared(1536);
+        let codes: Vec<_> = (0..BLOCK_WIDTH)
+            .map(|seed| {
+                quantizer
+                    .encode_code(&vector(1536, seed as u64 + 300))
                     .into_vec()
             })
             .collect();
@@ -164,10 +227,61 @@ mod tests {
         );
 
         for (score, code) in scores.iter().zip(code_refs.iter()) {
-            let anchor = forced_scalar_anchor(block_prepared, code);
-            assert_eq!(score.to_bits(), anchor.to_bits());
+            assert_close_simd(*score, forced_scalar_anchor(block_prepared, code));
         }
-        assert_eq!(isa, crate::quant::isa::Isa::Scalar);
+        #[cfg(target_arch = "aarch64")]
+        let expected_isa = if std::arch::is_aarch64_feature_detected!("neon") {
+            crate::quant::isa::Isa::Neon
+        } else {
+            crate::quant::isa::Isa::Scalar
+        };
+        #[cfg(not(target_arch = "aarch64"))]
+        let expected_isa = crate::quant::isa::Isa::Scalar;
+        assert_eq!(isa, expected_isa);
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    #[test]
+    fn neon_block32_is_bit_equal_with_production_neon_batch() {
+        if !std::arch::is_aarch64_feature_detected!("neon") {
+            return;
+        }
+        let (quantizer, prepared) = prepared(1536);
+        let codes: Vec<_> = (0..BLOCK_WIDTH)
+            .map(|seed| {
+                quantizer
+                    .encode_code(&vector(1536, seed as u64 + 500))
+                    .into_vec()
+            })
+            .collect();
+        let code_refs: Vec<&[u8]> = codes.iter().map(Vec::as_slice).collect();
+        let block_prepared = prepared
+            .bits1_block_prepared(quantizer.code_len())
+            .expect("bits=1 block prepared should exist");
+        let mut kernel_scores = vec![0.0; BLOCK_WIDTH];
+
+        let isa = score_rabitq_bits1_block32(
+            block_prepared,
+            code_refs
+                .as_slice()
+                .try_into()
+                .expect("test fixture is exactly one block"),
+            &mut kernel_scores,
+        );
+        assert_eq!(isa, crate::quant::isa::Isa::Neon);
+
+        let slab = codes.iter().flatten().copied().collect::<Vec<_>>();
+        let mut batch_scores = Vec::new();
+        prepared
+            .estimate_ip_bits1_batch(&slab, quantizer.code_len(), &mut batch_scores)
+            .unwrap();
+
+        // Both paths call `sum_query_dequant_neon_bits1_pair` with the same
+        // candidate pairing, so the scores are equal by construction. A
+        // mismatch means the kernel and production NEON paths diverged.
+        for (kernel, production) in kernel_scores.iter().zip(batch_scores.iter()) {
+            assert_eq!(kernel.to_bits(), production.to_bits());
+        }
     }
 
     #[test]

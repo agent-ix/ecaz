@@ -901,6 +901,7 @@ impl PreparedEstimator {
             dimensions: self.dimensions,
             code_len,
             query_rotated: &self.query_rotated,
+            dequant_lut: &self.dequant_lut,
             bits1_byte_lut,
         })
     }
@@ -1252,6 +1253,7 @@ impl RaBitQScorer {
             dimensions: self.dimensions,
             code_len,
             query_rotated: &self.query_rotated,
+            dequant_lut: &self.dequant_lut,
             bits1_byte_lut,
         })
     }
@@ -2214,9 +2216,15 @@ unsafe fn sum_query_dequant_neon_bf16_bits4(
 // builder; the prior per-candidate version was a perf bug and is
 // removed.
 
+/// # Safety
+///
+/// Caller must confirm NEON availability before calling. `query_rotated` must
+/// hold exactly `dimensions` values, `byte_lut` must be a bits=1 dequant byte
+/// table, and `code` must contain at least `ceil(dimensions / 8)` packed code
+/// bytes.
 #[cfg(target_arch = "aarch64")]
 #[target_feature(enable = "neon")]
-unsafe fn sum_query_dequant_neon_bits1(
+pub(crate) unsafe fn sum_query_dequant_neon_bits1(
     query_rotated: &[f32],
     dimensions: usize,
     byte_lut: &[[f32; 8]; 256],
@@ -2303,12 +2311,13 @@ unsafe fn sum_query_dequant_neon_bits1(
 
 /// # Safety
 ///
-/// Caller must confirm NEON availability before calling. `byte_lut` must be a
-/// bits=1 dequant byte table and both code slices must contain at least
-/// `ceil(dimensions / 8)` packed code bytes.
+/// Caller must confirm NEON availability before calling. `query_rotated` must
+/// hold exactly `dimensions` values, `byte_lut` must be a bits=1 dequant byte
+/// table, and both code slices must contain at least `ceil(dimensions / 8)`
+/// packed code bytes.
 #[cfg(target_arch = "aarch64")]
 #[target_feature(enable = "neon")]
-unsafe fn sum_query_dequant_neon_bits1_pair(
+pub(crate) unsafe fn sum_query_dequant_neon_bits1_pair(
     query_rotated: &[f32],
     dimensions: usize,
     byte_lut: &[[f32; 8]; 256],

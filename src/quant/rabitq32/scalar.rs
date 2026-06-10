@@ -61,7 +61,7 @@ fn sum_query_dequant_bits1_byte_lut_scalar(prepared: PreparedBits1<'_>, code: &[
 }
 
 #[inline]
-fn finish_scalar_only_estimate(
+pub(super) fn finish_scalar_only_estimate(
     prepared: PreparedBits1<'_>,
     sum_q_dequant: f32,
     code: &[u8],
