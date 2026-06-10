@@ -866,8 +866,8 @@ fn validate_turboquant_no_qjl_4bit_meta(meta: CandidateMeta<'_>) -> Result<(), S
 fn validate_turboquant_qjl_meta(meta: CandidateMeta<'_>) -> Result<f32, String> {
     match meta {
         CandidateMeta::Gamma(gamma) => Ok(gamma),
+        CandidateMeta::GammaAndResidualSigns { gamma, .. } => Ok(gamma),
         CandidateMeta::None
-        | CandidateMeta::GammaAndResidualSigns { .. }
         | CandidateMeta::Binary
         | CandidateMeta::RaBitQ
         | CandidateMeta::GroupedPq { .. } => {
@@ -1262,7 +1262,17 @@ mod tests {
             batch
                 .push(
                     index,
-                    CandidatePayload::new(code, CandidateMeta::Gamma(encoded.gamma)),
+                    CandidatePayload::new(
+                        code,
+                        if index % 2 == 0 {
+                            CandidateMeta::Gamma(encoded.gamma)
+                        } else {
+                            CandidateMeta::GammaAndResidualSigns {
+                                gamma: encoded.gamma,
+                                signs: &[],
+                            }
+                        },
+                    ),
                 )
                 .unwrap();
         }

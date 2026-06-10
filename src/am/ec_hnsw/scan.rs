@@ -9,8 +9,9 @@ use pgrx::{pg_sys, FromDatum, PgBox};
 use crate::am::common::{
     callback::pg_am_callback,
     candidate_batch::{
-        score_grouped_pq_batch_for, score_turboquant_no_qjl_4bit_batch_for, CandidateBatch,
-        CandidateBatchScoringSurface, CandidateMeta, CandidatePayload,
+        score_grouped_pq_batch_for, score_turboquant_no_qjl_4bit_batch_for,
+        score_turboquant_qjl_batch_for, CandidateBatch, CandidateBatchScoringSurface,
+        CandidateMeta, CandidatePayload,
     },
     heap_slot::HeapSlotReader,
     quant_codec::{EncodedQuantPayload, QuantCodec, QuantCodecKind, QuantSearchCodecTag},
@@ -3175,6 +3176,49 @@ impl<'a> QuantCodec for HnswTurboQuantScanCodec<'a> {
                 .score_ip_from_parts_int8_approx_no_qjl_4bit(prepared, payload.code),
         };
         Ok(score)
+    }
+
+    fn score_ip_batch<Id>(
+        &self,
+        prepared_query: &Self::PreparedQuery,
+        batch: &CandidateBatch<'_, Id>,
+        out_scores: &mut [f32],
+    ) -> Result<(), String> {
+        match prepared_query {
+            HnswTurboQuantPreparedQuery::Exact(prepared)
+                if self.quantizer.exact_score_uses_qjl() =>
+            {
+                score_turboquant_qjl_batch_for(
+                    CandidateBatchScoringSurface::Hnsw,
+                    self.quantizer,
+                    prepared,
+                    batch,
+                    out_scores,
+                )
+            }
+            HnswTurboQuantPreparedQuery::FullLut(prepared) => {
+                score_turboquant_no_qjl_4bit_batch_for(
+                    CandidateBatchScoringSurface::Hnsw,
+                    self.quantizer,
+                    prepared,
+                    batch,
+                    out_scores,
+                )
+            }
+            _ => {
+                if batch.len() != out_scores.len() {
+                    return Err(format!(
+                        "ec_hnsw TurboQuant batch output count {} does not match candidate count {}",
+                        out_scores.len(),
+                        batch.len()
+                    ));
+                }
+                for (payload, out_score) in batch.payloads().iter().zip(out_scores.iter_mut()) {
+                    *out_score = self.score_ip_candidate(prepared_query, *payload)?;
+                }
+                Ok(())
+            }
+        }
     }
 }
 
@@ -7741,6 +7785,87 @@ mod tests {
                 .score_ip_from_parts_int8_approx_no_qjl_4bit(&prepared_int8, &encoded.mse_packed)
                 .to_bits()
         );
+    }
+
+    #[test]
+    fn hnsw_turboquant_qjl_scan_codec_batch_uses_qjl32_path() {
+        let _guard = crate::am::common::candidate_batch::CANDIDATE_BATCH_COUNTER_TEST_LOCK
+            .lock()
+            .unwrap();
+        crate::am::common::candidate_batch::reset_candidate_batch_scoring_counters();
+
+        let dimensions = 1024;
+        let query = unit_vector(dimensions);
+        let quantizer = ProdQuantizer::new(dimensions, 4, 42);
+        assert!(quantizer.exact_score_uses_qjl());
+        let prepared = quantizer.prepare_ip_query(&query);
+        let exact = HnswTurboQuantPreparedQuery::Exact(&prepared);
+        let codec = HnswTurboQuantScanCodec::new(&quantizer);
+        let encoded = (0..39)
+            .map(|index| {
+                let source = (0..dimensions)
+                    .map(|col| ((index + col * 7) % 37) as f32 / dimensions as f32)
+                    .collect::<Vec<_>>();
+                quantizer.encode(&source)
+            })
+            .collect::<Vec<_>>();
+        let codes = encoded
+            .iter()
+            .map(|encoded| {
+                let mut code =
+                    Vec::with_capacity(encoded.mse_packed.len() + encoded.qjl_packed.len());
+                code.extend_from_slice(&encoded.mse_packed);
+                code.extend_from_slice(&encoded.qjl_packed);
+                code
+            })
+            .collect::<Vec<_>>();
+        let mut batch = CandidateBatch::with_capacity(codes.len());
+        for (index, (code, encoded)) in codes.iter().zip(encoded.iter()).enumerate() {
+            batch
+                .push(
+                    index,
+                    CandidatePayload::new(
+                        code,
+                        if index % 2 == 0 {
+                            CandidateMeta::Gamma(encoded.gamma)
+                        } else {
+                            CandidateMeta::GammaAndResidualSigns {
+                                gamma: encoded.gamma,
+                                signs: &[],
+                            }
+                        },
+                    ),
+                )
+                .unwrap();
+        }
+        let mut scores = vec![0.0_f32; batch.len()];
+
+        QuantCodec::score_ip_batch(&codec, &exact, &batch, &mut scores).unwrap();
+
+        for (index, ((code, encoded), score)) in codes
+            .iter()
+            .zip(encoded.iter())
+            .zip(scores.iter())
+            .enumerate()
+        {
+            let scalar = quantizer.score_ip_from_parts(&prepared, encoded.gamma, code);
+            let tolerance = 1e-6_f32.max(scalar.abs() * 1e-6);
+            assert!(
+                (*score - scalar).abs() <= tolerance,
+                "index={index} batch={score} scalar={scalar}",
+            );
+        }
+        let snapshots = crate::am::common::candidate_batch::block_kernel_scoring_snapshots();
+        let qjl = snapshots
+            .iter()
+            .filter(|snapshot| {
+                snapshot.surface == "hnsw" && snapshot.quant_kind == "turboquant_qjl"
+            })
+            .collect::<Vec<_>>();
+        assert!(qjl.iter().any(|snapshot| snapshot.kernel_candidates == 32));
+        assert!(qjl.iter().any(|snapshot| snapshot.scalar_candidates == 7));
+
+        crate::am::common::candidate_batch::reset_candidate_batch_scoring_counters();
     }
 
     #[test]

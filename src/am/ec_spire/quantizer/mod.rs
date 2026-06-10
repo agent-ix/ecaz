@@ -7,8 +7,9 @@ use super::storage::{
     SPIRE_PAYLOAD_FORMAT_TURBOQUANT,
 };
 use crate::am::common::candidate_batch::{
-    record_block_scalar_score_for, score_turboquant_no_qjl_4bit_batch_for, CandidateBatch,
-    CandidateBatchScoringSurface, CandidateMeta, CandidatePayload,
+    record_block_scalar_score_for, score_turboquant_no_qjl_4bit_batch_for,
+    score_turboquant_qjl_batch_for, CandidateBatch, CandidateBatchScoringSurface, CandidateMeta,
+    CandidatePayload,
 };
 use crate::am::common::quant_codec::{
     EncodedQuantPayload, QuantCodec, QuantCodecKind, QuantSearchCodecTag,
@@ -375,6 +376,25 @@ impl SpirePreparedAssignmentScorer {
                             &batch,
                             out_scores,
                         );
+                    } else {
+                        let mut batch = CandidateBatch::with_capacity(payload_count);
+                        for (candidate_index, (payload, gamma)) in payloads
+                            .chunks_exact(payload_stride)
+                            .zip(gammas.iter())
+                            .enumerate()
+                        {
+                            batch.push(
+                                candidate_index,
+                                CandidatePayload::new(payload, CandidateMeta::Gamma(*gamma)),
+                            )?;
+                        }
+                        return score_turboquant_qjl_batch_for(
+                            CandidateBatchScoringSurface::Spire,
+                            quantizer,
+                            prepared,
+                            &batch,
+                            out_scores,
+                        );
                     }
                 }
 
@@ -386,14 +406,17 @@ impl SpirePreparedAssignmentScorer {
                 {
                     *out_score = quantizer.score_ip_from_parts(prepared, *gamma, payload);
                 }
-                if no_qjl_4bit_lut.is_some() {
-                    record_block_scalar_score_for(
-                        CandidateBatchScoringSurface::Spire,
-                        QuantCodecKind::TurboQuant,
-                        payload_count,
-                        u64::try_from(scalar_started.elapsed().as_nanos()).unwrap_or(u64::MAX),
-                    );
-                }
+                let quant_kind = if no_qjl_4bit_lut.is_some() {
+                    QuantCodecKind::TurboQuant
+                } else {
+                    QuantCodecKind::TurboQuantQjl
+                };
+                record_block_scalar_score_for(
+                    CandidateBatchScoringSurface::Spire,
+                    quant_kind,
+                    payload_count,
+                    u64::try_from(scalar_started.elapsed().as_nanos()).unwrap_or(u64::MAX),
+                );
             }
             Self::RaBitQ { prepared, .. } => {
                 for ((payload, gamma), out_score) in payloads
@@ -448,6 +471,14 @@ impl SpirePreparedAssignmentScorer {
                             batch,
                             out_scores,
                         );
+                    } else {
+                        return score_turboquant_qjl_batch_for(
+                            CandidateBatchScoringSurface::Spire,
+                            quantizer,
+                            prepared,
+                            batch,
+                            out_scores,
+                        );
                     }
                 }
 
@@ -463,14 +494,17 @@ impl SpirePreparedAssignmentScorer {
                     };
                     *out_score = quantizer.score_ip_from_parts(prepared, gamma, payload.code);
                 }
-                if no_qjl_4bit_lut.is_some() {
-                    record_block_scalar_score_for(
-                        CandidateBatchScoringSurface::Spire,
-                        QuantCodecKind::TurboQuant,
-                        batch.len(),
-                        u64::try_from(scalar_started.elapsed().as_nanos()).unwrap_or(u64::MAX),
-                    );
-                }
+                let quant_kind = if no_qjl_4bit_lut.is_some() {
+                    QuantCodecKind::TurboQuant
+                } else {
+                    QuantCodecKind::TurboQuantQjl
+                };
+                record_block_scalar_score_for(
+                    CandidateBatchScoringSurface::Spire,
+                    quant_kind,
+                    batch.len(),
+                    u64::try_from(scalar_started.elapsed().as_nanos()).unwrap_or(u64::MAX),
+                );
             }
             Self::RaBitQ { .. } => {
                 for (payload, out_score) in batch.payloads().iter().zip(out_scores.iter_mut()) {
