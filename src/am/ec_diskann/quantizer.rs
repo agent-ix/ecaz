@@ -1396,11 +1396,17 @@ mod tests {
                 "index={index}"
             );
         }
-        for (index, tuple) in tuples[32..].iter().enumerate() {
-            let expected = crate::quant::rabitq32::score_rabitq_bits1_scalar(
-                block_prepared,
-                &tuple.search_code,
-            );
+        let tail_codes: Vec<&[u8]> = tuples[32..]
+            .iter()
+            .map(|tuple| tuple.search_code.as_slice())
+            .collect();
+        let mut expected_tail_scores = vec![0.0; tail_codes.len()];
+        crate::quant::rabitq32::score_rabitq_bits1_partial(
+            block_prepared,
+            &tail_codes,
+            &mut expected_tail_scores,
+        );
+        for (index, expected) in expected_tail_scores.iter().enumerate() {
             assert_eq!(
                 batch_scores[32 + index].to_bits(),
                 (-expected).to_bits(),

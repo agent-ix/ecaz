@@ -74,6 +74,33 @@ pub(crate) fn score_rabitq_bits1_block32(
     }
 }
 
+/// Scores a partial batch (1..=31 candidates: sub-width batches and block
+/// tails) through the best available backend. Graph AMs produce neighbor
+/// batches bounded by graph degree / survivor budgets that rarely reach the
+/// 32-wide block, so the partial path must not fall back to forced-scalar
+/// scoring on SIMD hosts. Returns the ISA actually used.
+pub(crate) fn score_rabitq_bits1_partial(
+    prepared: PreparedBits1<'_>,
+    codes: &[&[u8]],
+    out_scores: &mut [f32],
+) -> crate::quant::isa::Isa {
+    debug_assert!(!codes.is_empty() && codes.len() < BLOCK_WIDTH);
+    debug_assert_eq!(codes.len(), out_scores.len());
+    let isa = crate::quant::isa::current_isa();
+    match isa {
+        crate::quant::isa::Isa::Neon => neon::score_partial_neon(prepared, codes, out_scores),
+        crate::quant::isa::Isa::Avx2
+        | crate::quant::isa::Isa::Sve2
+        | crate::quant::isa::Isa::Sve
+        | crate::quant::isa::Isa::Scalar => {
+            scalar::score_partial_scalar(prepared, codes, out_scores)
+        }
+    }
+}
+
+/// Forced-scalar single-candidate reference; retained as the strict parity
+/// anchor entry point for tests and diagnostics.
+#[allow(dead_code)]
 pub(crate) fn score_rabitq_bits1_scalar(prepared: PreparedBits1<'_>, code: &[u8]) -> f32 {
     scalar::score_scalar_tail(prepared, code)
 }
@@ -238,6 +265,49 @@ mod tests {
         #[cfg(not(target_arch = "aarch64"))]
         let expected_isa = crate::quant::isa::Isa::Scalar;
         assert_eq!(isa, expected_isa);
+    }
+
+    #[test]
+    fn partial_dispatch_matches_anchor_and_production_batch() {
+        let (quantizer, prepared) = prepared(1536);
+        let codes: Vec<_> = (0..7)
+            .map(|seed| {
+                quantizer
+                    .encode_code(&vector(1536, seed as u64 + 900))
+                    .into_vec()
+            })
+            .collect();
+        let code_refs: Vec<&[u8]> = codes.iter().map(Vec::as_slice).collect();
+        let block_prepared = prepared
+            .bits1_block_prepared(quantizer.code_len())
+            .expect("bits=1 block prepared should exist");
+        let mut scores = vec![0.0; codes.len()];
+
+        let isa = super::score_rabitq_bits1_partial(block_prepared, &code_refs, &mut scores);
+
+        for (score, code) in scores.iter().zip(code_refs.iter()) {
+            assert_close_simd(*score, forced_scalar_anchor(block_prepared, code));
+        }
+        // The partial NEON path pairs candidates exactly like the production
+        // batch slab scorer, so scores are bit-equal on NEON hosts; the
+        // scalar partial path is bit-equal with the forced-scalar anchor.
+        let slab = codes.iter().flatten().copied().collect::<Vec<_>>();
+        let mut batch_scores = Vec::new();
+        prepared
+            .estimate_ip_bits1_batch(&slab, quantizer.code_len(), &mut batch_scores)
+            .unwrap();
+        if isa == crate::quant::isa::Isa::Neon {
+            for (score, production) in scores.iter().zip(batch_scores.iter()) {
+                assert_eq!(score.to_bits(), production.to_bits());
+            }
+        } else {
+            for (score, code) in scores.iter().zip(code_refs.iter()) {
+                assert_eq!(
+                    score.to_bits(),
+                    forced_scalar_anchor(block_prepared, code).to_bits()
+                );
+            }
+        }
     }
 
     #[cfg(target_arch = "aarch64")]

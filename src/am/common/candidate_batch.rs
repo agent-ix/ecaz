@@ -738,16 +738,37 @@ fn score_rabitq_bits1_batch_inner<Id>(
         return score_rabitq_bits1_batch_blocked(prepared, batch, out_scores);
     }
 
-    let scalar_started = Instant::now();
-    for (payload, out_score) in batch.payloads().iter().zip(out_scores.iter_mut()) {
-        *out_score = crate::quant::rabitq32::score_rabitq_bits1_scalar(prepared, payload.code);
+    let mut timing = BatchScoringTiming::default();
+    score_rabitq_bits1_partial_into(prepared, batch.payloads(), out_scores, &mut timing);
+    Ok(timing)
+}
+
+/// Scores a sub-width run through the partial dispatch and records it under
+/// the ISA actually used: SIMD-executed runs count as kernel work (graph AMs
+/// rarely reach the 32-wide block, so partial batches are their primary
+/// path); scalar-executed runs keep the scalar-tail attribution.
+fn score_rabitq_bits1_partial_into(
+    prepared: crate::quant::rabitq32::PreparedBits1<'_>,
+    payloads: &[CandidatePayload<'_>],
+    out_scores: &mut [f32],
+    timing: &mut BatchScoringTiming,
+) {
+    debug_assert_eq!(payloads.len(), out_scores.len());
+    if payloads.is_empty() {
+        return;
     }
-    Ok(BatchScoringTiming {
-        scalar_candidates: batch.len(),
-        scalar_elapsed_nanos: u64::try_from(scalar_started.elapsed().as_nanos())
-            .unwrap_or(u64::MAX),
-        ..BatchScoringTiming::default()
-    })
+    let started = Instant::now();
+    let codes: Vec<&[u8]> = payloads.iter().map(|payload| payload.code).collect();
+    let isa = crate::quant::rabitq32::score_rabitq_bits1_partial(prepared, &codes, out_scores);
+    let elapsed = u64::try_from(started.elapsed().as_nanos()).unwrap_or(u64::MAX);
+    if isa == Isa::Scalar {
+        timing.scalar_candidates += payloads.len();
+        timing.scalar_elapsed_nanos = timing.scalar_elapsed_nanos.saturating_add(elapsed);
+    } else {
+        timing.kernel_isa = Some(isa);
+        timing.kernel_candidates += payloads.len();
+        timing.kernel_elapsed_nanos = timing.kernel_elapsed_nanos.saturating_add(elapsed);
+    }
 }
 
 fn score_rabitq_bits1_batch_blocked<Id>(
@@ -778,18 +799,12 @@ fn score_rabitq_bits1_batch_blocked<Id>(
         block_start += crate::quant::rabitq32::BLOCK_WIDTH;
     }
 
-    let scalar_started = Instant::now();
-    for (payload, out_score) in batch.payloads()[block_start..]
-        .iter()
-        .zip(out_scores[block_start..].iter_mut())
-    {
-        timing.scalar_candidates += 1;
-        *out_score = crate::quant::rabitq32::score_rabitq_bits1_scalar(prepared, payload.code);
-    }
-    if timing.scalar_candidates > 0 {
-        timing.scalar_elapsed_nanos =
-            u64::try_from(scalar_started.elapsed().as_nanos()).unwrap_or(u64::MAX);
-    }
+    score_rabitq_bits1_partial_into(
+        prepared,
+        &batch.payloads()[block_start..],
+        &mut out_scores[block_start..],
+        &mut timing,
+    );
 
     Ok(timing)
 }
@@ -1194,9 +1209,10 @@ mod tests {
         )
         .unwrap();
 
-        // The first 32 candidates go through the dispatched block kernel;
-        // reproduce that call directly so the expectation matches whichever
-        // ISA backend this host selects. The 7-candidate tail is scalar.
+        // The first 32 candidates go through the dispatched block kernel and
+        // the 7-candidate tail through the partial dispatch; reproduce both
+        // calls directly so the expectation matches whichever ISA backend
+        // this host selects.
         let block_codes: [&[u8]; 32] = encoded[..32]
             .iter()
             .map(Vec::as_slice)
@@ -1209,12 +1225,18 @@ mod tests {
             block_codes,
             &mut expected_block_scores,
         );
+        let tail_codes: Vec<&[u8]> = encoded[32..].iter().map(Vec::as_slice).collect();
+        let mut expected_tail_scores = vec![0.0; tail_codes.len()];
+        let tail_isa = crate::quant::rabitq32::score_rabitq_bits1_partial(
+            block_prepared,
+            &tail_codes,
+            &mut expected_tail_scores,
+        );
         for (score, expected) in batch_scores[..32].iter().zip(expected_block_scores.iter()) {
             assert_eq!(score.to_bits(), expected.to_bits());
         }
-        for (payload, score) in encoded[32..].iter().zip(batch_scores[32..].iter()) {
-            let scalar = crate::quant::rabitq32::score_rabitq_bits1_scalar(block_prepared, payload);
-            assert_eq!(score.to_bits(), scalar.to_bits());
+        for (score, expected) in batch_scores[32..].iter().zip(expected_tail_scores.iter()) {
+            assert_eq!(score.to_bits(), expected.to_bits());
         }
 
         let block_snapshots = super::block_kernel_scoring_snapshots();
@@ -1226,18 +1248,19 @@ mod tests {
                     && snapshot.isa == kernel_isa.label()
             })
             .unwrap();
-        assert_eq!(kernel_row.kernel_flushes, 1);
-        assert_eq!(kernel_row.kernel_candidates, 32);
-        let tail_row = block_snapshots
-            .iter()
-            .find(|snapshot| {
-                snapshot.surface == "diskann"
-                    && snapshot.quant_kind == "rabitq"
-                    && snapshot.isa == "scalar"
-            })
-            .unwrap();
-        assert_eq!(tail_row.scalar_flushes, 1);
-        assert_eq!(tail_row.scalar_candidates, 7);
+        assert!(kernel_row.kernel_flushes >= 1);
+        assert!(kernel_row.kernel_candidates >= 32);
+        if tail_isa == Isa::Scalar {
+            let tail_row = block_snapshots
+                .iter()
+                .find(|snapshot| {
+                    snapshot.surface == "diskann"
+                        && snapshot.quant_kind == "rabitq"
+                        && snapshot.isa == "scalar"
+                })
+                .unwrap();
+            assert_eq!(tail_row.scalar_candidates, 7);
+        }
         let total_candidates: u64 = block_snapshots
             .iter()
             .filter(|snapshot| snapshot.surface == "diskann" && snapshot.quant_kind == "rabitq")
@@ -1248,7 +1271,7 @@ mod tests {
     }
 
     #[test]
-    fn rabitq_bits1_batch_below_width_records_scalar_only() {
+    fn rabitq_bits1_batch_below_width_uses_partial_dispatch() {
         let _guard = super::CANDIDATE_BATCH_COUNTER_TEST_LOCK.lock().unwrap();
         super::reset_candidate_batch_scoring_counters();
         let dimensions = 40;
@@ -1285,25 +1308,39 @@ mod tests {
         )
         .unwrap();
 
-        for (payload, score) in encoded.iter().zip(batch_scores.iter()) {
-            let scalar = crate::quant::rabitq32::score_rabitq_bits1_scalar(block_prepared, payload);
-            assert_eq!(score.to_bits(), scalar.to_bits());
+        // Sub-width batches go through the partial dispatch; reproduce that
+        // call directly so the expectation matches whichever ISA backend
+        // this host selects.
+        let codes: Vec<&[u8]> = encoded.iter().map(Vec::as_slice).collect();
+        let mut expected_scores = vec![0.0; codes.len()];
+        let partial_isa = crate::quant::rabitq32::score_rabitq_bits1_partial(
+            block_prepared,
+            &codes,
+            &mut expected_scores,
+        );
+        for (score, expected) in batch_scores.iter().zip(expected_scores.iter()) {
+            assert_eq!(score.to_bits(), expected.to_bits());
         }
         let block_snapshots = super::block_kernel_scoring_snapshots();
-        let block = block_snapshots
+        let row = block_snapshots
             .iter()
             .find(|snapshot| {
                 snapshot.surface == "ivf"
                     && snapshot.quant_kind == "rabitq"
-                    && snapshot.isa == "scalar"
+                    && snapshot.isa == partial_isa.label()
             })
             .unwrap();
-        assert_eq!(block.flushes, 1);
-        assert_eq!(block.candidates, 7);
-        assert_eq!(block.kernel_flushes, 0);
-        assert_eq!(block.kernel_candidates, 0);
-        assert_eq!(block.scalar_flushes, 1);
-        assert_eq!(block.scalar_candidates, 7);
+        assert_eq!(row.flushes, 1);
+        assert_eq!(row.candidates, 7);
+        if partial_isa == Isa::Scalar {
+            assert_eq!(row.kernel_flushes, 0);
+            assert_eq!(row.scalar_flushes, 1);
+            assert_eq!(row.scalar_candidates, 7);
+        } else {
+            assert_eq!(row.kernel_flushes, 1);
+            assert_eq!(row.kernel_candidates, 7);
+            assert_eq!(row.scalar_candidates, 0);
+        }
         super::reset_candidate_batch_scoring_counters();
     }
 

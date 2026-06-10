@@ -1615,13 +1615,17 @@ mod tests {
                 batch_scores[index]
             );
         }
-        for (index, payload) in code_chunks[32..].iter().enumerate() {
-            let kernel_scalar =
-                crate::quant::rabitq32::score_rabitq_bits1_scalar(block_prepared, payload);
+        let mut expected_tail_scores = vec![0.0; code_chunks.len() - 32];
+        crate::quant::rabitq32::score_rabitq_bits1_partial(
+            block_prepared,
+            &code_chunks[32..],
+            &mut expected_tail_scores,
+        );
+        for (index, expected) in expected_tail_scores.iter().enumerate() {
             assert_eq!(
                 batch_scores[32 + index].to_bits(),
-                kernel_scalar.to_bits(),
-                "tail index={index} batch={} kernel={kernel_scalar}",
+                expected.to_bits(),
+                "tail index={index} batch={} kernel={expected}",
                 batch_scores[32 + index]
             );
         }

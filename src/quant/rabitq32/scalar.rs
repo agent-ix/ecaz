@@ -13,6 +13,18 @@ pub(super) fn score_block32_scalar(
     Isa::Scalar
 }
 
+pub(super) fn score_partial_scalar(
+    prepared: PreparedBits1<'_>,
+    codes: &[&[u8]],
+    out_scores: &mut [f32],
+) -> Isa {
+    debug_assert_eq!(out_scores.len(), codes.len());
+    for (code, out_score) in codes.iter().zip(out_scores.iter_mut()) {
+        *out_score = score_scalar_tail(prepared, code);
+    }
+    Isa::Scalar
+}
+
 pub(super) fn score_scalar_tail(prepared: PreparedBits1<'_>, code: &[u8]) -> f32 {
     let sum_q_dequant = sum_query_dequant_bits1_byte_lut_scalar(prepared, code);
     finish_scalar_only_estimate(prepared, sum_q_dequant, code)
