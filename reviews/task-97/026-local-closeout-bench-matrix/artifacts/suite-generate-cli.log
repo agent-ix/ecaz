@@ -1,0 +1,15 @@
+[suite:task97-local-closeout-qjl32-suite] wrote reviews/task-97/026-local-closeout-bench-matrix/artifacts/suite-generate-manifest.json
+[suite:task97-local-closeout-qjl32-suite] generate-qjl32-512-corpus -> --database postgres --host /home/peter/.pgrx --port 28818 --log-file reviews/task-97/026-local-closeout-bench-matrix/artifacts/generate-qjl32-512-corpus.log corpus generate --output reviews/task-97/026-local-closeout-bench-matrix/artifacts/task97_qjl32_512_corpus.tsv --n 512 --dim 1024 --seed 42 --start-id 0 --kind corpus
+[suite:task97-local-closeout-qjl32-suite] wrote reviews/task-97/026-local-closeout-bench-matrix/artifacts/suite-generate-manifest.json
+[suite:task97-local-closeout-qjl32-suite] wrote reviews/task-97/026-local-closeout-bench-matrix/artifacts/suite-generate-manifest.json
+[suite:task97-local-closeout-qjl32-suite] generate-qjl32-512-queries -> --database postgres --host /home/peter/.pgrx --port 28818 --log-file reviews/task-97/026-local-closeout-bench-matrix/artifacts/generate-qjl32-512-queries.log corpus generate --output reviews/task-97/026-local-closeout-bench-matrix/artifacts/task97_qjl32_512_queries.tsv --n 64 --dim 1024 --seed 43 --start-id 1000000 --kind queries
+[suite:task97-local-closeout-qjl32-suite] wrote reviews/task-97/026-local-closeout-bench-matrix/artifacts/suite-generate-manifest.json
+[suite:task97-local-closeout-qjl32-suite] wrote reviews/task-97/026-local-closeout-bench-matrix/artifacts/suite-generate-manifest.json
+[suite:task97-local-closeout-qjl32-suite] generate-qjl32-4096-corpus -> --database postgres --host /home/peter/.pgrx --port 28818 --log-file reviews/task-97/026-local-closeout-bench-matrix/artifacts/generate-qjl32-4096-corpus.log corpus generate --output reviews/task-97/026-local-closeout-bench-matrix/artifacts/task97_qjl32_4096_corpus.tsv --n 4096 --dim 1024 --seed 44 --start-id 2000000 --kind corpus
+[suite:task97-local-closeout-qjl32-suite] wrote reviews/task-97/026-local-closeout-bench-matrix/artifacts/suite-generate-manifest.json
+[suite:task97-local-closeout-qjl32-suite] wrote reviews/task-97/026-local-closeout-bench-matrix/artifacts/suite-generate-manifest.json
+[suite:task97-local-closeout-qjl32-suite] generate-qjl32-4096-queries -> --database postgres --host /home/peter/.pgrx --port 28818 --log-file reviews/task-97/026-local-closeout-bench-matrix/artifacts/generate-qjl32-4096-queries.log corpus generate --output reviews/task-97/026-local-closeout-bench-matrix/artifacts/task97_qjl32_4096_queries.tsv --n 64 --dim 1024 --seed 45 --start-id 3000000 --kind queries
+[suite:task97-local-closeout-qjl32-suite] wrote reviews/task-97/026-local-closeout-bench-matrix/artifacts/suite-generate-manifest.json
+[suite:task97-local-closeout-qjl32-suite] wrote reviews/task-97/026-local-closeout-bench-matrix/artifacts/suite-generate-manifest.json
+[suite:task97-local-closeout-qjl32-suite] wrote reviews/task-97/026-local-closeout-bench-matrix/artifacts/results-generate.jsonl
+[suite:task97-local-closeout-qjl32-suite] wrote reviews/task-97/026-local-closeout-bench-matrix/artifacts/suite-generate-manifest.json
