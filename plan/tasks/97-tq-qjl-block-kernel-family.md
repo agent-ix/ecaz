@@ -1,6 +1,6 @@
 # Task 97: TurboQuant QJL Block Kernel Family (Gamma + Residual Signs)
 
-Status: in review (2026-06-09; QJL surface inventory, qjl32 counter kind/design, scalar reference, local AVX2/NEON/SVE code slices, IVF/SPIRE/HNSW AM registration, HNSW hot/cold exact-payload batching, local PG18 suite evidence for the clarified production QJL fixture `dim=1024,bits=4,seed=42`, and local scoring-ladder evidence are packeted through `reviews/task-97/011-local-scoring-share-ladder/`; packet 011 review, stop-condition vs separate qjl32 AVX2 optimization disposition, Graviton 4 runtime dispatch/vector-length/counter evidence, and the final closeout matrix remain pending approval)
+Status: in review (2026-06-09; QJL surface inventory, qjl32 counter kind/design, scalar reference, local AVX2/NEON/SVE code slices, IVF/SPIRE/HNSW AM registration, HNSW hot/cold exact-payload batching, local PG18 suite evidence for the clarified production QJL fixture `dim=1024,bits=4,seed=42`, local scoring-ladder evidence, and current-head per-candidate scorer Criterion evidence are packeted through `reviews/task-97/013-per-candidate-scorer-evidence/`; packet 013 review, old-vs-new F1 disposition, stop-condition vs separate qjl32 AVX2 optimization disposition, Graviton 4 runtime dispatch/vector-length/counter evidence, and the final closeout matrix remain pending approval)
 Owner: coder (to be assigned). Phase III parallel.
 Priority: 2 (QJL variant; per-candidate metadata complicates kernel)
 
