@@ -9,4 +9,3 @@ Benchmarking quant/score_ip_from_parts/d1024_b4/1024: Analyzing
 quant/score_ip_from_parts/d1024_b4/1024
                         time:   [874.53 ns 887.34 ns 904.33 ns]
                         thrpt:  [1.1058 Melem/s 1.1270 Melem/s 1.1435 Melem/s]
-

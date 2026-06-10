@@ -46,4 +46,3 @@ quant/qjl32_block32/dispatch/d1024_b4
                         time:   [-4.1294% -1.3743% +1.4124%] (p = 0.39 > 0.05)
                         thrpt:  [-1.3927% +1.3935% +4.3073%]
                         No change in performance detected.
-
