@@ -1,7 +1,7 @@
 use std::mem::{offset_of, size_of};
 use std::ptr::{self, NonNull};
 
-use pgrx::{pg_sys, GucContext, GucFlags, GucRegistry, GucSetting};
+use pgrx::{pg_sys, GucContext, GucFlags, GucRegistry, GucSetting, PostgresGucEnum};
 
 use crate::am::common::callback::pg_am_callback;
 
@@ -23,6 +23,23 @@ static EC_HNSW_FORCE_BINARY_DERIVATION_GUC: GucSetting<bool> = GucSetting::<bool
 static EC_HNSW_ENABLE_PARALLEL_BUILD_CONCURRENT_DSM_GUC: GucSetting<bool> =
     GucSetting::<bool>::new(true);
 static EC_HNSW_CANDIDATE_BATCH_SCORING_GUC: GucSetting<bool> = GucSetting::<bool>::new(true);
+static EC_HNSW_TURBOQUANT_EXACT_SCORE_MODE_GUC: GucSetting<TurboQuantExactScoreModeGuc> =
+    GucSetting::<TurboQuantExactScoreModeGuc>::new(TurboQuantExactScoreModeGuc::Exact);
+
+/// Session selector for the HNSW TurboQuant exact-score strategy. Replaces
+/// the former `TQVECTOR_TURBOQUANT_EXACT_SCORE_MODE` server environment
+/// variable so benchmark cells can toggle modes per session (Task 98).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PostgresGucEnum)]
+pub(super) enum TurboQuantExactScoreModeGuc {
+    #[name = c"exact"]
+    Exact,
+    #[name = c"full_lut"]
+    FullLut,
+    #[name = c"tiled_lut"]
+    TiledLut,
+    #[name = c"int8_approx"]
+    Int8Approx,
+}
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
@@ -114,6 +131,18 @@ pub(super) fn register_gucs() {
         GucContext::Userset,
         GucFlags::default(),
     );
+    GucRegistry::define_enum_guc(
+        c"ec_hnsw.turboquant_exact_score_mode",
+        c"Session selector for the ec_hnsw TurboQuant exact-score strategy.",
+        c"Task 98 measurement switch (formerly the TQVECTOR_TURBOQUANT_EXACT_SCORE_MODE server environment variable). Values: exact, full_lut, tiled_lut, int8_approx.",
+        &EC_HNSW_TURBOQUANT_EXACT_SCORE_MODE_GUC,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
+}
+
+pub(super) fn current_turboquant_exact_score_mode() -> TurboQuantExactScoreModeGuc {
+    EC_HNSW_TURBOQUANT_EXACT_SCORE_MODE_GUC.get()
 }
 
 pub(super) fn current_session_ef_search() -> i32 {

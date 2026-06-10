@@ -264,6 +264,10 @@ pub(crate) struct BlockKernelCounterSnapshot {
     pub(crate) scalar_flushes: i64,
     pub(crate) scalar_candidates: i64,
     pub(crate) scalar_elapsed_nanos: i64,
+    pub(crate) width_lt8_flushes: i64,
+    pub(crate) width_8_15_flushes: i64,
+    pub(crate) width_16_31_flushes: i64,
+    pub(crate) width_ge32_flushes: i64,
 }
 
 impl BlockKernelCounterSnapshot {
@@ -277,6 +281,10 @@ impl BlockKernelCounterSnapshot {
         self.scalar_flushes += other.scalar_flushes;
         self.scalar_candidates += other.scalar_candidates;
         self.scalar_elapsed_nanos += other.scalar_elapsed_nanos;
+        self.width_lt8_flushes += other.width_lt8_flushes;
+        self.width_8_15_flushes += other.width_8_15_flushes;
+        self.width_16_31_flushes += other.width_16_31_flushes;
+        self.width_ge32_flushes += other.width_ge32_flushes;
     }
 }
 
@@ -323,7 +331,9 @@ pub(crate) async fn snapshot_block_kernel_counters(
         .query(
             "SELECT surface, quant_kind, isa, flushes, candidates, elapsed_nanos, \
                     kernel_flushes, kernel_candidates, kernel_elapsed_nanos, \
-                    scalar_flushes, scalar_candidates, scalar_elapsed_nanos \
+                    scalar_flushes, scalar_candidates, scalar_elapsed_nanos, \
+                    width_lt8_flushes, width_8_15_flushes, width_16_31_flushes, \
+                    width_ge32_flushes \
              FROM ec_block_kernel_scoring_snapshot() \
              ORDER BY surface, quant_kind, isa",
             &[],
@@ -345,9 +355,19 @@ pub(crate) async fn snapshot_block_kernel_counters(
                 scalar_flushes: row.get(9),
                 scalar_candidates: row.get(10),
                 scalar_elapsed_nanos: row.get(11),
+                width_lt8_flushes: row.get(12),
+                width_8_15_flushes: row.get(13),
+                width_16_31_flushes: row.get(14),
+                width_ge32_flushes: row.get(15),
             })
             .collect(),
-        Err(_) => Vec::new(),
+        Err(error) => {
+            eprintln!(
+                "[block-kernel-counters] snapshot query failed (stale extension catalog? \
+                 recreate the bench database after counter-schema changes): {error}"
+            );
+            Vec::new()
+        }
     };
     Ok(BlockKernelCounterSnapshots {
         block_kernel,
@@ -429,7 +449,7 @@ pub(crate) fn format_block_kernel_counter_lines(
     let mut lines = Vec::new();
     for snapshot in &snapshots.block_kernel {
         lines.push(format!(
-            "[block-kernel-counters] command={command} label={label} surface={} quant={} isa={} flushes={} candidates={} elapsed_nanos={} elapsed_ms={:.6} kernel_flushes={} kernel_candidates={} kernel_elapsed_nanos={} kernel_elapsed_ms={:.6} scalar_flushes={} scalar_candidates={} scalar_elapsed_nanos={} scalar_elapsed_ms={:.6}",
+            "[block-kernel-counters] command={command} label={label} surface={} quant={} isa={} flushes={} candidates={} elapsed_nanos={} elapsed_ms={:.6} kernel_flushes={} kernel_candidates={} kernel_elapsed_nanos={} kernel_elapsed_ms={:.6} scalar_flushes={} scalar_candidates={} scalar_elapsed_nanos={} scalar_elapsed_ms={:.6} width_lt8={} width_8_15={} width_16_31={} width_ge32={}",
             snapshot.surface,
             snapshot.quant_kind,
             snapshot.isa,
@@ -445,6 +465,10 @@ pub(crate) fn format_block_kernel_counter_lines(
             snapshot.scalar_candidates,
             snapshot.scalar_elapsed_nanos,
             snapshot.scalar_elapsed_nanos as f64 / 1_000_000.0,
+            snapshot.width_lt8_flushes,
+            snapshot.width_8_15_flushes,
+            snapshot.width_16_31_flushes,
+            snapshot.width_ge32_flushes,
         ));
     }
     let task87_lines =
@@ -661,6 +685,10 @@ mod tests {
                 scalar_flushes: 1,
                 scalar_candidates: 7,
                 scalar_elapsed_nanos: 400_000,
+                width_lt8_flushes: 1,
+                width_8_15_flushes: 0,
+                width_16_31_flushes: 0,
+                width_ge32_flushes: 1,
             }],
             task87_compat: vec![Task87CandidateBatchCounterSnapshot {
                 surface: "ivf".to_owned(),

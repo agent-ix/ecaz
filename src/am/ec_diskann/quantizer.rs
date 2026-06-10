@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use crate::am::common::{
     candidate_batch::{
-        score_grouped_pq_batch_for, CandidateBatch, CandidateBatchScoringSurface, CandidateMeta,
-        CandidatePayload,
+        score_grouped_pq_batch_for, score_hamming_words_batch_for, score_rabitq_bits1_batch_for,
+        CandidateBatch, CandidateBatchScoringSurface, CandidateMeta, CandidatePayload,
     },
     quant_codec::{EncodedQuantPayload, QuantCodec, QuantCodecKind, QuantSearchCodecTag},
     training::{self, GroupedPq4Model},
@@ -303,6 +303,48 @@ fn score_diskann_prepared_prefilter_batch(
         );
     }
     match prefilter {
+        DiskannPreparedPrefilter::BinarySidecar { query_words, .. }
+            if super::options::candidate_batch_scoring_enabled() =>
+        {
+            let candidate_words: Vec<&[u64]> = tuples
+                .iter()
+                .map(|tuple| tuple.binary_words.as_slice())
+                .collect();
+            score_hamming_words_batch_for(
+                CandidateBatchScoringSurface::Diskann,
+                query_words,
+                &candidate_words,
+                out_scores,
+            )
+            .unwrap_or_else(|error| pgrx::error!("{error}"));
+        }
+        DiskannPreparedPrefilter::RaBitQ { prepared }
+            if super::options::candidate_batch_scoring_enabled() =>
+        {
+            let Some(first_tuple) = tuples.first() else {
+                return;
+            };
+            let codec = DiskannRaBitQPrefilterCodec::new(
+                first_tuple.search_code.len(),
+                DISKANN_RABITQ_BITS,
+            );
+            let mut batch = CandidateBatch::with_capacity(tuples.len());
+            for (index, tuple) in tuples.iter().enumerate() {
+                batch
+                    .push(
+                        index,
+                        CandidatePayload::new(&tuple.search_code, CandidateMeta::RaBitQ),
+                    )
+                    .unwrap_or_else(|error| pgrx::error!("{error}"));
+            }
+            QuantCodec::score_ip_batch(&codec, prepared, &batch, out_scores)
+                .unwrap_or_else(|error| pgrx::error!("{error}"));
+            // Prefilter polarity stays outside the codec, matching the
+            // per-candidate RaBitQ arm.
+            for score in out_scores {
+                *score = -*score;
+            }
+        }
         DiskannPreparedPrefilter::GroupedPq {
             query_lut,
             group_count,
@@ -592,6 +634,38 @@ impl QuantCodec for DiskannRaBitQPrefilterCodec {
             ));
         }
         Ok(prepared_query.estimate_ip_scalar_only(payload.code))
+    }
+
+    fn score_ip_batch<Id>(
+        &self,
+        prepared_query: &Self::PreparedQuery,
+        batch: &CandidateBatch<'_, Id>,
+        out_scores: &mut [f32],
+    ) -> Result<(), String> {
+        if self.bits != 1 {
+            if batch.len() != out_scores.len() {
+                return Err(format!(
+                    "quant codec batch output count {} does not match candidate count {}",
+                    out_scores.len(),
+                    batch.len()
+                ));
+            }
+            for (payload, out_score) in batch.payloads().iter().zip(out_scores.iter_mut()) {
+                *out_score = self.score_ip_candidate(prepared_query, *payload)?;
+            }
+            return Ok(());
+        }
+        let prepared = prepared_query
+            .bits1_block_prepared(self.search_code_len)
+            .ok_or_else(|| {
+                "ec_diskann RaBitQ bits=1 prepared query missing block state".to_owned()
+            })?;
+        score_rabitq_bits1_batch_for(
+            CandidateBatchScoringSurface::Diskann,
+            prepared,
+            batch,
+            out_scores,
+        )
     }
 }
 
@@ -1283,6 +1357,114 @@ mod tests {
 
         assert_eq!(observed.to_bits(), expected.to_bits());
         assert_eq!(prefilter.score(&tuple).to_bits(), (-expected).to_bits());
+    }
+
+    #[test]
+    fn diskann_rabitq_prefilter_batch_routes_through_block_kernel() {
+        let dimensions = 40;
+        let quantizer =
+            RaBitQQuantizer::cached_seeded_srht_bits(dimensions, 42, DISKANN_RABITQ_BITS).unwrap();
+        let query: Vec<f32> = (0..dimensions)
+            .map(|index| ((index as f32) * 0.17).sin())
+            .collect();
+        let prepared = quantizer.prepare_estimator(&query);
+        let tuples: Vec<VamanaNodeTuple> = (0..35)
+            .map(|row| {
+                let source: Vec<f32> = (0..dimensions)
+                    .map(|col| (((row * 5 + col) as f32) * 0.07).cos())
+                    .collect();
+                tuple_with_codes(Vec::new(), quantizer.encode_code(&source).into_vec())
+            })
+            .collect();
+        let prefilter = DiskannPreparedPrefilter::RaBitQ { prepared };
+        let mut batch_scores = vec![0.0; tuples.len()];
+
+        score_diskann_prepared_prefilter_batch(&prefilter, &tuples, &mut batch_scores);
+
+        let DiskannPreparedPrefilter::RaBitQ { prepared } = &prefilter else {
+            unreachable!()
+        };
+        let block_prepared = prepared
+            .bits1_block_prepared(tuples[0].search_code.len())
+            .expect("bits=1 block prepared should exist");
+
+        // First 32 tuples route through the dispatched block kernel;
+        // reproduce that call directly so the expectation matches whichever
+        // ISA backend this host selects. The 3-tuple tail is scalar. The
+        // prefilter negates inner products.
+        let block_codes: [&[u8]; 32] = tuples[..32]
+            .iter()
+            .map(|tuple| tuple.search_code.as_slice())
+            .collect::<Vec<_>>()
+            .try_into()
+            .unwrap();
+        let mut expected_block_scores = vec![0.0; 32];
+        crate::quant::rabitq32::score_rabitq_bits1_block32(
+            block_prepared,
+            block_codes,
+            &mut expected_block_scores,
+        );
+        for (index, expected) in expected_block_scores.iter().enumerate() {
+            assert_eq!(
+                batch_scores[index].to_bits(),
+                (-expected).to_bits(),
+                "index={index}"
+            );
+        }
+        let tail_codes: Vec<&[u8]> = tuples[32..]
+            .iter()
+            .map(|tuple| tuple.search_code.as_slice())
+            .collect();
+        let mut expected_tail_scores = vec![0.0; tail_codes.len()];
+        crate::quant::rabitq32::score_rabitq_bits1_partial(
+            block_prepared,
+            &tail_codes,
+            &mut expected_tail_scores,
+        );
+        for (index, expected) in expected_tail_scores.iter().enumerate() {
+            assert_eq!(
+                batch_scores[32 + index].to_bits(),
+                (-expected).to_bits(),
+                "tail index={index}"
+            );
+        }
+    }
+
+    #[test]
+    fn diskann_binary_sidecar_prefilter_batch_is_exactly_per_candidate() {
+        let word_count = 24;
+        let query_words: Vec<u64> = (0..word_count)
+            .map(|index| (index as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15) ^ 0x5DEE_CE66)
+            .collect();
+        let tuples: Vec<VamanaNodeTuple> = (0..35)
+            .map(|row| {
+                let words: Vec<u64> = (0..word_count)
+                    .map(|index| {
+                        ((row * 31 + index) as u64).wrapping_mul(0xA076_1D64_78BD_642F) ^ 0x1234
+                    })
+                    .collect();
+                tuple_with_codes(words, Vec::new())
+            })
+            .collect();
+        let prefilter = DiskannPreparedPrefilter::BinarySidecar {
+            rotated_query: Vec::new(),
+            query_words: query_words.clone(),
+        };
+        let mut batch_scores = vec![0.0; tuples.len()];
+
+        score_diskann_prepared_prefilter_batch(&prefilter, &tuples, &mut batch_scores);
+
+        // Hamming distances are integers: the batch path must match the
+        // per-candidate path exactly on every host, regardless of which ISA
+        // backend executed.
+        for (tuple, batch_score) in tuples.iter().zip(batch_scores.iter()) {
+            assert_eq!(*batch_score, prefilter.score(tuple));
+            assert_eq!(
+                *batch_score,
+                crate::quant::hamming32::hamming_distance_scalar(&query_words, &tuple.binary_words)
+                    as f32
+            );
+        }
     }
 
     #[test]

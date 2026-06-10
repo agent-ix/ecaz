@@ -1,0 +1,10 @@
+┌───────────┬───────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬───────────────────────────────┐
+│ ef_search ┆ count ┆ mean    ┆ stddev  ┆ min     ┆ p50     ┆ p95     ┆ p99     ┆ max     ┆ cache_state                   │
+╞═══════════╪═══════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═══════════════════════════════╡
+│ 80        ┆ 32    ┆ 3.48 ms ┆ 1.01 ms ┆ 2.50 ms ┆ 3.27 ms ┆ 4.57 ms ┆ 7.28 ms ┆ 8.27 ms ┆ task98_int8_approx_real10k_on │
+└───────────┴───────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴───────────────────────────────┘
+[block-kernel-counters] command=latency label=ef_search=80 surface=hnsw quant=turboquant isa=neon flushes=6656 candidates=16733 elapsed_nanos=4988479 elapsed_ms=4.988479 kernel_flushes=6656 kernel_candidates=16733 kernel_elapsed_nanos=4988479 kernel_elapsed_ms=4.988479 scalar_flushes=0 scalar_candidates=0 scalar_elapsed_nanos=0 scalar_elapsed_ms=0.000000 width_lt8=6244 width_8_15=317 width_16_31=92 width_ge32=3
+[task87-counters] command=latency label=ef_search=80 surface=hnsw flushes=6656 candidates=16733 elapsed_nanos=4988479 elapsed_ms=4.988479 lut32_flushes=6656 lut32_candidates=16733
+[task87-counters] command=latency label=ef_search=80 surface=ivf flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=ef_search=80 surface=spire flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=ef_search=80 surface=unknown flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0

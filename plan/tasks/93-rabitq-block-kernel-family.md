@@ -1,6 +1,13 @@
 # Task 93: RaBitQ Block Kernel Family (All AMs × All ISAs)
 
-Status: proposed (2026-06-08)
+Status: complete (2026-06-10, closeout `reviews/task-93/007-closeout-status/`,
+reviewer-approved with owner lane decisions recorded 2026-06-10: the
+Graviton SVE lane and the Intel AVX2 measurement are both explicitly
+deferred into Task 99's cross-ISA profile. Scalar + NEON measured on all
+three AMs x real10k/50k/100k with recall byte-equal and every gate passed;
+AVX2 code landed bit-equal-by-construction with production primitives; SVE
+hosts route through NEON with truthful isa attribution. Task 99 carries
+the IVF ~99% 32-block-coverage datum for the SVE decision)
 Owner: coder (to be assigned). Phase III parallel — multiple coders OK across Tasks 93–98.
 Priority: 2 (Phase III block kernel family — RaBitQ)
 
