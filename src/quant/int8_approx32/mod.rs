@@ -6,6 +6,10 @@
 //! every ISA backend must produce identical sums and therefore identical
 //! final scores — parity tests assert strict `to_bits()` equality, with no
 //! tolerance framing (the hamming32 contract).
+//!
+//! The HNSW routing slice consumes these entry points; the allow is
+//! removed when it lands.
+#![allow(dead_code)]
 
 mod avx2;
 mod neon;
