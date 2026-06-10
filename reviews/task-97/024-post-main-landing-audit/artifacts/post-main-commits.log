@@ -1,0 +1,58 @@
+Script started on 2026-06-09 23:46:09-07:00 [<not executed on terminal>]
+15db5a237 (HEAD -> task-97-tq-qjl-block-kernel, origin/task-97-tq-qjl-block-kernel) Add Task 97 status packet through Graviton runbook
+7ff52fa59 Refresh Task 97 status through Graviton runbook
+f5c936deb Add Task 97 Graviton closeout runbook
+56b8a781a Add Task 97 status packet through NEON hook
+3558218d6 Refresh Task 97 status through NEON hook
+65cd8a75d Add Task 97 qjl32 NEON parity packet
+cc9df4553 Add qjl32 forced NEON parity hook
+79c71ee88 Add Task 97 status packet through octet batch
+1bcf9bf58 Refresh Task 97 status through octet batch packet
+816bbdee0 Add Task 97 qjl32 octet batch review packet
+fa501976c Bypass HNSW QJL batching below octet width
+0f4252ef9 Add qjl32 AVX2 octet batch path
+8be21ebd6 Approve Task 97 packets 015-016: transpose worked, require octet sub-block slice before stop condition
+8ed446d3b Refresh Task 97 status through AVX2 transpose
+d9eb20e95 Add Task 97 qjl32 AVX2 transpose packet
+a6b0bfd8b Transpose Task 97 QJL AVX2 block kernel
+c5a75c8a4 Add Task 97 old scorer diagnostic packet
+4840a0cb7 Review Task 97 packets 009-014: approve evidence, require candidate-parallel AVX2 transpose before stop condition
+7c4935018 Add Task 97 old QJL scorer diagnostic
+9ca6183c2 Add Task 97 status packet through per-candidate evidence
+2b67525ed Refresh Task 97 status through per-candidate evidence
+82b7f8eca Add Task 97 per-candidate scorer evidence packet
+8742d7f2b Add Task 97 QJL per-candidate bench row
+99df09e34 Add Task 97 status packet through scoring ladder
+fccc4e0cf Refresh Task 97 status through scoring ladder
+7bf5b495d Add Task 97 local scoring ladder packet
+c07590302 Add Task 97 status packet for QJL fixture
+48be35a56 Refresh Task 97 status for QJL fixture
+192f252d2 Add Task 97 local QJL32 suite packet
+70f6f2cf3 Route HNSW TurboQuant QJL through batch scoring
+f82c88e3d Review Task 97 packets 004-008: approve ISA slices and AM registration, flag prod-scorer rewrite evidence and speedup floor
+3a5e9109b Add Task 97 status packet
+ee5919222 Refresh Task 97 status through SVE packet
+7188c8c39 Add Task 97 qjl32 SVE packet
+69b9d82fb Add qjl32 SVE dispatch skeleton
+82dee9877 Add Task 97 qjl32 NEON packet
+d11a0287e Add qjl32 NEON local kernel
+06ed7249b Add Task 97 qjl32 AM registration packet
+3e0ca3eaa Register qjl32 AM batch paths
+fb70f2ebc Merge remote-tracking branch 'origin/task-97-tq-qjl-block-kernel' into task-97-tq-qjl-block-kernel
+0ae58cf62 Update Task 97 qjl32 AVX2 packet evidence
+b0efa19d9 Align Task 97 qjl32 production dispatch tolerance
+2353d7392 Add Task 97 qjl32 AVX2 review request
+b8a785736 Add Task 97 qjl32 AVX2 local kernel
+87d30e6dd reviewer: Task 97 packet 003 — approve qjl32 scalar reference; require production-dispatch ADR-076 tolerance pair before ISA kernels
+299313d92 reviewer: Task 97 packet 002 — approve TurboQuantQjl counter kind; require forced-scalar to_bits anchor in qjl32 design
+60e910c6f Add Task 97 qjl32 scalar review request
+13d36c051 Add Task 97 qjl32 scalar reference
+65154ef2a Add Task 97 qjl32 design request
+e115cbc7f Add Task 97 TurboQuant QJL counter kind
+036100757 Record approved qjl32 direction: TurboQuantQjl kind, separate family, no LUT unification
+442a8b004 Expand Task 97 F1: shared TurboQuant kind corrupts Task 87 compat view
+48013005e Approve Task 97 Phase 0 QJL inventory; require distinct counter kind
+ac08faeda Add Task 97 QJL inventory review request
+085e73a7e Add Task 97 QJL surface inventory artifacts
+
+Script done on 2026-06-09 23:46:09-07:00 [COMMAND_EXIT_CODE="0"]
