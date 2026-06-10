@@ -361,7 +361,13 @@ pub(crate) async fn snapshot_block_kernel_counters(
                 width_ge32_flushes: row.get(15),
             })
             .collect(),
-        Err(_) => Vec::new(),
+        Err(error) => {
+            eprintln!(
+                "[block-kernel-counters] snapshot query failed (stale extension catalog? \
+                 recreate the bench database after counter-schema changes): {error}"
+            );
+            Vec::new()
+        }
     };
     Ok(BlockKernelCounterSnapshots {
         block_kernel,
