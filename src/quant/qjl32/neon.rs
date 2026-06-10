@@ -28,6 +28,31 @@ pub(super) fn score_block32_neon(
     scalar::score_block32_scalar(quantizer, prepared, codes, gammas, out_scores)
 }
 
+#[cfg(test)]
+pub(super) fn score_block32_neon_for_test(
+    quantizer: &ProdQuantizer,
+    prepared: &PreparedQuery,
+    codes: &[&[u8]; BLOCK_WIDTH],
+    gammas: &[f32; BLOCK_WIDTH],
+    out_scores: &mut [f32],
+) -> Option<Isa> {
+    #[cfg(target_arch = "aarch64")]
+    {
+        if is_aarch64_feature_detected!("neon") {
+            // SAFETY: runtime feature detection above guarantees NEON support;
+            // test fixtures use the same validated shapes as the public block path.
+            for lane in 0..BLOCK_WIDTH {
+                out_scores[lane] =
+                    unsafe { score_candidate_neon(quantizer, prepared, codes[lane], gammas[lane]) };
+            }
+            return Some(Isa::Neon);
+        }
+    }
+
+    let _ = (quantizer, prepared, codes, gammas, out_scores);
+    None
+}
+
 #[cfg(target_arch = "aarch64")]
 #[target_feature(enable = "neon")]
 unsafe fn score_candidate_neon(
