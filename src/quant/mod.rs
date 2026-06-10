@@ -30,6 +30,7 @@ pub mod grouped_pq;
 pub(crate) mod grouped_pq_block;
 pub mod hadamard;
 pub(crate) mod hamming32;
+pub(crate) mod int8_approx32;
 pub(crate) mod isa;
 pub(crate) mod lut32;
 pub mod mse;
