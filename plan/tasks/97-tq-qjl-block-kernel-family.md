@@ -4,6 +4,28 @@ Status: proposed (2026-06-08)
 Owner: coder (to be assigned). Phase III parallel.
 Priority: 2 (QJL variant; per-candidate metadata complicates kernel)
 
+## Scope decision (2026-06-09)
+
+Per project decision after the Task 96 stop condition
+(`reviews/task-96/001-surface-inventory-stop-condition/feedback/`):
+
+1. **Currently-implemented surfaces only.** Task 97 builds kernels for
+   the QJL/gamma-aware scoring paths that exist in tree today. Do not
+   add new TQ modes, bit widths, or storage surfaces, and do not
+   reopen the MSE-vs-QJL bit-allocation question (ADR-025 stays
+   PROPOSED deliberately; its reevaluation is deferred to the complete
+   post-kernel index × quant × mode profile under Task 99).
+2. **Phase 0 surface inventory required**, mirroring Task 96's. Before
+   kernel work, audit which (AM, dim, bits) cells actually reach
+   gamma-aware scoring — and specifically whether any cell is
+   reachable on the standard 1536-dim benchmark corpora, since
+   `qjl_enabled(dim, bits)` makes dim 1536 at 4 bits the no-QJL lane.
+   If QJL scoring is unreachable at the standard fixtures, say so in
+   the Phase 0 packet and propose the measurement fixture (non-tiled
+   dim) before implementing; if no production-reachable QJL surface
+   exists at all, file a stop-condition packet per the Task 96
+   precedent.
+
 ## Why
 
 TurboQuant QJL is the gamma-aware path: per-candidate scoring

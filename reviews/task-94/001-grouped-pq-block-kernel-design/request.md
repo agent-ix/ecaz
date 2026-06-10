@@ -37,4 +37,3 @@ kernel under `src/quant/grouped_pq_block/`, registered only through
 ## Validation
 
 Design-only packet. No tests, benches, CI, or AWS runs were performed.
-

@@ -55,4 +55,3 @@ The local test validates build/fallback behavior on this host and executes the
 real NEON backend only when the host exposes NEON. Graviton-4 runtime dispatch
 evidence was not collected in this packet because AWS testing is reserved for
 approved/final evidence runs.
-

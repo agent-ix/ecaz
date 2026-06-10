@@ -1,0 +1,168 @@
+Script started on 2026-06-09 15:09:38-07:00 [<not executed on terminal>]
+src/am/ec_ivf/mod.rs
+58:pub(super) const EC_IVF_DEFAULT_QUANT_BITS: i32 = 4;
+
+src/am/ec_hnsw/graph.rs
+94:                            .binary_sign_no_qjl_4bit_supported()
+172:                        .binary_sign_no_qjl_4bit_supported()
+
+src/am/ec_diskann/quantizer.rs
+15:    prod::{mse_code_len, PreparedLutNoQjl4BitQuery, ProdQuantizer},
+19:use crate::DEFAULT_QUANT_BITS;
+34:fn turboquant_no_qjl_4bit_quantizer(
+40:    if !quantizer.int8_approx_no_qjl_4bit_supported() {
+90:                    DEFAULT_QUANT_BITS,
+94:                    .then(|| ProdQuantizer::cached(dimensions, DEFAULT_QUANT_BITS, seed));
+110:                    turboquant_no_qjl_4bit_quantizer(dimensions, seed, "storage_format")?;
+208:        prepared_lut: PreparedLutNoQjl4BitQuery,
+609:    type PreparedQuery = PreparedLutNoQjl4BitQuery;
+634:        if !self.quantizer.int8_approx_no_qjl_4bit_supported() {
+640:        Ok(self.quantizer.prepare_ip_query_lut_no_qjl_4bit(query))
+655:        if !self.quantizer.int8_approx_no_qjl_4bit_supported() {
+662:            .score_ip_from_parts_lut_no_qjl_4bit(prepared_query, payload.code))
+779:            DEFAULT_QUANT_BITS,
+841:            let quantizer = turboquant_no_qjl_4bit_quantizer(
+847:                prepared_lut: quantizer.prepare_ip_query_lut_no_qjl_4bit(raw_query),
+1295:        let prepared_lut = quantizer.prepare_ip_query_lut_no_qjl_4bit(&query);
+1314:        let direct_prepared = quantizer.prepare_ip_query_lut_no_qjl_4bit(&query);
+1322:            quantizer.score_ip_from_parts_lut_no_qjl_4bit(&direct_prepared, &search_code);
+
+src/am/ec_diskann/insert.rs
+1618:    use crate::DEFAULT_QUANT_BITS;
+1715:        let quantizer = ProdQuantizer::cached(source.len(), DEFAULT_QUANT_BITS, metadata.seed);
+
+src/am/ec_ivf/quantizer.rs
+4:    score_grouped_pq_batch_for, score_turboquant_no_qjl_4bit_batch_for, CandidateBatch,
+13:use crate::quant::prod::{ExactScoreMode, PreparedLutNoQjl4BitQuery, PreparedQuery, ProdQuantizer};
+32:    TurboQuantNoQjl4BitLut(PreparedLutNoQjl4BitQuery),
+125:        let bits = match rabitq_bits.unwrap_or(crate::DEFAULT_QUANT_BITS) {
+158:                    crate::DEFAULT_QUANT_BITS,
+215:                    crate::DEFAULT_QUANT_BITS,
+219:                    ExactScoreMode::MseNoQjl4Bit => {
+221:                            quantizer.prepare_ip_query_lut_no_qjl_4bit(query),
+258:            crate::DEFAULT_QUANT_BITS,
+286:                    crate::DEFAULT_QUANT_BITS,
+297:                    crate::DEFAULT_QUANT_BITS,
+300:                Ok(quantizer.score_ip_from_parts_lut_no_qjl_4bit(prepared_query, payload))
+411:    pub(super) fn score_turboquant_no_qjl_4bit_batch_from_payloads(
+438:                    crate::DEFAULT_QUANT_BITS,
+457:                score_turboquant_no_qjl_4bit_batch_for(
+568:                crate::code_len(self.dimensions, crate::DEFAULT_QUANT_BITS)
+793:                    crate::DEFAULT_QUANT_BITS,
+796:                score_turboquant_no_qjl_4bit_batch_for(
+1111:            crate::DEFAULT_QUANT_BITS,
+1125:    fn turboquant_dispatch_uses_lut_for_no_qjl_4bit_lane() {
+1138:            crate::DEFAULT_QUANT_BITS,
+1141:        let direct_prepared = direct.prepare_ip_query_lut_no_qjl_4bit(&query);
+1147:            direct.score_ip_from_parts_lut_no_qjl_4bit(&direct_prepared, &payload)
+1152:    fn turboquant_no_qjl_4bit_batch_scores_match_scalar_scores() {
+1178:            .score_turboquant_no_qjl_4bit_batch_from_payloads(
+1332:            crate::DEFAULT_QUANT_BITS,
+
+src/am/ec_hnsw/scan.rs
+12:        score_grouped_pq_batch_for, score_turboquant_no_qjl_4bit_batch_for, CandidateBatch,
+21:    BinarySignNoQjl4BitQuery, Int8ApproxNoQjl4BitQuery, PreparedLutNoQjl4BitQuery, PreparedQuery,
+633:            Self::FullLut => "full_lut_no_qjl_4bit",
+634:            Self::TiledLut => "tiled_lut_no_qjl_4bit",
+635:            Self::Int8Approx => "int8_approx_no_qjl_4bit",
+2083:    let binary_query_requested = quantizer.binary_sign_no_qjl_4bit_supported()
+2087:        binary_query_requested.then(|| quantizer.prepare_ip_query_binary_sign_no_qjl_4bit(query));
+2097:                if !quantizer.int8_approx_no_qjl_4bit_supported() {
+2103:                    Some(quantizer.prepare_ip_query_lut_no_qjl_4bit(query)),
+2109:                if !quantizer.int8_approx_no_qjl_4bit_supported() {
+2116:                    Some(quantizer.prepare_ip_query_tiled_lut_no_qjl_4bit(
+2124:                if !quantizer.int8_approx_no_qjl_4bit_supported() {
+2132:                    Some(quantizer.prepare_ip_query_int8_approx_no_qjl_4bit(query)),
+2455:    score_turboquant_no_qjl_4bit_batch_for(
+2518:                        quantizer.binary_sign_words_from_packed_no_qjl_4bit(code_bytes),
+3104:    FullLut(&'a PreparedLutNoQjl4BitQuery),
+3169:                .score_ip_from_parts_lut_no_qjl_4bit(prepared, payload.code),
+3172:                .score_ip_from_parts_tiled_lut_no_qjl_4bit(prepared, payload.code),
+3175:                .score_ip_from_parts_int8_approx_no_qjl_4bit(prepared, payload.code),
+3306:    -quantizer.score_binary_sign_words_no_qjl_4bit(binary_query, grouped.call.input.binary_words)
+3711:                -quantizer.score_binary_sign_words_no_qjl_4bit(
+5837:    pub(super) turboquant_lut_query: *mut PreparedLutNoQjl4BitQuery,
+7699:        let prepared_lut = quantizer.prepare_ip_query_lut_no_qjl_4bit(&query);
+7710:                .score_ip_from_parts_lut_no_qjl_4bit(&prepared_lut, &encoded.mse_packed)
+7715:            .prepare_ip_query_tiled_lut_no_qjl_4bit(&query, TURBOQUANT_TILED_LUT_TILE_SIZE);
+7726:                .score_ip_from_parts_tiled_lut_no_qjl_4bit(&prepared_tiled, &encoded.mse_packed)
+7730:        let prepared_int8 = quantizer.prepare_ip_query_int8_approx_no_qjl_4bit(&query);
+7741:                .score_ip_from_parts_int8_approx_no_qjl_4bit(&prepared_int8, &encoded.mse_packed)
+7751:        let prepared_lut = Box::new(quantizer.prepare_ip_query_lut_no_qjl_4bit(&query));
+7765:                -quantizer.score_ip_from_parts_lut_no_qjl_4bit(&prepared_lut, &encoded.mse_packed)
+
+src/am/ec_ivf/scan.rs
+1454:            StorageFormat::TurboQuant => quant_bits == 4,
+1473:    if quantizer.score_turboquant_no_qjl_4bit_batch_from_payloads(
+2533:        crate::DEFAULT_QUANT_BITS,
+
+src/am/ec_ivf/build.rs
+1107:            crate::DEFAULT_QUANT_BITS,
+
+src/am/ec_ivf/options.rs
+12:    EC_IVF_DEFAULT_QUANT_BITS, EC_IVF_DEFAULT_RERANK_WIDTH, EC_IVF_DEFAULT_SEED,
+162:        quant_bits: EC_IVF_DEFAULT_QUANT_BITS,
+170:    /// falls back to `EC_IVF_DEFAULT_QUANT_BITS = 4`.
+173:            EC_IVF_DEFAULT_QUANT_BITS
+179:            _ => EC_IVF_DEFAULT_QUANT_BITS as u8,
+439:            EC_IVF_DEFAULT_QUANT_BITS,
+
+src/am/ec_hnsw/insert.rs
+626:        .binary_sign_no_qjl_4bit_supported(),
+
+src/am/ec_spire/quantizer/tests.rs
+58:            crate::DEFAULT_QUANT_BITS,
+72:    fn turboquant_assignment_scorer_uses_no_qjl_4bit_lut_path() {
+98:            ProdQuantizer::cached(dim, crate::DEFAULT_QUANT_BITS, crate::DEFAULT_QUANT_SEED);
+100:        let prepared_lut = quantizer.prepare_ip_query_lut_no_qjl_4bit(&query);
+103:            quantizer.score_ip_from_parts_lut_no_qjl_4bit(&prepared_lut, &payload_a);
+108:            SpirePreparedAssignmentScorer::TurboQuant { no_qjl_4bit_lut, .. } => {
+109:                assert!(no_qjl_4bit_lut.is_some());
+157:            crate::DEFAULT_QUANT_BITS,
+360:                    bits: crate::DEFAULT_QUANT_BITS,
+405:                bits: crate::DEFAULT_QUANT_BITS
+
+src/am/ec_spire/quantizer/mod.rs
+10:    record_block_scalar_score_for, score_turboquant_no_qjl_4bit_batch_for, CandidateBatch,
+17:    payload_len, ExactScoreMode, PreparedLutNoQjl4BitQuery, PreparedQuery, ProdQuantizer,
+57:        no_qjl_4bit_lut: Option<PreparedLutNoQjl4BitQuery>,
+97:                    crate::DEFAULT_QUANT_BITS,
+101:                let no_qjl_4bit_lut = (quantizer.exact_score_mode()
+102:                    == ExactScoreMode::MseNoQjl4Bit)
+103:                    .then(|| quantizer.prepare_ip_query_lut_no_qjl_4bit(query_vector));
+109:                    no_qjl_4bit_lut,
+116:                    crate::DEFAULT_QUANT_BITS,
+213:                no_qjl_4bit_lut,
+217:                if let Some(prepared_lut) = no_qjl_4bit_lut {
+223:                            .score_ip_from_parts_lut_no_qjl_4bit(prepared_lut, encoded_payload),
+260:                no_qjl_4bit_lut,
+265:                    if let Some(prepared_lut) = no_qjl_4bit_lut {
+267:                        quantizer.score_ip_from_parts_lut_no_qjl_4bit(prepared_lut, payload)
+355:                no_qjl_4bit_lut,
+359:                    if let Some(prepared_lut) = no_qjl_4bit_lut {
+371:                        return score_turboquant_no_qjl_4bit_batch_for(
+389:                if no_qjl_4bit_lut.is_some() {
+432:                no_qjl_4bit_lut,
+443:                    if let Some(prepared_lut) = no_qjl_4bit_lut {
+444:                        return score_turboquant_no_qjl_4bit_batch_for(
+466:                if no_qjl_4bit_lut.is_some() {
+513:                bits: crate::DEFAULT_QUANT_BITS,
+609:                crate::DEFAULT_QUANT_BITS,
+621:                crate::DEFAULT_QUANT_BITS,
+706:            payload_len(dimensions, crate::DEFAULT_QUANT_BITS) - size_of::<f32>()
+708:        SpireAssignmentPayloadFormat::RaBitQ => code_len_for(dimensions, crate::DEFAULT_QUANT_BITS)
+
+src/am/ec_hnsw/build.rs
+545:            bits: crate::DEFAULT_QUANT_BITS,
+557:        bits: crate::DEFAULT_QUANT_BITS,
+586:                crate::DEFAULT_QUANT_BITS,
+605:            if bits != crate::DEFAULT_QUANT_BITS || seed != crate::DEFAULT_QUANT_SEED {
+608:                    crate::DEFAULT_QUANT_BITS,
+1155:                NativeBuildDecodedCodeValues::try_no_qjl_4bit(state, dimensions, bits, seed),
+1184:    fn try_no_qjl_4bit(state: &BuildState, dimensions: usize, bits: u8, seed: u64) -> Option<Self> {
+1210:            decode_no_qjl_4bit_code_values_into(
+1238:fn decode_no_qjl_4bit_code_values_into(
+2986:    fn decoded_no_qjl_4bit_scores_match_code_metric() {
+3599:            quantizer.binary_sign_words_from_packed_no_qjl_4bit(&tuple.code)
+
+Script done on 2026-06-09 15:09:38-07:00 [COMMAND_EXIT_CODE="0"]

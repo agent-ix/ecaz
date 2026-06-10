@@ -48,4 +48,3 @@ The local host did not provide approved Graviton-4 runtime evidence in this
 packet. The NEON parity test executes the real backend only on NEON-capable
 aarch64 hosts; otherwise it returns early. Graviton-4 dispatch and measured
 runtime vector-length evidence remain for the approved AWS/final evidence run.
-

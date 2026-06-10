@@ -47,4 +47,3 @@ Local validation for the emitter fix should be CLI-level and not AWS-backed:
 
 The Graviton 4 measurement packet later in T94 must include direct
 `[block-kernel-counters]` rows and measured runtime SVE2 vector length.
-

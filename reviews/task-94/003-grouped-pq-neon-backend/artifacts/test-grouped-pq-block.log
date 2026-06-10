@@ -15,4 +15,3 @@ test quant::grouped_pq_block::tests::grouped_pq_block32_matches_scalar_reference
 test quant::grouped_pq_block::tests::grouped_pq_scalar_tail_matches_scalar_reference_bits ... ok
 
 test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 2039 filtered out; finished in 0.00s
-

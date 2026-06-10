@@ -47,4 +47,3 @@ No CI, AWS, or benchmark runs were performed.
 - LUT values are deterministic non-trivial f32 values rather than zero/power-of-two fixtures.
 - Real NEON, SVE2, and AVX2 kernels are not claimed in this packet; those remain
   Phase 3, Phase 4, and Phase 5.
-

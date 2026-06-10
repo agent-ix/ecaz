@@ -178,4 +178,3 @@ Phase 6: register IVF, DiskANN, and HNSW where applicable through
 
 Phase 7: close out with per-AM x ISA results table, ADR-076 pointer, and task
 status update.
-
