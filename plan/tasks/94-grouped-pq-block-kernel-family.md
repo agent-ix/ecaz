@@ -1,6 +1,6 @@
 # Task 94: Grouped-PQ / PqFastScan Block Kernel Family (All AMs × All ISAs)
 
-Status: in review (2026-06-09; implementation, local validation, automatic CI cleanup, local IVF PqFastScan suite-smoke evidence through `reviews/task-94/024-local-bench-smoke/`, and broader local IVF/DiskANN PqFastScan bench matrix evidence through `reviews/task-94/025-local-bench-matrix/`; final Graviton 4 / full benchmark closeout evidence pending approval)
+Status: in review (2026-06-09; implementation, local validation, automatic CI cleanup, local IVF PqFastScan suite-smoke evidence through `reviews/task-94/024-local-bench-smoke/`, broader local IVF/DiskANN PqFastScan bench matrix evidence through `reviews/task-94/025-local-bench-matrix/`, and closeout-scope pruning/GUC documentation through `reviews/task-94/026-closeout-doc-notes/`; final Graviton 4 / full benchmark closeout evidence pending approval)
 Owner: coder (to be assigned). Phase III parallel — multiple coders OK across Tasks 93–98.
 Priority: 2 (highest documented kernel-win ROI in Phase III)
 
@@ -89,6 +89,22 @@ storage format.
 7. No new `unsafe` outside ISA module boundary; full safety doc
    on intrinsic-using modules.
 8. Per-AM closeout matrix in `reviews/task-94/.../artifacts/`.
+
+## Closeout Notes
+
+Packet 024 identified two closeout-scope documentation requirements for the
+IVF PqFastScan production batch path:
+
+- The batch path bypasses the legacy per-posting `suffix_max`
+  `min_ip_to_keep` pruning used by `score_ip_from_parts_with_min_bound`.
+  Correctness is unchanged, but EXPLAIN/dashboard readers should expect
+  `posting_pruned_by_bound = 0` for postings scored by the batch path. Treat
+  mixed small-cell latency results as a pruning-vs-throughput trade, not as
+  pure kernel overhead.
+- The IVF PqFastScan kernel path remains opt-in behind
+  `ec_ivf.scratch_soa_batch_decode`; Task 94 does not flip the default without
+  the final Graviton 4 / full closeout evidence. User-facing docs name this
+  GUC and the opt-in posture.
 
 ## Phases
 

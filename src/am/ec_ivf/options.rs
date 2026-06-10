@@ -257,7 +257,7 @@ pub(super) fn register_gucs() {
     GucRegistry::define_bool_guc(
         c"ec_ivf.scratch_soa_batch_decode",
         c"Enable experimental ec_ivf posting scratch SoA batch decode.",
-        c"Task 51 diagnostic mode; batches decoded posting tuple fields into scan-local structure-of-arrays buffers before scoring. Disabled by default.",
+        c"Experimental opt-in path that batches decoded posting tuple fields into scan-local structure-of-arrays buffers before scoring. Also enables Task 94 IVF PqFastScan grouped-PQ block-kernel scoring for eligible indexes. Disabled by default.",
         &EC_IVF_SCRATCH_SOA_BATCH_DECODE_GUC,
         GucContext::Userset,
         GucFlags::default(),

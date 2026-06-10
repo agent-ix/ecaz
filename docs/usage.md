@@ -118,6 +118,21 @@ SET ec_ivf.rerank_width = 500;
 Current local evidence keeps `storage_format = 'auto'` unchanged. For larger
 high-dimensional IVF surfaces where speed and index size dominate, the measured
 recommendation is explicit `storage_format = 'pq_fastscan', pq_group_size = 8`.
+The Task 94 grouped-PQ block-kernel path for IVF PqFastScan is currently
+opt-in through:
+
+```sql
+SET ec_ivf.scratch_soa_batch_decode = on;
+```
+
+This routes eligible PqFastScan posting-list drains through the batched
+grouped-PQ block scorer. With this setting enabled, IVF no longer reports
+`posting_pruned_by_bound` for those batched postings because the batch path
+scores each posting in the scratch buffer instead of using the per-posting
+`suffix_max` cutoff. That is a pruning-vs-throughput trade: local Task 94
+evidence shows it helps on larger/high-nprobe cells and can be flat on smaller
+cells. Leave it off unless you are intentionally evaluating or deploying the
+PqFastScan batch path with workload-specific evidence.
 
 ## DiskANN
 
