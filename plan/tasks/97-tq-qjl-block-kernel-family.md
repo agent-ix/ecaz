@@ -1,6 +1,6 @@
 # Task 97: TurboQuant QJL Block Kernel Family (Gamma + Residual Signs)
 
-Status: in review (2026-06-09; Phase 0 inventory approved, local AVX2 qjl32 packet in `reviews/task-97/004-qjl32-avx2-local/`)
+Status: in review (2026-06-09; QJL surface inventory, qjl32 counter kind/design, scalar reference, local AVX2/NEON/SVE code slices, and IVF/SPIRE/HNSW AM registration are packeted through `reviews/task-97/007-qjl32-sve-dispatch-local/`; Graviton 4 runtime dispatch/vector-length/counter evidence and final closeout matrix remain pending approval)
 Owner: coder (to be assigned). Phase III parallel.
 Priority: 2 (QJL variant; per-candidate metadata complicates kernel)
 
