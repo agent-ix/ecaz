@@ -1,4 +1,4 @@
-use super::{scalar, BLOCK_WIDTH};
+use super::{scalar, BLOCK_WIDTH, OCTET_WIDTH};
 use crate::quant::isa::Isa;
 use crate::quant::prod::{PreparedQuery, ProdQuantizer};
 
@@ -27,6 +27,29 @@ pub(super) fn score_block32_avx2(
     }
 
     scalar::score_block32_scalar(quantizer, prepared, codes, gammas, out_scores)
+}
+
+pub(super) fn score_octet8_avx2(
+    quantizer: &ProdQuantizer,
+    prepared: &PreparedQuery,
+    codes: &[&[u8]; OCTET_WIDTH],
+    gammas: &[f32; OCTET_WIDTH],
+    out_scores: &mut [f32],
+) -> Option<Isa> {
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    {
+        if is_x86_feature_detected!("avx2") {
+            // SAFETY: runtime feature detection above guarantees AVX2 support,
+            // and callers validate qjl32 shapes before dispatch.
+            unsafe {
+                score_octet8_candidate_parallel_avx2(quantizer, prepared, codes, gammas, out_scores)
+            };
+            return Some(Isa::Avx2);
+        }
+    }
+
+    let _ = (quantizer, prepared, codes, gammas, out_scores);
+    None
 }
 
 #[cfg(test)]
@@ -82,7 +105,14 @@ unsafe fn score_block32_candidate_parallel_avx2(
     let mut block_lane = 0usize;
     while block_lane < BLOCK_WIDTH {
         score_candidate_octet_avx2(
-            quantizer, prepared, codes, gammas, out_scores, block_lane, codebook, qjl_scale,
+            quantizer,
+            prepared,
+            codes.as_slice(),
+            gammas.as_slice(),
+            out_scores,
+            block_lane,
+            codebook,
+            qjl_scale,
         );
         block_lane += 8;
     }
@@ -90,11 +120,34 @@ unsafe fn score_block32_candidate_parallel_avx2(
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[target_feature(enable = "avx2")]
+unsafe fn score_octet8_candidate_parallel_avx2(
+    quantizer: &ProdQuantizer,
+    prepared: &PreparedQuery,
+    codes: &[&[u8]; OCTET_WIDTH],
+    gammas: &[f32; OCTET_WIDTH],
+    out_scores: &mut [f32],
+) {
+    let codebook = _mm256_loadu_ps(quantizer.codebook.as_ptr());
+    let qjl_scale = _mm256_set1_ps(prepared.qjl_scale);
+    score_candidate_octet_avx2(
+        quantizer,
+        prepared,
+        codes.as_slice(),
+        gammas.as_slice(),
+        out_scores,
+        0,
+        codebook,
+        qjl_scale,
+    );
+}
+
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[target_feature(enable = "avx2")]
 unsafe fn score_candidate_octet_avx2(
     quantizer: &ProdQuantizer,
     prepared: &PreparedQuery,
-    codes: &[&[u8]; BLOCK_WIDTH],
-    gammas: &[f32; BLOCK_WIDTH],
+    codes: &[&[u8]],
+    gammas: &[f32],
     out_scores: &mut [f32],
     block_lane: usize,
     codebook: __m256,

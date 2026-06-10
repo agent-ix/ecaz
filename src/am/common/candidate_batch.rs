@@ -733,8 +733,8 @@ fn score_turboquant_qjl_batch_inner<Id>(
     crate::quant::qjl32::validate_qjl_shape(quantizer, prepared)?;
     validate_turboquant_qjl_batch_shapes(quantizer.original_dim, batch)?;
 
-    if batch.len() >= crate::quant::qjl32::BLOCK_WIDTH {
-        return score_turboquant_qjl_batch_block32(quantizer, prepared, batch, out_scores);
+    if batch.len() >= crate::quant::qjl32::OCTET_WIDTH {
+        return score_turboquant_qjl_batch_kernel(quantizer, prepared, batch, out_scores);
     }
 
     let scalar_started = Instant::now();
@@ -755,7 +755,7 @@ fn score_turboquant_qjl_batch_inner<Id>(
     })
 }
 
-fn score_turboquant_qjl_batch_block32<Id>(
+fn score_turboquant_qjl_batch_kernel<Id>(
     quantizer: &ProdQuantizer,
     prepared: &PreparedQuery,
     batch: &CandidateBatch<'_, Id>,
@@ -791,6 +791,38 @@ fn score_turboquant_qjl_batch_block32<Id>(
             .kernel_elapsed_nanos
             .saturating_add(u64::try_from(block_started.elapsed().as_nanos()).unwrap_or(u64::MAX));
         block_start += crate::quant::qjl32::BLOCK_WIDTH;
+    }
+
+    while block_start + crate::quant::qjl32::OCTET_WIDTH <= batch.len() {
+        let block_started = Instant::now();
+        let payloads =
+            &batch.payloads()[block_start..block_start + crate::quant::qjl32::OCTET_WIDTH];
+        let mut codes = [&[][..]; crate::quant::qjl32::OCTET_WIDTH];
+        let mut gammas = [0.0_f32; crate::quant::qjl32::OCTET_WIDTH];
+        for (lane, payload) in payloads.iter().enumerate() {
+            gammas[lane] = validate_turboquant_qjl_meta(payload.meta)?;
+            crate::quant::qjl32::validate_code_shape(
+                block_start + lane,
+                quantizer.original_dim,
+                payload.code,
+            )?;
+            codes[lane] = payload.code;
+        }
+        let Some(isa) = crate::quant::qjl32::score_turboquant_qjl_octet8_avx2(
+            quantizer,
+            prepared,
+            codes,
+            gammas,
+            &mut out_scores[block_start..block_start + crate::quant::qjl32::OCTET_WIDTH],
+        ) else {
+            break;
+        };
+        timing.kernel_isa = Some(isa);
+        timing.kernel_candidates += crate::quant::qjl32::OCTET_WIDTH;
+        timing.kernel_elapsed_nanos = timing
+            .kernel_elapsed_nanos
+            .saturating_add(u64::try_from(block_started.elapsed().as_nanos()).unwrap_or(u64::MAX));
+        block_start += crate::quant::qjl32::OCTET_WIDTH;
     }
 
     let scalar_started = Instant::now();
@@ -1246,7 +1278,7 @@ mod tests {
         let quantizer = crate::quant::prod::ProdQuantizer::new(1024, 4, 42);
         let query = random_unit_vector(1024, 151);
         let prepared = quantizer.prepare_ip_query(&query);
-        let encoded: Vec<_> = (0..39)
+        let encoded: Vec<_> = (0..47)
             .map(|seed| quantizer.encode(&random_unit_vector(1024, seed + 500)))
             .collect();
         let codes: Vec<Vec<u8>> = encoded
@@ -1305,7 +1337,7 @@ mod tests {
             qjl.iter()
                 .map(|snapshot| snapshot.kernel_candidates)
                 .sum::<u64>(),
-            32
+            40
         );
         assert_eq!(
             qjl.iter()
@@ -1315,7 +1347,7 @@ mod tests {
         );
         assert_eq!(
             qjl.iter().map(|snapshot| snapshot.candidates).sum::<u64>(),
-            39
+            47
         );
         let task87_ivf = super::candidate_batch_scoring_snapshots()
             .into_iter()
