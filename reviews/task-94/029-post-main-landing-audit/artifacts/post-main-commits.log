@@ -1,0 +1,9 @@
+Script started on 2026-06-09 23:43:28-07:00 [<not executed on terminal>]
+1348ca151 (HEAD -> task-94-grouped-pq-block-kernel) Merge remote-tracking branch 'origin/main' into task-94-grouped-pq-block-kernel
+a08b0ba0b (origin/task-94-grouped-pq-block-kernel) Add Task 94 status packet through Graviton runbook
+7ab01a976 Refresh Task 94 status through Graviton runbook
+aa2436419 Add Task 94 Graviton closeout runbook
+4c796439d Add Task 94 closeout doc notes packet
+53ebf0ca1 Document Task 94 IVF PqFastScan opt-in tradeoff
+
+Script done on 2026-06-09 23:43:28-07:00 [COMMAND_EXIT_CODE="0"]

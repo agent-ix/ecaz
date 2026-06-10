@@ -1,0 +1,19 @@
+Script started on 2026-06-09 23:43:28-07:00 [<not executed on terminal>]
+ docs/usage.md                                      |  15 ++
+ plan/tasks/94-grouped-pq-block-kernel-family.md    |  18 ++-
+ plan/tasks/README.md                               |   2 +-
+ .../artifacts/cargo-fmt-check.log                  |  77 +++++++++++
+ .../artifacts/git-diff-check.log                   |   3 +
+ .../026-closeout-doc-notes/artifacts/manifest.md   |  40 ++++++
+ reviews/task-94/026-closeout-doc-notes/request.md  |  35 +++++
+ .../artifacts/git-diff-check.log                   |   3 +
+ .../artifacts/graviton4-closeout-runbook.md        | 152 +++++++++++++++++++++
+ .../artifacts/manifest.md                          |  31 +++++
+ .../027-graviton4-closeout-runbook/request.md      |  37 +++++
+ .../artifacts/git-diff-check.log                   |   3 +
+ .../artifacts/manifest.md                          |  26 ++++
+ .../028-status-through-packet-027/request.md       |  39 ++++++
+ src/am/ec_ivf/options.rs                           |   2 +-
+ 15 files changed, 480 insertions(+), 3 deletions(-)
+
+Script done on 2026-06-09 23:43:28-07:00 [COMMAND_EXIT_CODE="0"]
