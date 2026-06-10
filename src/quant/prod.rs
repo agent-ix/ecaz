@@ -1059,9 +1059,8 @@ impl ProdQuantizer {
         qjl_packed: &[u8],
     ) -> f32 {
         use std::arch::x86_64::{
-            _mm256_add_ps, _mm256_fmadd_ps, _mm256_loadu_ps, _mm256_mul_ps,
-            _mm256_permutevar8x32_ps, _mm256_set1_epi32, _mm256_setr_epi32, _mm256_setzero_ps,
-            _mm256_storeu_ps,
+            __m256i, _mm256_add_ps, _mm256_loadu_ps, _mm256_loadu_si256, _mm256_mul_ps,
+            _mm256_permutevar8x32_ps, _mm256_setzero_ps, _mm256_storeu_ps,
         };
 
         let bits_per_index = mse_bits(self.original_dim, self.bits);
@@ -1070,102 +1069,46 @@ impl ProdQuantizer {
         let mut qjl_sum = 0.0_f32;
         let mut dim_index = 0usize;
         let mut mse_acc0 = _mm256_setzero_ps();
-        let mut mse_acc1 = _mm256_setzero_ps();
-        let mut mse_acc2 = _mm256_setzero_ps();
-        let mut mse_acc3 = _mm256_setzero_ps();
         let mut qjl_acc0 = _mm256_setzero_ps();
-        let mut qjl_acc1 = _mm256_setzero_ps();
-        let mut qjl_acc2 = _mm256_setzero_ps();
-        let mut qjl_acc3 = _mm256_setzero_ps();
 
         if bits_per_index == 3 {
             debug_assert_eq!(self.codebook.len(), 8);
             let codebook = _mm256_loadu_ps(self.codebook.as_ptr());
-            let shifts = _mm256_setr_epi32(0, 3, 6, 9, 12, 15, 18, 21);
-            let mask = _mm256_set1_epi32(0x7);
-
-            while dim_index + 32 <= self.original_dim {
-                let l0 = decode_eight_3bit_lanes_avx2(
-                    decode_eight_3bit_aligned_word(mse_packed, dim_index),
-                    shifts,
-                    mask,
-                );
-                let l1 = decode_eight_3bit_lanes_avx2(
-                    decode_eight_3bit_aligned_word(mse_packed, dim_index + 8),
-                    shifts,
-                    mask,
-                );
-                let l2 = decode_eight_3bit_lanes_avx2(
-                    decode_eight_3bit_aligned_word(mse_packed, dim_index + 16),
-                    shifts,
-                    mask,
-                );
-                let l3 = decode_eight_3bit_lanes_avx2(
-                    decode_eight_3bit_aligned_word(mse_packed, dim_index + 24),
-                    shifts,
-                    mask,
-                );
-
-                mse_acc0 = _mm256_fmadd_ps(
-                    _mm256_permutevar8x32_ps(codebook, l0),
-                    _mm256_loadu_ps(prepared.rotated.as_ptr().add(dim_index)),
-                    mse_acc0,
-                );
-                qjl_acc0 = _mm256_fmadd_ps(
-                    _mm256_loadu_ps(prepared.sq.as_ptr().add(dim_index)),
-                    _mm256_loadu_ps(qjl_sign_lanes(qjl_packed[dim_index / 8]).as_ptr()),
-                    qjl_acc0,
-                );
-                mse_acc1 = _mm256_fmadd_ps(
-                    _mm256_permutevar8x32_ps(codebook, l1),
-                    _mm256_loadu_ps(prepared.rotated.as_ptr().add(dim_index + 8)),
-                    mse_acc1,
-                );
-                qjl_acc1 = _mm256_fmadd_ps(
-                    _mm256_loadu_ps(prepared.sq.as_ptr().add(dim_index + 8)),
-                    _mm256_loadu_ps(qjl_sign_lanes(qjl_packed[(dim_index + 8) / 8]).as_ptr()),
-                    qjl_acc1,
-                );
-                mse_acc2 = _mm256_fmadd_ps(
-                    _mm256_permutevar8x32_ps(codebook, l2),
-                    _mm256_loadu_ps(prepared.rotated.as_ptr().add(dim_index + 16)),
-                    mse_acc2,
-                );
-                qjl_acc2 = _mm256_fmadd_ps(
-                    _mm256_loadu_ps(prepared.sq.as_ptr().add(dim_index + 16)),
-                    _mm256_loadu_ps(qjl_sign_lanes(qjl_packed[(dim_index + 16) / 8]).as_ptr()),
-                    qjl_acc2,
-                );
-                mse_acc3 = _mm256_fmadd_ps(
-                    _mm256_permutevar8x32_ps(codebook, l3),
-                    _mm256_loadu_ps(prepared.rotated.as_ptr().add(dim_index + 24)),
-                    mse_acc3,
-                );
-                qjl_acc3 = _mm256_fmadd_ps(
-                    _mm256_loadu_ps(prepared.sq.as_ptr().add(dim_index + 24)),
-                    _mm256_loadu_ps(qjl_sign_lanes(qjl_packed[(dim_index + 24) / 8]).as_ptr()),
-                    qjl_acc3,
-                );
-                dim_index += 32;
-            }
-
+            let shifts = [0_i32, 3, 6, 9, 12, 15, 18, 21];
+            let mut mse_terms = [0.0_f32; 8];
+            let mut qjl_terms = [0.0_f32; 8];
             while dim_index + 8 <= self.original_dim {
-                let lanes = decode_eight_3bit_lanes_avx2(
-                    decode_eight_3bit_aligned_word(mse_packed, dim_index),
-                    shifts,
-                    mask,
+                let word = decode_eight_3bit_aligned_word(mse_packed, dim_index);
+                let indices = [
+                    ((word >> shifts[0]) & 0x7) as i32,
+                    ((word >> shifts[1]) & 0x7) as i32,
+                    ((word >> shifts[2]) & 0x7) as i32,
+                    ((word >> shifts[3]) & 0x7) as i32,
+                    ((word >> shifts[4]) & 0x7) as i32,
+                    ((word >> shifts[5]) & 0x7) as i32,
+                    ((word >> shifts[6]) & 0x7) as i32,
+                    ((word >> shifts[7]) & 0x7) as i32,
+                ];
+                let index_vector = _mm256_loadu_si256(indices.as_ptr().cast::<__m256i>());
+                let codebook_values = _mm256_permutevar8x32_ps(codebook, index_vector);
+                _mm256_storeu_ps(
+                    mse_terms.as_mut_ptr(),
+                    _mm256_mul_ps(
+                        codebook_values,
+                        _mm256_loadu_ps(prepared.rotated.as_ptr().add(dim_index)),
+                    ),
                 );
-
-                mse_acc0 = _mm256_fmadd_ps(
-                    _mm256_permutevar8x32_ps(codebook, lanes),
-                    _mm256_loadu_ps(prepared.rotated.as_ptr().add(dim_index)),
-                    mse_acc0,
+                _mm256_storeu_ps(
+                    qjl_terms.as_mut_ptr(),
+                    _mm256_mul_ps(
+                        _mm256_loadu_ps(qjl_sign_lanes(qjl_packed[dim_index / 8]).as_ptr()),
+                        _mm256_loadu_ps(prepared.sq.as_ptr().add(dim_index)),
+                    ),
                 );
-                qjl_acc0 = _mm256_fmadd_ps(
-                    _mm256_loadu_ps(prepared.sq.as_ptr().add(dim_index)),
-                    _mm256_loadu_ps(qjl_sign_lanes(qjl_packed[dim_index / 8]).as_ptr()),
-                    qjl_acc0,
-                );
+                for lane in 0..8 {
+                    mse_sum += mse_terms[lane];
+                    qjl_sum += qjl_terms[lane];
+                }
                 dim_index += 8;
             }
         } else {
@@ -1192,20 +1135,8 @@ impl ProdQuantizer {
 
         let mut mse_lanes = [0.0_f32; 8];
         let mut qjl_lanes = [0.0_f32; 8];
-        _mm256_storeu_ps(
-            mse_lanes.as_mut_ptr(),
-            _mm256_add_ps(
-                _mm256_add_ps(mse_acc0, mse_acc1),
-                _mm256_add_ps(mse_acc2, mse_acc3),
-            ),
-        );
-        _mm256_storeu_ps(
-            qjl_lanes.as_mut_ptr(),
-            _mm256_add_ps(
-                _mm256_add_ps(qjl_acc0, qjl_acc1),
-                _mm256_add_ps(qjl_acc2, qjl_acc3),
-            ),
-        );
+        _mm256_storeu_ps(mse_lanes.as_mut_ptr(), mse_acc0);
+        _mm256_storeu_ps(qjl_lanes.as_mut_ptr(), qjl_acc0);
         mse_sum += mse_lanes.into_iter().sum::<f32>();
         qjl_sum += qjl_lanes.into_iter().sum::<f32>();
 

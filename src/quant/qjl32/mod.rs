@@ -315,6 +315,69 @@ mod tests {
     }
 
     #[test]
+    fn qjl32_scalar_reference_matches_production_dispatch_tolerance() {
+        let quantizer = crate::quant::prod::ProdQuantizer::new(1024, 4, 42);
+        let query = random_unit_vector(1024, 231);
+        let prepared = quantizer.prepare_ip_query(&query);
+        let encoded: Vec<_> = (0..BLOCK_WIDTH + 7)
+            .map(|seed| quantizer.encode(&random_unit_vector(1024, seed as u64 + 700)))
+            .collect();
+
+        for encoded in &encoded {
+            let mut code = Vec::with_capacity(encoded.mse_packed.len() + encoded.qjl_packed.len());
+            code.extend_from_slice(&encoded.mse_packed);
+            code.extend_from_slice(&encoded.qjl_packed);
+            let scalar = score_turboquant_qjl_scalar(&quantizer, &prepared, &code, encoded.gamma);
+            let production = quantizer.score_ip_from_parts(&prepared, encoded.gamma, &code);
+            assert_close(scalar, production, 4);
+        }
+    }
+
+    #[test]
+    fn qjl32_block32_matches_production_dispatch_tolerance() {
+        let quantizer = crate::quant::prod::ProdQuantizer::new(1024, 4, 42);
+        let query = random_unit_vector(1024, 251);
+        let prepared = quantizer.prepare_ip_query(&query);
+        let encoded: Vec<_> = (0..BLOCK_WIDTH)
+            .map(|seed| quantizer.encode(&random_unit_vector(1024, seed as u64 + 800)))
+            .collect();
+        let codes: Vec<Vec<u8>> = encoded
+            .iter()
+            .map(|encoded| {
+                let mut code =
+                    Vec::with_capacity(encoded.mse_packed.len() + encoded.qjl_packed.len());
+                code.extend_from_slice(&encoded.mse_packed);
+                code.extend_from_slice(&encoded.qjl_packed);
+                code
+            })
+            .collect();
+        let code_refs: Vec<&[u8]> = codes.iter().map(Vec::as_slice).collect();
+        let gammas: [f32; BLOCK_WIDTH] = encoded
+            .iter()
+            .map(|encoded| encoded.gamma)
+            .collect::<Vec<_>>()
+            .try_into()
+            .unwrap();
+        let mut scores = vec![0.0; BLOCK_WIDTH];
+
+        let _isa = score_turboquant_qjl_block32(
+            &quantizer,
+            &prepared,
+            code_refs
+                .as_slice()
+                .try_into()
+                .expect("test fixture is exactly one block"),
+            gammas,
+            &mut scores,
+        );
+
+        for ((code, gamma), score) in code_refs.iter().zip(gammas.iter()).zip(scores.iter()) {
+            let production = quantizer.score_ip_from_parts(&prepared, *gamma, code);
+            assert_close(*score, production, 4);
+        }
+    }
+
+    #[test]
     fn qjl32_rejects_no_qjl_1536_lane() {
         let quantizer = crate::quant::prod::ProdQuantizer::new(1536, 4, 42);
         let query = random_unit_vector(1536, 131);
