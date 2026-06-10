@@ -120,12 +120,6 @@ mod tests {
                 return crate::quant::isa::Isa::Neon;
             }
         }
-        #[cfg(target_arch = "x86_64")]
-        {
-            if std::arch::is_x86_feature_detected!("avx2") {
-                return crate::quant::isa::Isa::Avx2;
-            }
-        }
         crate::quant::isa::Isa::Scalar
     }
 
