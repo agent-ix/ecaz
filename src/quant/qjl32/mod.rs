@@ -258,9 +258,60 @@ mod tests {
 
         for ((code, gamma), score) in code_refs.iter().zip(gammas.iter()).zip(scores.iter()) {
             let pre_slice = quantizer.score_ip_from_parts_scalar_reference(&prepared, *gamma, code);
-            assert_eq!(score.to_bits(), pre_slice.to_bits());
+            if isa == Isa::Scalar {
+                assert_eq!(score.to_bits(), pre_slice.to_bits());
+            } else {
+                assert_close(*score, pre_slice, 4);
+            }
         }
-        assert_eq!(isa, Isa::Scalar);
+        assert!(matches!(isa, Isa::Scalar | Isa::Avx2));
+    }
+
+    #[test]
+    fn qjl32_avx2_block32_matches_pre_slice_scorer_tolerance() {
+        let quantizer = crate::quant::prod::ProdQuantizer::new(1024, 4, 42);
+        let query = random_unit_vector(1024, 211);
+        let prepared = quantizer.prepare_ip_query(&query);
+        let encoded: Vec<_> = (0..BLOCK_WIDTH)
+            .map(|seed| quantizer.encode(&random_unit_vector(1024, seed as u64 + 600)))
+            .collect();
+        let codes: Vec<Vec<u8>> = encoded
+            .iter()
+            .map(|encoded| {
+                let mut code =
+                    Vec::with_capacity(encoded.mse_packed.len() + encoded.qjl_packed.len());
+                code.extend_from_slice(&encoded.mse_packed);
+                code.extend_from_slice(&encoded.qjl_packed);
+                code
+            })
+            .collect();
+        let code_refs: Vec<&[u8]> = codes.iter().map(Vec::as_slice).collect();
+        let gammas: [f32; BLOCK_WIDTH] = encoded
+            .iter()
+            .map(|encoded| encoded.gamma)
+            .collect::<Vec<_>>()
+            .try_into()
+            .unwrap();
+        let mut scores = vec![0.0; BLOCK_WIDTH];
+
+        let Some(isa) = super::avx2::score_block32_avx2_for_test(
+            &quantizer,
+            &prepared,
+            code_refs
+                .as_slice()
+                .try_into()
+                .expect("test fixture is exactly one block"),
+            &gammas,
+            &mut scores,
+        ) else {
+            return;
+        };
+
+        assert_eq!(isa, Isa::Avx2);
+        for ((code, gamma), score) in code_refs.iter().zip(gammas.iter()).zip(scores.iter()) {
+            let pre_slice = quantizer.score_ip_from_parts_scalar_reference(&prepared, *gamma, code);
+            assert_close(*score, pre_slice, 4);
+        }
     }
 
     #[test]
@@ -293,5 +344,26 @@ mod tests {
             *value /= norm;
         }
         values
+    }
+
+    fn assert_close(actual: f32, expected: f32, max_ulp: u32) {
+        let ulp = ulp_distance(actual, expected);
+        let rel = ((actual - expected).abs() / expected.abs().max(1.0e-12)).abs();
+        assert!(
+            ulp <= max_ulp || rel <= 1.0e-6,
+            "actual={actual:?} expected={expected:?} ulp={ulp} rel={rel:?}"
+        );
+    }
+
+    fn ulp_distance(lhs: f32, rhs: f32) -> u32 {
+        fn ordered(bits: u32) -> i32 {
+            let signed = bits as i32;
+            if signed < 0 {
+                i32::MIN - signed
+            } else {
+                signed
+            }
+        }
+        ordered(lhs.to_bits()).abs_diff(ordered(rhs.to_bits()))
     }
 }

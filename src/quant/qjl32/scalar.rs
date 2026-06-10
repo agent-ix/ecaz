@@ -73,7 +73,7 @@ fn decode_eight_3bit_aligned(packed: &[u8], dim_index: usize) -> [usize; 8] {
     ]
 }
 
-fn mse_index_at_3bit(packed: &[u8], dim_index: usize) -> usize {
+pub(super) fn mse_index_at_3bit(packed: &[u8], dim_index: usize) -> usize {
     let bit_offset = dim_index * 3;
     let byte_index = bit_offset / 8;
     let bit_shift = bit_offset % 8;
@@ -84,7 +84,7 @@ fn mse_index_at_3bit(packed: &[u8], dim_index: usize) -> usize {
     ((word >> bit_shift) & 0x7) as usize
 }
 
-fn qjl_sign_at(packed: &[u8], dim_index: usize) -> bool {
+pub(super) fn qjl_sign_at(packed: &[u8], dim_index: usize) -> bool {
     (packed[dim_index / 8] >> (dim_index % 8)) & 1 == 1
 }
 
