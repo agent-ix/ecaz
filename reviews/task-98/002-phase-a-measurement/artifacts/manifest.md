@@ -53,3 +53,16 @@
 
 Suite outputs, per-cell load/recall/latency logs, install log, shared
 truth caches.
+
+## Addendum: root cause confirmed (static)
+
+`graph.rs` `Tuple::exact_payload()` returns `None` for `TurboHot` tuples —
+the V3 hot/cold TurboQuant layout does not carry exact payloads inline, so
+`live_loaded_state_from_exact_payload` never produces
+`LoadedElementState::ExactPayload` on modern `storage_format=turboquant`
+indexes, and every exact-mode batching arm (Task 87's FullLut included) is
+dead on this surface; scoring happens per candidate inside the cold-read
+path (`exact_score_cached_graph_element`). This retroactively explains the
+Task 87 packet 020/022-024 zero-counter record. The fix slice batches at
+the cold-payload read: accumulate cold reads per frontier and score
+through the mode-dispatched wrappers.
