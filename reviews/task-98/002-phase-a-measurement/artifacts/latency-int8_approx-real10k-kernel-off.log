@@ -1,0 +1,9 @@
+┌───────────┬───────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬────────────────────────────────┐
+│ ef_search ┆ count ┆ mean    ┆ stddev  ┆ min     ┆ p50     ┆ p95     ┆ p99     ┆ max     ┆ cache_state                    │
+╞═══════════╪═══════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪════════════════════════════════╡
+│ 80        ┆ 32    ┆ 3.34 ms ┆ 1.19 ms ┆ 2.22 ms ┆ 3.07 ms ┆ 5.22 ms ┆ 7.35 ms ┆ 8.30 ms ┆ task98_int8_approx_real10k_off │
+└───────────┴───────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴────────────────────────────────┘
+[task87-counters] command=latency label=ef_search=80 surface=hnsw flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=ef_search=80 surface=ivf flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=ef_search=80 surface=spire flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=ef_search=80 surface=unknown flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0

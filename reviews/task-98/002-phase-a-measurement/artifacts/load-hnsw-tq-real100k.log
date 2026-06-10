@@ -1,0 +1,22 @@
+[loader] inspecting data/task31_m5_dbpedia_staged/ec_hnsw_real_100k_corpus.tsv
+[loader] inspecting data/task31_m5_dbpedia_staged/ec_hnsw_real_100k_queries.tsv
+[loader] corpus: 100000 rows, sha256=07275cfd5a7a4b415ddf5eacc086de98294ac978532df46ffae30f9202323a95  queries: 1000 rows, sha256=a7cbec6fc44f6c148234538f61339d00d2f10646febc8f667dcbe75d9cf41782
+[loader] warning: manifest verification failed for data/task31_m5_dbpedia_staged/ec_hnsw_real_100k_manifest.json: prefix="ec_hnsw_real_100k" (expected "task98_pa_hnsw_tq_real100k")
+[loader] copied corpus table task98_pa_hnsw_tq_real100k_corpus in 65.86s
+[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...
+[loader] encoded corpus table task98_pa_hnsw_tq_real100k_corpus in 8.66s
+[loader] copied queries table task98_pa_hnsw_tq_real100k_queries in 690.70ms
+[loader] building task98_pa_hnsw_tq_real100k_turboquant_m16_idx using ec_hnsw (reloptions=[m=16, ef_construction=128, build_source_column=source, storage_format=turboquant]) ...
+[loader] built task98_pa_hnsw_tq_real100k_turboquant_m16_idx in 69.13s
+┌─────────┬──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ field   ┆ value                                                                                                                            │
+╞═════════╪══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════╡
+│ profile ┆ ec_hnsw                                                                                                                          │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ task98_pa_hnsw_tq_real100k_corpus (100000 rows)                                                                                  │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ task98_pa_hnsw_tq_real100k_queries (1000 rows)                                                                                   │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ task98_pa_hnsw_tq_real100k_turboquant_m16_idx [m=16, ef_construction=128, build_source_column=source, storage_format=turboquant] │
+└─────────┴──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+[loader] completed prefix task98_pa_hnsw_tq_real100k in 251.50s
