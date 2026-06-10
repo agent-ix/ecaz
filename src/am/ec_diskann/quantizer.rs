@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use crate::am::common::{
     candidate_batch::{
-        score_rabitq_bits1_batch_for, CandidateBatch, CandidateBatchScoringSurface, CandidateMeta,
-        CandidatePayload,
+        score_grouped_pq_batch_for, score_rabitq_bits1_batch_for, CandidateBatch,
+        CandidateBatchScoringSurface, CandidateMeta, CandidatePayload,
     },
     quant_codec::{EncodedQuantPayload, QuantCodec, QuantCodecKind, QuantSearchCodecTag},
     training::{self, GroupedPq4Model},
@@ -290,6 +290,78 @@ impl DiskannPreparedPrefilter {
     }
 }
 
+fn score_diskann_prepared_prefilter_batch(
+    prefilter: &DiskannPreparedPrefilter,
+    tuples: &[super::tuple::VamanaNodeTuple],
+    out_scores: &mut [f32],
+) {
+    if tuples.len() != out_scores.len() {
+        pgrx::error!(
+            "ec_diskann prefilter batch output count {} does not match tuple count {}",
+            out_scores.len(),
+            tuples.len()
+        );
+    }
+    match prefilter {
+        DiskannPreparedPrefilter::GroupedPq {
+            query_lut,
+            group_count,
+            ..
+        } => {
+            let mut batch = CandidateBatch::with_capacity(tuples.len());
+            for (index, tuple) in tuples.iter().enumerate() {
+                batch
+                    .push(
+                        index,
+                        CandidatePayload::new(
+                            &tuple.search_code,
+                            CandidateMeta::GroupedPq {
+                                group_count: *group_count,
+                            },
+                        ),
+                    )
+                    .unwrap_or_else(|error| pgrx::error!("{error}"));
+            }
+            score_grouped_pq_batch_for(
+                CandidateBatchScoringSurface::Diskann,
+                query_lut,
+                *group_count,
+                &batch,
+                out_scores,
+            )
+            .unwrap_or_else(|error| pgrx::error!("{error}"));
+            for score in out_scores {
+                *score = -*score;
+            }
+        }
+        _ => {
+            for (tuple, out_score) in tuples.iter().zip(out_scores.iter_mut()) {
+                *out_score = prefilter.score(tuple);
+            }
+        }
+    }
+}
+
+impl super::scan::VamanaPrefilter for DiskannPreparedPrefilter {
+    fn score(&self, tuple: &super::tuple::VamanaNodeTuple) -> f32 {
+        DiskannPreparedPrefilter::score(self, tuple)
+    }
+
+    fn score_batch(&self, tuples: &[super::tuple::VamanaNodeTuple], out_scores: &mut [f32]) {
+        score_diskann_prepared_prefilter_batch(self, tuples, out_scores);
+    }
+}
+
+impl super::scan::VamanaPrefilter for &DiskannPreparedPrefilter {
+    fn score(&self, tuple: &super::tuple::VamanaNodeTuple) -> f32 {
+        DiskannPreparedPrefilter::score(self, tuple)
+    }
+
+    fn score_batch(&self, tuples: &[super::tuple::VamanaNodeTuple], out_scores: &mut [f32]) {
+        score_diskann_prepared_prefilter_batch(self, tuples, out_scores);
+    }
+}
+
 fn u64_words_to_le_bytes(words: &[u64]) -> Vec<u8> {
     let mut bytes = Vec::with_capacity(std::mem::size_of_val(words));
     for word in words {
@@ -446,6 +518,21 @@ impl QuantCodec for DiskannGroupedPqPrefilterCodec {
             self.group_count,
             payload.code,
         ))
+    }
+
+    fn score_ip_batch<Id>(
+        &self,
+        prepared_query: &Self::PreparedQuery,
+        batch: &CandidateBatch<'_, Id>,
+        out_scores: &mut [f32],
+    ) -> Result<(), String> {
+        score_grouped_pq_batch_for(
+            CandidateBatchScoringSurface::Diskann,
+            prepared_query,
+            self.group_count,
+            batch,
+            out_scores,
+        )
     }
 }
 
@@ -1053,6 +1140,146 @@ mod tests {
 
         assert_eq!(observed.to_bits(), expected.to_bits());
         assert_eq!(prefilter.score(&tuple).to_bits(), (-expected).to_bits());
+    }
+
+    #[test]
+    fn diskann_grouped_pq_prefilter_codec_batch_uses_block_kernel_counters() {
+        let _guard = crate::am::common::candidate_batch::CANDIDATE_BATCH_COUNTER_TEST_LOCK
+            .lock()
+            .unwrap();
+        crate::am::common::candidate_batch::reset_candidate_batch_scoring_counters();
+        let group_count = 16;
+        let group_size = 2;
+        let query_lut = (0..group_count * GROUPED_PQ_CENTROIDS)
+            .map(|index| ((index as i32 % 29) - 14) as f32 * 0.0625)
+            .collect::<Vec<_>>();
+        let codes = (0..39)
+            .map(|seed| {
+                let indices = (0..group_count)
+                    .map(|group| {
+                        (seed as u8)
+                            .wrapping_add((group as u8).wrapping_mul(3))
+                            .wrapping_add((group as u8) >> 1)
+                            & 0x0F
+                    })
+                    .collect::<Vec<_>>();
+                crate::quant::grouped_pq::pack_grouped_pq_nibbles(&indices)
+            })
+            .collect::<Vec<_>>();
+        let codec = DiskannGroupedPqPrefilterCodec::new(group_count, group_size);
+        let mut batch = CandidateBatch::with_capacity(codes.len());
+        for (index, code) in codes.iter().enumerate() {
+            batch
+                .push(
+                    index,
+                    CandidatePayload::new(code, CandidateMeta::GroupedPq { group_count }),
+                )
+                .unwrap();
+        }
+        let mut scores = vec![0.0_f32; batch.len()];
+
+        QuantCodec::score_ip_batch(&codec, &query_lut, &batch, &mut scores).unwrap();
+
+        for (code, score) in codes.iter().zip(scores.iter()) {
+            let expected = grouped_pq_score_f32(&query_lut, group_count, code);
+            assert_eq!(score.to_bits(), expected.to_bits());
+        }
+        let snapshots = crate::am::common::candidate_batch::block_kernel_scoring_snapshots();
+        let grouped = snapshots
+            .iter()
+            .filter(|snapshot| snapshot.surface == "diskann" && snapshot.quant_kind == "grouped_pq")
+            .collect::<Vec<_>>();
+        assert!(!grouped.is_empty());
+        assert_eq!(
+            grouped
+                .iter()
+                .map(|snapshot| snapshot.kernel_candidates)
+                .sum::<u64>(),
+            32
+        );
+        assert_eq!(
+            grouped
+                .iter()
+                .map(|snapshot| snapshot.scalar_candidates)
+                .sum::<u64>(),
+            7
+        );
+        assert_eq!(
+            grouped
+                .iter()
+                .map(|snapshot| snapshot.candidates)
+                .sum::<u64>(),
+            39
+        );
+        crate::am::common::candidate_batch::reset_candidate_batch_scoring_counters();
+    }
+
+    #[test]
+    fn diskann_grouped_pq_prepared_prefilter_batch_scores_and_records_counters() {
+        use crate::am::ec_diskann::scan::VamanaPrefilter;
+
+        let _guard = crate::am::common::candidate_batch::CANDIDATE_BATCH_COUNTER_TEST_LOCK
+            .lock()
+            .unwrap();
+        crate::am::common::candidate_batch::reset_candidate_batch_scoring_counters();
+        let group_count = 16;
+        let group_size = 2;
+        let query_lut = (0..group_count * GROUPED_PQ_CENTROIDS)
+            .map(|index| ((index as i32 % 23) - 11) as f32 * 0.046875)
+            .collect::<Vec<_>>();
+        let tuples = (0..39)
+            .map(|seed| {
+                let indices = (0..group_count)
+                    .map(|group| {
+                        (seed as u8)
+                            .wrapping_add((group as u8).wrapping_mul(7))
+                            .wrapping_add((group as u8) >> 1)
+                            & 0x0F
+                    })
+                    .collect::<Vec<_>>();
+                tuple_with_codes(
+                    Vec::new(),
+                    crate::quant::grouped_pq::pack_grouped_pq_nibbles(&indices),
+                )
+            })
+            .collect::<Vec<_>>();
+        let prefilter = DiskannPreparedPrefilter::GroupedPq {
+            rotated_query: Vec::new(),
+            flat_codebooks: Vec::new(),
+            query_lut: query_lut.clone(),
+            group_count,
+            group_size,
+        };
+        let mut batch_scores = vec![0.0_f32; tuples.len()];
+
+        (&prefilter).score_batch(&tuples, &mut batch_scores);
+
+        for (tuple, score) in tuples.iter().zip(batch_scores.iter()) {
+            let expected = -grouped_pq_score_f32(&query_lut, group_count, &tuple.search_code);
+            assert_eq!(score.to_bits(), expected.to_bits());
+            assert_eq!(prefilter.score(tuple).to_bits(), expected.to_bits());
+        }
+        let snapshots = crate::am::common::candidate_batch::block_kernel_scoring_snapshots();
+        let grouped = snapshots
+            .iter()
+            .filter(|snapshot| snapshot.surface == "diskann" && snapshot.quant_kind == "grouped_pq")
+            .collect::<Vec<_>>();
+        assert!(!grouped.is_empty());
+        assert_eq!(
+            grouped
+                .iter()
+                .map(|snapshot| snapshot.kernel_candidates)
+                .sum::<u64>(),
+            32
+        );
+        assert_eq!(
+            grouped
+                .iter()
+                .map(|snapshot| snapshot.scalar_candidates)
+                .sum::<u64>(),
+            7
+        );
+        crate::am::common::candidate_batch::reset_candidate_batch_scoring_counters();
     }
 
     #[test]

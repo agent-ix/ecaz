@@ -1484,17 +1484,34 @@ fn parse_result_rows(
     raw: &str,
 ) -> Vec<ResultRow> {
     match step.kind.as_str() {
-        "recall" | "latency" | "sidecar-rerank" | "spire-pipeline" => parse_table_rows(raw)
-            .into_iter()
-            .map(|values| ResultRow {
-                suite: manifest.suite.clone(),
-                step: step.name.clone(),
-                kind: step.kind.clone(),
-                metric: step.kind.clone(),
-                artifact: artifact.into(),
-                values: add_result_context(manifest, step, values),
-            })
-            .collect(),
+        "recall" | "latency" | "sidecar-rerank" | "spire-pipeline" => {
+            let mut rows: Vec<ResultRow> = parse_table_rows(raw)
+                .into_iter()
+                .map(|values| ResultRow {
+                    suite: manifest.suite.clone(),
+                    step: step.name.clone(),
+                    kind: step.kind.clone(),
+                    metric: step.kind.clone(),
+                    artifact: artifact.into(),
+                    values: add_result_context(manifest, step, values),
+                })
+                .collect();
+            if step.kind == "latency" {
+                rows.extend(
+                    parse_block_kernel_counter_rows(raw)
+                        .into_iter()
+                        .map(|values| ResultRow {
+                            suite: manifest.suite.clone(),
+                            step: step.name.clone(),
+                            kind: step.kind.clone(),
+                            metric: "block_kernel_counters".into(),
+                            artifact: artifact.into(),
+                            values: add_result_context(manifest, step, values),
+                        }),
+                );
+            }
+            rows
+        }
         "cross-am" => parse_table_rows(raw)
             .into_iter()
             .map(|values| ResultRow {
@@ -1719,6 +1736,25 @@ fn parse_table_rows(raw: &str) -> Vec<BTreeMap<String, String>> {
         }
     }
     rows
+}
+
+fn parse_block_kernel_counter_rows(raw: &str) -> Vec<BTreeMap<String, String>> {
+    raw.lines()
+        .filter_map(|line| {
+            line.trim_start()
+                .strip_prefix("[block-kernel-counters] ")
+                .and_then(parse_space_key_values)
+        })
+        .collect()
+}
+
+fn parse_space_key_values(rest: &str) -> Option<BTreeMap<String, String>> {
+    let mut values = BTreeMap::new();
+    for part in rest.split_whitespace() {
+        let (key, value) = part.split_once('=')?;
+        values.insert(key.to_owned(), value.to_owned());
+    }
+    (!values.is_empty()).then_some(values)
 }
 
 fn parse_storage_rows(raw: &str) -> Vec<(String, BTreeMap<String, String>)> {
@@ -4899,6 +4935,106 @@ mod tests {
         assert_eq!(
             values.get("socket_dir").map(String::as_str),
             Some("/var/run/postgresql")
+        );
+    }
+
+    #[test]
+    fn latency_result_rows_include_block_kernel_counter_lines() {
+        let manifest = SuiteManifest {
+            suite: "task94".into(),
+            schema_version: 1,
+            config: "suite.json".into(),
+            config_sha256: "hash".into(),
+            dry_run: false,
+            generated_at_unix_ms: 0,
+            connection: ManifestConnection {
+                database: "tqvector_bench".into(),
+                host: None,
+                port: Some(28818),
+                user: None,
+                password_configured: false,
+            },
+            steps: Vec::new(),
+            threshold_results: Vec::new(),
+        };
+        let step = StepRecord {
+            name: "latency-pqfastscan-grouped-pq".into(),
+            kind: "latency".into(),
+            command: vec![
+                "bench".into(),
+                "latency".into(),
+                "--prefix".into(),
+                "task94_real10k_pqfastscan".into(),
+                "--profile".into(),
+                "ec_ivf".into(),
+                "--socket-dir".into(),
+                "/var/run/postgresql".into(),
+            ],
+            selected: true,
+            quant: Some("grouped_pq".into()),
+            isa: Some("sve2".into()),
+            kernel_status: None,
+            pgoptions: None,
+            tags: vec![
+                "pq_fastscan".into(),
+                "quant=grouped_pq".into(),
+                "isa=sve2".into(),
+            ],
+            expected_artifacts: vec!["latency.log".into()],
+            status: Some(StepStatus::Succeeded),
+            started_at_unix_ms: None,
+            finished_at_unix_ms: None,
+            duration_ms: None,
+            exit_code: None,
+            parallel_workers_before: None,
+            parallel_workers_after: None,
+            parallel_workers_delta: None,
+        };
+        let rows = parse_result_rows(
+            &manifest,
+            &step,
+            "latency.log",
+            "┌────────┬─────────┬────────────┐\n\
+             │ nprobe ┆ queries ┆ latency_ms │\n\
+             ╞════════╪═════════╪════════════╡\n\
+             │ 8      ┆ 20      ┆ 1.2500     │\n\
+             └────────┴─────────┴────────────┘\n\
+             [block-kernel-counters] command=latency label=nprobe=8 surface=ivf quant=grouped_pq isa=sve2 flushes=2 candidates=39 elapsed_nanos=1500000 elapsed_ms=1.500000 kernel_flushes=1 kernel_candidates=32 kernel_elapsed_nanos=1100000 kernel_elapsed_ms=1.100000 scalar_flushes=1 scalar_candidates=7 scalar_elapsed_nanos=400000 scalar_elapsed_ms=0.400000\n\
+             [task87-counters] command=latency label=nprobe=8 surface=ivf flushes=2 candidates=39 elapsed_nanos=1500000 elapsed_ms=1.500000 lut32_flushes=1 lut32_candidates=32\n",
+        );
+
+        assert_eq!(rows.len(), 2);
+        assert!(rows.iter().any(|row| row.metric == "latency"));
+        let counters = rows
+            .iter()
+            .find(|row| row.metric == "block_kernel_counters")
+            .expect("direct block-kernel counter row should be extracted");
+        assert_eq!(counters.kind, "latency");
+        assert_eq!(counters.artifact, "latency.log");
+        assert_eq!(
+            counters.values.get("surface").map(String::as_str),
+            Some("ivf")
+        );
+        assert_eq!(
+            counters.values.get("quant").map(String::as_str),
+            Some("grouped_pq")
+        );
+        assert_eq!(counters.values.get("isa").map(String::as_str), Some("sve2"));
+        assert_eq!(
+            counters.values.get("kernel_candidates").map(String::as_str),
+            Some("32")
+        );
+        assert_eq!(
+            counters.values.get("scalar_candidates").map(String::as_str),
+            Some("7")
+        );
+        assert_eq!(
+            counters.values.get("profile").map(String::as_str),
+            Some("ec_ivf")
+        );
+        assert_eq!(
+            counters.values.get("storage_format").map(String::as_str),
+            Some("pq_fastscan")
         );
     }
 

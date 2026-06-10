@@ -97,6 +97,30 @@ pub struct ScanCandidate {
     pub has_overflow_heaptids: bool,
 }
 
+pub trait VamanaPrefilter {
+    fn score(&self, tuple: &VamanaNodeTuple) -> f32;
+
+    fn score_batch(&self, tuples: &[VamanaNodeTuple], out_scores: &mut [f32]) {
+        assert_eq!(
+            tuples.len(),
+            out_scores.len(),
+            "Vamana prefilter batch output count must match tuple count"
+        );
+        for (tuple, out_score) in tuples.iter().zip(out_scores.iter_mut()) {
+            *out_score = self.score(tuple);
+        }
+    }
+}
+
+impl<F> VamanaPrefilter for F
+where
+    F: for<'a> Fn(&'a VamanaNodeTuple) -> f32,
+{
+    fn score(&self, tuple: &VamanaNodeTuple) -> f32 {
+        self(tuple)
+    }
+}
+
 #[derive(Debug, Clone)]
 struct FrontierEntry {
     candidate: ScanCandidate,
@@ -181,7 +205,7 @@ pub fn vamana_scan<R, Pre, Re>(
 ) -> Result<Vec<ScanResult>, String>
 where
     R: GraphReader + ?Sized,
-    Pre: Fn(&VamanaNodeTuple) -> f32,
+    Pre: VamanaPrefilter,
     Re: Fn(ItemPointer) -> f32,
 {
     let mut scratch = VisitedState::new();
@@ -219,7 +243,7 @@ pub fn vamana_scan_with<R, Pre, Pf, Re>(
 ) -> Result<Vec<ScanResult>, String>
 where
     R: GraphReader + ?Sized,
-    Pre: Fn(&VamanaNodeTuple) -> f32,
+    Pre: VamanaPrefilter,
     Pf: FnOnce(&[ItemPointer]),
     Re: Fn(ItemPointer) -> f32,
 {
@@ -246,7 +270,7 @@ pub fn vamana_scan_with_frontier_profile<R, Pre, Pf, Re>(
 ) -> Result<Vec<ScanResult>, String>
 where
     R: GraphReader + ?Sized,
-    Pre: Fn(&VamanaNodeTuple) -> f32,
+    Pre: VamanaPrefilter,
     Pf: FnOnce(&[ItemPointer]),
     Re: Fn(ItemPointer) -> f32,
 {
@@ -376,7 +400,7 @@ pub fn greedy_descent<R, Pre>(
 ) -> Result<Vec<ScanCandidate>, String>
 where
     R: GraphReader + ?Sized,
-    Pre: Fn(&VamanaNodeTuple) -> f32,
+    Pre: VamanaPrefilter,
 {
     let mut scratch = VisitedState::new();
     greedy_descent_with(reader, &mut scratch, entry_point, list_size, prefilter)
@@ -394,13 +418,13 @@ pub fn greedy_descent_with<R, Pre>(
 ) -> Result<Vec<ScanCandidate>, String>
 where
     R: GraphReader + ?Sized,
-    Pre: Fn(&VamanaNodeTuple) -> f32,
+    Pre: VamanaPrefilter,
 {
     scratch.clear();
     scratch.reserve(list_size.saturating_mul(2));
 
     let entry_tuple = reader.read_node(entry_point)?;
-    let entry_score = prefilter(&entry_tuple);
+    let entry_score = prefilter.score(&entry_tuple);
     let entry = ScanCandidate {
         tid: entry_point,
         primary_heaptid: entry_tuple.primary_heaptid,
@@ -431,6 +455,8 @@ where
             insert_visited_sorted(&mut visited_best, picked, list_size);
         }
 
+        let mut neighbor_tids = Vec::new();
+        let mut neighbor_tuples = Vec::new();
         for nbr in picked_entry
             .neighbors
             .into_iter()
@@ -442,8 +468,16 @@ where
             if !scratch.in_frontier.insert(nbr) {
                 continue;
             }
-            let nbr_tuple = reader.read_node(nbr)?;
-            let score = prefilter(&nbr_tuple);
+            neighbor_tids.push(nbr);
+            neighbor_tuples.push(reader.read_node(nbr)?);
+        }
+        let mut neighbor_scores = vec![0.0_f32; neighbor_tuples.len()];
+        prefilter.score_batch(&neighbor_tuples, &mut neighbor_scores);
+        for ((nbr, nbr_tuple), score) in neighbor_tids
+            .into_iter()
+            .zip(neighbor_tuples.into_iter())
+            .zip(neighbor_scores.into_iter())
+        {
             let candidate = ScanCandidate {
                 tid: nbr,
                 primary_heaptid: nbr_tuple.primary_heaptid,
@@ -469,13 +503,13 @@ pub fn greedy_descent_with_frontier_profile<R, Pre>(
 ) -> Result<Vec<ScanCandidate>, String>
 where
     R: GraphReader + ?Sized,
-    Pre: Fn(&VamanaNodeTuple) -> f32,
+    Pre: VamanaPrefilter,
 {
     scratch.clear();
     scratch.reserve(list_size.saturating_mul(2));
 
     let entry_tuple = reader.read_node(entry_point)?;
-    let entry_score = prefilter(&entry_tuple);
+    let entry_score = prefilter.score(&entry_tuple);
     let entry = ScanCandidate {
         tid: entry_point,
         primary_heaptid: entry_tuple.primary_heaptid,
@@ -520,6 +554,8 @@ where
             frontier_profile.retained_inserts += 1;
         }
 
+        let mut neighbor_tids = Vec::new();
+        let mut neighbor_tuples = Vec::new();
         for nbr in picked_entry
             .neighbors
             .into_iter()
@@ -540,8 +576,16 @@ where
             }
             add_profile_elapsed(&mut frontier_profile.visited_set_us, visited_started);
             frontier_profile.visited_set_ops += 1;
-            let nbr_tuple = reader.read_node(nbr)?;
-            let score = prefilter(&nbr_tuple);
+            neighbor_tids.push(nbr);
+            neighbor_tuples.push(reader.read_node(nbr)?);
+        }
+        let mut neighbor_scores = vec![0.0_f32; neighbor_tuples.len()];
+        prefilter.score_batch(&neighbor_tuples, &mut neighbor_scores);
+        for ((nbr, nbr_tuple), score) in neighbor_tids
+            .into_iter()
+            .zip(neighbor_tuples.into_iter())
+            .zip(neighbor_scores.into_iter())
+        {
             let candidate = ScanCandidate {
                 tid: nbr,
                 primary_heaptid: nbr_tuple.primary_heaptid,
@@ -1116,6 +1160,52 @@ mod tests {
         for pair in frontier.windows(2) {
             assert!(pair[0].score <= pair[1].score);
         }
+    }
+
+    #[test]
+    fn greedy_descent_uses_batch_prefilter_for_neighbor_expansions() {
+        use std::cell::Cell;
+
+        struct CountingPrefilter {
+            scalar_calls: Cell<usize>,
+            batch_calls: Cell<usize>,
+            batch_candidates: Cell<usize>,
+        }
+
+        impl VamanaPrefilter for CountingPrefilter {
+            fn score(&self, tuple: &VamanaNodeTuple) -> f32 {
+                self.scalar_calls.set(self.scalar_calls.get() + 1);
+                (tuple.primary_heaptid.block_number - 1000) as f32
+            }
+
+            fn score_batch(&self, tuples: &[VamanaNodeTuple], out_scores: &mut [f32]) {
+                self.batch_calls.set(self.batch_calls.get() + 1);
+                self.batch_candidates
+                    .set(self.batch_candidates.get() + tuples.len());
+                for (tuple, out_score) in tuples.iter().zip(out_scores.iter_mut()) {
+                    *out_score = (tuple.primary_heaptid.block_number - 1000) as f32;
+                }
+            }
+        }
+
+        let n = 12;
+        let g = chain_graph(n, 4);
+        let payloads = synth_payloads(n, 0, 0);
+        let persisted =
+            persist_vamana_graph(&g, 0, DEFAULT_PAGE_SIZE, &payloads, 4, 0, 0).expect("persist");
+        let reader = PersistedGraphReader::new(&persisted.chain, 4, 0, 0);
+        let prefilter = CountingPrefilter {
+            scalar_calls: Cell::new(0),
+            batch_calls: Cell::new(0),
+            batch_candidates: Cell::new(0),
+        };
+
+        let frontier = greedy_descent(&reader, persisted.entry_point_tid, 6, &prefilter)
+            .expect("descent should use counting prefilter");
+
+        assert_eq!(prefilter.scalar_calls.get(), 1);
+        assert!(prefilter.batch_calls.get() > 0);
+        assert!(prefilter.batch_candidates.get() >= frontier.len().saturating_sub(1));
     }
 
     // SC-011: vamana_scan_with reuses a caller-owned VisitedState

@@ -1,8 +1,9 @@
 use super::options::StorageFormat;
 use super::page;
 use crate::am::common::candidate_batch::{
-    score_rabitq_bits1_batch_for, score_turboquant_no_qjl_4bit_batch_for, CandidateBatch,
-    CandidateBatchScoringSurface, CandidateMeta, CandidatePayload,
+    score_grouped_pq_batch_for, score_rabitq_bits1_batch_for,
+    score_turboquant_no_qjl_4bit_batch_for, CandidateBatch, CandidateBatchScoringSurface,
+    CandidateMeta, CandidatePayload,
 };
 use crate::am::common::quant_codec::{
     EncodedQuantPayload, QuantCodec, QuantCodecKind, QuantSearchCodecTag,
@@ -389,9 +390,11 @@ impl IvfQuantizer {
                         payloads.len()
                     ));
                 }
-                let prepared = prepared_query.bits1_block_prepared(payload_len).ok_or_else(
-                    || "ec_ivf RaBitQ bits=1 prepared query missing block state".to_owned(),
-                )?;
+                let prepared = prepared_query
+                    .bits1_block_prepared(payload_len)
+                    .ok_or_else(|| {
+                        "ec_ivf RaBitQ bits=1 prepared query missing block state".to_owned()
+                    })?;
                 let mut batch = CandidateBatch::with_capacity(payloads.len() / payload_len);
                 for (index, payload) in payloads.chunks_exact(payload_len).enumerate() {
                     batch.push(index, CandidatePayload::new(payload, CandidateMeta::RaBitQ))?;
@@ -492,6 +495,84 @@ impl IvfQuantizer {
             (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::RaBitQ(_))
             | (IvfQuantizerProfile::TurboQuant, IvfPreparedQuery::TurboQuant(_))
             | (IvfQuantizerProfile::PqFastScan { .. }, IvfPreparedQuery::PqFastScan { .. }) => {
+                Ok(false)
+            }
+            (IvfQuantizerProfile::TurboQuant, IvfPreparedQuery::RaBitQ(_))
+            | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::TurboQuant(_))
+            | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::TurboQuantNoQjl4BitLut(_))
+            | (IvfQuantizerProfile::TurboQuant, IvfPreparedQuery::PqFastScan { .. })
+            | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::PqFastScan { .. })
+            | (IvfQuantizerProfile::PqFastScan { .. }, IvfPreparedQuery::TurboQuant(_))
+            | (
+                IvfQuantizerProfile::PqFastScan { .. },
+                IvfPreparedQuery::TurboQuantNoQjl4BitLut(_),
+            )
+            | (IvfQuantizerProfile::PqFastScan { .. }, IvfPreparedQuery::RaBitQ(_)) => {
+                Err("ec_ivf prepared query does not match quantizer profile".to_owned())
+            }
+        }
+    }
+
+    pub(super) fn score_grouped_pq_batch_from_payloads(
+        self,
+        prepared_query: &IvfPreparedQuery,
+        payloads: &[u8],
+        payload_len: usize,
+        out_scores: &mut Vec<f32>,
+    ) -> Result<bool, String> {
+        match (self.profile, prepared_query) {
+            (
+                IvfQuantizerProfile::PqFastScan { group_count, .. },
+                IvfPreparedQuery::PqFastScan {
+                    lut,
+                    group_count: prepared_group_count,
+                    ..
+                },
+            ) => {
+                if group_count != *prepared_group_count {
+                    return Err("ec_ivf pq_fastscan prepared query group count mismatch".to_owned());
+                }
+                if payload_len == 0 {
+                    return Err("ec_ivf PqFastScan batch payload length must be nonzero".to_owned());
+                }
+                if payload_len != self.payload_len() {
+                    return Err(format!(
+                        "ec_ivf PqFastScan batch payload length mismatch: got {payload_len}, expected {}",
+                        self.payload_len()
+                    ));
+                }
+                if payloads.len() % payload_len != 0 {
+                    return Err(format!(
+                        "ec_ivf PqFastScan batch payload bytes {} are not divisible by payload length {payload_len}",
+                        payloads.len()
+                    ));
+                }
+
+                let candidate_count = payloads.len() / payload_len;
+                let mut batch = CandidateBatch::with_capacity(candidate_count);
+                for (index, payload) in payloads.chunks_exact(payload_len).enumerate() {
+                    batch.push(
+                        index,
+                        CandidatePayload {
+                            code: payload,
+                            meta: CandidateMeta::GroupedPq { group_count },
+                        },
+                    )?;
+                }
+                out_scores.clear();
+                out_scores.resize(batch.len(), 0.0);
+                score_grouped_pq_batch_for(
+                    CandidateBatchScoringSurface::Ivf,
+                    lut,
+                    group_count,
+                    &batch,
+                    out_scores,
+                )?;
+                Ok(true)
+            }
+            (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::RaBitQ(_))
+            | (IvfQuantizerProfile::TurboQuant, IvfPreparedQuery::TurboQuant(_))
+            | (IvfQuantizerProfile::TurboQuant, IvfPreparedQuery::TurboQuantNoQjl4BitLut(_)) => {
                 Ok(false)
             }
             (IvfQuantizerProfile::TurboQuant, IvfPreparedQuery::RaBitQ(_))
@@ -745,6 +826,25 @@ impl QuantCodec for IvfQuantCodec<'_> {
                     CandidateBatchScoringSurface::Ivf,
                     quantizer.as_ref(),
                     prepared_query,
+                    batch,
+                    out_scores,
+                )
+            }
+            (
+                IvfQuantizerProfile::PqFastScan { group_count, .. },
+                IvfPreparedQuery::PqFastScan {
+                    lut,
+                    group_count: prepared_group_count,
+                    ..
+                },
+            ) => {
+                if group_count != *prepared_group_count {
+                    return Err("ec_ivf pq_fastscan prepared query group count mismatch".to_owned());
+                }
+                score_grouped_pq_batch_for(
+                    CandidateBatchScoringSurface::Ivf,
+                    lut,
+                    group_count,
                     batch,
                     out_scores,
                 )
@@ -1642,7 +1742,7 @@ mod tests {
         let dispatch = IvfQuantizer::resolve(StorageFormat::PqFastScan, dimensions).unwrap();
         let codec = dispatch.quant_codec_with_pq_model(&model).unwrap();
         let prepared = QuantCodec::prepare_ip_query(&codec, &query).unwrap();
-        let encoded = (0..3)
+        let encoded = (0..39)
             .map(|index| {
                 let source = (0..dimensions)
                     .map(|col| if (index + col) % 2 == 0 { 0.25 } else { -0.25 })
@@ -1650,7 +1750,7 @@ mod tests {
                 QuantCodec::encode_source(&codec, &source).unwrap()
             })
             .collect::<Vec<_>>();
-        let mut batch = CandidateBatch::with_capacity(3);
+        let mut batch = CandidateBatch::with_capacity(encoded.len());
         for (index, payload) in encoded.iter().enumerate() {
             batch
                 .push(
@@ -1679,6 +1779,74 @@ mod tests {
                 batch_scores[index]
             );
         }
+    }
+
+    #[test]
+    fn pq_fastscan_payload_batch_scores_match_scalar_and_records_counters() {
+        let _guard = crate::am::common::candidate_batch::CANDIDATE_BATCH_COUNTER_TEST_LOCK
+            .lock()
+            .unwrap();
+        crate::am::common::candidate_batch::reset_candidate_batch_scoring_counters();
+
+        let dimensions = 16;
+        let query = unit_vector(dimensions);
+        let model = pq_fastscan_test_model(dimensions);
+        let dispatch = IvfQuantizer::resolve(StorageFormat::PqFastScan, dimensions).unwrap();
+        let prepared = dispatch
+            .prepare_ip_query_with_pq_model(&query, &model)
+            .unwrap();
+        let encoded = (0..39)
+            .map(|index| {
+                let source = (0..dimensions)
+                    .map(|col| if (index + col) % 2 == 0 { 0.25 } else { -0.25 })
+                    .collect::<Vec<_>>();
+                dispatch
+                    .encode_source_with_pq_model(&source, &model)
+                    .unwrap()
+            })
+            .collect::<Vec<_>>();
+        let payloads = encoded
+            .iter()
+            .flat_map(|(_, _, payload)| payload.iter().copied())
+            .collect::<Vec<_>>();
+        let mut batch_scores = Vec::new();
+
+        let used_batch = dispatch
+            .score_grouped_pq_batch_from_payloads(
+                &prepared,
+                &payloads,
+                dispatch.payload_len(),
+                &mut batch_scores,
+            )
+            .unwrap();
+
+        assert!(used_batch);
+        assert_eq!(batch_scores.len(), encoded.len());
+        for (index, (_, gamma, payload)) in encoded.iter().enumerate() {
+            let scalar = dispatch
+                .score_ip_from_parts(&prepared, *gamma, payload)
+                .unwrap();
+            assert_eq!(
+                batch_scores[index].to_bits(),
+                scalar.to_bits(),
+                "index={index} batch={} scalar={scalar}",
+                batch_scores[index]
+            );
+        }
+
+        let snapshots = crate::am::common::candidate_batch::block_kernel_scoring_snapshots();
+        let grouped_pq = snapshots
+            .iter()
+            .filter(|snapshot| snapshot.surface == "ivf" && snapshot.quant_kind == "grouped_pq")
+            .collect::<Vec<_>>();
+        assert!(grouped_pq
+            .iter()
+            .any(|snapshot| snapshot.kernel_candidates == 32));
+        assert!(grouped_pq
+            .iter()
+            .any(|snapshot| snapshot.scalar_candidates == 7));
+
+        crate::am::common::candidate_batch::reset_candidate_batch_scoring_counters();
     }
 
     #[test]

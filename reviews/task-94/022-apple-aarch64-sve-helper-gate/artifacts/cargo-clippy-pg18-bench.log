@@ -1,0 +1,9 @@
+Script started on 2026-06-09 12:24:05-07:00 [<not executed on terminal>]
+   Compiling ring v0.17.14
+   Compiling rustls v0.23.40
+    Checking rustls-webpki v0.103.13
+    Checking tokio-rustls v0.26.4
+    Checking ecaz v0.1.1 (/home/peter/dev/ecaz)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 27.80s
+
+Script done on 2026-06-09 12:24:33-07:00 [COMMAND_EXIT_CODE="0"]
