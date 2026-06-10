@@ -2499,6 +2499,76 @@ fn flush_turboquant_full_lut_payload_batch(
     ));
 }
 
+struct HnswRaBitQBatchCandidate {
+    source_tid: page::ItemPointer,
+    element: Arc<CachedGraphElement>,
+}
+
+fn flush_rabitq_search_code_batch(
+    opaque: &mut TqScanOpaque,
+    batch_candidates: &mut Vec<HnswRaBitQBatchCandidate>,
+    candidates: &mut Vec<search::BeamCandidate<page::ItemPointer>>,
+) {
+    if batch_candidates.is_empty() {
+        return;
+    }
+    let scan_graph_storage = opaque.scan_graph_storage;
+    let pending = std::mem::take(batch_candidates);
+    #[cfg(any(test, feature = "pg_test"))]
+    let started = Instant::now();
+
+    let mut batch = CandidateBatch::with_capacity(pending.len());
+    let mut search_code_len = 0usize;
+    for (index, candidate) in pending.iter().enumerate() {
+        let grouped = grouped_score_context_from_scan_state(scan_graph_storage, &candidate.element)
+            .unwrap_or_else(|| {
+                pgrx::error!(
+                    "ec_hnsw RaBitQ batch traversal requires metadata-aligned grouped payloads"
+                )
+            });
+        let search_code = grouped_score_search_code(grouped).unwrap_or_else(|| {
+            pgrx::error!("ec_hnsw RaBitQ batch traversal requires metadata-aligned search codes")
+        });
+        search_code_len = search_code.len();
+        batch
+            .push(
+                index,
+                CandidatePayload::new(search_code, CandidateMeta::RaBitQ),
+            )
+            .unwrap_or_else(|error| pgrx::error!("{error}"));
+    }
+
+    let prepared_query = rabitq_scan_query(opaque)
+        .unwrap_or_else(|| pgrx::error!("ec_hnsw RaBitQ scan is missing RaBitQ query state"));
+    let codec = HnswRaBitQScanCodec::new(search_code_len, storage_binding::HNSW_RABITQ_BITS);
+    let mut scores = vec![0.0; batch.len()];
+    QuantCodec::score_ip_batch(&codec, prepared_query, &batch, &mut scores)
+        .unwrap_or_else(|error| pgrx::error!("{error}"));
+    drop(batch);
+
+    #[cfg(any(test, feature = "pg_test"))]
+    let elapsed_us = u64::try_from(started.elapsed().as_micros()).unwrap_or(u64::MAX);
+    #[cfg(not(any(test, feature = "pg_test")))]
+    let elapsed_us = 0;
+
+    for (index, (candidate, ip)) in pending.into_iter().zip(scores).enumerate() {
+        // Keep the debug profile's per-candidate call count; attribute the
+        // whole batch elapsed to the first candidate so the elapsed sum
+        // matches wall time.
+        record_grouped_traversal_approx_score_elapsed(
+            opaque,
+            if index == 0 { elapsed_us } else { 0 },
+        );
+        // Traversal polarity stays outside the codec: beam scores are
+        // negated inner products, matching score_rabitq_search_code_result.
+        candidates.push(search::BeamCandidate::with_source(
+            candidate.element.tid,
+            -ip,
+            candidate.source_tid,
+        ));
+    }
+}
+
 fn build_cached_graph_element(
     opaque_ref: &mut TqScanOpaque,
     element_tid: page::ItemPointer,
@@ -3578,6 +3648,16 @@ where
     if !binary_query_present {
         let mut grouped_candidates = exact_budget.map(|_| Vec::with_capacity(capacity));
         let mut exact_payload_batch = Vec::with_capacity(capacity);
+        // RaBitQ approx traversal scoring batches whole neighbor lists
+        // through the rabitq32 block kernel. Eligibility is loop-invariant:
+        // the per-layer exact and binary modes take their existing paths.
+        let rabitq_batch_eligible =
+            matches!(scan_graph_storage, graph::GraphStorageDescriptor::RaBitQ(_))
+                && super::options::candidate_batch_scoring_enabled()
+                && grouped_candidates.is_none()
+                && !grouped_exact_traversal_full_candidate_scoring_for_layer(opaque, layer)
+                && !grouped_binary_traversal_score_enabled(opaque);
+        let mut rabitq_payload_batch = Vec::with_capacity(capacity);
         for neighbor_tid in neighbor_tids.iter().copied() {
             if keep_neighbor_tid(neighbor_tid) {
                 let (neighbor, loaded_state) = cached_graph_element_with_prefetch(
@@ -3671,6 +3751,11 @@ where
                                 element: neighbor,
                                 approx_score,
                             });
+                        } else if rabitq_batch_eligible {
+                            rabitq_payload_batch.push(HnswRaBitQBatchCandidate {
+                                source_tid,
+                                element: neighbor,
+                            });
                         } else {
                             let score = score_grouped_candidate_context(
                                 index_relation,
@@ -3690,6 +3775,7 @@ where
         }
 
         flush_turboquant_full_lut_payload_batch(opaque, &mut exact_payload_batch, &mut candidates);
+        flush_rabitq_search_code_batch(opaque, &mut rabitq_payload_batch, &mut candidates);
         if let Some(grouped_candidates) = grouped_candidates {
             candidates.extend(score_budgeted_grouped_traversal_candidates(
                 index_relation,

@@ -303,6 +303,33 @@ fn score_diskann_prepared_prefilter_batch(
         );
     }
     match prefilter {
+        DiskannPreparedPrefilter::RaBitQ { prepared }
+            if super::options::candidate_batch_scoring_enabled() =>
+        {
+            let Some(first_tuple) = tuples.first() else {
+                return;
+            };
+            let codec = DiskannRaBitQPrefilterCodec::new(
+                first_tuple.search_code.len(),
+                DISKANN_RABITQ_BITS,
+            );
+            let mut batch = CandidateBatch::with_capacity(tuples.len());
+            for (index, tuple) in tuples.iter().enumerate() {
+                batch
+                    .push(
+                        index,
+                        CandidatePayload::new(&tuple.search_code, CandidateMeta::RaBitQ),
+                    )
+                    .unwrap_or_else(|error| pgrx::error!("{error}"));
+            }
+            QuantCodec::score_ip_batch(&codec, prepared, &batch, out_scores)
+                .unwrap_or_else(|error| pgrx::error!("{error}"));
+            // Prefilter polarity stays outside the codec, matching the
+            // per-candidate RaBitQ arm.
+            for score in out_scores {
+                *score = -*score;
+            }
+        }
         DiskannPreparedPrefilter::GroupedPq {
             query_lut,
             group_count,
@@ -1315,6 +1342,71 @@ mod tests {
 
         assert_eq!(observed.to_bits(), expected.to_bits());
         assert_eq!(prefilter.score(&tuple).to_bits(), (-expected).to_bits());
+    }
+
+    #[test]
+    fn diskann_rabitq_prefilter_batch_routes_through_block_kernel() {
+        let dimensions = 40;
+        let quantizer =
+            RaBitQQuantizer::cached_seeded_srht_bits(dimensions, 42, DISKANN_RABITQ_BITS).unwrap();
+        let query: Vec<f32> = (0..dimensions)
+            .map(|index| ((index as f32) * 0.17).sin())
+            .collect();
+        let prepared = quantizer.prepare_estimator(&query);
+        let tuples: Vec<VamanaNodeTuple> = (0..35)
+            .map(|row| {
+                let source: Vec<f32> = (0..dimensions)
+                    .map(|col| (((row * 5 + col) as f32) * 0.07).cos())
+                    .collect();
+                tuple_with_codes(Vec::new(), quantizer.encode_code(&source).into_vec())
+            })
+            .collect();
+        let prefilter = DiskannPreparedPrefilter::RaBitQ { prepared };
+        let mut batch_scores = vec![0.0; tuples.len()];
+
+        score_diskann_prepared_prefilter_batch(&prefilter, &tuples, &mut batch_scores);
+
+        let DiskannPreparedPrefilter::RaBitQ { prepared } = &prefilter else {
+            unreachable!()
+        };
+        let block_prepared = prepared
+            .bits1_block_prepared(tuples[0].search_code.len())
+            .expect("bits=1 block prepared should exist");
+
+        // First 32 tuples route through the dispatched block kernel;
+        // reproduce that call directly so the expectation matches whichever
+        // ISA backend this host selects. The 3-tuple tail is scalar. The
+        // prefilter negates inner products.
+        let block_codes: [&[u8]; 32] = tuples[..32]
+            .iter()
+            .map(|tuple| tuple.search_code.as_slice())
+            .collect::<Vec<_>>()
+            .try_into()
+            .unwrap();
+        let mut expected_block_scores = vec![0.0; 32];
+        crate::quant::rabitq32::score_rabitq_bits1_block32(
+            block_prepared,
+            block_codes,
+            &mut expected_block_scores,
+        );
+        for (index, expected) in expected_block_scores.iter().enumerate() {
+            assert_eq!(
+                batch_scores[index].to_bits(),
+                (-expected).to_bits(),
+                "index={index}"
+            );
+        }
+        for (index, tuple) in tuples[32..].iter().enumerate() {
+            let expected = crate::quant::rabitq32::score_rabitq_bits1_scalar(
+                block_prepared,
+                &tuple.search_code,
+            );
+            assert_eq!(
+                batch_scores[32 + index].to_bits(),
+                (-expected).to_bits(),
+                "tail index={index}"
+            );
+        }
     }
 
     #[test]
