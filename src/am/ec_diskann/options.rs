@@ -24,6 +24,7 @@ static ECDISKANN_LIST_SIZE_GUC: GucSetting<i32> =
 static ECDISKANN_PREFILTER_KIND_GUC: GucSetting<PrefilterKind> =
     GucSetting::<PrefilterKind>::new(PrefilterKind::Auto);
 static ECDISKANN_SCAN_PROFILE_NOTICE_GUC: GucSetting<bool> = GucSetting::<bool>::new(false);
+static ECDISKANN_CANDIDATE_BATCH_SCORING_GUC: GucSetting<bool> = GucSetting::<bool>::new(true);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PostgresGucEnum)]
 pub(super) enum PrefilterKind {
@@ -153,6 +154,14 @@ pub(super) fn register_gucs() {
         GucContext::Userset,
         GucFlags::default(),
     );
+    GucRegistry::define_bool_guc(
+        c"ec_diskann.candidate_batch_scoring",
+        c"Enable Task 93 ec_diskann CandidateBatch prefilter scoring.",
+        c"Diagnostic Task 93 switch; enabled by default. Disable only to compare the block-kernel CandidateBatch prefilter route against the per-candidate scoring path.",
+        &ECDISKANN_CANDIDATE_BATCH_SCORING_GUC,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
 }
 
 pub(super) fn current_session_list_size() -> i32 {
@@ -165,6 +174,16 @@ pub(super) fn current_prefilter_kind() -> PrefilterKind {
 
 pub(super) fn scan_profile_notice_enabled() -> bool {
     ECDISKANN_SCAN_PROFILE_NOTICE_GUC.get()
+}
+
+#[cfg(test)]
+pub(super) fn candidate_batch_scoring_enabled() -> bool {
+    true
+}
+
+#[cfg(not(test))]
+pub(super) fn candidate_batch_scoring_enabled() -> bool {
+    ECDISKANN_CANDIDATE_BATCH_SCORING_GUC.get()
 }
 
 pub(super) fn resolve_scan_tuning(options: &TqDiskannOptions) -> ScanTuning {

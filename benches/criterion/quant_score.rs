@@ -327,6 +327,49 @@ fn bench_rabitq_score(c: &mut Criterion) {
     group.finish();
 }
 
+fn bench_hamming32_block32(c: &mut Criterion) {
+    let mut group = c.benchmark_group("quant/hamming32_block32");
+    for word_count in [24usize, 192] {
+        let mut state = 0x9E37_79B9_7F4A_7C15u64;
+        let mut next = move || {
+            state = state
+                .wrapping_mul(0xA076_1D64_78BD_642F)
+                .wrapping_add(0xE703_7ED1_A0B4_28DB);
+            state
+        };
+        let query: Vec<u64> = (0..word_count).map(|_| next()).collect();
+        let candidates: Vec<Vec<u64>> = (0..32)
+            .map(|_| (0..word_count).map(|_| next()).collect())
+            .collect();
+        let candidate_refs: [&[u64]; 32] = candidates
+            .iter()
+            .map(Vec::as_slice)
+            .collect::<Vec<_>>()
+            .try_into()
+            .unwrap();
+        let mut out = [0u32; 32];
+
+        group.throughput(Throughput::Elements(32));
+        group.bench_function(BenchmarkId::new("scalar", word_count * 64), |b| {
+            b.iter(|| {
+                ecaz::bench_api::hamming32_block32_scalar_reference(
+                    &query,
+                    &candidate_refs,
+                    &mut out,
+                );
+                out.iter().copied().sum::<u32>()
+            });
+        });
+        group.bench_function(BenchmarkId::new("dispatch", word_count * 64), |b| {
+            b.iter(|| {
+                ecaz::bench_api::hamming32_block32_dispatch(&query, &candidate_refs, &mut out);
+                out.iter().copied().sum::<u32>()
+            });
+        });
+    }
+    group.finish();
+}
+
 criterion_group!(
     benches,
     bench_score_ip_encoded,
@@ -338,6 +381,7 @@ criterion_group!(
     bench_score_ip_from_parts_int8_approx_no_qjl_4bit,
     bench_decode_approximate,
     bench_score_throughput,
-    bench_rabitq_score
+    bench_rabitq_score,
+    bench_hamming32_block32
 );
 criterion_main!(benches);

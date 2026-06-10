@@ -1,0 +1,799 @@
+{
+  "name": "task98-phase-a-hnsw-exact-modes",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-98/002-phase-a-measurement/artifacts",
+  "defaults": {
+    "pg": 18,
+    "bits": 4,
+    "seed": 42,
+    "queries_limit": 64,
+    "iterations": 32,
+    "force_index": true,
+    "sample_backend_memory": false
+  },
+  "steps": [
+    {
+      "kind": "load",
+      "name": "load-hnsw-tq-real10k",
+      "tags": [
+        "task98",
+        "phase_a",
+        "hnsw",
+        "turboquant",
+        "real10k"
+      ],
+      "prefix": "task98_pa_hnsw_tq_real10k",
+      "profile": "ec_hnsw",
+      "storage_format": "turboquant",
+      "bits": 4,
+      "dim": 1536,
+      "m": [
+        16
+      ],
+      "ef_construction": 128,
+      "corpus_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_corpus.tsv",
+      "queries_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_queries.tsv",
+      "manifest_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "log_file": "${artifact_dir}/load-hnsw-tq-real10k.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-tiled_lut-real10k-kernel-on",
+      "tags": [
+        "task98",
+        "phase_a",
+        "hnsw",
+        "turboquant",
+        "real10k",
+        "mode=tiled_lut",
+        "kernel_on",
+        "quant=turboquant",
+        "kernel_status=valid"
+      ],
+      "prefix": "task98_pa_hnsw_tq_real10k",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        80
+      ],
+      "queries_limit": 64,
+      "session_gucs": [
+        "ec_hnsw.disable_binary_prefilter=on",
+        "ec_hnsw.turboquant_exact_score_mode=tiled_lut"
+      ],
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "log_output": "${artifact_dir}/recall-tiled_lut-real10k-kernel-on.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-tiled_lut-real10k-kernel-on",
+      "tags": [
+        "task98",
+        "phase_a",
+        "hnsw",
+        "turboquant",
+        "real10k",
+        "mode=tiled_lut",
+        "kernel_on",
+        "quant=turboquant",
+        "kernel_status=valid"
+      ],
+      "prefix": "task98_pa_hnsw_tq_real10k",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        80
+      ],
+      "iterations": 32,
+      "concurrency": 1,
+      "cache_state": "task98_tiled_lut_real10k_on",
+      "session_gucs": [
+        "ec_hnsw.disable_binary_prefilter=on",
+        "ec_hnsw.turboquant_exact_score_mode=tiled_lut"
+      ],
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-tiled_lut-real10k-kernel-on.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-tiled_lut-real10k-kernel-off",
+      "tags": [
+        "task98",
+        "phase_a",
+        "hnsw",
+        "turboquant",
+        "real10k",
+        "mode=tiled_lut",
+        "kernel_off",
+        "quant=turboquant",
+        "kernel_status=valid"
+      ],
+      "prefix": "task98_pa_hnsw_tq_real10k",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        80
+      ],
+      "queries_limit": 64,
+      "session_gucs": [
+        "ec_hnsw.disable_binary_prefilter=on",
+        "ec_hnsw.turboquant_exact_score_mode=tiled_lut",
+        "ec_hnsw.candidate_batch_scoring=off"
+      ],
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "log_output": "${artifact_dir}/recall-tiled_lut-real10k-kernel-off.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-tiled_lut-real10k-kernel-off",
+      "tags": [
+        "task98",
+        "phase_a",
+        "hnsw",
+        "turboquant",
+        "real10k",
+        "mode=tiled_lut",
+        "kernel_off",
+        "quant=turboquant",
+        "kernel_status=valid"
+      ],
+      "prefix": "task98_pa_hnsw_tq_real10k",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        80
+      ],
+      "iterations": 32,
+      "concurrency": 1,
+      "cache_state": "task98_tiled_lut_real10k_off",
+      "session_gucs": [
+        "ec_hnsw.disable_binary_prefilter=on",
+        "ec_hnsw.turboquant_exact_score_mode=tiled_lut",
+        "ec_hnsw.candidate_batch_scoring=off"
+      ],
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-tiled_lut-real10k-kernel-off.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-int8_approx-real10k-kernel-on",
+      "tags": [
+        "task98",
+        "phase_a",
+        "hnsw",
+        "turboquant",
+        "real10k",
+        "mode=int8_approx",
+        "kernel_on",
+        "quant=turboquant",
+        "kernel_status=valid"
+      ],
+      "prefix": "task98_pa_hnsw_tq_real10k",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        80
+      ],
+      "queries_limit": 64,
+      "session_gucs": [
+        "ec_hnsw.disable_binary_prefilter=on",
+        "ec_hnsw.turboquant_exact_score_mode=int8_approx"
+      ],
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "log_output": "${artifact_dir}/recall-int8_approx-real10k-kernel-on.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-int8_approx-real10k-kernel-on",
+      "tags": [
+        "task98",
+        "phase_a",
+        "hnsw",
+        "turboquant",
+        "real10k",
+        "mode=int8_approx",
+        "kernel_on",
+        "quant=turboquant",
+        "kernel_status=valid"
+      ],
+      "prefix": "task98_pa_hnsw_tq_real10k",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        80
+      ],
+      "iterations": 32,
+      "concurrency": 1,
+      "cache_state": "task98_int8_approx_real10k_on",
+      "session_gucs": [
+        "ec_hnsw.disable_binary_prefilter=on",
+        "ec_hnsw.turboquant_exact_score_mode=int8_approx"
+      ],
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-int8_approx-real10k-kernel-on.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-int8_approx-real10k-kernel-off",
+      "tags": [
+        "task98",
+        "phase_a",
+        "hnsw",
+        "turboquant",
+        "real10k",
+        "mode=int8_approx",
+        "kernel_off",
+        "quant=turboquant",
+        "kernel_status=valid"
+      ],
+      "prefix": "task98_pa_hnsw_tq_real10k",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        80
+      ],
+      "queries_limit": 64,
+      "session_gucs": [
+        "ec_hnsw.disable_binary_prefilter=on",
+        "ec_hnsw.turboquant_exact_score_mode=int8_approx",
+        "ec_hnsw.candidate_batch_scoring=off"
+      ],
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "log_output": "${artifact_dir}/recall-int8_approx-real10k-kernel-off.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-int8_approx-real10k-kernel-off",
+      "tags": [
+        "task98",
+        "phase_a",
+        "hnsw",
+        "turboquant",
+        "real10k",
+        "mode=int8_approx",
+        "kernel_off",
+        "quant=turboquant",
+        "kernel_status=valid"
+      ],
+      "prefix": "task98_pa_hnsw_tq_real10k",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        80
+      ],
+      "iterations": 32,
+      "concurrency": 1,
+      "cache_state": "task98_int8_approx_real10k_off",
+      "session_gucs": [
+        "ec_hnsw.disable_binary_prefilter=on",
+        "ec_hnsw.turboquant_exact_score_mode=int8_approx",
+        "ec_hnsw.candidate_batch_scoring=off"
+      ],
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-int8_approx-real10k-kernel-off.log"
+    },
+    {
+      "kind": "load",
+      "name": "load-hnsw-tq-real50k",
+      "tags": [
+        "task98",
+        "phase_a",
+        "hnsw",
+        "turboquant",
+        "real50k"
+      ],
+      "prefix": "task98_pa_hnsw_tq_real50k",
+      "profile": "ec_hnsw",
+      "storage_format": "turboquant",
+      "bits": 4,
+      "dim": 1536,
+      "m": [
+        16
+      ],
+      "ef_construction": 128,
+      "corpus_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_50k_corpus.tsv",
+      "queries_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_50k_queries.tsv",
+      "manifest_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_50k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "log_file": "${artifact_dir}/load-hnsw-tq-real50k.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-tiled_lut-real50k-kernel-on",
+      "tags": [
+        "task98",
+        "phase_a",
+        "hnsw",
+        "turboquant",
+        "real50k",
+        "mode=tiled_lut",
+        "kernel_on",
+        "quant=turboquant",
+        "kernel_status=valid"
+      ],
+      "prefix": "task98_pa_hnsw_tq_real50k",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        80
+      ],
+      "queries_limit": 48,
+      "session_gucs": [
+        "ec_hnsw.disable_binary_prefilter=on",
+        "ec_hnsw.turboquant_exact_score_mode=tiled_lut"
+      ],
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "log_output": "${artifact_dir}/recall-tiled_lut-real50k-kernel-on.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-tiled_lut-real50k-kernel-on",
+      "tags": [
+        "task98",
+        "phase_a",
+        "hnsw",
+        "turboquant",
+        "real50k",
+        "mode=tiled_lut",
+        "kernel_on",
+        "quant=turboquant",
+        "kernel_status=valid"
+      ],
+      "prefix": "task98_pa_hnsw_tq_real50k",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        80
+      ],
+      "iterations": 32,
+      "concurrency": 1,
+      "cache_state": "task98_tiled_lut_real50k_on",
+      "session_gucs": [
+        "ec_hnsw.disable_binary_prefilter=on",
+        "ec_hnsw.turboquant_exact_score_mode=tiled_lut"
+      ],
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-tiled_lut-real50k-kernel-on.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-tiled_lut-real50k-kernel-off",
+      "tags": [
+        "task98",
+        "phase_a",
+        "hnsw",
+        "turboquant",
+        "real50k",
+        "mode=tiled_lut",
+        "kernel_off",
+        "quant=turboquant",
+        "kernel_status=valid"
+      ],
+      "prefix": "task98_pa_hnsw_tq_real50k",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        80
+      ],
+      "queries_limit": 48,
+      "session_gucs": [
+        "ec_hnsw.disable_binary_prefilter=on",
+        "ec_hnsw.turboquant_exact_score_mode=tiled_lut",
+        "ec_hnsw.candidate_batch_scoring=off"
+      ],
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "log_output": "${artifact_dir}/recall-tiled_lut-real50k-kernel-off.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-tiled_lut-real50k-kernel-off",
+      "tags": [
+        "task98",
+        "phase_a",
+        "hnsw",
+        "turboquant",
+        "real50k",
+        "mode=tiled_lut",
+        "kernel_off",
+        "quant=turboquant",
+        "kernel_status=valid"
+      ],
+      "prefix": "task98_pa_hnsw_tq_real50k",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        80
+      ],
+      "iterations": 32,
+      "concurrency": 1,
+      "cache_state": "task98_tiled_lut_real50k_off",
+      "session_gucs": [
+        "ec_hnsw.disable_binary_prefilter=on",
+        "ec_hnsw.turboquant_exact_score_mode=tiled_lut",
+        "ec_hnsw.candidate_batch_scoring=off"
+      ],
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-tiled_lut-real50k-kernel-off.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-int8_approx-real50k-kernel-on",
+      "tags": [
+        "task98",
+        "phase_a",
+        "hnsw",
+        "turboquant",
+        "real50k",
+        "mode=int8_approx",
+        "kernel_on",
+        "quant=turboquant",
+        "kernel_status=valid"
+      ],
+      "prefix": "task98_pa_hnsw_tq_real50k",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        80
+      ],
+      "queries_limit": 48,
+      "session_gucs": [
+        "ec_hnsw.disable_binary_prefilter=on",
+        "ec_hnsw.turboquant_exact_score_mode=int8_approx"
+      ],
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "log_output": "${artifact_dir}/recall-int8_approx-real50k-kernel-on.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-int8_approx-real50k-kernel-on",
+      "tags": [
+        "task98",
+        "phase_a",
+        "hnsw",
+        "turboquant",
+        "real50k",
+        "mode=int8_approx",
+        "kernel_on",
+        "quant=turboquant",
+        "kernel_status=valid"
+      ],
+      "prefix": "task98_pa_hnsw_tq_real50k",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        80
+      ],
+      "iterations": 32,
+      "concurrency": 1,
+      "cache_state": "task98_int8_approx_real50k_on",
+      "session_gucs": [
+        "ec_hnsw.disable_binary_prefilter=on",
+        "ec_hnsw.turboquant_exact_score_mode=int8_approx"
+      ],
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-int8_approx-real50k-kernel-on.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-int8_approx-real50k-kernel-off",
+      "tags": [
+        "task98",
+        "phase_a",
+        "hnsw",
+        "turboquant",
+        "real50k",
+        "mode=int8_approx",
+        "kernel_off",
+        "quant=turboquant",
+        "kernel_status=valid"
+      ],
+      "prefix": "task98_pa_hnsw_tq_real50k",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        80
+      ],
+      "queries_limit": 48,
+      "session_gucs": [
+        "ec_hnsw.disable_binary_prefilter=on",
+        "ec_hnsw.turboquant_exact_score_mode=int8_approx",
+        "ec_hnsw.candidate_batch_scoring=off"
+      ],
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "log_output": "${artifact_dir}/recall-int8_approx-real50k-kernel-off.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-int8_approx-real50k-kernel-off",
+      "tags": [
+        "task98",
+        "phase_a",
+        "hnsw",
+        "turboquant",
+        "real50k",
+        "mode=int8_approx",
+        "kernel_off",
+        "quant=turboquant",
+        "kernel_status=valid"
+      ],
+      "prefix": "task98_pa_hnsw_tq_real50k",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        80
+      ],
+      "iterations": 32,
+      "concurrency": 1,
+      "cache_state": "task98_int8_approx_real50k_off",
+      "session_gucs": [
+        "ec_hnsw.disable_binary_prefilter=on",
+        "ec_hnsw.turboquant_exact_score_mode=int8_approx",
+        "ec_hnsw.candidate_batch_scoring=off"
+      ],
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-int8_approx-real50k-kernel-off.log"
+    },
+    {
+      "kind": "load",
+      "name": "load-hnsw-tq-real100k",
+      "tags": [
+        "task98",
+        "phase_a",
+        "hnsw",
+        "turboquant",
+        "real100k"
+      ],
+      "prefix": "task98_pa_hnsw_tq_real100k",
+      "profile": "ec_hnsw",
+      "storage_format": "turboquant",
+      "bits": 4,
+      "dim": 1536,
+      "m": [
+        16
+      ],
+      "ef_construction": 128,
+      "corpus_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_100k_corpus.tsv",
+      "queries_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_100k_queries.tsv",
+      "manifest_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_100k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "log_file": "${artifact_dir}/load-hnsw-tq-real100k.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-tiled_lut-real100k-kernel-on",
+      "tags": [
+        "task98",
+        "phase_a",
+        "hnsw",
+        "turboquant",
+        "real100k",
+        "mode=tiled_lut",
+        "kernel_on",
+        "quant=turboquant",
+        "kernel_status=valid"
+      ],
+      "prefix": "task98_pa_hnsw_tq_real100k",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        80
+      ],
+      "queries_limit": 32,
+      "session_gucs": [
+        "ec_hnsw.disable_binary_prefilter=on",
+        "ec_hnsw.turboquant_exact_score_mode=tiled_lut"
+      ],
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "log_output": "${artifact_dir}/recall-tiled_lut-real100k-kernel-on.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-tiled_lut-real100k-kernel-on",
+      "tags": [
+        "task98",
+        "phase_a",
+        "hnsw",
+        "turboquant",
+        "real100k",
+        "mode=tiled_lut",
+        "kernel_on",
+        "quant=turboquant",
+        "kernel_status=valid"
+      ],
+      "prefix": "task98_pa_hnsw_tq_real100k",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        80
+      ],
+      "iterations": 32,
+      "concurrency": 1,
+      "cache_state": "task98_tiled_lut_real100k_on",
+      "session_gucs": [
+        "ec_hnsw.disable_binary_prefilter=on",
+        "ec_hnsw.turboquant_exact_score_mode=tiled_lut"
+      ],
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-tiled_lut-real100k-kernel-on.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-tiled_lut-real100k-kernel-off",
+      "tags": [
+        "task98",
+        "phase_a",
+        "hnsw",
+        "turboquant",
+        "real100k",
+        "mode=tiled_lut",
+        "kernel_off",
+        "quant=turboquant",
+        "kernel_status=valid"
+      ],
+      "prefix": "task98_pa_hnsw_tq_real100k",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        80
+      ],
+      "queries_limit": 32,
+      "session_gucs": [
+        "ec_hnsw.disable_binary_prefilter=on",
+        "ec_hnsw.turboquant_exact_score_mode=tiled_lut",
+        "ec_hnsw.candidate_batch_scoring=off"
+      ],
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "log_output": "${artifact_dir}/recall-tiled_lut-real100k-kernel-off.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-tiled_lut-real100k-kernel-off",
+      "tags": [
+        "task98",
+        "phase_a",
+        "hnsw",
+        "turboquant",
+        "real100k",
+        "mode=tiled_lut",
+        "kernel_off",
+        "quant=turboquant",
+        "kernel_status=valid"
+      ],
+      "prefix": "task98_pa_hnsw_tq_real100k",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        80
+      ],
+      "iterations": 32,
+      "concurrency": 1,
+      "cache_state": "task98_tiled_lut_real100k_off",
+      "session_gucs": [
+        "ec_hnsw.disable_binary_prefilter=on",
+        "ec_hnsw.turboquant_exact_score_mode=tiled_lut",
+        "ec_hnsw.candidate_batch_scoring=off"
+      ],
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-tiled_lut-real100k-kernel-off.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-int8_approx-real100k-kernel-on",
+      "tags": [
+        "task98",
+        "phase_a",
+        "hnsw",
+        "turboquant",
+        "real100k",
+        "mode=int8_approx",
+        "kernel_on",
+        "quant=turboquant",
+        "kernel_status=valid"
+      ],
+      "prefix": "task98_pa_hnsw_tq_real100k",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        80
+      ],
+      "queries_limit": 32,
+      "session_gucs": [
+        "ec_hnsw.disable_binary_prefilter=on",
+        "ec_hnsw.turboquant_exact_score_mode=int8_approx"
+      ],
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "log_output": "${artifact_dir}/recall-int8_approx-real100k-kernel-on.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-int8_approx-real100k-kernel-on",
+      "tags": [
+        "task98",
+        "phase_a",
+        "hnsw",
+        "turboquant",
+        "real100k",
+        "mode=int8_approx",
+        "kernel_on",
+        "quant=turboquant",
+        "kernel_status=valid"
+      ],
+      "prefix": "task98_pa_hnsw_tq_real100k",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        80
+      ],
+      "iterations": 32,
+      "concurrency": 1,
+      "cache_state": "task98_int8_approx_real100k_on",
+      "session_gucs": [
+        "ec_hnsw.disable_binary_prefilter=on",
+        "ec_hnsw.turboquant_exact_score_mode=int8_approx"
+      ],
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-int8_approx-real100k-kernel-on.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-int8_approx-real100k-kernel-off",
+      "tags": [
+        "task98",
+        "phase_a",
+        "hnsw",
+        "turboquant",
+        "real100k",
+        "mode=int8_approx",
+        "kernel_off",
+        "quant=turboquant",
+        "kernel_status=valid"
+      ],
+      "prefix": "task98_pa_hnsw_tq_real100k",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        80
+      ],
+      "queries_limit": 32,
+      "session_gucs": [
+        "ec_hnsw.disable_binary_prefilter=on",
+        "ec_hnsw.turboquant_exact_score_mode=int8_approx",
+        "ec_hnsw.candidate_batch_scoring=off"
+      ],
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "log_output": "${artifact_dir}/recall-int8_approx-real100k-kernel-off.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-int8_approx-real100k-kernel-off",
+      "tags": [
+        "task98",
+        "phase_a",
+        "hnsw",
+        "turboquant",
+        "real100k",
+        "mode=int8_approx",
+        "kernel_off",
+        "quant=turboquant",
+        "kernel_status=valid"
+      ],
+      "prefix": "task98_pa_hnsw_tq_real100k",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        80
+      ],
+      "iterations": 32,
+      "concurrency": 1,
+      "cache_state": "task98_int8_approx_real100k_off",
+      "session_gucs": [
+        "ec_hnsw.disable_binary_prefilter=on",
+        "ec_hnsw.turboquant_exact_score_mode=int8_approx",
+        "ec_hnsw.candidate_batch_scoring=off"
+      ],
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-int8_approx-real100k-kernel-off.log"
+    }
+  ]
+}
