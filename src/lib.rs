@@ -111,6 +111,29 @@ pub mod bench_api {
     pub fn simd_backend() -> &'static str {
         crate::quant::simd_backend_name()
     }
+
+    // Task 95 hamming32 off-path scoring-share hooks.
+    #[cfg(feature = "bench")]
+    pub fn hamming32_block32_scalar_reference(
+        query_words: &[u64],
+        candidates: &[&[u64]; 32],
+        out_distances: &mut [u32],
+    ) {
+        crate::quant::hamming32::score_hamming_block32_scalar_reference(
+            query_words,
+            candidates,
+            out_distances,
+        );
+    }
+    #[cfg(feature = "bench")]
+    pub fn hamming32_block32_dispatch(
+        query_words: &[u64],
+        candidates: &[&[u64]; 32],
+        out_distances: &mut [u32],
+    ) -> &'static str {
+        crate::quant::hamming32::score_hamming_block32(query_words, candidates, out_distances)
+            .label()
+    }
     #[cfg(feature = "bench")]
     pub fn hnsw_source_inner_product_scalar_reference(left: &[f32], right: &[f32]) -> f32 {
         crate::am::hnsw_source_inner_product_scalar_reference(left, right)

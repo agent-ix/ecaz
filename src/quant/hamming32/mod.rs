@@ -85,6 +85,16 @@ pub(crate) fn hamming_distance_scalar(query_words: &[u64], candidate_words: &[u6
     scalar::hamming_distance(query_words, candidate_words)
 }
 
+/// Forced-scalar block entry for off-path scoring-share measurement.
+#[cfg(feature = "bench")]
+pub(crate) fn score_hamming_block32_scalar_reference(
+    query_words: &[u64],
+    candidates: &[&[u64]; BLOCK_WIDTH],
+    out_distances: &mut [u32],
+) {
+    scalar::score_block32_scalar(query_words, candidates, out_distances);
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
