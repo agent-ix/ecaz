@@ -148,7 +148,47 @@ flags are reserved for delta objects.
 
 ```json
 {
-  "TODO": "describe the schema shape here"
+  "$id": "ix://agent-ix/ecaz/spire-leaf-v2",
+  "title": "SPIRE Leaf V2 object",
+  "encoding": "binary, little-endian, packed logical stream after the FR-049 common header",
+  "meta_tuple": {
+    "header": { "$ref": "ix://agent-ix/ecaz/spire-partition-object-header", "kind": "leaf", "format_version": 2, "flags": "0x00000001", "level": 0, "child_count": 0 },
+    "fields": [
+      { "name": "payload_format", "type": "u8", "enum": { "0": "none", "1": "turboquant", "2": "pq_fastscan", "3": "rabitq" } },
+      { "name": "vec_id_kind", "type": "u8", "enum": { "1": "local_u64", "2": "global_bytes" } },
+      { "name": "reserved", "type": "u16", "const": 0 },
+      { "name": "payload_stride", "type": "u32", "description": "bytes per encoded payload row; nonzero for non-empty leaves" },
+      { "name": "vec_id_stride", "type": "u16", "description": "16 for local IDs; 2..=32 for global IDs" },
+      { "name": "reserved2", "type": "u16", "const": 0 },
+      { "name": "segment_count", "type": "u32" },
+      { "name": "first_segment_locator", "type": "item_pointer_v1", "description": "invalid for empty leaf; valid for non-empty leaf" },
+      { "name": "object_bytes_total", "type": "u64", "minimum": 1 }
+    ]
+  },
+  "segment_tuple": {
+    "header": { "$ref": "ix://agent-ix/ecaz/spire-partition-object-header", "kind": "leaf", "format_version": 2, "flags": "0x00000002" },
+    "fields": [
+      { "name": "segment_no", "offset": "0", "type": "u32le" },
+      { "name": "row_base", "offset": "4", "type": "u32le" },
+      { "name": "row_count", "offset": "8", "type": "u32le" },
+      { "name": "next_segment_locator", "offset": "12", "type": "item_pointer_v1" },
+      { "name": "flags", "offset": "18", "type": "u16le[row_count]", "flag_bits": ["primary", "boundary_replica", "tombstone", "stale_locator", "delta_insert", "delta_delete"] },
+      { "name": "vec_ids", "offset": "18 + 2*row_count", "type": "bytea[row_count * vec_id_stride]" },
+      { "name": "heap_tids", "offset": "previous end", "type": "item_pointer_v1[row_count]" },
+      { "name": "gammas", "offset": "previous end", "type": "float4le[row_count]", "constraint": "finite" },
+      { "name": "payloads", "offset": "previous end", "type": "bytea[row_count * payload_stride]", "layout": "row-major; row i occupies bytes i*payload_stride..(i+1)*payload_stride" }
+    ]
+  },
+  "item_pointer_v1": { "encoding": "block_number u32le followed by offset_number u16le; 6 bytes", "invalid": "zero block with zero offset, except where explicitly marked invalid for an empty object" },
+  "vec_id": {
+    "local": "0x01 || little_endian_u64 (dedupe scope: origin node only)",
+    "global": "0x02 || stable_global_payload_bytes (dedupe scope: all nodes; production payload is 16 bytes, 17 bytes stored)",
+    "max_bytes_including_discriminator": 32
+  },
+  "block_summary": {
+    "status": "optional, evidence-gated (FR-050 rules 1-5)",
+    "description": "Leaf-local block summaries group a deterministic row range and store a format-specific summary payload used to estimate whether the block should be decoded; the canonical assignment row encoding above is unchanged, scans fall back to full segment decode when summaries are absent/stale/disabled, and any externally durable summary format must pass NFR-016 format-evolution discipline before this schema pins its byte layout."
+  }
 }
 ```
 

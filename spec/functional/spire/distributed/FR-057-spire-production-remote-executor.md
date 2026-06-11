@@ -68,8 +68,34 @@ stateDiagram-v2
 
 ```mermaid
 sequenceDiagram
-    participant TODO
-    TODO->>TODO: describe the workflow
+    participant Coord as Coordinator merge path
+    participant Exec as Production remote executor
+    participant Gov as Fanout budgets + advisory governance
+    participant Sec as Secret resolution
+    participant Remote as Remote node (libpq/TLS)
+
+    Coord->>Exec: selected remote nodes and PIDs
+    Exec->>Gov: check static fanout limits (nodes, total PIDs, PIDs per node)
+    Exec->>Gov: acquire advisory dispatch slots (global and per node)
+    alt budget or descriptor failure
+        Gov-->>Exec: refuse before socket open
+        Exec-->>Coord: Blocked (no conninfo exposure)
+    else transport ready
+        Exec->>Sec: resolve raw conninfo from conninfo_secret_name (executor-internal)
+        Exec->>Remote: connect with preserved libpq/TLS security parameters
+        Exec->>Remote: validate endpoint identity (index identity, extension version, served epoch, tuple transport capability, schema fingerprint)
+        Exec->>Remote: dispatch typed remote_scan_v1 request (Sent)
+        Remote-->>Exec: candidate batch (CandidateReceive)
+        Remote-->>Exec: heap tuple payloads (HeapReceive)
+        Exec->>Exec: validate payload arity, types, and capacity limits
+        Exec-->>Coord: validated candidate/tuple batches (ReadyMerge)
+    end
+    note over Exec,Remote: timeout, interrupt/cancel, transport failure, stale epoch, or identity mismatch moves the affected work to Failed
+    alt strict mode
+        Exec-->>Coord: query fails when required remote work is stale, unavailable, overloaded, or identity-incompatible
+    else degraded mode permitted by the query path
+        Exec-->>Coord: skip failed remote work, one reported row per skipped node
+    end
 ```
 
 ## Acceptance Criteria

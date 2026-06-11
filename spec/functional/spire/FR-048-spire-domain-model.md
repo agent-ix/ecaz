@@ -143,7 +143,39 @@ erDiagram
 
 ## Bounded Context
 
-> TODO: describe the bounded context for this domain — the scope, the ubiquitous language, and the dominant interactions inside the boundary.
+The SPIRE bounded context owns everything between a vector `ORDER BY` over an
+`ec_spire`-indexed relation and the candidate rows that reach PostgreSQL's
+executor: partition-object storage (`FR-049`..`FR-051`), epoch publication and
+build (`FR-052`), local eager bounded search (`FR-053`), update/maintenance
+lifecycle (`FR-054`), distributed topology and placement (`FR-055`..`FR-058`),
+coordinator-routed DML with 2PC (`FR-059`), and operator diagnostics
+(`FR-060`).
+
+Its ubiquitous language is the Domain Terms table above: PID, partition
+object, object version, epoch, placement entry, local store, `SpireVecId`,
+boundary replica, and placement directory. Inside the boundary, "partition"
+always means a PID-addressed SPIRE object — never a PostgreSQL declarative
+table partition — and "publish" always means epoch publication, the only
+visibility boundary for coherent object sets.
+
+Dominant interactions inside the boundary:
+
+- **Local read path**: index AM → root/control → active epoch → routing
+  objects → leaf/delta objects in local stores → heap TIDs.
+- **Distributed read path**: `EcSpireDistributedScan` CustomScan → routing
+  metadata → production remote executor → origin-node SPIRE scoring → typed
+  tuple payload merge with `SpireVecId` dedupe.
+- **Write path**: coordinator DML frontdoor → placement directory →
+  origin-node primitives with two-phase commit.
+- **Maintenance path**: deltas, replacement objects, and replacement epochs;
+  published objects are never mutated in place.
+
+Outside the boundary remain: quantizer math and block kernels (owned by the
+quant context through the `QuantCodec` adapter), generic AM contracts and WAL
+discipline (common context), heap row storage and visibility (PostgreSQL),
+and benchmark orchestration (operator context). Cross-shard non-vector SQL,
+automatic DDL propagation, and cross-shard embedding moves are explicit v1
+non-goals at this boundary.
 
 ## Acceptance Criteria
 

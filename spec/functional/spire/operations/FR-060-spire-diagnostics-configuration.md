@@ -103,7 +103,23 @@ SHALL be reported as a tradeoff unless latency and candidate gates also pass.
 
 ## Endpoint
 
-> TODO: document the endpoint as a `| Method | Path | Auth | Description |` table.
+SPIRE's operator endpoints are SQL diagnostic functions on the coordinator (and
+locally on each node), not HTTP routes. `Method` is the SQL invocation shape,
+`Path` is the function identity, and `Auth` is the PostgreSQL privilege needed.
+
+| Method | Path | Auth | Description |
+| --- | --- | --- | --- |
+| `SELECT * FROM fn(regclass)` | `ec_spire_index_health_snapshot` | table owner or `pg_monitor`-style read role | One-row state, epoch, object, placement, and byte-count overview. |
+| `SELECT * FROM fn(regclass)` | `ec_spire_index_active_snapshot_diagnostics` | read role | Active epoch object/placement detail. |
+| `SELECT * FROM fn(regclass)` | `ec_spire_index_relation_storage_snapshot`, `ec_spire_index_epoch_cleanup_summary` | read role | Storage layout, old-epoch retention, and cleanup debt. |
+| `SELECT * FROM fn(regclass)` | `ec_spire_index_epoch_cleanup_run` | index owner (mutating) | Safe reclamation of superseded epoch objects. |
+| `SELECT * FROM fn(regclass, ...)` | `ec_spire_index_scan_routing_snapshot`, `ec_spire_index_scan_placement_snapshot`, `ec_spire_index_scan_local_store_execution_snapshot` | read role | Route budgets, selected PIDs, local store grouping, candidate counts. |
+| `SELECT * FROM fn(regclass, ...)` | candidate-attribution funnel, pipeline, target-block-rank, row-segment, and block-summary diagnostics | read role | Miss attribution across routing, selected-block containment, candidate budget, row decode, heap rerank, and approximate scoring. |
+| `SELECT * FROM fn(regclass)` | `ec_spire_index_boundary_replica_identity_snapshot`, `ec_spire_index_boundary_replica_placement_diagnostics` | read role | Boundary replica identity and placement health. |
+| `SELECT * FROM fn(...)` | `ec_spire_remote_search_production_executor_state_summary`, `ec_spire_remote_search_degraded_skip_report`, `ec_spire_remote_pipeline_steps` | read role; live variants open libpq/TLS sockets | Dry and live remote readiness, strict/degraded status, pipeline stages. |
+| `SELECT * FROM fn(...)` | `ec_spire_dml_frontdoor_*` | write role for plan execution | DML classifier and primitive plans. |
+| `SELECT fn(...)` | `ec_spire_reap_orphaned_remote_prepared_xacts` | superuser/operator role (mutating) | Two-phase-commit orphan recovery. |
+| `SELECT * FROM fn(regclass)` | `ec_spire_index_options_snapshot`, `ec_spire_index_cost_tuning_snapshot` | read role | Effective reloptions, GUCs, payload scannability, cost constants. |
 
 ## Acceptance Criteria
 

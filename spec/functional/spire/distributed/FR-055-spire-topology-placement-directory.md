@@ -82,7 +82,22 @@ support lookup by `(index_oid, source_identity)`.
 
 ```json
 {
-  "TODO": "describe the schema shape here"
+  "$id": "ix://agent-ix/ecaz/spire-placement-directory",
+  "title": "ec_spire_placement coordinator table",
+  "storage": "PostgreSQL table on the coordinator; write-routing and PK-read source of truth, not a read-path materialization catalog",
+  "columns": [
+    { "name": "index_oid", "type": "oid", "description": "coordinator SPIRE index" },
+    { "name": "pk_value", "type": "bytea", "description": "canonical primary-key encoding; v1 bigint uses PostgreSQL int8send bytes" },
+    { "name": "node_id", "type": "integer", "description": "0 for coordinator-local, positive for remotes" },
+    { "name": "centroid_id", "type": "bigint", "description": "active-epoch routing leaf identity, opaque across retraining" },
+    { "name": "served_epoch", "type": "bigint", "minimum": 1, "description": "positive remote/coordinator epoch" },
+    { "name": "source_identity", "type": "bytea", "length": 16, "description": "exact 16-byte stable identity payload" }
+  ],
+  "primary_key": ["index_oid", "pk_value"],
+  "indexes": [
+    { "name": "identity lookup", "columns": ["index_oid", "source_identity"] }
+  ],
+  "out_of_scope_v1": ["non-vector non-PK scatter-gather reads", "automatic DDL propagation"]
 }
 ```
 
