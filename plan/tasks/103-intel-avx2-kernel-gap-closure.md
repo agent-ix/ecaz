@@ -1,10 +1,17 @@
 # Task 103: Intel AVX2 Kernel Gap Closure (Pre-AWS Intel Lane)
 
-Status: proposed (2026-06-10; in-epic per operator decision — created so
-the AWS Graviton-vs-Intel price/performance comparison runs against a
-complete Intel kernel matrix, not one with `missing_kernel` holes)
+Status: complete (2026-06-11). Evidence: `reviews/task-103/` packets
+001–003. Packet 003 (rabitq32 AVX2 validation, AC4) approved by the
+outside reviewer 2026-06-11 with independent test reruns; packet 001's
+dispositions (tiled_lut32 **retired/deprioritized**, hamming32 AVX2
+**skip** — AC2/AC3) and packet 002's int8_approx32 AVX2 kernel (AC1,
+10.4× the scalar anchor, recall byte-equal) accepted by operator
+decision 2026-06-11. AC6 holds: the Intel column carries five real
+kernels (lut32, qjl32, grouped_pq, int8_approx32, rabitq32) and two
+documented decisions — no `missing_kernel` cells. The AWS Intel
+profile lane (Task 99 item 9) is unblocked.
 Owner: coder (assigned 2026-06-10: the Task 102 author). Phase III.
-Priority: 1 (blocks the AWS Intel profile lane; ARM lanes unaffected)
+Priority: 1 (blocked the AWS Intel profile lane; ARM lanes unaffected)
 
 ## Why
 
