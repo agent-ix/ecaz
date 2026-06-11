@@ -693,7 +693,11 @@ mod production_executor_state_tests {
 
     #[test]
     fn production_receive_adapters_reject_selected_pid_batches_before_connection() {
-        let oversized_pids = (0_u64..65).collect::<Vec<_>>();
+        let rows_per_batch_cap = u64::try_from(
+            crate::am::ec_spire::options::current_session_max_remote_payload_rows_per_batch(),
+        )
+        .expect("rows-per-batch cap should be non-negative");
+        let oversized_pids = (0_u64..=rows_per_batch_cap).collect::<Vec<_>>();
         let candidate_results =
             SpireRemoteProductionTransportAdapter::run_candidate_receive_requests(vec![
                 SpireRemoteProductionCandidateReceiveRequest {

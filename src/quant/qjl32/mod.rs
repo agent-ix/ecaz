@@ -304,7 +304,10 @@ mod tests {
                 assert_close(*score, pre_slice, 4);
             }
         }
-        assert!(matches!(isa, Isa::Scalar | Isa::Avx2));
+        assert!(matches!(
+            isa,
+            Isa::Scalar | Isa::Avx2 | Isa::Neon | Isa::Sve2
+        ));
     }
 
     #[test]
