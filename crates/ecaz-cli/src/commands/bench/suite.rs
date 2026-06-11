@@ -95,6 +95,10 @@ struct RunArgs {
     /// `<artifact_dir>/suite-manifest.json` when the config has `artifact_dir`.
     #[arg(long)]
     manifest_output: Option<PathBuf>,
+
+    /// Permit latency/recall suite steps against a debug-built backend.
+    #[arg(long)]
+    allow_debug_backend: bool,
 }
 
 #[derive(Args, Debug)]
@@ -133,6 +137,7 @@ struct SuiteRunOptions {
     results_output: Option<PathBuf>,
     artifact_dir: Option<PathBuf>,
     manifest_output: Option<PathBuf>,
+    allow_debug_backend: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -643,6 +648,8 @@ struct SuiteManifest {
     dry_run: bool,
     generated_at_unix_ms: u128,
     connection: ManifestConnection,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    backend: Option<BackendPreflight>,
     steps: Vec<StepRecord>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     threshold_results: Vec<ThresholdResult>,
@@ -655,6 +662,15 @@ struct ManifestConnection {
     port: Option<u16>,
     user: Option<String>,
     password_configured: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct BackendPreflight {
+    build_profile: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    sha256: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    path: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -758,6 +774,7 @@ pub async fn run(conn: &ConnectionOptions, args: SuiteArgs) -> Result<()> {
                     results_output: None,
                     artifact_dir: None,
                     manifest_output: args.manifest_output,
+                    allow_debug_backend: false,
                 },
             )
             .await
@@ -777,6 +794,7 @@ impl From<RunArgs> for SuiteRunOptions {
             results_output: args.results_output,
             artifact_dir: args.artifact_dir,
             manifest_output: args.manifest_output,
+            allow_debug_backend: args.allow_debug_backend,
         }
     }
 }
@@ -793,6 +811,18 @@ async fn run_suite(conn: &ConnectionOptions, args: SuiteRunOptions) -> Result<()
     let mut manifest = build_manifest(conn, &args, &raw, &config)?;
     if let Some(resume_from) = &args.resume_from {
         apply_resume(&mut manifest, resume_from).await?;
+    }
+    if !args.dry_run && manifest_has_release_guarded_steps(&manifest) {
+        let preflight = preflight_backend(conn).await?;
+        manifest.backend = Some(preflight.clone());
+        write_manifest_if_requested(&args, &config, &manifest).await?;
+        if preflight.build_profile != "release" && !args.allow_debug_backend {
+            bail!(
+                "suite selected latency/recall steps but backend build profile is {:?}; \
+                 reinstall a release backend or pass --allow-debug-backend",
+                preflight.build_profile
+            );
+        }
     }
     write_manifest_if_requested(&args, &config, &manifest).await?;
 
@@ -1235,6 +1265,7 @@ fn build_manifest(
             user: conn.user.clone(),
             password_configured: conn.password.is_some(),
         },
+        backend: None,
         steps: Vec::with_capacity(config.steps.len()),
         threshold_results: Vec::new(),
     };
@@ -3571,6 +3602,76 @@ fn validate_spire_remote_tuple_transport(value: &str) -> Result<()> {
     }
 }
 
+fn manifest_has_release_guarded_steps(manifest: &SuiteManifest) -> bool {
+    manifest.steps.iter().any(|step| {
+        step.selected
+            && matches!(step.status, Some(StepStatus::Pending))
+            && matches!(step.kind.as_str(), "latency" | "recall")
+    })
+}
+
+async fn preflight_backend(conn: &ConnectionOptions) -> Result<BackendPreflight> {
+    let client = crate::psql::connect(conn).await?;
+    let build_profile = query_backend_build_profile(&client).await?;
+    let backend_path = derive_local_pgrx_backend_path(&client).await?;
+    let sha256 = match &backend_path {
+        Some(path) => Some(sha256_file_hex(path).await?),
+        None => None,
+    };
+    Ok(BackendPreflight {
+        build_profile,
+        sha256,
+        path: backend_path.map(|path| path.display().to_string()),
+    })
+}
+
+async fn query_backend_build_profile(client: &tokio_postgres::Client) -> Result<String> {
+    let row = client
+        .query_one("SELECT ecaz_build_profile()", &[])
+        .await
+        .context("querying ecaz_build_profile(); reinstall/update the extension if missing")?;
+    Ok(row.get::<_, String>(0))
+}
+
+async fn derive_local_pgrx_backend_path(
+    client: &tokio_postgres::Client,
+) -> Result<Option<PathBuf>> {
+    let row = client
+        .query_one("SHOW data_directory", &[])
+        .await
+        .context("querying data_directory for backend sha256 preflight")?;
+    let data_dir = PathBuf::from(row.get::<_, String>(0));
+    let Some(data_name) = data_dir.file_name().and_then(|name| name.to_str()) else {
+        return Ok(None);
+    };
+    let Some(pg_major) = data_name.strip_prefix("data-") else {
+        return Ok(None);
+    };
+    let Some(pgrx_home) = data_dir.parent() else {
+        return Ok(None);
+    };
+    let mut candidates = Vec::new();
+    for entry in std::fs::read_dir(pgrx_home)
+        .wrap_err_with(|| format!("reading pgrx home {}", pgrx_home.display()))?
+    {
+        let entry = entry?;
+        let file_name = entry.file_name();
+        let file_name = file_name.to_string_lossy();
+        if file_name.starts_with(&format!("{pg_major}.")) {
+            candidates.push(entry.path().join("pgrx-install/lib/postgresql/ecaz.so"));
+        }
+    }
+    candidates.sort();
+    Ok(candidates.into_iter().rev().find(|path| path.is_file()))
+}
+
+async fn sha256_file_hex(path: &Path) -> Result<String> {
+    let bytes = tokio::fs::read(path)
+        .await
+        .wrap_err_with(|| format!("reading backend {}", path.display()))?;
+    Ok(sha256_hex(&bytes))
+}
+
 fn sha256_hex(bytes: &[u8]) -> String {
     let digest = Sha256::digest(bytes);
     hex::encode(digest)
@@ -4130,6 +4231,7 @@ mod tests {
             results_output: None,
             artifact_dir: None,
             manifest_output: None,
+            allow_debug_backend: false,
         };
 
         let manifest =
@@ -4208,6 +4310,7 @@ mod tests {
             results_output: None,
             artifact_dir: None,
             manifest_output: None,
+            allow_debug_backend: false,
         };
 
         let manifest =
@@ -4263,6 +4366,7 @@ mod tests {
             results_output: None,
             artifact_dir: None,
             manifest_output: None,
+            allow_debug_backend: false,
         };
 
         assert!(build_manifest(&conn(), &args, "{}", &config)
@@ -4289,6 +4393,7 @@ mod tests {
             results_output: None,
             artifact_dir: None,
             manifest_output: None,
+            allow_debug_backend: false,
         };
         let manifest = build_manifest(&conn(), &args, raw, &config).expect("manifest should build");
 
@@ -4331,6 +4436,7 @@ mod tests {
             results_output: None,
             artifact_dir: None,
             manifest_output: None,
+            allow_debug_backend: false,
         };
         let manifest = build_manifest(&conn(), &args, raw, &config).expect("manifest should build");
 
@@ -4393,6 +4499,7 @@ mod tests {
                 user: None,
                 password_configured: false,
             },
+            backend: None,
             steps: vec![StepRecord {
                 name: "load-real10k-w4".into(),
                 kind: "load".into(),
@@ -4816,6 +4923,7 @@ mod tests {
             results_output: None,
             artifact_dir: None,
             manifest_output: None,
+            allow_debug_backend: false,
         };
         assert!(step_selected(&step, &args));
 
@@ -4864,6 +4972,7 @@ mod tests {
                 user: None,
                 password_configured: false,
             },
+            backend: None,
             steps: Vec::new(),
             threshold_results: Vec::new(),
         };
@@ -4954,6 +5063,7 @@ mod tests {
                 user: None,
                 password_configured: false,
             },
+            backend: None,
             steps: Vec::new(),
             threshold_results: Vec::new(),
         };

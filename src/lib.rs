@@ -1211,6 +1211,15 @@ fn ec_block_kernel_scoring_reset() {
 }
 
 #[pg_extern(stable)]
+fn ecaz_build_profile() -> &'static str {
+    if cfg!(debug_assertions) {
+        "debug"
+    } else {
+        "release"
+    }
+}
+
+#[pg_extern(stable)]
 #[allow(clippy::type_complexity)]
 fn ec_block_kernel_scoring_snapshot() -> TableIterator<
     'static,
