@@ -1,0 +1,11 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.18s
+     Running unittests src/lib.rs (target/debug/deps/ecaz-52f8c7085962b346)
+
+running 4 tests
+test quant::int8_approx32::tests::simd_dim_tails_are_bit_equal_with_scalar_reference ... ok
+test quant::int8_approx32::tests::block32_is_bit_equal_at_extreme_i8_values ... ok
+test quant::int8_approx32::tests::scalar_reference_matches_production_scorer_bits ... ok
+test quant::int8_approx32::tests::block32_and_partial_are_bit_equal_with_scalar_reference ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 2090 filtered out; finished in 0.06s
+

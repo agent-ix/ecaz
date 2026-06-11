@@ -1,0 +1,66 @@
+[suite:task103-int8-avx2] wrote reviews/task-103/002-int8-avx2-kernel/artifacts/suite-manifest.json
+[suite:task103-int8-avx2] wrote reviews/task-103/002-int8-avx2-kernel/artifacts/suite-manifest.json
+[suite:task103-int8-avx2] recall-hnsw-real10k-int8_approx-kernel-on -> --database postgres --host /home/peter/.pgrx --port 28818 bench recall --prefix task87_phase6_real10k_hnsw --profile ec_hnsw --k 10 --sweep 80 --queries-limit 100 --bits 4 --seed 42 --force-index --session-guc ec_hnsw.disable_binary_prefilter=on --session-guc ec_hnsw.turboquant_exact_score_mode=int8_approx --truth-cache-dir reviews/task-103/002-int8-avx2-kernel/artifacts/truth-cache --log-output reviews/task-103/002-int8-avx2-kernel/artifacts/recall-hnsw-real10k-int8_approx-kernel-on.log
+[suite:task103-int8-avx2] wrote reviews/task-103/002-int8-avx2-kernel/artifacts/suite-manifest.json
+┌───────────┬─────────┬───────────────┬──────────┬─────────────────┬──────────────────┬────────────┬────────────┬────────────┬──────────────┬────────┬─────────────┐
+│ ef_search ┆ queries ┆ recall_trials ┆ recall@k ┆ recall_ci95_low ┆ recall_ci95_high ┆ recall_p10 ┆ recall_p50 ┆ recall_p90 ┆ recall_worst ┆ ndcg@k ┆ mean q-time │
+╞═══════════╪═════════╪═══════════════╪══════════╪═════════════════╪══════════════════╪════════════╪════════════╪════════════╪══════════════╪════════╪═════════════╡
+│ 80        ┆ 100     ┆ 1000          ┆ 0.6230   ┆ 0.5925          ┆ 0.6525           ┆ 0.0000     ┆ 0.7500     ┆ 1.0000     ┆ 0.0000       ┆ 0.9319 ┆ 4.75 ms     │
+└───────────┴─────────┴───────────────┴──────────┴─────────────────┴──────────────────┴────────────┴────────────┴────────────┴──────────────┴────────┴─────────────┘
+[recall] fetching queries from task87_phase6_real10k_hnsw_queries ...
+[recall] fetching corpus from task87_phase6_real10k_hnsw_corpus ...
+[recall] computing ground truth: 100 queries vs 10000 corpus rows (dim=1536) ...
+[recall] ground truth in 1.67s
+[recall] wrote ground truth cache reviews/task-103/002-int8-avx2-kernel/artifacts/truth-cache/truth-v1-rows10000-queries100-dim1536-k10-0a53c80e2256ac7b.json
+[suite:task103-int8-avx2] wrote reviews/task-103/002-int8-avx2-kernel/artifacts/suite-manifest.json
+[suite:task103-int8-avx2] recall-hnsw-real10k-int8_approx-kernel-off -> --database postgres --host /home/peter/.pgrx --port 28818 bench recall --prefix task87_phase6_real10k_hnsw --profile ec_hnsw --k 10 --sweep 80 --queries-limit 100 --bits 4 --seed 42 --force-index --session-guc ec_hnsw.disable_binary_prefilter=on --session-guc ec_hnsw.turboquant_exact_score_mode=int8_approx --session-guc ec_hnsw.candidate_batch_scoring=off --truth-cache-dir reviews/task-103/002-int8-avx2-kernel/artifacts/truth-cache --log-output reviews/task-103/002-int8-avx2-kernel/artifacts/recall-hnsw-real10k-int8_approx-kernel-off.log
+[suite:task103-int8-avx2] wrote reviews/task-103/002-int8-avx2-kernel/artifacts/suite-manifest.json
+┌───────────┬─────────┬───────────────┬──────────┬─────────────────┬──────────────────┬────────────┬────────────┬────────────┬──────────────┬────────┬─────────────┐
+│ ef_search ┆ queries ┆ recall_trials ┆ recall@k ┆ recall_ci95_low ┆ recall_ci95_high ┆ recall_p10 ┆ recall_p50 ┆ recall_p90 ┆ recall_worst ┆ ndcg@k ┆ mean q-time │
+╞═══════════╪═════════╪═══════════════╪══════════╪═════════════════╪══════════════════╪════════════╪════════════╪════════════╪══════════════╪════════╪═════════════╡
+│ 80        ┆ 100     ┆ 1000          ┆ 0.6230   ┆ 0.5925          ┆ 0.6525           ┆ 0.0000     ┆ 0.7500     ┆ 1.0000     ┆ 0.0000       ┆ 0.9319 ┆ 4.34 ms     │
+└───────────┴─────────┴───────────────┴──────────┴─────────────────┴──────────────────┴────────────┴────────────┴────────────┴──────────────┴────────┴─────────────┘
+[recall] fetching queries from task87_phase6_real10k_hnsw_queries ...
+[recall] fetching corpus from task87_phase6_real10k_hnsw_corpus ...
+[recall] loaded ground truth cache reviews/task-103/002-int8-avx2-kernel/artifacts/truth-cache/truth-v1-rows10000-queries100-dim1536-k10-0a53c80e2256ac7b.json
+[suite:task103-int8-avx2] wrote reviews/task-103/002-int8-avx2-kernel/artifacts/suite-manifest.json
+[suite:task103-int8-avx2] latency-hnsw-real10k-int8_approx-kernel-off -> --database postgres --host /home/peter/.pgrx --port 28818 bench latency --prefix task87_phase6_real10k_hnsw --profile ec_hnsw --k 10 --concurrency 1 --iterations 300 --sweep "80,160" --bits 4 --seed 42 --force-index --cache-state task103_p002_hnsw_int8_approx_off --session-guc ec_hnsw.disable_binary_prefilter=on --session-guc ec_hnsw.turboquant_exact_score_mode=int8_approx --session-guc ec_hnsw.candidate_batch_scoring=off --task87-candidate-batch-counters --memory-sample-interval-ms 25 --log-output reviews/task-103/002-int8-avx2-kernel/artifacts/latency-hnsw-real10k-int8_approx-kernel-off.log
+[suite:task103-int8-avx2] wrote reviews/task-103/002-int8-avx2-kernel/artifacts/suite-manifest.json
+┌───────────┬───────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬───────────────────────────────────┐
+│ ef_search ┆ count ┆ mean    ┆ stddev  ┆ min     ┆ p50     ┆ p95     ┆ p99     ┆ max     ┆ cache_state                       │
+╞═══════════╪═══════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═══════════════════════════════════╡
+│ 80        ┆ 300   ┆ 4.31 ms ┆ 1.01 ms ┆ 2.42 ms ┆ 4.14 ms ┆ 6.21 ms ┆ 7.15 ms ┆ 7.45 ms ┆ task103_p002_hnsw_int8_approx_off │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 160       ┆ 300   ┆ 6.47 ms ┆ 1.39 ms ┆ 3.86 ms ┆ 6.34 ms ┆ 8.78 ms ┆ 10.4 ms ┆ 11.6 ms ┆ task103_p002_hnsw_int8_approx_off │
+└───────────┴───────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴───────────────────────────────────┘
+[task87-counters] command=latency label=ef_search=80 surface=hnsw flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=ef_search=80 surface=ivf flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=ef_search=80 surface=spire flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=ef_search=80 surface=unknown flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=ef_search=160 surface=hnsw flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=ef_search=160 surface=ivf flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=ef_search=160 surface=spire flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=ef_search=160 surface=unknown flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[suite:task103-int8-avx2] wrote reviews/task-103/002-int8-avx2-kernel/artifacts/suite-manifest.json
+[suite:task103-int8-avx2] latency-hnsw-real10k-int8_approx-kernel-on -> --database postgres --host /home/peter/.pgrx --port 28818 bench latency --prefix task87_phase6_real10k_hnsw --profile ec_hnsw --k 10 --concurrency 1 --iterations 300 --sweep "80,160" --bits 4 --seed 42 --force-index --cache-state task103_p002_hnsw_int8_approx_on --session-guc ec_hnsw.disable_binary_prefilter=on --session-guc ec_hnsw.turboquant_exact_score_mode=int8_approx --task87-candidate-batch-counters --memory-sample-interval-ms 25 --log-output reviews/task-103/002-int8-avx2-kernel/artifacts/latency-hnsw-real10k-int8_approx-kernel-on.log
+[suite:task103-int8-avx2] wrote reviews/task-103/002-int8-avx2-kernel/artifacts/suite-manifest.json
+┌───────────┬───────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬──────────────────────────────────┐
+│ ef_search ┆ count ┆ mean    ┆ stddev  ┆ min     ┆ p50     ┆ p95     ┆ p99     ┆ max     ┆ cache_state                      │
+╞═══════════╪═══════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪══════════════════════════════════╡
+│ 80        ┆ 300   ┆ 3.80 ms ┆ 0.87 ms ┆ 2.31 ms ┆ 3.63 ms ┆ 5.37 ms ┆ 6.19 ms ┆ 7.99 ms ┆ task103_p002_hnsw_int8_approx_on │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 160       ┆ 300   ┆ 5.58 ms ┆ 1.17 ms ┆ 3.60 ms ┆ 5.37 ms ┆ 7.71 ms ┆ 8.94 ms ┆ 10.4 ms ┆ task103_p002_hnsw_int8_approx_on │
+└───────────┴───────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴──────────────────────────────────┘
+[block-kernel-counters] command=latency label=ef_search=80 surface=hnsw quant=turboquant_int8 isa=avx2 flushes=111258 candidates=268446 elapsed_nanos=23795530 elapsed_ms=23.795530 kernel_flushes=111258 kernel_candidates=268446 kernel_elapsed_nanos=23795530 kernel_elapsed_ms=23.795530 scalar_flushes=0 scalar_candidates=0 scalar_elapsed_nanos=0 scalar_elapsed_ms=0.000000 width_lt8=105543 width_8_15=4353 width_16_31=1275 width_ge32=87
+[task87-counters] command=latency label=ef_search=80 surface=hnsw flushes=111258 candidates=268446 elapsed_nanos=23795530 elapsed_ms=23.795530 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=ef_search=80 surface=ivf flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=ef_search=80 surface=spire flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=ef_search=80 surface=unknown flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[block-kernel-counters] command=latency label=ef_search=160 surface=hnsw quant=turboquant_int8 isa=avx2 flushes=184755 candidates=417687 elapsed_nanos=37005872 elapsed_ms=37.005872 kernel_flushes=184755 kernel_candidates=417687 kernel_elapsed_nanos=37005872 kernel_elapsed_ms=37.005872 scalar_flushes=0 scalar_candidates=0 scalar_elapsed_nanos=0 scalar_elapsed_ms=0.000000 width_lt8=176820 width_8_15=6111 width_16_31=1713 width_ge32=111
+[task87-counters] command=latency label=ef_search=160 surface=hnsw flushes=184755 candidates=417687 elapsed_nanos=37005872 elapsed_ms=37.005872 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=ef_search=160 surface=ivf flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=ef_search=160 surface=spire flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=ef_search=160 surface=unknown flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[suite:task103-int8-avx2] wrote reviews/task-103/002-int8-avx2-kernel/artifacts/suite-manifest.json
+[suite:task103-int8-avx2] wrote reviews/task-103/002-int8-avx2-kernel/artifacts/results.jsonl
+[suite:task103-int8-avx2] wrote reviews/task-103/002-int8-avx2-kernel/artifacts/suite-manifest.json
