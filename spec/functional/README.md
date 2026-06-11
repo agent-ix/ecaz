@@ -16,3 +16,12 @@ by bounded context so new work has an obvious home.
 When moving a requirement, preserve its frontmatter `id` and update active spec,
 docs, ADR, and test-matrix links. Historical review packet prose can remain as
 the original record unless it is being republished as current evidence.
+
+New requirements should be authored as domain-typed objects in the
+parser-compatible shape: frontmatter `artifact_type: FR` plus an `object:`
+kind (`data_schema`, `process`, `configuration`, `domain`, ...) and
+`relationships:` entries with `ix://agent-ix/ecaz/...` targets, with the
+kind's anchor sections in the body (`## Schema` JSON for data_schema,
+`## Workflow` mermaid for process, `## Parameters`/`## Settings` for
+configuration). `FR-061`..`FR-074` are the reference examples. One object per
+FR; legacy `traces:`-style frontmatter is being migrated separately.

@@ -128,7 +128,21 @@ presence alone.
 | FR-057 | FR-057 ACs | TC-023, TC-024, TC-034 | Partial: executor fault/readiness matrix exists; Stage E live coverage is not complete for every fault category |
 | FR-058 | FR-058 ACs | TC-024, TC-034 | Partial: CustomScan distributed reads are implemented; lifecycle callback, mark/restore exclusion, and rescan/end-after-cancel proof remain gaps |
 | FR-059 | FR-059-AC-1..9 | TC-025, TC-034 | Partial: coordinator-routed DML baseline exists; repeated remote prepared-branch uniqueness and row-state assertions need direct evidence |
-| FR-060 | FR-060-AC-1..8 | TC-021, TC-023, TC-024, TC-025 | Partial: diagnostics and fail-closed reporting exist; operator surface drift checks and matrix-to-live coverage remain gaps |
+| FR-060 | FR-060-AC-1..9 | TC-021, TC-023, TC-024, TC-025 | Partial: diagnostics and fail-closed reporting exist; operator surface drift checks and matrix-to-live coverage remain gaps |
+| FR-061 IVF persisted format | FR-061-AC-1..3 | TC-009, TC-010 | Partial: spec-only schema transcription from `src/am/ec_ivf/page.rs`; independent-decode and rejection-path evidence remain `GAP-018`-style inventory work |
+| FR-062 DiskANN persisted format | FR-062-AC-1..3 | TC-011, TC-012 | Partial: spec-only schema transcription from `src/am/ec_diskann/{page,tuple}.rs`; rejection-path evidence inventory pending |
+| FR-063 block-kernel counter snapshot | FR-063-AC-1..3 | TC-035 | Partial: field names and label sets pinned; round-trip parity test between snapshot, log line, and results row not yet packeted |
+| FR-064 suite config schema | FR-064-AC-1..3 | TC-020 benchmark suites, TC-036 | Partial: schema documented from `SuiteConfig`; checked-in-suite parse audit not yet packeted |
+| FR-065 suite manifest schema | FR-065-AC-1..3 | TC-020 benchmark suites, TC-036 | Partial: schema documented from `SuiteManifest`; backend-preflight proof shares TC-036 gaps |
+| FR-066 suite results row schema | FR-066-AC-1..3 | TC-020 benchmark suites, TC-033, TC-035 | Partial: row shape documented from `ResultRow`; FR-063 field-parity test not yet packeted |
+| FR-067 DiskANN scan pipeline | FR-067-AC-1..3 | TC-011, TC-035 | Partial: stage decomposition specified; batch-on/off A/B and stage-attribution packet evidence pending |
+| FR-068 IVF scan pipeline | FR-068-AC-1..3 | TC-010, TC-035 | Partial: stage decomposition specified; pruning-vs-batch axis evidence pending |
+| FR-069 IVF parallel build | FR-069-AC-1..3 | TC-009, TC-016 | Partial: protocol specified; serial/parallel equivalence evidence lives with FR-031-AC-4 fixtures |
+| FR-070 suite run lifecycle | FR-070-AC-1..3 | TC-020 benchmark suites, TC-036 | Partial: ordering guarantees specified; preflight/resume CLI evidence shares TC-036 gaps |
+| FR-071 HNSW configuration | FR-071-AC-1..2 | TC-004, TC-035 | Partial: GUC/reloption inventory matches `register_gucs()` at authoring time; drift audit not automated |
+| FR-072 IVF configuration | FR-072-AC-1..2 | TC-010 | Partial: inventory matches `register_gucs()` at authoring time, including Task 51 adaptive/SoA switches; drift audit not automated |
+| FR-073 DiskANN configuration | FR-073-AC-1..2 | TC-011 | Partial: inventory matches `register_gucs()` at authoring time, including candidate_batch_scoring and scan_profile_notice; drift audit not automated |
+| FR-074 QuantCodec scoring contract | FR-074-AC-1..3 | TC-035 | Partial: trait surface pinned from `src/am/common/quant_codec.rs`; cross-AM adapter audit shares the FR-015-AC-10 gap |
 | FR-044 | FR-044-AC-1..4 | TC-026, TC-030 | Planned: cloud command surface and idempotence |
 | FR-045 | FR-045-AC-1..4 | TC-027 | Planned: terraform module and profile selection |
 | FR-046 | FR-046-AC-1..3 | TC-028 | Planned: dataset registry and parquet staging |
