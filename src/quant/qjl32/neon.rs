@@ -31,6 +31,34 @@ pub(super) fn score_block32_neon(
     scalar::score_block32_scalar(quantizer, prepared, codes, gammas, out_scores)
 }
 
+/// NEON octet entry for the 8-31-candidate remainder band of the width
+/// cascade — the aarch64 counterpart of `avx2::score_octet8_avx2`. Without
+/// it the remainder fell back to scalar on Apple silicon (Task 104 packet
+/// 007 reviewer finding: 8-15/16-31-wide flushes carried the bulk of the
+/// HNSW/SPIRE QJL kernel-on scalar share).
+pub(super) fn score_octet8_neon(
+    quantizer: &ProdQuantizer,
+    prepared: &PreparedQuery,
+    codes: &[&[u8]; OCTET_WIDTH],
+    gammas: &[f32; OCTET_WIDTH],
+    out_scores: &mut [f32],
+) -> Option<Isa> {
+    #[cfg(target_arch = "aarch64")]
+    {
+        if is_aarch64_feature_detected!("neon") {
+            // SAFETY: runtime feature detection above guarantees NEON support,
+            // and callers validate qjl32 shapes before dispatch.
+            unsafe {
+                score_octet8_candidate_parallel_neon(quantizer, prepared, codes, gammas, out_scores)
+            };
+            return Some(Isa::Neon);
+        }
+    }
+
+    let _ = (quantizer, prepared, codes, gammas, out_scores);
+    None
+}
+
 #[cfg(test)]
 pub(super) fn score_block32_neon_for_test(
     quantizer: &ProdQuantizer,
@@ -65,6 +93,46 @@ pub(super) fn score_block32_neon_for_test(
 /// 8-entry 3-bit codebook lives in a 32-byte tbl register pair, so the
 /// per-dimension codebook gather is a `vqtbl2q_u8` byte shuffle (the
 /// NEON analogue of `_mm256_permutevar8x32_ps`) instead of scalar loads.
+/// Load the eight-entry 3-bit codebook into the 32-byte tbl register pair.
+///
+/// # Safety
+/// Requires NEON and a codebook of exactly eight f32s.
+#[cfg(target_arch = "aarch64")]
+#[target_feature(enable = "neon")]
+unsafe fn load_codebook_table(quantizer: &ProdQuantizer) -> std::arch::aarch64::uint8x16x2_t {
+    use std::arch::aarch64::{uint8x16x2_t, vld1q_u8};
+
+    debug_assert_eq!(quantizer.codebook.len(), 8);
+    // SAFETY: the 3-bit lane codebook is exactly eight contiguous f32s,
+    // reinterpreted as the 32-byte tbl source.
+    let table_bytes = std::slice::from_raw_parts(quantizer.codebook.as_ptr().cast::<u8>(), 32);
+    uint8x16x2_t(
+        vld1q_u8(table_bytes.as_ptr()),
+        vld1q_u8(table_bytes.as_ptr().add(16)),
+    )
+}
+
+#[cfg(target_arch = "aarch64")]
+#[target_feature(enable = "neon")]
+unsafe fn score_octet8_candidate_parallel_neon(
+    quantizer: &ProdQuantizer,
+    prepared: &PreparedQuery,
+    codes: &[&[u8]; OCTET_WIDTH],
+    gammas: &[f32; OCTET_WIDTH],
+    out_scores: &mut [f32],
+) {
+    let cb_table = load_codebook_table(quantizer);
+    score_octet_candidate_parallel_neon(
+        quantizer,
+        prepared,
+        codes.as_slice(),
+        gammas.as_slice(),
+        out_scores,
+        0,
+        cb_table,
+    );
+}
+
 #[cfg(target_arch = "aarch64")]
 #[target_feature(enable = "neon")]
 unsafe fn score_block32_candidate_parallel_neon(
@@ -74,17 +142,7 @@ unsafe fn score_block32_candidate_parallel_neon(
     gammas: &[f32; BLOCK_WIDTH],
     out_scores: &mut [f32],
 ) {
-    use std::arch::aarch64::{uint8x16x2_t, vld1q_u8};
-
-    debug_assert_eq!(quantizer.codebook.len(), 8);
-    // SAFETY: the 3-bit lane codebook is exactly eight contiguous f32s,
-    // reinterpreted as the 32-byte tbl source.
-    let table_bytes =
-        std::slice::from_raw_parts(quantizer.codebook.as_ptr().cast::<u8>(), 32);
-    let cb_table = uint8x16x2_t(
-        vld1q_u8(table_bytes.as_ptr()),
-        vld1q_u8(table_bytes.as_ptr().add(16)),
-    );
+    let cb_table = load_codebook_table(quantizer);
 
     let mut block_lane = 0usize;
     while block_lane < BLOCK_WIDTH {
