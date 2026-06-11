@@ -5,6 +5,8 @@ use crate::quant::prod::{PreparedQuery, ProdQuantizer};
 #[cfg(target_arch = "aarch64")]
 use std::arch::is_aarch64_feature_detected;
 
+const OCTET_WIDTH: usize = 8;
+
 pub(super) fn score_block32_neon(
     quantizer: &ProdQuantizer,
     prepared: &PreparedQuery,
@@ -17,10 +19,11 @@ pub(super) fn score_block32_neon(
         if is_aarch64_feature_detected!("neon") {
             // SAFETY: runtime feature detection above guarantees NEON support,
             // and callers validate qjl32 shapes before dispatch.
-            for lane in 0..BLOCK_WIDTH {
-                out_scores[lane] =
-                    unsafe { score_candidate_neon(quantizer, prepared, codes[lane], gammas[lane]) };
-            }
+            unsafe {
+                score_block32_candidate_parallel_neon(
+                    quantizer, prepared, codes, gammas, out_scores,
+                )
+            };
             return Isa::Neon;
         }
     }
@@ -41,10 +44,11 @@ pub(super) fn score_block32_neon_for_test(
         if is_aarch64_feature_detected!("neon") {
             // SAFETY: runtime feature detection above guarantees NEON support;
             // test fixtures use the same validated shapes as the public block path.
-            for lane in 0..BLOCK_WIDTH {
-                out_scores[lane] =
-                    unsafe { score_candidate_neon(quantizer, prepared, codes[lane], gammas[lane]) };
-            }
+            unsafe {
+                score_block32_candidate_parallel_neon(
+                    quantizer, prepared, codes, gammas, out_scores,
+                )
+            };
             return Some(Isa::Neon);
         }
     }
@@ -53,103 +57,177 @@ pub(super) fn score_block32_neon_for_test(
     None
 }
 
+/// Candidate-parallel qjl32 block kernel (Task 104). Mirrors the AVX2
+/// octet design: candidates occupy vector lanes and dimensions iterate
+/// sequentially, so each candidate keeps the scalar accumulation order
+/// (separate multiply and add roundings, one accumulator per lane) and
+/// stays inside the family's 4-ulp pre-slice tolerance contract. The
+/// 8-entry 3-bit codebook lives in a 32-byte tbl register pair, so the
+/// per-dimension codebook gather is a `vqtbl2q_u8` byte shuffle (the
+/// NEON analogue of `_mm256_permutevar8x32_ps`) instead of scalar loads.
 #[cfg(target_arch = "aarch64")]
 #[target_feature(enable = "neon")]
-unsafe fn score_candidate_neon(
+unsafe fn score_block32_candidate_parallel_neon(
     quantizer: &ProdQuantizer,
     prepared: &PreparedQuery,
-    code: &[u8],
-    gamma: f32,
-) -> f32 {
-    let (mse_packed, qjl_packed) = super::split_qjl_code_bytes(quantizer.original_dim, code);
-    let shifts = [0_u32, 3, 6, 9, 12, 15, 18, 21];
-    let mut products = [0.0_f32; 4];
-    let mut mse_sum = 0.0_f32;
-    let mut qjl_sum = 0.0_f32;
+    codes: &[&[u8]; BLOCK_WIDTH],
+    gammas: &[f32; BLOCK_WIDTH],
+    out_scores: &mut [f32],
+) {
+    use std::arch::aarch64::{uint8x16x2_t, vld1q_u8};
+
+    debug_assert_eq!(quantizer.codebook.len(), 8);
+    // SAFETY: the 3-bit lane codebook is exactly eight contiguous f32s,
+    // reinterpreted as the 32-byte tbl source.
+    let table_bytes =
+        std::slice::from_raw_parts(quantizer.codebook.as_ptr().cast::<u8>(), 32);
+    let cb_table = uint8x16x2_t(
+        vld1q_u8(table_bytes.as_ptr()),
+        vld1q_u8(table_bytes.as_ptr().add(16)),
+    );
+
+    let mut block_lane = 0usize;
+    while block_lane < BLOCK_WIDTH {
+        score_octet_candidate_parallel_neon(
+            quantizer,
+            prepared,
+            codes.as_slice(),
+            gammas.as_slice(),
+            out_scores,
+            block_lane,
+            cb_table,
+        );
+        block_lane += OCTET_WIDTH;
+    }
+}
+
+#[cfg(target_arch = "aarch64")]
+#[target_feature(enable = "neon")]
+unsafe fn score_octet_candidate_parallel_neon(
+    quantizer: &ProdQuantizer,
+    prepared: &PreparedQuery,
+    codes: &[&[u8]],
+    gammas: &[f32],
+    out_scores: &mut [f32],
+    block_lane: usize,
+    cb_table: std::arch::aarch64::uint8x16x2_t,
+) {
+    use std::arch::aarch64::{
+        vaddq_f32, vaddq_u32, vandq_u32, vbslq_f32, vceqq_u32, vdupq_n_f32, vdupq_n_s32,
+        vdupq_n_u32, vld1q_f32, vld1q_u32, vmulq_f32, vmulq_u32, vqtbl2q_u8,
+        vreinterpretq_f32_u8, vreinterpretq_u8_u32, vshlq_n_u32, vshlq_u32, vst1q_f32,
+    };
+
+    let mut mse_codes = [&[][..]; OCTET_WIDTH];
+    let mut qjl_codes = [&[][..]; OCTET_WIDTH];
+    for lane in 0..OCTET_WIDTH {
+        let (mse_packed, qjl_packed) =
+            super::split_qjl_code_bytes(quantizer.original_dim, codes[block_lane + lane]);
+        mse_codes[lane] = mse_packed;
+        qjl_codes[lane] = qjl_packed;
+    }
+
+    let mask7 = vdupq_n_u32(0x7);
+    let bit1 = vdupq_n_u32(1);
+    let byte_spread = vdupq_n_u32(0x0101_0101);
+    let byte_offsets = vdupq_n_u32(0x0302_0100);
+    let one = vdupq_n_f32(1.0);
+    let neg_one = vdupq_n_f32(-1.0);
+
+    let mut mse_acc0 = vdupq_n_f32(0.0);
+    let mut mse_acc1 = vdupq_n_f32(0.0);
+    let mut qjl_acc0 = vdupq_n_f32(0.0);
+    let mut qjl_acc1 = vdupq_n_f32(0.0);
+
     let mut dim_index = 0usize;
-
     while dim_index + 8 <= quantizer.original_dim {
-        let word = decode_eight_3bit_aligned_word(mse_packed, dim_index);
-        let indices = [
-            ((word >> shifts[0]) & 0x7) as usize,
-            ((word >> shifts[1]) & 0x7) as usize,
-            ((word >> shifts[2]) & 0x7) as usize,
-            ((word >> shifts[3]) & 0x7) as usize,
-            ((word >> shifts[4]) & 0x7) as usize,
-            ((word >> shifts[5]) & 0x7) as usize,
-            ((word >> shifts[6]) & 0x7) as usize,
-            ((word >> shifts[7]) & 0x7) as usize,
-        ];
-        let signs = qjl_sign_lanes(qjl_packed[dim_index / 8]);
+        let mut words = [0_u32; OCTET_WIDTH];
+        let mut sign_bytes = [0_u32; OCTET_WIDTH];
+        for lane in 0..OCTET_WIDTH {
+            words[lane] = decode_eight_3bit_aligned_word(mse_codes[lane], dim_index);
+            sign_bytes[lane] = u32::from(qjl_codes[lane][dim_index / 8]);
+        }
+        let words_lo = vld1q_u32(words.as_ptr());
+        let words_hi = vld1q_u32(words.as_ptr().add(4));
+        let signs_lo = vld1q_u32(sign_bytes.as_ptr());
+        let signs_hi = vld1q_u32(sign_bytes.as_ptr().add(4));
 
-        accumulate_four_neon(
-            &mut mse_sum,
-            [
-                quantizer.codebook[indices[0]],
-                quantizer.codebook[indices[1]],
-                quantizer.codebook[indices[2]],
-                quantizer.codebook[indices[3]],
-            ],
-            &prepared.rotated[dim_index..dim_index + 4],
-            &mut products,
-        );
-        accumulate_four_neon(
-            &mut qjl_sum,
-            [signs[0], signs[1], signs[2], signs[3]],
-            &prepared.sq[dim_index..dim_index + 4],
-            &mut products,
-        );
-        accumulate_four_neon(
-            &mut mse_sum,
-            [
-                quantizer.codebook[indices[4]],
-                quantizer.codebook[indices[5]],
-                quantizer.codebook[indices[6]],
-                quantizer.codebook[indices[7]],
-            ],
-            &prepared.rotated[dim_index + 4..dim_index + 8],
-            &mut products,
-        );
-        accumulate_four_neon(
-            &mut qjl_sum,
-            [signs[4], signs[5], signs[6], signs[7]],
-            &prepared.sq[dim_index + 4..dim_index + 8],
-            &mut products,
-        );
+        for subdim in 0..8 {
+            let index_shift = vdupq_n_s32(-((subdim * 3) as i32));
+            let sign_shift = vdupq_n_s32(-(subdim as i32));
+
+            let idx_lo = vandq_u32(vshlq_u32(words_lo, index_shift), mask7);
+            let idx_hi = vandq_u32(vshlq_u32(words_hi, index_shift), mask7);
+            let bytes_lo = vaddq_u32(
+                vmulq_u32(vshlq_n_u32::<2>(idx_lo), byte_spread),
+                byte_offsets,
+            );
+            let bytes_hi = vaddq_u32(
+                vmulq_u32(vshlq_n_u32::<2>(idx_hi), byte_spread),
+                byte_offsets,
+            );
+            let cb_lo =
+                vreinterpretq_f32_u8(vqtbl2q_u8(cb_table, vreinterpretq_u8_u32(bytes_lo)));
+            let cb_hi =
+                vreinterpretq_f32_u8(vqtbl2q_u8(cb_table, vreinterpretq_u8_u32(bytes_hi)));
+
+            let absolute = dim_index + subdim;
+            let rotated = vdupq_n_f32(*prepared.rotated.get_unchecked(absolute));
+            mse_acc0 = vaddq_f32(mse_acc0, vmulq_f32(cb_lo, rotated));
+            mse_acc1 = vaddq_f32(mse_acc1, vmulq_f32(cb_hi, rotated));
+
+            let bit_lo = vandq_u32(vshlq_u32(signs_lo, sign_shift), bit1);
+            let bit_hi = vandq_u32(vshlq_u32(signs_hi, sign_shift), bit1);
+            let sign_lo = vbslq_f32(vceqq_u32(bit_lo, bit1), one, neg_one);
+            let sign_hi = vbslq_f32(vceqq_u32(bit_hi, bit1), one, neg_one);
+            let sq = vdupq_n_f32(*prepared.sq.get_unchecked(absolute));
+            qjl_acc0 = vaddq_f32(qjl_acc0, vmulq_f32(sign_lo, sq));
+            qjl_acc1 = vaddq_f32(qjl_acc1, vmulq_f32(sign_hi, sq));
+        }
 
         dim_index += 8;
     }
 
     while dim_index < quantizer.original_dim {
-        let centroid_index = scalar::mse_index_at_3bit(mse_packed, dim_index);
-        mse_sum += quantizer.codebook[centroid_index] * prepared.rotated[dim_index];
-        qjl_sum += if scalar::qjl_sign_at(qjl_packed, dim_index) {
-            prepared.sq[dim_index]
-        } else {
-            -prepared.sq[dim_index]
-        };
+        let mut cb_values = [0.0_f32; OCTET_WIDTH];
+        let mut sign_values = [0.0_f32; OCTET_WIDTH];
+        for lane in 0..OCTET_WIDTH {
+            cb_values[lane] =
+                quantizer.codebook[scalar::mse_index_at_3bit(mse_codes[lane], dim_index)];
+            sign_values[lane] = if scalar::qjl_sign_at(qjl_codes[lane], dim_index) {
+                1.0
+            } else {
+                -1.0
+            };
+        }
+        let rotated = vdupq_n_f32(prepared.rotated[dim_index]);
+        mse_acc0 = vaddq_f32(mse_acc0, vmulq_f32(vld1q_f32(cb_values.as_ptr()), rotated));
+        mse_acc1 = vaddq_f32(
+            mse_acc1,
+            vmulq_f32(vld1q_f32(cb_values.as_ptr().add(4)), rotated),
+        );
+        let sq = vdupq_n_f32(prepared.sq[dim_index]);
+        qjl_acc0 = vaddq_f32(qjl_acc0, vmulq_f32(vld1q_f32(sign_values.as_ptr()), sq));
+        qjl_acc1 = vaddq_f32(
+            qjl_acc1,
+            vmulq_f32(vld1q_f32(sign_values.as_ptr().add(4)), sq),
+        );
         dim_index += 1;
     }
 
-    mse_sum + gamma * prepared.qjl_scale * qjl_sum
-}
-
-#[cfg(target_arch = "aarch64")]
-#[target_feature(enable = "neon")]
-unsafe fn accumulate_four_neon(
-    sum: &mut f32,
-    left: [f32; 4],
-    right: &[f32],
-    products: &mut [f32; 4],
-) {
-    use std::arch::aarch64::{vld1q_f32, vmulq_f32, vst1q_f32};
-
-    let left = vld1q_f32(left.as_ptr());
-    let right = vld1q_f32(right.as_ptr());
-    vst1q_f32(products.as_mut_ptr(), vmulq_f32(left, right));
-    for product in products {
-        *sum += *product;
-    }
+    let qjl_scale = vdupq_n_f32(prepared.qjl_scale);
+    let gamma_lo = vld1q_f32(gammas.as_ptr().add(block_lane));
+    let gamma_hi = vld1q_f32(gammas.as_ptr().add(block_lane + 4));
+    let weight_lo = vmulq_f32(gamma_lo, qjl_scale);
+    let weight_hi = vmulq_f32(gamma_hi, qjl_scale);
+    vst1q_f32(
+        out_scores.as_mut_ptr().add(block_lane),
+        vaddq_f32(mse_acc0, vmulq_f32(weight_lo, qjl_acc0)),
+    );
+    vst1q_f32(
+        out_scores.as_mut_ptr().add(block_lane + 4),
+        vaddq_f32(mse_acc1, vmulq_f32(weight_hi, qjl_acc1)),
+    );
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -163,26 +241,4 @@ fn decode_eight_3bit_aligned_word(packed: &[u8], dim_index: usize) -> u32 {
         packed[byte_index + 2],
         0,
     ])
-}
-
-#[cfg(target_arch = "aarch64")]
-#[inline]
-fn qjl_sign_lanes(byte: u8) -> &'static [f32; 8] {
-    static LUT: [[f32; 8]; 256] = build_qjl_sign_lut();
-    &LUT[byte as usize]
-}
-
-#[cfg(target_arch = "aarch64")]
-const fn build_qjl_sign_lut() -> [[f32; 8]; 256] {
-    let mut lut = [[0.0; 8]; 256];
-    let mut byte = 0usize;
-    while byte < 256 {
-        let mut lane = 0usize;
-        while lane < 8 {
-            lut[byte][lane] = if ((byte >> lane) & 1) == 1 { 1.0 } else { -1.0 };
-            lane += 1;
-        }
-        byte += 1;
-    }
-    lut
 }
