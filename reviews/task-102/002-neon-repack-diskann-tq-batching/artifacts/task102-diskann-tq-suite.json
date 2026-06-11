@@ -1,0 +1,127 @@
+{
+  "name": "task102-diskann-tq",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-102/002-neon-repack-diskann-tq-batching/artifacts",
+  "defaults": {
+    "pg": 18,
+    "bits": 4,
+    "seed": 42,
+    "queries_limit": 64,
+    "iterations": 200,
+    "force_index": true,
+    "sample_backend_memory": false
+  },
+  "steps": [
+    {
+      "kind": "raw",
+      "name": "generate-diskann-tq-2k-corpus",
+      "tags": ["task102", "fixture", "generate", "corpus"],
+      "args": [
+        "corpus",
+        "generate",
+        "--output",
+        "reviews/task-102/002-neon-repack-diskann-tq-batching/artifacts/task102_diskann_tq_2k_corpus.tsv",
+        "--n",
+        "2000",
+        "--dim",
+        "1536",
+        "--seed",
+        "10201",
+        "--kind",
+        "corpus"
+      ],
+      "expected_artifacts": [
+        "reviews/task-102/002-neon-repack-diskann-tq-batching/artifacts/task102_diskann_tq_2k_corpus.tsv"
+      ]
+    },
+    {
+      "kind": "raw",
+      "name": "generate-diskann-tq-2k-queries",
+      "tags": ["task102", "fixture", "generate", "queries"],
+      "args": [
+        "corpus",
+        "generate",
+        "--output",
+        "reviews/task-102/002-neon-repack-diskann-tq-batching/artifacts/task102_diskann_tq_2k_queries.tsv",
+        "--n",
+        "64",
+        "--dim",
+        "1536",
+        "--seed",
+        "10202",
+        "--kind",
+        "queries"
+      ],
+      "expected_artifacts": [
+        "reviews/task-102/002-neon-repack-diskann-tq-batching/artifacts/task102_diskann_tq_2k_queries.tsv"
+      ]
+    },
+    {
+      "kind": "load",
+      "name": "load-diskann-tq-2k",
+      "tags": ["task102", "fixture", "diskann", "turboquant", "synthetic2k"],
+      "prefix": "task102_diskann_tq_2k",
+      "profile": "ec_diskann",
+      "storage_format": "turboquant",
+      "bits": 4,
+      "dim": 1536,
+      "corpus_file": "reviews/task-102/002-neon-repack-diskann-tq-batching/artifacts/task102_diskann_tq_2k_corpus.tsv",
+      "queries_file": "reviews/task-102/002-neon-repack-diskann-tq-batching/artifacts/task102_diskann_tq_2k_queries.tsv",
+      "log_file": "${artifact_dir}/load-diskann-tq-2k.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-diskann-tq-2k-kernel-on",
+      "tags": ["task102", "local", "diskann", "turboquant", "synthetic2k", "kernel_on", "quant=turboquant", "isa=avx2"],
+      "prefix": "task102_diskann_tq_2k",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [64],
+      "queries_limit": 64,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "log_output": "${artifact_dir}/recall-diskann-tq-2k-kernel-on.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-diskann-tq-2k-kernel-off",
+      "tags": ["task102", "local", "diskann", "turboquant", "synthetic2k", "kernel_off", "quant=turboquant"],
+      "prefix": "task102_diskann_tq_2k",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [64],
+      "queries_limit": 64,
+      "session_gucs": ["ec_diskann.candidate_batch_scoring=off"],
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "log_output": "${artifact_dir}/recall-diskann-tq-2k-kernel-off.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-diskann-tq-2k-kernel-on",
+      "tags": ["task102", "local", "diskann", "turboquant", "synthetic2k", "kernel_on", "quant=turboquant", "isa=avx2"],
+      "prefix": "task102_diskann_tq_2k",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [64, 128],
+      "iterations": 200,
+      "concurrency": 1,
+      "cache_state": "task102_diskann_tq_2k_on",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-diskann-tq-2k-kernel-on.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-diskann-tq-2k-kernel-off",
+      "tags": ["task102", "local", "diskann", "turboquant", "synthetic2k", "kernel_off", "quant=turboquant"],
+      "prefix": "task102_diskann_tq_2k",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [64, 128],
+      "iterations": 200,
+      "concurrency": 1,
+      "session_gucs": ["ec_diskann.candidate_batch_scoring=off"],
+      "cache_state": "task102_diskann_tq_2k_off",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-diskann-tq-2k-kernel-off.log"
+    }
+  ]
+}

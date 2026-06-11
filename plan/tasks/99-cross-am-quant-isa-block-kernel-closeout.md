@@ -182,6 +182,18 @@ accurately represents what shipped.
   vpmaddubsw named for int8). Key profile fact: HNSW exact-mode payoff is
   governed by partial-width behavior — >=32-wide flushes are <0.1% of the
   distribution at 10k/50k/100k.
+
+- Quantized-LUT (u8 fast-scan) lut32 variant — **deferred indefinitely**
+  (operator decision 2026-06-10, recorded ahead of the Graviton 4 evidence
+  pass; carry into ADR-077). Rationale: (a) it breaks the byte-equal recall
+  regime — it would need the ADR-076 tolerance + forced-scalar-anchor lane;
+  (b) post-Task-102 the lut32 lane is no longer scoring-dominated (235
+  ns/candidate AVX2; ~2.4 ms of SPIRE's 8.5 ms p50), so the residual
+  end-to-end upside is ~20%; (c) landing it after the G4 pass would change
+  the lut32 kernel inner loop and invalidate the paid lut32 ARM evidence.
+  Any revisit routes through this task's index × quant × mode profile data
+  and a new confirmed task, and must land **before** — never after — an ARM
+  evidence trip.
 ## Coordination
 
 - **Depends on Tasks 87, 91, 92, 93, 94, 95, 96, 97, 98** all
