@@ -1,7 +1,7 @@
 # Task 99: Cross-(AM × Quant × ISA) Block Kernel Completeness Closeout
 
-Status: proposed (2026-06-08)
-Owner: coder (to be assigned). One coder.
+Status: in progress (2026-06-11)
+Owner: coder (assigned 2026-06-11: the Task 102/103 author). One coder.
 Priority: 2 (project-level closeout for the kernel-completeness initiative)
 
 ## Why
