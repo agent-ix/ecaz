@@ -27,3 +27,16 @@ gates); clippy pg18 -D warnings clean. No shared/x86 code touched — Task
 Review focus: (1) the accumulation-order argument for the tolerance
 contract; (2) the byte-index construction for vqtbl2q ((idx<<2)*0x01010101
 + 0x03020100); (3) the scalar tail keeping per-lane dim order.
+
+## 2026-06-11 response to feedback seq 1 (P1: remainder scalar fallback)
+
+Accepted and fixed in `5c44d9f45`: `score_octet8_neon` exposed from the
+existing candidate-parallel octet implementation and the driver remainder
+routed through ISA-dispatched `score_turboquant_qjl_octet8` (SVE ladder
+positions take the NEON octet; sub-8 stays scalar by the cascade design,
+matching the other families). Octet parity test widened to the dispatched
+entry. Re-measured in the octet-round artifacts (see manifest addendum):
+batch-surface scalar fallback is eliminated — remaining scalar rows are
+the one-off path (empty width histograms) plus ~10 sub-8 flushes on IVF —
+and HNSW QJL e2e moves from neutral to -17.4%/-13.5%. Packet 008's matrix
+and AC3 wording updated to attribute the one-off path explicitly.

@@ -22,11 +22,23 @@ Acceptance criteria status:
    SPIRE PqFastScan, DiskANN TQ @1024).
 5. Kernel code changes are on the branch awaiting review/merge to main
    BEFORE the G4 trip: `16133580a` (qjl32 prod-scorer alignment),
-   `f88c640d3` (qjl32 NEON block kernel), `d1235077c` (suite-runner
-   retired marker). aarch64-only; no Intel re-run required.
+   `f88c640d3` (qjl32 NEON block kernel), `5c44d9f45` (NEON octet
+   remainder routing), `d1235077c` (suite-runner retired marker).
+   aarch64-only except the remainder-dispatch rename in candidate_batch
+   (pure rename on the x86 path); no Intel re-run required.
 6. Matrix citable from Task 99 — `m5-index-quant-option-matrix.md`.
 
 Open findings handed to Task 99: SPIRE PqFastScan structurally absent
 end-to-end (product gap); HNSW/DiskANN grouped-PQ batch engagement gaps
-(Task 94/101 lane); HNSW QJL exact path is one-off dominated (batch
-neutral end-to-end).
+(Task 94/101 lane).
+
+## 2026-06-11 update after packet 007 feedback seq 1
+
+The qjl32 remainder band now routes through the NEON octet
+(`5c44d9f45`); AC3/AC4 re-verified on the packet 007 octet-round
+artifacts — no batch-side scalar fallback remains (residual `isa=scalar`
+rows are the one-off path with empty width histograms, plus sub-8
+flushes by cascade design), HNSW QJL e2e moved from neutral to
+-17.4%/-13.5%, recall unchanged at every cell. The matrix doc gained an
+attribution note spelling out the one-off-row semantics the reviewer
+flagged.

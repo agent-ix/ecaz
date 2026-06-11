@@ -39,3 +39,27 @@
   - Recall identical to packet 006 pre-fix values at every cell
     (tolerance lane holds; 4-ulp unit gates in packet 001 cover the
     kernel contract).
+
+## Octet-round addendum (response to 2026-06-11-01-reviewer P1)
+
+- Code: `5c44d9f45` — NEON octet entry (`score_octet8_neon`) + ISA-dispatched
+  remainder routing (`score_turboquant_qjl_octet8`); the 8-31-candidate
+  remainder band no longer breaks to scalar on aarch64.
+- Backend: fresh release install, dylib sha256
+  `fda206bea488fb9bb2cca666c1873c1e11a08ea8eb8f817ce51bf1e5f1e85bfb`
+  (`install-ecaz-pg18-octet.log`), postmaster restarted, probe
+  `build-profile-probe-octet.log` = release.
+- SuiteConfig: `task104-qjl32-neon-octet-suite.json` (14 cells; manifest
+  `suite-manifest-octet.json`, results `results-octet.jsonl`).
+- Batch-surface scalar fallback eliminated:
+  - HNSW kernel-on: kernel candidates 2,944/3,040 -> 113,488/182,952 with
+    the 8-15/16-31 width buckets now on the `isa=neon` row (168.3-168.9
+    ns/c); remaining scalar rows (27,878/44,662) carry empty width
+    histograms — the genuine one-off (non-batch) scoring path.
+  - SPIRE kernel-on: scalar 21,190/43,065 -> 5,334/10,849 (one-off only).
+  - IVF batch-on: scalar 4,620/4,266 -> 1,156/978 (one-offs plus 9-10
+    sub-8 flushes; sub-8 stays scalar by the width-cascade design).
+- e2e p50 batch-on vs off: HNSW 1.09/2.18 vs 1.32/2.52 ms
+  (-17.4%/-13.5%, previously neutral); IVF 0.35/0.53 vs 0.67/1.18 ms
+  (-47.8%/-55.1%); SPIRE 3.72/6.58 vs 3.94/7.26 ms (-5.6%/-9.4%).
+- Recall identical to the pre-fix and postfix rounds at every cell.

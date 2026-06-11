@@ -11,7 +11,9 @@ columns.
 - Backend SHAs: packets 002–006 measured at dylib
   `11cc8654…` (head `16133580a`, pre block-kernel rewrite); packet 007
   re-measured the QJL lanes at dylib `a11db8fb…` (head `f88c640d3`,
-  candidate-parallel qjl32 NEON kernel).
+  candidate-parallel qjl32 NEON kernel) and again at dylib `fda206be…`
+  (head `5c44d9f45`, NEON octet remainder routing — the octet round is
+  the citable QJL state).
 - Fixtures: real dbpedia 10k @1536-dim (staged `task31_m5_dbpedia_staged`),
   synthetic isotropic 10k @1024-dim for the QJL lanes (packet 006
   fixtures, seeds 10401/10402). One index per table, `task104_*` prefixes.
@@ -32,20 +34,29 @@ Gate: kernel-on cell ≥1.5× the same-head non-batch anchor. Kernel rows
 all report `isa=neon`, `scalar_candidates=0`, width histograms recorded
 (IVF example: 1158 ge32 flushes vs 27 sub-32 at nprobe=8).
 
+Attribution note (packet 007 review): "scalar_candidates=0" holds on the
+batch-surface kernel rows. Kernel-on cells additionally record a separate
+`isa=scalar` one-off row — the non-batch scoring path (rerank, entry
+distances), identifiable by its empty width histogram — which doubles as
+the same-cell floor-gate anchor. After the qjl32 NEON octet routing
+(`5c44d9f45`) no family leaks batch remainder flushes to scalar on the
+M5; the only by-design scalar batch work is sub-8 flushes (cascade-wide
+convention).
+
 | AM | quant lane | kernel ns/c (neon) | anchor ns/c | ratio | gate |
 | --- | --- | ---: | ---: | ---: | --- |
 | IVF | TQ no-QJL 4-bit (lut32, full-LUT) | 221.3–221.9 | 880.9–912.9 | ~4.1× | PASS |
 | IVF | grouped-PQ (PqFastScan) | 30.4–30.9 | — (kernel-dominant, 980k cand) | ≫1.5× vs 891 ns/c TQ-class one-off | PASS |
 | IVF | RaBitQ bits=1 | 63.9–64.1 | — (kernel-dominant) | ≫1.5× (Task 93 M5 anchors: NEON 2.7–5.8×) | PASS |
-| IVF | TQ-QJL @1024 (post-fix) | 167.3–168.3 | 581.9–582.7 | ~3.5× | PASS (was 0.83× pre-fix) |
+| IVF | TQ-QJL @1024 (octet round) | 167.9–168.6 | 585.1–602.3 | ~3.5× | PASS (was 0.83× pre-fix); residual scalar = one-offs + 9–10 sub-8 flushes (sub-8 stays scalar by cascade design across families) |
 | HNSW | TQ full_lut (lut32 repack, Task 102) | 494.9 avg | 903.3 avg | **1.83×** | PASS — repack did NOT regress; no revert-to-v1 |
 | HNSW | TQ int8_approx (int8_approx32) | 99–105 | — (kernel-dominant) | ≫1.5× (fastest HNSW exact mode on M5) | PASS |
 | HNSW | TQ tiled_lut | — (NEON path is a scalar-delegating stub; 100% scalar at 1339.6 ns/c) | — | — | **retired confirmed** (47–48% slower than full_lut on Intel per Task 103; on M5 it has no kernel at all) |
 | HNSW | RaBitQ (bits-1 sidecar) | ~65 | — (kernel-dominant) | ≫1.5× (Task 93) | PASS |
 | HNSW | grouped-PQ | no batch engagement observed (counters zero with prefilter disabled) | — | — | **coverage gap recorded** — Task 94/101 sub-width backport lane, see notes |
-| HNSW | TQ-QJL @1024 (post-fix) | 183.0–184.5 | 583.8–585.1 | ~3.2× | PASS (kernel share small on this path — ~3k batch vs ~138–225k one-off candidates; e2e neutral) |
+| HNSW | TQ-QJL @1024 (octet round) | 168.3–168.9 | 581.5–584.8 | ~3.5× | PASS — after the NEON octet remainder routing (`5c44d9f45`) the batch surface carries 113k–183k candidates at `isa=neon` with zero batch-side scalar fallback; remaining scalar rows are the one-off path (empty width histograms) |
 | SPIRE | TQ no-QJL 4-bit | 226.8 avg | 818.8 avg | 3.61× | PASS |
-| SPIRE | TQ-QJL @1024 (post-fix) | 168.6–169.3 | 585.8–589.7 | ~3.5× | PASS (was 0.83× pre-fix) |
+| SPIRE | TQ-QJL @1024 (octet round) | 168.6–169.2 | 595.0–602.2 | ~3.5× | PASS (was 0.83× pre-fix); batch-side scalar fallback eliminated by the octet routing (scalar 21k/43k → 5.3k/10.8k, one-off only) |
 | SPIRE | RaBitQ | runs; counters not batch-attributed on this surface | — | — | measured e2e only |
 | DiskANN | TQ no-QJL 4-bit | 298.7 avg | 891.1 avg | 2.98× | PASS |
 | DiskANN | binary/Hamming sidecar (hamming32) | 7.1 | — (integer-exact popcount; Task 95 M5 closeout) | PASS (Task 95: e2e p50 −21%/−3%) | PASS |
@@ -72,18 +83,18 @@ affect parity or floor-gate conclusions.
 | Cell | sweep | p50 on (ms) | p50 off (ms) | delta |
 | --- | --- | ---: | ---: | ---: |
 | IVF TQ no-QJL | 8/16/32 | 0.46/0.72/1.15 | 0.99/1.77/3.08 | **−53.5% / −59.3% / −62.7%** |
-| IVF TQ-QJL @1024 (post-fix) | 8/16 | 0.36/0.54 | 0.67/1.17 | **−46.3% / −53.8%** |
+| IVF TQ-QJL @1024 (octet round) | 8/16 | 0.35/0.53 | 0.67/1.18 | **−47.8% / −55.1%** |
 | DiskANN TQ no-QJL | 64/128 | 0.68/0.95 | 1.05/1.54 | −35.2% / −38.3% |
 | SPIRE TQ no-QJL | 8/16/32 | 4.59/7.97/14.10 | 5.08/9.10/16.00 | −9.6% / −12.4% / −11.9% |
 | HNSW TQ int8_approx | 32/80/200 | 0.43/0.69/0.91 | 0.48/0.80/1.04 | −10.4% / −13.8% / −12.5% |
 | HNSW TQ full_lut | 32/80/200 | 0.56/0.93/1.20 | 0.61/0.98/1.26 | −8.2% / −5.1% / −4.8% |
 | HNSW RaBitQ | 32/80/200 | 0.43/0.78/1.00 | 0.46/0.87/1.06 | −6.5% / −10.3% / −5.7% |
-| SPIRE TQ-QJL @1024 (post-fix) | 8/16 | 3.77/6.58 | 3.91/7.11 | −3.6% / −7.5% |
+| SPIRE TQ-QJL @1024 (octet round) | 8/16 | 3.72/6.58 | 3.94/7.26 | −5.6% / −9.4% |
 | DiskANN grouped-PQ (sidecar-routed) | 64/128 | 0.47/0.59 | 0.48/0.64 | −2.1% / −7.8% |
 | IVF grouped-PQ | 8/16/32 | 0.28/0.33/0.45 | 0.27/0.34/0.47 | ±4% (noise; kernel share small in e2e) |
 | IVF RaBitQ bits=1 | 8/16/32 | 0.29/0.40/0.56 | 0.29/0.40/0.57 | ~0% (rerank-dominated e2e) |
 | HNSW grouped-PQ | 32/80/200 | 0.49/0.86/1.55 | 0.48/0.86/1.55 | ~0% (no batch engagement, see gap) |
-| HNSW TQ-QJL @1024 | 32/80 | 1.35/2.55 | 1.33/2.50 | +1.5% / +2.0% (one-off-dominated path) |
+| HNSW TQ-QJL @1024 (octet round) | 32/80 | 1.09/2.18 | 1.32/2.52 | **−17.4% / −13.5%** (was neutral before the octet remainder routing) |
 
 ## kernel_status markers (absent / retired / no-kernel cells)
 
@@ -125,7 +136,10 @@ affect parity or floor-gate conclusions.
    fixes). aarch64-only.
 2. `f88c640d3` — candidate-parallel qjl32 NEON block kernel
    (667–684 → 167–185 ns/c, floor gate 0.83× → 3.2–3.5×). aarch64-only.
-3. `d1235077c` — `ecaz bench suite` runnable `retired` kernel_status
+3. `5c44d9f45` — NEON octet entry + ISA-dispatched remainder routing for
+   qjl32 (packet 007 review response; the remainder dispatch in
+   `candidate_batch` is shared code but a pure rename on the x86 path).
+4. `d1235077c` — `ecaz bench suite` runnable `retired` kernel_status
    (tooling).
 
 No shared/x86 code was touched; the Task 103 Intel cells do not require
