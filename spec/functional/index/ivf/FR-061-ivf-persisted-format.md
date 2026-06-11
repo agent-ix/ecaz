@@ -126,5 +126,5 @@ encode/decode) and `src/am/ec_ivf/quantizer.rs` (payload variants).
 
 ## Dependencies
 
-- **Upstream**: `FR-049`-style format discipline; `NFR-016` on-disk format evolution.
+- **Upstream**: `NFR-016` on-disk format evolution discipline.
 - **Downstream**: `FR-031` (build writes this format), `FR-032` (scan reads it), `FR-033` (insert/vacuum mutate it), `FR-068`/`FR-069` process FRs.

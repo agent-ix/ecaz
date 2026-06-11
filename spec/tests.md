@@ -129,18 +129,18 @@ presence alone.
 | FR-058 | FR-058 ACs | TC-024, TC-034 | Partial: CustomScan distributed reads are implemented; lifecycle callback, mark/restore exclusion, and rescan/end-after-cancel proof remain gaps |
 | FR-059 | FR-059-AC-1..9 | TC-025, TC-034 | Partial: coordinator-routed DML baseline exists; repeated remote prepared-branch uniqueness and row-state assertions need direct evidence |
 | FR-060 | FR-060-AC-1..9 | TC-021, TC-023, TC-024, TC-025 | Partial: diagnostics and fail-closed reporting exist; operator surface drift checks and matrix-to-live coverage remain gaps |
-| FR-061 IVF persisted format | FR-061-AC-1..3 | TC-009, TC-010 | Partial: spec-only schema transcription from `src/am/ec_ivf/page.rs`; independent-decode and rejection-path evidence remain `GAP-018`-style inventory work |
-| FR-062 DiskANN persisted format | FR-062-AC-1..3 | TC-011, TC-012 | Partial: spec-only schema transcription from `src/am/ec_diskann/{page,tuple}.rs`; rejection-path evidence inventory pending |
+| FR-061 IVF persisted format | FR-061-AC-1..3 | TC-007 | Partial: spec-only schema transcription from `src/am/ec_ivf/page.rs`; independent-decode and rejection-path evidence remain `GAP-018`-style inventory work |
+| FR-062 DiskANN persisted format | FR-062-AC-1..3 | TC-010, TC-012 | Partial: spec-only schema transcription from `src/am/ec_diskann/{page,tuple}.rs`; rejection-path evidence inventory pending |
 | FR-063 block-kernel counter snapshot | FR-063-AC-1..3 | TC-035 | Partial: field names and label sets pinned; round-trip parity test between snapshot, log line, and results row not yet packeted |
 | FR-064 suite config schema | FR-064-AC-1..3 | TC-020 benchmark suites, TC-036 | Partial: schema documented from `SuiteConfig`; checked-in-suite parse audit not yet packeted |
 | FR-065 suite manifest schema | FR-065-AC-1..3 | TC-020 benchmark suites, TC-036 | Partial: schema documented from `SuiteManifest`; backend-preflight proof shares TC-036 gaps |
 | FR-066 suite results row schema | FR-066-AC-1..3 | TC-020 benchmark suites, TC-033, TC-035 | Partial: row shape documented from `ResultRow`; FR-063 field-parity test not yet packeted |
 | FR-067 DiskANN scan pipeline | FR-067-AC-1..3 | TC-011, TC-035 | Partial: stage decomposition specified; batch-on/off A/B and stage-attribution packet evidence pending |
-| FR-068 IVF scan pipeline | FR-068-AC-1..3 | TC-010, TC-035 | Partial: stage decomposition specified; pruning-vs-batch axis evidence pending |
-| FR-069 IVF parallel build | FR-069-AC-1..3 | TC-009, TC-016 | Partial: protocol specified; serial/parallel equivalence evidence lives with FR-031-AC-4 fixtures |
+| FR-068 IVF scan pipeline | FR-068-AC-1..3 | TC-008, TC-035 | Partial: stage decomposition specified; pruning-vs-batch axis evidence pending |
+| FR-069 IVF parallel build | FR-069-AC-1..3 | TC-007, TC-016 | Partial: protocol specified; serial/parallel equivalence evidence lives with FR-031-AC-4 fixtures |
 | FR-070 suite run lifecycle | FR-070-AC-1..3 | TC-020 benchmark suites, TC-036 | Partial: ordering guarantees specified; preflight/resume CLI evidence shares TC-036 gaps |
 | FR-071 HNSW configuration | FR-071-AC-1..2 | TC-004, TC-035 | Partial: GUC/reloption inventory matches `register_gucs()` at authoring time; drift audit not automated |
-| FR-072 IVF configuration | FR-072-AC-1..2 | TC-010 | Partial: inventory matches `register_gucs()` at authoring time, including Task 51 adaptive/SoA switches; drift audit not automated |
+| FR-072 IVF configuration | FR-072-AC-1..2 | TC-008 | Partial: inventory matches `register_gucs()` at authoring time, including Task 51 adaptive/SoA switches; drift audit not automated |
 | FR-073 DiskANN configuration | FR-073-AC-1..2 | TC-011 | Partial: inventory matches `register_gucs()` at authoring time, including candidate_batch_scoring and scan_profile_notice; drift audit not automated |
 | FR-074 QuantCodec scoring contract | FR-074-AC-1..3 | TC-035 | Partial: trait surface pinned from `src/am/common/quant_codec.rs`; cross-AM adapter audit shares the FR-015-AC-10 gap |
 | FR-044 | FR-044-AC-1..4 | TC-026, TC-030 | Planned: cloud command surface and idempotence |
@@ -175,15 +175,15 @@ presence alone.
 | TC-001 | `tqvector` artifact layout, I/O, encode, scoring | Unit / pg_test | P0 | FR-001..FR-006, FR-013..FR-018 | Implemented |
 | TC-002 | `ecvector` typmod, I/O, casts, encode defaults | Unit / pg_test | P0 | US-012, FR-028 | Implemented |
 | TC-003 | SQL bootstrap registers extension objects | pg_test / catalog inspection | P0 | US-004, FR-012, FR-029 | Implemented |
-| TC-004 | HNSW build, scan, insert, vacuum, storage formats | pg_test | P0 | US-002, US-003, US-005, FR-007..FR-018, FR-030 | Implemented |
+| TC-004 | HNSW build, scan, insert, vacuum, storage formats | pg_test | P0 | US-002, US-003, US-005, FR-007..FR-018, FR-030, FR-071 | Implemented |
 | TC-005 | PG18 planner, EXPLAIN, stats, module identity | pg_test / inspection | P0 | US-006, US-007, US-009, US-011, FR-019..FR-027, FR-030 | Partial: custom stats reset blocked |
 | TC-006 | HNSW parallel build and DSM graph assembly | pg_test / benchmark | P1 | US-008, FR-021, FR-030 | Partial: local implementation landed, scale evidence deferred |
-| TC-007 | IVF build, reloptions, metadata, storage formats | pg_test | P0 | US-013, FR-031 | Implemented |
-| TC-008 | IVF scan, GUC overrides, rerank, cost, EXPLAIN | pg_test | P0 | US-013, FR-032 | Implemented |
+| TC-007 | IVF build, reloptions, metadata, storage formats | pg_test | P0 | US-013, FR-031, FR-061, FR-069 | Implemented |
+| TC-008 | IVF scan, GUC overrides, rerank, cost, EXPLAIN | pg_test | P0 | US-013, FR-032, FR-068, FR-072 | Implemented |
 | TC-009 | IVF insert, vacuum, admin/drift snapshots | pg_test | P0 | US-013, FR-033 | Implemented |
-| TC-010 | DiskANN build, unit-normalized contract, graph storage | pg_test | P0 | US-014, FR-034 | Implemented |
-| TC-011 | DiskANN scan, prefilter, list-size override, rerank | pg_test | P0 | US-014, FR-035 | Implemented |
-| TC-012 | DiskANN insert, vacuum repair, diagnostics | pg_test | P0 | US-014, FR-036 | Implemented |
+| TC-010 | DiskANN build, unit-normalized contract, graph storage | pg_test | P0 | US-014, FR-034, FR-062 | Implemented |
+| TC-011 | DiskANN scan, prefilter, list-size override, rerank | pg_test | P0 | US-014, FR-035, FR-067, FR-073 | Implemented |
+| TC-012 | DiskANN insert, vacuum repair, diagnostics | pg_test | P0 | US-014, FR-036, FR-062 | Implemented |
 | TC-013 | Safety, WAL discipline, unsafe/fuzz/license review | Unit / fuzz / inspection | P1 | NFR-004, FR-011 | Partial: run explicitly when risk warrants |
 | TC-014 | PG18 primary and PG17 compatibility builds | CI / build | P0 | US-004, FR-026, FR-027, NFR-005 | Partial: not run in this docs checkpoint |
 | TC-015 | Local benchmark provenance for HNSW/IVF/DiskANN | Review packet / docs audit | P1 | US-015, NFR-001, NFR-002, NFR-003, NFR-007 | Implemented for current docs |
@@ -191,7 +191,7 @@ presence alone.
 | TC-017 | ReadStream cold-cache speedup gate | Benchmark | P2 | NFR-006, FR-019 | Gap: deferred |
 | TC-018 | HNSW insert decontention follow-up | Benchmark / implementation | P2 | Future Task 13 | Gap: future work |
 | TC-019 | `ecaz` CLI command tree, profiles, logging, and docs links | Unit / docs audit | P1 | US-016, FR-037, NFR-009 | Implemented for docs traceability; CLI tests run on demand |
-| TC-020 benchmark suites | `ecaz bench suite` dry-run, execution manifest, audit, status, report, and results extraction | Unit / CLI smoke | P1 | US-017 benchmark suites, FR-038 benchmark suites, NFR-007, NFR-009 | Implemented for first auto-runner surface; backend profile preflight remains under TC-036 |
+| TC-020 benchmark suites | `ecaz bench suite` dry-run, execution manifest, audit, status, report, and results extraction | Unit / CLI smoke | P1 | US-017 benchmark suites, FR-038 benchmark suites, FR-064, FR-065, FR-066, FR-070, NFR-007, NFR-009 | Implemented for first auto-runner surface; backend profile preflight remains under TC-036 |
 | TC-020 SPIRE | SPIRE partition-object domain model and binary storage formats | Design packet / pg_test | P0 | US-022, FR-048, FR-049, FR-050, FR-051, FR-052, NFR-013 | Implemented for spec traceability; format-freeze binary compatibility tests should be added before external persistence commitments |
 | TC-021 | SPIRE local store configuration, placement, and diagnostics | SQL / pg_test | P1 | US-018, US-022, FR-053, FR-055, FR-060, NFR-013 | Implemented for local v1 behavior; true parallel local-store execution deferred |
 | TC-022 | SPIRE routing, scoring, dedupe, and heap visibility handling | pg_test | P0 | US-018, US-022, FR-050, FR-051, FR-053 | Implemented for eager bounded local scans |
@@ -207,8 +207,8 @@ presence alone.
 | TC-032 | Corpus load throughput meets per-profile NFR-011 targets | Benchmark | P1 | NFR-011, FR-047 | Planned: baseline once first `1m` run lands |
 | TC-033 | Benchmark reporting standard docs/spec audit | Docs / spec audit | P1 | US-015, US-017, FR-038, NFR-015 | Implemented for the standard; future benchmark packets apply row-level block-kernel and backend-provenance fields |
 | TC-034 | Task 34 hardening and analysis lanes | Static analysis / fuzz / model checking / sanitizer / supply-chain audit | P0 | NFR-004, FR-011, FR-049, FR-050, FR-051, FR-052, FR-053, FR-054, FR-055, FR-056, FR-057, FR-058, FR-059 | Partial: packeted Task 34 evidence currently covers installer, MIRAI, Flux, and Rudra-family logs; aggregate local/nightly, sanitizer, fuzz, cargo-careful, Kani, Loom, Shuttle, cargo-vet, cargo-geiger, AFL, PG18 sanitizer, and SQLsmith evidence remain gaps until packeted |
-| TC-035 | QuantCodec block-kernel completeness matrix | Unit / benchmark packet / docs audit | P0 | FR-014, FR-015, FR-030, FR-032, FR-035, NFR-015 | Partial: target matrix is specified; Task 99, Task 102 ARM evidence, the Task 103 Intel lane, Graviton 4 vector-length, and deferred hardware cells remain gaps until packeted |
-| TC-036 | Benchmark suite backend-profile preflight | CLI unit / suite audit | P0 | FR-038, NFR-007, NFR-015 | Partial: suite manifests must prove release/debug backend selection for latency and recall rows before product benchmark claims |
+| TC-035 | QuantCodec block-kernel completeness matrix | Unit / benchmark packet / docs audit | P0 | FR-014, FR-015, FR-030, FR-032, FR-035, FR-063, FR-066, FR-067, FR-068, FR-071, FR-074, NFR-015 | Partial: target matrix is specified; Task 99, Task 102 ARM evidence, the Task 103 Intel lane, Graviton 4 vector-length, and deferred hardware cells remain gaps until packeted |
+| TC-036 | Benchmark suite backend-profile preflight | CLI unit / suite audit | P0 | FR-038, FR-064, FR-065, FR-070, NFR-007, NFR-015 | Partial: suite manifests must prove release/debug backend selection for latency and recall rows before product benchmark claims |
 
 ## Option Permutation Matrix
 
