@@ -3,14 +3,20 @@ use super::candidate_batch::{CandidateBatch, CandidatePayload};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum QuantCodecKind {
     TurboQuant,
+    TurboQuantQjl,
+    TurboQuantTiledLut,
+    TurboQuantInt8,
     RaBitQ,
     GroupedPq,
     Binary,
 }
 
 impl QuantCodecKind {
-    pub(crate) const ALL: [Self; 4] = [
+    pub(crate) const ALL: [Self; 7] = [
         Self::TurboQuant,
+        Self::TurboQuantQjl,
+        Self::TurboQuantTiledLut,
+        Self::TurboQuantInt8,
         Self::RaBitQ,
         Self::GroupedPq,
         Self::Binary,
@@ -19,6 +25,9 @@ impl QuantCodecKind {
     pub(crate) fn label(self) -> &'static str {
         match self {
             Self::TurboQuant => "turboquant",
+            Self::TurboQuantQjl => "turboquant_qjl",
+            Self::TurboQuantTiledLut => "turboquant_tiled_lut",
+            Self::TurboQuantInt8 => "turboquant_int8",
             Self::RaBitQ => "rabitq",
             Self::GroupedPq => "grouped_pq",
             Self::Binary => "binary",

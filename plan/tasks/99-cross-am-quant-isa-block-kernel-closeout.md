@@ -84,6 +84,12 @@ initiative was the completeness matrix; Task 99 produces it.
      away cutoff pruning (IVF PqFastScan suffix-max bound per
      Task 94 packet 024 F1), so the profile captures the
      kernel-vs-pruning interaction rather than averaging it.
+   - **Graviton 4 lane required (pinned 2026-06-10)**: the profile
+     must include a Graviton 4 pass, not Intel-only — the ADR-025
+     reevaluation hinges on Graviton L1D behavior (the 4+1 rejection
+     was a Graviton cache-spill argument), and the per-ISA
+     comparison (AC 4) needs the same cells on both hosts. Runs
+     after Tasks 101 / 94-F8 / 102 so every family is final-shape.
    The reevaluation decision itself (ADR-025 flip or revision,
    any new storage surface) is follow-up scope informed by this
    profile, not owned by Task 99.

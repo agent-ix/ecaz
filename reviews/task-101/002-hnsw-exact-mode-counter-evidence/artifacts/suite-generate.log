@@ -1,0 +1,9 @@
+[suite:task101-hnsw-exact-mode-counter-suite] wrote reviews/task-101/002-hnsw-exact-mode-counter-evidence/artifacts/suite-manifest.json
+[suite:task101-hnsw-exact-mode-counter-suite] generate-hnsw-tq-1k-corpus -> --database tqvector_task101 --host /home/peter/.pgrx --port 28818 corpus generate --output reviews/task-101/002-hnsw-exact-mode-counter-evidence/artifacts/task101_hnsw_tq_1k_corpus.tsv --n 1000 --dim 1536 --seed 4201 --kind corpus
+[suite:task101-hnsw-exact-mode-counter-suite] wrote reviews/task-101/002-hnsw-exact-mode-counter-evidence/artifacts/suite-manifest.json
+[suite:task101-hnsw-exact-mode-counter-suite] wrote reviews/task-101/002-hnsw-exact-mode-counter-evidence/artifacts/suite-manifest.json
+[suite:task101-hnsw-exact-mode-counter-suite] generate-hnsw-tq-1k-queries -> --database tqvector_task101 --host /home/peter/.pgrx --port 28818 corpus generate --output reviews/task-101/002-hnsw-exact-mode-counter-evidence/artifacts/task101_hnsw_tq_1k_queries.tsv --n 64 --dim 1536 --seed 4202 --kind queries
+[suite:task101-hnsw-exact-mode-counter-suite] wrote reviews/task-101/002-hnsw-exact-mode-counter-evidence/artifacts/suite-manifest.json
+[suite:task101-hnsw-exact-mode-counter-suite] wrote reviews/task-101/002-hnsw-exact-mode-counter-evidence/artifacts/suite-manifest.json
+[suite:task101-hnsw-exact-mode-counter-suite] wrote reviews/task-101/002-hnsw-exact-mode-counter-evidence/artifacts/results.jsonl
+[suite:task101-hnsw-exact-mode-counter-suite] wrote reviews/task-101/002-hnsw-exact-mode-counter-evidence/artifacts/suite-manifest.json

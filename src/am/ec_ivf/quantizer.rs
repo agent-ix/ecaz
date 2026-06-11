@@ -2,8 +2,8 @@ use super::options::StorageFormat;
 use super::page;
 use crate::am::common::candidate_batch::{
     score_grouped_pq_batch_for, score_rabitq_bits1_batch_for,
-    score_turboquant_no_qjl_4bit_batch_for, CandidateBatch, CandidateBatchScoringSurface,
-    CandidateMeta, CandidatePayload,
+    score_turboquant_no_qjl_4bit_batch_for, score_turboquant_qjl_batch_for, CandidateBatch,
+    CandidateBatchScoringSurface, CandidateMeta, CandidatePayload,
 };
 use crate::am::common::quant_codec::{
     EncodedQuantPayload, QuantCodec, QuantCodecKind, QuantSearchCodecTag,
@@ -437,7 +437,7 @@ impl IvfQuantizer {
         }
     }
 
-    pub(super) fn score_turboquant_no_qjl_4bit_batch_from_payloads(
+    pub(super) fn score_turboquant_batch_from_payloads(
         self,
         prepared_query: &IvfPreparedQuery,
         payloads: &[u8],
@@ -492,8 +492,52 @@ impl IvfQuantizer {
                 )?;
                 Ok(true)
             }
+            (IvfQuantizerProfile::TurboQuant, IvfPreparedQuery::TurboQuant(prepared_query)) => {
+                if payload_len == 0 {
+                    return Err(
+                        "ec_ivf TurboQuant QJL batch payload length must be nonzero".to_owned()
+                    );
+                }
+                if payloads.len() != payload_len * gammas.len() {
+                    return Err(format!(
+                        "ec_ivf TurboQuant QJL batch payload length mismatch: got {} bytes for {} postings with {} byte payloads",
+                        payloads.len(),
+                        gammas.len(),
+                        payload_len
+                    ));
+                }
+
+                let quantizer = ProdQuantizer::cached(
+                    self.dimensions,
+                    crate::DEFAULT_QUANT_BITS,
+                    crate::DEFAULT_QUANT_SEED,
+                );
+                let mut batch = CandidateBatch::with_capacity(gammas.len());
+                for (index, (payload, gamma)) in payloads
+                    .chunks_exact(payload_len)
+                    .zip(gammas.iter().copied())
+                    .enumerate()
+                {
+                    batch.push(
+                        index,
+                        CandidatePayload {
+                            code: payload,
+                            meta: CandidateMeta::Gamma(gamma),
+                        },
+                    )?;
+                }
+                out_scores.clear();
+                out_scores.resize(batch.len(), 0.0);
+                score_turboquant_qjl_batch_for(
+                    CandidateBatchScoringSurface::Ivf,
+                    quantizer.as_ref(),
+                    prepared_query,
+                    &batch,
+                    out_scores,
+                )?;
+                Ok(true)
+            }
             (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::RaBitQ(_))
-            | (IvfQuantizerProfile::TurboQuant, IvfPreparedQuery::TurboQuant(_))
             | (IvfQuantizerProfile::PqFastScan { .. }, IvfPreparedQuery::PqFastScan { .. }) => {
                 Ok(false)
             }
@@ -511,6 +555,23 @@ impl IvfQuantizer {
                 Err("ec_ivf prepared query does not match quantizer profile".to_owned())
             }
         }
+    }
+
+    pub(super) fn score_turboquant_no_qjl_4bit_batch_from_payloads(
+        self,
+        prepared_query: &IvfPreparedQuery,
+        payloads: &[u8],
+        payload_len: usize,
+        gammas: &[f32],
+        out_scores: &mut Vec<f32>,
+    ) -> Result<bool, String> {
+        self.score_turboquant_batch_from_payloads(
+            prepared_query,
+            payloads,
+            payload_len,
+            gammas,
+            out_scores,
+        )
     }
 
     pub(super) fn score_grouped_pq_batch_from_payloads(
@@ -823,6 +884,20 @@ impl QuantCodec for IvfQuantCodec<'_> {
                     crate::DEFAULT_QUANT_SEED,
                 );
                 score_turboquant_no_qjl_4bit_batch_for(
+                    CandidateBatchScoringSurface::Ivf,
+                    quantizer.as_ref(),
+                    prepared_query,
+                    batch,
+                    out_scores,
+                )
+            }
+            (IvfQuantizerProfile::TurboQuant, IvfPreparedQuery::TurboQuant(prepared_query)) => {
+                let quantizer = ProdQuantizer::cached(
+                    self.quantizer.dimensions,
+                    crate::DEFAULT_QUANT_BITS,
+                    crate::DEFAULT_QUANT_SEED,
+                );
+                score_turboquant_qjl_batch_for(
                     CandidateBatchScoringSurface::Ivf,
                     quantizer.as_ref(),
                     prepared_query,

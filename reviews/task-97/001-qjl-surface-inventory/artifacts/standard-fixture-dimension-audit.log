@@ -1,0 +1,47 @@
+Script started on 2026-06-09 17:23:26-07:00 [<not executed on terminal>]
+plan/tasks/99-cross-am-quant-isa-block-kernel-closeout.md
+75:   - **Dimension coverage**: no-QJL exists only at dim 1536, so
+77:     least one non-tiled dimension (synthetic fixture if needed)
+
+plan/tasks/task30-phase13b-spire-aws-verification-runbook.md
+270:  `qdrant-dbpedia-openai3-large-1536-1m`.
+
+plan/tasks/12-real-corpus-recall.md
+13:- DBpedia OpenAI embeddings, or
+26:- `NFR-003` already says recall benchmarks SHALL run against DBpedia OpenAI embeddings or
+64:  DBpedia run is staged by the user out-of-band per `docs/RECALL_REAL_CORPUS.md`.
+76:- The "DBpedia OpenAI embeddings or equivalent" execution lane implied by the spec
+
+plan/tasks/task30-phase13a-spire-aws-verification-design.md
+104:  at dim 1536; source `ecaz corpus generate` with seed 42. Use: smoke and
+107:  `qdrant-dbpedia-openai3-large-1536-1m`; 1,000,000 rows at dim 1536;
+111:  10,000,000 rows at dim 1536; source `ecaz corpus generate` (seed 42,
+406:- [ ] Representative dataset is `qdrant-dbpedia-openai3-large-1536-1m`
+
+reviews/task-96/001-surface-inventory-stop-condition/feedback/2026-06-09-02-reviewer.md
+32:   non-tiled dimension so QJL lanes are actually exercisable; absent
+45:  gamma-aware cell is reachable on the standard 1536-dim corpora
+46:  (dim 1536 at 4 bits is the no-QJL lane by `qjl_enabled`), propose a
+
+reviews/task-92/014-offpath-calibration-run/request.md
+14:- Generated a deterministic synthetic 4096-row / 64-query 1536-dim fixture.
+55:- `target/debug/ecaz corpus generate --output ...task92_offpath_spire_turboquant_corpus.tsv --n 4096 --dim 1536 --seed 42 --kind corpus --log-file ...generate-corpus.log`
+56:- `target/debug/ecaz corpus generate --output ...task92_offpath_spire_turboquant_queries.tsv --n 64 --dim 1536 --seed 4242 --kind queries --log-file ...generate-queries.log`
+57:- `target/debug/ecaz corpus load --prefix task92_offpath_spire_turboquant --profile ec_spire --storage-format turboquant --dim 1536 --bits 4 --seed 42 --database postgres --host /home/peter/.pgrx --port 28818 --log-file ...load-spire-turboquant.log`
+
+reviews/task-92/014-offpath-calibration-run/feedback/2026-06-09-01-reviewer.md
+21:- Loaded a deterministic 4096-row × 1536-dim corpus + 64 queries via
+
+reviews/task-92/014-offpath-calibration-run/artifacts/generate-queries.log
+1:[generate] wrote 64 × dim 1536 rows to reviews/task-92/014-offpath-calibration-run/artifacts/task92_offpath_spire_turboquant_queries.tsv (kind=Queries, seed=4242)
+
+reviews/task-92/014-offpath-calibration-run/artifacts/generate-corpus.log
+1:[generate] wrote 4096 × dim 1536 rows to reviews/task-92/014-offpath-calibration-run/artifacts/task92_offpath_spire_turboquant_corpus.tsv (kind=Corpus, seed=42)
+
+reviews/task-92/014-offpath-calibration-run/artifacts/manifest.md
+10:- Fixture: synthetic 4096-row / 64-query 1536-dim SPIRE TurboQuant
+20:- Command: `target/debug/ecaz corpus generate --output reviews/task-92/014-offpath-calibration-run/artifacts/task92_offpath_spire_turboquant_corpus.tsv --n 4096 --dim 1536 --seed 42 --kind corpus --log-file reviews/task-92/014-offpath-calibration-run/artifacts/generate-corpus.log`
+26:- Command: `target/debug/ecaz corpus generate --output reviews/task-92/014-offpath-calibration-run/artifacts/task92_offpath_spire_turboquant_queries.tsv --n 64 --dim 1536 --seed 4242 --kind queries --log-file reviews/task-92/014-offpath-calibration-run/artifacts/generate-queries.log`
+32:- Command: `target/debug/ecaz corpus load --prefix task92_offpath_spire_turboquant --corpus-file reviews/task-92/014-offpath-calibration-run/artifacts/task92_offpath_spire_turboquant_corpus.tsv --queries-file reviews/task-92/014-offpath-calibration-run/artifacts/task92_offpath_spire_turboquant_queries.tsv --profile ec_spire --storage-format turboquant --dim 1536 --bits 4 --seed 42 --database postgres --host /home/peter/.pgrx --port 28818 --log-file reviews/task-92/014-offpath-calibration-run/artifacts/load-spire-turboquant.log`
+
+Script done on 2026-06-09 17:23:26-07:00 [COMMAND_EXIT_CODE="0"]

@@ -99,6 +99,30 @@ pub mod bench_api {
         unpack_mse_indices, unpack_qjl_signs, EncodedTq, Int8ApproxNoQjl4BitQuery,
         PreparedLutNoQjl4BitQuery, PreparedQuery, PreparedTiledLutNoQjl4BitQuery, ProdQuantizer,
     };
+    #[cfg(feature = "bench")]
+    pub const QJL32_BLOCK_WIDTH: usize = crate::quant::qjl32::BLOCK_WIDTH;
+    #[cfg(feature = "bench")]
+    pub fn qjl32_score_block32(
+        quantizer: &ProdQuantizer,
+        prepared: &PreparedQuery,
+        codes: [&[u8]; QJL32_BLOCK_WIDTH],
+        gammas: [f32; QJL32_BLOCK_WIDTH],
+        out_scores: &mut [f32],
+    ) -> &'static str {
+        crate::quant::qjl32::score_turboquant_qjl_block32(
+            quantizer, prepared, codes, gammas, out_scores,
+        )
+        .label()
+    }
+    #[cfg(feature = "bench")]
+    pub fn qjl32_score_scalar(
+        quantizer: &ProdQuantizer,
+        prepared: &PreparedQuery,
+        code: &[u8],
+        gamma: f32,
+    ) -> f32 {
+        crate::quant::qjl32::score_turboquant_qjl_scalar(quantizer, prepared, code, gamma)
+    }
 
     // Hadamard
     #[cfg(all(feature = "bench", target_arch = "x86_64"))]
@@ -1184,6 +1208,15 @@ fn ec_diskann_index_graph_summary(
 #[pg_extern(volatile)]
 fn ec_block_kernel_scoring_reset() {
     am::common::candidate_batch::reset_candidate_batch_scoring_counters();
+}
+
+#[pg_extern(stable)]
+fn ecaz_build_profile() -> &'static str {
+    if cfg!(debug_assertions) {
+        "debug"
+    } else {
+        "release"
+    }
 }
 
 #[pg_extern(stable)]

@@ -10,7 +10,7 @@ mod tests {
         SpireLeafAssignmentRow, SPIRE_ASSIGNMENT_FLAG_PRIMARY, SPIRE_PAYLOAD_FORMAT_NONE,
         SPIRE_PAYLOAD_FORMAT_RABITQ, SPIRE_PAYLOAD_FORMAT_TURBOQUANT,
     };
-    use crate::quant::prod::ProdQuantizer;
+    use crate::quant::prod::{ExactScoreMode, ProdQuantizer};
     use crate::quant::rabitq::RaBitQQuantizer;
     use crate::storage::page::ItemPointer;
 
@@ -135,6 +135,129 @@ mod tests {
             scorer.score_zero_gamma_payload_chunks_max_prevalidated(payload_stride, &payloads),
             batch_scores[0].max(batch_scores[1])
         );
+    }
+
+    #[test]
+    fn turboquant_qjl_assignment_batch_uses_qjl32_path() {
+        let _guard = crate::am::common::candidate_batch::CANDIDATE_BATCH_COUNTER_TEST_LOCK
+            .lock()
+            .unwrap();
+        crate::am::common::candidate_batch::reset_candidate_batch_scoring_counters();
+
+        let dim = 1024;
+        let query = (0..dim)
+            .map(|index| ((index as f32) * 0.019).sin())
+            .collect::<Vec<_>>();
+        let scorer =
+            SpirePreparedAssignmentScorer::prepare(SpireAssignmentPayloadFormat::TurboQuant, dim, &query)
+                .unwrap();
+        let quantizer =
+            ProdQuantizer::cached(dim, crate::DEFAULT_QUANT_BITS, crate::DEFAULT_QUANT_SEED);
+        assert_eq!(quantizer.exact_score_mode(), ExactScoreMode::MseLutQjl);
+        let prepared = quantizer.prepare_ip_query(&query);
+        match &scorer {
+            SpirePreparedAssignmentScorer::TurboQuant { no_qjl_4bit_lut, .. } => {
+                assert!(no_qjl_4bit_lut.is_none());
+            }
+            SpirePreparedAssignmentScorer::RaBitQ { .. } => {
+                panic!("TurboQuant prepare should return TurboQuant scorer")
+            }
+        }
+
+        let encoded = (0..39)
+            .map(|row| {
+                let source = (0..dim)
+                    .map(|col| ((row + col * 5) % 31) as f32 / dim as f32)
+                    .collect::<Vec<_>>();
+                encode_assignment_payload(SpireAssignmentPayloadFormat::TurboQuant, &source)
+                    .unwrap()
+            })
+            .collect::<Vec<_>>();
+        let payload_stride = encoded[0].1.len();
+        let mut payloads = Vec::with_capacity(payload_stride * encoded.len());
+        let mut gammas = Vec::with_capacity(encoded.len());
+        for (gamma, payload) in &encoded {
+            assert_eq!(payload.len(), payload_stride);
+            gammas.push(*gamma);
+            payloads.extend_from_slice(payload);
+        }
+        let mut raw_scores = vec![0.0_f32; encoded.len()];
+
+        scorer
+            .score_batch_ip(payload_stride, &payloads, &gammas, &mut raw_scores)
+            .unwrap();
+
+        for (index, ((gamma, payload), score)) in encoded.iter().zip(raw_scores.iter()).enumerate()
+        {
+            let scalar = quantizer.score_ip_from_parts(&prepared, *gamma, payload);
+            let tolerance = 1e-6_f32.max(scalar.abs() * 1e-6);
+            assert!(
+                (*score - scalar).abs() <= tolerance,
+                "index={index} batch={score} scalar={scalar}",
+            );
+        }
+        let snapshots = crate::am::common::candidate_batch::block_kernel_scoring_snapshots();
+        let qjl = snapshots
+            .iter()
+            .filter(|snapshot| snapshot.surface == "spire" && snapshot.quant_kind == "turboquant_qjl")
+            .collect::<Vec<_>>();
+        assert!(qjl
+            .iter()
+            .any(|snapshot| snapshot.kernel_candidates == 32));
+        assert!(qjl
+            .iter()
+            .any(|snapshot| snapshot.scalar_candidates == 7));
+
+        crate::am::common::candidate_batch::reset_candidate_batch_scoring_counters();
+
+        let mut batch = CandidateBatch::with_capacity(encoded.len());
+        for (index, (gamma, payload)) in encoded.iter().enumerate() {
+            batch
+                .push(
+                    index,
+                    CandidatePayload::new(
+                        payload,
+                        if index % 2 == 0 {
+                            CandidateMeta::Gamma(*gamma)
+                        } else {
+                            CandidateMeta::GammaAndResidualSigns {
+                                gamma: *gamma,
+                                signs: &[],
+                            }
+                        },
+                    ),
+                )
+                .unwrap();
+        }
+        let mut candidate_scores = vec![0.0_f32; batch.len()];
+
+        scorer
+            .score_candidate_batch_ip(&batch, &mut candidate_scores)
+            .unwrap();
+
+        for (index, ((gamma, payload), score)) in
+            encoded.iter().zip(candidate_scores.iter()).enumerate()
+        {
+            let scalar = quantizer.score_ip_from_parts(&prepared, *gamma, payload);
+            let tolerance = 1e-6_f32.max(scalar.abs() * 1e-6);
+            assert!(
+                (*score - scalar).abs() <= tolerance,
+                "index={index} batch={score} scalar={scalar}",
+            );
+        }
+        let snapshots = crate::am::common::candidate_batch::block_kernel_scoring_snapshots();
+        let qjl = snapshots
+            .iter()
+            .filter(|snapshot| snapshot.surface == "spire" && snapshot.quant_kind == "turboquant_qjl")
+            .collect::<Vec<_>>();
+        assert!(qjl
+            .iter()
+            .any(|snapshot| snapshot.kernel_candidates == 32));
+        assert!(qjl
+            .iter()
+            .any(|snapshot| snapshot.scalar_candidates == 7));
+
+        crate::am::common::candidate_batch::reset_candidate_batch_scoring_counters();
     }
 
     #[test]

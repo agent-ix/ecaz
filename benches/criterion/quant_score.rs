@@ -5,7 +5,10 @@
 mod helpers;
 
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
-use ecaz::bench_api::{ProdQuantizer, Quantizer, RaBitQQuantizer};
+use ecaz::bench_api::{
+    qjl32_score_block32, qjl32_score_scalar, ProdQuantizer, Quantizer, RaBitQQuantizer,
+    QJL32_BLOCK_WIDTH,
+};
 
 fn bench_score_ip_encoded(c: &mut Criterion) {
     let mut group = c.benchmark_group("quant/score_ip_encoded");
@@ -68,7 +71,7 @@ fn bench_score_ip_codes_lite(c: &mut Criterion) {
 
 fn bench_score_ip_from_parts(c: &mut Criterion) {
     let mut group = c.benchmark_group("quant/score_ip_from_parts");
-    for &(dim, bits) in &[(256, 4u8), (768, 4), (1536, 4), (3072, 4)] {
+    for &(dim, bits) in &[(256, 4u8), (768, 4), (1024, 4), (1536, 4), (3072, 4)] {
         let quantizer = ProdQuantizer::new(dim, bits, 42);
         let prepared = quantizer.prepare_ip_query(&helpers::random_unit_vector(dim, 1));
         let candidates: Vec<(f32, Vec<u8>)> = (0..1000)
@@ -89,6 +92,33 @@ fn bench_score_ip_from_parts(c: &mut Criterion) {
                 quantizer.score_ip_from_parts(&prepared, *gamma, code_bytes)
             });
         });
+        #[cfg(target_arch = "x86_64")]
+        if dim == 1024
+            && bits == 4
+            && quantizer
+                .score_ip_from_parts_avx2_multi_accum_pre_b0efa19d9_for_test(
+                    &prepared,
+                    candidates[0].0,
+                    &candidates[0].1,
+                )
+                .is_some()
+        {
+            group.bench_function(
+                BenchmarkId::new("pre_b0efa19d9_multi_accum", "d1024_b4"),
+                |b| {
+                    let mut idx = 0usize;
+                    b.iter(|| {
+                        let (gamma, code_bytes) = &candidates[idx % 1000];
+                        idx += 1;
+                        quantizer
+                            .score_ip_from_parts_avx2_multi_accum_pre_b0efa19d9_for_test(
+                                &prepared, *gamma, code_bytes,
+                            )
+                            .expect("AVX2/FMA old-path diagnostic should be available")
+                    });
+                },
+            );
+        }
     }
     group.finish();
 }
@@ -247,6 +277,58 @@ fn bench_score_ip_from_parts_int8_approx_no_qjl_4bit(c: &mut Criterion) {
     group.finish();
 }
 
+fn bench_qjl32_block32(c: &mut Criterion) {
+    let mut group = c.benchmark_group("quant/qjl32_block32");
+    let dim = 1024;
+    let bits = 4u8;
+    let quantizer = ProdQuantizer::new(dim, bits, 42);
+    let prepared = quantizer.prepare_ip_query(&helpers::random_unit_vector(dim, 1));
+    let encoded: Vec<_> = (0..QJL32_BLOCK_WIDTH)
+        .map(|i| quantizer.encode(&helpers::random_unit_vector(dim, i as u64 + 1000)))
+        .collect();
+    let codes: Vec<Vec<u8>> = encoded
+        .iter()
+        .map(|encoded| {
+            let mut code = Vec::with_capacity(encoded.mse_packed.len() + encoded.qjl_packed.len());
+            code.extend_from_slice(&encoded.mse_packed);
+            code.extend_from_slice(&encoded.qjl_packed);
+            code
+        })
+        .collect();
+    let code_refs: [&[u8]; QJL32_BLOCK_WIDTH] = codes
+        .iter()
+        .map(Vec::as_slice)
+        .collect::<Vec<_>>()
+        .try_into()
+        .expect("qjl32 benchmark fixture is exactly one block");
+    let gammas: [f32; QJL32_BLOCK_WIDTH] = encoded
+        .iter()
+        .map(|encoded| encoded.gamma)
+        .collect::<Vec<_>>()
+        .try_into()
+        .expect("qjl32 benchmark fixture is exactly one block");
+    let mut out_scores = [0.0_f32; QJL32_BLOCK_WIDTH];
+
+    group.throughput(Throughput::Elements(QJL32_BLOCK_WIDTH as u64));
+    group.bench_function(BenchmarkId::new("scalar", "d1024_b4"), |b| {
+        b.iter(|| {
+            let mut sum = 0.0_f32;
+            for lane in 0..QJL32_BLOCK_WIDTH {
+                sum += qjl32_score_scalar(&quantizer, &prepared, code_refs[lane], gammas[lane]);
+            }
+            sum
+        });
+    });
+    group.bench_function(BenchmarkId::new("dispatch", "d1024_b4"), |b| {
+        b.iter(|| {
+            let _isa =
+                qjl32_score_block32(&quantizer, &prepared, code_refs, gammas, &mut out_scores);
+            out_scores.iter().copied().sum::<f32>()
+        });
+    });
+    group.finish();
+}
+
 fn bench_score_throughput(c: &mut Criterion) {
     let mut group = c.benchmark_group("quant/score_throughput");
     let dim = 1536;
@@ -379,6 +461,7 @@ criterion_group!(
     bench_score_ip_from_parts_lut_no_qjl_4bit,
     bench_score_ip_from_parts_tiled_lut_no_qjl_4bit,
     bench_score_ip_from_parts_int8_approx_no_qjl_4bit,
+    bench_qjl32_block32,
     bench_decode_approximate,
     bench_score_throughput,
     bench_rabitq_score,

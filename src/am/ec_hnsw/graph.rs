@@ -814,6 +814,36 @@ where
     }
 }
 
+pub(crate) unsafe fn load_layer0_successor_candidates_with_storage_batched_scores<
+    KeepFn,
+    ScoreBatchFn,
+>(
+    index_relation: pg_sys::Relation,
+    source_tid: page::ItemPointer,
+    storage: GraphStorageDescriptor,
+    m: usize,
+    mut keep_neighbor_tid: KeepFn,
+    mut score_candidates: ScoreBatchFn,
+) -> Vec<search::BeamCandidate<page::ItemPointer>>
+where
+    KeepFn: FnMut(page::ItemPointer) -> bool,
+    ScoreBatchFn: FnMut(&[GraphElement]) -> Vec<Option<f32>>,
+{
+    // SAFETY: `source_tid` is a graph node reached by search traversal, layer
+    // zero is always present, and `storage` matches exact element payloads.
+    unsafe {
+        load_successor_candidates_for_layer_with_storage_batched_scores(
+            index_relation,
+            source_tid,
+            storage,
+            m,
+            0,
+            &mut keep_neighbor_tid,
+            &mut score_candidates,
+        )
+    }
+}
+
 pub(crate) unsafe fn greedy_descend_from_entry_with_storage<ScoreFn>(
     index_relation: pg_sys::Relation,
     storage: GraphStorageDescriptor,
@@ -946,6 +976,42 @@ where
     })
 }
 
+pub(crate) unsafe fn load_layer0_refill_successors_with_storage_batched_scores<
+    KeepFn,
+    ScoreBatchFn,
+>(
+    index_relation: pg_sys::Relation,
+    storage: GraphStorageDescriptor,
+    m: usize,
+    source_tid: page::ItemPointer,
+    max_successor_candidates: usize,
+    mut keep_neighbor_tid: KeepFn,
+    mut score_candidates: ScoreBatchFn,
+) -> Vec<search::BeamCandidate<page::ItemPointer>>
+where
+    KeepFn: FnMut(page::ItemPointer) -> bool,
+    ScoreBatchFn: FnMut(&[GraphElement]) -> Vec<Option<f32>>,
+{
+    if source_tid == page::ItemPointer::INVALID || max_successor_candidates == 0 {
+        return Vec::new();
+    }
+
+    refill_successors_with_successors(source_tid, max_successor_candidates, |source_tid| {
+        // SAFETY: Refill expands the validated source or its discovered graph
+        // successors synchronously; `storage` matches exact tuple payloads.
+        unsafe {
+            load_layer0_successor_candidates_with_storage_batched_scores(
+                index_relation,
+                source_tid,
+                storage,
+                m,
+                &mut keep_neighbor_tid,
+                &mut score_candidates,
+            )
+        }
+    })
+}
+
 pub(crate) unsafe fn expand_layer0_visible_seeds_with_storage<SeedIter, KeepFn, ScoreFn>(
     index_relation: pg_sys::Relation,
     storage: GraphStorageDescriptor,
@@ -972,6 +1038,41 @@ where
                 m,
                 &mut keep_neighbor_tid,
                 &mut score_candidate,
+            )
+        }
+    })
+}
+
+pub(crate) unsafe fn expand_layer0_visible_seeds_with_storage_batched_scores<
+    SeedIter,
+    KeepFn,
+    ScoreBatchFn,
+>(
+    index_relation: pg_sys::Relation,
+    storage: GraphStorageDescriptor,
+    m: usize,
+    max_successor_candidates: usize,
+    seeds: SeedIter,
+    mut keep_neighbor_tid: KeepFn,
+    mut score_candidates: ScoreBatchFn,
+) -> Layer0VisibleSeedExpansion
+where
+    SeedIter: IntoIterator<Item = search::BeamCandidate<page::ItemPointer>>,
+    KeepFn: FnMut(page::ItemPointer) -> bool,
+    ScoreBatchFn: FnMut(&[GraphElement]) -> Vec<Option<f32>>,
+{
+    expand_visible_seeds_with_successors(max_successor_candidates, seeds, |source_tid| {
+        // SAFETY: Visible-seed expansion invokes this closure synchronously
+        // for seed or discovered graph nodes, and `storage` matches exact
+        // tuple payloads during successor loading.
+        unsafe {
+            load_layer0_successor_candidates_with_storage_batched_scores(
+                index_relation,
+                source_tid,
+                storage,
+                m,
+                &mut keep_neighbor_tid,
+                &mut score_candidates,
             )
         }
     })
@@ -1292,6 +1393,54 @@ where
     }
 
     candidates
+}
+
+unsafe fn load_successor_candidates_for_layer_with_storage_batched_scores<KeepFn, ScoreBatchFn>(
+    index_relation: pg_sys::Relation,
+    source_tid: page::ItemPointer,
+    storage: GraphStorageDescriptor,
+    m: usize,
+    layer: u8,
+    keep_neighbor_tid: &mut KeepFn,
+    score_candidates: &mut ScoreBatchFn,
+) -> Vec<search::BeamCandidate<page::ItemPointer>>
+where
+    KeepFn: FnMut(page::ItemPointer) -> bool,
+    ScoreBatchFn: FnMut(&[GraphElement]) -> Vec<Option<f32>>,
+{
+    let (element, neighbors) = load_exact_graph_adjacency(index_relation, source_tid, storage);
+    let valid_neighbor_tids =
+        valid_neighbor_tids_for_layer(&neighbors.tids, element.level, m, layer);
+    let mut neighbor_elements = Vec::with_capacity(valid_neighbor_tids.len());
+
+    for neighbor_tid in valid_neighbor_tids {
+        if !keep_neighbor_tid(neighbor_tid) {
+            continue;
+        }
+
+        neighbor_elements.push(load_exact_graph_element(
+            index_relation,
+            neighbor_tid,
+            storage,
+        ));
+    }
+
+    let scores = score_candidates(&neighbor_elements);
+    if scores.len() != neighbor_elements.len() {
+        pgrx::error!(
+            "ec_hnsw batched graph scoring returned {} scores for {} neighbors",
+            scores.len(),
+            neighbor_elements.len()
+        );
+    }
+
+    neighbor_elements
+        .into_iter()
+        .zip(scores)
+        .filter_map(|(neighbor, score)| {
+            score.map(|score| search::BeamCandidate::new(neighbor.tid, score))
+        })
+        .collect()
 }
 
 fn layer0_successor_candidates_from_elements<I, F>(

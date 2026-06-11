@@ -1,6 +1,6 @@
 # Task 97: TurboQuant QJL Block Kernel Family (Gamma + Residual Signs)
 
-Status: proposed (2026-06-08)
+Status: in review (2026-06-10; QJL surface inventory, qjl32 counter kind/design, scalar reference, local AVX2/NEON/SVE code slices, IVF/SPIRE/HNSW AM registration, HNSW hot/cold exact-payload batching, local PG18 suite evidence for the clarified production QJL fixture `dim=1024,bits=4,seed=42`, local scoring-ladder evidence, current-head and old-loop per-candidate scorer Criterion evidence, reviewer-required qjl32 AVX2 candidate-parallel transpose, qjl32 AVX2 octet-tail/HNSW under-octet bypass follow-up, forced qjl32 NEON parity hook, Graviton 4 closeout runbook, and post-main landing audit are packeted through `reviews/task-97/024-post-main-landing-audit/`; packet 022-024 review, Graviton 4 runtime dispatch/vector-length/counter evidence, and the final closeout matrix remain pending approval)
 Owner: coder (to be assigned). Phase III parallel.
 Priority: 2 (QJL variant; per-candidate metadata complicates kernel)
 

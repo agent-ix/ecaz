@@ -1470,7 +1470,7 @@ fn process_scratch_soa_postings(
         return Ok(());
     }
 
-    if quantizer.score_turboquant_no_qjl_4bit_batch_from_payloads(
+    if quantizer.score_turboquant_batch_from_payloads(
         prepared_query,
         &scratch.payloads,
         scratch.payload_len,

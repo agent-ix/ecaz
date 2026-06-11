@@ -36,6 +36,7 @@ pub(crate) mod lut32;
 pub mod mse;
 pub mod prod;
 pub mod qjl;
+pub(crate) mod qjl32;
 pub mod rabitq;
 pub(crate) mod rabitq32;
 pub mod rotation;
