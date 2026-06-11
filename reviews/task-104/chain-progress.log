@@ -1,6 +1,0 @@
-DONE 002-hnsw-m5-matrix rc=0
-DONE 003-ivf-m5-matrix rc=0
-DONE 004-diskann-m5-matrix rc=0
-DONE 005-spire-m5-matrix rc=0
-DONE 006-qjl-1024dim-m5-matrix rc=0
-ALL-DONE
