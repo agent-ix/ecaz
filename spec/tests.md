@@ -93,7 +93,7 @@ presence alone.
 | --- | --- | --- | --- |
 | FR-001..FR-006 | Type, I/O, encode, scoring, operators | TC-001, TC-002, TC-003 | Partial: current unit/pg_test coverage is grouped; strict per-AC evidence inventory remains `GAP-018` and legacy frontmatter migration remains `GAP-020` |
 | FR-007..FR-013, FR-016..FR-018 | HNSW layout/build/scan/vacuum/WAL/insert/scoring | TC-001, TC-004, TC-013 | Partial: old HNSW product benchmark rows need refreshed evidence |
-| FR-014 | FR-014-AC-1..5 block-kernel scoring, ISA dispatch, width buckets, counters, and correctness anchors | TC-035, TC-033 | Partial: architecture and reporting standard are specified; Task 99 completeness matrix, Task 102 real LUT32 SIMD, and Graviton 4 vector-length evidence remain explicit gates |
+| FR-014 | FR-014-AC-1..5 block-kernel scoring, ISA dispatch, width buckets, counters, and correctness anchors | TC-035, TC-033 | Partial: architecture and reporting standard are specified; Task 99 completeness matrix, Task 102 ARM (Graviton 4 NEON/SVE2) evidence, and the Task 103 Intel lane (int8_approx32 AVX2, rabitq32 validation, recorded tiled_lut/hamming dispositions) remain explicit gates |
 | FR-015 | FR-015-AC-1..10 ProdQuantizer math plus index-local QuantCodec adapter boundary | TC-001, TC-035 | Partial: deterministic encode/score surface is implementation-backed, but AC-10 requires cross-AM adapter audit evidence before standards-complete closure |
 | FR-019 | ReadStream integration | TC-005, TC-017 | Partial: behavior coverage exists; speedup evidence deferred |
 | FR-020 | Planner cost estimation | TC-005 | Partial: local modeled/live cost evidence is grouped; strict per-AC evidence inventory remains `GAP-018` and legacy frontmatter migration remains `GAP-020` |
@@ -193,7 +193,7 @@ presence alone.
 | TC-032 | Corpus load throughput meets per-profile NFR-011 targets | Benchmark | P1 | NFR-011, FR-047 | Planned: baseline once first `1m` run lands |
 | TC-033 | Benchmark reporting standard docs/spec audit | Docs / spec audit | P1 | US-015, US-017, FR-038, NFR-015 | Implemented for the standard; future benchmark packets apply row-level block-kernel and backend-provenance fields |
 | TC-034 | Task 34 hardening and analysis lanes | Static analysis / fuzz / model checking / sanitizer / supply-chain audit | P0 | NFR-004, FR-011, FR-049, FR-050, FR-051, FR-052, FR-053, FR-054, FR-055, FR-056, FR-057, FR-058, FR-059 | Partial: packeted Task 34 evidence currently covers installer, MIRAI, Flux, and Rudra-family logs; aggregate local/nightly, sanitizer, fuzz, cargo-careful, Kani, Loom, Shuttle, cargo-vet, cargo-geiger, AFL, PG18 sanitizer, and SQLsmith evidence remain gaps until packeted |
-| TC-035 | QuantCodec block-kernel completeness matrix | Unit / benchmark packet / docs audit | P0 | FR-014, FR-015, FR-030, FR-032, FR-035, NFR-015 | Partial: target matrix is specified; Task 99, Task 102, Graviton 4 vector-length, and deferred hardware cells remain gaps until packeted |
+| TC-035 | QuantCodec block-kernel completeness matrix | Unit / benchmark packet / docs audit | P0 | FR-014, FR-015, FR-030, FR-032, FR-035, NFR-015 | Partial: target matrix is specified; Task 99, Task 102 ARM evidence, the Task 103 Intel lane, Graviton 4 vector-length, and deferred hardware cells remain gaps until packeted |
 | TC-036 | Benchmark suite backend-profile preflight | CLI unit / suite audit | P0 | FR-038, NFR-007, NFR-015 | Partial: suite manifests must prove release/debug backend selection for latency and recall rows before product benchmark claims |
 
 ## Option Permutation Matrix
@@ -302,8 +302,9 @@ Ecaz has one required local service integration: PostgreSQL itself.
 | GAP-020 | Legacy structured relationship frontmatter migration | Medium | Migrate active legacy `FR-001..FR-027`, early NFRs, and stakeholder requirements from `traces:`/prose links to `artifact_type` plus semantic `relationships:` before claiming whole-spec ISO/IEC/IEEE 42010 or IEEE 828 graph completeness |
 | GAP-021 | Legacy benchmark row conformance to NFR-015 | Medium | Either convert legacy HNSW/IVF/DiskANN benchmark tables to row-level NFR-015 fields or keep them explicitly labeled as local summary rows outside standards-complete comparisons |
 | GAP-022 | Block-kernel Task 99 completeness matrix not yet packeted | High | Packet row-level quant-kind, AM-surface, ISA, width-bucket, scalar-anchor, recall, and latency evidence before accepting ADR-077 |
-| GAP-023 | Real LUT32 SIMD closure remains pending | Medium | Close Task 102 with packeted real-SIMD evidence before publishing LUT32 completion claims |
+| GAP-023 | LUT32 SIMD closure partially evidenced | Medium | AVX2 kernels are landed, measured, and packeted (Task 102 packets 001-002); close Task 102 with Graviton 4 NEON/SVE2 hardware evidence before publishing LUT32 completion claims |
 | GAP-024 | Graviton 4 vector-length and deferred hardware cells not yet packeted | Medium | Require measured `sve`/`sve2` vector-length labels and explicit absent/deferred cells before ARM production claims |
+| GAP-025 | Task 103 Intel AVX2 lane not yet closed | Medium | Land the int8_approx32 AVX2 kernel (AC1), record the tiled_lut32 retire/deprioritize and hamming32 skip dispositions in the matrix (AC2/AC3), and validate/bench rabitq32 on Intel (AC4) before Intel completeness claims |
 
 ## Test Execution Summary
 

@@ -429,7 +429,7 @@ matched within 0–4% on the TurboQuant rows after the
 - [`docs/benchmark-reporting-standard.md`](../../docs/benchmark-reporting-standard.md)
 - [`spec/non-functional/NFR-007-benchmark-provenance.md`](../../spec/non-functional/NFR-007-benchmark-provenance.md)
 - [`spec/non-functional/NFR-015-benchmark-reporting-standard.md`](../../spec/non-functional/NFR-015-benchmark-reporting-standard.md)
-- [`spec/functional/FR-038-configured-benchmark-suite-runner.md`](../../spec/functional/FR-038-configured-benchmark-suite-runner.md)
+- [`spec/functional/operator/FR-038-configured-benchmark-suite-runner.md`](../../spec/functional/operator/FR-038-configured-benchmark-suite-runner.md)
   (the suite runner that this packet's AM-baseline script complements
   for the snapshot-restore case)
 - Prior cycle: [`benchmarks/cloud-10k-real-baselines/manifest.md`](../cloud-10k-real-baselines/manifest.md)

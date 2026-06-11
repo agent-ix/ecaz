@@ -142,9 +142,9 @@ Counters must distinguish:
 - off-path scalar flushes, candidates, and elapsed nanos when kernel routing is
   disabled, width gating sends candidates to scalar, or prevalidation rejects
   the batch; and
-- width buckets used for dispatch attribution, including exact block32,
-  partial-width, octet, and scalar remainder buckets when a kernel family
-  supports them.
+- flush-width histogram buckets (`<8`, `8..15`, `16..31`, `>=32`) recorded per
+  wrapper flush, so exact block32, partial/octet, and scalar-remainder
+  dispatch can be attributed from the measured width distribution.
 
 The off-path scalar counter is the canonical comparison for later
 `>= 2x` scoring-share claims. It must not change the scalar scorer's

@@ -151,7 +151,7 @@ Minimum test coverage for a kernel family:
   candidate order;
 - shape mismatch rejects before counters increment and before output mutation;
 - counter rows report the backend-returned ISA for whole and partial blocks,
-  width buckets for exact block32/partial/octet/scalar remainder, and
+  flush-width histogram buckets (`<8`, `8..15`, `16..31`, `>=32`), and
   `Isa::Scalar` for scalar remainders.
 
 ## Graviton 4 / SVE2 Evidence

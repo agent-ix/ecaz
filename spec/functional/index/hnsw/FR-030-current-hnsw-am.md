@@ -27,7 +27,7 @@ relationships:
 4. PG18 SHALL expose planner ordering callbacks, tree-height callback, custom EXPLAIN counters, and stats where configured.
 5. Eligible PG18 builds SHALL support parallel heap ingestion and concurrent DSM graph assembly, with a diagnostic fallback GUC.
 6. HNSW scan scoring SHALL route TurboQuant, QJL, RaBitQ, grouped-PQ codec parity, and exact-score mode surfaces through the shared `QuantCodec` / candidate-batch scoring contract where a batch boundary exists.
-7. `ec_hnsw.turboquant_exact_score_mode` SHALL select among `full_lut`, `tiled_lut`, and `int8_approx` compressed-domain exact-score modes for measurement and diagnostics.
+7. `ec_hnsw.turboquant_exact_score_mode` SHALL select among `exact`, `full_lut`, `tiled_lut`, and `int8_approx` exact-score strategies for measurement and diagnostics, where `exact` is the raw uncompressed scoring path and the other three are compressed-domain modes.
 8. HNSW block-kernel acceptance SHALL disclose frontier batch-width distribution because graph-frontier batches often limit 32-wide kernel coverage.
 9. Parallel index scan is not part of the active requirement set.
 

@@ -26,13 +26,13 @@ method rather than calling ISA-specific functions directly.
 
 | Family | Quant kind | Current owner | Required behavior |
 | --- | --- | --- | --- |
-| TurboQuant no-QJL 4-bit LUT | `turboquant` | Task 87 / 102 | Shared batch route; real AVX2/NEON/SVE2 kernels are in-epic before final Task 99 closeout. |
+| TurboQuant no-QJL 4-bit LUT | `turboquant` | Task 87 / 102 | Shared batch route; real AVX2/NEON/SVE kernels landed in Task 102 (AVX2 measured and approved; NEON/SVE2 static-reviewed pending Graviton 4 evidence). |
 | TurboQuant QJL | `turboquant_qjl` | Task 97 | Gamma-aware current surfaces only; QJL side data is prevalidated before scoring. |
-| HNSW tiled LUT exact mode | `turboquant_tiled_lut` | Task 98 | HNSW exact-score mode with distinct counters and width histogram. |
-| HNSW int8 approximate exact mode | `turboquant_int8` | Task 98 | Integer-exact HNSW exact-score mode with distinct counters and width histogram. |
-| RaBitQ bits=1 | `rabitq` | Task 93 | IVF, HNSW, and DiskANN batch scoring with partial-width dispatch. |
+| HNSW tiled LUT exact mode | `turboquant_tiled_lut` | Task 98 / 103 | HNSW exact-score mode with distinct counters and width histogram; Task 103 packet 001 marks this lane retire/deprioritize (47-48% slower than `full_lut` at byte-identical recall), so no further ISA kernels are planned for it. |
+| HNSW int8 approximate exact mode | `turboquant_int8` | Task 98 / 103 | Integer-exact HNSW exact-score mode with distinct counters and width histogram; the missing AVX2 kernel is the Task 103 AC1 highest-value cell. |
+| RaBitQ bits=1 | `rabitq` | Task 93 / 103 | IVF, HNSW, and DiskANN batch scoring with partial-width dispatch; Intel validation/bench evidence is owed under Task 103 AC4. |
 | Grouped-PQ / PqFastScan | `grouped_pq` | Task 94 | IVF and DiskANN batch scoring; HNSW codec parity remains scalar until a traversal batch boundary exists. |
-| Binary sidecar / Hamming | `binary` | Task 95 | DiskANN binary-sidecar prefilter batch scoring. |
+| Binary sidecar / Hamming | `binary` | Task 95 / 103 | DiskANN binary-sidecar prefilter batch scoring; Task 103 packet 001 records a documented AVX2 skip (scalar POPCNT is within noise end-to-end). |
 
 Structural absences SHALL be recorded as absent cells in the Task 99 matrix
 rather than hidden by omitted rows. The raw fp32 `ecvector` path does not need a

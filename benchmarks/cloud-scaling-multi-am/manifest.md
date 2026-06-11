@@ -332,6 +332,6 @@ scripts/run_full_sweep.sh \
 - Reporting standard: [`docs/benchmark-reporting-standard.md`](../../docs/benchmark-reporting-standard.md)
 - Suite runner spec (this packet's
   `scripts/run_full_sweep.sh` is a narrower companion to FR-038's
-  `ecaz bench suite`): [`spec/functional/FR-038-configured-benchmark-suite-runner.md`](../../spec/functional/FR-038-configured-benchmark-suite-runner.md)
+  `ecaz bench suite`): [`spec/functional/operator/FR-038-configured-benchmark-suite-runner.md`](../../spec/functional/operator/FR-038-configured-benchmark-suite-runner.md)
 - ADR-050 (the per-AM-isolated-table guidance this packet implements):
   [`spec/adr/ADR-050-configured-benchmark-suite-runner.md`](../../spec/adr/ADR-050-configured-benchmark-suite-runner.md)

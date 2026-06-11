@@ -93,13 +93,17 @@ Required fields:
 
 | Field | Meaning |
 | --- | --- |
-| `surface` | AM or scoring path, such as `ec_hnsw`, `ec_ivf`, `ec_diskann`, `ec_spire`, or an isolated quant benchmark. |
-| `quant_kind` | Stable quant family or exact-score mode, such as `turboquant`, `turboquant_qjl`, `rabitq`, `grouped_pq`, `binary`, `hnsw_tiled_lut`, or `hnsw_int8`. |
-| `isa` | Runtime dispatch label: `scalar`, `neon`, `sve`, `sve2`, `avx2`, or a measured width label such as `sve2-128` when making width-specific claims. |
+| `surface` | Counter surface label as emitted by the snapshot: `hnsw`, `ivf`, `diskann`, `spire`, or `unknown` for an isolated quant benchmark. |
+| `quant_kind` | Stable quant-kind label as emitted by the snapshot: `turboquant`, `turboquant_qjl`, `turboquant_tiled_lut`, `turboquant_int8`, `rabitq`, `grouped_pq`, or `binary`. |
+| `isa` | Runtime dispatch label: `scalar`, `neon`, `sve`, `sve2`, or `avx2`. |
 | `flushes` / `candidates` / `elapsed_nanos` | Total batch scoring work for the row. |
 | `kernel_flushes` / `kernel_candidates` / `kernel_elapsed_nanos` | Work handled by the selected kernel path. |
 | `scalar_flushes` / `scalar_candidates` / `scalar_elapsed_nanos` | Off-path scalar work, including disabled kernels and unsupported widths. |
-| `width_buckets` | Exact block32, partial/octet, scalar remainder, and absent/deferred bucket counts when available. |
+| `width_lt8_flushes` / `width_8_15_flushes` / `width_16_31_flushes` / `width_ge32_flushes` | Flush-width histogram buckets (`<8`, `8..15`, `16..31`, `>=32` candidates per flush). |
+
+Width-specific SVE/SVE2 performance claims must additionally report the
+measured runtime vector length (for example `sve2-128`) in the packet prose or
+environment fields; the `isa` counter label itself stays `sve`/`sve2`.
 
 Reports must distinguish scoring-share wins from end-to-end query latency wins.
 A faster scorer is not a product latency claim unless the packet also reports

@@ -74,7 +74,8 @@ not be used as substitutes.
 | Universal kernel pattern | Accepted by ADR-076; block32 base width, runtime ISA detection, scalar anchors, and counter attribution are architectural policy. |
 | Width cascade | Accepted as production dispatch direction by Task 101; specs require width buckets and prevalidation before output mutation. |
 | Task 99 matrix | Required before this ADR can become accepted; it is the row-level completeness gate for quant kind, AM surface, ISA, and width bucket. |
-| Task 102 LUT32 | Required before publishing real-SIMD LUT32 completion claims; scalar or scaffolded evidence is not enough for that cell. |
+| Task 102 LUT32 | Real AVX2/NEON/SVE kernels landed; AVX2 evidence is packeted and approved (Task 102 packets 001-002). The remaining gate is Graviton 4 NEON/SVE2 hardware evidence and Task 102 closeout before LUT32 completion claims. |
+| Task 103 Intel lane | Required before Intel completeness claims: int8_approx32 AVX2 kernel (AC1), tiled_lut32 retire/deprioritize disposition (AC2), hamming32 documented AVX2 skip (AC3), and rabitq32 Intel validation (AC4) per packet 001. |
 | Graviton 4 evidence | Required for ARM production claims. Reports must include measured runtime vector-length labels such as `sve2-128` when making width-specific claims. |
 | AVX-512 and Apple silicon | Deferred; not part of the Task 92/99 acceptance surface. |
 | ADR-025 state | Remains outside this closure unless a successor ADR explicitly reopens that decision with benchmark evidence. |
