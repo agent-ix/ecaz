@@ -716,6 +716,9 @@ enum KernelCellStatus {
     MissingKernel,
     StructurallyAbsent,
     InvalidConfig,
+    /// Task 103/104: the cell's kernel was retired on measured grounds; the
+    /// step still executes so the matrix re-confirms the disposition.
+    Retired,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -1711,14 +1714,18 @@ fn parse_kernel_status(value: &str) -> Result<KernelCellStatus> {
         "missing_kernel" => Ok(KernelCellStatus::MissingKernel),
         "structurally_absent" => Ok(KernelCellStatus::StructurallyAbsent),
         "invalid_config" => Ok(KernelCellStatus::InvalidConfig),
+        "retired" => Ok(KernelCellStatus::Retired),
         other => bail!(
-            "kernel_status tag must be one of valid, missing_kernel, structurally_absent, invalid_config; got {other:?}"
+            "kernel_status tag must be one of valid, missing_kernel, structurally_absent, invalid_config, retired; got {other:?}"
         ),
     }
 }
 
 fn kernel_cell_is_runnable(status: Option<KernelCellStatus>) -> bool {
-    matches!(status, None | Some(KernelCellStatus::Valid))
+    matches!(
+        status,
+        None | Some(KernelCellStatus::Valid) | Some(KernelCellStatus::Retired)
+    )
 }
 
 fn kernel_status_label(status: KernelCellStatus) -> &'static str {
@@ -1727,6 +1734,7 @@ fn kernel_status_label(status: KernelCellStatus) -> &'static str {
         KernelCellStatus::MissingKernel => "missing_kernel",
         KernelCellStatus::StructurallyAbsent => "structurally_absent",
         KernelCellStatus::InvalidConfig => "invalid_config",
+        KernelCellStatus::Retired => "retired",
     }
 }
 
@@ -4339,6 +4347,58 @@ mod tests {
         );
         assert_eq!(row.values.get("quant").map(String::as_str), Some("rabitq"));
         assert_eq!(row.values.get("isa").map(String::as_str), Some("sve2"));
+    }
+
+    #[test]
+    fn retired_kernel_cells_execute_and_emit_marker_row() {
+        let config = SuiteConfig {
+            name: "kernel-axis-retired".into(),
+            schema_version: 1,
+            artifact_dir: None,
+            defaults: SuiteDefaults::default(),
+            thresholds: Vec::new(),
+            steps: vec![SuiteStep::Raw(RawStep {
+                name: "tiled_lut-retired-confirmation".into(),
+                tags: vec![
+                    "quant=turboquant".into(),
+                    "isa=neon".into(),
+                    "kernel_status=retired".into(),
+                ],
+                args: vec![
+                    "bench".into(),
+                    "latency".into(),
+                    "--prefix".into(),
+                    "p".into(),
+                ],
+                expected_artifacts: Vec::new(),
+            })],
+        };
+        let args = SuiteRunOptions {
+            config: "suite.json".into(),
+            dry_run: true,
+            continue_on_error: false,
+            only: Vec::new(),
+            only_tag: Vec::new(),
+            resume_from: None,
+            results_output: None,
+            artifact_dir: None,
+            manifest_output: None,
+            allow_debug_backend: false,
+        };
+
+        let manifest =
+            build_manifest(&conn(), &args, "{}", &config).expect("manifest should build");
+
+        let retired = &manifest.steps[0];
+        assert_eq!(retired.kernel_status, Some(KernelCellStatus::Retired));
+        assert!(matches!(retired.status, Some(StepStatus::DryRun)));
+        assert!(!retired.command.is_empty());
+
+        let row = kernel_cell_result_row(&manifest, retired).expect("marker row");
+        assert_eq!(
+            row.values.get("kernel_status").map(String::as_str),
+            Some("retired")
+        );
     }
 
     #[test]
