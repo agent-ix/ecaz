@@ -1,0 +1,270 @@
+{
+  "name": "task103-intel-baseline-matrix",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-103/001-intel-baseline-matrix/artifacts",
+  "defaults": {
+    "pg": 18,
+    "bits": 4,
+    "seed": 42,
+    "queries_limit": 100,
+    "iterations": 300,
+    "force_index": true,
+    "sample_backend_memory": false
+  },
+  "steps": [
+    {
+      "kind": "recall",
+      "name": "recall-hnsw-real10k-full_lut-kernel-on",
+      "tags": [
+        "task103",
+        "local",
+        "hnsw",
+        "turboquant",
+        "real10k",
+        "kernel_on",
+        "quant=turboquant",
+        "isa=avx2"
+      ],
+      "prefix": "task87_phase6_real10k_hnsw",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        80
+      ],
+      "queries_limit": 100,
+      "session_gucs": [
+        "ec_hnsw.disable_binary_prefilter=on",
+        "ec_hnsw.turboquant_exact_score_mode=full_lut"
+      ],
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "log_output": "${artifact_dir}/recall-hnsw-real10k-full_lut-kernel-on.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-hnsw-real10k-tiled_lut-kernel-on",
+      "tags": [
+        "task103",
+        "local",
+        "hnsw",
+        "turboquant",
+        "real10k",
+        "kernel_on",
+        "quant=turboquant",
+        "isa=avx2"
+      ],
+      "prefix": "task87_phase6_real10k_hnsw",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        80
+      ],
+      "queries_limit": 100,
+      "session_gucs": [
+        "ec_hnsw.disable_binary_prefilter=on",
+        "ec_hnsw.turboquant_exact_score_mode=tiled_lut"
+      ],
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "log_output": "${artifact_dir}/recall-hnsw-real10k-tiled_lut-kernel-on.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-hnsw-real10k-int8_approx-kernel-on",
+      "tags": [
+        "task103",
+        "local",
+        "hnsw",
+        "turboquant",
+        "real10k",
+        "kernel_on",
+        "quant=turboquant",
+        "isa=avx2"
+      ],
+      "prefix": "task87_phase6_real10k_hnsw",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        80
+      ],
+      "queries_limit": 100,
+      "session_gucs": [
+        "ec_hnsw.disable_binary_prefilter=on",
+        "ec_hnsw.turboquant_exact_score_mode=int8_approx"
+      ],
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "log_output": "${artifact_dir}/recall-hnsw-real10k-int8_approx-kernel-on.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-hnsw-real10k-full_lut-kernel-on",
+      "tags": [
+        "task103",
+        "local",
+        "hnsw",
+        "turboquant",
+        "real10k",
+        "kernel_on",
+        "quant=turboquant",
+        "isa=avx2"
+      ],
+      "prefix": "task87_phase6_real10k_hnsw",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        80,
+        160
+      ],
+      "iterations": 300,
+      "concurrency": 1,
+      "session_gucs": [
+        "ec_hnsw.disable_binary_prefilter=on",
+        "ec_hnsw.turboquant_exact_score_mode=full_lut"
+      ],
+      "cache_state": "task103_hnsw_full_lut_on",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-hnsw-real10k-full_lut-kernel-on.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-hnsw-real10k-tiled_lut-kernel-on",
+      "tags": [
+        "task103",
+        "local",
+        "hnsw",
+        "turboquant",
+        "real10k",
+        "kernel_on",
+        "quant=turboquant",
+        "isa=avx2"
+      ],
+      "prefix": "task87_phase6_real10k_hnsw",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        80,
+        160
+      ],
+      "iterations": 300,
+      "concurrency": 1,
+      "session_gucs": [
+        "ec_hnsw.disable_binary_prefilter=on",
+        "ec_hnsw.turboquant_exact_score_mode=tiled_lut"
+      ],
+      "cache_state": "task103_hnsw_tiled_lut_on",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-hnsw-real10k-tiled_lut-kernel-on.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-hnsw-real10k-int8_approx-kernel-on",
+      "tags": [
+        "task103",
+        "local",
+        "hnsw",
+        "turboquant",
+        "real10k",
+        "kernel_on",
+        "quant=turboquant",
+        "isa=avx2"
+      ],
+      "prefix": "task87_phase6_real10k_hnsw",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        80,
+        160
+      ],
+      "iterations": 300,
+      "concurrency": 1,
+      "session_gucs": [
+        "ec_hnsw.disable_binary_prefilter=on",
+        "ec_hnsw.turboquant_exact_score_mode=int8_approx"
+      ],
+      "cache_state": "task103_hnsw_int8_approx_on",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-hnsw-real10k-int8_approx-kernel-on.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-hnsw-real10k-int8_approx-kernel-off",
+      "tags": [
+        "task103",
+        "local",
+        "hnsw",
+        "turboquant",
+        "real10k",
+        "kernel_off",
+        "quant=turboquant"
+      ],
+      "prefix": "task87_phase6_real10k_hnsw",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        80,
+        160
+      ],
+      "iterations": 300,
+      "concurrency": 1,
+      "session_gucs": [
+        "ec_hnsw.disable_binary_prefilter=on",
+        "ec_hnsw.turboquant_exact_score_mode=int8_approx",
+        "ec_hnsw.candidate_batch_scoring=off"
+      ],
+      "cache_state": "task103_hnsw_int8_approx_off",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-hnsw-real10k-int8_approx-kernel-off.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-diskann-real50k-binary-kernel-on",
+      "tags": [
+        "task103",
+        "local",
+        "diskann",
+        "binary",
+        "real50k",
+        "kernel_on",
+        "quant=binary"
+      ],
+      "prefix": "task67_local_fullq_50k_diskann",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [
+        64,
+        128
+      ],
+      "iterations": 120,
+      "concurrency": 1,
+      "cache_state": "task103_diskann_binary_on",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-diskann-real50k-binary-kernel-on.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-diskann-real50k-binary-kernel-off",
+      "tags": [
+        "task103",
+        "local",
+        "diskann",
+        "binary",
+        "real50k",
+        "kernel_off",
+        "quant=binary"
+      ],
+      "prefix": "task67_local_fullq_50k_diskann",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [
+        64,
+        128
+      ],
+      "iterations": 120,
+      "concurrency": 1,
+      "cache_state": "task103_diskann_binary_off",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-diskann-real50k-binary-kernel-off.log",
+      "session_gucs": [
+        "ec_diskann.candidate_batch_scoring=off"
+      ]
+    }
+  ]
+}

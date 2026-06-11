@@ -916,37 +916,54 @@ mod tests {
         )
         .unwrap();
 
+        let block_snapshots = super::block_kernel_scoring_snapshots();
+        let turboquant: Vec<_> = block_snapshots
+            .iter()
+            .filter(|snapshot| snapshot.surface == "ivf" && snapshot.quant_kind == "turboquant")
+            .collect();
+        assert!(!turboquant.is_empty());
+        let kernel_candidates = turboquant
+            .iter()
+            .map(|snapshot| snapshot.kernel_candidates)
+            .sum::<u64>();
+        let scalar_candidates = turboquant
+            .iter()
+            .map(|snapshot| snapshot.scalar_candidates)
+            .sum::<u64>();
+        assert_eq!(kernel_candidates + scalar_candidates, 39);
+        assert!(kernel_candidates >= 32);
+        for block in &turboquant {
+            assert_eq!(
+                block.elapsed_nanos,
+                block.kernel_elapsed_nanos + block.scalar_elapsed_nanos
+            );
+        }
+        let simd_host = turboquant.iter().any(|snapshot| snapshot.isa != "scalar");
+        if simd_host {
+            // Real lut32 block kernel: the 32-block and the padded 7-tail both
+            // dispatch under the detected ISA (Task 102).
+            assert_eq!(kernel_candidates, 39);
+            assert_eq!(scalar_candidates, 0);
+        } else {
+            // Scalar-only host: legacy block-as-kernel attribution plus a
+            // scalar partial tail.
+            assert_eq!(kernel_candidates, 32);
+            assert_eq!(scalar_candidates, 7);
+        }
+
         let snapshots = super::candidate_batch_scoring_snapshots();
         let ivf = snapshots
             .iter()
             .find(|snapshot| snapshot.surface == "ivf")
             .unwrap();
-        assert_eq!(ivf.flushes, 1);
         assert_eq!(ivf.candidates, 39);
+        assert_eq!(ivf.flushes, 1);
         assert_eq!(ivf.lut32_flushes, 1);
-        assert_eq!(ivf.lut32_candidates, 32);
-        let block_snapshots = super::block_kernel_scoring_snapshots();
-        let block = block_snapshots
-            .iter()
-            .find(|snapshot| {
-                snapshot.surface == "ivf"
-                    && snapshot.quant_kind == "turboquant"
-                    && snapshot.isa == "scalar"
-            })
-            .unwrap();
-        assert_eq!(block.surface, "ivf");
-        assert_eq!(block.quant_kind, "turboquant");
-        assert_eq!(block.isa, "scalar");
-        assert_eq!(block.flushes, 2);
-        assert_eq!(block.candidates, 39);
-        assert_eq!(
-            block.elapsed_nanos,
-            block.kernel_elapsed_nanos + block.scalar_elapsed_nanos
-        );
-        assert_eq!(block.kernel_flushes, 1);
-        assert_eq!(block.kernel_candidates, 32);
-        assert_eq!(block.scalar_flushes, 1);
-        assert_eq!(block.scalar_candidates, 7);
+        if simd_host {
+            assert_eq!(ivf.lut32_candidates, 39);
+        } else {
+            assert_eq!(ivf.lut32_candidates, 32);
+        }
         let spire = snapshots
             .iter()
             .find(|snapshot| snapshot.surface == "spire")

@@ -3,7 +3,8 @@ use std::sync::Arc;
 use crate::am::common::{
     candidate_batch::{
         score_grouped_pq_batch_for, score_hamming_words_batch_for, score_rabitq_bits1_batch_for,
-        CandidateBatch, CandidateBatchScoringSurface, CandidateMeta, CandidatePayload,
+        score_turboquant_no_qjl_4bit_batch_for, CandidateBatch, CandidateBatchScoringSurface,
+        CandidateMeta, CandidatePayload,
     },
     quant_codec::{EncodedQuantPayload, QuantCodec, QuantCodecKind, QuantSearchCodecTag},
     training::{self, GroupedPq4Model},
@@ -376,6 +377,33 @@ fn score_diskann_prepared_prefilter_batch(
                 *score = -*score;
             }
         }
+        DiskannPreparedPrefilter::TurboQuant {
+            quantizer,
+            prepared_lut,
+        } if super::options::candidate_batch_scoring_enabled() => {
+            let mut batch = CandidateBatch::with_capacity(tuples.len());
+            for (index, tuple) in tuples.iter().enumerate() {
+                batch
+                    .push(
+                        index,
+                        CandidatePayload::new(&tuple.search_code, CandidateMeta::None),
+                    )
+                    .unwrap_or_else(|error| pgrx::error!("{error}"));
+            }
+            score_turboquant_no_qjl_4bit_batch_for(
+                CandidateBatchScoringSurface::Diskann,
+                quantizer,
+                prepared_lut,
+                &batch,
+                out_scores,
+            )
+            .unwrap_or_else(|error| pgrx::error!("{error}"));
+            // Prefilter polarity stays outside the codec, matching the
+            // per-candidate TurboQuant arm.
+            for score in out_scores {
+                *score = -*score;
+            }
+        }
         _ => {
             for (tuple, out_score) in tuples.iter().zip(out_scores.iter_mut()) {
                 *out_score = prefilter.score(tuple);
@@ -734,6 +762,21 @@ impl QuantCodec for DiskannTurboQuantPrefilterCodec<'_> {
         Ok(self
             .quantizer
             .score_ip_from_parts_lut_no_qjl_4bit(prepared_query, payload.code))
+    }
+
+    fn score_ip_batch<Id>(
+        &self,
+        prepared_query: &Self::PreparedQuery,
+        batch: &CandidateBatch<'_, Id>,
+        out_scores: &mut [f32],
+    ) -> Result<(), String> {
+        score_turboquant_no_qjl_4bit_batch_for(
+            CandidateBatchScoringSurface::Diskann,
+            self.quantizer,
+            prepared_query,
+            batch,
+            out_scores,
+        )
     }
 }
 
@@ -1321,6 +1364,87 @@ mod tests {
         assert_eq!(kernel_candidates + scalar_candidates, 39);
         assert!(kernel_candidates >= 32);
         if grouped.iter().any(|snapshot| snapshot.isa != "scalar") {
+            assert_eq!(kernel_candidates, 39);
+            assert_eq!(scalar_candidates, 0);
+        } else {
+            assert_eq!(kernel_candidates, 32);
+            assert_eq!(scalar_candidates, 7);
+        }
+        crate::am::common::candidate_batch::reset_candidate_batch_scoring_counters();
+    }
+
+    #[test]
+    fn diskann_turboquant_prepared_prefilter_batch_scores_and_records_counters() {
+        use crate::am::ec_diskann::scan::VamanaPrefilter;
+
+        fn unit_vector(dim: usize, seed: u64) -> Vec<f32> {
+            let mut state = seed
+                .wrapping_mul(0x9E37_79B9_7F4A_7C15)
+                .wrapping_add(0x2545_F491_4F6C_DD1D);
+            let mut vector: Vec<f32> = (0..dim)
+                .map(|_| {
+                    state = state
+                        .wrapping_mul(6_364_136_223_846_793_005)
+                        .wrapping_add(1_442_695_040_888_963_407);
+                    (((state >> 33) as i32 % 1000) as f32) / 1000.0 - 0.5
+                })
+                .collect();
+            let norm = vector
+                .iter()
+                .map(|value| value * value)
+                .sum::<f32>()
+                .sqrt()
+                .max(1e-6);
+            vector.iter_mut().for_each(|value| *value /= norm);
+            vector
+        }
+
+        let _guard = crate::am::common::candidate_batch::CANDIDATE_BATCH_COUNTER_TEST_LOCK
+            .lock()
+            .unwrap();
+        crate::am::common::candidate_batch::reset_candidate_batch_scoring_counters();
+        let quantizer = Arc::new(ProdQuantizer::new(1536, 4, 42));
+        let query = unit_vector(1536, 4242);
+        let prepared_lut = quantizer.prepare_ip_query_lut_no_qjl_4bit(&query);
+        let tuples = (0..39)
+            .map(|seed| {
+                tuple_with_codes(
+                    Vec::new(),
+                    quantizer.encode(&unit_vector(1536, 700 + seed)).mse_packed,
+                )
+            })
+            .collect::<Vec<_>>();
+        let prefilter = DiskannPreparedPrefilter::TurboQuant {
+            quantizer: Arc::clone(&quantizer),
+            prepared_lut: quantizer.prepare_ip_query_lut_no_qjl_4bit(&query),
+        };
+        let mut batch_scores = vec![0.0_f32; tuples.len()];
+
+        (&prefilter).score_batch(&tuples, &mut batch_scores);
+
+        for (tuple, score) in tuples.iter().zip(batch_scores.iter()) {
+            let expected =
+                -quantizer.score_ip_from_parts_lut_no_qjl_4bit(&prepared_lut, &tuple.search_code);
+            assert_eq!(score.to_bits(), expected.to_bits());
+            assert_eq!(prefilter.score(tuple).to_bits(), expected.to_bits());
+        }
+        let snapshots = crate::am::common::candidate_batch::block_kernel_scoring_snapshots();
+        let turboquant = snapshots
+            .iter()
+            .filter(|snapshot| snapshot.surface == "diskann" && snapshot.quant_kind == "turboquant")
+            .collect::<Vec<_>>();
+        assert!(!turboquant.is_empty());
+        let kernel_candidates = turboquant
+            .iter()
+            .map(|snapshot| snapshot.kernel_candidates)
+            .sum::<u64>();
+        let scalar_candidates = turboquant
+            .iter()
+            .map(|snapshot| snapshot.scalar_candidates)
+            .sum::<u64>();
+        assert_eq!(kernel_candidates + scalar_candidates, 39);
+        assert!(kernel_candidates >= 32);
+        if turboquant.iter().any(|snapshot| snapshot.isa != "scalar") {
             assert_eq!(kernel_candidates, 39);
             assert_eq!(scalar_candidates, 0);
         } else {
