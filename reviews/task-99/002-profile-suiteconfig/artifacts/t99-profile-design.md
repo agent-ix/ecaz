@@ -110,6 +110,20 @@ builds, the dominant cost — est. 2–4 h) → suite run (est. 2–3 h) →
 Task 97 runbook cells (packet 022; rides the same G4 instance) →
 `cloud snapshot` → `cloud down --yes`.
 
+**Task 94's deferred G4 pass rides this trip** (its only remaining item
+per the packet 028 reviewer verdict; no separate runbook exists — the
+task file's old "packet 027" runbook pointer was stale and is fixed).
+Closing evidence = this profile's grouped-PQ cells: IVF pq_fastscan
+batch-on/off (nprobe 16/64) and DiskANN prefilter_kind=grouped_pq
+batch-on/off (list_size 64/128) at 100k with counters, `isa=sve2` rows
+and measured vector length, **annotated as the gather-shape SVE2
+kernel** if the SVE repack remains deferred (Task 94 reopened-scope
+rule). G4 NEON-forced cells are out of scope: the NEON column is the M5
+lane (Task 104), and the block-kernel `Isa` dispatcher has no
+NEON-forcing override on SVE2 hosts. If Task 94's reviewer requires the
+full packet-025 matrix shape, supplemental 10k/25k IVF pq_fastscan
+replicas are cheap to add on-instance from the same source tables.
+
 Estimated cost: roughly 6–9 instance-hours per lane → **~$5–8 total**,
 plus EBS snapshot retention. Instance types and on-demand pricing are
 recorded in the run-packet manifests per the pinned requirement.

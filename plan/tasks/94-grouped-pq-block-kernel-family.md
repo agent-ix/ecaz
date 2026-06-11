@@ -34,9 +34,17 @@ now do. The slice:
   `reviews/task-99/000-pre-closeout-architecture-review/feedback/`
   (finding F8).
 
-The Graviton 4 runbook (packet 027) executes after this slice and
-Task 101, so ARM evidence is collected once against the final kernel
-shape.
+The Graviton 4 pass executes after this slice and Task 101, so ARM
+evidence is collected once against the final kernel shape. (Stale
+pointer fixed 2026-06-11: this previously cited a "runbook (packet
+027)", but ordinal 027 was consumed by the local latency-width rerun
+and no Task 94 runbook packet was ever written. The G4 pass now rides
+the Task 99 profile trip — see
+`reviews/task-99/002-profile-suiteconfig/artifacts/t99-profile-design.md`
+— whose grouped-PQ cells (IVF pq_fastscan batch-on/off,
+DiskANN prefilter_kind=grouped_pq batch-on/off, with counters) are this
+task's closing G4 evidence, annotated as measuring the gather-shape
+SVE2 kernel if the SVE repack remains deferred.)
 
 ## Why
 

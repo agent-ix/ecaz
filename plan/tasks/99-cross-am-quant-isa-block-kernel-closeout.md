@@ -191,6 +191,23 @@ accurately represents what shipped.
   value beyond NEON's 2.7-3.6x — and the Intel AVX2 compile/runtime/bench
   validation of the landed rabitq32 AVX2 backend.
 
+- Task 94 (recorded 2026-06-11): the **deferred Graviton 4 pass** — per the
+  packet 028 reviewer verdict the only remaining Task 94 item. No Task 94
+  runbook packet exists (the task file's "packet 027" pointer was stale and
+  has been corrected); the pass rides this task's G4 profile lane. Closing
+  evidence: the profile's grouped-PQ cells (IVF pq_fastscan batch-on/off at
+  nprobe 16/64, DiskANN prefilter_kind=grouped_pq batch-on/off at
+  list_size 64/128, 100k fixtures, counters on) with `isa=sve2` attribution
+  and measured vector length; annotated as measuring the **gather-shape**
+  SVE2 kernel if the SVE repack remains deferred (Task 94 reopened-scope
+  rule). The NEON column is owned by the M5 lane (Task 104: IVF grouped-PQ
+  30.4–30.9 ns/c, PASS) — there is no Isa-level NEON-forcing mechanism on
+  SVE2 hosts, so a G4 NEON-forced cell is out of scope unless a reviewer
+  requires it (which would need a small dispatcher override first).
+  Supplemental 10k/25k IVF cells matching the packet-025 matrix shape can
+  be added on-instance from the same source tables if the Task 94 reviewer
+  asks; default is the 100k profile cells. Task 94's status flip to
+  `complete` stays owned by Task 94, citing these cells.
 - Task 95: the AVX2-vs-hardware-POPCNT question for hamming32 (Intel lane;
   expected return bounded by the measured NEON 1.10-1.17x).
 - Task 98: AVX2 variants for tiled_lut32/int8_approx32 (Intel lane;
