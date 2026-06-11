@@ -69,6 +69,15 @@ sequenceDiagram
    score and deterministic tie-break.
 9. Stale heap locators SHALL be suppressed or repaired by the update/vacuum
    policy; scans SHALL NOT emit unrelated heap rows.
+10. Leaf-local block summaries MAY reduce row-segment decode and candidate
+    scoring, but any pruning policy SHALL preserve the accepted candidate
+    surface unless a benchmark packet proves a better recall/latency point.
+11. Local search diagnostics SHALL distinguish routing misses, selected-leaf
+    block containment misses, candidate-budget misses, heap rerank work, and
+    scored candidate surface.
+12. Product-scale recall recovery SHALL NOT be claimed from wider top-graph
+    search, blanket global-cap expansion, or near-cap rescue unless the
+    evidence keeps candidate growth within the stated benchmark gate.
 
 ## Acceptance Criteria
 
@@ -86,3 +95,15 @@ heap-rerank work.
 
 Store-grouped prefetch is distinguishable from true parallel multi-store
 execution in diagnostics and product claims.
+
+### FR-053-AC-4
+
+SPIRE local recall/latency packets report candidate-surface and miss-attribution
+fields sufficient to tell routing errors apart from selected-leaf block
+containment or candidate-budget misses.
+
+### FR-053-AC-5
+
+Leaf block-summary or pruning changes preserve recall and candidate-surface
+gates relative to the accepted Task 79/81 baseline or explicitly record the
+tradeoff as a rejected/diagnostic point.

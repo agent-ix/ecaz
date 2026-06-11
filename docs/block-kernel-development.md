@@ -12,7 +12,7 @@ ISA-specific kernel functions directly. The quant codec owns:
 - shape validation;
 - width gating;
 - runtime ISA dispatch;
-- scalar tail handling;
+- partial-width and scalar remainder handling;
 - counter attribution.
 
 The reference implementation is `src/quant/lut32/`, the Task 87 TurboQuant
@@ -34,8 +34,10 @@ src/quant/<kernel>/
 Responsibilities:
 
 - `mod.rs`: public entry point, shape validation, block-width gating, runtime
-  dispatch, scalar tail routing, and counter-facing return values.
-- `scalar.rs`: bit-exact reference implementation plus scalar tail scoring.
+  dispatch, partial-width or scalar remainder routing, and counter-facing
+  return values.
+- `scalar.rs`: bit-exact reference implementation plus scalar remainder
+  scoring.
 - `neon.rs`: aarch64 NEON backend or a safe scalar fallback.
 - `sve.rs`: aarch64 SVE/SVE2 backend or a safe scalar fallback.
 - `avx2.rs`: x86/x86_64 AVX2 backend or a safe scalar fallback.
@@ -71,16 +73,20 @@ A real Graviton 4 SVE2 backend returns `Isa::Sve2`.
 
 ## Width Gating
 
-Use a universal block width of 32 candidates.
+Use a universal base block width of 32 candidates.
 
-- `batch.len() < 32`: score all candidates with the scalar path.
-- `batch.len() >= 32`: score the largest whole block range with the block
-  backend and score the remaining tail with the scalar path.
-- shape mismatches fail before scoring and before counter increments.
+- shape mismatches fail before scoring, before output mutation, and before
+  counter increments;
+- `batch.len() >= 32`: score the largest whole block32 range with the selected
+  backend;
+- supported remainders use the family-specific partial-width cascade
+  (`partial`, `octet`, or equivalent) before scalar fallback;
+- unsupported widths, disabled kernels, and missing runtime features use the
+  scalar reference path.
 
-Scalar tails must be recorded separately under `Isa::Scalar`, even when whole
-blocks in the same batch use `Isa::Sve2`, `Isa::Sve`, `Isa::Neon`, or
-`Isa::Avx2`.
+Scalar remainders must be recorded separately under `Isa::Scalar`, even when
+whole or partial blocks in the same batch use `Isa::Sve2`, `Isa::Sve`,
+`Isa::Neon`, or `Isa::Avx2`.
 
 ## Counter Attribution
 
@@ -89,7 +95,9 @@ Kernel call sites record rows by `(surface, quant_kind, isa)`.
 For every successful batch:
 
 - whole blocks increment `kernel_*` fields on the backend-returned ISA row;
-- scalar tails increment `scalar_*` fields on the `Isa::Scalar` row;
+- supported partial-width blocks increment the appropriate kernel row and
+  width bucket for the backend-returned ISA;
+- scalar remainders increment `scalar_*` fields on the `Isa::Scalar` row;
 - fallback backend stubs that delegate to scalar return `Isa::Scalar`, so they
   do not publish false ISA-specific rows.
 
@@ -135,13 +143,16 @@ before score polarity conversion.
 
 Minimum test coverage for a kernel family:
 
-- `len < 32` scores only scalar tail and matches scalar reference;
+- `len < 32` follows the family's supported partial-width or scalar remainder
+  route and matches the scalar reference;
 - `len == 32` scores one whole block and matches the reference within the
   required tolerance;
-- `len > 32` scores whole blocks plus scalar tail and preserves candidate order;
-- shape mismatch rejects before counters increment;
-- counter rows report the backend-returned ISA for whole blocks and
-  `Isa::Scalar` for tails.
+- `len > 32` scores whole blocks plus partial/scalar remainders and preserves
+  candidate order;
+- shape mismatch rejects before counters increment and before output mutation;
+- counter rows report the backend-returned ISA for whole and partial blocks,
+  width buckets for exact block32/partial/octet/scalar remainder, and
+  `Isa::Scalar` for scalar remainders.
 
 ## Graviton 4 / SVE2 Evidence
 
@@ -155,7 +166,7 @@ For Graviton 4 packets:
   claims, for example `sve2-128`;
 - avoid width-specific claims if vector length was not measured;
 - include counter evidence showing kernel rows under `isa=sve2` once a real
-  SVE2 backend lands, with scalar tails still under `isa=scalar`.
+  SVE2 backend lands, with scalar remainders still under `isa=scalar`.
 
 Task 92's infrastructure closeout does not require AWS Graviton 4 benchmarks:
 it ships shared dispatch, counters, suite axes, docs, and safe fallback stubs.

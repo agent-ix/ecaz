@@ -54,6 +54,7 @@ flowchart LR
 | Health and active state | `ec_spire_index_health_snapshot`, `ec_spire_index_active_snapshot_diagnostics` | One-row state, epoch, object, placement, and byte-count overview. |
 | Storage and epoch cleanup | `ec_spire_index_relation_storage_snapshot`, `ec_spire_index_epoch_cleanup_summary`, `ec_spire_index_epoch_cleanup_run` | Old epoch retention, cleanup debt, and safe reclamation. |
 | Routing and scan | `ec_spire_index_scan_routing_snapshot`, `ec_spire_index_scan_placement_snapshot`, `ec_spire_index_scan_local_store_execution_snapshot` | Route budgets, selected PIDs, local store grouping, candidate counts. |
+| Candidate attribution | funnel, pipeline, target-block-rank, row-segment, and block-summary diagnostics | Distinguish routing, selected-block containment, candidate-budget, row-decode, heap-rerank, and approximate-scoring bottlenecks. |
 | Boundary replica | `ec_spire_index_boundary_replica_identity_snapshot`, `ec_spire_index_boundary_replica_placement_diagnostics` | Replica identity and placement health. |
 | Remote executor | `ec_spire_remote_search_production_executor_state_summary`, `ec_spire_remote_search_degraded_skip_report`, `ec_spire_remote_pipeline_steps` | Dry and live remote readiness, strict/degraded status, pipeline stages. |
 | DML and recovery | `ec_spire_dml_frontdoor_*`, `ec_spire_reap_orphaned_remote_prepared_xacts` | DML classifier, primitive plans, 2PC recovery. |
@@ -94,6 +95,11 @@ lifecycle fixtures.
 
 Measurement and readiness claims SHALL cite packet-local artifacts and one of
 the evidence labels defined by the SPIRE readiness docs.
+
+Product-scale Pareto or recall-recovery claims SHALL cite suite-driven
+artifacts and candidate-surface diagnostics. Diagnostics that show a larger
+candidate surface, wider top-graph search, or wider block cap improved recall
+SHALL be reported as a tradeoff unless latency and candidate gates also pass.
 
 ## Endpoint
 
@@ -142,3 +148,9 @@ lifecycle fixtures.
 
 Diagnostics distinguish implementation readiness from benchmark claims and do
 not imply product-scale performance without packet-local measurement artifacts.
+
+### FR-060-AC-9
+
+SPIRE recall/latency diagnostics expose candidate-surface and miss-attribution
+fields that can support Task 73-85 style decisions without relying on terminal
+scrollback or external scratch files.

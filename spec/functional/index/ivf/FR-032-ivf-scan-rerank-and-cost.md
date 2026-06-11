@@ -24,6 +24,15 @@ relationships:
 4. `heap_f32` rerank SHALL rerank approximate candidates from heap `ecvector` data.
 5. PG18 SHALL expose strategy translation and tree-height callback wiring for IVF where supported.
 6. IVF cost snapshots SHALL expose planner inputs and modeled cost state.
+7. IVF compressed-domain scan scoring SHALL route TurboQuant, QJL, RaBitQ, and
+   grouped-PQ/PqFastScan surfaces through `QuantCodec::score_ip_batch` where
+   the selected storage format exposes a batchable search payload.
+8. IVF PqFastScan batch scoring SHALL document the interaction between
+   scratch-SoA batch decode and suffix-max or cutoff pruning. Batch-on/off MUST
+   remain a benchmark axis where pruning tradeoffs affect latency.
+9. Non-ORDER-BY SQL over IVF-indexed tables SHALL not fail because the planner
+   picked the ANN access method for a plain scan. Until Task 100 lands, this is
+   a known robustness gap rather than an accepted behavior.
 
 ## Acceptance Criteria
 
@@ -38,3 +47,15 @@ Session `ec_ivf.nprobe` and `ec_ivf.rerank_width` overrides are reflected in sca
 ### FR-032-AC-3
 
 `EXPLAIN (ecaz)` can report IVF scan counters on PG18.
+
+### FR-032-AC-4
+
+IVF block-kernel benchmark evidence includes `surface=ivf` rows with quant kind,
+ISA, scalar/kernel counters, and width buckets for claimed compressed-domain
+batch-scoring wins.
+
+### FR-032-AC-5
+
+Plain non-ORDER-BY statements such as `count(*)` over an IVF-indexed table plan
+and execute without an ANN scan shape error after the Task 100 planner guard is
+implemented.

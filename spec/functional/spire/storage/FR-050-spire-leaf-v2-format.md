@@ -19,7 +19,9 @@ relationships:
 
 SPIRE leaf V2 objects SHALL store assignment rows in a segmented, column-major
 layout so scans can borrow row references, batch score encoded payloads, and
-avoid copying entire leaf objects into per-query state.
+avoid copying entire leaf objects into per-query state. Leaf V2 MAY also store
+query-time block-summary metadata used to score or prune groups of rows before
+row-segment payload decode.
 
 ## Leaf V2 Meta Tuple
 
@@ -53,6 +55,27 @@ Leaf V2 segment tuples use `kind = leaf`, `format_version = 2`, and
 7. `heap_tids[row_count]: item pointer[]`
 8. `gammas[row_count]: float4[]`
 9. `payloads[row_count * payload_stride]: bytea`
+
+## Leaf Block Summaries
+
+Leaf V2 may include leaf-local block summaries for latency-oriented scans. A
+block summary groups a bounded row range inside a leaf and stores the
+format-specific summary payload needed to estimate whether that block should be
+decoded and scored for a query.
+
+Rules:
+
+1. Block summaries SHALL be scoped to one leaf object and SHALL NOT change the
+   canonical assignment row encoding.
+2. Summary rows SHALL identify the covered row range deterministically.
+3. Summary scoring and pruning SHALL be optional. A scan must be able to fall
+   back to full leaf segment decode when summaries are absent, stale, or
+   disabled.
+4. Summary pruning policies SHALL be benchmark-gated because product-scale Task
+   82-84 evidence showed blanket candidate-cap expansion recovers recall only
+   by increasing the scored candidate surface.
+5. Any summary format that becomes externally durable SHALL be covered by the
+   on-disk format evolution discipline in `NFR-016`.
 
 ## Canonical Segment Encoding
 
@@ -146,3 +169,9 @@ vector-ID encodings are rejected.
 
 The spec defines enough vector identity and assignment flag semantics to
 reproduce scan dedupe, boundary-replica handling, and delta overlay behavior.
+
+### FR-050-AC-4
+
+Leaf block summaries can be decoded independently from row segments and scans
+can fall back to full row-segment decode when summary metadata is unavailable
+or disabled.

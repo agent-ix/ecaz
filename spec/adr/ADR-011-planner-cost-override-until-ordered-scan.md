@@ -11,7 +11,7 @@ date: 2026-04-05
 > **SUPERSEDED (2026-04-11):** The `f64::MAX` planner override has been removed.
 > `amcostestimate` now delegates to the FR-020 two-phase cost model
 > (graph-traversal + linear-fallback) documented in
-> [FR-020-cost-estimation.md](../functional/FR-020-cost-estimation.md).
+> [FR-020-cost-estimation.md](../functional/common/FR-020-cost-estimation.md).
 > All four Follow-Up conditions below have been met: greedy descent + layer-0
 > traversal (A3), ordered result production matching the operator class (A3),
 > `ef_search` wired through scan tuning (A4, bb13a7a), and scan validation

@@ -66,6 +66,7 @@ This index is the canonical navigation surface for Ecaz architecture decisions. 
 | SPIRE leaf-local block pruning | `ADR-074-spire-leaf-local-block-pruning.md` | PROPOSED | Task 79 Phase 4 direction: query-aware subleaf block summaries reachable before row segment reads, with a SPIRE leaf format bump and full-leaf fallback. |
 | DiskANN graph build worker stepping stone | `ADR-075-diskann-graph-build-worker-stepping-stone.md` | PROPOSED | Task 65b uses rayon only as a deterministic graph-core stepping stone while PostgreSQL remains the worker-count authority. |
 | Universal block kernel pattern | `ADR-076-universal-block-kernel-pattern.md` | ACCEPTED | Task 92 standardizes block width, runtime ISA detection, `(AM, quant, ISA)` counters, off-path scalar accounting, and the per-kernel module layout for Tasks 93-99. |
+| Block kernel completeness closing record | `ADR-077-block-kernel-completeness-closing-record.md` | PROPOSED | Records the QuantCodec + candidate-batch + width-cascade target surface and the Task 99/102 evidence boundaries before block-kernel completion claims. |
 
 ## Superseded Historical Decisions
 

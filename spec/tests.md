@@ -92,7 +92,9 @@ presence alone.
 | Functional Req | Acceptance Criteria | Test Cases | Coverage Status |
 | --- | --- | --- | --- |
 | FR-001..FR-006 | Type, I/O, encode, scoring, operators | TC-001, TC-002, TC-003 | Partial: current unit/pg_test coverage is grouped; strict per-AC evidence inventory remains `GAP-018` and legacy frontmatter migration remains `GAP-020` |
-| FR-007..FR-018 | HNSW layout/build/scan/vacuum/WAL/insert/scoring | TC-001, TC-004, TC-013 | Partial: old HNSW product benchmark rows need refreshed evidence |
+| FR-007..FR-013, FR-016..FR-018 | HNSW layout/build/scan/vacuum/WAL/insert/scoring | TC-001, TC-004, TC-013 | Partial: old HNSW product benchmark rows need refreshed evidence |
+| FR-014 | FR-014-AC-1..5 block-kernel scoring, ISA dispatch, width buckets, counters, and correctness anchors | TC-035, TC-033 | Partial: architecture and reporting standard are specified; Task 99 completeness matrix, Task 102 real LUT32 SIMD, and Graviton 4 vector-length evidence remain explicit gates |
+| FR-015 | FR-015-AC-1..10 ProdQuantizer math plus index-local QuantCodec adapter boundary | TC-001, TC-035 | Partial: deterministic encode/score surface is implementation-backed, but AC-10 requires cross-AM adapter audit evidence before standards-complete closure |
 | FR-019 | ReadStream integration | TC-005, TC-017 | Partial: behavior coverage exists; speedup evidence deferred |
 | FR-020 | Planner cost estimation | TC-005 | Partial: local modeled/live cost evidence is grouped; strict per-AC evidence inventory remains `GAP-018` and legacy frontmatter migration remains `GAP-020` |
 | FR-021 | Parallel index build | TC-006, TC-016 | Partial: scale measurement deferred |
@@ -112,7 +114,7 @@ presence alone.
 | FR-035 | FR-035-AC-1..3 | TC-011 | Partial: local DiskANN scan/prefilter/rerank evidence is grouped; strict per-AC evidence inventory remains `GAP-018` |
 | FR-036 | FR-036-AC-1..3 | TC-012 | Partial: local DiskANN insert/vacuum/diagnostics evidence is grouped; strict per-AC evidence inventory remains `GAP-018` |
 | FR-037 | FR-037-AC-1..4 | TC-019 | Partial: docs/spec traceability is grouped; CLI unit execution was not run in this docs checkpoint and strict per-AC evidence inventory remains `GAP-018` |
-| FR-038 benchmark suites | FR-038-AC-1..8 | TC-020 benchmark suites, TC-033 | Partial: first auto-runner surface is implemented, but strict per-AC evidence inventory remains `GAP-018` and full schema-driven report generation remains iterative |
+| FR-038 benchmark suites | FR-038-AC-1..10 | TC-020 benchmark suites, TC-033, TC-036 | Partial: first auto-runner surface is implemented, but strict per-AC evidence inventory, backend-profile preflight proof, and full schema-driven report generation remain iterative |
 | FR-039..FR-043 tombstones | No active ACs | Spec inspection | Superseded: retained tombstone files preserve immutable ID history and point to `FR-048..FR-060` replacements |
 | FR-048 | FR-048-AC-1..8 | TC-020 SPIRE, TC-021, TC-024, TC-025 | Partial: domain model, identities, epochs, placement, and read/write boundary definitions are specified, but strict per-AC evidence inventory remains `GAP-018` |
 | FR-049 | FR-049-AC-1..3 | TC-020 SPIRE, TC-022, TC-034 | Partial: common header decode and rejection paths exist; external fixture compatibility remains a gap before format freeze |
@@ -142,7 +144,7 @@ presence alone.
 | NFR-004 | NFR-004-AC-1..5 | TC-013, TC-034 | Partial: Task 34 documents the lane surface, but only packet-local raw logs count as completed evidence; unpacketed local lanes, PG18 sanitizer, and SQLsmith remain gaps |
 | NFR-005 | Build and CI | TC-014 | Partial: static docs checkpoint did not run build/test commands |
 | NFR-006 | Async I/O cold-cache performance | TC-017 | Gap: measurement deferred |
-| NFR-007 | Benchmark provenance | TC-015 | Partial: review-packet citations exist, but legacy benchmark summary rows remain outside NFR-015 row-level conformance until `GAP-021` closes |
+| NFR-007 | Benchmark provenance | TC-015, TC-020 benchmark suites, TC-036 | Partial: review-packet citations exist, but backend-profile proof and legacy benchmark summary rows remain outside NFR-015 row-level conformance until `GAP-021` closes |
 | NFR-008 | Scale boundary | TC-016 | Partial: policy is specified; execution remains deferred and strict per-AC evidence inventory remains `GAP-018` |
 | NFR-009 | CLI drift and artifact discipline | TC-019 | Partial: docs/spec traceability exists; command-tree execution audit is deferred to CLI tests and strict per-AC evidence inventory remains `GAP-018` |
 | NFR-010 | Cloud cost discipline (status reporting, no NAT, --confirm-cost gate) | TC-031 | Planned: cloud harness implementation in progress |
@@ -150,7 +152,7 @@ presence alone.
 | NFR-012 | Cloud throughput targets | TC-016, TC-032 | Partial: targets are specified; product evidence is gated on controlled cloud runs |
 | NFR-013 | SPIRE local readiness and capacity | TC-020 SPIRE, TC-021, TC-022, TC-023, TC-025 | Partial: implementation traceability exists; full capacity envelope needs controlled local storage evidence |
 | NFR-014 | SPIRE transport security and operations | TC-024, TC-025 | Partial: v1 contract specifies TLS, timeout, cancellation, and observability behavior; deployment evidence deferred |
-| NFR-015 | Benchmark reporting standard | TC-033 | Partial: standard is specified; existing and future benchmark rows must conform packet-by-packet before being marked complete |
+| NFR-015 | Benchmark reporting standard | TC-033, TC-035, TC-036 | Partial: standard is specified; existing and future benchmark rows must conform packet-by-packet, including block-kernel counters and backend provenance, before being marked complete |
 
 ## Test Case Summary
 
@@ -175,7 +177,7 @@ presence alone.
 | TC-017 | ReadStream cold-cache speedup gate | Benchmark | P2 | NFR-006, FR-019 | Gap: deferred |
 | TC-018 | HNSW insert decontention follow-up | Benchmark / implementation | P2 | Future Task 13 | Gap: future work |
 | TC-019 | `ecaz` CLI command tree, profiles, logging, and docs links | Unit / docs audit | P1 | US-016, FR-037, NFR-009 | Implemented for docs traceability; CLI tests run on demand |
-| TC-020 benchmark suites | `ecaz bench suite` dry-run, execution manifest, audit, status, report, and results extraction | Unit / CLI smoke | P1 | US-017 benchmark suites, FR-038 benchmark suites, NFR-007, NFR-009 | Implemented for first auto-runner surface |
+| TC-020 benchmark suites | `ecaz bench suite` dry-run, execution manifest, audit, status, report, and results extraction | Unit / CLI smoke | P1 | US-017 benchmark suites, FR-038 benchmark suites, NFR-007, NFR-009 | Implemented for first auto-runner surface; backend profile preflight remains under TC-036 |
 | TC-020 SPIRE | SPIRE partition-object domain model and binary storage formats | Design packet / pg_test | P0 | US-022, FR-048, FR-049, FR-050, FR-051, FR-052, NFR-013 | Implemented for spec traceability; format-freeze binary compatibility tests should be added before external persistence commitments |
 | TC-021 | SPIRE local store configuration, placement, and diagnostics | SQL / pg_test | P1 | US-018, US-022, FR-053, FR-055, FR-060, NFR-013 | Implemented for local v1 behavior; true parallel local-store execution deferred |
 | TC-022 | SPIRE routing, scoring, dedupe, and heap visibility handling | pg_test | P0 | US-018, US-022, FR-050, FR-051, FR-053 | Implemented for eager bounded local scans |
@@ -189,8 +191,10 @@ presence alone.
 | TC-030 | Pause/resume preserves data; snapshot + `--from-snapshot` skips re-load | Integration | P1 | US-021, FR-044, NFR-010 | Planned: implementation in progress |
 | TC-031 | `--confirm-cost` gate, status `$/hr` and `$/mo` reporting, S3 lifecycle rule | Unit / static | P1 | NFR-010 | Planned: implementation in progress |
 | TC-032 | Corpus load throughput meets per-profile NFR-011 targets | Benchmark | P1 | NFR-011, FR-047 | Planned: baseline once first `1m` run lands |
-| TC-033 | Benchmark reporting standard docs/spec audit | Docs / spec audit | P1 | US-015, US-017, FR-038, NFR-015 | Implemented for the standard; future benchmark packets apply it row-by-row |
+| TC-033 | Benchmark reporting standard docs/spec audit | Docs / spec audit | P1 | US-015, US-017, FR-038, NFR-015 | Implemented for the standard; future benchmark packets apply row-level block-kernel and backend-provenance fields |
 | TC-034 | Task 34 hardening and analysis lanes | Static analysis / fuzz / model checking / sanitizer / supply-chain audit | P0 | NFR-004, FR-011, FR-049, FR-050, FR-051, FR-052, FR-053, FR-054, FR-055, FR-056, FR-057, FR-058, FR-059 | Partial: packeted Task 34 evidence currently covers installer, MIRAI, Flux, and Rudra-family logs; aggregate local/nightly, sanitizer, fuzz, cargo-careful, Kani, Loom, Shuttle, cargo-vet, cargo-geiger, AFL, PG18 sanitizer, and SQLsmith evidence remain gaps until packeted |
+| TC-035 | QuantCodec block-kernel completeness matrix | Unit / benchmark packet / docs audit | P0 | FR-014, FR-015, FR-030, FR-032, FR-035, NFR-015 | Partial: target matrix is specified; Task 99, Task 102, Graviton 4 vector-length, and deferred hardware cells remain gaps until packeted |
+| TC-036 | Benchmark suite backend-profile preflight | CLI unit / suite audit | P0 | FR-038, NFR-007, NFR-015 | Partial: suite manifests must prove release/debug backend selection for latency and recall rows before product benchmark claims |
 
 ## Option Permutation Matrix
 
@@ -215,6 +219,8 @@ presence alone.
 | TC-023 | SPIRE consistency mode | local strict default, explicit degraded, remote strict | Strict fails closed; degraded reports skipped placements and remote failure metadata |
 | TC-024 | SPIRE remote transport | TLS required/disabled for dev, timeout, cancellation, tuple payload shape, version mismatch, remote fanout and payload caps | Remote executor validates endpoint identity, wire version, payload arity/types, cancellation, capacity limits, and fail-closed behavior |
 | TC-034 | Hardening analysis lanes | Packeted evidence currently includes installer, MIRAI, Flux, and Rudra-family logs; documented but unpacketed lanes include `hardening-local`, `hardening-nightly-local`, cargo-audit/deny/vet, unsafe audit, Miri, careful, fuzz, Kani, Loom, Shuttle, sanitizers, SQLsmith, cargo-geiger, and AFL | Each lane must record command, gate level, prerequisites, artifact, interpretation rule, and model boundary before it is promoted from gap to completed evidence |
+| TC-035 | Block-kernel dispatch matrix | quant kind, AM surface, ISA label, width bucket, scalar anchor | Matrix rows distinguish exact block32, partial/octet, scalar remainder, absent, and deferred cells |
+| TC-036 | Benchmark backend profile states | release backend, debug backend without override, debug backend with explicit override | Latency/recall suites fail fast on debug backend unless explicitly allowed, and manifests preserve backend provenance |
 
 ## Constraint Boundary Tests
 
@@ -254,6 +260,8 @@ presence alone.
 | EC-014 | Hardening analyzer passes because an optional tool is missing | NFR-004 | TC-034 | False confidence in safety baseline |
 | EC-015 | Pure Rust proof is misapplied to pgrx/SPI/libpq callback behavior | NFR-004, FR-058 | TC-024, TC-034 | Incorrect production-readiness claim |
 | EC-016 | SPIRE Stage E matrix only checks status strings, not executor behavior | FR-057, FR-058 | TC-024, TC-034 | Distributed failure mode appears covered but fails live |
+| EC-017 | Block-kernel partial widths fall back silently without counter attribution | FR-014, FR-030, FR-032, FR-035, NFR-015 | TC-035 | Scoring-share claims misrepresent production AM batch distributions |
+| EC-018 | Latency/recall benchmark uses a debug backend without manifest evidence | FR-038, NFR-007, NFR-015 | TC-036 | Product benchmark claim is inflated or not reproducible |
 
 ## Integration Test Matrix
 
@@ -293,6 +301,9 @@ Ecaz has one required local service integration: PostgreSQL itself.
 | GAP-019 | Task 34 unpacketed local hardening lane logs | Medium | Packet raw logs for aggregate local/nightly, sanitizer, fuzz, cargo-careful, Kani, Loom, Shuttle, cargo-vet, cargo-geiger, and AFL lanes before marking `TC-034` complete |
 | GAP-020 | Legacy structured relationship frontmatter migration | Medium | Migrate active legacy `FR-001..FR-027`, early NFRs, and stakeholder requirements from `traces:`/prose links to `artifact_type` plus semantic `relationships:` before claiming whole-spec ISO/IEC/IEEE 42010 or IEEE 828 graph completeness |
 | GAP-021 | Legacy benchmark row conformance to NFR-015 | Medium | Either convert legacy HNSW/IVF/DiskANN benchmark tables to row-level NFR-015 fields or keep them explicitly labeled as local summary rows outside standards-complete comparisons |
+| GAP-022 | Block-kernel Task 99 completeness matrix not yet packeted | High | Packet row-level quant-kind, AM-surface, ISA, width-bucket, scalar-anchor, recall, and latency evidence before accepting ADR-077 |
+| GAP-023 | Real LUT32 SIMD closure remains pending | Medium | Close Task 102 with packeted real-SIMD evidence before publishing LUT32 completion claims |
+| GAP-024 | Graviton 4 vector-length and deferred hardware cells not yet packeted | Medium | Require measured `sve`/`sve2` vector-length labels and explicit absent/deferred cells before ARM production claims |
 
 ## Test Execution Summary
 
@@ -301,6 +312,6 @@ This checkpoint is a docs/spec cleanup. Tests were not run by default under the 
 | Category | Total Groups | Implemented / Evidenced | Partial | Gap |
 | --- | ---: | ---: | ---: | ---: |
 | Unit / pg_test behavior groups | 21 | 15 | 6 | 0 |
-| Benchmark / measurement groups | 4 | 1 | 1 | 2 |
+| Benchmark / measurement groups | 6 | 1 | 3 | 2 |
 | Hardening / analysis groups | 1 | 1 packeted subset | 1 documented-but-unpacketed local lane set plus 1 live PG18/manual lane set | 1 |
 | Integration groups | 6 | 0 | 6 | 0 |

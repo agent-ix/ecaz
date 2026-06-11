@@ -38,7 +38,13 @@ methods, quantizers, storage formats, and option sets.
    and query-time memory when the harness exposes those fields.
 7. Build, ingest, update, delete, vacuum, and distributed transport reports
    SHALL use the same candidate identity fields as recall and latency reports.
-8. Product benchmark reports SHALL additionally identify hardware, CPU
+8. Block-kernel counter reports SHALL include access-method surface,
+   `quant_kind`, `isa`, total/kernel/scalar flushes, candidates and elapsed
+   time, and width buckets `<8`, `8..15`, `16..31`, and `>=32`.
+9. Latency and recall reports SHALL include backend build profile provenance
+   from `NFR-007` when the run is suite-driven or otherwise intended as task
+   closeout evidence.
+10. Product benchmark reports SHALL additionally identify hardware, CPU
    architecture, storage class, PostgreSQL settings, cache-control procedure,
    repeat count, and variance or repeatability summary.
 
@@ -61,3 +67,9 @@ Future comparisons between `turboquant`, `pq_fastscan`, `rabitq`, trained
 quantizers, and future formats report the same candidate identity and metric
 fields so the rows can be compared across `ec_hnsw`, `ec_ivf`, `ec_diskann`,
 `ec_spire`, and future access methods.
+
+### NFR-015-AC-4
+
+Block-kernel comparisons preserve enough counter fields to distinguish
+scoring-share wins from end-to-end latency changes and to identify
+structurally absent or missing-kernel cells in the Task 99 matrix.

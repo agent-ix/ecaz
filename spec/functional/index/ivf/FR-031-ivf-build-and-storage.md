@@ -14,7 +14,10 @@ relationships:
 
 ## Requirement
 
-`ec_ivf` SHALL implement a PostgreSQL index access method that trains centroids, assigns heap rows to posting lists, and persists AM-owned metadata and posting-list pages.
+`ec_ivf` SHALL implement a PostgreSQL index access method that trains centroids,
+assigns heap rows to posting lists, and persists AM-owned metadata and
+posting-list pages. Eligible PG18 builds SHALL support the current parallel
+heap-ingestion and tuple-buffer capture surface when enabled.
 
 ## Behavior
 
@@ -24,6 +27,9 @@ relationships:
 4. `rerank` SHALL accept `auto`, `off`, and `heap_f32`; `source_column` SHALL be rejected until implemented.
 5. Training and assignment SHALL be deterministic for the same data and seed.
 6. Posting slack pages SHALL be reserved when configured for churn reuse.
+7. Parallel IVF build SHALL preserve serial/parallel equivalence for centroid
+   assignment and posting-list metadata before it is used for product-scale
+   build-time claims.
 
 ## Acceptance Criteria
 
@@ -38,3 +44,9 @@ Invalid reloption values raise ERROR during index creation.
 ### FR-031-AC-3
 
 `rerank = 'source_column'` raises a clear unsupported-mode ERROR.
+
+### FR-031-AC-4
+
+Parallel IVF build diagnostics can prove that worker tuple capture is live and
+that serial and parallel build paths produce equivalent index-visible results
+on the validation fixtures used for Task 71.

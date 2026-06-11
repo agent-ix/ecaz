@@ -133,6 +133,33 @@ pub fn score_ip_encoded_lite(&self, codes_a: &[u8], codes_b: &[u8]) -> f32
 
 Used during aminsert page-level beam search. SIMD-accelerated (FR-014).
 
+### Index-Local QuantCodec Adapters
+
+`ProdQuantizer` remains the owner of TurboQuant math: deterministic
+construction, encoding, prepared-query LUT construction, scalar reference
+scoring, QJL correction, and code-to-code scoring. Index-local adapters SHALL
+wrap that math in the shared `QuantCodec` contract selected by ADR-071 and
+ADR-072.
+
+Each adapter SHALL:
+
+1. bind `ProdQuantizer` to the AM-owned storage metadata, tuple/list payload
+   layout, and traversal state;
+2. route scan-time batch scoring through the common candidate-batch surface so
+   HNSW, IVF, DiskANN, and SPIRE do not call ISA-specific TurboQuant functions
+   directly;
+3. preserve scalar single-candidate scoring for correctness anchors, insert
+   paths, and small or disabled-kernel batches;
+4. expose block-kernel counter attribution through the shared
+   `(surface, quant_kind, isa)` reporting surface defined by FR-014 and
+   NFR-015; and
+5. fail shape or metadata mismatches before scoring and before counter
+   increments.
+
+Future TurboQuant variants SHALL add adapter coverage rather than bypassing
+`QuantCodec`. AM code owns storage and traversal binding; quant code owns
+scoring math and batch dispatch.
+
 ### Pack / Unpack Utilities
 
 ```rust
@@ -181,3 +208,8 @@ Repeated construction requests for the same `(original_dim, bits, seed)` within 
 
 ### FR-015-AC-9: Code-to-code scorer ignores QJL in v0.1
 Altering only `gamma` and QJL bits while keeping MSE indices fixed SHALL NOT change `score_ip_encoded_lite`.
+
+### FR-015-AC-10: QuantCodec adapter boundary
+Index-local TurboQuant adapters SHALL preserve deterministic scalar scoring,
+route scan-time candidate batches through `QuantCodec`, and keep AM code from
+calling ISA-specific TurboQuant kernel functions directly.

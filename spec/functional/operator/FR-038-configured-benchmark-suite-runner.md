@@ -26,19 +26,34 @@ Ecaz SHALL provide a configured benchmark suite runner under `ecaz bench suite` 
 
 1. `ecaz bench suite run --config <path>` SHALL parse a JSON suite and expand each selected step into the ordinary `ecaz` command it represents.
 2. `run --dry-run` SHALL write the manifest and print expanded commands without executing suite steps.
-3. `run` SHALL execute selected steps sequentially and record per-step status, timing, exit code, command, and expected artifacts in `suite-manifest.json`.
+3. `run` SHALL execute selected steps sequentially and record per-step status,
+   timing, exit code, command, and expected artifacts in
+   `suite-manifest.json`.
 4. `run --only <name>` SHALL restrict execution to matching step names and SHALL leave other steps marked skipped.
 5. `run --only-tag <tag>` SHALL restrict execution to steps that declare matching tags.
 6. `run --resume-from <manifest>` SHALL skip selected steps that already succeeded in the referenced manifest only when the config hash and expanded step command match the current run.
 7. `run` SHALL stop after the first failed selected step unless `--continue-on-error` is set.
-8. `run` SHOULD write normalized `results.jsonl` rows from completed recall, latency, storage, and load artifacts.
+8. `run` SHOULD write normalized `results.jsonl` rows from completed recall,
+   latency, storage, load, build-timing, and block-kernel-counter artifacts
+   when those result families are emitted.
 9. `run` SHALL evaluate configured thresholds against parsed result rows and fail the suite when any threshold is not satisfied.
 10. Thresholds SHALL support exact-match row filters so multi-row sweeps can target a specific candidate row.
 11. `audit --config <path>` SHALL validate suite shape and required load input files before a long run.
 12. `status --manifest <path>` SHALL summarize completed, failed, skipped, dry-run, stale, and missing-artifact state.
 13. `report --manifest <path>` SHALL emit a markdown report from manifest metadata and parsed result rows.
 14. The legacy `ecaz bench suite --config <path> --dry-run` form SHALL remain accepted as a compatibility alias for the first dry-run slice.
-15. Suite reports SHOULD preserve the access-method, quantizer/storage-format, option-set, dataset, environment, and metric fields required by `NFR-015`.
+15. Suite reports SHOULD preserve the access-method,
+   quantizer/storage-format, option-set, dataset, environment, backend
+   provenance, and metric fields required by `NFR-015`.
+16. `run` SHALL preflight latency and recall suites against the connected
+   backend by querying SQL-visible extension build profile metadata. The
+   manifest SHALL record the backend build profile and SHOULD record the
+   installed backend path and SHA256 when the local pgrx layout can be
+   identified.
+17. `run` SHALL refuse latency or recall steps against a debug-built backend
+   unless `--allow-debug-backend` is explicitly passed. Debug-backend runs are
+   valid only as diagnostic evidence and SHALL NOT support product latency or
+   recall claims.
 
 ## Acceptance Criteria
 
@@ -74,3 +89,13 @@ Thresholds can target a specific row from a multi-row sweep, and resume rejects 
 
 Suite reports include enough candidate identity and metric metadata to populate
 the benchmark reporting standard without hand-editing result semantics.
+
+### FR-038-AC-9
+
+Latency and recall suite runs record the backend build profile in the manifest
+before executing selected benchmark steps.
+
+### FR-038-AC-10
+
+Latency and recall suite runs fail fast on a debug backend unless
+`--allow-debug-backend` is present.

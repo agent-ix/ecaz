@@ -14,7 +14,10 @@ relationships:
 
 ## Requirement
 
-`ec_diskann` SHALL implement a Vamana/DiskANN-style access method with AM-owned persisted graph storage.
+`ec_diskann` SHALL implement a Vamana/DiskANN-style access method with AM-owned
+persisted graph storage. The build path SHALL support the current deterministic
+single-process Vamana core and the Task 65b parallel graph-construction
+stepping-stone when enabled.
 
 ## Behavior
 
@@ -23,6 +26,11 @@ relationships:
 3. `storage_format` SHALL currently accept `pq_fastscan`.
 4. Build SHALL validate finite unit-normalized source vectors for the v0 distance wrapper.
 5. The persisted format SHALL include graph nodes, medoid metadata, grouped-PQ codebook chain, binary sidecars, and duplicate overflow state where needed.
+6. Parallel graph construction SHALL preserve deterministic persisted adjacency
+   equality on validation fixtures before it can support product build-time
+   claims.
+7. Build diagnostics SHALL expose enough phase timing to let `ecaz bench suite`
+   parse DiskANN build-time evidence.
 
 ## Acceptance Criteria
 
@@ -37,3 +45,13 @@ Non-unit or non-finite source vectors are rejected or warned according to the bu
 ### FR-034-AC-3
 
 Invalid DiskANN reloption values raise ERROR during index creation.
+
+### FR-034-AC-4
+
+Parallel DiskANN build evidence proves serial/parallel persisted graph
+equivalence for the accepted stepping-stone configuration.
+
+### FR-034-AC-5
+
+Suite build artifacts include parseable DiskANN phase timing for build
+benchmark packets.
