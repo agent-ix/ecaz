@@ -72,10 +72,12 @@
       "queries_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_queries.tsv",
       "manifest_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_manifest.json",
       "dim": 1536,
-      "bits": 1,
       "storage_format": "rabitq",
       "log_file": "${artifact_dir}/load-ivf-real10k-rabitq-bits1.log",
-      "allow_manifest_mismatch": true
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "quant_bits=1"
+      ]
     },
     {
       "kind": "load",
@@ -95,10 +97,12 @@
       "queries_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_queries.tsv",
       "manifest_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_manifest.json",
       "dim": 1536,
-      "bits": 2,
       "storage_format": "rabitq",
       "log_file": "${artifact_dir}/load-ivf-real10k-rabitq-bits2.log",
-      "allow_manifest_mismatch": true
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "quant_bits=2"
+      ]
     },
     {
       "kind": "load",
@@ -118,10 +122,12 @@
       "queries_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_queries.tsv",
       "manifest_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_manifest.json",
       "dim": 1536,
-      "bits": 4,
       "storage_format": "rabitq",
       "log_file": "${artifact_dir}/load-ivf-real10k-rabitq-bits4.log",
-      "allow_manifest_mismatch": true
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "quant_bits=4"
+      ]
     },
     {
       "kind": "load",
@@ -141,10 +147,12 @@
       "queries_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_queries.tsv",
       "manifest_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_manifest.json",
       "dim": 1536,
-      "bits": 8,
       "storage_format": "rabitq",
       "log_file": "${artifact_dir}/load-ivf-real10k-rabitq-bits8.log",
-      "allow_manifest_mismatch": true
+      "allow_manifest_mismatch": true,
+      "reloptions": [
+        "quant_bits=8"
+      ]
     },
     {
       "kind": "load",
@@ -261,7 +269,6 @@
       "prefix": "task104_real10k_ivf_rb1",
       "profile": "ec_ivf",
       "k": 10,
-      "bits": 1,
       "sweep": [
         8,
         16,
@@ -284,7 +291,6 @@
       "prefix": "task104_real10k_ivf_rb2",
       "profile": "ec_ivf",
       "k": 10,
-      "bits": 2,
       "sweep": [
         16
       ],
@@ -305,7 +311,6 @@
       "prefix": "task104_real10k_ivf_rb4",
       "profile": "ec_ivf",
       "k": 10,
-      "bits": 4,
       "sweep": [
         16
       ],
@@ -326,7 +331,6 @@
       "prefix": "task104_real10k_ivf_rb8",
       "profile": "ec_ivf",
       "k": 10,
-      "bits": 8,
       "sweep": [
         16
       ],
@@ -459,7 +463,6 @@
       "prefix": "task104_real10k_ivf_rb1",
       "profile": "ec_ivf",
       "k": 10,
-      "bits": 1,
       "sweep": [
         8,
         16,
@@ -485,7 +488,6 @@
       "prefix": "task104_real10k_ivf_rb2",
       "profile": "ec_ivf",
       "k": 10,
-      "bits": 2,
       "sweep": [
         16
       ],
@@ -509,7 +511,6 @@
       "prefix": "task104_real10k_ivf_rb4",
       "profile": "ec_ivf",
       "k": 10,
-      "bits": 4,
       "sweep": [
         16
       ],
@@ -533,7 +534,6 @@
       "prefix": "task104_real10k_ivf_rb8",
       "profile": "ec_ivf",
       "k": 10,
-      "bits": 8,
       "sweep": [
         16
       ],

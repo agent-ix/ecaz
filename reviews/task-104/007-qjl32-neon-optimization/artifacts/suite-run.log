@@ -1,0 +1,171 @@
+[suite:task104-qjl32-neon-postfix] wrote reviews/task-104/007-qjl32-neon-optimization/artifacts/suite-manifest.json
+[suite:task104-qjl32-neon-postfix] wrote reviews/task-104/007-qjl32-neon-optimization/artifacts/suite-manifest.json
+[suite:task104-qjl32-neon-postfix] recall-hnsw-qjl1024-kernel-on-postfix -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 bench recall --prefix task104_qjl1024_hnsw_tq --profile ec_hnsw --k 10 --sweep "32,80" --queries-limit 64 --bits 4 --seed 42 --force-index --session-guc ec_hnsw.disable_binary_prefilter=on --truth-cache-dir reviews/task-104/007-qjl32-neon-optimization/artifacts/truth-cache --log-output reviews/task-104/007-qjl32-neon-optimization/artifacts/recall-hnsw-qjl1024-kernel-on.log
+[suite:task104-qjl32-neon-postfix] wrote reviews/task-104/007-qjl32-neon-optimization/artifacts/suite-manifest.json
+┌───────────┬─────────┬───────────────┬──────────┬─────────────────┬──────────────────┬────────────┬────────────┬────────────┬──────────────┬────────┬─────────────┐
+│ ef_search ┆ queries ┆ recall_trials ┆ recall@k ┆ recall_ci95_low ┆ recall_ci95_high ┆ recall_p10 ┆ recall_p50 ┆ recall_p90 ┆ recall_worst ┆ ndcg@k ┆ mean q-time │
+╞═══════════╪═════════╪═══════════════╪══════════╪═════════════════╪══════════════════╪════════════╪════════════╪════════════╪══════════════╪════════╪═════════════╡
+│ 32        ┆ 64      ┆ 640           ┆ 0.1734   ┆ 0.1461          ┆ 0.2047           ┆ 0.0000     ┆ 0.2000     ┆ 0.3700     ┆ 0.0000       ┆ 0.8433 ┆ 1.49 ms     │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 80        ┆ 64      ┆ 640           ┆ 0.3141   ┆ 0.2793          ┆ 0.3510           ┆ 0.1300     ┆ 0.3000     ┆ 0.5000     ┆ 0.0000       ┆ 0.9002 ┆ 2.56 ms     │
+└───────────┴─────────┴───────────────┴──────────┴─────────────────┴──────────────────┴────────────┴────────────┴────────────┴──────────────┴────────┴─────────────┘
+[recall] fetching queries from task104_qjl1024_hnsw_tq_queries ...
+[recall] fetching corpus from task104_qjl1024_hnsw_tq_corpus ...
+[recall] computing ground truth: 64 queries vs 10000 corpus rows (dim=1024) ...
+[recall] ground truth in 13.91ms
+[recall] wrote ground truth cache reviews/task-104/007-qjl32-neon-optimization/artifacts/truth-cache/truth-v1-rows10000-queries64-dim1024-k10-95aeb2a01d704ee4.json
+[suite:task104-qjl32-neon-postfix] wrote reviews/task-104/007-qjl32-neon-optimization/artifacts/suite-manifest.json
+[suite:task104-qjl32-neon-postfix] recall-hnsw-qjl1024-kernel-off-postfix -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 bench recall --prefix task104_qjl1024_hnsw_tq --profile ec_hnsw --k 10 --sweep "32,80" --queries-limit 64 --bits 4 --seed 42 --force-index --session-guc ec_hnsw.disable_binary_prefilter=on --session-guc ec_hnsw.candidate_batch_scoring=off --truth-cache-dir reviews/task-104/007-qjl32-neon-optimization/artifacts/truth-cache --log-output reviews/task-104/007-qjl32-neon-optimization/artifacts/recall-hnsw-qjl1024-kernel-off.log
+[suite:task104-qjl32-neon-postfix] wrote reviews/task-104/007-qjl32-neon-optimization/artifacts/suite-manifest.json
+┌───────────┬─────────┬───────────────┬──────────┬─────────────────┬──────────────────┬────────────┬────────────┬────────────┬──────────────┬────────┬─────────────┐
+│ ef_search ┆ queries ┆ recall_trials ┆ recall@k ┆ recall_ci95_low ┆ recall_ci95_high ┆ recall_p10 ┆ recall_p50 ┆ recall_p90 ┆ recall_worst ┆ ndcg@k ┆ mean q-time │
+╞═══════════╪═════════╪═══════════════╪══════════╪═════════════════╪══════════════════╪════════════╪════════════╪════════════╪══════════════╪════════╪═════════════╡
+│ 32        ┆ 64      ┆ 640           ┆ 0.1734   ┆ 0.1461          ┆ 0.2047           ┆ 0.0000     ┆ 0.2000     ┆ 0.3700     ┆ 0.0000       ┆ 0.8433 ┆ 1.38 ms     │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 80        ┆ 64      ┆ 640           ┆ 0.3141   ┆ 0.2793          ┆ 0.3510           ┆ 0.1300     ┆ 0.3000     ┆ 0.5000     ┆ 0.0000       ┆ 0.9002 ┆ 2.53 ms     │
+└───────────┴─────────┴───────────────┴──────────┴─────────────────┴──────────────────┴────────────┴────────────┴────────────┴──────────────┴────────┴─────────────┘
+[recall] fetching queries from task104_qjl1024_hnsw_tq_queries ...
+[recall] fetching corpus from task104_qjl1024_hnsw_tq_corpus ...
+[recall] loaded ground truth cache reviews/task-104/007-qjl32-neon-optimization/artifacts/truth-cache/truth-v1-rows10000-queries64-dim1024-k10-95aeb2a01d704ee4.json
+[suite:task104-qjl32-neon-postfix] wrote reviews/task-104/007-qjl32-neon-optimization/artifacts/suite-manifest.json
+[suite:task104-qjl32-neon-postfix] recall-ivf-qjl1024-postfix -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 bench recall --prefix task104_qjl1024_ivf_tq --profile ec_ivf --k 10 --sweep "8,16" --queries-limit 64 --bits 4 --seed 42 --force-index --truth-cache-dir reviews/task-104/007-qjl32-neon-optimization/artifacts/truth-cache --log-output reviews/task-104/007-qjl32-neon-optimization/artifacts/recall-ivf-qjl1024.log
+[suite:task104-qjl32-neon-postfix] wrote reviews/task-104/007-qjl32-neon-optimization/artifacts/suite-manifest.json
+┌────────┬─────────┬───────────────┬──────────┬─────────────────┬──────────────────┬────────────┬────────────┬────────────┬──────────────┬────────┬─────────────┐
+│ nprobe ┆ queries ┆ recall_trials ┆ recall@k ┆ recall_ci95_low ┆ recall_ci95_high ┆ recall_p10 ┆ recall_p50 ┆ recall_p90 ┆ recall_worst ┆ ndcg@k ┆ mean q-time │
+╞════════╪═════════╪═══════════════╪══════════╪═════════════════╪══════════════════╪════════════╪════════════╪════════════╪══════════════╪════════╪═════════════╡
+│ 8      ┆ 64      ┆ 640           ┆ 0.1609   ┆ 0.1345          ┆ 0.1914           ┆ 0.0000     ┆ 0.2000     ┆ 0.3000     ┆ 0.0000       ┆ 0.8359 ┆ 0.74 ms     │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 16     ┆ 64      ┆ 640           ┆ 0.2938   ┆ 0.2598          ┆ 0.3302           ┆ 0.1000     ┆ 0.3000     ┆ 0.5000     ┆ 0.0000       ┆ 0.8873 ┆ 1.18 ms     │
+└────────┴─────────┴───────────────┴──────────┴─────────────────┴──────────────────┴────────────┴────────────┴────────────┴──────────────┴────────┴─────────────┘
+[recall] fetching queries from task104_qjl1024_ivf_tq_queries ...
+[recall] fetching corpus from task104_qjl1024_ivf_tq_corpus ...
+[recall] loaded ground truth cache reviews/task-104/007-qjl32-neon-optimization/artifacts/truth-cache/truth-v1-rows10000-queries64-dim1024-k10-95aeb2a01d704ee4.json
+[suite:task104-qjl32-neon-postfix] wrote reviews/task-104/007-qjl32-neon-optimization/artifacts/suite-manifest.json
+[suite:task104-qjl32-neon-postfix] recall-spire-qjl1024-kernel-on-postfix -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 bench recall --prefix task104_qjl1024_spire_tq --profile ec_spire --k 10 --sweep "8,16" --queries-limit 64 --bits 4 --seed 42 --force-index --truth-cache-dir reviews/task-104/007-qjl32-neon-optimization/artifacts/truth-cache --log-output reviews/task-104/007-qjl32-neon-optimization/artifacts/recall-spire-qjl1024-kernel-on.log
+[suite:task104-qjl32-neon-postfix] wrote reviews/task-104/007-qjl32-neon-optimization/artifacts/suite-manifest.json
+┌────────┬─────────┬───────────────┬──────────┬─────────────────┬──────────────────┬────────────┬────────────┬────────────┬──────────────┬────────┬─────────────┐
+│ nprobe ┆ queries ┆ recall_trials ┆ recall@k ┆ recall_ci95_low ┆ recall_ci95_high ┆ recall_p10 ┆ recall_p50 ┆ recall_p90 ┆ recall_worst ┆ ndcg@k ┆ mean q-time │
+╞════════╪═════════╪═══════════════╪══════════╪═════════════════╪══════════════════╪════════════╪════════════╪════════════╪══════════════╪════════╪═════════════╡
+│ 8      ┆ 64      ┆ 640           ┆ 0.1609   ┆ 0.1345          ┆ 0.1914           ┆ 0.0000     ┆ 0.2000     ┆ 0.3000     ┆ 0.0000       ┆ 0.8499 ┆ 3.82 ms     │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 16     ┆ 64      ┆ 640           ┆ 0.2953   ┆ 0.2613          ┆ 0.3318           ┆ 0.1000     ┆ 0.3000     ┆ 0.5000     ┆ 0.0000       ┆ 0.9022 ┆ 6.66 ms     │
+└────────┴─────────┴───────────────┴──────────┴─────────────────┴──────────────────┴────────────┴────────────┴────────────┴──────────────┴────────┴─────────────┘
+[recall] fetching queries from task104_qjl1024_spire_tq_queries ...
+[recall] fetching corpus from task104_qjl1024_spire_tq_corpus ...
+[recall] loaded ground truth cache reviews/task-104/007-qjl32-neon-optimization/artifacts/truth-cache/truth-v1-rows10000-queries64-dim1024-k10-95aeb2a01d704ee4.json
+[suite:task104-qjl32-neon-postfix] wrote reviews/task-104/007-qjl32-neon-optimization/artifacts/suite-manifest.json
+[suite:task104-qjl32-neon-postfix] recall-spire-qjl1024-kernel-off-postfix -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 bench recall --prefix task104_qjl1024_spire_tq --profile ec_spire --k 10 --sweep "8,16" --queries-limit 64 --bits 4 --seed 42 --force-index --session-guc ec_spire.candidate_batch_scoring=off --truth-cache-dir reviews/task-104/007-qjl32-neon-optimization/artifacts/truth-cache --log-output reviews/task-104/007-qjl32-neon-optimization/artifacts/recall-spire-qjl1024-kernel-off.log
+[suite:task104-qjl32-neon-postfix] wrote reviews/task-104/007-qjl32-neon-optimization/artifacts/suite-manifest.json
+┌────────┬─────────┬───────────────┬──────────┬─────────────────┬──────────────────┬────────────┬────────────┬────────────┬──────────────┬────────┬─────────────┐
+│ nprobe ┆ queries ┆ recall_trials ┆ recall@k ┆ recall_ci95_low ┆ recall_ci95_high ┆ recall_p10 ┆ recall_p50 ┆ recall_p90 ┆ recall_worst ┆ ndcg@k ┆ mean q-time │
+╞════════╪═════════╪═══════════════╪══════════╪═════════════════╪══════════════════╪════════════╪════════════╪════════════╪══════════════╪════════╪═════════════╡
+│ 8      ┆ 64      ┆ 640           ┆ 0.1609   ┆ 0.1345          ┆ 0.1914           ┆ 0.0000     ┆ 0.2000     ┆ 0.3000     ┆ 0.0000       ┆ 0.8499 ┆ 4.06 ms     │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 16     ┆ 64      ┆ 640           ┆ 0.2953   ┆ 0.2613          ┆ 0.3318           ┆ 0.1000     ┆ 0.3000     ┆ 0.5000     ┆ 0.0000       ┆ 0.9022 ┆ 7.24 ms     │
+└────────┴─────────┴───────────────┴──────────┴─────────────────┴──────────────────┴────────────┴────────────┴────────────┴──────────────┴────────┴─────────────┘
+[recall] fetching queries from task104_qjl1024_spire_tq_queries ...
+[recall] fetching corpus from task104_qjl1024_spire_tq_corpus ...
+[recall] loaded ground truth cache reviews/task-104/007-qjl32-neon-optimization/artifacts/truth-cache/truth-v1-rows10000-queries64-dim1024-k10-95aeb2a01d704ee4.json
+[suite:task104-qjl32-neon-postfix] wrote reviews/task-104/007-qjl32-neon-optimization/artifacts/suite-manifest.json
+[suite:task104-qjl32-neon-postfix] latency-hnsw-qjl1024-kernel-on-postfix -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 bench latency --prefix task104_qjl1024_hnsw_tq --profile ec_hnsw --k 10 --concurrency 1 --iterations 200 --sweep "32,80" --bits 4 --seed 42 --force-index --cache-state task104_qjl_hnsw_on_postfix --session-guc ec_hnsw.disable_binary_prefilter=on --task87-candidate-batch-counters --memory-sample-interval-ms 25 --log-output reviews/task-104/007-qjl32-neon-optimization/artifacts/latency-hnsw-qjl1024-kernel-on.log
+[suite:task104-qjl32-neon-postfix] wrote reviews/task-104/007-qjl32-neon-optimization/artifacts/suite-manifest.json
+┌───────────┬───────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────────────────────────┐
+│ ef_search ┆ count ┆ mean    ┆ stddev  ┆ min     ┆ p50     ┆ p95     ┆ p99     ┆ max     ┆ cache_state                 │
+╞═══════════╪═══════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════════════════════════╡
+│ 32        ┆ 200   ┆ 1.41 ms ┆ 0.46 ms ┆ 1.03 ms ┆ 1.35 ms ┆ 1.70 ms ┆ 2.54 ms ┆ 6.64 ms ┆ task104_qjl_hnsw_on_postfix │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 80        ┆ 200   ┆ 2.61 ms ┆ 0.25 ms ┆ 2.24 ms ┆ 2.55 ms ┆ 3.08 ms ┆ 3.27 ms ┆ 4.47 ms ┆ task104_qjl_hnsw_on_postfix │
+└───────────┴───────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────────────────────────┘
+[block-kernel-counters] command=latency label=ef_search=32 surface=hnsw quant=turboquant_qjl isa=neon flushes=92 candidates=2944 elapsed_nanos=538837 elapsed_ms=0.538837 kernel_flushes=92 kernel_candidates=2944 kernel_elapsed_nanos=538837 kernel_elapsed_ms=0.538837 scalar_flushes=0 scalar_candidates=0 scalar_elapsed_nanos=0 scalar_elapsed_ms=0.000000 width_lt8=0 width_8_15=0 width_16_31=0 width_ge32=92
+[block-kernel-counters] command=latency label=ef_search=32 surface=hnsw quant=turboquant_qjl isa=scalar flushes=10208 candidates=138422 elapsed_nanos=80992634 elapsed_ms=80.992634 kernel_flushes=0 kernel_candidates=0 kernel_elapsed_nanos=0 kernel_elapsed_ms=0.000000 scalar_flushes=10208 scalar_candidates=138422 scalar_elapsed_nanos=80992634 scalar_elapsed_ms=80.992634 width_lt8=0 width_8_15=7237 width_16_31=2971 width_ge32=0
+[task87-counters] command=latency label=ef_search=32 surface=hnsw flushes=10300 candidates=141366 elapsed_nanos=81531471 elapsed_ms=81.531471 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=ef_search=32 surface=ivf flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=ef_search=32 surface=spire flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=ef_search=32 surface=unknown flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[block-kernel-counters] command=latency label=ef_search=80 surface=hnsw quant=turboquant_qjl isa=neon flushes=95 candidates=3040 elapsed_nanos=560873 elapsed_ms=0.560873 kernel_flushes=95 kernel_candidates=3040 kernel_elapsed_nanos=560873 kernel_elapsed_ms=0.560873 scalar_flushes=0 scalar_candidates=0 scalar_elapsed_nanos=0 scalar_elapsed_ms=0.000000 width_lt8=0 width_8_15=0 width_16_31=0 width_ge32=95
+[block-kernel-counters] command=latency label=ef_search=80 surface=hnsw quant=turboquant_qjl isa=scalar flushes=17850 candidates=224574 elapsed_nanos=131111712 elapsed_ms=131.111712 kernel_flushes=0 kernel_candidates=0 kernel_elapsed_nanos=0 kernel_elapsed_ms=0.000000 scalar_flushes=17850 scalar_candidates=224574 scalar_elapsed_nanos=131111712 scalar_elapsed_ms=131.111712 width_lt8=0 width_8_15=13912 width_16_31=3938 width_ge32=0
+[task87-counters] command=latency label=ef_search=80 surface=hnsw flushes=17945 candidates=227614 elapsed_nanos=131672585 elapsed_ms=131.672585 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=ef_search=80 surface=ivf flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=ef_search=80 surface=spire flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=ef_search=80 surface=unknown flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[suite:task104-qjl32-neon-postfix] wrote reviews/task-104/007-qjl32-neon-optimization/artifacts/suite-manifest.json
+[suite:task104-qjl32-neon-postfix] latency-hnsw-qjl1024-kernel-off-postfix -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 bench latency --prefix task104_qjl1024_hnsw_tq --profile ec_hnsw --k 10 --concurrency 1 --iterations 200 --sweep "32,80" --bits 4 --seed 42 --force-index --cache-state task104_qjl_hnsw_off_postfix --session-guc ec_hnsw.disable_binary_prefilter=on --session-guc ec_hnsw.candidate_batch_scoring=off --task87-candidate-batch-counters --memory-sample-interval-ms 25 --log-output reviews/task-104/007-qjl32-neon-optimization/artifacts/latency-hnsw-qjl1024-kernel-off.log
+[suite:task104-qjl32-neon-postfix] wrote reviews/task-104/007-qjl32-neon-optimization/artifacts/suite-manifest.json
+┌───────────┬───────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬──────────────────────────────┐
+│ ef_search ┆ count ┆ mean    ┆ stddev  ┆ min     ┆ p50     ┆ p95     ┆ p99     ┆ max     ┆ cache_state                  │
+╞═══════════╪═══════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪══════════════════════════════╡
+│ 32        ┆ 200   ┆ 1.35 ms ┆ 0.21 ms ┆ 1.03 ms ┆ 1.33 ms ┆ 1.68 ms ┆ 1.79 ms ┆ 3.19 ms ┆ task104_qjl_hnsw_off_postfix │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 80        ┆ 200   ┆ 2.55 ms ┆ 0.23 ms ┆ 2.18 ms ┆ 2.50 ms ┆ 2.96 ms ┆ 3.20 ms ┆ 4.06 ms ┆ task104_qjl_hnsw_off_postfix │
+└───────────┴───────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴──────────────────────────────┘
+[task87-counters] command=latency label=ef_search=32 surface=hnsw flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=ef_search=32 surface=ivf flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=ef_search=32 surface=spire flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=ef_search=32 surface=unknown flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=ef_search=80 surface=hnsw flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=ef_search=80 surface=ivf flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=ef_search=80 surface=spire flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=ef_search=80 surface=unknown flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[suite:task104-qjl32-neon-postfix] wrote reviews/task-104/007-qjl32-neon-optimization/artifacts/suite-manifest.json
+[suite:task104-qjl32-neon-postfix] latency-ivf-qjl1024-postfix -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 bench latency --prefix task104_qjl1024_ivf_tq --profile ec_ivf --k 10 --concurrency 1 --iterations 200 --sweep "8,16" --bits 4 --seed 42 --force-index --cache-state task104_qjl_ivf_postfix --task87-candidate-batch-counters --memory-sample-interval-ms 25 --log-output reviews/task-104/007-qjl32-neon-optimization/artifacts/latency-ivf-qjl1024.log
+[suite:task104-qjl32-neon-postfix] wrote reviews/task-104/007-qjl32-neon-optimization/artifacts/suite-manifest.json
+┌────────┬───────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────────────────────┐
+│ nprobe ┆ count ┆ mean    ┆ stddev  ┆ min     ┆ p50     ┆ p95     ┆ p99     ┆ max     ┆ cache_state             │
+╞════════╪═══════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════════════════════╡
+│ 8      ┆ 200   ┆ 0.69 ms ┆ 0.11 ms ┆ 0.62 ms ┆ 0.67 ms ┆ 0.81 ms ┆ 0.84 ms ┆ 2.05 ms ┆ task104_qjl_ivf_postfix │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 16     ┆ 200   ┆ 1.19 ms ┆ 0.08 ms ┆ 1.10 ms ┆ 1.18 ms ┆ 1.26 ms ┆ 1.30 ms ┆ 2.23 ms ┆ task104_qjl_ivf_postfix │
+└────────┴───────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────────────────────┘
+[task87-counters] command=latency label=nprobe=8 surface=hnsw flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=nprobe=8 surface=ivf flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=nprobe=8 surface=spire flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=nprobe=8 surface=unknown flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=nprobe=16 surface=hnsw flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=nprobe=16 surface=ivf flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=nprobe=16 surface=spire flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=nprobe=16 surface=unknown flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[suite:task104-qjl32-neon-postfix] wrote reviews/task-104/007-qjl32-neon-optimization/artifacts/suite-manifest.json
+[suite:task104-qjl32-neon-postfix] latency-spire-qjl1024-kernel-on-postfix -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 bench latency --prefix task104_qjl1024_spire_tq --profile ec_spire --k 10 --concurrency 1 --iterations 200 --sweep "8,16" --bits 4 --seed 42 --force-index --cache-state task104_qjl_spire_on_postfix --task87-candidate-batch-counters --memory-sample-interval-ms 25 --log-output reviews/task-104/007-qjl32-neon-optimization/artifacts/latency-spire-qjl1024-kernel-on.log
+[suite:task104-qjl32-neon-postfix] wrote reviews/task-104/007-qjl32-neon-optimization/artifacts/suite-manifest.json
+┌────────┬───────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬──────────────────────────────┐
+│ nprobe ┆ count ┆ mean    ┆ stddev  ┆ min     ┆ p50     ┆ p95     ┆ p99     ┆ max     ┆ cache_state                  │
+╞════════╪═══════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪══════════════════════════════╡
+│ 8      ┆ 200   ┆ 3.86 ms ┆ 0.38 ms ┆ 3.40 ms ┆ 3.77 ms ┆ 4.46 ms ┆ 4.97 ms ┆ 7.24 ms ┆ task104_qjl_spire_on_postfix │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 16     ┆ 200   ┆ 6.64 ms ┆ 0.39 ms ┆ 6.14 ms ┆ 6.58 ms ┆ 7.12 ms ┆ 7.91 ms ┆ 10.3 ms ┆ task104_qjl_spire_on_postfix │
+└────────┴───────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴──────────────────────────────┘
+[block-kernel-counters] command=latency label=nprobe=8 surface=spire quant=turboquant_qjl isa=neon flushes=1600 candidates=138912 elapsed_nanos=23513185 elapsed_ms=23.513185 kernel_flushes=1600 kernel_candidates=138912 kernel_elapsed_nanos=23513185 kernel_elapsed_ms=23.513185 scalar_flushes=0 scalar_candidates=0 scalar_elapsed_nanos=0 scalar_elapsed_ms=0.000000 width_lt8=0 width_8_15=0 width_16_31=0 width_ge32=1600
+[block-kernel-counters] command=latency label=nprobe=8 surface=spire quant=turboquant_qjl isa=scalar flushes=1509 candidates=21190 elapsed_nanos=12496586 elapsed_ms=12.496586 kernel_flushes=0 kernel_candidates=0 kernel_elapsed_nanos=0 kernel_elapsed_ms=0.000000 scalar_flushes=1509 scalar_candidates=21190 scalar_elapsed_nanos=12496586 scalar_elapsed_ms=12.496586 width_lt8=0 width_8_15=0 width_16_31=0 width_ge32=0
+[task87-counters] command=latency label=nprobe=8 surface=hnsw flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=nprobe=8 surface=ivf flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=nprobe=8 surface=spire flushes=3109 candidates=160102 elapsed_nanos=36009771 elapsed_ms=36.009771 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=nprobe=8 surface=unknown flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[block-kernel-counters] command=latency label=nprobe=16 surface=spire quant=turboquant_qjl isa=neon flushes=3200 candidates=277184 elapsed_nanos=46722243 elapsed_ms=46.722243 kernel_flushes=3200 kernel_candidates=277184 kernel_elapsed_nanos=46722243 kernel_elapsed_ms=46.722243 scalar_flushes=0 scalar_candidates=0 scalar_elapsed_nanos=0 scalar_elapsed_ms=0.000000 width_lt8=0 width_8_15=0 width_16_31=0 width_ge32=3200
+[block-kernel-counters] command=latency label=nprobe=16 surface=spire quant=turboquant_qjl isa=scalar flushes=3022 candidates=43065 elapsed_nanos=25228941 elapsed_ms=25.228941 kernel_flushes=0 kernel_candidates=0 kernel_elapsed_nanos=0 kernel_elapsed_ms=0.000000 scalar_flushes=3022 scalar_candidates=43065 scalar_elapsed_nanos=25228941 scalar_elapsed_ms=25.228941 width_lt8=0 width_8_15=0 width_16_31=0 width_ge32=0
+[task87-counters] command=latency label=nprobe=16 surface=hnsw flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=nprobe=16 surface=ivf flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=nprobe=16 surface=spire flushes=6222 candidates=320249 elapsed_nanos=71951184 elapsed_ms=71.951184 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=nprobe=16 surface=unknown flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[suite:task104-qjl32-neon-postfix] wrote reviews/task-104/007-qjl32-neon-optimization/artifacts/suite-manifest.json
+[suite:task104-qjl32-neon-postfix] latency-spire-qjl1024-kernel-off-postfix -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 bench latency --prefix task104_qjl1024_spire_tq --profile ec_spire --k 10 --concurrency 1 --iterations 200 --sweep "8,16" --bits 4 --seed 42 --force-index --cache-state task104_qjl_spire_off_postfix --session-guc ec_spire.candidate_batch_scoring=off --task87-candidate-batch-counters --memory-sample-interval-ms 25 --log-output reviews/task-104/007-qjl32-neon-optimization/artifacts/latency-spire-qjl1024-kernel-off.log
+[suite:task104-qjl32-neon-postfix] wrote reviews/task-104/007-qjl32-neon-optimization/artifacts/suite-manifest.json
+┌────────┬───────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬───────────────────────────────┐
+│ nprobe ┆ count ┆ mean    ┆ stddev  ┆ min     ┆ p50     ┆ p95     ┆ p99     ┆ max     ┆ cache_state                   │
+╞════════╪═══════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═══════════════════════════════╡
+│ 8      ┆ 200   ┆ 3.95 ms ┆ 0.28 ms ┆ 3.61 ms ┆ 3.91 ms ┆ 4.25 ms ┆ 4.72 ms ┆ 7.01 ms ┆ task104_qjl_spire_off_postfix │
+├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 16     ┆ 200   ┆ 7.18 ms ┆ 0.34 ms ┆ 6.68 ms ┆ 7.11 ms ┆ 7.72 ms ┆ 7.98 ms ┆ 10.4 ms ┆ task104_qjl_spire_off_postfix │
+└────────┴───────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴───────────────────────────────┘
+[block-kernel-counters] command=latency label=nprobe=8 surface=spire quant=turboquant_qjl isa=scalar flushes=1600 candidates=160102 elapsed_nanos=86809133 elapsed_ms=86.809133 kernel_flushes=0 kernel_candidates=0 kernel_elapsed_nanos=0 kernel_elapsed_ms=0.000000 scalar_flushes=1600 scalar_candidates=160102 scalar_elapsed_nanos=86809133 scalar_elapsed_ms=86.809133 width_lt8=0 width_8_15=0 width_16_31=0 width_ge32=0
+[task87-counters] command=latency label=nprobe=8 surface=hnsw flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=nprobe=8 surface=ivf flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=nprobe=8 surface=spire flushes=1600 candidates=160102 elapsed_nanos=86809133 elapsed_ms=86.809133 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=nprobe=8 surface=unknown flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[block-kernel-counters] command=latency label=nprobe=16 surface=spire quant=turboquant_qjl isa=scalar flushes=3200 candidates=320249 elapsed_nanos=174036623 elapsed_ms=174.036623 kernel_flushes=0 kernel_candidates=0 kernel_elapsed_nanos=0 kernel_elapsed_ms=0.000000 scalar_flushes=3200 scalar_candidates=320249 scalar_elapsed_nanos=174036623 scalar_elapsed_ms=174.036623 width_lt8=0 width_8_15=0 width_16_31=0 width_ge32=0
+[task87-counters] command=latency label=nprobe=16 surface=hnsw flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=nprobe=16 surface=ivf flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=nprobe=16 surface=spire flushes=3200 candidates=320249 elapsed_nanos=174036623 elapsed_ms=174.036623 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=nprobe=16 surface=unknown flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[suite:task104-qjl32-neon-postfix] wrote reviews/task-104/007-qjl32-neon-optimization/artifacts/suite-manifest.json
+[suite:task104-qjl32-neon-postfix] wrote reviews/task-104/007-qjl32-neon-optimization/artifacts/results.jsonl
+[suite:task104-qjl32-neon-postfix] wrote reviews/task-104/007-qjl32-neon-optimization/artifacts/suite-manifest.json

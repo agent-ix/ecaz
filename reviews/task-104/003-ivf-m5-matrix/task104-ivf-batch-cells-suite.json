@@ -1,0 +1,326 @@
+{
+  "name": "task104-ivf-batch-cells",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-104/003-ivf-m5-matrix/artifacts",
+  "defaults": {
+    "pg": 18,
+    "bits": 4,
+    "seed": 42,
+    "queries_limit": 100,
+    "iterations": 300,
+    "force_index": true,
+    "sample_backend_memory": false
+  },
+  "steps": [
+    {
+      "kind": "recall",
+      "name": "recall-ivf-turboquant-batch-on",
+      "tags": [
+        "task104",
+        "m5",
+        "ivf",
+        "real10k",
+        "quant=turboquant",
+        "kernel_on",
+        "isa=neon",
+        "kernel_status=valid"
+      ],
+      "prefix": "task104_real10k_ivf_tq",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        32
+      ],
+      "ivf_scratch_soa_batch_decode": true,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "log_output": "${artifact_dir}/recall-ivf-turboquant-batch-on.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-ivf-turboquant-batch-off",
+      "tags": [
+        "task104",
+        "m5",
+        "ivf",
+        "real10k",
+        "quant=turboquant",
+        "kernel_off",
+        "isa=scalar"
+      ],
+      "prefix": "task104_real10k_ivf_tq",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        32
+      ],
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "log_output": "${artifact_dir}/recall-ivf-turboquant-batch-off.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-ivf-turboquant-batch-on",
+      "tags": [
+        "task104",
+        "m5",
+        "ivf",
+        "real10k",
+        "quant=turboquant",
+        "kernel_on",
+        "isa=neon",
+        "kernel_status=valid"
+      ],
+      "prefix": "task104_real10k_ivf_tq",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        32
+      ],
+      "ivf_scratch_soa_batch_decode": true,
+      "iterations": 300,
+      "concurrency": 1,
+      "cache_state": "task104_latency_ivf_turboquant_batch_on",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-ivf-turboquant-batch-on.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-ivf-turboquant-batch-off",
+      "tags": [
+        "task104",
+        "m5",
+        "ivf",
+        "real10k",
+        "quant=turboquant",
+        "kernel_off",
+        "isa=scalar"
+      ],
+      "prefix": "task104_real10k_ivf_tq",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        32
+      ],
+      "iterations": 300,
+      "concurrency": 1,
+      "cache_state": "task104_latency_ivf_turboquant_batch_off",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-ivf-turboquant-batch-off.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-ivf-pq_fastscan-batch-on",
+      "tags": [
+        "task104",
+        "m5",
+        "ivf",
+        "real10k",
+        "quant=pq_fastscan",
+        "kernel_on",
+        "isa=neon",
+        "kernel_status=valid"
+      ],
+      "prefix": "task104_real10k_ivf_pq",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        32
+      ],
+      "ivf_scratch_soa_batch_decode": true,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "log_output": "${artifact_dir}/recall-ivf-pq_fastscan-batch-on.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-ivf-pq_fastscan-batch-off",
+      "tags": [
+        "task104",
+        "m5",
+        "ivf",
+        "real10k",
+        "quant=pq_fastscan",
+        "kernel_off",
+        "isa=scalar"
+      ],
+      "prefix": "task104_real10k_ivf_pq",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        32
+      ],
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "log_output": "${artifact_dir}/recall-ivf-pq_fastscan-batch-off.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-ivf-pq_fastscan-batch-on",
+      "tags": [
+        "task104",
+        "m5",
+        "ivf",
+        "real10k",
+        "quant=pq_fastscan",
+        "kernel_on",
+        "isa=neon",
+        "kernel_status=valid"
+      ],
+      "prefix": "task104_real10k_ivf_pq",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        32
+      ],
+      "ivf_scratch_soa_batch_decode": true,
+      "iterations": 300,
+      "concurrency": 1,
+      "cache_state": "task104_latency_ivf_pq_fastscan_batch_on",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-ivf-pq_fastscan-batch-on.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-ivf-pq_fastscan-batch-off",
+      "tags": [
+        "task104",
+        "m5",
+        "ivf",
+        "real10k",
+        "quant=pq_fastscan",
+        "kernel_off",
+        "isa=scalar"
+      ],
+      "prefix": "task104_real10k_ivf_pq",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        32
+      ],
+      "iterations": 300,
+      "concurrency": 1,
+      "cache_state": "task104_latency_ivf_pq_fastscan_batch_off",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-ivf-pq_fastscan-batch-off.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-ivf-rabitq-batch-on",
+      "tags": [
+        "task104",
+        "m5",
+        "ivf",
+        "real10k",
+        "quant=rabitq",
+        "kernel_on",
+        "isa=neon",
+        "kernel_status=valid",
+        "bits1"
+      ],
+      "prefix": "task104_real10k_ivf_rb1",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        32
+      ],
+      "ivf_scratch_soa_batch_decode": true,
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "log_output": "${artifact_dir}/recall-ivf-rabitq-batch-on.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-ivf-rabitq-batch-off",
+      "tags": [
+        "task104",
+        "m5",
+        "ivf",
+        "real10k",
+        "quant=rabitq",
+        "kernel_off",
+        "isa=scalar",
+        "bits1"
+      ],
+      "prefix": "task104_real10k_ivf_rb1",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        32
+      ],
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "log_output": "${artifact_dir}/recall-ivf-rabitq-batch-off.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-ivf-rabitq-batch-on",
+      "tags": [
+        "task104",
+        "m5",
+        "ivf",
+        "real10k",
+        "quant=rabitq",
+        "kernel_on",
+        "isa=neon",
+        "kernel_status=valid",
+        "bits1"
+      ],
+      "prefix": "task104_real10k_ivf_rb1",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        32
+      ],
+      "ivf_scratch_soa_batch_decode": true,
+      "iterations": 300,
+      "concurrency": 1,
+      "cache_state": "task104_latency_ivf_rabitq_batch_on",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-ivf-rabitq-batch-on.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-ivf-rabitq-batch-off",
+      "tags": [
+        "task104",
+        "m5",
+        "ivf",
+        "real10k",
+        "quant=rabitq",
+        "kernel_off",
+        "isa=scalar",
+        "bits1"
+      ],
+      "prefix": "task104_real10k_ivf_rb1",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        32
+      ],
+      "iterations": 300,
+      "concurrency": 1,
+      "cache_state": "task104_latency_ivf_rabitq_batch_off",
+      "task87_candidate_batch_counters": true,
+      "log_output": "${artifact_dir}/latency-ivf-rabitq-batch-off.log"
+    }
+  ]
+}

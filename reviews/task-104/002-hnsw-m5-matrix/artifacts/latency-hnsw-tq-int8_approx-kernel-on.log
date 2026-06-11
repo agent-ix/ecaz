@@ -1,0 +1,24 @@
+┌───────────┬───────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────────────────────────┐
+│ ef_search ┆ count ┆ mean    ┆ stddev  ┆ min     ┆ p50     ┆ p95     ┆ p99     ┆ max     ┆ cache_state                 │
+╞═══════════╪═══════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════════════════════════╡
+│ 32        ┆ 300   ┆ 0.46 ms ┆ 0.14 ms ┆ 0.31 ms ┆ 0.43 ms ┆ 0.66 ms ┆ 0.84 ms ┆ 2.33 ms ┆ task104_hnsw_int8_approx_on │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 80        ┆ 300   ┆ 0.74 ms ┆ 0.17 ms ┆ 0.52 ms ┆ 0.69 ms ┆ 1.04 ms ┆ 1.24 ms ┆ 2.41 ms ┆ task104_hnsw_int8_approx_on │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 200       ┆ 300   ┆ 0.95 ms ┆ 0.17 ms ┆ 0.72 ms ┆ 0.91 ms ┆ 1.28 ms ┆ 1.39 ms ┆ 2.73 ms ┆ task104_hnsw_int8_approx_on │
+└───────────┴───────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────────────────────────┘
+[block-kernel-counters] command=latency label=ef_search=32 surface=hnsw quant=turboquant_int8 isa=neon flushes=31474 candidates=79934 elapsed_nanos=7987459 elapsed_ms=7.987459 kernel_flushes=31474 kernel_candidates=79934 kernel_elapsed_nanos=7987459 kernel_elapsed_ms=7.987459 scalar_flushes=0 scalar_candidates=0 scalar_elapsed_nanos=0 scalar_elapsed_ms=0.000000 width_lt8=29474 width_8_15=1529 width_16_31=451 width_ge32=20
+[task87-counters] command=latency label=ef_search=32 surface=hnsw flushes=31474 candidates=79934 elapsed_nanos=7987459 elapsed_ms=7.987459 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=ef_search=32 surface=ivf flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=ef_search=32 surface=spire flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=ef_search=32 surface=unknown flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[block-kernel-counters] command=latency label=ef_search=80 surface=hnsw quant=turboquant_int8 isa=neon flushes=60594 candidates=134688 elapsed_nanos=13849476 elapsed_ms=13.849476 kernel_flushes=60594 kernel_candidates=134688 kernel_elapsed_nanos=13849476 kernel_elapsed_ms=13.849476 scalar_flushes=0 scalar_candidates=0 scalar_elapsed_nanos=0 scalar_elapsed_ms=0.000000 width_lt8=57862 width_8_15=2149 width_16_31=560 width_ge32=23
+[task87-counters] command=latency label=ef_search=80 surface=hnsw flushes=60594 candidates=134688 elapsed_nanos=13849476 elapsed_ms=13.849476 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=ef_search=80 surface=ivf flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=ef_search=80 surface=spire flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=ef_search=80 surface=unknown flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[block-kernel-counters] command=latency label=ef_search=200 surface=hnsw quant=turboquant_int8 isa=neon flushes=83949 candidates=170133 elapsed_nanos=17805828 elapsed_ms=17.805828 kernel_flushes=83949 kernel_candidates=170133 kernel_elapsed_nanos=17805828 kernel_elapsed_ms=17.805828 scalar_flushes=0 scalar_candidates=0 scalar_elapsed_nanos=0 scalar_elapsed_ms=0.000000 width_lt8=81466 width_8_15=2378 width_16_31=105 width_ge32=0
+[task87-counters] command=latency label=ef_search=200 surface=hnsw flushes=83949 candidates=170133 elapsed_nanos=17805828 elapsed_ms=17.805828 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=ef_search=200 surface=ivf flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=ef_search=200 surface=spire flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=ef_search=200 surface=unknown flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0

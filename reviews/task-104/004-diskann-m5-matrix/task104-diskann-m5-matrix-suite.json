@@ -51,7 +51,6 @@
       "queries_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_queries.tsv",
       "manifest_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_manifest.json",
       "dim": 1536,
-      "bits": 1,
       "storage_format": "rabitq",
       "log_file": "${artifact_dir}/load-diskann-real10k-rabitq-bits1.log",
       "allow_manifest_mismatch": true
@@ -169,7 +168,6 @@
       "prefix": "task104_real10k_diskann_rb1",
       "profile": "ec_diskann",
       "k": 10,
-      "bits": 1,
       "sweep": [
         64,
         128
@@ -193,7 +191,6 @@
       "prefix": "task104_real10k_diskann_rb1",
       "profile": "ec_diskann",
       "k": 10,
-      "bits": 1,
       "sweep": [
         64,
         128
@@ -383,7 +380,6 @@
       "prefix": "task104_real10k_diskann_rb1",
       "profile": "ec_diskann",
       "k": 10,
-      "bits": 1,
       "sweep": [
         64,
         128
@@ -410,7 +406,6 @@
       "prefix": "task104_real10k_diskann_rb1",
       "profile": "ec_diskann",
       "k": 10,
-      "bits": 1,
       "sweep": [
         64,
         128

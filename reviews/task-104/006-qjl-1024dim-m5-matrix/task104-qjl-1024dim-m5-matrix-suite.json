@@ -15,22 +15,72 @@
     {
       "kind": "raw",
       "name": "generate-qjl-1024dim-corpus",
-      "tags": ["task104", "m5", "qjl", "fixture", "generate", "corpus"],
-      "args": ["corpus", "generate", "--output", "reviews/task-104/006-qjl-1024dim-m5-matrix/artifacts/task104_qjl_1024d_10k_corpus.tsv", "--n", "10000", "--dim", "1024", "--seed", "10401", "--kind", "corpus"],
-      "expected_artifacts": ["reviews/task-104/006-qjl-1024dim-m5-matrix/artifacts/task104_qjl_1024d_10k_corpus.tsv"]
+      "tags": [
+        "task104",
+        "m5",
+        "qjl",
+        "fixture",
+        "generate",
+        "corpus"
+      ],
+      "args": [
+        "corpus",
+        "generate",
+        "--output",
+        "reviews/task-104/006-qjl-1024dim-m5-matrix/artifacts/task104_qjl_1024d_10k_corpus.tsv",
+        "--n",
+        "10000",
+        "--dim",
+        "1024",
+        "--seed",
+        "10401",
+        "--kind",
+        "corpus"
+      ],
+      "expected_artifacts": [
+        "reviews/task-104/006-qjl-1024dim-m5-matrix/artifacts/task104_qjl_1024d_10k_corpus.tsv"
+      ]
     },
     {
       "kind": "raw",
       "name": "generate-qjl-1024dim-queries",
-      "tags": ["task104", "m5", "qjl", "fixture", "generate", "queries"],
-      "args": ["corpus", "generate", "--output", "reviews/task-104/006-qjl-1024dim-m5-matrix/artifacts/task104_qjl_1024d_queries.tsv", "--n", "64", "--dim", "1024", "--seed", "10402", "--kind", "queries"],
-      "expected_artifacts": ["reviews/task-104/006-qjl-1024dim-m5-matrix/artifacts/task104_qjl_1024d_queries.tsv"]
+      "tags": [
+        "task104",
+        "m5",
+        "qjl",
+        "fixture",
+        "generate",
+        "queries"
+      ],
+      "args": [
+        "corpus",
+        "generate",
+        "--output",
+        "reviews/task-104/006-qjl-1024dim-m5-matrix/artifacts/task104_qjl_1024d_queries.tsv",
+        "--n",
+        "64",
+        "--dim",
+        "1024",
+        "--seed",
+        "10402",
+        "--kind",
+        "queries"
+      ],
+      "expected_artifacts": [
+        "reviews/task-104/006-qjl-1024dim-m5-matrix/artifacts/task104_qjl_1024d_queries.tsv"
+      ]
     },
-
     {
       "kind": "load",
       "name": "load-hnsw-qjl1024-turboquant",
-      "tags": ["task104", "m5", "hnsw", "load", "qjl1024", "quant=turboquant_qjl"],
+      "tags": [
+        "task104",
+        "m5",
+        "hnsw",
+        "load",
+        "qjl1024",
+        "quant=turboquant_qjl"
+      ],
       "prefix": "task104_qjl1024_hnsw_tq",
       "profile": "ec_hnsw",
       "corpus_file": "reviews/task-104/006-qjl-1024dim-m5-matrix/artifacts/task104_qjl_1024d_10k_corpus.tsv",
@@ -42,7 +92,14 @@
     {
       "kind": "load",
       "name": "load-ivf-qjl1024-turboquant",
-      "tags": ["task104", "m5", "ivf", "load", "qjl1024", "quant=turboquant_qjl"],
+      "tags": [
+        "task104",
+        "m5",
+        "ivf",
+        "load",
+        "qjl1024",
+        "quant=turboquant_qjl"
+      ],
       "prefix": "task104_qjl1024_ivf_tq",
       "profile": "ec_ivf",
       "corpus_file": "reviews/task-104/006-qjl-1024dim-m5-matrix/artifacts/task104_qjl_1024d_10k_corpus.tsv",
@@ -54,7 +111,14 @@
     {
       "kind": "load",
       "name": "load-spire-qjl1024-turboquant",
-      "tags": ["task104", "m5", "spire", "load", "qjl1024", "quant=turboquant_qjl"],
+      "tags": [
+        "task104",
+        "m5",
+        "spire",
+        "load",
+        "qjl1024",
+        "quant=turboquant_qjl"
+      ],
       "prefix": "task104_qjl1024_spire_tq",
       "profile": "ec_spire",
       "corpus_file": "reviews/task-104/006-qjl-1024dim-m5-matrix/artifacts/task104_qjl_1024d_10k_corpus.tsv",
@@ -64,38 +128,50 @@
       "log_file": "${artifact_dir}/load-spire-qjl1024-turboquant.log"
     },
     {
-      "kind": "load",
-      "name": "load-diskann-qjl1024-turboquant",
-      "tags": ["task104", "m5", "diskann", "load", "qjl1024", "quant=turboquant_qjl"],
-      "prefix": "task104_qjl1024_diskann_tq",
-      "profile": "ec_diskann",
-      "corpus_file": "reviews/task-104/006-qjl-1024dim-m5-matrix/artifacts/task104_qjl_1024d_10k_corpus.tsv",
-      "queries_file": "reviews/task-104/006-qjl-1024dim-m5-matrix/artifacts/task104_qjl_1024d_queries.tsv",
-      "dim": 1024,
-      "storage_format": "turboquant",
-      "log_file": "${artifact_dir}/load-diskann-qjl1024-turboquant.log"
-    },
-
-    {
       "kind": "recall",
       "name": "recall-hnsw-qjl1024-kernel-on",
-      "tags": ["task104", "m5", "hnsw", "qjl1024", "kernel_on", "quant=turboquant_qjl", "isa=neon", "kernel_status=valid"],
+      "tags": [
+        "task104",
+        "m5",
+        "hnsw",
+        "qjl1024",
+        "kernel_on",
+        "quant=turboquant_qjl",
+        "isa=neon",
+        "kernel_status=valid"
+      ],
       "prefix": "task104_qjl1024_hnsw_tq",
       "profile": "ec_hnsw",
       "k": 10,
-      "sweep": [32, 80],
-      "session_gucs": ["ec_hnsw.disable_binary_prefilter=on"],
+      "sweep": [
+        32,
+        80
+      ],
+      "session_gucs": [
+        "ec_hnsw.disable_binary_prefilter=on"
+      ],
       "truth_cache_dir": "${artifact_dir}/truth-cache",
       "log_output": "${artifact_dir}/recall-hnsw-qjl1024-kernel-on.log"
     },
     {
       "kind": "recall",
       "name": "recall-hnsw-qjl1024-kernel-off",
-      "tags": ["task104", "m5", "hnsw", "qjl1024", "kernel_off", "quant=turboquant_qjl", "isa=scalar"],
+      "tags": [
+        "task104",
+        "m5",
+        "hnsw",
+        "qjl1024",
+        "kernel_off",
+        "quant=turboquant_qjl",
+        "isa=scalar"
+      ],
       "prefix": "task104_qjl1024_hnsw_tq",
       "profile": "ec_hnsw",
       "k": 10,
-      "sweep": [32, 80],
+      "sweep": [
+        32,
+        80
+      ],
       "session_gucs": [
         "ec_hnsw.disable_binary_prefilter=on",
         "ec_hnsw.candidate_batch_scoring=off"
@@ -106,72 +182,99 @@
     {
       "kind": "recall",
       "name": "recall-ivf-qjl1024",
-      "tags": ["task104", "m5", "ivf", "qjl1024", "kernel_on", "quant=turboquant_qjl", "isa=neon", "kernel_status=valid"],
+      "tags": [
+        "task104",
+        "m5",
+        "ivf",
+        "qjl1024",
+        "kernel_on",
+        "quant=turboquant_qjl",
+        "isa=neon",
+        "kernel_status=valid"
+      ],
       "prefix": "task104_qjl1024_ivf_tq",
       "profile": "ec_ivf",
       "k": 10,
-      "sweep": [8, 16],
+      "sweep": [
+        8,
+        16
+      ],
       "truth_cache_dir": "${artifact_dir}/truth-cache",
       "log_output": "${artifact_dir}/recall-ivf-qjl1024.log"
     },
     {
       "kind": "recall",
       "name": "recall-spire-qjl1024-kernel-on",
-      "tags": ["task104", "m5", "spire", "qjl1024", "kernel_on", "quant=turboquant_qjl", "isa=neon", "kernel_status=valid"],
+      "tags": [
+        "task104",
+        "m5",
+        "spire",
+        "qjl1024",
+        "kernel_on",
+        "quant=turboquant_qjl",
+        "isa=neon",
+        "kernel_status=valid"
+      ],
       "prefix": "task104_qjl1024_spire_tq",
       "profile": "ec_spire",
       "k": 10,
-      "sweep": [8, 16],
+      "sweep": [
+        8,
+        16
+      ],
       "truth_cache_dir": "${artifact_dir}/truth-cache",
       "log_output": "${artifact_dir}/recall-spire-qjl1024-kernel-on.log"
     },
     {
       "kind": "recall",
       "name": "recall-spire-qjl1024-kernel-off",
-      "tags": ["task104", "m5", "spire", "qjl1024", "kernel_off", "quant=turboquant_qjl", "isa=scalar"],
+      "tags": [
+        "task104",
+        "m5",
+        "spire",
+        "qjl1024",
+        "kernel_off",
+        "quant=turboquant_qjl",
+        "isa=scalar"
+      ],
       "prefix": "task104_qjl1024_spire_tq",
       "profile": "ec_spire",
       "k": 10,
-      "sweep": [8, 16],
-      "session_gucs": ["ec_spire.candidate_batch_scoring=off"],
+      "sweep": [
+        8,
+        16
+      ],
+      "session_gucs": [
+        "ec_spire.candidate_batch_scoring=off"
+      ],
       "truth_cache_dir": "${artifact_dir}/truth-cache",
       "log_output": "${artifact_dir}/recall-spire-qjl1024-kernel-off.log"
     },
     {
-      "kind": "recall",
-      "name": "recall-diskann-qjl1024-kernel-on",
-      "tags": ["task104", "m5", "diskann", "qjl1024", "kernel_on", "quant=turboquant_qjl", "isa=neon", "kernel_status=valid"],
-      "prefix": "task104_qjl1024_diskann_tq",
-      "profile": "ec_diskann",
-      "k": 10,
-      "sweep": [64, 128],
-      "truth_cache_dir": "${artifact_dir}/truth-cache",
-      "log_output": "${artifact_dir}/recall-diskann-qjl1024-kernel-on.log"
-    },
-    {
-      "kind": "recall",
-      "name": "recall-diskann-qjl1024-kernel-off",
-      "tags": ["task104", "m5", "diskann", "qjl1024", "kernel_off", "quant=turboquant_qjl", "isa=scalar"],
-      "prefix": "task104_qjl1024_diskann_tq",
-      "profile": "ec_diskann",
-      "k": 10,
-      "sweep": [64, 128],
-      "session_gucs": ["ec_diskann.candidate_batch_scoring=off"],
-      "truth_cache_dir": "${artifact_dir}/truth-cache",
-      "log_output": "${artifact_dir}/recall-diskann-qjl1024-kernel-off.log"
-    },
-
-    {
       "kind": "latency",
       "name": "latency-hnsw-qjl1024-kernel-on",
-      "tags": ["task104", "m5", "hnsw", "qjl1024", "kernel_on", "quant=turboquant_qjl", "isa=neon", "kernel_status=valid"],
+      "tags": [
+        "task104",
+        "m5",
+        "hnsw",
+        "qjl1024",
+        "kernel_on",
+        "quant=turboquant_qjl",
+        "isa=neon",
+        "kernel_status=valid"
+      ],
       "prefix": "task104_qjl1024_hnsw_tq",
       "profile": "ec_hnsw",
       "k": 10,
-      "sweep": [32, 80],
+      "sweep": [
+        32,
+        80
+      ],
       "iterations": 200,
       "concurrency": 1,
-      "session_gucs": ["ec_hnsw.disable_binary_prefilter=on"],
+      "session_gucs": [
+        "ec_hnsw.disable_binary_prefilter=on"
+      ],
       "cache_state": "task104_qjl_hnsw_on",
       "task87_candidate_batch_counters": true,
       "log_output": "${artifact_dir}/latency-hnsw-qjl1024-kernel-on.log"
@@ -179,11 +282,22 @@
     {
       "kind": "latency",
       "name": "latency-hnsw-qjl1024-kernel-off",
-      "tags": ["task104", "m5", "hnsw", "qjl1024", "kernel_off", "quant=turboquant_qjl", "isa=scalar"],
+      "tags": [
+        "task104",
+        "m5",
+        "hnsw",
+        "qjl1024",
+        "kernel_off",
+        "quant=turboquant_qjl",
+        "isa=scalar"
+      ],
       "prefix": "task104_qjl1024_hnsw_tq",
       "profile": "ec_hnsw",
       "k": 10,
-      "sweep": [32, 80],
+      "sweep": [
+        32,
+        80
+      ],
       "iterations": 200,
       "concurrency": 1,
       "session_gucs": [
@@ -197,11 +311,23 @@
     {
       "kind": "latency",
       "name": "latency-ivf-qjl1024",
-      "tags": ["task104", "m5", "ivf", "qjl1024", "kernel_on", "quant=turboquant_qjl", "isa=neon", "kernel_status=valid"],
+      "tags": [
+        "task104",
+        "m5",
+        "ivf",
+        "qjl1024",
+        "kernel_on",
+        "quant=turboquant_qjl",
+        "isa=neon",
+        "kernel_status=valid"
+      ],
       "prefix": "task104_qjl1024_ivf_tq",
       "profile": "ec_ivf",
       "k": 10,
-      "sweep": [8, 16],
+      "sweep": [
+        8,
+        16
+      ],
       "iterations": 200,
       "concurrency": 1,
       "cache_state": "task104_qjl_ivf",
@@ -211,11 +337,23 @@
     {
       "kind": "latency",
       "name": "latency-spire-qjl1024-kernel-on",
-      "tags": ["task104", "m5", "spire", "qjl1024", "kernel_on", "quant=turboquant_qjl", "isa=neon", "kernel_status=valid"],
+      "tags": [
+        "task104",
+        "m5",
+        "spire",
+        "qjl1024",
+        "kernel_on",
+        "quant=turboquant_qjl",
+        "isa=neon",
+        "kernel_status=valid"
+      ],
       "prefix": "task104_qjl1024_spire_tq",
       "profile": "ec_spire",
       "k": 10,
-      "sweep": [8, 16],
+      "sweep": [
+        8,
+        16
+      ],
       "iterations": 200,
       "concurrency": 1,
       "cache_state": "task104_qjl_spire_on",
@@ -225,46 +363,51 @@
     {
       "kind": "latency",
       "name": "latency-spire-qjl1024-kernel-off",
-      "tags": ["task104", "m5", "spire", "qjl1024", "kernel_off", "quant=turboquant_qjl", "isa=scalar"],
+      "tags": [
+        "task104",
+        "m5",
+        "spire",
+        "qjl1024",
+        "kernel_off",
+        "quant=turboquant_qjl",
+        "isa=scalar"
+      ],
       "prefix": "task104_qjl1024_spire_tq",
       "profile": "ec_spire",
       "k": 10,
-      "sweep": [8, 16],
+      "sweep": [
+        8,
+        16
+      ],
       "iterations": 200,
       "concurrency": 1,
-      "session_gucs": ["ec_spire.candidate_batch_scoring=off"],
+      "session_gucs": [
+        "ec_spire.candidate_batch_scoring=off"
+      ],
       "cache_state": "task104_qjl_spire_off",
       "task87_candidate_batch_counters": true,
       "log_output": "${artifact_dir}/latency-spire-qjl1024-kernel-off.log"
     },
     {
       "kind": "latency",
-      "name": "latency-diskann-qjl1024-kernel-on",
-      "tags": ["task104", "m5", "diskann", "qjl1024", "kernel_on", "quant=turboquant_qjl", "isa=neon", "kernel_status=valid"],
-      "prefix": "task104_qjl1024_diskann_tq",
+      "name": "marker-diskann-qjl1024-structurally-absent",
+      "tags": [
+        "task104",
+        "m5",
+        "diskann",
+        "qjl1024",
+        "quant=turboquant_qjl",
+        "kernel_status=structurally_absent"
+      ],
+      "prefix": "task104_qjl1024_hnsw_tq",
       "profile": "ec_diskann",
       "k": 10,
-      "sweep": [64, 128],
-      "iterations": 200,
+      "sweep": [
+        64
+      ],
+      "iterations": 1,
       "concurrency": 1,
-      "cache_state": "task104_qjl_diskann_on",
-      "task87_candidate_batch_counters": true,
-      "log_output": "${artifact_dir}/latency-diskann-qjl1024-kernel-on.log"
-    },
-    {
-      "kind": "latency",
-      "name": "latency-diskann-qjl1024-kernel-off",
-      "tags": ["task104", "m5", "diskann", "qjl1024", "kernel_off", "quant=turboquant_qjl", "isa=scalar"],
-      "prefix": "task104_qjl1024_diskann_tq",
-      "profile": "ec_diskann",
-      "k": 10,
-      "sweep": [64, 128],
-      "iterations": 200,
-      "concurrency": 1,
-      "session_gucs": ["ec_diskann.candidate_batch_scoring=off"],
-      "cache_state": "task104_qjl_diskann_off",
-      "task87_candidate_batch_counters": true,
-      "log_output": "${artifact_dir}/latency-diskann-qjl1024-kernel-off.log"
+      "log_output": "${artifact_dir}/marker-diskann-qjl1024.log"
     }
   ]
 }

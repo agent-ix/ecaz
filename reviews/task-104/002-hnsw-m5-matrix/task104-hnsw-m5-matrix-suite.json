@@ -55,75 +55,6 @@
       "allow_manifest_mismatch": true
     },
     {
-      "kind": "load",
-      "name": "load-hnsw-real10k-rabitq-bits1",
-      "tags": [
-        "task104",
-        "m5",
-        "hnsw",
-        "load",
-        "real10k",
-        "quant=rabitq",
-        "bits1"
-      ],
-      "prefix": "task104_real10k_hnsw_rb1",
-      "profile": "ec_hnsw",
-      "corpus_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_corpus.tsv",
-      "queries_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_queries.tsv",
-      "manifest_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_manifest.json",
-      "dim": 1536,
-      "bits": 1,
-      "storage_format": "rabitq",
-      "log_file": "${artifact_dir}/load-hnsw-real10k-rabitq-bits1.log",
-      "allow_manifest_mismatch": true
-    },
-    {
-      "kind": "load",
-      "name": "load-hnsw-real10k-rabitq-bits4",
-      "tags": [
-        "task104",
-        "m5",
-        "hnsw",
-        "load",
-        "real10k",
-        "quant=rabitq",
-        "bits4"
-      ],
-      "prefix": "task104_real10k_hnsw_rb4",
-      "profile": "ec_hnsw",
-      "corpus_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_corpus.tsv",
-      "queries_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_queries.tsv",
-      "manifest_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_manifest.json",
-      "dim": 1536,
-      "bits": 4,
-      "storage_format": "rabitq",
-      "log_file": "${artifact_dir}/load-hnsw-real10k-rabitq-bits4.log",
-      "allow_manifest_mismatch": true
-    },
-    {
-      "kind": "load",
-      "name": "load-hnsw-real10k-rabitq-bits8",
-      "tags": [
-        "task104",
-        "m5",
-        "hnsw",
-        "load",
-        "real10k",
-        "quant=rabitq",
-        "bits8"
-      ],
-      "prefix": "task104_real10k_hnsw_rb8",
-      "profile": "ec_hnsw",
-      "corpus_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_corpus.tsv",
-      "queries_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_queries.tsv",
-      "manifest_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_manifest.json",
-      "dim": 1536,
-      "bits": 8,
-      "storage_format": "rabitq",
-      "log_file": "${artifact_dir}/load-hnsw-real10k-rabitq-bits8.log",
-      "allow_manifest_mismatch": true
-    },
-    {
       "kind": "recall",
       "name": "recall-hnsw-tq-full_lut-kernel-on",
       "tags": [
@@ -343,112 +274,6 @@
       ],
       "truth_cache_dir": "${artifact_dir}/truth-cache",
       "log_output": "${artifact_dir}/recall-hnsw-pq-kernel-off.log"
-    },
-    {
-      "kind": "recall",
-      "name": "recall-hnsw-rb1-kernel-on",
-      "tags": [
-        "task104",
-        "m5",
-        "hnsw",
-        "real10k",
-        "kernel_on",
-        "quant=rabitq",
-        "bits1",
-        "isa=neon",
-        "kernel_status=valid"
-      ],
-      "prefix": "task104_real10k_hnsw_rb1",
-      "profile": "ec_hnsw",
-      "k": 10,
-      "bits": 1,
-      "sweep": [
-        32,
-        80,
-        200
-      ],
-      "session_gucs": [
-        "ec_hnsw.disable_binary_prefilter=on"
-      ],
-      "truth_cache_dir": "${artifact_dir}/truth-cache",
-      "log_output": "${artifact_dir}/recall-hnsw-rb1-kernel-on.log"
-    },
-    {
-      "kind": "recall",
-      "name": "recall-hnsw-rb1-kernel-off",
-      "tags": [
-        "task104",
-        "m5",
-        "hnsw",
-        "real10k",
-        "kernel_off",
-        "quant=rabitq",
-        "bits1",
-        "isa=scalar"
-      ],
-      "prefix": "task104_real10k_hnsw_rb1",
-      "profile": "ec_hnsw",
-      "k": 10,
-      "bits": 1,
-      "sweep": [
-        32,
-        80,
-        200
-      ],
-      "session_gucs": [
-        "ec_hnsw.disable_binary_prefilter=on",
-        "ec_hnsw.candidate_batch_scoring=off"
-      ],
-      "truth_cache_dir": "${artifact_dir}/truth-cache",
-      "log_output": "${artifact_dir}/recall-hnsw-rb1-kernel-off.log"
-    },
-    {
-      "kind": "recall",
-      "name": "recall-hnsw-rb4-storage-lane",
-      "tags": [
-        "task104",
-        "m5",
-        "hnsw",
-        "real10k",
-        "quant=rabitq",
-        "bits4"
-      ],
-      "prefix": "task104_real10k_hnsw_rb4",
-      "profile": "ec_hnsw",
-      "k": 10,
-      "bits": 4,
-      "sweep": [
-        80
-      ],
-      "session_gucs": [
-        "ec_hnsw.disable_binary_prefilter=on"
-      ],
-      "truth_cache_dir": "${artifact_dir}/truth-cache",
-      "log_output": "${artifact_dir}/recall-hnsw-rb4-storage-lane.log"
-    },
-    {
-      "kind": "recall",
-      "name": "recall-hnsw-rb8-storage-lane",
-      "tags": [
-        "task104",
-        "m5",
-        "hnsw",
-        "real10k",
-        "quant=rabitq",
-        "bits8"
-      ],
-      "prefix": "task104_real10k_hnsw_rb8",
-      "profile": "ec_hnsw",
-      "k": 10,
-      "bits": 8,
-      "sweep": [
-        80
-      ],
-      "session_gucs": [
-        "ec_hnsw.disable_binary_prefilter=on"
-      ],
-      "truth_cache_dir": "${artifact_dir}/truth-cache",
-      "log_output": "${artifact_dir}/recall-hnsw-rb8-storage-lane.log"
     },
     {
       "kind": "latency",
@@ -721,122 +546,187 @@
       "log_output": "${artifact_dir}/latency-hnsw-pq-kernel-off.log"
     },
     {
-      "kind": "latency",
-      "name": "latency-hnsw-rb1-kernel-on",
+      "kind": "load",
+      "name": "load-hnsw-real10k-rabitq",
+      "tags": [
+        "task104",
+        "m5",
+        "hnsw",
+        "load",
+        "real10k",
+        "quant=rabitq"
+      ],
+      "prefix": "task104_real10k_hnsw_rb",
+      "profile": "ec_hnsw",
+      "corpus_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_corpus.tsv",
+      "queries_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_queries.tsv",
+      "manifest_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "dim": 1536,
+      "storage_format": "rabitq",
+      "log_file": "${artifact_dir}/load-hnsw-real10k-rabitq.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-hnsw-rb-kernel-on",
       "tags": [
         "task104",
         "m5",
         "hnsw",
         "real10k",
-        "kernel_on",
         "quant=rabitq",
-        "bits1",
+        "bits1_sidecar",
+        "kernel_on",
         "isa=neon",
         "kernel_status=valid"
       ],
-      "prefix": "task104_real10k_hnsw_rb1",
+      "prefix": "task104_real10k_hnsw_rb",
       "profile": "ec_hnsw",
       "k": 10,
-      "bits": 1,
       "sweep": [
         32,
         80,
         200
       ],
-      "iterations": 300,
-      "concurrency": 1,
       "session_gucs": [
         "ec_hnsw.disable_binary_prefilter=on"
       ],
-      "cache_state": "task104_hnsw_rb1_on",
-      "task87_candidate_batch_counters": true,
-      "log_output": "${artifact_dir}/latency-hnsw-rb1-kernel-on.log"
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "log_output": "${artifact_dir}/recall-hnsw-rb-kernel-on.log"
     },
     {
-      "kind": "latency",
-      "name": "latency-hnsw-rb1-kernel-off",
+      "kind": "recall",
+      "name": "recall-hnsw-rb-kernel-off",
       "tags": [
         "task104",
         "m5",
         "hnsw",
         "real10k",
-        "kernel_off",
         "quant=rabitq",
-        "bits1",
+        "bits1_sidecar",
+        "kernel_off",
         "isa=scalar"
       ],
-      "prefix": "task104_real10k_hnsw_rb1",
+      "prefix": "task104_real10k_hnsw_rb",
       "profile": "ec_hnsw",
       "k": 10,
-      "bits": 1,
       "sweep": [
         32,
         80,
         200
       ],
-      "iterations": 300,
-      "concurrency": 1,
       "session_gucs": [
         "ec_hnsw.disable_binary_prefilter=on",
         "ec_hnsw.candidate_batch_scoring=off"
       ],
-      "cache_state": "task104_hnsw_rb1_off",
-      "task87_candidate_batch_counters": true,
-      "log_output": "${artifact_dir}/latency-hnsw-rb1-kernel-off.log"
+      "truth_cache_dir": "${artifact_dir}/truth-cache",
+      "log_output": "${artifact_dir}/recall-hnsw-rb-kernel-off.log"
     },
     {
       "kind": "latency",
-      "name": "latency-hnsw-rb4-storage-lane",
+      "name": "latency-hnsw-rb-kernel-on",
       "tags": [
         "task104",
         "m5",
         "hnsw",
         "real10k",
         "quant=rabitq",
-        "bits4"
+        "bits1_sidecar",
+        "kernel_on",
+        "isa=neon",
+        "kernel_status=valid"
       ],
-      "prefix": "task104_real10k_hnsw_rb4",
+      "prefix": "task104_real10k_hnsw_rb",
       "profile": "ec_hnsw",
       "k": 10,
-      "bits": 4,
       "sweep": [
-        80
+        32,
+        80,
+        200
       ],
-      "iterations": 300,
-      "concurrency": 1,
       "session_gucs": [
         "ec_hnsw.disable_binary_prefilter=on"
       ],
-      "cache_state": "task104_hnsw_rb4",
+      "iterations": 300,
+      "concurrency": 1,
+      "cache_state": "task104_hnsw_rb_on",
       "task87_candidate_batch_counters": true,
-      "log_output": "${artifact_dir}/latency-hnsw-rb4-storage-lane.log"
+      "log_output": "${artifact_dir}/latency-hnsw-rb-kernel-on.log"
     },
     {
       "kind": "latency",
-      "name": "latency-hnsw-rb8-storage-lane",
+      "name": "latency-hnsw-rb-kernel-off",
       "tags": [
         "task104",
         "m5",
         "hnsw",
         "real10k",
         "quant=rabitq",
-        "bits8"
+        "bits1_sidecar",
+        "kernel_off",
+        "isa=scalar"
       ],
-      "prefix": "task104_real10k_hnsw_rb8",
+      "prefix": "task104_real10k_hnsw_rb",
       "profile": "ec_hnsw",
       "k": 10,
-      "bits": 8,
       "sweep": [
-        80
+        32,
+        80,
+        200
+      ],
+      "session_gucs": [
+        "ec_hnsw.disable_binary_prefilter=on",
+        "ec_hnsw.candidate_batch_scoring=off"
       ],
       "iterations": 300,
       "concurrency": 1,
-      "session_gucs": [
-        "ec_hnsw.disable_binary_prefilter=on"
-      ],
-      "cache_state": "task104_hnsw_rb8",
+      "cache_state": "task104_hnsw_rb_off",
       "task87_candidate_batch_counters": true,
-      "log_output": "${artifact_dir}/latency-hnsw-rb8-storage-lane.log"
+      "log_output": "${artifact_dir}/latency-hnsw-rb-kernel-off.log"
+    },
+    {
+      "kind": "latency",
+      "name": "marker-hnsw-rabitq-bits4-structurally-absent",
+      "tags": [
+        "task104",
+        "m5",
+        "hnsw",
+        "real10k",
+        "quant=rabitq",
+        "bits4",
+        "kernel_status=structurally_absent"
+      ],
+      "prefix": "task104_real10k_hnsw_rb",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        80
+      ],
+      "iterations": 1,
+      "concurrency": 1,
+      "log_output": "${artifact_dir}/marker-hnsw-rabitq-bits4.log"
+    },
+    {
+      "kind": "latency",
+      "name": "marker-hnsw-rabitq-bits8-structurally-absent",
+      "tags": [
+        "task104",
+        "m5",
+        "hnsw",
+        "real10k",
+        "quant=rabitq",
+        "bits8",
+        "kernel_status=structurally_absent"
+      ],
+      "prefix": "task104_real10k_hnsw_rb",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        80
+      ],
+      "iterations": 1,
+      "concurrency": 1,
+      "log_output": "${artifact_dir}/marker-hnsw-rabitq-bits8.log"
     }
   ]
 }

@@ -35,27 +35,6 @@
     },
     {
       "kind": "load",
-      "name": "load-spire-real10k-pqfastscan",
-      "tags": [
-        "task104",
-        "m5",
-        "spire",
-        "load",
-        "real10k",
-        "quant=pq_fastscan"
-      ],
-      "prefix": "task104_real10k_spire_pq",
-      "profile": "ec_spire",
-      "corpus_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_corpus.tsv",
-      "queries_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_queries.tsv",
-      "manifest_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_manifest.json",
-      "dim": 1536,
-      "storage_format": "pq_fastscan",
-      "log_file": "${artifact_dir}/load-spire-real10k-pqfastscan.log",
-      "allow_manifest_mismatch": true
-    },
-    {
-      "kind": "load",
       "name": "load-spire-real10k-rabitq-bits1",
       "tags": [
         "task104",
@@ -72,7 +51,6 @@
       "queries_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_queries.tsv",
       "manifest_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_manifest.json",
       "dim": 1536,
-      "bits": 1,
       "storage_format": "rabitq",
       "log_file": "${artifact_dir}/load-spire-real10k-rabitq-bits1.log",
       "allow_manifest_mismatch": true
@@ -129,56 +107,6 @@
     },
     {
       "kind": "recall",
-      "name": "recall-spire-pq-kernel-on",
-      "tags": [
-        "task104",
-        "m5",
-        "spire",
-        "real10k",
-        "kernel_on",
-        "quant=pq_fastscan",
-        "isa=neon",
-        "kernel_status=valid"
-      ],
-      "prefix": "task104_real10k_spire_pq",
-      "profile": "ec_spire",
-      "k": 10,
-      "sweep": [
-        8,
-        16,
-        32
-      ],
-      "truth_cache_dir": "${artifact_dir}/truth-cache",
-      "log_output": "${artifact_dir}/recall-spire-pq-kernel-on.log"
-    },
-    {
-      "kind": "recall",
-      "name": "recall-spire-pq-kernel-off",
-      "tags": [
-        "task104",
-        "m5",
-        "spire",
-        "real10k",
-        "kernel_off",
-        "quant=pq_fastscan",
-        "isa=scalar"
-      ],
-      "prefix": "task104_real10k_spire_pq",
-      "profile": "ec_spire",
-      "k": 10,
-      "sweep": [
-        8,
-        16,
-        32
-      ],
-      "session_gucs": [
-        "ec_spire.candidate_batch_scoring=off"
-      ],
-      "truth_cache_dir": "${artifact_dir}/truth-cache",
-      "log_output": "${artifact_dir}/recall-spire-pq-kernel-off.log"
-    },
-    {
-      "kind": "recall",
       "name": "recall-spire-rb1",
       "tags": [
         "task104",
@@ -191,7 +119,6 @@
       "prefix": "task104_real10k_spire_rb1",
       "profile": "ec_spire",
       "k": 10,
-      "bits": 1,
       "sweep": [
         8,
         16,
@@ -258,62 +185,6 @@
     },
     {
       "kind": "latency",
-      "name": "latency-spire-pq-kernel-on",
-      "tags": [
-        "task104",
-        "m5",
-        "spire",
-        "real10k",
-        "kernel_on",
-        "quant=pq_fastscan",
-        "isa=neon",
-        "kernel_status=valid"
-      ],
-      "prefix": "task104_real10k_spire_pq",
-      "profile": "ec_spire",
-      "k": 10,
-      "sweep": [
-        8,
-        16,
-        32
-      ],
-      "iterations": 300,
-      "concurrency": 1,
-      "cache_state": "task104_spire_pq_on",
-      "task87_candidate_batch_counters": true,
-      "log_output": "${artifact_dir}/latency-spire-pq-kernel-on.log"
-    },
-    {
-      "kind": "latency",
-      "name": "latency-spire-pq-kernel-off",
-      "tags": [
-        "task104",
-        "m5",
-        "spire",
-        "real10k",
-        "kernel_off",
-        "quant=pq_fastscan",
-        "isa=scalar"
-      ],
-      "prefix": "task104_real10k_spire_pq",
-      "profile": "ec_spire",
-      "k": 10,
-      "sweep": [
-        8,
-        16,
-        32
-      ],
-      "iterations": 300,
-      "concurrency": 1,
-      "session_gucs": [
-        "ec_spire.candidate_batch_scoring=off"
-      ],
-      "cache_state": "task104_spire_pq_off",
-      "task87_candidate_batch_counters": true,
-      "log_output": "${artifact_dir}/latency-spire-pq-kernel-off.log"
-    },
-    {
-      "kind": "latency",
       "name": "latency-spire-rb1",
       "tags": [
         "task104",
@@ -326,7 +197,6 @@
       "prefix": "task104_real10k_spire_rb1",
       "profile": "ec_spire",
       "k": 10,
-      "bits": 1,
       "sweep": [
         8,
         16,
@@ -366,6 +236,27 @@
       "cache_state": "task104_spire_tq_leaf_blocks",
       "task87_candidate_batch_counters": true,
       "log_output": "${artifact_dir}/latency-spire-tq-leaf-blocks.log"
+    },
+    {
+      "kind": "latency",
+      "name": "marker-spire-pqfastscan-structurally-absent",
+      "tags": [
+        "task104",
+        "m5",
+        "spire",
+        "real10k",
+        "quant=pq_fastscan",
+        "kernel_status=structurally_absent"
+      ],
+      "prefix": "task104_real10k_spire_tq",
+      "profile": "ec_spire",
+      "k": 10,
+      "sweep": [
+        16
+      ],
+      "iterations": 1,
+      "concurrency": 1,
+      "log_output": "${artifact_dir}/marker-spire-pqfastscan.log"
     }
   ]
 }
