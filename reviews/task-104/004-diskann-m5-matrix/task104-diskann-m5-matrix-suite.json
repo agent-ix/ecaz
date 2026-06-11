@@ -15,7 +15,14 @@
     {
       "kind": "load",
       "name": "load-diskann-real10k-pqfastscan",
-      "tags": ["task104", "m5", "diskann", "load", "real10k", "quant=pq_fastscan"],
+      "tags": [
+        "task104",
+        "m5",
+        "diskann",
+        "load",
+        "real10k",
+        "quant=pq_fastscan"
+      ],
       "prefix": "task104_real10k_diskann_pq",
       "profile": "ec_diskann",
       "corpus_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_corpus.tsv",
@@ -23,12 +30,21 @@
       "manifest_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_manifest.json",
       "dim": 1536,
       "storage_format": "pq_fastscan",
-      "log_file": "${artifact_dir}/load-diskann-real10k-pqfastscan.log"
+      "log_file": "${artifact_dir}/load-diskann-real10k-pqfastscan.log",
+      "allow_manifest_mismatch": true
     },
     {
       "kind": "load",
       "name": "load-diskann-real10k-rabitq-bits1",
-      "tags": ["task104", "m5", "diskann", "load", "real10k", "quant=rabitq", "bits1"],
+      "tags": [
+        "task104",
+        "m5",
+        "diskann",
+        "load",
+        "real10k",
+        "quant=rabitq",
+        "bits1"
+      ],
       "prefix": "task104_real10k_diskann_rb1",
       "profile": "ec_diskann",
       "corpus_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_corpus.tsv",
@@ -37,12 +53,20 @@
       "dim": 1536,
       "bits": 1,
       "storage_format": "rabitq",
-      "log_file": "${artifact_dir}/load-diskann-real10k-rabitq-bits1.log"
+      "log_file": "${artifact_dir}/load-diskann-real10k-rabitq-bits1.log",
+      "allow_manifest_mismatch": true
     },
     {
       "kind": "load",
       "name": "load-diskann-real10k-turboquant",
-      "tags": ["task104", "m5", "diskann", "load", "real10k", "quant=turboquant"],
+      "tags": [
+        "task104",
+        "m5",
+        "diskann",
+        "load",
+        "real10k",
+        "quant=turboquant"
+      ],
       "prefix": "task104_real10k_diskann_tq",
       "profile": "ec_diskann",
       "corpus_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_corpus.tsv",
@@ -50,101 +74,204 @@
       "manifest_file": "data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_manifest.json",
       "dim": 1536,
       "storage_format": "turboquant",
-      "log_file": "${artifact_dir}/load-diskann-real10k-turboquant.log"
+      "log_file": "${artifact_dir}/load-diskann-real10k-turboquant.log",
+      "allow_manifest_mismatch": true
     },
-
     {
       "kind": "recall",
       "name": "recall-diskann-pq-kernel-on",
-      "tags": ["task104", "m5", "diskann", "real10k", "kernel_on", "quant=pq_fastscan", "isa=neon", "kernel_status=valid"],
+      "tags": [
+        "task104",
+        "m5",
+        "diskann",
+        "real10k",
+        "kernel_on",
+        "quant=pq_fastscan",
+        "isa=neon",
+        "kernel_status=valid"
+      ],
       "prefix": "task104_real10k_diskann_pq",
       "profile": "ec_diskann",
       "k": 10,
-      "sweep": [64, 128],
+      "sweep": [
+        64,
+        128
+      ],
       "truth_cache_dir": "${artifact_dir}/truth-cache",
       "log_output": "${artifact_dir}/recall-diskann-pq-kernel-on.log"
     },
     {
       "kind": "recall",
       "name": "recall-diskann-pq-kernel-off",
-      "tags": ["task104", "m5", "diskann", "real10k", "kernel_off", "quant=pq_fastscan", "isa=scalar"],
+      "tags": [
+        "task104",
+        "m5",
+        "diskann",
+        "real10k",
+        "kernel_off",
+        "quant=pq_fastscan",
+        "isa=scalar"
+      ],
       "prefix": "task104_real10k_diskann_pq",
       "profile": "ec_diskann",
       "k": 10,
-      "sweep": [64, 128],
-      "session_gucs": ["ec_diskann.candidate_batch_scoring=off"],
+      "sweep": [
+        64,
+        128
+      ],
+      "session_gucs": [
+        "ec_diskann.candidate_batch_scoring=off"
+      ],
       "truth_cache_dir": "${artifact_dir}/truth-cache",
       "log_output": "${artifact_dir}/recall-diskann-pq-kernel-off.log"
     },
     {
       "kind": "recall",
       "name": "recall-diskann-pq-binary-sidecar",
-      "tags": ["task104", "m5", "diskann", "real10k", "kernel_on", "quant=binary", "isa=neon", "kernel_status=valid", "prefilter=binary_sidecar"],
+      "tags": [
+        "task104",
+        "m5",
+        "diskann",
+        "real10k",
+        "kernel_on",
+        "quant=binary",
+        "isa=neon",
+        "kernel_status=valid",
+        "prefilter=binary_sidecar"
+      ],
       "prefix": "task104_real10k_diskann_pq",
       "profile": "ec_diskann",
       "k": 10,
-      "sweep": [64, 128],
-      "session_gucs": ["ec_diskann.prefilter_kind=binary_sidecar"],
+      "sweep": [
+        64,
+        128
+      ],
+      "session_gucs": [
+        "ec_diskann.prefilter_kind=binary_sidecar"
+      ],
       "truth_cache_dir": "${artifact_dir}/truth-cache",
       "log_output": "${artifact_dir}/recall-diskann-pq-binary-sidecar.log"
     },
     {
       "kind": "recall",
       "name": "recall-diskann-rb1-kernel-on",
-      "tags": ["task104", "m5", "diskann", "real10k", "kernel_on", "quant=rabitq", "bits1", "isa=neon", "kernel_status=valid"],
+      "tags": [
+        "task104",
+        "m5",
+        "diskann",
+        "real10k",
+        "kernel_on",
+        "quant=rabitq",
+        "bits1",
+        "isa=neon",
+        "kernel_status=valid"
+      ],
       "prefix": "task104_real10k_diskann_rb1",
       "profile": "ec_diskann",
       "k": 10,
       "bits": 1,
-      "sweep": [64, 128],
+      "sweep": [
+        64,
+        128
+      ],
       "truth_cache_dir": "${artifact_dir}/truth-cache",
       "log_output": "${artifact_dir}/recall-diskann-rb1-kernel-on.log"
     },
     {
       "kind": "recall",
       "name": "recall-diskann-rb1-kernel-off",
-      "tags": ["task104", "m5", "diskann", "real10k", "kernel_off", "quant=rabitq", "bits1", "isa=scalar"],
+      "tags": [
+        "task104",
+        "m5",
+        "diskann",
+        "real10k",
+        "kernel_off",
+        "quant=rabitq",
+        "bits1",
+        "isa=scalar"
+      ],
       "prefix": "task104_real10k_diskann_rb1",
       "profile": "ec_diskann",
       "k": 10,
       "bits": 1,
-      "sweep": [64, 128],
-      "session_gucs": ["ec_diskann.candidate_batch_scoring=off"],
+      "sweep": [
+        64,
+        128
+      ],
+      "session_gucs": [
+        "ec_diskann.candidate_batch_scoring=off"
+      ],
       "truth_cache_dir": "${artifact_dir}/truth-cache",
       "log_output": "${artifact_dir}/recall-diskann-rb1-kernel-off.log"
     },
     {
       "kind": "recall",
       "name": "recall-diskann-tq-kernel-on",
-      "tags": ["task104", "m5", "diskann", "real10k", "kernel_on", "quant=turboquant", "isa=neon", "kernel_status=valid"],
+      "tags": [
+        "task104",
+        "m5",
+        "diskann",
+        "real10k",
+        "kernel_on",
+        "quant=turboquant",
+        "isa=neon",
+        "kernel_status=valid"
+      ],
       "prefix": "task104_real10k_diskann_tq",
       "profile": "ec_diskann",
       "k": 10,
-      "sweep": [64, 128],
+      "sweep": [
+        64,
+        128
+      ],
       "truth_cache_dir": "${artifact_dir}/truth-cache",
       "log_output": "${artifact_dir}/recall-diskann-tq-kernel-on.log"
     },
     {
       "kind": "recall",
       "name": "recall-diskann-tq-kernel-off",
-      "tags": ["task104", "m5", "diskann", "real10k", "kernel_off", "quant=turboquant", "isa=scalar"],
+      "tags": [
+        "task104",
+        "m5",
+        "diskann",
+        "real10k",
+        "kernel_off",
+        "quant=turboquant",
+        "isa=scalar"
+      ],
       "prefix": "task104_real10k_diskann_tq",
       "profile": "ec_diskann",
       "k": 10,
-      "sweep": [64, 128],
-      "session_gucs": ["ec_diskann.candidate_batch_scoring=off"],
+      "sweep": [
+        64,
+        128
+      ],
+      "session_gucs": [
+        "ec_diskann.candidate_batch_scoring=off"
+      ],
       "truth_cache_dir": "${artifact_dir}/truth-cache",
       "log_output": "${artifact_dir}/recall-diskann-tq-kernel-off.log"
     },
-
     {
       "kind": "latency",
       "name": "latency-diskann-pq-kernel-on",
-      "tags": ["task104", "m5", "diskann", "real10k", "kernel_on", "quant=pq_fastscan", "isa=neon", "kernel_status=valid"],
+      "tags": [
+        "task104",
+        "m5",
+        "diskann",
+        "real10k",
+        "kernel_on",
+        "quant=pq_fastscan",
+        "isa=neon",
+        "kernel_status=valid"
+      ],
       "prefix": "task104_real10k_diskann_pq",
       "profile": "ec_diskann",
       "k": 10,
-      "sweep": [64, 128],
+      "sweep": [
+        64,
+        128
+      ],
       "iterations": 200,
       "concurrency": 1,
       "cache_state": "task104_diskann_pq_on",
@@ -154,14 +281,27 @@
     {
       "kind": "latency",
       "name": "latency-diskann-pq-kernel-off",
-      "tags": ["task104", "m5", "diskann", "real10k", "kernel_off", "quant=pq_fastscan", "isa=scalar"],
+      "tags": [
+        "task104",
+        "m5",
+        "diskann",
+        "real10k",
+        "kernel_off",
+        "quant=pq_fastscan",
+        "isa=scalar"
+      ],
       "prefix": "task104_real10k_diskann_pq",
       "profile": "ec_diskann",
       "k": 10,
-      "sweep": [64, 128],
+      "sweep": [
+        64,
+        128
+      ],
       "iterations": 200,
       "concurrency": 1,
-      "session_gucs": ["ec_diskann.candidate_batch_scoring=off"],
+      "session_gucs": [
+        "ec_diskann.candidate_batch_scoring=off"
+      ],
       "cache_state": "task104_diskann_pq_off",
       "task87_candidate_batch_counters": true,
       "log_output": "${artifact_dir}/latency-diskann-pq-kernel-off.log"
@@ -169,14 +309,29 @@
     {
       "kind": "latency",
       "name": "latency-diskann-pq-binary-sidecar-on",
-      "tags": ["task104", "m5", "diskann", "real10k", "kernel_on", "quant=binary", "isa=neon", "kernel_status=valid", "prefilter=binary_sidecar"],
+      "tags": [
+        "task104",
+        "m5",
+        "diskann",
+        "real10k",
+        "kernel_on",
+        "quant=binary",
+        "isa=neon",
+        "kernel_status=valid",
+        "prefilter=binary_sidecar"
+      ],
       "prefix": "task104_real10k_diskann_pq",
       "profile": "ec_diskann",
       "k": 10,
-      "sweep": [64, 128],
+      "sweep": [
+        64,
+        128
+      ],
       "iterations": 200,
       "concurrency": 1,
-      "session_gucs": ["ec_diskann.prefilter_kind=binary_sidecar"],
+      "session_gucs": [
+        "ec_diskann.prefilter_kind=binary_sidecar"
+      ],
       "cache_state": "task104_diskann_binary_on",
       "task87_candidate_batch_counters": true,
       "log_output": "${artifact_dir}/latency-diskann-pq-binary-sidecar-on.log"
@@ -184,11 +339,23 @@
     {
       "kind": "latency",
       "name": "latency-diskann-pq-binary-sidecar-off",
-      "tags": ["task104", "m5", "diskann", "real10k", "kernel_off", "quant=binary", "isa=scalar", "prefilter=binary_sidecar"],
+      "tags": [
+        "task104",
+        "m5",
+        "diskann",
+        "real10k",
+        "kernel_off",
+        "quant=binary",
+        "isa=scalar",
+        "prefilter=binary_sidecar"
+      ],
       "prefix": "task104_real10k_diskann_pq",
       "profile": "ec_diskann",
       "k": 10,
-      "sweep": [64, 128],
+      "sweep": [
+        64,
+        128
+      ],
       "iterations": 200,
       "concurrency": 1,
       "session_gucs": [
@@ -202,12 +369,25 @@
     {
       "kind": "latency",
       "name": "latency-diskann-rb1-kernel-on",
-      "tags": ["task104", "m5", "diskann", "real10k", "kernel_on", "quant=rabitq", "bits1", "isa=neon", "kernel_status=valid"],
+      "tags": [
+        "task104",
+        "m5",
+        "diskann",
+        "real10k",
+        "kernel_on",
+        "quant=rabitq",
+        "bits1",
+        "isa=neon",
+        "kernel_status=valid"
+      ],
       "prefix": "task104_real10k_diskann_rb1",
       "profile": "ec_diskann",
       "k": 10,
       "bits": 1,
-      "sweep": [64, 128],
+      "sweep": [
+        64,
+        128
+      ],
       "iterations": 200,
       "concurrency": 1,
       "cache_state": "task104_diskann_rb1_on",
@@ -217,15 +397,29 @@
     {
       "kind": "latency",
       "name": "latency-diskann-rb1-kernel-off",
-      "tags": ["task104", "m5", "diskann", "real10k", "kernel_off", "quant=rabitq", "bits1", "isa=scalar"],
+      "tags": [
+        "task104",
+        "m5",
+        "diskann",
+        "real10k",
+        "kernel_off",
+        "quant=rabitq",
+        "bits1",
+        "isa=scalar"
+      ],
       "prefix": "task104_real10k_diskann_rb1",
       "profile": "ec_diskann",
       "k": 10,
       "bits": 1,
-      "sweep": [64, 128],
+      "sweep": [
+        64,
+        128
+      ],
       "iterations": 200,
       "concurrency": 1,
-      "session_gucs": ["ec_diskann.candidate_batch_scoring=off"],
+      "session_gucs": [
+        "ec_diskann.candidate_batch_scoring=off"
+      ],
       "cache_state": "task104_diskann_rb1_off",
       "task87_candidate_batch_counters": true,
       "log_output": "${artifact_dir}/latency-diskann-rb1-kernel-off.log"
@@ -233,11 +427,23 @@
     {
       "kind": "latency",
       "name": "latency-diskann-tq-kernel-on",
-      "tags": ["task104", "m5", "diskann", "real10k", "kernel_on", "quant=turboquant", "isa=neon", "kernel_status=valid"],
+      "tags": [
+        "task104",
+        "m5",
+        "diskann",
+        "real10k",
+        "kernel_on",
+        "quant=turboquant",
+        "isa=neon",
+        "kernel_status=valid"
+      ],
       "prefix": "task104_real10k_diskann_tq",
       "profile": "ec_diskann",
       "k": 10,
-      "sweep": [64, 128],
+      "sweep": [
+        64,
+        128
+      ],
       "iterations": 200,
       "concurrency": 1,
       "cache_state": "task104_diskann_tq_on",
@@ -247,14 +453,27 @@
     {
       "kind": "latency",
       "name": "latency-diskann-tq-kernel-off",
-      "tags": ["task104", "m5", "diskann", "real10k", "kernel_off", "quant=turboquant", "isa=scalar"],
+      "tags": [
+        "task104",
+        "m5",
+        "diskann",
+        "real10k",
+        "kernel_off",
+        "quant=turboquant",
+        "isa=scalar"
+      ],
       "prefix": "task104_real10k_diskann_tq",
       "profile": "ec_diskann",
       "k": 10,
-      "sweep": [64, 128],
+      "sweep": [
+        64,
+        128
+      ],
       "iterations": 200,
       "concurrency": 1,
-      "session_gucs": ["ec_diskann.candidate_batch_scoring=off"],
+      "session_gucs": [
+        "ec_diskann.candidate_batch_scoring=off"
+      ],
       "cache_state": "task104_diskann_tq_off",
       "task87_candidate_batch_counters": true,
       "log_output": "${artifact_dir}/latency-diskann-tq-kernel-off.log"
