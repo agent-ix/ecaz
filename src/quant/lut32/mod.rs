@@ -121,7 +121,9 @@ pub(crate) fn score_lut_no_qjl_4bit_partial(
         return crate::quant::isa::Isa::Scalar;
     }
 
-    if crate::quant::isa::current_isa() == crate::quant::isa::Isa::Scalar {
+    // Scalar hosts score live lanes directly; a single live lane is also
+    // cheaper through the scalar tail than through a padded octet.
+    if crate::quant::isa::current_isa() == crate::quant::isa::Isa::Scalar || codes.len() == 1 {
         for (code, out_score) in codes.iter().zip(out_scores.iter_mut()) {
             *out_score = scalar::score_scalar_tail(lut, original_dim, code);
         }
@@ -133,6 +135,21 @@ pub(crate) fn score_lut_no_qjl_4bit_partial(
         padded_codes[lane] = *code;
     }
     let mut block_scores = [0.0_f32; BLOCK_WIDTH];
+
+    // AVX2 tails pay only for the octets they occupy; the HNSW exact-mode
+    // flush-width histogram is dominated by sub-8 flushes, where a full
+    // padded block wastes three quarters of the kernel work.
+    let padded_len = codes.len().next_multiple_of(8);
+    if let Some(isa) = avx2::score_octets_avx2(
+        lut,
+        original_dim,
+        &padded_codes[..padded_len],
+        &mut block_scores[..padded_len],
+    ) {
+        out_scores.copy_from_slice(&block_scores[..codes.len()]);
+        return isa;
+    }
+
     let isa = score_lut_no_qjl_4bit_block32(lut, original_dim, padded_codes, &mut block_scores);
     out_scores.copy_from_slice(&block_scores[..codes.len()]);
     isa
@@ -377,29 +394,34 @@ mod tests {
     }
 
     #[test]
-    fn lut32_partial_matches_scalar_tail_bits() {
+    fn lut32_partial_matches_scalar_tail_bits_across_widths() {
         let dim = 1536;
         let lut = lut(dim);
-        let codes: Vec<Vec<u8>> = (0..7).map(|seed| code(dim, seed as u8)).collect();
-        let code_refs: Vec<&[u8]> = codes.iter().map(Vec::as_slice).collect();
-        let mut scores = vec![0.0; code_refs.len()];
+        // Widths cover the single-lane scalar fast path and every octet
+        // count of the AVX2 partial entry, including exact octet multiples.
+        for width in [1usize, 2, 7, 8, 9, 16, 17, 25, 31] {
+            let codes: Vec<Vec<u8>> = (0..width).map(|seed| code(dim, seed as u8)).collect();
+            let code_refs: Vec<&[u8]> = codes.iter().map(Vec::as_slice).collect();
+            let mut scores = vec![0.0; code_refs.len()];
 
-        let isa = score_lut_no_qjl_4bit_partial(&lut, dim, &code_refs, &mut scores);
+            let isa = score_lut_no_qjl_4bit_partial(&lut, dim, &code_refs, &mut scores);
 
-        for (code, score) in code_refs.iter().zip(scores.iter()) {
-            assert_eq!(
-                score.to_bits(),
-                score_lut_no_qjl_4bit_scalar(&lut, dim, code).to_bits()
-            );
+            for (code, score) in code_refs.iter().zip(scores.iter()) {
+                assert_eq!(
+                    score.to_bits(),
+                    score_lut_no_qjl_4bit_scalar(&lut, dim, code).to_bits(),
+                    "width={width}"
+                );
+            }
+            assert!(matches!(
+                isa,
+                crate::quant::isa::Isa::Scalar
+                    | crate::quant::isa::Isa::Neon
+                    | crate::quant::isa::Isa::Sve
+                    | crate::quant::isa::Isa::Sve2
+                    | crate::quant::isa::Isa::Avx2
+            ));
         }
-        assert!(matches!(
-            isa,
-            crate::quant::isa::Isa::Scalar
-                | crate::quant::isa::Isa::Neon
-                | crate::quant::isa::Isa::Sve
-                | crate::quant::isa::Isa::Sve2
-                | crate::quant::isa::Isa::Avx2
-        ));
     }
 
     #[test]
