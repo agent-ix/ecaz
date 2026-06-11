@@ -1586,6 +1586,12 @@ mod tests {
 
     #[test]
     fn rabitq_bits1_batch_dispatch_matches_scalar_scores() {
+        // Scoring through the batch dispatch mutates the global counters this
+        // lock guards; without it, concurrent counter-asserting tests see
+        // double-counted ivf/rabitq rows.
+        let _guard = crate::am::common::candidate_batch::CANDIDATE_BATCH_COUNTER_TEST_LOCK
+            .lock()
+            .unwrap();
         let dimensions = 40;
         let query = unit_vector(dimensions);
         let dispatch = IvfQuantizer::resolve_with_pq_group_size_and_bits(
@@ -1632,6 +1638,10 @@ mod tests {
 
     #[test]
     fn rabitq_bits1_batch_dispatch_routes_through_block_kernel() {
+        // Same counter-lock requirement as the dispatch test above.
+        let _guard = crate::am::common::candidate_batch::CANDIDATE_BATCH_COUNTER_TEST_LOCK
+            .lock()
+            .unwrap();
         let dimensions = 40;
         let query = unit_vector(dimensions);
         let dispatch = IvfQuantizer::resolve_with_pq_group_size_and_bits(
