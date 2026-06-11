@@ -123,11 +123,23 @@ pub(crate) fn score_lut_no_qjl_4bit_partial(
 
     // Scalar hosts score live lanes directly; a single live lane is also
     // cheaper through the scalar tail than through a padded octet.
-    if crate::quant::isa::current_isa() == crate::quant::isa::Isa::Scalar || codes.len() == 1 {
+    let host_isa = crate::quant::isa::current_isa();
+    if host_isa == crate::quant::isa::Isa::Scalar || codes.len() == 1 {
         for (code, out_score) in codes.iter().zip(out_scores.iter_mut()) {
             *out_score = scalar::score_scalar_tail(lut, original_dim, code);
         }
         return crate::quant::isa::Isa::Scalar;
+    }
+
+    // SVE hosts score the live width directly: the gather helper's whilelt
+    // loop predicates the tail natively, so no padding at all.
+    if matches!(
+        host_isa,
+        crate::quant::isa::Isa::Sve2 | crate::quant::isa::Isa::Sve
+    ) {
+        if let Some(isa) = sve::score_partial_sve(lut, original_dim, codes, out_scores) {
+            return isa;
+        }
     }
 
     let mut padded_codes = [codes[0]; BLOCK_WIDTH];
@@ -136,11 +148,20 @@ pub(crate) fn score_lut_no_qjl_4bit_partial(
     }
     let mut block_scores = [0.0_f32; BLOCK_WIDTH];
 
-    // AVX2 tails pay only for the octets they occupy; the HNSW exact-mode
-    // flush-width histogram is dominated by sub-8 flushes, where a full
-    // padded block wastes three quarters of the kernel work.
+    // AVX2/NEON tails pay only for the octets they occupy; the HNSW
+    // exact-mode flush-width histogram is dominated by sub-8 flushes, where
+    // a full padded block wastes three quarters of the kernel work.
     let padded_len = codes.len().next_multiple_of(8);
     if let Some(isa) = avx2::score_octets_avx2(
+        lut,
+        original_dim,
+        &padded_codes[..padded_len],
+        &mut block_scores[..padded_len],
+    ) {
+        out_scores.copy_from_slice(&block_scores[..codes.len()]);
+        return isa;
+    }
+    if let Some(isa) = neon::score_octets_neon(
         lut,
         original_dim,
         &padded_codes[..padded_len],

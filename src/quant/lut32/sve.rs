@@ -115,6 +115,35 @@ pub(super) fn score_block32_sve_for_test(
     None
 }
 
+/// Live-width entry for sub-block tails: scores exactly `codes.len()`
+/// candidates (1..BLOCK_WIDTH) with no padding — the VL-agnostic `whilelt`
+/// loop in the gather helper predicates the tail natively. Returns `None`
+/// when SVE is unavailable so the caller can fall back.
+pub(super) fn score_partial_sve(
+    lut: &[f32],
+    original_dim: usize,
+    codes: &[&[u8]],
+    out_scores: &mut [f32],
+) -> Option<Isa> {
+    #[cfg(all(target_arch = "aarch64", not(target_vendor = "apple")))]
+    {
+        debug_assert!(!codes.is_empty() && codes.len() < BLOCK_WIDTH);
+        if is_aarch64_feature_detected!("sve2") {
+            // SAFETY: runtime feature detection above guarantees SVE2/SVE
+            // support, and callers validate LUT/code/output shapes before dispatch.
+            return Some(unsafe { score_sve_impl(lut, original_dim, codes, out_scores, Isa::Sve2) });
+        }
+        if is_aarch64_feature_detected!("sve") {
+            // SAFETY: runtime feature detection above guarantees SVE support,
+            // and callers validate LUT/code/output shapes before dispatch.
+            return Some(unsafe { score_sve_impl(lut, original_dim, codes, out_scores, Isa::Sve) });
+        }
+    }
+
+    let _ = (lut, original_dim, codes, out_scores);
+    None
+}
+
 #[cfg(test)]
 pub(super) fn runtime_vector_lanes_for_test() -> Option<usize> {
     runtime_vector_lanes()
@@ -140,20 +169,33 @@ unsafe fn score_block32_sve_impl(
     out_scores: &mut [f32],
     isa: Isa,
 ) -> Isa {
-    debug_assert_eq!(out_scores.len(), BLOCK_WIDTH);
+    score_sve_impl(lut, original_dim, codes, out_scores, isa)
+}
 
-    out_scores[..BLOCK_WIDTH].fill(0.0);
+#[cfg(all(target_arch = "aarch64", not(target_vendor = "apple")))]
+unsafe fn score_sve_impl(
+    lut: &[f32],
+    original_dim: usize,
+    codes: &[&[u8]],
+    out_scores: &mut [f32],
+    isa: Isa,
+) -> Isa {
+    debug_assert!(!codes.is_empty() && codes.len() <= BLOCK_WIDTH);
+    debug_assert_eq!(out_scores.len(), codes.len());
+
+    let lane_count = codes.len();
+    out_scores[..lane_count].fill(0.0);
     let mut indexes = [0_u32; BLOCK_WIDTH];
     for dim_index in 0..original_dim {
         let byte_index = dim_index / 2;
-        for (lane, index) in indexes.iter_mut().enumerate() {
+        for (lane, index) in indexes.iter_mut().enumerate().take(lane_count) {
             *index = nibble_index(codes[lane], byte_index, dim_index);
         }
         ecaz_lut32_sve_gather_accumulate_f32(
             out_scores.as_mut_ptr(),
             lut.as_ptr().add(dim_index * 16),
             indexes.as_ptr(),
-            BLOCK_WIDTH,
+            lane_count,
         );
     }
 
