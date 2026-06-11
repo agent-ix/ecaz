@@ -90,6 +90,18 @@ initiative was the completeness matrix; Task 99 produces it.
      was a Graviton cache-spill argument), and the per-ISA
      comparison (AC 4) needs the same cells on both hosts. Runs
      after Tasks 101 / 94-F8 / 102 so every family is final-shape.
+   - **AWS Intel lane required (pinned 2026-06-10)**: the Intel side
+     of the per-ISA comparison runs on an AWS Intel instance, not the
+     local desktop, so the Graviton-vs-Intel price/performance
+     question is answered on controlled, citable, currently-purchasable
+     hardware (record instance types and on-demand pricing for both
+     lanes in the profile manifest). Both lanes execute the same
+     locally-validated profile SuiteConfig, restored from the same
+     corpus base snapshot. The local Intel desktop remains the
+     dev/iteration host; per-family closeout packets that already
+     closed on local-Intel evidence stand and are not re-run. The
+     Intel lane runs after Task 103 so the Intel kernel matrix is
+     final-shape (same single-trip economics as the G4 pin).
    The reevaluation decision itself (ADR-025 flip or revision,
    any new storage surface) is follow-up scope informed by this
    profile, not owned by Task 99.
