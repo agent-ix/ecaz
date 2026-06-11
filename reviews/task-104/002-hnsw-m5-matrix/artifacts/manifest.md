@@ -6,8 +6,10 @@
 - Host: Apple M5 Pro, `aarch64-apple-darwin`, PostgreSQL 18.3 (Homebrew
   binaries, pgrx-managed cluster `~/.pgrx/data-18`, socket
   `/Users/peter/.pgrx`, port 28818)
-- Backend: release (`ecaz_build_profile()` probe in
-  `002-hnsw-m5-matrix/artifacts/build-profile-probe.log`), dylib sha256
+- Backend: release (recorded as `backend.build_profile=release` in each
+  suite's `suite-manifest.json`; the interactive probe-log artifacts were
+  dropped — `ecaz dev sql --log-file` mirrors only CLI output, not the
+  spawned psql; later probes use `--log-output`), dylib sha256
   `11cc8654b91bf920dc1f9d07a9523b34ff4f36c39ed76f184663c43b925c80fe`
   (install log `002-hnsw-m5-matrix/artifacts/install-ecaz-pg18.log`),
   built from head `16133580a`.

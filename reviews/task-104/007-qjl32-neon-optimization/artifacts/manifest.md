@@ -6,11 +6,9 @@
 - Host: Apple M5 Pro, `aarch64-apple-darwin`, PostgreSQL 18.3 (Homebrew
   binaries, pgrx-managed cluster `~/.pgrx/data-18`, socket
   `/Users/peter/.pgrx`, port 28818)
-- Backend: release (`ecaz_build_profile()` probe in
-  `002-hnsw-m5-matrix/artifacts/build-profile-probe.log`), dylib sha256
-  `see body`
-  (install log `002-hnsw-m5-matrix/artifacts/install-ecaz-pg18.log`),
-  built from head `16133580a`.
+- Backend: release per round — dylib SHAs, install logs, and
+  `backend.build_profile=release` suite-manifest records are listed in
+  the body below per measurement round.
 - Isolation: one index per table, `task104_*` prefixes, isolated bench
   database `tqvector_bench`.
 - Runner: `ecaz bench suite run --config <packet SuiteConfig>
@@ -22,8 +20,9 @@
   kernel, aarch64-only; see request.md).
 - Backend: fresh release install, dylib sha256
   `a11db8fb54a54b7f28b608e3148cd21211e44915f7bc333b7b92dad7ee826e73`
-  (`install-ecaz-pg18.log`), postmaster restarted, probe
-  `build-profile-probe.log` = release.
+  (`install-ecaz-pg18.log`), postmaster restarted; release recorded as `backend.build_profile=release`
+  in `suite-manifest.json` (the probe-log artifact was empty — wrong flag —
+  and was dropped).
 - SuiteConfigs: `task104-qjl32-neon-postfix-suite.json` (10 cells, re-runs
   the packet 006 bench cells on the same fixtures/indexes) and
   `task104-ivf-qjl-batch-cells-suite.json` (4 corrected IVF QJL cells with
@@ -47,8 +46,8 @@
   remainder band no longer breaks to scalar on aarch64.
 - Backend: fresh release install, dylib sha256
   `fda206bea488fb9bb2cca666c1873c1e11a08ea8eb8f817ce51bf1e5f1e85bfb`
-  (`install-ecaz-pg18-octet.log`), postmaster restarted, probe
-  `build-profile-probe-octet.log` = release.
+  (`install-ecaz-pg18-octet.log`), postmaster restarted, probe `build-profile-probe-octet.log` = release
+  (captured via `dev sql --log-output`).
 - SuiteConfig: `task104-qjl32-neon-octet-suite.json` (14 cells; manifest
   `suite-manifest-octet.json`, results `results-octet.jsonl`).
 - Batch-surface scalar fallback eliminated:
