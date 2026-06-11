@@ -4,6 +4,9 @@ title: "QuantCodec Scoring Contract"
 artifact_type: FR
 status: IMPLEMENTED
 relationships:
+  - target: "ix://agent-ix/ecaz/US-002"
+    type: "implements"
+    cardinality: "N:1"
   - target: "ix://agent-ix/ecaz/FR-014"
     type: "implements"
     cardinality: "1:1"

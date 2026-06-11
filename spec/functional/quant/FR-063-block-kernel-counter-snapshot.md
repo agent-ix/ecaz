@@ -5,6 +5,9 @@ artifact_type: FR
 status: IMPLEMENTED
 object: data_schema
 relationships:
+  - target: "ix://agent-ix/ecaz/US-015"
+    type: "implements"
+    cardinality: "N:1"
   - target: "ix://agent-ix/ecaz/FR-014"
     type: "implements"
     cardinality: "1:1"

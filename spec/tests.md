@@ -216,13 +216,19 @@ presence alone.
 | --- | --- | --- | --- |
 | TC-004 | `ec_hnsw.storage_format` | `turboquant`, `pq_fastscan`, `rabitq` | Valid formats build/scan; incompatible live storage-format changes reject until rebuild |
 | TC-004 | `ec_hnsw.ef_search` | relation default, session override, reset | Effective scan breadth follows session override when set |
+| TC-004 | `ec_hnsw.turboquant_exact_score_mode` | `exact`, `full_lut`, `tiled_lut`, `int8_approx` | All four modes return correct ordered results; compressed modes emit their own `quant_kind` counter rows (`FR-071`) |
+| TC-004 | `ec_hnsw.candidate_batch_scoring` | on, off | Identical result sets; counter attribution moves between kernel and per-candidate routes (`FR-071-AC-2`) |
 | TC-006 | `ec_hnsw.enable_parallel_build_concurrent_dsm` | true, false | true uses concurrent DSM path when eligible; false uses diagnostic fallback |
 | TC-007 | `ec_ivf.storage_format` | `auto`, `turboquant`, `pq_fastscan`, `rabitq` | Valid formats build; invalid strings reject |
 | TC-007 | `ec_ivf.rerank` | `auto`, `off`, `heap_f32`, `source_column` | First three supported; `source_column` rejected in v1 |
 | TC-008 | `ec_ivf.nprobe`, `ec_ivf.rerank_width` | relation, session, auto | Effective scan settings report correct source |
+| TC-008 | `ec_ivf.adaptive_nprobe` (+ `score_gap_micros`, `score_margin_ratio_bps`) | off, gap signal, ratio signal | Off never reduces nprobe; enabled reduction is deterministic for a given query/frontier and only when the configured signal triggers (`FR-072`) |
+| TC-008 | `ec_ivf.scratch_soa_batch_decode` | on, off | Identical result sets; decode batching is a latency-only axis recorded per `FR-072-CON-2` |
 | TC-010 | `ec_diskann.storage_format` | `pq_fastscan` | Valid; other values reject |
 | TC-011 | `ec_diskann.prefilter_kind` | `auto`, `binary_sidecar`, `grouped_pq` | Selects persisted sidecar or grouped-PQ fallback as requested |
 | TC-011 | `ec_diskann.list_size` | relation, session override, reset | Effective scan breadth reports correct source |
+| TC-011 | `ec_diskann.candidate_batch_scoring` | on, off | Identical result sets; `surface=diskann` kernel counter rows appear only when on (`FR-073-AC-2`) |
+| TC-011 | `ec_diskann.scan_profile_notice` | on, off | On emits one per-query stage-timing NOTICE; results and counters unchanged (`FR-073`) |
 | TC-019 | `ecaz` command groups | `corpus`, `bench`, `compare`, `dev`, `quant`, `stress` | Help tree, README tree, and dispatch modules stay aligned |
 | TC-019 | `ecaz` AM profiles | `ec_hnsw`, `ec_ivf`, `ec_diskann`, `ec_spire` | Profile metadata selects AM, opclass, embedding type, scan GUC, sweep axis, and reloption set |
 | TC-019 | `ecaz` logging | terminal output, `--log-file`, dev SQL `--log-output` | Review evidence can be stored under packet-local artifacts |
