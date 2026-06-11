@@ -142,5 +142,8 @@ affect parity or floor-gate conclusions.
 4. `d1235077c` — `ecaz bench suite` runnable `retired` kernel_status
    (tooling).
 
-No shared/x86 code was touched; the Task 103 Intel cells do not require
-a re-run (AVX2 paths byte-identical).
+The kernel changes are aarch64-only. Two shared surfaces were touched —
+the `candidate_batch` remainder dispatch (a rename; the x86 octet path
+still reaches the same AVX2 implementation) and the `ecaz bench suite`
+runner (tooling, not scoring) — neither alters x86 scoring behavior, so
+the Task 103 Intel cells do not require a re-run.
