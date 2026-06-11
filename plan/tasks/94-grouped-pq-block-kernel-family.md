@@ -1,6 +1,12 @@
 # Task 94: Grouped-PQ / PqFastScan Block Kernel Family (All AMs × All ISAs)
 
-Status: in review (2026-06-09; implementation, local validation, automatic CI cleanup, local IVF PqFastScan suite-smoke evidence through `reviews/task-94/024-local-bench-smoke/`, and broader local IVF/DiskANN PqFastScan bench matrix evidence through `reviews/task-94/025-local-bench-matrix/`; final Graviton 4 / full benchmark closeout evidence pending approval)
+Status: in review — G4 pass only (2026-06-10, packet 028 AC5 closeout
+approved per `reviews/task-94/028-release-ac5-rerun/feedback/2026-06-10-01-reviewer.md`:
+"the Task 94 F8 slice has complete local evidence; the only remaining
+Task 94 item is the deferred Graviton 4 pass", sequenced after Task 102.
+All implementation and local evidence merged to main via PRs #19/#22–#24.
+Status line refreshed 2026-06-11; previously stale at the 2026-06-09
+wording.)
 Owner: coder (to be assigned). Phase III parallel — multiple coders OK across Tasks 93–98.
 Priority: 2 (highest documented kernel-win ROI in Phase III)
 
