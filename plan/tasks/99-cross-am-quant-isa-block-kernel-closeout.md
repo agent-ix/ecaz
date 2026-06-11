@@ -111,8 +111,11 @@ initiative was the completeness matrix; Task 99 produces it.
 - New kernel work. All kernels are Tasks 93–98.
 - AVX-512 variants. Follow-up if measurement post-Task-99
   justifies.
-- Apple silicon (M-series) production variants. M5 NEON is for
-  development validation, not production.
+- Apple silicon (M-series) bench/optimization work — owned by Task 104
+  (operator decision 2026-06-11: Apple silicon is a supported target).
+  Task 104 supplies an M5 supported-target column for this task's
+  aggregate matrix; the per-ISA *production* comparison (AC 4) remains
+  Graviton 4 + AWS Intel.
 - Any new quant added during the initiative — those open as
   separate tasks following the same pattern.
 
