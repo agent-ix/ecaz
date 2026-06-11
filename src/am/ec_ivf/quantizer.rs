@@ -1948,12 +1948,23 @@ mod tests {
             .iter()
             .filter(|snapshot| snapshot.surface == "ivf" && snapshot.quant_kind == "grouped_pq")
             .collect::<Vec<_>>();
-        assert!(grouped_pq
+        let kernel_candidates = grouped_pq
             .iter()
-            .any(|snapshot| snapshot.kernel_candidates == 32));
-        assert!(grouped_pq
+            .map(|snapshot| snapshot.kernel_candidates)
+            .sum::<u64>();
+        let scalar_candidates = grouped_pq
             .iter()
-            .any(|snapshot| snapshot.scalar_candidates == 7));
+            .map(|snapshot| snapshot.scalar_candidates)
+            .sum::<u64>();
+        assert_eq!(kernel_candidates + scalar_candidates, 39);
+        assert!(kernel_candidates >= 32);
+        if grouped_pq.iter().any(|snapshot| snapshot.isa != "scalar") {
+            assert_eq!(kernel_candidates, 39);
+            assert_eq!(scalar_candidates, 0);
+        } else {
+            assert_eq!(kernel_candidates, 32);
+            assert_eq!(scalar_candidates, 7);
+        }
 
         crate::am::common::candidate_batch::reset_candidate_batch_scoring_counters();
     }

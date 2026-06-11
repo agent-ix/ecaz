@@ -1,0 +1,320 @@
+[suite:task104-diskann-m5-matrix] wrote reviews/task-104/004-diskann-m5-matrix/artifacts/suite-manifest.json
+[suite:task104-diskann-m5-matrix] wrote reviews/task-104/004-diskann-m5-matrix/artifacts/suite-manifest.json
+[suite:task104-diskann-m5-matrix] load-diskann-real10k-pqfastscan -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 --log-file reviews/task-104/004-diskann-m5-matrix/artifacts/load-diskann-real10k-pqfastscan.log corpus load --prefix task104_real10k_diskann_pq --profile ec_diskann --corpus-file data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_corpus.tsv --queries-file data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_queries.tsv --manifest-file data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_manifest.json --allow-manifest-mismatch --dim 1536 --bits 4 --seed 42 --storage-format pq_fastscan
+[suite:task104-diskann-m5-matrix] wrote reviews/task-104/004-diskann-m5-matrix/artifacts/suite-manifest.json
+┌─────────┬─────────────────────────────────────────────────────────────────────────┐
+│ field   ┆ value                                                                   │
+╞═════════╪═════════════════════════════════════════════════════════════════════════╡
+│ profile ┆ ec_diskann                                                              │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ task104_real10k_diskann_pq_corpus (10000 rows)                          │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ task104_real10k_diskann_pq_queries (200 rows)                           │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ task104_real10k_diskann_pq_pq_fastscan_idx [storage_format=pq_fastscan] │
+└─────────┴─────────────────────────────────────────────────────────────────────────┘
+[loader] inspecting data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_corpus.tsv
+[loader] inspecting data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_queries.tsv
+[loader] corpus: 10000 rows, sha256=c67c5810b66d982d705974e48d4775479adfbd92a988f694091266e049a35e75  queries: 200 rows, sha256=a2c191bb742017d849e73f6e6866e8e0f0bac1579ba212f7fc76b8eb09904ae8
+[loader] warning: manifest verification failed for data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_manifest.json: prefix="ec_hnsw_real_10k" (expected "task104_real10k_diskann_pq")
+[loader] task104_real10k_diskann_pq_corpus already has 10000 rows; skipping reload
+[loader] task104_real10k_diskann_pq_queries already has 200 rows; skipping reload
+[loader] task104_real10k_diskann_pq_pq_fastscan_idx already exists with reloptions=[storage_format=pq_fastscan]; skipping rebuild
+[loader] completed prefix task104_real10k_diskann_pq in 614.18ms
+[suite:task104-diskann-m5-matrix] wrote reviews/task-104/004-diskann-m5-matrix/artifacts/suite-manifest.json
+[suite:task104-diskann-m5-matrix] load-diskann-real10k-rabitq-bits1 -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 --log-file reviews/task-104/004-diskann-m5-matrix/artifacts/load-diskann-real10k-rabitq-bits1.log corpus load --prefix task104_real10k_diskann_rb1 --profile ec_diskann --corpus-file data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_corpus.tsv --queries-file data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_queries.tsv --manifest-file data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_manifest.json --allow-manifest-mismatch --dim 1536 --bits 4 --seed 42 --storage-format rabitq
+[suite:task104-diskann-m5-matrix] wrote reviews/task-104/004-diskann-m5-matrix/artifacts/suite-manifest.json
+┌─────────┬────────────────────────────────────────────────────────────────┐
+│ field   ┆ value                                                          │
+╞═════════╪════════════════════════════════════════════════════════════════╡
+│ profile ┆ ec_diskann                                                     │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ task104_real10k_diskann_rb1_corpus (10000 rows)                │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ task104_real10k_diskann_rb1_queries (200 rows)                 │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ task104_real10k_diskann_rb1_rabitq_idx [storage_format=rabitq] │
+└─────────┴────────────────────────────────────────────────────────────────┘
+[loader] inspecting data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_corpus.tsv
+[loader] inspecting data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_queries.tsv
+[loader] corpus: 10000 rows, sha256=c67c5810b66d982d705974e48d4775479adfbd92a988f694091266e049a35e75  queries: 200 rows, sha256=a2c191bb742017d849e73f6e6866e8e0f0bac1579ba212f7fc76b8eb09904ae8
+[loader] warning: manifest verification failed for data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_manifest.json: prefix="ec_hnsw_real_10k" (expected "task104_real10k_diskann_rb1")
+[loader] task104_real10k_diskann_rb1_corpus exists but is empty; dropping and reloading
+[loader] copied corpus table task104_real10k_diskann_rb1_corpus in 1.39s
+[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...
+[loader] encoded corpus table task104_real10k_diskann_rb1_corpus in 776.42ms
+[loader] copied queries table task104_real10k_diskann_rb1_queries in 33.41ms
+[loader] building task104_real10k_diskann_rb1_rabitq_idx using ec_diskann (reloptions=[storage_format=rabitq]) ...
+[loader] built task104_real10k_diskann_rb1_rabitq_idx in 6.92s
+[loader] ec_diskann_ambuild_timing index=task104_real10k_diskann_rb1_rabitq_idx phase=complete heap_tuples=10000 scanned_tuples=10000 unique_tuples=10000 data_pages=527 heap_scan_ms=31 source_ref_ms=0 training_ms=0 sidecar_setup_ms=0 payload_derivation_ms=6 build_persist_ms=6873 core_medoid_ms=94 core_graph_ms=6775 core_persist_ms=3 parallel_requested_workers=0 parallel_effective_workers=0 parallel_batch_size=704 parallel_flush_rate=0 parallel_rayon_scaffold=0 parallel_epochs=0 parallel_proposal_ms=0 parallel_reducer_ms=0 parallel_same_epoch_candidate_reads=0 parallel_total_candidate_reads=0 overflow_ms=0 codebook_ms=0 write_pages_ms=2 metadata_ms=0 flush_total_ms=6883 total_ms=6915
+[loader] completed prefix task104_real10k_diskann_rb1 in 9.73s
+[suite:task104-diskann-m5-matrix] wrote reviews/task-104/004-diskann-m5-matrix/artifacts/suite-manifest.json
+[suite:task104-diskann-m5-matrix] load-diskann-real10k-turboquant -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 --log-file reviews/task-104/004-diskann-m5-matrix/artifacts/load-diskann-real10k-turboquant.log corpus load --prefix task104_real10k_diskann_tq --profile ec_diskann --corpus-file data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_corpus.tsv --queries-file data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_queries.tsv --manifest-file data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_manifest.json --allow-manifest-mismatch --dim 1536 --bits 4 --seed 42 --storage-format turboquant
+[suite:task104-diskann-m5-matrix] wrote reviews/task-104/004-diskann-m5-matrix/artifacts/suite-manifest.json
+┌─────────┬───────────────────────────────────────────────────────────────────────┐
+│ field   ┆ value                                                                 │
+╞═════════╪═══════════════════════════════════════════════════════════════════════╡
+│ profile ┆ ec_diskann                                                            │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ task104_real10k_diskann_tq_corpus (10000 rows)                        │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ task104_real10k_diskann_tq_queries (200 rows)                         │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ task104_real10k_diskann_tq_turboquant_idx [storage_format=turboquant] │
+└─────────┴───────────────────────────────────────────────────────────────────────┘
+[loader] inspecting data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_corpus.tsv
+[loader] inspecting data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_queries.tsv
+[loader] corpus: 10000 rows, sha256=c67c5810b66d982d705974e48d4775479adfbd92a988f694091266e049a35e75  queries: 200 rows, sha256=a2c191bb742017d849e73f6e6866e8e0f0bac1579ba212f7fc76b8eb09904ae8
+[loader] warning: manifest verification failed for data/task31_m5_dbpedia_staged/ec_hnsw_real_10k_manifest.json: prefix="ec_hnsw_real_10k" (expected "task104_real10k_diskann_tq")
+[loader] task104_real10k_diskann_tq_corpus already has 10000 rows; skipping reload
+[loader] task104_real10k_diskann_tq_queries already has 200 rows; skipping reload
+[loader] task104_real10k_diskann_tq_turboquant_idx already exists with reloptions=[storage_format=turboquant]; skipping rebuild
+[loader] completed prefix task104_real10k_diskann_tq in 619.67ms
+[suite:task104-diskann-m5-matrix] wrote reviews/task-104/004-diskann-m5-matrix/artifacts/suite-manifest.json
+[suite:task104-diskann-m5-matrix] recall-diskann-pq-kernel-on -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 bench recall --prefix task104_real10k_diskann_pq --profile ec_diskann --k 10 --sweep "64,128" --queries-limit 100 --bits 4 --seed 42 --force-index --truth-cache-dir reviews/task-104/004-diskann-m5-matrix/artifacts/truth-cache --log-output reviews/task-104/004-diskann-m5-matrix/artifacts/recall-diskann-pq-kernel-on.log
+[suite:task104-diskann-m5-matrix] wrote reviews/task-104/004-diskann-m5-matrix/artifacts/suite-manifest.json
+┌───────────┬─────────┬───────────────┬──────────┬─────────────────┬──────────────────┬────────────┬────────────┬────────────┬──────────────┬────────┬─────────────┐
+│ list_size ┆ queries ┆ recall_trials ┆ recall@k ┆ recall_ci95_low ┆ recall_ci95_high ┆ recall_p10 ┆ recall_p50 ┆ recall_p90 ┆ recall_worst ┆ ndcg@k ┆ mean q-time │
+╞═══════════╪═════════╪═══════════════╪══════════╪═════════════════╪══════════════════╪════════════╪════════════╪════════════╪══════════════╪════════╪═════════════╡
+│ 64        ┆ 100     ┆ 1000          ┆ 0.9940   ┆ 0.9870          ┆ 0.9972           ┆ 1.0000     ┆ 1.0000     ┆ 1.0000     ┆ 0.7000       ┆ 0.9998 ┆ 0.55 ms     │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 128       ┆ 100     ┆ 1000          ┆ 0.9950   ┆ 0.9883          ┆ 0.9979           ┆ 1.0000     ┆ 1.0000     ┆ 1.0000     ┆ 0.7000       ┆ 0.9999 ┆ 0.59 ms     │
+└───────────┴─────────┴───────────────┴──────────┴─────────────────┴──────────────────┴────────────┴────────────┴────────────┴──────────────┴────────┴─────────────┘
+[recall] fetching queries from task104_real10k_diskann_pq_queries ...
+[recall] fetching corpus from task104_real10k_diskann_pq_corpus ...
+[recall] loaded ground truth cache reviews/task-104/004-diskann-m5-matrix/artifacts/truth-cache/truth-v1-rows10000-queries100-dim1536-k10-e5bb60a9b3dc310c.json
+[suite:task104-diskann-m5-matrix] wrote reviews/task-104/004-diskann-m5-matrix/artifacts/suite-manifest.json
+[suite:task104-diskann-m5-matrix] recall-diskann-pq-kernel-off -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 bench recall --prefix task104_real10k_diskann_pq --profile ec_diskann --k 10 --sweep "64,128" --queries-limit 100 --bits 4 --seed 42 --force-index --session-guc ec_diskann.candidate_batch_scoring=off --truth-cache-dir reviews/task-104/004-diskann-m5-matrix/artifacts/truth-cache --log-output reviews/task-104/004-diskann-m5-matrix/artifacts/recall-diskann-pq-kernel-off.log
+[suite:task104-diskann-m5-matrix] wrote reviews/task-104/004-diskann-m5-matrix/artifacts/suite-manifest.json
+┌───────────┬─────────┬───────────────┬──────────┬─────────────────┬──────────────────┬────────────┬────────────┬────────────┬──────────────┬────────┬─────────────┐
+│ list_size ┆ queries ┆ recall_trials ┆ recall@k ┆ recall_ci95_low ┆ recall_ci95_high ┆ recall_p10 ┆ recall_p50 ┆ recall_p90 ┆ recall_worst ┆ ndcg@k ┆ mean q-time │
+╞═══════════╪═════════╪═══════════════╪══════════╪═════════════════╪══════════════════╪════════════╪════════════╪════════════╪══════════════╪════════╪═════════════╡
+│ 64        ┆ 100     ┆ 1000          ┆ 0.9940   ┆ 0.9870          ┆ 0.9972           ┆ 1.0000     ┆ 1.0000     ┆ 1.0000     ┆ 0.7000       ┆ 0.9998 ┆ 0.50 ms     │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 128       ┆ 100     ┆ 1000          ┆ 0.9950   ┆ 0.9883          ┆ 0.9979           ┆ 1.0000     ┆ 1.0000     ┆ 1.0000     ┆ 0.7000       ┆ 0.9999 ┆ 0.60 ms     │
+└───────────┴─────────┴───────────────┴──────────┴─────────────────┴──────────────────┴────────────┴────────────┴────────────┴──────────────┴────────┴─────────────┘
+[recall] fetching queries from task104_real10k_diskann_pq_queries ...
+[recall] fetching corpus from task104_real10k_diskann_pq_corpus ...
+[recall] loaded ground truth cache reviews/task-104/004-diskann-m5-matrix/artifacts/truth-cache/truth-v1-rows10000-queries100-dim1536-k10-e5bb60a9b3dc310c.json
+[suite:task104-diskann-m5-matrix] wrote reviews/task-104/004-diskann-m5-matrix/artifacts/suite-manifest.json
+[suite:task104-diskann-m5-matrix] recall-diskann-pq-binary-sidecar -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 bench recall --prefix task104_real10k_diskann_pq --profile ec_diskann --k 10 --sweep "64,128" --queries-limit 100 --bits 4 --seed 42 --force-index --session-guc ec_diskann.prefilter_kind=binary_sidecar --truth-cache-dir reviews/task-104/004-diskann-m5-matrix/artifacts/truth-cache --log-output reviews/task-104/004-diskann-m5-matrix/artifacts/recall-diskann-pq-binary-sidecar.log
+[suite:task104-diskann-m5-matrix] wrote reviews/task-104/004-diskann-m5-matrix/artifacts/suite-manifest.json
+┌───────────┬─────────┬───────────────┬──────────┬─────────────────┬──────────────────┬────────────┬────────────┬────────────┬──────────────┬────────┬─────────────┐
+│ list_size ┆ queries ┆ recall_trials ┆ recall@k ┆ recall_ci95_low ┆ recall_ci95_high ┆ recall_p10 ┆ recall_p50 ┆ recall_p90 ┆ recall_worst ┆ ndcg@k ┆ mean q-time │
+╞═══════════╪═════════╪═══════════════╪══════════╪═════════════════╪══════════════════╪════════════╪════════════╪════════════╪══════════════╪════════╪═════════════╡
+│ 64        ┆ 100     ┆ 1000          ┆ 0.9940   ┆ 0.9870          ┆ 0.9972           ┆ 1.0000     ┆ 1.0000     ┆ 1.0000     ┆ 0.7000       ┆ 0.9998 ┆ 0.48 ms     │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 128       ┆ 100     ┆ 1000          ┆ 0.9950   ┆ 0.9883          ┆ 0.9979           ┆ 1.0000     ┆ 1.0000     ┆ 1.0000     ┆ 0.7000       ┆ 0.9999 ┆ 0.58 ms     │
+└───────────┴─────────┴───────────────┴──────────┴─────────────────┴──────────────────┴────────────┴────────────┴────────────┴──────────────┴────────┴─────────────┘
+[recall] fetching queries from task104_real10k_diskann_pq_queries ...
+[recall] fetching corpus from task104_real10k_diskann_pq_corpus ...
+[recall] loaded ground truth cache reviews/task-104/004-diskann-m5-matrix/artifacts/truth-cache/truth-v1-rows10000-queries100-dim1536-k10-e5bb60a9b3dc310c.json
+[suite:task104-diskann-m5-matrix] wrote reviews/task-104/004-diskann-m5-matrix/artifacts/suite-manifest.json
+[suite:task104-diskann-m5-matrix] recall-diskann-rb1-kernel-on -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 bench recall --prefix task104_real10k_diskann_rb1 --profile ec_diskann --k 10 --sweep "64,128" --queries-limit 100 --bits 4 --seed 42 --force-index --truth-cache-dir reviews/task-104/004-diskann-m5-matrix/artifacts/truth-cache --log-output reviews/task-104/004-diskann-m5-matrix/artifacts/recall-diskann-rb1-kernel-on.log
+[suite:task104-diskann-m5-matrix] wrote reviews/task-104/004-diskann-m5-matrix/artifacts/suite-manifest.json
+┌───────────┬─────────┬───────────────┬──────────┬─────────────────┬──────────────────┬────────────┬────────────┬────────────┬──────────────┬────────┬─────────────┐
+│ list_size ┆ queries ┆ recall_trials ┆ recall@k ┆ recall_ci95_low ┆ recall_ci95_high ┆ recall_p10 ┆ recall_p50 ┆ recall_p90 ┆ recall_worst ┆ ndcg@k ┆ mean q-time │
+╞═══════════╪═════════╪═══════════════╪══════════╪═════════════════╪══════════════════╪════════════╪════════════╪════════════╪══════════════╪════════╪═════════════╡
+│ 64        ┆ 100     ┆ 1000          ┆ 0.9980   ┆ 0.9927          ┆ 0.9995           ┆ 1.0000     ┆ 1.0000     ┆ 1.0000     ┆ 0.9000       ┆ 0.9999 ┆ 0.55 ms     │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 128       ┆ 100     ┆ 1000          ┆ 0.9990   ┆ 0.9944          ┆ 0.9998           ┆ 1.0000     ┆ 1.0000     ┆ 1.0000     ┆ 0.9000       ┆ 0.9999 ┆ 0.63 ms     │
+└───────────┴─────────┴───────────────┴──────────┴─────────────────┴──────────────────┴────────────┴────────────┴────────────┴──────────────┴────────┴─────────────┘
+[recall] fetching queries from task104_real10k_diskann_rb1_queries ...
+[recall] fetching corpus from task104_real10k_diskann_rb1_corpus ...
+[recall] loaded ground truth cache reviews/task-104/004-diskann-m5-matrix/artifacts/truth-cache/truth-v1-rows10000-queries100-dim1536-k10-e5bb60a9b3dc310c.json
+[suite:task104-diskann-m5-matrix] wrote reviews/task-104/004-diskann-m5-matrix/artifacts/suite-manifest.json
+[suite:task104-diskann-m5-matrix] recall-diskann-rb1-kernel-off -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 bench recall --prefix task104_real10k_diskann_rb1 --profile ec_diskann --k 10 --sweep "64,128" --queries-limit 100 --bits 4 --seed 42 --force-index --session-guc ec_diskann.candidate_batch_scoring=off --truth-cache-dir reviews/task-104/004-diskann-m5-matrix/artifacts/truth-cache --log-output reviews/task-104/004-diskann-m5-matrix/artifacts/recall-diskann-rb1-kernel-off.log
+[suite:task104-diskann-m5-matrix] wrote reviews/task-104/004-diskann-m5-matrix/artifacts/suite-manifest.json
+┌───────────┬─────────┬───────────────┬──────────┬─────────────────┬──────────────────┬────────────┬────────────┬────────────┬──────────────┬────────┬─────────────┐
+│ list_size ┆ queries ┆ recall_trials ┆ recall@k ┆ recall_ci95_low ┆ recall_ci95_high ┆ recall_p10 ┆ recall_p50 ┆ recall_p90 ┆ recall_worst ┆ ndcg@k ┆ mean q-time │
+╞═══════════╪═════════╪═══════════════╪══════════╪═════════════════╪══════════════════╪════════════╪════════════╪════════════╪══════════════╪════════╪═════════════╡
+│ 64        ┆ 100     ┆ 1000          ┆ 0.9980   ┆ 0.9927          ┆ 0.9995           ┆ 1.0000     ┆ 1.0000     ┆ 1.0000     ┆ 0.9000       ┆ 0.9999 ┆ 0.51 ms     │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 128       ┆ 100     ┆ 1000          ┆ 0.9990   ┆ 0.9944          ┆ 0.9998           ┆ 1.0000     ┆ 1.0000     ┆ 1.0000     ┆ 0.9000       ┆ 0.9999 ┆ 0.66 ms     │
+└───────────┴─────────┴───────────────┴──────────┴─────────────────┴──────────────────┴────────────┴────────────┴────────────┴──────────────┴────────┴─────────────┘
+[recall] fetching queries from task104_real10k_diskann_rb1_queries ...
+[recall] fetching corpus from task104_real10k_diskann_rb1_corpus ...
+[recall] loaded ground truth cache reviews/task-104/004-diskann-m5-matrix/artifacts/truth-cache/truth-v1-rows10000-queries100-dim1536-k10-e5bb60a9b3dc310c.json
+[suite:task104-diskann-m5-matrix] wrote reviews/task-104/004-diskann-m5-matrix/artifacts/suite-manifest.json
+[suite:task104-diskann-m5-matrix] recall-diskann-tq-kernel-on -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 bench recall --prefix task104_real10k_diskann_tq --profile ec_diskann --k 10 --sweep "64,128" --queries-limit 100 --bits 4 --seed 42 --force-index --truth-cache-dir reviews/task-104/004-diskann-m5-matrix/artifacts/truth-cache --log-output reviews/task-104/004-diskann-m5-matrix/artifacts/recall-diskann-tq-kernel-on.log
+[suite:task104-diskann-m5-matrix] wrote reviews/task-104/004-diskann-m5-matrix/artifacts/suite-manifest.json
+┌───────────┬─────────┬───────────────┬──────────┬─────────────────┬──────────────────┬────────────┬────────────┬────────────┬──────────────┬────────┬─────────────┐
+│ list_size ┆ queries ┆ recall_trials ┆ recall@k ┆ recall_ci95_low ┆ recall_ci95_high ┆ recall_p10 ┆ recall_p50 ┆ recall_p90 ┆ recall_worst ┆ ndcg@k ┆ mean q-time │
+╞═══════════╪═════════╪═══════════════╪══════════╪═════════════════╪══════════════════╪════════════╪════════════╪════════════╪══════════════╪════════╪═════════════╡
+│ 64        ┆ 100     ┆ 1000          ┆ 0.9980   ┆ 0.9927          ┆ 0.9995           ┆ 1.0000     ┆ 1.0000     ┆ 1.0000     ┆ 0.9000       ┆ 0.9999 ┆ 0.79 ms     │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 128       ┆ 100     ┆ 1000          ┆ 1.0000   ┆ 0.9962          ┆ 1.0000           ┆ 1.0000     ┆ 1.0000     ┆ 1.0000     ┆ 1.0000       ┆ 1.0000 ┆ 0.93 ms     │
+└───────────┴─────────┴───────────────┴──────────┴─────────────────┴──────────────────┴────────────┴────────────┴────────────┴──────────────┴────────┴─────────────┘
+[recall] fetching queries from task104_real10k_diskann_tq_queries ...
+[recall] fetching corpus from task104_real10k_diskann_tq_corpus ...
+[recall] loaded ground truth cache reviews/task-104/004-diskann-m5-matrix/artifacts/truth-cache/truth-v1-rows10000-queries100-dim1536-k10-e5bb60a9b3dc310c.json
+[suite:task104-diskann-m5-matrix] wrote reviews/task-104/004-diskann-m5-matrix/artifacts/suite-manifest.json
+[suite:task104-diskann-m5-matrix] recall-diskann-tq-kernel-off -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 bench recall --prefix task104_real10k_diskann_tq --profile ec_diskann --k 10 --sweep "64,128" --queries-limit 100 --bits 4 --seed 42 --force-index --session-guc ec_diskann.candidate_batch_scoring=off --truth-cache-dir reviews/task-104/004-diskann-m5-matrix/artifacts/truth-cache --log-output reviews/task-104/004-diskann-m5-matrix/artifacts/recall-diskann-tq-kernel-off.log
+[suite:task104-diskann-m5-matrix] wrote reviews/task-104/004-diskann-m5-matrix/artifacts/suite-manifest.json
+┌───────────┬─────────┬───────────────┬──────────┬─────────────────┬──────────────────┬────────────┬────────────┬────────────┬──────────────┬────────┬─────────────┐
+│ list_size ┆ queries ┆ recall_trials ┆ recall@k ┆ recall_ci95_low ┆ recall_ci95_high ┆ recall_p10 ┆ recall_p50 ┆ recall_p90 ┆ recall_worst ┆ ndcg@k ┆ mean q-time │
+╞═══════════╪═════════╪═══════════════╪══════════╪═════════════════╪══════════════════╪════════════╪════════════╪════════════╪══════════════╪════════╪═════════════╡
+│ 64        ┆ 100     ┆ 1000          ┆ 0.9980   ┆ 0.9927          ┆ 0.9995           ┆ 1.0000     ┆ 1.0000     ┆ 1.0000     ┆ 0.9000       ┆ 0.9999 ┆ 1.11 ms     │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 128       ┆ 100     ┆ 1000          ┆ 1.0000   ┆ 0.9962          ┆ 1.0000           ┆ 1.0000     ┆ 1.0000     ┆ 1.0000     ┆ 1.0000       ┆ 1.0000 ┆ 1.48 ms     │
+└───────────┴─────────┴───────────────┴──────────┴─────────────────┴──────────────────┴────────────┴────────────┴────────────┴──────────────┴────────┴─────────────┘
+[recall] fetching queries from task104_real10k_diskann_tq_queries ...
+[recall] fetching corpus from task104_real10k_diskann_tq_corpus ...
+[recall] loaded ground truth cache reviews/task-104/004-diskann-m5-matrix/artifacts/truth-cache/truth-v1-rows10000-queries100-dim1536-k10-e5bb60a9b3dc310c.json
+[suite:task104-diskann-m5-matrix] wrote reviews/task-104/004-diskann-m5-matrix/artifacts/suite-manifest.json
+[suite:task104-diskann-m5-matrix] latency-diskann-pq-kernel-on -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 bench latency --prefix task104_real10k_diskann_pq --profile ec_diskann --k 10 --concurrency 1 --iterations 200 --sweep "64,128" --bits 4 --seed 42 --force-index --cache-state task104_diskann_pq_on --task87-candidate-batch-counters --memory-sample-interval-ms 25 --log-output reviews/task-104/004-diskann-m5-matrix/artifacts/latency-diskann-pq-kernel-on.log
+[suite:task104-diskann-m5-matrix] wrote reviews/task-104/004-diskann-m5-matrix/artifacts/suite-manifest.json
+┌───────────┬───────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬───────────────────────┐
+│ list_size ┆ count ┆ mean    ┆ stddev  ┆ min     ┆ p50     ┆ p95     ┆ p99     ┆ max     ┆ cache_state           │
+╞═══════════╪═══════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═══════════════════════╡
+│ 64        ┆ 200   ┆ 0.49 ms ┆ 0.13 ms ┆ 0.33 ms ┆ 0.47 ms ┆ 0.63 ms ┆ 0.76 ms ┆ 1.85 ms ┆ task104_diskann_pq_on │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 128       ┆ 200   ┆ 0.60 ms ┆ 0.08 ms ┆ 0.41 ms ┆ 0.59 ms ┆ 0.73 ms ┆ 0.86 ms ┆ 1.15 ms ┆ task104_diskann_pq_on │
+└───────────┴───────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴───────────────────────┘
+[block-kernel-counters] command=latency label=list_size=64 surface=diskann quant=binary isa=neon flushes=13263 candidates=151474 elapsed_nanos=1053773 elapsed_ms=1.053773 kernel_flushes=13263 kernel_candidates=151474 kernel_elapsed_nanos=1053773 kernel_elapsed_ms=1.053773 scalar_flushes=0 scalar_candidates=0 scalar_elapsed_nanos=0 scalar_elapsed_ms=0.000000 width_lt8=4401 width_8_15=5576 width_16_31=3081 width_ge32=205
+[task87-counters] command=latency label=list_size=64 surface=hnsw flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=list_size=64 surface=ivf flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=list_size=64 surface=spire flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=list_size=64 surface=unknown flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[block-kernel-counters] command=latency label=list_size=128 surface=diskann quant=binary isa=neon flushes=25206 candidates=236478 elapsed_nanos=1705962 elapsed_ms=1.705962 kernel_flushes=25206 kernel_candidates=236478 kernel_elapsed_nanos=1705962 kernel_elapsed_ms=1.705962 scalar_flushes=0 scalar_candidates=0 scalar_elapsed_nanos=0 scalar_elapsed_ms=0.000000 width_lt8=11481 width_8_15=9724 width_16_31=3796 width_ge32=205
+[task87-counters] command=latency label=list_size=128 surface=hnsw flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=list_size=128 surface=ivf flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=list_size=128 surface=spire flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=list_size=128 surface=unknown flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[suite:task104-diskann-m5-matrix] wrote reviews/task-104/004-diskann-m5-matrix/artifacts/suite-manifest.json
+[suite:task104-diskann-m5-matrix] latency-diskann-pq-kernel-off -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 bench latency --prefix task104_real10k_diskann_pq --profile ec_diskann --k 10 --concurrency 1 --iterations 200 --sweep "64,128" --bits 4 --seed 42 --force-index --cache-state task104_diskann_pq_off --session-guc ec_diskann.candidate_batch_scoring=off --task87-candidate-batch-counters --memory-sample-interval-ms 25 --log-output reviews/task-104/004-diskann-m5-matrix/artifacts/latency-diskann-pq-kernel-off.log
+[suite:task104-diskann-m5-matrix] wrote reviews/task-104/004-diskann-m5-matrix/artifacts/suite-manifest.json
+┌───────────┬───────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬────────────────────────┐
+│ list_size ┆ count ┆ mean    ┆ stddev  ┆ min     ┆ p50     ┆ p95     ┆ p99     ┆ max     ┆ cache_state            │
+╞═══════════╪═══════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪════════════════════════╡
+│ 64        ┆ 200   ┆ 0.49 ms ┆ 0.07 ms ┆ 0.34 ms ┆ 0.48 ms ┆ 0.60 ms ┆ 0.68 ms ┆ 1.03 ms ┆ task104_diskann_pq_off │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 128       ┆ 200   ┆ 0.64 ms ┆ 0.10 ms ┆ 0.42 ms ┆ 0.64 ms ┆ 0.78 ms ┆ 0.91 ms ┆ 1.16 ms ┆ task104_diskann_pq_off │
+└───────────┴───────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴────────────────────────┘
+[task87-counters] command=latency label=list_size=64 surface=hnsw flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=list_size=64 surface=ivf flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=list_size=64 surface=spire flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=list_size=64 surface=unknown flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=list_size=128 surface=hnsw flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=list_size=128 surface=ivf flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=list_size=128 surface=spire flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=list_size=128 surface=unknown flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[suite:task104-diskann-m5-matrix] wrote reviews/task-104/004-diskann-m5-matrix/artifacts/suite-manifest.json
+[suite:task104-diskann-m5-matrix] latency-diskann-pq-binary-sidecar-on -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 bench latency --prefix task104_real10k_diskann_pq --profile ec_diskann --k 10 --concurrency 1 --iterations 200 --sweep "64,128" --bits 4 --seed 42 --force-index --cache-state task104_diskann_binary_on --session-guc ec_diskann.prefilter_kind=binary_sidecar --task87-candidate-batch-counters --memory-sample-interval-ms 25 --log-output reviews/task-104/004-diskann-m5-matrix/artifacts/latency-diskann-pq-binary-sidecar-on.log
+[suite:task104-diskann-m5-matrix] wrote reviews/task-104/004-diskann-m5-matrix/artifacts/suite-manifest.json
+┌───────────┬───────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬───────────────────────────┐
+│ list_size ┆ count ┆ mean    ┆ stddev  ┆ min     ┆ p50     ┆ p95     ┆ p99     ┆ max     ┆ cache_state               │
+╞═══════════╪═══════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═══════════════════════════╡
+│ 64        ┆ 200   ┆ 0.46 ms ┆ 0.07 ms ┆ 0.33 ms ┆ 0.45 ms ┆ 0.55 ms ┆ 0.63 ms ┆ 1.05 ms ┆ task104_diskann_binary_on │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 128       ┆ 200   ┆ 0.60 ms ┆ 0.09 ms ┆ 0.41 ms ┆ 0.60 ms ┆ 0.73 ms ┆ 0.78 ms ┆ 1.19 ms ┆ task104_diskann_binary_on │
+└───────────┴───────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴───────────────────────────┘
+[block-kernel-counters] command=latency label=list_size=64 surface=diskann quant=binary isa=neon flushes=13263 candidates=151474 elapsed_nanos=1082121 elapsed_ms=1.082121 kernel_flushes=13263 kernel_candidates=151474 kernel_elapsed_nanos=1082121 kernel_elapsed_ms=1.082121 scalar_flushes=0 scalar_candidates=0 scalar_elapsed_nanos=0 scalar_elapsed_ms=0.000000 width_lt8=4401 width_8_15=5576 width_16_31=3081 width_ge32=205
+[task87-counters] command=latency label=list_size=64 surface=hnsw flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=list_size=64 surface=ivf flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=list_size=64 surface=spire flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=list_size=64 surface=unknown flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[block-kernel-counters] command=latency label=list_size=128 surface=diskann quant=binary isa=neon flushes=25206 candidates=236478 elapsed_nanos=1644284 elapsed_ms=1.644284 kernel_flushes=25206 kernel_candidates=236478 kernel_elapsed_nanos=1644284 kernel_elapsed_ms=1.644284 scalar_flushes=0 scalar_candidates=0 scalar_elapsed_nanos=0 scalar_elapsed_ms=0.000000 width_lt8=11481 width_8_15=9724 width_16_31=3796 width_ge32=205
+[task87-counters] command=latency label=list_size=128 surface=hnsw flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=list_size=128 surface=ivf flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=list_size=128 surface=spire flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=list_size=128 surface=unknown flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[suite:task104-diskann-m5-matrix] wrote reviews/task-104/004-diskann-m5-matrix/artifacts/suite-manifest.json
+[suite:task104-diskann-m5-matrix] latency-diskann-pq-binary-sidecar-off -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 bench latency --prefix task104_real10k_diskann_pq --profile ec_diskann --k 10 --concurrency 1 --iterations 200 --sweep "64,128" --bits 4 --seed 42 --force-index --cache-state task104_diskann_binary_off --session-guc ec_diskann.prefilter_kind=binary_sidecar --session-guc ec_diskann.candidate_batch_scoring=off --task87-candidate-batch-counters --memory-sample-interval-ms 25 --log-output reviews/task-104/004-diskann-m5-matrix/artifacts/latency-diskann-pq-binary-sidecar-off.log
+[suite:task104-diskann-m5-matrix] wrote reviews/task-104/004-diskann-m5-matrix/artifacts/suite-manifest.json
+┌───────────┬───────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬────────────────────────────┐
+│ list_size ┆ count ┆ mean    ┆ stddev  ┆ min     ┆ p50     ┆ p95     ┆ p99     ┆ max     ┆ cache_state                │
+╞═══════════╪═══════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪════════════════════════════╡
+│ 64        ┆ 200   ┆ 0.49 ms ┆ 0.07 ms ┆ 0.37 ms ┆ 0.49 ms ┆ 0.61 ms ┆ 0.69 ms ┆ 0.97 ms ┆ task104_diskann_binary_off │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 128       ┆ 200   ┆ 0.63 ms ┆ 0.10 ms ┆ 0.45 ms ┆ 0.62 ms ┆ 0.80 ms ┆ 0.88 ms ┆ 1.11 ms ┆ task104_diskann_binary_off │
+└───────────┴───────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴────────────────────────────┘
+[task87-counters] command=latency label=list_size=64 surface=hnsw flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=list_size=64 surface=ivf flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=list_size=64 surface=spire flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=list_size=64 surface=unknown flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=list_size=128 surface=hnsw flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=list_size=128 surface=ivf flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=list_size=128 surface=spire flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=list_size=128 surface=unknown flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[suite:task104-diskann-m5-matrix] wrote reviews/task-104/004-diskann-m5-matrix/artifacts/suite-manifest.json
+[suite:task104-diskann-m5-matrix] latency-diskann-rb1-kernel-on -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 bench latency --prefix task104_real10k_diskann_rb1 --profile ec_diskann --k 10 --concurrency 1 --iterations 200 --sweep "64,128" --bits 4 --seed 42 --force-index --cache-state task104_diskann_rb1_on --task87-candidate-batch-counters --memory-sample-interval-ms 25 --log-output reviews/task-104/004-diskann-m5-matrix/artifacts/latency-diskann-rb1-kernel-on.log
+[suite:task104-diskann-m5-matrix] wrote reviews/task-104/004-diskann-m5-matrix/artifacts/suite-manifest.json
+┌───────────┬───────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬────────────────────────┐
+│ list_size ┆ count ┆ mean    ┆ stddev  ┆ min     ┆ p50     ┆ p95     ┆ p99     ┆ max     ┆ cache_state            │
+╞═══════════╪═══════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪════════════════════════╡
+│ 64        ┆ 200   ┆ 0.51 ms ┆ 0.09 ms ┆ 0.36 ms ┆ 0.50 ms ┆ 0.64 ms ┆ 0.74 ms ┆ 1.27 ms ┆ task104_diskann_rb1_on │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 128       ┆ 200   ┆ 0.63 ms ┆ 0.10 ms ┆ 0.44 ms ┆ 0.63 ms ┆ 0.79 ms ┆ 0.95 ms ┆ 1.24 ms ┆ task104_diskann_rb1_on │
+└───────────┴───────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴────────────────────────┘
+[block-kernel-counters] command=latency label=list_size=64 surface=diskann quant=rabitq isa=neon flushes=13199 candidates=149301 elapsed_nanos=9808022 elapsed_ms=9.808022 kernel_flushes=13199 kernel_candidates=149301 kernel_elapsed_nanos=9808022 kernel_elapsed_ms=9.808022 scalar_flushes=0 scalar_candidates=0 scalar_elapsed_nanos=0 scalar_elapsed_ms=0.000000 width_lt8=4460 width_8_15=5490 width_16_31=3045 width_ge32=204
+[task87-counters] command=latency label=list_size=64 surface=hnsw flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=list_size=64 surface=ivf flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=list_size=64 surface=spire flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=list_size=64 surface=unknown flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[block-kernel-counters] command=latency label=list_size=128 surface=diskann quant=rabitq isa=neon flushes=25188 candidates=233163 elapsed_nanos=15293542 elapsed_ms=15.293542 kernel_flushes=25188 kernel_candidates=233163 kernel_elapsed_nanos=15293542 kernel_elapsed_ms=15.293542 scalar_flushes=0 scalar_candidates=0 scalar_elapsed_nanos=0 scalar_elapsed_ms=0.000000 width_lt8=11723 width_8_15=9591 width_16_31=3670 width_ge32=204
+[task87-counters] command=latency label=list_size=128 surface=hnsw flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=list_size=128 surface=ivf flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=list_size=128 surface=spire flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=list_size=128 surface=unknown flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[suite:task104-diskann-m5-matrix] wrote reviews/task-104/004-diskann-m5-matrix/artifacts/suite-manifest.json
+[suite:task104-diskann-m5-matrix] latency-diskann-rb1-kernel-off -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 bench latency --prefix task104_real10k_diskann_rb1 --profile ec_diskann --k 10 --concurrency 1 --iterations 200 --sweep "64,128" --bits 4 --seed 42 --force-index --cache-state task104_diskann_rb1_off --session-guc ec_diskann.candidate_batch_scoring=off --task87-candidate-batch-counters --memory-sample-interval-ms 25 --log-output reviews/task-104/004-diskann-m5-matrix/artifacts/latency-diskann-rb1-kernel-off.log
+[suite:task104-diskann-m5-matrix] wrote reviews/task-104/004-diskann-m5-matrix/artifacts/suite-manifest.json
+┌───────────┬───────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────────────────────┐
+│ list_size ┆ count ┆ mean    ┆ stddev  ┆ min     ┆ p50     ┆ p95     ┆ p99     ┆ max     ┆ cache_state             │
+╞═══════════╪═══════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════════════════════╡
+│ 64        ┆ 200   ┆ 0.50 ms ┆ 0.08 ms ┆ 0.34 ms ┆ 0.48 ms ┆ 0.62 ms ┆ 0.71 ms ┆ 1.11 ms ┆ task104_diskann_rb1_off │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 128       ┆ 200   ┆ 0.65 ms ┆ 0.10 ms ┆ 0.42 ms ┆ 0.64 ms ┆ 0.81 ms ┆ 0.90 ms ┆ 1.22 ms ┆ task104_diskann_rb1_off │
+└───────────┴───────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────────────────────┘
+[task87-counters] command=latency label=list_size=64 surface=hnsw flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=list_size=64 surface=ivf flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=list_size=64 surface=spire flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=list_size=64 surface=unknown flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=list_size=128 surface=hnsw flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=list_size=128 surface=ivf flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=list_size=128 surface=spire flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=list_size=128 surface=unknown flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[suite:task104-diskann-m5-matrix] wrote reviews/task-104/004-diskann-m5-matrix/artifacts/suite-manifest.json
+[suite:task104-diskann-m5-matrix] latency-diskann-tq-kernel-on -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 bench latency --prefix task104_real10k_diskann_tq --profile ec_diskann --k 10 --concurrency 1 --iterations 200 --sweep "64,128" --bits 4 --seed 42 --force-index --cache-state task104_diskann_tq_on --task87-candidate-batch-counters --memory-sample-interval-ms 25 --log-output reviews/task-104/004-diskann-m5-matrix/artifacts/latency-diskann-tq-kernel-on.log
+[suite:task104-diskann-m5-matrix] wrote reviews/task-104/004-diskann-m5-matrix/artifacts/suite-manifest.json
+┌───────────┬───────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬───────────────────────┐
+│ list_size ┆ count ┆ mean    ┆ stddev  ┆ min     ┆ p50     ┆ p95     ┆ p99     ┆ max     ┆ cache_state           │
+╞═══════════╪═══════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═══════════════════════╡
+│ 64        ┆ 200   ┆ 0.70 ms ┆ 0.16 ms ┆ 0.47 ms ┆ 0.68 ms ┆ 0.85 ms ┆ 1.07 ms ┆ 2.51 ms ┆ task104_diskann_tq_on │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 128       ┆ 200   ┆ 0.97 ms ┆ 0.19 ms ┆ 0.63 ms ┆ 0.95 ms ┆ 1.20 ms ┆ 1.33 ms ┆ 2.89 ms ┆ task104_diskann_tq_on │
+└───────────┴───────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴───────────────────────┘
+[block-kernel-counters] command=latency label=list_size=64 surface=diskann quant=turboquant isa=neon flushes=12845 candidates=147855 elapsed_nanos=42772933 elapsed_ms=42.772933 kernel_flushes=12845 kernel_candidates=147855 kernel_elapsed_nanos=42772933 kernel_elapsed_ms=42.772933 scalar_flushes=0 scalar_candidates=0 scalar_elapsed_nanos=0 scalar_elapsed_ms=0.000000 width_lt8=4226 width_8_15=5455 width_16_31=2958 width_ge32=206
+[block-kernel-counters] command=latency label=list_size=64 surface=diskann quant=turboquant isa=scalar flushes=348 candidates=348 elapsed_nanos=308827 elapsed_ms=0.308827 kernel_flushes=0 kernel_candidates=0 kernel_elapsed_nanos=0 kernel_elapsed_ms=0.000000 scalar_flushes=348 scalar_candidates=348 scalar_elapsed_nanos=308827 scalar_elapsed_ms=0.308827 width_lt8=348 width_8_15=0 width_16_31=0 width_ge32=0
+[task87-counters] command=latency label=list_size=64 surface=hnsw flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=list_size=64 surface=ivf flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=list_size=64 surface=spire flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=list_size=64 surface=unknown flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[block-kernel-counters] command=latency label=list_size=128 surface=diskann quant=turboquant isa=neon flushes=23840 candidates=229163 elapsed_nanos=69841110 elapsed_ms=69.841110 kernel_flushes=23840 kernel_candidates=229163 kernel_elapsed_nanos=69841110 kernel_elapsed_ms=69.841110 scalar_flushes=0 scalar_candidates=0 scalar_elapsed_nanos=0 scalar_elapsed_ms=0.000000 width_lt8=10590 width_8_15=9512 width_16_31=3531 width_ge32=207
+[block-kernel-counters] command=latency label=list_size=128 surface=diskann quant=turboquant isa=scalar flushes=1366 candidates=1366 elapsed_nanos=1218453 elapsed_ms=1.218453 kernel_flushes=0 kernel_candidates=0 kernel_elapsed_nanos=0 kernel_elapsed_ms=0.000000 scalar_flushes=1366 scalar_candidates=1366 scalar_elapsed_nanos=1218453 scalar_elapsed_ms=1.218453 width_lt8=1366 width_8_15=0 width_16_31=0 width_ge32=0
+[task87-counters] command=latency label=list_size=128 surface=hnsw flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=list_size=128 surface=ivf flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=list_size=128 surface=spire flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=list_size=128 surface=unknown flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[suite:task104-diskann-m5-matrix] wrote reviews/task-104/004-diskann-m5-matrix/artifacts/suite-manifest.json
+[suite:task104-diskann-m5-matrix] latency-diskann-tq-kernel-off -> --database tqvector_bench --host /Users/peter/.pgrx --port 28818 bench latency --prefix task104_real10k_diskann_tq --profile ec_diskann --k 10 --concurrency 1 --iterations 200 --sweep "64,128" --bits 4 --seed 42 --force-index --cache-state task104_diskann_tq_off --session-guc ec_diskann.candidate_batch_scoring=off --task87-candidate-batch-counters --memory-sample-interval-ms 25 --log-output reviews/task-104/004-diskann-m5-matrix/artifacts/latency-diskann-tq-kernel-off.log
+[suite:task104-diskann-m5-matrix] wrote reviews/task-104/004-diskann-m5-matrix/artifacts/suite-manifest.json
+┌───────────┬───────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬────────────────────────┐
+│ list_size ┆ count ┆ mean    ┆ stddev  ┆ min     ┆ p50     ┆ p95     ┆ p99     ┆ max     ┆ cache_state            │
+╞═══════════╪═══════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪════════════════════════╡
+│ 64        ┆ 200   ┆ 1.06 ms ┆ 0.19 ms ┆ 0.66 ms ┆ 1.05 ms ┆ 1.30 ms ┆ 1.54 ms ┆ 2.62 ms ┆ task104_diskann_tq_off │
+├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ 128       ┆ 200   ┆ 1.52 ms ┆ 0.28 ms ┆ 0.94 ms ┆ 1.54 ms ┆ 1.93 ms ┆ 2.23 ms ┆ 3.30 ms ┆ task104_diskann_tq_off │
+└───────────┴───────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴────────────────────────┘
+[task87-counters] command=latency label=list_size=64 surface=hnsw flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=list_size=64 surface=ivf flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=list_size=64 surface=spire flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=list_size=64 surface=unknown flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=list_size=128 surface=hnsw flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=list_size=128 surface=ivf flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=list_size=128 surface=spire flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[task87-counters] command=latency label=list_size=128 surface=unknown flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
+[suite:task104-diskann-m5-matrix] wrote reviews/task-104/004-diskann-m5-matrix/artifacts/suite-manifest.json
+[suite:task104-diskann-m5-matrix] wrote reviews/task-104/004-diskann-m5-matrix/artifacts/results.jsonl
+[suite:task104-diskann-m5-matrix] wrote reviews/task-104/004-diskann-m5-matrix/artifacts/suite-manifest.json

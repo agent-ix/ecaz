@@ -312,6 +312,29 @@ impl ProdQuantizer {
         self.score_ip_from_split_parts_neon_checked(prepared, gamma, mse_packed, qjl_packed)
     }
 
+    #[cfg(all(any(test, feature = "bench"), target_arch = "aarch64"))]
+    pub fn score_ip_from_parts_neon_multi_accum_pre_task104_for_test(
+        &self,
+        prepared: &PreparedQuery,
+        gamma: f32,
+        code_bytes: &[u8],
+    ) -> Option<f32> {
+        if !std::arch::is_aarch64_feature_detected!("neon")
+            || !qjl_enabled(self.original_dim, self.bits)
+            || mse_bits(self.original_dim, self.bits) != 3
+        {
+            return None;
+        }
+        let (mse_packed, qjl_packed) = self.split_code_bytes(code_bytes);
+        // SAFETY: runtime feature detection proves NEON; guards restrict this
+        // diagnostic to the QJL-active 3-bit MSE lane.
+        Some(unsafe {
+            self.score_ip_from_split_parts_neon_multi_accum_pre_task104(
+                prepared, gamma, mse_packed, qjl_packed,
+            )
+        })
+    }
+
     pub fn prepare_ip_query_int8_approx_no_qjl_4bit(
         &self,
         query: &[f32],
@@ -1390,8 +1413,8 @@ impl ProdQuantizer {
         qjl_packed: &[u8],
     ) -> f32 {
         use std::arch::aarch64::{
-            vaddq_f32, vandq_u32, vdupq_n_f32, vdupq_n_u32, vfmaq_f32, vld1q_f32, vld1q_s32,
-            vmulq_f32, vshlq_u32, vst1q_f32, vst1q_u32,
+            vandq_u32, vdupq_n_u32, vld1q_f32, vld1q_s32, vmulq_f32, vshlq_u32, vst1q_f32,
+            vst1q_u32,
         };
 
         let bits_per_index = self.bits - 1;
@@ -1404,10 +1427,8 @@ impl ProdQuantizer {
             let shifts_lo = vld1q_s32([0_i32, -3, -6, -9].as_ptr());
             let shifts_hi = vld1q_s32([-12_i32, -15, -18, -21].as_ptr());
             let mask = vdupq_n_u32(0x7);
-            let mut mse_acc0 = vdupq_n_f32(0.0);
-            let mut mse_acc1 = vdupq_n_f32(0.0);
-            let mut qjl_acc0 = vdupq_n_f32(0.0);
-            let mut qjl_acc1 = vdupq_n_f32(0.0);
+            let mut mse_terms = [0.0_f32; 8];
+            let mut qjl_terms = [0.0_f32; 8];
 
             while dim_index + 8 <= self.original_dim {
                 let word = decode_eight_3bit_aligned_word(mse_packed, dim_index);
@@ -1429,40 +1450,43 @@ impl ProdQuantizer {
                 cb_hi[2] = self.codebook[idx_buf[2] as usize];
                 cb_hi[3] = self.codebook[idx_buf[3] as usize];
 
-                mse_acc0 = vfmaq_f32(
-                    mse_acc0,
-                    vld1q_f32(cb_lo.as_ptr()),
-                    vld1q_f32(prepared.rotated.as_ptr().add(dim_index)),
+                vst1q_f32(
+                    mse_terms.as_mut_ptr(),
+                    vmulq_f32(
+                        vld1q_f32(cb_lo.as_ptr()),
+                        vld1q_f32(prepared.rotated.as_ptr().add(dim_index)),
+                    ),
                 );
-                mse_acc1 = vfmaq_f32(
-                    mse_acc1,
-                    vld1q_f32(cb_hi.as_ptr()),
-                    vld1q_f32(prepared.rotated.as_ptr().add(dim_index + 4)),
+                vst1q_f32(
+                    mse_terms.as_mut_ptr().add(4),
+                    vmulq_f32(
+                        vld1q_f32(cb_hi.as_ptr()),
+                        vld1q_f32(prepared.rotated.as_ptr().add(dim_index + 4)),
+                    ),
                 );
 
                 let sign_lanes = qjl_sign_lanes(qjl_packed[dim_index / 8]);
-                qjl_acc0 = vfmaq_f32(
-                    qjl_acc0,
-                    vld1q_f32(prepared.sq.as_ptr().add(dim_index)),
-                    vld1q_f32(sign_lanes.as_ptr()),
+                vst1q_f32(
+                    qjl_terms.as_mut_ptr(),
+                    vmulq_f32(
+                        vld1q_f32(prepared.sq.as_ptr().add(dim_index)),
+                        vld1q_f32(sign_lanes.as_ptr()),
+                    ),
                 );
-                qjl_acc1 = vfmaq_f32(
-                    qjl_acc1,
-                    vld1q_f32(prepared.sq.as_ptr().add(dim_index + 4)),
-                    vld1q_f32(sign_lanes.as_ptr().add(4)),
+                vst1q_f32(
+                    qjl_terms.as_mut_ptr().add(4),
+                    vmulq_f32(
+                        vld1q_f32(prepared.sq.as_ptr().add(dim_index + 4)),
+                        vld1q_f32(sign_lanes.as_ptr().add(4)),
+                    ),
                 );
 
+                for lane in 0..8 {
+                    mse_sum += mse_terms[lane];
+                    qjl_sum += qjl_terms[lane];
+                }
                 dim_index += 8;
             }
-
-            let mse_total = vaddq_f32(mse_acc0, mse_acc1);
-            let qjl_total = vaddq_f32(qjl_acc0, qjl_acc1);
-            let mut mse_lanes = [0.0_f32; 4];
-            let mut qjl_lanes = [0.0_f32; 4];
-            vst1q_f32(mse_lanes.as_mut_ptr(), mse_total);
-            vst1q_f32(qjl_lanes.as_mut_ptr(), qjl_total);
-            mse_sum += mse_lanes.iter().sum::<f32>();
-            qjl_sum += qjl_lanes.iter().sum::<f32>();
         } else {
             while dim_index + 4 <= self.original_dim {
                 let mut mse_values = [0.0_f32; 4];
@@ -1497,6 +1521,107 @@ impl ProdQuantizer {
             } else {
                 prepared.lut[dim_index * num_centroids + centroid_index]
             };
+            qjl_sum += if qjl_sign_at(qjl_packed, dim_index) {
+                prepared.sq[dim_index]
+            } else {
+                -prepared.sq[dim_index]
+            };
+            dim_index += 1;
+        }
+
+        mse_sum + gamma * prepared.qjl_scale * qjl_sum
+    }
+
+    /// Pre-Task-104 NEON shape kept for diagnostics: two fused
+    /// multiply-add accumulators per stream with one horizontal sum at the
+    /// end, which diverges from the scalar reference by more than the
+    /// 4-ulp production dispatch gate (measured 12 ulp at dim=1024 on M5).
+    #[cfg(all(any(test, feature = "bench"), target_arch = "aarch64"))]
+    #[target_feature(enable = "neon")]
+    unsafe fn score_ip_from_split_parts_neon_multi_accum_pre_task104(
+        &self,
+        prepared: &PreparedQuery,
+        gamma: f32,
+        mse_packed: &[u8],
+        qjl_packed: &[u8],
+    ) -> f32 {
+        use std::arch::aarch64::{
+            vaddq_f32, vandq_u32, vdupq_n_f32, vdupq_n_u32, vfmaq_f32, vld1q_f32, vld1q_s32,
+            vshlq_u32, vst1q_f32, vst1q_u32,
+        };
+
+        let bits_per_index = self.bits - 1;
+        debug_assert_eq!(bits_per_index, 3);
+        let mut mse_sum = 0.0_f32;
+        let mut qjl_sum = 0.0_f32;
+        let mut dim_index = 0usize;
+
+        let shifts_lo = vld1q_s32([0_i32, -3, -6, -9].as_ptr());
+        let shifts_hi = vld1q_s32([-12_i32, -15, -18, -21].as_ptr());
+        let mask = vdupq_n_u32(0x7);
+        let mut mse_acc0 = vdupq_n_f32(0.0);
+        let mut mse_acc1 = vdupq_n_f32(0.0);
+        let mut qjl_acc0 = vdupq_n_f32(0.0);
+        let mut qjl_acc1 = vdupq_n_f32(0.0);
+
+        while dim_index + 8 <= self.original_dim {
+            let word = decode_eight_3bit_aligned_word(mse_packed, dim_index);
+            let broadcast = vdupq_n_u32(word);
+            let idx_lo = vandq_u32(vshlq_u32(broadcast, shifts_lo), mask);
+            let idx_hi = vandq_u32(vshlq_u32(broadcast, shifts_hi), mask);
+
+            let mut idx_buf = [0_u32; 4];
+            let mut cb_lo = [0.0_f32; 4];
+            let mut cb_hi = [0.0_f32; 4];
+            vst1q_u32(idx_buf.as_mut_ptr(), idx_lo);
+            cb_lo[0] = self.codebook[idx_buf[0] as usize];
+            cb_lo[1] = self.codebook[idx_buf[1] as usize];
+            cb_lo[2] = self.codebook[idx_buf[2] as usize];
+            cb_lo[3] = self.codebook[idx_buf[3] as usize];
+            vst1q_u32(idx_buf.as_mut_ptr(), idx_hi);
+            cb_hi[0] = self.codebook[idx_buf[0] as usize];
+            cb_hi[1] = self.codebook[idx_buf[1] as usize];
+            cb_hi[2] = self.codebook[idx_buf[2] as usize];
+            cb_hi[3] = self.codebook[idx_buf[3] as usize];
+
+            mse_acc0 = vfmaq_f32(
+                mse_acc0,
+                vld1q_f32(cb_lo.as_ptr()),
+                vld1q_f32(prepared.rotated.as_ptr().add(dim_index)),
+            );
+            mse_acc1 = vfmaq_f32(
+                mse_acc1,
+                vld1q_f32(cb_hi.as_ptr()),
+                vld1q_f32(prepared.rotated.as_ptr().add(dim_index + 4)),
+            );
+
+            let sign_lanes = qjl_sign_lanes(qjl_packed[dim_index / 8]);
+            qjl_acc0 = vfmaq_f32(
+                qjl_acc0,
+                vld1q_f32(prepared.sq.as_ptr().add(dim_index)),
+                vld1q_f32(sign_lanes.as_ptr()),
+            );
+            qjl_acc1 = vfmaq_f32(
+                qjl_acc1,
+                vld1q_f32(prepared.sq.as_ptr().add(dim_index + 4)),
+                vld1q_f32(sign_lanes.as_ptr().add(4)),
+            );
+
+            dim_index += 8;
+        }
+
+        let mse_total = vaddq_f32(mse_acc0, mse_acc1);
+        let qjl_total = vaddq_f32(qjl_acc0, qjl_acc1);
+        let mut mse_lanes = [0.0_f32; 4];
+        let mut qjl_lanes = [0.0_f32; 4];
+        vst1q_f32(mse_lanes.as_mut_ptr(), mse_total);
+        vst1q_f32(qjl_lanes.as_mut_ptr(), qjl_total);
+        mse_sum += mse_lanes.iter().sum::<f32>();
+        qjl_sum += qjl_lanes.iter().sum::<f32>();
+
+        while dim_index < self.original_dim {
+            let centroid_index = mse_index_at(mse_packed, dim_index, 3) as usize;
+            mse_sum += self.codebook[centroid_index] * prepared.rotated[dim_index];
             qjl_sum += if qjl_sign_at(qjl_packed, dim_index) {
                 prepared.sq[dim_index]
             } else {
@@ -1980,7 +2105,7 @@ mod tests {
         dot / (norm_a * norm_b).max(f32::EPSILON)
     }
 
-    #[cfg(target_arch = "x86_64")]
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
     fn ulp_distance(lhs: f32, rhs: f32) -> u32 {
         fn ordered(bits: u32) -> i32 {
             let signed = bits as i32;
@@ -2486,6 +2611,82 @@ mod tests {
 
         println!(
             "qjl_pre_b0efa19d9_multi_accum_tolerance_diagnostic dim=1024 bits=4 candidates=1000 max_ulp={max_ulp} max_rel={max_rel:.9e} violations={violations} worst_seed={worst_seed}"
+        );
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    #[test]
+    fn qjl_neon_production_path_matches_scalar_reference_tolerance() {
+        if !std::arch::is_aarch64_feature_detected!("neon") {
+            eprintln!("skipping NEON production-path parity: NEON unavailable");
+            return;
+        }
+
+        let quantizer = ProdQuantizer::new(1024, 4, 42);
+        let prepared = quantizer.prepare_ip_query(&random_unit_vector(1024, 1));
+
+        for seed in 0..1000_u64 {
+            let encoded = quantizer.encode(&random_unit_vector(1024, seed + 300));
+            let mut code = encoded.mse_packed;
+            code.extend_from_slice(&encoded.qjl_packed);
+            let neon = quantizer
+                .score_ip_from_parts_neon_for_test(&prepared, encoded.gamma, &code)
+                .expect("NEON production path");
+            let scalar =
+                quantizer.score_ip_from_parts_scalar_reference(&prepared, encoded.gamma, &code);
+            let ulp = ulp_distance(neon, scalar);
+            let rel = (neon - scalar).abs() / scalar.abs().max(1.0e-12);
+            assert!(
+                ulp <= 4 || rel <= 1.0e-6,
+                "seed={} neon={neon:?} scalar={scalar:?} ulp={ulp} rel={rel:.9e}",
+                seed + 300
+            );
+        }
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    #[test]
+    fn qjl_pre_task104_neon_multi_accum_tolerance_diagnostic() {
+        if !std::arch::is_aarch64_feature_detected!("neon") {
+            eprintln!("skipping old-path diagnostic: NEON unavailable");
+            return;
+        }
+
+        let quantizer = ProdQuantizer::new(1024, 4, 42);
+        let prepared = quantizer.prepare_ip_query(&random_unit_vector(1024, 1));
+        let mut max_ulp = 0_u32;
+        let mut max_rel = 0.0_f32;
+        let mut violations = 0_usize;
+        let mut worst_seed = 0_u64;
+
+        for seed in 0..1000_u64 {
+            let encoded = quantizer.encode(&random_unit_vector(1024, seed + 300));
+            let mut code = encoded.mse_packed;
+            code.extend_from_slice(&encoded.qjl_packed);
+            let old = quantizer
+                .score_ip_from_parts_neon_multi_accum_pre_task104_for_test(
+                    &prepared,
+                    encoded.gamma,
+                    &code,
+                )
+                .expect("NEON old-path diagnostic");
+            let scalar =
+                quantizer.score_ip_from_parts_scalar_reference(&prepared, encoded.gamma, &code);
+            let ulp = ulp_distance(old, scalar);
+            let rel = (old - scalar).abs() / scalar.abs().max(1.0e-12);
+
+            if ulp > max_ulp || (ulp == max_ulp && rel > max_rel) {
+                max_ulp = ulp;
+                max_rel = rel;
+                worst_seed = seed + 300;
+            }
+            if ulp > 4 && rel > 1.0e-6 {
+                violations += 1;
+            }
+        }
+
+        println!(
+            "qjl_pre_task104_neon_multi_accum_tolerance_diagnostic dim=1024 bits=4 candidates=1000 max_ulp={max_ulp} max_rel={max_rel:.9e} violations={violations} worst_seed={worst_seed}"
         );
     }
 

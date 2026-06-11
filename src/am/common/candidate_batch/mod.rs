@@ -709,7 +709,7 @@ fn score_turboquant_qjl_remainder(
             codes[lane] = *code;
             gammas[lane] = *gamma;
         }
-        let Some(isa) = crate::quant::qjl32::score_turboquant_qjl_octet8_avx2(
+        let Some(isa) = crate::quant::qjl32::score_turboquant_qjl_octet8(
             quantizer,
             prepared,
             codes,
