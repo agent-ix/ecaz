@@ -349,6 +349,7 @@ pub(crate) use self::ec_spire::remote_search_libpq_executor_budget_contract_prob
 pub(crate) use self::ec_spire::remote_search_libpq_identity_cache_contract_probe_counts as spire_remote_search_libpq_identity_cache_contract_probe_counts;
 
 pub(crate) fn register_gucs() {
+    common::isa_cap::register_gucs();
     ec_diskann::register_gucs();
     ec_hnsw::register_gucs();
     ec_ivf::register_gucs();
