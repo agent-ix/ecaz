@@ -1,35 +1,43 @@
 # Task 99 Phase 3 — per-ISA comparison + scoring-share vs end-to-end decoupling map
 
-Status: **interim** — local-Intel and Apple-M5 columns final; Graviton 4
-(SVE2 + NEON-capped) and AWS-Intel columns land with the trip
-(runbook: packet 006). The decoupling classification below is from the
-packet 003 local profile (one host, one fixture set, all cells), which
-is the first dataset where every family is measured under identical
-conditions.
+Status: **final** — all five columns measured. Local-Intel (packet 003)
+and Apple-M5 (task-104/008) plus the trip lanes: Graviton 4 default +
+NEON-capped (packet 008) and AWS Intel (packet 009).
 
 ## 1. Per-ISA comparison (AC 4) — kernel ns/candidate by family
 
-| family | scalar anchor | avx2 (local Intel, packet 003) | neon (Apple M5, task-104/008) | sve2 (G4) | neon-capped (G4) | avx2 (AWS Intel) |
+| family | scalar anchor | avx2 (local Intel, 003) | neon (Apple M5, 104) | G4 default dispatch (008) | G4 neon-capped (008) | avx2 (AWS Intel, 009) |
 | --- | --- | --- | --- | --- | --- | --- |
-| lut32 (IVF/SPIRE blocks) | 1,054–1,062 (task-102) | 235.6–255.1 | 221.3–226.8 | pending | pending | pending |
-| lut32 (HNSW multi-lane) | ~1,309 unbatched | 477.3–479.5 | 494.9 | pending | pending | pending |
-| lut32 (DiskANN) | 891.1 (M5 anchor) | 277.9–278.2 | 298.7 | pending | pending | pending |
-| int8_approx32 (HNSW) | 918.7–923.0 (task-103) | 86.8–87.4 | 99–105 | skip by rule | skip by rule | pending |
-| rabitq32 | 364–793 (task-93, per nprobe) | 68.8–89.8 | 63.9–65.6 | decision cell (NEON-routing today) | pending | pending |
-| grouped_pq (IVF) | ~110 scalar rate (task-94 F8 datum) | 160.4–161.6¹ | 30.4–30.9¹ | pending (gather shape) | pending | pending |
-| grouped_pq (DiskANN) | 〃 | 143.6–156.9 | sidecar-routed by default | pending | pending | pending |
-| qjl32 @1024d | 581–602 (M5 anchor) | 256.0–263.5 | 167.9–169.2 | pending (runbook 97/022) | pending | pending |
-| hamming32 | 11.5–11.8 POPCNT (task-103) | skip (decision) | 7.1 | scope-out by rule | — | pending (skip stands) |
-| tiled_lut32 | 1,339.6–3,001 (retired) | retired | retired | retired | — | retired |
+| lut32 (IVF/SPIRE blocks) | 1,054–1,062 (task-102) | 235.6–255.1 | 221.3–226.8 | sve2: 1,204/1,210 | **589/597** | 170/180 |
+| lut32 (HNSW multi-lane) | ~1,309 unbatched | 477.3–479.5 | 494.9 | sve2: 3,897 | **1,184** | 374 |
+| lut32 (DiskANN) | 891.1 (M5 anchor) | 277.9–278.2 | 298.7 | sve2: 1,504 | **710** | 213 |
+| int8_approx32 (HNSW) | 918.7–923.0 (task-103) | 86.8–87.4 | 99–105 | neon: 129 (SVE skip by rule) | 129 (control) | 96 |
+| rabitq32 | 364–793 (task-93, per nprobe) | 68.8–89.8 | 63.9–65.6 | neon: 115–182 (truthful routing) | identical (control) | 71–92 |
+| grouped_pq (IVF) | ~110 scalar rate (task-94 F8 datum) | 160.4–161.6¹ | 30.4–30.9¹ | sve2: 144 (gather shape) | **130** | 132 |
+| grouped_pq (DiskANN) | 〃 | 143.6–156.9 | sidecar-routed | sve2: 160 | **119** | 138 |
+| qjl32 @1024d | 581–602 (M5 anchor) | 256.0–263.5 | 167.9–169.2 | sve2 blocks ~3,000 + neon octets | **429–483** | 215–235 |
+| hamming32 | 11.5–11.8 POPCNT (task-103) | skip (decision) | 7.1 | neon: 12 | 12 (control) | scalar POPCNT (skip upheld) |
+| tiled_lut32 | 1,339.6–3,001 (retired) | retired | retired | scalar (retired) | — | scalar (retired) |
 
 ¹ grouped-PQ rates are per *posting candidate* on different decode
 shapes per host lane — compare within a column, not across AMs.
 
-Observation already visible pre-trip: **AVX2 and M5-NEON land within
-~±15% of each other on most families** at equal vector width (128-bit
-NEON vs 256-bit AVX2 — AVX2's width advantage largely does not
-translate 2×, consistent with LUT/shuffle-bound inner loops). The G4
-columns decide the SVE2-vs-NEON preference question (ADR-077 §6 slot).
+**Verdict (the §3-slot answer for ADR-077 §6): SVE2 loses to NEON on
+Graviton 4 at every family where it dispatches** — 2.0–3.3× slower on
+lut32, 1.1–1.35× on grouped-pq (gather shape), and the qjl32 SVE2
+block path ~6× slower than the pure-NEON cascade. End-to-end, default
+(SVE2-preferred) dispatch costs **27–45% p50 on every TQ/lut32 cell**
+(IVF TQ 41.0 vs 22.9 ms at nprobe=16), 17–21% on SPIRE QJL, ~5% on IVF
+pqfs; worst neon-capped regression anywhere is +0.6% (noise). The
+already-NEON families measure identical capped vs uncapped — internal
+controls validating the comparison. Recommendation: flip
+`select_highest_isa` to prefer NEON over Sve/Sve2 on aarch64 (SVE2
+re-entry per family only by future measurement).
+
+Cross-ISA observation: AVX2 (256-bit) beats NEON (128-bit) by ~1.3–2×
+on most families on production hosts, and M5-NEON ≈ AWS-Intel-AVX2 on
+several (M5 silicon is strong per clock); G4-NEON trails both. The
+grouped-pq family is the exception where G4-NEON ≈ AVX2.
 
 ## 2. Decoupling map (AC 3 / scope item 5) — where kernel wins reach end-to-end
 
@@ -81,13 +89,32 @@ SPIRE TQ is strongly class A locally (−48/−62% at 100k) but mild on M5
 (−9.6/−12.4% at 10k) — fixture-scale-dependent leaf-scoring share, not
 an ISA effect. The G4 lane measures the same 100k shape as local.
 
-## 3. What the trip fills in
+## 3. What the trip filled in (2026-06-12)
 
-1. G4 SVE2 column + measured vector length (expect `sve2-128`).
-2. G4 NEON-capped column → per-family SVE2-vs-NEON verdict (ADR-077
-   §6); changes `select_highest_isa` preference only if NEON wins a
-   family.
-3. AWS-Intel column → the citable Intel numbers + the
-   price/performance table (instance pricing recorded per runbook).
-4. rabitq32 SVE decision (today: truthful NEON routing on SVE hosts).
-5. Task 94 gather-shape SVE2 grouped-PQ annotation; Task 97 closure.
+1. G4 SVE2 column measured; vector length **sve2-128** confirmed
+   (`/proc/sys/abi/sve_default_vector_length` = 16 bytes + the
+   `runtime_sve_vector_lanes_for_test` assertions in the day-one set).
+2. G4 NEON-capped column → **NEON wins every family** (verdict above);
+   `select_highest_isa` preference change recommended.
+3. AWS-Intel column measured (packet 009); price/performance inputs in
+   the lane manifests (m8g.2xlarge ~$0.346/hr vs m7i.2xlarge
+   ~$0.493/hr status-line rates; per-cell p50s in results.jsonl —
+   Intel wins most absolute p50s even before normalizing, and by more
+   under today's G4 dispatch).
+4. rabitq32 SVE decision closed by the same data: the truthful NEON
+   routing is not just acceptable but optimal — building a rabitq32
+   SVE2 kernel is measurably unjustified (SVE2 loses at equal width on
+   every family that has one).
+5. Task 94 gather-shape SVE2 grouped-PQ cells measured + annotated
+   (and the NEON repack question answered: G4-NEON already beats
+   G4-SVE2-gather); Task 97 G4 cells collected (packet 008
+   `task97-run/`, `isa=sve2` rows + runbook gates).
+
+## 4. Decoupling-map deltas from the trip
+
+The class structure holds on both production lanes. Notable cross-lane
+rows: IVF TQ stays class A everywhere (G4 −44% e2e under proper NEON
+dispatch); DiskANN TQ class A on G4 (−27/−30% capped); the IVF QJL
+@1024 class-B negative-net cell stays ~0/slightly negative on both
+production lanes (and emits no batch counters on any host — recorded
+as an attribution gap with SPIRE-rabitq).

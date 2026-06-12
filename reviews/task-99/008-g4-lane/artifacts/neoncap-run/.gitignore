@@ -1,0 +1,5 @@
+# Suite-generated QJL fixture TSVs (93 MB / 1 MB) — reproducible on any
+# lane from the suite's corpus-generate steps (seeds 9901/9902); never
+# committed.
+t99_qjl_1024_corpus.tsv
+t99_qjl_1024_queries.tsv

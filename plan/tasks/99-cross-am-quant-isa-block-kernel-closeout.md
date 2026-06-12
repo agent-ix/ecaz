@@ -1,6 +1,21 @@
 # Task 99: Cross-(AM × Quant × ISA) Block Kernel Completeness Closeout
 
-Status: in progress (2026-06-11)
+Status: in review (2026-06-12). All phases executed; evidence:
+`reviews/task-99/` packets 001–009. Phases 1–2 = packet 001 (aggregate
+matrix + structural exclusions); item 9 profile = packets 002/003
+(SuiteConfig + local validation, 91/91, 34/34 recall pairs byte-equal);
+`ecaz.isa_cap` = packet 004; ADR-077 draft = packet 005 (PROPOSED,
+§4/§6 decisions now data-filled); trip runbook = packet 006; Phase 3 =
+packet 007 (final, all five ISA columns); AWS trip 2026-06-12 =
+packets 008 (G4: sve2-128, 91/91 + neon-cap + Task 97 cells; **SVE2
+loses to NEON at every family** — dispatch-preference decision in
+ADR-077 §6) and 009 (Intel: 91/91, 1-ULP codegen finding documented).
+Snapshots: `snap-097eb8a8e881384dd` (G4), `snap-0dc395f4f6458c37b`
+(Intel); both stacks destroyed. Awaiting reviewer approval of the
+matrix + ADR-077 (Phase 5), then ADR-077 → ACCEPTED and status flip
+to complete. Follow-up slices decided but not yet implemented:
+aarch64 dispatch-preference flip; `ec_ivf.scratch_soa_batch_decode`
+default-on; rabitq32 strict-test contract fix.
 Owner: coder (assigned 2026-06-11: the Task 102/103 author). One coder.
 Priority: 2 (project-level closeout for the kernel-completeness initiative)
 

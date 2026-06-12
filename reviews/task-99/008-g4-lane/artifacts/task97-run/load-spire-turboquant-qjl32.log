@@ -1,0 +1,22 @@
+[loader] inspecting reviews/task-97/009-local-qjl32-suite/artifacts/task97_qjl32_corpus.tsv
+[loader] inspecting reviews/task-97/009-local-qjl32-suite/artifacts/task97_qjl32_queries.tsv
+[loader] corpus: 512 rows, sha256=bec1c9e01049ef3a35148e045304301ff8456a600f7e33516341dc4e1331fb75  queries: 32 rows, sha256=e4b2f9abc3045673470c0b48f2a42562536a673a4bda8d51de044f4c0ffe956d
+[loader] no sibling manifest at reviews/task-97/009-local-qjl32-suite/artifacts/task97_qjl32_manifest.json; continuing without verification
+[loader] copied corpus table task97_qjl32_spire_corpus in 91.83ms
+[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...
+[loader] encoded corpus table task97_qjl32_spire_corpus in 33.77ms
+[loader] copied queries table task97_qjl32_spire_queries in 9.28ms
+[loader] building task97_qjl32_spire_turboquant_idx using ec_spire (reloptions=[nlists=16, nprobe=8, training_sample_rows=512, storage_format=turboquant]) ...
+[loader] built task97_qjl32_spire_turboquant_idx in 33.88ms
+┌─────────┬──────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ field   ┆ value                                                                                                        │
+╞═════════╪══════════════════════════════════════════════════════════════════════════════════════════════════════════════╡
+│ profile ┆ ec_spire                                                                                                     │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ task97_qjl32_spire_corpus (512 rows)                                                                         │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ task97_qjl32_spire_queries (32 rows)                                                                         │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ task97_qjl32_spire_turboquant_idx [nlists=16, nprobe=8, training_sample_rows=512, storage_format=turboquant] │
+└─────────┴──────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+[loader] completed prefix task97_qjl32_spire in 203.44ms
