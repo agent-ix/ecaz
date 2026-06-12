@@ -53,14 +53,23 @@ pub(crate) fn select_highest_isa(features: HostIsaFeatures) -> Isa {
     if features.x86.avx2 {
         return Isa::Avx2;
     }
+    // ADR-077 §6 (Task 105 / Task 99 G4 measurement, 2026-06-12): on
+    // aarch64, Neon is preferred over Sve/Sve2. Graviton 4's SVE2 is
+    // 128-bit — the same vector width as NEON — and the NEON-capped A/B
+    // (reviews/task-99/008-g4-lane/) measured the SVE2 kernels 2.0–3.3×
+    // slower on lut32, 1.1–1.35× on grouped-pq, and ~6× on the qjl32
+    // block path, costing 27–45% end-to-end p50 on every TurboQuant
+    // cell. SVE kernels stay in-tree; per-family re-entry requires
+    // beating the NEON cell on the production target (which will need a
+    // preference override — the `ecaz.isa_cap` GUC only lowers).
+    if features.aarch64.neon {
+        return Isa::Neon;
+    }
     if features.aarch64.sve2 {
         return Isa::Sve2;
     }
     if features.aarch64.sve {
         return Isa::Sve;
-    }
-    if features.aarch64.neon {
-        return Isa::Neon;
     }
     Isa::Scalar
 }
@@ -232,12 +241,13 @@ mod tests {
 
     #[test]
     fn capped_selection_limits_but_never_fakes() {
-        // No cap: unchanged.
-        assert_eq!(select_highest_isa_capped(graviton4(), None), Isa::Sve2);
-        // Caps below the selected tier walk down the available ladder.
+        // No cap: the ADR-077 NEON preference applies.
+        assert_eq!(select_highest_isa_capped(graviton4(), None), Isa::Neon);
+        // The cap is a ceiling, never a raise: capping at a higher tier
+        // does not override the NEON preference.
         assert_eq!(
             select_highest_isa_capped(graviton4(), Some(Isa::Sve)),
-            Isa::Sve
+            Isa::Neon
         );
         assert_eq!(
             select_highest_isa_capped(graviton4(), Some(Isa::Neon)),
@@ -247,10 +257,9 @@ mod tests {
             select_highest_isa_capped(graviton4(), Some(Isa::Scalar)),
             Isa::Scalar
         );
-        // A cap at or above the selected tier is a no-op.
         assert_eq!(
             select_highest_isa_capped(graviton4(), Some(Isa::Avx2)),
-            Isa::Sve2
+            Isa::Neon
         );
         // Capping to an ISA the host lacks falls to scalar, never fakes.
         assert_eq!(
@@ -301,7 +310,9 @@ mod tests {
     }
 
     #[test]
-    fn select_highest_isa_prefers_graviton4_sve2() {
+    fn select_highest_isa_prefers_neon_on_graviton4() {
+        // ADR-077 §6: Neon over Sve2 at equal 128-bit width (measured,
+        // reviews/task-99/008-g4-lane/).
         let features = HostIsaFeatures {
             aarch64: Aarch64Features {
                 neon: true,
@@ -311,21 +322,32 @@ mod tests {
             x86: X86Features::default(),
         };
 
-        assert_eq!(select_highest_isa(features), Isa::Sve2);
+        assert_eq!(select_highest_isa(features), Isa::Neon);
     }
 
     #[test]
-    fn select_highest_isa_distinguishes_base_sve() {
-        let features = HostIsaFeatures {
+    fn select_highest_isa_uses_sve_tiers_only_without_neon() {
+        // Synthetic — no real aarch64 host lacks NEON while having SVE;
+        // documents that the SVE tiers remain reachable in the ladder.
+        let sve2_only = HostIsaFeatures {
             aarch64: Aarch64Features {
-                neon: true,
+                neon: false,
+                sve: true,
+                sve2: true,
+            },
+            x86: X86Features::default(),
+        };
+        let sve_only = HostIsaFeatures {
+            aarch64: Aarch64Features {
+                neon: false,
                 sve: true,
                 sve2: false,
             },
             x86: X86Features::default(),
         };
 
-        assert_eq!(select_highest_isa(features), Isa::Sve);
+        assert_eq!(select_highest_isa(sve2_only), Isa::Sve2);
+        assert_eq!(select_highest_isa(sve_only), Isa::Sve);
     }
 
     #[test]

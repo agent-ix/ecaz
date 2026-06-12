@@ -302,9 +302,13 @@ mod tests {
         for (score, code) in scores.iter().zip(code_refs.iter()) {
             assert_close_simd(*score, forced_scalar_anchor(block_prepared, code));
         }
-        // The partial NEON path pairs candidates exactly like the production
-        // batch slab scorer, so scores are bit-equal on NEON hosts; the
+        // The partial SIMD path pairs candidates exactly like the production
+        // batch slab scorer, so scores agree by source construction; the
         // scalar partial path is bit-equal with the forced-scalar anchor.
+        // Source-order equality is NOT a portable bit-equality guarantee:
+        // under target-cpu=native the two inline contexts codegen apart by
+        // 1 ULP on Sapphire Rapids (Task 105 / reviews/task-99/009-intel-lane/),
+        // so the SIMD comparison grades under the family envelope.
         let slab = codes.iter().flatten().copied().collect::<Vec<_>>();
         let mut batch_scores = Vec::new();
         prepared
@@ -312,7 +316,7 @@ mod tests {
             .unwrap();
         if isa != crate::quant::isa::Isa::Scalar {
             for (score, production) in scores.iter().zip(batch_scores.iter()) {
-                assert_eq!(score.to_bits(), production.to_bits());
+                assert_close_simd(*score, *production);
             }
         } else {
             for (score, code) in scores.iter().zip(code_refs.iter()) {
@@ -362,10 +366,13 @@ mod tests {
 
         // The kernel and the production batch slab scorer call the same
         // per-ISA pair primitive with the same candidate pairing, so scores
-        // are equal by construction on both NEON and AVX2 hosts. A mismatch
-        // means the kernel and production paths diverged.
+        // agree by source construction. That is not a portable bit-equality
+        // guarantee: under target-cpu=native the two inline contexts codegen
+        // apart by exactly 1 ULP on Sapphire Rapids (Task 105 /
+        // reviews/task-99/009-intel-lane/), so this grades under the family
+        // envelope. A divergence beyond it means the paths genuinely split.
         for (kernel, production) in kernel_scores.iter().zip(batch_scores.iter()) {
-            assert_eq!(kernel.to_bits(), production.to_bits());
+            assert_close_simd(*kernel, *production);
         }
     }
 
