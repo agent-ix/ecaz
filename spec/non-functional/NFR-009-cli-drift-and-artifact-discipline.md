@@ -3,6 +3,7 @@ id: NFR-009
 title: CLI Drift and Artifact Discipline
 type: non-functional-requirement
 artifact_type: NFR
+quality_attribute: maintainability
 status: APPROVED
 relationships:
   - target: "ix://agent-ix/ecaz/US-016"
@@ -11,9 +12,17 @@ relationships:
 ---
 # NFR-009: CLI Drift and Artifact Discipline
 
-## Requirement
+## Statement
 
 Ecaz SHALL keep the operator CLI aligned with the implemented extension surface and make CLI-produced evidence reproducible from packet-local artifacts.
+
+## Measurement and Evaluation
+
+| Metric | Target | Threshold | Method |
+|---|---|---|---|
+| CLI command-tree drift | operator README command tree matches the implemented Clap command tree | no undocumented drift | CLI drift audit (README vs Clap tree, `profiles.rs` watch point) |
+| CLI profile metadata drift | profile metadata matches extension access-method names, opclasses, reloptions, and scan GUCs | re-audited whenever those surfaces change | profile metadata audit against the extension surface |
+| Packet-local CLI evidence compliance | 100% of review packets citing CLI measurements store raw logs and the command used under packet `artifacts/` | no exceptions | review packet audit |
 
 ## Policy
 
@@ -23,6 +32,17 @@ Ecaz SHALL keep the operator CLI aligned with the implemented extension surface 
 4. Review packets that cite CLI measurements SHALL store raw logs under the packet `artifacts/` directory and cite the command used.
 5. Long benchmark sequences SHOULD use `ecaz bench suite` configs instead of shell scripts so dry-run manifests, status checks, and packet-local artifact paths remain auditable.
 6. Until shared constants are extracted into a common crate, `profiles.rs` is the accepted drift watch point between the CLI and extension.
+
+## Verification
+
+Compliance is checked by auditing the operator README command tree against the
+implemented Clap command tree (with `profiles.rs` as the accepted drift watch
+point until shared constants are extracted), auditing CLI profile metadata
+against extension access-method names, opclasses, reloptions, and scan GUCs
+whenever those surfaces change, and reviewing packets that cite CLI
+measurements for packet-local raw logs (`--log-file` into `artifacts/`) and
+recorded commands. The test matrix is checked to trace the CLI user story,
+functional requirement, and drift discipline to a validation case.
 
 ## Acceptance Criteria
 

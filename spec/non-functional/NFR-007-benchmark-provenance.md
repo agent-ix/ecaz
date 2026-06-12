@@ -3,6 +3,7 @@ id: NFR-007
 title: Benchmark Provenance
 type: non-functional-requirement
 artifact_type: NFR
+quality_attribute: compliance
 status: APPROVED
 relationships:
   - target: "ix://agent-ix/ecaz/StR-006"
@@ -11,11 +12,15 @@ relationships:
 ---
 # NFR-007: Benchmark Provenance
 
-## Requirement
+## Statement
 
 Any benchmark result used in README, docs, spec, task status, or review rationale SHALL identify the evidence source and the scope of the claim.
 
-## Measurement Rules
+## Measurement and Evaluation
+
+| Metric | Target | Threshold | Method |
+|---|---|---|---|
+| Benchmark-claim provenance compliance | 100% of cited benchmark claims trace to a source packet or are labeled historical/local | no exceptions | repo audit of `docs/benchmarks.md`, `spec/tests.md`, and packet manifests |
 
 1. Benchmark measurements SHALL store raw logs under `benchmarks/<topic>/artifacts/` and summarize them in `benchmarks/<topic>/manifest.md`. Code-review packets that include benchmark evidence MAY continue to live under `reviews/task-{id}/{ordinal}-<topic>/artifacts/` and SHALL cite the benchmark packet by path when one exists.
 2. Artifact manifests SHALL record head SHA, topic, lane, fixture, storage format, rerank mode, command, timestamp, isolation/shared-table status, and cited key result lines.
@@ -33,6 +38,17 @@ Any benchmark result used in README, docs, spec, task status, or review rational
 8. When the suite runner can identify the installed extension library, the
    packet manifest or suite manifest SHOULD record its SHA256 so later review
    can distinguish release installs from `pg_test` debug overwrites.
+
+## Verification
+
+Compliance is checked by repo audit: every benchmark row in
+`docs/benchmarks.md` is checked for a citation to a source packet under
+`benchmarks/<topic>/` (or a code-review packet under
+`reviews/task-{id}/{ordinal}-<topic>/`) or an explicit historical/local label;
+packet manifests are reviewed for the required provenance fields (head SHA,
+lane, fixture, command, timestamp, isolation status, backend build profile);
+and `spec/tests.md` is checked to record measurement gaps rather than marking
+unevidenced performance requirements complete.
 
 ## Acceptance Criteria
 

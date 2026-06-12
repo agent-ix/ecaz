@@ -3,6 +3,7 @@ id: NFR-014
 title: SPIRE Transport Security and Operations
 type: non-functional-requirement
 artifact_type: NFR
+quality_attribute: security
 status: APPROVED
 relationships:
   - target: "ix://agent-ix/ecaz/FR-056"
@@ -17,7 +18,7 @@ relationships:
 ---
 # NFR-014: SPIRE Transport Security and Operations
 
-## Requirement
+## Statement
 
 SPIRE remote transport and coordinator-routed writes SHALL preserve libpq
 security semantics, avoid exposing raw secrets, fail closed on schema drift and
@@ -49,6 +50,15 @@ prepared transactions.
    coordinator and remotes.
 5. Coordinator-routed INSERT, UPDATE, and DELETE SHALL compare coordinator and
    remote schema fingerprints before mutating remote SQL.
+
+## Measurement and Evaluation
+
+| Metric | Target | Threshold | Method |
+|---|---|---|---|
+| Raw conninfo / raw secret exposure through SQL diagnostics, logs, result rows, or unsanitized errors | zero exposures | no exceptions | inspection and SQL diagnostics over PG18 fixtures |
+| Schema drift and endpoint identity mismatch handling | 100% fail closed before mutating remote state | no exceptions | PG18 fixture verification |
+| JSON tuple transport on the production distributed read path | not selected once typed transport is required | no exceptions | typed-transport readiness inspection |
+| Remote prepared-transaction recovery readiness | `max_prepared_transactions` > 0 with reserved slots; operator-driven reaper documented | no exceptions | SQL diagnostics and readiness hints |
 
 ## Verification
 

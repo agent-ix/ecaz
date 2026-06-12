@@ -2,13 +2,20 @@
 id: NFR-005
 title: Build and CI
 type: non-functional-requirement
+artifact_type: NFR
+quality_attribute: maintainability
 status: APPROVED
 traces:
   - StR-002
 ---
 # NFR-005: Build and CI
 
-## Requirement
+## Statement
+
+The extension SHALL build on Rust stable with pgrx 0.17+, pass the full CI
+pipeline (formatting, lint, unit tests, pgrx integration lanes, license audit)
+on every push and PR, and build for the declared PostgreSQL and architecture
+targets.
 
 ### Toolchain
 
@@ -36,6 +43,26 @@ The extension SHALL build for:
 
 AVX2 SIMD is enabled by default (`-C target-cpu=native`) for development but SHALL NOT be hard-required — the extension SHALL compile (with degraded performance) without AVX2.
 
-## Measurement
+## Measurement and Evaluation
+
+| Metric | Target | Threshold | Method |
+|---|---|---|---|
+| CI pipeline steps passing per push/PR | all steps pass | any failing step blocks merge | CI pipeline run on every push and PR |
+| Formatting drift | none | `cargo fmt --check` passes | `cargo fmt --check` CI step |
+| Clippy warnings | zero | `-D warnings` (all warnings are errors) | `cargo clippy --all-targets --all-features -- -D warnings` CI step |
+| Unit test failures | zero | `cargo test` passes | `cargo test` CI step |
+| PG18 integration test failures | zero | `cargo pgrx test pg18` passes | `cargo pgrx test pg18` CI step |
+| License audit findings | zero | `cargo deny check licenses` passes | `cargo deny check licenses` CI step |
+| Build target coverage | PG18 primary + PG17 fallback, x86_64 and aarch64 linux; compiles without AVX2 | build succeeds (degraded performance without AVX2 acceptable) | CI build matrix |
 
 CI pipeline runs on every push and PR. All steps must pass for merge.
+
+## Verification
+
+Compliance is checked by the CI pipeline itself: every push and PR runs
+`cargo fmt --check`, `cargo clippy --all-targets --all-features -- -D warnings`,
+`cargo test`, `cargo pgrx test pg18` (with `cargo pgrx test pg17` when PG17
+coverage is requested), and `cargo deny check licenses`. Merge is blocked
+unless all steps pass. Build-target compliance is verified by building for
+PostgreSQL 18/17 on `x86_64-unknown-linux-gnu` and
+`aarch64-unknown-linux-gnu`, including a build without AVX2.

@@ -2,13 +2,20 @@
 id: NFR-003
 title: Recall Quality
 type: non-functional-requirement
+artifact_type: NFR
+quality_attribute: functional_suitability
 status: APPROVED
 traces:
   - StR-001
 ---
 # NFR-003: Recall Quality
 
-## Requirement
+## Statement
+
+Search quality SHALL meet the minimum Recall@10 targets below on a 50K x
+1536-dim, 4-bit corpus, measured against brute-force exact inner product over
+raw fp32 vectors, using estimators implemented exactly as declared in FR-013
+and FR-015 with no additional bias.
 
 ### Recall@10 Targets (50K × 1536, 4-bit)
 
@@ -31,7 +38,16 @@ The extension SHALL implement the query-to-code and code-to-code estimators exac
 
 The headline recall targets above apply to freshly bulk-built indexes. Recall after incremental inserts SHALL be benchmarked separately and reported as a function of the fraction of nodes inserted since the last bulk build or REINDEX.
 
-## Measurement
+## Measurement and Evaluation
+
+| Metric | Target | Threshold | Method |
+|---|---|---|---|
+| Recall@10 (m=8, ef_search=128, 50K x 1536, 4-bit) | >= 89% | 89% | recall benchmark vs brute-force fp32 ground truth (DBpedia OpenAI embeddings) |
+| Recall@10 (m=8, ef_search=200, 50K x 1536, 4-bit) | >= 93% | 93% | recall benchmark vs brute-force fp32 ground truth (DBpedia OpenAI embeddings) |
+| Recall@10 (m=16, ef_search=200, 50K x 1536, 4-bit) | >= 97% | 97% | recall benchmark vs brute-force fp32 ground truth (DBpedia OpenAI embeddings) |
+| Recall@10 degradation vs tail-retaining reference variant | <= 1.5 percentage points | 1.5 percentage points | required-comparison benchmark (decision gate) |
+| NDCG@10 degradation vs tail-retaining reference variant | <= 1 percentage point | 1 percentage point | required-comparison benchmark (decision gate) |
+| Post-insert recall drift curve | monotonic, reported at 0%, 5%, 10%, 20% insert checkpoints | all required checkpoints reported | post-insert drift benchmark |
 
 Recall benchmarks SHALL be run against the DBpedia OpenAI embeddings dataset (or equivalent) and reported in `BENCHMARKS.md`.
 
@@ -73,3 +89,14 @@ The current truncated-tail design remains acceptable if:
 - the post-insert drift curve remains monotonic and reported at the required checkpoints
 
 If those gates fail, the storage/scoring design SHALL be revisited.
+
+## Verification
+
+Compliance is checked by running recall benchmarks against the DBpedia OpenAI
+embeddings dataset (or equivalent) with brute-force exact inner product over
+raw fp32 vectors as ground truth (computed outside Postgres using numpy or
+equivalent), reporting results in `BENCHMARKS.md` per the Required Methodology
+and Required Metrics above, and evaluating the Decision Gates against the
+tail-retaining offline reference variant. Each report is checked for the
+published dataset name, row count, dimensionality, query count, random seed,
+and checkpoint definitions.

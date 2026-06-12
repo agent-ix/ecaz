@@ -3,6 +3,7 @@ id: NFR-015
 title: Benchmark Reporting Standard
 type: non-functional-requirement
 artifact_type: NFR
+quality_attribute: compliance
 status: APPROVED
 relationships:
   - target: "ix://agent-ix/ecaz/StR-006"
@@ -14,12 +15,17 @@ relationships:
 ---
 # NFR-015: Benchmark Reporting Standard
 
-## Requirement
+## Statement
 
 Ecaz benchmark reports SHALL use one common reporting schema across access
 methods, quantizers, storage formats, and option sets.
 
-## Reporting Rules
+## Measurement and Evaluation
+
+| Metric | Target | Threshold | Method |
+|---|---|---|---|
+| Reporting-schema compliance | 100% of benchmark report rows carry the required candidate identity, environment, and metric fields for their metric family | no exceptions | repo audit of `docs/benchmarks.md` and `docs/benchmark-index.md` against `docs/benchmark-reporting-standard.md` |
+| Provenance completeness | every reported run includes the environment, dataset, command, artifact packet, and claim class required by NFR-007 | no exceptions | packet manifest audit |
 
 1. Every candidate comparison row SHALL identify the access method, opclass,
    storage or quantizer format, format-specific options, AM reloptions, session
@@ -47,6 +53,17 @@ methods, quantizers, storage formats, and option sets.
 10. Product benchmark reports SHALL additionally identify hardware, CPU
    architecture, storage class, PostgreSQL settings, cache-control procedure,
    repeat count, and variance or repeatability summary.
+
+## Verification
+
+Compliance is checked by auditing benchmark documentation against the
+reporting standard: `docs/benchmark-reporting-standard.md` is checked to
+define the required reporting fields for all current metric families, and
+`docs/benchmarks.md` / `docs/benchmark-index.md` are checked to link to the
+standard and to contain no benchmark rows whose scope cannot be traced to
+packet-local evidence or an explicit gap. Cross-format and block-kernel
+comparison rows are reviewed for the common candidate identity fields and the
+counter fields required by the rules above.
 
 ## Acceptance Criteria
 

@@ -2,13 +2,20 @@
 id: NFR-001
 title: Query Latency
 type: non-functional-requirement
+artifact_type: NFR
+quality_attribute: performance_efficiency
 status: APPROVED
 traces:
   - StR-001
 ---
 # NFR-001: Query Latency
 
-## Requirement
+## Statement
+
+Query-path latency and scoring throughput SHALL meet the targets below: HNSW
+index scans SHALL meet the stated p50/p99 latency bounds, and sequential-scan
+and distance-function scoring throughput SHALL be benchmarked and published as
+specified.
 
 ### HNSW Index Scan
 
@@ -25,7 +32,15 @@ traces:
 - Single `tqvector_inner_product` call: benchmarked and reported at 1536-dim, 4-bit
 - Prepared-query scoring throughput (`score_ip_encoded`) SHALL be benchmarked separately from symmetric SQL-function scoring because they have different cost profiles
 
-## Measurement
+## Measurement and Evaluation
+
+| Metric | Target | Threshold | Method |
+|---|---|---|---|
+| HNSW top-10 p50 latency (50K x 1536-dim, 4-bit, m=8, ef_search=40) | < 5ms | 5ms | ecaz bench latency |
+| HNSW top-10 p99 latency under steady-state load (same configuration) | < 15ms | 15ms | ecaz bench latency |
+| Sequential-scan compressed-domain scoring throughput (scores/sec, rows/sec) | published for representative sequential scans | measured and reported | benchmark run reported in BENCHMARKS.md |
+| Single `tqvector_inner_product` call latency (1536-dim, 4-bit) | benchmarked and reported | reported | isolated benchmark harness |
+| Prepared-query scoring throughput (`score_ip_encoded`) | benchmarked separately from symmetric SQL-function scoring | reported | isolated benchmark harness |
 
 Benchmarks SHALL be run on representative hardware and reported in `BENCHMARKS.md`.
 
@@ -50,3 +65,13 @@ showing that the expected `ec_hnsw` index was chosen for the measured run.
 - Compare prepared-query scoring throughput against symmetric code-to-code scoring throughput at the same dimension and bit-width.
 - Compare HNSW query latency against sequential scan throughput on the same dataset.
 - Compare insert latency before and after enabling the index.
+
+## Verification
+
+Compliance is checked by running `ecaz bench latency` against a canonically
+loaded corpus (per `docs/RECALL_REAL_CORPUS.md`) and reviewing the published
+results in `BENCHMARKS.md`. Review artifacts MUST record the exact `ecaz`
+invocation, the selected profile/prefix/sweep surface, and a representative
+`EXPLAIN` plan showing that the expected `ec_hnsw` index was chosen for the
+measured run. Single-call scoring latency is verified in an isolated benchmark
+harness, not by extrapolating from full SQL query timings.
