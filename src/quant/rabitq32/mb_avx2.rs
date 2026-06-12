@@ -14,9 +14,9 @@
 //! NOTE: validated by compile-check on x86_64 and benched on the Intel lane;
 //! the M5 dev host cannot execute this path.
 
-use super::{PreparedBitsN, BLOCK_WIDTH};
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 use super::read_level_for;
+use super::{PreparedBitsN, BLOCK_WIDTH};
 use crate::quant::isa::Isa;
 
 #[cfg(target_arch = "x86")]
