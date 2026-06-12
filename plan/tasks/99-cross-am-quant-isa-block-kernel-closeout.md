@@ -1,6 +1,11 @@
 # Task 99: Cross-(AM × Quant × ISA) Block Kernel Completeness Closeout
 
-Status: in review (2026-06-12). All phases executed; evidence:
+Status: complete (2026-06-12; accepted by operator decision — the
+operator's explicit completion directive — with no outside-reviewer
+feedback yet on packets 001–009; the outside reviewer is invited to
+review post-hoc and may reopen, findings routing through this bucket.
+Mirrors the Task 103 operator-acceptance precedent.)
+All phases executed; evidence:
 `reviews/task-99/` packets 001–009. Phases 1–2 = packet 001 (aggregate
 matrix + structural exclusions); item 9 profile = packets 002/003
 (SuiteConfig + local validation, 91/91, 34/34 recall pairs byte-equal);
@@ -11,9 +16,9 @@ packets 008 (G4: sve2-128, 91/91 + neon-cap + Task 97 cells; **SVE2
 loses to NEON at every family** — dispatch-preference decision in
 ADR-077 §6) and 009 (Intel: 91/91, 1-ULP codegen finding documented).
 Snapshots: `snap-097eb8a8e881384dd` (G4), `snap-0dc395f4f6458c37b`
-(Intel); both stacks destroyed. Awaiting reviewer approval of the
-matrix + ADR-077 (Phase 5), then ADR-077 → ACCEPTED and status flip
-to complete. Follow-up slices decided but not yet implemented:
+(Intel); both stacks destroyed. ADR-077 → ACCEPTED (operator decision,
+provenance recorded in the ADR header).
+Follow-up slices decided in ADR-077 but not yet implemented:
 aarch64 dispatch-preference flip; `ec_ivf.scratch_soa_batch_decode`
 default-on; rabitq32 strict-test contract fix.
 Owner: coder (assigned 2026-06-11: the Task 102/103 author). One coder.
