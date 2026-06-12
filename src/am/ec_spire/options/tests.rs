@@ -24,10 +24,13 @@ mod tests {
             SpireStorageFormat::parse_reloption("turboquant").unwrap(),
             SpireStorageFormat::TurboQuant
         );
-        assert_eq!(
-            SpireStorageFormat::parse_reloption("pq_fastscan").unwrap(),
-            SpireStorageFormat::PqFastScan
-        );
+        // pq_fastscan is rejected at parse: SPIRE cannot build a grouped-PQ
+        // index (no model persistence flow), so the reloption is a permanent
+        // exclusion rather than a parse-then-fail-at-build lane (Task 106
+        // slice 4).
+        let pqfs_err = SpireStorageFormat::parse_reloption("pq_fastscan").unwrap_err();
+        assert!(pqfs_err.contains("not supported"));
+        assert!(pqfs_err.contains("grouped-PQ model persistence"));
         assert_eq!(
             SpireStorageFormat::parse_reloption("rabitq").unwrap(),
             SpireStorageFormat::RaBitQ

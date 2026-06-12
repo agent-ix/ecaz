@@ -208,10 +208,21 @@ impl SpireStorageFormat {
         match value {
             "auto" => Ok(Self::Auto),
             "turboquant" => Ok(Self::TurboQuant),
-            "pq_fastscan" => Ok(Self::PqFastScan),
+            // Pq-FastScan is rejected at parse: SPIRE has no flow to train and
+            // persist a grouped-PQ model, so encode_assignment_payload could
+            // never build the index on any host (Task 104 packet 008). Rather
+            // than parse a reloption that always fails at build, reject it here
+            // with a clear message. Permanent exclusion recorded in ADR-077
+            // section 8 / aggregate matrix section 4 (Task 106 slice 4).
+            "pq_fastscan" => Err(
+                "ec_spire storage_format 'pq_fastscan' is not supported: SPIRE has no \
+                 grouped-PQ model persistence, so a pq_fastscan index cannot be built. \
+                 Use 'turboquant' or 'rabitq'."
+                    .to_owned(),
+            ),
             "rabitq" => Ok(Self::RaBitQ),
             other => Err(format!(
-                "invalid ec_spire storage_format reloption: expected 'auto', 'turboquant', 'pq_fastscan', or 'rabitq', got '{other}'"
+                "invalid ec_spire storage_format reloption: expected 'auto', 'turboquant', or 'rabitq', got '{other}'"
             )),
         }
     }
