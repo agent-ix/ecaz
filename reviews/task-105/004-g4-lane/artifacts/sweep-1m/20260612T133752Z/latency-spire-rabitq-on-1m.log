@@ -1,9 +1,9 @@
 ┌────────┬───────┬──────────┬─────────┬──────────┬──────────┬──────────┬──────────┬──────────┬─────────────────────────┐
 │ nprobe ┆ count ┆ mean     ┆ stddev  ┆ min      ┆ p50      ┆ p95      ┆ p99      ┆ max      ┆ cache_state             │
 ╞════════╪═══════╪══════════╪═════════╪══════════╪══════════╪══════════╪══════════╪══════════╪═════════════════════════╡
-│ 16     ┆ 100   ┆ 47.0 ms  ┆ 5.06 ms ┆ 37.7 ms  ┆ 46.4 ms  ┆ 55.6 ms  ┆ 58.4 ms  ┆ 59.1 ms  ┆ t105_spire_rabitq_on_1m │
+│ 16     ┆ 100   ┆ 55.0 ms  ┆ 5.05 ms ┆ 43.1 ms  ┆ 54.9 ms  ┆ 64.9 ms  ┆ 68.2 ms  ┆ 68.2 ms  ┆ t105_spire_rabitq_on_1m │
 ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-│ 64     ┆ 100   ┆ 126.1 ms ┆ 10.7 ms ┆ 100.3 ms ┆ 125.0 ms ┆ 142.9 ms ┆ 148.6 ms ┆ 162.2 ms ┆ t105_spire_rabitq_on_1m │
+│ 64     ┆ 100   ┆ 136.9 ms ┆ 10.6 ms ┆ 104.8 ms ┆ 136.6 ms ┆ 150.5 ms ┆ 156.3 ms ┆ 165.6 ms ┆ t105_spire_rabitq_on_1m │
 └────────┴───────┴──────────┴─────────┴──────────┴──────────┴──────────┴──────────┴──────────┴─────────────────────────┘
 [task87-counters] command=latency label=nprobe=16 surface=hnsw flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
 [task87-counters] command=latency label=nprobe=16 surface=ivf flushes=0 candidates=0 elapsed_nanos=0 elapsed_ms=0.000000 lut32_flushes=0 lut32_candidates=0
