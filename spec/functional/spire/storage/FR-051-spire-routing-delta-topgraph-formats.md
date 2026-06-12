@@ -4,7 +4,7 @@ title: SPIRE Routing Delta and Top Graph Formats
 type: functional-requirement
 artifact_type: FR
 status: APPROVED
-object: data_schema
+object: binary_format
 relationships:
   - target: "ix://agent-ix/ecaz/FR-048"
     type: "depends_on"
@@ -103,58 +103,50 @@ flowchart TD
     Leaf --> Delta
 ```
 
-## Schema
+## Layout
 
-```json
-{
-  "$id": "ix://agent-ix/ecaz/spire-routing-delta-topgraph",
-  "title": "SPIRE routing, delta, and top-graph object payloads",
-  "encoding": "binary, little-endian, no implicit padding, after the FR-049 common header",
-  "routing_object": {
-    "header": { "$ref": "ix://agent-ix/ecaz/spire-partition-object-header", "kind": ["root", "internal"], "format_version": 1 },
-    "fields": [
-      { "name": "dimensions", "offset": "0", "type": "u16le", "minimum": 1 },
-      { "name": "reserved", "offset": "2", "type": "u16le", "const": 0 },
-      { "name": "children", "offset": "4", "type": "child_entry[child_count]", "stride": "child_stride = 12 + 4*dimensions" }
-    ],
-    "child_entry": [
-      { "name": "centroid_ordinal", "type": "u32le" },
-      { "name": "child_pid", "type": "u64le", "description": "internal or leaf partition object in the same epoch manifest" },
-      { "name": "centroid", "type": "float4le[dimensions]" }
-    ],
-    "validation": "payload byte length must equal exactly 4 + child_count*child_stride; root has parent_pid=0, internal has nonzero parent_pid"
-  },
-  "delta_object": {
-    "header": { "$ref": "ix://agent-ix/ecaz/spire-partition-object-header", "kind": "delta", "format_version": 1, "level": 0, "parent_pid": "nonzero parent leaf PID" },
-    "payload": { "$ref": "ix://agent-ix/ecaz/spire-leaf-v2#segment_tuple", "segment_no": 0, "row_base": 0, "segment_chain": "none" },
-    "row_rules": [
-      "insert rows set delta_insert plus a primary or boundary_replica role",
-      "delete rows set delta_delete with tombstone semantics and payload_format=none",
-      "a row never sets both delta_insert and delta_delete",
-      "stale_locator rows suppress affected candidates until repair or replacement publication"
-    ]
-  },
-  "top_graph_object": {
-    "header": { "$ref": "ix://agent-ix/ecaz/spire-partition-object-header", "kind": "top_graph", "format_version": 1, "assignment_count": 0 },
-    "fields": [
-      { "name": "root_pid", "offset": "0", "type": "u64le", "description": "PID of the active root/top routing object" },
-      { "name": "dimensions", "offset": "8", "type": "u16le", "minimum": 1 },
-      { "name": "reserved", "offset": "10", "type": "u16le", "const": 0 },
-      { "name": "graph_degree", "offset": "12", "type": "u32le", "minimum": 1 },
-      { "name": "build_list_size", "offset": "16", "type": "u32le", "minimum": 1 },
-      { "name": "alpha", "offset": "20", "type": "float4le", "constraint": "finite and >= 1.0" },
-      { "name": "entry_node", "offset": "24", "type": "u32le", "constraint": "< child_count" },
-      { "name": "nodes", "offset": "28", "type": "top_graph_node[child_count]", "variable_length": true }
-    ],
-    "top_graph_node": [
-      { "name": "child_pid", "type": "u64le", "constraint": "no duplicate child PIDs" },
-      { "name": "centroid_ordinal", "type": "u32le" },
-      { "name": "neighbor_count", "type": "u32le" },
-      { "name": "neighbors", "type": "u32le[neighbor_count]", "constraint": "ordinals < child_count; no self-neighbor duplicates" }
-    ],
-    "validation": "reject trailing bytes; node set must equal the active root/top routing object's child frontier"
-  }
-}
+```yaml
+format: spire-routing-delta-topgraph
+title: SPIRE routing, delta, and top-graph object payloads
+endianness: little
+encoding: "binary, no implicit padding, after the FR-049 common header"
+record_types:
+  - name: routing_object
+    header: { $ref: "ix://agent-ix/ecaz/spire-partition-object-header", kind: [root, internal], format_version: 1 }
+    fields:
+      - { name: dimensions, offset: 0, type: u16, minimum: 1 }
+      - { name: reserved, offset: 2, type: u16, const: 0 }
+      - { name: children, offset: 4, type: "child_entry[child_count]", stride: "child_stride = 12 + 4*dimensions" }
+    child_entry:
+      - { name: centroid_ordinal, type: u32 }
+      - { name: child_pid, type: u64, description: internal or leaf partition object in the same epoch manifest }
+      - { name: centroid, type: "f32[dimensions]" }
+    validation: "payload byte length must equal exactly 4 + child_count*child_stride; root has parent_pid=0, internal has nonzero parent_pid"
+  - name: delta_object
+    header: { $ref: "ix://agent-ix/ecaz/spire-partition-object-header", kind: delta, format_version: 1, level: 0, parent_pid: nonzero parent leaf PID }
+    payload: { $ref: "ix://agent-ix/ecaz/spire-leaf-v2#segment_tuple", segment_no: 0, row_base: 0, segment_chain: none }
+    row_rules:
+      - insert rows set delta_insert plus a primary or boundary_replica role
+      - delete rows set delta_delete with tombstone semantics and payload_format=none
+      - a row never sets both delta_insert and delta_delete
+      - stale_locator rows suppress affected candidates until repair or replacement publication
+  - name: top_graph_object
+    header: { $ref: "ix://agent-ix/ecaz/spire-partition-object-header", kind: top_graph, format_version: 1, assignment_count: 0 }
+    fields:
+      - { name: root_pid, offset: 0, type: u64, description: PID of the active root/top routing object }
+      - { name: dimensions, offset: 8, type: u16, minimum: 1 }
+      - { name: reserved, offset: 10, type: u16, const: 0 }
+      - { name: graph_degree, offset: 12, type: u32, minimum: 1 }
+      - { name: build_list_size, offset: 16, type: u32, minimum: 1 }
+      - { name: alpha, offset: 20, type: f32, constraint: finite and >= 1.0 }
+      - { name: entry_node, offset: 24, type: u32, constraint: "< child_count" }
+      - { name: nodes, offset: 28, type: "top_graph_node[child_count]", variable_length: true }
+    top_graph_node:
+      - { name: child_pid, type: u64, constraint: no duplicate child PIDs }
+      - { name: centroid_ordinal, type: u32 }
+      - { name: neighbor_count, type: u32 }
+      - { name: neighbors, type: "u32[neighbor_count]", constraint: "ordinals < child_count; no self-neighbor duplicates" }
+    validation: "reject trailing bytes; node set must equal the active root/top routing object's child frontier"
 ```
 
 ## Acceptance Criteria
