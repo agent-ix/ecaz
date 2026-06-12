@@ -3,7 +3,7 @@ id: FR-022
 title: Vacuum Implementation — Soft Delete and Graph Maintenance
 type: functional-requirement
 status: DRAFT
-object_type: process
+object: process
 traces:
   - US-010
   - US-005

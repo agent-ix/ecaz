@@ -3,7 +3,7 @@ id: FR-026
 title: PG18 Module Identity and Version Reporting
 type: functional-requirement
 status: DRAFT
-object_type: configuration
+object: configuration
 traces:
   - US-004
   - StR-004

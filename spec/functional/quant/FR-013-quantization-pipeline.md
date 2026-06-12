@@ -3,7 +3,7 @@ id: FR-013
 title: Two-Stage Vector Quantization Pipeline
 type: functional-requirement
 status: APPROVED
-object_type: process
+object: process
 traces:
   - StR-001
   - US-001

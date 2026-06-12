@@ -3,7 +3,7 @@ id: FR-015
 title: ProdQuantizer Orchestrator
 type: functional-requirement
 status: APPROVED
-object_type: entity
+object: entity
 traces:
   - FR-013
   - FR-005

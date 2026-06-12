@@ -3,7 +3,7 @@ id: FR-008
 title: HNSW Index Access Method — Build
 type: functional-requirement
 status: APPROVED
-object_type: process
+object: process
 traces:
   - US-003
   - FR-007

@@ -3,7 +3,7 @@ id: FR-009
 title: HNSW Index Access Method — Scan (Query)
 type: functional-requirement
 status: APPROVED
-object_type: process
+object: process
 traces:
   - US-002
   - FR-017

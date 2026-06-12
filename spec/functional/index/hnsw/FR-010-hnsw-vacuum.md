@@ -3,7 +3,7 @@ id: FR-010
 title: HNSW Index Access Method — Vacuum
 type: functional-requirement
 status: APPROVED
-object_type: process
+object: process
 traces:
   - US-005
   - FR-007

@@ -4,7 +4,7 @@ title: Multi-AM SQL Bootstrap Contract
 type: functional-requirement
 artifact_type: FR
 status: IMPLEMENTED
-object_type: configuration
+object: configuration
 relationships:
   - target: "ix://agent-ix/ecaz/US-012"
     type: "implements"

@@ -3,7 +3,7 @@ id: FR-001
 title: tqvector Data Type Registration
 type: functional-requirement
 status: APPROVED
-object_type: entity
+object: entity
 traces:
   - US-001
   - US-004

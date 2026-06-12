@@ -3,7 +3,7 @@ id: FR-020
 title: Planner Cost Estimation
 type: functional-requirement
 status: IMPLEMENTED
-object_type: process
+object: process
 traces:
   - US-007
   - FR-009

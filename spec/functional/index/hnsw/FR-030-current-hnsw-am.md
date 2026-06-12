@@ -4,7 +4,7 @@ title: Current HNSW Access Method Surface
 type: functional-requirement
 artifact_type: FR
 status: IMPLEMENTED
-object_type: process
+object: process
 relationships:
   - target: "ix://agent-ix/ecaz/US-003"
     type: "implements"

@@ -3,7 +3,7 @@ id: FR-007
 title: HNSW Index Access Method — Page Layout
 type: functional-requirement
 status: APPROVED
-object_type: entity
+object: entity
 traces:
   - US-003
   - StR-001

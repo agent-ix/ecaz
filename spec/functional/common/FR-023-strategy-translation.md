@@ -3,7 +3,7 @@ id: FR-023
 title: Strategy Translation Callbacks
 type: functional-requirement
 status: DRAFT
-object_type: entity
+object: entity
 traces:
   - US-007
   - FR-009

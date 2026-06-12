@@ -4,7 +4,7 @@ title: IVF Scan, Rerank, and Costing
 type: functional-requirement
 artifact_type: FR
 status: IMPLEMENTED
-object_type: process
+object: process
 relationships:
   - target: "ix://agent-ix/ecaz/US-013"
     type: "implements"

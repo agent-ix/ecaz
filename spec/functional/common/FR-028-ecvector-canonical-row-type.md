@@ -4,7 +4,7 @@ title: ecvector Canonical Row Type
 type: functional-requirement
 artifact_type: FR
 status: IMPLEMENTED
-object_type: entity
+object: entity
 relationships:
   - target: "ix://agent-ix/ecaz/US-012"
     type: "implements"

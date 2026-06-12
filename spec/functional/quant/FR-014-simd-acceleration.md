@@ -3,7 +3,7 @@ id: FR-014
 title: SIMD Acceleration
 type: functional-requirement
 status: APPROVED
-object_type: process
+object: process
 traces:
   - NFR-001
   - FR-013

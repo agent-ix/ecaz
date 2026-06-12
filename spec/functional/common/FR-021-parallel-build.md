@@ -3,7 +3,7 @@ id: FR-021
 title: Parallel Index Build
 type: functional-requirement
 status: DRAFT
-object_type: process
+object: process
 traces:
   - US-008
   - FR-008

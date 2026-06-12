@@ -4,7 +4,7 @@ title: Cloud Dataset Registry
 type: functional-requirement
 artifact_type: FR
 status: PROPOSED
-object_type: data-source
+object: data-source
 relationships:
   - target: "ix://agent-ix/ecaz/US-021"
     type: "implements"

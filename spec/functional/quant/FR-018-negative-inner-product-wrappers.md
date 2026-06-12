@@ -3,7 +3,7 @@ id: FR-018
 title: Negative Inner Product Wrapper Functions
 type: functional-requirement
 status: APPROVED
-object_type: api
+object: api
 traces:
   - US-002
   - FR-005

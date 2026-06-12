@@ -3,7 +3,7 @@ id: FR-011
 title: WAL Safety — GenericXLog Usage
 type: functional-requirement
 status: APPROVED
-object_type: process
+object: process
 traces:
   - US-003
   - US-005

@@ -3,7 +3,7 @@ id: FR-012
 title: SQL Bootstrap — Extension Packaging
 type: functional-requirement
 status: APPROVED
-object_type: configuration
+object: configuration
 traces:
   - US-004
 ---

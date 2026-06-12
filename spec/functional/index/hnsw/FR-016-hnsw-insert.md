@@ -3,7 +3,7 @@ id: FR-016
 title: HNSW Index Access Method — Insert
 type: functional-requirement
 status: APPROVED
-object_type: process
+object: process
 traces:
   - FR-007
   - FR-015

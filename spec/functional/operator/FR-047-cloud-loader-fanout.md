@@ -4,7 +4,7 @@ title: In-VPC Corpus Load Fan-Out
 type: functional-requirement
 artifact_type: FR
 status: PROPOSED
-object_type: process
+object: process
 relationships:
   - target: "ix://agent-ix/ecaz/US-021"
     type: "implements"

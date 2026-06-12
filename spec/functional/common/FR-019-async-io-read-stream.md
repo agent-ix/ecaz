@@ -3,7 +3,7 @@ id: FR-019
 title: Async I/O — ReadStream Integration
 type: functional-requirement
 status: DRAFT
-object_type: process
+object: process
 traces:
   - US-006
   - FR-009

@@ -3,7 +3,7 @@ id: FR-002
 title: tqvector Text I/O
 type: functional-requirement
 status: APPROVED
-object_type: api
+object: api
 traces:
   - US-001
   - FR-001

@@ -3,7 +3,7 @@ id: FR-025
 title: Custom Cumulative Statistics
 type: functional-requirement
 status: DRAFT
-object_type: entity
+object: entity
 traces:
   - US-011
   - StR-004

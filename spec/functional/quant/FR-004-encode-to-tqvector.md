@@ -3,7 +3,7 @@ id: FR-004
 title: encode_to_tqvector — fp32 to Compressed Code
 type: functional-requirement
 status: APPROVED
-object_type: api
+object: api
 traces:
   - US-001
   - FR-013

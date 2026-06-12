@@ -4,7 +4,7 @@ title: Ecaz CLI Operator Surface
 type: functional-requirement
 artifact_type: FR
 status: IMPLEMENTED
-object_type: interface
+object: interface
 relationships:
   - target: "ix://agent-ix/ecaz/US-016"
     type: "implements"

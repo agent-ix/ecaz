@@ -3,7 +3,7 @@ id: FR-017
 title: Prepared-Query Inner Product Function
 type: functional-requirement
 status: APPROVED
-object_type: api
+object: api
 traces:
   - US-002
   - FR-013

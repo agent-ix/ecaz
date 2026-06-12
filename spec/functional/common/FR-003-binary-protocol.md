@@ -3,7 +3,7 @@ id: FR-003
 title: tqvector Binary Protocol (Send/Receive)
 type: functional-requirement
 status: APPROVED
-object_type: api
+object: api
 traces:
   - US-001
   - FR-001

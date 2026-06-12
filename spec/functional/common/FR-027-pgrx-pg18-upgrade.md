@@ -3,7 +3,7 @@ id: FR-027
 title: pgrx PG18 Support and Build Configuration
 type: functional-requirement
 status: DRAFT
-object_type: configuration
+object: configuration
 traces:
   - US-004
   - StR-004

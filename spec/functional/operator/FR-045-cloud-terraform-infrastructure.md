@@ -4,7 +4,7 @@ title: Cloud Terraform-Managed Infrastructure
 type: functional-requirement
 artifact_type: FR
 status: PROPOSED
-object_type: infrastructure
+object: infrastructure
 relationships:
   - target: "ix://agent-ix/ecaz/US-021"
     type: "implements"

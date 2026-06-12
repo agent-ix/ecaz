@@ -4,7 +4,7 @@ title: Configured Benchmark Suite Runner
 type: functional-requirement
 artifact_type: FR
 status: APPROVED
-object_type: interface
+object: interface
 relationships:
   - target: "ix://agent-ix/ecaz/US-017"
     type: "implements"

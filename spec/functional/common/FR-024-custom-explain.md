@@ -3,7 +3,7 @@ id: FR-024
 title: Custom EXPLAIN Options — Scan Diagnostics
 type: functional-requirement
 status: DRAFT
-object_type: process
+object: process
 traces:
   - US-009
   - FR-009

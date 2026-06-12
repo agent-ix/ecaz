@@ -3,7 +3,7 @@ id: FR-006
 title: SQL Operators and Operator Class
 type: functional-requirement
 status: APPROVED
-object_type: api
+object: api
 traces:
   - US-002
   - FR-017

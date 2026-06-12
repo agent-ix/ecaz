@@ -4,7 +4,7 @@ title: DiskANN Build and Persisted Vamana Storage
 type: functional-requirement
 artifact_type: FR
 status: IMPLEMENTED
-object_type: process
+object: process
 relationships:
   - target: "ix://agent-ix/ecaz/US-014"
     type: "implements"
