@@ -30,7 +30,12 @@ static EC_IVF_ADAPTIVE_NPROBE_SCORE_GAP_MICROS_GUC: GucSetting<i32> =
     GucSetting::<i32>::new(EC_IVF_DEFAULT_ADAPTIVE_NPROBE_SCORE_GAP_MICROS);
 static EC_IVF_ADAPTIVE_NPROBE_SCORE_MARGIN_RATIO_BPS_GUC: GucSetting<i32> =
     GucSetting::<i32>::new(EC_IVF_DEFAULT_ADAPTIVE_NPROBE_SCORE_MARGIN_RATIO_BPS);
-static EC_IVF_SCRATCH_SOA_BATCH_DECODE_GUC: GucSetting<bool> = GucSetting::<bool>::new(false);
+// ADR-077 §4 (Task 105, 2026-06-12): default flipped to on. The Task 99
+// three-lane profile measured batch-on winning IVF turboquant by
+// -66/-69% (local) and -44% (G4) p50 with byte-equal recall, and winning
+// pq_fastscan despite the suffix-max pruning trade (-5 to -10% on every
+// lane). Off remains a diagnostic switch.
+static EC_IVF_SCRATCH_SOA_BATCH_DECODE_GUC: GucSetting<bool> = GucSetting::<bool>::new(true);
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
@@ -256,8 +261,8 @@ pub(super) fn register_gucs() {
     );
     GucRegistry::define_bool_guc(
         c"ec_ivf.scratch_soa_batch_decode",
-        c"Enable experimental ec_ivf posting scratch SoA batch decode.",
-        c"Task 51 diagnostic mode; batches decoded posting tuple fields into scan-local structure-of-arrays buffers before scoring. Disabled by default.",
+        c"Enable ec_ivf posting scratch SoA batch decode (block-kernel scoring).",
+        c"Batches decoded posting tuple fields into scan-local structure-of-arrays buffers so scoring routes through the block kernels. Enabled by default per ADR-077 §4 (Task 99 three-lane profile); disable only as a diagnostic A/B switch.",
         &EC_IVF_SCRATCH_SOA_BATCH_DECODE_GUC,
         GucContext::Userset,
         GucFlags::default(),
