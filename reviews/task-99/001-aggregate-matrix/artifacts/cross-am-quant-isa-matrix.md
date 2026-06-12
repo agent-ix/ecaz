@@ -193,8 +193,8 @@ the Task 92 marker convention and the Task 104 matrix's identical entry.
 | scalar | complete — anchor per family by construction | — |
 | avx2 (Intel) | **complete** (Task 103 AC6: five real kernels — lut32, qjl32, grouped_pq, int8_approx32, rabitq32 — plus retired/skip decisions; no `missing_kernel` cells) | AWS-Intel profile lane re-measures the same cells on citable hardware |
 | neon (Apple M5) | **complete** (Task 104: every family ≥1.5× floor or documented marker; 40/40 recall pairs byte-equal; no-SVE ladder validated) | supported-target column; never substitutes for G4 |
-| neon (Graviton 4) | not measured | G4 day-one smoke + profile lane |
-| sve2 (Graviton 4) | **not measured anywhere** — the single remaining ISA column | this task's trip: lut32 (all AMs), qjl32 (IVF/SPIRE/HNSW, runbook 97/022), rabitq32 (SVE-vs-NEON-routing decision, IVF ~99% block-coverage datum), grouped-pq (gather vs repack annotation); hamming/int8/tiled excluded by rule |
+| neon (Graviton 4) | **complete** (trip 2026-06-12, packet 008 neoncap run via `ecaz.isa_cap=neon`: every kernel family measured, zero sve rows under cap, recall unchanged) | — |
+| sve2 (Graviton 4) | **complete** (packet 008: `sve2-128` measured; lut32/grouped-pq/qjl32 SVE2 kernels served default dispatch with truthful attribution) — **and measurably loses to NEON at every family** (2.0–3.3× on lut32; e2e −27/−45% recoverable). Dispatch-preference flip decided in ADR-077 §6; rabitq32 SVE kernel question closed (unjustified) | follow-up slice: dispatcher preference change |
 
 ## 6. Open items this matrix feeds forward
 

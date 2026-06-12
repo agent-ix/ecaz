@@ -96,13 +96,17 @@ byte-equal recall is the expected outcome everywhere it was measured
 - **DiskANN: GUC default-on** (`ec_diskann.candidate_batch_scoring`).
   Measured parity-to-win; the off switch stays for diagnostics.
 - **IVF: GUC default-off** (`ec_ivf.scratch_soa_batch_decode`) —
-  **pending decision input**: batch-on trades away suffix-max cutoff
-  pruning (Task 94 packet 024 F1), and the Task 101 release rerun
-  measured batch-on winning all six IVF grouped-PQ cells (−3.8% to
-  −10.4%) despite the trade. The Task 99 profile (batch on/off at every
-  IVF cell, three lanes) is the dataset for the default flip decision.
-  This ADR records the policy menu; the IVF default decision is taken
-  when this record flips to ACCEPTED, citing the profile.
+  **decision input now measured** (Task 99 profile, three lanes):
+  batch-on wins IVF turboquant overwhelmingly (local −66/−69%, G4
+  −44%, byte-equal recall), wins IVF pq_fastscan despite the
+  suffix-max trade (−5 to −10% on every lane), is neutral on IVF
+  rabitq1 (rerank-dominated), and is mildly negative only on the IVF
+  QJL @1024 small-nprobe cells (~+8% local, ~0 production lanes; no
+  batch counters emit there, indicating the kernel path is not the
+  delta). **Decision: flip `ec_ivf.scratch_soa_batch_decode` default
+  to on** (implementation is a confirmed follow-up slice with the GUC
+  default + docs + a local A/B re-check; the off switch remains for
+  diagnostics and for the QJL small-fixture niche).
 
 ### 5. Counter-key attribution (resolves pre-closeout F2)
 
@@ -124,8 +128,19 @@ is no longer load-bearing. The Task 87 compat surface keys on
   per-ISA A/B on one host. The Graviton 4 NEON-capped pass exists
   because G4's SVE2 is 128-bit — the same width as NEON — so
   "SVE2 over NEON" is a per-family measurement, not an assumption.
-  [To record at ACCEPT time: the per-family G4 SVE2-vs-NEON outcome
-  from `t99-g4-neon-cap-suite.json`.]
+- **Measured outcome (2026-06-12, packets 008/007): SVE2 loses to NEON
+  on Graviton 4 at every family where it dispatches** — lut32 2.0–3.3×
+  slower, grouped-pq (gather shape) 1.1–1.35×, qjl32 block path ~6×
+  vs the pure-NEON cascade; end-to-end −27% to −45% p50 recoverable on
+  every TQ/lut32 cell by NEON dispatch, worst regression +0.6%.
+  Control cells (rabitq/int8/hamming, NEON-routed in both runs)
+  measured identical. **Decision: `select_highest_isa` SHALL prefer
+  Neon over Sve/Sve2 on aarch64.** Existing SVE2 kernels stay in-tree
+  behind the dispatcher; per-family SVE2 re-entry requires beating the
+  NEON cell on the production target. (Implementation is a small
+  dispatcher change + G4 re-validation of the changed preference — a
+  confirmed follow-up slice; until it lands, G4 operators can set
+  `ecaz.isa_cap=neon` to get the measured-better behavior.)
 
 ### 7. Structural lessons (standing design facts)
 

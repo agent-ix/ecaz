@@ -1,4 +1,4 @@
-# Manifest — Task 99 packet 009: AWS Intel lane (IN PROGRESS)
+# Manifest — Task 99 packet 009: AWS Intel lane (COMPLETE)
 
 - Lane: **AWS Intel production column** — `10k-intel`, db instance
   `i-02479540bbab734ea` (m7i.2xlarge, Sapphire Rapids), us-west-2,
@@ -42,7 +42,21 @@ codegen-stable configuration), reviewed as its own slice. Recall
 parity on this lane's rabitq cells is evaluated under the ADR-076
 tolerance-family rule and reported explicitly either way.
 
-## Remaining steps (runbook packet 006)
+## Lane execution (complete)
 
-Fixtures (SSM `38b847af…`, in progress) → main profile suite →
-snapshot → down. (No NEON-cap/Task-97/Task-94 extras on this lane.)
+- Catalog refresh applied (same stale-snapshot fix as the G4 lane:
+  241 function defs replayed, 0 errors — `catalog-refresh.log`).
+- Fixtures: `fixtures.log`, 11 indexes, sources 100,000/1,000 rows,
+  rc=0 (`t99-fixture-sources-aws.sql`).
+- Main profile run (`profile-run/`): **91/91 succeeded, 34/34 recall
+  on/off pairs byte-equal** (including the rabitq cells — the 1-ULP
+  codegen divergence did not disturb recall), `isa=avx2` kernel
+  attribution at every kernel cell, structure identical to the local
+  Intel column (packet 003).
+- Post-lane snapshot: **`snap-0dc395f4f6458c37b`**; stack destroyed
+  after snapshot.
+
+Selected kernel rates (avx2, ns/candidate, citable Intel column):
+lut32 IVF/SPIRE/HNSW/DiskANN = 170/180/374/213; rabitq 71–92;
+int8_approx 96; qjl32 215–235 @1024d; grouped-pq 132–138;
+binary = scalar POPCNT (skip decision upheld).
