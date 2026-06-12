@@ -1,0 +1,74 @@
+SELECT 100000
+ALTER TABLE
+SELECT 1000
+CREATE INDEX
+ANALYZE
+ANALYZE
+SELECT 100000
+ALTER TABLE
+SELECT 1000
+CREATE INDEX
+ANALYZE
+ANALYZE
+SELECT 100000
+ALTER TABLE
+SELECT 1000
+CREATE INDEX
+ANALYZE
+ANALYZE
+SELECT 100000
+ALTER TABLE
+SELECT 1000
+CREATE INDEX
+ANALYZE
+ANALYZE
+SELECT 100000
+ALTER TABLE
+SELECT 1000
+CREATE INDEX
+ANALYZE
+ANALYZE
+SELECT 100000
+ALTER TABLE
+SELECT 1000
+CREATE INDEX
+ANALYZE
+ANALYZE
+SELECT 100000
+ALTER TABLE
+SELECT 1000
+CREATE INDEX
+ANALYZE
+ANALYZE
+SELECT 100000
+ALTER TABLE
+SELECT 1000
+CREATE INDEX
+ANALYZE
+ANALYZE
+SELECT 100000
+ALTER TABLE
+SELECT 1000
+CREATE INDEX
+ANALYZE
+ANALYZE
+SELECT 100000
+ALTER TABLE
+SELECT 1000
+CREATE INDEX
+ANALYZE
+ANALYZE
+SELECT 100000
+ALTER TABLE
+SELECT 1000
+CREATE INDEX
+ANALYZE
+ANALYZE
+psql:reviews/task-99/002-profile-suiteconfig/artifacts/t99-fixtures.sql:64: NOTICE:  ec_spire_ambuild_timing index=t99_spire_tq_100k_idx phase=complete heap_tuples=100000 scanned_tuples=100000 index_tuples=100000 recursive_fanout=0 setup_ms=0 heap_scan_ms=4617 sample_collect_ms=0 kmeans_ms=928 kmeans_calls=1 assignment_ms=1041 recursive_kmeans_ms=0 recursive_kmeans_calls=0 recursive_kmeans_max_level=0 recursive_assignment_ms=0 recursive_routing_initial_children=0 recursive_routing_final_children=0 recursive_routing_iterations=0 draft_ms=31627 draft_total_ms=31627 draft_input_clone_ms=0 draft_pid_alloc_ms=0 draft_recursive_routing_ms=0 draft_route_map_ms=0 draft_leaf_rows_ms=0 draft_leaf_inputs_ms=0 draft_validation_ms=0 top_graph_ms=0 pq4_training_ms=0 object_store_ms=2027 object_store_total_ms=2027 publish_ms=0 total_ms=40315
+psql:reviews/task-99/002-profile-suiteconfig/artifacts/t99-fixtures.sql:72: NOTICE:  ec_spire_ambuild_timing index=t99_spire_rabitq_100k_idx phase=complete heap_tuples=100000 scanned_tuples=100000 index_tuples=100000 recursive_fanout=0 setup_ms=0 heap_scan_ms=5074 sample_collect_ms=0 kmeans_ms=863 kmeans_calls=1 assignment_ms=981 recursive_kmeans_ms=0 recursive_kmeans_calls=0 recursive_kmeans_max_level=0 recursive_assignment_ms=0 recursive_routing_initial_children=0 recursive_routing_final_children=0 recursive_routing_iterations=0 draft_ms=32016 draft_total_ms=32016 draft_input_clone_ms=0 draft_pid_alloc_ms=0 draft_recursive_routing_ms=0 draft_route_map_ms=0 draft_leaf_rows_ms=0 draft_leaf_inputs_ms=0 draft_validation_ms=0 top_graph_ms=0 pq4_training_ms=0 object_store_ms=1649 object_store_total_ms=1649 publish_ms=0 total_ms=40633
+psql:reviews/task-99/002-profile-suiteconfig/artifacts/t99-fixtures.sql:84: NOTICE:  ec_diskann_vamana_pass_timing index=t99_diskann_pqfs_100k_idx pass=0 alpha=1.2 elapsed_ms=356566 greedy_search_ms=88882 candidate_pool_ms=2 robust_prune_ms=5 backlink_ms=162434 greedy_distance_calls=0 candidate_pool_distance_calls=0 robust_prune_distance_calls=0 backlink_distance_calls=0 visited_mean=104.58 visited_p95=111 candidate_pool_mean=104.58 candidate_pool_p95=111 reprunes=2659354
+psql:reviews/task-99/002-profile-suiteconfig/artifacts/t99-fixtures.sql:84: NOTICE:  ec_diskann_ambuild_timing index=t99_diskann_pqfs_100k_idx phase=complete heap_tuples=100000 scanned_tuples=100000 unique_tuples=100000 data_pages=5883 heap_scan_ms=3363 source_ref_ms=1 training_ms=228 sidecar_setup_ms=0 payload_derivation_ms=261 build_persist_ms=357429 core_medoid_ms=670 core_graph_ms=356603 core_persist_ms=140 parallel_requested_workers=0 parallel_effective_workers=0 parallel_requested_batch_size=704 parallel_batch_size=704 parallel_flush_rate=0 parallel_rayon_scaffold=false parallel_alpha_growth_disabled=false parallel_epochs=0 parallel_proposal_ms=0 parallel_reducer_ms=0 parallel_same_epoch_candidate_reads=0 parallel_total_candidate_reads=0 parallel_stale_read_ppm=0 overflow_ms=0 codebook_ms=0 write_pages_ms=381 metadata_ms=0 flush_total_ms=358304 total_ms=361684
+psql:reviews/task-99/002-profile-suiteconfig/artifacts/t99-fixtures.sql:91: NOTICE:  ec_diskann_vamana_pass_timing index=t99_diskann_rabitq_100k_idx pass=0 alpha=1.2 elapsed_ms=350251 greedy_search_ms=86454 candidate_pool_ms=3 robust_prune_ms=3 backlink_ms=160083 greedy_distance_calls=0 candidate_pool_distance_calls=0 robust_prune_distance_calls=0 backlink_distance_calls=0 visited_mean=104.58 visited_p95=111 candidate_pool_mean=104.58 candidate_pool_p95=111 reprunes=2659354
+psql:reviews/task-99/002-profile-suiteconfig/artifacts/t99-fixtures.sql:91: NOTICE:  ec_diskann_ambuild_timing index=t99_diskann_rabitq_100k_idx phase=complete heap_tuples=100000 scanned_tuples=100000 unique_tuples=100000 data_pages=5264 heap_scan_ms=3351 source_ref_ms=1 training_ms=0 sidecar_setup_ms=0 payload_derivation_ms=91 build_persist_ms=350717 core_medoid_ms=274 core_graph_ms=350293 core_persist_ms=131 parallel_requested_workers=0 parallel_effective_workers=0 parallel_requested_batch_size=704 parallel_batch_size=704 parallel_flush_rate=0 parallel_rayon_scaffold=false parallel_alpha_growth_disabled=false parallel_epochs=0 parallel_proposal_ms=0 parallel_reducer_ms=0 parallel_same_epoch_candidate_reads=0 parallel_total_candidate_reads=0 parallel_stale_read_ppm=0 overflow_ms=0 codebook_ms=0 write_pages_ms=486 metadata_ms=0 flush_total_ms=351297 total_ms=354659
+psql:reviews/task-99/002-profile-suiteconfig/artifacts/t99-fixtures.sql:98: NOTICE:  ec_diskann_vamana_pass_timing index=t99_diskann_tq_100k_idx pass=0 alpha=1.2 elapsed_ms=353212 greedy_search_ms=87786 candidate_pool_ms=1 robust_prune_ms=2 backlink_ms=161326 greedy_distance_calls=0 candidate_pool_distance_calls=0 robust_prune_distance_calls=0 backlink_distance_calls=0 visited_mean=104.58 visited_p95=111 candidate_pool_mean=104.58 candidate_pool_p95=111 reprunes=2659354
+psql:reviews/task-99/002-profile-suiteconfig/artifacts/t99-fixtures.sql:98: NOTICE:  ec_diskann_ambuild_timing index=t99_diskann_tq_100k_idx phase=complete heap_tuples=100000 scanned_tuples=100000 unique_tuples=100000 data_pages=12500 heap_scan_ms=3240 source_ref_ms=1 training_ms=0 sidecar_setup_ms=0 payload_derivation_ms=67 build_persist_ms=353666 core_medoid_ms=255 core_graph_ms=353248 core_persist_ms=149 parallel_requested_workers=0 parallel_effective_workers=0 parallel_requested_batch_size=704 parallel_batch_size=704 parallel_flush_rate=0 parallel_rayon_scaffold=false parallel_alpha_growth_disabled=false parallel_epochs=0 parallel_proposal_ms=0 parallel_reducer_ms=0 parallel_same_epoch_candidate_reads=0 parallel_total_candidate_reads=0 parallel_stale_read_ppm=0 overflow_ms=0 codebook_ms=0 write_pages_ms=965 metadata_ms=0 flush_total_ms=354701 total_ms=357957

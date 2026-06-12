@@ -102,11 +102,17 @@ ISO = "ec_hnsw.disable_binary_prefilter=on"
 BOFF = "ec_hnsw.candidate_batch_scoring=off"
 
 
+# NOTE on markers: `kernel_status=` tags are SKIP directives to the suite
+# runner (except the runnable `retired`). Real surfaces we want measured
+# as no-kernel baselines carry plain `no_kernel_*` tags instead; the
+# aggregate matrix documents their kernel absence.
 def hnsw_mode_tags(mode, state, status="valid"):
     t = [T99, "hnsw", "turboquant", "real100k", f"mode={mode}",
          f"kernel_{state}"]
-    if status != "valid":
-        t.append(f"kernel_status={status}")
+    if status == "retired":
+        t.append("kernel_status=retired")
+    elif status != "valid":
+        t.append(status)
     return t
 
 
@@ -114,7 +120,7 @@ def hnsw_mode_tags(mode, state, status="valid"):
 for mode, status, both in (
     ("full_lut", "valid", True),
     ("int8_approx", "valid", True),
-    ("exact", "structurally_absent", True),   # no-kernel f32 baseline mode
+    ("exact", "no_kernel_baseline", True),    # runnable f32 baseline mode
     ("tiled_lut", "retired", False),          # runnable retired confirmation
 ):
     g_on = [ISO, f"ec_hnsw.turboquant_exact_score_mode={mode}"]
@@ -151,13 +157,15 @@ IS = [16, 64]
 for quant, prefix, states, status in (
     ("turboquant", "t99_ivf_tq_100k", ("on", "off"), "valid"),
     ("rabitq1", "t99_ivf_rabitq1_100k", ("on", "off"), "valid"),
-    ("rabitq4", "t99_ivf_rabitq4_100k", ("on",), "missing_kernel"),
+    # Real storage lane, no block kernel (Task 93 bits=1 scope) —
+    # plain tag so the runner executes it as a baseline.
+    ("rabitq4", "t99_ivf_rabitq4_100k", ("on",), "no_kernel_storage_lane"),
     ("pq_fastscan", "t99_ivf_pqfs_100k", ("on", "off"), "valid"),
 ):
     for state in states:
         tags = [T99, "ivf", quant, "real100k", f"kernel_{state}"]
         if status != "valid":
-            tags.append(f"kernel_status={status}")
+            tags.append(status)
         steps += cell(f"ivf-{quant}-{state}", tags, prefix, "ec_ivf", IS,
                       ivf_soa=(state == "on"))
 

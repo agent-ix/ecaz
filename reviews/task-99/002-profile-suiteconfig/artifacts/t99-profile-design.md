@@ -118,11 +118,20 @@ batch-on/off (nprobe 16/64) and DiskANN prefilter_kind=grouped_pq
 batch-on/off (list_size 64/128) at 100k with counters, `isa=sve2` rows
 and measured vector length, **annotated as the gather-shape SVE2
 kernel** if the SVE repack remains deferred (Task 94 reopened-scope
-rule). G4 NEON-forced cells are out of scope: the NEON column is the M5
-lane (Task 104), and the block-kernel `Isa` dispatcher has no
-NEON-forcing override on SVE2 hosts. If Task 94's reviewer requires the
-full packet-025 matrix shape, supplemental 10k/25k IVF pq_fastscan
-replicas are cheap to add on-instance from the same source tables.
+rule). If Task 94's reviewer requires the full packet-025 matrix shape,
+supplemental 10k/25k IVF pq_fastscan replicas are cheap to add
+on-instance from the same source tables.
+
+**G4 NEON-capped pass (added 2026-06-11, operator decision).** After the
+main profile run on G4, run `t99-g4-neon-cap-suite.json`
+(`reviews/task-99/004-isa-cap-dispatch/`, 32 steps derived from the main
+profile's kernel-on cells) with the new `ecaz.isa_cap=neon` session GUC.
+Graviton 4's SVE2 is 128-bit — the same vector width as NEON — so this
+pass measures whether preferring SVE2 over NEON in `select_highest_isa`
+is actually right per family, instead of assuming it. Expected counter
+attribution on these cells is `isa=neon`; that is the cap working.
+Recall must stay byte-equal vs the same fixture's uncapped cells for
+bit-exact families.
 
 Estimated cost: roughly 6–9 instance-hours per lane → **~$5–8 total**,
 plus EBS snapshot retention. Instance types and on-demand pricing are
