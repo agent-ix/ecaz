@@ -12,7 +12,7 @@ relationships:
 ---
 # FR-044: Ecaz Cloud Command Surface
 
-## Requirement
+## Description
 
 Ecaz SHALL expose an `ecaz cloud` subcommand group that owns the full
 provision → install → load → bench → teardown lifecycle for cloud-hosted
@@ -59,6 +59,13 @@ without AWS console access, SSH, or manual SQL.
 
 ## Acceptance Criteria
 
+| ID | Criteria | Verification |
+|---|---|---|
+| FR-044-AC-1 | `ecaz cloud --help` lists every verb and each verb dispatches to the `ecaz-cloud` crate | Test |
+| FR-044-AC-2 | Re-running any verb on an already-converged state exits zero with no side effects (`up`, `down`, `pause`, `resume`) | Demonstration |
+| FR-044-AC-3 | `status` output is parsable as JSON with `--json` and matches the true AWS state | Test |
+| FR-044-AC-4 | A `corpus load` interrupted between shards resumes from the next incomplete shard when re-run with `--resume` | Demonstration |
+
 ### FR-044-AC-1
 
 `ecaz cloud --help` lists every verb above and each verb dispatches
@@ -78,3 +85,8 @@ true AWS state (verified by querying EC2 directly in tests).
 
 A `corpus load` interrupted between shards resumes from the next
 incomplete shard when re-run with `--resume`.
+
+## Dependencies
+
+- **Upstream**: US-021 (implements), FR-046 (dataset registry consumed by `corpus stage`/`corpus load`), FR-047 (loader fan-out used by `corpus load`)
+- **Downstream**: FR-045 (Terraform infrastructure supports this surface)

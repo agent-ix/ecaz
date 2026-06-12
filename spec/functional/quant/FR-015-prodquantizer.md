@@ -1,6 +1,7 @@
 ---
 id: FR-015
 title: ProdQuantizer Orchestrator
+artifact_type: FR
 type: functional-requirement
 status: APPROVED
 object: entity
@@ -12,7 +13,7 @@ traces:
 ---
 # FR-015: ProdQuantizer Orchestrator
 
-## Requirement
+## Description
 
 The extension SHALL implement a `ProdQuantizer` struct in `quant/prod.rs` that orchestrates the two-stage quantization pipeline and exposes the complete encode/decode/score API used by all other components.
 
@@ -182,6 +183,19 @@ pub fn unpack_qjl_signs(packed: &[u8], dim: usize) -> Vec<bool>
 
 ## Acceptance Criteria
 
+| ID | Criteria | Verification |
+|---|---|---|
+| FR-015-AC-1 | `ProdQuantizer::new(1536, 4, 42).encode(&vec)` produces a 772-byte payload: 4-byte `gamma`, 576-byte `mse_packed`, 192-byte `qjl_packed` | Test |
+| FR-015-AC-2 | Decode(encode(v)) cosine similarity > 0.85 on average over a fixed-seed sample of 100 random 1536-dim unit vectors | Test |
+| FR-015-AC-3 | `score_ip_encoded` with a prepared query matches the FR-013 formula within floating-point tolerance | Test |
+| FR-015-AC-4 | `score_ip_encoded_lite(a, b) == score_ip_encoded_lite(b, a)` for all valid inputs | Test |
+| FR-015-AC-5 | Pack then unpack of MSE indices is lossless for all bit widths 1–7 | Test |
+| FR-015-AC-6 | Two `ProdQuantizer::new(1536, 4, 42)` instances produce identical codebooks and sign vectors | Test |
+| FR-015-AC-7 | Repeated `score_ip_encoded` calls with the same LUT do not allocate heap memory | Analysis |
+| FR-015-AC-8 | Repeated construction for the same `(original_dim, bits, seed)` within a backend reuses cached immutable quantizer state | Test |
+| FR-015-AC-9 | Altering only `gamma` and QJL bits with fixed MSE indices does not change `score_ip_encoded_lite` | Test |
+| FR-015-AC-10 | Index-local adapters preserve deterministic scalar scoring, route batches through `QuantCodec`, and keep AM code off ISA-specific kernel functions | Inspection |
+
 ### FR-015-AC-1: Encode produces correct code length
 `ProdQuantizer::new(1536, 4, 42).encode(&vec)` SHALL produce a quantized payload of exactly 772 bytes, consisting of 4-byte `gamma`, 576-byte `mse_packed`, and 192-byte `qjl_packed`.
 
@@ -213,3 +227,8 @@ Altering only `gamma` and QJL bits while keeping MSE indices fixed SHALL NOT cha
 Index-local TurboQuant adapters SHALL preserve deterministic scalar scoring,
 route scan-time candidate batches through `QuantCodec`, and keep AM code from
 calling ISA-specific TurboQuant kernel functions directly.
+
+## Dependencies
+
+- **Upstream**: FR-013 (pipeline math implemented here), FR-005 (code-to-code contract), FR-017 (prepared-query contract), FR-014 (SIMD acceleration and counter surface)
+- **Downstream**: none identified

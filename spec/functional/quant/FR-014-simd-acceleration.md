@@ -1,6 +1,7 @@
 ---
 id: FR-014
 title: SIMD Acceleration
+artifact_type: FR
 type: functional-requirement
 status: APPROVED
 object: process
@@ -12,7 +13,7 @@ traces:
 ---
 # FR-014: SIMD Acceleration
 
-## Requirement
+## Description
 
 The extension SHALL provide scalar-correct compressed-domain scoring and
 SIMD-accelerated block kernels for access-method batch scoring where a shipped
@@ -105,6 +106,14 @@ site or safe family-local dispatch wrappers.
 
 ## Acceptance Criteria
 
+| ID | Criteria | Verification |
+|---|---|---|
+| FR-014-AC-1 | On a CPU without a family-supported SIMD ISA, every quantized scoring path produces correct results via scalar fallback | Test |
+| FR-014-AC-2 | Each accelerated family proves scalar/SIMD equivalence under its accepted anchor mode and preserves recall in acceptance benchmark cells | Test |
+| FR-014-AC-3 | Running on a CPU without AVX2, NEON, SVE, or SVE2 does not produce an illegal instruction fault | Test |
+| FR-014-AC-4 | Accepted benchmark evidence includes `(surface, quant_kind, isa)` rows with kernel/scalar counters and width buckets for claimed block-kernel results | Inspection |
+| FR-014-AC-5 | The Task 99 matrix identifies every shipped `(AM, quant, ISA)` cell as complete, partial, missing-kernel, structurally absent, or deferred, with source packets | Inspection |
+
 ### FR-014-AC-1: Scalar fallback correctness
 On a CPU without a family-supported SIMD ISA, every quantized scoring path
 SHALL produce correct results using scalar fallback.
@@ -128,3 +137,8 @@ latency or coverage result.
 The project-level Task 99 matrix SHALL identify every shipped
 `(AM, quant, ISA)` cell as complete, partial, missing-kernel, structurally
 absent, or deferred, with source packets for measured claims.
+
+## Dependencies
+
+- **Upstream**: NFR-001 (traces), FR-013 (quantization pipeline), FR-005 (code-to-code scoring), FR-017 (prepared-query scoring)
+- **Downstream**: FR-015 (`QuantCodec` adapters expose the counter surface defined here)

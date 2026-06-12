@@ -18,7 +18,7 @@ relationships:
 ---
 # FR-038: Configured Benchmark Suite Runner
 
-## Requirement
+## Description
 
 Ecaz SHALL provide a configured benchmark suite runner under `ecaz bench suite` for repeatable load, recall, latency, storage, EXPLAIN, and custom benchmark sequences.
 
@@ -56,6 +56,19 @@ Ecaz SHALL provide a configured benchmark suite runner under `ecaz bench suite` 
    recall claims.
 
 ## Acceptance Criteria
+
+| ID | Criteria | Verification |
+|---|---|---|
+| FR-038-AC-1 | Dry-runs and executed runs produce a manifest with config SHA256, redacted connection metadata, expanded commands, tags, step selection, status, timing, and artifact paths | Test |
+| FR-038-AC-2 | The runner supports the step kinds `load`, `recall`, `latency`, `storage`, `explain`, and `raw` | Test |
+| FR-038-AC-3 | Suite audit and status commands are usable without connecting to PostgreSQL | Test |
+| FR-038-AC-4 | The CLI README documents suite commands, schema conventions, dry-run/execution flow, and targeted tuning usage | Inspection |
+| FR-038-AC-5 | Completed suite runs can produce normalized JSONL rows for recall, latency, storage, and load artifacts | Test |
+| FR-038-AC-6 | Configured thresholds are recorded in the manifest and can fail an otherwise completed suite | Test |
+| FR-038-AC-7 | Thresholds can target a specific row from a multi-row sweep, and resume rejects stale manifests | Test |
+| FR-038-AC-8 | Suite reports include enough candidate identity and metric metadata to populate the benchmark reporting standard without hand-editing | Inspection |
+| FR-038-AC-9 | Latency and recall suite runs record the backend build profile in the manifest before executing selected benchmark steps | Test |
+| FR-038-AC-10 | Latency and recall suite runs fail fast on a debug backend unless `--allow-debug-backend` is present | Test |
 
 ### FR-038-AC-1
 
@@ -99,3 +112,8 @@ before executing selected benchmark steps.
 
 Latency and recall suite runs fail fast on a debug backend unless
 `--allow-debug-backend` is present.
+
+## Dependencies
+
+- **Upstream**: US-017 (implements), FR-037 (extends), NFR-015 (supports)
+- **Downstream**: none identified

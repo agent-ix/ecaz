@@ -1,6 +1,7 @@
 ---
 id: FR-013
 title: Two-Stage Vector Quantization Pipeline
+artifact_type: FR
 type: functional-requirement
 status: APPROVED
 object: process
@@ -10,7 +11,7 @@ traces:
 ---
 # FR-013: Two-Stage Vector Quantization Pipeline
 
-## Requirement
+## Description
 
 The extension SHALL implement the `tqvector` two-stage vector quantization algorithm as an internal module (`quant/`). The quantizer compresses fp32 vectors into bit-packed integer codes plus a residual norm scalar, and it defines both a high-quality query-to-code estimator and a lower-fidelity symmetric code-to-code estimator.
 
@@ -108,6 +109,15 @@ The symmetric code-to-code estimator SHALL NOT apply the QJL residual term in v0
 
 ## Acceptance Criteria
 
+| ID | Criteria | Verification |
+|---|---|---|
+| FR-013-AC-1 | For any even number of centroids the codebook is symmetric around zero (sum of all centroids < 1e-3) | Test |
+| FR-013-AC-2 | The Beta PDF for any dimension d >= 2 integrates to 1.0 ± 0.001 over [-1, 1] | Test |
+| FR-013-AC-3 | SRHT rotation preserves norm within < 1e-5 relative error | Test |
+| FR-013-AC-4 | 1536-dim 4-bit encode-decode round-trip cosine similarity > 0.85 on average over random unit vectors | Test |
+| FR-013-AC-5 | Encoding the same vector with the same `(bits, seed)` produces byte-identical codes | Test |
+| FR-013-AC-6 | QJL output is exactly `ceil(original_dim / 8)` bytes for any input dimension | Test |
+
 ### FR-013-AC-1: Codebook centroids are symmetric
 For any even number of centroids, the codebook SHALL be symmetric around zero (sum of all centroids < 1e-3).
 
@@ -125,3 +135,8 @@ Encoding the same vector with the same `(bits, seed)` SHALL produce byte-identic
 
 ### FR-013-AC-6: QJL bit count correctness
 The QJL output SHALL be exactly `ceil(original_dim / 8)` bytes for any input dimension.
+
+## Dependencies
+
+- **Upstream**: StR-001 (traces), US-001 (traces)
+- **Downstream**: FR-004 (SQL encode function), FR-005 (code-to-code estimator), FR-014 (SIMD acceleration), FR-015 (`ProdQuantizer` implementation), FR-017 (prepared-query estimator)

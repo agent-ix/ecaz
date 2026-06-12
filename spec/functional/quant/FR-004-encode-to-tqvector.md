@@ -1,6 +1,7 @@
 ---
 id: FR-004
 title: encode_to_tqvector — fp32 to Compressed Code
+artifact_type: FR
 type: functional-requirement
 status: APPROVED
 object: api
@@ -10,7 +11,7 @@ traces:
 ---
 # FR-004: encode_to_tqvector — fp32 to Compressed Code
 
-## Requirement
+## Description
 
 The extension SHALL provide an SQL-callable function that compresses a raw fp32 vector into a `tqvector` value using the two-stage quantization pipeline (FR-013).
 
@@ -20,7 +21,7 @@ The extension SHALL provide an SQL-callable function that compresses a raw fp32 
 encode_to_tqvector(embedding float4[], bits int, seed bigint DEFAULT 42) RETURNS tqvector
 ```
 
-### Behavior
+## Behavior
 
 1. SHALL pad the input vector to the next power-of-two length (zero-padded) for the internal FWHT workspace only
 2. SHALL apply SRHT rotation (diagonal random signs + Fast Walsh-Hadamard Transform) seeded by `seed`
@@ -33,11 +34,18 @@ encode_to_tqvector(embedding float4[], bits int, seed bigint DEFAULT 42) RETURNS
 9. SHALL return a valid `tqvector` value that round-trips through text and binary I/O
 10. SHALL be marked `IMMUTABLE`, `STRICT`, `PARALLEL SAFE`
 
-### Determinism
+## Determinism
 
 Given the same `(embedding, bits, seed)`, the function SHALL always produce the same output. The quantizer is data-oblivious — fully determined by `(original_dim, bits, seed)` with no training or fitting step.
 
 ## Acceptance Criteria
+
+| ID | Criteria | Verification |
+|---|---|---|
+| FR-004-AC-1 | `encode_to_tqvector` on a valid fp32 array returns a value storable and retrievable from a `tqvector` column | Test |
+| FR-004-AC-2 | Two calls with identical arguments produce byte-identical results | Test |
+| FR-004-AC-3 | `bits` outside 2–8 (e.g. 0) raises ERROR | Test |
+| FR-004-AC-4 | Output payload length equals `4 + ceil(original_dim * (bits-1) / 8) + ceil(original_dim / 8)` regardless of transform padding | Test |
 
 ### FR-004-AC-1: Encode produces valid tqvector
 `encode_to_tqvector(ARRAY[1.0, 2.0, 3.0, 4.0]::float4[], 4, 42)` SHALL return a value that can be stored and retrieved from a `tqvector` column.
@@ -50,3 +58,8 @@ Two calls with identical arguments SHALL produce byte-identical results.
 
 ### FR-004-AC-4: Code length correctness
 The output quantized payload length SHALL equal `4 + ceil(original_dim * (bits-1) / 8) + ceil(original_dim / 8)`. Internal transform padding SHALL NOT change the persisted payload length. The embedded `code_bytes` subsection excludes the 4-byte `gamma` field and therefore has length `ceil(original_dim * (bits-1) / 8) + ceil(original_dim / 8)`.
+
+## Dependencies
+
+- **Upstream**: US-001 (traces), FR-013 (two-stage quantization pipeline)
+- **Downstream**: none identified
