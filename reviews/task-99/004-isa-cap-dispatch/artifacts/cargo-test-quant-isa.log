@@ -1,0 +1,15 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.18s
+     Running unittests src/lib.rs (target/debug/deps/ecaz-52f8c7085962b346)
+
+running 8 tests
+test quant::isa::tests::capped_selection_limits_but_never_fakes ... ok
+test quant::isa::tests::parse_isa_cap_accepts_known_values ... ok
+test quant::isa::tests::cap_encoding_roundtrips ... ok
+test quant::isa::tests::select_highest_isa_distinguishes_base_sve ... ok
+test quant::isa::tests::select_highest_isa_falls_back_to_neon_or_scalar ... ok
+test quant::isa::tests::parse_isa_cap_rejects_unknown_values - should panic ... ok
+test quant::isa::tests::select_highest_isa_prefers_graviton4_sve2 ... ok
+test quant::isa::tests::select_highest_isa_prefers_x86_avx2_on_x86_features ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 2090 filtered out; finished in 0.00s
+
