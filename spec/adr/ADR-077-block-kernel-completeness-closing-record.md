@@ -1,11 +1,19 @@
 ---
 id: ADR-077
 title: "Block Kernel Completeness Closing Record"
-status: PROPOSED
+status: ACCEPTED
 impact: Closes the Task 87/91/92/93-98/101-104 kernel-completeness initiative; sets the operating convention for all future quantized scoring work, the per-family anchor-regime menu, the per-AM enablement policy, and the coverage gate for new quants.
 date: 2026-06-11
 ---
 # ADR-077: Block Kernel Completeness Closing Record
+
+Acceptance provenance: ACCEPTED 2026-06-12 by operator decision (the
+operator's explicit Task-99-completion directive), with the §4 IVF
+default decision and the §6 dispatch-preference decision data-filled
+from the three-lane profile (`reviews/task-99/` packets 003/008/009).
+No outside-reviewer feedback existed on packets 001–009 at acceptance
+time; the outside reviewer is invited to review post-hoc and may reopen
+any section — reopened findings route through the Task 99 bucket.
 
 ## Context
 
