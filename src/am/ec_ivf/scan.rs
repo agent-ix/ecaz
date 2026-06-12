@@ -1453,8 +1453,17 @@ fn use_scratch_soa_batch_decode_for_format(
         && match storage_format {
             StorageFormat::TurboQuant => quant_bits == 4,
             StorageFormat::PqFastScan => true,
-            StorageFormat::RaBitQ => quant_bits == 1 || quant_bits == 8,
-            StorageFormat::Auto => false,
+            // All RaBitQ widths run a batched dispatch: bits=1 and 2/4 through
+            // the unified block-kernel driver, bits=8 through the arithmetic
+            // batch estimator (ec_ivf/quantizer.rs score_ip_bits1_batch_from_payloads).
+            StorageFormat::RaBitQ => matches!(quant_bits, 1 | 2 | 4 | 8),
+            // Auto resolves to TurboQuant at scan time (IvfQuantizer::resolve),
+            // so an Auto-built index — the default when no storage_format
+            // reloption is set — must admit the batch path exactly like an
+            // explicit TurboQuant index. Persisting Auto raw previously left
+            // these (the common 10k×1024d profile shape) on the per-candidate
+            // path with zero batch counters (ADR-077 §9.3 / Task 106 slice 3).
+            StorageFormat::Auto => quant_bits == 4,
         }
 }
 
@@ -2802,6 +2811,9 @@ mod tests {
             IvfStorageFormat::TurboQuant,
             2
         ));
+        // Every RaBitQ width now runs a batched dispatch: bits=1/2/4 through
+        // the unified block-kernel driver, bits=8 through the arithmetic batch
+        // estimator (Task 106 multi-bit closure).
         assert!(use_scratch_soa_batch_decode_for_format(
             true,
             IvfStorageFormat::RaBitQ,
@@ -2810,17 +2822,34 @@ mod tests {
         assert!(use_scratch_soa_batch_decode_for_format(
             true,
             IvfStorageFormat::RaBitQ,
-            8
+            2
         ));
-        assert!(!use_scratch_soa_batch_decode_for_format(
+        assert!(use_scratch_soa_batch_decode_for_format(
             true,
             IvfStorageFormat::RaBitQ,
             4
         ));
         assert!(use_scratch_soa_batch_decode_for_format(
             true,
+            IvfStorageFormat::RaBitQ,
+            8
+        ));
+        assert!(use_scratch_soa_batch_decode_for_format(
+            true,
             IvfStorageFormat::PqFastScan,
             4
+        ));
+        // Auto resolves to TurboQuant, so an Auto-built default index admits the
+        // batch path like an explicit TurboQuant index (Task 106 slice 3).
+        assert!(use_scratch_soa_batch_decode_for_format(
+            true,
+            IvfStorageFormat::Auto,
+            4
+        ));
+        assert!(!use_scratch_soa_batch_decode_for_format(
+            true,
+            IvfStorageFormat::Auto,
+            2
         ));
         assert!(!use_scratch_soa_batch_decode_for_format(
             false,

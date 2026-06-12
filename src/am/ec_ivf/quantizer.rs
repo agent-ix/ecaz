@@ -1,7 +1,7 @@
 use super::options::StorageFormat;
 use super::page;
 use crate::am::common::candidate_batch::{
-    score_grouped_pq_batch_for, score_rabitq_bits1_batch_for,
+    score_grouped_pq_batch_for, score_rabitq_bits1_batch_for, score_rabitq_bitsn_batch_for,
     score_turboquant_no_qjl_4bit_batch_for, score_turboquant_qjl_batch_for, CandidateBatch,
     CandidateBatchScoringSurface, CandidateMeta, CandidatePayload,
 };
@@ -410,8 +410,41 @@ impl IvfQuantizer {
                 Ok(true)
             }
             (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::RaBitQ(prepared_query))
+                if self.rabitq_bits == 2 || self.rabitq_bits == 4 =>
+            {
+                if payload_len == 0 || payloads.len() % payload_len != 0 {
+                    return Err(format!(
+                        "ec_ivf RaBitQ bits={} batch payload slab length {} is not divisible by code length {payload_len}",
+                        self.rabitq_bits,
+                        payloads.len()
+                    ));
+                }
+                let prepared = prepared_query
+                    .bitsn_block_prepared(payload_len)
+                    .ok_or_else(|| {
+                        "ec_ivf RaBitQ multi-bit prepared query missing block state".to_owned()
+                    })?;
+                let mut batch = CandidateBatch::with_capacity(payloads.len() / payload_len);
+                for (index, payload) in payloads.chunks_exact(payload_len).enumerate() {
+                    batch.push(index, CandidatePayload::new(payload, CandidateMeta::RaBitQ))?;
+                }
+                out_scores.clear();
+                out_scores.resize(batch.len(), 0.0);
+                score_rabitq_bitsn_batch_for(
+                    CandidateBatchScoringSurface::Ivf,
+                    prepared,
+                    &batch,
+                    out_scores,
+                )?;
+                Ok(true)
+            }
+            (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::RaBitQ(prepared_query))
                 if self.rabitq_bits == 8 =>
             {
+                // bits=8 is a full-byte level (no LUT fast-scan shape); it keeps
+                // the multi-bit arithmetic batch estimator. Routed here so it is
+                // still a single batched dispatch, but it does not emit
+                // block-kernel counters (documented in ADR-077 §9).
                 prepared_query.estimate_ip_batch(payloads, payload_len, out_scores)?;
                 Ok(true)
             }
@@ -1465,6 +1498,12 @@ mod tests {
 
     #[test]
     fn common_quant_codec_scores_rabitq_batch() {
+        // bits=2/4 now record block-kernel counters through the unified driver,
+        // so this test serializes on the shared counter lock to avoid polluting
+        // the count-asserting tests running in parallel.
+        let _guard = crate::am::common::candidate_batch::CANDIDATE_BATCH_COUNTER_TEST_LOCK
+            .lock()
+            .unwrap();
         let dimensions = 40;
         let query = unit_vector(dimensions);
         let codec = IvfQuantizer::resolve_with_pq_group_size_and_bits(
@@ -1515,6 +1554,10 @@ mod tests {
 
     #[test]
     fn common_quant_codec_rabitq_batch_is_bit_exact_with_scalar() {
+        // Records block-kernel counters at bits=4; serialize on the shared lock.
+        let _guard = crate::am::common::candidate_batch::CANDIDATE_BATCH_COUNTER_TEST_LOCK
+            .lock()
+            .unwrap();
         let dimensions = 40;
         let query = unit_vector(dimensions);
         let codec = IvfQuantizer::resolve_with_pq_group_size_and_bits(
@@ -1717,31 +1760,85 @@ mod tests {
     }
 
     #[test]
-    fn non_bits1_batch_dispatch_declines_without_scoring() {
-        let dimensions = 40;
-        let query = unit_vector(dimensions);
-        let dispatch = IvfQuantizer::resolve_with_pq_group_size_and_bits(
-            StorageFormat::RaBitQ,
-            dimensions,
-            None,
-            Some(4),
-        )
-        .unwrap();
-        let prepared = dispatch.prepare_ip_query(&query).unwrap();
-        let (_, _, payload) = dispatch.encode_source(&query).unwrap();
-        let mut batch_scores = vec![1.0];
-
-        let used_batch = dispatch
-            .score_ip_bits1_batch_from_payloads(
-                &prepared,
-                &payload,
-                dispatch.payload_len(),
-                &mut batch_scores,
+    fn rabitq_multibit_batch_dispatch_routes_through_block_kernel() {
+        // bits=2 and bits=4 RaBitQ now engage the unified multi-bit block
+        // kernel (they previously declined to per-candidate scoring). Holds the
+        // counter lock because the dispatch records block-kernel rows.
+        let _guard = crate::am::common::candidate_batch::CANDIDATE_BATCH_COUNTER_TEST_LOCK
+            .lock()
+            .unwrap();
+        for bits in [2_u8, 4] {
+            let dimensions = 48;
+            let query = unit_vector(dimensions);
+            let dispatch = IvfQuantizer::resolve_with_pq_group_size_and_bits(
+                StorageFormat::RaBitQ,
+                dimensions,
+                None,
+                Some(bits),
             )
             .unwrap();
+            let prepared = dispatch.prepare_ip_query(&query).unwrap();
+            let payloads = (0..35)
+                .flat_map(|row| {
+                    let source = (0..dimensions)
+                        .map(|col| ((row * 3 + col) as f32).sin())
+                        .collect::<Vec<_>>();
+                    let (_, _, payload) = dispatch.encode_source(&source).unwrap();
+                    payload
+                })
+                .collect::<Vec<_>>();
+            let mut batch_scores = Vec::new();
 
-        assert!(!used_batch);
-        assert_eq!(batch_scores, vec![1.0]);
+            let used_batch = dispatch
+                .score_ip_bits1_batch_from_payloads(
+                    &prepared,
+                    &payloads,
+                    dispatch.payload_len(),
+                    &mut batch_scores,
+                )
+                .unwrap();
+
+            assert!(used_batch, "bits={bits} multi-bit batch should engage");
+            assert_eq!(batch_scores.len(), 35);
+
+            let IvfPreparedQuery::RaBitQ(estimator) = &prepared else {
+                panic!("RaBitQ profile should prepare a RaBitQ query");
+            };
+            let block_prepared = estimator
+                .bitsn_block_prepared(dispatch.payload_len())
+                .expect("bits=2/4 block prepared should exist");
+            let code_chunks: Vec<&[u8]> = payloads.chunks_exact(dispatch.payload_len()).collect();
+
+            // First 32 route through the dispatched block kernel; reproduce the
+            // same call so the expectation matches the host ISA backend.
+            let block_codes: [&[u8]; 32] = code_chunks[..32].to_vec().try_into().unwrap();
+            let mut expected_block = vec![0.0; 32];
+            crate::quant::rabitq32::score_rabitq_bitsn_block32(
+                block_prepared,
+                block_codes,
+                &mut expected_block,
+            );
+            for (index, expected) in expected_block.iter().enumerate() {
+                assert_eq!(
+                    batch_scores[index].to_bits(),
+                    expected.to_bits(),
+                    "bits={bits} index={index}"
+                );
+            }
+            let mut expected_tail = vec![0.0; code_chunks.len() - 32];
+            crate::quant::rabitq32::score_rabitq_bitsn_partial(
+                block_prepared,
+                &code_chunks[32..],
+                &mut expected_tail,
+            );
+            for (index, expected) in expected_tail.iter().enumerate() {
+                assert_eq!(
+                    batch_scores[32 + index].to_bits(),
+                    expected.to_bits(),
+                    "bits={bits} tail index={index}"
+                );
+            }
+        }
     }
 
     #[test]
@@ -1785,6 +1882,9 @@ mod tests {
 
     #[test]
     fn common_quant_codec_scores_grouped_pq_batch_with_prepared_model() {
+        let _guard = crate::am::common::candidate_batch::CANDIDATE_BATCH_COUNTER_TEST_LOCK
+            .lock()
+            .unwrap();
         let dimensions = 16;
         let source = unit_vector(dimensions);
         let query = unit_vector(dimensions);
@@ -1845,6 +1945,9 @@ mod tests {
 
     #[test]
     fn common_quant_codec_grouped_pq_batch_is_bit_exact_with_scalar() {
+        let _guard = crate::am::common::candidate_batch::CANDIDATE_BATCH_COUNTER_TEST_LOCK
+            .lock()
+            .unwrap();
         let dimensions = 16;
         let query = unit_vector(dimensions);
         let model = pq_fastscan_test_model(dimensions);
@@ -2018,6 +2121,9 @@ mod tests {
 
     #[test]
     fn common_quant_codec_pq_fastscan_batch_is_bit_exact_with_direct_path() {
+        let _guard = crate::am::common::candidate_batch::CANDIDATE_BATCH_COUNTER_TEST_LOCK
+            .lock()
+            .unwrap();
         let dimensions = 16;
         let query = unit_vector(dimensions);
         let model = pq_fastscan_test_model(dimensions);
@@ -2083,6 +2189,9 @@ mod tests {
 
     #[test]
     fn common_quant_codec_grouped_pq_rejects_mismatched_candidate_meta() {
+        let _guard = crate::am::common::candidate_batch::CANDIDATE_BATCH_COUNTER_TEST_LOCK
+            .lock()
+            .unwrap();
         let dimensions = 16;
         let source = unit_vector(dimensions);
         let query = unit_vector(dimensions);

@@ -339,6 +339,22 @@ pub(crate) fn score_rabitq_bits1_batch_for<Id>(
     result.map(|_| ())
 }
 
+/// Multi-bit (bits=2/4) RaBitQ block scoring through the width-cascade driver.
+/// Records under `QuantCodecKind::RaBitQ` exactly like the bits=1 lane; the bit
+/// width is implied by which kernel ran (the `isa`/kernel attribution).
+pub(crate) fn score_rabitq_bitsn_batch_for<Id>(
+    surface: CandidateBatchScoringSurface,
+    prepared: crate::quant::rabitq32::PreparedBitsN<'_>,
+    batch: &CandidateBatch<'_, Id>,
+    out_scores: &mut [f32],
+) -> Result<(), String> {
+    let result = score_rabitq_bitsn_batch_inner(prepared, batch, out_scores);
+    if let Ok(timing) = &result {
+        record_batch_scoring_timing(surface, QuantCodecKind::RaBitQ, batch.len(), timing);
+    }
+    result.map(|_| ())
+}
+
 /// Task 95: Hamming sidecar batch scoring over `u64` words. Distances are
 /// integer-exact across every ISA backend, so no tolerance framing applies;
 /// counter attribution follows the rabitq32 partial-width convention
@@ -618,6 +634,72 @@ fn score_rabitq_bits1_batch_blocked<Id>(
             }
             let started = Instant::now();
             let isa = crate::quant::rabitq32::score_rabitq_bits1_partial(
+                prepared,
+                tail_codes,
+                tail_scores,
+            );
+            timing.record_run(
+                isa,
+                tail_codes.len(),
+                u64::try_from(started.elapsed().as_nanos()).unwrap_or(u64::MAX),
+                false,
+            );
+        },
+    )
+}
+
+fn score_rabitq_bitsn_batch_inner<Id>(
+    prepared: crate::quant::rabitq32::PreparedBitsN<'_>,
+    batch: &CandidateBatch<'_, Id>,
+    out_scores: &mut [f32],
+) -> Result<BatchScoringTiming, String> {
+    if batch.len() != out_scores.len() {
+        return Err(format!(
+            "rabitq32 multi-bit score output count {} does not match candidate count {}",
+            out_scores.len(),
+            batch.len()
+        ));
+    }
+    prepared.validate()?;
+
+    for (index, payload) in batch.payloads().iter().enumerate() {
+        // Multi-bit RaBitQ carries the same zero-gamma meta contract as bits=1.
+        validate_rabitq_bits1_meta(payload.meta)?;
+        crate::quant::rabitq32::validate_multibit_code_shape(index, prepared, payload.code)?;
+    }
+
+    Ok(score_rabitq_bitsn_batch_blocked(
+        prepared, batch, out_scores,
+    ))
+}
+
+fn score_rabitq_bitsn_batch_blocked<Id>(
+    prepared: crate::quant::rabitq32::PreparedBitsN<'_>,
+    batch: &CandidateBatch<'_, Id>,
+    out_scores: &mut [f32],
+) -> BatchScoringTiming {
+    let codes: Vec<&[u8]> = batch
+        .payloads()
+        .iter()
+        .map(|payload| payload.code)
+        .collect();
+    score_width_cascade(
+        &codes,
+        out_scores,
+        crate::quant::rabitq32::BLOCK_WIDTH,
+        false,
+        |block_codes, block_scores| {
+            let codes: [&[u8]; crate::quant::rabitq32::BLOCK_WIDTH] = block_codes
+                .try_into()
+                .expect("width-cascade block length is exact");
+            crate::quant::rabitq32::score_rabitq_bitsn_block32(prepared, codes, block_scores)
+        },
+        |tail_codes, tail_scores, timing| {
+            if tail_codes.is_empty() {
+                return;
+            }
+            let started = Instant::now();
+            let isa = crate::quant::rabitq32::score_rabitq_bitsn_partial(
                 prepared,
                 tail_codes,
                 tail_scores,
