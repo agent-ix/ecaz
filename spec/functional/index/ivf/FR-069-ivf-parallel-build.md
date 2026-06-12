@@ -55,7 +55,7 @@ sequenceDiagram
     Leader-->>PG: build result (workers_launched, parallel_effective_workers in build diagnostics)
 ```
 
-## Specification
+## Behavior
 
 - PostgreSQL remains the worker-count authority: the plan consumes
   `ii_ParallelWorkers`; there is no ecaz-side worker GUC for IVF build.
@@ -91,9 +91,9 @@ sequenceDiagram
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-069-AC-1 | A parallel build on the validation fixtures matches the serial build's index-visible results | pg_test |
-| FR-069-AC-2 | Build diagnostics distinguish requested, launched, and effective worker counts | pg_test |
-| FR-069-AC-3 | Suite build-timing rows for an IVF parallel build include worker fields | CLI unit test |
+| FR-069-AC-1 | A parallel build on the validation fixtures matches the serial build's index-visible results | Test |
+| FR-069-AC-2 | Build diagnostics distinguish requested, launched, and effective worker counts | Test |
+| FR-069-AC-3 | Suite build-timing rows for an IVF parallel build include worker fields | Test |
 
 ## Dependencies
 

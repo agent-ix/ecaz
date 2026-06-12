@@ -63,7 +63,7 @@ sequenceDiagram
     Scan-->>Exec: heap TIDs in final order (LIMIT truncates)
 ```
 
-## Specification
+## Behavior
 
 Stage boundaries for attribution:
 
@@ -100,9 +100,9 @@ Stage boundaries for attribution:
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-068-AC-1 | Batch and per-candidate routes return identical result sets for the same query and settings | pg_test A/B |
-| FR-068-AC-2 | Batch-scored work appears as `surface=ivf` counter rows with the active quant kind and ISA | pg_test + suite extraction |
-| FR-068-AC-3 | An IVF latency packet can attribute a change to centroid selection, posting scoring, pruning, or rerank using this decomposition | Packet audit |
+| FR-068-AC-1 | Batch and per-candidate routes return identical result sets for the same query and settings (pg_test A/B) | Test |
+| FR-068-AC-2 | Batch-scored work appears as `surface=ivf` counter rows with the active quant kind and ISA (pg_test + suite result extraction) | Test |
+| FR-068-AC-3 | An IVF latency packet can attribute a change to centroid selection, posting scoring, pruning, or rerank using this decomposition (packet audit) | Inspection |
 
 ## Dependencies
 

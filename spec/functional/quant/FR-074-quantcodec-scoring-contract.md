@@ -142,9 +142,7 @@ dispatch:
     - binary
 ```
 
-## Specification
-
-### Inputs
+## Inputs
 
 | Field | Type | Source |
 | --- | --- | --- |
@@ -154,7 +152,7 @@ dispatch:
 | `batch` | `&CandidateBatch<'_, Id>` | Borrowed candidate batch assembled by the AM scan loop. |
 | `min_ip_to_keep` | `Option<f32>` | Optional cutoff for `try_score_ip_candidate`. |
 
-### Outputs
+## Outputs
 
 | Field | Type | Description |
 | --- | --- | --- |
@@ -164,7 +162,7 @@ dispatch:
 | `out_scores: &mut [f32]` | batch scores | Candidate-order scores from `score_ip_batch`. |
 | counter rows | `FR-063` snapshot | `(surface, quant_kind, isa)` attribution emitted by batch dispatch. |
 
-### Behavior
+## Behavior
 
 The trait surface SHALL be:
 
@@ -220,9 +218,9 @@ pub(crate) trait QuantCodec {
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-074-AC-1 | Every shipped quant family scores through a `QuantCodec` implementation on every batchable AM surface, observable via `FR-063` counter rows | pg_test + counter audit |
-| FR-074-AC-2 | Batch and per-candidate routes agree within the family's ADR-076 anchor mode on shared fixtures | Unit test |
-| FR-074-AC-3 | A shape-invalid batch returns an error with no score output mutation and no counter increment | Unit test |
+| FR-074-AC-1 | Every shipped quant family scores through a `QuantCodec` implementation on every batchable AM surface, observable via `FR-063` counter rows (pg_test + counter audit) | Test |
+| FR-074-AC-2 | Batch and per-candidate routes agree within the family's ADR-076 anchor mode on shared fixtures | Test |
+| FR-074-AC-3 | A shape-invalid batch returns an error with no score output mutation and no counter increment | Test |
 
 ## Dependencies
 

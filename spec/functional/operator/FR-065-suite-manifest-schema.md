@@ -126,9 +126,9 @@ Implementation anchor: `SuiteManifest`, `BackendPreflight`, `StepRecord`, and
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-065-AC-1 | A dry run and an executed run both produce manifests valid against this schema | CLI unit test |
-| FR-065-AC-2 | A debug-backend latency run without `--allow-debug-backend` fails before any step executes and the refusal cites `build_profile` | CLI unit test |
-| FR-065-AC-3 | `status --manifest` can classify completed, failed, skipped, dry-run, stale, and missing-artifact states from manifest fields alone | CLI unit test |
+| FR-065-AC-1 | A dry run and an executed run both produce manifests valid against this schema | Test |
+| FR-065-AC-2 | A debug-backend latency run without `--allow-debug-backend` fails before any step executes and the refusal cites `build_profile` | Test |
+| FR-065-AC-3 | `status --manifest` can classify completed, failed, skipped, dry-run, stale, and missing-artifact states from manifest fields alone | Test |
 
 ## Dependencies
 

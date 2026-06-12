@@ -73,9 +73,9 @@ verbatim.
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-066-AC-1 | One executed suite produces rows for every succeeded step with a parseable artifact | CLI unit test |
-| FR-066-AC-2 | A `[block-kernel-counters]` backend log line round-trips into a row whose values match `FR-063` | CLI unit test |
-| FR-066-AC-3 | `report --manifest` renders its tables from these rows without hand-editing result semantics (`FR-038-AC-8`) | CLI smoke |
+| FR-066-AC-1 | One executed suite produces rows for every succeeded step with a parseable artifact | Test |
+| FR-066-AC-2 | A `[block-kernel-counters]` backend log line round-trips into a row whose values match `FR-063` | Test |
+| FR-066-AC-3 | `report --manifest` renders its tables from these rows without hand-editing result semantics (`FR-038-AC-8`) | Demonstration |
 
 ## Dependencies
 

@@ -74,7 +74,7 @@ sequenceDiagram
     end
 ```
 
-## Specification
+## Behavior
 
 Ordering guarantees:
 
@@ -109,9 +109,9 @@ Ordering guarantees:
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-070-AC-1 | An interrupted run's manifest supports `status` classification and `--resume-from` continuation | CLI unit test |
-| FR-070-AC-2 | A debug backend without the override flag stops the run before the first benchmark step, and the manifest shows why | CLI unit test |
-| FR-070-AC-3 | Dry-run writes a complete manifest and executes nothing | CLI unit test |
+| FR-070-AC-1 | An interrupted run's manifest supports `status` classification and `--resume-from` continuation | Test |
+| FR-070-AC-2 | A debug backend without the override flag stops the run before the first benchmark step, and the manifest shows why | Test |
+| FR-070-AC-3 | Dry-run writes a complete manifest and executes nothing | Test |
 
 ## Dependencies
 

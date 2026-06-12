@@ -77,9 +77,9 @@ Implementation anchor: `BlockKernelScoringSnapshot` in
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-063-AC-1 | The in-extension snapshot, the `[block-kernel-counters]` log line, and the `results.jsonl` row expose identical field names for one flush | CLI unit test over a captured run |
-| FR-063-AC-2 | A scalar-fallback host emits rows with `isa=scalar` and zero `kernel_*` fields | pg_test |
-| FR-063-AC-3 | Width histogram fields sum to `flushes` for every row | Unit test |
+| FR-063-AC-1 | The in-extension snapshot, the `[block-kernel-counters]` log line, and the `results.jsonl` row expose identical field names for one flush (CLI unit test over a captured run) | Test |
+| FR-063-AC-2 | A scalar-fallback host emits rows with `isa=scalar` and zero `kernel_*` fields | Test |
+| FR-063-AC-3 | Width histogram fields sum to `flushes` for every row | Test |
 
 ## Dependencies
 

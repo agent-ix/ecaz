@@ -94,9 +94,9 @@ not_persisted_in_v1:
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-062-AC-1 | An independent implementation can decode the metadata block, walk the graph from `entry_point`, and decode node payloads from this schema alone | Spec audit against `src/am/ec_diskann/tuple.rs` |
-| FR-062-AC-2 | The binary sidecar, grouped-PQ search code, and codec kind are all resolvable from metadata before reading any node tuple | Code review |
-| FR-062-AC-3 | Malformed version, tuple-length, and neighbor-slot violations are rejected | pg_test |
+| FR-062-AC-1 | An independent implementation can decode the metadata block, walk the graph from `entry_point`, and decode node payloads from this schema alone (spec audit against `src/am/ec_diskann/tuple.rs`) | Inspection |
+| FR-062-AC-2 | The binary sidecar, grouped-PQ search code, and codec kind are all resolvable from metadata before reading any node tuple | Inspection |
+| FR-062-AC-3 | Malformed version, tuple-length, and neighbor-slot violations are rejected | Test |
 
 ## Dependencies
 

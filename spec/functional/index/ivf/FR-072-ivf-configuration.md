@@ -57,7 +57,7 @@ Scope `creation` rows are index reloptions (`CREATE INDEX ... WITH (...)`);
 3. Adaptive-nprobe switches are deterministic for a given query and frontier;
    they trade recall for latency and are diagnostic, not product defaults.
 4. `scratch_soa_batch_decode` interacts with suffix-max/cutoff pruning
-   (`FR-068` Specification item 3); benchmark packets toggling it keep
+   (`FR-068` Behavior item 3); benchmark packets toggling it keep
    batch-on/off as an explicit axis.
 
 ## Constraints
@@ -72,8 +72,8 @@ Scope `creation` rows are index reloptions (`CREATE INDEX ... WITH (...)`);
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-072-AC-1 | The Settings table matches the GUCs registered in `src/am/ec_ivf/options.rs` one-to-one, including unset sentinels | Docs audit |
-| FR-072-AC-2 | Session `nprobe`/`rerank_width` overrides are reflected in scan/debug output (`FR-032-AC-2`) | pg_test |
+| FR-072-AC-1 | The Settings table matches the GUCs registered in `src/am/ec_ivf/options.rs` one-to-one, including unset sentinels | Inspection |
+| FR-072-AC-2 | Session `nprobe`/`rerank_width` overrides are reflected in scan/debug output (`FR-032-AC-2`) | Test |
 
 ## Dependencies
 

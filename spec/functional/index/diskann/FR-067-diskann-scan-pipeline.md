@@ -59,7 +59,7 @@ sequenceDiagram
     Scan-->>Exec: heap TIDs in exact-score order (LIMIT truncates)
 ```
 
-## Specification
+## Behavior
 
 Stage boundaries for attribution:
 
@@ -98,9 +98,9 @@ Stage boundaries for attribution:
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-067-AC-1 | A DiskANN scan-optimization packet can name the dominant stage for a latency change using this stage decomposition | Packet audit |
-| FR-067-AC-2 | Batch-scored candidates appear as `surface=diskann` counter rows with the active quant kind and ISA | pg_test + suite extraction |
-| FR-067-AC-3 | The same query returns identical rows with batching on and off | pg_test A/B |
+| FR-067-AC-1 | A DiskANN scan-optimization packet can name the dominant stage for a latency change using this stage decomposition (packet audit) | Inspection |
+| FR-067-AC-2 | Batch-scored candidates appear as `surface=diskann` counter rows with the active quant kind and ISA (pg_test + suite result extraction) | Test |
+| FR-067-AC-3 | The same query returns identical rows with batching on and off (pg_test A/B) | Test |
 
 ## Dependencies
 

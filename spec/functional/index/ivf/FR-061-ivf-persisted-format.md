@@ -115,9 +115,9 @@ not_persisted:
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-061-AC-1 | An independent implementation can decode metadata, centroid chain, posting entries, and PQ codebook chain from this schema alone | Spec audit against `src/am/ec_ivf/page.rs` |
-| FR-061-AC-2 | Malformed magic, version, dimension mismatch, heaptid overflow, and payload-length mismatch are rejected | pg_test |
-| FR-061-AC-3 | The three payload variants are distinguishable from metadata alone, without sniffing payload bytes | Code review |
+| FR-061-AC-1 | An independent implementation can decode metadata, centroid chain, posting entries, and PQ codebook chain from this schema alone (spec audit against `src/am/ec_ivf/page.rs`) | Inspection |
+| FR-061-AC-2 | Malformed magic, version, dimension mismatch, heaptid overflow, and payload-length mismatch are rejected | Test |
+| FR-061-AC-3 | The three payload variants are distinguishable from metadata alone, without sniffing payload bytes | Inspection |
 
 ## Dependencies
 

@@ -66,8 +66,8 @@ Scope `creation` rows are index reloptions (`CREATE INDEX ... WITH (...)`);
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-071-AC-1 | The Settings table matches the GUCs registered in `src/am/ec_hnsw/options.rs` one-to-one, including defaults and value sets | Docs audit |
-| FR-071-AC-2 | `SET ec_hnsw.candidate_batch_scoring = off` changes counter attribution (scalar route) without changing query results | pg_test A/B |
+| FR-071-AC-1 | The Settings table matches the GUCs registered in `src/am/ec_hnsw/options.rs` one-to-one, including defaults and value sets | Inspection |
+| FR-071-AC-2 | `SET ec_hnsw.candidate_batch_scoring = off` changes counter attribution (scalar route) without changing query results (pg_test A/B) | Test |
 
 ## Dependencies
 

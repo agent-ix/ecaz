@@ -102,9 +102,9 @@ Implementation anchor: `SuiteConfig` and `SuiteStep` in
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-064-AC-1 | Every checked-in suite under `crates/ecaz-cli/suites/` parses against this schema | CLI unit test |
-| FR-064-AC-2 | A threshold with `filters` selects exactly one row from a multi-row sweep | CLI unit test |
-| FR-064-AC-3 | The documented step-kind list matches the `SuiteStep` enum verbatim | Docs audit |
+| FR-064-AC-1 | Every checked-in suite under `crates/ecaz-cli/suites/` parses against this schema | Test |
+| FR-064-AC-2 | A threshold with `filters` selects exactly one row from a multi-row sweep | Test |
+| FR-064-AC-3 | The documented step-kind list matches the `SuiteStep` enum verbatim | Inspection |
 
 ## Dependencies
 
