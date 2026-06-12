@@ -1,6 +1,7 @@
 ---
 id: FR-001
 title: tqvector Data Type Registration
+artifact_type: FR
 type: functional-requirement
 status: APPROVED
 object: entity
@@ -10,7 +11,7 @@ traces:
 ---
 # FR-001: tqvector Data Type Registration
 
-## Requirement
+## Description
 
 The extension SHALL register a PostgreSQL data type named `tqvector` with the following properties:
 
@@ -50,6 +51,12 @@ The implementation MAY use an internal transform workspace whose dimension is `n
 
 ## Acceptance Criteria
 
+| ID | Criteria | Verification |
+|----|----------|--------------|
+| FR-001-AC-1 | `tqvector` is visible in `pg_type` after `CREATE EXTENSION ecaz` | Test |
+| FR-001-AC-2 | `tqvector` values are TOASTable; a 1536-dim 4-bit datum occupies 783 bytes total | Test |
+| FR-001-AC-3 | Pack/unpack of `(dim, bits, seed, gamma, code_bytes)` round-trips losslessly for all valid parameter combinations | Test |
+
 ### FR-001-AC-1: Type exists after CREATE EXTENSION
 After `CREATE EXTENSION ecaz`, the type `tqvector` SHALL be visible in `pg_type`.
 
@@ -58,3 +65,8 @@ Values stored in `tqvector` columns SHALL be TOASTable. A 1536-dim, 4-bit datum 
 
 ### FR-001-AC-3: Binary layout correctness
 Pack/unpack of `(dim, bits, seed, gamma, code_bytes)` SHALL round-trip losslessly for all valid parameter combinations.
+
+## Dependencies
+
+- **Upstream**: US-001, US-004 (traces)
+- **Downstream**: FR-002, FR-003 (tqvector text and binary I/O trace this type)

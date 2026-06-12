@@ -1,6 +1,7 @@
 ---
 id: FR-025
 title: Custom Cumulative Statistics
+artifact_type: FR
 type: functional-requirement
 status: DRAFT
 object: entity
@@ -10,7 +11,7 @@ traces:
 ---
 # FR-025: Custom Cumulative Statistics
 
-## Requirement
+## Description
 
 On PG18, the extension SHALL register a custom pgstat kind to track aggregate operational metrics across all queries, visible via a SQL function and resettable via standard PostgreSQL statistics reset.
 
@@ -107,6 +108,14 @@ falls back to backend-local counters.
 
 ## Acceptance Criteria
 
+| ID | Criteria | Verification |
+|----|----------|--------------|
+| FR-025-AC-1 | On PG18, `SELECT * FROM ecaz_stats()` returns a row with all defined counters | Test |
+| FR-025-AC-2 | After 10 HNSW scan queries, `total_scans_started` is at least 10 and `total_distance_calcs` is greater than 0 | Test |
+| FR-025-AC-3 | The custom-kind reset limitation is documented rather than claiming `pg_stat_reset_shared(text)` resets the custom kind | Inspection |
+| FR-025-AC-4 | Counters accumulate across queries within a session and do not reset between queries | Test |
+| FR-025-AC-5 | On PG17, `ecaz_stats()` raises an appropriate error or does not exist | Test |
+
 ### FR-025-AC-1: Stats function exists
 On PG18, `SELECT * FROM ecaz_stats()` SHALL return a row with all defined counters.
 
@@ -130,3 +139,8 @@ On PG17, calling `ecaz_stats()` SHALL raise an appropriate error or the function
 - PG source: `src/include/utils/pgstat_kind.h` — `PGSTAT_KIND_CUSTOM_MIN` (24), `PGSTAT_KIND_CUSTOM_MAX` (32), `PGSTAT_KIND_EXPERIMENTAL` (24, for dev use)
 - PG source: `src/backend/utils/activity/pgstat.c` — registration flow, shmem allocation, snapshot/flush lifecycle
 - PG source: `src/backend/utils/activity/pgstat_shmem.c` — shared memory backing for custom stat entries
+
+## Dependencies
+
+- **Upstream**: US-011, StR-004 (traces)
+- **Downstream**: none identified

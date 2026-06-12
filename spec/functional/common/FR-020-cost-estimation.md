@@ -1,6 +1,7 @@
 ---
 id: FR-020
 title: Planner Cost Estimation
+artifact_type: FR
 type: functional-requirement
 status: IMPLEMENTED
 object: process
@@ -11,7 +12,7 @@ traces:
 ---
 # FR-020: Planner Cost Estimation
 
-## Requirement
+## Description
 
 The extension SHALL provide production cost-estimation callbacks that let the PostgreSQL query planner compare Ecaz index scans against sequential scans. ADR-011's former prohibitive-cost override is superseded. On PG18, the extension SHALL additionally implement `amgettreeheight` where the access method has meaningful height metadata.
 
@@ -134,6 +135,14 @@ The planner compares index scan cost against sequential scan cost. For ec_hnsw:
 
 ## Acceptance Criteria
 
+| ID | Criteria | Verification |
+|----|----------|--------------|
+| FR-020-AC-1 | EXPLAIN of an ORDER BY `<#>` LIMIT 10 query on a 10K-row indexed table shows Index Scan using `ec_hnsw` | Test |
+| FR-020-AC-2 | On a 50-row indexed table the planner may prefer sequential scan (cost model identifies the crossover) | Test |
+| FR-020-AC-3 | The cost model reads `m`, `ef_search`, `dimensions`, and `max_level` from the index metadata page, not hardcoded defaults | Inspection |
+| FR-020-AC-4 | On PG18, `amgettreeheight` returns the `max_level` value from the metadata page | Test |
+| FR-020-AC-5 | ADR-011 remains marked superseded and the former blanket prohibitive-cost override is not used for non-empty valid indexes | Inspection |
+
 ### FR-020-AC-1: Planner selects index
 On a 10K-row table with a ec_hnsw index, `EXPLAIN SELECT ... ORDER BY col <#> $q LIMIT 10` SHALL show "Index Scan using ec_hnsw".
 
@@ -156,3 +165,8 @@ ADR-011 SHALL remain marked as superseded, and the former blanket prohibitive-co
 - PG source: `src/backend/access/nbtree/nbtree.c` — `btgettreeheight()` reference implementation (reads btree metapage)
 - PG source: `src/backend/access/nbtree/nbtcostestimate.c` — `btcostestimate()` reference for how tree_height feeds into I/O cost estimation
 - pgvector source: `src/hnswscan.c` — pgvector's HNSW cost estimation for comparison
+
+## Dependencies
+
+- **Upstream**: US-007, FR-009, StR-004 (traces)
+- **Downstream**: none identified

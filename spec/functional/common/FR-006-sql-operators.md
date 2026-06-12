@@ -1,6 +1,7 @@
 ---
 id: FR-006
 title: SQL Operators and Operator Class
+artifact_type: FR
 type: functional-requirement
 status: APPROVED
 object: api
@@ -11,7 +12,7 @@ traces:
 ---
 # FR-006: SQL Operators and Operator Class
 
-## Requirement
+## Description
 
 The extension SHALL register SQL operators and an operator class for HNSW index integration.
 
@@ -57,6 +58,12 @@ CREATE OPERATOR CLASS tqvector_ip_ops DEFAULT FOR TYPE tqvector
 
 ## Acceptance Criteria
 
+| ID | Criteria | Verification |
+|----|----------|--------------|
+| FR-006-AC-1 | `SELECT * FROM t ORDER BY col <#> $query LIMIT 10` parses and executes when `$query` is `float4[]` | Test |
+| FR-006-AC-2 | EXPLAIN of the ORDER BY query on an indexed table shows an Index Scan using `ec_hnsw` | Test |
+| FR-006-AC-3 | `a <#> b` equals `b <#> a` for the `(tqvector, tqvector)` overload | Test |
+
 ### FR-006-AC-1: Operator usable in ORDER BY
 `SELECT * FROM t ORDER BY col <#> $query LIMIT 10` SHALL parse and execute when `$query` is `float4[]`.
 
@@ -73,3 +80,8 @@ Current staged behavior:
 
 ### FR-006-AC-3: Operator commutativity
 `a <#> b` SHALL equal `b <#> a` for the `(tqvector, tqvector)` overload.
+
+## Dependencies
+
+- **Upstream**: US-002, FR-017, FR-018 (traces)
+- **Downstream**: none identified

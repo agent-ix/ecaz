@@ -1,6 +1,7 @@
 ---
 id: FR-012
 title: SQL Bootstrap — Extension Packaging
+artifact_type: FR
 type: functional-requirement
 status: APPROVED
 object: configuration
@@ -9,7 +10,7 @@ traces:
 ---
 # FR-012: SQL Bootstrap — Extension Packaging
 
-## Requirement
+## Description
 
 The extension SHALL be installable via standard PostgreSQL extension management.
 
@@ -51,6 +52,12 @@ The extension SHALL compile and install on PostgreSQL 17 and 18 via pgrx feature
 
 ## Acceptance Criteria
 
+| ID | Criteria | Verification |
+|----|----------|--------------|
+| FR-012-AC-1 | `CREATE EXTENSION ecaz` succeeds on a fresh database | Test |
+| FR-012-AC-2 | `DROP EXTENSION ecaz CASCADE` removes all objects without orphans in pg_type, pg_operator, or pg_am | Test |
+| FR-012-AC-3 | `cargo pgrx test pg17` and `cargo pgrx test pg18` both pass | Test |
+
 ### FR-012-AC-1: Clean install
 `CREATE EXTENSION ecaz` on a fresh database SHALL succeed without errors.
 
@@ -59,3 +66,8 @@ The extension SHALL compile and install on PostgreSQL 17 and 18 via pgrx feature
 
 ### FR-012-AC-3: Multi-version support
 `cargo pgrx test pg17` and `cargo pgrx test pg18` SHALL both pass.
+
+## Dependencies
+
+- **Upstream**: US-004 (traces)
+- **Downstream**: none identified

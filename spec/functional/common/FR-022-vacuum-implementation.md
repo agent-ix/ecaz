@@ -1,6 +1,7 @@
 ---
 id: FR-022
 title: Vacuum Implementation — Soft Delete and Graph Maintenance
+artifact_type: FR
 type: functional-requirement
 status: DRAFT
 object: process
@@ -13,7 +14,7 @@ traces:
 ---
 # FR-022: Vacuum Implementation — Soft Delete and Graph Maintenance
 
-## Requirement
+## Description
 
 The extension SHALL implement a working `ambulkdelete` and `amvacuumcleanup` replacing the current no-op implementation. The vacuum algorithm uses a three-pass approach matching the specification in FR-010.
 
@@ -179,6 +180,15 @@ This version does not compact pages after deletion. Deleted element tuples remai
 
 ## Acceptance Criteria
 
+| ID | Criteria | Verification |
+|----|----------|--------------|
+| FR-022-AC-1 | After `DELETE` plus `VACUUM`, a search query does not return the deleted row | Test |
+| FR-022-AC-2 | Post-vacuum element tuples contain no heap TIDs the vacuum callback reported as dead | Test |
+| FR-022-AC-3 | After vacuuming 10% of a 10K-row index (m=8), recall@10 is at least 80% of pre-vacuum recall per NFR-003 methodology | Analysis |
+| FR-022-AC-4 | 60 seconds of concurrent VACUUM, INSERT, and SELECT produce no errors, panics, or corrupted results | Test |
+| FR-022-AC-5 | Every page write in ambulkdelete is wrapped in GenericXLog | Inspection |
+| FR-022-AC-6 | After amvacuumcleanup, `pg_class.reltuples` reflects the live (non-deleted) element count | Test |
+
 ### FR-022-AC-1: Dead rows removed
 After `DELETE FROM t WHERE id = $x; VACUUM t;`, a search query SHALL NOT return the deleted row.
 
@@ -204,3 +214,8 @@ After `amvacuumcleanup`, `pg_class.reltuples` SHALL reflect the count of live (n
 - PG source: `src/backend/catalog/index.c` — `index_vacuum_cleanup()` post-vacuum catalog update flow
 - PG source: `src/include/access/genam.h` — `IndexBulkDeleteCallback` type, `IndexBulkDeleteResult` fields (`num_pages`, `num_index_tuples`, `tuples_removed`)
 - pgvector source: `src/hnswvacuum.c` — three-pass vacuum algorithm (scan → repair → finalize) used as reference for tqvector's approach
+
+## Dependencies
+
+- **Upstream**: US-010, US-005, FR-010, FR-007, StR-004 (traces); FR-009 (deleted-element skip during scan); FR-019 (PG18 streaming reads)
+- **Downstream**: none identified

@@ -1,6 +1,7 @@
 ---
 id: FR-019
 title: Async I/O — ReadStream Integration
+artifact_type: FR
 type: functional-requirement
 status: DRAFT
 object: process
@@ -12,7 +13,7 @@ traces:
 ---
 # FR-019: Async I/O — ReadStream Integration
 
-## Requirement
+## Description
 
 On PostgreSQL 18, the extension SHALL replace synchronous `ReadBufferExtended` calls in scan and vacuum hot paths with the PG18 `read_stream` API, enabling transparent async I/O via the configured `io_method` (sync, worker, or io_uring). On PostgreSQL 17 and earlier, the extension SHALL fall back to the existing synchronous path.
 
@@ -126,7 +127,7 @@ With read_stream, the `ReadBufferExtended` + `LockBuffer` calls are replaced by 
 
 ### Linear Stream — Sequential Prefetch
 
-#### Sequence Diagram
+#### Sequence Diagram — Linear Stream
 
 ```mermaid
 sequenceDiagram
@@ -160,7 +161,7 @@ sequenceDiagram
     end
 ```
 
-#### Callback State
+#### Callback State — Linear Stream
 
 ```rust
 struct LinearPrefetchState {
@@ -229,6 +230,14 @@ The dispatch is compile-time via Cargo features, not runtime. This avoids any ov
 
 ## Acceptance Criteria
 
+| ID | Criteria | Verification |
+|----|----------|--------------|
+| FR-019-AC-1 | On PG18, scan page reads go through `read_stream_next_buffer()` with no direct `ReadBufferExtended` in bootstrap or linear phases | Inspection |
+| FR-019-AC-2 | On PG17, scan behavior is unchanged and no `read_stream` calls are present in the compiled binary | Inspection |
+| FR-019-AC-3 | Cold-cache HNSW top-10 latency with `effective_io_concurrency=16` is measurably lower than with 0 on PG18 `io_method=worker` | Analysis |
+| FR-019-AC-4 | After `amendscan`, zero stream buffers remain pinned and `read_stream_end()` is called for both streams | Test |
+| FR-019-AC-5 | On PG18, `count_element_tuples()` uses a sequential ReadStream instead of per-page `ReadBufferExtended` | Inspection |
+
 ### FR-019-AC-1: PG18 scan uses ReadStream
 On PG18, `amgettuple` SHALL NOT call `ReadBufferExtended` directly during the bootstrap or linear scan phases. All page reads SHALL go through `read_stream_next_buffer()`.
 
@@ -255,3 +264,8 @@ On PG18, `count_element_tuples()` SHALL use a sequential `ReadStream` instead of
 - [Waiting for Postgres 18: Accelerating Disk Reads with Async I/O — pganalyze](https://pganalyze.com/blog/postgres-18-async-io) — high-level architecture, `io_method` comparison, GUC tuning
 - [PostgreSQL 18 AIO Deep Dive — credativ](https://www.credativ.de/en/blog/postgresql-en/postgresql-18-asynchronous-disk-i-o-deep-dive-into-implementation/) — `StartReadBuffers`/`WaitReadBuffers` internals, io_uring ring buffer model
 - [PostgreSQL AIO Wiki](https://wiki.postgresql.org/wiki/AIO) — design overview, which operations use AIO today vs roadmap
+
+## Dependencies
+
+- **Upstream**: US-006, FR-009, FR-010, StR-004 (traces)
+- **Downstream**: FR-022 (vacuum streaming reads on PG18 per FR-019)

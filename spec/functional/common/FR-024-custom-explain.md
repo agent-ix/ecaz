@@ -1,6 +1,7 @@
 ---
 id: FR-024
 title: Custom EXPLAIN Options — Scan Diagnostics
+artifact_type: FR
 type: functional-requirement
 status: DRAFT
 object: process
@@ -11,7 +12,7 @@ traces:
 ---
 # FR-024: Custom EXPLAIN Options — Scan Diagnostics
 
-## Requirement
+## Description
 
 On PG18, the extension SHALL register a custom EXPLAIN option `ecaz` that, when enabled, causes EXPLAIN output to include Ecaz-specific scan statistics for each Index Scan node using the `ec_hnsw` access method.
 
@@ -137,6 +138,14 @@ per-node hook remain PG18-only.
 
 ## Acceptance Criteria
 
+| ID | Criteria | Verification |
+|----|----------|--------------|
+| FR-024-AC-1 | `EXPLAIN (ecaz) SELECT ...` parses without error when the extension is loaded | Test |
+| FR-024-AC-2 | JSON EXPLAIN with `ecaz` on an `ec_hnsw` index includes an "Ecaz Stats" group with all defined counters; text output exposes the same properties | Test |
+| FR-024-AC-3 | EXPLAIN without the `ecaz` option includes no Ecaz-specific output | Test |
+| FR-024-AC-4 | `EXPLAIN (ecaz, ANALYZE)` shows non-zero counter values reflecting actual scan execution | Test |
+| FR-024-AC-5 | The per-node hook chains to any previously installed `explain_per_node_hook` | Inspection |
+
 ### FR-024-AC-1: Option recognized
 `EXPLAIN (ecaz) SELECT ...` SHALL parse without error when the extension is loaded.
 
@@ -160,3 +169,8 @@ If another extension has installed an `explain_per_node_hook`, Ecaz's hook SHALL
 - PG source: `src/include/commands/explain_format.h` — `ExplainPropertyText()`, `ExplainPropertyInteger()`, `ExplainPropertyFloat()`, `ExplainPropertyBool()`, `ExplainOpenGroup()`, `ExplainCloseGroup()`
 - PG source: `src/backend/commands/explain.c` — `explain_per_node_hook` / `explain_per_plan_hook` declaration, `ApplyExtensionExplainOption()` parser integration
 - PG source: `src/include/commands/explain_state.h` — `GUCCheckBooleanExplainOption()` helper for boolean option validation
+
+## Dependencies
+
+- **Upstream**: US-009, FR-009, StR-004 (traces)
+- **Downstream**: none identified

@@ -12,7 +12,7 @@ relationships:
 ---
 # FR-028: ecvector Canonical Row Type
 
-## Requirement
+## Description
 
 The extension SHALL register `ecvector` as the canonical exact/raw fp32 row type for application tables.
 
@@ -26,6 +26,13 @@ The extension SHALL register `ecvector` as the canonical exact/raw fp32 row type
 6. Non-finite values SHALL be rejected.
 
 ## Acceptance Criteria
+
+| ID | Criteria | Verification |
+|----|----------|--------------|
+| FR-028-AC-1 | `CREATE EXTENSION ecaz` registers `ecvector` with typmod input, text I/O, binary I/O, and casts | Test |
+| FR-028-AC-2 | Wrong-dimensionality inserts into `ecvector(N)` raise ERROR | Test |
+| FR-028-AC-3 | `real[]`/`bytea` round-trips through `ecvector` preserve the fp32 payload | Test |
+| FR-028-AC-4 | `encode_to_ecvector` accepts only canonical `(4, 42)` quantizer defaults; other pairs raise ERROR | Test |
 
 ### FR-028-AC-1
 
@@ -42,3 +49,8 @@ Inserting a vector with the wrong dimensionality into `ecvector(N)` raises ERROR
 ### FR-028-AC-4
 
 `encode_to_ecvector(input, 4, 42)` returns a storable `ecvector`; non-canonical bit/seed pairs raise ERROR.
+
+## Dependencies
+
+- **Upstream**: US-012 (implements)
+- **Downstream**: none identified
