@@ -20,10 +20,11 @@ green at every scale:
   13:37–17:08 UTC 2026-06-12).
 - 14/14 recall on/off pairs equal at 1M (28/28 across smaller scales in
   their own manifests); zero `avx2`/`sve` attribution anywhere in the lane.
-- Headline 1M kernel on/off p50: SPIRE TQ −22.6%, DiskANN TQ −13.1%,
-  IVF TQ flat (memory-bound at 1M, matching the established scale
-  gradient). Full numbers and per-directory provenance in
-  `artifacts/manifest.md`.
+- Headline 1M kernel on/off p50: SPIRE TQ −22.6%, DiskANN TQ −13.1%.
+  IVF on/off pairs are same-config noise-floor pairs post-ADR-077 §4
+  default flip (off arm omits the flag instead of forcing the GUC off);
+  the IVF differential evidence is Task 99's explicit A/B. Full numbers
+  and per-directory provenance in `artifacts/manifest.md`.
 
 ## Response to feedback 2026-06-12-01 (codex)
 

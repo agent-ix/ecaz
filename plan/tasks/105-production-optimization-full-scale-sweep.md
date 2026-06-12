@@ -1,7 +1,14 @@
 # Task 105: Production-Target Optimization + Full-Scale Benchmark Sweep
 
-Status: in progress (2026-06-12; operator-confirmed scope — "optimize
-before the full sweep")
+Status: evidence complete, review open (2026-06-12). Phase 1 merged
+(`main=1345ca603`, PR #31); Phase 2 ran green on both lanes at all
+four scales (packets 004/005; both stacks snapshotted and destroyed);
+Phase 3 published (packet 006: matrix, baseline comparison, handoff).
+All five acceptance criteria have on-branch evidence. Closure waits on
+outside review of packets 004/005/006 (incl. the response to the
+2026-06-12-01 G4-lane feedback).
+Original scope note: operator-confirmed — "optimize before the full
+sweep".
 Owner: coder (the Task 99/102/103 author lane). One coder.
 Priority: 1 (gates the safety/cleanup/release-readiness shift)
 

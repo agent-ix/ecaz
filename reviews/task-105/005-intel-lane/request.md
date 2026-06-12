@@ -17,8 +17,10 @@ operator's confirm-before-expensive-work instruction.
 - 14/14 recall on/off pairs equal at 1M; `isa=avx2`/`scalar` attribution
   only across the lane.
 - Headline 1M kernel on/off p50: SPIRE TQ −37% @16 / −48% @64; DiskANN TQ
-  −11% @64; HNSW rabitq / TQ full_lut −19%/−21% @ef=160; IVF families flat
-  (memory-bound at 1M, matching the established scale gradient).
+  −11% @64; HNSW rabitq / TQ full_lut −19%/−21% @ef=160. IVF on/off pairs
+  are same-config noise-floor pairs post-ADR-077 §4 default flip (off arm
+  omits the flag instead of forcing the GUC off); the IVF differential
+  evidence is Task 99's explicit A/B at 100k.
 - One flagged anomaly (not concluded): diskann-pqfs-binary @64 +26% vs
   @128 −7%, single noisy point — carried to the Phase 3 analysis.
 

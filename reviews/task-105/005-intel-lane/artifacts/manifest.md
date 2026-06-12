@@ -50,8 +50,13 @@ packetized.
 - Headline 1M p50 kernel on/off deltas at matched sweep points: SPIRE TQ
   38.7/61.7 ms (−37%) @16 and 98.2/187.8 ms (−48%) @64; DiskANN TQ −11%
   @64, −5% @128; HNSW rabitq and HNSW TQ full_lut −19%/−21% @ef=160 (flat
-  @80); IVF TQ / rabitq1 / pq_fastscan within ±4% (flat at 1M,
-  memory-bound — matches the established scale gradient).
+  @80). IVF on/off pairs read ~0% by construction: the config's off arm
+  omits `--ivf-scratch-soa-batch-decode` rather than forcing the GUC off,
+  and after the ADR-077 §4 default flip both arms run batch decode — the
+  IVF pairs are same-config noise-floor pairs, not a kernel A/B. The IVF
+  differential evidence is Task 99's explicit A/B (−70.3/−68.9% Intel at
+  100k); kernel engagement in both arms here is confirmed by counter rows
+  (35–45% of query time at 1M).
 - Known anomaly for Phase 3: `diskann-pqfs-binary` on/off @list_size=64 is
   +26% (4.84 vs 3.83 ms) while @128 it is −7%; single noisy point
   (stddev ≈ 1.4 ms on ~4 ms p50s), flagged rather than concluded.

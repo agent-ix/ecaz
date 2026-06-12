@@ -72,9 +72,14 @@ Post-rebuild verification (all gates green):
 - Headline 1M p50 kernel on/off deltas at matched sweep points
   (nprobe/list_size 16|64 or ef 80|160): SPIRE TQ 62.3/80.5 ms (−23%) @16
   and 165.8/230.7 ms (−28%) @64; DiskANN TQ −13% @64, −14% @128; DiskANN
-  pqfs-binary −7% @64, −9% @128; IVF TQ, IVF rabitq1, IVF pq_fastscan and
-  the remaining HNSW/SPIRE rabitq cells all within ±2% (flat at 1M,
-  memory-bound — matches the established scale gradient).
+  pqfs-binary −7% @64, −9% @128; remaining HNSW/SPIRE rabitq cells within
+  ±2%. IVF on/off pairs read ~0% by construction: the config's off arm
+  omits `--ivf-scratch-soa-batch-decode` rather than forcing the GUC off,
+  and after the ADR-077 §4 default flip both arms run batch decode — the
+  IVF pairs are same-config noise-floor pairs, not a kernel A/B. The IVF
+  differential evidence is Task 99's explicit A/B (−44% G4 / −70% Intel
+  at 100k); kernel engagement in both arms here is confirmed by counter
+  rows (51–71% of query time at 1M on G4).
 
 Note: `results.jsonl` `artifact` fields contain the remote runner's
 config-relative paths (`reviews/task-105/002-.../artifacts/...`); the
