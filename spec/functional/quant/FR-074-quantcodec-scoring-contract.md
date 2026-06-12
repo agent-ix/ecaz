@@ -3,6 +3,7 @@ id: FR-074
 title: "QuantCodec Scoring Contract"
 artifact_type: FR
 status: IMPLEMENTED
+object: interface
 relationships:
   - target: "ix://agent-ix/ecaz/US-002"
     type: "implements"
@@ -28,10 +29,118 @@ contract, and AM code never calls ISA-specific kernel functions directly.
 This FR pins the contract's method surface, which until now was named
 throughout the spec but defined only in code.
 
-No spec-objects kind models a code interface/trait; this FR is authored as a
-standard behavioral FR (recorded as a format gap).
+This FR is modeled as the `interface` object kind; implementations are not
+enumerated here — each implementation FR links via an `implements` edge.
 
 Implementation anchor: `src/am/common/quant_codec.rs`.
+
+## Contract
+
+```yaml
+name: QuantCodec
+associated_types:
+  - name: PreparedQuery
+    semantics: "Codec-owned prepared-query state (LUTs, projected query, scales)."
+operations:
+  - name: codec_kind
+    inputs: []
+    output: QuantCodecKind
+    semantics: >-
+      Returns one of the seven closed QuantCodecKind values whose labels are
+      pinned by FR-063: turboquant, turboquant_qjl, turboquant_tiled_lut,
+      turboquant_int8, rabitq, grouped_pq, binary.
+  - name: search_codec_tag
+    inputs: []
+    output: QuantSearchCodecTag
+    semantics: "Identifies the persisted search-code tag the codec scores."
+  - name: payload_len
+    inputs: []
+    output: usize
+    semantics: >-
+      Constant for a codec instance so AMs can validate stored payload bytes
+      before scoring.
+  - name: encode_source
+    inputs:
+      - { name: source, type: "&[f32]", semantics: "Raw vector to encode." }
+    output: "Result<EncodedQuantPayload, String>"
+    semantics: "Encodes a raw vector into persisted-format code bytes."
+  - name: prepare_ip_query
+    inputs:
+      - { name: query, type: "&[f32]", semantics: "Raw query vector." }
+    output: "Result<Self::PreparedQuery, String>"
+    semantics: >-
+      Builds the codec-owned prepared-query state (LUTs, projected query,
+      scales) used by all scoring operations.
+  - name: score_ip_candidate
+    inputs:
+      - { name: prepared_query, type: "&Self::PreparedQuery" }
+      - name: payload
+        type: "CandidatePayload<'_>"
+        semantics: >-
+          One candidate's persisted code bytes plus format side data (gamma,
+          sidecar words) as stored by the owning AM.
+    output: "Result<f32, String>"
+    semantics: >-
+      Inner-product estimate for one candidate. Remains the scalar
+      correctness anchor: batch and per-candidate routes satisfy the family's
+      ADR-076 anchor mode against the same scalar reference.
+  - name: try_score_ip_candidate
+    inputs:
+      - { name: prepared_query, type: "&Self::PreparedQuery" }
+      - { name: payload, type: "CandidatePayload<'_>" }
+      - name: min_ip_to_keep
+        type: "Option<f32>"
+        semantics: "Optional per-candidate cutoff."
+    output: "Result<Option<f32>, String>"
+    semantics: >-
+      Inner-product estimate with cutoff; None when the candidate is cut off.
+      Cutoffs are per-candidate and never reorder or skip output slots.
+  - name: score_ip_batch
+    generic_over: Id
+    inputs:
+      - { name: prepared_query, type: "&Self::PreparedQuery" }
+      - name: batch
+        type: "&CandidateBatch<'_, Id>"
+        semantics: "Borrowed candidate batch assembled by the AM scan loop."
+      - name: out_scores
+        type: "&mut [f32]"
+        semantics: "Candidate-order output scores."
+    output: "Result<(), String>"
+    semantics: >-
+      Owns shape prevalidation, width-cascade routing (FR-014), runtime ISA
+      dispatch, scalar-remainder fallback, and counter attribution, emitting
+      (surface, quant_kind, isa) counter rows per FR-063. Output scores are
+      in candidate order. Prevalidation failures mutate no output slot and
+      no counter.
+invariants:
+  - >-
+    payload_len is constant per codec instance; AMs validate stored payload
+    bytes before scoring.
+  - >-
+    AM scan code never calls ISA-specific kernel functions directly; the
+    codec methods are the only compressed-domain scoring entry.
+  - >-
+    Index-local adapters bind AM-owned storage metadata and traversal state
+    to the codec per FR-015's adapter rules; quant code owns scoring math and
+    dispatch, AM code owns storage and traversal.
+  - >-
+    New quant families enter through this contract — scalar reference, batch
+    dispatch, width cascade, counters, reporting — rather than adding
+    AM-specific scoring entry points.
+  - >-
+    QuantCodecKind is a closed enum shared with the counter surface; adding a
+    kind updates FR-063 and NFR-015 in the same change.
+dispatch:
+  by: codec_kind label
+  labels:
+    - turboquant
+    - turboquant_qjl
+    - turboquant_tiled_lut
+    - turboquant_int8
+    - rabitq
+    - grouped_pq
+    - binary
+```
 
 ## Specification
 
