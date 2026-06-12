@@ -15,9 +15,6 @@ tags:
   - simd
 implementation_language: rust
 relationships:
-  - target: "crate://pgrx"
-    type: "requires"
-    cardinality: "1:1"
   - target: "ix://agent-ix/agent-memory-context"
     type: "implements"
     cardinality: "1:1"
@@ -101,7 +98,7 @@ This specification does not govern:
 - GPU/offline build trainers, OPQ/AQ/LSQ successors, SPANN, Symphony, and parallel index scan unless reactivated by a later accepted ADR
 - Cosine and L2 operator families in the current v0 inner-product surface
 
-## 3. Current Product Surface
+## 3. System Overview
 
 ### 3.1 SQL Types
 
@@ -306,7 +303,7 @@ measurement. They are not certification claims.
 | ISO/IEC 25010 | Quality model for non-functional requirements. | NFRs scoped to a primary quality attribute such as performance efficiency, reliability, security, maintainability, portability, or scalability. |
 | ISO/IEC/IEEE 15939 | Measurement process for benchmark, recall, storage, memory, hardening, and operational claims. | Metric definitions, measurement context, candidate identity fields, hardening-lane command provenance, artifact provenance, and documented decision thresholds or explicit gaps. |
 
-## 9. Requirement Architecture
+## 9. Requirements Architecture
 
 ```
 spec/
