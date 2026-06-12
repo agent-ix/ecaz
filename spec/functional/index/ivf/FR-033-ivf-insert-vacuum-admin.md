@@ -12,7 +12,7 @@ relationships:
 ---
 # FR-033: IVF Insert, Vacuum, and Admin Snapshots
 
-## Requirement
+## Description
 
 `ec_ivf` SHALL support live insert, vacuum cleanup, and read-only admin/debug snapshots for drift and page ownership.
 
@@ -25,6 +25,12 @@ relationships:
 
 ## Acceptance Criteria
 
+| ID | Criteria | Verification |
+|---|---|---|
+| FR-033-AC-1 | Rows inserted after index creation are reachable through the IVF index | Test |
+| FR-033-AC-2 | DELETE plus VACUUM removes dead heap TIDs from IVF posting lists | Test |
+| FR-033-AC-3 | IVF admin snapshots reject non-IVF indexes with a clear error | Test |
+
 ### FR-033-AC-1
 
 Rows inserted after index creation are reachable through the IVF index.
@@ -36,3 +42,8 @@ DELETE plus VACUUM removes dead heap TIDs from IVF posting lists.
 ### FR-033-AC-3
 
 IVF admin snapshots reject non-IVF indexes with a clear error.
+
+## Dependencies
+
+- **Upstream**: US-013 (implements relationship)
+- **Downstream**: none identified

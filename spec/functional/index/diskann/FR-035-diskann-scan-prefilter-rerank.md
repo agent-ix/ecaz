@@ -12,7 +12,7 @@ relationships:
 ---
 # FR-035: DiskANN Scan, Prefilter, and Rerank
 
-## Requirement
+## Description
 
 `ec_diskann` SHALL implement ordered scan over the persisted Vamana graph using a configurable traversal prefilter and heap rerank.
 
@@ -34,6 +34,14 @@ relationships:
    management, heap rerank, or I/O.
 
 ## Acceptance Criteria
+
+| ID | Criteria | Verification |
+|---|---|---|
+| FR-035-AC-1 | `ORDER BY embedding <#> query LIMIT k` returns ordered results through `ec_diskann` | Test |
+| FR-035-AC-2 | Session `ec_diskann.list_size` changes the effective scan breadth | Test |
+| FR-035-AC-3 | Binary sidecar prefilter and grouped-PQ fallback are selectable through `ec_diskann.prefilter_kind` | Test |
+| FR-035-AC-4 | DiskANN block-kernel benchmark evidence includes `surface=diskann` rows with quant kind, ISA, scalar/kernel counters, and width buckets | Analysis |
+| FR-035-AC-5 | DiskANN scan optimization packets preserve recall and attribute latency changes to the dominant scan stage | Analysis |
 
 ### FR-035-AC-1
 
@@ -58,3 +66,8 @@ compressed-domain batch-scoring wins.
 DiskANN scan optimization packets preserve recall and attribute end-to-end
 latency changes to the dominant scan stage rather than only reporting aggregate
 p50/p95/p99.
+
+## Dependencies
+
+- **Upstream**: US-014 (implements relationship)
+- **Downstream**: none identified

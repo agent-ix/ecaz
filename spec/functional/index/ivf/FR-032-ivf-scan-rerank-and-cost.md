@@ -12,7 +12,7 @@ relationships:
 ---
 # FR-032: IVF Scan, Rerank, and Costing
 
-## Requirement
+## Description
 
 `ec_ivf` SHALL implement ordered scan behavior over selected posting lists and expose planner/diagnostic surfaces sufficient for local performance tuning.
 
@@ -35,6 +35,14 @@ relationships:
    a known robustness gap rather than an accepted behavior.
 
 ## Acceptance Criteria
+
+| ID | Criteria | Verification |
+|---|---|---|
+| FR-032-AC-1 | An IVF index scan returns ordered heap TIDs for `ORDER BY embedding <#> query LIMIT k` | Test |
+| FR-032-AC-2 | Session `ec_ivf.nprobe` and `ec_ivf.rerank_width` overrides are reflected in scan/debug output | Test |
+| FR-032-AC-3 | `EXPLAIN (ecaz)` can report IVF scan counters on PG18 | Test |
+| FR-032-AC-4 | IVF block-kernel benchmark evidence includes `surface=ivf` rows with quant kind, ISA, scalar/kernel counters, and width buckets | Analysis |
+| FR-032-AC-5 | Plain non-ORDER-BY statements such as `count(*)` over an IVF-indexed table plan and execute without an ANN scan shape error after the Task 100 planner guard | Test |
 
 ### FR-032-AC-1
 
@@ -59,3 +67,8 @@ batch-scoring wins.
 Plain non-ORDER-BY statements such as `count(*)` over an IVF-indexed table plan
 and execute without an ANN scan shape error after the Task 100 planner guard is
 implemented.
+
+## Dependencies
+
+- **Upstream**: US-013 (implements relationship)
+- **Downstream**: none identified

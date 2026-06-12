@@ -15,7 +15,7 @@ relationships:
 ---
 # FR-030: Current HNSW Access Method Surface
 
-## Requirement
+## Description
 
 `ec_hnsw` SHALL remain the default general-purpose ANN access method and SHALL support the current main-branch build, scan, insert, vacuum, planner, diagnostics, parallel-build, storage-format, and compressed-domain scoring surfaces.
 
@@ -32,6 +32,15 @@ relationships:
 9. Parallel index scan is not part of the active requirement set.
 
 ## Acceptance Criteria
+
+| ID | Criteria | Verification |
+|---|---|---|
+| FR-030-AC-1 | `CREATE INDEX ... USING ec_hnsw` succeeds for documented `ecvector` and `tqvector` opclasses | Test |
+| FR-030-AC-2 | `SET ec_hnsw.ef_search = value` changes the effective scan breadth reported by HNSW diagnostics | Test |
+| FR-030-AC-3 | On PG18, `EXPLAIN (ecaz)` can emit HNSW scan counters for an HNSW index scan | Test |
+| FR-030-AC-4 | Parallel HNSW build can be enabled or disabled through the documented diagnostic GUC | Test |
+| FR-030-AC-5 | HNSW compressed-domain batch scoring emits block-kernel counter rows with surface `hnsw` and the applicable quant kind | Test |
+| FR-030-AC-6 | HNSW exact-mode benchmark evidence reports width buckets and avoids SVE/32-wide claims when the `>=32` flush share is below the task gate | Analysis |
 
 ### FR-030-AC-1
 
@@ -60,3 +69,8 @@ the shared batch scorer.
 HNSW exact-mode benchmark evidence reports width buckets and does not claim SVE
 or 32-wide kernel wins when the measured `>=32` flush share is below the task
 gate.
+
+## Dependencies
+
+- **Upstream**: US-003, US-008 (implements relationships)
+- **Downstream**: none identified

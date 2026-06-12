@@ -1,6 +1,7 @@
 ---
 id: FR-008
 title: HNSW Index Access Method — Build
+artifact_type: FR
 type: functional-requirement
 status: APPROVED
 object: process
@@ -10,7 +11,7 @@ traces:
   - StR-003
 ---
 # FR-008: HNSW Index Access Method — Build
-## Requirement
+## Description
 
 The extension SHALL implement the `ambuild`, `ambuildempty`, and `amoptions` callbacks for the `ec_hnsw` access method.
 
@@ -190,6 +191,15 @@ Called for `CREATE INDEX` before any data exists:
 
 ## Acceptance Criteria
 
+| ID | Criteria | Verification |
+|---|---|---|
+| FR-008-AC-1 | After `CREATE INDEX ... USING ec_hnsw` on 1000 rows, the index contains 1000 element tuples | Test |
+| FR-008-AC-2 | A partially-built index is cleaned up on recovery after a crash during ambuild (standard Postgres behavior) | Analysis |
+| FR-008-AC-3 | Every page modification in ambuild is wrapped in GenericXLogStart/GenericXLogFinish | Inspection |
+| FR-008-AC-4 | After ambuild, every neighbor TID in every TqNeighborTuple points to a valid TqElementTuple | Test |
+| FR-008-AC-5 | Default-mode ambuild uses f32 inner product distance from the raw-vector source, not compressed code distance | Inspection |
+| FR-008-AC-6 | `WITH (m = 0)` raises ERROR; `WITH (m = 8, ef_construction = 64)` succeeds | Test |
+
 ### FR-008-AC-1: Bulk build populates graph
 After `CREATE INDEX ... USING ec_hnsw` on a table with 1000 rows, the index SHALL contain 1000 element tuples.
 
@@ -209,3 +219,8 @@ code distance.
 
 ### FR-008-AC-6: amoptions validation
 `WITH (m = 0)` SHALL raise ERROR. `WITH (m = 8, ef_construction = 64)` SHALL succeed.
+
+## Dependencies
+
+- **Upstream**: US-003, FR-007, StR-003 (traces); FR-011 (GenericXLog), FR-015 (quantizer scoring) referenced in prose
+- **Downstream**: none identified

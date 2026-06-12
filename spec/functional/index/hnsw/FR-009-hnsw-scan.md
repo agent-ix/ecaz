@@ -1,6 +1,7 @@
 ---
 id: FR-009
 title: HNSW Index Access Method — Scan (Query)
+artifact_type: FR
 type: functional-requirement
 status: APPROVED
 object: process
@@ -13,7 +14,7 @@ traces:
 ---
 # FR-009: HNSW Index Access Method — Scan (Query)
 
-## Requirement
+## Description
 
 The extension SHALL implement the scan callbacks for the `ec_hnsw` access method: `ambeginscan`, `amrescan`, `amgettuple`, `amendscan`. All scan operations work directly on Postgres buffer pages — no `hnsw_rs` involvement.
 
@@ -219,6 +220,15 @@ All page reads during scan use `ReadBuffer` + `LockBuffer(BUFFER_LOCK_SHARE)`. P
 
 ## Acceptance Criteria
 
+| ID | Criteria | Verification |
+|---|---|---|
+| FR-009-AC-1 | `SELECT id FROM t ORDER BY col <#> $q LIMIT 10` returns exactly 10 rows given >= 10 rows in the table | Test |
+| FR-009-AC-2 | Results are ordered by ascending negative inner product (highest similarity first) | Test |
+| FR-009-AC-3 | EXPLAIN confirms an Index Scan using `ec_hnsw` once the bootstrap-stage planner cost override is removed | Test |
+| FR-009-AC-4 | Higher ef_search values produce higher recall at the cost of increased latency | Analysis |
+| FR-009-AC-5 | `SET ec_hnsw.ef_search = 200` succeeds and affects subsequent queries in the same session | Test |
+| FR-009-AC-6 | Scanning a 50K-row index keeps simultaneously pinned buffers bounded (< 10) | Analysis |
+
 ### FR-009-AC-1: Top-k results returned
 `SELECT id FROM t ORDER BY col <#> $q LIMIT 10` SHALL return exactly 10 rows (given >= 10 rows in the table).
 
@@ -236,3 +246,8 @@ Higher ef_search values SHALL produce higher recall at the cost of increased lat
 
 ### FR-009-AC-6: No excessive buffer pins
 During a scan of a 50K-row index, the maximum number of simultaneously pinned buffers SHALL be bounded (< 10).
+
+## Dependencies
+
+- **Upstream**: US-002, FR-017, FR-007, FR-015, StR-003 (traces); ADR-011 (planner gate) referenced in prose
+- **Downstream**: none identified

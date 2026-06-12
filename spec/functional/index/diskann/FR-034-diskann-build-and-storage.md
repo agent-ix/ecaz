@@ -12,7 +12,7 @@ relationships:
 ---
 # FR-034: DiskANN Build and Persisted Vamana Storage
 
-## Requirement
+## Description
 
 `ec_diskann` SHALL implement a Vamana/DiskANN-style access method with AM-owned
 persisted graph storage. The build path SHALL support the current deterministic
@@ -33,6 +33,14 @@ stepping-stone when enabled.
    parse DiskANN build-time evidence.
 
 ## Acceptance Criteria
+
+| ID | Criteria | Verification |
+|---|---|---|
+| FR-034-AC-1 | `CREATE INDEX ... USING ec_diskann` succeeds for unit-normalized `ecvector` data and writes readable graph metadata | Test |
+| FR-034-AC-2 | Non-unit or non-finite source vectors are rejected or warned according to the build/insert context | Test |
+| FR-034-AC-3 | Invalid DiskANN reloption values raise ERROR during index creation | Test |
+| FR-034-AC-4 | Parallel DiskANN build evidence proves serial/parallel persisted graph equivalence for the accepted stepping-stone configuration | Analysis |
+| FR-034-AC-5 | Suite build artifacts include parseable DiskANN phase timing for build benchmark packets | Inspection |
 
 ### FR-034-AC-1
 
@@ -55,3 +63,8 @@ equivalence for the accepted stepping-stone configuration.
 
 Suite build artifacts include parseable DiskANN phase timing for build
 benchmark packets.
+
+## Dependencies
+
+- **Upstream**: US-014 (implements relationship)
+- **Downstream**: none identified

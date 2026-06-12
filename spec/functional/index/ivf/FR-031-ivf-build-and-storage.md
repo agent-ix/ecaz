@@ -12,7 +12,7 @@ relationships:
 ---
 # FR-031: IVF Build and Storage
 
-## Requirement
+## Description
 
 `ec_ivf` SHALL implement a PostgreSQL index access method that trains centroids,
 assigns heap rows to posting lists, and persists AM-owned metadata and
@@ -33,6 +33,13 @@ heap-ingestion and tuple-buffer capture surface when enabled.
 
 ## Acceptance Criteria
 
+| ID | Criteria | Verification |
+|---|---|---|
+| FR-031-AC-1 | `CREATE INDEX ... USING ec_ivf` produces readable IVF metadata with centroid/list counts and storage-format metadata | Test |
+| FR-031-AC-2 | Invalid reloption values raise ERROR during index creation | Test |
+| FR-031-AC-3 | `rerank = 'source_column'` raises a clear unsupported-mode ERROR | Test |
+| FR-031-AC-4 | Parallel IVF build diagnostics prove live worker tuple capture and serial/parallel equivalence on the Task 71 validation fixtures | Analysis |
+
 ### FR-031-AC-1
 
 `CREATE INDEX ... USING ec_ivf` produces readable IVF metadata with centroid/list counts and storage-format metadata.
@@ -50,3 +57,8 @@ Invalid reloption values raise ERROR during index creation.
 Parallel IVF build diagnostics can prove that worker tuple capture is live and
 that serial and parallel build paths produce equivalent index-visible results
 on the validation fixtures used for Task 71.
+
+## Dependencies
+
+- **Upstream**: US-013 (implements relationship)
+- **Downstream**: none identified
