@@ -23,31 +23,25 @@ tuning surface ships undocumented.
 
 Implementation anchor: `src/am/ec_hnsw/options.rs` (`register_gucs`).
 
-## Parameters
+## Configuration
 
-Index reloptions (`CREATE INDEX ... WITH (...)`):
+Scope `creation` rows are index reloptions (`CREATE INDEX ... WITH (...)`);
+`runtime` and `session` rows are session GUCs (all `PGC_USERSET`).
 
-| Name | Type | Default | Range | Description |
+| Name | Scope | Type | Default | Description |
 | --- | --- | --- | --- | --- |
-| `m` | int | 8 | 2-100 | Max neighbors per layer. |
-| `ef_construction` | int | 64 | 10-1000 | Build-time beam width. |
-| `ef_search` | int | 40 | 1-1000 | Per-index default scan breadth. |
-| `build_source_column` | text | null | valid heap column | Optional `float4[]` column used only during bulk build. |
-| `rerank_source_column` | text | null | valid heap column | Optional rerank payload source. |
-| `storage_format` | text | per opclass | documented formats | Persisted code format selector. |
-
-## Settings
-
-Session GUCs (all `PGC_USERSET`):
-
-| Name | Type | Default | Range/Values | Description |
-| --- | --- | --- | --- | --- |
-| `ec_hnsw.ef_search` | int | 40 | 1-1000 | Session override for scan breadth; at default the reloption stays authoritative. |
-| `ec_hnsw.turboquant_exact_score_mode` | enum | `exact` | `exact`, `full_lut`, `tiled_lut`, `int8_approx` | Task 98 measurement switch selecting the TurboQuant exact-score strategy. |
-| `ec_hnsw.candidate_batch_scoring` | bool | `on` | — | Task 87 batch-scoring route; disable only to A/B the structural CandidateBatch route against the pre-Task-87 scalar FullLut path. |
-| `ec_hnsw.enable_parallel_build_concurrent_dsm` | bool | `on` | — | ADR-048 Phase-4 concurrent DSM graph assembly for eligible parallel builds; disable only as a diagnostic fallback. |
-| `ec_hnsw.disable_binary_prefilter` | bool | `off` | — | Diagnostic A/B switch: skip ADR-031 binary-query preparation. |
-| `ec_hnsw.force_binary_derivation` | bool | `off` | — | Diagnostic A/B switch: derive binary words from code bytes even when persisted sidecars exist. |
+| `m` | creation | int | 8 | Max neighbors per layer. Range: 2-100. |
+| `ef_construction` | creation | int | 64 | Build-time beam width. Range: 10-1000. |
+| `ef_search` | creation | int | 40 | Per-index default scan breadth. Range: 1-1000. |
+| `build_source_column` | creation | text | null | Optional `float4[]` column used only during bulk build. Must be a valid heap column. |
+| `rerank_source_column` | creation | text | null | Optional rerank payload source. Must be a valid heap column. |
+| `storage_format` | creation | text | per opclass | Persisted code format selector. Values: documented formats. |
+| `ec_hnsw.ef_search` | session | int | 40 | Session override for scan breadth; at default the reloption stays authoritative. Range: 1-1000. |
+| `ec_hnsw.turboquant_exact_score_mode` | runtime | enum | `exact` | Task 98 measurement switch selecting the TurboQuant exact-score strategy. Values: `exact`, `full_lut`, `tiled_lut`, `int8_approx`. |
+| `ec_hnsw.candidate_batch_scoring` | runtime | bool | `on` | Task 87 batch-scoring route; disable only to A/B the structural CandidateBatch route against the pre-Task-87 scalar FullLut path. |
+| `ec_hnsw.enable_parallel_build_concurrent_dsm` | runtime | bool | `on` | ADR-048 Phase-4 concurrent DSM graph assembly for eligible parallel builds; disable only as a diagnostic fallback. |
+| `ec_hnsw.disable_binary_prefilter` | runtime | bool | `off` | Diagnostic A/B switch: skip ADR-031 binary-query preparation. |
+| `ec_hnsw.force_binary_derivation` | runtime | bool | `off` | Diagnostic A/B switch: derive binary words from code bytes even when persisted sidecars exist. |
 
 ## Behavior
 

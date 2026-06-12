@@ -25,34 +25,28 @@ that were previously undocumented in spec.
 
 Implementation anchor: `src/am/ec_ivf/options.rs` (`register_gucs`).
 
-## Parameters
+## Configuration
 
-Index reloptions (`CREATE INDEX ... WITH (...)`):
+Scope `creation` rows are index reloptions (`CREATE INDEX ... WITH (...)`);
+`runtime` and `session` rows are session GUCs (all `PGC_USERSET`).
 
-| Name | Type | Description |
-| --- | --- | --- |
-| `nlists` | int | IVF cluster count. |
-| `nprobe` | int | Default posting lists probed per query; automatic `ceil(sqrt(nlists))` when unset. |
-| `rerank_width` | int | Default `heap_f32` rerank frontier width. |
-| `training_sample_rows` | int | Centroid training sample size. |
-| `seed` | int | Deterministic training/assignment seed. |
-| `pq_group_size` | int | Dimensions per grouped-PQ group (`pq_fastscan`). |
-| `posting_slack_percent` | int | Reserved slack pages for churn reuse. |
-| `storage_format` | text | `auto`, `turboquant`, `pq_fastscan`, `rabitq`. |
-| `rerank` | text | `auto`, `off`, `heap_f32`; `source_column` rejected until implemented. |
-
-## Settings
-
-Session GUCs (all `PGC_USERSET`):
-
-| Name | Type | Default | Range/Values | Description |
+| Name | Scope | Type | Default | Description |
 | --- | --- | --- | --- | --- |
-| `ec_ivf.nprobe` | int | -1 (unset) | -1..max | Overrides relation `nprobe` when set to 1 or higher; -1 uses the relation value. |
-| `ec_ivf.rerank_width` | int | -1 (unset) | -1..max | Overrides relation `rerank_width` when set to 0 or higher; -1 uses the relation value. |
-| `ec_ivf.adaptive_nprobe` | bool | `off` | — | Task 51 diagnostic: scans may halve nprobe when the centroid frontier shows the configured score gap. |
-| `ec_ivf.adaptive_nprobe_score_gap_micros` | int | 0 | 0..max | Inner-product score gap (x1e6) required between retained frontier and next centroid before adaptive reduction. |
-| `ec_ivf.adaptive_nprobe_score_margin_ratio_bps` | int | 0 | 0..max | Basis-point ratio signal; values > 0 switch adaptive nprobe to the ratio criterion. |
-| `ec_ivf.scratch_soa_batch_decode` | bool | `off` | — | Task 51 experimental: batch posting-tuple field decode into scan-local structure-of-arrays buffers before scoring. |
+| `nlists` | creation | int | — | IVF cluster count. |
+| `nprobe` | creation | int | — | Default posting lists probed per query; automatic `ceil(sqrt(nlists))` when unset. |
+| `rerank_width` | creation | int | — | Default `heap_f32` rerank frontier width. |
+| `training_sample_rows` | creation | int | — | Centroid training sample size. |
+| `seed` | creation | int | — | Deterministic training/assignment seed. |
+| `pq_group_size` | creation | int | — | Dimensions per grouped-PQ group (`pq_fastscan`). |
+| `posting_slack_percent` | creation | int | — | Reserved slack pages for churn reuse. |
+| `storage_format` | creation | text | — | `auto`, `turboquant`, `pq_fastscan`, `rabitq`. |
+| `rerank` | creation | text | — | `auto`, `off`, `heap_f32`; `source_column` rejected until implemented. |
+| `ec_ivf.nprobe` | session | int | -1 (unset) | Overrides relation `nprobe` when set to 1 or higher; -1 uses the relation value. Range: -1..max. |
+| `ec_ivf.rerank_width` | session | int | -1 (unset) | Overrides relation `rerank_width` when set to 0 or higher; -1 uses the relation value. Range: -1..max. |
+| `ec_ivf.adaptive_nprobe` | runtime | bool | `off` | Task 51 diagnostic: scans may halve nprobe when the centroid frontier shows the configured score gap. |
+| `ec_ivf.adaptive_nprobe_score_gap_micros` | runtime | int | 0 | Inner-product score gap (x1e6) required between retained frontier and next centroid before adaptive reduction. Range: 0..max. |
+| `ec_ivf.adaptive_nprobe_score_margin_ratio_bps` | runtime | int | 0 | Basis-point ratio signal; values > 0 switch adaptive nprobe to the ratio criterion. Range: 0..max. |
+| `ec_ivf.scratch_soa_batch_decode` | runtime | bool | `off` | Task 51 experimental: batch posting-tuple field decode into scan-local structure-of-arrays buffers before scoring. |
 
 ## Behavior
 

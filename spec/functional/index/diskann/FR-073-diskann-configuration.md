@@ -26,30 +26,24 @@ measurement switch.
 
 Implementation anchor: `src/am/ec_diskann/options.rs` (`register_gucs`).
 
-## Parameters
+## Configuration
 
-Index reloptions (`CREATE INDEX ... WITH (...)`):
+Scope `creation` rows are index reloptions (`CREATE INDEX ... WITH (...)`);
+`runtime` and `session` rows are session GUCs (all `PGC_USERSET`).
 
-| Name | Type | Description |
-| --- | --- | --- |
-| `graph_degree` | int | Max neighbors per Vamana node (R). |
-| `build_list_size` | int | Vamana build-phase beam (L). |
-| `list_size` | int | Default scan breadth. |
-| `rerank_budget` | int | Exact heap-rerank bound before LIMIT truncation. |
-| `top_k` | int | Expected result depth used by costing. |
-| `alpha` | real | Vamana pruning factor. |
-| `storage_format` | text | Currently `pq_fastscan` (`FR-034` behavior 3). |
-
-## Settings
-
-Session GUCs (all `PGC_USERSET`):
-
-| Name | Type | Default | Range/Values | Description |
+| Name | Scope | Type | Default | Description |
 | --- | --- | --- | --- | --- |
-| `ec_diskann.list_size` | int | -1 (unset) | -1, 1-10000 | Overrides relation `list_size` when set to 1-10000; -1 uses the relation value. |
-| `ec_diskann.prefilter_kind` | enum | `auto` | `auto`, `binary_sidecar`, `grouped_pq` | `auto` uses persisted binary sidecars when present and falls back to grouped-PQ; `grouped_pq` forces the legacy prefilter for emergency rollback. |
-| `ec_diskann.candidate_batch_scoring` | bool | `on` | — | Task 93 block-kernel CandidateBatch prefilter route; disable only to A/B against the per-candidate scoring path. |
-| `ec_diskann.scan_profile_notice` | bool | `off` | — | Task 70 developer switch: amrescan emits one NOTICE with scan setup, graph read/decode, prefilter scoring, frontier maintenance, heap prefetch, exact rerank, result expansion, and total timing. |
+| `graph_degree` | creation | int | — | Max neighbors per Vamana node (R). |
+| `build_list_size` | creation | int | — | Vamana build-phase beam (L). |
+| `list_size` | creation | int | — | Default scan breadth. |
+| `rerank_budget` | creation | int | — | Exact heap-rerank bound before LIMIT truncation. |
+| `top_k` | creation | int | — | Expected result depth used by costing. |
+| `alpha` | creation | real | — | Vamana pruning factor. |
+| `storage_format` | creation | text | — | Currently `pq_fastscan` (`FR-034` behavior 3). |
+| `ec_diskann.list_size` | session | int | -1 (unset) | Overrides relation `list_size` when set to 1-10000; -1 uses the relation value. Range: -1, 1-10000. |
+| `ec_diskann.prefilter_kind` | runtime | enum | `auto` | `auto` uses persisted binary sidecars when present and falls back to grouped-PQ; `grouped_pq` forces the legacy prefilter for emergency rollback. Values: `auto`, `binary_sidecar`, `grouped_pq`. |
+| `ec_diskann.candidate_batch_scoring` | runtime | bool | `on` | Task 93 block-kernel CandidateBatch prefilter route; disable only to A/B against the per-candidate scoring path. |
+| `ec_diskann.scan_profile_notice` | runtime | bool | `off` | Task 70 developer switch: amrescan emits one NOTICE with scan setup, graph read/decode, prefilter scoring, frontier maintenance, heap prefetch, exact rerank, result expansion, and total timing. |
 
 ## Behavior
 
