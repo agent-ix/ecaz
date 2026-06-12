@@ -23,9 +23,10 @@ G4 NEON/SVE2 numbers do not exist yet anywhere in the project.
 | TQ no-QJL 4-bit, tiled_lut mode (tiled_lut32) | **retired** | structurally absent | structurally absent | structurally absent |
 | TQ-QJL (qjl32, non-1536 dims) | **real** | **real** | **real** | structurally absent (TQ storage is 1536-only on DiskANN) |
 | TQ no-QJL 2-bit | absent — no surface (Task 96 stop) | absent | absent | absent |
-| RaBitQ bits=1 (rabitq32) | **real** (bits-1 sidecar lane) | **real** | partial — e2e only, counters not batch-attributed | **real** |
-| RaBitQ bits=2/4/8 | structurally absent (no `quant_bits` on ec_hnsw) | storage lanes measured; **no kernel** (rabitq32 is bits=1 by contract) | not measured | bits=1 by construction |
-| grouped-PQ (grouped_pq_block) | out of scope (per-candidate traversal) + M5 coverage gap recorded | **real** | **structurally absent — product gap** (see §4) | **real** |
+| RaBitQ bits=1 (rabitq32) | **real** (bits-1 sidecar lane) | **real** | **real** (unified driver; Task 106) — counters batch-attributed | **real** |
+| RaBitQ bits=2/4 (rabitq32 multi-bit) | structurally absent (no `quant_bits` on ec_hnsw) | **real** (multi-bit block kernel; Task 106 — scalar/NEON/AVX2; NEON M5-validated, AVX2 bench-pending) | bits=4-by-default (driver-routed; no block kernel by contract) | bits=1 by construction |
+| RaBitQ bits=8 | structurally absent | batched (arithmetic estimator; **no block kernel** — full-byte level, no LUT fast-scan shape) | not exposed | bits=1 by construction |
+| grouped-PQ (grouped_pq_block) | registered; traversal-batch decision is measurement-gated (§6a item 2) | **real** | **structurally absent — product gap, permanent exclusion** (see §4) | **real** |
 | binary/Hamming sidecar (hamming32) | out of scope (Task 95 scope: DiskANN only) | out of scope | out of scope | **real** (NEON) / **skip** (AVX2, documented) |
 | f32 raw | no-kernel cell (canonical) | no-kernel cell | no-kernel cell | no-kernel cell |
 
@@ -173,15 +174,17 @@ the Task 92 marker convention and the Task 104 matrix's identical entry.
 | --- | --- | --- |
 | TQ no-QJL 2-bit, all AMs | `structurally_absent` — no AM exposes a 2-bit no-QJL surface; `qjl_enabled()` makes bits=2 QJL-by-construction; SQL rejects bits≠4 | task-96/001 surface inventory + accepted stop condition (2026-06-09) |
 | HNSW exact-score modes on IVF/SPIRE/DiskANN | `structurally_absent` — `ec_hnsw.turboquant_exact_score_mode` is an HNSW GUC; other AMs have no exact-mode stage | task-98 task file scope |
-| TQ-QJL on DiskANN | `structurally_absent` — DiskANN ambuild rejects TQ storage off the no-QJL 4-bit (1536) lane | task-104/008 markers table |
-| RaBitQ bits=2/4/8 kernels | no kernel by family contract (rabitq32 is bits=1); IVF storage lanes measured as lanes (bits=2 recall 0.9410, bits=8 recall 0.9820 on M5) | task-93/002 scope; task-104/008 markers |
-| RaBitQ bits=4/8 on HNSW | `structurally_absent` — ec_hnsw exposes no `quant_bits`; rabitq on HNSW is the bits-1 sidecar lane only | task-104/008 markers |
-| grouped-PQ on HNSW | out of scope by design — HNSW traversal scores per-candidate; batch override exists for codec parity tests only. M5 additionally observed zero batch engagement end-to-end (**coverage gap recorded**, Task 94/101 sub-width backport lane) | task-94 task file; task-104/008 §1 |
-| **grouped-PQ on SPIRE** | `structurally_absent` — **product gap**: reloption parses but `encode_assignment_payload` unconditionally errors ("requires a persisted grouped-PQ model"); no fixture flow can build the index; no end-to-end SPIRE PQ evidence exists on any host | task-104/008 markers (flagged to Task 99) |
-| Hamming on IVF/HNSW/SPIRE | out of scope — Task 95 scope is the DiskANN binary-sidecar prefilter, the only ≥batch-width binary surface | task-95 task file |
+| TQ-QJL on DiskANN (non-1536) | **reasoned boundary** (Task 106) — DiskANN's TurboQuant lane is the compact no-QJL 4-bit *prefilter* search code (`VAMANA_SEARCH_CODEC_TURBOQUANT`), which only exists at dim=1536. Non-1536 TQ requires QJL residual signs — a different, larger code format not justified for a coarse prefilter, and DiskANN already serves non-1536 via RaBitQ (bits-1 sidecar) and grouped-PQ. Not built; non-1536 users choose RaBitQ/grouped-PQ. | task-104/008; Task 106 slice 9 |
+| RaBitQ bits=2/4 kernels (IVF) | **real** (Task 106) — multi-bit rabitq32 block kernel (scalar anchor + NEON + AVX2; SVE→NEON), routed through the unified driver with truthful counters. NEON M5-validated; AVX2 bench-pending. Was a weak deferral (bits=1 shipped, 2/4 punted) | Task 106 slices 5–8 |
+| RaBitQ bits=8 kernels | no block kernel by family contract — full-byte level has no LUT fast-scan shape; uses the arithmetic batch estimator (recall 0.9820 on M5) | task-93/002 scope; Task 106 |
+| RaBitQ bits=2/4/8 on HNSW/DiskANN | `structurally_absent` — HNSW/DiskANN expose no `quant_bits`; rabitq there is the bits-1 sidecar lane by construction (a multi-bit *sidecar prefilter* is not a useful surface) | task-104/008 markers |
+| grouped-PQ on HNSW | **measurement-gated** (Task 106 slice 2) — traversal scores per-candidate; the rabitq traversal batch boundary (`flush_rabitq_search_code_batch`) exists to mirror if the flush-width histogram (Task 98 Phase A) justifies it. ADR-077 §7.2 (graph AMs are width-bound) + M5 zero-engagement point toward a measured skip; the histogram on the bench hosts decides | task-94; task-104/008 §1; Task 106 |
+| **grouped-PQ on SPIRE** | `structurally_absent` — **permanent exclusion** (Task 106 slice 4): SPIRE has no grouped-PQ model persistence, so the index cannot build. The `pq_fastscan` reloption is now rejected at parse with a clear message (operator decision: SPIRE will not gain model persistence) | task-104/008; Task 106 slice 4 |
+| Hamming on IVF/HNSW/SPIRE | out of scope — Task 95 scope is the DiskANN binary-sidecar prefilter, the only ≥batch-width binary surface; IVF/HNSW/SPIRE have no persisted binary-sidecar surface (true gap) | task-95 task file |
 | tiled_lut32, all ISAs | `retired` | task-103/001; task-104/008 confirmation |
 | hamming32 AVX2 | `skip` (documented with measurements) | task-103/001 |
-| int8_approx32 / tiled_lut32 SVE | skip by rule (HNSW ≥32-wide flushes ≤0.08%) | task-98/003 |
+| int8_approx32 SVE | skip by rule (HNSW ≥32-wide flushes ≤0.08%, measured) | task-98/003 |
+| tiled_lut32 SVE | `retired` (no SIMD kernel exists to apply the width rule to — tiled_lut32 is a scalar-stub retired lane; the "skip by rule" label was a miscategorization) | task-103/001; task-104/008; Task 106 audit |
 | hamming32 SVE | scope-down by rule (popcount-bound) | task-95/003 |
 | Quantized-LUT (u8 fast-scan) lut32 variant | **deferred indefinitely** (operator decision 2026-06-10; breaks byte-equal regime, post-102 upside ~20%, would invalidate paid ARM evidence) | task 99 file, "Absorbed deferrals" |
 | f32 raw, all AMs | `structurally_absent` (canonical no-kernel cell) | §3 above |
@@ -198,14 +201,47 @@ the Task 92 marker convention and the Task 104 matrix's identical entry.
 
 ## 6a. Unified-driver coverage gaps (sharpened 2026-06-12, Task 105 sweep)
 
-Operator decision: noted now, fixed in a smaller targeted pass after
-the full-scale sweep. See ADR-077 §9 for the canonical wording:
-(1) SPIRE×RaBitQ never migrated (legacy estimator + scalar per-payload
-path; toggle inert, no counters, all hosts/scales); (2) HNSW×grouped-PQ
-registered but never engages (per-candidate traversal); (3) IVF×TQ-QJL
-engagement is fixture-shape-dependent (counters at 512/4096-row
-fixtures incl. G4 sve2, none at 10k×1024d on any host — diagnosis
-needed); (4) SPIRE×pq_fastscan product gap (cannot build).
+Originally noted for a smaller targeted pass after the full-scale sweep.
+**Task 106 (2026-06-12) closed or decided all four**, plus the multi-bit
+RaBitQ weak deferral surfaced by the Task 106 audit. Status:
+
+1. **SPIRE×RaBitQ — CLOSED (code).** Migrated onto the unified
+   candidate-batch driver: bits=1 engages the rabitq32 block kernel
+   (counters + width cascade); the GUC-off path records scalar counter
+   rows. `ec_spire.candidate_batch_scoring` is now a live A/B switch
+   instead of inert. (SPIRE assignment storage is bits=4 by default, so
+   block-kernel counters are bits=1-by-contract — see §1 RaBitQ note.)
+2. **HNSW×grouped-PQ — DECIDED, measurement-gated.** Per the Task 106
+   slice text and ADR-077 §7.2 (graph AMs are width-bound: greedy descent
+   consumes each expansion's scores before forming the next, so
+   partial/octet dispatch — not cross-expansion batching — is the
+   coverage answer), the resolution is a flush-width measurement
+   (Task 98 Phase A histogram) on the bench hosts. M5 already observed
+   zero batch engagement e2e; the histogram confirms batch-or-skip. The
+   rabitq traversal batch boundary (`flush_rabitq_search_code_batch`)
+   exists to mirror if the width distribution justifies it; a measured
+   skip is an acceptable outcome.
+3. **IVF×TQ-QJL — CLOSED (code).** Root cause: `StorageFormat::Auto`
+   (the default when no `storage_format` reloption is set) resolves to
+   TurboQuant at scan time, but `use_scratch_soa_batch_decode_for_format`
+   rejected `Auto`, leaving default 10k×1024d indexes on the
+   per-candidate path with zero batch counters. The Task 97 512/4096-row
+   fixtures set `storage_format` explicitly, which is why they engaged.
+   The gate now admits `Auto` at bits=4 exactly like explicit TurboQuant.
+4. **SPIRE×pq_fastscan — CLOSED (permanent exclusion).** Operator
+   decision: SPIRE will not gain grouped-PQ model persistence. The
+   reloption is now rejected at parse with a clear message instead of
+   parsing then failing at build. See §4.
+
+**Multi-bit RaBitQ (IVF bits=2/4) — CLOSED (code), bench pending.** This
+was a weak deferral, not a true gap: the bits=1 rabitq32 kernel shipped
+while bits=2/4 fell to per-candidate scoring with no counter attribution
+and no scoring-share measurement. Task 106 adds the multi-bit block-kernel
+family (scalar anchor + NEON + AVX2; SVE routes to NEON) and routes IVF
+bits=2/4 through the unified width-cascade driver with truthful counters.
+NEON validated on M5; AVX2 compile+bench on the Intel lane. bits=8 keeps
+the arithmetic batch estimator (full-byte level, no LUT fast-scan shape).
+See §1 and §2.5.
 
 ## 6. Open items this matrix feeds forward
 
