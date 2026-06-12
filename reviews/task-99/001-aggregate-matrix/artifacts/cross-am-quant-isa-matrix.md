@@ -196,6 +196,17 @@ the Task 92 marker convention and the Task 104 matrix's identical entry.
 | neon (Graviton 4) | **complete** (trip 2026-06-12, packet 008 neoncap run via `ecaz.isa_cap=neon`: every kernel family measured, zero sve rows under cap, recall unchanged) | — |
 | sve2 (Graviton 4) | **complete** (packet 008: `sve2-128` measured; lut32/grouped-pq/qjl32 SVE2 kernels served default dispatch with truthful attribution) — **and measurably loses to NEON at every family** (2.0–3.3× on lut32; e2e −27/−45% recoverable). Dispatch-preference flip decided in ADR-077 §6; rabitq32 SVE kernel question closed (unjustified) | follow-up slice: dispatcher preference change |
 
+## 6a. Unified-driver coverage gaps (sharpened 2026-06-12, Task 105 sweep)
+
+Operator decision: noted now, fixed in a smaller targeted pass after
+the full-scale sweep. See ADR-077 §9 for the canonical wording:
+(1) SPIRE×RaBitQ never migrated (legacy estimator + scalar per-payload
+path; toggle inert, no counters, all hosts/scales); (2) HNSW×grouped-PQ
+registered but never engages (per-candidate traversal); (3) IVF×TQ-QJL
+engagement is fixture-shape-dependent (counters at 512/4096-row
+fixtures incl. G4 sve2, none at 10k×1024d on any host — diagnosis
+needed); (4) SPIRE×pq_fastscan product gap (cannot build).
+
 ## 6. Open items this matrix feeds forward
 
 1. **G4 lane** (profile + per-family runbooks 94/027-shape, 97/022) — the
