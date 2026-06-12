@@ -7,9 +7,9 @@ use super::storage::{
     SPIRE_PAYLOAD_FORMAT_TURBOQUANT,
 };
 use crate::am::common::candidate_batch::{
-    record_block_scalar_score_for, score_turboquant_no_qjl_4bit_batch_for,
-    score_turboquant_qjl_batch_for, CandidateBatch, CandidateBatchScoringSurface, CandidateMeta,
-    CandidatePayload,
+    record_block_scalar_score_for, score_rabitq_bits1_batch_for,
+    score_turboquant_no_qjl_4bit_batch_for, score_turboquant_qjl_batch_for, CandidateBatch,
+    CandidateBatchScoringSurface, CandidateMeta, CandidatePayload,
 };
 use crate::am::common::quant_codec::{
     EncodedQuantPayload, QuantCodec, QuantCodecKind, QuantSearchCodecTag,
@@ -419,16 +419,18 @@ impl SpirePreparedAssignmentScorer {
                 );
             }
             Self::RaBitQ { prepared, .. } => {
-                for ((payload, gamma), out_score) in payloads
-                    .chunks_exact(payload_stride)
-                    .zip(gammas.iter())
-                    .zip(out_scores.iter_mut())
-                {
+                for gamma in gammas {
                     if *gamma != 0.0 {
                         return Err("ec_spire RaBitQ assignment gamma must be 0".to_owned());
                     }
-                    *out_score = prepared.estimate_ip_scalar_only(payload);
                 }
+                score_rabitq_payload_slab(
+                    prepared,
+                    payload_stride,
+                    payloads,
+                    payload_count,
+                    out_scores,
+                )?;
             }
         }
         Ok(())
@@ -506,8 +508,14 @@ impl SpirePreparedAssignmentScorer {
                     u64::try_from(scalar_started.elapsed().as_nanos()).unwrap_or(u64::MAX),
                 );
             }
-            Self::RaBitQ { .. } => {
-                for (payload, out_score) in batch.payloads().iter().zip(out_scores.iter_mut()) {
+            Self::RaBitQ {
+                dimensions,
+                prepared,
+                ..
+            } => {
+                let payload_stride = expected_payload_len(*dimensions, self.payload_format())?;
+                let mut slab = Vec::with_capacity(payload_stride * batch.len());
+                for payload in batch.payloads() {
                     let gamma = match payload.meta {
                         CandidateMeta::None
                         | CandidateMeta::Binary
@@ -516,9 +524,24 @@ impl SpirePreparedAssignmentScorer {
                         CandidateMeta::Gamma(gamma) => gamma,
                         CandidateMeta::GammaAndResidualSigns { gamma, .. } => gamma,
                     };
-                    *out_score =
-                        self.score_payload_ip(self.payload_format(), gamma, payload.code)?;
+                    if gamma != 0.0 {
+                        return Err("ec_spire RaBitQ assignment gamma must be 0".to_owned());
+                    }
+                    if payload.code.len() != payload_stride {
+                        return Err(format!(
+                            "ec_spire RaBitQ candidate payload length {} does not match stride {payload_stride}",
+                            payload.code.len()
+                        ));
+                    }
+                    slab.extend_from_slice(payload.code);
                 }
+                score_rabitq_payload_slab(
+                    prepared,
+                    payload_stride,
+                    &slab,
+                    batch.len(),
+                    out_scores,
+                )?;
             }
         }
         Ok(())
@@ -680,6 +703,73 @@ pub(super) fn encode_assignment_input(
         gamma,
         encoded_payload,
     })
+}
+
+/// Score a contiguous zero-gamma RaBitQ payload slab through the unified
+/// candidate-batch machinery (ADR-077 §9.1 SPIRE×RaBitQ migration).
+///
+/// `bits=1` routes through the rabitq32 block-kernel driver
+/// (`score_rabitq_bits1_batch_for`): width cascade, `(spire, rabitq, isa)`
+/// counter attribution, and a scalar tail. `bits=2/4/8` have no rabitq32 block
+/// kernel by family contract (Task 96 stop condition), so they use the
+/// multi-bit arithmetic SIMD estimator (`estimate_ip_batch`), which still
+/// dispatches once per slab and hoists prepared-query state. With candidate
+/// batch scoring disabled the lane falls back to the per-payload scalar
+/// estimator and records scalar counter rows — so
+/// `ec_spire.candidate_batch_scoring` is a live A/B switch on this surface
+/// rather than inert.
+fn score_rabitq_payload_slab(
+    prepared: &PreparedEstimator,
+    payload_stride: usize,
+    payloads: &[u8],
+    payload_count: usize,
+    out_scores: &mut [f32],
+) -> Result<(), String> {
+    debug_assert_eq!(out_scores.len(), payload_count);
+    if payload_count == 0 {
+        return Ok(());
+    }
+
+    if super::options::candidate_batch_scoring_enabled() {
+        if let Some(block_prepared) = prepared.bits1_block_prepared(payload_stride) {
+            let mut batch = CandidateBatch::with_capacity(payload_count);
+            for (index, payload) in payloads.chunks_exact(payload_stride).enumerate() {
+                batch.push(index, CandidatePayload::new(payload, CandidateMeta::RaBitQ))?;
+            }
+            return score_rabitq_bits1_batch_for(
+                CandidateBatchScoringSurface::Spire,
+                block_prepared,
+                &batch,
+                out_scores,
+            );
+        }
+
+        let mut scores = Vec::with_capacity(payload_count);
+        prepared.estimate_ip_batch(payloads, payload_stride, &mut scores)?;
+        if scores.len() != payload_count {
+            return Err(format!(
+                "ec_spire RaBitQ batch estimator produced {} scores for {payload_count} payloads",
+                scores.len()
+            ));
+        }
+        out_scores.copy_from_slice(&scores);
+        return Ok(());
+    }
+
+    let scalar_started = Instant::now();
+    for (payload, out_score) in payloads
+        .chunks_exact(payload_stride)
+        .zip(out_scores.iter_mut())
+    {
+        *out_score = prepared.estimate_ip_scalar_only(payload);
+    }
+    record_block_scalar_score_for(
+        CandidateBatchScoringSurface::Spire,
+        QuantCodecKind::RaBitQ,
+        payload_count,
+        u64::try_from(scalar_started.elapsed().as_nanos()).unwrap_or(u64::MAX),
+    );
+    Ok(())
 }
 
 fn validate_vector_shape(label: &str, dimensions: usize, vector: &[f32]) -> Result<(), String> {
