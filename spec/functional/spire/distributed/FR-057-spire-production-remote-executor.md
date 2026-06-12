@@ -15,7 +15,7 @@ relationships:
 ---
 # FR-057: SPIRE Production Remote Executor
 
-## Requirement
+## Description
 
 Distributed SPIRE SHALL use a production remote executor that resolves sanitized
 libpq/TLS connection state, enforces fanout and governance budgets, validates
@@ -100,17 +100,32 @@ sequenceDiagram
 
 ## Acceptance Criteria
 
-### FR-057-AC-1
+| ID | Criteria | Verification |
+|----|----------|--------------|
+| FR-057-AC-1 | Remote execution exposes pending, transport-ready, sent, receive, ready, failed, blocked, strict, and degraded statuses with stable labels | Test |
+| FR-057-AC-2 | Budget and governance overload fail before raw conninfo exposure and before candidate batches enter merge state | Test |
+| FR-057-AC-3 | Endpoint identity mismatch, stale epoch, timeout, cancellation, transport failure, and degraded skip are observable through operator diagnostics | Demonstration |
+
+### FR-057-AC-1: Executor status labels
 
 Remote execution exposes pending, transport-ready, sent, receive, ready, failed,
 blocked, strict, and degraded statuses with stable labels.
 
-### FR-057-AC-2
+### FR-057-AC-2: Pre-socket budget failure
 
 Budget and governance overload fail before raw conninfo exposure and before
 candidate batches enter merge state.
 
-### FR-057-AC-3
+### FR-057-AC-3: Fault observability
 
 Endpoint identity mismatch, stale epoch, timeout, cancellation, transport
 failure, and degraded skip are observable through operator diagnostics.
+
+## Dependencies
+
+- **Upstream**: FR-055 (topology, remote descriptors, and
+  `conninfo_secret_name` placement state), FR-056 (typed remote endpoint and
+  tuple transport the executor dispatches).
+- **Downstream**: FR-058 (distributed CustomScan read), FR-059
+  (coordinator-routed DML/2PC), and FR-060 (diagnostics and operator
+  surface), per their declared dependencies on this FR.

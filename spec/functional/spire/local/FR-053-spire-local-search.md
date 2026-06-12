@@ -18,7 +18,7 @@ relationships:
 ---
 # FR-053: SPIRE Local Search
 
-## Requirement
+## Description
 
 Local `ec_spire` index scans SHALL use an eager bounded scan contract:
 `amrescan` loads the active epoch, routes the query, reads selected objects,
@@ -81,29 +81,44 @@ sequenceDiagram
 
 ## Acceptance Criteria
 
-### FR-053-AC-1
+| ID | Criteria | Verification |
+|----|----------|--------------|
+| FR-053-AC-1 | Local scans expose route, store, candidate, dedupe, truncation, rerank, and cursor-drain diagnostics sufficient to identify the limiting stage | Test |
+| FR-053-AC-2 | `amgettuple` drains a pre-ranked cursor and does not perform object-store or heap-rerank work | Test |
+| FR-053-AC-3 | Store-grouped prefetch is distinguishable from true parallel multi-store execution in diagnostics and product claims | Inspection |
+| FR-053-AC-4 | SPIRE local recall/latency packets report candidate-surface and miss-attribution fields that separate routing errors from containment or candidate-budget misses | Analysis |
+| FR-053-AC-5 | Leaf block-summary or pruning changes preserve recall and candidate-surface gates versus the accepted baseline or record the tradeoff explicitly | Analysis |
+
+### FR-053-AC-1: Stage diagnostics
 
 Local scans expose route, store, candidate, dedupe, truncation, rerank, and
 cursor-drain diagnostics sufficient to identify the limiting stage.
 
-### FR-053-AC-2
+### FR-053-AC-2: Cursor-drain contract
 
 `amgettuple` drains a pre-ranked cursor and does not perform object-store or
 heap-rerank work.
 
-### FR-053-AC-3
+### FR-053-AC-3: Prefetch vs parallel claims
 
 Store-grouped prefetch is distinguishable from true parallel multi-store
 execution in diagnostics and product claims.
 
-### FR-053-AC-4
+### FR-053-AC-4: Miss-attribution reporting
 
 SPIRE local recall/latency packets report candidate-surface and miss-attribution
 fields sufficient to tell routing errors apart from selected-leaf block
 containment or candidate-budget misses.
 
-### FR-053-AC-5
+### FR-053-AC-5: Pruning-change gates
 
 Leaf block-summary or pruning changes preserve recall and candidate-surface
 gates relative to the accepted Task 79/81 baseline or explicitly record the
 tradeoff as a rejected/diagnostic point.
+
+## Dependencies
+
+- **Upstream**: FR-048 (domain model: epochs, placements, `SpireVecId`
+  dedupe), FR-050 (leaf V2 and block-summary decode), FR-051 (routing, delta,
+  and top-graph objects used for query routing).
+- **Downstream**: none identified.

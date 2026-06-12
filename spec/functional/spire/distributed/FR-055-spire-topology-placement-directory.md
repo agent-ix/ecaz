@@ -12,7 +12,7 @@ relationships:
 ---
 # FR-055: SPIRE Distributed Topology and Placement Directory
 
-## Requirement
+## Description
 
 Distributed SPIRE SHALL use a coordinator PostgreSQL instance for routing
 metadata and one or more remote PostgreSQL shard nodes for row storage and
@@ -103,17 +103,32 @@ support lookup by `(index_oid, source_identity)`.
 
 ## Acceptance Criteria
 
-### FR-055-AC-1
+| ID | Criteria | Verification |
+|----|----------|--------------|
+| FR-055-AC-1 | The topology distinguishes coordinator routing metadata from remote shard row storage and local SPIRE scoring | Inspection |
+| FR-055-AC-2 | The placement directory is defined as the write-routing and PK-read source of truth, not a read-path materialization catalog | Inspection |
+| FR-055-AC-3 | The v1 schema states that non-vector non-PK scatter-gather reads and automatic DDL propagation are out of scope | Inspection |
+
+### FR-055-AC-1: Role separation
 
 The topology distinguishes coordinator routing metadata from remote shard row
 storage and local SPIRE scoring.
 
-### FR-055-AC-2
+### FR-055-AC-2: Directory source of truth
 
 The placement directory is defined as the write-routing and PK-read source of
 truth, not as a read-path materialization catalog.
 
-### FR-055-AC-3
+### FR-055-AC-3: V1 scope exclusions
 
 The v1 schema states that non-vector non-PK scatter-gather reads and automatic
 DDL propagation are out of scope.
+
+## Dependencies
+
+- **Upstream**: FR-048 (domain model: placement directory, remote nodes,
+  epochs).
+- **Downstream**: FR-056 (remote endpoint and typed transport), FR-057
+  (production remote executor), FR-058 (distributed CustomScan read), and
+  FR-059 (coordinator-routed DML/2PC), which all build on this topology and
+  placement-directory contract.

@@ -12,7 +12,7 @@ relationships:
 ---
 # FR-049: SPIRE Partition Object Header
 
-## Requirement
+## Description
 
 Every persisted SPIRE partition object SHALL begin with a validated binary
 header that identifies object kind, format version, PID, object version,
@@ -87,17 +87,31 @@ record_types:
 
 ## Acceptance Criteria
 
-### FR-049-AC-1
+| ID | Criteria | Verification |
+|----|----------|--------------|
+| FR-049-AC-1 | A binary object with invalid magic, unsupported version, unknown kind, nonzero reserved byte, zero PID, or zero object version is rejected | Test |
+| FR-049-AC-2 | Every object-specific decoder validates that the common header kind and flags match the payload type being decoded | Test |
+| FR-049-AC-3 | The object kind table is stable enough for an independent implementation to route encoded bytes to the correct decoder | Inspection |
+
+### FR-049-AC-1: Header rejection
 
 A binary partition object with an invalid magic, unsupported version, unknown
 kind, nonzero reserved byte, zero PID, or zero object version is rejected.
 
-### FR-049-AC-2
+### FR-049-AC-2: Decoder kind and flag checks
 
 Every object-specific decoder validates that the common header kind and flags
 match the payload type being decoded.
 
-### FR-049-AC-3
+### FR-049-AC-3: Kind-table routing stability
 
 The object kind table is stable enough for an independent implementation to
 route encoded bytes to the correct decoder.
+
+## Dependencies
+
+- **Upstream**: FR-048 (SPIRE domain model: PIDs, object versions, epochs, and
+  object kinds this header encodes).
+- **Downstream**: FR-050 (leaf object payloads) and FR-051 (routing, delta, and
+  top-graph payloads), which own the format-specific payloads behind this
+  common header; FR-052 writes header-bearing objects during build.

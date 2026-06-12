@@ -17,7 +17,7 @@ relationships:
 ---
 # FR-043: SPIRE Update, Split, and Merge Lifecycle (Superseded)
 
-## Tombstone
+## Description
 
 This identifier was assigned during the earlier SPIRE partition-object design
 checkpoint for update, split, and merge lifecycle behavior. The active
@@ -30,3 +30,14 @@ requirements are now:
 This tombstone has no active acceptance criteria. It exists to preserve the
 immutable requirement ID history required by the master specification lifecycle
 policy.
+
+## Acceptance Criteria
+
+| ID | Criteria | Verification |
+|----|----------|--------------|
+| FR-043-AC-1 | The tombstone preserves the superseded requirement ID and routes readers to the active superseding requirements | Inspection |
+
+## Dependencies
+
+- **Upstream**: none (superseded; see Description).
+- **Downstream**: FR-054, FR-059, FR-060 (superseding active requirements).

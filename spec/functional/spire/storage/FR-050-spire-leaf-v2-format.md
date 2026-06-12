@@ -15,7 +15,7 @@ relationships:
 ---
 # FR-050: SPIRE Leaf V2 Format
 
-## Requirement
+## Description
 
 SPIRE leaf V2 objects SHALL store assignment rows in a segmented, column-major
 layout so scans can borrow row references, batch score encoded payloads, and
@@ -190,24 +190,40 @@ block_summary:
 
 ## Acceptance Criteria
 
-### FR-050-AC-1
+| ID | Criteria | Verification |
+|----|----------|--------------|
+| FR-050-AC-1 | An independent implementation can decode a Leaf V2 meta tuple and follow its segment chain without Rust-specific or in-memory layout assumptions | Analysis |
+| FR-050-AC-2 | Malformed stride, row-count, non-finite gamma, invalid heap TID, and invalid vector-ID encodings are rejected | Test |
+| FR-050-AC-3 | The spec defines enough vector identity and assignment flag semantics to reproduce scan dedupe, boundary-replica handling, and delta overlay behavior | Inspection |
+| FR-050-AC-4 | Leaf block summaries decode independently from row segments and scans fall back to full row-segment decode when summary metadata is unavailable or disabled | Test |
+
+### FR-050-AC-1: Independent decodability
 
 An independent implementation can decode a Leaf V2 meta tuple and follow its
 segment chain without consulting Rust-specific structures, host pointer layout,
 or PostgreSQL in-memory struct alignment.
 
-### FR-050-AC-2
+### FR-050-AC-2: Malformed-encoding rejection
 
 Malformed stride, row-count, non-finite gamma, invalid heap TID, and invalid
 vector-ID encodings are rejected.
 
-### FR-050-AC-3
+### FR-050-AC-3: Identity and flag semantics
 
 The spec defines enough vector identity and assignment flag semantics to
 reproduce scan dedupe, boundary-replica handling, and delta overlay behavior.
 
-### FR-050-AC-4
+### FR-050-AC-4: Block-summary independence and fallback
 
 Leaf block summaries can be decoded independently from row segments and scans
 can fall back to full row-segment decode when summary metadata is unavailable
 or disabled.
+
+## Dependencies
+
+- **Upstream**: FR-048 (domain model: vector identity, boundary replicas,
+  delta overlay semantics), FR-049 (common partition object header preceding
+  every leaf tuple), NFR-016 (on-disk format evolution discipline for any
+  externally durable summary format).
+- **Downstream**: FR-051 (delta objects reuse the Leaf V2 segment payload
+  encoding defined here).

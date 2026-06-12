@@ -20,7 +20,7 @@ relationships:
 ---
 # FR-039: SPIRE Local NVMe Placement (Superseded)
 
-## Tombstone
+## Description
 
 This identifier was assigned during the earlier SPIRE partition-object design
 checkpoint for local NVMe/store placement. The active requirements are now:
@@ -33,3 +33,15 @@ checkpoint for local NVMe/store placement. The active requirements are now:
 This tombstone has no active acceptance criteria. It exists to preserve the
 immutable requirement ID history required by the master specification lifecycle
 policy.
+
+## Acceptance Criteria
+
+| ID | Criteria | Verification |
+|----|----------|--------------|
+| FR-039-AC-1 | The tombstone preserves the superseded requirement ID and routes readers to the active superseding requirements | Inspection |
+
+## Dependencies
+
+- **Upstream**: none (superseded; see Description).
+- **Downstream**: FR-048, FR-053, FR-055, FR-060 (superseding active
+  requirements).

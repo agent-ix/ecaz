@@ -18,7 +18,7 @@ relationships:
 ---
 # FR-051: SPIRE Routing Delta and Top Graph Formats
 
-## Requirement
+## Description
 
 SPIRE SHALL persist routing, delta, and top-graph objects as typed partition
 objects with explicit binary payloads so hierarchy reconstruction and query
@@ -151,17 +151,32 @@ record_types:
 
 ## Acceptance Criteria
 
-### FR-051-AC-1
+| ID | Criteria | Verification |
+|----|----------|--------------|
+| FR-051-AC-1 | Routing object payloads define dimensions, child PIDs, centroid ordinals, and centroid vectors precisely enough to rebuild the routing hierarchy | Inspection |
+| FR-051-AC-2 | Delta object rows distinguish insert, delete, tombstone, stale-locator, primary, and boundary-replica semantics without mutating published base leaves | Test |
+| FR-051-AC-3 | Top graph objects validate root PID, node count, entry node, graph degree, neighbor ordinals, finite alpha, and frontier ownership | Test |
+
+### FR-051-AC-1: Routing payload completeness
 
 Routing object payloads define dimensions, child PIDs, centroid ordinals, and
 centroid vectors with enough precision to rebuild the routing hierarchy.
 
-### FR-051-AC-2
+### FR-051-AC-2: Delta row semantics
 
 Delta object rows distinguish insert, delete, tombstone, stale-locator, primary,
 and boundary-replica semantics without mutating published base leaves.
 
-### FR-051-AC-3
+### FR-051-AC-3: Top-graph validation
 
 Top graph objects validate root PID, node count, entry node, graph degree,
 neighbor ordinals, finite alpha, and the root/top frontier ownership contract.
+
+## Dependencies
+
+- **Upstream**: FR-048 (domain model: routing hierarchy, deltas, epochs),
+  FR-049 (common partition object header), FR-050 (Leaf V2 segment payload
+  reused by delta objects).
+- **Downstream**: FR-052 (build writes routing, delta, and top-graph objects)
+  and FR-053 (local search routes queries through these objects), per their
+  declared dependencies on this FR.

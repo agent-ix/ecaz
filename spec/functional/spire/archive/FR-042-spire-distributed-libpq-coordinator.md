@@ -20,7 +20,7 @@ relationships:
 ---
 # FR-042: SPIRE Distributed libpq Coordinator (Superseded)
 
-## Tombstone
+## Description
 
 This identifier was assigned during the earlier SPIRE partition-object design
 checkpoint for libpq coordinator behavior. The active requirements are now:
@@ -33,3 +33,15 @@ checkpoint for libpq coordinator behavior. The active requirements are now:
 This tombstone has no active acceptance criteria. It exists to preserve the
 immutable requirement ID history required by the master specification lifecycle
 policy.
+
+## Acceptance Criteria
+
+| ID | Criteria | Verification |
+|----|----------|--------------|
+| FR-042-AC-1 | The tombstone preserves the superseded requirement ID and routes readers to the active superseding requirements | Inspection |
+
+## Dependencies
+
+- **Upstream**: none (superseded; see Description).
+- **Downstream**: FR-055, FR-056, FR-057, FR-058 (superseding active
+  requirements).

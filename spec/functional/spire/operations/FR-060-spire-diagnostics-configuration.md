@@ -18,7 +18,7 @@ relationships:
 ---
 # FR-060: SPIRE Diagnostics Configuration and Operator Surface
 
-## Requirement
+## Description
 
 SPIRE SHALL expose read-only SQL diagnostics, bounded configuration, and
 operator command surfaces that explain active index state, routing behavior,
@@ -123,50 +123,70 @@ locally on each node), not HTTP routes. `Method` is the SQL invocation shape,
 
 ## Acceptance Criteria
 
-### FR-060-AC-1
+| ID | Criteria | Verification |
+|----|----------|--------------|
+| FR-060-AC-1 | An operator can inspect active epoch, object, placement, scan, route, local store, remote, DML, cost, and cleanup state via SQL diagnostics | Demonstration |
+| FR-060-AC-2 | Diagnostics do not expose raw conninfo secrets or raw remote error text | Test |
+| FR-060-AC-3 | Stable labels and evidence labels are documented as public contracts and stale row-materialization labels are not used for the current read path | Inspection |
+| FR-060-AC-4 | Effective SPIRE reloptions and GUCs can be inspected in enough detail to reproduce routing, fanout, timeout, payload, and degraded-mode behavior | Demonstration |
+| FR-060-AC-5 | Remote executor diagnostics expose endpoint identity, transport readiness, timeout/cancel state, strict failures, degraded skips, and payload compatibility without secrets | Test |
+| FR-060-AC-6 | DML diagnostics expose classifier outcome, primitive plan inputs, placement directory state, prepared transaction intent state, and operator recovery actions | Test |
+| FR-060-AC-7 | Repeatable SPIRE operator workflows can write packet-local logs and cite stable evidence labels for readiness, read, fault, and DML fixtures | Demonstration |
+| FR-060-AC-8 | Diagnostics distinguish implementation readiness from benchmark claims and do not imply product-scale performance without packet-local measurement artifacts | Inspection |
+| FR-060-AC-9 | Recall/latency diagnostics expose candidate-surface and miss-attribution fields that support measurement decisions without terminal scrollback or scratch files | Analysis |
+
+### FR-060-AC-1: SQL state inspection
 
 An operator can inspect active epoch, object, placement, scan, route, local
 store, remote, DML, cost, and cleanup state through SQL diagnostics.
 
-### FR-060-AC-2
+### FR-060-AC-2: Secret hygiene
 
 Diagnostics do not expose raw conninfo secrets or raw remote error text.
 
-### FR-060-AC-3
+### FR-060-AC-3: Label contracts
 
 Stable labels and evidence labels are documented as public contracts and stale
 row-materialization labels are not used as the current distributed read path.
 
-### FR-060-AC-4
+### FR-060-AC-4: Configuration inspectability
 
 Effective SPIRE reloptions and GUCs can be inspected with enough detail to
 reproduce routing, fanout, timeout, payload, and degraded-mode behavior.
 
-### FR-060-AC-5
+### FR-060-AC-5: Remote executor observability
 
 Remote executor diagnostics expose endpoint identity, transport readiness,
 timeout/cancel state, strict failures, degraded skips, and tuple-payload
 compatibility without exposing raw secrets.
 
-### FR-060-AC-6
+### FR-060-AC-6: DML and recovery observability
 
 DML diagnostics expose classifier outcome, primitive plan inputs, placement
 directory state, prepared transaction intent state, and operator-owned recovery
 actions.
 
-### FR-060-AC-7
+### FR-060-AC-7: Repeatable evidence workflows
 
 Repeatable SPIRE operator workflows can write packet-local logs and cite stable
 evidence labels for local readiness, distributed read, transport fault, and DML
 lifecycle fixtures.
 
-### FR-060-AC-8
+### FR-060-AC-8: Readiness vs claims
 
 Diagnostics distinguish implementation readiness from benchmark claims and do
 not imply product-scale performance without packet-local measurement artifacts.
 
-### FR-060-AC-9
+### FR-060-AC-9: Miss-attribution fields
 
 SPIRE recall/latency diagnostics expose candidate-surface and miss-attribution
 fields that can support Task 73-85 style decisions without relying on terminal
 scrollback or external scratch files.
+
+## Dependencies
+
+- **Upstream**: FR-048 (domain model: epochs, objects, placements the
+  diagnostics describe), FR-057 (remote executor states and degraded-skip
+  reporting surfaced here), FR-059 (DML classifier, prepared-xact intents,
+  and reaper surfaced here).
+- **Downstream**: none identified.
