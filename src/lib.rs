@@ -124,6 +124,23 @@ pub mod bench_api {
         crate::quant::qjl32::score_turboquant_qjl_scalar(quantizer, prepared, code, gamma)
     }
 
+    #[cfg(feature = "bench")]
+    pub const RABITQ32_BLOCK_WIDTH: usize = crate::quant::rabitq32::BLOCK_WIDTH;
+    /// Score one 32-candidate block of multi-bit (bits=2/4) RaBitQ codes
+    /// through the dispatched block kernel; returns the ISA label. Task 106.
+    #[cfg(feature = "bench")]
+    pub fn rabitq32_multibit_score_block32(
+        prepared: &crate::quant::rabitq::PreparedEstimator,
+        code_len: usize,
+        codes: [&[u8]; RABITQ32_BLOCK_WIDTH],
+        out_scores: &mut [f32],
+    ) -> &'static str {
+        let block = prepared
+            .bitsn_block_prepared(code_len)
+            .expect("multi-bit (bits=2/4) prepared estimator");
+        crate::quant::rabitq32::score_rabitq_bitsn_block32(block, codes, out_scores).label()
+    }
+
     // Hadamard
     #[cfg(all(feature = "bench", target_arch = "x86_64"))]
     pub use crate::quant::hadamard::fwht_in_place_avx2_for_test;

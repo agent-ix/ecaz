@@ -6,8 +6,8 @@ mod helpers;
 
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use ecaz::bench_api::{
-    qjl32_score_block32, qjl32_score_scalar, ProdQuantizer, Quantizer, RaBitQQuantizer,
-    QJL32_BLOCK_WIDTH,
+    qjl32_score_block32, qjl32_score_scalar, rabitq32_multibit_score_block32, ProdQuantizer,
+    Quantizer, RaBitQQuantizer, QJL32_BLOCK_WIDTH, RABITQ32_BLOCK_WIDTH,
 };
 
 fn bench_score_ip_encoded(c: &mut Criterion) {
@@ -329,6 +329,61 @@ fn bench_qjl32_block32(c: &mut Criterion) {
     group.finish();
 }
 
+/// Multi-bit (bits=2/4) RaBitQ block kernel vs the per-candidate scalar
+/// estimate. Reports the dispatched-block scoring-share on this host
+/// (NEON on M5, AVX2 on Intel). Task 106.
+fn bench_rabitq32_multibit_block32(c: &mut Criterion) {
+    let mut group = c.benchmark_group("quant/rabitq32_multibit_block32");
+    let dim = 1024;
+    let prod = ProdQuantizer::cached(dim, 4, 42);
+    for &(bits, label) in &[(2_u8, "bits2"), (4_u8, "bits4")] {
+        let quantizer = RaBitQQuantizer::with_srht_bits_clip(dim, prod.clone(), bits, 2.0).unwrap();
+        let prepared = quantizer.prepare_estimator(&helpers::random_unit_vector(dim, 1));
+        let code_len = <RaBitQQuantizer as Quantizer>::code_len(&quantizer);
+        let codes: Vec<Vec<u8>> = (0..RABITQ32_BLOCK_WIDTH)
+            .map(|i| {
+                <RaBitQQuantizer as Quantizer>::encode_code(
+                    &quantizer,
+                    &helpers::random_unit_vector(dim, i as u64 + 1000),
+                )
+                .into_vec()
+            })
+            .collect();
+        let code_refs: [&[u8]; RABITQ32_BLOCK_WIDTH] = codes
+            .iter()
+            .map(Vec::as_slice)
+            .collect::<Vec<_>>()
+            .try_into()
+            .expect("multi-bit rabitq32 benchmark fixture is exactly one block");
+        let mut out = [0.0_f32; RABITQ32_BLOCK_WIDTH];
+
+        group.throughput(Throughput::Elements(RABITQ32_BLOCK_WIDTH as u64));
+        group.bench_function(
+            BenchmarkId::new(format!("scalar_estimate_{label}"), dim),
+            |b| {
+                b.iter(|| {
+                    let mut sum = 0.0_f32;
+                    for code in &code_refs {
+                        sum += prepared.estimate_ip_scalar_only(code);
+                    }
+                    sum
+                });
+            },
+        );
+        group.bench_function(
+            BenchmarkId::new(format!("block_dispatch_{label}"), dim),
+            |b| {
+                b.iter(|| {
+                    let _isa =
+                        rabitq32_multibit_score_block32(&prepared, code_len, code_refs, &mut out);
+                    out.iter().copied().sum::<f32>()
+                });
+            },
+        );
+    }
+    group.finish();
+}
+
 fn bench_score_throughput(c: &mut Criterion) {
     let mut group = c.benchmark_group("quant/score_throughput");
     let dim = 1536;
@@ -462,6 +517,7 @@ criterion_group!(
     bench_score_ip_from_parts_tiled_lut_no_qjl_4bit,
     bench_score_ip_from_parts_int8_approx_no_qjl_4bit,
     bench_qjl32_block32,
+    bench_rabitq32_multibit_block32,
     bench_decode_approximate,
     bench_score_throughput,
     bench_rabitq_score,

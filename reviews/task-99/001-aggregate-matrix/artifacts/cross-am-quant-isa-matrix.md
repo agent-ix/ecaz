@@ -24,8 +24,9 @@ G4 NEON/SVE2 numbers do not exist yet anywhere in the project.
 | TQ-QJL (qjl32, non-1536 dims) | **real** | **real** | **real** | structurally absent (TQ storage is 1536-only on DiskANN) |
 | TQ no-QJL 2-bit | absent — no surface (Task 96 stop) | absent | absent | absent |
 | RaBitQ bits=1 (rabitq32) | **real** (bits-1 sidecar lane) | **real** | **real** (unified driver; Task 106) — counters batch-attributed | **real** |
-| RaBitQ bits=2/4 (rabitq32 multi-bit) | structurally absent (no `quant_bits` on ec_hnsw) | **real** (multi-bit block kernel; Task 106 — scalar/NEON/AVX2; NEON M5-validated, AVX2 bench-pending) | bits=4-by-default (driver-routed; no block kernel by contract) | bits=1 by construction |
-| RaBitQ bits=8 | structurally absent | batched (arithmetic estimator; **no block kernel** — full-byte level, no LUT fast-scan shape) | not exposed | bits=1 by construction |
+| RaBitQ bits=2 (rabitq32 multi-bit) | structurally absent (no `quant_bits` on ec_hnsw) | **real** (multi-bit block kernel; Task 106) — no per-candidate SIMD kernel exists for bits=2, and the block kernel is a measured win: M5 NEON **2.66×** (30.7→11.5 µs / 32-block, d1024) | not exposed | bits=1 by construction |
+| RaBitQ bits=4 | structurally absent | **real** via the per-candidate arithmetic estimator (NeonBits4/Avx2Bits4) — the multi-bit *block* kernel measured **2.8× slower** on M5 NEON (12.9 vs 4.6 µs), so bits=4 is **not** block-routed (evidence-driven; AVX2 gather may revisit). No block-kernel counters | bits=4-by-default | bits=1 by construction |
+| RaBitQ bits=8 | structurally absent | batched arithmetic estimator (NeonBits8/Avx2Bits8); **no block kernel** — full-byte level, no LUT fast-scan shape | not exposed | bits=1 by construction |
 | grouped-PQ (grouped_pq_block) | registered; traversal-batch decision is measurement-gated (§6a item 2) | **real** | **structurally absent — product gap, permanent exclusion** (see §4) | **real** |
 | binary/Hamming sidecar (hamming32) | out of scope (Task 95 scope: DiskANN only) | out of scope | out of scope | **real** (NEON) / **skip** (AVX2, documented) |
 | f32 raw | no-kernel cell (canonical) | no-kernel cell | no-kernel cell | no-kernel cell |
@@ -233,15 +234,26 @@ RaBitQ weak deferral surfaced by the Task 106 audit. Status:
    reloption is now rejected at parse with a clear message instead of
    parsing then failing at build. See §4.
 
-**Multi-bit RaBitQ (IVF bits=2/4) — CLOSED (code), bench pending.** This
+**Multi-bit RaBitQ (IVF bits=2/4) — CLOSED (code + M5 evidence).** This
 was a weak deferral, not a true gap: the bits=1 rabitq32 kernel shipped
-while bits=2/4 fell to per-candidate scoring with no counter attribution
-and no scoring-share measurement. Task 106 adds the multi-bit block-kernel
-family (scalar anchor + NEON + AVX2; SVE routes to NEON) and routes IVF
-bits=2/4 through the unified width-cascade driver with truthful counters.
-NEON validated on M5; AVX2 compile+bench on the Intel lane. bits=8 keeps
-the arithmetic batch estimator (full-byte level, no LUT fast-scan shape).
-See §1 and §2.5.
+while bits=2/4 fell to per-candidate scoring with no scoring-share
+measurement. Task 106 added the multi-bit block-kernel family (scalar +
+NEON + AVX2; SVE→NEON) **and measured it on M5**, which decided the
+routing on evidence:
+- **bits=2 → block kernel.** No per-candidate SIMD kernel exists for
+  bits=2 (estimate_ip_batch supports only 1/4/8), so it otherwise falls
+  to true scalar. The block kernel is a **2.66× win** (M5 NEON: 30.7→11.5
+  µs for a 32-block at d1024). Counter-attributed.
+- **bits=4 → per-candidate arithmetic estimator (NeonBits4/Avx2Bits4).**
+  The block kernel measured **2.8× slower** on M5 NEON (12.9 vs 4.6 µs):
+  its per-dim scalar gather doesn't beat NeonBits4's vectorized nibble
+  unpack. So bits=4 is **not** block-routed. The AVX2 hardware gather
+  (`permutevar8x32`) may change this on the Intel lane — a per-ISA
+  routing decision to confirm there.
+- **bits=8 → arithmetic estimator** (full-byte, no LUT fast-scan shape).
+
+The block kernel remains built and tested for all ISAs so the Intel/G4
+benches can complete the per-ISA routing picture. See §1 and §2.5.
 
 ## 6. Open items this matrix feeds forward
 

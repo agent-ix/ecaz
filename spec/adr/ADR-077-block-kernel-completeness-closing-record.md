@@ -223,12 +223,20 @@ The unified-driver coverage claim now holds with the following resolutions:
    reloption is rejected at parse with a clear message instead of parsing
    then failing at build.
 
-**Multi-bit RaBitQ (IVF bits=2/4) — CLOSED (code), bench pending.** Added
+**Multi-bit RaBitQ (IVF bits=2/4) — CLOSED (code + M5 evidence).** Added
 the multi-bit rabitq32 block-kernel family (scalar anchor + NEON + AVX2;
-SVE routes to NEON), routed IVF bits=2/4 through the unified driver with
-truthful counters. NEON validated on M5 (ISA-asserted, parity within the
-1e-5 envelope); AVX2 compile+bench on the Intel lane. bits=8 keeps the
-arithmetic batch estimator (full-byte level, no LUT fast-scan shape).
+SVE→NEON) and measured it on M5, which set the routing on evidence rather
+than assumption:
+- **bits=2 → block kernel** (2.66× win over scalar; no per-candidate SIMD
+  kernel exists for bits=2). Counter-attributed.
+- **bits=4 → per-candidate arithmetic estimator** (NeonBits4) — the block
+  kernel measured 2.8× *slower* on M5 NEON, so it is not used; AVX2's
+  hardware gather may revisit on the Intel lane.
+- **bits=8 → arithmetic estimator** (full-byte, no LUT fast-scan shape).
+This is the §6 dispatch-preference principle applied per bit width: the
+block kernel is preferred only where measured faster than the existing
+per-candidate path. The kernel stays built and tested for all ISAs so the
+Intel/G4 benches complete the per-ISA picture.
 
 **Reasoned boundary recorded (Task 106):** TQ-QJL on DiskANN non-1536 is a
 deliberate architectural boundary, not a gap — DiskANN's TurboQuant lane is
