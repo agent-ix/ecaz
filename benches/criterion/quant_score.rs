@@ -334,52 +334,60 @@ fn bench_qjl32_block32(c: &mut Criterion) {
 /// (NEON on M5, AVX2 on Intel). Task 106.
 fn bench_rabitq32_multibit_block32(c: &mut Criterion) {
     let mut group = c.benchmark_group("quant/rabitq32_multibit_block32");
-    let dim = 1024;
-    let prod = ProdQuantizer::cached(dim, 4, 42);
-    for &(bits, label) in &[(2_u8, "bits2"), (4_u8, "bits4")] {
-        let quantizer = RaBitQQuantizer::with_srht_bits_clip(dim, prod.clone(), bits, 2.0).unwrap();
-        let prepared = quantizer.prepare_estimator(&helpers::random_unit_vector(dim, 1));
-        let code_len = <RaBitQQuantizer as Quantizer>::code_len(&quantizer);
-        let codes: Vec<Vec<u8>> = (0..RABITQ32_BLOCK_WIDTH)
-            .map(|i| {
-                <RaBitQQuantizer as Quantizer>::encode_code(
-                    &quantizer,
-                    &helpers::random_unit_vector(dim, i as u64 + 1000),
-                )
-                .into_vec()
-            })
-            .collect();
-        let code_refs: [&[u8]; RABITQ32_BLOCK_WIDTH] = codes
-            .iter()
-            .map(Vec::as_slice)
-            .collect::<Vec<_>>()
-            .try_into()
-            .expect("multi-bit rabitq32 benchmark fixture is exactly one block");
-        let mut out = [0.0_f32; RABITQ32_BLOCK_WIDTH];
+    // Full M5 sweep across the embedding dimensions the project benches, both
+    // multi-bit widths. `scalar_estimate` is the per-candidate path actually
+    // taken today (NeonBits4 on M5 for bits=4; true scalar for bits=2, which
+    // has no NeonBits2 kernel); `block_dispatch` is the new multi-bit block
+    // kernel. Task 106.
+    for &dim in &[256usize, 768, 1024, 1536, 3072] {
+        let prod = ProdQuantizer::cached(dim, 4, 42);
+        for &(bits, label) in &[(2_u8, "bits2"), (4_u8, "bits4")] {
+            let quantizer =
+                RaBitQQuantizer::with_srht_bits_clip(dim, prod.clone(), bits, 2.0).unwrap();
+            let prepared = quantizer.prepare_estimator(&helpers::random_unit_vector(dim, 1));
+            let code_len = <RaBitQQuantizer as Quantizer>::code_len(&quantizer);
+            let codes: Vec<Vec<u8>> = (0..RABITQ32_BLOCK_WIDTH)
+                .map(|i| {
+                    <RaBitQQuantizer as Quantizer>::encode_code(
+                        &quantizer,
+                        &helpers::random_unit_vector(dim, i as u64 + 1000),
+                    )
+                    .into_vec()
+                })
+                .collect();
+            let code_refs: [&[u8]; RABITQ32_BLOCK_WIDTH] = codes
+                .iter()
+                .map(Vec::as_slice)
+                .collect::<Vec<_>>()
+                .try_into()
+                .expect("multi-bit rabitq32 benchmark fixture is exactly one block");
+            let mut out = [0.0_f32; RABITQ32_BLOCK_WIDTH];
 
-        group.throughput(Throughput::Elements(RABITQ32_BLOCK_WIDTH as u64));
-        group.bench_function(
-            BenchmarkId::new(format!("scalar_estimate_{label}"), dim),
-            |b| {
-                b.iter(|| {
-                    let mut sum = 0.0_f32;
-                    for code in &code_refs {
-                        sum += prepared.estimate_ip_scalar_only(code);
-                    }
-                    sum
-                });
-            },
-        );
-        group.bench_function(
-            BenchmarkId::new(format!("block_dispatch_{label}"), dim),
-            |b| {
-                b.iter(|| {
-                    let _isa =
-                        rabitq32_multibit_score_block32(&prepared, code_len, code_refs, &mut out);
-                    out.iter().copied().sum::<f32>()
-                });
-            },
-        );
+            group.throughput(Throughput::Elements(RABITQ32_BLOCK_WIDTH as u64));
+            group.bench_function(
+                BenchmarkId::new(format!("scalar_estimate_{label}"), dim),
+                |b| {
+                    b.iter(|| {
+                        let mut sum = 0.0_f32;
+                        for code in &code_refs {
+                            sum += prepared.estimate_ip_scalar_only(code);
+                        }
+                        sum
+                    });
+                },
+            );
+            group.bench_function(
+                BenchmarkId::new(format!("block_dispatch_{label}"), dim),
+                |b| {
+                    b.iter(|| {
+                        let _isa = rabitq32_multibit_score_block32(
+                            &prepared, code_len, code_refs, &mut out,
+                        );
+                        out.iter().copied().sum::<f32>()
+                    });
+                },
+            );
+        }
     }
     group.finish();
 }
