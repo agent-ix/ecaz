@@ -19,15 +19,14 @@ scales.
   - `ec_ivf` default `Auto` storage, scratch SoA on/off, recall + latency.
   - `ec_spire` + `rabitq`, candidate batch scoring on/off, recall + latency +
     `spire-pipeline`.
-- Negative smoke only: `ec_spire` + `pq_fastscan` at 10k, separate config,
-  expected to fail until the grouped-PQ persistence product gap is closed.
-
 ## Explicit Exclusions
 
 The configs intentionally exclude HNSW grouped-PQ, DiskANN, explicit
 TurboQuant comparator lanes, broad PQ-FastScan benches, and unrelated
-quant/index/option combinations. HNSW grouped-PQ remains a separate open Task
-106 gap, not part of this AWS bench rerun.
+quant/index/option combinations. SPIRE pq_fastscan is excluded because that
+surface is not implemented for SPIRE and is not a benchmark target. HNSW
+grouped-PQ remains a separate open Task 106 gap, not part of this AWS bench
+rerun.
 
 ## Configs
 
@@ -37,8 +36,6 @@ quant/index/option combinations. HNSW grouped-PQ remains a separate open Task
 - `task106-aws-intel-targeted.json` is the main 129-step AWS Intel suite.
 - `task106-aws-graviton-targeted.json` is the main 129-step AWS Graviton
   suite.
-- `task106-aws-spire-pqfastscan-negative-smoke.json` is the separate negative
-  product-gap smoke.
 
 ## Validation
 
