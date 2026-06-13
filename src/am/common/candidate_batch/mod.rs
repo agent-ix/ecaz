@@ -118,6 +118,23 @@ fn record_batch_scoring_timing(
     record_flush_width(surface, quant_kind, isa, batch_width);
 }
 
+/// Records a grouped-PQ HNSW traversal flush-width sample for the Task 106
+/// gap-2 (HNSW × grouped-PQ) measure-first histogram. Grouped-PQ traversal
+/// scores per candidate today, so no block kernel runs; this samples the
+/// would-be batch width at a natural traversal boundary so the flush-width
+/// distribution can decide whether a traversal block kernel is justified.
+/// Width-only: it does not touch flush/kernel/scalar counts. The `Isa::Scalar`
+/// key reflects that no SIMD kernel dispatched — the signal is the width-bucket
+/// distribution, not the isa label.
+pub(crate) fn record_grouped_pq_traversal_flush_width(batch_width: usize) {
+    record_flush_width(
+        CandidateBatchScoringSurface::Hnsw,
+        QuantCodecKind::GroupedPq,
+        Isa::Scalar,
+        batch_width,
+    );
+}
+
 pub(crate) fn score_turboquant_no_qjl_4bit_batch<Id>(
     quantizer: &ProdQuantizer,
     prepared: &PreparedLutNoQjl4BitQuery,
@@ -1313,6 +1330,43 @@ mod tests {
         assert_eq!(scalar.scalar_flushes, 1);
         assert_eq!(scalar.scalar_candidates, 7);
         assert_eq!(scalar.scalar_elapsed_nanos, 20);
+    }
+
+    #[test]
+    fn grouped_pq_traversal_flush_width_probe_records_width_only_histogram() {
+        let _guard = super::CANDIDATE_BATCH_COUNTER_TEST_LOCK.lock().unwrap();
+        super::reset_candidate_batch_scoring_counters();
+
+        // Task 106 gap-2 measure-first probe: width samples from the grouped-PQ
+        // HNSW traversal boundary land in the hnsw × grouped_pq × scalar
+        // histogram and touch only the width buckets — no kernel ran, so the
+        // flush/kernel/scalar counts stay zero. The snapshot must still surface
+        // the row (width-only), or the histogram would be invisible to benches.
+        super::record_grouped_pq_traversal_flush_width(3); // bucket 1-7
+        super::record_grouped_pq_traversal_flush_width(12); // bucket 8-15
+        super::record_grouped_pq_traversal_flush_width(40); // bucket >=32
+        super::record_grouped_pq_traversal_flush_width(0); // ignored (no sample)
+
+        let snapshots = super::block_kernel_scoring_snapshots();
+        let grouped = snapshots
+            .iter()
+            .find(|snapshot| {
+                snapshot.surface == "hnsw"
+                    && snapshot.quant_kind == "grouped_pq"
+                    && snapshot.isa == "scalar"
+            })
+            .expect("grouped-PQ traversal width sample should surface a snapshot row");
+        assert_eq!(grouped.width_lt8_flushes, 1);
+        assert_eq!(grouped.width_8_15_flushes, 1);
+        assert_eq!(grouped.width_16_31_flushes, 0);
+        assert_eq!(grouped.width_ge32_flushes, 1);
+        // Width-only: no block kernel ran, so scoring counts stay zero.
+        assert_eq!(grouped.flushes, 0);
+        assert_eq!(grouped.candidates, 0);
+        assert_eq!(grouped.kernel_flushes, 0);
+        assert_eq!(grouped.scalar_flushes, 0);
+
+        super::reset_candidate_batch_scoring_counters();
     }
 
     #[test]
