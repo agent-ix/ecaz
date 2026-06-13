@@ -159,7 +159,14 @@ def bench_steps(scale):
              f"t105_hnsw_rabitq_{scale}", "ec_hnsw", HS, gucs=gucs)
 
     # IVF — batch axis via the explicit flag; note default is now ON
-    # (ADR-077 §4): the "off" cells are the diagnostic A/B column.
+    # (ADR-077 §4). CAVEAT: the suite runner treats ivf_soa=False the
+    # same as absent (it only appends --ivf-scratch-soa-batch-decode
+    # when True), so post-flip the "off" cells inherit batch decode ON.
+    # They are therefore SAME-CONFIG stability pairs, NOT a kernel A/B.
+    # The IVF kernel differential is Task 99's pre-flip 100k A/B
+    # (reviews/task-99/008|009); see packet 006 honest markers. A true
+    # off arm would require the runner to emit an explicit `SET ... =
+    # off` for the False case (suite.rs gap) plus a fresh rerun.
     for quant, prefix, states, marker in (
         ("turboquant", f"t105_ivf_tq_{scale}", ("on", "off"), None),
         ("rabitq1", f"t105_ivf_rabitq1_{scale}", ("on", "off"), None),
