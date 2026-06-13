@@ -189,7 +189,7 @@ is no longer load-bearing. The Task 87 compat surface keys on
   not exposed there because a multi-bit *coarse prefilter* is not a useful
   surface.
 
-### 9. Named open gaps — closed/decided by Task 106 (2026-06-12)
+### 9. Named open gaps — three closed by Task 106; HNSW grouped-PQ still open (2026-06-12)
 
 Sharpened during the Task 105 full-scale sweep, then closed or decided by
 the Task 106 targeted pass. The Task 106 audit additionally found that
@@ -198,19 +198,25 @@ the bits=1 kernel shipped while 2/4 fell to per-candidate scoring with no
 counter attribution and no scoring-share measurement — and closed it too.
 The unified-driver coverage claim now holds with the following resolutions:
 
-1. **SPIRE × RaBitQ — CLOSED (code).** Migrated onto the unified
-   candidate-batch driver via a shared `score_rabitq_payload_slab` helper:
-   bits=1 engages the rabitq32 block kernel (counters + width cascade);
-   bits=2/4/8 use the multi-bit arithmetic estimator; the GUC-off path
-   records scalar counter rows. `ec_spire.candidate_batch_scoring` is a
-   live A/B switch instead of inert. SPIRE assignment storage is bits=4 by
-   default, so block-kernel counters are bits=1-by-contract here.
-2. **HNSW × grouped-PQ — DECIDED, measurement-gated.** Resolution is the
-   flush-width histogram (Task 98 Phase A) on the bench hosts: the rabitq
-   traversal batch boundary (`flush_rabitq_search_code_batch`) exists to
-   mirror if the width distribution justifies it. §7.2 (graph AMs are
-   width-bound) and M5's measured zero engagement point toward a measured
-   skip; a measured skip is an acceptable outcome per the slice text.
+1. **SPIRE × RaBitQ — CLOSED in code; e2e effect below noise.** Migrated
+   onto the unified candidate-batch driver via a shared
+   `score_rabitq_payload_slab` helper: bits=1 engages the rabitq32 block
+   kernel (counters + width cascade); bits=2/4/8 use the multi-bit
+   arithmetic estimator; the GUC-off path records scalar counter rows. The
+   path is now correct and counter-capable. **Honest caveat (M5 index-level
+   bench, real 10k):** `ec_spire.candidate_batch_scoring` on/off still shows
+   ~0% e2e delta and zero counters on the default bits=4 lane — SPIRE e2e is
+   routing/rerank-dominated and assignment scoring is negligible, so the
+   "inert toggle" is largely inherent to SPIRE, not fully resolved by the
+   migration. SPIRE storage is bits=4 by default, so block-kernel counters
+   are bits=1-by-contract here.
+2. **HNSW × grouped-PQ — OPEN (pending measurement).** The deciding
+   evidence — the flush-width histogram (Task 98 Phase A) — is not captured,
+   so per AC1 this cell stays open, not closed. The rabitq traversal batch
+   boundary (`flush_rabitq_search_code_batch`) exists to mirror if the
+   histogram justifies it; §7.2 (graph AMs are width-bound) and M5's measured
+   zero engagement point toward a measured skip, but the histogram on the
+   bench hosts makes the call.
 3. **IVF × TQ-QJL — CLOSED (code).** Root cause found: `StorageFormat::Auto`
    (the default) resolves to TurboQuant at scan time but
    `use_scratch_soa_batch_decode_for_format` rejected `Auto`, leaving
@@ -218,10 +224,14 @@ The unified-driver coverage claim now holds with the following resolutions:
    counters. The Task 97 512/4096-row fixtures set `storage_format`
    explicitly, which is why they engaged. The gate now admits `Auto` at
    bits=4 like explicit TurboQuant.
-4. **SPIRE pq_fastscan — CLOSED (permanent exclusion).** Operator decision:
-   SPIRE will not gain grouped-PQ model persistence, so the `pq_fastscan`
-   reloption is rejected at parse with a clear message instead of parsing
-   then failing at build.
+4. **SPIRE pq_fastscan — CLOSED (permanent exclusion, existing behavior).**
+   Operator decision: SPIRE will not gain grouped-PQ model persistence. The
+   `pq_fastscan` reloption parses and an empty index can be created, but a
+   populated build defers/errors and the assignment payload reports
+   `deferred_model_metadata` / unscannable via the options snapshot — the
+   existing, documented exclusion. (An earlier attempt to reject the
+   reloption at parse was reverted: it broke the existing deferred-state
+   observability and its pg tests — reviewer 2026-06-13-01 P1.)
 
 **Multi-bit RaBitQ (IVF bits=2/4) — CLOSED (code + M5 evidence).** Added
 the multi-bit rabitq32 block-kernel family (scalar anchor + NEON + AVX2;

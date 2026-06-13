@@ -58,9 +58,27 @@ engagement consistent when the GUC is enabled. Whether batch-on should be
 the IVF default (ADR-077 §4) is a separate enablement decision this fix does
 not change.
 
-## Not yet run (index level)
+## SPIRE × RaBitQ GUC A/B (slice 1)
 
-SPIRE × RaBitQ GUC A/B (`ec_spire.candidate_batch_scoring` on/off) — the
-slice-1 surface. The IVF surfaces (the bulk of the Task 106 changes) are
-index-level validated above; the SPIRE assignment-scoring migration is
-covered by its passing unit test and a follow-up index-level A/B.
+SPIRE rabitq index (default bits=4), nprobe=16:
+
+| `ec_spire.candidate_batch_scoring` | p50 | counters |
+| ---------------------------------- | ---- | -------- |
+| off | 224.6 ms | `surface=spire flushes=0 candidates=0` |
+| on  | 224.5 ms | `surface=spire flushes=0 candidates=0` |
+
+**Honest finding:** the toggle shows ~0% e2e delta and zero candidate-batch
+counters on this lane. The slice-1 migration makes the SPIRE rabitq path
+correct and counter-capable (bits=1 → block kernel; verified by unit test),
+but SPIRE is bits=4 by default (estimator path, no block-kernel counters)
+and its e2e is routing/rerank-dominated, so assignment scoring is
+negligible. The ADR-077 §9.1 "inert toggle (~0% on/off)" is therefore
+largely inherent to SPIRE at this workload, not fully resolved by the
+migration. Recorded as a code-correctness/attribution change with no
+measurable e2e effect here, rather than a performance win.
+
+## Remaining (other hosts)
+
+AVX2 (Intel) — may revisit bits=4 block routing via the hardware gather;
+SVE/NEON-cap (G4); the HNSW grouped-PQ flush-width histogram; recall@k vs
+ground truth and scoring-share at production scale.

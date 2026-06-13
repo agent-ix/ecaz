@@ -24,13 +24,14 @@ mod tests {
             SpireStorageFormat::parse_reloption("turboquant").unwrap(),
             SpireStorageFormat::TurboQuant
         );
-        // pq_fastscan is rejected at parse: SPIRE cannot build a grouped-PQ
-        // index (no model persistence flow), so the reloption is a permanent
-        // exclusion rather than a parse-then-fail-at-build lane (Task 106
-        // slice 4).
-        let pqfs_err = SpireStorageFormat::parse_reloption("pq_fastscan").unwrap_err();
-        assert!(pqfs_err.contains("not supported"));
-        assert!(pqfs_err.contains("grouped-PQ model persistence"));
+        // pq_fastscan parses (the index can be created empty), but it is a
+        // permanent exclusion: a populated build defers/errors because SPIRE has
+        // no grouped-PQ model persistence (Task 106 slice 4 — documented, not a
+        // parse-time rejection).
+        assert_eq!(
+            SpireStorageFormat::parse_reloption("pq_fastscan").unwrap(),
+            SpireStorageFormat::PqFastScan
+        );
         assert_eq!(
             SpireStorageFormat::parse_reloption("rabitq").unwrap(),
             SpireStorageFormat::RaBitQ
@@ -214,10 +215,10 @@ mod tests {
             resolve_scan_max_routed_candidate_rows_value(26_000).unwrap(),
             Some(26_000)
         );
-        assert!(resolve_scan_max_routed_candidate_rows_value(
-            EC_SPIRE_MAX_MAX_CANDIDATE_ROWS + 1
-        )
-        .is_err());
+        assert!(
+            resolve_scan_max_routed_candidate_rows_value(EC_SPIRE_MAX_MAX_CANDIDATE_ROWS + 1)
+                .is_err()
+        );
     }
 
     #[test]
