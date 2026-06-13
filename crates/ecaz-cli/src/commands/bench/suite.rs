@@ -214,6 +214,7 @@ enum SuiteStep {
     SidecarRerank(SidecarRerankStep),
     ComparePgvector(ComparePgvectorStep),
     CompareVectorscale(CompareVectorscaleStep),
+    CompareVchord(CompareVchordStep),
     Raw(RawStep),
 }
 
@@ -621,6 +622,36 @@ struct CompareVectorscaleStep {
     vectorscale_storage_layout: Option<String>,
     #[serde(default)]
     vectorscale_query_rescore: Option<i32>,
+    #[serde(default)]
+    queries_limit: Option<usize>,
+    #[serde(default)]
+    rebuild: bool,
+    #[serde(default)]
+    log_file: Option<PathBuf>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CompareVchordStep {
+    name: String,
+    #[serde(default)]
+    tags: Vec<String>,
+    prefix: String,
+    #[serde(default)]
+    profile: Option<String>,
+    #[serde(default)]
+    k: Option<usize>,
+    #[serde(default)]
+    sweep: Vec<i32>,
+    #[serde(default)]
+    ecaz_sweep: Option<i32>,
+    #[serde(default)]
+    vchord_probes: Option<i32>,
+    #[serde(default)]
+    vchord_lists: Option<i32>,
+    #[serde(default)]
+    vchord_maintenance_work_mem: Option<String>,
+    #[serde(default)]
+    rerank_width: Option<i32>,
     #[serde(default)]
     queries_limit: Option<usize>,
     #[serde(default)]
@@ -1157,6 +1188,9 @@ fn apply_default_artifact_logs(config: &mut SuiteConfig) {
             SuiteStep::CompareVectorscale(step) if step.log_file.is_none() => {
                 step.log_file = Some(log_path(&step.name));
             }
+            SuiteStep::CompareVchord(step) if step.log_file.is_none() => {
+                step.log_file = Some(log_path(&step.name));
+            }
             _ => {}
         }
     }
@@ -1214,6 +1248,9 @@ fn apply_artifact_dir_templates(config: &mut SuiteConfig) {
                 rewrite_artifact_dir_path(&mut step.log_file, &artifact_dir);
             }
             SuiteStep::CompareVectorscale(step) => {
+                rewrite_artifact_dir_path(&mut step.log_file, &artifact_dir);
+            }
+            SuiteStep::CompareVchord(step) => {
                 rewrite_artifact_dir_path(&mut step.log_file, &artifact_dir);
             }
             SuiteStep::Raw(step) => {
@@ -1436,7 +1473,129 @@ async fn extract_result_rows(manifest: &SuiteManifest) -> Result<Vec<ResultRow>>
             rows.extend(parse_result_rows(manifest, step, artifact, &raw));
         }
     }
+    rows.extend(compare_frontier_rows(manifest, &rows));
     Ok(rows)
+}
+
+fn compare_frontier_rows(manifest: &SuiteManifest, rows: &[ResultRow]) -> Vec<ResultRow> {
+    const BANDS: [f64; 3] = [0.98, 0.99, 0.995];
+
+    let mut by_step_engine: BTreeMap<(String, String, String), Vec<&ResultRow>> = BTreeMap::new();
+    for row in rows {
+        if row.metric != "compare" {
+            continue;
+        }
+        let Some(engine) = row.values.get("engine").map(String::as_str) else {
+            continue;
+        };
+        if parse_f64_value(row.values.get("recall@k")).is_none()
+            || parse_ms_value(row.values.get("p50")).is_none()
+        {
+            continue;
+        }
+        by_step_engine
+            .entry((
+                row.step.clone(),
+                row.kind.clone(),
+                compare_engine_family(engine).to_owned(),
+            ))
+            .or_default()
+            .push(row);
+    }
+
+    let mut frontier_rows = Vec::new();
+    for ((step, kind, engine), candidates) in by_step_engine {
+        if let Some(best) = best_recall_row(&candidates) {
+            frontier_rows.push(compare_frontier_row(
+                manifest,
+                best,
+                &step,
+                &kind,
+                &engine,
+                "best_recall",
+                None,
+            ));
+        }
+        for band in BANDS {
+            if let Some(best) = fastest_row_at_recall(&candidates, band) {
+                frontier_rows.push(compare_frontier_row(
+                    manifest,
+                    best,
+                    &step,
+                    &kind,
+                    &engine,
+                    "recall_band",
+                    Some(band),
+                ));
+            }
+        }
+    }
+    frontier_rows
+}
+
+fn compare_engine_family(engine: &str) -> &str {
+    engine.split_once('[').map_or(engine, |(family, _)| family)
+}
+
+fn best_recall_row<'a>(rows: &[&'a ResultRow]) -> Option<&'a ResultRow> {
+    rows.iter()
+        .copied()
+        .max_by(|a, b| compare_recall_then_latency(a, b))
+}
+
+fn fastest_row_at_recall<'a>(rows: &[&'a ResultRow], band: f64) -> Option<&'a ResultRow> {
+    rows.iter()
+        .copied()
+        .filter(|row| parse_f64_value(row.values.get("recall@k")).is_some_and(|r| r >= band))
+        .min_by(|a, b| compare_latency_then_recall(a, b))
+}
+
+fn compare_recall_then_latency(a: &ResultRow, b: &ResultRow) -> std::cmp::Ordering {
+    let ar = parse_f64_value(a.values.get("recall@k")).unwrap_or(f64::NEG_INFINITY);
+    let br = parse_f64_value(b.values.get("recall@k")).unwrap_or(f64::NEG_INFINITY);
+    ar.total_cmp(&br).then_with(|| {
+        let ap50 = parse_ms_value(a.values.get("p50")).unwrap_or(f64::INFINITY);
+        let bp50 = parse_ms_value(b.values.get("p50")).unwrap_or(f64::INFINITY);
+        bp50.total_cmp(&ap50)
+    })
+}
+
+fn compare_latency_then_recall(a: &ResultRow, b: &ResultRow) -> std::cmp::Ordering {
+    let ap50 = parse_ms_value(a.values.get("p50")).unwrap_or(f64::INFINITY);
+    let bp50 = parse_ms_value(b.values.get("p50")).unwrap_or(f64::INFINITY);
+    ap50.total_cmp(&bp50).then_with(|| {
+        let ar = parse_f64_value(a.values.get("recall@k")).unwrap_or(f64::NEG_INFINITY);
+        let br = parse_f64_value(b.values.get("recall@k")).unwrap_or(f64::NEG_INFINITY);
+        br.total_cmp(&ar)
+    })
+}
+
+fn compare_frontier_row(
+    manifest: &SuiteManifest,
+    source: &ResultRow,
+    step: &str,
+    kind: &str,
+    engine: &str,
+    frontier: &str,
+    band: Option<f64>,
+) -> ResultRow {
+    let mut values = source.values.clone();
+    if let Some(label) = source.values.get("engine").cloned() {
+        values.insert("engine_label".into(), label);
+    }
+    values.insert("frontier".into(), frontier.into());
+    values.insert("engine".into(), engine.into());
+    if let Some(band) = band {
+        values.insert("recall_floor".into(), format!("{band:.3}"));
+    }
+    ResultRow {
+        suite: manifest.suite.clone(),
+        step: step.into(),
+        kind: kind.into(),
+        metric: "compare_frontier".into(),
+        artifact: source.artifact.clone(),
+        values,
+    }
 }
 
 fn parallel_worker_result_row(manifest: &SuiteManifest, step: &StepRecord) -> Option<ResultRow> {
@@ -1579,7 +1738,7 @@ fn parse_result_rows(
                 values: add_result_context(manifest, step, values),
             })
             .collect(),
-        "compare-pgvector" | "compare-vectorscale" => {
+        "compare-pgvector" | "compare-vectorscale" | "compare-vchord" => {
             let mut rows: Vec<ResultRow> = parse_compare_table_rows(raw)
                 .into_iter()
                 .map(|values| ResultRow {
@@ -1994,6 +2153,26 @@ fn duration_seconds(value: &str) -> Option<String> {
     Some(format!("{seconds:.6}"))
 }
 
+fn parse_f64_value(value: Option<&String>) -> Option<f64> {
+    value?.parse::<f64>().ok().filter(|value| value.is_finite())
+}
+
+fn parse_ms_value(value: Option<&String>) -> Option<f64> {
+    let value = value?;
+    let trimmed = value.trim();
+    let split_at = trimmed
+        .find(|ch: char| !(ch.is_ascii_digit() || ch == '.'))
+        .unwrap_or(trimmed.len());
+    let amount = trimmed[..split_at].parse::<f64>().ok()?;
+    let unit = trimmed[split_at..].trim();
+    let ms = match unit {
+        "" | "ms" => amount,
+        "s" => amount * 1000.0,
+        _ => return None,
+    };
+    ms.is_finite().then_some(ms)
+}
+
 fn table_lines(raw: &str) -> Vec<Vec<String>> {
     raw.lines()
         .filter_map(table_cells)
@@ -2313,6 +2492,7 @@ impl SuiteStep {
             SuiteStep::SidecarRerank(step) => &step.name,
             SuiteStep::ComparePgvector(step) => &step.name,
             SuiteStep::CompareVectorscale(step) => &step.name,
+            SuiteStep::CompareVchord(step) => &step.name,
             SuiteStep::Raw(step) => &step.name,
         }
     }
@@ -2331,6 +2511,7 @@ impl SuiteStep {
             SuiteStep::SidecarRerank(_) => "sidecar-rerank",
             SuiteStep::ComparePgvector(_) => "compare-pgvector",
             SuiteStep::CompareVectorscale(_) => "compare-vectorscale",
+            SuiteStep::CompareVchord(_) => "compare-vchord",
             SuiteStep::Raw(_) => "raw",
         }
     }
@@ -2349,6 +2530,7 @@ impl SuiteStep {
             SuiteStep::SidecarRerank(step) => &step.tags,
             SuiteStep::ComparePgvector(step) => &step.tags,
             SuiteStep::CompareVectorscale(step) => &step.tags,
+            SuiteStep::CompareVchord(step) => &step.tags,
             SuiteStep::Raw(step) => &step.tags,
         }
     }
@@ -2564,6 +2746,16 @@ impl SuiteStep {
                 }
                 Ok(())
             }
+            SuiteStep::CompareVchord(step) => {
+                validate_profile_name("compare-vchord profile", step.profile.as_deref())?;
+                if step.sweep.is_empty() && step.ecaz_sweep.is_none() {
+                    bail!(
+                        "compare-vchord step {:?} must include sweep or ecaz_sweep",
+                        step.name
+                    )
+                }
+                Ok(())
+            }
             SuiteStep::Raw(step) if step.args.is_empty() => {
                 bail!("raw step {:?} must include args", step.name)
             }
@@ -2585,6 +2777,7 @@ impl SuiteStep {
             SuiteStep::SidecarRerank(step) => Ok(expand_sidecar_rerank(step, defaults)),
             SuiteStep::ComparePgvector(step) => Ok(expand_compare_pgvector(step, defaults)),
             SuiteStep::CompareVectorscale(step) => Ok(expand_compare_vectorscale(step, defaults)),
+            SuiteStep::CompareVchord(step) => Ok(expand_compare_vchord(step, defaults)),
             SuiteStep::Raw(step) => Ok(step.args.clone()),
         }
     }
@@ -2635,6 +2828,7 @@ impl SuiteStep {
             SuiteStep::SidecarRerank(step) => step.log_output.iter().cloned().collect(),
             SuiteStep::ComparePgvector(step) => step.log_file.iter().cloned().collect(),
             SuiteStep::CompareVectorscale(step) => step.log_file.iter().cloned().collect(),
+            SuiteStep::CompareVchord(step) => step.log_file.iter().cloned().collect(),
             SuiteStep::Raw(step) => step.expected_artifacts.clone(),
         }
     }
@@ -3373,6 +3567,45 @@ fn expand_compare_vectorscale(
             "--vectorscale-query-rescore",
             &query_rescore.to_string(),
         );
+    }
+    if let Some(limit) = step.queries_limit.or(defaults.queries_limit) {
+        push_arg(&mut args, "--queries-limit", &limit.to_string());
+    }
+    if step.rebuild {
+        args.push("--rebuild".into());
+    }
+    args
+}
+
+fn expand_compare_vchord(step: &CompareVchordStep, defaults: &SuiteDefaults) -> Vec<String> {
+    let mut args = Vec::new();
+    push_opt_path(&mut args, "--log-file", step.log_file.as_deref());
+    args.extend(["compare".into(), "vchord".into()]);
+    push_arg(&mut args, "--prefix", &step.prefix);
+    push_arg(
+        &mut args,
+        "--profile",
+        &profile(defaults, step.profile.as_deref()),
+    );
+    push_arg(&mut args, "--k", &step.k.unwrap_or(10).to_string());
+    if !step.sweep.is_empty() {
+        push_arg(&mut args, "--sweep", &join_i32(&step.sweep));
+    } else if let Some(ecaz_sweep) = step.ecaz_sweep {
+        push_arg(&mut args, "--ecaz-sweep", &ecaz_sweep.to_string());
+        push_arg(
+            &mut args,
+            "--vchord-probes",
+            &step.vchord_probes.unwrap_or(ecaz_sweep).to_string(),
+        );
+    }
+    if let Some(lists) = step.vchord_lists {
+        push_arg(&mut args, "--vchord-lists", &lists.to_string());
+    }
+    if let Some(memory) = step.vchord_maintenance_work_mem.as_deref() {
+        push_arg(&mut args, "--vchord-maintenance-work-mem", memory);
+    }
+    if let Some(width) = step.rerank_width {
+        push_arg(&mut args, "--rerank-width", &width.to_string());
     }
     if let Some(limit) = step.queries_limit.or(defaults.queries_limit) {
         push_arg(&mut args, "--queries-limit", &limit.to_string());
@@ -5377,6 +5610,90 @@ mod tests {
             rows[0].1.get("modeled_total_cost").map(String::as_str),
             Some("22.4224")
         );
+    }
+
+    #[test]
+    fn compare_frontier_rows_pick_best_recall_and_fastest_bands() {
+        let manifest = SuiteManifest {
+            suite: "suite".into(),
+            schema_version: 1,
+            config: "suite.json".into(),
+            config_sha256: "sha".into(),
+            dry_run: false,
+            generated_at_unix_ms: 0,
+            connection: ManifestConnection {
+                database: "postgres".into(),
+                host: None,
+                port: None,
+                user: None,
+                password_configured: false,
+            },
+            backend: None,
+            steps: Vec::new(),
+            threshold_results: Vec::new(),
+        };
+        let rows = vec![
+            ResultRow {
+                suite: "suite".into(),
+                step: "compare-vchord".into(),
+                kind: "compare-vchord".into(),
+                metric: "compare".into(),
+                artifact: "compare.log".into(),
+                values: BTreeMap::from([
+                    ("engine".into(), "vchord_rabitq[probes=32]".into()),
+                    ("sweep".into(), "32".into()),
+                    ("recall@k".into(), "0.9910".into()),
+                    ("p50".into(), "9.0 ms".into()),
+                ]),
+            },
+            ResultRow {
+                suite: "suite".into(),
+                step: "compare-vchord".into(),
+                kind: "compare-vchord".into(),
+                metric: "compare".into(),
+                artifact: "compare.log".into(),
+                values: BTreeMap::from([
+                    ("engine".into(), "vchord_rabitq[probes=64]".into()),
+                    ("sweep".into(), "64".into()),
+                    ("recall@k".into(), "0.9960".into()),
+                    ("p50".into(), "12.0 ms".into()),
+                ]),
+            },
+            ResultRow {
+                suite: "suite".into(),
+                step: "compare-vchord".into(),
+                kind: "compare-vchord".into(),
+                metric: "compare".into(),
+                artifact: "compare.log".into(),
+                values: BTreeMap::from([
+                    ("engine".into(), "vchord_rabitq[probes=128]".into()),
+                    ("sweep".into(), "128".into()),
+                    ("recall@k".into(), "0.9960".into()),
+                    ("p50".into(), "15.0 ms".into()),
+                ]),
+            },
+        ];
+
+        let frontier = compare_frontier_rows(&manifest, &rows);
+
+        assert_eq!(frontier.len(), 4);
+        let best_recall = frontier
+            .iter()
+            .find(|row| row.values.get("frontier").map(String::as_str) == Some("best_recall"))
+            .unwrap();
+        assert_eq!(
+            best_recall.values.get("engine").map(String::as_str),
+            Some("vchord_rabitq")
+        );
+        assert_eq!(
+            best_recall.values.get("engine_label").map(String::as_str),
+            Some("vchord_rabitq[probes=64]")
+        );
+        let band_99 = frontier
+            .iter()
+            .find(|row| row.values.get("recall_floor").map(String::as_str) == Some("0.990"))
+            .unwrap();
+        assert_eq!(band_99.values.get("sweep").map(String::as_str), Some("32"));
     }
 
     #[test]
