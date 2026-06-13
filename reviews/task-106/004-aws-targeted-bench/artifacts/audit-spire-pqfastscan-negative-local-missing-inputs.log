@@ -1,0 +1,14 @@
+[suite:task106-aws-spire-pqfastscan-negative-smoke] audit: step "load-10k-aws-intel-spire-pqfastscan-gap" references missing input /var/lib/pgsql/18/datasets/staged-task106-targeted/ec_real_10k_corpus.tsv
+[suite:task106-aws-spire-pqfastscan-negative-smoke] audit: step "load-10k-aws-intel-spire-pqfastscan-gap" references missing input /var/lib/pgsql/18/datasets/staged-task106-targeted/ec_real_10k_queries.tsv
+[suite:task106-aws-spire-pqfastscan-negative-smoke] audit: step "load-10k-aws-intel-spire-pqfastscan-gap" references missing input /var/lib/pgsql/18/datasets/staged-task106-targeted/ec_real_10k_manifest.json
+[suite:task106-aws-spire-pqfastscan-negative-smoke] audit: step "load-10k-aws-graviton-spire-pqfastscan-gap" references missing input /var/lib/pgsql/18/datasets/staged-task106-targeted/ec_real_10k_corpus.tsv
+[suite:task106-aws-spire-pqfastscan-negative-smoke] audit: step "load-10k-aws-graviton-spire-pqfastscan-gap" references missing input /var/lib/pgsql/18/datasets/staged-task106-targeted/ec_real_10k_queries.tsv
+[suite:task106-aws-spire-pqfastscan-negative-smoke] audit: step "load-10k-aws-graviton-spire-pqfastscan-gap" references missing input /var/lib/pgsql/18/datasets/staged-task106-targeted/ec_real_10k_manifest.json
+
+   0: [91msuite audit found 6 issue(s)[0m
+
+Location:
+   [35mcrates/ecaz-cli/src/commands/bench/suite.rs[0m:[35m981[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.

@@ -1,0 +1,158 @@
+{
+  "suite": "task106-aws-targeted-fixture-prep",
+  "schema_version": 1,
+  "config": "reviews/task-106/004-aws-targeted-bench/task106-aws-targeted-fixture-prep.json",
+  "config_sha256": "4097f05d9ee369a3ab1bac8053be2227f1a4aed091edc30db51a7aa742814f9f",
+  "dry_run": true,
+  "generated_at_unix_ms": 1781391466634,
+  "connection": {
+    "database": "tqvector_bench",
+    "host": null,
+    "port": null,
+    "user": null,
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "fetch-dbpedia-openai3-if-missing",
+      "kind": "corpus-fetch",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "corpus",
+        "fetch",
+        "--dataset",
+        "qdrant-dbpedia-openai3-large-1536-1m",
+        "--output-dir",
+        "/var/lib/pgsql/18/datasets/dbpedia-openai3-1m"
+      ],
+      "selected": true,
+      "tags": [
+        "task106",
+        "aws-targeted",
+        "fixture-prep",
+        "fetch"
+      ],
+      "expected_artifacts": [
+        "/var/lib/pgsql/18/datasets/dbpedia-openai3-1m/ecaz_fetch_manifest.json"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "prepare-10k",
+      "kind": "corpus-prepare",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "corpus",
+        "prepare",
+        "--profile",
+        "ec_real_10k",
+        "--parquet",
+        "/var/lib/pgsql/18/datasets/dbpedia-openai3-1m/data",
+        "--output-dir",
+        "/var/lib/pgsql/18/datasets/staged-task106-targeted"
+      ],
+      "selected": true,
+      "tags": [
+        "task106",
+        "aws-targeted",
+        "fixture-prep",
+        "real10k"
+      ],
+      "expected_artifacts": [
+        "/var/lib/pgsql/18/datasets/staged-task106-targeted/ec_real_10k_corpus.tsv",
+        "/var/lib/pgsql/18/datasets/staged-task106-targeted/ec_real_10k_queries.tsv",
+        "/var/lib/pgsql/18/datasets/staged-task106-targeted/ec_real_10k_manifest.json"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "prepare-50k",
+      "kind": "corpus-prepare",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "corpus",
+        "prepare",
+        "--profile",
+        "ec_real_50k",
+        "--parquet",
+        "/var/lib/pgsql/18/datasets/dbpedia-openai3-1m/data",
+        "--output-dir",
+        "/var/lib/pgsql/18/datasets/staged-task106-targeted"
+      ],
+      "selected": true,
+      "tags": [
+        "task106",
+        "aws-targeted",
+        "fixture-prep",
+        "real50k"
+      ],
+      "expected_artifacts": [
+        "/var/lib/pgsql/18/datasets/staged-task106-targeted/ec_real_50k_corpus.tsv",
+        "/var/lib/pgsql/18/datasets/staged-task106-targeted/ec_real_50k_queries.tsv",
+        "/var/lib/pgsql/18/datasets/staged-task106-targeted/ec_real_50k_manifest.json"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "prepare-100k",
+      "kind": "corpus-prepare",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "corpus",
+        "prepare",
+        "--profile",
+        "ec_real_100k",
+        "--parquet",
+        "/var/lib/pgsql/18/datasets/dbpedia-openai3-1m/data",
+        "--output-dir",
+        "/var/lib/pgsql/18/datasets/staged-task106-targeted"
+      ],
+      "selected": true,
+      "tags": [
+        "task106",
+        "aws-targeted",
+        "fixture-prep",
+        "real100k"
+      ],
+      "expected_artifacts": [
+        "/var/lib/pgsql/18/datasets/staged-task106-targeted/ec_real_100k_corpus.tsv",
+        "/var/lib/pgsql/18/datasets/staged-task106-targeted/ec_real_100k_queries.tsv",
+        "/var/lib/pgsql/18/datasets/staged-task106-targeted/ec_real_100k_manifest.json"
+      ],
+      "status": "dry-run"
+    },
+    {
+      "name": "prepare-1m",
+      "kind": "corpus-prepare",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "corpus",
+        "prepare",
+        "--profile",
+        "ec_real_ann_benchmarks_anchor",
+        "--parquet",
+        "/var/lib/pgsql/18/datasets/dbpedia-openai3-1m/data",
+        "--output-dir",
+        "/var/lib/pgsql/18/datasets/staged-task106-targeted"
+      ],
+      "selected": true,
+      "tags": [
+        "task106",
+        "aws-targeted",
+        "fixture-prep",
+        "real1m"
+      ],
+      "expected_artifacts": [
+        "/var/lib/pgsql/18/datasets/staged-task106-targeted/ec_real_ann_benchmarks_anchor_corpus.tsv",
+        "/var/lib/pgsql/18/datasets/staged-task106-targeted/ec_real_ann_benchmarks_anchor_queries.tsv",
+        "/var/lib/pgsql/18/datasets/staged-task106-targeted/ec_real_ann_benchmarks_anchor_manifest.json"
+      ],
+      "status": "dry-run"
+    }
+  ]
+}
