@@ -181,16 +181,36 @@ is no longer load-bearing. The Task 87 compat surface keys on
 
 ### 9. Named open gaps (not blocking this record)
 
-- **SPIRE pq_fastscan product gap**: the reloption parses but
-  `encode_assignment_payload` requires a persisted grouped-PQ model no
-  fixture flow provides; no end-to-end SPIRE PQ evidence exists on any
-  host (Task 104 finding). Needs an owner decision: wire it or
-  document it as a permanent exclusion.
-- **HNSW grouped-PQ coverage**: per-candidate traversal scoring; M5
-  observed zero batch engagement end-to-end. Candidate for the same
-  follow-up discussion.
-- Both are recorded in the aggregate matrix §6 and stay visible until
-  an operator decision lands.
+Sharpened during the Task 105 full-scale sweep (2026-06-12, operator
+decision: note now, fix in a smaller targeted pass afterward). The
+unified-driver coverage claim ("any quant × any index through one
+batch surface") holds everywhere EXCEPT:
+
+1. **SPIRE × RaBitQ — never migrated to the unified driver.**
+   `score_payload_ip` scores per-candidate via
+   `estimate_ip_scalar_only`; the chunked-max path uses the legacy
+   `rabitq.rs` SIMD batch estimator. No block-kernel counters on any
+   host; `ec_spire.candidate_batch_scoring` is inert on this lane
+   (~0% on/off, all scales). Follow-up: route through the rabitq32
+   driver (counters + width cascade + the scalar per-payload path).
+2. **HNSW × grouped-PQ — registered but never engages.** Traversal
+   scores one search-code at a time; the batch override is reached by
+   codec-parity tests only (Task 94 documented; M5 confirmed zero
+   engagement e2e). Follow-up: traversal batch boundary, or document
+   as permanent.
+3. **IVF × TQ-QJL — engagement is fixture-shape-dependent.** Real
+   counter rows at Task 97's 512/4096-row fixtures (incl. `sve2` on
+   G4), but zero batch counters at 10k × 1024-dim profile shapes on
+   every host while small e2e on/off deltas persist. Needs a
+   diagnosis pass (gating condition unknown) before fix-or-document.
+4. **SPIRE pq_fastscan product gap**: the reloption parses but
+   `encode_assignment_payload` requires a persisted grouped-PQ model
+   no fixture flow provides; no end-to-end SPIRE PQ evidence exists on
+   any host (Task 104 finding). Owner decision: wire it or document
+   as a permanent exclusion.
+
+All four are recorded in the aggregate matrix open-gaps section and
+stay visible until the targeted pass lands.
 
 ## Consequences
 
