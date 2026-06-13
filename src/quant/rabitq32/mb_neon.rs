@@ -11,7 +11,9 @@
 //! Graded under the rabitq32 family envelope (ADR-076): the FMA reorders the
 //! accumulation versus the forced-scalar anchor, so this is not bit-exact.
 
-use super::{finish_multibit_estimate, read_level_for, PreparedBitsN, BLOCK_WIDTH};
+#[cfg(target_arch = "aarch64")]
+use super::{finish_multibit_estimate, read_level_for};
+use super::{PreparedBitsN, BLOCK_WIDTH};
 use crate::quant::isa::Isa;
 
 pub(super) fn score_block32_neon(
