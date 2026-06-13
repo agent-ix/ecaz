@@ -1,12 +1,17 @@
 # Task 105: Production-Target Optimization + Full-Scale Benchmark Sweep
 
-Status: evidence complete, review open (2026-06-12). Phase 1 merged
-(`main=1345ca603`, PR #31); Phase 2 ran green on both lanes at all
-four scales (packets 004/005; both stacks snapshotted and destroyed);
-Phase 3 published (packet 006: matrix, baseline comparison, handoff).
-All five acceptance criteria have on-branch evidence. Closure waits on
-outside review of packets 004/005/006 (incl. the response to the
-2026-06-12-01 G4-lane feedback).
+Status: COMPLETE — merged to `main` 2026-06-13 (PR #32, merge commit
+`afa7fb28e`). Phase 1 merged earlier (`main=1345ca603`, PR #31); Phase 2
+ran green on both lanes at all four scales (packets 004/005); Phase 3
+published (packet 006: matrix, baseline comparison, handoff). The
+2026-06-13 reviewer blockers on packets 002/003/006 were resolved
+doc-only (packet 007). All five acceptance criteria verified, including
+a live AWS AC5 teardown check: both bench stacks destroyed, no
+non-terminated instances in us-west-2, G4 `snap-0f546929f70d60fb5` +
+Intel `snap-0338adc6455257604` completed and retained, corpus base
+`snap-0e9c7743263e61d70` retained. Honest scope: fresh Task 105 evidence
+is 10k/50k/1M both lanes + the G4 100k NEON confirm column; the full
+100k on/off A/B is delegated to Task 99 (008/009) by Phase 2 design.
 Original scope note: operator-confirmed — "optimize before the full
 sweep".
 Owner: coder (the Task 99/102/103 author lane). One coder.
