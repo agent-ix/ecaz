@@ -1,0 +1,11 @@
+ pid | phase 
+-----+-------
+(0 rows)
+
+  pid   | state  | wait_event_type | wait_event |       age       |                               query                               
+--------+--------+-----------------+------------+-----------------+-------------------------------------------------------------------
+ 634385 | active |                 |            | 00:02:41.710775 | INSERT INTO t106_1m_ivf_auto_tq_corpus (id, source, embedding)   +
+        |        |                 |            |                 |              SELECT id, source, encode_to_ecvector(source, 4, 42)+
+        |        |                 |            |                 |            
+(1 row)
+

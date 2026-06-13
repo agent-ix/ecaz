@@ -1,0 +1,7 @@
+  pid   | state  | wait_event_type |  wait_event  |       age       |                                     query                                     
+--------+--------+-----------------+--------------+-----------------+-------------------------------------------------------------------------------
+ 610371 | active |                 |              | 00:00:15.831812 | CREATE INDEX t106_1m_ivf_rabitq_b1_rabitq_idx ON t106_1m_ivf_rabitq_b1_corpus+
+        |        |                 |              |                 |         USING ec_ivf (
+ 613304 |        | IO              | DataFileRead |                 | 
+(2 rows)
+
