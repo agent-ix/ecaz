@@ -231,8 +231,10 @@ RaBitQ weak deferral surfaced by the Task 106 audit. Status:
    explicitly, which is why they engaged. The gate now admits `Auto` at
    bits=4 like explicit TurboQuant. M5 index-level A/B confirms: an
    Auto-built index emits zero counters with the GUC off and
-   `kernel_candidates=530085` with it on. (Batch-on is slower e2e here —
-   forfeits suffix-max pruning, §7.1 — so the GUC default stays off.)
+   `kernel_candidates=530085` with it on. On the **release** backend
+   batch-on is 2.4× faster e2e (1.16 vs 2.77 ms), agreeing with §4's
+   "batch-on wins IVF TurboQuant". (An earlier debug-backend pass wrongly
+   showed batch-on slower — the debug kernel overhead masked the win.)
 4. **SPIRE×pq_fastscan — CLOSED (permanent exclusion, existing behavior).**
    Operator decision: SPIRE will not gain grouped-PQ model persistence. The
    reloption parses and an empty index can be created, but a populated build

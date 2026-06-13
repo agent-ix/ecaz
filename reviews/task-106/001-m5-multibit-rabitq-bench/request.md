@@ -47,3 +47,12 @@ kernel microbench, the index-level bench, and the build/smoke results.
 `feedback/2026-06-13-01-reviewer.md`: P1 (stale pq_fastscan tests) — slice-4
 reverted; P1 (HNSW grouped-PQ closure) — re-marked OPEN; P2 (missing
 request.md) — this file.
+
+`feedback/2026-06-13-02-reviewer.md` (provenance): added `artifacts/manifest.md`,
+raw logs (`raw-*.log`), and a reproducible suite config + run
+(`crates/ecaz-cli/suites/task106-m5-ivf-rabitq-multibit.json` →
+`artifacts/suite/{suite-manifest.json,results.jsonl,*.log}`) for the IVF
+RaBitQ bit sweep. Running the suite surfaced that the earlier ad-hoc latency
+numbers were from a debug backend; re-ran on a release backend
+(`cargo pgrx install --release`), which corrected the IVF Auto-gate
+conclusion (batch-on is 2.4× faster on release, not slower).
