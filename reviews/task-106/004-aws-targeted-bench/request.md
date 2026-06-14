@@ -19,14 +19,27 @@ scales.
   - `ec_ivf` default `Auto` storage, scratch SoA on/off, recall + latency.
   - `ec_spire` + `rabitq`, candidate batch scoring on/off, recall + latency +
     `spire-pipeline`.
+  - `ec_hnsw` + grouped-PQ (`pq_fastscan`), candidate batch scoring on/off,
+    recall + latency — the **gap-2 flush-width histogram** cells (added
+    2026-06-13). The latency on-arm carries `--task87-candidate-batch-counters`
+    so the measure-first probe (code commit `3e5a837af`) records the per-flush
+    width distribution that decides whether a grouped-PQ traversal block kernel
+    is justified (ADR-077 §9.2). Recall on/off is a parity check; latency
+    on/off is a noise pair (the probe leaves scoring unchanged) — the
+    deliverable is the histogram, not a batch speedup A/B.
+
 ## Explicit Exclusions
 
-The configs intentionally exclude HNSW grouped-PQ, DiskANN, explicit
-TurboQuant comparator lanes, broad PQ-FastScan benches, and unrelated
-quant/index/option combinations. SPIRE pq_fastscan is excluded because that
-surface is not implemented for SPIRE and is not a benchmark target. HNSW
-grouped-PQ remains a separate open Task 106 gap, not part of this AWS bench
-rerun.
+The configs intentionally exclude DiskANN, explicit TurboQuant comparator
+lanes, broad PQ-FastScan benches, and unrelated quant/index/option
+combinations. SPIRE pq_fastscan is excluded because that surface is not
+implemented for SPIRE and is a permanent exclusion (operator decision, ADR-077
+§9.4), not a benchmark target.
+
+HNSW grouped-PQ is now **included** (gap-2 histogram, above) rather than
+deferred. Its flush-width histogram is host-independent (graph + ef determine
+the widths), so a single lane is sufficient; both lanes carry it for config
+symmetry and a cross-lane confirmation.
 
 ## Configs
 
