@@ -4183,6 +4183,638 @@
       "session_gucs": [
         "ec_spire.candidate_batch_scoring=off"
       ]
+    },
+    {
+      "kind": "load",
+      "name": "load-10k-hnsw-groupedpq",
+      "tags": [
+        "task106",
+        "aws-targeted",
+        "aws-intel",
+        "real10k",
+        "hnsw",
+        "hnsw-pqfastscan-groupedpq",
+        "gap2-flush-width"
+      ],
+      "prefix": "t106_aws_intel_10k_hnsw_groupedpq",
+      "profile": "ec_hnsw",
+      "bits": 4,
+      "dim": 1536,
+      "corpus_file": "/var/lib/pgsql/18/datasets/staged-task106-targeted/ec_real_10k_corpus.tsv",
+      "queries_file": "/var/lib/pgsql/18/datasets/staged-task106-targeted/ec_real_10k_queries.tsv",
+      "manifest_file": "/var/lib/pgsql/18/datasets/staged-task106-targeted/ec_real_10k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [],
+      "storage_format": "pq_fastscan",
+      "m": [
+        16
+      ],
+      "ef_construction": 128,
+      "log_file": "reviews/task-106/004-aws-targeted-bench/artifacts/aws-intel/load-10k-hnsw-groupedpq.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-10k-hnsw-groupedpq-batch-on",
+      "tags": [
+        "task106",
+        "aws-targeted",
+        "aws-intel",
+        "real10k",
+        "hnsw",
+        "hnsw-pqfastscan-groupedpq",
+        "storage_format=pq_fastscan",
+        "traversal_score_mode=pq",
+        "gap2-flush-width",
+        "candidate_batch",
+        "option=batch-on",
+        "recall"
+      ],
+      "prefix": "t106_aws_intel_10k_hnsw_groupedpq",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        40,
+        80,
+        120
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "reviews/task-106/004-aws-targeted-bench/artifacts/aws-intel/truth-cache",
+      "log_output": "reviews/task-106/004-aws-targeted-bench/artifacts/aws-intel/recall-10k-hnsw-groupedpq-batch-on.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-10k-hnsw-groupedpq-batch-on",
+      "tags": [
+        "task106",
+        "aws-targeted",
+        "aws-intel",
+        "real10k",
+        "hnsw",
+        "hnsw-pqfastscan-groupedpq",
+        "storage_format=pq_fastscan",
+        "traversal_score_mode=pq",
+        "gap2-flush-width",
+        "candidate_batch",
+        "option=batch-on",
+        "latency"
+      ],
+      "prefix": "t106_aws_intel_10k_hnsw_groupedpq",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        40,
+        80,
+        120
+      ],
+      "queries_limit": 200,
+      "iterations": 200,
+      "concurrency": 1,
+      "cache_state": "task106_10k_hnsw-groupedpq_batch-on",
+      "task87_candidate_batch_counters": true,
+      "truth_cache_dir": "reviews/task-106/004-aws-targeted-bench/artifacts/aws-intel/truth-cache",
+      "log_output": "reviews/task-106/004-aws-targeted-bench/artifacts/aws-intel/latency-10k-hnsw-groupedpq-batch-on.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-10k-hnsw-groupedpq-batch-off",
+      "tags": [
+        "task106",
+        "aws-targeted",
+        "aws-intel",
+        "real10k",
+        "hnsw",
+        "hnsw-pqfastscan-groupedpq",
+        "storage_format=pq_fastscan",
+        "traversal_score_mode=pq",
+        "gap2-flush-width",
+        "scalar-ab",
+        "option=batch-off",
+        "recall"
+      ],
+      "prefix": "t106_aws_intel_10k_hnsw_groupedpq",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        40,
+        80,
+        120
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "reviews/task-106/004-aws-targeted-bench/artifacts/aws-intel/truth-cache",
+      "log_output": "reviews/task-106/004-aws-targeted-bench/artifacts/aws-intel/recall-10k-hnsw-groupedpq-batch-off.log",
+      "session_gucs": [
+        "ec_hnsw.candidate_batch_scoring=off"
+      ]
+    },
+    {
+      "kind": "latency",
+      "name": "latency-10k-hnsw-groupedpq-batch-off",
+      "tags": [
+        "task106",
+        "aws-targeted",
+        "aws-intel",
+        "real10k",
+        "hnsw",
+        "hnsw-pqfastscan-groupedpq",
+        "storage_format=pq_fastscan",
+        "traversal_score_mode=pq",
+        "gap2-flush-width",
+        "scalar-ab",
+        "option=batch-off",
+        "latency"
+      ],
+      "prefix": "t106_aws_intel_10k_hnsw_groupedpq",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        40,
+        80,
+        120
+      ],
+      "queries_limit": 200,
+      "iterations": 200,
+      "concurrency": 1,
+      "cache_state": "task106_10k_hnsw-groupedpq_batch-off",
+      "task87_candidate_batch_counters": true,
+      "truth_cache_dir": "reviews/task-106/004-aws-targeted-bench/artifacts/aws-intel/truth-cache",
+      "log_output": "reviews/task-106/004-aws-targeted-bench/artifacts/aws-intel/latency-10k-hnsw-groupedpq-batch-off.log",
+      "session_gucs": [
+        "ec_hnsw.candidate_batch_scoring=off"
+      ]
+    },
+    {
+      "kind": "load",
+      "name": "load-50k-hnsw-groupedpq",
+      "tags": [
+        "task106",
+        "aws-targeted",
+        "aws-intel",
+        "real50k",
+        "hnsw",
+        "hnsw-pqfastscan-groupedpq",
+        "gap2-flush-width"
+      ],
+      "prefix": "t106_aws_intel_50k_hnsw_groupedpq",
+      "profile": "ec_hnsw",
+      "bits": 4,
+      "dim": 1536,
+      "corpus_file": "/var/lib/pgsql/18/datasets/staged-task106-targeted/ec_real_50k_corpus.tsv",
+      "queries_file": "/var/lib/pgsql/18/datasets/staged-task106-targeted/ec_real_50k_queries.tsv",
+      "manifest_file": "/var/lib/pgsql/18/datasets/staged-task106-targeted/ec_real_50k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [],
+      "storage_format": "pq_fastscan",
+      "m": [
+        16
+      ],
+      "ef_construction": 128,
+      "log_file": "reviews/task-106/004-aws-targeted-bench/artifacts/aws-intel/load-50k-hnsw-groupedpq.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-50k-hnsw-groupedpq-batch-on",
+      "tags": [
+        "task106",
+        "aws-targeted",
+        "aws-intel",
+        "real50k",
+        "hnsw",
+        "hnsw-pqfastscan-groupedpq",
+        "storage_format=pq_fastscan",
+        "traversal_score_mode=pq",
+        "gap2-flush-width",
+        "candidate_batch",
+        "option=batch-on",
+        "recall"
+      ],
+      "prefix": "t106_aws_intel_50k_hnsw_groupedpq",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        40,
+        80,
+        120
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "reviews/task-106/004-aws-targeted-bench/artifacts/aws-intel/truth-cache",
+      "log_output": "reviews/task-106/004-aws-targeted-bench/artifacts/aws-intel/recall-50k-hnsw-groupedpq-batch-on.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-50k-hnsw-groupedpq-batch-on",
+      "tags": [
+        "task106",
+        "aws-targeted",
+        "aws-intel",
+        "real50k",
+        "hnsw",
+        "hnsw-pqfastscan-groupedpq",
+        "storage_format=pq_fastscan",
+        "traversal_score_mode=pq",
+        "gap2-flush-width",
+        "candidate_batch",
+        "option=batch-on",
+        "latency"
+      ],
+      "prefix": "t106_aws_intel_50k_hnsw_groupedpq",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        40,
+        80,
+        120
+      ],
+      "queries_limit": 200,
+      "iterations": 200,
+      "concurrency": 1,
+      "cache_state": "task106_50k_hnsw-groupedpq_batch-on",
+      "task87_candidate_batch_counters": true,
+      "truth_cache_dir": "reviews/task-106/004-aws-targeted-bench/artifacts/aws-intel/truth-cache",
+      "log_output": "reviews/task-106/004-aws-targeted-bench/artifacts/aws-intel/latency-50k-hnsw-groupedpq-batch-on.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-50k-hnsw-groupedpq-batch-off",
+      "tags": [
+        "task106",
+        "aws-targeted",
+        "aws-intel",
+        "real50k",
+        "hnsw",
+        "hnsw-pqfastscan-groupedpq",
+        "storage_format=pq_fastscan",
+        "traversal_score_mode=pq",
+        "gap2-flush-width",
+        "scalar-ab",
+        "option=batch-off",
+        "recall"
+      ],
+      "prefix": "t106_aws_intel_50k_hnsw_groupedpq",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        40,
+        80,
+        120
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "reviews/task-106/004-aws-targeted-bench/artifacts/aws-intel/truth-cache",
+      "log_output": "reviews/task-106/004-aws-targeted-bench/artifacts/aws-intel/recall-50k-hnsw-groupedpq-batch-off.log",
+      "session_gucs": [
+        "ec_hnsw.candidate_batch_scoring=off"
+      ]
+    },
+    {
+      "kind": "latency",
+      "name": "latency-50k-hnsw-groupedpq-batch-off",
+      "tags": [
+        "task106",
+        "aws-targeted",
+        "aws-intel",
+        "real50k",
+        "hnsw",
+        "hnsw-pqfastscan-groupedpq",
+        "storage_format=pq_fastscan",
+        "traversal_score_mode=pq",
+        "gap2-flush-width",
+        "scalar-ab",
+        "option=batch-off",
+        "latency"
+      ],
+      "prefix": "t106_aws_intel_50k_hnsw_groupedpq",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        40,
+        80,
+        120
+      ],
+      "queries_limit": 200,
+      "iterations": 200,
+      "concurrency": 1,
+      "cache_state": "task106_50k_hnsw-groupedpq_batch-off",
+      "task87_candidate_batch_counters": true,
+      "truth_cache_dir": "reviews/task-106/004-aws-targeted-bench/artifacts/aws-intel/truth-cache",
+      "log_output": "reviews/task-106/004-aws-targeted-bench/artifacts/aws-intel/latency-50k-hnsw-groupedpq-batch-off.log",
+      "session_gucs": [
+        "ec_hnsw.candidate_batch_scoring=off"
+      ]
+    },
+    {
+      "kind": "load",
+      "name": "load-100k-hnsw-groupedpq",
+      "tags": [
+        "task106",
+        "aws-targeted",
+        "aws-intel",
+        "real100k",
+        "hnsw",
+        "hnsw-pqfastscan-groupedpq",
+        "gap2-flush-width"
+      ],
+      "prefix": "t106_aws_intel_100k_hnsw_groupedpq",
+      "profile": "ec_hnsw",
+      "bits": 4,
+      "dim": 1536,
+      "corpus_file": "/var/lib/pgsql/18/datasets/staged-task106-targeted/ec_real_100k_corpus.tsv",
+      "queries_file": "/var/lib/pgsql/18/datasets/staged-task106-targeted/ec_real_100k_queries.tsv",
+      "manifest_file": "/var/lib/pgsql/18/datasets/staged-task106-targeted/ec_real_100k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [],
+      "storage_format": "pq_fastscan",
+      "m": [
+        16
+      ],
+      "ef_construction": 128,
+      "log_file": "reviews/task-106/004-aws-targeted-bench/artifacts/aws-intel/load-100k-hnsw-groupedpq.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-100k-hnsw-groupedpq-batch-on",
+      "tags": [
+        "task106",
+        "aws-targeted",
+        "aws-intel",
+        "real100k",
+        "hnsw",
+        "hnsw-pqfastscan-groupedpq",
+        "storage_format=pq_fastscan",
+        "traversal_score_mode=pq",
+        "gap2-flush-width",
+        "candidate_batch",
+        "option=batch-on",
+        "recall"
+      ],
+      "prefix": "t106_aws_intel_100k_hnsw_groupedpq",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        40,
+        80,
+        120
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "reviews/task-106/004-aws-targeted-bench/artifacts/aws-intel/truth-cache",
+      "log_output": "reviews/task-106/004-aws-targeted-bench/artifacts/aws-intel/recall-100k-hnsw-groupedpq-batch-on.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-100k-hnsw-groupedpq-batch-on",
+      "tags": [
+        "task106",
+        "aws-targeted",
+        "aws-intel",
+        "real100k",
+        "hnsw",
+        "hnsw-pqfastscan-groupedpq",
+        "storage_format=pq_fastscan",
+        "traversal_score_mode=pq",
+        "gap2-flush-width",
+        "candidate_batch",
+        "option=batch-on",
+        "latency"
+      ],
+      "prefix": "t106_aws_intel_100k_hnsw_groupedpq",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        40,
+        80,
+        120
+      ],
+      "queries_limit": 200,
+      "iterations": 200,
+      "concurrency": 1,
+      "cache_state": "task106_100k_hnsw-groupedpq_batch-on",
+      "task87_candidate_batch_counters": true,
+      "truth_cache_dir": "reviews/task-106/004-aws-targeted-bench/artifacts/aws-intel/truth-cache",
+      "log_output": "reviews/task-106/004-aws-targeted-bench/artifacts/aws-intel/latency-100k-hnsw-groupedpq-batch-on.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-100k-hnsw-groupedpq-batch-off",
+      "tags": [
+        "task106",
+        "aws-targeted",
+        "aws-intel",
+        "real100k",
+        "hnsw",
+        "hnsw-pqfastscan-groupedpq",
+        "storage_format=pq_fastscan",
+        "traversal_score_mode=pq",
+        "gap2-flush-width",
+        "scalar-ab",
+        "option=batch-off",
+        "recall"
+      ],
+      "prefix": "t106_aws_intel_100k_hnsw_groupedpq",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        40,
+        80,
+        120
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "reviews/task-106/004-aws-targeted-bench/artifacts/aws-intel/truth-cache",
+      "log_output": "reviews/task-106/004-aws-targeted-bench/artifacts/aws-intel/recall-100k-hnsw-groupedpq-batch-off.log",
+      "session_gucs": [
+        "ec_hnsw.candidate_batch_scoring=off"
+      ]
+    },
+    {
+      "kind": "latency",
+      "name": "latency-100k-hnsw-groupedpq-batch-off",
+      "tags": [
+        "task106",
+        "aws-targeted",
+        "aws-intel",
+        "real100k",
+        "hnsw",
+        "hnsw-pqfastscan-groupedpq",
+        "storage_format=pq_fastscan",
+        "traversal_score_mode=pq",
+        "gap2-flush-width",
+        "scalar-ab",
+        "option=batch-off",
+        "latency"
+      ],
+      "prefix": "t106_aws_intel_100k_hnsw_groupedpq",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        40,
+        80,
+        120
+      ],
+      "queries_limit": 200,
+      "iterations": 200,
+      "concurrency": 1,
+      "cache_state": "task106_100k_hnsw-groupedpq_batch-off",
+      "task87_candidate_batch_counters": true,
+      "truth_cache_dir": "reviews/task-106/004-aws-targeted-bench/artifacts/aws-intel/truth-cache",
+      "log_output": "reviews/task-106/004-aws-targeted-bench/artifacts/aws-intel/latency-100k-hnsw-groupedpq-batch-off.log",
+      "session_gucs": [
+        "ec_hnsw.candidate_batch_scoring=off"
+      ]
+    },
+    {
+      "kind": "load",
+      "name": "load-1m-hnsw-groupedpq",
+      "tags": [
+        "task106",
+        "aws-targeted",
+        "aws-intel",
+        "real1m",
+        "hnsw",
+        "hnsw-pqfastscan-groupedpq",
+        "gap2-flush-width"
+      ],
+      "prefix": "t106_aws_intel_1m_hnsw_groupedpq",
+      "profile": "ec_hnsw",
+      "bits": 4,
+      "dim": 1536,
+      "corpus_file": "/var/lib/pgsql/18/datasets/staged-task106-targeted/ec_real_ann_benchmarks_anchor_corpus.tsv",
+      "queries_file": "/var/lib/pgsql/18/datasets/staged-task106-targeted/ec_real_ann_benchmarks_anchor_queries.tsv",
+      "manifest_file": "/var/lib/pgsql/18/datasets/staged-task106-targeted/ec_real_ann_benchmarks_anchor_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": [],
+      "storage_format": "pq_fastscan",
+      "m": [
+        16
+      ],
+      "ef_construction": 128,
+      "log_file": "reviews/task-106/004-aws-targeted-bench/artifacts/aws-intel/load-1m-hnsw-groupedpq.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-1m-hnsw-groupedpq-batch-on",
+      "tags": [
+        "task106",
+        "aws-targeted",
+        "aws-intel",
+        "real1m",
+        "hnsw",
+        "hnsw-pqfastscan-groupedpq",
+        "storage_format=pq_fastscan",
+        "traversal_score_mode=pq",
+        "gap2-flush-width",
+        "candidate_batch",
+        "option=batch-on",
+        "recall"
+      ],
+      "prefix": "t106_aws_intel_1m_hnsw_groupedpq",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        40,
+        80,
+        120
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "reviews/task-106/004-aws-targeted-bench/artifacts/aws-intel/truth-cache",
+      "log_output": "reviews/task-106/004-aws-targeted-bench/artifacts/aws-intel/recall-1m-hnsw-groupedpq-batch-on.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-1m-hnsw-groupedpq-batch-on",
+      "tags": [
+        "task106",
+        "aws-targeted",
+        "aws-intel",
+        "real1m",
+        "hnsw",
+        "hnsw-pqfastscan-groupedpq",
+        "storage_format=pq_fastscan",
+        "traversal_score_mode=pq",
+        "gap2-flush-width",
+        "candidate_batch",
+        "option=batch-on",
+        "latency"
+      ],
+      "prefix": "t106_aws_intel_1m_hnsw_groupedpq",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        40,
+        80,
+        120
+      ],
+      "queries_limit": 200,
+      "iterations": 200,
+      "concurrency": 1,
+      "cache_state": "task106_1m_hnsw-groupedpq_batch-on",
+      "task87_candidate_batch_counters": true,
+      "truth_cache_dir": "reviews/task-106/004-aws-targeted-bench/artifacts/aws-intel/truth-cache",
+      "log_output": "reviews/task-106/004-aws-targeted-bench/artifacts/aws-intel/latency-1m-hnsw-groupedpq-batch-on.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-1m-hnsw-groupedpq-batch-off",
+      "tags": [
+        "task106",
+        "aws-targeted",
+        "aws-intel",
+        "real1m",
+        "hnsw",
+        "hnsw-pqfastscan-groupedpq",
+        "storage_format=pq_fastscan",
+        "traversal_score_mode=pq",
+        "gap2-flush-width",
+        "scalar-ab",
+        "option=batch-off",
+        "recall"
+      ],
+      "prefix": "t106_aws_intel_1m_hnsw_groupedpq",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        40,
+        80,
+        120
+      ],
+      "queries_limit": 200,
+      "truth_cache_dir": "reviews/task-106/004-aws-targeted-bench/artifacts/aws-intel/truth-cache",
+      "log_output": "reviews/task-106/004-aws-targeted-bench/artifacts/aws-intel/recall-1m-hnsw-groupedpq-batch-off.log",
+      "session_gucs": [
+        "ec_hnsw.candidate_batch_scoring=off"
+      ]
+    },
+    {
+      "kind": "latency",
+      "name": "latency-1m-hnsw-groupedpq-batch-off",
+      "tags": [
+        "task106",
+        "aws-targeted",
+        "aws-intel",
+        "real1m",
+        "hnsw",
+        "hnsw-pqfastscan-groupedpq",
+        "storage_format=pq_fastscan",
+        "traversal_score_mode=pq",
+        "gap2-flush-width",
+        "scalar-ab",
+        "option=batch-off",
+        "latency"
+      ],
+      "prefix": "t106_aws_intel_1m_hnsw_groupedpq",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        40,
+        80,
+        120
+      ],
+      "queries_limit": 200,
+      "iterations": 200,
+      "concurrency": 1,
+      "cache_state": "task106_1m_hnsw-groupedpq_batch-off",
+      "task87_candidate_batch_counters": true,
+      "truth_cache_dir": "reviews/task-106/004-aws-targeted-bench/artifacts/aws-intel/truth-cache",
+      "log_output": "reviews/task-106/004-aws-targeted-bench/artifacts/aws-intel/latency-1m-hnsw-groupedpq-batch-off.log",
+      "session_gucs": [
+        "ec_hnsw.candidate_batch_scoring=off"
+      ]
     }
   ]
 }
