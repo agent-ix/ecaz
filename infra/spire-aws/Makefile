@@ -155,13 +155,13 @@ load-stress:
 smoke:
 	cd $(REPO_ROOT) && PREFIX=$(PREFIX) $(SCRIPTS)/smoke.sh $(TOPOLOGY) $(ARTIFACT_DIR)
 
-smoke-correctness: PREFIX = ec_spire_aws_synth_10k
+smoke-correctness: PREFIX ?= ec_spire_aws_synth_10k
 smoke-correctness: smoke
 
-smoke-representative: PREFIX = ec_spire_aws_repr_1m
+smoke-representative: PREFIX ?= ec_spire_aws_repr_1m
 smoke-representative: smoke
 
-smoke-stress: PREFIX = ec_spire_aws_synth_10m
+smoke-stress: PREFIX ?= ec_spire_aws_synth_10m
 smoke-stress: smoke
 
 verify-correctness-tunneled:
