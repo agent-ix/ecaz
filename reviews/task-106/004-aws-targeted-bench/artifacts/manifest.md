@@ -195,3 +195,61 @@ cell is present.
     for a grouped-PQ traversal block-kernel investment; the likely next action
     is to inspect the probe wiring or counter surface before treating gap 2 as
     histogram-decided.
+
+## Local Gap-2 Probe Diagnosis
+
+- Date: 2026-06-14.
+- Pre-fix head: `81eeccb07`.
+- Local PG18 fixture:
+  - `ec_hnsw` HNSW grouped-PQ / `storage_format=pq_fastscan`, `m=8`,
+    `ef_search=40`, 1,000 corpus rows, 50 query rows.
+  - Fixture and logs under `artifacts/local-gap2-repro/`.
+- Pre-fix catalog checks:
+  - `local-gap2-catalog-check.log`: extension `ecaz|0.1.1` installed;
+    `ec_block_kernel_scoring_snapshot()` present.
+  - `local-gap2-empty-snapshot.log`: snapshot function returned the expected
+    width bucket columns and zero rows after reset.
+- Pre-fix single-session repro:
+  - Command used `target/release/ecaz dev sql --pg 18 ...` with
+    `ec_hnsw.candidate_batch_scoring=on`, `ec_hnsw.ef_search=40`, and
+    `enable_seqscan=off`.
+  - `single-session-query-snapshot.log` shows the query used
+    `t106_local_gap2_hnsw_groupedpq_pq_fastscan_m8_idx`, returned 10 rows,
+    and then `ec_block_kernel_scoring_snapshot()` returned 0 rows.
+- Root cause:
+  - The Task 106 probe counted grouped-PQ traversal width only inside the
+    direct grouped scoring subpath.
+  - Default HNSW PqFastScan traversal can use the binary traversal score path
+    for grouped candidates, bypassing that increment while still using the
+    HNSW grouped-PQ index. The AWS logs therefore reflected probe placement,
+    not absence of grouped-PQ traversal work.
+- Fix:
+  - Move the width increment to the top of each
+    `CandidateScoreDispatch::Grouped(_)` arm in
+    `src/am/ec_hnsw/scan.rs`, before binary traversal, exact-budget, or other
+    scoring branches choose the scoring path.
+  - This remains width-only evidence: scoring flush/kernel/scalar counts stay
+    zero because no grouped-PQ traversal block kernel exists yet.
+- Post-fix local validation:
+  - `cargo test --lib grouped_pq_traversal_flush_width_probe_records_width_only_histogram --no-default-features --features pg18`
+    passed: 1 test passed. Log:
+    `local-gap2-repro/cargo-test-counter-after-fix.log`.
+  - `rustfmt --check src/am/ec_hnsw/scan.rs` passed. Repo-wide
+    `cargo fmt --check` still fails on existing quant-file formatting diffs
+    outside this change. Log:
+    `local-gap2-repro/rustfmt-scan-after-fix.log`.
+  - Installed the patched release extension into local PG18 with
+    `cargo pgrx install --release --pg-config /home/peter/.pgrx/18.3/pgrx-install/bin/pg_config`
+    and restarted `/home/peter/.pgrx/data-18`.
+  - `single-session-query-snapshot-after-fix.log` shows the same HNSW
+    PqFastScan index plan and a positive width-only row:
+    `surface=hnsw`, `quant_kind=grouped_pq`, `isa=scalar`,
+    `width_8_15_flushes=23`, `width_16_31_flushes=20`.
+  - `latency-hnsw-groupedpq-batch-on-after-fix.log` shows the bench logging
+    path now emits:
+    `width_lt8=0 width_8_15=256 width_16_31=194 width_ge32=0`.
+- AWS implication:
+  - The completed AWS recall/latency results remain valid.
+  - Gap 2 still needs an AWS rerun of the HNSW grouped-PQ gap-2 latency cells
+    on a branch/head containing this probe fix before the histogram can be
+    treated as AWS-measured.

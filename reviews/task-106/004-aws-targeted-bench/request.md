@@ -77,4 +77,13 @@ histogram evidence for a grouped-PQ traversal block kernel; the next decision
 should treat gap 2 as requiring probe/counter wiring inspection before calling
 the histogram question closed.
 
+Follow-up on 2026-06-14: local diagnosis found the probe placement bug. The
+HNSW PqFastScan path can use binary traversal scoring for grouped candidates,
+which bypassed the old increment site. The probe has been moved to the grouped
+candidate dispatch boundary in `src/am/ec_hnsw/scan.rs`. Local PG18 validation
+now shows the same HNSW grouped-PQ query emits a width-only
+`block-kernel-counters` row, and the local latency command prints
+`width_8_15=256 width_16_31=194`. Gap 2 still needs a narrow AWS rerun of the
+HNSW grouped-PQ gap-2 latency cells on a branch/head containing this fix.
+
 See `artifacts/manifest.md` for exact commands and artifact paths.

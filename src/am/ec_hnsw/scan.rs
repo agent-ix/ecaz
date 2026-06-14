@@ -3897,6 +3897,9 @@ where
                         }
                     },
                     CandidateScoreDispatch::Grouped(grouped) => {
+                        if grouped_pq_width_probe {
+                            grouped_pq_traversal_width += 1;
+                        }
                         flush_turboquant_full_lut_payload_batch(
                             opaque,
                             &mut exact_payload_batch,
@@ -3917,9 +3920,6 @@ where
                                 element: neighbor,
                             });
                         } else {
-                            if grouped_pq_width_probe {
-                                grouped_pq_traversal_width += 1;
-                            }
                             let score = score_grouped_candidate_context(
                                 index_relation,
                                 opaque,
@@ -4055,6 +4055,9 @@ where
                 ));
             }
             CandidateScoreDispatch::Grouped(grouped) => {
+                if grouped_pq_width_probe {
+                    grouped_pq_traversal_width += 1;
+                }
                 let binary_traversal_enabled = grouped_binary_traversal_score_enabled(opaque);
                 if let Some(grouped_candidates) = grouped_candidates.as_mut() {
                     let approx_score = if binary_traversal_enabled {
@@ -4078,9 +4081,6 @@ where
                     let score = if binary_traversal_enabled && !exact_full {
                         candidate.approx_score
                     } else {
-                        if grouped_pq_width_probe {
-                            grouped_pq_traversal_width += 1;
-                        }
                         score_grouped_candidate_context(index_relation, opaque, grouped, layer)
                     };
                     candidates.push(search::BeamCandidate::with_source(
