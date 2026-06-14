@@ -1,6 +1,7 @@
 # Task 106 packet 004 - targeted AWS bench results
 
-Status: completed AWS targeted bench packet (2026-06-14). Coder lane.
+Status: completed AWS targeted bench packet plus gap-2 fixed-probe AWS rerun
+(2026-06-14). Coder lane.
 
 ## Summary
 
@@ -12,6 +13,13 @@ Both AWS main suites completed successfully:
 
 - `aws-intel`: 149/149 steps succeeded, 826 `results.jsonl` rows.
 - `aws-graviton`: 149/149 steps succeeded, 826 `results.jsonl` rows.
+
+The fixed-probe gap-2 rerun also completed successfully:
+
+- `aws-intel-gap2-rerun-06020c8c0`: 9/9 steps succeeded, 36
+  `results.jsonl` rows.
+- `aws-graviton-gap2-rerun-06020c8c0`: 9/9 steps succeeded, 36
+  `results.jsonl` rows.
 
 The raw logs, manifests, and result streams are packet-local under
 `artifacts/aws-intel/` and `artifacts/aws-graviton/`. The AWS instances were
@@ -83,7 +91,21 @@ which bypassed the old increment site. The probe has been moved to the grouped
 candidate dispatch boundary in `src/am/ec_hnsw/scan.rs`. Local PG18 validation
 now shows the same HNSW grouped-PQ query emits a width-only
 `block-kernel-counters` row, and the local latency command prints
-`width_8_15=256 width_16_31=194`. Gap 2 still needs a narrow AWS rerun of the
-HNSW grouped-PQ gap-2 latency cells on a branch/head containing this fix.
+`width_8_15=256 width_16_31=194`.
+
+AWS fixed-probe rerun result: both lanes now emit the expected width-only
+`block-kernel-counters` rows for HNSW grouped-PQ batch-on at 10k, 50k, 100k,
+and 1m across ef_search 40/80/120. Per lane totals across the 12 histogram
+rows are:
+
+- `width_lt8=2496`
+- `width_8_15=45516`
+- `width_16_31=181377`
+- `width_ge32=0`
+
+Interpretation: the AWS histogram question is now measured. Widths are
+overwhelmingly 8-31 and never >=32 in this rerun, so gap 2 should close as a
+measured skip for a grouped-PQ traversal block kernel rather than an
+implementation target.
 
 See `artifacts/manifest.md` for exact commands and artifact paths.

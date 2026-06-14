@@ -253,3 +253,91 @@ cell is present.
   - Gap 2 still needs an AWS rerun of the HNSW grouped-PQ gap-2 latency cells
     on a branch/head containing this probe fix before the histogram can be
     treated as AWS-measured.
+
+## AWS Gap-2 Fixed-Probe Rerun
+
+- Date: 2026-06-14.
+- Fixed head / code commit: `06020c8c0`.
+- Config commit: `4991d5c11`.
+- Purpose: rerun only the HNSW grouped-PQ gap-2 latency cells after the local
+  probe fix. This is not a full sweep.
+- Configs:
+  - `task106-aws-intel-gap2-rerun-06020c8c0.json`.
+  - `task106-aws-graviton-gap2-rerun-06020c8c0.json`.
+- Scope per lane:
+  - 9 steps: host precheck plus 8 latency steps.
+  - Scales: 10k, 50k, 100k, 1m.
+  - Options: HNSW grouped-PQ batch-on and batch-off.
+  - Sweep: `ef_search={40,80,120}`, 200 queries / 200 iterations.
+
+### Install / Host Recovery
+
+- Initial stale verifier SSM `202e85df-6b65-4da4-b773-5376291ac0b6` was
+  canceled after hanging in root-run `ecaz dev sql`.
+- Manual psql verifier SSM `65eaab51-723d-4635-b628-b9af00569b97`:
+  - Intel verified `ecaz|0.1.1` and
+    `ec_block_kernel_scoring_snapshot()`.
+  - Intel fixed `.so` sha256:
+    `8c20efe3b336133949f4e23e08d0504c68c107e6a236b53dea069cc42c294e2a`.
+  - Graviton initially showed only an empty pgrx cluster; the real 800G data
+    volume was attached but unmounted.
+- Graviton recovery:
+  - Discovery SSM `35ba0149-8a46-4a04-b9f3-9dee4af58b08` showed Intel mounted
+    `/dev/nvme1n1` at `/var/lib/pgsql/18`, while Graviton had the 800G XFS
+    volume attached as `/dev/nvme0n1` but not mounted.
+  - Recovery SSM `1714cdd9-0379-47c3-8f55-293718d81a40` stopped the empty
+    `/var/lib/pgsql/.pgrx/data-18` cluster, mounted `/dev/nvme0n1` at
+    `/var/lib/pgsql/18`, and started `/var/lib/pgsql/18/data`.
+  - Post-recovery verification showed `/var/lib/pgsql/18` at 800G with
+    405G used / 396G free, `ecaz|0.1.1`,
+    `ec_block_kernel_scoring_snapshot()`, and all four
+    `t106_aws_graviton_*_hnsw_groupedpq_{corpus,queries}` table pairs.
+
+### Rerun Execution
+
+- Intel:
+  - Failed precheck attempt SSM `2c509f1d-8b18-4fb5-9ecc-d0362454b1a5`
+    exposed that root-run raw precheck steps require
+    `PGRX_HOME=/var/lib/pgsql/.pgrx`.
+  - Successful rerun SSM `132eeef2-c7d2-4b70-8640-107657d2f754`.
+  - S3 prefix:
+    `s3://ecaz-cloud-10k-intel-e06ee4a0/bench-artifacts/task106-gap2-rerun-intel-06020c8c0/20260614T1539Z/`.
+  - Packet-local artifacts:
+    `artifacts/aws-intel-gap2-rerun-06020c8c0/`.
+  - `suite-manifest.json`: 9 succeeded, 0 failed.
+  - `results.jsonl`: 36 rows.
+- Graviton:
+  - Successful rerun SSM `509fe639-fbe2-4026-8d78-29136691962b`.
+  - S3 prefix:
+    `s3://ecaz-cloud-10k-medium-268ea93e/bench-artifacts/task106-gap2-rerun-graviton-06020c8c0/20260614T1539Z/`.
+  - Packet-local artifacts:
+    `artifacts/aws-graviton-gap2-rerun-06020c8c0/`.
+  - `suite-manifest.json`: 9 succeeded, 0 failed.
+  - `results.jsonl`: 36 rows.
+- Remote S3 sync:
+  - Intel SSM `e23ff9a5-4ea8-4c79-9343-0e306151be29`.
+  - Graviton SSM `1a2e0216-6118-425b-b54e-6b1ec280b5d1`.
+
+### Fixed-Probe Histogram Result
+
+- Both AWS lanes emitted positive width-only
+  `block-kernel-counters` rows for batch-on HNSW grouped-PQ at all four
+  scales and all three ef_search values.
+- Batch-off latency steps succeeded and did not emit width rows, as expected
+  with `ec_hnsw.candidate_batch_scoring=off`.
+- Per-lane totals across 12 batch-on histogram rows:
+  - `block_kernel_counters` rows: 12.
+  - latency rows: 24.
+  - `width_lt8=2496`.
+  - `width_8_15=45516`.
+  - `width_16_31=181377`.
+  - `width_ge32=0`.
+- 1m batch-on rows:
+  - ef40: `width_lt8=0 width_8_15=3155 width_16_31=8403 width_ge32=0`.
+  - ef80: `width_lt8=0 width_8_15=4521 width_16_31=15692 width_ge32=0`.
+  - ef120: `width_lt8=0 width_8_15=5843 width_16_31=22763 width_ge32=0`.
+- Interpretation:
+  - The AWS gap-2 histogram question is now measured.
+  - Widths are overwhelmingly in 8-31 and never >=32 in this rerun.
+  - This supports closing gap 2 as a measured skip for a grouped-PQ traversal
+    block kernel, not as an implementation target.
