@@ -64,9 +64,10 @@ Required cells:
 
 Required scales:
 
-- 100k as a topology smoke/control.
+- 100k as the small decision/control scale.
 - 1m as the minimum product-scale decision point.
-- 10k/50k are optional smoke only; they must not drive the conclusion.
+- 10k/50k are debug-only and should run only if needed to validate topology or
+  avoid wasting larger-instance time. They must not drive the conclusion.
 
 Required metrics:
 
@@ -80,9 +81,9 @@ Required metrics:
 
 ### Phase 2 - Multi-Node SPIRE Benchmark
 
-Measure a real distributed SPIRE topology. The minimum acceptable topology is
-one coordinator plus at least two worker/data nodes. Prefer a three-worker
-shape if the existing infra supports it within budget.
+Measure a real distributed SPIRE topology. The required topology is one
+coordinator plus two worker/data nodes. Do not expand to more workers unless a
+specific setup/debug issue proves the two-worker shape insufficient.
 
 Required cells:
 
