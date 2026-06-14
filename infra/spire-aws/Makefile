@@ -52,7 +52,7 @@ override WORK_DIR := $(abspath $(WORK_DIR))
 override DISTRIBUTED_PLAN := $(abspath $(DISTRIBUTED_PLAN))
 
 export SPIRE_AWS_DIR REPO_ROOT ARTIFACT_DIR TOPOLOGY PACKAGE_TARBALL
-export ECAZ_BIN WORK_DIR
+export ECAZ_BIN WORK_DIR PREFIX
 export ECAZ_SPIRE_AWS_TARBALL_PATH ?= $(PACKAGE_TARBALL)
 
 .PHONY: preflight preflight-operator preflight-state preflight-permissions preflight-representative-performance mark-representative-performance-start confirm-provision archive-local-state cleanup-residue build-operator-cli provision topology setup package-extension install-extension install setup-coordinator-store-volumes configure-pg-hba register-remotes register register-correctness register-representative register-stress \
