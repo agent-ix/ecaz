@@ -24,6 +24,7 @@ BUCKET=$(jq -r '.artifact_bucket' "$TOPOLOGY")
 ECAZ_BIN="${ECAZ_BIN:-ecaz}"
 WORK_DIR="${WORK_DIR:-$ARTIFACT_DIR/work}"
 SPIRE_AWS_RESET_COORDINATOR_INDEX="${SPIRE_AWS_RESET_COORDINATOR_INDEX:-1}"
+SPIRE_AWS_SKIP_COORDINATOR_LOAD="${SPIRE_AWS_SKIP_COORDINATOR_LOAD:-0}"
 SPIRE_AWS_STORAGE_FORMAT="${SPIRE_AWS_STORAGE_FORMAT:-rabitq}"
 SPIRE_AWS_NODE_LOAD_BASE_DIR="${SPIRE_AWS_NODE_LOAD_BASE_DIR:-/var/tmp/ecaz-spire-aws-load}"
 SPIRE_AWS_COORD_RELOPTIONS="${SPIRE_AWS_COORD_RELOPTIONS:-}"
@@ -599,11 +600,16 @@ case "$TIER" in
       --output-dir "$WORK_DIR/qdrant-dbpedia/prepared/" \
       --dim 1536 \
       --source-dataset "$SOURCE_DATASET"
-    load_coordinator_representative_node_local \
-      "$WORK_DIR/qdrant-dbpedia/prepared/${PREPARED_PREFIX}_corpus.tsv" \
-      "$WORK_DIR/qdrant-dbpedia/prepared/${PREPARED_PREFIX}_queries.tsv" \
-      "$WORK_DIR/qdrant-dbpedia/prepared/${PREPARED_PREFIX}_manifest.json"
-    restart_operator_tunnel_if_available coordinator "$(jq -r '.coordinator.instance_id' "$TOPOLOGY")" "$COORD_PORT"
+    if [[ "$SPIRE_AWS_SKIP_COORDINATOR_LOAD" != "1" ]]; then
+      load_coordinator_representative_node_local \
+        "$WORK_DIR/qdrant-dbpedia/prepared/${PREPARED_PREFIX}_corpus.tsv" \
+        "$WORK_DIR/qdrant-dbpedia/prepared/${PREPARED_PREFIX}_queries.tsv" \
+        "$WORK_DIR/qdrant-dbpedia/prepared/${PREPARED_PREFIX}_manifest.json"
+      restart_operator_tunnel_if_available coordinator "$(jq -r '.coordinator.instance_id' "$TOPOLOGY")" "$COORD_PORT"
+    else
+      echo "coordinator load skipped for representative tier (SPIRE_AWS_SKIP_COORDINATOR_LOAD=1)" \
+        | tee "$ARTIFACT_DIR/coordinator-load-${TIER}.skipped.log"
+    fi
     write_leaf_owned_distributed_plan "$WORK_DIR/qdrant-dbpedia/prepared/${PREPARED_PREFIX}_corpus.tsv" 1536 4 42 ec_spire "$SPIRE_AWS_STORAGE_FORMAT" \
       > "$ARTIFACT_DIR/distributed-plan-${TIER}.log"
     ;;
