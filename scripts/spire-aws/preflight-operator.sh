@@ -86,8 +86,13 @@ require_graviton_family coordinator_instance_type "$coordinator_instance_type"
 require_graviton_family remote_instance_type "$remote_instance_type"
 require_expected_lane_value region "$region" "us-west-2"
 require_expected_lane_value availability_zone "$availability_zone" "us-west-2a"
-require_expected_lane_value coordinator_instance_type "$coordinator_instance_type" "m7g.large"
-require_expected_lane_value remote_instance_type "$remote_instance_type" "m7g.large"
+if [[ "${SPIRE_AWS_ALLOW_NONDEFAULT_GRAVITON_LANE:-0}" == "1" ]]; then
+  printf 'SPIRE AWS nondefault Graviton lane override accepted: coordinator=%s remote=%s\n' \
+    "$coordinator_instance_type" "$remote_instance_type"
+else
+  require_expected_lane_value coordinator_instance_type "$coordinator_instance_type" "m7g.large"
+  require_expected_lane_value remote_instance_type "$remote_instance_type" "m7g.large"
+fi
 
 architecture="$(aws ec2 describe-images \
   --region "$region" \
