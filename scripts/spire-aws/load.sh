@@ -26,7 +26,45 @@ WORK_DIR="${WORK_DIR:-$ARTIFACT_DIR/work}"
 SPIRE_AWS_RESET_COORDINATOR_INDEX="${SPIRE_AWS_RESET_COORDINATOR_INDEX:-1}"
 SPIRE_AWS_STORAGE_FORMAT="${SPIRE_AWS_STORAGE_FORMAT:-rabitq}"
 SPIRE_AWS_NODE_LOAD_BASE_DIR="${SPIRE_AWS_NODE_LOAD_BASE_DIR:-/var/tmp/ecaz-spire-aws-load}"
+SPIRE_AWS_COORD_RELOPTIONS="${SPIRE_AWS_COORD_RELOPTIONS:-}"
+SPIRE_AWS_REMOTE_RELOPTIONS="${SPIRE_AWS_REMOTE_RELOPTIONS:-}"
 mkdir -p "$WORK_DIR"
+
+reloption_args_string() {
+  local raw="$1"
+  local out=""
+  local item
+
+  if [[ -z "$raw" ]]; then
+    return
+  fi
+  IFS=',' read -r -a items <<< "$raw"
+  for item in "${items[@]}"; do
+    [[ -n "$item" ]] || continue
+    out+=" --reloption $(printf '%q' "$item")"
+  done
+  printf '%s' "$out"
+}
+
+reloption_args_array() {
+  local raw="$1"
+  local item
+
+  RELOPTION_ARGS=()
+  if [[ -z "$raw" ]]; then
+    return
+  fi
+  IFS=',' read -r -a items <<< "$raw"
+  for item in "${items[@]}"; do
+    [[ -n "$item" ]] || continue
+    RELOPTION_ARGS+=(--reloption "$item")
+  done
+}
+
+COORD_RELOPTION_ARGS_STRING="$(reloption_args_string "$SPIRE_AWS_COORD_RELOPTIONS")"
+REMOTE_RELOPTION_ARGS_STRING="$(reloption_args_string "$SPIRE_AWS_REMOTE_RELOPTIONS")"
+reloption_args_array "$SPIRE_AWS_COORD_RELOPTIONS"
+COORD_RELOPTION_ARGS=("${RELOPTION_ARGS[@]}")
 
 ssm_wait_command() {
   local instance_id="$1"
@@ -270,6 +308,7 @@ load_remote_shards_node_local() {
       --arg remote_index "$remote_index" \
       --arg drop_sql "$drop_sql" \
       --arg storage_format "$SPIRE_AWS_STORAGE_FORMAT" \
+      --arg remote_reloption_args "$REMOTE_RELOPTION_ARGS_STRING" \
       '[
         "set -euo pipefail",
         "command -v /usr/local/bin/ecaz >/dev/null",
@@ -284,7 +323,7 @@ load_remote_shards_node_local() {
         "drop_status=$?",
         "aws s3 cp \($node_dir)/drop.log s3://\($bucket)/\($drop_log_key) --region \($region) || true",
         "if [ \"$drop_status\" -ne 0 ]; then exit \"$drop_status\"; fi",
-        "/usr/local/bin/ecaz corpus load --host 127.0.0.1 --port 5432 --user ecaz_coord --database postgres --profile ec_spire --prefix \($remote_prefix) --dim 1536 --bits 4 --seed 42 --corpus-file \($node_corpus_path) --corpus-only --storage-format \($storage_format) --index-name \($remote_index) --log-file \($node_load_log)",
+        "/usr/local/bin/ecaz corpus load --host 127.0.0.1 --port 5432 --user ecaz_coord --database postgres --profile ec_spire --prefix \($remote_prefix) --dim 1536 --bits 4 --seed 42 --corpus-file \($node_corpus_path) --corpus-only --storage-format \($storage_format) --index-name \($remote_index) \($remote_reloption_args) --log-file \($node_load_log)",
         "load_status=$?",
         "aws s3 cp \($node_load_log) s3://\($bucket)/\($load_log_key) --region \($region) || true",
         "if [ \"$load_status\" -ne 0 ]; then exit \"$load_status\"; fi",
@@ -337,6 +376,7 @@ load_coordinator_representative_node_local() {
     --arg prefix "$PREFIX" \
     --arg coord_index "$COORD_INDEX" \
     --arg storage_format "$SPIRE_AWS_STORAGE_FORMAT" \
+    --arg coord_reloption_args "$COORD_RELOPTION_ARGS_STRING" \
     --arg load_log_key "$load_log_key" \
     --arg reset_log_key "$reset_log_key" \
     --arg reset_requested "$SPIRE_AWS_RESET_COORDINATOR_INDEX" \
@@ -356,7 +396,7 @@ load_coordinator_representative_node_local() {
       "reset_status=$?",
       "aws s3 cp \($node_dir)/reset-index.log s3://\($bucket)/\($reset_log_key) --region \($region) || true",
       "if [ \"$reset_status\" -ne 0 ]; then exit \"$reset_status\"; fi",
-      "/usr/local/bin/ecaz corpus load --host 127.0.0.1 --port 5432 --user ecaz_coord --database postgres --prefix \($prefix) --corpus-file \($node_corpus_path) --queries-file \($node_queries_path) --manifest-file \($node_manifest_path) --allow-manifest-mismatch --profile ec_spire --dim 1536 --bits 4 --seed 42 --storage-format \($storage_format) --index-name \($coord_index) --log-file \($node_dir)/load.log",
+      "/usr/local/bin/ecaz corpus load --host 127.0.0.1 --port 5432 --user ecaz_coord --database postgres --prefix \($prefix) --corpus-file \($node_corpus_path) --queries-file \($node_queries_path) --manifest-file \($node_manifest_path) --allow-manifest-mismatch --profile ec_spire --dim 1536 --bits 4 --seed 42 --storage-format \($storage_format) --index-name \($coord_index) \($coord_reloption_args) --log-file \($node_dir)/load.log",
       "load_status=$?",
       "aws s3 cp \($node_dir)/load.log s3://\($bucket)/\($load_log_key) --region \($region) || true",
       "exit \"$load_status\""
@@ -450,6 +490,7 @@ write_leaf_owned_distributed_plan() {
       --arg corpus_file "$remote_corpus" \
       --arg identity_sql "$identity_sql" \
       --arg storage_format "$storage_format" \
+      --argjson remote_reloptions "$(printf '%s\n' "$SPIRE_AWS_REMOTE_RELOPTIONS" | jq -R 'split(",") | map(select(length > 0))')" \
       --argjson row_count "$row_count" \
       --argjson shard_id "$((node_id - 2))" \
       --argjson dim "$dim" \
@@ -463,7 +504,7 @@ write_leaf_owned_distributed_plan() {
         remote_prefix: $remote_prefix,
         shard_ids: [$shard_id],
         corpus_file: $corpus_file,
-        remote_load_args: [
+        remote_load_args: ([
           "ecaz", "corpus", "load",
           "--profile", "ec_spire",
           "--prefix", $remote_prefix,
@@ -474,7 +515,7 @@ write_leaf_owned_distributed_plan() {
           "--corpus-only",
           "--storage-format", $storage_format,
           "--index-name", $remote_index
-        ],
+        ] + ($remote_reloptions | map(["--reloption", .]) | add // [])),
         remote_identity_query_sql: $identity_sql,
         coordinator_register_descriptor_sql_template: "",
         row_count: $row_count,
@@ -534,6 +575,7 @@ case "$TIER" in
       --profile ec_spire --dim 1536 --bits 4 --seed 42 \
       --storage-format "$SPIRE_AWS_STORAGE_FORMAT" \
       --index-name "$COORD_INDEX" \
+      "${COORD_RELOPTION_ARGS[@]}" \
       --log-file "$ARTIFACT_DIR/coordinator-load-${TIER}.log"
     write_leaf_owned_distributed_plan "$WORK_DIR/${PREFIX}_corpus.tsv" 1536 4 42 ec_spire "$SPIRE_AWS_STORAGE_FORMAT" \
       > "$ARTIFACT_DIR/distributed-plan-${TIER}.log"
@@ -586,6 +628,7 @@ case "$TIER" in
       --profile ec_spire --dim 1536 --bits 4 --seed 42 \
       --storage-format "$SPIRE_AWS_STORAGE_FORMAT" \
       --index-name "$COORD_INDEX" \
+      "${COORD_RELOPTION_ARGS[@]}" \
       --log-file "$ARTIFACT_DIR/coordinator-load-${TIER}.log"
     write_leaf_owned_distributed_plan "$WORK_DIR/${PREFIX}_corpus.tsv" 1536 4 42 ec_spire "$SPIRE_AWS_STORAGE_FORMAT" \
       > "$ARTIFACT_DIR/distributed-plan-${TIER}.log"
