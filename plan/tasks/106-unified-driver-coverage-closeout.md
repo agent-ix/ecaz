@@ -1,6 +1,11 @@
 # Task 106: Unified-Driver Coverage Closeout (Targeted Gap Pass)
 
-Status: proposed (2026-06-12; operator-confirmed during the Task 105
+Status: complete (2026-06-14, closeout). Evidence: `reviews/task-106/`
+packets 001–004; reviewer judged closeable in
+`reviews/task-106/004-aws-targeted-bench/feedback/2026-06-14-01-reviewer.md`
+(all four §9 gaps + multi-bit per-ISA routing recorded closed/decided in
+ADR-077 §9 + matrix §6a/§9; recall parity 90/90 both AWS lanes; AC1–AC4
+met). Original proposal (2026-06-12; operator-confirmed during the Task 105
 sweep — "we're not going to fix now we just need to note them so we
 can do smaller targeted pass after this" → "let's get those oversights
 into a new task")
