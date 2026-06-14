@@ -39,7 +39,7 @@ reloption_args_string() {
   if [[ -z "$raw" ]]; then
     return
   fi
-  IFS=',' read -r -a items <<< "$raw"
+  IFS=';' read -r -a items <<< "$raw"
   for item in "${items[@]}"; do
     [[ -n "$item" ]] || continue
     out+=" --reloption $(printf '%q' "$item")"
@@ -55,11 +55,17 @@ reloption_args_array() {
   if [[ -z "$raw" ]]; then
     return
   fi
-  IFS=',' read -r -a items <<< "$raw"
+  IFS=';' read -r -a items <<< "$raw"
   for item in "${items[@]}"; do
     [[ -n "$item" ]] || continue
     RELOPTION_ARGS+=(--reloption "$item")
   done
+}
+
+reloptions_json() {
+  local raw="$1"
+
+  printf '%s\n' "$raw" | jq -R 'split(";") | map(select(length > 0))'
 }
 
 COORD_RELOPTION_ARGS_STRING="$(reloption_args_string "$SPIRE_AWS_COORD_RELOPTIONS")"
@@ -491,7 +497,7 @@ write_leaf_owned_distributed_plan() {
       --arg corpus_file "$remote_corpus" \
       --arg identity_sql "$identity_sql" \
       --arg storage_format "$storage_format" \
-      --argjson remote_reloptions "$(printf '%s\n' "$SPIRE_AWS_REMOTE_RELOPTIONS" | jq -R 'split(",") | map(select(length > 0))')" \
+      --argjson remote_reloptions "$(reloptions_json "$SPIRE_AWS_REMOTE_RELOPTIONS")" \
       --argjson row_count "$row_count" \
       --argjson shard_id "$((node_id - 2))" \
       --argjson dim "$dim" \
