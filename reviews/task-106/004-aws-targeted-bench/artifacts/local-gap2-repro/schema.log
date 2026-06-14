@@ -1,0 +1,15 @@
+                            Table "public.t106_local_gap2_hnsw_groupedpq_corpus"
+  Column   |   Type   | Collation | Nullable | Default | Storage  | Compression | Stats target | Description 
+-----------+----------+-----------+----------+---------+----------+-------------+--------------+-------------
+ id        | bigint   |           | not null |         | plain    |             |              | 
+ source    | real[]   |           | not null |         | extended |             |              | 
+ embedding | ecvector |           | not null |         | external |             |              | 
+Indexes:
+    "t106_local_gap2_hnsw_groupedpq_corpus_pkey" PRIMARY KEY, btree (id)
+    "t106_local_gap2_hnsw_groupedpq_pq_fastscan_m8_idx" ec_hnsw (embedding) WITH (m='8', ef_construction='64', build_source_column=source, storage_format=pq_fastscan)
+Not-null constraints:
+    "t106_local_gap2_hnsw_groupedpq_corpus_id_not_null" NOT NULL "id"
+    "t106_local_gap2_hnsw_groupedpq_corpus_source_not_null" NOT NULL "source"
+    "t106_local_gap2_hnsw_groupedpq_corpus_embedding_not_null" NOT NULL "embedding"
+Access method: heap
+

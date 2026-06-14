@@ -1,0 +1,5 @@
+  pid   | state  | wait_event_type | wait_event |       age       |                                         query                                          
+--------+--------+-----------------+------------+-----------------+----------------------------------------------------------------------------------------
+ 619392 | active |                 |            | 00:00:00.751621 | SELECT id FROM t106_1m_ivf_rabitq_b2_corpus ORDER BY embedding <#> $1::real[] LIMIT $2
+(1 row)
+

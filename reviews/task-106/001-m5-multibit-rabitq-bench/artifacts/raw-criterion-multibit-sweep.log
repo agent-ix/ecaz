@@ -1,0 +1,155 @@
+quant/rabitq32_multibit_block32/scalar_estimate_bits2/256
+                        time:   [8.9065 µs 8.9299 µs 8.9525 µs]
+                        thrpt:  [3.5744 Melem/s 3.5835 Melem/s 3.5929 Melem/s]
+Found 7 outliers among 100 measurements (7.00%)
+  4 (4.00%) low severe
+  3 (3.00%) low mild
+quant/rabitq32_multibit_block32/block_dispatch_bits2/256
+                        time:   [2.8939 µs 2.8953 µs 2.8969 µs]
+                        thrpt:  [11.046 Melem/s 11.052 Melem/s 11.058 Melem/s]
+Found 14 outliers among 100 measurements (14.00%)
+  1 (1.00%) low severe
+  3 (3.00%) low mild
+  6 (6.00%) high mild
+  4 (4.00%) high severe
+quant/rabitq32_multibit_block32/scalar_estimate_bits4/256
+                        time:   [1.1788 µs 1.1805 µs 1.1833 µs]
+                        thrpt:  [27.044 Melem/s 27.108 Melem/s 27.145 Melem/s]
+Found 11 outliers among 100 measurements (11.00%)
+  4 (4.00%) low severe
+  3 (3.00%) high mild
+  4 (4.00%) high severe
+quant/rabitq32_multibit_block32/block_dispatch_bits4/256
+                        time:   [3.2145 µs 3.2175 µs 3.2214 µs]
+                        thrpt:  [9.9337 Melem/s 9.9455 Melem/s 9.9548 Melem/s]
+Found 14 outliers among 100 measurements (14.00%)
+  3 (3.00%) low severe
+  1 (1.00%) low mild
+  5 (5.00%) high mild
+  5 (5.00%) high severe
+quant/rabitq32_multibit_block32/scalar_estimate_bits2/768
+                        time:   [25.675 µs 25.810 µs 25.951 µs]
+                        thrpt:  [1.2331 Melem/s 1.2398 Melem/s 1.2463 Melem/s]
+Found 1 outliers among 100 measurements (1.00%)
+  1 (1.00%) low mild
+quant/rabitq32_multibit_block32/block_dispatch_bits2/768
+                        time:   [8.5333 µs 8.5362 µs 8.5394 µs]
+                        thrpt:  [3.7473 Melem/s 3.7487 Melem/s 3.7500 Melem/s]
+Found 8 outliers among 100 measurements (8.00%)
+  4 (4.00%) high mild
+  4 (4.00%) high severe
+quant/rabitq32_multibit_block32/scalar_estimate_bits4/768
+                        time:   [3.4022 µs 3.4037 µs 3.4053 µs]
+                        thrpt:  [9.3970 Melem/s 9.4014 Melem/s 9.4057 Melem/s]
+Found 8 outliers among 100 measurements (8.00%)
+  3 (3.00%) low severe
+  1 (1.00%) low mild
+  3 (3.00%) high mild
+  1 (1.00%) high severe
+quant/rabitq32_multibit_block32/block_dispatch_bits4/768
+                        time:   [9.4900 µs 9.4944 µs 9.4995 µs]
+                        thrpt:  [3.3686 Melem/s 3.3704 Melem/s 3.3720 Melem/s]
+Found 10 outliers among 100 measurements (10.00%)
+  2 (2.00%) low severe
+  1 (1.00%) low mild
+  2 (2.00%) high mild
+  5 (5.00%) high severe
+quant/rabitq32_multibit_block32/scalar_estimate_bits2/1024
+                        time:   [34.004 µs 34.140 µs 34.294 µs]
+                        thrpt:  [933.11 Kelem/s 937.33 Kelem/s 941.07 Kelem/s]
+                 change:
+                        time:   [+12.171% +12.952% +13.703%] (p = 0.00 < 0.05)
+                        thrpt:  [-12.051% -11.467% -10.851%]
+                        Performance has regressed.
+Found 1 outliers among 100 measurements (1.00%)
+  1 (1.00%) low mild
+quant/rabitq32_multibit_block32/block_dispatch_bits2/1024
+                        time:   [11.363 µs 11.372 µs 11.383 µs]
+                        thrpt:  [2.8113 Melem/s 2.8140 Melem/s 2.8162 Melem/s]
+                 change:
+                        time:   [-1.8779% -1.7013% -1.5413%] (p = 0.00 < 0.05)
+                        thrpt:  [+1.5654% +1.7308% +1.9138%]
+                        Performance has improved.
+Found 12 outliers among 100 measurements (12.00%)
+  3 (3.00%) low severe
+  7 (7.00%) high mild
+  2 (2.00%) high severe
+quant/rabitq32_multibit_block32/scalar_estimate_bits4/1024
+                        time:   [4.5236 µs 4.5251 µs 4.5268 µs]
+                        thrpt:  [7.0690 Melem/s 7.0717 Melem/s 7.0740 Melem/s]
+                 change:
+                        time:   [-2.0607% -1.9730% -1.8893%] (p = 0.00 < 0.05)
+                        thrpt:  [+1.9257% +2.0127% +2.1040%]
+                        Performance has improved.
+Found 11 outliers among 100 measurements (11.00%)
+  2 (2.00%) low severe
+  3 (3.00%) low mild
+  2 (2.00%) high mild
+  4 (4.00%) high severe
+quant/rabitq32_multibit_block32/block_dispatch_bits4/1024
+                        time:   [12.660 µs 12.667 µs 12.675 µs]
+                        thrpt:  [2.5247 Melem/s 2.5263 Melem/s 2.5277 Melem/s]
+                 change:
+                        time:   [-1.6383% -1.4985% -1.3618%] (p = 0.00 < 0.05)
+                        thrpt:  [+1.3806% +1.5213% +1.6656%]
+                        Performance has improved.
+Found 12 outliers among 100 measurements (12.00%)
+  3 (3.00%) low severe
+  3 (3.00%) low mild
+  3 (3.00%) high mild
+  3 (3.00%) high severe
+quant/rabitq32_multibit_block32/scalar_estimate_bits2/1536
+                        time:   [50.806 µs 51.030 µs 51.256 µs]
+                        thrpt:  [624.31 Kelem/s 627.08 Kelem/s 629.85 Kelem/s]
+Found 16 outliers among 100 measurements (16.00%)
+  4 (4.00%) low severe
+  3 (3.00%) low mild
+  9 (9.00%) high mild
+quant/rabitq32_multibit_block32/block_dispatch_bits2/1536
+                        time:   [17.012 µs 17.018 µs 17.025 µs]
+                        thrpt:  [1.8795 Melem/s 1.8804 Melem/s 1.8811 Melem/s]
+Found 8 outliers among 100 measurements (8.00%)
+  8 (8.00%) high mild
+quant/rabitq32_multibit_block32/scalar_estimate_bits4/1536
+                        time:   [6.7847 µs 6.7879 µs 6.7915 µs]
+                        thrpt:  [4.7118 Melem/s 4.7143 Melem/s 4.7165 Melem/s]
+Found 11 outliers among 100 measurements (11.00%)
+  3 (3.00%) low severe
+  3 (3.00%) high mild
+  5 (5.00%) high severe
+quant/rabitq32_multibit_block32/block_dispatch_bits4/1536
+                        time:   [18.957 µs 18.984 µs 19.019 µs]
+                        thrpt:  [1.6825 Melem/s 1.6856 Melem/s 1.6880 Melem/s]
+Found 12 outliers among 100 measurements (12.00%)
+  1 (1.00%) low severe
+  1 (1.00%) low mild
+  4 (4.00%) high mild
+  6 (6.00%) high severe
+quant/rabitq32_multibit_block32/scalar_estimate_bits2/3072
+                        time:   [103.71 µs 104.27 µs 104.76 µs]
+                        thrpt:  [305.45 Kelem/s 306.88 Kelem/s 308.56 Kelem/s]
+quant/rabitq32_multibit_block32/block_dispatch_bits2/3072
+                        time:   [33.964 µs 33.977 µs 33.991 µs]
+                        thrpt:  [941.42 Kelem/s 941.82 Kelem/s 942.18 Kelem/s]
+Found 13 outliers among 100 measurements (13.00%)
+  3 (3.00%) low severe
+  3 (3.00%) low mild
+  3 (3.00%) high mild
+  4 (4.00%) high severe
+quant/rabitq32_multibit_block32/scalar_estimate_bits4/3072
+                        time:   [13.518 µs 13.524 µs 13.530 µs]
+                        thrpt:  [2.3651 Melem/s 2.3662 Melem/s 2.3672 Melem/s]
+Found 10 outliers among 100 measurements (10.00%)
+  1 (1.00%) low severe
+  2 (2.00%) low mild
+  3 (3.00%) high mild
+  4 (4.00%) high severe
+quant/rabitq32_multibit_block32/block_dispatch_bits4/3072
+                        time:   [37.809 µs 37.824 µs 37.843 µs]
+                        thrpt:  [845.61 Kelem/s 846.01 Kelem/s 846.36 Kelem/s]
+Found 9 outliers among 100 measurements (9.00%)
+  3 (3.00%) low severe
+  1 (1.00%) low mild
+  3 (3.00%) high mild
+  2 (2.00%) high severe
+

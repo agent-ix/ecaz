@@ -1,0 +1,22 @@
+[loader] inspecting /home/peter/dev/datasets/tqhnsw_real_50k/tqhnsw_real_50k_corpus.tsv
+[loader] inspecting /home/peter/dev/datasets/tqhnsw_real_50k/tqhnsw_real_50k_queries.tsv
+[loader] corpus: 50000 rows, sha256=56023baaa7bc42f758272e8617603d538808e6290a8a70a3a84e057571240133  queries: 435 rows, sha256=519a7e4167f60ead69ad3ae276fd7d23cf51811f18bc3961077a98bb49134ebe
+[loader] warning: manifest verification failed for /home/peter/dev/datasets/tqhnsw_real_50k/tqhnsw_real_50k_manifest.json: prefix="tqhnsw_real_50k" (expected "t106_50k_spire_rabitq"); corpus.sha256="56ca9efe174709116ca8919f85d40043c525fc68377e23d6b824adec3c1de923" (expected "56023baaa7bc42f758272e8617603d538808e6290a8a70a3a84e057571240133"); queries.rows=1000 (expected 435); queries.sha256="95ac7992578aa80bb193657f10fbcbf1ea3867e559739244bf5a467f7a5a9fa3" (expected "519a7e4167f60ead69ad3ae276fd7d23cf51811f18bc3961077a98bb49134ebe"); queries.last_id=50999 (expected 50434)
+[loader] copied corpus table t106_50k_spire_rabitq_corpus in 21.72s
+[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...
+[loader] encoded corpus table t106_50k_spire_rabitq_corpus in 14.38s
+[loader] copied queries table t106_50k_spire_rabitq_queries in 205.96ms
+[loader] building t106_50k_spire_rabitq_rabitq_idx using ec_spire (reloptions=[nlists=128, nprobe=24, rerank_width=25, local_store_count=1, training_sample_rows=20000, storage_format=rabitq]) ...
+[loader] built t106_50k_spire_rabitq_rabitq_idx in 22.21s
+┌─────────┬───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ field   ┆ value                                                                                                                                             │
+╞═════════╪═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════╡
+│ profile ┆ ec_spire                                                                                                                                          │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ t106_50k_spire_rabitq_corpus (50000 rows)                                                                                                         │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ t106_50k_spire_rabitq_queries (435 rows)                                                                                                          │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ t106_50k_spire_rabitq_rabitq_idx [nlists=128, nprobe=24, rerank_width=25, local_store_count=1, training_sample_rows=20000, storage_format=rabitq] │
+└─────────┴───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+[loader] completed prefix t106_50k_spire_rabitq in 63.87s

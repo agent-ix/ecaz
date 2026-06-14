@@ -906,6 +906,24 @@ impl PreparedEstimator {
         })
     }
 
+    /// Prepared view for the multi-bit (bits=2/4) RaBitQ block kernel, or
+    /// `None` when this estimator is not a 2/4-bit lane.
+    pub(crate) fn bitsn_block_prepared(
+        &self,
+        code_len: usize,
+    ) -> Option<crate::quant::rabitq32::PreparedBitsN<'_>> {
+        if !matches!(self.bits_per_dim, 2 | 4) {
+            return None;
+        }
+        Some(crate::quant::rabitq32::PreparedBitsN {
+            dimensions: self.dimensions,
+            bits: self.bits_per_dim,
+            code_len,
+            query_rotated: &self.query_rotated,
+            dequant_lut: &self.dequant_lut,
+        })
+    }
+
     pub fn estimate_ip(&self, code: &[u8]) -> DistanceEstimate {
         estimate_ip_impl(
             &self.query_rotated,

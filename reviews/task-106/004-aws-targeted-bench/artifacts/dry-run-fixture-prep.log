@@ -1,0 +1,6 @@
+[suite:task106-aws-targeted-fixture-prep] wrote reviews/task-106/004-aws-targeted-bench/artifacts/fixture-prep/suite-manifest.json
+[suite:task106-aws-targeted-fixture-prep] fetch-dbpedia-openai3-if-missing -> --database tqvector_bench corpus fetch --dataset qdrant-dbpedia-openai3-large-1536-1m --output-dir /var/lib/pgsql/18/datasets/dbpedia-openai3-1m
+[suite:task106-aws-targeted-fixture-prep] prepare-10k -> --database tqvector_bench corpus prepare --profile ec_real_10k --parquet /var/lib/pgsql/18/datasets/dbpedia-openai3-1m/data --output-dir /var/lib/pgsql/18/datasets/staged-task106-targeted
+[suite:task106-aws-targeted-fixture-prep] prepare-50k -> --database tqvector_bench corpus prepare --profile ec_real_50k --parquet /var/lib/pgsql/18/datasets/dbpedia-openai3-1m/data --output-dir /var/lib/pgsql/18/datasets/staged-task106-targeted
+[suite:task106-aws-targeted-fixture-prep] prepare-100k -> --database tqvector_bench corpus prepare --profile ec_real_100k --parquet /var/lib/pgsql/18/datasets/dbpedia-openai3-1m/data --output-dir /var/lib/pgsql/18/datasets/staged-task106-targeted
+[suite:task106-aws-targeted-fixture-prep] prepare-1m -> --database tqvector_bench corpus prepare --profile ec_real_ann_benchmarks_anchor --parquet /var/lib/pgsql/18/datasets/dbpedia-openai3-1m/data --output-dir /var/lib/pgsql/18/datasets/staged-task106-targeted

@@ -177,40 +177,107 @@ is no longer load-bearing. The Task 87 compat surface keys on
   result, SVE scoped out by rule, AVX2 skip with measurements
   (POPCNT 11.5–11.8 ns/c ≈ 0.5% of query time).
 - **tiled_lut32**: retired (47–48% slower than full_lut at the only
-  shipped dimension; cache rationale void at 1536d).
+  shipped dimension; cache rationale void at 1536d). The SVE column is
+  also `retired`, not "skip by rule" — there is no SIMD kernel to apply a
+  flush-width rule to (Task 106 audit correction).
+- **RaBitQ bits=8 block kernel**: no block kernel by family contract —
+  a full-byte quantization level has no LUT fast-scan shape, so bits=8
+  uses the arithmetic batch estimator (recall 0.9820 on M5). bits=2/4
+  *do* have a block kernel as of Task 106 (the rabitq32 multi-bit family);
+  only bits=8 is the deliberate no-block-kernel cell. RaBitQ on HNSW and
+  DiskANN is the bits-1 sidecar prefilter by construction — multi-bit is
+  not exposed there because a multi-bit *coarse prefilter* is not a useful
+  surface.
 
-### 9. Named open gaps (not blocking this record)
+### 9. Named open gaps — all four closed/decided by Task 106 (2026-06-12; HNSW grouped-PQ measured-skip 2026-06-14)
 
-Sharpened during the Task 105 full-scale sweep (2026-06-12, operator
-decision: note now, fix in a smaller targeted pass afterward). The
-unified-driver coverage claim ("any quant × any index through one
-batch surface") holds everywhere EXCEPT:
+Sharpened during the Task 105 full-scale sweep, then closed or decided by
+the Task 106 targeted pass. The Task 106 audit additionally found that
+**multi-bit RaBitQ (IVF bits=2/4) was a weak deferral**, not a true gap —
+the bits=1 kernel shipped while 2/4 fell to per-candidate scoring with no
+counter attribution and no scoring-share measurement — and closed it too.
+The HNSW grouped-PQ cell closed last, as a measured skip, once the AWS
+flush-width histogram landed (2026-06-14). The unified-driver coverage claim
+now holds with the following resolutions:
 
-1. **SPIRE × RaBitQ — never migrated to the unified driver.**
-   `score_payload_ip` scores per-candidate via
-   `estimate_ip_scalar_only`; the chunked-max path uses the legacy
-   `rabitq.rs` SIMD batch estimator. No block-kernel counters on any
-   host; `ec_spire.candidate_batch_scoring` is inert on this lane
-   (~0% on/off, all scales). Follow-up: route through the rabitq32
-   driver (counters + width cascade + the scalar per-payload path).
-2. **HNSW × grouped-PQ — registered but never engages.** Traversal
-   scores one search-code at a time; the batch override is reached by
-   codec-parity tests only (Task 94 documented; M5 confirmed zero
-   engagement e2e). Follow-up: traversal batch boundary, or document
-   as permanent.
-3. **IVF × TQ-QJL — engagement is fixture-shape-dependent.** Real
-   counter rows at Task 97's 512/4096-row fixtures (incl. `sve2` on
-   G4), but zero batch counters at 10k × 1024-dim profile shapes on
-   every host while small e2e on/off deltas persist. Needs a
-   diagnosis pass (gating condition unknown) before fix-or-document.
-4. **SPIRE pq_fastscan product gap**: the reloption parses but
-   `encode_assignment_payload` requires a persisted grouped-PQ model
-   no fixture flow provides; no end-to-end SPIRE PQ evidence exists on
-   any host (Task 104 finding). Owner decision: wire it or document
-   as a permanent exclusion.
+1. **SPIRE × RaBitQ — CLOSED in code; e2e effect below noise.** Migrated
+   onto the unified candidate-batch driver via a shared
+   `score_rabitq_payload_slab` helper: bits=1 engages the rabitq32 block
+   kernel (counters + width cascade); bits=2/4/8 use the multi-bit
+   arithmetic estimator; the GUC-off path records scalar counter rows. The
+   path is now correct and counter-capable. **Honest caveat (M5 index-level
+   bench, real 10k):** `ec_spire.candidate_batch_scoring` on/off still shows
+   ~0% e2e delta and zero counters on the default bits=4 lane — SPIRE e2e is
+   routing/rerank-dominated and assignment scoring is negligible, so the
+   "inert toggle" is largely inherent to SPIRE, not fully resolved by the
+   migration. SPIRE storage is bits=4 by default, so block-kernel counters
+   are bits=1-by-contract here.
+2. **HNSW × grouped-PQ — CLOSED (measured skip, 2026-06-14).** A
+   measure-first width probe (`record_grouped_pq_traversal_flush_width`,
+   commit `06020c8c0`) recorded the flush-width histogram at the grouped-PQ
+   traversal boundary on both AWS lanes (10k/50k/100k/1m × ef 40/80/120).
+   Per-lane buckets: `width_lt8≈2496`, `width_8_15≈45516`, `width_16_31≈181377`,
+   `width_ge32=0` — widths are **16–31 dominant (~79%) and never reach a full
+   32-block.** Decision: **do not add a grouped-PQ traversal block kernel on
+   HNSW.** The skip is *not* because the widths are too small (16–31 is
+   kernel-viable — the same grouped-PQ block kernel wins −3.8/−10.4% on IVF
+   where it is kernel-dominant, matrix §2.6). It is because on HNSW grouped-PQ
+   scoring is a small share of query time (graph traversal dominates; §7.2,
+   graph AMs are width-bound; M5 observed zero batch engagement), and the
+   histogram confirms the widths never reach the full-block regime — so the
+   e2e benefit would be negligible. **Caveat:** the block kernel was never
+   wired into HNSW traversal, so there is no HNSW grouped-PQ e2e A/B — this is
+   a histogram-plus-prior-evidence measured skip (the Task 98 method permits
+   this), not a measured e2e regression. The width probe stays in code for
+   re-measurement if a future change makes grouped-PQ scoring a larger share.
+3. **IVF × TQ-QJL — CLOSED (code).** Root cause found: `StorageFormat::Auto`
+   (the default) resolves to TurboQuant at scan time but
+   `use_scratch_soa_batch_decode_for_format` rejected `Auto`, leaving
+   default 10k×1024d indexes on the per-candidate path with zero batch
+   counters. The Task 97 512/4096-row fixtures set `storage_format`
+   explicitly, which is why they engaged. The gate now admits `Auto` at
+   bits=4 like explicit TurboQuant.
+4. **SPIRE pq_fastscan — CLOSED (permanent exclusion, existing behavior).**
+   Operator decision: SPIRE will not gain grouped-PQ model persistence. The
+   `pq_fastscan` reloption parses and an empty index can be created, but a
+   populated build defers/errors and the assignment payload reports
+   `deferred_model_metadata` / unscannable via the options snapshot — the
+   existing, documented exclusion. (An earlier attempt to reject the
+   reloption at parse was reverted: it broke the existing deferred-state
+   observability and its pg tests — reviewer 2026-06-13-01 P1.)
 
-All four are recorded in the aggregate matrix open-gaps section and
-stay visible until the targeted pass lands.
+**Multi-bit RaBitQ (IVF bits=2/4) — CLOSED (code + M5 evidence).** Added
+the multi-bit rabitq32 block-kernel family (scalar anchor + NEON + AVX2;
+SVE→NEON) and measured it on M5, which set the routing on evidence rather
+than assumption:
+- **bits=2 → block kernel** (2.66× win over scalar; no per-candidate SIMD
+  kernel exists for bits=2). Counter-attributed.
+- **bits=4 → per-candidate arithmetic estimator** (NeonBits4) — the block
+  kernel measured 2.8× *slower* on M5 NEON, so it is not used. AVX2's
+  hardware gather *may* beat the arithmetic path, but the Task 106 AWS run did
+  **not** measure that (bits=4 ran the arithmetic path on AVX2; there was no
+  forced-block A/B). Current routing (bits=4 arithmetic) stands; the
+  AVX2-gather revisit is an explicit **future-optional**, not a Task 106
+  deliverable.
+- **bits=8 → arithmetic estimator** (full-byte, no LUT fast-scan shape).
+This is the §6 dispatch-preference principle applied per bit width: the
+block kernel is preferred only where measured faster than the existing
+per-candidate path. **Per-ISA picture complete (Task 106 AWS, 2026-06-14):**
+the bits=2 block kernel engages on both `avx2` (AWS Intel) and `neon` (G4)
+with truthful counters (kernel_candidates large, scalar_candidates=0);
+bits=4/8 run the arithmetic estimator on both ISAs as designed.
+
+**Reasoned boundary recorded (Task 106):** TQ-QJL on DiskANN non-1536 is a
+deliberate architectural boundary, not a gap — DiskANN's TurboQuant lane is
+the compact no-QJL 4-bit *prefilter* search code (1536-only); non-1536 is
+served by RaBitQ and grouped-PQ, and a QJL residual-signs prefilter is not
+justified. See the aggregate matrix §4.
+
+Remaining: none for Task 106. The cross-host benches are done (Task 106 AWS,
+2026-06-14: AWS Intel `avx2` + G4 `neon` confirmed the per-ISA routing —
+bits=2 block, bits=4/8 arithmetic) and the HNSW grouped-PQ flush-width
+histogram is captured (gap 9.2, measured skip). Future-optional only: the
+bits=4 AVX2-gather revisit.
 
 ## Consequences
 

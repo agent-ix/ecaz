@@ -1,0 +1,6 @@
+  pid   | state  | wait_event_type | wait_event  |       age       |                                         query                                          
+--------+--------+-----------------+-------------+-----------------+----------------------------------------------------------------------------------------
+ 618207 | active | Timeout         | VacuumDelay | 00:09:25.049075 | autovacuum: VACUUM pg_toast.pg_toast_38567040
+ 619022 | active |                 |             | 00:00:00.950183 | SELECT id FROM t106_1m_ivf_rabitq_b2_corpus ORDER BY embedding <#> $1::real[] LIMIT $2
+(2 rows)
+

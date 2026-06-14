@@ -1,0 +1,6 @@
+  pid   | state  | wait_event_type | wait_event |       age       |                                          query                                           
+--------+--------+-----------------+------------+-----------------+------------------------------------------------------------------------------------------
+ 705241 | active | IO              | WalSync    | 00:07:52.234528 | autovacuum: VACUUM pg_toast.pg_toast_50487150
+ 714847 | active |                 |            | 00:00:00.118574 | SELECT id FROM t106_1m_ivf_explicit_tq_corpus ORDER BY embedding <#> $1::real[] LIMIT $2
+(2 rows)
+

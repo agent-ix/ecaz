@@ -9,10 +9,11 @@ use pgrx::{pg_sys, FromDatum, PgBox};
 use crate::am::common::{
     callback::pg_am_callback,
     candidate_batch::{
-        score_grouped_pq_batch_for, score_rabitq_bits1_batch_for,
-        score_turboquant_int8_approx_batch_for, score_turboquant_no_qjl_4bit_batch_for,
-        score_turboquant_qjl_batch_for, score_turboquant_tiled_lut_batch_for, CandidateBatch,
-        CandidateBatchScoringSurface, CandidateMeta, CandidatePayload,
+        record_grouped_pq_traversal_flush_width, score_grouped_pq_batch_for,
+        score_rabitq_bits1_batch_for, score_turboquant_int8_approx_batch_for,
+        score_turboquant_no_qjl_4bit_batch_for, score_turboquant_qjl_batch_for,
+        score_turboquant_tiled_lut_batch_for, CandidateBatch, CandidateBatchScoringSurface,
+        CandidateMeta, CandidatePayload,
     },
     heap_slot::HeapSlotReader,
     quant_codec::{EncodedQuantPayload, QuantCodec, QuantCodecKind, QuantSearchCodecTag},
@@ -3740,6 +3741,17 @@ where
         })
         .unwrap_or(0);
     let mut candidates = Vec::with_capacity(capacity);
+    // Task 106 slice 2 (gap-2, HNSW × grouped-PQ measure-first): on a
+    // grouped-PQ (pq_fastscan) index with candidate-batch scoring enabled,
+    // sample the would-be batch width at this natural traversal boundary (one
+    // neighbor-list expansion) so the flush-width histogram can decide whether
+    // a grouped-PQ traversal block kernel is justified. Scoring is unchanged —
+    // recall is identical on/off; this only counts grouped-PQ candidates.
+    let grouped_pq_width_probe = matches!(
+        scan_graph_storage,
+        graph::GraphStorageDescriptor::PqFastScan(_)
+    ) && super::options::candidate_batch_scoring_enabled();
+    let mut grouped_pq_traversal_width = 0usize;
     let neighbor_tids =
         graph::valid_neighbor_tids_for_layer(&neighbors.tids, element.level, scan_m, layer);
     #[cfg(feature = "pg18")]
@@ -3885,6 +3897,9 @@ where
                         }
                     },
                     CandidateScoreDispatch::Grouped(grouped) => {
+                        if grouped_pq_width_probe {
+                            grouped_pq_traversal_width += 1;
+                        }
                         flush_turboquant_full_lut_payload_batch(
                             opaque,
                             &mut exact_payload_batch,
@@ -3934,6 +3949,9 @@ where
             ));
         }
 
+        if grouped_pq_width_probe {
+            record_grouped_pq_traversal_flush_width(grouped_pq_traversal_width);
+        }
         release_prefetched_graph_buffers_if_any(prefetched_buffers);
         return candidates;
     }
@@ -4037,6 +4055,9 @@ where
                 ));
             }
             CandidateScoreDispatch::Grouped(grouped) => {
+                if grouped_pq_width_probe {
+                    grouped_pq_traversal_width += 1;
+                }
                 let binary_traversal_enabled = grouped_binary_traversal_score_enabled(opaque);
                 if let Some(grouped_candidates) = grouped_candidates.as_mut() {
                     let approx_score = if binary_traversal_enabled {
@@ -4083,6 +4104,9 @@ where
         ));
     }
 
+    if grouped_pq_width_probe {
+        record_grouped_pq_traversal_flush_width(grouped_pq_traversal_width);
+    }
     release_prefetched_graph_buffers_if_any(prefetched_buffers);
     candidates
 }
