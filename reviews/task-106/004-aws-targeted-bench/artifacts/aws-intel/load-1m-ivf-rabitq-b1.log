@@ -1,0 +1,24 @@
+[loader] warning: profile "ec_ivf" does not list quant_bits as known reloption; passing through verbatim. Known reloptions: nlists, nprobe, rerank_width, training_sample_rows, seed, pq_group_size, storage_format, quantizer, rerank
+[loader] inspecting /var/lib/pgsql/18/datasets/staged-task106-targeted/ec_real_ann_benchmarks_anchor_corpus.tsv
+[loader] inspecting /var/lib/pgsql/18/datasets/staged-task106-targeted/ec_real_ann_benchmarks_anchor_queries.tsv
+[loader] corpus: 990000 rows, sha256=00d96d7665edc31cd8e4e62712c0ef2679fb714682f3ce4d522305e59faec687  queries: 10000 rows, sha256=34c4874e0e35734574f4ee9e1dd10753fcec2d295955061a407c258df163f5a0
+[loader] warning: manifest verification failed for /var/lib/pgsql/18/datasets/staged-task106-targeted/ec_real_ann_benchmarks_anchor_manifest.json: prefix="ec_real_ann_benchmarks_anchor" (expected "t106_aws_intel_1m_ivf_rabitq_b1")
+[loader] copied corpus table t106_aws_intel_1m_ivf_rabitq_b1_corpus in 319.33s
+[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...
+[loader] encoded corpus table t106_aws_intel_1m_ivf_rabitq_b1_corpus in 422.04s
+[loader] copied queries table t106_aws_intel_1m_ivf_rabitq_b1_queries in 4.74s
+[loader] building t106_aws_intel_1m_ivf_rabitq_b1_rabitq_idx using ec_ivf (reloptions=[nlists=256, quant_bits=1, training_sample_rows=50000, rerank=heap_f32, rerank_width=50, storage_format=rabitq]) ...
+[loader] built t106_aws_intel_1m_ivf_rabitq_b1_rabitq_idx in 226.42s
+[loader] ec_ivf build timing: requested_workers=2 workers_launched=2 heap_tuples=990000 index_tuples=990000 heap_ingest_us=173591449 train_model_us=12869913 stage_build_plan_us=31585655 stage_pq_train_us=0 stage_centroids_us=792 stage_assign_us=31029896 stage_postings_us=548177 stage_directory_us=102 flush_build_plan_us=7542818 parallel_begin_us=1842 parallel_drain_us=171629466 parallel_sort_push_us=1960134 parallel_worker_tuple_buffer_capacity=1048576 parallel_worker_tuple_buffer_struct_bytes=67108864
+┌─────────┬────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ field   ┆ value                                                                                                                                                      │
+╞═════════╪════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════╡
+│ profile ┆ ec_ivf                                                                                                                                                     │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ t106_aws_intel_1m_ivf_rabitq_b1_corpus (990000 rows)                                                                                                       │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ t106_aws_intel_1m_ivf_rabitq_b1_queries (10000 rows)                                                                                                       │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ t106_aws_intel_1m_ivf_rabitq_b1_rabitq_idx [nlists=256, quant_bits=1, training_sample_rows=50000, rerank=heap_f32, rerank_width=50, storage_format=rabitq] │
+└─────────┴────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+[loader] completed prefix t106_aws_intel_1m_ivf_rabitq_b1 in 1127.58s
