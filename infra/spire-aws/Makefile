@@ -55,7 +55,7 @@ export SPIRE_AWS_DIR REPO_ROOT ARTIFACT_DIR TOPOLOGY PACKAGE_TARBALL
 export ECAZ_BIN WORK_DIR
 export ECAZ_SPIRE_AWS_TARBALL_PATH ?= $(PACKAGE_TARBALL)
 
-.PHONY: preflight preflight-operator preflight-state preflight-permissions preflight-representative-performance mark-representative-performance-start confirm-provision archive-local-state cleanup-residue build-operator-cli provision topology setup package-extension install-extension install configure-pg-hba register-remotes register register-correctness register-representative register-stress \
+.PHONY: preflight preflight-operator preflight-state preflight-permissions preflight-representative-performance mark-representative-performance-start confirm-provision archive-local-state cleanup-residue build-operator-cli provision topology setup package-extension install-extension install setup-coordinator-store-volumes configure-pg-hba register-remotes register register-correctness register-representative register-stress \
         load-correctness load-representative load-stress \
         smoke smoke-correctness smoke-representative smoke-stress \
         bench-correctness bench-representative-priority bench-representative bench-representative-pooling summarize-representative-performance verify-representative-performance-summary bench-stress \
@@ -122,6 +122,9 @@ install-extension: package-extension
 	cd $(REPO_ROOT) && $(SCRIPTS)/install.sh $(TOPOLOGY) $(ARTIFACT_DIR)
 
 install: install-extension
+
+setup-coordinator-store-volumes:
+	cd $(REPO_ROOT) && $(SCRIPTS)/setup-coordinator-store-volumes.sh $(TOPOLOGY) $(ARTIFACT_DIR)
 
 configure-pg-hba:
 	cd $(REPO_ROOT) && $(SCRIPTS)/configure-pg-hba.sh $(TOPOLOGY) $(ARTIFACT_DIR)

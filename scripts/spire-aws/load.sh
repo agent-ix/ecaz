@@ -539,8 +539,9 @@ case "$TIER" in
       > "$ARTIFACT_DIR/distributed-plan-${TIER}.log"
     ;;
   representative)
-    PREFIX=ec_spire_aws_repr_1m
-    PREPARED_PREFIX=ec_real_100k
+    PREFIX="${PREFIX:-ec_spire_aws_repr_1m}"
+    PREPARED_PREFIX="${SPIRE_AWS_REPRESENTATIVE_PREPARED_PREFIX:-ec_real_100k}"
+    SOURCE_DATASET="${SPIRE_AWS_REPRESENTATIVE_DATASET:-qdrant-dbpedia-openai3-large-1536-1m}"
     COORD_INDEX="${COORD_INDEX:-${PREFIX}_idx}"
     REMOTE_INDEX="${REMOTE_INDEX:-${PREFIX}_remote_idx}"
     DISTRIBUTED_OUTPUT_DIR="${ARTIFACT_DIR}/distributed-${TIER}"
@@ -548,14 +549,14 @@ case "$TIER" in
     PLAN_FILE="${DISTRIBUTED_OUTPUT_DIR}/distributed-placement-plan.json"
     write_distributed_placement_config
     "$ECAZ_BIN" corpus fetch \
-      --dataset qdrant-dbpedia-openai3-large-1536-1m \
+      --dataset "$SOURCE_DATASET" \
       --output-dir "$WORK_DIR/qdrant-dbpedia/"
     "$ECAZ_BIN" corpus prepare \
       --profile "$PREPARED_PREFIX" \
       --parquet "$WORK_DIR/qdrant-dbpedia/data" \
       --output-dir "$WORK_DIR/qdrant-dbpedia/prepared/" \
       --dim 1536 \
-      --source-dataset qdrant-dbpedia-openai3-large-1536-1m
+      --source-dataset "$SOURCE_DATASET"
     load_coordinator_representative_node_local \
       "$WORK_DIR/qdrant-dbpedia/prepared/${PREPARED_PREFIX}_corpus.tsv" \
       "$WORK_DIR/qdrant-dbpedia/prepared/${PREPARED_PREFIX}_queries.tsv" \

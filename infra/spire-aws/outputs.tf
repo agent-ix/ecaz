@@ -54,6 +54,18 @@ output "topology" {
     coordinator = {
       instance_id = aws_instance.coordinator.id
       private_ip  = aws_instance.coordinator.private_ip
+      local_store_volumes = [
+        for i in range(var.coordinator_extra_store_volume_count) : {
+          volume_id   = aws_ebs_volume.coordinator_store[i].id
+          device_name = aws_volume_attachment.coordinator_store[i].device_name
+          mount_path  = "/var/lib/ecaz-spire-store-${i + 1}"
+          tablespace  = "ecaz_spire_store_${i + 1}"
+          volume_type = "gp3"
+          size_gb     = var.coordinator_extra_store_volume_gb
+          iops        = 3000
+          throughput  = 125
+        }
+      ]
     }
     remotes = [
       for i in range(var.remote_count) : {
