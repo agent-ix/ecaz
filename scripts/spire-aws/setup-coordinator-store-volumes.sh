@@ -43,9 +43,9 @@ COMMANDS_JSON=$(jq -c '
         "uuid=$(blkid -s UUID -o value \"$dev\")",
         "mkdir -p " + ($v.mount_path | shquote),
         "grep -q \"UUID=$uuid \" /etc/fstab || echo \"UUID=$uuid " + $v.mount_path + " xfs defaults,nofail 0 2\" >> /etc/fstab",
-        "mount " + ($v.mount_path | shquote),
+        "mountpoint -q " + ($v.mount_path | shquote) + " || mount " + ($v.mount_path | shquote),
         "install -o postgres -g postgres -m 0700 -d " + ($location | shquote),
-        "sudo -u postgres \"$PG_BIN/psql\" -v ON_ERROR_STOP=1 -d postgres -c \"DO \\$\\$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_tablespace WHERE spcname = '\''" + $v.tablespace + "'\'') THEN EXECUTE format('\''CREATE TABLESPACE %I LOCATION %L'\'', '\''" + $v.tablespace + "'\'', '\''" + $location + "'\''); END IF; END \\$\\$;\""
+        "sudo -u postgres \"$PG_BIN/psql\" -v ON_ERROR_STOP=1 -d postgres -Atc \"SELECT 1 FROM pg_tablespace WHERE spcname = '\''" + $v.tablespace + "'\''\" | grep -qx 1 || sudo -u postgres \"$PG_BIN/psql\" -v ON_ERROR_STOP=1 -d postgres -c \"CREATE TABLESPACE " + $v.tablespace + " LOCATION '\''" + $location + "'\''\""
       ]
   ] | flatten
   + [
