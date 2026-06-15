@@ -70,8 +70,7 @@ The run checklist is `../run-checklist.md`. It enumerates:
 - `phase1-rabitq-100k-l1-control/checkpoint.md`
   - Status: checkpoint prepared; attempt 1 failed before benchmark.
   - Next cell: `phase1-rabitq-100k-l1-control`.
-  - Runtime policy: no arbitrary wall-clock cap; run the cell to completion or
-    command failure.
+  - Execution policy: run the cell to completion or command failure.
   - Scope: 100k representative corpus, RaBitQ, `bits=4`,
     `local_store_count=1`, one coordinator index only.
   - Benchmark matrix: rendered single-node `ecaz bench suite` config derived
@@ -81,7 +80,7 @@ The run checklist is `../run-checklist.md`. It enumerates:
   - Root cause: attempted to stream the 2GB 100k corpus through an SSM
     port-forward instead of using a node-local AWS load path.
   - AWS state after failure: stopped, recorded in
-    `phase1-rabitq-100k-l1-control/aws-stop/describe-stopped-after-timeout.json`.
+    `phase1-rabitq-100k-l1-control/aws-stop/describe-stopped-after-interruption.json`.
   - No load/build, recall, latency, storage, or routing result from this
     attempt is decision-grade.
 - `phase1-rabitq-100k-l1-control/retry-node-local/failure.md`
@@ -101,7 +100,7 @@ The run checklist is `../run-checklist.md`. It enumerates:
 - `phase1-rabitq-100k-l1-control/retry-direct-ssm/checkpoint.md`
   - Status: completed.
   - Next cell: `phase1-rabitq-100k-l1-control`.
-  - Runtime policy: no arbitrary wall-clock cap; ran to completion.
+  - Execution policy: ran to completion.
   - Scope: one coordinator-only RaBitQ 100k index with `bits=4` and
     `local_store_count=1`; no remote shard loading and no comparator or
     Task 106 reruns.

@@ -17,13 +17,12 @@ Status: checkpoint prepared; not started.
 - Work directory:
   `reviews/task-107/004-distributed-completion/work/phase1-rabitq-100k-l1-control/`.
 
-## Runtime Policy
+## Execution Policy
 
-No arbitrary wall-clock cap is set for this cell. Run the cell to completion or
-command failure. The planned work covers AWS start/status checks, SSM tunnel
-preflight, 100k corpus fetch/prepare reuse or regeneration, coordinator
-load/build, one single-node `ecaz bench suite` run, storage capture, cleanup,
-and AWS stop.
+Run the cell to completion or command failure. The planned work covers AWS
+start/status checks, SSM tunnel preflight, 100k corpus fetch/prepare reuse or
+regeneration, coordinator load/build, one single-node `ecaz bench suite` run,
+storage capture, cleanup, and AWS stop.
 
 ## Stop Conditions
 

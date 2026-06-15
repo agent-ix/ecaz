@@ -27,8 +27,8 @@ to terminate the stalled cell.
 - First load command failed immediately because it specified storage format
   twice:
   `--storage-format rabitq` and `--reloption storage_format=rabitq`.
-- Retried load command without the duplicate reloption, then stopped after the
-  checkpoint timeout.
+- Retried load command without the duplicate reloption, then stopped during the
+  earlier interrupted attempt.
 
 ## Failure Details
 
@@ -57,18 +57,18 @@ the corpus is copied to the coordinator and loaded locally.
 
 ## AWS State
 
-AWS was stopped after the timeout:
+AWS was stopped after the interrupted attempt:
 
-- `aws-stop/stop-instances-after-timeout.json`
-- `aws-stop/describe-stopped-after-timeout.json`
+- `aws-stop/stop-instances-after-interruption.json`
+- `aws-stop/describe-stopped-after-interruption.json`
 
 Final recorded state: coordinator and both remotes stopped.
 
 ## Cleanup State
 
-Cleanup SQL was not completed in this attempt because the timeout was handled
-by stopping the instances. Before any retry, the first command after startup
-must check for and drop any `task107_phase1_rabitq_100k_l1%` objects.
+Cleanup SQL was not completed in this attempt because the interruption was
+handled by stopping the instances. Before any retry, the first command after
+startup must check for and drop any `task107_phase1_rabitq_100k_l1%` objects.
 
 ## Corrective Action
 
