@@ -52,3 +52,19 @@ Run this cell by AWS SSM, one cell at a time. Benchmark sweeps run through `ecaz
 - Resume export payload:
   - script: `resume-export.sh`;
   - SSM parameters: `resume-export-ssm-parameters.json`.
+
+## Resume Export Result
+
+- SSM command id: `b989c56a-c4e1-4389-8b0a-9b40f9caefd5`.
+- SSM result: `Status=Success`, `ResponseCode=0`, elapsed `PT1M38.141S`.
+- Resume reused the completed coordinator index and exported two remote corpus
+  shards:
+  - node 2: 504734 rows;
+  - node 3: 485266 rows.
+- Evidence:
+  - `resume-export/ssm-command-invocation.final.json`
+  - `resume-export/`
+  - `distributed-representative/distributed-placement-plan.json`
+  - `distributed-representative/remotes.jsonl`
+  - `distributed-representative/node-*/coordinator-base-assignments.stderr.log`
+  - `distributed-representative/node-*/upload-remote-corpus.log`
