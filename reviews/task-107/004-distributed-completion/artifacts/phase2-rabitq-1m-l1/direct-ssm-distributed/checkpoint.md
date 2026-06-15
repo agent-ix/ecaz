@@ -114,3 +114,26 @@ Run this cell by AWS SSM, one cell at a time. Benchmark sweeps run through `ecaz
   - `remote-load-node-3/inspect.log`
   - `remote-load-node-3/drop.log`
   - `remote-load-node-3/corpus-row-count.log`
+
+## Remote Node 2 Materialization Result
+
+- SSM command id: `67f905e2-5c8a-4f57-841f-772c8ad1e040`.
+- SSM result: `Status=Success`, `ResponseCode=0`, elapsed `PT24.392S`.
+- Materialized 504734 coordinator leaf-base assignments into
+  `task107_phase2_rabitq_1m_l1_remote_idx`.
+- Materialization output: `active_epoch=1`, `leaf_count=498`,
+  `assignment_count=504734`, `status=materialized`.
+- Leaf parity evidence:
+  - coordinator required leaves: 498;
+  - remote observed leaves: 498;
+  - missing or mismatched leaves: 0.
+- Endpoint identity: `endpoint_status=ready`, `tuple_transport_status=ready`,
+  `remote_index_identity_hex=a7b56a9cf0d817f9`.
+- Evidence:
+  - `remote-materialize-node-2/send-command.json`
+  - `remote-materialize-node-2/ssm-command-invocation.final-summary.json`
+  - `remote-materialize-node-2/remote-materialize.log`
+  - `remote-materialize-node-2/coordinator-required-leaves.txt`
+  - `remote-materialize-node-2/remote-observed-leaves.txt`
+  - `remote-materialize-node-2/missing-or-mismatched-leaves.txt`
+  - `remote-materialize-node-2/identity.json`
