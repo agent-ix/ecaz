@@ -1,0 +1,9 @@
+tunnel coordinator ready on port 15432
+tunnel remote-2 ready on port 15433
+tunnel remote-3 ready on port 15434
+2026-06-15 09:34:56.559159+00|activity|14807|active|||SELECT now(), 'activity', pid, state, wait_event_type, wait_event, left(query, 260) FROM pg_stat_activity WHERE datname='postgres' AND (query LIKE '%task107_phase1_rabitq_1m_l1%' OR query LIKE '%CREATE INDEX%' OR state <> 'idle') ORDER BY pid; SELECT now(), 'p
+2026-06-15 09:34:56.559159+00|relations|task107_phase1_rabitq_1m_l1_corpus|r|17324843008
+2026-06-15 09:34:56.559159+00|relations|task107_phase1_rabitq_1m_l1_corpus_pkey|i|22257664
+2026-06-15 09:34:56.559159+00|relations|task107_phase1_rabitq_1m_l1_idx|i|823181312
+2026-06-15 09:34:56.559159+00|relations|task107_phase1_rabitq_1m_l1_queries|r|83771392
+2026-06-15 09:34:56.559159+00|relations|task107_phase1_rabitq_1m_l1_queries_pkey|i|245760

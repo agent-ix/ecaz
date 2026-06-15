@@ -1,4 +1,7 @@
 {
+  "executionTimeout": [
+    "172800"
+  ],
   "commands": [
     "set -euo pipefail",
     "export AWS_DEFAULT_REGION=us-west-2",
