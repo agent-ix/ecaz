@@ -42,6 +42,10 @@ Packet: `reviews/task-107/004-distributed-completion/`
    the user explicitly asks to stop them or a concrete failure requires cleanup.
 8. A cell is complete only when packet-local artifacts include load/build,
    storage, recall/latency, and required routing/fanout evidence.
+9. Do not impose arbitrary wall-clock caps on benchmark cells. Long AWS SSM
+   cells must set both the send-command timeout and the `AWS-RunShellScript`
+   `executionTimeout` high enough to let the cell run to completion or an
+   actual command failure.
 
 ## Required Cells
 
