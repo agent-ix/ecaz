@@ -1,0 +1,10 @@
+tunnel coordinator ready on port 15432
+tunnel remote-2 ready on port 15433
+tunnel remote-3 ready on port 15434
+2026-06-15 10:45:12.939532+00|activity|16516|active|||CREATE INDEX task107_phase1_rabitq_1m_l2_idx ON task107_phase1_rabitq_1m_l2_corpus
+        USING ec_spire (embedding ecvector_spire_ip_ops) WITH (local_store_count = 2, local_store_tablespaces = 'ecaz_spire_store_1,ecaz_spire_store_2', storage_format = 'rabitq')
+2026-06-15 10:45:12.939532+00|activity|17567|active|||SELECT now(), 'activity', pid, state, wait_event_type, wait_event, left(query, 320) FROM pg_stat_activity WHERE datname='postgres' AND (query LIKE '%task107_phase1_rabitq_1m_l2%' OR query LIKE '%ec_spire%' OR query LIKE '%bench%' OR state <> 'idle') ORDER BY pid; SELECT now(), 'relations', c.relname, c.relkind, pg_tota
+2026-06-15 10:45:12.939532+00|relations|task107_phase1_rabitq_1m_l2_corpus|r|16501653504
+2026-06-15 10:45:12.939532+00|relations|task107_phase1_rabitq_1m_l2_corpus_pkey|i|22257664
+2026-06-15 10:45:12.939532+00|relations|task107_phase1_rabitq_1m_l2_queries|r|83771392
+2026-06-15 10:45:12.939532+00|relations|task107_phase1_rabitq_1m_l2_queries_pkey|i|245760
