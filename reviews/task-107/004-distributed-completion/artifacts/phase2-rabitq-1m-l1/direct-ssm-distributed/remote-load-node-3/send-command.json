@@ -1,0 +1,52 @@
+{
+    "Command": {
+        "CommandId": "271e027f-a9e6-49b5-9de3-bf594ebd219d",
+        "DocumentName": "AWS-RunShellScript",
+        "DocumentVersion": "$DEFAULT",
+        "Comment": "task107 phase2 rabitq 1m l1 remote node 3 load",
+        "ExpiresAfter": "2026-06-19T09:50:47.729000-07:00",
+        "Parameters": {
+            "commands": [
+                "set -euo pipefail",
+                "mkdir -p /var/tmp/ecaz-task107-phase2-rabitq-1m-l1/remote-node-3",
+                "aws s3 cp s3://ecaz-spire-aws-20260614203301860100000009/task107/004/phase2-rabitq-1m-l1/direct-ssm-distributed/config/remote-load-node-3.sh /var/tmp/ecaz-task107-phase2-rabitq-1m-l1/remote-node-3.sh --region us-west-2",
+                "bash /var/tmp/ecaz-task107-phase2-rabitq-1m-l1/remote-node-3.sh"
+            ],
+            "executionTimeout": [
+                "172800"
+            ]
+        },
+        "InstanceIds": [
+            "i-00c2f2aca9dbdd6bd"
+        ],
+        "Targets": [],
+        "RequestedDateTime": "2026-06-15T09:50:47.729000-07:00",
+        "Status": "Pending",
+        "StatusDetails": "Pending",
+        "OutputS3Region": "us-west-2",
+        "OutputS3BucketName": "ecaz-spire-aws-20260614203301860100000009",
+        "OutputS3KeyPrefix": "task107/004/phase2-rabitq-1m-l1/direct-ssm-distributed/ssm",
+        "MaxConcurrency": "50",
+        "MaxErrors": "0",
+        "TargetCount": 1,
+        "CompletedCount": 0,
+        "ErrorCount": 0,
+        "DeliveryTimedOutCount": 0,
+        "ServiceRole": "",
+        "NotificationConfig": {
+            "NotificationArn": "",
+            "NotificationEvents": [],
+            "NotificationType": ""
+        },
+        "CloudWatchOutputConfig": {
+            "CloudWatchLogGroupName": "",
+            "CloudWatchOutputEnabled": false
+        },
+        "TimeoutSeconds": 172800,
+        "AlarmConfiguration": {
+            "IgnorePollAlarmFailure": false,
+            "Alarms": []
+        },
+        "TriggeredAlarms": []
+    }
+}

@@ -1,0 +1,13 @@
+{
+    "CommandId": "271e027f-a9e6-49b5-9de3-bf594ebd219d",
+    "InstanceId": "i-00c2f2aca9dbdd6bd",
+    "Comment": "task107 phase2 rabitq 1m l1 remote node 3 load",
+    "Status": "Success",
+    "StatusDetails": "Success",
+    "ResponseCode": 0,
+    "ExecutionStartDateTime": "2026-06-15T16:50:48.059Z",
+    "ExecutionElapsedTime": "PT23M17.992S",
+    "ExecutionEndDateTime": "2026-06-15T17:14:05.059Z",
+    "StandardOutputUrl": "https://s3.us-west-2.amazonaws.com/ecaz-spire-aws-20260614203301860100000009/task107/004/phase2-rabitq-1m-l1/direct-ssm-distributed/ssm/271e027f-a9e6-49b5-9de3-bf594ebd219d/i-00c2f2aca9dbdd6bd/awsrunShellScript/0.awsrunShellScript/stdout",
+    "StandardErrorUrl": "https://s3.us-west-2.amazonaws.com/ecaz-spire-aws-20260614203301860100000009/task107/004/phase2-rabitq-1m-l1/direct-ssm-distributed/ssm/271e027f-a9e6-49b5-9de3-bf594ebd219d/i-00c2f2aca9dbdd6bd/awsrunShellScript/0.awsrunShellScript/stderr"
+}
