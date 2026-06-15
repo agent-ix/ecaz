@@ -655,3 +655,22 @@ The run checklist is `../run-checklist.md`. It enumerates:
     `1e1f2668-763f-494b-86a2-6e26b08ad2da`, and remote node 3 command
     `860aa065-47b4-469a-92fb-985614749369` all completed with
     `Status=Success`, `ResponseCode=0`.
+
+### AWS Teardown
+
+- `aws-teardown/teardown-summary.md`
+  - Status: completed.
+  - Command: `make -C infra/spire-aws ARTIFACT_DIR=/home/peter/dev/ecaz/reviews/task-107/004-distributed-completion/artifacts/aws-teardown teardown`.
+  - Result: Terraform destroy completed successfully with `37 destroyed`.
+  - Direct verification:
+    - `aws-teardown/terraform-state-list-after-destroy.log`: no
+      Terraform-managed resources remained in state.
+    - `aws-teardown/describe-instances-after-destroy.log`: all three Task 107
+      EC2 instances reported `terminated`.
+    - `aws-teardown/describe-volumes-after-destroy.log`: the Task 107 EBS
+      volume ids returned `InvalidVolume.NotFound`.
+    - `aws-teardown/head-bucket-after-destroy.log`: the Task 107 artifact
+      bucket returned `404 Not Found`.
+    - `aws-teardown/residue-final-after-secret-notfound.log`: no matching S3
+      buckets, Secrets Manager secrets, VPCs, IAM role, or IAM instance
+      profile remained.
