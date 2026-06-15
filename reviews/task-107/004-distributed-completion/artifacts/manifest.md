@@ -503,3 +503,71 @@ The run checklist is `../run-checklist.md`. It enumerates:
   - AWS state after cell:
     `phase1-turboquant-1m-l2/direct-ssm-tablespaces/aws-state/describe-after-cell.json`;
     all three Task 107 instances remained running for the next cell.
+- `phase2-rabitq-1m-l1/direct-ssm-distributed/`
+  - Status: completed.
+  - Cell: `phase2-rabitq-1m-l1`.
+  - Execution policy: resumed one distributed RaBitQ 1m cell to completion
+    after the packet-003 cancellation and packet-004 export retry; no
+    single-node/single-disk or comparator rows were rerun.
+  - Scope: one coordinator plus two remotes, `bits=4`,
+    `local_store_count=1`, `storage_format=rabitq`.
+  - Coordinator setup/export artifacts:
+    - `setup/coordinator-load.log`
+    - `resume-export/distributed-placement-plan.path`
+    - `distributed-representative/distributed-placement-plan.json`
+  - Remote load/materialization artifacts:
+    - `remote-load-node-2/load.log`
+    - `remote-load-node-3/load.log`
+    - `remote-materialize-node-2/remote-materialize.log`
+    - `remote-materialize-node-3/remote-materialize.log`
+    - `remote-materialize-node-2/identity.json`
+    - `remote-materialize-node-3/identity.json`
+  - Registration and suite artifacts:
+    - `coordinator-register-run/ssm-command-invocation.final.json`
+    - `coordinator-register-run/register-remotes.log`
+    - `coordinator-register-run/remote-node-snapshot.jsonl`
+    - `bench/suite-manifest-node.json`
+    - `bench/suite-results-node.jsonl`
+  - SSM result: coordinator registration and suite command
+    `ed487c10-f162-4a30-ba71-21994dc99ea9` completed with `Status=Success`,
+    `ResponseCode=0`, elapsed `PT8M41.939S`.
+  - Load/build result: coordinator load/build reused the completed
+    `task107_phase2_rabitq_1m_l1_idx`; remote node 2 loaded 504734 rows and
+    remote node 3 loaded 485266 rows. Both remotes materialized their exported
+    coordinator leaf-base assignments and emitted `endpoint_status=ready` and
+    `tuple_transport_status=ready`.
+  - Registration/routing evidence: `publish-remote-placements.log` reports
+    995 rewritten placements across 2 remote nodes; `register-remotes.log`
+    reports `registered_node_2=t` and `registered_node_3=t`;
+    `remote-node-snapshot.jsonl` reports node 2 with 498 available placements
+    and node 3 with 497 available placements, both `status=ready`,
+    `descriptor_state=active`, `descriptor_generation=1`,
+    `local_store_count=1`, and `last_error=none`.
+  - Key recall results:
+    - k10 nprobe 8/16/24/32/64: 0.7940 / 0.8650 / 0.8880 / 0.9160 / 0.9510.
+    - k100 nprobe 8/16/24/32/64: 0.7583 / 0.8376 / 0.8710 / 0.8935 / 0.9321.
+  - Key latency results:
+    - k10 c1 mean nprobe 8/16/24/32: 89.3 / 103.6 / 111.8 / 121.3 ms.
+    - k10 c4 mean nprobe 8/16/24/32: 95.7 / 107.7 / 117.4 / 126.0 ms.
+    - k10 c8 mean nprobe 8/16/24/32: 101.8 / 113.7 / 123.6 / 133.0 ms.
+    - k1 c32 nprobe 32 mean: 228.4 ms.
+  - Production remote-read evidence:
+    - k10 nprobe 64 recall 0.9510; `result_source=remote_heap_candidates`,
+      `status=ready`, `remote_pid_sum=6400`, `dispatch_sum=200`,
+      `total_p50=117.000 ms`, `total_p95=135.000 ms`.
+    - k100 nprobe 64 recall 0.9321; `result_source=remote_heap_candidates`,
+      `status=ready`, `remote_pid_sum=6400`, `dispatch_sum=200`,
+      `total_p50=118.000 ms`, `total_p95=137.000 ms`.
+  - Storage result: 990000 rows, total 16.1 GiB, indexes 806.4 MiB;
+    `task107_phase2_rabitq_1m_l1_idx` reports 784.9 MiB with reloptions
+    `{local_store_count=1,storage_format=rabitq}`.
+  - Cleanup artifacts:
+    - `cleanup/coordinator/ssm-command-invocation.final.json`
+    - `cleanup/remote-node-2/ssm-command-invocation.final.json`
+    - `cleanup/remote-node-3/ssm-command-invocation.final.json`
+    - `cleanup/coordinator/residue-after.log`
+    - `cleanup/remote-node-2/residue-after.log`
+    - `cleanup/remote-node-3/residue-after.log`
+  - Cleanup result: coordinator and both remote cleanup commands completed
+    with `Status=Success`, `ResponseCode=0`; all three `residue-after.log`
+    files are empty.

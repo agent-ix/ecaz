@@ -15,6 +15,8 @@ Packet: `reviews/task-107/004-distributed-completion/`
   packet-local load/build, storage, recall/latency, and cleanup evidence.
 - Existing completed Task 107 benchmark evidence:
   - Packet 003: RaBitQ 100k distributed, `bits=4`, `local_store_count=1`.
+  - Packet 004: RaBitQ 1m distributed, `bits=4`, `local_store_count=1`,
+    one coordinator plus two remotes.
   - Packet 004: RaBitQ 100k single node with 2 disks,
     `bits=4`, `local_store_count=2`, explicit
     `local_store_tablespaces=ecaz_spire_store_1,ecaz_spire_store_2`.
@@ -78,7 +80,7 @@ These cells run on the one-coordinator/two-remote topology.
 | Cell | Scale | Storage | Store count | Status | Artifact directory |
 | --- | --- | --- | ---: | --- | --- |
 | phase2-rabitq-100k-l1 | 100k | RaBitQ | 1 | Completed in packet 003; cite, do not rerun unless invalidated | `../003-aws-benchmarks/artifacts/rabitq-100k-l1/` |
-| phase2-rabitq-1m-l1 | 1m | RaBitQ | 1 | Packet 003 attempt canceled during coordinator index build; no completed run | `artifacts/phase2-rabitq-1m-l1/` |
+| phase2-rabitq-1m-l1 | 1m | RaBitQ | 1 | Completed in packet 004 direct SSM distributed run; coordinator/remotes cleanup completed | `artifacts/phase2-rabitq-1m-l1/direct-ssm-distributed/` |
 | phase2-turboquant-100k-l1 | 100k | TurboQuant | 1 | Packet 003 has coordinator load/build only; distributed result missing | `artifacts/phase2-turboquant-100k-l1/` |
 | phase2-turboquant-1m-l1 | 1m | TurboQuant | 1 | Not started | `artifacts/phase2-turboquant-1m-l1/` |
 
