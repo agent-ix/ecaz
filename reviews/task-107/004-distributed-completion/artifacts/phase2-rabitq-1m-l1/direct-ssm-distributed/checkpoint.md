@@ -1,6 +1,6 @@
 # Cell Checkpoint: phase2-rabitq-1m-l1
 
-Status: prepared; setup not started.
+Status: setup failed after successful coordinator load/build; resume required.
 
 ## Intent
 
@@ -23,3 +23,29 @@ Run this cell by AWS SSM, one cell at a time. Benchmark sweeps run through `ecaz
 
 - SSM setup payload: `setup-ssm-parameters.json`.
 - Intended setup output prefix: `s3://ecaz-spire-aws-20260614203301860100000009/task107/004/phase2-rabitq-1m-l1/direct-ssm-distributed/`.
+
+## Setup Attempt Result
+
+- SSM command id: `8aabd685-0484-4668-954e-4e51bd26d1a6`.
+- SSM result: `Status=Failed`, `ResponseCode=2`, elapsed `PT1H1M28.808S`.
+- Coordinator load/build completed before the failure:
+  - copied 990000 corpus rows in 317.43s;
+  - encoded corpus in 475.40s;
+  - copied 10000 queries in 3.44s;
+  - built `task107_phase2_rabitq_1m_l1_idx` in 2678.33s;
+  - completed coordinator prefix load/build in 3602.41s.
+- Failure: remote corpus export reported
+  `row_count_mismatch node=2 rows=0 assignments=504734`.
+- Root cause: the inline resume/export script used `psql -At` without forcing
+  tab-separated output, then extracted row ids with `cut -f12`. The assignment
+  export was pipe-delimited, so the row-id extraction did not produce stable
+  corpus ids.
+- Evidence:
+  - `setup/ssm-command-invocation.final.json`
+  - `setup/coordinator-load.log`
+  - `setup/coordinator-inspect.log`
+  - `setup/coordinator-drop.log`
+- Resume plan: keep the completed coordinator index in place, rerun only the
+  remote corpus export using tab-separated assignment output or `cut -d '|'
+  -f12`, then load remote node 2 and node 3 sequentially before running the
+  suite.
