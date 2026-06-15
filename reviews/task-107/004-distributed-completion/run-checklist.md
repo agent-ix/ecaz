@@ -68,7 +68,7 @@ These cells run on the one-coordinator/two-remote topology.
 
 ## Stop/Go Checkpoints
 
-- Before any AWS start: confirm the next cell and expected maximum runtime.
+- Before any AWS start: confirm the next cell and intended artifact directory.
 - Before any 1m build: confirm prepared corpus prefix and scale; do not use the
   default 100k representative prefix by accident.
 - Before TurboQuant distributed full runs: first record the current endpoint
