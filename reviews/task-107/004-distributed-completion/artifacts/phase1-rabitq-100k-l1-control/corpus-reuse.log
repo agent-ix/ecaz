@@ -1,0 +1,4 @@
+Reused existing prepared 100k corpus files for this cell.
+corpus=data/task106_full_sweep_100k/ec_real_100k_corpus.tsv
+queries=data/task106_full_sweep_100k/ec_real_100k_queries.tsv
+manifest=data/task106_full_sweep_100k/ec_real_100k_manifest.json

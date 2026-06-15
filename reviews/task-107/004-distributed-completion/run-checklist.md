@@ -38,7 +38,7 @@ time.
 
 | Cell | Scale | Storage | Store count | Status | Artifact directory |
 | --- | --- | --- | ---: | --- | --- |
-| phase1-rabitq-100k-l1-control | 100k | RaBitQ | 1 | Not started in packet 004 | `artifacts/phase1-rabitq-100k-l1-control/` |
+| phase1-rabitq-100k-l1-control | 100k | RaBitQ | 1 | Attempt 1 failed before benchmark; retry must use node-local load path | `artifacts/phase1-rabitq-100k-l1-control/` |
 | phase1-rabitq-100k-l2 | 100k | RaBitQ | 2 | Not started | `artifacts/phase1-rabitq-100k-l2/` |
 | phase1-rabitq-100k-l4 | 100k | RaBitQ | 4 | Packet 003 attempt failed placement/export; needs rerun only after blocker is understood | `artifacts/phase1-rabitq-100k-l4/` |
 | phase1-rabitq-1m-l1-control | 1m | RaBitQ | 1 | Not started in packet 004 | `artifacts/phase1-rabitq-1m-l1-control/` |
@@ -73,4 +73,3 @@ These cells run on the one-coordinator/two-remote topology.
 - After any failed cell: stop; record the exact failure and ask whether to fix
   the blocker or move to the next independent cell.
 - After each work session: stop AWS and record final EC2 state.
-

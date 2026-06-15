@@ -65,10 +65,18 @@ The run checklist is `../run-checklist.md`. It enumerates:
 ## Prepared Cell Checkpoints
 
 - `phase1-rabitq-100k-l1-control/checkpoint.md`
-  - Status: checkpoint prepared; not started.
+  - Status: checkpoint prepared; attempt 1 failed before benchmark.
   - Next cell: `phase1-rabitq-100k-l1-control`.
   - Expected maximum runtime before stopping and asking for review: 45 minutes.
   - Scope: 100k representative corpus, RaBitQ, `bits=4`,
     `local_store_count=1`, one coordinator index only.
   - Benchmark matrix: rendered single-node `ecaz bench suite` config derived
     from packet-003 `suite-single-node.json`.
+- `phase1-rabitq-100k-l1-control/failure.md`
+  - Status: failed before benchmark.
+  - Root cause: attempted to stream the 2GB 100k corpus through an SSM
+    port-forward instead of using a node-local AWS load path.
+  - AWS state after failure: stopped, recorded in
+    `phase1-rabitq-100k-l1-control/aws-stop/describe-stopped-after-timeout.json`.
+  - No load/build, recall, latency, storage, or routing result from this
+    attempt is decision-grade.
