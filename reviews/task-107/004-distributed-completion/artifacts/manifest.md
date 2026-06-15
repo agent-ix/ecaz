@@ -571,3 +571,51 @@ The run checklist is `../run-checklist.md`. It enumerates:
   - Cleanup result: coordinator and both remote cleanup commands completed
     with `Status=Success`, `ResponseCode=0`; all three `residue-after.log`
     files are empty.
+- `phase2-turboquant-100k-l1/direct-ssm-distributed/`
+  - Status: blocked at the required distributed endpoint readiness probe.
+  - Cell: `phase2-turboquant-100k-l1`.
+  - Scope: one coordinator plus two remotes, `bits=4`,
+    `local_store_count=1`, `storage_format=turboquant`.
+  - Coordinator setup/export artifacts:
+    - `setup-export/ssm-command-invocation.final.json`
+    - `setup-export/coordinator-load.log`
+    - `setup-export/coordinator-inspect.log`
+    - `distributed-representative/distributed-placement-plan.json`
+    - `distributed-representative/remotes.jsonl`
+  - Coordinator setup/export result: SSM command
+    `3fcf556b-19e5-43c1-b61d-37440d4be810` completed with
+    `Status=Success`, `ResponseCode=0`, elapsed `PT2M59.819S`; built
+    `task107_phase2_turboquant_100k_l1_idx` over 100000 rows and exported
+    52031 rows for node 2 plus 47969 rows for node 3.
+  - Remote load artifacts:
+    - `remote-load-node-2/ssm-command-invocation.final-summary.json`
+    - `remote-load-node-2/load.log`
+    - `remote-load-node-2/inspect.log`
+    - `remote-load-node-3/ssm-command-invocation.final-summary.json`
+    - `remote-load-node-3/load.log`
+    - `remote-load-node-3/inspect.log`
+  - Remote load result: node 2 SSM command
+    `6889a2a2-abb7-4235-8f8e-f1dd4bfe7a31` completed with
+    `Status=Success`, `ResponseCode=0`, elapsed `PT1M11.88S`; node 3 SSM
+    command `f4803bc3-2376-4cd8-b741-70e579df5e42` completed with
+    `Status=Success`, `ResponseCode=0`, elapsed `PT1M5.707S`.
+  - Remote materialization/readiness artifacts:
+    - `remote-materialize-node-2/ssm-command-invocation.final-summary.json`
+    - `remote-materialize-node-2/remote-materialize.log`
+    - `remote-materialize-node-2/identity.json`
+    - `remote-materialize-node-2/missing-or-mismatched-leaves.txt`
+    - `remote-materialize-node-3/ssm-command-invocation.final-summary.json`
+    - `remote-materialize-node-3/remote-materialize.log`
+    - `remote-materialize-node-3/identity.json`
+    - `remote-materialize-node-3/missing-or-mismatched-leaves.txt`
+  - Remote materialization result: node 2 SSM command
+    `2b84fbe8-790e-4dde-b458-b44cfc9754a2` completed with
+    `Status=Success`, `ResponseCode=0`, elapsed `PT4.593S`; node 3 SSM
+    command `2115814c-a7ec-4506-888c-b4028be6eabd` completed with
+    `Status=Success`, `ResponseCode=0`, elapsed `PT4.35S`. Both
+    `missing-or-mismatched-leaves.txt` files are empty.
+  - Blocker result: both remote identities report
+    `endpoint_status=requires_rabitq_storage_format` and
+    `tuple_transport_status=ready`. Per `../run-checklist.md`, no
+    coordinator remote-read suite was run for TurboQuant 100k and
+    `phase2-turboquant-1m-l1` was not started.
