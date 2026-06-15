@@ -1,6 +1,6 @@
 # Cell Checkpoint: phase1-rabitq-1m-l1-control
 
-Status: prepared; not started.
+Status: completed.
 
 ## Intent
 
@@ -41,3 +41,39 @@ makes that unsafe.
 The SSM command is sent with a high AWS service timeout so the benchmark is not
 bounded by the AWS Run Command default. There is no benchmark time cap in the
 payload.
+
+## Result
+
+The first full SSM attempt timed out at the `AWS-RunShellScript` document
+default while building the index; see `failure-timeout.md`. Post-timeout SQL
+checks showed the index had completed and was valid, so the resume command
+`5b1a96bd-3efd-4253-94f2-185475af4f55` continued from the valid loaded/indexed
+state.
+
+- Final resume SSM status: `Success`, response code `0`.
+- Resume execution window: `2026-06-15T09:38:47.024Z` to
+  `2026-06-15T09:53:23.024Z` (`PT14M36.389S`).
+- Load/index evidence: `resume/load/index-validity.log` records 990,000
+  corpus rows, 10,000 query rows, and valid `ec_spire` index
+  `task107_phase1_rabitq_1m_l1_idx` with
+  `{local_store_count=1,local_store_tablespaces=ecaz_spire_store_1,storage_format=rabitq}`.
+- Recall/latency evidence: `resume/bench/suite-results-node.jsonl` and
+  `resume/load/run-suite-resume.log`.
+- Storage evidence: `resume/bench/storage.log`.
+- Cleanup evidence: `resume/load/cleanup-drop.log` dropped the index, query
+  table, and corpus table; `resume/load/residue-after-cleanup.log` is empty.
+- AWS state after the cell:
+  `aws-state/describe-after-cell.json`; all three Task 107 instances remained
+  running.
+
+Key results:
+
+- k10 recall nprobe 8/16/24/32/64: 0.8110 / 0.8820 / 0.9060 / 0.9340 /
+  0.9690.
+- k100 recall nprobe 8/16/24/32/64: 0.7626 / 0.8425 / 0.8763 / 0.8988 /
+  0.9375.
+- k10 c1 mean nprobe 8/16/24/32: 187.9 / 336.2 / 487.4 / 620.9 ms.
+- k10 c4 mean nprobe 8/16/24/32: 211.4 / 382.6 / 541.4 / 678.5 ms.
+- k10 c8 mean nprobe 8/16/24/32: 230.3 / 404.3 / 575.3 / 721.7 ms.
+- k1 c32 nprobe 32 mean: 1505.3 ms.
+- Storage: total 16.1 GiB; `ec_spire` index 784.8 MiB, 831.3 B/row.
