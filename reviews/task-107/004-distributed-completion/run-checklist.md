@@ -1,24 +1,24 @@
 # Task 107 Packet 004 Run Checklist
 
 Date: 2026-06-15
-Head SHA: `cf78d560b4a758327611e7610b3a6014893d0931`
+Head SHA: `92254bca929c949f2de3715efefec6d4c53e4568`
 Packet: `reviews/task-107/004-distributed-completion/`
 
 ## Current State
 
 - AWS topology: one coordinator plus two remotes.
-- Current AWS state: running after completing `phase1-turboquant-1m-l2`;
-  proceed one cell at a time.
+- Current AWS state: running after completing all checklist benchmark cells;
+  Task 107 benchmark DB objects have been cleaned up after the final cell.
 - Packet 004 benchmark/load status for Task 107 Phase 1 cells: completed
   `phase1-rabitq-100k-l2`, `phase1-rabitq-1m-l2`,
   `phase1-turboquant-100k-l2`, and `phase1-turboquant-1m-l2` with
   packet-local load/build, storage, recall/latency, and cleanup evidence.
-- Packet 004 Phase 2 TurboQuant distributed status: coordinator export,
-  both remote loads, and both remote materialization probes completed for
-  `phase2-turboquant-100k-l1`, but both remote identities report
-  `endpoint_status=requires_rabitq_storage_format`. Per the stop/go rule,
-  TurboQuant distributed benchmark sequencing is paused and
-  `phase2-turboquant-1m-l1` was not started.
+- Packet 004 Phase 2 TurboQuant distributed status: completed after commit
+  `92254bca929c949f2de3715efefec6d4c53e4568` enabled TurboQuant SPIRE remote
+  endpoints. `phase2-turboquant-100k-l1` completed successfully.
+  `phase2-turboquant-1m-l1` completed all suite steps and cleanup, with a
+  recorded suite threshold miss: k10 nprobe64 recall measured `0.9490` against
+  the configured `>= 0.9500` floor, causing two threshold checks to fail.
 - Existing completed Task 107 benchmark evidence:
   - Packet 003: RaBitQ 100k distributed, `bits=4`, `local_store_count=1`.
   - Packet 004: RaBitQ 1m distributed, `bits=4`, `local_store_count=1`,
@@ -32,6 +32,12 @@ Packet: `reviews/task-107/004-distributed-completion/`
   - Packet 004: TurboQuant 1m single node with 2 disks,
     `bits=4`, `local_store_count=2`, explicit
     `local_store_tablespaces=ecaz_spire_store_1,ecaz_spire_store_2`.
+  - Packet 004: TurboQuant 100k distributed, `bits=4`,
+    `local_store_count=1`, one coordinator plus two remotes, completed after
+    the remote endpoint fix.
+  - Packet 004: TurboQuant 1m distributed, `bits=4`,
+    `local_store_count=1`, one coordinator plus two remotes, completed with
+    the threshold miss recorded above.
   - Packet 004: the earlier
     `artifacts/phase1-rabitq-100k-l2/direct-ssm/` run is superseded because it
     omitted explicit `local_store_tablespaces`.
@@ -87,8 +93,8 @@ These cells run on the one-coordinator/two-remote topology.
 | --- | --- | --- | ---: | --- | --- |
 | phase2-rabitq-100k-l1 | 100k | RaBitQ | 1 | Completed in packet 003; cite, do not rerun unless invalidated | `../003-aws-benchmarks/artifacts/rabitq-100k-l1/` |
 | phase2-rabitq-1m-l1 | 1m | RaBitQ | 1 | Completed in packet 004 direct SSM distributed run; coordinator/remotes cleanup completed | `artifacts/phase2-rabitq-1m-l1/direct-ssm-distributed/` |
-| phase2-turboquant-100k-l1 | 100k | TurboQuant | 1 | Blocked at required distributed endpoint readiness probe: coordinator export, both remote loads, and both remote materializations succeeded, but both remote identities reported `endpoint_status=requires_rabitq_storage_format`; no coordinator remote-read suite was run | `artifacts/phase2-turboquant-100k-l1/direct-ssm-distributed/` |
-| phase2-turboquant-1m-l1 | 1m | TurboQuant | 1 | Blocked by the 100k TurboQuant distributed readiness result; not started per stop/go rule | `artifacts/phase2-turboquant-1m-l1/` |
+| phase2-turboquant-100k-l1 | 100k | TurboQuant | 1 | Completed in packet 004 after TurboQuant remote endpoint fix; coordinator/remotes cleanup completed | `artifacts/phase2-turboquant-100k-l1/direct-ssm-distributed/` |
+| phase2-turboquant-1m-l1 | 1m | TurboQuant | 1 | Completed in packet 004 direct SSM distributed run; all suite steps succeeded, suite returned threshold failure because k10 nprobe64 recall was `0.9490` vs configured `>=0.9500`; coordinator/remotes cleanup completed | `artifacts/phase2-turboquant-1m-l1/direct-ssm-distributed/` |
 
 ## Stop/Go Checkpoints
 

@@ -1,6 +1,6 @@
 # Task 107 Packet 004 Manifest
 
-- Head SHA: `cf78d560b4a758327611e7610b3a6014893d0931`
+- Head SHA: `92254bca929c949f2de3715efefec6d4c53e4568`
 - Task bucket: `reviews/task-107/004-distributed-completion/`
 - Created: 2026-06-15T03:07:58Z
 - Purpose: run-control packet for completing the remaining Task 107 AWS
@@ -58,7 +58,11 @@ explicit `local_store_tablespaces`.
 
 ### Current AWS State
 
-After `phase1-turboquant-1m-l2`, AWS was checked directly in
+After the final `phase2-turboquant-1m-l1` distributed benchmark, the three Task
+107 instances were left running. The final cell's coordinator and remote DB
+objects were cleaned up successfully; no EC2 stop command was issued.
+
+Earlier after `phase1-turboquant-1m-l2`, AWS was checked directly in
 `phase1-turboquant-1m-l2/direct-ssm-tablespaces/aws-state/describe-after-cell.json`:
 
 - `i-0b4386fa5017f1363` (`ecaz-spire-aws-coord`): running,
@@ -572,62 +576,82 @@ The run checklist is `../run-checklist.md`. It enumerates:
     with `Status=Success`, `ResponseCode=0`; all three `residue-after.log`
     files are empty.
 - `phase2-turboquant-100k-l1/direct-ssm-distributed/`
-  - Status: blocked at the required distributed endpoint readiness probe.
+  - Status: completed after commit
+    `92254bca929c949f2de3715efefec6d4c53e4568` enabled TurboQuant SPIRE
+    remote endpoints. PQ-fastscan remains unsupported as expected.
   - Cell: `phase2-turboquant-100k-l1`.
   - Scope: one coordinator plus two remotes, `bits=4`,
     `local_store_count=1`, `storage_format=turboquant`.
-  - Coordinator setup/export artifacts:
-    - `setup-export/ssm-command-invocation.final.json`
-    - `setup-export/coordinator-load.log`
-    - `setup-export/coordinator-inspect.log`
-    - `distributed-representative/distributed-placement-plan.json`
-    - `distributed-representative/remotes.jsonl`
+  - Key readiness evidence: both remote identities report
+    `endpoint_status=ready` and `tuple_transport_status=ready`; node 2
+    endpoint identity hex `94648bf2daaa390a`, node 3 endpoint identity hex
+    `f020eba543c7568a`.
+  - Key recall results:
+    - k10 nprobe64: 0.9600, mean q-time 64.51 ms.
+    - k100 nprobe64: 0.9369, mean q-time 65.82 ms.
+  - Production remote-read evidence:
+    - k10/k100 nprobe64 both `status=ready`,
+      `result_source=remote_heap_candidates`, `selected_pid_sum=6400`,
+      `remote_pid_sum=6400`, `dispatch_sum=200`, and
+      timeout/cancel/degraded-skip sums all zero.
+  - Storage result: 100000 rows, total 1.6 GiB, index 81.5 MiB.
+  - Cleanup result: coordinator and both remote cleanup commands completed
+    with `Status=Success`, `ResponseCode=0`.
+- `phase2-turboquant-1m-l1/direct-ssm-distributed/`
+  - Status: completed with suite threshold miss.
+  - Cell: `phase2-turboquant-1m-l1`.
+  - Scope: one coordinator plus two remotes, `bits=4`,
+    `local_store_count=1`, `storage_format=turboquant`.
   - Coordinator setup/export result: SSM command
-    `3fcf556b-19e5-43c1-b61d-37440d4be810` completed with
-    `Status=Success`, `ResponseCode=0`, elapsed `PT2M59.819S`; built
-    `task107_phase2_turboquant_100k_l1_idx` over 100000 rows and exported
-    52031 rows for node 2 plus 47969 rows for node 3.
-  - Remote load artifacts:
-    - `remote-load-node-2/ssm-command-invocation.final-summary.json`
-    - `remote-load-node-2/load.log`
-    - `remote-load-node-2/inspect.log`
-    - `remote-load-node-3/ssm-command-invocation.final-summary.json`
-    - `remote-load-node-3/load.log`
-    - `remote-load-node-3/inspect.log`
+    `7256baf7-5bbe-4571-a176-6a91e11d1254` completed successfully. Load/build
+    timings: corpus copy 318.09s, encode 489.47s, index build 2691.81s, total
+    3634.45s.
   - Remote load result: node 2 SSM command
-    `6889a2a2-abb7-4235-8f8e-f1dd4bfe7a31` completed with
-    `Status=Success`, `ResponseCode=0`, elapsed `PT1M11.88S`; node 3 SSM
-    command `f4803bc3-2376-4cd8-b741-70e579df5e42` completed with
-    `Status=Success`, `ResponseCode=0`, elapsed `PT1M5.707S`.
-  - Remote materialization/readiness artifacts:
-    - `remote-materialize-node-2/ssm-command-invocation.final-summary.json`
-    - `remote-materialize-node-2/remote-materialize.log`
-    - `remote-materialize-node-2/identity.json`
-    - `remote-materialize-node-2/missing-or-mismatched-leaves.txt`
-    - `remote-materialize-node-3/ssm-command-invocation.final-summary.json`
-    - `remote-materialize-node-3/remote-materialize.log`
-    - `remote-materialize-node-3/identity.json`
-    - `remote-materialize-node-3/missing-or-mismatched-leaves.txt`
+    `077d6515-9995-471e-99ff-5a5be7cad15a` loaded 504734 rows and completed
+    successfully; node 3 SSM command `74a0fbdb-d8d9-4d0b-a6dc-1a29ab6c0d27`
+    loaded 485266 rows and completed successfully.
   - Remote materialization result: node 2 SSM command
-    `2b84fbe8-790e-4dde-b458-b44cfc9754a2` completed with
-    `Status=Success`, `ResponseCode=0`, elapsed `PT4.593S`; node 3 SSM
-    command `2115814c-a7ec-4506-888c-b4028be6eabd` completed with
-    `Status=Success`, `ResponseCode=0`, elapsed `PT4.35S`. Both
-    `missing-or-mismatched-leaves.txt` files are empty.
-  - Blocker result: both remote identities report
-    `endpoint_status=requires_rabitq_storage_format` and
-    `tuple_transport_status=ready`. Per `../run-checklist.md`, no
-    coordinator remote-read suite was run for TurboQuant 100k and
-    `phase2-turboquant-1m-l1` was not started.
-  - Root-cause audit: the readiness result matches the checked-in remote
-    search contract, not an AWS setup or packet-script failure.
-    `src/am/ec_spire/coordinator/remote_candidates/endpoint_identity.rs`
-    advertises `quantizer_family` as
-    `rabitq_only_pq_and_pqfastscan_reserved`, maps TurboQuant to
-    `unsupported_turboquant`, and returns
-    `requires_rabitq_storage_format` for non-RaBitQ assignment payloads.
-    `src/tests/remote_search/contracts_libpq.rs` and
-    `src/tests/remote_search/libpq_executor.rs` assert the corresponding
-    fail-closed behavior. Completing the remaining TurboQuant distributed
-    cells therefore requires a product-code change to support TurboQuant
-    remote endpoints before any valid benchmark can be run.
+    `c2ef0085-1fe4-4010-adde-fdbbeb96ad78` completed successfully; node 3 SSM
+    command `e5f0e481-0b13-4f24-b2b2-90e378d8755b` completed successfully.
+  - Registration and suite artifacts:
+    - `coordinator-register-run-send-command.json`
+    - `coordinator-register-run/run-suite.log`
+    - `coordinator-register-run/run-suite.stderr.log`
+    - `coordinator-register-run/remote-node-snapshot.jsonl`
+    - `bench/suite-manifest-node.json`
+    - `bench/suite-results-node.jsonl`
+    - `bench/13a3a-recall-k10.log`
+    - `bench/13a3a-recall-k100.log`
+    - `bench/13e3-production-read-profile-k10.log`
+    - `bench/13e3-production-read-profile-k100.log`
+    - `bench/storage.log`
+  - Suite result: coordinator command
+    `70dc864d-df90-407b-9931-419d0e61a68c` exited `Status=Failed`,
+    `ResponseCode=1`, elapsed `PT9M5.705S`, because the suite threshold
+    summary reported `suite thresholds failed: 2`. All 9 suite steps in
+    `suite-manifest-node.json` have `status=succeeded`.
+  - Threshold miss:
+    - `phase2-turboquant-1m-l1-recall-k10-nprobe64-floor`: actual
+      `recall@k=0.9490`, expected `>=0.9500`.
+    - `phase2-turboquant-1m-l1-remote-read-k10-nprobe64-floor`: actual
+      `recall@k=0.9490`, expected `>=0.9500`.
+  - Key recall results:
+    - k10 nprobe 8/16/24/32/64: 0.7940 / 0.8640 / 0.8860 / 0.9140 / 0.9490.
+    - k100 nprobe64: 0.9331.
+  - Production remote-read evidence:
+    - k10 nprobe64: `status=ready`,
+      `result_source=remote_heap_candidates`, `selected_pid_sum=6400`,
+      `remote_pid_sum=6400`, `dispatch_sum=200`, `total_p50=140.000 ms`,
+      `total_p95=164.000 ms`, timeout/cancel/degraded-skip sums all zero.
+    - k100 nprobe64: `status=ready`,
+      `result_source=remote_heap_candidates`, `selected_pid_sum=6400`,
+      `remote_pid_sum=6400`, `dispatch_sum=200`, `total_p50=141.000 ms`,
+      `total_p95=166.000 ms`, timeout/cancel/degraded-skip sums all zero.
+  - Storage result: 990000 rows, total 16.1 GiB, indexes 805.6 MiB;
+    `task107_phase2_turboquant_1m_l1_idx` reports 784.1 MiB with reloptions
+    `{local_store_count=1,storage_format=turboquant}`.
+  - Cleanup result: coordinator command
+    `13795924-9f0d-4a81-a21d-66f5e75d8380`, remote node 2 command
+    `1e1f2668-763f-494b-86a2-6e26b08ad2da`, and remote node 3 command
+    `860aa065-47b4-469a-92fb-985614749369` all completed with
+    `Status=Success`, `ResponseCode=0`.

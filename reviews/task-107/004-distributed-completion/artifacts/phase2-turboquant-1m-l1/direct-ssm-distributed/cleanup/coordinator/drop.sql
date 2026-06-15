@@ -1,0 +1,4 @@
+\set ON_ERROR_STOP on
+DROP INDEX IF EXISTS task107_phase2_turboquant_1m_l1_idx;
+DROP TABLE IF EXISTS task107_phase2_turboquant_1m_l1_queries CASCADE;
+DROP TABLE IF EXISTS task107_phase2_turboquant_1m_l1_corpus CASCADE;

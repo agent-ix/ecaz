@@ -1,0 +1,51 @@
+{
+    "Command": {
+        "CommandId": "70dc864d-df90-407b-9931-419d0e61a68c",
+        "DocumentName": "AWS-RunShellScript",
+        "DocumentVersion": "$DEFAULT",
+        "Comment": "",
+        "ExpiresAfter": "2026-06-17T16:12:38.844000-07:00",
+        "Parameters": {
+            "commands": [
+                "mkdir -p /var/tmp/ecaz-task107-phase2-turboquant-1m-l1/coordinator-register-run",
+                "aws s3 cp s3://ecaz-spire-aws-20260614203301860100000009/task107/004/phase2-turboquant-1m-l1/direct-ssm-distributed/coordinator-register-run/config/coordinator-register-run.sh /var/tmp/ecaz-task107-phase2-turboquant-1m-l1/coordinator-register-run/coordinator-register-run.sh --region us-west-2",
+                "bash /var/tmp/ecaz-task107-phase2-turboquant-1m-l1/coordinator-register-run/coordinator-register-run.sh"
+            ],
+            "executionTimeout": [
+                "172800"
+            ]
+        },
+        "InstanceIds": [
+            "i-0b4386fa5017f1363"
+        ],
+        "Targets": [],
+        "RequestedDateTime": "2026-06-15T15:12:38.844000-07:00",
+        "Status": "Pending",
+        "StatusDetails": "Pending",
+        "OutputS3Region": "us-west-2",
+        "OutputS3BucketName": "",
+        "OutputS3KeyPrefix": "",
+        "MaxConcurrency": "50",
+        "MaxErrors": "0",
+        "TargetCount": 1,
+        "CompletedCount": 0,
+        "ErrorCount": 0,
+        "DeliveryTimedOutCount": 0,
+        "ServiceRole": "",
+        "NotificationConfig": {
+            "NotificationArn": "",
+            "NotificationEvents": [],
+            "NotificationType": ""
+        },
+        "CloudWatchOutputConfig": {
+            "CloudWatchLogGroupName": "",
+            "CloudWatchOutputEnabled": false
+        },
+        "TimeoutSeconds": 3600,
+        "AlarmConfiguration": {
+            "IgnorePollAlarmFailure": false,
+            "Alarms": []
+        },
+        "TriggeredAlarms": []
+    }
+}
