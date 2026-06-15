@@ -61,3 +61,14 @@ The run checklist is `../run-checklist.md`. It enumerates:
 - remaining Phase 2 distributed multi-node cells;
 - completed packet-003 evidence that must be cited instead of rerun;
 - stop/go checkpoints for avoiding infrastructure drift and accidental reruns.
+
+## Prepared Cell Checkpoints
+
+- `phase1-rabitq-100k-l1-control/checkpoint.md`
+  - Status: checkpoint prepared; not started.
+  - Next cell: `phase1-rabitq-100k-l1-control`.
+  - Expected maximum runtime before stopping and asking for review: 45 minutes.
+  - Scope: 100k representative corpus, RaBitQ, `bits=4`,
+    `local_store_count=1`, one coordinator index only.
+  - Benchmark matrix: rendered single-node `ecaz bench suite` config derived
+    from packet-003 `suite-single-node.json`.
