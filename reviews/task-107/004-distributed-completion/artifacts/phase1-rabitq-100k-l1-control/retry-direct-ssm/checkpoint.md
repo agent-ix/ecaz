@@ -34,7 +34,7 @@ evidence. This retry uses a simpler coordinator-local SSM payload:
 
 ## Planned Commands
 
-Start the existing Task 107 topology and refresh AutoStop:
+Start the existing Task 107 topology and refresh the safety AutoStop tag:
 
 ```bash
 scripts/spire-aws/start-topology-instances.sh \
@@ -43,7 +43,7 @@ scripts/spire-aws/start-topology-instances.sh \
 
 aws ec2 create-tags --region us-west-2 \
   --resources i-0b4386fa5017f1363 i-07bcc98c3d5d027ee i-00c2f2aca9dbdd6bd \
-  --tags Key=AutoStop,Value=<refreshed-8-hour-deadline>
+  --tags Key=AutoStop,Value=<refreshed-safety-tag>
 ```
 
 Send the coordinator-only SSM command using:
@@ -61,4 +61,5 @@ aws ssm send-command \
 
 If load/build succeeds, run the existing packet-local `ecaz bench suite` config,
 capture storage evidence, clean up only the `task107_phase1_rabitq_100k_l1%`
-objects, stop AWS, and record final EC2 state.
+objects, and record EC2 state. Leave AWS running unless the user explicitly
+asks to stop it.

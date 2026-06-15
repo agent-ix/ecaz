@@ -30,7 +30,8 @@ Packet: `reviews/task-107/004-distributed-completion/`
 6. Before starting each cell, record the exact command and intended artifact
    directory.
 7. After each cell, record status, elapsed time, key result lines, cleanup
-   state, and whether AWS remains running or stopped.
+   state, and current AWS state. Leave the Task 107 instances running unless
+   the user explicitly asks to stop them or a concrete failure requires cleanup.
 8. A cell is complete only when packet-local artifacts include load/build,
    storage, recall/latency, and required routing/fanout evidence.
 
@@ -75,7 +76,11 @@ These cells run on the one-coordinator/two-remote topology.
   default 100k representative prefix by accident.
 - Before TurboQuant distributed full runs: first record the current endpoint
   readiness behavior. If the distributed remote read path reports TurboQuant as
-  unsupported, stop and package that blocker instead of running 1m TurboQuant.
-- After any failed cell: stop; record the exact failure and ask whether to fix
-  the blocker or move to the next independent cell.
-- After each work session: stop AWS and record final EC2 state.
+  unsupported, pause benchmark sequencing and package that blocker instead of
+  running 1m TurboQuant.
+- After any failed cell: pause benchmark sequencing, record the exact failure,
+  and ask whether to fix the blocker or move to the next independent cell. Keep
+  the Task 107 EC2 instances running unless the user explicitly asks otherwise
+  or a concrete cleanup requirement makes that unsafe.
+- After each work session: record current EC2 state. Leave AWS running unless
+  the user explicitly asks to stop it.
