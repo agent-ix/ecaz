@@ -9,69 +9,62 @@ Packet: `reviews/task-107/004-distributed-completion/`
 - AWS topology: one coordinator plus two remotes.
 - Current AWS state: running after completing `phase1-rabitq-1m-l2`;
   proceed one cell at a time.
-- Packet 004 benchmark/load status: completed
-  `phase1-rabitq-100k-l1-control`, `phase1-rabitq-100k-l2`,
-  `phase1-rabitq-100k-l4`, `phase1-rabitq-1m-l1-control`, and
-  `phase1-rabitq-1m-l2` with
-  packet-local load/build, storage, recall/latency, and cleanup evidence.
+- Packet 004 benchmark/load status for Task 107 Phase 1 cells: completed
+  `phase1-rabitq-100k-l2` and `phase1-rabitq-1m-l2` with packet-local
+  load/build, storage, recall/latency, and cleanup evidence.
 - Existing completed Task 107 benchmark evidence:
   - Packet 003: RaBitQ 100k distributed, `bits=4`, `local_store_count=1`.
-  - Packet 004: RaBitQ 100k single-node/multi-store control,
-    `bits=4`, `local_store_count=1`.
-  - Packet 004: RaBitQ 100k single-node/multi-store,
+  - Packet 004: RaBitQ 100k single node with 2 disks,
     `bits=4`, `local_store_count=2`, explicit
     `local_store_tablespaces=ecaz_spire_store_1,ecaz_spire_store_2`.
   - Packet 004: the earlier
     `artifacts/phase1-rabitq-100k-l2/direct-ssm/` run is superseded because it
     omitted explicit `local_store_tablespaces`.
-  - Packet 004: RaBitQ 100k single-node/multi-store,
-    `bits=4`, `local_store_count=4`, explicit
-    `local_store_tablespaces=ecaz_spire_store_1,ecaz_spire_store_2,ecaz_spire_store_3,ecaz_spire_store_4`.
 
 ## Operating Rules
 
-1. Run one benchmark cell at a time. Do not build multiple indexes at once.
-2. Do not rerun Task 106 single-store SPIRE evidence.
-3. Do not rerun HNSW, IVF, DiskANN, or other comparator baselines.
-4. Use `ecaz bench suite` for benchmark matrices and sweeps.
-5. Do not patch infrastructure or runner scripts unless the next checklist cell
+1. The checklist contains only these test classes:
+   - single node with 2 disks;
+   - multinode with 1 controller and 2 nodes.
+2. Remove any test that does not match those classes from this checklist.
+3. Run one benchmark cell at a time. Do not build multiple indexes at once.
+4. Do not rerun Task 106 single-node/single-disk SPIRE evidence.
+5. Do not add or run Phase 1 single-node/single-disk rows. They are outside
+   this checklist.
+6. Do not add or run Phase 1 4-disk rows. They are outside the requested scope.
+7. Do not rerun HNSW, IVF, DiskANN, or other comparator rows.
+8. Use `ecaz bench suite` for benchmark matrices and sweeps.
+9. Do not patch infrastructure or runner scripts unless the next checklist cell
    is blocked by a concrete failure. Record the failure before any patch.
-6. Before starting each cell, record the exact command and intended artifact
+10. Before starting each runnable cell, record the exact command and intended artifact
    directory.
-7. After each cell, record status, elapsed time, key result lines, cleanup
+11. After each runnable cell, record status, elapsed time, key result lines, cleanup
    state, and current AWS state. Leave the Task 107 instances running unless
    the user explicitly asks to stop them or a concrete failure requires cleanup.
-8. A cell is complete only when packet-local artifacts include load/build,
+12. A runnable cell is complete only when packet-local artifacts include load/build,
    storage, recall/latency, and required routing/fanout evidence.
-9. Do not impose arbitrary wall-clock caps on benchmark cells. Long AWS SSM
+13. Do not impose arbitrary wall-clock caps on benchmark cells. Long AWS SSM
    cells must set both the send-command timeout and the `AWS-RunShellScript`
    `executionTimeout` high enough to let the cell run to completion or an
    actual command failure.
 
 ## Required Cells
 
-### Phase 1 - Single-Node Multi-Disk / Multi-Store
+### Phase 1 - Single Node With 2 Disks
 
-These are Task 107 cells and were not completed by Task 106. They should run on
-the Task 107 AWS host with the multi-store device layout, one index lane at a
-time.
+Only 2-disk rows are runnable Task 107 single-node cells. Single-node/single-
+disk rows and four-disk rows are outside this checklist. Runnable rows should
+run on the Task 107 AWS host with the two-store device layout, one index lane
+at a time.
 
 | Cell | Scale | Storage | Store count | Status | Artifact directory |
 | --- | --- | --- | ---: | --- | --- |
-| phase1-rabitq-100k-l1-control | 100k | RaBitQ | 1 | Completed in packet 004 direct SSM retry; cleanup completed | `artifacts/phase1-rabitq-100k-l1-control/retry-direct-ssm/` |
 | phase1-rabitq-100k-l2 | 100k | RaBitQ | 2 | Completed in packet 004 corrected direct SSM tablespace run; cleanup completed | `artifacts/phase1-rabitq-100k-l2/direct-ssm-tablespaces/` |
-| phase1-rabitq-100k-l4 | 100k | RaBitQ | 4 | Completed in packet 004 corrected direct SSM tablespace run; cleanup completed | `artifacts/phase1-rabitq-100k-l4/direct-ssm-tablespaces/` |
-| phase1-rabitq-1m-l1-control | 1m | RaBitQ | 1 | Completed in packet 004 direct SSM tablespace run; cleanup completed | `artifacts/phase1-rabitq-1m-l1-control/direct-ssm-tablespaces/` |
 | phase1-rabitq-1m-l2 | 1m | RaBitQ | 2 | Completed in packet 004 direct SSM tablespace run; cleanup completed | `artifacts/phase1-rabitq-1m-l2/direct-ssm-tablespaces/` |
-| phase1-rabitq-1m-l4 | 1m | RaBitQ | 4 | Not started | `artifacts/phase1-rabitq-1m-l4/` |
-| phase1-turboquant-100k-l1-control | 100k | TurboQuant | 1 | Not started in packet 004 | `artifacts/phase1-turboquant-100k-l1-control/` |
 | phase1-turboquant-100k-l2 | 100k | TurboQuant | 2 | Not started | `artifacts/phase1-turboquant-100k-l2/` |
-| phase1-turboquant-100k-l4 | 100k | TurboQuant | 4 | Not started | `artifacts/phase1-turboquant-100k-l4/` |
-| phase1-turboquant-1m-l1-control | 1m | TurboQuant | 1 | Not started | `artifacts/phase1-turboquant-1m-l1-control/` |
 | phase1-turboquant-1m-l2 | 1m | TurboQuant | 2 | Not started | `artifacts/phase1-turboquant-1m-l2/` |
-| phase1-turboquant-1m-l4 | 1m | TurboQuant | 4 | Not started | `artifacts/phase1-turboquant-1m-l4/` |
 
-### Phase 2 - Distributed Multi-Node
+### Phase 2 - Multinode With 1 Controller And 2 Nodes
 
 These cells run on the one-coordinator/two-remote topology.
 
