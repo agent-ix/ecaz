@@ -68,3 +68,26 @@ Run this cell by AWS SSM, one cell at a time. Benchmark sweeps run through `ecaz
   - `distributed-representative/remotes.jsonl`
   - `distributed-representative/node-*/coordinator-base-assignments.stderr.log`
   - `distributed-representative/node-*/upload-remote-corpus.log`
+
+## Remote Node 2 Load Result
+
+- SSM command id: `595ba388-99da-4802-b813-3cbbff2fc927`.
+- SSM result: `Status=Success`, `ResponseCode=0`, elapsed `PT24M35.211S`.
+- Remote prefix: `task107_phase2_rabitq_1m_l1_node_2`.
+- Remote index: `task107_phase2_rabitq_1m_l1_remote_idx`.
+- Loaded 504734 corpus rows with `bits=4`, `storage_format=rabitq`, and
+  `local_store_count=1`.
+- Load timings:
+  - copy: 162.76s;
+  - encode: 211.15s;
+  - index build: 1003.53s;
+  - total: 1442.10s.
+- Inspect evidence reports the remote SPiRE index at 402.5 MiB with
+  `{local_store_count=1,storage_format=rabitq}`.
+- Evidence:
+  - `remote-load-node-2/send-command.json`
+  - `remote-load-node-2/ssm-command-invocation.final-summary.json`
+  - `remote-load-node-2/load.log`
+  - `remote-load-node-2/inspect.log`
+  - `remote-load-node-2/drop.log`
+  - `remote-load-node-2/corpus-row-count.log`
