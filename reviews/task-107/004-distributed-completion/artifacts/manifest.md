@@ -12,16 +12,16 @@ This packet begins after packet 003, which completed only the RaBitQ 100k
 distributed lane and recorded several partial/non-decision attempts. Packet 004
 must follow `../run-checklist.md` before any additional AWS benchmark work.
 
-Packet 004 has completed `phase1-rabitq-100k-l1-control`,
-`phase1-rabitq-100k-l2`, `phase1-rabitq-100k-l4`,
-`phase1-rabitq-1m-l1-control`, and `phase1-rabitq-1m-l2`. The earlier failed
-attempts remain recorded as non-decision-grade history; the decision-grade
-evidence for the completed cells is under
-`phase1-rabitq-100k-l1-control/retry-direct-ssm/`,
-`phase1-rabitq-100k-l2/direct-ssm-tablespaces/`, and
-`phase1-rabitq-100k-l4/direct-ssm-tablespaces/`, and
-`phase1-rabitq-1m-l1-control/direct-ssm-tablespaces/`, and
-`phase1-rabitq-1m-l2/direct-ssm-tablespaces/`. The earlier
+Packet 004's active checklist is limited to single node with 2 disks and
+multinode with 1 controller plus 2 nodes. The in-scope completed packet-004
+cells are `phase1-rabitq-100k-l2`, `phase1-rabitq-1m-l2`, and
+`phase1-turboquant-100k-l2`. Earlier packet-004 single-disk and 4-disk
+artifacts remain recorded only as historical, out-of-scope evidence and do not
+count toward the current checklist. The decision-grade evidence for the
+in-scope completed packet-004 cells is under
+`phase1-rabitq-100k-l2/direct-ssm-tablespaces/`,
+`phase1-rabitq-1m-l2/direct-ssm-tablespaces/`, and
+`phase1-turboquant-100k-l2/direct-ssm-tablespaces/`. The earlier
 `phase1-rabitq-100k-l2/direct-ssm/` run is superseded because it omitted
 explicit `local_store_tablespaces`.
 
@@ -57,8 +57,8 @@ explicit `local_store_tablespaces`.
 
 ### Current AWS State
 
-After `phase1-rabitq-1m-l2`, AWS was checked directly in
-`phase1-rabitq-1m-l2/direct-ssm-tablespaces/aws-state/describe-after-cell.json`:
+After `phase1-turboquant-100k-l2`, AWS was checked directly in
+`phase1-turboquant-100k-l2/direct-ssm-tablespaces/aws-state/describe-after-cell.json`:
 
 - `i-0b4386fa5017f1363` (`ecaz-spire-aws-coord`): running,
   `AutoStop=2026-06-17T05:30:31Z`.
@@ -71,8 +71,8 @@ After `phase1-rabitq-1m-l2`, AWS was checked directly in
 
 The run checklist is `../run-checklist.md`. It enumerates:
 
-- remaining Phase 1 single-node multi-disk/multi-store cells;
-- remaining Phase 2 distributed multi-node cells;
+- remaining Phase 1 single-node 2-disk cells;
+- remaining Phase 2 cells for one controller and two nodes;
 - completed packet-003 evidence that must be cited instead of rerun;
 - stop/go checkpoints for avoiding infrastructure drift and accidental reruns.
 
@@ -381,4 +381,64 @@ The run checklist is `../run-checklist.md`. It enumerates:
     empty `load/residue-after-cleanup.log`.
   - AWS state after cell:
     `phase1-rabitq-1m-l2/direct-ssm-tablespaces/aws-state/describe-after-cell.json`;
+    all three Task 107 instances remained running for the next cell.
+- `phase1-turboquant-100k-l2/direct-ssm-tablespaces/checkpoint.md`
+  - Status: completed.
+  - Cell: `phase1-turboquant-100k-l2`.
+  - Execution policy: ran one isolated index cell to completion using the
+    existing 100k representative corpus.
+  - Scope: one coordinator-only TurboQuant 100k index with `bits=4`,
+    `local_store_count=2`, and
+    `local_store_tablespaces=ecaz_spire_store_1,ecaz_spire_store_2`; no remote
+    shard loading and no comparator or Task 106 reruns.
+  - Command payload:
+    `phase1-turboquant-100k-l2/direct-ssm-tablespaces/ssm-parameters.json`.
+  - SSM evidence:
+    - final invocation:
+      `phase1-turboquant-100k-l2/direct-ssm-tablespaces/load/ssm-command-invocation.final.json`;
+    - stdout/stderr:
+      `phase1-turboquant-100k-l2/direct-ssm-tablespaces/ssm/6f98340e-4524-41fb-8938-54c4c6c72fc7/i-0b4386fa5017f1363/awsrunShellScript/0.awsrunShellScript/`.
+  - SSM result: `Status=Success`, `ResponseCode=0`, execution window
+    `2026-06-15T12:43:04.535Z` to `2026-06-15T13:19:58.535Z`, elapsed
+    `PT36M54.883S`.
+  - Load/build artifacts:
+    - `phase1-turboquant-100k-l2/direct-ssm-tablespaces/load/load.log`
+    - `phase1-turboquant-100k-l2/direct-ssm-tablespaces/load/inspect.log`
+  - Load/build result: 100000 corpus rows, 1000 queries, `bits=4`,
+    `local_store_count=2`,
+    `local_store_tablespaces=ecaz_spire_store_1,ecaz_spire_store_2`,
+    `storage_format=turboquant`; corpus copy 32.46s, encode 23.94s, query
+    copy 416.78ms, index build 90.02s, total 159.82s.
+  - Routing/fanout evidence: `load/inspect.log` and `bench/storage.log` record
+    the isolated `task107_phase1_turboquant_100k_l2_idx` index with reloptions
+    `{local_store_count=2,"local_store_tablespaces=ecaz_spire_store_1,ecaz_spire_store_2",storage_format=turboquant}`.
+  - Recall/latency artifacts:
+    - `phase1-turboquant-100k-l2/direct-ssm-tablespaces/bench/13a3a-recall-k10.log`
+    - `phase1-turboquant-100k-l2/direct-ssm-tablespaces/bench/13a3a-recall-k100.log`
+    - `phase1-turboquant-100k-l2/direct-ssm-tablespaces/bench/13a3a-latency-k10-c1.log`
+    - `phase1-turboquant-100k-l2/direct-ssm-tablespaces/bench/13a3a-latency-k10-c4.log`
+    - `phase1-turboquant-100k-l2/direct-ssm-tablespaces/bench/13a3a-latency-k10-c8.log`
+    - `phase1-turboquant-100k-l2/direct-ssm-tablespaces/bench/13a3f-pk-c32.log`
+    - `phase1-turboquant-100k-l2/direct-ssm-tablespaces/bench/suite-results-node.jsonl`
+  - Key recall results:
+    - k10 nprobe 8/16/24/32/64: 0.7939 / 0.8703 / 0.9041 / 0.9268 / 0.9661.
+    - k100 nprobe 8/16/24/32/64: 0.6862 / 0.7899 / 0.8362 / 0.8687 / 0.9336.
+  - Key latency results:
+    - k10 c1 mean nprobe 8/16/24/32: 47.6 / 82.8 / 117.4 / 159.4 ms.
+    - k10 c4 mean nprobe 8/16/24/32: 49.9 / 83.4 / 122.5 / 156.2 ms.
+    - k10 c8 mean nprobe 8/16/24/32: 49.0 / 84.6 / 121.6 / 159.8 ms.
+    - k1 c32 nprobe 32 mean: 327.1 ms.
+  - Storage artifact:
+    `phase1-turboquant-100k-l2/direct-ssm-tablespaces/bench/storage.log`.
+  - Storage result: total 1.6 GiB; `ec_spire` index 64.0 KiB, 0.7 B/row with
+    `local_store_count=2`,
+    `local_store_tablespaces=ecaz_spire_store_1,ecaz_spire_store_2`, and
+    `storage_format=turboquant`.
+  - Cleanup artifact:
+    `phase1-turboquant-100k-l2/direct-ssm-tablespaces/load/cleanup-drop.log`.
+  - Cleanup result: dropped index, queries table, and corpus table; no
+    remaining `task107_phase1_turboquant_100k_l2%` relations were printed in
+    the empty `load/residue-after-cleanup.log`.
+  - AWS state after cell:
+    `phase1-turboquant-100k-l2/direct-ssm-tablespaces/aws-state/describe-after-cell.json`;
     all three Task 107 instances remained running for the next cell.

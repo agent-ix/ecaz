@@ -7,14 +7,18 @@ Packet: `reviews/task-107/004-distributed-completion/`
 ## Current State
 
 - AWS topology: one coordinator plus two remotes.
-- Current AWS state: running after completing `phase1-rabitq-1m-l2`;
+- Current AWS state: running after completing `phase1-turboquant-100k-l2`;
   proceed one cell at a time.
 - Packet 004 benchmark/load status for Task 107 Phase 1 cells: completed
-  `phase1-rabitq-100k-l2` and `phase1-rabitq-1m-l2` with packet-local
-  load/build, storage, recall/latency, and cleanup evidence.
+  `phase1-rabitq-100k-l2`, `phase1-rabitq-1m-l2`, and
+  `phase1-turboquant-100k-l2` with packet-local load/build, storage,
+  recall/latency, and cleanup evidence.
 - Existing completed Task 107 benchmark evidence:
   - Packet 003: RaBitQ 100k distributed, `bits=4`, `local_store_count=1`.
   - Packet 004: RaBitQ 100k single node with 2 disks,
+    `bits=4`, `local_store_count=2`, explicit
+    `local_store_tablespaces=ecaz_spire_store_1,ecaz_spire_store_2`.
+  - Packet 004: TurboQuant 100k single node with 2 disks,
     `bits=4`, `local_store_count=2`, explicit
     `local_store_tablespaces=ecaz_spire_store_1,ecaz_spire_store_2`.
   - Packet 004: the earlier
@@ -61,7 +65,7 @@ at a time.
 | --- | --- | --- | ---: | --- | --- |
 | phase1-rabitq-100k-l2 | 100k | RaBitQ | 2 | Completed in packet 004 corrected direct SSM tablespace run; cleanup completed | `artifacts/phase1-rabitq-100k-l2/direct-ssm-tablespaces/` |
 | phase1-rabitq-1m-l2 | 1m | RaBitQ | 2 | Completed in packet 004 direct SSM tablespace run; cleanup completed | `artifacts/phase1-rabitq-1m-l2/direct-ssm-tablespaces/` |
-| phase1-turboquant-100k-l2 | 100k | TurboQuant | 2 | Not started | `artifacts/phase1-turboquant-100k-l2/` |
+| phase1-turboquant-100k-l2 | 100k | TurboQuant | 2 | Completed in packet 004 direct SSM tablespace run; cleanup completed | `artifacts/phase1-turboquant-100k-l2/direct-ssm-tablespaces/` |
 | phase1-turboquant-1m-l2 | 1m | TurboQuant | 2 | Not started | `artifacts/phase1-turboquant-1m-l2/` |
 
 ### Phase 2 - Multinode With 1 Controller And 2 Nodes
