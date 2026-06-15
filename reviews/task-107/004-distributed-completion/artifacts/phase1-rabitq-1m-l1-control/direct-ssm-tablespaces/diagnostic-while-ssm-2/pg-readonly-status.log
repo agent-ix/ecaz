@@ -1,0 +1,10 @@
+tunnel coordinator ready on port 15432
+tunnel remote-2 ready on port 15433
+tunnel remote-3 ready on port 15434
+2026-06-15 08:43:08.020874+00|activity|12846|active|IO|WalInitSync|INSERT INTO task107_phase1_rabitq_1m_l1_corpus (id, source, embedding)
+             SELECT id, source, encode_to_ecvector(source, 4, 42)
+             FROM ecaz_corpus_stage
+             ORDER BY id
+2026-06-15 08:43:08.020874+00|activity|13263|active|||SELECT now(), 'activity', pid, state, wait_event_type, wait_event, left(query, 240) FROM pg_stat_activity WHERE datname='postgres' AND (query LIKE '%task107_phase1_rabitq_1m_l1%' OR query LIKE '%ecaz corpus%' OR query LIKE '%CREATE INDEX%' 
+2026-06-15 08:43:08.020874+00|relations|task107_phase1_rabitq_1m_l1_corpus|r|16300220416
+2026-06-15 08:43:08.020874+00|relations|task107_phase1_rabitq_1m_l1_corpus_pkey|i|21979136
