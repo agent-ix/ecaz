@@ -619,3 +619,15 @@ The run checklist is `../run-checklist.md`. It enumerates:
     `tuple_transport_status=ready`. Per `../run-checklist.md`, no
     coordinator remote-read suite was run for TurboQuant 100k and
     `phase2-turboquant-1m-l1` was not started.
+  - Root-cause audit: the readiness result matches the checked-in remote
+    search contract, not an AWS setup or packet-script failure.
+    `src/am/ec_spire/coordinator/remote_candidates/endpoint_identity.rs`
+    advertises `quantizer_family` as
+    `rabitq_only_pq_and_pqfastscan_reserved`, maps TurboQuant to
+    `unsupported_turboquant`, and returns
+    `requires_rabitq_storage_format` for non-RaBitQ assignment payloads.
+    `src/tests/remote_search/contracts_libpq.rs` and
+    `src/tests/remote_search/libpq_executor.rs` assert the corresponding
+    fail-closed behavior. Completing the remaining TurboQuant distributed
+    cells therefore requires a product-code change to support TurboQuant
+    remote endpoints before any valid benchmark can be run.
