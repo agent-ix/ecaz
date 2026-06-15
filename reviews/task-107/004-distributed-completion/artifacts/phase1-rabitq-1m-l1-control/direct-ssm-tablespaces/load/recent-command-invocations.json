@@ -1,0 +1,393 @@
+{
+    "CommandInvocations": [
+        {
+            "CommandId": "cedefb52-a83b-4cba-a63b-84e7fcf516fa",
+            "InstanceId": "i-0b4386fa5017f1363",
+            "InstanceName": "ip-10-42-1-154.us-west-2.compute.internal",
+            "Comment": "ecaz Task 107 phase1 rabitq 1m l1 coordinator node suite",
+            "DocumentName": "AWS-RunShellScript",
+            "DocumentVersion": "$DEFAULT",
+            "RequestedDateTime": "2026-06-15T01:27:50.581000-07:00",
+            "Status": "InProgress",
+            "StatusDetails": "InProgress",
+            "StandardOutputUrl": "",
+            "StandardErrorUrl": "",
+            "CommandPlugins": [
+                {
+                    "Name": "aws:runShellScript",
+                    "Status": "InProgress",
+                    "StatusDetails": "InProgress",
+                    "ResponseCode": -1,
+                    "Output": "",
+                    "StandardOutputUrl": "",
+                    "StandardErrorUrl": "",
+                    "OutputS3Region": "",
+                    "OutputS3BucketName": "",
+                    "OutputS3KeyPrefix": ""
+                }
+            ],
+            "ServiceRole": "",
+            "NotificationConfig": {
+                "NotificationArn": "",
+                "NotificationEvents": [],
+                "NotificationType": ""
+            },
+            "CloudWatchOutputConfig": {
+                "CloudWatchLogGroupName": "",
+                "CloudWatchOutputEnabled": false
+            }
+        },
+        {
+            "CommandId": "05ec8aeb-f829-408e-90eb-0e381a478989",
+            "InstanceId": "i-0b4386fa5017f1363",
+            "InstanceName": "ip-10-42-1-154.us-west-2.compute.internal",
+            "Comment": "ecaz Task 107 phase1 rabitq 100k l2 tablespace load",
+            "DocumentName": "AWS-RunShellScript",
+            "DocumentVersion": "$DEFAULT",
+            "RequestedDateTime": "2026-06-14T23:28:10.092000-07:00",
+            "Status": "Success",
+            "StatusDetails": "Success",
+            "StandardOutputUrl": "https://s3.us-west-2.amazonaws.com/ecaz-spire-aws-20260614203301860100000009/task107/004/phase1-rabitq-100k-l2/direct-ssm-tablespaces/ssm/05ec8aeb-f829-408e-90eb-0e381a478989/i-0b4386fa5017f1363/awsrunShellScript/0.awsrunShellScript/stdout",
+            "StandardErrorUrl": "https://s3.us-west-2.amazonaws.com/ecaz-spire-aws-20260614203301860100000009/task107/004/phase1-rabitq-100k-l2/direct-ssm-tablespaces/ssm/05ec8aeb-f829-408e-90eb-0e381a478989/i-0b4386fa5017f1363/awsrunShellScript/0.awsrunShellScript/stderr",
+            "CommandPlugins": [
+                {
+                    "Name": "aws:runShellScript",
+                    "Status": "Success",
+                    "StatusDetails": "Success",
+                    "ResponseCode": 0,
+                    "ResponseStartDateTime": "2026-06-14T23:28:10.204000-07:00",
+                    "ResponseFinishDateTime": "2026-06-14T23:31:11.035000-07:00",
+                    "Output": "step=preflight\nstep=download-corpus\nCompleted 256.0 KiB/2.0 GiB (1.3 MiB/s) with 1 file(s) remaining\rCompleted 512.0 KiB/2.0 GiB (2.6 MiB/s) with 1 file(s) remaining\rCompleted 768.0 KiB/2.0 GiB (3.9 MiB/s) with 1 file(s) remaining\rCompleted 1.0 MiB/2.0 GiB (5.1 MiB/s) with 1 file(s) remaining  \rCompleted 1.2 MiB/2.0 GiB (6.4 MiB/s) with 1 file(s) remaining  \rCompleted 1.5 MiB/2.0 GiB (7.7 MiB/s) with 1 file(s) remaining  \rCompleted 1.8 MiB/2.0 GiB (8.8 MiB/s) with 1 file(s) remaining  \rCompleted 2.0 MiB/2.0 GiB (10.0 MiB/s) with 1 file(s) remaining \rCompleted 2.2 MiB/2.0 GiB (11.2 MiB/s) with 1 file(s) remaining \rCompleted 2.5 MiB/2.0 GiB (12.4 MiB/s) with 1 file(s) remaining \rCompleted 2.8 MiB/2.0 GiB (13.6 MiB/s) with 1 file(s) remaining \rCompleted 3.0 MiB/2.0 GiB (14.8 MiB/s) with 1 file(s) remaining \rCompleted 3.2 MiB/2.0 GiB (16.0 MiB/s) with 1 file(s) remaining \rCompleted 3.5 MiB/2.0 GiB (17.2 MiB/s) with 1 file(s) remaining \rCompleted 3.8 MiB/2.0 GiB (18.3 MiB/s) with 1 file(s) remaining \rCompleted 4.0 MiB/2.0 GiB (19.4 MiB/s) with 1 file(s) remaining \rCompleted 4.2 MiB/2.0 GiB (20.3 MiB/s) with 1 file(s) remaining \rCompleted 4.5 MiB/2.0 GiB (21.4 MiB/s) with 1 file(s) remaining \rCompleted 4.8 MiB/2.\n---Output truncated---\n----------ERROR-------\n[loader] inspecting /var/tmp/ecaz-task107-phase1-rabitq-100k-l2-tablespaces/ec_real_100k_corpus.tsv\n[loader] inspecting /var/tmp/ecaz-task107-phase1-rabitq-100k-l2-tablespaces/ec_real_100k_queries.tsv\n[loader] corpus: 100000 rows, sha256=07275cfd5a7a4b415ddf5eacc086de98294ac978532df46ffae30f9202323a95  queries: 1000 rows, sha256=a7cbec6fc44f6c148234538f61339d00d2f10646febc8f667dcbe75d9cf41782\n[loader] warning: manifest verification failed for /var/tmp/ecaz-task107-phase1-rabitq-100k-l2-tablespaces/ec_real_100k_manifest.json: prefix=\"ec_real_100k\" (expected \"task107_phase1_rabitq_100k_l2\")\n[loader] copied corpus table task107_phase1_rabitq_100k_l2_corpus in 32.26s\n[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...\n[loader] encoded corpus table task107_phase1_rabitq_100k_l2_corpus in 33.77s\n[loader] copied queries table task107_phase1_rabitq_100k_l2_queries in 346.55ms\n[loader] building task107_phase1_rabitq_100k_l2_idx using ec_spire (reloptions=[local_store_count=2, local_store_tablespaces=ecaz_spire_store_1,ecaz_spire_store_2, storage_format=rabitq]) ...\n[loader] built task107_phase1_rabitq_100k_l2_idx in 89.72s\n[loader] completed prefix task107_phase1_rabitq_100k_l2 in 168.94s\n",
+                    "StandardOutputUrl": "https://s3.us-west-2.amazonaws.com/ecaz-spire-aws-20260614203301860100000009/task107/004/phase1-rabitq-100k-l2/direct-ssm-tablespaces/ssm/05ec8aeb-f829-408e-90eb-0e381a478989/i-0b4386fa5017f1363/awsrunShellScript/0.awsrunShellScript/stdout",
+                    "StandardErrorUrl": "https://s3.us-west-2.amazonaws.com/ecaz-spire-aws-20260614203301860100000009/task107/004/phase1-rabitq-100k-l2/direct-ssm-tablespaces/ssm/05ec8aeb-f829-408e-90eb-0e381a478989/i-0b4386fa5017f1363/awsrunShellScript/0.awsrunShellScript/stderr",
+                    "OutputS3Region": "us-west-2",
+                    "OutputS3BucketName": "ecaz-spire-aws-20260614203301860100000009",
+                    "OutputS3KeyPrefix": "task107/004/phase1-rabitq-100k-l2/direct-ssm-tablespaces/ssm/05ec8aeb-f829-408e-90eb-0e381a478989/i-0b4386fa5017f1363/awsrunShellScript"
+                }
+            ],
+            "ServiceRole": "",
+            "NotificationConfig": {
+                "NotificationArn": "",
+                "NotificationEvents": [],
+                "NotificationType": ""
+            },
+            "CloudWatchOutputConfig": {
+                "CloudWatchLogGroupName": "",
+                "CloudWatchOutputEnabled": false
+            }
+        },
+        {
+            "CommandId": "67e1b2e7-5ac9-4bf8-a66d-75c7e35cddda",
+            "InstanceId": "i-0b4386fa5017f1363",
+            "InstanceName": "ip-10-42-1-154.us-west-2.compute.internal",
+            "Comment": "task107 phase1 rabitq 100k l1 node-local load",
+            "DocumentName": "AWS-RunShellScript",
+            "DocumentVersion": "$DEFAULT",
+            "RequestedDateTime": "2026-06-14T21:06:07.335000-07:00",
+            "Status": "Failed",
+            "StatusDetails": "Failed",
+            "StandardOutputUrl": "https://s3.us-west-2.amazonaws.com/ecaz-spire-aws-20260614203301860100000009/task107/004/phase1-rabitq-100k-l1-control/retry-node-local/ssm/67e1b2e7-5ac9-4bf8-a66d-75c7e35cddda/i-0b4386fa5017f1363/awsrunShellScript/0.awsrunShellScript/stdout",
+            "StandardErrorUrl": "https://s3.us-west-2.amazonaws.com/ecaz-spire-aws-20260614203301860100000009/task107/004/phase1-rabitq-100k-l1-control/retry-node-local/ssm/67e1b2e7-5ac9-4bf8-a66d-75c7e35cddda/i-0b4386fa5017f1363/awsrunShellScript/0.awsrunShellScript/stderr",
+            "CommandPlugins": [
+                {
+                    "Name": "aws:runShellScript",
+                    "Status": "Failed",
+                    "StatusDetails": "Failed",
+                    "ResponseCode": 3,
+                    "ResponseStartDateTime": "2026-06-14T21:06:07.591000-07:00",
+                    "ResponseFinishDateTime": "2026-06-14T21:06:15.958000-07:00",
+                    "Output": "Completed 256.0 KiB/2.0 GiB (1.4 MiB/s) with 1 file(s) remaining\rCompleted 512.0 KiB/2.0 GiB (2.9 MiB/s) with 1 file(s) remaining\rCompleted 768.0 KiB/2.0 GiB (4.3 MiB/s) with 1 file(s) remaining\rCompleted 1.0 MiB/2.0 GiB (5.7 MiB/s) with 1 file(s) remaining  \rCompleted 1.2 MiB/2.0 GiB (7.1 MiB/s) with 1 file(s) remaining  \rCompleted 1.5 MiB/2.0 GiB (8.6 MiB/s) with 1 file(s) remaining  \rCompleted 1.8 MiB/2.0 GiB (10.0 MiB/s) with 1 file(s) remaining \rCompleted 2.0 MiB/2.0 GiB (11.4 MiB/s) with 1 file(s) remaining \rCompleted 2.2 MiB/2.0 GiB (12.8 MiB/s) with 1 file(s) remaining \rCompleted 2.5 MiB/2.0 GiB (14.1 MiB/s) with 1 file(s) remaining \rCompleted 2.8 MiB/2.0 GiB (15.5 MiB/s) with 1 file(s) remaining \rCompleted 3.0 MiB/2.0 GiB (16.8 MiB/s) with 1 file(s) remaining \rCompleted 3.2 MiB/2.0 GiB (18.1 MiB/s) with 1 file(s) remaining \rCompleted 3.5 MiB/2.0 GiB (19.4 MiB/s) with 1 file(s) remaining \rCompleted 3.8 MiB/2.0 GiB (20.7 MiB/s) with 1 file(s) remaining \rCompleted 4.0 MiB/2.0 GiB (22.0 MiB/s) with 1 file(s) remaining \rCompleted 4.2 MiB/2.0 GiB (23.3 MiB/s) with 1 file(s) remaining \rCompleted 4.5 MiB/2.0 GiB (24.5 MiB/s) with 1 file(s) remaining \rCompleted 4.8 MiB/2.0 GiB (25.8 MiB/s) with 1 file(s) remaining \rCompleted 5.0 MiB/2.0 GiB (27.0 MiB/s) with 1 file(s) remaining \rCompleted 5.2 MiB/2.0 GiB (28.3 MiB/s) with 1 file(s) remaining \rCompleted 5.5 MiB/2.0 GiB (29.5 MiB/s) with 1 file(s) remaining \rCompleted 5.8 MiB/2.0 GiB (30.6 MiB/s) with 1 file(s) remaining \rCompleted 6.0 MiB/2.0 GiB (31.8 MiB/s) with 1 file(s) remaining \rCompleted 6.2 MiB/2.0 GiB (33.0 MiB/s) with 1 file(s) remaining \rCompleted 6.5 MiB/2.0 GiB (34.3 MiB/s) with 1 file(s) remaining \rCompleted 6.8 MiB/2.0 GiB (35.5 MiB/s) with 1 file(s) remaining \rCompleted 7.0 MiB/2.0 GiB (36.6 MiB/s) with 1 file(s) remaining \rCompleted 7.2 MiB/2.0 GiB (37.8 MiB/s) with 1 file(s) remaining \rCompleted 7.5 MiB/2.0 GiB (39.1 MiB/s) with 1 file(s) remaining \rCompleted 7.8 MiB/2.0 GiB (40.1 MiB/s) with 1 file(s) remaining \rCompleted 8.0 MiB/2.0 GiB (41.3 MiB/s) with 1 file(s) remaining \rCompleted 8.2 MiB/2.0 GiB (42.5 MiB/s) with 1 file(s) remaining \rCompleted 8.5 MiB/2.0 GiB (43.8 MiB/s) with 1 file(s) remaining \rCompleted 8.8 MiB/2.0 GiB (45.0 MiB/s) with 1 file(s) remaining \rCompleted 9.0 MiB/2.0 GiB (46.1 MiB/s) with 1 file(s) remaining \rCompleted 9.2 MiB/2.0 GiB (47.0 MiB/s) with 1 file(s) remaining \rCompleted 9\n---Output truncated---\n----------ERROR-------\nfailed to run commands: exit status 3",
+                    "StandardOutputUrl": "https://s3.us-west-2.amazonaws.com/ecaz-spire-aws-20260614203301860100000009/task107/004/phase1-rabitq-100k-l1-control/retry-node-local/ssm/67e1b2e7-5ac9-4bf8-a66d-75c7e35cddda/i-0b4386fa5017f1363/awsrunShellScript/0.awsrunShellScript/stdout",
+                    "StandardErrorUrl": "https://s3.us-west-2.amazonaws.com/ecaz-spire-aws-20260614203301860100000009/task107/004/phase1-rabitq-100k-l1-control/retry-node-local/ssm/67e1b2e7-5ac9-4bf8-a66d-75c7e35cddda/i-0b4386fa5017f1363/awsrunShellScript/0.awsrunShellScript/stderr",
+                    "OutputS3Region": "us-west-2",
+                    "OutputS3BucketName": "ecaz-spire-aws-20260614203301860100000009",
+                    "OutputS3KeyPrefix": "task107/004/phase1-rabitq-100k-l1-control/retry-node-local/ssm/67e1b2e7-5ac9-4bf8-a66d-75c7e35cddda/i-0b4386fa5017f1363/awsrunShellScript"
+                }
+            ],
+            "ServiceRole": "",
+            "NotificationConfig": {
+                "NotificationArn": "",
+                "NotificationEvents": [],
+                "NotificationType": ""
+            },
+            "CloudWatchOutputConfig": {
+                "CloudWatchLogGroupName": "",
+                "CloudWatchOutputEnabled": false
+            }
+        },
+        {
+            "CommandId": "a9279093-aeab-493c-98bf-64ebddde4713",
+            "InstanceId": "i-0b4386fa5017f1363",
+            "InstanceName": "ip-10-42-1-154.us-west-2.compute.internal",
+            "Comment": "task107 inspect postgres restart hang",
+            "DocumentName": "AWS-RunShellScript",
+            "DocumentVersion": "$DEFAULT",
+            "RequestedDateTime": "2026-06-14T19:35:14.855000-07:00",
+            "Status": "Success",
+            "StatusDetails": "Success",
+            "StandardOutputUrl": "",
+            "StandardErrorUrl": "",
+            "CommandPlugins": [
+                {
+                    "Name": "aws:runShellScript",
+                    "Status": "Success",
+                    "StatusDetails": "Success",
+                    "ResponseCode": 0,
+                    "ResponseStartDateTime": "2026-06-14T19:35:14.974000-07:00",
+                    "ResponseFinishDateTime": "2026-06-14T19:35:15.089000-07:00",
+                    "Output": "● postgresql.service - PostgreSQL database server\n     Loaded: loaded (/usr/lib/systemd/system/postgresql.service; enabled; preset: disabled)\n    Drop-In: /etc/systemd/system/postgresql.service.d\n             └─10-ecaz-spire-remote-conninfo.conf\n     Active: deactivating (stop-sigterm) since Mon 2026-06-15 02:34:05 UTC; 1min 9s ago\n    Process: 44236 ExecStartPre=/usr/libexec/postgresql-check-db-dir postgresql (code=exited, status=0/SUCCESS)\n   Main PID: 44238 (postgres)\n      Tasks: 23 (limit: 151718)\n     Memory: 40.5G\n        CPU: 2h 52min 14.533s\n     CGroup: /system.slice/postgresql.service\n             ├─44238 /usr/bin/postgres -D /var/lib/pgsql/data\n             ├─44239 \"postgres: logger \"\n             ├─44240 \"postgres: io worker 0\"\n             ├─44241 \"postgres: io worker 1\"\n             ├─44242 \"postgres: io worker 2\"\n             ├─44243 \"postgres: checkpointer \"\n             └─54643 \"postgres: ecaz_coord postgres 127.0.0.1(54922) CREATE INDEX\"\n\nJun 14 20:54:47 ip-10-42-1-154.us-west-2.compute.internal systemd[1]: Starting postgresql.service - PostgreSQL database server...\nJun 14 20:54:47 ip-10-42-1-154.us-west-2.compute.internal postgres[44238]: 2026-06-14 20:54:47.925 UTC [44238] LOG:  registered custom cumulative statistics \"ecaz\" with ID 25\nJun 14 20:54:48 ip-10-42-1-154.us-west-2.compute.internal postgres[44238]: 2026-06-14 20:54:48.182 UTC [44238] LOG:  redirecting log output to logging collector process\nJun 14 20:54:48 ip-10-42-1-154.us-west-2.compute.internal postgres[44238]: 2026-06-14 20:54:48.182 UTC [44238] HINT:  Future log output will appear in directory \"log\".\nJun 14 20:54:48 ip-10-42-1-154.us-west-2.compute.internal systemd[1]: Started postgresql.service - PostgreSQL database server.\nJun 15 02:34:05 ip-10-42-1-154.us-west-2.compute.internal systemd[1]: Stopping postgresql.service - PostgreSQL database server...\n    PID    PPID STAT     ELAPSED CMD\n  44238       1 Ss      05:40:27 /usr/bin/postgres -D /var/lib/pgsql/data\n  44239   44238 Ss      05:40:27 postgres: logger \n  44240   44238 Ss      05:40:27 postgres: io worker 0\n  44241   44238 Ss      05:40:27 postgres: io worker 1\n  44242   44238 Ss      05:40:27 postgres: io worker 2\n  44243   44238 Ss      05:40:27 postgres: checkpointer \n  54643   44238 Rsl        33:10 postgres: ecaz_coord postgres 127.0.0.1(54922) CREATE INDEX\n",
+                    "StandardOutputUrl": "",
+                    "StandardErrorUrl": "",
+                    "OutputS3Region": "us-west-2",
+                    "OutputS3BucketName": "",
+                    "OutputS3KeyPrefix": ""
+                }
+            ],
+            "ServiceRole": "",
+            "NotificationConfig": {
+                "NotificationArn": "",
+                "NotificationEvents": [],
+                "NotificationType": ""
+            },
+            "CloudWatchOutputConfig": {
+                "CloudWatchLogGroupName": "",
+                "CloudWatchOutputEnabled": false
+            }
+        },
+        {
+            "CommandId": "a964ff00-f47f-4770-b871-d6ab4e1543e5",
+            "InstanceId": "i-0b4386fa5017f1363",
+            "InstanceName": "ip-10-42-1-154.us-west-2.compute.internal",
+            "Comment": "ecaz Phase 13e node-local coordinator load representative",
+            "DocumentName": "AWS-RunShellScript",
+            "DocumentVersion": "$DEFAULT",
+            "RequestedDateTime": "2026-06-14T18:59:11.417000-07:00",
+            "Status": "Cancelled",
+            "StatusDetails": "Cancelled",
+            "StandardOutputUrl": "https://s3.us-west-2.amazonaws.com/ecaz-spire-aws-20260614203301860100000009/spire-aws/load-ssm/a964ff00-f47f-4770-b871-d6ab4e1543e5/i-0b4386fa5017f1363/awsrunShellScript/0.awsrunShellScript/stdout",
+            "StandardErrorUrl": "https://s3.us-west-2.amazonaws.com/ecaz-spire-aws-20260614203301860100000009/spire-aws/load-ssm/a964ff00-f47f-4770-b871-d6ab4e1543e5/i-0b4386fa5017f1363/awsrunShellScript/0.awsrunShellScript/stderr",
+            "CommandPlugins": [
+                {
+                    "Name": "aws:runShellScript",
+                    "Status": "Cancelled",
+                    "StatusDetails": "Cancelled",
+                    "ResponseCode": 137,
+                    "ResponseStartDateTime": "2026-06-14T18:59:11.530000-07:00",
+                    "ResponseFinishDateTime": "2026-06-14T19:24:59.030000-07:00",
+                    "Output": "Filesystem      Size  Used Avail Use% Mounted on\n/dev/nvme0n1p1  400G  9.1G  391G   3% /\nCompleted 256.0 KiB/19.5 GiB (1.2 MiB/s) with 1 file(s) remaining\rCompleted 512.0 KiB/19.5 GiB (2.4 MiB/s) with 1 file(s) remaining\rCompleted 768.0 KiB/19.5 GiB (3.6 MiB/s) with 1 file(s) remaining\rCompleted 1.0 MiB/19.5 GiB (4.8 MiB/s) with 1 file(s) remaining  \rCompleted 1.2 MiB/19.5 GiB (5.9 MiB/s) with 1 file(s) remaining  \rCompleted 1.5 MiB/19.5 GiB (7.1 MiB/s) with 1 file(s) remaining  \rCompleted 1.8 MiB/19.5 GiB (8.3 MiB/s) with 1 file(s) remaining  \rCompleted 2.0 MiB/19.5 GiB (9.5 MiB/s) with 1 file(s) remaining  \rCompleted 2.2 MiB/19.5 GiB (10.6 MiB/s) with 1 file(s) remaining \rCompleted 2.5 MiB/19.5 GiB (11.8 MiB/s) with 1 file(s) remaining \rCompleted 2.8 MiB/19.5 GiB (12.9 MiB/s) with 1 file(s) remaining \rCompleted 3.0 MiB/19.5 GiB (14.1 MiB/s) with 1 file(s) remaining \rCompleted 3.2 MiB/19.5 GiB (15.2 MiB/s) with 1 file(s) remaining \rCompleted 3.5 MiB/19.5 GiB (16.4 MiB/s) with 1 file(s) remaining \rCompleted 3.8 MiB/19.5 GiB (17.5 MiB/s) with 1 file(s) remaining \rCompleted 4.0 MiB/19.5 GiB (18.7 MiB/s) with 1 file(s) remaining \rCompleted 4.2 MiB/19.5 GiB (19.8 MiB/s) with 1 file(s) remaining \rCompleted 4.5 MiB/19.5 GiB (20.9 MiB/s) with 1 file(s) remaining \rCompleted 4.8 MiB/19.5 GiB (22.0 MiB/s) with 1 file(s) remaining \rCompleted 5.0 MiB/19.5 GiB (23.2 MiB/s) with 1 fi\n---Output truncated---\n----------ERROR-------\n[loader] inspecting /var/tmp/ecaz-spire-aws-load/representative/coordinator/ec_real_ann_benchmarks_anchor_corpus.tsv\n[loader] inspecting /var/tmp/ecaz-spire-aws-load/representative/coordinator/ec_real_ann_benchmarks_anchor_queries.tsv\n[loader] corpus: 990000 rows, sha256=00d96d7665edc31cd8e4e62712c0ef2679fb714682f3ce4d522305e59faec687  queries: 10000 rows, sha256=34c4874e0e35734574f4ee9e1dd10753fcec2d295955061a407c258df163f5a0\n[loader] warning: manifest verification failed for /var/tmp/ecaz-spire-aws-load/representative/coordinator/ec_real_ann_benchmarks_anchor_manifest.json: prefix=\"ec_real_ann_benchmarks_anchor\" (expected \"task107_rabitq_1m_l1\")\n[loader] copied corpus table task107_rabitq_1m_l1_corpus in 318.45s\n[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...\n[loader] encoded corpus table task107_rabitq_1m_l1_corpus in 429.44s\n[loader] copied queries table task107_rabitq_1m_l1_queries in 3.35s\n[loader] building task107_rabitq_1m_l1_idx using ec_spire (reloptions=[local_store_count=1, storage_format=rabitq]) ...\n",
+                    "StandardOutputUrl": "https://s3.us-west-2.amazonaws.com/ecaz-spire-aws-20260614203301860100000009/spire-aws/load-ssm/a964ff00-f47f-4770-b871-d6ab4e1543e5/i-0b4386fa5017f1363/awsrunShellScript/0.awsrunShellScript/stdout",
+                    "StandardErrorUrl": "https://s3.us-west-2.amazonaws.com/ecaz-spire-aws-20260614203301860100000009/spire-aws/load-ssm/a964ff00-f47f-4770-b871-d6ab4e1543e5/i-0b4386fa5017f1363/awsrunShellScript/0.awsrunShellScript/stderr",
+                    "OutputS3Region": "us-west-2",
+                    "OutputS3BucketName": "ecaz-spire-aws-20260614203301860100000009",
+                    "OutputS3KeyPrefix": "spire-aws/load-ssm/a964ff00-f47f-4770-b871-d6ab4e1543e5/i-0b4386fa5017f1363/awsrunShellScript"
+                }
+            ],
+            "ServiceRole": "",
+            "NotificationConfig": {
+                "NotificationArn": "",
+                "NotificationEvents": [],
+                "NotificationType": ""
+            },
+            "CloudWatchOutputConfig": {
+                "CloudWatchLogGroupName": "",
+                "CloudWatchOutputEnabled": false
+            }
+        },
+        {
+            "CommandId": "25dc13ea-03e9-4df1-ac36-f72c6689913b",
+            "InstanceId": "i-0b4386fa5017f1363",
+            "InstanceName": "ip-10-42-1-154.us-west-2.compute.internal",
+            "Comment": "",
+            "DocumentName": "AWS-RunShellScript",
+            "DocumentVersion": "$DEFAULT",
+            "RequestedDateTime": "2026-06-14T16:36:47.312000-07:00",
+            "Status": "Failed",
+            "StatusDetails": "Failed",
+            "StandardOutputUrl": "",
+            "StandardErrorUrl": "",
+            "CommandPlugins": [
+                {
+                    "Name": "aws:runShellScript",
+                    "Status": "Failed",
+                    "StatusDetails": "Failed",
+                    "ResponseCode": 1,
+                    "ResponseStartDateTime": "2026-06-14T16:36:47.418000-07:00",
+                    "ResponseFinishDateTime": "2026-06-14T16:36:47.422000-07:00",
+                    "Output": "Filesystem      Size  Used Avail Use% Mounted on\n/dev/nvme0n1p1  400G  9.1G  391G   3% /\n/dev/nvme3n1    200G  1.5G  199G   1% /var/lib/ecaz-spire-store-1\n/dev/nvme2n1    200G  1.5G  199G   1% /var/lib/ecaz-spire-store-2\n/dev/nvme4n1    200G  1.5G  199G   1% /var/lib/ecaz-spire-store-3\n/dev/nvme1n1    200G  1.5G  199G   1% /var/lib/ecaz-spire-store-4\n\n----------ERROR-------\ndf: /var/lib/postgresql/18/main: No such file or directory\nfailed to run commands: exit status 1",
+                    "StandardOutputUrl": "",
+                    "StandardErrorUrl": "",
+                    "OutputS3Region": "us-west-2",
+                    "OutputS3BucketName": "",
+                    "OutputS3KeyPrefix": ""
+                }
+            ],
+            "ServiceRole": "",
+            "NotificationConfig": {
+                "NotificationArn": "",
+                "NotificationEvents": [],
+                "NotificationType": ""
+            },
+            "CloudWatchOutputConfig": {
+                "CloudWatchLogGroupName": "",
+                "CloudWatchOutputEnabled": false
+            }
+        },
+        {
+            "CommandId": "064cb815-5774-4019-a94d-0554415b5dab",
+            "InstanceId": "i-0b4386fa5017f1363",
+            "InstanceName": "ip-10-42-1-154.us-west-2.compute.internal",
+            "Comment": "ecaz Phase 13e node-local coordinator load representative",
+            "DocumentName": "AWS-RunShellScript",
+            "DocumentVersion": "$DEFAULT",
+            "RequestedDateTime": "2026-06-14T15:44:59.489000-07:00",
+            "Status": "Success",
+            "StatusDetails": "Success",
+            "StandardOutputUrl": "https://s3.us-west-2.amazonaws.com/ecaz-spire-aws-20260614203301860100000009/spire-aws/load-ssm/064cb815-5774-4019-a94d-0554415b5dab/i-0b4386fa5017f1363/awsrunShellScript/0.awsrunShellScript/stdout",
+            "StandardErrorUrl": "https://s3.us-west-2.amazonaws.com/ecaz-spire-aws-20260614203301860100000009/spire-aws/load-ssm/064cb815-5774-4019-a94d-0554415b5dab/i-0b4386fa5017f1363/awsrunShellScript/0.awsrunShellScript/stderr",
+            "CommandPlugins": [
+                {
+                    "Name": "aws:runShellScript",
+                    "Status": "Success",
+                    "StatusDetails": "Success",
+                    "ResponseCode": 0,
+                    "ResponseStartDateTime": "2026-06-14T15:44:59.597000-07:00",
+                    "ResponseFinishDateTime": "2026-06-14T15:47:52.565000-07:00",
+                    "Output": "Filesystem      Size  Used Avail Use% Mounted on\n/dev/nvme0n1p1  400G  9.1G  391G   3% /\nCompleted 256.0 KiB/2.0 GiB (1.5 MiB/s) with 1 file(s) remaining\rCompleted 512.0 KiB/2.0 GiB (3.0 MiB/s) with 1 file(s) remaining\rCompleted 768.0 KiB/2.0 GiB (4.4 MiB/s) with 1 file(s) remaining\rCompleted 1.0 MiB/2.0 GiB (5.8 MiB/s) with 1 file(s) remaining  \rCompleted 1.2 MiB/2.0 GiB (7.3 MiB/s) with 1 file(s) remaining  \rCompleted 1.5 MiB/2.0 GiB (8.7 MiB/s) with 1 file(s) remaining  \rCompleted 1.8 MiB/2.0 GiB (10.1 MiB/s) with 1 file(s) remaining \rCompleted 2.0 MiB/2.0 GiB (11.5 MiB/s) with 1 file(s) remaining \rCompleted 2.2 MiB/2.0 GiB (13.0 MiB/s) with 1 file(s) remaining \rCompleted 2.5 MiB/2.0 GiB (14.4 MiB/s) with 1 file(s) remaining \rCompleted 2.8 MiB/2.0 GiB (15.8 MiB/s) with 1 file(s) remaining \rCompleted 3.0 MiB/2.0 GiB (17.2 MiB/s) with 1 file(s) remaining \rCompleted 3.2 MiB/2.0 GiB (18.6 MiB/s) with 1 file(s) remaining \rCompleted 3.5 MiB/2.0 GiB (19.9 MiB/s) with 1 file(s) remaining \rCompleted 3.8 MiB/2.0 GiB (21.3 MiB/s) with 1 file(s) remaining \rCompleted 4.0 MiB/2.0 GiB (22.7 MiB/s) with 1 file(s) remaining \rCompleted 4.2 MiB/2.0 GiB (24.0 MiB/s) with 1 file(s) remaining \rCompleted 4.5 MiB/2.0 GiB (25.2 MiB/s) with\n---Output truncated---\n----------ERROR-------\n[loader] inspecting /var/tmp/ecaz-spire-aws-load/representative/coordinator/ec_real_100k_corpus.tsv\n[loader] inspecting /var/tmp/ecaz-spire-aws-load/representative/coordinator/ec_real_100k_queries.tsv\n[loader] corpus: 100000 rows, sha256=07275cfd5a7a4b415ddf5eacc086de98294ac978532df46ffae30f9202323a95  queries: 1000 rows, sha256=a7cbec6fc44f6c148234538f61339d00d2f10646febc8f667dcbe75d9cf41782\n[loader] warning: manifest verification failed for /var/tmp/ecaz-spire-aws-load/representative/coordinator/ec_real_100k_manifest.json: prefix=\"ec_real_100k\" (expected \"task107_rabitq_100k_l4\")\n[loader] copied corpus table task107_rabitq_100k_l4_corpus in 32.15s\n[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...\n[loader] encoded corpus table task107_rabitq_100k_l4_corpus in 28.86s\n[loader] copied queries table task107_rabitq_100k_l4_queries in 534.04ms\n[loader] building task107_rabitq_100k_l4_idx using ec_spire (reloptions=[local_store_count=4, local_store_tablespaces=ecaz_spire_store_1,ecaz_spire_store_2,ecaz_spire_store_3,ecaz_spire_store_4, storage_format=rabitq]) ...\n[loader] built task107_rabitq_100k_l4_idx in 90.64s\n[loader] completed prefix task107_rabitq_100k_l4 in 165.66s\n",
+                    "StandardOutputUrl": "https://s3.us-west-2.amazonaws.com/ecaz-spire-aws-20260614203301860100000009/spire-aws/load-ssm/064cb815-5774-4019-a94d-0554415b5dab/i-0b4386fa5017f1363/awsrunShellScript/0.awsrunShellScript/stdout",
+                    "StandardErrorUrl": "https://s3.us-west-2.amazonaws.com/ecaz-spire-aws-20260614203301860100000009/spire-aws/load-ssm/064cb815-5774-4019-a94d-0554415b5dab/i-0b4386fa5017f1363/awsrunShellScript/0.awsrunShellScript/stderr",
+                    "OutputS3Region": "us-west-2",
+                    "OutputS3BucketName": "ecaz-spire-aws-20260614203301860100000009",
+                    "OutputS3KeyPrefix": "spire-aws/load-ssm/064cb815-5774-4019-a94d-0554415b5dab/i-0b4386fa5017f1363/awsrunShellScript"
+                }
+            ],
+            "ServiceRole": "",
+            "NotificationConfig": {
+                "NotificationArn": "",
+                "NotificationEvents": [],
+                "NotificationType": ""
+            },
+            "CloudWatchOutputConfig": {
+                "CloudWatchLogGroupName": "",
+                "CloudWatchOutputEnabled": false
+            }
+        },
+        {
+            "CommandId": "606c196a-f1a5-4599-b334-ed16d6d1f8a0",
+            "InstanceId": "i-0b4386fa5017f1363",
+            "InstanceName": "ip-10-42-1-154.us-west-2.compute.internal",
+            "Comment": "ecaz Task 107 coordinator local-store tablespaces",
+            "DocumentName": "AWS-RunShellScript",
+            "DocumentVersion": "$DEFAULT",
+            "RequestedDateTime": "2026-06-14T13:53:54.124000-07:00",
+            "Status": "Failed",
+            "StatusDetails": "Failed",
+            "StandardOutputUrl": "https://s3.us-west-2.amazonaws.com/ecaz-spire-aws-20260614203301860100000009/spire-aws/setup-coordinator-store-volumes/606c196a-f1a5-4599-b334-ed16d6d1f8a0/i-0b4386fa5017f1363/awsrunShellScript/0.awsrunShellScript/stdout",
+            "StandardErrorUrl": "https://s3.us-west-2.amazonaws.com/ecaz-spire-aws-20260614203301860100000009/spire-aws/setup-coordinator-store-volumes/606c196a-f1a5-4599-b334-ed16d6d1f8a0/i-0b4386fa5017f1363/awsrunShellScript/0.awsrunShellScript/stderr",
+            "CommandPlugins": [
+                {
+                    "Name": "aws:runShellScript",
+                    "Status": "Failed",
+                    "StatusDetails": "Failed",
+                    "ResponseCode": 1,
+                    "ResponseStartDateTime": "2026-06-14T13:53:54.249000-07:00",
+                    "ResponseFinishDateTime": "2026-06-14T13:53:55.116000-07:00",
+                    "Output": "Last metadata expiration check: 0:12:56 ago on Sun Jun 14 20:40:58 2026.\nPackage xfsprogs-6.12.0-3.amzn2023.0.1.aarch64 is already installed.\nPackage nvme-cli-2.13-1.amzn2023.0.3.aarch64 is already installed.\nDependencies resolved.\nNothing to do.\nComplete!\nconfiguring volume_id=vol-0a88f5453ae4bcdca tablespace=ecaz_spire_store_1\n\n----------ERROR-------\nERROR:  syntax error at or near \":\"\nLINE 1: SELECT 1 FROM pg_tablespace WHERE spcname = :'ts'\n                                                    ^\nERROR:  syntax error at or near \":\"\nLINE 1: CREATE TABLESPACE :\"ts\" LOCATION :'loc'\n                          ^\nfailed to run commands: exit status 1",
+                    "StandardOutputUrl": "https://s3.us-west-2.amazonaws.com/ecaz-spire-aws-20260614203301860100000009/spire-aws/setup-coordinator-store-volumes/606c196a-f1a5-4599-b334-ed16d6d1f8a0/i-0b4386fa5017f1363/awsrunShellScript/0.awsrunShellScript/stdout",
+                    "StandardErrorUrl": "https://s3.us-west-2.amazonaws.com/ecaz-spire-aws-20260614203301860100000009/spire-aws/setup-coordinator-store-volumes/606c196a-f1a5-4599-b334-ed16d6d1f8a0/i-0b4386fa5017f1363/awsrunShellScript/0.awsrunShellScript/stderr",
+                    "OutputS3Region": "us-west-2",
+                    "OutputS3BucketName": "ecaz-spire-aws-20260614203301860100000009",
+                    "OutputS3KeyPrefix": "spire-aws/setup-coordinator-store-volumes/606c196a-f1a5-4599-b334-ed16d6d1f8a0/i-0b4386fa5017f1363/awsrunShellScript"
+                }
+            ],
+            "ServiceRole": "",
+            "NotificationConfig": {
+                "NotificationArn": "",
+                "NotificationEvents": [],
+                "NotificationType": ""
+            },
+            "CloudWatchOutputConfig": {
+                "CloudWatchLogGroupName": "",
+                "CloudWatchOutputEnabled": false
+            }
+        },
+        {
+            "CommandId": "d4af80fa-4133-448c-86c3-f4a8b844c66f",
+            "InstanceId": "i-0b4386fa5017f1363",
+            "InstanceName": "ip-10-42-1-154.us-west-2.compute.internal",
+            "Comment": "ecaz Task 107 coordinator local-store tablespaces",
+            "DocumentName": "AWS-RunShellScript",
+            "DocumentVersion": "$DEFAULT",
+            "RequestedDateTime": "2026-06-14T13:52:51.057000-07:00",
+            "Status": "Failed",
+            "StatusDetails": "Failed",
+            "StandardOutputUrl": "https://s3.us-west-2.amazonaws.com/ecaz-spire-aws-20260614203301860100000009/spire-aws/setup-coordinator-store-volumes/d4af80fa-4133-448c-86c3-f4a8b844c66f/i-0b4386fa5017f1363/awsrunShellScript/0.awsrunShellScript/stdout",
+            "StandardErrorUrl": "https://s3.us-west-2.amazonaws.com/ecaz-spire-aws-20260614203301860100000009/spire-aws/setup-coordinator-store-volumes/d4af80fa-4133-448c-86c3-f4a8b844c66f/i-0b4386fa5017f1363/awsrunShellScript/0.awsrunShellScript/stderr",
+            "CommandPlugins": [
+                {
+                    "Name": "aws:runShellScript",
+                    "Status": "Failed",
+                    "StatusDetails": "Failed",
+                    "ResponseCode": 32,
+                    "ResponseStartDateTime": "2026-06-14T13:52:51.170000-07:00",
+                    "ResponseFinishDateTime": "2026-06-14T13:52:51.791000-07:00",
+                    "Output": "Last metadata expiration check: 0:11:53 ago on Sun Jun 14 20:40:58 2026.\nPackage xfsprogs-6.12.0-3.amzn2023.0.1.aarch64 is already installed.\nPackage nvme-cli-2.13-1.amzn2023.0.3.aarch64 is already installed.\nDependencies resolved.\nNothing to do.\nComplete!\nconfiguring volume_id=vol-0a88f5453ae4bcdca tablespace=ecaz_spire_store_1\n\n----------ERROR-------\nmount: /var/lib/ecaz-spire-store-1: /dev/nvme3n1 already mounted on /var/lib/ecaz-spire-store-1.\nfailed to run commands: exit status 32",
+                    "StandardOutputUrl": "https://s3.us-west-2.amazonaws.com/ecaz-spire-aws-20260614203301860100000009/spire-aws/setup-coordinator-store-volumes/d4af80fa-4133-448c-86c3-f4a8b844c66f/i-0b4386fa5017f1363/awsrunShellScript/0.awsrunShellScript/stdout",
+                    "StandardErrorUrl": "https://s3.us-west-2.amazonaws.com/ecaz-spire-aws-20260614203301860100000009/spire-aws/setup-coordinator-store-volumes/d4af80fa-4133-448c-86c3-f4a8b844c66f/i-0b4386fa5017f1363/awsrunShellScript/0.awsrunShellScript/stderr",
+                    "OutputS3Region": "us-west-2",
+                    "OutputS3BucketName": "ecaz-spire-aws-20260614203301860100000009",
+                    "OutputS3KeyPrefix": "spire-aws/setup-coordinator-store-volumes/d4af80fa-4133-448c-86c3-f4a8b844c66f/i-0b4386fa5017f1363/awsrunShellScript"
+                }
+            ],
+            "ServiceRole": "",
+            "NotificationConfig": {
+                "NotificationArn": "",
+                "NotificationEvents": [],
+                "NotificationType": ""
+            },
+            "CloudWatchOutputConfig": {
+                "CloudWatchLogGroupName": "",
+                "CloudWatchOutputEnabled": false
+            }
+        },
+        {
+            "CommandId": "b43b0a95-9a7d-4ae3-b613-e63c24c43aaa",
+            "InstanceId": "i-0b4386fa5017f1363",
+            "InstanceName": "ip-10-42-1-154.us-west-2.compute.internal",
+            "Comment": "ecaz Task 107 coordinator local-store tablespaces",
+            "DocumentName": "AWS-RunShellScript",
+            "DocumentVersion": "$DEFAULT",
+            "RequestedDateTime": "2026-06-14T13:51:44.502000-07:00",
+            "Status": "Failed",
+            "StatusDetails": "Failed",
+            "StandardOutputUrl": "https://s3.us-west-2.amazonaws.com/ecaz-spire-aws-20260614203301860100000009/spire-aws/setup-coordinator-store-volumes/b43b0a95-9a7d-4ae3-b613-e63c24c43aaa/i-0b4386fa5017f1363/awsrunShellScript/0.awsrunShellScript/stdout",
+            "StandardErrorUrl": "https://s3.us-west-2.amazonaws.com/ecaz-spire-aws-20260614203301860100000009/spire-aws/setup-coordinator-store-volumes/b43b0a95-9a7d-4ae3-b613-e63c24c43aaa/i-0b4386fa5017f1363/awsrunShellScript/0.awsrunShellScript/stderr",
+            "CommandPlugins": [
+                {
+                    "Name": "aws:runShellScript",
+                    "Status": "Failed",
+                    "StatusDetails": "Failed",
+                    "ResponseCode": 1,
+                    "ResponseStartDateTime": "2026-06-14T13:51:44.632000-07:00",
+                    "ResponseFinishDateTime": "2026-06-14T13:51:47.139000-07:00",
+                    "Output": "Last metadata expiration check: 0:10:46 ago on Sun Jun 14 20:40:58 2026.\nPackage xfsprogs-6.12.0-3.amzn2023.0.1.aarch64 is already installed.\nDependencies resolved.\n================================================================================\n Package        Architecture  Version                   Repository         Size\n================================================================================\nInstalling:\n nvme-cli       aarch64       2.13-1.amzn2023.0.3       amazonlinux       1.0 M\nInstalling dependencies:\n libnvme        aarch64       1.13-1.amzn2023.0.1       amazonlinux       107 k\n liburing       aarch64       2.6-2.amzn2023.0.1        amazonlinux        42 k\n\nTransaction Summary\n================================================================================\nInstall  3 Packages\n\nTotal download size: 1.1 M\nInstalled size: 7.8 M\nDownloading Packages:\n(1/3): liburing-2.6-2.amzn2023.0.1.aarch64.rpm  1.1 MB/s |  42 kB     00:00    \n(2/3): libnvme-1.13-1.amzn2023.0.1.aarch64.rpm  2.6 MB/s | 107 kB     00:00    \n(3/3): nvme-cli-2.13-1.amzn2023.0.3.aarch64.rpm  19 MB/s | 1.0 MB     00:00    \n--------------------------------------------------------------------------------\nTotal           \n---Output truncated---\n----------ERROR-------\n================================================================================\nWARNING:\n  A newer release of \"Amazon Linux\" is available.\n\n  Available Versions:\n\n  Version 2023.11.20260526:\n    Run the following command to upgrade to 2023.11.20260526:\n\n      dnf upgrade --releasever=2023.11.20260526\n\n    Release notes:\n     https://docs.aws.amazon.com/linux/al2023/release-notes/relnotes-2023.11.20260526.html\n\n  Version 2023.12.20260608:\n    Run the following command to upgrade to 2023.12.20260608:\n\n      dnf upgrade --releasever=2023.12.20260608\n\n    Release notes:\n     https://docs.aws.amazon.com/linux/al2023/release-notes/relnotes-2023.12.20260608.html\n\n  Version 2023.12.20260611:\n    Run the following command to upgrade to 2023.12.20260611:\n\n      dnf upgrade --releasever=2023.12.20260611\n\n    Release notes:\n     https://docs.aws.amazon.com/linux/al2023/release-notes/relnotes-2023.12.20260611.html\n\n================================================================================\nERROR:  CREATE TABLESPACE cannot be executed from a function\nCONTEXT:  SQL statement \"CREATE TABLESPACE ecaz_spire_store_1 LOCATION '/var/lib/ecaz-spire-store-1/pg_tblspc'\"\nPL/pgSQL function inline_code_block line 1 a\n---Error truncated----",
+                    "StandardOutputUrl": "https://s3.us-west-2.amazonaws.com/ecaz-spire-aws-20260614203301860100000009/spire-aws/setup-coordinator-store-volumes/b43b0a95-9a7d-4ae3-b613-e63c24c43aaa/i-0b4386fa5017f1363/awsrunShellScript/0.awsrunShellScript/stdout",
+                    "StandardErrorUrl": "https://s3.us-west-2.amazonaws.com/ecaz-spire-aws-20260614203301860100000009/spire-aws/setup-coordinator-store-volumes/b43b0a95-9a7d-4ae3-b613-e63c24c43aaa/i-0b4386fa5017f1363/awsrunShellScript/0.awsrunShellScript/stderr",
+                    "OutputS3Region": "us-west-2",
+                    "OutputS3BucketName": "ecaz-spire-aws-20260614203301860100000009",
+                    "OutputS3KeyPrefix": "spire-aws/setup-coordinator-store-volumes/b43b0a95-9a7d-4ae3-b613-e63c24c43aaa/i-0b4386fa5017f1363/awsrunShellScript"
+                }
+            ],
+            "ServiceRole": "",
+            "NotificationConfig": {
+                "NotificationArn": "",
+                "NotificationEvents": [],
+                "NotificationType": ""
+            },
+            "CloudWatchOutputConfig": {
+                "CloudWatchLogGroupName": "",
+                "CloudWatchOutputEnabled": false
+            }
+        }
+    ],
+    "NextToken": "AAEAAUUJ1tamsB+a2iAxxTK4lD+0jQlixGSUIQzjb/QXbuRlAAAAAGovuHvZ0XhQep07afiCljqVlju2ijtnv3la6a9msO5id+eOBL9c3MUrvfbsW2yx8nLBFV4BkDMcPokJZp1T48iSTnSodVAZ+iEOs10Szsae3jnN8AGFET5ibOtqboVkzaef0uz67QLed8TR8pA0WNhWlgH5jpOvX+hYb5qTE8/qFGxgvYj04hTj8/O92qbP0bM/hJ4ByURLqwlIdjDBpBrpBu9wNHScAaVB8pIS2zbQpoWL8nZ+f2fwprftaa4KdWTm4HXRSoH3oYQxYBuUuheKkv+8t39rcBgWv0PHJv0jCob+nU+mMNONQa9xJJP5xbFMUgQMEAED6ZapBS1nEVlgCPKBV2syAE7h8H42wTczJGOPaXijnDPgJ3CitYuAvZBNJy2axIsYBgdpf9Mme837OOE5dFB+GF/08XdvYVwzrzpHSc1sv1DEzVxiuMrl2C1IKY+alHj2pM++8a3XlZCcNFakC3XKVGC2kVY0CGzxwSA5So3FwRN5/f4NfVFVWMxPHCyP1uM5Ty5LWzHpcSyrQqhLCyffkISVn3EK5Eg6bXONwRFqJvjcpUcGnvKTp/VPk6uPXc0F11THfBrNrLp+wnj7PyOyVKoQEAHXNDG+dgtijhC9/5Ll/ag1xP238YMq16rKofwS3QpPYGJ4OOgizjv+IXPePCc11LOUrohu1G7erGp0BnFwPo80Y2yqwhsUEWbI3IcUo8FWh+TcHViIB2+cusP3PCudRnYEZFMnRgvWA1qlxGKG/uxhED1gyJBaYolboILKfeeyKZ//OvF2sSKA6qt6tP32YImUNDmqxm4d+FHo1gn4fqHFaAqscUquV7p2C0xKhs3zHrZ9xfLDTjyCgPE4up2orQMEVzFaLK620playQJX4n5Hi2WjNrkCI3i2e5iNmHEsvkhIri83C6Q9hbCvObemCHxJsSPERFU+CmP0Pudj3MWHdJMSEcaeGL462/7AZTiAkyk2vhuVDo5R0g1DK8ZdmMTV44esIYobB/YSK7qpd7oSnwoSHn+3sVF3+AH6xvHW7y+H4mdkIye7fRTPIq95T0QHs/Ym/HSpynr1KPf6kiKabmDQQlS1THzCmFpV9+qBv5w6a12V+y3PKPYqlhygCofHIW8CnJiCTciCwqplP/e+izfRmRaBsVfS5/hiMvzeyvTMbKDuNAzEcZ8HnHVEAp8/KAIfZFjtGDZIAPZW1dLF2U4cwwfLsyE="
+}
