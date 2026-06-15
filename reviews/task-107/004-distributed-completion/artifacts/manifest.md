@@ -1,6 +1,6 @@
 # Task 107 Packet 004 Manifest
 
-- Head SHA: `c129491041e5dbdfc69fdf780846d144e2c737aa`
+- Head SHA: `82c59a02efc592aa82936d3b13ac1d65e213f97f`
 - Task bucket: `reviews/task-107/004-distributed-completion/`
 - Created: 2026-06-15T03:07:58Z
 - Purpose: run-control packet for completing the remaining Task 107 AWS
@@ -12,11 +12,10 @@ This packet begins after packet 003, which completed only the RaBitQ 100k
 distributed lane and recorded several partial/non-decision attempts. Packet 004
 must follow `../run-checklist.md` before any additional AWS benchmark work.
 
-No packet-004 benchmark cell has completed yet. The
-`phase1-rabitq-100k-l1-control` cell has two failed attempts, both before any
-decision-grade load/build, storage, recall/latency, or routing result. A direct
-coordinator-only SSM retry checkpoint is prepared but not started because AWS
-start requires explicit cost approval.
+Packet 004 has completed `phase1-rabitq-100k-l1-control`. The earlier failed
+attempts remain recorded as non-decision-grade history; the decision-grade
+evidence for this cell is under
+`phase1-rabitq-100k-l1-control/retry-direct-ssm/`.
 
 ## Current Packet Artifacts
 
@@ -100,13 +99,38 @@ The run checklist is `../run-checklist.md`. It enumerates:
   - No load/build, recall, latency, storage, or routing result from this retry
     is decision-grade.
 - `phase1-rabitq-100k-l1-control/retry-direct-ssm/checkpoint.md`
-  - Status: checkpoint prepared; not started.
+  - Status: completed.
   - Next cell: `phase1-rabitq-100k-l1-control`.
-  - Runtime policy: no arbitrary wall-clock cap; run the cell to completion or
-    command failure.
+  - Runtime policy: no arbitrary wall-clock cap; ran to completion.
   - Scope: one coordinator-only RaBitQ 100k index with `bits=4` and
     `local_store_count=1`; no remote shard loading and no comparator or
     Task 106 reruns.
   - Command payload: `phase1-rabitq-100k-l1-control/retry-direct-ssm/ssm-parameters.json`.
-  - Start status: not started; AWS start requires explicit user approval for
-    the cost-incurring instances.
+  - Load/build artifacts:
+    - `retry-direct-ssm/load/ssm-command-invocation.final.json`
+    - `retry-direct-ssm/load/load.log`
+    - `retry-direct-ssm/load/inspect.log`
+  - Load/build result: 100000 corpus rows, 1000 queries, `bits=4`,
+    `local_store_count=1`, `storage_format=rabitq`; copy 32.20s, encode
+    24.65s, index build 89.52s, total 162.16s.
+  - Recall/latency artifacts:
+    - `phase1-rabitq-100k-l1-control/13a3a-recall-k10.log`
+    - `phase1-rabitq-100k-l1-control/13a3a-recall-k100.log`
+    - `phase1-rabitq-100k-l1-control/13a3a-latency-k10-c1.log`
+    - `phase1-rabitq-100k-l1-control/13a3a-latency-k10-c4.log`
+    - `phase1-rabitq-100k-l1-control/13a3a-latency-k10-c8.log`
+    - `phase1-rabitq-100k-l1-control/13a3f-pk-c32.log`
+    - `retry-direct-ssm/bench/suite-results-single-node.jsonl`
+  - Key recall results:
+    - k10 nprobe 8/16/24/32/64: 0.7939 / 0.8703 / 0.9041 / 0.9268 / 0.9661.
+    - k100 nprobe 8/16/24/32/64: 0.6862 / 0.7899 / 0.8362 / 0.8687 / 0.9336.
+  - Key latency results:
+    - k10 c1 mean nprobe 8/16/24/32: 99.7 / 136.4 / 162.2 / 190.0 ms.
+    - k10 c4 mean nprobe 8/16/24/32: 94.1 / 124.6 / 158.3 / 196.6 ms.
+    - k10 c8 mean nprobe 8/16/24/32: 124.8 / 131.3 / 163.0 / 198.1 ms.
+    - k1 c32 nprobe 32 mean: 499.3 ms.
+  - Storage artifact: `retry-direct-ssm/storage/storage.log`.
+  - Storage result: total 1.6 GiB, index 81.7 MiB.
+  - Cleanup artifact: `retry-direct-ssm/cleanup/cleanup-drop.log`.
+  - Cleanup result: dropped index, queries table, and corpus table; no remaining
+    `task107_phase1_rabitq_100k_l1%` relations were printed.

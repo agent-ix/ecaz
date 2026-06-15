@@ -1,19 +1,21 @@
 # Task 107 Packet 004 Run Checklist
 
 Date: 2026-06-15
-Head SHA: `c129491041e5dbdfc69fdf780846d144e2c737aa`
+Head SHA: `82c59a02efc592aa82936d3b13ac1d65e213f97f`
 Packet: `reviews/task-107/004-distributed-completion/`
 
 ## Current State
 
 - AWS topology: one coordinator plus two remotes.
-- Current AWS state: stopped after the `phase1-rabitq-100k-l1-control`
-  node-local retry failure; the direct coordinator-only SSM retry is prepared
-  but not started because AWS start needs explicit cost approval.
-- Packet 004 benchmark/load status: no cell has produced completed corpus load,
-  index build, storage, recall/latency, or routing evidence.
-- Existing completed Task 107 benchmark evidence remains limited to packet 003:
-  RaBitQ 100k distributed, `bits=4`, `local_store_count=1`.
+- Current AWS state: running after completing
+  `phase1-rabitq-100k-l1-control`; proceed one cell at a time.
+- Packet 004 benchmark/load status: completed
+  `phase1-rabitq-100k-l1-control` with packet-local load/build, storage,
+  recall/latency, and cleanup evidence.
+- Existing completed Task 107 benchmark evidence:
+  - Packet 003: RaBitQ 100k distributed, `bits=4`, `local_store_count=1`.
+  - Packet 004: RaBitQ 100k single-node/multi-store control,
+    `bits=4`, `local_store_count=1`.
 
 ## Operating Rules
 
@@ -40,7 +42,7 @@ time.
 
 | Cell | Scale | Storage | Store count | Status | Artifact directory |
 | --- | --- | --- | ---: | --- | --- |
-| phase1-rabitq-100k-l1-control | 100k | RaBitQ | 1 | Attempt 1 timed out over SSM tunnel; node-local retry failed after S3 downloads before load/build; direct coordinator-only SSM retry prepared but not started pending explicit AWS cost approval; no decision-grade result | `artifacts/phase1-rabitq-100k-l1-control/` |
+| phase1-rabitq-100k-l1-control | 100k | RaBitQ | 1 | Completed in packet 004 direct SSM retry; cleanup completed | `artifacts/phase1-rabitq-100k-l1-control/retry-direct-ssm/` |
 | phase1-rabitq-100k-l2 | 100k | RaBitQ | 2 | Not started | `artifacts/phase1-rabitq-100k-l2/` |
 | phase1-rabitq-100k-l4 | 100k | RaBitQ | 4 | Packet 003 attempt failed placement/export; needs rerun only after blocker is understood | `artifacts/phase1-rabitq-100k-l4/` |
 | phase1-rabitq-1m-l1-control | 1m | RaBitQ | 1 | Not started in packet 004 | `artifacts/phase1-rabitq-1m-l1-control/` |
