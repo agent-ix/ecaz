@@ -17,7 +17,11 @@ Packet: `reviews/task-107/004-distributed-completion/`
   - Packet 004: RaBitQ 100k single-node/multi-store control,
     `bits=4`, `local_store_count=1`.
   - Packet 004: RaBitQ 100k single-node/multi-store,
-    `bits=4`, `local_store_count=2`.
+    `bits=4`, `local_store_count=2`, explicit
+    `local_store_tablespaces=ecaz_spire_store_1,ecaz_spire_store_2`.
+  - Packet 004: the earlier
+    `artifacts/phase1-rabitq-100k-l2/direct-ssm/` run is superseded because it
+    omitted explicit `local_store_tablespaces`.
 
 ## Operating Rules
 
@@ -46,7 +50,7 @@ time.
 | Cell | Scale | Storage | Store count | Status | Artifact directory |
 | --- | --- | --- | ---: | --- | --- |
 | phase1-rabitq-100k-l1-control | 100k | RaBitQ | 1 | Completed in packet 004 direct SSM retry; cleanup completed | `artifacts/phase1-rabitq-100k-l1-control/retry-direct-ssm/` |
-| phase1-rabitq-100k-l2 | 100k | RaBitQ | 2 | Completed in packet 004 direct SSM run; cleanup completed | `artifacts/phase1-rabitq-100k-l2/direct-ssm/` |
+| phase1-rabitq-100k-l2 | 100k | RaBitQ | 2 | Completed in packet 004 corrected direct SSM tablespace run; cleanup completed | `artifacts/phase1-rabitq-100k-l2/direct-ssm-tablespaces/` |
 | phase1-rabitq-100k-l4 | 100k | RaBitQ | 4 | Packet 003 attempt failed placement/export; needs rerun only after blocker is understood | `artifacts/phase1-rabitq-100k-l4/` |
 | phase1-rabitq-1m-l1-control | 1m | RaBitQ | 1 | Not started in packet 004 | `artifacts/phase1-rabitq-1m-l1-control/` |
 | phase1-rabitq-1m-l2 | 1m | RaBitQ | 2 | Not started | `artifacts/phase1-rabitq-1m-l2/` |

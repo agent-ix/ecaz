@@ -12,11 +12,13 @@ This packet begins after packet 003, which completed only the RaBitQ 100k
 distributed lane and recorded several partial/non-decision attempts. Packet 004
 must follow `../run-checklist.md` before any additional AWS benchmark work.
 
-Packet 004 has completed `phase1-rabitq-100k-l1-control` and
-`phase1-rabitq-100k-l2`. The earlier failed attempts remain recorded as
-non-decision-grade history; the decision-grade evidence for the completed cells
-is under `phase1-rabitq-100k-l1-control/retry-direct-ssm/` and
-`phase1-rabitq-100k-l2/direct-ssm/`.
+Packet 004 has completed `phase1-rabitq-100k-l1-control` and the corrected
+`phase1-rabitq-100k-l2` tablespace run. The earlier failed attempts remain
+recorded as non-decision-grade history; the decision-grade evidence for the
+completed cells is under `phase1-rabitq-100k-l1-control/retry-direct-ssm/` and
+`phase1-rabitq-100k-l2/direct-ssm-tablespaces/`. The earlier
+`phase1-rabitq-100k-l2/direct-ssm/` run is superseded because it omitted
+explicit `local_store_tablespaces`.
 
 ## Current Packet Artifacts
 
@@ -138,45 +140,60 @@ The run checklist is `../run-checklist.md`. It enumerates:
   - Cleanup result: dropped index, queries table, and corpus table; no remaining
     `task107_phase1_rabitq_100k_l1%` relations were printed.
 - `phase1-rabitq-100k-l2/direct-ssm/checkpoint.md`
+  - Status: superseded by
+    `phase1-rabitq-100k-l2/direct-ssm-tablespaces/`.
+  - Reason: this run used `local_store_count=2` but omitted explicit
+    `local_store_tablespaces`, so it is retained only as history.
+- `phase1-rabitq-100k-l2/direct-ssm-tablespaces/checkpoint.md`
   - Status: completed.
   - Cell: `phase1-rabitq-100k-l2`.
   - Execution policy: ran one isolated index cell to completion.
-  - Scope: one coordinator-only RaBitQ 100k index with `bits=4` and
-    `local_store_count=2`; no remote shard loading and no comparator or
-    Task 106 reruns.
-  - Command payload: `phase1-rabitq-100k-l2/direct-ssm/ssm-parameters.json`.
+  - Scope: one coordinator-only RaBitQ 100k index with `bits=4`,
+    `local_store_count=2`, and
+    `local_store_tablespaces=ecaz_spire_store_1,ecaz_spire_store_2`; no remote
+    shard loading and no comparator or Task 106 reruns.
+  - Command payload:
+    `phase1-rabitq-100k-l2/direct-ssm-tablespaces/ssm-parameters.json`.
   - Load/build artifacts:
-    - `phase1-rabitq-100k-l2/direct-ssm/load/ssm-command-invocation.final.json`
-    - `phase1-rabitq-100k-l2/direct-ssm/load/load.log`
-    - `phase1-rabitq-100k-l2/direct-ssm/load/inspect.log`
+    - `phase1-rabitq-100k-l2/direct-ssm-tablespaces/load/ssm-command-invocation.final.json`
+    - `phase1-rabitq-100k-l2/direct-ssm-tablespaces/load/load.log`
+    - `phase1-rabitq-100k-l2/direct-ssm-tablespaces/load/inspect.log`
   - Load/build result: 100000 corpus rows, 1000 queries, `bits=4`,
-    `local_store_count=2`, `storage_format=rabitq`; copy 32.27s, encode
-    27.88s, index build 89.74s, total 163.30s.
+    `local_store_count=2`,
+    `local_store_tablespaces=ecaz_spire_store_1,ecaz_spire_store_2`,
+    `storage_format=rabitq`; copy 32.26s, encode 33.77s, index build 89.72s,
+    total 168.94s.
   - Routing/fanout evidence: `load/inspect.log` and `storage/storage.log`
     both record the isolated `task107_phase1_rabitq_100k_l2_idx` index with
-    reloptions `{local_store_count=2, storage_format=rabitq}`.
+    reloptions `{local_store_count=2,
+    local_store_tablespaces=ecaz_spire_store_1,ecaz_spire_store_2,
+    storage_format=rabitq}`.
   - Recall/latency artifacts:
-    - `phase1-rabitq-100k-l2/direct-ssm/13a3a-recall-k10.log`
-    - `phase1-rabitq-100k-l2/direct-ssm/13a3a-recall-k100.log`
-    - `phase1-rabitq-100k-l2/direct-ssm/13a3a-latency-k10-c1.log`
-    - `phase1-rabitq-100k-l2/direct-ssm/13a3a-latency-k10-c4.log`
-    - `phase1-rabitq-100k-l2/direct-ssm/13a3a-latency-k10-c8.log`
-    - `phase1-rabitq-100k-l2/direct-ssm/13a3f-pk-c32.log`
-    - `phase1-rabitq-100k-l2/direct-ssm/bench/suite-results-single-node.jsonl`
+    - `phase1-rabitq-100k-l2/direct-ssm-tablespaces/13a3a-recall-k10.log`
+    - `phase1-rabitq-100k-l2/direct-ssm-tablespaces/13a3a-recall-k100.log`
+    - `phase1-rabitq-100k-l2/direct-ssm-tablespaces/13a3a-latency-k10-c1.log`
+    - `phase1-rabitq-100k-l2/direct-ssm-tablespaces/13a3a-latency-k10-c4.log`
+    - `phase1-rabitq-100k-l2/direct-ssm-tablespaces/13a3a-latency-k10-c8.log`
+    - `phase1-rabitq-100k-l2/direct-ssm-tablespaces/13a3f-pk-c32.log`
+    - `phase1-rabitq-100k-l2/direct-ssm-tablespaces/bench/suite-results-single-node.jsonl`
   - Key recall results:
     - k10 nprobe 8/16/24/32/64: 0.7939 / 0.8703 / 0.9041 / 0.9268 / 0.9661.
     - k100 nprobe 8/16/24/32/64: 0.6862 / 0.7899 / 0.8362 / 0.8687 / 0.9336.
   - Key latency results:
-    - k10 c1 mean nprobe 8/16/24/32: 84.1 / 118.3 / 151.3 / 185.2 ms.
-    - k10 c4 mean nprobe 8/16/24/32: 88.0 / 121.3 / 155.0 / 190.3 ms.
-    - k10 c8 mean nprobe 8/16/24/32: 121.6 / 130.3 / 161.0 / 196.3 ms.
-    - k1 c32 nprobe 32 mean: 489.2 ms.
-  - Storage artifact: `phase1-rabitq-100k-l2/direct-ssm/storage/storage.log`.
+    - k10 c1 mean nprobe 8/16/24/32: 83.8 / 118.1 / 150.9 / 183.7 ms.
+    - k10 c4 mean nprobe 8/16/24/32: 90.5 / 122.2 / 157.0 / 191.6 ms.
+    - k10 c8 mean nprobe 8/16/24/32: 122.9 / 131.0 / 161.9 / 199.3 ms.
+    - k1 c32 nprobe 32 mean: 488.7 ms.
+  - Storage artifact:
+    `phase1-rabitq-100k-l2/direct-ssm-tablespaces/storage/storage.log`.
   - Storage result: total 1.6 GiB; storage command reports `ec_spire` relation
-    size 64.0 KiB with `local_store_count=2` and `storage_format=rabitq`.
-  - Cleanup artifact: `phase1-rabitq-100k-l2/direct-ssm/cleanup/cleanup-drop.log`.
+    size 64.0 KiB with `local_store_count=2`,
+    `local_store_tablespaces=ecaz_spire_store_1,ecaz_spire_store_2`, and
+    `storage_format=rabitq`.
+  - Cleanup artifact:
+    `phase1-rabitq-100k-l2/direct-ssm-tablespaces/cleanup/cleanup-drop.log`.
   - Cleanup result: dropped index, queries table, and corpus table; no remaining
     `task107_phase1_rabitq_100k_l2%` relations were printed.
   - AWS state after cell:
-    `phase1-rabitq-100k-l2/direct-ssm/aws-state/describe-after-cell.json`;
+    `phase1-rabitq-100k-l2/direct-ssm-tablespaces/aws-state/describe-after-cell.json`;
     all three Task 107 instances remained running for the next cell.
