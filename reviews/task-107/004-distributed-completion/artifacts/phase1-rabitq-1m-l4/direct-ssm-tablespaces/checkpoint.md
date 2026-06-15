@@ -1,6 +1,6 @@
 # Cell Checkpoint: phase1-rabitq-1m-l4
 
-Status: prepared; not started.
+Status: started; SSM command in progress.
 
 ## Intent
 
@@ -43,3 +43,10 @@ makes that unsafe.
 The SSM command will be sent with a high AWS service timeout and
 `AWS-RunShellScript` `executionTimeout=172800`; there is no benchmark time cap
 in the payload.
+
+## Start Evidence
+
+- SSM command: `02140ecb-e9ad-4e13-8a72-074a5591de8d`.
+- Initial invocation status: `InProgress`.
+- Send-command artifact: `load/send-command.json`.
+- Latest invocation artifact: `load/ssm-command-invocation.latest.json`.

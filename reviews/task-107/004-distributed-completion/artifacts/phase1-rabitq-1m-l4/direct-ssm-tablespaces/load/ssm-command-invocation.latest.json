@@ -1,0 +1,20 @@
+{
+    "CommandId": "02140ecb-e9ad-4e13-8a72-074a5591de8d",
+    "InstanceId": "i-0b4386fa5017f1363",
+    "Comment": "task107-phase1-rabitq-1m-l4-direct-ssm-tablespaces",
+    "DocumentName": "AWS-RunShellScript",
+    "DocumentVersion": "$DEFAULT",
+    "PluginName": "aws:runShellScript",
+    "ResponseCode": -1,
+    "ExecutionEndDateTime": "",
+    "Status": "InProgress",
+    "StatusDetails": "InProgress",
+    "StandardOutputContent": "",
+    "StandardOutputUrl": "",
+    "StandardErrorContent": "",
+    "StandardErrorUrl": "",
+    "CloudWatchOutputConfig": {
+        "CloudWatchLogGroupName": "",
+        "CloudWatchOutputEnabled": false
+    }
+}
