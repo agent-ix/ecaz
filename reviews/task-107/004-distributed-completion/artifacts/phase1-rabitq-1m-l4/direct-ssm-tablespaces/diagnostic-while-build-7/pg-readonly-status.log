@@ -1,0 +1,13 @@
+tunnel coordinator ready on port 15432
+tunnel remote-2 ready on port 15433
+tunnel remote-3 ready on port 15434
+2026-06-15 11:55:13.694643+00|activity|19846|active|||CREATE INDEX task107_phase1_rabitq_1m_l4_idx ON task107_phase1_rabitq_1m_l4_corpus
+        USING ec_spire (embedding ecvector_spire_ip_ops) WITH (local_store_count = 4, local_store_tablespaces = 'ecaz_spire_store_1,ecaz_spire_store_2,ecaz_spire_store_3,ecaz_spire_store_4', storage_format = 'rabitq')
+2026-06-15 11:55:13.694643+00|activity|20293|active|Timeout|VacuumDelay|autovacuum: VACUUM pg_toast.pg_toast_11413275
+2026-06-15 11:55:13.694643+00|activity|20328|active|||SELECT now(), 'activity', pid, state, wait_event_type, wait_event, left(query, 320) FROM pg_stat_activity WHERE datname='postgres' AND (query LIKE '%task107_phase1_rabitq_1m_l4%' OR query LIKE '%ec_spire%' OR query LIKE '%bench%' OR state <> 'idle') ORDER BY pid; SELECT now(), 'relations', c.relname, c.relkind, pg_tota
+2026-06-15 11:55:13.694643+00|relations|task107_phase1_rabitq_1m_l4_corpus|r|16501194752
+2026-06-15 11:55:13.694643+00|relations|task107_phase1_rabitq_1m_l4_corpus_pkey|i|22257664
+2026-06-15 11:55:13.694643+00|relations|task107_phase1_rabitq_1m_l4_queries|r|83763200
+2026-06-15 11:55:13.694643+00|relations|task107_phase1_rabitq_1m_l4_queries_pkey|i|245760
+2026-06-15 11:55:13.694643+00|index_state|task107_phase1_rabitq_1m_l4_corpus_pkey|t|t|t|btree|22257664|
+2026-06-15 11:55:13.694643+00|index_state|task107_phase1_rabitq_1m_l4_queries_pkey|t|t|t|btree|245760|
