@@ -71,7 +71,8 @@ The run checklist is `../run-checklist.md`. It enumerates:
 - `phase1-rabitq-100k-l1-control/checkpoint.md`
   - Status: checkpoint prepared; attempt 1 failed before benchmark.
   - Next cell: `phase1-rabitq-100k-l1-control`.
-  - Expected maximum runtime before stopping and asking for review: 45 minutes.
+  - Runtime policy: no arbitrary wall-clock cap; run the cell to completion or
+    command failure.
   - Scope: 100k representative corpus, RaBitQ, `bits=4`,
     `local_store_count=1`, one coordinator index only.
   - Benchmark matrix: rendered single-node `ecaz bench suite` config derived
@@ -101,8 +102,8 @@ The run checklist is `../run-checklist.md`. It enumerates:
 - `phase1-rabitq-100k-l1-control/retry-direct-ssm/checkpoint.md`
   - Status: checkpoint prepared; not started.
   - Next cell: `phase1-rabitq-100k-l1-control`.
-  - Expected maximum runtime before stopping and packaging status: 45 minutes.
-  - Coordinator-local load/build timeout: 15 minutes.
+  - Runtime policy: no arbitrary wall-clock cap; run the cell to completion or
+    command failure.
   - Scope: one coordinator-only RaBitQ 100k index with `bits=4` and
     `local_store_count=1`; no remote shard loading and no comparator or
     Task 106 reruns.

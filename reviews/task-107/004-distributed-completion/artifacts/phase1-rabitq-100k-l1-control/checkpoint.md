@@ -17,13 +17,13 @@ Status: checkpoint prepared; not started.
 - Work directory:
   `reviews/task-107/004-distributed-completion/work/phase1-rabitq-100k-l1-control/`.
 
-## Expected Runtime
+## Runtime Policy
 
-Maximum planned runtime before stopping and asking for review: 45 minutes.
-
-The estimate covers AWS start/status checks, SSM tunnel preflight, 100k
-corpus fetch/prepare reuse or regeneration, coordinator load/build, one
-single-node `ecaz bench suite` run, storage capture, cleanup, and AWS stop.
+No arbitrary wall-clock cap is set for this cell. Run the cell to completion or
+command failure. The planned work covers AWS start/status checks, SSM tunnel
+preflight, 100k corpus fetch/prepare reuse or regeneration, coordinator
+load/build, one single-node `ecaz bench suite` run, storage capture, cleanup,
+and AWS stop.
 
 ## Stop Conditions
 
@@ -31,7 +31,6 @@ single-node `ecaz bench suite` run, storage capture, cleanup, and AWS stop.
   corpus or by the default distributed prefix accidentally.
 - Stop immediately if another `task107_%` relation already exists on the
   coordinator before load.
-- Stop immediately if load/build exceeds 15 minutes.
 - Stop immediately if the suite runner cannot express the recall/latency
   matrix without code or script changes.
 - Stop and package failure if cleanup does not leave zero
@@ -182,4 +181,3 @@ scripts/spire-aws/with-ssm-port-forwards.sh \
 Then stop the three Task 107 AWS instances and save the final
 `describe-instances` output under
 `artifacts/phase1-rabitq-100k-l1-control/aws-stop/`.
-

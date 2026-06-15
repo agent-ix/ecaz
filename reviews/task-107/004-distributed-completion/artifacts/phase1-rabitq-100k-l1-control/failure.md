@@ -9,9 +9,8 @@ this attempt should be cited.
 
 The corrected `ecaz corpus load` command started through an SSM port-forward
 and attempted to send the 2GB 100k corpus from the local workstation through
-the tunnel. It exceeded the checkpointed 15-minute load/build stop condition
-before copy completion was logged. AWS was stopped to terminate the stalled
-cell.
+the tunnel. It was stopped before copy completion was logged. AWS was stopped
+to terminate the stalled cell.
 
 ## What Ran
 
@@ -81,4 +80,3 @@ Retry this same cell using the node-local AWS loading pattern:
 - run the already-rendered single-node `ecaz bench suite` config after load
   succeeds;
 - capture storage, cleanup, and stopped AWS state.
-

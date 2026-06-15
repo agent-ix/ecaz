@@ -15,10 +15,11 @@ Status: prepared; not started.
 - Artifact directory:
   `reviews/task-107/004-distributed-completion/artifacts/phase1-rabitq-100k-l1-control/retry-direct-ssm/`.
 
-## Runtime Limits
+## Runtime Policy
 
-- Maximum planned runtime before stopping and packaging status: 45 minutes.
-- Coordinator-local `ecaz corpus load` timeout: 15 minutes.
+- No arbitrary wall-clock cap is set for this retry.
+- The retry should run until the cell completes or a command fails. On failure,
+  package the exact failure and proceed according to the checklist.
 
 ## Why This Retry Is Different
 
@@ -57,7 +58,7 @@ aws ssm send-command \
   --parameters file://reviews/task-107/004-distributed-completion/artifacts/phase1-rabitq-100k-l1-control/retry-direct-ssm/ssm-parameters.json \
   --output-s3-bucket-name ecaz-spire-aws-20260614203301860100000009 \
   --output-s3-key-prefix task107/004/phase1-rabitq-100k-l1-control/retry-direct-ssm/ssm \
-  --timeout-seconds 1200
+  --timeout-seconds 14400
 ```
 
 If load/build succeeds, run the existing packet-local `ecaz bench suite` config,
