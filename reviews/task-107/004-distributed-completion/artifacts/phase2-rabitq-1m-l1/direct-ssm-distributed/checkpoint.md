@@ -49,3 +49,6 @@ Run this cell by AWS SSM, one cell at a time. Benchmark sweeps run through `ecaz
   remote corpus export using tab-separated assignment output or `cut -d '|'
   -f12`, then load remote node 2 and node 3 sequentially before running the
   suite.
+- Resume export payload:
+  - script: `resume-export.sh`;
+  - SSM parameters: `resume-export-ssm-parameters.json`.
