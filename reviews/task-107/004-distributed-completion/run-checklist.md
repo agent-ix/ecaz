@@ -1,17 +1,18 @@
 # Task 107 Packet 004 Run Checklist
 
 Date: 2026-06-15
-Head SHA: `97d8c85cf62ac7ade1de2923799e975dad6e6818`
+Head SHA: `cf78d560b4a758327611e7610b3a6014893d0931`
 Packet: `reviews/task-107/004-distributed-completion/`
 
 ## Current State
 
 - AWS topology: one coordinator plus two remotes.
-- Current AWS state: running after completing `phase1-rabitq-1m-l1-control`;
+- Current AWS state: running after completing `phase1-rabitq-1m-l2`;
   proceed one cell at a time.
 - Packet 004 benchmark/load status: completed
   `phase1-rabitq-100k-l1-control`, `phase1-rabitq-100k-l2`,
-  `phase1-rabitq-100k-l4`, and `phase1-rabitq-1m-l1-control` with
+  `phase1-rabitq-100k-l4`, `phase1-rabitq-1m-l1-control`, and
+  `phase1-rabitq-1m-l2` with
   packet-local load/build, storage, recall/latency, and cleanup evidence.
 - Existing completed Task 107 benchmark evidence:
   - Packet 003: RaBitQ 100k distributed, `bits=4`, `local_store_count=1`.
@@ -61,7 +62,7 @@ time.
 | phase1-rabitq-100k-l2 | 100k | RaBitQ | 2 | Completed in packet 004 corrected direct SSM tablespace run; cleanup completed | `artifacts/phase1-rabitq-100k-l2/direct-ssm-tablespaces/` |
 | phase1-rabitq-100k-l4 | 100k | RaBitQ | 4 | Completed in packet 004 corrected direct SSM tablespace run; cleanup completed | `artifacts/phase1-rabitq-100k-l4/direct-ssm-tablespaces/` |
 | phase1-rabitq-1m-l1-control | 1m | RaBitQ | 1 | Completed in packet 004 direct SSM tablespace run; cleanup completed | `artifacts/phase1-rabitq-1m-l1-control/direct-ssm-tablespaces/` |
-| phase1-rabitq-1m-l2 | 1m | RaBitQ | 2 | Not started | `artifacts/phase1-rabitq-1m-l2/` |
+| phase1-rabitq-1m-l2 | 1m | RaBitQ | 2 | Completed in packet 004 direct SSM tablespace run; cleanup completed | `artifacts/phase1-rabitq-1m-l2/direct-ssm-tablespaces/` |
 | phase1-rabitq-1m-l4 | 1m | RaBitQ | 4 | Not started | `artifacts/phase1-rabitq-1m-l4/` |
 | phase1-turboquant-100k-l1-control | 100k | TurboQuant | 1 | Not started in packet 004 | `artifacts/phase1-turboquant-100k-l1-control/` |
 | phase1-turboquant-100k-l2 | 100k | TurboQuant | 2 | Not started | `artifacts/phase1-turboquant-100k-l2/` |

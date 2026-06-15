@@ -1,7 +1,122 @@
 [
     {
+        "Key": "task107/004/phase1-rabitq-1m-l2/direct-ssm-tablespaces/bench/13a3a-latency-k10-c1.log",
+        "Size": 3693,
+        "LastModified": "2026-06-15T11:22:58+00:00"
+    },
+    {
+        "Key": "task107/004/phase1-rabitq-1m-l2/direct-ssm-tablespaces/bench/13a3a-latency-k10-c4.log",
+        "Size": 3693,
+        "LastModified": "2026-06-15T11:22:58+00:00"
+    },
+    {
+        "Key": "task107/004/phase1-rabitq-1m-l2/direct-ssm-tablespaces/bench/13a3a-latency-k10-c8.log",
+        "Size": 3693,
+        "LastModified": "2026-06-15T11:22:58+00:00"
+    },
+    {
+        "Key": "task107/004/phase1-rabitq-1m-l2/direct-ssm-tablespaces/bench/13a3a-recall-k10.log",
+        "Size": 4516,
+        "LastModified": "2026-06-15T11:22:58+00:00"
+    },
+    {
+        "Key": "task107/004/phase1-rabitq-1m-l2/direct-ssm-tablespaces/bench/13a3a-recall-k100.log",
+        "Size": 4516,
+        "LastModified": "2026-06-15T11:22:58+00:00"
+    },
+    {
+        "Key": "task107/004/phase1-rabitq-1m-l2/direct-ssm-tablespaces/bench/13a3f-pk-c32.log",
+        "Size": 1810,
+        "LastModified": "2026-06-15T11:22:58+00:00"
+    },
+    {
+        "Key": "task107/004/phase1-rabitq-1m-l2/direct-ssm-tablespaces/bench/storage.log",
+        "Size": 6185,
+        "LastModified": "2026-06-15T11:22:58+00:00"
+    },
+    {
+        "Key": "task107/004/phase1-rabitq-1m-l2/direct-ssm-tablespaces/bench/suite-manifest-node.json",
+        "Size": 8489,
+        "LastModified": "2026-06-15T11:22:58+00:00"
+    },
+    {
+        "Key": "task107/004/phase1-rabitq-1m-l2/direct-ssm-tablespaces/bench/suite-results-node.jsonl",
+        "Size": 17990,
+        "LastModified": "2026-06-15T11:22:58+00:00"
+    },
+    {
+        "Key": "task107/004/phase1-rabitq-1m-l2/direct-ssm-tablespaces/bench/truth-cache/13a3a-recall-k10.json",
+        "Size": 38897,
+        "LastModified": "2026-06-15T11:22:58+00:00"
+    },
+    {
+        "Key": "task107/004/phase1-rabitq-1m-l2/direct-ssm-tablespaces/bench/truth-cache/13a3a-recall-k100.json",
+        "Size": 358809,
+        "LastModified": "2026-06-15T11:22:58+00:00"
+    },
+    {
         "Key": "task107/004/phase1-rabitq-1m-l2/direct-ssm-tablespaces/config/suite-node.json",
         "Size": 2630,
         "LastModified": "2026-06-15T10:07:00+00:00"
+    },
+    {
+        "Key": "task107/004/phase1-rabitq-1m-l2/direct-ssm-tablespaces/load/cleanup-drop.log",
+        "Size": 33,
+        "LastModified": "2026-06-15T11:22:57+00:00"
+    },
+    {
+        "Key": "task107/004/phase1-rabitq-1m-l2/direct-ssm-tablespaces/load/df-after.log",
+        "Size": 89,
+        "LastModified": "2026-06-15T11:22:53+00:00"
+    },
+    {
+        "Key": "task107/004/phase1-rabitq-1m-l2/direct-ssm-tablespaces/load/df-before.log",
+        "Size": 89,
+        "LastModified": "2026-06-15T11:22:52+00:00"
+    },
+    {
+        "Key": "task107/004/phase1-rabitq-1m-l2/direct-ssm-tablespaces/load/drop.log",
+        "Size": 262,
+        "LastModified": "2026-06-15T11:22:53+00:00"
+    },
+    {
+        "Key": "task107/004/phase1-rabitq-1m-l2/direct-ssm-tablespaces/load/inspect.log",
+        "Size": 4850,
+        "LastModified": "2026-06-15T11:22:56+00:00"
+    },
+    {
+        "Key": "task107/004/phase1-rabitq-1m-l2/direct-ssm-tablespaces/load/load.log",
+        "Size": 4802,
+        "LastModified": "2026-06-15T11:22:55+00:00"
+    },
+    {
+        "Key": "task107/004/phase1-rabitq-1m-l2/direct-ssm-tablespaces/load/residue-after-cleanup.log",
+        "Size": 0,
+        "LastModified": "2026-06-15T11:22:57+00:00"
+    },
+    {
+        "Key": "task107/004/phase1-rabitq-1m-l2/direct-ssm-tablespaces/load/residue-after-drop.log",
+        "Size": 0,
+        "LastModified": "2026-06-15T11:22:55+00:00"
+    },
+    {
+        "Key": "task107/004/phase1-rabitq-1m-l2/direct-ssm-tablespaces/load/residue-before.log",
+        "Size": 0,
+        "LastModified": "2026-06-15T11:22:54+00:00"
+    },
+    {
+        "Key": "task107/004/phase1-rabitq-1m-l2/direct-ssm-tablespaces/load/run-suite.log",
+        "Size": 34125,
+        "LastModified": "2026-06-15T11:22:56+00:00"
+    },
+    {
+        "Key": "task107/004/phase1-rabitq-1m-l2/direct-ssm-tablespaces/ssm/63bd3e6c-a375-4957-acde-a146a33dc1ca/i-0b4386fa5017f1363/awsrunShellScript/0.awsrunShellScript/stderr",
+        "Size": 1242,
+        "LastModified": "2026-06-15T11:22:59+00:00"
+    },
+    {
+        "Key": "task107/004/phase1-rabitq-1m-l2/direct-ssm-tablespaces/ssm/63bd3e6c-a375-4957-acde-a146a33dc1ca/i-0b4386fa5017f1363/awsrunShellScript/0.awsrunShellScript/stdout",
+        "Size": 5568691,
+        "LastModified": "2026-06-15T11:22:58+00:00"
     }
 ]

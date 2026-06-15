@@ -1,6 +1,6 @@
 # Task 107 Packet 004 Manifest
 
-- Head SHA: `d9ced2cfb9298eab18da7730ef4bedfd48fbc9f4`
+- Head SHA: `cf78d560b4a758327611e7610b3a6014893d0931`
 - Task bucket: `reviews/task-107/004-distributed-completion/`
 - Created: 2026-06-15T03:07:58Z
 - Purpose: run-control packet for completing the remaining Task 107 AWS
@@ -13,14 +13,15 @@ distributed lane and recorded several partial/non-decision attempts. Packet 004
 must follow `../run-checklist.md` before any additional AWS benchmark work.
 
 Packet 004 has completed `phase1-rabitq-100k-l1-control`,
-`phase1-rabitq-100k-l2`, `phase1-rabitq-100k-l4`, and
-`phase1-rabitq-1m-l1-control`. The earlier failed attempts remain recorded as
-non-decision-grade history; the decision-grade evidence for the completed cells
-is under
+`phase1-rabitq-100k-l2`, `phase1-rabitq-100k-l4`,
+`phase1-rabitq-1m-l1-control`, and `phase1-rabitq-1m-l2`. The earlier failed
+attempts remain recorded as non-decision-grade history; the decision-grade
+evidence for the completed cells is under
 `phase1-rabitq-100k-l1-control/retry-direct-ssm/`,
 `phase1-rabitq-100k-l2/direct-ssm-tablespaces/`, and
 `phase1-rabitq-100k-l4/direct-ssm-tablespaces/`, and
-`phase1-rabitq-1m-l1-control/direct-ssm-tablespaces/`. The earlier
+`phase1-rabitq-1m-l1-control/direct-ssm-tablespaces/`, and
+`phase1-rabitq-1m-l2/direct-ssm-tablespaces/`. The earlier
 `phase1-rabitq-100k-l2/direct-ssm/` run is superseded because it omitted
 explicit `local_store_tablespaces`.
 
@@ -56,8 +57,8 @@ explicit `local_store_tablespaces`.
 
 ### Current AWS State
 
-After `phase1-rabitq-100k-l2`, AWS was checked directly in
-`phase1-rabitq-100k-l2/direct-ssm/aws-state/describe-after-cell.json`:
+After `phase1-rabitq-1m-l2`, AWS was checked directly in
+`phase1-rabitq-1m-l2/direct-ssm-tablespaces/aws-state/describe-after-cell.json`:
 
 - `i-0b4386fa5017f1363` (`ecaz-spire-aws-coord`): running,
   `AutoStop=2026-06-17T05:30:31Z`.
@@ -320,4 +321,64 @@ The run checklist is `../run-checklist.md`. It enumerates:
     empty `resume/load/residue-after-cleanup.log`.
   - AWS state after cell:
     `phase1-rabitq-1m-l1-control/direct-ssm-tablespaces/aws-state/describe-after-cell.json`;
+    all three Task 107 instances remained running for the next cell.
+- `phase1-rabitq-1m-l2/direct-ssm-tablespaces/checkpoint.md`
+  - Status: completed.
+  - Cell: `phase1-rabitq-1m-l2`.
+  - Execution policy: ran one isolated index cell to completion using the
+    existing 1m representative corpus.
+  - Scope: one coordinator-only RaBitQ 1m index with `bits=4`,
+    `local_store_count=2`, and
+    `local_store_tablespaces=ecaz_spire_store_1,ecaz_spire_store_2`; no remote
+    shard loading and no comparator or Task 106 reruns.
+  - Command payload:
+    `phase1-rabitq-1m-l2/direct-ssm-tablespaces/ssm-parameters.json`.
+  - SSM evidence:
+    - final invocation:
+      `phase1-rabitq-1m-l2/direct-ssm-tablespaces/load/ssm-command-invocation.latest.json`;
+    - stdout/stderr:
+      `phase1-rabitq-1m-l2/direct-ssm-tablespaces/ssm/63bd3e6c-a375-4957-acde-a146a33dc1ca/i-0b4386fa5017f1363/awsrunShellScript/0.awsrunShellScript/`.
+  - SSM result: `Status=Success`, `ResponseCode=0`, execution window
+    `2026-06-15T10:07:44.318Z` to `2026-06-15T11:22:57.318Z`, elapsed
+    `PT1H15M13.844S`.
+  - Load/build artifacts:
+    - `phase1-rabitq-1m-l2/direct-ssm-tablespaces/load/load.log`
+    - `phase1-rabitq-1m-l2/direct-ssm-tablespaces/load/inspect.log`
+  - Load/build result: 990000 corpus rows, 10000 queries, `bits=4`,
+    `local_store_count=2`,
+    `local_store_tablespaces=ecaz_spire_store_1,ecaz_spire_store_2`,
+    `storage_format=rabitq`; corpus copy 320.23s, encode 421.44s, query copy
+    3.37s, index build 2680.67s, total 3553.77s.
+  - Routing/fanout evidence: `load/inspect.log` and `bench/storage.log` record
+    the isolated `task107_phase1_rabitq_1m_l2_idx` index with reloptions
+    `{local_store_count=2,"local_store_tablespaces=ecaz_spire_store_1,ecaz_spire_store_2",storage_format=rabitq}`.
+  - Recall/latency artifacts:
+    - `phase1-rabitq-1m-l2/direct-ssm-tablespaces/bench/13a3a-recall-k10.log`
+    - `phase1-rabitq-1m-l2/direct-ssm-tablespaces/bench/13a3a-recall-k100.log`
+    - `phase1-rabitq-1m-l2/direct-ssm-tablespaces/bench/13a3a-latency-k10-c1.log`
+    - `phase1-rabitq-1m-l2/direct-ssm-tablespaces/bench/13a3a-latency-k10-c4.log`
+    - `phase1-rabitq-1m-l2/direct-ssm-tablespaces/bench/13a3a-latency-k10-c8.log`
+    - `phase1-rabitq-1m-l2/direct-ssm-tablespaces/bench/13a3f-pk-c32.log`
+    - `phase1-rabitq-1m-l2/direct-ssm-tablespaces/bench/suite-results-node.jsonl`
+  - Key recall results:
+    - k10 nprobe 8/16/24/32/64: 0.8110 / 0.8820 / 0.9060 / 0.9340 / 0.9690.
+    - k100 nprobe 8/16/24/32/64: 0.7626 / 0.8425 / 0.8763 / 0.8988 / 0.9375.
+  - Key latency results:
+    - k10 c1 mean nprobe 8/16/24/32: 203.3 / 361.9 / 521.1 / 658.0 ms.
+    - k10 c4 mean nprobe 8/16/24/32: 217.8 / 387.4 / 556.3 / 703.4 ms.
+    - k10 c8 mean nprobe 8/16/24/32: 232.6 / 411.6 / 584.0 / 743.1 ms.
+    - k1 c32 nprobe 32 mean: 1527.0 ms.
+  - Storage artifact:
+    `phase1-rabitq-1m-l2/direct-ssm-tablespaces/bench/storage.log`.
+  - Storage result: total 15.4 GiB; `ec_spire` index 168.0 KiB, 0.2 B/row
+    with `local_store_count=2`,
+    `local_store_tablespaces=ecaz_spire_store_1,ecaz_spire_store_2`, and
+    `storage_format=rabitq`.
+  - Cleanup artifact:
+    `phase1-rabitq-1m-l2/direct-ssm-tablespaces/load/cleanup-drop.log`.
+  - Cleanup result: dropped index, queries table, and corpus table; no
+    remaining `task107_phase1_rabitq_1m_l2%` relations were printed in the
+    empty `load/residue-after-cleanup.log`.
+  - AWS state after cell:
+    `phase1-rabitq-1m-l2/direct-ssm-tablespaces/aws-state/describe-after-cell.json`;
     all three Task 107 instances remained running for the next cell.
