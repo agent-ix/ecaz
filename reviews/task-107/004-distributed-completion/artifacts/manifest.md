@@ -1,6 +1,6 @@
 # Task 107 Packet 004 Manifest
 
-- Head SHA: `31ec11b202b8ba2bb3a85c40f158c1e2962a7c0e`
+- Head SHA: `c129491041e5dbdfc69fdf780846d144e2c737aa`
 - Task bucket: `reviews/task-107/004-distributed-completion/`
 - Created: 2026-06-15T03:07:58Z
 - Purpose: run-control packet for completing the remaining Task 107 AWS
@@ -14,7 +14,9 @@ must follow `../run-checklist.md` before any additional AWS benchmark work.
 
 No packet-004 benchmark cell has completed yet. The
 `phase1-rabitq-100k-l1-control` cell has two failed attempts, both before any
-decision-grade load/build, storage, recall/latency, or routing result.
+decision-grade load/build, storage, recall/latency, or routing result. A direct
+coordinator-only SSM retry checkpoint is prepared but not started because AWS
+start requires explicit cost approval.
 
 ## Current Packet Artifacts
 
@@ -96,3 +98,14 @@ The run checklist is `../run-checklist.md`. It enumerates:
     `phase1-rabitq-100k-l1-control/retry-node-local/aws-stop/describe-stopped-after-ssm-failure.json`.
   - No load/build, recall, latency, storage, or routing result from this retry
     is decision-grade.
+- `phase1-rabitq-100k-l1-control/retry-direct-ssm/checkpoint.md`
+  - Status: checkpoint prepared; not started.
+  - Next cell: `phase1-rabitq-100k-l1-control`.
+  - Expected maximum runtime before stopping and packaging status: 45 minutes.
+  - Coordinator-local load/build timeout: 15 minutes.
+  - Scope: one coordinator-only RaBitQ 100k index with `bits=4` and
+    `local_store_count=1`; no remote shard loading and no comparator or
+    Task 106 reruns.
+  - Command payload: `phase1-rabitq-100k-l1-control/retry-direct-ssm/ssm-parameters.json`.
+  - Start status: not started; AWS start requires explicit user approval for
+    the cost-incurring instances.
