@@ -1,0 +1,41 @@
+{
+    "CommandInvocations": [
+        {
+            "CommandId": "76989fb0-fcb4-404f-b2a9-e3772256c714",
+            "InstanceId": "i-0b4386fa5017f1363",
+            "InstanceName": "ip-10-42-1-154.us-west-2.compute.internal",
+            "Comment": "ecaz Task 107 phase1 rabitq 100k l2 coordinator-only load",
+            "DocumentName": "AWS-RunShellScript",
+            "DocumentVersion": "$DEFAULT",
+            "RequestedDateTime": "2026-06-14T22:31:37.337000-07:00",
+            "Status": "InProgress",
+            "StatusDetails": "InProgress",
+            "StandardOutputUrl": "",
+            "StandardErrorUrl": "",
+            "CommandPlugins": [
+                {
+                    "Name": "aws:runShellScript",
+                    "Status": "InProgress",
+                    "StatusDetails": "InProgress",
+                    "ResponseCode": -1,
+                    "Output": "",
+                    "StandardOutputUrl": "",
+                    "StandardErrorUrl": "",
+                    "OutputS3Region": "",
+                    "OutputS3BucketName": "",
+                    "OutputS3KeyPrefix": ""
+                }
+            ],
+            "ServiceRole": "",
+            "NotificationConfig": {
+                "NotificationArn": "",
+                "NotificationEvents": [],
+                "NotificationType": ""
+            },
+            "CloudWatchOutputConfig": {
+                "CloudWatchLogGroupName": "",
+                "CloudWatchOutputEnabled": false
+            }
+        }
+    ]
+}
