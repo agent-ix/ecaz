@@ -1,0 +1,8 @@
+
+   0: [91mCommand { std: "/home/peter/.pgrx/18.3/pgrx-install/bin/psql" "-h" "127.0.0.1" "-p" "15432" "-U" "ecaz_coord" "-d" "postgres" "-v" "ON_ERROR_STOP=1" "-c" "DROP INDEX IF EXISTS task107_rabitq_1m_l1_idx; DROP TABLE IF EXISTS task107_rabitq_1m_l1_queries CASCADE; DROP TABLE IF EXISTS task107_rabitq_1m_l1_corpus CASCADE;", kill_on_drop: false } failed with status exit status: 2[0m
+
+Location:
+   [35mcrates/ecaz-cli/src/commands/dev/support.rs[0m:[35m210[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.

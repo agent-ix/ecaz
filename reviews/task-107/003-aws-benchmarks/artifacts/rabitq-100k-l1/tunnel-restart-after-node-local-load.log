@@ -1,0 +1,6 @@
+tunnel coordinator ready on port 15432
+tunnel coordinator restarted on 127.0.0.1:15432 after 1 attempt(s)
+tunnel remote-2 ready on port 15433
+tunnel remote-2 restarted on 127.0.0.1:15433 after 1 attempt(s)
+tunnel remote-3 ready on port 15434
+tunnel remote-3 restarted on 127.0.0.1:15434 after 1 attempt(s)

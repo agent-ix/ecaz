@@ -1,0 +1,3 @@
+DROP TABLE
+DROP TABLE
+NOTICE:  table "task107_rabitq_100k_l1_node_3_queries" does not exist, skipping
