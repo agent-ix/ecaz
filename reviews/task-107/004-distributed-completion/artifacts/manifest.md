@@ -1,6 +1,6 @@
 # Task 107 Packet 004 Manifest
 
-- Head SHA: `8ab418dffe02ff58f671dae0a24e1785eb56e86a`
+- Head SHA: `31ec11b202b8ba2bb3a85c40f158c1e2962a7c0e`
 - Task bucket: `reviews/task-107/004-distributed-completion/`
 - Created: 2026-06-15T03:07:58Z
 - Purpose: run-control packet for completing the remaining Task 107 AWS
@@ -12,7 +12,9 @@ This packet begins after packet 003, which completed only the RaBitQ 100k
 distributed lane and recorded several partial/non-decision attempts. Packet 004
 must follow `../run-checklist.md` before any additional AWS benchmark work.
 
-No benchmark/load has been run in this packet yet.
+No packet-004 benchmark cell has completed yet. The
+`phase1-rabitq-100k-l1-control` cell has two failed attempts, both before any
+decision-grade load/build, storage, recall/latency, or routing result.
 
 ## Current Packet Artifacts
 
@@ -80,3 +82,17 @@ The run checklist is `../run-checklist.md`. It enumerates:
     `phase1-rabitq-100k-l1-control/aws-stop/describe-stopped-after-timeout.json`.
   - No load/build, recall, latency, storage, or routing result from this
     attempt is decision-grade.
+- `phase1-rabitq-100k-l1-control/retry-node-local/failure.md`
+  - Status: failed before corpus load/build benchmark evidence.
+  - SSM command id: `67e1b2e7-5ac9-4bf8-a66d-75c7e35cddda`.
+  - Final SSM result: `Status=Failed`, `ResponseCode=3`, execution window
+    `2026-06-15T04:06:07.591Z` to `2026-06-15T04:06:15.591Z`.
+  - Evidence: `retry-node-local/load/ssm-stdout.log` shows the coordinator
+    downloaded the 100k corpus, queries, and manifest from S3; stderr only
+    reports `failed to run commands: exit status 3`.
+  - Failure point: after S3 downloads and before any usable `ecaz corpus load`
+    log or load/build output.
+  - AWS state after retry: stopped, recorded in
+    `phase1-rabitq-100k-l1-control/retry-node-local/aws-stop/describe-stopped-after-ssm-failure.json`.
+  - No load/build, recall, latency, storage, or routing result from this retry
+    is decision-grade.

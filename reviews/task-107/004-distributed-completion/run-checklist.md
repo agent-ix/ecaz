@@ -1,15 +1,16 @@
 # Task 107 Packet 004 Run Checklist
 
 Date: 2026-06-15
-Head SHA: `8ab418dffe02ff58f671dae0a24e1785eb56e86a`
+Head SHA: `31ec11b202b8ba2bb3a85c40f158c1e2962a7c0e`
 Packet: `reviews/task-107/004-distributed-completion/`
 
 ## Current State
 
 - AWS topology: one coordinator plus two remotes.
-- Current AWS state: stopped after the packet-004 preflight.
-- Packet 004 benchmark/load status: no corpus load, index build, or benchmark
-  run has been started in this packet.
+- Current AWS state: stopped after the `phase1-rabitq-100k-l1-control`
+  node-local retry failure.
+- Packet 004 benchmark/load status: no cell has produced completed corpus load,
+  index build, storage, recall/latency, or routing evidence.
 - Existing completed Task 107 benchmark evidence remains limited to packet 003:
   RaBitQ 100k distributed, `bits=4`, `local_store_count=1`.
 
@@ -38,7 +39,7 @@ time.
 
 | Cell | Scale | Storage | Store count | Status | Artifact directory |
 | --- | --- | --- | ---: | --- | --- |
-| phase1-rabitq-100k-l1-control | 100k | RaBitQ | 1 | Attempt 1 failed before benchmark; retry must use node-local load path | `artifacts/phase1-rabitq-100k-l1-control/` |
+| phase1-rabitq-100k-l1-control | 100k | RaBitQ | 1 | Attempt 1 timed out over SSM tunnel; node-local retry failed after S3 downloads before load/build; no decision-grade result | `artifacts/phase1-rabitq-100k-l1-control/` |
 | phase1-rabitq-100k-l2 | 100k | RaBitQ | 2 | Not started | `artifacts/phase1-rabitq-100k-l2/` |
 | phase1-rabitq-100k-l4 | 100k | RaBitQ | 4 | Packet 003 attempt failed placement/export; needs rerun only after blocker is understood | `artifacts/phase1-rabitq-100k-l4/` |
 | phase1-rabitq-1m-l1-control | 1m | RaBitQ | 1 | Not started in packet 004 | `artifacts/phase1-rabitq-1m-l1-control/` |
