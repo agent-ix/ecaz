@@ -68,7 +68,7 @@ pub(crate) fn remote_search_endpoint_contract_rows(
         SpireRemoteSearchEndpointContractRow {
             contract_ordinal: 9,
             contract_item: "quantizer_family",
-            contract_value: "rabitq_only_pq_and_pqfastscan_reserved",
+            contract_value: "turboquant_and_rabitq_pqfastscan_reserved",
             status: SPIRE_REMOTE_STATUS_READY,
             validator: "must_reject_unsupported_quantizer_families_until_implemented",
             recommendation: SPIRE_REMOTE_NONE,
@@ -139,7 +139,7 @@ fn remote_search_endpoint_quantizer_profile(
 ) -> &'static str {
     match format {
         quantizer::SpireAssignmentPayloadFormat::RaBitQ => "rabitq_v1",
-        quantizer::SpireAssignmentPayloadFormat::TurboQuant => "unsupported_turboquant",
+        quantizer::SpireAssignmentPayloadFormat::TurboQuant => "turboquant_v1",
         quantizer::SpireAssignmentPayloadFormat::PqFastScan => "unsupported_pq_fastscan",
     }
 }
@@ -463,12 +463,16 @@ pub(crate) fn remote_search_endpoint_identity_row(
         ]);
 
         let (status, recommendation) =
-            if assignment_payload_format == quantizer::SpireAssignmentPayloadFormat::RaBitQ {
+            if matches!(
+                assignment_payload_format,
+                quantizer::SpireAssignmentPayloadFormat::TurboQuant
+                    | quantizer::SpireAssignmentPayloadFormat::RaBitQ
+            ) {
                 (SPIRE_REMOTE_STATUS_READY, SPIRE_REMOTE_NONE)
             } else {
                 (
                     SPIRE_REMOTE_STATUS_REQUIRES_RABITQ_STORAGE_FORMAT,
-                    "create or reindex the remote-serving SPIRE index with storage_format = 'rabitq'",
+                    "create or reindex the remote-serving SPIRE index with storage_format = 'turboquant' or 'rabitq'",
                 )
             };
 
