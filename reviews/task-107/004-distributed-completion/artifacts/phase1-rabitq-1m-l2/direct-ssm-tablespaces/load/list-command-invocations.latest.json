@@ -1,0 +1,41 @@
+{
+    "CommandInvocations": [
+        {
+            "CommandId": "63bd3e6c-a375-4957-acde-a146a33dc1ca",
+            "InstanceId": "i-0b4386fa5017f1363",
+            "InstanceName": "ip-10-42-1-154.us-west-2.compute.internal",
+            "Comment": "",
+            "DocumentName": "AWS-RunShellScript",
+            "DocumentVersion": "$DEFAULT",
+            "RequestedDateTime": "2026-06-15T03:07:44.208000-07:00",
+            "Status": "InProgress",
+            "StatusDetails": "InProgress",
+            "StandardOutputUrl": "",
+            "StandardErrorUrl": "",
+            "CommandPlugins": [
+                {
+                    "Name": "aws:runShellScript",
+                    "Status": "InProgress",
+                    "StatusDetails": "InProgress",
+                    "ResponseCode": -1,
+                    "Output": "",
+                    "StandardOutputUrl": "",
+                    "StandardErrorUrl": "",
+                    "OutputS3Region": "",
+                    "OutputS3BucketName": "",
+                    "OutputS3KeyPrefix": ""
+                }
+            ],
+            "ServiceRole": "",
+            "NotificationConfig": {
+                "NotificationArn": "",
+                "NotificationEvents": [],
+                "NotificationType": ""
+            },
+            "CloudWatchOutputConfig": {
+                "CloudWatchLogGroupName": "",
+                "CloudWatchOutputEnabled": false
+            }
+        }
+    ]
+}
