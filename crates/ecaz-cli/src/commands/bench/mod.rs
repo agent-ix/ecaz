@@ -11,6 +11,7 @@ use crate::profiles::IndexProfile;
 use crate::psql::ConnectionOptions;
 
 mod build_probe;
+mod comparator;
 mod cross_am;
 mod graph;
 pub mod latency;
@@ -23,6 +24,7 @@ mod storage;
 mod suite;
 
 pub use build_probe::BuildProbeArgs;
+pub use comparator::ComparatorArgs;
 pub use cross_am::CrossAmArgs;
 pub use graph::GraphArgs;
 pub use latency::LatencyArgs;
@@ -536,6 +538,8 @@ pub enum BenchCommand {
     Latency(LatencyArgs),
     /// Storage accounting: corpus table size, per-index size, per-vector datum size.
     Storage(StorageArgs),
+    /// Standalone competitor measurement: recall@k + latency + storage for one external engine.
+    Comparator(ComparatorArgs),
     /// DiskANN persisted graph diagnostics: reachability, degree, and edge counters.
     DiskannGraph(GraphArgs),
     /// DiskANN in-memory build diagnostics: candidate pools, pruning, and degree shape.
@@ -559,6 +563,7 @@ impl BenchCommand {
             BenchCommand::CrossAm(a) => cross_am::run(a).await,
             BenchCommand::Latency(a) => latency::run(conn, a).await,
             BenchCommand::Storage(a) => storage::run(conn, a).await,
+            BenchCommand::Comparator(a) => comparator::run(conn, a).await,
             BenchCommand::DiskannGraph(a) => graph::run(conn, a).await,
             BenchCommand::DiskannBuildProbe(a) => build_probe::run(conn, a).await,
             BenchCommand::Overhead(a) => overhead::run(conn, a).await,

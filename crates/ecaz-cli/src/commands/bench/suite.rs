@@ -212,8 +212,7 @@ enum SuiteStep {
     Storage(StorageStep),
     Explain(ExplainStep),
     SidecarRerank(SidecarRerankStep),
-    ComparePgvector(ComparePgvectorStep),
-    CompareVectorscale(CompareVectorscaleStep),
+    Comparator(ComparatorStep),
     Raw(RawStep),
 }
 
@@ -560,73 +559,37 @@ struct SidecarRerankStep {
 }
 
 #[derive(Debug, Deserialize)]
-struct ComparePgvectorStep {
+struct ComparatorStep {
     name: String,
     #[serde(default)]
     tags: Vec<String>,
+    engine: String,
     prefix: String,
     #[serde(default)]
-    profile: Option<String>,
-    #[serde(default)]
     k: Option<usize>,
-    #[serde(default)]
     sweep: Vec<i32>,
-    #[serde(default)]
-    ecaz_sweep: Option<i32>,
-    #[serde(default)]
-    pgvector_am: Option<String>,
-    #[serde(default)]
-    pgvector_ef_search: Option<i32>,
-    #[serde(default)]
-    pgvector_m: Option<i32>,
-    #[serde(default)]
-    pgvector_ef_construction: Option<i32>,
-    #[serde(default)]
-    pgvector_lists: Option<i32>,
-    #[serde(default)]
-    pgvector_probes: Option<i32>,
-    #[serde(default)]
-    pgvector_maintenance_work_mem: Option<String>,
-    #[serde(default)]
-    rerank_width: Option<i32>,
     #[serde(default)]
     queries_limit: Option<usize>,
     #[serde(default)]
-    rebuild: bool,
+    lists: Option<i32>,
     #[serde(default)]
-    log_file: Option<PathBuf>,
-}
-
-#[derive(Debug, Deserialize)]
-struct CompareVectorscaleStep {
-    name: String,
+    m: Option<i32>,
     #[serde(default)]
-    tags: Vec<String>,
-    prefix: String,
+    ef_construction: Option<i32>,
     #[serde(default)]
-    profile: Option<String>,
+    num_neighbors: Option<i32>,
     #[serde(default)]
-    k: Option<usize>,
+    build_search_list_size: Option<i32>,
     #[serde(default)]
-    sweep: Vec<i32>,
+    max_alpha: Option<f32>,
     #[serde(default)]
-    ecaz_sweep: Option<i32>,
+    storage_layout: Option<String>,
     #[serde(default)]
-    vectorscale_num_neighbors: Option<i32>,
-    #[serde(default)]
-    vectorscale_build_search_list_size: Option<i32>,
-    #[serde(default)]
-    vectorscale_max_alpha: Option<f32>,
-    #[serde(default)]
-    vectorscale_storage_layout: Option<String>,
-    #[serde(default)]
-    vectorscale_query_rescore: Option<i32>,
-    #[serde(default)]
-    queries_limit: Option<usize>,
+    maintenance_work_mem: Option<String>,
     #[serde(default)]
     rebuild: bool,
     #[serde(default)]
-    log_file: Option<PathBuf>,
+    log_output: Option<PathBuf>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1151,11 +1114,8 @@ fn apply_default_artifact_logs(config: &mut SuiteConfig) {
             SuiteStep::SidecarRerank(step) if step.log_output.is_none() => {
                 step.log_output = Some(log_path(&step.name));
             }
-            SuiteStep::ComparePgvector(step) if step.log_file.is_none() => {
-                step.log_file = Some(log_path(&step.name));
-            }
-            SuiteStep::CompareVectorscale(step) if step.log_file.is_none() => {
-                step.log_file = Some(log_path(&step.name));
+            SuiteStep::Comparator(step) if step.log_output.is_none() => {
+                step.log_output = Some(log_path(&step.name));
             }
             _ => {}
         }
@@ -1210,11 +1170,8 @@ fn apply_artifact_dir_templates(config: &mut SuiteConfig) {
             SuiteStep::SidecarRerank(step) => {
                 rewrite_artifact_dir_path(&mut step.log_output, &artifact_dir);
             }
-            SuiteStep::ComparePgvector(step) => {
-                rewrite_artifact_dir_path(&mut step.log_file, &artifact_dir);
-            }
-            SuiteStep::CompareVectorscale(step) => {
-                rewrite_artifact_dir_path(&mut step.log_file, &artifact_dir);
+            SuiteStep::Comparator(step) => {
+                rewrite_artifact_dir_path(&mut step.log_output, &artifact_dir);
             }
             SuiteStep::Raw(step) => {
                 for arg in &mut step.args {
@@ -1579,20 +1536,20 @@ fn parse_result_rows(
                 values: add_result_context(manifest, step, values),
             })
             .collect(),
-        "compare-pgvector" | "compare-vectorscale" => {
-            let mut rows: Vec<ResultRow> = parse_compare_table_rows(raw)
+        "comparator" => {
+            let mut rows: Vec<ResultRow> = parse_comparator_table_rows(raw)
                 .into_iter()
                 .map(|values| ResultRow {
                     suite: manifest.suite.clone(),
                     step: step.name.clone(),
                     kind: step.kind.clone(),
-                    metric: "compare".into(),
+                    metric: "comparator".into(),
                     artifact: artifact.into(),
                     values: add_result_context(manifest, step, values),
                 })
                 .collect();
             rows.extend(
-                parse_compare_summary_rows(raw)
+                parse_comparator_summary_rows(raw)
                     .into_iter()
                     .map(|(metric, values)| ResultRow {
                         suite: manifest.suite.clone(),
@@ -1840,33 +1797,46 @@ fn parse_byte_value(value: &str) -> Option<f64> {
     Some(amount * multiplier)
 }
 
-fn parse_compare_table_rows(raw: &str) -> Vec<BTreeMap<String, String>> {
+fn parse_comparator_table_rows(raw: &str) -> Vec<BTreeMap<String, String>> {
     parse_table_rows(raw)
         .into_iter()
-        .filter(|row| {
-            row.get("engine")
-                .map(|engine| !engine.starts_with('Δ'))
-                .unwrap_or(false)
-        })
+        .filter(|row| row.contains_key("engine") && row.contains_key("recall@k"))
         .collect()
 }
 
-fn parse_compare_summary_rows(raw: &str) -> Vec<(String, BTreeMap<String, String>)> {
+fn parse_comparator_summary_rows(raw: &str) -> Vec<(String, BTreeMap<String, String>)> {
     let mut rows = Vec::new();
     for line in raw.lines() {
-        if let Some((name, seconds)) = parse_compare_timed_line(line, "built ") {
+        if let Some((name, seconds)) = parse_comparator_timed_line(line, "built ") {
             rows.push((
-                "compare_build".into(),
+                "comparator_build".into(),
                 BTreeMap::from([("subject".into(), name), ("seconds".into(), seconds)]),
             ));
-        } else if let Some((name, bytes)) = parse_compare_size_line(line) {
+        } else if let Some((name, bytes)) = parse_comparator_size_line(line) {
             rows.push((
-                "compare_index_size".into(),
+                "comparator_index_size".into(),
                 BTreeMap::from([("subject".into(), name), ("bytes".into(), bytes)]),
             ));
         }
     }
     rows
+}
+
+fn parse_comparator_timed_line(line: &str, prefix: &str) -> Option<(String, String)> {
+    let rest = line
+        .trim_start()
+        .strip_prefix("[comparator] ")?
+        .strip_prefix(prefix)?;
+    let (name, duration) = rest.rsplit_once(" in ")?;
+    Some((name.trim().into(), duration_seconds(duration.trim())?))
+}
+
+fn parse_comparator_size_line(line: &str) -> Option<(String, String)> {
+    let rest = line.trim_start().strip_prefix("[comparator] ")?;
+    let (name, bytes) = rest.rsplit_once(" pg_relation_size=")?;
+    let bytes = bytes.strip_suffix(" bytes")?.trim();
+    bytes.parse::<u64>().ok()?;
+    Some((name.trim().into(), bytes.into()))
 }
 
 fn parse_load_rows(raw: &str) -> Vec<(String, BTreeMap<String, String>)> {
@@ -1934,23 +1904,6 @@ fn parse_integer_key_values(rest: &str) -> Option<BTreeMap<String, String>> {
     } else {
         Some(values)
     }
-}
-
-fn parse_compare_timed_line(line: &str, prefix: &str) -> Option<(String, String)> {
-    let rest = line
-        .trim_start()
-        .strip_prefix("[compare] ")?
-        .strip_prefix(prefix)?;
-    let (name, duration) = rest.rsplit_once(" in ")?;
-    Some((name.trim().into(), duration_seconds(duration.trim())?))
-}
-
-fn parse_compare_size_line(line: &str) -> Option<(String, String)> {
-    let rest = line.trim_start().strip_prefix("[compare] ")?;
-    let (name, bytes) = rest.rsplit_once(" pg_relation_size=")?;
-    let bytes = bytes.strip_suffix(" bytes")?.trim();
-    bytes.parse::<u64>().ok()?;
-    Some((name.trim().into(), bytes.into()))
 }
 
 fn parse_explain_rows(raw: &str) -> Vec<(String, BTreeMap<String, String>)> {
@@ -2311,8 +2264,7 @@ impl SuiteStep {
             SuiteStep::Storage(step) => &step.name,
             SuiteStep::Explain(step) => &step.name,
             SuiteStep::SidecarRerank(step) => &step.name,
-            SuiteStep::ComparePgvector(step) => &step.name,
-            SuiteStep::CompareVectorscale(step) => &step.name,
+            SuiteStep::Comparator(step) => &step.name,
             SuiteStep::Raw(step) => &step.name,
         }
     }
@@ -2329,8 +2281,7 @@ impl SuiteStep {
             SuiteStep::Storage(_) => "storage",
             SuiteStep::Explain(_) => "explain",
             SuiteStep::SidecarRerank(_) => "sidecar-rerank",
-            SuiteStep::ComparePgvector(_) => "compare-pgvector",
-            SuiteStep::CompareVectorscale(_) => "compare-vectorscale",
+            SuiteStep::Comparator(_) => "comparator",
             SuiteStep::Raw(_) => "raw",
         }
     }
@@ -2347,8 +2298,7 @@ impl SuiteStep {
             SuiteStep::Storage(step) => &step.tags,
             SuiteStep::Explain(step) => &step.tags,
             SuiteStep::SidecarRerank(step) => &step.tags,
-            SuiteStep::ComparePgvector(step) => &step.tags,
-            SuiteStep::CompareVectorscale(step) => &step.tags,
+            SuiteStep::Comparator(step) => &step.tags,
             SuiteStep::Raw(step) => &step.tags,
         }
     }
@@ -2544,22 +2494,18 @@ impl SuiteStep {
                 }
                 Ok(())
             }
-            SuiteStep::ComparePgvector(step) => {
-                validate_profile_name("compare-pgvector profile", step.profile.as_deref())?;
-                if step.sweep.is_empty() && step.ecaz_sweep.is_none() {
-                    bail!(
-                        "compare-pgvector step {:?} must include sweep or ecaz_sweep",
-                        step.name
-                    )
+            SuiteStep::Comparator(step) => {
+                if step.sweep.is_empty() {
+                    bail!("comparator step {:?} must include a sweep", step.name)
                 }
-                Ok(())
-            }
-            SuiteStep::CompareVectorscale(step) => {
-                validate_profile_name("compare-vectorscale profile", step.profile.as_deref())?;
-                if step.sweep.is_empty() && step.ecaz_sweep.is_none() {
+                if !matches!(
+                    step.engine.as_str(),
+                    "vchord" | "pgvector-hnsw" | "pgvector-ivfflat" | "pgvectorscale"
+                ) {
                     bail!(
-                        "compare-vectorscale step {:?} must include sweep or ecaz_sweep",
-                        step.name
+                        "comparator step {:?} engine {:?} must be one of vchord, pgvector-hnsw, pgvector-ivfflat, pgvectorscale",
+                        step.name,
+                        step.engine
                     )
                 }
                 Ok(())
@@ -2583,8 +2529,7 @@ impl SuiteStep {
             SuiteStep::Storage(step) => Ok(expand_storage(step)),
             SuiteStep::Explain(step) => Ok(expand_explain(step, defaults, conn)),
             SuiteStep::SidecarRerank(step) => Ok(expand_sidecar_rerank(step, defaults)),
-            SuiteStep::ComparePgvector(step) => Ok(expand_compare_pgvector(step, defaults)),
-            SuiteStep::CompareVectorscale(step) => Ok(expand_compare_vectorscale(step, defaults)),
+            SuiteStep::Comparator(step) => Ok(expand_comparator(step, defaults)),
             SuiteStep::Raw(step) => Ok(step.args.clone()),
         }
     }
@@ -2633,8 +2578,7 @@ impl SuiteStep {
                 .cloned()
                 .collect(),
             SuiteStep::SidecarRerank(step) => step.log_output.iter().cloned().collect(),
-            SuiteStep::ComparePgvector(step) => step.log_file.iter().cloned().collect(),
-            SuiteStep::CompareVectorscale(step) => step.log_file.iter().cloned().collect(),
+            SuiteStep::Comparator(step) => step.log_output.iter().cloned().collect(),
             SuiteStep::Raw(step) => step.expected_artifacts.clone(),
         }
     }
@@ -3273,110 +3217,45 @@ fn expand_sidecar_rerank(step: &SidecarRerankStep, defaults: &SuiteDefaults) -> 
     args
 }
 
-fn expand_compare_pgvector(step: &ComparePgvectorStep, defaults: &SuiteDefaults) -> Vec<String> {
+fn expand_comparator(step: &ComparatorStep, defaults: &SuiteDefaults) -> Vec<String> {
     let mut args = Vec::new();
-    push_opt_path(&mut args, "--log-file", step.log_file.as_deref());
-    args.extend(["compare".into(), "pgvector".into()]);
+    args.extend(["bench".into(), "comparator".into()]);
+    push_arg(&mut args, "--engine", &step.engine);
     push_arg(&mut args, "--prefix", &step.prefix);
-    push_arg(
-        &mut args,
-        "--profile",
-        &profile(defaults, step.profile.as_deref()),
-    );
     push_arg(&mut args, "--k", &step.k.unwrap_or(10).to_string());
-    if let Some(pgvector_am) = step.pgvector_am.as_deref() {
-        push_arg(&mut args, "--pgvector-am", pgvector_am);
+    push_arg(&mut args, "--sweep", &join_i32(&step.sweep));
+    if let Some(lists) = step.lists {
+        push_arg(&mut args, "--lists", &lists.to_string());
     }
-    if !step.sweep.is_empty() {
-        push_arg(&mut args, "--sweep", &join_i32(&step.sweep));
-    } else if let Some(ecaz_sweep) = step.ecaz_sweep {
-        push_arg(&mut args, "--ecaz-sweep", &ecaz_sweep.to_string());
+    if let Some(m) = step.m {
+        push_arg(&mut args, "--m", &m.to_string());
+    }
+    if let Some(ef_construction) = step.ef_construction {
+        push_arg(&mut args, "--ef-construction", &ef_construction.to_string());
+    }
+    if let Some(num_neighbors) = step.num_neighbors {
+        push_arg(&mut args, "--num-neighbors", &num_neighbors.to_string());
+    }
+    if let Some(build_search_list_size) = step.build_search_list_size {
         push_arg(
             &mut args,
-            "--pgvector-ef-search",
-            &step.pgvector_ef_search.unwrap_or(ecaz_sweep).to_string(),
+            "--build-search-list-size",
+            &build_search_list_size.to_string(),
         );
     }
-    if let Some(pgvector_probes) = step.pgvector_probes {
-        push_arg(&mut args, "--pgvector-probes", &pgvector_probes.to_string());
+    if let Some(max_alpha) = step.max_alpha {
+        push_arg(&mut args, "--max-alpha", &max_alpha.to_string());
     }
-    if let Some(memory) = step.pgvector_maintenance_work_mem.as_deref() {
-        push_arg(&mut args, "--pgvector-maintenance-work-mem", memory);
+    if let Some(storage_layout) = step.storage_layout.as_deref() {
+        push_arg(&mut args, "--storage-layout", storage_layout);
     }
-    if let Some(pgvector_m) = step.pgvector_m {
-        push_arg(&mut args, "--pgvector-m", &pgvector_m.to_string());
-    }
-    if let Some(pgvector_ef_construction) = step.pgvector_ef_construction {
-        push_arg(
-            &mut args,
-            "--pgvector-ef-construction",
-            &pgvector_ef_construction.to_string(),
-        );
-    }
-    if let Some(pgvector_lists) = step.pgvector_lists {
-        push_arg(&mut args, "--pgvector-lists", &pgvector_lists.to_string());
-    }
-    if let Some(width) = step.rerank_width {
-        push_arg(&mut args, "--rerank-width", &width.to_string());
+    if let Some(memory) = step.maintenance_work_mem.as_deref() {
+        push_arg(&mut args, "--maintenance-work-mem", memory);
     }
     if let Some(limit) = step.queries_limit.or(defaults.queries_limit) {
         push_arg(&mut args, "--queries-limit", &limit.to_string());
     }
-    if step.rebuild {
-        args.push("--rebuild".into());
-    }
-    args
-}
-
-fn expand_compare_vectorscale(
-    step: &CompareVectorscaleStep,
-    defaults: &SuiteDefaults,
-) -> Vec<String> {
-    let mut args = Vec::new();
-    push_opt_path(&mut args, "--log-file", step.log_file.as_deref());
-    args.extend(["compare".into(), "vectorscale".into()]);
-    push_arg(&mut args, "--prefix", &step.prefix);
-    push_arg(
-        &mut args,
-        "--profile",
-        &profile(defaults, step.profile.as_deref()),
-    );
-    push_arg(&mut args, "--k", &step.k.unwrap_or(10).to_string());
-    if !step.sweep.is_empty() {
-        push_arg(&mut args, "--sweep", &join_i32(&step.sweep));
-    } else if let Some(ecaz_sweep) = step.ecaz_sweep {
-        push_arg(&mut args, "--ecaz-sweep", &ecaz_sweep.to_string());
-    }
-    if let Some(num_neighbors) = step.vectorscale_num_neighbors {
-        push_arg(
-            &mut args,
-            "--vectorscale-num-neighbors",
-            &num_neighbors.to_string(),
-        );
-    }
-    if let Some(search_list_size) = step.vectorscale_build_search_list_size {
-        push_arg(
-            &mut args,
-            "--vectorscale-build-search-list-size",
-            &search_list_size.to_string(),
-        );
-    }
-    if let Some(max_alpha) = step.vectorscale_max_alpha {
-        push_arg(&mut args, "--vectorscale-max-alpha", &max_alpha.to_string());
-    }
-    if let Some(storage_layout) = step.vectorscale_storage_layout.as_deref() {
-        push_arg(&mut args, "--vectorscale-storage-layout", storage_layout);
-    }
-    if let Some(query_rescore) = step.vectorscale_query_rescore {
-        push_arg(
-            &mut args,
-            "--vectorscale-query-rescore",
-            &query_rescore.to_string(),
-        );
-    }
-    if let Some(limit) = step.queries_limit.or(defaults.queries_limit) {
-        push_arg(&mut args, "--queries-limit", &limit.to_string());
-    }
+    push_opt_path(&mut args, "--log-output", step.log_output.as_deref());
     if step.rebuild {
         args.push("--rebuild".into());
     }
@@ -4057,6 +3936,80 @@ mod tests {
         assert!(args
             .windows(2)
             .any(|w| w == ["--predictions-output", "predictions.json"]));
+    }
+
+    #[test]
+    fn expands_comparator_with_vchord_engine_and_lists() {
+        let defaults = SuiteDefaults {
+            queries_limit: Some(200),
+            ..SuiteDefaults::default()
+        };
+        let step = ComparatorStep {
+            name: "comparator-vchord".into(),
+            tags: vec!["comparator".into()],
+            engine: "vchord".into(),
+            prefix: "real_100k".into(),
+            k: Some(10),
+            sweep: vec![1, 4, 16, 64],
+            queries_limit: None,
+            lists: Some(320),
+            m: None,
+            ef_construction: None,
+            num_neighbors: None,
+            build_search_list_size: None,
+            max_alpha: None,
+            storage_layout: None,
+            maintenance_work_mem: Some("4GB".into()),
+            rebuild: true,
+            log_output: Some("comparator-vchord.log".into()),
+        };
+        let args = expand_comparator(&step, &defaults);
+        assert_eq!(&args[0], "bench");
+        assert_eq!(&args[1], "comparator");
+        assert!(args.windows(2).any(|w| w == ["--engine", "vchord"]));
+        assert!(args.windows(2).any(|w| w == ["--prefix", "real_100k"]));
+        assert!(args.windows(2).any(|w| w == ["--sweep", "1,4,16,64"]));
+        assert!(args.windows(2).any(|w| w == ["--lists", "320"]));
+        assert!(args
+            .windows(2)
+            .any(|w| w == ["--maintenance-work-mem", "4GB"]));
+        assert!(args.windows(2).any(|w| w == ["--queries-limit", "200"]));
+        assert!(args
+            .windows(2)
+            .any(|w| w == ["--log-output", "comparator-vchord.log"]));
+        assert!(args.contains(&"--rebuild".into()));
+        // No ecaz side: there must be no --profile in the comparator argv.
+        assert!(!args.iter().any(|a| a == "--profile"));
+    }
+
+    #[test]
+    fn parses_comparator_table_and_summary_rows() {
+        let raw = "[comparator] built real_100k_corpus_vchord_idx in 12.34s\n\
+                   [comparator] real_100k_corpus_vchord_idx pg_relation_size=4096 bytes\n\
+                   ┌────────┬───────┬──────────┬────────┬──────┬──────┬──────┬──────┐\n\
+                   │ engine ┆ sweep ┆ recall@k ┆ ndcg@k ┆ p50  ┆ p95  ┆ p99  ┆ mean │\n\
+                   ╞════════╪═══════╪══════════╪════════╪══════╪══════╪══════╪══════╡\n\
+                   │ vchord[probes=16] ┆ 16 ┆ 0.9000 ┆ 0.8500 ┆ 1.00 ms ┆ 2.00 ms ┆ 3.00 ms ┆ 1.50 ms │\n\
+                   └────────┴───────┴──────────┴────────┴──────┴──────┴──────┴──────┘\n";
+        let table_rows = parse_comparator_table_rows(raw);
+        assert_eq!(table_rows.len(), 1);
+        assert_eq!(
+            table_rows[0].get("engine").map(String::as_str),
+            Some("vchord[probes=16]")
+        );
+        assert_eq!(
+            table_rows[0].get("recall@k").map(String::as_str),
+            Some("0.9000")
+        );
+        let summary = parse_comparator_summary_rows(raw);
+        assert!(summary
+            .iter()
+            .any(|(metric, v)| metric == "comparator_build"
+                && v.get("subject").map(String::as_str)
+                    == Some("real_100k_corpus_vchord_idx")));
+        assert!(summary.iter().any(|(metric, v)| metric
+            == "comparator_index_size"
+            && v.get("bytes").map(String::as_str) == Some("4096")));
     }
 
     #[test]

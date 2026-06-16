@@ -107,15 +107,13 @@ ecaz
 │   ├── diskann-graph       # persisted graph reachability/degree/edge diagnostics
 │   ├── diskann-build-probe # in-memory candidate pool/pruning/degree diagnostics
 │   ├── overhead            # encode / internal scan / residual SQL breakdown
+│   ├── comparator          # standalone competitor recall + latency + storage (one external engine)
 │   ├── spire-pipeline      # SPIRE routing, remote fanout, recall, latency, and transport counters
 │   └── suite
 │       ├── run             # dry-run or execute a configured benchmark suite
 │       ├── audit           # validate suite shape and required local inputs
 │       ├── status          # summarize a suite manifest
 │       └── report          # emit a minimal markdown manifest report
-├── compare
-│   ├── pgvector    # side-by-side recall + latency vs pgvector
-│   └── vectorscale # side-by-side DiskANN comparison vs pgvectorscale
 ├── dev
 │   ├── install
 │   │   ├── ecaz-pg-test # install the ecaz pg_test build into a pgrx tree
@@ -154,7 +152,7 @@ ecaz dev sql --pg 18 --file reviews/task-{id}/001-example/artifacts/run.sql --ra
 Use repeated `--env NAME=VALUE` flags to pass temporary environment to
 the underlying `psql` process.
 
-Corpus, benchmark, compare, and stress commands accept `--profile` where the
+Corpus, benchmark, and stress commands accept `--profile` where the
 selected workflow is access-method specific. Current profiles are `ec_hnsw`,
 `ec_ivf`, and `ec_diskann`, so a single corpus can be measured against multiple
 access methods without re-loading data. Today all three profiles use `ecvector`
@@ -335,11 +333,13 @@ Supported step kinds are:
 - `storage`: expands to `ecaz bench storage` with an optional `--log-file`.
 - `explain`: generates the configured SQL file and runs it through
   `ecaz dev sql --raw --file ... --log-output ...`.
-- `compare-pgvector`: expands to `ecaz compare pgvector`, including matched
-  sweeps, pgvector HNSW build knobs, optional rebuild, and `--log-file`.
-- `compare-vectorscale`: expands to `ecaz compare vectorscale`, including
-  matched sweeps, pgvectorscale DiskANN build knobs, optional rebuild, and
-  `--log-file`.
+- `comparator`: expands to `ecaz bench comparator`, the standalone competitor
+  measurement for one external engine (`vchord`, `pgvector-hnsw`,
+  `pgvector-ivfflat`, `pgvectorscale`), including the engine query-GUC `sweep`,
+  per-engine build knobs (`lists` / `m` / `ef_construction` /
+  `num_neighbors` / `build_search_list_size` / `max_alpha` / `storage_layout`),
+  optional rebuild, and `--log-output`. There is no ecaz side, so comparator
+  measurement is decoupled from ecaz re-measurement (no-re-run policy).
 - `raw`: runs an explicit `args` array for a command not yet modeled by a
   first-class step kind. Use `expected_artifacts` if status/report should audit
   output files.
@@ -373,7 +373,7 @@ should keep going after failures.
 Use `--artifact-dir <path>` to run a reusable suite against a task-local review
 packet or a promoted current lane without editing the checked-in config. When a
 suite has `artifact_dir`, omitted routine log paths for load, recall, latency,
-storage, compare, sidecar, spire-pipeline, cross-am, and explain steps are
+storage, comparator, sidecar, spire-pipeline, cross-am, and explain steps are
 filled from that directory. Raw steps may use `${artifact_dir}` in `args` and
 `expected_artifacts`.
 
