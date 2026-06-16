@@ -90,6 +90,38 @@ Packet directories inside a task bucket must sort in chronological order.
 - `request.md` should summarize the result and point at the packet-local
   artifact files.
 
+### Never Commit: Corpus Data, Operational Logs, and Polling Cruft
+
+A review packet is decision-grade evidence, not a capture of everything the run
+emitted. A packet should be tens of files, not hundreds. The following are
+**banned from commits** and are gitignored (see root `.gitignore`); committing
+them bloats packets and git history with regenerable or throwaway data:
+
+- **Corpus / query / ground-truth data** (`*.tsv`, `*.tsv.gz` under `reviews/`
+  or `benchmarks/`). Regenerable via `ecaz corpus`. Record the corpus prefix,
+  scale, and SHA in `manifest.md` instead of committing the data. The single
+  largest object in this repo's history is a committed corpus `.tsv` — never
+  add more.
+- **SSM / tunnel / polling exhaust**: `tunnel-state/`, `tunnel-*.log`,
+  `*.tunneled.json`, `diagnostic-while-*/` status snapshots, and
+  `pg-readonly-status.log`. These are session/operational state, not evidence.
+- **Raw SSM RunShellScript output trees** (`**/awsrunShellScript/`
+  stdout/stderr dumps, often several MB each). Keep only the cited result
+  lines, copied into a small packet-local log or quoted in `manifest.md`.
+- **Poll snapshots**: `ssm-command-invocation.latest.json`,
+  `list-command-invocations*.json`. Keep the single
+  `ssm-command-invocation.final.json` when the manifest cites its command id /
+  status.
+- **Regenerable caches**: `truth-cache/` recall ground-truth.
+
+What **does** belong in a packet: `manifest.md`, `request.md`, `feedback/*.md`,
+the `ecaz bench suite` config, `suite-manifest*.json` + `suite-results*.jsonl`,
+and the specific recall / latency / storage / load / inspect result logs that
+`request.md` cites. If a packet is accumulating hundreds of files, you are
+committing exhaust — stop and prune before requesting review. `.gitignore`
+prevents new commits of this cruft, but already-tracked copies must be removed
+with an explicit `git rm` pass.
+
 ### Legacy `review/` Holding Area
 
 `review/` is now a temporary legacy holding area only. It currently contains
