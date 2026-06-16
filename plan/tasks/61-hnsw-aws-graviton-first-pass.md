@@ -1,8 +1,11 @@
 # Task 61: HNSW AWS Graviton First-Pass Tuning
 
-Status: **proposed**
+Status: **complete** (2026-06-16) — HNSW AWS Graviton first-pass work
+landed on `main` (merge `b6918dc3b`) with baseline + scan-frontier
+overhead packets (`reviews/task-61/001`–`002`); the Task 105/106/107
+production sweep additionally re-ran HNSW on Graviton at full scale.
 
-Follow-on to the completed low-cost Graviton DiskANN Task 59 suite. This task
+Was a follow-on to the completed low-cost Graviton DiskANN Task 59 suite. This task
 owns the first AWS Graviton optimization pass for `ec_hnsw`, using the same
 review-packet and `ecaz bench suite` discipline. Task 33 remains the local M5
 HNSW design/measurement lane; this task is specifically cloud Graviton evidence

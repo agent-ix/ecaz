@@ -1,9 +1,11 @@
 # Task 50: Unsafe Structural Reduction (Post-Burndown)
 
-Status: **deferred** — depends on Task 35 reaching zero baseline entries and on
-Tasks 40, 41, and 43 landing the structural lifts they already own. This task
-picks up where Task 35 stops: Task 35 ensures every `unsafe { ... }` site is
-either deleted, wrapped, or accompanied by a specific `// SAFETY:` comment.
+Status: **complete** (2026-06-16) — structural reduction landed across 15
+top-density modules at ≥30% block-count reduction each (closeout
+`reviews/task-50/027-closeout-summary`), and the per-AM follow-on lanes
+(Tasks 55/56/57/58/59) closed afterward. Picked up where Task 35 stopped:
+Task 35 ensured every `unsafe { ... }` site is deleted, wrapped, or
+carries a specific `// SAFETY:` comment; Task 50 reduced the block count.
 This task drives the *count* of `unsafe { ... }` blocks down by changing the
 code shape, not by documenting the existing shape.
 
