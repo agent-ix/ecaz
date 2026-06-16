@@ -45,7 +45,9 @@ evidence. No Task 106 single-node/single-disk evidence was rerun.
   - `selected_pid_sum=6400`, `remote_pid_sum=6400`, `dispatch_sum=200`;
   - timeout, cancel, and degraded-skip sums were all zero.
 - Cleanup completed successfully on the coordinator and both remotes after the
-  final cell. EC2 instances were left running.
+  final cell. EC2 instances were initially left running for operator review;
+  they were later destroyed and verified in
+  `artifacts/aws-teardown/teardown-summary.md`.
 
 ## Evidence
 

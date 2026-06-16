@@ -59,8 +59,11 @@ explicit `local_store_tablespaces`.
 ### Current AWS State
 
 After the final `phase2-turboquant-1m-l1` distributed benchmark, the three Task
-107 instances were left running. The final cell's coordinator and remote DB
-objects were cleaned up successfully; no EC2 stop command was issued.
+107 instances were initially left running for operator review. The final cell's
+coordinator and remote DB objects were cleaned up successfully. This state is
+superseded by the `AWS Teardown` section below, where Terraform destroy and
+direct AWS checks verify that the instances, volumes, bucket, VPC, IAM
+resources, and secrets were removed.
 
 Earlier after `phase1-turboquant-1m-l2`, AWS was checked directly in
 `phase1-turboquant-1m-l2/direct-ssm-tablespaces/aws-state/describe-after-cell.json`:
@@ -71,6 +74,23 @@ Earlier after `phase1-turboquant-1m-l2`, AWS was checked directly in
   `AutoStop=2026-06-17T05:30:31Z`.
 - `i-00c2f2aca9dbdd6bd` (`ecaz-spire-aws-remote-2`): running,
   `AutoStop=2026-06-17T05:30:31Z`.
+
+### Out-of-Scope / Drift Artifact Quarantine
+
+The decision packet must draw only from the corrected checklist: single node
+with 2 disks and multinode with 1 coordinator plus 2 remotes. The following
+packet-004 artifacts remain committed only as historical drift/debug evidence
+and are not decision-grade checklist cells:
+
+- `phase1-rabitq-100k-l1-control/`
+- `phase1-rabitq-1m-l1-control/`
+- `phase1-rabitq-100k-l4/`
+- `phase1-rabitq-1m-l4/direct-ssm-tablespaces/`
+- `phase1-rabitq-100k-l2/direct-ssm/`
+
+In particular, `phase1-rabitq-1m-l4/direct-ssm-tablespaces/` is abandoned
+out-of-scope evidence from the discontinued 4-disk path. It should not be read
+as in-flight benchmark work.
 
 ## Run List Source Of Truth
 
