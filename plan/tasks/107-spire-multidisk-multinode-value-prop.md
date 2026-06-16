@@ -1,10 +1,13 @@
 # Task 107: SPIRE Multi-Disk / Multi-Node Value-Proposition Benchmark
 
-Status: proposed (2026-06-14, operator-confirmed after Task 106 AWS
-closeout). Owner: coder to be assigned. One coder plus optional infra
-operator support for AWS topology bring-up.
-Priority: 1 for SPIRE product direction; blocks any keep/drop/product
-decision about SPIRE's intended deployment model.
+Status: **complete** (2026-06-15) — reviewer sign-off
+`reviews/task-107/005-product-decision/feedback/2026-06-15-01-reviewer.md`
+("APPROVED … Task 107 is complete and ready to close"). Product
+decision: drop local multi-disk/multi-store SPIRE as a product surface,
+keep multinode SPIRE only as a narrow research/regression surface, and
+do not market SPIRE RaBitQ/TurboQuant as product-competitive without a
+separate latency/storage-observability follow-up. Owner: coder.
+Priority was 1 for SPIRE product direction.
 
 ## Why
 
