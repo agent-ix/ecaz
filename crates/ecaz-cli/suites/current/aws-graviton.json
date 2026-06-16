@@ -13,31 +13,102 @@
     "sample_backend_memory": true,
     "memory_sample_interval_ms": 25
   },
+  "thresholds": [],
   "steps": [
     {
       "kind": "raw",
       "name": "precheck-host",
       "tags": ["setup", "precheck", "current", "aws-graviton"],
       "args": [
-        "dev",
-        "sql",
-        "--pg",
-        "18",
-        "--db",
-        "postgres",
-        "--socket-dir",
-        "/var/run/postgresql",
-        "--raw",
-        "--sql",
-        "SELECT now() AS captured_at, version() AS postgres_version, current_setting('shared_buffers') AS shared_buffers, current_setting('work_mem') AS work_mem, current_setting('maintenance_work_mem') AS maintenance_work_mem, current_setting('effective_cache_size') AS effective_cache_size; SELECT left(pg_read_file('/proc/cpuinfo', 0, 20000), 20000) AS cpuinfo_prefix; SELECT left(pg_read_file('/proc/meminfo', 0, 12000), 12000) AS meminfo_prefix;",
-        "--log-output",
-        "${artifact_dir}/precheck-host.log"
+        "dev", "sql", "--pg", "18", "--db", "postgres",
+        "--socket-dir", "/var/run/postgresql", "--raw",
+        "--sql", "SELECT now() AS captured_at, version() AS postgres_version, current_setting('shared_buffers') AS shared_buffers, current_setting('work_mem') AS work_mem, current_setting('maintenance_work_mem') AS maintenance_work_mem, current_setting('effective_cache_size') AS effective_cache_size; SELECT left(pg_read_file('/proc/cpuinfo', 0, 20000), 20000) AS cpuinfo_prefix; SELECT left(pg_read_file('/proc/meminfo', 0, 12000), 12000) AS meminfo_prefix;",
+        "--log-output", "${artifact_dir}/precheck-host.log"
       ],
       "expected_artifacts": ["${artifact_dir}/precheck-host.log"]
     },
+
     {
       "kind": "load",
-      "name": "load-100k-diskann-default",
+      "name": "load-100k-hnsw",
+      "tags": ["load", "current", "aws-graviton", "ec_real_100k", "hnsw"],
+      "prefix": "current_aws_graviton_real100k_hnsw",
+      "profile": "ec_hnsw",
+      "corpus_file": "/var/lib/pgsql/18/datasets/staged-current/ec_real_100k_corpus.tsv",
+      "queries_file": "/var/lib/pgsql/18/datasets/staged-current/ec_real_100k_queries.tsv",
+      "manifest_file": "/var/lib/pgsql/18/datasets/staged-current/ec_real_100k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "m": [16],
+      "ef_construction": 128
+    },
+    {
+      "kind": "recall",
+      "name": "recall-100k-hnsw",
+      "tags": ["recall", "current", "aws-graviton", "ec_real_100k", "hnsw"],
+      "prefix": "current_aws_graviton_real100k_hnsw",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [40, 64, 100, 128, 160, 200]
+    },
+    {
+      "kind": "latency",
+      "name": "latency-100k-hnsw",
+      "tags": ["latency", "current", "aws-graviton", "ec_real_100k", "hnsw"],
+      "prefix": "current_aws_graviton_real100k_hnsw",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [40, 64, 100, 128, 160, 200],
+      "concurrency": 1,
+      "cache_state": "post_recall_warm"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-100k-hnsw",
+      "tags": ["storage", "current", "aws-graviton", "ec_real_100k", "hnsw"],
+      "prefix": "current_aws_graviton_real100k_hnsw"
+    },
+
+    {
+      "kind": "load",
+      "name": "load-100k-ivf",
+      "tags": ["load", "current", "aws-graviton", "ec_real_100k", "ivf"],
+      "prefix": "current_aws_graviton_real100k_ivf",
+      "profile": "ec_ivf",
+      "corpus_file": "/var/lib/pgsql/18/datasets/staged-current/ec_real_100k_corpus.tsv",
+      "queries_file": "/var/lib/pgsql/18/datasets/staged-current/ec_real_100k_queries.tsv",
+      "manifest_file": "/var/lib/pgsql/18/datasets/staged-current/ec_real_100k_manifest.json",
+      "allow_manifest_mismatch": true
+    },
+    {
+      "kind": "recall",
+      "name": "recall-100k-ivf",
+      "tags": ["recall", "current", "aws-graviton", "ec_real_100k", "ivf"],
+      "prefix": "current_aws_graviton_real100k_ivf",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [8, 16, 24, 32, 48, 64]
+    },
+    {
+      "kind": "latency",
+      "name": "latency-100k-ivf",
+      "tags": ["latency", "current", "aws-graviton", "ec_real_100k", "ivf"],
+      "prefix": "current_aws_graviton_real100k_ivf",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [8, 16, 24, 32, 48, 64],
+      "concurrency": 1,
+      "cache_state": "post_recall_warm"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-100k-ivf",
+      "tags": ["storage", "current", "aws-graviton", "ec_real_100k", "ivf"],
+      "prefix": "current_aws_graviton_real100k_ivf"
+    },
+
+    {
+      "kind": "load",
+      "name": "load-100k-diskann",
       "tags": ["load", "current", "aws-graviton", "ec_real_100k", "diskann"],
       "prefix": "current_aws_graviton_real100k_diskann",
       "profile": "ec_diskann",
@@ -48,7 +119,7 @@
     },
     {
       "kind": "recall",
-      "name": "recall-100k-diskann-list-sweep",
+      "name": "recall-100k-diskann",
       "tags": ["recall", "current", "aws-graviton", "ec_real_100k", "diskann"],
       "prefix": "current_aws_graviton_real100k_diskann",
       "profile": "ec_diskann",
@@ -57,7 +128,7 @@
     },
     {
       "kind": "latency",
-      "name": "latency-100k-diskann-list-sweep",
+      "name": "latency-100k-diskann",
       "tags": ["latency", "current", "aws-graviton", "ec_real_100k", "diskann"],
       "prefix": "current_aws_graviton_real100k_diskann",
       "profile": "ec_diskann",
@@ -68,9 +139,47 @@
     },
     {
       "kind": "storage",
-      "name": "storage-100k-diskann-default",
+      "name": "storage-100k-diskann",
       "tags": ["storage", "current", "aws-graviton", "ec_real_100k", "diskann"],
       "prefix": "current_aws_graviton_real100k_diskann"
+    },
+
+    {
+      "kind": "load",
+      "name": "load-100k-spire",
+      "tags": ["load", "current", "aws-graviton", "ec_real_100k", "spire"],
+      "prefix": "current_aws_graviton_real100k_spire",
+      "profile": "ec_spire",
+      "corpus_file": "/var/lib/pgsql/18/datasets/staged-current/ec_real_100k_corpus.tsv",
+      "queries_file": "/var/lib/pgsql/18/datasets/staged-current/ec_real_100k_queries.tsv",
+      "manifest_file": "/var/lib/pgsql/18/datasets/staged-current/ec_real_100k_manifest.json",
+      "allow_manifest_mismatch": true
+    },
+    {
+      "kind": "recall",
+      "name": "recall-100k-spire",
+      "tags": ["recall", "current", "aws-graviton", "ec_real_100k", "spire"],
+      "prefix": "current_aws_graviton_real100k_spire",
+      "profile": "ec_spire",
+      "k": 10,
+      "sweep": [8, 16, 24, 32]
+    },
+    {
+      "kind": "latency",
+      "name": "latency-100k-spire",
+      "tags": ["latency", "current", "aws-graviton", "ec_real_100k", "spire"],
+      "prefix": "current_aws_graviton_real100k_spire",
+      "profile": "ec_spire",
+      "k": 10,
+      "sweep": [8, 16, 24, 32],
+      "concurrency": 1,
+      "cache_state": "post_recall_warm"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-100k-spire",
+      "tags": ["storage", "current", "aws-graviton", "ec_real_100k", "spire"],
+      "prefix": "current_aws_graviton_real100k_spire"
     }
   ]
 }

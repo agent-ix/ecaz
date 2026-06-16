@@ -377,6 +377,25 @@ storage, comparator, sidecar, spire-pipeline, cross-am, and explain steps are
 filled from that directory. Raw steps may use `${artifact_dir}` in `args` and
 `expected_artifacts`.
 
+### The standard ecaz sweep (run these as-is)
+
+The configs under `crates/ecaz-cli/suites/current/` —
+`m5-local.json`, `intel-local.json`, `aws-intel.json`, `aws-graviton.json` — are
+**the** canonical per-lane standard sweep, one per supported host. Each runs the
+standard access-method profiles (`ec_hnsw`, `ec_ivf`, `ec_diskann`, `ec_spire`)
+× the standard `load` / `recall` / `latency` / `storage` steps, at the corpus
+scales that lane stages, with each profile's `default_sweep` from
+`src/profiles.rs` (`ec_hnsw` `[40,64,100,128,160,200]`, `ec_diskann`
+`[64,128,200,400,800]`, `ec_ivf` `[8,16,24,32,48,64]`, `ec_spire`
+`[8,16,24,32]`). Competitor numbers come from `comparator` steps, never from
+re-running this sweep.
+
+Convention: **run the standard lane config as-is** for routine measurement —
+only hand-author a bespoke `SuiteConfig` when a task needs a non-standard
+grid/scale/option, and record that reason in the packet `manifest.md`. To add a
+scale to a lane, stage its corpus TSVs on that host and add the
+load/recall/latency/storage quartet per standard profile (keep `default_sweep`).
+
 Current benchmark lanes live under `benchmarks/current/<lane>/` and use the
 configs under `crates/ecaz-cli/suites/current/`:
 
