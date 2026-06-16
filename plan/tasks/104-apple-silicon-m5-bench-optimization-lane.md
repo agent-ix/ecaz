@@ -1,9 +1,12 @@
 # Task 104: Apple Silicon (M5) Full Bench Matrix + NEON Optimization Lane
 
-Status: proposed (2026-06-11; operator decision — Apple silicon is a
-**supported target**, not a dev-validation-only host. Supersedes the
-"M5 NEON is for development validation, not production" posture in
-Task 99's out-of-scope list for everything this task owns.)
+Status: **complete** (2026-06-16; merged via PRs #25/#26/#27, reviewer
+acceptance `reviews/task-104/008-*/feedback/2026-06-11-01-reviewer.md`
+"No blocking findings") — full M5 index × quant × option matrix landed
+with NEON optimization where the floor gate failed. Operator decision:
+Apple silicon is a **supported target**, not a dev-validation-only host
+— supersedes the "M5 NEON is for development validation, not production"
+posture in Task 99's out-of-scope list for everything this task owns.
 Owner: coder (M5 session). Runs on the operator's Apple M5.
 Priority: 2 (parallel with Task 99 local phases; any kernel changes it
 produces must land before the G4 trip — see Sequencing)

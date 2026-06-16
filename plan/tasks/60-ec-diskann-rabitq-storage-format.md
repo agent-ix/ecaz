@@ -1,9 +1,9 @@
 # Task 60: ec_diskann RaBitQ Storage Format
 
-Status: **proposed**
-
-Add `storage_format = 'rabitq'` to `ec_diskann` so DiskANN/Vamana can
-ride RaBitQ-1bit codes alongside the existing `pq_fastscan` payload.
+Status: **complete** (2026-06-16) — `storage_format = 'rabitq'` for
+`ec_diskann` landed on `main` (merge `a8b2aca41`; benchmark artifacts
+`0be251132`; packets `reviews/task-60/001`–`014`). DiskANN/Vamana now
+rides RaBitQ-1bit codes alongside the existing `pq_fastscan` payload.
 Goal is to give operators a smaller-index DiskANN option without
 giving up the graph-traversal recall/latency curve.
 

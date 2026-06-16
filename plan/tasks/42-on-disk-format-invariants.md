@@ -1,9 +1,11 @@
 # Task 42: On-Disk Format and Cross-Arch / Cross-Version Invariants
 
-Status: **partial smoke checkpoint** — current fixture, matrix, layout, qemu,
-WAL-policy, and PG18 same-binary `pg_upgrade` smoke infrastructure is in place.
-Broader CI stabilization and richer live-upgrade coverage remain deferred until
-the CI surface is steadier and a second writable format version ships.
+Status: **complete** (2026-06-16; closeout `788a074a4`, reviewer-accepted
+honest-audit feedback under `reviews/task-42/018-*/`) — fixture, matrix,
+layout, qemu, WAL-policy, and PG18 same-binary `pg_upgrade` smoke
+infrastructure landed. Broader CI stabilization and richer live-upgrade
+coverage are intentionally deferred until the CI surface is steadier and
+a second writable format version ships (documented follow-on, not a gap).
 
 ## Scope
 

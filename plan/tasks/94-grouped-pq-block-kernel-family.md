@@ -1,9 +1,13 @@
 # Task 94: Grouped-PQ / PqFastScan Block Kernel Family (All AMs × All ISAs)
 
-Status: in review — G4 pass only (2026-06-10, packet 028 AC5 closeout
-approved per `reviews/task-94/028-release-ac5-rerun/feedback/2026-06-10-01-reviewer.md`:
-"the Task 94 F8 slice has complete local evidence; the only remaining
-Task 94 item is the deferred Graviton 4 pass", sequenced after Task 102.
+Status: **complete** (2026-06-16) — grouped-PQ/PqFastScan block kernels,
+all codec registrations, the F8 shuffle-repack slice, and the
+release-backend AC5 rerun landed with reviewer-approved local evidence
+through `reviews/task-94/028-release-ac5-rerun/` (merged via PRs
+#19/#22–#24). The sole remaining item — the deferred Graviton 4 pass —
+was executed as part of the Task 105/106/107 production G4 sweep on the
+newer build. HNSW grouped-PQ traversal stays per-candidate by the packet
+017 disposition (traversal batching is a recommended follow-up task).
 All implementation and local evidence merged to main via PRs #19/#22–#24.
 Status line refreshed 2026-06-11; previously stale at the 2026-06-09
 wording.)

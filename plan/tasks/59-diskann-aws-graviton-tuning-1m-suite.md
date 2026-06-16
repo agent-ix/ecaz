@@ -1,9 +1,13 @@
 # Task 59: DiskANN AWS Graviton Tuning and 1M Benchmark Suite
 
-Status: **proposed**
-
-Follow-on to the 2026-05-24 low-cost Graviton DiskANN optimization that removed
-per-scan full-index materialization from the normal scan path.
+Status: **complete** (2026-06-16) — AWS Graviton DiskANN tuning + full
+`ecaz bench suite` through 1M landed and reviewer-accepted: 1M suite
+completed end-to-end (0.9655 recall@10 @ 5.2 ms p50; 455 MiB index) and
+the `cache_state` latency label landed, both APPROVED in
+`reviews/task-59/008-final-graviton-suite/feedback/2026-05-24-01-reviewer.md`;
+raw evidence `benchmarks/task59-aws-diskann-final-graviton-suite/`. Was a
+follow-on to the 2026-05-24 low-cost Graviton DiskANN optimization that
+removed per-scan full-index materialization from the normal scan path.
 
 Task 55 remains the unsafe-burndown task. This task owns the next AWS-backed
 `ec_diskann` performance cycle: tune on AWS Graviton, profile the remaining

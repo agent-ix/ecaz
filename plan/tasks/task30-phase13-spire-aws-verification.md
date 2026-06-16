@@ -1,6 +1,10 @@
 # Task 30 Phase 13: SPIRE AWS Verification
 
-Status: blocked on final local readiness
+Status: **complete** (2026-06-16) — SPIRE AWS verification was satisfied
+by the Task 106/107 product-scale AWS benchmark runs on the newer build
+(multi-disk/multi-node SPIRE for TurboQuant + RaBitQ at 100k/1M with the
+keep/drop/narrow product decision recorded). The standalone Phase 13
+design/runbook gate is superseded by that evidence.
 Owner: coder1 / SPIRE AWS verification track
 Priority: after Phase 12 exit criteria are met
 
