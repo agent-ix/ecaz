@@ -1,100 +1,65 @@
-# Comparator extension scripts
+# Comparator extension install scripts
 
-Per-comparator scripts for benchmarking third-party PostgreSQL
-vector-search extensions alongside ecaz on the same host.
+These scripts install third-party PostgreSQL vector-search extensions so they
+can be measured alongside ecaz on the same host. **Measurement itself is no
+longer done here** — use the standalone, engine-generic CLI command instead:
 
-Each comparator (`pgvector`, `pgvectorscale`, `vchord`, `lantern`,
-...) lives in its own subdirectory with three scripts:
-
-```
-<name>/install.sh   # build / install the extension
-<name>/load.sh      # create real_<size>_<name>_corpus + build its index
-<name>/bench.sh     # latency bench → <out>/<size>/<name>/<variant>/
+```sh
+ecaz bench comparator --engine {vchord|pgvector-hnsw|pgvector-ivfflat|pgvectorscale} \
+  --prefix <corpus-prefix> --sweep <query-guc-values> [--lists N] ...
 ```
 
-Shared helpers (top level):
-- `_common.sh` — log helper, extension-installed checks, vector-table loader, nlists heuristic
-- `_bench_lib.sh` — the `comparator_bench_latency` helper used by every bench script
-- `run_all.sh` — orchestrator: invokes each `<name>/{install,load,bench}.sh` in sequence
-- `sweep.sh` + `compute_recall.py` — recall + multi-operating-point Pareto (see below)
+`ecaz bench comparator` builds the engine's sidecar table + index from the
+ecaz `<prefix>_corpus.source` column, computes brute-force ground truth, and
+emits recall@k + latency percentiles + storage per sweep value (one Pareto row
+per value). It measures **one** external engine standalone — there is no ecaz
+side, which keeps comparator measurement decoupled from ecaz re-measurement
+(no-re-run policy). Drive matrices/sweeps through an `ecaz bench suite` config
+with a `comparator` step (FR-038), not bash. See `crates/ecaz-cli/README.md`.
 
-## Adding a new comparator
+## Why these scripts remain
 
-1. Create `<name>/install.sh` that handles "build from source if not
-   already installed". Use `comparator_extension_installed <control-name>`.
-2. Create `<name>/load.sh` that creates `real_<size>_<name>_corpus`
-   (use `comparator_load_vector_table`) and builds the extension's
-   recommended index via `CREATE INDEX`. Be idempotent. If the
-   extension ships multiple index types you want to bench
-   side-by-side (as pgvector does with HNSW + IVFFlat), create one
-   replicated corpus table per index variant
-   (`real_<size>_<name>_<variant>_corpus`) so the bench harness
-   doesn't need to drop+rebuild swap between passes. CTAS the second
-   table from the first instead of re-reading the TSV.
-3. Create `<name>/bench.sh` that calls `comparator_bench_latency` with
-   the right operator (`<#>` IP, `<->` L2, `<=>` cosine). Pass
-   `--corpus-table` / `--queries-table` explicitly when bench targets
-   are per-variant replicated tables; otherwise `--prefix` infers
-   `<prefix>_corpus` + `<prefix>_queries`.
-4. Add `<name>` to the default `--exts` list in `run_all.sh` if you
-   want the orchestrator to pick it up by default.
+Installing an extension is an operator prerequisite the CLI cannot perform:
+it requires copying files into the `pg_config` tree, editing
+`shared_preload_libraries`, and restarting PostgreSQL. Each comparator keeps a
+single idempotent `install.sh`:
+
+```
+pgvector/install.sh        # install pgvector into the selected pg_config tree
+pgvectorscale/install.sh   # install pgvectorscale (StreamingDiskANN)
+vchord/install.sh          # install VectorChord (vchordrq); preload + restart
+```
+
+`_common.sh` holds the shared helpers those install scripts source
+(`comparator_log`, `comparator_extension_installed`, and the default
+build/pg_config paths).
+
+### vchord is the preload-and-restart case
+
+`vchord/install.sh` downloads the prebuilt upstream zip for the host PG major +
+arch, drops the `.so` / `.control` / `.sql` into the `pg_config` dirs, then
+appends `vchord` to `shared_preload_libraries` via `ALTER SYSTEM` and restarts
+PostgreSQL. Without the preload, `CREATE EXTENSION vchord` errors with
+`vchord must be loaded via shared_preload_libraries`. After install:
+
+```sh
+scripts/comparators/vchord/install.sh
+psql -c 'CREATE EXTENSION IF NOT EXISTS vchord CASCADE;'
+ecaz bench comparator --engine vchord --prefix real_100k \
+  --sweep 1,4,16,64 --lists 320 --log-output <packet>/artifacts/vchord-100k.log
+```
 
 ## Operator cheatsheet
 
-pgvector defines three distance operators:
+pgvector defines three distance operators; the comparator command and the
+sidecar index DDL both use inner product (`<#>`, `vector_ip_ops`) to match
+ecaz's IP semantics:
 
 | Operator | Meaning | Used by |
 |---|---|---|
 | `<->` | L2 distance | pgvector L2 ops |
-| `<#>` | negative inner product (use `ORDER BY ... ` ASC) | pgvector IP ops, vchord IP, ecaz ec_ivf |
-| `<=>` | cosine distance | pgvector cosine ops, pgvectorscale, lantern |
+| `<#>` | negative inner product (`ORDER BY ... ASC`) | pgvector IP ops, vchord IP, ecaz |
+| `<=>` | cosine distance | pgvector cosine ops |
 
-Pick the operator that matches the opclass you used when building
-the index. Mismatch = sequential scan.
-
-## Reproduction recipe
-
-From a fresh bench host with pg18 + ecaz installed:
-
-```bash
-cd /var/lib/pgsql/build/ecaz
-
-# One call covers install + load + bench for every comparator.
-scripts/comparators/run_all.sh \
-    --out /var/lib/pgsql/18/artifacts/comparators \
-    --size 1m --dim 1536 \
-    --corpus-file /var/lib/pgsql/18/datasets/staged-1m/ec_real_ann_benchmarks_anchor_corpus.tsv \
-    --queries-file /var/lib/pgsql/18/datasets/staged-1m/ec_real_ann_benchmarks_anchor_queries.tsv
-
-# Per-comparator invocations are also fine:
-scripts/comparators/pgvector/install.sh
-scripts/comparators/pgvector/load.sh --size 1m --dim 1536 \
-    --corpus-file ... --queries-file ...
-scripts/comparators/pgvector/bench.sh --out ... --size 1m
-```
-
-## Recall + operating-point sweep
-
-`sweep.sh` runs a brute-force ground-truth pass and a fixed
-operating-point grid for every comparator at one size. After it
-finishes, `compute_recall.py` derives `latency.log` + `recall.txt`
-per cell and an aggregate `_pareto.tsv`.
-
-```bash
-# Assumes the load scripts above already ran for this size.
-scripts/comparators/sweep.sh \
-    --out /var/lib/pgsql/18/artifacts/sweep \
-    --size 1m
-
-scripts/comparators/compute_recall.py \
-    /var/lib/pgsql/18/artifacts/sweep 1m
-```
-
-Grid (200 queries × k=10, IP opclass):
-- pgvector HNSW: `hnsw.ef_search` ∈ {16, 40, 100, 400}
-- pgvector IVFFlat: `ivfflat.probes` ∈ {1, 8, 32, 100}
-- pgvectorscale DiskANN: `diskann.query_search_list_size` ∈ {40, 100, 400, 1000}
-- vchord RaBitQ-on-IVF: `vchordrq.probes` ∈ {1, 4, 16, 64}
-
-The ground-truth pass is a parallel seqscan top-K with index/bitmap
-scans disabled — exact neighbors per query, computed once per size.
+Pick the operator that matches the opclass used when building the index;
+mismatch falls back to a sequential scan.
