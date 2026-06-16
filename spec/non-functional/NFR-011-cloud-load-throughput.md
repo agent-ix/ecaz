@@ -2,7 +2,7 @@
 id: NFR-011
 title: Cloud Corpus Load Throughput
 type: non-functional-requirement
-artifact_type: NFR
+type: NFR
 status: PROPOSED
 relationships:
   - target: "ix://agent-ix/ecaz/StR-007"

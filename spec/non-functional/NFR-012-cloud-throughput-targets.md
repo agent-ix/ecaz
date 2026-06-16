@@ -2,7 +2,7 @@
 id: NFR-012
 title: Cloud Read QPS and Live Write Throughput Targets
 type: non-functional-requirement
-artifact_type: NFR
+type: NFR
 status: PROPOSED
 relationships:
   - target: "ix://agent-ix/ecaz/StR-007"

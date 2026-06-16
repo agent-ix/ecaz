@@ -2,7 +2,7 @@
 id: US-017
 title: Run Configured Benchmark Suites
 type: user-story
-artifact_type: US
+type: US
 status: APPROVED
 relationships:
   - target: "ix://agent-ix/ecaz/StR-006"

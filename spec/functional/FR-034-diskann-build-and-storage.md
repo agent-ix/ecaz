@@ -2,7 +2,7 @@
 id: FR-034
 title: DiskANN Build and Persisted Vamana Storage
 type: functional-requirement
-artifact_type: FR
+type: FR
 status: IMPLEMENTED
 object_type: process
 relationships:

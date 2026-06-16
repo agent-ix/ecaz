@@ -2,7 +2,7 @@
 id: FR-030
 title: Current HNSW Access Method Surface
 type: functional-requirement
-artifact_type: FR
+type: FR
 status: IMPLEMENTED
 object_type: process
 relationships:

@@ -2,7 +2,7 @@
 id: FR-042
 title: "SPIRE Distributed libpq Coordinator (Superseded)"
 type: functional-requirement
-artifact_type: FR
+type: FR
 status: SUPERSEDED
 relationships:
   - target: "ix://agent-ix/ecaz/FR-055"

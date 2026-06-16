@@ -2,7 +2,7 @@
 id: FR-033
 title: IVF Insert, Vacuum, and Admin Snapshots
 type: functional-requirement
-artifact_type: FR
+type: FR
 status: IMPLEMENTED
 object_type: process
 relationships:

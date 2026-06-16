@@ -2,7 +2,7 @@
 id: FR-037
 title: Ecaz CLI Operator Surface
 type: functional-requirement
-artifact_type: FR
+type: FR
 status: IMPLEMENTED
 object_type: interface
 relationships:

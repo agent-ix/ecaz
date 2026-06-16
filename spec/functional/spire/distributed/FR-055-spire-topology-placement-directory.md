@@ -2,7 +2,7 @@
 id: FR-055
 title: SPIRE Distributed Topology and Placement Directory
 type: functional-requirement
-artifact_type: FR
+type: FR
 status: APPROVED
 object: data_schema
 relationships:

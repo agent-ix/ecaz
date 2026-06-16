@@ -2,7 +2,7 @@
 id: NFR-009
 title: CLI Drift and Artifact Discipline
 type: non-functional-requirement
-artifact_type: NFR
+type: NFR
 status: APPROVED
 relationships:
   - target: "ix://agent-ix/ecaz/US-016"

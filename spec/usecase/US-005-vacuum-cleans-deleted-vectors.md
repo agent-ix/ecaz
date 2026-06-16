@@ -2,7 +2,7 @@
 id: US-005
 title: VACUUM Cleans Up Deleted Vectors
 type: user-story
-artifact_type: US
+type: US
 status: APPROVED
 relationships:
   - target: "ix://agent-ix/ecaz/StR-001"

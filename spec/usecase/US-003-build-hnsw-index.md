@@ -2,7 +2,7 @@
 id: US-003
 title: Build HNSW Index on Existing Data
 type: user-story
-artifact_type: US
+type: US
 status: APPROVED
 relationships:
   - target: "ix://agent-ix/ecaz/StR-001"

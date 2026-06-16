@@ -2,7 +2,7 @@
 id: FR-039
 title: "SPIRE Local NVMe Placement (Superseded)"
 type: functional-requirement
-artifact_type: FR
+type: FR
 status: SUPERSEDED
 relationships:
   - target: "ix://agent-ix/ecaz/FR-048"

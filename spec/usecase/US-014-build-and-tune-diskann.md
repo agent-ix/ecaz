@@ -2,7 +2,7 @@
 id: US-014
 title: Build and Tune DiskANN Indexes
 type: user-story
-artifact_type: US
+type: US
 status: APPROVED
 relationships:
   - target: "ix://agent-ix/ecaz/StR-005"

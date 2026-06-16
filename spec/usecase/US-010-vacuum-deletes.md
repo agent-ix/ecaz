@@ -2,7 +2,7 @@
 id: US-010
 title: Vacuum Removes Deleted Vectors
 type: user-story
-artifact_type: US
+type: US
 status: DRAFT
 priority: P1-critical
 relationships:

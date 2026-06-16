@@ -2,7 +2,7 @@
 id: FR-051
 title: SPIRE Routing Delta and Top Graph Formats
 type: functional-requirement
-artifact_type: FR
+type: FR
 status: APPROVED
 object: data_schema
 relationships:

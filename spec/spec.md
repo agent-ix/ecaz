@@ -1,5 +1,5 @@
 ---
-artifact_type: master-requirements
+type: master-requirements
 name: ecaz
 org: agent-ix
 component_type: pgrx-extension

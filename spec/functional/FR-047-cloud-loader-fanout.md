@@ -2,7 +2,7 @@
 id: FR-047
 title: In-VPC Corpus Load Fan-Out
 type: functional-requirement
-artifact_type: FR
+type: FR
 status: PROPOSED
 object_type: process
 relationships:

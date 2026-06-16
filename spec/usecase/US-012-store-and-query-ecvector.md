@@ -2,7 +2,7 @@
 id: US-012
 title: Store and Query Canonical ecvector Columns
 type: user-story
-artifact_type: US
+type: US
 status: APPROVED
 relationships:
   - target: "ix://agent-ix/ecaz/StR-005"

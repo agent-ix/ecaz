@@ -2,7 +2,7 @@
 id: StR-006
 title: Benchmark Evidence Discipline
 type: stakeholder-requirement
-artifact_type: StR
+type: StR
 status: APPROVED
 relationships:
   - target: "ix://agent-ix/ecaz/NFR-007"

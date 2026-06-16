@@ -2,7 +2,7 @@
 id: NFR-010
 title: Cloud Cost Discipline
 type: non-functional-requirement
-artifact_type: NFR
+type: NFR
 status: PROPOSED
 relationships:
   - target: "ix://agent-ix/ecaz/StR-007"

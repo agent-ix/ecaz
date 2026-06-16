@@ -2,7 +2,7 @@
 id: US-006
 title: Async I/O Accelerated Scan
 type: user-story
-artifact_type: US
+type: US
 status: DRAFT
 priority: P1-critical
 relationships:

@@ -2,7 +2,7 @@
 id: FR-048
 title: SPIRE Domain Model
 type: functional-requirement
-artifact_type: FR
+type: FR
 status: APPROVED
 object: domain
 relationships:

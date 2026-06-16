@@ -2,7 +2,7 @@
 id: FR-029
 title: Multi-AM SQL Bootstrap Contract
 type: functional-requirement
-artifact_type: FR
+type: FR
 status: IMPLEMENTED
 object_type: configuration
 relationships:

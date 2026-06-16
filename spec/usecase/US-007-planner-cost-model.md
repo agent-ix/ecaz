@@ -2,7 +2,7 @@
 id: US-007
 title: Planner-Visible Cost Model
 type: user-story
-artifact_type: US
+type: US
 status: DRAFT
 priority: P1-critical
 relationships:

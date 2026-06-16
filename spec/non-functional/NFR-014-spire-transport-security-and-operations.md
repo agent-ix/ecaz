@@ -2,7 +2,7 @@
 id: NFR-014
 title: SPIRE Transport Security and Operations
 type: non-functional-requirement
-artifact_type: NFR
+type: NFR
 status: APPROVED
 relationships:
   - target: "ix://agent-ix/ecaz/FR-056"

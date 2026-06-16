@@ -2,7 +2,7 @@
 id: NFR-004
 title: Safety and Stability
 type: non-functional-requirement
-artifact_type: NFR
+type: NFR
 status: APPROVED
 relationships:
   - target: "ix://agent-ix/ecaz/StR-002"

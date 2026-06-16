@@ -2,7 +2,7 @@
 id: US-008
 title: Parallel Index Build
 type: user-story
-artifact_type: US
+type: US
 status: DRAFT
 priority: P2-high
 relationships:

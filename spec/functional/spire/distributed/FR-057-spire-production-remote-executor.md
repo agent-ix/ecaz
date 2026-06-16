@@ -2,7 +2,7 @@
 id: FR-057
 title: SPIRE Production Remote Executor
 type: functional-requirement
-artifact_type: FR
+type: FR
 status: APPROVED
 object: process
 relationships:

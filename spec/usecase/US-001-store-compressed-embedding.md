@@ -2,7 +2,7 @@
 id: US-001
 title: Store a Compressed Embedding
 type: user-story
-artifact_type: US
+type: US
 status: APPROVED
 relationships:
   - target: "ix://agent-ix/ecaz/StR-001"

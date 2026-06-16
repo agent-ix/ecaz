@@ -2,7 +2,7 @@
 id: US-016
 title: Operate Ecaz Through One CLI
 type: user-story
-artifact_type: US
+type: US
 status: IMPLEMENTED
 relationships:
   - target: "ix://agent-ix/ecaz/StR-006"

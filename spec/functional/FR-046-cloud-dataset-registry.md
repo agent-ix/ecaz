@@ -2,7 +2,7 @@
 id: FR-046
 title: Cloud Dataset Registry
 type: functional-requirement
-artifact_type: FR
+type: FR
 status: PROPOSED
 object_type: data-source
 relationships:

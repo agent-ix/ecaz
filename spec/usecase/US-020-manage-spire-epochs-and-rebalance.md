@@ -2,7 +2,7 @@
 id: US-020
 title: Manage SPIRE Epochs, Updates, and Rebalancing
 type: user-story
-artifact_type: US
+type: US
 status: APPROVED
 relationships:
   - target: "ix://agent-ix/ecaz/StR-005"

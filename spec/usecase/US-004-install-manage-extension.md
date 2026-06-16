@@ -2,7 +2,7 @@
 id: US-004
 title: Install and Manage Extension Lifecycle
 type: user-story
-artifact_type: US
+type: US
 status: APPROVED
 relationships:
   - target: "ix://agent-ix/ecaz/StR-002"

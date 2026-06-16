@@ -2,7 +2,7 @@
 id: FR-056
 title: SPIRE Remote Endpoint and Typed Tuple Transport
 type: functional-requirement
-artifact_type: FR
+type: FR
 status: APPROVED
 object: dto
 relationships:

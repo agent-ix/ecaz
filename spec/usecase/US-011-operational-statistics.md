@@ -2,7 +2,7 @@
 id: US-011
 title: Operational Statistics
 type: user-story
-artifact_type: US
+type: US
 status: DRAFT
 priority: P3-medium
 relationships:

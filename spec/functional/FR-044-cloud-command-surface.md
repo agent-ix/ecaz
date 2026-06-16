@@ -2,7 +2,7 @@
 id: FR-044
 title: Ecaz Cloud Command Surface
 type: functional-requirement
-artifact_type: FR
+type: FR
 status: PROPOSED
 object_type: interface
 relationships:

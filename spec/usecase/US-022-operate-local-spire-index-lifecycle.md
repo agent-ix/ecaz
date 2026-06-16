@@ -2,7 +2,7 @@
 id: US-022
 title: Operate a Local SPIRE Index Lifecycle
 type: user-story
-artifact_type: US
+type: US
 status: APPROVED
 relationships:
   - target: "ix://agent-ix/ecaz/StR-005"

@@ -2,7 +2,7 @@
 id: FR-053
 title: SPIRE Local Search
 type: functional-requirement
-artifact_type: FR
+type: FR
 status: APPROVED
 object: process
 relationships:

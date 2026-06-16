@@ -2,7 +2,7 @@
 id: NFR-016
 title: On-Disk Format Evolution Discipline
 type: non-functional-requirement
-artifact_type: NFR
+type: NFR
 status: PROPOSED
 relationships:
   - target: "ix://agent-ix/ecaz/StR-001"

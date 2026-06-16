@@ -2,7 +2,7 @@
 id: US-015
 title: Compare Access Method Benchmarks
 type: user-story
-artifact_type: US
+type: US
 status: APPROVED
 relationships:
   - target: "ix://agent-ix/ecaz/StR-006"

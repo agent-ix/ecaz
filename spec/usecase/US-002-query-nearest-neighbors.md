@@ -2,7 +2,7 @@
 id: US-002
 title: Query Nearest Neighbors via SQL
 type: user-story
-artifact_type: US
+type: US
 status: APPROVED
 relationships:
   - target: "ix://agent-ix/ecaz/StR-001"

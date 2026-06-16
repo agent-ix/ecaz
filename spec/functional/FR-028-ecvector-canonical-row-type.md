@@ -2,7 +2,7 @@
 id: FR-028
 title: ecvector Canonical Row Type
 type: functional-requirement
-artifact_type: FR
+type: FR
 status: IMPLEMENTED
 object_type: entity
 relationships:

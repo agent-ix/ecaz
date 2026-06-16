@@ -1,5 +1,5 @@
 ---
-artifact_type: adr-index
+type: adr-index
 name: ecaz
 status: IMPLEMENTED
 ---

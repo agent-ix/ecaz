@@ -2,7 +2,7 @@
 id: US-021
 title: Run a Complete Cloud Benchmark Cycle
 type: user-story
-artifact_type: US
+type: US
 status: PROPOSED
 relationships:
   - target: "ix://agent-ix/ecaz/StR-007"

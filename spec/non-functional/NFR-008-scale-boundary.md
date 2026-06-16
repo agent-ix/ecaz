@@ -2,7 +2,7 @@
 id: NFR-008
 title: Scale Boundary and Hardware Claim Policy
 type: non-functional-requirement
-artifact_type: NFR
+type: NFR
 status: APPROVED
 relationships:
   - target: "ix://agent-ix/ecaz/StR-006"

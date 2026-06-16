@@ -2,7 +2,7 @@
 id: FR-036
 title: DiskANN Insert, Vacuum, and Diagnostics
 type: functional-requirement
-artifact_type: FR
+type: FR
 status: IMPLEMENTED
 object_type: process
 relationships:

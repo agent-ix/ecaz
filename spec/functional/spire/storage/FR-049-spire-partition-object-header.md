@@ -2,7 +2,7 @@
 id: FR-049
 title: SPIRE Partition Object Header
 type: functional-requirement
-artifact_type: FR
+type: FR
 status: APPROVED
 object: data_schema
 relationships:

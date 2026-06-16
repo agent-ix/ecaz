@@ -2,7 +2,7 @@
 id: StR-005
 title: Multi-Access-Method Vector Search Portfolio
 type: stakeholder-requirement
-artifact_type: StR
+type: StR
 status: APPROVED
 relationships:
   - target: "ix://agent-ix/ecaz/US-012"

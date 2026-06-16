@@ -2,7 +2,7 @@
 id: US-013
 title: Build and Tune IVF Indexes
 type: user-story
-artifact_type: US
+type: US
 status: APPROVED
 relationships:
   - target: "ix://agent-ix/ecaz/StR-005"

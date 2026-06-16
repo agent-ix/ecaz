@@ -2,7 +2,7 @@
 id: FR-038
 title: Configured Benchmark Suite Runner
 type: functional-requirement
-artifact_type: FR
+type: FR
 status: APPROVED
 object_type: interface
 relationships:

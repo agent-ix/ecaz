@@ -2,7 +2,7 @@
 id: FR-035
 title: DiskANN Scan, Prefilter, and Rerank
 type: functional-requirement
-artifact_type: FR
+type: FR
 status: IMPLEMENTED
 object_type: process
 relationships:

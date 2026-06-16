@@ -2,7 +2,7 @@
 id: US-018
 title: Operate SPIRE Across Local NVMe Stores
 type: user-story
-artifact_type: US
+type: US
 status: APPROVED
 relationships:
   - target: "ix://agent-ix/ecaz/StR-005"

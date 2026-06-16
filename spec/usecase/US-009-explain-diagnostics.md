@@ -2,7 +2,7 @@
 id: US-009
 title: EXPLAIN Scan Diagnostics
 type: user-story
-artifact_type: US
+type: US
 status: DRAFT
 priority: P2-high
 relationships:

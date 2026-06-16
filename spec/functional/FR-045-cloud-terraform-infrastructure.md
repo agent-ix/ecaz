@@ -2,7 +2,7 @@
 id: FR-045
 title: Cloud Terraform-Managed Infrastructure
 type: functional-requirement
-artifact_type: FR
+type: FR
 status: PROPOSED
 object_type: infrastructure
 relationships:
