@@ -1,10 +1,10 @@
 # Task 53: Common P6 — Datum / Varlena / EcVector Typed Wrappers
 
-Status: **proposed** — supersedes the §P6 disposition in
-`reviews/task-50/030-comprehensive-unsafe-burndown-plan/request.md`
-and the source.rs structural-ceiling rationale in
-`reviews/task-50/448-hnsw-burndown-refreshed-closeout/request.md`.
-Second Phase-1 lane in the post-Task-50 hardening sequence.
+Status: **complete** (2026-06-16) — Common P6 datum/typed-view
+migration landed on `main` (`source.rs` 29 → 13). Closeout
+`reviews/task-53/004-closeout/`; final acceptance
+`reviews/task-53/004-closeout/feedback/2026-06-16-01-reviewer.md`.
+Was the second Phase-1 lane in the post-Task-50 hardening sequence.
 
 ## Why
 

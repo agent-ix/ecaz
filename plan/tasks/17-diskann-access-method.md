@@ -1,11 +1,10 @@
 # Task 17: DiskANN (Vamana) as Second Access Method
 
-Status: **substantially complete on branch — callback buildout phases 1–9
-landed by 2026-04-20, and 2026-04-21 follow-up recovery/signoff work
-closed the remaining local DiskANN runtime smoke gaps.** The remaining
-work is review, merge, and final faster-machine signoff rather than
-another missing `ec_diskann` AM callback slice. Working branch:
-`adr034-diskann-rebased`.
+Status: **complete** (2026-06-16) — `ec_diskann` (ADR-034) is landed
+on `main` (`src/am/ec_diskann/`) and has been built upon and optimized
+by Tasks 29/29a–e, 55, 59, 60, 65, 70, 99, 104, and 106. The historical
+`adr034-diskann-rebased` branch is retained for reference only. (Prior
+"substantially complete on branch" header dated 2026-04-21 was stale.)
 
 Executes ADR-034.
 

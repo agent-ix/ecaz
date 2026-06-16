@@ -1,8 +1,10 @@
 # Task 52: Common P8 Finish — Typed Shared-Header + ShmToc Wrappers
 
-Status: **proposed** — supersedes the §P8 continuation queue named in
-`reviews/task-50/448-hnsw-burndown-refreshed-closeout/request.md`.
-First Phase-1 lane in the post-Task-50 hardening sequence.
+Status: **complete** (2026-06-16) — additive P8 typed shared-header /
+ShmToc wrappers landed on `main` via `Merge task-52-reconcile`
+(`833f29cba`); reviewer ACK `1b0cff66c`. Packets under
+`reviews/task-52-reconcile/`. Was the first Phase-1 lane in the
+post-Task-50 hardening sequence.
 
 ## Why
 
