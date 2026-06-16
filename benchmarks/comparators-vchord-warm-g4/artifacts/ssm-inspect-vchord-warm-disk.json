@@ -1,0 +1,22 @@
+{
+    "CommandId": "208ecf42-88b4-4be6-b7fc-dcd54d3f4c29",
+    "InstanceId": "i-099b28c358d176776",
+    "Comment": "inspect-vchord-warm-disk",
+    "DocumentName": "AWS-RunShellScript",
+    "DocumentVersion": "$DEFAULT",
+    "PluginName": "aws:runShellScript",
+    "ResponseCode": 0,
+    "ExecutionStartDateTime": "2026-06-16T23:19:02.135Z",
+    "ExecutionElapsedTime": "PT0.105S",
+    "ExecutionEndDateTime": "2026-06-16T23:19:02.135Z",
+    "Status": "Success",
+    "StatusDetails": "Success",
+    "StandardOutputContent": "Filesystem      Size  Used Avail Use% Mounted on\n/dev/nvme0n1p1   20G   12G  8.8G  57% /\n/dev/nvme1n1    100G   69G   32G  69% /var/lib/pgsql/18\n35 GB\n",
+    "StandardOutputUrl": "",
+    "StandardErrorContent": "",
+    "StandardErrorUrl": "",
+    "CloudWatchOutputConfig": {
+        "CloudWatchLogGroupName": "",
+        "CloudWatchOutputEnabled": false
+    }
+}
