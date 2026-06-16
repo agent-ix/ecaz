@@ -1,9 +1,12 @@
 # Task 58: HNSW `build_parallel.rs` P8 Consumer Migration
 
-Status: **proposed** — second HNSW deep-burndown follow-up to Task 54.
-Targets the largest remaining HNSW unsafe-block file
-(`src/am/ec_hnsw/build_parallel.rs` = 112 blocks) by consuming the
-Task 52 P8 typed-view wrappers (DSM / atomic / SpinLock).
+Status: **complete** (2026-06-16) — HNSW `build_parallel.rs` P8
+consumer migration landed (−28 src/); the Task 58.1 follow-up was
+CLOSE-APPROVED (`cb08dfef5`) after a level-playing-field experiment
+resolved the latency block (at parity or faster). Closeout
+`reviews/task-58/007-task-58-1-closeout/`. Was the second HNSW
+deep-burndown follow-up to Task 54, consuming the Task 52 P8 typed-view
+wrappers (DSM / atomic / SpinLock) on the largest HNSW unsafe-block file.
 
 ## Why
 

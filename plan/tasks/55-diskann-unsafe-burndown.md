@@ -1,8 +1,10 @@
 # Task 55: DiskANN Unsafe Burndown
 
-Status: **proposed** — first per-AM rotation after Phase 1 common
-wrappers land. Supersedes the per-AM scope of Task 50 by applying the
-same recipe to `src/am/ec_diskann/`.
+Status: **complete** (2026-06-16) — DiskANN unsafe burndown landed on
+`main` (merge `1adcf95aa`, −27 src/): all §Exit Criteria met, bench
+gate cleared. Closeout `reviews/task-55/004-closeout/` (retroactive
+reviewer close-ack on file). Was the first per-AM rotation after Phase 1
+common wrappers, applying the Task 50 recipe to `src/am/ec_diskann/`.
 
 ## Why
 
