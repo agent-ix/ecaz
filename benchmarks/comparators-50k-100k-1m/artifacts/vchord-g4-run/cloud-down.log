@@ -1,0 +1,17 @@
+cloud down --profile 10k-medium --yes --no-snapshot-required (2026-06-16)
+
+Billable resources destroyed:
+- aws_instance db i-0a6951577c705f238: terminated
+- aws_ebs_volume vol-0d29159d2c8c855a6 (100 GiB, restored from snap-0e9c7743263e61d70): destroyed (InvalidVolume.NotFound)
+- VPC vpc-068d7dcba6283b86c + subnets + security groups + connect endpoint: destroyed
+
+Retained:
+- Corpus base snapshot snap-0e9c7743263e61d70: completed (intentionally kept; covers the corpus at all scales)
+
+Not destroyed by terraform:
+- S3 bucket ecaz-cloud-10k-medium-268ea93e: DeleteBucket returned 409 BucketNotEmpty
+  (holds the 7 bench-artifact objects already synced into this packet). The
+  bucket is not force_destroy and emptying it is a mass-delete that needs
+  explicit operator authorization; it carries negligible cost. Clean up with an
+  authorized `aws s3 rm s3://ecaz-cloud-10k-medium-268ea93e --recursive` +
+  re-run `ecaz cloud down --profile 10k-medium --yes --no-snapshot-required`.
