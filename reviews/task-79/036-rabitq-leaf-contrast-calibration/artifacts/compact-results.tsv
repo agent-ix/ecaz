@@ -1,7 +1,0 @@
-row	global_blocks	leaf_contrast_weight	radius_weight	candidates	latency_p50_ms	latency_p95_ms	recall_at_10	returned_sum	gate
-leaf_contrast	640	0.00	0.25	4050758	44.870	52.173	0.9870	2000	fail_recall
-leaf_contrast	640	0.25	0.25	4052735	45.506	51.544	0.9860	2000	fail_recall_p50
-leaf_contrast	640	0.50	0.25	4053651	44.801	52.646	0.9860	2000	fail_recall
-leaf_contrast	640	1.00	0.25	4054561	44.925	51.436	0.9800	2000	fail_recall
-leaf_contrast	640	2.00	0.25	4055175	45.168	52.805	0.9705	2000	fail_recall_p50
-leaf_contrast	640	4.00	0.25	4055601	45.277	52.652	0.9540	2000	fail_recall_p50

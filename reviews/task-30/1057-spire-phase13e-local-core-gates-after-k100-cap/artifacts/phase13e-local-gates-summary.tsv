@@ -1,6 +1,0 @@
-run_id	gate	status	artifact_dir
-after-k100-cap	phase13e-static-remote-placement	pass	reviews/task-30/1057-spire-phase13e-local-core-gates-after-k100-cap/artifacts/phase13e-static-remote-placement
-after-k100-cap	multicluster-customscan-read	pass	reviews/task-30/1057-spire-phase13e-local-core-gates-after-k100-cap/artifacts/multicluster-customscan-read
-after-k100-cap	insert-read-after-customscan-helper	pass	reviews/task-30/1057-spire-phase13e-local-core-gates-after-k100-cap/artifacts/insert-read-after-customscan-helper
-after-k100-cap	insert-read-after-customscan-trigger	pass	reviews/task-30/1057-spire-phase13e-local-core-gates-after-k100-cap/artifacts/insert-read-after-customscan-trigger
-after-k100-cap	transport-overlap	pass	reviews/task-30/1057-spire-phase13e-local-core-gates-after-k100-cap/artifacts/transport-overlap

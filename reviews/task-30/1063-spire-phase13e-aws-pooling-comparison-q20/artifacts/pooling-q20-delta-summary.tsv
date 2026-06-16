@@ -1,4 +1,0 @@
-metric	nprobe_8	nprobe_16	nprobe_24	nprobe_32
-socket_open_sum_delta	53	60	60	60
-connect_p50_delta_ms	19	20	20	20
-total_p50_delta_ms	10	9	9	11

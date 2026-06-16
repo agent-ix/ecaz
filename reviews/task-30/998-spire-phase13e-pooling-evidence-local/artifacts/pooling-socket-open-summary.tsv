@@ -1,8 +1,0 @@
-phase	status	result_source	dispatch_count	socket_open_count	candidate_receive_query_count	heap_receive_query_count	degraded_skipped_dispatch_count	returned_candidate_count	next_blocker
-pool_disabled_1	ready	remote_heap_candidates	3	3	3	3	0	10	none
-pool_disabled_2	ready	remote_heap_candidates	3	3	3	3	0	10	none
-pooled_warmup	ready	remote_heap_candidates	3	3	3	3	0	10	none
-pooled_followup_1	ready	remote_heap_candidates	3	0	3	3	0	10	none
-pooled_followup_2	ready	remote_heap_candidates	3	0	3	3	0	10	none
-pooled_remote_down_degraded	degraded_ready	remote_heap_candidates	3	0	2	2	1	10	none
-pooled_after_restart	ready	remote_heap_candidates	3	1	3	3	0	10	none

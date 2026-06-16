@@ -1,9 +1,0 @@
-row	global_blocks	first_pass_representatives	full_rescore_blocks	candidates	latency_p50_ms	latency_p95_ms	recall_at_10	returned_sum	gate
-full_k3	736	0	0	4657668	48.853	56.690	0.9925	2000	fail_p50
-full_k3	768	0	0	4860209	49.017	56.424	0.9925	2000	fail_p50
-two_stage	736	2	1024	4657668	49.856	60.253	0.9925	2000	fail_p50
-two_stage	736	2	1280	4657668	48.651	59.354	0.9925	2000	fail_p50
-two_stage	768	2	896	4860209	49.648	57.167	0.9925	2000	fail_p50
-two_stage	768	2	1024	4860209	49.281	56.671	0.9925	2000	fail_p50
-two_stage	768	2	1280	4860209	49.088	57.734	0.9925	2000	fail_p50
-two_stage	768	2	1536	4860209	49.543	56.906	0.9925	2000	fail_p50

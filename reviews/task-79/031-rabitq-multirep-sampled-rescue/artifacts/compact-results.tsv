@@ -1,5 +1,0 @@
-row	final_blocks	probe_blocks	sample_rows	prior_weight	radius_weight	candidates	latency_p50_ms	latency_p95_ms	recall_at_10	returned_sum	gate
-summary	640	0	0	0.8	0.25	4050758	45.272	53.010	0.9870	2000	fail
-sampled	640	896	1	0.8	0.25	4229958	49.407	57.603	0.9870	1933	fail
-sampled	640	1024	1	0.8	0.25	4255558	49.596	57.262	0.9870	1933	fail
-sampled	640	896	2	0.8	0.25	4409158	50.826	60.268	0.9870	1878	fail

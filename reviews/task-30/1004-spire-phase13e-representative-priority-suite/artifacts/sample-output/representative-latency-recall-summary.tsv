@@ -1,4 +1,0 @@
-source	step	kind	nprobe	queries_or_count	latency_p50	latency_p95	latency_p99	recall_at_k
-latency	13a3a-latency-k10-c1	latency	8	1000	10.0 ms	20.0 ms	30.0 ms	
-recall	13a3a-recall-k10	recall	8	1000				0.99
-spire-pipeline	13e3-production-read-profile-k10	spire-pipeline	8	1000	11.0 ms	22.0 ms	33.0 ms	0.99
