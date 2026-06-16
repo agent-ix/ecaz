@@ -165,8 +165,13 @@ under `crates/ecaz-cli/suites/current/`:
 
 Each canonical config IS "the standard ecaz sweep" for that lane: the standard
 access-method profiles (`ec_hnsw`, `ec_ivf`, `ec_diskann`, `ec_spire`) × the
-standard `load` / `recall` / `latency` / `storage` steps, at the corpus scales
-that lane stages. The recall/latency steps set `sweep` to the profile's
+standard scales (**10k / 50k / 100k / 1m**) × the standard `load` / `recall` /
+`latency` / `storage` steps (65 steps: precheck + 4×4×4). Corpus TSVs are staged
+per lane at a single canonical dir — local lanes read `data/staged-current/`,
+AWS lanes `/var/lib/pgsql/18/datasets/staged-current/`, both named
+`ec_real_{10k,50k,100k,1m}_{corpus,queries}.tsv` + `_manifest.json`; staging the
+four scales there is the run prerequisite. The recall/latency steps set `sweep`
+to the profile's
 `default_sweep` from `crates/ecaz-cli/src/profiles.rs` verbatim — do **not**
 hand-pick a different grid (suite steps require an explicit `sweep`, so the
 standard is to copy the registered default):
@@ -186,9 +191,9 @@ when a task genuinely needs a non-standard grid/scale/option, and **state that
 reason in the packet `manifest.md`**. A packet that silently re-authors the
 standard matrix is a smell — point at the canonical lane config instead.
 
-Adding a scale to a lane: stage its corpus TSVs on that host and add the
-`load`/`recall`/`latency`/`storage` quartet for each standard profile at that
-scale to the lane config (keep using `default_sweep`).
+When resource-constrained (e.g. a 1m run on a local desktop), subset with
+`--only-tag ec_real_100k` / `--only-tag hnsw` rather than editing the config —
+the canonical config always carries the full 10k/50k/100k/1m × 4-profile matrix.
 
 ### Push and Visibility
 

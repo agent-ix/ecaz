@@ -383,18 +383,21 @@ The configs under `crates/ecaz-cli/suites/current/` —
 `m5-local.json`, `intel-local.json`, `aws-intel.json`, `aws-graviton.json` — are
 **the** canonical per-lane standard sweep, one per supported host. Each runs the
 standard access-method profiles (`ec_hnsw`, `ec_ivf`, `ec_diskann`, `ec_spire`)
-× the standard `load` / `recall` / `latency` / `storage` steps, at the corpus
-scales that lane stages, with each profile's `default_sweep` from
-`src/profiles.rs` (`ec_hnsw` `[40,64,100,128,160,200]`, `ec_diskann`
-`[64,128,200,400,800]`, `ec_ivf` `[8,16,24,32,48,64]`, `ec_spire`
-`[8,16,24,32]`). Competitor numbers come from `comparator` steps, never from
-re-running this sweep.
+× the standard scales (**10k / 50k / 100k / 1m**) × the standard `load` /
+`recall` / `latency` / `storage` steps (65 steps), with each profile's
+`default_sweep` from `src/profiles.rs` (`ec_hnsw` `[40,64,100,128,160,200]`,
+`ec_diskann` `[64,128,200,400,800]`, `ec_ivf` `[8,16,24,32,48,64]`, `ec_spire`
+`[8,16,24,32]`). Corpus TSVs are staged at a single per-environment dir
+(`data/staged-current/` local, `/var/lib/pgsql/18/datasets/staged-current/` AWS),
+named `ec_real_{10k,50k,100k,1m}_{corpus,queries}.tsv` + `_manifest.json`.
+Competitor numbers come from `comparator` steps, never from re-running this
+sweep.
 
 Convention: **run the standard lane config as-is** for routine measurement —
 only hand-author a bespoke `SuiteConfig` when a task needs a non-standard
-grid/scale/option, and record that reason in the packet `manifest.md`. To add a
-scale to a lane, stage its corpus TSVs on that host and add the
-load/recall/latency/storage quartet per standard profile (keep `default_sweep`).
+grid/scale/option, and record that reason in the packet `manifest.md`. Subset a
+run with `--only-tag ec_real_100k` / `--only-tag hnsw` when resource-constrained
+rather than editing the config.
 
 Current benchmark lanes live under `benchmarks/current/<lane>/` and use the
 configs under `crates/ecaz-cli/suites/current/`:

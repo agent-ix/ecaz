@@ -14,11 +14,12 @@ document the "run-as-is, justify custom" convention. No runner code changed
 ### Canonical lane configs (now full standard matrix)
 
 `m5-local.json`, `intel-local.json`, `aws-intel.json`, `aws-graviton.json` each
-now cover the standard access-method profiles (`ec_hnsw`, `ec_ivf`,
-`ec_diskann`, `ec_spire`) × the standard `load` / `recall` / `latency` /
-`storage` steps at the scale each lane stages today (100k), replacing the prior
-hand-curated 1–2-profile subsets. recall/latency `sweep` is set to each
-profile's `default_sweep` from `crates/ecaz-cli/src/profiles.rs` verbatim
+now cover the full standard matrix — the standard access-method profiles
+(`ec_hnsw`, `ec_ivf`, `ec_diskann`, `ec_spire`) × the standard scales
+(**10k / 50k / 100k / 1m**) × the standard `load` / `recall` / `latency` /
+`storage` steps (**65 steps each**: precheck + 4×4×4) — replacing the prior
+hand-curated 1–2-profile, 100k-only subsets. recall/latency `sweep` is set to
+each profile's `default_sweep` from `crates/ecaz-cli/src/profiles.rs` verbatim
 (suite steps require an explicit `sweep`, so the standard is to copy the
 registered default):
 
@@ -39,31 +40,39 @@ re-running this sweep.
   subsection — names the four canonical configs, the profile/step/sweep
   standard, and the convention: **run the standard lane config as-is; only
   hand-author a bespoke SuiteConfig for a non-standard grid/scale/option and
-  state the reason in the packet `manifest.md`**. Adding a scale = stage its
-  TSVs on the host and append the load/recall/latency/storage quartet per
-  profile.
+  state the reason in the packet `manifest.md`**. Subset with
+  `--only-tag ec_real_100k` / `--only-tag hnsw` when resource-constrained
+  instead of editing the config.
 - `crates/ecaz-cli/README.md`: mirrors the same standard + convention above the
   "Current benchmark lanes" runbook.
 
+## Corpus staging convention
+
+Each lane reads a single per-environment staged dir, named
+`ec_real_{10k,50k,100k,1m}_{corpus,queries}.tsv` + `_manifest.json`:
+
+- local lanes (`m5-local`, `intel-local`): `data/staged-current/`
+- AWS lanes (`aws-intel`, `aws-graviton`): `/var/lib/pgsql/18/datasets/staged-current/`
+
+Staging the four scales there is the run prerequisite (the corpus exists — it's
+been exercised on these hosts; the config is the recipe pointing at the
+canonical location).
+
 ## Commit
 
-- `56ce92879` Task 109: canonical per-lane standard sweep configs + convention
+- `56ce92879` (100k cut, superseded) → full 4-scale matrix in the follow-up
+  commit on this branch.
 
 ## Verification
 
 - `ecaz bench suite run --config crates/ecaz-cli/suites/current/<lane>.json
-  --dry-run` expands cleanly for all four lanes — 17 steps each (precheck + 4
-  profiles × 4 steps), each recall/latency step carrying the profile
-  `default_sweep`. (Local `audit` will flag missing corpus inputs for the AWS
-  lanes since their TSVs live on the remote host, not locally; the dry-run is
-  the structural check.)
+  --dry-run` expands cleanly for all four lanes — **65 steps each** (precheck +
+  4 scales × 4 profiles × 4 steps), all four scales (10k/50k/100k/1m) present,
+  each recall/latency step carrying the profile `default_sweep`, no errors.
+  (Local `audit` will flag missing corpus inputs since the TSVs live on each
+  lane's host, not on this machine; the dry-run is the structural check.)
 
-## Scope note / follow-up
+## Follow-up (noted, not this cut)
 
-- Lanes cover **100k** today (the scale staged on every host). Extending each
-  lane to 10k/50k/1m is the documented fill-in path: stage the TSVs on the host,
-  append the per-profile quartet at that scale with `default_sweep`. Not done in
-  this cut because the 50k/1m corpus TSVs are not staged on every lane's host
-  (the AWS snapshot holds them as loaded tables, not local TSVs).
 - Auditing/retiring the redundant per-task suites under `crates/ecaz-cli/suites/`
-  remains a noted follow-up (not this cut).
+  remains a follow-up.
