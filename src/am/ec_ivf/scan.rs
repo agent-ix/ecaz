@@ -2460,7 +2460,10 @@ fn process_borrowed_columnar_postings(
     let heap_tid_bytes = scratch.heap_tids.len().saturating_mul(ITEM_POINTER_BYTES);
     opaque
         .explain_counters
-        .record_dense_coalesced_flush(payload_bytes, heap_tid_bytes);
+        .record_dense_coalesced_flush(0, heap_tid_bytes);
+    opaque
+        .explain_counters
+        .record_columnar_payload_borrow(payload_bytes);
 
     if !quantizer.score_turboquant_batch_from_payload_refs(
         prepared_query,
@@ -2695,6 +2698,7 @@ fn process_columnar_frozen_list_page_scatter(
         return Ok(false);
     }
     let block = super::page::IvfColumnarFrozenListPinnedPages::read(index_relation_handle, header)?;
+    opaque.explain_counters.record_columnar_frozen_list_visit();
     if block.payload_len() != payload_len {
         return Err(format!(
             "ec_ivf columnar frozen list payload length mismatch: got {}, expected {payload_len}",
