@@ -407,6 +407,7 @@ mod tests {
             dense_posting_blocks: false,
             dense_posting_pack_pages: 1,
             dense_posting_typed_layout: false,
+            columnar_frozen_lists: false,
             storage_format: options::StorageFormat::TurboQuant,
             rerank: options::RerankMode::HeapF32,
         });

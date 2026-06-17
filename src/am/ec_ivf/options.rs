@@ -54,6 +54,7 @@ struct EcIvfReloptions {
     dense_posting_blocks: i32,
     dense_posting_pack_pages: i32,
     dense_posting_typed_layout: i32,
+    columnar_frozen_lists: i32,
     storage_format_offset: i32,
     quantizer_offset: i32,
     rerank_offset: i32,
@@ -159,6 +160,7 @@ pub(super) struct EcIvfOptions {
     pub(super) dense_posting_blocks: bool,
     pub(super) dense_posting_pack_pages: i32,
     pub(super) dense_posting_typed_layout: bool,
+    pub(super) columnar_frozen_lists: bool,
     pub(super) storage_format: StorageFormat,
     pub(super) rerank: RerankMode,
 }
@@ -176,6 +178,7 @@ impl EcIvfOptions {
         dense_posting_blocks: false,
         dense_posting_pack_pages: 1,
         dense_posting_typed_layout: false,
+        columnar_frozen_lists: false,
         storage_format: StorageFormat::Auto,
         rerank: RerankMode::Auto,
     };
@@ -519,6 +522,16 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_amoptions(
             1,
             offset_of!(EcIvfReloptions, dense_posting_typed_layout) as i32,
         );
+        pg_sys::add_local_int_reloption(
+            &mut relopts,
+            c"columnar_frozen_lists".as_ptr(),
+            c"Experimental Task 111b columnar frozen-list IVF posting layout: 0 disables, 1 enables for build-time frozen postings."
+                .as_ptr(),
+            0,
+            0,
+            1,
+            offset_of!(EcIvfReloptions, columnar_frozen_lists) as i32,
+        );
         pg_sys::add_local_string_reloption(
                 &mut relopts,
                 c"storage_format".as_ptr(),
@@ -629,6 +642,7 @@ fn build_options_from_reloptions(
         dense_posting_blocks: reloptions.dense_posting_blocks != 0,
         dense_posting_pack_pages: reloptions.dense_posting_pack_pages.max(1),
         dense_posting_typed_layout: reloptions.dense_posting_typed_layout != 0,
+        columnar_frozen_lists: reloptions.columnar_frozen_lists != 0,
         storage_format,
         rerank,
     }

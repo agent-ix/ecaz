@@ -177,6 +177,8 @@ pub(super) struct EcIvfOptions {
     pub(super) quant_bits: u8,
     pub(super) dense_posting_blocks: bool,
     pub(super) dense_posting_pack_pages: i32,
+    pub(super) dense_posting_typed_layout: bool,
+    pub(super) columnar_frozen_lists: bool,
 }
 
 #[cfg(not(any(feature = "pg17", feature = "pg18")))]
@@ -1209,6 +1211,63 @@ impl IvfColumnarFrozenListColumns {
             self.total_heap_tids,
         )
         .map(|offsets| offsets.total_column_bytes as usize)
+    }
+
+    pub(super) fn logical_bytes(&self) -> Result<Vec<u8>, String> {
+        let mut out = Vec::with_capacity(self.total_column_bytes()?);
+        out.extend_from_slice(&self.gamma_bytes);
+        out.extend_from_slice(&self.payload_bytes);
+        out.extend_from_slice(&self.heap_tid_count_bytes);
+        out.extend_from_slice(&self.heap_tid_offset_bytes);
+        out.extend_from_slice(&self.heap_tid_bytes);
+        out.extend_from_slice(&self.rerank_tid_bytes);
+        out.extend_from_slice(&self.deleted_bitmap);
+        Ok(out)
+    }
+
+    pub(super) fn raw_page_bytes(&self, page_size: usize) -> Result<Vec<Vec<u8>>, String> {
+        let mut pages = Vec::new();
+        self.push_column_raw_pages(&mut pages, &self.gamma_bytes, size_of::<f32>(), page_size)?;
+        self.push_column_raw_pages(&mut pages, &self.payload_bytes, self.payload_len, page_size)?;
+        self.push_column_raw_pages(
+            &mut pages,
+            &self.heap_tid_count_bytes,
+            size_of::<u16>(),
+            page_size,
+        )?;
+        self.push_column_raw_pages(
+            &mut pages,
+            &self.heap_tid_offset_bytes,
+            size_of::<u32>(),
+            page_size,
+        )?;
+        self.push_column_raw_pages(
+            &mut pages,
+            &self.heap_tid_bytes,
+            ITEM_POINTER_BYTES,
+            page_size,
+        )?;
+        self.push_column_raw_pages(
+            &mut pages,
+            &self.rerank_tid_bytes,
+            ITEM_POINTER_BYTES,
+            page_size,
+        )?;
+        self.push_column_raw_pages(&mut pages, &self.deleted_bitmap, 1, page_size)?;
+        Ok(pages)
+    }
+
+    fn push_column_raw_pages(
+        &self,
+        pages: &mut Vec<Vec<u8>>,
+        bytes: &[u8],
+        item_width: usize,
+        page_size: usize,
+    ) -> Result<(), String> {
+        for chunk in columnar_page_chunks(bytes, item_width, page_size)? {
+            pages.push(chunk.bytes.to_vec());
+        }
+        Ok(())
     }
 
     pub(super) fn gamma(&self, index: usize) -> f32 {
@@ -3031,6 +3090,10 @@ pub(super) fn posting_tuple_fits(payload_len: usize, page_size: usize) -> bool {
 pub(super) fn columnar_frozen_list_header_tuple_fits(page_size: usize) -> bool {
     aligned_tuple_bytes(IvfColumnarFrozenListHeaderTuple::encoded_len())
         <= usable_page_bytes(page_size)
+}
+
+pub(super) fn columnar_frozen_list_raw_page_capacity(page_size: usize) -> usize {
+    usable_page_bytes(page_size)
 }
 
 pub(super) fn dense_posting_block_tuple_fits(
@@ -4857,6 +4920,7 @@ mod tests {
             dense_posting_blocks: false,
             dense_posting_pack_pages: 1,
             dense_posting_typed_layout: false,
+            columnar_frozen_lists: false,
             storage_format: StorageFormat::RaBitQ,
             rerank: RerankMode::HeapF32,
         });
@@ -4888,6 +4952,7 @@ mod tests {
             dense_posting_blocks: false,
             dense_posting_pack_pages: 1,
             dense_posting_typed_layout: false,
+            columnar_frozen_lists: false,
             storage_format: StorageFormat::Auto,
             rerank: RerankMode::Auto,
         });
@@ -5093,6 +5158,26 @@ mod tests {
         assert_eq!(chunks[2].start_item, 4);
         assert_eq!(chunks[2].item_count, 1);
         assert_eq!(chunks[2].bytes, &[13, 14, 15]);
+    }
+
+    #[test]
+    fn columnar_frozen_list_raw_pages_keep_all_column_items_whole() {
+        let postings = vec![
+            (tid(11, 1), 0.125, tid(101, 1), vec![1, 2, 3]),
+            (tid(12, 2), 0.25, tid(102, 2), vec![4, 5, 6]),
+            (tid(13, 3), 0.5, tid(103, 3), vec![7, 8, 9]),
+        ];
+        let columns =
+            IvfColumnarFrozenListColumns::from_single_heaptid_postings(&postings, 3).unwrap();
+
+        let raw_pages = columns.raw_page_bytes(PAGE_HEADER_BYTES + 7).unwrap();
+        let reassembled = raw_pages.concat();
+
+        assert_eq!(reassembled, columns.logical_bytes().unwrap());
+        assert_eq!(
+            raw_pages.iter().map(Vec::len).collect::<Vec<_>>(),
+            vec![4, 4, 4, 6, 3, 6, 4, 4, 4, 6, 6, 6, 6, 6, 6, 1]
+        );
     }
 
     #[test]
@@ -5597,6 +5682,7 @@ mod tests {
             dense_posting_blocks: false,
             dense_posting_pack_pages: 1,
             dense_posting_typed_layout: false,
+            columnar_frozen_lists: false,
             storage_format: StorageFormat::Auto,
             rerank: RerankMode::Auto,
         });

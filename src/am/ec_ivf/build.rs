@@ -89,11 +89,18 @@ pub(super) struct BuildState {
 
 pub(super) struct IvfBuildPlan {
     data_pages: DataPageChain,
+    column_pages: Vec<IvfColumnarStagedPage>,
     metadata: page::MetadataPage,
     centroid_tids: Vec<ItemPointer>,
     directory_tids: Vec<ItemPointer>,
     posting_tids_by_list: Vec<Vec<ItemPointer>>,
     directory_entries: Vec<page::IvfListDirectoryTuple>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct IvfColumnarStagedPage {
+    block_number: pg_sys::BlockNumber,
+    bytes: Vec<u8>,
 }
 
 #[derive(Debug, Default, Copy, Clone, PartialEq, Eq)]
@@ -636,16 +643,51 @@ impl BuildState {
         data_pages.start_new_page_if_current_has_tuples();
         let postings_start = Instant::now();
         let use_dense_posting_blocks = dense_posting_blocks_enabled(self.options);
+        let use_columnar_frozen_lists = columnar_frozen_lists_enabled(self.options);
         let dense_posting_pack_pages = dense_posting_pack_pages(self.options);
         let dense_posting_typed_layout = self.options.dense_posting_typed_layout;
         let mut dense_logical_block_id = 0_u32;
+        let mut column_pages = Vec::new();
         for (list_id, tuple_indices) in tuple_indices_by_list.iter().enumerate() {
             if !tuple_indices.is_empty() {
                 data_pages.start_new_page_if_current_has_tuples();
             }
             live_posting_counts_by_list[list_id] = u64::try_from(tuple_indices.len())
                 .map_err(|_| "posting count exceeds u64".to_owned())?;
-            if use_dense_posting_blocks && !tuple_indices.is_empty() {
+            if use_columnar_frozen_lists && !tuple_indices.is_empty() {
+                let list_id_u32 = list_id_u32(list_id)?;
+                let mut postings = Vec::with_capacity(tuple_indices.len());
+                let mut payload_len = None;
+                for tuple_index in tuple_indices {
+                    let (heap_tid, gamma, payload) = encode_build_posting(
+                        &self.heap_tuples[*tuple_index],
+                        &pq_model,
+                        pq_posting_quantizer,
+                    )?;
+                    let current_payload_len = payload.len();
+                    if let Some(existing) = payload_len {
+                        if existing != current_payload_len {
+                            return Err(
+                                "ec_ivf columnar frozen list payload length changed within a list"
+                                    .to_owned(),
+                            );
+                        }
+                    } else {
+                        payload_len = Some(current_payload_len);
+                    }
+                    postings.push((heap_tid, gamma, ItemPointer::INVALID, payload));
+                }
+                let last_column_block = insert_columnar_frozen_list(
+                    &mut data_pages,
+                    &mut column_pages,
+                    &mut posting_tids_by_list[list_id],
+                    list_id_u32,
+                    &postings,
+                    payload_len.expect("non-empty columnar list has payloads"),
+                    self.page_size,
+                )?;
+                directory_tail_blocks_by_list[list_id] = Some(last_column_block);
+            } else if use_dense_posting_blocks && !tuple_indices.is_empty() {
                 let list_id_u32 = list_id_u32(list_id)?;
                 let mut pending = Vec::new();
                 let mut pending_payload_len = None;
@@ -725,10 +767,12 @@ impl BuildState {
                     .first()
                     .expect("non-empty list should have posting tids")
                     .block_number;
-                let tail = posting_tids_by_list[list_id]
-                    .last()
-                    .expect("non-empty list should have posting tids")
-                    .block_number;
+                let tail = directory_tail_blocks_by_list[list_id].unwrap_or_else(|| {
+                    posting_tids_by_list[list_id]
+                        .last()
+                        .expect("non-empty list should have posting tids")
+                        .block_number
+                });
                 let posting_pages = tail - head + 1;
                 directory_tail_blocks_by_list[list_id] = Some(tail);
                 let slack_pages =
@@ -796,6 +840,7 @@ impl BuildState {
         Ok((
             IvfBuildPlan {
                 data_pages,
+                column_pages,
                 metadata,
                 centroid_tids,
                 directory_tids,
@@ -852,6 +897,16 @@ fn posting_slack_pages(posting_pages: u32, slack_percent: i32) -> Result<usize, 
 
 fn dense_posting_blocks_enabled(options: options::EcIvfOptions) -> bool {
     options.dense_posting_blocks
+        && matches!(
+            options.storage_format,
+            options::StorageFormat::Auto
+                | options::StorageFormat::TurboQuant
+                | options::StorageFormat::RaBitQ
+        )
+}
+
+fn columnar_frozen_lists_enabled(options: options::EcIvfOptions) -> bool {
+    options.columnar_frozen_lists
         && matches!(
             options.storage_format,
             options::StorageFormat::Auto
@@ -1021,6 +1076,59 @@ fn insert_dense_posting_group(
     Ok(())
 }
 
+fn insert_columnar_frozen_list(
+    data_pages: &mut DataPageChain,
+    column_pages: &mut Vec<IvfColumnarStagedPage>,
+    posting_tids: &mut Vec<ItemPointer>,
+    list_id: u32,
+    postings: &[(ItemPointer, f32, ItemPointer, Vec<u8>)],
+    payload_len: usize,
+    page_size: usize,
+) -> Result<pg_sys::BlockNumber, String> {
+    let columns =
+        page::IvfColumnarFrozenListColumns::from_single_heaptid_postings(postings, payload_len)?;
+    let raw_pages = columns.raw_page_bytes(page_size)?;
+    if raw_pages.is_empty() {
+        return Err("ec_ivf columnar frozen list produced no raw pages".to_owned());
+    }
+
+    let current_block = data_pages
+        .pages()
+        .last()
+        .expect("data page chain is non-empty")
+        .block_number();
+    let first_column_block = current_block
+        .checked_add(1)
+        .ok_or_else(|| "ec_ivf columnar frozen list first block overflow".to_owned())?;
+    let raw_page_count = u32::try_from(raw_pages.len())
+        .map_err(|_| "ec_ivf columnar frozen list page count exceeds u32".to_owned())?;
+    let last_column_block = first_column_block
+        .checked_add(raw_page_count - 1)
+        .ok_or_else(|| "ec_ivf columnar frozen list last block overflow".to_owned())?;
+    let header = columns.header(
+        list_id,
+        page::BlockRef {
+            block_number: first_column_block,
+        },
+        page::BlockRef {
+            block_number: last_column_block,
+        },
+    )?;
+    posting_tids.push(data_pages.insert_ivf_columnar_frozen_list_header(&header)?);
+    data_pages.start_new_page_if_current_has_tuples();
+    if raw_pages.len() > 1 {
+        data_pages.append_empty_pages(raw_pages.len() - 1);
+    }
+    for (page_index, bytes) in raw_pages.into_iter().enumerate() {
+        column_pages.push(IvfColumnarStagedPage {
+            block_number: first_column_block + page_index as u32,
+            bytes,
+        });
+    }
+    data_pages.append_empty_pages(1);
+    Ok(last_column_block)
+}
+
 fn encode_build_posting(
     tuple: &BuildTuple,
     pq_model: &Option<IvfPqFastScanModel>,
@@ -1058,15 +1166,26 @@ pub(super) unsafe fn flush_build_plan(index_relation: pg_sys::Relation, plan: &I
 
     let handle = NonNull::new(index_relation)
         .unwrap_or_else(|| pgrx::error!("ec_ivf flush_build_plan received a null index relation"));
-    write_data_pages(handle, &plan.data_pages);
+    write_data_pages(handle, &plan.data_pages, &plan.column_pages);
     // SAFETY: same live relation; metadata belongs to the staged plan just
     // flushed to disk.
     page::initialize_metadata_page(index_relation, plan.metadata);
 }
 
-fn write_data_pages(handle: RelationHandle, data_pages: &DataPageChain) {
+fn write_data_pages(
+    handle: RelationHandle,
+    data_pages: &DataPageChain,
+    column_pages: &[IvfColumnarStagedPage],
+) {
     for staged_page in data_pages.pages() {
-        write_data_page(handle, staged_page);
+        if let Some(column_page) = column_pages
+            .iter()
+            .find(|page| page.block_number == staged_page.block_number())
+        {
+            write_columnar_raw_page(handle, column_page);
+        } else {
+            write_data_page(handle, staged_page);
+        }
     }
 }
 
@@ -1091,6 +1210,53 @@ fn write_data_page(handle: RelationHandle, staged_page: &crate::storage::page::D
             page.add_item(tuple).unwrap_or_else(|err| {
                 pgrx::error!("ec_ivf failed to write tuple to block {}", err.block_number)
             });
+        }
+    }
+    wal_txn.finish();
+}
+
+fn write_columnar_raw_page(handle: RelationHandle, staged_page: &IvfColumnarStagedPage) {
+    let buffer = LockedBufferGuard::read_main_locked_handle(
+        handle,
+        P_NEW,
+        pg_sys::ReadBufferMode::RBM_ZERO_AND_LOCK,
+    )
+    .unwrap_or_else(|| {
+        pgrx::error!(
+            "ec_ivf failed to allocate columnar data buffer for block {}",
+            staged_page.block_number
+        )
+    });
+    if buffer.block_number() != staged_page.block_number {
+        pgrx::error!(
+            "ec_ivf columnar staged block mismatch: allocated {}, expected {}",
+            buffer.block_number(),
+            staged_page.block_number
+        );
+    }
+    let capacity = page::columnar_frozen_list_raw_page_capacity(buffer.page_size());
+    if staged_page.bytes.len() > capacity {
+        pgrx::error!(
+            "ec_ivf columnar page payload {} exceeds raw capacity {}",
+            staged_page.bytes.len(),
+            capacity
+        );
+    }
+
+    let mut wal_txn = wal::WalTxnScope::start_handle(handle);
+    {
+        let mut page = wal_txn.register_page(&buffer);
+        page.init(capacity);
+        // SAFETY: the page was initialized with the whole raw column payload
+        // area as special space, so PageGetSpecialPointer points at a writable
+        // region of `capacity` bytes. The bounds check above proves the copy
+        // fits within that region.
+        unsafe {
+            ptr::copy_nonoverlapping(
+                staged_page.bytes.as_ptr(),
+                pg_sys::PageGetSpecialPointer(page.page_ptr()).cast::<u8>(),
+                staged_page.bytes.len(),
+            );
         }
     }
     wal_txn.finish();
@@ -1342,6 +1508,7 @@ mod tests {
             dense_posting_blocks: false,
             dense_posting_pack_pages: 1,
             dense_posting_typed_layout: false,
+            columnar_frozen_lists: false,
             storage_format: options::StorageFormat::Auto,
             rerank: options::RerankMode::Auto,
         }
@@ -1495,6 +1662,60 @@ mod tests {
         assert_eq!(dense.gammas.len(), 2);
         assert_eq!(dense.heap_tids.len(), 2);
         assert_eq!(dense.payloads.len(), 2 * payload_len);
+    }
+
+    #[test]
+    fn build_state_can_stage_columnar_frozen_lists_when_gated() {
+        let mut opts = options(0, 2);
+        opts.columnar_frozen_lists = true;
+        opts.storage_format = options::StorageFormat::TurboQuant;
+        let mut state = BuildState::new(opts, IndexedVectorKind::Ecvector);
+        state.page_size = 128;
+        state.try_push(tuple(1, vec![1.0, 0.0])).unwrap();
+        state.try_push(tuple(2, vec![0.9, 0.1])).unwrap();
+        state.try_push(tuple(3, vec![-1.0, 0.0])).unwrap();
+
+        let plan = state
+            .stage_build_plan(&model(vec![vec![1.0, 0.0], vec![-1.0, 0.0]]))
+            .unwrap();
+
+        assert_eq!(plan.posting_count(), 3);
+        assert_eq!(plan.directory_entries[0].live_count, 2);
+        assert_eq!(plan.directory_entries[1].live_count, 1);
+        assert_eq!(plan.posting_tids_by_list[0].len(), 1);
+        assert!(
+            plan.column_pages.len() >= 2,
+            "small test page should force multiple raw column pages"
+        );
+
+        let payload_len = state.heap_tuples[0].payload.len();
+        let header_tid = plan.posting_tids_by_list[0][0];
+        let header = plan
+            .data_pages
+            .read_ivf_columnar_frozen_list_header(header_tid)
+            .unwrap();
+        let first_column_block = header.first_column_block.block_number;
+        let last_column_block = header.last_column_block.block_number;
+        assert_eq!(header.list_id, 0);
+        assert_eq!(header.posting_count, 2);
+        assert_eq!(header.payload_len as usize, payload_len);
+        assert_eq!(header_tid.block_number + 1, first_column_block);
+        assert_eq!(
+            plan.directory_entries[0].head_block.block_number,
+            header_tid.block_number
+        );
+        assert_eq!(
+            plan.directory_entries[0].tail_block.block_number,
+            last_column_block
+        );
+        assert!(plan
+            .column_pages
+            .iter()
+            .any(|page| { page.block_number == first_column_block && !page.bytes.is_empty() }));
+        assert!(plan
+            .column_pages
+            .iter()
+            .any(|page| { page.block_number == last_column_block && !page.bytes.is_empty() }));
     }
 
     #[test]
