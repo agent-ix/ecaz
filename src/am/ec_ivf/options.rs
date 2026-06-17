@@ -38,6 +38,7 @@ static EC_IVF_ADAPTIVE_NPROBE_SCORE_MARGIN_RATIO_BPS_GUC: GucSetting<i32> =
 static EC_IVF_SCRATCH_SOA_BATCH_DECODE_GUC: GucSetting<bool> = GucSetting::<bool>::new(true);
 static EC_IVF_DENSE_POSTING_COALESCING_GUC: GucSetting<bool> = GucSetting::<bool>::new(true);
 static EC_IVF_DENSE_POSTING_TYPED_VIEWS_GUC: GucSetting<bool> = GucSetting::<bool>::new(true);
+static EC_IVF_COLUMNAR_PAGE_SCATTER_GUC: GucSetting<bool> = GucSetting::<bool>::new(true);
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
@@ -297,6 +298,14 @@ pub(super) fn register_gucs() {
         GucContext::Userset,
         GucFlags::default(),
     );
+    GucRegistry::define_bool_guc(
+        c"ec_ivf.columnar_page_scatter",
+        c"Enable ec_ivf columnar frozen-list page-aware scoring.",
+        c"Task 111c switch; when enabled, columnar frozen-list payloads are scored from pinned raw pages for supported codecs. Disable to force the Task 111b logical-copy fallback.",
+        &EC_IVF_COLUMNAR_PAGE_SCATTER_GUC,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
 }
 
 pub(super) fn current_session_nprobe() -> i32 {
@@ -352,6 +361,14 @@ pub(super) fn current_session_dense_posting_typed_views() -> bool {
         true
     } else {
         EC_IVF_DENSE_POSTING_TYPED_VIEWS_GUC.get()
+    }
+}
+
+pub(super) fn current_session_columnar_page_scatter() -> bool {
+    if cfg!(test) {
+        true
+    } else {
+        EC_IVF_COLUMNAR_PAGE_SCATTER_GUC.get()
     }
 }
 

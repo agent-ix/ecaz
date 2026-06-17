@@ -1129,6 +1129,12 @@ pub(super) struct IvfColumnarFrozenListPageChunk<'a> {
     pub(super) bytes: &'a [u8],
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct IvfColumnarRawPageRange {
+    page_index: usize,
+    page_offset: usize,
+}
+
 impl IvfColumnarFrozenListColumns {
     pub(super) fn from_single_heaptid_postings(
         postings: &[(ItemPointer, f32, ItemPointer, Vec<u8>)],
@@ -1727,6 +1733,197 @@ impl<'a> IvfColumnarFrozenListRef<'a> {
     }
 }
 
+#[cfg(any(feature = "pg17", feature = "pg18"))]
+pub(super) struct IvfColumnarFrozenListPinnedPages {
+    header: IvfColumnarFrozenListHeaderRef,
+    page_lengths: Vec<usize>,
+    buffers: Vec<LockedBufferGuard>,
+}
+
+#[cfg(any(feature = "pg17", feature = "pg18"))]
+impl IvfColumnarFrozenListPinnedPages {
+    pub(super) fn read(
+        index_relation: RelationHandle,
+        header: IvfColumnarFrozenListHeaderRef,
+    ) -> Result<Self, String> {
+        header.validate()?;
+        let first_block = header.first_column_block.block_number;
+        let last_block = header.last_column_block.block_number;
+        let expected_block_count = last_block
+            .checked_sub(first_block)
+            .and_then(|delta| delta.checked_add(1))
+            .ok_or_else(|| "ec_ivf columnar frozen list block range underflow".to_owned())?
+            as usize;
+
+        let first_buffer = read_columnar_raw_page(
+            index_relation,
+            first_block,
+            "columnar frozen list first page",
+        )?;
+        let page_size = first_buffer.page_size();
+        let page_lengths = columnar_frozen_list_raw_page_lengths(header, page_size)?;
+        if page_lengths.len() != expected_block_count {
+            return Err(format!(
+                "ec_ivf columnar frozen list block count mismatch: header has {expected_block_count}, derived {}",
+                page_lengths.len()
+            ));
+        }
+
+        let mut buffers = Vec::with_capacity(page_lengths.len());
+        buffers.push(first_buffer);
+        for page_index in 1..page_lengths.len() {
+            let block_number = first_block
+                .checked_add(page_index as u32)
+                .ok_or_else(|| "ec_ivf columnar frozen list block number overflow".to_owned())?;
+            buffers.push(read_columnar_raw_page(
+                index_relation,
+                block_number,
+                "columnar frozen list page",
+            )?);
+        }
+
+        let total: usize = page_lengths.iter().sum();
+        if total != header.total_column_bytes as usize {
+            return Err(format!(
+                "ec_ivf columnar frozen list pinned byte count mismatch: got {total}, expected {}",
+                header.total_column_bytes
+            ));
+        }
+
+        Ok(Self {
+            header,
+            page_lengths,
+            buffers,
+        })
+    }
+
+    pub(super) fn list_id(&self) -> u32 {
+        self.header.list_id
+    }
+
+    pub(super) fn len(&self) -> usize {
+        self.header.posting_count as usize
+    }
+
+    pub(super) fn payload_len(&self) -> usize {
+        self.header.payload_len as usize
+    }
+
+    pub(super) fn gamma(&self, index: usize) -> Result<f32, String> {
+        let start = (self.header.gamma_offset as usize)
+            .checked_add(
+                index
+                    .checked_mul(size_of::<f32>())
+                    .ok_or_else(|| "ec_ivf columnar gamma offset overflow".to_owned())?,
+            )
+            .ok_or_else(|| "ec_ivf columnar gamma offset overflow".to_owned())?;
+        let bytes = self.single_page_slice(start, size_of::<f32>())?;
+        Ok(f32::from_le_bytes(bytes.try_into().expect(
+            "validated columnar gamma slice should be 4 bytes",
+        )))
+    }
+
+    pub(super) fn is_deleted(&self, index: usize) -> Result<bool, String> {
+        let byte = self.single_page_slice(
+            (self.header.deleted_bitmap_offset as usize)
+                .checked_add(index / 8)
+                .ok_or_else(|| "ec_ivf columnar deleted bitmap offset overflow".to_owned())?,
+            1,
+        )?[0];
+        Ok((byte & (1 << (index % 8))) != 0)
+    }
+
+    pub(super) fn heap_tid_count(&self, index: usize) -> Result<usize, String> {
+        let start = (self.header.heap_tid_count_offset as usize)
+            .checked_add(
+                index
+                    .checked_mul(size_of::<u16>())
+                    .ok_or_else(|| "ec_ivf columnar heap tid count offset overflow".to_owned())?,
+            )
+            .ok_or_else(|| "ec_ivf columnar heap tid count offset overflow".to_owned())?;
+        let bytes = self.single_page_slice(start, size_of::<u16>())?;
+        Ok(u16::from_le_bytes(
+            bytes
+                .try_into()
+                .expect("validated columnar heap tid count slice should be 2 bytes"),
+        ) as usize)
+    }
+
+    fn heap_tid_offset(&self, index: usize) -> Result<usize, String> {
+        let start = (self.header.heap_tid_offset_offset as usize)
+            .checked_add(
+                index
+                    .checked_mul(size_of::<u32>())
+                    .ok_or_else(|| "ec_ivf columnar heap tid offset overflow".to_owned())?,
+            )
+            .ok_or_else(|| "ec_ivf columnar heap tid offset overflow".to_owned())?;
+        let bytes = self.single_page_slice(start, size_of::<u32>())?;
+        Ok(u32::from_le_bytes(
+            bytes
+                .try_into()
+                .expect("validated columnar heap tid offset slice should be 4 bytes"),
+        ) as usize)
+    }
+
+    pub(super) fn heap_tids(&self, index: usize) -> Result<Vec<ItemPointer>, String> {
+        let start = self.heap_tid_offset(index)?;
+        let count = self.heap_tid_count(index)?;
+        let byte_start = (self.header.heap_tid_offset as usize)
+            .checked_add(
+                start
+                    .checked_mul(ITEM_POINTER_BYTES)
+                    .ok_or_else(|| "ec_ivf columnar heap tid byte offset overflow".to_owned())?,
+            )
+            .ok_or_else(|| "ec_ivf columnar heap tid byte offset overflow".to_owned())?;
+        let byte_len = count
+            .checked_mul(ITEM_POINTER_BYTES)
+            .ok_or_else(|| "ec_ivf columnar heap tid byte length overflow".to_owned())?;
+        let bytes = self.single_page_slice(byte_start, byte_len)?;
+        bytes
+            .chunks_exact(ITEM_POINTER_BYTES)
+            .map(ItemPointer::decode)
+            .collect()
+    }
+
+    pub(super) fn payload(&self, index: usize) -> Result<&[u8], String> {
+        let start = (self.header.payload_offset as usize)
+            .checked_add(
+                index
+                    .checked_mul(self.payload_len())
+                    .ok_or_else(|| "ec_ivf columnar payload offset overflow".to_owned())?,
+            )
+            .ok_or_else(|| "ec_ivf columnar payload offset overflow".to_owned())?;
+        self.single_page_slice(start, self.payload_len())
+    }
+
+    fn single_page_slice(&self, logical_start: usize, len: usize) -> Result<&[u8], String> {
+        let range = columnar_single_page_range(&self.page_lengths, logical_start, len)?;
+        let buffer = self
+            .buffers
+            .get(range.page_index)
+            .ok_or_else(|| "ec_ivf columnar raw page range has no buffer".to_owned())?;
+        let block_number = buffer.block_number();
+        let page = buffer.page();
+        let special_size = unsafe { pg_sys::PageGetSpecialSize(page) } as usize;
+        let end = range
+            .page_offset
+            .checked_add(len)
+            .ok_or_else(|| "ec_ivf columnar raw page slice overflow".to_owned())?;
+        if special_size < end {
+            return Err(format!(
+                "ec_ivf columnar frozen list page {block_number} special area too small: got {special_size}, expected at least {end}"
+            ));
+        }
+        let special = unsafe { pg_sys::PageGetSpecialPointer(page) }.cast::<u8>();
+        if special.is_null() {
+            return Err(format!(
+                "ec_ivf columnar frozen list page {block_number} returned a null special pointer"
+            ));
+        }
+        Ok(unsafe { std::slice::from_raw_parts(special.add(range.page_offset).cast_const(), len) })
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub(super) enum IvfDensePostingRef<'a> {
     Block(IvfDensePostingBlockRef<'a>),
@@ -1916,6 +2113,44 @@ fn columnar_page_chunk_lengths(
         remaining -= chunk_len;
     }
     Ok(lengths)
+}
+
+fn columnar_single_page_range(
+    page_lengths: &[usize],
+    logical_start: usize,
+    len: usize,
+) -> Result<IvfColumnarRawPageRange, String> {
+    let logical_end = logical_start
+        .checked_add(len)
+        .ok_or_else(|| "ec_ivf columnar logical byte range overflow".to_owned())?;
+    let mut page_start = 0_usize;
+    for (page_index, page_len) in page_lengths.iter().copied().enumerate() {
+        let page_end = page_start
+            .checked_add(page_len)
+            .ok_or_else(|| "ec_ivf columnar raw page length overflow".to_owned())?;
+        if logical_start >= page_start && logical_start < page_end {
+            if logical_end <= page_end {
+                return Ok(IvfColumnarRawPageRange {
+                    page_index,
+                    page_offset: logical_start - page_start,
+                });
+            }
+            return Err(format!(
+                "ec_ivf columnar logical byte range [{logical_start}, {logical_end}) crosses raw page boundary at {page_end}"
+            ));
+        }
+        page_start = page_end;
+    }
+    if len == 0 && logical_start == page_start {
+        return Ok(IvfColumnarRawPageRange {
+            page_index: page_lengths.len(),
+            page_offset: 0,
+        });
+    }
+    Err(format!(
+        "ec_ivf columnar logical byte range [{logical_start}, {logical_end}) is outside {} raw bytes",
+        page_start
+    ))
 }
 
 pub(super) fn columnar_frozen_list_raw_page_lengths(
@@ -5669,6 +5904,43 @@ mod tests {
 
         assert_eq!(lengths, vec![raw_capacity, 6]);
         assert!(lengths.iter().all(|len| *len <= raw_capacity));
+    }
+
+    #[test]
+    fn columnar_single_page_range_maps_logical_offsets_to_raw_pages() {
+        let lengths = vec![4, 6, 3];
+
+        assert_eq!(
+            columnar_single_page_range(&lengths, 0, 4).unwrap(),
+            IvfColumnarRawPageRange {
+                page_index: 0,
+                page_offset: 0
+            }
+        );
+        assert_eq!(
+            columnar_single_page_range(&lengths, 4, 3).unwrap(),
+            IvfColumnarRawPageRange {
+                page_index: 1,
+                page_offset: 0
+            }
+        );
+        assert_eq!(
+            columnar_single_page_range(&lengths, 8, 2).unwrap(),
+            IvfColumnarRawPageRange {
+                page_index: 1,
+                page_offset: 4
+            }
+        );
+    }
+
+    #[test]
+    fn columnar_single_page_range_rejects_cross_page_ranges() {
+        let err = columnar_single_page_range(&[4, 6, 3], 3, 2).unwrap_err();
+
+        assert!(err.contains("crosses raw page boundary"));
+        assert!(columnar_single_page_range(&[4, 6, 3], 13, 1)
+            .unwrap_err()
+            .contains("outside 13 raw bytes"));
     }
 
     #[test]

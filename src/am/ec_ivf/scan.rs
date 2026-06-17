@@ -366,6 +366,17 @@ struct IvfDensePostingBlockScratch {
 }
 
 #[derive(Debug)]
+struct IvfBorrowedPostingScratch<'a> {
+    payload_len: usize,
+    gammas: Vec<f32>,
+    heap_tid_offsets: Vec<usize>,
+    heap_tid_counts: Vec<usize>,
+    heap_tids: Vec<ItemPointer>,
+    payloads: Vec<&'a [u8]>,
+    scores: Vec<f32>,
+}
+
+#[derive(Debug)]
 struct IvfDensePackedPending {
     list_id: u32,
     logical_block_id: u32,
@@ -499,6 +510,80 @@ impl IvfPostingScratchSoa {
         let start = index * self.payload_len;
         let end = start + self.payload_len;
         &self.payloads[start..end]
+    }
+
+    fn heap_tids(&self, index: usize) -> &[ItemPointer] {
+        let start = self.heap_tid_offsets[index];
+        let end = start + self.heap_tid_counts[index];
+        &self.heap_tids[start..end]
+    }
+}
+
+impl<'a> IvfBorrowedPostingScratch<'a> {
+    fn new(payload_len: usize) -> Self {
+        Self {
+            payload_len,
+            gammas: Vec::with_capacity(IVF_POSTING_SCRATCH_SOA_BATCH_POSTINGS),
+            heap_tid_offsets: Vec::with_capacity(IVF_POSTING_SCRATCH_SOA_BATCH_POSTINGS),
+            heap_tid_counts: Vec::with_capacity(IVF_POSTING_SCRATCH_SOA_BATCH_POSTINGS),
+            heap_tids: Vec::with_capacity(IVF_POSTING_SCRATCH_SOA_BATCH_HEAPTIDS),
+            payloads: Vec::with_capacity(IVF_POSTING_SCRATCH_SOA_BATCH_POSTINGS),
+            scores: Vec::with_capacity(IVF_POSTING_SCRATCH_SOA_BATCH_POSTINGS),
+        }
+    }
+
+    fn clear(&mut self) {
+        self.gammas.clear();
+        self.heap_tid_offsets.clear();
+        self.heap_tid_counts.clear();
+        self.heap_tids.clear();
+        self.payloads.clear();
+        self.scores.clear();
+    }
+
+    fn is_empty(&self) -> bool {
+        self.gammas.is_empty()
+    }
+
+    fn can_accept(&self, heap_tid_count: usize) -> bool {
+        self.gammas.len() < IVF_POSTING_SCRATCH_SOA_BATCH_POSTINGS
+            && self.heap_tids.len().saturating_add(heap_tid_count)
+                <= IVF_POSTING_SCRATCH_SOA_BATCH_HEAPTIDS
+    }
+
+    fn push_columnar_posting(
+        &mut self,
+        block: &'a super::page::IvfColumnarFrozenListPinnedPages,
+        index: usize,
+        heap_tid_count: usize,
+        gamma: f32,
+    ) -> Result<(), String> {
+        let payload = block.payload(index)?;
+        if payload.len() != self.payload_len {
+            return Err(format!(
+                "ec_ivf columnar borrowed payload length mismatch: got {}, expected {}",
+                payload.len(),
+                self.payload_len
+            ));
+        }
+        let heap_tids = block.heap_tids(index)?;
+        if heap_tids.len() != heap_tid_count {
+            return Err(format!(
+                "ec_ivf columnar borrowed heap tid count mismatch: got {}, expected {heap_tid_count}",
+                heap_tids.len()
+            ));
+        }
+        let offset = self.heap_tids.len();
+        self.gammas.push(gamma);
+        self.heap_tid_offsets.push(offset);
+        self.heap_tid_counts.push(heap_tid_count);
+        self.heap_tids.extend(heap_tids);
+        self.payloads.push(payload);
+        Ok(())
+    }
+
+    fn len(&self) -> usize {
+        self.gammas.len()
     }
 
     fn heap_tids(&self, index: usize) -> &[ItemPointer] {
@@ -1851,6 +1936,32 @@ unsafe fn materialize_probe_candidates(
                             if dense_scratch_list_id.is_none() {
                                 dense_scratch_list_id = Some(header.list_id);
                             }
+                            if super::options::current_session_columnar_page_scatter()
+                                && quantizer.supports_turboquant_payload_ref_batch(prepared_query)
+                            {
+                                process_dense_coalesced_postings(
+                                    &mut *dense_scratch,
+                                    quantizer,
+                                    prepared_query,
+                                    opaque,
+                                    best_by_heap_tid,
+                                    &mut running_top,
+                                )?;
+                                dense_scratch_list_id = None;
+                                if process_columnar_frozen_list_page_scatter(
+                                    index_relation_handle,
+                                    header,
+                                    payload_len,
+                                    quantizer,
+                                    prepared_query,
+                                    opaque,
+                                    best_by_heap_tid,
+                                    &mut running_top,
+                                    &mut remaining_live_tids_by_list,
+                                )? {
+                                    return Ok(());
+                                }
+                            }
                             let logical_bytes =
                                 super::page::read_columnar_frozen_list_logical_bytes(
                                     index_relation_handle,
@@ -2073,6 +2184,31 @@ unsafe fn materialize_probe_candidates(
                                 "ec_ivf columnar frozen list interrupted a dense packed group"
                                     .to_owned(),
                             );
+                        }
+                        if super::options::current_session_columnar_page_scatter()
+                            && quantizer.supports_turboquant_payload_ref_batch(prepared_query)
+                        {
+                            process_dense_coalesced_postings(
+                                &mut dense_packed_scratch,
+                                quantizer,
+                                prepared_query,
+                                opaque,
+                                best_by_heap_tid,
+                                &mut running_top,
+                            )?;
+                        }
+                        if process_columnar_frozen_list_page_scatter(
+                            index_relation_handle,
+                            header,
+                            payload_len,
+                            quantizer,
+                            prepared_query,
+                            opaque,
+                            best_by_heap_tid,
+                            &mut running_top,
+                            &mut remaining_live_tids_by_list,
+                        )? {
+                            return Ok(());
                         }
                         let logical_bytes = super::page::read_columnar_frozen_list_logical_bytes(
                             index_relation_handle,
@@ -2309,6 +2445,53 @@ fn process_scratch_soa_postings(
     Ok(())
 }
 
+fn process_borrowed_columnar_postings(
+    scratch: &mut IvfBorrowedPostingScratch<'_>,
+    quantizer: IvfQuantizer,
+    prepared_query: &IvfPreparedQuery,
+    opaque: &mut EcIvfScanOpaque,
+    best_by_heap_tid: *mut HashMap<ItemPointer, EcIvfScoredCandidate>,
+    running_top: &mut Option<CandidateTopK>,
+) -> Result<(), String> {
+    if scratch.is_empty() {
+        return Ok(());
+    }
+    let payload_bytes = scratch.payloads.len().saturating_mul(scratch.payload_len);
+    let heap_tid_bytes = scratch.heap_tids.len().saturating_mul(ITEM_POINTER_BYTES);
+    opaque
+        .explain_counters
+        .record_dense_coalesced_flush(payload_bytes, heap_tid_bytes);
+
+    if !quantizer.score_turboquant_batch_from_payload_refs(
+        prepared_query,
+        &scratch.payloads,
+        scratch.payload_len,
+        &scratch.gammas,
+        &mut scratch.scores,
+    )? {
+        return Err("ec_ivf columnar page scatter is only implemented for TurboQuant".to_owned());
+    }
+    if scratch.scores.len() != scratch.len() {
+        return Err(format!(
+            "ec_ivf columnar borrowed batch scorer produced {} scores for {} postings",
+            scratch.scores.len(),
+            scratch.len()
+        ));
+    }
+    for index in 0..scratch.len() {
+        record_scored_posting_candidates(
+            opaque,
+            best_by_heap_tid,
+            running_top,
+            scratch.heap_tids(index).iter().copied(),
+            scratch.heap_tid_counts[index],
+            -scratch.scores[index],
+        );
+    }
+    scratch.clear();
+    Ok(())
+}
+
 fn process_dense_coalesced_postings(
     scratch: &mut IvfPostingScratchSoa,
     quantizer: IvfQuantizer,
@@ -2436,6 +2619,100 @@ fn append_columnar_frozen_list_to_coalesced_scratch(
     }
 
     Ok(())
+}
+
+fn append_columnar_frozen_list_to_borrowed_scratch<'a>(
+    block: &'a super::page::IvfColumnarFrozenListPinnedPages,
+    scratch: &mut IvfBorrowedPostingScratch<'a>,
+    quantizer: IvfQuantizer,
+    prepared_query: &IvfPreparedQuery,
+    opaque: &mut EcIvfScanOpaque,
+    best_by_heap_tid: *mut HashMap<ItemPointer, EcIvfScoredCandidate>,
+    running_top: &mut Option<CandidateTopK>,
+    remaining_live_tids_by_list: &mut [u64],
+) -> Result<(), String> {
+    if block.len() == 0 {
+        return Ok(());
+    }
+
+    for index in 0..block.len() {
+        if block.is_deleted(index)? {
+            continue;
+        }
+        opaque.explain_counters.record_columnar_posting_visited();
+        let heap_tid_count = block.heap_tid_count(index)?;
+        if !consume_live_tid_budget(remaining_live_tids_by_list, block.list_id(), heap_tid_count)? {
+            continue;
+        }
+        if !scratch.can_accept(heap_tid_count) && !scratch.is_empty() {
+            process_borrowed_columnar_postings(
+                scratch,
+                quantizer,
+                prepared_query,
+                opaque,
+                best_by_heap_tid,
+                running_top,
+            )?;
+        }
+        let gamma = block.gamma(index)?;
+        scratch.push_columnar_posting(block, index, heap_tid_count, gamma)?;
+        if scratch.len() >= IVF_POSTING_SCRATCH_SOA_BATCH_POSTINGS {
+            process_borrowed_columnar_postings(
+                scratch,
+                quantizer,
+                prepared_query,
+                opaque,
+                best_by_heap_tid,
+                running_top,
+            )?;
+        }
+    }
+
+    process_borrowed_columnar_postings(
+        scratch,
+        quantizer,
+        prepared_query,
+        opaque,
+        best_by_heap_tid,
+        running_top,
+    )
+}
+
+fn process_columnar_frozen_list_page_scatter(
+    index_relation_handle: crate::storage::relation::RelationHandle,
+    header: super::page::IvfColumnarFrozenListHeaderRef,
+    payload_len: usize,
+    quantizer: IvfQuantizer,
+    prepared_query: &IvfPreparedQuery,
+    opaque: &mut EcIvfScanOpaque,
+    best_by_heap_tid: *mut HashMap<ItemPointer, EcIvfScoredCandidate>,
+    running_top: &mut Option<CandidateTopK>,
+    remaining_live_tids_by_list: &mut [u64],
+) -> Result<bool, String> {
+    if !super::options::current_session_columnar_page_scatter()
+        || !quantizer.supports_turboquant_payload_ref_batch(prepared_query)
+    {
+        return Ok(false);
+    }
+    let block = super::page::IvfColumnarFrozenListPinnedPages::read(index_relation_handle, header)?;
+    if block.payload_len() != payload_len {
+        return Err(format!(
+            "ec_ivf columnar frozen list payload length mismatch: got {}, expected {payload_len}",
+            block.payload_len()
+        ));
+    }
+    let mut scratch = IvfBorrowedPostingScratch::new(payload_len);
+    append_columnar_frozen_list_to_borrowed_scratch(
+        &block,
+        &mut scratch,
+        quantizer,
+        prepared_query,
+        opaque,
+        best_by_heap_tid,
+        running_top,
+        remaining_live_tids_by_list,
+    )?;
+    Ok(true)
 }
 
 fn drain_dense_packed_group_to_scratch(
