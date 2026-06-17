@@ -119,9 +119,9 @@ impl IvfBuildPlan {
     }
 
     fn posting_count(&self) -> usize {
-        self.posting_tids_by_list
+        self.directory_entries
             .iter()
-            .map(Vec::len)
+            .map(|entry| usize::try_from(entry.live_count).unwrap_or(usize::MAX))
             .sum::<usize>()
     }
 
@@ -632,30 +632,83 @@ impl BuildState {
 
         let mut posting_tids_by_list = vec![Vec::new(); nlists];
         let mut directory_tail_blocks_by_list = vec![None; nlists];
+        let mut live_posting_counts_by_list = vec![0_u64; nlists];
         data_pages.start_new_page_if_current_has_tuples();
         let postings_start = Instant::now();
+        let use_dense_posting_blocks = dense_posting_blocks_enabled(self.options);
         for (list_id, tuple_indices) in tuple_indices_by_list.iter().enumerate() {
             if !tuple_indices.is_empty() {
                 data_pages.start_new_page_if_current_has_tuples();
             }
-            for tuple_index in tuple_indices {
-                let tuple = &self.heap_tuples[*tuple_index];
-                let (gamma, payload) = match &pq_model {
-                    Some(pq_model) => {
-                        let (_, gamma, payload) = pq_posting_quantizer
-                            .expect("pq posting quantizer should exist for pq model")
-                            .encode_source_with_pq_model(&tuple.source_vector, pq_model)?;
-                        (gamma, payload)
+            live_posting_counts_by_list[list_id] = u64::try_from(tuple_indices.len())
+                .map_err(|_| "posting count exceeds u64".to_owned())?;
+            if use_dense_posting_blocks && !tuple_indices.is_empty() {
+                let list_id_u32 = list_id_u32(list_id)?;
+                let mut pending = Vec::new();
+                let mut pending_payload_len = None;
+                for tuple_index in tuple_indices {
+                    let (heap_tid, gamma, payload) = encode_build_posting(
+                        &self.heap_tuples[*tuple_index],
+                        &pq_model,
+                        pq_posting_quantizer,
+                    )?;
+                    let payload_len = payload.len();
+                    if let Some(existing) = pending_payload_len {
+                        if existing != payload_len {
+                            return Err(
+                                "ec_ivf dense posting block payload length changed within a list"
+                                    .to_owned(),
+                            );
+                        }
+                    } else {
+                        pending_payload_len = Some(payload_len);
                     }
-                    None => (tuple.gamma, tuple.payload.clone()),
-                };
-                posting_tids_by_list[list_id].push(data_pages.insert_ivf_single_heaptid_posting(
-                    list_id_u32(list_id)?,
-                    tuple.heap_tid,
-                    gamma,
-                    ItemPointer::INVALID,
-                    &payload,
-                )?);
+                    if !pending.is_empty()
+                        && !page::dense_posting_block_tuple_fits(
+                            pending.len() + 1,
+                            pending.len() + 1,
+                            payload_len,
+                            self.page_size,
+                        )
+                    {
+                        let dense = page::IvfDensePostingBlockTuple::from_single_heaptid_postings(
+                            list_id_u32,
+                            &pending,
+                            payload_len,
+                        )?;
+                        posting_tids_by_list[list_id]
+                            .push(data_pages.insert_ivf_dense_posting_block(&dense)?);
+                        pending.clear();
+                    }
+                    pending.push((heap_tid, gamma, ItemPointer::INVALID, payload));
+                }
+                if !pending.is_empty() {
+                    let payload_len = pending_payload_len.expect("pending postings have payloads");
+                    let dense = page::IvfDensePostingBlockTuple::from_single_heaptid_postings(
+                        list_id_u32,
+                        &pending,
+                        payload_len,
+                    )?;
+                    posting_tids_by_list[list_id]
+                        .push(data_pages.insert_ivf_dense_posting_block(&dense)?);
+                }
+            } else {
+                for tuple_index in tuple_indices {
+                    let (heap_tid, gamma, payload) = encode_build_posting(
+                        &self.heap_tuples[*tuple_index],
+                        &pq_model,
+                        pq_posting_quantizer,
+                    )?;
+                    posting_tids_by_list[list_id].push(
+                        data_pages.insert_ivf_single_heaptid_posting(
+                            list_id_u32(list_id)?,
+                            heap_tid,
+                            gamma,
+                            ItemPointer::INVALID,
+                            &payload,
+                        )?,
+                    );
+                }
             }
             if !tuple_indices.is_empty() {
                 let head = posting_tids_by_list[list_id]
@@ -702,8 +755,7 @@ impl BuildState {
                     block_number: directory_tail_blocks_by_list[list_id]
                         .unwrap_or(tail.block_number),
                 };
-                directory.live_count = u64::try_from(posting_tids.len())
-                    .map_err(|_| "posting count exceeds u64".to_owned())?;
+                directory.live_count = live_posting_counts_by_list[list_id];
             }
             directory_tids.push(data_pages.insert_ivf_list_directory(directory)?);
             directory_entries.push(directory);
@@ -786,6 +838,33 @@ fn posting_slack_pages(posting_pages: u32, slack_percent: i32) -> Result<usize, 
         .ok_or_else(|| "posting slack page count overflow".to_owned())?
         / 100;
     usize::try_from(slack_pages).map_err(|_| "posting slack page count exceeds usize".to_owned())
+}
+
+fn dense_posting_blocks_enabled(options: options::EcIvfOptions) -> bool {
+    options.dense_posting_blocks
+        && matches!(
+            options.storage_format,
+            options::StorageFormat::Auto
+                | options::StorageFormat::TurboQuant
+                | options::StorageFormat::RaBitQ
+        )
+}
+
+fn encode_build_posting(
+    tuple: &BuildTuple,
+    pq_model: &Option<IvfPqFastScanModel>,
+    pq_posting_quantizer: Option<IvfQuantizer>,
+) -> Result<(ItemPointer, f32, Vec<u8>), String> {
+    let (gamma, payload) = match pq_model {
+        Some(pq_model) => {
+            let (_, gamma, payload) = pq_posting_quantizer
+                .expect("pq posting quantizer should exist for pq model")
+                .encode_source_with_pq_model(&tuple.source_vector, pq_model)?;
+            (gamma, payload)
+        }
+        None => (tuple.gamma, tuple.payload.clone()),
+    };
+    Ok((tuple.heap_tid, gamma, payload))
 }
 
 fn resolve_training_sample_count(requested_sample_rows: i32, row_count: usize) -> usize {
@@ -1089,6 +1168,7 @@ mod tests {
             pq_group_size: 0,
             posting_slack_percent: 0,
             quant_bits: 4,
+            dense_posting_blocks: false,
             storage_format: options::StorageFormat::Auto,
             rerank: options::RerankMode::Auto,
         }
@@ -1211,6 +1291,37 @@ mod tests {
                 assert!(!posting.deleted);
             }
         }
+    }
+
+    #[test]
+    fn build_state_can_stage_dense_posting_blocks_when_gated() {
+        let mut opts = options(0, 2);
+        opts.dense_posting_blocks = true;
+        opts.storage_format = options::StorageFormat::TurboQuant;
+        let mut state = BuildState::new(opts, IndexedVectorKind::Ecvector);
+        state.try_push(tuple(1, vec![1.0, 0.0])).unwrap();
+        state.try_push(tuple(2, vec![0.9, 0.1])).unwrap();
+        state.try_push(tuple(3, vec![-1.0, 0.0])).unwrap();
+
+        let plan = state
+            .stage_build_plan(&model(vec![vec![1.0, 0.0], vec![-1.0, 0.0]]))
+            .unwrap();
+
+        assert_eq!(plan.posting_count(), 3);
+        assert_eq!(plan.directory_entries[0].live_count, 2);
+        assert_eq!(plan.directory_entries[1].live_count, 1);
+        assert_eq!(plan.posting_tids_by_list[0].len(), 1);
+        assert_eq!(plan.posting_tids_by_list[1].len(), 1);
+
+        let payload_len = state.heap_tuples[0].payload.len();
+        let dense = plan
+            .data_pages
+            .read_ivf_dense_posting_block(plan.posting_tids_by_list[0][0], payload_len)
+            .unwrap();
+        assert_eq!(dense.list_id, 0);
+        assert_eq!(dense.gammas.len(), 2);
+        assert_eq!(dense.heap_tids.len(), 2);
+        assert_eq!(dense.payloads.len(), 2 * payload_len);
     }
 
     #[test]

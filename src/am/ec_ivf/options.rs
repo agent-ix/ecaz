@@ -49,6 +49,7 @@ struct EcIvfReloptions {
     pq_group_size: i32,
     posting_slack_percent: i32,
     quant_bits: i32,
+    dense_posting_blocks: i32,
     storage_format_offset: i32,
     quantizer_offset: i32,
     rerank_offset: i32,
@@ -151,6 +152,7 @@ pub(super) struct EcIvfOptions {
     pub(super) pq_group_size: i32,
     pub(super) posting_slack_percent: i32,
     pub(super) quant_bits: i32,
+    pub(super) dense_posting_blocks: bool,
     pub(super) storage_format: StorageFormat,
     pub(super) rerank: RerankMode,
 }
@@ -165,6 +167,7 @@ impl EcIvfOptions {
         pq_group_size: EC_IVF_DEFAULT_PQ_GROUP_SIZE,
         posting_slack_percent: EC_IVF_DEFAULT_POSTING_SLACK_PERCENT,
         quant_bits: EC_IVF_DEFAULT_QUANT_BITS,
+        dense_posting_blocks: false,
         storage_format: StorageFormat::Auto,
         rerank: RerankMode::Auto,
     };
@@ -446,6 +449,16 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_amoptions(
             EC_IVF_MAX_QUANT_BITS,
             offset_of!(EcIvfReloptions, quant_bits) as i32,
         );
+        pg_sys::add_local_int_reloption(
+            &mut relopts,
+            c"dense_posting_blocks".as_ptr(),
+            c"Experimental Task 111 build-time dense IVF posting block layout: 0 disables, 1 enables for frozen build postings."
+                .as_ptr(),
+            0,
+            0,
+            1,
+            offset_of!(EcIvfReloptions, dense_posting_blocks) as i32,
+        );
         pg_sys::add_local_string_reloption(
                 &mut relopts,
                 c"storage_format".as_ptr(),
@@ -553,6 +566,7 @@ fn build_options_from_reloptions(
         pq_group_size: reloptions.pq_group_size,
         posting_slack_percent: reloptions.posting_slack_percent,
         quant_bits: reloptions.quant_bits,
+        dense_posting_blocks: reloptions.dense_posting_blocks != 0,
         storage_format,
         rerank,
     }

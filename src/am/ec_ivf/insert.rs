@@ -242,6 +242,7 @@ fn options_from_metadata(metadata: &page::MetadataPage) -> Result<options::EcIvf
         pq_group_size: i32::from(metadata.pq_group_size),
         posting_slack_percent: 0,
         quant_bits: i32::from(metadata.quant_bits),
+        dense_posting_blocks: false,
         storage_format: metadata.storage_format,
         rerank: metadata.rerank,
     })

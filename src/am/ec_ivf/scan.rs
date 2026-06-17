@@ -1322,35 +1322,62 @@ unsafe fn materialize_probe_candidates(
         // drain are the only borrowers of this scratch buffer for the
         // duration of the call.
         unsafe {
-            super::page::visit_ivf_posting_refs_for_block_sequence(
+            super::page::visit_ivf_posting_entries_for_block_sequence(
                 index_relation_handle,
                 &probe_plan.block_sequence,
                 payload_len,
-                |_, posting| {
-                    if !probe_plan.contains_list(posting.list_id) || posting.deleted {
-                        return Ok(());
+                |_, entry| {
+                    match entry {
+                        super::page::IvfPostingEntryRef::Row(posting) => {
+                            if !probe_plan.contains_list(posting.list_id) || posting.deleted {
+                                return Ok(());
+                            }
+                            opaque.explain_counters.record_row_posting_visited();
+                            let heap_tid_count = posting.heaptid_count();
+                            if !consume_live_tid_budget(
+                                &mut remaining_live_tids_by_list,
+                                posting.list_id,
+                                heap_tid_count,
+                            )? {
+                                return Ok(());
+                            }
+                            let scratch_ref = &mut *scratch;
+                            if !scratch_ref.can_accept(heap_tid_count) {
+                                process_scratch_soa_postings(
+                                    scratch_ref,
+                                    quantizer,
+                                    prepared_query,
+                                    opaque,
+                                    best_by_heap_tid,
+                                    &mut running_top,
+                                )?;
+                            }
+                            scratch_ref.push(posting);
+                        }
+                        super::page::IvfPostingEntryRef::DenseBlock(block) => {
+                            if !probe_plan.contains_list(block.list_id) {
+                                return Ok(());
+                            }
+                            opaque.explain_counters.record_dense_block_visited();
+                            process_scratch_soa_postings(
+                                &mut *scratch,
+                                quantizer,
+                                prepared_query,
+                                opaque,
+                                best_by_heap_tid,
+                                &mut running_top,
+                            )?;
+                            process_dense_posting_block(
+                                block,
+                                quantizer,
+                                prepared_query,
+                                opaque,
+                                best_by_heap_tid,
+                                &mut running_top,
+                                &mut remaining_live_tids_by_list,
+                            )?;
+                        }
                     }
-                    opaque.explain_counters.record_posting_visited();
-                    let heap_tid_count = posting.heaptid_count();
-                    if !consume_live_tid_budget(
-                        &mut remaining_live_tids_by_list,
-                        posting.list_id,
-                        heap_tid_count,
-                    )? {
-                        return Ok(());
-                    }
-                    let scratch_ref = &mut *scratch;
-                    if !scratch_ref.can_accept(heap_tid_count) {
-                        process_scratch_soa_postings(
-                            scratch_ref,
-                            quantizer,
-                            prepared_query,
-                            opaque,
-                            best_by_heap_tid,
-                            &mut running_top,
-                        )?;
-                    }
-                    scratch_ref.push(posting);
                     Ok(())
                 },
             )?;
@@ -1364,46 +1391,65 @@ unsafe fn materialize_probe_candidates(
             )?;
         }
     } else {
-        super::page::visit_ivf_posting_refs_for_block_sequence(
+        super::page::visit_ivf_posting_entries_for_block_sequence(
             index_relation_handle,
             &probe_plan.block_sequence,
             payload_len,
-            |_, posting| {
-                if !probe_plan.contains_list(posting.list_id) || posting.deleted {
-                    return Ok(());
+            |_, entry| {
+                match entry {
+                    super::page::IvfPostingEntryRef::Row(posting) => {
+                        if !probe_plan.contains_list(posting.list_id) || posting.deleted {
+                            return Ok(());
+                        }
+                        opaque.explain_counters.record_row_posting_visited();
+                        let heap_tid_count = posting.heaptid_count();
+                        if !consume_live_tid_budget(
+                            &mut remaining_live_tids_by_list,
+                            posting.list_id,
+                            heap_tid_count,
+                        )? {
+                            return Ok(());
+                        }
+                        let min_ip_to_keep = running_top
+                            .as_ref()
+                            .and_then(CandidateTopK::worst_score_if_full)
+                            .map(|worst_score| -worst_score);
+                        let Some(ip) = quantizer.score_ip_from_parts_with_min_bound(
+                            prepared_query,
+                            posting.gamma,
+                            posting.payload,
+                            min_ip_to_keep,
+                        )?
+                        else {
+                            opaque.explain_counters.record_posting_pruned_by_bound();
+                            return Ok(());
+                        };
+                        let score = -ip;
+                        record_scored_posting_candidates(
+                            opaque,
+                            best_by_heap_tid,
+                            &mut running_top,
+                            posting.heaptids(),
+                            heap_tid_count,
+                            score,
+                        );
+                    }
+                    super::page::IvfPostingEntryRef::DenseBlock(block) => {
+                        if !probe_plan.contains_list(block.list_id) {
+                            return Ok(());
+                        }
+                        opaque.explain_counters.record_dense_block_visited();
+                        process_dense_posting_block(
+                            block,
+                            quantizer,
+                            prepared_query,
+                            opaque,
+                            best_by_heap_tid,
+                            &mut running_top,
+                            &mut remaining_live_tids_by_list,
+                        )?;
+                    }
                 }
-                opaque.explain_counters.record_posting_visited();
-                let heap_tid_count = posting.heaptid_count();
-                if !consume_live_tid_budget(
-                    &mut remaining_live_tids_by_list,
-                    posting.list_id,
-                    heap_tid_count,
-                )? {
-                    return Ok(());
-                }
-                let min_ip_to_keep = running_top
-                    .as_ref()
-                    .and_then(CandidateTopK::worst_score_if_full)
-                    .map(|worst_score| -worst_score);
-                let Some(ip) = quantizer.score_ip_from_parts_with_min_bound(
-                    prepared_query,
-                    posting.gamma,
-                    posting.payload,
-                    min_ip_to_keep,
-                )?
-                else {
-                    opaque.explain_counters.record_posting_pruned_by_bound();
-                    return Ok(());
-                };
-                let score = -ip;
-                record_scored_posting_candidates(
-                    opaque,
-                    best_by_heap_tid,
-                    &mut running_top,
-                    posting.heaptids(),
-                    heap_tid_count,
-                    score,
-                );
                 Ok(())
             },
         )?
@@ -1590,6 +1636,99 @@ fn process_scratch_soa_postings(
         );
     }
     scratch.clear();
+    Ok(())
+}
+
+fn process_dense_posting_block(
+    block: super::page::IvfDensePostingBlockRef<'_>,
+    quantizer: IvfQuantizer,
+    prepared_query: &IvfPreparedQuery,
+    opaque: &mut EcIvfScanOpaque,
+    best_by_heap_tid: *mut HashMap<ItemPointer, EcIvfScoredCandidate>,
+    running_top: &mut Option<CandidateTopK>,
+    remaining_live_tids_by_list: &mut [u64],
+) -> Result<(), String> {
+    if block.len() == 0 {
+        return Ok(());
+    }
+    debug_assert_eq!(block.payloads.len(), block.len() * block.payload_len());
+    let gammas = block.gammas();
+    let mut scores = Vec::new();
+
+    let scored_batch = quantizer.score_turboquant_batch_from_payloads(
+        prepared_query,
+        block.payloads,
+        block.payload_len(),
+        &gammas,
+        &mut scores,
+    )? || quantizer.score_ip_bits1_batch_from_payloads(
+        prepared_query,
+        block.payloads,
+        block.payload_len(),
+        &mut scores,
+    )? || quantizer.score_grouped_pq_batch_from_payloads(
+        prepared_query,
+        block.payloads,
+        block.payload_len(),
+        &mut scores,
+    )?;
+
+    if scored_batch {
+        if scores.len() != block.len() {
+            return Err(format!(
+                "ec_ivf dense block batch scorer produced {} scores for {} postings",
+                scores.len(),
+                block.len()
+            ));
+        }
+        for index in 0..block.len() {
+            opaque.explain_counters.record_dense_posting_visited();
+            let heap_tid_count = block.heap_tid_count(index);
+            if !consume_live_tid_budget(remaining_live_tids_by_list, block.list_id, heap_tid_count)?
+            {
+                continue;
+            }
+            record_scored_posting_candidates(
+                opaque,
+                best_by_heap_tid,
+                running_top,
+                block.heap_tids(index),
+                heap_tid_count,
+                -scores[index],
+            );
+        }
+        return Ok(());
+    }
+
+    for (index, gamma) in gammas.iter().copied().enumerate() {
+        opaque.explain_counters.record_dense_posting_visited();
+        let heap_tid_count = block.heap_tid_count(index);
+        if !consume_live_tid_budget(remaining_live_tids_by_list, block.list_id, heap_tid_count)? {
+            continue;
+        }
+        let min_ip_to_keep = running_top
+            .as_ref()
+            .and_then(CandidateTopK::worst_score_if_full)
+            .map(|worst_score| -worst_score);
+        let Some(ip) = quantizer.score_ip_from_parts_with_min_bound(
+            prepared_query,
+            gamma,
+            block.payload(index),
+            min_ip_to_keep,
+        )?
+        else {
+            opaque.explain_counters.record_posting_pruned_by_bound();
+            continue;
+        };
+        record_scored_posting_candidates(
+            opaque,
+            best_by_heap_tid,
+            running_top,
+            block.heap_tids(index),
+            heap_tid_count,
+            -ip,
+        );
+    }
     Ok(())
 }
 
@@ -2741,6 +2880,7 @@ mod tests {
             pq_group_size: 0,
             posting_slack_percent: 0,
             quant_bits: 1,
+            dense_posting_blocks: false,
             storage_format: IvfStorageFormat::RaBitQ,
             rerank,
         }

@@ -118,8 +118,10 @@ const IVF_CENTROID_TAG: u8 = 0x21;
 const IVF_LIST_DIRECTORY_TAG: u8 = 0x22;
 const IVF_POSTING_TAG: u8 = 0x23;
 const IVF_PQ_CODEBOOK_TAG: u8 = 0x24;
+const IVF_DENSE_POSTING_BLOCK_TAG: u8 = 0x25;
 const POSTING_FLAG_DELETED: u8 = 0b0000_0001;
 const POSTING_FIXED_BYTES: usize = EC_IVF_POSTING_PAYLOAD_OFFSET;
+const DENSE_POSTING_BLOCK_HEADER_BYTES: usize = 16;
 
 #[cfg(not(any(feature = "pg17", feature = "pg18")))]
 #[repr(u8)]
@@ -165,6 +167,7 @@ pub(super) struct EcIvfOptions {
     pub(super) storage_format: StorageFormat,
     pub(super) rerank: RerankMode,
     pub(super) quant_bits: u8,
+    pub(super) dense_posting_blocks: bool,
 }
 
 #[cfg(not(any(feature = "pg17", feature = "pg18")))]
@@ -963,6 +966,38 @@ pub struct IvfPostingTuple {
     pub payload: Vec<u8>,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub(super) struct IvfDensePostingBlockTuple {
+    pub(super) list_id: u32,
+    pub(super) gammas: Vec<f32>,
+    pub(super) heap_tid_counts: Vec<u16>,
+    pub(super) heap_tid_offsets: Vec<u32>,
+    pub(super) rerank_tids: Vec<ItemPointer>,
+    pub(super) heap_tids: Vec<ItemPointer>,
+    pub(super) payload_len: usize,
+    pub(super) payloads: Vec<u8>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(super) struct IvfDensePostingBlockRef<'a> {
+    pub(super) list_id: u32,
+    count: usize,
+    total_heap_tids: usize,
+    payload_len: usize,
+    gamma_bytes: &'a [u8],
+    heap_tid_count_bytes: &'a [u8],
+    heap_tid_offset_bytes: &'a [u8],
+    rerank_tid_bytes: &'a [u8],
+    heap_tid_bytes: &'a [u8],
+    pub(super) payloads: &'a [u8],
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(super) enum IvfPostingEntryRef<'a> {
+    Row(IvfPostingTupleRef<'a>),
+    DenseBlock(IvfDensePostingBlockRef<'a>),
+}
+
 #[derive(Debug, Clone, Copy)]
 pub(super) struct IvfPostingTupleRef<'a> {
     pub(super) list_id: u32,
@@ -972,6 +1007,289 @@ pub(super) struct IvfPostingTupleRef<'a> {
     pub(super) gamma: f32,
     pub(super) rerank_tid: ItemPointer,
     pub(super) payload: &'a [u8],
+}
+
+impl<'a> IvfDensePostingBlockRef<'a> {
+    pub(super) fn decode(input: &'a [u8], payload_len: usize) -> Result<Self, String> {
+        if input.len() < DENSE_POSTING_BLOCK_HEADER_BYTES {
+            return Err(format!(
+                "ec_ivf dense posting block length mismatch: got {}, expected at least {DENSE_POSTING_BLOCK_HEADER_BYTES}",
+                input.len()
+            ));
+        }
+        if input[0] != IVF_DENSE_POSTING_BLOCK_TAG {
+            return Err(format!(
+                "invalid ec_ivf dense posting block tag: {}",
+                input[0]
+            ));
+        }
+        let count = u16::from_le_bytes(
+            input[5..7]
+                .try_into()
+                .expect("dense block count slice should be 2 bytes"),
+        ) as usize;
+        let stored_payload_len = u16::from_le_bytes(
+            input[7..9]
+                .try_into()
+                .expect("dense block payload length slice should be 2 bytes"),
+        ) as usize;
+        if stored_payload_len != payload_len {
+            return Err(format!(
+                "ec_ivf dense posting block payload length mismatch: got {stored_payload_len}, expected {payload_len}"
+            ));
+        }
+        let total_heap_tids = u32::from_le_bytes(
+            input[9..13]
+                .try_into()
+                .expect("dense block heap tid count slice should be 4 bytes"),
+        ) as usize;
+        let gamma_start = DENSE_POSTING_BLOCK_HEADER_BYTES;
+        let gamma_end = gamma_start + count * size_of::<f32>();
+        let heap_tid_count_end = gamma_end + count * size_of::<u16>();
+        let heap_tid_offset_end = heap_tid_count_end + count * size_of::<u32>();
+        let rerank_tid_end = heap_tid_offset_end + count * ITEM_POINTER_BYTES;
+        let heap_tid_end = rerank_tid_end + total_heap_tids * ITEM_POINTER_BYTES;
+        let payload_end = heap_tid_end + count * payload_len;
+        if input.len() != payload_end {
+            return Err(format!(
+                "ec_ivf dense posting block length mismatch: got {}, expected {payload_end}",
+                input.len()
+            ));
+        }
+        Ok(Self {
+            list_id: u32::from_le_bytes(
+                input[1..5]
+                    .try_into()
+                    .expect("dense block list id slice should be 4 bytes"),
+            ),
+            count,
+            total_heap_tids,
+            payload_len,
+            gamma_bytes: &input[gamma_start..gamma_end],
+            heap_tid_count_bytes: &input[gamma_end..heap_tid_count_end],
+            heap_tid_offset_bytes: &input[heap_tid_count_end..heap_tid_offset_end],
+            rerank_tid_bytes: &input[heap_tid_offset_end..rerank_tid_end],
+            heap_tid_bytes: &input[rerank_tid_end..heap_tid_end],
+            payloads: &input[heap_tid_end..payload_end],
+        })
+    }
+
+    pub(super) fn len(&self) -> usize {
+        self.count
+    }
+
+    pub(super) fn total_heap_tids(&self) -> usize {
+        self.total_heap_tids
+    }
+
+    pub(super) fn payload_len(&self) -> usize {
+        self.payload_len
+    }
+
+    pub(super) fn gammas(&self) -> Vec<f32> {
+        self.gamma_bytes
+            .chunks_exact(size_of::<f32>())
+            .map(|chunk| f32::from_le_bytes(chunk.try_into().expect("validated gamma chunk")))
+            .collect()
+    }
+
+    pub(super) fn heap_tid_count(&self, index: usize) -> usize {
+        let start = index * size_of::<u16>();
+        u16::from_le_bytes(
+            self.heap_tid_count_bytes[start..start + size_of::<u16>()]
+                .try_into()
+                .expect("validated heap tid count chunk"),
+        ) as usize
+    }
+
+    pub(super) fn heap_tid_offset(&self, index: usize) -> usize {
+        let start = index * size_of::<u32>();
+        u32::from_le_bytes(
+            self.heap_tid_offset_bytes[start..start + size_of::<u32>()]
+                .try_into()
+                .expect("validated heap tid offset chunk"),
+        ) as usize
+    }
+
+    pub(super) fn heap_tids(&self, index: usize) -> impl Iterator<Item = ItemPointer> + '_ {
+        let start = self.heap_tid_offset(index);
+        let count = self.heap_tid_count(index);
+        self.heap_tid_bytes[start * ITEM_POINTER_BYTES..(start + count) * ITEM_POINTER_BYTES]
+            .chunks_exact(ITEM_POINTER_BYTES)
+            .map(|chunk| ItemPointer::decode(chunk).expect("validated dense block tid bytes"))
+    }
+
+    pub(super) fn payload(&self, index: usize) -> &[u8] {
+        let start = index * self.payload_len;
+        &self.payloads[start..start + self.payload_len]
+    }
+
+    pub(super) fn validate_offsets(&self) -> Result<(), String> {
+        for index in 0..self.count {
+            let start = self.heap_tid_offset(index);
+            let count = self.heap_tid_count(index);
+            if start
+                .checked_add(count)
+                .is_none_or(|end| end > self.total_heap_tids)
+            {
+                return Err("ec_ivf dense posting block heap tid range is out of bounds".to_owned());
+            }
+            let rerank_start = index * ITEM_POINTER_BYTES;
+            ItemPointer::decode(
+                &self.rerank_tid_bytes[rerank_start..rerank_start + ITEM_POINTER_BYTES],
+            )?;
+        }
+        Ok(())
+    }
+}
+
+impl IvfDensePostingBlockTuple {
+    pub(super) fn from_single_heaptid_postings(
+        list_id: u32,
+        postings: &[(ItemPointer, f32, ItemPointer, Vec<u8>)],
+        payload_len: usize,
+    ) -> Result<Self, String> {
+        let count = postings.len();
+        if count == 0 {
+            return Err("ec_ivf dense posting block requires at least one posting".to_owned());
+        }
+        if count > u16::MAX as usize {
+            return Err("ec_ivf dense posting block count exceeds u16".to_owned());
+        }
+        if payload_len > u16::MAX as usize {
+            return Err("ec_ivf dense posting block payload length exceeds u16".to_owned());
+        }
+        let mut gammas = Vec::with_capacity(count);
+        let mut heap_tid_counts = Vec::with_capacity(count);
+        let mut heap_tid_offsets = Vec::with_capacity(count);
+        let mut rerank_tids = Vec::with_capacity(count);
+        let mut heap_tids = Vec::with_capacity(count);
+        let mut payloads = Vec::with_capacity(count * payload_len);
+        for (heap_tid, gamma, rerank_tid, payload) in postings {
+            if !gamma.is_finite() {
+                return Err("ec_ivf dense posting block gamma must be finite".to_owned());
+            }
+            if payload.len() != payload_len {
+                return Err(format!(
+                    "ec_ivf dense posting block payload length mismatch: got {}, expected {payload_len}",
+                    payload.len()
+                ));
+            }
+            heap_tid_offsets.push(u32::try_from(heap_tids.len()).map_err(|_| {
+                "ec_ivf dense posting block heap tid offset exceeds u32".to_owned()
+            })?);
+            heap_tid_counts.push(1);
+            heap_tids.push(*heap_tid);
+            gammas.push(*gamma);
+            rerank_tids.push(*rerank_tid);
+            payloads.extend_from_slice(payload);
+        }
+        Ok(Self {
+            list_id,
+            gammas,
+            heap_tid_counts,
+            heap_tid_offsets,
+            rerank_tids,
+            heap_tids,
+            payload_len,
+            payloads,
+        })
+    }
+
+    pub(super) fn encode(&self) -> Result<Vec<u8>, String> {
+        if self.gammas.len() != self.heap_tid_counts.len()
+            || self.gammas.len() != self.heap_tid_offsets.len()
+            || self.gammas.len() != self.rerank_tids.len()
+            || self.payloads.len() != self.gammas.len() * self.payload_len
+        {
+            return Err("ec_ivf dense posting block array length mismatch".to_owned());
+        }
+        if self.gammas.len() > u16::MAX as usize {
+            return Err("ec_ivf dense posting block count exceeds u16".to_owned());
+        }
+        if self.heap_tids.len() > u32::MAX as usize {
+            return Err("ec_ivf dense posting block heap tid count exceeds u32".to_owned());
+        }
+        if self.payload_len > u16::MAX as usize {
+            return Err("ec_ivf dense posting block payload length exceeds u16".to_owned());
+        }
+        if self.gammas.iter().any(|gamma| !gamma.is_finite()) {
+            return Err("ec_ivf dense posting block gamma must be finite".to_owned());
+        }
+
+        let mut out = Vec::with_capacity(Self::encoded_len(
+            self.gammas.len(),
+            self.heap_tids.len(),
+            self.payload_len,
+        ));
+        out.push(IVF_DENSE_POSTING_BLOCK_TAG);
+        out.extend_from_slice(&self.list_id.to_le_bytes());
+        out.extend_from_slice(&(self.gammas.len() as u16).to_le_bytes());
+        out.extend_from_slice(&(self.payload_len as u16).to_le_bytes());
+        out.extend_from_slice(&(self.heap_tids.len() as u32).to_le_bytes());
+        out.extend_from_slice(&[0, 0, 0]);
+        for gamma in &self.gammas {
+            out.extend_from_slice(&gamma.to_le_bytes());
+        }
+        for count in &self.heap_tid_counts {
+            out.extend_from_slice(&count.to_le_bytes());
+        }
+        for offset in &self.heap_tid_offsets {
+            out.extend_from_slice(&offset.to_le_bytes());
+        }
+        for tid in &self.rerank_tids {
+            tid.encode_into(&mut out);
+        }
+        for tid in &self.heap_tids {
+            tid.encode_into(&mut out);
+        }
+        out.extend_from_slice(&self.payloads);
+        Ok(out)
+    }
+
+    pub(super) fn decode(input: &[u8], payload_len: usize) -> Result<Self, String> {
+        let block = IvfDensePostingBlockRef::decode(input, payload_len)?;
+        block.validate_offsets()?;
+        let mut heap_tid_counts = Vec::with_capacity(block.len());
+        let mut heap_tid_offsets = Vec::with_capacity(block.len());
+        let mut rerank_tids = Vec::with_capacity(block.len());
+        for index in 0..block.len() {
+            heap_tid_counts.push(block.heap_tid_count(index) as u16);
+            heap_tid_offsets.push(block.heap_tid_offset(index) as u32);
+            let start = index * ITEM_POINTER_BYTES;
+            rerank_tids.push(ItemPointer::decode(
+                &block.rerank_tid_bytes[start..start + ITEM_POINTER_BYTES],
+            )?);
+        }
+        Ok(Self {
+            list_id: block.list_id,
+            gammas: block.gammas(),
+            heap_tid_counts,
+            heap_tid_offsets,
+            rerank_tids,
+            heap_tids: block
+                .heap_tid_bytes
+                .chunks_exact(ITEM_POINTER_BYTES)
+                .map(ItemPointer::decode)
+                .collect::<Result<Vec<_>, _>>()?,
+            payload_len: block.payload_len,
+            payloads: block.payloads.to_vec(),
+        })
+    }
+
+    pub(super) const fn encoded_len(
+        count: usize,
+        total_heap_tids: usize,
+        payload_len: usize,
+    ) -> usize {
+        DENSE_POSTING_BLOCK_HEADER_BYTES
+            + count * size_of::<f32>()
+            + count * size_of::<u16>()
+            + count * size_of::<u32>()
+            + count * ITEM_POINTER_BYTES
+            + total_heap_tids * ITEM_POINTER_BYTES
+            + count * payload_len
+    }
 }
 
 impl<'a> IvfPostingTupleRef<'a> {
@@ -1215,6 +1533,19 @@ pub(super) fn posting_tuple_fits(payload_len: usize, page_size: usize) -> bool {
     aligned_tuple_bytes(IvfPostingTuple::encoded_len(payload_len)) <= usable_page_bytes(page_size)
 }
 
+pub(super) fn dense_posting_block_tuple_fits(
+    count: usize,
+    total_heap_tids: usize,
+    payload_len: usize,
+    page_size: usize,
+) -> bool {
+    aligned_tuple_bytes(IvfDensePostingBlockTuple::encoded_len(
+        count,
+        total_heap_tids,
+        payload_len,
+    )) <= usable_page_bytes(page_size)
+}
+
 pub(super) fn pq_codebook_tuple_fits(centroid_count: usize, page_size: usize) -> bool {
     aligned_tuple_bytes(IvfPqCodebookTuple::encoded_len(centroid_count))
         <= usable_page_bytes(page_size)
@@ -1257,6 +1588,13 @@ impl DataPage {
         self.insert_raw_tuple(tuple.encode()?)
     }
 
+    pub(super) fn insert_ivf_dense_posting_block(
+        &mut self,
+        tuple: &IvfDensePostingBlockTuple,
+    ) -> Result<ItemPointer, String> {
+        self.insert_raw_tuple(tuple.encode()?)
+    }
+
     pub(super) fn insert_ivf_single_heaptid_posting(
         &mut self,
         list_id: u32,
@@ -1291,6 +1629,14 @@ impl DataPage {
         payload_len: usize,
     ) -> Result<IvfPostingTuple, String> {
         IvfPostingTuple::decode(self.raw_tuple(tid)?, payload_len)
+    }
+
+    pub(super) fn read_ivf_dense_posting_block(
+        &self,
+        tid: ItemPointer,
+        payload_len: usize,
+    ) -> Result<IvfDensePostingBlockTuple, String> {
+        IvfDensePostingBlockTuple::decode(self.raw_tuple(tid)?, payload_len)
     }
 }
 
@@ -1337,6 +1683,13 @@ impl DataPageChain {
         self.insert_raw_tuple(tuple.encode()?)
     }
 
+    pub(super) fn insert_ivf_dense_posting_block(
+        &mut self,
+        tuple: &IvfDensePostingBlockTuple,
+    ) -> Result<ItemPointer, String> {
+        self.insert_raw_tuple(tuple.encode()?)
+    }
+
     pub(super) fn insert_ivf_single_heaptid_posting(
         &mut self,
         list_id: u32,
@@ -1376,6 +1729,17 @@ impl DataPageChain {
             .get_page(tid.block_number)
             .ok_or_else(|| format!("ec_ivf posting block {} not found", tid.block_number))?;
         page.read_ivf_posting(tid, payload_len)
+    }
+
+    pub(super) fn read_ivf_dense_posting_block(
+        &self,
+        tid: ItemPointer,
+        payload_len: usize,
+    ) -> Result<IvfDensePostingBlockTuple, String> {
+        let page = self
+            .get_page(tid.block_number)
+            .ok_or_else(|| format!("ec_ivf dense posting block {} not found", tid.block_number))?;
+        page.read_ivf_dense_posting_block(tid, payload_len)
     }
 }
 
@@ -1591,6 +1955,45 @@ where
     Ok(())
 }
 
+#[cfg(any(feature = "pg17", feature = "pg18"))]
+pub(super) fn visit_ivf_posting_entries_for_block_sequence<F>(
+    index_relation: RelationHandle,
+    block_numbers: &[pg_sys::BlockNumber],
+    payload_len: usize,
+    mut visitor: F,
+) -> Result<(), String>
+where
+    F: for<'a> FnMut(ItemPointer, IvfPostingEntryRef<'a>) -> Result<(), String>,
+{
+    if block_numbers.is_empty() {
+        return Ok(());
+    }
+
+    #[cfg(feature = "pg18")]
+    {
+        visit_ivf_posting_entry_block_sequence_with_read_stream(
+            index_relation.as_ptr(),
+            block_numbers,
+            payload_len,
+            &mut visitor,
+        )?;
+    }
+
+    #[cfg(not(feature = "pg18"))]
+    {
+        for block_number in block_numbers {
+            visit_all_ivf_posting_entries_for_block(
+                index_relation.as_ptr(),
+                *block_number,
+                payload_len,
+                &mut visitor,
+            )?;
+        }
+    }
+
+    Ok(())
+}
+
 #[cfg(feature = "pg18")]
 fn visit_ivf_posting_blocks_with_read_stream<F>(
     index_relation: pg_sys::Relation,
@@ -1630,6 +2033,26 @@ where
         "ec_ivf posting ref block sequence",
         |buffer, block_number| {
             visit_all_ivf_posting_refs_from_buffer(buffer, block_number, payload_len, visitor)
+        },
+    )
+}
+
+#[cfg(feature = "pg18")]
+fn visit_ivf_posting_entry_block_sequence_with_read_stream<F>(
+    index_relation: pg_sys::Relation,
+    block_numbers: &[pg_sys::BlockNumber],
+    payload_len: usize,
+    visitor: &mut F,
+) -> Result<(), String>
+where
+    F: for<'a> FnMut(ItemPointer, IvfPostingEntryRef<'a>) -> Result<(), String>,
+{
+    crate::am::stream::visit_relation_block_sequence_read_stream(
+        index_relation,
+        block_numbers,
+        "ec_ivf posting entry block sequence",
+        |buffer, block_number| {
+            visit_all_ivf_posting_entries_from_buffer(buffer, block_number, payload_len, visitor)
         },
     )
 }
@@ -1675,6 +2098,25 @@ where
     let result =
         visit_all_ivf_posting_refs_from_buffer(&buffer, block_number, payload_len, visitor);
     result
+}
+
+#[cfg(all(any(feature = "pg17", feature = "pg18"), not(feature = "pg18")))]
+fn visit_all_ivf_posting_entries_for_block<F>(
+    index_relation: pg_sys::Relation,
+    block_number: pg_sys::BlockNumber,
+    payload_len: usize,
+    visitor: &mut F,
+) -> Result<(), String>
+where
+    F: for<'a> FnMut(ItemPointer, IvfPostingEntryRef<'a>) -> Result<(), String>,
+{
+    let index = IvfPageRelation::new(ivf_relation_nonnull(
+        index_relation,
+        "ec_ivf posting-list entry read",
+    ));
+    let buffer = read_posting_block(index, block_number, "posting-list")?;
+
+    visit_all_ivf_posting_entries_from_buffer(&buffer, block_number, payload_len, visitor)
 }
 
 #[cfg(any(feature = "pg17", feature = "pg18"))]
@@ -1756,6 +2198,43 @@ where
                 },
                 posting,
             )
+        })?;
+    }
+    Ok(())
+}
+
+#[cfg(any(feature = "pg17", feature = "pg18"))]
+fn visit_all_ivf_posting_entries_from_buffer<F>(
+    buffer: &LockedBufferGuard,
+    block_number: pg_sys::BlockNumber,
+    payload_len: usize,
+    visitor: &mut F,
+) -> Result<(), String>
+where
+    F: for<'a> FnMut(ItemPointer, IvfPostingEntryRef<'a>) -> Result<(), String>,
+{
+    let page = PageTupleReader::new(buffer, block_number);
+    for offset in 1..=page.line_pointer_count() {
+        page.visit_line(offset, "posting entry", |tuple_bytes| {
+            let Some(tag) = tuple_bytes.first().copied() else {
+                return Ok(());
+            };
+            let tid = ItemPointer {
+                block_number,
+                offset_number: offset,
+            };
+            match tag {
+                IVF_POSTING_TAG => {
+                    let posting = IvfPostingTupleRef::decode(tuple_bytes, payload_len)?;
+                    visitor(tid, IvfPostingEntryRef::Row(posting))
+                }
+                IVF_DENSE_POSTING_BLOCK_TAG => {
+                    let block = IvfDensePostingBlockRef::decode(tuple_bytes, payload_len)?;
+                    block.validate_offsets()?;
+                    visitor(tid, IvfPostingEntryRef::DenseBlock(block))
+                }
+                _ => Ok(()),
+            }
         })?;
     }
     Ok(())
@@ -2587,6 +3066,7 @@ mod tests {
             pq_group_size: 0,
             posting_slack_percent: 0,
             quant_bits: 4,
+            dense_posting_blocks: false,
             storage_format: StorageFormat::RaBitQ,
             rerank: RerankMode::HeapF32,
         });
@@ -2615,6 +3095,7 @@ mod tests {
             pq_group_size: 0,
             posting_slack_percent: 0,
             quant_bits: 4,
+            dense_posting_blocks: false,
             storage_format: StorageFormat::Auto,
             rerank: RerankMode::Auto,
         });
@@ -2704,6 +3185,38 @@ mod tests {
         assert_eq!(borrowed.heaptid_count(), tuple.heaptids.len());
         assert_eq!(borrowed.collect_heaptids(), tuple.heaptids);
         assert_eq!(borrowed.payload, tuple.payload.as_slice());
+    }
+
+    #[test]
+    fn dense_posting_block_roundtrip_preserves_scan_arrays() {
+        let postings = vec![
+            (tid(11, 1), 0.25, ItemPointer::INVALID, vec![1, 2, 3]),
+            (tid(12, 2), 0.5, ItemPointer::INVALID, vec![4, 5, 6]),
+            (tid(13, 3), 0.75, ItemPointer::INVALID, vec![7, 8, 9]),
+        ];
+        let tuple =
+            IvfDensePostingBlockTuple::from_single_heaptid_postings(4, &postings, 3).unwrap();
+
+        let encoded = tuple.encode().unwrap();
+        let decoded = IvfDensePostingBlockTuple::decode(&encoded, 3).unwrap();
+        let borrowed = IvfDensePostingBlockRef::decode(&encoded, 3).unwrap();
+
+        assert_eq!(decoded, tuple);
+        assert!(dense_posting_block_tuple_fits(
+            tuple.gammas.len(),
+            tuple.heap_tids.len(),
+            tuple.payload_len,
+            DEFAULT_PAGE_SIZE
+        ));
+        assert_eq!(borrowed.list_id, 4);
+        assert_eq!(borrowed.len(), 3);
+        assert_eq!(borrowed.total_heap_tids(), 3);
+        assert_eq!(borrowed.gammas(), vec![0.25, 0.5, 0.75]);
+        assert_eq!(borrowed.payload(1), &[4, 5, 6]);
+        assert_eq!(
+            borrowed.heap_tids(2).collect::<Vec<_>>(),
+            vec![postings[2].0]
+        );
     }
 
     #[test]
@@ -2992,6 +3505,7 @@ mod tests {
             pq_group_size: 0,
             posting_slack_percent: 0,
             quant_bits: 4,
+            dense_posting_blocks: false,
             storage_format: StorageFormat::Auto,
             rerank: RerankMode::Auto,
         });
