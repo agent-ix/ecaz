@@ -1,0 +1,5 @@
+$ cargo test -q build_state_splits_packed_dense_payloads_into_continuations --lib
+
+running 1 test
+.
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2115 filtered out; finished in 0.03s
