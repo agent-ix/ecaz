@@ -1,0 +1,40 @@
+\pset pager off
+\timing on
+
+SET enable_seqscan = off;
+SET ec_ivf.nprobe = 32;
+SET ec_ivf.dense_posting_coalescing = off;
+SET ec_ivf.scratch_soa_batch_decode = on;
+SET ec_ivf.rerank_width = 0;
+
+SELECT
+current_setting('server_version') AS server_version,
+current_setting('ec_ivf.nprobe') AS sweep_value,
+current_setting('ec_ivf.scratch_soa_batch_decode') AS scratch_soa_batch_decode,
+           current_setting('ec_ivf.rerank_width') AS rerank_width,
+           'ec_ivf' AS profile;
+
+SELECT
+'task111a_50k_rb1_dense_old_rabitq_idx' AS index_name,
+pg_relation_size('task111a_50k_rb1_dense_old_rabitq_idx'::regclass) AS index_bytes,
+pg_size_pretty(pg_relation_size('task111a_50k_rb1_dense_old_rabitq_idx'::regclass)) AS index_size;
+
+SELECT *
+FROM ec_ivf_index_cost_snapshot('task111a_50k_rb1_dense_old_rabitq_idx'::regclass);
+
+EXPLAIN (FORMAT JSON, ecaz, ANALYZE, COSTS OFF)
+SELECT id
+FROM task111a_50k_rb1_dense_old_corpus
+ORDER BY embedding <#> (
+SELECT source
+FROM task111a_50k_rb1_dense_old_queries
+ORDER BY id
+LIMIT 1
+)::real[]
+LIMIT 10;
+
+RESET enable_seqscan;
+RESET ec_ivf.nprobe;
+RESET ec_ivf.dense_posting_coalescing;
+RESET ec_ivf.scratch_soa_batch_decode;
+RESET ec_ivf.rerank_width;
