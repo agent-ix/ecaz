@@ -365,13 +365,27 @@ struct IvfDensePostingBlockScratch {
     scores: Vec<f32>,
 }
 
+#[derive(Debug)]
+struct IvfDensePackedPending {
+    list_id: u32,
+    logical_block_id: u32,
+    segment_count: u16,
+    next_segment_index: u16,
+    payload_len: usize,
+    gammas: Vec<f32>,
+    deleted: Vec<bool>,
+    heap_tid_counts: Vec<usize>,
+    heap_tids: Vec<ItemPointer>,
+    payloads: Vec<u8>,
+}
+
 impl IvfDensePostingBlockScratch {
     fn clear(&mut self) {
         self.gammas.clear();
         self.scores.clear();
     }
 
-    fn load_gammas(&mut self, block: super::page::IvfDensePostingBlockRef<'_>) {
+    fn load_gammas(&mut self, block: super::page::IvfDensePostingRef<'_>) {
         block.copy_gammas_to(&mut self.gammas);
         self.scores.clear();
     }
@@ -429,7 +443,7 @@ impl IvfPostingScratchSoa {
 
     fn push_dense_posting(
         &mut self,
-        block: super::page::IvfDensePostingBlockRef<'_>,
+        block: super::page::IvfDensePostingRef<'_>,
         index: usize,
         heap_tid_count: usize,
     ) {
@@ -440,6 +454,16 @@ impl IvfPostingScratchSoa {
         self.heap_tid_counts.push(heap_tid_count);
         self.heap_tids.extend(block.heap_tids(index));
         self.payloads.extend_from_slice(block.payload(index));
+    }
+
+    fn push_dense_parts(&mut self, gamma: f32, heap_tids: &[ItemPointer], payload: &[u8]) {
+        debug_assert_eq!(payload.len(), self.payload_len);
+        let offset = self.heap_tids.len();
+        self.gammas.push(gamma);
+        self.heap_tid_offsets.push(offset);
+        self.heap_tid_counts.push(heap_tids.len());
+        self.heap_tids.extend_from_slice(heap_tids);
+        self.payloads.extend_from_slice(payload);
     }
 
     fn len(&self) -> usize {
@@ -456,6 +480,102 @@ impl IvfPostingScratchSoa {
         let start = self.heap_tid_offsets[index];
         let end = start + self.heap_tid_counts[index];
         &self.heap_tids[start..end]
+    }
+}
+
+impl IvfDensePackedPending {
+    fn from_header(
+        segment: super::page::IvfDensePostingPackedSegmentRef<'_>,
+    ) -> Result<Self, String> {
+        if segment.segment_index != 0 {
+            return Err("ec_ivf dense packed group header segment index is not zero".to_owned());
+        }
+        let mut heap_tid_counts = Vec::with_capacity(segment.len());
+        let mut heap_tids = Vec::with_capacity(segment.total_heap_tids());
+        let mut deleted = Vec::with_capacity(segment.len());
+        for index in 0..segment.len() {
+            heap_tid_counts.push(segment.heap_tid_count(index));
+            heap_tids.extend(segment.heap_tids(index));
+            deleted.push(segment.is_deleted(index));
+        }
+        let total_payload_len = segment
+            .len()
+            .checked_mul(segment.payload_len())
+            .ok_or_else(|| "ec_ivf dense packed group payload length overflow".to_owned())?;
+        if segment.payloads.len() > total_payload_len {
+            return Err("ec_ivf dense packed group header payload is too long".to_owned());
+        }
+        let mut payloads = Vec::with_capacity(total_payload_len);
+        payloads.extend_from_slice(segment.payloads);
+        Ok(Self {
+            list_id: segment.list_id,
+            logical_block_id: segment.logical_block_id,
+            segment_count: segment.segment_count,
+            next_segment_index: 1,
+            payload_len: segment.payload_len(),
+            gammas: segment.gammas(),
+            deleted,
+            heap_tid_counts,
+            heap_tids,
+            payloads,
+        })
+    }
+
+    fn append_continuation(
+        &mut self,
+        continuation: super::page::IvfDensePostingPackedContinuationRef<'_>,
+    ) -> Result<(), String> {
+        if continuation.list_id != self.list_id
+            || continuation.logical_block_id != self.logical_block_id
+            || continuation.segment_count != self.segment_count
+        {
+            return Err("ec_ivf dense packed continuation does not match active group".to_owned());
+        }
+        if continuation.segment_index != self.next_segment_index {
+            return Err("ec_ivf dense packed continuation segment order mismatch".to_owned());
+        }
+        if usize::try_from(continuation.payload_offset).unwrap_or(usize::MAX) != self.payloads.len()
+        {
+            return Err("ec_ivf dense packed continuation payload offset mismatch".to_owned());
+        }
+        let total_payload_len = self.total_payload_len()?;
+        if self
+            .payloads
+            .len()
+            .saturating_add(continuation.payloads.len())
+            > total_payload_len
+        {
+            return Err("ec_ivf dense packed continuation exceeds group payload length".to_owned());
+        }
+        self.payloads.extend_from_slice(continuation.payloads);
+        self.next_segment_index = self
+            .next_segment_index
+            .checked_add(1)
+            .ok_or_else(|| "ec_ivf dense packed continuation index overflow".to_owned())?;
+        Ok(())
+    }
+
+    fn is_complete(&self) -> Result<bool, String> {
+        Ok(self.next_segment_index == self.segment_count
+            && self.payloads.len() == self.total_payload_len()?)
+    }
+
+    fn total_payload_len(&self) -> Result<usize, String> {
+        self.gammas
+            .len()
+            .checked_mul(self.payload_len)
+            .ok_or_else(|| "ec_ivf dense packed group payload length overflow".to_owned())
+    }
+
+    fn heap_tid_range(&self, index: usize) -> &[ItemPointer] {
+        let start = self.heap_tid_counts[..index].iter().sum::<usize>();
+        let end = start + self.heap_tid_counts[index];
+        &self.heap_tids[start..end]
+    }
+
+    fn payload(&self, index: usize) -> &[u8] {
+        let start = index * self.payload_len;
+        &self.payloads[start..start + self.payload_len]
     }
 }
 
@@ -1422,6 +1542,7 @@ unsafe fn materialize_probe_candidates(
         let scratch = posting_scratch_soa(opaque, payload_len);
         let dense_scratch = dense_posting_coalescing_scratch(opaque, payload_len);
         let mut dense_scratch_list_id: Option<u32> = None;
+        let mut dense_packed_pending: Option<IvfDensePackedPending> = None;
         // SAFETY: `scratch` is a scan-opaque-owned `*mut IvfPostingScratchSoa`
         // allocated by `posting_scratch_soa`; the visitor and the post-loop
         // drain are the only borrowers of this scratch buffer for the
@@ -1447,6 +1568,10 @@ unsafe fn materialize_probe_candidates(
                                 &mut running_top,
                             )?;
                             dense_scratch_list_id = None;
+                            if dense_packed_pending.is_some() {
+                                return Err("ec_ivf row posting interrupted a dense packed group"
+                                    .to_owned());
+                            }
                             opaque.explain_counters.record_row_posting_visited();
                             let heap_tid_count = posting.heaptid_count();
                             if !consume_live_tid_budget(
@@ -1484,9 +1609,13 @@ unsafe fn materialize_probe_candidates(
                                 best_by_heap_tid,
                                 &mut running_top,
                             )?;
+                            if dense_packed_pending.is_some() {
+                                return Err("ec_ivf dense block interrupted a dense packed group"
+                                    .to_owned());
+                            }
                             if !use_dense_posting_coalescing {
                                 process_dense_posting_block(
-                                    block,
+                                    super::page::IvfDensePostingRef::Block(block),
                                     quantizer,
                                     prepared_query,
                                     opaque,
@@ -1512,7 +1641,7 @@ unsafe fn materialize_probe_candidates(
                                 dense_scratch_list_id = Some(block.list_id);
                             }
                             append_dense_posting_block_to_coalesced_scratch(
-                                block,
+                                super::page::IvfDensePostingRef::Block(block),
                                 &mut *dense_scratch,
                                 quantizer,
                                 prepared_query,
@@ -1522,10 +1651,101 @@ unsafe fn materialize_probe_candidates(
                                 &mut remaining_live_tids_by_list,
                             )?;
                         }
+                        super::page::IvfPostingEntryRef::DensePackedSegment(segment) => {
+                            if !probe_plan.contains_list(segment.list_id) {
+                                return Ok(());
+                            }
+                            if dense_packed_pending.is_some() {
+                                return Err(
+                                    "ec_ivf dense packed group header interrupted an active group"
+                                        .to_owned(),
+                                );
+                            }
+                            opaque.explain_counters.record_dense_block_visited();
+                            process_scratch_soa_postings(
+                                &mut *scratch,
+                                ScratchSoaFlushKind::Row,
+                                quantizer,
+                                prepared_query,
+                                opaque,
+                                best_by_heap_tid,
+                                &mut running_top,
+                            )?;
+                            if dense_scratch_list_id
+                                .is_some_and(|list_id| list_id != segment.list_id)
+                            {
+                                process_dense_coalesced_postings(
+                                    &mut *dense_scratch,
+                                    quantizer,
+                                    prepared_query,
+                                    opaque,
+                                    best_by_heap_tid,
+                                    &mut running_top,
+                                )?;
+                                dense_scratch_list_id = None;
+                            }
+                            if dense_scratch_list_id.is_none() {
+                                dense_scratch_list_id = Some(segment.list_id);
+                            }
+                            dense_packed_pending =
+                                Some(IvfDensePackedPending::from_header(segment)?);
+                            if dense_packed_pending
+                                .as_ref()
+                                .expect("pending just initialized")
+                                .is_complete()?
+                            {
+                                let group = dense_packed_pending
+                                    .take()
+                                    .expect("pending just checked complete");
+                                drain_dense_packed_group_to_scratch(
+                                    &group,
+                                    &mut *dense_scratch,
+                                    quantizer,
+                                    prepared_query,
+                                    opaque,
+                                    best_by_heap_tid,
+                                    &mut running_top,
+                                    &mut remaining_live_tids_by_list,
+                                )?;
+                                dense_scratch_list_id = None;
+                            }
+                        }
+                        super::page::IvfPostingEntryRef::DensePackedContinuation(continuation) => {
+                            if !probe_plan.contains_list(continuation.list_id) {
+                                return Ok(());
+                            }
+                            let Some(group) = dense_packed_pending.as_mut() else {
+                                return Err(
+                                    "ec_ivf dense packed continuation arrived without a header"
+                                        .to_owned(),
+                                );
+                            };
+                            opaque.explain_counters.record_dense_block_visited();
+                            group.append_continuation(continuation)?;
+                            if group.is_complete()? {
+                                let group = dense_packed_pending
+                                    .take()
+                                    .expect("pending just checked complete");
+                                drain_dense_packed_group_to_scratch(
+                                    &group,
+                                    &mut *dense_scratch,
+                                    quantizer,
+                                    prepared_query,
+                                    opaque,
+                                    best_by_heap_tid,
+                                    &mut running_top,
+                                    &mut remaining_live_tids_by_list,
+                                )?;
+                                dense_scratch_list_id = None;
+                            }
+                        }
                     }
                     Ok(())
                 },
             )?;
+            if dense_packed_pending.is_some() {
+                return Err("ec_ivf dense packed group ended before final continuation".to_owned());
+            }
             process_scratch_soa_postings(
                 &mut *scratch,
                 ScratchSoaFlushKind::Row,
@@ -1545,6 +1765,8 @@ unsafe fn materialize_probe_candidates(
             )?;
         }
     } else {
+        let mut dense_packed_pending: Option<IvfDensePackedPending> = None;
+        let mut dense_packed_scratch = IvfPostingScratchSoa::new(payload_len);
         super::page::visit_ivf_posting_entries_for_block_sequence(
             index_relation_handle,
             &probe_plan.block_sequence,
@@ -1554,6 +1776,11 @@ unsafe fn materialize_probe_candidates(
                     super::page::IvfPostingEntryRef::Row(posting) => {
                         if !probe_plan.contains_list(posting.list_id) || posting.deleted {
                             return Ok(());
+                        }
+                        if dense_packed_pending.is_some() {
+                            return Err(
+                                "ec_ivf row posting interrupted a dense packed group".to_owned()
+                            );
                         }
                         opaque.explain_counters.record_row_posting_visited();
                         let heap_tid_count = posting.heaptid_count();
@@ -1592,9 +1819,14 @@ unsafe fn materialize_probe_candidates(
                         if !probe_plan.contains_list(block.list_id) {
                             return Ok(());
                         }
+                        if dense_packed_pending.is_some() {
+                            return Err(
+                                "ec_ivf dense block interrupted a dense packed group".to_owned()
+                            );
+                        }
                         opaque.explain_counters.record_dense_block_visited();
                         process_dense_posting_block(
-                            block,
+                            super::page::IvfDensePostingRef::Block(block),
                             quantizer,
                             prepared_query,
                             opaque,
@@ -1603,10 +1835,73 @@ unsafe fn materialize_probe_candidates(
                             &mut remaining_live_tids_by_list,
                         )?;
                     }
+                    super::page::IvfPostingEntryRef::DensePackedSegment(segment) => {
+                        if !probe_plan.contains_list(segment.list_id) {
+                            return Ok(());
+                        }
+                        if dense_packed_pending.is_some() {
+                            return Err(
+                                "ec_ivf dense packed group header interrupted an active group"
+                                    .to_owned(),
+                            );
+                        }
+                        opaque.explain_counters.record_dense_block_visited();
+                        dense_packed_pending = Some(IvfDensePackedPending::from_header(segment)?);
+                        if dense_packed_pending
+                            .as_ref()
+                            .expect("pending just initialized")
+                            .is_complete()?
+                        {
+                            let group = dense_packed_pending
+                                .take()
+                                .expect("pending just checked complete");
+                            drain_dense_packed_group_to_scratch(
+                                &group,
+                                &mut dense_packed_scratch,
+                                quantizer,
+                                prepared_query,
+                                opaque,
+                                best_by_heap_tid,
+                                &mut running_top,
+                                &mut remaining_live_tids_by_list,
+                            )?;
+                        }
+                    }
+                    super::page::IvfPostingEntryRef::DensePackedContinuation(continuation) => {
+                        if !probe_plan.contains_list(continuation.list_id) {
+                            return Ok(());
+                        }
+                        let Some(group) = dense_packed_pending.as_mut() else {
+                            return Err(
+                                "ec_ivf dense packed continuation arrived without a header"
+                                    .to_owned(),
+                            );
+                        };
+                        opaque.explain_counters.record_dense_block_visited();
+                        group.append_continuation(continuation)?;
+                        if group.is_complete()? {
+                            let group = dense_packed_pending
+                                .take()
+                                .expect("pending just checked complete");
+                            drain_dense_packed_group_to_scratch(
+                                &group,
+                                &mut dense_packed_scratch,
+                                quantizer,
+                                prepared_query,
+                                opaque,
+                                best_by_heap_tid,
+                                &mut running_top,
+                                &mut remaining_live_tids_by_list,
+                            )?;
+                        }
+                    }
                 }
                 Ok(())
             },
-        )?
+        )?;
+        if dense_packed_pending.is_some() {
+            return Err("ec_ivf dense packed group ended before final continuation".to_owned());
+        }
     }
 
     // SAFETY: `best_by_heap_tid` points to the scan-owned dedup map populated
@@ -1826,7 +2121,7 @@ fn process_dense_coalesced_postings(
 }
 
 fn append_dense_posting_block_to_coalesced_scratch(
-    block: super::page::IvfDensePostingBlockRef<'_>,
+    block: super::page::IvfDensePostingRef<'_>,
     scratch: &mut IvfPostingScratchSoa,
     quantizer: IvfQuantizer,
     prepared_query: &IvfPreparedQuery,
@@ -1838,7 +2133,7 @@ fn append_dense_posting_block_to_coalesced_scratch(
     if block.len() == 0 {
         return Ok(());
     }
-    debug_assert_eq!(block.payloads.len(), block.len() * block.payload_len());
+    debug_assert_eq!(block.payloads().len(), block.len() * block.payload_len());
 
     for index in 0..block.len() {
         if block.is_deleted(index) {
@@ -1846,7 +2141,7 @@ fn append_dense_posting_block_to_coalesced_scratch(
         }
         opaque.explain_counters.record_dense_posting_visited();
         let heap_tid_count = block.heap_tid_count(index);
-        if !consume_live_tid_budget(remaining_live_tids_by_list, block.list_id, heap_tid_count)? {
+        if !consume_live_tid_budget(remaining_live_tids_by_list, block.list_id(), heap_tid_count)? {
             continue;
         }
         if !scratch.can_accept(heap_tid_count) && !scratch.is_empty() {
@@ -1875,8 +2170,56 @@ fn append_dense_posting_block_to_coalesced_scratch(
     Ok(())
 }
 
+fn drain_dense_packed_group_to_scratch(
+    group: &IvfDensePackedPending,
+    scratch: &mut IvfPostingScratchSoa,
+    quantizer: IvfQuantizer,
+    prepared_query: &IvfPreparedQuery,
+    opaque: &mut EcIvfScanOpaque,
+    best_by_heap_tid: *mut HashMap<ItemPointer, EcIvfScoredCandidate>,
+    running_top: &mut Option<CandidateTopK>,
+    remaining_live_tids_by_list: &mut [u64],
+) -> Result<(), String> {
+    if !group.is_complete()? {
+        return Err("ec_ivf dense packed group ended before all payload bytes arrived".to_owned());
+    }
+    for index in 0..group.gammas.len() {
+        if group.deleted[index] {
+            continue;
+        }
+        opaque.explain_counters.record_dense_posting_visited();
+        let heap_tid_count = group.heap_tid_counts[index];
+        if !consume_live_tid_budget(remaining_live_tids_by_list, group.list_id, heap_tid_count)? {
+            continue;
+        }
+        if !scratch.can_accept(heap_tid_count) && !scratch.is_empty() {
+            process_dense_coalesced_postings(
+                scratch,
+                quantizer,
+                prepared_query,
+                opaque,
+                best_by_heap_tid,
+                running_top,
+            )?;
+        }
+        scratch.push_dense_parts(
+            group.gammas[index],
+            group.heap_tid_range(index),
+            group.payload(index),
+        );
+    }
+    process_dense_coalesced_postings(
+        scratch,
+        quantizer,
+        prepared_query,
+        opaque,
+        best_by_heap_tid,
+        running_top,
+    )
+}
+
 fn process_dense_posting_block(
-    block: super::page::IvfDensePostingBlockRef<'_>,
+    block: super::page::IvfDensePostingRef<'_>,
     quantizer: IvfQuantizer,
     prepared_query: &IvfPreparedQuery,
     opaque: &mut EcIvfScanOpaque,
@@ -1887,7 +2230,7 @@ fn process_dense_posting_block(
     if block.len() == 0 {
         return Ok(());
     }
-    debug_assert_eq!(block.payloads.len(), block.len() * block.payload_len());
+    debug_assert_eq!(block.payloads().len(), block.len() * block.payload_len());
     // SAFETY: scratch is scan-opaque-owned, cleared before reuse, and this
     // function is the only user for the duration of dense block processing.
     let scratch = unsafe { dense_posting_block_scratch(opaque) };
@@ -1897,18 +2240,18 @@ fn process_dense_posting_block(
         let scratch = &mut *scratch;
         quantizer.score_turboquant_batch_from_payloads(
             prepared_query,
-            block.payloads,
+            block.payloads(),
             block.payload_len(),
             &scratch.gammas,
             &mut scratch.scores,
         )? || quantizer.score_ip_bits1_batch_from_payloads(
             prepared_query,
-            block.payloads,
+            block.payloads(),
             block.payload_len(),
             &mut scratch.scores,
         )? || quantizer.score_grouped_pq_batch_from_payloads(
             prepared_query,
-            block.payloads,
+            block.payloads(),
             block.payload_len(),
             &mut scratch.scores,
         )?
@@ -1929,8 +2272,11 @@ fn process_dense_posting_block(
             }
             opaque.explain_counters.record_dense_posting_visited();
             let heap_tid_count = block.heap_tid_count(index);
-            if !consume_live_tid_budget(remaining_live_tids_by_list, block.list_id, heap_tid_count)?
-            {
+            if !consume_live_tid_budget(
+                remaining_live_tids_by_list,
+                block.list_id(),
+                heap_tid_count,
+            )? {
                 continue;
             }
             record_scored_posting_candidates(
@@ -1951,7 +2297,7 @@ fn process_dense_posting_block(
         }
         opaque.explain_counters.record_dense_posting_visited();
         let heap_tid_count = block.heap_tid_count(index);
-        if !consume_live_tid_budget(remaining_live_tids_by_list, block.list_id, heap_tid_count)? {
+        if !consume_live_tid_budget(remaining_live_tids_by_list, block.list_id(), heap_tid_count)? {
             continue;
         }
         let min_ip_to_keep = running_top
@@ -3115,7 +3461,8 @@ pub(crate) unsafe fn debug_ec_ivf_directory_entry(
 mod tests {
     use super::super::options::{EcIvfOptions, RerankMode, StorageFormat as IvfStorageFormat};
     use super::super::page::{
-        IvfDensePostingBlockRef, IvfDensePostingBlockTuple, IvfPostingTuple, IvfPostingTupleRef,
+        IvfDensePostingBlockRef, IvfDensePostingBlockTuple, IvfDensePostingRef, IvfPostingTuple,
+        IvfPostingTupleRef,
     };
     use super::{
         build_probe_block_sequence, candidate_heap_blocks, candidate_heap_tid_cmp,
@@ -3185,6 +3532,7 @@ mod tests {
             posting_slack_percent: 0,
             quant_bits: 1,
             dense_posting_blocks: false,
+            dense_posting_pack_pages: 1,
             storage_format: IvfStorageFormat::RaBitQ,
             rerank,
         }
@@ -3275,7 +3623,7 @@ mod tests {
         let block = IvfDensePostingBlockRef::decode(&encoded, 2).unwrap();
         let mut scratch = IvfDensePostingBlockScratch::default();
 
-        scratch.load_gammas(block);
+        scratch.load_gammas(IvfDensePostingRef::Block(block));
         scratch.scores.extend([1.0, 2.0, 3.0]);
         let gamma_capacity = scratch.gammas.capacity();
         let score_capacity = scratch.scores.capacity();
@@ -3287,7 +3635,7 @@ mod tests {
         let smaller_encoded = smaller_tuple.encode().unwrap();
         let smaller_block = IvfDensePostingBlockRef::decode(&smaller_encoded, 2).unwrap();
 
-        scratch.load_gammas(smaller_block);
+        scratch.load_gammas(IvfDensePostingRef::Block(smaller_block));
 
         assert_eq!(scratch.gammas, vec![0.25, 0.5]);
         assert!(scratch.scores.is_empty());
@@ -3323,8 +3671,8 @@ mod tests {
         let block = IvfDensePostingBlockRef::decode(&encoded, 2).unwrap();
         let mut scratch = IvfPostingScratchSoa::new(2);
 
-        scratch.push_dense_posting(block, 0, block.heap_tid_count(0));
-        scratch.push_dense_posting(block, 2, block.heap_tid_count(2));
+        scratch.push_dense_posting(IvfDensePostingRef::Block(block), 0, block.heap_tid_count(0));
+        scratch.push_dense_posting(IvfDensePostingRef::Block(block), 2, block.heap_tid_count(2));
 
         assert_eq!(scratch.len(), 2);
         assert_eq!(scratch.gammas, vec![0.25, 0.75]);

@@ -405,6 +405,7 @@ mod tests {
             posting_slack_percent: 0,
             quant_bits: 4,
             dense_posting_blocks: false,
+            dense_posting_pack_pages: 1,
             storage_format: options::StorageFormat::TurboQuant,
             rerank: options::RerankMode::HeapF32,
         });

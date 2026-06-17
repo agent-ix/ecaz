@@ -119,9 +119,13 @@ const IVF_LIST_DIRECTORY_TAG: u8 = 0x22;
 const IVF_POSTING_TAG: u8 = 0x23;
 const IVF_PQ_CODEBOOK_TAG: u8 = 0x24;
 const IVF_DENSE_POSTING_BLOCK_TAG: u8 = 0x25;
+const IVF_DENSE_POSTING_PACKED_SEGMENT_TAG: u8 = 0x26;
+const IVF_DENSE_POSTING_PACKED_CONTINUATION_TAG: u8 = 0x27;
 const POSTING_FLAG_DELETED: u8 = 0b0000_0001;
 const POSTING_FIXED_BYTES: usize = EC_IVF_POSTING_PAYLOAD_OFFSET;
 const DENSE_POSTING_BLOCK_HEADER_BYTES: usize = 16;
+const DENSE_POSTING_PACKED_SEGMENT_HEADER_BYTES: usize = 28;
+const DENSE_POSTING_PACKED_CONTINUATION_HEADER_BYTES: usize = 24;
 
 #[cfg(not(any(feature = "pg17", feature = "pg18")))]
 #[repr(u8)]
@@ -168,6 +172,7 @@ pub(super) struct EcIvfOptions {
     pub(super) rerank: RerankMode,
     pub(super) quant_bits: u8,
     pub(super) dense_posting_blocks: bool,
+    pub(super) dense_posting_pack_pages: i32,
 }
 
 #[cfg(not(any(feature = "pg17", feature = "pg18")))]
@@ -979,6 +984,33 @@ pub(super) struct IvfDensePostingBlockTuple {
     pub(super) payloads: Vec<u8>,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub(super) struct IvfDensePostingPackedSegmentTuple {
+    pub(super) list_id: u32,
+    pub(super) logical_block_id: u32,
+    pub(super) segment_index: u16,
+    pub(super) segment_count: u16,
+    pub(super) total_posting_count: u16,
+    pub(super) gammas: Vec<f32>,
+    pub(super) heap_tid_counts: Vec<u16>,
+    pub(super) heap_tid_offsets: Vec<u32>,
+    pub(super) rerank_tids: Vec<ItemPointer>,
+    pub(super) heap_tids: Vec<ItemPointer>,
+    pub(super) deleted_bitmap: Vec<u8>,
+    pub(super) payload_len: usize,
+    pub(super) payloads: Vec<u8>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(super) struct IvfDensePostingPackedContinuationTuple {
+    pub(super) list_id: u32,
+    pub(super) logical_block_id: u32,
+    pub(super) segment_index: u16,
+    pub(super) segment_count: u16,
+    pub(super) payload_offset: u32,
+    pub(super) payloads: Vec<u8>,
+}
+
 #[derive(Debug, Clone, Copy)]
 pub(super) struct IvfDensePostingBlockRef<'a> {
     pub(super) list_id: u32,
@@ -995,9 +1027,60 @@ pub(super) struct IvfDensePostingBlockRef<'a> {
 }
 
 #[derive(Debug, Clone, Copy)]
+pub(super) struct IvfDensePostingPackedSegmentRef<'a> {
+    pub(super) list_id: u32,
+    pub(super) logical_block_id: u32,
+    pub(super) segment_index: u16,
+    pub(super) segment_count: u16,
+    pub(super) total_posting_count: u16,
+    count: usize,
+    total_heap_tids: usize,
+    payload_len: usize,
+    deleted_bitmap: &'a [u8],
+    gamma_bytes: &'a [u8],
+    heap_tid_count_bytes: &'a [u8],
+    heap_tid_offset_bytes: &'a [u8],
+    rerank_tid_bytes: &'a [u8],
+    heap_tid_bytes: &'a [u8],
+    pub(super) payloads: &'a [u8],
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(super) struct IvfDensePostingPackedContinuationRef<'a> {
+    pub(super) list_id: u32,
+    pub(super) logical_block_id: u32,
+    pub(super) segment_index: u16,
+    pub(super) segment_count: u16,
+    pub(super) payload_offset: u32,
+    pub(super) payloads: &'a [u8],
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(super) enum IvfDensePostingRef<'a> {
+    Block(IvfDensePostingBlockRef<'a>),
+    PackedSegment(IvfDensePostingPackedSegmentRef<'a>),
+}
+
+pub(super) struct IvfDensePostingHeapTids<'a> {
+    chunks: std::slice::ChunksExact<'a, u8>,
+}
+
+impl Iterator for IvfDensePostingHeapTids<'_> {
+    type Item = ItemPointer;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.chunks
+            .next()
+            .map(|chunk| ItemPointer::decode(chunk).expect("validated dense posting tid bytes"))
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
 pub(super) enum IvfPostingEntryRef<'a> {
     Row(IvfPostingTupleRef<'a>),
     DenseBlock(IvfDensePostingBlockRef<'a>),
+    DensePackedSegment(IvfDensePostingPackedSegmentRef<'a>),
+    DensePackedContinuation(IvfDensePostingPackedContinuationRef<'a>),
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -1172,6 +1255,364 @@ impl<'a> IvfDensePostingBlockRef<'a> {
             )?;
         }
         Ok(())
+    }
+}
+
+impl<'a> IvfDensePostingPackedSegmentRef<'a> {
+    pub(super) fn decode(input: &'a [u8], payload_len: usize) -> Result<Self, String> {
+        if input.len() < DENSE_POSTING_PACKED_SEGMENT_HEADER_BYTES {
+            return Err(format!(
+                "ec_ivf dense posting packed segment length mismatch: got {}, expected at least {DENSE_POSTING_PACKED_SEGMENT_HEADER_BYTES}",
+                input.len()
+            ));
+        }
+        if input[0] != IVF_DENSE_POSTING_PACKED_SEGMENT_TAG {
+            return Err(format!(
+                "invalid ec_ivf dense posting packed segment tag: {}",
+                input[0]
+            ));
+        }
+        let count = u16::from_le_bytes(
+            input[15..17]
+                .try_into()
+                .expect("packed dense segment count slice should be 2 bytes"),
+        ) as usize;
+        let stored_payload_len = u16::from_le_bytes(
+            input[17..19]
+                .try_into()
+                .expect("packed dense segment payload length slice should be 2 bytes"),
+        ) as usize;
+        if stored_payload_len != payload_len {
+            return Err(format!(
+                "ec_ivf dense posting packed segment payload length mismatch: got {stored_payload_len}, expected {payload_len}"
+            ));
+        }
+        let total_heap_tids = u32::from_le_bytes(
+            input[19..23]
+                .try_into()
+                .expect("packed dense segment heap tid count slice should be 4 bytes"),
+        ) as usize;
+        let header_payload_len = u32::from_le_bytes(
+            input[23..27]
+                .try_into()
+                .expect("packed dense segment payload byte count slice should be 4 bytes"),
+        ) as usize;
+        let deleted_bitmap_len = dense_deleted_bitmap_len(count);
+        let deleted_bitmap_start = DENSE_POSTING_PACKED_SEGMENT_HEADER_BYTES;
+        let gamma_start = deleted_bitmap_start + deleted_bitmap_len;
+        let gamma_end = gamma_start + count * size_of::<f32>();
+        let heap_tid_count_end = gamma_end + count * size_of::<u16>();
+        let heap_tid_offset_end = heap_tid_count_end + count * size_of::<u32>();
+        let rerank_tid_end = heap_tid_offset_end + count * ITEM_POINTER_BYTES;
+        let heap_tid_end = rerank_tid_end + total_heap_tids * ITEM_POINTER_BYTES;
+        let total_payload_len = count.checked_mul(payload_len).ok_or_else(|| {
+            "ec_ivf dense posting packed segment payload length overflow".to_owned()
+        })?;
+        if header_payload_len > total_payload_len {
+            return Err(
+                "ec_ivf dense posting packed segment payload bytes exceed logical payload length"
+                    .to_owned(),
+            );
+        }
+        let payload_end = heap_tid_end + header_payload_len;
+        if input.len() != payload_end {
+            return Err(format!(
+                "ec_ivf dense posting packed segment length mismatch: got {}, expected {payload_end}",
+                input.len()
+            ));
+        }
+        Ok(Self {
+            list_id: u32::from_le_bytes(
+                input[1..5]
+                    .try_into()
+                    .expect("packed dense segment list id slice should be 4 bytes"),
+            ),
+            logical_block_id: u32::from_le_bytes(
+                input[5..9]
+                    .try_into()
+                    .expect("packed dense segment logical block id slice should be 4 bytes"),
+            ),
+            segment_index: u16::from_le_bytes(
+                input[9..11]
+                    .try_into()
+                    .expect("packed dense segment index slice should be 2 bytes"),
+            ),
+            segment_count: u16::from_le_bytes(
+                input[11..13]
+                    .try_into()
+                    .expect("packed dense segment count slice should be 2 bytes"),
+            ),
+            total_posting_count: u16::from_le_bytes(
+                input[13..15]
+                    .try_into()
+                    .expect("packed dense segment total posting count slice should be 2 bytes"),
+            ),
+            count,
+            total_heap_tids,
+            payload_len,
+            deleted_bitmap: &input[deleted_bitmap_start..gamma_start],
+            gamma_bytes: &input[gamma_start..gamma_end],
+            heap_tid_count_bytes: &input[gamma_end..heap_tid_count_end],
+            heap_tid_offset_bytes: &input[heap_tid_count_end..heap_tid_offset_end],
+            rerank_tid_bytes: &input[heap_tid_offset_end..rerank_tid_end],
+            heap_tid_bytes: &input[rerank_tid_end..heap_tid_end],
+            payloads: &input[heap_tid_end..payload_end],
+        })
+    }
+
+    pub(super) fn len(&self) -> usize {
+        self.count
+    }
+
+    pub(super) fn total_heap_tids(&self) -> usize {
+        self.total_heap_tids
+    }
+
+    pub(super) fn payload_len(&self) -> usize {
+        self.payload_len
+    }
+
+    pub(super) fn is_deleted(&self, index: usize) -> bool {
+        dense_deleted_bitmap_get(self.deleted_bitmap, index)
+    }
+
+    pub(super) fn gammas(&self) -> Vec<f32> {
+        self.gamma_bytes
+            .chunks_exact(size_of::<f32>())
+            .map(|chunk| f32::from_le_bytes(chunk.try_into().expect("validated gamma chunk")))
+            .collect()
+    }
+
+    pub(super) fn copy_gammas_to(&self, out: &mut Vec<f32>) {
+        out.clear();
+        out.reserve(self.count);
+        out.extend(
+            self.gamma_bytes
+                .chunks_exact(size_of::<f32>())
+                .map(|chunk| f32::from_le_bytes(chunk.try_into().expect("validated gamma chunk"))),
+        );
+    }
+
+    pub(super) fn gamma(&self, index: usize) -> f32 {
+        let start = index * size_of::<f32>();
+        f32::from_le_bytes(
+            self.gamma_bytes[start..start + size_of::<f32>()]
+                .try_into()
+                .expect("validated gamma chunk"),
+        )
+    }
+
+    pub(super) fn heap_tid_count(&self, index: usize) -> usize {
+        let start = index * size_of::<u16>();
+        u16::from_le_bytes(
+            self.heap_tid_count_bytes[start..start + size_of::<u16>()]
+                .try_into()
+                .expect("validated heap tid count chunk"),
+        ) as usize
+    }
+
+    pub(super) fn heap_tid_offset(&self, index: usize) -> usize {
+        let start = index * size_of::<u32>();
+        u32::from_le_bytes(
+            self.heap_tid_offset_bytes[start..start + size_of::<u32>()]
+                .try_into()
+                .expect("validated heap tid offset chunk"),
+        ) as usize
+    }
+
+    pub(super) fn heap_tids(&self, index: usize) -> impl Iterator<Item = ItemPointer> + '_ {
+        let start = self.heap_tid_offset(index);
+        let count = self.heap_tid_count(index);
+        self.heap_tid_bytes[start * ITEM_POINTER_BYTES..(start + count) * ITEM_POINTER_BYTES]
+            .chunks_exact(ITEM_POINTER_BYTES)
+            .map(|chunk| ItemPointer::decode(chunk).expect("validated dense segment tid bytes"))
+    }
+
+    pub(super) fn payload(&self, index: usize) -> &[u8] {
+        let start = index * self.payload_len;
+        &self.payloads[start..start + self.payload_len]
+    }
+
+    pub(super) fn validate_offsets(&self) -> Result<(), String> {
+        if self.segment_count == 0 {
+            return Err("ec_ivf dense posting packed segment count is zero".to_owned());
+        }
+        if self.segment_index >= self.segment_count {
+            return Err("ec_ivf dense posting packed segment index is out of bounds".to_owned());
+        }
+        if usize::from(self.total_posting_count) < self.count {
+            return Err(
+                "ec_ivf dense posting packed segment total count is smaller than segment count"
+                    .to_owned(),
+            );
+        }
+        for index in 0..self.count {
+            let start = self.heap_tid_offset(index);
+            let count = self.heap_tid_count(index);
+            if start
+                .checked_add(count)
+                .is_none_or(|end| end > self.total_heap_tids)
+            {
+                return Err(
+                    "ec_ivf dense posting packed segment heap tid range is out of bounds"
+                        .to_owned(),
+                );
+            }
+            let rerank_start = index * ITEM_POINTER_BYTES;
+            ItemPointer::decode(
+                &self.rerank_tid_bytes[rerank_start..rerank_start + ITEM_POINTER_BYTES],
+            )?;
+        }
+        Ok(())
+    }
+}
+
+impl<'a> IvfDensePostingPackedContinuationRef<'a> {
+    pub(super) fn decode(input: &'a [u8]) -> Result<Self, String> {
+        if input.len() < DENSE_POSTING_PACKED_CONTINUATION_HEADER_BYTES {
+            return Err(format!(
+                "ec_ivf dense posting packed continuation length mismatch: got {}, expected at least {DENSE_POSTING_PACKED_CONTINUATION_HEADER_BYTES}",
+                input.len()
+            ));
+        }
+        if input[0] != IVF_DENSE_POSTING_PACKED_CONTINUATION_TAG {
+            return Err(format!(
+                "invalid ec_ivf dense posting packed continuation tag: {}",
+                input[0]
+            ));
+        }
+        let payload_len = u32::from_le_bytes(
+            input[17..21]
+                .try_into()
+                .expect("packed dense continuation payload length slice should be 4 bytes"),
+        ) as usize;
+        let payload_start = DENSE_POSTING_PACKED_CONTINUATION_HEADER_BYTES;
+        let payload_end = payload_start + payload_len;
+        if input.len() != payload_end {
+            return Err(format!(
+                "ec_ivf dense posting packed continuation length mismatch: got {}, expected {payload_end}",
+                input.len()
+            ));
+        }
+        Ok(Self {
+            list_id: u32::from_le_bytes(
+                input[1..5]
+                    .try_into()
+                    .expect("packed dense continuation list id slice should be 4 bytes"),
+            ),
+            logical_block_id: u32::from_le_bytes(
+                input[5..9]
+                    .try_into()
+                    .expect("packed dense continuation logical block id slice should be 4 bytes"),
+            ),
+            segment_index: u16::from_le_bytes(
+                input[9..11]
+                    .try_into()
+                    .expect("packed dense continuation index slice should be 2 bytes"),
+            ),
+            segment_count: u16::from_le_bytes(
+                input[11..13]
+                    .try_into()
+                    .expect("packed dense continuation count slice should be 2 bytes"),
+            ),
+            payload_offset: u32::from_le_bytes(
+                input[13..17]
+                    .try_into()
+                    .expect("packed dense continuation payload offset slice should be 4 bytes"),
+            ),
+            payloads: &input[payload_start..payload_end],
+        })
+    }
+}
+
+impl<'a> IvfDensePostingRef<'a> {
+    pub(super) fn list_id(self) -> u32 {
+        match self {
+            Self::Block(block) => block.list_id,
+            Self::PackedSegment(segment) => segment.list_id,
+        }
+    }
+
+    pub(super) fn len(self) -> usize {
+        match self {
+            Self::Block(block) => block.len(),
+            Self::PackedSegment(segment) => segment.len(),
+        }
+    }
+
+    pub(super) fn payload_len(self) -> usize {
+        match self {
+            Self::Block(block) => block.payload_len(),
+            Self::PackedSegment(segment) => segment.payload_len(),
+        }
+    }
+
+    pub(super) fn payloads(self) -> &'a [u8] {
+        match self {
+            Self::Block(block) => block.payloads,
+            Self::PackedSegment(segment) => segment.payloads,
+        }
+    }
+
+    pub(super) fn is_deleted(self, index: usize) -> bool {
+        match self {
+            Self::Block(block) => block.is_deleted(index),
+            Self::PackedSegment(segment) => segment.is_deleted(index),
+        }
+    }
+
+    pub(super) fn copy_gammas_to(self, out: &mut Vec<f32>) {
+        match self {
+            Self::Block(block) => block.copy_gammas_to(out),
+            Self::PackedSegment(segment) => segment.copy_gammas_to(out),
+        }
+    }
+
+    pub(super) fn gamma(self, index: usize) -> f32 {
+        match self {
+            Self::Block(block) => block.gamma(index),
+            Self::PackedSegment(segment) => segment.gamma(index),
+        }
+    }
+
+    pub(super) fn heap_tid_count(self, index: usize) -> usize {
+        match self {
+            Self::Block(block) => block.heap_tid_count(index),
+            Self::PackedSegment(segment) => segment.heap_tid_count(index),
+        }
+    }
+
+    pub(super) fn heap_tids(self, index: usize) -> IvfDensePostingHeapTids<'a> {
+        let bytes = match self {
+            Self::Block(block) => {
+                let start = block.heap_tid_offset(index);
+                let count = block.heap_tid_count(index);
+                &block.heap_tid_bytes
+                    [start * ITEM_POINTER_BYTES..(start + count) * ITEM_POINTER_BYTES]
+            }
+            Self::PackedSegment(segment) => {
+                let start = segment.heap_tid_offset(index);
+                let count = segment.heap_tid_count(index);
+                &segment.heap_tid_bytes
+                    [start * ITEM_POINTER_BYTES..(start + count) * ITEM_POINTER_BYTES]
+            }
+        };
+        IvfDensePostingHeapTids {
+            chunks: bytes.chunks_exact(ITEM_POINTER_BYTES),
+        }
+    }
+
+    pub(super) fn payload(self, index: usize) -> &'a [u8] {
+        match self {
+            Self::Block(block) => {
+                let start = index * block.payload_len;
+                &block.payloads[start..start + block.payload_len]
+            }
+            Self::PackedSegment(segment) => {
+                let start = index * segment.payload_len;
+                &segment.payloads[start..start + segment.payload_len]
+            }
+        }
     }
 }
 
@@ -1426,6 +1867,242 @@ impl<'a> IvfPostingTupleRef<'a> {
     }
 }
 
+impl IvfDensePostingPackedSegmentTuple {
+    pub(super) fn from_single_heaptid_postings(
+        list_id: u32,
+        logical_block_id: u32,
+        segment_index: u16,
+        segment_count: u16,
+        total_posting_count: u16,
+        postings: &[(ItemPointer, f32, ItemPointer, Vec<u8>)],
+        payload_len: usize,
+    ) -> Result<Self, String> {
+        let count = postings.len();
+        if count == 0 {
+            return Err(
+                "ec_ivf dense posting packed segment requires at least one posting".to_owned(),
+            );
+        }
+        if segment_count == 0 || segment_index >= segment_count {
+            return Err("ec_ivf dense posting packed segment ordinal is invalid".to_owned());
+        }
+        if count > u16::MAX as usize {
+            return Err("ec_ivf dense posting packed segment count exceeds u16".to_owned());
+        }
+        if payload_len > u16::MAX as usize {
+            return Err(
+                "ec_ivf dense posting packed segment payload length exceeds u16".to_owned(),
+            );
+        }
+        let mut gammas = Vec::with_capacity(count);
+        let mut heap_tid_counts = Vec::with_capacity(count);
+        let mut heap_tid_offsets = Vec::with_capacity(count);
+        let mut rerank_tids = Vec::with_capacity(count);
+        let mut heap_tids = Vec::with_capacity(count);
+        let mut payloads = Vec::with_capacity(count * payload_len);
+        for (heap_tid, gamma, rerank_tid, payload) in postings {
+            if !gamma.is_finite() {
+                return Err("ec_ivf dense posting packed segment gamma must be finite".to_owned());
+            }
+            if payload.len() != payload_len {
+                return Err(format!(
+                    "ec_ivf dense posting packed segment payload length mismatch: got {}, expected {payload_len}",
+                    payload.len()
+                ));
+            }
+            heap_tid_offsets.push(u32::try_from(heap_tids.len()).map_err(|_| {
+                "ec_ivf dense posting packed segment heap tid offset exceeds u32".to_owned()
+            })?);
+            heap_tid_counts.push(1);
+            heap_tids.push(*heap_tid);
+            gammas.push(*gamma);
+            rerank_tids.push(*rerank_tid);
+            payloads.extend_from_slice(payload);
+        }
+        Ok(Self {
+            list_id,
+            logical_block_id,
+            segment_index,
+            segment_count,
+            total_posting_count,
+            gammas,
+            heap_tid_counts,
+            heap_tid_offsets,
+            rerank_tids,
+            heap_tids,
+            deleted_bitmap: vec![0; dense_deleted_bitmap_len(count)],
+            payload_len,
+            payloads,
+        })
+    }
+
+    pub(super) fn encode(&self) -> Result<Vec<u8>, String> {
+        if self.gammas.len() != self.heap_tid_counts.len()
+            || self.gammas.len() != self.heap_tid_offsets.len()
+            || self.gammas.len() != self.rerank_tids.len()
+            || self.payloads.len() > self.gammas.len() * self.payload_len
+            || self.deleted_bitmap.len() != dense_deleted_bitmap_len(self.gammas.len())
+        {
+            return Err("ec_ivf dense posting packed segment array length mismatch".to_owned());
+        }
+        if self.segment_count == 0 || self.segment_index >= self.segment_count {
+            return Err("ec_ivf dense posting packed segment ordinal is invalid".to_owned());
+        }
+        if self.gammas.len() > u16::MAX as usize {
+            return Err("ec_ivf dense posting packed segment count exceeds u16".to_owned());
+        }
+        if self.heap_tids.len() > u32::MAX as usize {
+            return Err(
+                "ec_ivf dense posting packed segment heap tid count exceeds u32".to_owned(),
+            );
+        }
+        if self.payload_len > u16::MAX as usize {
+            return Err(
+                "ec_ivf dense posting packed segment payload length exceeds u16".to_owned(),
+            );
+        }
+        if self.gammas.iter().any(|gamma| !gamma.is_finite()) {
+            return Err("ec_ivf dense posting packed segment gamma must be finite".to_owned());
+        }
+
+        let mut out = Vec::with_capacity(Self::encoded_len(
+            self.gammas.len(),
+            self.heap_tids.len(),
+            self.payload_len,
+        ));
+        out.push(IVF_DENSE_POSTING_PACKED_SEGMENT_TAG);
+        out.extend_from_slice(&self.list_id.to_le_bytes());
+        out.extend_from_slice(&self.logical_block_id.to_le_bytes());
+        out.extend_from_slice(&self.segment_index.to_le_bytes());
+        out.extend_from_slice(&self.segment_count.to_le_bytes());
+        out.extend_from_slice(&self.total_posting_count.to_le_bytes());
+        out.extend_from_slice(&(self.gammas.len() as u16).to_le_bytes());
+        out.extend_from_slice(&(self.payload_len as u16).to_le_bytes());
+        out.extend_from_slice(&(self.heap_tids.len() as u32).to_le_bytes());
+        out.extend_from_slice(&(self.payloads.len() as u32).to_le_bytes());
+        out.push(0);
+        out.extend_from_slice(&self.deleted_bitmap);
+        for gamma in &self.gammas {
+            out.extend_from_slice(&gamma.to_le_bytes());
+        }
+        for count in &self.heap_tid_counts {
+            out.extend_from_slice(&count.to_le_bytes());
+        }
+        for offset in &self.heap_tid_offsets {
+            out.extend_from_slice(&offset.to_le_bytes());
+        }
+        for tid in &self.rerank_tids {
+            tid.encode_into(&mut out);
+        }
+        for tid in &self.heap_tids {
+            tid.encode_into(&mut out);
+        }
+        out.extend_from_slice(&self.payloads);
+        Ok(out)
+    }
+
+    pub(super) fn decode(input: &[u8], payload_len: usize) -> Result<Self, String> {
+        let segment = IvfDensePostingPackedSegmentRef::decode(input, payload_len)?;
+        segment.validate_offsets()?;
+        let mut heap_tid_counts = Vec::with_capacity(segment.len());
+        let mut heap_tid_offsets = Vec::with_capacity(segment.len());
+        let mut rerank_tids = Vec::with_capacity(segment.len());
+        for index in 0..segment.len() {
+            heap_tid_counts.push(segment.heap_tid_count(index) as u16);
+            heap_tid_offsets.push(segment.heap_tid_offset(index) as u32);
+            let start = index * ITEM_POINTER_BYTES;
+            rerank_tids.push(ItemPointer::decode(
+                &segment.rerank_tid_bytes[start..start + ITEM_POINTER_BYTES],
+            )?);
+        }
+        Ok(Self {
+            list_id: segment.list_id,
+            logical_block_id: segment.logical_block_id,
+            segment_index: segment.segment_index,
+            segment_count: segment.segment_count,
+            total_posting_count: segment.total_posting_count,
+            gammas: segment.gammas(),
+            heap_tid_counts,
+            heap_tid_offsets,
+            rerank_tids,
+            heap_tids: segment
+                .heap_tid_bytes
+                .chunks_exact(ITEM_POINTER_BYTES)
+                .map(ItemPointer::decode)
+                .collect::<Result<Vec<_>, _>>()?,
+            deleted_bitmap: segment.deleted_bitmap.to_vec(),
+            payload_len: segment.payload_len,
+            payloads: segment.payloads.to_vec(),
+        })
+    }
+
+    pub(super) const fn encoded_len(
+        count: usize,
+        total_heap_tids: usize,
+        payload_len: usize,
+    ) -> usize {
+        Self::encoded_len_with_payload_bytes(count, total_heap_tids, count * payload_len)
+    }
+
+    pub(super) const fn encoded_len_with_payload_bytes(
+        count: usize,
+        total_heap_tids: usize,
+        payload_bytes: usize,
+    ) -> usize {
+        DENSE_POSTING_PACKED_SEGMENT_HEADER_BYTES
+            + dense_deleted_bitmap_len(count)
+            + count * size_of::<f32>()
+            + count * size_of::<u16>()
+            + count * size_of::<u32>()
+            + count * ITEM_POINTER_BYTES
+            + total_heap_tids * ITEM_POINTER_BYTES
+            + payload_bytes
+    }
+}
+
+impl IvfDensePostingPackedContinuationTuple {
+    pub(super) fn encode(&self) -> Result<Vec<u8>, String> {
+        if self.segment_count == 0
+            || self.segment_index == 0
+            || self.segment_index >= self.segment_count
+        {
+            return Err("ec_ivf dense posting packed continuation ordinal is invalid".to_owned());
+        }
+        if self.payloads.len() > u32::MAX as usize {
+            return Err(
+                "ec_ivf dense posting packed continuation payload length exceeds u32".to_owned(),
+            );
+        }
+        let mut out = Vec::with_capacity(Self::encoded_len(self.payloads.len()));
+        out.push(IVF_DENSE_POSTING_PACKED_CONTINUATION_TAG);
+        out.extend_from_slice(&self.list_id.to_le_bytes());
+        out.extend_from_slice(&self.logical_block_id.to_le_bytes());
+        out.extend_from_slice(&self.segment_index.to_le_bytes());
+        out.extend_from_slice(&self.segment_count.to_le_bytes());
+        out.extend_from_slice(&self.payload_offset.to_le_bytes());
+        out.extend_from_slice(&(self.payloads.len() as u32).to_le_bytes());
+        out.extend_from_slice(&[0, 0, 0]);
+        out.extend_from_slice(&self.payloads);
+        Ok(out)
+    }
+
+    pub(super) fn decode(input: &[u8]) -> Result<Self, String> {
+        let continuation = IvfDensePostingPackedContinuationRef::decode(input)?;
+        Ok(Self {
+            list_id: continuation.list_id,
+            logical_block_id: continuation.logical_block_id,
+            segment_index: continuation.segment_index,
+            segment_count: continuation.segment_count,
+            payload_offset: continuation.payload_offset,
+            payloads: continuation.payloads.to_vec(),
+        })
+    }
+
+    pub(super) const fn encoded_len(payload_bytes: usize) -> usize {
+        DENSE_POSTING_PACKED_CONTINUATION_HEADER_BYTES + payload_bytes
+    }
+}
+
 impl IvfPostingTuple {
     pub(super) fn encode(&self) -> Result<Vec<u8>, String> {
         if self.heaptids.len() > HEAPTID_INLINE_CAPACITY {
@@ -1611,6 +2288,43 @@ pub(super) fn dense_posting_block_tuple_fits(
     )) <= usable_page_bytes(page_size)
 }
 
+pub(super) fn dense_posting_packed_segment_tuple_fits(
+    count: usize,
+    total_heap_tids: usize,
+    payload_len: usize,
+    page_size: usize,
+) -> bool {
+    aligned_tuple_bytes(IvfDensePostingPackedSegmentTuple::encoded_len(
+        count,
+        total_heap_tids,
+        payload_len,
+    )) <= usable_page_bytes(page_size)
+}
+
+pub(super) fn dense_posting_packed_segment_header_tuple_fits(
+    count: usize,
+    total_heap_tids: usize,
+    payload_bytes: usize,
+    page_size: usize,
+) -> bool {
+    aligned_tuple_bytes(
+        IvfDensePostingPackedSegmentTuple::encoded_len_with_payload_bytes(
+            count,
+            total_heap_tids,
+            payload_bytes,
+        ),
+    ) <= usable_page_bytes(page_size)
+}
+
+pub(super) fn dense_posting_packed_continuation_tuple_fits(
+    payload_bytes: usize,
+    page_size: usize,
+) -> bool {
+    aligned_tuple_bytes(IvfDensePostingPackedContinuationTuple::encoded_len(
+        payload_bytes,
+    )) <= usable_page_bytes(page_size)
+}
+
 pub(super) fn pq_codebook_tuple_fits(centroid_count: usize, page_size: usize) -> bool {
     aligned_tuple_bytes(IvfPqCodebookTuple::encoded_len(centroid_count))
         <= usable_page_bytes(page_size)
@@ -1660,6 +2374,20 @@ impl DataPage {
         self.insert_raw_tuple(tuple.encode()?)
     }
 
+    pub(super) fn insert_ivf_dense_posting_packed_segment(
+        &mut self,
+        tuple: &IvfDensePostingPackedSegmentTuple,
+    ) -> Result<ItemPointer, String> {
+        self.insert_raw_tuple(tuple.encode()?)
+    }
+
+    pub(super) fn insert_ivf_dense_posting_packed_continuation(
+        &mut self,
+        tuple: &IvfDensePostingPackedContinuationTuple,
+    ) -> Result<ItemPointer, String> {
+        self.insert_raw_tuple(tuple.encode()?)
+    }
+
     pub(super) fn insert_ivf_single_heaptid_posting(
         &mut self,
         list_id: u32,
@@ -1702,6 +2430,21 @@ impl DataPage {
         payload_len: usize,
     ) -> Result<IvfDensePostingBlockTuple, String> {
         IvfDensePostingBlockTuple::decode(self.raw_tuple(tid)?, payload_len)
+    }
+
+    pub(super) fn read_ivf_dense_posting_packed_segment(
+        &self,
+        tid: ItemPointer,
+        payload_len: usize,
+    ) -> Result<IvfDensePostingPackedSegmentTuple, String> {
+        IvfDensePostingPackedSegmentTuple::decode(self.raw_tuple(tid)?, payload_len)
+    }
+
+    pub(super) fn read_ivf_dense_posting_packed_continuation(
+        &self,
+        tid: ItemPointer,
+    ) -> Result<IvfDensePostingPackedContinuationTuple, String> {
+        IvfDensePostingPackedContinuationTuple::decode(self.raw_tuple(tid)?)
     }
 }
 
@@ -1751,6 +2494,20 @@ impl DataPageChain {
     pub(super) fn insert_ivf_dense_posting_block(
         &mut self,
         tuple: &IvfDensePostingBlockTuple,
+    ) -> Result<ItemPointer, String> {
+        self.insert_raw_tuple(tuple.encode()?)
+    }
+
+    pub(super) fn insert_ivf_dense_posting_packed_segment(
+        &mut self,
+        tuple: &IvfDensePostingPackedSegmentTuple,
+    ) -> Result<ItemPointer, String> {
+        self.insert_raw_tuple(tuple.encode()?)
+    }
+
+    pub(super) fn insert_ivf_dense_posting_packed_continuation(
+        &mut self,
+        tuple: &IvfDensePostingPackedContinuationTuple,
     ) -> Result<ItemPointer, String> {
         self.insert_raw_tuple(tuple.encode()?)
     }
@@ -1805,6 +2562,33 @@ impl DataPageChain {
             .get_page(tid.block_number)
             .ok_or_else(|| format!("ec_ivf dense posting block {} not found", tid.block_number))?;
         page.read_ivf_dense_posting_block(tid, payload_len)
+    }
+
+    pub(super) fn read_ivf_dense_posting_packed_segment(
+        &self,
+        tid: ItemPointer,
+        payload_len: usize,
+    ) -> Result<IvfDensePostingPackedSegmentTuple, String> {
+        let page = self.get_page(tid.block_number).ok_or_else(|| {
+            format!(
+                "ec_ivf dense posting packed segment block {} not found",
+                tid.block_number
+            )
+        })?;
+        page.read_ivf_dense_posting_packed_segment(tid, payload_len)
+    }
+
+    pub(super) fn read_ivf_dense_posting_packed_continuation(
+        &self,
+        tid: ItemPointer,
+    ) -> Result<IvfDensePostingPackedContinuationTuple, String> {
+        let page = self.get_page(tid.block_number).ok_or_else(|| {
+            format!(
+                "ec_ivf dense posting packed continuation block {} not found",
+                tid.block_number
+            )
+        })?;
+        page.read_ivf_dense_posting_packed_continuation(tid)
     }
 }
 
@@ -2328,6 +3112,19 @@ where
                     let block = IvfDensePostingBlockRef::decode(tuple_bytes, payload_len)?;
                     block.validate_offsets()?;
                     visitor(tid, IvfPostingEntryRef::DenseBlock(block))
+                }
+                IVF_DENSE_POSTING_PACKED_SEGMENT_TAG => {
+                    let segment =
+                        IvfDensePostingPackedSegmentRef::decode(tuple_bytes, payload_len)?;
+                    segment.validate_offsets()?;
+                    visitor(tid, IvfPostingEntryRef::DensePackedSegment(segment))
+                }
+                IVF_DENSE_POSTING_PACKED_CONTINUATION_TAG => {
+                    let continuation = IvfDensePostingPackedContinuationRef::decode(tuple_bytes)?;
+                    visitor(
+                        tid,
+                        IvfPostingEntryRef::DensePackedContinuation(continuation),
+                    )
                 }
                 _ => Ok(()),
             }
@@ -3202,6 +3999,7 @@ mod tests {
             posting_slack_percent: 0,
             quant_bits: 4,
             dense_posting_blocks: false,
+            dense_posting_pack_pages: 1,
             storage_format: StorageFormat::RaBitQ,
             rerank: RerankMode::HeapF32,
         });
@@ -3231,6 +4029,7 @@ mod tests {
             posting_slack_percent: 0,
             quant_bits: 4,
             dense_posting_blocks: false,
+            dense_posting_pack_pages: 1,
             storage_format: StorageFormat::Auto,
             rerank: RerankMode::Auto,
         });
@@ -3352,6 +4151,71 @@ mod tests {
             borrowed.heap_tids(2).collect::<Vec<_>>(),
             vec![postings[2].0]
         );
+    }
+
+    #[test]
+    fn dense_posting_packed_segment_roundtrip_preserves_logical_block_metadata() {
+        let postings = vec![
+            (tid(21, 1), 0.125, ItemPointer::INVALID, vec![1, 3]),
+            (tid(22, 2), 0.25, ItemPointer::INVALID, vec![5, 7]),
+        ];
+        let tuple = IvfDensePostingPackedSegmentTuple::from_single_heaptid_postings(
+            9, 17, 1, 3, 7, &postings, 2,
+        )
+        .unwrap();
+
+        let encoded = tuple.encode().unwrap();
+        let decoded = IvfDensePostingPackedSegmentTuple::decode(&encoded, 2).unwrap();
+        let borrowed = IvfDensePostingPackedSegmentRef::decode(&encoded, 2).unwrap();
+
+        assert_eq!(decoded, tuple);
+        assert!(dense_posting_packed_segment_tuple_fits(
+            tuple.gammas.len(),
+            tuple.heap_tids.len(),
+            tuple.payload_len,
+            DEFAULT_PAGE_SIZE
+        ));
+        assert_eq!(borrowed.list_id, 9);
+        assert_eq!(borrowed.logical_block_id, 17);
+        assert_eq!(borrowed.segment_index, 1);
+        assert_eq!(borrowed.segment_count, 3);
+        assert_eq!(borrowed.total_posting_count, 7);
+        assert_eq!(borrowed.len(), 2);
+        assert_eq!(borrowed.total_heap_tids(), 2);
+        assert_eq!(borrowed.gammas(), vec![0.125, 0.25]);
+        assert_eq!(borrowed.payload(1), &[5, 7]);
+        assert_eq!(
+            borrowed.heap_tids(0).collect::<Vec<_>>(),
+            vec![postings[0].0]
+        );
+    }
+
+    #[test]
+    fn dense_posting_packed_continuation_roundtrip_preserves_payload_slice() {
+        let tuple = IvfDensePostingPackedContinuationTuple {
+            list_id: 9,
+            logical_block_id: 17,
+            segment_index: 2,
+            segment_count: 4,
+            payload_offset: 8192,
+            payloads: vec![11, 13, 17, 19],
+        };
+
+        let encoded = tuple.encode().unwrap();
+        let decoded = IvfDensePostingPackedContinuationTuple::decode(&encoded).unwrap();
+        let borrowed = IvfDensePostingPackedContinuationRef::decode(&encoded).unwrap();
+
+        assert_eq!(decoded, tuple);
+        assert!(dense_posting_packed_continuation_tuple_fits(
+            tuple.payloads.len(),
+            DEFAULT_PAGE_SIZE
+        ));
+        assert_eq!(borrowed.list_id, 9);
+        assert_eq!(borrowed.logical_block_id, 17);
+        assert_eq!(borrowed.segment_index, 2);
+        assert_eq!(borrowed.segment_count, 4);
+        assert_eq!(borrowed.payload_offset, 8192);
+        assert_eq!(borrowed.payloads, &[11, 13, 17, 19]);
     }
 
     #[test]
@@ -3641,6 +4505,7 @@ mod tests {
             posting_slack_percent: 0,
             quant_bits: 4,
             dense_posting_blocks: false,
+            dense_posting_pack_pages: 1,
             storage_format: StorageFormat::Auto,
             rerank: RerankMode::Auto,
         });

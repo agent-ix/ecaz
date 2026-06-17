@@ -51,6 +51,7 @@ struct EcIvfReloptions {
     posting_slack_percent: i32,
     quant_bits: i32,
     dense_posting_blocks: i32,
+    dense_posting_pack_pages: i32,
     storage_format_offset: i32,
     quantizer_offset: i32,
     rerank_offset: i32,
@@ -154,6 +155,7 @@ pub(super) struct EcIvfOptions {
     pub(super) posting_slack_percent: i32,
     pub(super) quant_bits: i32,
     pub(super) dense_posting_blocks: bool,
+    pub(super) dense_posting_pack_pages: i32,
     pub(super) storage_format: StorageFormat,
     pub(super) rerank: RerankMode,
 }
@@ -169,6 +171,7 @@ impl EcIvfOptions {
         posting_slack_percent: EC_IVF_DEFAULT_POSTING_SLACK_PERCENT,
         quant_bits: EC_IVF_DEFAULT_QUANT_BITS,
         dense_posting_blocks: false,
+        dense_posting_pack_pages: 1,
         storage_format: StorageFormat::Auto,
         rerank: RerankMode::Auto,
     };
@@ -476,6 +479,16 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_amoptions(
             1,
             offset_of!(EcIvfReloptions, dense_posting_blocks) as i32,
         );
+        pg_sys::add_local_int_reloption(
+            &mut relopts,
+            c"dense_posting_pack_pages".as_ptr(),
+            c"Experimental Task 111 dense posting logical block page budget; 1 keeps the original one-page dense tuple, values above 1 write page-spanning packed segments."
+                .as_ptr(),
+            1,
+            1,
+            16,
+            offset_of!(EcIvfReloptions, dense_posting_pack_pages) as i32,
+        );
         pg_sys::add_local_string_reloption(
                 &mut relopts,
                 c"storage_format".as_ptr(),
@@ -584,6 +597,7 @@ fn build_options_from_reloptions(
         posting_slack_percent: reloptions.posting_slack_percent,
         quant_bits: reloptions.quant_bits,
         dense_posting_blocks: reloptions.dense_posting_blocks != 0,
+        dense_posting_pack_pages: reloptions.dense_posting_pack_pages.max(1),
         storage_format,
         rerank,
     }

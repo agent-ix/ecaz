@@ -636,6 +636,8 @@ impl BuildState {
         data_pages.start_new_page_if_current_has_tuples();
         let postings_start = Instant::now();
         let use_dense_posting_blocks = dense_posting_blocks_enabled(self.options);
+        let dense_posting_pack_pages = dense_posting_pack_pages(self.options);
+        let mut dense_logical_block_id = 0_u32;
         for (list_id, tuple_indices) in tuple_indices_by_list.iter().enumerate() {
             if !tuple_indices.is_empty() {
                 data_pages.start_new_page_if_current_has_tuples();
@@ -646,6 +648,7 @@ impl BuildState {
                 let list_id_u32 = list_id_u32(list_id)?;
                 let mut pending = Vec::new();
                 let mut pending_payload_len = None;
+                let mut pending_posting_limit = usize::MAX;
                 for tuple_index in tuple_indices {
                     let (heap_tid, gamma, payload) = encode_build_posting(
                         &self.heap_tuples[*tuple_index],
@@ -662,35 +665,39 @@ impl BuildState {
                         }
                     } else {
                         pending_payload_len = Some(payload_len);
-                    }
-                    if !pending.is_empty()
-                        && !page::dense_posting_block_tuple_fits(
-                            pending.len() + 1,
-                            pending.len() + 1,
+                        pending_posting_limit = dense_posting_group_limit(
                             payload_len,
+                            dense_posting_pack_pages,
                             self.page_size,
-                        )
-                    {
-                        let dense = page::IvfDensePostingBlockTuple::from_single_heaptid_postings(
+                        )?;
+                    }
+                    if pending.len() >= pending_posting_limit {
+                        insert_dense_posting_group(
+                            &mut data_pages,
+                            &mut posting_tids_by_list[list_id],
                             list_id_u32,
                             &pending,
                             payload_len,
+                            dense_posting_pack_pages,
+                            self.page_size,
+                            &mut dense_logical_block_id,
                         )?;
-                        posting_tids_by_list[list_id]
-                            .push(data_pages.insert_ivf_dense_posting_block(&dense)?);
                         pending.clear();
                     }
                     pending.push((heap_tid, gamma, ItemPointer::INVALID, payload));
                 }
                 if !pending.is_empty() {
                     let payload_len = pending_payload_len.expect("pending postings have payloads");
-                    let dense = page::IvfDensePostingBlockTuple::from_single_heaptid_postings(
+                    insert_dense_posting_group(
+                        &mut data_pages,
+                        &mut posting_tids_by_list[list_id],
                         list_id_u32,
                         &pending,
                         payload_len,
+                        dense_posting_pack_pages,
+                        self.page_size,
+                        &mut dense_logical_block_id,
                     )?;
-                    posting_tids_by_list[list_id]
-                        .push(data_pages.insert_ivf_dense_posting_block(&dense)?);
                 }
             } else {
                 for tuple_index in tuple_indices {
@@ -848,6 +855,162 @@ fn dense_posting_blocks_enabled(options: options::EcIvfOptions) -> bool {
                 | options::StorageFormat::TurboQuant
                 | options::StorageFormat::RaBitQ
         )
+}
+
+fn dense_posting_pack_pages(options: options::EcIvfOptions) -> usize {
+    usize::try_from(options.dense_posting_pack_pages.max(1)).unwrap_or(1)
+}
+
+fn dense_posting_group_limit(
+    payload_len: usize,
+    pack_pages: usize,
+    page_size: usize,
+) -> Result<usize, String> {
+    const DENSE_POSTING_TARGET_SCORER_WIDTH: usize = 32;
+    if pack_pages > 1 {
+        if !page::dense_posting_packed_segment_header_tuple_fits(
+            DENSE_POSTING_TARGET_SCORER_WIDTH,
+            DENSE_POSTING_TARGET_SCORER_WIDTH,
+            0,
+            page_size,
+        ) {
+            return Err(format!(
+                "ec_ivf dense posting payload length {payload_len} metadata does not fit on a page"
+            ));
+        }
+        return Ok(DENSE_POSTING_TARGET_SCORER_WIDTH);
+    }
+    let fit = page::dense_posting_block_tuple_fits;
+    let mut segment_capacity = 1_usize;
+    if !fit(1, 1, payload_len, page_size) {
+        return Err(format!(
+            "ec_ivf dense posting payload length {payload_len} does not fit on a page"
+        ));
+    }
+    while segment_capacity < u16::MAX as usize
+        && fit(
+            segment_capacity + 1,
+            segment_capacity + 1,
+            payload_len,
+            page_size,
+        )
+    {
+        segment_capacity += 1;
+    }
+    Ok(segment_capacity
+        .saturating_mul(pack_pages.max(1))
+        .min(u16::MAX as usize)
+        .max(1))
+}
+
+fn dense_packed_header_payload_capacity(
+    posting_count: usize,
+    total_heap_tids: usize,
+    total_payload_bytes: usize,
+    page_size: usize,
+) -> usize {
+    let mut payload_bytes = total_payload_bytes;
+    while !page::dense_posting_packed_segment_header_tuple_fits(
+        posting_count,
+        total_heap_tids,
+        payload_bytes,
+        page_size,
+    ) {
+        payload_bytes -= 1;
+    }
+    payload_bytes
+}
+
+fn dense_packed_continuation_payload_capacity(page_size: usize) -> Result<usize, String> {
+    let mut payload_bytes = 1_usize;
+    if !page::dense_posting_packed_continuation_tuple_fits(payload_bytes, page_size) {
+        return Err("ec_ivf dense posting packed continuation cannot fit payload bytes".to_owned());
+    }
+    while payload_bytes < u16::MAX as usize
+        && page::dense_posting_packed_continuation_tuple_fits(payload_bytes + 1, page_size)
+    {
+        payload_bytes += 1;
+    }
+    Ok(payload_bytes)
+}
+
+fn insert_dense_posting_group(
+    data_pages: &mut DataPageChain,
+    posting_tids: &mut Vec<ItemPointer>,
+    list_id: u32,
+    postings: &[(ItemPointer, f32, ItemPointer, Vec<u8>)],
+    payload_len: usize,
+    pack_pages: usize,
+    page_size: usize,
+    next_logical_block_id: &mut u32,
+) -> Result<(), String> {
+    if pack_pages <= 1 {
+        let dense = page::IvfDensePostingBlockTuple::from_single_heaptid_postings(
+            list_id,
+            postings,
+            payload_len,
+        )?;
+        posting_tids.push(data_pages.insert_ivf_dense_posting_block(&dense)?);
+        return Ok(());
+    }
+
+    let mut full_payloads = Vec::with_capacity(postings.len() * payload_len);
+    for (_, _, _, payload) in postings {
+        full_payloads.extend_from_slice(payload);
+    }
+    let header_payload_len = dense_packed_header_payload_capacity(
+        postings.len(),
+        postings.len(),
+        full_payloads.len(),
+        page_size,
+    );
+    let continuation_capacity = dense_packed_continuation_payload_capacity(page_size)?;
+    let remaining_payload_len = full_payloads.len() - header_payload_len;
+    let segment_count = 1 + remaining_payload_len.div_ceil(continuation_capacity);
+    if segment_count > u16::MAX as usize {
+        return Err("ec_ivf dense posting packed segment count exceeds u16".to_owned());
+    }
+    let total_posting_count = u16::try_from(postings.len())
+        .map_err(|_| "ec_ivf dense posting packed group count exceeds u16".to_owned())?;
+    let logical_block_id = *next_logical_block_id;
+    *next_logical_block_id = next_logical_block_id
+        .checked_add(1)
+        .ok_or_else(|| "ec_ivf dense posting logical block id overflow".to_owned())?;
+
+    let mut header = page::IvfDensePostingPackedSegmentTuple::from_single_heaptid_postings(
+        list_id,
+        logical_block_id,
+        0,
+        u16::try_from(segment_count)
+            .map_err(|_| "ec_ivf dense posting packed segment count exceeds u16".to_owned())?,
+        total_posting_count,
+        postings,
+        payload_len,
+    )?;
+    header.payloads.truncate(header_payload_len);
+    posting_tids.push(data_pages.insert_ivf_dense_posting_packed_segment(&header)?);
+
+    let mut payload_offset = header_payload_len;
+    for (continuation_index, chunk) in full_payloads[header_payload_len..]
+        .chunks(continuation_capacity)
+        .enumerate()
+    {
+        let continuation = page::IvfDensePostingPackedContinuationTuple {
+            list_id,
+            logical_block_id,
+            segment_index: u16::try_from(continuation_index + 1).map_err(|_| {
+                "ec_ivf dense posting packed continuation index exceeds u16".to_owned()
+            })?,
+            segment_count: u16::try_from(segment_count)
+                .map_err(|_| "ec_ivf dense posting packed segment count exceeds u16".to_owned())?,
+            payload_offset: u32::try_from(payload_offset)
+                .map_err(|_| "ec_ivf dense posting packed payload offset exceeds u32".to_owned())?,
+            payloads: chunk.to_vec(),
+        };
+        posting_tids.push(data_pages.insert_ivf_dense_posting_packed_continuation(&continuation)?);
+        payload_offset += chunk.len();
+    }
+    Ok(())
 }
 
 fn encode_build_posting(
@@ -1169,6 +1332,7 @@ mod tests {
             posting_slack_percent: 0,
             quant_bits: 4,
             dense_posting_blocks: false,
+            dense_posting_pack_pages: 1,
             storage_format: options::StorageFormat::Auto,
             rerank: options::RerankMode::Auto,
         }
@@ -1322,6 +1486,86 @@ mod tests {
         assert_eq!(dense.gammas.len(), 2);
         assert_eq!(dense.heap_tids.len(), 2);
         assert_eq!(dense.payloads.len(), 2 * payload_len);
+    }
+
+    #[test]
+    fn build_state_can_stage_packed_dense_posting_segments_when_requested() {
+        let mut opts = options(0, 2);
+        opts.dense_posting_blocks = true;
+        opts.dense_posting_pack_pages = 4;
+        opts.storage_format = options::StorageFormat::TurboQuant;
+        let mut state = BuildState::new(opts, IndexedVectorKind::Ecvector);
+        state.try_push(tuple(1, vec![1.0, 0.0])).unwrap();
+        state.try_push(tuple(2, vec![0.9, 0.1])).unwrap();
+        state.try_push(tuple(3, vec![-1.0, 0.0])).unwrap();
+
+        let plan = state
+            .stage_build_plan(&model(vec![vec![1.0, 0.0], vec![-1.0, 0.0]]))
+            .unwrap();
+
+        assert_eq!(plan.posting_count(), 3);
+        assert_eq!(plan.directory_entries[0].live_count, 2);
+        assert_eq!(plan.posting_tids_by_list[0].len(), 1);
+
+        let payload_len = state.heap_tuples[0].payload.len();
+        let segment = plan
+            .data_pages
+            .read_ivf_dense_posting_packed_segment(plan.posting_tids_by_list[0][0], payload_len)
+            .unwrap();
+        assert_eq!(segment.list_id, 0);
+        assert_eq!(segment.logical_block_id, 0);
+        assert_eq!(segment.segment_index, 0);
+        assert_eq!(segment.segment_count, 1);
+        assert_eq!(segment.total_posting_count, 2);
+        assert_eq!(segment.gammas.len(), 2);
+        assert_eq!(segment.heap_tids.len(), 2);
+        assert_eq!(segment.payloads.len(), 2 * payload_len);
+    }
+
+    #[test]
+    fn build_state_splits_packed_dense_payloads_into_continuations() {
+        let mut opts = options(0, 2);
+        opts.dense_posting_blocks = true;
+        opts.dense_posting_pack_pages = 4;
+        opts.storage_format = options::StorageFormat::TurboQuant;
+        let mut state = BuildState::new(opts, IndexedVectorKind::Ecvector);
+        state.page_size = 4096;
+        for offset_number in 1..=32 {
+            let mut source_vector = vec![0.0; 512];
+            source_vector[0] = 1.0;
+            state.try_push(tuple(offset_number, source_vector)).unwrap();
+        }
+
+        let mut positive = vec![0.0; 512];
+        positive[0] = 1.0;
+        let mut negative = vec![0.0; 512];
+        negative[0] = -1.0;
+        let plan = state
+            .stage_build_plan(&model(vec![positive, negative]))
+            .unwrap();
+
+        assert!(plan.posting_tids_by_list[0].len() > 1);
+        let payload_len = state.heap_tuples[0].payload.len();
+        let header = plan
+            .data_pages
+            .read_ivf_dense_posting_packed_segment(plan.posting_tids_by_list[0][0], payload_len)
+            .unwrap();
+        let continuation = plan
+            .data_pages
+            .read_ivf_dense_posting_packed_continuation(plan.posting_tids_by_list[0][1])
+            .unwrap();
+
+        assert_eq!(header.total_posting_count, 32);
+        assert_eq!(header.segment_index, 0);
+        assert!(header.segment_count > 1);
+        assert_eq!(header.gammas.len(), 32);
+        assert!(header.payloads.len() < 32 * payload_len);
+        assert_eq!(continuation.list_id, header.list_id);
+        assert_eq!(continuation.logical_block_id, header.logical_block_id);
+        assert_eq!(continuation.segment_index, 1);
+        assert_eq!(continuation.segment_count, header.segment_count);
+        assert_eq!(continuation.payload_offset as usize, header.payloads.len());
+        assert!(!continuation.payloads.is_empty());
     }
 
     #[test]
