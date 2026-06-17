@@ -1465,6 +1465,8 @@
 
     #[pg_test]
     fn test_ec_ivf_columnar_frozen_lists_scan_insert_vacuum() {
+        Spi::run("SET ec_ivf.columnar_page_scatter = off")
+            .expect("columnar page-scatter fallback setting should be accepted");
         Spi::run(
             "CREATE TABLE ec_ivf_columnar_scan_vacuum (id bigint primary key, embedding ecvector)",
         )
@@ -1544,6 +1546,88 @@
         assert_eq!(after_vacuum.columnar_postings_visited, 2);
         assert!(after_vacuum.columnar_logical_bytes_copied > 0);
         assert_eq!(after_vacuum.dense_coalesced_flushes, 1);
+        Spi::run("RESET ec_ivf.columnar_page_scatter")
+            .expect("columnar page-scatter setting should reset");
+    }
+
+    #[pg_test]
+    fn test_ec_ivf_columnar_page_scatter_matches_copy_scan() {
+        Spi::run(
+            "CREATE TABLE ec_ivf_columnar_page_scatter_equiv (
+                id bigint primary key,
+                embedding ecvector
+             )",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_ivf_columnar_page_scatter_equiv
+             SELECT id,
+                    (ARRAY[(1.0 - (id::real * 0.001))::real]
+                     || array_fill(0.0::real, ARRAY[511]))::ecvector
+             FROM generate_series(0, 39) AS id",
+        )
+        .expect("seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_ivf_columnar_page_scatter_equiv_idx
+             ON ec_ivf_columnar_page_scatter_equiv USING ec_ivf (embedding ecvector_ip_ops)
+             WITH (
+                nlists = 1,
+                nprobe = 1,
+                training_sample_rows = 40,
+                storage_format = 'turboquant',
+                columnar_frozen_lists = 1
+             )",
+        )
+        .expect("columnar IVF index creation should succeed");
+
+        let index_oid = ec_ivf_index_oid("ec_ivf_columnar_page_scatter_equiv_idx");
+        let query = {
+            let mut query = Vec::with_capacity(512);
+            query.push(1.0);
+            query.resize(512, 0.0);
+            query
+        };
+
+        Spi::run("SET ec_ivf.columnar_page_scatter = off")
+            .expect("copy fallback setting should be accepted");
+        let copy =
+            ec_ivf_debug!(am::debug_ec_ivf_gettuple_counter_snapshot(index_oid, query.clone()));
+
+        Spi::run("SET ec_ivf.columnar_page_scatter = on")
+            .expect("page-scatter setting should be accepted");
+        let scatter =
+            ec_ivf_debug!(am::debug_ec_ivf_gettuple_counter_snapshot(index_oid, query));
+        Spi::run("RESET ec_ivf.columnar_page_scatter")
+            .expect("columnar page-scatter setting should reset");
+
+        let copy_bits = copy
+            .outputs
+            .iter()
+            .map(|(block_number, offset_number, score)| {
+                (*block_number, *offset_number, score.to_bits())
+            })
+            .collect::<Vec<_>>();
+        let scatter_bits = scatter
+            .outputs
+            .iter()
+            .map(|(block_number, offset_number, score)| {
+                (*block_number, *offset_number, score.to_bits())
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(copy.outputs.len(), 40);
+        assert_eq!(scatter.outputs.len(), 40);
+        assert_eq!(scatter_bits, copy_bits);
+        assert_eq!(copy.columnar_frozen_lists_visited, 1);
+        assert_eq!(scatter.columnar_frozen_lists_visited, 1);
+        assert_eq!(copy.columnar_postings_visited, 40);
+        assert_eq!(scatter.columnar_postings_visited, 40);
+        assert!(copy.columnar_logical_bytes_copied > 0);
+        assert_eq!(copy.columnar_payload_bytes_borrowed, 0);
+        assert_eq!(scatter.columnar_logical_bytes_copied, 0);
+        assert!(scatter.columnar_payload_bytes_borrowed > 0);
+        assert_eq!(copy.dense_coalesced_flushes, scatter.dense_coalesced_flushes);
+        assert!(scatter.orderby_cleared);
     }
 
     #[pg_test]
