@@ -1682,6 +1682,9 @@ fn process_dense_posting_block(
             ));
         }
         for index in 0..block.len() {
+            if block.is_deleted(index) {
+                continue;
+            }
             opaque.explain_counters.record_dense_posting_visited();
             let heap_tid_count = block.heap_tid_count(index);
             if !consume_live_tid_budget(remaining_live_tids_by_list, block.list_id, heap_tid_count)?
@@ -1701,6 +1704,9 @@ fn process_dense_posting_block(
     }
 
     for (index, gamma) in gammas.iter().copied().enumerate() {
+        if block.is_deleted(index) {
+            continue;
+        }
         opaque.explain_counters.record_dense_posting_visited();
         let heap_tid_count = block.heap_tid_count(index);
         if !consume_live_tid_budget(remaining_live_tids_by_list, block.list_id, heap_tid_count)? {
@@ -2646,6 +2652,58 @@ pub(crate) unsafe fn debug_ec_ivf_gettuple_outputs(
 
     debug_end_heap_backed_scan(state);
     (outputs, orderby_cleared)
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) struct EcIvfGettupleCounterDebugSnapshot {
+    pub(crate) outputs: Vec<(u32, u16, f32)>,
+    pub(crate) orderby_cleared: bool,
+    pub(crate) row_postings_visited: u32,
+    pub(crate) dense_blocks_visited: u32,
+    pub(crate) dense_postings_visited: u32,
+    pub(crate) scratch_soa_flushes: u32,
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+/// # Safety
+/// Test-only helper; caller is a pgrx-managed test fixture that holds
+/// the IVF index referenced by `index_oid` open for the call duration.
+pub(crate) unsafe fn debug_ec_ivf_gettuple_counter_snapshot(
+    index_oid: pg_sys::Oid,
+    query: Vec<f32>,
+) -> EcIvfGettupleCounterDebugSnapshot {
+    let state = debug_begin_heap_backed_scan(index_oid);
+    let mut orderby = pg_sys::ScanKeyData {
+        sk_argument: IntoDatum::into_datum(query).expect("query should convert to datum"),
+        ..Default::default()
+    };
+    let scan = state.scan.as_ptr();
+    debug_index_rescan(scan, ptr::null_mut(), 0, &mut orderby, 1);
+
+    let mut outputs = Vec::new();
+    while debug_am_gettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) {
+        let (block_number, offset_number) = debug_scan_heap_tid(scan);
+        let score = debug_scan_first_orderby_score(scan).unwrap_or_else(|| {
+            pgrx::error!("ec_ivf debug gettuple output is missing order-by score")
+        });
+        outputs.push((block_number, offset_number, score));
+    }
+    let orderby_cleared = if debug_scan_orderbynulls_is_null(scan) {
+        false
+    } else {
+        debug_scan_first_orderby_is_null(scan)
+    };
+    let counters = debug_scan_opaque(scan).explain_counters;
+
+    debug_end_heap_backed_scan(state);
+    EcIvfGettupleCounterDebugSnapshot {
+        outputs,
+        orderby_cleared,
+        row_postings_visited: counters.stats_row_postings_visited,
+        dense_blocks_visited: counters.stats_dense_blocks_visited,
+        dense_postings_visited: counters.stats_dense_postings_visited,
+        scratch_soa_flushes: counters.stats_scratch_soa_flushes,
+    }
 }
 
 #[cfg(any(test, feature = "pg_test"))]

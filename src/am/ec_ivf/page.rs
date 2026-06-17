@@ -974,6 +974,7 @@ pub(super) struct IvfDensePostingBlockTuple {
     pub(super) heap_tid_offsets: Vec<u32>,
     pub(super) rerank_tids: Vec<ItemPointer>,
     pub(super) heap_tids: Vec<ItemPointer>,
+    pub(super) deleted_bitmap: Vec<u8>,
     pub(super) payload_len: usize,
     pub(super) payloads: Vec<u8>,
 }
@@ -984,6 +985,7 @@ pub(super) struct IvfDensePostingBlockRef<'a> {
     count: usize,
     total_heap_tids: usize,
     payload_len: usize,
+    deleted_bitmap: &'a [u8],
     gamma_bytes: &'a [u8],
     heap_tid_count_bytes: &'a [u8],
     heap_tid_offset_bytes: &'a [u8],
@@ -1043,7 +1045,9 @@ impl<'a> IvfDensePostingBlockRef<'a> {
                 .try_into()
                 .expect("dense block heap tid count slice should be 4 bytes"),
         ) as usize;
-        let gamma_start = DENSE_POSTING_BLOCK_HEADER_BYTES;
+        let deleted_bitmap_len = dense_deleted_bitmap_len(count);
+        let deleted_bitmap_start = DENSE_POSTING_BLOCK_HEADER_BYTES;
+        let gamma_start = deleted_bitmap_start + deleted_bitmap_len;
         let gamma_end = gamma_start + count * size_of::<f32>();
         let heap_tid_count_end = gamma_end + count * size_of::<u16>();
         let heap_tid_offset_end = heap_tid_count_end + count * size_of::<u32>();
@@ -1065,6 +1069,7 @@ impl<'a> IvfDensePostingBlockRef<'a> {
             count,
             total_heap_tids,
             payload_len,
+            deleted_bitmap: &input[deleted_bitmap_start..gamma_start],
             gamma_bytes: &input[gamma_start..gamma_end],
             heap_tid_count_bytes: &input[gamma_end..heap_tid_count_end],
             heap_tid_offset_bytes: &input[heap_tid_count_end..heap_tid_offset_end],
@@ -1084,6 +1089,14 @@ impl<'a> IvfDensePostingBlockRef<'a> {
 
     pub(super) fn payload_len(&self) -> usize {
         self.payload_len
+    }
+
+    pub(super) fn deleted_bitmap(&self) -> &'a [u8] {
+        self.deleted_bitmap
+    }
+
+    pub(super) fn is_deleted(&self, index: usize) -> bool {
+        dense_deleted_bitmap_get(self.deleted_bitmap, index)
     }
 
     pub(super) fn gammas(&self) -> Vec<f32> {
@@ -1144,6 +1157,18 @@ impl<'a> IvfDensePostingBlockRef<'a> {
 }
 
 impl IvfDensePostingBlockTuple {
+    pub(super) fn len(&self) -> usize {
+        self.gammas.len()
+    }
+
+    pub(super) fn is_deleted(&self, index: usize) -> bool {
+        dense_deleted_bitmap_get(&self.deleted_bitmap, index)
+    }
+
+    pub(super) fn mark_deleted(&mut self, index: usize) {
+        dense_deleted_bitmap_set(&mut self.deleted_bitmap, index);
+    }
+
     pub(super) fn from_single_heaptid_postings(
         list_id: u32,
         postings: &[(ItemPointer, f32, ItemPointer, Vec<u8>)],
@@ -1191,6 +1216,7 @@ impl IvfDensePostingBlockTuple {
             heap_tid_offsets,
             rerank_tids,
             heap_tids,
+            deleted_bitmap: vec![0; dense_deleted_bitmap_len(count)],
             payload_len,
             payloads,
         })
@@ -1201,6 +1227,7 @@ impl IvfDensePostingBlockTuple {
             || self.gammas.len() != self.heap_tid_offsets.len()
             || self.gammas.len() != self.rerank_tids.len()
             || self.payloads.len() != self.gammas.len() * self.payload_len
+            || self.deleted_bitmap.len() != dense_deleted_bitmap_len(self.gammas.len())
         {
             return Err("ec_ivf dense posting block array length mismatch".to_owned());
         }
@@ -1228,6 +1255,7 @@ impl IvfDensePostingBlockTuple {
         out.extend_from_slice(&(self.payload_len as u16).to_le_bytes());
         out.extend_from_slice(&(self.heap_tids.len() as u32).to_le_bytes());
         out.extend_from_slice(&[0, 0, 0]);
+        out.extend_from_slice(&self.deleted_bitmap);
         for gamma in &self.gammas {
             out.extend_from_slice(&gamma.to_le_bytes());
         }
@@ -1272,6 +1300,7 @@ impl IvfDensePostingBlockTuple {
                 .chunks_exact(ITEM_POINTER_BYTES)
                 .map(ItemPointer::decode)
                 .collect::<Result<Vec<_>, _>>()?,
+            deleted_bitmap: block.deleted_bitmap().to_vec(),
             payload_len: block.payload_len,
             payloads: block.payloads.to_vec(),
         })
@@ -1283,12 +1312,29 @@ impl IvfDensePostingBlockTuple {
         payload_len: usize,
     ) -> usize {
         DENSE_POSTING_BLOCK_HEADER_BYTES
+            + dense_deleted_bitmap_len(count)
             + count * size_of::<f32>()
             + count * size_of::<u16>()
             + count * size_of::<u32>()
             + count * ITEM_POINTER_BYTES
             + total_heap_tids * ITEM_POINTER_BYTES
             + count * payload_len
+    }
+}
+
+const fn dense_deleted_bitmap_len(count: usize) -> usize {
+    (count + 7) / 8
+}
+
+fn dense_deleted_bitmap_get(bitmap: &[u8], index: usize) -> bool {
+    bitmap
+        .get(index / 8)
+        .is_some_and(|byte| byte & (1 << (index % 8)) != 0)
+}
+
+fn dense_deleted_bitmap_set(bitmap: &mut [u8], index: usize) {
+    if let Some(byte) = bitmap.get_mut(index / 8) {
+        *byte |= 1 << (index % 8);
     }
 }
 
@@ -1879,10 +1925,40 @@ pub(super) unsafe fn rewrite_ivf_postings_for_list_blocks<F>(
     tail_block: BlockRef,
     payload_len: usize,
     no_compact_blocks: &[pg_sys::BlockNumber],
-    mut rewrite: F,
+    rewrite: F,
 ) -> Result<(), String>
 where
     F: FnMut(ItemPointer, IvfPostingTuple) -> Result<IvfPostingRewrite, String>,
+{
+    rewrite_ivf_posting_entries_for_list_blocks(
+        index_relation,
+        list_id,
+        head_block,
+        tail_block,
+        payload_len,
+        no_compact_blocks,
+        rewrite,
+        |_, _| Ok(IvfDensePostingBlockRewrite::Keep),
+    )
+}
+
+#[cfg(any(feature = "pg17", feature = "pg18"))]
+pub(super) unsafe fn rewrite_ivf_posting_entries_for_list_blocks<RowFn, DenseFn>(
+    index_relation: pg_sys::Relation,
+    list_id: u32,
+    head_block: BlockRef,
+    tail_block: BlockRef,
+    payload_len: usize,
+    no_compact_blocks: &[pg_sys::BlockNumber],
+    mut rewrite_row: RowFn,
+    mut rewrite_dense: DenseFn,
+) -> Result<(), String>
+where
+    RowFn: FnMut(ItemPointer, IvfPostingTuple) -> Result<IvfPostingRewrite, String>,
+    DenseFn: FnMut(
+        ItemPointer,
+        IvfDensePostingBlockTuple,
+    ) -> Result<IvfDensePostingBlockRewrite, String>,
 {
     let index = IvfPageRelation::new(ivf_relation_nonnull(
         index_relation,
@@ -1909,7 +1985,8 @@ where
             block_number,
             payload_len,
             !no_compact_blocks.contains(&block_number),
-            &mut rewrite,
+            &mut rewrite_row,
+            &mut rewrite_dense,
         )?;
     }
 
@@ -2515,6 +2592,13 @@ pub(super) enum IvfPostingRewrite {
 }
 
 #[cfg(any(feature = "pg17", feature = "pg18"))]
+#[derive(Debug, Clone, PartialEq)]
+pub(super) enum IvfDensePostingBlockRewrite {
+    Keep,
+    Rewrite(IvfDensePostingBlockTuple),
+}
+
+#[cfg(any(feature = "pg17", feature = "pg18"))]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct IvfPostingBlockSummary {
     pub(super) block_number: pg_sys::BlockNumber,
@@ -2553,16 +2637,21 @@ pub(super) unsafe fn debug_ivf_posting_block_summaries(
 }
 
 #[cfg(any(feature = "pg17", feature = "pg18"))]
-fn rewrite_ivf_postings_for_list_block<F>(
+fn rewrite_ivf_postings_for_list_block<RowFn, DenseFn>(
     index: IvfPageRelation<'_>,
     list_id: u32,
     block_number: pg_sys::BlockNumber,
     payload_len: usize,
     compact_deletes: bool,
-    rewrite: &mut F,
+    rewrite_row: &mut RowFn,
+    rewrite_dense: &mut DenseFn,
 ) -> Result<(), String>
 where
-    F: FnMut(ItemPointer, IvfPostingTuple) -> Result<IvfPostingRewrite, String>,
+    RowFn: FnMut(ItemPointer, IvfPostingTuple) -> Result<IvfPostingRewrite, String>,
+    DenseFn: FnMut(
+        ItemPointer,
+        IvfDensePostingBlockTuple,
+    ) -> Result<IvfDensePostingBlockRewrite, String>,
 {
     let buffer = index
         .read_main(
@@ -2579,7 +2668,8 @@ where
         block_number,
         payload_len,
         compact_deletes,
-        rewrite,
+        rewrite_row,
+        rewrite_dense,
     )
 }
 
@@ -2654,17 +2744,22 @@ fn debug_ivf_posting_block_summary(
 }
 
 #[cfg(any(feature = "pg17", feature = "pg18"))]
-fn rewrite_ivf_postings_from_exclusive_buffer<F>(
+fn rewrite_ivf_postings_from_exclusive_buffer<RowFn, DenseFn>(
     index: IvfPageRelation<'_>,
     buffer: &LockedBufferGuard,
     list_id: u32,
     block_number: pg_sys::BlockNumber,
     payload_len: usize,
     compact_deletes: bool,
-    rewrite: &mut F,
+    rewrite_row: &mut RowFn,
+    rewrite_dense: &mut DenseFn,
 ) -> Result<(), String>
 where
-    F: FnMut(ItemPointer, IvfPostingTuple) -> Result<IvfPostingRewrite, String>,
+    RowFn: FnMut(ItemPointer, IvfPostingTuple) -> Result<IvfPostingRewrite, String>,
+    DenseFn: FnMut(
+        ItemPointer,
+        IvfDensePostingBlockTuple,
+    ) -> Result<IvfDensePostingBlockRewrite, String>,
 {
     enum PostingVisit {
         NonPosting,
@@ -2684,33 +2779,54 @@ where
 
     for offset in 1..=writer.line_pointer_count() {
         let tuple_visit = writer.visit_line(offset, "posting", |tuple_bytes| {
-            if tuple_bytes.first().copied() != Some(IVF_POSTING_TAG) {
-                return Ok(PostingVisit::NonPosting);
-            }
-
-            let posting = IvfPostingTuple::decode(tuple_bytes, payload_len)?;
-            if posting.list_id != list_id {
-                return Ok(PostingVisit::OtherList);
-            }
-
             let posting_tid = ItemPointer {
                 block_number,
                 offset_number: offset,
             };
-            match rewrite(posting_tid, posting)? {
-                IvfPostingRewrite::Keep => Ok(PostingVisit::Keep),
-                IvfPostingRewrite::Rewrite(updated) => {
-                    let encoded = updated.encode()?;
-                    if encoded.len() != tuple_bytes.len() {
-                        return Err(format!(
-                            "ec_ivf posting tuple size changed from {} to {}",
-                            tuple_bytes.len(),
-                            encoded.len()
-                        ));
+            match tuple_bytes.first().copied() {
+                Some(IVF_POSTING_TAG) => {
+                    let posting = IvfPostingTuple::decode(tuple_bytes, payload_len)?;
+                    if posting.list_id != list_id {
+                        return Ok(PostingVisit::OtherList);
                     }
-                    Ok(PostingVisit::Rewrite(encoded))
+
+                    match rewrite_row(posting_tid, posting)? {
+                        IvfPostingRewrite::Keep => Ok(PostingVisit::Keep),
+                        IvfPostingRewrite::Rewrite(updated) => {
+                            let encoded = updated.encode()?;
+                            if encoded.len() != tuple_bytes.len() {
+                                return Err(format!(
+                                    "ec_ivf posting tuple size changed from {} to {}",
+                                    tuple_bytes.len(),
+                                    encoded.len()
+                                ));
+                            }
+                            Ok(PostingVisit::Rewrite(encoded))
+                        }
+                        IvfPostingRewrite::Delete => Ok(PostingVisit::Delete),
+                    }
                 }
-                IvfPostingRewrite::Delete => Ok(PostingVisit::Delete),
+                Some(IVF_DENSE_POSTING_BLOCK_TAG) => {
+                    let block = IvfDensePostingBlockTuple::decode(tuple_bytes, payload_len)?;
+                    if block.list_id != list_id {
+                        return Ok(PostingVisit::OtherList);
+                    }
+                    match rewrite_dense(posting_tid, block)? {
+                        IvfDensePostingBlockRewrite::Keep => Ok(PostingVisit::Keep),
+                        IvfDensePostingBlockRewrite::Rewrite(updated) => {
+                            let encoded = updated.encode()?;
+                            if encoded.len() != tuple_bytes.len() {
+                                return Err(format!(
+                                    "ec_ivf dense posting block tuple size changed from {} to {}",
+                                    tuple_bytes.len(),
+                                    encoded.len()
+                                ));
+                            }
+                            Ok(PostingVisit::Rewrite(encoded))
+                        }
+                    }
+                }
+                _ => Ok(PostingVisit::NonPosting),
             }
         });
         match tuple_visit {
