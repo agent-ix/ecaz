@@ -1900,7 +1900,7 @@ fn columnar_page_chunk_lengths(
     if byte_len % item_width != 0 {
         return Err("ec_ivf columnar frozen list bytes are not item-aligned".to_owned());
     }
-    let item_capacity = usable_page_bytes(page_size) / item_width;
+    let item_capacity = columnar_frozen_list_raw_page_capacity(page_size) / item_width;
     if item_capacity == 0 {
         return Err(format!(
             "ec_ivf columnar frozen list item width {item_width} does not fit on a page"
@@ -5629,6 +5629,8 @@ mod tests {
         let reassembled = raw_pages.concat();
 
         assert_eq!(reassembled, columns.logical_bytes().unwrap());
+        let raw_capacity = columnar_frozen_list_raw_page_capacity(PAGE_HEADER_BYTES + 7);
+        assert!(raw_pages.iter().all(|page| page.len() <= raw_capacity));
         assert_eq!(
             raw_pages.iter().map(Vec::len).collect::<Vec<_>>(),
             vec![4, 4, 4, 6, 3, 6, 4, 4, 4, 6, 6, 6, 6, 6, 6, 1]
@@ -5658,6 +5660,15 @@ mod tests {
             vec![postings[0].0]
         );
         assert!(!decoded.is_deleted(2));
+    }
+
+    #[test]
+    fn columnar_frozen_list_raw_page_chunks_obey_guard_capacity() {
+        let raw_capacity = columnar_frozen_list_raw_page_capacity(DEFAULT_PAGE_SIZE);
+        let lengths = columnar_page_chunk_lengths(raw_capacity + 6, 1, DEFAULT_PAGE_SIZE).unwrap();
+
+        assert_eq!(lengths, vec![raw_capacity, 6]);
+        assert!(lengths.iter().all(|len| *len <= raw_capacity));
     }
 
     #[test]
