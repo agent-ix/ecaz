@@ -1106,6 +1106,16 @@ impl<'a> IvfDensePostingBlockRef<'a> {
             .collect()
     }
 
+    pub(super) fn copy_gammas_to(&self, out: &mut Vec<f32>) {
+        out.clear();
+        out.reserve(self.count);
+        out.extend(
+            self.gamma_bytes
+                .chunks_exact(size_of::<f32>())
+                .map(|chunk| f32::from_le_bytes(chunk.try_into().expect("validated gamma chunk"))),
+        );
+    }
+
     pub(super) fn heap_tid_count(&self, index: usize) -> usize {
         let start = index * size_of::<u16>();
         u16::from_le_bytes(

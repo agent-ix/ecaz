@@ -53,6 +53,7 @@ struct EcIvfScanOpaque {
     posting_candidate_count: u32,
     next_candidate_index: u32,
     posting_scratch_soa: *mut IvfPostingScratchSoa,
+    dense_posting_block_scratch: *mut IvfDensePostingBlockScratch,
     heap_rerank_state: Option<Box<IvfHeapRerankState>>,
     explain_counters: IvfExplainCounters,
     stats_delta: TqStatsCounters,
@@ -78,6 +79,10 @@ impl std::fmt::Debug for EcIvfScanOpaque {
             .field("posting_candidate_count", &self.posting_candidate_count)
             .field("next_candidate_index", &self.next_candidate_index)
             .field("posting_scratch_soa", &self.posting_scratch_soa)
+            .field(
+                "dense_posting_block_scratch",
+                &self.dense_posting_block_scratch,
+            )
             .field("heap_rerank_state", &self.heap_rerank_state.is_some())
             .field("explain_counters", &self.explain_counters)
             .field("stats_delta", &self.stats_delta)
@@ -347,6 +352,24 @@ struct IvfPostingScratchSoa {
     heap_tids: Vec<ItemPointer>,
     payloads: Vec<u8>,
     scores: Vec<f32>,
+}
+
+#[derive(Debug, Default)]
+struct IvfDensePostingBlockScratch {
+    gammas: Vec<f32>,
+    scores: Vec<f32>,
+}
+
+impl IvfDensePostingBlockScratch {
+    fn clear(&mut self) {
+        self.gammas.clear();
+        self.scores.clear();
+    }
+
+    fn load_gammas(&mut self, block: super::page::IvfDensePostingBlockRef<'_>) {
+        block.copy_gammas_to(&mut self.gammas);
+        self.scores.clear();
+    }
 }
 
 impl IvfPostingScratchSoa {
@@ -636,6 +659,7 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_amendscan(scan: pg_sys::IndexScanD
             free_pq_fastscan_model(opaque);
             free_candidate_dedup(opaque);
             free_posting_scratch_soa(opaque);
+            free_dense_posting_block_scratch(opaque);
             pg_sys::pfree(opaque_ptr);
             (*scan).opaque = ptr::null_mut();
         }
@@ -941,6 +965,32 @@ fn free_posting_scratch_soa(opaque: &mut EcIvfScanOpaque) {
     if !ptr.is_null() {
         // SAFETY: non-null `ptr` was created with `Box::into_raw` by
         // `posting_scratch_soa` and is owned by this scan opaque.
+        drop(unsafe { Box::from_raw(ptr) });
+    }
+}
+
+/// # Safety
+/// `dense_posting_block_scratch` is scan-opaque owned and allocated by this
+/// helper; the returned raw pointer is valid until
+/// `free_dense_posting_block_scratch` clears it.
+unsafe fn dense_posting_block_scratch(
+    opaque: &mut EcIvfScanOpaque,
+) -> *mut IvfDensePostingBlockScratch {
+    if opaque.dense_posting_block_scratch.is_null() {
+        opaque.dense_posting_block_scratch =
+            Box::into_raw(Box::new(IvfDensePostingBlockScratch::default()));
+        return opaque.dense_posting_block_scratch;
+    }
+
+    (&mut *opaque.dense_posting_block_scratch).clear();
+    opaque.dense_posting_block_scratch
+}
+
+fn free_dense_posting_block_scratch(opaque: &mut EcIvfScanOpaque) {
+    let ptr = std::mem::replace(&mut opaque.dense_posting_block_scratch, ptr::null_mut());
+    if !ptr.is_null() {
+        // SAFETY: non-null `ptr` was created with `Box::into_raw` by
+        // `dense_posting_block_scratch` and is owned by this scan opaque.
         drop(unsafe { Box::from_raw(ptr) });
     }
 }
@@ -1652,33 +1702,39 @@ fn process_dense_posting_block(
         return Ok(());
     }
     debug_assert_eq!(block.payloads.len(), block.len() * block.payload_len());
-    let gammas = block.gammas();
-    let mut scores = Vec::new();
+    // SAFETY: scratch is scan-opaque-owned, cleared before reuse, and this
+    // function is the only user for the duration of dense block processing.
+    let scratch = unsafe { dense_posting_block_scratch(opaque) };
+    unsafe { (&mut *scratch).load_gammas(block) };
 
-    let scored_batch = quantizer.score_turboquant_batch_from_payloads(
-        prepared_query,
-        block.payloads,
-        block.payload_len(),
-        &gammas,
-        &mut scores,
-    )? || quantizer.score_ip_bits1_batch_from_payloads(
-        prepared_query,
-        block.payloads,
-        block.payload_len(),
-        &mut scores,
-    )? || quantizer.score_grouped_pq_batch_from_payloads(
-        prepared_query,
-        block.payloads,
-        block.payload_len(),
-        &mut scores,
-    )?;
+    let scored_batch = unsafe {
+        let scratch = &mut *scratch;
+        quantizer.score_turboquant_batch_from_payloads(
+            prepared_query,
+            block.payloads,
+            block.payload_len(),
+            &scratch.gammas,
+            &mut scratch.scores,
+        )? || quantizer.score_ip_bits1_batch_from_payloads(
+            prepared_query,
+            block.payloads,
+            block.payload_len(),
+            &mut scratch.scores,
+        )? || quantizer.score_grouped_pq_batch_from_payloads(
+            prepared_query,
+            block.payloads,
+            block.payload_len(),
+            &mut scratch.scores,
+        )?
+    };
 
     if scored_batch {
-        if scores.len() != block.len() {
+        let score_count = unsafe { (*scratch).scores.len() };
+        if score_count != block.len() {
             return Err(format!(
                 "ec_ivf dense block batch scorer produced {} scores for {} postings",
-                scores.len(),
-                block.len()
+                score_count,
+                block.len(),
             ));
         }
         for index in 0..block.len() {
@@ -1697,13 +1753,13 @@ fn process_dense_posting_block(
                 running_top,
                 block.heap_tids(index),
                 heap_tid_count,
-                -scores[index],
+                -unsafe { (&(*scratch).scores)[index] },
             );
         }
         return Ok(());
     }
 
-    for (index, gamma) in gammas.iter().copied().enumerate() {
+    for index in 0..block.len() {
         if block.is_deleted(index) {
             continue;
         }
@@ -1718,7 +1774,7 @@ fn process_dense_posting_block(
             .map(|worst_score| -worst_score);
         let Some(ip) = quantizer.score_ip_from_parts_with_min_bound(
             prepared_query,
-            gamma,
+            unsafe { (&(*scratch).gammas)[index] },
             block.payload(index),
             min_ip_to_keep,
         )?
@@ -2870,13 +2926,15 @@ pub(crate) unsafe fn debug_ec_ivf_directory_entry(
 #[cfg(test)]
 mod tests {
     use super::super::options::{EcIvfOptions, RerankMode, StorageFormat as IvfStorageFormat};
-    use super::super::page::{IvfPostingTuple, IvfPostingTupleRef};
+    use super::super::page::{
+        IvfDensePostingBlockRef, IvfDensePostingBlockTuple, IvfPostingTuple, IvfPostingTupleRef,
+    };
     use super::{
         build_probe_block_sequence, candidate_heap_blocks, candidate_heap_tid_cmp,
         choose_adaptive_nprobe, consume_live_tid_budget, inner_product, inner_product_scalar,
         pre_rerank_candidate_limit, select_probe_lists, select_probe_lists_with_adaptive,
         use_scratch_soa_batch_decode_for_format, CandidateTopK, EcIvfCentroidScore,
-        EcIvfScoredCandidate, IvfPostingScratchSoa, ProbeBlockRange,
+        EcIvfScoredCandidate, IvfDensePostingBlockScratch, IvfPostingScratchSoa, ProbeBlockRange,
     };
     use crate::storage::page::ItemPointer;
 
@@ -2999,6 +3057,54 @@ mod tests {
 
         assert_eq!(scratch.payload_len, 9);
         assert!(scratch.payloads.capacity() >= 9 * super::IVF_POSTING_SCRATCH_SOA_BATCH_POSTINGS);
+    }
+
+    #[test]
+    fn dense_posting_block_scratch_reuses_gamma_and_score_capacity() {
+        let postings = vec![
+            (
+                candidate(11, 1, 0.0).heap_tid,
+                0.25,
+                ItemPointer::INVALID,
+                vec![1, 2],
+            ),
+            (
+                candidate(12, 1, 0.0).heap_tid,
+                0.5,
+                ItemPointer::INVALID,
+                vec![3, 4],
+            ),
+            (
+                candidate(13, 1, 0.0).heap_tid,
+                0.75,
+                ItemPointer::INVALID,
+                vec![5, 6],
+            ),
+        ];
+        let tuple =
+            IvfDensePostingBlockTuple::from_single_heaptid_postings(7, &postings, 2).unwrap();
+        let encoded = tuple.encode().unwrap();
+        let block = IvfDensePostingBlockRef::decode(&encoded, 2).unwrap();
+        let mut scratch = IvfDensePostingBlockScratch::default();
+
+        scratch.load_gammas(block);
+        scratch.scores.extend([1.0, 2.0, 3.0]);
+        let gamma_capacity = scratch.gammas.capacity();
+        let score_capacity = scratch.scores.capacity();
+
+        let smaller_postings = postings[..2].to_vec();
+        let smaller_tuple =
+            IvfDensePostingBlockTuple::from_single_heaptid_postings(7, &smaller_postings, 2)
+                .unwrap();
+        let smaller_encoded = smaller_tuple.encode().unwrap();
+        let smaller_block = IvfDensePostingBlockRef::decode(&smaller_encoded, 2).unwrap();
+
+        scratch.load_gammas(smaller_block);
+
+        assert_eq!(scratch.gammas, vec![0.25, 0.5]);
+        assert!(scratch.scores.is_empty());
+        assert_eq!(scratch.gammas.capacity(), gamma_capacity);
+        assert_eq!(scratch.scores.capacity(), score_capacity);
     }
 
     #[test]
