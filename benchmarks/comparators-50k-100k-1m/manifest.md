@@ -270,9 +270,86 @@ dominated).
 - `scripts/comparators/load_vchord.sh` (now `vchord/load.sh`) — builds vchordrq with explicit IVF lists matching the pgvector IVFFlat baseline
 - `scripts/comparators/bench_pgvectorscale.sh` (now `pgvectorscale/bench.sh`) — uses `<#>` to match the vector_ip_ops opclass
 
+## vchord probe sweep (Task 108.4 — completes the deferred cell)
+
+The originally-deferred `vchordrq.probes ∈ {1,4,16,64}` sweep was captured on
+2026-06-16 via the new standalone, FR-038-compliant
+`ecaz bench comparator` command (no bash). It replaces the old
+`sweep.sh`/`compute_recall.py` path retired in Task 108.
+
+- **Head SHA:** `a792006fa` (branch `task-108-109-comparator-unification`); host
+  ecaz CLI built from this branch by `ecaz cloud up`/cloud-init.
+- **Host:** AWS EC2 `i-0a6951577c705f238`, `m8g.2xlarge` (Graviton 4 / aarch64),
+  us-west-2 — same instance class as the recorded pgvector/pgvectorscale Pareto
+  above. Restored from corpus base snapshot `snap-0e9c7743263e61d70` via
+  `ecaz cloud up --profile 10k-medium --from-snapshot ...` (no corpus reload).
+- **Corpus prefixes** (loaded ecaz tables on the snapshot, `source real[1536]`):
+  `real_50k_ivf_rabitq` (50k), `real_100k_ivf_rabitq1_rerank` (100k),
+  `real_1m_ivf_rabitq1_rerank` (≈990k). The comparator builds its own
+  `{prefix}_corpus_vchord` sidecar + `vchordrq` index, so the existing ec_ivf
+  index on the source table is irrelevant.
+- **Command:** `ecaz cloud bench --profile 10k-medium --database tqvector_bench
+  --suite vchord-g4-probe --config
+  artifacts/vchord-g4-run/vchord-sweep-suite.json` — one `comparator` step per
+  scale, `--sweep 1,4,16,64`, `k=10`, lists pinned 224/320/1024,
+  `residual_quantization = true`. Suite ran on-host via SSM; artifacts synced
+  from `s3://ecaz-cloud-10k-medium-268ea93e/bench-artifacts/vchord-g4-probe/`.
+
+### Cited result lines (recall@10 — the primary deferred deliverable)
+
+| scale | probes=1 | probes=4 | probes=16 | probes=64 | index size |
+|---|---|---|---|---|---|
+| 50k  | 0.5085 | 0.7450 | 0.8965 | 0.9750 | 411 MiB (430 661 632 B) |
+| 100k | 0.2460 | 0.6395 | 0.8295 | 0.9460 | 817 MiB (856 293 376 B) |
+| 1m   | 0.6620 | 0.8535 | 0.9410 | 0.9745 | 7.8 GiB (8 396 414 976 B) |
+
+recall→probes is clean and monotone at every scale. The 1m probes=64 cell
+(recall 0.9745) is a lower-probe operating point than the recorded vchord
+`default` cell above (~0.9995 recall, ~80 ms p50 warm), consistent with the
+default scanning more lists.
+
+### Latency caveat (1m)
+
+50k/100k p50 are clean (0.20–1.56 ms). At **1m the latency is confounded by a
+cold buffer cache**: the suite runs each cell immediately after the 279 s index
+build with no warmup, so the first cell (probes=1) reads cold —
+p50 183 ms / p95 410 ms — while later warm cells fall to p50 3.4–7.2 ms
+(probes 16/64). Treat the 1m recall curve as authoritative and the 1m latency as
+cold-start-noisy; a warm re-run would be needed for a clean 1m latency
+comparison. 50k/100k were small enough to stay warm.
+
+### `vchord/install.sh` fix landed alongside this run
+
+The kept prerequisite script had a real bug: `ALTER SYSTEM SET
+shared_preload_libraries = 'ecaz,vchord'` stores the comma-list as a single
+quoted filename `"ecaz,vchord"`, so Postgres FATALs on restart with
+`could not access file "ecaz,vchord"` and won't start. Fixed to emit each
+library as its own quoted list element (`'ecaz', 'vchord'`). pgvector's `vector`
+extension must also be installed first (`scripts/comparators/pgvector/install.sh`)
+since vchord depends on the `vector` type.
+
+### Evidence files (this packet)
+
+- `artifacts/vchord-g4-run/vchord-sweep-suite.json` — the FR-038 SuiteConfig
+- `artifacts/vchord-g4-run/artifacts/comparator-vchord-{50k,100k,1m}-probe-sweep.log`
+  — per-scale Pareto tables + build/size lines
+- `artifacts/vchord-g4-run/artifacts/results.jsonl` + `suite-manifest.json`
+- `artifacts/vchord-g4-run/{cloud-up,cloud-bench,cloud-down}.log`
+
+### Re-run
+
+```sh
+ecaz cloud up --profile 10k-medium --from-snapshot snap-0e9c7743263e61d70 \
+  --git-ref <branch> --confirm-cost 8
+# on host: install pgvector + vchord prerequisites (vchord/install.sh now fixed)
+ecaz cloud bench --profile 10k-medium --database tqvector_bench \
+  --suite vchord-g4-probe \
+  --config benchmarks/comparators-50k-100k-1m/artifacts/vchord-g4-run/vchord-sweep-suite.json
+ecaz cloud down --profile 10k-medium --yes --no-snapshot-required
+```
+
 ## Not included this cycle
 
-- vchord probe sweep — would require dropping + rebuilding the vchordrq index; deferred to a separate cycle to keep this packet under "no rebuilds of indexes already built for this measurement"
 - Concurrency curves — serial only
 - k≠10
 - Distance metrics other than IP

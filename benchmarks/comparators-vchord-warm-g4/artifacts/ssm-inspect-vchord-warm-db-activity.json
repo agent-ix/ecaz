@@ -1,0 +1,22 @@
+{
+    "CommandId": "815172ee-e854-418f-b062-f863ce76c263",
+    "InstanceId": "i-099b28c358d176776",
+    "Comment": "inspect-vchord-warm-db-activity",
+    "DocumentName": "AWS-RunShellScript",
+    "DocumentVersion": "$DEFAULT",
+    "PluginName": "aws:runShellScript",
+    "ResponseCode": 0,
+    "ExecutionStartDateTime": "2026-06-16T23:04:15.768Z",
+    "ExecutionElapsedTime": "PT0.335S",
+    "ExecutionEndDateTime": "2026-06-16T23:04:15.768Z",
+    "Status": "Success",
+    "StatusDetails": "Success",
+    "StandardOutputContent": "2026-06-16 23:04:15.867412+00|53882|active|IO|DataFileRead|INSERT INTO real_1m_ivf_rabitq1_rerank_corpus_vchord (id, embedding)\n         SELECT id, source::vector(1536) FROM real_1m_ivf_rabitq1_rerank_corpus\n         ON\n2026-06-16 23:04:15.867412+00|54301|active|||select now(), pid, state, wait_event_type, wait_event, left(query,160) from pg_stat_activity where datname='tqvector_bench' order by pid;\nreal_1m_ivf_rabitq1_rerank_corpus_vchord|3215 MB\nreal_100k_ivf_rabitq1_rerank_corpus_vchord|1615 MB\nreal_100k_ivf_rabitq1_rerank_corpus_vchord_idx|817 MB\nreal_50k_ivf_rabitq_corpus_vchord|810 MB\nreal_50k_ivf_rabitq_corpus_vchord_idx|411 MB\nreal_1m_ivf_rabitq1_rerank_corpus_vchord_pkey|8856 kB\nreal_100k_ivf_rabitq1_rerank_corpus_vchord_pkey|2208 kB\nreal_50k_ivf_rabitq_corpus_vchord_pkey|1112 kB\nvchordrq_sampled_queries|0 bytes\n",
+    "StandardOutputUrl": "",
+    "StandardErrorContent": "",
+    "StandardErrorUrl": "",
+    "CloudWatchOutputConfig": {
+        "CloudWatchLogGroupName": "",
+        "CloudWatchOutputEnabled": false
+    }
+}

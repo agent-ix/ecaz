@@ -1,0 +1,3 @@
+warning: `ecaz-cli` (bin "ecaz") generated 17 warnings (1 duplicate) (run `cargo clippy --fix --bin "ecaz" -p ecaz-cli` to apply 5 suggestions)
+warning: `ecaz-cli` (bin "ecaz" test) generated 16 warnings (16 duplicates)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.22s

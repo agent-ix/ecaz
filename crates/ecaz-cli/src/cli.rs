@@ -2,9 +2,9 @@
 //!
 //! Subcommand groups mirror the conceptual split in the CLI README:
 //! `corpus` (data in/out of Postgres), `bench` (measurements against loaded
-//! corpora), `compare` (cross-engine comparison), and `stress` (correctness
-//! under load). Adding a new group means adding one variant to `Command`
-//! and one module under `commands/`.
+//! corpora, including standalone competitor measurement via `bench comparator`),
+//! and `stress` (correctness under load). Adding a new group means adding one
+//! variant to `Command` and one module under `commands/`.
 
 use clap::{Parser, Subcommand};
 use color_eyre::eyre::Result;
@@ -17,10 +17,10 @@ use crate::{commands, psql};
     name = "ecaz",
     version,
     about = "Operator CLI for the Ecaz Postgres extension",
-    long_about = "ecaz — corpus loading, benchmarking (recall / latency / storage), \
-                  and cross-engine comparison for the Ecaz Postgres vector extension. \
-                  Access methods (ec_hnsw, ec_ivf, ec_diskann) are selected via \
-                  `--profile`; every command is profile-aware."
+    long_about = "ecaz — corpus loading and benchmarking (recall / latency / storage, \
+                  plus standalone competitor measurement via `bench comparator`) for the \
+                  Ecaz Postgres vector extension. Access methods (ec_hnsw, ec_ivf, \
+                  ec_diskann) are selected via `--profile`; every command is profile-aware."
 )]
 pub struct Cli {
     #[command(subcommand)]
@@ -64,15 +64,10 @@ enum Command {
         #[command(subcommand)]
         command: commands::corpus::CorpusCommand,
     },
-    /// Benchmarks against a loaded corpus (recall, latency, storage, ...).
+    /// Benchmarks against a loaded corpus (recall, latency, storage, comparator, ...).
     Bench {
         #[command(subcommand)]
         command: commands::bench::BenchCommand,
-    },
-    /// Compare Ecaz against external vector-search engines on the same corpus.
-    Compare {
-        #[command(subcommand)]
-        command: commands::compare::CompareCommand,
     },
     /// Development/setup/test helpers that own the old wrapper-script surface.
     Dev {
@@ -108,7 +103,6 @@ impl Cli {
         match self.command {
             Command::Corpus { command } => command.run(&conn).await,
             Command::Bench { command } => command.run(&conn).await,
-            Command::Compare { command } => command.run(&conn).await,
             Command::Dev { command } => command.run(&conn).await,
             Command::Quant { command } => command.run(&conn.database).await,
             Command::Stress { command } => command.run(&conn).await,

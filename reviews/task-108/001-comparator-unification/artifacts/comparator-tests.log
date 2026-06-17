@@ -1,0 +1,22 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.18s
+     Running unittests src/main.rs (target/debug/deps/ecaz-bdbeafde08ddf599)
+
+running 15 tests
+test commands::bench::comparator::tests::configured_engine_label_is_self_describing ... ok
+test commands::bench::comparator::tests::default_lists_is_ceil_sqrt_rows ... ok
+test commands::bench::comparator::tests::engine_query_gucs_match_each_engine ... ok
+test commands::bench::comparator::tests::knn_sql_uses_ip_operator_and_bind_cast ... ok
+test commands::bench::comparator::tests::pgvector_hnsw_index_sql_pins_ip_ops_and_reloptions ... ok
+test commands::bench::comparator::tests::pgvector_ivfflat_index_sql_pins_ip_ops_and_lists ... ok
+test commands::bench::comparator::tests::populate_sql_is_idempotent_via_on_conflict ... ok
+test commands::bench::comparator::tests::memory_value_validation_matches_postgres_units ... ok
+test commands::bench::comparator::tests::sidecar_and_index_names_are_engine_scoped ... ok
+test commands::bench::comparator::tests::storage_layout_validation_accepts_known_values ... ok
+test commands::bench::comparator::tests::sidecar_ddl_uses_if_not_exists_and_vector_dim ... ok
+test commands::bench::comparator::tests::vchord_index_sql_pins_rabitq_residual_options ... ok
+test commands::bench::comparator::tests::vectorscale_index_sql_uses_diskann_ip_ops_and_reloptions ... ok
+test commands::bench::suite::tests::expands_comparator_with_vchord_engine_and_lists ... ok
+test commands::bench::suite::tests::parses_comparator_table_and_summary_rows ... ok
+
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 391 filtered out; finished in 0.00s
+

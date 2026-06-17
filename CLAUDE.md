@@ -155,6 +155,46 @@ into the owning packet.** Do not write new bash sweepers, per-packet
   workflow into a script. Land that extension as its own commit before
   using it in a packet.
 
+### The Standard ecaz Sweep
+
+There is **one canonical per-lane suite config** per supported host, committed
+under `crates/ecaz-cli/suites/current/`:
+
+- `m5-local.json` (Apple M5), `intel-local.json` (Intel desktop),
+  `aws-intel.json` (AWS Intel), `aws-graviton.json` (AWS Graviton 4).
+
+Each canonical config IS "the standard ecaz sweep" for that lane: the standard
+access-method profiles (`ec_hnsw`, `ec_ivf`, `ec_diskann`, `ec_spire`) × the
+standard scales (**10k / 50k / 100k / 1m**) × the standard `load` / `recall` /
+`latency` / `storage` steps (65 steps: precheck + 4×4×4). Corpus TSVs are staged
+per lane at a single canonical dir — local lanes read `data/staged-current/`,
+AWS lanes `/var/lib/pgsql/18/datasets/staged-current/`, both named
+`ec_real_{10k,50k,100k,1m}_{corpus,queries}.tsv` + `_manifest.json`; staging the
+four scales there is the run prerequisite. The recall/latency steps set `sweep`
+to the profile's
+`default_sweep` from `crates/ecaz-cli/src/profiles.rs` verbatim — do **not**
+hand-pick a different grid (suite steps require an explicit `sweep`, so the
+standard is to copy the registered default):
+
+- `ec_hnsw` → `[40, 64, 100, 128, 160, 200]`
+- `ec_diskann` → `[64, 128, 200, 400, 800]`
+- `ec_ivf` → `[8, 16, 24, 32, 48, 64]`
+- `ec_spire` → `[8, 16, 24, 32]`
+
+Competitor numbers come from `comparator` steps (`ecaz bench comparator`), not
+from re-running the standard ecaz sweep.
+
+**Convention:** run the standard lane config **as-is** —
+`ecaz bench suite run --config crates/ecaz-cli/suites/current/<lane>.json
+--artifact-dir <packet>/artifacts`. Only hand-author a bespoke `SuiteConfig`
+when a task genuinely needs a non-standard grid/scale/option, and **state that
+reason in the packet `manifest.md`**. A packet that silently re-authors the
+standard matrix is a smell — point at the canonical lane config instead.
+
+When resource-constrained (e.g. a 1m run on a local desktop), subset with
+`--only-tag ec_real_100k` / `--only-tag hnsw` rather than editing the config —
+the canonical config always carries the full 10k/50k/100k/1m × 4-profile matrix.
+
 ### Push and Visibility
 
 - Push committed checkpoints, packet updates, and feedback files to the remote

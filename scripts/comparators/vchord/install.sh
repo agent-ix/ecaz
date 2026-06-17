@@ -102,14 +102,21 @@ PSQL_OK=$(sudo -u postgres psql -tAc "select 1;" 2>/dev/null || true)
 if [[ "$PSQL_OK" != "1" ]]; then
   comparator_log "postgres not reachable; skipping auto-config of shared_preload_libraries"
   comparator_log "Manual step:"
-  comparator_log "  ALTER SYSTEM SET shared_preload_libraries='<existing>,vchord';"
+  comparator_log "  ALTER SYSTEM SET shared_preload_libraries = 'ecaz', 'vchord';"
   comparator_log "  sudo systemctl restart postgresql"
 else
   CURRENT=$(sudo -u postgres psql -tAc "show shared_preload_libraries;" 2>/dev/null | tr -d ' ')
   if [[ ",${CURRENT}," != *",vchord,"* ]]; then
-    NEW=$([[ -z "$CURRENT" ]] && echo "vchord" || echo "${CURRENT},vchord")
-    comparator_log "adding vchord -> '$NEW'"
-    sudo -u postgres psql -c "ALTER SYSTEM SET shared_preload_libraries = '$NEW';"
+    LIBS="${CURRENT:+$CURRENT,}vchord"
+    # shared_preload_libraries is a GUC_LIST_QUOTE list. ALTER SYSTEM must
+    # receive each library as its OWN single-quoted value (comma-separated),
+    # not one quoted comma-string: `= 'ecaz,vchord'` is stored as the single
+    # filename "ecaz,vchord", and Postgres then FATALs on startup with
+    # `could not access file "ecaz,vchord"`. Emit `'ecaz', 'vchord'` instead.
+    QUOTED=$(printf '%s\n' "$LIBS" | tr ',' '\n' | sed '/^$/d' \
+      | awk 'BEGIN{ORS=""}{printf "%s%c%s%c", (NR>1?", ":""), 39, $0, 39}')
+    comparator_log "adding vchord -> shared_preload_libraries ($LIBS)"
+    sudo -u postgres psql -c "ALTER SYSTEM SET shared_preload_libraries = $QUOTED;"
     sudo systemctl restart postgresql
     sleep 3
   else

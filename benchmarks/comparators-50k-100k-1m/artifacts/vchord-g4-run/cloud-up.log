@@ -1,0 +1,8 @@
+Apply complete! Resources: 25 added, 0 changed, 0 destroyed.
+db_instance_id = "i-0a6951577c705f238"
+db_private_ip = "10.42.1.66"
+profile = "10k-medium"
+region = "us-west-2"
+s3_bucket = "ecaz-cloud-10k-medium-268ea93e"
+up: profile=10k-medium db=10.42.1.66 bucket=ecaz-cloud-10k-medium-268ea93e
+next: ecaz cloud install --profile 10k-medium (or `ecaz cloud corpus stage`)

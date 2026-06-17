@@ -679,7 +679,7 @@ fn rerank_width_guc(profile: &profiles::IndexProfile) -> Option<&'static str> {
     }
 }
 
-/// `fetch_sources` reachable from sibling modules (e.g. `compare::pgvector`)
+/// `fetch_sources` reachable from sibling modules (e.g. `bench::comparator`)
 /// without exporting from the binary crate root.
 pub async fn fetch_sources_public(
     client: &Client,
