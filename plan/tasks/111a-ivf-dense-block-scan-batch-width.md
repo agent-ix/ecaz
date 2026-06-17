@@ -99,8 +99,14 @@ default-off until a promotion decision.
 - Drive everything through `ecaz bench suite` with a committed `SuiteConfig`.
 - Compare, per storage format and nprobe cell: row, dense (current), dense+A,
   dense+B for TurboQuant and RaBitQ.
-- Cells: real 100k **and 1M** (1M is required for the promotion question; it is
-  an AWS lane reading the 1M corpus base — local hosts only stage 10k/100k).
+- **Stage the scales; do not front-load 1M.** Run real **50k + 100k first**
+  (local lane) as the gate. Escalate to **1M (AWS lane)** only if 50k/100k show
+  promise — i.e. the TurboQuant dense regression is closed (dense ≥ row,
+  width≥32 reached), the RaBitQ win is retained, and recall is unchanged. If
+  50k/100k do not show promise, stop and record an iterate/abandon decision
+  without paying for the 1M tier.
+- 1M is the AWS lane reading the 1M corpus base; local hosts only stage
+  10k/100k today and would need 50k staged.
 - Use the registered `ec_ivf` default sweep `[8,16,24,32,48,64]`; do not subset
   without a manifest-stated reason.
 - Report warm latency p50/p95/p99, recall@10 + NDCG@10, build time, index size,
@@ -114,9 +120,10 @@ default-off until a promotion decision.
    evidence rather than fully built — state the reason in the packet).
 3. Recall and NDCG unchanged vs the legacy row path for every compared cell.
 4. SIMD flush-width counters show dense TurboQuant reaching width≥32.
-5. A benchmark packet reports the head-to-head matrix at real 100k and 1M for
-   TurboQuant and RaBitQ with latency, recall, build time, index size, pages,
-   candidates, and flush-width histograms.
+5. A benchmark packet reports the head-to-head matrix for TurboQuant and RaBitQ
+   with latency, recall, build time, index size, pages, candidates, and
+   flush-width histograms. Real 50k + 100k are required; 1M is required only if
+   50k/100k show promise (and is a prerequisite for any default-promotion).
 6. The packet explicitly recommends which approach to adopt (A, B, or neither),
    and an explicit promote / iterate / abandon decision for
    `dense_posting_blocks` as a default.
@@ -128,7 +135,9 @@ default-off until a promotion decision.
   high-recall cells with no p95/p99 regression that erases the win.
 - RaBitQ dense retains its Task 111 latency win.
 - Index-size and build-time deltas reported and justified.
-- 1M evidence present (not 100k-only) before any default move.
+- 1M evidence present before any default move — but 1M is run only after 50k/100k
+  show promise, so a default decision can be reached at the smaller scales and
+  1M confirms it rather than gating the early go/no-go.
 
 ## Dependencies and Coordination
 
