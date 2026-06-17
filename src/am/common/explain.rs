@@ -81,6 +81,9 @@ pub(crate) struct IvfExplainCounters {
     pub stats_row_postings_visited: u32,
     pub stats_dense_blocks_visited: u32,
     pub stats_dense_postings_visited: u32,
+    pub stats_columnar_frozen_lists_visited: u32,
+    pub stats_columnar_postings_visited: u32,
+    pub stats_columnar_logical_bytes_copied: u32,
     pub stats_postings_scored: u32,
     pub stats_postings_pruned_by_bound: u32,
     pub stats_scratch_soa_flushes: u32,
@@ -271,6 +274,20 @@ impl IvfExplainCounters {
         self.stats_dense_postings_visited = self.stats_dense_postings_visited.saturating_add(1);
     }
 
+    pub(crate) fn record_columnar_frozen_list_copy(&mut self, logical_bytes_copied: usize) {
+        self.stats_columnar_frozen_lists_visited =
+            self.stats_columnar_frozen_lists_visited.saturating_add(1);
+        self.stats_columnar_logical_bytes_copied = self
+            .stats_columnar_logical_bytes_copied
+            .saturating_add(u32::try_from(logical_bytes_copied).unwrap_or(u32::MAX));
+    }
+
+    pub(crate) fn record_columnar_posting_visited(&mut self) {
+        self.record_posting_visited();
+        self.stats_columnar_postings_visited =
+            self.stats_columnar_postings_visited.saturating_add(1);
+    }
+
     pub(crate) fn record_posting_scored(&mut self) {
         self.stats_postings_scored = self.stats_postings_scored.saturating_add(1);
     }
@@ -378,7 +395,7 @@ impl IvfExplainCounters {
         *self = Self::default();
     }
 
-    pub(crate) fn explain_properties(self) -> [ExplainProperty; 29] {
+    pub(crate) fn explain_properties(self) -> [ExplainProperty; 32] {
         [
             ExplainProperty {
                 property_name: "Centroid Scores",
@@ -407,6 +424,18 @@ impl IvfExplainCounters {
             ExplainProperty {
                 property_name: "Dense Postings Visited",
                 value: ExplainPropertyValue::Integer(self.stats_dense_postings_visited),
+            },
+            ExplainProperty {
+                property_name: "Columnar Frozen Lists Visited",
+                value: ExplainPropertyValue::Integer(self.stats_columnar_frozen_lists_visited),
+            },
+            ExplainProperty {
+                property_name: "Columnar Postings Visited",
+                value: ExplainPropertyValue::Integer(self.stats_columnar_postings_visited),
+            },
+            ExplainProperty {
+                property_name: "Columnar Logical Bytes Copied",
+                value: ExplainPropertyValue::Integer(self.stats_columnar_logical_bytes_copied),
             },
             ExplainProperty {
                 property_name: "Postings Scored",
@@ -886,6 +915,8 @@ mod tests {
         counters.record_row_posting_visited();
         counters.record_dense_block_visited();
         counters.record_dense_posting_visited();
+        counters.record_columnar_frozen_list_copy(13);
+        counters.record_columnar_posting_visited();
         counters.record_posting_scored();
         counters.record_posting_pruned_by_bound();
         counters.record_scratch_soa_flush(17, 23);
@@ -909,10 +940,13 @@ mod tests {
                 stats_centroid_scores: 4,
                 stats_selected_lists: 2,
                 stats_posting_pages_read: 3,
-                stats_postings_visited: 2,
+                stats_postings_visited: 3,
                 stats_row_postings_visited: 1,
                 stats_dense_blocks_visited: 1,
                 stats_dense_postings_visited: 1,
+                stats_columnar_frozen_lists_visited: 1,
+                stats_columnar_postings_visited: 1,
+                stats_columnar_logical_bytes_copied: 13,
                 stats_postings_scored: 1,
                 stats_postings_pruned_by_bound: 1,
                 stats_scratch_soa_flushes: 1,
@@ -949,28 +983,31 @@ mod tests {
             stats_row_postings_visited: 7,
             stats_dense_blocks_visited: 11,
             stats_dense_postings_visited: 13,
-            stats_postings_scored: 17,
-            stats_postings_pruned_by_bound: 19,
-            stats_scratch_soa_flushes: 23,
-            stats_scratch_payload_bytes_copied: 29,
-            stats_scratch_heap_tid_bytes_copied: 31,
-            stats_dense_coalesced_flushes: 37,
-            stats_dense_coalesced_payload_bytes_copied: 41,
-            stats_dense_coalesced_heap_tid_bytes_copied: 43,
-            stats_dense_packed_groups_assembled: 47,
-            stats_dense_packed_segments_assembled: 53,
-            stats_dense_packed_payload_bytes_copied: 59,
-            stats_dense_packed_groups_borrowed: 61,
-            stats_dense_packed_payload_bytes_borrowed: 67,
-            stats_heap_tids_scored: 71,
-            stats_candidates_scored: 73,
-            stats_candidates_inserted: 79,
-            stats_candidates_emitted: 83,
-            stats_rerank_rows: 89,
-            stats_heap_blocks_fetched: 97,
-            stats_approximate_scan_elapsed_us: 101,
-            stats_exact_rerank_elapsed_us: 103,
-            stats_filtered_duplicates: 107,
+            stats_columnar_frozen_lists_visited: 17,
+            stats_columnar_postings_visited: 19,
+            stats_columnar_logical_bytes_copied: 23,
+            stats_postings_scored: 29,
+            stats_postings_pruned_by_bound: 31,
+            stats_scratch_soa_flushes: 37,
+            stats_scratch_payload_bytes_copied: 41,
+            stats_scratch_heap_tid_bytes_copied: 43,
+            stats_dense_coalesced_flushes: 47,
+            stats_dense_coalesced_payload_bytes_copied: 53,
+            stats_dense_coalesced_heap_tid_bytes_copied: 59,
+            stats_dense_packed_groups_assembled: 61,
+            stats_dense_packed_segments_assembled: 67,
+            stats_dense_packed_payload_bytes_copied: 71,
+            stats_dense_packed_groups_borrowed: 73,
+            stats_dense_packed_payload_bytes_borrowed: 79,
+            stats_heap_tids_scored: 83,
+            stats_candidates_scored: 89,
+            stats_candidates_inserted: 97,
+            stats_candidates_emitted: 101,
+            stats_rerank_rows: 103,
+            stats_heap_blocks_fetched: 107,
+            stats_approximate_scan_elapsed_us: 109,
+            stats_exact_rerank_elapsed_us: 113,
+            stats_filtered_duplicates: 127,
         };
 
         assert_eq!(
@@ -1005,92 +1042,104 @@ mod tests {
                     value: ExplainPropertyValue::Integer(13),
                 },
                 ExplainProperty {
-                    property_name: "Postings Scored",
+                    property_name: "Columnar Frozen Lists Visited",
                     value: ExplainPropertyValue::Integer(17),
                 },
                 ExplainProperty {
-                    property_name: "Postings Pruned By Bound",
+                    property_name: "Columnar Postings Visited",
                     value: ExplainPropertyValue::Integer(19),
                 },
                 ExplainProperty {
-                    property_name: "Scratch SoA Flushes",
+                    property_name: "Columnar Logical Bytes Copied",
                     value: ExplainPropertyValue::Integer(23),
                 },
                 ExplainProperty {
-                    property_name: "Scratch Payload Bytes Copied",
+                    property_name: "Postings Scored",
                     value: ExplainPropertyValue::Integer(29),
                 },
                 ExplainProperty {
-                    property_name: "Scratch Heap TID Bytes Copied",
+                    property_name: "Postings Pruned By Bound",
                     value: ExplainPropertyValue::Integer(31),
                 },
                 ExplainProperty {
-                    property_name: "Dense Coalesced Flushes",
+                    property_name: "Scratch SoA Flushes",
                     value: ExplainPropertyValue::Integer(37),
                 },
                 ExplainProperty {
-                    property_name: "Dense Coalesced Payload Bytes Copied",
+                    property_name: "Scratch Payload Bytes Copied",
                     value: ExplainPropertyValue::Integer(41),
                 },
                 ExplainProperty {
-                    property_name: "Dense Coalesced Heap TID Bytes Copied",
+                    property_name: "Scratch Heap TID Bytes Copied",
                     value: ExplainPropertyValue::Integer(43),
                 },
                 ExplainProperty {
-                    property_name: "Dense Packed Groups Assembled",
+                    property_name: "Dense Coalesced Flushes",
                     value: ExplainPropertyValue::Integer(47),
                 },
                 ExplainProperty {
-                    property_name: "Dense Packed Segments Assembled",
+                    property_name: "Dense Coalesced Payload Bytes Copied",
                     value: ExplainPropertyValue::Integer(53),
                 },
                 ExplainProperty {
-                    property_name: "Dense Packed Payload Bytes Copied",
+                    property_name: "Dense Coalesced Heap TID Bytes Copied",
                     value: ExplainPropertyValue::Integer(59),
                 },
                 ExplainProperty {
-                    property_name: "Dense Packed Groups Borrowed",
+                    property_name: "Dense Packed Groups Assembled",
                     value: ExplainPropertyValue::Integer(61),
                 },
                 ExplainProperty {
-                    property_name: "Dense Packed Payload Bytes Borrowed",
+                    property_name: "Dense Packed Segments Assembled",
                     value: ExplainPropertyValue::Integer(67),
                 },
                 ExplainProperty {
-                    property_name: "Heap TIDs Scored",
+                    property_name: "Dense Packed Payload Bytes Copied",
                     value: ExplainPropertyValue::Integer(71),
                 },
                 ExplainProperty {
-                    property_name: "Candidates Scored",
+                    property_name: "Dense Packed Groups Borrowed",
                     value: ExplainPropertyValue::Integer(73),
                 },
                 ExplainProperty {
-                    property_name: "Candidates Inserted",
+                    property_name: "Dense Packed Payload Bytes Borrowed",
                     value: ExplainPropertyValue::Integer(79),
                 },
                 ExplainProperty {
-                    property_name: "Candidates Emitted",
+                    property_name: "Heap TIDs Scored",
                     value: ExplainPropertyValue::Integer(83),
                 },
                 ExplainProperty {
-                    property_name: "Rerank Rows",
+                    property_name: "Candidates Scored",
                     value: ExplainPropertyValue::Integer(89),
                 },
                 ExplainProperty {
-                    property_name: "Heap Blocks Fetched",
+                    property_name: "Candidates Inserted",
                     value: ExplainPropertyValue::Integer(97),
                 },
                 ExplainProperty {
-                    property_name: "Approximate Scan Elapsed Us",
+                    property_name: "Candidates Emitted",
                     value: ExplainPropertyValue::Integer(101),
                 },
                 ExplainProperty {
-                    property_name: "Exact Rerank Elapsed Us",
+                    property_name: "Rerank Rows",
                     value: ExplainPropertyValue::Integer(103),
                 },
                 ExplainProperty {
-                    property_name: "Filtered Duplicates",
+                    property_name: "Heap Blocks Fetched",
                     value: ExplainPropertyValue::Integer(107),
+                },
+                ExplainProperty {
+                    property_name: "Approximate Scan Elapsed Us",
+                    value: ExplainPropertyValue::Integer(109),
+                },
+                ExplainProperty {
+                    property_name: "Exact Rerank Elapsed Us",
+                    value: ExplainPropertyValue::Integer(113),
+                },
+                ExplainProperty {
+                    property_name: "Filtered Duplicates",
+                    value: ExplainPropertyValue::Integer(127),
                 },
             ]
         );

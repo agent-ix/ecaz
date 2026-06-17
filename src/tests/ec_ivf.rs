@@ -1494,7 +1494,10 @@
             ec_ivf_debug!(am::debug_ec_ivf_gettuple_counter_snapshot(index_oid, vec![1.0, 0.0]));
         assert_eq!(initial.outputs.len(), 3);
         assert_eq!(initial.row_postings_visited, 0);
-        assert_eq!(initial.dense_postings_visited, 3);
+        assert_eq!(initial.dense_postings_visited, 0);
+        assert_eq!(initial.columnar_frozen_lists_visited, 1);
+        assert_eq!(initial.columnar_postings_visited, 3);
+        assert!(initial.columnar_logical_bytes_copied > 0);
         assert_eq!(initial.dense_coalesced_flushes, 1);
 
         Spi::run("INSERT INTO ec_ivf_columnar_scan_vacuum VALUES (3, '[1.0,0.2]'::ecvector)")
@@ -1508,7 +1511,10 @@
                 == (inserted_tid.block_number, inserted_tid.offset_number)
         ));
         assert!(mixed.row_postings_visited >= 1);
-        assert_eq!(mixed.dense_postings_visited, 3);
+        assert_eq!(mixed.dense_postings_visited, 0);
+        assert_eq!(mixed.columnar_frozen_lists_visited, 1);
+        assert_eq!(mixed.columnar_postings_visited, 3);
+        assert!(mixed.columnar_logical_bytes_copied > 0);
 
         let deleted_tid = heap_tid_for_row("ec_ivf_columnar_scan_vacuum", 1);
         Spi::run("DELETE FROM ec_ivf_columnar_scan_vacuum WHERE id = 1")
@@ -1533,7 +1539,10 @@
                 != (deleted_tid.block_number, deleted_tid.offset_number)
         ));
         assert!(after_vacuum.row_postings_visited >= 1);
-        assert_eq!(after_vacuum.dense_postings_visited, 2);
+        assert_eq!(after_vacuum.dense_postings_visited, 0);
+        assert_eq!(after_vacuum.columnar_frozen_lists_visited, 1);
+        assert_eq!(after_vacuum.columnar_postings_visited, 2);
+        assert!(after_vacuum.columnar_logical_bytes_copied > 0);
         assert_eq!(after_vacuum.dense_coalesced_flushes, 1);
     }
 

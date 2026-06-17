@@ -1856,6 +1856,9 @@ unsafe fn materialize_probe_candidates(
                                     index_relation_handle,
                                     header,
                                 )?;
+                            opaque
+                                .explain_counters
+                                .record_columnar_frozen_list_copy(logical_bytes.len());
                             let block = super::page::IvfColumnarFrozenListRef::decode(
                                 header,
                                 &logical_bytes,
@@ -2075,6 +2078,9 @@ unsafe fn materialize_probe_candidates(
                             index_relation_handle,
                             header,
                         )?;
+                        opaque
+                            .explain_counters
+                            .record_columnar_frozen_list_copy(logical_bytes.len());
                         let block =
                             super::page::IvfColumnarFrozenListRef::decode(header, &logical_bytes)?;
                         append_columnar_frozen_list_to_coalesced_scratch(
@@ -2398,7 +2404,7 @@ fn append_columnar_frozen_list_to_coalesced_scratch(
         if block.is_deleted(index) {
             continue;
         }
-        opaque.explain_counters.record_dense_posting_visited();
+        opaque.explain_counters.record_columnar_posting_visited();
         let heap_tid_count = block.heap_tid_count(index);
         if !consume_live_tid_budget(remaining_live_tids_by_list, block.list_id, heap_tid_count)? {
             continue;
@@ -3520,6 +3526,9 @@ pub(crate) struct EcIvfGettupleCounterDebugSnapshot {
     pub(crate) row_postings_visited: u32,
     pub(crate) dense_blocks_visited: u32,
     pub(crate) dense_postings_visited: u32,
+    pub(crate) columnar_frozen_lists_visited: u32,
+    pub(crate) columnar_postings_visited: u32,
+    pub(crate) columnar_logical_bytes_copied: u32,
     pub(crate) scratch_soa_flushes: u32,
     pub(crate) dense_coalesced_flushes: u32,
     pub(crate) dense_packed_groups_assembled: u32,
@@ -3567,6 +3576,9 @@ pub(crate) unsafe fn debug_ec_ivf_gettuple_counter_snapshot(
         row_postings_visited: counters.stats_row_postings_visited,
         dense_blocks_visited: counters.stats_dense_blocks_visited,
         dense_postings_visited: counters.stats_dense_postings_visited,
+        columnar_frozen_lists_visited: counters.stats_columnar_frozen_lists_visited,
+        columnar_postings_visited: counters.stats_columnar_postings_visited,
+        columnar_logical_bytes_copied: counters.stats_columnar_logical_bytes_copied,
         scratch_soa_flushes: counters.stats_scratch_soa_flushes,
         dense_coalesced_flushes: counters.stats_dense_coalesced_flushes,
         dense_packed_groups_assembled: counters.stats_dense_packed_groups_assembled,
