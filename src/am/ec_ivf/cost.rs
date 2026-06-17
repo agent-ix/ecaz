@@ -406,6 +406,7 @@ mod tests {
             quant_bits: 4,
             dense_posting_blocks: false,
             dense_posting_pack_pages: 1,
+            dense_posting_typed_layout: false,
             storage_format: options::StorageFormat::TurboQuant,
             rerank: options::RerankMode::HeapF32,
         });

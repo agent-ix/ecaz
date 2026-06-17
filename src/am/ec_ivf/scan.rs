@@ -385,7 +385,15 @@ impl IvfDensePostingBlockScratch {
         self.scores.clear();
     }
 
-    fn load_gammas(&mut self, block: super::page::IvfDensePostingRef<'_>) {
+    fn load_gammas(&mut self, block: super::page::IvfDensePostingRef<'_>, use_typed: bool) {
+        if use_typed {
+            if let Some(gammas) = block.gammas_native_le() {
+                self.gammas.clear();
+                self.gammas.extend_from_slice(gammas);
+                self.scores.clear();
+                return;
+            }
+        }
         block.copy_gammas_to(&mut self.gammas);
         self.scores.clear();
     }
@@ -446,10 +454,11 @@ impl IvfPostingScratchSoa {
         block: super::page::IvfDensePostingRef<'_>,
         index: usize,
         heap_tid_count: usize,
+        gamma: f32,
     ) {
         debug_assert_eq!(block.payload_len(), self.payload_len);
         let offset = self.heap_tids.len();
-        self.gammas.push(block.gamma(index));
+        self.gammas.push(gamma);
         self.heap_tid_offsets.push(offset);
         self.heap_tid_counts.push(heap_tid_count);
         self.heap_tids.extend(block.heap_tids(index));
@@ -486,6 +495,7 @@ impl IvfPostingScratchSoa {
 impl IvfDensePackedPending {
     fn from_header(
         segment: super::page::IvfDensePostingPackedSegmentRef<'_>,
+        use_typed: bool,
     ) -> Result<Self, String> {
         if segment.segment_index != 0 {
             return Err("ec_ivf dense packed group header segment index is not zero".to_owned());
@@ -493,8 +503,16 @@ impl IvfDensePackedPending {
         let mut heap_tid_counts = Vec::with_capacity(segment.len());
         let mut heap_tids = Vec::with_capacity(segment.total_heap_tids());
         let mut deleted = Vec::with_capacity(segment.len());
+        let typed_counts = use_typed
+            .then(|| segment.heap_tid_counts_native_le())
+            .flatten();
         for index in 0..segment.len() {
-            heap_tid_counts.push(segment.heap_tid_count(index));
+            heap_tid_counts.push(
+                typed_counts
+                    .and_then(|counts| counts.get(index).copied())
+                    .map(usize::from)
+                    .unwrap_or_else(|| segment.heap_tid_count(index)),
+            );
             heap_tids.extend(segment.heap_tids(index));
             deleted.push(segment.is_deleted(index));
         }
@@ -513,7 +531,11 @@ impl IvfDensePackedPending {
             segment_count: segment.segment_count,
             next_segment_index: 1,
             payload_len: segment.payload_len(),
-            gammas: segment.gammas(),
+            gammas: use_typed
+                .then(|| segment.gammas_native_le())
+                .flatten()
+                .map(<[f32]>::to_vec)
+                .unwrap_or_else(|| segment.gammas()),
             deleted,
             heap_tid_counts,
             heap_tids,
@@ -1519,6 +1541,7 @@ unsafe fn materialize_probe_candidates(
         Some(metadata.quant_bits),
     )?;
     let payload_len = quantizer.payload_len();
+    let use_dense_posting_typed_views = super::options::current_session_dense_posting_typed_views();
     // SAFETY: `index_relation` and metadata describe the live IVF index; the
     // selected list ids come from validated centroid scores.
     let probe_plan =
@@ -1616,6 +1639,7 @@ unsafe fn materialize_probe_candidates(
                             if !use_dense_posting_coalescing {
                                 process_dense_posting_block(
                                     super::page::IvfDensePostingRef::Block(block),
+                                    use_dense_posting_typed_views,
                                     quantizer,
                                     prepared_query,
                                     opaque,
@@ -1642,6 +1666,7 @@ unsafe fn materialize_probe_candidates(
                             }
                             append_dense_posting_block_to_coalesced_scratch(
                                 super::page::IvfDensePostingRef::Block(block),
+                                use_dense_posting_typed_views,
                                 &mut *dense_scratch,
                                 quantizer,
                                 prepared_query,
@@ -1687,8 +1712,10 @@ unsafe fn materialize_probe_candidates(
                             if dense_scratch_list_id.is_none() {
                                 dense_scratch_list_id = Some(segment.list_id);
                             }
-                            dense_packed_pending =
-                                Some(IvfDensePackedPending::from_header(segment)?);
+                            dense_packed_pending = Some(IvfDensePackedPending::from_header(
+                                segment,
+                                use_dense_posting_typed_views,
+                            )?);
                             if dense_packed_pending
                                 .as_ref()
                                 .expect("pending just initialized")
@@ -1827,6 +1854,7 @@ unsafe fn materialize_probe_candidates(
                         opaque.explain_counters.record_dense_block_visited();
                         process_dense_posting_block(
                             super::page::IvfDensePostingRef::Block(block),
+                            use_dense_posting_typed_views,
                             quantizer,
                             prepared_query,
                             opaque,
@@ -1846,7 +1874,10 @@ unsafe fn materialize_probe_candidates(
                             );
                         }
                         opaque.explain_counters.record_dense_block_visited();
-                        dense_packed_pending = Some(IvfDensePackedPending::from_header(segment)?);
+                        dense_packed_pending = Some(IvfDensePackedPending::from_header(
+                            segment,
+                            use_dense_posting_typed_views,
+                        )?);
                         if dense_packed_pending
                             .as_ref()
                             .expect("pending just initialized")
@@ -2122,6 +2153,7 @@ fn process_dense_coalesced_postings(
 
 fn append_dense_posting_block_to_coalesced_scratch(
     block: super::page::IvfDensePostingRef<'_>,
+    use_typed: bool,
     scratch: &mut IvfPostingScratchSoa,
     quantizer: IvfQuantizer,
     prepared_query: &IvfPreparedQuery,
@@ -2134,6 +2166,7 @@ fn append_dense_posting_block_to_coalesced_scratch(
         return Ok(());
     }
     debug_assert_eq!(block.payloads().len(), block.len() * block.payload_len());
+    let gamma_view = use_typed.then(|| block.gammas_native_le()).flatten();
 
     for index in 0..block.len() {
         if block.is_deleted(index) {
@@ -2154,7 +2187,10 @@ fn append_dense_posting_block_to_coalesced_scratch(
                 running_top,
             )?;
         }
-        scratch.push_dense_posting(block, index, heap_tid_count);
+        let gamma = gamma_view
+            .and_then(|gammas| gammas.get(index).copied())
+            .unwrap_or_else(|| block.gamma(index));
+        scratch.push_dense_posting(block, index, heap_tid_count, gamma);
         if scratch.len() >= IVF_POSTING_SCRATCH_SOA_BATCH_POSTINGS {
             process_dense_coalesced_postings(
                 scratch,
@@ -2220,6 +2256,7 @@ fn drain_dense_packed_group_to_scratch(
 
 fn process_dense_posting_block(
     block: super::page::IvfDensePostingRef<'_>,
+    use_typed: bool,
     quantizer: IvfQuantizer,
     prepared_query: &IvfPreparedQuery,
     opaque: &mut EcIvfScanOpaque,
@@ -2234,15 +2271,21 @@ fn process_dense_posting_block(
     // SAFETY: scratch is scan-opaque-owned, cleared before reuse, and this
     // function is the only user for the duration of dense block processing.
     let scratch = unsafe { dense_posting_block_scratch(opaque) };
-    unsafe { (&mut *scratch).load_gammas(block) };
+    let typed_gammas = use_typed.then(|| block.gammas_native_le()).flatten();
 
     let scored_batch = unsafe {
         let scratch = &mut *scratch;
+        if typed_gammas.is_none() {
+            scratch.load_gammas(block, false);
+        } else {
+            scratch.scores.clear();
+        }
+        let gammas = typed_gammas.unwrap_or(&scratch.gammas);
         quantizer.score_turboquant_batch_from_payloads(
             prepared_query,
             block.payloads(),
             block.payload_len(),
-            &scratch.gammas,
+            gammas,
             &mut scratch.scores,
         )? || quantizer.score_ip_bits1_batch_from_payloads(
             prepared_query,
@@ -2306,7 +2349,9 @@ fn process_dense_posting_block(
             .map(|worst_score| -worst_score);
         let Some(ip) = quantizer.score_ip_from_parts_with_min_bound(
             prepared_query,
-            unsafe { (&(*scratch).gammas)[index] },
+            typed_gammas
+                .and_then(|gammas| gammas.get(index).copied())
+                .unwrap_or_else(|| unsafe { (&(*scratch).gammas)[index] }),
             block.payload(index),
             min_ip_to_keep,
         )?
@@ -3533,6 +3578,7 @@ mod tests {
             quant_bits: 1,
             dense_posting_blocks: false,
             dense_posting_pack_pages: 1,
+            dense_posting_typed_layout: false,
             storage_format: IvfStorageFormat::RaBitQ,
             rerank,
         }
@@ -3623,7 +3669,7 @@ mod tests {
         let block = IvfDensePostingBlockRef::decode(&encoded, 2).unwrap();
         let mut scratch = IvfDensePostingBlockScratch::default();
 
-        scratch.load_gammas(IvfDensePostingRef::Block(block));
+        scratch.load_gammas(IvfDensePostingRef::Block(block), true);
         scratch.scores.extend([1.0, 2.0, 3.0]);
         let gamma_capacity = scratch.gammas.capacity();
         let score_capacity = scratch.scores.capacity();
@@ -3635,7 +3681,7 @@ mod tests {
         let smaller_encoded = smaller_tuple.encode().unwrap();
         let smaller_block = IvfDensePostingBlockRef::decode(&smaller_encoded, 2).unwrap();
 
-        scratch.load_gammas(IvfDensePostingRef::Block(smaller_block));
+        scratch.load_gammas(IvfDensePostingRef::Block(smaller_block), true);
 
         assert_eq!(scratch.gammas, vec![0.25, 0.5]);
         assert!(scratch.scores.is_empty());
@@ -3671,8 +3717,18 @@ mod tests {
         let block = IvfDensePostingBlockRef::decode(&encoded, 2).unwrap();
         let mut scratch = IvfPostingScratchSoa::new(2);
 
-        scratch.push_dense_posting(IvfDensePostingRef::Block(block), 0, block.heap_tid_count(0));
-        scratch.push_dense_posting(IvfDensePostingRef::Block(block), 2, block.heap_tid_count(2));
+        scratch.push_dense_posting(
+            IvfDensePostingRef::Block(block),
+            0,
+            block.heap_tid_count(0),
+            block.gamma(0),
+        );
+        scratch.push_dense_posting(
+            IvfDensePostingRef::Block(block),
+            2,
+            block.heap_tid_count(2),
+            block.gamma(2),
+        );
 
         assert_eq!(scratch.len(), 2);
         assert_eq!(scratch.gammas, vec![0.25, 0.75]);

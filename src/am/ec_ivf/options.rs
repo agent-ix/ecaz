@@ -37,6 +37,7 @@ static EC_IVF_ADAPTIVE_NPROBE_SCORE_MARGIN_RATIO_BPS_GUC: GucSetting<i32> =
 // lane). Off remains a diagnostic switch.
 static EC_IVF_SCRATCH_SOA_BATCH_DECODE_GUC: GucSetting<bool> = GucSetting::<bool>::new(true);
 static EC_IVF_DENSE_POSTING_COALESCING_GUC: GucSetting<bool> = GucSetting::<bool>::new(true);
+static EC_IVF_DENSE_POSTING_TYPED_VIEWS_GUC: GucSetting<bool> = GucSetting::<bool>::new(true);
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
@@ -52,6 +53,7 @@ struct EcIvfReloptions {
     quant_bits: i32,
     dense_posting_blocks: i32,
     dense_posting_pack_pages: i32,
+    dense_posting_typed_layout: i32,
     storage_format_offset: i32,
     quantizer_offset: i32,
     rerank_offset: i32,
@@ -156,6 +158,7 @@ pub(super) struct EcIvfOptions {
     pub(super) quant_bits: i32,
     pub(super) dense_posting_blocks: bool,
     pub(super) dense_posting_pack_pages: i32,
+    pub(super) dense_posting_typed_layout: bool,
     pub(super) storage_format: StorageFormat,
     pub(super) rerank: RerankMode,
 }
@@ -172,6 +175,7 @@ impl EcIvfOptions {
         quant_bits: EC_IVF_DEFAULT_QUANT_BITS,
         dense_posting_blocks: false,
         dense_posting_pack_pages: 1,
+        dense_posting_typed_layout: false,
         storage_format: StorageFormat::Auto,
         rerank: RerankMode::Auto,
     };
@@ -282,6 +286,14 @@ pub(super) fn register_gucs() {
         GucContext::Userset,
         GucFlags::default(),
     );
+    GucRegistry::define_bool_guc(
+        c"ec_ivf.dense_posting_typed_views",
+        c"Enable ec_ivf dense posting aligned typed views.",
+        c"Diagnostic Task 111a switch; when enabled, little-endian aligned dense numeric arrays can be read as native typed slices. Disable to compare against the byte-decoding fallback.",
+        &EC_IVF_DENSE_POSTING_TYPED_VIEWS_GUC,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
 }
 
 pub(super) fn current_session_nprobe() -> i32 {
@@ -329,6 +341,14 @@ pub(super) fn current_session_dense_posting_coalescing() -> bool {
         true
     } else {
         EC_IVF_DENSE_POSTING_COALESCING_GUC.get()
+    }
+}
+
+pub(super) fn current_session_dense_posting_typed_views() -> bool {
+    if cfg!(test) {
+        true
+    } else {
+        EC_IVF_DENSE_POSTING_TYPED_VIEWS_GUC.get()
     }
 }
 
@@ -489,6 +509,16 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_amoptions(
             16,
             offset_of!(EcIvfReloptions, dense_posting_pack_pages) as i32,
         );
+        pg_sys::add_local_int_reloption(
+            &mut relopts,
+            c"dense_posting_typed_layout".as_ptr(),
+            c"Experimental Task 111a aligned dense posting layout for native little-endian typed views: 0 disables, 1 enables."
+                .as_ptr(),
+            0,
+            0,
+            1,
+            offset_of!(EcIvfReloptions, dense_posting_typed_layout) as i32,
+        );
         pg_sys::add_local_string_reloption(
                 &mut relopts,
                 c"storage_format".as_ptr(),
@@ -598,6 +628,7 @@ fn build_options_from_reloptions(
         quant_bits: reloptions.quant_bits,
         dense_posting_blocks: reloptions.dense_posting_blocks != 0,
         dense_posting_pack_pages: reloptions.dense_posting_pack_pages.max(1),
+        dense_posting_typed_layout: reloptions.dense_posting_typed_layout != 0,
         storage_format,
         rerank,
     }

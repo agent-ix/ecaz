@@ -637,6 +637,7 @@ impl BuildState {
         let postings_start = Instant::now();
         let use_dense_posting_blocks = dense_posting_blocks_enabled(self.options);
         let dense_posting_pack_pages = dense_posting_pack_pages(self.options);
+        let dense_posting_typed_layout = self.options.dense_posting_typed_layout;
         let mut dense_logical_block_id = 0_u32;
         for (list_id, tuple_indices) in tuple_indices_by_list.iter().enumerate() {
             if !tuple_indices.is_empty() {
@@ -679,6 +680,7 @@ impl BuildState {
                             &pending,
                             payload_len,
                             dense_posting_pack_pages,
+                            dense_posting_typed_layout,
                             self.page_size,
                             &mut dense_logical_block_id,
                         )?;
@@ -695,6 +697,7 @@ impl BuildState {
                         &pending,
                         payload_len,
                         dense_posting_pack_pages,
+                        dense_posting_typed_layout,
                         self.page_size,
                         &mut dense_logical_block_id,
                     )?;
@@ -941,6 +944,7 @@ fn insert_dense_posting_group(
     postings: &[(ItemPointer, f32, ItemPointer, Vec<u8>)],
     payload_len: usize,
     pack_pages: usize,
+    typed_layout: bool,
     page_size: usize,
     next_logical_block_id: &mut u32,
 ) -> Result<(), String> {
@@ -950,7 +954,11 @@ fn insert_dense_posting_group(
             postings,
             payload_len,
         )?;
-        posting_tids.push(data_pages.insert_ivf_dense_posting_block(&dense)?);
+        posting_tids.push(if typed_layout {
+            data_pages.insert_ivf_dense_posting_aligned_block(&dense)?
+        } else {
+            data_pages.insert_ivf_dense_posting_block(&dense)?
+        });
         return Ok(());
     }
 
@@ -1333,6 +1341,7 @@ mod tests {
             quant_bits: 4,
             dense_posting_blocks: false,
             dense_posting_pack_pages: 1,
+            dense_posting_typed_layout: false,
             storage_format: options::StorageFormat::Auto,
             rerank: options::RerankMode::Auto,
         }

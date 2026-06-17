@@ -244,6 +244,7 @@ fn options_from_metadata(metadata: &page::MetadataPage) -> Result<options::EcIvf
         quant_bits: i32::from(metadata.quant_bits),
         dense_posting_blocks: false,
         dense_posting_pack_pages: 1,
+        dense_posting_typed_layout: false,
         storage_format: metadata.storage_format,
         rerank: metadata.rerank,
     })

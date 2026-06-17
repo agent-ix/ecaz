@@ -121,6 +121,7 @@ const IVF_PQ_CODEBOOK_TAG: u8 = 0x24;
 const IVF_DENSE_POSTING_BLOCK_TAG: u8 = 0x25;
 const IVF_DENSE_POSTING_PACKED_SEGMENT_TAG: u8 = 0x26;
 const IVF_DENSE_POSTING_PACKED_CONTINUATION_TAG: u8 = 0x27;
+const IVF_DENSE_POSTING_ALIGNED_BLOCK_TAG: u8 = 0x28;
 const POSTING_FLAG_DELETED: u8 = 0b0000_0001;
 const POSTING_FIXED_BYTES: usize = EC_IVF_POSTING_PAYLOAD_OFFSET;
 const DENSE_POSTING_BLOCK_HEADER_BYTES: usize = 16;
@@ -1075,6 +1076,46 @@ impl Iterator for IvfDensePostingHeapTids<'_> {
     }
 }
 
+fn native_le_f32_slice(bytes: &[u8]) -> Option<&[f32]> {
+    if !cfg!(target_endian = "little") || bytes.len() % size_of::<f32>() != 0 {
+        return None;
+    }
+    let ptr = bytes.as_ptr().cast::<f32>();
+    if !ptr.is_aligned() {
+        return None;
+    }
+    // SAFETY: little-endian host byte order matches durable LE order; the
+    // caller validated length as a whole number of f32 values; f32 has no
+    // invalid bit patterns; and alignment was checked above.
+    Some(unsafe { std::slice::from_raw_parts(ptr, bytes.len() / size_of::<f32>()) })
+}
+
+fn native_le_u16_slice(bytes: &[u8]) -> Option<&[u16]> {
+    if !cfg!(target_endian = "little") || bytes.len() % size_of::<u16>() != 0 {
+        return None;
+    }
+    let ptr = bytes.as_ptr().cast::<u16>();
+    if !ptr.is_aligned() {
+        return None;
+    }
+    // SAFETY: little-endian host byte order matches durable LE order; length
+    // and alignment were checked; u16 has no invalid bit patterns.
+    Some(unsafe { std::slice::from_raw_parts(ptr, bytes.len() / size_of::<u16>()) })
+}
+
+fn native_le_u32_slice(bytes: &[u8]) -> Option<&[u32]> {
+    if !cfg!(target_endian = "little") || bytes.len() % size_of::<u32>() != 0 {
+        return None;
+    }
+    let ptr = bytes.as_ptr().cast::<u32>();
+    if !ptr.is_aligned() {
+        return None;
+    }
+    // SAFETY: little-endian host byte order matches durable LE order; length
+    // and alignment were checked; u32 has no invalid bit patterns.
+    Some(unsafe { std::slice::from_raw_parts(ptr, bytes.len() / size_of::<u32>()) })
+}
+
 #[derive(Debug, Clone, Copy)]
 pub(super) enum IvfPostingEntryRef<'a> {
     Row(IvfPostingTupleRef<'a>),
@@ -1102,7 +1143,8 @@ impl<'a> IvfDensePostingBlockRef<'a> {
                 input.len()
             ));
         }
-        if input[0] != IVF_DENSE_POSTING_BLOCK_TAG {
+        let is_aligned_layout = input[0] == IVF_DENSE_POSTING_ALIGNED_BLOCK_TAG;
+        if input[0] != IVF_DENSE_POSTING_BLOCK_TAG && !is_aligned_layout {
             return Err(format!(
                 "invalid ec_ivf dense posting block tag: {}",
                 input[0]
@@ -1129,12 +1171,39 @@ impl<'a> IvfDensePostingBlockRef<'a> {
                 .expect("dense block heap tid count slice should be 4 bytes"),
         ) as usize;
         let deleted_bitmap_len = dense_deleted_bitmap_len(count);
-        let deleted_bitmap_start = DENSE_POSTING_BLOCK_HEADER_BYTES;
-        let gamma_start = deleted_bitmap_start + deleted_bitmap_len;
-        let gamma_end = gamma_start + count * size_of::<f32>();
-        let heap_tid_count_end = gamma_end + count * size_of::<u16>();
-        let heap_tid_offset_end = heap_tid_count_end + count * size_of::<u32>();
-        let rerank_tid_end = heap_tid_offset_end + count * ITEM_POINTER_BYTES;
+        let gamma_start;
+        let gamma_end;
+        let heap_tid_count_start;
+        let heap_tid_count_end;
+        let heap_tid_offset_start;
+        let heap_tid_offset_end;
+        let deleted_bitmap_start;
+        let deleted_bitmap_end;
+        if is_aligned_layout {
+            gamma_start = DENSE_POSTING_BLOCK_HEADER_BYTES;
+            gamma_end = gamma_start + count * size_of::<f32>();
+            heap_tid_offset_start = gamma_end;
+            heap_tid_offset_end = heap_tid_offset_start + count * size_of::<u32>();
+            heap_tid_count_start = heap_tid_offset_end;
+            heap_tid_count_end = heap_tid_count_start + count * size_of::<u16>();
+            deleted_bitmap_start = heap_tid_count_end;
+            deleted_bitmap_end = deleted_bitmap_start + deleted_bitmap_len;
+        } else {
+            deleted_bitmap_start = DENSE_POSTING_BLOCK_HEADER_BYTES;
+            deleted_bitmap_end = deleted_bitmap_start + deleted_bitmap_len;
+            gamma_start = deleted_bitmap_end;
+            gamma_end = gamma_start + count * size_of::<f32>();
+            heap_tid_count_start = gamma_end;
+            heap_tid_count_end = heap_tid_count_start + count * size_of::<u16>();
+            heap_tid_offset_start = heap_tid_count_end;
+            heap_tid_offset_end = heap_tid_offset_start + count * size_of::<u32>();
+        }
+        let rerank_tid_start = if is_aligned_layout {
+            deleted_bitmap_end
+        } else {
+            heap_tid_offset_end
+        };
+        let rerank_tid_end = rerank_tid_start + count * ITEM_POINTER_BYTES;
         let heap_tid_end = rerank_tid_end + total_heap_tids * ITEM_POINTER_BYTES;
         let payload_end = heap_tid_end + count * payload_len;
         if input.len() != payload_end {
@@ -1152,11 +1221,11 @@ impl<'a> IvfDensePostingBlockRef<'a> {
             count,
             total_heap_tids,
             payload_len,
-            deleted_bitmap: &input[deleted_bitmap_start..gamma_start],
+            deleted_bitmap: &input[deleted_bitmap_start..deleted_bitmap_end],
             gamma_bytes: &input[gamma_start..gamma_end],
-            heap_tid_count_bytes: &input[gamma_end..heap_tid_count_end],
-            heap_tid_offset_bytes: &input[heap_tid_count_end..heap_tid_offset_end],
-            rerank_tid_bytes: &input[heap_tid_offset_end..rerank_tid_end],
+            heap_tid_count_bytes: &input[heap_tid_count_start..heap_tid_count_end],
+            heap_tid_offset_bytes: &input[heap_tid_offset_start..heap_tid_offset_end],
+            rerank_tid_bytes: &input[rerank_tid_start..rerank_tid_end],
             heap_tid_bytes: &input[rerank_tid_end..heap_tid_end],
             payloads: &input[heap_tid_end..payload_end],
         })
@@ -1187,6 +1256,18 @@ impl<'a> IvfDensePostingBlockRef<'a> {
             .chunks_exact(size_of::<f32>())
             .map(|chunk| f32::from_le_bytes(chunk.try_into().expect("validated gamma chunk")))
             .collect()
+    }
+
+    pub(super) fn gammas_native_le(&self) -> Option<&'a [f32]> {
+        native_le_f32_slice(self.gamma_bytes)
+    }
+
+    pub(super) fn heap_tid_counts_native_le(&self) -> Option<&'a [u16]> {
+        native_le_u16_slice(self.heap_tid_count_bytes)
+    }
+
+    pub(super) fn heap_tid_offsets_native_le(&self) -> Option<&'a [u32]> {
+        native_le_u32_slice(self.heap_tid_offset_bytes)
     }
 
     pub(super) fn copy_gammas_to(&self, out: &mut Vec<f32>) {
@@ -1298,12 +1379,15 @@ impl<'a> IvfDensePostingPackedSegmentRef<'a> {
                 .expect("packed dense segment payload byte count slice should be 4 bytes"),
         ) as usize;
         let deleted_bitmap_len = dense_deleted_bitmap_len(count);
-        let deleted_bitmap_start = DENSE_POSTING_PACKED_SEGMENT_HEADER_BYTES;
-        let gamma_start = deleted_bitmap_start + deleted_bitmap_len;
+        let gamma_start = DENSE_POSTING_PACKED_SEGMENT_HEADER_BYTES;
         let gamma_end = gamma_start + count * size_of::<f32>();
-        let heap_tid_count_end = gamma_end + count * size_of::<u16>();
-        let heap_tid_offset_end = heap_tid_count_end + count * size_of::<u32>();
-        let rerank_tid_end = heap_tid_offset_end + count * ITEM_POINTER_BYTES;
+        let heap_tid_offset_start = gamma_end;
+        let heap_tid_offset_end = heap_tid_offset_start + count * size_of::<u32>();
+        let heap_tid_count_start = heap_tid_offset_end;
+        let heap_tid_count_end = heap_tid_count_start + count * size_of::<u16>();
+        let deleted_bitmap_start = heap_tid_count_end;
+        let deleted_bitmap_end = deleted_bitmap_start + deleted_bitmap_len;
+        let rerank_tid_end = deleted_bitmap_end + count * ITEM_POINTER_BYTES;
         let heap_tid_end = rerank_tid_end + total_heap_tids * ITEM_POINTER_BYTES;
         let total_payload_len = count.checked_mul(payload_len).ok_or_else(|| {
             "ec_ivf dense posting packed segment payload length overflow".to_owned()
@@ -1350,11 +1434,11 @@ impl<'a> IvfDensePostingPackedSegmentRef<'a> {
             count,
             total_heap_tids,
             payload_len,
-            deleted_bitmap: &input[deleted_bitmap_start..gamma_start],
+            deleted_bitmap: &input[deleted_bitmap_start..deleted_bitmap_end],
             gamma_bytes: &input[gamma_start..gamma_end],
-            heap_tid_count_bytes: &input[gamma_end..heap_tid_count_end],
-            heap_tid_offset_bytes: &input[heap_tid_count_end..heap_tid_offset_end],
-            rerank_tid_bytes: &input[heap_tid_offset_end..rerank_tid_end],
+            heap_tid_count_bytes: &input[heap_tid_count_start..heap_tid_count_end],
+            heap_tid_offset_bytes: &input[heap_tid_offset_start..heap_tid_offset_end],
+            rerank_tid_bytes: &input[deleted_bitmap_end..rerank_tid_end],
             heap_tid_bytes: &input[rerank_tid_end..heap_tid_end],
             payloads: &input[heap_tid_end..payload_end],
         })
@@ -1381,6 +1465,18 @@ impl<'a> IvfDensePostingPackedSegmentRef<'a> {
             .chunks_exact(size_of::<f32>())
             .map(|chunk| f32::from_le_bytes(chunk.try_into().expect("validated gamma chunk")))
             .collect()
+    }
+
+    pub(super) fn gammas_native_le(&self) -> Option<&'a [f32]> {
+        native_le_f32_slice(self.gamma_bytes)
+    }
+
+    pub(super) fn heap_tid_counts_native_le(&self) -> Option<&'a [u16]> {
+        native_le_u16_slice(self.heap_tid_count_bytes)
+    }
+
+    pub(super) fn heap_tid_offsets_native_le(&self) -> Option<&'a [u32]> {
+        native_le_u32_slice(self.heap_tid_offset_bytes)
     }
 
     pub(super) fn copy_gammas_to(&self, out: &mut Vec<f32>) {
@@ -1568,6 +1664,13 @@ impl<'a> IvfDensePostingRef<'a> {
         }
     }
 
+    pub(super) fn gammas_native_le(self) -> Option<&'a [f32]> {
+        match self {
+            Self::Block(block) => block.gammas_native_le(),
+            Self::PackedSegment(segment) => segment.gammas_native_le(),
+        }
+    }
+
     pub(super) fn gamma(self, index: usize) -> f32 {
         match self {
             Self::Block(block) => block.gamma(index),
@@ -1683,6 +1786,14 @@ impl IvfDensePostingBlockTuple {
     }
 
     pub(super) fn encode(&self) -> Result<Vec<u8>, String> {
+        self.encode_with_layout(false)
+    }
+
+    pub(super) fn encode_aligned(&self) -> Result<Vec<u8>, String> {
+        self.encode_with_layout(true)
+    }
+
+    fn encode_with_layout(&self, aligned_layout: bool) -> Result<Vec<u8>, String> {
         if self.gammas.len() != self.heap_tid_counts.len()
             || self.gammas.len() != self.heap_tid_offsets.len()
             || self.gammas.len() != self.rerank_tids.len()
@@ -1709,21 +1820,38 @@ impl IvfDensePostingBlockTuple {
             self.heap_tids.len(),
             self.payload_len,
         ));
-        out.push(IVF_DENSE_POSTING_BLOCK_TAG);
+        out.push(if aligned_layout {
+            IVF_DENSE_POSTING_ALIGNED_BLOCK_TAG
+        } else {
+            IVF_DENSE_POSTING_BLOCK_TAG
+        });
         out.extend_from_slice(&self.list_id.to_le_bytes());
         out.extend_from_slice(&(self.gammas.len() as u16).to_le_bytes());
         out.extend_from_slice(&(self.payload_len as u16).to_le_bytes());
         out.extend_from_slice(&(self.heap_tids.len() as u32).to_le_bytes());
         out.extend_from_slice(&[0, 0, 0]);
-        out.extend_from_slice(&self.deleted_bitmap);
-        for gamma in &self.gammas {
-            out.extend_from_slice(&gamma.to_le_bytes());
-        }
-        for count in &self.heap_tid_counts {
-            out.extend_from_slice(&count.to_le_bytes());
-        }
-        for offset in &self.heap_tid_offsets {
-            out.extend_from_slice(&offset.to_le_bytes());
+        if aligned_layout {
+            for gamma in &self.gammas {
+                out.extend_from_slice(&gamma.to_le_bytes());
+            }
+            for offset in &self.heap_tid_offsets {
+                out.extend_from_slice(&offset.to_le_bytes());
+            }
+            for count in &self.heap_tid_counts {
+                out.extend_from_slice(&count.to_le_bytes());
+            }
+            out.extend_from_slice(&self.deleted_bitmap);
+        } else {
+            out.extend_from_slice(&self.deleted_bitmap);
+            for gamma in &self.gammas {
+                out.extend_from_slice(&gamma.to_le_bytes());
+            }
+            for count in &self.heap_tid_counts {
+                out.extend_from_slice(&count.to_le_bytes());
+            }
+            for offset in &self.heap_tid_offsets {
+                out.extend_from_slice(&offset.to_le_bytes());
+            }
         }
         for tid in &self.rerank_tids {
             tid.encode_into(&mut out);
@@ -1981,16 +2109,16 @@ impl IvfDensePostingPackedSegmentTuple {
         out.extend_from_slice(&(self.heap_tids.len() as u32).to_le_bytes());
         out.extend_from_slice(&(self.payloads.len() as u32).to_le_bytes());
         out.push(0);
-        out.extend_from_slice(&self.deleted_bitmap);
         for gamma in &self.gammas {
             out.extend_from_slice(&gamma.to_le_bytes());
-        }
-        for count in &self.heap_tid_counts {
-            out.extend_from_slice(&count.to_le_bytes());
         }
         for offset in &self.heap_tid_offsets {
             out.extend_from_slice(&offset.to_le_bytes());
         }
+        for count in &self.heap_tid_counts {
+            out.extend_from_slice(&count.to_le_bytes());
+        }
+        out.extend_from_slice(&self.deleted_bitmap);
         for tid in &self.rerank_tids {
             tid.encode_into(&mut out);
         }
@@ -2050,10 +2178,10 @@ impl IvfDensePostingPackedSegmentTuple {
         payload_bytes: usize,
     ) -> usize {
         DENSE_POSTING_PACKED_SEGMENT_HEADER_BYTES
-            + dense_deleted_bitmap_len(count)
             + count * size_of::<f32>()
-            + count * size_of::<u16>()
             + count * size_of::<u32>()
+            + count * size_of::<u16>()
+            + dense_deleted_bitmap_len(count)
             + count * ITEM_POINTER_BYTES
             + total_heap_tids * ITEM_POINTER_BYTES
             + payload_bytes
@@ -2374,6 +2502,13 @@ impl DataPage {
         self.insert_raw_tuple(tuple.encode()?)
     }
 
+    pub(super) fn insert_ivf_dense_posting_aligned_block(
+        &mut self,
+        tuple: &IvfDensePostingBlockTuple,
+    ) -> Result<ItemPointer, String> {
+        self.insert_raw_tuple(tuple.encode_aligned()?)
+    }
+
     pub(super) fn insert_ivf_dense_posting_packed_segment(
         &mut self,
         tuple: &IvfDensePostingPackedSegmentTuple,
@@ -2496,6 +2631,13 @@ impl DataPageChain {
         tuple: &IvfDensePostingBlockTuple,
     ) -> Result<ItemPointer, String> {
         self.insert_raw_tuple(tuple.encode()?)
+    }
+
+    pub(super) fn insert_ivf_dense_posting_aligned_block(
+        &mut self,
+        tuple: &IvfDensePostingBlockTuple,
+    ) -> Result<ItemPointer, String> {
+        self.insert_raw_tuple(tuple.encode_aligned()?)
     }
 
     pub(super) fn insert_ivf_dense_posting_packed_segment(
@@ -3108,7 +3250,7 @@ where
                     let posting = IvfPostingTupleRef::decode(tuple_bytes, payload_len)?;
                     visitor(tid, IvfPostingEntryRef::Row(posting))
                 }
-                IVF_DENSE_POSTING_BLOCK_TAG => {
+                IVF_DENSE_POSTING_BLOCK_TAG | IVF_DENSE_POSTING_ALIGNED_BLOCK_TAG => {
                     let block = IvfDensePostingBlockRef::decode(tuple_bytes, payload_len)?;
                     block.validate_offsets()?;
                     visitor(tid, IvfPostingEntryRef::DenseBlock(block))
@@ -3622,7 +3764,7 @@ where
                         IvfPostingRewrite::Delete => Ok(PostingVisit::Delete),
                     }
                 }
-                Some(IVF_DENSE_POSTING_BLOCK_TAG) => {
+                Some(tag @ (IVF_DENSE_POSTING_BLOCK_TAG | IVF_DENSE_POSTING_ALIGNED_BLOCK_TAG)) => {
                     let block = IvfDensePostingBlockTuple::decode(tuple_bytes, payload_len)?;
                     if block.list_id != list_id {
                         return Ok(PostingVisit::OtherList);
@@ -3630,7 +3772,11 @@ where
                     match rewrite_dense(posting_tid, block)? {
                         IvfDensePostingBlockRewrite::Keep => Ok(PostingVisit::Keep),
                         IvfDensePostingBlockRewrite::Rewrite(updated) => {
-                            let encoded = updated.encode()?;
+                            let encoded = if tag == IVF_DENSE_POSTING_ALIGNED_BLOCK_TAG {
+                                updated.encode_aligned()?
+                            } else {
+                                updated.encode()?
+                            };
                             if encoded.len() != tuple_bytes.len() {
                                 return Err(format!(
                                     "ec_ivf dense posting block tuple size changed from {} to {}",
@@ -4000,6 +4146,7 @@ mod tests {
             quant_bits: 4,
             dense_posting_blocks: false,
             dense_posting_pack_pages: 1,
+            dense_posting_typed_layout: false,
             storage_format: StorageFormat::RaBitQ,
             rerank: RerankMode::HeapF32,
         });
@@ -4030,6 +4177,7 @@ mod tests {
             quant_bits: 4,
             dense_posting_blocks: false,
             dense_posting_pack_pages: 1,
+            dense_posting_typed_layout: false,
             storage_format: StorageFormat::Auto,
             rerank: RerankMode::Auto,
         });
@@ -4154,6 +4302,36 @@ mod tests {
     }
 
     #[test]
+    fn dense_posting_aligned_block_roundtrip_exposes_native_views() {
+        let postings = vec![
+            (tid(11, 1), 0.25, ItemPointer::INVALID, vec![1, 2]),
+            (tid(12, 2), 0.5, ItemPointer::INVALID, vec![3, 4]),
+            (tid(13, 3), 0.75, ItemPointer::INVALID, vec![5, 6]),
+        ];
+        let tuple =
+            IvfDensePostingBlockTuple::from_single_heaptid_postings(4, &postings, 2).unwrap();
+
+        let aligned = tuple.encode_aligned().unwrap();
+        let legacy = tuple.encode().unwrap();
+        let aligned_ref = IvfDensePostingBlockRef::decode(&aligned, 2).unwrap();
+        let legacy_ref = IvfDensePostingBlockRef::decode(&legacy, 2).unwrap();
+
+        assert_eq!(aligned[0], IVF_DENSE_POSTING_ALIGNED_BLOCK_TAG);
+        assert_eq!(
+            IvfDensePostingBlockTuple::decode(&aligned, 2).unwrap(),
+            tuple
+        );
+        assert_eq!(aligned_ref.gammas_native_le().unwrap(), &[0.25, 0.5, 0.75]);
+        assert_eq!(aligned_ref.heap_tid_counts_native_le().unwrap(), &[1, 1, 1]);
+        assert_eq!(
+            aligned_ref.heap_tid_offsets_native_le().unwrap(),
+            &[0, 1, 2]
+        );
+        assert_eq!(legacy_ref.gammas(), aligned_ref.gammas());
+        assert!(legacy_ref.gammas_native_le().is_none());
+    }
+
+    #[test]
     fn dense_posting_packed_segment_roundtrip_preserves_logical_block_metadata() {
         let postings = vec![
             (tid(21, 1), 0.125, ItemPointer::INVALID, vec![1, 3]),
@@ -4183,6 +4361,9 @@ mod tests {
         assert_eq!(borrowed.len(), 2);
         assert_eq!(borrowed.total_heap_tids(), 2);
         assert_eq!(borrowed.gammas(), vec![0.125, 0.25]);
+        assert_eq!(borrowed.gammas_native_le().unwrap(), &[0.125, 0.25]);
+        assert_eq!(borrowed.heap_tid_counts_native_le().unwrap(), &[1, 1]);
+        assert_eq!(borrowed.heap_tid_offsets_native_le().unwrap(), &[0, 1]);
         assert_eq!(borrowed.payload(1), &[5, 7]);
         assert_eq!(
             borrowed.heap_tids(0).collect::<Vec<_>>(),
@@ -4506,6 +4687,7 @@ mod tests {
             quant_bits: 4,
             dense_posting_blocks: false,
             dense_posting_pack_pages: 1,
+            dense_posting_typed_layout: false,
             storage_format: StorageFormat::Auto,
             rerank: RerankMode::Auto,
         });
