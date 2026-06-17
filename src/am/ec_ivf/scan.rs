@@ -53,6 +53,7 @@ struct EcIvfScanOpaque {
     posting_candidate_count: u32,
     next_candidate_index: u32,
     posting_scratch_soa: *mut IvfPostingScratchSoa,
+    dense_posting_coalescing_scratch: *mut IvfPostingScratchSoa,
     dense_posting_block_scratch: *mut IvfDensePostingBlockScratch,
     heap_rerank_state: Option<Box<IvfHeapRerankState>>,
     explain_counters: IvfExplainCounters,
@@ -79,6 +80,10 @@ impl std::fmt::Debug for EcIvfScanOpaque {
             .field("posting_candidate_count", &self.posting_candidate_count)
             .field("next_candidate_index", &self.next_candidate_index)
             .field("posting_scratch_soa", &self.posting_scratch_soa)
+            .field(
+                "dense_posting_coalescing_scratch",
+                &self.dense_posting_coalescing_scratch,
+            )
             .field(
                 "dense_posting_block_scratch",
                 &self.dense_posting_block_scratch,
@@ -422,6 +427,21 @@ impl IvfPostingScratchSoa {
         self.payloads.extend_from_slice(posting.payload);
     }
 
+    fn push_dense_posting(
+        &mut self,
+        block: super::page::IvfDensePostingBlockRef<'_>,
+        index: usize,
+        heap_tid_count: usize,
+    ) {
+        debug_assert_eq!(block.payload_len(), self.payload_len);
+        let offset = self.heap_tids.len();
+        self.gammas.push(block.gamma(index));
+        self.heap_tid_offsets.push(offset);
+        self.heap_tid_counts.push(heap_tid_count);
+        self.heap_tids.extend(block.heap_tids(index));
+        self.payloads.extend_from_slice(block.payload(index));
+    }
+
     fn len(&self) -> usize {
         self.gammas.len()
     }
@@ -659,6 +679,7 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_amendscan(scan: pg_sys::IndexScanD
             free_pq_fastscan_model(opaque);
             free_candidate_dedup(opaque);
             free_posting_scratch_soa(opaque);
+            free_dense_posting_coalescing_scratch(opaque);
             free_dense_posting_block_scratch(opaque);
             pg_sys::pfree(opaque_ptr);
             (*scan).opaque = ptr::null_mut();
@@ -965,6 +986,36 @@ fn free_posting_scratch_soa(opaque: &mut EcIvfScanOpaque) {
     if !ptr.is_null() {
         // SAFETY: non-null `ptr` was created with `Box::into_raw` by
         // `posting_scratch_soa` and is owned by this scan opaque.
+        drop(unsafe { Box::from_raw(ptr) });
+    }
+}
+
+/// # Safety
+/// `dense_posting_coalescing_scratch` is scan-opaque owned and allocated by
+/// this helper; the returned raw pointer is valid until
+/// `free_dense_posting_coalescing_scratch` clears it.
+unsafe fn dense_posting_coalescing_scratch(
+    opaque: &mut EcIvfScanOpaque,
+    payload_len: usize,
+) -> *mut IvfPostingScratchSoa {
+    if opaque.dense_posting_coalescing_scratch.is_null() {
+        opaque.dense_posting_coalescing_scratch =
+            Box::into_raw(Box::new(IvfPostingScratchSoa::new(payload_len)));
+        return opaque.dense_posting_coalescing_scratch;
+    }
+
+    (&mut *opaque.dense_posting_coalescing_scratch).clear_for_payload_len(payload_len);
+    opaque.dense_posting_coalescing_scratch
+}
+
+fn free_dense_posting_coalescing_scratch(opaque: &mut EcIvfScanOpaque) {
+    let ptr = std::mem::replace(
+        &mut opaque.dense_posting_coalescing_scratch,
+        ptr::null_mut(),
+    );
+    if !ptr.is_null() {
+        // SAFETY: non-null `ptr` was created with `Box::into_raw` by
+        // `dense_posting_coalescing_scratch` and is owned by this scan opaque.
         drop(unsafe { Box::from_raw(ptr) });
     }
 }
@@ -1367,10 +1418,13 @@ unsafe fn materialize_probe_candidates(
     record_posting_pages_read(opaque, posting_pages);
     if use_scratch_soa_batch_decode(metadata) {
         let scratch = posting_scratch_soa(opaque, payload_len);
+        let dense_scratch = dense_posting_coalescing_scratch(opaque, payload_len);
+        let mut dense_scratch_list_id: Option<u32> = None;
         // SAFETY: `scratch` is a scan-opaque-owned `*mut IvfPostingScratchSoa`
         // allocated by `posting_scratch_soa`; the visitor and the post-loop
         // drain are the only borrowers of this scratch buffer for the
-        // duration of the call.
+        // duration of the call. `dense_scratch` has the same scan-opaque
+        // ownership and is only borrowed while dense blocks are coalesced.
         unsafe {
             super::page::visit_ivf_posting_entries_for_block_sequence(
                 index_relation_handle,
@@ -1382,6 +1436,15 @@ unsafe fn materialize_probe_candidates(
                             if !probe_plan.contains_list(posting.list_id) || posting.deleted {
                                 return Ok(());
                             }
+                            process_dense_coalesced_postings(
+                                &mut *dense_scratch,
+                                quantizer,
+                                prepared_query,
+                                opaque,
+                                best_by_heap_tid,
+                                &mut running_top,
+                            )?;
+                            dense_scratch_list_id = None;
                             opaque.explain_counters.record_row_posting_visited();
                             let heap_tid_count = posting.heaptid_count();
                             if !consume_live_tid_budget(
@@ -1395,6 +1458,7 @@ unsafe fn materialize_probe_candidates(
                             if !scratch_ref.can_accept(heap_tid_count) {
                                 process_scratch_soa_postings(
                                     scratch_ref,
+                                    ScratchSoaFlushKind::Row,
                                     quantizer,
                                     prepared_query,
                                     opaque,
@@ -1411,14 +1475,31 @@ unsafe fn materialize_probe_candidates(
                             opaque.explain_counters.record_dense_block_visited();
                             process_scratch_soa_postings(
                                 &mut *scratch,
+                                ScratchSoaFlushKind::Row,
                                 quantizer,
                                 prepared_query,
                                 opaque,
                                 best_by_heap_tid,
                                 &mut running_top,
                             )?;
-                            process_dense_posting_block(
+                            if dense_scratch_list_id.is_some_and(|list_id| list_id != block.list_id)
+                            {
+                                process_dense_coalesced_postings(
+                                    &mut *dense_scratch,
+                                    quantizer,
+                                    prepared_query,
+                                    opaque,
+                                    best_by_heap_tid,
+                                    &mut running_top,
+                                )?;
+                                dense_scratch_list_id = None;
+                            }
+                            if dense_scratch_list_id.is_none() {
+                                dense_scratch_list_id = Some(block.list_id);
+                            }
+                            append_dense_posting_block_to_coalesced_scratch(
                                 block,
+                                &mut *dense_scratch,
                                 quantizer,
                                 prepared_query,
                                 opaque,
@@ -1433,6 +1514,15 @@ unsafe fn materialize_probe_candidates(
             )?;
             process_scratch_soa_postings(
                 &mut *scratch,
+                ScratchSoaFlushKind::Row,
+                quantizer,
+                prepared_query,
+                opaque,
+                best_by_heap_tid,
+                &mut running_top,
+            )?;
+            process_dense_coalesced_postings(
+                &mut *dense_scratch,
                 quantizer,
                 prepared_query,
                 opaque,
@@ -1563,8 +1653,15 @@ fn use_scratch_soa_batch_decode_for_format(
         }
 }
 
+#[derive(Debug, Clone, Copy)]
+enum ScratchSoaFlushKind {
+    Row,
+    DenseCoalesced,
+}
+
 fn process_scratch_soa_postings(
     scratch: &mut IvfPostingScratchSoa,
+    flush_kind: ScratchSoaFlushKind,
     quantizer: IvfQuantizer,
     prepared_query: &IvfPreparedQuery,
     opaque: &mut EcIvfScanOpaque,
@@ -1574,10 +1671,16 @@ fn process_scratch_soa_postings(
     if scratch.is_empty() {
         return Ok(());
     }
-    opaque.explain_counters.record_scratch_soa_flush(
-        scratch.payloads.len(),
-        scratch.heap_tids.len().saturating_mul(ITEM_POINTER_BYTES),
-    );
+    let payload_bytes = scratch.payloads.len();
+    let heap_tid_bytes = scratch.heap_tids.len().saturating_mul(ITEM_POINTER_BYTES);
+    match flush_kind {
+        ScratchSoaFlushKind::Row => opaque
+            .explain_counters
+            .record_scratch_soa_flush(payload_bytes, heap_tid_bytes),
+        ScratchSoaFlushKind::DenseCoalesced => opaque
+            .explain_counters
+            .record_dense_coalesced_flush(payload_bytes, heap_tid_bytes),
+    }
 
     if quantizer.score_turboquant_batch_from_payloads(
         prepared_query,
@@ -1686,6 +1789,75 @@ fn process_scratch_soa_postings(
         );
     }
     scratch.clear();
+    Ok(())
+}
+
+fn process_dense_coalesced_postings(
+    scratch: &mut IvfPostingScratchSoa,
+    quantizer: IvfQuantizer,
+    prepared_query: &IvfPreparedQuery,
+    opaque: &mut EcIvfScanOpaque,
+    best_by_heap_tid: *mut HashMap<ItemPointer, EcIvfScoredCandidate>,
+    running_top: &mut Option<CandidateTopK>,
+) -> Result<(), String> {
+    process_scratch_soa_postings(
+        scratch,
+        ScratchSoaFlushKind::DenseCoalesced,
+        quantizer,
+        prepared_query,
+        opaque,
+        best_by_heap_tid,
+        running_top,
+    )
+}
+
+fn append_dense_posting_block_to_coalesced_scratch(
+    block: super::page::IvfDensePostingBlockRef<'_>,
+    scratch: &mut IvfPostingScratchSoa,
+    quantizer: IvfQuantizer,
+    prepared_query: &IvfPreparedQuery,
+    opaque: &mut EcIvfScanOpaque,
+    best_by_heap_tid: *mut HashMap<ItemPointer, EcIvfScoredCandidate>,
+    running_top: &mut Option<CandidateTopK>,
+    remaining_live_tids_by_list: &mut [u64],
+) -> Result<(), String> {
+    if block.len() == 0 {
+        return Ok(());
+    }
+    debug_assert_eq!(block.payloads.len(), block.len() * block.payload_len());
+
+    for index in 0..block.len() {
+        if block.is_deleted(index) {
+            continue;
+        }
+        opaque.explain_counters.record_dense_posting_visited();
+        let heap_tid_count = block.heap_tid_count(index);
+        if !consume_live_tid_budget(remaining_live_tids_by_list, block.list_id, heap_tid_count)? {
+            continue;
+        }
+        if !scratch.can_accept(heap_tid_count) && !scratch.is_empty() {
+            process_dense_coalesced_postings(
+                scratch,
+                quantizer,
+                prepared_query,
+                opaque,
+                best_by_heap_tid,
+                running_top,
+            )?;
+        }
+        scratch.push_dense_posting(block, index, heap_tid_count);
+        if scratch.len() >= IVF_POSTING_SCRATCH_SOA_BATCH_POSTINGS {
+            process_dense_coalesced_postings(
+                scratch,
+                quantizer,
+                prepared_query,
+                opaque,
+                best_by_heap_tid,
+                running_top,
+            )?;
+        }
+    }
+
     Ok(())
 }
 
@@ -2718,6 +2890,7 @@ pub(crate) struct EcIvfGettupleCounterDebugSnapshot {
     pub(crate) dense_blocks_visited: u32,
     pub(crate) dense_postings_visited: u32,
     pub(crate) scratch_soa_flushes: u32,
+    pub(crate) dense_coalesced_flushes: u32,
 }
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -2759,6 +2932,7 @@ pub(crate) unsafe fn debug_ec_ivf_gettuple_counter_snapshot(
         dense_blocks_visited: counters.stats_dense_blocks_visited,
         dense_postings_visited: counters.stats_dense_postings_visited,
         scratch_soa_flushes: counters.stats_scratch_soa_flushes,
+        dense_coalesced_flushes: counters.stats_dense_coalesced_flushes,
     }
 }
 
@@ -3105,6 +3279,45 @@ mod tests {
         assert!(scratch.scores.is_empty());
         assert_eq!(scratch.gammas.capacity(), gamma_capacity);
         assert_eq!(scratch.scores.capacity(), score_capacity);
+    }
+
+    #[test]
+    fn posting_scratch_soa_batches_dense_posting_fields_without_losing_order() {
+        let postings = vec![
+            (
+                candidate(11, 1, 0.0).heap_tid,
+                0.25,
+                ItemPointer::INVALID,
+                vec![1, 2],
+            ),
+            (
+                candidate(12, 1, 0.0).heap_tid,
+                0.5,
+                ItemPointer::INVALID,
+                vec![3, 4],
+            ),
+            (
+                candidate(13, 1, 0.0).heap_tid,
+                0.75,
+                ItemPointer::INVALID,
+                vec![5, 6],
+            ),
+        ];
+        let tuple =
+            IvfDensePostingBlockTuple::from_single_heaptid_postings(7, &postings, 2).unwrap();
+        let encoded = tuple.encode().unwrap();
+        let block = IvfDensePostingBlockRef::decode(&encoded, 2).unwrap();
+        let mut scratch = IvfPostingScratchSoa::new(2);
+
+        scratch.push_dense_posting(block, 0, block.heap_tid_count(0));
+        scratch.push_dense_posting(block, 2, block.heap_tid_count(2));
+
+        assert_eq!(scratch.len(), 2);
+        assert_eq!(scratch.gammas, vec![0.25, 0.75]);
+        assert_eq!(scratch.payload(0), [1, 2]);
+        assert_eq!(scratch.payload(1), [5, 6]);
+        assert_eq!(scratch.heap_tids(0), [candidate(11, 1, 0.0).heap_tid]);
+        assert_eq!(scratch.heap_tids(1), [candidate(13, 1, 0.0).heap_tid]);
     }
 
     #[test]

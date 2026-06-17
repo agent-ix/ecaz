@@ -86,6 +86,9 @@ pub(crate) struct IvfExplainCounters {
     pub stats_scratch_soa_flushes: u32,
     pub stats_scratch_payload_bytes_copied: u32,
     pub stats_scratch_heap_tid_bytes_copied: u32,
+    pub stats_dense_coalesced_flushes: u32,
+    pub stats_dense_coalesced_payload_bytes_copied: u32,
+    pub stats_dense_coalesced_heap_tid_bytes_copied: u32,
     pub stats_heap_tids_scored: u32,
     pub stats_candidates_scored: u32,
     pub stats_candidates_inserted: u32,
@@ -285,6 +288,20 @@ impl IvfExplainCounters {
             .saturating_add(u32::try_from(heap_tid_bytes_copied).unwrap_or(u32::MAX));
     }
 
+    pub(crate) fn record_dense_coalesced_flush(
+        &mut self,
+        payload_bytes_copied: usize,
+        heap_tid_bytes_copied: usize,
+    ) {
+        self.stats_dense_coalesced_flushes = self.stats_dense_coalesced_flushes.saturating_add(1);
+        self.stats_dense_coalesced_payload_bytes_copied = self
+            .stats_dense_coalesced_payload_bytes_copied
+            .saturating_add(u32::try_from(payload_bytes_copied).unwrap_or(u32::MAX));
+        self.stats_dense_coalesced_heap_tid_bytes_copied = self
+            .stats_dense_coalesced_heap_tid_bytes_copied
+            .saturating_add(u32::try_from(heap_tid_bytes_copied).unwrap_or(u32::MAX));
+    }
+
     pub(crate) fn record_heap_tids_scored(&mut self, count: usize) {
         self.stats_heap_tids_scored = self
             .stats_heap_tids_scored
@@ -333,7 +350,7 @@ impl IvfExplainCounters {
         *self = Self::default();
     }
 
-    pub(crate) fn explain_properties(self) -> [ExplainProperty; 21] {
+    pub(crate) fn explain_properties(self) -> [ExplainProperty; 24] {
         [
             ExplainProperty {
                 property_name: "Centroid Scores",
@@ -382,6 +399,22 @@ impl IvfExplainCounters {
             ExplainProperty {
                 property_name: "Scratch Heap TID Bytes Copied",
                 value: ExplainPropertyValue::Integer(self.stats_scratch_heap_tid_bytes_copied),
+            },
+            ExplainProperty {
+                property_name: "Dense Coalesced Flushes",
+                value: ExplainPropertyValue::Integer(self.stats_dense_coalesced_flushes),
+            },
+            ExplainProperty {
+                property_name: "Dense Coalesced Payload Bytes Copied",
+                value: ExplainPropertyValue::Integer(
+                    self.stats_dense_coalesced_payload_bytes_copied,
+                ),
+            },
+            ExplainProperty {
+                property_name: "Dense Coalesced Heap TID Bytes Copied",
+                value: ExplainPropertyValue::Integer(
+                    self.stats_dense_coalesced_heap_tid_bytes_copied,
+                ),
             },
             ExplainProperty {
                 property_name: "Heap TIDs Scored",
@@ -806,6 +839,7 @@ mod tests {
         counters.record_posting_scored();
         counters.record_posting_pruned_by_bound();
         counters.record_scratch_soa_flush(17, 23);
+        counters.record_dense_coalesced_flush(29, 31);
         counters.record_heap_tids_scored(9);
         counters.record_candidate_scored();
         counters.record_candidate_scored();
@@ -832,6 +866,9 @@ mod tests {
                 stats_scratch_soa_flushes: 1,
                 stats_scratch_payload_bytes_copied: 17,
                 stats_scratch_heap_tid_bytes_copied: 23,
+                stats_dense_coalesced_flushes: 1,
+                stats_dense_coalesced_payload_bytes_copied: 29,
+                stats_dense_coalesced_heap_tid_bytes_copied: 31,
                 stats_heap_tids_scored: 9,
                 stats_candidates_scored: 2,
                 stats_candidates_inserted: 1,
@@ -860,15 +897,18 @@ mod tests {
             stats_scratch_soa_flushes: 23,
             stats_scratch_payload_bytes_copied: 29,
             stats_scratch_heap_tid_bytes_copied: 31,
-            stats_heap_tids_scored: 37,
-            stats_candidates_scored: 41,
-            stats_candidates_inserted: 43,
-            stats_candidates_emitted: 47,
-            stats_rerank_rows: 53,
-            stats_heap_blocks_fetched: 59,
-            stats_approximate_scan_elapsed_us: 61,
-            stats_exact_rerank_elapsed_us: 67,
-            stats_filtered_duplicates: 71,
+            stats_dense_coalesced_flushes: 37,
+            stats_dense_coalesced_payload_bytes_copied: 41,
+            stats_dense_coalesced_heap_tid_bytes_copied: 43,
+            stats_heap_tids_scored: 47,
+            stats_candidates_scored: 53,
+            stats_candidates_inserted: 59,
+            stats_candidates_emitted: 61,
+            stats_rerank_rows: 67,
+            stats_heap_blocks_fetched: 71,
+            stats_approximate_scan_elapsed_us: 73,
+            stats_exact_rerank_elapsed_us: 79,
+            stats_filtered_duplicates: 83,
         };
 
         assert_eq!(
@@ -923,40 +963,52 @@ mod tests {
                     value: ExplainPropertyValue::Integer(31),
                 },
                 ExplainProperty {
-                    property_name: "Heap TIDs Scored",
+                    property_name: "Dense Coalesced Flushes",
                     value: ExplainPropertyValue::Integer(37),
                 },
                 ExplainProperty {
-                    property_name: "Candidates Scored",
+                    property_name: "Dense Coalesced Payload Bytes Copied",
                     value: ExplainPropertyValue::Integer(41),
                 },
                 ExplainProperty {
-                    property_name: "Candidates Inserted",
+                    property_name: "Dense Coalesced Heap TID Bytes Copied",
                     value: ExplainPropertyValue::Integer(43),
                 },
                 ExplainProperty {
-                    property_name: "Candidates Emitted",
+                    property_name: "Heap TIDs Scored",
                     value: ExplainPropertyValue::Integer(47),
                 },
                 ExplainProperty {
-                    property_name: "Rerank Rows",
+                    property_name: "Candidates Scored",
                     value: ExplainPropertyValue::Integer(53),
                 },
                 ExplainProperty {
-                    property_name: "Heap Blocks Fetched",
+                    property_name: "Candidates Inserted",
                     value: ExplainPropertyValue::Integer(59),
                 },
                 ExplainProperty {
-                    property_name: "Approximate Scan Elapsed Us",
+                    property_name: "Candidates Emitted",
                     value: ExplainPropertyValue::Integer(61),
                 },
                 ExplainProperty {
-                    property_name: "Exact Rerank Elapsed Us",
+                    property_name: "Rerank Rows",
                     value: ExplainPropertyValue::Integer(67),
                 },
                 ExplainProperty {
-                    property_name: "Filtered Duplicates",
+                    property_name: "Heap Blocks Fetched",
                     value: ExplainPropertyValue::Integer(71),
+                },
+                ExplainProperty {
+                    property_name: "Approximate Scan Elapsed Us",
+                    value: ExplainPropertyValue::Integer(73),
+                },
+                ExplainProperty {
+                    property_name: "Exact Rerank Elapsed Us",
+                    value: ExplainPropertyValue::Integer(79),
+                },
+                ExplainProperty {
+                    property_name: "Filtered Duplicates",
+                    value: ExplainPropertyValue::Integer(83),
                 },
             ]
         );

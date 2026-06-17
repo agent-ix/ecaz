@@ -1116,6 +1116,15 @@ impl<'a> IvfDensePostingBlockRef<'a> {
         );
     }
 
+    pub(super) fn gamma(&self, index: usize) -> f32 {
+        let start = index * size_of::<f32>();
+        f32::from_le_bytes(
+            self.gamma_bytes[start..start + size_of::<f32>()]
+                .try_into()
+                .expect("validated gamma chunk"),
+        )
+    }
+
     pub(super) fn heap_tid_count(&self, index: usize) -> usize {
         let start = index * size_of::<u16>();
         u16::from_le_bytes(

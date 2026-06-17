@@ -1163,6 +1163,7 @@
         assert_eq!(counters.dense_blocks_visited, 1);
         assert_eq!(counters.dense_postings_visited, 4);
         assert_eq!(counters.scratch_soa_flushes, 0);
+        assert_eq!(counters.dense_coalesced_flushes, 1);
         assert!(counters.orderby_cleared);
     }
 
@@ -1199,6 +1200,8 @@
         assert_eq!(counters.row_postings_visited, 0);
         assert_eq!(counters.dense_blocks_visited, 1);
         assert_eq!(counters.dense_postings_visited, 4);
+        assert_eq!(counters.scratch_soa_flushes, 0);
+        assert_eq!(counters.dense_coalesced_flushes, 1);
         assert!(counters.orderby_cleared);
     }
 
@@ -1237,6 +1240,7 @@
         assert!(counters.row_postings_visited >= 1);
         assert_eq!(counters.dense_blocks_visited, 1);
         assert_eq!(counters.dense_postings_visited, 3);
+        assert_eq!(counters.dense_coalesced_flushes, 1);
         assert!(counters.orderby_cleared);
     }
 
@@ -1284,6 +1288,7 @@
         ));
         assert_eq!(counters.dense_blocks_visited, 1);
         assert_eq!(counters.dense_postings_visited, 2);
+        assert_eq!(counters.dense_coalesced_flushes, 1);
     }
 
     #[pg_test]
