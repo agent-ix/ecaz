@@ -1,4 +1,5 @@
 ---
+type: ADR
 id: ADR-002
 title: "hnsw_rs has no delete — own the graph in Postgres pages"
 status: SUPERSEDED

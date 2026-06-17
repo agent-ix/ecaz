@@ -1,7 +1,7 @@
 ---
 id: FR-017
 title: Prepared-Query Inner Product Function
-type: functional-requirement
+type: FR
 status: APPROVED
 object_type: api
 traces:
@@ -12,7 +12,7 @@ traces:
 ---
 # FR-017: Prepared-Query Inner Product Function
 
-## Requirement
+## Description
 
 The extension SHALL provide a function for computing the approximate inner product between a stored `tqvector` candidate and a raw fp32 query using the prepared-query LUT estimator.
 
@@ -79,6 +79,13 @@ The specification treats this row-by-row query preparation cost as an accepted v
 
 ## Acceptance Criteria
 
+| ID | Criteria | Verification |
+|----|----------|--------------|
+| FR-017-AC-1 | Known-vector query-to-code accuracy | Test |
+| FR-017-AC-2 | Dimension mismatch error | Test |
+| FR-017-AC-3 | Zero allocation in prepared-query hot path | Test |
+| FR-017-AC-4 | LUT memory footprint | Test |
+
 ### FR-017-AC-1: Known-vector query-to-code accuracy
 Given a known 1536-dim raw query vector and a known encoded candidate at b=4, the query-to-code estimate SHALL be benchmarked against true fp32 inner product using the formulas defined in FR-013 and FR-015.
 
@@ -90,3 +97,7 @@ After prepared-query setup, `score_ip_encoded` SHALL not allocate heap memory (v
 
 ### FR-017-AC-4: LUT memory footprint
 The LUT for 1536-dim 4-bit SHALL occupy <= 48 KB.
+
+## Dependencies
+
+- **Upstream**: US-002, FR-013, FR-014, FR-015

@@ -1,14 +1,16 @@
 ---
 id: NFR-003
 title: Recall Quality
-type: non-functional-requirement
+type: NFR
 status: APPROVED
 traces:
   - StR-001
 ---
 # NFR-003: Recall Quality
 
-## Requirement
+## Statement
+
+Ecaz approximate search SHALL meet the recall-quality targets below relative to exact fp32 ground truth, without introducing bias beyond the declared estimator formulas.
 
 ### Recall@10 Targets (50K × 1536, 4-bit)
 
@@ -31,7 +33,16 @@ The extension SHALL implement the query-to-code and code-to-code estimators exac
 
 The headline recall targets above apply to freshly bulk-built indexes. Recall after incremental inserts SHALL be benchmarked separately and reported as a function of the fraction of nodes inserted since the last bulk build or REINDEX.
 
-## Measurement
+## Measurement and Evaluation
+
+| Metric | Target | Threshold | Method |
+|--------|--------|-----------|--------|
+| Recall@10 (50K×1536, 4-bit, m=8, ef_search=128) | >= 89% | >= 89% | Recall Benchmark |
+| Recall@10 (m=8, ef_search=200) | >= 93% | >= 93% | Recall Benchmark |
+| Recall@10 (m=16, ef_search=200) | >= 97% | >= 97% | Recall Benchmark |
+| Recall@10 degradation vs tail-retaining reference | <= 1.5 pp | <= 1.5 pp | Recall Benchmark |
+| NDCG@10 degradation vs tail-retaining reference | <= 1.0 pp | <= 1.0 pp | Recall Benchmark |
+
 
 Recall benchmarks SHALL be run against the DBpedia OpenAI embeddings dataset (or equivalent) and reported in `BENCHMARKS.md`.
 
@@ -73,3 +84,8 @@ The current truncated-tail design remains acceptable if:
 - the post-insert drift curve remains monotonic and reported at the required checkpoints
 
 If those gates fail, the storage/scoring design SHALL be revisited.
+
+## Verification
+
+Recall benchmarks run against the DBpedia OpenAI embeddings dataset (or equivalent) with brute-force exact fp32 inner product as ground truth, holding `m`, `ef_construction`, `ef_search`, hardware, and PostgreSQL settings constant, and assert each configuration meets its Recall@10 target and the reference-variant degradation gates.
+

@@ -1,7 +1,7 @@
 ---
 id: FR-014
 title: SIMD Acceleration
-type: functional-requirement
+type: FR
 status: APPROVED
 object_type: process
 traces:
@@ -12,7 +12,7 @@ traces:
 ---
 # FR-014: SIMD Acceleration
 
-## Requirement
+## Description
 
 The extension SHALL provide SIMD-accelerated implementations of performance-critical functions on both x86_64 (AVX2+FMA) and aarch64 (NEON) architectures, with scalar fallback on both.
 
@@ -43,6 +43,13 @@ For every SIMD-accelerated function, the output SHALL be bit-identical to the sc
 
 ## Acceptance Criteria
 
+| ID | Criteria | Verification |
+|----|----------|--------------|
+| FR-014-AC-1 | Scalar fallback correctness | Test |
+| FR-014-AC-2 | SIMD-scalar equivalence | Test |
+| FR-014-AC-3 | No SIGILL on unsupported CPU | Test |
+| FR-014-AC-4 | Throughput improvement | Test |
+
 ### FR-014-AC-1: Scalar fallback correctness
 On a CPU without AVX2 or NEON, all quantizer functions SHALL produce correct results using the scalar path.
 
@@ -54,3 +61,7 @@ Running the extension on a CPU without AVX2 (x86_64) or NEON (aarch64) SHALL NOT
 
 ### FR-014-AC-4: Throughput improvement
 The AVX2+FMA implementation of `fwht` at dim=2048 SHALL achieve at least 3x throughput versus the scalar implementation (measured by `cargo bench`).
+
+## Dependencies
+
+- **Upstream**: NFR-001, FR-013, FR-005, FR-017

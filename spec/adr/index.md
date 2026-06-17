@@ -1,11 +1,19 @@
 ---
-type: adr-index
+type: index
 name: ecaz
 status: IMPLEMENTED
+title: "ADR Index"
 ---
 # ADR Index
 
 This index is the canonical navigation surface for Ecaz architecture decisions. Some historical ADR files share numeric IDs because they were added before the repository enforced unique ADR numbering. The files are preserved to avoid link churn; this index records the current interpretation.
+
+## Contents
+
+- [Current Implemented Decisions](#current-implemented-decisions)
+- [Current Optional or Deferred Decisions](#current-optional-or-deferred-decisions)
+- [Superseded Historical Decisions](#superseded-historical-decisions)
+- [Numbering Policy](#numbering-policy)
 
 ## Current Implemented Decisions
 

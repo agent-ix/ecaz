@@ -1,4 +1,5 @@
 ---
+type: ADR
 id: ADR-010
 title: "Match duplicate tqvector entries on gamma plus code bytes"
 status: DECIDED

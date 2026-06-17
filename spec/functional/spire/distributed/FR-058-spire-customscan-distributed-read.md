@@ -1,7 +1,6 @@
 ---
 id: FR-058
 title: SPIRE CustomScan Distributed Read
-type: functional-requirement
 type: FR
 status: APPROVED
 object: process
@@ -18,7 +17,7 @@ relationships:
 ---
 # FR-058: SPIRE CustomScan Distributed Read
 
-## Requirement
+## Description
 
 SPIRE distributed vector reads SHALL use `EcSpireDistributedScan`, a PostgreSQL
 CustomScan node, to route selected PIDs to local and remote stores, merge
@@ -69,6 +68,12 @@ sequenceDiagram
 
 ## Acceptance Criteria
 
+| ID | Criteria | Verification |
+|----|----------|--------------|
+| FR-058-AC-1 | Eligible distributed vector queries produce an `EcSpireDistributedScan` plan instead of a local index scan | Test |
+| FR-058-AC-2 | Remote-origin rows are returned as virtual tuple payloads without requiring a coordinator-local heap TID | Test |
+| FR-058-AC-3 | The spec states the v1 distributed read isolation limitation and the absence of cross-shard EvalPlanQual semantics | Test |
+
 ### FR-058-AC-1
 
 Eligible distributed vector queries produce an `EcSpireDistributedScan` plan
@@ -83,3 +88,7 @@ coordinator-local heap TID.
 
 The spec states the v1 distributed read isolation limitation and the absence of
 cross-shard EvalPlanQual semantics.
+
+## Dependencies
+
+- **Related**: FR-055, FR-056, FR-057

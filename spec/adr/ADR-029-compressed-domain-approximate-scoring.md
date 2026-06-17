@@ -1,4 +1,5 @@
 ---
+type: ADR
 id: ADR-029
 title: "Compressed-Domain Approximate Scoring for Beam Search Pre-Filter"
 status: PROPOSED

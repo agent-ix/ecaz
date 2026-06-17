@@ -1,7 +1,6 @@
 ---
 id: FR-048
 title: SPIRE Domain Model
-type: functional-requirement
 type: FR
 status: APPROVED
 object: domain
@@ -21,7 +20,7 @@ relationships:
 ---
 # FR-048: SPIRE Domain Model
 
-## Requirement
+## Description
 
 `ec_spire` SHALL model distributed vector search as epoch-published,
 PID-addressed partition objects with stable vector identity, explicit
@@ -147,6 +146,17 @@ erDiagram
 
 ## Acceptance Criteria
 
+| ID | Criteria | Verification |
+|----|----------|--------------|
+| FR-048-AC-1 | The spec defines the SPIRE bounded context using PIDs, partition objects, object versions, epochs, placements, local stores, vector identity, remote nodes, and placement directory rows | Test |
+| FR-048-AC-2 | The spec distinguishes local index-AM scans from distributed CustomScan reads and does not describe remote-origin tuple delivery as index-AM heap-TID materialization | Test |
+| FR-048-AC-3 | The spec defines local and global vector identity semantics, including node-scoped local ID dedupe and cross-node global ID dedupe | Test |
+| FR-048-AC-4 | The spec requires fail-closed strict behavior and explicit degraded diagnostics for stale or unavailable placements and remotes | Test |
+| FR-048-AC-5 | The spec defines epoch publication as the only visibility boundary for coherent partition-object sets | Test |
+| FR-048-AC-6 | The spec identifies all SPIRE object families required to reproduce the storage model: root/control, routing, leaf, delta, top-graph, replacement, and placement objects | Test |
+| FR-048-AC-7 | The spec distinguishes read placement metadata from write placement-directory metadata and states when each is consulted | Test |
+| FR-048-AC-8 | The spec records the explicit v1 deferrals for product-scale evidence, true parallel local-store execution, cross-shard non-vector SQL, automatic DDL, and cross-shard embedding moves | Test |
+
 ### FR-048-AC-1
 
 The spec defines the SPIRE bounded context using PIDs, partition objects,
@@ -190,3 +200,7 @@ metadata and states when each is consulted.
 The spec records the explicit v1 deferrals for product-scale evidence, true
 parallel local-store execution, cross-shard non-vector SQL, automatic DDL, and
 cross-shard embedding moves.
+
+## Dependencies
+
+- **Related**: US-018, US-019, US-020, US-022

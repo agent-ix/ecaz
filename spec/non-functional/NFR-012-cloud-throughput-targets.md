@@ -1,7 +1,6 @@
 ---
 id: NFR-012
 title: Cloud Read QPS and Live Write Throughput Targets
-type: non-functional-requirement
 type: NFR
 status: PROPOSED
 relationships:
@@ -14,7 +13,7 @@ relationships:
 ---
 # NFR-012: Cloud Read QPS and Live Write Throughput Targets
 
-## Requirement
+## Statement
 
 Cloud benchmark runs SHALL produce read-QPS and write-throughput
 artifacts comparable across profiles, against documented targets, so
@@ -68,6 +67,19 @@ The first run that emits both `1b` single-node and `1b × 3 sharded`
 results closes a fundamental design question: is CustomScan remote-executor
 coordination overhead small enough that sharding wins for read latency, or
 only for write throughput.
+
+## Measurement and Evaluation
+
+| Metric | Target | Threshold | Method |
+|--------|--------|-----------|--------|
+| `1m` resident read QPS (IVF+RaBitQ, nprobe=10) | >= 30k | >= 30k | Read QPS Benchmark |
+| `100m` resident read QPS | >= 10k | >= 10k | Read QPS Benchmark |
+| `1m`–`10m` COPY (8-way) write throughput | >= 300k/s | >= 300k/s | Write Throughput Benchmark |
+| Coordinator overhead reported for distributed runs | Present | Present | Inspection |
+
+## Verification
+
+`ecaz cloud bench` emits `read_qps.json` and `write_throughput.json` per profile, a `comparison.md` cross-tabulates measured QPS and write throughput against the documented targets, and distributed runs additionally emit `coordinator_overhead_ms` so the sharding tradeoff is answerable from artifacts alone.
 
 ## Acceptance Criteria
 

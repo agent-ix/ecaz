@@ -1,4 +1,5 @@
 ---
+type: ADR
 id: ADR-017
 title: "HNSW over IVF: Topology-Agnostic Indexing for Heterogeneous Data Shapes"
 status: PROPOSED

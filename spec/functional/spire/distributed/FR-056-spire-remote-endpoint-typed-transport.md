@@ -1,7 +1,6 @@
 ---
 id: FR-056
 title: SPIRE Remote Endpoint and Typed Tuple Transport
-type: functional-requirement
 type: FR
 status: APPROVED
 object: dto
@@ -15,7 +14,7 @@ relationships:
 ---
 # FR-056: SPIRE Remote Endpoint and Typed Tuple Transport
 
-## Requirement
+## Description
 
 Remote SPIRE endpoints SHALL return validated candidate identity, score,
 diagnostics, and typed tuple payloads using per-attribute PostgreSQL binary I/O
@@ -113,6 +112,12 @@ sequenceDiagram
 
 ## Acceptance Criteria
 
+| ID | Criteria | Verification |
+|----|----------|--------------|
+| FR-056-AC-1 | The endpoint request, candidate envelope, and typed tuple payload arrays are defined without relying on JSON as the production read transport | Test |
+| FR-056-AC-2 | The coordinator validates name, type OID, typmod, collation, NULL status, and binary payload shape before constructing a CustomScan tuple | Test |
+| FR-056-AC-3 | Unsupported typed transport, unsupported binary I/O, payload caps, and schema drift have stable fail-closed status labels | Test |
+
 ### FR-056-AC-1
 
 The endpoint request, candidate envelope, and typed tuple payload arrays are
@@ -127,3 +132,7 @@ binary payload shape before constructing a CustomScan tuple.
 
 Unsupported typed transport, unsupported binary I/O, payload caps, and schema
 drift have stable fail-closed status labels.
+
+## Dependencies
+
+- **Related**: FR-048, FR-055

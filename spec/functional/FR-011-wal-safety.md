@@ -1,7 +1,7 @@
 ---
 id: FR-011
 title: WAL Safety — GenericXLog Usage
-type: functional-requirement
+type: FR
 status: APPROVED
 object_type: process
 traces:
@@ -10,7 +10,7 @@ traces:
 ---
 # FR-011: WAL Safety — GenericXLog Usage
 
-## Requirement
+## Description
 
 All page modifications within the `ec_hnsw` index access method SHALL use PostgreSQL's GenericXLog facility for crash-safe durability.
 
@@ -35,8 +35,17 @@ GenericXLogFinish(state);  // atomically writes WAL record
 
 ## Acceptance Criteria
 
+| ID | Criteria | Verification |
+|----|----------|--------------|
+| FR-011-AC-1 | Crash recovery | Test |
+| FR-011-AC-2 | No direct page writes | Test |
+
 ### FR-011-AC-1: Crash recovery
 After building an index, simulating a crash (kill -9), and restarting PostgreSQL, the index SHALL pass `REINDEX` without errors.
 
 ### FR-011-AC-2: No direct page writes
 A code audit SHALL confirm that no index page is modified without GenericXLog wrapping.
+
+## Dependencies
+
+- **Upstream**: US-003, US-005

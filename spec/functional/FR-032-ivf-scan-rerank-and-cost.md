@@ -1,7 +1,6 @@
 ---
 id: FR-032
 title: IVF Scan, Rerank, and Costing
-type: functional-requirement
 type: FR
 status: IMPLEMENTED
 object_type: process
@@ -12,7 +11,7 @@ relationships:
 ---
 # FR-032: IVF Scan, Rerank, and Costing
 
-## Requirement
+## Description
 
 `ec_ivf` SHALL implement ordered scan behavior over selected posting lists and expose planner/diagnostic surfaces sufficient for local performance tuning.
 
@@ -27,6 +26,12 @@ relationships:
 
 ## Acceptance Criteria
 
+| ID | Criteria | Verification |
+|----|----------|--------------|
+| FR-032-AC-1 | An IVF index scan returns ordered heap TIDs for `ORDER BY embedding <#> query LIMIT k` | Test |
+| FR-032-AC-2 | Session `ec_ivf.nprobe` and `ec_ivf.rerank_width` overrides are reflected in scan/debug output | Test |
+| FR-032-AC-3 | `EXPLAIN (ecaz)` can report IVF scan counters on PG18 | Test |
+
 ### FR-032-AC-1
 
 An IVF index scan returns ordered heap TIDs for `ORDER BY embedding <#> query LIMIT k`.
@@ -38,3 +43,7 @@ Session `ec_ivf.nprobe` and `ec_ivf.rerank_width` overrides are reflected in sca
 ### FR-032-AC-3
 
 `EXPLAIN (ecaz)` can report IVF scan counters on PG18.
+
+## Dependencies
+
+- **Related**: US-013

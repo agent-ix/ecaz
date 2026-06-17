@@ -1,7 +1,7 @@
 ---
 id: FR-015
 title: ProdQuantizer Orchestrator
-type: functional-requirement
+type: FR
 status: APPROVED
 object_type: entity
 traces:
@@ -12,7 +12,7 @@ traces:
 ---
 # FR-015: ProdQuantizer Orchestrator
 
-## Requirement
+## Description
 
 The extension SHALL implement a `ProdQuantizer` struct in `quant/prod.rs` that orchestrates the two-stage quantization pipeline and exposes the complete encode/decode/score API used by all other components.
 
@@ -155,6 +155,18 @@ pub fn unpack_qjl_signs(packed: &[u8], dim: usize) -> Vec<bool>
 
 ## Acceptance Criteria
 
+| ID | Criteria | Verification |
+|----|----------|--------------|
+| FR-015-AC-1 | Encode produces correct code length | Test |
+| FR-015-AC-2 | Encode + decode round-trip | Test |
+| FR-015-AC-3 | Prepared-query scoring matches the declared formula | Test |
+| FR-015-AC-4 | Code-to-code scoring is symmetric | Test |
+| FR-015-AC-5 | Pack/unpack round-trip | Test |
+| FR-015-AC-6 | Deterministic construction | Test |
+| FR-015-AC-7 | Zero allocation in score_ip_encoded | Test |
+| FR-015-AC-8 | Backend-local cache reuse | Test |
+| FR-015-AC-9 | Code-to-code scorer ignores QJL in v0.1 | Test |
+
 ### FR-015-AC-1: Encode produces correct code length
 `ProdQuantizer::new(1536, 4, 42).encode(&vec)` SHALL produce a quantized payload of exactly 772 bytes, consisting of 4-byte `gamma`, 576-byte `mse_packed`, and 192-byte `qjl_packed`.
 
@@ -181,3 +193,7 @@ Repeated construction requests for the same `(original_dim, bits, seed)` within 
 
 ### FR-015-AC-9: Code-to-code scorer ignores QJL in v0.1
 Altering only `gamma` and QJL bits while keeping MSE indices fixed SHALL NOT change `score_ip_encoded_lite`.
+
+## Dependencies
+
+- **Upstream**: FR-013, FR-005, FR-017, FR-014

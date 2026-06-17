@@ -1,7 +1,7 @@
 ---
 id: FR-022
 title: Vacuum Implementation — Soft Delete and Graph Maintenance
-type: functional-requirement
+type: FR
 status: DRAFT
 object_type: process
 traces:
@@ -13,7 +13,7 @@ traces:
 ---
 # FR-022: Vacuum Implementation — Soft Delete and Graph Maintenance
 
-## Requirement
+## Description
 
 The extension SHALL implement a working `ambulkdelete` and `amvacuumcleanup` replacing the current no-op implementation. The vacuum algorithm uses a three-pass approach matching the specification in FR-010.
 
@@ -179,6 +179,15 @@ This version does not compact pages after deletion. Deleted element tuples remai
 
 ## Acceptance Criteria
 
+| ID | Criteria | Verification |
+|----|----------|--------------|
+| FR-022-AC-1 | Dead rows removed | Test |
+| FR-022-AC-2 | Heap TID removal | Test |
+| FR-022-AC-3 | Graph connectivity | Test |
+| FR-022-AC-4 | Concurrent safety | Test |
+| FR-022-AC-5 | GenericXLog | Test |
+| FR-022-AC-6 | Statistics reported | Test |
+
 ### FR-022-AC-1: Dead rows removed
 After `DELETE FROM t WHERE id = $x; VACUUM t;`, a search query SHALL NOT return the deleted row.
 
@@ -204,3 +213,7 @@ After `amvacuumcleanup`, `pg_class.reltuples` SHALL reflect the count of live (n
 - PG source: `src/backend/catalog/index.c` — `index_vacuum_cleanup()` post-vacuum catalog update flow
 - PG source: `src/include/access/genam.h` — `IndexBulkDeleteCallback` type, `IndexBulkDeleteResult` fields (`num_pages`, `num_index_tuples`, `tuples_removed`)
 - pgvector source: `src/hnswvacuum.c` — three-pass vacuum algorithm (scan → repair → finalize) used as reference for tqvector's approach
+
+## Dependencies
+
+- **Upstream**: US-010, US-005, FR-010, FR-007, StR-004

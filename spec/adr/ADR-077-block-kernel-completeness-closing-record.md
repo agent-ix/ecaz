@@ -1,4 +1,5 @@
 ---
+type: ADR
 id: ADR-077
 title: "Block Kernel Completeness Closing Record"
 status: ACCEPTED

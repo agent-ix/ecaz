@@ -1,14 +1,16 @@
 ---
 id: NFR-001
 title: Query Latency
-type: non-functional-requirement
+type: NFR
 status: APPROVED
 traces:
   - StR-001
 ---
 # NFR-001: Query Latency
 
-## Requirement
+## Statement
+
+Ecaz query and scoring paths SHALL meet the latency and throughput targets below on representative hardware.
 
 ### HNSW Index Scan
 
@@ -25,7 +27,14 @@ traces:
 - Single `tqvector_inner_product` call: benchmarked and reported at 1536-dim, 4-bit
 - Prepared-query scoring throughput (`score_ip_encoded`) SHALL be benchmarked separately from symmetric SQL-function scoring because they have different cost profiles
 
-## Measurement
+## Measurement and Evaluation
+
+| Metric | Target | Threshold | Method |
+|--------|--------|-----------|--------|
+| HNSW top-10 p50 latency (50K×1536, 4-bit, m=8, ef_search=40) | < 5 ms | <= 5 ms | Latency Benchmark |
+| HNSW top-10 p99 latency (steady-state load) | < 15 ms | <= 15 ms | Latency Benchmark |
+| Prepared-query scoring throughput (`score_ip_encoded`, 1536-dim, 4-bit) | Reported per release | Reported | Isolated Scoring Benchmark |
+
 
 Benchmarks SHALL be run on representative hardware and reported in `BENCHMARKS.md`.
 
@@ -50,3 +59,8 @@ showing that the expected `ec_hnsw` index was chosen for the measured run.
 - Compare prepared-query scoring throughput against symmetric code-to-code scoring throughput at the same dimension and bit-width.
 - Compare HNSW query latency against sequential scan throughput on the same dataset.
 - Compare insert latency before and after enabling the index.
+
+## Verification
+
+A repeatable `ecaz bench latency` run against a canonically loaded corpus measures p50/p99 HNSW latency and prepared-query scoring throughput, captures the `EXPLAIN` plan confirming the expected `ec_hnsw` index, and asserts the measured values stay within threshold.
+

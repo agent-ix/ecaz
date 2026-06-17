@@ -1,4 +1,5 @@
 ---
+type: ADR
 id: ADR-075
 title: "DiskANN Graph Build Worker Stepping Stone"
 status: PROPOSED

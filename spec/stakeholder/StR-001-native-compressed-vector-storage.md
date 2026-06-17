@@ -1,7 +1,7 @@
 ---
 id: StR-001
 title: Native Compressed Vector Storage in PostgreSQL
-type: stakeholder-requirement
+type: StR
 status: APPROVED
 derived_usecases:
   - US-001
@@ -11,7 +11,7 @@ derived_usecases:
 ---
 # StR-001: Native Compressed Vector Storage in PostgreSQL
 
-## Need
+## Stakeholder Need
 
 The agent memory system requires storing and querying millions of high-dimensional embedding vectors (1536-dim fp32) across 100K+ agents. Raw fp32 storage consumes 6KB per vector — at scale this requires 8.8TB of HNSW indexes alone, making it impractical on standard hardware.
 
@@ -26,7 +26,7 @@ A PostgreSQL extension SHALL provide a native data type that stores TurboQuant-c
 - Keeping ANN search inside PostgreSQL eliminates external vector database infrastructure and simplifies operations
 - TurboQuant is data-oblivious (no training) — new agents produce valid compressed codes on their first INSERT with zero warm-up
 
-## Success Criteria
+## Validation Criteria
 
 - 1M vectors at 1536-dim, 4-bit stored in < 1GB of index space
 - ANN queries return results via standard SQL (ORDER BY ... <#> ... LIMIT k)

@@ -1,4 +1,5 @@
 ---
+type: ADR
 id: ADR-019
 title: "WAL Write Amplification Mitigation Strategy"
 status: PROPOSED

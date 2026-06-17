@@ -1,7 +1,6 @@
 ---
 id: FR-045
 title: Cloud Terraform-Managed Infrastructure
-type: functional-requirement
 type: FR
 status: PROPOSED
 object_type: infrastructure
@@ -15,7 +14,7 @@ relationships:
 ---
 # FR-045: Cloud Terraform-Managed Infrastructure
 
-## Requirement
+## Description
 
 The cloud harness SHALL provision all AWS resources via a single
 Terraform module rooted at `infra/cloud/terraform/`, with one state
@@ -60,6 +59,13 @@ file per profile so multiple sizes can coexist.
 
 ## Acceptance Criteria
 
+| ID | Criteria | Verification |
+|----|----------|--------------|
+| FR-045-AC-1 | `terraform plan` against `profiles/10k.tfvars` succeeds with no external state and zero manual variables | Test |
+| FR-045-AC-2 | `terraform apply` against `profiles/dev.tfvars` produces a stack whose outputs satisfy the schema above | Test |
+| FR-045-AC-3 | The DB instance is reachable via SSM `start-session`; SSH (port 22) is not open in any security group | Test |
+| FR-045-AC-4 | S3 bucket has the configured lifecycle rule on the parquet prefix | Test |
+
 ### FR-045-AC-1
 
 `terraform plan` against `profiles/10k.tfvars` succeeds with no
@@ -78,3 +84,7 @@ is not open in any security group.
 ### FR-045-AC-4
 
 S3 bucket has the configured lifecycle rule on the parquet prefix.
+
+## Dependencies
+
+- **Related**: FR-044, US-021

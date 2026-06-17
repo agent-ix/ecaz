@@ -1,7 +1,6 @@
 ---
 id: US-010
 title: Vacuum Removes Deleted Vectors
-type: user-story
 type: US
 status: DRAFT
 priority: P1-critical
@@ -15,7 +14,9 @@ relationships:
 ---
 # US-010: Vacuum Removes Deleted Vectors
 
-**As** an application developer managing agent memories,
+## Story
+
+**As an** application developer managing agent memories,
 **I want** `DELETE` + `VACUUM` to remove dead vectors from the HNSW index so they are not returned in subsequent searches,
 **So that** the index does not accumulate stale entries that waste I/O and degrade scan quality.
 

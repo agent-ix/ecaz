@@ -1,14 +1,16 @@
 ---
 id: NFR-005
 title: Build and CI
-type: non-functional-requirement
+type: NFR
 status: APPROVED
 traces:
   - StR-002
 ---
 # NFR-005: Build and CI
 
-## Requirement
+## Statement
+
+Ecaz SHALL build and pass its continuous-integration gates on every push and pull request across the supported toolchain and target matrix below.
 
 ### Toolchain
 
@@ -36,6 +38,18 @@ The extension SHALL build for:
 
 AVX2 SIMD is enabled by default (`-C target-cpu=native`) for development but SHALL NOT be hard-required — the extension SHALL compile (with degraded performance) without AVX2.
 
-## Measurement
+## Measurement and Evaluation
+
+| Metric | Target | Threshold | Method |
+|--------|--------|-----------|--------|
+| CI pipeline pass rate on push/PR | 100% of required steps | 100% | CI Gate |
+| PG18 primary integration lane (`cargo pgrx test pg18`) | Pass | Pass | Integration Test |
+| Build without AVX2 | Compiles (degraded perf) | Compiles | Build Test |
+
 
 CI pipeline runs on every push and PR. All steps must pass for merge.
+
+## Verification
+
+The CI pipeline runs `cargo fmt --check`, clippy with `-D warnings`, `cargo test`, `cargo pgrx test pg18`, and `cargo deny check licenses` on every push and PR; all required steps must pass for merge, and a no-AVX2 build is exercised to confirm the extension still compiles.
+

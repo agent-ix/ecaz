@@ -1,7 +1,6 @@
 ---
 id: US-007
 title: Planner-Visible Cost Model
-type: user-story
 type: US
 status: DRAFT
 priority: P1-critical
@@ -12,7 +11,9 @@ relationships:
 ---
 # US-007: Planner-Visible Cost Model
 
-**As** an application developer,
+## Story
+
+**As an** application developer,
 **I want** the query planner to automatically choose the HNSW index for `ORDER BY <#> LIMIT k` queries without manual hints,
 **So that** ANN search works through the standard Postgres query planner like any other index.
 

@@ -1,4 +1,5 @@
 ---
+type: ADR
 id: ADR-058
 title: "SPIRE Remote Libpq Executor Boundary"
 status: ACCEPTED

@@ -1,4 +1,5 @@
 ---
+type: ADR
 id: ADR-067
 title: "SPIRE Distributed Scan via CustomScan"
 status: ACCEPTED

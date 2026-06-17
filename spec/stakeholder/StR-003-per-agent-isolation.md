@@ -1,14 +1,14 @@
 ---
 id: StR-003
 title: Per-Agent Isolation via Partitioned HNSW
-type: stakeholder-requirement
+type: StR
 status: APPROVED
 derived_usecases:
   - US-003
 ---
 # StR-003: Per-Agent Isolation via Partitioned HNSW
 
-## Need
+## Stakeholder Need
 
 The system serves 100K+ agents, each with isolated memory. Queries within one agent must not scan other agents' data, and HNSW indexes must support per-partition operation.
 
@@ -22,7 +22,7 @@ The HNSW index access method SHALL operate correctly on partitioned tables. A qu
 - Each within-agent query hits exactly one partition — cross-partition scan is unacceptable for latency
 - Cross-agent queries fan out to all shards via the query router (not the extension's concern)
 
-## Success Criteria
+## Validation Criteria
 
 - HNSW index per partition operates independently
 - INSERT/SCAN/VACUUM on one partition does not touch other partitions' index pages

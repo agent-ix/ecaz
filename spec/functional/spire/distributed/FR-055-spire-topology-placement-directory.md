@@ -1,7 +1,6 @@
 ---
 id: FR-055
 title: SPIRE Distributed Topology and Placement Directory
-type: functional-requirement
 type: FR
 status: APPROVED
 object: data_schema
@@ -12,7 +11,7 @@ relationships:
 ---
 # FR-055: SPIRE Distributed Topology and Placement Directory
 
-## Requirement
+## Description
 
 Distributed SPIRE SHALL use a coordinator PostgreSQL instance for routing
 metadata and one or more remote PostgreSQL shard nodes for row storage and
@@ -88,6 +87,12 @@ support lookup by `(index_oid, source_identity)`.
 
 ## Acceptance Criteria
 
+| ID | Criteria | Verification |
+|----|----------|--------------|
+| FR-055-AC-1 | The topology distinguishes coordinator routing metadata from remote shard row storage and local SPIRE scoring | Test |
+| FR-055-AC-2 | The placement directory is defined as the write-routing and PK-read source of truth, not as a read-path materialization catalog | Test |
+| FR-055-AC-3 | The v1 schema states that non-vector non-PK scatter-gather reads and automatic DDL propagation are out of scope | Test |
+
 ### FR-055-AC-1
 
 The topology distinguishes coordinator routing metadata from remote shard row
@@ -102,3 +107,7 @@ truth, not as a read-path materialization catalog.
 
 The v1 schema states that non-vector non-PK scatter-gather reads and automatic
 DDL propagation are out of scope.
+
+## Dependencies
+
+- **Related**: FR-048

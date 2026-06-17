@@ -1,7 +1,6 @@
 ---
 id: US-005
 title: VACUUM Cleans Up Deleted Vectors
-type: user-story
 type: US
 status: APPROVED
 relationships:
@@ -11,7 +10,9 @@ relationships:
 ---
 # US-005: VACUUM Cleans Up Deleted Vectors
 
-**As** a platform engineer,
+## Story
+
+**As a** platform engineer,
 **I want** VACUUM to properly clean up deleted vectors from the HNSW index,
 **So that** the index does not grow unboundedly and deleted rows do not appear in search results.
 

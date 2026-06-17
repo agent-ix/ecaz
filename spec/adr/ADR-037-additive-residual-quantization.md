@@ -1,4 +1,5 @@
 ---
+type: ADR
 id: ADR-037
 title: "Additive / Residual Quantization as PqFastScan v2 Compression"
 status: PROPOSED

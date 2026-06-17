@@ -1,4 +1,5 @@
 ---
+type: ADR
 id: ADR-048
 title: "Parallel HNSW Build Graph Assembly"
 status: DECIDED

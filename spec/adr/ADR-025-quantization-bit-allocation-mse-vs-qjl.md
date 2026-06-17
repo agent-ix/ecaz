@@ -1,4 +1,5 @@
 ---
+type: ADR
 id: ADR-025
 title: "Bit Allocation Within the MSE+QJL Quantizer: 3+1 vs 4+0 vs 4+1"
 status: PROPOSED

@@ -1,7 +1,9 @@
 ---
-type: test-matrix
+id: TM-001
+type: TestMatrix
 name: ecaz
 status: PARTIAL
+title: "Test Matrix"
 ---
 # Test Matrix
 

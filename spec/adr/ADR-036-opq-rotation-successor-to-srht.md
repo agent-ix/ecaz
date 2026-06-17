@@ -1,4 +1,5 @@
 ---
+type: ADR
 id: ADR-036
 title: "OPQ Rotation as Successor to SRHT in the PqFastScan Pipeline"
 status: PROPOSED

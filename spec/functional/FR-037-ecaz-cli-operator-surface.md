@@ -1,7 +1,6 @@
 ---
 id: FR-037
 title: Ecaz CLI Operator Surface
-type: functional-requirement
 type: FR
 status: IMPLEMENTED
 object_type: interface
@@ -12,7 +11,7 @@ relationships:
 ---
 # FR-037: Ecaz CLI Operator Surface
 
-## Requirement
+## Description
 
 Ecaz SHALL provide a single `ecaz` CLI for operator workflows that prepare and load corpora, run benchmarks, compare external engines, exercise stress harnesses, inspect quantizer feasibility, and manage local development helpers.
 
@@ -33,6 +32,13 @@ Ecaz SHALL provide a single `ecaz` CLI for operator workflows that prepare and l
 
 ## Acceptance Criteria
 
+| ID | Criteria | Verification |
+|----|----------|--------------|
+| FR-037-AC-1 | `ecaz --help` exposes all top-level command groups and each group dispatches to the owning module | Test |
+| FR-037-AC-2 | Profile-aware corpus, benchmark, compare, and stress workflows select the correct access method, opclass, embedding type, encoder, scan GUC, sweep axis, and known reloption set from `profiles.rs` | Test |
+| FR-037-AC-3 | Commands that produce review evidence can write packet-local logs without shell `tee` wrappers | Test |
+| FR-037-AC-4 | The operator README and user docs list the full implemented command surface | Test |
+
 ### FR-037-AC-1
 
 `ecaz --help` exposes all top-level command groups and each group dispatches to the owning module.
@@ -48,3 +54,7 @@ Commands that produce review evidence can write packet-local logs without shell 
 ### FR-037-AC-4
 
 The operator README and user docs list the full implemented command surface.
+
+## Dependencies
+
+- **Related**: US-016

@@ -1,4 +1,5 @@
 ---
+type: ADR
 id: ADR-062
 title: "SPIRE Query Difficulty Estimator Deferral"
 status: DEFERRED

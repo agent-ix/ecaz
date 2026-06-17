@@ -1,7 +1,7 @@
 ---
 id: FR-016
 title: HNSW Index Access Method — Insert
-type: functional-requirement
+type: FR
 status: APPROVED
 object_type: process
 traces:
@@ -11,7 +11,7 @@ traces:
 ---
 # FR-016: HNSW Index Access Method — Insert
 
-## Requirement
+## Description
 
 The extension SHALL implement the `aminsert` callback for the `ec_hnsw` access method.
 
@@ -152,6 +152,13 @@ The new point's layer is drawn from the geometric distribution: `floor(-ln(rando
 
 ## Acceptance Criteria
 
+| ID | Criteria | Verification |
+|----|----------|--------------|
+| FR-016-AC-1 | Insert updates graph | Test |
+| FR-016-AC-2 | GenericXLog usage | Test |
+| FR-016-AC-3 | No deadlock under concurrent insert | Test |
+| FR-016-AC-4 | Recall drift is measurable | Test |
+
 ### FR-016-AC-1: Insert updates graph
 After inserting a new row into an indexed table, the new vector SHALL be reachable via HNSW search.
 
@@ -168,3 +175,7 @@ Current validation note:
 
 ### FR-016-AC-4: Recall drift is measurable
 The implementation SHALL expose queryable statistics that identify total live nodes and nodes inserted since the last bulk build or REINDEX, so recall drift checkpoints can be measured as incremental inserts accumulate after bulk build.
+
+## Dependencies
+
+- **Upstream**: FR-007, FR-015, StR-003

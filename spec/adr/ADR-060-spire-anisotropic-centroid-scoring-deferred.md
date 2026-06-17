@@ -1,4 +1,5 @@
 ---
+type: ADR
 id: ADR-060
 title: "SPIRE Anisotropic Centroid Scoring Deferral"
 status: DEFERRED

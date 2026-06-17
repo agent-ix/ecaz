@@ -1,4 +1,5 @@
 ---
+type: ADR
 id: ADR-033
 title: "Shared Graph Lifecycle with Format-Specific Insert/Vacuum Adapters"
 status: PROPOSED

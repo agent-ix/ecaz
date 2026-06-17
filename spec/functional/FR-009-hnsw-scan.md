@@ -1,7 +1,7 @@
 ---
 id: FR-009
 title: HNSW Index Access Method — Scan (Query)
-type: functional-requirement
+type: FR
 status: APPROVED
 object_type: process
 traces:
@@ -13,7 +13,7 @@ traces:
 ---
 # FR-009: HNSW Index Access Method — Scan (Query)
 
-## Requirement
+## Description
 
 The extension SHALL implement the scan callbacks for the `ec_hnsw` access method: `ambeginscan`, `amrescan`, `amgettuple`, `amendscan`. All scan operations work directly on Postgres buffer pages — no `hnsw_rs` involvement.
 
@@ -219,6 +219,15 @@ All page reads during scan use `ReadBuffer` + `LockBuffer(BUFFER_LOCK_SHARE)`. P
 
 ## Acceptance Criteria
 
+| ID | Criteria | Verification |
+|----|----------|--------------|
+| FR-009-AC-1 | Top-k results returned | Test |
+| FR-009-AC-2 | Results ordered by distance | Test |
+| FR-009-AC-3 | Index scan used | Test |
+| FR-009-AC-4 | ef_search affects recall | Test |
+| FR-009-AC-5 | GUC is session-settable | Test |
+| FR-009-AC-6 | No excessive buffer pins | Test |
+
 ### FR-009-AC-1: Top-k results returned
 `SELECT id FROM t ORDER BY col <#> $q LIMIT 10` SHALL return exactly 10 rows (given >= 10 rows in the table).
 
@@ -236,3 +245,7 @@ Higher ef_search values SHALL produce higher recall at the cost of increased lat
 
 ### FR-009-AC-6: No excessive buffer pins
 During a scan of a 50K-row index, the maximum number of simultaneously pinned buffers SHALL be bounded (< 10).
+
+## Dependencies
+
+- **Upstream**: US-002, FR-017, FR-007, FR-015, StR-003

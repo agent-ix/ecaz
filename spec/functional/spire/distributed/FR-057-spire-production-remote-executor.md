@@ -1,7 +1,6 @@
 ---
 id: FR-057
 title: SPIRE Production Remote Executor
-type: functional-requirement
 type: FR
 status: APPROVED
 object: process
@@ -15,7 +14,7 @@ relationships:
 ---
 # FR-057: SPIRE Production Remote Executor
 
-## Requirement
+## Description
 
 Distributed SPIRE SHALL use a production remote executor that resolves sanitized
 libpq/TLS connection state, enforces fanout and governance budgets, validates
@@ -74,6 +73,12 @@ sequenceDiagram
 
 ## Acceptance Criteria
 
+| ID | Criteria | Verification |
+|----|----------|--------------|
+| FR-057-AC-1 | Remote execution exposes pending, transport-ready, sent, receive, ready, failed, blocked, strict, and degraded statuses with stable labels | Test |
+| FR-057-AC-2 | Budget and governance overload fail before raw conninfo exposure and before candidate batches enter merge state | Test |
+| FR-057-AC-3 | Endpoint identity mismatch, stale epoch, timeout, cancellation, transport failure, and degraded skip are observable through operator diagnostics | Test |
+
 ### FR-057-AC-1
 
 Remote execution exposes pending, transport-ready, sent, receive, ready, failed,
@@ -88,3 +93,7 @@ candidate batches enter merge state.
 
 Endpoint identity mismatch, stale epoch, timeout, cancellation, transport
 failure, and degraded skip are observable through operator diagnostics.
+
+## Dependencies
+
+- **Related**: FR-055, FR-056

@@ -1,4 +1,5 @@
 ---
+type: ADR
 id: ADR-065
 title: "SPIRE Remote Row Materialization Catalog"
 status: PROPOSED

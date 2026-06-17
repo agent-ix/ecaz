@@ -1,4 +1,5 @@
 ---
+type: ADR
 id: ADR-049
 title: "Build SPIRE on a Partition-Object IVF Foundation"
 status: PROPOSED

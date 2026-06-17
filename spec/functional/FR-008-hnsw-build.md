@@ -1,7 +1,7 @@
 ---
 id: FR-008
 title: HNSW Index Access Method — Build
-type: functional-requirement
+type: FR
 status: APPROVED
 object_type: process
 traces:
@@ -10,7 +10,7 @@ traces:
   - StR-003
 ---
 # FR-008: HNSW Index Access Method — Build
-## Requirement
+## Description
 
 The extension SHALL implement the `ambuild`, `ambuildempty`, and `amoptions` callbacks for the `ec_hnsw` access method.
 
@@ -190,6 +190,15 @@ Called for `CREATE INDEX` before any data exists:
 
 ## Acceptance Criteria
 
+| ID | Criteria | Verification |
+|----|----------|--------------|
+| FR-008-AC-1 | Bulk build populates graph | Test |
+| FR-008-AC-2 | Crash safety | Test |
+| FR-008-AC-3 | GenericXLog usage | Test |
+| FR-008-AC-4 | Two-pass TID correctness | Test |
+| FR-008-AC-5 | Build uses f32 distance | Test |
+| FR-008-AC-6 | amoptions validation | Test |
+
 ### FR-008-AC-1: Bulk build populates graph
 After `CREATE INDEX ... USING ec_hnsw` on a table with 1000 rows, the index SHALL contain 1000 element tuples.
 
@@ -209,3 +218,7 @@ code distance.
 
 ### FR-008-AC-6: amoptions validation
 `WITH (m = 0)` SHALL raise ERROR. `WITH (m = 8, ef_construction = 64)` SHALL succeed.
+
+## Dependencies
+
+- **Upstream**: US-003, FR-007, StR-003

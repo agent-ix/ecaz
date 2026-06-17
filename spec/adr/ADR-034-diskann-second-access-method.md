@@ -1,4 +1,5 @@
 ---
+type: ADR
 id: ADR-034
 title: "DiskANN as Second Access Method for Medium-Large Scale"
 status: IMPLEMENTED

@@ -1,4 +1,5 @@
 ---
+type: ADR
 id: ADR-072
 title: "Index-Local Quantized Codec Adapters"
 status: ACCEPTED

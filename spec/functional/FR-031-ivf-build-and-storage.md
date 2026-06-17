@@ -1,7 +1,6 @@
 ---
 id: FR-031
 title: IVF Build and Storage
-type: functional-requirement
 type: FR
 status: IMPLEMENTED
 object_type: process
@@ -12,7 +11,7 @@ relationships:
 ---
 # FR-031: IVF Build and Storage
 
-## Requirement
+## Description
 
 `ec_ivf` SHALL implement a PostgreSQL index access method that trains centroids, assigns heap rows to posting lists, and persists AM-owned metadata and posting-list pages.
 
@@ -27,6 +26,12 @@ relationships:
 
 ## Acceptance Criteria
 
+| ID | Criteria | Verification |
+|----|----------|--------------|
+| FR-031-AC-1 | `CREATE INDEX | Test |
+| FR-031-AC-2 | Invalid reloption values raise ERROR during index creation | Test |
+| FR-031-AC-3 | `rerank = 'source_column'` raises a clear unsupported-mode ERROR | Test |
+
 ### FR-031-AC-1
 
 `CREATE INDEX ... USING ec_ivf` produces readable IVF metadata with centroid/list counts and storage-format metadata.
@@ -38,3 +43,7 @@ Invalid reloption values raise ERROR during index creation.
 ### FR-031-AC-3
 
 `rerank = 'source_column'` raises a clear unsupported-mode ERROR.
+
+## Dependencies
+
+- **Related**: US-013

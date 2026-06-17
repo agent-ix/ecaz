@@ -1,7 +1,6 @@
 ---
 id: FR-054
 title: SPIRE Update Maintenance and Cleanup
-type: functional-requirement
 type: FR
 status: APPROVED
 object: process
@@ -15,7 +14,7 @@ relationships:
 ---
 # FR-054: SPIRE Update Maintenance and Cleanup
 
-## Requirement
+## Description
 
 `ec_spire` SHALL represent inserts, deletes, split, merge, compaction, and
 cleanup as epoch-safe delta or replacement-object publication, never as
@@ -73,6 +72,13 @@ stateDiagram-v2
 
 ## Acceptance Criteria
 
+| ID | Criteria | Verification |
+|----|----------|--------------|
+| FR-054-AC-1 | Insert and delete paths become visible through a successor epoch or fail explicitly; they do not mutate active published objects in place | Test |
+| FR-054-AC-2 | Split and merge publish replacement routing and leaf objects without changing the meaning of PIDs still referenced by retained epochs | Test |
+| FR-054-AC-3 | Cleanup can prove retained epochs are no longer needed before removing old object tuples | Test |
+| FR-054-AC-4 | Maintenance diagnostics expose planned action, lock-time recheck result, publication result, cleanup eligibility, and failure reason | Test |
+
 ### FR-054-AC-1
 
 Insert and delete paths become visible through a successor epoch or fail
@@ -92,3 +98,7 @@ object tuples.
 
 Maintenance diagnostics expose planned action, lock-time recheck result,
 publication result, cleanup eligibility, and failure reason.
+
+## Dependencies
+
+- **Related**: FR-048, FR-052

@@ -1,4 +1,5 @@
 ---
+type: ADR
 id: ADR-018
 title: "HNSW Graph Quality with TurboQuant-Compressed Distances"
 status: DECIDED

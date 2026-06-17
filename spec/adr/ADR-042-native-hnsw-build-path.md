@@ -1,4 +1,5 @@
 ---
+type: ADR
 id: ADR-042
 title: "Native HNSW build path — retire hnsw_rs from production BUILD"
 status: DECIDED

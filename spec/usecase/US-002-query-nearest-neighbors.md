@@ -1,7 +1,6 @@
 ---
 id: US-002
 title: Query Nearest Neighbors via SQL
-type: user-story
 type: US
 status: APPROVED
 relationships:
@@ -11,7 +10,9 @@ relationships:
 ---
 # US-002: Query Nearest Neighbors via SQL
 
-**As** an application developer querying agent memories,
+## Story
+
+**As an** application developer querying agent memories,
 **I want** to find the top-k nearest vectors using standard SQL ORDER BY with the `<#>` operator and a raw query embedding,
 **So that** ANN search works through the standard Postgres query planner with no application-side logic.
 

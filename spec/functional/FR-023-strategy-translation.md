@@ -1,7 +1,7 @@
 ---
 id: FR-023
 title: Strategy Translation Callbacks
-type: functional-requirement
+type: FR
 status: DRAFT
 object_type: entity
 traces:
@@ -11,7 +11,7 @@ traces:
 ---
 # FR-023: Strategy Translation Callbacks
 
-## Requirement
+## Description
 
 On PG18, the extension SHALL implement `amtranslatestrategy` and `amtranslatecmptype` callbacks and set the `amconsistentordering` flag to enable the optimizer to reason about the `<#>` operator's ordering semantics.
 
@@ -77,6 +77,13 @@ On PG17, these fields do not exist in `IndexAmRoutine`. The implementation SHALL
 
 ## Acceptance Criteria
 
+| ID | Criteria | Verification |
+|----|----------|--------------|
+| FR-023-AC-1 | Strategy translation registered | Test |
+| FR-023-AC-2 | COMPARE_LT mapping | Test |
+| FR-023-AC-3 | Reverse mapping | Test |
+| FR-023-AC-4 | Invalid inputs | Test |
+
 ### FR-023-AC-1: Strategy translation registered
 On PG18, the `IndexAmRoutine` returned by `ec_hnsw_handler` SHALL have non-null `amtranslatestrategy` and `amtranslatecmptype` callbacks.
 
@@ -95,3 +102,7 @@ On PG18, the `IndexAmRoutine` returned by `ec_hnsw_handler` SHALL have non-null 
 - PG source: `src/include/access/cmptype.h` — `CompareType` enum (`COMPARE_INVALID`, `COMPARE_LT`, `COMPARE_LE`, `COMPARE_EQ`, `COMPARE_GE`, `COMPARE_GT`, `COMPARE_NE`, `COMPARE_OVERLAP`, `COMPARE_CONTAINED_BY`)
 - PG source: `src/backend/access/index/amapi.c` — `IndexAmTranslateStrategy()` and `IndexAmTranslateCompareType()` wrapper functions that call the AM callbacks
 - PG source: `src/backend/access/nbtree/nbtree.c` — `bttranslatestrategy()` and `bttranslatecmptype()` reference implementations
+
+## Dependencies
+
+- **Upstream**: US-007, FR-009, StR-004

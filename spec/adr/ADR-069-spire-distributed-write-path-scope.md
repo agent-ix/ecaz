@@ -1,4 +1,5 @@
 ---
+type: ADR
 id: ADR-069
 title: "SPIRE Distributed Write Path Scope"
 status: ACCEPTED

@@ -1,7 +1,6 @@
 ---
 id: FR-059
 title: SPIRE Coordinator Routed DML and 2PC
-type: functional-requirement
 type: FR
 status: APPROVED
 object: process
@@ -15,7 +14,7 @@ relationships:
 ---
 # FR-059: SPIRE Coordinator Routed DML and 2PC
 
-## Requirement
+## Description
 
 Distributed SPIRE SHALL support coordinator-routed INSERT, non-embedding
 UPDATE, DELETE, and PK-keyed SELECT for the v1 narrow table shape while keeping
@@ -98,6 +97,18 @@ manual outcome confirmation if remote commit resolution failed.
 
 ## Acceptance Criteria
 
+| ID | Criteria | Verification |
+|----|----------|--------------|
+| FR-059-AC-1 | Coordinator-routed INSERT and DELETE commit or roll back remote heap state and coordinator placement-directory state together | Test |
+| FR-059-AC-2 | The v1 front-door limitations are explicit and fail closed rather than silently executing unsupported distributed semantics | Test |
+| FR-059-AC-3 | The prepared-xact GID, intent states, lost-ack recovery window, and reaper decision rule are defined well enough for operator recovery and repeated branches cannot collide in one coordinator transaction | Test |
+| FR-059-AC-4 | Coordinator-routed INSERT defines source identity, target node selection, remote payload construction, placement-directory registration, and 2PC ordering | Test |
+| FR-059-AC-5 | PK-keyed UPDATE and DELETE route through the placement directory and validate that exactly the v1 supported table shape is being modified | Test |
+| FR-059-AC-6 | Embedding-changing UPDATE is rejected with an explicit distributed SPIRE error instead of silently moving rows across shards | Test |
+| FR-059-AC-7 | PK-keyed SELECT can use placement-directory routing without pretending to be a general cross-shard SQL planner | Test |
+| FR-059-AC-8 | Bulk-load registration is identified as an operational mode outside the transparent coordinator DML front door | Test |
+| FR-059-AC-9 | Every unsupported DML shape fails before remote mutation and points operators at the v1 SPIRE distributed DML contract | Test |
+
 ### FR-059-AC-1
 
 Coordinator-routed INSERT and DELETE commit or roll back remote heap state and
@@ -143,3 +154,7 @@ transparent coordinator DML front door.
 
 Every unsupported DML shape fails before remote mutation and points operators at
 the v1 SPIRE distributed DML contract.
+
+## Dependencies
+
+- **Related**: FR-055, FR-057

@@ -1,7 +1,6 @@
 ---
 id: FR-029
 title: Multi-AM SQL Bootstrap Contract
-type: functional-requirement
 type: FR
 status: IMPLEMENTED
 object_type: configuration
@@ -12,7 +11,7 @@ relationships:
 ---
 # FR-029: Multi-AM SQL Bootstrap Contract
 
-## Requirement
+## Description
 
 `CREATE EXTENSION ecaz` SHALL register all implemented SQL types, functions, operators, access methods, and operator classes required by the current multi-AM surface.
 
@@ -31,6 +30,13 @@ relationships:
 
 ## Acceptance Criteria
 
+| ID | Criteria | Verification |
+|----|----------|--------------|
+| FR-029-AC-1 | After `CREATE EXTENSION ecaz`, `pg_am` includes `ec_hnsw`, `ec_ivf`, `ec_diskann`, and `ec_spire` | Test |
+| FR-029-AC-2 | An `ecvector` column can be indexed by all three implemented AMs with the documented opclass | Test |
+| FR-029-AC-3 | `DROP EXTENSION ecaz CASCADE` removes the extension-owned SQL objects | Test |
+| FR-029-AC-4 | The `ec_spire` access method registers its AM handler and SPIRE-specific opclasses for local partition-object indexes; distributed remote reads use the `EcSpireDistributedScan` CustomScan path when active remote placements exist | Test |
+
 ### FR-029-AC-1
 
 After `CREATE EXTENSION ecaz`, `pg_am` includes `ec_hnsw`, `ec_ivf`, `ec_diskann`, and `ec_spire`.
@@ -46,3 +52,7 @@ An `ecvector` column can be indexed by all three implemented AMs with the docume
 ### FR-029-AC-4
 
 The `ec_spire` access method registers its AM handler and SPIRE-specific opclasses for local partition-object indexes; distributed remote reads use the `EcSpireDistributedScan` CustomScan path when active remote placements exist.
+
+## Dependencies
+
+- **Related**: US-012

@@ -1,4 +1,5 @@
 ---
+type: ADR
 id: ADR-011
 title: "Hold planner selection off until ordered ec_hnsw scan semantics are credible"
 status: SUPERSEDED

@@ -1,7 +1,6 @@
 ---
 id: FR-047
 title: In-VPC Corpus Load Fan-Out
-type: functional-requirement
 type: FR
 status: PROPOSED
 object_type: process
@@ -15,7 +14,7 @@ relationships:
 ---
 # FR-047: In-VPC Corpus Load Fan-Out
 
-## Requirement
+## Description
 
 `ecaz cloud corpus load` SHALL execute parquet → COPY ingestion
 inside the database VPC by fanning out parallel workers on the
@@ -46,6 +45,13 @@ workstation.
 
 ## Acceptance Criteria
 
+| ID | Criteria | Verification |
+|----|----------|--------------|
+| FR-047-AC-1 | A `dev`-profile load with 4 parquet shards spawns 4 concurrent workers on the loader EC2 (verified via SSM exec history) | Test |
+| FR-047-AC-2 | After a `corpus load`, the DB row counts match the registry's declared `row_count` for the dataset | Test |
+| FR-047-AC-3 | Killing a worker mid-load and re-running with `--resume` completes the load without duplicating rows in already-loaded shards | Test |
+| FR-047-AC-4 | Load throughput meets or exceeds NFR-011 targets for the profile | Test |
+
 ### FR-047-AC-1
 
 A `dev`-profile load with 4 parquet shards spawns 4 concurrent
@@ -64,3 +70,7 @@ the load without duplicating rows in already-loaded shards.
 ### FR-047-AC-4
 
 Load throughput meets or exceeds NFR-011 targets for the profile.
+
+## Dependencies
+
+- **Related**: FR-044, US-021

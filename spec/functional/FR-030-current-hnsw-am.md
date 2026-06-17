@@ -1,7 +1,6 @@
 ---
 id: FR-030
 title: Current HNSW Access Method Surface
-type: functional-requirement
 type: FR
 status: IMPLEMENTED
 object_type: process
@@ -15,7 +14,7 @@ relationships:
 ---
 # FR-030: Current HNSW Access Method Surface
 
-## Requirement
+## Description
 
 `ec_hnsw` SHALL remain the default general-purpose ANN access method and SHALL support the current main-branch build, scan, insert, vacuum, planner, diagnostics, and parallel-build surfaces.
 
@@ -29,6 +28,13 @@ relationships:
 6. Parallel index scan is not part of the active requirement set.
 
 ## Acceptance Criteria
+
+| ID | Criteria | Verification |
+|----|----------|--------------|
+| FR-030-AC-1 | `CREATE INDEX | Test |
+| FR-030-AC-2 | `SET ec_hnsw.ef_search = value` changes the effective scan breadth reported by HNSW diagnostics | Test |
+| FR-030-AC-3 | On PG18, `EXPLAIN (ecaz)` can emit HNSW scan counters for an HNSW index scan | Test |
+| FR-030-AC-4 | Parallel HNSW build can be enabled or disabled through the documented diagnostic GUC | Test |
 
 ### FR-030-AC-1
 
@@ -45,3 +51,7 @@ On PG18, `EXPLAIN (ecaz)` can emit HNSW scan counters for an HNSW index scan.
 ### FR-030-AC-4
 
 Parallel HNSW build can be enabled or disabled through the documented diagnostic GUC.
+
+## Dependencies
+
+- **Related**: US-003, US-008

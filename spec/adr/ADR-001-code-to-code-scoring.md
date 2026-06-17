@@ -1,4 +1,5 @@
 ---
+type: ADR
 id: ADR-001
 title: "turbo-quant crate lacks code-to-code inner product"
 status: SUPERSEDED

@@ -1,4 +1,5 @@
 ---
+type: ADR
 id: ADR-038
 title: "Local Search Quantization as Codebook Refinement"
 status: PROPOSED

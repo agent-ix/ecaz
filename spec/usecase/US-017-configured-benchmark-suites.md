@@ -1,7 +1,6 @@
 ---
 id: US-017
 title: Run Configured Benchmark Suites
-type: user-story
 type: US
 status: APPROVED
 relationships:
@@ -23,7 +22,9 @@ relationships:
 ---
 # US-017: Run Configured Benchmark Suites
 
-**As** a reviewer, extension developer, or platform engineer,
+## Story
+
+**As a** reviewer, extension developer, or platform engineer,
 **I want** long benchmark sequences to run from a checked-in configuration,
 **So that** AM onboarding, tuning sweeps, and RDS/Graviton measurements produce repeatable packet-local evidence without hand-running each command.
 

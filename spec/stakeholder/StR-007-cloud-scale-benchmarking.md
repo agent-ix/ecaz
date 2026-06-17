@@ -1,14 +1,14 @@
 ---
 id: StR-007
 title: Repeatable Scale Benchmarking on Managed Cloud
-type: stakeholder-requirement
+type: StR
 status: PROPOSED
 derived_usecases:
   - US-021
 ---
 # StR-007: Repeatable Scale Benchmarking on Managed Cloud
 
-## Need
+## Stakeholder Need
 
 Ecaz benchmark evidence today is bounded by what fits on an operator
 workstation. The committed corpus stops at 1M × 1536-dim vectors
@@ -45,7 +45,7 @@ of rows.
   public internet is impractical, so corpus staging and load SHALL
   happen inside the database VPC.
 
-## Success Criteria
+## Validation Criteria
 
 - `ecaz cloud up --profile 10k` reaches a queryable ecaz database in
   under 10 minutes from a clean slate.

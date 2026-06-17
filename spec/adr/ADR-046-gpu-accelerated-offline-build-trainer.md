@@ -1,4 +1,5 @@
 ---
+type: ADR
 id: ADR-046
 title: "GPU-Accelerated Offline Build Trainer (Push-Model Artifacts)"
 status: PROPOSED

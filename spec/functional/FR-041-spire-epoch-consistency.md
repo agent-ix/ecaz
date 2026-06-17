@@ -1,7 +1,6 @@
 ---
 id: FR-041
 title: "SPIRE Epoch Consistency (Superseded)"
-type: functional-requirement
 type: FR
 status: SUPERSEDED
 relationships:
@@ -20,7 +19,7 @@ relationships:
 ---
 # FR-041: SPIRE Epoch Consistency (Superseded)
 
-## Tombstone
+## Description
 
 This identifier was assigned during the earlier SPIRE partition-object design
 checkpoint for epoch consistency. The active requirements are now:
@@ -33,3 +32,13 @@ checkpoint for epoch consistency. The active requirements are now:
 This tombstone has no active acceptance criteria. It exists to preserve the
 immutable requirement ID history required by the master specification lifecycle
 policy.
+
+## Acceptance Criteria
+
+| ID | Criteria | Verification |
+|----|----------|--------------|
+| FR-041-AC-1 | This identifier is retired; the requirement is satisfied by the listed successor requirements | Inspection |
+
+## Dependencies
+
+- **Downstream**: superseded by FR-048, FR-052, FR-054, FR-057

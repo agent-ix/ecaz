@@ -1,7 +1,6 @@
 ---
 id: FR-046
 title: Cloud Dataset Registry
-type: functional-requirement
 type: FR
 status: PROPOSED
 object_type: data-source
@@ -15,7 +14,7 @@ relationships:
 ---
 # FR-046: Cloud Dataset Registry
 
-## Requirement
+## Description
 
 The cloud harness SHALL ship a dataset registry that maps short
 names to source locations, dimensions, distance metrics, and the
@@ -50,6 +49,12 @@ third-party benchmarks each dataset is comparable against.
 
 ## Acceptance Criteria
 
+| ID | Criteria | Verification |
+|----|----------|--------------|
+| FR-046-AC-1 | Every registered dataset has a non-empty `source`, `dim`, `row_count`, and `comparable_to` field | Test |
+| FR-046-AC-2 | `corpus stage --dataset bigann-1b --dry-run` reports the planned S3 keys and total bytes without downloading | Test |
+| FR-046-AC-3 | A staged dataset's manifest SHA matches the registry's `expected_sha256` after a successful `corpus stage` run | Test |
+
 ### FR-046-AC-1
 
 Every registered dataset has a non-empty `source`, `dim`,
@@ -64,3 +69,7 @@ S3 keys and total bytes without downloading.
 
 A staged dataset's manifest SHA matches the registry's
 `expected_sha256` after a successful `corpus stage` run.
+
+## Dependencies
+
+- **Related**: FR-044, US-021

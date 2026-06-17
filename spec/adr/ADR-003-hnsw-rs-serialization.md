@@ -1,4 +1,5 @@
 ---
+type: ADR
 id: ADR-003
 title: "Walk hnsw_rs graph and write to Postgres pages"
 status: SUPERSEDED

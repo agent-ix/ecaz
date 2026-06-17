@@ -1,7 +1,6 @@
 ---
 id: US-016
 title: Operate Ecaz Through One CLI
-type: user-story
 type: US
 status: IMPLEMENTED
 relationships:
@@ -17,7 +16,9 @@ relationships:
 ---
 # US-016: Operate Ecaz Through One CLI
 
-**As** a reviewer, platform engineer, or extension developer,
+## Story
+
+**As a** reviewer, platform engineer, or extension developer,
 **I want** one profile-aware `ecaz` command surface for corpora, benchmarks, comparisons, stress harnesses, and local development,
 **So that** evidence-producing workflows are reproducible and do not drift across one-off scripts.
 

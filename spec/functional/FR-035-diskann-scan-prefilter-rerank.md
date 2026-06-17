@@ -1,7 +1,6 @@
 ---
 id: FR-035
 title: DiskANN Scan, Prefilter, and Rerank
-type: functional-requirement
 type: FR
 status: IMPLEMENTED
 object_type: process
@@ -12,7 +11,7 @@ relationships:
 ---
 # FR-035: DiskANN Scan, Prefilter, and Rerank
 
-## Requirement
+## Description
 
 `ec_diskann` SHALL implement ordered scan over the persisted Vamana graph using a configurable traversal prefilter and heap rerank.
 
@@ -26,6 +25,12 @@ relationships:
 
 ## Acceptance Criteria
 
+| ID | Criteria | Verification |
+|----|----------|--------------|
+| FR-035-AC-1 | `ORDER BY embedding <#> query LIMIT k` returns ordered results through `ec_diskann` | Test |
+| FR-035-AC-2 | Session `ec_diskann.list_size` changes the effective scan breadth | Test |
+| FR-035-AC-3 | The binary sidecar prefilter path and grouped-PQ fallback are selectable through `ec_diskann.prefilter_kind` | Test |
+
 ### FR-035-AC-1
 
 `ORDER BY embedding <#> query LIMIT k` returns ordered results through `ec_diskann`.
@@ -37,3 +42,7 @@ Session `ec_diskann.list_size` changes the effective scan breadth.
 ### FR-035-AC-3
 
 The binary sidecar prefilter path and grouped-PQ fallback are selectable through `ec_diskann.prefilter_kind`.
+
+## Dependencies
+
+- **Related**: US-014

@@ -1,7 +1,6 @@
 ---
 id: FR-060
 title: SPIRE Diagnostics Configuration and Operator Surface
-type: functional-requirement
 type: FR
 status: APPROVED
 object: api_endpoint
@@ -18,7 +17,7 @@ relationships:
 ---
 # FR-060: SPIRE Diagnostics Configuration and Operator Surface
 
-## Requirement
+## Description
 
 SPIRE SHALL expose read-only SQL diagnostics, bounded configuration, and
 operator command surfaces that explain active index state, routing behavior,
@@ -101,6 +100,17 @@ the evidence labels defined by the SPIRE readiness docs.
 
 ## Acceptance Criteria
 
+| ID | Criteria | Verification |
+|----|----------|--------------|
+| FR-060-AC-1 | An operator can inspect active epoch, object, placement, scan, route, local store, remote, DML, cost, and cleanup state through SQL diagnostics | Test |
+| FR-060-AC-2 | Diagnostics do not expose raw conninfo secrets or raw remote error text | Test |
+| FR-060-AC-3 | Stable labels and evidence labels are documented as public contracts and stale row-materialization labels are not used as the current distributed read path | Test |
+| FR-060-AC-4 | Effective SPIRE reloptions and GUCs can be inspected with enough detail to reproduce routing, fanout, timeout, payload, and degraded-mode behavior | Test |
+| FR-060-AC-5 | Remote executor diagnostics expose endpoint identity, transport readiness, timeout/cancel state, strict failures, degraded skips, and tuple-payload compatibility without exposing raw secrets | Test |
+| FR-060-AC-6 | DML diagnostics expose classifier outcome, primitive plan inputs, placement directory state, prepared transaction intent state, and operator-owned recovery actions | Test |
+| FR-060-AC-7 | Repeatable SPIRE operator workflows can write packet-local logs and cite stable evidence labels for local readiness, distributed read, transport fault, and DML lifecycle fixtures | Test |
+| FR-060-AC-8 | Diagnostics distinguish implementation readiness from benchmark claims and do not imply product-scale performance without packet-local measurement artifacts | Test |
+
 ### FR-060-AC-1
 
 An operator can inspect active epoch, object, placement, scan, route, local
@@ -142,3 +152,7 @@ lifecycle fixtures.
 
 Diagnostics distinguish implementation readiness from benchmark claims and do
 not imply product-scale performance without packet-local measurement artifacts.
+
+## Dependencies
+
+- **Related**: FR-048, FR-057, FR-059

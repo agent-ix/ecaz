@@ -1,7 +1,6 @@
 ---
 id: FR-052
 title: SPIRE Build and Epoch Publish
-type: functional-requirement
 type: FR
 status: APPROVED
 object: process
@@ -21,7 +20,7 @@ relationships:
 ---
 # FR-052: SPIRE Build and Epoch Publish
 
-## Requirement
+## Description
 
 `ec_spire` SHALL build relation-backed partition objects from heap vectors,
 write a validated manifest bundle, and publish a coherent active epoch only
@@ -69,6 +68,12 @@ sequenceDiagram
 
 ## Acceptance Criteria
 
+| ID | Criteria | Verification |
+|----|----------|--------------|
+| FR-052-AC-1 | An empty or populated build publishes a root/control state, active epoch, manifest, and placement set that diagnostics can read back | Test |
+| FR-052-AC-2 | Build publication fails closed when required partition-object bytes, placement entries, object versions, or store descriptors are inconsistent | Test |
+| FR-052-AC-3 | The build flow can be reproduced from heap scan through centroid training, draft object creation, object writes, manifest validation, and active epoch publication | Test |
+
 ### FR-052-AC-1
 
 An empty or populated build publishes a root/control state, active epoch,
@@ -84,3 +89,7 @@ entries, object versions, or store descriptors are inconsistent.
 The build flow can be reproduced from heap scan through centroid training,
 draft object creation, object writes, manifest validation, and active epoch
 publication.
+
+## Dependencies
+
+- **Related**: FR-048, FR-049, FR-050, FR-051

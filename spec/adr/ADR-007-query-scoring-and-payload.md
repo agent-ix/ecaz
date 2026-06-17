@@ -1,4 +1,5 @@
 ---
+type: ADR
 id: ADR-007
 title: "Persist gamma and use raw-query scoring for the high-quality search path"
 status: DECIDED

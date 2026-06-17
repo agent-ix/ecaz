@@ -1,7 +1,6 @@
 ---
 id: NFR-016
 title: On-Disk Format Evolution Discipline
-type: non-functional-requirement
 type: NFR
 status: PROPOSED
 relationships:
@@ -49,7 +48,7 @@ by the individual FRs (FR-007 HNSW page layout, FR-034 DiskANN build and
 storage, etc.). It defines the *discipline* under which those formats may
 change.
 
-## Requirement
+## Statement
 
 Every on-disk payload Ecaz writes SHALL be governed by an explicit
 format-version tag, an explicit evolution lifecycle, and a fixture-backed
@@ -220,6 +219,14 @@ this NFR, not a fixture defect.
 Forward-compatible extension blocks are encoded per the convention
 selected in the governing ADR. A payload kind whose forward-compat
 behavior is not documented in its FR is in violation of NFR-016-EV-5.
+
+## Measurement and Evaluation
+
+| Metric | Target | Threshold | Method |
+|--------|--------|-----------|--------|
+| On-disk payloads carrying an explicit format-version tag | 100% | 100% | Inspection |
+| Fixture-backed compatibility matrix coverage | All versioned formats | All | Compatibility Test |
+| Silent layout drift or undocumented deprecation | None | 0 | Inspection |
 
 ## Verification
 

@@ -1,4 +1,5 @@
 ---
+type: ADR
 id: ADR-023
 title: "SIMD Bit-Packing for MSE Index Decode in Scoring Hot Path"
 status: PROPOSED

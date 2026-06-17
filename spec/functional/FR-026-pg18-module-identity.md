@@ -1,7 +1,7 @@
 ---
 id: FR-026
 title: PG18 Module Identity and Version Reporting
-type: functional-requirement
+type: FR
 status: DRAFT
 object_type: configuration
 traces:
@@ -10,7 +10,7 @@ traces:
 ---
 # FR-026: PG18 Module Identity and Version Reporting
 
-## Requirement
+## Description
 
 On PG18, the extension SHALL use `PG_MODULE_MAGIC_EXT` to declare its name and version, making this information available via `pg_get_loaded_modules()` for diagnostics and version tracking.
 
@@ -48,6 +48,11 @@ On PG17, the standard `PG_MODULE_MAGIC` macro is used. The extension name and ve
 
 ## Acceptance Criteria
 
+| ID | Criteria | Verification |
+|----|----------|--------------|
+| FR-026-AC-1 | Module visible | Test |
+| FR-026-AC-2 | Version matches Cargo.toml | Test |
+
 ### FR-026-AC-1: Module visible
 On PG18, `SELECT module_name, version FROM pg_get_loaded_modules() WHERE module_name = 'ecaz'`
 SHALL return one row with the correct version.
@@ -59,3 +64,7 @@ The reported version SHALL match the `version` field in `Cargo.toml`.
 
 - PG source: `src/include/fmgr.h` — `Pg_magic_struct` definition (`.name`, `.version` fields), `PG_MODULE_MAGIC_EXT` macro, `PG_MODULE_MAGIC_DATA` initializer
 - PG source: `src/backend/utils/fmgr/dfmgr.c` — `pg_get_loaded_modules()` function that exposes module name/version
+
+## Dependencies
+
+- **Upstream**: US-004, StR-004

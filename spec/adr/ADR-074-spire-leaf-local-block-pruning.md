@@ -1,4 +1,5 @@
 ---
+type: ADR
 id: ADR-074
 title: "SPIRE Leaf-Local Block Pruning"
 status: ACCEPTED

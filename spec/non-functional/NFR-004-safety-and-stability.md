@@ -1,7 +1,6 @@
 ---
 id: NFR-004
 title: Safety and Stability
-type: non-functional-requirement
 type: NFR
 status: APPROVED
 relationships:
@@ -47,7 +46,7 @@ relationships:
 ---
 # NFR-004: Safety and Stability
 
-## Requirement
+## Statement
 
 Primary quality attribute: reliability. This requirement is the safety umbrella
 for backend crash prevention, memory/resource lifetime, WAL recovery, and the
@@ -133,7 +132,14 @@ Only lanes with packet-local raw logs may be cited as completed evidence for
 coverage gaps until a review packet stores their raw logs and records pass,
 skip, or manual-gate interpretation.
 
-## Measurement
+## Measurement and Evaluation
+
+| Metric | Target | Threshold | Method |
+|--------|--------|-----------|--------|
+| New uncommented `unsafe` blocks | 0 | 0 | `make audit-unsafe` Gate |
+| Hardening lanes (Miri, fuzz, Kani, Loom, Shuttle, sanitizers) | Pass | Pass | `make hardening-nightly-local` |
+| Supply-chain audit (`cargo-audit`, `deny-full`, `cargo-vet`) | Clean | Clean | Supply-Chain Audit |
+
 
 - `make hardening-local` for stable local checks that do not need a live cluster.
 - `make hardening-nightly-local` for slower Miri, cargo-careful, fuzz, Kani,
@@ -145,6 +151,10 @@ skip, or manual-gate interpretation.
 - Fuzz testing: feed random byte sequences to parsers, tuple decoders,
   metadata decoders, item-pointer decoders, and vector normalization paths.
 - Code review and packet-local logs for unsafe/static analyzer findings.
+
+## Verification
+
+The local and nightly hardening Make targets, the unsafe-baseline audit, and the supply-chain audit lanes are run and their results reviewed against the gates above, with fuzzing exercising parser, tuple/metadata/item-pointer decoders, and vector normalization paths; findings are captured in packet-local logs.
 
 ## Acceptance Criteria
 

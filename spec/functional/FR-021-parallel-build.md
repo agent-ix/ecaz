@@ -1,7 +1,7 @@
 ---
 id: FR-021
 title: Parallel Index Build
-type: functional-requirement
+type: FR
 status: DRAFT
 object_type: process
 traces:
@@ -11,7 +11,7 @@ traces:
 ---
 # FR-021: Parallel Index Build
 
-## Requirement
+## Description
 
 The extension SHALL support parallel index build by parallelizing eligible
 `ec_hnsw` build work across multiple PostgreSQL background workers. The build
@@ -238,6 +238,15 @@ disabled, the build falls back to the serial graph path (FR-008).
 
 ## Acceptance Criteria
 
+| ID | Criteria | Verification |
+|----|----------|--------------|
+| FR-021-AC-1 | Parallel workers used | Test |
+| FR-021-AC-2 | Correctness | Test |
+| FR-021-AC-3 | Speedup | Test |
+| FR-021-AC-4 | Concurrent build | Test |
+| FR-021-AC-5 | Small table fallback | Test |
+| FR-021-AC-6 | GenericXLog safety | Test |
+
 ### FR-021-AC-1: Parallel workers used
 With `max_parallel_maintenance_workers = 4` on a 100K-row table, `CREATE INDEX USING ec_hnsw` SHALL launch parallel workers.
 
@@ -271,3 +280,7 @@ All page writes during the leader's graph serialization phase SHALL use GenericX
 - PG source: `src/backend/access/nbtree/nbtsort.c` — btree parallel build (older reference implementation using same infrastructure)
 - ADR-048: Parallel HNSW build graph assembly
 - Review packet 666: Phase 3 real-50k recall and speed summary
+
+## Dependencies
+
+- **Upstream**: US-008, FR-008, StR-004

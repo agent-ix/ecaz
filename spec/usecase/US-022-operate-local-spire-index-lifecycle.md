@@ -1,7 +1,6 @@
 ---
 id: US-022
 title: Operate a Local SPIRE Index Lifecycle
-type: user-story
 type: US
 status: APPROVED
 relationships:
@@ -23,7 +22,9 @@ relationships:
 ---
 # US-022: Operate a Local SPIRE Index Lifecycle
 
-**As** a platform engineer,
+## Story
+
+**As a** platform engineer,
 **I want** to build, query, update, vacuum, maintain, and inspect a local SPIRE index,
 **So that** I can operate the partition-object foundation before and alongside distributed deployments.
 

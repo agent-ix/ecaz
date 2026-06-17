@@ -1,7 +1,6 @@
 ---
 id: FR-053
 title: SPIRE Local Search
-type: functional-requirement
 type: FR
 status: APPROVED
 object: process
@@ -18,7 +17,7 @@ relationships:
 ---
 # FR-053: SPIRE Local Search
 
-## Requirement
+## Description
 
 Local `ec_spire` index scans SHALL use an eager bounded scan contract:
 `amrescan` loads the active epoch, routes the query, reads selected objects,
@@ -72,6 +71,12 @@ sequenceDiagram
 
 ## Acceptance Criteria
 
+| ID | Criteria | Verification |
+|----|----------|--------------|
+| FR-053-AC-1 | Local scans expose route, store, candidate, dedupe, truncation, rerank, and cursor-drain diagnostics sufficient to identify the limiting stage | Test |
+| FR-053-AC-2 | `amgettuple` drains a pre-ranked cursor and does not perform object-store or heap-rerank work | Test |
+| FR-053-AC-3 | Store-grouped prefetch is distinguishable from true parallel multi-store execution in diagnostics and product claims | Test |
+
 ### FR-053-AC-1
 
 Local scans expose route, store, candidate, dedupe, truncation, rerank, and
@@ -86,3 +91,7 @@ heap-rerank work.
 
 Store-grouped prefetch is distinguishable from true parallel multi-store
 execution in diagnostics and product claims.
+
+## Dependencies
+
+- **Related**: FR-048, FR-050, FR-051

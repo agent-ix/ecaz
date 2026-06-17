@@ -1,4 +1,5 @@
 ---
+type: ADR
 id: ADR-039
 title: "ARM SVE as Secondary SIMD Backend for ARM Targets"
 status: PROPOSED

@@ -1,7 +1,6 @@
 ---
 id: FR-038
 title: Configured Benchmark Suite Runner
-type: functional-requirement
 type: FR
 status: APPROVED
 object_type: interface
@@ -18,7 +17,7 @@ relationships:
 ---
 # FR-038: Configured Benchmark Suite Runner
 
-## Requirement
+## Description
 
 Ecaz SHALL provide a configured benchmark suite runner under `ecaz bench suite` for repeatable load, recall, latency, storage, EXPLAIN, and custom benchmark sequences.
 
@@ -41,6 +40,17 @@ Ecaz SHALL provide a configured benchmark suite runner under `ecaz bench suite` 
 15. Suite reports SHOULD preserve the access-method, quantizer/storage-format, option-set, dataset, environment, and metric fields required by `NFR-015`.
 
 ## Acceptance Criteria
+
+| ID | Criteria | Verification |
+|----|----------|--------------|
+| FR-038-AC-1 | Suite dry-runs and executed runs produce a manifest with config SHA256, redacted connection metadata, expanded commands, tags, step selection, step status, timing, and artifact paths | Test |
+| FR-038-AC-2 | The runner supports the configured step kinds needed by current Task 31 IVF work: `load`, `recall`, `latency`, `storage`, `explain`, and `raw` | Test |
+| FR-038-AC-3 | Suite audit and status commands are usable without connecting to PostgreSQL | Test |
+| FR-038-AC-4 | The CLI README documents suite commands, schema conventions, dry-run/execution flow, and targeted tuning usage | Test |
+| FR-038-AC-5 | Completed suite runs can produce normalized JSONL rows for recall, latency, storage, and load artifacts | Test |
+| FR-038-AC-6 | Configured thresholds are recorded in the manifest and can fail an otherwise completed suite | Test |
+| FR-038-AC-7 | Thresholds can target a specific row from a multi-row sweep, and resume rejects stale manifests whose config hash or expanded command differs | Test |
+| FR-038-AC-8 | Suite reports include enough candidate identity and metric metadata to populate the benchmark reporting standard without hand-editing result semantics | Test |
 
 ### FR-038-AC-1
 
@@ -74,3 +84,7 @@ Thresholds can target a specific row from a multi-row sweep, and resume rejects 
 
 Suite reports include enough candidate identity and metric metadata to populate
 the benchmark reporting standard without hand-editing result semantics.
+
+## Dependencies
+
+- **Related**: FR-037, NFR-015, US-017

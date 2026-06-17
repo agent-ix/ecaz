@@ -15,9 +15,6 @@ tags:
   - simd
 implementation_language: rust
 relationships:
-  - target: "crate://pgrx"
-    type: "requires"
-    cardinality: "1:1"
   - target: "ix://agent-ix/agent-memory-context"
     type: "implements"
     cardinality: "1:1"
@@ -27,6 +24,7 @@ standards_alignment:
   - iso-iec-ieee-42010
   - iso-iec-25010
   - iso-iec-ieee-15939
+title: "Master Requirements Specification"
 ---
 # Master Requirements Specification
 ## Ecaz - PostgreSQL Extension for Compressed Vector Search
@@ -134,7 +132,7 @@ payloads, and returns rows without coordinator mirror tables. Coordinator writes
 route by placement metadata and use PostgreSQL two-phase commit for multi-node
 INSERT atomicity; broader shard SQL remains outside v1.
 
-## 4. Architecture
+## 4. System Overview
 
 ```mermaid
 graph TD
@@ -283,7 +281,7 @@ measurement. They are not certification claims.
 | ISO/IEC 25010 | Quality model for non-functional requirements. | NFRs scoped to a primary quality attribute such as performance efficiency, reliability, security, maintainability, portability, or scalability. |
 | ISO/IEC/IEEE 15939 | Measurement process for benchmark, recall, storage, memory, hardening, and operational claims. | Metric definitions, measurement context, candidate identity fields, hardening-lane command provenance, artifact provenance, and documented decision thresholds or explicit gaps. |
 
-## 9. Requirement Architecture
+## 9. Requirements Architecture
 
 ```
 spec/

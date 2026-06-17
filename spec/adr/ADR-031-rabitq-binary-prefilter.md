@@ -1,4 +1,5 @@
 ---
+type: ADR
 id: ADR-031
 title: "RaBitQ Binary Pre-Filter for Beam Search Candidate Scoring"
 status: SUPERSEDED

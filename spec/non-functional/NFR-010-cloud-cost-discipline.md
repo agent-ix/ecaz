@@ -1,7 +1,6 @@
 ---
 id: NFR-010
 title: Cloud Cost Discipline
-type: non-functional-requirement
 type: NFR
 status: PROPOSED
 relationships:
@@ -14,7 +13,7 @@ relationships:
 ---
 # NFR-010: Cloud Cost Discipline
 
-## Requirement
+## Statement
 
 The cloud harness SHALL make ongoing AWS spend visible, bounded, and
 reversible. A forgotten profile SHALL NOT be able to silently accrue
@@ -43,6 +42,18 @@ material spend.
 7. The harness SHALL refuse to provision a profile larger than
    `dev` without an explicit `--confirm-cost` flag whose argument
    matches the projected $/day for that profile.
+
+## Measurement and Evaluation
+
+| Metric | Target | Threshold | Method |
+|--------|--------|-----------|--------|
+| Paid resources remaining after `ecaz cloud down` | Only intentionally retained snapshot/bucket | Only retained | Demonstration |
+| Cost fields in `ecaz cloud status --json` (`estimated_hourly_usd`, `retained_monthly_usd`) | Present, non-null numeric | Present | Inspection |
+| NAT gateway resources in Terraform plan | 0 | 0 | Inspection |
+
+## Verification
+
+A teardown demonstration runs `ecaz cloud down` then `ecaz cloud status` to confirm zero compute resources and only retained storage, the `--json` status output is inspected for cost fields, and the Terraform plan is inspected for absence of NAT gateways and presence of the `--confirm-cost` guard.
 
 ## Acceptance Criteria
 

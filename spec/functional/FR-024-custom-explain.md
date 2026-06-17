@@ -1,7 +1,7 @@
 ---
 id: FR-024
 title: Custom EXPLAIN Options — Scan Diagnostics
-type: functional-requirement
+type: FR
 status: DRAFT
 object_type: process
 traces:
@@ -11,7 +11,7 @@ traces:
 ---
 # FR-024: Custom EXPLAIN Options — Scan Diagnostics
 
-## Requirement
+## Description
 
 On PG18, the extension SHALL register a custom EXPLAIN option `ecaz` that, when enabled, causes EXPLAIN output to include Ecaz-specific scan statistics for each Index Scan node using the `ec_hnsw` access method.
 
@@ -137,6 +137,14 @@ per-node hook remain PG18-only.
 
 ## Acceptance Criteria
 
+| ID | Criteria | Verification |
+|----|----------|--------------|
+| FR-024-AC-1 | Option recognized | Test |
+| FR-024-AC-2 | Stats emitted | Test |
+| FR-024-AC-3 | No output when disabled | Test |
+| FR-024-AC-4 | ANALYZE shows actuals | Test |
+| FR-024-AC-5 | Hook chains | Test |
+
 ### FR-024-AC-1: Option recognized
 `EXPLAIN (ecaz) SELECT ...` SHALL parse without error when the extension is loaded.
 
@@ -160,3 +168,7 @@ If another extension has installed an `explain_per_node_hook`, Ecaz's hook SHALL
 - PG source: `src/include/commands/explain_format.h` — `ExplainPropertyText()`, `ExplainPropertyInteger()`, `ExplainPropertyFloat()`, `ExplainPropertyBool()`, `ExplainOpenGroup()`, `ExplainCloseGroup()`
 - PG source: `src/backend/commands/explain.c` — `explain_per_node_hook` / `explain_per_plan_hook` declaration, `ApplyExtensionExplainOption()` parser integration
 - PG source: `src/include/commands/explain_state.h` — `GUCCheckBooleanExplainOption()` helper for boolean option validation
+
+## Dependencies
+
+- **Upstream**: US-009, FR-009, StR-004

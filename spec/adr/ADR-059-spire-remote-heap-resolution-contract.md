@@ -1,4 +1,5 @@
 ---
+type: ADR
 id: ADR-059
 title: "SPIRE Remote Heap Resolution Contract"
 status: ACCEPTED

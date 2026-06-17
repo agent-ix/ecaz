@@ -1,7 +1,6 @@
 ---
 id: FR-043
 title: "SPIRE Update, Split, and Merge Lifecycle (Superseded)"
-type: functional-requirement
 type: FR
 status: SUPERSEDED
 relationships:
@@ -17,7 +16,7 @@ relationships:
 ---
 # FR-043: SPIRE Update, Split, and Merge Lifecycle (Superseded)
 
-## Tombstone
+## Description
 
 This identifier was assigned during the earlier SPIRE partition-object design
 checkpoint for update, split, and merge lifecycle behavior. The active
@@ -30,3 +29,13 @@ requirements are now:
 This tombstone has no active acceptance criteria. It exists to preserve the
 immutable requirement ID history required by the master specification lifecycle
 policy.
+
+## Acceptance Criteria
+
+| ID | Criteria | Verification |
+|----|----------|--------------|
+| FR-043-AC-1 | This identifier is retired; the requirement is satisfied by the listed successor requirements | Inspection |
+
+## Dependencies
+
+- **Downstream**: superseded by FR-054, FR-059, FR-060

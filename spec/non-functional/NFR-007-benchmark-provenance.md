@@ -1,7 +1,6 @@
 ---
 id: NFR-007
 title: Benchmark Provenance
-type: non-functional-requirement
 type: NFR
 status: APPROVED
 relationships:
@@ -11,7 +10,7 @@ relationships:
 ---
 # NFR-007: Benchmark Provenance
 
-## Requirement
+## Statement
 
 Any benchmark result used in README, docs, spec, task status, or review rationale SHALL identify the evidence source and the scope of the claim.
 
@@ -23,6 +22,17 @@ Any benchmark result used in README, docs, spec, task status, or review rational
 4. Promoted current benchmark lanes MAY live under `benchmarks/current/<lane>/` for mutable host-class snapshots, but each lane manifest SHALL cite the immutable source packet, head SHA, suite config path/hash, raw artifacts, and claim class.
 5. Local development measurements SHALL be labeled as local evidence and SHALL NOT be described as product benchmark claims.
 6. Product benchmark claims SHALL require dedicated controlled hardware and reproducible command/settings metadata.
+
+## Measurement and Evaluation
+
+| Metric | Target | Threshold | Method |
+|--------|--------|-----------|--------|
+| Benchmark claim provenance (source + scope identified) | 100% of cited claims | 100% | Inspection |
+| Raw logs stored under owning packet `artifacts/` | Present for every measurement claim | Present | Inspection |
+
+## Verification
+
+Reviewers inspect each cited benchmark claim against its source packet, manifest fields, and packet-local raw logs, and confirm local evidence is labeled distinctly from product benchmark claims.
 
 ## Acceptance Criteria
 

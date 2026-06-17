@@ -1,7 +1,7 @@
 ---
 id: FR-004
 title: encode_to_tqvector — fp32 to Compressed Code
-type: functional-requirement
+type: FR
 status: APPROVED
 object_type: api
 traces:
@@ -10,7 +10,7 @@ traces:
 ---
 # FR-004: encode_to_tqvector — fp32 to Compressed Code
 
-## Requirement
+## Description
 
 The extension SHALL provide an SQL-callable function that compresses a raw fp32 vector into a `tqvector` value using the two-stage quantization pipeline (FR-013).
 
@@ -20,7 +20,7 @@ The extension SHALL provide an SQL-callable function that compresses a raw fp32 
 encode_to_tqvector(embedding float4[], bits int, seed bigint DEFAULT 42) RETURNS tqvector
 ```
 
-### Behavior
+### Encoding Behavior
 
 1. SHALL pad the input vector to the next power-of-two length (zero-padded) for the internal FWHT workspace only
 2. SHALL apply SRHT rotation (diagonal random signs + Fast Walsh-Hadamard Transform) seeded by `seed`
@@ -39,6 +39,13 @@ Given the same `(embedding, bits, seed)`, the function SHALL always produce the 
 
 ## Acceptance Criteria
 
+| ID | Criteria | Verification |
+|----|----------|--------------|
+| FR-004-AC-1 | Encode produces valid tqvector | Test |
+| FR-004-AC-2 | Deterministic output | Test |
+| FR-004-AC-3 | Reject invalid bits | Test |
+| FR-004-AC-4 | Code length correctness | Test |
+
 ### FR-004-AC-1: Encode produces valid tqvector
 `encode_to_tqvector(ARRAY[1.0, 2.0, 3.0, 4.0]::float4[], 4, 42)` SHALL return a value that can be stored and retrieved from a `tqvector` column.
 
@@ -50,3 +57,7 @@ Two calls with identical arguments SHALL produce byte-identical results.
 
 ### FR-004-AC-4: Code length correctness
 The output quantized payload length SHALL equal `4 + ceil(original_dim * (bits-1) / 8) + ceil(original_dim / 8)`. Internal transform padding SHALL NOT change the persisted payload length. The embedded `code_bytes` subsection excludes the 4-byte `gamma` field and therefore has length `ceil(original_dim * (bits-1) / 8) + ceil(original_dim / 8)`.
+
+## Dependencies
+
+- **Upstream**: US-001, FR-013

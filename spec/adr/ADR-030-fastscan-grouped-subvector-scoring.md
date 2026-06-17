@@ -1,4 +1,5 @@
 ---
+type: ADR
 id: ADR-030
 title: "FastScan Grouped Subvector Scoring for 4-bit Codes"
 status: PROPOSED

@@ -1,7 +1,6 @@
 ---
 id: FR-039
 title: "SPIRE Local NVMe Placement (Superseded)"
-type: functional-requirement
 type: FR
 status: SUPERSEDED
 relationships:
@@ -20,7 +19,7 @@ relationships:
 ---
 # FR-039: SPIRE Local NVMe Placement (Superseded)
 
-## Tombstone
+## Description
 
 This identifier was assigned during the earlier SPIRE partition-object design
 checkpoint for local NVMe/store placement. The active requirements are now:
@@ -33,3 +32,13 @@ checkpoint for local NVMe/store placement. The active requirements are now:
 This tombstone has no active acceptance criteria. It exists to preserve the
 immutable requirement ID history required by the master specification lifecycle
 policy.
+
+## Acceptance Criteria
+
+| ID | Criteria | Verification |
+|----|----------|--------------|
+| FR-039-AC-1 | This identifier is retired; the requirement is satisfied by the listed successor requirements | Inspection |
+
+## Dependencies
+
+- **Downstream**: superseded by FR-048, FR-053, FR-055, FR-060

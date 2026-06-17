@@ -1,4 +1,5 @@
 ---
+type: ADR
 id: ADR-071
 title: "Unified Quantizer Interface Across Access Methods"
 status: ACCEPTED

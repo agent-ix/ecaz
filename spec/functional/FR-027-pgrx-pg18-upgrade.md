@@ -1,7 +1,7 @@
 ---
 id: FR-027
 title: pgrx PG18 Support and Build Configuration
-type: functional-requirement
+type: FR
 status: DRAFT
 object_type: configuration
 traces:
@@ -10,7 +10,7 @@ traces:
 ---
 # FR-027: pgrx PG18 Support and Build Configuration
 
-## Requirement
+## Description
 
 The extension SHALL add PostgreSQL 18 as a supported target via pgrx feature flags, making PG18 the default build target while maintaining PG17 compatibility.
 
@@ -95,6 +95,13 @@ pub unsafe extern "C-unwind" fn _PG_init() {
 
 ## Acceptance Criteria
 
+| ID | Criteria | Verification |
+|----|----------|--------------|
+| FR-027-AC-1 | PG18 builds | Test |
+| FR-027-AC-2 | PG17 builds | Test |
+| FR-027-AC-3 | Tests pass on both | Test |
+| FR-027-AC-4 | _PG_init called | Test |
+
 ### FR-027-AC-1: PG18 builds
 `cargo pgrx build --features pg18 --release` SHALL succeed.
 
@@ -106,3 +113,7 @@ pub unsafe extern "C-unwind" fn _PG_init() {
 
 ### FR-027-AC-4: _PG_init called
 On PG18, `CREATE EXTENSION ecaz` SHALL invoke `_PG_init`, registering the EXPLAIN option and any PG18 diagnostics setup that is not still blocked on preload-time pgstat wiring.
+
+## Dependencies
+
+- **Upstream**: US-004, StR-004

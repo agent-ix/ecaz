@@ -1,7 +1,7 @@
 ---
 id: FR-013
 title: Two-Stage Vector Quantization Pipeline
-type: functional-requirement
+type: FR
 status: APPROVED
 object_type: process
 traces:
@@ -10,7 +10,7 @@ traces:
 ---
 # FR-013: Two-Stage Vector Quantization Pipeline
 
-## Requirement
+## Description
 
 The extension SHALL implement the `tqvector` two-stage vector quantization algorithm as an internal module (`quant/`). The quantizer compresses fp32 vectors into bit-packed integer codes plus a residual norm scalar, and it defines both a high-quality query-to-code estimator and a lower-fidelity symmetric code-to-code estimator.
 
@@ -108,6 +108,15 @@ The symmetric code-to-code estimator SHALL NOT apply the QJL residual term in v0
 
 ## Acceptance Criteria
 
+| ID | Criteria | Verification |
+|----|----------|--------------|
+| FR-013-AC-1 | Codebook centroids are symmetric | Test |
+| FR-013-AC-2 | Beta PDF integrates to one | Test |
+| FR-013-AC-3 | SRHT rotation preserves norm | Test |
+| FR-013-AC-4 | Encode-decode round-trip fidelity | Test |
+| FR-013-AC-5 | Deterministic encoding | Test |
+| FR-013-AC-6 | QJL bit count correctness | Test |
+
 ### FR-013-AC-1: Codebook centroids are symmetric
 For any even number of centroids, the codebook SHALL be symmetric around zero (sum of all centroids < 1e-3).
 
@@ -125,3 +134,7 @@ Encoding the same vector with the same `(bits, seed)` SHALL produce byte-identic
 
 ### FR-013-AC-6: QJL bit count correctness
 The QJL output SHALL be exactly `ceil(original_dim / 8)` bytes for any input dimension.
+
+## Dependencies
+
+- **Upstream**: StR-001, US-001

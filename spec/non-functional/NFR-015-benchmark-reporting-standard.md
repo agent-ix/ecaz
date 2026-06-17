@@ -1,7 +1,6 @@
 ---
 id: NFR-015
 title: Benchmark Reporting Standard
-type: non-functional-requirement
 type: NFR
 status: APPROVED
 relationships:
@@ -14,7 +13,7 @@ relationships:
 ---
 # NFR-015: Benchmark Reporting Standard
 
-## Requirement
+## Statement
 
 Ecaz benchmark reports SHALL use one common reporting schema across access
 methods, quantizers, storage formats, and option sets.
@@ -41,6 +40,17 @@ methods, quantizers, storage formats, and option sets.
 8. Product benchmark reports SHALL additionally identify hardware, CPU
    architecture, storage class, PostgreSQL settings, cache-control procedure,
    repeat count, and variance or repeatability summary.
+
+## Measurement and Evaluation
+
+| Metric | Target | Threshold | Method |
+|--------|--------|-----------|--------|
+| Comparison rows using the common reporting schema | 100% | 100% | Inspection |
+| Required identity/quality fields present per row | Complete | Complete | Inspection |
+
+## Verification
+
+Reviewers inspect benchmark comparison reports to confirm every candidate row carries the common-schema identity fields (access method, opclass, storage/quantizer format, options, reloptions, GUC overrides, rerank mode) and the required environment, dataset, command, packet, claim-class, and recall/quality fields.
 
 ## Acceptance Criteria
 

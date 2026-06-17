@@ -1,7 +1,6 @@
 ---
 id: FR-050
 title: SPIRE Leaf V2 Format
-type: functional-requirement
 type: FR
 status: APPROVED
 object: data_schema
@@ -15,7 +14,7 @@ relationships:
 ---
 # FR-050: SPIRE Leaf V2 Format
 
-## Requirement
+## Description
 
 SPIRE leaf V2 objects SHALL store assignment rows in a segmented, column-major
 layout so scans can borrow row references, batch score encoded payloads, and
@@ -131,6 +130,12 @@ flags are reserved for delta objects.
 
 ## Acceptance Criteria
 
+| ID | Criteria | Verification |
+|----|----------|--------------|
+| FR-050-AC-1 | An independent implementation can decode a Leaf V2 meta tuple and follow its segment chain without consulting Rust-specific structures, host pointer layout, or PostgreSQL in-memory struct alignment | Test |
+| FR-050-AC-2 | Malformed stride, row-count, non-finite gamma, invalid heap TID, and invalid vector-ID encodings are rejected | Test |
+| FR-050-AC-3 | The spec defines enough vector identity and assignment flag semantics to reproduce scan dedupe, boundary-replica handling, and delta overlay behavior | Test |
+
 ### FR-050-AC-1
 
 An independent implementation can decode a Leaf V2 meta tuple and follow its
@@ -146,3 +151,7 @@ vector-ID encodings are rejected.
 
 The spec defines enough vector identity and assignment flag semantics to
 reproduce scan dedupe, boundary-replica handling, and delta overlay behavior.
+
+## Dependencies
+
+- **Related**: FR-048, FR-049

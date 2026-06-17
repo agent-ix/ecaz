@@ -1,7 +1,7 @@
 ---
 id: FR-002
 title: tqvector Text I/O
-type: functional-requirement
+type: FR
 status: APPROVED
 object_type: api
 traces:
@@ -10,7 +10,7 @@ traces:
 ---
 # FR-002: tqvector Text I/O
 
-## Requirement
+## Description
 
 The extension SHALL provide text input/output functions for the `tqvector` type.
 
@@ -48,6 +48,12 @@ For this requirement:
 
 ## Acceptance Criteria
 
+| ID | Criteria | Verification |
+|----|----------|--------------|
+| FR-002-AC-1 | Text round-trip | Test |
+| FR-002-AC-2 | Error on invalid hex | Test |
+| FR-002-AC-3 | Error on dimension mismatch | Test |
+
 ### FR-002-AC-1: Text round-trip
 `tqvector_out(tqvector_in(text))` SHALL produce the canonical form of any valid input text.
 
@@ -56,3 +62,7 @@ Input `'[dim=4,bits=4]:ZZZZ'::tqvector` SHALL raise ERROR with a message contain
 
 ### FR-002-AC-3: Error on dimension mismatch
 Input with hex length not matching `code_len(dim, bits)` SHALL raise ERROR with "code length mismatch".
+
+## Dependencies
+
+- **Upstream**: US-001, FR-001

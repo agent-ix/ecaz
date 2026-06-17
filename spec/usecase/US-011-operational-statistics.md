@@ -1,7 +1,6 @@
 ---
 id: US-011
 title: Operational Statistics
-type: user-story
 type: US
 status: DRAFT
 priority: P3-medium
@@ -12,7 +11,9 @@ relationships:
 ---
 # US-011: Operational Statistics
 
-**As** a platform engineer monitoring Ecaz in production,
+## Story
+
+**As a** platform engineer monitoring Ecaz in production,
 **I want** aggregate statistics (total distance calculations, graph hops, cache hits) to be accessible via a SQL function,
 **So that** I can monitor extension health without per-query EXPLAIN analysis.
 

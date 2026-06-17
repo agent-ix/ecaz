@@ -1,7 +1,6 @@
 ---
 id: NFR-011
 title: Cloud Corpus Load Throughput
-type: non-functional-requirement
 type: NFR
 status: PROPOSED
 relationships:
@@ -14,7 +13,7 @@ relationships:
 ---
 # NFR-011: Cloud Corpus Load Throughput
 
-## Requirement
+## Statement
 
 In-VPC parquet → COPY load throughput SHALL meet the targets below
 so that a 100M-row corpus is loadable in a single working session,
@@ -44,6 +43,19 @@ separately (FR-047 §4).
 3. If a profile misses its target by more than 25%, the next
    benchmark suite run SHALL include a `load-throughput-regression`
    review packet.
+
+## Measurement and Evaluation
+
+| Metric | Target | Threshold | Method |
+|--------|--------|-----------|--------|
+| `dev` (50k) load wall time | < 60 s | <= 60 s | Load Benchmark |
+| `1m` load wall time | < 10 min | <= 10 min | Load Benchmark |
+| `10m` load wall time | < 90 min | <= 90 min | Load Benchmark |
+| `100m` load wall time | < 12 hours | <= 12 hours | Load Benchmark |
+
+## Verification
+
+Throughput is measured from the start of the first worker to completion of the last worker (load phase only), recorded in `throughput.json`, uploaded to the profile S3 bucket, and asserted against the per-profile wall-time targets; a miss of more than 25% triggers a `load-throughput-regression` review packet.
 
 ## Acceptance Criteria
 

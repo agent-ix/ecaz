@@ -1,4 +1,5 @@
 ---
+type: ADR
 id: ADR-066
 title: "SPIRE Operator-Owned Row Materialization Mirror Sync"
 status: PROPOSED

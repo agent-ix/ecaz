@@ -1,7 +1,6 @@
 ---
 id: FR-051
 title: SPIRE Routing Delta and Top Graph Formats
-type: functional-requirement
 type: FR
 status: APPROVED
 object: data_schema
@@ -18,7 +17,7 @@ relationships:
 ---
 # FR-051: SPIRE Routing Delta and Top Graph Formats
 
-## Requirement
+## Description
 
 SPIRE SHALL persist routing, delta, and top-graph objects as typed partition
 objects with explicit binary payloads so hierarchy reconstruction and query
@@ -113,6 +112,12 @@ flowchart TD
 
 ## Acceptance Criteria
 
+| ID | Criteria | Verification |
+|----|----------|--------------|
+| FR-051-AC-1 | Routing object payloads define dimensions, child PIDs, centroid ordinals, and centroid vectors with enough precision to rebuild the routing hierarchy | Test |
+| FR-051-AC-2 | Delta object rows distinguish insert, delete, tombstone, stale-locator, primary, and boundary-replica semantics without mutating published base leaves | Test |
+| FR-051-AC-3 | Top graph objects validate root PID, node count, entry node, graph degree, neighbor ordinals, finite alpha, and the root/top frontier ownership contract | Test |
+
 ### FR-051-AC-1
 
 Routing object payloads define dimensions, child PIDs, centroid ordinals, and
@@ -127,3 +132,7 @@ and boundary-replica semantics without mutating published base leaves.
 
 Top graph objects validate root PID, node count, entry node, graph degree,
 neighbor ordinals, finite alpha, and the root/top frontier ownership contract.
+
+## Dependencies
+
+- **Related**: FR-048, FR-049, FR-050

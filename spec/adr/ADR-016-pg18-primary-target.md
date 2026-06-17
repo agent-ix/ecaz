@@ -1,4 +1,5 @@
 ---
+type: ADR
 id: ADR-016
 title: PostgreSQL 18 as Primary Target
 status: DECIDED

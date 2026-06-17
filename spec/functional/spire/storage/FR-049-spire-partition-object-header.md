@@ -1,7 +1,6 @@
 ---
 id: FR-049
 title: SPIRE Partition Object Header
-type: functional-requirement
 type: FR
 status: APPROVED
 object: data_schema
@@ -12,7 +11,7 @@ relationships:
 ---
 # FR-049: SPIRE Partition Object Header
 
-## Requirement
+## Description
 
 Every persisted SPIRE partition object SHALL begin with a validated binary
 header that identifies object kind, format version, PID, object version,
@@ -69,6 +68,12 @@ Header size SHALL be exactly 54 bytes.
 
 ## Acceptance Criteria
 
+| ID | Criteria | Verification |
+|----|----------|--------------|
+| FR-049-AC-1 | A binary partition object with an invalid magic, unsupported version, unknown kind, nonzero reserved byte, zero PID, or zero object version is rejected | Test |
+| FR-049-AC-2 | Every object-specific decoder validates that the common header kind and flags match the payload type being decoded | Test |
+| FR-049-AC-3 | The object kind table is stable enough for an independent implementation to route encoded bytes to the correct decoder | Test |
+
 ### FR-049-AC-1
 
 A binary partition object with an invalid magic, unsupported version, unknown
@@ -83,3 +88,7 @@ match the payload type being decoded.
 
 The object kind table is stable enough for an independent implementation to
 route encoded bytes to the correct decoder.
+
+## Dependencies
+
+- **Related**: FR-048

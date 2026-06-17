@@ -1,7 +1,7 @@
 ---
 id: FR-005
 title: Code-to-Code Inner Product Function
-type: functional-requirement
+type: FR
 status: APPROVED
 object_type: api
 traces:
@@ -12,7 +12,7 @@ traces:
 ---
 # FR-005: Code-to-Code Inner Product Function
 
-## Requirement
+## Description
 
 The extension SHALL provide a function for computing the symmetric approximate inner product between two stored `tqvector` values using the lower-fidelity code-to-code estimator.
 
@@ -42,6 +42,12 @@ Lower fidelity than the prepared-query path because the query is compressed and 
 
 ## Acceptance Criteria
 
+| ID | Criteria | Verification |
+|----|----------|--------------|
+| FR-005-AC-1 | Known-vector code-to-code accuracy | Test |
+| FR-005-AC-2 | Dimension mismatch error | Test |
+| FR-005-AC-3 | Symmetry | Test |
+
 ### FR-005-AC-1: Known-vector code-to-code accuracy
 Given two known 1536-dim vectors encoded at b=4, the code-to-code estimate SHALL be benchmarked against true fp32 inner product using the formulas defined in FR-013 and FR-015.
 
@@ -50,3 +56,7 @@ Given two known 1536-dim vectors encoded at b=4, the code-to-code estimate SHALL
 
 ### FR-005-AC-3: Symmetry
 `tqvector_inner_product(a, b)` SHALL equal `tqvector_inner_product(b, a)` for all valid inputs.
+
+## Dependencies
+
+- **Upstream**: US-002, FR-013, FR-014, FR-015

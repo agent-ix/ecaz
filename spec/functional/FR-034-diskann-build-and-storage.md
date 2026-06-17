@@ -1,7 +1,6 @@
 ---
 id: FR-034
 title: DiskANN Build and Persisted Vamana Storage
-type: functional-requirement
 type: FR
 status: IMPLEMENTED
 object_type: process
@@ -12,7 +11,7 @@ relationships:
 ---
 # FR-034: DiskANN Build and Persisted Vamana Storage
 
-## Requirement
+## Description
 
 `ec_diskann` SHALL implement a Vamana/DiskANN-style access method with AM-owned persisted graph storage.
 
@@ -26,6 +25,12 @@ relationships:
 
 ## Acceptance Criteria
 
+| ID | Criteria | Verification |
+|----|----------|--------------|
+| FR-034-AC-1 | `CREATE INDEX | Test |
+| FR-034-AC-2 | Non-unit or non-finite source vectors are rejected or warned according to the build/insert context | Test |
+| FR-034-AC-3 | Invalid DiskANN reloption values raise ERROR during index creation | Test |
+
 ### FR-034-AC-1
 
 `CREATE INDEX ... USING ec_diskann` succeeds for unit-normalized `ecvector` data and writes readable graph metadata.
@@ -37,3 +42,7 @@ Non-unit or non-finite source vectors are rejected or warned according to the bu
 ### FR-034-AC-3
 
 Invalid DiskANN reloption values raise ERROR during index creation.
+
+## Dependencies
+
+- **Related**: US-014

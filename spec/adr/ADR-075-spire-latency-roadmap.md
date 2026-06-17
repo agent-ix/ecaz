@@ -1,4 +1,5 @@
 ---
+type: ADR
 id: ADR-075
 title: "SPIRE Latency Roadmap"
 status: PROPOSED

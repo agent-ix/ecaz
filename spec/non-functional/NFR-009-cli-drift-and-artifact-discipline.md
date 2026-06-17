@@ -1,7 +1,6 @@
 ---
 id: NFR-009
 title: CLI Drift and Artifact Discipline
-type: non-functional-requirement
 type: NFR
 status: APPROVED
 relationships:
@@ -11,7 +10,7 @@ relationships:
 ---
 # NFR-009: CLI Drift and Artifact Discipline
 
-## Requirement
+## Statement
 
 Ecaz SHALL keep the operator CLI aligned with the implemented extension surface and make CLI-produced evidence reproducible from packet-local artifacts.
 
@@ -23,6 +22,17 @@ Ecaz SHALL keep the operator CLI aligned with the implemented extension surface 
 4. Review packets that cite CLI measurements SHALL store raw logs under the packet `artifacts/` directory and cite the command used.
 5. Long benchmark sequences SHOULD use `ecaz bench suite` configs instead of shell scripts so dry-run manifests, status checks, and packet-local artifact paths remain auditable.
 6. Until shared constants are extracted into a common crate, `profiles.rs` is the accepted drift watch point between the CLI and extension.
+
+## Measurement and Evaluation
+
+| Metric | Target | Threshold | Method |
+|--------|--------|-----------|--------|
+| README command tree matches implemented Clap tree | No drift | No drift | Inspection |
+| CLI measurement evidence stored packet-local with command cited | Enforced | Enforced | Inspection |
+
+## Verification
+
+Reviewers audit the README command tree against the implemented Clap tree and `profiles.rs` drift watch point, and confirm CLI measurement runs cite packet-local `--log-file` artifacts and the command used.
 
 ## Acceptance Criteria
 

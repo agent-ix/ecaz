@@ -1,7 +1,6 @@
 ---
 id: NFR-013
 title: SPIRE Local Readiness and Capacity
-type: non-functional-requirement
 type: NFR
 status: APPROVED
 relationships:
@@ -20,13 +19,18 @@ relationships:
 ---
 # NFR-013: SPIRE Local Readiness and Capacity
 
-## Requirement
+## Statement
 
 SPIRE local production-readiness smoke evidence SHALL use explicit bounded
 fanout, payload, timeout, and concurrency settings and SHALL NOT be described
 as AWS/RDS or product-scale evidence.
 
-## Measurement Contract
+## Measurement and Evaluation
+
+| Metric | Target | Threshold | Method |
+|--------|--------|-----------|--------|
+| SPIRE local-store readiness and capacity baseline | Reported per the measurement contract | Reported | SPIRE Capacity Benchmark |
+
 
 Local readiness packets SHALL record:
 
@@ -61,6 +65,10 @@ Local readiness evidence SHALL NOT claim product-scale capacity, managed-service
 behavior, cross-AZ behavior, WAN behavior, AWS/RDS latency, AWS/RDS throughput,
 or safe higher concurrency without packet-local measurements for the tested
 fixture.
+
+## Verification
+
+The SPIRE local readiness and capacity baseline is measured according to the measurement contract and capacity-baseline sections, scoped by the stated claim boundary, with raw artifacts stored in the owning review packet.
 
 ## Acceptance Criteria
 

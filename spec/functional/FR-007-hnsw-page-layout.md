@@ -1,7 +1,7 @@
 ---
 id: FR-007
 title: HNSW Index Access Method — Page Layout
-type: functional-requirement
+type: FR
 status: APPROVED
 object_type: entity
 traces:
@@ -10,7 +10,7 @@ traces:
 ---
 # FR-007: HNSW Index Access Method — Page Layout
 
-## Requirement
+## Description
 
 The extension SHALL implement a custom PostgreSQL index access method named `ec_hnsw` with a page layout modeled on pgvector's HNSW implementation.
 
@@ -111,6 +111,14 @@ To prevent deadlocks: always acquire page locks in block number order. Never hol
 
 ## Acceptance Criteria
 
+| ID | Criteria | Verification |
+|----|----------|--------------|
+| FR-007-AC-1 | Metadata page readable | Test |
+| FR-007-AC-2 | Element tuple round-trip | Test |
+| FR-007-AC-3 | Neighbor tuple integrity | Test |
+| FR-007-AC-4 | Page extension works | Test |
+| FR-007-AC-5 | Lock ordering prevents deadlock | Test |
+
 ### FR-007-AC-1: Metadata page readable
 After CREATE INDEX, page 0 SHALL contain valid metadata with the specified M and ef_construction.
 
@@ -125,3 +133,7 @@ Inserting more tuples than fit on a single page SHALL extend the relation withou
 
 ### FR-007-AC-5: Lock ordering prevents deadlock
 Concurrent inserts SHALL not deadlock (verified by stress test with 10 concurrent inserters for 30 seconds).
+
+## Dependencies
+
+- **Upstream**: US-003, StR-001

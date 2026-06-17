@@ -1,4 +1,5 @@
 ---
+type: ADR
 id: ADR-016
 title: "Resolve ef_search through a session override over per-index defaults"
 status: DECIDED

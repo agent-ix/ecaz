@@ -1,7 +1,7 @@
 ---
 id: FR-010
 title: HNSW Index Access Method — Vacuum
-type: functional-requirement
+type: FR
 status: APPROVED
 object_type: process
 traces:
@@ -11,7 +11,7 @@ traces:
 ---
 # FR-010: HNSW Index Access Method — Vacuum
 
-## Requirement
+## Description
 
 The extension SHALL implement `ambulkdelete` and `amvacuumcleanup` using the three-pass algorithm from pgvector's `hnswvacuum.c`.
 
@@ -47,6 +47,12 @@ On partitioned tables, vacuuming one partition index SHALL NOT read or modify an
 
 ## Acceptance Criteria
 
+| ID | Criteria | Verification |
+|----|----------|--------------|
+| FR-010-AC-1 | Deleted rows removed from results | Test |
+| FR-010-AC-2 | Graph connectivity maintained | Test |
+| FR-010-AC-3 | No corruption under concurrent load | Test |
+
 ### FR-010-AC-1: Deleted rows removed from results
 After DELETE + VACUUM, a search SHALL NOT return the deleted row.
 
@@ -63,3 +69,7 @@ Current validation note:
   then issues one final post-quiesce `VACUUM (ANALYZE)` and checks that the
   live index's reachable live-element count stays within 90% of a freshly
   rebuilt reference ec_hnsw index on the same final table data.
+
+## Dependencies
+
+- **Upstream**: US-005, FR-007, StR-003

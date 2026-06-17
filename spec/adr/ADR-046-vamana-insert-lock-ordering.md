@@ -1,4 +1,5 @@
 ---
+type: ADR
 id: ADR-046
 title: "Vamana Live Insert Lock Ordering (ec_diskann)"
 status: ACCEPTED

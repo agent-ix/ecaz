@@ -1,4 +1,5 @@
 ---
+type: ADR
 id: ADR-073
 title: "HNSW Staged Offline Bulk Build Direction"
 status: PROPOSED

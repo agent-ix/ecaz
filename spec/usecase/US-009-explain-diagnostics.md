@@ -1,7 +1,6 @@
 ---
 id: US-009
 title: EXPLAIN Scan Diagnostics
-type: user-story
 type: US
 status: DRAFT
 priority: P2-high
@@ -12,7 +11,9 @@ relationships:
 ---
 # US-009: EXPLAIN Scan Diagnostics
 
-**As** an application developer debugging query performance,
+## Story
+
+**As an** application developer debugging query performance,
 **I want** `EXPLAIN (ecaz) SELECT ... ORDER BY col <#> $q LIMIT 10` to show Ecaz-specific statistics,
 **So that** I can understand whether poor performance is caused by graph topology, I/O, or scoring overhead.
 

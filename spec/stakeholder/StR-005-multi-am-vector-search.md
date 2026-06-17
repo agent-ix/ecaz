@@ -1,7 +1,6 @@
 ---
 id: StR-005
 title: Multi-Access-Method Vector Search Portfolio
-type: stakeholder-requirement
 type: StR
 status: APPROVED
 relationships:
@@ -29,7 +28,7 @@ relationships:
 ---
 # StR-005: Multi-Access-Method Vector Search Portfolio
 
-## Need
+## Stakeholder Need
 
 The extension now serves more than a single HNSW/TurboQuant experiment. Users need one PostgreSQL extension that can store vectors once and compare access-method tradeoffs without changing application tables.
 
@@ -37,7 +36,11 @@ The extension now serves more than a single HNSW/TurboQuant experiment. Users ne
 
 Ecaz SHALL provide a canonical row type and multiple opt-in ANN access methods under one extension identity. HNSW SHALL remain the default general-purpose path; IVF and DiskANN SHALL be available as explicit access-method choices with their own tuning, observability, and measurement boundaries. SPIRE SHALL provide the partition-object path for local multi-store operation and distributed PostgreSQL-node scale.
 
-## Success Criteria
+## Rationale
+
+Different workloads favor different ANN tradeoffs: HNSW gives strong general-purpose recall/latency, IVF trades build cost for memory and tunable probing, DiskANN targets larger-than-memory graphs, and SPIRE addresses local multi-store and distributed scale. Forcing one access method onto every workload, or requiring users to re-model their tables to switch methods, blocks honest comparison and adoption. Storing vectors once under a canonical row type and offering opt-in access methods under a single extension identity lets users evaluate and select tradeoffs without application-table churn.
+
+## Validation Criteria
 
 1. `ecvector(dim)` works as the canonical indexed column type for HNSW, IVF, and DiskANN.
 2. `ec_hnsw`, `ec_ivf`, `ec_diskann`, and `ec_spire` are registered by `CREATE EXTENSION ecaz`.

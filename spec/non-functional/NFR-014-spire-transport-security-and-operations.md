@@ -1,7 +1,6 @@
 ---
 id: NFR-014
 title: SPIRE Transport Security and Operations
-type: non-functional-requirement
 type: NFR
 status: APPROVED
 relationships:
@@ -17,12 +16,20 @@ relationships:
 ---
 # NFR-014: SPIRE Transport Security and Operations
 
-## Requirement
+## Statement
 
 SPIRE remote transport and coordinator-routed writes SHALL preserve libpq
 security semantics, avoid exposing raw secrets, fail closed on schema drift and
 endpoint identity mismatches, and provide operator-owned recovery for remote
 prepared transactions.
+
+## Measurement and Evaluation
+
+| Metric | Target | Threshold | Method |
+|--------|--------|-----------|--------|
+| Raw secret exposure in logs/transport | None | 0 | Inspection |
+| Fail-closed on schema drift / endpoint identity mismatch | Enforced | Enforced | Test |
+| Operator-owned recovery for remote prepared transactions | Available | Available | Demonstration |
 
 ## Security Constraints
 

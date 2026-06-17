@@ -1,4 +1,5 @@
 ---
+type: ADR
 id: ADR-041
 title: "Module Structure for Multi-AM, Multi-Quantizer Growth"
 status: IMPLEMENTED

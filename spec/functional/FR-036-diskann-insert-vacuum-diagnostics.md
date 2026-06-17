@@ -1,7 +1,6 @@
 ---
 id: FR-036
 title: DiskANN Insert, Vacuum, and Diagnostics
-type: functional-requirement
 type: FR
 status: IMPLEMENTED
 object_type: process
@@ -12,7 +11,7 @@ relationships:
 ---
 # FR-036: DiskANN Insert, Vacuum, and Diagnostics
 
-## Requirement
+## Description
 
 `ec_diskann` SHALL support live insert, duplicate handling, vacuum repair, and graph diagnostics for the persisted Vamana format.
 
@@ -25,6 +24,12 @@ relationships:
 
 ## Acceptance Criteria
 
+| ID | Criteria | Verification |
+|----|----------|--------------|
+| FR-036-AC-1 | Rows inserted after DiskANN index creation are reachable through the index | Test |
+| FR-036-AC-2 | DELETE plus VACUUM removes dead DiskANN entries and repairs affected neighbor slots | Test |
+| FR-036-AC-3 | DiskANN diagnostics expose graph summary metadata without mutating the index | Test |
+
 ### FR-036-AC-1
 
 Rows inserted after DiskANN index creation are reachable through the index.
@@ -36,3 +41,7 @@ DELETE plus VACUUM removes dead DiskANN entries and repairs affected neighbor sl
 ### FR-036-AC-3
 
 DiskANN diagnostics expose graph summary metadata without mutating the index.
+
+## Dependencies
+
+- **Related**: US-014

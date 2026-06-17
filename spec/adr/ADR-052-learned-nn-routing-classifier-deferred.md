@@ -1,4 +1,5 @@
 ---
+type: ADR
 id: ADR-052
 title: "Defer Learned NN-Routing Classifier for SPIRE"
 status: DEFERRED

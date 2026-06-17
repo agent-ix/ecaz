@@ -1,4 +1,5 @@
 ---
+type: ADR
 id: ADR-047
 title: "Vamana Vacuum Graph Repair Lock Ordering (ec_diskann)"
 status: ACCEPTED
