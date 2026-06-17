@@ -465,6 +465,22 @@ impl IvfPostingScratchSoa {
         self.payloads.extend_from_slice(block.payload(index));
     }
 
+    fn push_columnar_posting(
+        &mut self,
+        block: super::page::IvfColumnarFrozenListRef<'_>,
+        index: usize,
+        heap_tid_count: usize,
+        gamma: f32,
+    ) {
+        debug_assert_eq!(block.payload_len(), self.payload_len);
+        let offset = self.heap_tids.len();
+        self.gammas.push(gamma);
+        self.heap_tid_offsets.push(offset);
+        self.heap_tid_counts.push(heap_tid_count);
+        self.heap_tids.extend(block.heap_tids(index));
+        self.payloads.extend_from_slice(block.payload(index));
+    }
+
     fn push_dense_parts(&mut self, gamma: f32, heap_tids: &[ItemPointer], payload: &[u8]) {
         debug_assert_eq!(payload.len(), self.payload_len);
         let offset = self.heap_tids.len();
@@ -1800,6 +1816,73 @@ unsafe fn materialize_probe_candidates(
                                 dense_scratch_list_id = None;
                             }
                         }
+                        super::page::IvfPostingEntryRef::ColumnarHeader(header) => {
+                            if !probe_plan.contains_list(header.list_id) {
+                                return Ok(());
+                            }
+                            if dense_packed_pending.is_some() {
+                                return Err(
+                                    "ec_ivf columnar frozen list interrupted a dense packed group"
+                                        .to_owned(),
+                                );
+                            }
+                            process_scratch_soa_postings(
+                                &mut *scratch,
+                                ScratchSoaFlushKind::Row,
+                                quantizer,
+                                prepared_query,
+                                opaque,
+                                best_by_heap_tid,
+                                &mut running_top,
+                            )?;
+                            if dense_scratch_list_id
+                                .is_some_and(|list_id| list_id != header.list_id)
+                            {
+                                process_dense_coalesced_postings(
+                                    &mut *dense_scratch,
+                                    quantizer,
+                                    prepared_query,
+                                    opaque,
+                                    best_by_heap_tid,
+                                    &mut running_top,
+                                )?;
+                                dense_scratch_list_id = None;
+                            }
+                            if dense_scratch_list_id.is_none() {
+                                dense_scratch_list_id = Some(header.list_id);
+                            }
+                            let logical_bytes =
+                                super::page::read_columnar_frozen_list_logical_bytes(
+                                    index_relation_handle,
+                                    header,
+                                )?;
+                            let block = super::page::IvfColumnarFrozenListRef::decode(
+                                header,
+                                &logical_bytes,
+                            )?;
+                            append_columnar_frozen_list_to_coalesced_scratch(
+                                block,
+                                use_dense_posting_typed_views,
+                                &mut *dense_scratch,
+                                quantizer,
+                                prepared_query,
+                                opaque,
+                                best_by_heap_tid,
+                                &mut running_top,
+                                &mut remaining_live_tids_by_list,
+                            )?;
+                            if !use_dense_posting_coalescing {
+                                process_dense_coalesced_postings(
+                                    &mut *dense_scratch,
+                                    quantizer,
+                                    prepared_query,
+                                    opaque,
+                                    best_by_heap_tid,
+                                    &mut running_top,
+                                )?;
+                                dense_scratch_list_id = None;
+                            }
+                        }
                     }
                     Ok(())
                 },
@@ -1977,6 +2060,42 @@ unsafe fn materialize_probe_candidates(
                                 &mut remaining_live_tids_by_list,
                             )?;
                         }
+                    }
+                    super::page::IvfPostingEntryRef::ColumnarHeader(header) => {
+                        if !probe_plan.contains_list(header.list_id) {
+                            return Ok(());
+                        }
+                        if dense_packed_pending.is_some() {
+                            return Err(
+                                "ec_ivf columnar frozen list interrupted a dense packed group"
+                                    .to_owned(),
+                            );
+                        }
+                        let logical_bytes = super::page::read_columnar_frozen_list_logical_bytes(
+                            index_relation_handle,
+                            header,
+                        )?;
+                        let block =
+                            super::page::IvfColumnarFrozenListRef::decode(header, &logical_bytes)?;
+                        append_columnar_frozen_list_to_coalesced_scratch(
+                            block,
+                            use_dense_posting_typed_views,
+                            &mut dense_packed_scratch,
+                            quantizer,
+                            prepared_query,
+                            opaque,
+                            best_by_heap_tid,
+                            &mut running_top,
+                            &mut remaining_live_tids_by_list,
+                        )?;
+                        process_dense_coalesced_postings(
+                            &mut dense_packed_scratch,
+                            quantizer,
+                            prepared_query,
+                            opaque,
+                            best_by_heap_tid,
+                            &mut running_top,
+                        )?;
                     }
                 }
                 Ok(())
@@ -2243,6 +2362,61 @@ fn append_dense_posting_block_to_coalesced_scratch(
             .and_then(|gammas| gammas.get(index).copied())
             .unwrap_or_else(|| block.gamma(index));
         scratch.push_dense_posting(block, index, heap_tid_count, gamma);
+        if scratch.len() >= IVF_POSTING_SCRATCH_SOA_BATCH_POSTINGS {
+            process_dense_coalesced_postings(
+                scratch,
+                quantizer,
+                prepared_query,
+                opaque,
+                best_by_heap_tid,
+                running_top,
+            )?;
+        }
+    }
+
+    Ok(())
+}
+
+fn append_columnar_frozen_list_to_coalesced_scratch(
+    block: super::page::IvfColumnarFrozenListRef<'_>,
+    use_typed: bool,
+    scratch: &mut IvfPostingScratchSoa,
+    quantizer: IvfQuantizer,
+    prepared_query: &IvfPreparedQuery,
+    opaque: &mut EcIvfScanOpaque,
+    best_by_heap_tid: *mut HashMap<ItemPointer, EcIvfScoredCandidate>,
+    running_top: &mut Option<CandidateTopK>,
+    remaining_live_tids_by_list: &mut [u64],
+) -> Result<(), String> {
+    if block.len() == 0 {
+        return Ok(());
+    }
+    block.validate_offsets()?;
+    let gamma_view = use_typed.then(|| block.gammas_native_le()).flatten();
+
+    for index in 0..block.len() {
+        if block.is_deleted(index) {
+            continue;
+        }
+        opaque.explain_counters.record_dense_posting_visited();
+        let heap_tid_count = block.heap_tid_count(index);
+        if !consume_live_tid_budget(remaining_live_tids_by_list, block.list_id, heap_tid_count)? {
+            continue;
+        }
+        if !scratch.can_accept(heap_tid_count) && !scratch.is_empty() {
+            process_dense_coalesced_postings(
+                scratch,
+                quantizer,
+                prepared_query,
+                opaque,
+                best_by_heap_tid,
+                running_top,
+            )?;
+        }
+        let gamma = gamma_view
+            .and_then(|gammas| gammas.get(index).copied())
+            .unwrap_or_else(|| block.gamma(index));
+        scratch.push_columnar_posting(block, index, heap_tid_count, gamma);
         if scratch.len() >= IVF_POSTING_SCRATCH_SOA_BATCH_POSTINGS {
             process_dense_coalesced_postings(
                 scratch,
