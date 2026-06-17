@@ -566,18 +566,18 @@ impl<'a> IvfBorrowedPostingScratch<'a> {
                 self.payload_len
             ));
         }
-        let heap_tids = block.heap_tids(index)?;
-        if heap_tids.len() != heap_tid_count {
+        let offset = self.heap_tids.len();
+        block.extend_heap_tids_into(index, &mut self.heap_tids)?;
+        let decoded_count = self.heap_tids.len() - offset;
+        if decoded_count != heap_tid_count {
+            self.heap_tids.truncate(offset);
             return Err(format!(
-                "ec_ivf columnar borrowed heap tid count mismatch: got {}, expected {heap_tid_count}",
-                heap_tids.len()
+                "ec_ivf columnar borrowed heap tid count mismatch: got {decoded_count}, expected {heap_tid_count}"
             ));
         }
-        let offset = self.heap_tids.len();
         self.gammas.push(gamma);
         self.heap_tid_offsets.push(offset);
         self.heap_tid_counts.push(heap_tid_count);
-        self.heap_tids.extend(heap_tids);
         self.payloads.push(payload);
         Ok(())
     }

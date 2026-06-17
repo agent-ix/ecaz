@@ -1885,6 +1885,31 @@ impl IvfColumnarFrozenListPinnedPages {
             .collect()
     }
 
+    pub(super) fn extend_heap_tids_into(
+        &self,
+        index: usize,
+        out: &mut Vec<ItemPointer>,
+    ) -> Result<(), String> {
+        let start = self.heap_tid_offset(index)?;
+        let count = self.heap_tid_count(index)?;
+        let byte_start = (self.header.heap_tid_offset as usize)
+            .checked_add(
+                start
+                    .checked_mul(ITEM_POINTER_BYTES)
+                    .ok_or_else(|| "ec_ivf columnar heap tid byte offset overflow".to_owned())?,
+            )
+            .ok_or_else(|| "ec_ivf columnar heap tid byte offset overflow".to_owned())?;
+        let byte_len = count
+            .checked_mul(ITEM_POINTER_BYTES)
+            .ok_or_else(|| "ec_ivf columnar heap tid byte length overflow".to_owned())?;
+        let bytes = self.single_page_slice(byte_start, byte_len)?;
+        out.reserve(count);
+        for chunk in bytes.chunks_exact(ITEM_POINTER_BYTES) {
+            out.push(ItemPointer::decode(chunk)?);
+        }
+        Ok(())
+    }
+
     pub(super) fn payload(&self, index: usize) -> Result<&[u8], String> {
         let start = (self.header.payload_offset as usize)
             .checked_add(
