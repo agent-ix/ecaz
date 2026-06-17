@@ -15,7 +15,7 @@ use crate::am::stats::{self, TqStatsCounters};
 #[cfg(feature = "pg18")]
 use crate::storage::buffer_guard::PinnedBufferGuard;
 use crate::storage::{
-    page::{ItemPointer, HEAPTID_INLINE_CAPACITY},
+    page::{ItemPointer, HEAPTID_INLINE_CAPACITY, ITEM_POINTER_BYTES},
     relation_guard::HeapRelationGuard,
     slot_guard::TupleTableSlotGuard,
     snapshot_guard::RegisteredSnapshotGuard,
@@ -1478,6 +1478,10 @@ fn process_scratch_soa_postings(
     if scratch.is_empty() {
         return Ok(());
     }
+    opaque.explain_counters.record_scratch_soa_flush(
+        scratch.payloads.len(),
+        scratch.heap_tids.len().saturating_mul(ITEM_POINTER_BYTES),
+    );
 
     if quantizer.score_turboquant_batch_from_payloads(
         prepared_query,
