@@ -508,6 +508,8 @@ struct ExplainStep {
     #[serde(default)]
     ivf_scratch_soa_batch_decode: Option<bool>,
     #[serde(default)]
+    session_gucs: Vec<String>,
+    #[serde(default)]
     pg: Option<u16>,
     #[serde(default)]
     db: Option<String>,
@@ -3280,6 +3282,8 @@ fn explain_sql(step: &ExplainStep, defaults: &SuiteDefaults) -> String {
     let rerank_guc = rerank_width_guc(profile);
     let use_scratch_soa =
         profile.name == "ec_ivf" && step.ivf_scratch_soa_batch_decode.unwrap_or(false);
+    let session_set_sql = explain_session_guc_set_sql(&step.session_gucs);
+    let session_reset_sql = explain_session_guc_reset_sql(&step.session_gucs);
     let set_scratch_soa_sql = if use_scratch_soa {
         "SET ec_ivf.scratch_soa_batch_decode = on;\n".to_owned()
     } else {
@@ -3331,6 +3335,7 @@ fn explain_sql(step: &ExplainStep, defaults: &SuiteDefaults) -> String {
          \\timing on\n\n\
          SET enable_seqscan = off;\n\
          SET {scan_guc} = {nprobe};\n\
+         {session_set_sql}\
          {set_scratch_soa_sql}\
          {set_rerank_sql}\n\
          SELECT\n\
@@ -3356,10 +3361,12 @@ fn explain_sql(step: &ExplainStep, defaults: &SuiteDefaults) -> String {
          LIMIT 10;\n\n\
          RESET enable_seqscan;\n\
          RESET {scan_guc};\n\
+         {session_reset_sql}\
          {reset_scratch_soa_sql}\
          {reset_rerank_sql}",
         nprobe = step.nprobe,
         scan_guc = scan_guc,
+        session_set_sql = session_set_sql,
         set_scratch_soa_sql = set_scratch_soa_sql,
         set_rerank_sql = set_rerank_sql,
         current_scratch_soa_sql = current_scratch_soa_sql,
@@ -3371,8 +3378,25 @@ fn explain_sql(step: &ExplainStep, defaults: &SuiteDefaults) -> String {
         corpus_table = corpus_table,
         query_table = query_table,
         reset_scratch_soa_sql = reset_scratch_soa_sql,
+        session_reset_sql = session_reset_sql,
         reset_rerank_sql = reset_rerank_sql
     )
+}
+
+fn explain_session_guc_set_sql(session_gucs: &[String]) -> String {
+    session_gucs
+        .iter()
+        .filter_map(|guc| guc.split_once('='))
+        .map(|(name, value)| format!("SET {name} = {value};\n"))
+        .collect()
+}
+
+fn explain_session_guc_reset_sql(session_gucs: &[String]) -> String {
+    session_gucs
+        .iter()
+        .filter_map(|guc| guc.split_once('='))
+        .map(|(name, _)| format!("RESET {name};\n"))
+        .collect()
 }
 
 fn explain_step_profile<'a>(
@@ -5458,6 +5482,7 @@ mod tests {
             nprobe: 96,
             rerank_width: 1000,
             ivf_scratch_soa_batch_decode: None,
+            session_gucs: Vec::new(),
             pg: None,
             db: None,
             socket_dir: None,
@@ -5485,6 +5510,7 @@ mod tests {
             nprobe: 96,
             rerank_width: 1000,
             ivf_scratch_soa_batch_decode: None,
+            session_gucs: Vec::new(),
             pg: None,
             db: None,
             socket_dir: None,
@@ -5514,6 +5540,7 @@ mod tests {
             nprobe: 96,
             rerank_width: 1000,
             ivf_scratch_soa_batch_decode: Some(true),
+            session_gucs: Vec::new(),
             pg: None,
             db: None,
             socket_dir: None,
@@ -5531,6 +5558,33 @@ mod tests {
     }
 
     #[test]
+    fn explain_sql_applies_session_gucs() {
+        let step = ExplainStep {
+            name: "explain".into(),
+            tags: Vec::new(),
+            prefix: "pfx".into(),
+            profile: None,
+            index_name: None,
+            query_table: None,
+            corpus_table: None,
+            nprobe: 96,
+            rerank_width: 1000,
+            ivf_scratch_soa_batch_decode: Some(true),
+            session_gucs: vec!["ec_ivf.dense_posting_coalescing=off".into()],
+            pg: None,
+            db: None,
+            socket_dir: None,
+            port: None,
+            sql_file: Some("explain.sql".into()),
+            log_output: Some("explain.log".into()),
+        };
+        let sql = explain_sql(&step, &SuiteDefaults::default());
+
+        assert!(sql.contains("SET ec_ivf.dense_posting_coalescing = off;"));
+        assert!(sql.contains("RESET ec_ivf.dense_posting_coalescing;"));
+    }
+
+    #[test]
     fn explain_sql_uses_spire_profile_gucs_and_cost_snapshot() {
         let step = ExplainStep {
             name: "explain".into(),
@@ -5543,6 +5597,7 @@ mod tests {
             nprobe: 32,
             rerank_width: 500,
             ivf_scratch_soa_batch_decode: None,
+            session_gucs: Vec::new(),
             pg: None,
             db: None,
             socket_dir: None,
@@ -5576,6 +5631,7 @@ mod tests {
             nprobe: 200,
             rerank_width: -1,
             ivf_scratch_soa_batch_decode: None,
+            session_gucs: Vec::new(),
             pg: None,
             db: None,
             socket_dir: None,

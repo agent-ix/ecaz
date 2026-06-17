@@ -1417,6 +1417,8 @@ unsafe fn materialize_probe_candidates(
         .record_posting_pages_read(posting_pages);
     record_posting_pages_read(opaque, posting_pages);
     if use_scratch_soa_batch_decode(metadata) {
+        let use_dense_posting_coalescing =
+            super::options::current_session_dense_posting_coalescing();
         let scratch = posting_scratch_soa(opaque, payload_len);
         let dense_scratch = dense_posting_coalescing_scratch(opaque, payload_len);
         let mut dense_scratch_list_id: Option<u32> = None;
@@ -1482,6 +1484,18 @@ unsafe fn materialize_probe_candidates(
                                 best_by_heap_tid,
                                 &mut running_top,
                             )?;
+                            if !use_dense_posting_coalescing {
+                                process_dense_posting_block(
+                                    block,
+                                    quantizer,
+                                    prepared_query,
+                                    opaque,
+                                    best_by_heap_tid,
+                                    &mut running_top,
+                                    &mut remaining_live_tids_by_list,
+                                )?;
+                                return Ok(());
+                            }
                             if dense_scratch_list_id.is_some_and(|list_id| list_id != block.list_id)
                             {
                                 process_dense_coalesced_postings(

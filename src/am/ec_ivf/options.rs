@@ -36,6 +36,7 @@ static EC_IVF_ADAPTIVE_NPROBE_SCORE_MARGIN_RATIO_BPS_GUC: GucSetting<i32> =
 // pq_fastscan despite the suffix-max pruning trade (-5 to -10% on every
 // lane). Off remains a diagnostic switch.
 static EC_IVF_SCRATCH_SOA_BATCH_DECODE_GUC: GucSetting<bool> = GucSetting::<bool>::new(true);
+static EC_IVF_DENSE_POSTING_COALESCING_GUC: GucSetting<bool> = GucSetting::<bool>::new(true);
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
@@ -270,6 +271,14 @@ pub(super) fn register_gucs() {
         GucContext::Userset,
         GucFlags::default(),
     );
+    GucRegistry::define_bool_guc(
+        c"ec_ivf.dense_posting_coalescing",
+        c"Enable ec_ivf dense posting cross-block coalescing.",
+        c"Diagnostic Task 111a switch; when enabled, dense posting blocks are coalesced across consecutive blocks before batch scoring. Disable only to compare against the original one-page dense scan behavior.",
+        &EC_IVF_DENSE_POSTING_COALESCING_GUC,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
 }
 
 pub(super) fn current_session_nprobe() -> i32 {
@@ -309,6 +318,14 @@ pub(super) fn current_session_scratch_soa_batch_decode() -> bool {
         false
     } else {
         EC_IVF_SCRATCH_SOA_BATCH_DECODE_GUC.get()
+    }
+}
+
+pub(super) fn current_session_dense_posting_coalescing() -> bool {
+    if cfg!(test) {
+        true
+    } else {
+        EC_IVF_DENSE_POSTING_COALESCING_GUC.get()
     }
 }
 
