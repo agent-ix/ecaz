@@ -17,6 +17,17 @@ remains gated on this work: Task 111 closed with an "iterate, do not promote"
 verdict precisely because TurboQuant dense regressed p50/p95 at every measured
 cell.
 
+**Payload size is the real axis, not "TurboQuant vs RaBitQ."** Postings-per-page
+falls as the quantized payload grows, so a width-≥32 logical group spans more
+pages as bit-width rises. RaBitQ **1-bit** is the *exception* that fits ~35
+postings/page (so per-block zero-copy works); RaBitQ **2/4/8-bit** and TurboQuant
+all have larger payloads (~17/~9/~5 postings/page and ~10 respectively), so their
+width-≥32 groups **span multiple pages** and hit the same assembly cost. The
+multi-page (spanning) group path is therefore the **common case**, and its
+efficiency — minimizing or eliminating the per-group payload assembly copy — is a
+**primary objective of this task**, not a TurboQuant-only corner. Efficiency must
+be demonstrated across a RaBitQ bit-width sweep, not just at 1-bit.
+
 ## Why
 
 Task 111 packet 006 established, against verified raw artifacts, that:
@@ -127,10 +138,20 @@ copy; the spanning format consumes it directly (assemble → typed view → scor
 ### Phase 3 - Head-to-head benchmark gate
 
 - Drive everything through `ecaz bench suite` with a committed `SuiteConfig`.
-- Compare, per storage format and nprobe cell, for TurboQuant and RaBitQ:
-  row, dense (current/per-block), dense+A (coalesced), dense+typed-per-block,
-  dense+B (logical-group spanning), dense+B+typed. Keep Approach A as the
-  already-working baseline/gate; B is the durable structural candidate.
+- Compare, per quant mode and nprobe cell: row, dense (current/per-block),
+  dense+A (coalesced), dense+typed-per-block, dense+B (logical-group spanning),
+  dense+B+typed. Keep Approach A as the already-working baseline/gate; B is the
+  durable structural candidate.
+- **Sweep quant payload size, not just rb1+TQ.** Cover TurboQuant **and** a
+  RaBitQ bit-width sweep — at minimum `quant_bits` ∈ {1, 4} to bracket
+  fits-per-page (1-bit) vs spans-pages (4-bit), preferably {1, 2, 4, 8}. The
+  spanning modes (everything but rb1) are where the multi-page assembly cost
+  shows up; testing only rb1 would hide it. Subset by the staging rule if
+  resource-bound, but at least one spanning RaBitQ mode (e.g. rb4) is mandatory.
+- Report, per cell, the per-group payload **assembly/copy bytes** (or an
+  equivalent counter) alongside flush-width, so the multi-page efficiency — and
+  the value of a single-segment borrow fast path or a segmented scorer — is
+  directly measurable across bit-widths.
 - **Stage the scales; do not front-load 1M.** Run real **50k + 100k first**
   (local lane) as the gate. Escalate to **1M (AWS lane)** only if 50k/100k show
   promise — i.e. the TurboQuant dense regression is closed (dense ≥ row,
@@ -152,7 +173,12 @@ copy; the spanning format consumes it directly (assemble → typed view → scor
    closeable-by-argument: the operator directed (2026-06-17) that B not be closed
    as dominated. The A-vs-B decision must rest on measured evidence.
 3. Recall and NDCG unchanged vs the legacy row path for every compared cell.
-4. SIMD flush-width counters show dense TurboQuant reaching width≥32.
+4. SIMD flush-width counters show dense reaching width≥32 for **every spanning
+   quant mode tested** (TurboQuant and the higher-bit RaBitQ modes), not just
+   TurboQuant; and the multi-page group payload assembly cost is reported and
+   shown to be minimized (single-segment borrow fast path applied where the
+   group fits a page; a segmented scorer evaluated for true spanning groups if
+   the assembly copy is measured material).
 5. A benchmark packet reports the head-to-head matrix for TurboQuant and RaBitQ
    with latency, recall, build time, index size, pages, candidates, and
    flush-width histograms. Real 50k + 100k are required; 1M is required only if
