@@ -86,19 +86,51 @@ default-off until a promotion decision.
 - Add EXPLAIN/batch counters for coalesced flush count and width histogram so
   the width shift is observable.
 
-### Phase 2 - Packing prototype (Approach B)
+### Phase 2 - Logical-group page-spanning prototype (Approach B)
 
-- Add a build-time writer for multi-page (chained/overflow) dense blocks behind
-  the gate, with encode/decode invariants and focused page-format tests.
-- Add scan support that scores a packed block zero-copy at width≥32.
-- Define the durable format-version gate and old-index compatibility contract;
-  coordinate with Task 42 before landing any durable format change.
+The unit is a **logical dense group sized to the scorer width** (e.g. 32 or 64
+postings), NOT a page-bound block. PostgreSQL page capacity must stop defining
+SIMD batch size; physical segment tuples fragment a logical group only when the
+group does not fit a page. This makes "wide scorer calls" a structural property
+of the format instead of something the scan recovers with a scratch buffer (as
+Approach A does).
+
+Required shape and rules:
+
+- logical group: `count <= target_width`, metadata arrays stored **once per
+  group**, payload bytes possibly split across physical segment tuples;
+- segment identity: logical group id + segment index/count, with contiguous
+  segment visitation or explicit assembly checks;
+- continuation segments are mostly payload bytes (no repeated metadata, no
+  per-segment headers beyond what assembly needs);
+- **assemble the full logical group, then score once** — never score/flush
+  merely because a page or segment ended (a per-segment scorer call would
+  re-introduce the small-flush regression);
+- typed LE views on aligned metadata arrays (see the aligned-typed-view building
+  block below) so Intel/Graviton read gammas/offsets/counts zero-copy;
+- do not pad a final partial group up to `target_width` payloads unless a
+  scorer fast-path requires it and it benchmarks as worthwhile;
+- define the durable format-version gate and old-index compatibility contract;
+  coordinate with Task 42 before landing the durable format change. Delete/repack
+  lifecycle for spanning groups stays with Task 114.
+
+### Phase 2b - Aligned LE typed-view building block (shared by A and B)
+
+Independent of spanning, lay out the dense numeric arrays aligned + little-endian
+so they can be read as `&[f32]`/`&[u16]`/`&[u32]` zero-copy on the LE targets
+(Graviton 4, AWS Intel), with a `cfg!(target_endian="little")` + runtime
+`is_aligned` guard and a `from_le_bytes` fallback for tooling/tests/non-LE. This
+is a **component of both** the existing one-page format and the Approach B span
+format — not an alternative to B. It removes per-element decode and the gather
+copy; the spanning format consumes it directly (assemble → typed view → score).
 
 ### Phase 3 - Head-to-head benchmark gate
 
 - Drive everything through `ecaz bench suite` with a committed `SuiteConfig`.
-- Compare, per storage format and nprobe cell: row, dense (current), dense+A,
-  dense+B for TurboQuant and RaBitQ.
+- Compare, per storage format and nprobe cell, for TurboQuant and RaBitQ:
+  row, dense (current/per-block), dense+A (coalesced), dense+typed-per-block,
+  dense+B (logical-group spanning), dense+B+typed. Keep Approach A as the
+  already-working baseline/gate; B is the durable structural candidate.
 - **Stage the scales; do not front-load 1M.** Run real **50k + 100k first**
   (local lane) as the gate. Escalate to **1M (AWS lane)** only if 50k/100k show
   promise — i.e. the TurboQuant dense regression is closed (dense ≥ row,
@@ -115,9 +147,10 @@ default-off until a promotion decision.
 ## Acceptance Criteria
 
 1. Approach A (coalescing) implemented behind the `dense_posting_blocks` gate.
-2. Approach B (packing) implemented behind the gate (or, if a phase establishes
-   one approach is strictly dominated, that approach may be closed early with
-   evidence rather than fully built — state the reason in the packet).
+2. Approach B (logical-group page-spanning packing) is implemented behind the
+   gate and benchmarked head-to-head against A. B is **required**, not
+   closeable-by-argument: the operator directed (2026-06-17) that B not be closed
+   as dominated. The A-vs-B decision must rest on measured evidence.
 3. Recall and NDCG unchanged vs the legacy row path for every compared cell.
 4. SIMD flush-width counters show dense TurboQuant reaching width≥32.
 5. A benchmark packet reports the head-to-head matrix for TurboQuant and RaBitQ
