@@ -1107,6 +1107,181 @@ impl IvfColumnarFrozenListHeaderTuple {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub(super) struct IvfColumnarFrozenListColumns {
+    pub(super) posting_count: usize,
+    pub(super) payload_len: usize,
+    pub(super) total_heap_tids: usize,
+    pub(super) gamma_bytes: Vec<u8>,
+    pub(super) payload_bytes: Vec<u8>,
+    pub(super) heap_tid_count_bytes: Vec<u8>,
+    pub(super) heap_tid_offset_bytes: Vec<u8>,
+    pub(super) heap_tid_bytes: Vec<u8>,
+    pub(super) rerank_tid_bytes: Vec<u8>,
+    pub(super) deleted_bitmap: Vec<u8>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct IvfColumnarFrozenListPageChunk<'a> {
+    pub(super) start_item: usize,
+    pub(super) item_count: usize,
+    pub(super) bytes: &'a [u8],
+}
+
+impl IvfColumnarFrozenListColumns {
+    pub(super) fn from_single_heaptid_postings(
+        postings: &[(ItemPointer, f32, ItemPointer, Vec<u8>)],
+        payload_len: usize,
+    ) -> Result<Self, String> {
+        let posting_count = postings.len();
+        if posting_count == 0 {
+            return Err("ec_ivf columnar frozen list requires postings".to_owned());
+        }
+        if payload_len == 0 {
+            return Err("ec_ivf columnar frozen list requires payload bytes".to_owned());
+        }
+
+        let mut gamma_bytes = Vec::with_capacity(posting_count * size_of::<f32>());
+        let mut payload_bytes = Vec::with_capacity(posting_count * payload_len);
+        let mut heap_tid_count_bytes = Vec::with_capacity(posting_count * size_of::<u16>());
+        let mut heap_tid_offset_bytes = Vec::with_capacity(posting_count * size_of::<u32>());
+        let mut heap_tid_bytes = Vec::with_capacity(posting_count * ITEM_POINTER_BYTES);
+        let mut rerank_tid_bytes = Vec::with_capacity(posting_count * ITEM_POINTER_BYTES);
+        for (heap_tid, gamma, rerank_tid, payload) in postings {
+            if !gamma.is_finite() {
+                return Err("ec_ivf columnar frozen list gamma must be finite".to_owned());
+            }
+            if payload.len() != payload_len {
+                return Err(format!(
+                    "ec_ivf columnar frozen list payload length mismatch: got {}, expected {payload_len}",
+                    payload.len()
+                ));
+            }
+            let heap_tid_offset = heap_tid_bytes.len() / ITEM_POINTER_BYTES;
+            gamma_bytes.extend_from_slice(&gamma.to_le_bytes());
+            payload_bytes.extend_from_slice(payload);
+            heap_tid_count_bytes.extend_from_slice(&1_u16.to_le_bytes());
+            heap_tid_offset_bytes.extend_from_slice(
+                &u32::try_from(heap_tid_offset)
+                    .map_err(|_| {
+                        "ec_ivf columnar frozen list heap tid offset exceeds u32".to_owned()
+                    })?
+                    .to_le_bytes(),
+            );
+            heap_tid.encode_into(&mut heap_tid_bytes);
+            rerank_tid.encode_into(&mut rerank_tid_bytes);
+        }
+
+        checked_columnar_frozen_list_offsets(posting_count, payload_len, posting_count)?;
+        Ok(Self {
+            posting_count,
+            payload_len,
+            total_heap_tids: posting_count,
+            gamma_bytes,
+            payload_bytes,
+            heap_tid_count_bytes,
+            heap_tid_offset_bytes,
+            heap_tid_bytes,
+            rerank_tid_bytes,
+            deleted_bitmap: vec![0; dense_deleted_bitmap_len(posting_count)],
+        })
+    }
+
+    pub(super) fn header(
+        &self,
+        list_id: u32,
+        first_column_block: BlockRef,
+        last_column_block: BlockRef,
+    ) -> Result<IvfColumnarFrozenListHeaderTuple, String> {
+        IvfColumnarFrozenListHeaderTuple::from_shape(
+            list_id,
+            self.posting_count,
+            self.payload_len,
+            self.total_heap_tids,
+            first_column_block,
+            last_column_block,
+        )
+    }
+
+    pub(super) fn total_column_bytes(&self) -> Result<usize, String> {
+        checked_columnar_frozen_list_offsets(
+            self.posting_count,
+            self.payload_len,
+            self.total_heap_tids,
+        )
+        .map(|offsets| offsets.total_column_bytes as usize)
+    }
+
+    pub(super) fn gamma(&self, index: usize) -> f32 {
+        let start = index * size_of::<f32>();
+        f32::from_le_bytes(
+            self.gamma_bytes[start..start + size_of::<f32>()]
+                .try_into()
+                .expect("validated columnar gamma bytes"),
+        )
+    }
+
+    pub(super) fn payload(&self, index: usize) -> &[u8] {
+        let start = index * self.payload_len;
+        &self.payload_bytes[start..start + self.payload_len]
+    }
+
+    pub(super) fn heap_tid_count(&self, index: usize) -> usize {
+        let start = index * size_of::<u16>();
+        u16::from_le_bytes(
+            self.heap_tid_count_bytes[start..start + size_of::<u16>()]
+                .try_into()
+                .expect("validated columnar heap tid count bytes"),
+        ) as usize
+    }
+
+    pub(super) fn heap_tid_offset(&self, index: usize) -> usize {
+        let start = index * size_of::<u32>();
+        u32::from_le_bytes(
+            self.heap_tid_offset_bytes[start..start + size_of::<u32>()]
+                .try_into()
+                .expect("validated columnar heap tid offset bytes"),
+        ) as usize
+    }
+
+    pub(super) fn heap_tids(&self, index: usize) -> impl Iterator<Item = ItemPointer> + '_ {
+        let start = self.heap_tid_offset(index);
+        let count = self.heap_tid_count(index);
+        self.heap_tid_bytes[start * ITEM_POINTER_BYTES..(start + count) * ITEM_POINTER_BYTES]
+            .chunks_exact(ITEM_POINTER_BYTES)
+            .map(|chunk| ItemPointer::decode(chunk).expect("validated columnar heap tid bytes"))
+    }
+
+    pub(super) fn rerank_tid(&self, index: usize) -> ItemPointer {
+        let start = index * ITEM_POINTER_BYTES;
+        ItemPointer::decode(&self.rerank_tid_bytes[start..start + ITEM_POINTER_BYTES])
+            .expect("validated columnar rerank tid bytes")
+    }
+
+    pub(super) fn is_deleted(&self, index: usize) -> bool {
+        dense_deleted_bitmap_get(&self.deleted_bitmap, index)
+    }
+
+    pub(super) fn gamma_values_native_le(&self) -> Option<&[f32]> {
+        native_le_f32_slice(&self.gamma_bytes)
+    }
+
+    pub(super) fn heap_tid_counts_native_le(&self) -> Option<&[u16]> {
+        native_le_u16_slice(&self.heap_tid_count_bytes)
+    }
+
+    pub(super) fn heap_tid_offsets_native_le(&self) -> Option<&[u32]> {
+        native_le_u32_slice(&self.heap_tid_offset_bytes)
+    }
+
+    pub(super) fn payload_page_chunks(
+        &self,
+        page_size: usize,
+    ) -> Result<Vec<IvfColumnarFrozenListPageChunk<'_>>, String> {
+        columnar_page_chunks(&self.payload_bytes, self.payload_len, page_size)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct IvfPostingTuple {
     pub list_id: u32,
     pub deleted: bool,
@@ -1480,6 +1655,38 @@ fn validate_columnar_frozen_list_block_range(
         return Err("ec_ivf columnar frozen list column block range is inverted".to_owned());
     }
     Ok(())
+}
+
+fn columnar_page_chunks(
+    bytes: &[u8],
+    item_width: usize,
+    page_size: usize,
+) -> Result<Vec<IvfColumnarFrozenListPageChunk<'_>>, String> {
+    if item_width == 0 {
+        return Err("ec_ivf columnar frozen list item width is zero".to_owned());
+    }
+    if bytes.len() % item_width != 0 {
+        return Err("ec_ivf columnar frozen list bytes are not item-aligned".to_owned());
+    }
+    let item_capacity = usable_page_bytes(page_size) / item_width;
+    if item_capacity == 0 {
+        return Err(format!(
+            "ec_ivf columnar frozen list item width {item_width} does not fit on a page"
+        ));
+    }
+
+    let mut chunks = Vec::new();
+    let mut start_item = 0_usize;
+    for chunk in bytes.chunks(item_capacity * item_width) {
+        let item_count = chunk.len() / item_width;
+        chunks.push(IvfColumnarFrozenListPageChunk {
+            start_item,
+            item_count,
+            bytes: chunk,
+        });
+        start_item += item_count;
+    }
+    Ok(chunks)
 }
 
 fn native_le_f32_slice(bytes: &[u8]) -> Option<&[f32]> {
@@ -4827,6 +5034,102 @@ mod tests {
         assert!(IvfColumnarFrozenListHeaderTuple::decode(&encoded)
             .unwrap_err()
             .contains("column offsets mismatch"));
+    }
+
+    #[test]
+    fn columnar_frozen_list_columns_preserve_logical_postings() {
+        let postings = vec![
+            (tid(11, 1), 0.125, tid(101, 1), vec![1, 2, 3]),
+            (tid(12, 2), 0.25, tid(102, 2), vec![4, 5, 6]),
+            (tid(13, 3), 0.5, tid(103, 3), vec![7, 8, 9]),
+            (tid(14, 4), 0.75, tid(104, 4), vec![10, 11, 12]),
+        ];
+        let columns =
+            IvfColumnarFrozenListColumns::from_single_heaptid_postings(&postings, 3).unwrap();
+        let header = columns.header(9, block(40), block(43)).unwrap();
+
+        assert_eq!(columns.posting_count, 4);
+        assert_eq!(columns.payload_len, 3);
+        assert_eq!(columns.total_heap_tids, 4);
+        assert_eq!(columns.gamma(0), 0.125);
+        assert_eq!(columns.gamma(3), 0.75);
+        assert_eq!(columns.payload(1), &[4, 5, 6]);
+        assert_eq!(columns.heap_tid_count(2), 1);
+        assert_eq!(
+            columns.heap_tids(2).collect::<Vec<_>>(),
+            vec![postings[2].0]
+        );
+        assert_eq!(columns.rerank_tid(3), postings[3].2);
+        assert!(!columns.is_deleted(0));
+        assert_eq!(columns.total_column_bytes().unwrap(), 101);
+        assert_eq!(header.list_id, 9);
+        assert_eq!(header.posting_count, 4);
+        assert_eq!(header.payload_len, 3);
+        assert_eq!(header.total_heap_tids, 4);
+        assert_eq!(header.total_column_bytes, 101);
+    }
+
+    #[test]
+    fn columnar_frozen_list_payload_chunks_keep_whole_postings_per_page() {
+        let postings = vec![
+            (tid(11, 1), 0.125, ItemPointer::INVALID, vec![1, 2, 3]),
+            (tid(12, 2), 0.25, ItemPointer::INVALID, vec![4, 5, 6]),
+            (tid(13, 3), 0.5, ItemPointer::INVALID, vec![7, 8, 9]),
+            (tid(14, 4), 0.75, ItemPointer::INVALID, vec![10, 11, 12]),
+            (tid(15, 5), 1.0, ItemPointer::INVALID, vec![13, 14, 15]),
+        ];
+        let columns =
+            IvfColumnarFrozenListColumns::from_single_heaptid_postings(&postings, 3).unwrap();
+
+        let chunks = columns.payload_page_chunks(PAGE_HEADER_BYTES + 7).unwrap();
+
+        assert_eq!(chunks.len(), 3);
+        assert_eq!(chunks[0].start_item, 0);
+        assert_eq!(chunks[0].item_count, 2);
+        assert_eq!(chunks[0].bytes, &[1, 2, 3, 4, 5, 6]);
+        assert_eq!(chunks[1].start_item, 2);
+        assert_eq!(chunks[1].item_count, 2);
+        assert_eq!(chunks[1].bytes, &[7, 8, 9, 10, 11, 12]);
+        assert_eq!(chunks[2].start_item, 4);
+        assert_eq!(chunks[2].item_count, 1);
+        assert_eq!(chunks[2].bytes, &[13, 14, 15]);
+    }
+
+    #[test]
+    fn columnar_frozen_list_columns_reject_invalid_input() {
+        assert!(
+            IvfColumnarFrozenListColumns::from_single_heaptid_postings(&[], 3)
+                .unwrap_err()
+                .contains("requires postings")
+        );
+        assert!(IvfColumnarFrozenListColumns::from_single_heaptid_postings(
+            &[(tid(1, 1), 0.5, ItemPointer::INVALID, vec![1, 2, 3])],
+            0,
+        )
+        .unwrap_err()
+        .contains("requires payload"));
+        assert!(IvfColumnarFrozenListColumns::from_single_heaptid_postings(
+            &[(tid(1, 1), f32::NAN, ItemPointer::INVALID, vec![1, 2, 3])],
+            3,
+        )
+        .unwrap_err()
+        .contains("gamma must be finite"));
+        assert!(IvfColumnarFrozenListColumns::from_single_heaptid_postings(
+            &[(tid(1, 1), 0.5, ItemPointer::INVALID, vec![1, 2])],
+            3,
+        )
+        .unwrap_err()
+        .contains("payload length mismatch"));
+
+        let columns = IvfColumnarFrozenListColumns::from_single_heaptid_postings(
+            &[(tid(1, 1), 0.5, ItemPointer::INVALID, vec![1, 2, 3])],
+            3,
+        )
+        .unwrap();
+        assert!(columns
+            .payload_page_chunks(PAGE_HEADER_BYTES + 2)
+            .unwrap_err()
+            .contains("does not fit on a page"));
     }
 
     #[test]
