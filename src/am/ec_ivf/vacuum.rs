@@ -235,6 +235,16 @@ unsafe fn bulkdelete_list_postings(
                 callback_state,
             )
         },
+        |posting_tid, posting_segment| {
+            let mut result = result.borrow_mut();
+            bulkdelete_dense_packed_segment(
+                &mut result,
+                posting_tid,
+                posting_segment,
+                callback,
+                callback_state,
+            )
+        },
     )?;
 
     Ok(result.into_inner())
@@ -328,6 +338,60 @@ fn bulkdelete_dense_posting_block(
         Ok(page::IvfDensePostingBlockRewrite::Rewrite(posting_block))
     } else {
         Ok(page::IvfDensePostingBlockRewrite::Keep)
+    }
+}
+
+fn bulkdelete_dense_packed_segment(
+    result: &mut ListBulkDeleteResult,
+    _posting_tid: ItemPointer,
+    mut posting_segment: page::IvfDensePostingPackedSegmentTuple,
+    callback: BulkDeleteCallback,
+    callback_state: *mut c_void,
+) -> Result<page::IvfDensePostingPackedSegmentRewrite, String> {
+    let mut removed = 0_usize;
+    let mut changed = false;
+    for index in 0..posting_segment.len() {
+        if posting_segment.is_deleted(index) {
+            continue;
+        }
+        let start = usize::try_from(posting_segment.heap_tid_offsets[index])
+            .map_err(|_| "ec_ivf dense packed heap tid offset exceeds usize".to_owned())?;
+        let count = usize::from(posting_segment.heap_tid_counts[index]);
+        let end = start
+            .checked_add(count)
+            .ok_or_else(|| "ec_ivf dense packed heap tid range overflow".to_owned())?;
+        let heap_tids = posting_segment
+            .heap_tids
+            .get(start..end)
+            .ok_or_else(|| "ec_ivf dense packed heap tid range is out of bounds".to_owned())?;
+        if heap_tids
+            .iter()
+            .all(|heap_tid| heap_tid_is_dead(*heap_tid, callback, callback_state))
+        {
+            posting_segment.mark_deleted(index);
+            removed = removed.saturating_add(count);
+            changed = true;
+        } else {
+            result.record_live_posting(count)?;
+        }
+    }
+
+    if removed > 0 {
+        result.removed_heap_tids = result
+            .removed_heap_tids
+            .checked_add(
+                u64::try_from(removed)
+                    .map_err(|_| "ec_ivf removed heap tid count exceeds u64".to_owned())?,
+            )
+            .ok_or_else(|| "ec_ivf removed heap tid count overflow".to_owned())?;
+    }
+
+    if changed {
+        Ok(page::IvfDensePostingPackedSegmentRewrite::Rewrite(
+            posting_segment,
+        ))
+    } else {
+        Ok(page::IvfDensePostingPackedSegmentRewrite::Keep)
     }
 }
 

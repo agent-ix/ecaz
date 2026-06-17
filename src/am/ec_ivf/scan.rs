@@ -3348,6 +3348,11 @@ pub(crate) struct EcIvfGettupleCounterDebugSnapshot {
     pub(crate) dense_postings_visited: u32,
     pub(crate) scratch_soa_flushes: u32,
     pub(crate) dense_coalesced_flushes: u32,
+    pub(crate) dense_packed_groups_assembled: u32,
+    pub(crate) dense_packed_segments_assembled: u32,
+    pub(crate) dense_packed_payload_bytes_copied: u32,
+    pub(crate) dense_packed_groups_borrowed: u32,
+    pub(crate) dense_packed_payload_bytes_borrowed: u32,
 }
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -3390,6 +3395,11 @@ pub(crate) unsafe fn debug_ec_ivf_gettuple_counter_snapshot(
         dense_postings_visited: counters.stats_dense_postings_visited,
         scratch_soa_flushes: counters.stats_scratch_soa_flushes,
         dense_coalesced_flushes: counters.stats_dense_coalesced_flushes,
+        dense_packed_groups_assembled: counters.stats_dense_packed_groups_assembled,
+        dense_packed_segments_assembled: counters.stats_dense_packed_segments_assembled,
+        dense_packed_payload_bytes_copied: counters.stats_dense_packed_payload_bytes_copied,
+        dense_packed_groups_borrowed: counters.stats_dense_packed_groups_borrowed,
+        dense_packed_payload_bytes_borrowed: counters.stats_dense_packed_payload_bytes_borrowed,
     }
 }
 

@@ -1248,6 +1248,98 @@
     }
 
     #[pg_test]
+    fn test_ec_ivf_dense_packed_typed_span_vacuum() {
+        Spi::run(
+            "CREATE TABLE ec_ivf_dense_packed_span_scan (
+                id bigint primary key,
+                embedding ecvector
+             )",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_ivf_dense_packed_span_scan
+             SELECT id,
+                    (ARRAY[1.0::real] || array_fill(0.0::real, ARRAY[511]))::ecvector
+             FROM generate_series(0, 39) AS id",
+        )
+        .expect("seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_ivf_dense_packed_span_scan_idx
+             ON ec_ivf_dense_packed_span_scan USING ec_ivf (embedding ecvector_ip_ops)
+             WITH (
+                nlists = 1,
+                nprobe = 1,
+                training_sample_rows = 40,
+                storage_format = 'turboquant',
+                dense_posting_blocks = 1,
+                dense_posting_pack_pages = 4,
+                dense_posting_typed_layout = 1
+             )",
+        )
+        .expect("packed dense IVF index creation should succeed");
+
+        let index_oid = ec_ivf_index_oid("ec_ivf_dense_packed_span_scan_idx");
+        let query = {
+            let mut query = Vec::with_capacity(512);
+            query.push(1.0);
+            query.resize(512, 0.0);
+            query
+        };
+        let counters =
+            ec_ivf_debug!(am::debug_ec_ivf_gettuple_counter_snapshot(index_oid, query.clone()));
+
+        assert_eq!(counters.outputs.len(), 40);
+        assert_eq!(counters.row_postings_visited, 0);
+        assert!(
+            counters.dense_blocks_visited > 1,
+            "packed scan should visit a header plus continuation segments"
+        );
+        assert_eq!(counters.dense_postings_visited, 40);
+        assert!(
+            counters.dense_packed_groups_assembled >= 1,
+            "at least one width-32 packed group should require assembly"
+        );
+        assert!(
+            counters.dense_packed_segments_assembled > counters.dense_packed_groups_assembled,
+            "assembled packed groups should include continuation segments"
+        );
+        assert!(
+            counters.dense_packed_payload_bytes_copied > 0,
+            "spanning packed groups should report copied payload bytes"
+        );
+        assert!(
+            counters.dense_packed_groups_borrowed >= 1,
+            "final partial packed group should take the single-segment borrow path"
+        );
+        assert!(
+            counters.dense_packed_payload_bytes_borrowed > 0,
+            "borrowed packed groups should report borrowed payload bytes"
+        );
+        assert!(counters.orderby_cleared);
+
+        let deleted_tid = heap_tid_for_row("ec_ivf_dense_packed_span_scan", 7);
+        Spi::run("DELETE FROM ec_ivf_dense_packed_span_scan WHERE id = 7")
+            .expect("delete should succeed");
+        let stats =
+            ec_ivf_debug!(am::debug_ec_ivf_vacuum_remove_heap_tids(index_oid, &[deleted_tid]));
+        let after_vacuum =
+            ec_ivf_debug!(am::debug_ec_ivf_gettuple_counter_snapshot(index_oid, query));
+
+        assert_eq!(stats.tuples_removed, 1.0);
+        assert_eq!(stats.num_index_tuples, 39.0);
+        assert_eq!(after_vacuum.outputs.len(), 39);
+        assert!(after_vacuum.outputs.iter().all(
+            |(block_number, offset_number, _score)| (*block_number, *offset_number)
+                != (deleted_tid.block_number, deleted_tid.offset_number)
+        ));
+        assert_eq!(after_vacuum.dense_postings_visited, 39);
+        assert!(
+            after_vacuum.dense_packed_groups_assembled >= 1,
+            "vacuumed packed scan should still assemble the spanning group"
+        );
+    }
+
+    #[pg_test]
     fn test_ec_ivf_dense_posting_blocks_scan_mixed_insert_rows() {
         Spi::run(
             "CREATE TABLE ec_ivf_dense_mixed_scan (id bigint primary key, embedding ecvector)",

@@ -1996,6 +1996,18 @@ impl<'a> IvfPostingTupleRef<'a> {
 }
 
 impl IvfDensePostingPackedSegmentTuple {
+    pub(super) fn len(&self) -> usize {
+        self.gammas.len()
+    }
+
+    pub(super) fn is_deleted(&self, index: usize) -> bool {
+        dense_deleted_bitmap_get(&self.deleted_bitmap, index)
+    }
+
+    pub(super) fn mark_deleted(&mut self, index: usize) {
+        dense_deleted_bitmap_set(&mut self.deleted_bitmap, index);
+    }
+
     pub(super) fn from_single_heaptid_postings(
         list_id: u32,
         logical_block_id: u32,
@@ -2884,11 +2896,12 @@ where
         no_compact_blocks,
         rewrite,
         |_, _| Ok(IvfDensePostingBlockRewrite::Keep),
+        |_, _| Ok(IvfDensePostingPackedSegmentRewrite::Keep),
     )
 }
 
 #[cfg(any(feature = "pg17", feature = "pg18"))]
-pub(super) unsafe fn rewrite_ivf_posting_entries_for_list_blocks<RowFn, DenseFn>(
+pub(super) unsafe fn rewrite_ivf_posting_entries_for_list_blocks<RowFn, DenseFn, PackedFn>(
     index_relation: pg_sys::Relation,
     list_id: u32,
     head_block: BlockRef,
@@ -2897,6 +2910,7 @@ pub(super) unsafe fn rewrite_ivf_posting_entries_for_list_blocks<RowFn, DenseFn>
     no_compact_blocks: &[pg_sys::BlockNumber],
     mut rewrite_row: RowFn,
     mut rewrite_dense: DenseFn,
+    mut rewrite_packed: PackedFn,
 ) -> Result<(), String>
 where
     RowFn: FnMut(ItemPointer, IvfPostingTuple) -> Result<IvfPostingRewrite, String>,
@@ -2904,6 +2918,10 @@ where
         ItemPointer,
         IvfDensePostingBlockTuple,
     ) -> Result<IvfDensePostingBlockRewrite, String>,
+    PackedFn: FnMut(
+        ItemPointer,
+        IvfDensePostingPackedSegmentTuple,
+    ) -> Result<IvfDensePostingPackedSegmentRewrite, String>,
 {
     let index = IvfPageRelation::new(ivf_relation_nonnull(
         index_relation,
@@ -2932,6 +2950,7 @@ where
             !no_compact_blocks.contains(&block_number),
             &mut rewrite_row,
             &mut rewrite_dense,
+            &mut rewrite_packed,
         )?;
     }
 
@@ -3557,6 +3576,13 @@ pub(super) enum IvfDensePostingBlockRewrite {
 }
 
 #[cfg(any(feature = "pg17", feature = "pg18"))]
+#[derive(Debug, Clone, PartialEq)]
+pub(super) enum IvfDensePostingPackedSegmentRewrite {
+    Keep,
+    Rewrite(IvfDensePostingPackedSegmentTuple),
+}
+
+#[cfg(any(feature = "pg17", feature = "pg18"))]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct IvfPostingBlockSummary {
     pub(super) block_number: pg_sys::BlockNumber,
@@ -3595,7 +3621,7 @@ pub(super) unsafe fn debug_ivf_posting_block_summaries(
 }
 
 #[cfg(any(feature = "pg17", feature = "pg18"))]
-fn rewrite_ivf_postings_for_list_block<RowFn, DenseFn>(
+fn rewrite_ivf_postings_for_list_block<RowFn, DenseFn, PackedFn>(
     index: IvfPageRelation<'_>,
     list_id: u32,
     block_number: pg_sys::BlockNumber,
@@ -3603,6 +3629,7 @@ fn rewrite_ivf_postings_for_list_block<RowFn, DenseFn>(
     compact_deletes: bool,
     rewrite_row: &mut RowFn,
     rewrite_dense: &mut DenseFn,
+    rewrite_packed: &mut PackedFn,
 ) -> Result<(), String>
 where
     RowFn: FnMut(ItemPointer, IvfPostingTuple) -> Result<IvfPostingRewrite, String>,
@@ -3610,6 +3637,10 @@ where
         ItemPointer,
         IvfDensePostingBlockTuple,
     ) -> Result<IvfDensePostingBlockRewrite, String>,
+    PackedFn: FnMut(
+        ItemPointer,
+        IvfDensePostingPackedSegmentTuple,
+    ) -> Result<IvfDensePostingPackedSegmentRewrite, String>,
 {
     let buffer = index
         .read_main(
@@ -3628,6 +3659,7 @@ where
         compact_deletes,
         rewrite_row,
         rewrite_dense,
+        rewrite_packed,
     )
 }
 
@@ -3702,7 +3734,7 @@ fn debug_ivf_posting_block_summary(
 }
 
 #[cfg(any(feature = "pg17", feature = "pg18"))]
-fn rewrite_ivf_postings_from_exclusive_buffer<RowFn, DenseFn>(
+fn rewrite_ivf_postings_from_exclusive_buffer<RowFn, DenseFn, PackedFn>(
     index: IvfPageRelation<'_>,
     buffer: &LockedBufferGuard,
     list_id: u32,
@@ -3711,6 +3743,7 @@ fn rewrite_ivf_postings_from_exclusive_buffer<RowFn, DenseFn>(
     compact_deletes: bool,
     rewrite_row: &mut RowFn,
     rewrite_dense: &mut DenseFn,
+    rewrite_packed: &mut PackedFn,
 ) -> Result<(), String>
 where
     RowFn: FnMut(ItemPointer, IvfPostingTuple) -> Result<IvfPostingRewrite, String>,
@@ -3718,6 +3751,10 @@ where
         ItemPointer,
         IvfDensePostingBlockTuple,
     ) -> Result<IvfDensePostingBlockRewrite, String>,
+    PackedFn: FnMut(
+        ItemPointer,
+        IvfDensePostingPackedSegmentTuple,
+    ) -> Result<IvfDensePostingPackedSegmentRewrite, String>,
 {
     enum PostingVisit {
         NonPosting,
@@ -3780,6 +3817,27 @@ where
                             if encoded.len() != tuple_bytes.len() {
                                 return Err(format!(
                                     "ec_ivf dense posting block tuple size changed from {} to {}",
+                                    tuple_bytes.len(),
+                                    encoded.len()
+                                ));
+                            }
+                            Ok(PostingVisit::Rewrite(encoded))
+                        }
+                    }
+                }
+                Some(IVF_DENSE_POSTING_PACKED_SEGMENT_TAG) => {
+                    let segment =
+                        IvfDensePostingPackedSegmentTuple::decode(tuple_bytes, payload_len)?;
+                    if segment.list_id != list_id {
+                        return Ok(PostingVisit::OtherList);
+                    }
+                    match rewrite_packed(posting_tid, segment)? {
+                        IvfDensePostingPackedSegmentRewrite::Keep => Ok(PostingVisit::Keep),
+                        IvfDensePostingPackedSegmentRewrite::Rewrite(updated) => {
+                            let encoded = updated.encode()?;
+                            if encoded.len() != tuple_bytes.len() {
+                                return Err(format!(
+                                    "ec_ivf dense posting packed segment tuple size changed from {} to {}",
                                     tuple_bytes.len(),
                                     encoded.len()
                                 ));
