@@ -1719,6 +1719,101 @@ mod tests {
     }
 
     #[test]
+    fn columnar_frozen_list_raw_pages_match_header_block_range() {
+        let page_size = 128;
+        let payload_len = 37;
+        let postings = (0..9)
+            .map(|index| {
+                let heap_tid = ItemPointer {
+                    block_number: 10 + index,
+                    offset_number: 1,
+                };
+                let rerank_tid = ItemPointer {
+                    block_number: 20 + index,
+                    offset_number: 2,
+                };
+                let payload = (0..payload_len)
+                    .map(|offset| (index as u8).wrapping_mul(17).wrapping_add(offset as u8))
+                    .collect::<Vec<_>>();
+                (heap_tid, index as f32 + 0.5, rerank_tid, payload)
+            })
+            .collect::<Vec<_>>();
+        let expected_pages = page::IvfColumnarFrozenListColumns::from_single_heaptid_postings(
+            &postings,
+            payload_len,
+        )
+        .unwrap()
+        .raw_page_bytes(page_size)
+        .unwrap();
+        assert!(
+            expected_pages.len() >= 2,
+            "test shape should span multiple raw column pages"
+        );
+
+        let mut data_pages = DataPageChain::new(page_size);
+        let mut column_pages = Vec::new();
+        let mut posting_tids = Vec::new();
+        let last_column_block = insert_columnar_frozen_list(
+            &mut data_pages,
+            &mut column_pages,
+            &mut posting_tids,
+            7,
+            &postings,
+            payload_len,
+            page_size,
+        )
+        .unwrap();
+
+        assert_eq!(posting_tids.len(), 1);
+        let header_tid = posting_tids[0];
+        let header = data_pages
+            .read_ivf_columnar_frozen_list_header(header_tid)
+            .unwrap();
+        let first_column_block = header.first_column_block.block_number;
+        assert_eq!(header.list_id, 7);
+        assert_eq!(header.posting_count, postings.len() as u32);
+        assert_eq!(header.payload_len as usize, payload_len);
+        assert_eq!(header_tid.block_number + 1, first_column_block);
+        assert_eq!(header.last_column_block.block_number, last_column_block);
+        assert_eq!(
+            last_column_block - first_column_block + 1,
+            expected_pages.len() as u32
+        );
+
+        assert_eq!(column_pages.len(), expected_pages.len());
+        for (page_index, expected_bytes) in expected_pages.iter().enumerate() {
+            let block_number = first_column_block + page_index as u32;
+            let staged = column_pages
+                .iter()
+                .find(|page| page.block_number == block_number)
+                .unwrap_or_else(|| panic!("missing staged column page {block_number}"));
+            assert_eq!(staged.bytes, *expected_bytes);
+            assert_eq!(
+                data_pages
+                    .get_page(block_number)
+                    .expect("column page placeholder should exist")
+                    .tuple_count(),
+                0
+            );
+        }
+
+        let separator_block = last_column_block + 1;
+        assert_eq!(
+            data_pages
+                .get_page(separator_block)
+                .expect("separator page should exist")
+                .tuple_count(),
+            0
+        );
+        assert!(
+            column_pages
+                .iter()
+                .all(|page| page.block_number != separator_block),
+            "separator page must not be treated as column payload"
+        );
+    }
+
+    #[test]
     fn build_state_can_stage_packed_dense_posting_segments_when_requested() {
         let mut opts = options(0, 2);
         opts.dense_posting_blocks = true;
