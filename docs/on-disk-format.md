@@ -78,11 +78,37 @@ before interpreting the rest of the payload:
 | --- | --- | --- |
 | HNSW | `1`, `2`, `3`, `4` | accepts known tags, rejects unknown tags |
 | DiskANN | `3` | accepts the DiskANN tag, rejects foreign tags |
-| IVF | `1` | accepts the current tag, rejects unknown tags |
+| IVF | `1`, `2` | accepts known metadata versions in range, rejects unknown versions |
 | SPIRE partition objects | `1`, `2` | accepts known object versions, rejects unknown versions |
 
 Any incompatible field addition or reinterpretation must add a new format tag
 and update the layout assertions, fixture golden files, and upgrade matrix.
+
+## IVF Posting Tuple Tags
+
+IVF currently writes metadata format version `2` and accepts metadata versions
+`1..=2`, plus per-tuple tags inside data pages. Task 111b keeps the metadata
+version unchanged and adds a gated tuple tag for columnar frozen lists:
+
+| Tag | Tuple kind | Status |
+| --- | --- | --- |
+| `0x21` | centroid tuple | current |
+| `0x22` | list-directory tuple | current |
+| `0x23` | row posting tuple | current, default mutable/delta format |
+| `0x24` | PQ codebook tuple | current |
+| `0x25` | dense posting block | current experimental dense block format |
+| `0x26` | dense packed header segment | abandoned 111a page-spanning experiment; keep reader/writer only behind explicit experimental reloptions until cleanup |
+| `0x27` | dense packed continuation segment | abandoned 111a page-spanning experiment; keep reader/writer only behind explicit experimental reloptions until cleanup |
+| `0x28` | aligned dense posting block | current experimental typed-view dense block format |
+| `0x29` | columnar frozen-list header, version `1` | Task 111b gated columnar frozen-list format |
+
+The Task 111b compatibility contract is: row postings (`0x23`), legacy dense
+blocks (`0x25`), and aligned dense blocks (`0x28`) remain readable; columnar
+frozen lists are written only when `columnar_frozen_lists = 1`; and the
+abandoned packed tags (`0x26`/`0x27`) are not candidates for promotion. A later
+cleanup may remove their write path after any remaining benchmark fixtures are
+retired, but readers should reject or skip only through an explicit migration
+decision rather than silent tag reuse.
 
 ## Upgrade Matrix
 

@@ -1168,6 +1168,44 @@
     }
 
     #[pg_test]
+    fn test_ec_ivf_dense_typed_posting_blocks_scan_build_rows() {
+        Spi::run(
+            "CREATE TABLE ec_ivf_dense_typed_build_scan (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_ivf_dense_typed_build_scan VALUES
+             (0, '[1.0,0.0]'::ecvector),
+             (1, '[0.9,0.1]'::ecvector),
+             (2, '[0.0,1.0]'::ecvector),
+             (3, '[-1.0,0.0]'::ecvector)",
+        )
+        .expect("seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_ivf_dense_typed_build_scan_idx ON ec_ivf_dense_typed_build_scan USING ec_ivf \
+             (embedding ecvector_ip_ops) \
+             WITH (nlists = 1, nprobe = 1, training_sample_rows = 4, storage_format = 'turboquant', dense_posting_blocks = 1, dense_posting_typed_layout = 1)",
+        )
+        .expect("typed dense IVF index creation should succeed");
+
+        let index_oid = ec_ivf_index_oid("ec_ivf_dense_typed_build_scan_idx");
+        let ctid_to_id = ctid_id_map("ec_ivf_dense_typed_build_scan");
+        let ids = ivf_debug_output_ids(index_oid, vec![1.0, 0.0], &ctid_to_id, 4);
+        let counters =
+            ec_ivf_debug!(am::debug_ec_ivf_gettuple_counter_snapshot(index_oid, vec![1.0, 0.0]));
+
+        assert_eq!(ids.len(), 4);
+        assert!(ids.contains(&0));
+        assert_eq!(counters.outputs.len(), 4);
+        assert_eq!(counters.row_postings_visited, 0);
+        assert_eq!(counters.dense_blocks_visited, 1);
+        assert_eq!(counters.dense_postings_visited, 4);
+        assert_eq!(counters.scratch_soa_flushes, 0);
+        assert_eq!(counters.dense_coalesced_flushes, 1);
+        assert!(counters.orderby_cleared);
+    }
+
+    #[pg_test]
     fn test_ec_ivf_dense_posting_blocks_scan_can_disable_coalescing() {
         Spi::run(
             "CREATE TABLE ec_ivf_dense_coalescing_off_scan (id bigint primary key, embedding ecvector)",
