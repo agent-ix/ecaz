@@ -1,6 +1,10 @@
 # Task 111b: IVF Columnar Frozen-List Format
 
-Status: **proposed**.
+Status: **complete** (2026-06-17; closeout
+`reviews/task-111b/009-closeout-status/`). Format, writer, decode, scan,
+vacuum, old-index compatibility, counters, and the 50k/100k benchmark baseline
+landed. The format is **not promoted**; packet 008/009 defer storage-density and
+score-in-place decisions to 111c/111d.
 Priority: P0 latency (Task 111 line; score-in-place foundation).
 Parent: `111-ivf-scan-dense-posting-block-layout.md`,
 follows `111a-ivf-dense-block-scan-batch-width.md`.
