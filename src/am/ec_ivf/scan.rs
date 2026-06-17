@@ -599,6 +599,13 @@ impl IvfDensePackedPending {
         let start = index * self.payload_len;
         &self.payloads[start..start + self.payload_len]
     }
+
+    fn record_assembly_counters(&self, opaque: &mut EcIvfScanOpaque) {
+        opaque.explain_counters.record_dense_packed_group_assembly(
+            usize::from(self.segment_count),
+            self.payloads.len(),
+        );
+    }
 }
 
 impl PartialEq for ProbeListHeapEntry {
@@ -1712,6 +1719,31 @@ unsafe fn materialize_probe_candidates(
                             if dense_scratch_list_id.is_none() {
                                 dense_scratch_list_id = Some(segment.list_id);
                             }
+                            if segment.segment_index == 0 && segment.segment_count == 1 {
+                                process_dense_coalesced_postings(
+                                    &mut *dense_scratch,
+                                    quantizer,
+                                    prepared_query,
+                                    opaque,
+                                    best_by_heap_tid,
+                                    &mut running_top,
+                                )?;
+                                dense_scratch_list_id = None;
+                                opaque
+                                    .explain_counters
+                                    .record_dense_packed_group_borrow(segment.payloads.len());
+                                process_dense_posting_block(
+                                    super::page::IvfDensePostingRef::PackedSegment(segment),
+                                    use_dense_posting_typed_views,
+                                    quantizer,
+                                    prepared_query,
+                                    opaque,
+                                    best_by_heap_tid,
+                                    &mut running_top,
+                                    &mut remaining_live_tids_by_list,
+                                )?;
+                                return Ok(());
+                            }
                             dense_packed_pending = Some(IvfDensePackedPending::from_header(
                                 segment,
                                 use_dense_posting_typed_views,
@@ -1724,6 +1756,7 @@ unsafe fn materialize_probe_candidates(
                                 let group = dense_packed_pending
                                     .take()
                                     .expect("pending just checked complete");
+                                group.record_assembly_counters(opaque);
                                 drain_dense_packed_group_to_scratch(
                                     &group,
                                     &mut *dense_scratch,
@@ -1753,6 +1786,7 @@ unsafe fn materialize_probe_candidates(
                                 let group = dense_packed_pending
                                     .take()
                                     .expect("pending just checked complete");
+                                group.record_assembly_counters(opaque);
                                 drain_dense_packed_group_to_scratch(
                                     &group,
                                     &mut *dense_scratch,
@@ -1874,6 +1908,22 @@ unsafe fn materialize_probe_candidates(
                             );
                         }
                         opaque.explain_counters.record_dense_block_visited();
+                        if segment.segment_index == 0 && segment.segment_count == 1 {
+                            opaque
+                                .explain_counters
+                                .record_dense_packed_group_borrow(segment.payloads.len());
+                            process_dense_posting_block(
+                                super::page::IvfDensePostingRef::PackedSegment(segment),
+                                use_dense_posting_typed_views,
+                                quantizer,
+                                prepared_query,
+                                opaque,
+                                best_by_heap_tid,
+                                &mut running_top,
+                                &mut remaining_live_tids_by_list,
+                            )?;
+                            return Ok(());
+                        }
                         dense_packed_pending = Some(IvfDensePackedPending::from_header(
                             segment,
                             use_dense_posting_typed_views,
@@ -1886,6 +1936,7 @@ unsafe fn materialize_probe_candidates(
                             let group = dense_packed_pending
                                 .take()
                                 .expect("pending just checked complete");
+                            group.record_assembly_counters(opaque);
                             drain_dense_packed_group_to_scratch(
                                 &group,
                                 &mut dense_packed_scratch,
@@ -1914,6 +1965,7 @@ unsafe fn materialize_probe_candidates(
                             let group = dense_packed_pending
                                 .take()
                                 .expect("pending just checked complete");
+                            group.record_assembly_counters(opaque);
                             drain_dense_packed_group_to_scratch(
                                 &group,
                                 &mut dense_packed_scratch,
