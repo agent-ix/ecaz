@@ -122,11 +122,14 @@ const IVF_DENSE_POSTING_BLOCK_TAG: u8 = 0x25;
 const IVF_DENSE_POSTING_PACKED_SEGMENT_TAG: u8 = 0x26;
 const IVF_DENSE_POSTING_PACKED_CONTINUATION_TAG: u8 = 0x27;
 const IVF_DENSE_POSTING_ALIGNED_BLOCK_TAG: u8 = 0x28;
+const IVF_COLUMNAR_FROZEN_LIST_HEADER_TAG: u8 = 0x29;
+const COLUMNAR_FROZEN_LIST_HEADER_VERSION: u8 = 1;
 const POSTING_FLAG_DELETED: u8 = 0b0000_0001;
 const POSTING_FIXED_BYTES: usize = EC_IVF_POSTING_PAYLOAD_OFFSET;
 const DENSE_POSTING_BLOCK_HEADER_BYTES: usize = 16;
 const DENSE_POSTING_PACKED_SEGMENT_HEADER_BYTES: usize = 28;
 const DENSE_POSTING_PACKED_CONTINUATION_HEADER_BYTES: usize = 24;
+const COLUMNAR_FROZEN_LIST_HEADER_BYTES: usize = 58;
 
 #[cfg(not(any(feature = "pg17", feature = "pg18")))]
 #[repr(u8)]
@@ -962,6 +965,147 @@ impl IvfListDirectoryTuple {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct IvfColumnarFrozenListHeaderTuple {
+    pub(super) list_id: u32,
+    pub(super) posting_count: u32,
+    pub(super) payload_len: u16,
+    pub(super) total_heap_tids: u32,
+    pub(super) gamma_offset: u32,
+    pub(super) payload_offset: u32,
+    pub(super) heap_tid_count_offset: u32,
+    pub(super) heap_tid_offset_offset: u32,
+    pub(super) heap_tid_offset: u32,
+    pub(super) rerank_tid_offset: u32,
+    pub(super) deleted_bitmap_offset: u32,
+    pub(super) total_column_bytes: u32,
+    pub(super) first_column_block: BlockRef,
+    pub(super) last_column_block: BlockRef,
+}
+
+impl IvfColumnarFrozenListHeaderTuple {
+    pub(super) fn from_shape(
+        list_id: u32,
+        posting_count: usize,
+        payload_len: usize,
+        total_heap_tids: usize,
+        first_column_block: BlockRef,
+        last_column_block: BlockRef,
+    ) -> Result<Self, String> {
+        if posting_count == 0 {
+            return Err("ec_ivf columnar frozen list header requires postings".to_owned());
+        }
+        if payload_len == 0 {
+            return Err("ec_ivf columnar frozen list header requires payload bytes".to_owned());
+        }
+        if total_heap_tids < posting_count {
+            return Err(
+                "ec_ivf columnar frozen list header heap tid count is smaller than posting count"
+                    .to_owned(),
+            );
+        }
+        validate_columnar_frozen_list_block_range(first_column_block, last_column_block)?;
+        let offsets =
+            checked_columnar_frozen_list_offsets(posting_count, payload_len, total_heap_tids)?;
+        Ok(Self {
+            list_id,
+            posting_count: u32::try_from(posting_count).map_err(|_| {
+                "ec_ivf columnar frozen list header posting count exceeds u32".to_owned()
+            })?,
+            payload_len: u16::try_from(payload_len).map_err(|_| {
+                "ec_ivf columnar frozen list header payload length exceeds u16".to_owned()
+            })?,
+            total_heap_tids: u32::try_from(total_heap_tids).map_err(|_| {
+                "ec_ivf columnar frozen list header heap tid count exceeds u32".to_owned()
+            })?,
+            gamma_offset: offsets.gamma_offset,
+            payload_offset: offsets.payload_offset,
+            heap_tid_count_offset: offsets.heap_tid_count_offset,
+            heap_tid_offset_offset: offsets.heap_tid_offset_offset,
+            heap_tid_offset: offsets.heap_tid_offset,
+            rerank_tid_offset: offsets.rerank_tid_offset,
+            deleted_bitmap_offset: offsets.deleted_bitmap_offset,
+            total_column_bytes: offsets.total_column_bytes,
+            first_column_block,
+            last_column_block,
+        })
+    }
+
+    pub(super) fn encode(&self) -> Result<Vec<u8>, String> {
+        self.validate()?;
+        let mut out = Vec::with_capacity(Self::encoded_len());
+        out.push(IVF_COLUMNAR_FROZEN_LIST_HEADER_TAG);
+        out.push(COLUMNAR_FROZEN_LIST_HEADER_VERSION);
+        out.extend_from_slice(&0_u16.to_le_bytes());
+        out.extend_from_slice(&self.list_id.to_le_bytes());
+        out.extend_from_slice(&self.posting_count.to_le_bytes());
+        out.extend_from_slice(&self.payload_len.to_le_bytes());
+        out.extend_from_slice(&self.total_heap_tids.to_le_bytes());
+        out.extend_from_slice(&self.gamma_offset.to_le_bytes());
+        out.extend_from_slice(&self.payload_offset.to_le_bytes());
+        out.extend_from_slice(&self.heap_tid_count_offset.to_le_bytes());
+        out.extend_from_slice(&self.heap_tid_offset_offset.to_le_bytes());
+        out.extend_from_slice(&self.heap_tid_offset.to_le_bytes());
+        out.extend_from_slice(&self.rerank_tid_offset.to_le_bytes());
+        out.extend_from_slice(&self.deleted_bitmap_offset.to_le_bytes());
+        out.extend_from_slice(&self.total_column_bytes.to_le_bytes());
+        self.first_column_block.encode_into(&mut out);
+        self.last_column_block.encode_into(&mut out);
+        Ok(out)
+    }
+
+    pub(super) fn decode(input: &[u8]) -> Result<Self, String> {
+        let header = IvfColumnarFrozenListHeaderRef::decode(input)?;
+        Ok(Self {
+            list_id: header.list_id,
+            posting_count: header.posting_count,
+            payload_len: header.payload_len,
+            total_heap_tids: header.total_heap_tids,
+            gamma_offset: header.gamma_offset,
+            payload_offset: header.payload_offset,
+            heap_tid_count_offset: header.heap_tid_count_offset,
+            heap_tid_offset_offset: header.heap_tid_offset_offset,
+            heap_tid_offset: header.heap_tid_offset,
+            rerank_tid_offset: header.rerank_tid_offset,
+            deleted_bitmap_offset: header.deleted_bitmap_offset,
+            total_column_bytes: header.total_column_bytes,
+            first_column_block: header.first_column_block,
+            last_column_block: header.last_column_block,
+        })
+    }
+
+    pub(super) const fn encoded_len() -> usize {
+        COLUMNAR_FROZEN_LIST_HEADER_BYTES
+    }
+
+    fn validate(&self) -> Result<(), String> {
+        validate_columnar_frozen_list_shape(
+            self.posting_count,
+            self.payload_len,
+            self.total_heap_tids,
+            self.first_column_block,
+            self.last_column_block,
+        )?;
+        let expected = checked_columnar_frozen_list_offsets(
+            self.posting_count as usize,
+            self.payload_len as usize,
+            self.total_heap_tids as usize,
+        )?;
+        if self.gamma_offset != expected.gamma_offset
+            || self.payload_offset != expected.payload_offset
+            || self.heap_tid_count_offset != expected.heap_tid_count_offset
+            || self.heap_tid_offset_offset != expected.heap_tid_offset_offset
+            || self.heap_tid_offset != expected.heap_tid_offset
+            || self.rerank_tid_offset != expected.rerank_tid_offset
+            || self.deleted_bitmap_offset != expected.deleted_bitmap_offset
+            || self.total_column_bytes != expected.total_column_bytes
+        {
+            return Err("ec_ivf columnar frozen list header column offsets mismatch".to_owned());
+        }
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct IvfPostingTuple {
     pub list_id: u32,
@@ -1057,6 +1201,149 @@ pub(super) struct IvfDensePostingPackedContinuationRef<'a> {
 }
 
 #[derive(Debug, Clone, Copy)]
+pub(super) struct IvfColumnarFrozenListHeaderRef {
+    pub(super) list_id: u32,
+    pub(super) posting_count: u32,
+    pub(super) payload_len: u16,
+    pub(super) total_heap_tids: u32,
+    pub(super) gamma_offset: u32,
+    pub(super) payload_offset: u32,
+    pub(super) heap_tid_count_offset: u32,
+    pub(super) heap_tid_offset_offset: u32,
+    pub(super) heap_tid_offset: u32,
+    pub(super) rerank_tid_offset: u32,
+    pub(super) deleted_bitmap_offset: u32,
+    pub(super) total_column_bytes: u32,
+    pub(super) first_column_block: BlockRef,
+    pub(super) last_column_block: BlockRef,
+}
+
+impl IvfColumnarFrozenListHeaderRef {
+    pub(super) fn decode(input: &[u8]) -> Result<Self, String> {
+        if input.len() != COLUMNAR_FROZEN_LIST_HEADER_BYTES {
+            return Err(format!(
+                "ec_ivf columnar frozen list header length mismatch: got {}, expected {COLUMNAR_FROZEN_LIST_HEADER_BYTES}",
+                input.len()
+            ));
+        }
+        if input[0] != IVF_COLUMNAR_FROZEN_LIST_HEADER_TAG {
+            return Err(format!(
+                "invalid ec_ivf columnar frozen list header tag: {}",
+                input[0]
+            ));
+        }
+        if input[1] != COLUMNAR_FROZEN_LIST_HEADER_VERSION {
+            return Err(format!(
+                "invalid ec_ivf columnar frozen list header version: {}",
+                input[1]
+            ));
+        }
+        let reserved = u16::from_le_bytes(
+            input[2..4]
+                .try_into()
+                .expect("columnar header reserved slice should be 2 bytes"),
+        );
+        if reserved != 0 {
+            return Err("ec_ivf columnar frozen list header reserved flags are set".to_owned());
+        }
+
+        let header = Self {
+            list_id: u32::from_le_bytes(
+                input[4..8]
+                    .try_into()
+                    .expect("columnar header list id slice should be 4 bytes"),
+            ),
+            posting_count: u32::from_le_bytes(
+                input[8..12]
+                    .try_into()
+                    .expect("columnar header posting count slice should be 4 bytes"),
+            ),
+            payload_len: u16::from_le_bytes(
+                input[12..14]
+                    .try_into()
+                    .expect("columnar header payload length slice should be 2 bytes"),
+            ),
+            total_heap_tids: u32::from_le_bytes(
+                input[14..18]
+                    .try_into()
+                    .expect("columnar header heap tid count slice should be 4 bytes"),
+            ),
+            gamma_offset: u32::from_le_bytes(
+                input[18..22]
+                    .try_into()
+                    .expect("columnar header gamma offset slice should be 4 bytes"),
+            ),
+            payload_offset: u32::from_le_bytes(
+                input[22..26]
+                    .try_into()
+                    .expect("columnar header payload offset slice should be 4 bytes"),
+            ),
+            heap_tid_count_offset: u32::from_le_bytes(
+                input[26..30]
+                    .try_into()
+                    .expect("columnar header heap tid count offset slice should be 4 bytes"),
+            ),
+            heap_tid_offset_offset: u32::from_le_bytes(
+                input[30..34]
+                    .try_into()
+                    .expect("columnar header heap tid offset offset slice should be 4 bytes"),
+            ),
+            heap_tid_offset: u32::from_le_bytes(
+                input[34..38]
+                    .try_into()
+                    .expect("columnar header heap tid offset slice should be 4 bytes"),
+            ),
+            rerank_tid_offset: u32::from_le_bytes(
+                input[38..42]
+                    .try_into()
+                    .expect("columnar header rerank tid offset slice should be 4 bytes"),
+            ),
+            deleted_bitmap_offset: u32::from_le_bytes(
+                input[42..46]
+                    .try_into()
+                    .expect("columnar header deleted bitmap offset slice should be 4 bytes"),
+            ),
+            total_column_bytes: u32::from_le_bytes(
+                input[46..50]
+                    .try_into()
+                    .expect("columnar header total column bytes slice should be 4 bytes"),
+            ),
+            first_column_block: BlockRef::decode(&input[50..54])?,
+            last_column_block: BlockRef::decode(&input[54..58])?,
+        };
+        header.validate()?;
+        Ok(header)
+    }
+
+    pub(super) fn validate(&self) -> Result<(), String> {
+        validate_columnar_frozen_list_shape(
+            self.posting_count,
+            self.payload_len,
+            self.total_heap_tids,
+            self.first_column_block,
+            self.last_column_block,
+        )?;
+        let expected = checked_columnar_frozen_list_offsets(
+            self.posting_count as usize,
+            self.payload_len as usize,
+            self.total_heap_tids as usize,
+        )?;
+        if self.gamma_offset != expected.gamma_offset
+            || self.payload_offset != expected.payload_offset
+            || self.heap_tid_count_offset != expected.heap_tid_count_offset
+            || self.heap_tid_offset_offset != expected.heap_tid_offset_offset
+            || self.heap_tid_offset != expected.heap_tid_offset
+            || self.rerank_tid_offset != expected.rerank_tid_offset
+            || self.deleted_bitmap_offset != expected.deleted_bitmap_offset
+            || self.total_column_bytes != expected.total_column_bytes
+        {
+            return Err("ec_ivf columnar frozen list header column offsets mismatch".to_owned());
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
 pub(super) enum IvfDensePostingRef<'a> {
     Block(IvfDensePostingBlockRef<'a>),
     PackedSegment(IvfDensePostingPackedSegmentRef<'a>),
@@ -1074,6 +1361,125 @@ impl Iterator for IvfDensePostingHeapTids<'_> {
             .next()
             .map(|chunk| ItemPointer::decode(chunk).expect("validated dense posting tid bytes"))
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ColumnarFrozenListOffsets {
+    gamma_offset: u32,
+    payload_offset: u32,
+    heap_tid_count_offset: u32,
+    heap_tid_offset_offset: u32,
+    heap_tid_offset: u32,
+    rerank_tid_offset: u32,
+    deleted_bitmap_offset: u32,
+    total_column_bytes: u32,
+}
+
+fn checked_columnar_frozen_list_offsets(
+    posting_count: usize,
+    payload_len: usize,
+    total_heap_tids: usize,
+) -> Result<ColumnarFrozenListOffsets, String> {
+    let mut offset = 0_usize;
+    let gamma_offset = offset;
+    offset = offset
+        .checked_add(
+            posting_count
+                .checked_mul(size_of::<f32>())
+                .ok_or_else(|| "ec_ivf columnar frozen list gamma bytes overflow".to_owned())?,
+        )
+        .ok_or_else(|| "ec_ivf columnar frozen list gamma offset overflow".to_owned())?;
+    let payload_offset = offset;
+    offset = offset
+        .checked_add(
+            posting_count
+                .checked_mul(payload_len)
+                .ok_or_else(|| "ec_ivf columnar frozen list payload bytes overflow".to_owned())?,
+        )
+        .ok_or_else(|| "ec_ivf columnar frozen list payload offset overflow".to_owned())?;
+    let heap_tid_count_offset = offset;
+    offset = offset
+        .checked_add(posting_count.checked_mul(size_of::<u16>()).ok_or_else(|| {
+            "ec_ivf columnar frozen list heap tid count bytes overflow".to_owned()
+        })?)
+        .ok_or_else(|| "ec_ivf columnar frozen list heap tid count offset overflow".to_owned())?;
+    let heap_tid_offset_offset = offset;
+    offset = offset
+        .checked_add(posting_count.checked_mul(size_of::<u32>()).ok_or_else(|| {
+            "ec_ivf columnar frozen list heap tid offset bytes overflow".to_owned()
+        })?)
+        .ok_or_else(|| "ec_ivf columnar frozen list heap tid offset offset overflow".to_owned())?;
+    let heap_tid_offset = offset;
+    offset = offset
+        .checked_add(
+            total_heap_tids
+                .checked_mul(ITEM_POINTER_BYTES)
+                .ok_or_else(|| "ec_ivf columnar frozen list heap tid bytes overflow".to_owned())?,
+        )
+        .ok_or_else(|| "ec_ivf columnar frozen list heap tid offset overflow".to_owned())?;
+    let rerank_tid_offset = offset;
+    offset = offset
+        .checked_add(
+            posting_count
+                .checked_mul(ITEM_POINTER_BYTES)
+                .ok_or_else(|| {
+                    "ec_ivf columnar frozen list rerank tid bytes overflow".to_owned()
+                })?,
+        )
+        .ok_or_else(|| "ec_ivf columnar frozen list rerank tid offset overflow".to_owned())?;
+    let deleted_bitmap_offset = offset;
+    offset = offset
+        .checked_add(dense_deleted_bitmap_len(posting_count))
+        .ok_or_else(|| "ec_ivf columnar frozen list deleted bitmap offset overflow".to_owned())?;
+
+    let to_u32 = |value: usize, name: &str| {
+        u32::try_from(value).map_err(|_| format!("ec_ivf columnar frozen list {name} exceeds u32"))
+    };
+    Ok(ColumnarFrozenListOffsets {
+        gamma_offset: to_u32(gamma_offset, "gamma offset")?,
+        payload_offset: to_u32(payload_offset, "payload offset")?,
+        heap_tid_count_offset: to_u32(heap_tid_count_offset, "heap tid count offset")?,
+        heap_tid_offset_offset: to_u32(heap_tid_offset_offset, "heap tid offset offset")?,
+        heap_tid_offset: to_u32(heap_tid_offset, "heap tid offset")?,
+        rerank_tid_offset: to_u32(rerank_tid_offset, "rerank tid offset")?,
+        deleted_bitmap_offset: to_u32(deleted_bitmap_offset, "deleted bitmap offset")?,
+        total_column_bytes: to_u32(offset, "total column bytes")?,
+    })
+}
+
+fn validate_columnar_frozen_list_shape(
+    posting_count: u32,
+    payload_len: u16,
+    total_heap_tids: u32,
+    first_column_block: BlockRef,
+    last_column_block: BlockRef,
+) -> Result<(), String> {
+    if posting_count == 0 {
+        return Err("ec_ivf columnar frozen list header posting count is zero".to_owned());
+    }
+    if payload_len == 0 {
+        return Err("ec_ivf columnar frozen list header payload length is zero".to_owned());
+    }
+    if total_heap_tids < posting_count {
+        return Err(
+            "ec_ivf columnar frozen list header heap tid count is smaller than posting count"
+                .to_owned(),
+        );
+    }
+    validate_columnar_frozen_list_block_range(first_column_block, last_column_block)
+}
+
+fn validate_columnar_frozen_list_block_range(
+    first_column_block: BlockRef,
+    last_column_block: BlockRef,
+) -> Result<(), String> {
+    if first_column_block == BlockRef::INVALID || last_column_block == BlockRef::INVALID {
+        return Err("ec_ivf columnar frozen list column block range is invalid".to_owned());
+    }
+    if first_column_block.block_number > last_column_block.block_number {
+        return Err("ec_ivf columnar frozen list column block range is inverted".to_owned());
+    }
+    Ok(())
 }
 
 fn native_le_f32_slice(bytes: &[u8]) -> Option<&[f32]> {
@@ -2415,6 +2821,11 @@ pub(super) fn posting_tuple_fits(payload_len: usize, page_size: usize) -> bool {
     aligned_tuple_bytes(IvfPostingTuple::encoded_len(payload_len)) <= usable_page_bytes(page_size)
 }
 
+pub(super) fn columnar_frozen_list_header_tuple_fits(page_size: usize) -> bool {
+    aligned_tuple_bytes(IvfColumnarFrozenListHeaderTuple::encoded_len())
+        <= usable_page_bytes(page_size)
+}
+
 pub(super) fn dense_posting_block_tuple_fits(
     count: usize,
     total_heap_tids: usize,
@@ -2535,6 +2946,13 @@ impl DataPage {
         self.insert_raw_tuple(tuple.encode()?)
     }
 
+    pub(super) fn insert_ivf_columnar_frozen_list_header(
+        &mut self,
+        tuple: &IvfColumnarFrozenListHeaderTuple,
+    ) -> Result<ItemPointer, String> {
+        self.insert_raw_tuple(tuple.encode()?)
+    }
+
     pub(super) fn insert_ivf_single_heaptid_posting(
         &mut self,
         list_id: u32,
@@ -2592,6 +3010,13 @@ impl DataPage {
         tid: ItemPointer,
     ) -> Result<IvfDensePostingPackedContinuationTuple, String> {
         IvfDensePostingPackedContinuationTuple::decode(self.raw_tuple(tid)?)
+    }
+
+    pub(super) fn read_ivf_columnar_frozen_list_header(
+        &self,
+        tid: ItemPointer,
+    ) -> Result<IvfColumnarFrozenListHeaderTuple, String> {
+        IvfColumnarFrozenListHeaderTuple::decode(self.raw_tuple(tid)?)
     }
 }
 
@@ -2662,6 +3087,13 @@ impl DataPageChain {
     pub(super) fn insert_ivf_dense_posting_packed_continuation(
         &mut self,
         tuple: &IvfDensePostingPackedContinuationTuple,
+    ) -> Result<ItemPointer, String> {
+        self.insert_raw_tuple(tuple.encode()?)
+    }
+
+    pub(super) fn insert_ivf_columnar_frozen_list_header(
+        &mut self,
+        tuple: &IvfColumnarFrozenListHeaderTuple,
     ) -> Result<ItemPointer, String> {
         self.insert_raw_tuple(tuple.encode()?)
     }
@@ -2743,6 +3175,19 @@ impl DataPageChain {
             )
         })?;
         page.read_ivf_dense_posting_packed_continuation(tid)
+    }
+
+    pub(super) fn read_ivf_columnar_frozen_list_header(
+        &self,
+        tid: ItemPointer,
+    ) -> Result<IvfColumnarFrozenListHeaderTuple, String> {
+        let page = self.get_page(tid.block_number).ok_or_else(|| {
+            format!(
+                "ec_ivf columnar frozen list header block {} not found",
+                tid.block_number
+            )
+        })?;
+        page.read_ivf_columnar_frozen_list_header(tid)
     }
 }
 
@@ -4307,6 +4752,84 @@ mod tests {
     }
 
     #[test]
+    fn columnar_frozen_list_header_roundtrip_records_v1_column_contract() {
+        let tuple =
+            IvfColumnarFrozenListHeaderTuple::from_shape(7, 3, 5, 4, block(20), block(22)).unwrap();
+
+        let encoded = tuple.encode().unwrap();
+        let decoded = IvfColumnarFrozenListHeaderTuple::decode(&encoded).unwrap();
+        let borrowed = IvfColumnarFrozenListHeaderRef::decode(&encoded).unwrap();
+
+        assert_eq!(encoded.len(), COLUMNAR_FROZEN_LIST_HEADER_BYTES);
+        assert_eq!(encoded[0], IVF_COLUMNAR_FROZEN_LIST_HEADER_TAG);
+        assert_eq!(encoded[1], COLUMNAR_FROZEN_LIST_HEADER_VERSION);
+        assert_eq!(decoded, tuple);
+        assert_eq!(borrowed.list_id, 7);
+        assert_eq!(borrowed.posting_count, 3);
+        assert_eq!(borrowed.payload_len, 5);
+        assert_eq!(borrowed.total_heap_tids, 4);
+        assert_eq!(borrowed.gamma_offset, 0);
+        assert_eq!(borrowed.payload_offset, 12);
+        assert_eq!(borrowed.heap_tid_count_offset, 27);
+        assert_eq!(borrowed.heap_tid_offset_offset, 33);
+        assert_eq!(borrowed.heap_tid_offset, 45);
+        assert_eq!(borrowed.rerank_tid_offset, 69);
+        assert_eq!(borrowed.deleted_bitmap_offset, 87);
+        assert_eq!(borrowed.total_column_bytes, 88);
+        assert_eq!(borrowed.first_column_block, block(20));
+        assert_eq!(borrowed.last_column_block, block(22));
+        assert!(columnar_frozen_list_header_tuple_fits(DEFAULT_PAGE_SIZE));
+    }
+
+    #[test]
+    fn columnar_frozen_list_header_rejects_invalid_shape_and_offsets() {
+        assert!(
+            IvfColumnarFrozenListHeaderTuple::from_shape(1, 0, 4, 0, block(20), block(20))
+                .unwrap_err()
+                .contains("requires postings")
+        );
+        assert!(
+            IvfColumnarFrozenListHeaderTuple::from_shape(1, 1, 0, 1, block(20), block(20))
+                .unwrap_err()
+                .contains("requires payload")
+        );
+        assert!(
+            IvfColumnarFrozenListHeaderTuple::from_shape(1, 2, 4, 1, block(20), block(20))
+                .unwrap_err()
+                .contains("smaller than posting count")
+        );
+        assert!(IvfColumnarFrozenListHeaderTuple::from_shape(
+            1,
+            1,
+            4,
+            1,
+            BlockRef::INVALID,
+            block(20)
+        )
+        .unwrap_err()
+        .contains("block range is invalid"));
+        assert!(
+            IvfColumnarFrozenListHeaderTuple::from_shape(1, 1, 4, 1, block(21), block(20))
+                .unwrap_err()
+                .contains("block range is inverted")
+        );
+
+        let tuple =
+            IvfColumnarFrozenListHeaderTuple::from_shape(7, 3, 5, 4, block(20), block(22)).unwrap();
+        let mut encoded = tuple.encode().unwrap();
+        encoded[2] = 1;
+        assert!(IvfColumnarFrozenListHeaderTuple::decode(&encoded)
+            .unwrap_err()
+            .contains("reserved flags"));
+
+        let mut encoded = tuple.encode().unwrap();
+        encoded[22..26].copy_from_slice(&13_u32.to_le_bytes());
+        assert!(IvfColumnarFrozenListHeaderTuple::decode(&encoded)
+            .unwrap_err()
+            .contains("column offsets mismatch"));
+    }
+
+    #[test]
     fn posting_tuple_roundtrip_preserves_duplicate_heap_tids() {
         let tuple = IvfPostingTuple {
             list_id: 2,
@@ -4545,6 +5068,9 @@ mod tests {
             next_tid: ItemPointer::INVALID,
             centroids: vec![0.0, 0.5],
         };
+        let columnar_header =
+            IvfColumnarFrozenListHeaderTuple::from_shape(1, 3, 2, 3, block(100), block(101))
+                .unwrap();
         let updated_codebook = IvfPqCodebookTuple {
             group_index: 0,
             next_tid: tid(9, 1),
@@ -4556,6 +5082,9 @@ mod tests {
         let directory_tid = page.insert_ivf_list_directory(directory).unwrap();
         let posting_tid = page.insert_ivf_posting(&posting).unwrap();
         let codebook_tid = page.insert_ivf_pq_codebook(&codebook).unwrap();
+        let columnar_tid = page
+            .insert_ivf_columnar_frozen_list_header(&columnar_header)
+            .unwrap();
         page.update_ivf_pq_codebook(codebook_tid, &updated_codebook)
             .unwrap();
 
@@ -4568,6 +5097,11 @@ mod tests {
             page.read_ivf_posting(posting_tid, posting.payload.len())
                 .unwrap(),
             posting
+        );
+        assert_eq!(
+            page.read_ivf_columnar_frozen_list_header(columnar_tid)
+                .unwrap(),
+            columnar_header
         );
         assert_eq!(
             IvfPqCodebookTuple::decode(
@@ -4623,6 +5157,9 @@ mod tests {
             next_tid: ItemPointer::INVALID,
             centroids: vec![0.0, 1.0, 2.0, 3.0],
         };
+        let columnar_header =
+            IvfColumnarFrozenListHeaderTuple::from_shape(2, 2, 4, 2, block(110), block(111))
+                .unwrap();
         let updated_codebook = IvfPqCodebookTuple {
             group_index: 1,
             next_tid: tid(4, 2),
@@ -4633,6 +5170,9 @@ mod tests {
         let centroid_tid = chain.insert_ivf_centroid(&centroid).unwrap();
         let directory_tid = chain.insert_ivf_list_directory(directory).unwrap();
         let codebook_tid = chain.insert_ivf_pq_codebook(&codebook).unwrap();
+        let columnar_tid = chain
+            .insert_ivf_columnar_frozen_list_header(&columnar_header)
+            .unwrap();
         chain
             .update_ivf_pq_codebook(codebook_tid, &updated_codebook)
             .unwrap();
@@ -4641,6 +5181,12 @@ mod tests {
         assert_eq!(
             chain.read_ivf_list_directory(directory_tid).unwrap(),
             directory
+        );
+        assert_eq!(
+            chain
+                .read_ivf_columnar_frozen_list_header(columnar_tid)
+                .unwrap(),
+            columnar_header
         );
         assert_eq!(
             IvfPqCodebookTuple::decode(
@@ -4663,9 +5209,11 @@ mod tests {
         assert!(centroid_tuple_fits(1536, DEFAULT_PAGE_SIZE));
         assert!(list_directory_tuple_fits(DEFAULT_PAGE_SIZE));
         assert!(posting_tuple_fits(4096, DEFAULT_PAGE_SIZE));
+        assert!(columnar_frozen_list_header_tuple_fits(DEFAULT_PAGE_SIZE));
         assert!(pq_codebook_tuple_fits(256, DEFAULT_PAGE_SIZE));
         assert!(!centroid_tuple_fits(1536, 64));
         assert!(!list_directory_tuple_fits(32));
+        assert!(!columnar_frozen_list_header_tuple_fits(64));
         assert!(!posting_tuple_fits(DEFAULT_PAGE_SIZE, DEFAULT_PAGE_SIZE));
         assert!(!pq_codebook_tuple_fits(
             DEFAULT_PAGE_SIZE,
