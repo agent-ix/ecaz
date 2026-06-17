@@ -135,6 +135,19 @@ pub(crate) fn record_grouped_pq_traversal_flush_width(batch_width: usize) {
     );
 }
 
+/// Records an IVF RaBitQ arithmetic-batch flush-width sample for bits=4/8.
+/// Those lanes intentionally use the per-candidate arithmetic SIMD estimator
+/// instead of the block-kernel wrapper, so this exposes the scan flush-width
+/// histogram without attributing kernel/scalar scoring work.
+pub(crate) fn record_ivf_rabitq_arithmetic_batch_flush_width(batch_width: usize) {
+    record_flush_width(
+        CandidateBatchScoringSurface::Ivf,
+        QuantCodecKind::RaBitQ,
+        Isa::Scalar,
+        batch_width,
+    );
+}
+
 pub(crate) fn score_turboquant_no_qjl_4bit_batch<Id>(
     quantizer: &ProdQuantizer,
     prepared: &PreparedLutNoQjl4BitQuery,
