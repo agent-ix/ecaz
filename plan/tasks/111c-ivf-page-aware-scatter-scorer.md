@@ -1,18 +1,26 @@
 # Task 111c: IVF Page-Aware Scatter Scorer (score-in-place)
 
-Status: **proposed**.
+Status: **complete** (2026-06-17; closeout
+`reviews/task-111c/005-closeout-status/`). The TQ reference page-scatter scorer
+landed behind `ec_ivf.columnar_page_scatter`, with bit-identical equivalence
+coverage and zero logical payload copies. It is **not promoted** and the GUC is
+default-off: packets `002` through `004` show the zero-copy scatter path remains
+slower than the Task 111b logical-copy fallback after the requested page-run
+locality lever. Codec/ISA fanout is intentionally stopped.
 Priority: P0 latency (the score-in-place win).
 Parent: `111-ivf-scan-dense-posting-block-layout.md`.
 Depends on: **`111b-ivf-columnar-frozen-list-format.md`** (the columnar format).
 Evidence anchor: `reviews/task-111a/{004,007,008}`.
 
-Current risk note (2026-06-17): packets `reviews/task-111c/002-*` and
-`reviews/task-111c/003-*` prove the reference TQ page-scatter path is correct
-and zero-copy, but currently slower than the copy fallback. Packet 003 measured
-31,649 approximate scan us / 35.775 ms execution for page scatter versus 16,589
-approximate scan us / 20.720 ms execution for the copy fallback on the 50k TQ
-columnar fixture. Promotion depends on fixing the per-page-contiguity/scoring
-geometry so scattered zero-copy beats contiguous-copy-then-sequential-read.
+Closeout note (2026-06-17): packet `reviews/task-111c/004-*` implemented the
+extra reviewer-requested code lever: derive payload refs by contiguous page run,
+then accumulate across page boundaries to preserve dense flush width. The warmed
+50k TQ columnar A/B measured page scatter at 30,141 approximate scan us /
+34.536 ms execution versus the copy fallback at 18,986 approximate scan us /
+23.199 ms execution. This improved packet 003 slightly but still failed the
+hard gate. The evidence-backed decision is stop/pivot: contiguous
+copy-then-sequential-score is the better current design than scattered
+zero-copy reads for this layout.
 
 ## Goal
 
@@ -25,6 +33,20 @@ This is the slice that makes the columnar format actually beat Approach A. A
 pays a scratch-gather copy; this pays none. B paid fragmentation; the columnar
 format already removed that. Net target: the theoretical floor — every payload
 byte read exactly once from cache, batch width decoupled from the page.
+
+## Closeout Decision
+
+Task 111c completed the reference implementation and the decision gate, not the
+original promotion target. The broad fanout in the original scope was
+conditional on the reference TQ path beating the copy/dense baseline. It did
+not. Continuing into RaBitQ/grouped-PQ and AVX2/SVE2/NEON fanout would multiply
+kernel work for a measured-losing access pattern, so this task closes with:
+
+- TQ page-scatter reference path retained as an opt-in diagnostic switch;
+- default scan behavior restored to the Task 111b logical-copy fallback;
+- no dense/default promotion from 111c;
+- Task 111d or later work must beat the copy fallback directly, not assume that
+  removing the copy is sufficient.
 
 ## Why
 

@@ -6,6 +6,12 @@ Parent: `111-ivf-scan-dense-posting-block-layout.md`.
 Depends on: **`111c-ivf-page-aware-scatter-scorer.md`** (and 111b).
 Evidence anchor: `reviews/task-111a/{004,007,008}`.
 
+Carry-forward note (2026-06-17): Task 111c closed the scan-time page-scatter
+path as correct but not promoted/default-off because scattered zero-copy reads
+lost to the Task 111b logical-copy fallback even after page-run payload refs.
+Any 111d implementation must beat that copy fallback directly; it should not
+assume that avoiding an assembly copy is sufficient.
+
 ## Goal
 
 Skip the per-query, per-posting transpose entirely by storing the Task 111b
