@@ -122,7 +122,7 @@ impl IvfQuantizer {
                     group_size,
                 }
             }
-            StorageFormat::RaBitQ => IvfQuantizerProfile::RaBitQ,
+            StorageFormat::RaBitQ | StorageFormat::CoarseRerank => IvfQuantizerProfile::RaBitQ,
         };
         let bits = match rabitq_bits.unwrap_or(crate::DEFAULT_QUANT_BITS) {
             b @ (1 | 2 | 4 | 8) => b,
@@ -1381,6 +1381,13 @@ mod tests {
     #[test]
     fn rabitq_v1_format_resolves_to_rabitq() {
         let explicit = IvfQuantizer::resolve(StorageFormat::RaBitQ, 16).unwrap();
+
+        assert_eq!(explicit.profile, IvfQuantizerProfile::RaBitQ);
+    }
+
+    #[test]
+    fn coarse_rerank_v1_format_resolves_to_rabitq() {
+        let explicit = IvfQuantizer::resolve(StorageFormat::CoarseRerank, 16).unwrap();
 
         assert_eq!(explicit.profile, IvfQuantizerProfile::RaBitQ);
     }

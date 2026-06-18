@@ -366,7 +366,7 @@ fn scoring_mode_name(storage_format: options::StorageFormat) -> &'static str {
     match storage_format {
         options::StorageFormat::Auto | options::StorageFormat::TurboQuant => "turboquant_lut",
         options::StorageFormat::PqFastScan => "pq_fastscan_lut",
-        options::StorageFormat::RaBitQ => "rabitq_binary",
+        options::StorageFormat::RaBitQ | options::StorageFormat::CoarseRerank => "rabitq_binary",
     }
 }
 
@@ -374,7 +374,7 @@ fn storage_scoring_multiplier(storage_format: options::StorageFormat) -> f64 {
     match storage_format {
         options::StorageFormat::Auto | options::StorageFormat::TurboQuant => 1.0,
         options::StorageFormat::PqFastScan => 0.65,
-        options::StorageFormat::RaBitQ => 0.45,
+        options::StorageFormat::RaBitQ | options::StorageFormat::CoarseRerank => 0.45,
     }
 }
 

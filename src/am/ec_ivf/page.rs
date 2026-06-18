@@ -139,6 +139,7 @@ pub enum StorageFormat {
     TurboQuant = 1,
     PqFastScan = 2,
     RaBitQ = 3,
+    CoarseRerank = 4,
 }
 
 #[cfg(not(any(feature = "pg17", feature = "pg18")))]
@@ -5555,6 +5556,7 @@ fn decode_storage_format(value: u8) -> Result<StorageFormat, String> {
         value if value == StorageFormat::TurboQuant as u8 => Ok(StorageFormat::TurboQuant),
         value if value == StorageFormat::PqFastScan as u8 => Ok(StorageFormat::PqFastScan),
         value if value == StorageFormat::RaBitQ as u8 => Ok(StorageFormat::RaBitQ),
+        value if value == StorageFormat::CoarseRerank as u8 => Ok(StorageFormat::CoarseRerank),
         other => Err(format!("invalid ec_ivf storage format code: {other}")),
     }
 }
@@ -6540,6 +6542,7 @@ mod tests {
             StorageFormat::TurboQuant,
             StorageFormat::PqFastScan,
             StorageFormat::RaBitQ,
+            StorageFormat::CoarseRerank,
         ] {
             metadata.storage_format = storage_format;
             assert_eq!(

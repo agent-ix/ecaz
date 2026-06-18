@@ -2295,7 +2295,9 @@ fn use_scratch_soa_batch_decode_for_format(
             // All RaBitQ widths run a batched dispatch: bits=1 and 2/4 through
             // the unified block-kernel driver, bits=8 through the arithmetic
             // batch estimator (ec_ivf/quantizer.rs score_ip_bits1_batch_from_payloads).
-            StorageFormat::RaBitQ => matches!(quant_bits, 1 | 2 | 4 | 8),
+            StorageFormat::RaBitQ | StorageFormat::CoarseRerank => {
+                matches!(quant_bits, 1 | 2 | 4 | 8)
+            }
             // Auto resolves to TurboQuant at scan time (IvfQuantizer::resolve),
             // so an Auto-built index — the default when no storage_format
             // reloption is set — must admit the batch path exactly like an
@@ -4325,6 +4327,11 @@ mod tests {
             true,
             IvfStorageFormat::RaBitQ,
             8
+        ));
+        assert!(use_scratch_soa_batch_decode_for_format(
+            true,
+            IvfStorageFormat::CoarseRerank,
+            1
         ));
         assert!(use_scratch_soa_batch_decode_for_format(
             true,

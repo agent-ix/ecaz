@@ -902,6 +902,7 @@ fn dense_posting_blocks_enabled(options: options::EcIvfOptions) -> bool {
             options::StorageFormat::Auto
                 | options::StorageFormat::TurboQuant
                 | options::StorageFormat::RaBitQ
+                | options::StorageFormat::CoarseRerank
         )
 }
 
@@ -912,6 +913,7 @@ fn columnar_frozen_lists_enabled(options: options::EcIvfOptions) -> bool {
             options::StorageFormat::Auto
                 | options::StorageFormat::TurboQuant
                 | options::StorageFormat::RaBitQ
+                | options::StorageFormat::CoarseRerank
         )
 }
 

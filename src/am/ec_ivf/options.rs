@@ -70,6 +70,7 @@ pub enum StorageFormat {
     TurboQuant = 1,
     PqFastScan = 2,
     RaBitQ = 3,
+    CoarseRerank = 4,
 }
 
 impl StorageFormat {
@@ -79,8 +80,9 @@ impl StorageFormat {
             "turboquant" => Ok(Self::TurboQuant),
             "pq_fastscan" => Ok(Self::PqFastScan),
             "rabitq" => Ok(Self::RaBitQ),
+            "coarse_rerank" => Ok(Self::CoarseRerank),
             other => Err(format!(
-                "invalid ec_ivf storage_format reloption: expected 'auto', 'turboquant', 'pq_fastscan', or 'rabitq', got '{other}'"
+                "invalid ec_ivf storage_format reloption: expected 'auto', 'turboquant', 'pq_fastscan', 'rabitq', or 'coarse_rerank', got '{other}'"
             )),
         }
     }
@@ -91,12 +93,17 @@ impl StorageFormat {
             Self::TurboQuant => "turboquant",
             Self::PqFastScan => "pq_fastscan",
             Self::RaBitQ => "rabitq",
+            Self::CoarseRerank => "coarse_rerank",
         }
     }
 
     pub(super) fn validate_v1_supported(self) -> Result<(), String> {
         match self {
-            Self::Auto | Self::TurboQuant | Self::PqFastScan | Self::RaBitQ => Ok(()),
+            Self::Auto
+            | Self::TurboQuant
+            | Self::PqFastScan
+            | Self::RaBitQ
+            | Self::CoarseRerank => Ok(()),
         }
     }
 }
@@ -554,7 +561,7 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_amoptions(
         pg_sys::add_local_string_reloption(
                 &mut relopts,
                 c"storage_format".as_ptr(),
-                c"IVF posting-list quantizer profile: 'turboquant', 'pq_fastscan', 'rabitq', or 'auto'."
+                c"IVF posting-list quantizer profile: 'turboquant', 'pq_fastscan', 'rabitq', 'coarse_rerank', or 'auto'."
                     .as_ptr(),
                 ptr::null(),
                 None,
@@ -564,7 +571,7 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_amoptions(
         pg_sys::add_local_string_reloption(
                 &mut relopts,
                 c"quantizer".as_ptr(),
-                c"Alias for storage_format: IVF posting-list quantizer profile 'turboquant', 'pq_fastscan', 'rabitq', or 'auto'."
+                c"Alias for storage_format: IVF posting-list quantizer profile 'turboquant', 'pq_fastscan', 'rabitq', 'coarse_rerank', or 'auto'."
                     .as_ptr(),
                 ptr::null(),
                 None,
@@ -644,10 +651,19 @@ fn build_options_from_reloptions(
         .or(quantizer_reloption)
         .map(|value| StorageFormat::parse_reloption(&value).unwrap_or_else(|e| pgrx::error!("{e}")))
         .unwrap_or(StorageFormat::Auto);
-    let rerank = match rerank_reloption {
+    let mut rerank = match rerank_reloption {
         Some(value) => RerankMode::parse_reloption(&value).unwrap_or_else(|e| pgrx::error!("{e}")),
         None => RerankMode::Auto,
     };
+    if storage_format == StorageFormat::CoarseRerank {
+        match rerank {
+            RerankMode::Auto => rerank = RerankMode::HeapF32,
+            RerankMode::HeapF32 => {}
+            RerankMode::Off | RerankMode::SourceColumn => pgrx::error!(
+                "ec_ivf storage_format = 'coarse_rerank' requires rerank = 'auto' or rerank = 'heap_f32'"
+            ),
+        }
+    }
 
     EcIvfOptions {
         nlists: reloptions.nlists,
@@ -657,10 +673,20 @@ fn build_options_from_reloptions(
         seed: reloptions.seed,
         pq_group_size: reloptions.pq_group_size,
         posting_slack_percent: reloptions.posting_slack_percent,
-        quant_bits: reloptions.quant_bits,
-        dense_posting_blocks: reloptions.dense_posting_blocks != 0,
-        dense_posting_pack_pages: reloptions.dense_posting_pack_pages.max(1),
-        dense_posting_typed_layout: reloptions.dense_posting_typed_layout != 0,
+        quant_bits: if storage_format == StorageFormat::CoarseRerank {
+            1
+        } else {
+            reloptions.quant_bits
+        },
+        dense_posting_blocks: storage_format == StorageFormat::CoarseRerank
+            || reloptions.dense_posting_blocks != 0,
+        dense_posting_pack_pages: if storage_format == StorageFormat::CoarseRerank {
+            1
+        } else {
+            reloptions.dense_posting_pack_pages.max(1)
+        },
+        dense_posting_typed_layout: storage_format == StorageFormat::CoarseRerank
+            || reloptions.dense_posting_typed_layout != 0,
         columnar_frozen_lists: reloptions.columnar_frozen_lists != 0,
         storage_format,
         rerank,
@@ -672,4 +698,63 @@ pub(super) fn relation_options(index_relation: NonNull<pg_sys::RelationData>) ->
         return EcIvfOptions::DEFAULT;
     };
     reloptions.to_options()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn reloptions() -> EcIvfReloptions {
+        EcIvfReloptions {
+            vl_len_: 0,
+            nlists: 64,
+            nprobe: 32,
+            rerank_width: 50,
+            training_sample_rows: 10_000,
+            seed: 42,
+            pq_group_size: 0,
+            posting_slack_percent: 0,
+            quant_bits: 4,
+            dense_posting_blocks: 0,
+            dense_posting_pack_pages: 4,
+            dense_posting_typed_layout: 0,
+            columnar_frozen_lists: 0,
+            storage_format_offset: 0,
+            quantizer_offset: 0,
+            rerank_offset: 0,
+        }
+    }
+
+    #[test]
+    fn storage_format_parse_accepts_coarse_rerank() {
+        let parsed = StorageFormat::parse_reloption("coarse_rerank").unwrap();
+
+        assert_eq!(parsed, StorageFormat::CoarseRerank);
+        assert_eq!(parsed.reloption_name(), "coarse_rerank");
+    }
+
+    #[test]
+    fn coarse_rerank_preset_resolves_dense_rabitq1_heap_f32() {
+        let options =
+            build_options_from_reloptions(&reloptions(), Some("coarse_rerank".into()), None, None);
+
+        assert_eq!(options.storage_format, StorageFormat::CoarseRerank);
+        assert_eq!(options.quant_bits, 1);
+        assert!(options.dense_posting_blocks);
+        assert_eq!(options.dense_posting_pack_pages, 1);
+        assert!(options.dense_posting_typed_layout);
+        assert_eq!(options.rerank, RerankMode::HeapF32);
+    }
+
+    #[test]
+    fn coarse_rerank_keeps_explicit_heap_f32() {
+        let options = build_options_from_reloptions(
+            &reloptions(),
+            Some("coarse_rerank".into()),
+            None,
+            Some("heap_f32".into()),
+        );
+
+        assert_eq!(options.rerank, RerankMode::HeapF32);
+    }
 }
