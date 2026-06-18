@@ -1,0 +1,14 @@
+Script started on 2026-06-18 08:52:34-07:00 [<not executed on terminal>]
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.24s
+     Running unittests src/main.rs (target/debug/deps/ecaz-bdbeafde08ddf599)
+
+running 4 tests
+test commands::bench::sidecar_rerank::tests::sidecar_read_mode_labels_distinguish_db_modes ... [32mok(B[m
+test commands::bench::sidecar_rerank::tests::dot_f32_bytes_matches_plain_dot ... [32mok(B[m
+test commands::bench::sidecar_rerank::tests::dot_f16_bytes_matches_half_precision_dot ... [32mok(B[m
+test commands::bench::suite::tests::expands_sidecar_rerank_with_variants ... [32mok(B[m
+
+test result: [32mok(B[m. 4 passed; 0 failed; 0 ignored; 0 measured; 404 filtered out; finished in 0.00s
+
+
+Script done on 2026-06-18 08:52:34-07:00 [COMMAND_EXIT_CODE="0"]
