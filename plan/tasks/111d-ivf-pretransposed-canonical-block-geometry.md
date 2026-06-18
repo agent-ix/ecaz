@@ -59,8 +59,8 @@ less than today's full transpose.
 
 - The columnar format (111b) and the scatter scorer (111c).
 - **Host-pinned ISA-exact tiling** (the maximal-throughput, non-portable
-  variant) — that is the deferred future **Task 111e** escape hatch, opt-in for
-  arch-stable deployments; not in scope here.
+  variant) — deferred and unnumbered; Task 111e is now the coarse-rerank
+  pipeline.
 - Changing scoring math / recall / quantization.
 
 ## Phases
@@ -82,15 +82,14 @@ less than today's full transpose.
 4. A benchmark packet quantifies the latency gain vs 111c and the residual
    per-ISA adapt cost, and confirms Intel↔Graviton volume portability (no
    rebuild on arch change).
-5. The packet states whether the pre-transpose gain justifies the format, and
-   notes the deferred host-pinned (111e) escape hatch as the remaining lever for
-   arch-stable deployments.
+5. The packet states whether the pre-transpose gain justifies the format and
+   records any remaining deferred escape hatches.
 
 ## Dependencies and Coordination
 
 - Hard dependency on Task 111c (scatter scorer) and 111b (format).
 - ADR-077 per-ISA block-kernel coverage governs the adapt-reader gates.
 - Task 42: a new layout flag/tag in the columnar header — reconcile.
-- Future **Task 111e** (host-pinned compaction): opt-in rewrite to local ISA
-  tiling for arch-stable deployments; deferred by operator decision (2026-06-17)
-  — create only when prioritized.
+- Host-pinned compaction: opt-in rewrite to local ISA tiling for arch-stable
+  deployments; deferred by operator decision (2026-06-17) and no longer tied to
+  Task 111e.

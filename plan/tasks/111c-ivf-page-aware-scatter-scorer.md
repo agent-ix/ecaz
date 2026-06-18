@@ -88,7 +88,8 @@ spanning quant mode (TQ + rb2/4/8), with rb1 already fine per-block.
 - The columnar format itself (Task 111b).
 - Pre-transposed canonical block geometry (Task 111d) — this task keeps the
   scan-time transpose, just feeds it from scattered pages.
-- Host-pinned compaction (future 111e).
+- Host-pinned compaction (deferred and unnumbered; Task 111e is now the
+  coarse-rerank pipeline).
 - Changing scoring math / recall / quantization.
 
 ## Phases
@@ -124,6 +125,7 @@ spanning quant mode (TQ + rb2/4/8), with rb1 already fine per-block.
 
 - Hard dependency on Task 111b (format + page-aware reader).
 - ADR-077 block-kernel coverage convention governs the per-ISA gates.
-- Enables Task 111d (pre-transpose) and the future 111e host-pinned hatch.
+- Previously enabled Task 111d (pre-transpose); Task 111c closeout marks that
+  line stopped. The old host-pinned hatch is deferred/unnumbered.
 - 1M cells are an AWS lane (Graviton 4 + Intel); both little-endian, so the
   columnar format is volume-portable across them.

@@ -79,7 +79,8 @@ foundation for a scan that reads each payload byte exactly once (Task 111c).
 
 - The zero-copy page-aware **scatter scorer** (Task 111c).
 - **Pre-transposed** canonical block geometry (Task 111d).
-- Host-pinned compaction escape hatch (future Task 111e; deferred).
+- Host-pinned compaction escape hatch (deferred and unnumbered; Task 111e is
+  now the coarse-rerank pipeline).
 - Changing scoring math, quantization, recall, nprobe, or routing.
 - SPIRE / HNSW / DiskANN.
 - Promoting the format to default (separate decision after 111c evidence).
