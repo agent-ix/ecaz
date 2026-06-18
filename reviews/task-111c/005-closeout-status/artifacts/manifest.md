@@ -68,6 +68,10 @@
     `Columnar Logical Bytes Copied`: 18887163;
     `Columnar Payload Bytes Borrowed`: 0;
     `Dense Coalesced Flushes`: 109.
+- Reviewer feedback: `reviews/task-111c/004-page-run-payload-refs/feedback/2026-06-17-01-reviewer.md`
+  says the lever is correct but exhausted, recommends stopping scatter fanout,
+  keeping the GUC off/default-diagnostic, and marking 111d won't-pursue for this
+  line because pre-transpose does not fix scattered-read locality.
 
 ## Closeout Decision
 
@@ -75,3 +79,5 @@ The Task 111c reference implementation is correct and observable, but the
 promotion gate failed. The page-scatter path remains available only as an
 opt-in diagnostic. The default scan path returns to the Task 111b logical-copy
 fallback, and codec/ISA fanout is stopped for this access pattern.
+Task 111d is marked won't-pursue for this line; future pre-transpose work must
+be reopened as a fresh design that can beat the copy fallback directly.

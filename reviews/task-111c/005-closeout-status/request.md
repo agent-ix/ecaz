@@ -43,7 +43,8 @@ The warmed packet 004 A/B result is the deciding gate:
 
 That fails the "beat dense/copy before fanout" gate from packet 002 feedback.
 The closeout decision is therefore: **do not promote page scatter, stop codec/ISA
-fanout, and keep scatter as an opt-in diagnostic path.**
+fanout, mark 111d won't-pursue for this line, and keep scatter as an opt-in
+diagnostic path.**
 
 ## Runtime Gate
 
@@ -70,3 +71,5 @@ based on the already committed packet 004 `ecaz bench suite` A/B artifacts.
   the packet 004 result?
 - Does `artifacts/completion-audit.md` preserve the evidence trail and make the
   fanout stop condition explicit enough for 111d/future work?
+- Does marking 111d won't-pursue accurately reflect the packet 004 reviewer
+  recommendation?

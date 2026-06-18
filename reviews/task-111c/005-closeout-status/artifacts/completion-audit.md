@@ -105,7 +105,9 @@ Decision:
 - Do not promote page scatter.
 - Stop 111c codec/ISA fanout.
 - Default `ec_ivf.columnar_page_scatter` to `off`.
-- Carry forward the lesson for 111d/future work: a new layout must beat
+- Mark 111d won't-pursue for this line because pre-transpose does not fix the
+  scattered-read locality gap.
+- Carry forward the lesson for any future layout work: a new layout must beat
   contiguous copy plus sequential scoring directly; zero-copy alone is not
   sufficient evidence.
 
@@ -116,3 +118,5 @@ is negative for this page-scatter design: removing the assembly copy does not
 beat the locality of copy-then-sequential-score. The implemented path remains
 valuable for diagnostics and equivalence checks, but the production/default path
 stays on the faster Task 111b copy fallback.
+The immediately dependent 111d pre-transpose task is closed as won't-pursue for
+this line; reopening it requires a fresh design and a direct copy-fallback gate.

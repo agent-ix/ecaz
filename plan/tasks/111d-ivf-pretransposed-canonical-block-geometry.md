@@ -1,16 +1,22 @@
 # Task 111d: IVF Pre-Transposed Canonical Block Geometry
 
-Status: **proposed**.
+Status: **won't pursue** (2026-06-17; closed by Task 111c packet
+`reviews/task-111c/005-closeout-status/`). Task 111c packet 004 exhausted the
+page-scatter locality lever and the reviewer explicitly recommended stopping
+the scatter fanout: pre-transpose removes scan-time transpose but does not fix
+the scattered-read locality gap, so it cannot rescue this score-in-place line.
+Reopen only as a fresh design if it can beat the Task 111b copy fallback
+directly.
 Priority: P1 latency (incremental layer on score-in-place).
 Parent: `111-ivf-scan-dense-posting-block-layout.md`.
 Depends on: **`111c-ivf-page-aware-scatter-scorer.md`** (and 111b).
 Evidence anchor: `reviews/task-111a/{004,007,008}`.
 
-Carry-forward note (2026-06-17): Task 111c closed the scan-time page-scatter
-path as correct but not promoted/default-off because scattered zero-copy reads
-lost to the Task 111b logical-copy fallback even after page-run payload refs.
-Any 111d implementation must beat that copy fallback directly; it should not
-assume that avoiding an assembly copy is sufficient.
+Closeout note (2026-06-17): Task 111c closed the scan-time page-scatter path as
+correct but not promoted/default-off because scattered zero-copy reads lost to
+the Task 111b logical-copy fallback even after page-run payload refs. Since
+pre-transpose would not make scattered payload reads contiguous, this task is
+not pursued as a follow-on to 111c.
 
 ## Goal
 

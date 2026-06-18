@@ -45,8 +45,9 @@ kernel work for a measured-losing access pattern, so this task closes with:
 - TQ page-scatter reference path retained as an opt-in diagnostic switch;
 - default scan behavior restored to the Task 111b logical-copy fallback;
 - no dense/default promotion from 111c;
-- Task 111d or later work must beat the copy fallback directly, not assume that
-  removing the copy is sufficient.
+- Task 111d is marked won't-pursue for this line: pre-transpose does not fix the
+  scattered-read locality gap and should only return as a fresh design if it can
+  beat the copy fallback directly.
 
 ## Why
 
