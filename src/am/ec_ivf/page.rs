@@ -1741,6 +1741,13 @@ pub(super) struct IvfColumnarFrozenListPinnedPages {
 }
 
 #[cfg(any(feature = "pg17", feature = "pg18"))]
+pub(super) struct IvfColumnarFrozenListPayloadRun<'a> {
+    pub(super) start_index: usize,
+    pub(super) item_count: usize,
+    pub(super) payloads: &'a [u8],
+}
+
+#[cfg(any(feature = "pg17", feature = "pg18"))]
 impl IvfColumnarFrozenListPinnedPages {
     pub(super) fn read(
         index_relation: RelationHandle,
@@ -1919,6 +1926,59 @@ impl IvfColumnarFrozenListPinnedPages {
             )
             .ok_or_else(|| "ec_ivf columnar payload offset overflow".to_owned())?;
         self.single_page_slice(start, self.payload_len())
+    }
+
+    pub(super) fn payload_page_runs(
+        &self,
+    ) -> Result<Vec<IvfColumnarFrozenListPayloadRun<'_>>, String> {
+        let payload_len = self.payload_len();
+        if payload_len == 0 {
+            return Err("ec_ivf columnar payload run width is zero".to_owned());
+        }
+        let posting_count = self.len();
+        let payload_start = self.header.payload_offset as usize;
+        let payload_bytes = posting_count
+            .checked_mul(payload_len)
+            .ok_or_else(|| "ec_ivf columnar payload run bytes overflow".to_owned())?;
+        let payload_end = payload_start
+            .checked_add(payload_bytes)
+            .ok_or_else(|| "ec_ivf columnar payload run end overflow".to_owned())?;
+
+        let mut runs = Vec::new();
+        let mut page_start = 0_usize;
+        let mut next_index = 0_usize;
+        for page_len in self.page_lengths.iter().copied() {
+            let page_end = page_start
+                .checked_add(page_len)
+                .ok_or_else(|| "ec_ivf columnar raw page length overflow".to_owned())?;
+            let run_start = payload_start.max(page_start);
+            let run_end = payload_end.min(page_end);
+            if run_start < run_end {
+                let run_bytes = run_end - run_start;
+                if run_bytes % payload_len != 0 {
+                    return Err(format!(
+                        "ec_ivf columnar payload page run is not item-aligned: {run_bytes} bytes for width {payload_len}"
+                    ));
+                }
+                let item_count = run_bytes / payload_len;
+                let payloads = self.single_page_slice(run_start, run_bytes)?;
+                runs.push(IvfColumnarFrozenListPayloadRun {
+                    start_index: next_index,
+                    item_count,
+                    payloads,
+                });
+                next_index = next_index
+                    .checked_add(item_count)
+                    .ok_or_else(|| "ec_ivf columnar payload run item count overflow".to_owned())?;
+            }
+            page_start = page_end;
+        }
+        if next_index != posting_count {
+            return Err(format!(
+                "ec_ivf columnar payload page runs covered {next_index} postings, expected {posting_count}"
+            ));
+        }
+        Ok(runs)
     }
 
     fn single_page_slice(&self, logical_start: usize, len: usize) -> Result<&[u8], String> {

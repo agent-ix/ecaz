@@ -366,7 +366,7 @@ struct IvfDensePostingBlockScratch {
 }
 
 #[derive(Debug)]
-struct IvfBorrowedPostingScratch<'a> {
+struct IvfBorrowedPageRunScratch<'a> {
     payload_len: usize,
     gammas: Vec<f32>,
     heap_tid_offsets: Vec<usize>,
@@ -519,7 +519,7 @@ impl IvfPostingScratchSoa {
     }
 }
 
-impl<'a> IvfBorrowedPostingScratch<'a> {
+impl<'a> IvfBorrowedPageRunScratch<'a> {
     fn new(payload_len: usize) -> Self {
         Self {
             payload_len,
@@ -551,17 +551,21 @@ impl<'a> IvfBorrowedPostingScratch<'a> {
                 <= IVF_POSTING_SCRATCH_SOA_BATCH_HEAPTIDS
     }
 
-    fn push_columnar_posting(
+    fn len(&self) -> usize {
+        self.gammas.len()
+    }
+
+    fn push_columnar_metadata(
         &mut self,
-        block: &'a super::page::IvfColumnarFrozenListPinnedPages,
+        block: &super::page::IvfColumnarFrozenListPinnedPages,
         index: usize,
         heap_tid_count: usize,
         gamma: f32,
+        payload: &'a [u8],
     ) -> Result<(), String> {
-        let payload = block.payload(index)?;
         if payload.len() != self.payload_len {
             return Err(format!(
-                "ec_ivf columnar borrowed payload length mismatch: got {}, expected {}",
+                "ec_ivf columnar page-run payload length mismatch: got {}, expected {}",
                 payload.len(),
                 self.payload_len
             ));
@@ -572,7 +576,7 @@ impl<'a> IvfBorrowedPostingScratch<'a> {
         if decoded_count != heap_tid_count {
             self.heap_tids.truncate(offset);
             return Err(format!(
-                "ec_ivf columnar borrowed heap tid count mismatch: got {decoded_count}, expected {heap_tid_count}"
+                "ec_ivf columnar page-run heap tid count mismatch: got {decoded_count}, expected {heap_tid_count}"
             ));
         }
         self.gammas.push(gamma);
@@ -580,10 +584,6 @@ impl<'a> IvfBorrowedPostingScratch<'a> {
         self.heap_tid_counts.push(heap_tid_count);
         self.payloads.push(payload);
         Ok(())
-    }
-
-    fn len(&self) -> usize {
-        self.gammas.len()
     }
 
     fn heap_tids(&self, index: usize) -> &[ItemPointer] {
@@ -2445,8 +2445,8 @@ fn process_scratch_soa_postings(
     Ok(())
 }
 
-fn process_borrowed_columnar_postings(
-    scratch: &mut IvfBorrowedPostingScratch<'_>,
+fn process_borrowed_columnar_page_run_postings(
+    scratch: &mut IvfBorrowedPageRunScratch<'_>,
     quantizer: IvfQuantizer,
     prepared_query: &IvfPreparedQuery,
     opaque: &mut EcIvfScanOpaque,
@@ -2472,11 +2472,13 @@ fn process_borrowed_columnar_postings(
         &scratch.gammas,
         &mut scratch.scores,
     )? {
-        return Err("ec_ivf columnar page scatter is only implemented for TurboQuant".to_owned());
+        return Err(
+            "ec_ivf columnar page-run scatter is only implemented for TurboQuant".to_owned(),
+        );
     }
     if scratch.scores.len() != scratch.len() {
         return Err(format!(
-            "ec_ivf columnar borrowed batch scorer produced {} scores for {} postings",
+            "ec_ivf columnar page-run scorer produced {} scores for {} postings",
             scratch.scores.len(),
             scratch.len()
         ));
@@ -2626,7 +2628,7 @@ fn append_columnar_frozen_list_to_coalesced_scratch(
 
 fn append_columnar_frozen_list_to_borrowed_scratch<'a>(
     block: &'a super::page::IvfColumnarFrozenListPinnedPages,
-    scratch: &mut IvfBorrowedPostingScratch<'a>,
+    scratch: &mut IvfBorrowedPageRunScratch<'a>,
     quantizer: IvfQuantizer,
     prepared_query: &IvfPreparedQuery,
     opaque: &mut EcIvfScanOpaque,
@@ -2638,40 +2640,59 @@ fn append_columnar_frozen_list_to_borrowed_scratch<'a>(
         return Ok(());
     }
 
-    for index in 0..block.len() {
-        if block.is_deleted(index)? {
-            continue;
-        }
-        opaque.explain_counters.record_columnar_posting_visited();
-        let heap_tid_count = block.heap_tid_count(index)?;
-        if !consume_live_tid_budget(remaining_live_tids_by_list, block.list_id(), heap_tid_count)? {
-            continue;
-        }
-        if !scratch.can_accept(heap_tid_count) && !scratch.is_empty() {
-            process_borrowed_columnar_postings(
-                scratch,
-                quantizer,
-                prepared_query,
-                opaque,
-                best_by_heap_tid,
-                running_top,
+    for run in block.payload_page_runs()? {
+        for run_offset in 0..run.item_count {
+            let index = run.start_index + run_offset;
+            let payload_offset = run_offset
+                .checked_mul(block.payload_len())
+                .ok_or_else(|| "ec_ivf columnar page-run payload offset overflow".to_owned())?;
+            if block.is_deleted(index)? {
+                continue;
+            }
+            opaque.explain_counters.record_columnar_posting_visited();
+            let heap_tid_count = block.heap_tid_count(index)?;
+            if !consume_live_tid_budget(
+                remaining_live_tids_by_list,
+                block.list_id(),
+                heap_tid_count,
+            )? {
+                continue;
+            }
+            if !scratch.can_accept(heap_tid_count) && !scratch.is_empty() {
+                process_borrowed_columnar_page_run_postings(
+                    scratch,
+                    quantizer,
+                    prepared_query,
+                    opaque,
+                    best_by_heap_tid,
+                    running_top,
+                )?;
+            }
+            let payload_end = payload_offset
+                .checked_add(block.payload_len())
+                .ok_or_else(|| "ec_ivf columnar page-run payload end overflow".to_owned())?;
+            let gamma = block.gamma(index)?;
+            scratch.push_columnar_metadata(
+                block,
+                index,
+                heap_tid_count,
+                gamma,
+                &run.payloads[payload_offset..payload_end],
             )?;
-        }
-        let gamma = block.gamma(index)?;
-        scratch.push_columnar_posting(block, index, heap_tid_count, gamma)?;
-        if scratch.len() >= IVF_POSTING_SCRATCH_SOA_BATCH_POSTINGS {
-            process_borrowed_columnar_postings(
-                scratch,
-                quantizer,
-                prepared_query,
-                opaque,
-                best_by_heap_tid,
-                running_top,
-            )?;
+            if scratch.len() >= IVF_POSTING_SCRATCH_SOA_BATCH_POSTINGS {
+                process_borrowed_columnar_page_run_postings(
+                    scratch,
+                    quantizer,
+                    prepared_query,
+                    opaque,
+                    best_by_heap_tid,
+                    running_top,
+                )?;
+            }
         }
     }
 
-    process_borrowed_columnar_postings(
+    process_borrowed_columnar_page_run_postings(
         scratch,
         quantizer,
         prepared_query,
@@ -2705,7 +2726,7 @@ fn process_columnar_frozen_list_page_scatter(
             block.payload_len()
         ));
     }
-    let mut scratch = IvfBorrowedPostingScratch::new(payload_len);
+    let mut scratch = IvfBorrowedPageRunScratch::new(payload_len);
     append_columnar_frozen_list_to_borrowed_scratch(
         &block,
         &mut scratch,
