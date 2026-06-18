@@ -38,7 +38,9 @@ static EC_IVF_ADAPTIVE_NPROBE_SCORE_MARGIN_RATIO_BPS_GUC: GucSetting<i32> =
 static EC_IVF_SCRATCH_SOA_BATCH_DECODE_GUC: GucSetting<bool> = GucSetting::<bool>::new(true);
 static EC_IVF_DENSE_POSTING_COALESCING_GUC: GucSetting<bool> = GucSetting::<bool>::new(true);
 static EC_IVF_DENSE_POSTING_TYPED_VIEWS_GUC: GucSetting<bool> = GucSetting::<bool>::new(true);
-static EC_IVF_COLUMNAR_PAGE_SCATTER_GUC: GucSetting<bool> = GucSetting::<bool>::new(true);
+// Task 111c measured the zero-copy page-scatter path slower than the logical
+// copy fallback after the page-run locality lever, so keep it opt-in.
+static EC_IVF_COLUMNAR_PAGE_SCATTER_GUC: GucSetting<bool> = GucSetting::<bool>::new(false);
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
@@ -301,7 +303,7 @@ pub(super) fn register_gucs() {
     GucRegistry::define_bool_guc(
         c"ec_ivf.columnar_page_scatter",
         c"Enable ec_ivf columnar frozen-list page-aware scoring.",
-        c"Task 111c switch; when enabled, columnar frozen-list payloads are scored from pinned raw pages for supported codecs. Disable to force the Task 111b logical-copy fallback.",
+        c"Task 111c diagnostic switch; when enabled, columnar frozen-list payloads are scored from pinned raw pages for supported codecs. Disabled by default because the Task 111c gate found the Task 111b logical-copy fallback faster on the reference TQ cell.",
         &EC_IVF_COLUMNAR_PAGE_SCATTER_GUC,
         GucContext::Userset,
         GucFlags::default(),
