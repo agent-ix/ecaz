@@ -54,6 +54,7 @@ struct EcIvfReloptions {
     pq_group_size: i32,
     posting_slack_percent: i32,
     quant_bits: i32,
+    coarse_bits: i32,
     dense_posting_blocks: i32,
     dense_posting_pack_pages: i32,
     dense_posting_typed_layout: i32,
@@ -61,6 +62,9 @@ struct EcIvfReloptions {
     storage_format_offset: i32,
     quantizer_offset: i32,
     rerank_offset: i32,
+    coarse_format_offset: i32,
+    rerank_placement_offset: i32,
+    rerank_format_offset: i32,
 }
 
 #[repr(u8)]
@@ -117,6 +121,99 @@ pub enum RerankMode {
     SourceColumn = 3,
 }
 
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CoarseFormat {
+    Auto = 0,
+    RaBitQ = 1,
+}
+
+impl CoarseFormat {
+    pub(super) fn parse_reloption(value: &str) -> Result<Self, String> {
+        match value {
+            "auto" => Ok(Self::Auto),
+            "rabitq" => Ok(Self::RaBitQ),
+            other => Err(format!(
+                "invalid ec_ivf coarse_format reloption: expected 'auto' or 'rabitq', got '{other}'"
+            )),
+        }
+    }
+
+    pub(super) fn reloption_name(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::RaBitQ => "rabitq",
+        }
+    }
+}
+
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RerankPlacement {
+    Auto = 0,
+    Table = 1,
+    Index = 2,
+}
+
+impl RerankPlacement {
+    pub(super) fn parse_reloption(value: &str) -> Result<Self, String> {
+        match value {
+            "auto" => Ok(Self::Auto),
+            "table" | "heap" => Ok(Self::Table),
+            "index" => Ok(Self::Index),
+            other => Err(format!(
+                "invalid ec_ivf rerank_placement reloption: expected 'auto', 'table', 'heap', or 'index', got '{other}'"
+            )),
+        }
+    }
+
+    pub(super) fn reloption_name(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::Table => "table",
+            Self::Index => "index",
+        }
+    }
+}
+
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RerankFormat {
+    Auto = 0,
+    F32 = 1,
+    RaBitQ2 = 2,
+    RaBitQ4 = 3,
+    RaBitQ8 = 4,
+    TurboQuant = 5,
+}
+
+impl RerankFormat {
+    pub(super) fn parse_reloption(value: &str) -> Result<Self, String> {
+        match value {
+            "auto" => Ok(Self::Auto),
+            "f32" | "heap_f32" => Ok(Self::F32),
+            "rabitq2" | "rabitq_2" => Ok(Self::RaBitQ2),
+            "rabitq4" | "rabitq_4" => Ok(Self::RaBitQ4),
+            "rabitq8" | "rabitq_8" => Ok(Self::RaBitQ8),
+            "turboquant" => Ok(Self::TurboQuant),
+            other => Err(format!(
+                "invalid ec_ivf rerank_format reloption: expected 'auto', 'f32', 'heap_f32', 'rabitq2', 'rabitq4', 'rabitq8', or 'turboquant', got '{other}'"
+            )),
+        }
+    }
+
+    pub(super) fn reloption_name(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::F32 => "f32",
+            Self::RaBitQ2 => "rabitq2",
+            Self::RaBitQ4 => "rabitq4",
+            Self::RaBitQ8 => "rabitq8",
+            Self::TurboQuant => "turboquant",
+        }
+    }
+}
+
 impl RerankMode {
     pub(super) fn parse_reloption(value: &str) -> Result<Self, String> {
         match value {
@@ -167,12 +264,16 @@ pub(super) struct EcIvfOptions {
     pub(super) pq_group_size: i32,
     pub(super) posting_slack_percent: i32,
     pub(super) quant_bits: i32,
+    pub(super) coarse_bits: i32,
     pub(super) dense_posting_blocks: bool,
     pub(super) dense_posting_pack_pages: i32,
     pub(super) dense_posting_typed_layout: bool,
     pub(super) columnar_frozen_lists: bool,
     pub(super) storage_format: StorageFormat,
     pub(super) rerank: RerankMode,
+    pub(super) coarse_format: CoarseFormat,
+    pub(super) rerank_placement: RerankPlacement,
+    pub(super) rerank_format: RerankFormat,
 }
 
 impl EcIvfOptions {
@@ -185,12 +286,16 @@ impl EcIvfOptions {
         pq_group_size: EC_IVF_DEFAULT_PQ_GROUP_SIZE,
         posting_slack_percent: EC_IVF_DEFAULT_POSTING_SLACK_PERCENT,
         quant_bits: EC_IVF_DEFAULT_QUANT_BITS,
+        coarse_bits: 0,
         dense_posting_blocks: false,
         dense_posting_pack_pages: 1,
         dense_posting_typed_layout: false,
         columnar_frozen_lists: false,
         storage_format: StorageFormat::Auto,
         rerank: RerankMode::Auto,
+        coarse_format: CoarseFormat::Auto,
+        rerank_placement: RerankPlacement::Auto,
+        rerank_format: RerankFormat::Auto,
     };
 
     /// Validated, in-range quantizer bits-per-dim used for RaBitQ
@@ -520,6 +625,16 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_amoptions(
         );
         pg_sys::add_local_int_reloption(
             &mut relopts,
+            c"coarse_bits".as_ptr(),
+            c"Task 111e coarse_rerank coarse-stage RaBitQ bit width; 0 chooses the preset default, currently 1 bit."
+                .as_ptr(),
+            0,
+            0,
+            EC_IVF_MAX_QUANT_BITS,
+            offset_of!(EcIvfReloptions, coarse_bits) as i32,
+        );
+        pg_sys::add_local_int_reloption(
+            &mut relopts,
             c"dense_posting_blocks".as_ptr(),
             c"Experimental Task 111 build-time dense IVF posting block layout: 0 disables, 1 enables for frozen build postings."
                 .as_ptr(),
@@ -587,6 +702,35 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_amoptions(
             None,
             offset_of!(EcIvfReloptions, rerank_offset) as i32,
         );
+        pg_sys::add_local_string_reloption(
+            &mut relopts,
+            c"coarse_format".as_ptr(),
+            c"Task 111e coarse_rerank coarse-stage format: 'rabitq' or 'auto'.".as_ptr(),
+            ptr::null(),
+            None,
+            None,
+            offset_of!(EcIvfReloptions, coarse_format_offset) as i32,
+        );
+        pg_sys::add_local_string_reloption(
+            &mut relopts,
+            c"rerank_placement".as_ptr(),
+            c"Task 111e coarse_rerank rerank payload placement: 'table', 'heap', 'index', or 'auto'."
+                .as_ptr(),
+            ptr::null(),
+            None,
+            None,
+            offset_of!(EcIvfReloptions, rerank_placement_offset) as i32,
+        );
+        pg_sys::add_local_string_reloption(
+            &mut relopts,
+            c"rerank_format".as_ptr(),
+            c"Task 111e coarse_rerank rerank representation: 'f32', 'rabitq2', 'rabitq4', 'rabitq8', 'turboquant', or 'auto'."
+                .as_ptr(),
+            ptr::null(),
+            None,
+            None,
+            offset_of!(EcIvfReloptions, rerank_format_offset) as i32,
+        );
         pg_sys::build_local_reloptions(&mut relopts, reloptions, validate) as *mut pg_sys::bytea
     })
 }
@@ -620,12 +764,21 @@ impl EcIvfReloptionsView {
         let quantizer_reloption =
             self.read_string_reloption(reloptions.quantizer_offset, "quantizer");
         let rerank_reloption = self.read_string_reloption(reloptions.rerank_offset, "rerank");
+        let coarse_format_reloption =
+            self.read_string_reloption(reloptions.coarse_format_offset, "coarse_format");
+        let rerank_placement_reloption =
+            self.read_string_reloption(reloptions.rerank_placement_offset, "rerank_placement");
+        let rerank_format_reloption =
+            self.read_string_reloption(reloptions.rerank_format_offset, "rerank_format");
 
         build_options_from_reloptions(
             reloptions,
             storage_format_reloption,
             quantizer_reloption,
             rerank_reloption,
+            coarse_format_reloption,
+            rerank_placement_reloption,
+            rerank_format_reloption,
         )
     }
 }
@@ -635,6 +788,9 @@ fn build_options_from_reloptions(
     storage_format_reloption: Option<String>,
     quantizer_reloption: Option<String>,
     rerank_reloption: Option<String>,
+    coarse_format_reloption: Option<String>,
+    rerank_placement_reloption: Option<String>,
+    rerank_format_reloption: Option<String>,
 ) -> EcIvfOptions {
     if let (Some(storage_format), Some(quantizer)) =
         (&storage_format_reloption, &quantizer_reloption)
@@ -655,7 +811,57 @@ fn build_options_from_reloptions(
         Some(value) => RerankMode::parse_reloption(&value).unwrap_or_else(|e| pgrx::error!("{e}")),
         None => RerankMode::Auto,
     };
+    let mut coarse_format = match coarse_format_reloption {
+        Some(value) => {
+            CoarseFormat::parse_reloption(&value).unwrap_or_else(|e| pgrx::error!("{e}"))
+        }
+        None => CoarseFormat::Auto,
+    };
+    let mut coarse_bits = reloptions.coarse_bits;
+    let mut rerank_placement = match rerank_placement_reloption {
+        Some(value) => {
+            RerankPlacement::parse_reloption(&value).unwrap_or_else(|e| pgrx::error!("{e}"))
+        }
+        None => RerankPlacement::Auto,
+    };
+    let mut rerank_format = match rerank_format_reloption {
+        Some(value) => {
+            RerankFormat::parse_reloption(&value).unwrap_or_else(|e| pgrx::error!("{e}"))
+        }
+        None => RerankFormat::Auto,
+    };
     if storage_format == StorageFormat::CoarseRerank {
+        match coarse_format {
+            CoarseFormat::Auto => coarse_format = CoarseFormat::RaBitQ,
+            CoarseFormat::RaBitQ => {}
+        }
+        match coarse_bits {
+            0 => coarse_bits = 1,
+            1 => {}
+            2 | 4 | 8 => pgrx::error!(
+                "ec_ivf storage_format = 'coarse_rerank' currently requires coarse_bits = 1; wider coarse stages belong in the Task 111e alternative-coarse-stage sweep"
+            ),
+            _ => pgrx::error!(
+                "ec_ivf coarse_bits must be 0, 1, 2, 4, or 8 for storage_format = 'coarse_rerank'"
+            ),
+        }
+        match rerank_placement {
+            RerankPlacement::Auto => rerank_placement = RerankPlacement::Table,
+            RerankPlacement::Table => {}
+            RerankPlacement::Index => pgrx::error!(
+                "ec_ivf storage_format = 'coarse_rerank' does not support rerank_placement = 'index' yet; use rerank_placement = 'table'"
+            ),
+        }
+        match rerank_format {
+            RerankFormat::Auto => rerank_format = RerankFormat::F32,
+            RerankFormat::F32 => {}
+            RerankFormat::RaBitQ2
+            | RerankFormat::RaBitQ4
+            | RerankFormat::RaBitQ8
+            | RerankFormat::TurboQuant => pgrx::error!(
+                "ec_ivf storage_format = 'coarse_rerank' currently supports rerank_format = 'f32' only; compact rerank formats are Task 111e follow-up variants"
+            ),
+        }
         match rerank {
             RerankMode::Auto => rerank = RerankMode::HeapF32,
             RerankMode::HeapF32 => {}
@@ -678,6 +884,7 @@ fn build_options_from_reloptions(
         } else {
             reloptions.quant_bits
         },
+        coarse_bits,
         dense_posting_blocks: storage_format == StorageFormat::CoarseRerank
             || reloptions.dense_posting_blocks != 0,
         dense_posting_pack_pages: if storage_format == StorageFormat::CoarseRerank {
@@ -690,6 +897,9 @@ fn build_options_from_reloptions(
         columnar_frozen_lists: reloptions.columnar_frozen_lists != 0,
         storage_format,
         rerank,
+        coarse_format,
+        rerank_placement,
+        rerank_format,
     }
 }
 
@@ -715,6 +925,7 @@ mod tests {
             pq_group_size: 0,
             posting_slack_percent: 0,
             quant_bits: 4,
+            coarse_bits: 0,
             dense_posting_blocks: 0,
             dense_posting_pack_pages: 4,
             dense_posting_typed_layout: 0,
@@ -722,6 +933,9 @@ mod tests {
             storage_format_offset: 0,
             quantizer_offset: 0,
             rerank_offset: 0,
+            coarse_format_offset: 0,
+            rerank_placement_offset: 0,
+            rerank_format_offset: 0,
         }
     }
 
@@ -735,15 +949,26 @@ mod tests {
 
     #[test]
     fn coarse_rerank_preset_resolves_dense_rabitq1_heap_f32() {
-        let options =
-            build_options_from_reloptions(&reloptions(), Some("coarse_rerank".into()), None, None);
+        let options = build_options_from_reloptions(
+            &reloptions(),
+            Some("coarse_rerank".into()),
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
 
         assert_eq!(options.storage_format, StorageFormat::CoarseRerank);
+        assert_eq!(options.coarse_format, CoarseFormat::RaBitQ);
+        assert_eq!(options.coarse_bits, 1);
         assert_eq!(options.quant_bits, 1);
         assert!(options.dense_posting_blocks);
         assert_eq!(options.dense_posting_pack_pages, 1);
         assert!(options.dense_posting_typed_layout);
         assert_eq!(options.rerank, RerankMode::HeapF32);
+        assert_eq!(options.rerank_placement, RerankPlacement::Table);
+        assert_eq!(options.rerank_format, RerankFormat::F32);
     }
 
     #[test]
@@ -753,8 +978,38 @@ mod tests {
             Some("coarse_rerank".into()),
             None,
             Some("heap_f32".into()),
+            Some("rabitq".into()),
+            Some("table".into()),
+            Some("f32".into()),
         );
 
         assert_eq!(options.rerank, RerankMode::HeapF32);
+        assert_eq!(options.coarse_format, CoarseFormat::RaBitQ);
+        assert_eq!(options.rerank_placement, RerankPlacement::Table);
+        assert_eq!(options.rerank_format, RerankFormat::F32);
+    }
+
+    #[test]
+    fn coarse_rerank_accepts_explicit_phase2_contract() {
+        let mut reloptions = reloptions();
+        reloptions.coarse_bits = 1;
+
+        let options = build_options_from_reloptions(
+            &reloptions,
+            Some("coarse_rerank".into()),
+            None,
+            Some("heap_f32".into()),
+            Some("rabitq".into()),
+            Some("heap".into()),
+            Some("heap_f32".into()),
+        );
+
+        assert_eq!(options.storage_format, StorageFormat::CoarseRerank);
+        assert_eq!(options.coarse_format, CoarseFormat::RaBitQ);
+        assert_eq!(options.coarse_bits, 1);
+        assert_eq!(options.quant_bits, 1);
+        assert_eq!(options.rerank, RerankMode::HeapF32);
+        assert_eq!(options.rerank_placement, RerankPlacement::Table);
+        assert_eq!(options.rerank_format, RerankFormat::F32);
     }
 }

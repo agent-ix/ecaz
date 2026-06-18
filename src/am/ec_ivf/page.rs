@@ -29,7 +29,9 @@ mod pg_sys {
 }
 
 #[cfg(any(feature = "pg17", feature = "pg18"))]
-use super::options::{EcIvfOptions, RerankMode, StorageFormat};
+use super::options::{
+    CoarseFormat, EcIvfOptions, RerankFormat, RerankMode, RerankPlacement, StorageFormat,
+};
 #[cfg(any(feature = "pg17", feature = "pg18"))]
 use super::P_NEW;
 #[cfg(not(any(feature = "pg17", feature = "pg18")))]
@@ -5694,12 +5696,16 @@ mod tests {
             pq_group_size: 0,
             posting_slack_percent: 0,
             quant_bits: 4,
+            coarse_bits: 0,
             dense_posting_blocks: false,
             dense_posting_pack_pages: 1,
             dense_posting_typed_layout: false,
             columnar_frozen_lists: false,
             storage_format: StorageFormat::RaBitQ,
             rerank: RerankMode::HeapF32,
+            coarse_format: CoarseFormat::Auto,
+            rerank_placement: RerankPlacement::Auto,
+            rerank_format: RerankFormat::Auto,
         });
         metadata.dimensions = 1536;
         metadata.training_version = 3;
@@ -5726,12 +5732,16 @@ mod tests {
             pq_group_size: 0,
             posting_slack_percent: 0,
             quant_bits: 4,
+            coarse_bits: 0,
             dense_posting_blocks: false,
             dense_posting_pack_pages: 1,
             dense_posting_typed_layout: false,
             columnar_frozen_lists: false,
             storage_format: StorageFormat::Auto,
             rerank: RerankMode::Auto,
+            coarse_format: CoarseFormat::Auto,
+            rerank_placement: RerankPlacement::Auto,
+            rerank_format: RerankFormat::Auto,
         });
         let encoded = metadata.encode();
         let err = MetadataPage::decode(&encoded[..METADATA_BYTES - 1]).unwrap_err();
@@ -6529,12 +6539,16 @@ mod tests {
             pq_group_size: 0,
             posting_slack_percent: 0,
             quant_bits: 4,
+            coarse_bits: 0,
             dense_posting_blocks: false,
             dense_posting_pack_pages: 1,
             dense_posting_typed_layout: false,
             columnar_frozen_lists: false,
             storage_format: StorageFormat::Auto,
             rerank: RerankMode::Auto,
+            coarse_format: CoarseFormat::Auto,
+            rerank_placement: RerankPlacement::Auto,
+            rerank_format: RerankFormat::Auto,
         });
 
         for storage_format in [

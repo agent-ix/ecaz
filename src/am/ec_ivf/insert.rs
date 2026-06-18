@@ -242,12 +242,32 @@ fn options_from_metadata(metadata: &page::MetadataPage) -> Result<options::EcIvf
         pq_group_size: i32::from(metadata.pq_group_size),
         posting_slack_percent: 0,
         quant_bits: i32::from(metadata.quant_bits),
+        coarse_bits: if metadata.storage_format == options::StorageFormat::CoarseRerank {
+            1
+        } else {
+            0
+        },
         dense_posting_blocks: false,
         dense_posting_pack_pages: 1,
         dense_posting_typed_layout: false,
         columnar_frozen_lists: false,
         storage_format: metadata.storage_format,
         rerank: metadata.rerank,
+        coarse_format: if metadata.storage_format == options::StorageFormat::CoarseRerank {
+            options::CoarseFormat::RaBitQ
+        } else {
+            options::CoarseFormat::Auto
+        },
+        rerank_placement: if metadata.storage_format == options::StorageFormat::CoarseRerank {
+            options::RerankPlacement::Table
+        } else {
+            options::RerankPlacement::Auto
+        },
+        rerank_format: if metadata.storage_format == options::StorageFormat::CoarseRerank {
+            options::RerankFormat::F32
+        } else {
+            options::RerankFormat::Auto
+        },
     })
 }
 

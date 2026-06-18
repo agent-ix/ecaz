@@ -404,12 +404,16 @@ mod tests {
             pq_group_size: 0,
             posting_slack_percent: 0,
             quant_bits: 4,
+            coarse_bits: 0,
             dense_posting_blocks: false,
             dense_posting_pack_pages: 1,
             dense_posting_typed_layout: false,
             columnar_frozen_lists: false,
             storage_format: options::StorageFormat::TurboQuant,
             rerank: options::RerankMode::HeapF32,
+            coarse_format: options::CoarseFormat::Auto,
+            rerank_placement: options::RerankPlacement::Auto,
+            rerank_format: options::RerankFormat::Auto,
         });
         metadata.dimensions = dimensions;
         metadata.training_version = 1;

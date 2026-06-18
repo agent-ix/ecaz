@@ -4058,7 +4058,10 @@ pub(crate) unsafe fn debug_ec_ivf_directory_entry(
 
 #[cfg(test)]
 mod tests {
-    use super::super::options::{EcIvfOptions, RerankMode, StorageFormat as IvfStorageFormat};
+    use super::super::options::{
+        CoarseFormat, EcIvfOptions, RerankFormat, RerankMode, RerankPlacement,
+        StorageFormat as IvfStorageFormat,
+    };
     use super::super::page::{
         IvfDensePostingBlockRef, IvfDensePostingBlockTuple, IvfDensePostingRef, IvfPostingTuple,
         IvfPostingTupleRef,
@@ -4130,12 +4133,16 @@ mod tests {
             pq_group_size: 0,
             posting_slack_percent: 0,
             quant_bits: 1,
+            coarse_bits: 0,
             dense_posting_blocks: false,
             dense_posting_pack_pages: 1,
             dense_posting_typed_layout: false,
             columnar_frozen_lists: false,
             storage_format: IvfStorageFormat::RaBitQ,
             rerank,
+            coarse_format: CoarseFormat::Auto,
+            rerank_placement: RerankPlacement::Auto,
+            rerank_format: RerankFormat::Auto,
         }
     }
 
