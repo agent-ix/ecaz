@@ -29,9 +29,7 @@ mod pg_sys {
 }
 
 #[cfg(any(feature = "pg17", feature = "pg18"))]
-use super::options::{
-    CoarseFormat, EcIvfOptions, RerankFormat, RerankMode, RerankPlacement, StorageFormat,
-};
+use super::options::{EcIvfOptions, RerankMode, StorageFormat};
 #[cfg(any(feature = "pg17", feature = "pg18"))]
 use super::P_NEW;
 #[cfg(not(any(feature = "pg17", feature = "pg18")))]
@@ -5672,6 +5670,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::am::ec_ivf::options::{CoarseFormat, RerankFormat, RerankPlacement};
     use crate::storage::page::DEFAULT_PAGE_SIZE;
 
     fn tid(block_number: u32, offset_number: u16) -> ItemPointer {
