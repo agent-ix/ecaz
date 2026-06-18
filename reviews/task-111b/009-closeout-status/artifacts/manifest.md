@@ -2,7 +2,7 @@
 
 - Task bucket: `reviews/task-111b/`
 - Packet: `reviews/task-111b/009-closeout-status/`
-- Head SHA: `e29b4a9904a2a9e854bdb1f79aa914567fdf8fef` (audited status commit)
+- Head SHA: `d5255a91205aa33bf80a22d2c097453fdfafdbd7` (closeout packet reviewed by feedback)
 - Timestamp: 2026-06-17
 - Lane: closeout/status documentation only
 - Validation scope: no new runtime behavior; this packet audits and records the already-reviewed Task 111b evidence.
@@ -20,6 +20,11 @@
   - `reviews/task-111b/007-columnar-scan-counters/`
   - `reviews/task-111b/008-columnar-benchmark-matrix/`
 - Reviewer feedback through `reviews/task-111b/*/feedback/2026-06-17-01-reviewer.md`
+- Packet 009 reviewer feedback:
+  `reviews/task-111b/009-closeout-status/feedback/2026-06-17-01-reviewer.md`
+- 111c carry-forward evidence:
+  - `reviews/task-111c/002-page-scatter-explain-ab/`
+  - `reviews/task-111c/003-page-scatter-heap-tid-decode/`
 
 ## Output Artifacts
 

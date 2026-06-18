@@ -73,7 +73,11 @@ Evidence:
 
 The following are not 111b completion requirements and remain intentionally deferred:
 
-- zero-copy page-aware scatter scorer: Task 111c;
+- zero-copy page-aware scatter scorer: Task 111c. Current 111c packet 003
+  evidence is negative for promotion: page scatter removed logical payload
+  copies but measured 31,649 approximate scan us / 35.775 ms execution versus
+  copy fallback at 16,589 approximate scan us / 20.720 ms execution on the 50k
+  TQ columnar fixture;
 - pre-transposed canonical geometry: Task 111d;
 - default promotion decision: deferred until 111c/111d evidence;
 - storage-density improvements identified by packet 008 feedback: carry into 111c/111d work.
@@ -81,3 +85,7 @@ The following are not 111b completion requirements and remain intentionally defe
 ## Closeout Decision
 
 Task 111b is complete because its durable format, correctness, compatibility, vacuum/mixed-scan, counter, and benchmark-baseline requirements are implemented, reviewed, and documented. The status update marks the task complete while preserving the no-promotion decision and the follow-up risks surfaced by packet 008.
+Reviewer feedback on packet 009 adds that early 111c page-scatter evidence is
+also negative: contiguous copy followed by sequential scoring currently beats
+scattered zero-copy reads. That strengthens the no-promotion stance but does
+not reopen 111b's scoped acceptance criteria.

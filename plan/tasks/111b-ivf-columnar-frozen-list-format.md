@@ -4,7 +4,8 @@ Status: **complete** (2026-06-17; closeout
 `reviews/task-111b/009-closeout-status/`). Format, writer, decode, scan,
 vacuum, old-index compatibility, counters, and the 50k/100k benchmark baseline
 landed. The format is **not promoted**; packet 008/009 defer storage-density and
-score-in-place decisions to 111c/111d.
+score-in-place decisions to 111c/111d, and 111c packets 002/003 currently show
+the zero-copy page-scatter reference path is slower than the copy fallback.
 Priority: P0 latency (Task 111 line; score-in-place foundation).
 Parent: `111-ivf-scan-dense-posting-block-layout.md`,
 follows `111a-ivf-dense-block-scan-batch-width.md`.

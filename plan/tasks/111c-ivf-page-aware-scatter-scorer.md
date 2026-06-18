@@ -6,6 +6,14 @@ Parent: `111-ivf-scan-dense-posting-block-layout.md`.
 Depends on: **`111b-ivf-columnar-frozen-list-format.md`** (the columnar format).
 Evidence anchor: `reviews/task-111a/{004,007,008}`.
 
+Current risk note (2026-06-17): packets `reviews/task-111c/002-*` and
+`reviews/task-111c/003-*` prove the reference TQ page-scatter path is correct
+and zero-copy, but currently slower than the copy fallback. Packet 003 measured
+31,649 approximate scan us / 35.775 ms execution for page scatter versus 16,589
+approximate scan us / 20.720 ms execution for the copy fallback on the 50k TQ
+columnar fixture. Promotion depends on fixing the per-page-contiguity/scoring
+geometry so scattered zero-copy beats contiguous-copy-then-sequential-read.
+
 ## Goal
 
 Score the Task 111b columnar frozen-list **in place**: feed the SIMD block

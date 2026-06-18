@@ -34,6 +34,13 @@ The packet 008 reviewer feedback explicitly states:
 
 The task is complete, but the format should not be promoted as the default layout from 111b alone. Packet 008 found columnar is storage-denser than row but still larger than compact dense blocks in every measured cell, so storage-density and score-in-place work remain for 111c/111d.
 
+Follow-up from reviewer feedback: 111c packets 002/003 sharpen the score-in-place
+risk. The zero-copy page-scatter reference path removes logical payload copies
+but remains slower than the copy fallback; packet 003 measured page scatter at
+31,649 approximate scan us / 35.775 ms execution versus copy fallback at 16,589
+approximate scan us / 20.720 ms execution. This reinforces the no-promotion
+decision until 111c/111d resolve page-contiguity and scoring geometry.
+
 ## Validation
 
 No tests were run for this status-only packet. The acceptance-criterion evidence is audited in `artifacts/completion-audit.md` and points to the previously committed/reviewed packet artifacts.
@@ -43,3 +50,5 @@ No tests were run for this status-only packet. The acceptance-criterion evidence
 - Does the status update accurately reflect 111b completion without implying promotion?
 - Does `artifacts/completion-audit.md` map every 111b acceptance criterion to committed evidence?
 - Any wording needed to better preserve the packet 008 storage-density risk for 111c/111d?
+- Does the added 111c negative page-scatter signal carry forward the packet 009
+  feedback accurately?
