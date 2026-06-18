@@ -1,0 +1,31 @@
+[suite:task111e-final-gate] completed=4 failed=0 skipped=26 dry_run=0 missing_artifacts=0 stale=0
+Skipped      load-50k-coarse-rerank               
+Skipped      load-100k-coarse-rerank              
+Skipped      load-50k-rb1-dense-page-rerank-off   
+Skipped      load-100k-rb1-dense-page-rerank-off  
+Skipped      storage-50k-coarse-rerank            
+Skipped      storage-100k-coarse-rerank           
+Skipped      recall-50k-coarse-rerank-w50         
+Skipped      recall-50k-coarse-rerank-w100        
+Skipped      recall-100k-coarse-rerank-w50        
+Skipped      recall-100k-coarse-rerank-w100       
+Skipped      latency-50k-coarse-rerank-w50        
+Skipped      latency-50k-coarse-rerank-w100       
+Skipped      latency-100k-coarse-rerank-w50       
+Skipped      latency-100k-coarse-rerank-w100      
+Succeeded    explain-50k-coarse-rerank-p32-w50    --database task111e_coarse_rerank --host /home/peter/.pgrx --port 28818 dev sql --pg 18 --db task111e_coarse_rerank --socket-dir /home/peter/.pgrx --port 28818 --raw --file reviews/task-111e/006-final-gate/artifacts/suite/explain-50k-coarse-rerank-p32-w50.sql --log-output reviews/task-111e/006-final-gate/artifacts/suite/explain-50k-coarse-rerank-p32-w50.log
+Succeeded    explain-50k-coarse-rerank-p32-w100   --database task111e_coarse_rerank --host /home/peter/.pgrx --port 28818 dev sql --pg 18 --db task111e_coarse_rerank --socket-dir /home/peter/.pgrx --port 28818 --raw --file reviews/task-111e/006-final-gate/artifacts/suite/explain-50k-coarse-rerank-p32-w100.sql --log-output reviews/task-111e/006-final-gate/artifacts/suite/explain-50k-coarse-rerank-p32-w100.log
+Succeeded    explain-100k-coarse-rerank-p32-w50   --database task111e_coarse_rerank --host /home/peter/.pgrx --port 28818 dev sql --pg 18 --db task111e_coarse_rerank --socket-dir /home/peter/.pgrx --port 28818 --raw --file reviews/task-111e/006-final-gate/artifacts/suite/explain-100k-coarse-rerank-p32-w50.sql --log-output reviews/task-111e/006-final-gate/artifacts/suite/explain-100k-coarse-rerank-p32-w50.log
+Succeeded    explain-100k-coarse-rerank-p32-w100  --database task111e_coarse_rerank --host /home/peter/.pgrx --port 28818 dev sql --pg 18 --db task111e_coarse_rerank --socket-dir /home/peter/.pgrx --port 28818 --raw --file reviews/task-111e/006-final-gate/artifacts/suite/explain-100k-coarse-rerank-p32-w100.sql --log-output reviews/task-111e/006-final-gate/artifacts/suite/explain-100k-coarse-rerank-p32-w100.log
+Skipped      frontier-50k-f32-free-k25-1000-p32-p64 
+Skipped      frontier-50k-f32-free-k50-p32-p64    
+Skipped      frontier-50k-f32-free-k100-p32-p64   
+Skipped      frontier-50k-f32-free-k256-p32-p64   
+Skipped      frontier-50k-f32-free-k512-p32-p64   
+Skipped      frontier-50k-f32-free-k1000-p32-p64  
+Skipped      frontier-100k-f32-free-k25-p32-p64   
+Skipped      frontier-100k-f32-free-k50-p32-p64   
+Skipped      frontier-100k-f32-free-k100-p32-p64  
+Skipped      frontier-100k-f32-free-k256-p32-p64  
+Skipped      frontier-100k-f32-free-k512-p32-p64  
+Skipped      frontier-100k-f32-free-k1000-p32-p64 
