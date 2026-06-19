@@ -26,6 +26,16 @@ opt-in; recall-per-probe promotion bench-gated and deferred). Reviewed in
   packet artifacts.
 Priority: P2 recall-per-probe after latency-first layout work.
 
+**Benchmark verdict (2026-06-19, intel-local, real DBpedia 10/50/100k, fixed
+release `.so`; `benchmarks/ivf-111g-115-attribution/`):** residual gives **no
+recall-per-probe win** under exact `heap_f32` rerank — plain vs `rabitq_residual=1`
+is recall-identical at every nprobe/scale, **~9% slower**, same index size
+(net-negative). Exact rerank masks the lower coarse quant error (same mechanism as
+quant_bits: 1-bit recall == 4-bit). Keep residual **opt-in/off by default**.
+Follow-up: re-bench plain vs residual with `rerank=off` (coarse-only ranking) —
+the only regime where residual can move recall-per-probe. See
+`reviews/task-115/002-build-insert-scan/feedback/2026-06-19-04-reviewer.md`.
+
 ## Goal
 
 Improve IVF RaBitQ recall per probed list by encoding posting payloads as
