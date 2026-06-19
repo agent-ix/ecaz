@@ -53,14 +53,17 @@ pub(super) const METADATA_BLOCK_NUMBER: u32 = 0;
 pub(super) const FIRST_DATA_BLOCK_NUMBER: pg_sys::BlockNumber = 1;
 #[cfg(not(any(feature = "pg17", feature = "pg18")))]
 pub(super) const FIRST_DATA_BLOCK_NUMBER: u32 = 1;
-// v3 metadata is the only supported on-disk format. It is 86 bytes wide and
+// v4 metadata is the only supported on-disk format. It is 92 bytes wide and
 // stores the rerank sidecar head ItemPointer at bytes 80..86, pointing at the
-// 0x2A compact rerank sidecar chain used by rerank_placement = 'index'. A
-// rerank_sidecar_head of INVALID is the legitimate "no sidecar" state for
-// rerank_placement = 'table' and for f32 storage (rerank reads from the
-// heap/table source path instead). This research project keeps no backward
-// compatibility with older metadata widths.
-pub const EC_IVF_INDEX_FORMAT_VERSION: u16 = 3;
+// 0x2A compact rerank sidecar chain used by rerank_placement = 'index', and the
+// rerank sidecar directory head ItemPointer at bytes 86..92 (ADR-079), pointing
+// at the survivor-directed sidecar directory chain. A rerank_sidecar_head of
+// INVALID is the legitimate "no sidecar" state for rerank_placement = 'table'
+// and for f32 storage (rerank reads from the heap/table source path instead); a
+// directory head of INVALID falls back to a full-chain sidecar read. This
+// research project keeps no backward compatibility with older metadata widths
+// (the 86-byte v3 layout is rejected by version, not silently truncated).
+pub const EC_IVF_INDEX_FORMAT_VERSION: u16 = 4;
 pub(super) const INDEX_FORMAT_VERSION: u16 = EC_IVF_INDEX_FORMAT_VERSION;
 
 pub const EC_IVF_METADATA_MAGIC: u32 = 0x5649_4345; // "ECIV" as little-endian bytes.
@@ -682,7 +685,7 @@ impl MetadataPage {
         out[64..72].copy_from_slice(&self.inserted_since_build.to_le_bytes());
         write_item_pointer(&mut out[72..78], self.pq_codebook_head);
         out[78..80].copy_from_slice(&self.pq_group_size.to_le_bytes());
-        // Task 111g v3: rerank sidecar head (bytes 80..86).
+        // Task 111g: rerank sidecar head (bytes 80..86).
         write_item_pointer(&mut out[80..86], self.rerank_sidecar_head);
         // ADR-079: rerank sidecar directory head (bytes 86..92).
         write_item_pointer(&mut out[86..92], self.rerank_sidecar_directory_head);
@@ -690,8 +693,9 @@ impl MetadataPage {
     }
 
     pub fn decode(bytes: &[u8]) -> Result<Self, String> {
-        // v3 is the only supported width (86 bytes), including the rerank
-        // sidecar head at bytes 80..86.
+        // v4 is the only supported width (92 bytes), including the rerank
+        // sidecar head at bytes 80..86 and the sidecar directory head at
+        // bytes 86..92 (ADR-079).
         if bytes.len() < EC_IVF_METADATA_BYTES {
             return Err(format!(
                 "ec_ivf metadata length mismatch: got {}, expected at least {EC_IVF_METADATA_BYTES}",

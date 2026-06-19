@@ -113,9 +113,11 @@ const _: () = {
 };
 
 const _: () = {
-    // v3 metadata: 92 bytes (ADR-079 extended from 86) — rerank sidecar head
-    // ItemPointer at 80..86, rerank sidecar directory head at 86..92.
-    assert!(EC_IVF_INDEX_FORMAT_VERSION == 3);
+    // v4 metadata: 92 bytes (ADR-079 bumped v3->v4, 86->92) — rerank sidecar head
+    // ItemPointer at 80..86, rerank sidecar directory head at 86..92. The version
+    // bump (per NFR-016) makes the reader reject the old 86-byte v3 layout by
+    // version rather than by an ambiguous length mismatch.
+    assert!(EC_IVF_INDEX_FORMAT_VERSION == 4);
     assert!(EC_IVF_METADATA_MAGIC == 0x5649_4345);
     assert!(EC_IVF_METADATA_BYTES == 92);
     assert!(EC_IVF_METADATA_RERANK_SIDECAR_HEAD_OFFSET == 80);

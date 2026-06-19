@@ -49,7 +49,8 @@ Current fixture coverage:
 | `diskann_vamana_node_tuple_v3.hex` | DiskANN Vamana node tuple decode and swapped-neighbor-count rejection |
 | `diskann_vamana_overflow_tuple_v3.hex` | DiskANN duplicate heap-TID overflow tuple decode and swapped-count rejection |
 | `diskann_vamana_codebook_tuple_v3.hex` | DiskANN grouped-PQ codebook shard decode |
-| `ivf_metadata_v3.hex` | IVF metadata decode and swapped-version rejection |
+| `ivf_metadata_v4.hex` | current IVF metadata (92 bytes) decode and swapped-version rejection |
+| `ivf_metadata_v3.hex` | legacy 86-byte IVF metadata, now rejected by version |
 | `ivf_centroid_tuple_v1.hex` | IVF centroid tuple decode and swapped-dimension rejection |
 | `ivf_list_directory_tuple_v1.hex` | IVF list-directory tuple decode |
 | `ivf_posting_tuple_v1.hex` | IVF posting tuple decode |
@@ -78,7 +79,7 @@ before interpreting the rest of the payload:
 | --- | --- | --- |
 | HNSW | `1`, `2`, `3`, `4` | accepts known tags, rejects unknown tags |
 | DiskANN | `3` | accepts the DiskANN tag, rejects foreign tags |
-| IVF | `3` | accepts the IVF metadata tag, rejects all other versions |
+| IVF | `4` | accepts the IVF metadata tag, rejects all other versions |
 | SPIRE partition objects | `1`, `2` | accepts known object versions, rejects unknown versions |
 
 Any incompatible field addition or reinterpretation must add a new format tag
@@ -86,16 +87,26 @@ and update the layout assertions, fixture golden files, and upgrade matrix.
 
 ## IVF Metadata Format
 
-IVF writes and reads metadata format version `3` only; any other version is
-rejected. This is a research project with no backward compatibility — an index
-written by an older format is simply rebuilt.
+IVF writes and reads metadata format version `4` only; any other version
+(including the legacy 86-byte v3 layout) is rejected. This is a research project
+with no backward compatibility — an index written by an older format is simply
+rebuilt.
 
-The v3 metadata struct is `EC_IVF_METADATA_BYTES = 86` bytes wide.
+The v4 metadata struct is `EC_IVF_METADATA_BYTES = 92` bytes wide.
 `EC_IVF_METADATA_RERANK_SIDECAR_HEAD_OFFSET = 80` holds the head `ItemPointer` of
 the compact rerank sidecar chain (tag `0x2A`). A head of `ItemPointer::INVALID`
 is the legitimate "no sidecar" state for `rerank_placement = 'table'` and for
 f32 storage; the scan then reranks from the heap/table source path. That is a
 runtime placement state, not a compatibility mode.
+
+`EC_IVF_METADATA_RERANK_SIDECAR_DIRECTORY_HEAD_OFFSET = 86` holds the head
+`ItemPointer` of the survivor-directed rerank sidecar directory chain (ADR-079).
+The directory maps the first heap TID of each `0x2A` sidecar block to that
+block's TID, sorted by heap TID, so an index-side rerank reads only the sidecar
+blocks that actually hold survivor payloads instead of the whole chain. A
+directory head of `ItemPointer::INVALID` (or any index with rows inserted since
+the last full build) falls back to the full-chain sidecar read; the directory is
+written once per build over the build-sorted sidecar chain.
 
 ## IVF Posting Tuple Tags
 

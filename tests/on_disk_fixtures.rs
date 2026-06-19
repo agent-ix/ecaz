@@ -505,12 +505,13 @@ fn diskann_vamana_codebook_tuple_v3_fixture_decodes() {
 }
 
 #[test]
-fn ivf_metadata_v3_fixture_decodes() {
-    let bytes = decode_hex_fixture(include_str!("../fixtures/on-disk/ivf_metadata_v3.hex"));
+fn ivf_metadata_v4_fixture_decodes() {
+    // ADR-079: current IVF format is v4 (92 bytes, adds rerank_sidecar_directory_head).
+    let bytes = decode_hex_fixture(include_str!("../fixtures/on-disk/ivf_metadata_v4.hex"));
 
     let metadata = IvfMetadataPage::decode(&bytes).expect("ivf metadata fixture should decode");
 
-    assert_eq!(metadata.format_version, 3);
+    assert_eq!(metadata.format_version, 4);
     assert_eq!(metadata.dimensions, 128);
     assert_eq!(metadata.nlists, 16);
     assert_eq!(metadata.nprobe, 4);
@@ -554,7 +555,7 @@ fn ivf_metadata_v3_fixture_decodes() {
 
 #[test]
 fn ivf_metadata_byteswapped_version_is_rejected() {
-    let mut bytes = decode_hex_fixture(include_str!("../fixtures/on-disk/ivf_metadata_v3.hex"));
+    let mut bytes = decode_hex_fixture(include_str!("../fixtures/on-disk/ivf_metadata_v4.hex"));
     bytes.swap(
         EC_IVF_METADATA_FORMAT_VERSION_OFFSET,
         EC_IVF_METADATA_FORMAT_VERSION_OFFSET + 1,
@@ -563,7 +564,19 @@ fn ivf_metadata_byteswapped_version_is_rejected() {
     let err = IvfMetadataPage::decode(&bytes).expect_err("byte-swapped version should fail");
 
     assert!(
-        err.contains("unsupported ec_ivf metadata format version: 768"),
+        err.contains("unsupported ec_ivf metadata format version: 1024"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn ivf_metadata_v3_is_rejected_by_version() {
+    // ADR-079 / NFR-016: the old 86-byte v3 layout is rejected by version (and
+    // width), not silently mis-decoded. Research project => clean break + rebuild.
+    let bytes = decode_hex_fixture(include_str!("../fixtures/on-disk/ivf_metadata_v3.hex"));
+    let err = IvfMetadataPage::decode(&bytes).expect_err("old v3 layout should be rejected");
+    assert!(
+        err.contains("format version") || err.contains("length mismatch"),
         "unexpected error: {err}"
     );
 }
