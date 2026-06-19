@@ -101,6 +101,35 @@ On-disk format addition (free here — research project, rebuild). This is a rea
 redesign, sequenced after the benchmark goal completes; then re-bench sidecar-index
 for the "after". Table-side stays the correct lean-index default meanwhile.
 
+## Finding 8 — ADR-079 implemented: index-side O(N) bug fixed; rabitq4 now viable, f16 still directory-bound [proven]
+
+Implemented the survivor-directed sidecar directory (ADR-079) — metadata 86→92,
+build writes a `(first_tid → block_tid)` directory, scan binary-searches it and
+reads only the survivor blocks (full-chain fallback after inserts). Release `.so`
+`6078da14`. Re-bench (`artifacts/adr079-sidecar-index/`, fresh build, no inserts):
+
+| index-side @100k | recall np64 / np200 | p50 np8 / np64 / np200 | vs pre-fix (551 ms flat) |
+|---|---|---|---|
+| **rabitq4** | 0.917 / 0.942 | 7.7 / 9.6 / 16.0 ms | **fixed** — scales, ≈ table-side |
+| **f16** | 0.964 / 0.9975 (correct) | 146.8 / 150.2 / 159.2 ms | 3.6× faster, still slow |
+
+- **Correctness proven:** recall matches table-side/f32 at all scales → the
+  directed read returns the right payloads. (Index-placement pg_tests + the recall
+  match.)
+- **rabitq4 index-side fully fixed:** compact payload → many entries/block → small
+  directory → bounded read is fast (16 ms, scales with nprobe).
+- **f16 still directory-bound:** 3072 B payload → ~2 entries/sidecar-block → ~50k
+  blocks → ~74-block directory; the per-block directory read (~140 ms) now
+  dominates (flat ~150 ms). Survivor reads are bounded, but f16's directory is
+  large. Follow-up lever: denser/2-level directory or a per-relation directory cache.
+
+**Net verdict (unchanged overall):** **table-side f32 remains the best option**
+(13 ms, recall 0.999, 25 MiB lean index). ADR-079 removed the catastrophic
+regression and makes index-side **rabitq4** a real fast+compact option (but
+recall-capped ~0.94, rabitq4 lossy); index-side f16 is recall-correct but slow +
+416 MiB. Use table-side f32 by default; index-side rabitq4 where a compact index
+matters and ~0.94 recall suffices.
+
 ## Per-change verdict table (HEAD, all 8 configs on fixed `.so` 67e1534c, sweep 8–200, @100k)
 
 | Change | Recall effect | Latency / size effect | Verdict |
