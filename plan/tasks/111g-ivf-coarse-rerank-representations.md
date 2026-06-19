@@ -1,6 +1,13 @@
 # Task 111g: IVF Coarse-Rerank Representations (generic rerank_format)
 
-Status: **proposed**.
+Status: **done** (merged to `main` 2026-06-19). Code + correctness reviewed and
+approved in `reviews/task-111g/003b-persisted-compact-sidecar/`. **Outstanding:**
+the Phase-3 latency/recall/storage benchmark matrix (acceptance criterion 6) is
+env-blocked on the review box and must run on the Intel bench desktop with staged
+corpora before the rerank-rep promote/iterate decision is final. Index-side
+placement (`rerank_placement='index'`) was promoted from a Non-Goal to the
+constructive win: a persisted compact `0x2A` sidecar with a metadata v3 clean
+break (no backward-compat — research project), blessed in the 003a design review.
 Priority: P1 latency / recall-at-latency (unlocks the 111e contract).
 Parent: `111-ivf-scan-dense-posting-block-layout.md`, follows
 `111e-ivf-coarse-rerank-candidate-pipeline.md` and `111f-ivf-dead-format-cleanup.md`.
