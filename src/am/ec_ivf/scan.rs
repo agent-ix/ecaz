@@ -1586,10 +1586,7 @@ unsafe fn materialize_probe_candidates(
                         )? {
                             return Ok(());
                         }
-                        let min_ip_to_keep = running_top
-                            .as_ref()
-                            .and_then(CandidateTopK::worst_score_if_full)
-                            .map(|worst_score| -worst_score);
+                        let min_ip_to_keep = posting_prune_cutoff(&running_top);
                         let Some(ip) = quantizer.score_ip_from_parts_with_min_bound(
                             prepared_query,
                             posting.gamma,
@@ -1804,10 +1801,7 @@ fn process_scratch_soa_postings(
     }
 
     for index in 0..scratch.len() {
-        let min_ip_to_keep = running_top
-            .as_ref()
-            .and_then(CandidateTopK::worst_score_if_full)
-            .map(|worst_score| -worst_score);
+        let min_ip_to_keep = posting_prune_cutoff(running_top);
         let Some(ip) = quantizer.score_ip_from_parts_with_min_bound(
             prepared_query,
             scratch.gammas[index],
@@ -1994,10 +1988,7 @@ fn process_dense_posting_block(
         if !consume_live_tid_budget(remaining_live_tids_by_list, block.list_id(), heap_tid_count)? {
             continue;
         }
-        let min_ip_to_keep = running_top
-            .as_ref()
-            .and_then(CandidateTopK::worst_score_if_full)
-            .map(|worst_score| -worst_score);
+        let min_ip_to_keep = posting_prune_cutoff(running_top);
         let Some(ip) = quantizer.score_ip_from_parts_with_min_bound(
             prepared_query,
             typed_gammas
@@ -2020,6 +2011,22 @@ fn process_dense_posting_block(
         );
     }
     Ok(())
+}
+
+/// The running top-k cutoff (`min_ip_to_keep`) threaded into posting scoring as
+/// the bound-prune frontier, or `None` when no full frontier exists yet or the
+/// `ec_ivf.posting_bound_prune` switch is off (Task 113 A/B). Returning `None`
+/// disables the sound Cauchy-Schwarz pre-prune for that candidate; results are
+/// byte-identical either way, only the pruned-by-bound work count changes.
+#[inline]
+fn posting_prune_cutoff(running_top: &Option<CandidateTopK>) -> Option<f32> {
+    if !super::options::current_session_posting_bound_prune() {
+        return None;
+    }
+    running_top
+        .as_ref()
+        .and_then(CandidateTopK::worst_score_if_full)
+        .map(|worst_score| -worst_score)
 }
 
 fn record_scored_posting_candidates<I>(
@@ -3226,6 +3233,7 @@ pub(crate) struct EcIvfGettupleCounterDebugSnapshot {
     pub(crate) rerank_source_bytes_read: u32,
     pub(crate) rerank_candidates_considered: u32,
     pub(crate) rerank_candidates_skipped: u32,
+    pub(crate) postings_pruned_by_bound: u32,
 }
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -3272,6 +3280,7 @@ pub(crate) unsafe fn debug_ec_ivf_gettuple_counter_snapshot(
         rerank_source_bytes_read: counters.stats_rerank_source_bytes_read,
         rerank_candidates_considered: counters.stats_rerank_candidates_considered,
         rerank_candidates_skipped: counters.stats_rerank_candidates_skipped,
+        postings_pruned_by_bound: counters.stats_postings_pruned_by_bound,
     }
 }
 

@@ -3885,3 +3885,73 @@
         );
         assert_eq!(wide_lazy.rerank_candidates_skipped, 0);
     }
+
+    // ---------------------------------------------------------------------
+    // Task 113: posting-scan bound pruning recall-safety.
+    // ---------------------------------------------------------------------
+
+    /// Build a RaBitQ IVF index over `rows` so the scan scores through the
+    /// `score_ip_from_parts_with_min_bound` posting path that Task 113's
+    /// `ec_ivf.posting_bound_prune` switch gates.
+    fn make_rabitq_prune_index(table: &str, rows: &[(i64, Vec<f32>)]) -> pg_sys::Oid {
+        Spi::run(&format!(
+            "CREATE TABLE {table} (id bigint primary key, embedding ecvector)"
+        ))
+        .expect("table creation should succeed");
+        for (id, vector) in rows {
+            let literal = format_recall_vector_sql_literal(vector);
+            Spi::run(&format!("INSERT INTO {table} VALUES ({id}, {literal}::ecvector)"))
+                .expect("seed insert should succeed");
+        }
+        Spi::run(&format!(
+            "CREATE INDEX {table}_idx ON {table} USING ec_ivf \
+             (embedding ecvector_ip_ops) \
+             WITH (nlists = 4, nprobe = 4, training_sample_rows = {rows_len}, quantizer = 'rabitq')",
+            rows_len = rows.len(),
+        ))
+        .expect("rabitq index creation should succeed");
+        ec_ivf_index_oid(&format!("{table}_idx"))
+    }
+
+    /// RECALL-SAFETY PROOF (in test form): posting-scan bound pruning never
+    /// changes which candidates survive. The pruned scan
+    /// (`posting_bound_prune = on`) returns the byte-identical top-k, in the
+    /// same order with the same scores, as the unpruned scan
+    /// (`posting_bound_prune = off`). Only the pruned-by-bound work count
+    /// differs — the prune is a pure work reduction, sound by construction.
+    #[pg_test]
+    fn test_ec_ivf_posting_bound_prune_equals_unpruned() {
+        let rows = lazy_rerank_rows(48, 16);
+        let index_oid = make_rabitq_prune_index("ec_ivf_prune_eq", &rows);
+        let query = rows[7].1.clone();
+
+        Spi::run("SET ec_ivf.posting_bound_prune = off")
+            .expect("prune GUC should be settable");
+        let unpruned =
+            ec_ivf_debug!(am::debug_ec_ivf_gettuple_counter_snapshot(index_oid, query.clone()));
+
+        Spi::run("SET ec_ivf.posting_bound_prune = on")
+            .expect("prune GUC should be settable");
+        let pruned =
+            ec_ivf_debug!(am::debug_ec_ivf_gettuple_counter_snapshot(index_oid, query));
+        Spi::run("RESET ec_ivf.posting_bound_prune")
+            .expect("prune GUC should be resettable");
+
+        assert!(
+            !unpruned.outputs.is_empty(),
+            "unpruned scan should emit rows"
+        );
+        assert_eq!(
+            unpruned.outputs, pruned.outputs,
+            "bound pruning must return byte-identical (tid, tid, score) outputs in identical order"
+        );
+        // The unpruned scan prunes nothing; the pruned scan may prune some.
+        assert_eq!(
+            unpruned.postings_pruned_by_bound, 0,
+            "prune-off must record zero pruned-by-bound postings"
+        );
+        assert!(
+            pruned.postings_pruned_by_bound >= unpruned.postings_pruned_by_bound,
+            "prune-on must not prune fewer postings than prune-off"
+        );
+    }

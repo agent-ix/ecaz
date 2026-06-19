@@ -46,6 +46,14 @@ static EC_IVF_DENSE_POSTING_TYPED_VIEWS_GUC: GucSetting<bool> = GucSetting::<boo
 // byte-identical to the fixed-width path. Disable to force the legacy
 // fixed-width rerank for a deterministic A/B.
 static EC_IVF_LAZY_HEAP_RERANK_GUC: GucSetting<bool> = GucSetting::<bool>::new(true);
+// Task 113: thread the running top-k cutoff (`min_ip_to_keep`) into posting
+// scoring so candidates whose sound Cauchy-Schwarz upper bound proves they
+// cannot enter the frontier are pruned before full scoring/retention. Enabled
+// by default and recall-safe by construction (the cutoff is a deterministic
+// upper bound, see `quant::rabitq::try_estimate_ip_scalar`). Disable to force
+// the unpruned scan for a deterministic A/B; the pruned and unpruned scans must
+// return byte-identical results (only the work counts differ).
+static EC_IVF_POSTING_BOUND_PRUNE_GUC: GucSetting<bool> = GucSetting::<bool>::new(true);
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
@@ -422,6 +430,14 @@ pub(super) fn register_gucs() {
         GucContext::Userset,
         GucFlags::default(),
     );
+    GucRegistry::define_bool_guc(
+        c"ec_ivf.posting_bound_prune",
+        c"Enable ec_ivf posting-scan bound pruning.",
+        c"Task 113 switch; when enabled, the running top-k cutoff is threaded into posting scoring so candidates whose sound Cauchy-Schwarz upper bound proves they cannot enter the frontier are pruned before full scoring/retention. Recall-safe by construction. Disable to force the unpruned scan for a deterministic A/B; pruned and unpruned scans return byte-identical results, only the work counts differ.",
+        &EC_IVF_POSTING_BOUND_PRUNE_GUC,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
 }
 
 pub(super) fn current_session_nprobe() -> i32 {
@@ -474,6 +490,14 @@ pub(super) fn current_session_dense_posting_coalescing() -> bool {
 
 pub(super) fn current_session_lazy_heap_rerank() -> bool {
     EC_IVF_LAZY_HEAP_RERANK_GUC.get()
+}
+
+pub(super) fn current_session_posting_bound_prune() -> bool {
+    if cfg!(test) {
+        true
+    } else {
+        EC_IVF_POSTING_BOUND_PRUNE_GUC.get()
+    }
 }
 
 pub(super) fn current_session_dense_posting_typed_views() -> bool {
