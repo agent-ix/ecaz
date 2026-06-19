@@ -61,33 +61,73 @@
 //! A *calibrated* lower bound on `e_j` — e.g. RaBitQ's bound-capable scoring
 //! surface — is the missing ingredient. Producing it is **Task 113**
 //! (`113-ivf-bound-aware-candidate-pruning.md`, Phase 4 "Rerank Frontier
-//! Integration"). Until 113 lands such a bound for the IVF candidate frontier,
-//! the only *sound* lower bound this module can assert is
-//! `lower_bound(e_j) = -inf` — i.e. "a skipped candidate might be arbitrarily
-//! good" — under which the stop predicate provably never fires and the lazy
-//! driver exact-scores the full width. That makes the lazy path **byte-for-byte
-//! identical** to the fixed-width path today (proven by the equivalence test),
-//! while the bound seam is ready for 113 to switch the early stop on with no
-//! further changes to the stop logic.
+//! Integration"). Task 113 lands [`RaBitQLazyBound`], the RaBitQ-derived
+//! implementor wired into `scan.rs` in place of `NoBound`.
 //!
-//! See [`NoBound`] for that sound default and [`LazyRerankBound`] for the seam.
+//! ## Task 113 status: bound seam live; the latency skip still gated on two
+//! remaining levers
+//!
+//! Even with [`RaBitQLazyBound`] wired, **no skip fires today**, by design and
+//! for two independent, honest reasons:
+//!
+//! 1. **The k-cap is not built.** This AM is an ordered index scan with no `k`
+//!    pushdown, so the executor may pull the full `rerank_width` frontier and
+//!    the sound `min_kept` floor equals the width: `floor == considered`, so the
+//!    stop predicate is never reached. Lowering `min_kept` below the width
+//!    requires recall-safe **incremental / on-demand emission of the skipped
+//!    suffix across `amgettuple` calls** — fetch the mandatory floor, evaluate
+//!    the stop, and only fetch + exact-score a suffix candidate if the executor
+//!    actually pulls past the floor. That is invasive (it restructures the
+//!    rerank stage from a single tid-sorted batch into a resumable fetch) and is
+//!    the documented remaining Phase 4 work.
+//! 2. **A *tight, sound* `f(approx)` bound is not available from RaBitQ.**
+//!    [`RaBitQLazyBound`] is affine (`a - slack`); a sound `slack` must be a
+//!    *deterministic* worst-case error budget, but RaBitQ's only *calibrated*
+//!    (tight) envelope is **probabilistic** (~99%), which is recall-risky and
+//!    rejected (Task 113 Non-Goal). The deterministic worst-case `slack` is too
+//!    loose to fire skips. The genuinely tight + sound path is to **carry the
+//!    per-candidate Cauchy-Schwarz `ip` upper bound on the frontier candidate**
+//!    (computed for free during posting scan) rather than re-derive it from the
+//!    scalar approx score — a small frontier-format change tracked as remaining
+//!    Phase 4 work. See [`RaBitQLazyBound`] for the full soundness analysis.
+//!
+//! `RaBitQLazyBound::default()` carries `slack = +inf`, so its `lower_bound` is
+//! `-inf` — identical to `NoBound`. The lazy path is therefore still
+//! **byte-for-byte identical** to the fixed-width path (proven by the
+//! equivalence test); the bound seam is live and the stop logic is unchanged
+//! when a finite bound and the k-cap land.
+//!
+//! See [`NoBound`] for the always-safe default, [`RaBitQLazyBound`] for the
+//! RaBitQ implementor, and [`LazyRerankBound`] for the seam.
 
 /// Sound lower bound on the exact negative-inner-product score of a candidate,
 /// computed from whatever the approximate frontier carries.
 ///
-/// The contract is **soundness**: `lower_bound(candidate)` MUST be `<=` the
-/// candidate's true exact score for every candidate. A bound that can exceed
-/// the true exact score is a recall bug (it would let the lazy driver skip a
-/// candidate that should have been emitted).
+/// # Preconditions implementors MUST uphold
+///
+/// 1. **Soundness.** `lower_bound(approx_score)` MUST be `<=` the candidate's
+///    true exact score for every candidate whose approximate frontier score is
+///    `approx_score`. A bound that can exceed the true exact score is a recall
+///    bug (it would let the lazy driver skip a candidate that should have been
+///    emitted).
+/// 2. **Monotonicity.** `lower_bound` MUST be **non-decreasing in
+///    `approx_score`**: `a1 <= a2  =>  lower_bound(a1) <= lower_bound(a2)`.
+///    [`drive_lazy_rerank`] processes the suffix in ascending approx order and
+///    checks the suffix *head* only; that head-only check is sound **only**
+///    because monotonicity guarantees the head carries the smallest lower
+///    bound in the suffix. An implementor that breaks monotonicity would make
+///    the head-only stop unsound (the driver would have to scan all of the
+///    suffix). `NoBound` (constant), `SlackBound` (affine), and
+///    [`RaBitQLazyBound`] (affine) all satisfy this.
 ///
 /// Today the IVF frontier carries only the two-sided quantized score, which is
-/// not a sound lower bound (see module docs), so the only correct implementor
-/// is [`NoBound`]. Task 113 will add a calibrated implementor that derives a
-/// real lower bound from a bound-capable quantizer (RaBitQ first).
+/// not a sound lower bound (see module docs), so [`NoBound`] is the always-safe
+/// default. Task 113 adds [`RaBitQLazyBound`], the RaBitQ-derived implementor.
 pub(super) trait LazyRerankBound {
     /// A sound lower bound on the exact score of the candidate whose
     /// approximate frontier score is `approx_score`. Must never exceed the true
-    /// exact score.
+    /// exact score, and must be non-decreasing in `approx_score` (see the trait
+    /// preconditions).
     fn lower_bound(&self, approx_score: f32) -> f32;
 }
 
@@ -102,6 +142,91 @@ impl LazyRerankBound for NoBound {
     #[inline]
     fn lower_bound(&self, _approx_score: f32) -> f32 {
         f32::NEG_INFINITY
+    }
+}
+
+/// Task 113 Phase 4: the RaBitQ-derived calibrated lower bound on the exact
+/// neg-IP score, as a function of the approximate (quantized neg-IP) frontier
+/// score `a`.
+///
+/// Scores here are neg-IP (lower is better), so `a = -ip_approx` and the exact
+/// score is `e = -ip_exact`. We need `lower_bound(a) <= e`, i.e. an **upper
+/// bound on `ip_exact`** expressed against `a`. RaBitQ's *sound* surface is the
+/// Cauchy-Schwarz cutoff `|ip_exact| <= ||o|| * ||q|| / |o_dot|`
+/// (`RaBitQQuantizer::try_estimate_ip_scalar`, audited in Task 113 Phase 1).
+///
+/// The frontier candidate, however, carries only the scalar approximate score
+/// `a` — the per-candidate scalars (`||o||`, `o_dot`) needed for a *tight*
+/// per-candidate Cauchy-Schwarz bound are dropped after scoring. So a bound
+/// expressible as `f(a)` can only be the affine envelope
+///
+/// ```text
+///     lower_bound(a) = a - slack
+/// ```
+///
+/// which is sound **iff** `slack >= sup |e - a|` over the candidates. `slack`
+/// is therefore a *deterministic worst-case quantization-error budget*. This is
+/// monotone non-decreasing in `a` (affine, slope 1), satisfying the trait
+/// precondition.
+///
+/// # Soundness vs. tightness — the honest Phase 4 finding
+///
+/// RaBitQ does **not** expose a deterministic, tight `f(a)` error budget:
+///
+/// - Its only *calibrated* (tight) per-candidate envelope
+///   ([`crate::quant::rabitq::DistanceEstimate::bound`]) is **probabilistic**
+///   (~99% Gaussian-tail). Using it as `slack` would be recall-risky — the
+///   explicit Task 113 Non-Goal — so it is rejected.
+/// - A *deterministic* worst-case `slack` from `a` alone is the codebook clip
+///   range scaled by the dimension; it is sound but very loose, so it fires no
+///   skips on the real IVF frontier.
+///
+/// The genuinely tight + sound win is to carry the per-candidate Cauchy-Schwarz
+/// `ip_exact` upper bound on the frontier candidate itself (computed for free
+/// during posting scan, where the scalars are in hand) rather than re-deriving
+/// it from `a`. That is a frontier-format change tracked as remaining Phase 4
+/// work (see module docs / the packet); it is not faked here.
+///
+/// Default: `slack = +inf` reproduces [`NoBound`] (the stop never fires), so
+/// wiring `RaBitQLazyBound::default()` in place of `NoBound` is byte-identical
+/// and recall-safe. A finite `slack` only ever activates skips that the
+/// soundness precondition above guarantees are correct.
+#[derive(Debug, Clone, Copy)]
+pub(super) struct RaBitQLazyBound {
+    /// Deterministic worst-case `sup |e - a|` budget. Must be `>= 0`. `+inf`
+    /// (the default) disables early stops (equivalent to [`NoBound`]).
+    slack: f32,
+}
+
+impl Default for RaBitQLazyBound {
+    fn default() -> Self {
+        Self {
+            slack: f32::INFINITY,
+        }
+    }
+}
+
+impl RaBitQLazyBound {
+    /// Build a bound with an explicit deterministic error budget. `slack` MUST
+    /// be a sound upper bound on `sup |e - a|` for the candidates being
+    /// reranked, or the lazy stop becomes a recall bug. Non-finite or negative
+    /// `slack` collapses to the always-safe `NoBound` behavior.
+    #[cfg(test)]
+    pub(super) fn with_slack(slack: f32) -> Self {
+        let slack = if slack.is_finite() && slack >= 0.0 {
+            slack
+        } else {
+            f32::INFINITY
+        };
+        Self { slack }
+    }
+}
+
+impl LazyRerankBound for RaBitQLazyBound {
+    #[inline]
+    fn lower_bound(&self, approx_score: f32) -> f32 {
+        // a - inf == -inf (NoBound); a - finite_slack is affine, monotone.
+        approx_score - self.slack
     }
 }
 
@@ -197,7 +322,19 @@ where
         // Before fetching candidate `i`, check whether the whole suffix
         // starting at `i` can be skipped. Only allowed once the mandatory floor
         // is met.
-        if i >= floor {
+        if i >= floor && worst_kept.is_finite() {
+            // Gate on a *finite* kept floor. Two reasons:
+            //   1. Until something real has been exact-scored, `worst_kept` is
+            //      `-inf`, and `lower_bound(_) >= -inf` is trivially true for
+            //      any finite (or even `-inf`) bound — that would let a caller
+            //      that mis-feeds the floor (e.g. the `NoBound` placeholder fed
+            //      `-inf` exact scores) stop spuriously and skip live
+            //      candidates. Requiring finiteness makes the driver robust to
+            //      that landmine (Task-112 review finding 2).
+            //   2. With `NoBound` the suffix-head lower bound is `-inf`, so the
+            //      predicate `-inf >= worst_kept` is false for any finite
+            //      `worst_kept` — the stop still never fires, preserving the
+            //      byte-identical full-width rerank.
             let suffix_head_lb = bound.lower_bound(approx_scores_sorted[i]);
             if suffix_head_lb >= worst_kept {
                 reranked_prefix_len = i;
@@ -306,6 +443,73 @@ mod tests {
             loose.reranked_prefix_len >= tight.reranked_prefix_len,
             "looser bound must not skip more than a tighter one"
         );
+    }
+
+    #[test]
+    fn rabitq_default_bound_matches_nobound() {
+        // RaBitQLazyBound::default() (slack = +inf) must reproduce NoBound:
+        // full-width rerank, no skips, byte-identical.
+        let approx = [-9.0_f32, -8.0, -7.0, -6.0, -5.0];
+        let (plan, fetched) = drive_recording(&approx, &RaBitQLazyBound::default(), 2);
+        assert_eq!(plan.reranked_prefix_len, 5, "default bound reranks full width");
+        assert_eq!(plan.skipped(), 0);
+        assert_eq!(fetched, vec![0, 1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn rabitq_finite_slack_can_stop_early() {
+        // A finite, sound slack lets the affine bound fire the same early stop
+        // SlackBound does — RaBitQLazyBound is the production shape of that.
+        let approx = [-9.0_f32, -8.0, -7.0, -6.0, -5.0];
+        let (plan, _) = drive_recording(&approx, &RaBitQLazyBound::with_slack(0.0), 2);
+        assert_eq!(plan.reranked_prefix_len, 2, "zero-slack RaBitQ bound stops at floor");
+        assert_eq!(plan.skipped(), 3);
+    }
+
+    #[test]
+    fn rabitq_bound_is_monotone_non_decreasing() {
+        // Trait precondition: lower_bound is non-decreasing in approx score.
+        let bound = RaBitQLazyBound::with_slack(0.7);
+        let mut prev = f32::NEG_INFINITY;
+        for bits in -50i32..=50 {
+            let a = bits as f32 * 0.3;
+            let lb = bound.lower_bound(a);
+            assert!(lb >= prev, "non-monotone at a={a}: {lb} < {prev}");
+            assert!(lb <= a, "bound {lb} exceeded approx {a} (slack must be >= 0)");
+            prev = lb;
+        }
+    }
+
+    #[test]
+    fn rabitq_negative_or_nonfinite_slack_collapses_to_nobound() {
+        for bad in [-1.0_f32, f32::NAN, f32::INFINITY] {
+            let bound = RaBitQLazyBound::with_slack(bad);
+            assert_eq!(
+                bound.lower_bound(-3.0),
+                f32::NEG_INFINITY,
+                "bad slack {bad} must collapse to NoBound semantics",
+            );
+        }
+    }
+
+    #[test]
+    fn finite_floor_gate_blocks_spurious_stop_on_neg_inf_exact_scores() {
+        // Reproduces the Task-112 review landmine: if a caller feeds -inf exact
+        // scores (the old placeholder) AND a finite bound, the stop must NOT
+        // fire while worst_kept is still -inf. With the is_finite() gate the
+        // driver reranks the full width instead of skipping live candidates.
+        let approx = [-9.0_f32, -8.0, -7.0, -6.0, -5.0];
+        let mut fetched = Vec::new();
+        let plan = drive_lazy_rerank(&approx, &RaBitQLazyBound::with_slack(0.0), 2, |i| {
+            fetched.push(i);
+            f32::NEG_INFINITY // every exact score is -inf (the placeholder)
+        });
+        assert_eq!(
+            plan.reranked_prefix_len, 5,
+            "with -inf exact scores the finite-floor gate must keep reranking",
+        );
+        assert_eq!(plan.skipped(), 0);
+        assert_eq!(fetched, vec![0, 1, 2, 3, 4]);
     }
 
     #[test]

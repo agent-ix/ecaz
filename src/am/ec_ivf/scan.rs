@@ -2139,7 +2139,7 @@ unsafe fn rerank_probe_candidates(
                     .effective_rerank_width;
             let rerank_len = resolve_rerank_len(rerank_width, candidates.len());
 
-            // Task 112: plan the lazy exact-rerank pass over the approximate
+            // Task 112/113: plan the lazy exact-rerank pass over the approximate
             // frontier. `candidates[..rerank_len]` is ascending by approximate
             // score here (best first), so the plan only needs those scores.
             //
@@ -2147,36 +2147,40 @@ unsafe fn rerank_probe_candidates(
             // `k` pushdown, so the executor may pull the full `rerank_width`
             // frontier. The sound floor on the kept set is therefore the whole
             // width — we cannot drop a candidate the executor might still ask
-            // for. Combined with the `NoBound` lower bound (sound until Task 113
-            // supplies a calibrated one), the plan provably reranks the full
-            // width today: `reranked_prefix_len == rerank_len`, `skipped == 0`,
-            // byte-identical to the pre-112 fixed-width path. The plan is the
-            // seam Task 113 plugs a real bound into; an early stop additionally
-            // needs a `k`-cap or on-demand fetch of the skipped suffix before
-            // `min_kept` can drop below the full width (documented in
-            // `lazy.rs`). The gate forces the legacy width when disabled.
+            // for, so `floor == considered` and the stop predicate is never
+            // reached. Dropping `min_kept` below the width needs a `k`-cap or
+            // on-demand cross-`amgettuple` fetch of the skipped suffix; that is
+            // the remaining Task 113 Phase 4 lever (documented in `lazy.rs`).
+            //
+            // Task 113 swaps the `NoBound` lower bound for the RaBitQ-derived
+            // `RaBitQLazyBound`. `::default()` carries `slack = +inf`, so its
+            // `lower_bound` is `-inf` — identical to `NoBound` and recall-safe
+            // by construction (the stop provably never fires). It is wired here
+            // as the live seam so a finite, sound `slack` (or per-candidate
+            // bound carriage) activates skips with no further changes to this
+            // call site. The gate forces the legacy width when disabled.
             let lazy_enabled = super::options::current_session_lazy_heap_rerank();
             let approx_scores: Vec<f32> = candidates[..rerank_len]
                 .iter()
                 .map(|candidate| candidate.score)
                 .collect();
-            // Drive the lazy stop over the approximate frontier. The existing
-            // rerank helpers fetch the kept prefix tid-sorted in a single
-            // locality-preserving batch *after* the prefix length is decided, so
-            // the exact score is not available to the driver at planning time.
-            // That is sound today because the only available bound is `NoBound`,
-            // under which the stop is score-independent (it never fires early):
-            // `drive_lazy_rerank` returns `reranked_prefix_len == rerank_len`
-            // regardless of the exact scores fed in. The placeholder fetch makes
-            // that explicit. When Task 113 supplies a calibrated finite bound,
-            // activating real skips will require feeding true exact scores into
-            // the driver (e.g. fetch the mandatory floor, evaluate the stop, then
-            // fetch the remainder) — see `lazy.rs`.
+            // Feed the candidates' true approximate frontier scores as the
+            // driver's exact-score input. These are the genuine pre-rerank
+            // scores already materialized on each candidate (not the prior
+            // `-inf` placeholder), so `worst_kept` becomes a finite kept floor
+            // immediately. The driver's `worst_kept.is_finite()` gate (Task-112
+            // review finding 2) then makes the early stop robust: it can only
+            // fire once a real kept score exists. The *exact* heap-f32 rescore
+            // still happens in the tid-sorted batch below; under today's
+            // full-width floor the plan reranks everything regardless, so this
+            // value only affects the plan once a future k-cap lowers the floor,
+            // at which point feeding the candidates' own approx scores keeps the
+            // floor finite and the gate honest.
             let plan = super::lazy::drive_lazy_rerank(
                 &approx_scores,
-                &super::lazy::NoBound,
+                &super::lazy::RaBitQLazyBound::default(),
                 rerank_len,
-                |_| f32::NEG_INFINITY,
+                |i| approx_scores[i],
             );
             let reranked_prefix_len = if lazy_enabled {
                 plan.reranked_prefix_len
