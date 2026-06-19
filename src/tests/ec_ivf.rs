@@ -4132,3 +4132,49 @@
             "residual scan after insert should emit rows"
         );
     }
+
+    /// Task 115 (reviewer carry-forward 1): a residual posting must score
+    /// identically whether it was encoded at BUILD time or via a later INSERT.
+    /// Both encode the residual against the same frozen list centroid, so a row
+    /// inserted post-build must receive the SAME approximate score as its
+    /// build-time twin in the same index. Build the index on all rows, then
+    /// INSERT a duplicate of an existing row's vector; querying with that vector
+    /// must return the build-time row and the inserted duplicate with the
+    /// identical score (same centroid set, same residual encoder).
+    #[pg_test]
+    fn test_ec_ivf_rabitq_residual_build_equals_insert() {
+        let rows = lazy_rerank_rows(33, 16);
+        let twin_vec = rows[9].1.clone();
+
+        let index_oid =
+            make_rabitq_index_with_opts("ec_ivf_res_bei", &rows, ", rabitq_residual = 1");
+
+        // Insert a duplicate of an existing build-time row's vector. It is
+        // assigned to the same centroid and residual-encoded at insert time.
+        let literal = format_recall_vector_sql_literal(&twin_vec);
+        Spi::run(&format!(
+            "INSERT INTO ec_ivf_res_bei VALUES (9_999, {literal}::ecvector)"
+        ))
+        .expect("residual duplicate insert should succeed");
+
+        let (outputs, _) =
+            ec_ivf_debug!(am::debug_ec_ivf_gettuple_outputs(index_oid, twin_vec));
+        let ctid_to_id = ctid_id_map("ec_ivf_res_bei");
+
+        // Map each emitted (block, offset, score) to its row id, then compare the
+        // build-time twin (id 9) and the inserted duplicate (id 9999). Their
+        // approximate scores must match exactly: same vector, same centroid, same
+        // residual encoder at build and insert.
+        let score_for = |target: usize| -> Option<f32> {
+            outputs.iter().find_map(|&(block, offset, score)| {
+                (ctid_to_id.get(&(block, offset)).copied() == Some(target)).then_some(score)
+            })
+        };
+        let build_score = score_for(9).expect("build-time twin (id 9) should be emitted");
+        let insert_score =
+            score_for(9_999).expect("inserted duplicate (id 9999) should be emitted");
+        assert_eq!(
+            build_score, insert_score,
+            "a residual posting must score identically whether encoded at build or via INSERT"
+        );
+    }
