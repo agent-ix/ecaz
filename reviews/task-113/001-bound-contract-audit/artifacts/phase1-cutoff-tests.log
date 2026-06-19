@@ -1,0 +1,11 @@
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 42.14s
+     Running unittests src/lib.rs (target/debug/deps/ecaz-52f8c7085962b346)
+
+running 3 tests
+test quant::rabitq::tests::try_estimate_scalar_cutoff_is_monotone_in_threshold ... ok
+test quant::rabitq::tests::try_estimate_bound_carrying_cutoff_agrees_with_scalar ... ok
+test quant::rabitq::tests::try_estimate_scalar_cutoff_never_prunes_a_keepable_candidate ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 2165 filtered out; finished in 0.02s
+
