@@ -2497,11 +2497,31 @@ unsafe fn rerank_probe_candidates_index_side(
         .sidecar_payload_len(dimensions)
         .unwrap_or_else(|| pgrx::error!("ec_ivf index-side rerank used for an f32 rerank format"));
 
-    // Load the whole sidecar chain into a heap-TID -> compact payload map.
-    let payload_map = unsafe {
-        load_rerank_sidecar_payloads(index_relation, sidecar_head, expected_payload_len)
-    }
-    .unwrap_or_else(|e| pgrx::error!("{e}"));
+    // ADR-079: prefer the survivor-directed bounded read (read only the survivor
+    // blocks via the directory) over the O(N) full-chain materialization. Eligible
+    // only for a fresh build (no inserts since build) with a directory present;
+    // inserts prepend directory-less blocks, so fall back to the full chain until
+    // the next REINDEX regenerates the directory.
+    let metadata = unsafe { super::page::read_metadata_page(index_relation) };
+    let use_directory = metadata.rerank_sidecar_directory_head != ItemPointer::INVALID
+        && metadata.inserted_since_build == 0;
+    let payload_map = if use_directory {
+        let survivors: Vec<ItemPointer> = candidates.iter().map(|c| c.heap_tid).collect();
+        unsafe {
+            load_rerank_sidecar_payloads_directed(
+                index_relation,
+                metadata.rerank_sidecar_directory_head,
+                expected_payload_len,
+                &survivors,
+            )
+        }
+        .unwrap_or_else(|e| pgrx::error!("{e}"))
+    } else {
+        unsafe {
+            load_rerank_sidecar_payloads(index_relation, sidecar_head, expected_payload_len)
+        }
+        .unwrap_or_else(|e| pgrx::error!("{e}"))
+    };
 
     let batched = scorer.is_batched();
     let mut source_bytes_read = 0usize;
@@ -2577,6 +2597,77 @@ unsafe fn load_rerank_sidecar_payloads(
             map.insert(*heap_tid, payload);
         }
         next_tid = block.next_tid;
+    }
+    Ok(map)
+}
+
+/// ADR-079: survivor-directed bounded read. Instead of materializing the whole
+/// `0x2A` chain (O(N)), load the small directory (one entry per sidecar block:
+/// first heap TID -> block pointer), binary-search each survivor to its owning
+/// block, and read only those blocks (O(W)). `survivors_sorted` must be ascending
+/// by heap TID. Used only for a fresh build (no inserts) with a directory present;
+/// otherwise the caller uses the full-chain fallback.
+///
+/// # Safety
+/// `index_relation` is live; the directory + selected sidecar blocks are read.
+unsafe fn load_rerank_sidecar_payloads_directed(
+    index_relation: pg_sys::Relation,
+    directory_head: ItemPointer,
+    expected_payload_len: usize,
+    survivors_sorted: &[ItemPointer],
+) -> Result<std::collections::HashMap<ItemPointer, Vec<u8>>, String> {
+    let tid_key = |t: &ItemPointer| (t.block_number, t.offset_number);
+    // Load the directory: (first_tid, block_tid), ascending by first_tid (build
+    // wrote sidecar blocks globally tid-sorted). Directory payload is a 6-byte
+    // block pointer.
+    let mut dir: Vec<(ItemPointer, ItemPointer)> = Vec::new();
+    let mut next = directory_head;
+    while next != ItemPointer::INVALID {
+        let block = unsafe { super::page::read_ivf_rerank_sidecar_block(index_relation, next)? };
+        for (i, first_tid) in block.heap_tids.iter().enumerate() {
+            let start = i * block.payload_len;
+            let block_tid = ItemPointer::decode(&block.payloads[start..start + block.payload_len])?;
+            dir.push((*first_tid, block_tid));
+        }
+        next = block.next_tid;
+    }
+    let mut map = std::collections::HashMap::new();
+    if dir.is_empty() {
+        return Ok(map);
+    }
+    // Map each survivor to its owning block (the largest first_tid <= survivor).
+    // Survivors are ascending, so owning blocks are non-decreasing -> dedup by
+    // comparing to the last pushed block.
+    let mut needed: Vec<ItemPointer> = Vec::new();
+    for survivor in survivors_sorted {
+        let idx = dir.partition_point(|(first, _)| tid_key(first) <= tid_key(survivor));
+        if idx == 0 {
+            continue;
+        }
+        let block_tid = dir[idx - 1].1;
+        if needed.last() != Some(&block_tid) {
+            needed.push(block_tid);
+        }
+    }
+    let want: std::collections::HashSet<(u32, u16)> =
+        survivors_sorted.iter().map(tid_key).collect();
+    for block_tid in needed {
+        let block = unsafe { super::page::read_ivf_rerank_sidecar_block(index_relation, block_tid)? };
+        if block.payload_len != expected_payload_len {
+            return Err(format!(
+                "ec_ivf rerank sidecar payload length {} does not match expected {expected_payload_len}",
+                block.payload_len
+            ));
+        }
+        for (i, heap_tid) in block.heap_tids.iter().enumerate() {
+            if want.contains(&tid_key(heap_tid)) {
+                let start = i * block.payload_len;
+                map.insert(
+                    *heap_tid,
+                    block.payloads[start..start + block.payload_len].to_vec(),
+                );
+            }
+        }
     }
     Ok(map)
 }
