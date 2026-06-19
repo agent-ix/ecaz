@@ -80,16 +80,20 @@
 //!    actually pulls past the floor. That is invasive (it restructures the
 //!    rerank stage from a single tid-sorted batch into a resumable fetch) and is
 //!    the documented remaining Phase 4 work.
-//! 2. **A *tight, sound* `f(approx)` bound is not available from RaBitQ.**
-//!    [`RaBitQLazyBound`] is affine (`a - slack`); a sound `slack` must be a
-//!    *deterministic* worst-case error budget, but RaBitQ's only *calibrated*
-//!    (tight) envelope is **probabilistic** (~99%), which is recall-risky and
-//!    rejected (Task 113 Non-Goal). The deterministic worst-case `slack` is too
-//!    loose to fire skips. The genuinely tight + sound path is to **carry the
-//!    per-candidate Cauchy-Schwarz `ip` upper bound on the frontier candidate**
-//!    (computed for free during posting scan) rather than re-derive it from the
-//!    scalar approx score — a small frontier-format change tracked as remaining
-//!    Phase 4 work. See [`RaBitQLazyBound`] for the full soundness analysis.
+//! 2. **A *tight, sound* `f(approx)` bound is not available from RaBitQ.** The
+//!    stop needs a sound lower bound on the candidate's *exact* score, which is
+//!    the quantization-residual term `||q|| · ||o − x_dec||` — NOT the
+//!    estimate-space Cauchy-Schwarz posting-prune cutoff (that bounds the
+//!    estimate, not the exact score; reusing it here would be a recall bug, per
+//!    the 113/001 review). [`RaBitQLazyBound`] is the affine `a - slack` form of
+//!    that residual budget; a *global* deterministic `slack` is sound but loose
+//!    (large `||o − x_dec||` at 1-bit), and RaBitQ's only *tight* envelope is
+//!    probabilistic (~99%, recall-risky, rejected — Task 113 Non-Goal). The
+//!    genuinely tight + sound path is to **carry the per-candidate residual
+//!    bound `||q|| · ||o − x_dec||` on the frontier candidate** (computed for
+//!    free during posting scan) rather than re-derive it from the scalar approx
+//!    score — a small frontier-format change tracked as remaining Phase 4 work.
+//!    See [`RaBitQLazyBound`] for the full soundness analysis.
 //!
 //! `RaBitQLazyBound::default()` carries `slack = +inf`, so its `lower_bound` is
 //! `-inf` — identical to `NoBound`. The lazy path is therefore still
@@ -145,56 +149,80 @@ impl LazyRerankBound for NoBound {
     }
 }
 
-/// Task 113 Phase 4: the RaBitQ-derived calibrated lower bound on the exact
+/// Task 113 Phase 4: the RaBitQ-derived calibrated lower bound on the **exact**
 /// neg-IP score, as a function of the approximate (quantized neg-IP) frontier
 /// score `a`.
 ///
-/// Scores here are neg-IP (lower is better), so `a = -ip_approx` and the exact
-/// score is `e = -ip_exact`. We need `lower_bound(a) <= e`, i.e. an **upper
-/// bound on `ip_exact`** expressed against `a`. RaBitQ's *sound* surface is the
-/// Cauchy-Schwarz cutoff `|ip_exact| <= ||o|| * ||q|| / |o_dot|`
-/// (`RaBitQQuantizer::try_estimate_ip_scalar`, audited in Task 113 Phase 1).
+/// # The bound must be on the EXACT score, not the estimate (113/001 review)
 ///
-/// The frontier candidate, however, carries only the scalar approximate score
-/// `a` — the per-candidate scalars (`||o||`, `o_dot`) needed for a *tight*
-/// per-candidate Cauchy-Schwarz bound are dropped after scoring. So a bound
-/// expressible as `f(a)` can only be the affine envelope
+/// Scores here are neg-IP (lower is better): `a = -ip_approx` is the *quantized*
+/// estimate and the exact score is `e = -ip_exact = -⟨q, o⟩` for the true
+/// vector `o`. The lazy stop compares `lower_bound(a)` against `worst_kept`,
+/// which is an **exact** heap-f32 score — so `lower_bound(a)` must be a sound
+/// lower bound on `e`, i.e. an upper bound on `ip_exact = ⟨q, o⟩`.
+///
+/// **This is NOT the posting-prune Cauchy-Schwarz surface.** That surface
+/// (`RaBitQQuantizer::try_estimate_ip_scalar`, Phase 1) bounds the *estimate*
+/// `α·⟨q, x_dec⟩`, which is the right reference for the quantized-space posting
+/// prune but the *wrong* one here: substituting it would be a recall bug. The
+/// exact score relates to the estimate through the quantization residual,
 ///
 /// ```text
-///     lower_bound(a) = a - slack
+///     ⟨q, o⟩ = ⟨q, x_dec⟩ + ⟨q, o − x_dec⟩,
 /// ```
 ///
-/// which is sound **iff** `slack >= sup |e - a|` over the candidates. `slack`
-/// is therefore a *deterministic worst-case quantization-error budget*. This is
-/// monotone non-decreasing in `a` (affine, slope 1), satisfying the trait
-/// precondition.
+/// and the residual `⟨q, o − x_dec⟩` is exactly what the estimate surface does
+/// not bound. A *deterministic* bound on it is
+///
+/// ```text
+///     |⟨q, o − x_dec⟩| ≤ ||q|| · ||o − x_dec||,
+///     ||o − x_dec||² = ||o||² − 2·o_dot·||o||·||x_dec|| + ||x_dec||²,
+/// ```
+///
+/// all of which is recoverable from the stored per-candidate scalars
+/// (`||o||`, `o_dot`, `||x_dec||`). That yields a **sound, deterministic** lower
+/// bound on the exact score — distinct from both the estimate-space
+/// Cauchy-Schwarz cutoff and the probabilistic ε-envelope.
+///
+/// # Why this implementor is affine in `a`, and the slack contract
+///
+/// The frontier candidate carries only the scalar `a`; the per-candidate scalars
+/// needed for the tight per-candidate residual bound above are dropped after
+/// scoring. So a bound expressible as `f(a)` is the affine envelope
+///
+/// ```text
+///     lower_bound(a) = a - slack,
+/// ```
+///
+/// sound **iff** `slack >= sup |e − a|` over the candidates — where the per-
+/// candidate `|e − a|` is bounded by the residual term `||q|| · ||o − x_dec||`
+/// above. `slack` is therefore a *deterministic worst-case residual budget*,
+/// not anything derived from the estimate cutoff. Affine (slope 1) ⇒ monotone
+/// non-decreasing, satisfying the trait precondition.
 ///
 /// # Soundness vs. tightness — the honest Phase 4 finding
 ///
-/// RaBitQ does **not** expose a deterministic, tight `f(a)` error budget:
-///
-/// - Its only *calibrated* (tight) per-candidate envelope
-///   ([`crate::quant::rabitq::DistanceEstimate::bound`]) is **probabilistic**
-///   (~99% Gaussian-tail). Using it as `slack` would be recall-risky — the
-///   explicit Task 113 Non-Goal — so it is rejected.
-/// - A *deterministic* worst-case `slack` from `a` alone is the codebook clip
-///   range scaled by the dimension; it is sound but very loose, so it fires no
-///   skips on the real IVF frontier.
-///
-/// The genuinely tight + sound win is to carry the per-candidate Cauchy-Schwarz
-/// `ip_exact` upper bound on the frontier candidate itself (computed for free
-/// during posting scan, where the scalars are in hand) rather than re-deriving
-/// it from `a`. That is a frontier-format change tracked as remaining Phase 4
-/// work (see module docs / the packet); it is not faked here.
+/// A *global* deterministic `slack` (the sup of `||q||·||o − x_dec||` over the
+/// frontier) is sound but **loose** — at 1-bit RaBitQ `||o − x_dec||` is large,
+/// so the stop fires rarely or never. RaBitQ's only *tight* per-candidate
+/// envelope ([`crate::quant::rabitq::DistanceEstimate::bound`]) is
+/// **probabilistic** (~99% Gaussian-tail) and is rejected as recall-risky (the
+/// Task 113 Non-Goal). The genuinely tight + sound win is to **carry the
+/// per-candidate residual bound `||q||·||o − x_dec||` on the frontier candidate
+/// itself** (computed for free during posting scan, where the scalars are in
+/// hand) and feed it per-candidate — a small frontier-format change tracked as
+/// remaining Phase 4 work. It is not faked here.
 ///
 /// Default: `slack = +inf` reproduces [`NoBound`] (the stop never fires), so
 /// wiring `RaBitQLazyBound::default()` in place of `NoBound` is byte-identical
 /// and recall-safe. A finite `slack` only ever activates skips that the
-/// soundness precondition above guarantees are correct.
+/// soundness contract above guarantees are correct.
 #[derive(Debug, Clone, Copy)]
 pub(super) struct RaBitQLazyBound {
-    /// Deterministic worst-case `sup |e - a|` budget. Must be `>= 0`. `+inf`
-    /// (the default) disables early stops (equivalent to [`NoBound`]).
+    /// Deterministic worst-case `sup |e - a|` budget, bounded per-candidate by
+    /// the quantization residual `||q|| · ||o − x_dec||` (NOT the estimate-space
+    /// Cauchy-Schwarz cutoff). Must be `>= 0`. `+inf` (the default) disables
+    /// early stops (equivalent to [`NoBound`]).
     slack: f32,
 }
 

@@ -1142,13 +1142,17 @@ impl PreparedEstimator {
     ///    = 2.5`). It is NOT a deterministic/sound bound: a candidate's true
     ///    error can exceed it. Using it as a hard skip threshold would be
     ///    recall-risky — the explicit Task 113 Non-Goal — so it is **not**
-    ///    used to prune. The calibrated lower bound that Task 113 Phase 4
-    ///    feeds to the lazy rerank driver is derived from surface (1), not
-    ///    this envelope (see `ec_ivf::lazy::RaBitQLazyBound`).
+    ///    used to prune. Note neither surface is the right reference for Task
+    ///    113 Phase 4's lazy *exact*-rerank stop: that needs a sound lower
+    ///    bound on the EXACT score, i.e. on the quantization residual
+    ///    `||q|| · ||o − x_dec||`, distinct from this estimate cutoff (see
+    ///    `ec_ivf::lazy::RaBitQLazyBound`).
     ///
     /// Correctness: the asymmetric RaBitQ estimator is
-    /// `α · ⟨q, x_dec⟩` with `α = ||o|| · o_dot / ||x_dec||`. By
-    /// Cauchy-Schwarz, `|⟨q, x_dec⟩| ≤ ||q|| · ||x_dec||`, so the
+    /// `α · ⟨q, x_dec⟩` with `α = ||o|| · o_dot / ||x_dec||`, where
+    /// `o_dot = ⟨o/||o||, x_dec/||x_dec||⟩` is the cosine between the true
+    /// vector and its dequantized code (the unit-vector correction term).
+    /// By Cauchy-Schwarz, `|⟨q, x_dec⟩| ≤ ||q|| · ||x_dec||`, so the
     /// estimate is bounded by `||o|| · ||q|| / o_dot` (positive side).
     /// Skipping when that upper bound is below the running top-K cutoff
     /// is recall-safe: this candidate can never reach top-K.
@@ -6129,6 +6133,36 @@ mod tests {
                     );
                 }
                 last_pruned = pruned;
+            }
+        }
+    }
+
+    #[test]
+    fn try_estimate_scalar_cutoff_is_sound_under_non_identity_rotation() {
+        // Belt-and-suspenders against a norm/o_dot read bug that only manifests
+        // post-rotation: re-run the soundness check through a real SRHT
+        // rotation rather than Identity. The Cauchy-Schwarz cutoff is
+        // rotation-invariant, so soundness must still hold.
+        let dim = 256;
+        let rotation: Arc<dyn Rotation> = Arc::new(SrhtRotation::with_seed(dim, 1234));
+        let q = RaBitQQuantizer::new(rotation);
+        let query = deterministic_gaussian(dim, 13);
+        let prepared = q.prepare_estimator(&query);
+
+        for seed in 0..48u64 {
+            let c = deterministic_gaussian(dim, seed.wrapping_add(300));
+            let code = <RaBitQQuantizer as crate::quant::Quantizer>::encode_code(&q, &c).into_vec();
+            let unpruned = prepared
+                .try_estimate_ip_scalar(&code, f32::NEG_INFINITY)
+                .expect("NEG_INFINITY cutoff never prunes");
+            for cutoff_bits in -24i32..=24 {
+                let cutoff = cutoff_bits as f32 * 0.5;
+                if prepared.try_estimate_ip_scalar(&code, cutoff).is_none() {
+                    assert!(
+                        unpruned < cutoff,
+                        "rotated: pruned a keepable candidate ({unpruned} >= {cutoff})",
+                    );
+                }
             }
         }
     }
