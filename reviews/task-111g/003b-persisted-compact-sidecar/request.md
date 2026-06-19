@@ -147,3 +147,39 @@ unaffected (verified by the full `vacuum` test set staying green).
    existing `ivf_metadata_v1.hex` fixture (mirroring the hnsw precedent where v1
    and v3 rows share one metadata fixture). No new hand-authored hex fixture was
    fabricated; the v1 fixture is the durable backward-read proof.
+
+## Update — backward-compat machinery stripped (2026-06-19)
+
+This is a research project with no users and no backward-compat requirement, so
+the metadata bump is now a **clean break to format v3** (old indexes are simply
+rebuilt). The 003b backward-readable machinery was removed; the `0x2A` rerank
+sidecar, v3 86-byte metadata, and the legitimate `rerank_sidecar_head = INVALID`
+"no sidecar -> table/heap source" runtime state are all KEPT.
+
+Removed:
+
+- `src/am/ec_ivf/page.rs`: `EC_IVF_METADATA_BYTES_V2`,
+  `EC_IVF_INDEX_FORMAT_VERSION_MIN`, `special_size()`, `metadata_special_bytes()`
+  and its clamp; decode now requires `len >= EC_IVF_METADATA_BYTES (86)` and
+  `format_version == 3` (rejects everything else); the v2-image decode unit
+  tests; the v1/v2/additive comment framing.
+- Re-exports of `EC_IVF_METADATA_BYTES_V2` from `src/am/mod.rs`, `src/lib.rs`,
+  `src/am/ec_ivf/mod.rs`.
+- `tests/size_of_assertions.rs`: the `EC_IVF_METADATA_BYTES_V2 == 80` assertion.
+- `tests/on_disk_fixtures.rs`: the v1-fixture decode test; the byteswapped-version
+  test and the decode test now use a clean v3 fixture
+  (`fixtures/on-disk/ivf_metadata_v3.hex`); `fixtures/on-disk/ivf_metadata_v1.hex`
+  deleted.
+- `fixtures/upgrade/matrix.csv`: ivf now lists only `3` (read+write).
+- `docs/on-disk-format.md`, `plan/tasks/42-on-disk-format-invariants.md`:
+  simplified to v3-only, dropping the 1/2/3 history and "backward-readable"
+  policy framing.
+
+Validation (logs under `artifacts/`): `cargo check` and
+`cargo clippy --all-targets -D warnings` clean (pg18); integration tests
+`size_of_assertions` (13), `on_disk_fixtures` (47), `upgrade_matrix` (2) all
+pass; `cargo pgrx test pg18` coarse_rerank set (18) and index/table placement +
+sidecar set (7) all pass. One unrelated SPIRE test
+(`pg_test_ec_spire_boundary_replica_placement_diagnostics_sql`) matched the
+`placement` name filter and fails on a pre-existing ec_spire strict-snapshot
+assertion — no ec_spire files were touched by this change.

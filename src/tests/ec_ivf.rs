@@ -1548,11 +1548,11 @@
 
     #[pg_test]
     fn test_ec_ivf_table_placement_has_no_sidecar_and_scans() {
-        // Task 111g (003b) backward-readability: a table-placement coarse_rerank
-        // index carries NO sidecar (rerank_sidecar_head = INVALID), exactly like
-        // a v1/v2-era index. Such an index must still scan, reading the heap
-        // source (the table f32 path). This proves the v3 "no sidecar -> table
-        // fallback" path the metadata bump guarantees for old indexes.
+        // Task 111g (003b): a table-placement coarse_rerank index carries NO
+        // sidecar (rerank_sidecar_head = INVALID). Such an index must still
+        // scan, reading the heap source (the table f32 path). This is the
+        // legitimate "no sidecar -> table fallback" runtime state, not a compat
+        // mode.
         Spi::run("CREATE TABLE ec_ivf_no_sidecar (id bigint primary key, embedding ecvector)")
             .expect("table creation should succeed");
         Spi::run(

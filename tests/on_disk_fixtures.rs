@@ -505,12 +505,12 @@ fn diskann_vamana_codebook_tuple_v3_fixture_decodes() {
 }
 
 #[test]
-fn ivf_metadata_v1_fixture_decodes() {
-    let bytes = decode_hex_fixture(include_str!("../fixtures/on-disk/ivf_metadata_v1.hex"));
+fn ivf_metadata_v3_fixture_decodes() {
+    let bytes = decode_hex_fixture(include_str!("../fixtures/on-disk/ivf_metadata_v3.hex"));
 
     let metadata = IvfMetadataPage::decode(&bytes).expect("ivf metadata fixture should decode");
 
-    assert_eq!(metadata.format_version, 1);
+    assert_eq!(metadata.format_version, 3);
     assert_eq!(metadata.dimensions, 128);
     assert_eq!(metadata.nlists, 16);
     assert_eq!(metadata.nprobe, 4);
@@ -545,15 +545,14 @@ fn ivf_metadata_v1_fixture_decodes() {
         }
     );
     assert_eq!(metadata.pq_group_size, 4);
-    // Task 111g: this 80-byte v1 on-disk image predates the v3 rerank sidecar
-    // head (bytes 80..86). Decoding it under the v3 reader must yield head =
-    // INVALID ("no sidecar"), proving the v3 metadata bump is backward-readable.
+    // This fixture carries no rerank sidecar (head = INVALID), the legitimate
+    // "no sidecar -> table/heap source" runtime state for table placement / f32.
     assert_eq!(metadata.rerank_sidecar_head, ItemPointer::INVALID);
 }
 
 #[test]
-fn ivf_metadata_v1_byteswapped_version_is_rejected() {
-    let mut bytes = decode_hex_fixture(include_str!("../fixtures/on-disk/ivf_metadata_v1.hex"));
+fn ivf_metadata_byteswapped_version_is_rejected() {
+    let mut bytes = decode_hex_fixture(include_str!("../fixtures/on-disk/ivf_metadata_v3.hex"));
     bytes.swap(
         EC_IVF_METADATA_FORMAT_VERSION_OFFSET,
         EC_IVF_METADATA_FORMAT_VERSION_OFFSET + 1,
@@ -562,7 +561,7 @@ fn ivf_metadata_v1_byteswapped_version_is_rejected() {
     let err = IvfMetadataPage::decode(&bytes).expect_err("byte-swapped version should fail");
 
     assert!(
-        err.contains("unsupported ec_ivf metadata format version: 256"),
+        err.contains("unsupported ec_ivf metadata format version: 768"),
         "unexpected error: {err}"
     );
 }

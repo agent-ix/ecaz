@@ -1,0 +1,252 @@
+[32m[1m       Using[0m[39m [37m[1mCliArgument("pg18")[0m[39m and `pg_config` from [36m/home/peter/.pgrx/18.3/pgrx-install/bin/pg_config[39m
+CARGO_TARGET_DIR="/home/peter/dev/ecaz/target" PGRX_ALL_FEATURES="false" PGRX_BUILD_PROFILE="dev" PGRX_FEATURES="pg18 pg_test" PGRX_NO_DEFAULT_FEATURES="true" PGRX_NO_SCHEMA="false" "/home/peter/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "test" "--features" "pg18 pg_test" "--no-default-features" "placement"
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3m 40s
+     Running unittests src/lib.rs (target/debug/deps/ecaz-3c3edda2dfa5f066)
+
+running 190 tests
+test am::ec_ivf::options::tests::coarse_rerank_accepts_index_placement_with_f16 ... ok
+test am::ec_ivf::options::tests::coarse_rerank_accepts_index_placement_with_rabitq4 ... ok
+test am::ec_ivf::options::tests::coarse_rerank_rejects_index_placement_with_default_f32 - should panic ... ok
+test am::ec_ivf::options::tests::coarse_rerank_rejects_index_placement_with_explicit_f32 - should panic ... ok
+test am::ec_spire::custom_scan::tests::custom_scan_eligibility_counts_remote_available_placements ... ok
+test am::ec_spire::meta::tests::local_single_store_placement_uses_default_ids ... ok
+test am::ec_spire::meta::tests::placement_entry_rejects_invalid_identity_and_locator ... ok
+test am::ec_spire::meta::tests::placement_entry_round_trips ... ok
+test am::ec_spire::meta::tests::placement_entry_rejects_unknown_state_and_format ... ok
+test am::ec_spire::meta::tests::published_epoch_snapshot_accepts_strict_available_placement ... ok
+test am::ec_spire::meta::tests::placement_directory_rejects_duplicate_pid_and_epoch_mismatch ... ok
+test am::ec_spire::meta::tests::published_epoch_snapshot_degraded_mode_allows_unavailable_or_skipped_placement ... ok
+test am::ec_spire::meta::tests::published_epoch_snapshot_rejects_non_available_placement_in_strict_mode ... ok
+test am::ec_spire::meta::tests::published_epoch_snapshot_rejects_missing_or_version_mismatched_placement ... ok
+test am::ec_spire::meta::tests::placement_directory_sorts_and_round_trips_entries ... ok
+test am::ec_spire::meta::tests::placement_directory_rejects_corrupt_header_and_length ... ok
+test am::ec_spire::meta::tests::local_store_config_validates_placements_against_active_store_set ... ok
+test am::ec_spire::assign::tests::build_boundary_leaf_assignment_placements_reuses_vec_id_for_replicas ... ok
+test am::ec_spire::assign::tests::build_boundary_leaf_assignment_placements_with_identity_reuses_global_id_for_replicas ... ok
+test am::ec_spire::assign::tests::build_boundary_insert_delta_assignment_placements_sets_delta_flags ... ok
+test am::ec_spire::build::tests::local_recursive_routing_epoch_draft_rejects_missing_leaf_placement ... ok
+test am::ec_spire::build::tests::object_manifest_from_placement_writes_uses_durable_placement_tids ... ok
+test am::ec_spire::diagnostics::tests::store_placement_diagnostics_cannot_collect_stale_published_snapshot ... ok
+test am::ec_spire::build::tests::publish_coordinator_rejects_mismatched_placement_write_evidence ... ok
+test am::ec_spire::diagnostics::tests::store_placement_diagnostics_counts_degraded_unavailable_and_skipped_without_reading_them ... ok
+test am::ec_spire::diagnostics::tests::store_placement_diagnostics_groups_available_objects_by_store ... ok
+test am::ec_spire::build::tests::object_manifest_from_placement_writes_rejects_missing_or_duplicate_evidence ... ok
+test am::ec_spire::scan::tests::collect_snapshot_leaf_rows_skips_degraded_unavailable_or_skipped_placements ... ok
+test am::ec_spire::build::tests::recursive_epoch_relation_publish_input_uses_durable_placement_manifest ... ok
+test am::ec_spire::scan::tests::local_heap_delivery_gate_accepts_local_placements ... ok
+test am::ec_spire::scan::tests::local_heap_delivery_gate_blocks_remote_placements ... ok
+test am::ec_spire::storage::tests::local_object_store_rejects_mismatched_delta_placement ... ok
+test am::ec_spire::storage::tests::local_object_store_rejects_mismatched_placement ... ok
+test am::ec_spire::storage::tests::local_object_store_rejects_mismatched_routing_placement ... ok
+test am::ec_spire::tests::remote_search_fanout_records_degraded_skipped_placements ... ok
+test am::ec_spire::tests::scheduled_replacement_object_version_plan_rejects_missing_affected_leaf ... ok
+test am::ec_spire::tests::scheduled_replacement_object_version_plan_uses_max_affected_leaf_successor ... ok
+test am::ec_spire::tests::scheduled_replacement_object_version_plan_uses_successor_versions ... ok
+test am::ec_spire::update::tests::delta_epoch_draft_from_snapshot_rejects_degraded_base_placements ... ok
+test am::ec_spire::storage::tests::local_object_store_set_object_reader_trait_routes_through_store_for_placement ... ok
+test am::ec_spire::update::tests::local_scheduled_merge_replacement_execution_input_rejects_plan_drift ... ok
+test am::ec_spire::update::tests::local_scheduled_merge_replacement_execution_input_uses_publish_plan ... ok
+test am::ec_spire::update::tests::local_replacement_object_writer_persists_routing_and_leaf_objects ... ok
+test am::ec_spire::update::tests::local_scheduled_merge_replacement_execution_parts_preserve_write_evidence ... ok
+test am::ec_spire::update::tests::local_scheduled_replacement_execution_input_rejects_plan_drift ... ok
+test am::ec_spire::update::tests::local_scheduled_replacement_execution_rejects_children_outside_pid_plan_order ... ok
+test am::ec_spire::update::tests::local_scheduled_replacement_execution_input_uses_publish_plan ... ok
+test am::ec_spire::storage::tests::miri_local_object_store_read_rejects_placement_epoch_below_object_backref ... ok
+test am::ec_spire::update::tests::local_scheduled_replacement_object_writer_rejects_parent_or_child_count_mismatch ... ok
+test am::ec_spire::update::tests::local_scheduled_replacement_object_writer_persists_decision_bound_objects ... ok
+test am::ec_spire::update::tests::local_scheduled_replacement_execution_publish_plan_validator_rejects_input_drift ... ok
+test am::ec_spire::update::tests::local_scheduled_split_replacement_execution_input_rejects_plan_drift ... ok
+test am::ec_spire::update::tests::local_scheduled_split_replacement_execution_parts_preserve_write_evidence ... ok
+test am::ec_spire::update::tests::local_scheduled_replacement_execution_writes_objects_and_builds_draft ... ok
+test am::ec_spire::update::tests::local_selected_scheduled_merge_replacement_epoch_draft_builds_input_and_draft ... ok
+test am::ec_spire::update::tests::local_selected_scheduled_merge_replacement_epoch_draft_rejects_split_plan ... ok
+test am::ec_spire::update::tests::local_selected_scheduled_merge_replacement_execution_input_uses_lock_plan ... ok
+test am::ec_spire::update::tests::local_selected_scheduled_merge_replacement_epoch_draft_from_snapshot_loads_inputs ... ok
+test am::ec_spire::update::tests::local_selected_scheduled_replacement_draft_inputs_validate_bundle ... ok
+test am::ec_spire::update::tests::local_selected_scheduled_merge_replacement_execution_input_from_snapshot_loads_inputs ... ok
+test am::ec_spire::update::tests::local_selected_scheduled_replacement_epoch_draft_rejects_snapshot_drift ... ok
+test am::ec_spire::update::tests::local_selected_scheduled_merge_replacement_epoch_draft_from_snapshot_rejects_split_plan ... ok
+test am::ec_spire::update::tests::local_scheduled_split_replacement_execution_input_uses_publish_plan ... ok
+test am::ec_spire::update::tests::local_selected_scheduled_merge_replacement_execution_input_from_snapshot_rejects_split_plan ... ok
+test am::ec_spire::update::tests::local_selected_scheduled_split_replacement_epoch_draft_from_snapshot_rejects_merge_plan ... ok
+test am::ec_spire::update::tests::local_selected_scheduled_split_replacement_epoch_draft_rejects_merge_plan ... ok
+test am::ec_spire::update::tests::local_selected_scheduled_split_replacement_execution_input_rejects_merge_plan ... ok
+test am::ec_spire::update::tests::local_selected_scheduled_split_replacement_epoch_draft_builds_input_and_draft ... ok
+test am::ec_spire::update::tests::local_selected_scheduled_split_replacement_execution_input_from_snapshot_loads_parent ... ok
+test am::ec_spire::update::tests::local_selected_scheduled_split_replacement_execution_input_from_snapshot_rejects_merge_plan ... ok
+test am::ec_spire::update::tests::local_selected_scheduled_replacement_draft_inputs_reject_drift ... ok
+test am::ec_spire::update::tests::merge_replacement_leaf_input_combines_folded_rows_in_decision_order ... ok
+test am::ec_spire::update::tests::local_selected_scheduled_split_replacement_execution_input_uses_lock_plan ... ok
+test am::ec_spire::update::tests::merge_replacement_leaf_input_preserves_global_vec_ids ... ok
+test am::ec_spire::update::tests::local_selected_scheduled_merge_replacement_execution_input_rejects_split_plan ... ok
+test am::ec_spire::update::tests::local_selected_scheduled_replacement_epoch_draft_uses_lock_plan ... ok
+test am::ec_spire::update::tests::local_selected_scheduled_split_replacement_epoch_draft_from_snapshot_loads_parent ... ok
+test am::ec_spire::update::tests::merge_replacement_leaf_input_rejects_wrong_mode_or_row_set ... ok
+test am::ec_spire::update::tests::rechecked_scheduled_replacement_publish_lock_plans_matching_decision ... ok
+test am::ec_spire::update::tests::rechecked_scheduled_replacement_publish_lock_rejects_changed_decision ... ok
+test am::ec_spire::update::tests::miri_replacement_leaf_rows_fold_active_deltas_into_base_leaf_rows ... ok
+test am::ec_spire::update::tests::relation_scheduled_merge_replacement_execution_input_uses_publish_plan ... ok
+test am::ec_spire::update::tests::relation_scheduled_merge_replacement_execution_input_rejects_plan_drift ... ok
+test am::ec_spire::update::tests::relation_scheduled_merge_replacement_execution_parts_compose_inputs ... ok
+test am::ec_spire::update::tests::relation_scheduled_merge_replacement_execution_parts_rejects_drift ... ok
+test am::ec_spire::update::tests::relation_scheduled_replacement_execution_input_rejects_plan_drift ... ok
+test am::ec_spire::update::tests::relation_scheduled_replacement_execution_input_uses_publish_plan ... ok
+test am::ec_spire::update::tests::relation_scheduled_replacement_execution_publish_plan_validator_rejects_input_drift ... ok
+test am::ec_spire::update::tests::relation_scheduled_split_replacement_execution_input_rejects_plan_drift ... ok
+test am::ec_spire::update::tests::relation_scheduled_split_replacement_execution_parts_compose_inputs ... ok
+test am::ec_spire::update::tests::relation_scheduled_split_replacement_execution_input_uses_publish_plan ... ok
+test am::ec_spire::update::tests::relation_scheduled_split_replacement_execution_parts_rejects_drift ... ok
+test am::ec_spire::update::tests::relation_selected_scheduled_merge_replacement_execution_input_rejects_split_plan ... ok
+test am::ec_spire::update::tests::relation_selected_scheduled_merge_replacement_execution_input_from_snapshot_rejects_split_plan ... ok
+test am::ec_spire::update::tests::relation_selected_scheduled_merge_replacement_execution_input_uses_lock_plan ... ok
+test am::ec_spire::update::tests::relation_selected_scheduled_replacement_publish_inputs_reject_drift ... ok
+test am::ec_spire::update::tests::relation_selected_scheduled_merge_replacement_execution_input_from_snapshot_loads_inputs ... ok
+test am::ec_spire::update::tests::relation_selected_scheduled_replacement_publish_inputs_validate_bundle ... ok
+test am::ec_spire::update::tests::relation_selected_scheduled_split_replacement_execution_input_from_snapshot_loads_parent ... ok
+test am::ec_spire::update::tests::relation_selected_scheduled_split_replacement_execution_input_from_snapshot_rejects_merge_plan ... ok
+test am::ec_spire::update::tests::relation_selected_scheduled_split_replacement_execution_input_from_snapshot_sources_materializes ... ok
+test am::ec_spire::update::tests::relation_selected_scheduled_split_replacement_execution_input_rejects_merge_plan ... ok
+test am::ec_spire::update::tests::replacement_epoch_draft_builds_manifest_and_publish_bundle ... ok
+test am::ec_spire::update::tests::relation_selected_scheduled_split_replacement_execution_input_uses_lock_plan ... ok
+test am::ec_spire::update::tests::replacement_leaf_object_inputs_match_replacement_children ... ok
+test am::ec_spire::update::tests::replacement_leaf_object_inputs_reject_delta_flags_and_pid_mismatch ... ok
+test am::ec_spire::update::tests::replacement_pid_plan_allocates_merge_survivor_from_pid_cursor ... ok
+test am::ec_spire::update::tests::replacement_epoch_draft_from_object_placements_builds_directory_and_manifest ... ok
+test am::ec_spire::update::tests::replacement_pid_plan_allocates_split_children_from_pid_cursor ... ok
+test am::ec_spire::update::tests::replacement_leaf_rows_preserve_global_vec_ids_from_base_and_delta ... ok
+test am::ec_spire::update::tests::replacement_pid_plan_rebalance_reuses_pid_only_for_byte_equal_centroid ... ok
+test am::ec_spire::update::tests::replacement_scheduler_prefers_largest_split_candidate ... ok
+test am::ec_spire::build::tests::local_recursive_routing_epoch_draft_combines_routing_and_leaf_placements ... ok
+test am::ec_spire::update::tests::replacement_placement_directory_carries_unaffected_and_drops_old_leaf_and_delta ... ok
+test am::ec_spire::update::tests::replacement_scheduler_recheck_accepts_stable_decision ... ok
+test am::ec_spire::update::tests::replacement_scheduler_recheck_rejects_changed_decision ... ok
+test am::ec_spire::update::tests::replacement_scheduler_recheck_rejects_no_longer_recommended_decision ... ok
+test am::ec_spire::update::tests::replacement_scheduler_rejects_ambiguous_or_cross_epoch_rows ... ok
+test am::ec_spire::update::tests::replacement_scheduler_selects_sparsest_same_parent_merge_pair ... ok
+test am::ec_spire::update::tests::routing_rewrite_rejects_replacement_pid_colliding_with_unaffected_child ... ok
+test am::ec_spire::update::tests::scheduled_merge_replacement_centroid_rejects_missing_or_stale_inputs ... ok
+test am::ec_spire::update::tests::scheduled_merge_replacement_centroid_uses_equal_weight_for_empty_leaves ... ok
+test am::ec_spire::update::tests::scheduled_merge_replacement_centroid_weights_parent_child_centroids ... ok
+test am::ec_spire::update::tests::scheduled_merge_replacement_routing_parts_rejects_invalid_plan ... ok
+test am::ec_spire::update::tests::scheduled_merge_replacement_routing_parts_rewrite_parent ... ok
+test am::ec_spire::update::tests::scheduled_replacement_epoch_draft_rejects_epoch_or_placement_count_mismatch ... ok
+test am::ec_spire::update::tests::scheduled_replacement_parent_loader_reads_decision_parent ... ok
+test am::ec_spire::update::tests::scheduled_replacement_pid_plan_allocates_from_decision ... ok
+test am::ec_spire::update::tests::scheduled_replacement_epoch_draft_uses_decision_shape_for_publish_assembly ... ok
+test am::ec_spire::update::tests::scheduled_replacement_pid_plan_output_accepts_matching_placements_and_cursor ... ok
+test am::ec_spire::update::tests::scheduled_replacement_parent_loader_rejects_stale_inputs ... ok
+test am::ec_spire::update::tests::scheduled_replacement_pid_plan_output_rejects_mismatched_outputs ... ok
+test am::ec_spire::update::tests::scheduled_replacement_pid_plan_rejects_malformed_decision_without_advancing_cursor ... ok
+test am::ec_spire::update::tests::scheduled_replacement_publish_lock_does_not_advance_on_publish_plan_drift ... ok
+test am::ec_spire::update::tests::scheduled_replacement_publish_lock_plans_pids_and_publish_epoch ... ok
+test am::ec_spire::update::tests::scheduled_replacement_publish_plan_rejects_stale_epoch_or_cursor ... ok
+test am::ec_spire::update::tests::scheduled_replacement_publish_plan_uses_root_control_and_active_manifest ... ok
+test am::ec_spire::update::tests::scheduled_routing_replacement_children_accept_merge_survivor ... ok
+test am::ec_spire::update::tests::scheduled_routing_replacement_children_pair_pids_and_centroids_in_plan_order ... ok
+test am::ec_spire::update::tests::scheduled_routing_replacement_children_reject_count_and_centroid_shape ... ok
+test am::ec_spire::update::tests::scheduled_routing_replacement_children_reject_reused_or_mismatched_pids ... ok
+test am::ec_spire::update::tests::scheduled_split_replacement_routing_parts_rejects_invalid_inputs ... ok
+test am::ec_spire::update::tests::scheduled_split_replacement_routing_parts_rewrite_parent ... ok
+test am::ec_spire::update::tests::selected_scheduled_replacement_execution_snapshot_validator_rejects_drift ... ok
+test am::ec_spire::update::tests::selected_scheduled_replacement_execution_snapshot_validator_uses_lock_plan ... ok
+test am::ec_spire::update::tests::selected_scheduled_replacement_leaf_rows_collects_affected_rows ... ok
+test am::ec_spire::update::tests::selected_scheduled_replacement_leaf_rows_rejects_snapshot_drift ... ok
+test am::ec_spire::update::tests::selected_scheduled_replacement_leaf_rows_keeps_empty_affected_leaf ... ok
+test am::ec_spire::update::tests::selected_scheduled_replacement_parent_loader_rejects_snapshot_drift ... ok
+test am::ec_spire::update::tests::selected_scheduled_replacement_publish_lock_returns_decision_and_plan ... ok
+test am::ec_spire::update::tests::selected_scheduled_replacement_parent_loader_uses_lock_plan ... ok
+test am::ec_spire::update::tests::selected_scheduled_replacement_publish_lock_returns_none_without_allocation ... ok
+test am::ec_spire::update::tests::split_replacement_leaf_inputs_reject_wrong_shape_or_duplicate_vec_id ... ok
+test am::ec_spire::update::tests::split_replacement_leaf_inputs_validate_and_follow_pid_plan_order ... ok
+test am::ec_spire::update::tests::split_replacement_materialization_rejects_stale_or_bad_source_rows ... ok
+test am::ec_spire::update::tests::split_replacement_rows_filter_to_fetched_heap_sources ... ok
+test am::ec_spire::update::tests::split_replacement_source_rows_hydrate_fetched_vectors_in_row_order ... ok
+test am::ec_spire::update::tests::split_replacement_source_rows_reject_missing_or_stale_vectors ... ok
+test am::ec_spire::update::tests::split_replacement_materialization_trains_and_routes_source_rows ... ok
+test am::ec_spire::update::tests::split_replacement_materialization_from_rows_hydrates_trains_and_routes ... ok
+test am::ec_spire::update::tests::split_replacement_materialization_reuses_global_vec_ids_for_boundary_rows ... ok
+test am::ec_spire::update::tests::split_replacement_materialization_fans_out_boundary_rows ... ok
+test am::ec_spire::scan::tests::collect_scan_placement_diagnostics_reports_boundary_dedupe_and_winners ... ok
+test am::ec_spire::scan::tests::collect_scan_placement_diagnostics_counts_routed_store_rows ... ok
+test am::ec_spire::scan::tests::collect_scan_placement_diagnostics_reports_candidate_truncation ... ok
+test am::ec_spire::scan::tests::collect_scan_placement_diagnostics_skips_degraded_unavailable_leaf ... ok
+test am::ec_spire::scan::tests::collect_single_level_scan_plan_placement_diagnostics_caps_routed_candidate_rows ... ok
+[32m[1m       Using[0m[39m [37m[1mPgConfig("pg18")[0m[39m and `pg_config` from [36m/home/peter/.pgrx/18.3/pgrx-install/bin/pg_config[39m
+[32m[1m    Building[0m[39m extension with features [36mpg18 pg_test[39m
+[32m[1m     Running[0m[39m command [36m"/home/peter/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "build" "--lib" "--features" "pg18 pg_test" "--no-default-features" "--message-format=json-render-diagnostics"[39m
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 21.33s
+[32m[1m  Installing[0m[39m extension
+[32m[1m     Copying[0m[39m control file to [36m/home/peter/.pgrx/18.3/pgrx-install/share/postgresql/extension/ecaz.control[39m
+[32m[1m     Copying[0m[39m shared library to [36m/home/peter/.pgrx/18.3/pgrx-install/lib/postgresql/ecaz.so[39m
+[32m[1m  Discovered[0m[39m [36m[1m931[0m[39m SQL entities: [36m[1m2[0m[39m schemas ([36m[1m1[0m[39m unique), [36m[1m928[0m[39m functions, [36m[1m0[0m[39m types, [36m[1m0[0m[39m enums, [36m[1m1[0m[39m sqls, [36m[1m0[0m[39m ords, [36m[1m0[0m[39m hashes, [36m[1m0[0m[39m aggregates, [36m[1m0[0m[39m triggers
+[32m[1m  Rebuilding[0m[39m [36mpgrx_embed[39m, in debug mode, for SQL generation with features [36mpg18 pg_test[39m
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 23.15s
+[32m[1m     Writing[0m[39m SQL entities to /home/peter/.pgrx/18.3/pgrx-install/share/postgresql/extension/ecaz--0.1.1.sql
+[32m[1m    Finished[0m[39m installing ecaz
+test tests::pg_test_ec_spire_register_placement_batch_sql ... ok
+test tests::pg_test_ec_ivf_index_placement_vacuum_removes_sidecar_entry ... ok
+test tests::pg_test_ec_ivf_table_placement_has_no_sidecar_and_scans ... ok
+test tests::pg_test_ec_ivf_index_placement_insert_maintains_sidecar ... ok
+test tests::pg_test_ec_spire_dml_frontdoor_replacement_decision_sql ... ok
+test tests::pg_test_ec_ivf_index_placement_rabitq4_top_neighbor ... ok
+test tests::pg_test_ec_spire_placement_index_oid_lookup_uses_index_sql ... ok
+test tests::pg_test_ec_ivf_index_placement_f16_rabitq4_admin_snapshot ... ok
+test tests::pg_test_ec_ivf_index_placement_fewer_rerank_bytes ... ok
+test tests::pg_test_ec_spire_placement_directory_catalog_sql ... ok
+test tests::pg_test_ec_ivf_index_placement_f16_matches_table_f16_ranking ... ok
+test tests::pg_test_ec_spire_selected_pid_placement_snapshot_sql ... ok
+test tests::pg_test_ec_spire_scan_placement_snapshot_sql ... ok
+test tests::pg_test_ech_vacuum_pass2_layer0_replacement_fills_broken_edges ... ok
+test tests::pg_test_ec_spire_placement_snapshot_sql ... ok
+test tests::pg_test_ech_vacuum_pass2_upper_replacement_fills_broken_edges ... ok
+test tests::pg_test_ec_spire_insert_remote_prepare_stages_placement_sql ... ok
+test tests::pg_test_pg18_ec_spire_placement_write_contention_distinct_pk_dml ... ok
+test tests::pg_test_ec_spire_register_placement_batch_rejects_duplicate_pk_sql - should panic ... ok
+test tests::pg_test_ec_spire_register_placement_batch_rejects_null_entry_sql - should panic ... ok
+test tests::pg_test_ec_spire_register_placement_batch_rejects_invalid_sql - should panic ... ok
+test tests::pg_test_ec_spire_forward_coordinator_update_missing_placement_sql - should panic ... ok
+test tests::pg_test_ec_spire_boundary_replica_placement_diagnostics_sql ... FAILED
+
+failures:
+
+---- tests::pg_test_ec_spire_boundary_replica_placement_diagnostics_sql stdout ----
+
+thread 'tests::pg_test_ec_spire_boundary_replica_placement_diagnostics_sql' (784671) panicked at /home/peter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pgrx-tests-0.17.0/src/framework.rs:169:9:
+
+
+Postgres Messages:
+[37m[2m[2026-06-19 00:27:34.666 PDT] [785857] [6a34ef66.bfdc1]: LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+[2026-06-19 00:27:34.666 PDT] [785857] [6a34ef66.bfdc1]: LOG:  listening on IPv4 address "127.0.0.1", port 32218
+[2026-06-19 00:27:34.671 PDT] [785857] [6a34ef66.bfdc1]: LOG:  listening on Unix socket "/home/peter/dev/ecaz/target/test-pgdata/.s.PGSQL.32218"
+[2026-06-19 00:27:34.682 PDT] [785857] [6a34ef66.bfdc1]: LOG:  database system is ready to accept connections
+[0m[39m
+
+Test Function Messages:
+[36m[2026-06-19 00:27:35.159 PDT] [785947] [6a34ef67.bfe1b]: LOG:  statement: START TRANSACTION
+[2026-06-19 00:27:35.159 PDT] [785947] [6a34ef67.bfe1b]: LOG:  statement: SELECT "tests"."test_ec_spire_boundary_replica_placement_diagnostics_sql"();
+[2026-06-19 00:27:35.277 PDT] [785947] [6a34ef67.bfe1b]: NOTICE:  ec_spire_ambuild_timing index=ec_spire_boundary_replica_diag_missing_idx phase=complete heap_tuples=2 scanned_tuples=2 index_tuples=2 recursive_fanout=0 setup_ms=0 heap_scan_ms=102 sample_collect_ms=0 kmeans_ms=1 kmeans_calls=1 assignment_ms=0 recursive_kmeans_ms=0 recursive_kmeans_calls=0 recursive_kmeans_max_level=0 recursive_assignment_ms=0 recursive_routing_initial_children=0 recursive_routing_final_children=0 recursive_routing_iterations=0 draft_ms=0 draft_total_ms=0 draft_input_clone_ms=0 draft_pid_alloc_ms=0 draft_recursive_routing_ms=0 draft_route_map_ms=0 draft_leaf_rows_ms=0 draft_leaf_inputs_ms=0 draft_validation_ms=0 top_graph_ms=0 pq4_training_ms=0 object_store_ms=1 object_store_total_ms=1 publish_ms=0 total_ms=105
+[2026-06-19 00:27:35.277 PDT] [785947] [6a34ef67.bfe1b]: CONTEXT:  SQL statement "CREATE INDEX ec_spire_boundary_replica_diag_missing_idx ON ec_spire_boundary_replica_diag_missing USING ec_spire (embedding ecvector_spire_ip_ops) INCLUDE (source_identity) WITH (source_identity = 'include', nlists = 2, nprobe = 2)"
+[2026-06-19 00:27:35.289 PDT] [785947] [6a34ef67.bfe1b]: NOTICE:  ec_spire_ambuild_timing index=ec_spire_boundary_replica_diag_state_idx phase=complete heap_tuples=4 scanned_tuples=4 index_tuples=4 recursive_fanout=0 setup_ms=0 heap_scan_ms=0 sample_collect_ms=0 kmeans_ms=0 kmeans_calls=1 assignment_ms=0 recursive_kmeans_ms=0 recursive_kmeans_calls=0 recursive_kmeans_max_level=0 recursive_assignment_ms=0 recursive_routing_initial_children=0 recursive_routing_final_children=0 recursive_routing_iterations=0 draft_ms=0 draft_total_ms=0 draft_input_clone_ms=0 draft_pid_alloc_ms=0 draft_recursive_routing_ms=0 draft_route_map_ms=0 draft_leaf_rows_ms=0 draft_leaf_inputs_ms=0 draft_validation_ms=0 top_graph_ms=0 pq4_training_ms=0 object_store_ms=1 object_store_total_ms=1 publish_ms=0 total_ms=3
+[2026-06-19 00:27:35.289 PDT] [785947] [6a34ef67.bfe1b]: CONTEXT:  SQL statement "CREATE INDEX ec_spire_boundary_replica_diag_state_idx ON ec_spire_boundary_replica_diag_state USING ec_spire (embedding ecvector_spire_ip_ops) INCLUDE (source_identity) WITH ( source_identity = 'include', nlists = 4, nprobe = 4, boundary_replica_count = 1 )"
+[2026-06-19 00:27:35.292 PDT] [785947] [6a34ef67.bfe1b]: ERROR:  ec_spire strict published snapshot requires available placement for pid 2: got Unavailable
+[2026-06-19 00:27:35.292 PDT] [785947] [6a34ef67.bfe1b]: STATEMENT:  SELECT "tests"."test_ec_spire_boundary_replica_placement_diagnostics_sql"();
+[2026-06-19 00:27:35.293 PDT] [785947] [6a34ef67.bfe1b]: LOG:  statement: ROLLBACK
+[39m
+
+Client Error:
+[31m[1mec_spire strict published snapshot requires available placement for pid 2: got Unavailable[0m[39m
+postgres location: [37m[2mdebug.rs:709[0m[39m
+rust location: [33m<unknown>[39m
+
+
+
+
+failures:
+    tests::pg_test_ec_spire_boundary_replica_placement_diagnostics_sql
+
+test result: FAILED. 189 passed; 1 failed; 0 ignored; 0 measured; 1962 filtered out; finished in 47.74s
+
+error: test failed, to rerun pass `--lib`

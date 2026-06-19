@@ -53,27 +53,18 @@ pub(super) const METADATA_BLOCK_NUMBER: u32 = 0;
 pub(super) const FIRST_DATA_BLOCK_NUMBER: pg_sys::BlockNumber = 1;
 #[cfg(not(any(feature = "pg17", feature = "pg18")))]
 pub(super) const FIRST_DATA_BLOCK_NUMBER: u32 = 1;
-// v1 = original format
-// v2 = stores `quant_bits` (RaBitQ per-dim code width) at byte 34.
-//      Indexes written by v1 read back here as `quant_bits = 0` which
-//      the decoder coerces to the default of 4.
-// v3 = (Task 111g) stores the rerank sidecar head ItemPointer at bytes 80..86,
-//      widening the metadata struct to 86 bytes. The head points at the 0x2A
-//      compact rerank sidecar chain used by rerank_placement = 'index'. An
-//      additive, backward-readable bump: v1/v2 indexes decode here with
-//      rerank_sidecar_head = INVALID, i.e. "no sidecar" (rerank falls back to
-//      the heap/table source path).
+// v3 metadata is the only supported on-disk format. It is 86 bytes wide and
+// stores the rerank sidecar head ItemPointer at bytes 80..86, pointing at the
+// 0x2A compact rerank sidecar chain used by rerank_placement = 'index'. A
+// rerank_sidecar_head of INVALID is the legitimate "no sidecar" state for
+// rerank_placement = 'table' and for f32 storage (rerank reads from the
+// heap/table source path instead). This research project keeps no backward
+// compatibility with older metadata widths.
 pub const EC_IVF_INDEX_FORMAT_VERSION: u16 = 3;
-pub(super) const EC_IVF_INDEX_FORMAT_VERSION_MIN: u16 = 1;
 pub(super) const INDEX_FORMAT_VERSION: u16 = EC_IVF_INDEX_FORMAT_VERSION;
 
 pub const EC_IVF_METADATA_MAGIC: u32 = 0x5649_4345; // "ECIV" as little-endian bytes.
 pub const EC_IVF_METADATA_BYTES: usize = 86;
-/// v1/v2 metadata struct width, before the Task 111g rerank-sidecar head was
-/// appended. Decode tolerates buffers at least this long so a v2-era index
-/// (whose decode previously required exactly 80 meaningful bytes) still reads
-/// back with rerank_sidecar_head = INVALID.
-pub const EC_IVF_METADATA_BYTES_V2: usize = 80;
 pub const EC_IVF_METADATA_MAGIC_OFFSET: usize = 0;
 pub const EC_IVF_METADATA_FORMAT_VERSION_OFFSET: usize = 4;
 pub const EC_IVF_METADATA_DIMENSIONS_OFFSET: usize = 6;
@@ -562,25 +553,6 @@ impl WalRegisteredPage {
         }
     }
 
-    /// Actual size of this page's special area (`page_size - pd_special`). Used
-    /// to read the metadata special area without over-reading: a v2 metadata
-    /// page allocated only 80 special bytes, while v3 allocates 88, so the
-    /// metadata reader must clamp to the size actually present on the page.
-    fn special_size(&self) -> usize {
-        // SAFETY: `self.page` is a live, locked registered page image.
-        let pd_special = unsafe { (*self.page.cast::<pg_sys::PageHeaderData>()).pd_special } as usize;
-        // SAFETY: PageGetPageSize reads the page-size field of the same header.
-        let page_size = unsafe { pg_sys::PageGetPageSize(self.page) } as usize;
-        page_size.saturating_sub(pd_special)
-    }
-
-    /// The metadata special area, clamped to the bytes actually allocated on
-    /// the page (handles v2 80-byte vs v3 88-byte special areas).
-    fn metadata_special_bytes(&self) -> &[u8] {
-        let available = self.special_size().min(METADATA_BYTES);
-        self.special_bytes(available)
-    }
-
     fn copy_to_special(&self, bytes: &[u8]) {
         // SAFETY: callers provide a fixed-size special-area encoding for this
         // registered page type.
@@ -639,8 +611,8 @@ pub struct MetadataPage {
     pub pq_codebook_head: ItemPointer,
     pub pq_group_size: u16,
     /// Task 111g v3: head of the compact rerank sidecar chain (tag 0x2A),
-    /// keyed by heap TID. `INVALID` means no sidecar exists (rerank falls back
-    /// to the heap/table source path); always `INVALID` for v1/v2 indexes.
+    /// keyed by heap TID. `INVALID` means no sidecar exists (rerank_placement =
+    /// 'table' / f32 storage), so rerank reads from the heap/table source path.
     pub rerank_sidecar_head: ItemPointer,
 }
 
@@ -695,12 +667,11 @@ impl MetadataPage {
     }
 
     pub fn decode(bytes: &[u8]) -> Result<Self, String> {
-        // Accept the v1/v2 width (80) and up. v3 appends a 6-byte rerank
-        // sidecar head at bytes 80..86; when the buffer is shorter than that
-        // (a v1/v2 index), the head decodes as INVALID = "no sidecar".
-        if bytes.len() < EC_IVF_METADATA_BYTES_V2 {
+        // v3 is the only supported width (86 bytes), including the rerank
+        // sidecar head at bytes 80..86.
+        if bytes.len() < EC_IVF_METADATA_BYTES {
             return Err(format!(
-                "ec_ivf metadata length mismatch: got {}, expected at least {EC_IVF_METADATA_BYTES_V2}",
+                "ec_ivf metadata length mismatch: got {}, expected at least {EC_IVF_METADATA_BYTES}",
                 bytes.len()
             ));
         }
@@ -717,7 +688,7 @@ impl MetadataPage {
                 .try_into()
                 .expect("metadata format slice should be 2 bytes"),
         );
-        if !(EC_IVF_INDEX_FORMAT_VERSION_MIN..=INDEX_FORMAT_VERSION).contains(&format_version) {
+        if format_version != INDEX_FORMAT_VERSION {
             return Err(format!(
                 "unsupported ec_ivf metadata format version: {format_version}"
             ));
@@ -790,15 +761,11 @@ impl MetadataPage {
                     .try_into()
                     .expect("metadata pq group size slice should be 2 bytes"),
             ),
-            // Task 111g v3: read the sidecar head only when the buffer is wide
-            // enough; v1/v2 indexes have no sidecar (head = INVALID).
-            rerank_sidecar_head: if bytes.len() >= EC_IVF_METADATA_BYTES {
-                ItemPointer::decode(
-                    &bytes[EC_IVF_METADATA_RERANK_SIDECAR_HEAD_OFFSET..EC_IVF_METADATA_BYTES],
-                )?
-            } else {
-                ItemPointer::INVALID
-            },
+            // v3 rerank sidecar head (bytes 80..86). INVALID is the legitimate
+            // "no sidecar" state for rerank_placement = 'table' / f32 storage.
+            rerank_sidecar_head: ItemPointer::decode(
+                &bytes[EC_IVF_METADATA_RERANK_SIDECAR_HEAD_OFFSET..EC_IVF_METADATA_BYTES],
+            )?,
         })
     }
 }
@@ -3739,9 +3706,7 @@ pub(super) unsafe fn read_metadata_page(index_relation: pg_sys::Relation) -> Met
     let buffer = buffer.unwrap_or_else(|| pgrx::error!("ec_ivf failed to open metadata buffer"));
 
     let page = WalRegisteredPage::new(index.raw(), METADATA_BLOCK_NUMBER, buffer.page());
-    // Clamp to the bytes actually present so v2 indexes (80-byte special area)
-    // read back without over-reading into the page proper.
-    let metadata_bytes = page.metadata_special_bytes();
+    let metadata_bytes = page.special_bytes(METADATA_BYTES);
     MetadataPage::decode(metadata_bytes).unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
@@ -3767,10 +3732,7 @@ where
     let mut wal_txn = index.start_wal();
     let page = wal_txn.register_locked_buffer_full_image(&buffer);
     let registered = WalRegisteredPage::new(index.raw(), METADATA_BLOCK_NUMBER, page);
-    // Clamp to the bytes actually present (v2: 80, v3: 88) so neither read nor
-    // write overruns the allocated special area.
-    let special_size = registered.special_size().min(METADATA_BYTES);
-    let metadata_bytes = registered.special_bytes(special_size);
+    let metadata_bytes = registered.special_bytes(METADATA_BYTES);
     let mut metadata = match MetadataPage::decode(metadata_bytes) {
         Ok(metadata) => metadata,
         Err(err) => {
@@ -3783,11 +3745,8 @@ where
         return Err(err);
     }
 
-    // Write back only as many bytes as the page's special area holds. A v2
-    // metadata page has an 80-byte special area and never carries a sidecar
-    // head; clamping keeps the in-place update from overrunning it.
     let encoded = metadata.encode();
-    registered.copy_to_special(&encoded[..special_size]);
+    registered.copy_to_special(&encoded[..METADATA_BYTES]);
     wal_txn.finish();
     Ok(metadata)
 }
@@ -3864,51 +3823,9 @@ mod tests {
             rerank_format: RerankFormat::Auto,
         });
         let encoded = metadata.encode();
-        // Anything narrower than the v1/v2 width is a genuine truncation.
-        let err = MetadataPage::decode(&encoded[..EC_IVF_METADATA_BYTES_V2 - 1]).unwrap_err();
+        // Anything narrower than the v3 width is a genuine truncation.
+        let err = MetadataPage::decode(&encoded[..EC_IVF_METADATA_BYTES - 1]).unwrap_err();
         assert!(err.contains("metadata length mismatch"));
-    }
-
-    #[test]
-    fn metadata_decode_accepts_v2_width_with_no_sidecar() {
-        // Task 111g: a v2-era index's metadata is only 80 bytes wide and never
-        // carries the v3 rerank sidecar head. Decoding such a buffer must
-        // succeed with rerank_sidecar_head = INVALID (rerank falls back to the
-        // heap/table source path), proving the v3 bump is backward-readable.
-        let mut metadata = MetadataPage::empty(EcIvfOptions {
-            nlists: 64,
-            nprobe: 8,
-            rerank_width: 0,
-            training_sample_rows: 10_000,
-            seed: 7,
-            pq_group_size: 0,
-            posting_slack_percent: 0,
-            quant_bits: 4,
-            coarse_bits: 0,
-            dense_posting_blocks: false,
-            dense_posting_typed_layout: false,
-            storage_format: StorageFormat::RaBitQ,
-            rerank: RerankMode::HeapF32,
-            coarse_format: CoarseFormat::Auto,
-            rerank_placement: RerankPlacement::Auto,
-            rerank_format: RerankFormat::Auto,
-        });
-        // Simulate a v2 on-disk image: stamp the version byte to 2 and present
-        // only the 80-byte special area an old build would have written.
-        metadata.format_version = 2;
-        metadata.dimensions = 768;
-        metadata.centroid_head = tid(12, 2);
-        metadata.directory_head = tid(13, 4);
-        let encoded = metadata.encode();
-        let v2_image = &encoded[..EC_IVF_METADATA_BYTES_V2];
-
-        let decoded = MetadataPage::decode(v2_image).unwrap();
-
-        assert_eq!(decoded.format_version, 2);
-        assert_eq!(decoded.dimensions, 768);
-        assert_eq!(decoded.centroid_head, tid(12, 2));
-        assert_eq!(decoded.directory_head, tid(13, 4));
-        assert_eq!(decoded.rerank_sidecar_head, ItemPointer::INVALID);
     }
 
     #[test]
