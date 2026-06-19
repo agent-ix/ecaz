@@ -139,6 +139,36 @@ packet by path when one exists. See
 `spec/non-functional/NFR-007-benchmark-provenance.md` for the normative
 storage rule.
 
+### Task Closeout Requires 10/50/100k Benchmark Evidence
+
+**A task that changes quantizer, index, scan, rerank, posting, or storage
+behavior MUST NOT be closed, promoted, or merged-as-done on static code review,
+unit/pgrx tests, or predicted wins alone.** Closeout requires **A/B benchmark
+evidence at 10k / 50k / 100k minimum** (recall + latency + storage) for the
+**relevant quant/index** affected by the change, produced via `ecaz bench suite`
+and stored in the owning packet.
+
+- **Always test and measure; assumptions must be confirmed by facts.** Predictions
+  in this codebase frequently fall flat — "this will be faster / this is
+  recall-neutral / this win is marginal" is not a finding until a benchmark proves
+  it. A recall-safety unit test proves *correctness*, not the *latency/recall
+  effect*.
+- **A/B per change, at each gate.** Measure the effect of each change in isolation
+  (gate on/off, before/after commit, or plain-vs-variant index) so it is clear
+  which change moved the bar and which did not. Do **not** stack several changes
+  and bench only the aggregate — that destroys per-change attribution.
+- **Minimum matrix:** the relevant access method/quantizer × **10k / 50k / 100k**
+  (the staged real-corpus scales) × `recall` + `latency` + `storage`. Add the
+  variant axis the change introduces (e.g. rerank_format, quant_bits, residual
+  on/off, prune on/off). 1m is encouraged when 50k/100k show promise.
+- **"Bench deferred to a host" is not a closeout.** The task stays open until the
+  evidence lands. Local development hosts that have `ecaz` built + PG18 running +
+  the staged corpora (e.g. the Intel desktop) ARE bench hosts — check for the
+  binary and `data/staged-current/` before ever claiming env-blocked.
+- Evidence storage + provenance follow
+  `spec/non-functional/NFR-007-benchmark-provenance.md`; no fabricated numbers,
+  every cited result traces to a `results.jsonl` artifact.
+
 ### Benchmark Runner: `ecaz bench suite` Only
 
 **All benchmark matrices, sweeps, and multi-step measurement runs MUST be
