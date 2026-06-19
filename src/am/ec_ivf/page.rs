@@ -64,7 +64,7 @@ pub const EC_IVF_INDEX_FORMAT_VERSION: u16 = 3;
 pub(super) const INDEX_FORMAT_VERSION: u16 = EC_IVF_INDEX_FORMAT_VERSION;
 
 pub const EC_IVF_METADATA_MAGIC: u32 = 0x5649_4345; // "ECIV" as little-endian bytes.
-pub const EC_IVF_METADATA_BYTES: usize = 86;
+pub const EC_IVF_METADATA_BYTES: usize = 92;
 pub const EC_IVF_METADATA_MAGIC_OFFSET: usize = 0;
 pub const EC_IVF_METADATA_FORMAT_VERSION_OFFSET: usize = 4;
 pub const EC_IVF_METADATA_DIMENSIONS_OFFSET: usize = 6;
@@ -86,6 +86,11 @@ pub const EC_IVF_METADATA_PQ_CODEBOOK_HEAD_OFFSET: usize = 72;
 pub const EC_IVF_METADATA_PQ_GROUP_SIZE_OFFSET: usize = 78;
 /// Task 111g v3: rerank sidecar chain head ItemPointer (bytes 80..86).
 pub const EC_IVF_METADATA_RERANK_SIDECAR_HEAD_OFFSET: usize = 80;
+/// ADR-079: head of the rerank sidecar *directory* chain (bytes 86..92). The
+/// directory maps each build-written `0x2A` block's first heap TID to the block
+/// pointer, enabling survivor-directed bounded reads. `INVALID` => no directory
+/// (fall back to full-chain scan). Bumps metadata to 92 bytes (clean break).
+pub const EC_IVF_METADATA_RERANK_SIDECAR_DIRECTORY_HEAD_OFFSET: usize = 86;
 
 pub const EC_IVF_BLOCK_REF_BYTES: usize = 4;
 pub const EC_IVF_BLOCK_REF_BLOCK_NUMBER_OFFSET: usize = 0;
@@ -622,6 +627,10 @@ pub struct MetadataPage {
     /// keyed by heap TID. `INVALID` means no sidecar exists (rerank_placement =
     /// 'table' / f32 storage), so rerank reads from the heap/table source path.
     pub rerank_sidecar_head: ItemPointer,
+    /// ADR-079: head of the rerank sidecar directory chain (bytes 86..92).
+    /// `INVALID` when no directory exists (no sidecar, or pre-ADR-079 build);
+    /// scan falls back to the full-chain read in that case.
+    pub rerank_sidecar_directory_head: ItemPointer,
 }
 
 impl MetadataPage {
@@ -647,6 +656,7 @@ impl MetadataPage {
             pq_codebook_head: ItemPointer::INVALID,
             pq_group_size: 0,
             rerank_sidecar_head: ItemPointer::INVALID,
+            rerank_sidecar_directory_head: ItemPointer::INVALID,
         }
     }
 
@@ -674,6 +684,8 @@ impl MetadataPage {
         out[78..80].copy_from_slice(&self.pq_group_size.to_le_bytes());
         // Task 111g v3: rerank sidecar head (bytes 80..86).
         write_item_pointer(&mut out[80..86], self.rerank_sidecar_head);
+        // ADR-079: rerank sidecar directory head (bytes 86..92).
+        write_item_pointer(&mut out[86..92], self.rerank_sidecar_directory_head);
         out
     }
 
@@ -786,7 +798,12 @@ impl MetadataPage {
             // v3 rerank sidecar head (bytes 80..86). INVALID is the legitimate
             // "no sidecar" state for rerank_placement = 'table' / f32 storage.
             rerank_sidecar_head: ItemPointer::decode(
-                &bytes[EC_IVF_METADATA_RERANK_SIDECAR_HEAD_OFFSET..EC_IVF_METADATA_BYTES],
+                &bytes[EC_IVF_METADATA_RERANK_SIDECAR_HEAD_OFFSET
+                    ..EC_IVF_METADATA_RERANK_SIDECAR_HEAD_OFFSET + ITEM_POINTER_BYTES],
+            )?,
+            // ADR-079 rerank sidecar directory head (bytes 86..92).
+            rerank_sidecar_directory_head: ItemPointer::decode(
+                &bytes[EC_IVF_METADATA_RERANK_SIDECAR_DIRECTORY_HEAD_OFFSET..EC_IVF_METADATA_BYTES],
             )?,
         })
     }

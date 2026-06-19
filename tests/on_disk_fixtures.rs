@@ -548,6 +548,8 @@ fn ivf_metadata_v3_fixture_decodes() {
     // This fixture carries no rerank sidecar (head = INVALID), the legitimate
     // "no sidecar -> table/heap source" runtime state for table placement / f32.
     assert_eq!(metadata.rerank_sidecar_head, ItemPointer::INVALID);
+    // ADR-079: no sidecar directory either (head = INVALID -> full-chain fallback).
+    assert_eq!(metadata.rerank_sidecar_directory_head, ItemPointer::INVALID);
 }
 
 #[test]

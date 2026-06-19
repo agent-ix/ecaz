@@ -113,12 +113,13 @@ const _: () = {
 };
 
 const _: () = {
-    // v3 (Task 111g) is the only supported metadata format: 86 bytes, with the
-    // rerank sidecar head ItemPointer at bytes 80..86.
+    // v3 metadata: 92 bytes (ADR-079 extended from 86) — rerank sidecar head
+    // ItemPointer at 80..86, rerank sidecar directory head at 86..92.
     assert!(EC_IVF_INDEX_FORMAT_VERSION == 3);
     assert!(EC_IVF_METADATA_MAGIC == 0x5649_4345);
-    assert!(EC_IVF_METADATA_BYTES == 86);
+    assert!(EC_IVF_METADATA_BYTES == 92);
     assert!(EC_IVF_METADATA_RERANK_SIDECAR_HEAD_OFFSET == 80);
+    assert!(EC_IVF_METADATA_RERANK_SIDECAR_DIRECTORY_HEAD_OFFSET == 86);
     assert!(EC_IVF_METADATA_MAGIC_OFFSET == 0);
     assert!(EC_IVF_METADATA_FORMAT_VERSION_OFFSET == 4);
     assert!(EC_IVF_METADATA_DIMENSIONS_OFFSET == 6);
