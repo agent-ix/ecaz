@@ -28,6 +28,15 @@
   pg_test asserts f16/rabitq4 read fewer rerank source bytes than f32 on the same
   corpus — proves the byte reduction without `ecaz bench suite`.
 
+## Metadata-page-full finding
+
+The metadata page is exactly full (`EC_IVF_METADATA_BYTES = 80`, last field
+`pq_group_size` at `78..80`). Storing a sidecar head pointer needs **B1**: bump
+`EC_IVF_INDEX_FORMAT_VERSION` 2 → 3 and widen metadata to 86 bytes (additive,
+backward-readable — old v2 indexes decode with sidecar_head = INVALID = f32
+rerank). This is the one on-disk-format change in 003b and is gated on reviewer
+sign-off in request.md.
+
 ## Note on the existing on-disk hook
 
 `EC_IVF_POSTING_RERANK_TID_OFFSET` / `IvfDensePostingBlockRef::rerank_tid_bytes`

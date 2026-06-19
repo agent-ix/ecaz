@@ -61,9 +61,30 @@ diff that delivers the byte reduction.
 
 A new index-internal sidecar tuple kind, tag `0x2A`
 (`IVF_RERANK_SIDECAR_BLOCK_TAG`), stored in its own page chain in the index
-relation (not the heap), referenced by a new metadata head pointer
-`EC_IVF_METADATA_RERANK_SIDECAR_HEAD_OFFSET` (the metadata page has spare bytes;
-`EC_IVF_METADATA_BYTES = 80`, last used field at offset 78).
+relation (not the heap), referenced by a sidecar head pointer.
+
+**Metadata-page-full finding (reviewer decision needed):** the metadata page is
+*exactly* full — `EC_IVF_METADATA_BYTES = 80`, and the last field
+(`pq_group_size`) occupies bytes `78..80`. There is **no spare room** for a new
+6-byte `ItemPointer` head. Two ways to store the sidecar head:
+
+- **B1 (recommended): bump `EC_IVF_INDEX_FORMAT_VERSION` 2 → 3** and widen
+  `EC_IVF_METADATA_BYTES` to `86`, adding
+  `EC_IVF_METADATA_RERANK_SIDECAR_HEAD_OFFSET = 80`. `decode` already gates on
+  `format_version` range and tolerates `bytes.len() >= METADATA_BYTES`, and the
+  metadata buffer is a full page, so widening the struct is backward-compatible
+  for *reading* (old v2 indexes decode with sidecar_head = INVALID = "no
+  sidecar", i.e. f32 rerank). This is a clean, contained format bump — not a
+  layout break of the posting/dense formats the task protects.
+- **B2 (no format bump): reuse the always-INVALID per-posting `rerank_tid`** as
+  the sidecar pointer. Rejected for the same reason as Option A — it forces the
+  dense scan to carry rerank_tid through the coalesced SoA path.
+
+I recommend **B1**: it is the only way to get a heap-TID-keyed sidecar head
+without touching the dense scan, and the metadata format-version machinery is
+designed for exactly this kind of additive field. Please confirm the version
+bump is acceptable (it is the one on-disk-format change in this slice, and it is
+additive + backward-readable).
 
 Each sidecar block stores, for a tid-sorted run of entries:
 
@@ -152,7 +173,9 @@ without needing `ecaz bench suite`.
 ## Ask of the reviewer
 
 1. Bless **Option B** (sidecar keyed by heap TID, tag `0x2A`, metadata head
-   pointer) over Option A (rerank_tid-through-candidate).
+   pointer) over Option A (rerank_tid-through-candidate), and confirm the
+   **B1 metadata format-version bump (v2 → v3, +6 bytes, additive,
+   backward-readable)** — the metadata page is full so a head pointer needs it.
 2. Confirm the byte-reduction-by-counter evidence approach (no `ecaz bench
    suite`) satisfies the 003 win-evidence gate for the *code* slice (the full
    suite remains the Phase-3 / packet-002 gate on a provisioned lane).
