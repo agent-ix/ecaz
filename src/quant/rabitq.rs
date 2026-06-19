@@ -1123,6 +1123,29 @@ impl PreparedEstimator {
     /// `dimensions`-wide SIMD inner product when even the most
     /// optimistic estimate falls below `min_ip_to_keep`.
     ///
+    /// # Task 113 Phase 1 — bound contract audit
+    ///
+    /// RaBitQ carries **two distinct bound surfaces**, and only this one
+    /// is sound for recall-safe pruning:
+    ///
+    /// 1. **Cauchy-Schwarz prune cutoff (this method, and
+    ///    [`Self::try_estimate_ip`]).** `max_estimate = ||o|| · ||q|| /
+    ///    |o_dot|` is a *deterministic* upper bound on the estimate. The
+    ///    true estimate provably cannot exceed it, so pruning when
+    ///    `max_estimate < min_ip_to_keep` never drops a candidate that
+    ///    could reach the frontier. This is the surface the IVF scan
+    ///    threads its running top-k cutoff into. Monotone in
+    ///    `min_ip_to_keep` (raising it only prunes more). Pinned by the
+    ///    `try_estimate_*_cutoff_*` tests.
+    /// 2. **ε-concentration envelope ([`DistanceEstimate::bound`]).** A
+    ///    *probabilistic* ~99% Gaussian-tail bound (`RABITQ_BOUND_CONFIDENCE
+    ///    = 2.5`). It is NOT a deterministic/sound bound: a candidate's true
+    ///    error can exceed it. Using it as a hard skip threshold would be
+    ///    recall-risky — the explicit Task 113 Non-Goal — so it is **not**
+    ///    used to prune. The calibrated lower bound that Task 113 Phase 4
+    ///    feeds to the lazy rerank driver is derived from surface (1), not
+    ///    this envelope (see `ec_ivf::lazy::RaBitQLazyBound`).
+    ///
     /// Correctness: the asymmetric RaBitQ estimator is
     /// `α · ⟨q, x_dec⟩` with `α = ||o|| · o_dot / ||x_dec||`. By
     /// Cauchy-Schwarz, `|⟨q, x_dec⟩| ≤ ||q|| · ||x_dec||`, so the
@@ -6024,6 +6047,115 @@ mod tests {
                 est.estimate,
                 truth,
             );
+        }
+    }
+
+    // -----------------------------------------------------------------
+    // Task 113 Phase 1 — Cauchy-Schwarz prune-cutoff soundness.
+    //
+    // `try_estimate_ip_scalar` / `try_estimate_ip` are the IVF candidate
+    // prune surface (`min_ip_to_keep`). Unlike the ε-concentration bound
+    // (probabilistic), the cutoff used here is the *deterministic*
+    // Cauchy-Schwarz upper bound `||o|| * ||q|| / |o_dot|` on the
+    // estimate. Pruning when that upper bound is below the running cutoff
+    // is recall-safe: the candidate's true estimate can never reach the
+    // frontier. These tests pin (a) soundness — a pruned candidate's
+    // returned estimate (recomputed with no cutoff) is below the cutoff —
+    // and (b) monotonicity — raising the cutoff never un-prunes.
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn try_estimate_scalar_cutoff_never_prunes_a_keepable_candidate() {
+        // For a grid of cutoffs, any candidate the cutoff prunes (returns
+        // None) must have an unpruned estimate strictly below the cutoff:
+        // the Cauchy-Schwarz upper bound dominated the true estimate, so
+        // dropping it was sound.
+        let dim = 256;
+        let rotation: Arc<dyn Rotation> = Arc::new(Identity { dim });
+        let q = RaBitQQuantizer::new(rotation);
+        let query = deterministic_gaussian(dim, 11);
+        let prepared = q.prepare_estimator(&query);
+
+        let codes: Vec<Vec<u8>> = (0..64u64)
+            .map(|seed| {
+                let c = deterministic_gaussian(dim, seed.wrapping_add(100));
+                <RaBitQQuantizer as crate::quant::Quantizer>::encode_code(&q, &c).into_vec()
+            })
+            .collect();
+
+        for cutoff_bits in -40i32..=40 {
+            let cutoff = cutoff_bits as f32 * 0.25;
+            for code in &codes {
+                // Estimate with no effective cutoff (NEG_INFINITY never
+                // prunes), i.e. the value that would survive.
+                let unpruned = prepared
+                    .try_estimate_ip_scalar(code, f32::NEG_INFINITY)
+                    .expect("NEG_INFINITY cutoff never prunes");
+                match prepared.try_estimate_ip_scalar(code, cutoff) {
+                    None => assert!(
+                        unpruned < cutoff,
+                        "pruned a keepable candidate: estimate {unpruned} >= cutoff {cutoff}",
+                    ),
+                    Some(kept) => assert!(
+                        (kept - unpruned).abs() <= 1e-3,
+                        "kept estimate {kept} disagrees with unpruned {unpruned}",
+                    ),
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn try_estimate_scalar_cutoff_is_monotone_in_threshold() {
+        // Raising the cutoff can only prune more, never fewer: if a
+        // candidate is pruned at `lo`, it stays pruned at every `hi >= lo`.
+        let dim = 128;
+        let rotation: Arc<dyn Rotation> = Arc::new(Identity { dim });
+        let q = RaBitQQuantizer::new(rotation);
+        let query = deterministic_gaussian(dim, 5);
+        let prepared = q.prepare_estimator(&query);
+
+        for seed in 0..48u64 {
+            let c = deterministic_gaussian(dim, seed.wrapping_add(7));
+            let code = <RaBitQQuantizer as crate::quant::Quantizer>::encode_code(&q, &c).into_vec();
+            let mut last_pruned = false;
+            for cutoff_bits in -32i32..=32 {
+                let cutoff = cutoff_bits as f32 * 0.5;
+                let pruned = prepared.try_estimate_ip_scalar(&code, cutoff).is_none();
+                if last_pruned {
+                    assert!(
+                        pruned,
+                        "candidate un-pruned at higher cutoff {cutoff} (seed={seed})",
+                    );
+                }
+                last_pruned = pruned;
+            }
+        }
+    }
+
+    #[test]
+    fn try_estimate_bound_carrying_cutoff_agrees_with_scalar() {
+        // The bound-carrying `try_estimate_ip` must prune on the same
+        // deterministic Cauchy-Schwarz cutoff as the scalar fast path, so
+        // AM tooling and the IVF scan share one prune frontier.
+        let dim = 256;
+        let rotation: Arc<dyn Rotation> = Arc::new(Identity { dim });
+        let q = RaBitQQuantizer::new(rotation);
+        let query = deterministic_gaussian(dim, 3);
+        let prepared = q.prepare_estimator(&query);
+
+        for seed in 0..48u64 {
+            let c = deterministic_gaussian(dim, seed.wrapping_add(200));
+            let code = <RaBitQQuantizer as crate::quant::Quantizer>::encode_code(&q, &c).into_vec();
+            for cutoff_bits in -24i32..=24 {
+                let cutoff = cutoff_bits as f32 * 0.5;
+                let scalar_pruned = prepared.try_estimate_ip_scalar(&code, cutoff).is_none();
+                let bound_pruned = prepared.try_estimate_ip(&code, cutoff).is_none();
+                assert_eq!(
+                    scalar_pruned, bound_pruned,
+                    "scalar/bound cutoff disagree at {cutoff} (seed={seed})",
+                );
+            }
         }
     }
 
