@@ -55,6 +55,14 @@ pub(super) struct IvfQuantizer {
     /// Per-dim code width for the RaBitQ branch. Ignored for
     /// TurboQuant / PqFastScan profiles. Always one of {1, 2, 4, 8}.
     rabitq_bits: u8,
+    /// Task 115: when set (RaBitQ profile only), postings are encoded as the
+    /// residual `o − c` against the assigned IVF centroid via
+    /// [`Self::encode_source_residual`], and scan adds the exact per-list
+    /// centroid term `⟨q, c⟩` back. Default false (plain RaBitQ). The payload
+    /// layout/size is identical either way; only the encoded vector and the
+    /// scan-side centroid add differ. The non-residual `encode_source` path
+    /// rejects RaBitQ-residual indexes so a centroid is never silently dropped.
+    rabitq_residual: bool,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -111,6 +119,26 @@ impl IvfQuantizer {
         pq_group_size: Option<usize>,
         rabitq_bits: Option<u8>,
     ) -> Result<Self, String> {
+        Self::resolve_with_pq_group_size_bits_and_residual(
+            storage_format,
+            dimensions,
+            pq_group_size,
+            rabitq_bits,
+            false,
+        )
+    }
+
+    /// Task 115: resolve a quantizer, optionally in RaBitQ residual mode.
+    /// `rabitq_residual` is honored only for the RaBitQ profile; it is rejected
+    /// for any other storage format so the gate cannot be set on a quantizer
+    /// that has no centroid-correction scoring path.
+    pub(super) fn resolve_with_pq_group_size_bits_and_residual(
+        storage_format: StorageFormat,
+        dimensions: usize,
+        pq_group_size: Option<usize>,
+        rabitq_bits: Option<u8>,
+        rabitq_residual: bool,
+    ) -> Result<Self, String> {
         storage_format.validate_v1_supported()?;
         let profile = match storage_format {
             StorageFormat::Auto | StorageFormat::TurboQuant => IvfQuantizerProfile::TurboQuant,
@@ -124,6 +152,11 @@ impl IvfQuantizer {
             }
             StorageFormat::RaBitQ | StorageFormat::CoarseRerank => IvfQuantizerProfile::RaBitQ,
         };
+        if rabitq_residual && !matches!(profile, IvfQuantizerProfile::RaBitQ) {
+            return Err(
+                "ec_ivf rabitq_residual requires storage_format = 'rabitq'".to_owned(),
+            );
+        }
         let bits = match rabitq_bits.unwrap_or(crate::DEFAULT_QUANT_BITS) {
             b @ (1 | 2 | 4 | 8) => b,
             other => {
@@ -136,6 +169,7 @@ impl IvfQuantizer {
             profile,
             dimensions,
             rabitq_bits: bits,
+            rabitq_residual,
         })
     }
 
@@ -166,6 +200,11 @@ impl IvfQuantizer {
                 Ok((dimensions, encoded.gamma, payload))
             }
             IvfQuantizerProfile::RaBitQ => {
+                if self.rabitq_residual {
+                    return Err(
+                        "ec_ivf RaBitQ residual mode requires the assigned centroid; use encode_source_residual".to_owned(),
+                    );
+                }
                 let quantizer = self.rabitq_quantizer()?;
                 Ok((dimensions, 0.0, quantizer.encode_code(source).into_vec()))
             }
@@ -173,6 +212,47 @@ impl IvfQuantizer {
                 Err("ec_ivf pq_fastscan encoding requires a trained grouped codebook".to_owned())
             }
         }
+    }
+
+    /// Task 115: encode `source` as the RaBitQ residual against its assigned
+    /// `centroid`. RaBitQ residual mode only. The returned payload has the
+    /// identical length/layout to the plain RaBitQ code; only the encoded vector
+    /// (`source − centroid`) differs. `gamma` is 0.0 (RaBitQ does not use it).
+    pub(super) fn encode_source_residual(
+        self,
+        source: &[f32],
+        centroid: &[f32],
+    ) -> Result<(u16, f32, Vec<u8>), String> {
+        if !self.rabitq_residual || !matches!(self.profile, IvfQuantizerProfile::RaBitQ) {
+            return Err(
+                "ec_ivf encode_source_residual requires a RaBitQ residual-mode quantizer".to_owned(),
+            );
+        }
+        if source.is_empty() {
+            return Err("embedding must not be empty".to_owned());
+        }
+        if source.len() != self.dimensions {
+            return Err(format!(
+                "embedding dimension mismatch: got {}, expected {}",
+                source.len(),
+                self.dimensions
+            ));
+        }
+        if centroid.len() != self.dimensions {
+            return Err(format!(
+                "centroid dimension mismatch: got {}, expected {}",
+                centroid.len(),
+                self.dimensions
+            ));
+        }
+        let dimensions = u16::try_from(source.len())
+            .map_err(|_| format!("embedding dimension {} exceeds maximum 65535", source.len()))?;
+        let quantizer = self.rabitq_quantizer()?;
+        Ok((
+            dimensions,
+            0.0,
+            quantizer.encode_code_residual(source, centroid).into_vec(),
+        ))
     }
 
     pub(super) fn encode_source_with_pq_model(
@@ -872,6 +952,12 @@ impl IvfQuantizer {
 
     pub(super) fn rabitq_bits(self) -> u8 {
         self.rabitq_bits
+    }
+
+    /// Task 115: true when this RaBitQ quantizer encodes/decodes posting
+    /// residuals against the assigned centroid.
+    pub(super) fn rabitq_residual(self) -> bool {
+        self.rabitq_residual
     }
 
     pub(super) fn quant_codec(self) -> IvfQuantCodec<'static> {

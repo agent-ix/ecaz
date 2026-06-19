@@ -3538,6 +3538,7 @@ mod tests {
             coarse_bits: 0,
             dense_posting_blocks: false,
             dense_posting_typed_layout: false,
+            rabitq_residual: false,
             storage_format: IvfStorageFormat::RaBitQ,
             rerank,
             coarse_format: CoarseFormat::Auto,

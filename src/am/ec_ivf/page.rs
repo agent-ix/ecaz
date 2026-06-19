@@ -75,6 +75,8 @@ pub const EC_IVF_METADATA_TRAINING_VERSION_OFFSET: usize = 20;
 pub const EC_IVF_METADATA_SEED_OFFSET: usize = 24;
 pub const EC_IVF_METADATA_STORAGE_FORMAT_OFFSET: usize = 32;
 pub const EC_IVF_METADATA_RERANK_OFFSET: usize = 33;
+/// Task 115: RaBitQ residual-mode flag (byte 35; byte 34 is quant_bits).
+pub const EC_IVF_METADATA_RABITQ_RESIDUAL_OFFSET: usize = 35;
 pub const EC_IVF_METADATA_CENTROID_HEAD_OFFSET: usize = 36;
 pub const EC_IVF_METADATA_DIRECTORY_HEAD_OFFSET: usize = 42;
 pub const EC_IVF_METADATA_TOTAL_LIVE_TUPLES_OFFSET: usize = 48;
@@ -603,6 +605,12 @@ pub struct MetadataPage {
     /// indexes write 0 here and the decoder coerces to 4 (the legacy
     /// hardcoded value).
     pub quant_bits: u8,
+    /// Task 115: when true (RaBitQ only), posting payloads are residual-encoded
+    /// against the assigned centroid and scan applies the per-list centroid
+    /// correction. Stored at metadata byte 35 (0 = plain, the default for every
+    /// non-residual index). Distinguishes plain vs residual payloads written by
+    /// the current build so scan picks the right scoring path.
+    pub rabitq_residual: bool,
     pub centroid_head: ItemPointer,
     pub directory_head: ItemPointer,
     pub total_live_tuples: u64,
@@ -630,6 +638,7 @@ impl MetadataPage {
             storage_format: options.storage_format,
             rerank: options.rerank.v1_effective(),
             quant_bits: options.effective_quant_bits(),
+            rabitq_residual: options.rabitq_residual,
             centroid_head: ItemPointer::INVALID,
             directory_head: ItemPointer::INVALID,
             total_live_tuples: 0,
@@ -654,6 +663,8 @@ impl MetadataPage {
         out[32] = self.storage_format as u8;
         out[33] = self.rerank as u8;
         out[34] = self.quant_bits;
+        // Task 115: residual-mode flag (byte 35). 0 = plain RaBitQ.
+        out[35] = u8::from(self.rabitq_residual);
         write_item_pointer(&mut out[36..42], self.centroid_head);
         write_item_pointer(&mut out[42..48], self.directory_head);
         out[48..56].copy_from_slice(&self.total_live_tuples.to_le_bytes());
@@ -735,6 +746,17 @@ impl MetadataPage {
                 other => {
                     return Err(format!(
                         "invalid ec_ivf quant_bits stored in metadata: {other}"
+                    ))
+                }
+            },
+            // Task 115: residual-mode flag (byte 35). v1/v2 indexes wrote 0
+            // here, so they decode as plain RaBitQ — the recall-safe default.
+            rabitq_residual: match bytes[35] {
+                0 => false,
+                1 => true,
+                other => {
+                    return Err(format!(
+                        "invalid ec_ivf rabitq_residual flag stored in metadata: {other}"
                     ))
                 }
             },
@@ -3782,6 +3804,7 @@ mod tests {
             coarse_bits: 0,
             dense_posting_blocks: false,
             dense_posting_typed_layout: false,
+            rabitq_residual: false,
             storage_format: StorageFormat::RaBitQ,
             rerank: RerankMode::HeapF32,
             coarse_format: CoarseFormat::Auto,
@@ -3800,6 +3823,45 @@ mod tests {
 
         assert_eq!(decoded, metadata);
         assert_eq!(decoded.format_version, INDEX_FORMAT_VERSION);
+        // Task 115: default index is plain RaBitQ.
+        assert!(!decoded.rabitq_residual);
+    }
+
+    #[test]
+    fn metadata_roundtrips_rabitq_residual_flag() {
+        // Task 115: the residual-mode flag survives encode/decode and a plain
+        // index (flag clear) decodes as plain — byte 35 is the only difference.
+        let mut residual = MetadataPage::empty(EcIvfOptions {
+            nlists: 64,
+            nprobe: 8,
+            rerank_width: 0,
+            training_sample_rows: 10_000,
+            seed: 7,
+            pq_group_size: 0,
+            posting_slack_percent: 0,
+            quant_bits: 4,
+            coarse_bits: 0,
+            dense_posting_blocks: false,
+            dense_posting_typed_layout: false,
+            rabitq_residual: true,
+            storage_format: StorageFormat::RaBitQ,
+            rerank: RerankMode::HeapF32,
+            coarse_format: CoarseFormat::Auto,
+            rerank_placement: RerankPlacement::Auto,
+            rerank_format: RerankFormat::Auto,
+        });
+        residual.dimensions = 256;
+        let encoded = residual.encode();
+        assert_eq!(encoded[EC_IVF_METADATA_RABITQ_RESIDUAL_OFFSET], 1);
+        let decoded = MetadataPage::decode(&encoded).unwrap();
+        assert!(decoded.rabitq_residual);
+        assert_eq!(decoded, residual);
+
+        // Clearing the flag yields a plain index with byte 35 == 0.
+        residual.rabitq_residual = false;
+        let plain = residual.encode();
+        assert_eq!(plain[EC_IVF_METADATA_RABITQ_RESIDUAL_OFFSET], 0);
+        assert!(!MetadataPage::decode(&plain).unwrap().rabitq_residual);
     }
 
     #[test]
@@ -3816,6 +3878,7 @@ mod tests {
             coarse_bits: 0,
             dense_posting_blocks: false,
             dense_posting_typed_layout: false,
+            rabitq_residual: false,
             storage_format: StorageFormat::Auto,
             rerank: RerankMode::Auto,
             coarse_format: CoarseFormat::Auto,
@@ -4315,6 +4378,7 @@ mod tests {
             coarse_bits: 0,
             dense_posting_blocks: false,
             dense_posting_typed_layout: false,
+            rabitq_residual: false,
             storage_format: StorageFormat::Auto,
             rerank: RerankMode::Auto,
             coarse_format: CoarseFormat::Auto,

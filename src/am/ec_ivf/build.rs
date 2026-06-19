@@ -628,6 +628,20 @@ impl BuildState {
         } else {
             None
         };
+        // Task 115: when residual encoding is gated on (RaBitQ only), resolve a
+        // residual-mode quantizer once; postings are re-encoded against their
+        // assigned centroid inside the per-list loop below.
+        let residual_posting_quantizer = if self.options.rabitq_residual {
+            Some(IvfQuantizer::resolve_with_pq_group_size_bits_and_residual(
+                self.options.storage_format,
+                usize::from(dimensions),
+                self.options.requested_pq_group_size(),
+                Some(self.options.effective_quant_bits()),
+                true,
+            )?)
+        } else {
+            None
+        };
 
         let mut posting_tids_by_list = vec![Vec::new(); nlists];
         let mut directory_tail_blocks_by_list = vec![None; nlists];
@@ -647,11 +661,14 @@ impl BuildState {
                 let mut pending = Vec::new();
                 let mut pending_payload_len = None;
                 let mut pending_posting_limit = usize::MAX;
+                let residual_posting = residual_posting_quantizer
+                    .map(|q| (q, model.centroids[list_id].as_slice()));
                 for tuple_index in tuple_indices {
                     let (heap_tid, gamma, payload) = encode_build_posting(
                         &self.heap_tuples[*tuple_index],
                         &pq_model,
                         pq_posting_quantizer,
+                        residual_posting,
                     )?;
                     let payload_len = payload.len();
                     if let Some(existing) = pending_payload_len {
@@ -691,11 +708,14 @@ impl BuildState {
                     )?;
                 }
             } else {
+                let residual_posting = residual_posting_quantizer
+                    .map(|q| (q, model.centroids[list_id].as_slice()));
                 for tuple_index in tuple_indices {
                     let (heap_tid, gamma, payload) = encode_build_posting(
                         &self.heap_tuples[*tuple_index],
                         &pq_model,
                         pq_posting_quantizer,
+                        residual_posting,
                     )?;
                     posting_tids_by_list[list_id].push(
                         data_pages.insert_ivf_single_heaptid_posting(
@@ -1030,15 +1050,24 @@ fn encode_build_posting(
     tuple: &BuildTuple,
     pq_model: &Option<IvfPqFastScanModel>,
     pq_posting_quantizer: Option<IvfQuantizer>,
+    residual_posting: Option<(IvfQuantizer, &[f32])>,
 ) -> Result<(ItemPointer, f32, Vec<u8>), String> {
-    let (gamma, payload) = match pq_model {
-        Some(pq_model) => {
+    let (gamma, payload) = match (pq_model, residual_posting) {
+        (Some(pq_model), _) => {
             let (_, gamma, payload) = pq_posting_quantizer
                 .expect("pq posting quantizer should exist for pq model")
                 .encode_source_with_pq_model(&tuple.source_vector, pq_model)?;
             (gamma, payload)
         }
-        None => (tuple.gamma, tuple.payload.clone()),
+        // Task 115: residual mode re-encodes the source against the assigned
+        // centroid here (the only point in the build where the list's centroid
+        // is in hand), mirroring the deferred PQ re-encode path above.
+        (None, Some((residual_quantizer, centroid))) => {
+            let (_, gamma, payload) =
+                residual_quantizer.encode_source_residual(&tuple.source_vector, centroid)?;
+            (gamma, payload)
+        }
+        (None, None) => (tuple.gamma, tuple.payload.clone()),
     };
     Ok((tuple.heap_tid, gamma, payload))
 }
@@ -1347,6 +1376,7 @@ mod tests {
             coarse_bits: 0,
             dense_posting_blocks: false,
             dense_posting_typed_layout: false,
+            rabitq_residual: false,
             storage_format: options::StorageFormat::Auto,
             rerank: options::RerankMode::Auto,
             coarse_format: options::CoarseFormat::Auto,

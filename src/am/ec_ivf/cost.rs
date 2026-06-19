@@ -407,6 +407,7 @@ mod tests {
             coarse_bits: 0,
             dense_posting_blocks: false,
             dense_posting_typed_layout: false,
+            rabitq_residual: false,
             storage_format: options::StorageFormat::TurboQuant,
             rerank: options::RerankMode::HeapF32,
             coarse_format: options::CoarseFormat::Auto,

@@ -138,14 +138,37 @@ unsafe fn insert_into_trained_index(
     let heap_tid = tuple.heap_tid;
     let source_vector = tuple.source_vector.clone();
 
+    // Task 115: residual mode encodes the payload against the assigned centroid,
+    // which is only known after assignment (the PqFastScan re-encode runs
+    // earlier because it is centroid-independent). Re-encode here so the new
+    // posting matches the residual payloads written at build time.
+    let (gamma, payload) = if metadata.rabitq_residual {
+        let centroid = model
+            .centroids
+            .get(list_id)
+            .ok_or_else(|| format!("ec_ivf assigned list {list_id} has no centroid"))?;
+        let residual_quantizer = quantizer::IvfQuantizer::resolve_with_pq_group_size_bits_and_residual(
+            metadata.storage_format,
+            usize::from(metadata.dimensions),
+            metadata_pq_group_size(metadata),
+            Some(metadata.quant_bits),
+            true,
+        )?;
+        let (_dimensions, gamma, payload) =
+            residual_quantizer.encode_source_residual(&tuple.source_vector, centroid)?;
+        (gamma, payload)
+    } else {
+        (tuple.gamma, tuple.payload)
+    };
+
     let posting = page::IvfPostingTuple {
         list_id: u32::try_from(list_id)
             .map_err(|_| "ec_ivf assigned list id exceeds u32".to_owned())?,
         deleted: false,
         heaptids: vec![tuple.heap_tid],
-        gamma: tuple.gamma,
+        gamma,
         rerank_tid: ItemPointer::INVALID,
-        payload: tuple.payload,
+        payload,
     };
     let block_range = live_insert_block_range(&directory)
         .map_err(|e| format!("ec_ivf aminsert found invalid directory: {e}"))?;
@@ -314,6 +337,7 @@ fn options_from_metadata(
         },
         dense_posting_blocks: false,
         dense_posting_typed_layout: false,
+        rabitq_residual: metadata.rabitq_residual,
         storage_format: metadata.storage_format,
         rerank: metadata.rerank,
         coarse_format: if metadata.storage_format == options::StorageFormat::CoarseRerank {

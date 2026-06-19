@@ -70,6 +70,7 @@ struct EcIvfReloptions {
     coarse_bits: i32,
     dense_posting_blocks: i32,
     dense_posting_typed_layout: i32,
+    rabitq_residual: i32,
     storage_format_offset: i32,
     quantizer_offset: i32,
     rerank_offset: i32,
@@ -281,6 +282,9 @@ pub(super) struct EcIvfOptions {
     pub(super) coarse_bits: i32,
     pub(super) dense_posting_blocks: bool,
     pub(super) dense_posting_typed_layout: bool,
+    /// Task 115: RaBitQ residual encoding gate. Only meaningful for
+    /// `storage_format = 'rabitq'`; ignored (forced false) otherwise.
+    pub(super) rabitq_residual: bool,
     pub(super) storage_format: StorageFormat,
     pub(super) rerank: RerankMode,
     pub(super) coarse_format: CoarseFormat,
@@ -301,6 +305,7 @@ impl EcIvfOptions {
         coarse_bits: 0,
         dense_posting_blocks: false,
         dense_posting_typed_layout: false,
+        rabitq_residual: false,
         storage_format: StorageFormat::Auto,
         rerank: RerankMode::Auto,
         coarse_format: CoarseFormat::Auto,
@@ -675,6 +680,16 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_amoptions(
             1,
             offset_of!(EcIvfReloptions, dense_posting_typed_layout) as i32,
         );
+        pg_sys::add_local_int_reloption(
+            &mut relopts,
+            c"rabitq_residual".as_ptr(),
+            c"Task 115 RaBitQ residual encoding: 0 disables (plain RaBitQ, default), 1 encodes posting payloads as the residual against the assigned IVF centroid. Only valid with storage_format = 'rabitq'."
+                .as_ptr(),
+            0,
+            0,
+            1,
+            offset_of!(EcIvfReloptions, rabitq_residual) as i32,
+        );
         pg_sys::add_local_string_reloption(
                 &mut relopts,
                 c"storage_format".as_ptr(),
@@ -891,6 +906,14 @@ fn build_options_from_reloptions(
         }
     }
 
+    let rabitq_residual = reloptions.rabitq_residual != 0;
+    if rabitq_residual && storage_format != StorageFormat::RaBitQ {
+        pgrx::error!(
+            "ec_ivf rabitq_residual = 1 requires storage_format = 'rabitq' (got '{}')",
+            storage_format.reloption_name()
+        );
+    }
+
     EcIvfOptions {
         nlists: reloptions.nlists,
         nprobe: reloptions.nprobe,
@@ -909,6 +932,7 @@ fn build_options_from_reloptions(
             || reloptions.dense_posting_blocks != 0,
         dense_posting_typed_layout: storage_format == StorageFormat::CoarseRerank
             || reloptions.dense_posting_typed_layout != 0,
+        rabitq_residual,
         storage_format,
         rerank,
         coarse_format,
@@ -942,6 +966,7 @@ mod tests {
             coarse_bits: 0,
             dense_posting_blocks: 0,
             dense_posting_typed_layout: 0,
+            rabitq_residual: 0,
             storage_format_offset: 0,
             quantizer_offset: 0,
             rerank_offset: 0,
