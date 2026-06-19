@@ -239,10 +239,14 @@ fn page_payload_len(metadata: &page::MetadataPage) -> Result<usize, String> {
     } else {
         None
     };
-    super::quantizer::IvfQuantizer::resolve_with_pq_group_size(
+    // Pass the stored quant_bits: RaBitQ payload width depends on the per-dim
+    // code width (coarse_rerank builds at 1 bit). Resolving without bits would
+    // default to 4-bit and mis-size the dense posting payload during vacuum.
+    super::quantizer::IvfQuantizer::resolve_with_pq_group_size_and_bits(
         metadata.storage_format,
         metadata.dimensions as usize,
         pq_group_size,
+        Some(metadata.quant_bits),
     )
     .map(|quantizer| quantizer.payload_len())
 }

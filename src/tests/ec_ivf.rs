@@ -1951,6 +1951,58 @@
     }
 
     #[pg_test]
+    fn test_ec_ivf_index_placement_vacuum_removes_sidecar_entry() {
+        // Task 111g (003b): vacuuming a dead row removes it from the index-side
+        // f16 sidecar (tombstoned), so it is no longer returned, and the
+        // surviving rows still rerank correctly from the sidecar.
+        Spi::run("CREATE TABLE ec_ivf_idx_vac (id bigint primary key, embedding ecvector)")
+            .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_ivf_idx_vac VALUES
+             (0, '[1.0,0.0,0.0,0.0]'::ecvector),
+             (1, '[0.0,1.0,0.0,0.0]'::ecvector),
+             (2, '[0.0,0.0,1.0,0.0]'::ecvector),
+             (3, '[0.0,0.0,0.0,1.0]'::ecvector)",
+        )
+        .expect("seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_ivf_idx_vac_idx ON ec_ivf_idx_vac USING ec_ivf \
+             (embedding ecvector_ip_ops) \
+             WITH (
+                nlists = 2,
+                nprobe = 2,
+                training_sample_rows = 4,
+                storage_format = 'coarse_rerank',
+                rerank_format = 'f16',
+                rerank_placement = 'index',
+                rerank_width = 4
+             )",
+        )
+        .expect("index-placement f16 index creation should succeed");
+
+        let index_oid = ec_ivf_index_oid("ec_ivf_idx_vac_idx");
+        let deleted_tid = heap_tid_for_row("ec_ivf_idx_vac", 1);
+        Spi::run("DELETE FROM ec_ivf_idx_vac WHERE id = 1").expect("delete should succeed");
+        let stats =
+            ec_ivf_debug!(am::debug_ec_ivf_vacuum_remove_heap_tids(index_oid, &[deleted_tid]));
+        assert_eq!(stats.tuples_removed, 1.0);
+
+        // Query aligned with the deleted row's vector: it must not be returned,
+        // and the remaining rows must still be reranked from the sidecar.
+        let ctid_to_id = ctid_id_map("ec_ivf_idx_vac");
+        let ids = ivf_debug_output_ids(index_oid, vec![0.0, 1.0, 0.0, 0.0], &ctid_to_id, 4);
+        assert!(
+            !ids.contains(&1),
+            "vacuumed row should not be returned, got {ids:?}"
+        );
+        assert_eq!(ids.len(), 3, "three live rows should remain, got {ids:?}");
+
+        // A surviving row still reranks correctly from the (tombstoned) sidecar.
+        let top = ivf_debug_output_ids(index_oid, vec![0.0, 0.0, 1.0, 0.0], &ctid_to_id, 1);
+        assert_eq!(top, vec![2], "surviving row 2 should rank first for its query");
+    }
+
+    #[pg_test]
     fn test_ec_ivf_full_probe_matches_simple_exact_oracle_top1() {
         Spi::run(
             "CREATE TABLE ec_ivf_full_probe_oracle (id bigint primary key, embedding ecvector)",
