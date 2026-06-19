@@ -1064,6 +1064,173 @@
     }
 
     #[pg_test]
+    fn test_ec_ivf_coarse_rerank_f16_rabitq4_admin_snapshot() {
+        // Task 111g: f16 and rabitq4 table-side rerank formats are creatable and
+        // reported by the admin snapshot.
+        for (suffix, rerank_format, expected) in [
+            ("f16", "f16", "coarse_rerank/table/f16"),
+            ("rabitq4", "rabitq4", "coarse_rerank/table/rabitq4"),
+        ] {
+            let table = format!("ec_ivf_cr_fmt_{suffix}");
+            let index = format!("ec_ivf_cr_fmt_{suffix}_idx");
+            Spi::run(&format!(
+                "CREATE TABLE {table} (id bigint primary key, embedding ecvector)"
+            ))
+            .expect("table creation should succeed");
+            Spi::run(&format!(
+                "INSERT INTO {table} VALUES
+                 (0, '[1.0,0.0]'::ecvector),
+                 (1, '[0.0,1.0]'::ecvector),
+                 (2, '[-1.0,0.0]'::ecvector),
+                 (3, '[0.0,-1.0]'::ecvector)"
+            ))
+            .expect("seed insert should succeed");
+            Spi::run(&format!(
+                "CREATE INDEX {index} ON {table} USING ec_ivf \
+                 (embedding ecvector_ip_ops) \
+                 WITH (
+                    nlists = 2,
+                    nprobe = 2,
+                    training_sample_rows = 4,
+                    storage_format = 'coarse_rerank',
+                    rerank_format = '{rerank_format}',
+                    rerank_width = 3
+                 )"
+            ))
+            .unwrap_or_else(|e| panic!("coarse_rerank {rerank_format} index creation should succeed: {e:?}"));
+
+            let contract = Spi::get_one::<String>(&format!(
+                "SELECT storage_format || '/' || rerank_placement || '/' || rerank_format \
+                 FROM ec_ivf_index_admin_snapshot('{index}'::regclass)"
+            ))
+            .expect("admin snapshot should succeed")
+            .expect("contract row should be present");
+            assert_eq!(contract, expected, "rerank_format {rerank_format} admin snapshot");
+        }
+    }
+
+    #[pg_test]
+    fn test_ec_ivf_coarse_rerank_f16_matches_f32_ranking() {
+        // Task 111g recall parity: an f16 table-side rerank returns the same
+        // top-k ranking as the f32 table-side rerank on a deterministic corpus,
+        // and the f16 scores stay within binary16 precision of the f32 scores.
+        let rows: Vec<(i64, Vec<f32>)> = (0..16)
+            .map(|id| {
+                let base = id as f32;
+                let vector = (0..8)
+                    .map(|d| ((base * 0.37 + d as f32 * 0.11).sin()) * 0.5 + 0.5)
+                    .collect::<Vec<f32>>();
+                (id, vector)
+            })
+            .collect();
+
+        for (table, rerank_format) in [
+            ("ec_ivf_cr_par_f32", "f32"),
+            ("ec_ivf_cr_par_f16", "f16"),
+        ] {
+            Spi::run(&format!(
+                "CREATE TABLE {table} (id bigint primary key, embedding ecvector)"
+            ))
+            .expect("table creation should succeed");
+            for (id, vector) in &rows {
+                let literal = format_recall_vector_sql_literal(vector);
+                Spi::run(&format!(
+                    "INSERT INTO {table} VALUES ({id}, {literal}::ecvector)"
+                ))
+                .expect("seed insert should succeed");
+            }
+            Spi::run(&format!(
+                "CREATE INDEX {table}_idx ON {table} USING ec_ivf \
+                 (embedding ecvector_ip_ops) \
+                 WITH (
+                    nlists = 4,
+                    nprobe = 4,
+                    training_sample_rows = 16,
+                    storage_format = 'coarse_rerank',
+                    rerank_format = '{rerank_format}',
+                    rerank_width = 5
+                 )"
+            ))
+            .expect("coarse_rerank index creation should succeed");
+        }
+
+        let query = rows[3].1.clone();
+        let f32_oid = ec_ivf_index_oid("ec_ivf_cr_par_f32_idx");
+        let f16_oid = ec_ivf_index_oid("ec_ivf_cr_par_f16_idx");
+        let ctid_f32 = ctid_id_map("ec_ivf_cr_par_f32");
+        let ctid_f16 = ctid_id_map("ec_ivf_cr_par_f16");
+
+        let f32_ids = ivf_debug_output_ids(f32_oid, query.clone(), &ctid_f32, 5);
+        let f16_ids = ivf_debug_output_ids(f16_oid, query.clone(), &ctid_f16, 5);
+        assert_eq!(
+            f32_ids, f16_ids,
+            "f16 rerank top-5 ranking should match f32 rerank ranking"
+        );
+
+        // The f16 scores should track the f32 scores within binary16 precision.
+        let (f32_outputs, _) = ec_ivf_debug!(am::debug_ec_ivf_gettuple_outputs(f32_oid, query.clone()));
+        let (f16_outputs, _) = ec_ivf_debug!(am::debug_ec_ivf_gettuple_outputs(f16_oid, query));
+        assert_eq!(f32_outputs.len(), f16_outputs.len());
+        for ((_, _, f32_score), (_, _, f16_score)) in f32_outputs.iter().zip(f16_outputs.iter()) {
+            let tolerance = 0.01_f32.max(f32_score.abs() * 0.01);
+            assert!(
+                (f32_score - f16_score).abs() <= tolerance,
+                "f16 rerank score {f16_score} should track f32 rerank score {f32_score} within binary16 precision"
+            );
+        }
+    }
+
+    #[pg_test]
+    fn test_ec_ivf_coarse_rerank_rabitq4_returns_correct_top_neighbor() {
+        // Task 111g correctness: rabitq4 table-side rerank ranks the exact
+        // nearest neighbor first on a separable corpus.
+        Spi::run(
+            "CREATE TABLE ec_ivf_cr_rb4 (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        let rows: Vec<(i64, Vec<f32>)> = (0..12)
+            .map(|id| {
+                let theta = id as f32 * (std::f32::consts::PI / 6.0);
+                (id, vec![theta.cos(), theta.sin(), 0.0, 0.0])
+            })
+            .collect();
+        for (id, vector) in &rows {
+            let literal = format_recall_vector_sql_literal(vector);
+            Spi::run(&format!(
+                "INSERT INTO ec_ivf_cr_rb4 VALUES ({id}, {literal}::ecvector)"
+            ))
+            .expect("seed insert should succeed");
+        }
+        Spi::run(
+            "CREATE INDEX ec_ivf_cr_rb4_idx ON ec_ivf_cr_rb4 USING ec_ivf \
+             (embedding ecvector_ip_ops) \
+             WITH (
+                nlists = 4,
+                nprobe = 4,
+                training_sample_rows = 12,
+                storage_format = 'coarse_rerank',
+                rerank_format = 'rabitq4',
+                rerank_width = 5
+             )",
+        )
+        .expect("coarse_rerank rabitq4 index creation should succeed");
+
+        // Query aligned with row 0; row 0 is the exact nearest neighbor.
+        let query = rows[0].1.clone();
+        let index_oid = ec_ivf_index_oid("ec_ivf_cr_rb4_idx");
+        let ctid_to_id = ctid_id_map("ec_ivf_cr_rb4");
+        let ids = ivf_debug_output_ids(index_oid, query, &ctid_to_id, 3);
+        assert!(
+            !ids.is_empty(),
+            "rabitq4 rerank should emit candidates"
+        );
+        assert_eq!(
+            ids[0], 0,
+            "rabitq4 rerank should rank the exact nearest neighbor first, got {ids:?}"
+        );
+    }
+
+    #[pg_test]
     fn test_ec_ivf_posting_slack_reloption_reserves_list_range() {
         Spi::run(
             "CREATE TABLE ec_ivf_posting_slack_build (id bigint primary key, embedding ecvector)",

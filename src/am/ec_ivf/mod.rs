@@ -8,6 +8,7 @@ mod insert;
 mod options;
 mod page;
 mod quantizer;
+mod rerank;
 mod routine;
 mod scan;
 mod training;

@@ -2138,9 +2138,23 @@ unsafe fn rerank_probe_candidates(
                 super::options::resolve_scan_rerank_width(index_options.rerank_width)
                     .effective_rerank_width;
             let rerank_len = resolve_rerank_len(rerank_width, candidates.len());
+            // Task 111g: the rerank stage reads the heap source column
+            // tid-sorted (unchanged) and rescores the frontier through the
+            // configured `rerank_format` (f32 / f16 / rabitq4). The default
+            // `f32` path stays bit-identical to the pre-111g heap_f32 rerank.
+            let scorer = super::rerank::RerankScorer::resolve(
+                index_options.rerank_format,
+                index_options.storage_format,
+                opaque.scan_dimensions as usize,
+                opaque.query_values(),
+            )
+            .unwrap_or_else(|e| pgrx::error!("{e}"));
             // SAFETY: `rerank_len` is bounded by `candidates.len()`, and the
-            // heap_f32 helper validates scan-local rerank state before fetching.
-            unsafe { rerank_probe_candidates_heap_f32(opaque, &mut candidates[..rerank_len]) };
+            // heap rerank helper validates scan-local rerank state before
+            // fetching.
+            unsafe {
+                rerank_probe_candidates_table_side(opaque, &scorer, &mut candidates[..rerank_len])
+            };
             candidates[..rerank_len].sort_by(candidate_cmp);
             if rerank_width > 0 {
                 candidates.truncate(rerank_len);
@@ -2164,8 +2178,15 @@ fn resolve_rerank_len(rerank_width: i32, candidate_len: usize) -> usize {
 /// # Safety
 /// `opaque.heap_rerank_state` was created with `Box::into_raw` during scan
 /// configuration and remains live for the duration of this rerank pass.
-unsafe fn rerank_probe_candidates_heap_f32(
+///
+/// Reads the heap source column **tid-sorted** (unchanged from the pre-111g
+/// heap_f32 path) and rescores the frontier through `scorer`. Per-candidate
+/// representations (f32/f16) score inside the fetch loop; batched
+/// representations (rabitq4) collect the fetched source vectors and score the
+/// whole frontier through the shared candidate_batch scorers afterward.
+unsafe fn rerank_probe_candidates_table_side(
     opaque: &mut EcIvfScanOpaque,
+    scorer: &super::rerank::RerankScorer,
     candidates: &mut [EcIvfScoredCandidate],
 ) {
     if candidates.is_empty() {
@@ -2177,13 +2198,13 @@ unsafe fn rerank_probe_candidates_heap_f32(
         .as_deref()
         .filter(|state| state.source_attnum > 0)
         .unwrap_or_else(|| {
-            pgrx::error!("ec_ivf heap_f32 rerank is missing heap fetch state");
+            pgrx::error!("ec_ivf table-side rerank is missing heap fetch state");
         });
     let heap_relation = state.heap_relation();
     let snapshot = state.snapshot();
     let slot = state.slot();
     if heap_relation.is_null() || snapshot.is_null() || slot.is_null() {
-        pgrx::error!("ec_ivf heap_f32 rerank is missing heap fetch state");
+        pgrx::error!("ec_ivf table-side rerank is missing heap fetch state");
     }
     let source_attnum = i32::from(state.source_attnum);
     let heap_blocks = candidate_heap_blocks(candidates);
@@ -2201,30 +2222,55 @@ unsafe fn rerank_probe_candidates_heap_f32(
         heap_reader
     };
 
+    let batched = scorer.is_batched();
+    // Batched representations need every source vector materialized before
+    // scoring; non-batched representations score in place during the fetch.
+    let mut collected_sources: Vec<Vec<f32>> = if batched {
+        Vec::with_capacity(candidates.len())
+    } else {
+        Vec::new()
+    };
+
     let rerank_rows = {
         let query_values = opaque.query_values();
         let mut rerank_rows = 0usize;
-        for candidate in candidates {
+        for candidate in candidates.iter_mut() {
             source::fetch_heap_row_version_with_reader(
                 &mut heap_reader,
                 candidate.heap_tid,
-                "ec_ivf heap_f32 rerank source vector",
+                "ec_ivf table-side rerank source vector",
             );
             source::with_indexed_ecvector_from_slot_reader(
                 &mut heap_reader,
                 source_attnum,
-                "ec_ivf heap_f32 rerank source vector",
+                "ec_ivf table-side rerank source vector",
                 |source_vector| {
-                    candidate.score = source::negative_inner_product_index_internal(
-                        query_values,
-                        source_vector.as_slice(),
-                    );
+                    if batched {
+                        collected_sources.push(source_vector.as_slice().to_vec());
+                    } else {
+                        candidate.score = scorer.score_source(query_values, source_vector.as_slice());
+                    }
                 },
             );
             rerank_rows += 1;
         }
         rerank_rows
     };
+
+    if batched {
+        let source_refs: Vec<&[f32]> = collected_sources
+            .iter()
+            .map(|source| source.as_slice())
+            .collect();
+        let mut scores = vec![0.0_f32; source_refs.len()];
+        scorer
+            .score_sources_batch(&source_refs, &mut scores)
+            .unwrap_or_else(|e| pgrx::error!("{e}"));
+        for (candidate, score) in candidates.iter_mut().zip(scores.iter()) {
+            candidate.score = *score;
+        }
+    }
+
     for _ in 0..rerank_rows {
         opaque.explain_counters.record_rerank_row();
     }
