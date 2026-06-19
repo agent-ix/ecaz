@@ -101,15 +101,43 @@ On-disk format addition (free here — research project, rebuild). This is a rea
 redesign, sequenced after the benchmark goal completes; then re-bench sidecar-index
 for the "after". Table-side stays the correct lean-index default meanwhile.
 
-## Pending (matrix running on the fixed `.so`)
+## Per-change verdict table (HEAD, all 8 configs on fixed `.so` 67e1534c, sweep 8–200, @100k)
 
-Per-change A/B verdicts — filled as configs complete, each verified against the
-fixed-`.so` backend SHA in its `suite-manifest.json`:
+| Change | Recall effect | Latency / size effect | Verdict |
+|---|---|---|---|
+| **111g** table f16 (fixed) vs f32 | equal (0.9975 vs 0.9985 @np200) | ~6% slower scoring, same 25.4 MiB index | no benefit vs f32 |
+| **111g** table rabitq4 | **lower** (0.942 @np200) | same size, slower | worse — don't use |
+| **111g** index-side f16/rq4 | equal recall | **40–120× slower, 16× bigger** (O(N) chain) | **BROKEN → ADR-079** |
+| **112** lazy rerank on/off | equal (byte-identical) | neutral (within noise) | **inert** — no win |
+| **113** row-path prune on/off | equal (recall-safe ✓) | **+4% faster** @matched recall | keep (only real win) |
+| **113** dense-path prune on/off | equal (recall-safe ✓) | ~3% slower (bookkeeping, no pre-prune) | inert → gate to row path |
+| **115** residual plain/on | equal (no recall-per-probe gain) | **~9% slower**, same size | net-negative under exact rerank |
+| **quant_bits** 1/2/4/8 | all ≈0.999 (1-bit 0.9985) | idx 32.7/52.5/90.4/198.7 MiB; p50 7.8/53.3*/16.6/17.8 ms | **1-bit is the sweet spot** |
 
-- **111g** rerank reps: f32 vs f16(fixed) vs rabitq4 (table) + index-vs-table
-  sidecar latency (codex P1: does index-side full-chain read actually win?).
-- **112** lazy rerank: on vs off (expected recall-neutral; latency delta?).
-- **113** posting prune: on vs off (row + dense path, codex P2).
-- **115** residual: plain vs residual recall-per-probe + matched-recall latency.
-- **quant_bits** 1/2/4/8 recall/latency/size.
-- **Historical** per-segment: constant-rabitq at baseline/111g/112/113/115.
+\* qb2 p50=53 ms is an anomaly (likely an unoptimized 2-bit scan path) — flagged.
+
+## Overall conclusion (measured)
+
+**Exact `heap_f32` rerank dominates recall@10**, which masks every coarse-side
+quant optimization in this lane:
+- residual (115) and higher bit-depth (quant_bits) give **no recall gain** —
+  exact rerank already fixes the ranking from the coarse top-`rerank_width`.
+- **1-bit RaBitQ coarse + exact rerank is the sweet spot**: same recall as 4/8-bit
+  at the smallest index (32.7 MiB) and fastest scan (7.8 ms). The actionable win.
+
+On the latency-optimization side:
+- **112 lazy is inert** (no skip fires — NoBound + no k-cap + loose bound).
+- **113 prune helps only the row path (+4%)**; it is inert on the dense path.
+- **111g index-side sidecar is a regression** (O(N) full-chain read), not a win —
+  fix is ADR-079 (survivor-directed bounded read).
+- **f16 rerank was outright broken** (subnormal decode) → fixed, now ≈ f32.
+
+Net: most of the 111g→115 lane did **not** move the bar at matched recall; the
+real, measured takeaways are (a) the f16 fix, (b) 1-bit-coarse + exact-rerank as
+the efficient operating point, (c) 113 row-prune ~4%, and (d) the index-side
+regression to fix (ADR-079). Exactly the per-change attribution the bench was for.
+
+## Historical per-segment (constant plain-rabitq at each merge commit)
+
+Running via `run-historical.sh` (baseline 99dc70e53 → 111g → 112 → 113). Isolates
+each merge's net effect on the stable rabitq path; filled in on completion.
