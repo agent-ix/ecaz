@@ -1231,6 +1231,370 @@
     }
 
     #[pg_test]
+    fn test_ec_ivf_index_placement_f16_rabitq4_admin_snapshot() {
+        // Task 111g (003b): index placement is creatable for f16 and rabitq4,
+        // and the admin snapshot reports rerank_placement = index.
+        for (suffix, rerank_format, expected) in [
+            ("f16", "f16", "coarse_rerank/index/f16"),
+            ("rabitq4", "rabitq4", "coarse_rerank/index/rabitq4"),
+        ] {
+            let table = format!("ec_ivf_idx_pl_{suffix}");
+            let index = format!("ec_ivf_idx_pl_{suffix}_idx");
+            Spi::run(&format!(
+                "CREATE TABLE {table} (id bigint primary key, embedding ecvector)"
+            ))
+            .expect("table creation should succeed");
+            Spi::run(&format!(
+                "INSERT INTO {table} VALUES
+                 (0, '[1.0,0.0]'::ecvector),
+                 (1, '[0.0,1.0]'::ecvector),
+                 (2, '[-1.0,0.0]'::ecvector),
+                 (3, '[0.0,-1.0]'::ecvector)"
+            ))
+            .expect("seed insert should succeed");
+            Spi::run(&format!(
+                "CREATE INDEX {index} ON {table} USING ec_ivf \
+                 (embedding ecvector_ip_ops) \
+                 WITH (
+                    nlists = 2,
+                    nprobe = 2,
+                    training_sample_rows = 4,
+                    storage_format = 'coarse_rerank',
+                    rerank_format = '{rerank_format}',
+                    rerank_placement = 'index',
+                    rerank_width = 3
+                 )"
+            ))
+            .unwrap_or_else(|e| {
+                panic!("index-placement {rerank_format} index creation should succeed: {e:?}")
+            });
+
+            let contract = Spi::get_one::<String>(&format!(
+                "SELECT storage_format || '/' || rerank_placement || '/' || rerank_format \
+                 FROM ec_ivf_index_admin_snapshot('{index}'::regclass)"
+            ))
+            .expect("admin snapshot should succeed")
+            .expect("contract row should be present");
+            assert_eq!(contract, expected, "index placement {rerank_format} admin snapshot");
+        }
+    }
+
+    #[pg_test]
+    fn test_ec_ivf_index_placement_f16_matches_table_f16_ranking() {
+        // Task 111g (003b) recall parity: the index-side f16 sidecar rerank
+        // returns the SAME top-k ranking and bit-identical scores as the
+        // table-side f16 rerank (both round-trip the source through binary16),
+        // proving the persisted compact sidecar preserves f16 recall.
+        let rows: Vec<(i64, Vec<f32>)> = (0..16)
+            .map(|id| {
+                let base = id as f32;
+                let vector = (0..8)
+                    .map(|d| ((base * 0.37 + d as f32 * 0.11).sin()) * 0.5 + 0.5)
+                    .collect::<Vec<f32>>();
+                (id, vector)
+            })
+            .collect();
+
+        for (table, placement) in [
+            ("ec_ivf_idx_par_table", "table"),
+            ("ec_ivf_idx_par_index", "index"),
+        ] {
+            Spi::run(&format!(
+                "CREATE TABLE {table} (id bigint primary key, embedding ecvector)"
+            ))
+            .expect("table creation should succeed");
+            for (id, vector) in &rows {
+                let literal = format_recall_vector_sql_literal(vector);
+                Spi::run(&format!("INSERT INTO {table} VALUES ({id}, {literal}::ecvector)"))
+                    .expect("seed insert should succeed");
+            }
+            Spi::run(&format!(
+                "CREATE INDEX {table}_idx ON {table} USING ec_ivf \
+                 (embedding ecvector_ip_ops) \
+                 WITH (
+                    nlists = 4,
+                    nprobe = 4,
+                    training_sample_rows = 16,
+                    storage_format = 'coarse_rerank',
+                    rerank_format = 'f16',
+                    rerank_placement = '{placement}',
+                    rerank_width = 5
+                 )"
+            ))
+            .expect("coarse_rerank f16 index creation should succeed");
+        }
+
+        let query = rows[3].1.clone();
+        let table_oid = ec_ivf_index_oid("ec_ivf_idx_par_table_idx");
+        let index_oid = ec_ivf_index_oid("ec_ivf_idx_par_index_idx");
+        let ctid_table = ctid_id_map("ec_ivf_idx_par_table");
+        let ctid_index = ctid_id_map("ec_ivf_idx_par_index");
+
+        let table_ids = ivf_debug_output_ids(table_oid, query.clone(), &ctid_table, 5);
+        let index_ids = ivf_debug_output_ids(index_oid, query.clone(), &ctid_index, 5);
+        assert_eq!(
+            table_ids, index_ids,
+            "index-side f16 rerank top-5 ranking should match table-side f16 ranking"
+        );
+
+        let (table_outputs, _) =
+            ec_ivf_debug!(am::debug_ec_ivf_gettuple_outputs(table_oid, query.clone()));
+        let (index_outputs, _) =
+            ec_ivf_debug!(am::debug_ec_ivf_gettuple_outputs(index_oid, query));
+        assert_eq!(table_outputs.len(), index_outputs.len());
+        for ((_, _, table_score), (_, _, index_score)) in
+            table_outputs.iter().zip(index_outputs.iter())
+        {
+            // The sidecar stores the exact f16 round-trip of the source, so the
+            // index-side score is bit-identical to the table-side f16 score.
+            assert_eq!(
+                index_score.to_bits(),
+                table_score.to_bits(),
+                "index-side f16 score {index_score} should match table-side f16 score {table_score}"
+            );
+        }
+    }
+
+    #[pg_test]
+    fn test_ec_ivf_index_placement_rabitq4_top_neighbor() {
+        // Task 111g (003b) correctness: the index-side rabitq4 sidecar rerank
+        // ranks the exact nearest neighbor first on a separable corpus.
+        Spi::run("CREATE TABLE ec_ivf_idx_rb4 (id bigint primary key, embedding ecvector)")
+            .expect("table creation should succeed");
+        let rows: Vec<(i64, Vec<f32>)> = (0..12)
+            .map(|id| {
+                let theta = id as f32 * (std::f32::consts::PI / 6.0);
+                (id, vec![theta.cos(), theta.sin(), 0.0, 0.0])
+            })
+            .collect();
+        for (id, vector) in &rows {
+            let literal = format_recall_vector_sql_literal(vector);
+            Spi::run(&format!("INSERT INTO ec_ivf_idx_rb4 VALUES ({id}, {literal}::ecvector)"))
+                .expect("seed insert should succeed");
+        }
+        Spi::run(
+            "CREATE INDEX ec_ivf_idx_rb4_idx ON ec_ivf_idx_rb4 USING ec_ivf \
+             (embedding ecvector_ip_ops) \
+             WITH (
+                nlists = 4,
+                nprobe = 4,
+                training_sample_rows = 12,
+                storage_format = 'coarse_rerank',
+                rerank_format = 'rabitq4',
+                rerank_placement = 'index',
+                rerank_width = 5
+             )",
+        )
+        .expect("index-placement rabitq4 index creation should succeed");
+
+        let query = rows[0].1.clone();
+        let index_oid = ec_ivf_index_oid("ec_ivf_idx_rb4_idx");
+        let ctid_to_id = ctid_id_map("ec_ivf_idx_rb4");
+        let ids = ivf_debug_output_ids(index_oid, query, &ctid_to_id, 3);
+        assert!(!ids.is_empty(), "index-side rabitq4 rerank should emit candidates");
+        assert_eq!(
+            ids[0], 0,
+            "index-side rabitq4 rerank should rank the exact nearest neighbor first, got {ids:?}"
+        );
+    }
+
+    #[pg_test]
+    fn test_ec_ivf_index_placement_fewer_rerank_bytes() {
+        // Task 111g (003b) WIN EVIDENCE (by counter, no ecaz bench suite): the
+        // index-placement compact sidecar reads strictly fewer rerank *source*
+        // bytes than the table-side f32 rerank on the same corpus/query.
+        //   - table f32 reads dims*4 per reranked candidate (full heap source).
+        //   - index f16 reads dims*2; index rabitq4 reads the rabitq4 payload
+        //     length (both far smaller than dims*4).
+        let dims = 8usize;
+        let rows: Vec<(i64, Vec<f32>)> = (0..16)
+            .map(|id| {
+                let base = id as f32;
+                let vector = (0..dims)
+                    .map(|d| ((base * 0.41 + d as f32 * 0.13).cos()) * 0.5 + 0.5)
+                    .collect::<Vec<f32>>();
+                (id, vector)
+            })
+            .collect();
+
+        let make_index = |table: &str, rerank_format: &str, placement: &str| {
+            Spi::run(&format!(
+                "CREATE TABLE {table} (id bigint primary key, embedding ecvector)"
+            ))
+            .expect("table creation should succeed");
+            for (id, vector) in &rows {
+                let literal = format_recall_vector_sql_literal(vector);
+                Spi::run(&format!("INSERT INTO {table} VALUES ({id}, {literal}::ecvector)"))
+                    .expect("seed insert should succeed");
+            }
+            Spi::run(&format!(
+                "CREATE INDEX {table}_idx ON {table} USING ec_ivf \
+                 (embedding ecvector_ip_ops) \
+                 WITH (
+                    nlists = 4,
+                    nprobe = 4,
+                    training_sample_rows = 16,
+                    storage_format = 'coarse_rerank',
+                    rerank_format = '{rerank_format}',
+                    rerank_placement = '{placement}',
+                    rerank_width = 8
+                 )"
+            ))
+            .expect("coarse_rerank index creation should succeed");
+            ec_ivf_index_oid(&format!("{table}_idx"))
+        };
+
+        let table_f32_oid = make_index("ec_ivf_bytes_table_f32", "f32", "table");
+        let index_f16_oid = make_index("ec_ivf_bytes_index_f16", "f16", "index");
+        let index_rb4_oid = make_index("ec_ivf_bytes_index_rb4", "rabitq4", "index");
+
+        let query = rows[2].1.clone();
+        let table_f32 = ec_ivf_debug!(am::debug_ec_ivf_gettuple_counter_snapshot(
+            table_f32_oid,
+            query.clone()
+        ));
+        let index_f16 = ec_ivf_debug!(am::debug_ec_ivf_gettuple_counter_snapshot(
+            index_f16_oid,
+            query.clone()
+        ));
+        let index_rb4 = ec_ivf_debug!(am::debug_ec_ivf_gettuple_counter_snapshot(
+            index_rb4_oid,
+            query
+        ));
+
+        // Every variant reranks the same frontier, so rerank_rows match and the
+        // byte comparison is apples-to-apples.
+        assert!(table_f32.rerank_rows > 0, "table f32 should rerank rows");
+        assert_eq!(table_f32.rerank_rows, index_f16.rerank_rows);
+        assert_eq!(table_f32.rerank_rows, index_rb4.rerank_rows);
+
+        // f32 reads dims*4 per candidate; f16 reads dims*2 (exactly half).
+        assert_eq!(
+            table_f32.rerank_source_bytes_read,
+            table_f32.rerank_rows * (dims * 4) as u32,
+            "table f32 should read dims*4 per reranked candidate"
+        );
+        assert_eq!(
+            index_f16.rerank_source_bytes_read,
+            index_f16.rerank_rows * (dims * 2) as u32,
+            "index f16 should read dims*2 per reranked candidate"
+        );
+
+        assert!(
+            index_f16.rerank_source_bytes_read < table_f32.rerank_source_bytes_read,
+            "index f16 ({}) should read fewer rerank source bytes than table f32 ({})",
+            index_f16.rerank_source_bytes_read,
+            table_f32.rerank_source_bytes_read
+        );
+        assert!(
+            index_rb4.rerank_source_bytes_read < table_f32.rerank_source_bytes_read,
+            "index rabitq4 ({}) should read fewer rerank source bytes than table f32 ({})",
+            index_rb4.rerank_source_bytes_read,
+            table_f32.rerank_source_bytes_read
+        );
+    }
+
+    #[pg_test]
+    fn test_ec_ivf_index_placement_insert_maintains_sidecar() {
+        // Task 111g (003b): a row inserted after build into an index-placement
+        // index is reranked from the sidecar (its compact payload was appended),
+        // so it is returned and ranked correctly.
+        Spi::run("CREATE TABLE ec_ivf_idx_ins (id bigint primary key, embedding ecvector)")
+            .expect("table creation should succeed");
+        let rows: Vec<(i64, Vec<f32>)> = (0..12)
+            .map(|id| {
+                let theta = id as f32 * (std::f32::consts::PI / 6.0);
+                (id, vec![theta.cos(), theta.sin(), 0.0, 0.0])
+            })
+            .collect();
+        for (id, vector) in &rows {
+            let literal = format_recall_vector_sql_literal(vector);
+            Spi::run(&format!("INSERT INTO ec_ivf_idx_ins VALUES ({id}, {literal}::ecvector)"))
+                .expect("seed insert should succeed");
+        }
+        Spi::run(
+            "CREATE INDEX ec_ivf_idx_ins_idx ON ec_ivf_idx_ins USING ec_ivf \
+             (embedding ecvector_ip_ops) \
+             WITH (
+                nlists = 4,
+                nprobe = 4,
+                training_sample_rows = 12,
+                storage_format = 'coarse_rerank',
+                rerank_format = 'f16',
+                rerank_placement = 'index',
+                rerank_width = 8
+             )",
+        )
+        .expect("index-placement f16 index creation should succeed");
+
+        // Insert a brand-new row AFTER build with a vector distinct from every
+        // built row (no tie), placed nearest the query; it must flow through
+        // aminsert's sidecar append and then rank first when probed.
+        Spi::run("INSERT INTO ec_ivf_idx_ins VALUES (100, '[0.0,0.0,1.0,0.0]'::ecvector)")
+            .expect("post-build insert should succeed");
+
+        let index_oid = ec_ivf_index_oid("ec_ivf_idx_ins_idx");
+        let ctid_to_id = ctid_id_map("ec_ivf_idx_ins");
+        let ids = ivf_debug_output_ids(index_oid, vec![0.0, 0.0, 1.0, 0.0], &ctid_to_id, 3);
+        assert!(
+            ids.contains(&100),
+            "post-build inserted row should be reranked from the sidecar, got {ids:?}"
+        );
+        assert_eq!(
+            ids[0], 100,
+            "the inserted exact match should rank first, got {ids:?}"
+        );
+    }
+
+    #[pg_test]
+    fn test_ec_ivf_table_placement_has_no_sidecar_and_scans() {
+        // Task 111g (003b) backward-readability: a table-placement coarse_rerank
+        // index carries NO sidecar (rerank_sidecar_head = INVALID), exactly like
+        // a v1/v2-era index. Such an index must still scan, reading the heap
+        // source (the table f32 path). This proves the v3 "no sidecar -> table
+        // fallback" path the metadata bump guarantees for old indexes.
+        Spi::run("CREATE TABLE ec_ivf_no_sidecar (id bigint primary key, embedding ecvector)")
+            .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_ivf_no_sidecar VALUES
+             (0, '[1.0,0.0]'::ecvector),
+             (1, '[0.0,1.0]'::ecvector),
+             (2, '[-1.0,0.0]'::ecvector),
+             (3, '[0.0,-1.0]'::ecvector)",
+        )
+        .expect("seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_ivf_no_sidecar_idx ON ec_ivf_no_sidecar USING ec_ivf \
+             (embedding ecvector_ip_ops) \
+             WITH (
+                nlists = 2,
+                nprobe = 2,
+                training_sample_rows = 4,
+                storage_format = 'coarse_rerank',
+                rerank_format = 'f32',
+                rerank_placement = 'table',
+                rerank_width = 3
+             )",
+        )
+        .expect("table-placement index creation should succeed");
+
+        let index_oid = ec_ivf_index_oid("ec_ivf_no_sidecar_idx");
+        // No sidecar head persisted: the metadata reads back with an invalid
+        // sidecar head and the scan falls back to the heap/table source path.
+        let sidecar_head_valid =
+            ec_ivf_debug!(am::debug_ec_ivf_rerank_sidecar_head_is_valid(index_oid));
+        assert!(
+            !sidecar_head_valid,
+            "table-placement index should have no sidecar head"
+        );
+
+        let ctid_to_id = ctid_id_map("ec_ivf_no_sidecar");
+        let ids = ivf_debug_output_ids(index_oid, vec![1.0, 0.0], &ctid_to_id, 4);
+        assert!(ids.contains(&0), "table-placement scan should return rows, got {ids:?}");
+        assert_eq!(ids[0], 0, "table f32 rerank should rank the exact match first");
+    }
+
+    #[pg_test]
     fn test_ec_ivf_posting_slack_reloption_reserves_list_range() {
         Spi::run(
             "CREATE TABLE ec_ivf_posting_slack_build (id bigint primary key, embedding ecvector)",

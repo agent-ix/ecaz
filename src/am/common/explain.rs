@@ -98,6 +98,13 @@ pub(crate) struct IvfExplainCounters {
     pub stats_approximate_scan_elapsed_us: u32,
     pub stats_exact_rerank_elapsed_us: u32,
     pub stats_filtered_duplicates: u32,
+    /// Task 111g: total bytes of rerank *source* representation read for the
+    /// reranked frontier. Table f32 accumulates `dims * 4` per candidate
+    /// (full heap source); the index-placement compact sidecar accumulates
+    /// `dims * 2` (f16) or the rabitq4 payload length per candidate. This is
+    /// the byte-reduction win evidence the 003 gate asks to be proven by
+    /// counter.
+    pub stats_rerank_source_bytes_read: u32,
 }
 
 const EXPLAIN_COUNTER_DEFINITIONS: [ExplainCounterDefinition; 7] = [
@@ -346,11 +353,17 @@ impl IvfExplainCounters {
         self.stats_filtered_duplicates = self.stats_filtered_duplicates.saturating_add(1);
     }
 
+    pub(crate) fn record_rerank_source_bytes_read(&mut self, bytes: usize) {
+        self.stats_rerank_source_bytes_read = self
+            .stats_rerank_source_bytes_read
+            .saturating_add(u32::try_from(bytes).unwrap_or(u32::MAX));
+    }
+
     pub(crate) fn reset(&mut self) {
         *self = Self::default();
     }
 
-    pub(crate) fn explain_properties(self) -> [ExplainProperty; 24] {
+    pub(crate) fn explain_properties(self) -> [ExplainProperty; 25] {
         [
             ExplainProperty {
                 property_name: "Centroid Scores",
@@ -451,6 +464,10 @@ impl IvfExplainCounters {
             ExplainProperty {
                 property_name: "Filtered Duplicates",
                 value: ExplainPropertyValue::Integer(self.stats_filtered_duplicates),
+            },
+            ExplainProperty {
+                property_name: "Rerank Source Bytes Read",
+                value: ExplainPropertyValue::Integer(self.stats_rerank_source_bytes_read),
             },
         ]
     }
@@ -850,6 +867,7 @@ mod tests {
         counters.record_approximate_scan_elapsed_us(37);
         counters.record_exact_rerank_elapsed_us(41);
         counters.record_filtered_duplicate();
+        counters.record_rerank_source_bytes_read(43);
 
         assert_eq!(
             counters,
@@ -878,6 +896,7 @@ mod tests {
                 stats_approximate_scan_elapsed_us: 37,
                 stats_exact_rerank_elapsed_us: 41,
                 stats_filtered_duplicates: 1,
+                stats_rerank_source_bytes_read: 43,
             }
         );
     }
@@ -909,6 +928,7 @@ mod tests {
             stats_approximate_scan_elapsed_us: 113,
             stats_exact_rerank_elapsed_us: 127,
             stats_filtered_duplicates: 131,
+            stats_rerank_source_bytes_read: 137,
         };
 
         assert_eq!(
@@ -1009,6 +1029,10 @@ mod tests {
                 ExplainProperty {
                     property_name: "Filtered Duplicates",
                     value: ExplainPropertyValue::Integer(131),
+                },
+                ExplainProperty {
+                    property_name: "Rerank Source Bytes Read",
+                    value: ExplainPropertyValue::Integer(137),
                 },
             ]
         );

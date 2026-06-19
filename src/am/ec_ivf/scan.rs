@@ -2126,7 +2126,7 @@ fn consume_live_tid_budget(
 /// `opaque` is the live scan-opaque whose `heap_rerank_state` (if any)
 /// was configured by `configure_heap_rerank_state`.
 unsafe fn rerank_probe_candidates(
-    _scan: pg_sys::IndexScanDesc,
+    scan: pg_sys::IndexScanDesc,
     index_options: &super::options::EcIvfOptions,
     opaque: &mut EcIvfScanOpaque,
     candidates: &mut Vec<EcIvfScoredCandidate>,
@@ -2149,12 +2149,34 @@ unsafe fn rerank_probe_candidates(
                 opaque.query_values(),
             )
             .unwrap_or_else(|e| pgrx::error!("{e}"));
-            // SAFETY: `rerank_len` is bounded by `candidates.len()`, and the
-            // heap rerank helper validates scan-local rerank state before
-            // fetching.
-            unsafe {
-                rerank_probe_candidates_table_side(opaque, &scorer, &mut candidates[..rerank_len])
+
+            // Task 111g (003b): for rerank_placement = 'index', read the
+            // persisted compact 0x2A sidecar (keyed by heap TID) instead of the
+            // full f32 heap source. The 'table' path (and any v2-era index with
+            // no sidecar) keeps the heap-source read, bit-identical to f32.
+            let sidecar_head = unsafe {
+                index_placement_sidecar_head(scan, index_options)
             };
+            // SAFETY: `rerank_len` is bounded by `candidates.len()`, and the
+            // rerank helpers validate their scan-local state before fetching.
+            match sidecar_head {
+                Some(sidecar_head) => unsafe {
+                    rerank_probe_candidates_index_side(
+                        scan,
+                        opaque,
+                        &scorer,
+                        sidecar_head,
+                        &mut candidates[..rerank_len],
+                    )
+                },
+                None => unsafe {
+                    rerank_probe_candidates_table_side(
+                        opaque,
+                        &scorer,
+                        &mut candidates[..rerank_len],
+                    )
+                },
+            }
             candidates[..rerank_len].sort_by(candidate_cmp);
             if rerank_width > 0 {
                 candidates.truncate(rerank_len);
@@ -2163,6 +2185,29 @@ unsafe fn rerank_probe_candidates(
         super::options::RerankMode::SourceColumn => {
             pgrx::error!("ec_ivf rerank mode source_column is not supported yet")
         }
+    }
+}
+
+/// Returns the persisted compact rerank sidecar head when this scan should read
+/// the index-side 0x2A sidecar (rerank_placement = 'index' and a sidecar exists
+/// on disk), or `None` to keep the heap/table source read. A v2-era index has
+/// `rerank_sidecar_head = INVALID`, so it always falls back to the table path.
+///
+/// # Safety
+/// `scan` is the live IndexScanDesc; `(*scan).indexRelation` is read to decode
+/// the metadata page.
+unsafe fn index_placement_sidecar_head(
+    scan: pg_sys::IndexScanDesc,
+    index_options: &super::options::EcIvfOptions,
+) -> Option<ItemPointer> {
+    if index_options.rerank_placement != super::options::RerankPlacement::Index {
+        return None;
+    }
+    let metadata = unsafe { super::page::read_metadata_page((*scan).indexRelation) };
+    if metadata.rerank_sidecar_head == ItemPointer::INVALID {
+        None
+    } else {
+        Some(metadata.rerank_sidecar_head)
     }
 }
 
@@ -2271,9 +2316,131 @@ unsafe fn rerank_probe_candidates_table_side(
         }
     }
 
+    // The table path reads the full f32 heap source for every reranked
+    // candidate: `dimensions * 4` bytes each. Record it so the index-placement
+    // compact sidecar's byte reduction is comparable by counter.
+    let source_bytes_per_candidate = (opaque.scan_dimensions as usize) * std::mem::size_of::<f32>();
+    opaque
+        .explain_counters
+        .record_rerank_source_bytes_read(rerank_rows.saturating_mul(source_bytes_per_candidate));
+
     for _ in 0..rerank_rows {
         opaque.explain_counters.record_rerank_row();
     }
+}
+
+/// Task 111g (003b): rerank the survivor frontier from the persisted compact
+/// `0x2A` sidecar (keyed by heap TID) instead of the f32 heap source. The
+/// survivor set is bounded by `rerank_width`; the sidecar chain is loaded once
+/// into a heap-TID lookup map, then a single tid-sorted survivor-filtered pass
+/// reads only the survivors' compact payloads. Reuses the existing
+/// `RerankScorer` (no new SIMD) and records the (smaller) bytes read.
+///
+/// # Safety
+/// `scan` is the live IndexScanDesc; the sidecar chain rooted at `sidecar_head`
+/// is read from `(*scan).indexRelation`.
+unsafe fn rerank_probe_candidates_index_side(
+    scan: pg_sys::IndexScanDesc,
+    opaque: &mut EcIvfScanOpaque,
+    scorer: &super::rerank::RerankScorer,
+    sidecar_head: ItemPointer,
+    candidates: &mut [EcIvfScoredCandidate],
+) {
+    if candidates.is_empty() {
+        return;
+    }
+    // Read tid-sorted (matches the heap_f32 read shape and keeps the lookup
+    // map probes ascending).
+    candidates.sort_by(candidate_heap_tid_cmp);
+
+    let index_relation = unsafe { (*scan).indexRelation };
+    let dimensions = opaque.scan_dimensions as usize;
+    let expected_payload_len = scorer
+        .sidecar_payload_len(dimensions)
+        .unwrap_or_else(|| pgrx::error!("ec_ivf index-side rerank used for an f32 rerank format"));
+
+    // Load the whole sidecar chain into a heap-TID -> compact payload map.
+    let payload_map = unsafe {
+        load_rerank_sidecar_payloads(index_relation, sidecar_head, expected_payload_len)
+    }
+    .unwrap_or_else(|e| pgrx::error!("{e}"));
+
+    let batched = scorer.is_batched();
+    let mut source_bytes_read = 0usize;
+
+    if batched {
+        // Collect survivors' payloads in survivor order, then batch-score.
+        let mut payload_slab: Vec<u8> = Vec::with_capacity(candidates.len() * expected_payload_len);
+        for candidate in candidates.iter() {
+            let payload = payload_map.get(&candidate.heap_tid).unwrap_or_else(|| {
+                pgrx::error!(
+                    "ec_ivf index-side rerank is missing sidecar payload for heap tid {:?}",
+                    candidate.heap_tid
+                )
+            });
+            payload_slab.extend_from_slice(payload);
+            source_bytes_read += payload.len();
+        }
+        let mut scores = vec![0.0_f32; candidates.len()];
+        scorer
+            .score_sidecar_payloads_batch(&payload_slab, &mut scores)
+            .unwrap_or_else(|e| pgrx::error!("{e}"));
+        for (candidate, score) in candidates.iter_mut().zip(scores.iter()) {
+            candidate.score = *score;
+        }
+    } else {
+        for candidate in candidates.iter_mut() {
+            let payload = payload_map.get(&candidate.heap_tid).unwrap_or_else(|| {
+                pgrx::error!(
+                    "ec_ivf index-side rerank is missing sidecar payload for heap tid {:?}",
+                    candidate.heap_tid
+                )
+            });
+            candidate.score = scorer.score_sidecar_payload(payload);
+            source_bytes_read += payload.len();
+        }
+    }
+
+    let rerank_rows = candidates.len();
+    opaque
+        .explain_counters
+        .record_rerank_source_bytes_read(source_bytes_read);
+    for _ in 0..rerank_rows {
+        opaque.explain_counters.record_rerank_row();
+    }
+}
+
+/// Load the full compact rerank sidecar chain into a heap-TID -> payload map.
+/// The chain is followed via each block's `next_tid`. Validates that every
+/// block's payload width matches the scorer's expected compact width.
+///
+/// # Safety
+/// `index_relation` is live; the chain rooted at `head` is read page by page.
+unsafe fn load_rerank_sidecar_payloads(
+    index_relation: pg_sys::Relation,
+    head: ItemPointer,
+    expected_payload_len: usize,
+) -> Result<std::collections::HashMap<ItemPointer, Vec<u8>>, String> {
+    let mut map: std::collections::HashMap<ItemPointer, Vec<u8>> =
+        std::collections::HashMap::new();
+    let mut next_tid = head;
+    while next_tid != ItemPointer::INVALID {
+        let block =
+            unsafe { super::page::read_ivf_rerank_sidecar_block(index_relation, next_tid)? };
+        if block.payload_len != expected_payload_len {
+            return Err(format!(
+                "ec_ivf rerank sidecar payload length {} does not match expected {expected_payload_len}",
+                block.payload_len
+            ));
+        }
+        for (i, heap_tid) in block.heap_tids.iter().enumerate() {
+            let start = i * block.payload_len;
+            let payload = block.payloads[start..start + block.payload_len].to_vec();
+            map.insert(*heap_tid, payload);
+        }
+        next_tid = block.next_tid;
+    }
+    Ok(map)
 }
 
 fn candidate_heap_blocks(candidates: &[EcIvfScoredCandidate]) -> Vec<u32> {
@@ -2993,6 +3160,8 @@ pub(crate) struct EcIvfGettupleCounterDebugSnapshot {
     pub(crate) dense_postings_visited: u32,
     pub(crate) scratch_soa_flushes: u32,
     pub(crate) dense_coalesced_flushes: u32,
+    pub(crate) rerank_rows: u32,
+    pub(crate) rerank_source_bytes_read: u32,
 }
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -3035,7 +3204,22 @@ pub(crate) unsafe fn debug_ec_ivf_gettuple_counter_snapshot(
         dense_postings_visited: counters.stats_dense_postings_visited,
         scratch_soa_flushes: counters.stats_scratch_soa_flushes,
         dense_coalesced_flushes: counters.stats_dense_coalesced_flushes,
+        rerank_rows: counters.stats_rerank_rows,
+        rerank_source_bytes_read: counters.stats_rerank_source_bytes_read,
     }
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+/// # Safety
+/// Test-only helper; caller is a pgrx-managed test fixture that holds
+/// the IVF index referenced by `index_oid` open for the call duration.
+pub(crate) unsafe fn debug_ec_ivf_rerank_sidecar_head_is_valid(index_oid: pg_sys::Oid) -> bool {
+    let index_relation = crate::storage::relation_guard::IndexRelationGuard::access_share(
+        index_oid,
+        "ec_ivf debug rerank sidecar head",
+    );
+    let metadata = debug_read_metadata_page(index_relation.as_ptr());
+    metadata.rerank_sidecar_head != ItemPointer::INVALID
 }
 
 #[cfg(any(test, feature = "pg_test"))]

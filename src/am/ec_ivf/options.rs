@@ -803,19 +803,11 @@ fn build_options_from_reloptions(
                 "ec_ivf coarse_bits must be 0, 1, 2, 4, or 8 for storage_format = 'coarse_rerank'"
             ),
         }
-        match rerank_placement {
-            RerankPlacement::Auto => rerank_placement = RerankPlacement::Table,
-            RerankPlacement::Table => {}
-            RerankPlacement::Index => pgrx::error!(
-                "ec_ivf storage_format = 'coarse_rerank' does not support rerank_placement = 'index' yet; use rerank_placement = 'table'"
-            ),
-        }
         match rerank_format {
             RerankFormat::Auto => rerank_format = RerankFormat::F32,
-            // Task 111g: table-side f32 / f16 / rabitq4 reranks are implemented
-            // (all read the heap source column tid-sorted and rescore through
-            // the chosen representation). The remaining compact formats stay
-            // rejected until a slice implements + benches them.
+            // Task 111g: f32 / f16 / rabitq4 reranks are implemented. The
+            // remaining compact formats stay rejected until a slice implements
+            // + benches them.
             RerankFormat::F32 | RerankFormat::F16 | RerankFormat::RaBitQ4 => {}
             RerankFormat::RaBitQ2 | RerankFormat::RaBitQ8 | RerankFormat::TurboQuant => {
                 pgrx::error!(
@@ -823,6 +815,28 @@ fn build_options_from_reloptions(
                     rerank_format.reloption_name()
                 )
             }
+        }
+        match rerank_placement {
+            RerankPlacement::Auto => rerank_placement = RerankPlacement::Table,
+            RerankPlacement::Table => {}
+            // Task 111g (003b): index placement is implemented as the persisted
+            // compact 0x2A sidecar keyed by heap TID. It is only meaningful with
+            // a compact rerank_format (f16 / rabitq4); f32 keeps the heap source
+            // and has no sidecar to place index-side. `rerank_format` is already
+            // resolved (Auto -> F32) above, so f32 is the only "no sidecar" arm.
+            RerankPlacement::Index => match rerank_format {
+                RerankFormat::F16 | RerankFormat::RaBitQ4 => {}
+                RerankFormat::F32 => pgrx::error!(
+                    "ec_ivf rerank_placement = 'index' requires a compact rerank_format ('f16' or 'rabitq4'); 'f32' keeps the heap source, so use rerank_placement = 'table'"
+                ),
+                RerankFormat::Auto
+                | RerankFormat::RaBitQ2
+                | RerankFormat::RaBitQ8
+                | RerankFormat::TurboQuant => pgrx::error!(
+                    "ec_ivf rerank_placement = 'index' supports rerank_format = 'f16' or 'rabitq4'; '{}' is not implemented yet",
+                    rerank_format.reloption_name()
+                ),
+            },
         }
         match rerank {
             RerankMode::Auto => rerank = RerankMode::HeapF32,
@@ -1056,7 +1070,9 @@ mod tests {
 
     #[test]
     #[should_panic]
-    fn coarse_rerank_still_rejects_index_placement() {
+    fn coarse_rerank_rejects_index_placement_with_default_f32() {
+        // Task 111g (003b): index placement requires a compact rerank_format;
+        // the default (auto -> f32) keeps the heap source and is rejected.
         build_options_from_reloptions(
             &reloptions(),
             Some("coarse_rerank".into()),
@@ -1066,5 +1082,55 @@ mod tests {
             Some("index".into()),
             None,
         );
+    }
+
+    #[test]
+    #[should_panic]
+    fn coarse_rerank_rejects_index_placement_with_explicit_f32() {
+        build_options_from_reloptions(
+            &reloptions(),
+            Some("coarse_rerank".into()),
+            None,
+            None,
+            None,
+            Some("index".into()),
+            Some("f32".into()),
+        );
+    }
+
+    #[test]
+    fn coarse_rerank_accepts_index_placement_with_f16() {
+        let options = build_options_from_reloptions(
+            &reloptions(),
+            Some("coarse_rerank".into()),
+            None,
+            None,
+            None,
+            Some("index".into()),
+            Some("f16".into()),
+        );
+
+        assert_eq!(options.storage_format, StorageFormat::CoarseRerank);
+        assert_eq!(options.rerank, RerankMode::HeapF32);
+        assert_eq!(options.rerank_placement, RerankPlacement::Index);
+        assert_eq!(options.rerank_format, RerankFormat::F16);
+    }
+
+    #[test]
+    fn coarse_rerank_accepts_index_placement_with_rabitq4() {
+        let options = build_options_from_reloptions(
+            &reloptions(),
+            Some("coarse_rerank".into()),
+            None,
+            None,
+            None,
+            Some("index".into()),
+            Some("rabitq4".into()),
+        );
+
+        assert_eq!(options.storage_format, StorageFormat::CoarseRerank);
+        assert_eq!(options.rerank, RerankMode::HeapF32);
+        assert_eq!(options.rerank_placement, RerankPlacement::Index);
+        assert_eq!(options.rerank_format, RerankFormat::RaBitQ4);
     }
 }

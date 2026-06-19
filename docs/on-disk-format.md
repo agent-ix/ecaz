@@ -78,17 +78,36 @@ before interpreting the rest of the payload:
 | --- | --- | --- |
 | HNSW | `1`, `2`, `3`, `4` | accepts known tags, rejects unknown tags |
 | DiskANN | `3` | accepts the DiskANN tag, rejects foreign tags |
-| IVF | `1`, `2` | accepts known metadata versions in range, rejects unknown versions |
+| IVF | `1`, `2`, `3` | accepts known metadata versions in range, rejects unknown versions |
 | SPIRE partition objects | `1`, `2` | accepts known object versions, rejects unknown versions |
 
 Any incompatible field addition or reinterpretation must add a new format tag
 and update the layout assertions, fixture golden files, and upgrade matrix.
 
+## IVF Metadata Format Versions
+
+IVF currently writes metadata format version `3` and accepts metadata versions
+`1..=3`. The version history is additive and backward-readable:
+
+| Version | Added | Width (bytes) | Backward read |
+| --- | --- | --- | --- |
+| `1` | original metadata | 80 | — |
+| `2` | `quant_bits` at byte 34 (v1 reads 0, coerced to 4) | 80 | v1 reads as v2 with bits=4 |
+| `3` | rerank sidecar head `ItemPointer` at bytes 80..86 (Task 111g) | 86 | v1/v2 read with head = INVALID (no sidecar) |
+
+The v3 bump is additive: `EC_IVF_METADATA_BYTES` widened from 80 to 86 and the
+new field `EC_IVF_METADATA_RERANK_SIDECAR_HEAD_OFFSET = 80` holds the head of the
+compact rerank sidecar chain. A v1/v2 index's metadata special area is only 80
+bytes, so the reader clamps to the bytes actually present and decodes the head as
+`ItemPointer::INVALID`, which the scan treats as "no sidecar" — rerank falls back
+to the heap/table source path. `EC_IVF_METADATA_BYTES_V2 = 80` records the legacy
+width that decode tolerates.
+
 ## IVF Posting Tuple Tags
 
-IVF currently writes metadata format version `2` and accepts metadata versions
-`1..=2`, plus per-tuple tags inside data pages. The surviving Task 111 dense
-formats are page-local dense blocks and aligned dense blocks:
+Per-tuple tags inside IVF data pages. The surviving Task 111 dense formats are
+page-local dense blocks and aligned dense blocks; Task 111g adds the compact
+rerank sidecar block:
 
 | Tag | Tuple kind | Status |
 | --- | --- | --- |
@@ -98,11 +117,24 @@ formats are page-local dense blocks and aligned dense blocks:
 | `0x24` | PQ codebook tuple | current |
 | `0x25` | dense posting block | current dense block format |
 | `0x28` | aligned dense posting block | current typed-view dense block format |
+| `0x2A` | rerank sidecar block | current; compact rerank rep keyed by heap TID (Task 111g) |
 
-Task 111f removes the abandoned page-spanning packed and columnar frozen-list
-formats before they ship on `main`. Their former tag values remain reserved and
-must not be silently reused; any future incompatible IVF posting shape needs a
-new explicit format decision, layout assertions, and upgrade fixtures.
+The `0x2A` rerank sidecar block stores a tid-keyed run of compact rerank
+payloads (f16 = `dims * 2` bytes, rabitq4 = the rabitq4 payload length) for
+`rerank_placement = 'index'`, chained via a per-block `next_tid`. Its on-disk
+shape is
+`[tag:u8][rerank_format:u8][payload_len:u16][entry_count:u16][next_tid:6]` then
+`entry_count` heap TIDs and `entry_count * payload_len` payload bytes. Build
+writes it globally tid-sorted; insert prepends a single-entry block (O(1)) and
+repoints the metadata head; vacuum tombstones dead entries in place
+(`heap_tid = INVALID`, same byte length) and REINDEX regenerates the chain.
+`rerank_placement = 'table'` (and any v1/v2 index) writes no sidecar.
+
+Task 111f removed the abandoned page-spanning packed and columnar frozen-list
+formats (`0x26`, `0x27`, `0x29`) before they shipped on `main`. Their former tag
+values remain reserved and must not be silently reused; any future incompatible
+IVF posting shape needs a new explicit format decision, layout assertions, and
+upgrade fixtures.
 
 ## Upgrade Matrix
 

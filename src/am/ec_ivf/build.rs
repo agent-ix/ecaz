@@ -762,6 +762,14 @@ impl BuildState {
         }
         timing.directory_us = elapsed_us(directory_start);
 
+        // Task 111g: persist the compact rerank sidecar (tag 0x2A) for
+        // rerank_placement = 'index'. Built globally tid-sorted so the scan can
+        // read it tid-ordered; only f16 / rabitq4 persist a sidecar (f32 keeps
+        // the heap source).
+        data_pages.start_new_page_if_current_has_tuples();
+        let rerank_sidecar_head =
+            build_rerank_sidecar_chain(&mut data_pages, &self.heap_tuples, &self.options, dimensions)?;
+
         let mut metadata = page::MetadataPage::empty(self.options);
         metadata.dimensions = dimensions;
         metadata.nlists =
@@ -782,6 +790,7 @@ impl BuildState {
         }
         metadata.total_live_tuples = u64::try_from(self.heap_tuples.len())
             .map_err(|_| "heap tuple count exceeds u64".to_owned())?;
+        metadata.rerank_sidecar_head = rerank_sidecar_head;
 
         Ok((
             IvfBuildPlan {
@@ -870,6 +879,130 @@ fn dense_posting_group_limit(payload_len: usize, page_size: usize) -> Result<usi
         segment_capacity += 1;
     }
     Ok(segment_capacity.min(u16::MAX as usize).max(1))
+}
+
+/// Task 111g: build the compact rerank sidecar chain (tag 0x2A) for
+/// `rerank_placement = 'index'`. Returns the head ItemPointer, or `INVALID`
+/// when no sidecar is persisted (table placement, or an f32/auto rerank_format
+/// that keeps the heap source). Entries are written globally tid-sorted so the
+/// scan reads them in heap-TID order; blocks chain via `next_tid`.
+fn build_rerank_sidecar_chain(
+    data_pages: &mut DataPageChain,
+    heap_tuples: &[BuildTuple],
+    options: &options::EcIvfOptions,
+    dimensions: u16,
+) -> Result<ItemPointer, String> {
+    if options.rerank_placement != options::RerankPlacement::Index {
+        return Ok(ItemPointer::INVALID);
+    }
+    let Some(encoder) =
+        super::rerank::RerankSidecarEncoder::resolve(options.rerank_format, usize::from(dimensions))?
+    else {
+        // f32 / auto keep the heap source: no sidecar.
+        return Ok(ItemPointer::INVALID);
+    };
+    if heap_tuples.is_empty() {
+        return Ok(ItemPointer::INVALID);
+    }
+    let payload_len = encoder.payload_len(usize::from(dimensions));
+    let rerank_format = options.rerank_format as u8;
+    let page_size = data_pages.page_size();
+
+    // Globally tid-sort the rows so the sidecar chain is ascending by heap TID.
+    let mut order: Vec<usize> = (0..heap_tuples.len()).collect();
+    order.sort_by(|&a, &b| {
+        let ta = heap_tuples[a].heap_tid;
+        let tb = heap_tuples[b].heap_tid;
+        ta.block_number
+            .cmp(&tb.block_number)
+            .then_with(|| ta.offset_number.cmp(&tb.offset_number))
+    });
+
+    let entries_per_block = rerank_sidecar_entries_per_block(payload_len, page_size)?;
+
+    data_pages.start_new_page_if_current_has_tuples();
+    let mut block_tids: Vec<ItemPointer> = Vec::new();
+    let mut pending_tids: Vec<ItemPointer> = Vec::with_capacity(entries_per_block);
+    let mut pending_payloads: Vec<u8> = Vec::with_capacity(entries_per_block * payload_len);
+
+    let flush = |data_pages: &mut DataPageChain,
+                 block_tids: &mut Vec<ItemPointer>,
+                 pending_tids: &mut Vec<ItemPointer>,
+                 pending_payloads: &mut Vec<u8>|
+     -> Result<(), String> {
+        if pending_tids.is_empty() {
+            return Ok(());
+        }
+        let block = page::IvfRerankSidecarBlockTuple::new(
+            rerank_format,
+            payload_len,
+            std::mem::take(pending_tids),
+            std::mem::take(pending_payloads),
+        )?;
+        block_tids.push(data_pages.insert_ivf_rerank_sidecar_block(&block)?);
+        Ok(())
+    };
+
+    for &index in &order {
+        let tuple = &heap_tuples[index];
+        let payload = encoder.encode(&tuple.source_vector)?;
+        if payload.len() != payload_len {
+            return Err(format!(
+                "ec_ivf rerank sidecar payload length {} does not match expected {payload_len}",
+                payload.len()
+            ));
+        }
+        pending_tids.push(tuple.heap_tid);
+        pending_payloads.extend_from_slice(&payload);
+        if pending_tids.len() >= entries_per_block {
+            flush(
+                data_pages,
+                &mut block_tids,
+                &mut pending_tids,
+                &mut pending_payloads,
+            )?;
+        }
+    }
+    flush(
+        data_pages,
+        &mut block_tids,
+        &mut pending_tids,
+        &mut pending_payloads,
+    )?;
+
+    // Link each block to the next via its next_tid field (second pass, like the
+    // pq_codebook chain).
+    for i in 0..block_tids.len() {
+        let next_tid = block_tids.get(i + 1).copied().unwrap_or(ItemPointer::INVALID);
+        let mut block = data_pages
+            .read_ivf_rerank_sidecar_block_staged(block_tids[i])?;
+        block.next_tid = next_tid;
+        data_pages.update_ivf_rerank_sidecar_block(block_tids[i], &block)?;
+    }
+
+    Ok(block_tids.first().copied().unwrap_or(ItemPointer::INVALID))
+}
+
+/// Max sidecar entries that fit in one page-sized 0x2A block, given the compact
+/// payload width, capped at the `u16` entry-count field width. Errors if not
+/// even one entry fits a page.
+fn rerank_sidecar_entries_per_block(
+    payload_len: usize,
+    page_size: usize,
+) -> Result<usize, String> {
+    if !page::rerank_sidecar_block_tuple_fits(1, payload_len, page_size) {
+        return Err(format!(
+            "ec_ivf rerank sidecar payload length {payload_len} does not fit a single entry on a page"
+        ));
+    }
+    // Grow until the next entry would overflow the page (or the u16 cap).
+    let mut count = 1;
+    while count < u16::MAX as usize
+        && page::rerank_sidecar_block_tuple_fits(count + 1, payload_len, page_size)
+    {
+        count += 1;
+    }
+    Ok(count)
 }
 
 fn insert_dense_posting_group(

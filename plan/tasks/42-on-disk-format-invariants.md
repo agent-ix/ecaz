@@ -7,6 +7,43 @@ infrastructure landed. Broader CI stabilization and richer live-upgrade
 coverage are intentionally deferred until the CI surface is steadier and
 a second writable format version ships (documented follow-on, not a gap).
 
+## Update — IVF metadata v3 is the first second-writable format (Task 111g, 2026-06-18)
+
+Task 111g (packet `reviews/task-111g/003b-persisted-compact-sidecar/`) bumped the
+IVF metadata format from v2 to **v3**, the first time an AM in this repo gained a
+*second writable metadata version* (the trigger this task deferred its richer
+live-upgrade coverage on). The bump is **additive and backward-readable**:
+
+- `EC_IVF_METADATA_BYTES` widened 80 → 86; new field
+  `EC_IVF_METADATA_RERANK_SIDECAR_HEAD_OFFSET = 80` (the compact rerank sidecar
+  chain head, tag `0x2A`). `EC_IVF_METADATA_BYTES_V2 = 80` records the legacy
+  width that decode still tolerates.
+- Reader accepts versions `1..=3`; a v1/v2 index (80-byte special area) decodes
+  with `rerank_sidecar_head = INVALID` ("no sidecar"), and rerank falls back to
+  the heap/table source path.
+
+Reconciled by 111g (registry-consistency layer of this task):
+
+- `tests/size_of_assertions.rs`: pins `EC_IVF_INDEX_FORMAT_VERSION == 3`,
+  `EC_IVF_METADATA_BYTES == 86`, `EC_IVF_METADATA_BYTES_V2 == 80`,
+  `EC_IVF_METADATA_RERANK_SIDECAR_HEAD_OFFSET == 80`.
+- `fixtures/upgrade/matrix.csv`: ivf rows are now `1` (read-only), `2`
+  (read-only), `3` (read+write); `tests/upgrade_matrix.rs` expects ivf writable
+  set `{3}`.
+- `tests/on_disk_fixtures.rs::ivf_metadata_v1_fixture_decodes`: asserts the
+  committed 80-byte **v1** on-disk image decodes under the v3 reader with
+  `rerank_sidecar_head == INVALID` — the durable backward-read fixture proof.
+- `docs/on-disk-format.md`: version-policy table (IVF `1,2,3`), an IVF metadata
+  format-version history table, and the `0x2A` rerank-sidecar tag.
+
+**Remaining EV-3 follow-on (not claimed done here):** NFR-016-EV-3's full *live*
+upgrade rehearsal for IVF — build a corpus at the old version, upgrade the
+extension, scan with the new reader, and record a recall floor beside a
+historical fixture directory — is still a future lane. Because v3 is additive and
+backward-readable (proven by the v1-fixture decode above), no in-place data
+migration is required to read an old index; the live rehearsal is coverage, not a
+correctness gate for this bump.
+
 ## Scope
 
 Every byte that ECAZ writes to disk or that lives in a buffer page:

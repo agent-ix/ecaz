@@ -57,12 +57,23 @@ pub(super) const FIRST_DATA_BLOCK_NUMBER: u32 = 1;
 // v2 = stores `quant_bits` (RaBitQ per-dim code width) at byte 34.
 //      Indexes written by v1 read back here as `quant_bits = 0` which
 //      the decoder coerces to the default of 4.
-pub const EC_IVF_INDEX_FORMAT_VERSION: u16 = 2;
+// v3 = (Task 111g) stores the rerank sidecar head ItemPointer at bytes 80..86,
+//      widening the metadata struct to 86 bytes. The head points at the 0x2A
+//      compact rerank sidecar chain used by rerank_placement = 'index'. An
+//      additive, backward-readable bump: v1/v2 indexes decode here with
+//      rerank_sidecar_head = INVALID, i.e. "no sidecar" (rerank falls back to
+//      the heap/table source path).
+pub const EC_IVF_INDEX_FORMAT_VERSION: u16 = 3;
 pub(super) const EC_IVF_INDEX_FORMAT_VERSION_MIN: u16 = 1;
 pub(super) const INDEX_FORMAT_VERSION: u16 = EC_IVF_INDEX_FORMAT_VERSION;
 
 pub const EC_IVF_METADATA_MAGIC: u32 = 0x5649_4345; // "ECIV" as little-endian bytes.
-pub const EC_IVF_METADATA_BYTES: usize = 80;
+pub const EC_IVF_METADATA_BYTES: usize = 86;
+/// v1/v2 metadata struct width, before the Task 111g rerank-sidecar head was
+/// appended. Decode tolerates buffers at least this long so a v2-era index
+/// (whose decode previously required exactly 80 meaningful bytes) still reads
+/// back with rerank_sidecar_head = INVALID.
+pub const EC_IVF_METADATA_BYTES_V2: usize = 80;
 pub const EC_IVF_METADATA_MAGIC_OFFSET: usize = 0;
 pub const EC_IVF_METADATA_FORMAT_VERSION_OFFSET: usize = 4;
 pub const EC_IVF_METADATA_DIMENSIONS_OFFSET: usize = 6;
@@ -80,6 +91,8 @@ pub const EC_IVF_METADATA_TOTAL_DEAD_TUPLES_OFFSET: usize = 56;
 pub const EC_IVF_METADATA_INSERTED_SINCE_BUILD_OFFSET: usize = 64;
 pub const EC_IVF_METADATA_PQ_CODEBOOK_HEAD_OFFSET: usize = 72;
 pub const EC_IVF_METADATA_PQ_GROUP_SIZE_OFFSET: usize = 78;
+/// Task 111g v3: rerank sidecar chain head ItemPointer (bytes 80..86).
+pub const EC_IVF_METADATA_RERANK_SIDECAR_HEAD_OFFSET: usize = 80;
 
 pub const EC_IVF_BLOCK_REF_BYTES: usize = 4;
 pub const EC_IVF_BLOCK_REF_BLOCK_NUMBER_OFFSET: usize = 0;
@@ -120,6 +133,9 @@ const IVF_POSTING_TAG: u8 = 0x23;
 const IVF_PQ_CODEBOOK_TAG: u8 = 0x24;
 const IVF_DENSE_POSTING_BLOCK_TAG: u8 = 0x25;
 const IVF_DENSE_POSTING_ALIGNED_BLOCK_TAG: u8 = 0x28;
+// Task 111g: compact rerank sidecar block, keyed by heap TID. Stores a
+// tid-sorted run of (heap_tid, compact payload) entries chained via next_tid.
+const IVF_RERANK_SIDECAR_BLOCK_TAG: u8 = 0x2A;
 const POSTING_FLAG_DELETED: u8 = 0b0000_0001;
 const POSTING_FIXED_BYTES: usize = EC_IVF_POSTING_PAYLOAD_OFFSET;
 const DENSE_POSTING_BLOCK_HEADER_BYTES: usize = 16;
@@ -546,6 +562,25 @@ impl WalRegisteredPage {
         }
     }
 
+    /// Actual size of this page's special area (`page_size - pd_special`). Used
+    /// to read the metadata special area without over-reading: a v2 metadata
+    /// page allocated only 80 special bytes, while v3 allocates 88, so the
+    /// metadata reader must clamp to the size actually present on the page.
+    fn special_size(&self) -> usize {
+        // SAFETY: `self.page` is a live, locked registered page image.
+        let pd_special = unsafe { (*self.page.cast::<pg_sys::PageHeaderData>()).pd_special } as usize;
+        // SAFETY: PageGetPageSize reads the page-size field of the same header.
+        let page_size = unsafe { pg_sys::PageGetPageSize(self.page) } as usize;
+        page_size.saturating_sub(pd_special)
+    }
+
+    /// The metadata special area, clamped to the bytes actually allocated on
+    /// the page (handles v2 80-byte vs v3 88-byte special areas).
+    fn metadata_special_bytes(&self) -> &[u8] {
+        let available = self.special_size().min(METADATA_BYTES);
+        self.special_bytes(available)
+    }
+
     fn copy_to_special(&self, bytes: &[u8]) {
         // SAFETY: callers provide a fixed-size special-area encoding for this
         // registered page type.
@@ -603,6 +638,10 @@ pub struct MetadataPage {
     pub inserted_since_build: u64,
     pub pq_codebook_head: ItemPointer,
     pub pq_group_size: u16,
+    /// Task 111g v3: head of the compact rerank sidecar chain (tag 0x2A),
+    /// keyed by heap TID. `INVALID` means no sidecar exists (rerank falls back
+    /// to the heap/table source path); always `INVALID` for v1/v2 indexes.
+    pub rerank_sidecar_head: ItemPointer,
 }
 
 impl MetadataPage {
@@ -626,6 +665,7 @@ impl MetadataPage {
             inserted_since_build: 0,
             pq_codebook_head: ItemPointer::INVALID,
             pq_group_size: 0,
+            rerank_sidecar_head: ItemPointer::INVALID,
         }
     }
 
@@ -649,13 +689,18 @@ impl MetadataPage {
         out[64..72].copy_from_slice(&self.inserted_since_build.to_le_bytes());
         write_item_pointer(&mut out[72..78], self.pq_codebook_head);
         out[78..80].copy_from_slice(&self.pq_group_size.to_le_bytes());
+        // Task 111g v3: rerank sidecar head (bytes 80..86).
+        write_item_pointer(&mut out[80..86], self.rerank_sidecar_head);
         out
     }
 
     pub fn decode(bytes: &[u8]) -> Result<Self, String> {
-        if bytes.len() < METADATA_BYTES {
+        // Accept the v1/v2 width (80) and up. v3 appends a 6-byte rerank
+        // sidecar head at bytes 80..86; when the buffer is shorter than that
+        // (a v1/v2 index), the head decodes as INVALID = "no sidecar".
+        if bytes.len() < EC_IVF_METADATA_BYTES_V2 {
             return Err(format!(
-                "ec_ivf metadata length mismatch: got {}, expected at least {METADATA_BYTES}",
+                "ec_ivf metadata length mismatch: got {}, expected at least {EC_IVF_METADATA_BYTES_V2}",
                 bytes.len()
             ));
         }
@@ -745,6 +790,15 @@ impl MetadataPage {
                     .try_into()
                     .expect("metadata pq group size slice should be 2 bytes"),
             ),
+            // Task 111g v3: read the sidecar head only when the buffer is wide
+            // enough; v1/v2 indexes have no sidecar (head = INVALID).
+            rerank_sidecar_head: if bytes.len() >= EC_IVF_METADATA_BYTES {
+                ItemPointer::decode(
+                    &bytes[EC_IVF_METADATA_RERANK_SIDECAR_HEAD_OFFSET..EC_IVF_METADATA_BYTES],
+                )?
+            } else {
+                ItemPointer::INVALID
+            },
         })
     }
 }
@@ -1792,6 +1846,169 @@ impl IvfPqCodebookTuple {
     }
 }
 
+/// Task 111g: a compact rerank sidecar block (tag 0x2A), keyed by heap TID.
+///
+/// Each block holds a tid-sorted run of (heap_tid, compact payload) entries and
+/// chains to the next block via `next_tid`. Build writes the chain globally
+/// tid-sorted; insert appends to the tail (locally unsorted); the rerank read
+/// loads the whole chain into a heap-TID lookup map and reads only the (small,
+/// rerank_width-bounded) survivor set. `payload_len` is the compact rep width:
+/// `dims * 2` for f16, the rabitq4 payload length for rabitq4.
+///
+/// On-disk layout:
+/// ```text
+/// [tag:u8=0x2A][rerank_format:u8][payload_len:u16][entry_count:u16]
+/// [next_tid: ITEM_POINTER_BYTES]
+/// [heap_tids: entry_count * ITEM_POINTER_BYTES]   (ascending within a block)
+/// [payloads:  entry_count * payload_len]
+/// ```
+const RERANK_SIDECAR_HEADER_BYTES: usize = 1 + 1 + 2 + 2 + ITEM_POINTER_BYTES;
+const RERANK_SIDECAR_RERANK_FORMAT_OFFSET: usize = 1;
+const RERANK_SIDECAR_PAYLOAD_LEN_OFFSET: usize = 2;
+const RERANK_SIDECAR_ENTRY_COUNT_OFFSET: usize = 4;
+const RERANK_SIDECAR_NEXT_TID_OFFSET: usize = 6;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct IvfRerankSidecarBlockTuple {
+    pub(super) rerank_format: u8,
+    pub(super) payload_len: usize,
+    pub(super) next_tid: ItemPointer,
+    pub(super) heap_tids: Vec<ItemPointer>,
+    /// Flat `entry_count * payload_len` compact payload slab, parallel to
+    /// `heap_tids`.
+    pub(super) payloads: Vec<u8>,
+}
+
+impl IvfRerankSidecarBlockTuple {
+    pub(super) fn new(
+        rerank_format: u8,
+        payload_len: usize,
+        heap_tids: Vec<ItemPointer>,
+        payloads: Vec<u8>,
+    ) -> Result<Self, String> {
+        if payload_len == 0 || payload_len > u16::MAX as usize {
+            return Err(format!(
+                "ec_ivf rerank sidecar payload length {payload_len} out of range"
+            ));
+        }
+        if heap_tids.len() > u16::MAX as usize {
+            return Err("ec_ivf rerank sidecar entry count exceeds u16".to_owned());
+        }
+        if payloads.len() != heap_tids.len() * payload_len {
+            return Err(format!(
+                "ec_ivf rerank sidecar payload slab {} does not match {} entries * {payload_len}",
+                payloads.len(),
+                heap_tids.len()
+            ));
+        }
+        Ok(Self {
+            rerank_format,
+            payload_len,
+            next_tid: ItemPointer::INVALID,
+            heap_tids,
+            payloads,
+        })
+    }
+
+    pub(super) fn entry_count(&self) -> usize {
+        self.heap_tids.len()
+    }
+
+    pub(super) fn encode(&self) -> Result<Vec<u8>, String> {
+        let count = self.heap_tids.len();
+        if count > u16::MAX as usize {
+            return Err("ec_ivf rerank sidecar entry count exceeds u16".to_owned());
+        }
+        if self.payload_len == 0 || self.payload_len > u16::MAX as usize {
+            return Err(format!(
+                "ec_ivf rerank sidecar payload length {} out of range",
+                self.payload_len
+            ));
+        }
+        if self.payloads.len() != count * self.payload_len {
+            return Err(format!(
+                "ec_ivf rerank sidecar payload slab {} does not match {count} entries * {}",
+                self.payloads.len(),
+                self.payload_len
+            ));
+        }
+        let mut out = Vec::with_capacity(Self::encoded_len(count, self.payload_len));
+        out.push(IVF_RERANK_SIDECAR_BLOCK_TAG);
+        out.push(self.rerank_format);
+        out.extend_from_slice(&(self.payload_len as u16).to_le_bytes());
+        out.extend_from_slice(&(count as u16).to_le_bytes());
+        self.next_tid.encode_into(&mut out);
+        for heap_tid in &self.heap_tids {
+            heap_tid.encode_into(&mut out);
+        }
+        out.extend_from_slice(&self.payloads);
+        Ok(out)
+    }
+
+    pub(super) fn decode(input: &[u8]) -> Result<Self, String> {
+        if input.len() < RERANK_SIDECAR_HEADER_BYTES {
+            return Err(format!(
+                "ec_ivf rerank sidecar block length mismatch: got {}, expected at least {RERANK_SIDECAR_HEADER_BYTES}",
+                input.len()
+            ));
+        }
+        if input[0] != IVF_RERANK_SIDECAR_BLOCK_TAG {
+            return Err(format!(
+                "invalid ec_ivf rerank sidecar block tag: {}",
+                input[0]
+            ));
+        }
+        let rerank_format = input[RERANK_SIDECAR_RERANK_FORMAT_OFFSET];
+        let payload_len = u16::from_le_bytes(
+            input[RERANK_SIDECAR_PAYLOAD_LEN_OFFSET..RERANK_SIDECAR_PAYLOAD_LEN_OFFSET + 2]
+                .try_into()
+                .expect("rerank sidecar payload len slice should be 2 bytes"),
+        ) as usize;
+        let count = u16::from_le_bytes(
+            input[RERANK_SIDECAR_ENTRY_COUNT_OFFSET..RERANK_SIDECAR_ENTRY_COUNT_OFFSET + 2]
+                .try_into()
+                .expect("rerank sidecar entry count slice should be 2 bytes"),
+        ) as usize;
+        let next_tid = ItemPointer::decode(
+            &input[RERANK_SIDECAR_NEXT_TID_OFFSET..RERANK_SIDECAR_NEXT_TID_OFFSET + ITEM_POINTER_BYTES],
+        )?;
+        let heap_tids_start = RERANK_SIDECAR_HEADER_BYTES;
+        let heap_tids_end = heap_tids_start + count * ITEM_POINTER_BYTES;
+        let payloads_end = heap_tids_end + count * payload_len;
+        if input.len() != payloads_end {
+            return Err(format!(
+                "ec_ivf rerank sidecar block length mismatch: got {}, expected {payloads_end}",
+                input.len()
+            ));
+        }
+        let heap_tids = input[heap_tids_start..heap_tids_end]
+            .chunks_exact(ITEM_POINTER_BYTES)
+            .map(ItemPointer::decode)
+            .collect::<Result<Vec<_>, _>>()?;
+        let payloads = input[heap_tids_end..payloads_end].to_vec();
+        Ok(Self {
+            rerank_format,
+            payload_len,
+            next_tid,
+            heap_tids,
+            payloads,
+        })
+    }
+
+    pub(super) const fn encoded_len(count: usize, payload_len: usize) -> usize {
+        RERANK_SIDECAR_HEADER_BYTES + count * ITEM_POINTER_BYTES + count * payload_len
+    }
+}
+
+pub(super) fn rerank_sidecar_block_tuple_fits(
+    count: usize,
+    payload_len: usize,
+    page_size: usize,
+) -> bool {
+    aligned_tuple_bytes(IvfRerankSidecarBlockTuple::encoded_len(count, payload_len))
+        <= usable_page_bytes(page_size)
+}
+
 pub(super) fn centroid_tuple_fits(dimensions: usize, page_size: usize) -> bool {
     aligned_tuple_bytes(IvfCentroidTuple::encoded_len(dimensions)) <= usable_page_bytes(page_size)
 }
@@ -1901,6 +2118,21 @@ impl DataPage {
         self.update_raw_tuple(tid, tuple.encode()?)
     }
 
+    pub(super) fn insert_ivf_rerank_sidecar_block(
+        &mut self,
+        tuple: &IvfRerankSidecarBlockTuple,
+    ) -> Result<ItemPointer, String> {
+        self.insert_raw_tuple(tuple.encode()?)
+    }
+
+    pub(super) fn update_ivf_rerank_sidecar_block(
+        &mut self,
+        tid: ItemPointer,
+        tuple: &IvfRerankSidecarBlockTuple,
+    ) -> Result<(), String> {
+        self.update_raw_tuple(tid, tuple.encode()?)
+    }
+
     pub(super) fn read_ivf_posting(
         &self,
         tid: ItemPointer,
@@ -1915,6 +2147,13 @@ impl DataPage {
         payload_len: usize,
     ) -> Result<IvfDensePostingBlockTuple, String> {
         IvfDensePostingBlockTuple::decode(self.raw_tuple(tid)?, payload_len)
+    }
+
+    pub(super) fn read_ivf_rerank_sidecar_block(
+        &self,
+        tid: ItemPointer,
+    ) -> Result<IvfRerankSidecarBlockTuple, String> {
+        IvfRerankSidecarBlockTuple::decode(self.raw_tuple(tid)?)
     }
 }
 
@@ -2005,6 +2244,28 @@ impl DataPageChain {
             .update_ivf_pq_codebook(tid, tuple)
     }
 
+    pub(super) fn insert_ivf_rerank_sidecar_block(
+        &mut self,
+        tuple: &IvfRerankSidecarBlockTuple,
+    ) -> Result<ItemPointer, String> {
+        self.insert_raw_tuple(tuple.encode()?)
+    }
+
+    pub(super) fn update_ivf_rerank_sidecar_block(
+        &mut self,
+        tid: ItemPointer,
+        tuple: &IvfRerankSidecarBlockTuple,
+    ) -> Result<(), String> {
+        self.get_page_mut(tid.block_number)
+            .ok_or_else(|| {
+                format!(
+                    "ec_ivf rerank sidecar block {} not found",
+                    tid.block_number
+                )
+            })?
+            .update_ivf_rerank_sidecar_block(tid, tuple)
+    }
+
     pub(super) fn read_ivf_posting(
         &self,
         tid: ItemPointer,
@@ -2025,6 +2286,19 @@ impl DataPageChain {
             .get_page(tid.block_number)
             .ok_or_else(|| format!("ec_ivf dense posting block {} not found", tid.block_number))?;
         page.read_ivf_dense_posting_block(tid, payload_len)
+    }
+
+    pub(super) fn read_ivf_rerank_sidecar_block_staged(
+        &self,
+        tid: ItemPointer,
+    ) -> Result<IvfRerankSidecarBlockTuple, String> {
+        let page = self.get_page(tid.block_number).ok_or_else(|| {
+            format!(
+                "ec_ivf rerank sidecar block {} not found",
+                tid.block_number
+            )
+        })?;
+        page.read_ivf_rerank_sidecar_block(tid)
     }
 }
 
@@ -2078,6 +2352,24 @@ pub(super) unsafe fn read_ivf_pq_codebook(
         IvfPqCodebookTuple::decode(tuple_bytes, centroid_count)
     })?;
     Ok(codebook)
+}
+
+/// Task 111g: read one rerank sidecar block (tag 0x2A) and return its decoded
+/// tuple. The next block is taken from the tuple's own `next_tid` field, so
+/// callers follow the chain explicitly rather than relying on physical layout.
+#[cfg(any(feature = "pg17", feature = "pg18"))]
+pub(super) unsafe fn read_ivf_rerank_sidecar_block(
+    index_relation: pg_sys::Relation,
+    tid: ItemPointer,
+) -> Result<IvfRerankSidecarBlockTuple, String> {
+    let index = IvfPageRelation::new(ivf_relation_nonnull(
+        index_relation,
+        "ec_ivf rerank sidecar read",
+    ));
+    let (block, _) = read_page_tuple(index, tid, "rerank sidecar", |tuple_bytes| {
+        IvfRerankSidecarBlockTuple::decode(tuple_bytes)
+    })?;
+    Ok(block)
 }
 
 #[cfg(any(feature = "pg17", feature = "pg18"))]
@@ -2727,6 +3019,50 @@ fn append_ivf_posting_to_new_block(
     })
 }
 
+/// Task 111g: write a compact rerank sidecar block (tag 0x2A) onto a freshly
+/// allocated index page and return its tid. Insert uses this to prepend a new
+/// single-entry block onto the sidecar chain (its `next_tid` already points at
+/// the old chain head), so the chain stays O(1)-appendable without a tail walk.
+#[cfg(any(feature = "pg17", feature = "pg18"))]
+pub(super) unsafe fn append_ivf_rerank_sidecar_block_to_new_block(
+    index_relation: pg_sys::Relation,
+    block: &IvfRerankSidecarBlockTuple,
+) -> Result<ItemPointer, String> {
+    let index = IvfPageRelation::new(ivf_relation_nonnull(
+        index_relation,
+        "ec_ivf rerank sidecar append",
+    ));
+    let payload = block.encode()?;
+    if !rerank_sidecar_block_tuple_fits(block.entry_count(), block.payload_len, pg_sys::BLCKSZ as usize)
+    {
+        return Err(format!(
+            "ec_ivf rerank sidecar block ({} entries, payload {}) does not fit on a page",
+            block.entry_count(),
+            block.payload_len
+        ));
+    }
+    let buffer = index
+        .read_main_locked(P_NEW, pg_sys::ReadBufferMode::RBM_ZERO_AND_LOCK)
+        .ok_or_else(|| "ec_ivf failed to allocate rerank sidecar block".to_owned())?;
+    let page_size = buffer.page_size();
+    let mut wal_txn = index.start_wal();
+    let page = wal_txn.register_locked_buffer_full_image(&buffer);
+    let registered = WalRegisteredPage::new(index.raw(), buffer.block_number(), page);
+    registered.init(page_size, 0);
+    let offset = registered.add_item(&payload);
+    if offset == pg_sys::InvalidOffsetNumber {
+        std::mem::drop(wal_txn);
+        return Err("ec_ivf failed to append rerank sidecar block to new block".to_owned());
+    }
+    let block_number = buffer.block_number();
+    wal_txn.finish();
+    registered.record_free_space(registered.free_space());
+    Ok(ItemPointer {
+        block_number,
+        offset_number: offset,
+    })
+}
+
 #[cfg(any(feature = "pg17", feature = "pg18"))]
 pub(super) unsafe fn rewrite_ivf_list_directory(
     index_relation: pg_sys::Relation,
@@ -2760,6 +3096,55 @@ pub(super) unsafe fn rewrite_ivf_list_directory(
     }
     wal_txn.finish();
     Ok(())
+}
+
+/// Task 111g: rewrite a rerank sidecar block (tag 0x2A) in place. The rewritten
+/// block MUST keep the same entry count and payload length so the encoded size
+/// matches the existing slot (vacuum tombstones dead entries by setting their
+/// heap_tid to INVALID rather than removing them, keeping the byte length
+/// stable; space is reclaimed on REINDEX).
+#[cfg(any(feature = "pg17", feature = "pg18"))]
+pub(super) unsafe fn rewrite_ivf_rerank_sidecar_block(
+    index_relation: pg_sys::Relation,
+    tid: ItemPointer,
+    block: &IvfRerankSidecarBlockTuple,
+) -> Result<(), String> {
+    let index = IvfPageRelation::new(ivf_relation_nonnull(
+        index_relation,
+        "ec_ivf rerank sidecar rewrite",
+    ));
+    let encoded = block.encode()?;
+    let buffer = index
+        .read_main(
+            tid.block_number,
+            pg_sys::ReadBufferMode::RBM_NORMAL,
+            pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
+        )
+        .ok_or_else(|| {
+            format!(
+                "ec_ivf failed to open rerank sidecar block {}",
+                tid.block_number
+            )
+        })?;
+    let mut wal_txn = index.start_wal();
+    let page = wal_txn.register_locked_buffer_full_image(&buffer);
+    let writer = PageTupleWriter::new(page, buffer.page_size(), tid.block_number);
+    if let Err(err) = writer.copy_required_exact(tid, "rerank sidecar", &encoded) {
+        std::mem::drop(wal_txn);
+        return Err(err);
+    }
+    wal_txn.finish();
+    Ok(())
+}
+
+#[cfg(any(feature = "pg17", feature = "pg18"))]
+pub(super) unsafe fn read_ivf_rerank_sidecar_block_and_next(
+    index_relation: pg_sys::Relation,
+    tid: ItemPointer,
+) -> Result<(IvfRerankSidecarBlockTuple, ItemPointer), String> {
+    let block = unsafe { read_ivf_rerank_sidecar_block(index_relation, tid) }?;
+    let next = block.next_tid;
+    Ok((block, next))
 }
 
 #[cfg(any(feature = "pg17", feature = "pg18"))]
@@ -3354,7 +3739,9 @@ pub(super) unsafe fn read_metadata_page(index_relation: pg_sys::Relation) -> Met
     let buffer = buffer.unwrap_or_else(|| pgrx::error!("ec_ivf failed to open metadata buffer"));
 
     let page = WalRegisteredPage::new(index.raw(), METADATA_BLOCK_NUMBER, buffer.page());
-    let metadata_bytes = page.special_bytes(METADATA_BYTES);
+    // Clamp to the bytes actually present so v2 indexes (80-byte special area)
+    // read back without over-reading into the page proper.
+    let metadata_bytes = page.metadata_special_bytes();
     MetadataPage::decode(metadata_bytes).unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
@@ -3380,7 +3767,10 @@ where
     let mut wal_txn = index.start_wal();
     let page = wal_txn.register_locked_buffer_full_image(&buffer);
     let registered = WalRegisteredPage::new(index.raw(), METADATA_BLOCK_NUMBER, page);
-    let metadata_bytes = registered.special_bytes(METADATA_BYTES);
+    // Clamp to the bytes actually present (v2: 80, v3: 88) so neither read nor
+    // write overruns the allocated special area.
+    let special_size = registered.special_size().min(METADATA_BYTES);
+    let metadata_bytes = registered.special_bytes(special_size);
     let mut metadata = match MetadataPage::decode(metadata_bytes) {
         Ok(metadata) => metadata,
         Err(err) => {
@@ -3393,8 +3783,11 @@ where
         return Err(err);
     }
 
+    // Write back only as many bytes as the page's special area holds. A v2
+    // metadata page has an 80-byte special area and never carries a sidecar
+    // head; clamping keeps the in-place update from overrunning it.
     let encoded = metadata.encode();
-    registered.copy_to_special(&encoded);
+    registered.copy_to_special(&encoded[..special_size]);
     wal_txn.finish();
     Ok(metadata)
 }
@@ -3471,8 +3864,51 @@ mod tests {
             rerank_format: RerankFormat::Auto,
         });
         let encoded = metadata.encode();
-        let err = MetadataPage::decode(&encoded[..METADATA_BYTES - 1]).unwrap_err();
+        // Anything narrower than the v1/v2 width is a genuine truncation.
+        let err = MetadataPage::decode(&encoded[..EC_IVF_METADATA_BYTES_V2 - 1]).unwrap_err();
         assert!(err.contains("metadata length mismatch"));
+    }
+
+    #[test]
+    fn metadata_decode_accepts_v2_width_with_no_sidecar() {
+        // Task 111g: a v2-era index's metadata is only 80 bytes wide and never
+        // carries the v3 rerank sidecar head. Decoding such a buffer must
+        // succeed with rerank_sidecar_head = INVALID (rerank falls back to the
+        // heap/table source path), proving the v3 bump is backward-readable.
+        let mut metadata = MetadataPage::empty(EcIvfOptions {
+            nlists: 64,
+            nprobe: 8,
+            rerank_width: 0,
+            training_sample_rows: 10_000,
+            seed: 7,
+            pq_group_size: 0,
+            posting_slack_percent: 0,
+            quant_bits: 4,
+            coarse_bits: 0,
+            dense_posting_blocks: false,
+            dense_posting_typed_layout: false,
+            storage_format: StorageFormat::RaBitQ,
+            rerank: RerankMode::HeapF32,
+            coarse_format: CoarseFormat::Auto,
+            rerank_placement: RerankPlacement::Auto,
+            rerank_format: RerankFormat::Auto,
+        });
+        // Simulate a v2 on-disk image: stamp the version byte to 2 and present
+        // only the 80-byte special area an old build would have written.
+        metadata.format_version = 2;
+        metadata.dimensions = 768;
+        metadata.centroid_head = tid(12, 2);
+        metadata.directory_head = tid(13, 4);
+        let encoded = metadata.encode();
+        let v2_image = &encoded[..EC_IVF_METADATA_BYTES_V2];
+
+        let decoded = MetadataPage::decode(v2_image).unwrap();
+
+        assert_eq!(decoded.format_version, 2);
+        assert_eq!(decoded.dimensions, 768);
+        assert_eq!(decoded.centroid_head, tid(12, 2));
+        assert_eq!(decoded.directory_head, tid(13, 4));
+        assert_eq!(decoded.rerank_sidecar_head, ItemPointer::INVALID);
     }
 
     #[test]
@@ -3556,6 +3992,59 @@ mod tests {
         assert_eq!(borrowed.heaptid_count(), tuple.heaptids.len());
         assert_eq!(borrowed.collect_heaptids(), tuple.heaptids);
         assert_eq!(borrowed.payload, tuple.payload.as_slice());
+    }
+
+    #[test]
+    fn rerank_sidecar_block_roundtrips() {
+        let payload_len = 4;
+        let heap_tids = vec![tid(1, 1), tid(1, 5), tid(2, 3)];
+        let payloads: Vec<u8> = (0..(heap_tids.len() * payload_len) as u8).collect();
+        let mut block = IvfRerankSidecarBlockTuple::new(
+            RerankFormat::F16 as u8,
+            payload_len,
+            heap_tids.clone(),
+            payloads.clone(),
+        )
+        .unwrap();
+        block.next_tid = tid(7, 2);
+
+        let encoded = block.encode().unwrap();
+        assert_eq!(encoded[0], IVF_RERANK_SIDECAR_BLOCK_TAG);
+        let decoded = IvfRerankSidecarBlockTuple::decode(&encoded).unwrap();
+
+        assert_eq!(decoded, block);
+        assert_eq!(decoded.heap_tids, heap_tids);
+        assert_eq!(decoded.payloads, payloads);
+        assert_eq!(decoded.next_tid, tid(7, 2));
+        assert_eq!(decoded.entry_count(), 3);
+    }
+
+    #[test]
+    fn rerank_sidecar_block_rejects_bad_payload_slab() {
+        let err = IvfRerankSidecarBlockTuple::new(
+            RerankFormat::F16 as u8,
+            4,
+            vec![tid(1, 1), tid(1, 2)],
+            vec![0u8; 4], // should be 8 (2 entries * 4)
+        )
+        .unwrap_err();
+        assert!(err.contains("payload slab"));
+    }
+
+    #[test]
+    fn rerank_sidecar_block_decode_rejects_wrong_tag() {
+        let mut encoded = IvfRerankSidecarBlockTuple::new(
+            RerankFormat::RaBitQ4 as u8,
+            2,
+            vec![tid(1, 1)],
+            vec![9, 9],
+        )
+        .unwrap()
+        .encode()
+        .unwrap();
+        encoded[0] = IVF_DENSE_POSTING_BLOCK_TAG;
+        let err = IvfRerankSidecarBlockTuple::decode(&encoded).unwrap_err();
+        assert!(err.contains("rerank sidecar block tag"));
     }
 
     #[test]

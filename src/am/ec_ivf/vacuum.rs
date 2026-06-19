@@ -176,7 +176,59 @@ unsafe fn run_bulkdelete(
         add_index_bulk_delete_tuples_removed(stats_handle, removed_heap_tids);
     }
 
+    // Task 111g: maintain the compact rerank sidecar. Tombstone dead heap TIDs
+    // (set heap_tid = INVALID, same byte length) so the index-side rerank lookup
+    // never matches a reused heap line pointer to a stale payload. Space is
+    // reclaimed on REINDEX. No-op when there is no sidecar (table placement /
+    // v2-era index).
+    if metadata.rerank_sidecar_head != ItemPointer::INVALID {
+        bulkdelete_rerank_sidecar(
+            index_relation,
+            metadata.rerank_sidecar_head,
+            callback,
+            callback_state,
+        )
+        .unwrap_or_else(|e| pgrx::error!("{e}"));
+    }
+
     finish_vacuum_stats(index_relation, stats, &metadata)
+}
+
+/// Walk the rerank sidecar chain and tombstone entries whose heap TID is now
+/// dead. Each block is rewritten in place at the same byte length (dead entries
+/// keep their payload slot but get heap_tid = INVALID); only blocks that change
+/// are rewritten.
+///
+/// # Safety
+/// `index_relation` is the live IVF index being vacuumed; the chain rooted at
+/// `head` is read page by page; `callback`/`callback_state` are valid for the
+/// call.
+unsafe fn bulkdelete_rerank_sidecar(
+    index_relation: pg_sys::Relation,
+    head: ItemPointer,
+    callback: BulkDeleteCallback,
+    callback_state: *mut c_void,
+) -> Result<(), String> {
+    let mut next_tid = head;
+    while next_tid != ItemPointer::INVALID {
+        let block_tid = next_tid;
+        let (mut block, following) =
+            page::read_ivf_rerank_sidecar_block_and_next(index_relation, block_tid)?;
+        let mut changed = false;
+        for heap_tid in block.heap_tids.iter_mut() {
+            if *heap_tid != ItemPointer::INVALID
+                && heap_tid_is_dead(*heap_tid, callback, callback_state)
+            {
+                *heap_tid = ItemPointer::INVALID;
+                changed = true;
+            }
+        }
+        if changed {
+            page::rewrite_ivf_rerank_sidecar_block(index_relation, block_tid, &block)?;
+        }
+        next_tid = following;
+    }
+    Ok(())
 }
 
 fn page_payload_len(metadata: &page::MetadataPage) -> Result<usize, String> {

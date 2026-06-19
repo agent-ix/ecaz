@@ -106,6 +106,109 @@ impl RerankScorer {
         matches!(self, Self::RaBitQ4 { .. })
     }
 
+    /// The compact sidecar payload width this representation persists, for
+    /// `rerank_placement = 'index'`. `None` for f32 (no sidecar — keeps the
+    /// heap source). f16 stores `dimensions * 2` bytes; rabitq4 stores its
+    /// codec payload length.
+    pub(super) fn sidecar_payload_len(&self, dimensions: usize) -> Option<usize> {
+        match self {
+            Self::F32 => None,
+            Self::F16 { .. } => Some(dimensions * 2),
+            Self::RaBitQ4 { payload_len, .. } => Some(*payload_len),
+        }
+    }
+
+    /// Encode an f32 source vector into this representation's compact sidecar
+    /// payload (the persisted `0x2A` payload). `None` for f32.
+    pub(super) fn encode_sidecar_payload(&self, source: &[f32]) -> Result<Option<Vec<u8>>, String> {
+        match self {
+            Self::F32 => Ok(None),
+            Self::F16 { .. } => Ok(Some(pack_f16_payload(source))),
+            Self::RaBitQ4 {
+                quantizer,
+                payload_len,
+                ..
+            } => {
+                let (_dimensions, _gamma, code) = quantizer.encode_source(source)?;
+                if code.len() != *payload_len {
+                    return Err(format!(
+                        "ec_ivf rabitq4 sidecar code length {} does not match payload length {payload_len}",
+                        code.len()
+                    ));
+                }
+                Ok(Some(code))
+            }
+        }
+    }
+
+    /// Score a single candidate from its persisted compact sidecar payload
+    /// (`rerank_placement = 'index'`). Used by the f16 path which scores
+    /// per-candidate (against the f16-prepared query held in `self`); rabitq4
+    /// scores its payloads in a batch via `score_sidecar_payloads_batch`.
+    pub(super) fn score_sidecar_payload(&self, payload: &[u8]) -> f32 {
+        match self {
+            Self::F32 => {
+                pgrx::error!("ec_ivf f32 rerank has no sidecar payload to score")
+            }
+            Self::F16 { query_f16 } => {
+                let source = unpack_f16_payload(payload);
+                f16_negative_inner_product(query_f16, &source)
+            }
+            Self::RaBitQ4 { .. } => {
+                pgrx::error!(
+                    "ec_ivf rabitq4 sidecar rerank must score through score_sidecar_payloads_batch"
+                )
+            }
+        }
+    }
+
+    /// Batch-score persisted rabitq4 sidecar payloads directly (no re-encode):
+    /// `payloads` is a flat `count * payload_len` slab in survivor order.
+    pub(super) fn score_sidecar_payloads_batch(
+        &self,
+        payloads: &[u8],
+        out_scores: &mut [f32],
+    ) -> Result<(), String> {
+        let Self::RaBitQ4 {
+            quantizer,
+            prepared_query,
+            payload_len,
+        } = self
+        else {
+            return Err(
+                "ec_ivf score_sidecar_payloads_batch called for a non-batched rerank format".into(),
+            );
+        };
+        if out_scores.is_empty() {
+            return Ok(());
+        }
+        if payloads.len() != out_scores.len() * payload_len {
+            return Err(format!(
+                "ec_ivf rabitq4 sidecar payload slab {} does not match {} entries * {payload_len}",
+                payloads.len(),
+                out_scores.len()
+            ));
+        }
+        let mut estimates: Vec<f32> = Vec::with_capacity(out_scores.len());
+        let scored = quantizer.score_ip_bits1_batch_from_payloads(
+            prepared_query,
+            payloads,
+            *payload_len,
+            &mut estimates,
+        )?;
+        if !scored || estimates.len() != out_scores.len() {
+            return Err(format!(
+                "ec_ivf rabitq4 sidecar batch scorer produced {} scores for {} payloads",
+                estimates.len(),
+                out_scores.len()
+            ));
+        }
+        for (out, estimate) in out_scores.iter_mut().zip(estimates.iter()) {
+            *out = -estimate;
+        }
+        Ok(())
+    }
+
     /// Batch-score every fetched source vector. `out_scores.len()` must equal
     /// `sources.len()`. Only the batched representations (rabitq4) implement
     /// this; the f32/f16 paths score per-candidate via `score_source`.
@@ -170,11 +273,105 @@ impl RerankScorer {
     }
 }
 
+/// Query-independent encoder for the persisted compact rerank sidecar payload
+/// (`rerank_placement = 'index'`). Resolved at build/insert time (no query),
+/// it produces the `0x2A` payload that the scan-time `RerankScorer` later reads
+/// and scores. Mirrors the scoring scorer's compact reps: f16 and rabitq4.
+pub(super) enum RerankSidecarEncoder {
+    F16,
+    RaBitQ4 {
+        quantizer: IvfQuantizer,
+        payload_len: usize,
+    },
+}
+
+impl RerankSidecarEncoder {
+    /// Resolve the sidecar encoder for an index-placement compact `rerank_format`.
+    /// Returns `Ok(None)` for formats that keep the heap source (f32) — those
+    /// never persist a sidecar. Errors for unimplemented formats.
+    pub(super) fn resolve(
+        rerank_format: RerankFormat,
+        dimensions: usize,
+    ) -> Result<Option<Self>, String> {
+        match rerank_format {
+            RerankFormat::Auto | RerankFormat::F32 => Ok(None),
+            RerankFormat::F16 => Ok(Some(Self::F16)),
+            RerankFormat::RaBitQ4 => {
+                let quantizer = IvfQuantizer::resolve_with_pq_group_size_and_bits(
+                    StorageFormat::RaBitQ,
+                    dimensions,
+                    None,
+                    Some(4),
+                )?;
+                let payload_len = quantizer.payload_len();
+                Ok(Some(Self::RaBitQ4 {
+                    quantizer,
+                    payload_len,
+                }))
+            }
+            RerankFormat::RaBitQ2 | RerankFormat::RaBitQ8 | RerankFormat::TurboQuant => Err(format!(
+                "ec_ivf rerank_format = '{}' is not implemented for index placement",
+                rerank_format.reloption_name()
+            )),
+        }
+    }
+
+    /// The compact payload width this encoder persists (f16: `dimensions * 2`).
+    pub(super) fn payload_len(&self, dimensions: usize) -> usize {
+        match self {
+            Self::F16 => dimensions * 2,
+            Self::RaBitQ4 { payload_len, .. } => *payload_len,
+        }
+    }
+
+    /// Encode an f32 source vector into the persisted compact sidecar payload.
+    pub(super) fn encode(&self, source: &[f32]) -> Result<Vec<u8>, String> {
+        match self {
+            Self::F16 => Ok(pack_f16_payload(source)),
+            Self::RaBitQ4 {
+                quantizer,
+                payload_len,
+            } => {
+                let (_dimensions, _gamma, code) = quantizer.encode_source(source)?;
+                if code.len() != *payload_len {
+                    return Err(format!(
+                        "ec_ivf rabitq4 sidecar code length {} does not match payload length {payload_len}",
+                        code.len()
+                    ));
+                }
+                Ok(code)
+            }
+        }
+    }
+}
+
 /// Round a single f32 to IEEE-754 binary16 (round-to-nearest-even) and back to
 /// f32. No `half` crate dependency and no SIMD — this is a scalar reference
 /// round-trip used only on the bounded rerank frontier.
 pub(super) fn f16_round_trip(value: f32) -> f32 {
     f16_bits_to_f32(f32_to_f16_bits(value))
+}
+
+/// Pack an f32 source vector into the compact f16 sidecar payload: two
+/// little-endian bytes per dimension (IEEE-754 binary16, round-to-nearest).
+/// This is the persisted `0x2A` payload for `rerank_format = 'f16'` with
+/// `rerank_placement = 'index'` — half the bytes of the f32 heap source.
+pub(super) fn pack_f16_payload(source: &[f32]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(source.len() * 2);
+    for value in source {
+        out.extend_from_slice(&f32_to_f16_bits(*value).to_le_bytes());
+    }
+    out
+}
+
+/// Decode a compact f16 sidecar payload (2 little-endian bytes per dimension)
+/// back to f32 values. The inverse of `pack_f16_payload`; the returned vector
+/// is bit-identical to round-tripping each stored source component through f16.
+pub(super) fn unpack_f16_payload(payload: &[u8]) -> Vec<f32> {
+    payload
+        .chunks_exact(2)
+        .map(|chunk| f16_bits_to_f32(u16::from_le_bytes([chunk[0], chunk[1]])))
+        .collect()
 }
 
 fn f16_negative_inner_product(query_f16: &[f32], source: &[f32]) -> f32 {
@@ -352,6 +549,43 @@ mod tests {
             .map(|(q, s)| f16_round_trip(*q) * f16_round_trip(*s))
             .sum::<f32>();
         assert_eq!(actual.to_bits(), expected.to_bits());
+    }
+
+    #[test]
+    fn f16_pack_unpack_roundtrips_through_binary16() {
+        let source = [0.2_f32, -0.5, 0.75, 0.1, -0.9, 0.0123];
+        let packed = pack_f16_payload(&source);
+        assert_eq!(packed.len(), source.len() * 2);
+        let unpacked = unpack_f16_payload(&packed);
+        // Unpacking is exactly the f16 round-trip of each source component.
+        for (orig, got) in source.iter().zip(unpacked.iter()) {
+            assert_eq!(got.to_bits(), f16_round_trip(*orig).to_bits());
+        }
+    }
+
+    #[test]
+    fn f16_sidecar_payload_scores_match_table_f16_path() {
+        // The index-side f16 path (score_sidecar_payload over a packed payload)
+        // must produce the same score as the table-side f16 path
+        // (score_source over the raw f32 source), because both round-trip the
+        // source through binary16 before the inner product.
+        let query = [0.2_f32, -0.5, 0.75, 0.1, -0.9];
+        let source = [0.4_f32, 0.25, -0.6, 0.05, 0.33];
+        let scorer = RerankScorer::F16 {
+            query_f16: query.iter().copied().map(f16_round_trip).collect(),
+        };
+        let table_score = scorer.score_source(&query, &source);
+        let payload = pack_f16_payload(&source);
+        let index_score = scorer.score_sidecar_payload(&payload);
+        assert_eq!(index_score.to_bits(), table_score.to_bits());
+    }
+
+    #[test]
+    fn f16_sidecar_encoder_matches_pack_helper() {
+        let encoder = RerankSidecarEncoder::F16;
+        let source = [0.1_f32, -0.2, 0.3, -0.4];
+        assert_eq!(encoder.payload_len(source.len()), source.len() * 2);
+        assert_eq!(encoder.encode(&source).unwrap(), pack_f16_payload(&source));
     }
 
     #[test]

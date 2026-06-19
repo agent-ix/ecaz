@@ -133,6 +133,11 @@ unsafe fn insert_into_trained_index(
         .map_err(|e| format!("ec_ivf aminsert centroid assignment failed: {e}"))?;
     let (directory_tid, directory) = load_directory_entry(index_relation, metadata, list_id)?;
 
+    // Task 111g: keep the heap TID + source vector so we can append a compact
+    // rerank sidecar entry (index placement) after the posting is written.
+    let heap_tid = tuple.heap_tid;
+    let source_vector = tuple.source_vector.clone();
+
     let posting = page::IvfPostingTuple {
         list_id: u32::try_from(list_id)
             .map_err(|_| "ec_ivf assigned list id exceeds u32".to_owned())?,
@@ -164,6 +169,56 @@ unsafe fn insert_into_trained_index(
     page::update_metadata_page(index_relation, apply_metadata_insert_stats)
         .map_err(|e| format!("ec_ivf aminsert metadata update failed: {e}"))?;
 
+    // Task 111g: for rerank_placement = 'index', persist the new row's compact
+    // payload into the sidecar so the index-side rerank can find it. Prepend a
+    // single-entry 0x2A block to the chain (its next_tid = old head) and point
+    // the metadata head at it — O(1), no tail walk.
+    append_rerank_sidecar_entry(index_relation, heap_tid, &source_vector)?;
+
+    Ok(())
+}
+
+/// Append the inserted row's compact rerank payload to the 0x2A sidecar chain
+/// when the index uses rerank_placement = 'index' with a compact rerank_format.
+/// No-op for table placement / f32 (no sidecar). Prepends a single-entry block
+/// to keep inserts O(1).
+unsafe fn append_rerank_sidecar_entry(
+    index_relation: pg_sys::Relation,
+    heap_tid: ItemPointer,
+    source_vector: &[f32],
+) -> Result<(), String> {
+    let reloptions = NonNull::new(index_relation)
+        .map(options::relation_options)
+        .ok_or_else(|| "ec_ivf aminsert received null index relation".to_owned())?;
+    if reloptions.rerank_placement != options::RerankPlacement::Index {
+        return Ok(());
+    }
+    let Some(encoder) = super::rerank::RerankSidecarEncoder::resolve(
+        reloptions.rerank_format,
+        source_vector.len(),
+    )?
+    else {
+        return Ok(());
+    };
+    let payload = encoder.encode(source_vector)?;
+    let payload_len = encoder.payload_len(source_vector.len());
+
+    // Build the single-entry block with next_tid pointing at the current head.
+    let metadata = page::read_metadata_page(index_relation);
+    let mut block = page::IvfRerankSidecarBlockTuple::new(
+        reloptions.rerank_format as u8,
+        payload_len,
+        vec![heap_tid],
+        payload,
+    )?;
+    block.next_tid = metadata.rerank_sidecar_head;
+    let new_head = page::append_ivf_rerank_sidecar_block_to_new_block(index_relation, &block)?;
+
+    page::update_metadata_page(index_relation, |metadata| {
+        metadata.rerank_sidecar_head = new_head;
+        Ok(())
+    })
+    .map_err(|e| format!("ec_ivf aminsert rerank sidecar head update failed: {e}"))?;
     Ok(())
 }
 
@@ -223,13 +278,23 @@ unsafe fn bootstrap_empty_index(
     metadata: &page::MetadataPage,
     tuple: build::BuildTuple,
 ) -> Result<(), String> {
-    let options = options_from_metadata(metadata)?;
+    // Read the declared reloptions so the first-row build honours the rerank
+    // placement/format the index was created with (the metadata page does not
+    // persist those), keeping the bootstrap build's compact sidecar consistent
+    // with later inserts and a full rebuild.
+    let reloptions = NonNull::new(index_relation)
+        .map(options::relation_options)
+        .ok_or_else(|| "ec_ivf bootstrap received null index relation".to_owned())?;
+    let options = options_from_metadata(metadata, &reloptions)?;
     let plan = build::stage_single_tuple_build_plan(options, tuple)?;
     build::flush_build_plan(index_relation, &plan);
     Ok(())
 }
 
-fn options_from_metadata(metadata: &page::MetadataPage) -> Result<options::EcIvfOptions, String> {
+fn options_from_metadata(
+    metadata: &page::MetadataPage,
+    reloptions: &options::EcIvfOptions,
+) -> Result<options::EcIvfOptions, String> {
     Ok(options::EcIvfOptions {
         nlists: i32::try_from(metadata.nlists)
             .map_err(|_| "metadata nlists exceeds i32".to_owned())?,
@@ -256,16 +321,11 @@ fn options_from_metadata(metadata: &page::MetadataPage) -> Result<options::EcIvf
         } else {
             options::CoarseFormat::Auto
         },
-        rerank_placement: if metadata.storage_format == options::StorageFormat::CoarseRerank {
-            options::RerankPlacement::Table
-        } else {
-            options::RerankPlacement::Auto
-        },
-        rerank_format: if metadata.storage_format == options::StorageFormat::CoarseRerank {
-            options::RerankFormat::F32
-        } else {
-            options::RerankFormat::Auto
-        },
+        // Task 111g: placement/format are not persisted in metadata; take the
+        // resolved values from the declared reloptions so the bootstrap build's
+        // compact sidecar matches the index definition.
+        rerank_placement: reloptions.rerank_placement,
+        rerank_format: reloptions.rerank_format,
     })
 }
 

@@ -545,6 +545,10 @@ fn ivf_metadata_v1_fixture_decodes() {
         }
     );
     assert_eq!(metadata.pq_group_size, 4);
+    // Task 111g: this 80-byte v1 on-disk image predates the v3 rerank sidecar
+    // head (bytes 80..86). Decoding it under the v3 reader must yield head =
+    // INVALID ("no sidecar"), proving the v3 metadata bump is backward-readable.
+    assert_eq!(metadata.rerank_sidecar_head, ItemPointer::INVALID);
 }
 
 #[test]

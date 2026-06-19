@@ -114,9 +114,14 @@ const _: () = {
 
 const _: () = {
     // v2 added quant_bits at byte 34 (was reserved); v1 indexes decode as bits=4.
-    assert!(EC_IVF_INDEX_FORMAT_VERSION == 2);
+    // v3 (Task 111g) appended the rerank sidecar head ItemPointer at bytes
+    // 80..86, widening the metadata struct to 86; v1/v2 indexes (80-byte
+    // special area) decode with the head = INVALID.
+    assert!(EC_IVF_INDEX_FORMAT_VERSION == 3);
     assert!(EC_IVF_METADATA_MAGIC == 0x5649_4345);
-    assert!(EC_IVF_METADATA_BYTES == 80);
+    assert!(EC_IVF_METADATA_BYTES == 86);
+    assert!(EC_IVF_METADATA_BYTES_V2 == 80);
+    assert!(EC_IVF_METADATA_RERANK_SIDECAR_HEAD_OFFSET == 80);
     assert!(EC_IVF_METADATA_MAGIC_OFFSET == 0);
     assert!(EC_IVF_METADATA_FORMAT_VERSION_OFFSET == 4);
     assert!(EC_IVF_METADATA_DIMENSIONS_OFFSET == 6);
