@@ -1,19 +1,25 @@
 # Task 112: IVF Lazy Heap-F32 Rerank
 
-Status: **foundation merged to `main` 2026-06-19; latency win pending Task 113.**
-Phases 1–4 (lazy-rerank driver + correctness contract + `ec_ivf.lazy_heap_rerank`
-gate + considered/skipped counters) landed and were reviewed in
-`reviews/task-112/001-lazy-rerank-contract-instrumentation/` — but the path is
-**recall-neutral and byte-identical to fixed-width today** (inert under the only
-sound bound available, `NoBound = −∞`). The actual "exact-score fewer heap rows"
-win is **blocked on Task 113**, which owns the calibrated lower bound and (per
-its Phase 4 "Rerank Frontier Integration") will complete the live lazy wiring
-(k-cap / on-demand suffix fetch, feeding true exact scores into the driver — see
-the two seam findings in the 001 reviewer feedback) and run the deferred A/B
-bench (`artifacts/task-112-lazy-rerank-ab.intel-local.json`) showing heap
-rows/blocks reduced at matched recall. **This task closes jointly with 113**;
-acceptance criteria 4 (bench evidence) + the heap-fetch-reduction goal remain
-open until then.
+Status: **infrastructure merged to `main` 2026-06-19; latency win is conditional
+and deferred (not realized).** Phases 1–4 (lazy-rerank driver + correctness
+contract + `ec_ivf.lazy_heap_rerank` gate + considered/skipped counters) landed
+and were reviewed in `reviews/task-112/001-lazy-rerank-contract-instrumentation/`;
+Task 113 then supplied the calibrated bound seam (`RaBitQLazyBound`) and carried
+both 112 seam fixes (monotonicity precondition; `worst_kept.is_finite()` stop
+gate) — reviewed in `reviews/task-113/002-rabitq-lazy-bound/`.
+**Outcome of the joint 112/113 investigation:** the lazy path is recall-safe and
+byte-identical today, and a *recall-safe material skip is conditional, not a
+pending certainty*. The sound exact-score bound is the quantization residual
+`|⟨q,o−x_dec⟩| ≤ ||q||·||o−x_dec||`, which is **loose at 1-bit RaBitQ** (skips
+rarely fire) and tighter at higher bit-depth; the only *tight* per-candidate
+envelope is probabilistic (recall-unsafe, rejected). Realizing a skip also needs
+a **k-cap / on-demand cross-`amgettuple` suffix emission** (the AM has no `k`
+pushdown, so `min_kept == rerank_width` and the stop is never reached today).
+**Remaining (deferred, do not pursue blind):** run the joint
+`task-113-lazy-rerank-ab.intel-local.json` A/B on the Intel bench host; only if
+it shows the residual bound fires at the target bit-depth/recall cells is the
+k-cap + per-candidate residual carriage worth building. Acceptance criterion 4
+(bench evidence) + the heap-fetch-reduction goal remain open and bench-gated.
 Priority: P0 latency.
 
 ## Goal

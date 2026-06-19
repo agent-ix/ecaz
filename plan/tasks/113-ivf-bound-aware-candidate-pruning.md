@@ -1,6 +1,31 @@
 # Task 113: IVF Bound-Aware Candidate Pruning
 
-Status: **proposed**.
+Status: **merged to `main` 2026-06-19** (recall-safe code complete; latency
+promotion bench deferred to the Intel bench host). Reviewed in
+`reviews/task-113/001-bound-contract-audit/` (Phase 1) and
+`reviews/task-113/002-rabitq-lazy-bound/` (Phases 2/3/4/5).
+- **Sound bound surface confirmed:** the Cauchy-Schwarz prune cutoff
+  (`||o||·||q||/o_dot`) is a deterministic upper bound (recall-safe); the
+  ε-concentration envelope is probabilistic and correctly **not** used for hard
+  pruning (Non-Goal honored).
+- **Posting-prune (Phases 2/3) landed + made recall-safe-provable:** the sound
+  cutoff was already threaded into row / SoA-scalar / dense-block direct-scan
+  paths; this task added the `ec_ivf.posting_bound_prune` A/B GUC (default on =
+  pre-existing behavior), the `postings_pruned_by_bound` counter, and a
+  **pruned==unpruned byte-identical** pg18 proof. Batch kernels deliberately do
+  not pre-prune (preserve the 111 contiguous SIMD pass) — evidence-backed
+  per acceptance criterion 3.
+- **Phase 4 (lazy-rerank bound for Task 112):** `RaBitQLazyBound` seam is live
+  with the correct **exact-score** residual bound `|⟨q,o−x_dec⟩| ≤ ||q||·||o−x_dec||`
+  (NOT the estimate-space cutoff), plus the two Task-112 seam fixes (monotonicity
+  precondition; `worst_kept.is_finite()` stop gate). Default slack `+inf` →
+  byte-identical to `NoBound`.
+- **Outstanding / deferred:** (a) the Phase-5 promotion benches (posting-prune
+  A/B and joint 112+113 lazy A/B) are env-blocked here and must run on the Intel
+  bench desktop; (b) the lazy material skip is a **conditional** win — the
+  residual bound is loose at 1-bit (rare skips), tighter at higher RaBitQ
+  bit-depth, and needs a k-cap / on-demand-suffix emission to fire; pursue only
+  if the deferred lazy A/B shows it fires. See the 002 reviewer feedback.
 Priority: P1 latency.
 
 ## Goal
