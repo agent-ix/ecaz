@@ -1,6 +1,19 @@
 # Task 112: IVF Lazy Heap-F32 Rerank
 
-Status: **proposed**.
+Status: **foundation merged to `main` 2026-06-19; latency win pending Task 113.**
+Phases 1–4 (lazy-rerank driver + correctness contract + `ec_ivf.lazy_heap_rerank`
+gate + considered/skipped counters) landed and were reviewed in
+`reviews/task-112/001-lazy-rerank-contract-instrumentation/` — but the path is
+**recall-neutral and byte-identical to fixed-width today** (inert under the only
+sound bound available, `NoBound = −∞`). The actual "exact-score fewer heap rows"
+win is **blocked on Task 113**, which owns the calibrated lower bound and (per
+its Phase 4 "Rerank Frontier Integration") will complete the live lazy wiring
+(k-cap / on-demand suffix fetch, feeding true exact scores into the driver — see
+the two seam findings in the 001 reviewer feedback) and run the deferred A/B
+bench (`artifacts/task-112-lazy-rerank-ab.intel-local.json`) showing heap
+rows/blocks reduced at matched recall. **This task closes jointly with 113**;
+acceptance criteria 4 (bench evidence) + the heap-fetch-reduction goal remain
+open until then.
 Priority: P0 latency.
 
 ## Goal
