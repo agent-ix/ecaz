@@ -357,6 +357,11 @@ struct IvfPostingScratchSoa {
     heap_tids: Vec<ItemPointer>,
     payloads: Vec<u8>,
     scores: Vec<f32>,
+    /// Task 115: per-posting exact centroid inner product `⟨q, c⟩` for the
+    /// posting's assigned list, added to the RaBitQ residual estimate to recover
+    /// the full `⟨q, o⟩`. Always `0.0` in plain (non-residual) mode, so the
+    /// additive offset is the identity and plain-mode scores stay byte-identical.
+    centroid_ips: Vec<f32>,
 }
 
 #[derive(Debug, Default)]
@@ -395,6 +400,7 @@ impl IvfPostingScratchSoa {
             heap_tids: Vec::with_capacity(IVF_POSTING_SCRATCH_SOA_BATCH_HEAPTIDS),
             payloads: Vec::with_capacity(payload_len * IVF_POSTING_SCRATCH_SOA_BATCH_POSTINGS),
             scores: Vec::with_capacity(IVF_POSTING_SCRATCH_SOA_BATCH_POSTINGS),
+            centroid_ips: Vec::with_capacity(IVF_POSTING_SCRATCH_SOA_BATCH_POSTINGS),
         }
     }
 
@@ -413,6 +419,7 @@ impl IvfPostingScratchSoa {
         self.heap_tids.clear();
         self.payloads.clear();
         self.scores.clear();
+        self.centroid_ips.clear();
     }
 
     fn is_empty(&self) -> bool {
@@ -425,7 +432,7 @@ impl IvfPostingScratchSoa {
                 <= IVF_POSTING_SCRATCH_SOA_BATCH_HEAPTIDS
     }
 
-    fn push(&mut self, posting: super::page::IvfPostingTupleRef<'_>) {
+    fn push(&mut self, posting: super::page::IvfPostingTupleRef<'_>, centroid_ip: f32) {
         debug_assert_eq!(posting.payload.len(), self.payload_len);
         let offset = self.heap_tids.len();
         self.gammas.push(posting.gamma);
@@ -433,6 +440,7 @@ impl IvfPostingScratchSoa {
         self.heap_tid_counts.push(posting.heaptid_count());
         self.heap_tids.extend(posting.heaptids());
         self.payloads.extend_from_slice(posting.payload);
+        self.centroid_ips.push(centroid_ip);
     }
 
     fn push_dense_posting(
@@ -441,6 +449,7 @@ impl IvfPostingScratchSoa {
         index: usize,
         heap_tid_count: usize,
         gamma: f32,
+        centroid_ip: f32,
     ) {
         debug_assert_eq!(block.payload_len(), self.payload_len);
         let offset = self.heap_tids.len();
@@ -449,9 +458,16 @@ impl IvfPostingScratchSoa {
         self.heap_tid_counts.push(heap_tid_count);
         self.heap_tids.extend(block.heap_tids(index));
         self.payloads.extend_from_slice(block.payload(index));
+        self.centroid_ips.push(centroid_ip);
     }
 
-    fn push_dense_parts(&mut self, gamma: f32, heap_tids: &[ItemPointer], payload: &[u8]) {
+    fn push_dense_parts(
+        &mut self,
+        gamma: f32,
+        heap_tids: &[ItemPointer],
+        payload: &[u8],
+        centroid_ip: f32,
+    ) {
         debug_assert_eq!(payload.len(), self.payload_len);
         let offset = self.heap_tids.len();
         self.gammas.push(gamma);
@@ -459,6 +475,7 @@ impl IvfPostingScratchSoa {
         self.heap_tid_counts.push(heap_tids.len());
         self.heap_tids.extend_from_slice(heap_tids);
         self.payloads.extend_from_slice(payload);
+        self.centroid_ips.push(centroid_ip);
     }
 
     fn len(&self) -> usize {
@@ -475,6 +492,13 @@ impl IvfPostingScratchSoa {
         let start = self.heap_tid_offsets[index];
         let end = start + self.heap_tid_counts[index];
         &self.heap_tids[start..end]
+    }
+
+    /// Task 115: exact `⟨q, c⟩` offset for the posting at `index` (0.0 in plain
+    /// mode). Added to the RaBitQ residual estimate to recover the full
+    /// `⟨q, o⟩`.
+    fn centroid_ip(&self, index: usize) -> f32 {
+        self.centroid_ips[index]
     }
 }
 
@@ -636,6 +660,7 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_amrescan(
                 &index_options,
                 opaque,
                 &selected_lists,
+                &centroid_scores,
             )
             .unwrap_or_else(|e| pgrx::error!("{e}"));
             store_centroid_scores(opaque, &centroid_scores);
@@ -1396,6 +1421,7 @@ unsafe fn materialize_probe_candidates(
     index_options: &super::options::EcIvfOptions,
     opaque: &mut EcIvfScanOpaque,
     selected_lists: &[u32],
+    centroid_scores: &[EcIvfCentroidScore],
 ) -> Result<Vec<EcIvfScoredCandidate>, String> {
     if selected_lists.is_empty() {
         return Ok(Vec::new());
@@ -1411,12 +1437,34 @@ unsafe fn materialize_probe_candidates(
     let index_relation_handle = NonNull::new(index_relation).unwrap_or_else(|| {
         pgrx::error!("ec_ivf materialize_probe_candidates received null index relation")
     });
-    let quantizer = IvfQuantizer::resolve_with_pq_group_size_and_bits(
+    let quantizer = IvfQuantizer::resolve_with_pq_group_size_bits_and_residual(
         metadata.storage_format,
         metadata.dimensions as usize,
         metadata_pq_group_size(metadata),
         Some(metadata.quant_bits),
+        metadata.rabitq_residual,
     )?;
+    // Task 115: per-list exact centroid inner product `⟨q, c⟩`, indexed by
+    // list_id. In residual mode each posting's RaBitQ residual estimate
+    // (`⟨q, o − c⟩`) is shifted by this term to recover `⟨q, o⟩`. Empty (and
+    // unused) in plain mode, so the additive offset is the identity.
+    let centroid_ip_by_list: Vec<f32> = if quantizer.rabitq_residual() {
+        let mut by_list = vec![0.0_f32; metadata.nlists as usize];
+        for score in centroid_scores {
+            if let Some(slot) = by_list.get_mut(score.list_id as usize) {
+                *slot = score.score;
+            }
+        }
+        by_list
+    } else {
+        Vec::new()
+    };
+    let centroid_ip_for_list = |list_id: u32| -> f32 {
+        centroid_ip_by_list
+            .get(list_id as usize)
+            .copied()
+            .unwrap_or(0.0)
+    };
     let payload_len = quantizer.payload_len();
     let use_dense_posting_typed_views = super::options::current_session_dense_posting_typed_views();
     // SAFETY: `index_relation` and metadata describe the live IVF index; the
@@ -1424,8 +1472,17 @@ unsafe fn materialize_probe_candidates(
     let probe_plan =
         unsafe { build_selected_probe_plan(index_relation, metadata, selected_lists)? };
     let best_by_heap_tid = candidate_dedup_map(opaque, probe_plan.candidate_bound);
-    let mut running_top = quantizer
-        .uses_score_bound_pruning()
+    // Task 115: the Task 113 posting-prune Cauchy-Schwarz cutoff
+    // (`||o||·||q||/|o_dot|`) was derived as an upper bound on the estimate of
+    // `⟨q, o⟩` for PLAIN payloads. Under residual encoding the quantized
+    // estimate is `⟨q, o − c⟩`, so the sound full-score upper bound is
+    // `⟨q, c⟩ + ||r||·||q||/|r_dot|` — i.e. the per-list cutoff must be shifted
+    // by `−⟨q, c⟩`, which the current per-payload scoring sites do not carry.
+    // Rather than apply the plain-derived bound to a residual estimate (a recall
+    // bug), residual mode runs UNPRUNED here. The shifted-cutoff is the
+    // documented follow-up lever; it preserves recall by construction.
+    let bound_pruning_active = quantizer.uses_score_bound_pruning() && !quantizer.rabitq_residual();
+    let mut running_top = bound_pruning_active
         .then(|| pre_rerank_candidate_limit(index_options))
         .flatten()
         .map(CandidateTopK::new);
@@ -1488,7 +1545,7 @@ unsafe fn materialize_probe_candidates(
                                     &mut running_top,
                                 )?;
                             }
-                            scratch_ref.push(posting);
+                            scratch_ref.push(posting, centroid_ip_for_list(posting.list_id));
                         }
                         super::page::IvfPostingEntryRef::DenseBlock(block) => {
                             if !probe_plan.contains_list(block.list_id) {
@@ -1514,6 +1571,7 @@ unsafe fn materialize_probe_candidates(
                                     best_by_heap_tid,
                                     &mut running_top,
                                     &mut remaining_live_tids_by_list,
+                                    centroid_ip_for_list(block.list_id),
                                 )?;
                                 return Ok(());
                             }
@@ -1542,6 +1600,7 @@ unsafe fn materialize_probe_candidates(
                                 best_by_heap_tid,
                                 &mut running_top,
                                 &mut remaining_live_tids_by_list,
+                                centroid_ip_for_list(block.list_id),
                             )?;
                         }
                     }
@@ -1597,7 +1656,8 @@ unsafe fn materialize_probe_candidates(
                             opaque.explain_counters.record_posting_pruned_by_bound();
                             return Ok(());
                         };
-                        let score = -ip;
+                        // Task 115: residual estimate + exact per-list ⟨q, c⟩.
+                        let score = -(ip + centroid_ip_for_list(posting.list_id));
                         record_scored_posting_candidates(
                             opaque,
                             best_by_heap_tid,
@@ -1621,6 +1681,7 @@ unsafe fn materialize_probe_candidates(
                             best_by_heap_tid,
                             &mut running_top,
                             &mut remaining_live_tids_by_list,
+                            centroid_ip_for_list(block.list_id),
                         )?;
                     }
                 }
@@ -1739,7 +1800,7 @@ fn process_scratch_soa_postings(
                 running_top,
                 scratch.heap_tids(index).iter().copied(),
                 scratch.heap_tid_counts[index],
-                -scratch.scores[index],
+                -(scratch.scores[index] + scratch.centroid_ip(index)),
             );
         }
         scratch.clear();
@@ -1766,7 +1827,8 @@ fn process_scratch_soa_postings(
                 running_top,
                 scratch.heap_tids(index).iter().copied(),
                 scratch.heap_tid_counts[index],
-                -scratch.scores[index],
+                // Task 115: residual estimate + exact per-list ⟨q, c⟩ (0.0 plain).
+                -(scratch.scores[index] + scratch.centroid_ip(index)),
             );
         }
         scratch.clear();
@@ -1793,7 +1855,7 @@ fn process_scratch_soa_postings(
                 running_top,
                 scratch.heap_tids(index).iter().copied(),
                 scratch.heap_tid_counts[index],
-                -scratch.scores[index],
+                -(scratch.scores[index] + scratch.centroid_ip(index)),
             );
         }
         scratch.clear();
@@ -1818,7 +1880,8 @@ fn process_scratch_soa_postings(
             running_top,
             scratch.heap_tids(index).iter().copied(),
             scratch.heap_tid_counts[index],
-            -ip,
+            // Task 115: residual estimate + exact per-list ⟨q, c⟩ (0.0 plain).
+            -(ip + scratch.centroid_ip(index)),
         );
     }
     scratch.clear();
@@ -1844,6 +1907,7 @@ fn process_dense_coalesced_postings(
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 fn append_dense_posting_block_to_coalesced_scratch(
     block: super::page::IvfDensePostingRef<'_>,
     use_typed: bool,
@@ -1854,6 +1918,8 @@ fn append_dense_posting_block_to_coalesced_scratch(
     best_by_heap_tid: *mut HashMap<ItemPointer, EcIvfScoredCandidate>,
     running_top: &mut Option<CandidateTopK>,
     remaining_live_tids_by_list: &mut [u64],
+    // Task 115: exact `⟨q, c⟩` for this block's list (0.0 in plain mode).
+    centroid_ip: f32,
 ) -> Result<(), String> {
     if block.len() == 0 {
         return Ok(());
@@ -1883,7 +1949,7 @@ fn append_dense_posting_block_to_coalesced_scratch(
         let gamma = gamma_view
             .and_then(|gammas| gammas.get(index).copied())
             .unwrap_or_else(|| block.gamma(index));
-        scratch.push_dense_posting(block, index, heap_tid_count, gamma);
+        scratch.push_dense_posting(block, index, heap_tid_count, gamma, centroid_ip);
         if scratch.len() >= IVF_POSTING_SCRATCH_SOA_BATCH_POSTINGS {
             process_dense_coalesced_postings(
                 scratch,
@@ -1899,6 +1965,7 @@ fn append_dense_posting_block_to_coalesced_scratch(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn process_dense_posting_block(
     block: super::page::IvfDensePostingRef<'_>,
     use_typed: bool,
@@ -1908,6 +1975,8 @@ fn process_dense_posting_block(
     best_by_heap_tid: *mut HashMap<ItemPointer, EcIvfScoredCandidate>,
     running_top: &mut Option<CandidateTopK>,
     remaining_live_tids_by_list: &mut [u64],
+    // Task 115: exact `⟨q, c⟩` for this block's list (0.0 in plain mode).
+    centroid_ip: f32,
 ) -> Result<(), String> {
     if block.len() == 0 {
         return Ok(());
@@ -1973,7 +2042,7 @@ fn process_dense_posting_block(
                 running_top,
                 block.heap_tids(index),
                 heap_tid_count,
-                -unsafe { (&(*scratch).scores)[index] },
+                -(unsafe { (&(*scratch).scores)[index] } + centroid_ip),
             );
         }
         return Ok(());
@@ -2007,7 +2076,7 @@ fn process_dense_posting_block(
             running_top,
             block.heap_tids(index),
             heap_tid_count,
-            -ip,
+            -(ip + centroid_ip),
         );
     }
     Ok(())
@@ -3350,6 +3419,22 @@ pub(crate) unsafe fn debug_ec_ivf_rerank_mode(index_oid: pg_sys::Oid) -> &'stati
 }
 
 #[cfg(any(test, feature = "pg_test"))]
+/// Task 115 diagnostic: whether the index stores residual-encoded RaBitQ
+/// posting payloads (the scan applies the per-list centroid correction).
+///
+/// # Safety
+/// Test-only helper; caller is a pgrx-managed test fixture that holds
+/// the IVF index referenced by `index_oid` open for the call duration.
+pub(crate) unsafe fn debug_ec_ivf_rabitq_residual(index_oid: pg_sys::Oid) -> bool {
+    let index_relation = crate::storage::relation_guard::IndexRelationGuard::access_share(
+        index_oid,
+        "ec_ivf debug rabitq residual",
+    );
+    let metadata = debug_read_metadata_page(index_relation.as_ptr());
+    metadata.rabitq_residual
+}
+
+#[cfg(any(test, feature = "pg_test"))]
 /// # Safety
 /// Test-only helper; caller is a pgrx-managed test fixture that holds
 /// the IVF index referenced by `index_oid` open for the call duration.
@@ -3568,7 +3653,7 @@ mod tests {
         let posting = posting_ref_from_bytes(&encoded, tuple.payload.len());
         let mut scratch = IvfPostingScratchSoa::new(tuple.payload.len());
 
-        scratch.push(posting);
+        scratch.push(posting, 0.0);
 
         assert_eq!(scratch.len(), 1);
         assert_eq!(scratch.gammas, vec![1.25]);
@@ -3685,12 +3770,14 @@ mod tests {
             0,
             block.heap_tid_count(0),
             block.gamma(0),
+            0.0,
         );
         scratch.push_dense_posting(
             IvfDensePostingRef::Block(block),
             2,
             block.heap_tid_count(2),
             block.gamma(2),
+            0.0,
         );
 
         assert_eq!(scratch.len(), 2);

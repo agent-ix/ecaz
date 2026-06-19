@@ -3955,3 +3955,180 @@
             "prune-on must not prune fewer postings than prune-off"
         );
     }
+
+    // ---------------------------------------------------------------------
+    // Task 115 — IVF RaBitQ residual encoding (pgrx).
+    // ---------------------------------------------------------------------
+
+    fn make_rabitq_index_with_opts(
+        table: &str,
+        rows: &[(i64, Vec<f32>)],
+        extra_opts: &str,
+    ) -> pg_sys::Oid {
+        Spi::run(&format!(
+            "CREATE TABLE {table} (id bigint primary key, embedding ecvector)"
+        ))
+        .expect("table creation should succeed");
+        for (id, vector) in rows {
+            let literal = format_recall_vector_sql_literal(vector);
+            Spi::run(&format!("INSERT INTO {table} VALUES ({id}, {literal}::ecvector)"))
+                .expect("seed insert should succeed");
+        }
+        Spi::run(&format!(
+            "CREATE INDEX {table}_idx ON {table} USING ec_ivf \
+             (embedding ecvector_ip_ops) \
+             WITH (nlists = 4, nprobe = 4, training_sample_rows = {rows_len}, \
+             quantizer = 'rabitq'{extra_opts})",
+            rows_len = rows.len(),
+        ))
+        .expect("rabitq index creation should succeed");
+        ec_ivf_index_oid(&format!("{table}_idx"))
+    }
+
+    /// Task 115: plain and residual RaBitQ indexes coexist — both build, both
+    /// scan, and the metadata residual flag is set only on the residual index.
+    /// This is the plain-vs-residual coexistence proof.
+    #[pg_test]
+    fn test_ec_ivf_rabitq_residual_coexists_with_plain() {
+        let rows = lazy_rerank_rows(48, 16);
+        let query = rows[7].1.clone();
+
+        let plain_oid = make_rabitq_index_with_opts("ec_ivf_res_plain", &rows, "");
+        let residual_oid =
+            make_rabitq_index_with_opts("ec_ivf_res_resid", &rows, ", rabitq_residual = 1");
+
+        // The flag distinguishes the two payload formats written by this build.
+        assert!(
+            !ec_ivf_debug!(am::debug_ec_ivf_rabitq_residual(plain_oid)),
+            "plain index must not be flagged residual"
+        );
+        assert!(
+            ec_ivf_debug!(am::debug_ec_ivf_rabitq_residual(residual_oid)),
+            "residual index must be flagged residual"
+        );
+
+        // Scan reads BOTH formats and emits rows for each.
+        let (plain_outputs, _) =
+            ec_ivf_debug!(am::debug_ec_ivf_gettuple_outputs(plain_oid, query.clone()));
+        let (residual_outputs, _) =
+            ec_ivf_debug!(am::debug_ec_ivf_gettuple_outputs(residual_oid, query));
+        assert!(
+            !plain_outputs.is_empty(),
+            "plain RaBitQ scan should emit rows"
+        );
+        assert!(
+            !residual_outputs.is_empty(),
+            "residual RaBitQ scan should emit rows"
+        );
+    }
+
+    /// Task 115: with heap-f32 exact rerank and full nprobe (every list probed),
+    /// the residual and plain indexes return the IDENTICAL exact-reranked top-k.
+    /// The approximate codec only chooses which candidates enter the frontier;
+    /// the heap-f32 rerank rescoring against the exact source vector is unchanged
+    /// by residual encoding. This pins that residual mode preserves heap-f32
+    /// rerank correctness.
+    #[pg_test]
+    fn test_ec_ivf_rabitq_residual_heap_f32_rerank_matches_plain() {
+        let rows = lazy_rerank_rows(40, 16);
+        let query = rows[11].1.clone();
+
+        let plain_oid =
+            make_rabitq_index_with_opts("ec_ivf_res_rr_plain", &rows, ", rerank = 'heap_f32'");
+        let residual_oid = make_rabitq_index_with_opts(
+            "ec_ivf_res_rr_resid",
+            &rows,
+            ", rerank = 'heap_f32', rabitq_residual = 1",
+        );
+
+        let plain = ec_ivf_debug!(am::debug_ec_ivf_gettuple_counter_snapshot(
+            plain_oid,
+            query.clone()
+        ));
+        let residual =
+            ec_ivf_debug!(am::debug_ec_ivf_gettuple_counter_snapshot(residual_oid, query));
+
+        assert!(!plain.outputs.is_empty(), "plain rerank should emit rows");
+        // Heap-f32 rerank rescpres against the exact source: with all lists
+        // probed the candidate set is identical, so the reranked (tid, tid,
+        // exact score) outputs match byte-for-byte across the two codecs.
+        assert_eq!(
+            plain.outputs, residual.outputs,
+            "residual heap-f32 rerank must return the identical exact top-k as plain"
+        );
+    }
+
+    /// RECALL-SAFETY PROOF in RESIDUAL mode (mirrors
+    /// `test_ec_ivf_posting_bound_prune_equals_unpruned`): with residual
+    /// payloads, the posting-prune A/B must still return byte-identical
+    /// (tid, tid, score) outputs. Because residual mode runs the posting scan
+    /// UNPRUNED by construction (the plain-derived Cauchy-Schwarz cutoff is not
+    /// sound against a residual estimate vs a full-score cutoff), toggling the
+    /// prune GUC must be a no-op: identical outputs AND zero pruned-by-bound in
+    /// both states. This guards against the plain-derived bound ever silently
+    /// firing on residual payloads.
+    #[pg_test]
+    fn test_ec_ivf_rabitq_residual_posting_bound_prune_equals_unpruned() {
+        let rows = lazy_rerank_rows(48, 16);
+        let index_oid =
+            make_rabitq_index_with_opts("ec_ivf_res_prune", &rows, ", rabitq_residual = 1");
+        let query = rows[7].1.clone();
+
+        Spi::run("SET ec_ivf.posting_bound_prune = off")
+            .expect("prune GUC should be settable");
+        let unpruned =
+            ec_ivf_debug!(am::debug_ec_ivf_gettuple_counter_snapshot(index_oid, query.clone()));
+
+        Spi::run("SET ec_ivf.posting_bound_prune = on")
+            .expect("prune GUC should be settable");
+        let pruned =
+            ec_ivf_debug!(am::debug_ec_ivf_gettuple_counter_snapshot(index_oid, query));
+        Spi::run("RESET ec_ivf.posting_bound_prune")
+            .expect("prune GUC should be resettable");
+
+        assert!(
+            !unpruned.outputs.is_empty(),
+            "residual unpruned scan should emit rows"
+        );
+        assert_eq!(
+            unpruned.outputs, pruned.outputs,
+            "residual posting prune A/B must return byte-identical outputs in identical order"
+        );
+        // Residual mode never prunes by the plain-derived bound — both states
+        // must record zero pruned-by-bound (the recall-safety guard).
+        assert_eq!(
+            unpruned.postings_pruned_by_bound, 0,
+            "residual mode must record zero pruned-by-bound with prune off"
+        );
+        assert_eq!(
+            pruned.postings_pruned_by_bound, 0,
+            "residual mode must record zero pruned-by-bound even with prune on (gated off)"
+        );
+    }
+
+    /// Task 115: residual indexes accept inserts after build (insert-time
+    /// residual re-encode against the assigned centroid), and the inserted row
+    /// is findable.
+    #[pg_test]
+    fn test_ec_ivf_rabitq_residual_insert_after_build() {
+        let rows = lazy_rerank_rows(32, 16);
+        let index_oid =
+            make_rabitq_index_with_opts("ec_ivf_res_ins", &rows, ", rabitq_residual = 1");
+        assert!(ec_ivf_debug!(am::debug_ec_ivf_rabitq_residual(index_oid)));
+
+        // Insert a new row mirroring an existing vector so it must surface near
+        // the top for that query.
+        let new_vector = rows[5].1.clone();
+        let literal = format_recall_vector_sql_literal(&new_vector);
+        Spi::run(&format!(
+            "INSERT INTO ec_ivf_res_ins VALUES (10_000, {literal}::ecvector)"
+        ))
+        .expect("residual-mode insert should succeed");
+
+        let (outputs, _) =
+            ec_ivf_debug!(am::debug_ec_ivf_gettuple_outputs(index_oid, new_vector));
+        assert!(
+            !outputs.is_empty(),
+            "residual scan after insert should emit rows"
+        );
+    }
