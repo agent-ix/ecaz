@@ -137,7 +137,25 @@ real, measured takeaways are (a) the f16 fix, (b) 1-bit-coarse + exact-rerank as
 the efficient operating point, (c) 113 row-prune ~4%, and (d) the index-side
 regression to fix (ADR-079). Exactly the per-change attribution the bench was for.
 
-## Historical per-segment (constant plain-rabitq at each merge commit)
+## Historical per-segment (constant plain-rabitq at each merge commit) [complete]
 
-Running via `run-historical.sh` (baseline 99dc70e53 → 111g → 112 → 113). Isolates
-each merge's net effect on the stable rabitq path; filled in on completion.
+Each commit rebuilt with its own release `.so` (distinct backend SHAs in
+`artifacts/hist-*/suite-manifest.json`) and benched with the identical
+constant-rabitq config. Isolates each merge's net effect on the stable rabitq path.
+
+constant-rabitq @100k, p50 latency:
+
+| commit | backend | recall np64/np200 | p50 np64/np200 |
+|---|---|---|---|
+| baseline 99dc70e53 | 09029337 | 0.9655 / 0.9990 | 16.8 / 45.1 ms |
+| 111g 61fd84f95 | c68e5e40 | 0.9655 / 0.9990 | 16.3 / 42.7 ms |
+| 112 6d60eec50 | a47be920 | 0.9655 / 0.9990 | 16.7 / 43.6 ms |
+| 113 9ddb3be7c | 31085e3c | 0.9655 / 0.9990 | 16.9 / 43.1 ms |
+
+**Conclusion: the lane is neutral on the default rabitq path.** Recall is
+byte-identical across all four merges; p50 varies only within run-to-run noise
+(~5%, no monotic trend). Each task added opt-in/gated features (coarse_rerank
+sidecar, lazy rerank, posting prune toggle, residual) rather than changing the
+default RaBitQ scan — so **no merge regressed (or improved) the stable path**.
+The real per-feature effects are the HEAD gated A/Bs above; the historical layer
+is the safety confirmation (no silent regression slipped in).
