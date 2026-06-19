@@ -68,6 +68,39 @@ limit; nprobe was. All attribution configs now sweep `[8,16,32,64,128,200]` so
 absolute recall is representative and matched-recall latency comparison is
 possible. (This is a measurement-window fix, not a code change.)
 
+## Finding 3 — 111g index-side sidecar is a severe regression (O(N) full-chain read). BUG. [proven]
+
+**codex P1 confirmed and quantified.** `rerank_placement='index'` reads the
+**entire** `0x2A` sidecar chain into a `HashMap<heap_tid, payload>` on *every
+query* (`scan.rs:2500` → `load_rerank_sidecar_payloads`), then uses only the ~64
+survivors. For 100k f16 entries that's ~307 MB read + 100k allocations per query
+to serve ~196 KB of survivors — O(N) regardless of `rerank_width`.
+
+**Measured, index-side f16 vs table-side f16 @100k:**
+
+| metric | table-side | index-side | ratio |
+|---|---|---|---|
+| p50 @ nprobe 8   | 4.7 ms  | **551 ms** | 117× slower |
+| p50 @ nprobe 200 | 13.2 ms | **552 ms** | 42× slower |
+| p50 vs nprobe    | scales 5→13 ms | **flat ~540 ms** (O(N)) | — |
+| index size       | 25.4 MiB | **416 MiB** | 16× bigger |
+| recall@10        | ✓ | ✓ (same) | — |
+
+Latency is *flat across nprobe* — the signature of the nprobe-independent
+full-chain read. So index-side placement (111g's headline "byte-win", approved on
+the `stats_rerank_source_bytes_read` counter) is **40–120× slower and 16× larger**
+at identical recall. The counter measured survivor bytes (O(W)); the real work is
+O(N). **Verdict: do NOT promote `rerank_placement='index'`; the as-merged
+implementation is a regression, not a win.**
+
+**Fix (planned):** survivor-directed bounded read — read only the ~W survivor
+payloads, not the whole chain. Requires a sorted directory over the `0x2A` chain
+(heap-TID range → block) so blocks without survivors are skipped (build already
+writes blocks sorted by heap TID; insert-prepended blocks handled separately).
+On-disk format addition (free here — research project, rebuild). This is a real
+redesign, sequenced after the benchmark goal completes; then re-bench sidecar-index
+for the "after". Table-side stays the correct lean-index default meanwhile.
+
 ## Pending (matrix running on the fixed `.so`)
 
 Per-change A/B verdicts — filled as configs complete, each verified against the
