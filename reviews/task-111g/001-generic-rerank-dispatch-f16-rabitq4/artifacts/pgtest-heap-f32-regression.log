@@ -1,0 +1,4 @@
+30:test tests::pg_test_ec_ivf_heap_f32_rerank_mode_is_persisted ... ok
+31:test tests::pg_test_ec_ivf_heap_f32_rerank_width_bounds_exact_frontier ... ok
+32:test tests::pg_test_ec_ivf_heap_f32_rerank_full_probe_matches_exact_scores ... ok
+34:test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 2133 filtered out; finished in 50.73s
