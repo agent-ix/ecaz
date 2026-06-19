@@ -516,6 +516,77 @@ impl crate::quant::Quantizer for RaBitQQuantizer {
 }
 
 impl RaBitQQuantizer {
+    /// IVF residual encode (Task 115).
+    ///
+    /// Encodes the **residual** `o − c` of a posting vector `o` against its
+    /// assigned IVF centroid `c`, using the identical code layout, scalar tail,
+    /// and estimator as [`Quantizer::encode_code`]. The only difference is the
+    /// vector that gets rotated/quantized: `o − c` instead of `o`.
+    ///
+    /// ## Scoring identity
+    ///
+    /// IVF inner-product search wants `⟨q, o⟩`. Decompose against the centroid:
+    ///
+    /// ```text
+    /// ⟨q, o⟩ = ⟨q, c⟩ + ⟨q, o − c⟩
+    /// ```
+    ///
+    /// `⟨q, c⟩` is computed **exactly** once per probed list (the centroid is
+    /// already loaded for list selection — zero per-posting cost). The residual
+    /// term `⟨q, o − c⟩` is estimated by the standard RaBitQ asymmetric
+    /// estimator on this residual code: because [`Self::prepare_estimator`]
+    /// rotates `q` and the residual code packs `sign(rotate(o − c)) =
+    /// sign(rotate(o) − rotate(c))` (rotation is linear), the unchanged
+    /// estimator's output **is** `≈ ⟨q, o − c⟩`. No query-side change, no new
+    /// estimator, and no per-posting correction scalar are needed.
+    ///
+    /// ## Correction-metadata size (Phase-1 stop condition)
+    ///
+    /// The residual code is byte-for-byte the same shape as the plain code:
+    /// `⌈D·bits/8⌉` packed bytes + the 12-byte scalar tail (`||r||`, `r_dot`,
+    /// `||x_dec||`). The scalars now describe the residual `r = o − c` rather
+    /// than `o`, but there is **zero extra per-posting metadata**. The centroid
+    /// term is amortized per-list, not stored per-posting. The Phase-1 stop
+    /// condition ("correction metadata large enough to undermine the compact
+    /// index") therefore does **not** fire: residual mode has identical index
+    /// size to plain RaBitQ. This mirrors the existing Symphony centered path
+    /// ([`Self::encode_code_centered`]), specialized to a fixed per-list center.
+    pub fn encode_code_residual(&self, v: &[f32], centroid: &[f32]) -> Box<[u8]> {
+        assert_eq!(
+            v.len(),
+            self.dimensions,
+            "residual encode input length mismatch: got {}, expected {}",
+            v.len(),
+            self.dimensions,
+        );
+        assert_eq!(
+            centroid.len(),
+            self.dimensions,
+            "residual encode centroid length mismatch: got {}, expected {}",
+            centroid.len(),
+            self.dimensions,
+        );
+        let residual: Vec<f32> = v
+            .iter()
+            .zip(centroid.iter())
+            .map(|(&v_i, &c_i)| v_i - c_i)
+            .collect();
+        <Self as crate::quant::Quantizer>::encode_code(self, &residual)
+    }
+
+    /// Combine an exact centroid inner product `⟨q, c⟩` with the RaBitQ residual
+    /// estimate of `⟨q, o − c⟩` (from a code produced by
+    /// [`Self::encode_code_residual`]) into the full IVF estimate `⟨q, o⟩`.
+    ///
+    /// `residual_estimate` is the scalar the AM already computes via
+    /// `PreparedEstimator::estimate_ip_scalar_only` on the residual code; this
+    /// helper is the one-line `+` that documents the residual scoring identity
+    /// in one place so the AM scan and the reference tests share it.
+    #[inline]
+    pub fn combine_residual_estimate(centroid_ip: f32, residual_estimate: f32) -> f32 {
+        centroid_ip + residual_estimate
+    }
+
     /// Prepare the estimator state for `query`. The returned
     /// `PreparedEstimator` holds the rotated query coordinates in
     /// full f32 precision (the asymmetric half of the estimator) and
@@ -6744,5 +6815,206 @@ mod tests {
                 "bits=8 dim={dim}: scalar={scalar} neon={neon}"
             );
         }
+    }
+
+    // -----------------------------------------------------------------
+    // Task 115 — IVF residual RaBitQ scalar reference tests.
+    //
+    // These pin the Phase-1 scoring identity:
+    //   ⟨q, o⟩  =  ⟨q, c⟩ (exact)  +  ⟨q, o − c⟩ (RaBitQ-estimated)
+    // against the exact source inner product, on small fixtures, within
+    // quantization tolerance — and prove residual encoding adds zero
+    // bytes vs the plain (absolute) code.
+    // -----------------------------------------------------------------
+
+    fn seeded_residual_quantizer(dim: usize, bits: u8) -> RaBitQQuantizer {
+        // Use a real SRHT rotation (not identity) so the residual scoring
+        // identity is exercised under the production rotation front-end.
+        let rotation: Arc<dyn Rotation> = Arc::new(SrhtRotation::with_seed(dim, 42));
+        RaBitQQuantizer::with_bits(rotation, bits).unwrap()
+    }
+
+    fn exact_inner_product(a: &[f32], b: &[f32]) -> f32 {
+        a.iter().zip(b.iter()).map(|(&x, &y)| x * y).sum()
+    }
+
+    fn pseudo_vector(dim: usize, seed: u64) -> Vec<f32> {
+        // Deterministic-but-spread coordinates; not normalized so the test
+        // covers arbitrary-magnitude postings and centroids.
+        let mut state = seed.wrapping_mul(0x9E37_79B9_7F4A_7C15).wrapping_add(1);
+        (0..dim)
+            .map(|_| {
+                state ^= state << 13;
+                state ^= state >> 7;
+                state ^= state << 17;
+                ((state >> 11) as f32 / (1u64 << 53) as f32) * 2.0 - 1.0
+            })
+            .collect()
+    }
+
+    #[test]
+    fn residual_code_is_byte_identical_shape_to_absolute_code() {
+        for &dim in &[8_usize, 64, 256] {
+            for &bits in &RABITQ_SUPPORTED_BITS {
+                let q = seeded_residual_quantizer(dim, bits);
+                let v = pseudo_vector(dim, 1);
+                let c = pseudo_vector(dim, 2);
+                let absolute = <RaBitQQuantizer as crate::quant::Quantizer>::encode_code(&q, &v);
+                let residual = q.encode_code_residual(&v, &c);
+                // Phase-1 stop-condition evidence: residual encoding adds zero
+                // per-posting metadata; same length as the plain code.
+                assert_eq!(
+                    residual.len(),
+                    absolute.len(),
+                    "residual code must match plain code length (dim={dim}, bits={bits})"
+                );
+                assert_eq!(
+                    residual.len(),
+                    <RaBitQQuantizer as crate::quant::Quantizer>::code_len(&q)
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn residual_scoring_matches_exact_within_tolerance() {
+        // Residuals concentrate near a centroid: model a list whose members
+        // are the centroid plus a small jitter, which is exactly the regime
+        // residual encoding is meant to win in.
+        for &dim in &[64_usize, 256, 768] {
+            for &bits in &[1_u8, 2, 4, 8] {
+                let q = seeded_residual_quantizer(dim, bits);
+                let query = pseudo_vector(dim, 100);
+                let centroid = pseudo_vector(dim, 200);
+                let centroid_ip = exact_inner_product(&query, &centroid);
+                let prepared = q.prepare_estimator(&query);
+                let query_norm = exact_inner_product(&query, &query).sqrt();
+
+                // Build a few postings as centroid + small jitter. The error is
+                // measured against the residual-term scale `||q||·||o − c||`
+                // (Cauchy–Schwarz on the only quantized quantity); normalizing
+                // by the full `⟨q,o⟩` is meaningless when that sum is near zero
+                // for a random query/centroid, even though the absolute error
+                // is tiny.
+                let mut max_rel_err = 0.0_f32;
+                for member_seed in 0..8_u64 {
+                    let jitter = pseudo_vector(dim, 1_000 + member_seed);
+                    let o: Vec<f32> = centroid
+                        .iter()
+                        .zip(jitter.iter())
+                        .map(|(&c_i, &j_i)| c_i + 0.05 * j_i)
+                        .collect();
+
+                    let code = q.encode_code_residual(&o, &centroid);
+                    let residual_estimate = prepared.estimate_ip_scalar_only(&code);
+                    let combined =
+                        RaBitQQuantizer::combine_residual_estimate(centroid_ip, residual_estimate);
+
+                    let exact = exact_inner_product(&query, &o);
+                    let residual_norm: f32 = o
+                        .iter()
+                        .zip(centroid.iter())
+                        .map(|(&o_i, &c_i)| {
+                            let d = o_i - c_i;
+                            d * d
+                        })
+                        .sum::<f32>()
+                        .sqrt();
+                    let scale = (query_norm * residual_norm).max(1e-3);
+                    let rel_err = (combined - exact).abs() / scale;
+                    max_rel_err = max_rel_err.max(rel_err);
+                }
+                // RaBitQ is a coarse quantizer at low bits; the bound here is
+                // loose but pins that the residual identity is wired correctly
+                // (no sign error, no missing centroid term). Higher bits are
+                // tighter. Error is relative to the residual-term magnitude.
+                let tol = match bits {
+                    1 => 0.55,
+                    2 => 0.45,
+                    _ => 0.30,
+                };
+                assert!(
+                    max_rel_err <= tol,
+                    "residual scoring rel_err {max_rel_err} exceeds tol {tol} (dim={dim}, bits={bits})"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn residual_estimate_recovers_exact_residual_term() {
+        // The residual code alone (no centroid term) must estimate ⟨q, o − c⟩,
+        // matching what the plain estimator yields when fed the residual vector
+        // directly. This isolates the residual estimator from the centroid add.
+        let dim = 256;
+        for &bits in &[1_u8, 2, 4, 8] {
+            let q = seeded_residual_quantizer(dim, bits);
+            let query = pseudo_vector(dim, 7);
+            let centroid = pseudo_vector(dim, 8);
+            let o = pseudo_vector(dim, 9);
+            let residual: Vec<f32> = o
+                .iter()
+                .zip(centroid.iter())
+                .map(|(&o_i, &c_i)| o_i - c_i)
+                .collect();
+
+            let prepared = q.prepare_estimator(&query);
+            let via_residual_encode =
+                prepared.estimate_ip_scalar_only(&q.encode_code_residual(&o, &centroid));
+            let via_plain_encode_of_residual = prepared.estimate_ip_scalar_only(
+                &<RaBitQQuantizer as crate::quant::Quantizer>::encode_code(&q, &residual),
+            );
+            // encode_code_residual(o, c) must produce the identical code to
+            // encode_code(o − c): same estimate, bit-for-bit.
+            assert_eq!(
+                q.encode_code_residual(&o, &centroid),
+                <RaBitQQuantizer as crate::quant::Quantizer>::encode_code(&q, &residual),
+                "residual encode must equal plain encode of the residual vector (bits={bits})"
+            );
+            assert_eq!(via_residual_encode, via_plain_encode_of_residual);
+        }
+    }
+
+    #[test]
+    fn residual_beats_absolute_on_concentrated_lists() {
+        // The product justification for Task 115: when postings concentrate
+        // near the centroid, residual encoding has lower estimation error than
+        // absolute encoding at the same bit width. Average over a small list.
+        let dim = 768;
+        let bits = 1_u8;
+        let q = seeded_residual_quantizer(dim, bits);
+        let query = pseudo_vector(dim, 555);
+        let centroid = pseudo_vector(dim, 556);
+        let centroid_ip = exact_inner_product(&query, &centroid);
+        let prepared = q.prepare_estimator(&query);
+
+        let mut residual_err = 0.0_f32;
+        let mut absolute_err = 0.0_f32;
+        let members = 32;
+        for member_seed in 0..members as u64 {
+            let jitter = pseudo_vector(dim, 9_000 + member_seed);
+            let o: Vec<f32> = centroid
+                .iter()
+                .zip(jitter.iter())
+                .map(|(&c_i, &j_i)| c_i + 0.03 * j_i)
+                .collect();
+            let exact = exact_inner_product(&query, &o);
+
+            let residual_est = RaBitQQuantizer::combine_residual_estimate(
+                centroid_ip,
+                prepared.estimate_ip_scalar_only(&q.encode_code_residual(&o, &centroid)),
+            );
+            let absolute_est = prepared.estimate_ip_scalar_only(
+                &<RaBitQQuantizer as crate::quant::Quantizer>::encode_code(&q, &o),
+            );
+            residual_err += (residual_est - exact).abs();
+            absolute_err += (absolute_est - exact).abs();
+        }
+        residual_err /= members as f32;
+        absolute_err /= members as f32;
+        assert!(
+            residual_err < absolute_err,
+            "residual mean abs err {residual_err} should beat absolute {absolute_err} on a concentrated list"
+        );
     }
 }
