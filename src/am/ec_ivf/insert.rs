@@ -133,8 +133,9 @@ unsafe fn insert_into_trained_index(
         .map_err(|e| format!("ec_ivf aminsert centroid assignment failed: {e}"))?;
     let (directory_tid, directory) = load_directory_entry(index_relation, metadata, list_id)?;
 
-    // Task 111g: keep the heap TID + source vector so we can append a compact
-    // rerank sidecar entry (index placement) after the posting is written.
+    // Task 111g: keep the heap TID + source vector so index-placement inserts
+    // can append a compact rerank sidecar block and store its direct TID on the
+    // posting before the posting becomes visible to scans.
     let heap_tid = tuple.heap_tid;
     let source_vector = tuple.source_vector.clone();
 
@@ -147,13 +148,14 @@ unsafe fn insert_into_trained_index(
             .centroids
             .get(list_id)
             .ok_or_else(|| format!("ec_ivf assigned list {list_id} has no centroid"))?;
-        let residual_quantizer = quantizer::IvfQuantizer::resolve_with_pq_group_size_bits_and_residual(
-            metadata.storage_format,
-            usize::from(metadata.dimensions),
-            metadata_pq_group_size(metadata),
-            Some(metadata.quant_bits),
-            true,
-        )?;
+        let residual_quantizer =
+            quantizer::IvfQuantizer::resolve_with_pq_group_size_bits_and_residual(
+                metadata.storage_format,
+                usize::from(metadata.dimensions),
+                metadata_pq_group_size(metadata),
+                Some(metadata.quant_bits),
+                true,
+            )?;
         let (_dimensions, gamma, payload) =
             residual_quantizer.encode_source_residual(&tuple.source_vector, centroid)?;
         (gamma, payload)
@@ -161,13 +163,15 @@ unsafe fn insert_into_trained_index(
         (tuple.gamma, tuple.payload)
     };
 
+    let rerank_tid = append_rerank_sidecar_entry(index_relation, heap_tid, &source_vector)?;
+
     let posting = page::IvfPostingTuple {
         list_id: u32::try_from(list_id)
             .map_err(|_| "ec_ivf assigned list id exceeds u32".to_owned())?,
         deleted: false,
         heaptids: vec![tuple.heap_tid],
         gamma,
-        rerank_tid: ItemPointer::INVALID,
+        rerank_tid,
         payload,
     };
     let block_range = live_insert_block_range(&directory)
@@ -189,14 +193,14 @@ unsafe fn insert_into_trained_index(
         apply_directory_insert_stats(latest_directory, posting_tid)
     })
     .map_err(|e| format!("ec_ivf aminsert stats update failed: {e}"))?;
-    page::update_metadata_page(index_relation, apply_metadata_insert_stats)
-        .map_err(|e| format!("ec_ivf aminsert metadata update failed: {e}"))?;
-
-    // Task 111g: for rerank_placement = 'index', persist the new row's compact
-    // payload into the sidecar so the index-side rerank can find it. Prepend a
-    // single-entry 0x2A block to the chain (its next_tid = old head) and point
-    // the metadata head at it — O(1), no tail walk.
-    append_rerank_sidecar_entry(index_relation, heap_tid, &source_vector)?;
+    page::update_metadata_page(index_relation, |metadata| {
+        apply_metadata_insert_stats(metadata)?;
+        if rerank_tid != ItemPointer::INVALID {
+            metadata.rerank_sidecar_head = rerank_tid;
+        }
+        Ok(())
+    })
+    .map_err(|e| format!("ec_ivf aminsert metadata update failed: {e}"))?;
 
     Ok(())
 }
@@ -209,19 +213,19 @@ unsafe fn append_rerank_sidecar_entry(
     index_relation: pg_sys::Relation,
     heap_tid: ItemPointer,
     source_vector: &[f32],
-) -> Result<(), String> {
+) -> Result<ItemPointer, String> {
     let reloptions = NonNull::new(index_relation)
         .map(options::relation_options)
         .ok_or_else(|| "ec_ivf aminsert received null index relation".to_owned())?;
     if reloptions.rerank_placement != options::RerankPlacement::Index {
-        return Ok(());
+        return Ok(ItemPointer::INVALID);
     }
     let Some(encoder) = super::rerank::RerankSidecarEncoder::resolve(
         reloptions.rerank_format,
         source_vector.len(),
     )?
     else {
-        return Ok(());
+        return Ok(ItemPointer::INVALID);
     };
     let payload = encoder.encode(source_vector)?;
     let payload_len = encoder.payload_len(source_vector.len());
@@ -236,13 +240,7 @@ unsafe fn append_rerank_sidecar_entry(
     )?;
     block.next_tid = metadata.rerank_sidecar_head;
     let new_head = page::append_ivf_rerank_sidecar_block_to_new_block(index_relation, &block)?;
-
-    page::update_metadata_page(index_relation, |metadata| {
-        metadata.rerank_sidecar_head = new_head;
-        Ok(())
-    })
-    .map_err(|e| format!("ec_ivf aminsert rerank sidecar head update failed: {e}"))?;
-    Ok(())
+    Ok(new_head)
 }
 
 unsafe fn ensure_heap_tid_absent(

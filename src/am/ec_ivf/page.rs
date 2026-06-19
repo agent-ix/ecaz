@@ -57,12 +57,13 @@ pub(super) const FIRST_DATA_BLOCK_NUMBER: u32 = 1;
 // stores the rerank sidecar head ItemPointer at bytes 80..86, pointing at the
 // 0x2A compact rerank sidecar chain used by rerank_placement = 'index', and the
 // rerank sidecar directory head ItemPointer at bytes 86..92 (ADR-079), pointing
-// at the survivor-directed sidecar directory chain. A rerank_sidecar_head of
-// INVALID is the legitimate "no sidecar" state for rerank_placement = 'table'
-// and for f32 storage (rerank reads from the heap/table source path instead); a
-// directory head of INVALID falls back to a full-chain sidecar read. This
-// research project keeps no backward compatibility with older metadata widths
-// (the 86-byte v3 layout is rejected by version, not silently truncated).
+// at the sidecar directory fallback. Posting-carried rerank TIDs are the hot
+// sidecar lookup path; the directory and then full-chain read are compatibility
+// fallbacks. A rerank_sidecar_head of INVALID is the legitimate "no sidecar"
+// state for rerank_placement = 'table' and for f32 storage (rerank reads from
+// the heap/table source path instead). This research project keeps no backward
+// compatibility with older metadata widths (the 86-byte v3 layout is rejected
+// by version, not silently truncated).
 pub const EC_IVF_INDEX_FORMAT_VERSION: u16 = 4;
 pub(super) const INDEX_FORMAT_VERSION: u16 = EC_IVF_INDEX_FORMAT_VERSION;
 
@@ -91,8 +92,8 @@ pub const EC_IVF_METADATA_PQ_GROUP_SIZE_OFFSET: usize = 78;
 pub const EC_IVF_METADATA_RERANK_SIDECAR_HEAD_OFFSET: usize = 80;
 /// ADR-079: head of the rerank sidecar *directory* chain (bytes 86..92). The
 /// directory maps each build-written `0x2A` block's first heap TID to the block
-/// pointer, enabling survivor-directed bounded reads. `INVALID` => no directory
-/// (fall back to full-chain scan). Bumps metadata to 92 bytes (clean break).
+/// pointer. Posting-carried rerank TIDs are the hot path; this directory is the
+/// first fallback, and `INVALID` falls back again to full-chain scan.
 pub const EC_IVF_METADATA_RERANK_SIDECAR_DIRECTORY_HEAD_OFFSET: usize = 86;
 
 pub const EC_IVF_BLOCK_REF_BYTES: usize = 4;
@@ -1317,6 +1318,12 @@ impl<'a> IvfDensePostingBlockRef<'a> {
             .map(|chunk| ItemPointer::decode(chunk).expect("validated dense block tid bytes"))
     }
 
+    pub(super) fn rerank_tid(&self, index: usize) -> ItemPointer {
+        let start = index * ITEM_POINTER_BYTES;
+        ItemPointer::decode(&self.rerank_tid_bytes[start..start + ITEM_POINTER_BYTES])
+            .expect("validated dense block rerank tid bytes")
+    }
+
     pub(super) fn payload(&self, index: usize) -> &[u8] {
         let start = index * self.payload_len;
         &self.payloads[start..start + self.payload_len]
@@ -1407,6 +1414,12 @@ impl<'a> IvfDensePostingRef<'a> {
         };
         IvfDensePostingHeapTids {
             chunks: bytes.chunks_exact(ITEM_POINTER_BYTES),
+        }
+    }
+
+    pub(super) fn rerank_tid(self, index: usize) -> ItemPointer {
+        match self {
+            Self::Block(block) => block.rerank_tid(index),
         }
     }
 
@@ -1980,7 +1993,8 @@ impl IvfRerankSidecarBlockTuple {
                 .expect("rerank sidecar entry count slice should be 2 bytes"),
         ) as usize;
         let next_tid = ItemPointer::decode(
-            &input[RERANK_SIDECAR_NEXT_TID_OFFSET..RERANK_SIDECAR_NEXT_TID_OFFSET + ITEM_POINTER_BYTES],
+            &input[RERANK_SIDECAR_NEXT_TID_OFFSET
+                ..RERANK_SIDECAR_NEXT_TID_OFFSET + ITEM_POINTER_BYTES],
         )?;
         let heap_tids_start = RERANK_SIDECAR_HEADER_BYTES;
         let heap_tids_end = heap_tids_start + count * ITEM_POINTER_BYTES;
@@ -2267,12 +2281,7 @@ impl DataPageChain {
         tuple: &IvfRerankSidecarBlockTuple,
     ) -> Result<(), String> {
         self.get_page_mut(tid.block_number)
-            .ok_or_else(|| {
-                format!(
-                    "ec_ivf rerank sidecar block {} not found",
-                    tid.block_number
-                )
-            })?
+            .ok_or_else(|| format!("ec_ivf rerank sidecar block {} not found", tid.block_number))?
             .update_ivf_rerank_sidecar_block(tid, tuple)
     }
 
@@ -2302,12 +2311,9 @@ impl DataPageChain {
         &self,
         tid: ItemPointer,
     ) -> Result<IvfRerankSidecarBlockTuple, String> {
-        let page = self.get_page(tid.block_number).ok_or_else(|| {
-            format!(
-                "ec_ivf rerank sidecar block {} not found",
-                tid.block_number
-            )
-        })?;
+        let page = self
+            .get_page(tid.block_number)
+            .ok_or_else(|| format!("ec_ivf rerank sidecar block {} not found", tid.block_number))?;
         page.read_ivf_rerank_sidecar_block(tid)
     }
 }
@@ -3043,8 +3049,11 @@ pub(super) unsafe fn append_ivf_rerank_sidecar_block_to_new_block(
         "ec_ivf rerank sidecar append",
     ));
     let payload = block.encode()?;
-    if !rerank_sidecar_block_tuple_fits(block.entry_count(), block.payload_len, pg_sys::BLCKSZ as usize)
-    {
+    if !rerank_sidecar_block_tuple_fits(
+        block.entry_count(),
+        block.payload_len,
+        pg_sys::BLCKSZ as usize,
+    ) {
         return Err(format!(
             "ec_ivf rerank sidecar block ({} entries, payload {}) does not fit on a page",
             block.entry_count(),

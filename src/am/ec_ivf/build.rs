@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::ffi::c_void;
 use std::ptr::{self, NonNull};
 use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
@@ -643,6 +644,18 @@ impl BuildState {
             None
         };
 
+        // Build the compact rerank sidecar before postings so each posting can
+        // persist a direct pointer to its sidecar block. That lets scan skip the
+        // O(N) sidecar directory for fresh builds.
+        data_pages.start_new_page_if_current_has_tuples();
+        let (rerank_sidecar_head, rerank_sidecar_directory_head, rerank_tids_by_heap_tid) =
+            build_rerank_sidecar_chain(
+                &mut data_pages,
+                &self.heap_tuples,
+                &self.options,
+                dimensions,
+            )?;
+
         let mut posting_tids_by_list = vec![Vec::new(); nlists];
         let mut directory_tail_blocks_by_list = vec![None; nlists];
         let mut live_posting_counts_by_list = vec![0_u64; nlists];
@@ -661,8 +674,8 @@ impl BuildState {
                 let mut pending = Vec::new();
                 let mut pending_payload_len = None;
                 let mut pending_posting_limit = usize::MAX;
-                let residual_posting = residual_posting_quantizer
-                    .map(|q| (q, model.centroids[list_id].as_slice()));
+                let residual_posting =
+                    residual_posting_quantizer.map(|q| (q, model.centroids[list_id].as_slice()));
                 for tuple_index in tuple_indices {
                     let (heap_tid, gamma, payload) = encode_build_posting(
                         &self.heap_tuples[*tuple_index],
@@ -694,7 +707,11 @@ impl BuildState {
                         )?;
                         pending.clear();
                     }
-                    pending.push((heap_tid, gamma, ItemPointer::INVALID, payload));
+                    let rerank_tid = rerank_tids_by_heap_tid
+                        .get(&heap_tid)
+                        .copied()
+                        .unwrap_or(ItemPointer::INVALID);
+                    pending.push((heap_tid, gamma, rerank_tid, payload));
                 }
                 if !pending.is_empty() {
                     let payload_len = pending_payload_len.expect("pending postings have payloads");
@@ -708,8 +725,8 @@ impl BuildState {
                     )?;
                 }
             } else {
-                let residual_posting = residual_posting_quantizer
-                    .map(|q| (q, model.centroids[list_id].as_slice()));
+                let residual_posting =
+                    residual_posting_quantizer.map(|q| (q, model.centroids[list_id].as_slice()));
                 for tuple_index in tuple_indices {
                     let (heap_tid, gamma, payload) = encode_build_posting(
                         &self.heap_tuples[*tuple_index],
@@ -722,7 +739,10 @@ impl BuildState {
                             list_id_u32(list_id)?,
                             heap_tid,
                             gamma,
-                            ItemPointer::INVALID,
+                            rerank_tids_by_heap_tid
+                                .get(&heap_tid)
+                                .copied()
+                                .unwrap_or(ItemPointer::INVALID),
                             &payload,
                         )?,
                     );
@@ -781,14 +801,6 @@ impl BuildState {
             directory_entries.push(directory);
         }
         timing.directory_us = elapsed_us(directory_start);
-
-        // Task 111g: persist the compact rerank sidecar (tag 0x2A) for
-        // rerank_placement = 'index'. Built globally tid-sorted so the scan can
-        // read it tid-ordered; only f16 / rabitq4 persist a sidecar (f32 keeps
-        // the heap source).
-        data_pages.start_new_page_if_current_has_tuples();
-        let (rerank_sidecar_head, rerank_sidecar_directory_head) =
-            build_rerank_sidecar_chain(&mut data_pages, &self.heap_tuples, &self.options, dimensions)?;
 
         let mut metadata = page::MetadataPage::empty(self.options);
         metadata.dimensions = dimensions;
@@ -912,20 +924,24 @@ fn build_rerank_sidecar_chain(
     heap_tuples: &[BuildTuple],
     options: &options::EcIvfOptions,
     dimensions: u16,
-) -> Result<(ItemPointer, ItemPointer), String> {
-    // Returns (sidecar_head, directory_head). ADR-079: the directory chain maps
-    // each sidecar block's first heap TID to the block pointer for bounded reads.
+) -> Result<(ItemPointer, ItemPointer, HashMap<ItemPointer, ItemPointer>), String> {
+    // Returns (sidecar_head, directory_head, heap_tid -> sidecar block tid).
+    // ADR-079: the directory chain maps each sidecar block's first heap TID to
+    // the block pointer for bounded reads; direct posting pointers are the hot
+    // query path when available.
     if options.rerank_placement != options::RerankPlacement::Index {
-        return Ok((ItemPointer::INVALID, ItemPointer::INVALID));
+        return Ok((ItemPointer::INVALID, ItemPointer::INVALID, HashMap::new()));
     }
-    let Some(encoder) =
-        super::rerank::RerankSidecarEncoder::resolve(options.rerank_format, usize::from(dimensions))?
+    let Some(encoder) = super::rerank::RerankSidecarEncoder::resolve(
+        options.rerank_format,
+        usize::from(dimensions),
+    )?
     else {
         // f32 / auto keep the heap source: no sidecar.
-        return Ok((ItemPointer::INVALID, ItemPointer::INVALID));
+        return Ok((ItemPointer::INVALID, ItemPointer::INVALID, HashMap::new()));
     };
     if heap_tuples.is_empty() {
-        return Ok((ItemPointer::INVALID, ItemPointer::INVALID));
+        return Ok((ItemPointer::INVALID, ItemPointer::INVALID, HashMap::new()));
     }
     let payload_len = encoder.payload_len(usize::from(dimensions));
     let rerank_format = options.rerank_format as u8;
@@ -945,6 +961,8 @@ fn build_rerank_sidecar_chain(
 
     data_pages.start_new_page_if_current_has_tuples();
     let mut block_tids: Vec<ItemPointer> = Vec::new();
+    let mut rerank_tids_by_heap_tid: HashMap<ItemPointer, ItemPointer> =
+        HashMap::with_capacity(heap_tuples.len());
     // ADR-079: each block's first (smallest) heap TID, parallel to block_tids;
     // becomes the directory key for survivor-directed bounded reads.
     let mut block_first_tids: Vec<ItemPointer> = Vec::new();
@@ -953,6 +971,7 @@ fn build_rerank_sidecar_chain(
 
     let flush = |data_pages: &mut DataPageChain,
                  block_tids: &mut Vec<ItemPointer>,
+                 rerank_tids_by_heap_tid: &mut HashMap<ItemPointer, ItemPointer>,
                  block_first_tids: &mut Vec<ItemPointer>,
                  pending_tids: &mut Vec<ItemPointer>,
                  pending_payloads: &mut Vec<u8>|
@@ -968,6 +987,9 @@ fn build_rerank_sidecar_chain(
         )?;
         let first_tid = block.heap_tids[0];
         let block_tid = data_pages.insert_ivf_rerank_sidecar_block(&block)?;
+        for heap_tid in &block.heap_tids {
+            rerank_tids_by_heap_tid.insert(*heap_tid, block_tid);
+        }
         block_tids.push(block_tid);
         block_first_tids.push(first_tid);
         Ok(())
@@ -988,6 +1010,7 @@ fn build_rerank_sidecar_chain(
             flush(
                 data_pages,
                 &mut block_tids,
+                &mut rerank_tids_by_heap_tid,
                 &mut block_first_tids,
                 &mut pending_tids,
                 &mut pending_payloads,
@@ -997,6 +1020,7 @@ fn build_rerank_sidecar_chain(
     flush(
         data_pages,
         &mut block_tids,
+        &mut rerank_tids_by_heap_tid,
         &mut block_first_tids,
         &mut pending_tids,
         &mut pending_payloads,
@@ -1005,9 +1029,11 @@ fn build_rerank_sidecar_chain(
     // Link each block to the next via its next_tid field (second pass, like the
     // pq_codebook chain).
     for i in 0..block_tids.len() {
-        let next_tid = block_tids.get(i + 1).copied().unwrap_or(ItemPointer::INVALID);
-        let mut block = data_pages
-            .read_ivf_rerank_sidecar_block_staged(block_tids[i])?;
+        let next_tid = block_tids
+            .get(i + 1)
+            .copied()
+            .unwrap_or(ItemPointer::INVALID);
+        let mut block = data_pages.read_ivf_rerank_sidecar_block_staged(block_tids[i])?;
         block.next_tid = next_tid;
         data_pages.update_ivf_rerank_sidecar_block(block_tids[i], &block)?;
     }
@@ -1044,18 +1070,18 @@ fn build_rerank_sidecar_chain(
         block.next_tid = next_tid;
         data_pages.update_ivf_rerank_sidecar_block(dir_block_tids[i], &block)?;
     }
-    let directory_head = dir_block_tids.first().copied().unwrap_or(ItemPointer::INVALID);
+    let directory_head = dir_block_tids
+        .first()
+        .copied()
+        .unwrap_or(ItemPointer::INVALID);
 
-    Ok((sidecar_head, directory_head))
+    Ok((sidecar_head, directory_head, rerank_tids_by_heap_tid))
 }
 
 /// Max sidecar entries that fit in one page-sized 0x2A block, given the compact
 /// payload width, capped at the `u16` entry-count field width. Errors if not
 /// even one entry fits a page.
-fn rerank_sidecar_entries_per_block(
-    payload_len: usize,
-    page_size: usize,
-) -> Result<usize, String> {
+fn rerank_sidecar_entries_per_block(payload_len: usize, page_size: usize) -> Result<usize, String> {
     if !page::rerank_sidecar_block_tuple_fits(1, payload_len, page_size) {
         return Err(format!(
             "ec_ivf rerank sidecar payload length {payload_len} does not fit a single entry on a page"

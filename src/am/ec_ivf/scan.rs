@@ -230,6 +230,7 @@ struct EcIvfCentroidScore {
 #[derive(Debug, Clone, Copy)]
 struct EcIvfScoredCandidate {
     heap_tid: ItemPointer,
+    rerank_tid: ItemPointer,
     score: f32,
 }
 
@@ -355,6 +356,7 @@ struct IvfPostingScratchSoa {
     heap_tid_offsets: Vec<usize>,
     heap_tid_counts: Vec<usize>,
     heap_tids: Vec<ItemPointer>,
+    rerank_tids: Vec<ItemPointer>,
     payloads: Vec<u8>,
     scores: Vec<f32>,
     /// Task 115: per-posting exact centroid inner product `⟨q, c⟩` for the
@@ -398,6 +400,7 @@ impl IvfPostingScratchSoa {
             heap_tid_offsets: Vec::with_capacity(IVF_POSTING_SCRATCH_SOA_BATCH_POSTINGS),
             heap_tid_counts: Vec::with_capacity(IVF_POSTING_SCRATCH_SOA_BATCH_POSTINGS),
             heap_tids: Vec::with_capacity(IVF_POSTING_SCRATCH_SOA_BATCH_HEAPTIDS),
+            rerank_tids: Vec::with_capacity(IVF_POSTING_SCRATCH_SOA_BATCH_POSTINGS),
             payloads: Vec::with_capacity(payload_len * IVF_POSTING_SCRATCH_SOA_BATCH_POSTINGS),
             scores: Vec::with_capacity(IVF_POSTING_SCRATCH_SOA_BATCH_POSTINGS),
             centroid_ips: Vec::with_capacity(IVF_POSTING_SCRATCH_SOA_BATCH_POSTINGS),
@@ -417,6 +420,7 @@ impl IvfPostingScratchSoa {
         self.heap_tid_offsets.clear();
         self.heap_tid_counts.clear();
         self.heap_tids.clear();
+        self.rerank_tids.clear();
         self.payloads.clear();
         self.scores.clear();
         self.centroid_ips.clear();
@@ -439,6 +443,7 @@ impl IvfPostingScratchSoa {
         self.heap_tid_offsets.push(offset);
         self.heap_tid_counts.push(posting.heaptid_count());
         self.heap_tids.extend(posting.heaptids());
+        self.rerank_tids.push(posting.rerank_tid);
         self.payloads.extend_from_slice(posting.payload);
         self.centroid_ips.push(centroid_ip);
     }
@@ -457,6 +462,7 @@ impl IvfPostingScratchSoa {
         self.heap_tid_offsets.push(offset);
         self.heap_tid_counts.push(heap_tid_count);
         self.heap_tids.extend(block.heap_tids(index));
+        self.rerank_tids.push(block.rerank_tid(index));
         self.payloads.extend_from_slice(block.payload(index));
         self.centroid_ips.push(centroid_ip);
     }
@@ -465,6 +471,7 @@ impl IvfPostingScratchSoa {
         &mut self,
         gamma: f32,
         heap_tids: &[ItemPointer],
+        rerank_tid: ItemPointer,
         payload: &[u8],
         centroid_ip: f32,
     ) {
@@ -474,6 +481,7 @@ impl IvfPostingScratchSoa {
         self.heap_tid_offsets.push(offset);
         self.heap_tid_counts.push(heap_tids.len());
         self.heap_tids.extend_from_slice(heap_tids);
+        self.rerank_tids.push(rerank_tid);
         self.payloads.extend_from_slice(payload);
         self.centroid_ips.push(centroid_ip);
     }
@@ -492,6 +500,21 @@ impl IvfPostingScratchSoa {
         let start = self.heap_tid_offsets[index];
         let end = start + self.heap_tid_counts[index];
         &self.heap_tids[start..end]
+    }
+
+    fn candidate_tids(
+        &self,
+        index: usize,
+    ) -> impl Iterator<Item = (ItemPointer, ItemPointer)> + '_ {
+        let rerank_tid = if self.heap_tid_counts[index] == 1 {
+            self.rerank_tids[index]
+        } else {
+            ItemPointer::INVALID
+        };
+        self.heap_tids(index)
+            .iter()
+            .copied()
+            .map(move |heap_tid| (heap_tid, rerank_tid))
     }
 
     /// Task 115: exact `⟨q, c⟩` offset for the posting at `index` (0.0 in plain
@@ -1662,7 +1685,14 @@ unsafe fn materialize_probe_candidates(
                             opaque,
                             best_by_heap_tid,
                             &mut running_top,
-                            posting.heaptids(),
+                            posting.heaptids().map(|heap_tid| {
+                                let rerank_tid = if heap_tid_count == 1 {
+                                    posting.rerank_tid
+                                } else {
+                                    ItemPointer::INVALID
+                                };
+                                (heap_tid, rerank_tid)
+                            }),
                             heap_tid_count,
                             score,
                         );
@@ -1798,7 +1828,7 @@ fn process_scratch_soa_postings(
                 opaque,
                 best_by_heap_tid,
                 running_top,
-                scratch.heap_tids(index).iter().copied(),
+                scratch.candidate_tids(index),
                 scratch.heap_tid_counts[index],
                 -(scratch.scores[index] + scratch.centroid_ip(index)),
             );
@@ -1825,7 +1855,7 @@ fn process_scratch_soa_postings(
                 opaque,
                 best_by_heap_tid,
                 running_top,
-                scratch.heap_tids(index).iter().copied(),
+                scratch.candidate_tids(index),
                 scratch.heap_tid_counts[index],
                 // Task 115: residual estimate + exact per-list ⟨q, c⟩ (0.0 plain).
                 -(scratch.scores[index] + scratch.centroid_ip(index)),
@@ -1853,7 +1883,7 @@ fn process_scratch_soa_postings(
                 opaque,
                 best_by_heap_tid,
                 running_top,
-                scratch.heap_tids(index).iter().copied(),
+                scratch.candidate_tids(index),
                 scratch.heap_tid_counts[index],
                 -(scratch.scores[index] + scratch.centroid_ip(index)),
             );
@@ -1878,7 +1908,7 @@ fn process_scratch_soa_postings(
             opaque,
             best_by_heap_tid,
             running_top,
-            scratch.heap_tids(index).iter().copied(),
+            scratch.candidate_tids(index),
             scratch.heap_tid_counts[index],
             // Task 115: residual estimate + exact per-list ⟨q, c⟩ (0.0 plain).
             -(ip + scratch.centroid_ip(index)),
@@ -2040,7 +2070,14 @@ fn process_dense_posting_block(
                 opaque,
                 best_by_heap_tid,
                 running_top,
-                block.heap_tids(index),
+                block.heap_tids(index).map(|heap_tid| {
+                    let rerank_tid = if heap_tid_count == 1 {
+                        block.rerank_tid(index)
+                    } else {
+                        ItemPointer::INVALID
+                    };
+                    (heap_tid, rerank_tid)
+                }),
                 heap_tid_count,
                 -(unsafe { (&(*scratch).scores)[index] } + centroid_ip),
             );
@@ -2074,7 +2111,14 @@ fn process_dense_posting_block(
             opaque,
             best_by_heap_tid,
             running_top,
-            block.heap_tids(index),
+            block.heap_tids(index).map(|heap_tid| {
+                let rerank_tid = if heap_tid_count == 1 {
+                    block.rerank_tid(index)
+                } else {
+                    ItemPointer::INVALID
+                };
+                (heap_tid, rerank_tid)
+            }),
             heap_tid_count,
             -(ip + centroid_ip),
         );
@@ -2102,11 +2146,11 @@ fn record_scored_posting_candidates<I>(
     opaque: &mut EcIvfScanOpaque,
     best_by_heap_tid: *mut HashMap<ItemPointer, EcIvfScoredCandidate>,
     running_top: &mut Option<CandidateTopK>,
-    heap_tids: I,
+    candidate_tids: I,
     heap_tid_count: usize,
     score: f32,
 ) where
-    I: IntoIterator<Item = ItemPointer>,
+    I: IntoIterator<Item = (ItemPointer, ItemPointer)>,
 {
     opaque.explain_counters.record_posting_scored();
     opaque
@@ -2122,9 +2166,13 @@ fn record_scored_posting_candidates<I>(
     {
         return;
     }
-    for heap_tid in heap_tids {
+    for (heap_tid, rerank_tid) in candidate_tids {
         opaque.explain_counters.record_candidate_scored();
-        let candidate = EcIvfScoredCandidate { heap_tid, score };
+        let candidate = EcIvfScoredCandidate {
+            heap_tid,
+            rerank_tid,
+            score,
+        };
         // SAFETY: `best_by_heap_tid` points to the scan-owned dedup map
         // returned by `candidate_dedup_map` above.
         let best_by_heap_tid = unsafe { &mut *best_by_heap_tid };
@@ -2263,10 +2311,9 @@ unsafe fn rerank_probe_candidates(
             } else {
                 rerank_len
             };
-            opaque.explain_counters.record_lazy_rerank_plan(
-                rerank_len,
-                if lazy_enabled { plan.skipped() } else { 0 },
-            );
+            opaque
+                .explain_counters
+                .record_lazy_rerank_plan(rerank_len, if lazy_enabled { plan.skipped() } else { 0 });
             debug_assert!(reranked_prefix_len <= rerank_len);
             // Task 111g: the rerank stage reads the heap source column
             // tid-sorted (unchanged) and rescores the frontier through the
@@ -2284,9 +2331,7 @@ unsafe fn rerank_probe_candidates(
             // persisted compact 0x2A sidecar (keyed by heap TID) instead of the
             // full f32 heap source. The 'table' path (and any v2-era index with
             // no sidecar) keeps the heap-source read, bit-identical to f32.
-            let sidecar_head = unsafe {
-                index_placement_sidecar_head(scan, index_options)
-            };
+            let sidecar_head = unsafe { index_placement_sidecar_head(scan, index_options) };
             // SAFETY: `reranked_prefix_len <= rerank_len <= candidates.len()`,
             // and the rerank helpers validate their scan-local state before
             // fetching. Only the reranked prefix is exact-scored; the skipped
@@ -2431,7 +2476,8 @@ unsafe fn rerank_probe_candidates_table_side(
                     if batched {
                         collected_sources.push(source_vector.as_slice().to_vec());
                     } else {
-                        candidate.score = scorer.score_source(query_values, source_vector.as_slice());
+                        candidate.score =
+                            scorer.score_source(query_values, source_vector.as_slice());
                     }
                 },
             );
@@ -2467,12 +2513,11 @@ unsafe fn rerank_probe_candidates_table_side(
     }
 }
 
-/// Task 111g (003b): rerank the survivor frontier from the persisted compact
-/// `0x2A` sidecar (keyed by heap TID) instead of the f32 heap source. The
-/// survivor set is bounded by `rerank_width`; the sidecar chain is loaded once
-/// into a heap-TID lookup map, then a single tid-sorted survivor-filtered pass
-/// reads only the survivors' compact payloads. Reuses the existing
-/// `RerankScorer` (no new SIMD) and records the (smaller) bytes read.
+/// Task 111g: rerank the survivor frontier from the persisted compact `0x2A`
+/// sidecar instead of the f32 heap source. Fresh builds and new inserts store a
+/// direct sidecar block TID on each posting, so the hot path reads only the
+/// survivor blocks. The older heap-TID directory/full-chain loaders remain as
+/// compatibility fallbacks for postings that do not carry direct pointers.
 ///
 /// # Safety
 /// `scan` is the live IndexScanDesc; the sidecar chain rooted at `sidecar_head`
@@ -2497,15 +2542,22 @@ unsafe fn rerank_probe_candidates_index_side(
         .sidecar_payload_len(dimensions)
         .unwrap_or_else(|| pgrx::error!("ec_ivf index-side rerank used for an f32 rerank format"));
 
-    // ADR-079: prefer the survivor-directed bounded read (read only the survivor
-    // blocks via the directory) over the O(N) full-chain materialization. Eligible
-    // only for a fresh build (no inserts since build) with a directory present;
-    // inserts prepend directory-less blocks, so fall back to the full chain until
-    // the next REINDEX regenerates the directory.
+    // Prefer direct posting->sidecar TIDs. This avoids the ADR-079 directory's
+    // O(N) per-query scan, which is pathological for f16 because the 4KB compact
+    // vectors fit only one entry per 8KB sidecar page at the 2048-d benchmark
+    // shape.
     let metadata = unsafe { super::page::read_metadata_page(index_relation) };
+    let use_direct_tids = candidates
+        .iter()
+        .all(|candidate| candidate.rerank_tid != ItemPointer::INVALID);
     let use_directory = metadata.rerank_sidecar_directory_head != ItemPointer::INVALID
         && metadata.inserted_since_build == 0;
-    let payload_map = if use_directory {
+    let payload_map = if use_direct_tids {
+        unsafe {
+            load_rerank_sidecar_payloads_by_tid(index_relation, expected_payload_len, candidates)
+        }
+        .unwrap_or_else(|e| pgrx::error!("{e}"))
+    } else if use_directory {
         let survivors: Vec<ItemPointer> = candidates.iter().map(|c| c.heap_tid).collect();
         unsafe {
             load_rerank_sidecar_payloads_directed(
@@ -2517,10 +2569,8 @@ unsafe fn rerank_probe_candidates_index_side(
         }
         .unwrap_or_else(|e| pgrx::error!("{e}"))
     } else {
-        unsafe {
-            load_rerank_sidecar_payloads(index_relation, sidecar_head, expected_payload_len)
-        }
-        .unwrap_or_else(|e| pgrx::error!("{e}"))
+        unsafe { load_rerank_sidecar_payloads(index_relation, sidecar_head, expected_payload_len) }
+            .unwrap_or_else(|e| pgrx::error!("{e}"))
     };
 
     let batched = scorer.is_batched();
@@ -2568,6 +2618,67 @@ unsafe fn rerank_probe_candidates_index_side(
     }
 }
 
+/// Load compact rerank payloads through posting-carried sidecar block TIDs.
+/// This is O(unique survivor sidecar blocks) and does not touch the heap-TID
+/// directory. A direct pointer that does not contain its candidate heap TID is
+/// treated as index corruption rather than silently falling back.
+///
+/// # Safety
+/// `index_relation` is live; candidate rerank TIDs point at 0x2A sidecar blocks
+/// in that relation.
+unsafe fn load_rerank_sidecar_payloads_by_tid(
+    index_relation: pg_sys::Relation,
+    expected_payload_len: usize,
+    candidates: &[EcIvfScoredCandidate],
+) -> Result<HashMap<ItemPointer, Vec<u8>>, String> {
+    let tid_key = |t: &ItemPointer| (t.block_number, t.offset_number);
+    let mut wanted_by_block: HashMap<ItemPointer, HashSet<(u32, u16)>> = HashMap::new();
+    for candidate in candidates {
+        if candidate.rerank_tid == ItemPointer::INVALID {
+            return Err(format!(
+                "ec_ivf index-side rerank candidate {:?} has no direct sidecar tid",
+                candidate.heap_tid
+            ));
+        }
+        wanted_by_block
+            .entry(candidate.rerank_tid)
+            .or_default()
+            .insert(tid_key(&candidate.heap_tid));
+    }
+
+    let mut map = HashMap::with_capacity(candidates.len());
+    for (block_tid, wanted) in wanted_by_block {
+        let block =
+            unsafe { super::page::read_ivf_rerank_sidecar_block(index_relation, block_tid)? };
+        if block.payload_len != expected_payload_len {
+            return Err(format!(
+                "ec_ivf rerank sidecar payload length {} does not match expected {expected_payload_len}",
+                block.payload_len
+            ));
+        }
+        for (i, heap_tid) in block.heap_tids.iter().enumerate() {
+            if wanted.contains(&tid_key(heap_tid)) {
+                let start = i * block.payload_len;
+                map.insert(
+                    *heap_tid,
+                    block.payloads[start..start + block.payload_len].to_vec(),
+                );
+            }
+        }
+    }
+
+    for candidate in candidates {
+        if !map.contains_key(&candidate.heap_tid) {
+            return Err(format!(
+                "ec_ivf direct rerank sidecar block {:?} did not contain heap tid {:?}",
+                candidate.rerank_tid, candidate.heap_tid
+            ));
+        }
+    }
+
+    Ok(map)
+}
+
 /// Load the full compact rerank sidecar chain into a heap-TID -> payload map.
 /// The chain is followed via each block's `next_tid`. Validates that every
 /// block's payload width matches the scorer's expected compact width.
@@ -2578,9 +2689,8 @@ unsafe fn load_rerank_sidecar_payloads(
     index_relation: pg_sys::Relation,
     head: ItemPointer,
     expected_payload_len: usize,
-) -> Result<std::collections::HashMap<ItemPointer, Vec<u8>>, String> {
-    let mut map: std::collections::HashMap<ItemPointer, Vec<u8>> =
-        std::collections::HashMap::new();
+) -> Result<HashMap<ItemPointer, Vec<u8>>, String> {
+    let mut map: HashMap<ItemPointer, Vec<u8>> = HashMap::new();
     let mut next_tid = head;
     while next_tid != ItemPointer::INVALID {
         let block =
@@ -2615,7 +2725,7 @@ unsafe fn load_rerank_sidecar_payloads_directed(
     directory_head: ItemPointer,
     expected_payload_len: usize,
     survivors_sorted: &[ItemPointer],
-) -> Result<std::collections::HashMap<ItemPointer, Vec<u8>>, String> {
+) -> Result<HashMap<ItemPointer, Vec<u8>>, String> {
     let tid_key = |t: &ItemPointer| (t.block_number, t.offset_number);
     // Load the directory: (first_tid, block_tid), ascending by first_tid (build
     // wrote sidecar blocks globally tid-sorted). Directory payload is a 6-byte
@@ -2631,7 +2741,7 @@ unsafe fn load_rerank_sidecar_payloads_directed(
         }
         next = block.next_tid;
     }
-    let mut map = std::collections::HashMap::new();
+    let mut map = HashMap::new();
     if dir.is_empty() {
         return Ok(map);
     }
@@ -2649,10 +2759,10 @@ unsafe fn load_rerank_sidecar_payloads_directed(
             needed.push(block_tid);
         }
     }
-    let want: std::collections::HashSet<(u32, u16)> =
-        survivors_sorted.iter().map(tid_key).collect();
+    let want: HashSet<(u32, u16)> = survivors_sorted.iter().map(tid_key).collect();
     for block_tid in needed {
-        let block = unsafe { super::page::read_ivf_rerank_sidecar_block(index_relation, block_tid)? };
+        let block =
+            unsafe { super::page::read_ivf_rerank_sidecar_block(index_relation, block_tid)? };
         if block.payload_len != expected_payload_len {
             return Err(format!(
                 "ec_ivf rerank sidecar payload length {} does not match expected {expected_payload_len}",
@@ -3686,6 +3796,7 @@ mod tests {
                 block_number,
                 offset_number,
             },
+            rerank_tid: ItemPointer::INVALID,
             score,
         }
     }
@@ -3729,6 +3840,7 @@ mod tests {
 
     #[test]
     fn posting_scratch_soa_batches_fields_without_losing_order() {
+        let rerank_tid = candidate(41, 2, 0.0).heap_tid;
         let tuple = IvfPostingTuple {
             list_id: 7,
             deleted: false,
@@ -3737,7 +3849,7 @@ mod tests {
                 candidate(12, 3, 0.0).heap_tid,
             ],
             gamma: 1.25,
-            rerank_tid: ItemPointer::INVALID,
+            rerank_tid,
             payload: vec![4, 5, 6],
         };
         let encoded = tuple.encode().unwrap();
@@ -3750,6 +3862,38 @@ mod tests {
         assert_eq!(scratch.gammas, vec![1.25]);
         assert_eq!(scratch.payload(0), [4, 5, 6]);
         assert_eq!(scratch.heap_tids(0), tuple.heaptids.as_slice());
+        assert_eq!(scratch.rerank_tids, vec![rerank_tid]);
+        assert_eq!(
+            scratch.candidate_tids(0).collect::<Vec<_>>(),
+            vec![
+                (tuple.heaptids[0], ItemPointer::INVALID),
+                (tuple.heaptids[1], ItemPointer::INVALID),
+            ]
+        );
+    }
+
+    #[test]
+    fn posting_scratch_soa_preserves_direct_rerank_tid_for_single_heaptid() {
+        let heap_tid = candidate(11, 1, 0.0).heap_tid;
+        let rerank_tid = candidate(41, 2, 0.0).heap_tid;
+        let tuple = IvfPostingTuple {
+            list_id: 7,
+            deleted: false,
+            heaptids: vec![heap_tid],
+            gamma: 1.25,
+            rerank_tid,
+            payload: vec![4, 5, 6],
+        };
+        let encoded = tuple.encode().unwrap();
+        let posting = posting_ref_from_bytes(&encoded, tuple.payload.len());
+        let mut scratch = IvfPostingScratchSoa::new(tuple.payload.len());
+
+        scratch.push(posting, 0.0);
+
+        assert_eq!(
+            scratch.candidate_tids(0).collect::<Vec<_>>(),
+            vec![(heap_tid, rerank_tid)]
+        );
     }
 
     #[test]

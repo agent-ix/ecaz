@@ -102,11 +102,13 @@ runtime placement state, not a compatibility mode.
 `EC_IVF_METADATA_RERANK_SIDECAR_DIRECTORY_HEAD_OFFSET = 86` holds the head
 `ItemPointer` of the survivor-directed rerank sidecar directory chain (ADR-079).
 The directory maps the first heap TID of each `0x2A` sidecar block to that
-block's TID, sorted by heap TID, so an index-side rerank reads only the sidecar
-blocks that actually hold survivor payloads instead of the whole chain. A
-directory head of `ItemPointer::INVALID` (or any index with rows inserted since
-the last full build) falls back to the full-chain sidecar read; the directory is
-written once per build over the build-sorted sidecar chain.
+block's TID, sorted by heap TID. Fresh builds and inserts also persist the
+sidecar block TID directly on each posting, and that posting-carried pointer is
+the hot query path: rerank reads only the survivor sidecar blocks without
+scanning the directory. The directory remains a compatibility fallback when a
+posting does not carry a direct sidecar pointer; a directory head of
+`ItemPointer::INVALID` falls back again to the full-chain sidecar read. The
+directory is written once per build over the build-sorted sidecar chain.
 
 ## IVF Posting Tuple Tags
 
