@@ -461,16 +461,20 @@ fn f16_bits_to_f32(bits: u16) -> f32 {
             // Signed zero.
             return f32::from_bits(sign);
         }
-        // Subnormal f16 → normalized f32.
+        // Subnormal f16 → normalized f32. A subnormal binary16 has value
+        // `mantissa * 2^-24` = `(mantissa/1024) * 2^-14`, i.e. its base unbiased
+        // exponent is -14 (the smallest normal f16 exponent), NOT -1. Normalize
+        // by shifting the mantissa left until the implicit leading 1 reaches
+        // bit 10, decrementing the exponent from that -14 base.
         let mut mant = mantissa;
-        let mut exp: i32 = -1;
+        let mut exp: i32 = -14;
         // Normalize: shift mantissa left until the implicit bit appears.
         while (mant & 0x0400) == 0 {
             mant <<= 1;
             exp -= 1;
         }
         mant &= 0x03ff;
-        let f32_exp = ((exp + 127 + 1) as u32) << 23;
+        let f32_exp = ((exp + 127) as u32) << 23;
         let f32_mant = mant << 13;
         return f32::from_bits(sign | f32_exp | f32_mant);
     }
@@ -498,6 +502,98 @@ mod tests {
                 f16_round_trip(value),
                 value,
                 "f16 round-trip should be exact for {value}"
+            );
+        }
+    }
+
+    #[test]
+    fn f16_scorer_ranking_matches_f32_on_realistic_vectors() {
+        // Mirrors the scan: resolve an F16 and an F32 scorer from the same query,
+        // rank 2000 realistic (unit-norm, ~N(0,0.03)) 1536-d sources, and compare
+        // top-10. numpy shows correct f16 reranking yields recall 1.0 here, so a
+        // low overlap localizes the recall collapse to resolve()/score_source.
+        let d = 1536usize;
+        let n = 2000usize;
+        let gen = |seed: u64| -> Vec<f32> {
+            let mut s = seed;
+            let mut v = Vec::with_capacity(d);
+            for _ in 0..d {
+                s = s
+                    .wrapping_mul(6364136223846793005)
+                    .wrapping_add(1442695040888963407);
+                let u = ((s >> 33) as f32) / ((1u64 << 31) as f32) - 1.0;
+                v.push(u * 0.03);
+            }
+            let norm = v.iter().map(|x| x * x).sum::<f32>().sqrt();
+            v.iter().map(|x| x / norm).collect()
+        };
+        let query = gen(1);
+        let sources: Vec<Vec<f32>> = (0..n).map(|i| gen(100 + i as u64)).collect();
+        let f32s =
+            RerankScorer::resolve(RerankFormat::F32, StorageFormat::CoarseRerank, d, &query).unwrap();
+        let f16s =
+            RerankScorer::resolve(RerankFormat::F16, StorageFormat::CoarseRerank, d, &query).unwrap();
+        let mut s32: Vec<(usize, f32)> = sources
+            .iter()
+            .enumerate()
+            .map(|(i, s)| (i, f32s.score_source(&query, s)))
+            .collect();
+        let mut s16: Vec<(usize, f32)> = sources
+            .iter()
+            .enumerate()
+            .map(|(i, s)| (i, f16s.score_source(&query, s)))
+            .collect();
+        s32.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
+        s16.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
+        let top32: std::collections::HashSet<usize> = s32[..10].iter().map(|x| x.0).collect();
+        let overlap = s16[..10].iter().filter(|x| top32.contains(&x.0)).count();
+        assert!(
+            overlap >= 9,
+            "f16 top-10 overlap with f32 = {overlap}/10 (recall collapse reproduced in isolation)"
+        );
+    }
+
+    #[test]
+    fn f16_round_trip_is_accurate_for_subnormal_magnitudes() {
+        // Regression for the subnormal-decode bug that collapsed f16 rerank
+        // recall: values below the smallest normal f16 (2^-14 ≈ 6.1e-5) must
+        // round-trip to ~themselves, NOT to ~2^14× too large. References from
+        // numpy float16.
+        for (value, expected) in [
+            (3.9e-5_f32, 3.898144e-5_f32),
+            (-3.9e-5, -3.898144e-5),
+            (1e-5, 1.001358e-5),
+            (6e-5, 6.002188e-5),
+            (5.96e-8, 5.960464e-8),
+        ] {
+            let rt = f16_round_trip(value);
+            let tol = expected.abs() * 0.02 + 1e-9;
+            assert!(
+                (rt - expected).abs() <= tol,
+                "f16_round_trip({value}) = {rt}, expected ~{expected}"
+            );
+        }
+    }
+
+    #[test]
+    fn f16_bits_match_numpy_reference_for_embedding_magnitudes() {
+        // Reference f16 bit patterns from numpy float16 for typical embedding
+        // component magnitudes (DBpedia openai-3-large). Diagnostic for the
+        // f16 rerank recall collapse found by benchmark.
+        for (value, expected) in [
+            (0.025_f32, 0x2666_u16),
+            (-0.0123, 0xa24c),
+            (0.0573, 0x2b56),
+            (-0.04891, 0xaa43),
+            (0.001234, 0x150e),
+            (0.333, 0x3554),
+            (0.1, 0x2e66),
+        ] {
+            assert_eq!(
+                f32_to_f16_bits(value),
+                expected,
+                "f32_to_f16_bits({value}) = 0x{:04x}, expected 0x{expected:04x}",
+                f32_to_f16_bits(value)
             );
         }
     }
