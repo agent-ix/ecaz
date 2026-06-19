@@ -83,6 +83,15 @@ latency should fall from ~540 ms to ≤ table-side (compact f16 read < heap f32
 read), realizing 111g's original thesis. Re-bench `sidecar-index-placement` to
 confirm before promoting `rerank_placement='index'`.
 
+**Measured outcome (Finding 8, `.so` `6078da14`):** confirmed for **rabitq4**
+(551 ms flat → 16 ms, scales with nprobe, recall-correct) but **not for f16**,
+which only fell to a flat ~150 ms. Root cause: for f16's 3072-byte payloads the
+directory itself is ~N/2 entries and is fully materialized per query — the
+directed *survivor* read is bounded but the *directory walk* became the new O(N)
+term. Fixed by a two-level (sparse) directory in
+[ADR-080](ADR-080-ivf-rerank-sidecar-two-level-directory.md). table-side f32
+remains the measured best default regardless.
+
 ## Consequences
 
 - Index-side becomes a real option (compact payload + bounded read); table-side
