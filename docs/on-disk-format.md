@@ -87,8 +87,8 @@ and update the layout assertions, fixture golden files, and upgrade matrix.
 ## IVF Posting Tuple Tags
 
 IVF currently writes metadata format version `2` and accepts metadata versions
-`1..=2`, plus per-tuple tags inside data pages. Task 111b keeps the metadata
-version unchanged and adds a gated tuple tag for columnar frozen lists:
+`1..=2`, plus per-tuple tags inside data pages. The surviving Task 111 dense
+formats are page-local dense blocks and aligned dense blocks:
 
 | Tag | Tuple kind | Status |
 | --- | --- | --- |
@@ -96,19 +96,13 @@ version unchanged and adds a gated tuple tag for columnar frozen lists:
 | `0x22` | list-directory tuple | current |
 | `0x23` | row posting tuple | current, default mutable/delta format |
 | `0x24` | PQ codebook tuple | current |
-| `0x25` | dense posting block | current experimental dense block format |
-| `0x26` | dense packed header segment | abandoned 111a page-spanning experiment; keep reader/writer only behind explicit experimental reloptions until cleanup |
-| `0x27` | dense packed continuation segment | abandoned 111a page-spanning experiment; keep reader/writer only behind explicit experimental reloptions until cleanup |
-| `0x28` | aligned dense posting block | current experimental typed-view dense block format |
-| `0x29` | columnar frozen-list header, version `1` | Task 111b gated columnar frozen-list format |
+| `0x25` | dense posting block | current dense block format |
+| `0x28` | aligned dense posting block | current typed-view dense block format |
 
-The Task 111b compatibility contract is: row postings (`0x23`), legacy dense
-blocks (`0x25`), and aligned dense blocks (`0x28`) remain readable; columnar
-frozen lists are written only when `columnar_frozen_lists = 1`; and the
-abandoned packed tags (`0x26`/`0x27`) are not candidates for promotion. A later
-cleanup may remove their write path after any remaining benchmark fixtures are
-retired, but readers should reject or skip only through an explicit migration
-decision rather than silent tag reuse.
+Task 111f removes the abandoned page-spanning packed and columnar frozen-list
+formats before they ship on `main`. Their former tag values remain reserved and
+must not be silently reused; any future incompatible IVF posting shape needs a
+new explicit format decision, layout assertions, and upgrade fixtures.
 
 ## Upgrade Matrix
 

@@ -81,10 +81,6 @@ pub(crate) struct IvfExplainCounters {
     pub stats_row_postings_visited: u32,
     pub stats_dense_blocks_visited: u32,
     pub stats_dense_postings_visited: u32,
-    pub stats_columnar_frozen_lists_visited: u32,
-    pub stats_columnar_postings_visited: u32,
-    pub stats_columnar_logical_bytes_copied: u32,
-    pub stats_columnar_payload_bytes_borrowed: u32,
     pub stats_postings_scored: u32,
     pub stats_postings_pruned_by_bound: u32,
     pub stats_scratch_soa_flushes: u32,
@@ -93,11 +89,6 @@ pub(crate) struct IvfExplainCounters {
     pub stats_dense_coalesced_flushes: u32,
     pub stats_dense_coalesced_payload_bytes_copied: u32,
     pub stats_dense_coalesced_heap_tid_bytes_copied: u32,
-    pub stats_dense_packed_groups_assembled: u32,
-    pub stats_dense_packed_segments_assembled: u32,
-    pub stats_dense_packed_payload_bytes_copied: u32,
-    pub stats_dense_packed_groups_borrowed: u32,
-    pub stats_dense_packed_payload_bytes_borrowed: u32,
     pub stats_heap_tids_scored: u32,
     pub stats_candidates_scored: u32,
     pub stats_candidates_inserted: u32,
@@ -275,30 +266,6 @@ impl IvfExplainCounters {
         self.stats_dense_postings_visited = self.stats_dense_postings_visited.saturating_add(1);
     }
 
-    pub(crate) fn record_columnar_frozen_list_visit(&mut self) {
-        self.stats_columnar_frozen_lists_visited =
-            self.stats_columnar_frozen_lists_visited.saturating_add(1);
-    }
-
-    pub(crate) fn record_columnar_frozen_list_copy(&mut self, logical_bytes_copied: usize) {
-        self.record_columnar_frozen_list_visit();
-        self.stats_columnar_logical_bytes_copied = self
-            .stats_columnar_logical_bytes_copied
-            .saturating_add(u32::try_from(logical_bytes_copied).unwrap_or(u32::MAX));
-    }
-
-    pub(crate) fn record_columnar_payload_borrow(&mut self, payload_bytes_borrowed: usize) {
-        self.stats_columnar_payload_bytes_borrowed = self
-            .stats_columnar_payload_bytes_borrowed
-            .saturating_add(u32::try_from(payload_bytes_borrowed).unwrap_or(u32::MAX));
-    }
-
-    pub(crate) fn record_columnar_posting_visited(&mut self) {
-        self.record_posting_visited();
-        self.stats_columnar_postings_visited =
-            self.stats_columnar_postings_visited.saturating_add(1);
-    }
-
     pub(crate) fn record_posting_scored(&mut self) {
         self.stats_postings_scored = self.stats_postings_scored.saturating_add(1);
     }
@@ -333,29 +300,6 @@ impl IvfExplainCounters {
         self.stats_dense_coalesced_heap_tid_bytes_copied = self
             .stats_dense_coalesced_heap_tid_bytes_copied
             .saturating_add(u32::try_from(heap_tid_bytes_copied).unwrap_or(u32::MAX));
-    }
-
-    pub(crate) fn record_dense_packed_group_assembly(
-        &mut self,
-        segments: usize,
-        payload_bytes_copied: usize,
-    ) {
-        self.stats_dense_packed_groups_assembled =
-            self.stats_dense_packed_groups_assembled.saturating_add(1);
-        self.stats_dense_packed_segments_assembled = self
-            .stats_dense_packed_segments_assembled
-            .saturating_add(u32::try_from(segments).unwrap_or(u32::MAX));
-        self.stats_dense_packed_payload_bytes_copied = self
-            .stats_dense_packed_payload_bytes_copied
-            .saturating_add(u32::try_from(payload_bytes_copied).unwrap_or(u32::MAX));
-    }
-
-    pub(crate) fn record_dense_packed_group_borrow(&mut self, payload_bytes_borrowed: usize) {
-        self.stats_dense_packed_groups_borrowed =
-            self.stats_dense_packed_groups_borrowed.saturating_add(1);
-        self.stats_dense_packed_payload_bytes_borrowed = self
-            .stats_dense_packed_payload_bytes_borrowed
-            .saturating_add(u32::try_from(payload_bytes_borrowed).unwrap_or(u32::MAX));
     }
 
     pub(crate) fn record_heap_tids_scored(&mut self, count: usize) {
@@ -406,7 +350,7 @@ impl IvfExplainCounters {
         *self = Self::default();
     }
 
-    pub(crate) fn explain_properties(self) -> [ExplainProperty; 33] {
+    pub(crate) fn explain_properties(self) -> [ExplainProperty; 24] {
         [
             ExplainProperty {
                 property_name: "Centroid Scores",
@@ -435,22 +379,6 @@ impl IvfExplainCounters {
             ExplainProperty {
                 property_name: "Dense Postings Visited",
                 value: ExplainPropertyValue::Integer(self.stats_dense_postings_visited),
-            },
-            ExplainProperty {
-                property_name: "Columnar Frozen Lists Visited",
-                value: ExplainPropertyValue::Integer(self.stats_columnar_frozen_lists_visited),
-            },
-            ExplainProperty {
-                property_name: "Columnar Postings Visited",
-                value: ExplainPropertyValue::Integer(self.stats_columnar_postings_visited),
-            },
-            ExplainProperty {
-                property_name: "Columnar Logical Bytes Copied",
-                value: ExplainPropertyValue::Integer(self.stats_columnar_logical_bytes_copied),
-            },
-            ExplainProperty {
-                property_name: "Columnar Payload Bytes Borrowed",
-                value: ExplainPropertyValue::Integer(self.stats_columnar_payload_bytes_borrowed),
             },
             ExplainProperty {
                 property_name: "Postings Scored",
@@ -486,28 +414,6 @@ impl IvfExplainCounters {
                 property_name: "Dense Coalesced Heap TID Bytes Copied",
                 value: ExplainPropertyValue::Integer(
                     self.stats_dense_coalesced_heap_tid_bytes_copied,
-                ),
-            },
-            ExplainProperty {
-                property_name: "Dense Packed Groups Assembled",
-                value: ExplainPropertyValue::Integer(self.stats_dense_packed_groups_assembled),
-            },
-            ExplainProperty {
-                property_name: "Dense Packed Segments Assembled",
-                value: ExplainPropertyValue::Integer(self.stats_dense_packed_segments_assembled),
-            },
-            ExplainProperty {
-                property_name: "Dense Packed Payload Bytes Copied",
-                value: ExplainPropertyValue::Integer(self.stats_dense_packed_payload_bytes_copied),
-            },
-            ExplainProperty {
-                property_name: "Dense Packed Groups Borrowed",
-                value: ExplainPropertyValue::Integer(self.stats_dense_packed_groups_borrowed),
-            },
-            ExplainProperty {
-                property_name: "Dense Packed Payload Bytes Borrowed",
-                value: ExplainPropertyValue::Integer(
-                    self.stats_dense_packed_payload_bytes_borrowed,
                 ),
             },
             ExplainProperty {
@@ -930,15 +836,10 @@ mod tests {
         counters.record_row_posting_visited();
         counters.record_dense_block_visited();
         counters.record_dense_posting_visited();
-        counters.record_columnar_frozen_list_copy(13);
-        counters.record_columnar_payload_borrow(15);
-        counters.record_columnar_posting_visited();
         counters.record_posting_scored();
         counters.record_posting_pruned_by_bound();
         counters.record_scratch_soa_flush(17, 23);
         counters.record_dense_coalesced_flush(29, 31);
-        counters.record_dense_packed_group_assembly(2, 43);
-        counters.record_dense_packed_group_borrow(47);
         counters.record_heap_tids_scored(9);
         counters.record_candidate_scored();
         counters.record_candidate_scored();
@@ -956,14 +857,10 @@ mod tests {
                 stats_centroid_scores: 4,
                 stats_selected_lists: 2,
                 stats_posting_pages_read: 3,
-                stats_postings_visited: 3,
+                stats_postings_visited: 2,
                 stats_row_postings_visited: 1,
                 stats_dense_blocks_visited: 1,
                 stats_dense_postings_visited: 1,
-                stats_columnar_frozen_lists_visited: 1,
-                stats_columnar_postings_visited: 1,
-                stats_columnar_logical_bytes_copied: 13,
-                stats_columnar_payload_bytes_borrowed: 15,
                 stats_postings_scored: 1,
                 stats_postings_pruned_by_bound: 1,
                 stats_scratch_soa_flushes: 1,
@@ -972,11 +869,6 @@ mod tests {
                 stats_dense_coalesced_flushes: 1,
                 stats_dense_coalesced_payload_bytes_copied: 29,
                 stats_dense_coalesced_heap_tid_bytes_copied: 31,
-                stats_dense_packed_groups_assembled: 1,
-                stats_dense_packed_segments_assembled: 2,
-                stats_dense_packed_payload_bytes_copied: 43,
-                stats_dense_packed_groups_borrowed: 1,
-                stats_dense_packed_payload_bytes_borrowed: 47,
                 stats_heap_tids_scored: 9,
                 stats_candidates_scored: 2,
                 stats_candidates_inserted: 1,
@@ -1000,10 +892,6 @@ mod tests {
             stats_row_postings_visited: 7,
             stats_dense_blocks_visited: 11,
             stats_dense_postings_visited: 13,
-            stats_columnar_frozen_lists_visited: 17,
-            stats_columnar_postings_visited: 19,
-            stats_columnar_logical_bytes_copied: 23,
-            stats_columnar_payload_bytes_borrowed: 29,
             stats_postings_scored: 31,
             stats_postings_pruned_by_bound: 37,
             stats_scratch_soa_flushes: 41,
@@ -1012,11 +900,6 @@ mod tests {
             stats_dense_coalesced_flushes: 53,
             stats_dense_coalesced_payload_bytes_copied: 59,
             stats_dense_coalesced_heap_tid_bytes_copied: 61,
-            stats_dense_packed_groups_assembled: 67,
-            stats_dense_packed_segments_assembled: 71,
-            stats_dense_packed_payload_bytes_copied: 73,
-            stats_dense_packed_groups_borrowed: 79,
-            stats_dense_packed_payload_bytes_borrowed: 83,
             stats_heap_tids_scored: 89,
             stats_candidates_scored: 97,
             stats_candidates_inserted: 101,
@@ -1060,22 +943,6 @@ mod tests {
                     value: ExplainPropertyValue::Integer(13),
                 },
                 ExplainProperty {
-                    property_name: "Columnar Frozen Lists Visited",
-                    value: ExplainPropertyValue::Integer(17),
-                },
-                ExplainProperty {
-                    property_name: "Columnar Postings Visited",
-                    value: ExplainPropertyValue::Integer(19),
-                },
-                ExplainProperty {
-                    property_name: "Columnar Logical Bytes Copied",
-                    value: ExplainPropertyValue::Integer(23),
-                },
-                ExplainProperty {
-                    property_name: "Columnar Payload Bytes Borrowed",
-                    value: ExplainPropertyValue::Integer(29),
-                },
-                ExplainProperty {
                     property_name: "Postings Scored",
                     value: ExplainPropertyValue::Integer(31),
                 },
@@ -1106,26 +973,6 @@ mod tests {
                 ExplainProperty {
                     property_name: "Dense Coalesced Heap TID Bytes Copied",
                     value: ExplainPropertyValue::Integer(61),
-                },
-                ExplainProperty {
-                    property_name: "Dense Packed Groups Assembled",
-                    value: ExplainPropertyValue::Integer(67),
-                },
-                ExplainProperty {
-                    property_name: "Dense Packed Segments Assembled",
-                    value: ExplainPropertyValue::Integer(71),
-                },
-                ExplainProperty {
-                    property_name: "Dense Packed Payload Bytes Copied",
-                    value: ExplainPropertyValue::Integer(73),
-                },
-                ExplainProperty {
-                    property_name: "Dense Packed Groups Borrowed",
-                    value: ExplainPropertyValue::Integer(79),
-                },
-                ExplainProperty {
-                    property_name: "Dense Packed Payload Bytes Borrowed",
-                    value: ExplainPropertyValue::Integer(83),
                 },
                 ExplainProperty {
                     property_name: "Heap TIDs Scored",

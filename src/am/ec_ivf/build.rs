@@ -1,6 +1,5 @@
 use std::ffi::c_void;
-use std::ptr;
-use std::ptr::NonNull;
+use std::ptr::{self, NonNull};
 use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 use std::time::Instant;
 
@@ -89,18 +88,11 @@ pub(super) struct BuildState {
 
 pub(super) struct IvfBuildPlan {
     data_pages: DataPageChain,
-    column_pages: Vec<IvfColumnarStagedPage>,
     metadata: page::MetadataPage,
     centroid_tids: Vec<ItemPointer>,
     directory_tids: Vec<ItemPointer>,
     posting_tids_by_list: Vec<Vec<ItemPointer>>,
     directory_entries: Vec<page::IvfListDirectoryTuple>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct IvfColumnarStagedPage {
-    block_number: pg_sys::BlockNumber,
-    bytes: Vec<u8>,
 }
 
 #[derive(Debug, Default, Copy, Clone, PartialEq, Eq)]
@@ -643,51 +635,14 @@ impl BuildState {
         data_pages.start_new_page_if_current_has_tuples();
         let postings_start = Instant::now();
         let use_dense_posting_blocks = dense_posting_blocks_enabled(self.options);
-        let use_columnar_frozen_lists = columnar_frozen_lists_enabled(self.options);
-        let dense_posting_pack_pages = dense_posting_pack_pages(self.options);
         let dense_posting_typed_layout = self.options.dense_posting_typed_layout;
-        let mut dense_logical_block_id = 0_u32;
-        let mut column_pages = Vec::new();
         for (list_id, tuple_indices) in tuple_indices_by_list.iter().enumerate() {
             if !tuple_indices.is_empty() {
                 data_pages.start_new_page_if_current_has_tuples();
             }
             live_posting_counts_by_list[list_id] = u64::try_from(tuple_indices.len())
                 .map_err(|_| "posting count exceeds u64".to_owned())?;
-            if use_columnar_frozen_lists && !tuple_indices.is_empty() {
-                let list_id_u32 = list_id_u32(list_id)?;
-                let mut postings = Vec::with_capacity(tuple_indices.len());
-                let mut payload_len = None;
-                for tuple_index in tuple_indices {
-                    let (heap_tid, gamma, payload) = encode_build_posting(
-                        &self.heap_tuples[*tuple_index],
-                        &pq_model,
-                        pq_posting_quantizer,
-                    )?;
-                    let current_payload_len = payload.len();
-                    if let Some(existing) = payload_len {
-                        if existing != current_payload_len {
-                            return Err(
-                                "ec_ivf columnar frozen list payload length changed within a list"
-                                    .to_owned(),
-                            );
-                        }
-                    } else {
-                        payload_len = Some(current_payload_len);
-                    }
-                    postings.push((heap_tid, gamma, ItemPointer::INVALID, payload));
-                }
-                let last_column_block = insert_columnar_frozen_list(
-                    &mut data_pages,
-                    &mut column_pages,
-                    &mut posting_tids_by_list[list_id],
-                    list_id_u32,
-                    &postings,
-                    payload_len.expect("non-empty columnar list has payloads"),
-                    self.page_size,
-                )?;
-                directory_tail_blocks_by_list[list_id] = Some(last_column_block);
-            } else if use_dense_posting_blocks && !tuple_indices.is_empty() {
+            if use_dense_posting_blocks && !tuple_indices.is_empty() {
                 let list_id_u32 = list_id_u32(list_id)?;
                 let mut pending = Vec::new();
                 let mut pending_payload_len = None;
@@ -708,11 +663,8 @@ impl BuildState {
                         }
                     } else {
                         pending_payload_len = Some(payload_len);
-                        pending_posting_limit = dense_posting_group_limit(
-                            payload_len,
-                            dense_posting_pack_pages,
-                            self.page_size,
-                        )?;
+                        pending_posting_limit =
+                            dense_posting_group_limit(payload_len, self.page_size)?;
                     }
                     if pending.len() >= pending_posting_limit {
                         insert_dense_posting_group(
@@ -721,10 +673,7 @@ impl BuildState {
                             list_id_u32,
                             &pending,
                             payload_len,
-                            dense_posting_pack_pages,
                             dense_posting_typed_layout,
-                            self.page_size,
-                            &mut dense_logical_block_id,
                         )?;
                         pending.clear();
                     }
@@ -738,10 +687,7 @@ impl BuildState {
                         list_id_u32,
                         &pending,
                         payload_len,
-                        dense_posting_pack_pages,
                         dense_posting_typed_layout,
-                        self.page_size,
-                        &mut dense_logical_block_id,
                     )?;
                 }
             } else {
@@ -840,7 +786,6 @@ impl BuildState {
         Ok((
             IvfBuildPlan {
                 data_pages,
-                column_pages,
                 metadata,
                 centroid_tids,
                 directory_tids,
@@ -906,40 +851,7 @@ fn dense_posting_blocks_enabled(options: options::EcIvfOptions) -> bool {
         )
 }
 
-fn columnar_frozen_lists_enabled(options: options::EcIvfOptions) -> bool {
-    options.columnar_frozen_lists
-        && matches!(
-            options.storage_format,
-            options::StorageFormat::Auto
-                | options::StorageFormat::TurboQuant
-                | options::StorageFormat::RaBitQ
-                | options::StorageFormat::CoarseRerank
-        )
-}
-
-fn dense_posting_pack_pages(options: options::EcIvfOptions) -> usize {
-    usize::try_from(options.dense_posting_pack_pages.max(1)).unwrap_or(1)
-}
-
-fn dense_posting_group_limit(
-    payload_len: usize,
-    pack_pages: usize,
-    page_size: usize,
-) -> Result<usize, String> {
-    const DENSE_POSTING_TARGET_SCORER_WIDTH: usize = 32;
-    if pack_pages > 1 {
-        if !page::dense_posting_packed_segment_header_tuple_fits(
-            DENSE_POSTING_TARGET_SCORER_WIDTH,
-            DENSE_POSTING_TARGET_SCORER_WIDTH,
-            0,
-            page_size,
-        ) {
-            return Err(format!(
-                "ec_ivf dense posting payload length {payload_len} metadata does not fit on a page"
-            ));
-        }
-        return Ok(DENSE_POSTING_TARGET_SCORER_WIDTH);
-    }
+fn dense_posting_group_limit(payload_len: usize, page_size: usize) -> Result<usize, String> {
     let fit = page::dense_posting_block_tuple_fits;
     let mut segment_capacity = 1_usize;
     if !fit(1, 1, payload_len, page_size) {
@@ -957,41 +869,7 @@ fn dense_posting_group_limit(
     {
         segment_capacity += 1;
     }
-    Ok(segment_capacity
-        .saturating_mul(pack_pages.max(1))
-        .min(u16::MAX as usize)
-        .max(1))
-}
-
-fn dense_packed_header_payload_capacity(
-    posting_count: usize,
-    total_heap_tids: usize,
-    total_payload_bytes: usize,
-    page_size: usize,
-) -> usize {
-    let mut payload_bytes = total_payload_bytes;
-    while !page::dense_posting_packed_segment_header_tuple_fits(
-        posting_count,
-        total_heap_tids,
-        payload_bytes,
-        page_size,
-    ) {
-        payload_bytes -= 1;
-    }
-    payload_bytes
-}
-
-fn dense_packed_continuation_payload_capacity(page_size: usize) -> Result<usize, String> {
-    let mut payload_bytes = 1_usize;
-    if !page::dense_posting_packed_continuation_tuple_fits(payload_bytes, page_size) {
-        return Err("ec_ivf dense posting packed continuation cannot fit payload bytes".to_owned());
-    }
-    while payload_bytes < u16::MAX as usize
-        && page::dense_posting_packed_continuation_tuple_fits(payload_bytes + 1, page_size)
-    {
-        payload_bytes += 1;
-    }
-    Ok(payload_bytes)
+    Ok(segment_capacity.min(u16::MAX as usize).max(1))
 }
 
 fn insert_dense_posting_group(
@@ -1000,135 +878,19 @@ fn insert_dense_posting_group(
     list_id: u32,
     postings: &[(ItemPointer, f32, ItemPointer, Vec<u8>)],
     payload_len: usize,
-    pack_pages: usize,
     typed_layout: bool,
-    page_size: usize,
-    next_logical_block_id: &mut u32,
 ) -> Result<(), String> {
-    if pack_pages <= 1 {
-        let dense = page::IvfDensePostingBlockTuple::from_single_heaptid_postings(
-            list_id,
-            postings,
-            payload_len,
-        )?;
-        posting_tids.push(if typed_layout {
-            data_pages.insert_ivf_dense_posting_aligned_block(&dense)?
-        } else {
-            data_pages.insert_ivf_dense_posting_block(&dense)?
-        });
-        return Ok(());
-    }
-
-    let mut full_payloads = Vec::with_capacity(postings.len() * payload_len);
-    for (_, _, _, payload) in postings {
-        full_payloads.extend_from_slice(payload);
-    }
-    let header_payload_len = dense_packed_header_payload_capacity(
-        postings.len(),
-        postings.len(),
-        full_payloads.len(),
-        page_size,
-    );
-    let continuation_capacity = dense_packed_continuation_payload_capacity(page_size)?;
-    let remaining_payload_len = full_payloads.len() - header_payload_len;
-    let segment_count = 1 + remaining_payload_len.div_ceil(continuation_capacity);
-    if segment_count > u16::MAX as usize {
-        return Err("ec_ivf dense posting packed segment count exceeds u16".to_owned());
-    }
-    let total_posting_count = u16::try_from(postings.len())
-        .map_err(|_| "ec_ivf dense posting packed group count exceeds u16".to_owned())?;
-    let logical_block_id = *next_logical_block_id;
-    *next_logical_block_id = next_logical_block_id
-        .checked_add(1)
-        .ok_or_else(|| "ec_ivf dense posting logical block id overflow".to_owned())?;
-
-    let mut header = page::IvfDensePostingPackedSegmentTuple::from_single_heaptid_postings(
+    let dense = page::IvfDensePostingBlockTuple::from_single_heaptid_postings(
         list_id,
-        logical_block_id,
-        0,
-        u16::try_from(segment_count)
-            .map_err(|_| "ec_ivf dense posting packed segment count exceeds u16".to_owned())?,
-        total_posting_count,
         postings,
         payload_len,
     )?;
-    header.payloads.truncate(header_payload_len);
-    posting_tids.push(data_pages.insert_ivf_dense_posting_packed_segment(&header)?);
-
-    let mut payload_offset = header_payload_len;
-    for (continuation_index, chunk) in full_payloads[header_payload_len..]
-        .chunks(continuation_capacity)
-        .enumerate()
-    {
-        let continuation = page::IvfDensePostingPackedContinuationTuple {
-            list_id,
-            logical_block_id,
-            segment_index: u16::try_from(continuation_index + 1).map_err(|_| {
-                "ec_ivf dense posting packed continuation index exceeds u16".to_owned()
-            })?,
-            segment_count: u16::try_from(segment_count)
-                .map_err(|_| "ec_ivf dense posting packed segment count exceeds u16".to_owned())?,
-            payload_offset: u32::try_from(payload_offset)
-                .map_err(|_| "ec_ivf dense posting packed payload offset exceeds u32".to_owned())?,
-            payloads: chunk.to_vec(),
-        };
-        posting_tids.push(data_pages.insert_ivf_dense_posting_packed_continuation(&continuation)?);
-        payload_offset += chunk.len();
-    }
+    posting_tids.push(if typed_layout {
+        data_pages.insert_ivf_dense_posting_aligned_block(&dense)?
+    } else {
+        data_pages.insert_ivf_dense_posting_block(&dense)?
+    });
     Ok(())
-}
-
-fn insert_columnar_frozen_list(
-    data_pages: &mut DataPageChain,
-    column_pages: &mut Vec<IvfColumnarStagedPage>,
-    posting_tids: &mut Vec<ItemPointer>,
-    list_id: u32,
-    postings: &[(ItemPointer, f32, ItemPointer, Vec<u8>)],
-    payload_len: usize,
-    page_size: usize,
-) -> Result<pg_sys::BlockNumber, String> {
-    let columns =
-        page::IvfColumnarFrozenListColumns::from_single_heaptid_postings(postings, payload_len)?;
-    let raw_pages = columns.raw_page_bytes(page_size)?;
-    if raw_pages.is_empty() {
-        return Err("ec_ivf columnar frozen list produced no raw pages".to_owned());
-    }
-
-    let current_block = data_pages
-        .pages()
-        .last()
-        .expect("data page chain is non-empty")
-        .block_number();
-    let first_column_block = current_block
-        .checked_add(1)
-        .ok_or_else(|| "ec_ivf columnar frozen list first block overflow".to_owned())?;
-    let raw_page_count = u32::try_from(raw_pages.len())
-        .map_err(|_| "ec_ivf columnar frozen list page count exceeds u32".to_owned())?;
-    let last_column_block = first_column_block
-        .checked_add(raw_page_count - 1)
-        .ok_or_else(|| "ec_ivf columnar frozen list last block overflow".to_owned())?;
-    let header = columns.header(
-        list_id,
-        page::BlockRef {
-            block_number: first_column_block,
-        },
-        page::BlockRef {
-            block_number: last_column_block,
-        },
-    )?;
-    posting_tids.push(data_pages.insert_ivf_columnar_frozen_list_header(&header)?);
-    data_pages.start_new_page_if_current_has_tuples();
-    if raw_pages.len() > 1 {
-        data_pages.append_empty_pages(raw_pages.len() - 1);
-    }
-    for (page_index, bytes) in raw_pages.into_iter().enumerate() {
-        column_pages.push(IvfColumnarStagedPage {
-            block_number: first_column_block + page_index as u32,
-            bytes,
-        });
-    }
-    data_pages.append_empty_pages(1);
-    Ok(last_column_block)
 }
 
 fn encode_build_posting(
@@ -1168,26 +930,15 @@ pub(super) unsafe fn flush_build_plan(index_relation: pg_sys::Relation, plan: &I
 
     let handle = NonNull::new(index_relation)
         .unwrap_or_else(|| pgrx::error!("ec_ivf flush_build_plan received a null index relation"));
-    write_data_pages(handle, &plan.data_pages, &plan.column_pages);
+    write_data_pages(handle, &plan.data_pages);
     // SAFETY: same live relation; metadata belongs to the staged plan just
     // flushed to disk.
     page::initialize_metadata_page(index_relation, plan.metadata);
 }
 
-fn write_data_pages(
-    handle: RelationHandle,
-    data_pages: &DataPageChain,
-    column_pages: &[IvfColumnarStagedPage],
-) {
+fn write_data_pages(handle: RelationHandle, data_pages: &DataPageChain) {
     for staged_page in data_pages.pages() {
-        if let Some(column_page) = column_pages
-            .iter()
-            .find(|page| page.block_number == staged_page.block_number())
-        {
-            write_columnar_raw_page(handle, column_page);
-        } else {
-            write_data_page(handle, staged_page);
-        }
+        write_data_page(handle, staged_page);
     }
 }
 
@@ -1212,53 +963,6 @@ fn write_data_page(handle: RelationHandle, staged_page: &crate::storage::page::D
             page.add_item(tuple).unwrap_or_else(|err| {
                 pgrx::error!("ec_ivf failed to write tuple to block {}", err.block_number)
             });
-        }
-    }
-    wal_txn.finish();
-}
-
-fn write_columnar_raw_page(handle: RelationHandle, staged_page: &IvfColumnarStagedPage) {
-    let buffer = LockedBufferGuard::read_main_locked_handle(
-        handle,
-        P_NEW,
-        pg_sys::ReadBufferMode::RBM_ZERO_AND_LOCK,
-    )
-    .unwrap_or_else(|| {
-        pgrx::error!(
-            "ec_ivf failed to allocate columnar data buffer for block {}",
-            staged_page.block_number
-        )
-    });
-    if buffer.block_number() != staged_page.block_number {
-        pgrx::error!(
-            "ec_ivf columnar staged block mismatch: allocated {}, expected {}",
-            buffer.block_number(),
-            staged_page.block_number
-        );
-    }
-    let capacity = page::columnar_frozen_list_raw_page_capacity(buffer.page_size());
-    if staged_page.bytes.len() > capacity {
-        pgrx::error!(
-            "ec_ivf columnar page payload {} exceeds raw capacity {}",
-            staged_page.bytes.len(),
-            capacity
-        );
-    }
-
-    let mut wal_txn = wal::WalTxnScope::start_handle(handle);
-    {
-        let mut page = wal_txn.register_page(&buffer);
-        page.init(capacity);
-        // SAFETY: the page was initialized with the whole raw column payload
-        // area as special space, so PageGetSpecialPointer points at a writable
-        // region of `capacity` bytes. The bounds check above proves the copy
-        // fits within that region.
-        unsafe {
-            ptr::copy_nonoverlapping(
-                staged_page.bytes.as_ptr(),
-                pg_sys::PageGetSpecialPointer(page.page_ptr()).cast::<u8>(),
-                staged_page.bytes.len(),
-            );
         }
     }
     wal_txn.finish();
@@ -1509,9 +1213,7 @@ mod tests {
             quant_bits: 4,
             coarse_bits: 0,
             dense_posting_blocks: false,
-            dense_posting_pack_pages: 1,
             dense_posting_typed_layout: false,
-            columnar_frozen_lists: false,
             storage_format: options::StorageFormat::Auto,
             rerank: options::RerankMode::Auto,
             coarse_format: options::CoarseFormat::Auto,
@@ -1668,235 +1370,6 @@ mod tests {
         assert_eq!(dense.gammas.len(), 2);
         assert_eq!(dense.heap_tids.len(), 2);
         assert_eq!(dense.payloads.len(), 2 * payload_len);
-    }
-
-    #[test]
-    fn build_state_can_stage_columnar_frozen_lists_when_gated() {
-        let mut opts = options(0, 2);
-        opts.columnar_frozen_lists = true;
-        opts.storage_format = options::StorageFormat::TurboQuant;
-        let mut state = BuildState::new(opts, IndexedVectorKind::Ecvector);
-        state.page_size = 128;
-        state.try_push(tuple(1, vec![1.0, 0.0])).unwrap();
-        state.try_push(tuple(2, vec![0.9, 0.1])).unwrap();
-        state.try_push(tuple(3, vec![-1.0, 0.0])).unwrap();
-
-        let plan = state
-            .stage_build_plan(&model(vec![vec![1.0, 0.0], vec![-1.0, 0.0]]))
-            .unwrap();
-
-        assert_eq!(plan.posting_count(), 3);
-        assert_eq!(plan.directory_entries[0].live_count, 2);
-        assert_eq!(plan.directory_entries[1].live_count, 1);
-        assert_eq!(plan.posting_tids_by_list[0].len(), 1);
-        assert!(
-            plan.column_pages.len() >= 2,
-            "small test page should force multiple raw column pages"
-        );
-
-        let payload_len = state.heap_tuples[0].payload.len();
-        let header_tid = plan.posting_tids_by_list[0][0];
-        let header = plan
-            .data_pages
-            .read_ivf_columnar_frozen_list_header(header_tid)
-            .unwrap();
-        let first_column_block = header.first_column_block.block_number;
-        let last_column_block = header.last_column_block.block_number;
-        assert_eq!(header.list_id, 0);
-        assert_eq!(header.posting_count, 2);
-        assert_eq!(header.payload_len as usize, payload_len);
-        assert_eq!(header_tid.block_number + 1, first_column_block);
-        assert_eq!(
-            plan.directory_entries[0].head_block.block_number,
-            header_tid.block_number
-        );
-        assert_eq!(
-            plan.directory_entries[0].tail_block.block_number,
-            last_column_block
-        );
-        assert!(plan
-            .column_pages
-            .iter()
-            .any(|page| { page.block_number == first_column_block && !page.bytes.is_empty() }));
-        assert!(plan
-            .column_pages
-            .iter()
-            .any(|page| { page.block_number == last_column_block && !page.bytes.is_empty() }));
-    }
-
-    #[test]
-    fn columnar_frozen_list_raw_pages_match_header_block_range() {
-        let page_size = 128;
-        let payload_len = 37;
-        let postings = (0..9)
-            .map(|index| {
-                let heap_tid = ItemPointer {
-                    block_number: 10 + index,
-                    offset_number: 1,
-                };
-                let rerank_tid = ItemPointer {
-                    block_number: 20 + index,
-                    offset_number: 2,
-                };
-                let payload = (0..payload_len)
-                    .map(|offset| (index as u8).wrapping_mul(17).wrapping_add(offset as u8))
-                    .collect::<Vec<_>>();
-                (heap_tid, index as f32 + 0.5, rerank_tid, payload)
-            })
-            .collect::<Vec<_>>();
-        let expected_pages = page::IvfColumnarFrozenListColumns::from_single_heaptid_postings(
-            &postings,
-            payload_len,
-        )
-        .unwrap()
-        .raw_page_bytes(page_size)
-        .unwrap();
-        assert!(
-            expected_pages.len() >= 2,
-            "test shape should span multiple raw column pages"
-        );
-
-        let mut data_pages = DataPageChain::new(page_size);
-        let mut column_pages = Vec::new();
-        let mut posting_tids = Vec::new();
-        let last_column_block = insert_columnar_frozen_list(
-            &mut data_pages,
-            &mut column_pages,
-            &mut posting_tids,
-            7,
-            &postings,
-            payload_len,
-            page_size,
-        )
-        .unwrap();
-
-        assert_eq!(posting_tids.len(), 1);
-        let header_tid = posting_tids[0];
-        let header = data_pages
-            .read_ivf_columnar_frozen_list_header(header_tid)
-            .unwrap();
-        let first_column_block = header.first_column_block.block_number;
-        assert_eq!(header.list_id, 7);
-        assert_eq!(header.posting_count, postings.len() as u32);
-        assert_eq!(header.payload_len as usize, payload_len);
-        assert_eq!(header_tid.block_number + 1, first_column_block);
-        assert_eq!(header.last_column_block.block_number, last_column_block);
-        assert_eq!(
-            last_column_block - first_column_block + 1,
-            expected_pages.len() as u32
-        );
-
-        assert_eq!(column_pages.len(), expected_pages.len());
-        for (page_index, expected_bytes) in expected_pages.iter().enumerate() {
-            let block_number = first_column_block + page_index as u32;
-            let staged = column_pages
-                .iter()
-                .find(|page| page.block_number == block_number)
-                .unwrap_or_else(|| panic!("missing staged column page {block_number}"));
-            assert_eq!(staged.bytes, *expected_bytes);
-            assert_eq!(
-                data_pages
-                    .get_page(block_number)
-                    .expect("column page placeholder should exist")
-                    .tuple_count(),
-                0
-            );
-        }
-
-        let separator_block = last_column_block + 1;
-        assert_eq!(
-            data_pages
-                .get_page(separator_block)
-                .expect("separator page should exist")
-                .tuple_count(),
-            0
-        );
-        assert!(
-            column_pages
-                .iter()
-                .all(|page| page.block_number != separator_block),
-            "separator page must not be treated as column payload"
-        );
-    }
-
-    #[test]
-    fn build_state_can_stage_packed_dense_posting_segments_when_requested() {
-        let mut opts = options(0, 2);
-        opts.dense_posting_blocks = true;
-        opts.dense_posting_pack_pages = 4;
-        opts.storage_format = options::StorageFormat::TurboQuant;
-        let mut state = BuildState::new(opts, IndexedVectorKind::Ecvector);
-        state.try_push(tuple(1, vec![1.0, 0.0])).unwrap();
-        state.try_push(tuple(2, vec![0.9, 0.1])).unwrap();
-        state.try_push(tuple(3, vec![-1.0, 0.0])).unwrap();
-
-        let plan = state
-            .stage_build_plan(&model(vec![vec![1.0, 0.0], vec![-1.0, 0.0]]))
-            .unwrap();
-
-        assert_eq!(plan.posting_count(), 3);
-        assert_eq!(plan.directory_entries[0].live_count, 2);
-        assert_eq!(plan.posting_tids_by_list[0].len(), 1);
-
-        let payload_len = state.heap_tuples[0].payload.len();
-        let segment = plan
-            .data_pages
-            .read_ivf_dense_posting_packed_segment(plan.posting_tids_by_list[0][0], payload_len)
-            .unwrap();
-        assert_eq!(segment.list_id, 0);
-        assert_eq!(segment.logical_block_id, 0);
-        assert_eq!(segment.segment_index, 0);
-        assert_eq!(segment.segment_count, 1);
-        assert_eq!(segment.total_posting_count, 2);
-        assert_eq!(segment.gammas.len(), 2);
-        assert_eq!(segment.heap_tids.len(), 2);
-        assert_eq!(segment.payloads.len(), 2 * payload_len);
-    }
-
-    #[test]
-    fn build_state_splits_packed_dense_payloads_into_continuations() {
-        let mut opts = options(0, 2);
-        opts.dense_posting_blocks = true;
-        opts.dense_posting_pack_pages = 4;
-        opts.storage_format = options::StorageFormat::TurboQuant;
-        let mut state = BuildState::new(opts, IndexedVectorKind::Ecvector);
-        state.page_size = 4096;
-        for offset_number in 1..=32 {
-            let mut source_vector = vec![0.0; 512];
-            source_vector[0] = 1.0;
-            state.try_push(tuple(offset_number, source_vector)).unwrap();
-        }
-
-        let mut positive = vec![0.0; 512];
-        positive[0] = 1.0;
-        let mut negative = vec![0.0; 512];
-        negative[0] = -1.0;
-        let plan = state
-            .stage_build_plan(&model(vec![positive, negative]))
-            .unwrap();
-
-        assert!(plan.posting_tids_by_list[0].len() > 1);
-        let payload_len = state.heap_tuples[0].payload.len();
-        let header = plan
-            .data_pages
-            .read_ivf_dense_posting_packed_segment(plan.posting_tids_by_list[0][0], payload_len)
-            .unwrap();
-        let continuation = plan
-            .data_pages
-            .read_ivf_dense_posting_packed_continuation(plan.posting_tids_by_list[0][1])
-            .unwrap();
-
-        assert_eq!(header.total_posting_count, 32);
-        assert_eq!(header.segment_index, 0);
-        assert!(header.segment_count > 1);
-        assert_eq!(header.gammas.len(), 32);
-        assert!(header.payloads.len() < 32 * payload_len);
-        assert_eq!(continuation.list_id, header.list_id);
-        assert_eq!(continuation.logical_block_id, header.logical_block_id);
-        assert_eq!(continuation.segment_index, 1);
-        assert_eq!(continuation.segment_count, header.segment_count);
-        assert_eq!(continuation.payload_offset as usize, header.payloads.len());
-        assert!(!continuation.payloads.is_empty());
     }
 
     #[test]

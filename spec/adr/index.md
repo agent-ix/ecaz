@@ -75,6 +75,7 @@ This index is the canonical navigation surface for Ecaz architecture decisions. 
 | DiskANN graph build worker stepping stone | `ADR-075-diskann-graph-build-worker-stepping-stone.md` | PROPOSED | Task 65b uses rayon only as a deterministic graph-core stepping stone while PostgreSQL remains the worker-count authority. |
 | Universal block kernel pattern | `ADR-076-universal-block-kernel-pattern.md` | ACCEPTED | Task 92 standardizes block width, runtime ISA detection, `(AM, quant, ISA)` counters, off-path scalar accounting, and the per-kernel module layout for Tasks 93-99. |
 | Block kernel completeness closing record | `ADR-077-block-kernel-completeness-closing-record.md` | ACCEPTED | Task 99 closes the kernel-completeness initiative: aggregate matrix as coverage gate, anchor-regime menu, per-AM enablement policy (IVF batch default → on), ISA dispatch policy incl. `ecaz.isa_cap` and the measured NEON-over-SVE2 G4 decision, deliberate exclusions, and named open gaps. |
+| IVF dense format negative result | `ADR-078-ivf-dense-format-negative-result.md` | ACCEPTED | Task 111f keeps page-local/aligned dense blocks, coalescing, typed views, and coarse rerank; removes the dominated page-spanning packed, columnar frozen-list, and page-scatter experimental formats. |
 
 ## Superseded Historical Decisions
 

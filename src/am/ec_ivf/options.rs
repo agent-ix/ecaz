@@ -38,9 +38,6 @@ static EC_IVF_ADAPTIVE_NPROBE_SCORE_MARGIN_RATIO_BPS_GUC: GucSetting<i32> =
 static EC_IVF_SCRATCH_SOA_BATCH_DECODE_GUC: GucSetting<bool> = GucSetting::<bool>::new(true);
 static EC_IVF_DENSE_POSTING_COALESCING_GUC: GucSetting<bool> = GucSetting::<bool>::new(true);
 static EC_IVF_DENSE_POSTING_TYPED_VIEWS_GUC: GucSetting<bool> = GucSetting::<bool>::new(true);
-// Task 111c measured the zero-copy page-scatter path slower than the logical
-// copy fallback after the page-run locality lever, so keep it opt-in.
-static EC_IVF_COLUMNAR_PAGE_SCATTER_GUC: GucSetting<bool> = GucSetting::<bool>::new(false);
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
@@ -56,9 +53,7 @@ struct EcIvfReloptions {
     quant_bits: i32,
     coarse_bits: i32,
     dense_posting_blocks: i32,
-    dense_posting_pack_pages: i32,
     dense_posting_typed_layout: i32,
-    columnar_frozen_lists: i32,
     storage_format_offset: i32,
     quantizer_offset: i32,
     rerank_offset: i32,
@@ -266,9 +261,7 @@ pub(super) struct EcIvfOptions {
     pub(super) quant_bits: i32,
     pub(super) coarse_bits: i32,
     pub(super) dense_posting_blocks: bool,
-    pub(super) dense_posting_pack_pages: i32,
     pub(super) dense_posting_typed_layout: bool,
-    pub(super) columnar_frozen_lists: bool,
     pub(super) storage_format: StorageFormat,
     pub(super) rerank: RerankMode,
     pub(super) coarse_format: CoarseFormat,
@@ -288,9 +281,7 @@ impl EcIvfOptions {
         quant_bits: EC_IVF_DEFAULT_QUANT_BITS,
         coarse_bits: 0,
         dense_posting_blocks: false,
-        dense_posting_pack_pages: 1,
         dense_posting_typed_layout: false,
-        columnar_frozen_lists: false,
         storage_format: StorageFormat::Auto,
         rerank: RerankMode::Auto,
         coarse_format: CoarseFormat::Auto,
@@ -412,14 +403,6 @@ pub(super) fn register_gucs() {
         GucContext::Userset,
         GucFlags::default(),
     );
-    GucRegistry::define_bool_guc(
-        c"ec_ivf.columnar_page_scatter",
-        c"Enable ec_ivf columnar frozen-list page-aware scoring.",
-        c"Task 111c diagnostic switch; when enabled, columnar frozen-list payloads are scored from pinned raw pages for supported codecs. Disabled by default because the Task 111c gate found the Task 111b logical-copy fallback faster on the reference TQ cell.",
-        &EC_IVF_COLUMNAR_PAGE_SCATTER_GUC,
-        GucContext::Userset,
-        GucFlags::default(),
-    );
 }
 
 pub(super) fn current_session_nprobe() -> i32 {
@@ -475,14 +458,6 @@ pub(super) fn current_session_dense_posting_typed_views() -> bool {
         true
     } else {
         EC_IVF_DENSE_POSTING_TYPED_VIEWS_GUC.get()
-    }
-}
-
-pub(super) fn current_session_columnar_page_scatter() -> bool {
-    if cfg!(test) {
-        true
-    } else {
-        EC_IVF_COLUMNAR_PAGE_SCATTER_GUC.get()
     }
 }
 
@@ -645,16 +620,6 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_amoptions(
         );
         pg_sys::add_local_int_reloption(
             &mut relopts,
-            c"dense_posting_pack_pages".as_ptr(),
-            c"Experimental Task 111 dense posting logical block page budget; 1 keeps the original one-page dense tuple, values above 1 write page-spanning packed segments."
-                .as_ptr(),
-            1,
-            1,
-            16,
-            offset_of!(EcIvfReloptions, dense_posting_pack_pages) as i32,
-        );
-        pg_sys::add_local_int_reloption(
-            &mut relopts,
             c"dense_posting_typed_layout".as_ptr(),
             c"Experimental Task 111a aligned dense posting layout for native little-endian typed views: 0 disables, 1 enables."
                 .as_ptr(),
@@ -662,16 +627,6 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_amoptions(
             0,
             1,
             offset_of!(EcIvfReloptions, dense_posting_typed_layout) as i32,
-        );
-        pg_sys::add_local_int_reloption(
-            &mut relopts,
-            c"columnar_frozen_lists".as_ptr(),
-            c"Experimental Task 111b columnar frozen-list IVF posting layout: 0 disables, 1 enables for build-time frozen postings."
-                .as_ptr(),
-            0,
-            0,
-            1,
-            offset_of!(EcIvfReloptions, columnar_frozen_lists) as i32,
         );
         pg_sys::add_local_string_reloption(
                 &mut relopts,
@@ -887,14 +842,8 @@ fn build_options_from_reloptions(
         coarse_bits,
         dense_posting_blocks: storage_format == StorageFormat::CoarseRerank
             || reloptions.dense_posting_blocks != 0,
-        dense_posting_pack_pages: if storage_format == StorageFormat::CoarseRerank {
-            1
-        } else {
-            reloptions.dense_posting_pack_pages.max(1)
-        },
         dense_posting_typed_layout: storage_format == StorageFormat::CoarseRerank
             || reloptions.dense_posting_typed_layout != 0,
-        columnar_frozen_lists: reloptions.columnar_frozen_lists != 0,
         storage_format,
         rerank,
         coarse_format,
@@ -927,9 +876,7 @@ mod tests {
             quant_bits: 4,
             coarse_bits: 0,
             dense_posting_blocks: 0,
-            dense_posting_pack_pages: 4,
             dense_posting_typed_layout: 0,
-            columnar_frozen_lists: 0,
             storage_format_offset: 0,
             quantizer_offset: 0,
             rerank_offset: 0,
@@ -964,7 +911,6 @@ mod tests {
         assert_eq!(options.coarse_bits, 1);
         assert_eq!(options.quant_bits, 1);
         assert!(options.dense_posting_blocks);
-        assert_eq!(options.dense_posting_pack_pages, 1);
         assert!(options.dense_posting_typed_layout);
         assert_eq!(options.rerank, RerankMode::HeapF32);
         assert_eq!(options.rerank_placement, RerankPlacement::Table);
