@@ -1,9 +1,19 @@
 # Task 113 / 002 — Phase 4 RaBitQ lazy bound + seam fixes; Phase 2/5 prune A/B switch
 
 Branch: `task-113-ivf-bound-aware-candidate-pruning`
-Code commits: `5385de836` (lazy bound + seam fixes), `5a58bdf7a` (prune GUC + proof)
+Code commits: `5385de836` (lazy bound + seam fixes), `5a58bdf7a` (prune GUC +
+proof), `b93e536b4` (exact-score-bound derivation correction per 113/001 review).
 Phases: 4 (Rerank Frontier Integration), plus the Phase 2/5 posting-prune A/B
 switch and recall-safety proof.
+
+> **113/001 review carried (commit `b93e536b4`):** the reviewer correctly flagged
+> that the lazy stop needs a bound on the **exact** score, not the estimate-space
+> Cauchy-Schwarz cutoff. `RaBitQLazyBound`'s derivation is rewritten to the exact
+> quantization-residual bound `||q|| · ||o − x_dec||` (with `||o − x_dec||²`
+> recovered from the stored scalars). The affine `a - slack` code is unchanged;
+> only the `slack` contract is corrected. Also added a non-identity (SRHT)
+> rotation soundness test and an `o_dot` definition. See
+> `reviews/task-113/001-bound-contract-audit/feedback/2026-06-19-02-coder.md`.
 
 ## Summary
 
