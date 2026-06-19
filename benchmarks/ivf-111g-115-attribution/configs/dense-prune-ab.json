@@ -1,0 +1,36 @@
+{
+  "name": "ivf-attr-dense-prune-ab",
+  "schema_version": 1,
+  "_comment": "Codex 113/002 P2: the posting_bound_prune recall-safety test only builds a plain rabitq index (nlists=4, no dense_posting_blocks). This config exercises prune on/off on a coarse_rerank index (dense_posting_blocks + typed layout forced), at 10/50/100k, to (a) confirm prune off==on recall byte-identical on the dense path and (b) measure whether prune moves latency/pruned-by-bound counters there at all.",
+  "defaults": {
+    "pg": 18,
+    "socket_dir": "/home/peter/.pgrx",
+    "bits": 4,
+    "seed": 42,
+    "queries_limit": 200,
+    "iterations": 200,
+    "force_index": true
+  },
+  "steps": [
+    { "kind": "load", "name": "load-dprune-10k", "tags": ["dense-prune-ab", "ec_real_10k"], "prefix": "attr_dprune_10k", "profile": "ec_ivf", "corpus_file": "data/staged-current/ec_real_10k_corpus.tsv", "queries_file": "data/staged-current/ec_real_10k_queries.tsv", "manifest_file": "data/staged-current/ec_real_10k_manifest.json", "allow_manifest_mismatch": true, "reloptions": ["nlists=100", "storage_format=coarse_rerank", "rerank_format=f32", "rerank_placement=table", "rerank_width=64"] },
+    { "kind": "recall", "name": "recall-dprune-off-10k", "tags": ["dense-prune-ab", "prune-off", "ec_real_10k"], "prefix": "attr_dprune_10k", "profile": "ec_ivf", "k": 10, "sweep": [8, 16, 24, 32, 48, 64], "session_gucs": ["ec_ivf.posting_bound_prune=off"] },
+    { "kind": "latency", "name": "latency-dprune-off-10k", "tags": ["dense-prune-ab", "prune-off", "ec_real_10k"], "prefix": "attr_dprune_10k", "profile": "ec_ivf", "k": 10, "sweep": [8, 16, 24, 32, 48, 64], "concurrency": 1, "cache_state": "post_recall_warm", "session_gucs": ["ec_ivf.posting_bound_prune=off"] },
+    { "kind": "recall", "name": "recall-dprune-on-10k", "tags": ["dense-prune-ab", "prune-on", "ec_real_10k"], "prefix": "attr_dprune_10k", "profile": "ec_ivf", "k": 10, "sweep": [8, 16, 24, 32, 48, 64], "session_gucs": ["ec_ivf.posting_bound_prune=on"] },
+    { "kind": "latency", "name": "latency-dprune-on-10k", "tags": ["dense-prune-ab", "prune-on", "ec_real_10k"], "prefix": "attr_dprune_10k", "profile": "ec_ivf", "k": 10, "sweep": [8, 16, 24, 32, 48, 64], "concurrency": 1, "cache_state": "post_recall_warm", "session_gucs": ["ec_ivf.posting_bound_prune=on"] },
+    { "kind": "storage", "name": "storage-dprune-10k", "tags": ["dense-prune-ab", "ec_real_10k"], "prefix": "attr_dprune_10k" },
+
+    { "kind": "load", "name": "load-dprune-50k", "tags": ["dense-prune-ab", "ec_real_50k"], "prefix": "attr_dprune_50k", "profile": "ec_ivf", "corpus_file": "data/staged-current/ec_real_50k_corpus.tsv", "queries_file": "data/staged-current/ec_real_50k_queries.tsv", "manifest_file": "data/staged-current/ec_real_50k_manifest.json", "allow_manifest_mismatch": true, "reloptions": ["nlists=224", "storage_format=coarse_rerank", "rerank_format=f32", "rerank_placement=table", "rerank_width=64"] },
+    { "kind": "recall", "name": "recall-dprune-off-50k", "tags": ["dense-prune-ab", "prune-off", "ec_real_50k"], "prefix": "attr_dprune_50k", "profile": "ec_ivf", "k": 10, "sweep": [8, 16, 24, 32, 48, 64], "session_gucs": ["ec_ivf.posting_bound_prune=off"] },
+    { "kind": "latency", "name": "latency-dprune-off-50k", "tags": ["dense-prune-ab", "prune-off", "ec_real_50k"], "prefix": "attr_dprune_50k", "profile": "ec_ivf", "k": 10, "sweep": [8, 16, 24, 32, 48, 64], "concurrency": 1, "cache_state": "post_recall_warm", "session_gucs": ["ec_ivf.posting_bound_prune=off"] },
+    { "kind": "recall", "name": "recall-dprune-on-50k", "tags": ["dense-prune-ab", "prune-on", "ec_real_50k"], "prefix": "attr_dprune_50k", "profile": "ec_ivf", "k": 10, "sweep": [8, 16, 24, 32, 48, 64], "session_gucs": ["ec_ivf.posting_bound_prune=on"] },
+    { "kind": "latency", "name": "latency-dprune-on-50k", "tags": ["dense-prune-ab", "prune-on", "ec_real_50k"], "prefix": "attr_dprune_50k", "profile": "ec_ivf", "k": 10, "sweep": [8, 16, 24, 32, 48, 64], "concurrency": 1, "cache_state": "post_recall_warm", "session_gucs": ["ec_ivf.posting_bound_prune=on"] },
+    { "kind": "storage", "name": "storage-dprune-50k", "tags": ["dense-prune-ab", "ec_real_50k"], "prefix": "attr_dprune_50k" },
+
+    { "kind": "load", "name": "load-dprune-100k", "tags": ["dense-prune-ab", "ec_real_100k"], "prefix": "attr_dprune_100k", "profile": "ec_ivf", "corpus_file": "data/staged-current/ec_real_100k_corpus.tsv", "queries_file": "data/staged-current/ec_real_100k_queries.tsv", "manifest_file": "data/staged-current/ec_real_100k_manifest.json", "allow_manifest_mismatch": true, "reloptions": ["nlists=316", "storage_format=coarse_rerank", "rerank_format=f32", "rerank_placement=table", "rerank_width=64"] },
+    { "kind": "recall", "name": "recall-dprune-off-100k", "tags": ["dense-prune-ab", "prune-off", "ec_real_100k"], "prefix": "attr_dprune_100k", "profile": "ec_ivf", "k": 10, "sweep": [8, 16, 24, 32, 48, 64], "session_gucs": ["ec_ivf.posting_bound_prune=off"] },
+    { "kind": "latency", "name": "latency-dprune-off-100k", "tags": ["dense-prune-ab", "prune-off", "ec_real_100k"], "prefix": "attr_dprune_100k", "profile": "ec_ivf", "k": 10, "sweep": [8, 16, 24, 32, 48, 64], "concurrency": 1, "cache_state": "post_recall_warm", "session_gucs": ["ec_ivf.posting_bound_prune=off"] },
+    { "kind": "recall", "name": "recall-dprune-on-100k", "tags": ["dense-prune-ab", "prune-on", "ec_real_100k"], "prefix": "attr_dprune_100k", "profile": "ec_ivf", "k": 10, "sweep": [8, 16, 24, 32, 48, 64], "session_gucs": ["ec_ivf.posting_bound_prune=on"] },
+    { "kind": "latency", "name": "latency-dprune-on-100k", "tags": ["dense-prune-ab", "prune-on", "ec_real_100k"], "prefix": "attr_dprune_100k", "profile": "ec_ivf", "k": 10, "sweep": [8, 16, 24, 32, 48, 64], "concurrency": 1, "cache_state": "post_recall_warm", "session_gucs": ["ec_ivf.posting_bound_prune=on"] },
+    { "kind": "storage", "name": "storage-dprune-100k", "tags": ["dense-prune-ab", "ec_real_100k"], "prefix": "attr_dprune_100k" }
+  ]
+}

@@ -1,0 +1,35 @@
+{
+  "name": "ivf-attr-prune-ab",
+  "schema_version": 1,
+  "defaults": {
+    "pg": 18,
+    "socket_dir": "/home/peter/.pgrx",
+    "bits": 4,
+    "seed": 42,
+    "queries_limit": 200,
+    "iterations": 200,
+    "force_index": true
+  },
+  "steps": [
+    { "kind": "load", "name": "load-prune-10k", "tags": ["prune-ab", "ec_real_10k"], "prefix": "attr_prune_10k", "profile": "ec_ivf", "corpus_file": "data/staged-current/ec_real_10k_corpus.tsv", "queries_file": "data/staged-current/ec_real_10k_queries.tsv", "manifest_file": "data/staged-current/ec_real_10k_manifest.json", "allow_manifest_mismatch": true, "reloptions": ["nlists=100", "storage_format=rabitq", "quant_bits=4", "rerank=heap_f32", "rerank_width=64"] },
+    { "kind": "recall", "name": "recall-prune-off-10k", "tags": ["prune-ab", "prune-off", "ec_real_10k"], "prefix": "attr_prune_10k", "profile": "ec_ivf", "k": 10, "sweep": [8, 16, 24, 32, 48, 64], "session_gucs": ["ec_ivf.posting_bound_prune=off"] },
+    { "kind": "latency", "name": "latency-prune-off-10k", "tags": ["prune-ab", "prune-off", "ec_real_10k"], "prefix": "attr_prune_10k", "profile": "ec_ivf", "k": 10, "sweep": [8, 16, 24, 32, 48, 64], "concurrency": 1, "cache_state": "post_recall_warm", "session_gucs": ["ec_ivf.posting_bound_prune=off"] },
+    { "kind": "recall", "name": "recall-prune-on-10k", "tags": ["prune-ab", "prune-on", "ec_real_10k"], "prefix": "attr_prune_10k", "profile": "ec_ivf", "k": 10, "sweep": [8, 16, 24, 32, 48, 64], "session_gucs": ["ec_ivf.posting_bound_prune=on"] },
+    { "kind": "latency", "name": "latency-prune-on-10k", "tags": ["prune-ab", "prune-on", "ec_real_10k"], "prefix": "attr_prune_10k", "profile": "ec_ivf", "k": 10, "sweep": [8, 16, 24, 32, 48, 64], "concurrency": 1, "cache_state": "post_recall_warm", "session_gucs": ["ec_ivf.posting_bound_prune=on"] },
+    { "kind": "storage", "name": "storage-prune-10k", "tags": ["prune-ab", "ec_real_10k"], "prefix": "attr_prune_10k" },
+
+    { "kind": "load", "name": "load-prune-50k", "tags": ["prune-ab", "ec_real_50k"], "prefix": "attr_prune_50k", "profile": "ec_ivf", "corpus_file": "data/staged-current/ec_real_50k_corpus.tsv", "queries_file": "data/staged-current/ec_real_50k_queries.tsv", "manifest_file": "data/staged-current/ec_real_50k_manifest.json", "allow_manifest_mismatch": true, "reloptions": ["nlists=224", "storage_format=rabitq", "quant_bits=4", "rerank=heap_f32", "rerank_width=64"] },
+    { "kind": "recall", "name": "recall-prune-off-50k", "tags": ["prune-ab", "prune-off", "ec_real_50k"], "prefix": "attr_prune_50k", "profile": "ec_ivf", "k": 10, "sweep": [8, 16, 24, 32, 48, 64], "session_gucs": ["ec_ivf.posting_bound_prune=off"] },
+    { "kind": "latency", "name": "latency-prune-off-50k", "tags": ["prune-ab", "prune-off", "ec_real_50k"], "prefix": "attr_prune_50k", "profile": "ec_ivf", "k": 10, "sweep": [8, 16, 24, 32, 48, 64], "concurrency": 1, "cache_state": "post_recall_warm", "session_gucs": ["ec_ivf.posting_bound_prune=off"] },
+    { "kind": "recall", "name": "recall-prune-on-50k", "tags": ["prune-ab", "prune-on", "ec_real_50k"], "prefix": "attr_prune_50k", "profile": "ec_ivf", "k": 10, "sweep": [8, 16, 24, 32, 48, 64], "session_gucs": ["ec_ivf.posting_bound_prune=on"] },
+    { "kind": "latency", "name": "latency-prune-on-50k", "tags": ["prune-ab", "prune-on", "ec_real_50k"], "prefix": "attr_prune_50k", "profile": "ec_ivf", "k": 10, "sweep": [8, 16, 24, 32, 48, 64], "concurrency": 1, "cache_state": "post_recall_warm", "session_gucs": ["ec_ivf.posting_bound_prune=on"] },
+    { "kind": "storage", "name": "storage-prune-50k", "tags": ["prune-ab", "ec_real_50k"], "prefix": "attr_prune_50k" },
+
+    { "kind": "load", "name": "load-prune-100k", "tags": ["prune-ab", "ec_real_100k"], "prefix": "attr_prune_100k", "profile": "ec_ivf", "corpus_file": "data/staged-current/ec_real_100k_corpus.tsv", "queries_file": "data/staged-current/ec_real_100k_queries.tsv", "manifest_file": "data/staged-current/ec_real_100k_manifest.json", "allow_manifest_mismatch": true, "reloptions": ["nlists=316", "storage_format=rabitq", "quant_bits=4", "rerank=heap_f32", "rerank_width=64"] },
+    { "kind": "recall", "name": "recall-prune-off-100k", "tags": ["prune-ab", "prune-off", "ec_real_100k"], "prefix": "attr_prune_100k", "profile": "ec_ivf", "k": 10, "sweep": [8, 16, 24, 32, 48, 64], "session_gucs": ["ec_ivf.posting_bound_prune=off"] },
+    { "kind": "latency", "name": "latency-prune-off-100k", "tags": ["prune-ab", "prune-off", "ec_real_100k"], "prefix": "attr_prune_100k", "profile": "ec_ivf", "k": 10, "sweep": [8, 16, 24, 32, 48, 64], "concurrency": 1, "cache_state": "post_recall_warm", "session_gucs": ["ec_ivf.posting_bound_prune=off"] },
+    { "kind": "recall", "name": "recall-prune-on-100k", "tags": ["prune-ab", "prune-on", "ec_real_100k"], "prefix": "attr_prune_100k", "profile": "ec_ivf", "k": 10, "sweep": [8, 16, 24, 32, 48, 64], "session_gucs": ["ec_ivf.posting_bound_prune=on"] },
+    { "kind": "latency", "name": "latency-prune-on-100k", "tags": ["prune-ab", "prune-on", "ec_real_100k"], "prefix": "attr_prune_100k", "profile": "ec_ivf", "k": 10, "sweep": [8, 16, 24, 32, 48, 64], "concurrency": 1, "cache_state": "post_recall_warm", "session_gucs": ["ec_ivf.posting_bound_prune=on"] },
+    { "kind": "storage", "name": "storage-prune-100k", "tags": ["prune-ab", "ec_real_100k"], "prefix": "attr_prune_100k" }
+  ]
+}
