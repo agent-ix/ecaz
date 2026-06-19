@@ -43,8 +43,16 @@ contain the (≤ `rerank_width`) survivors, not the whole chain.
 
 ### On-disk (research project — clean format break, just rebuild)
 
-- New metadata field `rerank_sidecar_directory_head: ItemPointer` (v3 metadata
-  has spare offsets; add at the next free offset, bump nothing else needed).
+- New metadata field `rerank_sidecar_directory_head: ItemPointer`. **Correction
+  (per codex 111g/004 P1):** v3 metadata is **full** at `EC_IVF_METADATA_BYTES ==
+  86` with `rerank_sidecar_head` already occupying bytes `80..86` — there is **no
+  spare ItemPointer tail**. Adding the directory head therefore requires a
+  metadata **size/layout change**: extend `EC_IVF_METADATA_BYTES` to 92 (new field
+  at `86..92`), add `EC_IVF_METADATA_RERANK_SIDECAR_DIRECTORY_HEAD_OFFSET = 86`,
+  bump the encode/decode + the `size_of_assertions` / on-disk fixtures, and (per
+  research-project posture) treat it as a **clean format break + rebuild** (no
+  back-compat path; the decode requires the new width). Do NOT "add at the next
+  free offset, bump nothing" — that would over-read/over-write the 86-byte area.
 - A directory chain of blocks, each holding a sorted run of
   `(first_heap_tid, block_tid)` entries — one entry per build-written sidecar
   block, ascending by `first_heap_tid` (build already writes blocks in TID

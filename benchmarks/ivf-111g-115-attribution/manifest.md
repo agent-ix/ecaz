@@ -16,9 +16,15 @@ Conforms to `spec/non-functional/NFR-007-benchmark-provenance.md`.
   - 10k — `data/task106_intel_dbpedia_staged` — corpus SHA `c67c5810…`, 10000 rows / 200 q
   - 50k — `data/task111a_real50k` — corpus SHA `56023baa…`, 50000 rows / 1000 q
   - 100k — `data/task106_full_sweep_100k` — corpus SHA `07275cfd…`, 100000 rows / 1000 q
-- **Common knobs:** k=10, nprobe sweep `[8,16,24,32,48,64]`, queries_limit=200,
+- **Common knobs:** k=10, nprobe sweep `[8,16,32,64,128,200]` (extended from the
+  registered `[8,16,24,32,48,64]` default so curves reach ~0.999 and matched-recall
+  comparison is possible — see FINDINGS Finding 2), queries_limit=200,
   iterations=200, concurrency=1, cache_state=post_recall_warm, rerank_width=64;
   nlists per scale 100 / 224 / 316 (explicit, held constant for attribution).
+- **HEAD backend SHA (all 8 configs):** `67e1534cfcf82f43…` (release, f16-fixed),
+  recorded in each `artifacts/head-*/suite-manifest.json`. The committed
+  `artifacts/head-<config>/{results.jsonl,suite-manifest.json,*.log}` are the
+  decision-grade evidence behind the verdict table below + FINDINGS.md.
 
 ## Layers
 
@@ -44,16 +50,22 @@ storage size/per-row, and posting/heap/prune counters where emitted.
 
 ## Verdict table (per change)
 
-_Filled from results once runs complete — promote / iterate / abandon, each cited
-to a `results.jsonl` line. Reconciled against codex/gpt5.5 code-review feedback._
+Measured @100k on the fixed `.so` (full curves + 10/50k in FINDINGS.md and the
+committed `artifacts/head-*/results.jsonl`). Reconciled with codex code review.
 
-| Change | Metric moved? | Direction | Matched-recall latency Δ | Verdict |
-|---|---|---|---|---|
-| 111g rerank reps (f16/rabitq4 vs f32) | _tbd_ | | | |
-| 112 lazy rerank (on vs off) | _tbd_ | | | |
-| 113 posting prune (on vs off) | _tbd_ | | | |
-| 115 residual (on vs plain) | _tbd_ | | | |
-| quant_bits 1/2/4/8 | _tbd_ | | | |
+| Change | Result @100k | Verdict | Evidence |
+|---|---|---|---|
+| 111g table f16(fixed) vs f32 | recall 0.9975 vs 0.9985; ~6% slower; same 25.4 MiB | no benefit vs f32 | `head-rerank-format-matrix` |
+| 111g table rabitq4 | recall 0.942 (lower) | worse — don't use | `head-rerank-format-matrix` |
+| 111g **index-side** f16/rq4 | p50 ~540 ms (flat) vs 5–13 ms table; idx 416 vs 25 MiB | **BROKEN, O(N) → ADR-079** | `head-sidecar-index-placement` |
+| 112 lazy on/off | recall byte-identical; latency neutral | **inert — no win** | `head-lazy-ab` |
+| 113 row prune on/off | recall identical; p50 16.7 vs 17.4 / 43.6 vs 45.5 ms | recall-safe, **+4%** keep | `head-prune-ab` |
+| 113 dense prune on/off | recall identical; ~3% slower | recall-safe but inert → gate to row | `head-dense-prune-ab` |
+| 115 residual plain/on | recall identical; ~9% slower; same size | **no win** (masked by exact rerank) | `head-residual-ab` |
+| quant_bits 1/2/4/8 | recall all ≈0.999; idx 32.7/52.5/90.4/198.7 MiB; p50 7.8/53.3*/16.6/17.8 ms | **1-bit sweet spot** | `head-quant-bits-matrix` |
+
+\* qb2 p50=53 ms anomaly (likely unoptimized 2-bit scan). Full per-nprobe curves
+and the overall conclusion: `FINDINGS.md`.
 
 ## Re-run
 
