@@ -98,6 +98,16 @@ pub(crate) struct IvfExplainCounters {
     pub stats_approximate_scan_elapsed_us: u32,
     pub stats_exact_rerank_elapsed_us: u32,
     pub stats_filtered_duplicates: u32,
+    /// Task 112: number of frontier candidates considered for exact heap-f32
+    /// rerank (the `rerank_width`-bounded approximate frontier handed to the
+    /// rerank stage). With the lazy driver this is `reranked + skipped`.
+    pub stats_rerank_candidates_considered: u32,
+    /// Task 112: number of considered candidates the lazy rerank stop proved
+    /// could not enter the executor's result and therefore skipped (no heap
+    /// fetch, no exact score). Zero under the sound `NoBound` default that holds
+    /// until Task 113 supplies a calibrated lower bound; non-zero once a real
+    /// bound lets the stop fire safely.
+    pub stats_rerank_candidates_skipped: u32,
     /// Task 111g: total bytes of rerank *source* representation read for the
     /// reranked frontier. Table f32 accumulates `dims * 4` per candidate
     /// (full heap source); the index-placement compact sidecar accumulates
@@ -331,6 +341,19 @@ impl IvfExplainCounters {
         self.stats_rerank_rows = self.stats_rerank_rows.saturating_add(1);
     }
 
+    /// Task 112: record one lazy-rerank planning decision over a frontier of
+    /// `considered` candidates, `skipped` of which the lazy stop proved safe to
+    /// skip. Both accumulate across the scan (a scan has a single rerank pass
+    /// today, but the counters are additive for forward compatibility).
+    pub(crate) fn record_lazy_rerank_plan(&mut self, considered: usize, skipped: usize) {
+        self.stats_rerank_candidates_considered = self
+            .stats_rerank_candidates_considered
+            .saturating_add(u32::try_from(considered).unwrap_or(u32::MAX));
+        self.stats_rerank_candidates_skipped = self
+            .stats_rerank_candidates_skipped
+            .saturating_add(u32::try_from(skipped).unwrap_or(u32::MAX));
+    }
+
     pub(crate) fn record_heap_blocks_fetched(&mut self, count: usize) {
         self.stats_heap_blocks_fetched = self
             .stats_heap_blocks_fetched
@@ -363,7 +386,7 @@ impl IvfExplainCounters {
         *self = Self::default();
     }
 
-    pub(crate) fn explain_properties(self) -> [ExplainProperty; 25] {
+    pub(crate) fn explain_properties(self) -> [ExplainProperty; 27] {
         [
             ExplainProperty {
                 property_name: "Centroid Scores",
@@ -468,6 +491,14 @@ impl IvfExplainCounters {
             ExplainProperty {
                 property_name: "Rerank Source Bytes Read",
                 value: ExplainPropertyValue::Integer(self.stats_rerank_source_bytes_read),
+            },
+            ExplainProperty {
+                property_name: "Rerank Candidates Considered",
+                value: ExplainPropertyValue::Integer(self.stats_rerank_candidates_considered),
+            },
+            ExplainProperty {
+                property_name: "Rerank Candidates Skipped",
+                value: ExplainPropertyValue::Integer(self.stats_rerank_candidates_skipped),
             },
         ]
     }
@@ -868,6 +899,7 @@ mod tests {
         counters.record_exact_rerank_elapsed_us(41);
         counters.record_filtered_duplicate();
         counters.record_rerank_source_bytes_read(43);
+        counters.record_lazy_rerank_plan(47, 5);
 
         assert_eq!(
             counters,
@@ -896,6 +928,8 @@ mod tests {
                 stats_approximate_scan_elapsed_us: 37,
                 stats_exact_rerank_elapsed_us: 41,
                 stats_filtered_duplicates: 1,
+                stats_rerank_candidates_considered: 47,
+                stats_rerank_candidates_skipped: 5,
                 stats_rerank_source_bytes_read: 43,
             }
         );
@@ -928,6 +962,8 @@ mod tests {
             stats_approximate_scan_elapsed_us: 113,
             stats_exact_rerank_elapsed_us: 127,
             stats_filtered_duplicates: 131,
+            stats_rerank_candidates_considered: 139,
+            stats_rerank_candidates_skipped: 149,
             stats_rerank_source_bytes_read: 137,
         };
 
@@ -1033,6 +1069,14 @@ mod tests {
                 ExplainProperty {
                     property_name: "Rerank Source Bytes Read",
                     value: ExplainPropertyValue::Integer(137),
+                },
+                ExplainProperty {
+                    property_name: "Rerank Candidates Considered",
+                    value: ExplainPropertyValue::Integer(139),
+                },
+                ExplainProperty {
+                    property_name: "Rerank Candidates Skipped",
+                    value: ExplainPropertyValue::Integer(149),
                 },
             ]
         );

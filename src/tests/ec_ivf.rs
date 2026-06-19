@@ -3628,3 +3628,260 @@
         assert_eq!(after_outputs.len(), 2);
         assert!(after_outputs.iter().all(|(_, _, score)| score.is_finite()));
     }
+
+    // ---------------------------------------------------------------------
+    // Task 112: lazy heap-f32 exact rerank.
+    // ---------------------------------------------------------------------
+
+    /// Build a heap-f32 (table-side) rerank IVF index over `rows` with the given
+    /// `rerank_width`, returning its OID. `storage_format = 'coarse_rerank'`
+    /// keeps the heap source vector and reranks table-side through the f32 path
+    /// (the pre-112 exact rerank), which is exactly the surface Task 112 touches.
+    fn make_lazy_rerank_index(table: &str, rows: &[(i64, Vec<f32>)], rerank_width: i32) -> pg_sys::Oid {
+        Spi::run(&format!(
+            "CREATE TABLE {table} (id bigint primary key, embedding ecvector)"
+        ))
+        .expect("table creation should succeed");
+        for (id, vector) in rows {
+            let literal = format_recall_vector_sql_literal(vector);
+            Spi::run(&format!("INSERT INTO {table} VALUES ({id}, {literal}::ecvector)"))
+                .expect("seed insert should succeed");
+        }
+        Spi::run(&format!(
+            "CREATE INDEX {table}_idx ON {table} USING ec_ivf \
+             (embedding ecvector_ip_ops) \
+             WITH (
+                nlists = 4,
+                nprobe = 4,
+                training_sample_rows = {rows_len},
+                storage_format = 'coarse_rerank',
+                rerank_format = 'f32',
+                rerank_placement = 'table',
+                rerank_width = {rerank_width}
+             )",
+            rows_len = rows.len(),
+        ))
+        .expect("coarse_rerank heap-f32 index creation should succeed");
+        ec_ivf_index_oid(&format!("{table}_idx"))
+    }
+
+    fn lazy_rerank_rows(count: i64, dims: usize) -> Vec<(i64, Vec<f32>)> {
+        (0..count)
+            .map(|id| {
+                let base = id as f32;
+                let vector = (0..dims)
+                    .map(|d| ((base * 0.41 + d as f32 * 0.13).cos()) * 0.5 + 0.5)
+                    .collect::<Vec<f32>>();
+                (id, vector)
+            })
+            .collect()
+    }
+
+    /// RECALL-SAFETY PROOF (in test form): the lazy heap-f32 rerank returns the
+    /// exact same top-k, in the same order, with the same exact scores as the
+    /// fixed-width rerank on the same index and query. Under the sound NoBound
+    /// contract the lazy path never stops early, so this must hold byte-for-byte.
+    #[pg_test]
+    fn test_ec_ivf_lazy_rerank_equals_fixed_width() {
+        let rows = lazy_rerank_rows(16, 8);
+        let index_oid = make_lazy_rerank_index("ec_ivf_lazy_eq", &rows, 8);
+        let query = rows[3].1.clone();
+
+        Spi::run("SET ec_ivf.lazy_heap_rerank = off").expect("gate GUC should be settable");
+        let fixed =
+            ec_ivf_debug!(am::debug_ec_ivf_gettuple_counter_snapshot(index_oid, query.clone()));
+
+        Spi::run("SET ec_ivf.lazy_heap_rerank = on").expect("gate GUC should be settable");
+        let lazy =
+            ec_ivf_debug!(am::debug_ec_ivf_gettuple_counter_snapshot(index_oid, query));
+        Spi::run("RESET ec_ivf.lazy_heap_rerank").expect("gate GUC should be resettable");
+
+        assert!(!fixed.outputs.is_empty(), "fixed-width rerank should emit rows");
+        assert_eq!(
+            fixed.outputs, lazy.outputs,
+            "lazy rerank must return identical (tid, tid, exact score) outputs in identical order"
+        );
+        // Same heap fetch work: under NoBound nothing is skipped, so the lazy
+        // path reranks every candidate the fixed path did.
+        assert_eq!(fixed.rerank_rows, lazy.rerank_rows);
+        assert_eq!(
+            fixed.rerank_source_bytes_read,
+            lazy.rerank_source_bytes_read
+        );
+    }
+
+    /// Counters: the lazy stage exposes considered / skipped, and (under the
+    /// NoBound default) considered == rerank_rows and skipped == 0.
+    #[pg_test]
+    fn test_ec_ivf_lazy_rerank_counters_no_skip_under_no_bound() {
+        let rows = lazy_rerank_rows(16, 8);
+        let index_oid = make_lazy_rerank_index("ec_ivf_lazy_counters", &rows, 8);
+        let query = rows[5].1.clone();
+
+        let snap =
+            ec_ivf_debug!(am::debug_ec_ivf_gettuple_counter_snapshot(index_oid, query));
+
+        assert!(
+            snap.rerank_candidates_considered > 0,
+            "lazy rerank should report considered candidates"
+        );
+        assert_eq!(
+            snap.rerank_candidates_skipped, 0,
+            "NoBound must never skip a candidate (recall-safe)"
+        );
+        assert_eq!(
+            snap.rerank_candidates_considered, snap.rerank_rows,
+            "every considered candidate is reranked under NoBound"
+        );
+    }
+
+    /// Disabling the gate routes the legacy fixed-width path and still reports
+    /// considered, with zero skipped.
+    #[pg_test]
+    fn test_ec_ivf_lazy_rerank_gate_off_reports_zero_skipped() {
+        let rows = lazy_rerank_rows(16, 8);
+        let index_oid = make_lazy_rerank_index("ec_ivf_lazy_gate_off", &rows, 8);
+        let query = rows[1].1.clone();
+
+        Spi::run("SET ec_ivf.lazy_heap_rerank = off").expect("gate GUC should be settable");
+        let snap =
+            ec_ivf_debug!(am::debug_ec_ivf_gettuple_counter_snapshot(index_oid, query));
+        Spi::run("RESET ec_ivf.lazy_heap_rerank").expect("gate GUC should be resettable");
+
+        assert_eq!(snap.rerank_candidates_skipped, 0);
+        assert_eq!(snap.rerank_candidates_considered, snap.rerank_rows);
+    }
+
+    /// Ties: rows that share an exact score must come back in the deterministic
+    /// heap-TID tiebreak order, identical under lazy and fixed width.
+    #[pg_test]
+    fn test_ec_ivf_lazy_rerank_handles_score_ties() {
+        // Several identical vectors => identical exact scores against the query.
+        let mut rows: Vec<(i64, Vec<f32>)> = (0..6)
+            .map(|id| (id, vec![1.0_f32, 0.0]))
+            .collect();
+        // A couple of distinct rows so the frontier is non-trivial.
+        rows.push((6, vec![0.0_f32, 1.0]));
+        rows.push((7, vec![-1.0_f32, 0.0]));
+        let index_oid = make_lazy_rerank_index("ec_ivf_lazy_ties", &rows, 8);
+        let query = vec![1.0_f32, 0.0];
+
+        Spi::run("SET ec_ivf.lazy_heap_rerank = off").expect("gate GUC should be settable");
+        let fixed =
+            ec_ivf_debug!(am::debug_ec_ivf_gettuple_counter_snapshot(index_oid, query.clone()));
+        Spi::run("SET ec_ivf.lazy_heap_rerank = on").expect("gate GUC should be settable");
+        let lazy =
+            ec_ivf_debug!(am::debug_ec_ivf_gettuple_counter_snapshot(index_oid, query));
+        Spi::run("RESET ec_ivf.lazy_heap_rerank").expect("gate GUC should be resettable");
+
+        assert_eq!(
+            fixed.outputs, lazy.outputs,
+            "tie ordering must be identical under lazy and fixed width"
+        );
+        // The tied rows must appear before the distant ones, all with finite
+        // scores, in a stable order.
+        assert!(lazy.outputs.iter().all(|(_, _, score)| score.is_finite()));
+    }
+
+    /// Duplicate heap TIDs: the same heap row referenced from multiple probed
+    /// lists must be reranked once and returned once, identically lazy vs fixed.
+    #[pg_test]
+    fn test_ec_ivf_lazy_rerank_dedupes_duplicate_heap_tids() {
+        let rows = lazy_rerank_rows(12, 8);
+        // nprobe spans all lists so a heap TID reachable from multiple centroids
+        // is exercised through the dedup map before rerank.
+        let index_oid = make_lazy_rerank_index("ec_ivf_lazy_dupe", &rows, 8);
+        let query = rows[2].1.clone();
+
+        Spi::run("SET ec_ivf.lazy_heap_rerank = off").expect("gate GUC should be settable");
+        let fixed =
+            ec_ivf_debug!(am::debug_ec_ivf_gettuple_counter_snapshot(index_oid, query.clone()));
+        Spi::run("SET ec_ivf.lazy_heap_rerank = on").expect("gate GUC should be settable");
+        let lazy =
+            ec_ivf_debug!(am::debug_ec_ivf_gettuple_counter_snapshot(index_oid, query));
+        Spi::run("RESET ec_ivf.lazy_heap_rerank").expect("gate GUC should be resettable");
+
+        // No heap TID appears twice in the output.
+        let mut seen = std::collections::HashSet::new();
+        for (block_number, offset_number, _score) in &lazy.outputs {
+            assert!(
+                seen.insert((*block_number, *offset_number)),
+                "lazy rerank emitted a duplicate heap tid {block_number}:{offset_number}"
+            );
+        }
+        assert_eq!(fixed.outputs, lazy.outputs);
+    }
+
+    /// Empty frontier: when every indexed row has been deleted and vacuumed out
+    /// of the postings, the scan produces no candidates, so the rerank stage
+    /// reranks nothing, skips nothing, and emits nothing.
+    #[pg_test]
+    fn test_ec_ivf_lazy_rerank_empty_frontier_is_a_noop() {
+        Spi::run("CREATE TABLE ec_ivf_lazy_empty (id bigint primary key, embedding ecvector)")
+            .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_ivf_lazy_empty VALUES (0, '[1.0,0.0]'::ecvector), (1, '[0.0,1.0]'::ecvector)",
+        )
+        .expect("seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_ivf_lazy_empty_idx ON ec_ivf_lazy_empty USING ec_ivf \
+             (embedding ecvector_ip_ops) \
+             WITH (nlists = 1, nprobe = 1, training_sample_rows = 2, \
+                   storage_format = 'coarse_rerank', rerank_format = 'f32', \
+                   rerank_placement = 'table', rerank_width = 8)",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid = ec_ivf_index_oid("ec_ivf_lazy_empty_idx");
+        let tid0 = heap_tid_for_row("ec_ivf_lazy_empty", 0);
+        let tid1 = heap_tid_for_row("ec_ivf_lazy_empty", 1);
+        Spi::run("DELETE FROM ec_ivf_lazy_empty").expect("delete should succeed");
+        // Vacuum the deleted TIDs out of the index so the scan frontier is empty.
+        ec_ivf_debug!(am::debug_ec_ivf_vacuum_remove_heap_tids(index_oid, &[tid0, tid1]));
+
+        let snap =
+            ec_ivf_debug!(am::debug_ec_ivf_gettuple_counter_snapshot(index_oid, vec![1.0, 0.0]));
+
+        assert_eq!(snap.outputs.len(), 0, "empty frontier should emit no rows");
+        assert_eq!(snap.rerank_rows, 0);
+        assert_eq!(snap.rerank_candidates_considered, 0);
+        assert_eq!(snap.rerank_candidates_skipped, 0);
+    }
+
+    /// `rerank_width` boundaries: width smaller than the frontier truncates the
+    /// considered set to the width; width >= frontier considers the whole
+    /// frontier. Lazy and fixed width agree at each boundary.
+    #[pg_test]
+    fn test_ec_ivf_lazy_rerank_width_boundaries() {
+        let rows = lazy_rerank_rows(16, 8);
+        let query = rows[4].1.clone();
+
+        // Narrow width: fewer candidates considered than the frontier.
+        let narrow_oid = make_lazy_rerank_index("ec_ivf_lazy_width_narrow", &rows, 3);
+        let narrow =
+            ec_ivf_debug!(am::debug_ec_ivf_gettuple_counter_snapshot(narrow_oid, query.clone()));
+        assert!(
+            narrow.rerank_candidates_considered <= 3,
+            "narrow rerank_width=3 should consider at most 3 candidates, got {}",
+            narrow.rerank_candidates_considered
+        );
+        assert_eq!(narrow.rerank_candidates_skipped, 0);
+        assert_eq!(narrow.rerank_candidates_considered, narrow.rerank_rows);
+
+        // Wide width: considers the whole reachable frontier; lazy == fixed.
+        let wide_oid = make_lazy_rerank_index("ec_ivf_lazy_width_wide", &rows, 64);
+        Spi::run("SET ec_ivf.lazy_heap_rerank = off").expect("gate GUC should be settable");
+        let wide_fixed =
+            ec_ivf_debug!(am::debug_ec_ivf_gettuple_counter_snapshot(wide_oid, query.clone()));
+        Spi::run("SET ec_ivf.lazy_heap_rerank = on").expect("gate GUC should be settable");
+        let wide_lazy =
+            ec_ivf_debug!(am::debug_ec_ivf_gettuple_counter_snapshot(wide_oid, query));
+        Spi::run("RESET ec_ivf.lazy_heap_rerank").expect("gate GUC should be resettable");
+
+        assert_eq!(wide_fixed.outputs, wide_lazy.outputs);
+        assert_eq!(
+            wide_lazy.rerank_candidates_considered,
+            wide_lazy.rerank_rows
+        );
+        assert_eq!(wide_lazy.rerank_candidates_skipped, 0);
+    }

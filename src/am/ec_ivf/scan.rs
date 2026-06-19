@@ -2138,6 +2138,56 @@ unsafe fn rerank_probe_candidates(
                 super::options::resolve_scan_rerank_width(index_options.rerank_width)
                     .effective_rerank_width;
             let rerank_len = resolve_rerank_len(rerank_width, candidates.len());
+
+            // Task 112: plan the lazy exact-rerank pass over the approximate
+            // frontier. `candidates[..rerank_len]` is ascending by approximate
+            // score here (best first), so the plan only needs those scores.
+            //
+            // `min_kept = rerank_len`: this AM is an ordered index scan with no
+            // `k` pushdown, so the executor may pull the full `rerank_width`
+            // frontier. The sound floor on the kept set is therefore the whole
+            // width — we cannot drop a candidate the executor might still ask
+            // for. Combined with the `NoBound` lower bound (sound until Task 113
+            // supplies a calibrated one), the plan provably reranks the full
+            // width today: `reranked_prefix_len == rerank_len`, `skipped == 0`,
+            // byte-identical to the pre-112 fixed-width path. The plan is the
+            // seam Task 113 plugs a real bound into; an early stop additionally
+            // needs a `k`-cap or on-demand fetch of the skipped suffix before
+            // `min_kept` can drop below the full width (documented in
+            // `lazy.rs`). The gate forces the legacy width when disabled.
+            let lazy_enabled = super::options::current_session_lazy_heap_rerank();
+            let approx_scores: Vec<f32> = candidates[..rerank_len]
+                .iter()
+                .map(|candidate| candidate.score)
+                .collect();
+            // Drive the lazy stop over the approximate frontier. The existing
+            // rerank helpers fetch the kept prefix tid-sorted in a single
+            // locality-preserving batch *after* the prefix length is decided, so
+            // the exact score is not available to the driver at planning time.
+            // That is sound today because the only available bound is `NoBound`,
+            // under which the stop is score-independent (it never fires early):
+            // `drive_lazy_rerank` returns `reranked_prefix_len == rerank_len`
+            // regardless of the exact scores fed in. The placeholder fetch makes
+            // that explicit. When Task 113 supplies a calibrated finite bound,
+            // activating real skips will require feeding true exact scores into
+            // the driver (e.g. fetch the mandatory floor, evaluate the stop, then
+            // fetch the remainder) — see `lazy.rs`.
+            let plan = super::lazy::drive_lazy_rerank(
+                &approx_scores,
+                &super::lazy::NoBound,
+                rerank_len,
+                |_| f32::NEG_INFINITY,
+            );
+            let reranked_prefix_len = if lazy_enabled {
+                plan.reranked_prefix_len
+            } else {
+                rerank_len
+            };
+            opaque.explain_counters.record_lazy_rerank_plan(
+                rerank_len,
+                if lazy_enabled { plan.skipped() } else { 0 },
+            );
+            debug_assert!(reranked_prefix_len <= rerank_len);
             // Task 111g: the rerank stage reads the heap source column
             // tid-sorted (unchanged) and rescores the frontier through the
             // configured `rerank_format` (f32 / f16 / rabitq4). The default
@@ -2157,8 +2207,11 @@ unsafe fn rerank_probe_candidates(
             let sidecar_head = unsafe {
                 index_placement_sidecar_head(scan, index_options)
             };
-            // SAFETY: `rerank_len` is bounded by `candidates.len()`, and the
-            // rerank helpers validate their scan-local state before fetching.
+            // SAFETY: `reranked_prefix_len <= rerank_len <= candidates.len()`,
+            // and the rerank helpers validate their scan-local state before
+            // fetching. Only the reranked prefix is exact-scored; the skipped
+            // suffix (empty today under NoBound) keeps its approximate score and
+            // is ordered after the reranked prefix below.
             match sidecar_head {
                 Some(sidecar_head) => unsafe {
                     rerank_probe_candidates_index_side(
@@ -2166,18 +2219,23 @@ unsafe fn rerank_probe_candidates(
                         opaque,
                         &scorer,
                         sidecar_head,
-                        &mut candidates[..rerank_len],
+                        &mut candidates[..reranked_prefix_len],
                     )
                 },
                 None => unsafe {
                     rerank_probe_candidates_table_side(
                         opaque,
                         &scorer,
-                        &mut candidates[..rerank_len],
+                        &mut candidates[..reranked_prefix_len],
                     )
                 },
             }
-            candidates[..rerank_len].sort_by(candidate_cmp);
+            // The reranked prefix is sorted by exact score; the skipped suffix
+            // (provably worse by the lazy contract) keeps its approximate score
+            // and stays after the prefix. Today `reranked_prefix_len ==
+            // rerank_len`, so this sorts the whole reranked frontier exactly as
+            // the pre-112 path did.
+            candidates[..reranked_prefix_len].sort_by(candidate_cmp);
             if rerank_width > 0 {
                 candidates.truncate(rerank_len);
             }
@@ -3162,6 +3220,8 @@ pub(crate) struct EcIvfGettupleCounterDebugSnapshot {
     pub(crate) dense_coalesced_flushes: u32,
     pub(crate) rerank_rows: u32,
     pub(crate) rerank_source_bytes_read: u32,
+    pub(crate) rerank_candidates_considered: u32,
+    pub(crate) rerank_candidates_skipped: u32,
 }
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -3206,6 +3266,8 @@ pub(crate) unsafe fn debug_ec_ivf_gettuple_counter_snapshot(
         dense_coalesced_flushes: counters.stats_dense_coalesced_flushes,
         rerank_rows: counters.stats_rerank_rows,
         rerank_source_bytes_read: counters.stats_rerank_source_bytes_read,
+        rerank_candidates_considered: counters.stats_rerank_candidates_considered,
+        rerank_candidates_skipped: counters.stats_rerank_candidates_skipped,
     }
 }
 

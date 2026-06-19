@@ -38,6 +38,14 @@ static EC_IVF_ADAPTIVE_NPROBE_SCORE_MARGIN_RATIO_BPS_GUC: GucSetting<i32> =
 static EC_IVF_SCRATCH_SOA_BATCH_DECODE_GUC: GucSetting<bool> = GucSetting::<bool>::new(true);
 static EC_IVF_DENSE_POSTING_COALESCING_GUC: GucSetting<bool> = GucSetting::<bool>::new(true);
 static EC_IVF_DENSE_POSTING_TYPED_VIEWS_GUC: GucSetting<bool> = GucSetting::<bool>::new(true);
+// Task 112: drive the heap-f32 exact rerank through the lazy frontier driver
+// (process the approximate frontier best-first and stop exact-scoring once the
+// remaining candidates are provably unable to enter the result). Enabled by
+// default: under the sound `NoBound` contract that holds until Task 113 lands a
+// calibrated lower bound, the lazy driver never stops early, so it is
+// byte-identical to the fixed-width path. Disable to force the legacy
+// fixed-width rerank for a deterministic A/B.
+static EC_IVF_LAZY_HEAP_RERANK_GUC: GucSetting<bool> = GucSetting::<bool>::new(true);
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
@@ -406,6 +414,14 @@ pub(super) fn register_gucs() {
         GucContext::Userset,
         GucFlags::default(),
     );
+    GucRegistry::define_bool_guc(
+        c"ec_ivf.lazy_heap_rerank",
+        c"Enable ec_ivf lazy heap-f32 exact rerank.",
+        c"Task 112 switch; when enabled, the heap-f32 rerank stage processes the approximate frontier best-first and stops exact-scoring once the remaining candidates are provably unable to enter the result. Under the sound no-bound default (until Task 113 supplies a calibrated lower bound) the stop never fires early, so this is byte-identical to the fixed-width path. Disable to force the legacy fixed-width rerank for a deterministic A/B.",
+        &EC_IVF_LAZY_HEAP_RERANK_GUC,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
 }
 
 pub(super) fn current_session_nprobe() -> i32 {
@@ -454,6 +470,10 @@ pub(super) fn current_session_dense_posting_coalescing() -> bool {
     } else {
         EC_IVF_DENSE_POSTING_COALESCING_GUC.get()
     }
+}
+
+pub(super) fn current_session_lazy_heap_rerank() -> bool {
+    EC_IVF_LAZY_HEAP_RERANK_GUC.get()
 }
 
 pub(super) fn current_session_dense_posting_typed_views() -> bool {

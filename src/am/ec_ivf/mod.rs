@@ -5,6 +5,7 @@ mod build;
 mod build_parallel;
 mod cost;
 mod insert;
+mod lazy;
 mod options;
 mod page;
 mod quantizer;
