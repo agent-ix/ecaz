@@ -4606,6 +4606,83 @@ where
     Ok(metadata)
 }
 
+#[cfg(any(feature = "pg17", feature = "pg18"))]
+pub(super) unsafe fn update_metadata_page_prepending_rerank_group<F>(
+    index_relation: pg_sys::Relation,
+    group_tid: ItemPointer,
+    group_header: &mut IvfRerankGroupHeaderTuple,
+    update: F,
+) -> Result<MetadataPage, String>
+where
+    F: FnOnce(&mut MetadataPage) -> Result<(), String>,
+{
+    let index = IvfPageRelation::new(ivf_relation_nonnull(
+        index_relation,
+        "ec_ivf metadata rerank group prepend",
+    ));
+    let metadata_buffer = index
+        .read_main(
+            METADATA_BLOCK_NUMBER,
+            pg_sys::ReadBufferMode::RBM_NORMAL,
+            pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
+        )
+        .ok_or_else(|| "ec_ivf failed to open metadata buffer".to_owned())?;
+    let group_buffer = index
+        .read_main(
+            group_tid.block_number,
+            pg_sys::ReadBufferMode::RBM_NORMAL,
+            pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
+        )
+        .ok_or_else(|| {
+            format!(
+                "ec_ivf failed to open rerank group header block {}",
+                group_tid.block_number
+            )
+        })?;
+
+    let mut wal_txn = index.start_wal();
+    let metadata_page = wal_txn.register_locked_buffer_full_image(&metadata_buffer);
+    let metadata_registered =
+        WalRegisteredPage::new(index.raw(), METADATA_BLOCK_NUMBER, metadata_page);
+    let metadata_bytes = metadata_registered.special_bytes(METADATA_BYTES);
+    let mut metadata = match MetadataPage::decode(metadata_bytes) {
+        Ok(metadata) => metadata,
+        Err(err) => {
+            std::mem::drop(wal_txn);
+            return Err(err);
+        }
+    };
+    let previous_head = metadata.rerank_sidecar_head;
+    if let Err(err) = update(&mut metadata) {
+        std::mem::drop(wal_txn);
+        return Err(err);
+    }
+    group_header.next_group_tid = previous_head;
+    metadata.rerank_sidecar_head = group_tid;
+
+    let group_encoded = match group_header.encode() {
+        Ok(encoded) => encoded,
+        Err(err) => {
+            std::mem::drop(wal_txn);
+            return Err(err);
+        }
+    };
+    let group_page = wal_txn.register_locked_buffer_full_image(&group_buffer);
+    let group_writer =
+        PageTupleWriter::new(group_page, group_buffer.page_size(), group_tid.block_number);
+    if let Err(err) =
+        group_writer.copy_required_exact(group_tid, "rerank group header", &group_encoded)
+    {
+        std::mem::drop(wal_txn);
+        return Err(err);
+    }
+
+    let metadata_encoded = metadata.encode();
+    metadata_registered.copy_to_special(&metadata_encoded[..METADATA_BYTES]);
+    wal_txn.finish();
+    Ok(metadata)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

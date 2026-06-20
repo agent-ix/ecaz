@@ -165,8 +165,12 @@ unsafe fn insert_into_trained_index(
 
     let list_id_u32 =
         u32::try_from(list_id).map_err(|_| "ec_ivf assigned list id exceeds u32".to_owned())?;
-    let rerank_tid =
-        append_rerank_sidecar_entry(index_relation, heap_tid, list_id_u32, gamma, &source_vector)?;
+    let mut rerank_group =
+        append_rerank_group_entry(index_relation, heap_tid, list_id_u32, gamma, &source_vector)?;
+    let rerank_tid = rerank_group
+        .as_ref()
+        .map(|group| group.tid)
+        .unwrap_or(ItemPointer::INVALID);
 
     let posting = page::IvfPostingTuple {
         list_id: list_id_u32,
@@ -195,41 +199,51 @@ unsafe fn insert_into_trained_index(
         apply_directory_insert_stats(latest_directory, posting_tid)
     })
     .map_err(|e| format!("ec_ivf aminsert stats update failed: {e}"))?;
-    page::update_metadata_page(index_relation, |metadata| {
-        apply_metadata_insert_stats(metadata)?;
-        if rerank_tid != ItemPointer::INVALID {
-            metadata.rerank_sidecar_head = rerank_tid;
-        }
-        Ok(())
-    })
+    if let Some(group) = rerank_group.as_mut() {
+        page::update_metadata_page_prepending_rerank_group(
+            index_relation,
+            group.tid,
+            &mut group.header,
+            |metadata| apply_metadata_insert_stats(metadata),
+        )
+    } else {
+        page::update_metadata_page(index_relation, |metadata| {
+            apply_metadata_insert_stats(metadata)
+        })
+    }
     .map_err(|e| format!("ec_ivf aminsert metadata update failed: {e}"))?;
 
     Ok(())
 }
 
-/// Append the inserted row's compact rerank payload to the 0x2A sidecar chain
-/// when the index uses rerank_placement = 'index' with a compact rerank_format.
-/// No-op for source placement / f32 (no sidecar). Prepends a single-entry block
-/// to keep inserts O(1).
-unsafe fn append_rerank_sidecar_entry(
+struct AppendedRerankGroup {
+    tid: ItemPointer,
+    header: page::IvfRerankGroupHeaderTuple,
+}
+
+/// Append the inserted row's compact rerank payload to a fresh packed rerank
+/// group when the index uses rerank_placement = 'index' with a compact
+/// rerank_format. No-op for source placement / f32. The group is published
+/// later by relinking it under the metadata lock, after the posting is durable.
+unsafe fn append_rerank_group_entry(
     index_relation: pg_sys::Relation,
     heap_tid: ItemPointer,
     list_id: u32,
     gamma: f32,
     source_vector: &[f32],
-) -> Result<ItemPointer, String> {
+) -> Result<Option<AppendedRerankGroup>, String> {
     let reloptions = NonNull::new(index_relation)
         .map(options::relation_options)
         .ok_or_else(|| "ec_ivf aminsert received null index relation".to_owned())?;
     if reloptions.rerank_placement != options::RerankPlacement::Index {
-        return Ok(ItemPointer::INVALID);
+        return Ok(None);
     }
     let Some(encoder) = super::rerank::RerankSidecarEncoder::resolve(
         reloptions.rerank_format,
         source_vector.len(),
     )?
     else {
-        return Ok(ItemPointer::INVALID);
+        return Ok(None);
     };
     let payload = encoder.encode(source_vector)?;
     let payload_len = encoder.payload_len(source_vector.len());
@@ -254,9 +268,9 @@ unsafe fn append_rerank_sidecar_entry(
         segment_payload_capacity,
     )?;
 
-    // Build the single-entry group with next_group_tid pointing at the current
-    // head so live inserts stay O(1) without a tail walk.
-    let metadata = page::read_metadata_page(index_relation);
+    // Build the single-entry group now, but publish it only during the final
+    // metadata update. That update rewrites next_group_tid under the metadata
+    // lock so concurrent insert prepends cannot orphan each other.
     let postings = vec![(heap_tid, gamma, payload)];
     let mut header = page::IvfRerankGroupHeaderTuple::from_single_heaptid_postings(
         reloptions.rerank_format as u8,
@@ -267,9 +281,9 @@ unsafe fn append_rerank_sidecar_entry(
         header_payload_bytes,
     )?;
     header.next_segment_tid = next_segment_tid;
-    header.next_group_tid = metadata.rerank_sidecar_head;
-    let new_head = page::append_ivf_rerank_group_header_to_new_block(index_relation, &header)?;
-    Ok(new_head)
+    header.next_group_tid = ItemPointer::INVALID;
+    let tid = page::append_ivf_rerank_group_header_to_new_block(index_relation, &header)?;
+    Ok(Some(AppendedRerankGroup { tid, header }))
 }
 
 unsafe fn append_rerank_group_payload_segments(
