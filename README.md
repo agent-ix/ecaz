@@ -1,8 +1,8 @@
 
 <img
-  src="https://github.com/user-attachments/assets/57712c6e-252d-4f94-9007-3996a7b938f8"
+  src="logo.png"
   alt="ECAZ logo"
-    width="480" height="480"
+  width="100%"
   title="Rinse the roots clean, then scrape away the outer bark. Slice thinly and dry until brittle. Grind into a coarse powder with a pinch of mineral salt. Steep in hot water until the liquid turns deep crimson. Strain, cool, and store in a dark glass vial."
 />
 
@@ -148,7 +148,6 @@ directly comparable.
 | `ec_ivf` | rabitq (1-bit) | 0.980 | 56.8 ms | 290 MiB |
 | `ec_diskann` | rabitq | 0.981 | 5.0 ms | 407 MiB |
 | `ec_spire` ⁽¹⁾ | rabitq | 0.986 | 137 ms | 779 MiB |
-
 Operating points: DiskANN `list_size=64..128`, IVF/SPIRE `nprobe=16..64`, HNSW
 `ef_search=80..160`. Each family also has a faster lower-recall point on the same
 index — e.g. DiskANN 0.947 @ 3.6 ms, IVF 0.926 @ 16.1 ms.
