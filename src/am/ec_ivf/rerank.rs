@@ -49,8 +49,9 @@ enum RerankPreparedQuery {
 
 /// Query-independent rerank payload codec. This is the narrow common interface
 /// that build/insert uses for persisted bytes and scan uses for query prep and
-/// scoring. The legacy 0x2A sidecar stores these payload bytes directly; the
-/// packed group/segment layout will consume the same codec instead of adding
+/// scoring. The legacy 0x2A sidecar stored these payload bytes directly; the
+/// current packed group/segment layout stores the same codec payload bytes in
+/// 0x2B headers and 0x2C continuation segments instead of adding
 /// format-specific storage branches.
 pub(super) enum RerankPayloadCodec {
     F16 {
@@ -497,8 +498,8 @@ impl RerankScorer {
         }
     }
 
-    /// Encode an f32 source vector into this representation's compact sidecar
-    /// payload (the persisted `0x2A` payload). `None` for f32.
+    /// Encode an f32 source vector into this representation's compact persisted
+    /// payload. `None` for f32.
     pub(super) fn encode_sidecar_payload(&self, source: &[f32]) -> Result<Option<Vec<u8>>, String> {
         match self {
             Self::F32 => Ok(None),
@@ -562,10 +563,11 @@ impl RerankScorer {
     }
 }
 
-/// Query-independent encoder for the persisted compact rerank sidecar payload
+/// Query-independent encoder for the persisted compact rerank payload
 /// (`rerank_placement = 'index'`). Resolved at build/insert time (no query),
-/// it produces the `0x2A` payload that the scan-time `RerankScorer` later reads
-/// and scores. Mirrors the scan-time scorer's compact payload codec.
+/// it produces the payload bytes that the scan-time `RerankScorer` later reads
+/// from packed rerank groups and scores. Mirrors the scan-time scorer's compact
+/// payload codec.
 pub(super) struct RerankSidecarEncoder {
     codec: RerankPayloadCodec,
 }
@@ -606,8 +608,8 @@ pub(super) fn f16_round_trip(value: f32) -> f32 {
 
 /// Pack an f32 source vector into the compact f16 sidecar payload: two
 /// little-endian bytes per dimension (IEEE-754 binary16, round-to-nearest).
-/// This is the persisted `0x2A` payload for `rerank_format = 'f16'` with
-/// `rerank_placement = 'index'` — half the bytes of the f32 heap source.
+/// This is the persisted compact payload for `rerank_format = 'f16'` with
+/// `rerank_placement = 'index'` - half the bytes of the f32 heap source.
 pub(super) fn pack_f16_payload(source: &[f32]) -> Vec<u8> {
     let mut out = Vec::with_capacity(source.len() * 2);
     for value in source {

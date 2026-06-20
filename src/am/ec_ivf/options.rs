@@ -915,10 +915,10 @@ fn build_options_from_reloptions(
             RerankPlacement::Table => pgrx::error!(
                 "ec_ivf rerank_placement = 'table' is reserved for real table-owned persisted rerank payloads and is not implemented yet; use rerank_placement = 'source' for the existing f32 source vector or 'index' for persisted compact payloads"
             ),
-            // Task 111g/111h legacy baseline: index placement is currently the
-            // persisted compact 0x2A sidecar keyed by heap TID. It is only
-            // meaningful with compact rerank_format values; f32 keeps the source
-            // vector and has no sidecar to place index-side.
+            // Task 111h: index placement persists compact payloads in packed
+            // scorer-width rerank groups. It is only meaningful with compact
+            // rerank_format values; f32 keeps the source vector and has no
+            // compact payload to place index-side.
             RerankPlacement::Index => match rerank_format {
                 RerankFormat::F16
                 | RerankFormat::RaBitQ4

@@ -2327,12 +2327,17 @@ unsafe fn rerank_probe_candidates(
                 opaque.query_values(),
             )
             .unwrap_or_else(|e| pgrx::error!("{e}"));
+            opaque.explain_counters.record_rerank_surface(
+                index_options.rerank_placement.reloption_name(),
+                index_options.rerank_format.reloption_name(),
+            );
 
-            // Task 111g/111h: for rerank_placement = 'index', read the
-            // persisted compact 0x2A sidecar (keyed by heap TID) instead of the
-            // full f32 heap source. The source path keeps the heap-source read;
-            // `source_diagnostic` may score that fetched f32 vector through the
-            // legacy query-time compact conversion for benchmark attribution.
+            // Task 111h: for rerank_placement = 'index', read persisted packed
+            // rerank groups (0x2B/0x2C) through posting-carried group header
+            // TIDs instead of the full f32 heap source. The source path keeps
+            // the heap-source read; `source_diagnostic` may score that fetched
+            // f32 vector through the legacy query-time compact conversion for
+            // benchmark attribution.
             let sidecar_head = unsafe { index_placement_sidecar_head(scan, index_options) };
             // SAFETY: `reranked_prefix_len <= rerank_len <= candidates.len()`,
             // and the rerank helpers validate their scan-local state before
@@ -2373,10 +2378,10 @@ unsafe fn rerank_probe_candidates(
     }
 }
 
-/// Returns the persisted compact rerank sidecar head when this scan should read
-/// the index-side 0x2A sidecar (rerank_placement = 'index' and a sidecar exists
+/// Returns the persisted packed rerank group-chain head when this scan should
+/// read index-side groups (`rerank_placement = 'index'` and a group chain exists
 /// on disk), or `None` to keep the heap/source-vector read. An index with no
-/// sidecar head falls back to the source path.
+/// packed group head falls back to the source path.
 ///
 /// # Safety
 /// `scan` is the live IndexScanDesc; `(*scan).indexRelation` is read to decode
@@ -2516,11 +2521,11 @@ unsafe fn rerank_probe_candidates_source_side(
     }
 }
 
-/// Task 111g: rerank the survivor frontier from the persisted compact `0x2A`
-/// sidecar instead of the f32 heap source. Fresh builds and new inserts store a
-/// direct sidecar block TID on each posting, so the hot path reads only the
-/// survivor blocks. The older heap-TID directory/full-chain loaders remain as
-/// compatibility fallbacks for postings that do not carry direct pointers.
+/// Task 111h: rerank the survivor frontier from persisted packed rerank groups
+/// instead of the f32 heap source. Fresh builds and new inserts store a direct
+/// group header TID on each posting, so the hot path reads only survivor
+/// groups. The full-chain loader remains as a compatibility fallback for
+/// postings that do not carry direct pointers.
 ///
 /// # Safety
 /// `scan` is the live IndexScanDesc; the sidecar chain rooted at `sidecar_head`
@@ -2551,15 +2556,35 @@ unsafe fn rerank_probe_candidates_index_side(
     let use_direct_tids = candidates
         .iter()
         .all(|candidate| candidate.rerank_tid != ItemPointer::INVALID);
+    let mut read_stats = RerankGroupReadStats::default();
     let group_cache = if use_direct_tids {
         unsafe {
-            load_rerank_groups_by_header_tid(index_relation, expected_payload_len, candidates)
+            load_rerank_groups_by_header_tid(
+                index_relation,
+                expected_payload_len,
+                candidates,
+                &mut read_stats,
+            )
         }
         .unwrap_or_else(|e| pgrx::error!("{e}"))
     } else {
-        unsafe { load_rerank_groups_full_chain(index_relation, sidecar_head, expected_payload_len) }
-            .unwrap_or_else(|e| pgrx::error!("{e}"))
+        unsafe {
+            load_rerank_groups_full_chain(
+                index_relation,
+                sidecar_head,
+                expected_payload_len,
+                &mut read_stats,
+            )
+        }
+        .unwrap_or_else(|e| pgrx::error!("{e}"))
     };
+    opaque.explain_counters.record_rerank_index_group_reads(
+        read_stats.group_header_pages_read,
+        read_stats.payload_segment_pages_read,
+        read_stats.group_metadata_bytes_read,
+        read_stats.header_payload_bytes_read,
+        read_stats.segment_payload_bytes_read,
+    );
 
     let batched = scorer.is_batched();
     let mut source_bytes_read = 0usize;
@@ -2574,6 +2599,9 @@ unsafe fn rerank_probe_candidates_index_side(
             payload_slab.extend_from_slice(payload);
             source_bytes_read += payload.len();
         }
+        opaque
+            .explain_counters
+            .record_rerank_payload_slab_bytes_copied(payload_slab.len());
         let mut scores = vec![0.0_f32; candidates.len()];
         scorer
             .score_sidecar_payloads_batch(&payload_slab, &mut scores)
@@ -2595,6 +2623,9 @@ unsafe fn rerank_probe_candidates_index_side(
     opaque
         .explain_counters
         .record_rerank_source_bytes_read(source_bytes_read);
+    opaque
+        .explain_counters
+        .record_rerank_payload_bytes_scored(source_bytes_read);
     for _ in 0..rerank_rows {
         opaque.explain_counters.record_rerank_row();
     }
@@ -2603,6 +2634,40 @@ unsafe fn rerank_probe_candidates_index_side(
 struct LoadedRerankGroup {
     header: super::page::IvfRerankGroupHeaderTuple,
     payloads: Vec<u8>,
+}
+
+#[derive(Default)]
+struct RerankGroupReadStats {
+    group_header_pages_read: u32,
+    payload_segment_pages_read: u32,
+    group_metadata_bytes_read: usize,
+    header_payload_bytes_read: usize,
+    segment_payload_bytes_read: usize,
+}
+
+impl RerankGroupReadStats {
+    fn record_header(&mut self, header: &super::page::IvfRerankGroupHeaderTuple) {
+        self.group_header_pages_read = self.group_header_pages_read.saturating_add(1);
+        let encoded_len = super::page::IvfRerankGroupHeaderTuple::encoded_len(
+            header.len(),
+            header.scorer_width,
+            header.heap_tids.len(),
+            header.payloads.len(),
+        );
+        self.group_metadata_bytes_read = self
+            .group_metadata_bytes_read
+            .saturating_add(encoded_len.saturating_sub(header.payloads.len()));
+        self.header_payload_bytes_read = self
+            .header_payload_bytes_read
+            .saturating_add(header.payloads.len());
+    }
+
+    fn record_segment(&mut self, segment: &super::page::IvfRerankGroupPayloadSegmentTuple) {
+        self.payload_segment_pages_read = self.payload_segment_pages_read.saturating_add(1);
+        self.segment_payload_bytes_read = self
+            .segment_payload_bytes_read
+            .saturating_add(segment.payloads.len());
+    }
 }
 
 /// Load compact rerank payload groups through posting-carried group header TIDs.
@@ -2616,6 +2681,7 @@ unsafe fn load_rerank_groups_by_header_tid(
     index_relation: pg_sys::Relation,
     expected_payload_len: usize,
     candidates: &[EcIvfScoredCandidate],
+    read_stats: &mut RerankGroupReadStats,
 ) -> Result<HashMap<ItemPointer, LoadedRerankGroup>, String> {
     let mut groups = HashMap::new();
     for candidate in candidates {
@@ -2629,7 +2695,12 @@ unsafe fn load_rerank_groups_by_header_tid(
             continue;
         }
         let group = unsafe {
-            load_rerank_group(index_relation, candidate.rerank_tid, expected_payload_len)
+            load_rerank_group(
+                index_relation,
+                candidate.rerank_tid,
+                expected_payload_len,
+                read_stats,
+            )
         }?;
         groups.insert(candidate.rerank_tid, group);
     }
@@ -2646,12 +2717,15 @@ unsafe fn load_rerank_groups_full_chain(
     index_relation: pg_sys::Relation,
     head: ItemPointer,
     expected_payload_len: usize,
+    read_stats: &mut RerankGroupReadStats,
 ) -> Result<HashMap<ItemPointer, LoadedRerankGroup>, String> {
     let mut groups = HashMap::new();
     let mut next_tid = head;
     while next_tid != ItemPointer::INVALID {
         let group_tid = next_tid;
-        let group = unsafe { load_rerank_group(index_relation, group_tid, expected_payload_len) }?;
+        let group = unsafe {
+            load_rerank_group(index_relation, group_tid, expected_payload_len, read_stats)
+        }?;
         next_tid = group.header.next_group_tid;
         groups.insert(group_tid, group);
     }
@@ -2662,8 +2736,10 @@ unsafe fn load_rerank_group(
     index_relation: pg_sys::Relation,
     group_tid: ItemPointer,
     expected_payload_len: usize,
+    read_stats: &mut RerankGroupReadStats,
 ) -> Result<LoadedRerankGroup, String> {
     let header = unsafe { super::page::read_ivf_rerank_group_header(index_relation, group_tid)? };
+    read_stats.record_header(&header);
     if header.payload_len != expected_payload_len {
         return Err(format!(
             "ec_ivf rerank group payload length {} does not match expected {expected_payload_len}",
@@ -2680,6 +2756,7 @@ unsafe fn load_rerank_group(
         let segment = unsafe {
             super::page::read_ivf_rerank_group_payload_segment(index_relation, next_segment_tid)?
         };
+        read_stats.record_segment(&segment);
         payloads.extend_from_slice(&segment.payloads);
         if payloads.len() > expected_total {
             return Err(format!(
