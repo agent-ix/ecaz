@@ -5,8 +5,8 @@
 - [Rust](https://rustup.rs/) stable toolchain
 - [cargo-pgrx](https://github.com/pgcentralfoundation/pgrx) 0.17:
   `cargo install cargo-pgrx@0.17`
-- Native PostgreSQL build dependencies, or PostgreSQL 17/18 development
-  headers if using an existing server
+- Native PostgreSQL build dependencies, or PostgreSQL 18 development headers if
+  using an existing server (PG17 is supported as a compatibility build)
 
 ## Setup
 
