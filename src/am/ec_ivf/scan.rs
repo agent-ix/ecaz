@@ -2481,11 +2481,15 @@ unsafe fn rerank_probe_candidates_source_side(
     } else {
         Vec::new()
     };
+    let mut payload_decode_elapsed = Duration::ZERO;
+    let mut payload_score_elapsed = Duration::ZERO;
 
     let rerank_rows = {
         let query_values = opaque.query_values();
         let mut rerank_rows = 0usize;
         for candidate in candidates.iter_mut() {
+            let decode_started = Instant::now();
+            let mut candidate_score_elapsed = Duration::ZERO;
             source::fetch_heap_row_version_with_reader(
                 &mut heap_reader,
                 candidate.heap_tid,
@@ -2499,11 +2503,17 @@ unsafe fn rerank_probe_candidates_source_side(
                     if batched {
                         collected_sources.push(source_vector.as_slice().to_vec());
                     } else {
+                        let score_started = Instant::now();
                         candidate.score =
                             scorer.score_source(query_values, source_vector.as_slice());
+                        candidate_score_elapsed += score_started.elapsed();
                     }
                 },
             );
+            payload_decode_elapsed += decode_started
+                .elapsed()
+                .saturating_sub(candidate_score_elapsed);
+            payload_score_elapsed += candidate_score_elapsed;
             rerank_rows += 1;
         }
         rerank_rows
@@ -2515,9 +2525,11 @@ unsafe fn rerank_probe_candidates_source_side(
             .map(|source| source.as_slice())
             .collect();
         let mut scores = vec![0.0_f32; source_refs.len()];
+        let score_started = Instant::now();
         scorer
             .score_sources_batch(&source_refs, &mut scores)
             .unwrap_or_else(|e| pgrx::error!("{e}"));
+        payload_score_elapsed += score_started.elapsed();
         for (candidate, score) in candidates.iter_mut().zip(scores.iter()) {
             candidate.score = *score;
         }
@@ -2530,6 +2542,12 @@ unsafe fn rerank_probe_candidates_source_side(
     opaque
         .explain_counters
         .record_rerank_source_bytes_read(rerank_rows.saturating_mul(source_bytes_per_candidate));
+    opaque
+        .explain_counters
+        .record_rerank_payload_decode_elapsed_us(elapsed_us_u32(payload_decode_elapsed));
+    opaque
+        .explain_counters
+        .record_rerank_payload_score_elapsed_us(elapsed_us_u32(payload_score_elapsed));
 
     for _ in 0..rerank_rows {
         opaque.explain_counters.record_rerank_row();
@@ -2578,6 +2596,9 @@ unsafe fn rerank_probe_candidates_index_side(
         .iter()
         .all(|candidate| candidate.rerank_tid != ItemPointer::INVALID);
     let mut read_stats = RerankGroupReadStats::default();
+    let mut payload_decode_elapsed = Duration::ZERO;
+    let mut payload_score_elapsed = Duration::ZERO;
+    let group_load_started = Instant::now();
     let group_cache = if use_direct_tids {
         unsafe {
             load_rerank_groups_by_header_tid(
@@ -2604,6 +2625,7 @@ unsafe fn rerank_probe_candidates_index_side(
         }
         .unwrap_or_else(|e| pgrx::error!("{e}"))
     };
+    payload_decode_elapsed += group_load_started.elapsed();
     opaque.explain_counters.record_rerank_index_group_reads(
         read_stats.group_header_pages_read,
         read_stats.payload_segment_pages_read,
@@ -2618,6 +2640,7 @@ unsafe fn rerank_probe_candidates_index_side(
     if batched {
         // Collect survivors' payloads in survivor order, then batch-score.
         let mut payload_slab: Vec<u8> = Vec::with_capacity(candidates.len() * expected_payload_len);
+        let payload_decode_started = Instant::now();
         for candidate in candidates.iter() {
             let payload =
                 rerank_group_payload_for_candidate(&group_cache, candidate, expected_payload_len)
@@ -2625,23 +2648,30 @@ unsafe fn rerank_probe_candidates_index_side(
             payload_slab.extend_from_slice(payload);
             source_bytes_read += payload.len();
         }
+        payload_decode_elapsed += payload_decode_started.elapsed();
         opaque
             .explain_counters
             .record_rerank_payload_slab_bytes_copied(payload_slab.len());
         let mut scores = vec![0.0_f32; candidates.len()];
+        let payload_score_started = Instant::now();
         scorer
             .score_sidecar_payloads_batch(&payload_slab, &mut scores)
             .unwrap_or_else(|e| pgrx::error!("{e}"));
+        payload_score_elapsed += payload_score_started.elapsed();
         for (candidate, score) in candidates.iter_mut().zip(scores.iter()) {
             candidate.score = *score;
         }
     } else {
         for candidate in candidates.iter_mut() {
+            let payload_decode_started = Instant::now();
             let payload =
                 rerank_group_payload_for_candidate(&group_cache, candidate, expected_payload_len)
                     .unwrap_or_else(|e| pgrx::error!("{e}"));
-            candidate.score = scorer.score_sidecar_payload(payload);
+            payload_decode_elapsed += payload_decode_started.elapsed();
             source_bytes_read += payload.len();
+            let payload_score_started = Instant::now();
+            candidate.score = scorer.score_sidecar_payload(payload);
+            payload_score_elapsed += payload_score_started.elapsed();
         }
     }
 
@@ -2652,6 +2682,12 @@ unsafe fn rerank_probe_candidates_index_side(
     opaque
         .explain_counters
         .record_rerank_payload_bytes_scored(source_bytes_read);
+    opaque
+        .explain_counters
+        .record_rerank_payload_decode_elapsed_us(elapsed_us_u32(payload_decode_elapsed));
+    opaque
+        .explain_counters
+        .record_rerank_payload_score_elapsed_us(elapsed_us_u32(payload_score_elapsed));
     for _ in 0..rerank_rows {
         opaque.explain_counters.record_rerank_row();
     }
@@ -3758,6 +3794,8 @@ pub(crate) struct EcIvfGettupleCounterDebugSnapshot {
     pub(crate) dense_coalesced_flushes: u32,
     pub(crate) rerank_rows: u32,
     pub(crate) rerank_source_bytes_read: u32,
+    pub(crate) rerank_payload_decode_elapsed_us: u32,
+    pub(crate) rerank_payload_score_elapsed_us: u32,
     pub(crate) rerank_index_group_header_pages_read: u32,
     pub(crate) rerank_index_payload_segment_pages_read: u32,
     pub(crate) rerank_index_group_metadata_bytes_read: u32,
@@ -3842,8 +3880,9 @@ unsafe fn debug_ec_ivf_gettuple_counter_snapshot_inner(
         dense_coalesced_flushes: counters.stats_dense_coalesced_flushes,
         rerank_rows: counters.stats_rerank_rows,
         rerank_source_bytes_read: counters.stats_rerank_source_bytes_read,
-        rerank_index_group_header_pages_read: counters
-            .stats_rerank_index_group_header_pages_read,
+        rerank_payload_decode_elapsed_us: counters.stats_rerank_payload_decode_elapsed_us,
+        rerank_payload_score_elapsed_us: counters.stats_rerank_payload_score_elapsed_us,
+        rerank_index_group_header_pages_read: counters.stats_rerank_index_group_header_pages_read,
         rerank_index_payload_segment_pages_read: counters
             .stats_rerank_index_payload_segment_pages_read,
         rerank_index_group_metadata_bytes_read: counters

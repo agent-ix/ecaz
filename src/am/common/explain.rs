@@ -100,6 +100,14 @@ pub(crate) struct IvfExplainCounters {
     pub stats_heap_blocks_fetched: u32,
     pub stats_approximate_scan_elapsed_us: u32,
     pub stats_exact_rerank_elapsed_us: u32,
+    /// Task 111h: time spent fetching and decoding rerank payloads before
+    /// exact scoring. For source placement this includes heap-row fetch and
+    /// source-vector extraction; for index placement this includes packed group
+    /// reads, payload-slice resolution, and batch slab materialization.
+    pub stats_rerank_payload_decode_elapsed_us: u32,
+    /// Task 111h: time spent in the exact rerank scorer after payloads have
+    /// been fetched/decoded.
+    pub stats_rerank_payload_score_elapsed_us: u32,
     pub stats_filtered_duplicates: u32,
     /// Task 112: number of frontier candidates considered for exact heap-f32
     /// rerank (the `rerank_width`-bounded approximate frontier handed to the
@@ -171,6 +179,8 @@ impl Default for IvfExplainCounters {
             stats_heap_blocks_fetched: 0,
             stats_approximate_scan_elapsed_us: 0,
             stats_exact_rerank_elapsed_us: 0,
+            stats_rerank_payload_decode_elapsed_us: 0,
+            stats_rerank_payload_score_elapsed_us: 0,
             stats_filtered_duplicates: 0,
             stats_rerank_candidates_considered: 0,
             stats_rerank_candidates_skipped: 0,
@@ -446,6 +456,18 @@ impl IvfExplainCounters {
             .saturating_add(elapsed_us);
     }
 
+    pub(crate) fn record_rerank_payload_decode_elapsed_us(&mut self, elapsed_us: u32) {
+        self.stats_rerank_payload_decode_elapsed_us = self
+            .stats_rerank_payload_decode_elapsed_us
+            .saturating_add(elapsed_us);
+    }
+
+    pub(crate) fn record_rerank_payload_score_elapsed_us(&mut self, elapsed_us: u32) {
+        self.stats_rerank_payload_score_elapsed_us = self
+            .stats_rerank_payload_score_elapsed_us
+            .saturating_add(elapsed_us);
+    }
+
     pub(crate) fn record_filtered_duplicate(&mut self) {
         self.stats_filtered_duplicates = self.stats_filtered_duplicates.saturating_add(1);
     }
@@ -497,7 +519,7 @@ impl IvfExplainCounters {
         *self = Self::default();
     }
 
-    pub(crate) fn explain_properties(self) -> [ExplainProperty; 36] {
+    pub(crate) fn explain_properties(self) -> [ExplainProperty; 38] {
         [
             ExplainProperty {
                 property_name: "Rerank Placement",
@@ -602,6 +624,14 @@ impl IvfExplainCounters {
             ExplainProperty {
                 property_name: "Exact Rerank Elapsed Us",
                 value: ExplainPropertyValue::Integer(self.stats_exact_rerank_elapsed_us),
+            },
+            ExplainProperty {
+                property_name: "Rerank Payload Decode Elapsed Us",
+                value: ExplainPropertyValue::Integer(self.stats_rerank_payload_decode_elapsed_us),
+            },
+            ExplainProperty {
+                property_name: "Rerank Payload Score Elapsed Us",
+                value: ExplainPropertyValue::Integer(self.stats_rerank_payload_score_elapsed_us),
             },
             ExplainProperty {
                 property_name: "Filtered Duplicates",
@@ -1058,13 +1088,15 @@ mod tests {
         counters.record_heap_blocks_fetched(31);
         counters.record_approximate_scan_elapsed_us(37);
         counters.record_exact_rerank_elapsed_us(41);
+        counters.record_rerank_payload_decode_elapsed_us(43);
+        counters.record_rerank_payload_score_elapsed_us(47);
         counters.record_filtered_duplicate();
-        counters.record_rerank_source_bytes_read(43);
-        counters.record_lazy_rerank_plan(47, 5);
+        counters.record_rerank_source_bytes_read(53);
+        counters.record_lazy_rerank_plan(59, 5);
         counters.record_rerank_surface("index", "f16");
-        counters.record_rerank_index_group_reads(2, 3, 11, 13, 17);
-        counters.record_rerank_payload_bytes_scored(19);
-        counters.record_rerank_payload_slab_bytes_copied(23);
+        counters.record_rerank_index_group_reads(2, 3, 61, 67, 71);
+        counters.record_rerank_payload_bytes_scored(73);
+        counters.record_rerank_payload_slab_bytes_copied(79);
 
         assert_eq!(
             counters,
@@ -1094,17 +1126,19 @@ mod tests {
                 stats_heap_blocks_fetched: 31,
                 stats_approximate_scan_elapsed_us: 37,
                 stats_exact_rerank_elapsed_us: 41,
+                stats_rerank_payload_decode_elapsed_us: 43,
+                stats_rerank_payload_score_elapsed_us: 47,
                 stats_filtered_duplicates: 1,
-                stats_rerank_candidates_considered: 47,
+                stats_rerank_candidates_considered: 59,
                 stats_rerank_candidates_skipped: 5,
-                stats_rerank_source_bytes_read: 43,
+                stats_rerank_source_bytes_read: 53,
                 stats_rerank_index_group_header_pages_read: 2,
                 stats_rerank_index_payload_segment_pages_read: 3,
-                stats_rerank_index_group_metadata_bytes_read: 11,
-                stats_rerank_index_header_payload_bytes_read: 13,
-                stats_rerank_index_segment_payload_bytes_read: 17,
-                stats_rerank_payload_bytes_scored: 19,
-                stats_rerank_payload_slab_bytes_copied: 23,
+                stats_rerank_index_group_metadata_bytes_read: 61,
+                stats_rerank_index_header_payload_bytes_read: 67,
+                stats_rerank_index_segment_payload_bytes_read: 71,
+                stats_rerank_payload_bytes_scored: 73,
+                stats_rerank_payload_slab_bytes_copied: 79,
             }
         );
     }
@@ -1137,17 +1171,19 @@ mod tests {
             stats_heap_blocks_fetched: 109,
             stats_approximate_scan_elapsed_us: 113,
             stats_exact_rerank_elapsed_us: 127,
-            stats_filtered_duplicates: 131,
+            stats_rerank_payload_decode_elapsed_us: 131,
+            stats_rerank_payload_score_elapsed_us: 133,
+            stats_filtered_duplicates: 137,
             stats_rerank_candidates_considered: 139,
             stats_rerank_candidates_skipped: 149,
-            stats_rerank_source_bytes_read: 137,
-            stats_rerank_index_group_header_pages_read: 151,
-            stats_rerank_index_payload_segment_pages_read: 157,
-            stats_rerank_index_group_metadata_bytes_read: 163,
-            stats_rerank_index_header_payload_bytes_read: 167,
-            stats_rerank_index_segment_payload_bytes_read: 173,
-            stats_rerank_payload_bytes_scored: 179,
-            stats_rerank_payload_slab_bytes_copied: 181,
+            stats_rerank_source_bytes_read: 151,
+            stats_rerank_index_group_header_pages_read: 157,
+            stats_rerank_index_payload_segment_pages_read: 163,
+            stats_rerank_index_group_metadata_bytes_read: 167,
+            stats_rerank_index_header_payload_bytes_read: 173,
+            stats_rerank_index_segment_payload_bytes_read: 179,
+            stats_rerank_payload_bytes_scored: 181,
+            stats_rerank_payload_slab_bytes_copied: 191,
         };
 
         assert_eq!(
@@ -1254,12 +1290,20 @@ mod tests {
                     value: ExplainPropertyValue::Integer(127),
                 },
                 ExplainProperty {
-                    property_name: "Filtered Duplicates",
+                    property_name: "Rerank Payload Decode Elapsed Us",
                     value: ExplainPropertyValue::Integer(131),
                 },
                 ExplainProperty {
-                    property_name: "Rerank Source Bytes Read",
+                    property_name: "Rerank Payload Score Elapsed Us",
+                    value: ExplainPropertyValue::Integer(133),
+                },
+                ExplainProperty {
+                    property_name: "Filtered Duplicates",
                     value: ExplainPropertyValue::Integer(137),
+                },
+                ExplainProperty {
+                    property_name: "Rerank Source Bytes Read",
+                    value: ExplainPropertyValue::Integer(151),
                 },
                 ExplainProperty {
                     property_name: "Rerank Candidates Considered",
@@ -1271,31 +1315,31 @@ mod tests {
                 },
                 ExplainProperty {
                     property_name: "Rerank Index Group Header Pages Read",
-                    value: ExplainPropertyValue::Integer(151),
-                },
-                ExplainProperty {
-                    property_name: "Rerank Index Payload Segment Pages Read",
                     value: ExplainPropertyValue::Integer(157),
                 },
                 ExplainProperty {
-                    property_name: "Rerank Index Group Metadata Bytes Read",
+                    property_name: "Rerank Index Payload Segment Pages Read",
                     value: ExplainPropertyValue::Integer(163),
                 },
                 ExplainProperty {
-                    property_name: "Rerank Index Header Payload Bytes Read",
+                    property_name: "Rerank Index Group Metadata Bytes Read",
                     value: ExplainPropertyValue::Integer(167),
                 },
                 ExplainProperty {
-                    property_name: "Rerank Index Segment Payload Bytes Read",
+                    property_name: "Rerank Index Header Payload Bytes Read",
                     value: ExplainPropertyValue::Integer(173),
                 },
                 ExplainProperty {
-                    property_name: "Rerank Payload Bytes Scored",
+                    property_name: "Rerank Index Segment Payload Bytes Read",
                     value: ExplainPropertyValue::Integer(179),
                 },
                 ExplainProperty {
-                    property_name: "Rerank Payload Slab Bytes Copied",
+                    property_name: "Rerank Payload Bytes Scored",
                     value: ExplainPropertyValue::Integer(181),
+                },
+                ExplainProperty {
+                    property_name: "Rerank Payload Slab Bytes Copied",
+                    value: ExplainPropertyValue::Integer(191),
                 },
             ]
         );
