@@ -19,9 +19,13 @@ of quantization and index options rather than a single fixed architecture.
 
 #### Quantization Types
 
-- `turboquant` — [TurboQuant](https://research.google/blog/turboquant-redefining-ai-efficiency-with-extreme-compression/): training-free (data-oblivious) quantization that randomly rotates each vector and scalar-quantizes its coordinates, reaching near-optimal distortion at extreme compression with no learned codebook.
-- `pq_fastscan` — [Product Quantization](https://ieeexplore.ieee.org/document/5432202) in the SIMD FastScan layout: the vector is split into sub-blocks, each mapped to the nearest entry of a small learned codebook; 4-bit codes are scored through in-register lookup tables, with a colder full-precision rerank payload.
-- `rabitq` — [RaBitQ](https://arxiv.org/abs/2405.12497): quantization with a theoretical error bound — a random rotation collapses each dimension toward a sign bit, plus a few per-vector correction scalars that keep the distance estimate unbiased; supports 1–8 bit codes.
+- `turboquant` — [TurboQuant](https://research.google/blog/turboquant-redefining-ai-efficiency-with-
+  extreme-compression/): training-free quantization that reaches near-optimal accuracy at extreme
+  compression.
+- `pq_fastscan` — [Product Quantization](https://ieeexplore.ieee.org/document/5432202): trained
+  quantization that learns a small codebook from your data and approximates each vector with it.
+- `rabitq` — [RaBitQ](https://arxiv.org/abs/2405.12497): random-rotation binary quantization with an
+  unbiased distance estimator and a theoretical error bound; 1–8 bit codes.
 
 #### Index Families
 
