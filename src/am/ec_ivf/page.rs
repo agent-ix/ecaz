@@ -138,9 +138,16 @@ const IVF_DENSE_POSTING_ALIGNED_BLOCK_TAG: u8 = 0x28;
 // Task 111g: compact rerank sidecar block, keyed by heap TID. Stores a
 // tid-sorted run of (heap_tid, compact payload) entries chained via next_tid.
 const IVF_RERANK_SIDECAR_BLOCK_TAG: u8 = 0x2A;
+// Task 111h: packed scorer-width rerank groups. The header segment stores
+// logical-group metadata once; payload segments carry only continuation bytes.
+const IVF_RERANK_GROUP_HEADER_TAG: u8 = 0x2B;
+const IVF_RERANK_GROUP_PAYLOAD_SEGMENT_TAG: u8 = 0x2C;
 const POSTING_FLAG_DELETED: u8 = 0b0000_0001;
 const POSTING_FIXED_BYTES: usize = EC_IVF_POSTING_PAYLOAD_OFFSET;
 const DENSE_POSTING_BLOCK_HEADER_BYTES: usize = 16;
+const RERANK_GROUP_HEADER_FIXED_BYTES: usize =
+    1 + 1 + 4 + 2 + 2 + 2 + 4 + 4 + 2 + ITEM_POINTER_BYTES + 2;
+const RERANK_GROUP_PAYLOAD_SEGMENT_HEADER_BYTES: usize = 1 + 2 + ITEM_POINTER_BYTES;
 
 #[cfg(not(any(feature = "pg17", feature = "pg18")))]
 #[repr(u8)]
@@ -1047,6 +1054,52 @@ pub(super) struct IvfDensePostingBlockTuple {
     pub(super) payloads: Vec<u8>,
 }
 
+/// Task 111h packed rerank group header. One logical group is sized to the
+/// scorer width; this header stores group metadata once and may carry the first
+/// payload fragment. Continuation segments are payload-only tuples linked by
+/// `next_segment_tid`.
+#[derive(Debug, Clone, PartialEq)]
+pub(super) struct IvfRerankGroupHeaderTuple {
+    pub(super) rerank_format: u8,
+    pub(super) list_id: u32,
+    pub(super) scorer_width: usize,
+    pub(super) payload_len: usize,
+    pub(super) next_segment_tid: ItemPointer,
+    pub(super) deleted_bitmap: Vec<u8>,
+    pub(super) gammas: Vec<f32>,
+    pub(super) heap_tid_counts: Vec<u16>,
+    pub(super) heap_tid_offsets: Vec<u32>,
+    pub(super) payload_offsets: Vec<u32>,
+    pub(super) heap_tids: Vec<ItemPointer>,
+    pub(super) payloads: Vec<u8>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(super) struct IvfRerankGroupHeaderRef<'a> {
+    pub(super) rerank_format: u8,
+    pub(super) list_id: u32,
+    scorer_width: usize,
+    valid_count: usize,
+    payload_len: usize,
+    total_heap_tids: usize,
+    total_payload_bytes: usize,
+    header_payload_bytes: usize,
+    pub(super) next_segment_tid: ItemPointer,
+    deleted_bitmap: &'a [u8],
+    gamma_bytes: &'a [u8],
+    heap_tid_count_bytes: &'a [u8],
+    heap_tid_offset_bytes: &'a [u8],
+    payload_offset_bytes: &'a [u8],
+    heap_tid_bytes: &'a [u8],
+    pub(super) payloads: &'a [u8],
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct IvfRerankGroupPayloadSegmentTuple {
+    pub(super) next_segment_tid: ItemPointer,
+    pub(super) payloads: Vec<u8>,
+}
+
 #[derive(Debug, Clone, Copy)]
 pub(super) struct IvfDensePostingBlockRef<'a> {
     pub(super) list_id: u32,
@@ -1430,6 +1483,458 @@ impl<'a> IvfDensePostingRef<'a> {
                 &block.payloads[start..start + block.payload_len]
             }
         }
+    }
+}
+
+impl<'a> IvfRerankGroupHeaderRef<'a> {
+    pub(super) fn decode(input: &'a [u8]) -> Result<Self, String> {
+        if input.len() < RERANK_GROUP_HEADER_FIXED_BYTES {
+            return Err(format!(
+                "ec_ivf rerank group header length mismatch: got {}, expected at least {RERANK_GROUP_HEADER_FIXED_BYTES}",
+                input.len()
+            ));
+        }
+        if input[0] != IVF_RERANK_GROUP_HEADER_TAG {
+            return Err(format!(
+                "invalid ec_ivf rerank group header tag: {}",
+                input[0]
+            ));
+        }
+        let rerank_format = input[1];
+        let list_id = u32::from_le_bytes(
+            input[2..6]
+                .try_into()
+                .expect("rerank group list id slice should be 4 bytes"),
+        );
+        let scorer_width = u16::from_le_bytes(
+            input[6..8]
+                .try_into()
+                .expect("rerank group scorer width slice should be 2 bytes"),
+        ) as usize;
+        let valid_count = u16::from_le_bytes(
+            input[8..10]
+                .try_into()
+                .expect("rerank group valid count slice should be 2 bytes"),
+        ) as usize;
+        let payload_len = u16::from_le_bytes(
+            input[10..12]
+                .try_into()
+                .expect("rerank group payload len slice should be 2 bytes"),
+        ) as usize;
+        let total_heap_tids = u32::from_le_bytes(
+            input[12..16]
+                .try_into()
+                .expect("rerank group heap tid count slice should be 4 bytes"),
+        ) as usize;
+        let total_payload_bytes = u32::from_le_bytes(
+            input[16..20]
+                .try_into()
+                .expect("rerank group total payload slice should be 4 bytes"),
+        ) as usize;
+        let header_payload_bytes = u16::from_le_bytes(
+            input[20..22]
+                .try_into()
+                .expect("rerank group header payload slice should be 2 bytes"),
+        ) as usize;
+        let next_segment_tid = ItemPointer::decode(&input[22..22 + ITEM_POINTER_BYTES])?;
+        let reserved_start = 22 + ITEM_POINTER_BYTES;
+        if input[reserved_start..RERANK_GROUP_HEADER_FIXED_BYTES]
+            .iter()
+            .any(|byte| *byte != 0)
+        {
+            return Err("ec_ivf rerank group header reserved bytes must be zero".to_owned());
+        }
+
+        if scorer_width == 0 {
+            return Err("ec_ivf rerank group scorer width must be positive".to_owned());
+        }
+        if valid_count == 0 || valid_count > scorer_width {
+            return Err(format!(
+                "ec_ivf rerank group valid count {valid_count} must be in 1..={scorer_width}"
+            ));
+        }
+        if payload_len == 0 {
+            return Err("ec_ivf rerank group payload length must be positive".to_owned());
+        }
+        if total_payload_bytes != valid_count * payload_len {
+            return Err(format!(
+                "ec_ivf rerank group total payload bytes {total_payload_bytes} do not match {valid_count} entries * {payload_len}"
+            ));
+        }
+        if header_payload_bytes > total_payload_bytes {
+            return Err(format!(
+                "ec_ivf rerank group header payload bytes {header_payload_bytes} exceed total payload bytes {total_payload_bytes}"
+            ));
+        }
+
+        let deleted_bitmap_start = RERANK_GROUP_HEADER_FIXED_BYTES;
+        let deleted_bitmap_end = deleted_bitmap_start + dense_deleted_bitmap_len(scorer_width);
+        let gamma_start = deleted_bitmap_end;
+        let gamma_end = gamma_start + valid_count * size_of::<f32>();
+        let heap_tid_count_start = gamma_end;
+        let heap_tid_count_end = heap_tid_count_start + valid_count * size_of::<u16>();
+        let heap_tid_offset_start = heap_tid_count_end;
+        let heap_tid_offset_end = heap_tid_offset_start + valid_count * size_of::<u32>();
+        let payload_offset_start = heap_tid_offset_end;
+        let payload_offset_end = payload_offset_start + valid_count * size_of::<u32>();
+        let heap_tid_start = payload_offset_end;
+        let heap_tid_end = heap_tid_start + total_heap_tids * ITEM_POINTER_BYTES;
+        let payload_start = heap_tid_end;
+        let payload_end = payload_start + header_payload_bytes;
+        if input.len() != payload_end {
+            return Err(format!(
+                "ec_ivf rerank group header length mismatch: got {}, expected {payload_end}",
+                input.len()
+            ));
+        }
+
+        Ok(Self {
+            rerank_format,
+            list_id,
+            scorer_width,
+            valid_count,
+            payload_len,
+            total_heap_tids,
+            total_payload_bytes,
+            header_payload_bytes,
+            next_segment_tid,
+            deleted_bitmap: &input[deleted_bitmap_start..deleted_bitmap_end],
+            gamma_bytes: &input[gamma_start..gamma_end],
+            heap_tid_count_bytes: &input[heap_tid_count_start..heap_tid_count_end],
+            heap_tid_offset_bytes: &input[heap_tid_offset_start..heap_tid_offset_end],
+            payload_offset_bytes: &input[payload_offset_start..payload_offset_end],
+            heap_tid_bytes: &input[heap_tid_start..heap_tid_end],
+            payloads: &input[payload_start..payload_end],
+        })
+    }
+
+    pub(super) fn scorer_width(&self) -> usize {
+        self.scorer_width
+    }
+
+    pub(super) fn valid_count(&self) -> usize {
+        self.valid_count
+    }
+
+    pub(super) fn payload_len(&self) -> usize {
+        self.payload_len
+    }
+
+    pub(super) fn total_payload_bytes(&self) -> usize {
+        self.total_payload_bytes
+    }
+
+    pub(super) fn header_payload_bytes(&self) -> usize {
+        self.header_payload_bytes
+    }
+
+    pub(super) fn gamma(&self, index: usize) -> f32 {
+        let start = index * size_of::<f32>();
+        f32::from_le_bytes(
+            self.gamma_bytes[start..start + size_of::<f32>()]
+                .try_into()
+                .expect("validated rerank group gamma chunk"),
+        )
+    }
+
+    pub(super) fn heap_tid_count(&self, index: usize) -> usize {
+        let start = index * size_of::<u16>();
+        u16::from_le_bytes(
+            self.heap_tid_count_bytes[start..start + size_of::<u16>()]
+                .try_into()
+                .expect("validated rerank group heap tid count chunk"),
+        ) as usize
+    }
+
+    pub(super) fn heap_tid_offset(&self, index: usize) -> usize {
+        let start = index * size_of::<u32>();
+        u32::from_le_bytes(
+            self.heap_tid_offset_bytes[start..start + size_of::<u32>()]
+                .try_into()
+                .expect("validated rerank group heap tid offset chunk"),
+        ) as usize
+    }
+
+    pub(super) fn payload_offset(&self, index: usize) -> usize {
+        let start = index * size_of::<u32>();
+        u32::from_le_bytes(
+            self.payload_offset_bytes[start..start + size_of::<u32>()]
+                .try_into()
+                .expect("validated rerank group payload offset chunk"),
+        ) as usize
+    }
+
+    pub(super) fn heap_tids(&self, index: usize) -> impl Iterator<Item = ItemPointer> + '_ {
+        let start = self.heap_tid_offset(index);
+        let count = self.heap_tid_count(index);
+        self.heap_tid_bytes[start * ITEM_POINTER_BYTES..(start + count) * ITEM_POINTER_BYTES]
+            .chunks_exact(ITEM_POINTER_BYTES)
+            .map(|chunk| ItemPointer::decode(chunk).expect("validated rerank group tid bytes"))
+    }
+
+    pub(super) fn validate_offsets(&self) -> Result<(), String> {
+        for index in 0..self.valid_count {
+            let heap_start = self.heap_tid_offset(index);
+            let heap_count = self.heap_tid_count(index);
+            if heap_count == 0 {
+                return Err("ec_ivf rerank group heap tid range is empty".to_owned());
+            }
+            if heap_start
+                .checked_add(heap_count)
+                .map_or(true, |end| end > self.total_heap_tids)
+            {
+                return Err("ec_ivf rerank group heap tid range is out of bounds".to_owned());
+            }
+            let payload_start = self.payload_offset(index);
+            if payload_start
+                .checked_add(self.payload_len)
+                .map_or(true, |end| end > self.total_payload_bytes)
+            {
+                return Err("ec_ivf rerank group payload range is out of bounds".to_owned());
+            }
+        }
+        Ok(())
+    }
+}
+
+impl IvfRerankGroupHeaderTuple {
+    pub(super) fn len(&self) -> usize {
+        self.gammas.len()
+    }
+
+    pub(super) fn from_single_heaptid_postings(
+        rerank_format: u8,
+        list_id: u32,
+        scorer_width: usize,
+        postings: &[(ItemPointer, f32, Vec<u8>)],
+        payload_len: usize,
+        header_payload_bytes: usize,
+    ) -> Result<Self, String> {
+        if postings.is_empty() {
+            return Err("ec_ivf rerank group requires at least one posting".to_owned());
+        }
+        let mut gammas = Vec::with_capacity(postings.len());
+        let mut heap_tid_counts = Vec::with_capacity(postings.len());
+        let mut heap_tid_offsets = Vec::with_capacity(postings.len());
+        let mut payload_offsets = Vec::with_capacity(postings.len());
+        let mut heap_tids = Vec::with_capacity(postings.len());
+        let mut payloads = Vec::with_capacity(postings.len() * payload_len);
+        for (heap_tid, gamma, payload) in postings {
+            if !gamma.is_finite() {
+                return Err("ec_ivf rerank group gamma must be finite".to_owned());
+            }
+            if payload.len() != payload_len {
+                return Err(format!(
+                    "ec_ivf rerank group payload length mismatch: got {}, expected {payload_len}",
+                    payload.len()
+                ));
+            }
+            heap_tid_offsets.push(
+                u32::try_from(heap_tids.len())
+                    .map_err(|_| "ec_ivf rerank group heap tid offset exceeds u32".to_owned())?,
+            );
+            payload_offsets.push(
+                u32::try_from(payloads.len())
+                    .map_err(|_| "ec_ivf rerank group payload offset exceeds u32".to_owned())?,
+            );
+            heap_tid_counts.push(1);
+            heap_tids.push(*heap_tid);
+            gammas.push(*gamma);
+            payloads.extend_from_slice(payload);
+        }
+        let header_payload_bytes = header_payload_bytes.min(payloads.len());
+        Ok(Self {
+            rerank_format,
+            list_id,
+            scorer_width,
+            payload_len,
+            next_segment_tid: ItemPointer::INVALID,
+            deleted_bitmap: vec![0; dense_deleted_bitmap_len(scorer_width)],
+            gammas,
+            heap_tid_counts,
+            heap_tid_offsets,
+            payload_offsets,
+            heap_tids,
+            payloads: payloads[..header_payload_bytes].to_vec(),
+        })
+    }
+
+    pub(super) fn encode(&self) -> Result<Vec<u8>, String> {
+        let valid_count = self.gammas.len();
+        if self.scorer_width == 0 {
+            return Err("ec_ivf rerank group scorer width must be positive".to_owned());
+        }
+        if valid_count == 0 || valid_count > self.scorer_width {
+            return Err(format!(
+                "ec_ivf rerank group valid count {valid_count} must be in 1..={}",
+                self.scorer_width
+            ));
+        }
+        if self.scorer_width > u16::MAX as usize || valid_count > u16::MAX as usize {
+            return Err("ec_ivf rerank group scorer width/count exceeds u16".to_owned());
+        }
+        if self.payload_len == 0 || self.payload_len > u16::MAX as usize {
+            return Err("ec_ivf rerank group payload length out of range".to_owned());
+        }
+        if self.gammas.len() != self.heap_tid_counts.len()
+            || self.gammas.len() != self.heap_tid_offsets.len()
+            || self.gammas.len() != self.payload_offsets.len()
+            || self.deleted_bitmap.len() != dense_deleted_bitmap_len(self.scorer_width)
+        {
+            return Err("ec_ivf rerank group metadata array length mismatch".to_owned());
+        }
+        if self.gammas.iter().any(|gamma| !gamma.is_finite()) {
+            return Err("ec_ivf rerank group gamma must be finite".to_owned());
+        }
+        if self.heap_tids.len() > u32::MAX as usize {
+            return Err("ec_ivf rerank group heap tid count exceeds u32".to_owned());
+        }
+        let total_payload_bytes = valid_count
+            .checked_mul(self.payload_len)
+            .ok_or_else(|| "ec_ivf rerank group payload bytes overflow".to_owned())?;
+        if total_payload_bytes > u32::MAX as usize {
+            return Err("ec_ivf rerank group total payload bytes exceed u32".to_owned());
+        }
+        if self.payloads.len() > total_payload_bytes || self.payloads.len() > u16::MAX as usize {
+            return Err("ec_ivf rerank group header payload bytes out of range".to_owned());
+        }
+        let mut out = Vec::with_capacity(Self::encoded_len(
+            valid_count,
+            self.scorer_width,
+            self.heap_tids.len(),
+            self.payloads.len(),
+        ));
+        out.push(IVF_RERANK_GROUP_HEADER_TAG);
+        out.push(self.rerank_format);
+        out.extend_from_slice(&self.list_id.to_le_bytes());
+        out.extend_from_slice(&(self.scorer_width as u16).to_le_bytes());
+        out.extend_from_slice(&(valid_count as u16).to_le_bytes());
+        out.extend_from_slice(&(self.payload_len as u16).to_le_bytes());
+        out.extend_from_slice(&(self.heap_tids.len() as u32).to_le_bytes());
+        out.extend_from_slice(&(total_payload_bytes as u32).to_le_bytes());
+        out.extend_from_slice(&(self.payloads.len() as u16).to_le_bytes());
+        self.next_segment_tid.encode_into(&mut out);
+        out.extend_from_slice(&[0, 0]);
+        out.extend_from_slice(&self.deleted_bitmap);
+        for gamma in &self.gammas {
+            out.extend_from_slice(&gamma.to_le_bytes());
+        }
+        for count in &self.heap_tid_counts {
+            out.extend_from_slice(&count.to_le_bytes());
+        }
+        for offset in &self.heap_tid_offsets {
+            out.extend_from_slice(&offset.to_le_bytes());
+        }
+        for offset in &self.payload_offsets {
+            out.extend_from_slice(&offset.to_le_bytes());
+        }
+        for tid in &self.heap_tids {
+            tid.encode_into(&mut out);
+        }
+        out.extend_from_slice(&self.payloads);
+
+        IvfRerankGroupHeaderRef::decode(&out)?.validate_offsets()?;
+        Ok(out)
+    }
+
+    pub(super) fn decode(input: &[u8]) -> Result<Self, String> {
+        let header = IvfRerankGroupHeaderRef::decode(input)?;
+        header.validate_offsets()?;
+        let mut gammas = Vec::with_capacity(header.valid_count);
+        let mut heap_tid_counts = Vec::with_capacity(header.valid_count);
+        let mut heap_tid_offsets = Vec::with_capacity(header.valid_count);
+        let mut payload_offsets = Vec::with_capacity(header.valid_count);
+        for index in 0..header.valid_count {
+            gammas.push(header.gamma(index));
+            heap_tid_counts.push(header.heap_tid_count(index) as u16);
+            heap_tid_offsets.push(header.heap_tid_offset(index) as u32);
+            payload_offsets.push(header.payload_offset(index) as u32);
+        }
+        Ok(Self {
+            rerank_format: header.rerank_format,
+            list_id: header.list_id,
+            scorer_width: header.scorer_width,
+            payload_len: header.payload_len,
+            next_segment_tid: header.next_segment_tid,
+            deleted_bitmap: header.deleted_bitmap.to_vec(),
+            gammas,
+            heap_tid_counts,
+            heap_tid_offsets,
+            payload_offsets,
+            heap_tids: header
+                .heap_tid_bytes
+                .chunks_exact(ITEM_POINTER_BYTES)
+                .map(ItemPointer::decode)
+                .collect::<Result<Vec<_>, _>>()?,
+            payloads: header.payloads.to_vec(),
+        })
+    }
+
+    pub(super) const fn encoded_len(
+        valid_count: usize,
+        scorer_width: usize,
+        total_heap_tids: usize,
+        header_payload_bytes: usize,
+    ) -> usize {
+        RERANK_GROUP_HEADER_FIXED_BYTES
+            + dense_deleted_bitmap_len(scorer_width)
+            + valid_count * size_of::<f32>()
+            + valid_count * size_of::<u16>()
+            + valid_count * size_of::<u32>()
+            + valid_count * size_of::<u32>()
+            + total_heap_tids * ITEM_POINTER_BYTES
+            + header_payload_bytes
+    }
+}
+
+impl IvfRerankGroupPayloadSegmentTuple {
+    pub(super) fn encode(&self) -> Result<Vec<u8>, String> {
+        if self.payloads.len() > u16::MAX as usize {
+            return Err("ec_ivf rerank group payload segment exceeds u16".to_owned());
+        }
+        let mut out =
+            Vec::with_capacity(RERANK_GROUP_PAYLOAD_SEGMENT_HEADER_BYTES + self.payloads.len());
+        out.push(IVF_RERANK_GROUP_PAYLOAD_SEGMENT_TAG);
+        out.extend_from_slice(&(self.payloads.len() as u16).to_le_bytes());
+        self.next_segment_tid.encode_into(&mut out);
+        out.extend_from_slice(&self.payloads);
+        Ok(out)
+    }
+
+    pub(super) fn decode(input: &[u8]) -> Result<Self, String> {
+        if input.len() < RERANK_GROUP_PAYLOAD_SEGMENT_HEADER_BYTES {
+            return Err(format!(
+                "ec_ivf rerank group payload segment length mismatch: got {}, expected at least {RERANK_GROUP_PAYLOAD_SEGMENT_HEADER_BYTES}",
+                input.len()
+            ));
+        }
+        if input[0] != IVF_RERANK_GROUP_PAYLOAD_SEGMENT_TAG {
+            return Err(format!(
+                "invalid ec_ivf rerank group payload segment tag: {}",
+                input[0]
+            ));
+        }
+        let payload_bytes = u16::from_le_bytes(
+            input[1..3]
+                .try_into()
+                .expect("rerank group segment payload bytes should be 2 bytes"),
+        ) as usize;
+        let payload_start = RERANK_GROUP_PAYLOAD_SEGMENT_HEADER_BYTES;
+        let payload_end = payload_start + payload_bytes;
+        if input.len() != payload_end {
+            return Err(format!(
+                "ec_ivf rerank group payload segment length mismatch: got {}, expected {payload_end}",
+                input.len()
+            ));
+        }
+        Ok(Self {
+            next_segment_tid: ItemPointer::decode(&input[3..3 + ITEM_POINTER_BYTES])?,
+            payloads: input[payload_start..payload_end].to_vec(),
+        })
+    }
+
+    pub(super) const fn encoded_len(payload_bytes: usize) -> usize {
+        RERANK_GROUP_PAYLOAD_SEGMENT_HEADER_BYTES + payload_bytes
     }
 }
 
@@ -2030,6 +2535,32 @@ pub(super) fn rerank_sidecar_block_tuple_fits(
 ) -> bool {
     aligned_tuple_bytes(IvfRerankSidecarBlockTuple::encoded_len(count, payload_len))
         <= usable_page_bytes(page_size)
+}
+
+pub(super) fn rerank_group_header_tuple_fits(
+    valid_count: usize,
+    scorer_width: usize,
+    total_heap_tids: usize,
+    header_payload_bytes: usize,
+    page_size: usize,
+) -> bool {
+    valid_count > 0
+        && valid_count <= scorer_width
+        && aligned_tuple_bytes(IvfRerankGroupHeaderTuple::encoded_len(
+            valid_count,
+            scorer_width,
+            total_heap_tids,
+            header_payload_bytes,
+        )) <= usable_page_bytes(page_size)
+}
+
+pub(super) fn rerank_group_payload_segment_tuple_fits(
+    payload_bytes: usize,
+    page_size: usize,
+) -> bool {
+    aligned_tuple_bytes(IvfRerankGroupPayloadSegmentTuple::encoded_len(
+        payload_bytes,
+    )) <= usable_page_bytes(page_size)
 }
 
 pub(super) fn centroid_tuple_fits(dimensions: usize, page_size: usize) -> bool {
@@ -4057,6 +4588,122 @@ mod tests {
     }
 
     #[test]
+    fn rerank_group_header_roundtrips_payload_fragment() {
+        let postings = vec![
+            (tid(1, 1), 0.25, vec![10, 11, 12, 13]),
+            (tid(1, 5), 0.5, vec![20, 21, 22, 23]),
+            (tid(2, 3), 0.75, vec![30, 31, 32, 33]),
+        ];
+        let mut tuple = IvfRerankGroupHeaderTuple::from_single_heaptid_postings(
+            RerankFormat::F16 as u8,
+            42,
+            4,
+            &postings,
+            4,
+            5,
+        )
+        .unwrap();
+        tuple.next_segment_tid = tid(9, 7);
+        dense_deleted_bitmap_set(&mut tuple.deleted_bitmap, 3);
+
+        let encoded = tuple.encode().unwrap();
+        let decoded = IvfRerankGroupHeaderTuple::decode(&encoded).unwrap();
+        let borrowed = IvfRerankGroupHeaderRef::decode(&encoded).unwrap();
+
+        assert_eq!(encoded[0], IVF_RERANK_GROUP_HEADER_TAG);
+        assert_eq!(
+            encoded.len(),
+            IvfRerankGroupHeaderTuple::encoded_len(3, 4, 3, 5)
+        );
+        assert_eq!(decoded, tuple);
+        assert_eq!(tuple.len(), 3);
+        assert_eq!(borrowed.rerank_format, RerankFormat::F16 as u8);
+        assert_eq!(borrowed.list_id, 42);
+        assert_eq!(borrowed.scorer_width(), 4);
+        assert_eq!(borrowed.valid_count(), 3);
+        assert_eq!(borrowed.payload_len(), 4);
+        assert_eq!(borrowed.total_payload_bytes(), 12);
+        assert_eq!(borrowed.header_payload_bytes(), 5);
+        assert_eq!(borrowed.next_segment_tid, tid(9, 7));
+        assert!(dense_deleted_bitmap_get(borrowed.deleted_bitmap, 3));
+        assert_eq!(borrowed.gamma(2), 0.75);
+        assert_eq!(borrowed.heap_tid_count(1), 1);
+        assert_eq!(borrowed.heap_tid_offset(2), 2);
+        assert_eq!(borrowed.payload_offset(2), 8);
+        assert_eq!(borrowed.heap_tids(1).collect::<Vec<_>>(), vec![tid(1, 5)]);
+        assert_eq!(borrowed.payloads, &[10u8, 11, 12, 13, 20]);
+        assert!(rerank_group_header_tuple_fits(
+            3,
+            4,
+            3,
+            5,
+            DEFAULT_PAGE_SIZE
+        ));
+    }
+
+    #[test]
+    fn rerank_group_header_rejects_invalid_metadata() {
+        let postings = vec![(tid(1, 1), 0.25, vec![1, 2, 3, 4])];
+        let mut tuple = IvfRerankGroupHeaderTuple::from_single_heaptid_postings(
+            RerankFormat::F16 as u8,
+            7,
+            4,
+            &postings,
+            4,
+            4,
+        )
+        .unwrap();
+        tuple.heap_tid_counts[0] = 0;
+
+        let err = tuple.encode().unwrap_err();
+
+        assert!(err.contains("heap tid range is empty"));
+
+        let mut encoded = IvfRerankGroupHeaderTuple::from_single_heaptid_postings(
+            RerankFormat::F16 as u8,
+            7,
+            4,
+            &postings,
+            4,
+            4,
+        )
+        .unwrap()
+        .encode()
+        .unwrap();
+        encoded[RERANK_GROUP_HEADER_FIXED_BYTES - 1] = 1;
+        let err = IvfRerankGroupHeaderTuple::decode(&encoded).unwrap_err();
+
+        assert!(err.contains("reserved bytes"));
+    }
+
+    #[test]
+    fn rerank_group_payload_segment_roundtrips() {
+        let tuple = IvfRerankGroupPayloadSegmentTuple {
+            next_segment_tid: tid(12, 4),
+            payloads: vec![1, 2, 3, 4, 5, 6],
+        };
+
+        let encoded = tuple.encode().unwrap();
+        let decoded = IvfRerankGroupPayloadSegmentTuple::decode(&encoded).unwrap();
+
+        assert_eq!(encoded[0], IVF_RERANK_GROUP_PAYLOAD_SEGMENT_TAG);
+        assert_eq!(
+            encoded.len(),
+            IvfRerankGroupPayloadSegmentTuple::encoded_len(tuple.payloads.len())
+        );
+        assert_eq!(decoded, tuple);
+        assert!(rerank_group_payload_segment_tuple_fits(
+            tuple.payloads.len(),
+            DEFAULT_PAGE_SIZE
+        ));
+
+        let mut bad_tag = encoded;
+        bad_tag[0] = IVF_RERANK_GROUP_HEADER_TAG;
+        let err = IvfRerankGroupPayloadSegmentTuple::decode(&bad_tag).unwrap_err();
+        assert!(err.contains("payload segment tag"));
+    }
+
+    #[test]
     fn dense_posting_block_roundtrip_preserves_scan_arrays() {
         let postings = vec![
             (tid(11, 1), 0.25, ItemPointer::INVALID, vec![1, 2, 3]),
@@ -4325,10 +4972,32 @@ mod tests {
         assert!(list_directory_tuple_fits(DEFAULT_PAGE_SIZE));
         assert!(posting_tuple_fits(4096, DEFAULT_PAGE_SIZE));
         assert!(pq_codebook_tuple_fits(256, DEFAULT_PAGE_SIZE));
+        assert!(rerank_group_header_tuple_fits(
+            64,
+            64,
+            64,
+            1024,
+            DEFAULT_PAGE_SIZE
+        ));
+        assert!(rerank_group_payload_segment_tuple_fits(
+            4096,
+            DEFAULT_PAGE_SIZE
+        ));
         assert!(!centroid_tuple_fits(1536, 64));
         assert!(!list_directory_tuple_fits(32));
         assert!(!posting_tuple_fits(DEFAULT_PAGE_SIZE, DEFAULT_PAGE_SIZE));
         assert!(!pq_codebook_tuple_fits(
+            DEFAULT_PAGE_SIZE,
+            DEFAULT_PAGE_SIZE
+        ));
+        assert!(!rerank_group_header_tuple_fits(
+            0,
+            64,
+            0,
+            0,
+            DEFAULT_PAGE_SIZE
+        ));
+        assert!(!rerank_group_payload_segment_tuple_fits(
             DEFAULT_PAGE_SIZE,
             DEFAULT_PAGE_SIZE
         ));
