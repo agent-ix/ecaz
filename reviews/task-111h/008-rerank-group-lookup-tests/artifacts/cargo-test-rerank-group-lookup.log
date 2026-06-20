@@ -1,0 +1,13 @@
+Script started on 2026-06-19 22:09:17-07:00 [<not executed on terminal>]
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 02s
+     Running unittests src/lib.rs (target/debug/deps/ecaz-52f8c7085962b346)
+
+running 2 tests
+test am::ec_ivf::scan::tests::rerank_group_payload_lookup_uses_direct_tid_and_fallback_scan ... [32mok(B[m
+test am::ec_ivf::scan::tests::rerank_group_payload_lookup_skips_deleted_group_slots ... [32mok(B[m
+
+test result: [32mok(B[m. 2 passed; 0 failed; 0 ignored; 0 measured; 2200 filtered out; finished in 0.00s
+
+
+Script done on 2026-06-19 22:10:19-07:00 [COMMAND_EXIT_CODE="0"]
