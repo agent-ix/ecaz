@@ -189,11 +189,11 @@ win under the storage/cache conditions they are designed for.
       conversion cannot be mistaken for persisted table storage.
 - [x] Reject or gate diagnostic query-time f16/rabitq conversion paths outside
       the benchmark-only diagnostic surface.
-- [ ] Define the common rerank payload codec interface.
-- [ ] Implement persisted f16 payload encoding for build and insert.
-- [ ] Implement persisted RaBitQ-4 payload encoding under the same interface.
-- [ ] Implement persisted RaBitQ-8 payload encoding under the same interface.
-- [ ] Implement persisted TurboQuant payload encoding under the same interface.
+- [x] Define the common rerank payload codec interface.
+- [x] Implement persisted f16 payload encoding for build and insert.
+- [x] Implement persisted RaBitQ-4 payload encoding under the same interface.
+- [x] Implement persisted RaBitQ-8 payload encoding under the same interface.
+- [x] Implement persisted TurboQuant payload encoding under the same interface.
 - [ ] Implement the packed index-side rerank group/segment layout.
 - [ ] Benchmark the existing `0x2A` direct-TID sidecar path as a legacy
       index-side baseline before replacing or superseding it.

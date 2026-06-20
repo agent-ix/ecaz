@@ -2317,8 +2317,9 @@ unsafe fn rerank_probe_candidates(
             debug_assert!(reranked_prefix_len <= rerank_len);
             // Task 111g: the rerank stage reads the heap source column
             // tid-sorted (unchanged) and rescores the frontier through the
-            // configured `rerank_format` (f32 / f16 / rabitq4). The default
-            // `f32` path stays bit-identical to the pre-111g heap_f32 rerank.
+            // configured `rerank_format`. The default `f32` path stays
+            // bit-identical to the pre-111g heap_f32 rerank; compact formats
+            // share the Task 111h rerank payload codec.
             let scorer = super::rerank::RerankScorer::resolve(
                 index_options.rerank_format,
                 index_options.storage_format,
@@ -2411,8 +2412,9 @@ fn resolve_rerank_len(rerank_width: i32, candidate_len: usize) -> usize {
 /// Reads the heap source column **tid-sorted** (unchanged from the pre-111g
 /// heap_f32 path) and rescores the frontier through `scorer`. Per-candidate
 /// representations (f32/f16) score inside the fetch loop; batched
-/// representations (rabitq4) collect the fetched source vectors and score the
-/// whole frontier through the shared candidate_batch scorers afterward.
+/// representations (RaBitQ/TurboQuant) collect the fetched source vectors and
+/// score the whole frontier through the shared candidate_batch scorers
+/// afterward.
 unsafe fn rerank_probe_candidates_source_side(
     opaque: &mut EcIvfScanOpaque,
     scorer: &super::rerank::RerankScorer,

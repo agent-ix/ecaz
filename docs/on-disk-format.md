@@ -126,10 +126,10 @@ rerank sidecar block:
 | `0x28` | aligned dense posting block | current typed-view dense block format |
 | `0x2A` | rerank sidecar block | current; compact rerank rep keyed by heap TID (Task 111g) |
 
-The `0x2A` rerank sidecar block stores a tid-keyed run of compact rerank
-payloads (f16 = `dims * 2` bytes, rabitq4 = the rabitq4 payload length) for
-`rerank_placement = 'index'`, chained via a per-block `next_tid`. Its on-disk
-shape is
+The `0x2A` rerank sidecar block stores a tid-keyed run of Task 111h common
+rerank payload codec bytes for `rerank_placement = 'index'`, chained via a
+per-block `next_tid`. Current payloads are f16 (`dims * 2` bytes), RaBitQ-4,
+RaBitQ-8, and TurboQuant (gamma prefix plus codec bytes). Its on-disk shape is
 `[tag:u8][rerank_format:u8][payload_len:u16][entry_count:u16][next_tid:6]` then
 `entry_count` heap TIDs and `entry_count * payload_len` payload bytes. Build
 writes it globally tid-sorted; insert prepends a single-entry block (O(1)) and

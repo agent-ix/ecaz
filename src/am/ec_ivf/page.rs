@@ -1873,10 +1873,9 @@ impl IvfPqCodebookTuple {
 ///
 /// Each block holds a tid-sorted run of (heap_tid, compact payload) entries and
 /// chains to the next block via `next_tid`. Build writes the chain globally
-/// tid-sorted; insert appends to the tail (locally unsorted); the rerank read
-/// loads the whole chain into a heap-TID lookup map and reads only the (small,
-/// rerank_width-bounded) survivor set. `payload_len` is the compact rep width:
-/// `dims * 2` for f16, the rabitq4 payload length for rabitq4.
+/// tid-sorted; insert prepends single-entry blocks (locally unsorted); the
+/// rerank read loads the needed survivor payloads. `payload_len` is the Task
+/// 111h common rerank payload codec width for the configured compact format.
 ///
 /// On-disk layout:
 /// ```text

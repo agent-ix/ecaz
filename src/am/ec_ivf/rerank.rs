@@ -9,9 +9,12 @@
 //! - `f16`  — round both the query and each fetched source vector to IEEE-754
 //!   binary16 and back to f32, then take the exact negative inner product. Half
 //!   the value precision, no new SIMD.
-//! - `rabitq4` — encode each fetched source vector with the shared 4-bit RaBitQ
-//!   codec and score through the existing `candidate_batch` RaBitQ scorers, then
-//!   negate the inner-product estimate.
+//! - `rabitq4` / `rabitq8` — encode each fetched source vector with the shared
+//!   RaBitQ codec and score through the existing `candidate_batch` RaBitQ
+//!   scorers, then negate the inner-product estimate.
+//! - `turboquant` — encode each fetched source vector with the shared
+//!   TurboQuant codec, carrying gamma inside the rerank payload, and score
+//!   through the existing TurboQuant batch scorers.
 //!
 //! These source-placement diagnostic representations keep the on-disk layout
 //! untouched: the rerank payload is always the heap source vector. The
@@ -29,23 +32,388 @@ use crate::am::ec_ivf::options::StorageFormat;
 pub(super) enum RerankScorer {
     /// Exact f32 negative inner product (the pre-111g heap_f32 behaviour).
     F32,
-    /// f16 round-trip negative inner product. Holds the query pre-rounded to
-    /// f16 so each candidate only rounds its own source vector.
+    /// Compact rerank payload scorer used by both source-diagnostic conversion
+    /// and persisted index-side sidecar scoring.
+    Payload(RerankPayloadScorer),
+}
+
+pub(super) struct RerankPayloadScorer {
+    codec: RerankPayloadCodec,
+    prepared_query: RerankPreparedQuery,
+}
+
+enum RerankPreparedQuery {
     F16 { query_f16: Vec<f32> },
-    /// 4-bit RaBitQ estimate via the shared candidate_batch scorers.
-    RaBitQ4 {
+    Quantized(IvfPreparedQuery),
+}
+
+/// Query-independent rerank payload codec. This is the narrow common interface
+/// that build/insert uses for persisted bytes and scan uses for query prep and
+/// scoring. The legacy 0x2A sidecar stores these payload bytes directly; the
+/// packed group/segment layout will consume the same codec instead of adding
+/// format-specific storage branches.
+pub(super) enum RerankPayloadCodec {
+    F16 {
+        dimensions: usize,
+    },
+    RaBitQ {
+        format: RerankFormat,
+        bits: u8,
         quantizer: IvfQuantizer,
-        prepared_query: IvfPreparedQuery,
+        payload_len: usize,
+    },
+    TurboQuant {
+        quantizer: IvfQuantizer,
+        code_len: usize,
         payload_len: usize,
     },
 }
 
+impl RerankPayloadCodec {
+    pub(super) fn resolve(
+        rerank_format: RerankFormat,
+        dimensions: usize,
+    ) -> Result<Option<Self>, String> {
+        match rerank_format {
+            RerankFormat::Auto | RerankFormat::F32 => Ok(None),
+            RerankFormat::F16 => Ok(Some(Self::F16 { dimensions })),
+            RerankFormat::RaBitQ4 | RerankFormat::RaBitQ8 => {
+                let bits = match rerank_format {
+                    RerankFormat::RaBitQ4 => 4,
+                    RerankFormat::RaBitQ8 => 8,
+                    _ => unreachable!("matched only concrete RaBitQ rerank formats"),
+                };
+                let quantizer = IvfQuantizer::resolve_with_pq_group_size_and_bits(
+                    StorageFormat::RaBitQ,
+                    dimensions,
+                    None,
+                    Some(bits),
+                )?;
+                let payload_len = quantizer.payload_len();
+                Ok(Some(Self::RaBitQ {
+                    format: rerank_format,
+                    bits,
+                    quantizer,
+                    payload_len,
+                }))
+            }
+            RerankFormat::TurboQuant => {
+                let quantizer = IvfQuantizer::resolve(StorageFormat::TurboQuant, dimensions)?;
+                let code_len = quantizer.payload_len();
+                let payload_len = std::mem::size_of::<f32>() + code_len;
+                Ok(Some(Self::TurboQuant {
+                    quantizer,
+                    code_len,
+                    payload_len,
+                }))
+            }
+            RerankFormat::RaBitQ2 => Err(format!(
+                "ec_ivf rerank_format = '{}' is not implemented",
+                rerank_format.reloption_name()
+            )),
+        }
+    }
+
+    pub(super) fn format(&self) -> RerankFormat {
+        match self {
+            Self::F16 { .. } => RerankFormat::F16,
+            Self::RaBitQ { format, .. } => *format,
+            Self::TurboQuant { .. } => RerankFormat::TurboQuant,
+        }
+    }
+
+    pub(super) fn payload_len(&self) -> usize {
+        match self {
+            Self::F16 { dimensions } => dimensions * 2,
+            Self::RaBitQ { payload_len, .. } | Self::TurboQuant { payload_len, .. } => *payload_len,
+        }
+    }
+
+    pub(super) fn payload_alignment(&self) -> usize {
+        match self {
+            Self::F16 { .. } => 2,
+            Self::RaBitQ { .. } => 1,
+            Self::TurboQuant { .. } => std::mem::align_of::<f32>(),
+        }
+    }
+
+    fn prepare_query(&self, query: &[f32]) -> Result<RerankPreparedQuery, String> {
+        match self {
+            Self::F16 { dimensions } => {
+                if query.len() != *dimensions {
+                    return Err(format!(
+                        "ec_ivf f16 rerank query dimension mismatch: got {}, expected {dimensions}",
+                        query.len()
+                    ));
+                }
+                Ok(RerankPreparedQuery::F16 {
+                    query_f16: query.iter().copied().map(f16_round_trip).collect(),
+                })
+            }
+            Self::RaBitQ { quantizer, .. } | Self::TurboQuant { quantizer, .. } => quantizer
+                .prepare_ip_query(query)
+                .map(RerankPreparedQuery::Quantized),
+        }
+    }
+
+    pub(super) fn encode_source(&self, source: &[f32]) -> Result<Vec<u8>, String> {
+        match self {
+            Self::F16 { dimensions } => {
+                if source.len() != *dimensions {
+                    return Err(format!(
+                        "ec_ivf f16 rerank source dimension mismatch: got {}, expected {dimensions}",
+                        source.len()
+                    ));
+                }
+                Ok(pack_f16_payload(source))
+            }
+            Self::RaBitQ {
+                quantizer,
+                payload_len,
+                bits,
+                ..
+            } => {
+                let (_dimensions, _gamma, code) = quantizer.encode_source(source)?;
+                if code.len() != *payload_len {
+                    return Err(format!(
+                        "ec_ivf rabitq{bits} rerank code length {} does not match payload length {payload_len}",
+                        code.len()
+                    ));
+                }
+                Ok(code)
+            }
+            Self::TurboQuant {
+                quantizer,
+                code_len,
+                payload_len,
+            } => {
+                let (_dimensions, gamma, code) = quantizer.encode_source(source)?;
+                if code.len() != *code_len {
+                    return Err(format!(
+                        "ec_ivf turboquant rerank code length {} does not match payload code length {code_len}",
+                        code.len()
+                    ));
+                }
+                let mut payload = Vec::with_capacity(*payload_len);
+                payload.extend_from_slice(&gamma.to_le_bytes());
+                payload.extend_from_slice(&code);
+                Ok(payload)
+            }
+        }
+    }
+
+    fn score_source_diagnostic(
+        &self,
+        prepared_query: &RerankPreparedQuery,
+        query: &[f32],
+        source: &[f32],
+    ) -> Result<f32, String> {
+        match (self, prepared_query) {
+            (Self::F16 { .. }, RerankPreparedQuery::F16 { query_f16 }) => {
+                let _ = query;
+                Ok(f16_negative_inner_product(query_f16, source))
+            }
+            (_, RerankPreparedQuery::Quantized(_)) => {
+                let payload = self.encode_source(source)?;
+                self.score_payload(prepared_query, &payload)
+            }
+            (_, RerankPreparedQuery::F16 { .. }) => {
+                Err("ec_ivf rerank payload codec and prepared query do not match".to_owned())
+            }
+        }
+    }
+
+    fn score_payload(
+        &self,
+        prepared_query: &RerankPreparedQuery,
+        payload: &[u8],
+    ) -> Result<f32, String> {
+        match (self, prepared_query) {
+            (Self::F16 { .. }, RerankPreparedQuery::F16 { query_f16 }) => {
+                Ok(f16_payload_negative_inner_product(query_f16, payload))
+            }
+            (
+                Self::RaBitQ {
+                    quantizer, bits, ..
+                },
+                RerankPreparedQuery::Quantized(prepared_query),
+            ) => {
+                let estimate = quantizer.score_ip_from_parts(prepared_query, 0.0, payload)?;
+                let _ = bits;
+                Ok(-estimate)
+            }
+            (
+                Self::TurboQuant {
+                    quantizer,
+                    code_len,
+                    payload_len,
+                },
+                RerankPreparedQuery::Quantized(prepared_query),
+            ) => {
+                let (gamma, code) = split_turboquant_payload(payload, *code_len, *payload_len)?;
+                let estimate = quantizer.score_ip_from_parts(prepared_query, gamma, code)?;
+                Ok(-estimate)
+            }
+            _ => Err("ec_ivf rerank payload codec and prepared query do not match".to_owned()),
+        }
+    }
+
+    fn score_payloads_batch(
+        &self,
+        prepared_query: &RerankPreparedQuery,
+        payloads: &[u8],
+        out_scores: &mut [f32],
+    ) -> Result<(), String> {
+        match (self, prepared_query) {
+            (
+                Self::RaBitQ {
+                    quantizer,
+                    payload_len,
+                    bits,
+                    ..
+                },
+                RerankPreparedQuery::Quantized(prepared_query),
+            ) => {
+                if payloads.len() != out_scores.len() * payload_len {
+                    return Err(format!(
+                        "ec_ivf rabitq{bits} rerank payload slab {} does not match {} entries * {payload_len}",
+                        payloads.len(),
+                        out_scores.len()
+                    ));
+                }
+                let mut estimates: Vec<f32> = Vec::with_capacity(out_scores.len());
+                let scored = quantizer.score_ip_bits1_batch_from_payloads(
+                    prepared_query,
+                    payloads,
+                    *payload_len,
+                    &mut estimates,
+                )?;
+                if !scored || estimates.len() != out_scores.len() {
+                    return Err(format!(
+                        "ec_ivf rabitq{bits} rerank batch scorer produced {} scores for {} payloads",
+                        estimates.len(),
+                        out_scores.len()
+                    ));
+                }
+                for (out, estimate) in out_scores.iter_mut().zip(estimates.iter()) {
+                    *out = -estimate;
+                }
+                Ok(())
+            }
+            (
+                Self::TurboQuant {
+                    quantizer,
+                    code_len,
+                    payload_len,
+                },
+                RerankPreparedQuery::Quantized(prepared_query),
+            ) => {
+                if payloads.len() != out_scores.len() * payload_len {
+                    return Err(format!(
+                        "ec_ivf turboquant rerank payload slab {} does not match {} entries * {payload_len}",
+                        payloads.len(),
+                        out_scores.len()
+                    ));
+                }
+                let mut gammas = Vec::with_capacity(out_scores.len());
+                let mut code_slab = Vec::with_capacity(out_scores.len() * code_len);
+                for payload in payloads.chunks_exact(*payload_len) {
+                    let (gamma, code) = split_turboquant_payload(payload, *code_len, *payload_len)?;
+                    gammas.push(gamma);
+                    code_slab.extend_from_slice(code);
+                }
+                let mut estimates: Vec<f32> = Vec::with_capacity(out_scores.len());
+                let scored = quantizer.score_turboquant_batch_from_payloads(
+                    prepared_query,
+                    &code_slab,
+                    *code_len,
+                    &gammas,
+                    &mut estimates,
+                )?;
+                if !scored || estimates.len() != out_scores.len() {
+                    return Err(format!(
+                        "ec_ivf turboquant rerank batch scorer produced {} scores for {} payloads",
+                        estimates.len(),
+                        out_scores.len()
+                    ));
+                }
+                for (out, estimate) in out_scores.iter_mut().zip(estimates.iter()) {
+                    *out = -estimate;
+                }
+                Ok(())
+            }
+            (Self::F16 { .. }, RerankPreparedQuery::F16 { .. }) => {
+                Err("ec_ivf f16 rerank scores scalar packed payloads".to_owned())
+            }
+            _ => Err("ec_ivf rerank payload codec and prepared query do not match".to_owned()),
+        }
+    }
+
+    fn score_sources_batch(
+        &self,
+        prepared_query: &RerankPreparedQuery,
+        sources: &[&[f32]],
+        out_scores: &mut [f32],
+    ) -> Result<(), String> {
+        if sources.len() != out_scores.len() {
+            return Err(format!(
+                "ec_ivf rerank score count {} does not match source count {}",
+                out_scores.len(),
+                sources.len()
+            ));
+        }
+        if sources.is_empty() {
+            return Ok(());
+        }
+        let payload_len = self.payload_len();
+        let mut payloads = Vec::with_capacity(sources.len() * payload_len);
+        for source in sources {
+            let payload = self.encode_source(source)?;
+            if payload.len() != payload_len {
+                return Err(format!(
+                    "ec_ivf {} rerank payload length {} does not match expected {payload_len}",
+                    self.format().reloption_name(),
+                    payload.len()
+                ));
+            }
+            payloads.extend_from_slice(&payload);
+        }
+        self.score_payloads_batch(prepared_query, &payloads, out_scores)
+    }
+}
+
+fn split_turboquant_payload(
+    payload: &[u8],
+    code_len: usize,
+    payload_len: usize,
+) -> Result<(f32, &[u8]), String> {
+    if payload.len() != payload_len {
+        return Err(format!(
+            "ec_ivf turboquant rerank payload length {} does not match expected {payload_len}",
+            payload.len()
+        ));
+    }
+    let gamma = f32::from_le_bytes(
+        payload[..std::mem::size_of::<f32>()]
+            .try_into()
+            .expect("turboquant gamma slice should be four bytes"),
+    );
+    let code = &payload[std::mem::size_of::<f32>()..];
+    if code.len() != code_len {
+        return Err(format!(
+            "ec_ivf turboquant rerank code length {} does not match expected {code_len}",
+            code.len()
+        ));
+    }
+    Ok((gamma, code))
+}
+
 impl RerankScorer {
-    /// Build the scorer for `rerank_format`. `f16`/`rabitq4` are only valid for
-    /// the `coarse_rerank` storage format; the caller has
-    /// already validated that pairing at index creation, but this re-checks so a
-    /// stray format on another storage profile is a hard error rather than a
-    /// silent wrong answer.
+    /// Build the scorer for `rerank_format`. Compact payload formats are only
+    /// valid for the `coarse_rerank` storage format; the caller has already
+    /// validated that pairing at index creation, but this re-checks so a stray
+    /// format on another storage profile is a hard error rather than a silent
+    /// wrong answer.
     pub(super) fn resolve(
         rerank_format: RerankFormat,
         storage_format: StorageFormat,
@@ -56,37 +424,29 @@ impl RerankScorer {
             // Auto never reaches scan time (build_options_from_reloptions
             // resolves it), but treat it as the exact path defensively.
             RerankFormat::Auto | RerankFormat::F32 => Ok(Self::F32),
-            RerankFormat::F16 => {
-                let query_f16 = query.iter().copied().map(f16_round_trip).collect();
-                Ok(Self::F16 { query_f16 })
-            }
-            RerankFormat::RaBitQ4 => {
+            RerankFormat::F16
+            | RerankFormat::RaBitQ4
+            | RerankFormat::RaBitQ8
+            | RerankFormat::TurboQuant => {
                 if storage_format != StorageFormat::CoarseRerank {
                     return Err(format!(
-                        "ec_ivf rerank_format = 'rabitq4' requires storage_format = 'coarse_rerank', got {}",
+                        "ec_ivf rerank_format = '{}' requires storage_format = 'coarse_rerank', got {}",
+                        rerank_format.reloption_name(),
                         storage_format.reloption_name()
                     ));
                 }
-                let quantizer = IvfQuantizer::resolve_with_pq_group_size_and_bits(
-                    StorageFormat::RaBitQ,
-                    dimensions,
-                    None,
-                    Some(4),
-                )?;
-                let prepared_query = quantizer.prepare_ip_query(query)?;
-                let payload_len = quantizer.payload_len();
-                Ok(Self::RaBitQ4 {
-                    quantizer,
+                let codec = RerankPayloadCodec::resolve(rerank_format, dimensions)?
+                    .ok_or_else(|| "ec_ivf compact rerank codec resolved to source".to_owned())?;
+                let prepared_query = codec.prepare_query(query)?;
+                Ok(Self::Payload(RerankPayloadScorer {
+                    codec,
                     prepared_query,
-                    payload_len,
-                })
+                }))
             }
-            RerankFormat::RaBitQ2 | RerankFormat::RaBitQ8 | RerankFormat::TurboQuant => {
-                Err(format!(
-                    "ec_ivf rerank_format = '{}' is not implemented",
-                    rerank_format.reloption_name()
-                ))
-            }
+            RerankFormat::RaBitQ2 => Err(format!(
+                "ec_ivf rerank_format = '{}' is not implemented",
+                rerank_format.reloption_name()
+            )),
         }
     }
 
@@ -96,10 +456,20 @@ impl RerankScorer {
     pub(super) fn score_source(&self, query: &[f32], source: &[f32]) -> f32 {
         match self {
             Self::F32 => source::negative_inner_product_index_internal(query, source),
-            Self::F16 { query_f16 } => f16_negative_inner_product(query_f16, source),
-            // RaBitQ4 scores in a batch; this entry point is not used for it.
-            Self::RaBitQ4 { .. } => {
-                pgrx::error!("ec_ivf rabitq4 rerank must score through score_sources_batch")
+            Self::Payload(payload) => payload
+                .codec
+                .score_source_diagnostic(&payload.prepared_query, query, source)
+                .unwrap_or_else(|e| pgrx::error!("{e}")),
+        }
+    }
+
+    pub(super) fn score_source_result(&self, query: &[f32], source: &[f32]) -> Result<f32, String> {
+        match self {
+            Self::F32 => Ok(source::negative_inner_product_index_internal(query, source)),
+            Self::Payload(payload) => {
+                payload
+                    .codec
+                    .score_source_diagnostic(&payload.prepared_query, query, source)
             }
         }
     }
@@ -107,18 +477,23 @@ impl RerankScorer {
     /// Whether this representation scores per-candidate (`score_source`) or in a
     /// batch over all fetched source vectors (`score_sources_batch`).
     pub(super) fn is_batched(&self) -> bool {
-        matches!(self, Self::RaBitQ4 { .. })
+        matches!(
+            self,
+            Self::Payload(RerankPayloadScorer {
+                codec: RerankPayloadCodec::RaBitQ { .. } | RerankPayloadCodec::TurboQuant { .. },
+                ..
+            })
+        )
     }
 
     /// The compact sidecar payload width this representation persists, for
     /// `rerank_placement = 'index'`. `None` for f32 (no sidecar — keeps the
-    /// heap source). f16 stores `dimensions * 2` bytes; rabitq4 stores its
-    /// codec payload length.
-    pub(super) fn sidecar_payload_len(&self, dimensions: usize) -> Option<usize> {
+    /// heap source). Compact formats report the shared rerank payload codec
+    /// length, including any format-specific metadata embedded in the payload.
+    pub(super) fn sidecar_payload_len(&self, _dimensions: usize) -> Option<usize> {
         match self {
             Self::F32 => None,
-            Self::F16 { .. } => Some(dimensions * 2),
-            Self::RaBitQ4 { payload_len, .. } => Some(*payload_len),
+            Self::Payload(payload) => Some(payload.codec.payload_len()),
         }
     }
 
@@ -127,166 +502,72 @@ impl RerankScorer {
     pub(super) fn encode_sidecar_payload(&self, source: &[f32]) -> Result<Option<Vec<u8>>, String> {
         match self {
             Self::F32 => Ok(None),
-            Self::F16 { .. } => Ok(Some(pack_f16_payload(source))),
-            Self::RaBitQ4 {
-                quantizer,
-                payload_len,
-                ..
-            } => {
-                let (_dimensions, _gamma, code) = quantizer.encode_source(source)?;
-                if code.len() != *payload_len {
-                    return Err(format!(
-                        "ec_ivf rabitq4 sidecar code length {} does not match payload length {payload_len}",
-                        code.len()
-                    ));
-                }
-                Ok(Some(code))
-            }
+            Self::Payload(payload) => payload.codec.encode_source(source).map(Some),
         }
     }
 
     /// Score a single candidate from its persisted compact sidecar payload
-    /// (`rerank_placement = 'index'`). Used by the f16 path which scores
-    /// per-candidate (against the f16-prepared query held in `self`); rabitq4
-    /// scores its payloads in a batch via `score_sidecar_payloads_batch`.
+    /// (`rerank_placement = 'index'`). f16 scores directly from packed binary16
+    /// bytes; quantized formats may also use this scalar fallback for
+    /// differential tests.
     pub(super) fn score_sidecar_payload(&self, payload: &[u8]) -> f32 {
         match self {
             Self::F32 => {
                 pgrx::error!("ec_ivf f32 rerank has no sidecar payload to score")
             }
-            Self::F16 { query_f16 } => {
-                let source = unpack_f16_payload(payload);
-                f16_negative_inner_product(query_f16, &source)
-            }
-            Self::RaBitQ4 { .. } => {
-                pgrx::error!(
-                    "ec_ivf rabitq4 sidecar rerank must score through score_sidecar_payloads_batch"
-                )
-            }
+            Self::Payload(payload_scorer) => payload_scorer
+                .codec
+                .score_payload(&payload_scorer.prepared_query, payload)
+                .unwrap_or_else(|e| pgrx::error!("{e}")),
         }
     }
 
-    /// Batch-score persisted rabitq4 sidecar payloads directly (no re-encode):
-    /// `payloads` is a flat `count * payload_len` slab in survivor order.
+    /// Batch-score persisted quantized sidecar payloads directly (no
+    /// re-encode): `payloads` is a flat `count * payload_len` slab in survivor
+    /// order.
     pub(super) fn score_sidecar_payloads_batch(
         &self,
         payloads: &[u8],
         out_scores: &mut [f32],
     ) -> Result<(), String> {
-        let Self::RaBitQ4 {
-            quantizer,
-            prepared_query,
-            payload_len,
-        } = self
-        else {
-            return Err(
-                "ec_ivf score_sidecar_payloads_batch called for a non-batched rerank format".into(),
-            );
-        };
-        if out_scores.is_empty() {
-            return Ok(());
+        match self {
+            Self::Payload(payload) => {
+                payload
+                    .codec
+                    .score_payloads_batch(&payload.prepared_query, payloads, out_scores)
+            }
+            Self::F32 => {
+                Err("ec_ivf score_sidecar_payloads_batch called for f32 rerank format".into())
+            }
         }
-        if payloads.len() != out_scores.len() * payload_len {
-            return Err(format!(
-                "ec_ivf rabitq4 sidecar payload slab {} does not match {} entries * {payload_len}",
-                payloads.len(),
-                out_scores.len()
-            ));
-        }
-        let mut estimates: Vec<f32> = Vec::with_capacity(out_scores.len());
-        let scored = quantizer.score_ip_bits1_batch_from_payloads(
-            prepared_query,
-            payloads,
-            *payload_len,
-            &mut estimates,
-        )?;
-        if !scored || estimates.len() != out_scores.len() {
-            return Err(format!(
-                "ec_ivf rabitq4 sidecar batch scorer produced {} scores for {} payloads",
-                estimates.len(),
-                out_scores.len()
-            ));
-        }
-        for (out, estimate) in out_scores.iter_mut().zip(estimates.iter()) {
-            *out = -estimate;
-        }
-        Ok(())
     }
 
     /// Batch-score every fetched source vector. `out_scores.len()` must equal
-    /// `sources.len()`. Only the batched representations (rabitq4) implement
-    /// this; the f32/f16 paths score per-candidate via `score_source`.
+    /// `sources.len()`. Only the batched representations (RaBitQ/TurboQuant)
+    /// implement this; the f32/f16 paths score per-candidate via
+    /// `score_source`.
     pub(super) fn score_sources_batch(
         &self,
         sources: &[&[f32]],
         out_scores: &mut [f32],
     ) -> Result<(), String> {
-        let Self::RaBitQ4 {
-            quantizer,
-            prepared_query,
-            payload_len,
-        } = self
-        else {
-            return Err("ec_ivf score_sources_batch called for a non-batched rerank format".into());
-        };
-        if sources.len() != out_scores.len() {
-            return Err(format!(
-                "ec_ivf rabitq4 rerank score count {} does not match source count {}",
-                out_scores.len(),
-                sources.len()
-            ));
-        }
-        if sources.is_empty() {
-            return Ok(());
-        }
-
-        // Encode each fetched source vector into the rabitq4 payload slab, then
-        // score the whole slab through the shared candidate_batch scorers.
-        let mut payloads = Vec::with_capacity(sources.len() * payload_len);
-        for source in sources {
-            let (_dimensions, _gamma, code) = quantizer.encode_source(source)?;
-            if code.len() != *payload_len {
-                return Err(format!(
-                    "ec_ivf rabitq4 rerank code length {} does not match payload length {payload_len}",
-                    code.len()
-                ));
+        match self {
+            Self::Payload(payload) => {
+                payload
+                    .codec
+                    .score_sources_batch(&payload.prepared_query, sources, out_scores)
             }
-            payloads.extend_from_slice(&code);
+            Self::F32 => Err("ec_ivf score_sources_batch called for f32 rerank format".into()),
         }
-
-        let mut estimates: Vec<f32> = Vec::with_capacity(sources.len());
-        let scored = quantizer.score_ip_bits1_batch_from_payloads(
-            prepared_query,
-            &payloads,
-            *payload_len,
-            &mut estimates,
-        )?;
-        if !scored || estimates.len() != sources.len() {
-            return Err(format!(
-                "ec_ivf rabitq4 rerank batch scorer produced {} scores for {} sources",
-                estimates.len(),
-                sources.len()
-            ));
-        }
-        // The shared scorers return an inner-product estimate (higher = closer);
-        // the candidate score convention is negative inner product.
-        for (out, estimate) in out_scores.iter_mut().zip(estimates.iter()) {
-            *out = -estimate;
-        }
-        Ok(())
     }
 }
 
 /// Query-independent encoder for the persisted compact rerank sidecar payload
 /// (`rerank_placement = 'index'`). Resolved at build/insert time (no query),
 /// it produces the `0x2A` payload that the scan-time `RerankScorer` later reads
-/// and scores. Mirrors the scoring scorer's compact reps: f16 and rabitq4.
-pub(super) enum RerankSidecarEncoder {
-    F16,
-    RaBitQ4 {
-        quantizer: IvfQuantizer,
-        payload_len: usize,
-    },
+/// and scores. Mirrors the scan-time scorer's compact payload codec.
+pub(super) struct RerankSidecarEncoder {
+    codec: RerankPayloadCodec,
 }
 
 impl RerankSidecarEncoder {
@@ -297,57 +578,22 @@ impl RerankSidecarEncoder {
         rerank_format: RerankFormat,
         dimensions: usize,
     ) -> Result<Option<Self>, String> {
-        match rerank_format {
-            RerankFormat::Auto | RerankFormat::F32 => Ok(None),
-            RerankFormat::F16 => Ok(Some(Self::F16)),
-            RerankFormat::RaBitQ4 => {
-                let quantizer = IvfQuantizer::resolve_with_pq_group_size_and_bits(
-                    StorageFormat::RaBitQ,
-                    dimensions,
-                    None,
-                    Some(4),
-                )?;
-                let payload_len = quantizer.payload_len();
-                Ok(Some(Self::RaBitQ4 {
-                    quantizer,
-                    payload_len,
-                }))
-            }
-            RerankFormat::RaBitQ2 | RerankFormat::RaBitQ8 | RerankFormat::TurboQuant => {
-                Err(format!(
-                    "ec_ivf rerank_format = '{}' is not implemented for index placement",
-                    rerank_format.reloption_name()
-                ))
-            }
-        }
+        RerankPayloadCodec::resolve(rerank_format, dimensions)
+            .map(|codec| codec.map(|codec| Self { codec }))
     }
 
     /// The compact payload width this encoder persists (f16: `dimensions * 2`).
-    pub(super) fn payload_len(&self, dimensions: usize) -> usize {
-        match self {
-            Self::F16 => dimensions * 2,
-            Self::RaBitQ4 { payload_len, .. } => *payload_len,
-        }
+    pub(super) fn payload_len(&self, _dimensions: usize) -> usize {
+        self.codec.payload_len()
+    }
+
+    pub(super) fn payload_alignment(&self) -> usize {
+        self.codec.payload_alignment()
     }
 
     /// Encode an f32 source vector into the persisted compact sidecar payload.
     pub(super) fn encode(&self, source: &[f32]) -> Result<Vec<u8>, String> {
-        match self {
-            Self::F16 => Ok(pack_f16_payload(source)),
-            Self::RaBitQ4 {
-                quantizer,
-                payload_len,
-            } => {
-                let (_dimensions, _gamma, code) = quantizer.encode_source(source)?;
-                if code.len() != *payload_len {
-                    return Err(format!(
-                        "ec_ivf rabitq4 sidecar code length {} does not match payload length {payload_len}",
-                        code.len()
-                    ));
-                }
-                Ok(code)
-            }
-        }
+        self.codec.encode_source(source)
     }
 }
 
@@ -392,6 +638,23 @@ fn f16_negative_inner_product(query_f16: &[f32], source: &[f32]) -> f32 {
         .iter()
         .zip(source.iter())
         .map(|(q, s)| q * f16_round_trip(*s))
+        .sum();
+    -sum
+}
+
+fn f16_payload_negative_inner_product(query_f16: &[f32], payload: &[u8]) -> f32 {
+    let expected = query_f16.len() * 2;
+    if payload.len() != expected {
+        pgrx::error!(
+            "ec_ivf f16 rerank payload dimension mismatch: query dim {}, payload bytes {}, expected {expected}",
+            query_f16.len(),
+            payload.len()
+        );
+    }
+    let sum: f32 = query_f16
+        .iter()
+        .zip(payload.chunks_exact(2))
+        .map(|(q, chunk)| q * f16_bits_to_f32(u16::from_le_bytes([chunk[0], chunk[1]])))
         .sum();
     -sum
 }
@@ -673,9 +936,13 @@ mod tests {
         // source through binary16 before the inner product.
         let query = [0.2_f32, -0.5, 0.75, 0.1, -0.9];
         let source = [0.4_f32, 0.25, -0.6, 0.05, 0.33];
-        let scorer = RerankScorer::F16 {
-            query_f16: query.iter().copied().map(f16_round_trip).collect(),
-        };
+        let scorer = RerankScorer::resolve(
+            RerankFormat::F16,
+            StorageFormat::CoarseRerank,
+            source.len(),
+            &query,
+        )
+        .unwrap();
         let source_diag_score = scorer.score_source(&query, &source);
         let payload = pack_f16_payload(&source);
         let index_score = scorer.score_sidecar_payload(&payload);
@@ -683,11 +950,69 @@ mod tests {
     }
 
     #[test]
+    fn f16_sidecar_payload_scores_without_materializing_source_vec() {
+        let query = [0.2_f32, -0.5, 0.75, 0.1, -0.9];
+        let source = [0.4_f32, 0.25, -0.6, 0.05, 0.33];
+        let query_f16: Vec<f32> = query.iter().copied().map(f16_round_trip).collect();
+        let payload = pack_f16_payload(&source);
+        let direct = f16_payload_negative_inner_product(&query_f16, &payload);
+        let materialized = f16_negative_inner_product(&query_f16, &unpack_f16_payload(&payload));
+        assert_eq!(direct.to_bits(), materialized.to_bits());
+    }
+
+    #[test]
     fn f16_sidecar_encoder_matches_pack_helper() {
-        let encoder = RerankSidecarEncoder::F16;
+        let encoder = RerankSidecarEncoder::resolve(RerankFormat::F16, 4)
+            .unwrap()
+            .unwrap();
         let source = [0.1_f32, -0.2, 0.3, -0.4];
         assert_eq!(encoder.payload_len(source.len()), source.len() * 2);
+        assert_eq!(encoder.payload_alignment(), 2);
         assert_eq!(encoder.encode(&source).unwrap(), pack_f16_payload(&source));
+    }
+
+    #[test]
+    fn compact_payload_codecs_score_source_and_sidecar_consistently() {
+        let query = [0.2_f32, -0.5, 0.75, 0.1, -0.9, 0.33, -0.12, 0.44];
+        let source = [0.4_f32, 0.25, -0.6, 0.05, 0.33, -0.2, 0.18, 0.71];
+        for format in [
+            RerankFormat::RaBitQ4,
+            RerankFormat::RaBitQ8,
+            RerankFormat::TurboQuant,
+        ] {
+            let encoder = RerankSidecarEncoder::resolve(format, source.len())
+                .unwrap()
+                .unwrap();
+            let payload = encoder.encode(&source).unwrap();
+            assert_eq!(payload.len(), encoder.payload_len(source.len()));
+            assert!(encoder.payload_alignment() >= 1);
+
+            let scorer =
+                RerankScorer::resolve(format, StorageFormat::CoarseRerank, source.len(), &query)
+                    .unwrap();
+            let source_score = scorer.score_source_result(&query, &source).unwrap();
+            let sidecar_score = scorer.score_sidecar_payload(&payload);
+            assert!(
+                (source_score - sidecar_score).abs() <= 1.0e-5,
+                "{} source-diagnostic score {source_score} should match sidecar score {sidecar_score}",
+                format.reloption_name()
+            );
+
+            let mut slab = Vec::with_capacity(payload.len() * 2);
+            slab.extend_from_slice(&payload);
+            slab.extend_from_slice(&payload);
+            let mut scores = [0.0_f32; 2];
+            scorer
+                .score_sidecar_payloads_batch(&slab, &mut scores)
+                .unwrap();
+            for score in scores {
+                assert!(
+                    (score - sidecar_score).abs() <= 1.0e-3,
+                    "{} batch score {score} should stay close to scalar sidecar score {sidecar_score}",
+                    format.reloption_name()
+                );
+            }
+        }
     }
 
     #[test]

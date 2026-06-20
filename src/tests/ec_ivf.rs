@@ -1064,12 +1064,14 @@
     }
 
     #[pg_test]
-    fn test_ec_ivf_coarse_rerank_f16_rabitq4_admin_snapshot() {
+    fn test_ec_ivf_coarse_rerank_compact_admin_snapshot() {
         // Task 111h: compact rerank formats with auto placement resolve to the
         // persisted index sidecar, not the legacy source-vector conversion path.
         for (suffix, rerank_format, expected) in [
             ("f16", "f16", "coarse_rerank/index/f16"),
             ("rabitq4", "rabitq4", "coarse_rerank/index/rabitq4"),
+            ("rabitq8", "rabitq8", "coarse_rerank/index/rabitq8"),
+            ("tq", "turboquant", "coarse_rerank/index/turboquant"),
         ] {
             let table = format!("ec_ivf_cr_fmt_{suffix}");
             let index = format!("ec_ivf_cr_fmt_{suffix}_idx");
@@ -1231,12 +1233,14 @@
     }
 
     #[pg_test]
-    fn test_ec_ivf_index_placement_f16_rabitq4_admin_snapshot() {
-        // Task 111g (003b): index placement is creatable for f16 and rabitq4,
-        // and the admin snapshot reports rerank_placement = index.
+    fn test_ec_ivf_index_placement_compact_admin_snapshot() {
+        // Task 111h: index placement is creatable for every persisted compact
+        // rerank format implemented by the common codec.
         for (suffix, rerank_format, expected) in [
             ("f16", "f16", "coarse_rerank/index/f16"),
             ("rabitq4", "rabitq4", "coarse_rerank/index/rabitq4"),
+            ("rabitq8", "rabitq8", "coarse_rerank/index/rabitq8"),
+            ("tq", "turboquant", "coarse_rerank/index/turboquant"),
         ] {
             let table = format!("ec_ivf_idx_pl_{suffix}");
             let index = format!("ec_ivf_idx_pl_{suffix}_idx");
@@ -1358,46 +1362,62 @@
     }
 
     #[pg_test]
-    fn test_ec_ivf_index_placement_rabitq4_top_neighbor() {
-        // Task 111g (003b) correctness: the index-side rabitq4 sidecar rerank
-        // ranks the exact nearest neighbor first on a separable corpus.
-        Spi::run("CREATE TABLE ec_ivf_idx_rb4 (id bigint primary key, embedding ecvector)")
+    fn test_ec_ivf_index_quant_formats_top_neighbor() {
+        // Task 111h correctness: every quantized index-side sidecar rerank
+        // format implemented by the common payload codec can scan and ranks the
+        // exact nearest neighbor first on a separable corpus.
+        for (suffix, rerank_format) in [
+            ("rb4", "rabitq4"),
+            ("rb8", "rabitq8"),
+            ("tq", "turboquant"),
+        ] {
+            let table = format!("ec_ivf_idx_{suffix}");
+            let index = format!("ec_ivf_idx_{suffix}_idx");
+            Spi::run(&format!(
+                "CREATE TABLE {table} (id bigint primary key, embedding ecvector)"
+            ))
             .expect("table creation should succeed");
-        let rows: Vec<(i64, Vec<f32>)> = (0..12)
-            .map(|id| {
-                let theta = id as f32 * (std::f32::consts::PI / 6.0);
-                (id, vec![theta.cos(), theta.sin(), 0.0, 0.0])
-            })
-            .collect();
-        for (id, vector) in &rows {
-            let literal = format_recall_vector_sql_literal(vector);
-            Spi::run(&format!("INSERT INTO ec_ivf_idx_rb4 VALUES ({id}, {literal}::ecvector)"))
-                .expect("seed insert should succeed");
-        }
-        Spi::run(
-            "CREATE INDEX ec_ivf_idx_rb4_idx ON ec_ivf_idx_rb4 USING ec_ivf \
-             (embedding ecvector_ip_ops) \
-             WITH (
-                nlists = 4,
-                nprobe = 4,
-                training_sample_rows = 12,
-                storage_format = 'coarse_rerank',
-                rerank_format = 'rabitq4',
-                rerank_placement = 'index',
-                rerank_width = 5
-             )",
-        )
-        .expect("index-placement rabitq4 index creation should succeed");
+            let rows: Vec<(i64, Vec<f32>)> = (0..12)
+                .map(|id| {
+                    let theta = id as f32 * (std::f32::consts::PI / 6.0);
+                    (id, vec![theta.cos(), theta.sin(), 0.0, 0.0])
+                })
+                .collect();
+            for (id, vector) in &rows {
+                let literal = format_recall_vector_sql_literal(vector);
+                Spi::run(&format!("INSERT INTO {table} VALUES ({id}, {literal}::ecvector)"))
+                    .expect("seed insert should succeed");
+            }
+            Spi::run(&format!(
+                "CREATE INDEX {index} ON {table} USING ec_ivf \
+                 (embedding ecvector_ip_ops) \
+                 WITH (
+                    nlists = 4,
+                    nprobe = 4,
+                    training_sample_rows = 12,
+                    storage_format = 'coarse_rerank',
+                    rerank_format = '{rerank_format}',
+                    rerank_placement = 'index',
+                    rerank_width = 5
+                 )"
+            ))
+            .unwrap_or_else(|e| {
+                panic!("index-placement {rerank_format} index creation should succeed: {e:?}")
+            });
 
-        let query = rows[0].1.clone();
-        let index_oid = ec_ivf_index_oid("ec_ivf_idx_rb4_idx");
-        let ctid_to_id = ctid_id_map("ec_ivf_idx_rb4");
-        let ids = ivf_debug_output_ids(index_oid, query, &ctid_to_id, 3);
-        assert!(!ids.is_empty(), "index-side rabitq4 rerank should emit candidates");
-        assert_eq!(
-            ids[0], 0,
-            "index-side rabitq4 rerank should rank the exact nearest neighbor first, got {ids:?}"
-        );
+            let query = rows[0].1.clone();
+            let index_oid = ec_ivf_index_oid(&index);
+            let ctid_to_id = ctid_id_map(&table);
+            let ids = ivf_debug_output_ids(index_oid, query, &ctid_to_id, 3);
+            assert!(
+                !ids.is_empty(),
+                "index-side {rerank_format} rerank should emit candidates"
+            );
+            assert_eq!(
+                ids[0], 0,
+                "index-side {rerank_format} rerank should rank the exact nearest neighbor first, got {ids:?}"
+            );
+        }
     }
 
     #[pg_test]
@@ -1449,6 +1469,7 @@
         let source_f32_oid = make_index("ec_ivf_bytes_source_f32", "f32", "source");
         let index_f16_oid = make_index("ec_ivf_bytes_index_f16", "f16", "index");
         let index_rb4_oid = make_index("ec_ivf_bytes_index_rb4", "rabitq4", "index");
+        let index_rb8_oid = make_index("ec_ivf_bytes_index_rb8", "rabitq8", "index");
 
         let query = rows[2].1.clone();
         let source_f32 = ec_ivf_debug!(am::debug_ec_ivf_gettuple_counter_snapshot(
@@ -1461,6 +1482,10 @@
         ));
         let index_rb4 = ec_ivf_debug!(am::debug_ec_ivf_gettuple_counter_snapshot(
             index_rb4_oid,
+            query.clone()
+        ));
+        let index_rb8 = ec_ivf_debug!(am::debug_ec_ivf_gettuple_counter_snapshot(
+            index_rb8_oid,
             query
         ));
 
@@ -1469,6 +1494,7 @@
         assert!(source_f32.rerank_rows > 0, "source f32 should rerank rows");
         assert_eq!(source_f32.rerank_rows, index_f16.rerank_rows);
         assert_eq!(source_f32.rerank_rows, index_rb4.rerank_rows);
+        assert_eq!(source_f32.rerank_rows, index_rb8.rerank_rows);
 
         // f32 reads dims*4 per candidate; f16 reads dims*2 (exactly half).
         assert_eq!(
@@ -1492,6 +1518,12 @@
             index_rb4.rerank_source_bytes_read < source_f32.rerank_source_bytes_read,
             "index rabitq4 ({}) should read fewer rerank source bytes than source f32 ({})",
             index_rb4.rerank_source_bytes_read,
+            source_f32.rerank_source_bytes_read
+        );
+        assert!(
+            index_rb8.rerank_source_bytes_read < source_f32.rerank_source_bytes_read,
+            "index rabitq8 ({}) should read fewer rerank source bytes than source f32 ({})",
+            index_rb8.rerank_source_bytes_read,
             source_f32.rerank_source_bytes_read
         );
     }
