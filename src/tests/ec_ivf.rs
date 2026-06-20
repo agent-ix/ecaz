@@ -2294,6 +2294,164 @@
     }
 
     #[pg_test]
+    fn test_ec_ivf_index_placement_update_snapshot_payload() {
+        // Task 111h: an UPDATE creates a fresh heap TID and compact rerank
+        // payload. A cursor declared before the UPDATE must continue to see the
+        // old tuple/payload, while a fresh statement must rank the updated
+        // tuple from its new compact payload.
+        Spi::run("CREATE TABLE ec_ivf_idx_update (id bigint primary key, embedding ecvector)")
+            .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_ivf_idx_update VALUES
+             (0, '[1.0,0.0]'::ecvector),
+             (1, '[0.8,0.0]'::ecvector),
+             (2, '[0.0,0.5]'::ecvector),
+             (3, '[-1.0,0.0]'::ecvector)",
+        )
+        .expect("seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_ivf_idx_update_idx ON ec_ivf_idx_update USING ec_ivf \
+             (embedding ecvector_ip_ops) \
+             WITH (
+                nlists = 1,
+                nprobe = 1,
+                training_sample_rows = 4,
+                storage_format = 'coarse_rerank',
+                rerank_format = 'f16',
+                rerank_placement = 'index',
+                rerank_width = 8
+             )",
+        )
+        .expect("index-placement f16 index creation should succeed");
+        Spi::run("SET LOCAL enable_seqscan = off").expect("SET LOCAL should succeed");
+
+        let old_query = format_recall_vector_sql_literal(&[1.0, 0.0]);
+        let new_query = format_recall_vector_sql_literal(&[0.0, 1.0]);
+        let plan = Spi::connect(|client| {
+            client
+                .select(
+                    &format!(
+                        "EXPLAIN (COSTS OFF)
+                         SELECT id, embedding <#> {old_query} AS score
+                         FROM ec_ivf_idx_update
+                         ORDER BY embedding <#> {old_query}
+                         LIMIT 1"
+                    ),
+                    None,
+                    &[],
+                )
+                .expect("index-placement UPDATE EXPLAIN should succeed")
+                .map(|row| {
+                    row["QUERY PLAN"]
+                        .value::<String>()
+                        .expect("plan row should decode")
+                        .expect("plan row should not be NULL")
+                })
+                .collect::<Vec<_>>()
+                .join("\n")
+        });
+        assert!(
+            plan.contains("ec_ivf_idx_update_idx"),
+            "UPDATE visibility fixture should exercise the IVF index plan:\n{plan}"
+        );
+
+        Spi::run(&format!(
+            "DECLARE ec_ivf_idx_update_old CURSOR FOR
+             SELECT id, embedding <#> {old_query} AS score
+             FROM ec_ivf_idx_update
+             ORDER BY embedding <#> {old_query}
+             LIMIT 1"
+        ))
+        .expect("pre-UPDATE cursor declaration should succeed");
+
+        Spi::run("UPDATE ec_ivf_idx_update SET embedding = '[0.0,1.0]'::ecvector WHERE id = 0")
+            .expect("UPDATE should succeed");
+
+        let fetch_ranked = |sql: &str| -> (i64, f32) {
+            Spi::connect(|client| {
+                client
+                    .select(sql, None, &[])
+                    .expect("ranked query should succeed")
+                    .map(|row| {
+                        let id = row["id"]
+                            .value::<i64>()
+                            .expect("id should decode")
+                            .expect("id should not be NULL");
+                        let score = row["score"]
+                            .value::<f32>()
+                            .expect("score should decode")
+                            .expect("score should not be NULL");
+                        (id, score)
+                    })
+                    .next()
+                    .expect("ranked query should return one row")
+            })
+        };
+
+        let stale = fetch_ranked("FETCH FORWARD 1 FROM ec_ivf_idx_update_old");
+        assert_eq!(
+            stale.0, 0,
+            "pre-UPDATE cursor snapshot should still rank the old tuple/payload first"
+        );
+        assert!(
+            (stale.1 + 1.0).abs() <= f32::EPSILON,
+            "pre-UPDATE cursor should score the old vector against the old query, got {}",
+            stale.1
+        );
+
+        let fresh_old = fetch_ranked(&format!(
+            "SELECT id, embedding <#> {old_query} AS score
+             FROM ec_ivf_idx_update
+             ORDER BY embedding <#> {old_query}
+             LIMIT 1"
+        ));
+        assert_eq!(
+            fresh_old.0, 1,
+            "fresh snapshot should not surface the old id=0 version for the old query"
+        );
+        assert!(
+            (fresh_old.1 + 0.8).abs() <= f32::EPSILON,
+            "fresh old-query score should come from visible row 1, got {}",
+            fresh_old.1
+        );
+
+        let fresh_new = fetch_ranked(&format!(
+            "SELECT id, embedding <#> {new_query} AS score
+             FROM ec_ivf_idx_update
+             ORDER BY embedding <#> {new_query}
+             LIMIT 1"
+        ));
+        assert_eq!(
+            fresh_new.0, 0,
+            "fresh snapshot should rank the updated tuple from its new compact payload"
+        );
+        assert!(
+            (fresh_new.1 + 1.0).abs() <= f32::EPSILON,
+            "fresh new-query score should use the updated vector, got {}",
+            fresh_new.1
+        );
+
+        let index_oid = ec_ivf_index_oid("ec_ivf_idx_update_idx");
+        let counters = ec_ivf_debug!(am::debug_ec_ivf_gettuple_counter_snapshot(
+            index_oid,
+            vec![0.0, 1.0]
+        ));
+        assert_eq!(counters.rerank_placement, "index");
+        assert_eq!(counters.rerank_format, "f16");
+        assert_eq!(
+            counters.rerank_source_bytes_read, 0,
+            "updated index-side payload should not read the heap source vector during rerank"
+        );
+        assert_eq!(
+            counters.rerank_payload_bytes_scored,
+            counters.rerank_rows * (2 * 2) as u32,
+            "updated f16 payload should score dims*2 bytes per reranked candidate"
+        );
+        assert_eq!(counters.rerank_payload_slab_bytes_copied, 0);
+        Spi::run("CLOSE ec_ivf_idx_update_old").expect("cursor close should succeed");
+    }
+
+    #[pg_test]
     fn test_ec_ivf_full_probe_matches_simple_exact_oracle_top1() {
         Spi::run(
             "CREATE TABLE ec_ivf_full_probe_oracle (id bigint primary key, embedding ecvector)",
