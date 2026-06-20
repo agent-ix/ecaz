@@ -94,7 +94,7 @@ fn upgrade_matrix_names_current_writable_formats() {
         ("diskann", 3),
         ("hnsw", 3),
         ("hnsw", 4),
-        ("ivf", 7),
+        ("ivf", 8),
         ("spire-partition", 1),
         ("spire-partition", 2),
     ]);

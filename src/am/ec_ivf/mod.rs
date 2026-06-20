@@ -92,6 +92,7 @@ pub use self::page::{
     EC_IVF_METADATA_INSERTED_SINCE_BUILD_OFFSET, EC_IVF_METADATA_MAGIC,
     EC_IVF_METADATA_MAGIC_OFFSET, EC_IVF_METADATA_NLISTS_OFFSET, EC_IVF_METADATA_NPROBE_OFFSET,
     EC_IVF_METADATA_PQ_CODEBOOK_HEAD_OFFSET, EC_IVF_METADATA_PQ_GROUP_SIZE_OFFSET,
+    EC_IVF_METADATA_RABITQ_RERANK_CLIP_OFFSET, EC_IVF_METADATA_RABITQ_RERANK_SCORE_MODE_OFFSET,
     EC_IVF_METADATA_RERANK_OFFSET, EC_IVF_METADATA_RERANK_SIDECAR_DIRECTORY_HEAD_OFFSET,
     EC_IVF_METADATA_RERANK_SIDECAR_HEAD_OFFSET, EC_IVF_METADATA_SEED_OFFSET,
     EC_IVF_METADATA_STORAGE_FORMAT_OFFSET, EC_IVF_METADATA_TOTAL_DEAD_TUPLES_OFFSET,
@@ -125,10 +126,9 @@ pub(crate) use self::insert::debug_ec_ivf_validate_no_duplicate_heap_tid;
 pub(crate) use self::scan::{
     debug_ec_ivf_build_metadata, debug_ec_ivf_directory_entry, debug_ec_ivf_directory_summary,
     debug_ec_ivf_gettuple_after_rescan_result, debug_ec_ivf_gettuple_counter_snapshot,
-    debug_ec_ivf_gettuple_counter_snapshot_with_missing_rerank_tid,
-    debug_ec_ivf_gettuple_outputs, debug_ec_ivf_metadata,
-    debug_ec_ivf_pq_fastscan_model_cache_reused, debug_ec_ivf_quantizer_cache_ptr,
-    debug_ec_ivf_rabitq_residual, debug_ec_ivf_rerank_mode,
+    debug_ec_ivf_gettuple_counter_snapshot_with_missing_rerank_tid, debug_ec_ivf_gettuple_outputs,
+    debug_ec_ivf_metadata, debug_ec_ivf_pq_fastscan_model_cache_reused,
+    debug_ec_ivf_quantizer_cache_ptr, debug_ec_ivf_rabitq_residual, debug_ec_ivf_rerank_mode,
     debug_ec_ivf_rerank_sidecar_head_is_valid, debug_ec_ivf_rescan_query_prep,
 };
 

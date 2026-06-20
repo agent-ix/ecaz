@@ -113,10 +113,11 @@ const _: () = {
 };
 
 const _: () = {
-    // v7 metadata: 92 bytes. Bytes 80..86 point at the packed 0x2B rerank group
+    // v8 metadata: 92 bytes. Bytes 22..24 persist RaBitQ rerank scorer knobs.
+    // Bytes 80..86 point at the packed 0x2B rerank group
     // header chain for index-side compact rerank; bytes 86..92 retain the
-    // legacy directory-head slot but are INVALID for v7 packed groups.
-    assert!(EC_IVF_INDEX_FORMAT_VERSION == 7);
+    // legacy directory-head slot but are INVALID for v8 packed groups.
+    assert!(EC_IVF_INDEX_FORMAT_VERSION == 8);
     assert!(EC_IVF_METADATA_MAGIC == 0x5649_4345);
     assert!(EC_IVF_METADATA_BYTES == 92);
     assert!(EC_IVF_METADATA_RERANK_SIDECAR_HEAD_OFFSET == 80);
@@ -128,6 +129,8 @@ const _: () = {
     assert!(EC_IVF_METADATA_NPROBE_OFFSET == 12);
     assert!(EC_IVF_METADATA_TRAINING_SAMPLE_ROWS_OFFSET == 16);
     assert!(EC_IVF_METADATA_TRAINING_VERSION_OFFSET == 20);
+    assert!(EC_IVF_METADATA_RABITQ_RERANK_SCORE_MODE_OFFSET == 22);
+    assert!(EC_IVF_METADATA_RABITQ_RERANK_CLIP_OFFSET == 23);
     assert!(EC_IVF_METADATA_SEED_OFFSET == 24);
     assert!(EC_IVF_METADATA_STORAGE_FORMAT_OFFSET == 32);
     assert!(EC_IVF_METADATA_RERANK_OFFSET == 33);

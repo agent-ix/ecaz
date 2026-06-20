@@ -172,6 +172,7 @@ unsafe fn insert_into_trained_index(
         .ok_or_else(|| format!("ec_ivf assigned list {list_id} has no centroid"))?;
     let mut rerank_group = append_rerank_group_entry(
         index_relation,
+        metadata,
         heap_tid,
         list_id_u32,
         gamma,
@@ -238,6 +239,7 @@ struct AppendedRerankGroup {
 /// later by relinking it under the metadata lock, after the posting is durable.
 unsafe fn append_rerank_group_entry(
     index_relation: pg_sys::Relation,
+    metadata: &page::MetadataPage,
     heap_tid: ItemPointer,
     list_id: u32,
     gamma: f32,
@@ -253,7 +255,7 @@ unsafe fn append_rerank_group_entry(
     let Some(encoder) = super::rerank::RerankSidecarEncoder::resolve(
         reloptions.rerank_format,
         source_vector.len(),
-        reloptions.rabitq_rerank_clip,
+        metadata.rabitq_rerank_clip_i32(),
     )?
     else {
         return Ok(None);
@@ -478,8 +480,8 @@ fn options_from_metadata(
         dense_posting_blocks: false,
         dense_posting_typed_layout: false,
         rabitq_residual: metadata.rabitq_residual,
-        rabitq_rerank_score: reloptions.rabitq_rerank_score,
-        rabitq_rerank_clip: reloptions.rabitq_rerank_clip,
+        rabitq_rerank_score: metadata.rabitq_rerank_score_mode(),
+        rabitq_rerank_clip: metadata.rabitq_rerank_clip_i32(),
         storage_format: metadata.storage_format,
         rerank: metadata.rerank,
         coarse_format: if metadata.storage_format == options::StorageFormat::CoarseRerank {

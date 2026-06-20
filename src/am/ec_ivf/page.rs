@@ -29,7 +29,7 @@ mod pg_sys {
 }
 
 #[cfg(any(feature = "pg17", feature = "pg18"))]
-use super::options::{EcIvfOptions, RerankMode, StorageFormat};
+use super::options::{EcIvfOptions, RaBitQRerankScoreMode, RerankMode, StorageFormat};
 #[cfg(any(feature = "pg17", feature = "pg18"))]
 use super::P_NEW;
 #[cfg(not(any(feature = "pg17", feature = "pg18")))]
@@ -53,23 +53,26 @@ pub(super) const METADATA_BLOCK_NUMBER: u32 = 0;
 pub(super) const FIRST_DATA_BLOCK_NUMBER: pg_sys::BlockNumber = 1;
 #[cfg(not(any(feature = "pg17", feature = "pg18")))]
 pub(super) const FIRST_DATA_BLOCK_NUMBER: u32 = 1;
-// v7 metadata is the only supported on-disk format. It is 92 bytes wide and
-// stores the rerank sidecar head ItemPointer at bytes 80..86. In v7 that head
+// v8 metadata is the only supported on-disk format. It is 92 bytes wide and
+// stores RaBitQ rerank score knobs at bytes 22..24 plus the rerank sidecar head
+// ItemPointer at bytes 80..86. In v8 that head
 // points at the 0x2B packed rerank group-header chain used by
 // rerank_placement = 'index'. RaBitQ and TurboQuant rerank group payloads are
-// encoded relative to the assigned centroid in v7; v6 used centroid-relative
-// RaBitQ but whole-vector TurboQuant bytes, v5 used the same layout with
-// non-residual RaBitQ bytes, and v4's 0x2A heap-TID sidecar remains a legacy
-// benchmark baseline. No older version is a readable current format. The
+// encoded relative to the assigned centroid in v8; v7 used the same payload
+// layout but read the RaBitQ rerank score knobs from mutable live reloptions,
+// v6 used centroid-relative RaBitQ but whole-vector TurboQuant bytes, v5 used
+// the same layout with non-residual RaBitQ bytes, and v4's 0x2A heap-TID
+// sidecar remains a legacy benchmark baseline. No older version is a readable
+// current format. The
 // rerank sidecar directory head ItemPointer at bytes 86..92 is retained for the
-// old v4 field width but is INVALID for v7 packed groups. Posting-carried
+// old v4 field width but is INVALID for v8 packed groups. Posting-carried
 // rerank TIDs are the hot group lookup path; the group chain is the fallback,
 // vacuum, and inspection path. A rerank_sidecar_head of INVALID is the
 // legitimate "no sidecar" state for rerank_placement = 'source' and for f32
 // storage (rerank reads from the heap/source-vector path instead). This
 // research project keeps no backward compatibility with older metadata
 // widths/layouts.
-pub const EC_IVF_INDEX_FORMAT_VERSION: u16 = 7;
+pub const EC_IVF_INDEX_FORMAT_VERSION: u16 = 8;
 pub(super) const INDEX_FORMAT_VERSION: u16 = EC_IVF_INDEX_FORMAT_VERSION;
 
 pub const EC_IVF_METADATA_MAGIC: u32 = 0x5649_4345; // "ECIV" as little-endian bytes.
@@ -81,6 +84,8 @@ pub const EC_IVF_METADATA_NLISTS_OFFSET: usize = 8;
 pub const EC_IVF_METADATA_NPROBE_OFFSET: usize = 12;
 pub const EC_IVF_METADATA_TRAINING_SAMPLE_ROWS_OFFSET: usize = 16;
 pub const EC_IVF_METADATA_TRAINING_VERSION_OFFSET: usize = 20;
+pub const EC_IVF_METADATA_RABITQ_RERANK_SCORE_MODE_OFFSET: usize = 22;
+pub const EC_IVF_METADATA_RABITQ_RERANK_CLIP_OFFSET: usize = 23;
 pub const EC_IVF_METADATA_SEED_OFFSET: usize = 24;
 pub const EC_IVF_METADATA_STORAGE_FORMAT_OFFSET: usize = 32;
 pub const EC_IVF_METADATA_RERANK_OFFSET: usize = 33;
@@ -93,10 +98,10 @@ pub const EC_IVF_METADATA_TOTAL_DEAD_TUPLES_OFFSET: usize = 56;
 pub const EC_IVF_METADATA_INSERTED_SINCE_BUILD_OFFSET: usize = 64;
 pub const EC_IVF_METADATA_PQ_CODEBOOK_HEAD_OFFSET: usize = 72;
 pub const EC_IVF_METADATA_PQ_GROUP_SIZE_OFFSET: usize = 78;
-/// Task 111h v7: packed rerank group-header chain head ItemPointer
+/// Task 111h v8: packed rerank group-header chain head ItemPointer
 /// (bytes 80..86).
 pub const EC_IVF_METADATA_RERANK_SIDECAR_HEAD_OFFSET: usize = 80;
-/// Legacy ADR-079 directory head slot (bytes 86..92). v7 packed rerank groups
+/// Legacy ADR-079 directory head slot (bytes 86..92). v8 packed rerank groups
 /// keep the field for metadata width stability but write INVALID; group headers
 /// chain through their own `next_group_tid`.
 pub const EC_IVF_METADATA_RERANK_SIDECAR_DIRECTORY_HEAD_OFFSET: usize = 86;
@@ -197,6 +202,13 @@ pub enum RerankMode {
 }
 
 #[cfg(not(any(feature = "pg17", feature = "pg18")))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum RaBitQRerankScoreMode {
+    Estimator,
+    LeastSquares,
+}
+
+#[cfg(not(any(feature = "pg17", feature = "pg18")))]
 impl RerankMode {
     pub(super) fn v1_effective(self) -> Self {
         match self {
@@ -220,6 +232,8 @@ pub(super) struct EcIvfOptions {
     pub(super) storage_format: StorageFormat,
     pub(super) rerank: RerankMode,
     pub(super) quant_bits: u8,
+    pub(super) rabitq_rerank_score: RaBitQRerankScoreMode,
+    pub(super) rabitq_rerank_clip: i32,
     pub(super) dense_posting_blocks: bool,
     pub(super) dense_posting_typed_layout: bool,
 }
@@ -643,6 +657,15 @@ pub struct MetadataPage {
     pub seed: u64,
     pub storage_format: StorageFormat,
     pub rerank: RerankMode,
+    /// Task 111h v8: RaBitQ rerank scorer mode persisted at metadata byte 22.
+    /// `false` uses the paper estimator; `true` uses the least-squares
+    /// correction path. This is a build-time payload interpretation knob and
+    /// must not be read from mutable reloptions during scan or insert.
+    pub rabitq_rerank_least_squares: bool,
+    /// Task 111h v8: RaBitQ rerank clip persisted at metadata byte 23. Valid
+    /// values are 1..=8 and define the LUT/payload interpretation used by the
+    /// rerank scorer.
+    pub rabitq_rerank_clip: u8,
     /// RaBitQ per-dim code width. Valid values are {1, 2, 4, 8}. v1
     /// indexes write 0 here and the decoder coerces to 4 (the legacy
     /// hardcoded value).
@@ -683,6 +706,10 @@ impl MetadataPage {
             seed: u64::try_from(options.seed).expect("validated seed should fit in u64"),
             storage_format: options.storage_format,
             rerank: options.rerank.v1_effective(),
+            rabitq_rerank_least_squares: options.rabitq_rerank_score
+                == RaBitQRerankScoreMode::LeastSquares,
+            rabitq_rerank_clip: u8::try_from(options.rabitq_rerank_clip)
+                .expect("validated rabitq_rerank_clip should fit in u8"),
             quant_bits: options.effective_quant_bits(),
             rabitq_residual: options.rabitq_residual,
             centroid_head: ItemPointer::INVALID,
@@ -697,6 +724,18 @@ impl MetadataPage {
         }
     }
 
+    pub(super) fn rabitq_rerank_score_mode(&self) -> RaBitQRerankScoreMode {
+        if self.rabitq_rerank_least_squares {
+            RaBitQRerankScoreMode::LeastSquares
+        } else {
+            RaBitQRerankScoreMode::Estimator
+        }
+    }
+
+    pub(super) fn rabitq_rerank_clip_i32(&self) -> i32 {
+        i32::from(self.rabitq_rerank_clip)
+    }
+
     pub(super) fn encode(&self) -> [u8; METADATA_BYTES] {
         let mut out = [0_u8; METADATA_BYTES];
         out[0..4].copy_from_slice(&METADATA_MAGIC.to_le_bytes());
@@ -706,6 +745,8 @@ impl MetadataPage {
         out[12..16].copy_from_slice(&self.nprobe.to_le_bytes());
         out[16..20].copy_from_slice(&self.training_sample_rows.to_le_bytes());
         out[20..22].copy_from_slice(&self.training_version.to_le_bytes());
+        out[22] = u8::from(self.rabitq_rerank_least_squares);
+        out[23] = self.rabitq_rerank_clip;
         out[24..32].copy_from_slice(&self.seed.to_le_bytes());
         out[32] = self.storage_format as u8;
         out[33] = self.rerank as u8;
@@ -727,9 +768,9 @@ impl MetadataPage {
     }
 
     pub fn decode(bytes: &[u8]) -> Result<Self, String> {
-        // v4 is the only supported width (92 bytes), including the rerank
-        // sidecar head at bytes 80..86 and the sidecar directory head at
-        // bytes 86..92 (ADR-079).
+        // v8 is the only supported width (92 bytes), including RaBitQ rerank
+        // score knobs at bytes 22..24, the packed rerank group head at bytes
+        // 80..86, and the legacy sidecar directory head at bytes 86..92.
         if bytes.len() < EC_IVF_METADATA_BYTES {
             return Err(format!(
                 "ec_ivf metadata length mismatch: got {}, expected at least {EC_IVF_METADATA_BYTES}",
@@ -781,6 +822,23 @@ impl MetadataPage {
                     .try_into()
                     .expect("metadata training version slice should be 2 bytes"),
             ),
+            rabitq_rerank_least_squares: match bytes[22] {
+                0 => false,
+                1 => true,
+                other => {
+                    return Err(format!(
+                        "invalid ec_ivf rabitq_rerank_score_mode flag stored in metadata: {other}"
+                    ))
+                }
+            },
+            rabitq_rerank_clip: match bytes[23] {
+                clip @ 1..=8 => clip,
+                other => {
+                    return Err(format!(
+                        "invalid ec_ivf rabitq_rerank_clip stored in metadata: {other}"
+                    ))
+                }
+            },
             seed: u64::from_le_bytes(
                 bytes[24..32]
                     .try_into()
@@ -4769,8 +4827,52 @@ mod tests {
 
         assert_eq!(decoded, metadata);
         assert_eq!(decoded.format_version, INDEX_FORMAT_VERSION);
+        assert!(!decoded.rabitq_rerank_least_squares);
+        assert_eq!(
+            decoded.rabitq_rerank_clip,
+            EC_IVF_DEFAULT_RABITQ_RERANK_CLIP as u8
+        );
         // Task 115: default index is plain RaBitQ.
         assert!(!decoded.rabitq_residual);
+    }
+
+    #[test]
+    fn metadata_roundtrips_rabitq_rerank_score_knobs() {
+        let metadata = MetadataPage::empty(EcIvfOptions {
+            nlists: 64,
+            nprobe: 8,
+            rerank_width: 0,
+            training_sample_rows: 10_000,
+            seed: 7,
+            pq_group_size: 0,
+            posting_slack_percent: 0,
+            quant_bits: 4,
+            coarse_bits: 0,
+            dense_posting_blocks: false,
+            dense_posting_typed_layout: false,
+            rabitq_residual: false,
+            rabitq_rerank_score: RaBitQRerankScoreMode::LeastSquares,
+            rabitq_rerank_clip: 4,
+            storage_format: StorageFormat::CoarseRerank,
+            rerank: RerankMode::HeapF32,
+            coarse_format: CoarseFormat::RaBitQ,
+            rerank_placement: RerankPlacement::Index,
+            rerank_format: RerankFormat::RaBitQ8,
+        });
+
+        let encoded = metadata.encode();
+        assert_eq!(encoded[EC_IVF_METADATA_RABITQ_RERANK_SCORE_MODE_OFFSET], 1);
+        assert_eq!(encoded[EC_IVF_METADATA_RABITQ_RERANK_CLIP_OFFSET], 4);
+
+        let decoded = MetadataPage::decode(&encoded).unwrap();
+        assert!(decoded.rabitq_rerank_least_squares);
+        assert_eq!(
+            decoded.rabitq_rerank_score_mode(),
+            RaBitQRerankScoreMode::LeastSquares
+        );
+        assert_eq!(decoded.rabitq_rerank_clip, 4);
+        assert_eq!(decoded.rabitq_rerank_clip_i32(), 4);
+        assert_eq!(decoded, metadata);
     }
 
     #[test]

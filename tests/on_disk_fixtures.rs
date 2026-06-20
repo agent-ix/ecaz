@@ -505,14 +505,15 @@ fn diskann_vamana_codebook_tuple_v3_fixture_decodes() {
 }
 
 #[test]
-fn ivf_metadata_v7_fixture_decodes() {
-    // Task 111h: current IVF format is v7 (92 bytes; rerank sidecar head points
-    // at packed 0x2B rerank group headers when index placement is used).
-    let bytes = decode_hex_fixture(include_str!("../fixtures/on-disk/ivf_metadata_v7.hex"));
+fn ivf_metadata_v8_fixture_decodes() {
+    // Task 111h: current IVF format is v8 (92 bytes; RaBitQ rerank scorer
+    // knobs persisted at bytes 22..24, rerank sidecar head points at packed
+    // 0x2B rerank group headers when index placement is used).
+    let bytes = decode_hex_fixture(include_str!("../fixtures/on-disk/ivf_metadata_v8.hex"));
 
     let metadata = IvfMetadataPage::decode(&bytes).expect("ivf metadata fixture should decode");
 
-    assert_eq!(metadata.format_version, 7);
+    assert_eq!(metadata.format_version, 8);
     assert_eq!(metadata.dimensions, 128);
     assert_eq!(metadata.nlists, 16);
     assert_eq!(metadata.nprobe, 4);
@@ -521,6 +522,8 @@ fn ivf_metadata_v7_fixture_decodes() {
     assert_eq!(metadata.seed, 0x0102_0304_0506_0708);
     assert_eq!(metadata.storage_format, IvfStorageFormat::PqFastScan);
     assert_eq!(metadata.rerank, IvfRerankMode::HeapF32);
+    assert!(!metadata.rabitq_rerank_least_squares);
+    assert_eq!(metadata.rabitq_rerank_clip, 2);
     assert_eq!(metadata.quant_bits, 4);
     assert_eq!(
         metadata.centroid_head,
@@ -556,7 +559,7 @@ fn ivf_metadata_v7_fixture_decodes() {
 
 #[test]
 fn ivf_metadata_byteswapped_version_is_rejected() {
-    let mut bytes = decode_hex_fixture(include_str!("../fixtures/on-disk/ivf_metadata_v7.hex"));
+    let mut bytes = decode_hex_fixture(include_str!("../fixtures/on-disk/ivf_metadata_v8.hex"));
     bytes.swap(
         EC_IVF_METADATA_FORMAT_VERSION_OFFSET,
         EC_IVF_METADATA_FORMAT_VERSION_OFFSET + 1,
@@ -565,7 +568,20 @@ fn ivf_metadata_byteswapped_version_is_rejected() {
     let err = IvfMetadataPage::decode(&bytes).expect_err("byte-swapped version should fail");
 
     assert!(
-        err.contains("unsupported ec_ivf metadata format version: 1792"),
+        err.contains("unsupported ec_ivf metadata format version: 2048"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn ivf_metadata_v7_is_rejected_by_version() {
+    // Task 111h / NFR-016: v7 had the current 92-byte packed 0x2B layout but
+    // did not persist RaBitQ rerank score/clip; v8 rejects it so ALTERed
+    // reloptions cannot silently reinterpret existing sidecar bytes.
+    let bytes = decode_hex_fixture(include_str!("../fixtures/on-disk/ivf_metadata_v7.hex"));
+    let err = IvfMetadataPage::decode(&bytes).expect_err("old v7 layout should be rejected");
+    assert!(
+        err.contains("unsupported ec_ivf metadata format version: 7"),
         "unexpected error: {err}"
     );
 }
@@ -574,7 +590,7 @@ fn ivf_metadata_byteswapped_version_is_rejected() {
 fn ivf_metadata_v6_is_rejected_by_version() {
     // Task 111h TurboQuant centroid-relative follow-up / NFR-016: v6 used the
     // same packed 0x2B layout, but TurboQuant sidecar payloads encoded whole
-    // source vectors. v7 rejects it so old sidecar bytes cannot be silently
+    // source vectors. v8 rejects it so old sidecar bytes cannot be silently
     // scored as centroid-relative payloads.
     let bytes = decode_hex_fixture(include_str!("../fixtures/on-disk/ivf_metadata_v6.hex"));
     let err = IvfMetadataPage::decode(&bytes).expect_err("old v6 layout should be rejected");
@@ -587,7 +603,7 @@ fn ivf_metadata_v6_is_rejected_by_version() {
 #[test]
 fn ivf_metadata_v5_is_rejected_by_version() {
     // Task 111h residual rerank follow-up / NFR-016: v5 used the same packed
-    // 0x2B layout but RaBitQ rerank payloads were non-residual. v7 rejects it
+    // 0x2B layout but RaBitQ rerank payloads were non-residual. v8 rejects it
     // so old sidecar bytes cannot be silently scored as residual payloads.
     let bytes = decode_hex_fixture(include_str!("../fixtures/on-disk/ivf_metadata_v5.hex"));
     let err = IvfMetadataPage::decode(&bytes).expect_err("old v5 layout should be rejected");
@@ -599,7 +615,7 @@ fn ivf_metadata_v5_is_rejected_by_version() {
 
 #[test]
 fn ivf_metadata_v4_is_rejected_by_version() {
-    // Task 111h / NFR-016: v4 used the legacy 0x2A heap-TID sidecar. The v7
+    // Task 111h / NFR-016: v4 used the legacy 0x2A heap-TID sidecar. The v8
     // writer emits packed 0x2B/0x2C rerank groups, so v4 is an explicit rebuild
     // boundary in this research branch.
     let bytes = decode_hex_fixture(include_str!("../fixtures/on-disk/ivf_metadata_v4.hex"));

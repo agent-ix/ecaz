@@ -621,7 +621,12 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_amrescan(
         let metadata = super::page::read_metadata_page((*scan).indexRelation);
         let index_relation_handle = NonNull::new((*scan).indexRelation)
             .unwrap_or_else(|| pgrx::error!("ec_ivf scan needs a valid index relation"));
-        let index_options = super::options::relation_options(index_relation_handle);
+        let mut index_options = super::options::relation_options(index_relation_handle);
+        // RaBitQ compact rerank scorer knobs affect persisted payload
+        // interpretation. Read them from metadata so ALTERed reloptions cannot
+        // rescore existing bytes with a different LUT/estimator.
+        index_options.rabitq_rerank_score = metadata.rabitq_rerank_score_mode();
+        index_options.rabitq_rerank_clip = metadata.rabitq_rerank_clip_i32();
         metadata
             .storage_format
             .validate_v1_supported()
@@ -4496,8 +4501,7 @@ mod tests {
         assert_eq!(direct.list_id, 7);
 
         let fallback_candidate = candidate(11, 1, 0.0);
-        let fallback =
-            rerank_group_payload_for_candidate(&groups, &fallback_candidate, 2).unwrap();
+        let fallback = rerank_group_payload_for_candidate(&groups, &fallback_candidate, 2).unwrap();
         assert_eq!(fallback.payload, &[0x10, 0x11]);
         assert_eq!(fallback.list_id, 7);
     }

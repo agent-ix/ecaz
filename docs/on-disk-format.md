@@ -49,7 +49,8 @@ Current fixture coverage:
 | `diskann_vamana_node_tuple_v3.hex` | DiskANN Vamana node tuple decode and swapped-neighbor-count rejection |
 | `diskann_vamana_overflow_tuple_v3.hex` | DiskANN duplicate heap-TID overflow tuple decode and swapped-count rejection |
 | `diskann_vamana_codebook_tuple_v3.hex` | DiskANN grouped-PQ codebook shard decode |
-| `ivf_metadata_v7.hex` | current IVF metadata (92 bytes) decode and swapped-version rejection |
+| `ivf_metadata_v8.hex` | current IVF metadata (92 bytes) decode and swapped-version rejection |
+| `ivf_metadata_v7.hex` | legacy 92-byte IVF metadata lacking metadata-backed RaBitQ rerank score/clip fields, now rejected by version |
 | `ivf_metadata_v6.hex` | legacy 92-byte IVF metadata using packed `0x2B` groups with whole-vector TurboQuant rerank payloads, now rejected by version |
 | `ivf_metadata_v5.hex` | legacy 92-byte IVF metadata using packed `0x2B` groups with non-residual RaBitQ rerank payloads, now rejected by version |
 | `ivf_metadata_v4.hex` | legacy 92-byte IVF metadata using the old `0x2A` sidecar, now rejected by version |
@@ -82,7 +83,7 @@ before interpreting the rest of the payload:
 | --- | --- | --- |
 | HNSW | `1`, `2`, `3`, `4` | accepts known tags, rejects unknown tags |
 | DiskANN | `3` | accepts the DiskANN tag, rejects foreign tags |
-| IVF | `7` | accepts the IVF metadata tag, rejects all other versions |
+| IVF | `8` | accepts the IVF metadata tag, rejects all other versions |
 | SPIRE partition objects | `1`, `2` | accepts known object versions, rejects unknown versions |
 
 Any incompatible field addition or reinterpretation must add a new format tag
@@ -90,14 +91,20 @@ and update the layout assertions, fixture golden files, and upgrade matrix.
 
 ## IVF Metadata Format
 
-IVF writes and reads metadata format version `7` only; any other version
+IVF writes and reads metadata format version `8` only; any other version
 (including the legacy 86-byte v3 layout, the 92-byte v4 `0x2A` sidecar layout,
 the v5 packed-group layout with non-residual RaBitQ rerank payload bytes, and
-the v6 packed-group layout with whole-vector TurboQuant rerank payload bytes) is
+the v6 packed-group layout with whole-vector TurboQuant rerank payload bytes,
+and the v7 layout that kept RaBitQ rerank score/clip in mutable reloptions) is
 rejected. This is a research project with no backward compatibility - an index
 written by an older format is simply rebuilt.
 
-The v7 metadata struct is `EC_IVF_METADATA_BYTES = 92` bytes wide.
+The v8 metadata struct is `EC_IVF_METADATA_BYTES = 92` bytes wide.
+`EC_IVF_METADATA_RABITQ_RERANK_SCORE_MODE_OFFSET = 22` stores the RaBitQ rerank
+score mode (`0 = estimator`, `1 = least_squares`) and
+`EC_IVF_METADATA_RABITQ_RERANK_CLIP_OFFSET = 23` stores the RaBitQ rerank clip
+(`1..=8`). These are build-time payload interpretation knobs; scan and insert
+read them from metadata rather than mutable live reloptions.
 `EC_IVF_METADATA_RERANK_SIDECAR_HEAD_OFFSET = 80` holds the head `ItemPointer` of
 the packed compact rerank group-header chain (tag `0x2B`). A head of
 `ItemPointer::INVALID` is the legitimate "no sidecar" state for
@@ -106,9 +113,9 @@ the heap/source-vector path. That is a runtime placement state, not a
 compatibility mode.
 
 `EC_IVF_METADATA_RERANK_SIDECAR_DIRECTORY_HEAD_OFFSET = 86` is retained as a
-legacy field-width slot from ADR-079, but v7 packed rerank groups write
+legacy field-width slot from ADR-079, but v8 packed rerank groups write
 `ItemPointer::INVALID` there. The old v4 directory mapped `0x2A` sidecar blocks;
-v7 follows the `next_group_tid` field stored in each `0x2B` group header instead.
+v8 follows the `next_group_tid` field stored in each `0x2B` group header instead.
 
 ## IVF Posting Tuple Tags
 
@@ -125,15 +132,15 @@ rerank sidecar block:
 | `0x25` | dense posting block | current dense block format |
 | `0x28` | aligned dense posting block | current typed-view dense block format |
 | `0x2A` | rerank sidecar block | legacy v4; compact rerank rep keyed by heap TID (Task 111g) |
-| `0x2B` | rerank group header | current v7; scorer-width compact rerank group metadata |
-| `0x2C` | rerank group payload segment | current v7; payload-only continuation bytes |
+| `0x2B` | rerank group header | current v8; scorer-width compact rerank group metadata |
+| `0x2C` | rerank group payload segment | current v8; payload-only continuation bytes |
 
 The legacy v4 `0x2A` rerank sidecar block stored a tid-keyed run of compact
 rerank payload bytes, chained via a per-block `next_tid`. It remains only as a
-benchmark/code baseline; v7 readers reject v4 metadata rather than reading
+benchmark/code baseline; v8 readers reject v4 metadata rather than reading
 `0x2A` as a current format.
 
-The v7 `0x2B` rerank group header stores a logical scorer-width group once:
+The v8 `0x2B` rerank group header stores a logical scorer-width group once:
 `[tag:u8=0x2B][rerank_format:u8][list_id:u32][scorer_width:u16][valid_count:u16]`
 `[payload_len:u16][total_heap_tids:u32][total_payload_bytes:u32]`
 `[header_payload_bytes:u16][next_segment_tid:6][next_group_tid:6][reserved:u16]`,
@@ -144,7 +151,7 @@ Build writes groups per list and flushes at scorer-width completion or list
 boundary. Each posting stores its direct group-header TID in the existing
 `rerank_tid` slot.
 
-The v7 `0x2C` rerank group payload segment stores continuation bytes only:
+The v8 `0x2C` rerank group payload segment stores continuation bytes only:
 `[tag:u8=0x2C][payload_bytes:u16][next_segment_tid:6]` followed by
 `payload_bytes` payload bytes. Payload segments do not repeat group metadata.
 Group headers chain through `next_group_tid` for fallback scans, vacuum, and
