@@ -1,0 +1,2 @@
+DROP INDEX
+NOTICE:  index "task111h028_1m_index_rabitq4_w32_idx" does not exist, skipping
