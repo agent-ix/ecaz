@@ -3967,20 +3967,23 @@ pub(crate) unsafe fn debug_ec_ivf_directory_entry(
 
 #[cfg(test)]
 mod tests {
+    use hashbrown::HashMap;
+
     use super::super::options::{
         CoarseFormat, EcIvfOptions, RerankFormat, RerankMode, RerankPlacement,
         StorageFormat as IvfStorageFormat,
     };
     use super::super::page::{
         IvfDensePostingBlockRef, IvfDensePostingBlockTuple, IvfDensePostingRef, IvfPostingTuple,
-        IvfPostingTupleRef,
+        IvfPostingTupleRef, IvfRerankGroupHeaderTuple,
     };
     use super::{
         build_probe_block_sequence, candidate_heap_blocks, candidate_heap_tid_cmp,
         choose_adaptive_nprobe, consume_live_tid_budget, inner_product, inner_product_scalar,
-        pre_rerank_candidate_limit, select_probe_lists, select_probe_lists_with_adaptive,
-        use_scratch_soa_batch_decode_for_format, CandidateTopK, EcIvfCentroidScore,
-        EcIvfScoredCandidate, IvfDensePostingBlockScratch, IvfPostingScratchSoa, ProbeBlockRange,
+        pre_rerank_candidate_limit, rerank_group_payload_for_candidate, select_probe_lists,
+        select_probe_lists_with_adaptive, use_scratch_soa_batch_decode_for_format, CandidateTopK,
+        EcIvfCentroidScore, EcIvfScoredCandidate, IvfDensePostingBlockScratch,
+        IvfPostingScratchSoa, LoadedRerankGroup, ProbeBlockRange,
     };
     use crate::storage::page::ItemPointer;
 
@@ -4191,6 +4194,87 @@ mod tests {
         assert!(scratch.scores.is_empty());
         assert_eq!(scratch.gammas.capacity(), gamma_capacity);
         assert_eq!(scratch.scores.capacity(), score_capacity);
+    }
+
+    fn loaded_rerank_group(
+        heap_payloads: &[(ItemPointer, Vec<u8>)],
+        deleted_indexes: &[usize],
+    ) -> LoadedRerankGroup {
+        let postings = heap_payloads
+            .iter()
+            .map(|(heap_tid, payload)| (*heap_tid, 0.25, payload.clone()))
+            .collect::<Vec<_>>();
+        let mut header = IvfRerankGroupHeaderTuple::from_single_heaptid_postings(
+            RerankFormat::F16 as u8,
+            7,
+            4,
+            &postings,
+            2,
+            postings.len() * 2,
+        )
+        .unwrap();
+        for index in deleted_indexes {
+            header.mark_deleted(*index);
+        }
+        LoadedRerankGroup {
+            payloads: postings
+                .iter()
+                .flat_map(|(_, _, payload)| payload.iter().copied())
+                .collect(),
+            header,
+        }
+    }
+
+    #[test]
+    fn rerank_group_payload_lookup_uses_direct_tid_and_fallback_scan() {
+        let group_tid = candidate(90, 1, 0.0).heap_tid;
+        let first_heap_tid = candidate(11, 1, 0.0).heap_tid;
+        let second_heap_tid = candidate(12, 1, 0.0).heap_tid;
+        let group = loaded_rerank_group(
+            &[
+                (first_heap_tid, vec![0x10, 0x11]),
+                (second_heap_tid, vec![0x20, 0x21]),
+            ],
+            &[],
+        );
+        let mut groups = HashMap::new();
+        groups.insert(group_tid, group);
+
+        let mut direct_candidate = candidate(12, 1, 0.0);
+        direct_candidate.rerank_tid = group_tid;
+        assert_eq!(
+            rerank_group_payload_for_candidate(&groups, &direct_candidate, 2).unwrap(),
+            &[0x20, 0x21]
+        );
+
+        let fallback_candidate = candidate(11, 1, 0.0);
+        assert_eq!(
+            rerank_group_payload_for_candidate(&groups, &fallback_candidate, 2).unwrap(),
+            &[0x10, 0x11]
+        );
+    }
+
+    #[test]
+    fn rerank_group_payload_lookup_skips_deleted_group_slots() {
+        let group_tid = candidate(90, 1, 0.0).heap_tid;
+        let deleted_heap_tid = candidate(12, 1, 0.0).heap_tid;
+        let group = loaded_rerank_group(
+            &[
+                (candidate(11, 1, 0.0).heap_tid, vec![0x10, 0x11]),
+                (deleted_heap_tid, vec![0x20, 0x21]),
+            ],
+            &[1],
+        );
+        let mut groups = HashMap::new();
+        groups.insert(group_tid, group);
+
+        let mut candidate = candidate(12, 1, 0.0);
+        candidate.rerank_tid = group_tid;
+        let err = rerank_group_payload_for_candidate(&groups, &candidate, 2).unwrap_err();
+        assert!(
+            err.contains("did not contain heap tid"),
+            "unexpected error: {err}"
+        );
     }
 
     #[test]
