@@ -1,6 +1,7 @@
 # Task 111h: IVF Persisted Rerank Format Sweep
 
-Status: **proposed**.
+Status: **complete** (2026-06-20; closeout
+`reviews/task-111h/041-final-closeout-decision/`).
 Priority: P0 correctness of the coarse-rerank product decision.
 Parent: `111e-ivf-coarse-rerank-candidate-pipeline.md`,
 `111g-ivf-coarse-rerank-representations.md`.
@@ -195,20 +196,26 @@ win under the storage/cache conditions they are designed for.
 - [x] Implement persisted RaBitQ-8 payload encoding under the same interface.
 - [x] Implement persisted TurboQuant payload encoding under the same interface.
 - [x] Implement the packed index-side rerank group/segment layout.
-- [ ] Benchmark the existing `0x2A` direct-TID sidecar path as a legacy
-      index-side baseline before replacing or superseding it.
+- [x] Benchmark the existing `0x2A` direct-TID sidecar path as a legacy
+      index-side baseline before replacing or superseding it. Evidence:
+      `reviews/task-111h/033-legacy-0x2a-attribution/`, citing the completed
+      `reviews/task-111g/005-direct-sidecar-rerank-tids/` suite.
 - [x] Implement table-owned persisted compact payload storage, or produce
       packet-local evidence explaining why PostgreSQL table-owned storage is not
       viable and what replaces it. Evidence:
       `reviews/task-111h/034-table-owned-storage-rationale/`.
 - [x] Implement direct payload lookup without per-query heap-TID hash-map
       rebuilds for the index-side path.
-- [ ] Implement or explicitly benchmark away owned per-survivor payload copies
-      and double-copy batch-scoring slabs in the compact index path.
-- [ ] Add EXPLAIN/admin/counter coverage for placement, format, payload bytes,
-      pages read, decode time, and scoring time.
-- [ ] Add PG18 correctness fixtures for create/insert/update/delete/vacuum,
-      mixed old/new postings, and snapshot-visible rerank payloads.
+- [x] Implement or explicitly benchmark away owned per-survivor payload copies
+      and double-copy batch-scoring slabs in the compact index path. Evidence:
+      `reviews/task-111h/038-rabitq-slab-copy-decision/`.
+- [x] Add EXPLAIN/admin/counter coverage for placement, format, payload bytes,
+      pages read, decode time, and scoring time. Evidence:
+      `reviews/task-111h/030-counter-fixture-closeout-audit/`.
+- [x] Add PG18 correctness fixtures for create/insert/update/delete/vacuum,
+      mixed old/new postings, and snapshot-visible rerank payloads. Evidence:
+      `reviews/task-111h/030-counter-fixture-closeout-audit/` and
+      `reviews/task-111h/031-update-snapshot-fixture/`.
 - [x] Specifically cover live insert and vacuum for direct payload pointers,
       fallback directory/full-chain lookup, and mixed postings that cannot carry
       an unambiguous direct pointer.
@@ -216,12 +223,24 @@ win under the storage/cache conditions they are designed for.
 - [x] Add a no-query-time-source-conversion regression test for persisted compact
       formats: source-vector f32 may be read only for the `source` baseline or
       an explicitly diagnostic mode.
-- [ ] Run the full `ecaz bench suite` matrix at 10k/50k/100k/1M.
-- [ ] Publish packet-local manifests and raw results for every suite.
-- [ ] Produce a final decision table comparing f32 source, f16, RaBitQ-4,
-      RaBitQ-8, and TurboQuant at matched recall.
-- [ ] State promote / iterate / abandon for each format and placement with
-      evidence. No format may be left as "not tried".
+- [x] Run the full `ecaz bench suite` matrix at 10k/50k/100k/1M. Evidence:
+      `reviews/task-111h/026-rerank-suite-10k-v7/`,
+      `reviews/task-111h/027-rerank-suite-50k-v7/`,
+      `reviews/task-111h/024-rerank-suite-100k-v7/`, and
+      `reviews/task-111h/028-rerank-suite-1m-v7-shared/`. Follow-up targeted
+      evidence for RaBitQ8 clip/score and cold-cache behavior lives in
+      `reviews/task-111h/036-rabitq8-score-clip-ab/` and
+      `reviews/task-111h/040-cold-cache-50k-candidates/`.
+- [x] Publish packet-local manifests and raw results for every suite. Evidence:
+      suite configs, `suite-manifest.json`, `results.jsonl`, reports, and
+      storage/latency/recall logs in packets 024, 026, 027, 028, 036, and 040.
+- [x] Produce a final decision table comparing f32 source, f16, RaBitQ-4,
+      RaBitQ-8, and TurboQuant at matched recall. Evidence:
+      `reviews/task-111h/029-cross-scale-matched-recall-v7/` and final
+      closeout `reviews/task-111h/041-final-closeout-decision/`.
+- [x] State promote / iterate / abandon for each format and placement with
+      evidence. No format may be left as "not tried". Evidence:
+      `reviews/task-111h/041-final-closeout-decision/`.
 
 ## Acceptance Criteria
 
