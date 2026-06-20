@@ -434,6 +434,74 @@ impl RerankPayloadCodec {
         }
     }
 
+    fn score_payload_refs_batch(
+        &self,
+        prepared_query: &RerankPreparedQuery,
+        payloads: &[&[u8]],
+        out_scores: &mut [f32],
+    ) -> Result<(), String> {
+        match (self, prepared_query) {
+            (
+                Self::TurboQuant {
+                    quantizer,
+                    code_len,
+                    payload_len,
+                    ..
+                },
+                RerankPreparedQuery::Quantized(prepared_query),
+            ) => {
+                if payloads.len() != out_scores.len() {
+                    return Err(format!(
+                        "ec_ivf turboquant borrowed rerank payload count {} does not match score count {}",
+                        payloads.len(),
+                        out_scores.len()
+                    ));
+                }
+                let mut gammas = Vec::with_capacity(out_scores.len());
+                let mut codes = Vec::with_capacity(out_scores.len());
+                for payload in payloads {
+                    let (gamma, code) = split_turboquant_payload(payload, *code_len, *payload_len)?;
+                    gammas.push(gamma);
+                    codes.push(code);
+                }
+                let mut estimates: Vec<f32> = Vec::with_capacity(out_scores.len());
+                let scored = quantizer.score_turboquant_batch_from_payload_refs(
+                    prepared_query,
+                    &codes,
+                    *code_len,
+                    &gammas,
+                    &mut estimates,
+                )?;
+                if !scored || estimates.len() != out_scores.len() {
+                    return Err(format!(
+                        "ec_ivf turboquant borrowed rerank batch scorer produced {} scores for {} payloads",
+                        estimates.len(),
+                        out_scores.len()
+                    ));
+                }
+                for (out, estimate) in out_scores.iter_mut().zip(estimates.iter()) {
+                    *out = -estimate;
+                }
+                Ok(())
+            }
+            (
+                Self::RaBitQ {
+                    format,
+                    payload_len,
+                    ..
+                },
+                RerankPreparedQuery::Quantized(_),
+            ) => Err(format!(
+                "ec_ivf {} borrowed rerank payload batch is not available; contiguous slab length remains {payload_len}",
+                format.reloption_name()
+            )),
+            (Self::F16 { .. }, RerankPreparedQuery::F16 { .. }) => {
+                Err("ec_ivf f16 rerank scores scalar packed payloads".to_owned())
+            }
+            _ => Err("ec_ivf rerank payload codec and prepared query do not match".to_owned()),
+        }
+    }
+
     fn score_sources_batch(
         &self,
         prepared_query: &RerankPreparedQuery,
@@ -608,6 +676,15 @@ impl RerankScorer {
         }
     }
 
+    pub(super) fn supports_sidecar_payload_ref_batch(&self) -> bool {
+        match self {
+            Self::Payload(payload) => {
+                matches!(payload.codec, RerankPayloadCodec::TurboQuant { .. })
+            }
+            Self::F32 => false,
+        }
+    }
+
     /// The compact sidecar payload width this representation persists, for
     /// `rerank_placement = 'index'`. `None` for f32 (no sidecar — keeps the
     /// heap source). Compact formats report the shared rerank payload codec
@@ -684,6 +761,41 @@ impl RerankScorer {
         out_scores: &mut [f32],
     ) -> Result<(), String> {
         self.score_sidecar_payloads_batch(payloads, out_scores)?;
+        if self.uses_sidecar_centroid_ip() {
+            if centroid_ips.len() != out_scores.len() {
+                return Err(format!(
+                    "ec_ivf centroid-relative rerank centroid-ip count {} does not match score count {}",
+                    centroid_ips.len(),
+                    out_scores.len()
+                ));
+            }
+            for (score, centroid_ip) in out_scores.iter_mut().zip(centroid_ips.iter()) {
+                *score -= *centroid_ip;
+            }
+        }
+        Ok(())
+    }
+
+    pub(super) fn score_sidecar_payload_refs_batch_with_centroid_ips(
+        &self,
+        payloads: &[&[u8]],
+        centroid_ips: &[f32],
+        out_scores: &mut [f32],
+    ) -> Result<(), String> {
+        match self {
+            Self::Payload(payload) => {
+                payload.codec.score_payload_refs_batch(
+                    &payload.prepared_query,
+                    payloads,
+                    out_scores,
+                )?;
+            }
+            Self::F32 => {
+                return Err(
+                    "ec_ivf score_sidecar_payload_refs_batch called for f32 rerank format".into(),
+                )
+            }
+        }
         if self.uses_sidecar_centroid_ip() {
             if centroid_ips.len() != out_scores.len() {
                 return Err(format!(
@@ -1241,6 +1353,22 @@ mod tests {
                 .unwrap();
             assert_eq!(scores[0].to_bits(), corrected_score.to_bits());
             assert_eq!(scores[1].to_bits(), corrected_score.to_bits());
+            if format == RerankFormat::TurboQuant {
+                assert!(scorer.supports_sidecar_payload_ref_batch());
+                let payload_refs = [&payload[..], &payload[..]];
+                let mut ref_scores = [0.0_f32; 2];
+                scorer
+                    .score_sidecar_payload_refs_batch_with_centroid_ips(
+                        &payload_refs,
+                        &[centroid_ip, centroid_ip],
+                        &mut ref_scores,
+                    )
+                    .unwrap();
+                assert_eq!(ref_scores[0].to_bits(), corrected_score.to_bits());
+                assert_eq!(ref_scores[1].to_bits(), corrected_score.to_bits());
+            } else {
+                assert!(!scorer.supports_sidecar_payload_ref_batch());
+            }
         }
     }
 

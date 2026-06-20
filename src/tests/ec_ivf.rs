@@ -1470,6 +1470,7 @@
         let index_f16_oid = make_index("ec_ivf_bytes_index_f16", "f16", "index");
         let index_rb4_oid = make_index("ec_ivf_bytes_index_rb4", "rabitq4", "index");
         let index_rb8_oid = make_index("ec_ivf_bytes_index_rb8", "rabitq8", "index");
+        let index_tq_oid = make_index("ec_ivf_bytes_index_tq", "turboquant", "index");
 
         let query = rows[2].1.clone();
         let source_f32 = ec_ivf_debug!(am::debug_ec_ivf_gettuple_counter_snapshot(
@@ -1486,6 +1487,10 @@
         ));
         let index_rb8 = ec_ivf_debug!(am::debug_ec_ivf_gettuple_counter_snapshot(
             index_rb8_oid,
+            query.clone()
+        ));
+        let index_tq = ec_ivf_debug!(am::debug_ec_ivf_gettuple_counter_snapshot(
+            index_tq_oid,
             query
         ));
 
@@ -1500,9 +1505,12 @@
         assert_eq!(index_rb4.rerank_format, "rabitq4");
         assert_eq!(index_rb8.rerank_placement, "index");
         assert_eq!(index_rb8.rerank_format, "rabitq8");
+        assert_eq!(index_tq.rerank_placement, "index");
+        assert_eq!(index_tq.rerank_format, "turboquant");
         assert_eq!(source_f32.rerank_rows, index_f16.rerank_rows);
         assert_eq!(source_f32.rerank_rows, index_rb4.rerank_rows);
         assert_eq!(source_f32.rerank_rows, index_rb8.rerank_rows);
+        assert_eq!(source_f32.rerank_rows, index_tq.rerank_rows);
 
         // f32 reads dims*4 per candidate; f16 reads dims*2 (exactly half).
         assert_eq!(
@@ -1571,6 +1579,18 @@
             index_rb8.rerank_payload_bytes_scored > 0,
             "index rabitq8 should score persisted payload bytes"
         );
+        assert_eq!(
+            index_tq.rerank_source_bytes_read, 0,
+            "index turboquant should not read the heap source vector during rerank"
+        );
+        assert!(
+            index_tq.rerank_payload_bytes_scored > 0,
+            "index turboquant should score persisted payload bytes"
+        );
+        assert_eq!(
+            index_tq.rerank_payload_slab_bytes_copied, 0,
+            "index turboquant borrowed batch scoring should avoid the survivor payload slab"
+        );
 
         assert!(
             index_f16.rerank_source_bytes_read < source_f32.rerank_source_bytes_read,
@@ -1588,6 +1608,12 @@
             index_rb8.rerank_source_bytes_read < source_f32.rerank_source_bytes_read,
             "index rabitq8 ({}) should read fewer heap source bytes than source f32 ({})",
             index_rb8.rerank_source_bytes_read,
+            source_f32.rerank_source_bytes_read
+        );
+        assert!(
+            index_tq.rerank_source_bytes_read < source_f32.rerank_source_bytes_read,
+            "index turboquant ({}) should read fewer heap source bytes than source f32 ({})",
+            index_tq.rerank_source_bytes_read,
             source_f32.rerank_source_bytes_read
         );
     }

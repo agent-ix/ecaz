@@ -2656,7 +2656,43 @@ unsafe fn rerank_probe_candidates_index_side(
     let mut payload_bytes_scored = 0usize;
     let centroid_ip_by_list = build_rerank_centroid_ip_by_list(scorer, centroid_scores);
 
-    if batched {
+    if batched && scorer.supports_sidecar_payload_ref_batch() {
+        let mut payload_refs: Vec<&[u8]> = Vec::with_capacity(candidates.len());
+        let mut centroid_ips: Vec<f32> = if scorer.uses_sidecar_centroid_ip() {
+            Vec::with_capacity(candidates.len())
+        } else {
+            Vec::new()
+        };
+        let payload_decode_started = Instant::now();
+        for candidate in candidates.iter() {
+            let payload_ref =
+                rerank_group_payload_for_candidate(&group_cache, candidate, expected_payload_len)
+                    .unwrap_or_else(|e| pgrx::error!("{e}"));
+            let payload = payload_ref.payload;
+            payload_bytes_scored += payload.len();
+            payload_refs.push(payload);
+            if scorer.uses_sidecar_centroid_ip() {
+                centroid_ips.push(
+                    rerank_centroid_ip_for_list(&centroid_ip_by_list, payload_ref.list_id)
+                        .unwrap_or_else(|e| pgrx::error!("{e}")),
+                );
+            }
+        }
+        payload_decode_elapsed += payload_decode_started.elapsed();
+        let mut scores = vec![0.0_f32; candidates.len()];
+        let payload_score_started = Instant::now();
+        scorer
+            .score_sidecar_payload_refs_batch_with_centroid_ips(
+                &payload_refs,
+                &centroid_ips,
+                &mut scores,
+            )
+            .unwrap_or_else(|e| pgrx::error!("{e}"));
+        payload_score_elapsed += payload_score_started.elapsed();
+        for (candidate, score) in candidates.iter_mut().zip(scores.iter()) {
+            candidate.score = *score;
+        }
+    } else if batched {
         // Collect survivors' payloads in survivor order, then batch-score.
         let mut payload_slab: Vec<u8> = Vec::with_capacity(candidates.len() * expected_payload_len);
         let mut centroid_ips: Vec<f32> = if scorer.uses_sidecar_centroid_ip() {
