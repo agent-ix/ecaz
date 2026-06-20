@@ -22,7 +22,7 @@
 //! order (tid-sorted) and IO shape match the f32 path. Persisted compact
 //! payloads use the index-side sidecar path instead.
 
-use super::options::RerankFormat;
+use super::options::{RaBitQRerankScoreMode, RerankFormat, EC_IVF_DEFAULT_RABITQ_RERANK_CLIP};
 use super::quantizer::{IvfPreparedQuery, IvfQuantizer};
 use crate::am::ec_hnsw::source;
 use crate::am::ec_ivf::options::{RerankPlacement, StorageFormat};
@@ -60,6 +60,7 @@ pub(super) enum RerankPayloadCodec {
     RaBitQ {
         format: RerankFormat,
         bits: u8,
+        score_mode: RaBitQRerankScoreMode,
         quantizer: IvfQuantizer,
         payload_len: usize,
         residual: bool,
@@ -77,20 +78,36 @@ impl RerankPayloadCodec {
         rerank_format: RerankFormat,
         dimensions: usize,
     ) -> Result<Option<Self>, String> {
-        Self::resolve_with_rabitq_residual(rerank_format, dimensions, false)
+        Self::resolve_with_rabitq_options(
+            rerank_format,
+            dimensions,
+            false,
+            RaBitQRerankScoreMode::Estimator,
+            EC_IVF_DEFAULT_RABITQ_RERANK_CLIP,
+        )
     }
 
     fn resolve_index_side(
         rerank_format: RerankFormat,
         dimensions: usize,
+        rabitq_score_mode: RaBitQRerankScoreMode,
+        rabitq_quant_clip: i32,
     ) -> Result<Option<Self>, String> {
-        Self::resolve_with_rabitq_residual(rerank_format, dimensions, true)
+        Self::resolve_with_rabitq_options(
+            rerank_format,
+            dimensions,
+            true,
+            rabitq_score_mode,
+            rabitq_quant_clip,
+        )
     }
 
-    fn resolve_with_rabitq_residual(
+    fn resolve_with_rabitq_options(
         rerank_format: RerankFormat,
         dimensions: usize,
         rabitq_residual: bool,
+        rabitq_score_mode: RaBitQRerankScoreMode,
+        rabitq_quant_clip: i32,
     ) -> Result<Option<Self>, String> {
         match rerank_format {
             RerankFormat::Auto | RerankFormat::F32 => Ok(None),
@@ -107,11 +124,15 @@ impl RerankPayloadCodec {
                     None,
                     Some(bits),
                     rabitq_residual,
+                    Some(u8::try_from(rabitq_quant_clip).map_err(|_| {
+                        format!("ec_ivf rabitq rerank clip {rabitq_quant_clip} is outside u8 range")
+                    })?),
                 )?;
                 let payload_len = quantizer.payload_len();
                 Ok(Some(Self::RaBitQ {
                     format: rerank_format,
                     bits,
+                    score_mode: rabitq_score_mode,
                     quantizer,
                     payload_len,
                     residual: rabitq_residual,
@@ -317,11 +338,25 @@ impl RerankPayloadCodec {
             }
             (
                 Self::RaBitQ {
-                    quantizer, bits, ..
+                    score_mode, bits, ..
                 },
                 RerankPreparedQuery::Quantized(prepared_query),
             ) => {
-                let estimate = quantizer.score_ip_from_parts(prepared_query, 0.0, payload)?;
+                let estimate = match prepared_query {
+                    IvfPreparedQuery::RaBitQ(prepared) => match score_mode {
+                        RaBitQRerankScoreMode::Estimator => {
+                            prepared.estimate_ip_scalar_only(payload)
+                        }
+                        RaBitQRerankScoreMode::LeastSquares => {
+                            prepared.estimate_ip_least_squares_scalar_only(payload)
+                        }
+                    },
+                    _ => {
+                        return Err(
+                            "ec_ivf rabitq rerank prepared query is not a RaBitQ query".to_owned()
+                        )
+                    }
+                };
                 let _ = bits;
                 Ok(-estimate)
             }
@@ -354,6 +389,7 @@ impl RerankPayloadCodec {
                     quantizer,
                     payload_len,
                     bits,
+                    score_mode,
                     ..
                 },
                 RerankPreparedQuery::Quantized(prepared_query),
@@ -365,22 +401,43 @@ impl RerankPayloadCodec {
                         out_scores.len()
                     ));
                 }
-                let mut estimates: Vec<f32> = Vec::with_capacity(out_scores.len());
-                let scored = quantizer.score_ip_bits1_batch_from_payloads(
-                    prepared_query,
-                    payloads,
-                    *payload_len,
-                    &mut estimates,
-                )?;
-                if !scored || estimates.len() != out_scores.len() {
-                    return Err(format!(
-                        "ec_ivf rabitq{bits} rerank batch scorer produced {} scores for {} payloads",
-                        estimates.len(),
-                        out_scores.len()
-                    ));
-                }
-                for (out, estimate) in out_scores.iter_mut().zip(estimates.iter()) {
-                    *out = -estimate;
+                match score_mode {
+                    RaBitQRerankScoreMode::Estimator => {
+                        let mut estimates: Vec<f32> = Vec::with_capacity(out_scores.len());
+                        let scored = quantizer.score_ip_bits1_batch_from_payloads(
+                            prepared_query,
+                            payloads,
+                            *payload_len,
+                            &mut estimates,
+                        )?;
+                        if !scored || estimates.len() != out_scores.len() {
+                            return Err(format!(
+                                "ec_ivf rabitq{bits} rerank batch scorer produced {} scores for {} payloads",
+                                estimates.len(),
+                                out_scores.len()
+                            ));
+                        }
+                        for (out, estimate) in out_scores.iter_mut().zip(estimates.iter()) {
+                            *out = -estimate;
+                        }
+                    }
+                    RaBitQRerankScoreMode::LeastSquares => {
+                        let prepared = match prepared_query {
+                            IvfPreparedQuery::RaBitQ(prepared) => prepared,
+                            _ => {
+                                return Err(
+                                    "ec_ivf rabitq rerank prepared query is not a RaBitQ query"
+                                        .to_owned(),
+                                )
+                            }
+                        };
+                        for (out, payload) in out_scores
+                            .iter_mut()
+                            .zip(payloads.chunks_exact(*payload_len))
+                        {
+                            *out = -prepared.estimate_ip_least_squares_scalar_only(payload);
+                        }
+                    }
                 }
                 Ok(())
             }
@@ -598,6 +655,8 @@ impl RerankScorer {
         storage_format: StorageFormat,
         dimensions: usize,
         query: &[f32],
+        rabitq_score_mode: RaBitQRerankScoreMode,
+        rabitq_quant_clip: i32,
     ) -> Result<Self, String> {
         match rerank_format {
             // Auto never reaches scan time (build_options_from_reloptions
@@ -615,9 +674,20 @@ impl RerankScorer {
                     ));
                 }
                 let codec = if rerank_placement == RerankPlacement::Index {
-                    RerankPayloadCodec::resolve_index_side(rerank_format, dimensions)?
+                    RerankPayloadCodec::resolve_index_side(
+                        rerank_format,
+                        dimensions,
+                        rabitq_score_mode,
+                        rabitq_quant_clip,
+                    )?
                 } else {
-                    RerankPayloadCodec::resolve(rerank_format, dimensions)?
+                    RerankPayloadCodec::resolve_with_rabitq_options(
+                        rerank_format,
+                        dimensions,
+                        false,
+                        rabitq_score_mode,
+                        rabitq_quant_clip,
+                    )?
                 }
                 .ok_or_else(|| "ec_ivf compact rerank codec resolved to source".to_owned())?;
                 let prepared_query = codec.prepare_query(query)?;
@@ -847,9 +917,15 @@ impl RerankSidecarEncoder {
     pub(super) fn resolve(
         rerank_format: RerankFormat,
         dimensions: usize,
+        rabitq_quant_clip: i32,
     ) -> Result<Option<Self>, String> {
-        RerankPayloadCodec::resolve_index_side(rerank_format, dimensions)
-            .map(|codec| codec.map(|codec| Self { codec }))
+        RerankPayloadCodec::resolve_index_side(
+            rerank_format,
+            dimensions,
+            RaBitQRerankScoreMode::Estimator,
+            rabitq_quant_clip,
+        )
+        .map(|codec| codec.map(|codec| Self { codec }))
     }
 
     /// The compact payload width this encoder persists (f16: `dimensions * 2`).
@@ -1082,6 +1158,8 @@ mod tests {
             StorageFormat::CoarseRerank,
             d,
             &query,
+            RaBitQRerankScoreMode::Estimator,
+            EC_IVF_DEFAULT_RABITQ_RERANK_CLIP,
         )
         .unwrap();
         let f16s = RerankScorer::resolve(
@@ -1090,6 +1168,8 @@ mod tests {
             StorageFormat::CoarseRerank,
             d,
             &query,
+            RaBitQRerankScoreMode::Estimator,
+            EC_IVF_DEFAULT_RABITQ_RERANK_CLIP,
         )
         .unwrap();
         let mut s32: Vec<(usize, f32)> = sources
@@ -1232,6 +1312,8 @@ mod tests {
             StorageFormat::CoarseRerank,
             source.len(),
             &query,
+            RaBitQRerankScoreMode::Estimator,
+            EC_IVF_DEFAULT_RABITQ_RERANK_CLIP,
         )
         .unwrap();
         let source_diag_score = scorer.score_source(&query, &source);
@@ -1253,9 +1335,10 @@ mod tests {
 
     #[test]
     fn f16_sidecar_encoder_matches_pack_helper() {
-        let encoder = RerankSidecarEncoder::resolve(RerankFormat::F16, 4)
-            .unwrap()
-            .unwrap();
+        let encoder =
+            RerankSidecarEncoder::resolve(RerankFormat::F16, 4, EC_IVF_DEFAULT_RABITQ_RERANK_CLIP)
+                .unwrap()
+                .unwrap();
         let source = [0.1_f32, -0.2, 0.3, -0.4];
         assert_eq!(encoder.payload_len(source.len()), source.len() * 2);
         assert_eq!(encoder.payload_alignment(), 2);
@@ -1280,6 +1363,8 @@ mod tests {
                 StorageFormat::CoarseRerank,
                 query.len(),
                 &query,
+                RaBitQRerankScoreMode::Estimator,
+                EC_IVF_DEFAULT_RABITQ_RERANK_CLIP,
             )
             .unwrap();
             let source_refs: Vec<&[f32]> = sources.iter().map(|source| source.as_slice()).collect();
@@ -1313,9 +1398,13 @@ mod tests {
             RerankFormat::RaBitQ8,
             RerankFormat::TurboQuant,
         ] {
-            let encoder = RerankSidecarEncoder::resolve(format, source.len())
-                .unwrap()
-                .unwrap();
+            let encoder = RerankSidecarEncoder::resolve(
+                format,
+                source.len(),
+                EC_IVF_DEFAULT_RABITQ_RERANK_CLIP,
+            )
+            .unwrap()
+            .unwrap();
             assert!(encoder
                 .encode(&source)
                 .unwrap_err()
@@ -1329,6 +1418,8 @@ mod tests {
                 StorageFormat::CoarseRerank,
                 source.len(),
                 &query,
+                RaBitQRerankScoreMode::Estimator,
+                EC_IVF_DEFAULT_RABITQ_RERANK_CLIP,
             )
             .unwrap();
             assert!(scorer.uses_sidecar_centroid_ip());
@@ -1373,6 +1464,68 @@ mod tests {
     }
 
     #[test]
+    fn rabitq_index_rerank_exposes_least_squares_and_clip_levers() {
+        let query = [0.2_f32, -0.5, 0.75, 0.1, -0.9, 0.33, -0.12, 0.44];
+        let source = [1.4_f32, -0.25, 0.9, 0.35, -1.3, 0.8, 0.18, -0.71];
+        let centroid = [0.1_f32, -0.2, 0.4, 0.0, -0.4, 0.1, 0.08, 0.5];
+
+        let encoder_clip2 = RerankSidecarEncoder::resolve(RerankFormat::RaBitQ8, source.len(), 2)
+            .unwrap()
+            .unwrap();
+        let encoder_clip4 = RerankSidecarEncoder::resolve(RerankFormat::RaBitQ8, source.len(), 4)
+            .unwrap()
+            .unwrap();
+        let payload_clip2 = encoder_clip2
+            .encode_with_centroid(&source, &centroid)
+            .unwrap();
+        let payload_clip4 = encoder_clip4
+            .encode_with_centroid(&source, &centroid)
+            .unwrap();
+        assert_eq!(payload_clip2.len(), payload_clip4.len());
+        assert_ne!(
+            payload_clip2, payload_clip4,
+            "clip must affect persisted RaBitQ rerank payload bytes"
+        );
+
+        let estimator = RerankScorer::resolve(
+            RerankFormat::RaBitQ8,
+            RerankPlacement::Index,
+            StorageFormat::CoarseRerank,
+            source.len(),
+            &query,
+            RaBitQRerankScoreMode::Estimator,
+            2,
+        )
+        .unwrap();
+        let least_squares = RerankScorer::resolve(
+            RerankFormat::RaBitQ8,
+            RerankPlacement::Index,
+            StorageFormat::CoarseRerank,
+            source.len(),
+            &query,
+            RaBitQRerankScoreMode::LeastSquares,
+            2,
+        )
+        .unwrap();
+        let estimator_score = estimator.score_sidecar_payload(&payload_clip2);
+        let least_squares_score = least_squares.score_sidecar_payload(&payload_clip2);
+        assert_ne!(
+            estimator_score.to_bits(),
+            least_squares_score.to_bits(),
+            "least-squares scorer should be a distinct RaBitQ rerank lever"
+        );
+
+        let mut batch_scores = [0.0_f32; 2];
+        let mut slab = Vec::with_capacity(payload_clip2.len() * 2);
+        slab.extend_from_slice(&payload_clip2);
+        slab.extend_from_slice(&payload_clip2);
+        least_squares
+            .score_sidecar_payloads_batch(&slab, &mut batch_scores)
+            .unwrap();
+        assert_eq!(batch_scores, [least_squares_score, least_squares_score]);
+    }
+
+    #[test]
     fn compact_payload_codecs_batch_paths_match_scalar_scores() {
         let query = [0.2_f32, -0.5, 0.75, 0.1, -0.9, 0.33, -0.12, 0.44];
         let sources = [
@@ -1392,6 +1545,8 @@ mod tests {
                 StorageFormat::CoarseRerank,
                 query.len(),
                 &query,
+                RaBitQRerankScoreMode::Estimator,
+                EC_IVF_DEFAULT_RABITQ_RERANK_CLIP,
             )
             .unwrap();
             assert!(

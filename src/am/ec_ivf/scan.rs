@@ -1481,6 +1481,7 @@ unsafe fn materialize_probe_candidates(
         metadata_pq_group_size(metadata),
         Some(metadata.quant_bits),
         metadata.rabitq_residual,
+        None,
     )?;
     // Task 115: per-list exact centroid inner product `⟨q, c⟩`, indexed by
     // list_id. In residual mode each posting's RaBitQ residual estimate
@@ -2363,6 +2364,8 @@ unsafe fn rerank_probe_candidates(
                 index_options.storage_format,
                 opaque.scan_dimensions as usize,
                 opaque.query_values(),
+                index_options.rabitq_rerank_score,
+                index_options.rabitq_rerank_clip,
             )
             .unwrap_or_else(|e| pgrx::error!("{e}"));
             opaque.explain_counters.record_rerank_surface(
@@ -4214,8 +4217,8 @@ mod tests {
     use hashbrown::HashMap;
 
     use super::super::options::{
-        CoarseFormat, EcIvfOptions, RerankFormat, RerankMode, RerankPlacement,
-        StorageFormat as IvfStorageFormat,
+        CoarseFormat, EcIvfOptions, RaBitQRerankScoreMode, RerankFormat, RerankMode,
+        RerankPlacement, StorageFormat as IvfStorageFormat, EC_IVF_DEFAULT_RABITQ_RERANK_CLIP,
     };
     use super::super::page::{
         IvfDensePostingBlockRef, IvfDensePostingBlockTuple, IvfDensePostingRef, IvfPostingTuple,
@@ -4294,6 +4297,8 @@ mod tests {
             dense_posting_blocks: false,
             dense_posting_typed_layout: false,
             rabitq_residual: false,
+            rabitq_rerank_score: RaBitQRerankScoreMode::Estimator,
+            rabitq_rerank_clip: EC_IVF_DEFAULT_RABITQ_RERANK_CLIP,
             storage_format: IvfStorageFormat::RaBitQ,
             rerank,
             coarse_format: CoarseFormat::Auto,

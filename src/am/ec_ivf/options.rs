@@ -21,6 +21,9 @@ use super::{
 
 const EC_IVF_SESSION_NPROBE_UNSET: i32 = -1;
 const EC_IVF_SESSION_RERANK_WIDTH_UNSET: i32 = -1;
+pub(super) const EC_IVF_DEFAULT_RABITQ_RERANK_CLIP: i32 = 2;
+const EC_IVF_MIN_RABITQ_RERANK_CLIP: i32 = 1;
+const EC_IVF_MAX_RABITQ_RERANK_CLIP: i32 = 8;
 
 static EC_IVF_NPROBE_GUC: GucSetting<i32> = GucSetting::<i32>::new(EC_IVF_SESSION_NPROBE_UNSET);
 static EC_IVF_RERANK_WIDTH_GUC: GucSetting<i32> =
@@ -71,6 +74,8 @@ struct EcIvfReloptions {
     dense_posting_blocks: i32,
     dense_posting_typed_layout: i32,
     rabitq_residual: i32,
+    rabitq_rerank_least_squares: i32,
+    rabitq_rerank_clip: i32,
     storage_format_offset: i32,
     quantizer_offset: i32,
     rerank_offset: i32,
@@ -235,6 +240,31 @@ impl RerankFormat {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum RaBitQRerankScoreMode {
+    Estimator,
+    LeastSquares,
+}
+
+impl RaBitQRerankScoreMode {
+    pub(super) fn from_least_squares_flag(value: i32) -> Result<Self, String> {
+        match value {
+            0 => Ok(Self::Estimator),
+            1 => Ok(Self::LeastSquares),
+            other => Err(format!(
+                "ec_ivf rabitq_rerank_least_squares must be 0 or 1, got {other}"
+            )),
+        }
+    }
+
+    pub(super) fn reloption_name(self) -> &'static str {
+        match self {
+            Self::Estimator => "estimator",
+            Self::LeastSquares => "least_squares",
+        }
+    }
+}
+
 impl RerankMode {
     pub(super) fn parse_reloption(value: &str) -> Result<Self, String> {
         match value {
@@ -291,6 +321,13 @@ pub(super) struct EcIvfOptions {
     /// Task 115: RaBitQ residual encoding gate. Only meaningful for
     /// `storage_format = 'rabitq'`; ignored (forced false) otherwise.
     pub(super) rabitq_residual: bool,
+    /// Task 111h follow-up: index/source-diagnostic RaBitQ rerank scoring
+    /// profile. Default keeps the paper estimator; least_squares exposes the
+    /// lower-variance dequantized projection already present in the harness.
+    pub(super) rabitq_rerank_score: RaBitQRerankScoreMode,
+    /// Task 111h follow-up: integer scalar clip radius used for persisted
+    /// RaBitQ rerank payloads. Default 2 preserves the existing profile.
+    pub(super) rabitq_rerank_clip: i32,
     pub(super) storage_format: StorageFormat,
     pub(super) rerank: RerankMode,
     pub(super) coarse_format: CoarseFormat,
@@ -312,6 +349,8 @@ impl EcIvfOptions {
         dense_posting_blocks: false,
         dense_posting_typed_layout: false,
         rabitq_residual: false,
+        rabitq_rerank_score: RaBitQRerankScoreMode::Estimator,
+        rabitq_rerank_clip: EC_IVF_DEFAULT_RABITQ_RERANK_CLIP,
         storage_format: StorageFormat::Auto,
         rerank: RerankMode::Auto,
         coarse_format: CoarseFormat::Auto,
@@ -696,6 +735,26 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_amoptions(
             1,
             offset_of!(EcIvfReloptions, rabitq_residual) as i32,
         );
+        pg_sys::add_local_int_reloption(
+            &mut relopts,
+            c"rabitq_rerank_least_squares".as_ptr(),
+            c"Task 111h RaBitQ rerank scorer: 0 uses the default asymmetric estimator, 1 uses the lower-variance least-squares dequantized projection."
+                .as_ptr(),
+            0,
+            0,
+            1,
+            offset_of!(EcIvfReloptions, rabitq_rerank_least_squares) as i32,
+        );
+        pg_sys::add_local_int_reloption(
+            &mut relopts,
+            c"rabitq_rerank_clip".as_ptr(),
+            c"Task 111h RaBitQ rerank scalar quantization clip radius for compact rerank payloads; default 2 preserves the existing profile."
+                .as_ptr(),
+            EC_IVF_DEFAULT_RABITQ_RERANK_CLIP,
+            EC_IVF_MIN_RABITQ_RERANK_CLIP,
+            EC_IVF_MAX_RABITQ_RERANK_CLIP,
+            offset_of!(EcIvfReloptions, rabitq_rerank_clip) as i32,
+        );
         pg_sys::add_local_string_reloption(
                 &mut relopts,
                 c"storage_format".as_ptr(),
@@ -853,6 +912,19 @@ fn build_options_from_reloptions(
         }
         None => RerankFormat::Auto,
     };
+    let rabitq_rerank_score =
+        RaBitQRerankScoreMode::from_least_squares_flag(reloptions.rabitq_rerank_least_squares)
+            .unwrap_or_else(|e| pgrx::error!("{e}"));
+    if !(EC_IVF_MIN_RABITQ_RERANK_CLIP..=EC_IVF_MAX_RABITQ_RERANK_CLIP)
+        .contains(&reloptions.rabitq_rerank_clip)
+    {
+        pgrx::error!(
+            "ec_ivf rabitq_rerank_clip must be between {} and {}, got {}",
+            EC_IVF_MIN_RABITQ_RERANK_CLIP,
+            EC_IVF_MAX_RABITQ_RERANK_CLIP,
+            reloptions.rabitq_rerank_clip
+        );
+    }
     if storage_format == StorageFormat::CoarseRerank {
         match coarse_format {
             CoarseFormat::Auto => coarse_format = CoarseFormat::RaBitQ,
@@ -959,6 +1031,16 @@ fn build_options_from_reloptions(
             storage_format.reloption_name()
         );
     }
+    let rabitq_rerank_knob_set = rabitq_rerank_score != RaBitQRerankScoreMode::Estimator
+        || reloptions.rabitq_rerank_clip != EC_IVF_DEFAULT_RABITQ_RERANK_CLIP;
+    if rabitq_rerank_knob_set
+        && !(storage_format == StorageFormat::CoarseRerank
+            && matches!(rerank_format, RerankFormat::RaBitQ4 | RerankFormat::RaBitQ8))
+    {
+        pgrx::error!(
+            "ec_ivf RaBitQ rerank scoring knobs require storage_format = 'coarse_rerank' with rerank_format = 'rabitq4' or 'rabitq8'"
+        );
+    }
 
     EcIvfOptions {
         nlists: reloptions.nlists,
@@ -979,6 +1061,8 @@ fn build_options_from_reloptions(
         dense_posting_typed_layout: storage_format == StorageFormat::CoarseRerank
             || reloptions.dense_posting_typed_layout != 0,
         rabitq_residual,
+        rabitq_rerank_score,
+        rabitq_rerank_clip: reloptions.rabitq_rerank_clip,
         storage_format,
         rerank,
         coarse_format,
@@ -1013,6 +1097,8 @@ mod tests {
             dense_posting_blocks: 0,
             dense_posting_typed_layout: 0,
             rabitq_residual: 0,
+            rabitq_rerank_least_squares: 0,
+            rabitq_rerank_clip: EC_IVF_DEFAULT_RABITQ_RERANK_CLIP,
             storage_format_offset: 0,
             quantizer_offset: 0,
             rerank_offset: 0,
@@ -1174,6 +1260,47 @@ mod tests {
         assert_eq!(options.rerank, RerankMode::HeapF32);
         assert_eq!(options.rerank_placement, RerankPlacement::Index);
         assert_eq!(options.rerank_format, RerankFormat::RaBitQ8);
+    }
+
+    #[test]
+    fn coarse_rerank_accepts_rabitq_rerank_scoring_knobs() {
+        let mut reloptions = reloptions();
+        reloptions.rabitq_rerank_least_squares = 1;
+        reloptions.rabitq_rerank_clip = 4;
+
+        let options = build_options_from_reloptions(
+            &reloptions,
+            Some("coarse_rerank".into()),
+            None,
+            None,
+            None,
+            None,
+            Some("rabitq8".into()),
+        );
+
+        assert_eq!(options.rerank_format, RerankFormat::RaBitQ8);
+        assert_eq!(
+            options.rabitq_rerank_score,
+            RaBitQRerankScoreMode::LeastSquares
+        );
+        assert_eq!(options.rabitq_rerank_clip, 4);
+    }
+
+    #[test]
+    #[should_panic]
+    fn coarse_rerank_rejects_rabitq_rerank_knobs_for_non_rabitq_format() {
+        let mut reloptions = reloptions();
+        reloptions.rabitq_rerank_least_squares = 1;
+
+        build_options_from_reloptions(
+            &reloptions,
+            Some("coarse_rerank".into()),
+            None,
+            None,
+            None,
+            None,
+            Some("f16".into()),
+        );
     }
 
     #[test]

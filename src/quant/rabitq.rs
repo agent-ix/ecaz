@@ -83,6 +83,7 @@ struct SeededSrhtCacheKey {
     dimensions: usize,
     seed: u64,
     bits_per_dim: u8,
+    quant_clip_bits: u32,
 }
 
 static SEEDED_SRHT_CACHE: OnceLock<Mutex<HashMap<SeededSrhtCacheKey, Arc<RaBitQQuantizer>>>> =
@@ -291,10 +292,25 @@ impl RaBitQQuantizer {
         seed: u64,
         bits: u8,
     ) -> Result<Arc<Self>, String> {
+        Self::cached_seeded_srht_bits_clip(dimensions, seed, bits, RABITQ_DEFAULT_QUANT_CLIP)
+    }
+
+    pub fn cached_seeded_srht_bits_clip(
+        dimensions: usize,
+        seed: u64,
+        bits: u8,
+        quant_clip: f32,
+    ) -> Result<Arc<Self>, String> {
+        if quant_clip <= 0.0 || !quant_clip.is_finite() {
+            return Err(format!(
+                "RaBitQ quant_clip must be positive and finite, got {quant_clip}",
+            ));
+        }
         let key = SeededSrhtCacheKey {
             dimensions,
             seed,
             bits_per_dim: bits,
+            quant_clip_bits: quant_clip.to_bits(),
         };
         let cache = SEEDED_SRHT_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
         let mut cache_guard = cache
@@ -303,7 +319,9 @@ impl RaBitQQuantizer {
         if let Some(quantizer) = cache_guard.get(&key) {
             return Ok(Arc::clone(quantizer));
         }
-        let quantizer = Arc::new(Self::with_seeded_srht_bits(dimensions, seed, bits)?);
+        let quantizer = Arc::new(Self::with_seeded_srht_bits_clip(
+            dimensions, seed, bits, quant_clip,
+        )?);
         cache_guard.insert(key, Arc::clone(&quantizer));
         Ok(quantizer)
     }
@@ -386,10 +404,19 @@ impl RaBitQQuantizer {
     /// for prod call sites where the seed is recorded in the
     /// index metadata so different indexes get independent rotations.
     pub fn with_seeded_srht_bits(dimensions: usize, seed: u64, bits: u8) -> Result<Self, String> {
+        Self::with_seeded_srht_bits_clip(dimensions, seed, bits, RABITQ_DEFAULT_QUANT_CLIP)
+    }
+
+    pub fn with_seeded_srht_bits_clip(
+        dimensions: usize,
+        seed: u64,
+        bits: u8,
+        quant_clip: f32,
+    ) -> Result<Self, String> {
         #[cfg(test)]
         note_seeded_srht_construction_for_test(dimensions);
         let rotation: Arc<dyn Rotation> = Arc::new(SrhtRotation::with_seed(dimensions, seed));
-        Self::with_bits(rotation, bits)
+        Self::with_bits_clip(rotation, bits, quant_clip)
     }
 
     pub fn dimensions(&self) -> usize {

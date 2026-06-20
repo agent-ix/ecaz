@@ -4701,7 +4701,10 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::am::ec_ivf::options::{CoarseFormat, RerankFormat, RerankPlacement};
+    use crate::am::ec_ivf::options::{
+        CoarseFormat, RaBitQRerankScoreMode, RerankFormat, RerankPlacement,
+        EC_IVF_DEFAULT_RABITQ_RERANK_CLIP,
+    };
     use crate::storage::page::DEFAULT_PAGE_SIZE;
 
     fn tid(block_number: u32, offset_number: u16) -> ItemPointer {
@@ -4746,6 +4749,8 @@ mod tests {
             dense_posting_blocks: false,
             dense_posting_typed_layout: false,
             rabitq_residual: false,
+            rabitq_rerank_score: RaBitQRerankScoreMode::Estimator,
+            rabitq_rerank_clip: EC_IVF_DEFAULT_RABITQ_RERANK_CLIP,
             storage_format: StorageFormat::RaBitQ,
             rerank: RerankMode::HeapF32,
             coarse_format: CoarseFormat::Auto,
@@ -4785,6 +4790,8 @@ mod tests {
             dense_posting_blocks: false,
             dense_posting_typed_layout: false,
             rabitq_residual: true,
+            rabitq_rerank_score: RaBitQRerankScoreMode::Estimator,
+            rabitq_rerank_clip: EC_IVF_DEFAULT_RABITQ_RERANK_CLIP,
             storage_format: StorageFormat::RaBitQ,
             rerank: RerankMode::HeapF32,
             coarse_format: CoarseFormat::Auto,
@@ -4820,6 +4827,8 @@ mod tests {
             dense_posting_blocks: false,
             dense_posting_typed_layout: false,
             rabitq_residual: false,
+            rabitq_rerank_score: RaBitQRerankScoreMode::Estimator,
+            rabitq_rerank_clip: EC_IVF_DEFAULT_RABITQ_RERANK_CLIP,
             storage_format: StorageFormat::Auto,
             rerank: RerankMode::Auto,
             coarse_format: CoarseFormat::Auto,
@@ -5529,6 +5538,8 @@ mod tests {
             dense_posting_blocks: false,
             dense_posting_typed_layout: false,
             rabitq_residual: false,
+            rabitq_rerank_score: RaBitQRerankScoreMode::Estimator,
+            rabitq_rerank_clip: EC_IVF_DEFAULT_RABITQ_RERANK_CLIP,
             storage_format: StorageFormat::Auto,
             rerank: RerankMode::Auto,
             coarse_format: CoarseFormat::Auto,

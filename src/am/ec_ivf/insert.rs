@@ -155,6 +155,7 @@ unsafe fn insert_into_trained_index(
                 metadata_pq_group_size(metadata),
                 Some(metadata.quant_bits),
                 true,
+                None,
             )?;
         let (_dimensions, gamma, payload) =
             residual_quantizer.encode_source_residual(&tuple.source_vector, centroid)?;
@@ -252,6 +253,7 @@ unsafe fn append_rerank_group_entry(
     let Some(encoder) = super::rerank::RerankSidecarEncoder::resolve(
         reloptions.rerank_format,
         source_vector.len(),
+        reloptions.rabitq_rerank_clip,
     )?
     else {
         return Ok(None);
@@ -476,6 +478,8 @@ fn options_from_metadata(
         dense_posting_blocks: false,
         dense_posting_typed_layout: false,
         rabitq_residual: metadata.rabitq_residual,
+        rabitq_rerank_score: reloptions.rabitq_rerank_score,
+        rabitq_rerank_clip: reloptions.rabitq_rerank_clip,
         storage_format: metadata.storage_format,
         rerank: metadata.rerank,
         coarse_format: if metadata.storage_format == options::StorageFormat::CoarseRerank {

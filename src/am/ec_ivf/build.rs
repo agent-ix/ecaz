@@ -639,6 +639,7 @@ impl BuildState {
                 self.options.requested_pq_group_size(),
                 Some(self.options.effective_quant_bits()),
                 true,
+                None,
             )?)
         } else {
             None
@@ -940,6 +941,7 @@ fn build_rerank_group_chain(
     let Some(encoder) = super::rerank::RerankSidecarEncoder::resolve(
         options.rerank_format,
         usize::from(dimensions),
+        options.rabitq_rerank_clip,
     )?
     else {
         // f32 / auto keep the heap source: no sidecar.
@@ -1510,6 +1512,8 @@ mod tests {
             dense_posting_blocks: false,
             dense_posting_typed_layout: false,
             rabitq_residual: false,
+            rabitq_rerank_score: options::RaBitQRerankScoreMode::Estimator,
+            rabitq_rerank_clip: options::EC_IVF_DEFAULT_RABITQ_RERANK_CLIP,
             storage_format: options::StorageFormat::Auto,
             rerank: options::RerankMode::Auto,
             coarse_format: options::CoarseFormat::Auto,
